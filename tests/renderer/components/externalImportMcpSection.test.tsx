@@ -10,7 +10,7 @@
 
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type {
   ExternalMcpApplyResult,
   ExternalMcpPreviewResult,
@@ -147,7 +147,7 @@ describe('ExternalImportMcpPreview', () => {
 });
 
 describe('ExternalImportMcpResults', () => {
-  it('导入项默认「已导入（未启用）」；点开关先弹完整命令确认，确认前不启用', () => {
+  it('导入项默认「已导入（未启用）」；点开关先弹完整命令确认，确认前不启用', async () => {
     render(<ExternalImportMcpResults copy={copy} sourceNames={sourceNames} result={applyFixture()} />);
 
     const githubRow = screen.getByTestId('external-import-mcp-item-claude-code-github');
@@ -167,6 +167,7 @@ describe('ExternalImportMcpResults', () => {
       'setServerEnabled',
       { serverName: 'github', enabled: true },
     );
+    await waitFor(() => expect(githubRow.textContent).toContain('已启用'));
   });
 
   it('取消确认 → 不启用', () => {

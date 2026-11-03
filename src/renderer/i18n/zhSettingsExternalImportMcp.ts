@@ -46,6 +46,6 @@ export const zhSettingsExternalImportMcp = {
     enableDialogHint: '确认你信任它的来源再启用。',
     enableDialogConfirm: '确认启用',
     enableDialogCancel: '暂不启用',
-    resultsTitle: 'MCP 服务器：导入 {imported} 个，跳过 {skipped} 个（都未启用）',
+    resultsTitle: 'MCP 服务器：导入 {imported} 个，跳过 {skipped} 个',
   },
 };

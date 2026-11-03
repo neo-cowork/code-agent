@@ -40,6 +40,6 @@ export const enSettingsExternalImportMcp = {
     enableDialogHint: 'Make sure you trust where it comes from before enabling.',
     enableDialogConfirm: 'Enable',
     enableDialogCancel: 'Not now',
-    resultsTitle: 'MCP servers: imported {imported}, skipped {skipped} (all off)',
+    resultsTitle: 'MCP servers: imported {imported}, skipped {skipped}',
   },
 };
