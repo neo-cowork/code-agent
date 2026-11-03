@@ -39,13 +39,14 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
   }),
 }));
 
-// mcpClient 在测试进程里不可初始化（依赖 configService 运行时）：mock 成抛错，
-// 走「用户配置文件直读」这条真实回落（fixture dataDir 下的 mcp.json）。
+const runtimeAddServer = vi.hoisted(() => vi.fn());
+
 vi.mock('../../../src/host/mcp/mcpClient', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../src/host/mcp/mcpClient')>()),
-  getMCPClient: () => {
-    throw new Error('mcp client not initialized in test');
-  },
+  getMCPClient: () => ({
+    getServerStates: () => [],
+    addServer: runtimeAddServer,
+  }),
 }));
 
 // persistServerDefault 动态 import mcp.ipc：与 mcp.domain.ipc.test.ts 同款最小 mock。
@@ -66,6 +67,7 @@ let dataDir: string;
 
 beforeEach(async () => {
   logSink.length = 0;
+  runtimeAddServer.mockReset();
   tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'external-mcp-import-'));
   homeDir = path.join(tmpRoot, 'home');
   dataDir = path.join(tmpRoot, 'data');
@@ -363,6 +365,11 @@ describe('applyExternalMcpImport：落盘、泄密、幂等（验收②③④）
       ['sentry', false],
       ['websearch', false],
     ]);
+    expect(runtimeAddServer).toHaveBeenCalledTimes(6);
+    for (const [server] of runtimeAddServer.mock.calls) {
+      expect(server).toMatchObject({ enabled: false, scope: 'runtime' });
+      expect(JSON.stringify(server)).not.toContain(SECRET_LITERAL);
+    }
 
     // 写入形状细节：github 的 env 整个不写（唯一成员是 secret）；websearch 保留 benign env。
     const servers = (await loadMcpConfigFiles()) as Array<{

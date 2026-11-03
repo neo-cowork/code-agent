@@ -406,7 +406,10 @@ async function persistServerDefault(server: MCPServerConfig): Promise<unknown> {
   // 动态 import：mcp.ipc 的路由表静态引本模块，反向静态引它会成环。
   const { persistMcpServerConfigToPath } = await import('../ipc/mcp.ipc');
   await ensureUserConfigDir();
-  return persistMcpServerConfigToPath(getMcpScopedConfigPaths().user, 'servers', server);
+  const persisted = await persistMcpServerConfigToPath(getMcpScopedConfigPaths().user, 'servers', server);
+  const { getMCPClient } = await import('../mcp/mcpClient');
+  getMCPClient().addServer({ ...server, scope: 'runtime' });
+  return persisted;
 }
 
 function resolveSourceIds(sourceIds?: ExternalMcpConfigSourceId[]): ExternalMcpConfigSourceId[] {
