@@ -330,21 +330,22 @@ function mapEntry(sourceId: ExternalMcpConfigSourceId, entry: RawMcpEntry): Exte
   }
 
   // 远程：type=sse 保 sse，其余（http/http-streamable/缺省）归 http-streamable。
+  if (!url) return skipItem(sourceId, entry, 'remote', '', 'invalid-entry');
   const type = stringValue(raw, 'type');
   if (type !== undefined && type !== 'sse' && type !== 'http' && type !== 'http-streamable' && type !== 'stdio') {
-    return skipItem(sourceId, entry, 'remote', url ?? '', 'invalid-entry');
+    return skipItem(sourceId, entry, 'remote', url, 'invalid-entry');
   }
   if (type === 'stdio') {
-    return skipItem(sourceId, entry, 'remote', url ?? '', 'invalid-entry');
+    return skipItem(sourceId, entry, 'remote', url, 'invalid-entry');
   }
   const headers = sanitizeHeaders(raw.headers ?? raw.http_headers, needed);
   if (headers === null) {
-    return skipItem(sourceId, entry, 'remote', url ?? '', 'invalid-entry');
+    return skipItem(sourceId, entry, 'remote', url, 'invalid-entry');
   }
   const config = {
     name: entry.name,
     type: type === 'sse' ? ('sse' as const) : ('http-streamable' as const),
-    serverUrl: url!,
+    serverUrl: url,
     ...(Object.keys(headers).length > 0 ? { headers } : {}),
     enabled: false,
     scope: 'user',
@@ -354,9 +355,9 @@ function mapEntry(sourceId: ExternalMcpConfigSourceId, entry: RawMcpEntry): Exte
     name: entry.name,
     disposition: 'import',
     kind: 'remote',
-    commandSummary: url!,
+    commandSummary: url,
     neededEnvKeys: dedupeNeeded(needed),
-    dedupKey: url!,
+    dedupKey: url,
     config,
   };
 }
