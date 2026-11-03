@@ -311,6 +311,22 @@ describe('planExternalMcpImport：四来源读取与安全映射（验收①）'
     expect(capturedLogs()).not.toContain(SECRET_LITERAL);
   });
 
+  it('非对象条目与非数组 args 都明确按 invalid-entry 跳过', async () => {
+    await fs.mkdir(path.join(homeDir, '.cursor'), { recursive: true });
+    await fs.writeFile(path.join(homeDir, '.cursor', 'mcp.json'), JSON.stringify({
+      mcpServers: {
+        'bad-shape': 'not-an-object',
+        'bad-args': { command: 'npx', args: 'not-an-array' },
+      },
+    }));
+
+    const result = await planExternalMcpImport({ sourceIds: ['cursor'] });
+    expect(result.items.map((item) => [item.name, item.reason])).toEqual([
+      ['bad-shape', 'invalid-entry'],
+      ['bad-args', 'invalid-entry'],
+    ]);
+  });
+
   it('Neo 已有同名同配置 → already-exists；同名不同配置 → name-conflict', async () => {
     await writeFullFixtureHome();
     await fs.writeFile(

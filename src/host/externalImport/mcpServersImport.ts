@@ -118,8 +118,7 @@ async function readJsonMcpSource(filePath: string): Promise<ExternalMcpSourceRea
   }
   const entries: RawMcpEntry[] = [];
   for (const [name, entry] of Object.entries(mcpServers)) {
-    if (!isRecord(entry)) continue; // 形状坏的条目按 invalid-entry 走条目级跳过
-    entries.push({ name, raw: entry });
+    entries.push({ name, raw: isRecord(entry) ? entry : {} });
   }
   return { status: 'ok', entries };
 }
@@ -150,8 +149,7 @@ async function readCodexTomlSource(filePath: string): Promise<ExternalMcpSourceR
   }
   const entries: RawMcpEntry[] = [];
   for (const [name, entry] of Object.entries(mcpServers)) {
-    if (!isRecord(entry)) continue;
-    entries.push({ name, raw: entry });
+    entries.push({ name, raw: isRecord(entry) ? entry : {} });
   }
   return { status: 'ok', entries };
 }
@@ -179,7 +177,8 @@ function stringValue(raw: Record<string, unknown>, key: string): string | undefi
 /** string[] | undefined=缺省 | null=形状坏（条目级跳过）。 */
 function stringArrayValue(raw: Record<string, unknown>, key: string): string[] | null | undefined {
   const value = raw[key];
-  if (!Array.isArray(value)) return undefined;
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) return null;
   return value.every((item) => typeof item === 'string') ? (value as string[]) : null;
 }
 
