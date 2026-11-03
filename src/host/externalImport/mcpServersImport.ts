@@ -81,7 +81,7 @@ interface RawMcpEntry {
   raw: Record<string, unknown>;
 }
 
-export interface ExternalMcpSourceRead {
+interface ExternalMcpSourceRead {
   status: ExternalMcpSourceFileStatus;
   entries: RawMcpEntry[];
   error?: string;
@@ -156,7 +156,7 @@ async function readCodexTomlSource(filePath: string): Promise<ExternalMcpSourceR
   return { status: 'ok', entries };
 }
 
-export async function readExternalMcpSource(
+async function readExternalMcpSource(
   sourceId: ExternalMcpConfigSourceId,
   homeDir: string,
 ): Promise<ExternalMcpSourceRead & { configPath: string }> {
