@@ -104,8 +104,8 @@ async function readJsonMcpSource(filePath: string): Promise<ExternalMcpSourceRea
   let parsed: unknown;
   try {
     parsed = JSON.parse(content);
-  } catch (error) {
-    return { status: 'invalid', entries: [], error: `invalid JSON: ${readError(error)}` };
+  } catch {
+    return { status: 'invalid', entries: [], error: 'invalid JSON: parse error' };
   }
   if (!isRecord(parsed)) {
     return { status: 'invalid', entries: [], error: 'top-level value is not a JSON object' };
@@ -137,8 +137,8 @@ async function readCodexTomlSource(filePath: string): Promise<ExternalMcpSourceR
   let parsed: unknown;
   try {
     parsed = parseToml(content);
-  } catch (error) {
-    return { status: 'invalid', entries: [], error: `invalid TOML: ${readError(error)}` };
+  } catch {
+    return { status: 'invalid', entries: [], error: 'invalid TOML: parse error' };
   }
   if (!isRecord(parsed)) {
     return { status: 'invalid', entries: [], error: 'top-level value is not a TOML table' };

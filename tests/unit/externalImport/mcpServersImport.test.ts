@@ -199,7 +199,7 @@ async function writeFullFixtureHome(): Promise<void> {
   );
 }
 
-function itemByName(items: Array<{ name: string; sourceId?: string }>, name: string, sourceId?: string) {
+function itemByName<T extends { name: string; sourceId?: string }>(items: T[], name: string, sourceId?: string): T {
   const found = sourceId
     ? items.filter((item) => item.name === name && item.sourceId === sourceId)
     : items.filter((item) => item.name === name);
@@ -277,11 +277,19 @@ describe('planExternalMcpImport：四来源读取与安全映射（验收①）'
     expect(result.summary.skip).toBe(4);
   });
 
-  it('坏文件给文件级原因，绝不静默空列表（验收①）', async () => {
+  it('坏文件给文件级原因，绝不静默空列表；解析错误也不回显 secret（验收①③）', async () => {
     await fs.mkdir(path.join(homeDir, '.cursor'), { recursive: true });
-    await fs.writeFile(path.join(homeDir, '.cursor', 'mcp.json'), '{ not json', 'utf-8');
+    await fs.writeFile(
+      path.join(homeDir, '.cursor', 'mcp.json'),
+      `{"mcpServers":{"broken":{"env":{"API_KEY":"${SECRET_LITERAL}"}},}}`,
+      'utf-8',
+    );
     await fs.mkdir(path.join(homeDir, '.codex'), { recursive: true });
-    await fs.writeFile(path.join(homeDir, '.codex', 'config.toml'), '= broken [', 'utf-8');
+    await fs.writeFile(
+      path.join(homeDir, '.codex', 'config.toml'),
+      `[mcp_servers.broken]\nenv = { API_KEY = "${SECRET_LITERAL}" }\nbroken = [\n`,
+      'utf-8',
+    );
     // 路径是目录（非 root 环境也稳定触发 read 失败，不依赖 chmod 语义）。
     await fs.mkdir(path.join(homeDir, '.claude.json'), { recursive: true });
 
@@ -297,6 +305,8 @@ describe('planExternalMcpImport：四来源读取与安全映射（验收①）'
     // 文件缺失是信息项（missing），有独立原因文案。
     expect(bySource['claude-desktop'].status).toBe('missing');
     expect(result.items).toEqual([]);
+    expect(JSON.stringify(result)).not.toContain(SECRET_LITERAL);
+    expect(capturedLogs()).not.toContain(SECRET_LITERAL);
   });
 
   it('Neo 已有同名同配置 → already-exists；同名不同配置 → name-conflict', async () => {
