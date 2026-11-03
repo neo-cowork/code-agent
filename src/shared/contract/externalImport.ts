@@ -11,6 +11,7 @@ import type { MemoryImportAdapterId } from './memory';
 
 export type ExternalImportSourceId =
   | 'claude-code'
+  | 'claude-desktop'
   | 'codex'
   | 'cursor'
   | 'grok-build'
@@ -20,7 +21,10 @@ export type ExternalImportSourceId =
 /** 技能走复制的来源；Claude 按拍板 A 原地读取，不复制。 */
 export type ExternalSkillCopySourceId = 'codex' | 'cursor';
 
-export type ExternalImportCategory = 'instructions' | 'memories' | 'skills';
+/** 带 MCP server 配置文件的来源（N-EXTHISTORY-IMPORT-K1B-MCP）。 */
+export type ExternalMcpConfigSourceId = 'claude-code' | 'claude-desktop' | 'cursor' | 'codex';
+
+export type ExternalImportCategory = 'instructions' | 'memories' | 'skills' | 'mcp';
 
 export interface ExternalImportCategoryCount {
   category: ExternalImportCategory;
@@ -100,4 +104,75 @@ export interface ExternalImportSetClaudeLegacySkillsRequest {
 export interface ExternalImportSetClaudeLegacySkillsResult {
   /** 落盘后回读的生效值（写失败时与请求值可能不同，UI 以此为准） */
   enabled: boolean;
+}
+
+// ----------------------------------------------------------------------------
+// MCP servers 导入（N-EXTHISTORY-IMPORT-K1B-MCP）
+// ----------------------------------------------------------------------------
+//
+// 拍板 A：全部以 enabled:false 写入 Neo 用户 mcp.json，逐个手动启用（启用前先看
+// 完整命令行确认）；secret 形状值绝不落盘/回传/记日志，只记「需要哪个 KEY」的名字。
+
+/** 单个来源配置文件的读取状态（缺文件是信息项，坏文件必须给原因，不静默空列表）。 */
+export type ExternalMcpSourceFileStatus = 'ok' | 'missing' | 'unreadable' | 'invalid';
+
+export interface ExternalMcpSourceFileReport {
+  sourceId: ExternalMcpConfigSourceId;
+  /** 来源配置文件绝对路径（展示/判因用） */
+  configPath: string;
+  status: ExternalMcpSourceFileStatus;
+  /** status=unreadable/invalid 时的文件级原因（不含任何条目值） */
+  error?: string;
+}
+
+export type ExternalMcpSkipReason =
+  | 'source-disabled'
+  | 'placeholder-in-command'
+  | 'invalid-entry'
+  | 'duplicate-across-sources'
+  | 'already-exists'
+  | 'name-conflict'
+  | 'write-failed';
+
+export interface ExternalMcpPlanItem {
+  sourceId: ExternalMcpConfigSourceId;
+  name: string;
+  disposition: 'import' | 'skip';
+  reason?: ExternalMcpSkipReason;
+  /** stdio | 远程；skip 项也给（重复项灰显时仍要能认出来源与命令） */
+  kind: 'stdio' | 'remote';
+  /** 供预览/结果行与启用确认展示的命令摘要（stdio=command+args；远程=url），已过 secret 规则 */
+  commandSummary: string;
+  /** 被剥掉的 secret/占位符对应的 KEY 名字（仅名字，永不带值） */
+  neededEnvKeys: string[];
+  /** 跨来源/对既有配置去重用的键（stdio=command+args；远程=url） */
+  dedupKey: string;
+}
+
+export interface ExternalMcpPreviewRequest {
+  sourceIds?: ExternalMcpConfigSourceId[];
+}
+
+export interface ExternalMcpPreviewResult {
+  files: ExternalMcpSourceFileReport[];
+  items: ExternalMcpPlanItem[];
+  summary: { import: number; skip: number };
+}
+
+export interface ExternalMcpApplyRequest {
+  sourceIds?: ExternalMcpConfigSourceId[];
+}
+
+export interface ExternalMcpApplyResultItem extends ExternalMcpPlanItem {
+  action: 'imported' | 'skipped';
+  /** write-failed 时的宿主侧错误摘要（不含条目值） */
+  error?: string;
+}
+
+export interface ExternalMcpApplyResult {
+  /** 写入目标（Neo 用户 mcp.json） */
+  targetPath: string;
+  imported: number;
+  skipped: number;
+  items: ExternalMcpApplyResultItem[];
 }

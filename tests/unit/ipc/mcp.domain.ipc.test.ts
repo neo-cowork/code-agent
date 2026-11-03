@@ -98,3 +98,42 @@ describe('mcp.ipc dispatch 特征：兜底', () => {
     expect(await call('listResources')).toEqual({ success: false, error: { code: 'INTERNAL_ERROR', message: 'coded' } });
   });
 });
+
+// ----------------------------------------------------------------------------
+// N-EXTHISTORY-IMPORT-K1B-MCP：外部 MCP 导入两个 action 的派发（载荷直通模块）
+// ----------------------------------------------------------------------------
+
+const mcpImportPlan = vi.hoisted(() => vi.fn());
+const mcpImportApply = vi.hoisted(() => vi.fn());
+
+vi.mock('../../../src/host/externalImport/mcpServersImport', () => ({
+  planExternalMcpImport: mcpImportPlan,
+  applyExternalMcpImport: mcpImportApply,
+}));
+
+describe('mcp.ipc dispatch 特征：externalImportMcpPreview / externalImportMcpApply（K1B）', () => {
+  it('载荷直通 externalImport 模块并原样回传', async () => {
+    mcpImportPlan.mockResolvedValueOnce({ files: [], items: [], summary: { import: 0, skip: 0 } });
+    mcpImportApply.mockResolvedValueOnce({ targetPath: '/x/mcp.json', imported: 0, skipped: 0, items: [] });
+
+    expect(await call('externalImportMcpPreview', { sourceIds: ['cursor'] })).toEqual({
+      success: true,
+      data: { files: [], items: [], summary: { import: 0, skip: 0 } },
+    });
+    expect(mcpImportPlan).toHaveBeenCalledWith({ sourceIds: ['cursor'] });
+
+    expect(await call('externalImportMcpApply', { sourceIds: ['cursor', 'codex'] })).toEqual({
+      success: true,
+      data: { targetPath: '/x/mcp.json', imported: 0, skipped: 0, items: [] },
+    });
+    expect(mcpImportApply).toHaveBeenCalledWith({ sourceIds: ['cursor', 'codex'] });
+  });
+
+  it('模块抛错 → INTERNAL_ERROR（错误面同域内既有语义）', async () => {
+    mcpImportApply.mockRejectedValueOnce(new Error('importer down'));
+    expect(await call('externalImportMcpApply')).toEqual({
+      success: false,
+      error: { code: 'INTERNAL_ERROR', message: 'importer down' },
+    });
+  });
+});
