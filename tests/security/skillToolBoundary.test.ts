@@ -53,7 +53,7 @@ vi.mock('../../src/host/tools/dispatch/toolResolver', () => {
     requiresPermission: false,
     permissionLevel: 'read' as const,
   };
-  const defs: Record<string, unknown> = { bash: bashDef, write_file: writeDef, read_file: readDef };
+  const defs: Record<string, unknown> = { bash: bashDef, write_file: writeDef, Write: { ...writeDef, name: 'Write' }, read_file: readDef };
   const fakeResolver = {
     list: () => Object.keys(defs),
     getDefinition: (name: string) => defs[name],
@@ -269,6 +269,19 @@ describe('Skill allowed-tools boundary (GAP-001)', () => {
   });
 
   describe('别名折叠', () => {
+    it('executor: declared write_file covers a Write call (no boundary ask); mail-like undeclared tool still asks', async () => {
+      let asked = false;
+      const executor = makeExecutor(() => { asked = true; });
+      const boundary = { skillName: 's', allowedTools: ['write_file'] };
+      await executor.execute('Write', { file_path: '/tmp/out.txt', content: 'x' }, {
+        skillToolBoundary: boundary,
+        preApprovedTools: new Set(['Write']),
+      });
+      expect(asked).toBe(false);
+      await executor.execute('bash', { command: 'ls' }, { skillToolBoundary: boundary });
+      expect(asked).toBe(true);
+    });
+
     it('declared write_file allows a Write call; mail_send and undeclared tools still violate', async () => {
       const { skillBoundaryAllowsTool } = await import('../../src/host/tools/skillBoundaryScope');
       const boundary = { skillName: 's', allowedTools: ['write_file'] };
