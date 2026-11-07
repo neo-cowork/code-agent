@@ -163,6 +163,11 @@ describe('set_role_proactivity（真实 configService，临时数据目录）', 
       topicsExclude: ['股票'],
     });
     const handler = await toolModule.setRoleProactivityModule.createHandler();
+    // 通用 executor 不应先弹一张无复述的写权限卡；handler 的 forceConfirm 是唯一审批。
+    expect(toolModule.setRoleProactivityModule.schema).toMatchObject({
+      permissionLevel: 'write',
+      requiresPermission: false,
+    });
     await handler.execute(
       { roleId: '研究员', once_a_day: true, add_exclude: ['天气'] },
       makeCtx(),

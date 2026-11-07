@@ -72,6 +72,9 @@ export const setRoleProactivitySchema: ToolSchema = {
   category: 'fs',
   permissionLevel: 'write',
   readOnly: false,
+  // Handler owns the single approval with forceConfirm + the computed before/after restatement.
+  // The executor's generic write prompt would otherwise create a second, context-free card first.
+  requiresPermission: false,
   allowInPlanMode: false,
   accesses: [
     { kind: 'write', expression: 'resource(role, proactivity)' },
