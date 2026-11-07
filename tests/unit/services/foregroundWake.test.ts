@@ -174,7 +174,10 @@ describe('foreground task-result wake', () => {
     await createForegroundWake(dependencies())(task(), 'completed');
     expect(wakeLogger.warn).toHaveBeenCalledWith(
       'Foreground wake failed: owner missing',
-      expect.objectContaining({ taskId: 'task-1' }),
+      expect.objectContaining({
+        taskId: 'task-1',
+        message: 'Durable Run run-1 has no live owner lease',
+      }),
     );
   });
 
