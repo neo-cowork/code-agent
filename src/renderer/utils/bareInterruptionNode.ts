@@ -48,3 +48,13 @@ export function bareInterruptionNode(
     metadata: { ...msg.metadata, streamInterruptionReason: reason },
   };
 }
+
+// 空正文 + 中断原因 = 只承载“已停止”提示的节点；它不是真正的断流信号，
+// TurnCard 判定「本轮是否被中断」时要排除它，否则用户停止过的轮次会丢改动摘要。
+export function isBareInterruptionNode(node: TraceNode): boolean {
+  return node.type === 'assistant_text'
+    && !node.content
+    && !node.metadata?.agentError
+    && !node.metadata?.streamRecovery
+    && Boolean(node.metadata?.streamInterruptionReason);
+}
