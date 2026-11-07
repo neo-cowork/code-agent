@@ -11,6 +11,8 @@ import { useSessionStore } from '../stores/sessionStore';
 import { useSessionUIStore } from '../stores/sessionUIStore';
 import { useStreamingMessageAccumulatorStore } from '../stores/streamingMessageAccumulatorStore';
 import { selectHasStoppableSwarmWork, useSwarmStore } from '../stores/swarmStore';
+import { useBackgroundTaskStore } from '../stores/backgroundTaskStore';
+import { useTaskStore } from '../stores/taskStore';
 import {
   ensureNeoWorkCardLiveUpdates,
   isNeoWorkCardAwaitingRuntimeTerminal,
@@ -101,6 +103,7 @@ import {
 import { recordStreamingPerformanceCounter } from '../utils/streamingPerformanceMetrics';
 import { findSearchMatchForPendingJump } from '../utils/sessionSearchJump';
 import { buildProjectGoalChatStart } from '../utils/projectGoalChatSeed';
+import { isTerminalTaskStatus } from '@shared/contract/backgroundTask';
 import { findPendingPlanApproval, hasPlanApproval } from '../utils/planApprovalView';
 import { Image, MessageSquare } from 'lucide-react';
 import {
@@ -375,6 +378,17 @@ export const ChatView: React.FC = () => {
   // 回溯横幅禁用，并进去会把「主 loop 空闲时发新消息」误路由成运行中补充。
   const hasStoppableSwarmWork = useSwarmStore((state) =>
     selectHasStoppableSwarmWork(state, currentSessionId));
+  const hasStoppableCommandCenterWork = useBackgroundTaskStore((state) => (
+    Boolean(currentSessionId) && state.tasks.some((task) => (
+      task.sessionId === currentSessionId
+      && task.source === 'session_command_center'
+      && !isTerminalTaskStatus(task.status)
+    ))
+  ));
+  const isStopping = useTaskStore((state) => (
+    currentSessionId ? state.sessionStates[currentSessionId]?.status === 'cancelling' : false
+  ));
+  const hasStoppableBackgroundWork = hasStoppableSwarmWork || hasStoppableCommandCenterWork;
 
   // Bridge 拦截状态 (Phase 4)
   const [bridgePrompt, setBridgePrompt] = useState<{ toolName: string } | null>(null);
@@ -1055,7 +1069,8 @@ export const ChatView: React.FC = () => {
 
           <ChatInput ref={chatInputRef} onSend={handleSendEnvelopeWithCronFollowUp} onSteer={handleSteerEnvelope}
             disabled={effectiveIsProcessing || isCreatingSession} isProcessing={effectiveIsProcessing}
-            hasStoppableBackgroundWork={hasStoppableSwarmWork} isInterrupting={isInterrupting} onStop={cancel} hasContinuation={showDurableContinue}
+            hasStoppableBackgroundWork={hasStoppableBackgroundWork} isInterrupting={isInterrupting} isStopping={isStopping}
+            onStop={cancel} hasContinuation={showDurableContinue}
             onContinue={durableContinue.onContinue} hasPlan={false} placeholder={currentSessionId === skippedQuestionSessionId ? t.userQuestion.skippedPlaceholder : undefined} />
         </div>
       </div>
