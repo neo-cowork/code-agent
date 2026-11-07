@@ -81,6 +81,7 @@ export const expertZh = {
         empty: '这个会话还没有代理',
         backgroundBadge: '后台',
         stopRow: '停',
+        stopFailedHint: '这个任务已经结束或无法停止',
         conflictLine: '{left} 和 {right} 都改了 {file}',
         eventsToggle: '讨论流 · {count} 条',
         status: {
@@ -390,6 +391,7 @@ export const expertEn: typeof expertZh = {
         empty: 'No agents in this session yet',
         backgroundBadge: 'Background',
         stopRow: 'Stop',
+        stopFailedHint: 'This task already ended or cannot be stopped',
         conflictLine: '{left} and {right} both changed {file}',
         eventsToggle: 'Discussion · {count}',
         status: {

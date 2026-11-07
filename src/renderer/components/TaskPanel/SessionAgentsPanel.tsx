@@ -21,6 +21,7 @@ import { useAppStore } from '../../stores/appStore';
 import { useSwarmStore } from '../../stores/swarmStore';
 import { useComposerStore } from '../../stores/composerStore';
 import { useMemberViewStore } from '../../stores/memberViewStore';
+import { useBackgroundTaskStore } from '../../stores/backgroundTaskStore';
 import { useVoiceLiveRuntime } from '../../hooks/useVoiceLiveRuntime';
 import { deriveAgentMergeState } from '../../utils/agentMergeState';
 import { isAgentRowQuiet } from '../../utils/agentRowStall';
@@ -62,6 +63,7 @@ export const SessionAgentsPanel: React.FC = () => {
   const voiceCallLive = voiceRuntime.phase === 'live' || voiceRuntime.phase === 'connecting';
   const voiceActiveAgentId = voiceRuntime.activeAgentId;
   const [stoppingKey, setStoppingKey] = useState<string | null>(null);
+  const [stopHintKey, setStopHintKey] = useState<string | null>(null);
   const [stoppingAll, setStoppingAll] = useState(false);
   const [eventsOpen, setEventsOpen] = useState(false);
 
@@ -114,8 +116,13 @@ export const SessionAgentsPanel: React.FC = () => {
   const stopRow = async (row: AgentRow) => {
     if (stoppingKey) return;
     setStoppingKey(row.key);
+    setStopHintKey(null);
     try {
-      await stopSessionAgent(row, sessionId, activeRunId ?? undefined);
+      const result = await stopSessionAgent(row, sessionId, activeRunId ?? undefined);
+      if (result !== 'stopped') setStopHintKey(row.key);
+      if (row.kind === 'task') {
+        await useBackgroundTaskStore.getState().refreshTasks().catch(() => undefined);
+      }
     } finally {
       setStoppingKey(null);
     }
@@ -272,6 +279,14 @@ export const SessionAgentsPanel: React.FC = () => {
                     >
                       {statusLabel(row)}
                     </span>
+                    {stopHintKey === row.key && (
+                      <span
+                        data-testid={`agents-panel-stop-hint-${row.key}`}
+                        className="text-[10px] text-badge-warning"
+                      >
+                        · {text.panel.stopFailedHint}
+                      </span>
+                    )}
                     {/* N-FIX-WF-STALL-SPAWN-AGENT：spawn_agent 静默子代理的行级软提示， */}
                     {/* 文案复用 workflowStall.quiet（与 composer 工具条 90s 提示同一词条）。 */}
                     {isAgentRowQuiet(row, hintNow, releasedAtRef.current.get(row.key)) && (
