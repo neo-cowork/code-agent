@@ -2,7 +2,7 @@ import type { ToolSchema } from '../../../protocol/tools';
 
 export const delegateSessionSchema: ToolSchema = {
   name: 'delegate_session',
-  description: 'Delegate a task to another chat session or create a new session, or operate on an existing delegation. The model never supplies session ids or workspace paths; use list_session_candidates first.',
+  description: 'Delegate a task to another chat session, create a new session, or operate on an existing delegation. For delegate_existing, bind only when the user message singles out exactly one listed candidate and supplies task text. If several candidates fit, the named target is absent from the candidate list, or task text is missing, do not call delegate_session; call AskUserQuestion first. create_new is never a fallback for ambiguity. The model never supplies session ids or workspace paths; use list_session_candidates first.',
   outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
