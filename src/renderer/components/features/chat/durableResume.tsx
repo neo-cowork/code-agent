@@ -96,7 +96,7 @@ export const DurableResumeNotice: React.FC<{ text: string; actions?: React.React
 );
 
 /** 用户主动停止（user_stop）的停靠行：一句灰字说明为什么没有回答，其余原因沿用通用停靠行。 */
-export const DurableStoppedNotice: React.FC<{ actions?: React.ReactNode }> = ({ actions }) => {
+const DurableStoppedNotice: React.FC<{ actions?: React.ReactNode }> = ({ actions }) => {
   const { t } = useI18n();
   return (
     <div className="mx-auto mb-2 flex max-w-3xl items-center gap-2 px-4 text-xs text-zinc-400" data-testid="durable-stopped-notice">
