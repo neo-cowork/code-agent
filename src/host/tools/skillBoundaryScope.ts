@@ -12,6 +12,7 @@
 
 import type { SkillToolBoundary } from '../../shared/contract/agentSkill';
 import { resolveToolAlias } from '../services/toolSearch/deferredTools';
+import { toolMatchesPatternSet } from './toolExecutorHelpers';
 import { EXIT_ROLE_FLOW_TOOL_NAME } from './modules/roleAuthoring/exitRoleFlow.schema';
 
 /** 取 allowed-tools 条目的基础工具名（去掉 Bash(git:*) 这种模式前缀），并归一别名 */
@@ -77,4 +78,22 @@ export function buildStrictToolsetNotice(boundary: SkillToolBoundary): string {
     exitHint,
     '</strict-skill-toolset>',
   ].join('\n');
+}
+
+/**
+ * GAP-001 软边界判定：调用是否落在 skill 的 allowedTools 内。
+ * 两侧都过 resolveToolAlias（声明 `write_file` 即覆盖运行时 `Write`），
+ * 不带括号的条目才折叠别名；`Bash(git:*)` 这类带作用域的条目仍走 toolMatchesPatternSet 原语义。
+ */
+export function skillBoundaryAllowsTool(
+  boundary: SkillToolBoundary,
+  toolName: string,
+  params: Record<string, unknown>,
+): boolean {
+  const called = resolveToolAlias(toolName).toLowerCase();
+  for (const entry of boundary.allowedTools) {
+    if (entry.includes('(')) continue;
+    if (resolveToolAlias(entry.trim()).toLowerCase() === called) return true;
+  }
+  return toolMatchesPatternSet(toolName, params, new Set(boundary.allowedTools));
 }

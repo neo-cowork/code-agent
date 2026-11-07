@@ -268,6 +268,19 @@ describe('Skill allowed-tools boundary (GAP-001)', () => {
     });
   });
 
+  describe('别名折叠', () => {
+    it('declared write_file allows a Write call; mail_send and undeclared tools still violate', async () => {
+      const { skillBoundaryAllowsTool } = await import('../../src/host/tools/skillBoundaryScope');
+      const boundary = { skillName: 's', allowedTools: ['write_file'] };
+      expect(skillBoundaryAllowsTool(boundary, 'Write', {})).toBe(true);
+      expect(skillBoundaryAllowsTool(boundary, 'Edit', {})).toBe(false);
+      expect(skillBoundaryAllowsTool(boundary, 'mail_send', {})).toBe(false);
+      const scoped = { skillName: 's', allowedTools: ['Bash(git:*)'] };
+      expect(skillBoundaryAllowsTool(scoped, 'Bash', { command: 'git status' })).toBe(true);
+      expect(skillBoundaryAllowsTool(scoped, 'Bash', { command: 'npm install' })).toBe(false);
+    });
+  });
+
   describe('无边界时行为不变', () => {
     it('no boundary: safe commands auto-approved as before', async () => {
       let permissionRequested = false;
