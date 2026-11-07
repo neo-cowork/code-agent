@@ -81,19 +81,37 @@ export function buildStrictToolsetNotice(boundary: SkillToolBoundary): string {
 }
 
 /**
+ * 边界比较只折叠「同一工具的旧名/大小写写法」。TOOL_ALIASES 里还有语义别名
+ * （screenshot→computer_use）和多对一别名（create/new/archive_session→SessionManager），
+ * 折叠它们会让声明一个窄工具就授权另一个更宽的工具，所以不在此白名单内。
+ */
+const BOUNDARY_FOLDABLE_NAMES = new Set([
+  'read_file', 'write_file', 'append_file', 'edit_file', 'list_directory',
+  'web_search', 'web_fetch', 'ask_user_question', 'tool_search',
+  'memory_write', 'memory_read',
+  'bash', 'grep', 'glob', 'read', 'write', 'append', 'edit',
+]);
+
+function foldBoundaryName(name: string): string {
+  const trimmed = name.trim();
+  const folded = BOUNDARY_FOLDABLE_NAMES.has(trimmed.toLowerCase()) ? resolveToolAlias(trimmed) : trimmed;
+  return folded.toLowerCase();
+}
+
+/**
  * GAP-001 软边界判定：调用是否落在 skill 的 allowedTools 内。
- * 两侧都过 resolveToolAlias（声明 `write_file` 即覆盖运行时 `Write`），
- * 不带括号的条目才折叠别名；`Bash(git:*)` 这类带作用域的条目仍走 toolMatchesPatternSet 原语义。
+ * 两侧只折叠 BOUNDARY_FOLDABLE_NAMES 内的旧名（声明 `write_file` 即覆盖运行时 `Write`），
+ * 带括号的条目（`Bash(git:*)`）仍走 toolMatchesPatternSet 原语义。
  */
 export function skillBoundaryAllowsTool(
   boundary: SkillToolBoundary,
   toolName: string,
   params: Record<string, unknown>,
 ): boolean {
-  const called = resolveToolAlias(toolName).toLowerCase();
+  const called = foldBoundaryName(toolName);
   for (const entry of boundary.allowedTools) {
     if (entry.includes('(')) continue;
-    if (resolveToolAlias(entry.trim()).toLowerCase() === called) return true;
+    if (foldBoundaryName(entry) === called) return true;
   }
   return toolMatchesPatternSet(toolName, params, new Set(boundary.allowedTools));
 }

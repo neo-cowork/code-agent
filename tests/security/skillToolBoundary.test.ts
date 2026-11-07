@@ -294,6 +294,21 @@ describe('Skill allowed-tools boundary (GAP-001)', () => {
     });
   });
 
+  describe('别名折叠不得放宽权限', () => {
+    it('semantic/many-to-one aliases are not authorization-equivalent', async () => {
+      const { skillBoundaryAllowsTool } = await import('../../src/host/tools/skillBoundaryScope');
+      const shot = { skillName: 's', allowedTools: ['screenshot'] };
+      expect(skillBoundaryAllowsTool(shot, 'screenshot', {})).toBe(true);
+      expect(skillBoundaryAllowsTool(shot, 'computer_use', {})).toBe(false);
+      expect(skillBoundaryAllowsTool(shot, 'Computer', {})).toBe(false);
+      const create = { skillName: 's', allowedTools: ['create_session'] };
+      expect(skillBoundaryAllowsTool(create, 'archive_session', {})).toBe(false);
+      expect(skillBoundaryAllowsTool(create, 'SessionManager', {})).toBe(false);
+      const cu = { skillName: 's', allowedTools: ['computer_use'] };
+      expect(skillBoundaryAllowsTool(cu, 'screenshot', {})).toBe(false);
+    });
+  });
+
   describe('无边界时行为不变', () => {
     it('no boundary: safe commands auto-approved as before', async () => {
       let permissionRequested = false;
