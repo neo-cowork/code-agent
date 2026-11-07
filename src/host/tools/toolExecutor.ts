@@ -2017,6 +2017,7 @@ export class ToolExecutor {
         standingGrantTarget,
         computerApp,
         params,
+        browserContext: context,
         blocked: Boolean(commandAnalysisFailedReason)
           || guardFabricForcesApproval || protectedWriteForcesConfirmation
           || policyForcesConfirmation || unresolvedWriteTargetForcesAsk
@@ -2037,6 +2038,7 @@ export class ToolExecutor {
         params,
         commandValidation,
         commandRiskUnknown ? 'unknown' : knownAskCommandRisk,
+        context,
       );
       if (pluginOrigin) {
         Object.assign(permissionRequest.details, pluginOrigin);
@@ -2685,6 +2687,7 @@ export class ToolExecutor {
     params: Record<string, unknown>,
     commandValidation?: ValidationResult,
     commandRiskOverride?: ValidationResult['riskLevel'] | 'unknown',
+    browserContext?: ToolContext,
   ): PermissionRequestData {
     const sourceAttribution = (rawPath?: unknown): Record<string, unknown> => {
       const workspaceScope = this.runContext?.workspaceScope;
@@ -2837,7 +2840,7 @@ export class ToolExecutor {
         if (connectorRequest) return connectorRequest;
         // Map permission level to permission request type
         const requestType = permissionRequestTypeForLevel(tool.permissionLevel);
-        const browserGrantScope = resolveBrowserGrantScope(tool.name, params);
+        const browserGrantScope = resolveBrowserGrantScope(tool.name, params, browserContext);
         const permissionDetails = { ...params };
         delete permissionDetails.browserGrantScope;
         if (browserGrantScope) permissionDetails.browserGrantScope = browserGrantScope;

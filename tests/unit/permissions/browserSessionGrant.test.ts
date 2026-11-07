@@ -9,6 +9,7 @@ const resolverState = vi.hoisted(() => ({
 
 const activeTabState = vi.hoisted(() => ({
   url: null as string | null,
+  surfaceUrl: null as string | null,
 }));
 
 vi.mock('../../../src/host/tools/dispatch/toolResolver', () => ({
@@ -18,10 +19,25 @@ vi.mock('../../../src/host/tools/dispatch/toolResolver', () => ({
   }),
 }));
 
-vi.mock('../../../src/host/services/infra/browserService', () => ({
-  browserService: {
+vi.mock('../../../src/host/services/infra/browserPool', () => ({
+  getBrowserService: () => ({
     getActiveTab: () => (activeTabState.url ? { id: 'tab-1', url: activeTabState.url, title: 'Test' } : null),
-  },
+  }),
+}));
+
+vi.mock('../../../src/host/services/surfaceExecution/ManagedBrowserProviderAdapter', () => ({
+  surfaceIdentityFromToolContext: (context: { sessionId?: string; runId?: string; agentId?: string }) => (
+    context.sessionId && context.runId && context.agentId
+      ? { conversationId: context.sessionId, runId: context.runId, agentId: context.agentId }
+      : null
+  ),
+  getManagedBrowserProviderAdapter: () => ({
+    getBrowserService: () => ({
+      getActiveTab: () => (activeTabState.surfaceUrl
+        ? { id: 'surface-tab-1', url: activeTabState.surfaceUrl, title: 'Surface Test' }
+        : null),
+    }),
+  }),
 }));
 
 vi.mock('../../../src/host/platform', async (importOriginal) => {
@@ -89,6 +105,7 @@ describe('browserSessionGrant', () => {
     resetDecisionHistory();
     clearBrowserSessionGrants();
     activeTabState.url = 'https://site-a.example.com/form';
+    activeTabState.surfaceUrl = 'https://site-a.example.com/form';
     resolverState.definition = {
       name: 'Browser',
       description: 'browser tool',
@@ -170,6 +187,22 @@ describe('browserSessionGrant', () => {
       action: 'open',
       origin: 'https://site-a.example.com',
     }]);
+  });
+
+  it('resolves the active origin from the run-scoped managed-browser surface', () => {
+    activeTabState.url = 'https://wrong-default.example.com/';
+    activeTabState.surfaceUrl = 'https://surface.example.com/form';
+    const scope = resolveBrowserGrantScope(
+      'Browser',
+      { action: 'handle_dialog', dialogAction: 'dismiss' },
+      {
+        sessionId: 'surface-session',
+        runId: 'surface-run',
+        agentId: 'primary',
+      } as import('../../../src/host/tools/types').ToolContext,
+    );
+
+    expect(scope).toEqual({ action: 'handle_dialog', origin: 'https://surface.example.com' });
   });
 
   it('④ grant is per session (session 2 asks), does not survive clearSession-style cleanup, and sensitive-step hand-back never mints', async () => {

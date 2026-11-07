@@ -28,8 +28,15 @@ vi.mock('../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({ addMessageToSession: vi.fn() }),
 }));
 
-vi.mock('../../../src/host/services/infra/browserService', () => ({
-  browserService: { getActiveTab: () => null },
+vi.mock('../../../src/host/services/infra/browserPool', () => ({
+  getBrowserService: () => ({ getActiveTab: () => null }),
+}));
+
+vi.mock('../../../src/host/services/surfaceExecution/ManagedBrowserProviderAdapter', () => ({
+  surfaceIdentityFromToolContext: () => null,
+  getManagedBrowserProviderAdapter: () => ({
+    getBrowserService: () => ({ getActiveTab: () => null }),
+  }),
 }));
 
 vi.mock('../../../src/host/services/infra/logger', () => ({

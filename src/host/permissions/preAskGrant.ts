@@ -8,6 +8,7 @@ import { matchAppGrant } from './appGrantStore';
 import { matchBrowserSessionGrant, resolveBrowserGrantScope } from './browserSessionGrant';
 import { appGrantKey, type ComputerTargetApp } from './computerAppTarget';
 import { matchToolGrant } from './toolGrantStore';
+import type { ToolContext } from '../tools/types';
 
 export function resolvePreAskGrant(input: {
   toolName: string;
@@ -15,6 +16,7 @@ export function resolvePreAskGrant(input: {
   standingGrantTarget: string | null;
   computerApp: ComputerTargetApp | null;
   params?: Record<string, unknown>;
+  browserContext?: ToolContext;
   blocked: boolean;
 }): { ledgerReason: string; traceRule: string; traceDetail: string } | null {
   if (input.blocked) return null;
@@ -25,7 +27,7 @@ export function resolvePreAskGrant(input: {
       traceDetail: `app grant hit: ${input.computerApp.name}`,
     };
   }
-  const browserScope = resolveBrowserGrantScope(input.toolName, input.params);
+  const browserScope = resolveBrowserGrantScope(input.toolName, input.params, input.browserContext);
   const browserLedgerReason = matchBrowserSessionGrant(input.sessionId, browserScope);
   if (browserScope && browserLedgerReason) {
     return {

@@ -11,7 +11,9 @@
 // ============================================================================
 
 import { getStrictBrowserComputerActionCatalogForArgs, normalizeBrowserComputerCatalogToolName } from '../../shared/utils/browserComputerActionCatalog';
-import { browserService } from '../services/infra/browserService';
+import type { ToolContext } from '../tools/types';
+import { getBrowserService } from '../services/infra/browserPool';
+import { getManagedBrowserProviderAdapter, surfaceIdentityFromToolContext } from '../services/surfaceExecution/ManagedBrowserProviderAdapter';
 
 const GRANTABLE_BROWSER_ACTIONS = new Set([
   'handle_dialog',
@@ -61,6 +63,7 @@ function buildScopeKey(scope: BrowserGrantScope): string {
 export function resolveBrowserGrantScope(
   toolName: unknown,
   params: Record<string, unknown> | undefined,
+  browserContext?: ToolContext,
 ): BrowserGrantScope | null {
   const catalogTool = normalizeBrowserComputerCatalogToolName(toolName);
   if (catalogTool !== 'browser_action') return null;
@@ -70,9 +73,16 @@ export function resolveBrowserGrantScope(
   });
   if (!entry || !GRANTABLE_BROWSER_ACTIONS.has(entry.action)) return null;
 
-  const rawUrl = entry.action === 'open'
-    ? params?.url
-    : browserService.getActiveTab()?.url;
+  let rawUrl = params?.url;
+  if (entry.action !== 'open') {
+    const surfaceIdentity = browserContext
+      ? surfaceIdentityFromToolContext(browserContext)
+      : null;
+    const service = surfaceIdentity
+      ? getManagedBrowserProviderAdapter().getBrowserService(surfaceIdentity)
+      : getBrowserService(browserContext?.agentId);
+    rawUrl = service.getActiveTab()?.url;
+  }
   const origin = parseHttpOrigin(rawUrl);
   if (!origin) return null;
 
