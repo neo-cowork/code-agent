@@ -32,6 +32,26 @@ export interface DelegationPresentation {
   sessionId?: string;
 }
 
+const SPAWN_AGENT_PRIVATE_RESULT_LINE = /^- (?:Agent ID|Pipeline ID|Cost):(?:\s|$)/;
+
+/** Keep the host's orchestration receipt model-visible while hiding its private bookkeeping in UI details. */
+export function toDelegationDisplayToolCall(toolCall: ToolCall): ToolCall {
+  const result = toolCall.result;
+  const output = result?.output;
+  if (toolCall.name !== 'spawn_agent' || !result || typeof output !== 'string') return toolCall;
+
+  const visibleOutput = output
+    .split('\n')
+    .filter((line) => !SPAWN_AGENT_PRIVATE_RESULT_LINE.test(line))
+    .join('\n');
+  if (visibleOutput === output) return toolCall;
+
+  return {
+    ...toolCall,
+    result: { ...result, output: visibleOutput },
+  };
+}
+
 function basename(value: string): string {
   const normalized = value.split(/[?#]/, 1)[0] || value;
   return normalized.split(/[\\/]/).filter(Boolean).pop() || value;
