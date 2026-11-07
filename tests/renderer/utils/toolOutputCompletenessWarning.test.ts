@@ -46,6 +46,7 @@ describe('toolOutputCompletenessWarning', () => {
       expect(hasCompletenessIssues(result.meta)).toBe(true);
 
       const zhCleaned = replaceCompletenessWarningInOutput(
+        'Write',
         result.output,
         result.meta,
         zh.rendererHumanPipe.toolDetails.completenessWarningNote,
@@ -57,6 +58,7 @@ describe('toolOutputCompletenessWarning', () => {
       expect(zhCleaned).not.toContain('重新生成完整文件');
 
       const enCleaned = replaceCompletenessWarningInOutput(
+        'Write',
         result.output,
         result.meta,
         en.rendererHumanPipe.toolDetails.completenessWarningNote,
@@ -94,6 +96,7 @@ describe('toolOutputCompletenessWarning', () => {
       expect(hasCompletenessIssues(result.meta)).toBe(true);
 
       const zhCleaned = replaceCompletenessWarningInOutput(
+        'Edit',
         result.output,
         result.meta,
         zh.rendererHumanPipe.toolDetails.completenessWarningNote,
@@ -109,7 +112,8 @@ describe('toolOutputCompletenessWarning', () => {
 
   it('leaves output untouched when metadata has no completenessIssues', () => {
     const raw = 'Created file: /tmp/demo.ts (20 chars)\n\n⚠️ **代码完整性警告**: something';
-    expect(replaceCompletenessWarningInOutput(raw, undefined, 'REPLACED')).toBe(raw);
-    expect(replaceCompletenessWarningInOutput(raw, { completenessIssues: [] }, 'REPLACED')).toBe(raw);
+    expect(replaceCompletenessWarningInOutput('Write', raw, undefined, 'REPLACED')).toBe(raw);
+    expect(replaceCompletenessWarningInOutput('Edit', raw, { completenessIssues: [] }, 'REPLACED')).toBe(raw);
+    expect(replaceCompletenessWarningInOutput('Bash', raw, { completenessIssues: ['issue'] }, 'REPLACED')).toBe(raw);
   });
 });

@@ -14,6 +14,7 @@
 // ============================================================================
 
 const COMPLETENESS_WARNING_MARKER = '⚠️ **代码完整性警告**';
+const COMPLETENESS_WARNING_TOOL_NAMES = new Set(['Write', 'Edit', 'write_file', 'edit_file']);
 
 function isNonEmptyArray(value: unknown): value is unknown[] {
   return Array.isArray(value) && value.length > 0;
@@ -37,11 +38,14 @@ export function hasCompletenessIssues(
 }
 
 export function replaceCompletenessWarningInOutput(
+  toolName: string,
   output: string,
   metadata: Record<string, unknown> | null | undefined,
   replacementNote: string,
 ): string {
-  if (!output || !hasCompletenessIssues(metadata)) return output;
+  if (!COMPLETENESS_WARNING_TOOL_NAMES.has(toolName) || !output || !hasCompletenessIssues(metadata)) {
+    return output;
+  }
   const markerIndex = output.indexOf(COMPLETENESS_WARNING_MARKER);
   if (markerIndex < 0) return output;
   const prefix = output.slice(0, markerIndex).trimEnd();

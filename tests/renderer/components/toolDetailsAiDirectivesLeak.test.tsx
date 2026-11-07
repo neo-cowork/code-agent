@@ -365,7 +365,7 @@ describe('N-FIX-ERROR-CARD-AI-DIRECTIVES-LEAK — renderer cards for all 4 scene
 
     i18nState.lang = 'en';
     const enMarkup = renderToStaticMarkup(<ToolDetails toolCall={call} />);
-    expect(enMarkup).toContain('Wrote a file was missing required details and did not run');
+    expect(enMarkup).toContain('This action was missing required information and did not run');
     expect(enMarkup).not.toMatch(/[\u4e00-\u9fff]/);
     assertNoForbiddenStrings(enMarkup);
   });
@@ -410,7 +410,7 @@ describe('N-FIX-ERROR-CARD-AI-DIRECTIVES-LEAK — renderer cards for all 4 scene
         },
       };
 
-      const zhPresentation = humanizeToolError('Read', hostResult.error, zh, hostResult.metadata);
+      const zhPresentation = humanizeToolError(hostResult.error, 'Read', zh, hostResult.metadata);
       expect(zhPresentation.summary).toBe('这是 Neo 另一份独立数据目录，当前不能直接读取');
       expect(zhPresentation.detail).toBe('需要的话，直接告诉 Neo 你想找什么。');
 
@@ -421,7 +421,7 @@ describe('N-FIX-ERROR-CARD-AI-DIRECTIVES-LEAK — renderer cards for all 4 scene
 
       i18nState.lang = 'en';
       const enMarkup = renderToStaticMarkup(<ToolDetails toolCall={call} />);
-      expect(enMarkup).toContain('This is another separate Neo data directory and cannot be read directly');
+      expect(enMarkup).toContain('This belongs to a separate Neo data directory and cannot be read from here');
       expect(enMarkup).toContain('If you need something from it, just tell Neo what you are looking for.');
       expect(enMarkup).not.toMatch(/[\u4e00-\u9fff]/);
       assertNoForbiddenStrings(enMarkup);

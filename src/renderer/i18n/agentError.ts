@@ -94,8 +94,8 @@ const hostReasonEn: typeof hostReasonZh = {
   [HostReasonCode.OsSandboxDegraded]: { summary: 'The OS sandbox was not applied; the command will run without isolation' },
   [HostReasonCode.OsSandboxUnavailable]: { summary: 'The OS sandbox is unavailable, so the command was refused' },
   [HostReasonCode.UploadExpired]: { summary: 'This uploaded file has expired and cannot be read', detail: 'Please upload the file again.' },
-  [HostReasonCode.ToolArgsInvalid]: { summary: '{toolName} was missing required details and did not run' },
-  [HostReasonCode.ForeignDataDir]: { summary: 'This is another separate Neo data directory and cannot be read directly', detail: 'If you need something from it, just tell Neo what you are looking for.' },
+  [HostReasonCode.ToolArgsInvalid]: { summary: 'This action was missing required information and did not run' },
+  [HostReasonCode.ForeignDataDir]: { summary: 'This belongs to a separate Neo data directory and cannot be read from here', detail: 'If you need something from it, just tell Neo what you are looking for.' },
 };
 // agentError 域词条（AgentErrorCard 会话区错误卡片）—— zh/en 同文件相邻维护。
 // 卡片文案按 category 表驱动：title 一句话说发生了什么，suggestion 给建议动作，

@@ -33,10 +33,7 @@ import {
   buildToolErrorActions,
   isToolInterruptionPlaceholder,
 } from '../../../../../utils/toolExecutionPresentation';
-import {
-  hasCompletenessIssues,
-  replaceCompletenessWarningInOutput,
-} from '../../../../../utils/toolOutputCompletenessWarning';
+import { hasCompletenessIssues, replaceCompletenessWarningInOutput } from '../../../../../utils/toolOutputCompletenessWarning';
 import { readHostReasonFromMetadata } from '../../../../../utils/hostReasonPresentation';
 import { cleanToolResultDisplayText } from '../../../../../utils/toolResultDisplayText';
 import { useI18n } from '../../../../../hooks/useI18n';
@@ -412,6 +409,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                         ? stripAnsiCodes(result.error)
                         : typeof result.output === 'string'
                           ? replaceCompletenessWarningInOutput(
+                              name,
                               cleanToolResultDisplayText(name, stripAnsiCodes(result.output), copy),
                               result.metadata,
                               t.rendererHumanPipe.toolDetails.completenessWarningNote,
