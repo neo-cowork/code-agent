@@ -3,6 +3,7 @@ import { SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS } from '../../shared/consta
 import { getTextForegroundToolNames } from '../tools/protocolRegistry';
 import { detectTaskFeatures } from '../prompts/systemReminders';
 import { getNativeConnectorToolNamesForIntent } from '../connectors/nativeConnectorIntent';
+import { isRoleProactivityChatIntent } from './roleProactivityChatIntent';
 
 // 不导出：web/桌面两条装配路都经 getSessionCommandCenterBrainContextForPrompt 取块，
 // 导出常量只会引回「第二条装配路直接拼常量」的旧形态（rework r1）。
@@ -117,6 +118,9 @@ export function getTextForegroundToolNamesForPrompt(
     if (OFFICE_SHEET_DELIVERABLE_RE.test(prompt)) extras.push('excel_generate', 'DocEdit');
   }
   if (isMorningBriefSaveDraftReply(prompt)) extras.push('mail_draft');
+  // 角色主动性写入必须留在用户亲自参与的前台轮次，并继续走工具内 force-confirm。
+  // 只在相关请求命中时进 allowlist，避免每轮挂载写工具 schema。
+  if (isRoleProactivityChatIntent(prompt)) extras.push('set_role_proactivity');
   // 无意图命中时零副作用（不触 configService/registry）。
   extras.push(...getNativeConnectorToolNamesForIntent({ userText: prompt, allowedConnectorIds }));
   if (extras.length === 0) return base;

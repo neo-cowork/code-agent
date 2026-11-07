@@ -287,6 +287,22 @@ function classifyFailures(
   return [...codes];
 }
 
+async function validateLocatedArtifact(
+  ctx: RunnerContext,
+  artifactPath: string,
+): Promise<Pick<RunRecord, 'passedFull' | 'failuresRaw' | 'codes'>> {
+  const validation = await ctx.validateGameArtifact(
+    artifactPath,
+    buildFullContractValidationOptions(ctx.gameValidationTimeouts),
+  );
+  const failuresRaw = collectFailureStrings(validation);
+  return {
+    passedFull: validation.passed,
+    failuresRaw,
+    codes: classifyFailures(failuresRaw, ctx.inferArtifactRepairIssueCodesFromText),
+  };
+}
+
 async function fileExists(candidate: string): Promise<boolean> {
   try {
     await fs.access(candidate);
@@ -476,28 +492,14 @@ async function runOneUnit(
     const tokenUsage = readTokenUsage(ctx, agent);
 
     const artifactPath = await locateArtifact(workspaceDir, evalCase.prompt);
-    let passedFull: boolean;
-    let failuresRaw: string[];
-    let codes: string[];
-
-    if (!artifactPath) {
-      passedFull = false;
-      failuresRaw = ['No HTML artifact found in workspace after generation.'];
-      codes = ['artifact_missing'];
-    } else {
-      const validation = await ctx.validateGameArtifact(
-        artifactPath,
-        buildFullContractValidationOptions(ctx.gameValidationTimeouts),
-      );
-      passedFull = validation.passed;
-      failuresRaw = collectFailureStrings(validation);
-      codes = classifyFailures(failuresRaw, ctx.inferArtifactRepairIssueCodesFromText);
-    }
+    const artifactValidation = artifactPath
+      ? await validateLocatedArtifact(ctx, artifactPath)
+      : { passedFull: false, failuresRaw: ['No HTML artifact found in workspace after generation.'], codes: ['artifact_missing'] };
 
     return {
       ...base,
       durationMs: Date.now() - startedAtMs,
-      passedFull,
+      passedFull: artifactValidation.passedFull,
       // Not observable through StandaloneAgentAdapter's public sendMessage()
       // surface: light-contract validation runs inside AgentLoop via
       // handleModifiedArtifactValidation (toolArtifactValidationLifecycle.ts),
@@ -506,8 +508,8 @@ async function runOneUnit(
       // (agentAdapter.ts) does not forward into its return value; it only
       // handles 'message' | 'tool_call_start' | 'tool_call_end' | 'error'.
       passedLight: null,
-      failuresRaw,
-      codes,
+      failuresRaw: artifactValidation.failuresRaw,
+      codes: artifactValidation.codes,
       // Same reason as passedLight: the in-loop repair-attempt counter
       // (ARTIFACT_REPAIR_MAX_ATTEMPTS accounting) is only surfaced as
       // progress text, not through a typed event this adapter exposes.
@@ -531,15 +533,29 @@ async function runOneUnit(
         abandonedInflight = true;
       }
     }
+    const timeoutArtifact: Pick<RunRecord, 'artifactPath' | 'passedFull' | 'failuresRaw' | 'codes'> = {
+      artifactPath: null,
+      passedFull: null,
+      failuresRaw: [],
+      codes: [],
+    };
+    if (isTimeout && !abandonedInflight) {
+      try {
+        timeoutArtifact.artifactPath = await locateArtifact(workspaceDir, evalCase.prompt);
+        if (timeoutArtifact.artifactPath) {
+          Object.assign(timeoutArtifact, await validateLocatedArtifact(ctx, timeoutArtifact.artifactPath));
+        }
+      } catch { /* preserve the timeout record when locate/validation fails */ }
+    }
     return {
       ...base,
       durationMs: Date.now() - startedAtMs,
-      passedFull: null,
+      passedFull: timeoutArtifact.passedFull,
       passedLight: null,
-      failuresRaw: [],
-      codes: [],
+      failuresRaw: timeoutArtifact.failuresRaw,
+      codes: timeoutArtifact.codes,
       tokenUsage: readTokenUsage(ctx, agent),
-      artifactPath: null,
+      artifactPath: timeoutArtifact.artifactPath,
       error: error instanceof Error ? error.message : String(error),
       repairRoundsUsed: null,
       ...(isTimeout ? { timedOut: true as const, ...(abandonedInflight ? { abandonedInflight: true as const } : {}) } : {}),
