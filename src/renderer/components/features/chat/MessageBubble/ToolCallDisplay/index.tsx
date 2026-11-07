@@ -24,6 +24,7 @@ import {
   humanizeToolFailureReason,
   isEscalatedToolError,
 } from '../../../../../utils/toolExecutionPresentation';
+import { replaceCompletenessWarningInOutput } from '../../../../../utils/toolOutputCompletenessWarning';
 import type { Translations } from '../../../../../i18n';
 import { computeBashPreviewLines } from './bashOutputPreview';
 import {
@@ -393,7 +394,15 @@ function ToolReceiptMeta({ receipt }: { receipt: ToolReceiptPresentation }) {
 }
 
 function ReceiptDetail({ receipt, toolCall }: { receipt: ToolReceiptPresentation; toolCall: ToolCall }) {
-  const raw = receipt.detail || toolCall.result?.output || toolCall.result?.error;
+  const { t } = useI18n();
+  const rawOutput = typeof toolCall.result?.output === 'string'
+    ? replaceCompletenessWarningInOutput(
+        toolCall.result.output,
+        toolCall.result.metadata,
+        t.rendererHumanPipe.toolDetails.completenessWarningNote,
+      )
+    : toolCall.result?.output;
+  const raw = receipt.detail || rawOutput || toolCall.result?.error;
   if (!raw) return null;
   return (
     <pre

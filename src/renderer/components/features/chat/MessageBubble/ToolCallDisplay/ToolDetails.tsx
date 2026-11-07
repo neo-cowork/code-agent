@@ -33,6 +33,10 @@ import {
   buildToolErrorActions,
   isToolInterruptionPlaceholder,
 } from '../../../../../utils/toolExecutionPresentation';
+import {
+  hasCompletenessIssues,
+  replaceCompletenessWarningInOutput,
+} from '../../../../../utils/toolOutputCompletenessWarning';
 import { readHostReasonFromMetadata } from '../../../../../utils/hostReasonPresentation';
 import { cleanToolResultDisplayText } from '../../../../../utils/toolResultDisplayText';
 import { useI18n } from '../../../../../hooks/useI18n';
@@ -293,7 +297,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
       {/* Result section */}
       {result && (
         <div className="animate-fadeIn">
-          {!imageResult && !videoResult && !genericMediaAsset && !generatedFileResult && !createdFilePath && (
+          {!imageResult && !videoResult && !genericMediaAsset && !generatedFileResult && (!createdFilePath || hasCompletenessIssues(result.metadata)) && (
             <div className="flex items-center gap-2 text-xs font-medium text-gray-500 mb-2">
               <span>{result.success ? copy.result : copy.error}</span>
               <div className="flex-1 h-px bg-gray-700/50" />
@@ -345,7 +349,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
           )}
 
           {/* Standard result output */}
-          {!imageResult && !videoResult && !genericMediaAsset && !generatedFileResult && !createdFilePath && (
+          {!imageResult && !videoResult && !genericMediaAsset && !generatedFileResult && (!createdFilePath || hasCompletenessIssues(result.metadata)) && (
             <>
               {browserComputerNextSteps.length > 0 && (
                 <BrowserComputerNextStepActions actions={browserComputerNextSteps} copy={copy} />
@@ -407,7 +411,11 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                       : result.error
                         ? stripAnsiCodes(result.error)
                         : typeof result.output === 'string'
-                          ? cleanToolResultDisplayText(name, stripAnsiCodes(result.output), copy)
+                          ? replaceCompletenessWarningInOutput(
+                              cleanToolResultDisplayText(name, stripAnsiCodes(result.output), copy),
+                              result.metadata,
+                              t.rendererHumanPipe.toolDetails.completenessWarningNote,
+                            )
                           : JSON.stringify(result.output, null, 2)
                   }
                   lineCap={isShellTool(name) ? SHELL_RESULT_BODY_LINE_CAP : RESULT_BODY_LINE_CAP}
