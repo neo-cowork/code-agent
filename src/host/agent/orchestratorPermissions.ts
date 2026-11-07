@@ -30,6 +30,7 @@ import {
 } from './unattendedApprovalTerminal';
 import { getConfirmationGate } from './confirmationGate';
 import { mintAppGrantSession, mintAppGrantStanding } from '../permissions/appGrantStore';
+import { mintBrowserSessionGrant, readBrowserGrantScopeFromPermissionDetails } from '../permissions/browserSessionGrant';
 import { mintTool24hGrant, mintToolRunGrant } from '../permissions/toolGrantStore';
 import { getPermissionLevel } from './orchestrator/modelConfigResolver';
 import { createLogger } from '../services/infra/logger';
@@ -122,8 +123,10 @@ function recordHumanGrant(
   }
   if (updatedArgs && response !== 'allow') return;
   const app = request.details?.targetApp;
+  const browserScope = readBrowserGrantScopeFromPermissionDetails(request.tool, request.details);
   if (response === 'allow_session' && request.sessionId) {
     if (app?.name) mintAppGrantSession(request.sessionId, app);
+    else if (browserScope) mintBrowserSessionGrant(request.sessionId, browserScope);
     else getConfirmationGate().recordApproval(request.sessionId, request.tool);
   } else if (response === 'allow_standing' && app?.name) {
     mintAppGrantStanding(app);

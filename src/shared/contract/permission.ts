@@ -197,6 +197,8 @@ export interface PermissionRequest {
      * 不走工具级会话记忆。bundleId 缺省时按应用名匹配。
      */
     targetApp?: { bundleId?: string; name: string };
+    /** 托管浏览器外部副作用动作的 host 侧授权作用域（按动作 + 站点 origin 会话放行）。 */
+    browserGrantScope?: { action: string; origin: string };
     /** directory_access：申请的访问档位（request_directory 工具透传） */
     requestedAccess?: 'read_only' | 'read_write';
     /**

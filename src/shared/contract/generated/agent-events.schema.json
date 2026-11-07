@@ -1182,6 +1182,22 @@
               ],
               "additionalProperties": false
             },
+            "browserGrantScope": {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "type": "string"
+                },
+                "origin": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "action",
+                "origin"
+              ],
+              "additionalProperties": false
+            },
             "requestedAccess": {
               "type": "string",
               "enum": [

@@ -30,6 +30,7 @@ import {
   stripSensitiveStepParams,
 } from '../permissions/cuaSensitiveStep';
 import { resolvePreAskGrant } from '../permissions/preAskGrant';
+import { formatBrowserCrossSiteReason, resolveBrowserGrantScope } from '../permissions/browserSessionGrant';
 import { createLogger } from '../services/infra/logger';
 import { getAuditLogger, maskSensitiveData, isKnownSafeCommand, validateCommand, getShellSafetyMode, getExecPolicyStore, getPolicyEnforcer, type PolicyEnforcer, type PolicyCheckResult, type ValidationResult } from '../security';
 import { evaluateToolSlotDataDirAccess, FOREIGN_SLOT_DATA_DIR_CODE, type SlotDataDirAccess } from '../security/slotDataDirGuard';
@@ -2015,6 +2016,7 @@ export class ToolExecutor {
         sessionId: effectiveSessionId,
         standingGrantTarget,
         computerApp,
+        params,
         blocked: Boolean(commandAnalysisFailedReason)
           || guardFabricForcesApproval || protectedWriteForcesConfirmation
           || policyForcesConfirmation || unresolvedWriteTargetForcesAsk
@@ -2130,6 +2132,10 @@ export class ToolExecutor {
       // 只打标：非 external 不写该属性（缺省≠null），不改任何 allow/deny/ask 裁决。
       if (isExternalSideEffectTool(executionToolName)) permissionRequest.riskClass = 'external';
       if (computerApp) permissionRequest.details.targetApp = computerApp;
+      const browserCrossSiteReason = formatBrowserCrossSiteReason(effectiveSessionId, permissionRequest.details.browserGrantScope);
+      if (browserCrossSiteReason) {
+        permissionRequest.reason = [permissionRequest.reason, browserCrossSiteReason].filter(Boolean).join('；');
+      }
 
       // B1 readOnly（审出 HIGH）：最终审批层的自动放行捷径（agentOrchestrator 的
       // devModeAutoApprove / autoApprove[level]、renderer PermissionCard 的
@@ -2831,10 +2837,14 @@ export class ToolExecutor {
         if (connectorRequest) return connectorRequest;
         // Map permission level to permission request type
         const requestType = permissionRequestTypeForLevel(tool.permissionLevel);
+        const browserGrantScope = resolveBrowserGrantScope(tool.name, params);
+        const permissionDetails = { ...params };
+        delete permissionDetails.browserGrantScope;
+        if (browserGrantScope) permissionDetails.browserGrantScope = browserGrantScope;
         return {
           type: requestType,
           tool: tool.name,
-          details: { ...params },
+          details: permissionDetails,
           reasonCode: PermissionRequestReason.Unknown,
           boundary: {
             id: boundaryIdForRequestType(requestType),

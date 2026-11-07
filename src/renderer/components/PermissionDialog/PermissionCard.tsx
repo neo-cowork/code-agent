@@ -71,6 +71,7 @@ function normalizeRequest(
       targetKind: request.details.targetKind,
       standingGrantTarget: request.details.standingGrantTarget,
       targetApp: request.details.targetApp,
+      browserGrantScope: request.details.browserGrantScope,
       triggeredByAgentMessage: request.details.triggeredByAgentMessage,
       method: request.details.method,
       body: request.details.body,
@@ -154,6 +155,7 @@ export function PermissionCard({
   const settled = request?.resolved === true && request.decision !== undefined;
   const safeDefaultDeny = request !== null && isSafeDefaultDeny(request);
   const appGrantCard = Boolean(request?.details.targetApp?.name) && request?.forceConfirm !== true;
+  const browserScopedGrant = Boolean(request?.details.browserGrantScope);
 
   // 新请求进来时清空选中态（ processedRequestRef 之外的生命周期，独立于记忆直发 ）
   const requestId = request?.id ?? null;
@@ -189,7 +191,7 @@ export function PermissionCard({
 
   const memoryRequest = request ? toMemoryRequest(request) : null;
   const isNewRequest = request !== null && !settled && processedRequestRef.current !== request.id;
-  const memoryResult = memoryRequest && isNewRequest && request?.forceConfirm !== true && !appGrantCard
+  const memoryResult = memoryRequest && isNewRequest && request?.forceConfirm !== true && !appGrantCard && !browserScopedGrant
     ? checkMemory(memoryRequest)
     : null;
 
@@ -232,7 +234,7 @@ export function PermissionCard({
       processedRequestRef.current = request.id;
 
       try {
-        if (!appGrantCard && (level === 'session' || level === 'always' || level === 'never') && request.forceConfirm !== true) {
+        if (!appGrantCard && !browserScopedGrant && (level === 'session' || level === 'always' || level === 'never') && request.forceConfirm !== true) {
           const memoryReq: PermissionRequestForMemory = {
             id: request.id,
             tool: request.tool,
@@ -304,6 +306,7 @@ export function PermissionCard({
       request?.type,
       request?.details,
       appGrantCard,
+      browserScopedGrant,
       saveMemory,
       settled,
       recordPermissionDecision,

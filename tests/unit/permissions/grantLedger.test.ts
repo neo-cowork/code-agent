@@ -28,6 +28,10 @@ vi.mock('../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({ addMessageToSession: vi.fn() }),
 }));
 
+vi.mock('../../../src/host/services/infra/browserService', () => ({
+  browserService: { getActiveTab: () => null },
+}));
+
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() }),
 }));
@@ -47,6 +51,11 @@ import {
   mintAppGrantStanding,
 } from '../../../src/host/permissions/appGrantStore';
 import { listGrants, revokeGrant } from '../../../src/host/permissions/grantLedger';
+import {
+  clearBrowserSessionGrants,
+  matchBrowserSessionGrant,
+  mintBrowserSessionGrant,
+} from '../../../src/host/permissions/browserSessionGrant';
 import { SessionAutomationService } from '../../../src/host/services/sessionAutomation/sessionAutomationService';
 import { getConfirmationGate, resetConfirmationGate } from '../../../src/host/agent/confirmationGate';
 
@@ -109,6 +118,7 @@ describe('统一授权台账', () => {
     state.sessions.set(RUN_SESSION, { origin: { id: SOURCE_REF } });
     bindAppGrantDatabase(db, true);
     resetConfirmationGate();
+    clearBrowserSessionGrants();
     svc = new SessionAutomationService();
   });
 
@@ -116,6 +126,7 @@ describe('统一授权台账', () => {
     db.close();
     state.db = null;
     resetConfirmationGate();
+    clearBrowserSessionGrants();
   });
 
   it('① 一个台账列全三种存档的归一条目，id 稳定可解析', () => {
@@ -204,6 +215,29 @@ describe('统一授权台账', () => {
     expect(revokeGrant(`tool-session:${encodeURIComponent('conv-2')}:${encodeURIComponent('bash')}`)).toBe(true);
     expect(gate.shouldConfirm({ toolName: 'bash', params: {}, riskLevel: 'medium' }, 'conv-2')).toBe(true);
     gate.updateConfig({ policy: 'ask_if_dangerous' });
+  });
+
+  it('列出并撤销按动作与站点限定的 Browser 会话授权', () => {
+    const scope = { action: 'handle_dialog', origin: 'https://site-a.example.com' };
+    mintBrowserSessionGrant('conv-browser', scope, T0);
+
+    const entry = listGrants(T0 + 1).find((candidate) => candidate.id.startsWith('browser-session:'));
+    expect(entry).toMatchObject({
+      kind: 'tool-session',
+      label: 'handle_dialog',
+      detail: 'https://site-a.example.com',
+      source: 'conversation',
+      grantedAt: T0,
+      expiresAt: null,
+    });
+    expect(entry?.id).toBe(
+      `browser-session:${encodeURIComponent('conv-browser')}:${encodeURIComponent('handle_dialog@https://site-a.example.com')}`,
+    );
+    expect(matchBrowserSessionGrant('conv-browser', scope)).toBe(
+      'browser_grant:handle_dialog@https://site-a.example.com',
+    );
+    expect(revokeGrant(entry!.id)).toBe(true);
+    expect(matchBrowserSessionGrant('conv-browser', scope)).toBeNull();
   });
 
   it('③ 过期条目（注入时钟）不列出也不匹配——app 常驻与 automation 长期授权同判', () => {

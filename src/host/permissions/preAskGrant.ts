@@ -5,6 +5,7 @@
 
 import { getSessionAutomationService } from '../services/sessionAutomation/sessionAutomationService';
 import { matchAppGrant } from './appGrantStore';
+import { matchBrowserSessionGrant, resolveBrowserGrantScope } from './browserSessionGrant';
 import { appGrantKey, type ComputerTargetApp } from './computerAppTarget';
 import { matchToolGrant } from './toolGrantStore';
 
@@ -13,6 +14,7 @@ export function resolvePreAskGrant(input: {
   sessionId: string | undefined;
   standingGrantTarget: string | null;
   computerApp: ComputerTargetApp | null;
+  params?: Record<string, unknown>;
   blocked: boolean;
 }): { ledgerReason: string; traceRule: string; traceDetail: string } | null {
   if (input.blocked) return null;
@@ -21,6 +23,15 @@ export function resolvePreAskGrant(input: {
       ledgerReason: `app_grant:${appGrantKey(input.computerApp)}`,
       traceRule: 'app_grant',
       traceDetail: `app grant hit: ${input.computerApp.name}`,
+    };
+  }
+  const browserScope = resolveBrowserGrantScope(input.toolName, input.params);
+  const browserLedgerReason = matchBrowserSessionGrant(input.sessionId, browserScope);
+  if (browserScope && browserLedgerReason) {
+    return {
+      ledgerReason: browserLedgerReason,
+      traceRule: 'browser_grant',
+      traceDetail: `browser grant hit: ${browserScope.action}@${browserScope.origin}`,
     };
   }
   // N-PERM-GRANT-TIERS：host 侧工具授权两档。target 精确一致（null 只匹配 null），

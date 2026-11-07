@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 const lifecycleMocks = vi.hoisted(() => ({
   clearSessionCachePrompt: vi.fn(),
   clearSessionCacheHits: vi.fn(),
+  clearBrowserSessionGrants: vi.fn(),
   releaseMemoryIndexSnapshot: vi.fn(),
   releaseToolSearchSession: vi.fn(),
 }));
@@ -13,6 +14,10 @@ vi.mock('../../../src/host/agent/runtime/turnCostPersistence', () => ({
 
 vi.mock('../../../src/host/model/cacheHitObservation', () => ({
   clearSessionCacheHits: lifecycleMocks.clearSessionCacheHits,
+}));
+
+vi.mock('../../../src/host/permissions/browserSessionGrant', () => ({
+  clearBrowserSessionGrants: lifecycleMocks.clearBrowserSessionGrants,
 }));
 
 vi.mock('../../../src/host/lightMemory/indexLoader', () => ({
@@ -31,6 +36,7 @@ describe('clearSessionRuntimeCaches', () => {
 
     expect(lifecycleMocks.clearSessionCachePrompt).toHaveBeenCalledWith('session-ended');
     expect(lifecycleMocks.clearSessionCacheHits).toHaveBeenCalledWith('session-ended');
+    expect(lifecycleMocks.clearBrowserSessionGrants).toHaveBeenCalledWith('session-ended');
     expect(lifecycleMocks.releaseToolSearchSession).toHaveBeenCalledWith('session-ended');
     expect(lifecycleMocks.releaseMemoryIndexSnapshot).toHaveBeenCalledWith('session-ended');
   });

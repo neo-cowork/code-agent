@@ -184,6 +184,10 @@ const permissionRequestSchema = typed<PermissionRequest>(z.object({
       bundleId: z.string().optional(),
       name: z.string(),
     }).optional(),
+    browserGrantScope: z.object({
+      action: z.string(),
+      origin: z.string(),
+    }).optional(),
     requestedAccess: z.enum(['read_only', 'read_write']).optional(),
     method: z.string().optional(),
     body: z.string().optional(),

@@ -18,6 +18,10 @@ import {
   revokeAppSessionGrant,
 } from './appGrantStore';
 import {
+  listBrowserSessionGrants,
+  revokeBrowserSessionGrant,
+} from './browserSessionGrant';
+import {
   listToolGrants,
   revokeTool24hGrant,
   revokeToolRunGrant,
@@ -32,6 +36,7 @@ const ID_VARIANT = {
   toolSession: 'tool-session',
   toolRun: 'tool-run',
   tool24h: 'tool-24h',
+  browserSession: 'browser-session',
 } as const;
 
 function encodeSegment(value: string): string {
@@ -107,6 +112,18 @@ export function listGrants(now: number = Date.now()): PermissionGrantEntry[] {
     });
   }
 
+  for (const row of listBrowserSessionGrants()) {
+    entries.push({
+      id: buildId(ID_VARIANT.browserSession, row.sessionId, row.scopeKey),
+      kind: 'tool-session',
+      label: row.action,
+      detail: row.origin,
+      source: 'conversation',
+      grantedAt: row.grantedAt,
+      expiresAt: null,
+    });
+  }
+
   // N-PERM-GRANT-TIERS 两档工具授权：source 'run'（本次任务）| '24h'（24 小时内）。
   for (const grant of listToolGrants(now)) {
     entries.push({
@@ -143,6 +160,8 @@ export function revokeGrant(id: string): boolean {
         && getSessionAutomationService().revokeStandingGrant(segments[0], segments[1], segments[2]);
     case ID_VARIANT.toolSession:
       return segments.length === 2 && getConfirmationGate().revokeSessionApproval(segments[0], segments[1]);
+    case ID_VARIANT.browserSession:
+      return segments.length === 2 && revokeBrowserSessionGrant(segments[0], segments[1]);
     case ID_VARIANT.toolRun:
       return (segments.length === 2 || segments.length === 3)
         && revokeToolRunGrant(segments[0], segments[1], segments[2] ?? null);
