@@ -1,18 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Message } from '../../../src/shared/contract';
+import type { AgentEvent, Message } from '../../../src/shared/contract';
 import { findRegisteredSystemEvent } from '../../../src/shared/contract/systemEventRegistry';
 import type { SessionCommandTask } from '../../../src/host/services/commandCenter/sessionCommandCenter';
+import type { AgentRunOptions } from '../../../src/host/research/types';
 
 // 走默认依赖（产线路径）：唤醒轮失败后落的那句人话必须带登记键，否则渲染端投影层会把
 // 无 metadata 的 role:'system' 消息整条跳过，用户什么都看不到。
 const h = vi.hoisted(() => ({
   added: [] as Array<{ sessionId: string; message: Message }>,
-  emitted: [] as Array<{ sessionId: string; event: { type: string; data: Message } }>,
+  emitted: [] as Array<{ sessionId: string; event: AgentEvent }>,
 }));
 
 const orchestrator = {
   isProcessing: () => false,
-  sendMessage: vi.fn(async () => { throw new Error('Durable Run run-x has no live owner lease'); }),
+  sendMessage: vi.fn(async (_prompt: string, _attachments?: unknown[], _options?: AgentRunOptions) => {
+    throw new Error('Durable Run run-x has no live owner lease');
+  }),
 };
 vi.mock('../../../src/host/task/TaskManager', () => ({
   getTaskManager: () => ({
@@ -24,7 +27,7 @@ vi.mock('../../../src/host/task/TaskManager', () => ({
     setWorkingDirectory: vi.fn(),
     on: vi.fn(),
     onRunIdle: vi.fn(),
-    emitAgentEventForSession: (sessionId: string, event: { type: string; data: Message }) => {
+    emitAgentEventForSession: (sessionId: string, event: AgentEvent) => {
       h.emitted.push({ sessionId, event });
     },
   }),
@@ -56,7 +59,13 @@ const task = {
 } as unknown as SessionCommandTask;
 
 describe('foreground wake failure note (default dependencies)', () => {
-  beforeEach(() => { h.added.length = 0; h.emitted.length = 0; });
+  beforeEach(() => {
+    h.added.length = 0;
+    h.emitted.length = 0;
+    orchestrator.sendMessage.mockImplementation(async () => {
+      throw new Error('Durable Run run-x has no live owner lease');
+    });
+  });
 
   it('persists and broadcasts a note that the renderer registry recognises', async () => {
     await createForegroundWake()(task, 'completed');
@@ -67,6 +76,20 @@ describe('foreground wake failure note (default dependencies)', () => {
     const registered = findRegisteredSystemEvent(message.metadata);
     expect(registered?.key).toBe('backgroundWakeFailed');
     expect(message.metadata?.backgroundWakeFailed).toEqual({ taskId: 'task-n', reason: 'owner_missing' });
+    expect(h.emitted).toEqual([{ sessionId: 'session-n', event: { type: 'message', data: message } }]);
+  });
+
+  it('persists and broadcasts one registered note when a resolving wake reports RUN_FAILED', async () => {
+    orchestrator.sendMessage.mockImplementationOnce(async (_prompt, _attachments, options) => {
+      options?.terminalErrorSink?.({ code: 'RUN_FAILED', message: '401 invalid api key' });
+    });
+
+    await createForegroundWake()(task, 'completed');
+
+    expect(h.added).toHaveLength(1);
+    const { message } = h.added[0];
+    expect(message.metadata?.backgroundWakeFailed).toEqual({ taskId: 'task-n', reason: 'wake_failed' });
+    expect(h.emitted.filter((e) => e.event.type === 'error')).toEqual([]);
     expect(h.emitted).toEqual([{ sessionId: 'session-n', event: { type: 'message', data: message } }]);
   });
 });
