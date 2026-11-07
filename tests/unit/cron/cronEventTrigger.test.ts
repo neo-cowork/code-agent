@@ -769,7 +769,7 @@ describe('CronEventTrigger', () => {
         record: (batch) => { rows.push(...batch); },
         countActionsForRun: () => 0,
       };
-      const h = createMailHarness(
+      createMailHarness(
         [mailEventJob()],
         { listMessages: async () => [...messages], readMessage: async () => 'body' },
         store,
