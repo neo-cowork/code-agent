@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkbenchMcpRegistryItem } from '../../../src/renderer/utils/workbenchCapabilityRegistry';
 import { getWorkbenchCapabilityQuickActions } from '../../../src/renderer/utils/workbenchQuickActions';
 import { zh } from '../../../src/renderer/i18n/zh';
+import { en } from '../../../src/renderer/i18n/en';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
 
 const { mockRunQuickAction, mockUseInChat } = vi.hoisted(() => ({
@@ -476,6 +477,21 @@ describe('MCPSettings status', () => {
 
     expect(html.split(mcpText.trustSummary.approvalNotice).length - 1).toBe(1);
     expect(html.split(mcpText.trustSummary.authMaskedHint).length - 1).toBe(1);
+    expect(screen.getByTestId('mcp-trust-summary-note').textContent)
+      .not.toMatch(/destructive|openWorld|masked|OAuth|token/i);
+    expect([
+      ...Object.values(zh.settings.mcp.trustSummary),
+      ...Object.values(en.settings.mcp.trustSummary),
+    ].join(' ')).not.toMatch(/destructive|openWorld|masked|OAuth|token/i);
+  });
+
+  it('formats the connected summary without MCP or a device classifier in either language', () => {
+    const zhGrid = zh.settings.mcp.grid;
+    const enGrid = en.settings.mcp.grid;
+    expect(`${zhGrid.connectedSummaryPrefix}1${zhGrid.connectedSummaryMiddle}15${zhGrid.connectedSummarySuffix}`)
+      .toBe('已连接 1 / 共 15 个');
+    expect(`${enGrid.connectedSummaryPrefix}1${enGrid.connectedSummaryMiddle}15${enGrid.connectedSummarySuffix}`)
+      .toBe('Connected 1 of 15');
   });
 
   it('行尾统一为开关 + 详情入口；开关调用 setServerEnabled', async () => {
