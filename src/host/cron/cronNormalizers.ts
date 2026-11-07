@@ -4,13 +4,15 @@
 // 从 cronService.ts 抽出以收敛文件体积，无行为变更。
 // ============================================================================
 
-import type {
-  CronJobDefinition,
-  CronJobStatus,
-  CronScheduleType,
-  CronScheduleConfig,
-  CronJobAction,
-  CronExecutionTrigger,
+import {
+  CRON_PUSH_NOTES,
+  type CronPushNote,
+  type CronJobDefinition,
+  type CronJobStatus,
+  type CronScheduleType,
+  type CronScheduleConfig,
+  type CronJobAction,
+  type CronExecutionTrigger,
 } from '../../shared/contract/cron';
 import { CRON_GUARDRAILS, CRON_EVENT_TRIGGER, CRON_URGENCY_CRITERIA, EXTERNAL_WATCH } from '../../shared/constants';
 import { extractCronAlertText, parseCronRunDigest, type CronRunDigest } from '../../shared/cronRunDigest';
@@ -159,6 +161,7 @@ export interface CronExecutionRow {
   exit_code?: number | null;
   cost_usd?: number | null;
   trigger_json?: string | null;
+  push_note?: string | null;
 }
 
 const CRON_JOB_STATUSES: readonly CronJobStatus[] = [
@@ -633,7 +636,13 @@ export function normalizeCronExecutionRow(row: unknown): CronExecutionRow | null
     exit_code: readNullableNumberField(row, 'exit_code'),
     trigger_json: readNullableStringField(row, 'trigger_json'),
     cost_usd: readNullableNumberField(row, 'cost_usd'),
+    push_note: readNullableStringField(row, 'push_note'),
   };
+}
+
+/** push_note 列的枚举校验：未知值按无记录处理。 */
+export function parseCronPushNote(raw: unknown): CronPushNote | undefined {
+  return CRON_PUSH_NOTES.find((note) => note === raw);
 }
 
 /** trigger_json 列的形状校验：坏行按无 trigger 处理（trigger 是溯源字段，不承重执行语义）。 */

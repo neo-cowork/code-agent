@@ -71,7 +71,7 @@ import {
   saveCronJob,
   upsertCronExecutionInMemory,
 } from './cronPersistence';
-import { deliverCronResultToChannel } from './cronResultDelivery';
+import { deliverCronResultToChannel, type CronResultDeliverySkip } from './cronResultDelivery';
 import { actionModeForNewJob, carryEventActionMode, changeEventActionMode } from './cronEventActionModeChange';
 import { loadCronEventDecisions } from './cronEventDecisionLedger';
 import { rearmCronRunLimit, settleCronRunLimit } from './cronRunLimit';
@@ -1031,7 +1031,7 @@ export class CronService implements Disposable {
         return executeCronAgentAction({
           loadJob: (jobId) => this.jobs.get(jobId)?.definition,
           updateJob: (jobId, updates) => this.updateJob(jobId, updates),
-          deliverCronResult: (job, result, execId) => this.deliverCronResult(job, result, execId),
+          deliverCronResult: (job, result, execId, gate) => this.deliverCronResult(job, result, execId, gate),
           recordSessionId: (execId, sessionId) => this.recordExecutionSessionId(definition.id, execId, sessionId),
         }, definition, action, executionId, eventPayloadBlock, timeout);
       }
@@ -1157,11 +1157,11 @@ export class CronService implements Disposable {
   // --------------------------------------------------------------------------
 
   /** 投递与失败留痕的实现已拆到 cronResultDelivery.ts（含 FB-239 字面去重写回）。 */
-  private async deliverCronResult(definition: CronJobDefinition, result: unknown, executionId?: string): Promise<void> {
+  private async deliverCronResult(definition: CronJobDefinition, result: unknown, executionId?: string, gate?: CronResultDeliverySkip): Promise<void> {
     await deliverCronResultToChannel(definition, result, this.executions, executionId, {
       getLatestDefinition: (jobId) => this.jobs.get(jobId)?.definition,
       persistAction: (jobId, action) => this.updateJob(jobId, { action }),
-    });
+    }, gate);
   }
 
   private async loadJobsFromDatabase(): Promise<void> {

@@ -731,6 +731,8 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   // N-CRON-RUN-LEDGER-VISIBLE：本地运行实测成本（USD，scoped 计量器读数）。
   // 无模型调用与云端运行为 NULL（UI 显示 dash）。
   safeAlter(db, 'ALTER TABLE cron_executions ADD COLUMN cost_usd REAL CHECK (cost_usd IS NULL OR cost_usd >= 0)', logger);
+  // N-FIX-CRON-RESULT-PUSH-SILENT-SKIP：结果推送去向（枚举码；NULL = 未配置推送目标）。
+  safeAlter(db, 'ALTER TABLE cron_executions ADD COLUMN push_note TEXT', logger);
   // N-TRIGGER-OBSERVE-MODE：事件自动化执行档（带一次性迁移戳）+ 逐事件决策台账。
   applyCronEventDecisionsSchema(db, logger);
 

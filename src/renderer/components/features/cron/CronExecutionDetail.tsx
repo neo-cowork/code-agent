@@ -109,6 +109,15 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
     dailyBudget: cc.wakeSkipDailyBudget,
     quietHours: cc.wakeSkipQuietHours,
   });
+  const pushNoteText = execution.pushNote && {
+    pushed: cc.pushNotePushed,
+    duplicate: cc.pushNoteDuplicate,
+    'empty-body': cc.pushNoteEmptyBody,
+    'empty-result': cc.pushNoteEmptyResult,
+    'observe-mode': cc.pushNoteObserveMode,
+    'quiet-watch-round': cc.pushNoteQuietWatchRound,
+    'notify-quiet-round': cc.pushNoteNotifyQuietRound,
+  }[execution.pushNote];
   const loginWall = cronLoginWallCopy(execution.error, { error: cc.loginWallError });
   const timeLimitSeconds = execution.error?.match(TIME_LIMIT)?.[1];
   const budgetMatch = execution.error?.match(BUDGET_LIMIT);
@@ -239,6 +248,12 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
         <section className="mt-4" data-testid="cron-wake-skip-detail">
           <h5 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">{cc.wakeSkipTitle}</h5>
           <p className="text-sm text-zinc-100" data-testid="cron-wake-skip-sentence">{wakeSkip}</p>
+        </section>
+      )}
+      {pushNoteText && (
+        <section className="mt-4" data-testid="cron-push-note-detail">
+          <h5 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">{cc.pushNoteTitle}</h5>
+          <p className="text-sm text-zinc-100" data-testid="cron-push-note-sentence">{pushNoteText}</p>
         </section>
       )}
       {permissionDenied && (
