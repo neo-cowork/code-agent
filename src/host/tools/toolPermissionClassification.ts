@@ -20,6 +20,8 @@ import {
 } from '../../shared/utils/browserComputerActionCatalog';
 import { classifyShellDesktopAutomation } from '../permissions/shellDesktopAutomation';
 import { isBashToolName } from './toolNames';
+import { browserService } from '../services/infra/browserService';
+import { createLogger } from '../services/infra/logger';
 
 type ToolPermissionLevel = Parameters<typeof permissionModeAutoApproves>[1];
 
@@ -92,12 +94,55 @@ export const CLASSIFIER_ERROR_TRACE_RULE = 'classifier_error';
 export const INJECTED_PERMISSION_HANDLER_TRACE_RULE = 'injected_permission_handler';
 const BROWSER_COMPUTER_CONSEQUENCE_TRACE_RULE = 'browser_computer_consequence';
 const BROWSER_COMPUTER_HIGH_RISK_BLOCKED_CODE = 'BROWSER_COMPUTER_HIGH_RISK_BLOCKED';
+const logger = createLogger('ToolPermissionClassification');
+const SUBMIT_CLICK_TEXT_PATTERN = /\b(?:submit|send|pay|order|checkout|confirm)\b|提交|发送|支付|付款|下单|结账|确认/iu;
+const SUBMIT_SELECTOR_PATTERN = /\[\s*type\s*=\s*["']?(?:submit|image)(?:["']|\s*\])/iu;
 
-function classifyBrowserComputerConsequence(
+function browserConsequenceDecision(
+  entry: { tool: string; action: string },
+  decision: 'approve' | 'ask',
+  reason: string,
+  startedAt: number,
+): ClassificationResult {
+  return {
+    decision,
+    reason,
+    hostReason: createHostReason(
+      decision === 'approve'
+        ? HostReasonCode.PermissionClassifierAllowed
+        : HostReasonCode.PermissionClassifierConfirmationRequired,
+      reason,
+      { toolName: entry.tool },
+    ),
+    confidence: 1,
+    cached: false,
+    traceStep: createTraceStep(
+      'permission_classifier',
+      BROWSER_COMPUTER_CONSEQUENCE_TRACE_RULE,
+      decision === 'approve' ? 'allow' : 'ask',
+      reason,
+      startedAt,
+    ),
+  };
+}
+
+function clickArgsLookLikeSubmit(params: Record<string, unknown>): boolean {
+  const candidates = [params.text, params.selector];
+  if (params.targetRef && typeof params.targetRef === 'object' && !Array.isArray(params.targetRef)) {
+    const targetRef = params.targetRef as Record<string, unknown>;
+    candidates.push(targetRef.name, targetRef.textHint, targetRef.selector);
+  }
+  return candidates.some((value) => typeof value === 'string' && (
+    SUBMIT_CLICK_TEXT_PATTERN.test(value)
+      || (value === params.selector && SUBMIT_SELECTOR_PATTERN.test(value))
+  ));
+}
+
+async function classifyBrowserComputerConsequence(
   toolName: string,
   params: Record<string, unknown>,
   startedAt: number,
-): ClassificationResult | null {
+): Promise<ClassificationResult | null> {
   const catalogTool = normalizeBrowserComputerCatalogToolName(toolName);
   if (!catalogTool) return null;
   const entry = getStrictBrowserComputerActionCatalogForArgs({
@@ -147,30 +192,40 @@ function classifyBrowserComputerConsequence(
       ),
     };
   }
+  if (
+    entry.tool === 'browser_action'
+    && (entry.action === 'click' || entry.action === 'click_text')
+  ) {
+    const probe = await browserService.probeSubmitClick(params);
+    if (probe.status === 'known' && probe.isSubmit) {
+      const method = probe.method || 'GET';
+      const targetHost = probe.targetHost || 'unknown';
+      if (method !== 'GET' || probe.actionCrossOrigin) {
+        const crossOrigin = probe.actionCrossOrigin ? ', cross-origin' : '';
+        const reason = `Browser click submits a form (${method} to ${targetHost}${crossOrigin}) and requires confirmation: ${entry.tool}.${entry.action}`;
+        return browserConsequenceDecision(entry, 'ask', reason, startedAt);
+      }
+      const reason = `Browser click submits a same-origin GET form to ${targetHost}; no confirmation required: ${entry.tool}.${entry.action}`;
+      return browserConsequenceDecision(entry, 'approve', reason, startedAt);
+    }
+    if (probe.status === 'unknown') {
+      const heuristicMatched = clickArgsLookLikeSubmit(params);
+      logger.warn('Browser click submit probe unavailable; applying argument heuristic', {
+        action: entry.action,
+        cause: probe.cause,
+        heuristicMatched,
+      });
+      if (heuristicMatched) {
+        const reason = `Browser click may submit a form (target host unknown; live-target probe unavailable) and requires confirmation: ${entry.tool}.${entry.action}`;
+        return browserConsequenceDecision(entry, 'ask', reason, startedAt);
+      }
+    }
+  }
   const decision = entry.consequence === 'external_side_effect' ? 'ask' : 'approve';
   const reason = decision === 'ask'
     ? `Browser/computer action changes external state and requires confirmation: ${entry.tool}.${entry.action}`
     : `Browser/computer action has no external side effect: ${entry.tool}.${entry.action}`;
-  return {
-    decision,
-    reason,
-    hostReason: createHostReason(
-      decision === 'approve'
-        ? HostReasonCode.PermissionClassifierAllowed
-        : HostReasonCode.PermissionClassifierConfirmationRequired,
-      reason,
-      { toolName: entry.tool },
-    ),
-    confidence: 1,
-    cached: false,
-    traceStep: createTraceStep(
-      'permission_classifier',
-      BROWSER_COMPUTER_CONSEQUENCE_TRACE_RULE,
-      decision === 'approve' ? 'allow' : 'ask',
-      reason,
-      startedAt,
-    ),
-  };
+  return browserConsequenceDecision(entry, decision, reason, startedAt);
 }
 
 /**
@@ -440,7 +495,7 @@ export async function resolveToolPermissionClassification(input: {
       ),
     };
   } else {
-    classification = classifyBrowserComputerConsequence(
+    classification = await classifyBrowserComputerConsequence(
       input.executionToolName,
       input.params,
       input.permStartTime,

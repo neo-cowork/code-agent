@@ -1,9 +1,16 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Page } from 'playwright';
 import type { ToolDefinition } from '../../../src/shared/contract';
 
 const resolverState = vi.hoisted(() => ({
   definition: undefined as ToolDefinition | undefined,
   execute: vi.fn(),
+}));
+const loggerState = vi.hoisted(() => ({
+  debug: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
 }));
 
 vi.mock('../../../src/host/tools/dispatch/toolResolver', () => ({
@@ -16,13 +23,15 @@ vi.mock('../../../src/host/tools/dispatch/toolResolver', () => ({
 }));
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
-  logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-  createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+  logger: loggerState,
+  createLogger: () => loggerState,
 }));
 
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 import { AgentFailureCode, HostReasonCode } from '../../../src/shared/contract';
 import { resetPermissionModeManager } from '../../../src/host/permissions/modes';
+import { resolveToolPermissionClassification } from '../../../src/host/tools/toolPermissionClassification';
+import { browserService } from '../../../src/host/services/infra/browserService';
 
 function setSurfaceTool(name: string): void {
   resolverState.definition = {
@@ -52,6 +61,163 @@ describe('browser/computer consequence approval tier', () => {
       workingDirectory: '/test/workspace',
     });
   });
+
+describe('managed-browser submit click classification', () => {
+  let page: Page;
+  let tabId: string;
+
+  beforeAll(async () => {
+    await browserService.launch({
+      mode: 'headless',
+      profileMode: 'isolated',
+      provider: 'playwright-bundled',
+    });
+    tabId = await browserService.newTab();
+    const activeTab = browserService.getActiveTab();
+    if (!activeTab) throw new Error('managed browser test tab did not launch');
+    page = activeTab.page;
+    await page.route('https://forms.example.test/**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: '<!doctype html><title>classification fixture</title>',
+      });
+    });
+  });
+
+  afterAll(async () => {
+    await browserService.close();
+  });
+
+  beforeEach(() => {
+    loggerState.warn.mockClear();
+  });
+
+  async function setPageContent(html: string): Promise<void> {
+    await page.goto(`https://forms.example.test/classification?case=${Date.now()}`);
+    await page.setContent(html);
+  }
+
+  async function classify(params: Record<string, unknown>) {
+    return await resolveToolPermissionClassification({
+      executionToolName: 'browser_action',
+      policyToolName: 'browser_action',
+      params,
+      policyForcesConfirmation: false,
+      boundaryViolation: undefined,
+      workingDirectory: '/test/workspace',
+      permissionLevel: 'execute',
+      permStartTime: 0,
+      readOnlyForcesConfirmation: false,
+      sessionPermissionMode: 'default',
+    });
+  }
+
+  it('fill_form then click on a POST form submit control returns ask with the target host', async () => {
+    await setPageContent(`
+      <form method="post" action="/register">
+        <label>Name <input id="name" name="name"></label>
+        <button id="go">Go</button>
+      </form>
+    `);
+
+    expect((await classify({
+      action: 'fill_form',
+      formData: { '#name': 'Neo' },
+      tabId,
+    })).decision).toBe('approve');
+
+    const result = await classify({ action: 'click', selector: '#go', tabId });
+    expect(result).toMatchObject({
+      decision: 'ask',
+      traceStep: { rule: 'browser_computer_consequence', result: 'ask' },
+      hostReason: { metadata: { toolName: 'browser_action' } },
+    });
+    expect(result.reason).toContain('Browser click submits a form');
+    expect(result.reason).toContain('POST to forms.example.test');
+    expect(result.reason).not.toContain('no external side effect');
+  });
+
+  it('click_text on a cross-origin GET form submit control returns ask', async () => {
+    await setPageContent(`
+      <form method="get" action="https://payments.example.test/checkout">
+        <button type="submit">Continue</button>
+      </form>
+    `);
+
+    const result = await classify({ action: 'click_text', text: 'Continue', tabId });
+    expect(result.decision).toBe('ask');
+    expect(result.reason).toContain('GET to payments.example.test, cross-origin');
+  });
+
+  it.each([
+    ['link click', '<a id="target" href="/learn">Learn more</a>'],
+    ['expand/collapse button', '<button id="target" type="button" aria-expanded="false">Details</button>'],
+    ['input focus click', '<input id="target" name="query">'],
+    ['same-origin GET search form', '<form method="get" action="/search"><button id="target">Go</button></form>'],
+  ])('%s stays approved', async (_label, html) => {
+    await setPageContent(html);
+    expect((await classify({ action: 'click', selector: '#target', tabId })).decision).toBe('approve');
+  });
+
+  it('probe failure plus Submit text asks and logs the fallback cause', async () => {
+    const result = await classify({
+      action: 'click_text',
+      text: 'Submit',
+      tabId: 'missing-tab',
+    });
+
+    expect(result.decision).toBe('ask');
+    expect(loggerState.warn).toHaveBeenCalledWith(
+      'Browser click submit probe unavailable; applying argument heuristic',
+      expect.objectContaining({
+        action: 'click_text',
+        cause: expect.stringContaining('Tab not found'),
+        heuristicMatched: true,
+      }),
+    );
+  });
+
+  it('probe failure plus Next text stays approved and logs the fallback cause', async () => {
+    const result = await classify({
+      action: 'click_text',
+      text: 'Next',
+      tabId: 'missing-tab',
+    });
+
+    expect(result.decision).toBe('approve');
+    expect(loggerState.warn).toHaveBeenCalledWith(
+      'Browser click submit probe unavailable; applying argument heuristic',
+      expect.objectContaining({
+        action: 'click_text',
+        cause: expect.stringContaining('Tab not found'),
+        heuristicMatched: false,
+      }),
+    );
+  });
+
+  it('submit ask has the same result shape as a catalog external_side_effect ask', async () => {
+    await setPageContent(`
+      <form method="post" action="/register"><button id="go">Go</button></form>
+    `);
+    const submit = await classify({ action: 'click', selector: '#go', tabId });
+    const existing = await classify({ action: 'write_clipboard', clipboardText: 'value' });
+
+    expect(submit.decision).toBe('ask');
+    expect(Object.keys(submit).sort()).toEqual(Object.keys(existing).sort());
+    expect(Object.keys(submit.hostReason ?? {}).sort()).toEqual(
+      Object.keys(existing.hostReason ?? {}).sort(),
+    );
+    expect(Object.keys(submit.traceStep ?? {}).sort()).toEqual(
+      Object.keys(existing.traceStep ?? {}).sort(),
+    );
+    expect(submit).toMatchObject({
+      decision: 'ask',
+      traceStep: { rule: 'browser_computer_consequence', result: 'ask' },
+      hostReason: { metadata: { toolName: 'browser_action' } },
+    });
+  });
+});
 
   it('default: a browser action without external side effects runs without approval', async () => {
     setSurfaceTool('browser_action');
