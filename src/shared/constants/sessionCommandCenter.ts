@@ -18,6 +18,24 @@ export const SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS = 8;
 /** Hidden task-result wakes get a deliberately small reasoning budget. */
 export const SESSION_COMMAND_CENTER_WAKE_MAX_ITERATIONS = 4;
 
+/** Deferred foreground wakes surface a durable conversation note after this wait. */
+export const BACKGROUND_WAKE_DEFER_NOTICE_MS = 10_000;
+
+/** Human progress shown while a completed background task is waiting for the foreground turn. */
+export const BACKGROUND_WAKE_DEFER_PROGRESS = {
+  completed: '后台任务已完成，等待汇报',
+  failed: '后台任务已失败，等待汇报',
+} as const;
+
+/** Conversation copy used when a deferred wake reaches the visible-notice cap. */
+export function formatBackgroundWakeDeferredNote(
+  shortName: string,
+  status: keyof typeof BACKGROUND_WAKE_DEFER_PROGRESS,
+): string {
+  const outcome = status === 'completed' ? '完成' : '失败';
+  return `后台任务「${shortName}」已${outcome}，结果见上方的任务结果；当前步骤结束后，我会继续汇报。`;
+}
+
 /**
  * Prevent an autonomous task chain from waking the same conversation forever.
  * A new visible user message resets this counter.

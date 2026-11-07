@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AgentEvent } from '../../../src/shared/contract';
 import type { SessionCommandTask } from '../../../src/host/services/commandCenter/sessionCommandCenter';
 import {
   createForegroundWake,
@@ -8,13 +9,19 @@ import { WAKE_NOOP_TOOL_NAME } from '../../../src/shared/constants/agent';
 import { getSessionCommandCenterBrainContextForPrompt } from '../../../src/host/app/sessionCommandCenterBrain';
 // 常量已不导出，经单一真源函数取基块（空白轮次不命中回合级规则）
 const SESSION_COMMAND_CENTER_BRAIN_CONTEXT = getSessionCommandCenterBrainContextForPrompt('')[0];
-import { MAX_CONSECUTIVE_WAKES } from '../../../src/shared/constants/sessionCommandCenter';
+import {
+  BACKGROUND_WAKE_DEFER_NOTICE_MS,
+  BACKGROUND_WAKE_DEFER_PROGRESS,
+  MAX_CONSECUTIVE_WAKES,
+} from '../../../src/shared/constants/sessionCommandCenter';
 
 const sendMessage = vi.fn().mockResolvedValue(undefined);
 const orchestrator = {
   isProcessing: vi.fn(() => false),
   sendMessage,
 };
+let agentEventObserver: ((sessionId: string, event: AgentEvent, taskId?: string) => void) | undefined;
+let stateChangeListener: ((event: { sessionId: string; data?: unknown }) => void) | undefined;
 const manager = {
   getSessionState: vi.fn(() => ({ status: 'idle' })),
   getWaitingQueue: vi.fn((): string[] => []),
@@ -22,8 +29,15 @@ const manager = {
   getOrCreateCurrentOrchestrator: vi.fn(() => orchestrator),
   setSessionContext: vi.fn(),
   setWorkingDirectory: vi.fn(),
-  on: vi.fn(),
+  on: vi.fn((_event: 'state_change', listener: typeof stateChangeListener) => {
+    stateChangeListener = listener;
+  }),
   onRunIdle: vi.fn(),
+  emitAgentEventForSession: vi.fn(),
+  observeAgentEvents: vi.fn((observer: typeof agentEventObserver) => {
+    agentEventObserver = observer;
+    return () => { agentEventObserver = undefined; };
+  }),
 };
 const wakeLogger = {
   info: vi.fn(),
@@ -67,8 +81,39 @@ function dependencies(overrides: Partial<ForegroundWakeDependencies> = {}): Fore
     hasQueuedUserInput: vi.fn(() => false),
     isVoiceSession: vi.fn(() => false),
     recordWakeFailureNote: vi.fn(async () => undefined),
+    recordWakeDeferredNote: vi.fn(async () => undefined),
+    setTimeout: vi.fn(() => 1),
+    clearTimeout: vi.fn(),
     logger: wakeLogger,
     ...overrides,
+  };
+}
+
+function fakeTimer() {
+  let now = 0;
+  let nextId = 1;
+  const scheduledDelays: number[] = [];
+  const timers = new Map<number, { dueAt: number; callback: () => void }>();
+  return {
+    scheduledDelays,
+    setTimeout: (callback: () => void, delayMs: number): number => {
+      const id = nextId;
+      nextId += 1;
+      scheduledDelays.push(delayMs);
+      timers.set(id, { dueAt: now + delayMs, callback });
+      return id;
+    },
+    clearTimeout: (handle: unknown): void => {
+      timers.delete(handle as number);
+    },
+    advanceBy: (durationMs: number): void => {
+      now += durationMs;
+      for (const [id, timer] of [...timers.entries()].sort((a, b) => a[1].dueAt - b[1].dueAt)) {
+        if (timer.dueAt > now) continue;
+        timers.delete(id);
+        timer.callback();
+      }
+    },
   };
 }
 
@@ -81,6 +126,8 @@ describe('foreground task-result wake', () => {
     manager.getWaitingQueue.mockReturnValue([]);
     manager.hasActivePrimaryRun.mockReturnValue(false);
     manager.getOrCreateCurrentOrchestrator.mockReturnValue(orchestrator);
+    agentEventObserver = undefined;
+    stateChangeListener = undefined;
   });
 
   it.each(['completed', 'failed'] as const)('wakes for %s with hidden input and the foreground brain tool surface', async (status) => {
@@ -121,6 +168,88 @@ describe('foreground task-result wake', () => {
     expect(wakeLogger.info).toHaveBeenCalledWith(
       'Foreground wake deferred: session busy',
       expect.objectContaining({ sessionId: 'session-a' }),
+    );
+  });
+
+  it('emits deferred status immediately and one visible note at the cap', async () => {
+    manager.hasActivePrimaryRun.mockReturnValue(true);
+    const clock = fakeTimer();
+    const recordWakeDeferredNote = vi.fn(async () => undefined);
+    const wake = createForegroundWake(dependencies({
+      recordWakeDeferredNote,
+      setTimeout: clock.setTimeout,
+      clearTimeout: clock.clearTimeout,
+    }));
+
+    await wake(task(), 'completed');
+
+    expect(manager.emitAgentEventForSession).toHaveBeenCalledWith('session-a', {
+      type: 'task_progress',
+      data: expect.objectContaining({
+        phase: 'thinking',
+        step: BACKGROUND_WAKE_DEFER_PROGRESS.completed,
+      }),
+    });
+    expect(clock.scheduledDelays).toEqual([BACKGROUND_WAKE_DEFER_NOTICE_MS]);
+    expect(clock.scheduledDelays[0]).toBeLessThanOrEqual(BACKGROUND_WAKE_DEFER_NOTICE_MS);
+    expect(recordWakeDeferredNote).not.toHaveBeenCalled();
+
+    manager.emitAgentEventForSession.mockClear();
+    agentEventObserver?.('session-a', {
+      type: 'task_progress',
+      data: { turnId: 'turn-foreground', phase: 'thinking', step: '分析请求中...' },
+    });
+    expect(manager.emitAgentEventForSession).toHaveBeenCalledWith('session-a', {
+      type: 'task_progress',
+      data: {
+        turnId: 'turn-foreground',
+        phase: 'thinking',
+        step: '后台任务已完成，等待汇报',
+      },
+    });
+
+    clock.advanceBy(BACKGROUND_WAKE_DEFER_NOTICE_MS - 1);
+    expect(recordWakeDeferredNote).not.toHaveBeenCalled();
+    clock.advanceBy(1);
+    expect(recordWakeDeferredNote).toHaveBeenCalledTimes(1);
+    expect(recordWakeDeferredNote).toHaveBeenCalledWith(
+      'session-a',
+      '后台任务「报告」已完成，结果见上方的任务结果；当前步骤结束后，我会继续汇报。',
+      { taskId: 'task-1', outcome: 'completed' },
+    );
+    manager.hasActivePrimaryRun.mockReturnValue(false);
+    stateChangeListener?.({ sessionId: 'session-a', data: { status: 'idle' } });
+    await vi.waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(1));
+    clock.advanceBy(BACKGROUND_WAKE_DEFER_NOTICE_MS);
+    expect(recordWakeDeferredNote).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears a superseded task timer and surfaces only the latest failed result', async () => {
+    manager.hasActivePrimaryRun.mockReturnValue(true);
+    const clock = fakeTimer();
+    const recordWakeDeferredNote = vi.fn(async () => undefined);
+    const wake = createForegroundWake(dependencies({
+      recordWakeDeferredNote,
+      setTimeout: clock.setTimeout,
+      clearTimeout: clock.clearTimeout,
+    }));
+
+    await wake(task('task-old'), 'completed');
+    await wake({ ...task('task-new'), shortName: '新任务' }, 'failed');
+    clock.advanceBy(BACKGROUND_WAKE_DEFER_NOTICE_MS);
+
+    expect(recordWakeDeferredNote).toHaveBeenCalledTimes(1);
+    expect(recordWakeDeferredNote).toHaveBeenCalledWith(
+      'session-a',
+      expect.stringContaining('「新任务」已失败'),
+      { taskId: 'task-new', outcome: 'failed' },
+    );
+    expect(manager.emitAgentEventForSession).toHaveBeenLastCalledWith(
+      'session-a',
+      expect.objectContaining({
+        type: 'task_progress',
+        data: expect.objectContaining({ step: BACKGROUND_WAKE_DEFER_PROGRESS.failed }),
+      }),
     );
   });
 

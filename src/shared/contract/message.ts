@@ -433,6 +433,14 @@ export interface MessageMetadata {
     taskId: string;
     reason: 'owner_missing' | 'wake_failed';
   };
+  /**
+   * 后台任务终态唤醒被前台轮推迟超过上限时的用户可见说明。
+   * 任务结果已在会话里；这条只说明自动汇报会等当前步骤结束。
+   */
+  backgroundWakeDeferred?: {
+    taskId: string;
+    outcome: 'completed' | 'failed';
+  };
   /** User-visible audit note for atomic turn checkout / Redo, including partial outcomes. */
   turnCheckoutNote?: {
     operation: 'checkout' | 'redo';

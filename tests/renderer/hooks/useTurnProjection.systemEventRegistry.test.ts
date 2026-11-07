@@ -51,6 +51,7 @@ const SAMPLE_PAYLOADS: { [K in UserVisibleSystemEventKey]: NonNullable<MessageMe
   agentRecoveryNotice: { kind: 'vision_tool_unsupported' },
   roleFlowStalled: { skillName: 'create-role' },
   backgroundWakeFailed: { taskId: 'session-work-1', reason: 'wake_failed' },
+  backgroundWakeDeferred: { taskId: 'session-work-1', outcome: 'completed' },
   turnCheckoutNote: {
     operation: 'checkout',
     state: 'success',
