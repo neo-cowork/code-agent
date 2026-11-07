@@ -20,7 +20,7 @@ export const delegateTaskSchema: ToolSchema = {
       lane_key: { type: 'string', description: '目标或主题的稳定 lane；继续处理同一对象必须沿用。' },
       submission_key: { type: 'string', description: '当前 turn 内稳定的幂等键；同一次派发重试必须原样复用。' },
       prompt: { type: 'string', description: '给后台执行侧的完整自包含指令，保留用户原话中的目标、约束和验收要求。' },
-      queue_when_full: { type: 'boolean', description: '只有用户在并发槽满后的 AskUserQuestion 中明确选择排队时才传 true。' },
+      queue_when_full: { type: 'boolean', description: '仅在并发槽已满且用户明确要求排队后才传 true。' },
     },
     required: ['title', 'short_name', 'lane_key', 'submission_key', 'prompt'],
     additionalProperties: false,

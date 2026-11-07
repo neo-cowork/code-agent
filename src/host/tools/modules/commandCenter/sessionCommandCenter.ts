@@ -6,10 +6,16 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
-import type { MessageAttachment } from '../../../../shared/contract';
-import { getSessionCommandCenter, type SessionTaskReferenceResult } from '../../../services/commandCenter/sessionCommandCenter';
-import type { SpawnSessionTaskResult } from '../../../services/commandCenter/sessionCommandCenter';
+import type { MessageAttachment, UserQuestionOption } from '../../../../shared/contract';
+import {
+  getSessionCommandCenter,
+  type SessionCommandTask,
+  type SessionTaskReferenceResult,
+  type SpawnSessionTaskInput,
+  type SpawnSessionTaskResult,
+} from '../../../services/commandCenter/sessionCommandCenter';
 import { resolveBackgroundWorkspaceAuthority } from '../../../runtime/workspaceAuthority';
+import { promptUserInChat, type PromptUserResult } from '../../utils/userQuestionPrompt';
 import {
   cancelTaskSchema,
   delegateTaskSchema,
@@ -18,6 +24,10 @@ import {
 } from './sessionCommandCenter.schema';
 
 const WORKSPACE_REQUIRED_MESSAGE = '没有可写的项目根，请先选择项目或添加目录。';
+const OVERFLOW_QUESTION_HEADER = '任务已满';
+const OVERFLOW_QUEUE_OPTION_LABEL = '排队';
+const OVERFLOW_DECLINE_OPTION_LABEL = '暂不创建';
+const OVERFLOW_REPLACE_OPTION_PREFIX = '替换';
 
 function stringArg(args: Record<string, unknown>, key: string): string {
   return typeof args[key] === 'string' ? args[key].trim() : '';
@@ -114,7 +124,7 @@ export async function executeDelegateTask(
   }
 
   onProgress?.({ stage: 'starting', detail: shortName });
-  const result = await getSessionCommandCenter().spawn({
+  const spawnInput: SpawnSessionTaskInput = {
     sessionId: session,
     title,
     shortName,
@@ -132,15 +142,14 @@ export async function executeDelegateTask(
     parentRunId: ctx.runId,
     parentTurnId: ctx.turnId,
     toolCallId: ctx.currentToolCallId,
-  });
-  onProgress?.({ stage: 'completing', percent: 100 });
+  };
+  const result = await getSessionCommandCenter().spawn(spawnInput);
   if (result.outcome === 'requires_choice') {
-    const options = result.active.map((task) => task.shortName).join('、');
-    return {
-      ok: true,
-      output: `并发槽已满，任务尚未创建。现在调用 AskUserQuestion，让用户选择“排队”或替换这些活跃任务之一：${options}。`,
-    };
+    const choiceResult = await resolveOverflowChoiceInHost(spawnInput, result.active, ctx.abortSignal);
+    onProgress?.({ stage: 'completing', percent: 100 });
+    return { ok: true, output: choiceResult };
   }
+  onProgress?.({ stage: 'completing', percent: 100 });
   if (result.outcome === 'reused') {
     return { ok: true, output: describeDelegateTaskResult(result) };
   }
@@ -148,6 +157,99 @@ export async function executeDelegateTask(
     return { ok: true, output: describeDelegateTaskResult(result) };
   }
   return { ok: true, output: describeDelegateTaskResult(result) };
+}
+
+function buildOverflowQuestionOptions(
+  shortName: string,
+  active: SessionCommandTask[],
+): { options: UserQuestionOption[]; replaceable: Array<{ label: string; task: SessionCommandTask }> } {
+  const replaceable = active.slice(0, 2).map((task) => ({
+    label: `${OVERFLOW_REPLACE_OPTION_PREFIX}${task.shortName}`,
+    task,
+  }));
+  const options: UserQuestionOption[] = [
+    { label: OVERFLOW_QUEUE_OPTION_LABEL, description: '等空闲槽位释放后自动开始。' },
+    ...replaceable.map(({ label, task }) => ({
+      label,
+      description: `先停止「${task.shortName}」，再开始「${shortName}」。`,
+    })),
+    { label: OVERFLOW_DECLINE_OPTION_LABEL, description: '本次不创建后台任务。' },
+  ];
+  return { options, replaceable };
+}
+
+function describeOverflowUnansweredFallback(shortName: string): string {
+  return `后台任务槽位已满，任务「${shortName}」尚未创建，也没有加入排队。如需排队等待空闲槽位，请回复“排队”。`;
+}
+
+function extractOverflowAnswer(result: PromptUserResult): string | undefined {
+  if (result.status !== 'answered' || !result.response || result.response.declined === true) {
+    return undefined;
+  }
+  const raw = result.response.answers[OVERFLOW_QUESTION_HEADER];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+async function resolveOverflowChoiceInHost(
+  spawnInput: SpawnSessionTaskInput,
+  active: SessionCommandTask[],
+  abortSignal: AbortSignal,
+): Promise<string> {
+  const { shortName, sessionId } = spawnInput;
+  const { options, replaceable } = buildOverflowQuestionOptions(shortName, active);
+  const question = replaceable.length > 0
+    ? `当前后台任务槽位已满，「${shortName}」要排队等待，还是替换一件本会话的任务？`
+    : `当前后台任务槽位已满，「${shortName}」要排队等待空闲槽位，还是暂不创建？`;
+
+  const promptResult = await promptUserInChat([{
+    header: OVERFLOW_QUESTION_HEADER,
+    question,
+    options,
+  }], {
+    sessionId,
+    abortSignal,
+    notify: {
+      title: OVERFLOW_QUESTION_HEADER,
+      body: question,
+    },
+  });
+
+  const answer = extractOverflowAnswer(promptResult);
+  if (!answer) {
+    return describeOverflowUnansweredFallback(shortName);
+  }
+  if (answer === OVERFLOW_DECLINE_OPTION_LABEL) {
+    return `用户选择了暂不创建，后台任务「${shortName}」未创建，也未加入排队。`;
+  }
+  if (answer === OVERFLOW_QUEUE_OPTION_LABEL) {
+    const queued = await getSessionCommandCenter().spawn({ ...spawnInput, queueWhenFull: true });
+    if (queued.outcome === 'requires_choice') {
+      return describeOverflowUnansweredFallback(shortName);
+    }
+    return describeDelegateTaskResult(queued);
+  }
+
+  const matchedReplace = replaceable.find((entry) => entry.label === answer)
+    ?? (answer.startsWith(OVERFLOW_REPLACE_OPTION_PREFIX)
+      ? replaceable.find((entry) => entry.task.shortName === answer.slice(OVERFLOW_REPLACE_OPTION_PREFIX.length).trim())
+      : undefined);
+
+  if (matchedReplace) {
+    const center = getSessionCommandCenter();
+    await center.cancel(sessionId, matchedReplace.task.id);
+    const restarted = await center.spawn(spawnInput);
+    if (restarted.outcome !== 'requires_choice') {
+      return `已停止「${matchedReplace.task.shortName}」。${describeDelegateTaskResult(restarted)}`;
+    }
+    const queuedAfterCancel = await center.spawn({ ...spawnInput, queueWhenFull: true });
+    if (queuedAfterCancel.outcome !== 'requires_choice') {
+      return `已请求停止「${matchedReplace.task.shortName}」。${describeDelegateTaskResult(queuedAfterCancel)}`;
+    }
+    return describeOverflowUnansweredFallback(shortName);
+  }
+
+  return describeOverflowUnansweredFallback(shortName);
 }
 
 export async function executeSteerTask(
