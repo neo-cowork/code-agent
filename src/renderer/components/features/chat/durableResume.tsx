@@ -14,6 +14,11 @@ function shouldShowDurableContinue(
   return resume?.mode === 'continue' && resume.canContinue && !turnActive;
 }
 
+/** quota_wait 停靠也投影成 continue；它有自己的 QuotaWaitNotice，不再叠「任务已停止」行。 */
+export function shouldShowParkedNotice(showContinue: boolean, resume: { quotaWait?: unknown } | undefined): boolean {
+  return showContinue && !resume?.quotaWait;
+}
+
 /** The durable resume notice is the single recovery action for these modes. */
 export function suppressLegacyInterruptionDecision<T>(
   decision: T | null | undefined,

@@ -21,6 +21,7 @@ import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { useI18n } from '../../../src/renderer/hooks/useI18n';
 import {
   DurableResumeNotice,
+  shouldShowParkedNotice,
   useAbandonParkedRun,
   useDurableContinueVisible,
 } from '../../../src/renderer/components/features/chat/durableResume';
@@ -34,17 +35,18 @@ const realLoadSessions = useSessionStore.getState().loadSessions;
 
 // 与 ChatView 相同的接线：mode 行 + 停靠行（带放弃）+ confirmDialog + composer。
 function ParkedRow({ resume, turnActive }: {
-  resume: { mode: string; canContinue: boolean; runId?: string } | undefined;
+  resume: { mode: string; canContinue: boolean; runId?: string; quotaWait?: unknown } | undefined;
   turnActive: boolean;
 }) {
   const { t } = useI18n();
   const show = useDurableContinueVisible(resume, turnActive);
+  const showRow = shouldShowParkedNotice(show, resume);
   const abandon = useAbandonParkedRun(SESSION_ID, resume?.runId);
   return (
     <>
       {resume?.mode === 'auto-resuming' && <DurableResumeNotice text={t.chat.durableResumeNotice} />}
       {resume?.mode === 'queued' && <DurableResumeNotice text={t.chat.durableResumeQueuedNotice} />}
-      {show && (
+      {showRow && (
         <DurableResumeNotice text={t.chat.durableStoppedNotice} actions={
           <button type="button" className="rounded-md border border-zinc-700 px-2 py-1 text-[11px] text-zinc-200" onClick={abandon.onAbandon}>{t.chat.durableAbandon}</button>
         } />
@@ -62,6 +64,13 @@ function dialogConfirmButton(): HTMLElement {
 }
 
 describe('abandon entry in the durable resume notice row', () => {
+  it('quota_wait park (continue+canContinue+quotaWait) shows no stopped row / abandon button', () => {
+    const { rerender } = render(<ParkedRow resume={PARKED} turnActive={false} />);
+    expect(screen.getByTestId('durable-resume-notice')).toBeTruthy();
+    rerender(<ParkedRow resume={{ ...PARKED, quotaWait: { dueAt: 1, duePassed: false } }} turnActive={false} />);
+    expect(screen.queryByTestId('durable-resume-notice')).toBeNull();
+  });
+
   let loadSessions: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
