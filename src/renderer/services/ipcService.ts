@@ -62,6 +62,16 @@ function createSequencedAgentEventDispatcher(
   const lastSeqBySession = new Map<string, number>();
 
   return (event) => {
+    // stream_end 是渲染层本地哨兵：httpTransport 在 per-run 流结束时会合成它
+    // （全仓唯一生产者，且不在 AgentEventType 契约联合里），宿主从不发、也不占
+    // per-session 序列号。它若按「最后见到 +1」记进宿主序列账，宿主下一个广播
+    // （run 收线后补播的 permission_request 等，N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO）
+    // 会拿到同一个号而被当成重复丢掉——后台任务的审批卡在活页上永远不升级。
+    // 消费方（lifecycle/permission queue/halo）只把它当终态信号，从不按 seq 排序。
+    if ((event.type as string) === 'stream_end') {
+      callback(event);
+      return;
+    }
     const { streamEpoch, sessionId, seq } = event;
     if (
       typeof streamEpoch !== 'string'
