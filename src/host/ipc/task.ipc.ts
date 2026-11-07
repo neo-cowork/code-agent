@@ -14,6 +14,8 @@ import { TaskSchemas, type TaskDomainRequest } from '../../shared/ipc/schemas/ta
 import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import type { TaskManager, SessionState, TaskManagerEvent } from '../task';
 import { createLogger } from '../services/infra/logger';
+import { getBackgroundTaskLedger } from '../task/backgroundTaskLedger';
+import { getBackgroundTask, killBackgroundTask } from '../tools/modules/shell/backgroundTaskSources';
 
 const logger = createLogger('TaskIPC');
 
@@ -81,7 +83,37 @@ async function handleCancelBackgroundTask(
   taskManager: TaskManager,
   payload: BackgroundTaskIdPayload
 ): Promise<boolean> {
-  return taskManager.cancelBackgroundTask(payload.taskId);
+  try {
+    let cancelled = false;
+    const ledgerTask = getBackgroundTaskLedger().getTask(payload.taskId);
+    const originalTaskId = ledgerTask?.kind === 'shell'
+      && typeof ledgerTask.metadata?.originalTaskId === 'string'
+      ? ledgerTask.metadata.originalTaskId
+      : null;
+
+    if (originalTaskId) {
+      const shellTask = getBackgroundTask(originalTaskId);
+      if (shellTask?.status === 'running') {
+        cancelled = (await killBackgroundTask(originalTaskId)).success;
+      }
+    } else {
+      cancelled = await taskManager.cancelBackgroundTask(payload.taskId);
+    }
+
+    logger.info('Background task stop', {
+      taskId: payload.taskId,
+      outcome: cancelled ? 'stopped' : 'not_stopped',
+      cancelled,
+    });
+    return cancelled;
+  } catch (error) {
+    logger.info('Background task stop', {
+      taskId: payload.taskId,
+      outcome: 'error',
+      cancelled: false,
+    });
+    throw error;
+  }
 }
 
 function handleGetState(

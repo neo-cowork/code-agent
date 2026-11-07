@@ -1,5 +1,7 @@
 import {
+  getBackgroundTask,
   getAllBackgroundTasks,
+  killBackgroundTask,
   onBackgroundTaskLifecycleEvent,
   type BackgroundTaskLifecycleEvent,
   type TaskInfo,
@@ -12,8 +14,10 @@ import {
 } from '../../shell/ptyExecutor';
 
 export {
+  getBackgroundTask,
   getAllBackgroundTasks,
   getAllPtySessions,
+  killBackgroundTask,
   onBackgroundTaskLifecycleEvent,
   onPtySessionLifecycleEvent,
 };
