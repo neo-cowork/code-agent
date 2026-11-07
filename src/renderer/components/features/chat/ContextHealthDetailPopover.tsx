@@ -27,18 +27,14 @@ import { useContextHealthActions } from '../../../hooks/useContextHealthActions'
 import {
   bucketSharePercent,
   clampUsagePercent,
+  formatContextTokenNumber,
+  formatContextTokens,
   formatContextUsagePercent,
   isContextWindowKnown,
   shouldShowEstimateDeviation,
 } from '../../../utils/contextUsageFormat';
 import type { ContextHealthState } from '@shared/contract/contextHealth';
 import { resolveContextHealthDetailMode } from './contextHealthDetailMode';
-
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
-  return String(n);
-}
 
 function formatUsd(n: number): string {
   if (n === 0) return '$0.0000';
@@ -179,25 +175,30 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
         {detailMode === 'ready' && contextHealth ? (
           <div>
             {/* 大数字行 + 分段总条：总量的唯一出口 */}
-            <div className="mb-2 flex items-baseline justify-between tabular-nums">
-              <span className="text-sm font-semibold text-zinc-50">
+            <div className="mb-2 flex items-baseline justify-between gap-2 tabular-nums">
+              <span className="flex-shrink-0 text-sm font-semibold text-zinc-50">
                 {windowKnown
                   ? interpolate(ch.usageSummary, {
                     percent: formatContextUsagePercent(displayPercent),
                     remaining: formatContextUsagePercent(Math.max(0, 100 - displayPercent)),
                   })
-                  : ch.windowUnknownSummary}
+                  : interpolate(ch.windowUnknownSummary, {
+                    used: formatContextTokenNumber(contextHealth.currentTokens),
+                  })}
               </span>
-              <span className="text-[11px] text-zinc-400">
+              <span className="text-right text-[11px] text-zinc-400">
                 <span data-testid="context-health-window-caption">{ch.windowUsageCaption}</span>
                 {' · '}
-                {interpolate(ch.tokensFraction, {
-                  used: formatTokens(contextHealth.currentTokens),
-                  max: formatTokens(contextHealth.maxTokens),
-                })}
-                {!windowKnown && (
-                  <span className="ml-1.5 text-zinc-500" data-testid="context-health-window-unknown">
-                    {ch.windowUnknownBadge}
+                {windowKnown ? (
+                  interpolate(ch.tokensFraction, {
+                    used: formatContextTokenNumber(contextHealth.currentTokens),
+                    max: formatContextTokenNumber(contextHealth.maxTokens),
+                  })
+                ) : (
+                  <span data-testid="context-health-window-unknown">
+                    {interpolate(ch.windowUnknownSubline, {
+                      max: formatContextTokenNumber(contextHealth.maxTokens),
+                    })}
                   </span>
                 )}
                 {isEstimated && (
@@ -217,6 +218,10 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
                   </span>
                 )}
               </span>
+            </div>
+
+            <div className="mb-2 text-[11px] text-zinc-400" data-testid="context-health-what-this-means">
+              {windowKnown ? ch.whatThisMeansKnown : ch.whatThisMeansUnknown}
             </div>
 
             {buckets.length > 0 && bucketTotal > 0 && (
@@ -240,7 +245,7 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
                         style={{ width: `${share}%`, background: bucket.color }}
                         title={interpolate(ch.sourceBucketTitle, {
                           name: bucket.name,
-                          tokens: formatTokens(bucket.tokens),
+                          tokens: formatContextTokens(bucket.tokens, ch.tokenUnit),
                           percent: share.toFixed(1),
                         })}
                       />
@@ -250,7 +255,7 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
 
                 <div data-testid="context-bucket-list" data-cost-column={showCostColumn ? 'on' : 'off'}>
                   <div className={`grid gap-2 pb-1 text-[10px] text-zinc-500 ${
-                    showCostColumn ? 'grid-cols-[minmax(0,1fr)_90px_112px]' : 'grid-cols-[minmax(0,1fr)_90px]'
+                    showCostColumn ? 'grid-cols-[minmax(0,1fr)_116px_112px]' : 'grid-cols-[minmax(0,1fr)_116px]'
                   }`}>
                     <span>{ch.bucketColumn}</span>
                     <span className="text-right">{ch.tokenShareColumn}</span>
@@ -263,7 +268,7 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
                       <div
                         key={bucket.key}
                         className={`grid items-center gap-2 py-1 text-xs ${
-                          showCostColumn ? 'grid-cols-[minmax(0,1fr)_90px_112px]' : 'grid-cols-[minmax(0,1fr)_90px]'
+                          showCostColumn ? 'grid-cols-[minmax(0,1fr)_116px_112px]' : 'grid-cols-[minmax(0,1fr)_116px]'
                         }`}
                       >
                         <span className="flex min-w-0 items-center gap-2 text-zinc-300">
@@ -273,11 +278,11 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
                           />
                           <span className="truncate">{bucket.name}</span>
                         </span>
-                        <span className="text-right text-[11px] text-zinc-400 tabular-nums">
-                          {formatTokens(bucket.tokens)} · {share.toFixed(1)}%
+                        <span className="whitespace-nowrap text-right text-[11px] text-zinc-400 tabular-nums">
+                          {formatContextTokens(bucket.tokens, ch.tokenUnit)} · {share.toFixed(1)}%
                         </span>
                         {showCostColumn && (
-                          <span className="text-right text-[11px] text-zinc-400 tabular-nums">
+                          <span className="whitespace-nowrap text-right text-[11px] text-zinc-400 tabular-nums">
                             {bucketHasCost
                               ? `${formatUsd(knownBucketCost.costUsd)} · ${knownBucketCost.inputCostPercent.toFixed(1)}%`
                               : ''}
@@ -310,21 +315,21 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
               <div className="mt-3 border-t border-border-muted pt-3" data-testid="context-cache-cost-split">
                 <div className="mb-1 text-[11px] font-medium text-zinc-300">{ch.cacheSplitTitle}</div>
                 <div className="mb-2 text-[10px] text-zinc-500">{ch.cacheSplitHint}</div>
-                <div className="grid grid-cols-[minmax(0,1fr)_90px_112px] gap-2 py-1 text-[11px] text-zinc-400">
+                <div className="grid grid-cols-[minmax(0,1fr)_116px_112px] gap-2 py-1 text-[11px] text-zinc-400">
                   <span>{ch.cachedInput}</span>
-                  <span className="text-right tabular-nums">
-                    {formatTokens(cacheCostSplit.cachedTokens)} · {((cacheCostSplit.cachedTokens / cacheSplitTokens) * 100).toFixed(1)}%
+                  <span className="whitespace-nowrap text-right tabular-nums">
+                    {formatContextTokens(cacheCostSplit.cachedTokens, ch.tokenUnit)} · {((cacheCostSplit.cachedTokens / cacheSplitTokens) * 100).toFixed(1)}%
                   </span>
-                  <span className="text-right tabular-nums">
+                  <span className="whitespace-nowrap text-right tabular-nums">
                     {formatUsd(cacheCostSplit.cachedCostUsd)} · {cacheCostSplit.cachedCostPercent.toFixed(1)}%
                   </span>
                 </div>
-                <div className="grid grid-cols-[minmax(0,1fr)_90px_112px] gap-2 py-1 text-[11px] text-zinc-400">
+                <div className="grid grid-cols-[minmax(0,1fr)_116px_112px] gap-2 py-1 text-[11px] text-zinc-400">
                   <span>{ch.uncachedInput}</span>
-                  <span className="text-right tabular-nums">
-                    {formatTokens(cacheCostSplit.uncachedTokens)} · {((cacheCostSplit.uncachedTokens / cacheSplitTokens) * 100).toFixed(1)}%
+                  <span className="whitespace-nowrap text-right tabular-nums">
+                    {formatContextTokens(cacheCostSplit.uncachedTokens, ch.tokenUnit)} · {((cacheCostSplit.uncachedTokens / cacheSplitTokens) * 100).toFixed(1)}%
                   </span>
-                  <span className="text-right tabular-nums">
+                  <span className="whitespace-nowrap text-right tabular-nums">
                     {formatUsd(cacheCostSplit.uncachedCostUsd)} · {cacheCostSplit.uncachedCostPercent.toFixed(1)}%
                   </span>
                 </div>
@@ -340,7 +345,7 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
                   {compactResult && (
                     <div className="mt-1 text-badge-success">
                       {compactResult.totalSavedTokens > 0
-                        ? interpolate(ch.freedTokens, { tokens: formatTokens(compactResult.totalSavedTokens) })
+                        ? interpolate(ch.freedTokens, { tokens: formatContextTokenNumber(compactResult.totalSavedTokens) })
                         : interpolate(ch.compactedCount, { count: compactResult.compressionCount })}
                     </div>
                   )}
