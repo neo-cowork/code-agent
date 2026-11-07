@@ -44,6 +44,13 @@ export const EMPTY_OUTPUT_CONTINUATION_LIMIT = 3;
 
 /** 与 L1/L2 对齐：连续 3 次相同轮询观察才算空转。 */
 const POLLING_REPEAT_THRESHOLD = 3;
+/**
+ * 后台任务轮询卡死升级窗口（ms，N-FIX-DOOMLOOP-BG-POLL-FALSE-HANDBACK）：
+ * 同一轮询键（task_status / task_output / process poll|output|log + 归一化输出）
+ * 在窗口内连续不变只发一次性软提醒 polling_repeat；只有不变持续满该窗口且
+ * 轮询次数 ≥ POLLING_REPEAT_THRESHOLD 时，才进入 L1 doom-loop → doom-loop-abort 交还链。
+ */
+const POLL_STALL_WINDOW_MS = 5 * 60 * 1000;
 /** 与 L1/L2 对齐：同一规范化错误族连续 3 次才 nudge。 */
 const SAME_ERROR_FAMILY_THRESHOLD = 3;
 /** A,B,A,B 需要四步才成立；这是环的长度，不是另一套 ×3 计数。 */
@@ -170,6 +177,9 @@ export class DoomLoopGuard {
   /** 连续相同轮询观察（task + 状态 + 规范化正文）。 */
   private pollKey: string | null = null;
   private pollStreak = 0;
+  private pollFirstSeenAt: number | null = null;
+  private pollElapsedMs = 0;
+  private pollNudged = false;
   /** 连续相同规范化错误族。 */
   private errorFamily: string | null = null;
   private errorFamilyStreak = 0;
@@ -186,6 +196,8 @@ export class DoomLoopGuard {
    */
   private obsChains = new Map<string, ObsChain>();
 
+  constructor(private readonly now: () => number = Date.now) {}
+
   /** 记录一个 step 的全部工具调用，返回防护判定 */
   recordStep(toolCalls: GuardToolCall[]): DoomLoopCheck {
     if (toolCalls.length === 0) return { level: 'none' };
@@ -194,9 +206,11 @@ export class DoomLoopGuard {
     this.actionCycle.push(stepSig);
     if (this.actionCycle.length > ABAB_CYCLE_STEPS) this.actionCycle.shift();
 
-    // L1：逐个调用维护"连续相同"连击
+    // L1：逐个调用维护"连续相同"连击（轮询类调用不仅凭参数计入 L1 连击）
     let lastCall: GuardToolCall | null = null;
     for (const toolCall of toolCalls) {
+      lastCall = toolCall;
+      if (isPollClassCall(toolCall)) continue;
       const sig = callSignature(toolCall);
       if (sig === this.lastCallSignature) {
         this.identicalCallStreak += 1;
@@ -206,7 +220,19 @@ export class DoomLoopGuard {
         this.doomLoopNudged = false;
         for (const chain of this.obsChains.values()) chain.nudged = false;
       }
-      lastCall = toolCall;
+    }
+
+    if (lastCall !== null && isPollClassCall(lastCall)) {
+      const stalled =
+        this.pollKey !== null
+        && this.pollStreak >= POLLING_REPEAT_THRESHOLD
+        && this.pollElapsedMs >= POLL_STALL_WINDOW_MS;
+      if (stalled) {
+        if (this.pollNudged) return { level: 'doom-loop-abort' };
+        this.pollNudged = true;
+        return { level: 'doom-loop', nudge: DOOM_LOOP_NUDGE };
+      }
+      return { level: 'none' };
     }
 
     if (this.identicalCallStreak >= DOOM_LOOP_THRESHOLD) {
@@ -259,6 +285,9 @@ export class DoomLoopGuard {
     this.actionCycle = [];
     this.pollKey = null;
     this.pollStreak = 0;
+    this.pollFirstSeenAt = null;
+    this.pollElapsedMs = 0;
+    this.pollNudged = false;
     this.errorFamily = null;
     this.errorFamilyStreak = 0;
     this.cuaClickStreaks.clear();
@@ -344,15 +373,24 @@ export class DoomLoopGuard {
     if (!taskId) {
       this.pollKey = null;
       this.pollStreak = 0;
+      this.pollFirstSeenAt = null;
+      this.pollElapsedMs = 0;
+      this.pollNudged = false;
       return;
     }
     const observed = observePoll(call.summary);
-    // 身份是后台任务，不是整段参数。timeout/block 变化仍算同一次轮询。
+    // 身份是后台任务（或 task_status 工具名），不是整段参数。timeout/block 变化仍算同一次轮询。
     const key = `${taskId}\n${observed.status}\n${observed.body}`;
-    if (key === this.pollKey) this.pollStreak += 1;
-    else {
+    const nowMs = this.now();
+    if (key === this.pollKey) {
+      this.pollStreak += 1;
+      this.pollElapsedMs = this.pollFirstSeenAt !== null ? Math.max(0, nowMs - this.pollFirstSeenAt) : 0;
+    } else {
       this.pollKey = key;
       this.pollStreak = 1;
+      this.pollFirstSeenAt = nowMs;
+      this.pollElapsedMs = 0;
+      this.pollNudged = false;
     }
     if (this.pollStreak >= POLLING_REPEAT_THRESHOLD) this.takeSignal(SIGNAL_POLLING_REPEAT, signals);
   }
@@ -563,8 +601,19 @@ function normalizeSignalText(message: string): string {
   );
 }
 
+function isPollClassCall(toolCall: { name: string; arguments?: Record<string, unknown> }): boolean {
+  const name = toolCall.name.toLowerCase();
+  if (name === 'task_status' || name === 'task_output') return true;
+  if (name === 'process') {
+    const action = typeof toolCall.arguments?.action === 'string' ? toolCall.arguments.action.toLowerCase() : '';
+    return POLL_ACTIONS.has(action);
+  }
+  return false;
+}
+
 function backgroundPollTaskId(call: GuardCallResult): string | null {
   const name = call.name.toLowerCase();
+  if (name === 'task_status') return 'task_status';
   const args = call.arguments ?? {};
   if (name === 'process') {
     const action = typeof args.action === 'string' ? args.action.toLowerCase() : '';

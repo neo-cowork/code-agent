@@ -455,6 +455,129 @@ describe('DoomLoopGuard result signals', () => {
 });
 
 // ---------------------------------------------------------------------------
+// N-FIX-DOOMLOOP-BG-POLL-FALSE-HANDBACK — 后台轮询不应凭无参/同参在 L1 误触发交还栏
+// ---------------------------------------------------------------------------
+describe('DoomLoopGuard background poll stall window — N-FIX-DOOMLOOP-BG-POLL-FALSE-HANDBACK', () => {
+  it('(i) progressing task_output polls (body grows / status changes) ×10 → no doom-loop, no doom-loop-abort, no signals', () => {
+    let nowMs = 1_762_300_000_000;
+    const guard = new DoomLoopGuard(() => nowMs);
+    const pollCall = call('task_output', { task_id: 'bg-1' });
+    const levels: string[] = [];
+    const signalsList: string[][] = [];
+    for (let i = 1; i <= 10; i++) {
+      nowMs += 40_000;
+      const status = i === 10 ? 'completed' : 'running';
+      levels.push(guard.recordStep([pollCall]).level);
+      signalsList.push(
+        guard.recordResults([{
+          name: 'task_output',
+          arguments: { task_id: 'bg-1' },
+          success: true,
+          summary: `=== Task bg-1 ===\nStatus: ${status}\n--- Output ---\nstep ${i} finished: artifact_${ 'abcdef'[i % 6].repeat(i) }`,
+        }]).signals,
+      );
+    }
+    expect(levels.every((l) => l === 'none')).toBe(true);
+    expect(signalsList.every((s) => s.length === 0)).toBe(true);
+  });
+
+  it('replay (ii): task_status {} unchanged ×4 within stall window (25s apart) does not reach doom-loop or doom-loop-abort', () => {
+    let nowMs = 1_762_300_000_000;
+    const guard = new DoomLoopGuard(() => nowMs);
+    const callTaskStatus = call('task_status', {});
+    const runningText = '1. 抓站 [running] id=task_bg_42';
+    const levels: string[] = [];
+    const signalsList: string[][] = [];
+    for (let i = 0; i < 4; i++) {
+      nowMs += 25_000;
+      levels.push(guard.recordStep([callTaskStatus]).level);
+      signalsList.push(
+        guard.recordResults([{
+          name: 'task_status',
+          arguments: {},
+          success: true,
+          summary: runningText,
+        }]).signals,
+      );
+    }
+    expect(levels).toEqual(['none', 'none', 'none', 'none']);
+    expect(signalsList).toEqual([[], [], ['polling_repeat'], []]);
+  });
+
+  it('(iii) same poll output unchanged for > stall window (5 min) with ≥ 3 polls → doom-loop, then doom-loop-abort on next poll', () => {
+    let nowMs = 1_762_300_000_000;
+    const guard = new DoomLoopGuard(() => nowMs);
+    const callTaskStatus = call('task_status', {});
+    const runningText = '1. 抓站 [running] id=task_bg_42';
+    const stepPoll = (advanceMs: number, summary = runningText) => {
+      nowMs += advanceMs;
+      const check = guard.recordStep([callTaskStatus]);
+      const sig = guard.recordResults([{
+        name: 'task_status',
+        arguments: {},
+        success: true,
+        summary,
+      }]);
+      return { check, sig };
+    };
+
+    expect(stepPoll(0).check.level).toBe('none'); // t=0, poll 1
+    expect(stepPoll(120_000).check.level).toBe('none'); // t=120s, poll 2
+    const third = stepPoll(190_000); // t=310s (> 300s window), poll 3 confirms stall
+    expect(third.check.level).toBe('none');
+    expect(third.sig.signals).toEqual(['polling_repeat']);
+
+    const fourth = stepPoll(20_000); // poll 4 sees ≥3 polls & ≥5 min elapsed → doom-loop nudge
+    expect(fourth.check.level).toBe('doom-loop');
+    expect(fourth.check.nudge).toContain('<doom-loop-guard>');
+
+    const fifth = stepPoll(20_000); // poll 5 after nudge → doom-loop-abort
+    expect(fifth.check.level).toBe('doom-loop-abort');
+  });
+
+  it('(iv) non-poll tool repeated 3× with identical args still gives doom-loop and 4th gives doom-loop-abort (regression guard)', () => {
+    const nowMs = 1_762_300_000_000;
+    const guard = new DoomLoopGuard(() => nowMs);
+    const bashCall = call('Bash', { command: 'echo probe' });
+    expect(guard.recordStep([bashCall]).level).toBe('none');
+    expect(guard.recordStep([bashCall]).level).toBe('none');
+    expect(guard.recordStep([bashCall]).level).toBe('doom-loop');
+    expect(guard.recordStep([bashCall]).level).toBe('doom-loop-abort');
+  });
+
+  it('(v) resetAfterHandback clears poll stall state and changed result resets poll state', () => {
+    let nowMs = 1_762_300_000_000;
+    const guard = new DoomLoopGuard(() => nowMs);
+    const callTaskStatus = call('task_status', {});
+    const runningText = '1. 抓站 [running] id=task_bg_42';
+    const pollWith = (advanceMs: number, summary: string) => {
+      nowMs += advanceMs;
+      const level = guard.recordStep([callTaskStatus]).level;
+      guard.recordResults([{ name: 'task_status', arguments: {}, success: true, summary }]);
+      return level;
+    };
+
+    expect(pollWith(0, runningText)).toBe('none');
+    expect(pollWith(160_000, runningText)).toBe('none');
+    expect(pollWith(160_000, runningText)).toBe('none'); // streak=3, elapsed=320s
+    expect(guard.recordStep([callTaskStatus]).level).toBe('doom-loop'); // nudged on 4th step
+    // That 4th poll returns a changed result → resets poll state so next poll does not abort
+    guard.recordResults([{
+      name: 'task_status',
+      arguments: {},
+      success: true,
+      summary: '1. 抓站 [completed] id=task_bg_42：已完成抓取',
+    }]);
+    expect(pollWith(160_000, '1. 抓站 [completed] id=task_bg_42：已完成抓取')).toBe('none'); // streak=2, elapsed=160s
+    expect(pollWith(160_000, '1. 抓站 [completed] id=task_bg_42：已完成抓取')).toBe('none'); // streak=3, elapsed=320s
+    expect(pollWith(10_000, '1. 抓站 [completed] id=task_bg_42：已完成抓取')).toBe('doom-loop'); // nudged
+    expect(guard.recordStep([callTaskStatus]).level).toBe('doom-loop-abort');
+    guard.resetAfterHandback();
+    expect(pollWith(10_000, '1. 抓站 [completed] id=task_bg_42：已完成抓取')).toBe('none');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // N-CUA-SCREEN-GUARDS-LOOP — cua 近似点击 + 屏幕未变连击
 // ---------------------------------------------------------------------------
 const CUA = 'mcp__cua-driver__';
