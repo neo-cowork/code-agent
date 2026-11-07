@@ -1,6 +1,6 @@
 import type { ElementHandle, Page } from 'playwright';
 
-export interface BrowserSubmitClickProbeResult {
+interface BrowserSubmitClickProbeResult {
   status: 'known';
   isSubmit: boolean;
   method: string | null;
@@ -8,7 +8,7 @@ export interface BrowserSubmitClickProbeResult {
   targetHost: string | null;
 }
 
-export interface BrowserSubmitClickProbeUnknown {
+interface BrowserSubmitClickProbeUnknown {
   status: 'unknown';
   cause: string;
 }
