@@ -172,7 +172,15 @@ export function classifyAgentError(
       return { ...base, category: 'model_not_found', httpStatus: explicitStatus ?? 404 };
     }
 
-    if (normalized.includes('rate limit') || normalized.includes('too many requests') || hasStatus(429)) {
+    if (
+      normalized.includes('rate limit') ||
+      normalized.includes('too many requests') ||
+      hasStatus(429) ||
+      message.includes('速率限制') ||
+      message.includes('请求过于频繁') ||
+      message.includes('限制请求频率') ||
+      message.includes('请求频率')
+    ) {
       return { ...base, category: 'rate_limited', httpStatus: explicitStatus ?? 429 };
     }
 

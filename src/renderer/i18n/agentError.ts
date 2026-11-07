@@ -175,6 +175,7 @@ export const agentErrorZh = {
       generic: {
         title: '运行失败',
         suggestion: '请重试一次；若反复失败，可新开会话继续，或复制错误报告反馈。',
+        providerReason: '服务商返回：「{reason}」',
       },
     },
     details: {
@@ -286,6 +287,7 @@ export const agentErrorEn: typeof agentErrorZh = {
       generic: {
         title: 'Run failed',
         suggestion: 'Try again. If it keeps failing, start a new session, or copy the error report and send it to us.',
+        providerReason: 'Provider message: "{reason}"',
       },
     },
     details: {
