@@ -22,7 +22,7 @@ describe('describeAppleScriptFailure', () => {
   const cases: Array<[string, Error, string, RegExp, RegExp]> = [
     ['-1743', execError('Not authorized to send Apple events to Mail. (-1743)'), 'not_authorized', /系统设置.*自动化/, /System Settings > Privacy & Security > Automation/],
     ['-1728', execError('Mail got an error: Can\'t get mailbox "INBOX". (-1728)'), 'not_found', /检查对应账户/, /Check that the account/],
-    ['timeout', execError('', { killed: true, signal: 'SIGTERM' }), 'timeout', /稍后重试/, /try again later/],
+    ['timeout', execError('', { killed: true, signal: 'SIGTERM' }), 'timeout', /响应超时.*缩小查询时间范围.*calendar/, /did not respond in time \(timeout\).*Narrow the date range or pass a specific calendar name/],
     ['unknown', execError('syntax error (-2741)', { code: 1 }), 'read_failed', /读取失败，请稍后重试/, /Read failed, please try again later/],
   ];
 

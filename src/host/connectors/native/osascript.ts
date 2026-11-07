@@ -48,7 +48,7 @@ function describeAppleScriptFailureText(
       case 'not_found':
         return `${label} could not find the requested mailbox, account or calendar. Check that the account exists in the ${label} app.`;
       case 'timeout':
-        return `${label} did not respond in time. Please try again later.`;
+        return `${label} did not respond in time (timeout). Narrow the date range or pass a specific calendar name instead of retrying unchanged.`;
       default:
         return `${label}: Read failed, please try again later`;
     }
@@ -59,7 +59,7 @@ function describeAppleScriptFailureText(
     case 'not_found':
       return `${label} 找不到指定的邮箱/账户/日历：请在 ${label} 应用中检查对应账户是否存在。`;
     case 'timeout':
-      return `${label} 响应超时，请稍后重试。`;
+      return `${label} 响应超时：请缩小查询时间范围或指定具体日历名称（calendar），不要原样重试。`;
     default:
       return `${label}：读取失败，请稍后重试`;
   }
