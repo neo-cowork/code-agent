@@ -100,6 +100,18 @@ describe('用户 Bash(rm *) ask 规则 → 审批通道', () => {
     expect(await exists()).toBe(true);
   });
 
+  it.each([
+    ['rm -rf ~'],
+    ['rm -rf ..'],
+    ['rm -rf ~/.ssh'],
+  ])('ask 规则命中的危险形状 `%s` 仍被分类器硬拒，不弹可批准的审批卡', async (command) => {
+    const result = await makeExecutor(true, dir).execute('Bash', { command }, { sessionId: 'ask-danger' });
+    expect(requests).toHaveLength(0);
+    expect(result.success).toBe(false);
+    expect(result.error ?? '').toMatch(/^Denied|blocked/i);
+    expect(await exists()).toBe(true);
+  });
+
   it('不匹配 ask 规则的命令不被它拦（echo 仍按原链）', async () => {
     const result = await makeExecutor(true, dir).execute('Bash', { command: 'echo hi' }, { sessionId: 'ask-echo' });
     expect(result.success).toBe(true);

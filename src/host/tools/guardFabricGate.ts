@@ -36,6 +36,8 @@ export interface GuardFabricGateResult {
     trace?: DecisionTrace;
   };
   forceApproval?: boolean;
+  /** forceApproval 仅来自用户 ask 规则：分类器仍要跑（deny 兜底），但 approve 不得放行。 */
+  userAskRuleOnly?: boolean;
   traceStep?: DecisionStep;
 }
 
@@ -115,7 +117,7 @@ export function evaluateGuardFabricGate(input: GuardFabricGateInput): GuardFabri
   const userAsk = isBashToolName(input.policyToolName) && typeof input.params.command === 'string'
     ? matchUserAskRule(buildPolicyRequest(input), input.sessionId, input.executionToolName)
     : undefined;
-  const askResult: GuardFabricGateResult = userAsk ? { forceApproval: true, traceStep: userAsk.traceStep } : {};
+  const askResult: GuardFabricGateResult = userAsk ? { forceApproval: true, userAskRuleOnly: true, traceStep: userAsk.traceStep } : {};
 
   if (input.topology === 'main') {
     return askResult;
