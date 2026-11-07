@@ -216,6 +216,47 @@ describe('sweepOrphanMetadataOnlyWorkDirectories (startup sweep)', () => {
     await expect(stat(dir)).resolves.toBeTruthy();
   });
 
+  it('sweeps empty skill scaffolding beside an empty snapshot directory', async () => {
+    const dir = await makeOrphanShape('任务_1107_空技能脚手架');
+    await mkdir(path.join(dir, '.claude', 'skills'), { recursive: true });
+    await backdateTwoHours(dir);
+
+    await expect(sweepOrphanMetadataOnlyWorkDirectories()).resolves.toBe(1);
+    await expect(stat(dir)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('sweeps the full empty new-and-legacy skill watcher scaffolding shape', async () => {
+    const dir = await makeOrphanShape('任务_1107_完整技能脚手架');
+    await mkdir(path.join(dir, '.code-agent', 'skills'), { recursive: true });
+    await mkdir(path.join(dir, '.claude', 'skills'), { recursive: true });
+    await backdateTwoHours(dir);
+
+    await expect(sweepOrphanMetadataOnlyWorkDirectories()).resolves.toBe(1);
+    await expect(stat(dir)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('keeps skill scaffolding when the folder also holds one real file', async () => {
+    const dir = await makeOrphanShape('任务_1107_脚手架旁有文件');
+    await mkdir(path.join(dir, '.claude', 'skills'), { recursive: true });
+    await writeFile(path.join(dir, 'report.md'), '# user content');
+    await backdateTwoHours(dir);
+
+    await expect(sweepOrphanMetadataOnlyWorkDirectories()).resolves.toBe(0);
+    await expect(stat(path.join(dir, 'report.md'))).resolves.toBeTruthy();
+  });
+
+  it('keeps skill scaffolding when its skills entry is a symlink', async () => {
+    const dir = await makeOrphanShape('任务_1107_技能符号链接');
+    const outsideSkills = path.join(tempHome, 'outside-skills');
+    await mkdir(outsideSkills, { recursive: true });
+    await mkdir(path.join(dir, '.claude'), { recursive: true });
+    await symlink(outsideSkills, path.join(dir, '.claude', 'skills'));
+    await backdateTwoHours(dir);
+
+    await expect(sweepOrphanMetadataOnlyWorkDirectories()).resolves.toBe(0);
+    expect((await lstat(path.join(dir, '.claude', 'skills'))).isSymbolicLink()).toBe(true);
+  });
+
   it('leaves a symlink alone and never follows it', async () => {
     const realDir = await makeOrphanShape('任务_1105_真实夹', path.join(tempHome, 'outside-root'));
     const link = path.join(root, '任务_1105_符号链接');
@@ -259,5 +300,57 @@ describe('sweepOrphanMetadataOnlyWorkDirectories (startup sweep)', () => {
     } finally {
       endWorkDirectoryRun(dir);
     }
+  });
+});
+
+describe('endWorkDirectoryRun skill scaffolding recycle', () => {
+  let tempHome: string;
+  let root: string;
+  let priorEnv: { CODE_AGENT_HOME?: string; CODE_AGENT_DATA_DIR?: string };
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    mocks.reservations.mockResolvedValue([]);
+    tempHome = await mkdtemp(path.join(tmpdir(), 'workdir-skill-scaffold-'));
+    priorEnv = {
+      CODE_AGENT_HOME: process.env.CODE_AGENT_HOME,
+      CODE_AGENT_DATA_DIR: process.env.CODE_AGENT_DATA_DIR,
+    };
+    process.env.CODE_AGENT_HOME = tempHome;
+    process.env.CODE_AGENT_DATA_DIR = path.join(tempHome, '.code-agent');
+    root = getDefaultWorkDirectory();
+  });
+
+  afterEach(async () => {
+    for (const [key, value] of Object.entries(priorEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    await rm(tempHome, { recursive: true, force: true });
+  });
+
+  it('recycles a created folder holding only empty legacy skills and snapshot scaffolding', async () => {
+    const dir = path.join(root, '任务_1107_运行期空脚手架');
+    beginWorkDirectoryRun(dir);
+    await materializeRunWorkDirectoryOnce(dir, { sessionId: 'session-skill-scaffold' });
+    await mkdir(path.join(dir, '.claude', 'skills'), { recursive: true });
+    await mkdir(path.join(dir, '.code-agent', 'stream-snapshots'), { recursive: true });
+
+    endWorkDirectoryRun(dir);
+
+    await expect(stat(dir)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('keeps the same scaffolding shape when it also holds one real file', async () => {
+    const dir = path.join(root, '任务_1107_运行期有文件');
+    beginWorkDirectoryRun(dir);
+    await materializeRunWorkDirectoryOnce(dir, { sessionId: 'session-skill-file' });
+    await mkdir(path.join(dir, '.claude', 'skills'), { recursive: true });
+    await mkdir(path.join(dir, '.code-agent', 'stream-snapshots'), { recursive: true });
+    await writeFile(path.join(dir, 'report.md'), '# keep');
+
+    endWorkDirectoryRun(dir);
+
+    await expect(stat(path.join(dir, 'report.md'))).resolves.toBeTruthy();
   });
 });

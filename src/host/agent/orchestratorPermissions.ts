@@ -5,6 +5,7 @@
 import type { AgentEvent, AppSettings, PermissionRequest, PermissionResponse } from '../../shared/contract';
 import { PermissionRequestReason } from '../../shared/contract/permission';
 import type { PermissionAskResult, PermissionDeliveryOutcome, PermissionDenialSource } from '../../shared/contract/permission';
+import { isApprovePermissionResponse } from '../../shared/contract/permission';
 import type { ToolApprovalPayload, PendingApprovalKind } from '../../shared/contract/pendingApproval';
 import { INTERACTION_TIMEOUTS } from '../../shared/constants/timeouts';
 import { PARKED_APPROVAL_PREVIEW_MAX_CHARS } from '../../shared/constants/pendingApproval';
@@ -30,6 +31,7 @@ import {
 import { getConfirmationGate } from './confirmationGate';
 import { NL_RULE_K2_TEXT } from '../../shared/nlRuleRestate';
 import { mintAppGrantSession, mintAppGrantStanding } from '../permissions/appGrantStore';
+import { mintTool24hGrant, mintToolRunGrant } from '../permissions/toolGrantStore';
 import { getPermissionLevel } from './orchestrator/modelConfigResolver';
 import { createLogger } from '../services/infra/logger';
 import { approvalAnswerFromPermission, isCompanionApprovalResponding, noteCompanionApprovalSettlement } from '../services/companion/companionDecisionSink';
@@ -39,6 +41,16 @@ const logger = createLogger('AgentOrchestrator');
 
 /** 交互审批只提醒、不裁决；运行取消/会话切换负责最终清理。 */
 const INTERACTIVE_PERMISSION_REMINDER_MS = 30 * 60_000;
+
+/**
+ * 后台任务/子代理 lane 的审批带着自己的 run 身份（subagentToolRuntime 把
+ * { agentId, runId } 摊进请求；前台请求两者皆无）。run 收线清理据此放过它们
+ * （N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO）。
+ */
+function hasBackgroundRunIdentity(request: PermissionRequest): boolean {
+  return (typeof request.runId === 'string' && request.runId.length > 0)
+    || (typeof request.agentId === 'string' && request.agentId.length > 0);
+}
 
 /**
  * 重新确认「还有没有面能裁决这条审批」的节拍。
@@ -60,9 +72,10 @@ function toDeliveryOutcome(resolution: ParkedResolution): PermissionDeliveryOutc
   return resolution === 'storage_unavailable' ? 'storage_unavailable' : 'unknown_request';
 }
 
-/** 归一化审批响应为「放行/拒绝」。allow_standing（B4 铸权）在放行语义上等价 allow。 */
+/** 归一化审批响应为「放行/拒绝」。判定单一真源在共享契约（allow_standing 与
+ * allow_run/allow_24h 在放行语义上等价 allow）。 */
 function isApproveResponse(response: PermissionResponse): boolean {
-  return response === 'allow' || response === 'allow_session' || response === 'allow_standing';
+  return isApprovePermissionResponse(response);
 }
 
 /**
@@ -85,8 +98,16 @@ function buildParkedArgsPreview(request: PermissionRequest): string | undefined 
     : redacted;
 }
 
-/** 真人点的会话/始终。带 targetApp 时只记该应用，不记工具级放行。plain allow 不记。 */
-function recordHumanGrant(response: PermissionResponse, request: PermissionRequest): void {
+/** 真人点的会话/始终/两档工具授权。带 targetApp 时只记该应用，不记工具级放行。
+ * plain allow 不记。allow_run/allow_24h 铸进 toolGrantStore（target 取透传的
+ * standingGrantTarget，无 target 的工具级授权不放大到任何去向）。
+ * 带 updatedArgs 的非 allow 应答会被 toAskResult 整体 fail-closed 拒——那种应答
+ * 不铸造任何记忆：用户审的是改后内容，拒绝它不能换算成对原稿的任何档位授权。 */
+function recordHumanGrant(
+  response: PermissionResponse,
+  request: PermissionRequest,
+  updatedArgs?: Record<string, unknown>,
+): void {
   // ADR-088 §4 三层保证之 3（host 侧永不铸造）：敏感步骤交回的应答**整体**跳过铸造——
   // 包括 allow_session 在无 targetApp 时回落 recordApproval 的会话级工具放行记录
   // （那同样是本流程不许产生的授权）。任何形态的记住应答都降级为一次性语义。
@@ -100,12 +121,26 @@ function recordHumanGrant(response: PermissionResponse, request: PermissionReque
     });
     return;
   }
+  if (updatedArgs && response !== 'allow') return;
   const app = request.details?.targetApp;
   if (response === 'allow_session' && request.sessionId) {
     if (app?.name) mintAppGrantSession(request.sessionId, app);
     else getConfirmationGate().recordApproval(request.sessionId, request.tool);
   } else if (response === 'allow_standing' && app?.name) {
     mintAppGrantStanding(app);
+  } else if (response === 'allow_run' && !app?.name) {
+    // run 档没有会话就无处归属（重启恢复/无会话应答）：不落任何记忆，warn 留痕，
+    // 下一次同类调用照常询问——fail-safe 而非静默放大成全局。
+    if (!request.sessionId) {
+      logger.warn('allow_run response without sessionId: run-tier grant not minted, next call will ask again', {
+        tool: request.tool,
+        requestId: request.id,
+      });
+    } else {
+      mintToolRunGrant(request.sessionId, request.tool, request.details?.standingGrantTarget ?? null);
+    }
+  } else if (response === 'allow_24h' && !app?.name) {
+    mintTool24hGrant(request.tool, request.details?.standingGrantTarget ?? null);
   }
 }
 
@@ -357,15 +392,28 @@ export class OrchestratorPermissionIsland {
    *
    * B2 取消收尾：停车挂起的审批必须同步 repo resolve('rejected')，否则取消后 DB 留下
    * 孤儿 pending 行、收件箱永远挂着一条无对应 run 的待批准。
+   *
+   * N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO：`skipBackgroundLanes` 让 run 收线清理只解除
+   * 本 run 自己的（无 runId/agentId 身份）请求；后台任务/子代理 lane 的审批带着自己的
+   * run 身份，消费它的那条 run 还活着，不能因为前台 run 结束就被机器拒绝。
    */
-  drainPendingPermissions(response: PermissionResponse = 'deny'): void {
+  drainPendingPermissions(response: PermissionResponse = 'deny', options?: { skipBackgroundLanes?: boolean }): void {
     if (this.pendingPermissions.size === 0) return;
-    const count = this.pendingPermissions.size;
+    const skipBackgroundLanes = options?.skipBackgroundLanes === true;
+    const entries = [...this.pendingPermissions.entries()];
+    const drainable = skipBackgroundLanes
+      ? entries.filter(([, entry]) => !hasBackgroundRunIdentity(entry.request))
+      : entries;
+    if (drainable.length === 0) {
+      logger.info(`Skipped draining ${entries.length} pending background-lane permission(s) (owning run still alive)`, { response });
+      return;
+    }
+    const count = drainable.length;
     const repo = this.getPendingApprovalRepo();
-    for (const [id] of this.pendingPermissions.entries()) {
+    for (const [id] of drainable) {
       noteCompanionApprovalSettlement({ requestId: id, outcome: 'cancelled' });
     }
-    for (const [id, entry] of this.pendingPermissions.entries()) {
+    for (const [id, entry] of drainable) {
       if (entry.parked && repo) {
         try {
           const changes = repo.resolve({ id, status: 'rejected', feedback: 'run cancelled', resolvedAt: Date.now() });
@@ -376,11 +424,27 @@ export class OrchestratorPermissionIsland {
           logger.warn(`Parked approval cancel-resolve failed for ${id}`, err);
         }
       }
+      this.pendingPermissions.delete(id);
+      // 宿主整岛 drain 会解除后台 lane 挂起的审批，而渲染层在 run 终态已保留带
+      // runId/agentId 的卡：对每条被解除的请求发一条 resolved 的 permission_request，
+      // 让渲染层用 dismissPermissionRequest 收卡，避免留下点击即 unknown_request 的死卡。
+      try {
+        this.onEvent({
+          type: 'permission_request',
+          data: { ...entry.request, resolved: true },
+        });
+      } catch (err) {
+        logger.warn('Drained permission event could not be emitted; resolving cancelled anyway', err);
+      }
       // 取消/新消息统一解除 ≠ 用户拒绝（N-PERMTRACE）。
       entry.resolve(response, 'cancelled');
     }
-    this.pendingPermissions.clear();
     logger.info(`Drained ${count} pending permission(s)`, { response });
+  }
+
+  /** 还有未裁决的请求吗（含后台 lane 的）。run 收线后据此决定岛要不要继续注册。 */
+  hasPendingRequests(): boolean {
+    return this.pendingPermissions.size > 0;
   }
 
   /**
@@ -634,7 +698,7 @@ export class OrchestratorPermissionIsland {
       this.pendingPermissions.set(fullRequest.id, {
         resolve: (response, machineDenial, updatedArgs) => {
           clearInterval(watchdog);
-          recordHumanGrant(response, fullRequest);
+          recordHumanGrant(response, fullRequest, updatedArgs);
           resolve(toAskResult(response, machineDenial, updatedArgs, response === 'user_did_it' ? NL_RULE_K2_TEXT.handbackDoneModelText(fullRequest.tool) : undefined));
         },
         request: fullRequest,
