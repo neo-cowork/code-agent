@@ -33,6 +33,14 @@ interface CronCloudRuntimeDeps {
     execution: CronJobExecution,
     summary?: string,
   ) => Promise<void>;
+  /**
+   * 云端侧操作失败钩子（N-CRON-FAIL-PLAIN-CLOUD-DOWN-FU1）：recordFailure 落库后带上
+   * 刚持久化的执行回调一次；不接则只落库（单测/不关心通知的装配方）。
+   */
+  onFailureRecorded?: (
+    definition: CronJobDefinition,
+    execution: CronJobExecution,
+  ) => Promise<void> | void;
   unavailableMessage: () => string;
 }
 
@@ -178,13 +186,19 @@ export class CronCloudRuntime {
       if (!remoteJobId) throw new Error('Cloud cron job could not be synchronized.');
       return await this.client.runJob(remoteJobId);
     } catch (error) {
+      // 底因（英文原始报文）不进 execution.error——会跟界面语言混排（FB-547）；但排查
+      // 线索不能丢，与 recordFailure 同款格式先落一行日志再抛固定句。
+      console.warn(
+        `[CronService] Cloud job operation failed for ${definition.id}:`,
+        error instanceof Error ? error.message : String(error),
+      );
       throw new Error(this.deps.unavailableMessage(), { cause: error });
     }
   }
 
   private async recordFailure(definition: CronJobDefinition, cause: unknown): Promise<void> {
     const now = Date.now();
-    await this.deps.persistExecution({
+    const execution: CronJobExecution = {
       id: uuidv4(),
       jobId: definition.id,
       runsOn: 'cloud',
@@ -195,11 +209,15 @@ export class CronCloudRuntime {
       duration: 0,
       error: this.deps.unavailableMessage(),
       retryAttempt: 0,
-    });
+    };
+    await this.deps.persistExecution(execution);
     console.warn(
       `[CronService] Cloud job operation failed for ${definition.id}:`,
       cause instanceof Error ? cause.message : String(cause),
     );
+    // 落库成功才通知：云端调度器不可用时这是用户唯一的系统信号面；发不发、发什么
+    // 由 notifyCronAgentExecution 的门（动作类型/分类/冷却）决定，这里只负责接出来。
+    await this.deps.onFailureRecorded?.(definition, execution);
   }
 
   private async projectRun(run: CronApiRun): Promise<void> {

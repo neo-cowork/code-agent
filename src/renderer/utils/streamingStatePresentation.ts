@@ -11,7 +11,7 @@ export type RuntimeSessionStatus =
   | 'cancelled'
   | 'error';
 
-export type StreamingUiStatus =
+type StreamingUiStatus =
   | 'idle'
   | 'drafting'
   | 'using_tools'
@@ -22,7 +22,7 @@ export type StreamingUiStatus =
   | 'completed'
   | 'blocked';
 
-export type StreamingUiTone = 'neutral' | 'info' | 'success' | 'warning' | 'error';
+type StreamingUiTone = 'neutral' | 'info' | 'success' | 'warning' | 'error';
 
 export interface StreamingUiState {
   status: StreamingUiStatus;
@@ -81,6 +81,12 @@ export function hasIncompleteStreamSnapshot(
 export function hasCancelledRunMarker(turn: TraceTurn): boolean {
   return turn.nodes.some(
     (node) => node.metadata?.workbench?.runCancellation?.status === 'cancelled',
+  );
+}
+
+export function isIdleReapedRun(turn: TraceTurn): boolean {
+  return turn.nodes.some(
+    (node) => node.metadata?.workbench?.runCancellation?.reason === 'idle_reaped',
   );
 }
 

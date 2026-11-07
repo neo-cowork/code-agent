@@ -22,6 +22,14 @@ export const MEMORY = {
   FLUSH_CONFIDENCE: 0.8,
   /** preCompact flush: 查重时查询的 session_extracted 历史条数上限 */
   FLUSH_DEDUP_LOOKBACK: 200,
+  /** 记忆变更日志（N-MEM-JOURNAL-SOURCEJUMP）：before/after 快照 JSON 的截断上限 */
+  JOURNAL_SNAPSHOT_MAX_CHARS: 2_000,
+  /** 快照超限截断时拼在尾部的后缀（面板据此判定「截断快照不可完整恢复」，单一真源） */
+  JOURNAL_SNAPSHOT_TRUNCATED_SUFFIX: '…[truncated]',
+  /** 记忆变更日志：读接口默认返回条数 */
+  JOURNAL_DEFAULT_LIMIT: 50,
+  /** 记忆变更日志：读接口单次返回上限 */
+  JOURNAL_MAX_LIMIT: 200,
   /** Episodic FTS 索引的保留天数（超过此天数的消息触发 prune 可被清理） */
   EPISODIC_INDEX_RETENTION_DAYS: 90,
   /** EpisodicRecall 工具默认返回条数 */
@@ -68,36 +76,6 @@ export const MEMORY = {
   NEVER_USED_EVICTION_SINCE: Date.UTC(2026, 9, 16),
 } as const;
 
-/** 向量存储配置 */
-export const VECTOR_STORE = {
-  /** 最大文档数 */
-  MAX_DOCUMENTS: 10000,
-  /** 默认 TopK */
-  DEFAULT_TOP_K: 10,
-  /** 默认相似度阈值 */
-  DEFAULT_THRESHOLD: 0.7,
-  /** 分块大小 */
-  CHUNK_SIZE: 1000,
-  /** 分块重叠 */
-  CHUNK_OVERLAP: 100,
-} as const;
-
-/** Embedding 服务配置 */
-export const EMBEDDING = {
-  /** 最大缓存大小 */
-  MAX_CACHE_SIZE: 10000,
-  /** 批量处理大小 */
-  BATCH_SIZE: 100,
-} as const;
-
-/** 历史记录配置 */
-export const HISTORY = {
-  /** 使用记录最大条数 */
-  MAX_USAGE_HISTORY: 1000,
-  /** Token 记录最大条数 */
-  MAX_TOKEN_HISTORY: 1000,
-} as const;
-
 /** Swarm Trace 持久化（ADR-010 #5） */
 export const SWARM_TRACE = {
   /** 单次 list 默认返回 run 数量上限 */
@@ -128,20 +106,6 @@ export const TOOL_SCREENSHOTS = {
   NO_SESSION_DIR_NAME: 'no-session',
   /** 无会话上下文的调用方（convertToScreenshots）的 per-call 目录前缀，mkdtemp 补随机后缀 */
   PER_CALL_DIR_PREFIX: 'ppt-',
-} as const;
-
-/** 资源管理常量 */
-export const RESOURCE_MANAGEMENT = {
-  /** 磁盘空间警告阈值（1GB） */
-  DISK_WARNING_BYTES: 1024 * 1024 * 1024,
-  /** 磁盘空间临界阈值（100MB） */
-  DISK_CRITICAL_BYTES: 100 * 1024 * 1024,
-  /** 日志文件最大大小（10MB） */
-  LOG_MAX_FILE_SIZE: 10 * 1024 * 1024,
-  /** 日志文件最大数量 */
-  LOG_MAX_FILES: 10,
-  /** 优雅关闭超时（5秒） */
-  GRACEFUL_SHUTDOWN_TIMEOUT: 5_000,
 } as const;
 
 /** 后台任务日志按需读取限制。 */

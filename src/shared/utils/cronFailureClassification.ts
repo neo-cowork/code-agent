@@ -10,6 +10,7 @@
 
 import { parseCronLoginWallStop } from './browserLoginWall';
 import { classifyAgentError } from './agentErrorClassification';
+import { isCronCloudUnavailableError } from './cronCloudUnavailable';
 
 export const CRON_FAILURE_CODE = 'CRON_FAILURE' as const;
 
@@ -20,6 +21,7 @@ export type CronFailurePresentationKind =
   | 'auth'
   | 'network'
   | 'login_wall'
+  | 'cloud_unavailable'
   | 'other';
 
 export interface CronFailureClassification {
@@ -30,6 +32,7 @@ export interface CronFailureClassification {
   resetAt?: string;
 }
 
+const CRON_TIME_LIMIT_TEXT = /Cron job run exceeded its (\d+(?:\.\d+)?)s time limit\./;
 const QUOTA_TEXT = /\b1308\b|\b1310\b|usage limit/i;
 // 国内 provider 的 401 文案是中文（GLM 实测「令牌已过期或验证不正确」），classifyAgentError
 // 的英文关键词认不出就会漏成 other，这里补认这些**成句的鉴权措辞**。裸 401 不扫：错误原文是
@@ -92,6 +95,10 @@ export function classifyCronFailure(error?: string): CronFailureClassification {
   const text = error?.trim() ?? '';
   if (!text) return { kind: 'other' };
   if (parseCronLoginWallStop(text)) return { kind: 'login_wall' };
+  // 云端调度器不可用的固定句先于额度/鉴权/网络：executeJob 落库时会把 cause 报文
+  // （fetch failed / 401 等）追加在句子后面，先认固定句才不会被底因冲掉。
+  if (isCronCloudUnavailableError(text)) return { kind: 'cloud_unavailable' };
+  if (CRON_TIME_LIMIT_TEXT.test(text)) return { kind: 'timeout' };
   // 额度报文经常带着 HTTP 429。先认额度，避免被 classifyAgentError 收成 rate_limited。
   if (QUOTA_TEXT.test(text)) return quotaResult(text);
   if (AUTH_TEXT.test(text)) return { kind: 'auth' };
@@ -112,6 +119,8 @@ export function classifyCronFailure(error?: string): CronFailureClassification {
  * 落库用的失败原文。重试包装只留 "Retry stopped…"，服务商报文在 cause.responseBody 上；
  * 不把那段拼回来，执行详情就看不到 1308 / next_flush_time。
  * 普通 Error 没有 cause 时结果等于 message，登录墙码保持原样。
+ * 例外：云端调度器不可用的固定句是终点——cause 里是英文原始报文，拼进 execution.error
+ * 会让中文界面中英混排（FB-547）；底因由 CronCloudRuntime.runJob 落 console.warn。
  */
 export function cronFailureSourceText(error: unknown): string {
   if (typeof error === 'string') return error;
@@ -123,7 +132,12 @@ export function cronFailureSourceText(error: unknown): string {
   for (let depth = 0; depth < 6 && cursor != null && typeof cursor === 'object' && !seen.has(cursor); depth += 1) {
     seen.add(cursor);
     const record = cursor as { message?: unknown; responseBody?: unknown; cause?: unknown };
-    if (typeof record.message === 'string' && record.message) parts.push(record.message);
+    if (typeof record.message === 'string' && record.message) {
+      parts.push(record.message);
+      // 固定句自带完整人话指引，到此为止：再往下收就是把英文原始报文追加到
+      // 界面语言句子上（FB-547 中英混排）。存量混排行仍靠 classifyCronFailure 认固定句。
+      if (isCronCloudUnavailableError(record.message)) break;
+    }
     if (typeof record.responseBody === 'string') {
       const body = record.responseBody.trim();
       if (body && !parts.join('\n').includes(body)) parts.push(body);
