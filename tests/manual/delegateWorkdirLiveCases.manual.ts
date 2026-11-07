@@ -500,7 +500,7 @@ async function main(): Promise<void> {
         { role: 'user', content: prompt },
       ], 'required');
       const calls = turn.message.tool_calls ?? [];
-      log(`case f sub-agent glm model=${turn.model ?? 'unknown'} offered=${schema.name} calls=${calls.length}`);
+      log(`case f sub-agent model=${turn.model ?? 'unknown'} offered=${schema.name} calls=${calls.length}`);
       for (const call of calls) {
         const name = call.function?.name ?? '';
         fToolNames.push(name);
@@ -512,7 +512,7 @@ async function main(): Promise<void> {
         }]);
         log(`case f engine ${name} success=${results.every((result) => result.success)}`);
       }
-      check(calls.some((call) => call.function?.name === schema.name), `case f: GLM called ${schema.name}`);
+      check(calls.some((call) => call.function?.name === schema.name), `case f: model called ${schema.name}`);
       check(!existsSync(dirF), `case f: ${schema.name} did not materialize the planned dir`);
     }
     fSnapshot(snapshotOf('提醒、日程和邮件草稿均已通过连接器处理。', true));
