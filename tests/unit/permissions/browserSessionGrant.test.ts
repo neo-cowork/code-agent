@@ -19,25 +19,12 @@ vi.mock('../../../src/host/tools/dispatch/toolResolver', () => ({
   }),
 }));
 
-vi.mock('../../../src/host/services/infra/browserPool', () => ({
-  getBrowserService: () => ({
-    getActiveTab: () => (activeTabState.url ? { id: 'tab-1', url: activeTabState.url, title: 'Test' } : null),
-  }),
-}));
-
-vi.mock('../../../src/host/services/surfaceExecution/ManagedBrowserProviderAdapter', () => ({
-  surfaceIdentityFromToolContext: (context: { sessionId?: string; runId?: string; agentId?: string }) => (
-    context.sessionId && context.runId && context.agentId
-      ? { conversationId: context.sessionId, runId: context.runId, agentId: context.agentId }
-      : null
+vi.mock('../../../src/host/services/infra/browserGrantActiveUrlRegistry', () => ({
+  resolveBrowserGrantActiveUrl: (context?: { sessionId?: string; runId?: string; agentId?: string }) => (
+    context?.sessionId && context.runId && context.agentId
+      ? activeTabState.surfaceUrl
+      : activeTabState.url
   ),
-  getManagedBrowserProviderAdapter: () => ({
-    getBrowserService: () => ({
-      getActiveTab: () => (activeTabState.surfaceUrl
-        ? { id: 'surface-tab-1', url: activeTabState.surfaceUrl, title: 'Surface Test' }
-        : null),
-    }),
-  }),
 }));
 
 vi.mock('../../../src/host/platform', async (importOriginal) => {

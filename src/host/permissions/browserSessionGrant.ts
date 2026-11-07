@@ -12,8 +12,7 @@
 
 import { getStrictBrowserComputerActionCatalogForArgs, normalizeBrowserComputerCatalogToolName } from '../../shared/utils/browserComputerActionCatalog';
 import type { ToolContext } from '../tools/types';
-import { getBrowserService } from '../services/infra/browserPool';
-import { getManagedBrowserProviderAdapter, surfaceIdentityFromToolContext } from '../services/surfaceExecution/ManagedBrowserProviderAdapter';
+import { resolveBrowserGrantActiveUrl } from '../services/infra/browserGrantActiveUrlRegistry';
 
 const GRANTABLE_BROWSER_ACTIONS = new Set([
   'handle_dialog',
@@ -75,13 +74,7 @@ export function resolveBrowserGrantScope(
 
   let rawUrl = params?.url;
   if (entry.action !== 'open') {
-    const surfaceIdentity = browserContext
-      ? surfaceIdentityFromToolContext(browserContext)
-      : null;
-    const service = surfaceIdentity
-      ? getManagedBrowserProviderAdapter().getBrowserService(surfaceIdentity)
-      : getBrowserService(browserContext?.agentId);
-    rawUrl = service.getActiveTab()?.url;
+    rawUrl = resolveBrowserGrantActiveUrl(browserContext);
   }
   const origin = parseHttpOrigin(rawUrl);
   if (!origin) return null;

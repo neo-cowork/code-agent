@@ -10,6 +10,10 @@
 
 import { BROWSER_TIMEOUTS } from '../../../shared/constants/timeouts';
 import { BrowserService, browserService as defaultBrowserService } from './browserService';
+import {
+  forgetLegacyBrowserGrantSource,
+  rememberLegacyBrowserGrantSource,
+} from './browserGrantActiveUrlRegistry';
 
 /** Pool key for the default / personal managed browser singleton. */
 const DEFAULT_AGENT_KEY = '__default__';
@@ -80,6 +84,7 @@ export class BrowserPool {
     const entry = this.entries.get(agentId);
     if (!entry) return;
     this.entries.delete(agentId);
+    forgetLegacyBrowserGrantSource(agentId);
     await entry.service.close().catch(() => undefined);
   }
 
@@ -108,6 +113,7 @@ export class BrowserPool {
 
     const [evictKey, evictEntry] = reclaimable[0];
     this.entries.delete(evictKey);
+    forgetLegacyBrowserGrantSource(evictKey);
     void evictEntry.service.close().catch(() => undefined);
   }
 }
@@ -115,7 +121,9 @@ export class BrowserPool {
 export const browserPool = new BrowserPool();
 
 export function getBrowserService(agentId?: string | null): BrowserService {
-  return browserPool.acquire(agentId);
+  const service = browserPool.acquire(agentId);
+  rememberLegacyBrowserGrantSource(agentId, service);
+  return service;
 }
 
 const boundBrowserPoolReleaseGuards = new WeakSet<object>();

@@ -19,6 +19,11 @@ import type {
 } from '../../../shared/contract/surfaceExecution';
 import { SURFACE_USER_BROWSER_AGENT_ID } from '../../../shared/contract/surfaceExecution';
 import { createLogger } from '../infra/logger';
+import {
+  forgetBrowserGrantSurface,
+  forgetBrowserGrantSurfacesForConversation,
+  rememberBrowserGrantSurface,
+} from '../infra/browserGrantActiveUrlRegistry';
 
 const organicNavLogger = createLogger('ManagedBrowserOrganicNav');
 import {
@@ -238,7 +243,9 @@ export class ManagedBrowserProviderAdapter {
   getBrowserService(identity: SurfaceRuntimeIdentityV1): BrowserService {
     const key = managedBrowserServiceKey(identity);
     // Default pool key is acquired via null so BrowserService keeps unsuffixed personal profile.
-    return this.acquireBrowser(key === MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY ? null : key);
+    const service = this.acquireBrowser(key === MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY ? null : key);
+    rememberBrowserGrantSurface(identity, service);
+    return service;
   }
 
   getBinding(identity: SurfaceRuntimeIdentityV1): Readonly<ManagedBrowserBinding> | null {
@@ -247,6 +254,7 @@ export class ManagedBrowserProviderAdapter {
   }
 
   async clearConversationResumeState(conversationId: string): Promise<void> {
+    forgetBrowserGrantSurfacesForConversation(conversationId);
     await this.resumeStateStore.clearConversation(conversationId);
   }
 
@@ -392,6 +400,7 @@ export class ManagedBrowserProviderAdapter {
         await this.runtime.control(this.subject(binding), 'end_session');
         session = this.runtime.sessions.requireOwned(binding.surfaceSessionId, this.subject(binding));
         this.bindings.delete(this.ownerKey(input.identity));
+        forgetBrowserGrantSurface(input.identity);
       }
       let providerResult = wrapped.providerResult;
       // Must run after the operation ended: takeover aborts every in-flight operation of this run+agent.
@@ -644,6 +653,7 @@ export class ManagedBrowserProviderAdapter {
       abortShutdownError = error;
     }
     if (this.bindings.get(key) === binding) this.bindings.delete(key);
+    forgetBrowserGrantSurface(binding.identity);
     const stillShared = Array.from(this.bindings.values()).some((candidate) => (
       candidate.serviceKey === binding.serviceKey
       && candidate.browserService === binding.browserService
