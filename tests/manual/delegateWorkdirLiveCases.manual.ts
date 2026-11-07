@@ -162,19 +162,14 @@ function summarizeCall(call: GlmToolCall): string {
   return `${name} ${args.slice(0, 240)}`;
 }
 
-function lsRaw(target: string): string {
+function lsRaw(target: string, option = '-la'): string {
   try {
-    return execFileSync('ls', ['-la', target], { encoding: 'utf8' });
+    const output = execFileSync('ls', [option, target], { encoding: 'utf8' });
+    return option === '-A' ? output.trim() || '<empty>' : output;
   } catch (error) {
     const failed = error as { stdout?: string; stderr?: string; message?: string };
     return `${failed.stdout ?? ''}${failed.stderr ?? failed.message ?? 'ls failed'}`;
   }
-}
-
-function lsARaw(target: string): string {
-  if (!existsSync(target)) return '<missing>';
-  const output = execFileSync('ls', ['-A', target], { encoding: 'utf8' }).trim();
-  return output || '<empty>';
 }
 
 interface EngineBundle {
@@ -447,7 +442,7 @@ async function main(): Promise<void> {
     mkdirSync(root, { recursive: true });
     const rootBeforeF = readdirSync(root).sort();
     log('--- case f ls -A default root BEFORE ---');
-    log(lsARaw(root));
+    log(lsRaw(root, '-A'));
 
     const seedProject = path.join(tempHome, 'existing-project-for-skill-watcher');
     mkdirSync(seedProject, { recursive: true });
@@ -525,7 +520,7 @@ async function main(): Promise<void> {
     log(`case f connector tools=${fToolNames.join(',')}`);
     const rootAfterF = readdirSync(root).sort();
     log('--- case f ls -A default root AFTER sub-agent completed ---');
-    log(lsARaw(root));
+    log(lsRaw(root, '-A'));
     check(JSON.stringify(rootAfterF) === JSON.stringify(rootBeforeF), 'case f: default root listing is identical before/after');
     check(!existsSync(dirF), 'case f: completed connector-only background task leaves NO 任务_ folder');
 
