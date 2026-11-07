@@ -217,4 +217,37 @@ describe('后台任务自己的 run 结束 → 卡收走（stale-card guard）',
     expect(useAppStore.getState().pendingPermissionRequest).toBeNull();
     expect(useAppStore.getState().resolvedPermissionRequests['session-main']).toBeUndefined();
   });
+
+  it('宿主整岛 drain（取消/断连/新消息）发出的 resolved permission_request 收掉后台卡且不进本机已决存证', () => {
+    const { deps } = createProductionDeps('session-main');
+    const bgPending = backgroundPermissionRequest('bg-drained-pending');
+    const bgQueued = backgroundPermissionRequest('bg-drained-queued');
+    applyPermissionQueueEvent(
+      { type: 'permission_request', data: bgPending, sessionId: 'session-main' },
+      deps,
+    );
+    applyPermissionQueueEvent(
+      { type: 'permission_request', data: bgQueued, sessionId: 'session-main' },
+      deps,
+    );
+    expect(useAppStore.getState().pendingPermissionRequest?.id).toBe('bg-drained-pending');
+    expect(useAppStore.getState().queuedPermissionRequests['session-main']?.map((r) => r.id)).toEqual(['bg-drained-queued']);
+
+    // 宿主 drain 对每条被解除的请求发出 { ...request, resolved: true }（无 decision）
+    applyPermissionQueueEvent(
+      { type: 'permission_request', data: { ...bgPending, resolved: true }, sessionId: 'session-main' },
+      deps,
+    );
+    applyPermissionQueueEvent(
+      { type: 'permission_request', data: { ...bgQueued, resolved: true }, sessionId: 'session-main' },
+      deps,
+    );
+
+    // 即使随后到达 agent_cancelled，后台卡也早已被 dismiss 收掉，不留死卡，也不记进本机已决存证。
+    applyPermissionQueueEvent({ type: 'agent_cancelled', data: null, sessionId: 'session-main' }, deps);
+
+    expect(useAppStore.getState().pendingPermissionRequest).toBeNull();
+    expect(useAppStore.getState().queuedPermissionRequests['session-main']).toBeUndefined();
+    expect(useAppStore.getState().resolvedPermissionRequests['session-main']).toBeUndefined();
+  });
 });

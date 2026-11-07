@@ -393,9 +393,20 @@ export class OrchestratorPermissionIsland {
           logger.warn(`Parked approval cancel-resolve failed for ${id}`, err);
         }
       }
+      this.pendingPermissions.delete(id);
+      // 宿主整岛 drain 会解除后台 lane 挂起的审批，而渲染层在 run 终态已保留带
+      // runId/agentId 的卡：对每条被解除的请求发一条 resolved 的 permission_request，
+      // 让渲染层用 dismissPermissionRequest 收卡，避免留下点击即 unknown_request 的死卡。
+      try {
+        this.onEvent({
+          type: 'permission_request',
+          data: { ...entry.request, resolved: true },
+        });
+      } catch (err) {
+        logger.warn('Drained permission event could not be emitted; resolving cancelled anyway', err);
+      }
       // 取消/新消息统一解除 ≠ 用户拒绝（N-PERMTRACE）。
       entry.resolve(response, 'cancelled');
-      this.pendingPermissions.delete(id);
     }
     logger.info(`Drained ${count} pending permission(s)`, { response });
   }

@@ -177,4 +177,42 @@ describe('前台 run 结束后，后台 lane 的审批在宿主仍 pending（N-S
     expect((await backgroundPromise).approved).toBe(true);
     expect(island.hasPendingRequests()).toBe(false);
   });
+
+  it('整岛 drain（取消/断连/新消息到达）对每条被解除的请求发出 resolved permission_request 以便渲染层收卡', async () => {
+    const events: AgentEvent[] = [];
+    const island = new OrchestratorPermissionIsland({
+      getSettings: settings,
+      isDevModeAutoApproveEnabled: () => false,
+      getExecutionTopology: () => 'async_agent',
+      hasApprovalUi: () => true,
+      onEvent: (event) => events.push(event),
+    });
+    const backgroundPromise = island.requestPermission({
+      type: 'command',
+      tool: 'bash',
+      details: { command: 'echo bg-drain' },
+      sessionId: 'drain-session',
+      agentId: 'bg-agent-1',
+      runId: 'bg-run-1',
+      forceConfirm: true,
+    });
+    const [bgRequest] = island.listPendingRequests();
+    expect(bgRequest).toBeDefined();
+    events.length = 0;
+
+    // 取消 / SSE 断连 / 同会话新 run 注册：整岛 drain
+    island.drainPendingPermissions('deny');
+
+    const result = await backgroundPromise;
+    expect(result.approved).toBe(false);
+    expect(result.denialSource).toBe('cancelled');
+    expect(island.hasPendingRequests()).toBe(false);
+    expect(events).toContainEqual({
+      type: 'permission_request',
+      data: {
+        ...bgRequest,
+        resolved: true,
+      },
+    });
+  });
 });

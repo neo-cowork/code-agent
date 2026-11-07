@@ -119,9 +119,10 @@ export function applyPermissionQueueEvent(
       if (!permissionRequest) {
         break;
       }
-      // 手机（companion）先答的终态回传：桌面只收卡——pending 和队列里这条都撤掉，
-      // 但不进 recordPermissionDecision，那会把别处做的决定记成本机点击的存证。
-      if (permissionRequest.resolved && permissionRequest.resolvedBy === 'companion') {
+      // 手机（companion）先答，或宿主整岛 drain（取消/断连/新消息到达）解除挂起审批的终态回传：
+      // 桌面只收卡——pending 和队列里这条都撤掉，但不进 recordPermissionDecision，
+      // 那会把别处做的决定或机器取消记成本机点击的存证。
+      if (permissionRequest.resolved && (permissionRequest.resolvedBy === 'companion' || !permissionRequest.decision)) {
         deps.dismissPermissionRequest(permissionRequest.id);
         break;
       }

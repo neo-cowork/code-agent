@@ -917,10 +917,15 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     // N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO：后台 lane 的审批可以在 run 收线**之后**
     // 才抛（ask 晚于 finalize 几秒）。收线清理看到「岛上无 pending」已把岛注销，迟到的
     // permission_request 照常发事件，但注册表里没有这座岛——快照补全列不出它、点击应答
-    // 落 unknown_request。收线后岛再抛审批时把**自己**挂回注册表；新 run 已注册自己的岛
-    // 时 reregister 不回占。流开着时的常规事件一个字节都不变。
+    // 落 unknown_request。收线后岛再抛未裁决审批时把**自己**挂回注册表；新 run 已注册
+    // 自己的岛时 reregister 不回占，且 resolved 收卡事件（超时/drain）绝不把空岛挂回。
     const emitIslandEvent = (event: AgentEvent): void => {
-      if (event.type === 'permission_request' && runController.settled && foregroundPermissionIsland) {
+      if (
+        event.type === 'permission_request'
+        && !event.data?.resolved
+        && runController.settled
+        && foregroundPermissionIsland
+      ) {
         reregisterForegroundPermissionIsland(sessionId, foregroundPermissionIsland);
       }
       runController.emitAgentEvent(event);

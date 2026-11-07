@@ -97,4 +97,48 @@ describe('reregisterForegroundPermissionIsland（迟到的后台审批把岛挂�
       unregisterForegroundPermissionIsland(sessionId, oldIsland);
     }
   });
+
+  it('同会话新 run 注册时整岛 drain 旧岛，并对旧岛挂起的后台审批发出 resolved 事件供渲染层收卡', async () => {
+    const oldEvents: Array<{ type: string; data: unknown }> = [];
+    const oldIsland = new OrchestratorPermissionIsland({
+      getSettings: configServiceStub.getSettings as never,
+      isDevModeAutoApproveEnabled: configServiceStub.isDevModeAutoApproveEnabled,
+      getExecutionTopology: () => 'async_agent',
+      hasApprovalUi: () => true,
+      onEvent: (event) => { oldEvents.push(event); },
+    });
+    const newRunIsland = makeIsland();
+    try {
+      registerForegroundPermissionIsland(sessionId, oldIsland);
+      const bgApproval = oldIsland.requestPermission({
+        type: 'command',
+        tool: 'bash',
+        sessionId,
+        agentId: 'bg-agent-1',
+        runId: 'bg-run-1',
+        forceConfirm: true,
+        details: { command: 'echo bg' },
+      });
+      const [bgRequest] = oldIsland.listPendingRequests();
+      expect(bgRequest).toBeDefined();
+      oldEvents.length = 0;
+
+      // 同会话新 run 注册：旧岛被 drain 解除，且发出 resolved 事件让渲染层用 dismissPermissionRequest 收卡
+      registerForegroundPermissionIsland(sessionId, newRunIsland);
+
+      await expect(bgApproval).resolves.toEqual({ approved: false, denialSource: 'cancelled' });
+      expect(oldEvents).toContainEqual({
+        type: 'permission_request',
+        data: {
+          ...bgRequest,
+          resolved: true,
+        },
+      });
+    } finally {
+      oldIsland.drainPendingPermissions();
+      newRunIsland.drainPendingPermissions();
+      unregisterForegroundPermissionIsland(sessionId, newRunIsland);
+      unregisterForegroundPermissionIsland(sessionId, oldIsland);
+    }
+  });
 });
