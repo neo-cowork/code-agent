@@ -116,4 +116,12 @@ describe('toolOutputCompletenessWarning', () => {
     expect(replaceCompletenessWarningInOutput('Edit', raw, { completenessIssues: [] }, 'REPLACED')).toBe(raw);
     expect(replaceCompletenessWarningInOutput('Bash', raw, { completenessIssues: ['issue'] }, 'REPLACED')).toBe(raw);
   });
+
+  it('accepts completenessIssues from nested artifact metadata', () => {
+    const raw = 'Created file: /tmp/demo.ts\n\n⚠️ **代码完整性警告**: hidden';
+    const metadata = { artifact: { metadata: { completenessIssues: ['issue'] } } };
+    expect(replaceCompletenessWarningInOutput('Write', raw, metadata, 'REPLACED')).toBe(
+      'Created file: /tmp/demo.ts\n\nREPLACED',
+    );
+  });
 });

@@ -408,12 +408,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                       : result.error
                         ? stripAnsiCodes(result.error)
                         : typeof result.output === 'string'
-                          ? replaceCompletenessWarningInOutput(
-                              name,
-                              cleanToolResultDisplayText(name, stripAnsiCodes(result.output), copy),
-                              result.metadata,
-                              t.rendererHumanPipe.toolDetails.completenessWarningNote,
-                            )
+                          ? replaceCompletenessWarningInOutput(name, cleanToolResultDisplayText(name, stripAnsiCodes(result.output), copy), result.metadata, t.rendererHumanPipe.toolDetails.completenessWarningNote)
                           : JSON.stringify(result.output, null, 2)
                   }
                   lineCap={isShellTool(name) ? SHELL_RESULT_BODY_LINE_CAP : RESULT_BODY_LINE_CAP}
