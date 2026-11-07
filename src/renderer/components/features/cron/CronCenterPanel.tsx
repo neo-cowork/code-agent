@@ -392,6 +392,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
               <div className="min-w-0">
                 <CronExecutionDetail
                   execution={selectedExecution}
+                  jobName={selectedExecution ? jobNameById[selectedExecution.jobId] : undefined}
                   runsOn={selectedExecution?.runsOn ?? (selectedExecution ? runsOnByJobId[selectedExecution.jobId] : undefined)}
                   awaitingRun={selectedExecution ? awaitingByJobId.get(selectedExecution.jobId) ?? null : null}
                   onReviewAwaiting={() => setActiveTab('runs')}

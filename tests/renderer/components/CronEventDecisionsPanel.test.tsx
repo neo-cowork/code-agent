@@ -52,11 +52,11 @@ const decisions: CronEventDecision[] = [
     runId: 'run-1', tool: 'mail_send', target: 'client@example.com', summary: 'Re: invoice — We will refund you today.', createdAt: 3,
   },
   {
-    id: 'd2', jobId: 'job-listen', kind: 'event', eventId: 'm-7', decision: 'would_act', reason: '客户要求退款', runId: 'run-1',
+    id: 'd2', jobId: 'job-listen', kind: 'event', eventId: '323e4567-e89b-42d3-a456-426614174002', decision: 'would_act', reason: '客户要求退款', runId: 'run-1',
     matchedRule: 'mail message · account _icloud · mailbox INBOX', createdAt: 2,
   },
   {
-    id: 'd3', jobId: 'job-listen', kind: 'event', eventId: 'm-8', decision: 'ignored', reason: '广告邮件', runId: 'run-1',
+    id: 'd3', jobId: 'job-listen', kind: 'event', eventId: '423e4567-e89b-42d3-a456-426614174003', decision: 'ignored', reason: '广告邮件', runId: 'run-1',
     matchedRule: 'mail message · account _icloud · mailbox INBOX', createdAt: 1,
   },
 ];
@@ -102,6 +102,8 @@ describe('CronEventDecisionsPanel (via CronJobDetail)', () => {
     expect(generalRows[0].textContent).toContain('广告邮件');
     expect(within(generalRows[0]).getByTestId('cron-event-decision-rule').textContent)
       .toContain('mail message · account _icloud · mailbox INBOX');
+    expect(section.textContent).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/i);
+    expect(generalRows[0].textContent).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/i);
   });
 
   it('switch to auto opens a confirm modal; cancelling does not call the host', async () => {

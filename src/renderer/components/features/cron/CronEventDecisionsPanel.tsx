@@ -84,7 +84,7 @@ export const CronEventDecisionsPanel: React.FC<{ job: CronJobDefinition }> = ({ 
         <span className="text-zinc-500">
           {row.kind === 'action'
             ? copy.actionLabel.replace('{tool}', row.tool ?? '')
-            : copy.eventLabel.replace('{id}', row.eventId ?? '')}
+            : copy.eventLabel}
         </span>
         {row.target && <span className="text-zinc-500">{copy.targetLabel.replace('{target}', row.target)}</span>}
         <span className="ml-auto text-zinc-600">{formatDateTime(row.createdAt, language)}</span>

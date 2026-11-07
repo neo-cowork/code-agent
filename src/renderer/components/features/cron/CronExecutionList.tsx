@@ -93,7 +93,7 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
                 >
                   {jobNameById && (
                     <td className={`max-w-[200px] truncate text-zinc-200 ${tdClass}`}>
-                      {jobNameById[execution.jobId] || execution.jobId}
+                      {jobNameById[execution.jobId] ?? cc.deletedTask}
                     </td>
                   )}
                   <td className={`whitespace-nowrap ${tdClass}`}>

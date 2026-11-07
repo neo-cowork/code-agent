@@ -54,6 +54,7 @@ function failureAction(kind: CronFailurePresentationKind): 'model' | 'account' |
 
 interface CronExecutionDetailProps {
   execution: CronJobExecution | null;
+  jobName?: string;
   runsOn?: CronJobDefinition['runsOn'];
   /** 等批准运行（N-CRON-UNATTENDED-BASH-PARK-STUCK）：状态 chip 换 amber 徽章 + 一句提示 + 去处理。 */
   awaitingRun?: { executionId: string | null; commandPreview?: string } | null;
@@ -62,6 +63,7 @@ interface CronExecutionDetailProps {
 
 export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
   execution,
+  jobName,
   runsOn = 'local',
   awaitingRun = null,
   onReviewAwaiting,
@@ -69,6 +71,11 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
   const { t, language } = useI18n();
   const cc = t.cronCenter;
   const switchSession = useSessionStore((state) => state.switchSession);
+  const sessionTitle = useSessionStore((state) => (
+    execution?.sessionId
+      ? state.sessions.find((session) => session.id === execution.sessionId)?.title
+      : undefined
+  ));
   const setShowCronCenter = useAppStore((state) => state.setShowCronCenter);
   const [isOpeningSession, setIsOpeningSession] = useState(false);
   const [isRerunning, setIsRerunning] = useState(false);
@@ -149,7 +156,9 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h4 className="text-sm font-medium text-zinc-100">{cc.execDetailTitle}</h4>
-          <p className="mt-1 text-xs text-zinc-500">{execution.id}</p>
+          <p className="mt-1 text-xs text-zinc-500">
+            {jobName ?? cc.deletedTask} · {formatDateTime(execution.startedAt ?? execution.scheduledAt, language)}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           {execution.sessionId && (
@@ -204,7 +213,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
       )}
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <Info label={cc.execSession} value={execution.sessionId || '—'} />
+        <Info label={cc.execSession} value={execution.sessionId ? (sessionTitle ?? cc.linkedSession) : '—'} />
         <div className="rounded-lg border border-zinc-800 bg-zinc-900/70 p-3">
           <div className="text-xs text-zinc-500">{cc.execLocation}</div>
           <div className="mt-1">
