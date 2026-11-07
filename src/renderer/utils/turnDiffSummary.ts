@@ -60,7 +60,7 @@ export function isFileChangeCardOwnedNode(node: TraceNode): boolean {
   const tc = node.toolCall;
   if (!FILE_WRITE_TOOLS.includes(tc.name)) return false;
   if (!hasCompletedSuccessfulResult(tc)) return false;
-  if (hasCompletenessIssues(node.metadata)) return false;
+  if (hasCompletenessIssues(tc.metadata)) return false;
   return resolveFileChangePath(tc) !== null;
 }
 
