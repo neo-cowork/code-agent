@@ -12,6 +12,7 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
 import { getNativeDesktopPermissionStatus, isNativeDesktopAvailable } from '../services/nativeDesktop';
 import { toast } from '../hooks/useToast';
+import { OS_NOTIFICATION_TIMEOUTS } from '@shared/constants';
 
 const FOREGROUND_FAILURE_TOAST_MS = 10_000;
 
@@ -20,12 +21,22 @@ type OsNotificationPermission = 'granted' | 'denied' | 'unknown';
 type OsNotificationPermissionSnapshot = {
   permission: OsNotificationPermission;
   platform: string | null;
+  permissionReadTimedOut?: true;
 };
 
 export async function getOsNotificationPermissionSnapshot(): Promise<OsNotificationPermissionSnapshot> {
   if (!isNativeDesktopAvailable()) return { permission: 'unknown', platform: null };
   try {
-    const snapshot = await getNativeDesktopPermissionStatus();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<'timeout'>((resolve) => {
+      timer = setTimeout(() => resolve('timeout'), OS_NOTIFICATION_TIMEOUTS.PERMISSION_READ_MS);
+    });
+    const raced = await Promise.race([getNativeDesktopPermissionStatus(), timeout]).finally(() => clearTimeout(timer));
+    if (raced === 'timeout') {
+      console.warn('[osNotification] 读取系统通知权限超时，按 unknown 继续发送');
+      return { permission: 'unknown', platform: null, permissionReadTimedOut: true };
+    }
+    const snapshot = raced;
     const status = snapshot.permissions.find((permission) => permission.kind === 'notifications')?.status;
     return {
       permission: status === 'granted' || status === 'denied' ? status : 'unknown',
@@ -41,6 +52,11 @@ export async function getOsNotificationPermission(): Promise<OsNotificationPermi
 }
 
 /** 把原生通知投递结果回报主进程（落日志，便于诊断「没弹」）。fire-and-forget。 */
+/** 供 hook 在未走 postOsNotification 的早退分支里留痕。 */
+export function reportNotificationHandled(report: Record<string, unknown>): void {
+  reportDelivery(report);
+}
+
 function reportDelivery(report: Record<string, unknown>): void {
   try {
     void ipcService.invokeDomain(IPC_DOMAINS.NOTIFICATION, 'reportClientDelivery', report);
@@ -55,26 +71,6 @@ function loadModule(): Promise<NotifModule> {
   return modulePromise;
 }
 
-async function ensureTauriPermission(mod: NotifModule): Promise<boolean> {
-  let granted = await mod.isPermissionGranted();
-  if (!granted) {
-    granted = (await mod.requestPermission()) === 'granted';
-  }
-  return granted;
-}
-
-/** 主动请求系统通知授权。用于设置页或测试通知这类明确用户动作，不在 app 启动时预先弹权限。 */
-export async function requestOsNotificationPermission(): Promise<boolean> {
-  if (!isTauriMode()) return false;
-  try {
-    const mod = await loadModule();
-    return await ensureTauriPermission(mod);
-  } catch (err) {
-    console.warn('[osNotification] 主动请求通知授权失败', err);
-    return false;
-  }
-}
-
 /**
  * 焦点门控：窗口聚焦且页面可见时，用户正盯着 app，OS 弹窗与应用内反馈（侧栏
  * 未读红点/会话内提示）重复，只打扰不传信 —— 抑制。失焦或页面不可见才放行。
@@ -86,7 +82,30 @@ export function shouldSuppressOsNotification(hasFocus: boolean, visible: boolean
 /** 发一条原生系统通知。Tauri 下自动带 Agent Neo 图标/身份；web 回落浏览器通知。 */
 export async function postOsNotification(
   opts: { title: string; body: string },
-  flags: { urgent?: boolean; failure?: boolean; viewingSession?: boolean; onOpen?: () => void; openLabel?: string } = {},
+  flags: PostFlags = {},
+): Promise<void> {
+  // 每次调用恰好一条回报：任何抛错都兜底成一条带 error 的回报。
+  let reported = false;
+  const report = (r: Record<string, unknown>): void => {
+    reported = true;
+    reportDelivery(r);
+  };
+  try {
+    await postOsNotificationInner(opts, flags, report);
+  } catch (err) {
+    console.warn('[osNotification] postOsNotification 异常', err);
+    if (!reported) {
+      report({ mode: isTauriMode() ? 'tauri' : 'web', error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+}
+
+type PostFlags = { urgent?: boolean; failure?: boolean; viewingSession?: boolean; onOpen?: () => void; openLabel?: string };
+
+async function postOsNotificationInner(
+  opts: { title: string; body: string },
+  flags: PostFlags,
+  reportDelivery: (r: Record<string, unknown>) => void,
 ): Promise<void> {
   const urgent = flags.urgent === true;
   const hasFocus = typeof document !== 'undefined' && document.hasFocus();
@@ -116,7 +135,8 @@ export async function postOsNotification(
   const toastFlag = toastShown ? { toastShown: true } : {};
   if (isTauriMode()) {
     try {
-      const permission = await getOsNotificationPermission();
+      const { permission, permissionReadTimedOut } = await getOsNotificationPermissionSnapshot();
+      const timeoutFlag = permissionReadTimedOut ? { permissionReadTimedOut: true } : {};
       if (permission === 'denied') {
         reportDelivery({ mode: 'tauri', granted: false, dispatched: false, ...(urgent ? { urgent } : {}), ...toastFlag });
         return;
@@ -128,6 +148,7 @@ export async function postOsNotification(
         mode: 'tauri',
         ...(permission === 'granted' ? { granted: true } : { permission: 'unknown' }),
         dispatched: true,
+        ...timeoutFlag,
         ...(urgent ? { urgent } : {}),
         ...toastFlag,
       });
