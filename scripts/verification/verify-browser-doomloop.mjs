@@ -18,7 +18,7 @@ const prompt = [
   `2. 点击导航进入 Form 页，在 Name 输入框输入 Neo，点击 Greet，读出页面显示的问候语。`,
   `3. 进入 Reveal 页，点击 Show secret 按钮，读出 Secret code B。`,
   `4. 进入 Delayed 页，等页面状态变成 ready（页面约 4 秒后才变化，需要等待并重新读取），读出 Secret code C。`,
-  `5. 进入 Submit 页，在 Receipt name 输入框输入 Neo Submit，点击 Send form，读出 POST receipt 和 Submission code。`,
+  `5. 进入 Submit 页，在 Receipt name 输入框输入 Neo Submit，点击 Finish，读出 POST receipt 和 Submission code。`,
   `6. 最后汇总 A、B、C、Submission code、问候语和 POST receipt。`,
 ].join('\n');
 

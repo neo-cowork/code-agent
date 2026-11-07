@@ -13,7 +13,7 @@ const pages = {
   '/reveal': () => page('Fixture Reveal', '<button id="reveal" onclick="document.getElementById(\'secret\').textContent=\'Secret code B: BRAVO-42\'">Show secret</button><p id="secret"></p>'),
   // Same URL, text changes ~4s after load: re-reading with identical args yields different results.
   '/delayed': () => page('Fixture Delayed', '<p id="status">Status: loading</p><script>setTimeout(()=>{document.getElementById("status").textContent="Status: ready. Secret code C: CHARLIE-99"},4000)</script>'),
-  '/submit': () => page('Fixture Submit', '<form method="post" action="/submitted"><label>Receipt name <input id="receipt-name" name="receiptName"></label><button id="submit-form">Send form</button></form>'),
+  '/submit': () => page('Fixture Submit', '<form method="post" action="/submitted"><label>Receipt name <input id="receipt-name" name="receiptName"></label><button id="finish-form">Finish</button></form>'),
   '/upload': () => page('Fixture Upload', '<input type="file" id="f"><p>Upload any file to continue.</p>'),
 };
 
