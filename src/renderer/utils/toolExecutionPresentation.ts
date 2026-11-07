@@ -354,7 +354,7 @@ export function humanizeToolError(
     });
     const outcome = structuredFailureCode === AgentFailureCode.Timeout
       ? t.outcomeWords['failed-timeout'].timeline
-      : structuredFailureCode === AgentFailureCode.PermissionDenied
+      : structuredFailureCode === AgentFailureCode.PermissionDenied && metadata?.code !== 'FOREIGN_SLOT_DATA_DIR'
         ? t.outcomeWords['failed-approval-denied'].timeline
         : null;
     return {

@@ -908,6 +908,7 @@ export class ToolExecutor {
           failureCode: AgentFailureCode.PermissionDenied,
           slotName: slotAccess.slotName,
           slotRoot: slotAccess.slotRoot,
+          hostReason: createHostReason(HostReasonCode.ForeignDataDir, slotAccess.reason),
         },
       };
     }

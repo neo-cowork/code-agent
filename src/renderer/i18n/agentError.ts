@@ -45,6 +45,9 @@ const hostReasonZh = {
   [HostReasonCode.OsSandboxApplied]: { summary: '命令将在操作系统沙箱中执行' },
   [HostReasonCode.OsSandboxDegraded]: { summary: '操作系统沙箱未套用，将在无隔离环境下执行' },
   [HostReasonCode.OsSandboxUnavailable]: { summary: '操作系统沙箱不可用，已拒绝执行' },
+  [HostReasonCode.UploadExpired]: { summary: '这个上传的文件已过期，读取不了', detail: '请重新上传该文件。' },
+  [HostReasonCode.ToolArgsInvalid]: { summary: '{toolName}的调用缺少必要信息，没有执行' },
+  [HostReasonCode.ForeignDataDir]: { summary: '这是 Neo 另一份独立数据目录，当前不能直接读取', detail: '需要的话，直接告诉 Neo 你想找什么。' },
 } satisfies Record<HostReasonCode, { summary: string; detail?: string }>;
 
 const hostReasonEn: typeof hostReasonZh = {
@@ -90,6 +93,9 @@ const hostReasonEn: typeof hostReasonZh = {
   [HostReasonCode.OsSandboxApplied]: { summary: 'The command will run inside the OS sandbox' },
   [HostReasonCode.OsSandboxDegraded]: { summary: 'The OS sandbox was not applied; the command will run without isolation' },
   [HostReasonCode.OsSandboxUnavailable]: { summary: 'The OS sandbox is unavailable, so the command was refused' },
+  [HostReasonCode.UploadExpired]: { summary: 'This uploaded file has expired and cannot be read', detail: 'Please upload the file again.' },
+  [HostReasonCode.ToolArgsInvalid]: { summary: '{toolName} was missing required details and did not run' },
+  [HostReasonCode.ForeignDataDir]: { summary: 'This is another separate Neo data directory and cannot be read directly', detail: 'If you need something from it, just tell Neo what you are looking for.' },
 };
 // agentError 域词条（AgentErrorCard 会话区错误卡片）—— zh/en 同文件相邻维护。
 // 卡片文案按 category 表驱动：title 一句话说发生了什么，suggestion 给建议动作，

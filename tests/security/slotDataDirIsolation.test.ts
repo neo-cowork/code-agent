@@ -15,6 +15,7 @@ vi.mock('../../src/host/tools/shell/dynamicDescription', () => ({
 }));
 
 import { getUserConfigDir } from '../../src/host/config/configPaths';
+import { HostReasonCode } from '../../src/shared/contract/permission';
 import {
   collectForeignSlotTraversalExcludes,
   evaluateToolSlotDataDirAccess,
@@ -105,6 +106,10 @@ describe('槽数据目录读隔离', () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain(`这是另一个槽（${slotName}）的数据目录，当前槽无权读取`);
     expect(result.metadata?.code).toBe(FOREIGN_SLOT_DATA_DIR_CODE);
+    expect(result.metadata?.hostReason).toEqual({
+      code: HostReasonCode.ForeignDataDir,
+      modelText: result.error,
+    });
   }
 
   it('当前槽就是 getUserConfigDir 解析出来的 dev 槽', () => {
