@@ -23,7 +23,7 @@
 import * as fs from 'fs/promises';
 import * as fsSync from 'fs';
 import * as path from 'path';
-import { getDefaultWorkDirectory } from '../../config/configPaths';
+import { CONFIG_DIR_LEGACY, CONFIG_DIR_NEW, getDefaultWorkDirectory } from '../../config/configPaths';
 import { isPlannedSessionWorkDirectory, materializeSessionWorkDirectory } from '../../config/sessionWorkDirectory';
 import { listSessionWorkDirectoryReservations } from '../../config/sessionWorkDirectoryReservations';
 import { isPathWithinRoot } from '../../runtime/workspaceScope';
@@ -134,10 +134,11 @@ export function beginWorkDirectoryRun(workingDirectory: string | undefined): voi
 }
 
 /**
- * 最后一个占用该目录的 run 结束时，仅当本进程新建且内容只剩 `.code-agent`
- * （其中至多空的 `stream-snapshots` 脚手架 / owner 标记）才删除。其它任何文件
- * 或目录都留下；stream-snapshots 里还有未清除的 run 快照（断流恢复证据）时也
- * 不删——证据要活到用户重进会话被 loadStreamSnapshot 读回（rework r1）。
+ * 最后一个占用该目录的 run 结束时，仅当本进程新建且内容只剩配置脚手架
+ * （`.code-agent` 下的空 skills / 至多空的 stream-snapshots，或 `.claude/skills`）
+ * 才删除。其它任何文件或目录都留下；stream-snapshots 里还有未清除的 run 快照
+ * （断流恢复证据）时也不删——证据要活到用户重进会话被 loadStreamSnapshot
+ * 读回（rework r1）。
  * 删掉之后清掉 attempts，否则下一次 Write 会命中已完成的 promise、不再 mkdir。
  */
 export function endWorkDirectoryRun(workingDirectory: string | undefined): void {
@@ -174,10 +175,10 @@ function recycleCreatedMetadataDir(dir: string): void {
 }
 
 /**
- * 空目录，或仅有 `.code-agent` 且其中至多空的 `stream-snapshots` 脚手架。
- * 快照 run 文件是断流恢复证据，存在即不回收（判据单一真源在
- * hasUnclearedStreamSnapshots）。任何其它名字、符号链接、非常规文件都算
- * 用户内容，返回 false。
+ * 空目录，或仅有空的项目配置脚手架：`.code-agent/skills`、
+ * `.code-agent/stream-snapshots`、`.claude/skills`。快照 run 文件是断流恢复证据，
+ * 存在即不回收（判据单一真源在 hasUnclearedStreamSnapshots）。任何其它名字、
+ * 文件、符号链接、非常规条目都算用户内容，返回 false。
  */
 function isOnlyCodeAgentMetadata(dir: string): boolean {
   let rootStat: fsSync.Stats;
@@ -190,14 +191,51 @@ function isOnlyCodeAgentMetadata(dir: string): boolean {
   const top = readDirents(dir);
   if (!top) return false;
   if (top.length === 0) return true;
-  if (top.length !== 1 || top[0].name !== '.code-agent') return false;
-  if (!isRealDirectory(top[0])) return false;
-  const codeAgentEntries = readDirents(path.join(dir, '.code-agent'));
+  for (const entry of top) {
+    if (!isRealDirectory(entry)) return false;
+    if (entry.name === CONFIG_DIR_NEW) {
+      if (!isOnlyNewConfigScaffolding(dir)) return false;
+      continue;
+    }
+    if (entry.name === CONFIG_DIR_LEGACY) {
+      if (!isOnlyLegacySkillScaffolding(dir)) return false;
+      continue;
+    }
+    return false;
+  }
+  return true;
+}
+
+function isOnlyNewConfigScaffolding(dir: string): boolean {
+  const codeAgentEntries = readDirents(path.join(dir, CONFIG_DIR_NEW));
   if (!codeAgentEntries) return false;
-  if (codeAgentEntries.length === 0) return true;
-  if (codeAgentEntries.length !== 1 || codeAgentEntries[0].name !== 'stream-snapshots') return false;
-  if (!isRealDirectory(codeAgentEntries[0])) return false;
-  return !hasUnclearedStreamSnapshots(dir);
+  for (const entry of codeAgentEntries) {
+    if (!isRealDirectory(entry)) return false;
+    if (entry.name === 'skills') {
+      if (!isEmptyDirectory(path.join(dir, CONFIG_DIR_NEW, entry.name))) return false;
+      continue;
+    }
+    if (entry.name === 'stream-snapshots') {
+      if (hasUnclearedStreamSnapshots(dir)) return false;
+      continue;
+    }
+    return false;
+  }
+  return true;
+}
+
+function isOnlyLegacySkillScaffolding(dir: string): boolean {
+  const legacyEntries = readDirents(path.join(dir, CONFIG_DIR_LEGACY));
+  if (!legacyEntries) return false;
+  if (legacyEntries.length === 0) return true;
+  if (legacyEntries.length !== 1 || legacyEntries[0].name !== 'skills') return false;
+  if (!isRealDirectory(legacyEntries[0])) return false;
+  return isEmptyDirectory(path.join(dir, CONFIG_DIR_LEGACY, 'skills'));
+}
+
+function isEmptyDirectory(dir: string): boolean {
+  const entries = readDirents(dir);
+  return entries?.length === 0;
 }
 
 function isRealDirectory(entry: fsSync.Dirent): boolean {
@@ -223,7 +261,7 @@ const ORPHAN_SWEEP_MIN_AGE_MS = 60 * 60 * 1000;
  * （recycleCreatedMetadataDir）永远不认领这些夹子——case e 形状的元数据夹就在默认
  * 工作根里永久堆积。启动时扫一遍默认工作根的直接子项，只删同时满足全部条件的夹子：
  * ① isPlannedSessionWorkDirectory（任务_/Task_ 规划形状、严格在默认工作根之内）；
- * ② isOnlyCodeAgentMetadata（空、或只剩 .code-agent 至多空 stream-snapshots 脚手架、
+ * ② isOnlyCodeAgentMetadata（空、或只剩空 skills / 至多空 stream-snapshots 脚手架、
  *    无未清快照——内容判据单一真源沿用运行期回收，不另造谓词）；
  * ③ 不在本进程 activeRuns 里；
  * ④ lstat mtime 早于 1 小时前（多实例共根的年龄档）。
