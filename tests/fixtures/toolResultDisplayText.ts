@@ -33,4 +33,12 @@ nextOffset: null`;
 export const GREP_PAGED_RESULT = `src/a.ts:1:alpha
 
 (showing 1-1 of 2 matches)
-nextOffset: 1`;
+nextOffset: 1
+${ARCHIVE_NOTICE}
+[next-read] Before Edit or overwrite Write on any grep result file, call Read on that exact file first.`;
+
+export const GREP_ARCHIVED_COMPLETE_RESULT = `src/a.ts:1:alpha
+
+nextOffset: null
+${ARCHIVE_NOTICE}
+[next-read] Before Edit or overwrite Write on any grep result file, call Read on that exact file first.`;

@@ -55,7 +55,7 @@ export function cleanToolResultDisplayText(
     cleaned = cleanPaginationText(text, copy, true);
     if (cleaned === '(empty page)') cleaned = copy.directoryEmpty;
   } else if (GREP_TOOL_NAMES.has(normalizedName)) {
-    cleaned = cleanPaginationText(text, copy, false);
+    cleaned = cleanPaginationText(text, copy, true);
   }
 
   return text.length > 0 && cleaned.length === 0 ? text : cleaned;
