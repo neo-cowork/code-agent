@@ -95,6 +95,26 @@ const disconnectedSlackServer: WorkbenchMcpRegistryItem = {
   },
 };
 
+const lazySlackServer: WorkbenchMcpRegistryItem = {
+  ...disconnectedSlackServer,
+  status: 'lazy' as const,
+  description: '搜索 Slack 消息和频道',
+  health: 'degraded' as const,
+  lifecycle: {
+    ...disconnectedSlackServer.lifecycle,
+    connectionState: 'lazy' as const,
+  },
+};
+
+const disabledSlackServer: WorkbenchMcpRegistryItem = {
+  ...disconnectedSlackServer,
+  key: 'mcp:disabled-slack',
+  id: 'disabled-slack',
+  label: 'disabled-slack',
+  enabled: false,
+  description: '在需要时搜索团队消息',
+};
+
 const oauthNotionServer: WorkbenchMcpRegistryItem = {
   kind: 'mcp' as const,
   key: 'mcp:notion',
@@ -354,6 +374,30 @@ describe('MCPSettings status', () => {
     expect(html).toContain(mcpText.trustSummary.approvalNotice);
     expect(html).toContain('查看 github 详情');
     expect(html).not.toContain('Alma');
+  });
+
+  it('keeps connector card status in one badge and removes transport and lazy-load jargon from card DOM', () => {
+    mcpServers = [
+      { ...connectedGithubServer, description: '浏览代码仓库和议题' },
+      lazySlackServer,
+      disabledSlackServer,
+    ];
+
+    render(React.createElement(MCPSettings));
+
+    const expectedStatuses = [
+      ['github', mcpText.grid.cardStatus.connected],
+      ['slack', mcpText.grid.cardStatus.connectsWhenNeeded],
+      ['disabled-slack', mcpText.grid.cardStatus.disabled],
+    ] as const;
+    for (const [serverId, expectedStatus] of expectedStatuses) {
+      const card = screen.getByTestId(`mcp-connector-card-${serverId}`);
+      expect(card.textContent?.split(expectedStatus).length).toBe(2);
+      expect(card.textContent).not.toMatch(/transport:|http-streamable|stdio|懒加载|lazy[- ]?load/i);
+      expect(card.getAttribute('title')).not.toMatch(/transport:|http-streamable|stdio|status:|状态:/i);
+    }
+    expect(screen.getByTestId('mcp-connector-card-slack').textContent).toContain('搜索 Slack 消息和频道');
+    expect(screen.getByText('已连接 1 / 共 3 个')).toBeTruthy();
   });
 
   it('summarizes MCP trust boundaries without exposing token values', () => {
