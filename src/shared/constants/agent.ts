@@ -63,7 +63,9 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // tmeetMeetingSearch 五个连接器读 schema 加 readsUntrustedContent 元数据（同 sys-v89
 // 的 touchesWorkDirectory 口径：不进请求体，wire 序列化不含它，模型文本门要求 bump）。
 // 整合合并：本单与 main 已合入的 sys-v98 撞号，合并后的 prompt 输入哈希面未被记录过，按惯例升版。
-export const PROMPT_VERSION = 'sys-v99' as const;
+// sys-v100：N-FIX-BROWSER-TARGETREF-STRING-WASTE-STEPS——browser_action / Browser schema
+// targetRef 与 destinationTargetRef 扩为 ['object', 'string'] 并附单串 refId 示例（模型可见面变化）。
+export const PROMPT_VERSION = 'sys-v100' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =
