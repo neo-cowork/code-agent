@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const toolExecutorState = vi.hoisted(() => ({
   config: undefined as undefined | {
@@ -28,7 +28,13 @@ import {
   type ChildContextConfig,
   type ParentContext,
 } from '../../../src/host/agent/childContext';
+import { resolveSubagentParentContext } from '../../../src/host/agent/subagentProtocolContext';
 import { createSubagentToolRuntime } from '../../../src/host/agent/subagentToolRuntime';
+import {
+  getPermissionModeManager,
+  resetPermissionModeManager,
+} from '../../../src/host/permissions/modes';
+import { beginRunPolicy, endRunPolicy } from '../../../src/host/permissions/runPolicySnapshot';
 
 const childConfig: ChildContextConfig = {
   agentType: 'coder',
@@ -48,8 +54,16 @@ function parentContext(permissionMode: string): ParentContext {
 }
 
 describe('child permission mode inheritance', () => {
+  const activeRunIds = new Set<string>();
+
   beforeEach(() => {
     toolExecutorState.config = undefined;
+    resetPermissionModeManager();
+  });
+
+  afterEach(() => {
+    for (const runId of activeRunIds) endRunPolicy(runId);
+    activeRunIds.clear();
   });
 
   it.each([
@@ -76,19 +90,21 @@ describe('child permission mode inheritance', () => {
   });
 
   it('uses the inherited bypass mode to auto-approve ordinary Bash but forwards forced confirmation', async () => {
+    const sessionId = 'session-inherited-bypass';
+    getPermissionModeManager().setSessionMode(sessionId, 'bypassPermissions', true);
     const child = buildChildContext(childConfig, parentContext('bypassPermissions'));
     const permissionRequest = vi.fn(async () => false);
 
     createSubagentToolRuntime({
       context: {
-        sessionId: 'session-inherited-bypass',
+        sessionId,
         cwd: '/tmp/workbench',
         resolver: { getDefinition: vi.fn() },
         permission: { request: permissionRequest },
         events: { emit: vi.fn() },
         abortSignal: new AbortController().signal,
       } as any,
-      sessionId: 'session-inherited-bypass',
+      sessionId,
       effectiveMode: child.permissions.effectiveMode,
       identity: { agentId: 'child-1', runId: 'run-1', parentToolUseId: 'parent-tool-1' },
       allowedToolNames: new Set(child.toolPool),
@@ -121,5 +137,90 @@ describe('child permission mode inheritance', () => {
       tool: 'Bash',
       type: 'command',
     }));
+  });
+
+  it('inherits the run snapshot instead of an external mid-run session widening', async () => {
+    const sessionId = 'session-external-widening';
+    const runId = 'run-external-widening';
+    const manager = getPermissionModeManager();
+    manager.setSessionMode(sessionId, 'default');
+    beginRunPolicy(runId, sessionId);
+    activeRunIds.add(runId);
+    manager.setSessionMode(sessionId, 'bypassPermissions', true, 'external');
+
+    const parent = resolveSubagentParentContext({ sessionId, runId } as any);
+    const child = buildChildContext(childConfig, parent);
+    const permissionRequest = vi.fn(async () => false);
+    createSubagentToolRuntime({
+      context: {
+        sessionId,
+        cwd: '/tmp/workbench',
+        resolver: { getDefinition: vi.fn() },
+        permission: { request: permissionRequest },
+        events: { emit: vi.fn() },
+        abortSignal: new AbortController().signal,
+      } as any,
+      sessionId,
+      effectiveMode: child.permissions.effectiveMode,
+      identity: { agentId: 'child-external', runId, parentToolUseId: 'parent-external' },
+      allowedToolNames: new Set(child.toolPool),
+      checkToolExecution: vi.fn(() => true),
+    });
+
+    expect(parent.permissionMode).toBe('default');
+    expect(child.permissions.effectiveMode).toBe('default');
+    await expect(toolExecutorState.config!.requestPermission({
+      type: 'command',
+      tool: 'Bash',
+      details: { command: 'echo still asks' },
+      forceConfirm: false,
+    })).resolves.toBe(false);
+    expect(permissionRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('applies a user UI tightening to an already-running bypass child', async () => {
+    const sessionId = 'session-ui-tightening';
+    const runId = 'run-ui-tightening';
+    const manager = getPermissionModeManager();
+    manager.setSessionMode(sessionId, 'bypassPermissions', true, 'user-ui');
+    beginRunPolicy(runId, sessionId);
+    activeRunIds.add(runId);
+
+    const parent = resolveSubagentParentContext({ sessionId, runId } as any);
+    const child = buildChildContext(childConfig, parent);
+    const permissionRequest = vi.fn(async () => false);
+    createSubagentToolRuntime({
+      context: {
+        sessionId,
+        cwd: '/tmp/workbench',
+        resolver: { getDefinition: vi.fn() },
+        permission: { request: permissionRequest },
+        events: { emit: vi.fn() },
+        abortSignal: new AbortController().signal,
+      } as any,
+      sessionId,
+      effectiveMode: child.permissions.effectiveMode,
+      identity: { agentId: 'child-tightening', runId, parentToolUseId: 'parent-tightening' },
+      allowedToolNames: new Set(child.toolPool),
+      checkToolExecution: vi.fn(() => true),
+    });
+    const requestPermission = toolExecutorState.config!.requestPermission;
+
+    await expect(requestPermission({
+      type: 'command',
+      tool: 'Bash',
+      details: { command: 'echo before' },
+      forceConfirm: false,
+    })).resolves.toBe(true);
+    expect(permissionRequest).not.toHaveBeenCalled();
+
+    manager.setSessionMode(sessionId, 'default', false, 'user-ui');
+    await expect(requestPermission({
+      type: 'command',
+      tool: 'Bash',
+      details: { command: 'echo after' },
+      forceConfirm: false,
+    })).resolves.toBe(false);
+    expect(permissionRequest).toHaveBeenCalledTimes(1);
   });
 });

@@ -44,7 +44,7 @@ import {
 import { getSwarmEventEmitter } from '../swarmEventPublisher';
 import { resolveAgentDisplayNames } from '../resolveAgentDisplayNames';
 import { checkReadonlyParentRule, type ParentContext } from '../childContext';
-import { getPermissionModeManager } from '../../permissions/modes';
+import { resolveSubagentParentContext } from '../subagentProtocolContext';
 import { getSpawnGuard } from '../spawnGuard';
 import { bindFileOwnershipReleaseHook } from '../../services/infra/fileOwnershipRegistry';
 import { bindBrowserPoolReleaseHook } from '../../services/infra/browserPool';
@@ -388,14 +388,8 @@ export async function executeSpawnAgent(
       // 注入 agentId，让子 agent 走 BrowserPool / ComputerSurface 的 per-agent 实例。
       // 共享 context 不能直接 mutate（父 agent 也用同一个），clone 后注入。
       const parentContext: ParentContext = context.parentContext ?? {
-        rules: [],
-        memory: [],
-        hooks: [],
-        skills: [],
-        mcpConnections: [],
-        permissionMode: getPermissionModeManager().getModeForSession(context.sessionId) as string,
+        ...resolveSubagentParentContext(context),
         availableTools: tools.slice(),
-        role: context.agentRole,
       };
 
       // 孤儿回收（swarm 护栏 P1-2 #5）：仅后台 detached 子代理注入父探活。

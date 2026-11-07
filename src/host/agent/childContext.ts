@@ -12,6 +12,7 @@
 // ============================================================================
 
 import { buildProfilePrompt } from '../prompts/builder';
+import { moreRestrictivePermissionMode } from '../permissions/modes';
 import type { ToolContext } from '../tools/types';
 
 export type InheritanceMode = 'strict-inherit' | 'child-narrow' | 'independent';
@@ -77,27 +78,6 @@ export interface ChildContext {
   memory: string[];
   /** 实际生效的继承模式（默认 strict-inherit） */
   inheritanceMode: InheritanceMode;
-}
-
-// ----------------------------------------------------------------------------
-// Mode 取严
-// ----------------------------------------------------------------------------
-
-/** Plan §4.4 mode 取严：plan/dontAsk > readOnly > delegate > default > acceptEdits > bypassPermissions */
-const MODE_RESTRICTIVENESS: Record<string, number> = {
-  bypassPermissions: 0,
-  acceptEdits: 1,
-  default: 2,
-  delegate: 3,
-  readOnly: 4, // 只读探索：写/执行全走确认，比 default 严，比 plan（直接 deny）宽
-  plan: 5,
-  dontAsk: 6,
-};
-
-function moreRestrictiveMode(a: string, b: string): string {
-  const ra = MODE_RESTRICTIVENESS[a] ?? 2;
-  const rb = MODE_RESTRICTIVENESS[b] ?? 2;
-  return ra >= rb ? a : b;
 }
 
 // ----------------------------------------------------------------------------
@@ -229,7 +209,7 @@ export function buildChildContext(
 
   // 4. mode 取更严（plan §4.4）
   const childMode = config.mode ?? parent.permissionMode;
-  const effectiveMode = moreRestrictiveMode(parent.permissionMode, childMode);
+  const effectiveMode = moreRestrictivePermissionMode(parent.permissionMode, childMode);
 
   // 5. 按 inheritance 模式裁剪 ask / allow
   let effectiveAsk: string[];
