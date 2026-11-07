@@ -53,6 +53,11 @@ import type { HookManager } from '../hooks/hookManager';
 import { getToolResolver } from '../tools/dispatch/toolResolver';
 import { findResourceScopeMismatch } from '../tools/dispatch/resolveToolCallAccess';
 import { lookupMcpToolAfterReapedReconnect } from './mcpReapedToolLookup';
+import { getBrowserService } from '../services/infra/browserPool';
+import {
+  getManagedBrowserProviderAdapter,
+  surfaceIdentityFromToolContext,
+} from '../services/surfaceExecution/ManagedBrowserProviderAdapter';
 import type { ConversationExecutionIntent, WorkbenchToolScope } from '../../shared/contract/conversationEnvelope';
 import { isBashToolName, normalizeToolName } from './toolNames';
 import { isToolDeniedByRunPolicy } from './runToolPolicy';
@@ -1872,6 +1877,12 @@ export class ToolExecutor {
             sessionPermissionMode,
             peerOriginForcesConfirmation,
             launderRetryForcesAsk,
+            browserSubmitProbe: () => {
+              const surfaceIdentity = surfaceIdentityFromToolContext(context);
+              return surfaceIdentity
+                ? getManagedBrowserProviderAdapter().getBrowserService(surfaceIdentity)
+                : getBrowserService(context.agentId);
+            },
           });
           // B1: EXTERNAL 风险类打标进 decisionTrace（result='allow'，不改变审批结果，仅供
           // B2 无人值守停车 / B4 target 授权与审计消费）。此处入 traceBuilder 覆盖 deny/ask 路径；

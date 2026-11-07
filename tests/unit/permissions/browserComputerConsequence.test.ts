@@ -32,6 +32,7 @@ import { AgentFailureCode, HostReasonCode } from '../../../src/shared/contract';
 import { resetPermissionModeManager } from '../../../src/host/permissions/modes';
 import { resolveToolPermissionClassification } from '../../../src/host/tools/toolPermissionClassification';
 import { browserService } from '../../../src/host/services/infra/browserService';
+import { getManagedBrowserProviderAdapter } from '../../../src/host/services/surfaceExecution/ManagedBrowserProviderAdapter';
 
 function setSurfaceTool(name: string): void {
   resolverState.definition = {
@@ -199,6 +200,55 @@ describe('managed-browser submit click classification', () => {
         heuristicMatched: false,
       }),
     );
+  });
+
+  it('ToolExecutor probes the run-owned managed browser before dispatch', async () => {
+    const identity = {
+      conversationId: 'submit-probe-session',
+      runId: 'submit-probe-run',
+      turnId: 'submit-probe-turn',
+      agentId: 'submit-probe-agent',
+    };
+    const runBrowser = getManagedBrowserProviderAdapter().getBrowserService(identity);
+    await runBrowser.launch({
+      mode: 'headless',
+      profileMode: 'isolated',
+      provider: 'playwright-bundled',
+    });
+    try {
+      await runBrowser.newTab();
+      const runPage = runBrowser.getActiveTab()?.page;
+      if (!runPage) throw new Error('run-owned managed browser test tab did not launch');
+      await runPage.setContent(`
+        <form method="post" action="https://run-owned.example.test/register">
+          <button id="run-owned-go">Go</button>
+        </form>
+      `);
+      setSurfaceTool('Browser');
+
+      const result = await executor.execute(
+        'Browser',
+        { action: 'click', selector: '#run-owned-go' },
+        {
+          sessionId: identity.conversationId,
+          runId: identity.runId,
+          turnId: identity.turnId,
+          agentId: identity.agentId,
+        },
+      );
+
+      expect(result.success).toBe(true);
+      expect(permissionRequests).toHaveLength(1);
+      expect(permissionRequests[0].tool).toBe('Browser');
+      expect(permissionRequests[0].decisionTrace).toMatchObject({
+        steps: expect.arrayContaining([expect.objectContaining({
+          rule: 'browser_computer_consequence',
+          result: 'ask',
+        })]),
+      });
+    } finally {
+      await runBrowser.close();
+    }
   });
 
   it('submit ask has the same result shape as a catalog external_side_effect ask', async () => {

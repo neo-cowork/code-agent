@@ -142,6 +142,7 @@ async function classifyBrowserComputerConsequence(
   toolName: string,
   params: Record<string, unknown>,
   startedAt: number,
+  browserSubmitProbe?: () => Pick<typeof browserService, 'probeSubmitClick'>,
 ): Promise<ClassificationResult | null> {
   const catalogTool = normalizeBrowserComputerCatalogToolName(toolName);
   if (!catalogTool) return null;
@@ -196,7 +197,7 @@ async function classifyBrowserComputerConsequence(
     entry.tool === 'browser_action'
     && (entry.action === 'click' || entry.action === 'click_text')
   ) {
-    const probe = await browserService.probeSubmitClick(params);
+    const probe = await (browserSubmitProbe?.() ?? browserService).probeSubmitClick(params);
     if (probe.status === 'known' && probe.isSubmit) {
       const method = probe.method || 'GET';
       const targetHost = probe.targetHost || 'unknown';
@@ -425,6 +426,8 @@ export async function resolveToolPermissionClassification(input: {
    * （既有审批记忆 once/session/always 语义保留，不另造豁免）。
    */
   launderRetryForcesAsk?: boolean;
+  /** Resolve the run-owned managed browser lazily only for click target probing. */
+  browserSubmitProbe?: () => Pick<typeof browserService, 'probeSubmitClick'>;
 }): Promise<ClassificationResult> {
   // B1: EXTERNAL 风险类打标，与三分支决策正交、不改变审批结果。所有出口都带上，供 B2/B4/审计消费。
   const external = isExternalSideEffectTool(input.executionToolName);
@@ -499,6 +502,7 @@ export async function resolveToolPermissionClassification(input: {
       input.executionToolName,
       input.params,
       input.permStartTime,
+      input.browserSubmitProbe,
     ) ?? await classifyPermission(input.policyToolName, input.params, {
       workingDirectory: input.workingDirectory,
       workspaceRoot: input.workspaceRoot,
