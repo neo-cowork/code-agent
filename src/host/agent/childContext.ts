@@ -228,7 +228,7 @@ export function buildChildContext(
   const denyMerged = uniqUnion(parent.deny ?? [], config.deny ?? []);
 
   // 4. mode 取更严（plan §4.4）
-  const childMode = config.mode ?? 'default';
+  const childMode = config.mode ?? parent.permissionMode;
   const effectiveMode = moreRestrictiveMode(parent.permissionMode, childMode);
 
   // 5. 按 inheritance 模式裁剪 ask / allow
