@@ -43,6 +43,24 @@ export function unregisterForegroundPermissionIsland(
   }
 }
 
+/**
+ * run 收线后迟到的审批把岛挂回注册表（N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO）。
+ * /api/run 收线时后台 lane 的审批可能还没抛（ask 晚于 finalize 几秒）：收线清理看到
+ * 「岛上无 pending」把岛注销了，lane 随后抛的审批照常发事件，但注册表里没有这座岛
+ * ——快照补全列不出它、点击应答落 unknown_request（真机实证）。只在注册表为空或
+ * 已是这座岛时挂回；新 run 已注册自己的岛时绝不回占（那会让新 run 的审批不可达）。
+ */
+export function reregisterForegroundPermissionIsland(
+  sessionId: string,
+  island: OrchestratorPermissionIsland,
+): void {
+  const current = foregroundPermissionIslands.get(sessionId);
+  if (current && current !== island) return;
+  if (current === island) return;
+  foregroundPermissionIslands.set(sessionId, island);
+  notifyPermissionStateChange();
+}
+
 export function listForegroundPermissionRequests() {
   return [...foregroundPermissionIslands.values()].flatMap(island => island.listPendingRequests());
 }

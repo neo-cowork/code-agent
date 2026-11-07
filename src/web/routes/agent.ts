@@ -129,11 +129,12 @@ import {
 } from '../../host/services/agentEngine/externalEngineResumeBuilders';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { OrchestratorPermissionIsland } from '../../host/agent/orchestratorPermissions';
-import type { PermissionRequest } from '../../shared/contract';
+import type { AgentEvent, PermissionRequest } from '../../shared/contract';
 import { getScriptedRunPermissionHandler } from '../../host/permissions/scriptedRunPermissionPolicy';
 import { getConfigService as getHostConfigService } from '../../host/services/core/configService';
 import {
   registerForegroundPermissionIsland,
+  reregisterForegroundPermissionIsland,
   unregisterForegroundPermissionIsland,
 } from '../foregroundPermissionRegistry';
 import {
@@ -913,6 +914,18 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       eventFilter,
     });
 
+    // N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO：后台 lane 的审批可以在 run 收线**之后**
+    // 才抛（ask 晚于 finalize 几秒）。收线清理看到「岛上无 pending」已把岛注销，迟到的
+    // permission_request 照常发事件，但注册表里没有这座岛——快照补全列不出它、点击应答
+    // 落 unknown_request。收线后岛再抛审批时把**自己**挂回注册表；新 run 已注册自己的岛
+    // 时 reregister 不回占。流开着时的常规事件一个字节都不变。
+    const emitIslandEvent = (event: AgentEvent): void => {
+      if (event.type === 'permission_request' && runController.settled && foregroundPermissionIsland) {
+        reregisterForegroundPermissionIsland(sessionId, foregroundPermissionIsland);
+      }
+      runController.emitAgentEvent(event);
+    };
+
     if (transport.connectedClient) {
       res.once('close', runController.cancelForDisconnect);
       res.off('close', markPreflightDisconnected);
@@ -1083,7 +1096,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             isDevModeAutoApproveEnabled: () => acpConfigService.isDevModeAutoApproveEnabled(),
             getExecutionTopology: () => 'main',
             hasApprovalUi: (request) => liveHasApprovalUi(sessionId, request, deps.hasCompanionApprovalUi),
-            onEvent: (event) => runController.emitAgentEvent(event),
+            onEvent: emitIslandEvent,
           });
           registerForegroundPermissionIsland(sessionId, foregroundPermissionIsland);
         } else if (selectedEngine.kind === 'dsh_cli') {
@@ -1471,7 +1484,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         isDevModeAutoApproveEnabled: () => configService.isDevModeAutoApproveEnabled(),
         getExecutionTopology: () => 'main',
         hasApprovalUi: (request) => liveHasApprovalUi(sessionId, request, deps.hasCompanionApprovalUi),
-        onEvent: (event) => runController.emitAgentEvent(event),
+        onEvent: emitIslandEvent,
       });
       registerForegroundPermissionIsland(sessionId, foregroundPermissionIsland);
       const scripted = getScriptedRunPermissionHandler();

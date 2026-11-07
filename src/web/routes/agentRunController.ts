@@ -87,6 +87,11 @@ export class AgentRunController {
     return this.clientDisconnected;
   }
 
+  /** run 是否已收线（markSettled 之后）。岛在收线后抛审批时据此挂回注册表。 */
+  get settled(): boolean {
+    return this.runSettled;
+  }
+
   get hadTerminalError(): boolean {
     return this.runHadTerminalError;
   }
