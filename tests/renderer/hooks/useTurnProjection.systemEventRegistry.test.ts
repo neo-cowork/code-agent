@@ -208,6 +208,30 @@ describe('用户可见 system 事件登记制（P0-2）', () => {
     expect(nodes.filter((node) => node.id === 'sys-roleFlowStalled')).toHaveLength(1);
   });
 
+  it('backgroundWakeFailed 两种原因（wake_failed / owner_missing）都投出平实 system 节点，不生成 agentError 失败卡', () => {
+    for (const reason of ['wake_failed', 'owner_missing'] as const) {
+      const turns = project([
+        ...plainTurn(),
+        {
+          id: `wake-note-${reason}`,
+          role: 'system',
+          content: '后台任务「报告」已结束，结果见上方的任务结果；自动汇报这一步没能完成，需要的话可以直接问我。',
+          timestamp: 9_000,
+          metadata: { backgroundWakeFailed: { taskId: 'task-1', reason } },
+        } as Message,
+      ]);
+      const allNodes = turns.flatMap((turn) => turn.nodes);
+      const note = allNodes.find((n) => n.id === `wake-note-${reason}`);
+      expect(note).toMatchObject({
+        type: 'system',
+        subtype: USER_VISIBLE_SYSTEM_EVENT_REGISTRY.backgroundWakeFailed.subtype,
+        metadata: { backgroundWakeFailed: { taskId: 'task-1', reason } },
+      });
+      expect(note?.subtype).not.toBe('error');
+      expect(allNodes.some((n) => Boolean(n.metadata?.agentError))).toBe(false);
+    }
+  });
+
   it('底线：裸 role:system（无 metadata）仍被总闸跳过——内部指令不外泄', () => {
     const turns = project([
       ...plainTurn(),
