@@ -21,6 +21,7 @@ import type {
   WorkbenchActionTrace,
 } from '../../../shared/contract/desktop';
 import { IPC_CHANNELS } from '../../../shared/ipc';
+import { BROWSER_TIMEOUTS } from '../../../shared/constants/timeouts';
 import {
   resolveBrowserProvider,
   type BrowserProviderResolution,
@@ -353,14 +354,12 @@ export class BrowserService implements Disposable {
       this.logger.log('DEBUG', `Navigating to: ${summarizeBrowserUrlForLog(url)}`);
       await page.goto(url, { waitUntil: 'domcontentloaded' });
     }
-
     const tab: BrowserTab = {
       id: tabId,
       page,
       url: page.url(),
       title: await page.title(),
     };
-
     this.tabs.set(tabId, tab);
     this.activeTabId = tabId;
 
@@ -594,7 +593,7 @@ export class BrowserService implements Disposable {
   }
 
   async type(selector: string, text: string, tabId?: string): Promise<void> {
-    await this.getTab(tabId).page.fill(selector, text);
+    await this.getTab(tabId).page.fill(selector, text, { timeout: BROWSER_TIMEOUTS.FILL_SELECTOR });
   }
 
   async typeTargetRef(targetRefInput: unknown, text: string, tabId?: string): Promise<BrowserTargetRef> {
@@ -884,7 +883,7 @@ export class BrowserService implements Disposable {
   async fillForm(formData: Record<string, string>, tabId?: string): Promise<void> {
     const tab = this.getTab(tabId);
     for (const [selector, value] of Object.entries(formData)) {
-      await tab.page.fill(selector, value);
+      await tab.page.fill(selector, value, { timeout: BROWSER_TIMEOUTS.FILL_SELECTOR });
     }
   }
 

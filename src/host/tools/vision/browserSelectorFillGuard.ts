@@ -1,0 +1,287 @@
+import type { ToolExecutionResult } from '../types';
+import type { BrowserService, ElementInfo } from '../../services/infra/browserService.js';
+
+const CONSECUTIVE_FAILURE_STOP_THRESHOLD = 2;
+
+interface SelectorFailureState {
+  selector: string;
+  streak: number;
+  lastUrl: string;
+}
+
+const selectorFailuresByBrowser = new WeakMap<BrowserService, Map<string, SelectorFailureState>>();
+
+function resolveTabKey(browserService: BrowserService, tabId?: string): string | null {
+  if (tabId) return tabId;
+  try {
+    return browserService.getActiveTab()?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function getLiveUrl(browserService: BrowserService, tabId?: string): string {
+  try {
+    return browserService.getLiveTabUrl(tabId);
+  } catch {
+    return '';
+  }
+}
+
+function getOrCreateFailureState(
+  browserService: BrowserService,
+  tabId?: string,
+): { state: SelectorFailureState | null; currentUrl: string } {
+  const tabKey = resolveTabKey(browserService, tabId);
+  const currentUrl = getLiveUrl(browserService, tabId);
+  if (!tabKey) {
+    return { state: null, currentUrl };
+  }
+  let states = selectorFailuresByBrowser.get(browserService);
+  if (!states) {
+    states = new Map();
+    selectorFailuresByBrowser.set(browserService, states);
+  }
+  let state = states.get(tabKey);
+  if (!state) {
+    state = { selector: '', streak: 0, lastUrl: currentUrl };
+    states.set(tabKey, state);
+  } else if (currentUrl && state.lastUrl && currentUrl !== state.lastUrl) {
+    state.selector = '';
+    state.streak = 0;
+    state.lastUrl = currentUrl;
+  }
+  return { state, currentUrl };
+}
+
+export function resetBrowserSelectorFillStreak(browserService: BrowserService, tabId?: string): void {
+  const { state, currentUrl } = getOrCreateFailureState(browserService, tabId);
+  if (!state) return;
+  state.selector = '';
+  state.streak = 0;
+  state.lastUrl = currentUrl;
+}
+
+function checkThirdCallGuard(
+  state: SelectorFailureState | null,
+  selector: string,
+): ToolExecutionResult | null {
+  if (!state) return null;
+  if (state.selector === selector && state.streak >= CONSECUTIVE_FAILURE_STOP_THRESHOLD) {
+    state.streak += 1;
+    return {
+      success: false,
+      error:
+        `Selector fill stopped: "${selector}" has already failed ${CONSECUTIVE_FAILURE_STOP_THRESHOLD} consecutive times in this tab. ` +
+        `Do not retry this selector. Take a snapshot with browser_action.get_dom_snapshot and use a targetRef for a visible input, ` +
+        `or construct the search URL directly with browser_action.navigate.`,
+    };
+  }
+  return null;
+}
+
+function noteSelectorSuccess(
+  state: SelectorFailureState | null,
+  currentUrl: string,
+): void {
+  if (!state) return;
+  state.selector = '';
+  state.streak = 0;
+  state.lastUrl = currentUrl;
+}
+
+function noteSelectorFailure(
+  state: SelectorFailureState | null,
+  selector: string,
+  currentUrl: string,
+): void {
+  if (!state) return;
+  if (state.selector === selector) {
+    state.streak += 1;
+  } else {
+    state.selector = selector;
+    state.streak = 1;
+  }
+  if (currentUrl) {
+    state.lastUrl = currentUrl;
+  }
+}
+
+interface SelectorDomDiagnostics {
+  matchCount: number;
+  visibleCount: number;
+  notEditable: boolean;
+  innerWidth: number | null;
+}
+
+async function inspectSelectorFailureOnPage(
+  browserService: BrowserService,
+  selector: string,
+  tabId?: string,
+): Promise<SelectorDomDiagnostics> {
+  const fallbackWidth = (() => {
+    try {
+      const vp = browserService.getSessionState?.()?.viewport;
+      return typeof vp?.width === 'number' ? vp.width : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  try {
+    const encodedSelector = JSON.stringify(selector);
+    return await browserService.runScript<SelectorDomDiagnostics>(`(() => {
+      const sel = ${encodedSelector};
+      const innerWidth = typeof window !== 'undefined' ? window.innerWidth : null;
+      let elements = [];
+      try {
+        elements = Array.from(document.querySelectorAll(sel));
+      } catch {
+        return { matchCount: -1, visibleCount: 0, notEditable: false, innerWidth };
+      }
+      const matchCount = elements.length;
+      if (matchCount === 0) {
+        return { matchCount: 0, visibleCount: 0, notEditable: false, innerWidth };
+      }
+      let visibleCount = 0;
+      let notEditable = false;
+      for (const el of elements) {
+        const rect = el.getBoundingClientRect();
+        const style = window.getComputedStyle(el);
+        const visible =
+          style.display !== 'none' &&
+          style.visibility !== 'hidden' &&
+          style.visibility !== 'collapse' &&
+          rect.width > 0 &&
+          rect.height > 0;
+        if (visible) visibleCount += 1;
+        const htmlEl = el;
+        const tag = el.tagName.toLowerCase();
+        const editableTag = tag === 'input' || tag === 'textarea' || tag === 'select' || el.isContentEditable;
+        if (htmlEl.disabled || htmlEl.readOnly || !editableTag) {
+          notEditable = true;
+        }
+      }
+      return { matchCount, visibleCount, notEditable, innerWidth };
+    })()`, tabId);
+  } catch {
+    return { matchCount: -1, visibleCount: 0, notEditable: false, innerWidth: fallbackWidth };
+  }
+}
+
+async function formatSelectorFillError(args: {
+  browserService: BrowserService;
+  selector: string;
+  error: unknown;
+  tabId?: string;
+}): Promise<string> {
+  const { browserService, selector, error, tabId } = args;
+  const rawMessage = error instanceof Error ? error.message : String(error);
+  const diag = await inspectSelectorFailureOnPage(browserService, selector, tabId);
+  const width = diag.innerWidth;
+  const widthNote = width !== null
+    ? ` (current innerWidth=${width}px; the page may be showing a narrow/compact layout)`
+    : ' (the page may be showing a narrow/compact layout)';
+  const nextStep =
+    'Take a snapshot with browser_action.get_dom_snapshot and use a targetRef for a visible input, ' +
+    'or construct the search URL directly with browser_action.navigate.';
+
+  if (/strict mode violation|resolved to \d+ elements/i.test(rawMessage) || diag.matchCount > 1) {
+    const countLabel = diag.matchCount > 1 ? ` (${diag.matchCount} matches)` : '';
+    const hiddenNote = diag.visibleCount === 0 ? widthNote : '';
+    return `Cannot fill selector "${selector}": found several matching elements${countLabel}${hiddenNote}. ${nextStep}`;
+  }
+
+  if (
+    /not editable|not an <input>|disabled|readonly|read-only|not fillable|cannot be filled/i.test(rawMessage) ||
+    (diag.matchCount === 1 && diag.notEditable)
+  ) {
+    const hiddenNote = diag.visibleCount === 0 ? widthNote : '';
+    return `Cannot fill selector "${selector}": element is not editable (disabled, read-only, or not a text input)${hiddenNote}. ${nextStep}`;
+  }
+
+  if (diag.matchCount === 1 && diag.visibleCount === 0) {
+    return `Cannot fill selector "${selector}": element found but not visible${widthNote}. ${nextStep}`;
+  }
+
+  if (diag.matchCount === 0) {
+    return `Cannot fill selector "${selector}": element not found on the current page. ${nextStep}`;
+  }
+
+  if (/not visible|hidden/i.test(rawMessage)) {
+    return `Cannot fill selector "${selector}": element found but not visible${widthNote}. ${nextStep}`;
+  }
+
+  return `Cannot fill selector "${selector}": element not found or not visible within timeout${widthNote}. ${nextStep}`;
+}
+
+export async function executeSelectorTypeWithFastFail(args: {
+  browserService: BrowserService;
+  selector: string;
+  text: string;
+  tabId?: string;
+}): Promise<ToolExecutionResult> {
+  const { browserService, selector, text, tabId } = args;
+  const { state, currentUrl } = getOrCreateFailureState(browserService, tabId);
+
+  const guarded = checkThirdCallGuard(state, selector);
+  if (guarded) return guarded;
+
+  try {
+    await browserService.type(selector, text, tabId);
+    noteSelectorSuccess(state, getLiveUrl(browserService, tabId) || currentUrl);
+    let boundingBox: ElementInfo['rect'] | null = null;
+    try {
+      boundingBox = await browserService.getElementBoundingBox(selector, tabId);
+    } catch {
+      boundingBox = null;
+    }
+    return {
+      success: true,
+      output: `Typed ${text.length} chars into ${selector}`,
+      metadata: {
+        pointerTarget: {
+          label: selector,
+          selector,
+          boundingBox,
+        },
+      },
+    };
+  } catch (error) {
+    noteSelectorFailure(state, selector, currentUrl);
+    const formatted = await formatSelectorFillError({ browserService, selector, error, tabId });
+    return {
+      success: false,
+      error: formatted,
+    };
+  }
+}
+
+export async function executeFillFormWithFastFail(args: {
+  browserService: BrowserService;
+  formData: Record<string, string>;
+  tabId?: string;
+}): Promise<ToolExecutionResult> {
+  const { browserService, formData, tabId } = args;
+  const entries = Object.entries(formData);
+
+  for (const [selector, value] of entries) {
+    const { state, currentUrl } = getOrCreateFailureState(browserService, tabId);
+    const guarded = checkThirdCallGuard(state, selector);
+    if (guarded) return guarded;
+    try {
+      await browserService.fillForm({ [selector]: value }, tabId);
+      noteSelectorSuccess(state, getLiveUrl(browserService, tabId) || currentUrl);
+    } catch (error) {
+      noteSelectorFailure(state, selector, currentUrl);
+      const formatted = await formatSelectorFillError({ browserService, selector, error, tabId });
+      return {
+        success: false,
+        error: formatted,
+      };
+    }
+  }
+
+  const fields = Object.keys(formData).join(', ');
+  return { success: true, output: `Filled form fields: ${fields}` };
+}
