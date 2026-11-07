@@ -39,6 +39,7 @@ import { SESSION_COMMAND_CENTER_TOOL_NAMES } from '../../shared/constants/sessio
 import { collectToolArtifactsFromMetadata } from '../../shared/contract/artifactBlob';
 import { isDeliverableArtifact } from '../../shared/contract/artifactRoleRegistry';
 import { persistTaskManagerEvent, type TurnState } from './taskManagerEventPersistence';
+import { isTaskDeliveryFailed } from './taskDeliveryVerdict';
 import {
   DEFAULT_CONFIG,
   type BackgroundTaskRun,
@@ -351,12 +352,21 @@ export class TaskManager extends EventEmitter {
         const finalMessage = [...messages]
           .reverse()
           .find((message) => message.role === 'assistant' && message.content?.trim());
+        const seenArtifactLocations = new Set<string>();
         const artifacts = messages.flatMap((message) => (
           (message.toolResults ?? []).flatMap((result) => collectToolArtifactsFromMetadata(result.metadata))
-        )).filter((artifact) => isDeliverableArtifact(artifact) && Boolean(artifact.path || artifact.url));
-        this.emitEvent('task_completed', sessionId, {
+        )).filter((artifact) => {
+          const location = artifact.path ?? artifact.url;
+          if (!isDeliverableArtifact(artifact) || !location || seenArtifactLocations.has(location)) return false;
+          seenArtifactLocations.add(location);
+          return true;
+        });
+        const deliveryFailed = isTaskDeliveryFailed(messages, artifacts.length);
+        this.emitEvent(deliveryFailed ? 'task_error' : 'task_completed', sessionId, {
           taskId,
-          conclusion: finalMessage?.content?.trim(),
+          ...(deliveryFailed
+            ? { error: finalMessage?.content?.trim() || 'Task delivery failed.' }
+            : { conclusion: finalMessage?.content?.trim() }),
           ...(artifacts.length ? { artifacts } : {}),
         });
       }
