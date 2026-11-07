@@ -30,7 +30,11 @@ import {
   stripSensitiveStepParams,
 } from '../permissions/cuaSensitiveStep';
 import { resolvePreAskGrant } from '../permissions/preAskGrant';
-import { formatBrowserCrossSiteReason, resolveBrowserGrantScope } from '../permissions/browserSessionGrant';
+import {
+  formatBrowserCrossSiteReason,
+  readBrowserGrantScopeFromPermissionDetails,
+  resolveBrowserGrantScope,
+} from '../permissions/browserSessionGrant';
 import { createLogger } from '../services/infra/logger';
 import { getAuditLogger, maskSensitiveData, isKnownSafeCommand, validateCommand, getShellSafetyMode, getExecPolicyStore, getPolicyEnforcer, type PolicyEnforcer, type PolicyCheckResult, type ValidationResult } from '../security';
 import { evaluateToolSlotDataDirAccess, FOREIGN_SLOT_DATA_DIR_CODE, type SlotDataDirAccess } from '../security/slotDataDirGuard';
@@ -2134,7 +2138,10 @@ export class ToolExecutor {
       // 只打标：非 external 不写该属性（缺省≠null），不改任何 allow/deny/ask 裁决。
       if (isExternalSideEffectTool(executionToolName)) permissionRequest.riskClass = 'external';
       if (computerApp) permissionRequest.details.targetApp = computerApp;
-      const browserCrossSiteReason = formatBrowserCrossSiteReason(effectiveSessionId, permissionRequest.details.browserGrantScope);
+      const browserCrossSiteReason = formatBrowserCrossSiteReason(
+        effectiveSessionId,
+        readBrowserGrantScopeFromPermissionDetails(executionToolName, permissionRequest.details),
+      );
       if (browserCrossSiteReason) {
         permissionRequest.reason = [permissionRequest.reason, browserCrossSiteReason].filter(Boolean).join('；');
       }
