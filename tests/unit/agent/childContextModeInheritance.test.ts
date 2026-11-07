@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const toolExecutorState = vi.hoisted(() => ({
   config: undefined as undefined | {
+    permissionModeOverrideIsInheritedCeiling?: boolean;
     requestPermission: (request: {
       forceConfirm?: boolean;
       type: 'command';
@@ -112,6 +113,7 @@ describe('child permission mode inheritance', () => {
     });
 
     expect(toolExecutorState.config).toBeDefined();
+    expect(toolExecutorState.config!.permissionModeOverrideIsInheritedCeiling).toBe(true);
     const requestPermission = toolExecutorState.config!.requestPermission;
 
     await expect(requestPermission({

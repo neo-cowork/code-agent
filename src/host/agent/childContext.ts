@@ -12,7 +12,7 @@
 // ============================================================================
 
 import { buildProfilePrompt } from '../prompts/builder';
-import { moreRestrictivePermissionMode } from '../permissions/modes';
+import { moreRestrictivePermissionMode } from '../permissions/permissionModeOrdering';
 import type { ToolContext } from '../tools/types';
 
 export type InheritanceMode = 'strict-inherit' | 'child-narrow' | 'independent';

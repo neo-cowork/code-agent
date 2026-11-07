@@ -310,6 +310,8 @@ export interface ToolExecutorConfig {
    * （否则父会话开 bypass 时被收缩的子 agent 会借会话档扩权）。主 agent 不传。
    */
   permissionModeOverride?: PermissionMode;
+  /** Treat permissionModeOverride as an inherited ceiling and apply later session tightening. */
+  permissionModeOverrideIsInheritedCeiling?: boolean;
   /** Present only for immutable per-run executors. */
   runContext?: RunContext;
   /** Optional final dispatch hop. Returning null falls back to the protocol resolver. */
@@ -472,6 +474,7 @@ export class ToolExecutor {
   private executionTopology: ExecutionTopology;
   private auditEnabled = true;
   private permissionModeOverride?: PermissionMode;
+  private readonly permissionModeOverrideIsInheritedCeiling: boolean;
   private readonly forcePermissionHandler: boolean;
   private readonly ledgerOrigin: ToolLedgerOrigin;
   private readonly telemetryCollector?: TelemetryCollector;
@@ -482,6 +485,7 @@ export class ToolExecutor {
     this.requestPermission = config.requestPermission;
     this.workingDirectory = nodePath.resolve(config.workingDirectory);
     this.permissionModeOverride = config.permissionModeOverride;
+    this.permissionModeOverrideIsInheritedCeiling = config.permissionModeOverrideIsInheritedCeiling === true;
     this.forcePermissionHandler = config.forcePermissionHandler === true;
     this.runContext = config.runContext;
     this.dispatchTool = config.dispatchTool;
@@ -524,6 +528,7 @@ export class ToolExecutor {
       workingDirectory: runContext.cwd,
       // run-scoped 派生必须继承收缩档，否则子 agent 的 effectiveMode 在此丢失、扩权洞重开
       permissionModeOverride: this.permissionModeOverride,
+      permissionModeOverrideIsInheritedCeiling: this.permissionModeOverrideIsInheritedCeiling,
       executionTopology: this.executionTopology,
       runContext,
       dispatchTool: dispatchTool ?? this.dispatchTool,
@@ -1514,7 +1519,11 @@ export class ToolExecutor {
       : undefined;
 
     // B1 第 4 档「只读探索」判定：语义与档位改写规则集中在 toolPermissionClassification.ts
-    const sessionPermissionMode = resolveSessionPermissionMode(this.permissionModeOverride, options.sessionId);
+    const sessionPermissionMode = resolveSessionPermissionMode(
+      this.permissionModeOverride,
+      options.sessionId,
+      this.permissionModeOverrideIsInheritedCeiling,
+    );
     // PROTECTED_WRITE_PATHS：policyEnforcer 之后、prefix_rule 之前。allow / hook 预批 /
     // classifier W1 / acceptEdits 都不能放行；只有 bypassPermissions 档保持放行语义。
     const protectedWriteForcesConfirmation = sessionPermissionMode !== 'bypassPermissions'
