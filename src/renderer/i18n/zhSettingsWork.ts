@@ -227,9 +227,7 @@ export const zhSettingsWork = {
         description: '通道会话默认不触发桌面 reply notification；处理过程留在通道 typing / streaming / 任务面板里，系统通知只用于需要介入或任务完成。',
         body: '飞书、Telegram、HTTP API 的普通回复不会弹桌面通知。错误回复只发短摘要，完整 trace 留在本机诊断；后续如需每个通道的完成提醒，也必须显式打开并继续走脱敏。',
       },
-      accounts: {
-        title: '通道账号',
-      },
+      accounts: { title: '通道账号' },
       statusFilters: [
         { value: 'all', label: '全部' },
         { value: 'connected', label: '已连接' },
@@ -302,7 +300,7 @@ export const zhSettingsWork = {
         groupAccessModeAllMembers: '群里所有消息都回应（访客身份）',
         groupAccessModeHint: '访客只能用只读工具；哪些人算信任用户，在上面的「白名单用户 ID」里单独设置',
         groupAccessModePrivacyPrerequisite: '需要先在 Telegram 里关闭机器人的隐私模式，连接后这里会告诉你是否已生效。',
-        telegramPrivacyModeWarning: '群里还收不到未 @ 的消息：Telegram 默认开着机器人隐私模式。去 @BotFather 发 /setprivacy → 选这个机器人 → Disable，再把机器人移出群、重新拉进来，然后在这里断开再连接检查。也可以把机器人设为群管理员；已经是群管理员的话，忽略这条提示。',
+        telegramPrivacyModeTitle: '需要关闭 Telegram 隐私模式', telegramPrivacyModeBadge: '需要处理', telegramPrivacyModeWarning: '群里还收不到未 @ 的消息：Telegram 默认开着机器人隐私模式。去 @BotFather 发 /setprivacy → 选这个机器人 → Disable，再把机器人移出群、重新拉进来，然后在这里断开再连接检查。也可以把机器人设为群管理员；已经是群管理员的话，忽略这条提示。',
         telegramTipSearchPrefix: '在 Telegram 中搜索 ',
         telegramTipSearchSuffix: ' 创建 Bot',
         telegramTipNewBotPrefix: '发送 ',

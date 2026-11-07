@@ -226,9 +226,7 @@ export const enSettingsWork = {
         description: 'Channel sessions do not trigger desktop reply notifications by default. Progress stays in channel typing, streaming, or the task panel; system notifications are reserved for cases needing intervention or task completion.',
         body: 'Normal replies from Feishu, Telegram, and HTTP API do not show desktop notifications. Error replies send only a short summary, with the full trace kept in local diagnostics. If per-channel completion reminders are needed later, they must be explicitly enabled and continue to use redaction.',
       },
-      accounts: {
-        title: 'Channel accounts',
-      },
+      accounts: { title: 'Channel accounts' },
       statusFilters: [
         { value: 'all', label: 'All' },
         { value: 'connected', label: 'Connected' },
@@ -301,7 +299,7 @@ export const enSettingsWork = {
         groupAccessModeAllMembers: 'Reply to every group message (as guest)',
         groupAccessModeHint: 'Guests only get read-only tools. Who counts as trusted is set separately in the allowlisted user IDs field above.',
         groupAccessModePrivacyPrerequisite: 'Turn off the bot\'s privacy mode in Telegram first. After connecting, this page will tell you whether it is working.',
-        telegramPrivacyModeWarning: 'Unmentioned group messages still do not arrive: Telegram leaves bot privacy mode on by default. Open @BotFather, send /setprivacy, choose this bot, and choose Disable. Remove the bot from the group and add it back, then disconnect and connect here to re-check. Or make the bot a group admin; if it is already a group admin, ignore this hint.',
+        telegramPrivacyModeTitle: 'Turn off Telegram privacy mode', telegramPrivacyModeBadge: 'Action needed', telegramPrivacyModeWarning: 'Unmentioned group messages still do not arrive: Telegram leaves bot privacy mode on by default. Open @BotFather, send /setprivacy, choose this bot, and choose Disable. Remove the bot from the group and add it back, then disconnect and connect here to re-check. Or make the bot a group admin; if it is already a group admin, ignore this hint.',
         telegramTipSearchPrefix: 'Search ',
         telegramTipSearchSuffix: ' in Telegram to create a Bot',
         telegramTipNewBotPrefix: 'Send ',
