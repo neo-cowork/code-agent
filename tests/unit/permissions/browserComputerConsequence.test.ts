@@ -127,7 +127,12 @@ describe('managed-browser submit click classification', () => {
       tabId,
     })).decision).toBe('approve');
 
-    const result = await classify({ action: 'click', selector: '#go', tabId });
+    const snapshot = await browserService.getDomSnapshot(tabId);
+    const targetRef = snapshot.interactiveElements.find(
+      (element) => element.selectorHint === '#go',
+    )?.targetRef;
+    expect(targetRef).toBeDefined();
+    const result = await classify({ action: 'click', targetRef, tabId });
     expect(result).toMatchObject({
       decision: 'ask',
       traceStep: { rule: 'browser_computer_consequence', result: 'ask' },
