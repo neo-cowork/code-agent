@@ -11,6 +11,8 @@ import { getPolicyEngine } from '../permissions/policyEngine';
 import { resolveEffectivePolicyRules } from '../permissions/runPolicySnapshot';
 import { createLogger } from '../services/infra/logger';
 import { createTraceBuilder } from '../security/decisionTraceBuilder';
+import { isBashToolName } from './toolNames';
+import { matchUserAskRule } from './userAskRuleGate';
 
 const logger = createLogger('GuardFabricGate');
 
@@ -34,6 +36,8 @@ export interface GuardFabricGateResult {
     trace?: DecisionTrace;
   };
   forceApproval?: boolean;
+  /** forceApproval 仅来自用户 ask 规则：分类器仍要跑（deny 兜底），但 approve 不得放行。 */
+  userAskRuleOnly?: boolean;
   traceStep?: DecisionStep;
 }
 
@@ -109,10 +113,23 @@ export function evaluateGuardFabricGate(input: GuardFabricGateInput): GuardFabri
   const builtinDeny = evaluateBuiltinHardDeny(input);
   if (builtinDeny) return { deny: builtinDeny };
 
+  // 用户 ask 规则（Bash(rm *) → ask）命中：强制进审批，不被自动放行捷径越过。
+  // deny 已在上面先行；非 main 拓扑的 topology 裁决（deny）仍优先于这里的 ask。
+  const userAsk = isBashToolName(input.policyToolName) && typeof input.params.command === 'string'
+    ? matchUserAskRule(buildPolicyRequest(input), input.sessionId, input.executionToolName)
+    : undefined;
+  const askResult: GuardFabricGateResult = userAsk ? { forceApproval: true, userAskRuleOnly: true, traceStep: userAsk.traceStep } : {};
+
   if (input.topology === 'main') {
-    return {};
+    return askResult;
   }
 
+  const topologyResult = evaluateTopologyGate(input);
+  if (topologyResult.deny || topologyResult.forceApproval) return topologyResult;
+  return askResult;
+}
+
+function evaluateTopologyGate(input: GuardFabricGateInput): GuardFabricGateResult {
   try {
     const guardDecision = getGuardFabric().evaluate({
       tool: input.policyToolName,

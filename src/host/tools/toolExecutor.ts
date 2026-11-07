@@ -1230,6 +1230,7 @@ export class ToolExecutor {
 
     const executionTopology = options.executionTopology ?? this.executionTopology;
     let guardFabricForcesApproval = false;
+    let guardFabricAskRuleOnly = false;
     let guardFabricTraceStep: import('../../shared/contract/decisionTrace').DecisionStep | undefined;
     const guardFabricGate = evaluateGuardFabricGate({
       executionToolName,
@@ -1261,6 +1262,7 @@ export class ToolExecutor {
     }
     if (guardFabricGate.forceApproval) {
       guardFabricForcesApproval = true;
+      guardFabricAskRuleOnly = guardFabricGate.userAskRuleOnly === true;
       guardFabricTraceStep = guardFabricGate.traceStep;
     }
 
@@ -1856,7 +1858,7 @@ export class ToolExecutor {
           'ask',
           `命令无法可靠拆词，审批结果不能放行：${commandAnalysisFailedReason}`,
         );
-      } else if (!guardFabricForcesApproval) {
+      } else if (!guardFabricForcesApproval || guardFabricAskRuleOnly) {
         try {
           // 三分支解析 + readOnly/档位改写规则见 toolPermissionClassification.ts
           // Protected write means "cannot auto-approve", not "skip the classifier".
@@ -1895,6 +1897,7 @@ export class ToolExecutor {
             classification.decision === 'approve'
             && !this.forcePermissionHandler
             && !protectedWriteForcesConfirmation
+            && !guardFabricForcesApproval
             && !computerApp
             && !nlForcesAsk
           ) {
