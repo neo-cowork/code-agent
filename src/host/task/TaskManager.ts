@@ -385,11 +385,11 @@ export class TaskManager extends EventEmitter {
     }
   }
 
-  async cancelBackgroundTask(taskId: string): Promise<boolean> {
+  async cancelBackgroundTask(taskId: string, reason?: 'idle-reaped'): Promise<boolean> {
     const run = this.backgroundRuns.get(taskId);
     if (!run) return false;
     run.status = 'cancelling';
-    await run.orchestrator.cancel();
+    await run.orchestrator.cancel(reason);
     return true;
   }
 
@@ -640,6 +640,11 @@ export class TaskManager extends EventEmitter {
    */
   hasActivePrimaryRun(sessionId: string): boolean {
     return this.runRegistry?.hasSession(sessionId) ?? false;
+  }
+
+  /** 有 run 从 registry 退场（含前台轮结束）时回调；无 registry 时是空操作。 */
+  onRunIdle(listener: () => void): () => void {
+    return this.runRegistry?.onIdleTransition(listener) ?? (() => undefined);
   }
 
   /**
