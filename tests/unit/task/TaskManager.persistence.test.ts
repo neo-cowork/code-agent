@@ -66,6 +66,7 @@ vi.mock('../../../src/host/agent/agentOrchestrator', () => ({
 vi.mock('../../../src/host/platform', () => ({
   app: { getPath: () => '/tmp' },
   AppWindow: { getAllWindows: () => [] },
+  broadcastToRenderer: vi.fn(),
 }));
 
 vi.mock('../../../src/host/services', () => ({
@@ -89,6 +90,10 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
 }));
 
 import { TaskManager } from '../../../src/host/task/TaskManager';
+import {
+  getBackgroundTaskManager,
+  resetBackgroundTaskManager,
+} from '../../../src/host/session/backgroundTaskManager';
 
 const persistedMessageSymbol = Symbol.for('code-agent.contextAssembly.persistedMessage');
 
@@ -509,6 +514,23 @@ describe('TaskManager message event persistence', () => {
     expect(events).toContain('task_cancelled');
     expect(events).not.toContain('task_completed');
     expect(manager.getSessionState('session-cancel').status).toBe('idle');
+  });
+
+  it('drops a stale terminal background row when a new foreground run starts', async () => {
+    resetBackgroundTaskManager();
+    sessionManagerState.getSession.mockResolvedValue({ id: 'session-bg', title: '长任务' });
+    const background = getBackgroundTaskManager();
+    expect(await background.moveToBackground('session-bg')).toBe(true);
+    await background.markCompleted('session-bg', 'done');
+    expect(background.isInBackground('session-bg')).toBe(true);
+
+    const manager = new TaskManager({ maxConcurrentTasks: 1 });
+    manager.initialize({ configService: {} as never, onAgentEvent: vi.fn() });
+    orchestratorMocks.sendMessage.mockResolvedValue(undefined);
+    await manager.startTask('session-bg', 'continue');
+
+    expect(background.isInBackground('session-bg')).toBe(false);
+    resetBackgroundTaskManager();
   });
 
   it('persists idle to DB after a successful run (aligned with engine adapters)', async () => {

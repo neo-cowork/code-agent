@@ -223,6 +223,25 @@ describe('deferred tool preload', () => {
     expect(getToolSearchService().isToolLoaded('workflow_orchestrate')).toBe(true);
   });
 
+  it.each([
+    '以后每天只跟我说一次，别报天气',
+    '少烦我',
+    'Please change this role proactivity to daily',
+  ])('preloads set_role_proactivity for role proactivity chat intent: %s', (content) => {
+    expect(getDeferredToolsToPreloadForTurn(runtime({
+      messages: [{ id: 'm1', role: 'user', content, timestamp: 1 }],
+    }))).toContain('set_role_proactivity');
+    expect(getTextForegroundToolNamesForPrompt(content)).toContain('set_role_proactivity');
+  });
+
+  it('does not preload set_role_proactivity for unrelated daily conversation', () => {
+    expect(getDeferredToolsToPreloadForTurn(runtime({
+      messages: [{ id: 'm1', role: 'user', content: '每天早上我都会看天气', timestamp: 1 }],
+    }))).not.toContain('set_role_proactivity');
+    expect(getTextForegroundToolNamesForPrompt('每天早上我都会看天气'))
+      .not.toContain('set_role_proactivity');
+  });
+
   it('preloads dynamic workflow for /workflow and script workflow requests', () => {
     const loaded = preloadDeferredToolsForTurn(runtime({
       messages: [{
