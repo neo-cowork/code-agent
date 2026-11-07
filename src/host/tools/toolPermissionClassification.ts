@@ -20,7 +20,7 @@ import {
 } from '../../shared/utils/browserComputerActionCatalog';
 import { classifyShellDesktopAutomation } from '../permissions/shellDesktopAutomation';
 import { isBashToolName } from './toolNames';
-import { browserService } from '../services/infra/browserService';
+import type { BrowserService } from '../services/infra/browserService';
 import { createLogger } from '../services/infra/logger';
 
 type ToolPermissionLevel = Parameters<typeof permissionModeAutoApproves>[1];
@@ -97,6 +97,8 @@ const BROWSER_COMPUTER_HIGH_RISK_BLOCKED_CODE = 'BROWSER_COMPUTER_HIGH_RISK_BLOC
 const logger = createLogger('ToolPermissionClassification');
 const SUBMIT_CLICK_TEXT_PATTERN = /\b(?:submit|send|pay|order|checkout|confirm)\b|提交|发送|支付|付款|下单|结账|确认/iu;
 const SUBMIT_SELECTOR_PATTERN = /\[\s*type\s*=\s*["']?(?:submit|image)(?:["']|\s*\])/iu;
+type BrowserSubmitProbe = Pick<BrowserService, 'probeSubmitClick'>;
+type BrowserSubmitProbeResolver = () => BrowserSubmitProbe | Promise<BrowserSubmitProbe>;
 
 function browserConsequenceDecision(
   entry: { tool: string; action: string },
@@ -142,7 +144,7 @@ async function classifyBrowserComputerConsequence(
   toolName: string,
   params: Record<string, unknown>,
   startedAt: number,
-  browserSubmitProbe?: () => Pick<typeof browserService, 'probeSubmitClick'>,
+  browserSubmitProbe?: BrowserSubmitProbeResolver,
 ): Promise<ClassificationResult | null> {
   const catalogTool = normalizeBrowserComputerCatalogToolName(toolName);
   if (!catalogTool) return null;
@@ -197,7 +199,18 @@ async function classifyBrowserComputerConsequence(
     entry.tool === 'browser_action'
     && (entry.action === 'click' || entry.action === 'click_text')
   ) {
-    const probe = await (browserSubmitProbe?.() ?? browserService).probeSubmitClick(params);
+    let probe: Awaited<ReturnType<BrowserService['probeSubmitClick']>>;
+    try {
+      const probeService = browserSubmitProbe
+        ? await browserSubmitProbe()
+        : (await import('../services/infra/browserService')).browserService;
+      probe = await probeService.probeSubmitClick(params);
+    } catch (error) {
+      probe = {
+        status: 'unknown',
+        cause: error instanceof Error ? error.message : String(error),
+      };
+    }
     if (probe.status === 'known' && probe.isSubmit) {
       const method = probe.method || 'GET';
       const targetHost = probe.targetHost || 'unknown';
@@ -427,7 +440,7 @@ export async function resolveToolPermissionClassification(input: {
    */
   launderRetryForcesAsk?: boolean;
   /** Resolve the run-owned managed browser lazily only for click target probing. */
-  browserSubmitProbe?: () => Pick<typeof browserService, 'probeSubmitClick'>;
+  browserSubmitProbe?: BrowserSubmitProbeResolver;
 }): Promise<ClassificationResult> {
   // B1: EXTERNAL 风险类打标，与三分支决策正交、不改变审批结果。所有出口都带上，供 B2/B4/审计消费。
   const external = isExternalSideEffectTool(input.executionToolName);
