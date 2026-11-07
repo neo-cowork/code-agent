@@ -42,11 +42,18 @@ describe('registerAgentCancelRoute honest cancel settlement (A3)', () => {
     registry: RunRegistry,
     readService?: DurableRunReadService,
     onRecoveredWaitingCancelled?: (input: { runId: string; sessionId: string }) => void,
+    cancelSessionBackgroundTasks?: (sessionId: string) => Promise<number>,
   ) {
     const app = express();
     app.use(express.json());
     const router = express.Router();
-    registerAgentCancelRoute(router, registry, () => readService, onRecoveredWaitingCancelled);
+    registerAgentCancelRoute(
+      router,
+      registry,
+      () => readService,
+      onRecoveredWaitingCancelled,
+      cancelSessionBackgroundTasks,
+    );
     app.use('/api', router);
     server = http.createServer(app);
     await new Promise<void>((resolve) => server!.listen(0, '127.0.0.1', resolve));
@@ -333,5 +340,24 @@ describe('registerAgentCancelRoute honest cancel settlement (A3)', () => {
       db.close();
       rmSync(workspace, { recursive: true, force: true });
     }
+  });
+
+  it('stops command-center work when the session has only background tasks and reports the count', async () => {
+    const registry = new RunRegistry();
+    const cancelSessionBackgroundTasks = vi.fn().mockResolvedValue(2);
+    await start(registry, undefined, undefined, cancelSessionBackgroundTasks);
+
+    const response = await fetch(`${baseUrl}/api/cancel`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId: 'session-background-only' }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      message: 'Stopped 2 background tasks',
+      backgroundTasksStopped: 2,
+    });
+    expect(cancelSessionBackgroundTasks).toHaveBeenCalledWith('session-background-only');
   });
 });

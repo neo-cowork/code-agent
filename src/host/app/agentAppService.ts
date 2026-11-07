@@ -76,6 +76,7 @@ import type {
 } from '../../shared/contract/conversationEnvelope';
 import { resolveConnectorRequiredForTurn, withWorkbenchTurnSystemContext } from './workbenchTurnContext';
 import { withSessionCommandCenterBrain } from './sessionCommandCenterBrain';
+import { getSessionCommandCenter } from '../services/commandCenter/sessionCommandCenter';
 import { isSessionCommandCenterTurn } from '../../shared/constants/sessionCommandCenter';
 import { getPermissionModeManager } from '../permissions/modes';
 import {
@@ -905,6 +906,9 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         const externalHandle = this.durableRunReadService
           ? durableExternalHandle
           : registeredHandle;
+        if (normalizedReason === 'user-cancel' || normalizedReason === 'parent-cancel') {
+          await getSessionCommandCenter().cancelAllForSession(resolvedSessionId, normalizedReason);
+        }
         if (externalHandle) {
           await externalHandle.cancel(normalizedReason === 'session-switch' ? 'session-switch' : 'user');
           return;

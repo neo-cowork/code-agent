@@ -3,6 +3,7 @@ import type { TaskProgress } from '../../../shared/contract/backgroundTask';
 import type { ToolResult } from '../../../shared/contract/tool';
 import type { NormalizedToolArtifactMeta } from '../../../shared/contract/artifactBlob';
 import type { WorkspaceScope } from '../../../shared/contract/project';
+import type { CancellationReason } from '../../../shared/contract/cancellation';
 import type { AgentRunOptions } from '../../research/types';
 import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
@@ -14,7 +15,7 @@ import {
   type SessionTaskSlotRecovery,
 } from './sessionTaskSlotLedger';
 import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
-import { createForegroundWake } from './foregroundWake';
+import { createForegroundWake, type ForegroundWakeController } from './foregroundWake';
 import { getConfigService } from '../core/configService';
 import {
   formatSessionCommandTaskIdleFailure,
@@ -124,7 +125,8 @@ interface SessionCommandCenterDependencies {
   projectTerminalResult?: (task: SessionCommandTask, status: TerminalTaskStatus) => Promise<void>;
   /** 排队任务收到用户补话时落主会话记录（运行中路径由运行时 injectSteerMessage 落，不在这里重复） */
   persistMemberInput?: (sessionId: string, message: Message) => Promise<void>;
-  wakeForegroundBrain?: (task: SessionCommandTask, status: TerminalTaskStatus) => Promise<void>;
+  wakeForegroundBrain?: ((task: SessionCommandTask, status: TerminalTaskStatus) => Promise<void>)
+    & Partial<Pick<ForegroundWakeController, 'cancelPendingWake'>>;
   slotLedgerOptions?: Omit<SessionTaskSlotLedgerOptions, 'onRecovery'>;
   slotRecoveryLocale?: 'zh' | 'en';
 }
@@ -150,6 +152,10 @@ export class SessionCommandCenter {
   private readonly pendingApprovalIdsByTask = new Map<string, Set<string>>();
   /** 本轮审批等待的起点（首张未答审批时刻）；审批清空即删，下一张重新计时。 */
   private readonly approvalWaitStartedAtByTask = new Map<string, number>();
+  /** 用户 Stop 已覆盖的任务：终态仍投影到面板，但不能再唤醒前台。 */
+  private readonly suppressForegroundWakeTaskIds = new Set<string>();
+  /** 会话级 Stop 收线期间不释放队列的下一任务。 */
+  private readonly cancellingSessions = new Set<string>();
   private readonly approvalWaitCapMs: number;
   private readonly manager: TaskManager;
   private readonly projectTerminalResult: NonNullable<SessionCommandCenterDependencies['projectTerminalResult']>;
@@ -373,6 +379,54 @@ export class SessionCommandCenter {
     return { outcome: 'resolved', task: { ...task } };
   }
 
+  async cancelAllForSession(sessionId: string, reason: CancellationReason): Promise<number> {
+    this.wakeForegroundBrain.cancelPendingWake?.(sessionId);
+    const active = this.active(sessionId);
+    let cancelled = 0;
+    let failed = 0;
+
+    this.cancellingSessions.add(sessionId);
+    try {
+      for (const snapshot of active) {
+        const task = this.tasksBySession.get(sessionId)?.get(snapshot.id);
+        if (!task || TERMINAL.has(task.status) || task.status === 'cancelling') continue;
+        this.suppressForegroundWakeTaskIds.add(task.id);
+        try {
+          if (task.status === 'queued') {
+            await this.settle(task, 'cancelled');
+            cancelled += 1;
+            continue;
+          }
+
+          const accepted = await this.manager.cancelBackgroundTask(task.id);
+          if (accepted && !TERMINAL.has(task.status)) {
+            task.status = 'cancelling';
+            task.updatedAt = Date.now();
+            this.projectTask(task);
+          } else if (!TERMINAL.has(task.status)) {
+            // The manager may have dropped the run just before the request. Settle the
+            // command-center projection so the UI cannot remain stuck in running.
+            await this.settle(task, 'cancelled');
+          }
+          cancelled += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+    } finally {
+      this.cancellingSessions.delete(sessionId);
+    }
+
+    logger.info('Cancelled command-center tasks for session', {
+      sessionId,
+      reason,
+      requested: active.length,
+      cancelled,
+      failed,
+    });
+    return cancelled;
+  }
+
   dispose(): void {
     for (const eventName of TASK_LIFECYCLE_EVENTS) {
       this.manager.off(eventName, this.onTaskEvent);
@@ -383,6 +437,8 @@ export class SessionCommandCenter {
     this.shellCommandsByCallId.clear();
     this.pendingApprovalIdsByTask.clear();
     this.approvalWaitStartedAtByTask.clear();
+    this.suppressForegroundWakeTaskIds.clear();
+    this.cancellingSessions.clear();
   }
 
   private tasks(sessionId: string): Map<string, SessionCommandTask> {
@@ -721,6 +777,8 @@ export class SessionCommandCenter {
   ): Promise<void> {
     if (TERMINAL.has(task.status)) return;
     this.approvalWaitStartedAtByTask.delete(task.id);
+    this.pendingApprovalIdsByTask.delete(task.id);
+    const suppressForegroundWake = this.suppressForegroundWakeTaskIds.delete(task.id);
     task.status = status;
     task.detail = detail;
     task.summary = compactSummary(
@@ -751,12 +809,14 @@ export class SessionCommandCenter {
 
     try {
       await this.projectTerminalResult(task, status);
-      void this.wakeForegroundBrain(task, status).catch((error) => {
-        logger.warn('Failed to wake text foreground brain after task settlement', {
-          taskId: task.id,
-          message: error instanceof Error ? error.message : String(error),
+      if (!suppressForegroundWake) {
+        void this.wakeForegroundBrain(task, status).catch((error) => {
+          logger.warn('Failed to wake text foreground brain after task settlement', {
+            taskId: task.id,
+            message: error instanceof Error ? error.message : String(error),
+          });
         });
-      });
+      }
     } catch (error) {
       logger.warn('Failed to project text command task result', {
         taskId: task.id,
@@ -764,9 +824,10 @@ export class SessionCommandCenter {
       });
     }
 
+    if (this.cancellingSessions.has(task.sessionId)) return;
     for (const slot of startable) {
       const next = this.tasks(task.sessionId).get(slot.workItemId);
-      if (next) this.launch(next);
+      if (next && !TERMINAL.has(next.status)) this.launch(next);
     }
   }
 

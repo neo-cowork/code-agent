@@ -4,6 +4,7 @@ import type { RunRegistry } from '../../host/runtime/runRegistry';
 import { CANCELLATION_TIMEOUTS } from '../../shared/constants';
 import { AgentCancelBodySchema } from './agentBodySchemas';
 import { isDurableTerminalNativeControl } from './agentDurableRouteLifecycle';
+import { getSessionCommandCenter } from '../../host/services/commandCenter/sessionCommandCenter';
 
 export async function waitForCancelSettlement(input: {
   runId: string;
@@ -39,6 +40,9 @@ export function registerAgentCancelRoute(
   runRegistry: RunRegistry,
   getReadService?: () => DurableRunReadService | undefined,
   onRecoveredWaitingCancelled?: (input: { runId: string; sessionId: string }) => void,
+  cancelSessionBackgroundTasks: (sessionId: string) => Promise<number> = (sessionId) => (
+    getSessionCommandCenter().cancelAllForSession(sessionId, 'user-cancel')
+  ),
 ): void {
   router.post('/cancel', async (req, res) => {
     const parsedBody = AgentCancelBodySchema.safeParse(req.body ?? {});
@@ -53,8 +57,14 @@ export function registerAgentCancelRoute(
       // 路由只会回 "No active agent"，run 永远到不了终态，同一会话也起不了新 run。
       const recovered = await runRegistry.terminalRecoveredWaitingRun({ runId, sessionId });
       if (recovered) {
+        const backgroundTasksStopped = await cancelSessionBackgroundTasks(recovered.sessionId);
         if (!recovered.joined) onRecoveredWaitingCancelled?.({ runId: recovered.runId, sessionId: recovered.sessionId });
-        res.json({ message: 'Cancelled', runId: recovered.runId, sessionId: recovered.sessionId });
+        res.json({
+          message: 'Cancelled',
+          runId: recovered.runId,
+          sessionId: recovered.sessionId,
+          ...(backgroundTasksStopped > 0 ? { backgroundTasksStopped } : {}),
+        });
         return;
       }
       if (await isDurableTerminalNativeControl({
@@ -63,19 +73,34 @@ export function registerAgentCancelRoute(
         runId,
         sessionId,
       })) {
-        res.json({ message: 'No active agent to cancel' });
+        const backgroundTasksStopped = sessionId && !runId
+          ? await cancelSessionBackgroundTasks(sessionId)
+          : 0;
+        res.json({
+          message: backgroundTasksStopped > 0
+            ? `Stopped ${backgroundTasksStopped} background task${backgroundTasksStopped === 1 ? '' : 's'}`
+            : 'No active agent to cancel',
+          ...(backgroundTasksStopped > 0 ? { backgroundTasksStopped } : {}),
+        });
         return;
       }
       const ambiguous = !runId && !sessionId && runRegistry.size > 1;
+      const backgroundTasksStopped = !ambiguous && sessionId && !runId
+        ? await cancelSessionBackgroundTasks(sessionId)
+        : 0;
       res.status(ambiguous ? 409 : 200).json({
         message: ambiguous
           ? 'runId or sessionId is required when multiple runs are active'
-          : 'No active agent to cancel',
+          : backgroundTasksStopped > 0
+            ? `Stopped ${backgroundTasksStopped} background task${backgroundTasksStopped === 1 ? '' : 's'}`
+            : 'No active agent to cancel',
         ...(ambiguous ? { code: 'RUN_TARGET_REQUIRED' } : {}),
+        ...(!ambiguous && backgroundTasksStopped > 0 ? { backgroundTasksStopped } : {}),
       });
       return;
     }
 
+    const backgroundTasksStopped = await cancelSessionBackgroundTasks(target.context.sessionId);
     await target.cancel('user');
 
     // Honest response: only claim "Cancelled" after the run left the active set
@@ -97,6 +122,7 @@ export function registerAgentCancelRoute(
         message: 'Cancelled',
         runId: target.context.runId,
         sessionId: target.context.sessionId,
+        ...(backgroundTasksStopped > 0 ? { backgroundTasksStopped } : {}),
       });
       return;
     }
@@ -106,6 +132,7 @@ export function registerAgentCancelRoute(
       code: 'CANCEL_REQUESTED',
       runId: target.context.runId,
       sessionId: target.context.sessionId,
+      ...(backgroundTasksStopped > 0 ? { backgroundTasksStopped } : {}),
     });
   });
 }

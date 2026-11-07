@@ -363,6 +363,53 @@ describe('SessionCommandCenter', () => {
     center.dispose();
   });
 
+  it('cascades a session Stop to running and queued tasks without approvals or a foreground wake', async () => {
+    const manager = new FakeTaskManager();
+    const pendingApprovals = new Set<string>();
+    const wakeForegroundBrain = Object.assign(vi.fn().mockResolvedValue(undefined), {
+      cancelPendingWake: vi.fn(),
+    });
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn(),
+      wakeForegroundBrain,
+    });
+    const running = await center.spawn(input(1, 'report'));
+    const queued = await center.spawn(input(2, 'report'));
+    if (running.outcome === 'requires_choice' || queued.outcome !== 'queued') {
+      throw new Error('unexpected admission result');
+    }
+    pendingApprovals.add(running.task.id);
+    manager.emitAgent('session-a', {
+      type: 'permission_request',
+      data: { id: 'approval-1', resolved: false },
+    } as AgentEvent, running.task.id);
+    manager.cancelBackgroundTask.mockImplementationOnce(async (taskId: string) => {
+      pendingApprovals.delete(taskId);
+      manager.emitAgent('session-a', {
+        type: 'permission_request',
+        data: { id: 'approval-1', resolved: true },
+      } as AgentEvent, taskId);
+      manager.emitTask({ type: 'task_cancelled', sessionId: 'session-a', data: { taskId } });
+      return true;
+    });
+
+    await expect(center.cancelAllForSession('session-a', 'user-cancel')).resolves.toBe(2);
+    await vi.waitFor(() => expect(center.list('session-a')).toMatchObject([
+      { id: running.task.id, status: 'cancelled' },
+      { id: queued.task.id, status: 'cancelled' },
+    ]));
+    expect(manager.cancelBackgroundTask).toHaveBeenCalledTimes(1);
+    expect(manager.cancelBackgroundTask).toHaveBeenCalledWith(running.task.id);
+    expect(manager.startBackgroundTask).toHaveBeenCalledTimes(1);
+    expect(pendingApprovals).toEqual(new Set());
+    expect(wakeForegroundBrain.cancelPendingWake).toHaveBeenCalledWith('session-a');
+    expect(wakeForegroundBrain).not.toHaveBeenCalled();
+
+    await expect(center.cancelAllForSession('session-a', 'user-cancel')).resolves.toBe(0);
+    expect(manager.cancelBackgroundTask).toHaveBeenCalledTimes(1);
+    center.dispose();
+  });
+
   // 顺手抓到的老病：resolve() 经 list() 返回快照拷贝，steer 改的 prompt 从没落到台账那份，
   // 排队任务开工时读到的还是老任务书。断言落在台账（list 再读）而不是 steer 的返回值上。
   it('steer on a queued task appends to the ledger copy of the prompt, not a snapshot', async () => {

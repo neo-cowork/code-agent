@@ -124,9 +124,14 @@ function wakePrompt(task: SessionCommandTask, status: Extract<WakeStatus, 'compl
   return `后台任务 ${task.shortName} 已${outcome}，结果摘要：${resultText}。${supplement}`;
 }
 
+export interface ForegroundWakeController {
+  (task: SessionCommandTask, status: WakeStatus): Promise<void>;
+  cancelPendingWake: (sessionId: string) => void;
+}
+
 export function createForegroundWake(
   dependencies: ForegroundWakeDependencies = defaultDependencies,
-): (task: SessionCommandTask, status: WakeStatus) => Promise<void> {
+): ForegroundWakeController {
   const consecutiveBySession = new Map<string, ConsecutiveWakeState>();
   const inFlightSessions = new Set<string>();
   // 每会话只记最新一次被推迟的唤醒；会话回到 idle（或在途唤醒结束）时投递一次
@@ -308,6 +313,10 @@ export function createForegroundWake(
       if (turnRan) flushPending(sessionId);
     }
   };
-  return wake;
+  return Object.assign(wake, {
+    cancelPendingWake: (sessionId: string) => {
+      pendingBySession.delete(sessionId);
+    },
+  });
 }
 

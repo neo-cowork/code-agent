@@ -12,6 +12,14 @@ import { getFileCheckpointService } from '../../../src/host/services/checkpoint'
 import { loadStreamSnapshot } from '../../../src/host/session/streamSnapshot';
 import { getDefaultWorkDirectory } from '../../../src/host/config/configPaths';
 
+const commandCenterState = vi.hoisted(() => ({
+  cancelAllForSession: vi.fn(),
+}));
+
+vi.mock('../../../src/host/services/commandCenter/sessionCommandCenter', () => ({
+  getSessionCommandCenter: () => commandCenterState,
+}));
+
 vi.mock('../../../src/host/services', () => ({
   getSessionManager: vi.fn(),
 }));
@@ -124,6 +132,7 @@ describe('AgentAppService lifecycle routing', () => {
   };
 
   beforeEach(() => {
+    commandCenterState.cancelAllForSession.mockReset().mockResolvedValue(0);
     orchestrator = {
       cancel: vi.fn().mockResolvedValue(undefined),
       getWorkingDirectory: vi.fn(() => '/current/project'),
@@ -859,6 +868,31 @@ describe('AgentAppService lifecycle routing', () => {
       expect(orchestrator.cancel).not.toHaveBeenCalled();
     },
   );
+
+  it('cascades user cancellation to command-center tasks before the foreground and skips session-switch', async () => {
+    const order: string[] = [];
+    commandCenterState.cancelAllForSession.mockImplementation(async () => {
+      order.push('background');
+      return 2;
+    });
+    taskManager.getSessionState.mockReturnValue({ status: 'running' });
+    taskManager.cancelTask.mockImplementation(async () => {
+      order.push('foreground');
+    });
+    const service = createService(taskManager);
+
+    await service.cancel('session-1', 'user-cancel');
+
+    expect(commandCenterState.cancelAllForSession).toHaveBeenCalledWith('session-1', 'user-cancel');
+    expect(order).toEqual(['background', 'foreground']);
+
+    commandCenterState.cancelAllForSession.mockClear();
+    taskManager.cancelTask.mockClear();
+    await service.cancel('session-1', 'session-switch');
+
+    expect(commandCenterState.cancelAllForSession).not.toHaveBeenCalled();
+    expect(taskManager.cancelTask).toHaveBeenCalledWith('session-1');
+  });
 
   it('falls back to direct orchestrator cancellation for an untracked session', async () => {
     taskManager.getSessionState.mockReturnValue({ status: 'idle' });
