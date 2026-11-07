@@ -2,6 +2,7 @@
 // Deterministic 5-page fixture for managed-browser multi-step runs. No external network.
 // Usage: node tests/fixtures/browser-doomloop/server.mjs [port]  (prints FIXTURE_URL=...)
 import http from 'node:http';
+import { URLSearchParams } from 'node:url';
 
 const nav = '<nav><a href="/">Home</a> | <a href="/form">Form</a> | <a href="/reveal">Reveal</a> | <a href="/delayed">Delayed</a> | <a href="/submit">Submit</a> | <a href="/upload">Upload</a></nav>';
 const page = (title, body) => `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title></head><body>${nav}<h1>${title}</h1>${body}</body></html>`;
