@@ -95,6 +95,7 @@ import {
 } from '../sandbox/osSandboxPolicy';
 import { resolveBackgroundWorkspaceAuthority } from '../runtime/workspaceAuthority';
 import { resolveWorkspacePath } from '../runtime/workspaceScope';
+import { skillBoundaryAllowsTool } from './skillBoundaryScope';
 import { isDangerousCommand, sanitizeToolParams, toolMatchesPatternSet, truncateToolOutput } from './toolExecutorHelpers';
 import { prepareNativeToolCheckpoint } from './nativeToolCheckpoint';
 import { annotateToolExecution, beginApprovalWait, endApprovalWait, getApprovalWaitMs, reportUndeclaredToolParams, requestPermissionWithTelemetry } from './toolExecutionTelemetry';
@@ -1509,7 +1510,7 @@ export class ToolExecutor {
     // 只约束 requiresPermission 的工具（只读工具不受限）。
     const boundaryViolation = options.skillToolBoundary
       && toolDef.requiresPermission
-      && !toolMatchesPatternSet(executionToolName, params, new Set(options.skillToolBoundary.allowedTools))
+      && !skillBoundaryAllowsTool(options.skillToolBoundary, executionToolName, params)
       ? options.skillToolBoundary
       : undefined;
 
