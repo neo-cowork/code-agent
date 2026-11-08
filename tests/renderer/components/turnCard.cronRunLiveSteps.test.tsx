@@ -54,17 +54,21 @@ const toolCalls = [
   { id: 'read-ok', name: 'Read', arguments: { file_path: '/tmp/saved.txt' } },
   { id: 'write-denied', name: 'Write', arguments: { file_path: '/tmp/denied.txt', content: 'third' } },
 ];
+const inFlightWrite = {
+  id: 'write-in-flight', name: 'Write', arguments: { file_path: '/tmp/in-flight.txt', content: 'pending' },
+};
 
 let persistedMessages: Message[] = [];
 let parkedApprovals: unknown[] = [];
+let loadedSessionActiveRun = true;
 
-function storedRunMessages(results: ToolResult[] = toolResults): Message[] {
+function storedRunMessages(results: ToolResult[] = toolResults, unfinishedCalls = [] as typeof toolCalls): Message[] {
   const resultIds = new Set(results.map((result) => result.toolCallId));
   return [
     { id: 'user-1', role: 'user', content: 'Run the scheduled check', timestamp: 1_000 },
     {
       id: 'assistant-1', role: 'assistant', content: '', timestamp: 2_000,
-      toolCalls: toolCalls.filter((toolCall) => resultIds.has(toolCall.id)),
+      toolCalls: [...toolCalls.filter((toolCall) => resultIds.has(toolCall.id)), ...unfinishedCalls],
     },
     ...results.map((result, index) => ({
       id: `tool-result-${index}`,
@@ -103,14 +107,21 @@ function renderStoredRun(messages: Message[]): void {
 
 describe('TurnCard live cron run steps', () => {
   beforeEach(() => {
-    useAppStore.setState({ disclosureLevel: 'standard', language: 'en' });
+    useAppStore.setState({ disclosureLevel: 'standard', language: 'en', processingSessionIds: new Set() });
     persistedMessages = storedRunMessages();
     parkedApprovals = [];
+    loadedSessionActiveRun = true;
     domainInvokeMock.mockReset().mockImplementation(async (_domain: string, action: string) => {
       if (action === 'load') {
         return {
           success: true,
-          data: { ...runSession, status: 'running', activeRun: true, messages: persistedMessages, todos: [] },
+          data: {
+            ...runSession,
+            status: loadedSessionActiveRun ? 'running' : 'idle',
+            activeRun: loadedSessionActiveRun,
+            messages: persistedMessages,
+            todos: [],
+          },
         };
       }
       if (action === 'getSessionTasks') return { success: true, data: [] };
@@ -126,7 +137,7 @@ describe('TurnCard live cron run steps', () => {
     cleanup();
     vi.restoreAllMocks();
     delete (window as unknown as { domainAPI?: unknown }).domainAPI;
-    useAppStore.setState({ disclosureLevel: 'standard', language: 'zh' });
+    useAppStore.setState({ disclosureLevel: 'standard', language: 'zh', processingSessionIds: new Set() });
   });
 
   it('shows three persisted tool steps while the cron execution is running', async () => {
@@ -137,6 +148,26 @@ describe('TurnCard live cron run steps', () => {
     expect(screen.getAllByTestId('tool-call-row-Write')).toHaveLength(2);
     expect(screen.getAllByTestId('tool-group-head-label')).toHaveLength(1);
     expect(screen.getByTestId('tool-group-head-label').textContent).toContain('Read');
+  });
+
+  it('shows a persisted unfinished Write as an in-progress step while the cron execution is running', async () => {
+    persistedMessages = storedRunMessages(toolResults.slice(0, 2), [inFlightWrite]);
+    loadedSessionActiveRun = false;
+    vi.spyOn(cronClient, 'getExecutions').mockResolvedValue([execution('running')]);
+    renderStoredRun(persistedMessages);
+
+    expect((await screen.findByTestId('cron-run-status')).dataset.state).toBe('running');
+    await waitFor(() => {
+      const inFlightRow = screen.getAllByTestId('tool-call-row-Write')
+        .find((row) => row.textContent?.includes('in-flight.txt'));
+      expect(inFlightRow).toBeTruthy();
+      expect(inFlightRow?.getAttribute('role')).toBe('button');
+      expect(inFlightRow?.getAttribute('aria-expanded')).toBe('false');
+      expect(inFlightRow?.textContent).toContain('Writing');
+      expect(inFlightRow?.firstElementChild?.className).toContain('text-[var(--cc-pending)]');
+      expect(inFlightRow?.firstElementChild?.textContent).toMatch(/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/);
+      expect(inFlightRow?.closest('[data-testid="interrupt-timeline-step"]')).toBeNull();
+    });
   });
 
   it('reloads a tool step appended in the database while the execution stays running without remounting', async () => {
