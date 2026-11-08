@@ -78,6 +78,21 @@ afterEach(() => {
 });
 
 describe('manual cron agent action fields', () => {
+  it('shows and saves an agent prompt raw while the display layer masks it elsewhere', async () => {
+    const rawPrompt = 'back up notes --password=hunter2xyz';
+    const job = agentJob();
+    job.action = { type: 'agent', agentType: 'default', prompt: rawPrompt };
+    const updateJob = vi.fn(async (_id: string, input: UpdateCronJobInput) => ({ ...job, ...input }));
+    useCronStore.setState({ updateJob });
+    openActionTab(job);
+
+    expect((screen.getByTestId('cron-agent-task-instructions') as HTMLTextAreaElement).value).toBe(rawPrompt);
+    fireEvent.click(screen.getByText('保存修改'));
+
+    await waitFor(() => expect(updateJob).toHaveBeenCalledTimes(1));
+    expect(updateJob.mock.calls[0]?.[1]).toMatchObject({ action: { type: 'agent', prompt: rawPrompt } });
+  });
+
   it('uses every CRON_AGENT_TYPES value with a description, defaults to default, and saves without editing type or context', async () => {
     const createJob = vi.fn(async (input: CreateCronJobDefinition) => storedJob(input));
     useCronStore.setState({ createJob });
