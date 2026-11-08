@@ -381,6 +381,27 @@ describe('mailModule (native)', () => {
         expect(result.output).not.toContain('(');
       }
     });
+
+    it('read_message carries the image/attachment notice into tool output', async () => {
+      const notice = '邮件正文是图片/附件，未能提取出文本。 附件：1 个 (photo.png)';
+      execMock.mockResolvedValue({
+        data: {
+          id: 10,
+          subject: 'Image-only',
+          sender: 'a@x.com',
+          receivedAtMs: null,
+          read: true,
+          content: notice,
+          attachmentCount: 1,
+          attachments: ['photo.png'],
+        },
+      });
+
+      const result = await run({ action: 'read_message', message_id: 10 });
+
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.output).toContain(notice);
+    });
   });
 
   describe('onProgress', () => {

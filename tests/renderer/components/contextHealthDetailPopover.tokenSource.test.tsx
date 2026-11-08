@@ -159,7 +159,7 @@ describe('ContextHealthDetailPopover — 总量真源标注（N-CTXTRUTH）', ()
     expect(screen.getByTestId('context-health-deviation').textContent).toContain('+5.0%');
   });
 
-  it('窗口兜底：停用已用占比，标容量未知', () => {
+  it('窗口兜底：停用已用占比，标上限未获取', () => {
     pillMocks.appState.contextHealth = makeHealth({
       currentTokens: 153600,
       maxTokens: 128000,
@@ -170,7 +170,7 @@ describe('ContextHealthDetailPopover — 总量真源标注（N-CTXTRUTH）', ()
     });
     openPopover();
 
-    expect(screen.getByTestId('context-health-window-unknown').textContent).toContain('容量未知');
+    expect(screen.getByTestId('context-health-window-unknown').textContent).toContain('上限未获取');
     expect(screen.queryByText(/100% 已用/)).toBeNull();
     expect(screen.queryByText(/120% 已用/)).toBeNull();
   });

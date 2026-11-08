@@ -1884,6 +1884,18 @@ export class ToolExecutor {
             sessionPermissionMode,
             peerOriginForcesConfirmation,
             launderRetryForcesAsk,
+            browserSubmitProbe: async () => {
+              const {
+                getManagedBrowserProviderAdapter,
+                surfaceIdentityFromToolContext,
+              } = await import('../services/surfaceExecution/ManagedBrowserProviderAdapter');
+              const surfaceIdentity = surfaceIdentityFromToolContext(context);
+              if (surfaceIdentity) {
+                return getManagedBrowserProviderAdapter().getBrowserService(surfaceIdentity);
+              }
+              const { getBrowserService } = await import('../services/infra/browserPool');
+              return getBrowserService(context.agentId);
+            },
           });
           // B1: EXTERNAL 风险类打标进 decisionTrace（result='allow'，不改变审批结果，仅供
           // B2 无人值守停车 / B4 target 授权与审计消费）。此处入 traceBuilder 覆盖 deny/ask 路径；
