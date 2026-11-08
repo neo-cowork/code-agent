@@ -4,6 +4,7 @@
 // ============================================================================
 
 import type { ToolCall } from '@shared/contract';
+import type { TaskStatus } from '@shared/contract/backgroundTask';
 
 // ============================================================================
 // Status Types
@@ -28,8 +29,20 @@ export interface StatusColors {
 export function getToolStatus(
   toolCall: ToolCall,
   currentSessionId: string | null,
-  processingSessionIds: Set<string>
+  processingSessionIds: Set<string>,
+  backgroundTask?: { status: TaskStatus; resultIsAcceptance: boolean },
 ): ToolStatus {
+  // 后台任务台账是 accepted 工具调用后续终态的权威源。普通工具已有执行结果时仍以
+  // result 为准；delegate_task 的成功 result 只表示派单已接收，不能盖住任务终态。
+  if (backgroundTask && (!toolCall.result || backgroundTask.resultIsAcceptance)) {
+    if (backgroundTask.status === 'completed') return 'success';
+    if (backgroundTask.status === 'failed'
+      || backgroundTask.status === 'cancelled'
+      || backgroundTask.status === 'expired'
+      || backgroundTask.status === 'orphaned') return 'error';
+    return 'pending';
+  }
+
   if (toolCall.result) {
     return toolCall.result.success ? 'success' : 'error';
   }

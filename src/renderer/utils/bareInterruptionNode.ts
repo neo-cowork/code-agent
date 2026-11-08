@@ -30,6 +30,30 @@ function hasStreamRecoveryInSameTurn(msg: Message, all: Message[]): boolean {
   return all.slice(turnStart, turnEnd).some((message) => isStreamRecoveryMessage(message));
 }
 
+function hasCompletedBackgroundTaskResultInTurn(msg: Message, all: Message[]): boolean {
+  const messageIndex = all.indexOf(msg);
+  if (messageIndex < 0) return false;
+
+  const isVisibleUser = (candidate: Message): boolean => (
+    candidate.role === 'user' && !candidate.isMeta && candidate.visibility !== 'rewound'
+  );
+  for (let index = messageIndex - 1; index >= 0; index -= 1) {
+    const candidate = all[index];
+    if (isVisibleUser(candidate)) break;
+    if (candidate.role === 'system' && candidate.metadata?.backgroundTaskResult?.status === 'completed') {
+      return true;
+    }
+  }
+  for (let index = messageIndex + 1; index < all.length; index += 1) {
+    const candidate = all[index];
+    if (isVisibleUser(candidate)) break;
+    if (candidate.role === 'system' && candidate.metadata?.backgroundTaskResult?.status === 'completed') {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function bareInterruptionNode(
   msg: Message,
   all: Message[],
@@ -39,6 +63,10 @@ export function bareInterruptionNode(
   if (isStreamRecoveryMessage(msg) || msg.toolCalls?.length) return null;
   if (msg.content.replace(PROTOCOL_MARKERS, '').trim()) return null;
   if (hasStreamRecoveryInSameTurn(msg, all)) return null;
+  // 后台任务收口可能与仍在轮询的前台 run 交错落库：旧 run 的裸 [cancelled] 既可能
+  // 在权威 system 结果之前，也可能在其之后。只要同一轮已经有 completed 结果，它就是
+  // 内部抢占痕迹，不是用户按了停止。
+  if (reason === 'user' && hasCompletedBackgroundTaskResultInTurn(msg, all)) return null;
   return {
     id: `${msg.id}-text`,
     messageId: msg.id,

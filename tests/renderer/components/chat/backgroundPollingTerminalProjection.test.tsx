@@ -226,4 +226,85 @@ describe('后台轮询后的终态投影', () => {
     expect(raw.alertCards).toBeLessThanOrEqual(1);
     expect(raw.completionVisible).toBe(true);
   });
+
+  it('后台完成结果抢占轮询后留下的裸 cancelled 不投成用户停止行', () => {
+    const messages: Message[] = [
+      { id: 'visible-user', role: 'user', content: '在后台跑测试并查看三次进度', timestamp: 1 },
+      {
+        id: 'task-result',
+        role: 'system',
+        content: '[任务结果] TESTS｜completed\n测试通过。',
+        timestamp: 20,
+        metadata: {
+          backgroundTaskResult: {
+            source: 'agent-result',
+            taskId: 'task-tests',
+            shortName: 'TESTS',
+            status: 'completed',
+            summary: '测试通过。',
+          },
+        },
+      },
+      { id: 'preempted-poll', role: 'assistant', content: '[cancelled]', timestamp: 21 },
+      { id: 'completion-wake', role: 'user', content: '后台任务 TESTS 已完成，结果摘要：测试通过。', timestamp: 22 },
+      { id: 'completion', role: 'assistant', content: '后台测试已经通过。', timestamp: 23 },
+    ];
+    const projection = projectTurns(messages, SESSION_ID, false);
+    const assistantNodes = projection.turns.flatMap((turn) => turn.nodes)
+      .filter((node) => node.type === 'assistant_text');
+    const raw = {
+      stoppedRows: assistantNodes.filter((node) => node.metadata?.streamInterruptionReason === 'user').length,
+      completionVisible: assistantNodes.some((node) => node.content === '后台测试已经通过。'),
+      assistantNodes: assistantNodes.map((node) => ({
+        id: node.id,
+        content: node.content,
+        interruptionReason: node.metadata?.streamInterruptionReason,
+      })),
+    };
+    console.log('POLL_WAKE_PREEMPTED_CANCEL_RAW', JSON.stringify(raw));
+
+    expect(raw.stoppedRows).toBe(0);
+    expect(raw.completionVisible).toBe(true);
+  });
+
+  it('后台完成结果先后交错时也不投成用户停止行', () => {
+    const messages: Message[] = [
+      { id: 'visible-user', role: 'user', content: '在后台跑测试并查看三次进度', timestamp: 1 },
+      { id: 'dispatch-wake', role: 'user', content: '后台任务仍在运行', timestamp: 10, isMeta: true },
+      { id: 'preempted-poll', role: 'assistant', content: '[cancelled]', timestamp: 11 },
+      {
+        id: 'task-result',
+        role: 'system',
+        content: '[任务结果] TESTS｜completed\n测试通过。',
+        timestamp: 20,
+        metadata: {
+          backgroundTaskResult: {
+            source: 'agent-result',
+            taskId: 'task-tests',
+            shortName: 'TESTS',
+            status: 'completed',
+            summary: '测试通过。',
+          },
+        },
+      },
+      { id: 'completion-wake', role: 'user', content: '后台任务 TESTS 已完成，结果摘要：测试通过。', timestamp: 21 },
+      { id: 'completion', role: 'assistant', content: '后台测试已经通过。', timestamp: 22 },
+    ];
+    const projection = projectTurns(messages, SESSION_ID, false);
+    const assistantNodes = projection.turns.flatMap((turn) => turn.nodes)
+      .filter((node) => node.type === 'assistant_text');
+    const raw = {
+      stoppedRows: assistantNodes.filter((node) => node.metadata?.streamInterruptionReason === 'user').length,
+      completionVisible: assistantNodes.some((node) => node.content === '后台测试已经通过。'),
+      assistantNodes: assistantNodes.map((node) => ({
+        id: node.id,
+        content: node.content,
+        interruptionReason: node.metadata?.streamInterruptionReason,
+      })),
+    };
+    console.log('POLL_WAKE_PREEMPTED_CANCEL_BEFORE_RESULT_RAW', JSON.stringify(raw));
+
+    expect(raw.stoppedRows).toBe(0);
+    expect(raw.completionVisible).toBe(true);
+  });
 });

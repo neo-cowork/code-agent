@@ -6,6 +6,7 @@ import Database from 'better-sqlite3';
 
 import type { TaskManager, TaskManagerEvent } from '../../../src/host/task/TaskManager';
 import { RunRegistry } from '../../../src/host/runtime/runRegistry';
+import type { RunHandle } from '../../../src/host/runtime/runContext';
 import { DurableRunKernel } from '../../../src/host/runtime/durableRunKernel';
 import { DurableRunRepository } from '../../../src/host/services/core/repositories/DurableRunRepository';
 import { startRunPreferringDurable } from '../../../src/host/agent/orchestrator/durableRunStart';
@@ -15,6 +16,11 @@ import { resetSessionTaskConcurrencyPoolForTest } from '../../../src/host/servic
 import { resetBackgroundTaskLedgerForTest } from '../../../src/host/task/backgroundTaskLedger';
 import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
 import type { AgentRunOptions } from '../../../src/host/research/types';
+import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
+import { DoomLoopGuard } from '../../../src/host/agent/runtime/doomLoopGuard';
+import { runToolStepGuardRails } from '../../../src/host/agent/runtime/toolStepGuardRails';
+import { decideNextAction } from '../../../src/host/agent/loopDecision';
+import { SESSION_COMMAND_CENTER_WAKE_MAX_ITERATIONS } from '../../../src/shared/constants/sessionCommandCenter';
 
 // N-FIX-BG-TASK-WAKE-NO-OWNER-LEASE：真 RunRegistry（带 durable kernel）+ 真 createForegroundWake +
 // 真 SessionCommandCenter。TaskManager / Orchestrator 只替换到「注册 run」这一步，注册走产线同一个
@@ -85,6 +91,8 @@ describe('background task settlement wake with a real RunRegistry', () => {
   let queued: boolean;
   let wakeBody: (options: AgentRunOptions) => Promise<void>;
   let wakeSends: number;
+  let wakePrompts: string[];
+  let wakeOptions: AgentRunOptions[];
 
   beforeEach(() => {
     resetSessionTaskConcurrencyPoolForTest();
@@ -95,12 +103,16 @@ describe('background task settlement wake with a real RunRegistry', () => {
     info = vi.fn<(message: string, details?: unknown) => void>();
     queued = false;
     wakeSends = 0;
+    wakePrompts = [];
+    wakeOptions = [];
     wakeBody = async () => undefined;
     const orchestrator = {
       isProcessing: () => false,
       // 与 AgentOrchestrator.sendMessage 同一注册路径：auxiliary 且无 parentRunId → 非 durable
-      sendMessage: vi.fn(async (_p: string, _a: unknown, options: AgentRunOptions) => {
+      sendMessage: vi.fn(async (prompt: string, _a: unknown, options: AgentRunOptions) => {
         wakeSends += 1;
+        wakePrompts.push(prompt);
+        wakeOptions.push(options);
         const handle = await startRunPreferringDurable(
           registry,
           { runId: `wake-run-${wakeSends}`, sessionId: SESSION, workspace: '/tmp/wake-project' },
@@ -155,8 +167,54 @@ describe('background task settlement wake with a real RunRegistry', () => {
     return spawned.task;
   }
 
+  async function startRetainedForegroundWithTask(runId: string): Promise<{
+    task: SessionCommandTask;
+    foreground: RunHandle;
+  }> {
+    const foreground = await registry.startDurable({
+      runId,
+      sessionId: SESSION,
+      workspace: '/tmp/wake-project',
+    }, Date.now());
+    const spawned = await center.spawn({
+      sessionId: SESSION,
+      title: '任务一',
+      shortName: '任务一',
+      laneKey: 'lane-1',
+      submissionKey: 'sub-1',
+      prompt: '做点事',
+      workspaceScope: SCOPE,
+      parentRunId: runId,
+    });
+    if (spawned.outcome === 'requires_choice') throw new Error('unexpected');
+    await vi.waitFor(() => expect(manager.startBackgroundTask).toHaveBeenCalledTimes(1));
+    return { task: spawned.task, foreground };
+  }
+
   function settle(task: SessionCommandTask, conclusion = '任务一的结果'): void {
     manager.emitTask({ type: 'task_completed', sessionId: SESSION, data: { taskId: task.id, conclusion } } as TaskManagerEvent);
+  }
+
+  async function finishPollingRun(
+    runId: string,
+    handle: RunHandle,
+    status: 'completed' | 'cancelled',
+    reason: string,
+  ): Promise<void> {
+    const now = Date.now();
+    if (status === 'completed') {
+      // TaskManager foreground runs release their in-memory owner after the loop. The
+      // detached background child may still have an unresolved launch operation, so a
+      // completed durable terminal would (correctly) be rejected by the repository.
+      expect(await registry.releaseDurable(runId, handle, now)).toBe(true);
+      return;
+    }
+    await registry.terminalDurable(runId, {
+      now,
+      status,
+      reason,
+      event: { type: 'foreground_run_ended', payload: { reason }, recordedAt: now },
+    }, handle);
   }
 
   it('wake turn that spawns a follow-up task does not hit "no live owner lease"', async () => {
@@ -220,5 +278,90 @@ describe('background task settlement wake with a real RunRegistry', () => {
     queued = false;
     manager.emit('state_change', { type: 'state_change', sessionId: SESSION, data: { status: 'idle' } });
     await vi.waitFor(() => expect(wakeSends).toBe(1));
+  });
+
+  it('delivers the background result after the polling foreground turn reaches its step limit', async () => {
+    const { task, foreground } = await startRetainedForegroundWithTask('run-fg-step-limit');
+    const observedIterations = Array.from(
+      { length: SESSION_COMMAND_CENTER_WAKE_MAX_ITERATIONS },
+      (_, index) => index + 1,
+    );
+    expect(observedIterations.at(-1)).toBe(SESSION_COMMAND_CENTER_WAKE_MAX_ITERATIONS);
+    const loopDecision = decideNextAction({
+      stopReason: 'tool_use',
+      tokenUsage: { input: 1_000, output: 100 },
+      maxTokens: 128_000,
+      errorType: null,
+      consecutiveErrors: 0,
+      budgetRemaining: 1,
+      iterationCount: observedIterations.length,
+      maxIterations: SESSION_COMMAND_CENTER_WAKE_MAX_ITERATIONS,
+    });
+    expect(loopDecision).toMatchObject({ action: 'terminate', reason: 'max iterations reached' });
+    await finishPollingRun('run-fg-step-limit', foreground, 'completed', 'max_iterations');
+
+    settle(task, '测试通过：12 个测试全部通过。');
+    await vi.waitFor(() => expect(wakeSends).toBe(1));
+    const raw = {
+      terminalReason: 'max_iterations',
+      loopDecision: loopDecision.action,
+      iterations: observedIterations.length,
+      wakeMaxIterations: wakeOptions[0]?.maxIterations,
+      deliveredResult: wakePrompts[0]?.includes('测试通过：12 个测试全部通过。') ?? false,
+    };
+    console.log('FOREGROUND_WAKE_STEP_LIMIT_RAW', JSON.stringify(raw));
+
+    expect(raw.wakeMaxIterations).toBe(SESSION_COMMAND_CENTER_WAKE_MAX_ITERATIONS);
+    expect(raw.deliveredResult).toBe(true);
+  });
+
+  it('delivers the background result after doom-loop hand-back stops repeated foreground polling', async () => {
+    const { task, foreground } = await startRetainedForegroundWithTask('run-fg-doom-loop');
+    const guard = new DoomLoopGuard();
+    const ctx = {
+      sessionId: SESSION,
+      unattendedTurn: true,
+      onEvent: vi.fn(),
+      messages: [],
+      turnTrace: { record: vi.fn() },
+      control: {
+        isCancelled: false,
+        isInterrupted: false,
+        steerEpoch: 0,
+        runAbortController: null,
+        forceFinalResponse: vi.fn(),
+      },
+    } as unknown as RuntimeContext;
+    const warden = {
+      reviewToolStep: vi.fn().mockResolvedValue({ kind: 'none' }),
+      interceptFinal: vi.fn().mockReturnValue(null),
+    };
+    const guardOutcomes: string[] = [];
+    for (let iteration = 1; iteration <= 4; iteration += 1) {
+      const outcome = await runToolStepGuardRails({
+        ctx,
+        guard,
+        warden: warden as never,
+        toolCalls: [{ name: 'task_status', arguments: { task_id: task.id } }],
+        iterations: iteration,
+        inject: vi.fn(),
+        runTools: async () => 'continue',
+      });
+      guardOutcomes.push(outcome.outcome);
+    }
+    expect(guardOutcomes).toEqual(['proceed', 'proceed', 'proceed', 'abort']);
+    await finishPollingRun('run-fg-doom-loop', foreground, 'cancelled', 'guard_halt');
+
+    settle(task, '后台构建完成，产物校验通过。');
+    await vi.waitFor(() => expect(wakeSends).toBe(1));
+    const raw = {
+      terminalReason: 'guard_halt',
+      guardOutcomes,
+      handback: guardOutcomes.at(-1),
+      deliveredResult: wakePrompts[0]?.includes('后台构建完成，产物校验通过。') ?? false,
+    };
+    console.log('FOREGROUND_WAKE_DOOM_LOOP_RAW', JSON.stringify(raw));
+
+    expect(raw.deliveredResult).toBe(true);
   });
 });
