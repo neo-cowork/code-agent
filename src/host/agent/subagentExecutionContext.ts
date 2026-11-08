@@ -79,6 +79,7 @@ export function createProtocolSubagentExecutionContext(
             reason: request.reason,
             dangerLevel: request.dangerLevel,
             decisionTrace: request.decisionTrace,
+            ledgerRecordedByChild: true,
           },
         );
         return result.allow;

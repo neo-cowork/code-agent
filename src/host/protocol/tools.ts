@@ -339,6 +339,8 @@ export interface ToolContext {
   readonly executionIntent?: ConversationExecutionIntent;
   /** Run-scoped trace context, injected by the dispatch boundary. */
   readonly traceContext?: unknown;
+  /** One literal file grant minted by ToolExecutor for an approved single-file rm. */
+  readonly approvedSandboxWriteFile?: string;
   /** ToolExecutor 针对本次记忆目录写入签发的一次性授权。 */
   readonly directiveMemoryWriteGrant?: DirectiveMemoryWriteGrant;
 }
@@ -404,6 +406,8 @@ export interface CanUseToolRequestHint {
   readonly reason?: string;
   readonly dangerLevel?: 'normal' | 'warning' | 'danger';
   readonly decisionTrace?: unknown;
+  /** True when a child ToolExecutor records its own ledger row for this forwarded ask. */
+  readonly ledgerRecordedByChild?: boolean;
 }
 
 export type CanUseToolFn = (

@@ -182,6 +182,7 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
     toolScope: legacy?.toolScope as ProtocolToolContext['toolScope'],
     executionIntent: legacy?.executionIntent as ProtocolToolContext['executionIntent'],
     traceContext: getActiveRunTraceContext(),
+    approvedSandboxWriteFile: input.legacyCtx.approvedToolCall?.sandboxWriteFile,
     directiveMemoryWriteGrant: input.legacyCtx.directiveMemoryWriteGrant,
   };
 }
@@ -239,6 +240,7 @@ export function buildCanUseToolFromLegacy(
         reason: requestHint?.reason ?? cleanReason ?? `protocol tool ${requestedToolName}`,
         dangerLevel: requestHint?.dangerLevel,
         decisionTrace: requestHint?.decisionTrace as never,
+        ...(requestHint?.ledgerRecordedByChild ? { ledgerRecordedByChild: true } : {}),
       });
       return allowed
         ? { allow: true }

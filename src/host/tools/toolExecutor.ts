@@ -47,6 +47,7 @@ import type { NeoTagRunContext } from '../../shared/contract/tag';
 import type { SwarmRunScope } from '../../shared/contract/swarm';
 import { createTraceBuilder } from '../security/decisionTraceBuilder';
 import { denyConcreteShellWritePath } from './shell/writePathPolicyDeny';
+import { approvedSingleFileRmGrantForToolApproval } from './shell/approvedRmGrant';
 import { getPluginIdForTool, getPluginOriginForTool } from '../plugins/pluginToolOrigin';
 import { getWriteIsolationManager, getWriteIsolationScope, type WriteIsolationMetadata } from '../security/writeIsolation';
 import type { HookManager } from '../hooks/hookManager';
@@ -1315,7 +1316,7 @@ export class ToolExecutor {
         try {
           const askStartedAt = Date.now();
           const ask = normalizePermissionAskResult(await this.requestPermission(request));
-          recordInToolPermissionAsk(
+          if (!request.ledgerRecordedByChild) recordInToolPermissionAsk(
             request, ask, askStartedAt, effectiveSessionId, this.ledgerOrigin,
             getApprovalWaitMs(options.currentToolCallId, Date.now()),
           );
@@ -1798,7 +1799,6 @@ export class ToolExecutor {
         }
       }
     }
-
     if ((toolDef.requiresPermission || readArgumentForcesClassification || cuaAppGrantForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk) && (commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || protectedWriteForcesConfirmation || policyForcesConfirmation || unresolvedWriteTargetForcesAsk || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk || (!isPreApproved && !isSafeCommand))) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
@@ -2334,9 +2334,9 @@ export class ToolExecutor {
         });
         return { success: true, result: resolution.result, metadata: resolution.metadata };
       }
-
       if (approved) {
         const approvalSource = ask.approvalSource ?? 'unspecified';
+        context.approvedToolCall = { toolName: executionToolName, args: params, sandboxWriteFile: approvedSingleFileRmGrantForToolApproval({ approvalSource: ask.approvalSource, toolName: policyToolName, params, permissionRequest, sessionId: effectiveSessionId, context, abortSignal: options.abortSignal, workingDirectory: bashWorkingDirectory, policyEnforcer }) };
         traceBuilder.addStep('plan_approval', 'ask_approved', 'allow', `审批放行（来源：${approvalSource}）`);
         // ADR-067 D4：按**实际批准生效的参数**重算指纹后复位——审批卡上改过参数时
         // params 已是编辑后的那份（上面的 applyEditedArgs 只在这里替换）：批准 B 只清
@@ -2537,11 +2537,11 @@ export class ToolExecutor {
           workspaceScope: this.runContext?.workspaceScope,
         };
       }, this.executionCwd);
-
       // Execute the tool via protocol resolver
       context.approvedToolCall = {
         toolName: executionToolName,
         args: params,
+        ...(context.approvedToolCall?.sandboxWriteFile ? { sandboxWriteFile: context.approvedToolCall.sandboxWriteFile } : {}),
       };
       logger.debug('Dispatching to protocol resolver', { toolName: executionToolName, requestedToolName });
       executionLedger.begin();
