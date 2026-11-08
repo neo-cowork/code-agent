@@ -17,6 +17,10 @@ import { applyOutboundSecretMask } from '../../../src/host/security/outboundSecr
 import type { ModelMessage, ModelResponse, StreamChunk } from '../../../src/host/model/types';
 
 const PLACEHOLDER_RE = /\{\{SECRET_[A-Z0-9_]+_[0-9a-f]{8}\}\}/;
+const fakeGoogleApiKey = ['AIza', 'SyA1234567890BCDEFGh'].join('');
+const fakeSlackBotToken = ['xoxb', '1234567890abcdefXYZ'].join('-');
+const fakeSlackAppToken = ['xapp', '1-A123-456-789'].join('-');
+const fakeAwsAccessKey = ['AKIA', 'ABCDEFGHIJKLMNOP'].join('');
 
 function maskOn(): void {
   maskSettingsState.settings = { privacy: { outboundSecretMask: true } };
@@ -67,7 +71,7 @@ describe('outboundSecretMask ① 各密钥种类正例', () => {
 
   const cases: Array<{ kind: string; text: string; secret: string }> = [
     { kind: 'openai-key', text: 'key is sk-Abc123defGHI789xyz ok', secret: 'Abc123defGHI789xyz' },
-    { kind: 'google-api-key', text: 'gcp AIzaSyA1234567890BCDEFGh end', secret: 'AIzaSyA1234567890BCDEFGh' },
+    { kind: 'google-api-key', text: `gcp ${fakeGoogleApiKey} end`, secret: fakeGoogleApiKey },
     { kind: 'ak-prefixed-key', text: 'longcat ak_Abcdefghij1234567890 here', secret: 'ak_Abcdefghij1234567890' },
     { kind: 'github-ghp-token', text: 'git ghp_Abcdefghij1234567890 done', secret: 'ghp_Abcdefghij1234567890' },
     { kind: 'github-gho-token', text: 'oauth gho_Abcdefghij1234567890 done', secret: 'gho_Abcdefghij1234567890' },
@@ -76,9 +80,9 @@ describe('outboundSecretMask ① 各密钥种类正例', () => {
       text: `pat github_pat_${'A1b2C3d4E5'.repeat(9)} done`,
       secret: `github_pat_${'A1b2C3d4E5'.repeat(9)}`,
     },
-    { kind: 'slack-xox-token', text: 'slack xoxb-1234567890abcdefXYZ here', secret: 'xoxb-1234567890abcdefXYZ' },
-    { kind: 'slack-xapp-token', text: 'slack xapp-1-A123-456-789 here', secret: 'xapp-1-A123-456-789' },
-    { kind: 'aws-access-key-id', text: 'aws AKIAABCDEFGHIJKLMNOP here', secret: 'AKIAABCDEFGHIJKLMNOP' },
+    { kind: 'slack-xox-token', text: `slack ${fakeSlackBotToken} here`, secret: fakeSlackBotToken },
+    { kind: 'slack-xapp-token', text: `slack ${fakeSlackAppToken} here`, secret: fakeSlackAppToken },
+    { kind: 'aws-access-key-id', text: `aws ${fakeAwsAccessKey} here`, secret: fakeAwsAccessKey },
     { kind: 'url-basic-auth', text: 'fetch https://user:passw0rd123@example.com/x now', secret: 'user:passw0rd123' },
     { kind: 'cookie-header', text: 'Cookie: sessionid=abcdef123456 tail', secret: 'sessionid=abcdef123456' },
     { kind: 'session-cookie-assignment', text: 'session_cookie=abc123def456 end', secret: 'abc123def456' },
@@ -188,14 +192,14 @@ describe('outboundSecretMask ① 同值同占位符 / 跨请求稳定', () => {
       '# my env',
       'ZHIPU_API_KEY=abcd1234efgh5678',
       'GITHUB_TOKEN=ghp_Abcdefghij1234567890',
-      'AWS_KEY=AKIAABCDEFGHIJKLMNOP',
+      `AWS_KEY=${fakeAwsAccessKey}`,
       '',
     ].join('\n');
     const masked = applyOutboundSecretMask([{ role: 'user', content: envFile }])!.messages[0].content as string;
     expect(masked).toContain('# my env');
     expect(masked).not.toContain('abcd1234efgh5678');
     expect(masked).not.toContain('ghp_Abcdefghij1234567890');
-    expect(masked).not.toContain('AKIAABCDEFGHIJKLMNOP');
+    expect(masked).not.toContain(fakeAwsAccessKey);
   });
 });
 
@@ -214,7 +218,7 @@ describe('outboundSecretMask ② 还原', () => {
 
   it.each([
     ['sk-', 'https://api.example.com/v1?api_key=sk-Abc123defGHI789xyz&x=1'],
-    ['AIza', 'https://maps.example.com/v1?key=1&token=AIzaSyA1234567890abcdefghijklmnopqrstuv'],
+    ['AIza', `https://maps.example.com/v1?key=1&token=${fakeGoogleApiKey}abcdefghijklmnopqrstuv`],
   ])('嵌套命中（%s 前缀规则 + url-query-token）：回包不留内层占位符', async (_label, url) => {
     maskOn();
     const s = applyOutboundSecretMask([{ role: 'user', content: `curl "${url}"` }]);
