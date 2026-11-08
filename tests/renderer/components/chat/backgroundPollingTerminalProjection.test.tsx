@@ -8,6 +8,7 @@ import type { Task } from '../../../../src/shared/contract/backgroundTask';
 import type { TraceNode } from '../../../../src/shared/contract/trace';
 import { AgentErrorPresentation } from '../../../../src/renderer/components/features/chat/AgentErrorCard';
 import { ToolStepGroup } from '../../../../src/renderer/components/features/chat/ToolStepGroup';
+import { applyToolExecutionEvent, type ToolExecutionEventDeps } from '../../../../src/renderer/hooks/agent/effects/useToolExecutionEffects';
 import { projectTurns } from '../../../../src/renderer/hooks/useTurnProjection';
 import { useAppStore } from '../../../../src/renderer/stores/appStore';
 import { useBackgroundTaskStore } from '../../../../src/renderer/stores/backgroundTaskStore';
@@ -431,6 +432,53 @@ describe('后台轮询后的终态投影', () => {
     console.log('R3_REAL_POLLING_SHAPE_RAW', JSON.stringify(raw));
     expect(raw.interruptedRows).toBe(0);
     expect(raw.interruptionNodes).toEqual([]);
+  });
+
+  it('步数上限收尾后残留的参数流占位（宿主从未 start、库里没有）不投成已中断行', () => {
+    // 真机 r4 形状（attempt-r4-4，session_1794128735145_6ff4b16a）：库内只有已执行的调用，
+    // 步数上限那轮模型流出的 Bash 调用只存在于 live 消息里（stream_tool_call_start 占位），
+    // 宿主从未发 tool_call_start / tool_call_end，重载后该行消失。
+    const turnId = 'turn-step-limit-text';
+    let messages: Message[] = [
+      { id: 'visible-user', role: 'user', content: '在后台跑一下项目测试，跑的过程中帮我看三次进度，跑完告诉我结果', timestamp: 1 },
+      { id: turnId, role: 'assistant', content: '已达到本次执行的最大步数限制，工具已停用，只能先用文字汇报进展。', timestamp: 20 },
+    ];
+    const deps: ToolExecutionEventDeps = {
+      clearAgentPointers: () => {}, debug: () => {}, dispatchBridgeToolCall: () => {},
+      getCurrentSessionId: () => SESSION_ID, getCurrentTurnMessageId: () => turnId,
+      getMessages: () => messages, isDev: false, now: () => 30, queueUpdate: (() => {}) as ToolExecutionEventDeps['queueUpdate'],
+      recordAgentPointer: () => {}, setActiveToolProgress: (() => {}) as ToolExecutionEventDeps['setActiveToolProgress'],
+      setCapabilityGapNotice: () => {}, setLastEventAt: () => {},
+      setToolTimeoutWarning: (() => {}) as ToolExecutionEventDeps['setToolTimeoutWarning'],
+      updateMessage: (id, updates) => { messages = messages.map((m) => (m.id === id ? { ...m, ...updates } : m)); },
+      warn: () => {},
+    };
+    applyToolExecutionEvent({
+      type: 'stream_tool_call_start',
+      sessionId: SESSION_ID,
+      data: { index: 0, id: 'call_dropped_at_step_limit', name: 'Bash', turnId },
+    } as Parameters<typeof applyToolExecutionEvent>[0], deps);
+    const nodes = toolNodes(messages);
+    const text = renderToolNodes(nodes);
+    const raw = {
+      placeholder: nodes.map((node) => ({ id: node.toolCall?.id, streaming: node.toolCall?._streaming, hasResult: node.toolCall?.result !== undefined })),
+      interruptedRows: document.querySelectorAll('[data-testid="interrupt-timeline-step"]').length,
+      text: text.replace(/\s+/g, ' ').trim(),
+    };
+    console.log('R4_STREAM_PLACEHOLDER_RAW', JSON.stringify(raw));
+    expect(raw.placeholder).toEqual([{ id: 'call_dropped_at_step_limit', streaming: true, hasResult: false }]);
+    expect(raw.text).not.toContain('已中断');
+    expect(raw.text).toBe('');
+  });
+
+  it('会话仍在线时参数流占位照常显示为进行中', () => {
+    useAppStore.setState({ processingSessionIds: new Set<string>([SESSION_ID]) });
+    const text = renderToolNodes([{
+      id: 'live-node', type: 'tool_call', content: '', timestamp: 1,
+      toolCall: { id: 'call_live', name: 'Bash', args: {}, _streaming: true },
+    }]);
+    expect(text).not.toBe('');
+    expect(text).not.toContain('已中断');
   });
 
 });

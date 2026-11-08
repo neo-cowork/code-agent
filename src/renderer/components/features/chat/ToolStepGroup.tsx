@@ -108,17 +108,6 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       .filter((task) => task.toolCallId && task.status === 'completed')
       .map((task) => task.toolCallId as string),
   ), [backgroundTasks]);
-  const nodes = useMemo(() => sourceNodes.map((node) => {
-    const tc = node.toolCall;
-    if (!tc || getToolPreflightKind({ name: tc.name, result: tc.result === undefined ? undefined : {
-      toolCallId: tc.id, success: tc.success ?? true, output: tc.result, metadata: tc.metadata,
-    } }) !== 'question') return node;
-    return { ...node, toolCall: { ...tc, success: false } };
-  }), [sourceNodes]);
-  const sendPrompt = useMessageActionStore((state) => state.sendPrompt);
-  const resolvedPermissionRequests = useAppStore((state) => (
-    sessionId ? state.resolvedPermissionRequests?.[sessionId] : undefined
-  )) ?? EMPTY_RESOLVED_PERMISSION_REQUESTS;
   const pendingPermissionRequest = useAppStore((state) => state.pendingPermissionRequest);
   const pendingPermissionSessionId = useAppStore((state) => state.pendingPermissionSessionId);
   const queuedPermissionRequests = useAppStore((state) => state.queuedPermissionRequests);
@@ -128,6 +117,23 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     pendingPermissionSessionId,
     queuedPermissionRequests,
   }), [pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests]);
+  const nodes = useMemo(() => sourceNodes.flatMap((node) => {
+    const tc = node.toolCall;
+    if (!tc) return [node];
+    // 参数流占位（_streaming）在回合收尾后仍无 result：宿主从未发出 tool_call_start
+    // （步数上限/工具停用时丢弃了这次调用），它没执行过也不会入库，重载后根本不存在。
+    // 留着只会渲染成一条「已中断」，与已完成的任务打架——和库内形状对齐，直接不画。
+    if (tc._streaming && tc.result === undefined && !sessionLive
+      && !isToolCallAwaitingApproval(tc.id, sessionId, permissionState)) return [];
+    if (getToolPreflightKind({ name: tc.name, result: tc.result === undefined ? undefined : {
+      toolCallId: tc.id, success: tc.success ?? true, output: tc.result, metadata: tc.metadata,
+    } }) !== 'question') return [node];
+    return [{ ...node, toolCall: { ...tc, success: false } }];
+  }), [sourceNodes, sessionLive, sessionId, permissionState]);
+  const sendPrompt = useMessageActionStore((state) => state.sendPrompt);
+  const resolvedPermissionRequests = useAppStore((state) => (
+    sessionId ? state.resolvedPermissionRequests?.[sessionId] : undefined
+  )) ?? EMPTY_RESOLVED_PERMISSION_REQUESTS;
   // 主流可见节点：过滤 ToolSearch 等纯内部动作（仍可在混合组的展开明细里看到）
   const streamVisibleNodes = useMemo(
     () => nodes.filter((n) => {
