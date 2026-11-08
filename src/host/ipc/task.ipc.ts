@@ -15,7 +15,12 @@ import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry
 import type { TaskManager, SessionState, TaskManagerEvent } from '../task';
 import { createLogger } from '../services/infra/logger';
 import { getBackgroundTaskLedger } from '../task/backgroundTaskLedger';
-import { getBackgroundTask, killBackgroundTask } from '../tools/modules/shell/backgroundTaskSources';
+import {
+  getAllPtySessions,
+  getBackgroundTask,
+  killBackgroundTask,
+  killPtySession,
+} from '../tools/modules/shell/backgroundTaskSources';
 
 const logger = createLogger('TaskIPC');
 
@@ -90,11 +95,24 @@ async function handleCancelBackgroundTask(
       && typeof ledgerTask.metadata?.originalTaskId === 'string'
       ? ledgerTask.metadata.originalTaskId
       : null;
+    const originalPtySessionId = ledgerTask?.kind === 'pty'
+      ? (typeof ledgerTask.metadata?.originalSessionId === 'string'
+          ? ledgerTask.metadata.originalSessionId
+          : payload.taskId.startsWith('pty:')
+            ? payload.taskId.slice('pty:'.length)
+            : null)
+      : null;
 
     if (originalTaskId) {
       const shellTask = getBackgroundTask(originalTaskId);
       if (shellTask?.status === 'running') {
         cancelled = (await killBackgroundTask(originalTaskId)).success;
+      }
+    } else if (originalPtySessionId) {
+      const ptySession = getAllPtySessions()
+        .find((session) => session.sessionId === originalPtySessionId);
+      if (ptySession?.status === 'running') {
+        cancelled = (await killPtySession(originalPtySessionId)).success;
       }
     } else if (taskManager) {
       cancelled = await taskManager.cancelBackgroundTask(payload.taskId);

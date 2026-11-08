@@ -8,6 +8,7 @@ import {
 } from '../../shell/backgroundTasks';
 import {
   getAllPtySessions,
+  killPtySession,
   onPtySessionLifecycleEvent,
   type PtySessionInfo,
   type PtySessionLifecycleEvent,
@@ -18,6 +19,7 @@ export {
   getAllBackgroundTasks,
   getAllPtySessions,
   killBackgroundTask,
+  killPtySession,
   onBackgroundTaskLifecycleEvent,
   onPtySessionLifecycleEvent,
 };
