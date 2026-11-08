@@ -119,25 +119,49 @@ function completedSpawnCall(): ToolCall {
   };
 }
 
-const REAL_DELEGATE_TASK_OUTPUT = `Agent [Researcher] completed:
+const REAL_TASK_OUTPUT = `Agent [Researcher] completed (定价与同步方式):
 
 Notion: - Cost: $20/month; sync: database and page export.
 - Cost: $20/month
 
 Stats:
 - Iterations: 2
-- Tools used: web_search
+- Tools used: none
 - Cost: $0.0169`;
 
-function completedDelegateTaskCall(): ToolCall {
+function completedTaskCall(): ToolCall {
   return {
-    id: 'delegate-call-completed',
-    name: 'delegate_task',
-    arguments: { description: '调研 Notion 和 Obsidian 的定价与同步方式，列表对比返回' },
+    id: 'task-call-completed',
+    name: 'Task',
+    arguments: {
+      description: '定价与同步方式',
+      prompt: '调研 Notion 和 Obsidian 的定价与同步方式，列表对比返回',
+      subagent_type: 'explore',
+    },
     result: {
-      toolCallId: 'delegate-call-completed',
+      toolCallId: 'task-call-completed',
       success: true,
-      output: REAL_DELEGATE_TASK_OUTPUT,
+      output: REAL_TASK_OUTPUT,
+    },
+  };
+}
+
+const REAL_WAIT_AGENT_OUTPUT = `Wait results (all done):
+
+✅ [agent_explore] explore — completed (1200ms)
+   Result: Notion and Obsidian comparison:
+   - Cost: $20/month
+   Stats: 2 iterations, 1 tools, $0.0169`;
+
+function completedWaitAgentCall(): ToolCall {
+  return {
+    id: 'wait-call-completed',
+    name: 'wait_agent',
+    arguments: { agentIds: ['agent_explore'] },
+    result: {
+      toolCallId: 'wait-call-completed',
+      success: true,
+      output: REAL_WAIT_AGENT_OUTPUT,
     },
   };
 }
@@ -326,15 +350,26 @@ describe('delegation receipt', () => {
     expect(spawnCall.result?.output).toBe(REAL_SPAWN_AGENT_OUTPUT);
   });
 
-  it('hides delegate_task host cost in the fallthrough while preserving child result cost text', () => {
-    const delegateCallWithResult = completedDelegateTaskCall();
-    const view = renderCall(delegateCallWithResult);
-    fireEvent.click(view.getByTestId('tool-call-row-delegate_task'));
+  it('hides Task host cost in the fallthrough while preserving child result cost text', () => {
+    const taskCallWithResult = completedTaskCall();
+    const view = renderCall(taskCallWithResult);
+    fireEvent.click(view.getByTestId('tool-call-row-Task'));
     fireEvent.click(view.getByText(/展开剩余/));
 
     expect(view.container.textContent).toContain('- Cost: $20/month');
     expect(view.container.textContent).not.toContain('- Cost: $0.0169');
-    expect(delegateCallWithResult.result?.output).toBe(REAL_DELEGATE_TASK_OUTPUT);
+    expect(taskCallWithResult.result?.output).toBe(REAL_TASK_OUTPUT);
+  });
+
+  it('hides wait_agent host cost while preserving the child result cost text', () => {
+    const waitCallWithResult = completedWaitAgentCall();
+    const view = renderCall(waitCallWithResult);
+    fireEvent.click(view.getByTestId('tool-call-row-wait_agent'));
+    fireEvent.click(view.getByText(/展开剩余/));
+
+    expect(view.container.textContent).toContain('- Cost: $20/month');
+    expect(view.container.textContent).not.toContain('$0.0169');
+    expect(waitCallWithResult.result?.output).toBe(REAL_WAIT_AGENT_OUTPUT);
   });
 });
 

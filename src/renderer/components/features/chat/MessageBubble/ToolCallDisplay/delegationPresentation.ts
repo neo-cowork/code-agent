@@ -33,22 +33,33 @@ export interface DelegationPresentation {
 }
 
 const SPAWN_AGENT_PRIVATE_RESULT_LINE = /^- (?:Agent ID|Pipeline ID|Cost):(?:\s|$)/;
-const DELEGATE_TASK_PRIVATE_RESULT_LINE = /^- Cost:(?:\s|$)/;
-const SPAWN_AGENT_STATS_MARKER = '\nStats:\n';
+const TASK_PRIVATE_RESULT_LINE = /^- Cost:(?:\s|$)/;
+const TASK_STATS_MARKER = '\nStats:\n';
+const WAIT_AGENT_STATS_COST = /^(\s+Stats:.*?),\s+\$\d+(?:\.\d+)?\s*$/;
 
 /** Keep the host's orchestration receipt model-visible while hiding its private bookkeeping in UI details. */
 export function toDelegationDisplayToolCall(toolCall: ToolCall): ToolCall {
   const result = toolCall.result;
   const output = result?.output;
-  if ((toolCall.name !== 'spawn_agent' && toolCall.name !== 'delegate_task')
-    || !result || typeof output !== 'string') return toolCall;
+  if (!result || typeof output !== 'string') return toolCall;
 
-  const statsIndex = output.lastIndexOf(SPAWN_AGENT_STATS_MARKER);
+  if (toolCall.name === 'wait_agent') {
+    const visibleOutput = output.split('\n')
+      .map((line) => line.replace(WAIT_AGENT_STATS_COST, '$1'))
+      .join('\n');
+    return visibleOutput === output
+      ? toolCall
+      : { ...toolCall, result: { ...result, output: visibleOutput } };
+  }
+
+  if (toolCall.name !== 'spawn_agent' && toolCall.name !== 'Task') return toolCall;
+
+  const statsIndex = output.lastIndexOf(TASK_STATS_MARKER);
   if (statsIndex < 0) return toolCall;
-  const statsStart = statsIndex + SPAWN_AGENT_STATS_MARKER.length;
+  const statsStart = statsIndex + TASK_STATS_MARKER.length;
   const privateResultLine = toolCall.name === 'spawn_agent'
     ? SPAWN_AGENT_PRIVATE_RESULT_LINE
-    : DELEGATE_TASK_PRIVATE_RESULT_LINE;
+    : TASK_PRIVATE_RESULT_LINE;
   const visibleOutput = output.slice(0, statsStart) + output.slice(statsStart)
     .split('\n')
     .filter((line) => !privateResultLine.test(line))
