@@ -160,9 +160,12 @@ describe('background task settlement wake with a real RunRegistry', () => {
   }
 
   it('wake turn that spawns a follow-up task does not hit "no live owner lease"', async () => {
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     let followUpStatus: string | undefined;
+    let wakeRunIdObserved: string | undefined;
     wakeBody = async (options) => {
       const wakeRunId = (options as AgentRunOptions & { __wakeRunId?: string }).__wakeRunId;
+      wakeRunIdObserved = wakeRunId;
       // delegate_task 工具把 ctx.runId（= 唤醒轮 run id）作为 parentRunId 传下去
       const spawned = await center.spawn({
         sessionId: SESSION, title: '续作', shortName: '续作', laneKey: 'lane-2', submissionKey: 'sub-2',
@@ -170,14 +173,71 @@ describe('background task settlement wake with a real RunRegistry', () => {
       });
       if (spawned.outcome !== 'requires_choice') followUpStatus = spawned.task.status;
     };
-    const task = await startForegroundWithTask();
-    settle(task);
-    await vi.waitFor(() => expect(manager.startBackgroundTask.mock.calls.length).toBeGreaterThanOrEqual(2));
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    try {
+      const task = await startForegroundWithTask();
+      settle(task);
+      await vi.waitFor(() => expect(manager.startBackgroundTask.mock.calls.length).toBeGreaterThanOrEqual(2));
+      await new Promise((resolve) => setTimeout(resolve, 20));
 
-    expect(followUpStatus).toBe('running');
-    expect(manager.startFailures.map((e) => e.stack ?? e.message)).toEqual([]);
-    expect(warn.mock.calls.map((c) => String(c[0]))).not.toContain('Foreground wake failed');
+      expect(followUpStatus).toBe('running');
+      expect(manager.startFailures.map((e) => e.stack ?? e.message)).toEqual([]);
+      expect(warn.mock.calls.map((c) => String(c[0]))).not.toContain('Foreground wake failed');
+
+      // 唤醒轮本身以 auxiliary 注册（无 owner lease），续作任务的 parentRunId 就是唤醒轮 id，
+      // startRunPreferringDurable 走 INFO 回落而非 WARN。
+      const secondTaskCall = manager.startBackgroundTask.mock.calls[1];
+      expect(secondTaskCall?.[4]?.parentRunId).toBe(wakeRunIdObserved);
+      expect(wakeRunIdObserved).toBe('wake-run-1');
+      expect(registry.hasDurableOwner('wake-run-1')).toBe(false);
+      expect(registry.get('wake-run-1')).toBeDefined();
+
+      const fallbackCalls = stderrSpy.mock.calls.filter((call) =>
+        String(call[0]).includes('Parent run has no live owner lease, starting auxiliary run without durable parent link'),
+      );
+      expect(fallbackCalls).toHaveLength(1);
+      expect(String(fallbackCalls[0]?.[0])).toContain(' INFO [DurableRunStart] Parent run has no live owner lease');
+      expect(String(fallbackCalls[0]?.[0])).not.toContain(' WARN ');
+      expect(fallbackCalls[0]?.[1]).toMatchObject({
+        sessionId: SESSION,
+        parentRunId: 'wake-run-1',
+        parentRegistered: true,
+        parentHasSession: false,
+        reason: 'parent_run_not_durable',
+      });
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('uses startAuxiliaryDurableChild without fallback log when parent has a live owner lease', async () => {
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const parent = await registry.startDurable(
+        { runId: 'run-fg-durable', sessionId: SESSION, workspace: '/tmp/wake-project' },
+        100,
+      );
+      expect(registry.hasDurableOwner('run-fg-durable')).toBe(true);
+
+      const child = await startRunPreferringDurable(
+        registry,
+        { runId: 'child-durable', sessionId: SESSION, workspace: '/tmp/wake-project' },
+        'auxiliary',
+        'run-fg-durable',
+      );
+      expect(child.context.runId).toBe('child-durable');
+      expect(registry.hasDurableOwner('child-durable')).toBe(true);
+      expect(registry.getDurableEnvelope('child-durable')?.parentRunId).toBe('run-fg-durable');
+
+      const fallbackCalls = stderrSpy.mock.calls.filter((call) =>
+        String(call[0]).includes('Parent run has no live owner lease'),
+      );
+      expect(fallbackCalls).toEqual([]);
+
+      registry.unregister('child-durable', child);
+      registry.unregister('run-fg-durable', parent);
+    } finally {
+      stderrSpy.mockRestore();
+    }
   });
 
   it('defers the wake while a foreground run is active and delivers it when that run leaves the registry', async () => {
