@@ -56,6 +56,7 @@ export const cronCenterZh = {
     awaitingApprovalAction: '去处理',
     awaitingApprovalWithPreview: '等你批准：{preview}',
     nextRun: '下次 {time}',
+    localNextRun: '你本机的时间 {time}',
     locationFilterAll: '全部',
     locationLocal: '本地',
     locationCloud: '云端',
@@ -424,6 +425,21 @@ export const cronCenterZh = {
     // 定时任务模板的展示文案（按模板 id 索引，组件经 getTemplateDisplayCopy 取用）；
     // 没登记词条的存量模板用模板对象内的兜底文案。新模板文案一律走这里。
     templates: {
+      'daily-lookahead': {
+        name: '每日前瞻',
+        description: '备好今天剩余时间和明天的安排',
+        scheduleLabel: '工作日 15:00',
+      },
+      'daily-review': {
+        name: '每日回顾',
+        description: '回顾今天的进展和待续事项',
+        scheduleLabel: '工作日 17:30',
+      },
+      'weekly-review': {
+        name: '每周回顾',
+        description: '总结本周并备好下周重点',
+        scheduleLabel: '每周四 17:30',
+      },
       'morning-triage': {
         name: '晨间分诊',
         description: '汇总昨晚到现在的未读邮件、消息和日历变动',
@@ -540,6 +556,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     awaitingApprovalAction: 'Review',
     awaitingApprovalWithPreview: 'Needs your approval: {preview}',
     nextRun: 'Next {time}',
+    localNextRun: 'Your local time {time}',
     locationFilterAll: 'All',
     locationLocal: 'Local',
     locationCloud: 'Cloud',
@@ -890,6 +907,21 @@ export const cronCenterEn: typeof cronCenterZh = {
     templateReenable: 'Re-enable',
     templateEnableFailed: 'Failed to enable — please try again',
     templates: {
+      'daily-lookahead': {
+        name: 'Daily lookahead',
+        description: 'Prepare the rest of today and tomorrow’s plans',
+        scheduleLabel: 'Weekdays at 15:00',
+      },
+      'daily-review': {
+        name: 'Daily review',
+        description: 'Review today’s progress and follow-ups',
+        scheduleLabel: 'Weekdays at 17:30',
+      },
+      'weekly-review': {
+        name: 'Weekly review',
+        description: 'Summarize this week and prepare next week’s priorities',
+        scheduleLabel: 'Thursdays at 17:30',
+      },
       'morning-triage': {
         name: 'Morning triage',
         description: 'Round up unread mail, messages, and calendar changes since last night',
