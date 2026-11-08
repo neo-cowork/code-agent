@@ -390,7 +390,7 @@ describe('N-FIX-ERROR-CARD-AI-DIRECTIVES-LEAK — renderer cards for all 4 scene
       const hostResult = await executor.execute(
         'Read',
         { file_path: prodMemoryFile },
-        { planningMode: false, sessionId: 'scene-4-session' },
+        { sessionId: 'scene-4-session' },
       );
 
       expect(hostResult.success).toBe(false);
@@ -411,8 +411,8 @@ describe('N-FIX-ERROR-CARD-AI-DIRECTIVES-LEAK — renderer cards for all 4 scene
       };
 
       const zhPresentation = humanizeToolError(hostResult.error, 'Read', zh, hostResult.metadata);
-      expect(zhPresentation.summary).toBe('这是 Neo 另一份独立数据目录，当前不能直接读取');
-      expect(zhPresentation.detail).toBe('需要的话，直接告诉 Neo 你想找什么。');
+      expect(zhPresentation?.summary).toBe('这是 Neo 另一份独立数据目录，当前不能直接读取');
+      expect(zhPresentation?.detail).toBe('需要的话，直接告诉 Neo 你想找什么。');
 
       const zhMarkup = renderToStaticMarkup(<ToolDetails toolCall={call} />);
       expect(zhMarkup).toContain('这是 Neo 另一份独立数据目录，当前不能直接读取');
