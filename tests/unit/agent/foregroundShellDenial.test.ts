@@ -69,8 +69,8 @@ describe('describeDeniedShellCalls', () => {
     expect(out).toHaveLength(1);
     expect(out[0]).toMatchObject({ id: bashCall.id, name: 'delegate_task' });
     expect(out[0].arguments).toEqual({
-      title: '建明天9点交报告提醒',
-      short_name: '交报告',
+      title: '明天上午 9 点提醒我交报告',
+      short_name: '明天上午',
       lane_key: 'foreground-shell:run-1',
       submission_key: 'foreground-shell:run-1',
       prompt: '明天上午 9 点提醒我交报告。请用 Bash 工具执行多行 osascript（heredoc）建提醒\n\nCommand to run:\nosascript <<\'EOF\'\nreturn 1\nEOF',
@@ -81,8 +81,21 @@ describe('describeDeniedShellCalls', () => {
 
   it('任务摘要使用用户目标，不把工具名或命令带进标题', () => {
     const summary = summarizeForegroundShellRequest('请用 Bash 运行测试：npm run -s typecheck && npx vitest run tests/unit/app');
-    expect(summary).toEqual({ title: '运行类型检查和测试', shortName: '跑测试', userMessage: '运行类型检查和测试' });
+    expect(summary).toEqual({ title: '运行测试', shortName: '运行测试', userMessage: '运行测试' });
     expect(summary.title).not.toMatch(/Bash|npm|vitest|typecheck/i);
+  });
+
+  it.each([
+    ['明天上午 9 点提醒我开会。请用 Bash 执行 osascript 建提醒', '明天上午 9 点提醒我开会'],
+    ['用终端把 Downloads 里的 pdf 按日期归档', '把 Downloads 里的 pdf 按日期归档'],
+    ['用 Bash 查一下磁盘占用', '查一下磁盘占用'],
+  ])('非验收句子的摘要保持用户目标：%s', (prompt, title) => {
+    const summary = summarizeForegroundShellRequest(prompt);
+    expect(summary.title).toBe(title);
+    expect(summary.title).not.toMatch(/Bash|terminal|shell|osascript|heredoc|command|命令行|终端|工具|npm|npx|vitest|typecheck/i);
+    expect(summary.title).not.toContain('交报告');
+    expect(Array.from(summary.shortName).length).toBeGreaterThanOrEqual(2);
+    expect(Array.from(summary.shortName).length).toBeLessThanOrEqual(4);
   });
 
   it('同一 turn 的多个 Bash 调用共用 submission_key，交给共享委托路径复用', () => {

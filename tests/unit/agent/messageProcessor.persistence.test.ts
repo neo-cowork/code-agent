@@ -2439,7 +2439,7 @@ describe('MessageProcessor persistence', () => {
         name: 'delegate_task',
         arguments: expect.objectContaining({
           title: '运行测试',
-          short_name: '跑测试',
+          short_name: '运行测试',
           lane_key: 'foreground-shell:run-foreground-shell',
           submission_key: 'foreground-shell:run-foreground-shell',
           prompt: '请运行测试\n\nCommand to run:\nnpm run -s typecheck',

@@ -135,9 +135,16 @@ export async function executeDelegateTask(
   });
   onProgress?.({ stage: 'completing', percent: 100 });
   if (result.outcome === 'requires_choice') {
+    if (laneKey.startsWith('foreground-shell:')) {
+      return {
+        ok: true,
+        output: '后台任务暂时无法启动，当前并发名额已满；命令没有运行。',
+      };
+    }
+    const options = result.active.map((task) => task.shortName).join('、');
     return {
       ok: true,
-      output: '后台任务暂时无法启动，当前并发名额已满；命令没有运行。',
+      output: `并发槽已满，任务尚未创建。现在调用 AskUserQuestion，让用户选择“排队”或替换这些活跃任务之一：${options}。`,
     };
   }
   if (result.outcome === 'reused') {

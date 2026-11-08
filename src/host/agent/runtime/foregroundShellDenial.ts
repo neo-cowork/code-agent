@@ -32,24 +32,26 @@ export function summarizeForegroundShellRequest(userPrompt: string): {
   userMessage: string;
 } {
   const normalized = userPrompt.replace(/\s+/g, ' ').trim();
-  if (/(提醒|报告)/.test(normalized) && /(?:上午\s*)?9\s*点/.test(normalized)) {
-    return { title: '建明天9点交报告提醒', shortName: '交报告', userMessage: '建明天9点交报告提醒' };
-  }
-  if (/(typecheck|vitest)/i.test(normalized)) {
-    return { title: '运行类型检查和测试', shortName: '跑测试', userMessage: '运行类型检查和测试' };
-  }
-  if (/测试/.test(normalized)) return { title: '运行测试', shortName: '跑测试', userMessage: '运行测试' };
-
-  const firstClause = normalized.split(/[。！？\n]/, 1)[0] ?? '';
-  const withoutMethod = firstClause
-    .replace(/^\s*(?:请)?\s*(?:用|使用)\s*(?:Bash|terminal|shell|命令行|终端)(?:工具)?\s*(?:执行|运行)?/i, '')
-    .replace(/\b(?:Bash|terminal|shell|osascript|heredoc|command)\b|命令行|终端|工具/gi, '')
+  const methodPattern = /(?:请|麻烦|我想)?\s*(?:用|使用|通过)?\s*(?:\b(?:Bash|terminal|shell|osascript|heredoc|command)\b|命令行|终端)(?:\s*工具)?/i;
+  const methodMatch = normalized.match(methodPattern);
+  const beforeMethod = methodMatch?.index === undefined ? '' : normalized.slice(0, methodMatch.index);
+  const afterMethod = methodMatch?.index === undefined
+    ? normalized
+    : normalized.slice(methodMatch.index + methodMatch[0].length);
+  const candidate = (beforeMethod || afterMethod)
+    .split(/[。！？\n]/, 1)[0]
     .replace(/\s*[:：].*$/, '')
-    .replace(/[“”"'`]/g, '')
+    .replace(/`[^`]*`/g, '')
+    .replace(/\([^)]*(?:heredoc|command|osascript)[^)]*\)/gi, '')
+    .replace(/\b(?:Bash|terminal|shell|osascript|heredoc|command|npm|npx|vitest|typecheck)\b|命令行|终端|工具/gi, '')
+    .replace(/^\s*(?:请|麻烦)?\s*(?:帮我|帮忙)?\s*/, '')
     .replace(/\s+/g, ' ')
+    .replace(/[“”"']/g, '')
     .trim()
-    .replace(/^请\s*/, '');
-  const title = Array.from(withoutMethod).slice(0, 24).join('') || '处理后台任务';
+    .replace(/[。！？；;，,]+$/, '');
+  const hasChinese = /[\u3400-\u9fff]/.test(candidate);
+  const looksLikeShellCommand = !hasChinese && (/[|&;/<>$]/.test(candidate) || /^\S+(?:\s+-\w+)+$/.test(candidate));
+  const title = Array.from(looksLikeShellCommand ? '' : candidate).slice(0, 24).join('') || '处理后台任务';
   const shortName = Array.from(title.replace(/\s+/g, '')).slice(0, 4).join('') || '任务';
   return { title, shortName, userMessage: title };
 }
