@@ -613,6 +613,9 @@ export const enSettingsSystem = {
         updateAndUninstall: 'Update & uninstall',
         update: 'Update',
         uninstall: 'Uninstall',
+        uninstallDescription: 'If you no longer need the local bridge you can uninstall it: this stops the background service and deletes its local files, and needs the terminal.',
+        viewManualUninstallSteps: 'View manual uninstall steps (advanced)',
+        uninstallRiskHint: 'The sudo part needs the admin password, and the command deletes the local bridge folder; please confirm before running.',
       },
       workingDirectory: {
         emptyDirectory: '(empty directory)',

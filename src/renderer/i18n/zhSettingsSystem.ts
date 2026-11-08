@@ -615,6 +615,9 @@ export const zhSettingsSystem = {
         updateAndUninstall: '更新 & 卸载',
         update: '更新',
         uninstall: '卸载',
+        uninstallDescription: '如果不再需要本地桥接服务，可以将其卸载：这会停止后台服务并删除其本地文件，需要在终端中操作。',
+        viewManualUninstallSteps: '查看手动卸载步骤（高级）',
+        uninstallRiskHint: '其中 sudo 步骤需要输入系统管理员密码，命令会删除本地桥接目录，执行前请先确认。',
       },
       workingDirectory: {
         emptyDirectory: '(空目录)',
