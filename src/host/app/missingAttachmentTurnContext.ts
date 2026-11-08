@@ -20,11 +20,11 @@ const ATTACHMENT_MENTION_PATTERNS: ReadonlyArray<{ label: string; pattern: RegEx
   { label: '附件', pattern: /附件/ },
   {
     label: '这张表',
-    pattern: /(?:这|那)(?:张|份|个)(?:[\u4e00-\u9fa5A-Za-z0-9_-]{0,12})(?:表|表格|报表|清单|名单|数据表|工作簿|台账|账单)/,
+    pattern: /(?:这|那)(?:张|份)[\u4e00-\u9fa5A-Za-z0-9_-]{0,4}(?:表格|报表|数据表|工作簿|台账|账单|清单|名单|表)/,
   },
   {
     label: '这份文件',
-    pattern: /(?:这|那)(?:份|个|张|篇)(?:[\u4e00-\u9fa5A-Za-z0-9_-]{0,12})(?:文件|文档|材料|资料|合同|报告|简历|方案|试卷|讲义|演示稿|幻灯片)/,
+    pattern: /(?:这|那)(?:份|篇)[\u4e00-\u9fa5A-Za-z0-9_-]{0,4}(?:文件|文档|材料|资料|合同|报告|简历|试卷|讲义|演示稿|幻灯片)/,
   },
   {
     label: '我上传的',
@@ -39,6 +39,9 @@ const ATTACHMENT_MENTION_PATTERNS: ReadonlyArray<{ label: string; pattern: RegEx
     pattern: /\b(?:my|the)\s+uploaded\s+(?:file|files|sheet|spreadsheet|table|document|documents|image|images|screenshot|csv|xlsx|pdf|report|data|attachment|attachments)\b/i,
   },
 ];
+
+// 创建/起草类动词出现在指示词之前，说明是「写一份新的」而不是「看已有的」
+const CREATION_VERB_RE = /(?:写|做|设计|生成|制作|整理成|列出?|起草|创建|新建|画|编一|拟|草拟|出一)/;
 
 // 显式路径（绝对路径 / ~/ 路径 / Windows 盘符路径）
 const EXPLICIT_PATH_RE = /(?:^|[\s"'`（(【[])(?:~\/[^\s"'`）)】\]]+|\/(?:Users|home|tmp|var|opt|etc|Volumes|private|mnt|srv|root)\/[^\s"'`）)】\]]+|[A-Za-z]:[\\/][^\s"'`）)】\]]+)/;
@@ -120,6 +123,8 @@ function detectMissingAttachmentMention(
   for (const { label, pattern } of ATTACHMENT_MENTION_PATTERNS) {
     const match = trimmed.match(pattern);
     if (match?.[0]) {
+      const before = trimmed.slice(0, match.index ?? 0);
+      if (label !== '附件' && CREATION_VERB_RE.test(before)) continue;
       return { matched: true, keyword: match[0] || label };
     }
   }

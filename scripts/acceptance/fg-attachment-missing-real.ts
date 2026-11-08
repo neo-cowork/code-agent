@@ -36,6 +36,11 @@ const PROMPTS = [
     text: '写一首关于春天的短诗',
     expectMissingAttachment: false,
   },
+  {
+    id: 'P4',
+    text: '帮我设计这个项目的需求文档',
+    expectMissingAttachment: false,
+  },
 ] as const;
 
 type PromptId = typeof PROMPTS[number]['id'];
@@ -392,6 +397,11 @@ function afterFailures(results: Record<PromptId, PromptTotals>): string[] {
   if (results.P3.cancelledOrEmptyRounds !== 0) {
     failures.push(`P3: cancelled_or_empty=${results.P3.cancelledOrEmptyRounds}/${ROUNDS}`);
   }
+  if (results.P4.asksReuploadOrPathRounds !== 0) {
+    failures.push(`P4: asks_reupload=${results.P4.asksReuploadOrPathRounds}/${ROUNDS} (creation request must not ask for a re-upload)`);
+  }
+  // P4 only asserts "no re-upload ask". With fake empty tools the model keeps exploring for "这个项目"
+  // (identical with/without the fix and rule A: workspace/external scans, step-cap exhausted) — not gated here.
   return failures;
 }
 

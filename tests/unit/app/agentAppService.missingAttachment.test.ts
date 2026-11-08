@@ -253,4 +253,28 @@ describe('agentAppService missing-attachment turn context', () => {
       );
     }
   });
+
+  it.each([
+    '帮我设计这个项目的需求文档',
+    '帮我写这份报告，主题是AI趋势',
+    '帮我做这个月的销售报表模板',
+    '把这个问题整理成表',
+    '这个方案怎么样：先做A再做B',
+  ])('adds no missing-attachment line for creation/discussion request: %s', async (content) => {
+    await createService().sendMessage({ sessionId: 'session-miss-1', content, attachments: [] });
+
+    const runOptions = taskManager.startTask.mock.calls[0]?.[3] as { turnSystemContext?: string[] } | undefined;
+    expect(baselineTurnContextCount(runOptions)).toBe(0);
+    expect(loggerSpies.info).not.toHaveBeenCalledWith(
+      'Missing attachment mention detected on turn start',
+      expect.anything(),
+    );
+  });
+
+  it.each(['看看这份文件', '看看我上传的附件'])('still adds exactly one line for: %s', async (content) => {
+    await createService().sendMessage({ sessionId: 'session-miss-1', content, attachments: [] });
+
+    const runOptions = taskManager.startTask.mock.calls[0]?.[3] as { turnSystemContext?: string[] } | undefined;
+    expect(baselineTurnContextCount(runOptions)).toBe(1);
+  });
 });

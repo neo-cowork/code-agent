@@ -1556,6 +1556,34 @@ describe('createAgentRouter', () => {
       });
     });
 
+    describe('missing-attachment turn context on the desktop /run route (N-FIX-ATTACHMENT-NOT-IN-WORKDIR-FU1)', () => {
+      const postRun = async (prompt: string, sessionId: string) => {
+        const controller = new AbortController();
+        mockRun.mockClear();
+        try {
+          const response = await fetch(`${baseUrl}/api/run`, {
+            method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ prompt, sessionId, attachments: [] }), signal: controller.signal,
+          });
+          expect(response.ok).toBe(true);
+          await waitForAssertion(() => expect(mockRun).toHaveBeenCalled());
+          return String(mockRun.mock.calls.at(-1)![0]);
+        } finally { controller.abort(); }
+      };
+      const LINE = '本轮未收到任何上传附件';
+
+      it('空附件 + "分析这张销售表" → 模型面提示词恰含一次缺附件行', async () => {
+        const modelPrompt = await postRun('分析这张销售表', 'session-missing-att-route-pos');
+        expect(modelPrompt.split(LINE)).toHaveLength(2);
+        expect(modelPrompt).toContain('分析这张销售表');
+      });
+
+      it('"帮我写一首关于春天的短诗" 不含缺附件行', async () => {
+        const modelPrompt = await postRun('帮我写一首关于春天的短诗', 'session-missing-att-route-neg');
+        expect(modelPrompt).not.toContain(LINE);
+      });
+    });
+
     it('连接器 chip 进入 AgentLoop toolScope，不只停在提示词和消息 metadata', async () => {
       const controller = new AbortController();
       const response = await fetch(`${baseUrl}/api/run`, {

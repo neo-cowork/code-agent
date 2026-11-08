@@ -603,12 +603,7 @@ export class ChannelAgentBridge {
     }
 
     try {
-      await orchestrator.sendMessage(
-        message.content,
-        attachments,
-        undefined,
-        { ...this.buildChannelMessageMetadata(accountId, message), memoryTainted: true },
-      );
+      await orchestrator.sendMessage(message.content, attachments, undefined, { memoryTainted: true });
 
       if (!res.writableEnded && !clientDisconnected) {
         await safeWrite('data: [DONE]\n\n');
