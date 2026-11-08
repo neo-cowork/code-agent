@@ -12,6 +12,7 @@ import type {
   Logger,
 } from '../../../../../src/host/protocol/tools';
 import { fileReadTracker } from '../../../../../src/host/tools/fileReadTracker';
+import { HostReasonCode } from '../../../../../src/shared/contract/permission';
 
 vi.mock('../../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
@@ -259,6 +260,7 @@ describe('readModule (native)', () => {
       if (!result.ok) {
         expect(result.code).toBe('ENOENT');
         expect(result.error).toContain('not found');
+        expect(result.meta?.hostReason).toBeUndefined();
       }
     });
 
@@ -271,9 +273,13 @@ describe('readModule (native)', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.code).toBe('ENOENT');
-        expect(result.error).toContain('not found');
-        expect(result.error).toContain('上传已过期');
-        expect(result.error).toContain('重新上传');
+        expect(result.error).toBe(
+          `File not found: ${uploadPath}（该文件是聊天上传的临时副本，应用重启后会被清理——请直接告诉用户：上传已过期，请重新上传该文件）`,
+        );
+        expect(result.meta?.hostReason).toEqual({
+          code: HostReasonCode.UploadExpired,
+          modelText: result.error,
+        });
       }
     });
 

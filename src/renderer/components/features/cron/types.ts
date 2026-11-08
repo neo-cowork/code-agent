@@ -15,6 +15,7 @@ import { validateEventScheduleConstraints } from '@shared/cronEventValidation';
 import { isCronPermissionDeniedMarker } from '@shared/cronPermissionDenied';
 import { CRON_AGENT_TYPES, CRON_EVENT_TRIGGER } from '@shared/constants';
 import { formatCronExpressionLabel, humanizeEverySchedule, type CronHumanLang } from '@shared/cronHumanize';
+import { redactCommandKeywordSecrets, redactCredentialText } from '@shared/security/secretPatterns';
 import { formatDateTime } from '../../../utils/formatDateTime';
 import { getBuiltinJobDisplay } from './builtinJobDisplay';
 
@@ -550,13 +551,13 @@ export function formatActionSummary(job: CronJobDefinition, lang: CronHumanLang 
   if (builtin) return builtin.actionLabel;
   switch (job.action.type) {
     case 'shell':
-      return job.action.command;
+      return redactCronDisplayText(job.action.command);
     case 'tool':
       return `${job.action.toolName}()`;
     case 'agent':
       // agentType 是自由文本标签（'default' / 'heartbeat'），不是注册表键，执行链只用 roleId+prompt。
       // 直接显示它等于往列表里种一行 "default agent" 这种没信息量的开发者字串。
-      return job.action.prompt;
+      return redactCronDisplayText(job.action.prompt);
     case 'webhook':
       return `${job.action.method} ${job.action.url}`;
     case 'ipc':
@@ -564,6 +565,14 @@ export function formatActionSummary(job: CronJobDefinition, lang: CronHumanLang 
     default:
       return (job.action as { type: string }).type;
   }
+}
+
+/** Renderer-only masking for user-visible automation text; stored actions stay byte-identical. */
+export function redactCronDisplayText(value: string): string {
+  return redactCommandKeywordSecrets(
+    redactCredentialText(value, { redacted: '***REDACTED***' }),
+    { redacted: '***REDACTED***' },
+  );
 }
 
 export function getExecutionStatusMeta(status: CronJobStatus): { label: string; className: string } {
