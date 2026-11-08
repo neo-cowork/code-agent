@@ -127,4 +127,56 @@ describe('listDirectoryModule', () => {
     expect(ignored.ok).toBe(true);
     if (ignored.ok) expect(ignored.output).toContain('hidden.txt');
   });
+
+  it('returns ok empty-folder text on a planned 任务_ path that does not exist yet without creating it, and ENOENT on non-planned missing paths', async () => {
+    const prevHome = process.env.CODE_AGENT_HOME;
+    const prevDataDir = process.env.CODE_AGENT_DATA_DIR;
+    const dataDir = path.join(tmpDir, '.code-agent');
+    process.env.CODE_AGENT_HOME = tmpDir;
+    process.env.CODE_AGENT_DATA_DIR = dataDir;
+
+    try {
+      const plannedDir = path.join(tmpDir, 'Neo', '任务_1102_分析这张销售表：哪个区域毛利率最高');
+      const nonPlannedDir = path.join(tmpDir, 'Neo', 'ordinary_missing_folder');
+
+      const handler = await listDirectoryModule.createHandler();
+      const plannedResult = await handler.execute(
+        { path: plannedDir, recursive: true },
+        makeCtx({ workingDir: plannedDir }),
+        allowAll,
+      );
+
+      expect(plannedResult.ok).toBe(true);
+      if (plannedResult.ok) {
+        expect(plannedResult.output).toContain('(empty — this task folder has no files yet)');
+        expect(plannedResult.meta).toMatchObject({
+          dirPath: plannedDir,
+          recursive: true,
+          entryCount: 0,
+          fileCount: 0,
+          directoryCount: 0,
+          entries: [],
+          nextOffset: null,
+          entriesTruncated: false,
+        });
+      }
+      await expect(fs.stat(plannedDir)).rejects.toMatchObject({ code: 'ENOENT' });
+
+      const missingResult = await handler.execute(
+        { path: nonPlannedDir, recursive: true },
+        makeCtx({ workingDir: tmpDir }),
+        allowAll,
+      );
+      expect(missingResult).toEqual({
+        ok: false,
+        error: `Directory not found: ${nonPlannedDir}`,
+        code: 'ENOENT',
+      });
+    } finally {
+      if (prevHome === undefined) delete process.env.CODE_AGENT_HOME;
+      else process.env.CODE_AGENT_HOME = prevHome;
+      if (prevDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
+      else process.env.CODE_AGENT_DATA_DIR = prevDataDir;
+    }
+  });
 });
