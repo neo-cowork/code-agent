@@ -26,7 +26,6 @@ vi.mock('../../../src/renderer/services/cronClient', () => ({
 }));
 
 import { RoleRoutinesSection } from '../../../src/renderer/components/features/expert/RoleRoutinesSection';
-import { formatCronJobDateTime } from '../../../src/renderer/utils/formatCronJobTime';
 
 const ROLE_ID = '竞品观察员';
 const NEXT_AT = Date.UTC(2026, 9, 27, 1, 0, 0);
@@ -122,12 +121,11 @@ function expectLastLine(needle: string): string {
 describe('RoleRoutinesSection', () => {
   it('renders next run and last result for both routines, and keeps the empty state', async () => {
     const { unmount } = renderSection();
-    const cronNextLabel = formatCronJobDateTime(NEXT_AT, 'UTC', 'zh');
     const localNextLabel = zhDetailTime(NEXT_AT);
     const lastLabel = zhDetailTime(LAST_AT);
     const failed = screen.getByTestId('role-bound-automation-daily-report');
     const never = screen.getByTestId('role-bound-automation-weekly-report');
-    expect(failed.textContent).toContain(`下次运行：${cronNextLabel}`);
+    expect(failed.textContent).toContain('下次运行：2026/10/27 01:00（协调世界时）');
     // 普通失败 = 「没跑成」（运行记录同一口径）；喂进去的 ECONNRESET 原文绝不回显。
     expect(failed.textContent).toContain(`上次运行：${lastLabel} · 没跑成`);
     expect(failed.textContent).not.toContain('ECONNRESET');

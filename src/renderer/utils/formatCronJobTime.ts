@@ -48,6 +48,15 @@ function withTimeZoneSuffix(value: string, timeZone: string | undefined, languag
   return language === 'zh' ? `${value}（${zoneName}）` : `${value} (${zoneName})`;
 }
 
+/** Append the configured cron zone name when it differs from this machine. */
+export function formatCronTimeZoneSuffix(
+  value: string,
+  timeZone: string | undefined,
+  language: Language = 'zh',
+): string {
+  return withTimeZoneSuffix(value, resolveTimeZone(timeZone), language);
+}
+
 function formatZhParts(value: string | number | Date, timeZone: string): string {
   const parts = new Intl.DateTimeFormat('zh-CN', {
     timeZone,
@@ -93,7 +102,7 @@ export function formatCronScheduleLabelWithZone(
   language: CronHumanLang = 'zh',
 ): string {
   const base = formatCronExpressionLabel(expression, timeZone, language);
-  return withTimeZoneSuffix(base, resolveTimeZone(timeZone), language);
+  return formatCronTimeZoneSuffix(base, timeZone, language);
 }
 
 /** Short next-run time used by the sidebar and project rail. */
