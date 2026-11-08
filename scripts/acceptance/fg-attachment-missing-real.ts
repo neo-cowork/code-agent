@@ -4,6 +4,7 @@
 //       npx tsx scripts/acceptance/fg-attachment-missing-real.ts
 //       npx tsx scripts/acceptance/fg-attachment-missing-real.ts --provider xiaomi
 //       npx tsx scripts/acceptance/fg-attachment-missing-real.ts --expect-after
+//       FG_ATTACHMENT_PROMPTS=P1,P2,P3 npx tsx scripts/acceptance/fg-attachment-missing-real.ts --expect-after
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -380,30 +381,38 @@ function parseArgs(argv: string[]): { provider: Provider; expectAfter: boolean }
   return { provider, expectAfter: argv.includes('--expect-after') };
 }
 
-function afterFailures(results: Record<PromptId, PromptTotals>): string[] {
+function afterFailures(results: Partial<Record<PromptId, PromptTotals>>, promptIds: PromptId[]): string[] {
   const failures: string[] = [];
-  for (const id of ['P1', 'P2', 'P5'] as const) {
-    if (results[id].maxWorkspaceChecksInRound > 1) {
-      failures.push(`${id}: max_workspace_checks=${results[id].maxWorkspaceChecksInRound} (>1)`);
+  for (const id of promptIds.filter((candidate): candidate is 'P1' | 'P2' | 'P5' => (
+    candidate === 'P1' || candidate === 'P2' || candidate === 'P5'
+  ))) {
+    const result = results[id];
+    if (!result) continue;
+    if (result.maxWorkspaceChecksInRound > 1) {
+      failures.push(`${id}: max_workspace_checks=${result.maxWorkspaceChecksInRound} (>1)`);
     }
-    if (results[id].externalScanCalls !== 0) {
-      failures.push(`${id}: external_scans=${results[id].externalScanCalls}`);
+    if (result.externalScanCalls !== 0) {
+      failures.push(`${id}: external_scans=${result.externalScanCalls}`);
     }
-    if (results[id].asksReuploadOrPathRounds !== ROUNDS) {
-      failures.push(`${id}: asks_reupload=${results[id].asksReuploadOrPathRounds}/${ROUNDS}`);
+    if (result.asksReuploadOrPathRounds !== ROUNDS) {
+      failures.push(`${id}: asks_reupload=${result.asksReuploadOrPathRounds}/${ROUNDS}`);
     }
-    if (results[id].cancelledOrEmptyRounds !== 0) {
-      failures.push(`${id}: cancelled_or_empty=${results[id].cancelledOrEmptyRounds}/${ROUNDS}`);
+    if (result.cancelledOrEmptyRounds !== 0) {
+      failures.push(`${id}: cancelled_or_empty=${result.cancelledOrEmptyRounds}/${ROUNDS}`);
     }
   }
-  if (results.P3.totalToolCalls !== 0) {
-    failures.push(`P3: total_tool_calls=${results.P3.totalToolCalls}`);
+  const control = results.P3;
+  if (promptIds.includes('P3') && control) {
+    if (control.totalToolCalls !== 0) {
+      failures.push(`P3: total_tool_calls=${control.totalToolCalls}`);
+    }
+    if (control.cancelledOrEmptyRounds !== 0) {
+      failures.push(`P3: cancelled_or_empty=${control.cancelledOrEmptyRounds}/${ROUNDS}`);
+    }
   }
-  if (results.P3.cancelledOrEmptyRounds !== 0) {
-    failures.push(`P3: cancelled_or_empty=${results.P3.cancelledOrEmptyRounds}/${ROUNDS}`);
-  }
-  if (results.P4.asksReuploadOrPathRounds !== 0) {
-    failures.push(`P4: asks_reupload=${results.P4.asksReuploadOrPathRounds}/${ROUNDS} (creation request must not ask for a re-upload)`);
+  const creation = results.P4;
+  if (promptIds.includes('P4') && creation && creation.asksReuploadOrPathRounds !== 0) {
+    failures.push(`P4: asks_reupload=${creation.asksReuploadOrPathRounds}/${ROUNDS} (creation request must not ask for a re-upload)`);
   }
   // P4 only asserts "no re-upload ask". With fake empty tools the model keeps exploring for "这个项目"
   // (identical with/without the fix and rule A: workspace/external scans, step-cap exhausted) — not gated here.
@@ -425,12 +434,17 @@ async function main(): Promise<void> {
   await loadProductModules();
   const tools = wireTools();
   console.log(`REPLAY provider=${provider} model=${tier.model} endpoint=${tier.baseUrl} temperature=${TEMPERATURE} rounds=${ROUNDS} helper_loaded=${Boolean(withMissingAttachmentTurnSystemContextFn)} tools=${JSON.stringify(FAKE_TOOL_NAMES)}`);
-  const results = {} as Record<PromptId, PromptTotals>;
-  for (const prompt of PROMPTS) {
+  const promptIds = process.env.FG_ATTACHMENT_PROMPTS?.split(',').map((id) => id.trim()).filter(Boolean) as PromptId[] | undefined;
+  const selectedPrompts = promptIds?.length
+    ? PROMPTS.filter((prompt) => promptIds.includes(prompt.id))
+    : PROMPTS;
+  if (selectedPrompts.length === 0) throw new Error('FG_ATTACHMENT_PROMPTS selected no known prompts');
+  const results = {} as Partial<Record<PromptId, PromptTotals>>;
+  for (const prompt of selectedPrompts) {
     results[prompt.id] = await runPrompt(apiKey, provider, tier, prompt, tools);
   }
   if (expectAfter) {
-    const failures = afterFailures(results);
+    const failures = afterFailures(results, selectedPrompts.map((prompt) => prompt.id));
     if (failures.length > 0) throw new Error(`after expectations failed: ${failures.join('; ')}`);
     console.log('AFTER_EXPECTATIONS PASS');
   }
