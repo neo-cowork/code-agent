@@ -14,6 +14,9 @@ import {
   killBackgroundTask,
   startBackgroundTask,
 } from '../../../../src/host/tools/shell/backgroundTasks';
+import { BackgroundTaskLedger } from '../../../../src/host/task/backgroundTaskLedger';
+import { installBackgroundTaskEventAdapters } from '../../../../src/host/task/backgroundTaskSnapshotAdapters';
+import { shutdownEventBus } from '../../../../src/host/services/eventing/bus';
 
 const posixOnly = process.platform === 'win32' ? describe.skip : describe;
 
@@ -143,5 +146,92 @@ posixOnly('后台任务停机收尸', () => {
 
     expect(killedTasks).toBeGreaterThanOrEqual(1);
     expect(getAllBackgroundTasks().some((t) => t.status === 'running')).toBe(false);
+  }, 30000);
+
+  it('records stopped background task as cancelled with one task_cancelled notice before process exit fires failed', async () => {
+    const cwd = mkdtempSync(`${tmpdir()}/neo-bgtask-`);
+    const ledger = new BackgroundTaskLedger();
+    const detach = installBackgroundTaskEventAdapters(ledger);
+    try {
+      const started = startBackgroundTask(
+        'sandbox-exec-placeholder || sleep 600 && echo done',
+        cwd,
+        30_000,
+        {
+          sessionId: 'session-stop-real',
+          displayCommand: 'sleep 600 && echo done',
+        },
+      );
+      expect(started.success).toBe(true);
+      startedTaskIds.push(started.taskId!);
+
+      await waitFor(() => ledger.getTask(`shell:${started.taskId}`)?.status === 'running');
+
+      const killResult = await killBackgroundTask(started.taskId!);
+      expect(killResult.success).toBe(true);
+
+      const ledgerTask = ledger.getTask(`shell:${started.taskId}`);
+      expect(ledgerTask).toMatchObject({
+        status: 'cancelled',
+        title: 'sleep 600 && echo done',
+        failure: undefined,
+      });
+
+      const notifications = ledger.drainNotifications('session-stop-real');
+      expect(notifications).toHaveLength(1);
+      expect(notifications[0]).toMatchObject({
+        type: 'task_cancelled',
+        title: '任务已停止',
+      });
+      expect(notifications[0]?.message).toContain('sleep 600 && echo done 已停止');
+      expect(notifications[0]?.message).not.toContain('sandbox-exec');
+      expect(notifications[0]?.message).not.toContain('失败');
+      expect(notifications.some((n) => n.type === 'task_failed')).toBe(false);
+    } finally {
+      detach();
+      shutdownEventBus();
+    }
+  }, 30000);
+
+  it('keeps non-zero exit command as failed with task_failed notice', async () => {
+    const cwd = mkdtempSync(`${tmpdir()}/neo-bgtask-`);
+    const ledger = new BackgroundTaskLedger();
+    const detach = installBackgroundTaskEventAdapters(ledger);
+    try {
+      const started = startBackgroundTask(
+        'echo boom && exit 7',
+        cwd,
+        30_000,
+        {
+          sessionId: 'session-fail-real',
+          displayCommand: 'echo boom && exit 7',
+        },
+      );
+      expect(started.success).toBe(true);
+      startedTaskIds.push(started.taskId!);
+
+      await waitFor(() => ledger.getTask(`shell:${started.taskId}`)?.status === 'failed');
+
+      const ledgerTask = ledger.getTask(`shell:${started.taskId}`);
+      expect(ledgerTask).toMatchObject({
+        status: 'failed',
+        title: 'echo boom && exit 7',
+        failure: {
+          message: 'Process exited with code 7',
+          exitCode: 7,
+          category: 'command_failed',
+        },
+      });
+
+      const notifications = ledger.drainNotifications('session-fail-real');
+      expect(notifications).toHaveLength(1);
+      expect(notifications[0]).toMatchObject({
+        type: 'task_failed',
+        title: '后台任务失败',
+      });
+    } finally {
+      detach();
+      shutdownEventBus();
+    }
   }, 30000);
 });

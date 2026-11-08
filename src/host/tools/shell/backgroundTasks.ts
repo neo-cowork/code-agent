@@ -46,6 +46,7 @@ export interface TaskState {
   toolCallId?: string;
   ownerAgentId?: string;
   sandboxed?: boolean;
+  stoppedByRequest?: boolean;
   onExit?: () => void;
 }
 
@@ -63,6 +64,7 @@ export interface TaskInfo {
   duration: number;
   exitCode?: number;
   outputFile: string;
+  stoppedByRequest?: boolean;
 }
 
 export interface TaskOutput {
@@ -185,6 +187,7 @@ function toTaskInfo(task: TaskState): TaskInfo {
     duration: (task.endTime || Date.now()) - task.startTime,
     exitCode: task.exitCode,
     outputFile: task.outputFile,
+    ...(task.stoppedByRequest ? { stoppedByRequest: true } : {}),
   };
 }
 
@@ -388,14 +391,16 @@ export async function killBackgroundTask(
       clearTimeout(task.timeout);
     }
 
+    task.stoppedByRequest = true;
     task.outputStream?.end();
     // SIGTERM → 宽限 → SIGKILL → 探到整组消失，全在 killProcessTree 内部。
     await killProcessTree(task.process, { posixGroupKill: true });
 
     // Update status
     task.status = 'failed';
-    task.endTime = Date.now();
+    task.endTime = task.endTime ?? Date.now();
     runTaskExitCallback(task);
+    emitTaskLifecycleEvent('failed', task);
 
     return {
       success: true,
