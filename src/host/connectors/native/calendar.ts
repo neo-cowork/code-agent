@@ -139,29 +139,31 @@ async function probeCalendarAccess(): Promise<string[]> {
   }
 }
 
-async function listEvents(payload: Record<string, unknown>): Promise<CalendarEventItem[]> {
-  const calendarName = typeof payload.calendar === 'string' ? payload.calendar.trim() : '';
-  const fromMs = typeof payload.from_ms === 'number' ? payload.from_ms : new Date().setHours(0, 0, 0, 0);
-  const toMs = typeof payload.to_ms === 'number' ? payload.to_ms : Date.now() + 14 * 24 * 60 * 60 * 1000;
-  const limit = typeof payload.limit === 'number' ? payload.limit : 20;
+const SEGMENTED_LIST_EVENTS_DEADLINE_MS = 45_000;
 
-  const lines = [
+interface ListEventsOutcome {
+  events: CalendarEventItem[];
+  unreadCalendars?: string[];
+}
+
+function buildSingleCalendarEventsScript(
+  calendarReference: string | number,
+  fromMs: number,
+  toMs: number,
+  eventLimit: number,
+): string[] {
+  const calendarSelector = typeof calendarReference === 'number'
+    ? String(calendarReference)
+    : `"${escapeAppleScriptString(calendarReference)}"`;
+  return [
     ...sharedAppleScriptHandlers(),
     ...buildAppleScriptDateVar('fromDate', fromMs),
     ...buildAppleScriptDateVar('toDate', toMs),
     'tell application "Calendar"',
     'set outputLines to {}',
-    `set eventLimit to ${Math.max(1, Math.min(limit, 200))}`,
+    `set eventLimit to ${eventLimit}`,
     'set emittedCount to 0',
-  ];
-
-  if (calendarName) {
-    lines.push(`set targetCalendars to {calendar "${escapeAppleScriptString(calendarName)}"}`);
-  } else {
-    lines.push('set targetCalendars to every calendar');
-  }
-
-  lines.push(
+    `set targetCalendars to {calendar ${calendarSelector}}`,
     'repeat with cal in targetCalendars',
     'set matchingEvents to every event of cal whose end date >= fromDate and start date <= toDate',
     'repeat with ev in matchingEvents',
@@ -188,11 +190,16 @@ async function listEvents(payload: Record<string, unknown>): Promise<CalendarEve
     'if emittedCount >= eventLimit then exit repeat',
     'end repeat',
     'return my joinLines(outputLines)',
-    'end tell'
-  );
+    'end tell',
+  ];
+}
 
-  const output = await runAppleScript(lines);
-  const events = output
+function parseEventsFromAppleScriptOutput(
+  output: string,
+  fromMs: number,
+  toMs: number,
+): CalendarEventItem[] {
+  return output
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
@@ -214,15 +221,74 @@ async function listEvents(payload: Record<string, unknown>): Promise<CalendarEve
       const start = event.startAtMs ?? event.endAtMs ?? 0;
       const end = event.endAtMs ?? event.startAtMs ?? start;
       return end >= fromMs && start <= toMs;
-    })
+    });
+}
+
+function sortAndTruncateEvents(events: CalendarEventItem[], limit: number): CalendarEventItem[] {
+  return [...events]
     .sort((a, b) => {
       const aTime = a.startAtMs ?? Number.MAX_SAFE_INTEGER;
       const bTime = b.startAtMs ?? Number.MAX_SAFE_INTEGER;
       return aTime - bTime;
     })
     .slice(0, limit);
+}
 
-  return events;
+async function listEvents(payload: Record<string, unknown>): Promise<ListEventsOutcome> {
+  const calendarName = typeof payload.calendar === 'string' ? payload.calendar.trim() : '';
+  const fromMs = typeof payload.from_ms === 'number' ? payload.from_ms : new Date().setHours(0, 0, 0, 0);
+  const toMs = typeof payload.to_ms === 'number' ? payload.to_ms : Date.now() + 14 * 24 * 60 * 60 * 1000;
+  const limit = typeof payload.limit === 'number' ? payload.limit : 20;
+  const eventLimit = Math.max(1, Math.min(limit, 200));
+
+  if (calendarName) {
+    const output = await runAppleScript(buildSingleCalendarEventsScript(calendarName, fromMs, toMs, eventLimit));
+    return {
+      events: sortAndTruncateEvents(parseEventsFromAppleScriptOutput(output, fromMs, toMs), limit),
+    };
+  }
+
+  const calendars = await listCalendars();
+  if (calendars.length === 0) {
+    return { events: [] };
+  }
+
+  const deadlineAt = Date.now() + SEGMENTED_LIST_EVENTS_DEADLINE_MS;
+  const collected: CalendarEventItem[] = [];
+  const unreadCalendars: string[] = [];
+  let lastTimeoutError: unknown;
+
+  for (let i = 0; i < calendars.length; i++) {
+    const cal = calendars[i];
+    if (i > 0 && Date.now() >= deadlineAt) {
+      unreadCalendars.push(...calendars.slice(i));
+      break;
+    }
+    try {
+      const output = await runAppleScript(buildSingleCalendarEventsScript(i + 1, fromMs, toMs, eventLimit));
+      const parsed = parseEventsFromAppleScriptOutput(output, fromMs, toMs);
+      collected.push(...parsed);
+      if (collected.length >= eventLimit) {
+        break;
+      }
+    } catch (error) {
+      if (isAppleScriptFailure(error) && describeAppleScriptFailure('Calendar', error).code === 'timeout') {
+        unreadCalendars.push(cal);
+        lastTimeoutError = error;
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  if (unreadCalendars.length === calendars.length && lastTimeoutError !== undefined) {
+    throw lastTimeoutError;
+  }
+
+  return {
+    events: sortAndTruncateEvents(collected, limit),
+    unreadCalendars: unreadCalendars.length > 0 ? unreadCalendars : undefined,
+  };
 }
 
 async function getEvent(payload: Record<string, unknown>): Promise<CalendarEventItem> {
@@ -484,10 +550,14 @@ export const calendarConnector: Connector = {
         };
       }
       case 'list_events': {
-        const events = await listEvents(payload);
+        const { events, unreadCalendars } = await listEvents(payload);
+        const baseSummary = events.length > 0 ? `找到 ${events.length} 条日历事件` : '没有找到匹配的日历事件';
+        const unreadNote = unreadCalendars && unreadCalendars.length > 0
+          ? `（以下日历读取超时未包含：${unreadCalendars.join('、')}）`
+          : '';
         return {
           data: events,
-          summary: events.length > 0 ? `找到 ${events.length} 条日历事件` : '没有找到匹配的日历事件',
+          summary: `${baseSummary}${unreadNote}`,
         };
       }
       case 'get_event': {

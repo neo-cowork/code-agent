@@ -28,16 +28,16 @@ const logger = createLogger('DelegateSession');
 
 const REJECTION_SUFFIX = ' Nothing was delegated. Ask the user with AskUserQuestion; do not retry with create_new.';
 
-// FB-772：origin_turn_id 参与 submission_key 派生（session\0turn\0action\0target）。
-// 旧代码在 ctx.turnId 缺失时落 'unknown-turn' 跨轮共享常量——同 origin session
-// 同目标的第二个不同正文委托被 G4 误拒（idempotency_conflict）。turn id 经
-// buildProtocolContext 到达后，缺值只可能是调用方装配错误：turn 与 run 双缺时
-// 拒绝并告警，绝不回退跨轮共享常量；run 与用户轮一一对应，可作回退身份。
+// FB-772 / FB-873：origin_turn_id 参与 submission_key 派生（session\0turn\0action\0target）。
+// ctx.turnId 是单次模型推理步（agent step）id，由 streamHandler 每步重新生成；
+// ctx.runId 与用户发起轮（user turn）一一对应。优先用 ctx.runId 作发起轮身份，
+// 保证同一用户轮内多次迭代调用 delegate_session 命中同一 submission_key；
+// 仅在 ctx.runId 缺失时回退 ctx.turnId，二者双缺则拒绝并告警，绝不回退跨轮共享常量。
 function originTurnIdOf(ctx: Parameters<ToolHandler['execute']>[1]): string {
-  const turnId = typeof ctx.turnId === 'string' && ctx.turnId.trim().length > 0 ? ctx.turnId : undefined;
-  if (turnId !== undefined) return turnId;
   const runId = typeof ctx.runId === 'string' && ctx.runId.trim().length > 0 ? ctx.runId : undefined;
   if (runId !== undefined) return runId;
+  const turnId = typeof ctx.turnId === 'string' && ctx.turnId.trim().length > 0 ? ctx.turnId : undefined;
+  if (turnId !== undefined) return turnId;
   logger.warn('[DelegateSession] origin turn identity missing: ctx.turnId is empty and ctx.runId is empty; refusing to derive a submission key (no cross-turn constant fallback)');
   throw new Error('delegate_session requires an origin turn identity; both ctx.turnId and ctx.runId are empty');
 }
@@ -48,11 +48,18 @@ function rejection(code: string, detail: string, gate?: string): ToolResult<stri
   return { ok: false, code: 'DELEGATION_REJECTED', error: `${code}: ${detail}.${REJECTION_SUFFIX}`, meta: { code, gate: gate ?? 'none' } };
 }
 
-function successfulOutput(input: { delegationId: string; targetName: string; queuedAhead: number }): ToolResult<string> {
+function successfulOutput(input: { delegationId: string; targetName: string; queuedAhead: number; reused?: true }): ToolResult<string> {
+  const payload = {
+    delegationId: input.delegationId,
+    target: input.targetName,
+    status: 'active',
+    queuedAhead: input.queuedAhead,
+    ...(input.reused ? { reused: true as const } : {}),
+  };
   return {
     ok: true,
-    output: JSON.stringify({ delegationId: input.delegationId, target: input.targetName, status: 'active', queuedAhead: input.queuedAhead }),
-    meta: { delegationId: input.delegationId, target: input.targetName, status: 'active', queuedAhead: input.queuedAhead },
+    output: JSON.stringify(payload),
+    meta: { ...payload },
   };
 }
 
@@ -281,7 +288,7 @@ async function runDelegateSession(
       if (row && row.status !== 'active') {
         return rejection('delegation_not_active', `existing delegation ${row.delegationId} is ${row.status}; it is not revived on retry, re-issue the task as a new delegation`);
       }
-      return successfulOutput({ delegationId: admission.result.delegationId, targetName: runtime.getSessionRow(row?.targetSessionId ?? '')?.title ?? 'session', queuedAhead: 0 });
+      return successfulOutput({ delegationId: admission.result.delegationId, targetName: runtime.getSessionRow(row?.targetSessionId ?? '')?.title ?? 'session', queuedAhead: 0, reused: true });
     }
     if (call.action === 'stop' || call.action === 'resume' || call.action === 'correct') {
       return executeChain(call, admission.row ?? null, ctx, runtime);

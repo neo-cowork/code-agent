@@ -67,9 +67,9 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // sys-v101：N-FIX-BROWSER-TARGETREF-STRING-WASTE-STEPS 整合合并——browser_action / Browser schema
 // targetRef 与 destinationTargetRef 扩为 ['object', 'string'] 并附单串 refId 示例（模型可见面变化），
 // 与 main 已合入的 sys-v100 撞号，按惯例升版。
-// sys-v103：N-FIX-ATTACHMENT-NOT-IN-WORKDIR-FU1——Task Execution 新增第 5 条缺失附件回退规则，
-// 并还原 r1 超范围精简的其余段落文本。
-export const PROMPT_VERSION = 'sys-v104' as const;
+// sys-v102：整合 list_experts 可选 name 参数，支持 edit-role 从当前槽读取
+// 持久化专家定义；合并后模型可见面未在任一侧单独记录。
+export const PROMPT_VERSION = 'sys-v102' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =
