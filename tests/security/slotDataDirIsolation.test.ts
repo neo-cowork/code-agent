@@ -125,6 +125,18 @@ describe('槽数据目录读隔离', () => {
     expectForeignDenied(result, '.code-agent', PROD_SENTINEL);
   });
 
+  it('Read 拒读另一个槽的 agents/<role>.md 角色定义文件', async () => {
+    const prodAgentFile = path.join(prodSlot, 'agents', '研究员.md');
+    mkdirSync(path.dirname(prodAgentFile), { recursive: true });
+    writeFileSync(prodAgentFile, PROD_SENTINEL);
+    const result = await buildExecutor().execute(
+      'Read',
+      { file_path: prodAgentFile },
+      { sessionId: 'slot-isolation-read-agent-def' },
+    );
+    expectForeignDenied(result, '.code-agent', PROD_SENTINEL);
+  });
+
   it('Glob 拒扫生产槽目录，结果里不能出现生产槽文件内容或路径泄漏内容', async () => {
     const result = await buildExecutor().execute(
       'Glob',

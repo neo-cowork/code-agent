@@ -79,8 +79,15 @@ describe('buildCronAgentPrompt urgencyCriteria（N-CRON-MORNING-TRIAGE-URGENCY-R
   const NOW = new Date('2026-09-30T00:00:00.000Z');
   const todayEpoch = Math.floor(new Date(ANCHOR.year, ANCHOR.month - 1, ANCHOR.day, 0, 0, 0, 0).getTime() / 1000);
   const tomorrowEpoch = todayEpoch + 86400;
+  // 时区段（N-FIX-CRON-PROMPT-TODAY-DATE-TZ-MISMATCH）：未传 timeZone 时取宿主时区，当地时间取自真实 NOW。
+  const hostZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  const hostParts = new Intl.DateTimeFormat('en-US', {
+    timeZone: hostZone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+  }).formatToParts(NOW);
+  const hp = (t: string) => hostParts.find((x) => x.type === t)?.value;
+  const hostLocal = `${hp('year')}-${hp('month')}-${hp('day')} ${hp('hour')}:${hp('minute')}`;
   const timeAnchor =
-    `【当前时间】2026-09-30T00:00:00.000Z（UTC）。今天本地日期是 2099-12-31。`
+    `【当前时间】2026-09-30T00:00:00.000Z（UTC）。时区 ${hostZone}，当地时间 ${hostLocal}，今天本地日期是 2099-12-31。`
     + `若要按「今天/本地当天」查询时间戳，直接用这两个算好的值，不要自己换算年份：`
     + `今天本地 00:00 = ${todayEpoch}（Unix 秒），次日本地 00:00 = ${tomorrowEpoch}（Unix 秒）。`
     + '其他相对时间以【当前时间】为基准，不要用你训练时的日期。';
@@ -151,8 +158,15 @@ describe('buildCronAgentPrompt notifyWhen（N-CRON-RESTATE-HUMAN-WHEN）', () =>
   const NOW = new Date('2026-09-30T00:00:00.000Z');
   const todayEpoch = Math.floor(new Date(ANCHOR.year, ANCHOR.month - 1, ANCHOR.day, 0, 0, 0, 0).getTime() / 1000);
   const tomorrowEpoch = todayEpoch + 86400;
+  // 时区段（N-FIX-CRON-PROMPT-TODAY-DATE-TZ-MISMATCH）：未传 timeZone 时取宿主时区，当地时间取自真实 NOW。
+  const hostZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  const hostParts = new Intl.DateTimeFormat('en-US', {
+    timeZone: hostZone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+  }).formatToParts(NOW);
+  const hp = (t: string) => hostParts.find((x) => x.type === t)?.value;
+  const hostLocal = `${hp('year')}-${hp('month')}-${hp('day')} ${hp('hour')}:${hp('minute')}`;
   const timeAnchor =
-    `【当前时间】2026-09-30T00:00:00.000Z（UTC）。今天本地日期是 2099-12-31。`
+    `【当前时间】2026-09-30T00:00:00.000Z（UTC）。时区 ${hostZone}，当地时间 ${hostLocal}，今天本地日期是 2099-12-31。`
     + `若要按「今天/本地当天」查询时间戳，直接用这两个算好的值，不要自己换算年份：`
     + `今天本地 00:00 = ${todayEpoch}（Unix 秒），次日本地 00:00 = ${tomorrowEpoch}（Unix 秒）。`
     + '其他相对时间以【当前时间】为基准，不要用你训练时的日期。';

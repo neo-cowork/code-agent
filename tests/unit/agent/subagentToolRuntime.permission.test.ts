@@ -32,6 +32,7 @@ import { resolveSessionPermissionMode } from '../../../src/host/tools/toolPermis
 describe('createSubagentToolRuntime permission forwarding', () => {
   beforeEach(() => {
     toolExecutorState.config = undefined;
+    resetPermissionModeManager();
   });
 
   function captureRequestPermission(input: {
@@ -40,6 +41,11 @@ describe('createSubagentToolRuntime permission forwarding', () => {
     sessionId?: string;
   }) {
     const sessionId = input.sessionId ?? 'session-1';
+    getPermissionModeManager().setSessionMode(
+      sessionId,
+      input.effectiveMode,
+      input.effectiveMode === 'bypassPermissions',
+    );
     const permissionRequest = vi.fn(async () => input.permissionResult ?? false);
     createSubagentToolRuntime({
       context: {
@@ -139,6 +145,8 @@ describe('createSubagentToolRuntime permission forwarding', () => {
 
     beforeEach(() => {
       resetPermissionModeManager();
+      getPermissionModeManager().setSessionMode(SESSION, 'acceptEdits');
+      getPermissionModeManager().setSessionMode(OTHER, 'acceptEdits');
     });
 
     it('acceptEdits 子代理的 write 不再直接放行，改走 permission.request', async () => {

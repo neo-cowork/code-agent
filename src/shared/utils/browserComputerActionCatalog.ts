@@ -146,6 +146,8 @@ const BROWSER_ACTION_CATALOG: ActionCatalogMap = {
   forward: { ...WRITE_BROWSER_DEFAULTS, consequence: "no_external_side_effect" },
   reload: { ...WRITE_BROWSER_DEFAULTS, consequence: "no_external_side_effect" },
   set_viewport: { ...WRITE_BROWSER_DEFAULTS, consequence: "no_external_side_effect" },
+  // Most clicks are local page interactions. Permission classification probes
+  // the live target because a submit control can send form data or cross origin.
   click: { ...WRITE_BROWSER_DEFAULTS, consequence: "no_external_side_effect" },
   click_text: { ...WRITE_BROWSER_DEFAULTS, consequence: "no_external_side_effect" },
   type: { ...WRITE_BROWSER_DEFAULTS, consequence: "no_external_side_effect" },
@@ -176,6 +178,7 @@ const BROWSER_ACTION_CATALOG: ActionCatalogMap = {
     evidenceKind: "artifact",
     approvalKind: "tool_executor_file",
   },
+  // Filling fields alone sends nothing; submission is classified on the click.
   fill_form: { ...WRITE_BROWSER_DEFAULTS, consequence: "no_external_side_effect" },
   // execute_goal stays in the catalog for runtime lookup. Schema enum and
   // description advertise it only when CODE_AGENT_BROWSER_JEV_STEP=1. Calling
