@@ -13,6 +13,12 @@ const mocks = vi.hoisted(() => ({
   deleteProject: vi.fn(),
   invokeDomain: vi.fn(),
   isWebMode: vi.fn(),
+  isTauriMode: vi.fn(),
+  dialogOpen: vi.fn(),
+}));
+
+vi.mock('@tauri-apps/plugin-dialog', () => ({
+  open: mocks.dialogOpen,
 }));
 
 vi.mock('../../../src/renderer/services/projectClient', () => ({
@@ -32,6 +38,7 @@ vi.mock('../../../src/renderer/hooks/useI18n', () => ({
 
 vi.mock('../../../src/renderer/utils/platform', () => ({
   isWebMode: mocks.isWebMode,
+  isTauriMode: mocks.isTauriMode,
 }));
 
 import { ProjectSettingsDialog } from '../../../src/renderer/components/ProjectSettingsDialog';
@@ -73,6 +80,8 @@ describe('ProjectSettingsDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.isWebMode.mockReturnValue(false);
+    mocks.isTauriMode.mockReturnValue(true);
+    mocks.dialogOpen.mockResolvedValue('/repo/docs');
     mocks.getProjectDetail.mockResolvedValue(detail());
     mocks.getProjectSourceGitStates.mockResolvedValue([]);
     mocks.updateProject.mockImplementation(async (input) => ({
@@ -90,7 +99,7 @@ describe('ProjectSettingsDialog', () => {
       })),
     }));
     mocks.invokeDomain.mockImplementation(async (_domain, action) => (
-      action === 'selectDirectory' ? '/repo/docs' : { state: 'trusted' }
+      action === 'setCurrent' ? '/repo/docs' : { state: 'trusted' }
     ));
     vi.spyOn(window, 'confirm').mockReturnValue(true);
   });
@@ -103,6 +112,12 @@ describe('ProjectSettingsDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: /Add folder/i }));
 
     await waitFor(() => expect(screen.getAllByTestId('project-source-row')).toHaveLength(2));
+    expect(mocks.dialogOpen).toHaveBeenCalledWith({
+      directory: true,
+      multiple: false,
+      title: 'Add folder',
+    });
+    expect(mocks.invokeDomain).toHaveBeenCalledWith(expect.anything(), 'setCurrent', { dir: '/repo/docs' });
     const access = screen.getByLabelText('Source access /repo/docs') as HTMLSelectElement;
     expect(access.value).toBe('read_only');
 

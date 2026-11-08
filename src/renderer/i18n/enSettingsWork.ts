@@ -301,6 +301,7 @@ export const enSettingsWork = {
         groupAccessModeHint: 'Guests only get read-only tools. Who counts as trusted is set separately in the allowlisted user IDs field above.',
         groupAccessModePrivacyPrerequisite: 'Turn off the bot\'s privacy mode in Telegram first. After connecting, this page will tell you whether it is working.',
         telegramPrivacyModeTitle: 'Turn off Telegram privacy mode', telegramPrivacyModeBadge: 'Action needed', telegramPrivacyModeWarning: 'Unmentioned group messages still do not arrive: Telegram leaves bot privacy mode on by default. Open @BotFather, send /setprivacy, choose this bot, and choose Disable. Remove the bot from the group and add it back, then disconnect and connect here to re-check. Or make the bot a group admin; if it is already a group admin, ignore this hint.',
+        feishuSharedAppWarning: 'Another Neo on this computer is also connected to this Feishu app. Feishu delivers each message to only one of them at random, so group messages may not arrive here. Quit the other Neo, then reconnect this channel.',
         telegramTipSearchPrefix: 'Search ',
         telegramTipSearchSuffix: ' in Telegram to create a Bot',
         telegramTipNewBotPrefix: 'Send ',
@@ -952,6 +953,7 @@ export const enSettingsWork = {
       hotkeyStatusNeedsRestart: 'Granted — restart Neo to take effect',
       hotkeyEnable: 'Enable shortcut',
       hotkeyOpenSettings: 'Open Input Monitoring permissions',
+      hotkeyPermissionHint: 'If no system prompt appeared, click “Open Input Monitoring permissions,” add Agent Neo with the “+” button, and turn it on.',
     },
     hooks: {
       title: 'Hooks',

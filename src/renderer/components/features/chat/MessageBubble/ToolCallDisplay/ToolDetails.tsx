@@ -39,6 +39,7 @@ import { useI18n } from '../../../../../hooks/useI18n';
 import type { Translations } from '../../../../../i18n';
 import { useMessageActionStore } from '../../../../../stores/messageActionStore';
 import { copyPathToClipboard } from '../../../../../utils/platform';
+import { formatSessionTaskOutput } from '../../../../../utils/sessionTaskPresentation';
 import {
   ImageResultDisplay,
   GenericMediaResultDisplay,
@@ -407,7 +408,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                       : result.error
                         ? stripAnsiCodes(result.error)
                         : typeof result.output === 'string'
-                          ? cleanToolResultDisplayText(name, stripAnsiCodes(result.output), copy)
+                          ? cleanToolResultDisplayText(name, stripAnsiCodes(formatSessionTaskOutput(result.metadata, result.output, t)), copy)
                           : JSON.stringify(result.output, null, 2)
                   }
                   lineCap={isShellTool(name) ? SHELL_RESULT_BODY_LINE_CAP : RESULT_BODY_LINE_CAP}

@@ -302,6 +302,7 @@ export const zhSettingsWork = {
         groupAccessModeHint: '访客只能用只读工具；哪些人算信任用户，在上面的「白名单用户 ID」里单独设置',
         groupAccessModePrivacyPrerequisite: '需要先在 Telegram 里关闭机器人的隐私模式，连接后这里会告诉你是否已生效。',
         telegramPrivacyModeTitle: '需要关闭 Telegram 隐私模式', telegramPrivacyModeBadge: '需要处理', telegramPrivacyModeWarning: '群里还收不到未 @ 的消息：Telegram 默认开着机器人隐私模式。去 @BotFather 发 /setprivacy → 选这个机器人 → Disable，再把机器人移出群、重新拉进来，然后在这里断开再连接检查。也可以把机器人设为群管理员；已经是群管理员的话，忽略这条提示。',
+        feishuSharedAppWarning: '本机还有另一个 Neo 也连着这个飞书应用。飞书只会把消息随机发给其中一个，所以这里可能收不到群消息。退出另一个 Neo 后，重新连接这个通道。',
         telegramTipSearchPrefix: '在 Telegram 中搜索 ',
         telegramTipSearchSuffix: ' 创建 Bot',
         telegramTipNewBotPrefix: '发送 ',
@@ -953,6 +954,7 @@ export const zhSettingsWork = {
       hotkeyStatusNeedsRestart: '已授权，重启 Neo 后生效',
       hotkeyEnable: '开启快捷键',
       hotkeyOpenSettings: '打开「输入监控」权限设置',
+      hotkeyPermissionHint: '如果没有出现系统提示，请点击“打开「输入监控」权限设置”，用“+”按钮添加 Agent Neo 并将开关打开。',
     },
     hooks: {
       title: 'Hook',

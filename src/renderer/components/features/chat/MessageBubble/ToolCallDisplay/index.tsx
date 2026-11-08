@@ -40,6 +40,7 @@ import { DelegationHeader, DelegationReceipt } from './DelegationReceipt';
 import {
   deriveDelegationPresentation,
   resolveAgentActivityTarget,
+  toDelegationDisplayToolCall,
 } from './delegationPresentation';
 import { humanizeToolStep } from '../../../../../utils/humanizeToolStep';
 import { getHumanToolLabel } from '../../../../../utils/toolHumanLabel';
@@ -357,7 +358,7 @@ export function ToolCallDisplay({
       {expanded && !receipt && (
         <div className="ml-6 animate-fadeIn">
           <ToolDetails
-            toolCall={toolCall}
+            toolCall={toDelegationDisplayToolCall(toolCall)}
             compact={compact}
             mediaContext={{
               ...mediaContext,

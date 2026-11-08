@@ -18,6 +18,8 @@ interface CronExecutionListProps {
   onSelectExecution: (executionId: string) => void;
   /** 跨任务执行流（运行记录 tab）时传入：加一列任务名 */
   jobNameById?: Record<string, string>;
+  /** Complete catalog has loaded; otherwise a missing entry is not evidence of deletion. */
+  jobNamesLoaded?: boolean;
   /** Immutable execution location keyed by job id. */
   runsOnByJobId?: Record<string, CronJobDefinition['runsOn']>;
   /** jobId → 等批准运行（N-CRON-UNATTENDED-BASH-PARK-STUCK）：running 行状态格换 amber 徽章。 */
@@ -37,6 +39,7 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
   selectedExecutionId,
   onSelectExecution,
   jobNameById,
+  jobNamesLoaded = true,
   runsOnByJobId,
   awaitingByJobId,
 }) => {
@@ -93,7 +96,7 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
                 >
                   {jobNameById && (
                     <td className={`max-w-[200px] truncate text-zinc-200 ${tdClass}`}>
-                      {jobNameById[execution.jobId] || execution.jobId}
+                      {jobNameById[execution.jobId] ?? (jobNamesLoaded ? cc.deletedTask : cc.jobNameUnavailable)}
                     </td>
                   )}
                   <td className={`whitespace-nowrap ${tdClass}`}>

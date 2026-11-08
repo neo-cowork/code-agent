@@ -32,15 +32,22 @@ interface HotkeyStatus {
   devChannel: boolean;
 }
 
-function mockHotkey(status: HotkeyStatus | Error): void {
+function mockHotkey(
+  status: HotkeyStatus | Error,
+  requestResult: HotkeyStatus | Error = {
+    permissionGranted: true,
+    tapInstalled: true,
+    devChannel: status instanceof Error ? false : status.devChannel,
+  },
+): void {
   facadeInvoke.mockImplementation(async (action: string) => {
     if (action === 'getAppshotsHotkeyStatus') {
       if (status instanceof Error) throw status;
       return status;
     }
     if (action === 'requestAppshotsHotkeyAccess') {
-      const devChannel = status instanceof Error ? false : status.devChannel;
-      return { permissionGranted: true, tapInstalled: true, devChannel };
+      if (requestResult instanceof Error) throw requestResult;
+      return requestResult;
     }
     return undefined;
   });
@@ -104,6 +111,38 @@ describe('AppshotsSettings 快捷键（⌘+⌘）输入监控权限行', () => {
     await waitFor(() => {
       expect(screen.getByTestId('appshots-hotkey-permission-row').textContent).toContain('已开启');
     });
+    expect(screen.queryByTestId('appshots-hotkey-permission-hint')).toBeNull();
+  });
+
+  it('显式请求返回未授权时显示下一步提示，后续授权后隐藏', async () => {
+    const denied = { permissionGranted: false, tapInstalled: false, devChannel: false };
+    mockHotkey(denied, denied);
+    renderTab();
+    await screen.findByTestId('appshots-hotkey-permission-row');
+
+    fireEvent.click(screen.getByRole('button', { name: '开启快捷键' }));
+
+    const hint = await screen.findByTestId('appshots-hotkey-permission-hint');
+    expect(hint.textContent).toContain('如果没有出现系统提示');
+    expect(hint.textContent).toContain('用“+”按钮添加 Agent Neo 并将开关打开');
+
+    mockHotkey(denied, { permissionGranted: true, tapInstalled: true, devChannel: false });
+    fireEvent.click(screen.getByRole('button', { name: '开启快捷键' }));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('appshots-hotkey-permission-hint')).toBeNull();
+    });
+  });
+
+  it('显式请求抛错时仍显示下一步提示', async () => {
+    const denied = { permissionGranted: false, tapInstalled: false, devChannel: false };
+    mockHotkey(denied, new Error('native request failed'));
+    renderTab();
+    await screen.findByTestId('appshots-hotkey-permission-row');
+
+    fireEvent.click(screen.getByRole('button', { name: '开启快捷键' }));
+
+    expect(await screen.findByTestId('appshots-hotkey-permission-hint')).toBeTruthy();
   });
 
   it('granted + installed: 显示「已开启」，不再出现开启按钮', async () => {

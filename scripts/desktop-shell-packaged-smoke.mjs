@@ -251,7 +251,7 @@ function probeTcp(host, port, timeoutMs = 1500) {
 
 function readListenSample(port) {
   try {
-    const output = execFileSync('/usr/sbin/lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN'], {
+    const output = execFileSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN'], {
       encoding: 'utf8',
       timeout: 3000,
     });
@@ -259,6 +259,61 @@ function readListenSample(port) {
   } catch {
     return [];
   }
+}
+
+function readProcessCommandLine(pid) {
+  if (!pid || !/^\d+$/.test(String(pid))) return '';
+  try {
+    return execFileSync('/bin/ps', ['-ww', '-o', 'args=', '-p', String(pid)], {
+      encoding: 'utf8',
+      timeout: 2000,
+    }).trim();
+  } catch {
+    return '';
+  }
+}
+
+async function checkPreflightPortInUse(options) {
+  const ports = [...new Set([options.appPort, options.port].filter((p) => Number.isInteger(p) && p > 0))];
+  for (const port of ports) {
+    const lsofSample = readListenSample(port);
+    const dataLine = lsofSample.slice(1).find((line) => line.trim().length > 0);
+    let occupied = Boolean(dataLine);
+    if (!occupied) {
+      const probed = await probeTcp('127.0.0.1', port, 500);
+      occupied = probed.listening;
+    }
+    if (!occupied) continue;
+    const tokens = dataLine ? dataLine.trim().split(/\s+/) : [];
+    const command = tokens[0] || 'unknown';
+    const pid = tokens[1] && /^\d+$/.test(tokens[1]) ? Number(tokens[1]) : 'unknown';
+    const fullArgs = pid !== 'unknown' ? readProcessCommandLine(pid) : '';
+    const isDevApp = /Agent Neo Dev|code-agent-tauri|\.code-agent-dev/i.test(`${command} ${fullArgs} ${dataLine ?? ''}`);
+    const processLabel = isDevApp ? 'Agent Neo Dev' : 'another process';
+    const processLabelZh = isDevApp ? 'Agent Neo Dev' : '其他进程';
+    const killHint = pid !== 'unknown' ? `kill ${pid}` : `lsof -ti tcp:${port} | xargs kill`;
+    const message = `Port ${port} is already in use by ${processLabel} (pid=${pid}, command=${command}); quit it first (menu Agent Neo Dev > Quit, or \`${killHint}\`), then re-run. / 端口 ${port} 已被 ${processLabelZh}（pid=${pid}，command=${command}）占用；请先退出该进程（菜单 Agent Neo Dev > Quit 或 \`${killHint}\`）后再重新运行。`;
+    return {
+      ok: false,
+      summary: {
+        evidenceReady: false,
+        bootFile: path.join(options.tauriDataDir, 'logs', BOOT_FILE),
+        healthUrl: `http://localhost:${options.port}/api/health`,
+        diagnosticsEndpoint: `http://localhost:${options.port}/api/domain/diagnostics/desktopShell`,
+        port,
+        occupiedByPid: pid,
+        occupiedByCommand: command,
+        classificationStatus: 'failed',
+      },
+      failures: [{
+        code: 'desktop_shell_port_in_use',
+        message,
+        evidence: { port, pid, command, lsofSample },
+      }],
+      warnings: [],
+    };
+  }
+  return null;
 }
 
 function authorizedFetch(baseUrl, token, route, body, timeoutMs) {
@@ -846,37 +901,40 @@ async function main() {
     fs.mkdirSync(path.join(options.dataDir, 'logs'), { recursive: true });
     fs.mkdirSync(path.join(options.tauriDataDir, 'logs'), { recursive: true });
     const startedAtMs = Date.now();
-    if (!options.skipLaunch) {
-      launched = launchApp(options.appPath, options.dataDir, options.appPort);
-    }
+    let result = !options.skipLaunch ? await checkPreflightPortInUse(options) : null;
+    if (!result) {
+      if (!options.skipLaunch) {
+        launched = launchApp(options.appPath, options.dataDir, options.appPort);
+      }
 
-    const result = await collectEvidence({ ...options, startedAtMs });
-    if (options.companion && !options.healthOnly && result.evidence?.health) {
-      const companionEvidence = await collectCompanionEvidence({
-        appPath: options.appPath,
-        dataDir: options.dataDir,
-        port: options.port,
-        roundtrip: options.companionRoundtrip,
-      });
-      const companion = verifyPackagedCompanionEvidence(companionEvidence);
-      result.companion = companion;
-      result.summary = {
-        ...result.summary,
-        companionOk: companion.ok,
-        companionLanPort: companion.summary.lanPort,
-        companionInviteKind: companion.summary.inviteKind,
-        companionPaired: companion.summary.paired,
-      };
-      for (const failure of companion.failures) result.failures.push(failure);
-      for (const warning of companion.warnings) result.warnings.push(warning);
-      if (!companion.ok) result.ok = false;
-    }
-    if (launched && launched.getOutput() && result.failures.length > 0) {
-      result.launch = {
-        executable: launched.executable,
-        outputSample: launched.getOutput().slice(-4000),
-      };
-      assertNoSensitiveDesktopShellDiagnostics(result);
+      result = await collectEvidence({ ...options, startedAtMs });
+      if (options.companion && !options.healthOnly && result.evidence?.health) {
+        const companionEvidence = await collectCompanionEvidence({
+          appPath: options.appPath,
+          dataDir: options.dataDir,
+          port: options.port,
+          roundtrip: options.companionRoundtrip,
+        });
+        const companion = verifyPackagedCompanionEvidence(companionEvidence);
+        result.companion = companion;
+        result.summary = {
+          ...result.summary,
+          companionOk: companion.ok,
+          companionLanPort: companion.summary.lanPort,
+          companionInviteKind: companion.summary.inviteKind,
+          companionPaired: companion.summary.paired,
+        };
+        for (const failure of companion.failures) result.failures.push(failure);
+        for (const warning of companion.warnings) result.warnings.push(warning);
+        if (!companion.ok) result.ok = false;
+      }
+      if (launched && launched.getOutput() && result.failures.length > 0) {
+        result.launch = {
+          executable: launched.executable,
+          outputSample: launched.getOutput().slice(-4000),
+        };
+        assertNoSensitiveDesktopShellDiagnostics(result);
+      }
     }
     if (options.outFile) {
       fs.mkdirSync(path.dirname(options.outFile), { recursive: true });

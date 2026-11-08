@@ -12,6 +12,7 @@ import type {
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { describeAppleScriptWriteFailure } from './appleScriptWriteFailure';
 import { remindersUpdateSchema as schema } from './remindersUpdate.schema';
 import { captureReminderBefore } from './undoMetadata';
 
@@ -86,7 +87,13 @@ async function executeRemindersUpdate(
       },
     };
   } catch (error) {
-    const failure = `Reminders update failed: ${error instanceof Error ? error.message : String(error)}`;
+    const failure = describeAppleScriptWriteFailure(
+      'Reminders',
+      'Reminders update failed',
+      error,
+      ctx.logger,
+      schema.name,
+    );
     return {
       ok: false,
       error: failure,

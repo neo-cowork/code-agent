@@ -102,6 +102,11 @@ export function isTerminalCronRunStatusKind(kind: CronRunStatusLine['kind'] | nu
   );
 }
 
+/** 仍会新增步骤的运行态；状态行与步骤必须同时可见。 */
+export function isLiveCronRunStatusKind(kind: CronRunStatusLine['kind'] | null | undefined): boolean {
+  return kind === 'running' || kind === 'awaiting';
+}
+
 /** 按 executionId（优先）或 sessionId 匹配会话对应的执行记录。 */
 export function findCronExecutionForSession(
   executions: readonly CronJobExecution[],
