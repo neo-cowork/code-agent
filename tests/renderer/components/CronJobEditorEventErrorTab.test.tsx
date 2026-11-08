@@ -223,6 +223,7 @@ describe('event validation jumps to the basic tab', () => {
         draft={{
           input: {
             name: '盯群',
+            description: '关注群消息',
             enabled: true,
             scheduleType: 'event',
             schedule: { type: 'event', source: 'channel', accountId: 'account-feishu', eventName: 'message' },
@@ -230,6 +231,8 @@ describe('event validation jumps to the basic tab', () => {
             runsOn: 'local',
             maxRunBudget: 0.5,
           },
+          description: '关注群消息',
+          sourceSessionId: null,
         }}
         confirming={false}
         onConfirm={() => undefined}
