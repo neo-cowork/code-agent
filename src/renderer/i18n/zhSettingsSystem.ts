@@ -452,7 +452,7 @@ export const zhSettingsSystem = {
       clientSecretSaved: 'App Secret 已保存 ✓',
       availableActionsPrefix: '可用动作: ',
       details: {
-        missingClientId: '这个包里没有内置 client_id，当前无法发起授权。',
+        missingClientId: '此版本暂时无法连接该服务。请更新到最新版，或联系管理员。',
         needsSecret: '连接前需要先填写 App Secret，应用凭证可在飞书开放平台后台获取。',
         ready: '可以连接了。点击后将在系统浏览器打开飞书授权页，授权完成会自动回到 Neo。',
         noSecretRequired: '该服务商不需要 App Secret，可直接连接。',
@@ -611,6 +611,7 @@ export const zhSettingsSystem = {
         copied: '已复制',
         autoDetect: '自动检测',
         install: '安装',
+        downloadLatest: '下载最新版',
         updateAndUninstall: '更新 & 卸载',
         update: '更新',
         uninstall: '卸载',

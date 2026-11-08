@@ -450,7 +450,7 @@ export const enSettingsSystem = {
       clientSecretSaved: 'App Secret saved ✓',
       availableActionsPrefix: 'Available actions: ',
       details: {
-        missingClientId: 'This build does not include a client_id, so authorization cannot start.',
+        missingClientId: 'This version cannot connect to this service yet. Update to the latest version or contact your administrator.',
         needsSecret: 'Enter your App Secret before connecting. Find it in the Feishu Open Platform console.',
         ready: 'Ready to connect. This opens the Feishu authorization page in your system browser and returns to Neo automatically.',
         noSecretRequired: 'This provider does not require an App Secret, so you can connect directly.',
@@ -609,6 +609,7 @@ export const enSettingsSystem = {
         copied: 'Copied',
         autoDetect: 'Auto-detected',
         install: 'Install',
+        downloadLatest: 'Download latest version',
         updateAndUninstall: 'Update & uninstall',
         update: 'Update',
         uninstall: 'Uninstall',
