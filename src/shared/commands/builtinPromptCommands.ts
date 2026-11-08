@@ -66,11 +66,12 @@ const INIT_MEMORY_TEMPLATE = `为当前工作目录起草项目记忆。这些�
    参数还有 summary（一行摘要）、content（正文）、sources（你实际读过的、位于当前工作目录内的相对路径，至少一条）。
    只写文件里确证的事实。语言跟随文件夹的主语言（文档或注释是中文就用中文）。
 
-6. 若工具返回 exists, not overwritten：不要重试该主题，不要覆盖。在回复里引用已有正文，并给出改进建议。
+6. 若工具返回 exists, not overwritten：不要重试该主题，不要覆盖。在回复里逐字引用已有正文，并逐字转述工具返回的 status 行及其后面的状态说明。不要把 candidate 改说成 pending、partly active 或「per the settings page」，也不要把 active 改说成 candidate 或 waiting for confirmation。
 
 7. 最终回复必须：
    - 逐字引用每一条草稿的全文（刚写入的，以及已存在所以没覆盖的）
-   - 写明这些草稿要在 Settings -> Memory（设置里的「记忆」页）确认后才会生效
+   - 对每个主题重复工具返回的 status 及状态说明，不要混用不同状态的说法：candidate 表示仍在等待 Settings -> Memory（设置里的「记忆」页）确认，确认后才会生效；active 表示已经生效。
+   - 不要把同一条记忆同时描述为 candidate、partly active、pending 或 active
    - 空目录或读不到文件时说明没有写入`;
 
 export const BUILTIN_PROMPT_COMMANDS: PromptCommandInfo[] = [

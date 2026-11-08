@@ -17,6 +17,8 @@ describe('/init-memory builtin prompt command', () => {
     expect(command?.template).toContain('read_pdf');
     expect(command?.template).toContain('ReadDocument');
     expect(command?.template).toContain('exists, not overwritten');
+    expect(command?.template).toContain('逐字转述工具返回的 status 行及其后面的状态说明');
+    expect(command?.template).toContain('不要把同一条记忆同时描述为 candidate、partly active、pending 或 active');
     expect(command?.description).toBeTruthy();
   });
 

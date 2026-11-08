@@ -106,11 +106,22 @@ function candidateEntry(
 }
 
 function formatExists(topic: ProjectMemoryDraftTopic, entry: MemoryEntry): string {
+  const statusReceipt = entry.status === 'candidate'
+    ? [
+      'status: candidate',
+      'This draft is still waiting for confirmation in Settings -> Memory; it takes effect only after you confirm it there.',
+    ]
+    : entry.status === 'active'
+      ? [
+        'status: active',
+        'This memory is in effect.',
+      ]
+      : [`status: ${entry.status}`];
   return [
     'exists, not overwritten',
     `topic: ${topic}`,
     `id: ${entry.id}`,
-    `status: ${entry.status}`,
+    ...statusReceipt,
     'content:',
     entry.content,
   ].join('\n');

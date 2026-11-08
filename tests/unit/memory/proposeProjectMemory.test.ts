@@ -168,6 +168,9 @@ describe('ProposeProjectMemory', () => {
     expect(again.ok).toBe(true);
     if (!again.ok) return;
     expect(again.output).toContain('exists, not overwritten');
+    expect(again.output).toContain('status: candidate');
+    expect(again.output).toContain('still waiting for confirmation in Settings -> Memory');
+    expect(again.output).toContain('takes effect only after you confirm it there.');
     expect(again.output).toContain('This folder tracks household expenses in plain notes.');
     expect(again.output).not.toContain('This replacement must not be stored.');
   });
@@ -229,6 +232,7 @@ describe('ProposeProjectMemory', () => {
     if (!second.ok) return;
     expect(second.output).toContain('exists, not overwritten');
     expect(second.output).toContain('status: active');
+    expect(second.output).toContain('This memory is in effect.');
     expect(second.output).toContain('Write amounts in plain sentences.');
     const after = await fs.readFile(filePath, 'utf8');
     expect(after).toContain('status: active');
