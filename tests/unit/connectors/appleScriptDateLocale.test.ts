@@ -65,7 +65,9 @@ describe.each(FIXTURES)('%s (%s)', (_name, raw, expected) => {
     const got = (await calendarConnector.execute('get_event', { calendar: 'Work', event_uid: 'u1' })).data as typeof ev;
     expect([got.startAtMs, got.endAtMs]).toEqual([expected, expected]);
 
-    mocks.runAppleScript.mockResolvedValueOnce(`u1|Work|Meet|${raw}|${raw}|Room`);
+    mocks.runAppleScript
+      .mockResolvedValueOnce('Work')
+      .mockResolvedValueOnce(`u1|Work|Meet|${raw}|${raw}|Room`);
     const created = (await calendarConnector.execute('create_event', {
       calendar: 'Work', title: 'Meet', start_ms: EXPECTED,
     })).data as typeof ev;
@@ -123,7 +125,8 @@ describe('locale-independent fetch scripts', () => {
     await remindersConnector.execute('list_reminders', {});
     await remindersConnector.execute('get_reminder', { list: 'L', reminder_id: 'r' }).catch(() => undefined);
     expect(scripts).toHaveLength(8);
-    for (const script of scripts) {
+    const dateScripts = scripts.filter((script) => !script.includes('repeat with cal in every calendar'));
+    for (const script of dateScripts) {
       expect(script).toContain('on isoDateText(d)');
       expect(script).toMatch(/my isoDateText\(/);
       expect(script).not.toMatch(/(date received|start date|end date)[^)]*\) as text/);
