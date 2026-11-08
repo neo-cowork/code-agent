@@ -80,8 +80,11 @@ describe('常驻层体量', () => {
     // 规则本身已从 485 字符收紧到 430、并对首行做了无损微剪（213→194），仍超旧上限 84。
     // 屏幕控制是慢而不可核的动作面，这条规则是护栏内容，与 GHOSTRULES 同类；
     // 不接受再用它顶纯功能描述类的膨胀。
+    // 3190 → 3220（2026-11-07，N-FIX-ATTACHMENT-NOT-IN-WORKDIR-FU1，实测 3213）：常驻层
+    // 新增一句缺附件兜底规则（请用户重传/给路径，禁扫 ~/Downloads、~/Desktop、兄弟目录），
+    // 已压到 27 token；防的是真实复现的「扫盘 10+ 秒后回合被取消」，属护栏类。
     const total = estimateTokens(IDENTITY_PROMPT) + estimateTokens(TOOLS_PROMPT);
-    expect(total).toBeLessThanOrEqual(3190);
+    expect(total).toBeLessThanOrEqual(3220);
   });
 });
 

@@ -69,7 +69,7 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // 与 main 已合入的 sys-v100 撞号，按惯例升版。
 // sys-v103：N-FIX-ATTACHMENT-NOT-IN-WORKDIR-FU1——Task Execution 新增第 5 条缺失附件回退规则，
 // 并还原 r1 超范围精简的其余段落文本。
-export const PROMPT_VERSION = 'sys-v103' as const;
+export const PROMPT_VERSION = 'sys-v104' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =
