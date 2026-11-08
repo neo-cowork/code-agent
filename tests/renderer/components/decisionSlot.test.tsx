@@ -323,7 +323,7 @@ describe('DecisionSlot', () => {
       }
     });
     const text = screen.getByTestId('stall-notice').textContent ?? '';
-    expect(text).toContain('卡住了：启动了一个代理');
+    expect(text).toContain('卡住了：正在启动代理');
     expect(text).not.toContain('spawn_agent');
     expect(screen.getByRole('button', { name: '先停下' })).toBeTruthy();
   });

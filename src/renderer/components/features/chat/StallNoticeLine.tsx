@@ -43,7 +43,7 @@ export const StallNoticeLine: React.FC<{ hidden?: boolean }> = ({ hidden = false
 
   if (!notice || hidden || !notice.level) return null;
   const stuckOn = notice.phase === 'tool'
-    ? humanizeToolStep(notice.detail ?? '', undefined, t)
+    ? humanizeToolStep(notice.detail ?? '', undefined, t, undefined, 'running')
     : '等模型回响';
   return (
     <div
