@@ -108,6 +108,7 @@ export function createSubagentToolRuntime(input: {
     // 开关必须显式继承——漏传等于子代理绕过写边界（#1686 第四轮 ai-review 形状）。
     restrictWritesToWorkspace: context.restrictWritesToWorkspace === true,
     permissionModeOverride: input.effectiveMode as PermissionMode,
+    permissionModeOverrideIsInheritedCeiling: true,
     // 拓扑由构造点显式标注（SubagentExecutionContext.executionTopology），缺省 main：
     // 未标注的子 agent 路径不受 TOPOLOGY_RULES 约束（Option A 保守默认）。
     executionTopology: context.executionTopology ?? 'main',
@@ -119,7 +120,11 @@ export function createSubagentToolRuntime(input: {
     requestPermission: async (request) => {
       const forceConfirm = request.forceConfirm === true;
       // 限流在 spawn 之后才置位，不能用构造时的 effectiveMode 决定免确认。
-      const mode = resolveSessionPermissionMode(input.effectiveMode as PermissionMode, input.sessionId);
+      const mode = resolveSessionPermissionMode(
+        input.effectiveMode as PermissionMode,
+        input.sessionId,
+        true,
+      );
       if (
         !forceConfirm
         && (

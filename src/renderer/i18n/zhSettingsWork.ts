@@ -225,12 +225,10 @@ export const zhSettingsWork = {
       description: '配置外部入口，让 HTTP API、飞书、Lark 或 Telegram 可以和 Agent 交互。连接说明默认收起。',
       lowDistraction: {
         title: '低打扰策略',
-        description: '通道会话默认不触发桌面 reply notification；处理过程留在通道 typing / streaming / 任务面板里，系统通知只用于需要介入或任务完成。',
-        body: '飞书、Telegram、HTTP API 的普通回复不会弹桌面通知。错误回复只发短摘要，完整 trace 留在本机诊断；后续如需每个通道的完成提醒，也必须显式打开并继续走脱敏。',
+        description: '通道里的回复默认不弹桌面通知；处理进度留在通道会话和任务面板里，只有需要你介入或任务完成时，Neo 才会提醒你。',
+        body: '飞书、Telegram、HTTP API 的普通回复不会弹桌面通知。出错时只往通道发简短摘要，详细经过留在当前电脑用于排查；后续如需单开某个通道的完成提醒，也仍会先隐藏敏感信息。',
       },
-      accounts: {
-        title: '通道账号',
-      },
+      accounts: { title: '通道账号' },
       statusFilters: [
         { value: 'all', label: '全部' },
         { value: 'connected', label: '已连接' },
@@ -241,18 +239,18 @@ export const zhSettingsWork = {
       privacyModes: [
         {
           value: 'local-redact',
-          label: '默认脱敏',
-          description: '入站消息、附件摘要和 raw payload 在本地落地或分发前脱敏。',
+          label: '默认隐藏敏感信息',
+          description: '收到的消息和附件在保存或转交前会先隐藏其中的敏感信息。',
         },
         {
           value: 'allow-raw',
-          label: '保留 raw 调试',
-          description: '业务文本仍走脱敏，但保留原始 raw payload，适合受控连接器排障。',
+          label: '另存未处理副本（仅排查连接）',
+          description: '收到的消息和附件在保存或转交前会先隐藏其中的敏感信息，同时另存一份未处理副本，仅用于排查连接问题。',
         },
         {
           value: 'off',
-          label: '关闭通道脱敏',
-          description: '仅用于受控本地调试；消息、附件和 raw payload 可能保留原文。',
+          label: '不隐藏敏感信息',
+          description: '不隐藏任何内容，消息和附件可能按原样保存，仅用于当前电脑本地排查。',
         },
       ],
       configSummary: {
@@ -271,7 +269,7 @@ export const zhSettingsWork = {
         privacyModeLabel: '隐私策略',
         portLabel: '端口',
         apiKeyPlaceholder: '留空自动生成',
-        enableCors: '启用 CORS',
+        enableCors: '允许网页调用这个接口',
         encryptKeyLabel: 'Encrypt Key (可选)',
         verificationTokenLabel: 'Verification Token (可选)',
         approvalCardSecurityWarning: '配置校验令牌后审批卡才生效',
@@ -293,7 +291,7 @@ export const zhSettingsWork = {
         callbackUrlSuffix: '「事件与回调」请求地址配置',
         botTokenPlaceholder: '从 @BotFather 获取',
         proxyUrlLabel: '代理 URL (可选)',
-        proxyUrlPlaceholder: 'http://127.0.0.1:7897 (默认读 HTTPS_PROXY)',
+        proxyUrlPlaceholder: 'http://127.0.0.1:7897 (留空则沿用 Neo 启动时带有的代理)',
         fallbackProxyUrlLabel: '备用代理 URL (可选)',
         fallbackProxyUrlPlaceholder: '主代理不可用时自动切换',
         allowedUserIdsLabel: '白名单用户 ID (可选)',
@@ -303,7 +301,7 @@ export const zhSettingsWork = {
         groupAccessModeAllMembers: '群里所有消息都回应（访客身份）',
         groupAccessModeHint: '访客只能用只读工具；哪些人算信任用户，在上面的「白名单用户 ID」里单独设置',
         groupAccessModePrivacyPrerequisite: '需要先在 Telegram 里关闭机器人的隐私模式，连接后这里会告诉你是否已生效。',
-        telegramPrivacyModeWarning: '群里还收不到未 @ 的消息：Telegram 默认开着机器人隐私模式。去 @BotFather 发 /setprivacy → 选这个机器人 → Disable，再把机器人移出群、重新拉进来，然后在这里断开再连接检查。也可以把机器人设为群管理员；已经是群管理员的话，忽略这条提示。',
+        telegramPrivacyModeTitle: '需要关闭 Telegram 隐私模式', telegramPrivacyModeBadge: '需要处理', telegramPrivacyModeWarning: '群里还收不到未 @ 的消息：Telegram 默认开着机器人隐私模式。去 @BotFather 发 /setprivacy → 选这个机器人 → Disable，再把机器人移出群、重新拉进来，然后在这里断开再连接检查。也可以把机器人设为群管理员；已经是群管理员的话，忽略这条提示。',
         telegramTipSearchPrefix: '在 Telegram 中搜索 ',
         telegramTipSearchSuffix: ' 创建 Bot',
         telegramTipNewBotPrefix: '发送 ',
