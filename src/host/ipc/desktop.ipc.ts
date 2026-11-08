@@ -24,6 +24,7 @@ import { getNativeDesktopService } from '../services/desktop/nativeDesktopServic
 import { getComputerSurface } from '../services/desktop/computerSurface';
 import { startDesktopVisionAnalyzer } from '../services/desktop/desktopVisionAnalyzer';
 import { startDesktopAudioCapture, stopDesktopAudioCapture, getAudioCaptureStatus, clearAudioRecordings } from '../services/desktop/desktopAudioCapture';
+import type { AudioCaptureMissingPrerequisiteCode, AudioCapturePrerequisites } from '@shared/contract/audioCapture';
 import { browserService } from '../services/infra/browserService';
 import { browserRelayService } from '../services/infra/browserRelayService';
 import {
@@ -483,19 +484,45 @@ const desktopHandlers: RawDomainRouteHandlers<DesktopDomainRequest, NativeDeskto
     }
     manualAudioActive = true;
     await startDesktopAudioCapture(fifoPath, mode);
-    const audioSt = getAudioCaptureStatus();
+    const audioSt = getAudioCaptureStatus() as ReturnType<typeof getAudioCaptureStatus> & {
+      prerequisites?: AudioCapturePrerequisites;
+      missingPrerequisites?: AudioCaptureMissingPrerequisiteCode[];
+    };
     if (!audioSt.capturing) {
-      // 启动失败 — 回退标志位，返回错误原因
       manualAudioActive = false;
-      const reason = !audioSt.soxAvailable
-        ? 'sox 未安装，请运行: brew install sox'
-        : audioSt.asrEngine === 'none'
-          ? '未找到 ASR 引擎（whisper-cpp 或 qwen3-asr）'
-          : 'VAD 初始化失败';
+      const prereqs = audioSt.prerequisites;
+      const missing: AudioCaptureMissingPrerequisiteCode[] = audioSt.missingPrerequisites
+        ? [...audioSt.missingPrerequisites]
+        : [];
+      if (missing.length === 0) {
+        const micReady = prereqs ? prereqs.recorder.microphone === 'ready' : audioSt.soxAvailable;
+        const sysReady = prereqs ? prereqs.recorder.systemAudio === 'ready' : Boolean(audioSt.systemAudioAvailable);
+        if (mode === 'system-audio' && !sysReady && !micReady) {
+          missing.push('recorder_missing');
+        } else if (mode === 'microphone' && !micReady) {
+          missing.push('recorder_missing');
+        }
+        if ((prereqs ? prereqs.transcriptionEngine === 'missing' : audioSt.asrEngine === 'none')) {
+          missing.push('transcription_engine_missing');
+        }
+        if (prereqs?.voiceDetection === 'unsupported') {
+          missing.push('voice_detection_unsupported');
+        } else if (prereqs ? prereqs.voiceDetection !== 'ready' : !audioSt.vadReady) {
+          missing.push('voice_detection_missing');
+        }
+      }
+      const primaryCode = missing[0] || 'voice_detection_missing';
       return {
         success: false,
-        error: { code: 'AUDIO_START_FAILED', message: `录音启动失败：${reason}` },
-        data: audioSt,
+        error: {
+          code: 'AUDIO_START_FAILED',
+          message: primaryCode,
+          details: { missingPrerequisites: missing },
+        },
+        data: {
+          ...audioSt,
+          missingPrerequisites: missing,
+        },
       } satisfies IPCResponse<unknown>;
     }
     return { success: true, data: audioSt } satisfies IPCResponse<unknown>;
