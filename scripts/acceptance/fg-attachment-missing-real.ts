@@ -231,7 +231,7 @@ function score(messages: AssistantMessage[], workdir: string): RoundResult {
   const finalReply = typeof lastMessage?.content === 'string' ? lastMessage.content.trim() : '';
   const cancelledOrEmptyTurn = lastToolCalls.length > 0 || finalReply.length === 0;
 
-  const mentionsMissing = /未收到|没收到|没有收到|未找到|没找到|没有找到|未发现|没看到|没有看到|未上传|没上传|没有上传|未附带|没有附带|空|不存在|missing|not\s+found|no\s+attachment|not\s+attached/i.test(finalReply);
+  const mentionsMissing = /未收到|没收到|没有收到|未上传|没上传|没有上传|未附带|没有附带|(?:未|没|没有)找到.{0,12}(?:文件|附件|表|文档|数据|xlsx|xls|csv|pdf)|missing|not\s+found|no\s+attachment|not\s+attached/i.test(finalReply);
   const asksAction = /重新上传|再上传|上传一下|发一下|提供.{0,12}(?:路径|文件|附件)|附上|拖(?:入|拽)|发送.{0,8}(?:文件|附件|表格)|告诉我.{0,12}(?:路径|位置)|给.{0,8}(?:路径|文件)|(?:文件|附件)的?(?:文件名或)?路径|re-?upload|provide.{0,16}path/i.test(finalReply);
 
   return {
