@@ -19,6 +19,7 @@ const require_ = createRequire(import.meta.url);
 const REPO_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const SHOT_DIR = path.join(process.cwd(), 'test-results');
 const SCREENSHOT_DIR = process.env.CRON_DETAIL_SCREENSHOT_DIR || SHOT_DIR;
+const UNFIXED_CAPTURE = process.env.CRON_DETAIL_UNFIXED === '1';
 const DATA_DIR = process.env.CODE_AGENT_E2E_DATA_DIR
   || path.join(os.tmpdir(), `code-agent-e2e-data-${process.env.E2E_WEB_PORT || '8180'}`);
 
@@ -224,6 +225,15 @@ async function assertDetailScrollable(
   await setDetailScroll(detailRoot, 0);
   const initial = await snapshot(detailRoot);
   console.log(`[${tag}] initial ${JSON.stringify(initial)}`);
+  if (UNFIXED_CAPTURE) {
+    const requestedScrollTop = await detailRoot.evaluate((element) => {
+      element.scrollTo({ top: element.scrollHeight, behavior: 'instant' });
+      return element.scrollHeight;
+    });
+    const attempted = await snapshot(detailRoot);
+    console.log(`[${tag}] unfixed-scroll-attempt requestedScrollTop=${requestedScrollTop} ${JSON.stringify(attempted)}`);
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, `cron-detail-header-${tag}-before-scroll-attempt.png`) });
+  }
   expect(initial.scrollTop).toBe(0);
   expect(initial.overflowY, 'the detail root must own the single vertical scrollbar').toBe('auto');
   expect(initial.scrollHeight).toBeGreaterThan(initial.clientHeight);
