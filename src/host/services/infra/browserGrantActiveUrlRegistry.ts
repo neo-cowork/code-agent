@@ -66,6 +66,9 @@ export function resolveBrowserGrantActiveUrl(context?: BrowserGrantContext): unk
   const identity = identityFromContext(context);
   const surfaceSource = identity ? surfaceSources.get(surfaceKey(identity))?.deref() : undefined;
   if (surfaceSource) return surfaceSource.getActiveTab()?.url;
+  // Full managed-run identity but no registered surface: fail closed. The legacy pool
+  // browser is a different browser from the one the action runs on.
+  if (identity) return undefined;
 
   const legacyKey = context?.agentId?.trim() || DEFAULT_AGENT_KEY;
   const legacySource = legacySources.get(legacyKey)?.deref();
