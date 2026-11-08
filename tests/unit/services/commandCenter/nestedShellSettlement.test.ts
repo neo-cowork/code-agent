@@ -225,7 +225,7 @@ describe('session command task nested shell settlement', () => {
         success: true,
         output: `已在后台启动子 agent ${agentId}`,
         duration: 1,
-        metadata: { background: true, agentId, result: { background: true } },
+        metadata: { background: true, agentId, taskId: agentId, transferredToBackground: true, result: { background: true } },
       },
     }, spawned.task.id);
     manager.emitTask({

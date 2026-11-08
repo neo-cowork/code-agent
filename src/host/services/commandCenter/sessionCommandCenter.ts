@@ -143,7 +143,6 @@ interface NestedShellSettlement {
   failed: boolean;
   pendingCompletion?: { conclusion?: string; artifacts?: NormalizedToolArtifactMeta[] };
 }
-
 type NestedWorkKind = 'shell' | 'pty' | 'subagent';
 function nestedWorkKey(kind: NestedWorkKind, id: string): string {
   return `${kind}:${id}`;
@@ -666,6 +665,7 @@ export class SessionCommandCenter {
   }
   private nestedWorkFromResult(result: ToolResult): { kind: NestedWorkKind; id: string } | undefined {
     const metadata = result.metadata;
+    if (metadata?.background === true && typeof metadata.agentId === 'string') return { kind: 'subagent', id: metadata.agentId };
     if (metadata?.background === true && typeof metadata.taskId === 'string') return { kind: 'shell', id: metadata.taskId };
     if (metadata?.pty === true && typeof metadata.sessionId === 'string') return { kind: 'pty', id: metadata.sessionId };
     const nested = metadata?.result && typeof metadata.result === 'object' && !Array.isArray(metadata.result)
