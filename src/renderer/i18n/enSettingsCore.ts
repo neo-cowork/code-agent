@@ -123,6 +123,7 @@ export const enSettingsCore = {
       skillLibraryManagement: 'Skill library management',
       searchSkill: 'Search Skill',
       customRepository: 'Custom repository',
+      searchSources: 'Search sources',
       multichannelAccess: 'Multi-channel access',
       channelPrivacyPolicy: 'Channel privacy policy',
       lowNoiseNotifications: 'Low-noise notifications',
@@ -135,6 +136,7 @@ export const enSettingsCore = {
       modelUsage: 'Model usage',
       automaticScreenMemory: 'Automatic screen memory',
       manualDesktopActivity: 'Manual desktop activity',
+      appshots: 'App snapshots',
       permissionDataBoundary: 'Permissions and data boundary',
       voiceTranscription: 'Voice transcription',
       diagnosticBundle: 'Diagnostic bundle',
@@ -470,6 +472,7 @@ export const enSettingsCore = {
       autosaveHint: 'Changes are saved automatically. System-level hotkeys will be re-registered in the desktop runtime; failed items stay in config and are logged for diagnostics.',
       registrationFailedPrefix: 'Registration failed: ',
       registrationFailedUnknown: 'Unknown registration error',
+      modifierOnlyNote: 'Handled separately by App snapshots',
       categories: {
         global: 'Global launch',
         sessionEditing: 'Session editing',
