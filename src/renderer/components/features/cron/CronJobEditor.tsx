@@ -909,7 +909,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       {activeTab === 'advanced' && (
         <div className="space-y-3">
           <p className="text-xs text-zinc-500">配置重试策略和执行超时，通常保持默认即可。</p>
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3">
             <FormField label="最大重试次数">
               <Input
                 type="number"

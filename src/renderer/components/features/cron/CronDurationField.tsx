@@ -94,12 +94,13 @@ export const CronDurationField: React.FC<CronDurationFieldProps> = ({
       <label className="mb-1 block text-sm text-zinc-400" htmlFor={`${testId}-input`}>
         {label}
       </label>
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+      <div className="grid grid-cols-[minmax(96px,1fr)_88px] gap-2">
         <Input
           id={`${testId}-input`}
           data-testid={`${testId}-input`}
           type="text"
           inputMode="decimal"
+          className="!px-2"
           value={inputValue}
           onChange={(event) => commitInput(event.target.value, unit)}
           placeholder={placeholder}
