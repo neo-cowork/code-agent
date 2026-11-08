@@ -37,21 +37,31 @@ function hasCompletedBackgroundTaskResultInTurn(msg: Message, all: Message[]): b
   const isVisibleUser = (candidate: Message): boolean => (
     candidate.role === 'user' && !candidate.isMeta && candidate.visibility !== 'rewound'
   );
+  const isBackgroundWake = (candidate: Message): boolean => (
+    candidate.role === 'user'
+    && candidate.isMeta === true
+    && (
+      candidate.metadata?.automation?.automationType === 'role_wake'
+      || /后台任务|后台检查|任务结果|background task completed|<system-reminder>/iu.test(candidate.content)
+    )
+  );
+  let hasBackgroundWake = false;
+  let hasCompletedResult = false;
   for (let index = messageIndex - 1; index >= 0; index -= 1) {
     const candidate = all[index];
     if (isVisibleUser(candidate)) break;
-    if (candidate.role === 'system' && candidate.metadata?.backgroundTaskResult?.status === 'completed') {
-      return true;
-    }
+    hasBackgroundWake ||= isBackgroundWake(candidate);
+    hasCompletedResult ||= candidate.role === 'system'
+      && candidate.metadata?.backgroundTaskResult?.status === 'completed';
   }
   for (let index = messageIndex + 1; index < all.length; index += 1) {
     const candidate = all[index];
     if (isVisibleUser(candidate)) break;
-    if (candidate.role === 'system' && candidate.metadata?.backgroundTaskResult?.status === 'completed') {
-      return true;
-    }
+    hasBackgroundWake ||= isBackgroundWake(candidate);
+    hasCompletedResult ||= candidate.role === 'system'
+      && candidate.metadata?.backgroundTaskResult?.status === 'completed';
   }
-  return false;
+  return hasBackgroundWake && hasCompletedResult;
 }
 
 export function bareInterruptionNode(
@@ -64,8 +74,8 @@ export function bareInterruptionNode(
   if (msg.content.replace(PROTOCOL_MARKERS, '').trim()) return null;
   if (hasStreamRecoveryInSameTurn(msg, all)) return null;
   // 后台任务收口可能与仍在轮询的前台 run 交错落库：旧 run 的裸 [cancelled] 既可能
-  // 在权威 system 结果之前，也可能在其之后。只要同一轮已经有 completed 结果，它就是
-  // 内部抢占痕迹，不是用户按了停止。
+  // 在权威 system 结果之前，也可能在其之后。只有同一轮同时带有后台唤醒标记和
+  // completed 结果时，它才是内部抢占痕迹；孤立的 completed 任务不能吞掉真实用户停止。
   if (reason === 'user' && hasCompletedBackgroundTaskResultInTurn(msg, all)) return null;
   return {
     id: `${msg.id}-text`,

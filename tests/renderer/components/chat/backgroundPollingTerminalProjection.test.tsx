@@ -245,6 +245,19 @@ describe('后台轮询后的终态投影', () => {
           },
         },
       },
+      {
+        id: 'completion-wake-meta', role: 'user', content: '<system-reminder>1 background task completed</system-reminder>',
+        timestamp: 20.5, isMeta: true,
+        metadata: {
+          automation: {
+            automationId: 'background-subagent:polling-session',
+            automationType: 'role_wake',
+            event: 'stage_ready',
+            sourceSessionId: SESSION_ID,
+            status: 'running',
+          },
+        },
+      },
       { id: 'preempted-poll', role: 'assistant', content: '[cancelled]', timestamp: 21 },
       { id: 'completion-wake', role: 'user', content: '后台任务 TESTS 已完成，结果摘要：测试通过。', timestamp: 22 },
       { id: 'completion', role: 'assistant', content: '后台测试已经通过。', timestamp: 23 },
@@ -265,6 +278,42 @@ describe('后台轮询后的终态投影', () => {
 
     expect(raw.stoppedRows).toBe(0);
     expect(raw.completionVisible).toBe(true);
+  });
+
+  it('真实用户停止不因无关后台完成结果而被隐藏', () => {
+    const messages: Message[] = [
+      { id: 'visible-user', role: 'user', content: '我先停止当前命令', timestamp: 1 },
+      {
+        id: 'unrelated-result',
+        role: 'system',
+        content: '[任务结果] OTHER｜completed\n另一任务已完成。',
+        timestamp: 2,
+        metadata: {
+          backgroundTaskResult: {
+            source: 'agent-result',
+            taskId: 'other-task',
+            shortName: 'OTHER',
+            status: 'completed',
+            summary: '另一任务已完成。',
+          },
+        },
+      },
+      { id: 'real-stop', role: 'assistant', content: '[cancelled]', timestamp: 3 },
+    ];
+    const projection = projectTurns(messages, SESSION_ID, false);
+    const assistantNodes = projection.turns.flatMap((turn) => turn.nodes)
+      .filter((node) => node.type === 'assistant_text');
+    const raw = {
+      stoppedRows: assistantNodes.filter((node) => node.metadata?.streamInterruptionReason === 'user').length,
+      assistantNodes: assistantNodes.map((node) => ({
+        id: node.id,
+        content: node.content,
+        interruptionReason: node.metadata?.streamInterruptionReason,
+      })),
+    };
+    console.log('POLL_WAKE_REAL_STOP_UNRELATED_RESULT_RAW', JSON.stringify(raw));
+
+    expect(raw.stoppedRows).toBe(1);
   });
 
   it('后台完成结果先后交错时也不投成用户停止行', () => {
@@ -307,4 +356,81 @@ describe('后台轮询后的终态投影', () => {
     expect(raw.stoppedRows).toBe(0);
     expect(raw.completionVisible).toBe(true);
   });
+
+  it('真实轮询超时后 spawn_agent 形状不留下运行命令中断行', () => {
+    const messages: Message[] = [
+      { id: 'real-user', role: 'user', content: '请把项目检查交给后台并查看三次进度', timestamp: 1 },
+      {
+        id: 'dispatch-1', role: 'assistant', content: '交给后台执行。', timestamp: 2,
+        toolCalls: [{ id: 'call-dispatch-1', name: 'delegate_task', arguments: { title: '检查项目' } }],
+      },
+      {
+        id: 'dispatch-1-result', role: 'tool', content: '', timestamp: 3,
+        toolResults: [{ toolCallId: 'call-dispatch-1', success: false, error: 'Tool execution timed out after 120000ms without progress' }],
+      },
+      {
+        id: 'status-1', role: 'assistant', content: '', timestamp: 4,
+        toolCalls: [{ id: 'call-status-1', name: 'task_status', arguments: {} }],
+      },
+      {
+        id: 'status-1-result', role: 'tool', content: '', timestamp: 5,
+        toolResults: [{ toolCallId: 'call-status-1', success: true, output: '当前会话还没有后台任务。' }],
+      },
+      {
+        id: 'dispatch-2', role: 'assistant', content: '交给后台执行。', timestamp: 5.5,
+        toolCalls: [{ id: 'call-dispatch-2', name: 'delegate_task', arguments: { title: '检查项目' } }],
+      },
+      {
+        id: 'dispatch-2-result', role: 'tool', content: '', timestamp: 5.75,
+        toolResults: [{ toolCallId: 'call-dispatch-2', success: false, error: 'Tool execution timed out after 120000ms without progress' }],
+      },
+      {
+        id: 'spawn', role: 'assistant', content: '', timestamp: 6,
+        toolCalls: [{ id: 'call-spawn', name: 'spawn_agent', arguments: { run_in_background: true, role: 'explore', task: '检查项目' } }],
+      },
+      {
+        id: 'spawn-result', role: 'tool', content: '', timestamp: 7,
+        toolResults: [{ toolCallId: 'call-spawn', success: true, output: '已在后台启动子 agent，前台不阻塞。' }],
+      },
+      {
+        id: 'status-2', role: 'assistant', content: '再查看一次进度。', timestamp: 7.5,
+        toolCalls: [{ id: 'call-status-2', name: 'task_status', arguments: {} }],
+      },
+      {
+        id: 'status-2-result', role: 'tool', content: '', timestamp: 7.75,
+        toolResults: [{ toolCallId: 'call-status-2', success: true, output: '当前会话还没有后台任务。' }],
+      },
+      {
+        id: 'max-steps', role: 'assistant', content: '已达本任务的最大步骤上限，工具已停用。', timestamp: 8,
+        metadata: { agentError: { code: 'MAX_ITERATIONS_REACHED', category: 'generic' } },
+      },
+      {
+        id: 'background-result', role: 'user', content: '后台任务已完成，结果摘要：检查完成。', timestamp: 9, isMeta: true,
+        metadata: { backgroundTaskResult: { source: 'agent-result', taskId: 'subagent-bg', shortName: '检查', status: 'completed', summary: '检查完成。' } },
+      },
+    ];
+    useSessionStore.setState({ messages });
+    const hydrated = hydrateToolCallResults(messages);
+    const nodes = toolNodes(hydrated);
+    const text = renderToolNodes(nodes);
+    const raw = {
+      toolNodes: nodes.filter((node) => node.type === 'tool_call').map((node) => ({
+        id: node.id,
+        tool: node.toolCall?.name,
+        result: node.toolCall?.result,
+        success: node.toolCall?.success,
+      })),
+      interruptionNodes: nodes.filter((node) => node.metadata?.streamInterruptionReason).map((node) => ({
+        id: node.id,
+        content: node.content,
+        reason: node.metadata?.streamInterruptionReason,
+      })),
+      interruptedRows: document.querySelectorAll('[data-testid="interrupt-timeline-step"]').length,
+      text: text.replace(/\s+/g, ' ').trim(),
+    };
+    console.log('R3_REAL_POLLING_SHAPE_RAW', JSON.stringify(raw));
+    expect(raw.interruptedRows).toBe(0);
+    expect(raw.interruptionNodes).toEqual([]);
+  });
+
 });
