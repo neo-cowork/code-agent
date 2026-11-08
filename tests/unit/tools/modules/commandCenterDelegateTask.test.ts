@@ -71,6 +71,7 @@ describe('executeDelegateTask requires_choice copy', () => {
       prompt: '用户请求：检查磁盘占用\n\nCommand to run:\ndu -sh .',
     }, context(), allow);
 
+    if (!result.ok) throw new Error(result.error);
     expect(result).toEqual({
       ok: true,
       output: '后台任务暂时无法启动，当前并发名额已满；命令没有运行。',

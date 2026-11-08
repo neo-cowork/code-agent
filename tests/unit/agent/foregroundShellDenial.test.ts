@@ -17,6 +17,7 @@ import {
 } from '../../../src/host/agent/runtime/foregroundShellDenial';
 import type { ToolCall } from '../../../src/shared/contract';
 import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
+import { TurnTraceRecorder } from '../../../src/host/agent/runtime/turnTrace';
 import { getPolicyEngine, resetPolicyEngine } from '../../../src/host/permissions/policyEngine';
 import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import { buildRuleString } from '../../../src/shared/permissionRuleTranslate';
@@ -36,7 +37,7 @@ function foregroundContext(overrides: Partial<RuntimeContext> = {}): RuntimeCont
     messages: [{ id: 'user-1', role: 'user', content: '明天上午 9 点提醒我交报告。请用 Bash 工具执行多行 osascript（heredoc）建提醒', timestamp: 1 }],
     runId: 'run-1',
     turn: { currentTurnId: 'turn-1', runUserPrompt: '明天上午 9 点提醒我交报告。请用 Bash 工具执行多行 osascript（heredoc）建提醒' },
-    turnTrace: { record: vi.fn() },
+    turnTrace: new TurnTraceRecorder('fg-shell', '/tmp/fg-shell-trace-unused'),
     ...overrides,
   } as unknown as RuntimeContext;
 }
@@ -129,13 +130,14 @@ describe('describeDeniedShellCalls', () => {
   });
 
   it('混合批次只保留 Bash 的后台委托，并把其他调用记为 TOOL_BATCH_SKIPPED', () => {
-    const turnTrace = { record: vi.fn() };
+    const turnTrace = new TurnTraceRecorder('fg-shell', '/tmp/fg-shell-trace-unused');
+    const record = vi.spyOn(turnTrace, 'record').mockImplementation(() => undefined);
     const out = redirectDeniedShellCalls(foregroundContext({ turnTrace }), [
       bashCall,
       { id: 'call-connector-1', name: 'reminders_create', arguments: { title: '报告' } },
     ]);
     expect(out.map((call) => call.name)).toEqual(['delegate_task']);
-    expect(turnTrace.record).toHaveBeenCalledWith('tool_dispatch', expect.objectContaining({
+    expect(record).toHaveBeenCalledWith('tool_dispatch', expect.objectContaining({
       toolCallId: 'call-connector-1',
       outcome: 'skipped',
       error: 'TOOL_BATCH_SKIPPED',
