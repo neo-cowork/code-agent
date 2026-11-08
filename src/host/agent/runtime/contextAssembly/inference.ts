@@ -711,7 +711,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
           && isBashToolName(chunk.toolCall?.name ?? '')
           && !isToolDeniedForRun(ctx.runtime, 'delegate_task');
         const streamedToolName = redirectedForegroundShell ? 'delegate_task' : chunk.toolCall?.name;
-        const streamedUserMessage = redirectedForegroundShell
+        const streamedUserMessage = ctx.runtime.foregroundToolFace === true && streamedToolName === 'delegate_task'
           ? summarizeForegroundShellRequest(userRequest).userMessage
           : userRequest;
         commandCenterPreannounce = emitCommandCenterToolStart({
