@@ -37,7 +37,7 @@ import {
   channelReconnectingStatusText,
   isChannelConnectFailureRetryable,
 } from './channelReconnectScheduler';
-import { FEISHU_DEFAULT_HOST, LARK_DEFAULT_HOST } from '../../shared/constants';
+import { FEISHU_DEFAULT_HOST, FEISHU_LAST_INBOUND_PUSH_INTERVAL_MS, LARK_DEFAULT_HOST } from '../../shared/constants';
 import {
   getInboundPairingService,
   type InboundPairingRequest,
@@ -153,6 +153,7 @@ export class ChannelManager extends EventEmitter {
         const accounts = JSON.parse(data) as ChannelAccount[];
         for (const account of accounts) {
           delete account.feishuSharedAppDetected;
+          delete account.lastInboundAt;
           this.accounts.set(account.id, account);
         }
         logger.info(`Loaded ${accounts.length} channel accounts`);
@@ -168,7 +169,7 @@ export class ChannelManager extends EventEmitter {
   private saveAccounts(): void {
     try {
       const storage = getSecureStorage();
-      const accounts = Array.from(this.accounts.values()).map(({ feishuSharedAppDetected: _runtimeOnly, ...persisted }) => persisted);
+      const accounts = Array.from(this.accounts.values()).map(({ feishuSharedAppDetected: _runtimeOnly, lastInboundAt: _runtimeOnlyInbound, ...persisted }) => persisted);
       storage.set(CHANNEL_ACCOUNTS_KEY as never, JSON.stringify(accounts));
     } catch (error) {
       logger.error('Failed to save channel accounts', { error });
@@ -325,6 +326,16 @@ export class ChannelManager extends EventEmitter {
     // 监听事件
     channel.on('message', (message: ChannelMessage) => {
       this.handleMessage(accountId, message);
+    });
+
+    // 飞书入站时间：首条立即推，之后节流（含被过滤的消息，用于区分「没送达」和「被过滤」）
+    let lastInboundPushedAt = 0;
+    channel.on('inbound_event', (at: number) => {
+      account.lastInboundAt = at;
+      if (lastInboundPushedAt === 0 || at - lastInboundPushedAt >= FEISHU_LAST_INBOUND_PUSH_INTERVAL_MS) {
+        lastInboundPushedAt = at;
+        this.emit('accounts_changed', this.getAccounts());
+      }
     });
 
     // 监听事件（N-TRIGGER-GROUP-LISTEN）：未 @ 但命中显式监听绑定的群消息。
@@ -990,8 +1001,12 @@ export class ChannelManager extends EventEmitter {
         if (active instanceof FeishuChannel && typeof active.feishuSharedAppDetected === 'boolean') {
           account.feishuSharedAppDetected = active.feishuSharedAppDetected;
         }
+        if (active instanceof FeishuChannel && active.lastInboundAt !== undefined) {
+          account.lastInboundAt = active.lastInboundAt;
+        }
       } else {
         delete account.feishuSharedAppDetected;
+        delete account.lastInboundAt;
       }
       this.accounts.set(accountId, account);
     }
