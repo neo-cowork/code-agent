@@ -52,7 +52,7 @@ interface CronJobEditorProps {
   onClose: () => void;
 }
 
-type FieldErrors = Partial<Record<keyof CronJobDraft, string>> & { form?: string };
+type FieldErrors = Partial<Record<keyof CronJobDraft, string>> & { form?: string; eventForm?: boolean };
 
 type EditorTab = 'basic' | 'action' | 'advanced';
 
@@ -232,9 +232,17 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
   // （提交过/动过事件字段）后才显示，选完调度类型不立刻报。
   const eventViolation = isEventScheduleKind(draft.scheduleType) ? eventViolationFromDraft(draft) : null;
   const eventValidationMessage = eventValidationArmed && eventViolation ? cc.eventValidation[eventViolation.reason] : null;
+  useEffect(() => {
+    if (errors.eventForm && !eventViolation) setErrors((prev) => ({ ...prev, form: undefined, eventForm: false }));
+  }, [errors.eventForm, eventViolation]);
   const cloudRoleBound = isCloudRoleBoundAgentDraft(draft);
   const setField = <K extends keyof CronJobDraft>(key: K, value: CronJobDraft[K]) => {
     setDraft((current) => ({ ...current, [key]: value }));
+  };
+  const setEventField = <K extends keyof CronJobDraft>(key: K, value: CronJobDraft[K]) => {
+    setField(key, value);
+    setEventValidationArmed(true);
+    setErrors((prev) => (prev.eventForm ? { ...prev, form: undefined, eventForm: false } : prev));
   };
 
   const handlePickTemplate = (tpl: CronTemplate) => {
@@ -273,7 +281,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
     if (selectedTemplate.event) {
       const violation = eventViolationFromDraft(draft);
       if (violation) {
-        setErrors({ form: cc.eventValidation[violation.reason] });
+        setErrors({ form: cc.eventValidation[violation.reason], eventForm: true });
         return;
       }
     }
@@ -326,6 +334,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
             form: draft.scheduleType === 'event-mail'
               ? mailEventValidationMessage(violation, cc)
               : cc.eventValidation[violation.reason],
+            eventForm: true,
           });
           return;
         }
@@ -352,9 +361,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       }
       onClose();
     } catch (error) {
-      setErrors({
-        form: saveErrorMessage(error, cc.simpleCreateFailed),
-      });
+      setErrors({ form: saveErrorMessage(error, cc.simpleCreateFailed) });
     } finally {
       setSubmitting(false);
     }
@@ -577,10 +584,10 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
             <CronEventScheduleFields
               accountId={draft.eventAccountId}
               chatId={draft.eventChatId}
-              onAccountChange={(eventAccountId) => setField('eventAccountId', eventAccountId)}
-              onChatChange={(eventChatId) => setField('eventChatId', eventChatId)}
+              onAccountChange={(eventAccountId) => setEventField('eventAccountId', eventAccountId)}
+              onChatChange={(eventChatId) => setEventField('eventChatId', eventChatId)}
               maxRunBudget={draft.maxRunBudget}
-              onBudgetChange={(maxRunBudget) => setField('maxRunBudget', maxRunBudget)}
+              onBudgetChange={(maxRunBudget) => setEventField('maxRunBudget', maxRunBudget)}
               validationMessage={(() => {
                 const violation = eventViolationFromDraft(draft);
                 return violation ? cc.eventValidation[violation.reason] : null;
@@ -722,19 +729,10 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                 <CronEventScheduleFields
                   accountId={draft.eventAccountId}
                   chatId={draft.eventChatId}
-                  onAccountChange={(eventAccountId) => {
-                    setField('eventAccountId', eventAccountId);
-                    setEventValidationArmed(true);
-                  }}
-                  onChatChange={(eventChatId) => {
-                    setField('eventChatId', eventChatId);
-                    setEventValidationArmed(true);
-                  }}
+                  onAccountChange={(eventAccountId) => setEventField('eventAccountId', eventAccountId)}
+                  onChatChange={(eventChatId) => setEventField('eventChatId', eventChatId)}
                   maxRunBudget={draft.maxRunBudget}
-                  onBudgetChange={(maxRunBudget) => {
-                    setField('maxRunBudget', maxRunBudget);
-                    setEventValidationArmed(true);
-                  }}
+                  onBudgetChange={(maxRunBudget) => setEventField('maxRunBudget', maxRunBudget)}
                   validationMessage={eventValidationMessage}
                 />
               )}
@@ -745,10 +743,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                   configured={cloud.configured}
                   onGotoSettings={gotoCloudSettings}
                   maxRunBudget={draft.maxRunBudget}
-                  onBudgetChange={(maxRunBudget) => {
-                    setField('maxRunBudget', maxRunBudget);
-                    setEventValidationArmed(true);
-                  }}
+                  onBudgetChange={(maxRunBudget) => setEventField('maxRunBudget', maxRunBudget)}
                   validationMessage={eventValidationMessage}
                 />
               )}
@@ -757,19 +752,10 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                 <CronMailEventFields
                   accountId={draft.eventMailAccountId}
                   mailbox={draft.eventMailMailbox}
-                  onAccountChange={(eventMailAccountId) => {
-                    setField('eventMailAccountId', eventMailAccountId);
-                    setEventValidationArmed(true);
-                  }}
-                  onMailboxChange={(eventMailMailbox) => {
-                    setField('eventMailMailbox', eventMailMailbox);
-                    setEventValidationArmed(true);
-                  }}
+                  onAccountChange={(eventMailAccountId) => setEventField('eventMailAccountId', eventMailAccountId)}
+                  onMailboxChange={(eventMailMailbox) => setEventField('eventMailMailbox', eventMailMailbox)}
                   maxRunBudget={draft.maxRunBudget}
-                  onBudgetChange={(maxRunBudget) => {
-                    setField('maxRunBudget', maxRunBudget);
-                    setEventValidationArmed(true);
-                  }}
+                  onBudgetChange={(maxRunBudget) => setEventField('maxRunBudget', maxRunBudget)}
                   // 与通道分支同一道显示闸门：光选「新邮件」不填不挨红框（r2 口径）。
                   violation={eventValidationArmed ? eventViolation : null}
                 />
@@ -941,9 +927,9 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                   type="number"
                   value={draft.maxRunBudget}
                   onChange={(e) => {
-                    setField('maxRunBudget', e.target.value);
                     // event 任务的预算也在这里改（与事件字段同一 draft 字段），同步开闸。
-                    if (isEventScheduleKind(draft.scheduleType)) setEventValidationArmed(true);
+                    if (isEventScheduleKind(draft.scheduleType)) setEventField('maxRunBudget', e.target.value);
+                    else setField('maxRunBudget', e.target.value);
                   }}
                   placeholder="不限"
                   data-testid="cron-budget-limit-input"
