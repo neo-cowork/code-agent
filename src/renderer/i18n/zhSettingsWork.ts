@@ -257,7 +257,7 @@ export const zhSettingsWork = {
         portPrefix: '端口 ',
         webhookPortPrefix: 'Webhook 端口 ',
         allowlistUserSuffix: ' 个白名单用户',
-        longPolling: 'Long Polling',
+        longPolling: '长轮询',
         webSocket: '长连接',
         configured: '已配置',
       },
