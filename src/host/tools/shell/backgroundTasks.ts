@@ -47,6 +47,7 @@ export interface TaskState {
   ownerAgentId?: string;
   sandboxed?: boolean;
   stoppedByRequest?: boolean;
+  terminalEventEmitted?: boolean;
   onExit?: () => void;
 }
 
@@ -192,6 +193,12 @@ function toTaskInfo(task: TaskState): TaskInfo {
 }
 
 function emitTaskLifecycleEvent(type: BackgroundTaskLifecycleEventType, task: TaskState): void {
+  // 每个任务最多一条终态事件（进程 close / error / kill 谁先到谁发），否则 CLI TUI 之类
+  // 不去重的订阅方会对同一次停止弹两条消息、发两次系统通知。
+  if (type === 'completed' || type === 'failed') {
+    if (task.terminalEventEmitted) return;
+    task.terminalEventEmitted = true;
+  }
   backgroundTaskEvents.emit('lifecycle', {
     type,
     task: toTaskInfo(task),
@@ -271,7 +278,8 @@ function registerBackgroundTaskProcess(
     const data = chunk.toString();
     const text = stream === 'stderr' ? `[stderr] ${data}` : data;
     taskState.outputSize += text.length;
-    taskState.outputStream?.write(text);
+    // kill 会先 end() 日志流；进程树退出前仍可能有输出到达，写已结束的流会抛 write-after-end。
+    if (taskState.outputStream && !taskState.outputStream.writableEnded) taskState.outputStream.write(text);
     if (taskState.outputSize < MAX_BACKGROUND_OUTPUT) {
       taskState.output.push(text);
     } else if (!taskState.output[taskState.output.length - 1]?.includes('[Output limit reached]')) {

@@ -274,7 +274,7 @@ export function createPtySession(options: {
       sessionState.outputSize += data.length;
 
       // Write to file
-      sessionState.outputStream?.write(data);
+      if (sessionState.outputStream && !sessionState.outputStream.writableEnded) sessionState.outputStream.write(data);
 
       // Store in memory (with limit)
       if (sessionState.outputSize < MAX_PTY_OUTPUT) {
