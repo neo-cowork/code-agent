@@ -42,18 +42,6 @@
     "reason": "unowned — needs a ticket"
   },
   {
-    "file": "src/renderer/components/WorkbenchTabs.tsx",
-    "rule": "uuid",
-    "sample": "{labelFor(view.id)}",
-    "reason": "unowned — needs a ticket"
-  },
-  {
-    "file": "src/renderer/components/WorkbenchTabs.tsx",
-    "rule": "uuid",
-    "sample": "{descriptionFor(view.id)}",
-    "reason": "unowned — needs a ticket"
-  },
-  {
     "file": "src/renderer/components/design/DesignLayerPanel.tsx",
     "rule": "uuid",
     "sample": "{selected.parentId || '—'}",
@@ -210,18 +198,6 @@
     "reason": "unowned — needs a ticket"
   },
   {
-    "file": "src/renderer/components/features/expert/TeamRecipeDetailPage.tsx",
-    "rule": "uuid",
-    "sample": "text.expertTeamMode.replace('{lead}', roleName(recipe.lead.roleId))",
-    "reason": "unowned — needs a ticket"
-  },
-  {
-    "file": "src/renderer/components/features/expert/TeamRecipeDetailPage.tsx",
-    "rule": "uuid",
-    "sample": "{roleName(member.roleId)}",
-    "reason": "unowned — needs a ticket"
-  },
-  {
     "file": "src/renderer/components/features/knowledge/LibraryPanel.tsx",
     "rule": "uuid",
     "sample": "project.id",
@@ -249,24 +225,6 @@
     "file": "src/renderer/components/features/lab/nanogpt/stages/Tokenizer.tsx",
     "rule": "uuid",
     "sample": "{token.id}",
-    "reason": "unowned — needs a ticket"
-  },
-  {
-    "file": "src/renderer/components/features/projectCollaboration/ProjectCollaborationDetailPane.tsx",
-    "rule": "uuid",
-    "sample": "{formatRequesterLabel(workCard.requesterUserId, currentUser)}",
-    "reason": "unowned — needs a ticket"
-  },
-  {
-    "file": "src/renderer/components/features/projectCollaboration/ProjectCollaborationPanel.tsx",
-    "rule": "uuid",
-    "sample": "{formatRequesterLabel(workCard.requesterUserId, currentUser)}",
-    "reason": "unowned — needs a ticket"
-  },
-  {
-    "file": "src/renderer/components/features/projectSpace/CloudCollabCardsSection.tsx",
-    "rule": "uuid",
-    "sample": "{formatRequesterLabel(card.requesterUserId, currentUser)}",
     "reason": "unowned — needs a ticket"
   },
   {
@@ -324,21 +282,9 @@
     "reason": "unowned — needs a ticket"
   },
   {
-    "file": "src/renderer/components/features/settings/tabs/DataSettings.tsx",
-    "rule": "uuid",
-    "sample": "{getRowIcon(row.id)}",
-    "reason": "unowned — needs a ticket"
-  },
-  {
     "file": "src/renderer/components/features/settings/tabs/ExternalImportSettings.tsx",
     "rule": "uuid",
     "sample": "{item.sourceId}",
-    "reason": "unowned — needs a ticket"
-  },
-  {
-    "file": "src/renderer/components/features/settings/tabs/GeneralSettings.tsx",
-    "rule": "uuid",
-    "sample": "{getPermissionIcon(row.id)}",
     "reason": "unowned — needs a ticket"
   },
   {
@@ -480,18 +426,6 @@
     "reason": "unowned — needs a ticket"
   },
   {
-    "file": "src/renderer/components/features/settings/tabs/WorkspaceSettings.tsx",
-    "rule": "uuid",
-    "sample": "{scopeIcon(tile.id)}",
-    "reason": "unowned — needs a ticket"
-  },
-  {
-    "file": "src/renderer/components/features/settings/tabs/WorkspaceSettings.tsx",
-    "rule": "uuid",
-    "sample": "{scopeIcon(layer.id)}",
-    "reason": "unowned — needs a ticket"
-  },
-  {
     "file": "src/renderer/components/features/sidebar/SessionReplaySummaryDialog.tsx",
     "rule": "uuid",
     "sample": "{focusedWorkflowRun ? focusedWorkflowRun.goal ? `Workflow: ${focusedWorkflowRun.goal}` : `Workflow ${focusedWorkflowRun.runId}` : focusedBackgroundTask?.title}",
@@ -603,6 +537,72 @@
     "file": "src/renderer/i18n/zhSettingsWork.ts",
     "rule": "ou_id",
     "sample": "多个会话 ID 用逗号分隔，例如 oc_abc123def",
+    "reason": "unowned — needs a ticket"
+  },
+  {
+    "file": "src/renderer/components/WorkbenchTabs.tsx",
+    "rule": "uuid",
+    "sample": "{labelFor(view.id)}",
+    "reason": "unowned — needs a ticket"
+  },
+  {
+    "file": "src/renderer/components/WorkbenchTabs.tsx",
+    "rule": "uuid",
+    "sample": "{descriptionFor(view.id)}",
+    "reason": "unowned — needs a ticket"
+  },
+  {
+    "file": "src/renderer/components/features/expert/TeamRecipeDetailPage.tsx",
+    "rule": "uuid",
+    "sample": "text.expertTeamMode.replace('{lead}', roleName(recipe.lead.roleId))",
+    "reason": "unowned — needs a ticket"
+  },
+  {
+    "file": "src/renderer/components/features/expert/TeamRecipeDetailPage.tsx",
+    "rule": "uuid",
+    "sample": "{roleName(member.roleId)}",
+    "reason": "unowned — needs a ticket"
+  },
+  {
+    "file": "src/renderer/components/features/projectCollaboration/ProjectCollaborationDetailPane.tsx",
+    "rule": "uuid",
+    "sample": "{formatRequesterLabel(workCard.requesterUserId, currentUser)}",
+    "reason": "unowned — needs a ticket"
+  },
+  {
+    "file": "src/renderer/components/features/projectCollaboration/ProjectCollaborationPanel.tsx",
+    "rule": "uuid",
+    "sample": "{formatRequesterLabel(workCard.requesterUserId, currentUser)}",
+    "reason": "unowned — needs a ticket"
+  },
+  {
+    "file": "src/renderer/components/features/projectSpace/CloudCollabCardsSection.tsx",
+    "rule": "uuid",
+    "sample": "{formatRequesterLabel(card.requesterUserId, currentUser)}",
+    "reason": "unowned — needs a ticket"
+  },
+  {
+    "file": "src/renderer/components/features/settings/tabs/DataSettings.tsx",
+    "rule": "uuid",
+    "sample": "{getRowIcon(row.id)}",
+    "reason": "unowned — needs a ticket"
+  },
+  {
+    "file": "src/renderer/components/features/settings/tabs/GeneralSettings.tsx",
+    "rule": "uuid",
+    "sample": "{getPermissionIcon(row.id)}",
+    "reason": "unowned — needs a ticket"
+  },
+  {
+    "file": "src/renderer/components/features/settings/tabs/WorkspaceSettings.tsx",
+    "rule": "uuid",
+    "sample": "{scopeIcon(tile.id)}",
+    "reason": "unowned — needs a ticket"
+  },
+  {
+    "file": "src/renderer/components/features/settings/tabs/WorkspaceSettings.tsx",
+    "rule": "uuid",
+    "sample": "{scopeIcon(layer.id)}",
     "reason": "unowned — needs a ticket"
   },
   {

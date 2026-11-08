@@ -158,6 +158,12 @@ function rawIdentifierRuleForPropertyAccess(expr, sourceFile) {
   return 'uuid';
 }
 
+function isKnownLabelLookupCall(expr, sourceFile) {
+  if (!ts.isCallExpression(expr)) return false;
+  const callee = expr.expression.getText(sourceFile);
+  return /(?:^|\.)(?:labelFor|descriptionFor|getRowIcon|getPermissionIcon|formatRequesterLabel|roleName|scopeIcon|getHumanToolLabel)$/.test(callee);
+}
+
 function inspectRenderedExpression(expr, sourceFile, recordHit) {
   if (!expr) return;
   if (
@@ -258,6 +264,7 @@ function inspectRenderedExpression(expr, sourceFile, recordHit) {
   }
 
   if (ts.isCallExpression(expr)) {
+    if (isKnownLabelLookupCall(expr, sourceFile)) return;
     for (const argument of expr.arguments) {
       inspectRenderedExpression(argument, sourceFile, recordHit);
     }
