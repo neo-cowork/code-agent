@@ -56,6 +56,32 @@ const SHELF_TAG_CLASS = 'rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc
 /** 云货架拉取超过这个时长就当作超时，给可退出的空态 + 重试，不再让「正在加载…」常驻 */
 const ROLE_PACKS_LOAD_TIMEOUT_MS = 8000;
 
+function matchesSearchFields(query: string, fields: ReadonlyArray<string | undefined>): boolean {
+  const normalized = query.trim().toLocaleLowerCase();
+  if (!normalized) return true;
+  return fields.some((field) => field?.toLocaleLowerCase().includes(normalized) ?? false);
+}
+
+function matchesTeamRecipeSearch(recipe: TeamRecipe, query: string): boolean {
+  return matchesSearchFields(query, [recipe.name, recipe.description, ...(recipe.tags ?? [])]);
+}
+
+function matchesRolePackSearch(
+  item: RolePackListItem,
+  query: string,
+  categoryLabels: { categories: Record<string, string>; uncategorized: string },
+): boolean {
+  const { entry } = item;
+  return matchesSearchFields(query, [
+    entry.displayName || entry.visual.displayName || entry.roleId,
+    entry.visual.profession,
+    entry.description,
+    ...(entry.tags ?? []),
+    ...entry.visual.tags,
+    categoryLabels.categories[entry.visual.category] ?? categoryLabels.uncategorized,
+  ]);
+}
+
 /** 来源徽标文案：复用设置页角色卡的同一套口径（预设/自建/项目/缺定义），不再另造一套词 */
 function expertSourceLabel(entry: RolePanelEntry, sourceText: Record<string, string>): string {
   return sourceText[entry.source === 'orphan' ? 'missing' : entry.source] ?? entry.source;
@@ -278,6 +304,20 @@ export const ExpertPanel: React.FC = () => {
     ? shown
     : categoryGroups.find((group) => group.key === activeCategory)?.entries ?? [];
   const filteredShown = categoryFiltered.filter((entry) => matchesRoleSearch(entry, searchQuery, categoryLabels));
+  const searchActive = searchQuery.trim().length > 0;
+  const filteredBuiltinRecipes = TEAM_RECIPES.filter((recipe) => matchesTeamRecipeSearch(recipe, searchQuery));
+  const filteredUserRecipes = userRecipes.filter((recipe) => matchesTeamRecipeSearch(recipe, searchQuery));
+  const filteredRolePacks = rolePacks.filter((item) => matchesRolePackSearch(item, searchQuery, categoryLabels));
+  const discoverHasSearchMatch = filteredShown.length > 0
+    || filteredBuiltinRecipes.length > 0
+    || filteredUserRecipes.length > 0
+    || filteredRolePacks.length > 0;
+  const showSearchEmpty = !loading
+    && shown.length > 0
+    && searchActive
+    && (tab === 'mine'
+      ? filteredShown.length === 0
+      : !discoverHasSearchMatch && !rolePacksLoading && !rolePacksError);
   const rolePacksByRoleId = new Map(rolePacks.map((item) => [item.entry.roleId, item]));
 
   // 请专家团=请专家同交互（负责人 2026-08-05 拍板）：不弹主题输入、不直接发起会话，
@@ -447,12 +487,30 @@ export const ExpertPanel: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-6">
-            {tab === 'discover' ? (
-              <section aria-labelledby="team-recipes-title">
+            {showSearchEmpty ? (
+              <div
+                data-testid="expert-search-empty"
+                className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-zinc-700/70 p-8 text-center text-sm text-zinc-500"
+              >
+                <span>{text.searchNoResults.replace('{query}', searchQuery.trim())}</span>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  data-testid="expert-search-clear"
+                  onClick={() => setSearchQuery('')}
+                >
+                  {text.clearSearch}
+                </Button>
+              </div>
+            ) : null}
+
+            {tab === 'discover' && (!searchActive || filteredBuiltinRecipes.length > 0 || filteredUserRecipes.length > 0) ? (
+              <section aria-labelledby="team-recipes-title" data-testid="team-recipes-section">
                 <h2 id="team-recipes-title" className="mb-3 text-sm font-medium text-zinc-200">{t.team.sectionTitle}</h2>
+                {!searchActive || filteredBuiltinRecipes.length > 0 ? <>
                 <h3 className="mb-2 text-xs font-medium text-zinc-400">{t.team.builtinRecipes}</h3>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {TEAM_RECIPES.map((recipe) => {
+                  {filteredBuiltinRecipes.map((recipe) => {
                     const quickPrompt = recipe.quickPrompts?.[0];
                     return (
                     <div
@@ -500,10 +558,12 @@ export const ExpertPanel: React.FC = () => {
                     );
                   })}
                 </div>
+                </> : null}
+                {!searchActive || filteredUserRecipes.length > 0 ? <>
                 <h3 className="mb-2 mt-5 text-xs font-medium text-zinc-400">{t.team.myRecipes}</h3>
-                {userRecipes.length === 0 ? <p data-testid="team-my-recipes-empty" className="text-xs text-zinc-500">{t.team.myRecipesEmpty}</p> : null}
+                {!searchActive && userRecipes.length === 0 ? <p data-testid="team-my-recipes-empty" className="text-xs text-zinc-500">{t.team.myRecipesEmpty}</p> : null}
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {userRecipes.map((recipe) => (
+                  {filteredUserRecipes.map((recipe) => (
                     <div key={recipe.id} data-testid={`team-recipe-${recipe.id}`} className={SHELF_CARD_CLASS}>
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-2.5">
@@ -527,12 +587,13 @@ export const ExpertPanel: React.FC = () => {
                     </div>
                   ))}
                 </div>
+                </> : null}
               </section>
             ) : null}
 
             {tab === 'discover' ? (
               <RolePackShelf
-                items={rolePacks}
+                items={filteredRolePacks}
                 loading={rolePacksLoading}
                 error={rolePacksError}
                 timedOut={rolePacksTimedOut}
@@ -541,6 +602,7 @@ export const ExpertPanel: React.FC = () => {
                 onInstall={(roleId) => { void installWithElevation(roleId); }}
                 onUninstall={(roleId) => { void runRolePackAction(roleId, uninstallRolePack); }}
                 onRetryMissingSkills={(roleId) => { void runRolePackAction(roleId, retryRolePackMissingSkills); }}
+                hideWhenEmpty={searchActive}
               />
             ) : null}
 
@@ -604,23 +666,6 @@ export const ExpertPanel: React.FC = () => {
             {tab === 'discover' && !loading && shown.length === 0 ? (
               <div className="rounded-lg border border-dashed border-zinc-700/70 p-8 text-center text-sm text-zinc-500">
                 {text.empty}
-              </div>
-            ) : null}
-
-            {!loading && shown.length > 0 && filteredShown.length === 0 ? (
-              <div
-                data-testid="expert-search-empty"
-                className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-zinc-700/70 p-8 text-center text-sm text-zinc-500"
-              >
-                <span>{text.searchNoResults.replace('{query}', searchQuery.trim())}</span>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  data-testid="expert-search-clear"
-                  onClick={() => setSearchQuery('')}
-                >
-                  {text.clearSearch}
-                </Button>
               </div>
             ) : null}
 

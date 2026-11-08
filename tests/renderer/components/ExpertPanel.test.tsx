@@ -995,4 +995,5 @@ describe('ExpertPanel', () => {
     expect((screen.getByTestId('expert-search-input') as HTMLInputElement).value).toBe('');
     expect(screen.getAllByTestId(/^expert-card-/)).toHaveLength(22);
   });
+
 });
