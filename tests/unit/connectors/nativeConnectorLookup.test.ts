@@ -81,6 +81,9 @@ describe('native connector exact object lookup', () => {
 
   it('returns create handles using the known container names', async () => {
     osascriptMocks.runAppleScript.mockResolvedValueOnce(
+      'Work',
+    );
+    osascriptMocks.runAppleScript.mockResolvedValueOnce(
       'evt-created|Work|Created event|START|END|Room 1',
     );
     const calendarResult = await calendarConnector.execute('create_event', {
@@ -90,10 +93,13 @@ describe('native connector exact object lookup', () => {
       end_ms: 2_000,
     });
     expect(calendarResult.data).toMatchObject({ uid: 'evt-created', calendar: 'Work' });
-    const calendarScript = osascriptMocks.runAppleScript.mock.calls[0]?.[0] as string[];
+    const calendarScript = osascriptMocks.runAppleScript.mock.calls[1]?.[0] as string[];
     expect(calendarScript.join('\n')).toContain('my sanitizeText("Work")');
     expect(calendarScript.join('\n')).not.toContain('name of calendar of newEvent');
 
+    osascriptMocks.runAppleScript.mockResolvedValueOnce(
+      'Work',
+    );
     osascriptMocks.runAppleScript.mockResolvedValueOnce(
       'r-created|Work|Created reminder|false',
     );
@@ -102,7 +108,7 @@ describe('native connector exact object lookup', () => {
       title: 'Created reminder',
     });
     expect(reminderResult.data).toMatchObject({ id: 'r-created', list: 'Work' });
-    const reminderScript = osascriptMocks.runAppleScript.mock.calls[1]?.[0] as string[];
+    const reminderScript = osascriptMocks.runAppleScript.mock.calls[3]?.[0] as string[];
     expect(reminderScript.join('\n')).toContain('my sanitizeText("Work")');
     expect(reminderScript.join('\n')).not.toContain('name of list of newReminder');
   });

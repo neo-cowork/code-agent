@@ -544,4 +544,31 @@ describe('humanizeToolFailureReason — 裸工程错误码翻成人话 + 下一�
     });
     expect(humanizeToolFailureReason(exitCall, zh)).toBe(zh.toolStepHumanize.failureCode.replace('{code}', '137'));
   });
+
+  it('persisted spawn_agent invalid-agent-id failure infers tool-unavailable copy instead of failureReasonMissing', () => {
+    const persistedSpawnFailedCall: ToolCall = {
+      id: 'call_5fa74e436eb64c64be688ce9',
+      name: 'spawn_agent',
+      arguments: {
+        role: 'general-purpose',
+        task: '严格按以下两阶段执行，不得偏离：【阶段一 · 唯一一次工具调用】首先且仅调用一次 Bash 工具，命令为：printf "ok" > /tmp/neo-approve-test.txt',
+      },
+      result: {
+        toolCallId: 'call_5fa74e436eb64c64be688ce9',
+        success: false,
+        error: 'Invalid agent ID: "general-purpose". Valid IDs: coder, reviewer, explore, plan, awaiter, dream, distill, 万卷, 持衡, 数据分析师, 明镜, 溯真, 牧之, 记言, 青禾',
+        duration: 308,
+        metadata: {
+          executionStarted: true,
+          fromCache: false,
+          memoryTainted: true,
+        },
+      },
+    };
+    expect(humanizeToolFailureReason(persistedSpawnFailedCall, zh))
+      .toBe(zh.toolStepHumanize.failureCodes['tool-unavailable']);
+    expect(humanizeToolFailureReason(persistedSpawnFailedCall, zh))
+      .not.toBe(zh.toolStepHumanize.failureReasonMissing);
+  });
+
 });

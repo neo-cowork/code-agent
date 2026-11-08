@@ -66,6 +66,12 @@ export interface GlobalHotkeyRegistrationResult {
   error?: string | null;
 }
 
+export interface NativeSystemNotificationResult {
+  backend: 'unc' | 'legacy-needed';
+  ok: boolean;
+  reason?: string;
+}
+
 export interface NativeCommandActionMap {
   triggerAppshot: {
     payload: undefined;
@@ -147,6 +153,10 @@ export interface NativeCommandActionMap {
     payload: { bindings: GlobalHotkeyBinding[] };
     result: GlobalHotkeyRegistrationResult[];
   };
+  postSystemNotification: {
+    payload: { title: string; body: string };
+    result: NativeSystemNotificationResult;
+  };
 }
 
 export type NativeCommandAction = keyof NativeCommandActionMap;
@@ -176,6 +186,7 @@ const NATIVE_COMMANDS: {
   setAgentHaloMode: 'agent_halo_mode',
   hideAgentHalo: 'agent_halo_hide',
   setGlobalHotkeys: 'keybindings_set_global_hotkeys',
+  postSystemNotification: 'post_system_notification',
 };
 
 export function isNativeCommandRuntimeAvailable(): boolean {

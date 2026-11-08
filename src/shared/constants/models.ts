@@ -125,11 +125,22 @@ export const PROVIDER_MODELS_MAP: Record<string, ProviderInfo> = Object.fromEntr
   PROVIDER_MODELS.map((p) => [p.id, p])
 );
 
-const MODEL_LABELS: Record<string, string> = Object.fromEntries(
-  PROVIDER_MODELS.flatMap((provider) =>
-    provider.models.map((model) => [model.id, model.label] as const)
-  )
-);
+/**
+ * Labels for runtime-only models that are real routing targets but intentionally
+ * absent from the catalog so they do not become selectable provider rows.
+ */
+const RUNTIME_ONLY_MODEL_LABELS: Record<string, string> = {
+  'glm-5.3': 'GLM-5.3',
+};
+
+const MODEL_LABELS: Record<string, string> = {
+  ...Object.fromEntries(
+    PROVIDER_MODELS.flatMap((provider) =>
+      provider.models.map((model) => [model.id, model.label] as const)
+    )
+  ),
+  ...RUNTIME_ONLY_MODEL_LABELS,
+};
 
 export function getModelDisplayLabel(modelId: string): string {
   return MODEL_LABELS[modelId] ?? modelId;

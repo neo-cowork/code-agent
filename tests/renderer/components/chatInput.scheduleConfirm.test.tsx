@@ -346,6 +346,24 @@ describe('scheduled task confirmation', () => {
   });
 });
 
+describe('buildScheduleConfirmRows display redaction', () => {
+  it('masks an action prompt used as the what fallback without changing the input payload', () => {
+    const prompt = 'back up notes --password=hunter2xyz';
+    const input = {
+      ...rowInput,
+      name: '',
+      description: '',
+      action: { type: 'agent', agentType: 'default', prompt },
+    } as CreateCronJobInput;
+    const rows = buildScheduleConfirmRows(
+      { input, restatement: undefined },
+      rowLabels,
+    );
+    expect(rows.find((row) => row.key === 'what')?.value).toBe('back up notes --password=***REDACTED***');
+    expect((input.action as { prompt: string }).prompt).toBe(prompt);
+  });
+});
+
 // ①（N-CRON-RESTATE-HUMAN-WHEN）：when 行按 UI 语言走 cronHumanize 人话文案；
 // 复杂表达式带「自定义时间 / Custom schedule」前缀，at 按语言本地化日期。
 describe('buildScheduleConfirmRows — when 行按 UI 语言说人话', () => {

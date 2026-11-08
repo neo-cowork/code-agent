@@ -42,6 +42,7 @@ import { CompanionSection } from '../sections/CompanionSection';
 import { ChannelAccountWarningStrip } from './ChannelAccountWarningStrip';
 import { TelegramGroupAccessPrerequisite, TelegramPrivacyModeBadge, TelegramPrivacyModeHint } from './TelegramPrivacyModeHint';
 import { FeishuSharedAppHint } from './FeishuSharedAppHint';
+import { FeishuLastInboundLine } from './FeishuLastInboundLine';
 
 const logger = createLogger('ChannelsSettings');
 
@@ -950,6 +951,7 @@ export const ChannelsSettings: React.FC = () => {
                           </div>
                         )}
                         <TelegramPrivacyModeBadge account={account} />
+                        <FeishuLastInboundLine account={account} />
                       </div>
 
                       <div className="min-w-0 text-xs text-zinc-400">

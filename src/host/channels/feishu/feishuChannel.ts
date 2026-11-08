@@ -73,6 +73,8 @@ export class FeishuChannel extends BaseChannelPlugin {
   private wsClient: lark.WSClient | null = null;
   private wsSession: FeishuWsSession | null = null;
   get feishuSharedAppDetected(): boolean | undefined { return this.wsSession?.sharedAppDetected; }
+  private _lastInboundAt: number | undefined;
+  get lastInboundAt(): number | undefined { return this._lastInboundAt; }
   private botOpenId: string | null = null;
 
   // Webhook 服务器
@@ -782,6 +784,8 @@ export class FeishuChannel extends BaseChannelPlugin {
   }
 
   private async handleMessageEvent(event: FeishuMessageEvent): Promise<void> {
+    this._lastInboundAt = Date.now();
+    this.emit('inbound_event', this._lastInboundAt);
     logger.info('handleMessageEvent called', {
       messageId: event.message?.message_id,
       messageType: event.message?.message_type,

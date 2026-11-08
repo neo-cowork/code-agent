@@ -9,6 +9,9 @@ import { humanizeToolFailureReason } from '../../../src/renderer/utils/toolExecu
 vi.mock('../../../src/renderer/stores/appStore', () => {
   const state = {
     processingSessionIds: new Set<string>(),
+    pendingPermissionRequest: null as Record<string, unknown> | null,
+    pendingPermissionSessionId: null as string | null,
+    queuedPermissionRequests: [] as Array<Record<string, unknown>>,
     openPreview: vi.fn(),
     workingDirectory: '/repo',
     language: 'zh' as const,
@@ -16,13 +19,15 @@ vi.mock('../../../src/renderer/stores/appStore', () => {
     cloudUIStrings: undefined,
   };
   return {
+    __mockAppState: state,
     useAppStore: (selector?: (value: typeof state) => unknown) => selector ? selector(state) : state,
   };
 });
 
+let mockCurrentSessionId: string | null = 'session-1';
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
-  useSessionStore: (selector: (value: { currentSessionId: string }) => unknown) => (
-    selector({ currentSessionId: 'session-1' })
+  useSessionStore: (selector: (value: { currentSessionId: string | null }) => unknown) => (
+    selector({ currentSessionId: mockCurrentSessionId })
   ),
 }));
 
@@ -83,5 +88,100 @@ describe('ToolHeader terminal copy', () => {
     const text = view.container.textContent ?? '';
     expect(text).not.toContain(zh.deliveryExperience.approvalRequired);
     expect(text).toContain(humanizeToolFailureReason(toolCall, zh));
+  });
+
+  it('foreground spawn_agent renders pending-approval / running wording while active and only shows 未成功 with real reason on failure', async () => {
+    const appStoreMod = await import('../../../src/renderer/stores/appStore') as unknown as {
+      __mockAppState: {
+        processingSessionIds: Set<string>;
+        pendingPermissionRequest: Record<string, unknown> | null;
+        pendingPermissionSessionId: string | null;
+      };
+    };
+    const sessionId = 'session-ca8c3df9';
+    mockCurrentSessionId = sessionId;
+    appStoreMod.__mockAppState.processingSessionIds = new Set([sessionId]);
+    appStoreMod.__mockAppState.pendingPermissionSessionId = sessionId;
+    appStoreMod.__mockAppState.pendingPermissionRequest = {
+      id: 'perm-1',
+      sessionId,
+      tool: 'Bash',
+      parentToolUseId: 'call_33e127b9ca0a4c078fbad4c8',
+    };
+
+    const persistedRunningSpawnCall: ToolCall = {
+      id: 'call_33e127b9ca0a4c078fbad4c8',
+      name: 'spawn_agent',
+      arguments: {
+        role: 'coder',
+        task: '严格按以下两阶段执行，不得偏离：【阶段一 · 唯一一次工具调用】首先且仅调用一次 Bash 工具，命令为：printf "ok" > /tmp/neo-approve-test.txt',
+      },
+    };
+
+    const approvalView = render(
+      <ToolCallDisplay
+        toolCall={persistedRunningSpawnCall}
+        index={0}
+        total={1}
+        mediaContext={{ sessionId, messageId: '438997a6' }}
+      />,
+    );
+    const approvalText = approvalView.container.textContent ?? '';
+    expect(approvalText).toContain('请求启动代理');
+    expect(approvalText).not.toContain('启动代理未成功');
+    approvalView.unmount();
+
+    // User clicks Allow: pendingPermissionRequest clears, child continues running
+    appStoreMod.__mockAppState.pendingPermissionRequest = null;
+    const runningView = render(
+      <ToolCallDisplay
+        toolCall={persistedRunningSpawnCall}
+        index={0}
+        total={1}
+        mediaContext={{ sessionId, messageId: '438997a6' }}
+      />,
+    );
+    const runningText = runningView.container.textContent ?? '';
+    expect(runningText).toContain('正在启动代理');
+    expect(runningText).not.toContain('启动代理未成功');
+    expect(runningText).not.toContain('已中断');
+    runningView.unmount();
+
+    // Real failure (persisted call_5fa74e436eb64c64be688ce9) shows 未成功 and its mapped failure reason, not failureReasonMissing
+    const persistedFailedSpawnCall: ToolCall = {
+      id: 'call_5fa74e436eb64c64be688ce9',
+      name: 'spawn_agent',
+      arguments: {
+        role: 'general-purpose',
+        task: '严格按以下两阶段执行，不得偏离：【阶段一 · 唯一一次工具调用】首先且仅调用一次 Bash 工具，命令为：printf "ok" > /tmp/neo-approve-test.txt',
+      },
+      result: {
+        toolCallId: 'call_5fa74e436eb64c64be688ce9',
+        success: false,
+        error: 'Invalid agent ID: "general-purpose". Valid IDs: coder, reviewer, explore, plan, awaiter, dream, distill, 万卷, 持衡, 数据分析师, 明镜, 溯真, 牧之, 记言, 青禾',
+        duration: 308,
+        metadata: {
+          executionStarted: true,
+          fromCache: false,
+          memoryTainted: true,
+        },
+      },
+    };
+    const failedView = render(
+      <ToolCallDisplay
+        toolCall={persistedFailedSpawnCall}
+        index={0}
+        total={1}
+        mediaContext={{ sessionId, messageId: '69aeef46' }}
+      />,
+    );
+    const failedText = failedView.container.textContent ?? '';
+    expect(failedText).toContain('启动代理未成功');
+    expect(failedText).toContain(zh.toolStepHumanize.failureCodes['tool-unavailable']);
+    expect(failedText).not.toContain(zh.toolStepHumanize.failureReasonMissing);
+
+    mockCurrentSessionId = 'session-1';
+    appStoreMod.__mockAppState.processingSessionIds = new Set();
+    appStoreMod.__mockAppState.pendingPermissionSessionId = null;
   });
 });

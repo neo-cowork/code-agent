@@ -162,9 +162,6 @@ async function executeRemindersCreate(
   canUseTool: CanUseToolFn,
   onProgress?: ToolProgressFn,
 ): Promise<ToolResult<string>> {
-  if (typeof args.list !== 'string' || args.list.length === 0) {
-    return { ok: false, error: 'list must be a non-empty string', code: 'INVALID_ARGS' };
-  }
   if (typeof args.title !== 'string' || args.title.length === 0) {
     return { ok: false, error: 'title must be a non-empty string', code: 'INVALID_ARGS' };
   }
