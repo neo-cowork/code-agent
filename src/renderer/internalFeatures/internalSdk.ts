@@ -24,6 +24,7 @@ import * as m19 from '../utils/accessControl';
 import * as m20 from '../utils/sessionPresentation';
 import * as m21 from '../styles/zLayers';
 import * as m22 from '../slots/pluginUiSdk';
+import * as m23 from '@shared/humanizeInternalText';
 import { RENDERER_INTERNAL_SDK_VERSION } from './internalSdkVersion';
 
 const ReactModule = (React as typeof React & { default?: typeof React }).default ?? React;
@@ -57,6 +58,7 @@ export const INTERNAL_RENDERER_SDK = Object.freeze({
     '@renderer/utils/sessionPresentation': m20,
     '@renderer/styles/zLayers': m21,
     '@renderer/slots/pluginUiSdk': m22,
+    '@shared/humanizeInternalText': m23,
   }),
 });
 

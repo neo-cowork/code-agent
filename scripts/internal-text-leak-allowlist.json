@@ -1,0 +1,110 @@
+[
+  {
+    "file": "src/renderer/components/features/computerUse/ComputerUseContent.tsx",
+    "rule": "internal_tool_name",
+    "sample": "执行链路：现有 `computer_use` 工具、permission dialog、action preview 和 desktop IPC 继续负责动作。",
+    "reason": "unowned — needs a ticket"
+  },
+  {
+    "file": "src/renderer/components/features/computerUse/ComputerUseContent.tsx",
+    "rule": "internal_tool_name",
+    "sample": "还没有 Computer Surface action trace。执行过 `computer_use.get_state / observe / get_ax_elements` 后会在这里显示风险摘要。",
+    "reason": "unowned — needs a ticket"
+  },
+  {
+    "file": "src/renderer/components/features/cron/CronEventDecisionsPanel.tsx",
+    "rule": "uuid",
+    "sample": "copy.eventLabel.replace('{id}', row.eventId ?? '')",
+    "reason": "N-FIX-CRON-EVENT-DECISION-ENGLISH-RAW-ID"
+  },
+  {
+    "file": "src/renderer/components/features/cron/CronExecutionDetail.tsx",
+    "rule": "uuid",
+    "sample": "{execution.id}",
+    "reason": "N-FIX-CRON-RUN-RAW-ID-AS-NAME"
+  },
+  {
+    "file": "src/renderer/components/features/cron/CronExecutionDetail.tsx",
+    "rule": "session_id",
+    "sample": "execution.sessionId || '—'",
+    "reason": "N-FIX-CRON-RUN-RAW-ID-AS-NAME"
+  },
+  {
+    "file": "src/renderer/components/features/cron/CronExecutionList.tsx",
+    "rule": "uuid",
+    "sample": "jobNameById[execution.jobId] || execution.jobId",
+    "reason": "N-FIX-CRON-RUN-RAW-ID-AS-NAME"
+  },
+  {
+    "file": "src/renderer/components/features/settings/sections/NativeConnectorsSection.tsx",
+    "rule": "uuid",
+    "sample": "{row.id}",
+    "reason": "unowned — needs a ticket"
+  },
+  {
+    "file": "src/renderer/components/features/settings/tabs/MemoryEntriesManager.tsx",
+    "rule": "uuid",
+    "sample": "row.summary || row.id",
+    "reason": "unowned — needs a ticket"
+  },
+  {
+    "file": "src/renderer/components/features/settings/tabs/MemoryEntriesManager.tsx",
+    "rule": "session_id",
+    "sample": "item.filePath || item.memoryId || item.sessionId || item.candidateId || item.source || 'unknown'",
+    "reason": "unowned — needs a ticket"
+  },
+  {
+    "file": "src/renderer/components/features/settings/tabs/SearchSettings.tsx",
+    "rule": "uuid",
+    "sample": "sourceText?.label ?? entry.id",
+    "reason": "unowned — needs a ticket"
+  },
+  {
+    "file": "src/renderer/components/features/sidebar/SessionReplaySummaryDialog.tsx",
+    "rule": "uuid",
+    "sample": "labels.dialog.focusBackgroundTaskAria.replace('{id}', task.id)",
+    "reason": "unowned — needs a ticket"
+  },
+  {
+    "file": "src/renderer/components/features/sidebar/SessionReplaySummaryDialog.tsx",
+    "rule": "uuid",
+    "sample": "labels.dialog.backgroundEvidenceAria.replace('{id}', task.id)",
+    "reason": "unowned — needs a ticket"
+  },
+  {
+    "file": "src/renderer/components/features/swarm/AgentWorkRecordDialog.tsx",
+    "rule": "uuid",
+    "sample": "agent.name || agent.id",
+    "reason": "unowned — needs a ticket"
+  },
+  {
+    "file": "src/renderer/components/features/workflow/TaskDetailPanel.tsx",
+    "rule": "raw_json",
+    "sample": "JSON.stringify(task.output.data, null, 2)",
+    "reason": "unowned — needs a ticket"
+  },
+  {
+    "file": "src/renderer/i18n/enSettingsCore.ts",
+    "rule": "sandbox_exec",
+    "sample": "On Linux, install bubblewrap (bwrap). macOS uses the built-in sandbox-exec.",
+    "reason": "unowned — needs a ticket"
+  },
+  {
+    "file": "src/renderer/i18n/enSettingsWork.ts",
+    "rule": "ou_id",
+    "sample": "Separate conversation IDs with commas, e.g. oc_abc123def",
+    "reason": "unowned — needs a ticket"
+  },
+  {
+    "file": "src/renderer/i18n/zhSettingsCore.ts",
+    "rule": "sandbox_exec",
+    "sample": "Linux 请安装 bubblewrap（bwrap）。macOS 使用系统自带的 sandbox-exec。",
+    "reason": "unowned — needs a ticket"
+  },
+  {
+    "file": "src/renderer/i18n/zhSettingsWork.ts",
+    "rule": "ou_id",
+    "sample": "多个会话 ID 用逗号分隔，例如 oc_abc123def",
+    "reason": "unowned — needs a ticket"
+  }
+]
