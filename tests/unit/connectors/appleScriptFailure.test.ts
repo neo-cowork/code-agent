@@ -7,7 +7,7 @@ vi.mock('../../../src/host/services/core/configService', () => ({
   getConfigService: () => ({ getSettings: () => ({ ui: { language: configState.language } }) }),
 }));
 
-import { describeAppleScriptFailure } from '../../../src/host/connectors/native/osascript';
+import { describeAppleScriptFailure, sharedAppleScriptHandlers } from '../../../src/host/connectors/native/osascript';
 
 const SCRIPT = 'tell application "Mail"\nset x to every mailbox\nend tell';
 const FORBIDDEN = /osascript|Command failed|tell application|every mailbox/;
@@ -62,5 +62,14 @@ describe('describeAppleScriptFailure', () => {
     expect((caught as Error).message).toMatch(/Command failed/);
     const r = describeAppleScriptFailure('Mail', caught);
     expect(r.message).not.toMatch(/osascript|Command failed|tell application|applescript \(\(\(/i);
+  });
+
+  it.runIf(process.platform === 'darwin')('sharedAppleScriptHandlers sanitizeText replaces pipe, cr, lf, crlf, and tab with spaces', async () => {
+    const lines = [
+      ...sharedAppleScriptHandlers(),
+      'return my sanitizeText("Ship" & return & linefeed & "PR" & linefeed & "urgent|today" & tab & "end")',
+    ];
+    const { stdout } = await promisify(execFile)('osascript', lines.flatMap((l) => ['-e', l]));
+    expect(stdout.trim()).toBe('Ship PR urgent today end');
   });
 });

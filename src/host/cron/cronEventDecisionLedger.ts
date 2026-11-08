@@ -35,6 +35,7 @@ interface DecisionRow {
   job_id: string;
   kind: string;
   event_id: string | null;
+  event_label: string | null;
   decision: string;
   reason: string;
   run_id: string | null;
@@ -53,6 +54,7 @@ function rowToDecision(row: DecisionRow): CronEventDecision | null {
     jobId: row.job_id,
     kind: row.kind,
     ...(row.event_id ? { eventId: row.event_id } : {}),
+    ...(row.event_label ? { eventLabel: row.event_label } : {}),
     decision: row.decision as CronEventDecisionOutcome,
     reason: row.reason,
     ...(row.run_id ? { runId: row.run_id } : {}),
@@ -76,8 +78,8 @@ function recordCronEventDecisions(
     const maxPerJob = Math.max(1, Math.floor(options.maxPerJob ?? CRON_EVENT_DECISIONS.DEFAULT_MAX_PER_JOB));
     const insert = db.prepare(`
       INSERT INTO cron_event_decisions
-      (id, job_id, kind, event_id, decision, reason, run_id, matched_rule, tool, target, summary, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, job_id, kind, event_id, event_label, decision, reason, run_id, matched_rule, tool, target, summary, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const trim = db.prepare(`
       DELETE FROM cron_event_decisions
@@ -89,7 +91,7 @@ function recordCronEventDecisions(
     db.transaction(() => {
       rows.forEach((row, index) => {
         insert.run(
-          uuidv4(), row.jobId, row.kind, row.eventId ?? null, row.decision, row.reason,
+          uuidv4(), row.jobId, row.kind, row.eventId ?? null, row.eventLabel ?? null, row.decision, row.reason,
           row.runId ?? null, row.matchedRule ?? null, row.tool ?? null, row.target ?? null,
           row.summary ?? null, row.createdAt ?? base + index,
         );
