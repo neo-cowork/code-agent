@@ -124,8 +124,7 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
   };
 
   return (
-    <div className="relative h-full">
-    <div className="absolute inset-0 overflow-y-auto bg-zinc-900/40" data-testid="cron-detail-scroll-root">
+    <div className="flex h-full flex-col overflow-y-auto bg-zinc-900/40 contain-size">
       <div className="border-b border-zinc-800 p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -316,7 +315,6 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
           </div>
         )}
       </div>
-    </div>
     </div>
   );
 };
