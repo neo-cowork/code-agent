@@ -233,6 +233,23 @@ export const cronCenterZh = {
     resultPushListFailed: '暂时无法读取会话，可手动填写接收会话 ID。',
     resultPushAccountUnavailable: '之前保存的推送目标“{value}”对应的通道已不可用。原配置已保留，重新选择或改为不推送后再保存。',
     resultPushConversationUnavailable: '之前保存的接收会话已不可用。原配置已保留，重新选择后再保存。',
+    // 手动配置页的人话字段（N-FIX-CRON-EDITOR-AGENT-ACTION-DEV-FIELDS）
+    manualEditor: {
+      cronScheduleOption: '按固定时间重复（Cron 表达式）',
+      agentTypeLabel: 'Agent 类型',
+      taskInstructionsLabel: '任务指令',
+      extraParametersDisclosure: '高级：附加参数（可选）',
+      extraParametersHint: '填写 JSON 对象，为任务传入额外参数。没有附加参数时保持空白或 {} 即可。',
+      extraParametersExample: '示例：{"channel":"feishu"}',
+      extraParametersInputLabel: '附加参数（JSON）',
+      unknownAgentTypeDescription: '这是已有设置，除非你主动选择其他类型，否则会保留原值。',
+      agentTypes: {
+        default: { name: '通用助手（推荐）', description: '按任务指令完成一般工作。' },
+        heartbeat: { name: '定时巡检', description: '适合按计划重复检查并汇报结果。' },
+        dream: { name: '记忆整理', description: '适合复盘近期会话并整理长期记忆。' },
+        distill: { name: '经验提炼', description: '适合从重复工作中提炼可复用的流程。' },
+      },
+    },
     // 事件触发（N-CRON-EVENT-CREATE-UI）：通道消息 / 群监听调度
     eventScheduleOption: '通道消息（群监听）',
     eventAccountLabel: '触发账号',
@@ -242,7 +259,7 @@ export const cronCenterZh = {
     // 新邮件（邮件触发）调度（N-TRIGGER-MAIL-CREATE-ENTRY-K1）：账号/邮箱下拉 + 不可用三态
     eventMailScheduleOption: '新邮件（邮件触发）',
     // 已落库的 webhook 任务在编辑器里的调度类型（创建菜单不提供这一项）。
-    eventWebhookScheduleOption: 'Webhook 投递',
+    eventWebhookScheduleOption: '外部系统通知触发（Webhook 投递）',
     // Webhook 触发（N-CRON-WEBHOOK-CLOUD-HOOK-FU1）：云端服务设置卡 + 编辑器门 + 一次性链接卡 + 详情块
     cloudSettings: {
       title: '云端计划任务服务',
@@ -685,6 +702,23 @@ export const cronCenterEn: typeof cronCenterZh = {
     resultPushListFailed: 'Conversations could not be loaded. Enter the destination conversation ID manually.',
     resultPushAccountUnavailable: 'The channel for the saved destination “{value}” is no longer available. The original setting is preserved until you choose another destination or turn delivery off and save.',
     resultPushConversationUnavailable: 'The saved destination conversation is no longer available. The original setting is preserved until you choose another conversation and save.',
+    // Plain-language fields in the manual editor (N-FIX-CRON-EDITOR-AGENT-ACTION-DEV-FIELDS)
+    manualEditor: {
+      cronScheduleOption: 'Repeat at fixed times (Cron expression)',
+      agentTypeLabel: 'Agent type',
+      taskInstructionsLabel: 'Task instructions',
+      extraParametersDisclosure: 'Advanced: extra parameters (optional)',
+      extraParametersHint: 'Enter a JSON object to pass extra parameters to the task. Leave it blank or use {} when none are needed.',
+      extraParametersExample: 'Example: {"channel":"feishu"}',
+      extraParametersInputLabel: 'Extra parameters (JSON)',
+      unknownAgentTypeDescription: 'This is an existing setting and stays unchanged unless you choose another type.',
+      agentTypes: {
+        default: { name: 'General assistant (recommended)', description: 'Follows the task instructions for general work.' },
+        heartbeat: { name: 'Scheduled check', description: 'Best for repeated checks and reporting the result.' },
+        dream: { name: 'Memory review', description: 'Best for reviewing recent sessions and organizing durable memory.' },
+        distill: { name: 'Experience distillation', description: 'Best for turning repeated work into reusable workflows.' },
+      },
+    },
     // Event-triggered schedules (N-CRON-EVENT-CREATE-UI): channel message / group listen
     eventScheduleOption: 'Channel message (group listen)',
     eventAccountLabel: 'Trigger account',
@@ -693,7 +727,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     eventNoAccounts: 'No messaging channels connected yet — an event trigger needs an account to bind to.',
     // New-mail (mail trigger) schedules (N-TRIGGER-MAIL-CREATE-ENTRY-K1): account/mailbox dropdowns + three unavailable states
     eventMailScheduleOption: 'New mail (mail trigger)',
-    eventWebhookScheduleOption: 'Webhook delivery',
+    eventWebhookScheduleOption: 'Triggered by an external system (Webhook delivery)',
     // Webhook trigger (N-CRON-WEBHOOK-CLOUD-HOOK-FU1): cloud settings card + editor gate + one-time link card + detail block
     cloudSettings: {
       title: 'Cloud scheduler',
