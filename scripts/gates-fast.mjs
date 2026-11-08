@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/* global console */
 import fs from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { setTimeout, clearTimeout } from 'node:timers';
@@ -190,7 +189,7 @@ try {
       let failures = [];
       try { failures = summarizeVitestFailures(JSON.parse(fs.readFileSync(report, 'utf8')), root); } catch { /* 报告没写出来时保留原始失败 */ }
       if (!failures.length) throw error;
-      throw new Error(`${error instanceof Error ? error.message : String(error)}; failed: ${failures.join(' | ')}`);
+      throw new Error(`${error instanceof Error ? error.message : String(error)}; failed: ${failures.join(' | ')}`, { cause: error });
     }
     receipt.report = validateReport(receipt.selectedFiles, JSON.parse(fs.readFileSync(report, 'utf8')), root);
   });
