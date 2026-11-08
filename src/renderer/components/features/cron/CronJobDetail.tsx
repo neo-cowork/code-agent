@@ -310,7 +310,7 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
               />
             </section>
             <section className="min-h-0 overflow-y-auto">
-              <CronExecutionDetail execution={selectedExecution} runsOn={job.runsOn} />
+              <CronExecutionDetail execution={selectedExecution} jobName={job.name} runsOn={job.runsOn} />
             </section>
           </div>
         )}

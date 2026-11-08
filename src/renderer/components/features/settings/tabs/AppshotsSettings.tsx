@@ -47,6 +47,7 @@ export const AppshotsSettings: React.FC = () => {
   const [hotkeyStatus, setHotkeyStatus] = useState<AppshotsHotkeyStatus | null>(null);
   const [hotkeySupported, setHotkeySupported] = useState(true);
   const [hotkeyRequesting, setHotkeyRequesting] = useState(false);
+  const [hotkeyPermissionHintVisible, setHotkeyPermissionHintVisible] = useState(false);
   // 点过「开启快捷键」后最多轮询 60s（2s 一次）等安装结果；平时不轮询。
   const [hotkeyPollUntil, setHotkeyPollUntil] = useState(0);
   const pollUntilRef = useRef(0);
@@ -70,6 +71,10 @@ export const AppshotsSettings: React.FC = () => {
   }, [refreshHotkeyStatus]);
 
   useEffect(() => {
+    if (hotkeyStatus?.permissionGranted) setHotkeyPermissionHintVisible(false);
+  }, [hotkeyStatus?.permissionGranted]);
+
+  useEffect(() => {
     pollUntilRef.current = hotkeyPollUntil;
     if (hotkeyPollUntil === 0) return;
     const interval = setInterval(() => {
@@ -85,12 +90,26 @@ export const AppshotsSettings: React.FC = () => {
   // 显式请求「输入监控」：系统框只在用户点了这个按钮后才出现（Rust 侧每进程至多问一次）。
   const handleEnableHotkey = async () => {
     if (!isNativeCommandRuntimeAvailable()) return;
+    logger.info('Appshots hotkey access request started', { reason: 'user_clicked_enable' });
     setHotkeyRequesting(true);
     setHotkeyPollUntil(Date.now() + 60_000);
     try {
-      setHotkeyStatus(await invokeNativeCommandAction('requestAppshotsHotkeyAccess'));
+      const status = await invokeNativeCommandAction('requestAppshotsHotkeyAccess');
+      setHotkeyStatus(status);
+      if (status.permissionGranted) {
+        logger.info('Appshots hotkey access request finished', { reason: 'permission_granted' });
+      } else {
+        setHotkeyPermissionHintVisible(true);
+        logger.warn('Appshots hotkey access request finished', {
+          reason: 'permission_not_granted',
+        });
+      }
     } catch (error) {
-      logger.error('Failed to request appshots hotkey access', error);
+      setHotkeyPermissionHintVisible(true);
+      logger.warn('Appshots hotkey access request finished', {
+        reason: 'request_failed',
+        error: error instanceof Error ? error.message : String(error),
+      });
     } finally {
       setHotkeyRequesting(false);
     }
@@ -236,7 +255,7 @@ export const AppshotsSettings: React.FC = () => {
           {isMacPlatform && hotkeySupported && hotkeyStatus && (
             <div
               data-testid="appshots-hotkey-permission-row"
-              className="flex items-center gap-3 p-3 rounded-lg border border-zinc-700"
+              className="flex flex-wrap items-center gap-3 p-3 rounded-lg border border-zinc-700"
             >
               <Keyboard className="w-4 h-4 text-zinc-400 shrink-0" />
               <div className="min-w-0 flex-1">
@@ -272,6 +291,15 @@ export const AppshotsSettings: React.FC = () => {
                 >
                   {appshotsText.hotkeyOpenSettings}
                 </Button>
+              )}
+              {hotkeyPermissionHintVisible && !hotkeyStatus.permissionGranted && (
+                <p
+                  data-testid="appshots-hotkey-permission-hint"
+                  aria-live="polite"
+                  className="basis-full pl-7 text-xs leading-5 text-badge-warning"
+                >
+                  {appshotsText.hotkeyPermissionHint}
+                </p>
               )}
             </div>
           )}
