@@ -289,7 +289,7 @@ export function syncPtySessionSnapshotToLedger(
   session: PtySessionInfo,
   ledger: BackgroundTaskLedger = getBackgroundTaskLedger(),
 ): void {
-  const status = mapShellStatus(session.status, session.outputFile);
+  const status = mapShellStatus(session.status, session.outputFile, session.stoppedByRequest);
   const taskId = `pty:${session.sessionId}`;
   const command = [session.command, ...session.args].filter(Boolean).join(' ');
   const previous = ledger.getTask(taskId);

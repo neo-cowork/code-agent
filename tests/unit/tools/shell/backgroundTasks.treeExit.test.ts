@@ -11,6 +11,7 @@ import {
   getAllBackgroundTasks,
   adoptBackgroundTask,
   getTaskOutput,
+  cleanupTimedOutTasks,
   killBackgroundTask,
   startBackgroundTask,
 } from '../../../../src/host/tools/shell/backgroundTasks';
@@ -229,6 +230,38 @@ posixOnly('后台任务停机收尸', () => {
         type: 'task_failed',
         title: '后台任务失败',
       });
+    } finally {
+      detach();
+      shutdownEventBus();
+    }
+  }, 30000);
+
+  it('task over max runtime reaped by the timeout sweep stays failed with task_failed (not cancelled)', async () => {
+    const cwd = mkdtempSync(`${tmpdir()}/neo-bgtask-`);
+    const ledger = new BackgroundTaskLedger();
+    const detach = installBackgroundTaskEventAdapters(ledger);
+    try {
+      const started = startBackgroundTask('sleep 600', cwd, 30_000, {
+        sessionId: 'session-timeout-real',
+        displayCommand: 'sleep 600',
+      });
+      expect(started.success).toBe(true);
+      startedTaskIds.push(started.taskId!);
+      await waitFor(() => ledger.getTask(`shell:${started.taskId}`)?.status === 'running');
+
+      // 把时钟拨过 maxRuntime，让周期清扫（而非 setTimeout 句柄）认定超时。
+      const realNow = Date.now();
+      const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(realNow + 31_000);
+      try {
+        cleanupTimedOutTasks();
+      } finally {
+        nowSpy.mockRestore();
+      }
+      await waitFor(() => ledger.getTask(`shell:${started.taskId}`)?.status === 'failed', 15_000);
+
+      expect(ledger.getTask(`shell:${started.taskId}`)?.status).toBe('failed');
+      const notifications = ledger.drainNotifications('session-timeout-real');
+      expect(notifications.map((n) => n.type)).toEqual(['task_failed']);
     } finally {
       detach();
       shutdownEventBus();

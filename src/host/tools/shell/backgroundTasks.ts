@@ -379,6 +379,7 @@ export function adoptBackgroundTask(
  */
 export async function killBackgroundTask(
   taskId: string,
+  options: { reason?: 'stop' | 'timeout' } = {},
 ): Promise<{ success: boolean; error?: string; message?: string }> {
   const task = backgroundTasks.get(taskId);
   if (!task) {
@@ -391,7 +392,8 @@ export async function killBackgroundTask(
       clearTimeout(task.timeout);
     }
 
-    if (task.status === 'running') task.stoppedByRequest = true;
+    // 超时清扫不是用户/模型的停止请求：不打 stopped 标记，账本仍记 failed。
+    if (task.status === 'running' && options.reason !== 'timeout') task.stoppedByRequest = true;
     task.outputStream?.end();
     // SIGTERM → 宽限 → SIGKILL → 探到整组消失，全在 killProcessTree 内部。
     await killProcessTree(task.process, { posixGroupKill: true });
@@ -512,7 +514,7 @@ export function cleanupTimedOutTasks(): void {
     if (task.status === 'running' && now - task.startTime > task.maxRuntime) {
       console.warn(`[BackgroundTasks] Task ${taskId} timed out, killing...`);
       // 周期清理定时器回调，没有 await 的位置；killBackgroundTask 内部不 reject。
-      void killBackgroundTask(taskId);
+      void killBackgroundTask(taskId, { reason: 'timeout' });
     }
   }
 }

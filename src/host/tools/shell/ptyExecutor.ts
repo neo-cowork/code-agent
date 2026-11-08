@@ -47,6 +47,7 @@ interface PtySessionState {
   inputBuffer: string[];
   sandboxed?: boolean;
   onExit?: () => void;
+  stoppedByRequest?: boolean;
   /**
    * 供 killProcessTree 使用的句柄视图（懒建、随会话长存）。
    * **不能每次现造**：整树退出边界记在 WeakSet 里、按对象身份认，现造的话防 pid 复用就失效。
@@ -67,6 +68,7 @@ export interface PtySessionInfo {
   duration: number;
   exitCode?: number;
   outputFile: string;
+  stoppedByRequest?: boolean;
   cols: number;
   rows: number;
   sandboxed?: boolean;
@@ -125,6 +127,7 @@ function toPtySessionInfo(session: PtySessionState): PtySessionInfo {
     duration: (session.endTime || Date.now()) - session.startTime,
     exitCode: session.exitCode,
     outputFile: session.outputFile,
+    ...(session.stoppedByRequest ? { stoppedByRequest: true } : {}),
     cols: session.cols,
     rows: session.rows,
     sandboxed: session.sandboxed,
@@ -392,13 +395,18 @@ async function terminatePtyProcess(session: PtySessionState): Promise<void> {
 /**
  * Kill a PTY session（等到整组确认退出才返回——「已终止」是对调用方的承诺）
  */
-export async function killPtySession(sessionId: string): Promise<{ success: boolean; error?: string; message?: string }> {
+export async function killPtySession(
+  sessionId: string,
+  options: { reason?: 'stop' | 'timeout' } = {},
+): Promise<{ success: boolean; error?: string; message?: string }> {
   const session = ptySessions.get(sessionId);
   if (!session) {
     return { success: false, error: `No PTY session found with ID: ${sessionId}` };
   }
 
   try {
+    // 终止前打标，退出回调才不会先报 failed；超时清扫不算停止请求。
+    if (session.status === 'running' && options.reason !== 'timeout') session.stoppedByRequest = true;
     await terminatePtyProcess(session);
     session.outputStream?.end();
 
@@ -578,7 +586,7 @@ async function cleanupTimedOutPtySessions(): Promise<void> {
   for (const [sessionId, session] of ptySessions) {
     if (session.status === 'running' && now - session.startTime > session.maxRuntime) {
       console.warn(`[PTY] Session ${sessionId} timed out, killing...`);
-      await killPtySession(sessionId);
+      await killPtySession(sessionId, { reason: 'timeout' });
     }
   }
 }
