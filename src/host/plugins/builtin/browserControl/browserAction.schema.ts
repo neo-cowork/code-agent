@@ -39,13 +39,13 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
         description: 'CSS selector for element interactions. Prefer targetRef from get_dom_snapshot when available.',
       },
       targetRef: {
-        type: 'object',
-        description: 'Short-lived target reference returned by get_dom_snapshot interactiveElements[].targetRef',
+        type: ['object', 'string'],
+        description: 'Short-lived target reference returned by get_dom_snapshot: pass the targetRef object from get_dom_snapshot interactiveElements, or just its refId string, e.g. {"action":"click","targetRef":"<refId>"}.',
         additionalProperties: true,
       },
       destinationTargetRef: {
-        type: 'object',
-        description: 'Fresh destination targetRef for drag. Both drag endpoints must come from the same current DOM snapshot.',
+        type: ['object', 'string'],
+        description: 'Fresh destination targetRef for drag (pass the targetRef object from get_dom_snapshot interactiveElements, or just its refId string). Both drag endpoints must come from the same current DOM snapshot.',
         additionalProperties: true,
       },
       text: {

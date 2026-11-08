@@ -47,8 +47,9 @@ interface CommandDeadline {
   remainingMs: number;
   gateId: string | null;
 }
-export function validateBudgetPolicy(policy: BudgetPolicy): void;
+export function validateBudgetPolicy(policy: BudgetPolicy, outerMs?: number): void;
+export function scaleBudgetPolicy<P extends BudgetPolicy>(policy: P, env?: Record<string, string | undefined>): { policy: P; scale: number; outerMs: number };
 export function extractGateIds(source: string): string[];
-export function validateGateBudgetCoverage(policy: BudgetPolicy, gateIds: string[]): void;
+export function validateGateBudgetCoverage(policy: BudgetPolicy, gateIds: string[], outerMs?: number): void;
 export function commandDeadline(policy: BudgetPolicy, gateId: string | null | undefined, runElapsedMs: number, gateElapsedMs: number): CommandDeadline;
 export function budgetFailure(deadline: CommandDeadline, argv: string[]): string;

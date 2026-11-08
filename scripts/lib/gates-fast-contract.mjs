@@ -147,11 +147,11 @@ const SHIP_OUTER_TIMEOUT_MS = 180000;
  * 预算两层（N-GATESFAST-TOTAL-BUDGET）：budgetsMs 是每格硬上限，budgetMs 是整跑硬上限。
  * 原 60s 累计预算在负载 ~10 时被 9 格常态耗时（合计 60s+）必然耗尽、截在最后一格，与该格自身快慢无关。
  */
-export function validateBudgetPolicy(policy) {
+export function validateBudgetPolicy(policy, outerMs = SHIP_OUTER_TIMEOUT_MS) {
   const total = policy.budgetMs;
-  const ceiling = SHIP_OUTER_TIMEOUT_MS - 10000;
+  const ceiling = outerMs - 10000;
   if (!Number.isInteger(total) || total <= 0 || total > ceiling) {
-    throw new Error(`FAIL: policy.budgetMs must be a positive integer <= ${ceiling}ms (ship outer timeout ${SHIP_OUTER_TIMEOUT_MS}ms)`);
+    throw new Error(`FAIL: policy.budgetMs must be a positive integer <= ${ceiling}ms (ship outer timeout ${outerMs}ms)`);
   }
   const gates = Object.entries(policy.budgetsMs ?? {});
   if (!gates.length) throw new Error('FAIL: policy.budgetsMs must declare per-gate budgets');
@@ -185,8 +185,25 @@ export function extractGateIds(source) {
   return ids;
 }
 
-export function validateGateBudgetCoverage(policy, gateIds) {
-  validateBudgetPolicy(policy);
+/**
+ * 高负载工人机放宽预算（11-08：mini 收活 tests-typecheck/private 一晚超时 77 次，全是负载不是代码）。
+ * GATES_FAST_BUDGET_SCALE=1..3 同比放大每格与整跑预算；外层 ship 超时同步用 SHIP_FASTGATE_TIMEOUT_S 传进来校验。
+ * 不设 = 原预算原外层，笔记本与 CI 行为不变；回执记 budgetScale 供核验。
+ */
+export function scaleBudgetPolicy(policy, env = {}) {
+  const raw = env.GATES_FAST_BUDGET_SCALE;
+  const scale = raw === undefined || raw === '' ? 1 : Number(raw);
+  if (!(scale >= 1 && scale <= 3)) throw new Error(`FAIL: GATES_FAST_BUDGET_SCALE must be within 1..3, got ${raw}`);
+  const outerRaw = env.SHIP_FASTGATE_TIMEOUT_S;
+  const outerMs = outerRaw === undefined || outerRaw === '' ? SHIP_OUTER_TIMEOUT_MS : Number(outerRaw) * 1000;
+  if (!Number.isInteger(outerMs) || outerMs < SHIP_OUTER_TIMEOUT_MS) throw new Error(`FAIL: SHIP_FASTGATE_TIMEOUT_S must be an integer >= ${SHIP_OUTER_TIMEOUT_MS / 1000}, got ${outerRaw}`);
+  if (scale === 1) return { policy, scale, outerMs };
+  const budgetsMs = Object.fromEntries(Object.entries(policy.budgetsMs ?? {}).map(([id, ms]) => [id, Math.round(ms * scale)]));
+  return { policy: { ...policy, budgetMs: Math.round(policy.budgetMs * scale), budgetsMs }, scale, outerMs };
+}
+
+export function validateGateBudgetCoverage(policy, gateIds, outerMs = SHIP_OUTER_TIMEOUT_MS) {
+  validateBudgetPolicy(policy, outerMs);
   if (!Array.isArray(gateIds) || gateIds.length === 0) {
     throw new Error('FAIL: gateIds must contain the literal gates-fast registrations');
   }
