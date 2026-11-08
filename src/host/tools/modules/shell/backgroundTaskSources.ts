@@ -3,8 +3,6 @@ import {
   getTaskOutput,
   onBackgroundTaskLifecycleEvent,
   type BackgroundTaskLifecycleEvent,
-  type BackgroundTaskLifecycleEventType,
-  type TaskOutput,
   type TaskInfo,
 } from '../../shell/backgroundTasks';
 import {
@@ -26,9 +24,7 @@ export {
 
 export type {
   BackgroundTaskLifecycleEvent,
-  BackgroundTaskLifecycleEventType,
   PtySessionInfo,
   PtySessionLifecycleEvent,
   TaskInfo,
-  TaskOutput,
 };

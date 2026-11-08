@@ -127,7 +127,6 @@ const LAST_TOOL_FAILURE_CODES: ReadonlySet<string> = new Set([
 ]);
 
 type TerminalTaskStatus = Extract<SessionCommandTaskStatus, 'completed' | 'failed' | 'cancelled'>;
-
 interface SessionCommandCenterDependencies {
   projectTerminalResult?: (task: SessionCommandTask, status: TerminalTaskStatus) => Promise<void>;
   /** 排队任务收到用户补话时落主会话记录（运行中路径由运行时 injectSteerMessage 落，不在这里重复） */
@@ -136,27 +135,35 @@ interface SessionCommandCenterDependencies {
   slotLedgerOptions?: Omit<SessionTaskSlotLedgerOptions, 'onRecovery'>;
   slotRecoveryLocale?: 'zh' | 'en';
 }
-
 interface NestedShellSettlement {
   activeWorkIds: Set<string>;
   outputs: string[];
-  failed: boolean;
+  failureNotes: string[];
   pendingCompletion?: { conclusion?: string; artifacts?: NormalizedToolArtifactMeta[] };
 }
 type NestedWorkKind = 'shell' | 'pty' | 'subagent';
 function nestedWorkKey(kind: NestedWorkKind, id: string): string {
   return `${kind}:${id}`;
 }
+function isLaunchOnlyConclusion(value: string | undefined): boolean {
+  const text = value?.replace(/\s+/gu, ' ').trim();
+  return !text || /^(?:后台任务|任务)已启动(?:$|[：:（(\s])/u.test(text)
+    || /^已在后台启动(?:$|[：:（(\s])/u.test(text)
+    || /^(?:background task|task) started(?:$|[\s:.(])/iu.test(text);
+}
+function nestedDetail(state: NestedShellSettlement | undefined, conclusion?: string): string | undefined {
+  const failures = state?.failureNotes.join('\n').trim();
+  const nested = [state?.outputs.join('\n').trim(), failures].filter(Boolean).join('\n');
+  return isLaunchOnlyConclusion(conclusion) ? nested || conclusion : conclusion ? [conclusion, failures].filter(Boolean).join('\n') || conclusion : nested || conclusion;
+}
 function taskId(): string {
   return `session-work-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
-
 function compactSummary(value: string | undefined, fallback: string): string {
   const normalized = value?.replace(/\s+/g, ' ').trim();
   if (!normalized) return fallback;
   return Array.from(normalized).slice(0, 240).join('');
 }
-
 export class SessionCommandCenter {
   private readonly tasksBySession = new Map<string, Map<string, SessionCommandTask>>();
   private readonly ledgers = new Map<string, SessionTaskSlotLedger>();
@@ -280,7 +287,6 @@ export class SessionCommandCenter {
   active(sessionId: string): SessionCommandTask[] {
     return this.list(sessionId).filter((task) => !TERMINAL.has(task.status));
   }
-
   resolve(sessionId: string, target?: string): SessionTaskReferenceResult {
     const active = this.active(sessionId);
     const normalized = target?.trim().toLocaleLowerCase();
@@ -534,18 +540,12 @@ export class SessionCommandCenter {
         ? data.artifacts as NormalizedToolArtifactMeta[]
         : undefined;
       const nestedShells = this.nestedShellsByTask.get(task.id);
-      if (nestedShells?.activeWorkIds.size) {
+      if (nestedShells?.activeWorkIds.size && isLaunchOnlyConclusion(conclusion)) {
         nestedShells.pendingCompletion = { conclusion, artifacts };
         logger.info('Task completion deferred until nested background work exits', { taskId: task.id, nestedWorkIds: [...nestedShells.activeWorkIds] });
         return;
       }
-      const nestedResult = nestedShells?.outputs.join('\n').trim();
-      await this.settle(
-        task,
-        nestedShells?.failed ? 'failed' : 'completed',
-        nestedResult || conclusion,
-        artifacts,
-      );
+      await this.settle(task, 'completed', nestedDetail(nestedShells, conclusion), artifacts);
       return;
     }
     if (event.type === 'task_error') {
@@ -665,19 +665,20 @@ export class SessionCommandCenter {
   }
   private nestedWorkFromResult(result: ToolResult): { kind: NestedWorkKind; id: string } | undefined {
     const metadata = result.metadata;
-    if (metadata?.background === true && typeof metadata.agentId === 'string') return { kind: 'subagent', id: metadata.agentId };
-    if (metadata?.background === true && typeof metadata.taskId === 'string') return { kind: 'shell', id: metadata.taskId };
-    if (metadata?.pty === true && typeof metadata.sessionId === 'string') return { kind: 'pty', id: metadata.sessionId };
-    const nested = metadata?.result && typeof metadata.result === 'object' && !Array.isArray(metadata.result)
-      ? metadata.result as Record<string, unknown> : undefined;
-    if (metadata?.background !== true && nested?.background !== true) return undefined;
-    const id = [metadata?.agentId, metadata?.runId, nested?.agentId, nested?.runId]
+    if (!metadata || metadata.action === 'collect') return undefined;
+    if (metadata.background === true && typeof metadata.agentId === 'string') return { kind: 'subagent', id: metadata.agentId };
+    if (metadata.background === true && typeof metadata.taskId === 'string') return { kind: 'shell', id: metadata.taskId };
+    if (metadata.pty === true && typeof metadata.sessionId === 'string' && metadata.exitCode === undefined && metadata.duration === undefined)
+      return { kind: 'pty', id: metadata.sessionId };
+    const nested = metadata.result && typeof metadata.result === 'object' && !Array.isArray(metadata.result) ? metadata.result as Record<string, unknown> : undefined;
+    if (!(metadata.background === true || metadata.status === 'running' || nested?.background === true || nested?.status === 'running')) return undefined;
+    const id = [metadata.agentId, metadata.runId, nested?.agentId, nested?.runId]
       .find((value): value is string => typeof value === 'string');
     return id ? { kind: 'subagent', id } : undefined;
   }
   private trackNestedWork(task: SessionCommandTask, work: { kind: NestedWorkKind; id: string }): void {
     const workKey = nestedWorkKey(work.kind, work.id);
-    const state = this.nestedShellsByTask.get(task.id) ?? { activeWorkIds: new Set<string>(), outputs: [], failed: false };
+    const state = this.nestedShellsByTask.get(task.id) ?? { activeWorkIds: new Set<string>(), outputs: [], failureNotes: [] };
     state.activeWorkIds.add(workKey);
     this.nestedShellsByTask.set(task.id, state);
     this.ownerTaskByNestedWorkId.set(workKey, task);
@@ -727,12 +728,11 @@ export class SessionCommandCenter {
     if (!state) return;
     state.activeWorkIds.delete(workKey);
     const trimmedResult = resultText?.trim();
-    if (trimmedResult) state.outputs.push(trimmedResult);
-    if (observedStatus === 'failed') state.failed = true;
+    if (observedStatus === 'failed') state.failureNotes.push(trimmedResult ? `Nested ${kind} ${observedStatus}: ${trimmedResult}` : `Nested ${kind} ${observedStatus}`);
+    else if (trimmedResult) state.outputs.push(trimmedResult);
     const pending = state.pendingCompletion;
     if (state.activeWorkIds.size || !pending) return;
-    const detail = state.outputs.join('\n').trim() || pending.conclusion;
-    await this.settle(task, state.failed ? 'failed' : 'completed', detail, pending.artifacts);
+    await this.settle(task, 'completed', nestedDetail(state, pending.conclusion), pending.artifacts);
   }
   private noteApprovalEvent(taskId: string, event: AgentEvent): void {
     if (event.type !== 'permission_request') return;
