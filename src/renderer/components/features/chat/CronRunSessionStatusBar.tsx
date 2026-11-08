@@ -28,6 +28,7 @@ import {
   composeElapsed,
   deriveCronRunStatusLine,
   findCronExecutionForSession,
+  isLiveCronRunStatusKind,
   isTerminalCronRunStatusKind,
   setObservedCronRunStatusForSession,
   splitElapsedParts,
@@ -104,6 +105,13 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
         setPendingApproval(findParkedApprovalForSession(parked, sessionId, copy.awaitingBashPrefix));
       } else {
         setPendingApproval((previous) => (nextExecution ? null : previous));
+      }
+      // 后台 cron 不向已打开页面发送完整 message/tool-call 快照；运行中沿用会话
+      // 强制刷新路径拉取 DB 已保存步骤。isHydratingSession 防止慢 IPC 发生重叠轮询。
+      const sessionState = useSessionStore.getState();
+      const nextKind = deriveCronRunStatusLine({ execution: nextExecution, pendingApproval: null })?.kind;
+      if (window.domainAPI && isLiveCronRunStatusKind(nextKind) && sessionState.currentSessionId === sessionId && !sessionState.isHydratingSession) {
+        await sessionState.switchSession(sessionId, { force: true });
       }
     } catch {
       // 拉不到就不改状态：宁可停在上一拍的真实值，也不显示编出来的状态。
