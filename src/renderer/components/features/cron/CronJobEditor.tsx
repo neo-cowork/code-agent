@@ -182,7 +182,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
   }, [isOpen, job, copySource, cc.locationCloud, cc.locationLocal]);
 
   const title = job
-    ? '编辑定时任务'
+    ? cc.editTitle
     : copySource
       ? cc.copyTitle
     : step === 'simple'
@@ -191,7 +191,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
         ? '选择任务模板'
         : step === 'fill'
           ? (selectedTemplate ? getTemplateDisplayCopy(selectedTemplate, cc.templates).name : '') || '填写参数'
-          : '手动配置任务';
+          : cc.manualTitle;
 
   const scheduleOptions = useMemo(
     () => [
@@ -683,7 +683,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                     onChange={(e) => setField('enabled', e.target.checked)}
                     className="rounded border-zinc-700 bg-zinc-800"
                   />
-                  创建后立即启用
+                  {job ? cc.enabledStatus : cc.enableAfterCreate}
                 </label>
               </FormField>
             </div>
