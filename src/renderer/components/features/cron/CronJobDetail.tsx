@@ -124,7 +124,7 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
   };
 
   return (
-    <div className="flex h-full flex-col bg-zinc-900/40">
+    <div className="h-full overflow-y-auto bg-zinc-900/40">
       <div className="border-b border-zinc-800 p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -290,7 +290,7 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
         )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-hidden p-5">
+      <div className="min-h-[200px] p-5">
         <div className="mb-3 flex items-center gap-2">
           <Activity className="h-4 w-4 text-badge-info" />
           <h4 className="text-sm font-medium text-zinc-100">{cc.historyTitle}</h4>
