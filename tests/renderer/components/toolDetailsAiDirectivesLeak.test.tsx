@@ -54,7 +54,6 @@ import {
   humanizeToolFailureReason,
 } from '../../../src/renderer/utils/toolExecutionPresentation';
 import { zh } from '../../../src/renderer/i18n/zh';
-import { en } from '../../../src/renderer/i18n/en';
 
 const FORBIDDEN_STRINGS = [
   '请直接告诉用户',
