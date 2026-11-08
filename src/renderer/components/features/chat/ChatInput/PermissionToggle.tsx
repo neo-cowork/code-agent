@@ -178,7 +178,7 @@ export const PermissionToggle: React.FC<PermissionToggleProps> = ({ disabled }) 
         <div className="absolute bottom-full left-0 mb-2 w-56 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-50 p-3">
           <p className="text-xs text-zinc-300 mb-3">{t.permissionTier.bypassConfirmText}</p>
           {enableFailure && (
-            <p role="alert" className="text-xs text-red-400 mb-3">
+            <p role="alert" className="text-xs text-badge-danger mb-3">
               {enableFailure === 'forbidden'
                 ? t.permissionTier.enableError.forbidden
                 : enableFailure === 'pending'
