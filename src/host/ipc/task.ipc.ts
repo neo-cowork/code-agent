@@ -80,7 +80,7 @@ interface BackgroundTaskIdPayload {
 }
 
 async function handleCancelBackgroundTask(
-  taskManager: TaskManager,
+  taskManager: TaskManager | null,
   payload: BackgroundTaskIdPayload
 ): Promise<boolean> {
   try {
@@ -96,7 +96,7 @@ async function handleCancelBackgroundTask(
       if (shellTask?.status === 'running') {
         cancelled = (await killBackgroundTask(originalTaskId)).success;
       }
-    } else {
+    } else if (taskManager) {
       cancelled = await taskManager.cancelBackgroundTask(payload.taskId);
     }
 
@@ -210,6 +210,7 @@ interface TaskRouteCtx {
  * 返回安全默认且静默；写/控制类动作（含未知 action）返回结构化 unavailable 响应，并按 action 只打一次 debug。
  */
 function taskManagerUnavailableGuard(action: unknown, ctx: TaskRouteCtx): IPCResponse | null {
+  if (action === 'cancelBackgroundTask') return null;
   if (ctx.getTaskManager()) return null;
   switch (action) {
     case 'getAllStates':
@@ -260,9 +261,13 @@ const taskRoutes = defineDomainRoutes<TaskDomainRequest, TaskRouteCtx>(
     },
     // 行级停单个 delegate_task 后台任务（SessionAgentsPanel）：TaskManager 既有
     // cancelBackgroundTask(taskId)，此前只有 cancel_task 工具内部用，IPC 无出口。
-    cancelBackgroundTask: async (ctx, payload) => ({
-      cancelled: await handleCancelBackgroundTask(bridgedTaskManager(ctx), payload as BackgroundTaskIdPayload),
-    }),
+    cancelBackgroundTask: async (ctx, payload) => {
+      const taskManager = ctx.getTaskManager();
+      if (taskManager) ensureTaskEventBridge(taskManager);
+      return {
+        cancelled: await handleCancelBackgroundTask(taskManager, payload as BackgroundTaskIdPayload),
+      };
+    },
     getState: (ctx, payload) => handleGetState(bridgedTaskManager(ctx), payload as TaskIdPayload),
     getAllStates: (ctx) => handleGetAllStates(bridgedTaskManager(ctx)),
     getQueue: (ctx) => handleGetQueue(bridgedTaskManager(ctx)),

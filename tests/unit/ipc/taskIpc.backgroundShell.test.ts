@@ -1,4 +1,3 @@
-import { EventEmitter } from 'events';
 import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
@@ -150,11 +149,8 @@ describe('task.ipc — real background Bash row stop', () => {
       metadata: expect.objectContaining({ originalTaskId: taskId }),
     });
 
-    const fakeManager = Object.assign(new EventEmitter(), {
-      cancelBackgroundTask: vi.fn(async () => false),
-    });
     const ipc = makeFakeIpc();
-    registerTaskHandlers(ipc as never, () => fakeManager as never);
+    registerTaskHandlers(ipc as never, () => null);
     const response = await ipc.getHandler()({}, {
       action: 'cancelBackgroundTask',
       payload: { taskId: row?.id },
