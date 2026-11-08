@@ -70,6 +70,10 @@ import {
 } from './browser/pageInspectionHelpers';
 import { BrowserTargetRefRegistry } from './browser/targetRefRegistry';
 import {
+  probeBrowserSubmitClick,
+  type BrowserSubmitClickProbeOutcome,
+} from './browser/browserSubmitClickProbe';
+import {
   dragBrowserTargetRefs,
   captureBrowserDomSnapshot,
   getBrowserAccessibilitySnapshot,
@@ -576,6 +580,34 @@ export class BrowserService implements Disposable {
   // --------------------------------------------------------------------------
 
   async click(selector: string, tabId?: string): Promise<void> { await this.getTab(tabId).page.click(selector); }
+
+  async probeSubmitClick(args: Record<string, unknown>): Promise<BrowserSubmitClickProbeOutcome> {
+    try {
+      const tabId = typeof args.tabId === 'string' ? args.tabId : undefined;
+      if (args.targetRef) {
+        const resolved = await this.targetRefs.resolveBounds(
+          args.targetRef,
+          (id) => this.getTab(id),
+          tabId,
+        );
+        const point = {
+          x: resolved.bounds.x + (resolved.bounds.width / 2),
+          y: resolved.bounds.y + (resolved.bounds.height / 2),
+        };
+        return await probeBrowserSubmitClick(this.getTab(resolved.targetRef.tabId).page, { point });
+      }
+      const page = this.getTab(tabId).page;
+      if (typeof args.selector === 'string' && args.selector) {
+        return await probeBrowserSubmitClick(page, { selector: args.selector });
+      }
+      if (typeof args.text === 'string' && args.text) {
+        return await probeBrowserSubmitClick(page, { text: args.text });
+      }
+      return { status: 'unknown', cause: 'click args have no selector, targetRef, or text' };
+    } catch (error) {
+      return { status: 'unknown', cause: error instanceof Error ? error.message : String(error) };
+    }
+  }
 
   async getElementBoundingBox(selector: string, tabId?: string): Promise<ElementInfo['rect'] | null> {
     return getBrowserElementBoundingBox(this.getTab(tabId), selector);

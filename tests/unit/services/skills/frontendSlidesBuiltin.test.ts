@@ -36,6 +36,8 @@ const ALLOWED_TOOLS = [
   'read_pdf',
   'read_xlsx',
   'ReadDocument',
+  'spawn_agent',
+  'collect_agent',
 ];
 
 function writePackagedSkill(skillDir: string, marker: string): void {
