@@ -66,7 +66,6 @@ describe('calendarCreateEventModule (native)', () => {
       expect(calendarCreateEventModule.schema.readOnly).toBe(false);
       expect(calendarCreateEventModule.schema.allowInPlanMode).toBe(false);
       expect(calendarCreateEventModule.schema.inputSchema.required).toEqual([
-        'calendar',
         'title',
         'start_ms',
       ]);
@@ -74,10 +73,19 @@ describe('calendarCreateEventModule (native)', () => {
   });
 
   describe('validation & errors', () => {
-    it('rejects missing calendar', async () => {
+    it('allows missing calendar and passes it through to the connector', async () => {
+      execMock.mockResolvedValue({
+        data: {
+          uid: 'evt-default',
+          calendar: '日历',
+          title: 'x',
+          startAtMs: 1,
+          endAtMs: 1_800_001,
+        },
+      });
       const result = await run({ title: 'x', start_ms: 1 });
-      expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.code).toBe('INVALID_ARGS');
+      expect(result.ok).toBe(true);
+      expect(execMock).toHaveBeenCalledWith('create_event', { title: 'x', start_ms: 1 });
     });
 
     it('rejects missing title', async () => {
@@ -92,10 +100,19 @@ describe('calendarCreateEventModule (native)', () => {
       if (!result.ok) expect(result.code).toBe('INVALID_ARGS');
     });
 
-    it('rejects empty calendar string', async () => {
+    it('allows an empty calendar string and passes it through to the connector', async () => {
+      execMock.mockResolvedValue({
+        data: {
+          uid: 'evt-default',
+          calendar: '日历',
+          title: 'x',
+          startAtMs: 1,
+          endAtMs: 1_800_001,
+        },
+      });
       const result = await run({ calendar: '', title: 'x', start_ms: 1 });
-      expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.code).toBe('INVALID_ARGS');
+      expect(result.ok).toBe(true);
+      expect(execMock).toHaveBeenCalledWith('create_event', { calendar: '', title: 'x', start_ms: 1 });
     });
 
     it('returns PERMISSION_DENIED when canUseTool denies', async () => {
