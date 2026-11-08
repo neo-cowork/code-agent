@@ -4,7 +4,7 @@
 // （如 ECONNRESET socket hang up）绝不出现；取消、中断、完成也逐状态钉死，zh/en 双语。
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RoleBoundCronJob } from '../../../src/shared/contract/roleAssets';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 
@@ -78,6 +78,17 @@ let current: RoleBoundCronJob[] = [];
 function renderSection(jobs = current) {
   return render(<RoleRoutinesSection roleId={ROLE_ID} jobs={jobs} />);
 }
+
+// 固定本机时区为非 UTC：任务时区 UTC 与本机不同才会带「（协调世界时）」后缀，
+// 否则在 UTC 的 CI runner 上断言会随机器时区抖动。
+// 在模块加载时设置：describe 体内的 zhDetailTime(...) 也在收集阶段按同一时区求值。
+const ORIGINAL_TZ = process.env.TZ;
+process.env.TZ = 'Asia/Shanghai';
+
+afterAll(() => {
+  if (ORIGINAL_TZ === undefined) delete process.env.TZ;
+  else process.env.TZ = ORIGINAL_TZ;
+});
 
 beforeEach(() => {
   current = sampleJobs();
