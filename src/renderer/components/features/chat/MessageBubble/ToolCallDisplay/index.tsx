@@ -24,7 +24,7 @@ import {
   humanizeToolFailureReason,
   isEscalatedToolError,
 } from '../../../../../utils/toolExecutionPresentation';
-import { replaceCompletenessWarningInOutput } from '../../../../../utils/toolOutputCompletenessWarning';
+import { hasCompletenessIssues, replaceCompletenessWarningInOutput } from '../../../../../utils/toolOutputCompletenessWarning';
 import type { Translations } from '../../../../../i18n';
 import { computeBashPreviewLines } from './bashOutputPreview';
 import {
@@ -396,12 +396,16 @@ function ToolReceiptMeta({ receipt }: { receipt: ToolReceiptPresentation }) {
 function ReceiptDetail({ receipt, toolCall }: { receipt: ToolReceiptPresentation; toolCall: ToolCall }) {
   const { t } = useI18n();
   const raw = receipt.detail || toolCall.result?.output || toolCall.result?.error;
+  const hideCreatedFilePrefix = toolCall.name === 'Write'
+    && toolCall.result?.success === true
+    && hasCompletenessIssues(toolCall.result.metadata);
   const displayRaw = typeof raw === 'string'
     ? replaceCompletenessWarningInOutput(
         toolCall.name,
         raw,
         toolCall.result?.metadata,
         t.rendererHumanPipe.toolDetails.completenessWarningNote,
+        !hideCreatedFilePrefix,
       )
     : raw;
   if (!displayRaw) return null;
