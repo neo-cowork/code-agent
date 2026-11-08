@@ -2,6 +2,7 @@ import type {
   ParsedSkill,
   SkillContextModifier,
 } from '../../../shared/contract/agentSkill';
+import type { WorkbenchToolScope } from '../../../shared/contract/conversationEnvelope';
 import { getSkillDiscoveryService } from './skillDiscoveryService';
 import { loadSkillContent } from './skillLoader';
 import { hasOfficialSkillSections } from '../../security/skillOfficialSectionGuard';
@@ -331,10 +332,11 @@ export function retainSkillInvocationForTurn(
 export async function resolveSkillInvocation(
   message: string,
   workingDirectory: string,
+  options?: { sessionId?: string; toolScope?: WorkbenchToolScope },
 ): Promise<ResolvedSkillInvocation | null> {
   const discoveryService = getSkillDiscoveryService();
   await discoveryService.ensureInitialized(workingDirectory || process.cwd());
-  return resolveSkillInvocationFromSkills(message, discoveryService.getUserInvocableSkills());
+  return resolveSkillInvocationFromSkills(message, discoveryService.getUserInvocableSkills(options));
 }
 
 function canSkillAutoPreApproveTools(skill: ParsedSkill): boolean {

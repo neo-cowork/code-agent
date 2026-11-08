@@ -883,7 +883,13 @@ export class ConversationRuntime {
     preloadToolsForIntent(startupTaskFeatures, this.ctx.sessionId);
     try {
       const resolvedSkill =
-        await raceStartupStep(this.ctx, resolveSkillInvocation(userRequest, this.ctx.workingDirectory))
+        await raceStartupStep(
+          this.ctx,
+          resolveSkillInvocation(userRequest, this.ctx.workingDirectory, {
+            sessionId: this.ctx.sessionId,
+            toolScope: this.ctx.toolScope,
+          }),
+        )
         ?? await raceStartupStep(this.ctx, resolveStickyStrictSkillInvocation(this.ctx, userRequest));
       if (isStartupAborted(this.ctx)) return null;
       // 单轮文件交付轮丢弃裸词别名注入（sticky 来源只可能是 slash 种子，不受影响）
