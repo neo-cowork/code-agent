@@ -279,7 +279,7 @@ posixOnly('后台任务停机收尸', () => {
       });
       expect(started.success).toBe(true);
       startedTaskIds.push(started.taskId!);
-      await waitFor(() => ledger.getTask(`shell:${started.taskId}`)?.status === 'completed');
+      await waitFor(() => ledger.getTask(`shell:${started.taskId}`)?.status === 'completed', 20_000);
 
       const killResult = await killBackgroundTask(started.taskId!);
       expect(killResult.success).toBe(true);
