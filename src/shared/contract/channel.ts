@@ -348,6 +348,8 @@ export interface ChannelAccount {
   lastConnectedAt?: number;
   /** 最近一次 Telegram 连接读到的 getMe().can_read_all_group_messages；从未连上则为空 */
   telegramCanReadAllGroupMessages?: boolean;
+  /** 最近一次飞书/Lark 长连接握手检测到本机另一进程持有同 appId 连接（仅运行时，不落盘） */
+  feishuSharedAppDetected?: boolean;
   /** 关联的 Agent ID (路由到特定 Agent) */
   defaultAgentId?: string;
 }

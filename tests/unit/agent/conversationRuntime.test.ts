@@ -716,6 +716,22 @@ describe('ConversationRuntime', () => {
       expect(ctx.turn.lastStreamedContent).toBe('');
     });
 
+    it('persists the session-switch marker after cancelling an unsettled text stream', async () => {
+      const persistMessage = vi.fn();
+      ctx.turn.appendStreamedContent('partial response before switching');
+      ctx.persistMessage = persistMessage;
+
+      await runtime.cancel('session-switch');
+
+      expect(ctx.messages.at(-1)).toMatchObject({
+        role: 'assistant',
+        content: 'partial response before switching\n\n[未完成 — 切换会话中断]',
+      });
+      expect(ctx.messages.at(-1)?.content).toMatch(/\[未完成 — 切换会话中断\]$/u);
+      expect(persistMessage).toHaveBeenCalledWith(ctx.messages.at(-1));
+      expect(ctx.turn.lastStreamedContent).toBe('');
+    });
+
     it('persists a cancellation reason marker when a tool-only stream has no text partial', async () => {
       const persistMessage = vi.fn();
       ctx.persistMessage = persistMessage;
@@ -726,6 +742,20 @@ describe('ConversationRuntime', () => {
         role: 'assistant',
         content: '[cancelled]',
       });
+      expect(persistMessage).toHaveBeenCalledWith(ctx.messages.at(-1));
+    });
+
+    it('persists the session-switch marker for an unsettled tool-only stream', async () => {
+      const persistMessage = vi.fn();
+      ctx.persistMessage = persistMessage;
+
+      await runtime.cancel('session-switch');
+
+      expect(ctx.messages.at(-1)).toMatchObject({
+        role: 'assistant',
+        content: '[未完成 — 切换会话中断]',
+      });
+      expect(ctx.messages.at(-1)?.content).toBe('[未完成 — 切换会话中断]');
       expect(persistMessage).toHaveBeenCalledWith(ctx.messages.at(-1));
     });
 
