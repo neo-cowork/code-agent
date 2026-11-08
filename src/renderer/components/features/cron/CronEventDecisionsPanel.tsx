@@ -5,14 +5,17 @@
 // ============================================================================
 
 import React, { useEffect, useState } from 'react';
-import { Eye, Zap } from 'lucide-react';
+import { Check, Copy, Eye, Zap } from 'lucide-react';
 import type { CronEventDecision, CronJobDefinition } from '@shared/contract';
 import { resolveCronEventActionMode } from '@shared/cronEventActionMode';
+import { localizeDecisionText } from '@shared/cronEventDecisionText';
 import { cronClient } from '../../../services/cronClient';
 import { useCronStore } from '../../../stores/cronStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { ConfirmDialog } from '../../composites/ConfirmDialog';
+import { Button } from '../../primitives/Button';
 import { formatDateTime } from '../../../utils/formatDateTime';
+import { copyPathToClipboard } from '../../../utils/platform';
 
 /** 决策行底色：「本会执行」是观察期要用户过目的，高亮。 */
 function decisionRowClass(decision: CronEventDecision['decision']): string {
@@ -39,6 +42,7 @@ export const CronEventDecisionsPanel: React.FC<{ job: CronJobDefinition }> = ({ 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
   const [switchError, setSwitchError] = useState<string | null>(null);
+  const [copiedValue, setCopiedValue] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,33 +75,92 @@ export const CronEventDecisionsPanel: React.FC<{ job: CronJobDefinition }> = ({ 
   const wouldActRows = decisions.filter((row) => row.decision === 'would_act');
   const otherRows = decisions.filter((row) => row.decision !== 'would_act');
 
-  const renderRow = (row: CronEventDecision, testId: string) => (
-    <li
-      key={row.id}
-      data-testid={testId}
-      data-decision={row.decision}
-      data-highlight={row.decision === 'would_act' ? 'true' : undefined}
-      className={`rounded-lg border px-3 py-2 text-xs ${decisionRowClass(row.decision)}`}
-    >
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium text-zinc-200">{copy.decision[row.decision]}</span>
-        <span className="text-zinc-500">
-          {row.kind === 'action'
-            ? copy.actionLabel.replace('{tool}', row.tool ?? '')
-            : copy.eventLabel}
-        </span>
-        {row.target && <span className="text-zinc-500">{copy.targetLabel.replace('{target}', row.target)}</span>}
-        <span className="ml-auto text-zinc-600">{formatDateTime(row.createdAt, language)}</span>
-      </div>
-      <div className="mt-1 text-zinc-400">{row.reason}</div>
-      {row.matchedRule && (
-        <div className="mt-0.5 text-zinc-500" data-testid="cron-event-decision-rule">
-          {copy.ruleLabel.replace('{rule}', row.matchedRule)}
+  const copyValue = async (value: string) => {
+    if (await copyPathToClipboard(value)) setCopiedValue(value);
+  };
+
+  const eventDisplay = (row: CronEventDecision): string => {
+    if (row.eventLabel) return row.eventLabel;
+    const parts = row.eventId?.split('|');
+    return parts?.length === 3 && /^\d+$/.test(parts[2])
+      ? copy.mailFallback.replace('{number}', parts[2])
+      : copy.genericEvent;
+  };
+
+  const renderRow = (row: CronEventDecision, testId: string) => {
+    const reason = localizeDecisionText(row.reason, language);
+    const rule = row.matchedRule ? localizeDecisionText(row.matchedRule, language) : undefined;
+    const time = formatDateTime(row.createdAt, language);
+    const copyButton = (value: string, valueTestId: string) => (
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        className="px-2 py-1"
+        data-testid={valueTestId}
+        onClick={() => { void copyValue(value); }}
+        leftIcon={copiedValue === value ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+      >
+        {copiedValue === value ? copy.copied : copy.copy}
+      </Button>
+    );
+    return (
+      <li
+        key={row.id}
+        data-testid={testId}
+        data-decision={row.decision}
+        data-highlight={row.decision === 'would_act' ? 'true' : undefined}
+        className={`rounded-lg border px-3 py-2 text-xs ${decisionRowClass(row.decision)}`}
+      >
+        <div data-testid="cron-event-decision-default">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-medium text-zinc-200">{copy.decision[row.decision]}</span>
+            <span className="text-zinc-500">
+              {row.kind === 'action'
+                ? copy.actionLabel.replace('{tool}', row.tool ?? '')
+                : eventDisplay(row)}
+            </span>
+            {row.target && <span className="text-zinc-500">{copy.targetLabel.replace('{target}', row.target)}</span>}
+            <span className="ml-auto text-zinc-600">{time}</span>
+          </div>
+          <div className="mt-1 text-zinc-400">{reason}</div>
+          {rule && (
+            <div className="mt-0.5 text-zinc-500" data-testid="cron-event-decision-rule">
+              {copy.ruleLabel.replace('{rule}', rule)}
+            </div>
+          )}
+          {row.summary && <div className="mt-1 truncate text-zinc-300">{row.summary}</div>}
         </div>
-      )}
-      {row.summary && <div className="mt-1 truncate text-zinc-300">{row.summary}</div>}
-    </li>
-  );
+        <details className="mt-2 border-t border-zinc-800/80 pt-2" data-testid="cron-event-decision-details">
+          <summary className="cursor-pointer select-none text-zinc-500 hover:text-zinc-300">{copy.details}</summary>
+          <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-zinc-400">
+            <dt>{copy.detailRule}</dt><dd className="break-words text-zinc-300">{rule ?? copy.unavailableValue}</dd>
+            <dt>{copy.detailDecision}</dt><dd className="text-zinc-300">{copy.decision[row.decision]}</dd>
+            <dt>{copy.detailReason}</dt><dd className="break-words text-zinc-300">{reason}</dd>
+            <dt>{copy.detailTime}</dt><dd className="text-zinc-300">{time}</dd>
+            <dt>{copy.detailRun}</dt>
+            <dd className="flex min-w-0 items-center gap-1">
+              {row.runId ? (
+                <>
+                  <code className="truncate text-zinc-300">{row.runId}</code>
+                  {copyButton(row.runId, 'cron-event-decision-copy-run')}
+                </>
+              ) : copy.unavailableValue}
+            </dd>
+            {row.eventId && (
+              <>
+                <dt>{copy.detailEventId}</dt>
+                <dd className="flex min-w-0 items-center gap-1">
+                  <code className="truncate text-zinc-300" data-testid="cron-event-decision-raw-id">{row.eventId}</code>
+                  {copyButton(row.eventId, 'cron-event-decision-copy-event')}
+                </dd>
+              </>
+            )}
+          </dl>
+        </details>
+      </li>
+    );
+  };
 
   return (
     <section className="mt-4 rounded-xl border border-zinc-800 bg-zinc-950/50 px-4 py-3" data-testid="cron-event-decisions">
@@ -115,14 +178,16 @@ export const CronEventDecisionsPanel: React.FC<{ job: CronJobDefinition }> = ({ 
         </span>
         <span className="text-xs text-zinc-500">{mode === 'observe' ? copy.observeHint : copy.autoHint}</span>
         {mode === 'observe' && (
-          <button
+          <Button
             type="button"
+            size="sm"
+            variant="ghost"
             data-testid="cron-switch-to-auto"
             onClick={() => { setSwitchError(null); setConfirmOpen(true); }}
-            className="ml-auto text-xs text-badge-info hover:text-badge-info"
+            className="ml-auto text-badge-info hover:text-badge-info"
           >
             {copy.switchToAuto}
-          </button>
+          </Button>
         )}
       </div>
       {switchError && <div className="mt-2 text-xs text-badge-danger" role="alert">{switchError}</div>}
