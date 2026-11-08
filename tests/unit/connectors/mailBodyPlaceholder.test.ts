@@ -1,11 +1,18 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ runAppleScript: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  runAppleScript: vi.fn(),
+  warn: vi.fn(),
+}));
 
 vi.mock('../../../src/host/connectors/native/osascript', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../src/host/connectors/native/osascript')>();
   return { ...actual, runAppleScript: mocks.runAppleScript };
 });
+
+vi.mock('../../../src/host/services/infra/logger', () => ({
+  createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: mocks.warn, error: vi.fn() }),
+}));
 
 import { mailConnector } from '../../../src/host/connectors/native/mail';
 
@@ -20,7 +27,10 @@ function resultContent(result: Awaited<ReturnType<typeof mailConnector.execute>>
   return (result.data as { content: string }).content;
 }
 
-beforeEach(() => mocks.runAppleScript.mockReset());
+beforeEach(() => {
+  mocks.runAppleScript.mockReset();
+  mocks.warn.mockReset();
+});
 
 describe('native Mail body placeholder handling', () => {
   it('judges a body containing only U+FFFC empty and uses the source fallback', async () => {
@@ -33,6 +43,48 @@ describe('native Mail body placeholder handling', () => {
     expect(resultContent(result)).toBe('New device sign-in detected.');
     expect(mocks.runAppleScript).toHaveBeenCalledTimes(2);
     expect(mocks.runAppleScript.mock.calls[1][0].join('\n')).toContain('return source of msgRef');
+    expect(mocks.warn).not.toHaveBeenCalled();
+  });
+
+  it('warns when the source fallback is unauthorized and keeps the empty-body notice', async () => {
+    const error = Object.assign(
+      new Error('Command failed: osascript -e return source of msgRef'),
+      { stderr: 'not authorized to send Apple events' },
+    );
+    mocks.runAppleScript
+      .mockResolvedValueOnce(mailLine(PLACEHOLDER))
+      .mockRejectedValueOnce(error);
+
+    const result = await mailConnector.execute('read_message', READ_ARGS);
+
+    expect(resultContent(result)).toBe('邮件正文是图片/附件，未能提取出文本。');
+    expect(mocks.warn).toHaveBeenCalledTimes(1);
+    expect(mocks.warn).toHaveBeenCalledWith('Mail source fallback failed', {
+      mailbox: 'INBOX',
+      account: 'Work',
+      messageId: 7,
+      reason: 'not_authorized',
+      detail: 'not authorized to send Apple events',
+    });
+    expect(JSON.stringify(mocks.warn.mock.calls[0])).not.toContain('return source of msgRef');
+  });
+
+  it('warns with unexpected_error when the source fallback throws a plain error', async () => {
+    mocks.runAppleScript
+      .mockResolvedValueOnce(mailLine(PLACEHOLDER))
+      .mockRejectedValueOnce(new Error('boom'));
+
+    const result = await mailConnector.execute('read_message', READ_ARGS);
+
+    expect(resultContent(result)).toBe('邮件正文是图片/附件，未能提取出文本。');
+    expect(mocks.warn).toHaveBeenCalledTimes(1);
+    expect(mocks.warn).toHaveBeenCalledWith('Mail source fallback failed', {
+      mailbox: 'INBOX',
+      account: 'Work',
+      messageId: 7,
+      reason: 'unexpected_error',
+      detail: 'boom',
+    });
   });
 
   it('drops U+FFFC and other zero-width placeholders while keeping mixed text', async () => {
