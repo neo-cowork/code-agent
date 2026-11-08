@@ -28,7 +28,7 @@ function makeJob(overrides: Partial<CronJobDefinition> = {}): CronJobDefinition 
   return {
     id: 'job-automation-copy',
     name: 'Summarize unread mail',
-    scheduleType: 'event-mail',
+    scheduleType: 'event',
     schedule: {
       type: 'event',
       source: 'connector',
