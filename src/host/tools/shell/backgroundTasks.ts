@@ -391,7 +391,7 @@ export async function killBackgroundTask(
       clearTimeout(task.timeout);
     }
 
-    task.stoppedByRequest = true;
+    if (task.status === 'running') task.stoppedByRequest = true;
     task.outputStream?.end();
     // SIGTERM → 宽限 → SIGKILL → 探到整组消失，全在 killProcessTree 内部。
     await killProcessTree(task.process, { posixGroupKill: true });
