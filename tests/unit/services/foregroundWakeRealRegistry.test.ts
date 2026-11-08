@@ -27,17 +27,20 @@ const SCOPE = createWorkspaceScope('project-wake', [{
 
 class FakeTaskManager extends EventEmitter {
   startFailures: Error[] = [];
+  settleFailures: Error[] = [];
   state: { status: string } = { status: 'idle' };
+  private readonly handlesByTaskId = new Map<string, ReturnType<RunRegistry['start']>>();
   constructor(private readonly registry: RunRegistry) { super(); }
 
   startBackgroundTask = vi.fn(async (taskId: string, sessionId: string, _m: string, _a: unknown, options?: AgentRunOptions) => {
     try {
-      await startRunPreferringDurable(
+      const handle = await startRunPreferringDurable(
         this.registry,
         { runId: taskId, sessionId, workspace: '/tmp/wake-project' },
         'auxiliary',
         options?.parentRunId,
       );
+      this.handlesByTaskId.set(taskId, handle);
     } catch (error) {
       this.startFailures.push(error as Error);
       throw error;
@@ -46,7 +49,21 @@ class FakeTaskManager extends EventEmitter {
   interruptBackgroundTask = vi.fn().mockResolvedValue(true);
   cancelBackgroundTask = vi.fn().mockResolvedValue(true);
   observeAgentEvents(): () => void { return () => undefined; }
-  emitTask(event: TaskManagerEvent): void { this.emit(event.type, event); }
+  emitTask(event: TaskManagerEvent): void {
+    const taskId = (event.data as { taskId?: string } | undefined)?.taskId;
+    if (taskId && (event.type === 'task_completed' || event.type === 'task_error' || event.type === 'task_cancelled')) {
+      try {
+        const handle = this.handlesByTaskId.get(taskId);
+        if (handle) {
+          this.registry.unregister(taskId, handle);
+          this.handlesByTaskId.delete(taskId);
+        }
+      } catch (error) {
+        this.settleFailures.push(error as Error);
+      }
+    }
+    this.emit(event.type, event);
+  }
   // 以下是 foregroundWake 依赖的 TaskManager 面
   getSessionState(): { status: string } { return this.state; }
   getWaitingQueue(): string[] { return []; }
@@ -161,9 +178,11 @@ describe('background task settlement wake with a real RunRegistry', () => {
 
   it('wake turn that spawns a follow-up task does not hit "no live owner lease"', async () => {
     const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let followUpTask: SessionCommandTask | undefined;
     let followUpStatus: string | undefined;
     let wakeRunIdObserved: string | undefined;
     wakeBody = async (options) => {
+      if (wakeSends > 1) return;
       const wakeRunId = (options as AgentRunOptions & { __wakeRunId?: string }).__wakeRunId;
       wakeRunIdObserved = wakeRunId;
       // delegate_task 工具把 ctx.runId（= 唤醒轮 run id）作为 parentRunId 传下去
@@ -171,7 +190,10 @@ describe('background task settlement wake with a real RunRegistry', () => {
         sessionId: SESSION, title: '续作', shortName: '续作', laneKey: 'lane-2', submissionKey: 'sub-2',
         prompt: '继续', workspaceScope: SCOPE, parentRunId: wakeRunId,
       });
-      if (spawned.outcome !== 'requires_choice') followUpStatus = spawned.task.status;
+      if (spawned.outcome !== 'requires_choice') {
+        followUpTask = spawned.task;
+        followUpStatus = spawned.task.status;
+      }
     };
     try {
       const task = await startForegroundWithTask();
@@ -180,8 +202,8 @@ describe('background task settlement wake with a real RunRegistry', () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
 
       expect(followUpStatus).toBe('running');
-      expect(manager.startFailures.map((e) => e.stack ?? e.message)).toEqual([]);
-      expect(warn.mock.calls.map((c) => String(c[0]))).not.toContain('Foreground wake failed');
+      expect(followUpTask).toBeDefined();
+      expect(registry.get(followUpTask!.id)).toBeDefined();
 
       // 唤醒轮本身以 auxiliary 注册（无 owner lease），续作任务的 parentRunId 就是唤醒轮 id，
       // startRunPreferringDurable 走 INFO 回落而非 WARN。
@@ -204,6 +226,19 @@ describe('background task settlement wake with a real RunRegistry', () => {
         parentHasSession: false,
         reason: 'parent_run_not_durable',
       });
+
+      // 驱动续作任务走到终态：收尾后状态为 completed、registry 句柄已释放、无启动或收尾失败。
+      settle(followUpTask!, '续作的结果');
+      await vi.waitFor(() => {
+        const settled = center.list(SESSION).find((t) => t.id === followUpTask!.id);
+        expect(settled?.status).toBe('completed');
+      });
+      const settledFollowUp = center.list(SESSION).find((t) => t.id === followUpTask!.id);
+      expect(settledFollowUp?.summary).toContain('续作的结果');
+      expect(registry.get(followUpTask!.id)).toBeUndefined();
+      expect(manager.startFailures.map((e) => e.stack ?? e.message)).toEqual([]);
+      expect(manager.settleFailures.map((e) => e.stack ?? e.message)).toEqual([]);
+      expect(warn.mock.calls.map((c) => String(c[0]))).not.toContain('Foreground wake failed');
     } finally {
       stderrSpy.mockRestore();
     }
