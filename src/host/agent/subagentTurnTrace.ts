@@ -117,9 +117,10 @@ export function createSubagentTurnObservability(input: {
   });
   // startSubagentLifecycle keeps a foreground child on the parent session id. Its visible
   // turn/tool events therefore advance the same composer stall clock. Detached background
-  // agents carry backgroundDurableAgentId and must not keep a foreground composer alive.
+  // agents (run_in_background, waitForCompletion:false, foreground-timeout adoption) are
+  // marked detached and must not keep a foreground composer alive.
   const noteForegroundProgress = (): void => {
-    if (!input.events.backgroundDurableAgentId) noteStreamProgress(input.sessionId);
+    if (!input.events.detached && !input.events.backgroundDurableAgentId) noteStreamProgress(input.sessionId);
   };
   let mutationPaths = createSubagentMutationPathSlot();
   return {
