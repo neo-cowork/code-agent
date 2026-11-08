@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CronJobDefinition } from '../../../src/shared/contract/cron';
 
@@ -14,6 +14,8 @@ vi.mock('../../../src/renderer/services/cronClient', () => ({
 
 import { CronJobList } from '../../../src/renderer/components/features/cron/CronJobList';
 import { useCronStore } from '../../../src/renderer/stores/cronStore';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { MEMORY_CONSOLIDATION } from '../../../src/shared/constants/memory';
 
 function makeJob(overrides: Partial<CronJobDefinition>): CronJobDefinition {
   return {
@@ -163,5 +165,67 @@ describe('CronJobList 等你批准 badge（N-CRON-UNATTENDED-BASH-PARK-STUCK-VIS
 
     rerender(<CronJobList awaitingByJobId={new Map()} />);
     expect(screen.queryByTestId('cron-job-awaiting-approval')).toBeNull();
+  });
+});
+
+describe('CronJobList 内置维护任务本地化展示（N-FIX-BUILTIN-CRON-JOB-ENGLISH-COPY）', () => {
+  const initialLanguage = useAppStore.getState().language;
+  afterEach(() => {
+    useAppStore.setState({ language: initialLanguage });
+  });
+
+  const builtinMemoryJob = makeJob({
+    id: 'builtin-mem',
+    name: '[Maintenance] Light Memory consolidation',
+    description: 'Compress ~/.code-agent/memory without losing information (quick model).',
+    action: { type: 'memory-consolidation', dryRun: true },
+    tags: [MEMORY_CONSOLIDATION.JOB_TAG],
+  });
+
+  const userJob = makeJob({
+    id: 'user-job',
+    name: '每日英语单词',
+    description: '每天早上背 5 个单词',
+    action: { type: 'agent', agentType: 'default', prompt: '推荐 5 个单词' },
+    tags: ['study'],
+  });
+
+  it('中文界面下内置记忆任务显示「记忆整理」与中文描述，不含 [Maintenance] 或路径；普通用户任务原样渲染', () => {
+    useAppStore.setState({ language: 'zh' });
+    useCronStore.setState({ jobs: [builtinMemoryJob, userJob] });
+    const { container } = render(<CronJobList />);
+
+    expect(screen.getByText('记忆整理')).toBeTruthy();
+    expect(screen.getByText('定期整理你的记忆文件，合并重复内容，不会丢失信息。')).toBeTruthy();
+    expect(container.textContent).not.toContain('[Maintenance]');
+    expect(container.textContent).not.toContain('Light Memory consolidation');
+    expect(container.textContent).not.toContain('~/.code-agent/memory');
+
+    expect(screen.getByText('每日英语单词')).toBeTruthy();
+    expect(screen.getByText('每天早上背 5 个单词')).toBeTruthy();
+  });
+
+  it('英文界面下内置记忆任务保持英文原名与原描述，普通用户任务原样渲染', () => {
+    useAppStore.setState({ language: 'en' });
+    useCronStore.setState({ jobs: [builtinMemoryJob, userJob] });
+    render(<CronJobList />);
+
+    expect(screen.getByText('[Maintenance] Light Memory consolidation')).toBeTruthy();
+    expect(screen.getByText('Compress ~/.code-agent/memory without losing information (quick model).')).toBeTruthy();
+    expect(screen.getByText('每日英语单词')).toBeTruthy();
+  });
+
+  it('搜索同时匹配存储原名与本地化显示名/描述', () => {
+    useAppStore.setState({ language: 'zh' });
+    useCronStore.setState({ jobs: [builtinMemoryJob, userJob], searchQuery: '记忆整理' });
+    const { rerender } = render(<CronJobList />);
+    expect(screen.getByText('记忆整理')).toBeTruthy();
+    expect(screen.queryByText('每日英语单词')).toBeNull();
+
+    act(() => {
+      useCronStore.setState({ searchQuery: 'Light Memory' });
+    });
+    rerender(<CronJobList />);
+    expect(screen.getByText('记忆整理')).toBeTruthy();
   });
 });
