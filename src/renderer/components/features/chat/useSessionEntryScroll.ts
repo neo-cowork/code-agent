@@ -178,8 +178,6 @@ export function useSessionEntryScroll({
       setIsAtBottom(true);
     }
     if (outputFollowStreamingRef.current || userScrollLastInteractionAtRef.current !== entry.interactionAt) return;
-    const scroller = scrollerElementRef.current;
-    if (scroller && scroller.scrollHeight > scroller.clientHeight && isScrollerNearBottom(scroller)) return;
     const lastIndex = projectionTurnsRef.current.length - 1;
     if (lastIndex < 0) return;
     sessionEntrySettlingRef.current = true;

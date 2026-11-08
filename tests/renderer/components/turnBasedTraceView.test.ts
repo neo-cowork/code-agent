@@ -198,6 +198,41 @@ describe('TurnBasedTraceView session entry scrolling', () => {
     expect(view.queryByRole('button', { name: /回到底部|Jump to bottom/ })).toBeNull();
   });
 
+  it('settles late code-block and tool-card heights after an estimated near-bottom start', () => {
+    const view = render(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1, 45) }));
+    const scroller = view.getByTestId('virtuoso-scroller');
+    let height = 3_600;
+    let top = 3_500;
+    Object.defineProperties(scroller, {
+      scrollHeight: { get: () => height, configurable: true },
+      clientHeight: { value: 100, configurable: true },
+      scrollTop: {
+        get: () => top,
+        set: (value: number) => { top = Math.min(value, height - 100); },
+        configurable: true,
+      },
+    });
+
+    act(() => {
+      mocks.virtuosoProps.atBottomStateChange(false);
+      mocks.virtuosoProps.rangeChanged({ startIndex: 1_000_000, endIndex: 1_000_002 });
+      flushAnimationFrames();
+      vi.runOnlyPendingTimers();
+    });
+    expect(mocks.scrollToIndex).toHaveBeenCalledWith({ index: 44, align: 'end', behavior: 'auto' });
+
+    for (let frame = 0; frame < 8; frame += 1) {
+      act(() => flushAnimationFrames());
+    }
+    height = 7_200;
+    for (let frame = 0; frame < 18; frame += 1) {
+      act(() => flushAnimationFrames());
+    }
+
+    expect(top).toBe(7_100);
+    expect(view.queryByRole('button', { name: /回到底部|Jump to bottom/ })).toBeNull();
+  });
+
   it('recomputes isAtBottom after session-entry settle when content fits the viewport', () => {
     const view = render(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1) }));
     const scroller = view.getByTestId('virtuoso-scroller');
