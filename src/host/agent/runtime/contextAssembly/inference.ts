@@ -19,7 +19,8 @@ import { filterToolDefinitionsByWorkbenchScope } from '../../../tools/workbenchT
 import { filterToolDefinitionsByStrictSkillBoundary } from '../../../tools/skillBoundaryScope';
 import { trackNode } from '../../../observability/posthogNode';
 import { POSTHOG_EVENTS } from '../../../../shared/observability/posthog-events';
-import { filterToolsByRunPolicyObserved } from '../toolRunPolicy';
+import { filterToolsByRunPolicyObserved, isToolDeniedForRun } from '../toolRunPolicy';
+import { isBashToolName } from '../../../tools/toolNames';
 import {
   stripImagesFromMessages,
   extractUserRequestText,
@@ -704,12 +705,19 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
         emitAssistantMessageDelta(ctx, 'reasoning', chunk.content);
       } else if (chunk.type === 'tool_call_start') {
         const latestUserMessage = [...modelMessages].reverse().find((message) => message.role === 'user');
+        const userRequest = extractUserRequestText(latestUserMessage);
+        const redirectedForegroundShell = ctx.runtime.foregroundToolFace === true
+          && isBashToolName(chunk.toolCall?.name ?? '')
+          && !isToolDeniedForRun(ctx.runtime, 'delegate_task');
+        const shellMentionedInForeground = ctx.runtime.foregroundToolFace === true
+          && /\b(?:bash|terminal)\b|命令行|终端/i.test(userRequest);
+        const streamedToolName = redirectedForegroundShell ? 'delegate_task' : chunk.toolCall?.name;
         commandCenterPreannounce = emitCommandCenterToolStart({
-          toolName: chunk.toolCall?.name,
+          toolName: streamedToolName,
           commandCenterEnabled: ctx.runtime.allowedToolNames?.includes('delegate_task') === true,
           streamedContent: ctx.runtime.turn.lastStreamedContent,
           existingPreannounce: commandCenterPreannounce,
-          userMessage: extractUserRequestText(latestUserMessage),
+          userMessage: redirectedForegroundShell || shellMentionedInForeground ? '这项任务' : userRequest,
           emitPreview: (preview) => {
             ctx.runtime.turn.appendStreamedContent(preview);
             emitAssistantMessageDelta(ctx, 'content', preview);
@@ -719,7 +727,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
             data: {
               index: chunk.toolCall?.index,
               id: chunk.toolCall?.id,
-              name: chunk.toolCall?.name,
+              name: streamedToolName,
               turnId: ctx.runtime.turn.currentTurnId,
             },
           }),

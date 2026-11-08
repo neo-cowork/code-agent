@@ -69,7 +69,7 @@ import { recordMessageProcessorModelCallTelemetry } from './messageProcessorTele
 import { handleTruncatedToolCalls } from './messageProcessorToolTruncation';
 import { noteStagnationFingerprint } from '../../model/cacheHitObservation';
 import { deniedToolRetryGuidance, isToolDeniedForRun } from './toolRunPolicy';
-import { describeDeniedShellCalls } from './foregroundShellDenial';
+import { describeDeniedShellCalls, redirectDeniedShellCalls } from './foregroundShellDenial';
 import { attachTurnQualityMetadata } from './turnQuality';
 import { wasMessagePersistedByContextAssembly } from './contextAssembly/systemContextStack';
 import { shouldEndRunForPlanApproval } from './planApprovalRunBoundary';
@@ -642,7 +642,8 @@ export class MessageProcessor {
     // 下游一律以 toolCallId 为 Map 键做配对，同 id 后写覆盖前写（导出里 Bash 的
     // 结果被同 id 调用的错误顶掉）。入口统一改写成全局唯一 id，细节见
     // toolCallIdUniqueness.ts。
-    const toolCalls = ensureUniqueToolCallIds(response.toolCalls ?? [], this.ctx.messages).toolCalls;
+    let toolCalls = ensureUniqueToolCallIds(response.toolCalls ?? [], this.ctx.messages).toolCalls;
+    toolCalls = redirectDeniedShellCalls(this.ctx, toolCalls);
     const requestedToolNames = toolCalls.map((toolCall) => toolCall.name).join(', ');
 
     // 强制收尾生效中模型仍回了 tool_use：整轮封口——不派发 executor、不计工具失败

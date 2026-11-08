@@ -12,12 +12,60 @@ import { resolveEffectivePolicyRules } from '../../permissions/runPolicySnapshot
 import { createLogger } from '../../services/infra/logger';
 import { isBashToolName } from '../../tools/toolNames';
 import type { RuntimeContext } from './runtimeContext';
+import { isToolDeniedForRun } from './toolRunPolicy';
+import { getToolAttemptTrace } from './toolAttemptTrace';
 
 const logger = createLogger('AgentLoop');
 
 export interface ForegroundShellDenial {
   guidance: string;
   finalMessage: string;
+}
+
+function latestUserPrompt(ctx: RuntimeContext): string {
+  return [...(ctx.messages ?? [])].reverse().find((message) => message.role === 'user')?.content ?? '';
+}
+
+/** 把前台误发的 Bash 调用改成唯一可用的后台委托入口，避免模型先撞禁用工具。 */
+export function redirectDeniedShellCalls(
+  ctx: RuntimeContext,
+  toolCalls: readonly ToolCall[],
+): ToolCall[] {
+  if (ctx.foregroundToolFace !== true || isToolDeniedForRun(ctx, 'delegate_task')) return [...toolCalls];
+  const shellCalls = toolCalls.filter((call) => isBashToolName(call.name));
+  if (shellCalls.length === 0) return [...toolCalls];
+
+  const laneKey = `foreground-shell:${ctx.turn?.currentTurnId || ctx.runId || ctx.sessionId}`;
+  const userPrompt = ctx.turn?.runUserPrompt || latestUserPrompt(ctx);
+  const rewritten = shellCalls.map((call) => ({
+    ...call,
+    name: 'delegate_task',
+    arguments: {
+      title: '后台执行任务',
+      short_name: '后台任务',
+      lane_key: laneKey,
+      submission_key: call.id,
+      prompt: `${userPrompt}\n\nCommand to run:\n${typeof call.arguments.command === 'string' ? call.arguments.command : ''}`,
+    },
+  }));
+  const skippedCalls = toolCalls.filter((call) => !isBashToolName(call.name));
+  for (const call of skippedCalls) {
+    getToolAttemptTrace(ctx).begin(call);
+    getToolAttemptTrace(ctx).finish(call, {
+      toolCallId: call.id,
+      success: false,
+      error: 'TOOL_BATCH_SKIPPED',
+      duration: 0,
+      metadata: { skipped: true },
+    }, false, 0);
+  }
+  logger.info('Foreground shell call redirected to background task', {
+    cause: 'foreground-shell-redirected',
+    sessionId: ctx.sessionId,
+    callCount: rewritten.length,
+    skippedCount: skippedCalls.length,
+  });
+  return rewritten;
 }
 
 export function describeDeniedShellCalls(
@@ -33,9 +81,8 @@ export function describeDeniedShellCalls(
     userBashRules: userBashRules.map((rule) => rule.id),
   });
   return {
-    guidance: 'Bash is not part of this turn\'s tool face, so no approval prompt can be raised for it here. '
-      + 'Do not retry Bash. Tell the user plainly that shell commands cannot run directly in this turn '
-      + '(the command was NOT run), and offer to hand it to a background agent with spawn_agent.',
+    guidance: 'The requested shell command is not available in this foreground turn, so the command was NOT run. '
+      + 'Do not retry it. Continue with the tools available in this turn and tell the user plainly what was not run.',
     finalMessage: '本轮前台不直接执行 Shell 命令（Bash），命令没有运行。可以让我把它交给后台代理执行，届时会按你的权限规则询问你。',
   };
 }

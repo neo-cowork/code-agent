@@ -2360,4 +2360,94 @@ describe('MessageProcessor persistence', () => {
     // 承重断言：工具一次都没跑
     expect(toolEngine.executeToolsWithHooks).not.toHaveBeenCalled();
   });
+
+  it('persists a foreground Bash response as delegate_task before dispatch', async () => {
+    const persistedMessages: any[] = [];
+    const ctx = {
+      artifact: ArtifactState.forTest(),
+      sessionId: 'foreground-shell-session',
+      runId: 'run-foreground-shell',
+      messages: [{ id: 'user-1', role: 'user' as const, content: '请运行测试', timestamp: 1 }],
+      stats: RunStatsState.forTest({ totalToolCallCount: 0 } as never),
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.6-flash', maxTokens: 4096 },
+      contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
+      control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } } } as never),
+      turn: TurnState.forTest({
+        effortLevel: 'medium',
+        currentTurnId: 'turn-foreground-shell',
+        runUserPrompt: '请运行测试',
+        currentIterationSpanId: 'iteration-1',
+        needsReinference: false,
+        toolsUsedInTurn: [],
+      } as never),
+      foregroundToolFace: true,
+      allowedToolNames: ['delegate_task'],
+      onEvent: vi.fn(),
+      telemetryAdapter: { onTurnEnd: vi.fn() },
+      nudgeManager: {
+        getModifiedFiles: vi.fn(() => new Set()),
+        checkProgressState: vi.fn(),
+        checkPostForceExecute: vi.fn(),
+      },
+    };
+    const contextAssembly = {
+      stripInternalFormatMimicry: vi.fn((content: string) => content),
+      generateId: vi.fn()
+        .mockReturnValueOnce('assistant-foreground-shell')
+        .mockReturnValueOnce('tool-foreground-shell'),
+      addAndPersistMessage: vi.fn(async (message) => {
+        persistedMessages.push(message);
+      }),
+      flushHookMessageBuffer: vi.fn(),
+      updateContextHealth: vi.fn(),
+      checkAndAutoCompress: vi.fn(),
+      maybeInjectThinking: vi.fn(),
+    };
+    const runFinalizer = {
+      emitTaskProgress: vi.fn(),
+      tryParseTodosFromResponse: vi.fn(),
+      autoAdvanceTodos: vi.fn(),
+    };
+    const toolEngine = {
+      executeToolsWithHooks: vi.fn(async () => [
+        { toolCallId: 'bash-call-1', success: true, output: 'accepted' },
+      ]),
+    };
+    const processor = createProcessor(
+      ctx as DeepPartial<RuntimeContext>,
+      contextAssembly,
+      runFinalizer,
+      toolEngine,
+    );
+
+    await expect(processor.handleToolResponse(
+      {
+        type: 'tool_use',
+        content: '',
+        toolCalls: [{ id: 'bash-call-1', name: 'Bash', arguments: { command: 'npm run -s typecheck' } }],
+      } as ModelResponse,
+      false,
+      1,
+      { endSpan: vi.fn() },
+    )).resolves.toBe('continue');
+
+    expect(persistedMessages[0]).toMatchObject({
+      role: 'assistant',
+      toolCalls: [expect.objectContaining({
+        id: 'bash-call-1',
+        name: 'delegate_task',
+        arguments: expect.objectContaining({
+          title: '后台执行任务',
+          short_name: '后台任务',
+          lane_key: 'foreground-shell:turn-foreground-shell',
+          submission_key: 'bash-call-1',
+          prompt: '请运行测试\n\nCommand to run:\nnpm run -s typecheck',
+        }),
+      })],
+    });
+    expect(persistedMessages[0].toolCalls.map((call: { name: string }) => call.name)).not.toContain('Bash');
+    expect(toolEngine.executeToolsWithHooks).toHaveBeenCalledWith([
+      expect.objectContaining({ name: 'delegate_task' }),
+    ]);
+  });
 });
