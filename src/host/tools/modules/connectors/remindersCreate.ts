@@ -136,12 +136,18 @@ function buildRemindersCreateFailureResult(
   };
 }
 
+function normalizeSanitizedReminderText(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  return value.trim().replace(/\r\n|[|\r\n\t]/g, ' ').trim();
+}
+
 function matchesExpectedReminder(item: CreatedReminder, args: Record<string, unknown>): boolean {
   if (item.completed) return false;
-  const expectedTitle = typeof args.title === 'string' ? args.title.trim() : '';
-  if ((item.title ?? '').trim() !== expectedTitle) return false;
-  if (typeof args.notes === 'string' && args.notes.trim() !== '') {
-    if ((item.notes ?? '').trim() !== args.notes.trim()) return false;
+  const expectedTitle = normalizeSanitizedReminderText(args.title);
+  if (normalizeSanitizedReminderText(item.title) !== expectedTitle) return false;
+  const expectedNotes = normalizeSanitizedReminderText(args.notes);
+  if (expectedNotes !== '') {
+    if (normalizeSanitizedReminderText(item.notes) !== expectedNotes) return false;
   }
   if (typeof args.remind_at_ms === 'number' && Number.isFinite(args.remind_at_ms)) {
     if (typeof item.remindAtMs !== 'number' || !Number.isFinite(item.remindAtMs)) return false;

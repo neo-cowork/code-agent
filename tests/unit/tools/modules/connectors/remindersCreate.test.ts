@@ -192,6 +192,40 @@ describe('remindersCreateModule (native)', () => {
       expect(execMock).toHaveBeenCalledWith('list_reminders', { list: 'Work', limit: 200 });
     });
 
+    it('reconciles titles and notes after list_reminders sanitizes line delimiters', async () => {
+      const osascriptError = Object.assign(
+        new Error('Command failed: osascript -e \'tell application "Reminders" to make new reminder\''),
+        { killed: true, signal: 'SIGTERM' },
+      );
+      execMock
+        .mockRejectedValueOnce(osascriptError)
+        .mockResolvedValueOnce({
+          data: [
+            {
+              id: 'r-sanitized',
+              list: 'Work',
+              title: 'Ship PR urgent today',
+              completed: false,
+              notes: 'line 1 line 2 line 3 line 4 detail',
+            },
+          ],
+        });
+
+      const result = await run({
+        list: 'Work',
+        title: '  Ship\nPR\turgent|today  ',
+        notes: '  line 1\rline 2\nline 3\tline 4|detail  ',
+      });
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toContain('- [Work] Ship PR urgent today');
+        expect(result.meta).toMatchObject({ id: 'r-sanitized' });
+      }
+      const createCalls = execMock.mock.calls.filter((call) => call[0] === 'create_reminder');
+      expect(createCalls).toHaveLength(1);
+    });
+
     it('returns ok:false unconfirmed when reconcile list_reminders also rejects', async () => {
       const osascriptError = Object.assign(
         new Error('Command failed: osascript -e \'tell application "Reminders" to make new reminder\''),
