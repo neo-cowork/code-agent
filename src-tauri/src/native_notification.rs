@@ -1,7 +1,11 @@
 use serde::Serialize;
 use std::{path::Path, time::Duration};
 
+/// Completion of `addNotificationRequest` is local and fast.
 const UNC_CALLBACK_TIMEOUT: Duration = Duration::from_secs(2);
+/// The first authorization request shows a system prompt that only calls back after the
+/// user answers, so it needs a human-scale wait. Already-decided states return at once.
+const UNC_AUTHORIZATION_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NotificationBackend {
@@ -79,7 +83,7 @@ pub fn post_unc(title: &str, body: &str) -> Result<(), String> {
         );
 
         let authorized = authorization_receiver
-            .recv_timeout(UNC_CALLBACK_TIMEOUT)
+            .recv_timeout(UNC_AUTHORIZATION_TIMEOUT)
             .map_err(|_| "UNUserNotificationCenter authorization timed out".to_string())??;
         if !authorized {
             return Err("UNUserNotificationCenter authorization denied".to_string());
@@ -151,7 +155,16 @@ pub async fn post_system_notification(title: String, body: String) -> PostSystem
 
 #[cfg(test)]
 mod tests {
-    use super::{decide_backend, NotificationBackend, PostSystemNotificationResult};
+    use super::{
+        decide_backend, NotificationBackend, PostSystemNotificationResult,
+        UNC_AUTHORIZATION_TIMEOUT, UNC_CALLBACK_TIMEOUT,
+    };
+
+    #[test]
+    fn authorization_wait_outlasts_a_human_answering_the_prompt() {
+        assert!(UNC_AUTHORIZATION_TIMEOUT.as_secs() >= 60);
+        assert!(UNC_AUTHORIZATION_TIMEOUT > UNC_CALLBACK_TIMEOUT);
+    }
 
     #[test]
     fn backend_decision_table() {
