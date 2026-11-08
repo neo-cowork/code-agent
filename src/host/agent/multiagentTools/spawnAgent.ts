@@ -80,6 +80,7 @@ import {
 import { withRunTraceContext } from '../../telemetry/runTraceContext';
 import type { AgentTeamDurableController } from '../agentTeamDurableTypes';
 import type { SubagentExecutionContext } from '../subagentExecutorTypes';
+import { forkSubagentEventPort } from '../backgroundSubagentLiveProgress';
 import type { MultiagentExecutionResult } from '../multiagentExecutionTypes';
 import { createAgentTeamGraphCompatibility } from '../agentTeamGraphCompatibility';
 import {
@@ -413,8 +414,10 @@ export async function executeSpawnAgent(
         }
       }
 
+      const childEvents = forkSubagentEventPort(context.events, !waitForCompletion);
       const executorContext: SubagentExecutionContext = {
         ...context, cwd,
+        events: childEvents,
         // swarm 护栏 P1-2 #2：把递增后的深度沿 execution context 传递
         agentId,
         ownedPaths,
@@ -506,6 +509,7 @@ export async function executeSpawnAgent(
             task,
             agentStartedAt,
             foregroundBlockingBudgetMs,
+            childEvents,
           });
         }
 

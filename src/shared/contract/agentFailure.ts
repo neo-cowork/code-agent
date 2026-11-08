@@ -123,7 +123,12 @@ export function inferAgentFailureCode(input: {
   if (normalized.includes('failed dependencies') || normalized.includes('dependency failed')) {
     return AgentFailureCode.DependencyFailed;
   }
-  if (normalized.includes('unknown agent') || normalized.includes('unknown role') || normalized.includes('unknown workflow')) {
+  if (
+    normalized.includes('unknown agent')
+    || normalized.includes('invalid agent id')
+    || normalized.includes('unknown role')
+    || normalized.includes('unknown workflow')
+  ) {
     return AgentFailureCode.ToolUnavailable;
   }
   if (normalized.includes('workflow') || normalized.includes('stage')) {
