@@ -3,11 +3,18 @@
 // 从 UpdateSettings.tsx 纯平移拆出（god-file 债务门 1009/1000）。
 // ============================================================================
 
-import type { RendererBundleStatus } from '@shared/contract';
+import type { DesktopShellResourceCheck, RendererBundleStatus } from '@shared/contract';
 import { zh } from '../../../../i18n/zh';
 
 type UpdateSettingsText = typeof zh.settings.update;
 const DEFAULT_UPDATE_SETTINGS_TEXT = zh.settings.update;
+
+export interface DesktopShellDiagnosticRow {
+  key?: string;
+  label: string;
+  value: string;
+  copyValue?: string;
+}
 
 export function shortContentHash(contentHash: string | undefined): string {
   return contentHash ? contentHash.slice(0, 12) : 'unknown';
@@ -115,5 +122,35 @@ export function getRendererBundleDiagnosticRows(
     });
   }
   return rows;
+}
+
+function getDesktopShellResourceStatusText(
+  status: DesktopShellResourceCheck['status'],
+  labels: UpdateSettingsText['desktopShell']['diagnosticLabels'],
+): string {
+  if (status === 'present') return labels.resourcePresent;
+  if (status === 'missing') return labels.resourceMissing;
+  if (status === 'not-executable') return labels.resourceNotExecutable;
+  return labels.resourceUnknown;
+}
+
+export function getDesktopShellResourceDiagnosticRows(
+  resources: DesktopShellResourceCheck[],
+  labels: UpdateSettingsText['desktopShell']['diagnosticLabels'],
+): DesktopShellDiagnosticRow[] {
+  const orderedResources = [
+    ...resources.filter((resource) => resource.status !== 'present'),
+    ...resources.filter((resource) => resource.status === 'present'),
+  ];
+  return orderedResources.map((resource) => ({
+    key: `resource:${resource.id}`,
+    label: `${resource.label} (${resource.id})`,
+    value: [
+      getDesktopShellResourceStatusText(resource.status, labels),
+      resource.required ? null : labels.resourceOptional,
+      resource.path,
+    ].filter(Boolean).join(' · '),
+    copyValue: resource.path,
+  }));
 }
 
