@@ -94,6 +94,9 @@ Task: 判断 2+2 等于多少。不要使用任何工具，只直接返回结论
 
 Result:
 4
+- Cost: $20/month
+- Agent ID: customer-visible-reference
+- Pipeline ID: customer-visible-plan
 
 Stats:
 - Iterations: 1
@@ -277,9 +280,12 @@ describe('delegation receipt', () => {
     fireEvent.click(found.getByTestId('tool-call-row-spawn_agent'));
     fireEvent.click(found.getByText(/展开剩余/));
     expect(found.container.textContent).toContain('Result:');
-    expect(found.container.textContent).not.toContain('Agent ID:');
-    expect(found.container.textContent).not.toContain('Pipeline ID:');
-    expect(found.container.textContent).not.toContain('Cost: $');
+    expect(found.container.textContent).toContain('- Cost: $20/month');
+    expect(found.container.textContent).toContain('- Agent ID: customer-visible-reference');
+    expect(found.container.textContent).toContain('- Pipeline ID: customer-visible-plan');
+    expect(found.container.textContent).not.toContain('- Agent ID: agent_explore_7b8c452a');
+    expect(found.container.textContent).not.toContain('- Pipeline ID: agent_explore_7b8c452a');
+    expect(found.container.textContent).not.toContain('- Cost: $0.0000');
     expect(spawnCall.result?.output).toBe(REAL_SPAWN_AGENT_OUTPUT);
     found.unmount();
 
@@ -288,9 +294,12 @@ describe('delegation receipt', () => {
     fireEvent.click(missing.getByTestId('tool-call-row-spawn_agent'));
     fireEvent.click(missing.getByText(/展开剩余/));
     expect(missing.container.textContent).toContain('Result:');
-    expect(missing.container.textContent).not.toContain('Agent ID:');
-    expect(missing.container.textContent).not.toContain('Pipeline ID:');
-    expect(missing.container.textContent).not.toContain('Cost: $');
+    expect(missing.container.textContent).toContain('- Cost: $20/month');
+    expect(missing.container.textContent).toContain('- Agent ID: customer-visible-reference');
+    expect(missing.container.textContent).toContain('- Pipeline ID: customer-visible-plan');
+    expect(missing.container.textContent).not.toContain('- Agent ID: agent_explore_7b8c452a');
+    expect(missing.container.textContent).not.toContain('- Pipeline ID: agent_explore_7b8c452a');
+    expect(missing.container.textContent).not.toContain('- Cost: $0.0000');
     expect(spawnCall.result?.output).toBe(REAL_SPAWN_AGENT_OUTPUT);
   });
 });
