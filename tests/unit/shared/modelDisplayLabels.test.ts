@@ -6,6 +6,7 @@ import {
   QUICK_LANE_LOW_REASONING_EFFORT_MODELS,
   getModelDisplayLabel,
 } from '../../../src/shared/constants';
+import { buildRuntimeModelOptions } from '../../../src/shared/modelRuntime';
 
 const EXPECTED_ZHIPU_MODEL_IDS = [
   'glm-5.1',
@@ -42,5 +43,26 @@ describe('runtime model display labels', () => {
     for (const modelId of modelIds) {
       expect(getModelDisplayLabel(modelId), modelId).not.toBe(modelId);
     }
+  });
+
+  it('uses the shared label for runtime-only models in settings options', () => {
+    const settings = {
+      models: {
+        default: 'zhipu',
+        providers: {
+          zhipu: {
+            enabled: true,
+            apiKeyConfigured: true,
+            models: {
+              'glm-5.3': { enabled: true },
+            },
+          },
+        },
+        routing: {},
+      },
+    } as never;
+
+    expect(buildRuntimeModelOptions(settings, ['zhipu']).find((option) => option.model === 'glm-5.3')?.label)
+      .toBe('GLM-5.3');
   });
 });
