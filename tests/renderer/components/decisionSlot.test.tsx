@@ -314,15 +314,17 @@ describe('DecisionSlot', () => {
     expect(view.container.innerHTML).toBe('');
   });
 
-  it('没有待决卡时，卡住提示挂在这个槽位', () => {
+  it('没有待决卡时，卡住提示挂在这个槽位并使用用户可见工具名', () => {
     render(<DecisionSlot />);
     expect(screen.queryByTestId('stall-notice')).toBeNull();
     act(() => {
       for (const listener of stallListeners) {
-        listener({ sessionId: 'session-current', level: 'hint', phase: 'tool', detail: 'Bash' });
+        listener({ sessionId: 'session-current', level: 'hint', phase: 'tool', detail: 'spawn_agent' });
       }
     });
-    expect(screen.getByTestId('stall-notice').textContent).toContain('卡住了：Bash');
+    const text = screen.getByTestId('stall-notice').textContent ?? '';
+    expect(text).toContain('卡住了：启动了一个代理');
+    expect(text).not.toContain('spawn_agent');
     expect(screen.getByRole('button', { name: '先停下' })).toBeTruthy();
   });
 

@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ipcService } from '../../../services/ipcService';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { useI18n } from '../../../hooks/useI18n';
 import { useSessionStore } from '../../../stores/sessionStore';
+import { humanizeToolStep } from '../../../utils/humanizeToolStep';
 
 interface StallNotice {
   sessionId?: string;
@@ -12,6 +14,7 @@ interface StallNotice {
 }
 
 export const StallNoticeLine: React.FC<{ hidden?: boolean }> = ({ hidden = false }) => {
+  const { t } = useI18n();
   const sessionId = useSessionStore((state) => state.currentSessionId);
   const [notice, setNotice] = useState<StallNotice | null>(null);
   const hiddenRef = useRef(hidden);
@@ -39,7 +42,9 @@ export const StallNoticeLine: React.FC<{ hidden?: boolean }> = ({ hidden = false
   }, [hidden]);
 
   if (!notice || hidden || !notice.level) return null;
-  const stuckOn = notice.phase === 'tool' ? notice.detail : '等模型回响';
+  const stuckOn = notice.phase === 'tool'
+    ? humanizeToolStep(notice.detail ?? '', undefined, t)
+    : '等模型回响';
   return (
     <div
       data-testid="stall-notice"
