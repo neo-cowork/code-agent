@@ -203,10 +203,10 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
             size="sm"
             onClick={() => { void handleApproval('allow'); }}
             disabled={approvalBusy}
+            leftIcon={<Check className="h-3 w-3" />}
             className="!h-6 !rounded-md !border !border-badge-success/40 !bg-emerald-500/10 !px-2 !py-0 text-xs !text-badge-success transition-colors hover:!bg-emerald-500/20"
             data-testid="cron-run-status-approve"
           >
-            <Check className="h-3 w-3" />
             {copy.approve}
           </Button>
           <Button
@@ -215,10 +215,10 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
             size="sm"
             onClick={() => { void handleApproval('deny'); }}
             disabled={approvalBusy}
+            leftIcon={<X className="h-3 w-3" />}
             className="!h-6 !rounded-md !border !border-border-muted !px-2 !py-0 text-xs !text-zinc-400 transition-colors hover:!bg-zinc-800 hover:!text-zinc-200"
             data-testid="cron-run-status-reject"
           >
-            <X className="h-3 w-3" />
             {copy.reject}
           </Button>
         </span>

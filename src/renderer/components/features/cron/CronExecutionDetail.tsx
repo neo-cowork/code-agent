@@ -171,9 +171,10 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
               size="sm"
               onClick={handleOpenSession}
               disabled={isOpeningSession}
+              leftIcon={<MessageSquareText className="h-3.5 w-3.5" />}
+              data-testid="cron-exec-detail-open-session"
               className="!rounded-lg !border !border-zinc-800 !bg-zinc-900 !px-2.5 !py-1 text-xs !text-zinc-300 transition-colors hover:!border-zinc-700 hover:!bg-zinc-800"
             >
-              <MessageSquareText className="h-3.5 w-3.5" />
               {isOpeningSession ? cc.execOpeningSession : cc.execOpenSession}
             </Button>
           )}

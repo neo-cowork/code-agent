@@ -185,9 +185,9 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
               variant="ghost"
               size="sm"
               onClick={() => openEditEditor(job.id)}
+              leftIcon={<Pencil className="h-3.5 w-3.5" />}
               className="!rounded-lg !px-2.5 !py-1.5 text-xs !text-zinc-400 transition-colors hover:!bg-zinc-800 hover:!text-zinc-200"
             >
-              <Pencil className="h-3.5 w-3.5" />
               {cc.edit}
             </Button>
             <Button
@@ -195,9 +195,9 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
               variant="ghost"
               size="sm"
               onClick={handleToggleEnabled}
+              leftIcon={<Power className="h-3.5 w-3.5" />}
               className="!rounded-lg !px-2.5 !py-1.5 text-xs !text-zinc-400 transition-colors hover:!bg-zinc-800 hover:!text-zinc-200"
             >
-              <Power className="h-3.5 w-3.5" />
               {job.enabled ? cc.disable : cc.enable}
             </Button>
             <Button
@@ -206,9 +206,9 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
               size="sm"
               onClick={handleTrigger}
               disabled={isTriggering}
+              leftIcon={<Play className="h-3.5 w-3.5" />}
               className="!rounded-lg !px-2.5 !py-1.5 text-xs !text-badge-info transition-colors hover:!bg-blue-500/10 hover:!text-badge-info"
             >
-              <Play className="h-3.5 w-3.5" />
               {isTriggering ? cc.triggering : cc.trigger}
             </Button>
             <Button
@@ -216,9 +216,9 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
               variant="ghost"
               size="sm"
               onClick={handleDelete}
+              leftIcon={<Trash2 className="h-3.5 w-3.5" />}
               className="!rounded-lg !px-2.5 !py-1.5 text-xs !text-zinc-500 transition-colors hover:!bg-red-500/10 hover:!text-badge-danger"
             >
-              <Trash2 className="h-3.5 w-3.5" />
               {cc.delete}
             </Button>
           </div>

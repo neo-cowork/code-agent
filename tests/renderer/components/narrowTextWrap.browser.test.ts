@@ -83,7 +83,7 @@ describe('narrow text wrapping production surfaces', () => {
             retryAttempt: 0,
           };
           const awaiting = {
-            id: 'execution-awaiting', jobId: 'job-narrow', runsOn: 'local', status: 'running',
+            id: 'execution-awaiting', jobId: 'job-narrow', sessionId: 'awaiting-session', runsOn: 'local', status: 'running',
             scheduledAt: 1000, startedAt: 1000, retryAttempt: 0,
           };
           const failed = {
@@ -111,14 +111,22 @@ describe('narrow text wrapping production surfaces', () => {
           });
           useSessionStore.setState({
             currentSessionId: 'task-panel-session',
-            sessions: [{ id: 'task-panel-session', title: '处理中断任务', origin: { kind: 'cron', id: 'job-narrow', name: '每周摘要' }, sourceRunId: interrupted.id, status: 'error' }],
+            sessions: [
+              { id: 'task-panel-session', title: '处理中断任务', origin: { kind: 'cron', id: 'job-narrow', name: '每周摘要' }, sourceRunId: interrupted.id, status: 'error', type: 'chat', createdAt: 1, updatedAt: 2, messageCount: 2, turnCount: 1 },
+              { id: 'awaiting-session', title: '等待批准任务', origin: { kind: 'cron', id: 'job-narrow', name: '每周摘要' }, sourceRunId: awaiting.id, status: 'running', type: 'chat', createdAt: 1, updatedAt: 2, messageCount: 1, turnCount: 1 },
+            ],
             messages: [
               { id: 'narrow-user', role: 'user', content: '检查任务是否中断', timestamp: 1000 },
               { id: 'narrow-assistant', role: 'assistant', content: '已中断', timestamp: 1100 },
             ],
             sessionTasks: [],
           });
-          useTaskStore.setState({ sessionStates: { 'task-panel-session': { status: 'error' } } });
+          useTaskStore.setState({
+            sessionStates: {
+              'task-panel-session': { status: 'error', error: '用户中断' },
+              'awaiting-session': { status: 'running' },
+            },
+          });
 
           const invokeDomain = async (_domain, action) => {
             if (action === 'getExecutions') return { success: true, data: [interrupted] };
@@ -141,7 +149,12 @@ describe('narrow text wrapping production surfaces', () => {
           if (!rootElement || !createRoot) throw new Error('Missing harness root');
           const panel = (name, style, child) => React.createElement('section', { 'data-surface': name, style }, child);
           createRoot(rootElement).render(React.createElement('main', { style: { width: '1200px' } },
-            panel('run-detail-interrupted', { width: '360px' }, React.createElement(CronExecutionDetail, { execution: interrupted, jobName: '每周摘要' })),
+            panel('run-detail-interrupted', { width: '360px' }, React.createElement(React.Fragment, null,
+              React.createElement(CronExecutionDetail, { execution: interrupted, jobName: '每周摘要' }),
+              React.createElement('div', { 'data-testid': 'narrow-primitive-sensor', style: { width: '40px', overflow: 'hidden' } },
+                React.createElement(Badge, { className: 'w-full max-w-[40px] text-xs' }, '已中断'),
+              ),
+            )),
             panel('run-detail-awaiting', { width: '360px' }, React.createElement(CronExecutionDetail, { execution: awaiting, jobName: '每周摘要', awaitingRun: { executionId: awaiting.id, commandPreview: '读取三篇笔记' } })),
             panel('run-detail-failed', { width: '360px' }, React.createElement(CronExecutionDetail, { execution: failed, jobName: '每周摘要' })),
             panel('job-detail-failed', { width: '420px' }, React.createElement(CronJobDetail, { job })),
@@ -150,9 +163,6 @@ describe('narrow text wrapping production surfaces', () => {
               React.createElement(CronRunSessionStatusBar, { sessionId: 'task-panel-session' }),
             )),
             panel('channels', { width: '1200px' }, React.createElement(ChannelsSettings)),
-            React.createElement('div', { 'data-testid': 'narrow-primitive-sensor', style: { width: '40px', overflow: 'hidden' } },
-              React.createElement(Badge, { className: 'w-full max-w-[40px] text-xs' }, '已中断'),
-            ),
           ));
           window.__NARROW_SET_LANGUAGE__ = (language) => useAppStore.setState({ language });
           window.__NARROW_TEXT_WRAP_READY__ = true;
@@ -163,12 +173,30 @@ describe('narrow text wrapping production surfaces', () => {
       await page.waitForSelector('[data-testid="cron-exec-detail-status-interrupted"]');
       await page.waitForSelector('[data-testid="cron-detail-status"]');
       await page.waitForSelector('[data-testid="cron-run-status-text"]');
+      await page.waitForSelector('[data-testid="overview-run-header"]');
 
       const measurements = await page.evaluate(() => {
         const lineCount = (element) => {
-          const range = document.createRange();
-          range.selectNodeContents(element);
-          return new Set(Array.from(range.getClientRects()).map((rect) => Math.round(rect.top * 10) / 10)).size;
+          const childNodes = Array.from(element.childNodes);
+          const tops = (childNodes.length > 0 ? childNodes : [element])
+            .flatMap((node) => {
+              const range = document.createRange();
+              if (node === element) range.selectNodeContents(element);
+              else range.selectNodeContents(node);
+              return Array.from(range.getClientRects()).map((rect) => rect.top);
+            })
+            .sort((a, b) => a - b);
+          if (tops.length === 0) return 0;
+          const style = getComputedStyle(element);
+          const fontSize = Number.parseFloat(style.fontSize) || 16;
+          const parsedLineHeight = Number.parseFloat(style.lineHeight);
+          const lineHeight = Number.isFinite(parsedLineHeight) ? parsedLineHeight : fontSize * 1.2;
+          const rowTolerance = Math.max(2, lineHeight * 0.5);
+          let rows = 1;
+          for (let index = 1; index < tops.length; index += 1) {
+            if (tops[index] - tops[index - 1] > rowTolerance) rows += 1;
+          }
+          return rows;
         };
         const exact = (root, text) => {
           const candidates = Array.from(root.querySelectorAll('*')).filter((element) => element.textContent?.trim() === text);
@@ -193,17 +221,39 @@ describe('narrow text wrapping production surfaces', () => {
           if (!element) throw new Error('Missing channel action ' + label);
           return [label, lineCount(element)];
         }));
+        const sweep = Object.fromEntries(Array.from(document.querySelectorAll('[data-surface]')).map((surface) => {
+          const candidates = Array.from(surface.querySelectorAll('button, [class*="rounded"]')).filter((element) => {
+            const text = element.textContent?.trim() || '';
+            if (!text || text.length > 8 || /\s/.test(text)) return false;
+            const classTokens = Array.from(element.classList);
+            const roundedPill = classTokens.some((token) => token === 'rounded' || token === 'rounded-full' || token === 'rounded-md');
+            if (element.tagName !== 'BUTTON' && !roundedPill) return false;
+            const rect = element.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+          });
+          const details = candidates.map((element) => ({
+            text: element.textContent?.trim() || '',
+            testId: element.getAttribute('data-testid'),
+            lines: lineCount(element),
+          }));
+          return [surface.getAttribute('data-surface'), {
+            count: details.length,
+            failures: details.filter((item) => item.lines !== 1),
+          }];
+        }));
         return {
           runDetailInterrupted: read('run-detail-interrupted', { '已中断': '[data-testid="cron-exec-detail-status-interrupted"]' }),
-          runDetailAwaiting: read('run-detail-awaiting', { '等你批准': '[data-testid="cron-exec-detail-awaiting-approval"]', '打开会话': 'button' }),
+          runDetailAwaiting: read('run-detail-awaiting', { '等你批准': '[data-testid="cron-exec-detail-awaiting-approval"]', '打开会话': '[data-testid="cron-exec-detail-open-session"]' }),
           runDetailFailed: read('run-detail-failed', { '失败': '[data-testid="cron-exec-detail-status-failed"]' }),
           jobDetailFailed: read('job-detail-failed', { '失败': '[data-testid="cron-detail-status"]' }),
           taskPanelInterrupted: read('task-panel-interrupted', { '已中断': '[data-testid="cron-run-status-text"]' }),
+          overviewRunHeader: Boolean(document.querySelector('[data-testid="overview-run-header"]')),
           channels: channelCounts,
           primitiveSensor: lineCount(document.querySelector('[data-testid="narrow-primitive-sensor"] span')),
           overflow: Object.fromEntries(Array.from(document.querySelectorAll('[data-surface]')).map((element) => [
             element.getAttribute('data-surface'), { scrollWidth: element.scrollWidth, clientWidth: element.clientWidth },
           ])),
+          sweep,
         };
       });
       console.log('narrowTextWrap measurements', JSON.stringify(measurements));
@@ -243,6 +293,9 @@ describe('narrow text wrapping production surfaces', () => {
         measurements.primitiveSensor,
       ];
       expect(lines.every((count) => count === 1)).toBe(true);
+      const sweepFailures = Object.values(measurements.sweep)
+        .flatMap((surface) => surface.failures);
+      expect(sweepFailures).toEqual([]);
 
       await page.evaluate(() => {
         const fixture = document.createElement('div');
