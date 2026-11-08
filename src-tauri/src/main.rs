@@ -30,6 +30,7 @@ mod appshots_hotkey_gate;
 mod native_app_icon;
 mod native_desktop;
 mod native_manifest;
+mod native_notification;
 mod pip;
 mod quit_guard;
 mod resident_host;
@@ -53,6 +54,7 @@ use native_desktop::{
     desktop_stop_audio_rec, desktop_stop_collector, desktop_stop_voice_aec,
     desktop_update_analyze_text, desktop_write_voice_aec_playback, NativeDesktopState,
 };
+use native_notification::post_system_notification;
 use agent_halo::{agent_halo_hide, agent_halo_mode, agent_halo_show, AgentHaloState};
 use pip::{pip_control, pip_controls, pip_frame, pip_hide, pip_show};
 
@@ -4532,6 +4534,7 @@ fn main() {
             desktop_control_voice_aec,
             desktop_stop_voice_aec,
             desktop_get_app_icon,
+            post_system_notification,
             appshots_trigger,
             appshots_last_front_app,
             appshots_trigger_for_pid,
