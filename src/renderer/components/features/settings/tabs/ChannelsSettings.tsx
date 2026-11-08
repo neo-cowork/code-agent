@@ -41,6 +41,7 @@ import { zh } from '../../../../i18n/zh';
 import { CompanionSection } from '../sections/CompanionSection';
 import { ChannelAccountWarningStrip } from './ChannelAccountWarningStrip';
 import { TelegramGroupAccessPrerequisite, TelegramPrivacyModeBadge, TelegramPrivacyModeHint } from './TelegramPrivacyModeHint';
+import { FeishuSharedAppHint } from './FeishuSharedAppHint';
 
 const logger = createLogger('ChannelsSettings');
 
@@ -1019,6 +1020,7 @@ export const ChannelsSettings: React.FC = () => {
                     <div className="space-y-2 px-3 pb-3 empty:hidden" data-testid="channel-account-warnings">
                       {needsApprovalCardSecurityConfig(account) && <ChannelAccountWarningStrip body={channelText.modal.approvalCardSecurityWarning} />}
                       <TelegramPrivacyModeHint account={account} />
+                      <FeishuSharedAppHint account={account} />
                     </div>
                   </div>
                 ))}
