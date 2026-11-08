@@ -53,6 +53,12 @@ describe('cron event decision text table', () => {
     expect(localizeDecisionText(modelReason, 'en')).toBe(modelReason);
   });
 
+  it('does not treat model reasons beginning with run as host failure text', () => {
+    const modelReason = 'run the weekly digest';
+    expect(localizeDecisionText(modelReason, 'zh')).toBe(modelReason);
+    expect(localizeDecisionText(modelReason, 'en')).toBe(modelReason);
+  });
+
   it('keeps every host-stored template byte-identical to the pre-localization strings', () => {
     expect(describeEventScheduleRule({ type: 'event', source: 'channel', accountId: 'a1', chatId: 'c1', eventName: 'message' })).toBe('channel message · account a1 · chat c1');
     expect(describeEventScheduleRule({ type: 'event', source: 'channel', accountId: 'a1', eventName: 'message' })).toBe('channel message · account a1 · any chat');

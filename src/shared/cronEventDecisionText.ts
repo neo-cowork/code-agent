@@ -155,13 +155,15 @@ function escapeRegex(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+const HOST_RUN_STATUS_PATTERN = '(?:failed to start|pending|running|cancelled|paused|interrupted|failed)';
+
 function matcherFor(template: string): { regex: RegExp; names: string[] } {
   const names: string[] = [];
   let pattern = '^';
   let cursor = 0;
   for (const match of template.matchAll(PLACEHOLDER)) {
     pattern += escapeRegex(template.slice(cursor, match.index));
-    pattern += '([\\s\\S]*?)';
+    pattern += match[1] === 'status' ? `(${HOST_RUN_STATUS_PATTERN})` : '([\\s\\S]*?)';
     names.push(match[1]);
     cursor = (match.index ?? 0) + match[0].length;
   }
