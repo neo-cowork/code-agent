@@ -1,4 +1,9 @@
+import * as fs from 'fs/promises';
+import * as path from 'path';
 import type { CanUseToolFn, ToolContext, ToolHandler, ToolModule, ToolResult, ToolSchema } from '../../../protocol/tools';
+import { getUserConfigDir } from '../../../config/configPaths';
+import { isSafeRoleId } from '../../../services/roleAssets/roleAssetPaths';
+import { isPersistentRole } from '../../../services/roleAssets/roleAssetService';
 import { getTeamRecipeService, type KnownTeamRole } from '../../../services/team/teamRecipeService';
 import { listExpertsSchema } from './listExperts.schema';
 
@@ -21,6 +26,44 @@ function formatRoster(roles: KnownTeamRole[]): string {
   return roles.map((role) => `${role.roleId}${roleLabelSuffix(role)} — ${role.description}`).join('\n');
 }
 
+function notFoundError(rawName: string): string {
+  const safeDisplay = isSafeRoleId(rawName) ? ` "${rawName}"` : '';
+  return `Expert${safeDisplay} not found in the current slot. Ask the user to confirm the role name (or call list_experts without name to inspect the roster).`;
+}
+
+async function readRoleDefinition(rawName: string): Promise<ToolResult<string>> {
+  const roleId = rawName.trim();
+  if (!isSafeRoleId(roleId) || !(await isPersistentRole(roleId))) {
+    return {
+      ok: false,
+      error: notFoundError(roleId),
+      code: 'NOT_FOUND',
+    };
+  }
+  const definitionPath = path.join(getUserConfigDir(), 'agents', `${roleId}.md`);
+  try {
+    const content = await fs.readFile(definitionPath, 'utf-8');
+    if (!content.trim()) {
+      return {
+        ok: false,
+        error: notFoundError(roleId),
+        code: 'NOT_FOUND',
+      };
+    }
+    return {
+      ok: true,
+      output: content,
+      meta: { roleId, definition: content },
+    };
+  } catch {
+    return {
+      ok: false,
+      error: notFoundError(roleId),
+      code: 'NOT_FOUND',
+    };
+  }
+}
+
 class ListExpertsHandler implements ToolHandler<Record<string, unknown>, string> {
   readonly schema = schema;
 
@@ -32,6 +75,11 @@ class ListExpertsHandler implements ToolHandler<Record<string, unknown>, string>
     const permit = await canUseTool(schema.name, args);
     if (!permit.allow) return { ok: false, error: `permission denied: ${permit.reason}`, code: 'PERMISSION_DENIED' };
     if (ctx.abortSignal.aborted) return { ok: false, error: 'aborted', code: 'ABORTED' };
+
+    const nameArg = typeof args.name === 'string' ? args.name.trim() : '';
+    if (nameArg) {
+      return readRoleDefinition(nameArg);
+    }
 
     const roles = await getTeamRecipeService().knownRoles();
     return { ok: true, output: formatRoster(roles), meta: { roles } };
