@@ -251,7 +251,7 @@ function probeTcp(host, port, timeoutMs = 1500) {
 
 function readListenSample(port) {
   try {
-    const output = execFileSync('/usr/sbin/lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN'], {
+    const output = execFileSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN'], {
       encoding: 'utf8',
       timeout: 3000,
     });

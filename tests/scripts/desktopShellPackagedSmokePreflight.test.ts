@@ -29,7 +29,7 @@ function closeServer(server: net.Server): Promise<void> {
   });
 }
 
-function runSmokeCli(args: string[]) {
+function runSmokeCli(args: string[], env: NodeJS.ProcessEnv = {}) {
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'smoke-preflight-test-'));
   const dataDir = path.join(tmpRoot, 'data');
   const tauriDataDir = path.join(tmpRoot, 'tauri-data');
@@ -47,6 +47,7 @@ function runSmokeCli(args: string[]) {
       {
         encoding: 'utf8',
         timeout: 15_000,
+        env: { ...process.env, ...env },
       },
     );
   } finally {
@@ -131,6 +132,38 @@ describe('desktop-shell-packaged-smoke preflight port check', () => {
       expect(combined).not.toContain('desktop_shell_port_in_use');
     } finally {
       await closeServer(server);
+    }
+  });
+
+  it('(d) resolves lsof from PATH so the preflight works on Linux', async () => {
+    const { server, port } = await listenOnRandomPort();
+    const fakeBin = fs.mkdtempSync(path.join(os.tmpdir(), 'smoke-preflight-lsof-'));
+    const fakeLsof = path.join(fakeBin, 'lsof');
+    fs.writeFileSync(
+      fakeLsof,
+      `#!/usr/bin/env node\nprocess.stdout.write('COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME\\nportable-lsof-marker ${process.pid} test 1u IPv4 0 0 TCP 127.0.0.1:${port} (LISTEN)\\n');\n`,
+      { mode: 0o755 },
+    );
+    try {
+      const proc = runSmokeCli([
+        '--app',
+        '/nonexistent',
+        '--port',
+        String(port),
+        '--app-port',
+        String(port),
+        '--health-only',
+        '--json',
+      ], {
+        PATH: `${fakeBin}${path.delimiter}${process.env.PATH ?? ''}`,
+      });
+
+      expect(proc.status).toBe(1);
+      const parsed = JSON.parse(proc.stdout);
+      expect(parsed.failures[0].evidence.command).toBe('portable-lsof-marker');
+    } finally {
+      await closeServer(server);
+      fs.rmSync(fakeBin, { recursive: true, force: true });
     }
   });
 });
