@@ -44,7 +44,7 @@ const DEFAULT_ALLOWLIST_PATH = path.join(
 );
 const DEFAULT_DYNAMIC_ALLOWLIST_PATH = path.join(
   REPO_ROOT,
-  'scripts/internal-text-leak-dynamic-allowlist.json',
+  'scripts/lib/internal-text-leak-dynamic-allowlist.json',
 );
 const SHARED_PATTERNS = JSON.parse(
   fs.readFileSync(

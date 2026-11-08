@@ -68,7 +68,7 @@ on:
       - 'scripts/host-chinese-error-ratchet.mjs'
       - 'scripts/internal-text-leak-gate.mjs'
       - 'scripts/internal-text-leak-allowlist.json'
-      - 'scripts/internal-text-leak-dynamic-allowlist.json'
+      - 'scripts/lib/internal-text-leak-dynamic-allowlist.json'
       - 'src/shared/humanizeInternalText.ts'
       - 'src/shared/internalTextLeakPatterns.json'
       - 'tests/renderer/components/internalTextLeakDynamicScan.test.tsx'

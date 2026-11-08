@@ -14,7 +14,7 @@ import {
   detectInternalTextLeaks,
   type InternalTextFormat,
 } from '../../../src/shared/humanizeInternalText';
-import dynamicAllowlist from '../../../scripts/internal-text-leak-dynamic-allowlist.json';
+import dynamicAllowlist from '../../../scripts/lib/internal-text-leak-dynamic-allowlist.json';
 import { ToolStepGroup } from '../../../src/renderer/components/features/chat/ToolStepGroup';
 import { ToolDetails } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/ToolDetails';
 import { TaskDashboardSummary } from '../../../src/renderer/components/TaskPanel/RunWorkbenchCards';
