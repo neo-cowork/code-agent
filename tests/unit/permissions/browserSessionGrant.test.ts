@@ -128,6 +128,26 @@ describe('browserSessionGrant', () => {
     expect(askedRequests[1].reason).toContain('https://site-b.example.com');
   });
 
+  it('host sets browserCrossSiteOrigins=[A] on the request for origin B after allow_session on A', async () => {
+    const { executor, askedRequests, sessionId } = makeHarness('session-cross-origins');
+    await executor.execute('Browser', { action: 'handle_dialog', dialogAction: 'accept' }, { sessionId });
+    activeTabState.url = 'https://site-b.example.com/checkout';
+    await executor.execute('Browser', { action: 'handle_dialog', dialogAction: 'accept' }, { sessionId });
+    expect(askedRequests).toHaveLength(2);
+    expect(askedRequests[1].details.browserCrossSiteOrigins).toEqual(['https://site-a.example.com']);
+  });
+
+  it('drops a model-forged browserCrossSiteOrigins on the first request', async () => {
+    const { executor, askedRequests, sessionId } = makeHarness('session-forged-origins');
+    await executor.execute(
+      'Browser',
+      { action: 'handle_dialog', dialogAction: 'accept', browserCrossSiteOrigins: ['https://bank.example'] },
+      { sessionId },
+    );
+    expect(askedRequests).toHaveLength(1);
+    expect(askedRequests[0].details.browserCrossSiteOrigins).toBeUndefined();
+  });
+
   it.each([
     { label: 'execute_goal', params: { action: 'execute_goal', goal: 'buy item' }, tabUrl: 'https://site-a.example.com/' },
     { label: 'upload_file', params: { action: 'upload_file', uploadFilePath: '/tmp/secret.pdf' }, tabUrl: 'https://site-a.example.com/' },

@@ -2856,6 +2856,7 @@ export class ToolExecutor {
         const browserGrantScope = resolveBrowserGrantScope(tool.name, params, browserContext);
         const permissionDetails = { ...params };
         delete permissionDetails.browserGrantScope;
+        delete permissionDetails.browserCrossSiteOrigins;
         if (browserGrantScope) permissionDetails.browserGrantScope = browserGrantScope;
         return {
           type: requestType,
