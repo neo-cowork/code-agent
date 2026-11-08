@@ -142,24 +142,38 @@ async function postOsNotificationInner(
         body: opts.body,
       });
     } catch (err) {
-      // Older shells do not know the command. The command was never entered, so
-      // the legacy plugin remains a safe fallback and is kept behind the same
-      // legacy-needed branch as non-bundle/non-macOS runtimes.
-      result = {
-        backend: 'legacy-needed',
-        ok: false,
-        reason: err instanceof Error ? err.message : String(err),
-      };
+      // Older shells do not know the command (or the ACL rejects it). The command
+      // was never entered, so the legacy plugin remains a safe fallback and is kept
+      // behind the same legacy-needed branch as non-bundle/non-macOS runtimes.
+      const reason = err instanceof Error ? err.message : String(err);
+      console.warn('[osNotification] post_system_notification 调用失败，回落 legacy 通知', reason);
+      result = { backend: 'legacy-needed', ok: false, reason };
     }
 
     if (result.backend === 'legacy-needed') {
       try {
+        // Permission gate only here: the snapshot reads native desktop status, not UNC.
+        const { permission, permissionReadTimedOut } = await getOsNotificationPermissionSnapshot();
+        const timeoutFlag = permissionReadTimedOut ? { permissionReadTimedOut: true } : {};
+        if (permission === 'denied') {
+          reportDelivery({
+            mode: 'tauri',
+            backend: 'legacy',
+            granted: false,
+            dispatched: false,
+            ...(urgent ? { urgent } : {}),
+            ...toastFlag,
+          });
+          return;
+        }
         const mod = await loadModule();
         mod.sendNotification({ title: opts.title, body: opts.body });
         reportDelivery({
           mode: 'tauri',
           backend: 'legacy',
+          ...(permission === 'granted' ? { granted: true } : { permission: 'unknown' }),
           dispatched: true,
+          ...timeoutFlag,
           ...(urgent ? { urgent } : {}),
           ...toastFlag,
         });

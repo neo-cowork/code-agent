@@ -112,7 +112,7 @@ describe('osNotification', () => {
     expect(domainInvoke).toHaveBeenCalledWith(
       IPC_DOMAINS.NOTIFICATION,
       'reportClientDelivery',
-      { mode: 'tauri', backend: 'legacy', dispatched: true },
+      { mode: 'tauri', backend: 'legacy', granted: true, dispatched: true },
     );
   });
 
@@ -144,8 +144,44 @@ describe('osNotification', () => {
     expect(domainInvoke).toHaveBeenCalledWith(
       IPC_DOMAINS.NOTIFICATION,
       'reportClientDelivery',
-      { mode: 'tauri', backend: 'legacy', dispatched: true },
+      { mode: 'tauri', backend: 'legacy', granted: true, dispatched: true },
     );
+  });
+
+  it('legacy-needed with denied permission does not send and reports not dispatched', async () => {
+    getNativeDesktopPermissionStatus.mockResolvedValue({
+      permissions: [{ kind: 'notifications', status: 'denied' }],
+    });
+    const { postOsNotification } = await import('../../../src/renderer/utils/osNotification');
+
+    await postOsNotification({ title: '任务完成 - 循环', body: '已完成 1 轮' });
+
+    expect(notificationPlugin.sendNotification).not.toHaveBeenCalled();
+    expect(domainInvoke).toHaveBeenCalledWith(
+      IPC_DOMAINS.NOTIFICATION,
+      'reportClientDelivery',
+      { mode: 'tauri', backend: 'legacy', granted: false, dispatched: false },
+    );
+  });
+
+  it('warns with the reason and falls back to the legacy plugin when the command invoke rejects', async () => {
+    tauriInvoke.mockRejectedValue(new Error('Command post_system_notification not allowed by ACL'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const { postOsNotification } = await import('../../../src/renderer/utils/osNotification');
+      await postOsNotification({ title: 't', body: 'b' });
+
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('post_system_notification'),
+        'Command post_system_notification not allowed by ACL',
+      );
+      expect(notificationPlugin.sendNotification).toHaveBeenCalledTimes(1);
+      const reports = domainInvoke.mock.calls.filter((call) => call[1] === 'reportClientDelivery');
+      expect(reports).toHaveLength(1);
+      expect(reports[0][2]).toMatchObject({ mode: 'tauri', backend: 'legacy', dispatched: true });
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('reports UNC failure without calling the legacy plugin', async () => {
@@ -189,7 +225,7 @@ describe('osNotification', () => {
     expect(notificationPlugin.sendNotification).toHaveBeenCalledTimes(1);
     const reportCall = domainInvoke.mock.calls.find((call) => call[1] === 'reportClientDelivery');
     expect(reportCall?.[0]).toBe(IPC_DOMAINS.NOTIFICATION);
-    expect(reportCall?.[2]).toEqual({ mode: 'tauri', backend: 'legacy', dispatched: true });
+    expect(reportCall?.[2]).toEqual({ mode: 'tauri', backend: 'legacy', permission: 'unknown', dispatched: true });
     expect(reportCall?.[2]).not.toHaveProperty('granted');
   });
 
@@ -230,7 +266,7 @@ describe('osNotification', () => {
       IPC_DOMAINS.NOTIFICATION,
       'reportClientDelivery',
       sent
-        ? { mode: 'tauri', backend: 'legacy', dispatched: true, ...(urgent ? { urgent: true } : {}), ...(urgent && focused ? { toastShown: true } : {}) }
+        ? { mode: 'tauri', backend: 'legacy', granted: true, dispatched: true, ...(urgent ? { urgent: true } : {}), ...(urgent && focused ? { toastShown: true } : {}) }
         : { mode: 'suppressed-focused', dispatched: false },
     );
   });
@@ -249,15 +285,17 @@ describe('osNotification', () => {
   describe('exactly one delivery report per call', () => {
     const reports = () => domainInvoke.mock.calls.filter((c) => c[1] === 'reportClientDelivery');
 
-    it('command fallback still sends once when the legacy backend is needed', async () => {
+    it('legacy-needed + permission read never settles -> timeout report with permissionReadTimedOut, sendNotification once', async () => {
       vi.useFakeTimers();
       try {
+        getNativeDesktopPermissionStatus.mockReturnValue(new Promise(() => {}));
         const { postOsNotification } = await import('../../../src/renderer/utils/osNotification');
         const pending = postOsNotification({ title: 't', body: 'b' });
+        await vi.advanceTimersByTimeAsync(3_000);
         await pending;
         expect(notificationPlugin.sendNotification).toHaveBeenCalledTimes(1);
         expect(reports()).toHaveLength(1);
-        expect(reports()[0][2]).toEqual({ mode: 'tauri', backend: 'legacy', dispatched: true });
+        expect(reports()[0][2]).toEqual({ mode: 'tauri', backend: 'legacy', permission: 'unknown', dispatched: true, permissionReadTimedOut: true });
       } finally {
         vi.useRealTimers();
       }
@@ -275,20 +313,21 @@ describe('osNotification', () => {
       expect(reports()[0][2]).toEqual({ mode: 'tauri', error: 'toast boom' });
     });
 
-    it('legacy-needed -> one legacy report', async () => {
+    it('legacy-needed + denied -> one report (granted:false, dispatched:false), no send', async () => {
       getNativeDesktopPermissionStatus.mockResolvedValue({ permissions: [{ kind: 'notifications', status: 'denied' }] });
       const { postOsNotification } = await import('../../../src/renderer/utils/osNotification');
       await postOsNotification({ title: 't', body: 'b' });
+      expect(notificationPlugin.sendNotification).not.toHaveBeenCalled();
       expect(reports()).toHaveLength(1);
-      expect(reports()[0][2]).toMatchObject({ backend: 'legacy', dispatched: true });
+      expect(reports()[0][2]).toEqual({ mode: 'tauri', backend: 'legacy', granted: false, dispatched: false });
     });
 
-    it('command fallback -> one legacy report', async () => {
+    it('legacy-needed + unknown permission -> one legacy report', async () => {
       getNativeDesktopPermissionStatus.mockRejectedValue(new Error('nope'));
       const { postOsNotification } = await import('../../../src/renderer/utils/osNotification');
       await postOsNotification({ title: 't', body: 'b' });
       expect(reports()).toHaveLength(1);
-      expect(reports()[0][2]).toMatchObject({ backend: 'legacy', dispatched: true });
+      expect(reports()[0][2]).toMatchObject({ backend: 'legacy', permission: 'unknown', dispatched: true });
     });
 
     it('suppressed-focused / suppressed-viewing -> one report each', async () => {
@@ -357,11 +396,11 @@ describe('osNotification', () => {
       path.resolve(__dirname, '../../../src/renderer/utils/osNotification.ts'),
       'utf8',
     );
-    const legacyBranch = notificationSource.match(
-      /if\s*\(result\.backend\s*===\s*['"]legacy-needed['"]\)\s*\{([\s\S]*?)\n\s*\}/,
-    );
+    const branchStart = notificationSource.search(/if\s*\(result\.backend\s*===\s*['"]legacy-needed['"]\)\s*\{/);
+    const branchEnd = notificationSource.indexOf('if (result.ok)');
+    const legacyBranch = branchStart >= 0 && branchEnd > branchStart ? notificationSource.slice(branchStart, branchEnd) : '';
     const sendCalls = [...notificationSource.matchAll(/sendNotification\s*\(/g)];
-    expect(legacyBranch?.[1]).toContain('sendNotification');
+    expect(legacyBranch).toContain('sendNotification');
     expect(sendCalls).toHaveLength(1);
   });
 });
