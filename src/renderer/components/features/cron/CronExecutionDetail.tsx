@@ -22,6 +22,7 @@ import { cronLoginWallCopy, openCronLoginWallSite } from './cronLoginWallNotice'
 import { cronFailureSentence } from './cronFailureNotice';
 import { wakeSkipSentence } from './wakeSkipSentence';
 import { awaitingApprovalLabel } from './awaitingApprovalLabel';
+import { localizeParkedApprovalClosureText } from '../../../utils/toolExecutionPresentation';
 
 const CLOUD_NOT_WIRED = 'Cloud execution is not wired yet (N-L3-MINLOOP-SRV).';
 const TIME_LIMIT = /Cron job run exceeded its (\d+(?:\.\d+)?)s time limit\./;
@@ -231,7 +232,9 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
       {stopReason && stopReason.sessionId === reasonSessionId && (
         <section className="mt-4" data-testid="cron-exec-stop-reason">
           <h5 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">{cc.execStopReason}</h5>
-          <p className="text-sm text-zinc-100" data-testid="cron-exec-stop-reason-text">{stopReason.text}</p>
+          <p className="text-sm text-zinc-100" data-testid="cron-exec-stop-reason-text">
+            {localizeParkedApprovalClosureText(stopReason.text, t) ?? stopReason.text}
+          </p>
         </section>
       )}
 
