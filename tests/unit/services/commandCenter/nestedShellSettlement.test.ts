@@ -194,7 +194,7 @@ describe('session command task nested shell settlement', () => {
 
   it('waits for a background subagent returned by spawn_agent before waking', async () => {
     const manager = new FakeTaskManager();
-    const sendMessage = vi.fn(async () => undefined);
+    const sendMessage = vi.fn<(prompt: string) => Promise<void>>(async () => undefined);
     center = createCenterHarness(manager, sendMessage);
     const spawned = await center.spawn({
       sessionId: SESSION_ID,
