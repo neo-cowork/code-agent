@@ -294,6 +294,7 @@ describe('session command task nested shell settlement', () => {
       pty: true, sessionId: 'pty-done', exitCode: 0, duration: 120,
     }, 'terminal log');
     emitCompletion(manager, task.id, 'PTY 已完成，结论保留。');
+    expect(center.list(SESSION_ID)[0]?.status).toBe('completed');
     await vi.waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(1));
     expect(center.list(SESSION_ID)[0]).toMatchObject({ status: 'completed', resultText: 'PTY 已完成，结论保留。' });
   });
@@ -307,6 +308,7 @@ describe('session command task nested shell settlement', () => {
       result: { background: true, output: 'already collected' },
     }, '✅ collected');
     emitCompletion(manager, task.id, 'collect_agent 已返回最终结论。');
+    expect(center.list(SESSION_ID)[0]?.status).toBe('completed');
     await vi.waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(1));
     expect(center.list(SESSION_ID)[0]).toMatchObject({ status: 'completed', resultText: 'collect_agent 已返回最终结论。' });
   });
@@ -337,6 +339,7 @@ describe('session command task nested shell settlement', () => {
     emitToolResult(manager, task.id, 'bash-live', 'Bash', { background: true, taskId: nestedShellId }, 'Background task started.');
     const conclusion = '后台命令已经完成检查，配置没有问题。';
     emitCompletion(manager, task.id, conclusion);
+    expect(center.list(SESSION_ID)[0]?.status).toBe('completed');
     await vi.waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(1));
     expect(center.list(SESSION_ID)[0]).toMatchObject({ status: 'completed', resultText: conclusion });
   });
