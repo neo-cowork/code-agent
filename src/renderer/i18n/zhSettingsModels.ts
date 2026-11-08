@@ -588,7 +588,17 @@ export const zhSettingsModels = {
       grid: {
         title: '所有连接器',
         description: '按服务来源和使用位置分区查看，已连接服务与待发现服务不再混在一起。',
-        connectedSummarySuffix: ' 台 MCP 已连接',
+        connectedSummaryPrefix: '已连接 ',
+        connectedSummaryMiddle: ' / 共 ',
+        connectedSummarySuffix: ' 个',
+        cardStatus: {
+          connected: '已连接',
+          connectsWhenNeeded: '需要时自动连接',
+          disabled: '已停用',
+          connectionFailed: '连接失败',
+          connecting: '连接中',
+          notConnected: '未连接',
+        },
         sections: {
           saas: {
             title: '工作账号与在线服务',
@@ -634,11 +644,11 @@ export const zhSettingsModels = {
         addServerFailed: '添加服务器失败',
       },
       trustSummary: {
-        authReauthorizeHint: 'OAuth/token 需要重新授权',
-        authMaskedHint: '凭证默认 masked，不在列表明文展示',
+        authReauthorizeHint: '需要重新连接账号',
+        authMaskedHint: '密码和密钥不会以明文显示',
         toolUnit: '工具',
         resourceUnit: '资源',
-        approvalNotice: 'destructive/openWorld 调用前仍需审批',
+        approvalNotice: '可能更改数据或访问外部网络的操作仍会先征求你的同意',
       },
       management: {
         title: 'MCP 管理台',
