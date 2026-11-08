@@ -14,6 +14,7 @@ import {
   KEYBINDING_DEFINITION_BY_ID,
   eventToAccelerator,
   formatShortcutForDisplay,
+  isModifierOnlyAccelerator,
   normalizeAccelerator,
   type KeybindingActionId,
   type KeybindingCategory,
@@ -103,8 +104,6 @@ const COMMAND_PALETTE_COMPAT_ACCELERATORS = {
   win32: ['Ctrl+Shift+P'],
   linux: ['Ctrl+Shift+P'],
 } as const;
-
-const TAURI_UNSUPPORTED_GLOBAL_ACCELERATORS = new Set(['Cmd+Cmd']);
 
 interface GlobalHotkeyBindingPayload {
   actionId: KeybindingActionId;
@@ -246,7 +245,7 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
       const binding = keybindings.bindings[definition.id];
       if (!binding?.enabled || !binding.accelerator) continue;
       const accelerator = normalizeAccelerator(binding.accelerator, platform);
-      if (!accelerator || TAURI_UNSUPPORTED_GLOBAL_ACCELERATORS.has(accelerator)) continue;
+      if (!accelerator || isModifierOnlyAccelerator(accelerator, platform)) continue;
       bindings.push({ actionId: definition.id, accelerator });
     }
     return bindings;
