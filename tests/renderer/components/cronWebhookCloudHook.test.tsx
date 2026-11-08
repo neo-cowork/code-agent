@@ -176,7 +176,7 @@ describe('⑤b 编辑器门', () => {
     fireEvent.change(await screen.findByLabelText(/^单次预算上限/), { target: { value: '0.5' } });
     fireEvent.click(screen.getByText('执行动作'));
     fireEvent.change(controlForLabel('Agent 类型'), { target: { value: 'default' } });
-    fireEvent.change(controlForLabel('Prompt'), { target: { value: 'p' } });
+    fireEvent.change(controlForLabel('任务指令'), { target: { value: 'p' } });
     fireEvent.click(screen.getByText('创建任务'));
 
     const urlField = await screen.findByTestId('cron-webhook-url');
@@ -202,7 +202,7 @@ describe('⑤b 编辑器门', () => {
     fireEvent.change(await screen.findByLabelText(/^单次预算上限/), { target: { value: '0.5' } });
     fireEvent.click(screen.getByText('执行动作'));
     fireEvent.change(controlForLabel('Agent 类型'), { target: { value: 'default' } });
-    fireEvent.change(controlForLabel('Prompt'), { target: { value: 'p' } });
+    fireEvent.change(controlForLabel('任务指令'), { target: { value: 'p' } });
     fireEvent.click(screen.getByText('创建任务'));
 
     const failure = await screen.findByTestId('cron-webhook-failure');
