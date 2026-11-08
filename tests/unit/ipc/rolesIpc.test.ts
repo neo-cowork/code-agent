@@ -828,6 +828,34 @@ describe('roles.ipc (domain:roles)', () => {
       expect(detail.data?.isBuiltin).toBe(false);
     });
 
+    it('listDeletedRoles returns restorable entries through the real roles handler', async () => {
+      await seedUser('回收站专家', '列表展示');
+      const deleted = await invoke<{ trashId: string }>('deleteRole', { roleId: '回收站专家' });
+      expect(deleted.success).toBe(true);
+
+      const entryDir = path.join(mockConfigDir.dir, 'roles-trash', deleted.data!.trashId);
+      const definition = await fs.readFile(path.join(entryDir, 'agent.md'), 'utf-8');
+      await fs.writeFile(path.join(entryDir, 'agent.md'), definition.replace('description: 列表展示', 'description: 列表展示\ndisplay-name: 回收站花名'), 'utf-8');
+
+      const listed = await invoke<import('../../../src/shared/contract/roleAssets').TrashedRoleEntry[]>('listDeletedRoles');
+      expect(listed).toEqual({
+        success: true,
+        data: [expect.objectContaining({
+          trashId: deleted.data!.trashId,
+          roleId: '回收站专家',
+          displayName: '回收站花名',
+          deletedAt: expect.any(String),
+        })],
+      });
+
+      const oldMeta = JSON.parse(await fs.readFile(path.join(entryDir, 'meta.json'), 'utf-8')) as { roleId: string; deletedAt: string };
+      oldMeta.deletedAt = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString();
+      await fs.writeFile(path.join(entryDir, 'meta.json'), JSON.stringify(oldMeta), 'utf-8');
+      const expired = await invoke('listDeletedRoles');
+      expect(expired).toEqual({ success: true, data: [] });
+      await expect(fs.access(entryDir)).rejects.toThrow();
+    });
+
     it('缺参 / 未知条目返回稳定错误', async () => {
       const noRole = await invoke('deleteRole');
       expect(noRole.success).toBe(false);
