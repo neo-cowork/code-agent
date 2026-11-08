@@ -42,6 +42,16 @@ const DEFAULT_ALLOWLIST_PATH = path.join(
   REPO_ROOT,
   'scripts/internal-text-leak-allowlist.json',
 );
+const DEFAULT_DYNAMIC_ALLOWLIST_PATH = path.join(
+  REPO_ROOT,
+  'scripts/internal-text-leak-dynamic-allowlist.json',
+);
+const SHARED_PATTERNS = JSON.parse(
+  fs.readFileSync(
+    path.join(REPO_ROOT, 'src/shared/internalTextLeakPatterns.json'),
+    'utf8',
+  ),
+);
 
 const VALID_RULES = new Set([
   'uuid',
@@ -68,66 +78,27 @@ const USER_FACING_JSX_ATTRS = new Set([
   'value',
 ]);
 
-const INTERNAL_TOOL_NAMES = [
-  'read_file',
-  'write_file',
-  'edit_file',
-  'list_directory',
-  'web_fetch',
-  'todo_write',
-  'spawn_agent',
-  'agent_message',
-  'delegate_task',
-  'task_status',
-  'steer_task',
-  'cancel_task',
-  'memory_store',
-  'memory_search',
-  'tool_search',
-  'computer_use',
-  'browser_action',
-  'plan_update',
-  'plan_read',
-  'findings_write',
-  'AskUserQuestion',
-  'NotebookEdit',
-  'MultiEdit',
-  'ToolSearch',
-  'AgentSpawn',
-  'TaskManager',
-].sort((a, b) => b.length - a.length);
+const INTERNAL_TOOL_NAMES = [...SHARED_PATTERNS.internalToolNames].sort(
+  (a, b) => b.length - a.length,
+);
 
-const UUID_RE =
-  /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i;
-const SESSION_ID_RE = /\b(?:session_[A-Za-z0-9_-]{2,}|session-work-[A-Za-z0-9_-]{2,})\b/;
+const UUID_RE = new RegExp(SHARED_PATTERNS.uuid, 'i');
+const SESSION_ID_RE = new RegExp(SHARED_PATTERNS.sessionId);
 const SESSION_PREFIX_RE = /^(?:session_|session-work-)$/;
-const CALL_ID_RE = /\b(?:call_[A-Za-z0-9_-]{2,}|toolu_[A-Za-z0-9_-]{2,})\b/;
+const CALL_ID_RE = new RegExp(SHARED_PATTERNS.callId);
 const CALL_PREFIX_RE = /^(?:call_|toolu_)$/;
-const OU_ID_RE = /\b(?:ou_[A-Za-z0-9_-]{2,}|oc_[A-Za-z0-9_-]{2,})\b/;
+const OU_ID_RE = new RegExp(SHARED_PATTERNS.ouId);
 const OU_PREFIX_RE = /^(?:ou_|oc_)$/;
 const INTERNAL_TOOL_RE = new RegExp(
-  `(?<![A-Za-z0-9_/-])(?:mcp__[A-Za-z0-9_-]+(?:__[A-Za-z0-9_-]+)*|${INTERNAL_TOOL_NAMES.join('|')})(?![A-Za-z0-9_/-])`,
+  `(?:${SHARED_PATTERNS.internalToolPrefix}|(?<![A-Za-z0-9_/-])(?:${INTERNAL_TOOL_NAMES.join('|')}))(?![A-Za-z0-9_/-])`,
 );
-const ENGLISH_STATE_RES = [
-  /\baccepted\s*[：:]/,
-  /\[(running|completed|failed|cancelled|canceled|pending)\]\s*id=/i,
-  /\binterrupted:\s*process crashed\b/i,
-  /\btool call was cancelled\b/i,
-  /\bresult was recorded\b/i,
-  /\bmail message\s*·\s*account\b/i,
-  /\bno outbound action attempted\b/i,
-  /\brun result carried no eventDecisions\b/i,
-];
-const SANDBOX_EXEC_RE = /\bsandbox-exec(?:\s+-f\b|\b)/;
-const TEMP_PATH_RE = /(?:\/private\/tmp|\/tmp|\/var\/folders)\/[A-Za-z0-9._/-]+/;
+const ENGLISH_STATE_RES = SHARED_PATTERNS.englishState.map((source) => new RegExp(source, 'i'));
+const SANDBOX_EXEC_RE = new RegExp(SHARED_PATTERNS.sandboxExec);
+const TEMP_PATH_RE = new RegExp(SHARED_PATTERNS.tempPath);
 const RAW_JSON_RE =
-  /^\s*\{(?:\s*"[A-Za-z0-9_.-]+"\s*:\s*(?:"[^"]*"|-?\d+(?:\.\d+)?|true|false|null|\[[^\]]*\]|\{[^}]*\})\s*,?){1,}\}\s*$/;
-
-// Direct JSX expressions that render raw entity/session/tool IDs into visible text
-const RAW_UUID_EXPR_RE =
-  /^(?:execution\.id|execution\.jobId|row\.eventId|row\.id|entry\.id|task\.id|agent\.id|decision\.eventId)$/;
-const RAW_SESSION_EXPR_RE = /^(?:execution\.sessionId|item\.sessionId|session\.id)$/;
-const RAW_CALL_EXPR_RE = /^(?:toolCall\.id|call\.id|tc\.id)$/;
+  new RegExp(
+    `^\\s*\\{(?:\\s*${SHARED_PATTERNS.rawJsonKeyValue}\\s*,?){1,}\\}\\s*$`,
+  );
 const RAW_JSON_STRINGIFY_RE = /\bJSON\.stringify\s*\(/;
 
 export function detectStaticStringLeaks(text) {
@@ -167,6 +138,24 @@ function collectSourceFiles(dir, out = []) {
     }
   }
   return out;
+}
+
+function rawIdentifierRuleForPropertyAccess(expr, sourceFile) {
+  if (!ts.isPropertyAccessExpression(expr)) return null;
+  const property = expr.name.text;
+  if (!/^(?:id|[A-Za-z][A-Za-z0-9]*Id)$/.test(property)) return null;
+
+  const expressionText = expr.getText(sourceFile);
+  if (
+    /\bhumanizeInternalText\s*\(/.test(expressionText) ||
+    /\b(?:humanize|redact|label|lookup)[A-Za-z0-9_]*\s*\(/i.test(expressionText)
+  ) {
+    return null;
+  }
+  if (/sessionid/i.test(property)) return 'session_id';
+  if (/callid/i.test(property)) return 'call_id';
+  if (/ouid/i.test(property)) return 'ou_id';
+  return 'uuid';
 }
 
 function inspectRenderedExpression(expr, sourceFile, recordHit) {
@@ -245,6 +234,8 @@ function inspectRenderedExpression(expr, sourceFile, recordHit) {
 
   const exprText = expr.getText(sourceFile).trim();
 
+  if (/\bhumanizeInternalText\s*\(/.test(exprText)) return;
+
   // Check `.replace('{id}', task.id)` or `.replace('{id}', row.eventId ?? '')`
   if (
     ts.isCallExpression(expr) &&
@@ -260,18 +251,18 @@ function inspectRenderedExpression(expr, sourceFile, recordHit) {
     return;
   }
 
-  if (RAW_UUID_EXPR_RE.test(exprText)) {
-    recordHit('uuid', exprText, expr.getStart(sourceFile));
+  const identifierRule = rawIdentifierRuleForPropertyAccess(expr, sourceFile);
+  if (identifierRule) {
+    recordHit(identifierRule, exprText, expr.getStart(sourceFile));
     return;
   }
-  if (RAW_SESSION_EXPR_RE.test(exprText)) {
-    recordHit('session_id', exprText, expr.getStart(sourceFile));
-    return;
+
+  if (ts.isCallExpression(expr)) {
+    for (const argument of expr.arguments) {
+      inspectRenderedExpression(argument, sourceFile, recordHit);
+    }
   }
-  if (RAW_CALL_EXPR_RE.test(exprText)) {
-    recordHit('call_id', exprText, expr.getStart(sourceFile));
-    return;
-  }
+
   if (
     RAW_JSON_STRINGIFY_RE.test(exprText) &&
     !/humanizeInternalText/.test(exprText)
@@ -352,24 +343,9 @@ export function scanRendererStatic({
       ) {
         const rawSpan = node.getText(sourceFile).trim();
         const expr = node.expression;
-        if (
-          ts.isPropertyAccessExpression(expr) &&
-          RAW_UUID_EXPR_RE.test(expr.getText(sourceFile).trim())
-        ) {
-          recordHit('uuid', rawSpan, node.getStart(sourceFile));
-        } else if (
-          ts.isPropertyAccessExpression(expr) &&
-          RAW_SESSION_EXPR_RE.test(expr.getText(sourceFile).trim())
-        ) {
-          recordHit('session_id', rawSpan, node.getStart(sourceFile));
-        } else if (
-          ts.isPropertyAccessExpression(expr) &&
-          RAW_CALL_EXPR_RE.test(expr.getText(sourceFile).trim())
-        ) {
-          recordHit('call_id', rawSpan, node.getStart(sourceFile));
-        } else {
-          inspectRenderedExpression(expr, sourceFile, recordHit);
-        }
+        inspectRenderedExpression(expr, sourceFile, (rule, _sample, pos) =>
+          recordHit(rule, rawSpan, pos),
+        );
       }
 
       // 3. User-facing JSX attributes
@@ -433,10 +409,10 @@ export function scanRendererStatic({
   return { filesScanned: files.length, hits };
 }
 
-export function loadAndValidateAllowlist(allowlistPath = DEFAULT_ALLOWLIST_PATH) {
+function loadAndValidateEntries(allowlistPath, label) {
   if (!fs.existsSync(allowlistPath)) {
     throw new Error(
-      `[internal-text-leak-gate] Allowlist not found at ${allowlistPath}`,
+      `[internal-text-leak-gate] ${label} not found at ${allowlistPath}`,
     );
   }
   let parsed;
@@ -444,13 +420,13 @@ export function loadAndValidateAllowlist(allowlistPath = DEFAULT_ALLOWLIST_PATH)
     parsed = JSON.parse(fs.readFileSync(allowlistPath, 'utf8'));
   } catch (err) {
     throw new Error(
-      `[internal-text-leak-gate] Failed to parse allowlist JSON (${allowlistPath}): ${err.message}`,
+      `[internal-text-leak-gate] Failed to parse ${label} JSON (${allowlistPath}): ${err.message}`,
       { cause: err },
     );
   }
   if (!Array.isArray(parsed)) {
     throw new Error(
-      `[internal-text-leak-gate] Allowlist (${allowlistPath}) must be a JSON array.`,
+      `[internal-text-leak-gate] ${label} (${allowlistPath}) must be a JSON array.`,
     );
   }
 
@@ -458,32 +434,42 @@ export function loadAndValidateAllowlist(allowlistPath = DEFAULT_ALLOWLIST_PATH)
     const entry = parsed[i];
     if (!entry || typeof entry !== 'object') {
       throw new Error(
-        `[internal-text-leak-gate] Allowlist entry #${i} must be an object.`,
+        `[internal-text-leak-gate] ${label} entry #${i} must be an object.`,
       );
     }
     if (typeof entry.file !== 'string' || !entry.file.trim()) {
       throw new Error(
-        `[internal-text-leak-gate] Allowlist entry #${i} is missing a non-empty "file".`,
+        `[internal-text-leak-gate] ${label} entry #${i} is missing a non-empty "file".`,
       );
     }
     if (typeof entry.rule !== 'string' || !VALID_RULES.has(entry.rule)) {
       throw new Error(
-        `[internal-text-leak-gate] Allowlist entry #${i} (${entry.file}) has invalid "rule": ${JSON.stringify(entry.rule)}.`,
+        `[internal-text-leak-gate] ${label} entry #${i} (${entry.file}) has invalid "rule": ${JSON.stringify(entry.rule)}.`,
       );
     }
     if (typeof entry.sample !== 'string' || !entry.sample.trim()) {
       throw new Error(
-        `[internal-text-leak-gate] Allowlist entry #${i} (${entry.file}) is missing a non-empty "sample".`,
+        `[internal-text-leak-gate] ${label} entry #${i} (${entry.file}) is missing a non-empty "sample".`,
       );
     }
     if (typeof entry.reason !== 'string' || !entry.reason.trim()) {
       throw new Error(
-        `[internal-text-leak-gate] Allowlist entry #${i} (${entry.file} [${entry.rule}]) is missing a non-empty "reason". Every allowlisted leak must name its owning ticket or reason.`,
+        `[internal-text-leak-gate] ${label} entry #${i} (${entry.file} [${entry.rule}]) is missing a non-empty "reason". Every allowlisted leak must name its owning ticket or reason.`,
       );
     }
   }
 
   return parsed;
+}
+
+export function loadAndValidateAllowlist(allowlistPath = DEFAULT_ALLOWLIST_PATH) {
+  return loadAndValidateEntries(allowlistPath, 'Allowlist');
+}
+
+export function loadAndValidateDynamicAllowlist(
+  allowlistPath = DEFAULT_DYNAMIC_ALLOWLIST_PATH,
+) {
+  return loadAndValidateEntries(allowlistPath, 'Dynamic allowlist');
 }
 
 export function evaluateGate({
@@ -549,6 +535,7 @@ function main() {
 
   let result;
   try {
+    loadAndValidateDynamicAllowlist();
     result = evaluateGate();
   } catch (err) {
     console.error(err instanceof Error ? err.message : String(err));

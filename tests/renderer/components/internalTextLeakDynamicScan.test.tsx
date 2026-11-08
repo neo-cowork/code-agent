@@ -12,9 +12,9 @@ import type { TraceNode } from '../../../src/shared/contract/trace';
 import type { TaskRecord } from '../../../src/renderer/types/runWorkbench';
 import {
   detectInternalTextLeaks,
-  humanizeInternalText,
   type InternalTextFormat,
 } from '../../../src/shared/humanizeInternalText';
+import dynamicAllowlist from '../../../scripts/internal-text-leak-dynamic-allowlist.json';
 import { ToolStepGroup } from '../../../src/renderer/components/features/chat/ToolStepGroup';
 import { ToolDetails } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/ToolDetails';
 import { TaskDashboardSummary } from '../../../src/renderer/components/TaskPanel/RunWorkbenchCards';
@@ -112,8 +112,43 @@ const LEAK_FIXTURES = {
   },
 };
 
+type DynamicAllowlistEntry = {
+  file: string;
+  rule: InternalTextFormat;
+  sample: string;
+  reason: string;
+};
+
+function assertSurfaceHasOnlyExpectedLeaks(surface: string, visibleText: string) {
+  const leaks = detectInternalTextLeaks(visibleText);
+  const expected = (dynamicAllowlist as DynamicAllowlistEntry[]).filter(
+    (entry) => entry.file === surface,
+  );
+  const unexpected = leaks.filter(
+    (leak) =>
+      !expected.some(
+        (entry) => entry.rule === leak.format && entry.sample === leak.sample,
+      ),
+  );
+  if (unexpected.length > 0) {
+    throw new Error(
+      `[internal-text-leak-dynamic-scan] ${surface} has un-allowlisted visible leak(s):\n${unexpected
+        .map((leak) => `  - [rule=${leak.format}] sample=${JSON.stringify(leak.sample)}`)
+        .join('\n')}`,
+    );
+  }
+  for (const entry of expected) {
+    if (!leaks.some((leak) => leak.format === entry.rule && leak.sample === entry.sample)) {
+      console.warn(
+        `[internal-text-leak-dynamic-scan] ! expected leak no longer matches (can be tightened): ${surface} [${entry.rule}] "${entry.sample}" (${entry.reason})`,
+      );
+    }
+  }
+  return leaks;
+}
+
 describe('Internal-text leak dynamic scan across 4 key surfaces', () => {
-  it('verifies raw fixtures contain all 9 internal leak formats before humanization', () => {
+  it('verifies raw fixtures contain all 9 internal leak formats before rendering', () => {
     const combinedRaw = JSON.stringify(LEAK_FIXTURES);
     const detected = new Set<InternalTextFormat>(
       detectInternalTextLeaks(combinedRaw).map((m) => m.format),
@@ -134,18 +169,13 @@ describe('Internal-text leak dynamic scan across 4 key surfaces', () => {
     }
   });
 
-  it('Surface 1 (Chat message / tool card): renders humanized tool call without internal text leaks', () => {
+  it('Surface 1 (Chat message / tool card): reports only ticket-owned leaks from a raw tool call', () => {
     const rawCall = LEAK_FIXTURES.chatToolCall;
-    const humanizedCall: ToolCall = {
-      id: humanizeInternalText(rawCall.id, 'zh').text,
-      name: 'Read',
-      arguments: {
-        file_path: `${humanizeInternalText(rawCall.arguments.file, 'zh').text} · ${humanizeInternalText(rawCall.name, 'zh').text} · ${humanizeInternalText(rawCall.arguments.recipient, 'zh').text}`,
-      },
-      result: {
-        success: true,
-        output: humanizeInternalText(rawCall.result.output, 'zh').text,
-      },
+    const rawToolCall: ToolCall = {
+      id: rawCall.id,
+      name: rawCall.name,
+      arguments: rawCall.arguments,
+      result: rawCall.result,
     };
 
     const traceNode: TraceNode = {
@@ -153,10 +183,10 @@ describe('Internal-text leak dynamic scan across 4 key surfaces', () => {
       type: 'tool',
       timestamp: 1_762_000_000_000,
       toolCall: {
-        id: humanizedCall.id,
-        name: humanizedCall.name,
-        args: humanizedCall.arguments,
-        result: String(humanizedCall.result?.output ?? ''),
+        id: rawToolCall.id,
+        name: rawToolCall.name,
+        args: rawToolCall.arguments,
+        result: String(rawToolCall.result?.output ?? ''),
         success: true,
       },
     };
@@ -164,61 +194,53 @@ describe('Internal-text leak dynamic scan across 4 key surfaces', () => {
     const { container } = render(
       <div>
         <ToolStepGroup nodes={[traceNode]} defaultExpanded={true} />
-        <ToolDetails toolCall={humanizedCall} />
+        <ToolDetails toolCall={rawToolCall} />
       </div>,
     );
 
     const visibleText = container.textContent || '';
     expect(visibleText.length).toBeGreaterThan(0);
-    expect(visibleText).toContain('已接收：');
-    expect(detectInternalTextLeaks(visibleText)).toEqual([]);
+    assertSurfaceHasOnlyExpectedLeaks('chat-tool-card', visibleText);
   });
 
-  it('Surface 2 (Background-task card): renders humanized background task summary without internal text leaks', () => {
+  it('Surface 2 (Background-task card): reports only ticket-owned leaks from a raw task', () => {
     const rawBg = LEAK_FIXTURES.backgroundTask;
-    const humanizedTasks: TaskRecord[] = [
+    const rawTasks: TaskRecord[] = [
       {
         id: rawBg.id,
         scope: 'global',
-        title: humanizeInternalText(rawBg.title, 'zh').text,
+        title: rawBg.title,
         status: 'in_progress',
         steps: [
           {
-            title: humanizeInternalText(rawBg.stepTitle, 'zh').text,
+            title: rawBg.stepTitle,
             status: 'in_progress',
           },
         ],
       },
     ];
 
-    const { container } = render(<TaskDashboardSummary tasks={humanizedTasks} />);
+    const { container } = render(<TaskDashboardSummary tasks={rawTasks} />);
 
     const visibleText = container.textContent || '';
-    expect(visibleText).toContain('后台任务执行中');
-    expect(detectInternalTextLeaks(visibleText)).toEqual([]);
+    assertSurfaceHasOnlyExpectedLeaks('background-task-card', visibleText);
   });
 
-  it('Surface 3 (Automation run record & event decisions): renders humanized run record without internal text leaks', async () => {
+  it('Surface 3 (Automation run record & event decisions): reports only ticket-owned leaks from raw records', async () => {
     const rawExec = LEAK_FIXTURES.automationRun.execution;
-    const humanizedExec: CronJobExecution = {
-      ...rawExec,
-      id: humanizeInternalText(rawExec.id, 'zh').text,
-      jobId: humanizeInternalText(rawExec.jobId, 'zh').text,
-      sessionId: humanizeInternalText(rawExec.sessionId, 'zh').text,
-      result: humanizeInternalText(rawExec.result, 'zh').text,
-    };
+    const rawExecution: CronJobExecution = rawExec;
 
-    const humanizedDecisions: CronEventDecision[] =
+    const rawDecisions: CronEventDecision[] =
       LEAK_FIXTURES.automationRun.decisions.map((d) => ({
         ...d,
-        eventId: humanizeInternalText(d.eventId || '', 'zh').text,
-        reason: humanizeInternalText(d.reason || '', 'zh').text,
-        matchedRule: humanizeInternalText(d.matchedRule || '', 'zh').text,
+        eventId: d.eventId,
+        reason: d.reason,
+        matchedRule: d.matchedRule,
       }));
-    cronClientMocks.getEventDecisions.mockResolvedValue(humanizedDecisions);
+    cronClientMocks.getEventDecisions.mockResolvedValue(rawDecisions);
 
     const job: CronJobDefinition = {
-      id: humanizedExec.jobId,
+      id: rawExecution.jobId,
       runsOn: 'local',
       name: '收件箱自动巡检',
       scheduleType: 'event',
@@ -238,7 +260,7 @@ describe('Internal-text leak dynamic scan across 4 key surfaces', () => {
 
     const { container } = render(
       <div>
-        <CronExecutionDetail execution={humanizedExec} />
+        <CronExecutionDetail execution={rawExecution} />
         <CronEventDecisionsPanel job={job} />
       </div>,
     );
@@ -248,33 +270,21 @@ describe('Internal-text leak dynamic scan across 4 key surfaces', () => {
     );
 
     const visibleText = container.textContent || '';
-    expect(visibleText).toContain('本次运行未产生事件处理记录');
-    expect(visibleText).toContain('未发送外部通知');
-    expect(detectInternalTextLeaks(visibleText)).toEqual([]);
+    assertSurfaceHasOnlyExpectedLeaks('automation-run-record', visibleText);
   });
 
-  it('Surface 4 (Error card): renders humanized tool error card without internal text leaks', () => {
+  it('Surface 4 (Error card): reports only ticket-owned leaks from a raw tool error', () => {
     const rawErr = LEAK_FIXTURES.errorCard;
-    const humanizedError = humanizeInternalText(rawErr.result.error, 'zh');
-    const humanizedCommand = humanizeInternalText(
-      rawErr.arguments.command,
-      'zh',
-    ).text;
-    const humanizedErrorCall: ToolCall = {
-      id: humanizeInternalText(rawErr.id, 'zh').text,
-      name: 'Bash',
-      arguments: {
-        command: humanizedCommand,
-      },
-      result: {
-        success: false,
-        error: humanizedError.text,
-      },
+    const rawErrorCall: ToolCall = {
+      id: rawErr.id,
+      name: rawErr.name,
+      arguments: rawErr.arguments,
+      result: rawErr.result,
     };
 
-    const { container } = render(<ToolDetails toolCall={humanizedErrorCall} />);
+    const { container } = render(<ToolDetails toolCall={rawErrorCall} />);
 
-    // Also expand raw error details if toggle button is rendered to verify humanized error text has 0 leaks
+    // Also expand raw error details if a toggle is rendered so every visible string is scanned.
     const buttons = Array.from(container.querySelectorAll('button'));
     const rawErrorButton = buttons.find((b) =>
       b.textContent?.includes('查看原始报错'),
@@ -284,10 +294,6 @@ describe('Internal-text leak dynamic scan across 4 key surfaces', () => {
     }
 
     const visibleText = container.textContent || '';
-    expect(visibleText).toContain('执行中断：后台进程异常退出');
-    expect(humanizedError.collapseIntoDetails?.action).toBe(
-      'collapse_into_details',
-    );
-    expect(detectInternalTextLeaks(visibleText)).toEqual([]);
+    assertSurfaceHasOnlyExpectedLeaks('error-card', visibleText);
   });
 });

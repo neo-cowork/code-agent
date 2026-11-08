@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   evaluateGate,
   loadAndValidateAllowlist,
+  loadAndValidateDynamicAllowlist,
   scanRendererStatic,
 } from '../../scripts/internal-text-leak-gate.mjs';
 
@@ -99,14 +100,53 @@ describe('internal-text-leak-gate', () => {
       expect.objectContaining({
         file: 'src/renderer/LeakDemo.tsx',
         rule: 'session_id',
-        sample: '`session_${id}`',
+        sample: '{`session_${id}`}',
       }),
       expect.objectContaining({
         file: 'src/renderer/LeakDemo.tsx',
         rule: 'english_state_word',
-        sample: 'interrupted: process crashed',
+        sample: '{"interrupted: process crashed"}',
       }),
     ]);
+  });
+
+  it('catches a newly named runtime identifier member such as `{job.id}`', () => {
+    const dir = createTempDir();
+    const rendererDir = path.join(dir, 'src/renderer');
+    fs.mkdirSync(rendererDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(rendererDir, 'RuntimeIdLeak.tsx'),
+      'export function RuntimeIdLeak({ job }: { job: { id: string } }) { return <span>{job.id}</span>; }\n',
+      'utf8',
+    );
+    const allowlistPath = path.join(dir, 'allowlist.json');
+    fs.writeFileSync(allowlistPath, '[]', 'utf8');
+
+    const result = evaluateGate({ rendererDir, allowlistPath, repoRoot: dir });
+
+    expect(result.unexpectedHits).toEqual([
+      expect.objectContaining({
+        file: 'src/renderer/RuntimeIdLeak.tsx',
+        rule: 'uuid',
+        sample: '{job.id}',
+      }),
+    ]);
+  });
+
+  it('fails loud when a dynamic expected-leak entry has no reason', () => {
+    const dir = createTempDir();
+    const allowlistPath = path.join(dir, 'dynamic-allowlist.json');
+    fs.writeFileSync(
+      allowlistPath,
+      JSON.stringify([
+        { file: 'error-card', rule: 'session_id', sample: 'session_x', reason: '' },
+      ]),
+      'utf8',
+    );
+
+    expect(() => loadAndValidateDynamicAllowlist(allowlistPath)).toThrow(
+      /missing a non-empty "reason"/,
+    );
   });
 
   it('reports stale allowlist entries without failing when an allowlisted leak is fixed', () => {

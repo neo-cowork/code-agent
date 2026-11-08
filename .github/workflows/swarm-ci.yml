@@ -68,6 +68,12 @@ on:
       - 'scripts/host-chinese-error-ratchet.mjs'
       - 'scripts/internal-text-leak-gate.mjs'
       - 'scripts/internal-text-leak-allowlist.json'
+      - 'scripts/internal-text-leak-dynamic-allowlist.json'
+      - 'src/shared/humanizeInternalText.ts'
+      - 'src/shared/internalTextLeakPatterns.json'
+      - 'tests/renderer/components/internalTextLeakDynamicScan.test.tsx'
+      - 'tests/shared/humanizeInternalText.test.ts'
+      - 'tests/scripts/internalTextLeakGate.test.ts'
       - 'scripts/attention-budget-ratchet.mjs'
       # 基线也要触发：只改基线 = 手工放宽棘轮，不能溜过门（与 knip 基线同理）
       - 'scripts/attention-budget-ratchet-baseline.json'

@@ -1,3 +1,5 @@
+import leakPatterns from './internalTextLeakPatterns.json';
+
 export type InternalTextLanguage = 'zh' | 'en';
 
 export type InternalTextFormat =
@@ -28,19 +30,20 @@ export interface HumanizedInternalTextResult {
   collapseIntoDetails?: CollapseIntoDetailsInstruction;
 }
 
-const UUID_EXACT_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const UUID_GLOBAL_RE =
-  /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+const UUID_EXACT_RE = new RegExp(
+  `^(?:${leakPatterns.uuid.replace(/^\\b|\\b$/g, '')})$`,
+  'i',
+);
+const UUID_GLOBAL_RE = new RegExp(leakPatterns.uuid, 'gi');
 
-const SESSION_ID_EXACT_RE = /^(?:session_[A-Za-z0-9_-]{3,}|session-work-[A-Za-z0-9_-]{3,})$/;
-const SESSION_ID_GLOBAL_RE = /\b(?:session_[A-Za-z0-9_-]{3,}|session-work-[A-Za-z0-9_-]{3,})\b/g;
+const SESSION_ID_EXACT_RE = new RegExp(`^(?:${leakPatterns.sessionId.replace(/^\\b|\\b$/g, '')})$`);
+const SESSION_ID_GLOBAL_RE = new RegExp(leakPatterns.sessionId, 'g');
 
-const CALL_ID_EXACT_RE = /^(?:call_[A-Za-z0-9_-]{3,}|toolu_[A-Za-z0-9_-]{3,})$/;
-const CALL_ID_GLOBAL_RE = /\b(?:call_[A-Za-z0-9_-]{3,}|toolu_[A-Za-z0-9_-]{3,})\b/g;
+const CALL_ID_EXACT_RE = new RegExp(`^(?:${leakPatterns.callId.replace(/^\\b|\\b$/g, '')})$`);
+const CALL_ID_GLOBAL_RE = new RegExp(leakPatterns.callId, 'g');
 
-const OU_ID_EXACT_RE = /^(?:ou_[A-Za-z0-9_-]{3,}|oc_[A-Za-z0-9_-]{3,})$/;
-const OU_ID_GLOBAL_RE = /\b(?:ou_[A-Za-z0-9_-]{3,}|oc_[A-Za-z0-9_-]{3,})\b/g;
+const OU_ID_EXACT_RE = new RegExp(`^(?:${leakPatterns.ouId.replace(/^\\b|\\b$/g, '')})$`);
+const OU_ID_GLOBAL_RE = new RegExp(leakPatterns.ouId, 'g');
 
 const INTERNAL_TOOL_LABELS: Record<string, { zh: string; en: string }> = {
   read_file: { zh: '读取文件', en: 'Read file' },
@@ -71,12 +74,12 @@ const INTERNAL_TOOL_LABELS: Record<string, { zh: string; en: string }> = {
   TaskManager: { zh: '管理后台任务', en: 'Manage background tasks' },
 };
 
-const INTERNAL_TOOL_NAMES_SORTED = Object.keys(INTERNAL_TOOL_LABELS).sort(
+const INTERNAL_TOOL_NAMES_SORTED = [...leakPatterns.internalToolNames].sort(
   (a, b) => b.length - a.length,
 );
 
 const INTERNAL_TOOL_GLOBAL_RE = new RegExp(
-  `(?<![A-Za-z0-9_/-])(?:mcp__[A-Za-z0-9_-]+(?:__[A-Za-z0-9_-]+)*|${INTERNAL_TOOL_NAMES_SORTED.join('|')})(?![A-Za-z0-9_/-])`,
+  `${leakPatterns.internalToolPrefix}|(?<![A-Za-z0-9_/-])(?:${INTERNAL_TOOL_NAMES_SORTED.join('|')})(?![A-Za-z0-9_/-])`,
   'g',
 );
 
@@ -87,11 +90,11 @@ interface EnglishStatePattern {
 
 const ENGLISH_STATE_PATTERNS: EnglishStatePattern[] = [
   {
-    regex: /\baccepted\s*[：:]\s*/g,
+    regex: new RegExp(leakPatterns.englishState[0], 'g'),
     replace: (_match, lang) => (lang === 'en' ? 'Received: ' : '已接收：'),
   },
   {
-    regex: /\[(running|completed|failed|cancelled|canceled|pending)\]\s*id=([A-Za-z0-9_-]+)/gi,
+    regex: new RegExp(leakPatterns.englishState[1], 'gi'),
     replace: (_match, lang, state) => {
       const normalized = (state || '').toLowerCase();
       if (lang === 'en') {
@@ -109,51 +112,50 @@ const ENGLISH_STATE_PATTERNS: EnglishStatePattern[] = [
     },
   },
   {
-    regex: /\binterrupted:\s*process crashed\b/gi,
+    regex: new RegExp(leakPatterns.englishState[2], 'gi'),
     replace: (_match, lang) =>
       lang === 'en'
         ? 'Execution interrupted because the background process exited unexpectedly'
         : '执行中断：后台进程异常退出',
   },
   {
-    regex: /\btool call was cancelled\b/gi,
+    regex: new RegExp(leakPatterns.englishState[3], 'gi'),
     replace: (_match, lang) =>
       lang === 'en' ? 'Operation was cancelled' : '已取消本次操作',
   },
   {
-    regex: /\bresult was recorded\b/gi,
+    regex: new RegExp(leakPatterns.englishState[4], 'gi'),
     replace: (_match, lang) =>
       lang === 'en' ? 'Result saved' : '已记录执行结果',
   },
   {
-    regex: /\bmail message\s*·\s*account\s+([^\s·]+)\s*·\s*mailbox\s+([^\s·\n]+)/gi,
+    regex: new RegExp(leakPatterns.englishState[5], 'gi'),
     replace: (_match, lang, account, mailbox) =>
       lang === 'en'
         ? `Mail message (${account} / ${mailbox})`
         : `邮件消息（账号 ${account} · 邮箱 ${mailbox}）`,
   },
   {
-    regex: /\bno outbound action attempted\b/gi,
+    regex: new RegExp(leakPatterns.englishState[6], 'gi'),
     replace: (_match, lang) =>
       lang === 'en' ? 'No external message sent' : '未发送外部通知',
   },
   {
-    regex: /\brun result carried no eventDecisions\b/gi,
+    regex: new RegExp(leakPatterns.englishState[7], 'gi'),
     replace: (_match, lang) =>
       lang === 'en' ? 'No event handling records for this run' : '本次运行未产生事件处理记录',
   },
 ];
 
-const SANDBOX_EXEC_COMMAND_RE = /\bsandbox-exec\s+-f\s+\S+/g;
-const SANDBOX_EXEC_TOKEN_RE = /\bsandbox-exec\b/g;
+const SANDBOX_EXEC_COMMAND_RE = new RegExp(`${leakPatterns.sandboxExec}\\s+-f\\s+\\S+`, 'g');
+const SANDBOX_EXEC_TOKEN_RE = new RegExp(leakPatterns.sandboxExec, 'g');
 
-const TEMP_PATH_GLOBAL_RE =
-  /(?:\/private\/tmp|\/tmp|\/var\/folders)\/[A-Za-z0-9._/-]+/g;
+const TEMP_PATH_GLOBAL_RE = new RegExp(leakPatterns.tempPath, 'g');
 
-const RAW_JSON_OBJECT_RE =
-  /^\s*\{[\s\S]*"[^"\r\n]+"[\s]*:[\s\S]*\}\s*$/;
-const INLINE_RAW_JSON_RE =
-  /\{(?:\s*"[A-Za-z0-9_.-]+"\s*:\s*(?:"[^"]*"|-?\d+(?:\.\d+)?|true|false|null|\[[^\]]*\]|\{[^}]*\})\s*,?){1,}\}/g;
+const RAW_JSON_OBJECT_RE = new RegExp(
+  `^\\s*\\{(?:\\s*${leakPatterns.rawJsonKeyValue}\\s*,?){1,}\\}\\s*$`,
+);
+const INLINE_RAW_JSON_RE = new RegExp(`\\{(?:\\s*${leakPatterns.rawJsonKeyValue}\\s*,?){1,}\\}`, 'g');
 
 function humanizeMcpToolName(rawName: string, lang: InternalTextLanguage): string {
   const parts = rawName.replace(/^mcp__/, '').split('__').filter(Boolean);
@@ -207,9 +209,16 @@ export function detectInternalTextLeaks(input: string): InternalTextLeakMatch[] 
 
   const matches: InternalTextLeakMatch[] = [];
   const pushUnique = (format: InternalTextFormat, sample: string) => {
-    if (!matches.some((m) => m.format === format)) {
+    if (!matches.some((m) => m.format === format && m.sample === sample)) {
       matches.push({ format, sample });
     }
+  };
+  const collectRegexMatches = (regex: RegExp, format: InternalTextFormat) => {
+    regex.lastIndex = 0;
+    for (const match of input.matchAll(regex)) {
+      if (match[0]) pushUnique(format, match[0]);
+    }
+    regex.lastIndex = 0;
   };
 
   const trimmed = input.trim();
@@ -221,57 +230,25 @@ export function detectInternalTextLeaks(input: string): InternalTextLeakMatch[] 
       }
     } catch {
       // If it still looks like a raw JSON object literal with key-value pairs
-      if (INLINE_RAW_JSON_RE.test(trimmed)) {
-        INLINE_RAW_JSON_RE.lastIndex = 0;
-        pushUnique('raw_json', trimmed.slice(0, 80));
-      }
+      collectRegexMatches(INLINE_RAW_JSON_RE, 'raw_json');
     }
   } else {
-    INLINE_RAW_JSON_RE.lastIndex = 0;
-    const inlineJson = INLINE_RAW_JSON_RE.exec(input);
-    if (inlineJson) {
-      pushUnique('raw_json', inlineJson[0].slice(0, 80));
-    }
+    collectRegexMatches(INLINE_RAW_JSON_RE, 'raw_json');
   }
 
-  UUID_GLOBAL_RE.lastIndex = 0;
-  const uuidMatch = UUID_GLOBAL_RE.exec(input);
-  if (uuidMatch) pushUnique('uuid', uuidMatch[0]);
-
-  SESSION_ID_GLOBAL_RE.lastIndex = 0;
-  const sessionMatch = SESSION_ID_GLOBAL_RE.exec(input);
-  if (sessionMatch) pushUnique('session_id', sessionMatch[0]);
-
-  CALL_ID_GLOBAL_RE.lastIndex = 0;
-  const callMatch = CALL_ID_GLOBAL_RE.exec(input);
-  if (callMatch) pushUnique('call_id', callMatch[0]);
-
-  OU_ID_GLOBAL_RE.lastIndex = 0;
-  const ouMatch = OU_ID_GLOBAL_RE.exec(input);
-  if (ouMatch) pushUnique('ou_id', ouMatch[0]);
-
-  INTERNAL_TOOL_GLOBAL_RE.lastIndex = 0;
-  const toolMatch = INTERNAL_TOOL_GLOBAL_RE.exec(input);
-  if (toolMatch) pushUnique('internal_tool_name', toolMatch[0]);
+  collectRegexMatches(UUID_GLOBAL_RE, 'uuid');
+  collectRegexMatches(SESSION_ID_GLOBAL_RE, 'session_id');
+  collectRegexMatches(CALL_ID_GLOBAL_RE, 'call_id');
+  collectRegexMatches(OU_ID_GLOBAL_RE, 'ou_id');
+  collectRegexMatches(INTERNAL_TOOL_GLOBAL_RE, 'internal_tool_name');
 
   for (const pattern of ENGLISH_STATE_PATTERNS) {
-    pattern.regex.lastIndex = 0;
-    const stateMatch = pattern.regex.exec(input);
-    if (stateMatch) {
-      pushUnique('english_state_word', stateMatch[0]);
-      break;
-    }
+    collectRegexMatches(pattern.regex, 'english_state_word');
   }
 
-  SANDBOX_EXEC_COMMAND_RE.lastIndex = 0;
-  SANDBOX_EXEC_TOKEN_RE.lastIndex = 0;
-  const sandboxMatch =
-    SANDBOX_EXEC_COMMAND_RE.exec(input) || SANDBOX_EXEC_TOKEN_RE.exec(input);
-  if (sandboxMatch) pushUnique('sandbox_exec', sandboxMatch[0]);
-
-  TEMP_PATH_GLOBAL_RE.lastIndex = 0;
-  const tempMatch = TEMP_PATH_GLOBAL_RE.exec(input);
-  if (tempMatch) pushUnique('temp_path', tempMatch[0]);
+  collectRegexMatches(SANDBOX_EXEC_COMMAND_RE, 'sandbox_exec');
+  collectRegexMatches(SANDBOX_EXEC_TOKEN_RE, 'sandbox_exec');
+  collectRegexMatches(TEMP_PATH_GLOBAL_RE, 'temp_path');
 
   return matches;
 }
@@ -297,7 +274,7 @@ export function humanizeInternalText(
     return { text: input, detectedFormats: [] };
   }
 
-  const detectedFormats = leaks.map((l) => l.format);
+  const detectedFormats = [...new Set(leaks.map((l) => l.format))];
   const detailsLabel = lang === 'en' ? 'Technical details' : '技术详情';
   const trimmed = input.trim();
 
