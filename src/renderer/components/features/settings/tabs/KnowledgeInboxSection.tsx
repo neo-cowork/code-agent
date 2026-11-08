@@ -15,6 +15,7 @@ import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { useI18n } from '../../../../hooks/useI18n';
 import { zh, type Translations } from '../../../../i18n';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 import {
   buildInboxItems,
   buildMemoryInboxResolvePayload,
@@ -277,7 +278,7 @@ export function KnowledgeInboxSection() {
       description={t.knowledgeMemory.inboxSectionDescription}
       actions={(
         <span className="text-xs text-zinc-500">
-          {t.knowledgeMemory.countSuffix.replace('{count}', String(inboxItems.length))}
+          {interpolatePlural(t.knowledgeMemory.countSuffix, inboxItems.length)}
         </span>
       )}
     >

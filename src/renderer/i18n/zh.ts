@@ -148,7 +148,7 @@ export const zh = {
     cacheSavedLine: '缓存已省 {saved}',
     turnCostLine: '本轮 ≈ {cost} · {model}',
     turnCostUnknownLine: '本轮费用未知（{model} 无刊例价）',
-    unknownTurnsNote: '{count} 轮未知价未计入',
+    unknownTurnsNote: { one: '{count} 轮未知价未计入', other: '{count} 轮未知价未计入' },
     estimateDisclaimer: '刊例估算，非实际账单',
   },
 
@@ -268,7 +268,7 @@ export const zh = {
     proposalOpRename: '改标签',
     proposalOpDiscard: '淘汰',
     proposalOpGenerate: '生成图',
-    proposalEstCost: '预估生成花费 {amount}（{n} 张）',
+    proposalEstCost: { one: '预估生成花费 {amount}（{count} 张）', other: '预估生成花费 {amount}（{count} 张）' },
     proposalPaidBadge: '付费',
     proposalSelectedCount: '已选 {n}/{total}',
     proposalNothingSelected: '至少选一项',
@@ -758,7 +758,7 @@ export const zh = {
     patternSequential: '顺序协作',
     patternParallel: '并行协作',
     patternHierarchical: '层级编排',
-    agentsWorking: '{count} 个 Agent 协同工作中',
+    agentsWorking: { one: '{count} 个 Agent 协同工作中', other: '{count} 个 Agent 协同工作中' },
     // Skills
     unmountSkill: '卸载',
     addSkills: '添加 ({count})',
