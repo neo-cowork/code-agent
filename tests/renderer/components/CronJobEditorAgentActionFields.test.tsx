@@ -2,9 +2,10 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CronJobDefinition } from '../../../src/shared/contract/cron';
+import type { CreateCronJobDefinition, CronJobDefinition } from '../../../src/shared/contract/cron';
 import { CRON_AGENT_TYPES } from '../../../src/shared/constants';
 import { cronCenterEn, cronCenterZh } from '../../../src/renderer/i18n/cronCenter';
+import type { UpdateCronJobInput } from '../../../src/renderer/services/cronClient';
 
 vi.mock('../../../src/renderer/hooks/useMcpServerStates', () => ({
   useMcpServerStates: () => [],
@@ -31,8 +32,8 @@ function agentJob(
   };
 }
 
-function storedJob(input: Omit<CronJobDefinition, 'id' | 'createdAt' | 'updatedAt'>): CronJobDefinition {
-  return { ...input, id: 'created-agent-job', createdAt: 1, updatedAt: 1 };
+function storedJob(input: CreateCronJobDefinition): CronJobDefinition {
+  return { ...input, id: 'created-agent-job', runsOn: input.runsOn ?? 'local', createdAt: 1, updatedAt: 1 };
 }
 
 function controlForLabel(label: string): HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement {
@@ -78,7 +79,7 @@ afterEach(() => {
 
 describe('manual cron agent action fields', () => {
   it('uses every CRON_AGENT_TYPES value with a description, defaults to default, and saves without editing type or context', async () => {
-    const createJob = vi.fn(async (input: Omit<CronJobDefinition, 'id' | 'createdAt' | 'updatedAt'>) => storedJob(input));
+    const createJob = vi.fn(async (input: CreateCronJobDefinition) => storedJob(input));
     useCronStore.setState({ createJob });
     await openNewManualAgent();
 
@@ -140,7 +141,7 @@ describe('manual cron agent action fields', () => {
   });
 
   it.each(['', '{}'])('saves %j extra parameters as an empty object without error', async (contextText) => {
-    const updateJob = vi.fn(async (_id: string, input: Omit<CronJobDefinition, 'id' | 'createdAt' | 'updatedAt'>) => storedJob(input));
+    const updateJob = vi.fn(async (_id: string, input: UpdateCronJobInput) => ({ ...agentJob(), ...input }));
     useCronStore.setState({ updateJob });
     openActionTab(agentJob('default', { previous: true }));
 
