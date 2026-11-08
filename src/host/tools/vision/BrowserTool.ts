@@ -165,13 +165,13 @@ ${browserJevStepDescriptionSuffix()}
         description: '[Playwright] CSS selector for element interactions',
       },
       targetRef: {
-        type: 'object',
-        description: '[Playwright] Fresh target reference returned by get_dom_snapshot',
+        type: ['object', 'string'],
+        description: '[Playwright] Fresh target reference returned by get_dom_snapshot: pass the targetRef object from get_dom_snapshot interactiveElements, or just its refId string, e.g. {"action":"click","targetRef":"<refId>"}.',
         additionalProperties: true,
       },
       destinationTargetRef: {
-        type: 'object',
-        description: '[Playwright] Fresh destination target reference for drag',
+        type: ['object', 'string'],
+        description: '[Playwright] Fresh destination target reference for drag (pass the targetRef object from get_dom_snapshot interactiveElements, or just its refId string).',
         additionalProperties: true,
       },
       text: {

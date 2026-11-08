@@ -52,6 +52,7 @@ import {
   getWorkbenchCapabilityStatusPresentation,
   getWorkbenchCapabilityTitle,
 } from '../../../../utils/workbenchPresentation';
+import { getConnectorCardPresentation } from '../../../../utils/connectorCardPresentation';
 import type { WorkbenchMcpRegistryItem } from '../../../../utils/workbenchCapabilityRegistry';
 import {
   findWorkbenchCapabilityHistoryItem,
@@ -362,7 +363,6 @@ export const MCPSettings: React.FC = () => {
 
   const renderMcpServerCard = (server: WorkbenchMcpRegistryItem) => {
     const catalogEntry = mcpCatalog.servers.find((entry) => entry.id === server.id);
-    const serverStatus = getWorkbenchCapabilityStatusPresentation(server, { locale: language });
     const installing = serverInstallStates[server.id] === 'installing';
     const connectionState = installing ? 'connecting' : server.lifecycle.connectionState;
     const statusClass = getStatusBadgeClass(connectionState);
@@ -376,6 +376,7 @@ export const MCPSettings: React.FC = () => {
     const isComputerUse = COMPUTER_USE_SERVER_IDS.has(server.id);
     const riskTier = getMcpRiskTier(server.id);
     const displayName = isComputerUse ? mcpText.grid.sections.local.computerUseTitle : server.label;
+    const cardPresentation = getConnectorCardPresentation(server, mcpText.grid.cardStatus, { connectionState, displayName });
 
     return (
       <div
@@ -390,7 +391,7 @@ export const MCPSettings: React.FC = () => {
           if (event.key === 'Enter' || event.key === ' ') openCapabilitySheet(server);
         }}
         className="min-h-36 cursor-pointer rounded-xl border border-zinc-700 bg-zinc-900/60 p-4 transition-colors hover:border-zinc-600"
-        title={getWorkbenchCapabilityTitle(server, { locale: language })}
+        title={cardPresentation.title}
         data-testid={`mcp-connector-card-${server.id}`}
       >
         <div className="flex items-start justify-between gap-3">
@@ -418,7 +419,7 @@ export const MCPSettings: React.FC = () => {
                 />
                 <span className="truncate text-sm font-medium text-zinc-100">{displayName}</span>
                 <span className={`rounded border px-1.5 py-0.5 text-[10px] ${statusClass}`}>
-                  {connectionState === 'connecting' ? mcpText.management.installing : serverStatus.label}
+                  {cardPresentation.statusLabel}
                 </span>
                 {riskTier && (
                   <span
@@ -457,9 +458,9 @@ export const MCPSettings: React.FC = () => {
             />
           </div>
         </div>
-        <p className="mt-3 line-clamp-3 text-xs leading-relaxed text-zinc-400">
-          {getWorkbenchCapabilityTitle(server, { locale: language })}
-        </p>
+        {cardPresentation.description && (
+          <p className="mt-3 line-clamp-3 text-xs leading-relaxed text-zinc-400">{cardPresentation.description}</p>
+        )}
         {connectionState === 'connected' && (
           <Button
             size="sm"
@@ -471,9 +472,6 @@ export const MCPSettings: React.FC = () => {
             {mcpText.management.useInChat}
           </Button>
         )}
-        <div className="mt-3 text-[11px] text-zinc-500">
-          {connectionState === 'connecting' ? mcpText.management.installing : serverStatus.label}
-        </div>
       </div>
     );
   };
@@ -555,7 +553,8 @@ export const MCPSettings: React.FC = () => {
         ) : undefined}
       >
         <div className="text-xs text-zinc-500">
-          {serverSummary.connected}/{serverSummary.total}{mcpText.grid.connectedSummarySuffix}
+          {mcpText.grid.connectedSummaryPrefix}{serverSummary.connected}
+          {mcpText.grid.connectedSummaryMiddle}{serverSummary.total}{mcpText.grid.connectedSummarySuffix}
         </div>
 
         {message && (

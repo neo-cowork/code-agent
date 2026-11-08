@@ -28,6 +28,8 @@ const ALLOWED_TOOLS = [
   'read_pdf',
   'read_xlsx',
   'ReadDocument',
+  'spawn_agent',
+  'collect_agent',
 ];
 
 const MISSING_SKILL_PROMPT = [

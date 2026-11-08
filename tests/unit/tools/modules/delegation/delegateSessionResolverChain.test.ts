@@ -68,12 +68,12 @@ import { projectSessionCandidates } from '../../../../../src/host/services/deleg
 import { getToolResolver } from '../../../../../src/host/tools/dispatch/toolResolver';
 import type { ToolContext } from '../../../../../src/host/tools/types';
 
-function legacyCtxWithTurn(turnId: string): ToolContext {
+function legacyCtxWithTurn(turnId: string, runId = `run-for-${turnId}`): ToolContext {
   return {
     workingDirectory: '/workspace/origin',
     requestPermission: async () => true,
     sessionId: 'origin',
-    runId: `run-for-${turnId}`,
+    runId,
     turnId,
     workspace: '/workspace/origin',
     workspaceScope: {
@@ -147,10 +147,42 @@ describe('delegate_session 真链（resolver → protocol handler）origin_turn_
       target_session_id: string;
     }>;
     expect(rows).toHaveLength(2);
-    expect(rows.map((row) => row.origin_turn_id)).toEqual(['turn-AAAA', 'turn-BBBB']);
+    expect(rows.map((row) => row.origin_turn_id)).toEqual(['run-for-turn-AAAA', 'run-for-turn-BBBB']);
     expect(rows.map((row) => row.origin_turn_id)).not.toContain('unknown-turn');
     expect(new Set(rows.map((row) => row.submission_key)).size).toBe(2);
     expect(rows.every((row) => row.target_session_id === 'target')).toBe(true);
     expect(db.prepare('SELECT count(*) AS count FROM queued_inputs').get()).toMatchObject({ count: 2 });
+  });
+
+  it('同一用户轮（同 runId）跨两个模型步（不同 turnId）重复同参委托 → 复用第 1 条（reused: true），不产生第 2 行 (FB-873)', async () => {
+    const candidateRows = repo.listSessions(10_000, 0, false).map((session) => ({
+      id: session.id,
+      title: session.title,
+      workingDirectory: session.workingDirectory,
+      updatedAt: session.updatedAt,
+      sessionType: session.type,
+      isArchived: session.status === 'archived',
+      isDeleted: Boolean(session.isDeleted),
+      engineKind: session.engine?.kind,
+    }));
+    const projection = projectSessionCandidates(candidateRows, { originSessionId: 'origin', now: 100, secret: getDelegationCandidateSecret() });
+    const args = {
+      action: 'delegate_existing',
+      candidateSetId: projection.candidateSetId,
+      candidateRef: projection.candidates[0].candidateRef,
+      text: 'reply OK',
+    };
+
+    const resolver = getToolResolver();
+    const first = await resolver.execute('delegate_session', args, legacyCtxWithTurn('step-1', 'run-user-1'));
+    const second = await resolver.execute('delegate_session', args, legacyCtxWithTurn('step-2', 'run-user-1'));
+
+    expect(first.success).toBe(true);
+    expect(first.metadata).not.toHaveProperty('reused');
+    expect(second.success).toBe(true);
+    expect(second.metadata).toMatchObject({ status: 'active', target: 'Target', reused: true });
+    expect(JSON.parse(String(second.output))).toMatchObject({ status: 'active', target: 'Target', reused: true });
+    expect(db.prepare('SELECT count(*) AS count FROM session_delegations').get()).toMatchObject({ count: 1 });
+    expect(db.prepare('SELECT count(*) AS count FROM queued_inputs').get()).toMatchObject({ count: 1 });
   });
 });

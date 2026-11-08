@@ -63,10 +63,8 @@ describe('ChannelsSettings telegram privacy hint vs disconnect', () => {
     render(<ChannelsSettings />);
 
     await screen.findByText('TG 机器人');
-    const row = screen.getByText('TG 机器人').closest('div.grid') as HTMLElement;
-    expect(within(row).getByTestId('telegram-privacy-mode-hint').textContent).toBe(
-      c.modal.telegramPrivacyModeWarning,
-    );
+    const row = screen.getByText('TG 机器人').closest('[data-testid="channel-account-row"]') as HTMLElement;
+    expect(within(row).getByText(c.modal.telegramPrivacyModeWarning).textContent).toBe(c.modal.telegramPrivacyModeWarning);
 
     invoke.mockClear();
     fireEvent.click(screen.getByRole('button', { name: c.actions.disconnect }));
