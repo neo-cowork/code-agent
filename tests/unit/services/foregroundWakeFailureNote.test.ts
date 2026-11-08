@@ -89,7 +89,7 @@ describe('foreground wake failure note (default dependencies)', () => {
     const { message } = h.added[0];
     const registered = findRegisteredSystemEvent(message.metadata);
     expect(registered?.key).toBe('backgroundWakeDeferred');
-    expect(message.content).toBe('后台任务「报告」已完成，结果见上方的任务结果；当前步骤结束后，我会继续汇报。');
+    expect(message.content).toBe('后台任务「t」已完成，结果见上方的任务结果；当前步骤结束后，我会继续汇报。');
     expect(message.metadata?.backgroundWakeDeferred).toEqual({ taskId: 'task-n', outcome: 'completed' });
     expect(h.emitted.at(-1)).toEqual({ sessionId: 'session-n', event: { type: 'message', data: message } });
   });

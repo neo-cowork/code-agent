@@ -3,6 +3,7 @@ import type { SystemEventMessageMetadata } from '../../../shared/contract/system
 import {
   BACKGROUND_WAKE_DEFER_NOTICE_MS,
   BACKGROUND_WAKE_DEFER_PROGRESS,
+  BACKGROUND_WAKE_DEFER_TASK_TITLE_MAX_CHARS,
   formatBackgroundWakeDeferredNote,
   MAX_CONSECUTIVE_WAKES,
   SESSION_COMMAND_CENTER_WAKE_MAX_ITERATIONS,
@@ -11,6 +12,7 @@ import type { AgentOrchestrator } from '../../agent/agentOrchestrator';
 import type { AgentRunOptions } from '../../research/types';
 import { getPermissionModeManager } from '../../permissions/modes';
 import { getTaskManager } from '../../task/TaskManager';
+import { truncateObserveText } from '../../tools/observeModeGate';
 import { withSessionCommandCenterBrain } from '../../app/sessionCommandCenterBrain';
 import { getDatabase } from '../core/databaseService';
 import { QueuedInputRepository } from '../core/repositories/QueuedInputRepository';
@@ -211,7 +213,10 @@ export function createForegroundWake(
       pending.noticeEmitted = true;
       void dependencies.recordWakeDeferredNote(
         pending.task.sessionId,
-        formatBackgroundWakeDeferredNote(pending.task.shortName, pending.status),
+        formatBackgroundWakeDeferredNote(
+          truncateObserveText(pending.task.title, BACKGROUND_WAKE_DEFER_TASK_TITLE_MAX_CHARS),
+          pending.status,
+        ),
         { taskId: pending.task.id, outcome: pending.status },
       ).catch((error) => {
         dependencies.logger.warn('Foreground wake deferred note not recorded', {

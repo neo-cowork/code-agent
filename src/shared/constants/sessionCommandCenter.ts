@@ -21,6 +21,9 @@ export const SESSION_COMMAND_CENTER_WAKE_MAX_ITERATIONS = 4;
 /** Deferred foreground wakes surface a durable conversation note after this wait. */
 export const BACKGROUND_WAKE_DEFER_NOTICE_MS = 10_000;
 
+/** Keep the task title readable when it is embedded in the deferred-wake conversation note. */
+export const BACKGROUND_WAKE_DEFER_TASK_TITLE_MAX_CHARS = 80;
+
 /** Human progress shown while a completed background task is waiting for the foreground turn. */
 export const BACKGROUND_WAKE_DEFER_PROGRESS = {
   completed: '后台任务已完成，等待汇报',

@@ -175,13 +175,15 @@ describe('foreground task-result wake', () => {
     manager.hasActivePrimaryRun.mockReturnValue(true);
     const clock = fakeTimer();
     const recordWakeDeferredNote = vi.fn(async () => undefined);
+    const visibleTitle = '运行 sleep 40 并输出 X';
+    const internalShortName = 'slee';
     const wake = createForegroundWake(dependencies({
       recordWakeDeferredNote,
       setTimeout: clock.setTimeout,
       clearTimeout: clock.clearTimeout,
     }));
 
-    await wake(task(), 'completed');
+    await wake({ ...task(), title: visibleTitle, shortName: internalShortName }, 'completed');
 
     expect(manager.emitAgentEventForSession).toHaveBeenCalledWith('session-a', {
       type: 'task_progress',
@@ -214,9 +216,10 @@ describe('foreground task-result wake', () => {
     expect(recordWakeDeferredNote).toHaveBeenCalledTimes(1);
     expect(recordWakeDeferredNote).toHaveBeenCalledWith(
       'session-a',
-      '后台任务「报告」已完成，结果见上方的任务结果；当前步骤结束后，我会继续汇报。',
+      `后台任务「${visibleTitle}」已完成，结果见上方的任务结果；当前步骤结束后，我会继续汇报。`,
       { taskId: 'task-1', outcome: 'completed' },
     );
+    expect(recordWakeDeferredNote.mock.calls[0]?.[1]).not.toContain(`「${internalShortName}」`);
     manager.hasActivePrimaryRun.mockReturnValue(false);
     stateChangeListener?.({ sessionId: 'session-a', data: { status: 'idle' } });
     await vi.waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(1));
@@ -241,7 +244,7 @@ describe('foreground task-result wake', () => {
     expect(recordWakeDeferredNote).toHaveBeenCalledTimes(1);
     expect(recordWakeDeferredNote).toHaveBeenCalledWith(
       'session-a',
-      expect.stringContaining('「新任务」已失败'),
+      expect.stringContaining('「生成报告」已失败'),
       { taskId: 'task-new', outcome: 'failed' },
     );
     expect(manager.emitAgentEventForSession).toHaveBeenLastCalledWith(
