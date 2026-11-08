@@ -29,6 +29,7 @@ vi.mock('../../../src/renderer/services/cronClient', () => ({
 
 import { CronJobDetail } from '../../../src/renderer/components/features/cron/CronJobDetail';
 import { useCronStore } from '../../../src/renderer/stores/cronStore';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 
 function eventJob(overrides: Partial<CronJobDefinition> = {}): CronJobDefinition {
   return {
@@ -52,11 +53,11 @@ const decisions: CronEventDecision[] = [
     runId: 'run-1', tool: 'mail_send', target: 'client@example.com', summary: 'Re: invoice — We will refund you today.', createdAt: 3,
   },
   {
-    id: 'd2', jobId: 'job-listen', kind: 'event', eventId: 'm-7', decision: 'would_act', reason: '客户要求退款', runId: 'run-1',
+    id: 'd2', jobId: 'job-listen', kind: 'event', eventId: '163|INBOX|430', eventLabel: '王阿姨 · 退款什么时候到账', decision: 'would_act', reason: '客户要求退款', runId: 'run-1',
     matchedRule: 'mail message · account _icloud · mailbox INBOX', createdAt: 2,
   },
   {
-    id: 'd3', jobId: 'job-listen', kind: 'event', eventId: 'm-8', decision: 'ignored', reason: '广告邮件', runId: 'run-1',
+    id: 'd3', jobId: 'job-listen', kind: 'event', eventId: '163|INBOX|431', decision: 'ignored', reason: '广告邮件', runId: 'run-1',
     matchedRule: 'mail message · account _icloud · mailbox INBOX', createdAt: 1,
   },
 ];
@@ -67,6 +68,7 @@ beforeEach(() => {
   clientState.setEventActionMode.mockReset();
   clientState.getEventDecisions.mockResolvedValue(decisions);
   clientState.getEventActionModeChange.mockResolvedValue(null);
+  useAppStore.setState({ language: 'zh' });
 });
 
 afterEach(() => {
@@ -94,14 +96,60 @@ describe('CronEventDecisionsPanel (via CronJobDetail)', () => {
     expect(sectionRows[0].textContent).toContain('We will refund you today.');
     // 事件行带「命中的任务规则」（返修②）。
     expect(within(sectionRows[1]).getByTestId('cron-event-decision-rule').textContent)
-      .toContain('mail message · account _icloud · mailbox INBOX');
+      .toContain('邮件 · 账号 _icloud · 收件箱 INBOX');
+    expect(within(sectionRows[1]).getByTestId('cron-event-decision-default').textContent).toContain('王阿姨 · 退款什么时候到账');
+    expect(within(sectionRows[1]).getByTestId('cron-event-decision-default').textContent).not.toContain('163|INBOX|430');
 
     // 其余决策（非 would_act）留在总列表里：would_act 不得混入。
     const generalRows = await screen.findAllByTestId('cron-event-decision-row');
     expect(generalRows.map((row) => row.getAttribute('data-decision'))).toEqual(['ignored']);
     expect(generalRows[0].textContent).toContain('广告邮件');
+    expect(within(generalRows[0]).getByTestId('cron-event-decision-default').textContent).toContain('第 431 封邮件');
     expect(within(generalRows[0]).getByTestId('cron-event-decision-rule').textContent)
-      .toContain('mail message · account _icloud · mailbox INBOX');
+      .toContain('邮件 · 账号 _icloud · 收件箱 INBOX');
+  });
+
+  it.each([
+    { language: 'zh' as const, reason: '客户明确要求退款', expected: '客户明确要求退款' },
+    { language: 'en' as const, reason: 'Customer explicitly requested a refund', expected: 'Customer explicitly requested a refund' },
+    {
+      language: 'zh' as const,
+      reason: 'no outbound action attempted (no per-event reason stated)',
+      expected: '这个事件未触发任何对外操作；模型没有说明每个事件的原因',
+    },
+    {
+      language: 'en' as const,
+      reason: 'no outbound action attempted (no per-event reason stated)',
+      expected: 'This event did not trigger any outbound action; The model gave no reason for this event',
+    },
+  ])('renders model/fallback reason verbatim or localized in $language', async ({ language, reason, expected }) => {
+    useAppStore.setState({ language });
+    clientState.getEventDecisions.mockResolvedValue([{ ...decisions[2], reason }]);
+    render(<CronJobDetail job={eventJob()} />);
+    const row = await screen.findByTestId('cron-event-decision-row');
+    expect(within(row).getByTestId('cron-event-decision-default').textContent).toContain(expected);
+  });
+
+  it('keeps the raw mail id out of the default line and exposes it only in expandable details with copy controls', async () => {
+    clientState.getEventDecisions.mockResolvedValue([decisions[1]]);
+    render(<CronJobDetail job={eventJob()} />);
+    const row = await screen.findByTestId('cron-event-would-act-row');
+    const defaultLine = within(row).getByTestId('cron-event-decision-default');
+    expect(defaultLine.textContent).toContain('王阿姨 · 退款什么时候到账');
+    expect(defaultLine.textContent).not.toContain('163|INBOX|430');
+
+    const details = within(row).getByTestId('cron-event-decision-details') as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+    fireEvent.click(within(details).getByText('查看详情'));
+    expect(details.open).toBe(true);
+    expect(within(details).getByText('163|INBOX|430')).toBeTruthy();
+    expect(within(details).getByTestId('cron-event-decision-copy-event')).toBeTruthy();
+    expect(within(details).getByText('run-1')).toBeTruthy();
+    expect(within(details).getByTestId('cron-event-decision-copy-run')).toBeTruthy();
+    expect(details.textContent).toContain('规则');
+    expect(details.textContent).toContain('决策');
+    expect(details.textContent).toContain('原因');
+    expect(details.textContent).toContain('运行时间');
   });
 
   it('switch to auto opens a confirm modal; cancelling does not call the host', async () => {

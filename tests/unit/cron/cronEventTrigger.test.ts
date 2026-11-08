@@ -26,6 +26,7 @@ import {
 } from '../../../src/host/cron/cronMailPoller';
 import { getConnectorRegistry } from '../../../src/host/connectors/registry';
 import { parseCronExecutionTrigger } from '../../../src/host/cron/cronNormalizers';
+import type { CronEventDecisionInput, CronEventDecisionStore } from '../../../src/host/cron/cronEventDecisionLedger';
 
 import { CRON_EVENT_TRIGGER } from '../../../src/shared/constants/cronEventTrigger';
 
@@ -141,7 +142,11 @@ function mailMsg(id: number, overrides: Partial<MailSummary> = {}): MailSummary 
   };
 }
 
-function createMailHarness(jobs: CronJobDefinition[], reader: Partial<CronMailReader>) {
+function createMailHarness(
+  jobs: CronJobDefinition[],
+  reader: Partial<CronMailReader>,
+  decisionStore?: CronEventDecisionStore,
+) {
   const runs: CapturedRun[] = [];
   const host: CronEventTriggerHost = {
     getJobDefinitions: () => jobs,
@@ -158,6 +163,7 @@ function createMailHarness(jobs: CronJobDefinition[], reader: Partial<CronMailRe
     host,
     channelSource: new EventEmitter() as unknown as CronEventChannelSource,
     mailReader,
+    ...(decisionStore ? { decisionStore } : {}),
   });
   trigger.start();
   return { runs, trigger, jobs, mailReader };
@@ -754,6 +760,30 @@ describe('CronEventTrigger', () => {
       await vi.advanceTimersByTimeAsync(60_000); // t=105s：第三、四趟轮询
       expect(listMessages).toHaveBeenCalledTimes(4);
       expect(h.runs).toHaveLength(1);
+    });
+
+    it('mail 结算把发件人与主题截断为安全显示标签，并与内部组合 id 分栏保存', async () => {
+      const messages: MailSummary[] = [];
+      const rows: CronEventDecisionInput[] = [];
+      const store: CronEventDecisionStore = {
+        record: (batch) => { rows.push(...batch); },
+        countActionsForRun: () => 0,
+      };
+      createMailHarness(
+        [mailEventJob()],
+        { listMessages: async () => [...messages], readMessage: async () => 'body' },
+        store,
+      );
+      await vi.advanceTimersByTimeAsync(5_000);
+      messages.push(mailMsg(430, { sender: '王阿姨', subject: '退款什么时候到账' }));
+      await vi.advanceTimersByTimeAsync(40_000);
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        eventId: '_icloud|INBOX|430',
+        eventLabel: '王阿姨 · 退款什么时候到账',
+      });
+      expect(rows[0].eventLabel).not.toContain('_icloud|INBOX|430');
     });
 
     it('① 种子之后到达的邮件在下一趟轮询触发（每 30s 一趟，限频不吞）', async () => {
