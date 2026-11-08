@@ -2398,6 +2398,7 @@ describe('MessageProcessor persistence', () => {
       addAndPersistMessage: vi.fn(async (message) => {
         persistedMessages.push(message);
       }),
+      injectSystemMessage: vi.fn(),
       flushHookMessageBuffer: vi.fn(),
       updateContextHealth: vi.fn(),
       checkAndAutoCompress: vi.fn(),
@@ -2437,10 +2438,10 @@ describe('MessageProcessor persistence', () => {
         id: 'bash-call-1',
         name: 'delegate_task',
         arguments: expect.objectContaining({
-          title: '后台执行任务',
-          short_name: '后台任务',
-          lane_key: 'foreground-shell:turn-foreground-shell',
-          submission_key: 'bash-call-1',
+          title: '运行测试',
+          short_name: '跑测试',
+          lane_key: 'foreground-shell:run-foreground-shell',
+          submission_key: 'foreground-shell:run-foreground-shell',
           prompt: '请运行测试\n\nCommand to run:\nnpm run -s typecheck',
         }),
       })],

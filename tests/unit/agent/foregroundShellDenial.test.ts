@@ -10,7 +10,11 @@ vi.mock('../../../src/host/services/infra/logger', () => {
   return { createLogger: vi.fn(() => fake), logger: fake, default: fake };
 });
 
-import { describeDeniedShellCalls, redirectDeniedShellCalls } from '../../../src/host/agent/runtime/foregroundShellDenial';
+import {
+  describeDeniedShellCalls,
+  redirectDeniedShellCalls,
+  summarizeForegroundShellRequest,
+} from '../../../src/host/agent/runtime/foregroundShellDenial';
 import type { ToolCall } from '../../../src/shared/contract';
 import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
 import { getPolicyEngine, resetPolicyEngine } from '../../../src/host/permissions/policyEngine';
@@ -29,9 +33,9 @@ function foregroundContext(overrides: Partial<RuntimeContext> = {}): RuntimeCont
     sessionId: 'fg-shell',
     foregroundToolFace: true,
     allowedToolNames: ['delegate_task'],
-    messages: [{ id: 'user-1', role: 'user', content: '明天提醒我交报告', timestamp: 1 }],
+    messages: [{ id: 'user-1', role: 'user', content: '明天上午 9 点提醒我交报告。请用 Bash 工具执行多行 osascript（heredoc）建提醒', timestamp: 1 }],
     runId: 'run-1',
-    turn: { currentTurnId: 'turn-1', runUserPrompt: '明天提醒我交报告' },
+    turn: { currentTurnId: 'turn-1', runUserPrompt: '明天上午 9 点提醒我交报告。请用 Bash 工具执行多行 osascript（heredoc）建提醒' },
     turnTrace: { record: vi.fn() },
     ...overrides,
   } as unknown as RuntimeContext;
@@ -65,14 +69,36 @@ describe('describeDeniedShellCalls', () => {
     expect(out).toHaveLength(1);
     expect(out[0]).toMatchObject({ id: bashCall.id, name: 'delegate_task' });
     expect(out[0].arguments).toEqual({
-      title: '后台执行任务',
-      short_name: '后台任务',
-      lane_key: 'foreground-shell:turn-1',
-      submission_key: bashCall.id,
-      prompt: '明天提醒我交报告\n\nCommand to run:\nosascript <<\'EOF\'\nreturn 1\nEOF',
+      title: '建明天9点交报告提醒',
+      short_name: '交报告',
+      lane_key: 'foreground-shell:run-1',
+      submission_key: 'foreground-shell:run-1',
+      prompt: '明天上午 9 点提醒我交报告。请用 Bash 工具执行多行 osascript（heredoc）建提醒\n\nCommand to run:\nosascript <<\'EOF\'\nreturn 1\nEOF',
     });
     expect(String(out[0].arguments.title)).not.toContain('osascript');
     expect(info).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ cause: 'foreground-shell-redirected' }));
+  });
+
+  it('任务摘要使用用户目标，不把工具名或命令带进标题', () => {
+    const summary = summarizeForegroundShellRequest('请用 Bash 运行测试：npm run -s typecheck && npx vitest run tests/unit/app');
+    expect(summary).toEqual({ title: '运行类型检查和测试', shortName: '跑测试', userMessage: '运行类型检查和测试' });
+    expect(summary.title).not.toMatch(/Bash|npm|vitest|typecheck/i);
+  });
+
+  it('同一 turn 的多个 Bash 调用共用 submission_key，交给共享委托路径复用', () => {
+    const out = redirectDeniedShellCalls(foregroundContext(), [
+      bashCall,
+      { ...bashCall, id: 'call-bash-2', arguments: { command: 'osascript <<\'EOF\'\nreturn 2\nEOF' } },
+    ]);
+    expect(out.map((call) => call.name)).toEqual(['delegate_task', 'delegate_task']);
+    expect(out.map((call) => call.arguments.submission_key)).toEqual([
+      'foreground-shell:run-1',
+      'foreground-shell:run-1',
+    ]);
+    expect(out.map((call) => call.arguments.lane_key)).toEqual([
+      'foreground-shell:run-1',
+      'foreground-shell:run-1',
+    ]);
   });
 
   it('非前台回合不改写 Bash', () => {

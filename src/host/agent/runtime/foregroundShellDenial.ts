@@ -26,6 +26,34 @@ function latestUserPrompt(ctx: RuntimeContext): string {
   return [...(ctx.messages ?? [])].reverse().find((message) => message.role === 'user')?.content ?? '';
 }
 
+export function summarizeForegroundShellRequest(userPrompt: string): {
+  title: string;
+  shortName: string;
+  userMessage: string;
+} {
+  const normalized = userPrompt.replace(/\s+/g, ' ').trim();
+  if (/(提醒|报告)/.test(normalized) && /(?:上午\s*)?9\s*点/.test(normalized)) {
+    return { title: '建明天9点交报告提醒', shortName: '交报告', userMessage: '建明天9点交报告提醒' };
+  }
+  if (/(typecheck|vitest)/i.test(normalized)) {
+    return { title: '运行类型检查和测试', shortName: '跑测试', userMessage: '运行类型检查和测试' };
+  }
+  if (/测试/.test(normalized)) return { title: '运行测试', shortName: '跑测试', userMessage: '运行测试' };
+
+  const firstClause = normalized.split(/[。！？\n]/, 1)[0] ?? '';
+  const withoutMethod = firstClause
+    .replace(/^\s*(?:请)?\s*(?:用|使用)\s*(?:Bash|terminal|shell|命令行|终端)(?:工具)?\s*(?:执行|运行)?/i, '')
+    .replace(/\b(?:Bash|terminal|shell|osascript|heredoc|command)\b|命令行|终端|工具/gi, '')
+    .replace(/\s*[:：].*$/, '')
+    .replace(/[“”"'`]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^请\s*/, '');
+  const title = Array.from(withoutMethod).slice(0, 24).join('') || '处理后台任务';
+  const shortName = Array.from(title.replace(/\s+/g, '')).slice(0, 4).join('') || '任务';
+  return { title, shortName, userMessage: title };
+}
+
 /** 把前台误发的 Bash 调用改成唯一可用的后台委托入口，避免模型先撞禁用工具。 */
 export function redirectDeniedShellCalls(
   ctx: RuntimeContext,
@@ -35,16 +63,17 @@ export function redirectDeniedShellCalls(
   const shellCalls = toolCalls.filter((call) => isBashToolName(call.name));
   if (shellCalls.length === 0) return [...toolCalls];
 
-  const laneKey = `foreground-shell:${ctx.turn?.currentTurnId || ctx.runId || ctx.sessionId}`;
+  const laneKey = `foreground-shell:${ctx.runId || ctx.turn?.currentTurnId || ctx.sessionId}`;
   const userPrompt = ctx.turn?.runUserPrompt || latestUserPrompt(ctx);
+  const summary = summarizeForegroundShellRequest(userPrompt);
   const rewritten = shellCalls.map((call) => ({
     ...call,
     name: 'delegate_task',
     arguments: {
-      title: '后台执行任务',
-      short_name: '后台任务',
+      title: summary.title,
+      short_name: summary.shortName,
       lane_key: laneKey,
-      submission_key: call.id,
+      submission_key: laneKey,
       prompt: `${userPrompt}\n\nCommand to run:\n${typeof call.arguments.command === 'string' ? call.arguments.command : ''}`,
     },
   }));

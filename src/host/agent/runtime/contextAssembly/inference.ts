@@ -21,6 +21,7 @@ import { trackNode } from '../../../observability/posthogNode';
 import { POSTHOG_EVENTS } from '../../../../shared/observability/posthog-events';
 import { filterToolsByRunPolicyObserved, isToolDeniedForRun } from '../toolRunPolicy';
 import { isBashToolName } from '../../../tools/toolNames';
+import { summarizeForegroundShellRequest } from '../foregroundShellDenial';
 import {
   stripImagesFromMessages,
   extractUserRequestText,
@@ -709,15 +710,16 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
         const redirectedForegroundShell = ctx.runtime.foregroundToolFace === true
           && isBashToolName(chunk.toolCall?.name ?? '')
           && !isToolDeniedForRun(ctx.runtime, 'delegate_task');
-        const shellMentionedInForeground = ctx.runtime.foregroundToolFace === true
-          && /\b(?:bash|terminal)\b|命令行|终端/i.test(userRequest);
         const streamedToolName = redirectedForegroundShell ? 'delegate_task' : chunk.toolCall?.name;
+        const streamedUserMessage = redirectedForegroundShell
+          ? summarizeForegroundShellRequest(userRequest).userMessage
+          : userRequest;
         commandCenterPreannounce = emitCommandCenterToolStart({
           toolName: streamedToolName,
           commandCenterEnabled: ctx.runtime.allowedToolNames?.includes('delegate_task') === true,
           streamedContent: ctx.runtime.turn.lastStreamedContent,
           existingPreannounce: commandCenterPreannounce,
-          userMessage: redirectedForegroundShell || shellMentionedInForeground ? '这项任务' : userRequest,
+          userMessage: streamedUserMessage,
           emitPreview: (preview) => {
             ctx.runtime.turn.appendStreamedContent(preview);
             emitAssistantMessageDelta(ctx, 'content', preview);
