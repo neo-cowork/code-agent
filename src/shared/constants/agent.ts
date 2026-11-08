@@ -64,10 +64,14 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // 的 touchesWorkDirectory 口径：不进请求体，wire 序列化不含它，模型文本门要求 bump）。
 // sys-v100：整合 set_role_proactivity 的 schema 全额下发及 ToolSearch 索引行，
 // 合并后的 prompt 输入哈希面未在任何一侧记录过，按惯例升版。
-// sys-v102：N-FIX-BGTASK-QUEUE-FULL-DEAD-END——delegate_task 的 queue_when_full 参数描述更新
-// （并发槽已满时由工具自身弹选择卡，不再要求模型调 AskUserQuestion），与 main sys-v101
-// （browser targetRef 扩为 object|string）撞号，整合升版。
-export const PROMPT_VERSION = 'sys-v102' as const;
+// sys-v101：N-FIX-BROWSER-TARGETREF-STRING-WASTE-STEPS 整合合并——browser_action / Browser schema
+// targetRef 与 destinationTargetRef 扩为 ['object', 'string'] 并附单串 refId 示例（模型可见面变化），
+// 与 main 已合入的 sys-v100 撞号，按惯例升版。
+// sys-v102：整合 list_experts 可选 name 参数，支持 edit-role 从当前槽读取
+// 持久化专家定义；合并后模型可见面未在任一侧单独记录。
+// sys-v103：N-FIX-BGTASK-QUEUE-FULL-DEAD-END——delegate_task 的 queue_when_full 参数描述更新
+// （并发槽已满时由工具自身弹选择卡，不再要求模型调 AskUserQuestion），与 main sys-v102 撞号，整合升版。
+export const PROMPT_VERSION = 'sys-v103' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =

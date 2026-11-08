@@ -32,6 +32,7 @@ import { CronJobEditor } from './CronJobEditor';
 import { CronExecutionList } from './CronExecutionList';
 import { CronExecutionDetail } from './CronExecutionDetail';
 import { CronDailyCostSummary } from './CronDailyCostSummary';
+import { getBuiltinJobDisplay } from './builtinJobDisplay';
 import { WebModeBanner } from '../settings/WebModeBanner';
 import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 import { Button } from '../../primitives';
@@ -83,7 +84,7 @@ const StatusTile: React.FC<{ label: string; value: string; attention?: boolean; 
 );
 
 export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const cc = t.cronCenter;
   const {
     jobs,
@@ -227,8 +228,8 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
   );
 
   const jobNameById = useMemo(
-    () => Object.fromEntries(jobs.map((job) => [job.id, job.name])),
-    [jobs]
+    () => Object.fromEntries(jobs.map((job) => [job.id, getBuiltinJobDisplay(job, language)?.name ?? job.name])),
+    [jobs, language]
   );
 
   const runsOnByJobId = useMemo(

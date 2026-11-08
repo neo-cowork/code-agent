@@ -52,7 +52,9 @@ describe.each(FIXTURES)('%s (%s)', (_name, raw, expected) => {
 
   it('calendar list / get / create / update', async () => {
     const line = `u1|Work|Meet|${raw}|${raw}|Room|n|`;
-    mocks.runAppleScript.mockResolvedValueOnce(line);
+    mocks.runAppleScript
+      .mockResolvedValueOnce('Work')
+      .mockResolvedValueOnce(line);
     const list = await calendarConnector.execute('list_events', {
       from_ms: EXPECTED - 86_400_000, to_ms: EXPECTED + 86_400_000,
     });
@@ -114,7 +116,7 @@ describe('locale-independent fetch scripts', () => {
     });
     await mailConnector.execute('list_messages', { mailbox: 'INBOX' });
     await mailConnector.execute('read_message', { mailbox: 'INBOX', message_id: 1 }).catch(() => undefined);
-    await calendarConnector.execute('list_events', {});
+    await calendarConnector.execute('list_events', { calendar: 'W' });
     await calendarConnector.execute('get_event', { calendar: 'W', event_uid: 'u' }).catch(() => undefined);
     await calendarConnector.execute('create_event', { calendar: 'W', title: 't', start_ms: 1 }).catch(() => undefined);
     await calendarConnector.execute('update_event', { calendar: 'W', event_uid: 'u', title: 't' }).catch(() => undefined);
