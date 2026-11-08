@@ -1,4 +1,5 @@
 import { outcomeWordsZh } from './outcomeWords';
+import { zhAppshotsSettingsBase } from './appshotsSettingsBase';
 import { permissionGrantsZh } from './permissionGrants';
 // Settings namespace translations (zh/Work) — 纯平移拆分（债务门）
 export const zhSettingsWork = {
@@ -224,8 +225,8 @@ export const zhSettingsWork = {
       description: '配置外部入口，让 HTTP API、飞书、Lark 或 Telegram 可以和 Agent 交互。连接说明默认收起。',
       lowDistraction: {
         title: '低打扰策略',
-        description: '通道会话默认不触发桌面 reply notification；处理过程留在通道 typing / streaming / 任务面板里，系统通知只用于需要介入或任务完成。',
-        body: '飞书、Telegram、HTTP API 的普通回复不会弹桌面通知。错误回复只发短摘要，完整 trace 留在本机诊断；后续如需每个通道的完成提醒，也必须显式打开并继续走脱敏。',
+        description: '通道里的回复默认不弹桌面通知；处理进度留在通道会话和任务面板里，只有需要你介入或任务完成时，Neo 才会提醒你。',
+        body: '飞书、Telegram、HTTP API 的普通回复不会弹桌面通知。出错时只往通道发简短摘要，详细经过留在当前电脑用于排查；后续如需单开某个通道的完成提醒，也仍会先隐藏敏感信息。',
       },
       accounts: {
         title: '通道账号',
@@ -240,18 +241,18 @@ export const zhSettingsWork = {
       privacyModes: [
         {
           value: 'local-redact',
-          label: '默认脱敏',
-          description: '入站消息、附件摘要和 raw payload 在本地落地或分发前脱敏。',
+          label: '默认隐藏敏感信息',
+          description: '收到的消息和附件在保存或转交前会先隐藏其中的敏感信息。',
         },
         {
           value: 'allow-raw',
-          label: '保留 raw 调试',
-          description: '业务文本仍走脱敏，但保留原始 raw payload，适合受控连接器排障。',
+          label: '另存未处理副本（仅排查连接）',
+          description: '收到的消息和附件在保存或转交前会先隐藏其中的敏感信息，同时另存一份未处理副本，仅用于排查连接问题。',
         },
         {
           value: 'off',
-          label: '关闭通道脱敏',
-          description: '仅用于受控本地调试；消息、附件和 raw payload 可能保留原文。',
+          label: '不隐藏敏感信息',
+          description: '不隐藏任何内容，消息和附件可能按原样保存，仅用于当前电脑本地排查。',
         },
       ],
       configSummary: {
@@ -270,7 +271,7 @@ export const zhSettingsWork = {
         privacyModeLabel: '隐私策略',
         portLabel: '端口',
         apiKeyPlaceholder: '留空自动生成',
-        enableCors: '启用 CORS',
+        enableCors: '允许网页调用这个接口',
         encryptKeyLabel: 'Encrypt Key (可选)',
         verificationTokenLabel: 'Verification Token (可选)',
         approvalCardSecurityWarning: '配置校验令牌后审批卡才生效',
@@ -292,7 +293,7 @@ export const zhSettingsWork = {
         callbackUrlSuffix: '「事件与回调」请求地址配置',
         botTokenPlaceholder: '从 @BotFather 获取',
         proxyUrlLabel: '代理 URL (可选)',
-        proxyUrlPlaceholder: 'http://127.0.0.1:7897 (默认读 HTTPS_PROXY)',
+        proxyUrlPlaceholder: 'http://127.0.0.1:7897 (留空则沿用 Neo 启动时带有的代理)',
         fallbackProxyUrlLabel: '备用代理 URL (可选)',
         fallbackProxyUrlPlaceholder: '主代理不可用时自动切换',
         allowedUserIdsLabel: '白名单用户 ID (可选)',
@@ -946,28 +947,14 @@ export const zhSettingsWork = {
       },
     },
     appshots: {
-      enableTitle: '启用应用截图',
-      enableDescriptionPrefix: '按住',
-      enableDescriptionShortcut: ' 左 + 右 Command ',
-      enableDescriptionSuffix: '抓取当前前台 app 窗口，连同窗口文本一起送进输入框。',
-      triggerTitle: '触发方式',
-      triggerText: '同时按下左右 Command 键',
-      targetTitle: '发送目标',
-      targetDescription: '截图发送到哪个会话',
-      targetOptions: {
-        current: {
-          label: '当前会话',
-          description: '贴进正在进行的对话',
-        },
-        new: {
-          label: '每次新建会话',
-          description: '每张截图开一个新对话',
-        },
-      },
-      permissionsTitle: '系统权限',
-      permissionsDescription: '应用截图需要「屏幕录制」截窗、「辅助功能」读取窗口文本。若热键无反应，请在系统设置里授权后重启应用。',
-      openScreenCapture: '打开「屏幕录制」权限设置',
-      openAccessibility: '打开「辅助功能」权限设置',
+      ...zhAppshotsSettingsBase,
+      hotkeyTitle: '快捷键（⌘+⌘）· 输入监控',
+      hotkeyDescription: '只有想用左右 Command 快捷键时才需要「输入监控」；不开也能从输入框「+」菜单附上应用截图。',
+      hotkeyStatusOff: '未开启',
+      hotkeyStatusOn: '已开启',
+      hotkeyStatusNeedsRestart: '已授权，重启 Neo 后生效',
+      hotkeyEnable: '开启快捷键',
+      hotkeyOpenSettings: '打开「输入监控」权限设置',
     },
     hooks: {
       title: 'Hook',
