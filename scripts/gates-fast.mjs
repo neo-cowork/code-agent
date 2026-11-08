@@ -136,7 +136,7 @@ try {
     output = path.join(root, '.reports/gates-fast', `${receipt.receiptId}.json`);
     throw new Error('FAIL: receipt must be outside source or under .reports/gates-fast');
   }
-  if (policy.maxFiles !== 12) throw new Error('FAIL: first-version policy requires 12-file maximum');
+  if (policy.maxFiles !== 16) throw new Error('FAIL: policy requires 16-file maximum');
   validateGateBudgetCoverage(policy, extractGateIds(fs.readFileSync(path.join(root, 'scripts/gates-fast.mjs'), 'utf8')), shipOuterMs);
   if (options.regressions) regressions = JSON.parse(fs.readFileSync(options.regressions, 'utf8'));
   await gate('inputs', true, async () => {
