@@ -955,6 +955,7 @@ export const zhSettingsWork = {
       hotkeyStatusNeedsRestart: '已授权，重启 Neo 后生效',
       hotkeyEnable: '开启快捷键',
       hotkeyOpenSettings: '打开「输入监控」权限设置',
+      hotkeyPermissionHint: '如果没有出现系统提示，请点击“打开「输入监控」权限设置”，用“+”按钮添加 Agent Neo 并将开关打开。',
     },
     hooks: {
       title: 'Hook',

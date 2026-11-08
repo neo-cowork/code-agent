@@ -954,6 +954,7 @@ export const enSettingsWork = {
       hotkeyStatusNeedsRestart: 'Granted — restart Neo to take effect',
       hotkeyEnable: 'Enable shortcut',
       hotkeyOpenSettings: 'Open Input Monitoring permissions',
+      hotkeyPermissionHint: 'If no system prompt appeared, click “Open Input Monitoring permissions,” add Agent Neo with the “+” button, and turn it on.',
     },
     hooks: {
       title: 'Hooks',
