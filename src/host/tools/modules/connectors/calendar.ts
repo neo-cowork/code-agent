@@ -162,7 +162,11 @@ async function executeCalendar(
     };
   } catch (error) {
     const osascriptFailure = isAppleScriptFailure(error);
-    const failure = describeAppleScriptFailure('Calendar', error);
+    const failure = describeAppleScriptFailure(
+      'Calendar',
+      error,
+      action === 'list_events' ? { timeoutContext: 'calendar_list_events' } : undefined,
+    );
     const failureCode = osascriptFailure ? failure.code : 'connector_error';
     ctx.logger.warn('calendar connector failed', {
       connector: 'calendar',

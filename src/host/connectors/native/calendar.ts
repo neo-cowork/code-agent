@@ -147,11 +147,14 @@ interface ListEventsOutcome {
 }
 
 function buildSingleCalendarEventsScript(
-  calendarName: string,
+  calendarReference: string | number,
   fromMs: number,
   toMs: number,
   eventLimit: number,
 ): string[] {
+  const calendarSelector = typeof calendarReference === 'number'
+    ? String(calendarReference)
+    : `"${escapeAppleScriptString(calendarReference)}"`;
   return [
     ...sharedAppleScriptHandlers(),
     ...buildAppleScriptDateVar('fromDate', fromMs),
@@ -160,7 +163,7 @@ function buildSingleCalendarEventsScript(
     'set outputLines to {}',
     `set eventLimit to ${eventLimit}`,
     'set emittedCount to 0',
-    `set targetCalendars to {calendar "${escapeAppleScriptString(calendarName)}"}`,
+    `set targetCalendars to {calendar ${calendarSelector}}`,
     'repeat with cal in targetCalendars',
     'set matchingEvents to every event of cal whose end date >= fromDate and start date <= toDate',
     'repeat with ev in matchingEvents',
@@ -262,7 +265,7 @@ async function listEvents(payload: Record<string, unknown>): Promise<ListEventsO
       break;
     }
     try {
-      const output = await runAppleScript(buildSingleCalendarEventsScript(cal, fromMs, toMs, eventLimit));
+      const output = await runAppleScript(buildSingleCalendarEventsScript(i + 1, fromMs, toMs, eventLimit));
       const parsed = parseEventsFromAppleScriptOutput(output, fromMs, toMs);
       collected.push(...parsed);
       if (collected.length >= eventLimit) {

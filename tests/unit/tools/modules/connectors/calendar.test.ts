@@ -310,16 +310,16 @@ describe('calendarModule (native)', () => {
           if (script.includes('repeat with cal in every calendar') && !script.includes('matchingEvents')) {
             return 'Work\nPersonal\nHolidays';
           }
-          if (script.includes('calendar "Work"')) {
+          if (script.includes('set targetCalendars to {calendar 1}')) {
             return [
               'u-w2|Work|Late Work|2026-11-09T15:00:00|2026-11-09T16:00:00|Room 2||',
               'u-w1|Work|Early Work|2026-11-08T09:00:00|2026-11-08T10:00:00|Room 1||',
             ].join('\n');
           }
-          if (script.includes('calendar "Personal"')) {
+          if (script.includes('set targetCalendars to {calendar 2}')) {
             return 'u-p1|Personal|Mid Personal|2026-11-08T12:00:00|2026-11-08T13:00:00|Cafe||';
           }
-          if (script.includes('calendar "Holidays"')) {
+          if (script.includes('set targetCalendars to {calendar 3}')) {
             return 'u-h1|Holidays|Holiday Event|2026-11-08T08:00:00|2026-11-08T20:00:00|||';
           }
           return '';
@@ -360,10 +360,10 @@ describe('calendarModule (native)', () => {
           if (script.includes('repeat with cal in every calendar') && !script.includes('matchingEvents')) {
             return 'Work\nPersonal';
           }
-          if (script.includes('calendar "Work"')) {
+          if (script.includes('set targetCalendars to {calendar 1}')) {
             return 'u-w1|Work|Work Afternoon|2026-11-08T14:00:00|2026-11-08T15:00:00|||';
           }
-          if (script.includes('calendar "Personal"')) {
+          if (script.includes('set targetCalendars to {calendar 2}')) {
             return [
               'u-p1|Personal|Personal Morning|2026-11-08T08:00:00|2026-11-08T09:00:00|||',
               'u-p2|Personal|Personal Noon|2026-11-08T12:00:00|2026-11-08T13:00:00|||',
@@ -379,6 +379,41 @@ describe('calendarModule (native)', () => {
         });
         const events = res.data as Array<{ uid: string }>;
         expect(events.map((e) => e.uid)).toEqual(['u-p1', 'u-p2']);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('queries same-named calendars by index so every calendar is read exactly once', async () => {
+      const spy = vi.spyOn(osascript, 'runAppleScript');
+      try {
+        const fromMs = new Date('2026-11-07T00:00:00').getTime();
+        const toMs = fromMs + 5 * 24 * 60 * 60 * 1000;
+        spy.mockImplementation(async (lines: string[]) => {
+          const script = lines.join('\n');
+          if (script.includes('repeat with cal in every calendar') && !script.includes('matchingEvents')) {
+            return 'Calendar\nCalendar';
+          }
+          if (script.includes('set targetCalendars to {calendar 1}')) {
+            return 'u-icloud|Calendar|iCloud event|2026-11-08T08:00:00|2026-11-08T09:00:00|||';
+          }
+          if (script.includes('set targetCalendars to {calendar 2}')) {
+            return 'u-exchange|Calendar|Exchange event|2026-11-08T10:00:00|2026-11-08T11:00:00|||';
+          }
+          if (script.includes('calendar "Calendar"')) {
+            return 'u-icloud|Calendar|iCloud event|2026-11-08T08:00:00|2026-11-08T09:00:00|||';
+          }
+          return '';
+        });
+
+        const res = await calendarConnector.execute('list_events', {
+          from_ms: fromMs,
+          to_ms: toMs,
+          limit: 10,
+        });
+        const events = res.data as Array<{ uid: string }>;
+        expect(events.map((event) => event.uid)).toEqual(['u-icloud', 'u-exchange']);
+        expect(spy.mock.calls.filter(([lines]) => lines.join('\n').includes('matchingEvents'))).toHaveLength(2);
       } finally {
         spy.mockRestore();
       }
