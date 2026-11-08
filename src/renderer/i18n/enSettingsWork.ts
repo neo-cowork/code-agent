@@ -952,7 +952,7 @@ export const enSettingsWork = {
       hotkeyDescription: 'Input Monitoring is only needed for the left+right Command shortcut; you can still attach app screenshots from the "+" menu.',
       hotkeyStatusOff: 'Off',
       hotkeyStatusOn: 'On',
-      hotkeyStatusNeedsRestart: 'Granted — restart Neo to take effect',
+      hotkeyStatusNeedsRestart: 'Granted — click the button to turn it on',
       hotkeyEnable: 'Enable shortcut',
       hotkeyOpenSettings: 'Open Input Monitoring permissions',
       hotkeyPermissionHint: 'If no system prompt appeared, click “Open Input Monitoring permissions,” add Agent Neo with the “+” button, and turn it on.',

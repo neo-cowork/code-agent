@@ -20,6 +20,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useI18n } from '../../../hooks/useI18n';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import { fill } from './format';
 import type { TurnSegment } from './model';
 import { TurnDevtools } from './turnDevtools';
@@ -121,7 +122,7 @@ function StampChip({ segment }: { segment: TurnSegment }) {
         <span data-testid="inspector-stamp-qualifier">{stamp.evidencedQualifier}</span>
         {segment.stamp.evidenceCount > 0 && (
           <span className="opacity-70">
-            · {fill(t.sessionInspector.evidenceCount, { count: String(segment.stamp.evidenceCount) })}
+            · {interpolatePlural(t.sessionInspector.evidenceCount, segment.stamp.evidenceCount)}
           </span>
         )}
       </span>
@@ -185,11 +186,11 @@ function TurnActivitySummary({ segment }: { segment: TurnSegment }) {
   const detail = t.sessionInspector.activityDetail;
   const [showDetail, setShowDetail] = useState(false);
   const parts: string[] = [];
-  if (segment.toolCounts.read > 0) parts.push(fill(activity.read, { count: String(segment.toolCounts.read) }));
-  if (segment.toolCounts.write > 0) parts.push(fill(activity.write, { count: String(segment.toolCounts.write) }));
-  if (segment.toolCounts.command > 0) parts.push(fill(activity.command, { count: String(segment.toolCounts.command) }));
-  if (segment.toolCounts.browser > 0) parts.push(fill(activity.browser, { count: String(segment.toolCounts.browser) }));
-  if (segment.toolCounts.other > 0) parts.push(fill(activity.otherTool, { count: String(segment.toolCounts.other) }));
+  if (segment.toolCounts.read > 0) parts.push(interpolatePlural(activity.read, segment.toolCounts.read));
+  if (segment.toolCounts.write > 0) parts.push(interpolatePlural(activity.write, segment.toolCounts.write));
+  if (segment.toolCounts.command > 0) parts.push(interpolatePlural(activity.command, segment.toolCounts.command));
+  if (segment.toolCounts.browser > 0) parts.push(interpolatePlural(activity.browser, segment.toolCounts.browser));
+  if (segment.toolCounts.other > 0) parts.push(interpolatePlural(activity.otherTool, segment.toolCounts.other));
   // A：≥2 次工具调用才给明细入口；单工具轮不聚合、保持原样
   const hasDetail = segment.toolDispatches.length >= 2;
   return (
