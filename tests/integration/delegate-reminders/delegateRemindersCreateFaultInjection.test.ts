@@ -3,20 +3,25 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { MockInstance } from 'vitest';
+
+import type { AgentEvent, Message } from '../../../src/shared/contract';
+import type { TaskManagerEvent } from '../../../src/host/task/TaskManager';
+
+type TestSession = {
+  id: string;
+  title: string;
+  messages: Message[];
+  workingDirectory: string;
+};
 
 const sessionState = vi.hoisted(() => {
-  type Session = {
-    id: string;
-    title: string;
-    messages: Array<Record<string, unknown>>;
-    workingDirectory: string;
-  };
-  const sessions = new Map<string, Session>();
+  const sessions = new Map<string, TestSession>();
   const manager = {
     getSession: vi.fn(async (id: string) => sessions.get(id) ?? null),
     getCurrentSession: vi.fn(async () => undefined),
     getCurrentSessionId: vi.fn(() => undefined),
-    addMessageToSession: vi.fn(async (id: string, message: Record<string, unknown>) => {
+    addMessageToSession: vi.fn(async (id: string, message: Message) => {
       const session = sessions.get(id);
       if (session) session.messages.push(message);
     }),
@@ -53,7 +58,6 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => databaseState.db,
 }));
 
-import type { AgentEvent } from '../../../src/shared/contract';
 import type { CanUseToolFn, ToolContext } from '../../../src/host/protocol/tools';
 import type { Connector } from '../../../src/host/connectors';
 import type { ModelMessage, ModelResponse } from '../../../src/host/model/types';
@@ -90,12 +94,12 @@ type ChildCall = {
 
 const UNIQUE_TITLE = 'Pick up the dry cleaning';
 const PROMPT = 'remind me tomorrow 9am to pick up the dry cleaning';
-const allowTool = vi.fn().mockResolvedValue({ allow: true }) as CanUseToolFn;
+const allowTool: CanUseToolFn = async () => ({ allow: true });
 
 let workspaceRoot = '';
 let activeRun: ConnectorRun | undefined;
-let activeLifecycleEvents: unknown[] = [];
-let modelInference: ReturnType<typeof vi.spyOn<ModelRouter.prototype, 'inference'>>;
+let activeLifecycleEvents: TaskManagerEvent[] = [];
+let modelInference: MockInstance;
 
 function messageText(message: ModelMessage): string {
   if (typeof message.content === 'string') return message.content;
@@ -210,7 +214,7 @@ async function runScenario(
 }> {
   activeRun = fakeRemindersConnector(listFails);
   getConnectorRegistry().register(activeRun.connector);
-  const session = {
+  const session: TestSession = {
     id: sessionId,
     title: 'Reminder fault injection',
     messages: [],
@@ -227,15 +231,22 @@ async function runScenario(
   }, toolContext(sessionId), allowTool);
   await waitForTerminal(sessionId);
 
-  const terminalMessage = [...session.messages].reverse().find((message) => (
-    message.metadata
-      && typeof message.metadata === 'object'
-      && (message.metadata as { backgroundTaskResult?: unknown }).backgroundTaskResult
-  ));
+  const terminalMessage = [...session.messages].reverse().find((message) => {
+    const metadata = message.metadata;
+    return metadata !== undefined
+      && typeof metadata === 'object'
+      && 'backgroundTaskResult' in metadata
+      && Boolean(metadata.backgroundTaskResult);
+  });
   const terminalText = typeof terminalMessage?.content === 'string' ? terminalMessage.content : '';
   const calls = childTranscript(events);
   const childSessionEvent = activeLifecycleEvents.at(-1);
-  const taskId = (childSessionEvent as { data?: { taskId?: string } } | undefined)?.data?.taskId;
+  const taskId = typeof childSessionEvent?.data === 'object'
+    && childSessionEvent.data !== null
+    && 'taskId' in childSessionEvent.data
+    && typeof childSessionEvent.data.taskId === 'string'
+    ? childSessionEvent.data.taskId
+    : undefined;
   console.log(`CHILD_SESSION_EVENT ${JSON.stringify({ sessionId, taskId, event: childSessionEvent ?? null })}`);
   console.log(`CHILD_TOOL_CALLS ${JSON.stringify(calls)}`);
   console.log(`STORE_CONTENTS ${JSON.stringify(activeRun.store)}`);
