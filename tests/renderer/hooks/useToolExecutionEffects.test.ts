@@ -26,6 +26,7 @@ interface ToolExecutionState {
   messages: Message[];
   pointerEvents: AgentPointerEvent[];
   queuedUpdates: QueuedUpdate[];
+  reloadedSessionIds: string[];
   toolTimeoutWarning: ToolTimeoutData | null;
   warnings: string[];
 }
@@ -67,6 +68,7 @@ function createHarness(overrides: Partial<ToolExecutionState> = {}) {
     messages: [],
     pointerEvents: [],
     queuedUpdates: [],
+    reloadedSessionIds: [],
     toolTimeoutWarning: null,
     warnings: [],
     ...overrides,
@@ -93,6 +95,9 @@ function createHarness(overrides: Partial<ToolExecutionState> = {}) {
     },
     recordAgentPointer: (event) => {
       state.pointerEvents.push(event);
+    },
+    reloadCurrentSession: (sessionId) => {
+      state.reloadedSessionIds.push(sessionId);
     },
     setActiveToolProgress: (next) => {
       state.activeToolProgress = typeof next === 'function'
@@ -838,5 +843,28 @@ describe('automation session（cron 轮，事件流被 BACKGROUND_AGENT_EVENT_FI
 
     expect(state.messages[0].toolCalls?.[0].result).toMatchObject({ toolCallId: 'call_read_1' });
     expect(state.messages[0].toolCalls?.[1].result).toMatchObject({ toolCallId: 'call_write_1' });
+    expect(state.reloadedSessionIds).toEqual([]);
+  });
+
+  it('channel/cron 过滤轮（无 tool_call_start / message）到达未匹配的 tool_call_end 时触发当前会话重灌', () => {
+    const { deps, state } = createHarness({
+      messages: [assistantMessage('turn-channel', [])],
+    });
+
+    applyToolExecutionEvent(
+      {
+        type: 'tool_call_end',
+        data: {
+          toolCallId: 'channel_write_1',
+          success: true,
+          duration: 25,
+          output: 'Created file: /tmp/channel-step.md',
+        },
+        sessionId: 'session-current',
+      },
+      deps,
+    );
+
+    expect(state.reloadedSessionIds).toEqual(['session-current']);
   });
 });

@@ -1,7 +1,7 @@
 // ============================================================================
 // TurnCard - A single conversation turn (user prompt + assistant responses)
 // ============================================================================
-import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { TraceTurn, TraceNode } from '@shared/contract/trace';
 import type { StreamRecoverySnapshot } from '@shared/contract/session';
 import type { TurnHookActivity, TurnSkillActivity } from '@shared/contract/turnTimeline';
@@ -65,7 +65,7 @@ import { hasPendingPermissionForSession, hasQueuedPermissionForSession } from '.
 import { useSessionTurnActive } from '../../../hooks/useSessionTurnActive';
 import { resolveBusySignal } from '../../../utils/turnBusySignal';
 import { hasFoldHiddenMiddle, isNodeSkippedInMiddle } from './turnFoldVisibility';
-import { hasParkedApprovalClosure } from './cronRunSessionStatus';
+import { getObservedCronRunStatusForSession, hasParkedApprovalClosure, isLiveCronRunStatusKind, subscribeObservedCronRunStatus } from './cronRunSessionStatus';
 
 interface TurnCardProps {
   turn: TraceTurn;
@@ -175,17 +175,12 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     finalTextNode: getTurnFinalTextNode(turn, isVoiceTurn),
   }), [turn, isVoiceTurn]);
 
-  // 折叠策略：已完成 + 非 streaming + 节点数达阈值 + 确实有最终 assistant 文本
-  // + 折叠真藏得住中间内容（纯问答轮藏了个寂寞，不出「用时」空开关）。
-  // 语音任务卡不套这条阈值——电话里派出去的活不管几步都折成卡（用户在打电话，不看屏幕），
-  // 流式期间也折：live 信号由卡身底部的呼吸态指示承担，过程默认不铺开。
-  // 定时任务运行记录首轮由 afterUserMessage 展示唯一状态行，内部工具组默认收起，
-  // 但停车审批作废步骤必须展开，说明哪条命令没有运行及原因。
-  const hasExternalStatusLine = Boolean(afterUserMessage) && !hasParkedApprovalClosure(turn);
-  const canFold = isVoiceTurn
-    ? turn.nodes.length > 0
+  // 语音任务卡始终可折；定时运行终态由状态行接管折叠，live 态同时铺开已保存步骤。
+  const observedCronRunStatus = useSyncExternalStore(subscribeObservedCronRunStatus, () => getObservedCronRunStatusForSession(sessionId), () => null);
+  const hasExternalStatusLine = Boolean(afterUserMessage) && !hasParkedApprovalClosure(turn); const hasLiveExternalStatusLine = hasExternalStatusLine && isLiveCronRunStatusKind(observedCronRunStatus?.kind);
+  const canFold = isVoiceTurn ? turn.nodes.length > 0
     : hasExternalStatusLine
-      ? true
+      ? !hasLiveExternalStatusLine
       : turn.status === 'completed' &&
         !isStreaming &&
         turn.nodes.length >= policy.foldThreshold &&
@@ -516,7 +511,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                   node={node}
                   sessionId={sessionId}
                   attachments={node.attachments}
-                  isStreaming={isNodeStreaming}
+                  isStreaming={isNodeStreaming} unfinishedToolIsLive={hasLiveExternalStatusLine}
                   inVoiceDispatchCard={isVoiceTurn}
                   onStreamingDisplayUpdate={shouldReportDisplayUpdate ? handleAnchorStreamingDisplayUpdate : undefined}
                   onRewindUserPrompt={onRewindUserPrompt}

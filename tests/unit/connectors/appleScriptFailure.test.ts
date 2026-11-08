@@ -54,6 +54,18 @@ describe('describeAppleScriptFailure', () => {
       .toMatch(/did not respond in time \(timeout\).*Narrow the date range or pass a specific calendar name/);
   });
 
+  it('uses non-retry guidance for write timeouts', () => {
+    const timeout = execError('', { killed: true, signal: 'SIGTERM' });
+    const mail = describeAppleScriptFailure('Mail', timeout, { timeoutContext: 'write' });
+    expect(mail.message).toMatch(/结果无法确认.*不要直接重试/);
+    expect(mail.message).not.toMatch(/请稍后重试/);
+    configState.language = 'en';
+    expect(describeAppleScriptFailure('Calendar', timeout, { timeoutContext: 'write' }).message)
+      .toMatch(/result could not be confirmed.*check Calendar before retrying/i);
+    expect(describeAppleScriptFailure('Calendar', timeout, { timeoutContext: 'write' }).message)
+      .not.toMatch(/Please try again later/);
+  });
+
   it.runIf(process.platform === 'darwin')('stays clean for a genuine osascript exception', async () => {
     let caught: unknown;
     try {
