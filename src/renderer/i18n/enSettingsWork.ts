@@ -224,12 +224,10 @@ export const enSettingsWork = {
       description: 'Configure external entry points so HTTP API, Feishu, Lark, or Telegram can interact with the Agent. Connection notes are collapsed by default.',
       lowDistraction: {
         title: 'Low-distraction policy',
-        description: 'Channel sessions do not trigger desktop reply notifications by default. Progress stays in channel typing, streaming, or the task panel; system notifications are reserved for cases needing intervention or task completion.',
-        body: 'Normal replies from Feishu, Telegram, and HTTP API do not show desktop notifications. Error replies send only a short summary, with the full trace kept in local diagnostics. If per-channel completion reminders are needed later, they must be explicitly enabled and continue to use redaction.',
+        description: 'Replies in channels do not pop up desktop notifications by default; progress stays in the channel and the task panel, and Neo notifies you only when it needs you or a task finishes.',
+        body: 'Normal replies from Feishu, Telegram, and HTTP API do not pop up desktop notifications. On errors the channel gets a short summary and details stay on this computer. If you later turn on completion reminders for a channel, sensitive information is still hidden first.',
       },
-      accounts: {
-        title: 'Channel accounts',
-      },
+      accounts: { title: 'Channel accounts' },
       statusFilters: [
         { value: 'all', label: 'All' },
         { value: 'connected', label: 'Connected' },
@@ -240,18 +238,18 @@ export const enSettingsWork = {
       privacyModes: [
         {
           value: 'local-redact',
-          label: 'Default redaction',
-          description: 'Redact inbound messages, attachment summaries, and raw payloads before local persistence or dispatch.',
+          label: 'Hide sensitive info by default',
+          description: 'Sensitive information in incoming messages and attachments is hidden before it is saved or passed on.',
         },
         {
           value: 'allow-raw',
-          label: 'Keep raw debug data',
-          description: 'Business text is still redacted, but the original raw payload is kept for controlled connector troubleshooting.',
+          label: 'Also keep unprocessed copy (for troubleshooting)',
+          description: 'Sensitive information in incoming messages and attachments is hidden before it is saved or passed on, and an unprocessed copy is also kept only for troubleshooting a connection.',
         },
         {
           value: 'off',
-          label: 'Disable channel redaction',
-          description: 'Only for controlled local debugging; messages, attachments, and raw payloads may keep original text.',
+          label: 'Do not hide sensitive info',
+          description: 'Nothing is hidden; messages and attachments may be saved as-is, only for troubleshooting on this computer.',
         },
       ],
       configSummary: {
@@ -270,7 +268,7 @@ export const enSettingsWork = {
         privacyModeLabel: 'Privacy policy',
         portLabel: 'Port',
         apiKeyPlaceholder: 'Leave blank to generate automatically',
-        enableCors: 'Enable CORS',
+        enableCors: 'Let web pages call this API',
         encryptKeyLabel: 'Encrypt Key (optional)',
         verificationTokenLabel: 'Verification Token (optional)',
         approvalCardSecurityWarning: 'Configure a verification token before approval cards can be used.',
@@ -292,7 +290,7 @@ export const enSettingsWork = {
         callbackUrlSuffix: ' event and callback request URL settings',
         botTokenPlaceholder: 'Get it from @BotFather',
         proxyUrlLabel: 'Proxy URL (optional)',
-        proxyUrlPlaceholder: 'http://127.0.0.1:7897 (defaults to HTTPS_PROXY)',
+        proxyUrlPlaceholder: 'http://127.0.0.1:7897 (blank = use the proxy Neo already runs with, if any)',
         fallbackProxyUrlLabel: 'Fallback proxy URL (optional)',
         fallbackProxyUrlPlaceholder: 'Automatically switch when the primary proxy is unavailable',
         allowedUserIdsLabel: 'Allowlisted user IDs (optional)',
@@ -302,7 +300,7 @@ export const enSettingsWork = {
         groupAccessModeAllMembers: 'Reply to every group message (as guest)',
         groupAccessModeHint: 'Guests only get read-only tools. Who counts as trusted is set separately in the allowlisted user IDs field above.',
         groupAccessModePrivacyPrerequisite: 'Turn off the bot\'s privacy mode in Telegram first. After connecting, this page will tell you whether it is working.',
-        telegramPrivacyModeWarning: 'Unmentioned group messages still do not arrive: Telegram leaves bot privacy mode on by default. Open @BotFather, send /setprivacy, choose this bot, and choose Disable. Remove the bot from the group and add it back, then disconnect and connect here to re-check. Or make the bot a group admin; if it is already a group admin, ignore this hint.',
+        telegramPrivacyModeTitle: 'Turn off Telegram privacy mode', telegramPrivacyModeBadge: 'Action needed', telegramPrivacyModeWarning: 'Unmentioned group messages still do not arrive: Telegram leaves bot privacy mode on by default. Open @BotFather, send /setprivacy, choose this bot, and choose Disable. Remove the bot from the group and add it back, then disconnect and connect here to re-check. Or make the bot a group admin; if it is already a group admin, ignore this hint.',
         telegramTipSearchPrefix: 'Search ',
         telegramTipSearchSuffix: ' in Telegram to create a Bot',
         telegramTipNewBotPrefix: 'Send ',

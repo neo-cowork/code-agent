@@ -20,6 +20,7 @@ import {
 } from '@shared/ipc';
 import { useCronStore } from '../../../stores/cronStore';
 import { useAppStore } from '../../../stores/appStore';
+import { useI18n } from '../../../hooks/useI18n';
 import ipcService from '../../../services/ipcService';
 import { useWorkbenchCapabilityRegistry } from '../../../hooks/useWorkbenchCapabilityRegistry';
 import { useCurrentTurnCapabilityScope } from '../../../hooks/useCurrentTurnCapabilityScope';
@@ -38,6 +39,7 @@ import {
   formatScheduleSummary,
   getLatestExecutionStatus,
 } from '../cron/types';
+import { getBuiltinJobDisplay } from '../cron/builtinJobDisplay';
 import { CronJobEditor } from '../cron/CronJobEditor';
 import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 
@@ -247,6 +249,7 @@ const TimeCapabilityPanel: React.FC = () => {
     closeEditor,
   } = useCronStore();
   const openSettingsTab = useAppStore((state) => state.openSettingsTab);
+  const { language } = useI18n();
   const capabilityRegistry = useWorkbenchCapabilityRegistry();
   const currentTurnScope = useCurrentTurnCapabilityScope();
   const {
@@ -363,11 +366,12 @@ const TimeCapabilityPanel: React.FC = () => {
     const latest = latestExecutions[job.id];
     const latestMeta = getLatestExecutionStatus(latest);
     const isTriggering = triggeringJobId === job.id;
+    const displayName = getBuiltinJobDisplay(job, language)?.name ?? job.name;
     return (
       <div key={job.id} className="grid gap-3 border-t border-zinc-800 px-4 py-3 md:grid-cols-[minmax(0,1.2fr)_150px_120px_auto] md:items-center">
         <div className="min-w-0">
-          <div className="truncate text-sm font-medium text-zinc-100">{job.name}</div>
-          <div className="mt-1 truncate text-xs text-zinc-500">{formatScheduleSummary(job)} · {formatActionSummary(job)}</div>
+          <div className="truncate text-sm font-medium text-zinc-100">{displayName}</div>
+          <div className="mt-1 truncate text-xs text-zinc-500">{formatScheduleSummary(job, language)} · {formatActionSummary(job, language)}</div>
           {options?.showError && latest?.error && (
             <div className="mt-1 line-clamp-2 text-xs text-badge-danger">{latest.error}</div>
           )}

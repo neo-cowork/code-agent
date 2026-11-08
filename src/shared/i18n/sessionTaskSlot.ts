@@ -68,8 +68,8 @@ export function getSystemPromptHint(locale: SessionTaskSlotLocale): string {
 }
 
 const automationPromptTimeoutHint = {
-  zh: `这条命令可能一直在等待无人处理的 macOS「自动化」授权框，随后超时。请在「系统设置」>「隐私与安全性」>「自动化」中允许 Agent Neo 控制相应应用，然后重跑。${systemPromptHint.zh}`,
-  en: `The command probably waited for an unanswered macOS Automation prompt and timed out. In System Settings > Privacy & Security > Automation, allow Agent Neo to control the app, then rerun. ${systemPromptHint.en}`,
+  zh: `这条命令在等一个没人点的 macOS「自动化」授权框，已超时。请在「系统设置」>「隐私与安全性」>「自动化」中允许 Agent Neo 控制相应应用，然后重跑。${systemPromptHint.zh}`,
+  en: `This command was waiting for an unanswered macOS Automation prompt and timed out. In System Settings > Privacy & Security > Automation, allow Agent Neo to control the app, then rerun. ${systemPromptHint.en}`,
 } as const;
 
 export function withAutomationPromptTimeoutHint(
@@ -78,11 +78,8 @@ export function withAutomationPromptTimeoutHint(
   flag?: boolean,
 ): string {
   if (!flag) return text;
-  const hasSentenceEnding = /[.!?。！？]$/.test(text);
-  const separator = locale === 'zh'
-    ? (hasSentenceEnding ? '' : '。')
-    : (hasSentenceEnding ? ' ' : '. ');
-  return `${text}${separator}${automationPromptTimeoutHint[locale]}`;
+  const separator = locale === 'zh' ? '' : ' ';
+  return `${automationPromptTimeoutHint[locale]}${separator}${text}`;
 }
 
 function withSystemPromptHint(text: string, locale: SessionTaskSlotLocale, flag?: boolean): string {
