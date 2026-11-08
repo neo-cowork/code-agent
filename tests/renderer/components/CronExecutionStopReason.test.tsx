@@ -12,11 +12,11 @@ vi.mock('../../../src/renderer/services/cronClient', () => ({
 }));
 const language = vi.hoisted(() => ({ value: 'zh' as 'zh' | 'en' }));
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
-  const { cronCenterZh, cronCenterEn } = await import('../../../src/renderer/i18n/cronCenter');
+  const { zh, en } = await import('../../../src/renderer/i18n');
   return {
     useI18n: () => ({
       language: language.value,
-      t: language.value === 'zh' ? cronCenterZh : cronCenterEn,
+      t: language.value === 'zh' ? zh : en,
     }),
   };
 });
@@ -24,8 +24,29 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
 import type { CronJobExecution } from '@shared/contract';
 import { CronExecutionDetail } from '../../../src/renderer/components/features/cron/CronExecutionDetail';
 import { describeParkedApprovalClosure } from '../../../src/host/agent/parkedApprovalSurvival';
+import { PARKED_APPROVAL_CLOSURE_SENTENCES } from '../../../src/shared/parkedApprovalClosure';
 
-const SENTENCE = describeParkedApprovalClosure('expired_after_restart_24h');
+const CLOSURE_CASES = [
+  {
+    key: 'expiredAfterRestart24h',
+    sentence: describeParkedApprovalClosure('expired_after_restart_24h'),
+  },
+  {
+    key: 'workingDirectoryUnavailable',
+    sentence: describeParkedApprovalClosure('args_unavailable', 'working_directory_unavailable'),
+  },
+  {
+    key: 'runEndedAfterRestart',
+    sentence: describeParkedApprovalClosure('run_ended_after_restart'),
+  },
+  {
+    key: 'argsUnavailable',
+    sentence: describeParkedApprovalClosure('args_unavailable'),
+  },
+] as const satisfies ReadonlyArray<{
+  key: keyof typeof PARKED_APPROVAL_CLOSURE_SENTENCES;
+  sentence: string;
+}>;
 const execution = (o: Partial<CronJobExecution> = {}): CronJobExecution => ({
   id: 'exec-1', jobId: 'job-1', runsOn: 'local', status: 'interrupted', scheduledAt: 1, retryAttempt: 0,
   sessionId: 'sess-1', ...o,
@@ -34,23 +55,39 @@ const execution = (o: Partial<CronJobExecution> = {}): CronJobExecution => ({
 afterEach(() => { cleanup(); invokeDomain.mockReset(); language.value = 'zh'; });
 
 describe('CronExecutionDetail 为什么停了', () => {
-  it('② interrupted + 有作废审批：显示标签与 host 句子（zh）', async () => {
-    invokeDomain.mockResolvedValue(SENTENCE);
+  it.each(CLOSURE_CASES)('② %s：zh 显示原句，en 显示对应英文句', async ({ key, sentence }) => {
+    invokeDomain.mockResolvedValue(sentence);
     const { container } = render(<CronExecutionDetail execution={execution()} />);
     await waitFor(() => expect(screen.getByTestId('cron-exec-stop-reason')).toBeTruthy());
     expect(invokeDomain).toHaveBeenCalledWith('domain:sessionAutomation', 'getVoidedApprovalReason', { sessionId: 'sess-1' });
     console.log(`[DOM zh] ${screen.getByTestId('cron-exec-stop-reason').textContent}`);
-    expect(screen.getByTestId('cron-exec-stop-reason').textContent).toBe(`为什么停了${SENTENCE}`);
-    expect(container.textContent).toContain('这一步等你确认超过 24 小时，已自动作废，没有执行。');
-  });
+    expect(screen.getByTestId('cron-exec-stop-reason-text').textContent).toBe(sentence);
+    expect(container.textContent).toContain(sentence);
+    cleanup();
 
-  it('② en 标签 Why it stopped；failed 状态同样查询', async () => {
     language.value = 'en';
-    invokeDomain.mockResolvedValue(SENTENCE);
+    invokeDomain.mockResolvedValue(sentence);
     render(<CronExecutionDetail execution={execution({ status: 'failed' })} />);
     await waitFor(() => expect(screen.getByTestId('cron-exec-stop-reason')).toBeTruthy());
     console.log(`[DOM en] ${screen.getByTestId('cron-exec-stop-reason').textContent}`);
-    expect(screen.getByTestId('cron-exec-stop-reason').textContent).toBe(`Why it stopped${SENTENCE}`);
+    const enTranslation = (await import('../../../src/renderer/i18n/en')).en.toolStepHumanize.parkedClosure[key];
+    expect(screen.getByTestId('cron-exec-stop-reason-text').textContent).toBe(enTranslation);
+    expect(screen.getByTestId('cron-exec-stop-reason').textContent).toBe(`Why it stopped${enTranslation}`);
+  });
+
+  it('② 未识别句子在 zh / en 都原样显示', async () => {
+    const raw = 'A raw persisted reason that is not a parked-approval closure sentence.';
+    invokeDomain.mockResolvedValue(raw);
+    render(<CronExecutionDetail execution={execution()} />);
+    await waitFor(() => expect(screen.getByTestId('cron-exec-stop-reason-text').textContent).toBe(raw));
+    expect(screen.getByTestId('cron-exec-stop-reason-text').textContent).toBe(raw);
+
+    cleanup();
+    language.value = 'en';
+    invokeDomain.mockResolvedValue(raw);
+    render(<CronExecutionDetail execution={execution({ status: 'failed' })} />);
+    await waitFor(() => expect(screen.getByTestId('cron-exec-stop-reason-text').textContent).toBe(raw));
+    expect(screen.getByTestId('cron-exec-stop-reason-text').textContent).toBe(raw);
   });
 
   it('无原因 / completed / 无 sessionId：不渲染也不查询；查询报错不崩', async () => {
