@@ -228,4 +228,29 @@ describe('agentAppService missing-attachment turn context', () => {
     const runOptions = taskManager.startTask.mock.calls[0]?.[3] as { turnSystemContext?: string[] } | undefined;
     expect(baselineTurnContextCount(runOptions)).toBe(0);
   });
+
+  it('adds no missing-attachment line for general upload/send discussions ("怎么把文件上传到OSS", "帮我写个上传接口", "写封邮件把报告发给你们老板")', async () => {
+    for (const content of [
+      '怎么把文件上传到OSS',
+      '帮我写个上传接口',
+      '写封邮件把报告发给你们老板',
+      '这个网站上传图片总失败怎么办',
+    ]) {
+      taskManager.startTask.mockClear();
+      loggerSpies.info.mockClear();
+
+      await createService().sendMessage({
+        sessionId: 'session-miss-1',
+        content,
+        attachments: [],
+      });
+
+      const runOptions = taskManager.startTask.mock.calls[0]?.[3] as { turnSystemContext?: string[] } | undefined;
+      expect(baselineTurnContextCount(runOptions), `unexpected injection for: ${content}`).toBe(0);
+      expect(loggerSpies.info).not.toHaveBeenCalledWith(
+        'Missing attachment mention detected on turn start',
+        expect.anything(),
+      );
+    }
+  });
 });

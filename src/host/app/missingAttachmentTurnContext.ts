@@ -28,7 +28,7 @@ const ATTACHMENT_MENTION_PATTERNS: ReadonlyArray<{ label: string; pattern: RegEx
   },
   {
     label: '我上传的',
-    pattern: /(?:我|刚|刚才|上面|前面|随信)?(?:上传|发给你|发过来|传上来|拖进来|附上|附带)的?(?:[\u4e00-\u9fa5A-Za-z0-9_-]{0,12})(?:文件|表格|表|文档|图片|图|截图|资料|材料|数据|报告|简历|合同|附件)?/,
+    pattern: /(?:我|刚|刚才|上面|前面|随信)(?:上传|发|传)(?:给你|过来|上来)?的(?:[\u4e00-\u9fa5A-Za-z0-9_-]{0,12})(?:文件|表格|表|文档|图片|图|截图|资料|材料|数据|报告|简历|合同|附件)/,
   },
   {
     label: 'attached',
@@ -36,7 +36,7 @@ const ATTACHMENT_MENTION_PATTERNS: ReadonlyArray<{ label: string; pattern: RegEx
   },
   {
     label: 'uploaded',
-    pattern: /\b(?:uploaded|the\s+uploaded\s+(?:file|sheet|spreadsheet|table|document|csv|xlsx|pdf|report))\b/i,
+    pattern: /\b(?:my|the)\s+uploaded\s+(?:file|files|sheet|spreadsheet|table|document|documents|image|images|screenshot|csv|xlsx|pdf|report|data|attachment|attachments)\b/i,
   },
 ];
 
@@ -146,8 +146,8 @@ function sessionHasPriorTurnOrAttachments(
   return { isSubsequentTurn, hasEarlierAttachments };
 }
 
-export function withMissingAttachmentTurnSystemContext(
-  options: AppServiceRunOptions | undefined,
+export function withMissingAttachmentTurnSystemContext<T extends { turnSystemContext?: string[] } = AppServiceRunOptions>(
+  options: T | undefined,
   input: {
     sessionId: string;
     userText: string;
@@ -159,7 +159,7 @@ export function withMissingAttachmentTurnSystemContext(
     } | null;
     workingDirectory?: string;
   },
-): AppServiceRunOptions | undefined {
+): T | undefined {
   const { isSubsequentTurn, hasEarlierAttachments } = sessionHasPriorTurnOrAttachments(input.session);
   const detection = detectMissingAttachmentMention(
     input.userText,
@@ -180,7 +180,7 @@ export function withMissingAttachmentTurnSystemContext(
     taskFolderEmpty,
   });
   return {
-    ...(options ?? {}),
+    ...(options ?? ({} as T)),
     turnSystemContext: [...(options?.turnSystemContext ?? []), MISSING_ATTACHMENT_TURN_SYSTEM_CONTEXT_LINE],
   };
 }
