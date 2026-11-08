@@ -19,6 +19,8 @@ vi.mock('../../../../../src/host/connectors', () => ({
 }));
 
 import { calendarModule } from '../../../../../src/host/tools/modules/connectors/calendar';
+import { calendarConnector } from '../../../../../src/host/connectors/native/calendar';
+import * as osascript from '../../../../../src/host/connectors/native/osascript';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -245,6 +247,246 @@ describe('calendarModule (native)', () => {
       await run({ action: 'list_calendars' }, makeCtx(), allowAll, onProgress);
       const stages = onProgress.mock.calls.map((c) => c[0].stage);
       expect(stages).toContain('starting');
+    });
+  });
+
+  describe('list_events timeout, segmentation, partial result, and retry cap', () => {
+    it('distinguishes timeout, not_authorized, and read_failed with actionable next steps', async () => {
+      const timeoutErr = Object.assign(new Error('Command failed: osascript -e tell application "Calendar"'), {
+        killed: true,
+        signal: 'SIGTERM',
+      });
+      execMock.mockRejectedValueOnce(timeoutErr);
+      const rTimeout = await run({ action: 'list_events' }, makeCtx({ sessionId: 'sess-copy-1' }));
+      expect(rTimeout.ok).toBe(false);
+      if (!rTimeout.ok) {
+        expect(rTimeout.code).toBe('timeout');
+        expect(rTimeout.error).toBe(
+          'Calendar 响应超时：请缩小查询时间范围或指定具体日历名称（calendar），不要原样重试。',
+        );
+      }
+
+      const authErr = Object.assign(
+        new Error('Command failed: osascript -e ...\nNot authorized to send Apple events to Calendar. (-1743)'),
+        { code: 1 },
+      );
+      execMock.mockRejectedValueOnce(authErr);
+      const rAuth = await run({ action: 'list_events' }, makeCtx({ sessionId: 'sess-copy-2' }));
+      expect(rAuth.ok).toBe(false);
+      if (!rAuth.ok) {
+        expect(rAuth.code).toBe('not_authorized');
+        expect(rAuth.error).toBe(
+          'Calendar 未获授权：请在「系统设置 > 隐私与安全性 > 自动化」中允许 Neo 控制 Calendar，然后重试。',
+        );
+      }
+
+      const readErr = Object.assign(
+        new Error('Command failed: osascript -e ...\nsyntax error (-2741)'),
+        { code: 1 },
+      );
+      execMock.mockRejectedValueOnce(readErr);
+      const rRead = await run({ action: 'list_events' }, makeCtx({ sessionId: 'sess-copy-3' }));
+      expect(rRead.ok).toBe(false);
+      if (!rRead.ok) {
+        expect(rRead.code).toBe('read_failed');
+        expect(rRead.error).toBe('Calendar：读取失败，请稍后重试');
+      }
+    });
+
+    it('segments no-calendar list_events per calendar, merges sorted by startAtMs, and stops early when limit is reached', async () => {
+      const spy = vi.spyOn(osascript, 'runAppleScript');
+      try {
+        const fromMs = new Date('2026-11-07T00:00:00').getTime();
+        const toMs = fromMs + 5 * 24 * 60 * 60 * 1000;
+        const timeoutErr = Object.assign(new Error('Command failed: osascript -e set targetCalendars to every calendar'), {
+          killed: true,
+          signal: 'SIGTERM',
+        });
+        spy.mockImplementation(async (lines: string[]) => {
+          const script = lines.join('\n');
+          if (script.includes('set targetCalendars to every calendar')) {
+            throw timeoutErr;
+          }
+          if (script.includes('repeat with cal in every calendar') && !script.includes('matchingEvents')) {
+            return 'Work\nPersonal\nHolidays';
+          }
+          if (script.includes('set targetCalendars to {calendar 1}')) {
+            return [
+              'u-w2|Work|Late Work|2026-11-09T15:00:00|2026-11-09T16:00:00|Room 2||',
+              'u-w1|Work|Early Work|2026-11-08T09:00:00|2026-11-08T10:00:00|Room 1||',
+            ].join('\n');
+          }
+          if (script.includes('set targetCalendars to {calendar 2}')) {
+            return 'u-p1|Personal|Mid Personal|2026-11-08T12:00:00|2026-11-08T13:00:00|Cafe||';
+          }
+          if (script.includes('set targetCalendars to {calendar 3}')) {
+            return 'u-h1|Holidays|Holiday Event|2026-11-08T08:00:00|2026-11-08T20:00:00|||';
+          }
+          return '';
+        });
+
+        const res = await calendarConnector.execute('list_events', {
+          from_ms: fromMs,
+          to_ms: toMs,
+          limit: 3,
+        });
+        const events = res.data as Array<{ uid: string; title: string }>;
+        // Collected 2 from Work + 1 from Personal = 3 >= eventLimit(3), so Holidays was not queried!
+        expect(spy).toHaveBeenCalledTimes(3);
+        for (const call of spy.mock.calls.slice(1)) {
+          const scriptText = call[0].join('\n');
+          expect(scriptText).not.toContain('set targetCalendars to every calendar');
+        }
+        expect(events.map((e) => e.uid)).toEqual(['u-w1', 'u-p1', 'u-w2']);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('truncates merged events to limit after sorting across calendars', async () => {
+      const spy = vi.spyOn(osascript, 'runAppleScript');
+      try {
+        const fromMs = new Date('2026-11-07T00:00:00').getTime();
+        const toMs = fromMs + 5 * 24 * 60 * 60 * 1000;
+        const timeoutErr = Object.assign(new Error('Command failed: osascript -e set targetCalendars to every calendar'), {
+          killed: true,
+          signal: 'SIGTERM',
+        });
+        spy.mockImplementation(async (lines: string[]) => {
+          const script = lines.join('\n');
+          if (script.includes('set targetCalendars to every calendar')) {
+            throw timeoutErr;
+          }
+          if (script.includes('repeat with cal in every calendar') && !script.includes('matchingEvents')) {
+            return 'Work\nPersonal';
+          }
+          if (script.includes('set targetCalendars to {calendar 1}')) {
+            return 'u-w1|Work|Work Afternoon|2026-11-08T14:00:00|2026-11-08T15:00:00|||';
+          }
+          if (script.includes('set targetCalendars to {calendar 2}')) {
+            return [
+              'u-p1|Personal|Personal Morning|2026-11-08T08:00:00|2026-11-08T09:00:00|||',
+              'u-p2|Personal|Personal Noon|2026-11-08T12:00:00|2026-11-08T13:00:00|||',
+            ].join('\n');
+          }
+          return '';
+        });
+
+        const res = await calendarConnector.execute('list_events', {
+          from_ms: fromMs,
+          to_ms: toMs,
+          limit: 2,
+        });
+        const events = res.data as Array<{ uid: string }>;
+        expect(events.map((e) => e.uid)).toEqual(['u-p1', 'u-p2']);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('queries same-named calendars by index so every calendar is read exactly once', async () => {
+      const spy = vi.spyOn(osascript, 'runAppleScript');
+      try {
+        const fromMs = new Date('2026-11-07T00:00:00').getTime();
+        const toMs = fromMs + 5 * 24 * 60 * 60 * 1000;
+        spy.mockImplementation(async (lines: string[]) => {
+          const script = lines.join('\n');
+          if (script.includes('repeat with cal in every calendar') && !script.includes('matchingEvents')) {
+            return 'Calendar\nCalendar';
+          }
+          if (script.includes('set targetCalendars to {calendar 1}')) {
+            return 'u-icloud|Calendar|iCloud event|2026-11-08T08:00:00|2026-11-08T09:00:00|||';
+          }
+          if (script.includes('set targetCalendars to {calendar 2}')) {
+            return 'u-exchange|Calendar|Exchange event|2026-11-08T10:00:00|2026-11-08T11:00:00|||';
+          }
+          if (script.includes('calendar "Calendar"')) {
+            return 'u-icloud|Calendar|iCloud event|2026-11-08T08:00:00|2026-11-08T09:00:00|||';
+          }
+          return '';
+        });
+
+        const res = await calendarConnector.execute('list_events', {
+          from_ms: fromMs,
+          to_ms: toMs,
+          limit: 10,
+        });
+        const events = res.data as Array<{ uid: string }>;
+        expect(events.map((event) => event.uid)).toEqual(['u-icloud', 'u-exchange']);
+        expect(spy.mock.calls.filter(([lines]) => lines.join('\n').includes('matchingEvents'))).toHaveLength(2);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('returns partial events plus a note naming unread calendars when one calendar times out', async () => {
+      const spy = vi.spyOn(osascript, 'runAppleScript');
+      try {
+        const fromMs = new Date('2026-11-07T00:00:00').getTime();
+        const toMs = fromMs + 5 * 24 * 60 * 60 * 1000;
+        const timeoutErr = Object.assign(new Error('Command failed: osascript -e ...'), {
+          killed: true,
+          signal: 'SIGTERM',
+        });
+        spy
+          .mockResolvedValueOnce('Work\nSlowArchive\nPersonal')
+          .mockResolvedValueOnce('u-w1|Work|Standup|2026-11-08T10:00:00|2026-11-08T10:30:00|Zoom||')
+          .mockRejectedValueOnce(timeoutErr)
+          .mockResolvedValueOnce('u-p1|Personal|Dentist|2026-11-08T09:00:00|2026-11-08T09:30:00|Clinic||');
+
+        getMock.mockReturnValue(calendarConnector);
+        const result = await run(
+          { action: 'list_events', from_ms: fromMs, to_ms: toMs, limit: 10 },
+          makeCtx({ sessionId: 'sess-partial' }),
+        );
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.output).toContain('[Personal] Dentist');
+          expect(result.output).toContain('[Work] Standup');
+          expect(result.output).toContain('SlowArchive');
+          expect(result.output).toContain('以下日历读取超时未包含：SlowArchive');
+        }
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('enforces a 3-consecutive-timeout retry cap per session and resets on success', async () => {
+      const timeoutErr = Object.assign(new Error('Command failed: osascript -e ...'), {
+        killed: true,
+        signal: 'SIGTERM',
+      });
+      const ctx = makeCtx({ sessionId: 'sess-retry-cap' });
+
+      execMock.mockRejectedValueOnce(timeoutErr);
+      const r1 = await run({ action: 'list_events' }, ctx);
+      expect(r1.ok).toBe(false);
+      if (!r1.ok) expect(r1.error).not.toContain('retry cap reached');
+
+      execMock.mockRejectedValueOnce(timeoutErr);
+      const r2 = await run({ action: 'list_events' }, ctx);
+      expect(r2.ok).toBe(false);
+      if (!r2.ok) expect(r2.error).not.toContain('retry cap reached');
+
+      execMock.mockRejectedValueOnce(timeoutErr);
+      const r3 = await run({ action: 'list_events' }, ctx);
+      expect(r3.ok).toBe(false);
+      if (!r3.ok) {
+        expect(r3.code).toBe('timeout');
+        expect(r3.error).toContain('retry cap reached');
+        expect(r3.error).toContain('Stop retrying list_events automatically');
+        expect(r3.error).toContain('请停止自动重试');
+      }
+
+      // A successful list_events resets the counter for that session
+      execMock.mockResolvedValueOnce({ data: [] });
+      const rOk = await run({ action: 'list_events' }, ctx);
+      expect(rOk.ok).toBe(true);
+
+      execMock.mockRejectedValueOnce(timeoutErr);
+      const rAfterReset = await run({ action: 'list_events' }, ctx);
+      expect(rAfterReset.ok).toBe(false);
+      if (!rAfterReset.ok) expect(rAfterReset.error).not.toContain('retry cap reached');
     });
   });
 });

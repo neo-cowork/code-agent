@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import policy from '../../scripts/lib/gates-fast-policy.json';
 import {
   assertExactFiles, selectTests, validateFiles, validateReport, renderReceipt, digest,
-  validateBudgetPolicy, validateGateBudgetCoverage, extractGateIds, commandDeadline, budgetFailure,
+  validateBudgetPolicy, validateGateBudgetCoverage, scaleBudgetPolicy, extractGateIds, commandDeadline, budgetFailure,
   changedInputs, summarizeVitestFailures,
 } from '../../scripts/lib/gates-fast-contract.mjs';
 
@@ -149,6 +149,18 @@ describe('fast gate fail-closed contracts', () => {
     expect(commandDeadline(p, undefined, 40, 0)).toEqual({ limit: 'total', limitMs: 100, remainingMs: 60, gateId: null });
     expect(budgetFailure(commandDeadline(p, 'a', 10, 40), ['node', 'x'])).toBe('FAIL: gate budget 30ms exceeded (gate a) in node x');
     expect(budgetFailure(commandDeadline(p, 'a', 120, 0), ['node', 'x'])).toBe('FAIL: total budget 100ms exhausted (gate a) in node x');
+  });
+  it('budget scale: default leaves policy untouched; mini scale 2 needs the matching ship outer timeout', () => {
+    expect(scaleBudgetPolicy(policy, {})).toEqual({ policy, scale: 1, outerMs: 180000 });
+    const scaled = scaleBudgetPolicy(policy, { GATES_FAST_BUDGET_SCALE: '2', SHIP_FASTGATE_TIMEOUT_S: '360' });
+    expect(scaled.policy.budgetMs).toBe(policy.budgetMs * 2);
+    expect(scaled.policy.budgetsMs['tests-typecheck']).toBe(policy.budgetsMs['tests-typecheck'] * 2);
+    expect(() => validateBudgetPolicy(scaled.policy, scaled.outerMs)).not.toThrow();
+    const noOuter = scaleBudgetPolicy(policy, { GATES_FAST_BUDGET_SCALE: '2' });
+    expect(() => validateBudgetPolicy(noOuter.policy, noOuter.outerMs)).toThrow('ship outer timeout');
+    expect(() => scaleBudgetPolicy(policy, { GATES_FAST_BUDGET_SCALE: '5' })).toThrow('1..3');
+    expect(() => scaleBudgetPolicy(policy, { GATES_FAST_BUDGET_SCALE: '0.5' })).toThrow('1..3');
+    expect(() => scaleBudgetPolicy(policy, { SHIP_FASTGATE_TIMEOUT_S: '60' })).toThrow('>= 180');
   });
   it('对账 gates-fast.mjs 的 gate() 注册与 budgetsMs，缺项和多余项都 fail-closed', () => {
     const source = `await gate('inputs', true, run);\nawait gate("vitest", true, run);`;

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkbenchMcpRegistryItem } from '../../../src/renderer/utils/workbenchCapabilityRegistry';
 import { getWorkbenchCapabilityQuickActions } from '../../../src/renderer/utils/workbenchQuickActions';
 import { zh } from '../../../src/renderer/i18n/zh';
+import { en } from '../../../src/renderer/i18n/en';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
 
 const { mockRunQuickAction, mockUseInChat } = vi.hoisted(() => ({
@@ -93,6 +94,26 @@ const disconnectedSlackServer: WorkbenchMcpRegistryItem = {
     mountState: 'not_applicable' as const,
     connectionState: 'disconnected' as const,
   },
+};
+
+const lazySlackServer: WorkbenchMcpRegistryItem = {
+  ...disconnectedSlackServer,
+  status: 'lazy' as const,
+  description: '搜索 Slack 消息和频道',
+  health: 'degraded' as const,
+  lifecycle: {
+    ...disconnectedSlackServer.lifecycle,
+    connectionState: 'lazy' as const,
+  },
+};
+
+const disabledSlackServer: WorkbenchMcpRegistryItem = {
+  ...disconnectedSlackServer,
+  key: 'mcp:disabled-slack',
+  id: 'disabled-slack',
+  label: 'disabled-slack',
+  enabled: false,
+  description: '在需要时搜索团队消息',
 };
 
 const oauthNotionServer: WorkbenchMcpRegistryItem = {
@@ -356,6 +377,30 @@ describe('MCPSettings status', () => {
     expect(html).not.toContain('Alma');
   });
 
+  it('keeps connector card status in one badge and removes transport and lazy-load jargon from card DOM', () => {
+    mcpServers = [
+      { ...connectedGithubServer, description: '浏览代码仓库和议题' },
+      lazySlackServer,
+      disabledSlackServer,
+    ];
+
+    render(React.createElement(MCPSettings));
+
+    const expectedStatuses = [
+      ['github', mcpText.grid.cardStatus.connected],
+      ['slack', mcpText.grid.cardStatus.connectsWhenNeeded],
+      ['disabled-slack', mcpText.grid.cardStatus.disabled],
+    ] as const;
+    for (const [serverId, expectedStatus] of expectedStatuses) {
+      const card = screen.getByTestId(`mcp-connector-card-${serverId}`);
+      expect(card.textContent?.split(expectedStatus).length).toBe(2);
+      expect(card.textContent).not.toMatch(/transport:|http-streamable|stdio|懒加载|lazy[- ]?load/i);
+      expect(card.getAttribute('title')).not.toMatch(/transport:|http-streamable|stdio|status:|状态:/i);
+    }
+    expect(screen.getByTestId('mcp-connector-card-slack').textContent).toContain('搜索 Slack 消息和频道');
+    expect(screen.getByText('已连接 1 / 共 3 个')).toBeTruthy();
+  });
+
   it('summarizes MCP trust boundaries without exposing token values', () => {
     expect(getMcpTrustSummary(connectedGithubServer)).toContain(mcpText.trustSummary.authMaskedHint);
     expect(getMcpTrustSummary(authErrorTavilyServer)).toContain(mcpText.trustSummary.authReauthorizeHint);
@@ -432,6 +477,21 @@ describe('MCPSettings status', () => {
 
     expect(html.split(mcpText.trustSummary.approvalNotice).length - 1).toBe(1);
     expect(html.split(mcpText.trustSummary.authMaskedHint).length - 1).toBe(1);
+    expect(screen.getByTestId('mcp-trust-summary-note').textContent)
+      .not.toMatch(/destructive|openWorld|masked|OAuth|token/i);
+    expect([
+      ...Object.values(zh.settings.mcp.trustSummary),
+      ...Object.values(en.settings.mcp.trustSummary),
+    ].join(' ')).not.toMatch(/destructive|openWorld|masked|OAuth|token/i);
+  });
+
+  it('formats the connected summary without MCP or a device classifier in either language', () => {
+    const zhGrid = zh.settings.mcp.grid;
+    const enGrid = en.settings.mcp.grid;
+    expect(`${zhGrid.connectedSummaryPrefix}1${zhGrid.connectedSummaryMiddle}15${zhGrid.connectedSummarySuffix}`)
+      .toBe('已连接 1 / 共 15 个');
+    expect(`${enGrid.connectedSummaryPrefix}1${enGrid.connectedSummaryMiddle}15${enGrid.connectedSummarySuffix}`)
+      .toBe('Connected 1 of 15');
   });
 
   it('行尾统一为开关 + 详情入口；开关调用 setServerEnabled', async () => {

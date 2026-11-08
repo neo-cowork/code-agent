@@ -5,6 +5,7 @@ import { createLogger } from '../../../services/infra/logger';
 import { CONNECTOR_TOOL_NAMES } from '../../../../shared/contract/workbenchTools';
 import { needsArtifactTaskBrief } from '../../../prompts/builder';
 import { getNativeConnectorToolNamesForIntent } from '../../../connectors/nativeConnectorIntent';
+import { isRoleProactivityChatIntent } from '../../../app/roleProactivityChatIntent';
 
 const logger = createLogger('ContextAssembly');
 
@@ -105,6 +106,12 @@ export function getDeferredToolsToPreloadForTurn(
 
   if (SPAWN_AGENT_INTENT_RE.test(userText)) {
     tools.add('spawn_agent');
+  }
+
+  // 用户通常只会说“每天一次”或“少烦我”，不会点名 deferred 工具。执行层仍负责
+  // attended-only 与 force-confirm；这里与前台 allowlist 共用同一判据，只送 schema。
+  if (isRoleProactivityChatIntent(userText)) {
+    tools.add('set_role_proactivity');
   }
 
   for (const connectorId of runtime.toolScope?.allowedConnectorIds ?? []) {
