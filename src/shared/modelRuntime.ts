@@ -661,7 +661,7 @@ export function getProviderRuntimeModels(
     const capabilities = override.capabilities ?? inferModelCapabilities(modelId);
     byId.set(modelId, {
       id: modelId,
-      label: override.label || modelId,
+      label: override.label || getModelDisplayLabel(modelId),
       enabled: override.enabled ?? false,
       capabilities,
       maxTokens: override.maxTokens,

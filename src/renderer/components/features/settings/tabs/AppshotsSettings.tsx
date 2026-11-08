@@ -271,7 +271,7 @@ export const AppshotsSettings: React.FC = () => {
                     ? appshotsText.hotkeyStatusOn
                     : appshotsText.hotkeyStatusNeedsRestart}
               </span>
-              {!hotkeyStatus.permissionGranted && (
+              {!hotkeyStatus.tapInstalled && (
                 <Button
                   size="sm"
                   variant="secondary"

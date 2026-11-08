@@ -9,25 +9,35 @@ export interface StopSessionAgentTarget {
   key: string;
 }
 
+export type StopSessionAgentResult = 'stopped' | 'not_stopped' | 'error';
+
 export async function stopSessionAgent(
   target: StopSessionAgentTarget,
   sessionId: string | null,
   runId?: string,
-): Promise<void> {
-  if (target.kind === 'expert') {
-    if (!sessionId || !runId) return;
-    await ipcService
-      .invoke(IPC_CHANNELS.SWARM_CANCEL_AGENT, { sessionId, runId, agentId: target.key })
-      .catch(() => false);
-    return;
+): Promise<StopSessionAgentResult> {
+  try {
+    if (target.kind === 'expert') {
+      if (!sessionId || !runId) return 'not_stopped';
+      const stopped = await ipcService.invoke(
+        IPC_CHANNELS.SWARM_CANCEL_AGENT,
+        { sessionId, runId, agentId: target.key },
+      );
+      return stopped ? 'stopped' : 'not_stopped';
+    }
+    const result = target.kind === 'agent'
+      ? await ipcService.invokeDomain<{ cancelled: boolean }>(
+        IPC_DOMAINS.AGENT,
+        'closeAgent',
+        { agentId: target.key, sessionId },
+      )
+      : await ipcService.invokeDomain<{ cancelled: boolean }>(
+        IPC_DOMAINS.TASK,
+        'cancelBackgroundTask',
+        { taskId: target.key },
+      );
+    return result.cancelled ? 'stopped' : 'not_stopped';
+  } catch {
+    return 'error';
   }
-  if (target.kind === 'agent') {
-    await ipcService
-      .invokeDomain(IPC_DOMAINS.AGENT, 'closeAgent', { agentId: target.key, sessionId })
-      .catch(() => null);
-    return;
-  }
-  await window.domainAPI
-    ?.invoke(IPC_DOMAINS.TASK, 'cancelBackgroundTask', { taskId: target.key })
-    .catch(() => null);
 }

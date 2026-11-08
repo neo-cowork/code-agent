@@ -1,5 +1,7 @@
-// 前台一轮里「上次有可见进展」的观察器。90s 提示，5min 升级。
+// 前台一轮里「上次有可见进展」的观察器。软阈值（WORKFLOW_STALL_THRESHOLDS.N_SOFT_MS = 120s）提示，5min 升级。
 // 等审批或提问时时钟停住：这段时间不是模型卡住，卡片收起后也不许直接跳到「还是卡住」。
+
+import { WORKFLOW_STALL_THRESHOLDS } from '../../shared/constants';
 
 export type StallPhase = 'tool' | 'model';
 
@@ -38,7 +40,7 @@ export function clearStreamProgress(sessionId: string): void {
   streamTicks.delete(sessionId);
 }
 
-const HINT_MS = 90_000;
+const HINT_MS = WORKFLOW_STALL_THRESHOLDS.N_SOFT_MS;
 const ESCALATE_MS = 5 * 60_000;
 
 class StallObserver {
@@ -71,7 +73,7 @@ class StallObserver {
       this.level = 'escalated';
       return { level: 'escalated', phase, detail };
     }
-    if (idle >= HINT_MS && this.level === 'none') {
+    if (idle > HINT_MS && this.level === 'none') {
       this.level = 'hint';
       return { level: 'hint', phase, detail };
     }
