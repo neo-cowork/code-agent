@@ -1,6 +1,7 @@
 import React from 'react';
 import type { ChannelAccount } from '@shared/contract/channel';
 import { useI18n } from '../../../../hooks/useI18n';
+import { ChannelAccountWarningStrip } from './ChannelAccountWarningStrip';
 
 function showsFeishuSharedAppHint(account: ChannelAccount): boolean {
   if (account.type !== 'feishu' && account.type !== 'lark') return false;
@@ -13,8 +14,9 @@ export function FeishuSharedAppHint({ account }: { account: ChannelAccount }): R
   const { t } = useI18n();
   if (!showsFeishuSharedAppHint(account)) return null;
   return (
-    <div className="mt-1 text-xs text-badge-warning" data-testid="feishu-shared-app-hint">
-      {t.settings.channels.modal.feishuSharedAppWarning}
-    </div>
+    <ChannelAccountWarningStrip
+      body={t.settings.channels.modal.feishuSharedAppWarning}
+      data-testid="feishu-shared-app-hint"
+    />
   );
 }

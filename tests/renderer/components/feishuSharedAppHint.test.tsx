@@ -105,7 +105,7 @@ describe('FeishuSharedAppHint', () => {
 
     render(<ChannelsSettings />);
     await screen.findByText('飞书研发群');
-    const row = screen.getByText('飞书研发群').closest('div.grid') as HTMLElement;
+    const row = screen.getByText('飞书研发群').closest('[data-testid="channel-account-row"]') as HTMLElement;
     expect(within(row).getByTestId('feishu-shared-app-hint').textContent).toBe(ZH_WARNING);
   });
 });

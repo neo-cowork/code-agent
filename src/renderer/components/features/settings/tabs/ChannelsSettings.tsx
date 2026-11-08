@@ -39,7 +39,8 @@ import ipcService from '../../../../services/ipcService';
 import { useI18n } from '../../../../hooks/useI18n';
 import { zh } from '../../../../i18n/zh';
 import { CompanionSection } from '../sections/CompanionSection';
-import { TelegramGroupAccessPrerequisite, TelegramPrivacyModeHint } from './TelegramPrivacyModeHint';
+import { ChannelAccountWarningStrip } from './ChannelAccountWarningStrip';
+import { TelegramGroupAccessPrerequisite, TelegramPrivacyModeBadge, TelegramPrivacyModeHint } from './TelegramPrivacyModeHint';
 import { FeishuSharedAppHint } from './FeishuSharedAppHint';
 
 const logger = createLogger('ChannelsSettings');
@@ -923,105 +924,103 @@ export const ChannelsSettings: React.FC = () => {
                 </div>
 
                 {filteredAccounts.map((account) => (
-                  <div
-                    key={account.id}
-                    className="grid grid-cols-[minmax(220px,1.5fr)_120px_150px_minmax(160px,1fr)_210px] items-center border-b border-zinc-800 bg-zinc-900/30 px-3 py-3 last:border-b-0 hover:bg-zinc-800/50"
-                  >
-                    <div className="flex min-w-0 items-center gap-3">
-                      {getTypeIcon(account.type)}
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-medium text-zinc-200">{account.name}</div>
-                        <div className="mt-1 truncate text-xs text-zinc-500">{account.id}</div>
+                  <div key={account.id} className="border-b border-zinc-800 bg-zinc-900/30 last:border-b-0 hover:bg-zinc-800/50" data-testid="channel-account-row">
+                    <div className="grid min-h-[72px] grid-cols-[minmax(220px,1.5fr)_120px_150px_minmax(160px,1fr)_210px] items-center px-3 py-3" data-testid="channel-account-grid-row">
+                      <div className="flex min-w-0 items-center gap-3">
+                        {getTypeIcon(account.type)}
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium text-zinc-200">{account.name}</div>
+                          <div className="mt-1 truncate text-xs text-zinc-500">{account.id}</div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <span className="inline-flex h-6 items-center rounded-md bg-zinc-800 px-2 text-xs text-zinc-300">
+                          {getChannelTypeLabel(account.type, channelTypes)}
+                        </span>
+                      </div>
+
+                      <div className="min-w-0" data-testid="channel-account-status">
+                        <div className={`text-sm font-medium ${getStatusColor(account.status)}`}>
+                          {getStatusText(account.status)}
+                        </div>
+                        {account.errorMessage && (
+                          <div className="mt-1 truncate text-xs text-badge-danger" title={account.errorMessage}>
+                            {account.errorMessage}
+                          </div>
+                        )}
+                        <TelegramPrivacyModeBadge account={account} />
+                      </div>
+
+                      <div className="min-w-0 text-xs text-zinc-400">
+                        <div className="truncate">{getChannelConfigSummary(account, channelText.configSummary)}</div>
+                        {account.type === 'http-api' && (
+                          <div className="mt-1 flex items-center gap-2">
+                            <span className="truncate font-mono text-zinc-500">
+                              Key {(account.config as HttpApiChannelConfig).apiKey?.substring(0, 8)}...
+                            </span>
+                            <button
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                const key = (account.config as HttpApiChannelConfig).apiKey;
+                                if (key) {
+                                  navigator.clipboard.writeText(key);
+                                  setMessage({ type: 'success', text: channelText.toast.apiKeyCopied });
+                                }
+                              }}
+                              className="shrink-0 text-badge-accent transition-colors hover:text-badge-accent"
+                              title={channelText.actions.copyApiKey}
+                            >
+                              {channelText.actions.copy}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-end gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={isWebMode()}
+                          title={webOnlyNote}
+                          onClick={() => handleToggleConnection(account)}
+                          loading={connectingId === account.id}
+                          leftIcon={
+                            account.status === 'connected' ? (
+                              <PowerOff className="w-3 h-3" />
+                            ) : (
+                              <Power className="w-3 h-3" />
+                            )
+                          }
+                        >
+                          {account.status === 'connected' ? channelText.actions.disconnect : channelText.actions.connect}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={isWebMode()}
+                          title={webOnlyNote}
+                          onClick={() => handleEdit(account)}
+                          leftIcon={<Edit className="w-3 h-3" />}
+                        >
+                          {channelText.actions.edit}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={isWebMode()}
+                          title={webOnlyNote}
+                          onClick={() => handleDelete(account.id)}
+                          leftIcon={<Trash2 className="w-3 h-3 text-badge-danger" />}
+                        >
+                          {channelText.actions.delete}
+                        </Button>
                       </div>
                     </div>
-
-                    <div>
-                      <span className="inline-flex h-6 items-center rounded-md bg-zinc-800 px-2 text-xs text-zinc-300">
-                        {getChannelTypeLabel(account.type, channelTypes)}
-                      </span>
-                    </div>
-
-                    <div className="min-w-0">
-                      <div className={`text-sm font-medium ${getStatusColor(account.status)}`}>
-                        {getStatusText(account.status)}
-                      </div>
-                      {account.errorMessage && (
-                        <div className="mt-1 truncate text-xs text-badge-danger" title={account.errorMessage}>
-                          {account.errorMessage}
-                        </div>
-                      )}
-                      {needsApprovalCardSecurityConfig(account) && (
-                        <div className="mt-1 text-xs text-badge-warning">
-                          {channelText.modal.approvalCardSecurityWarning}
-                        </div>
-                      )}
+                    <div className="space-y-2 px-3 pb-3 empty:hidden" data-testid="channel-account-warnings">
+                      {needsApprovalCardSecurityConfig(account) && <ChannelAccountWarningStrip body={channelText.modal.approvalCardSecurityWarning} />}
                       <TelegramPrivacyModeHint account={account} />
                       <FeishuSharedAppHint account={account} />
-                    </div>
-
-                    <div className="min-w-0 text-xs text-zinc-400">
-                      <div className="truncate">{getChannelConfigSummary(account, channelText.configSummary)}</div>
-                      {account.type === 'http-api' && (
-                        <div className="mt-1 flex items-center gap-2">
-                          <span className="truncate font-mono text-zinc-500">
-                            Key {(account.config as HttpApiChannelConfig).apiKey?.substring(0, 8)}...
-                          </span>
-                          <button
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              const key = (account.config as HttpApiChannelConfig).apiKey;
-                              if (key) {
-                                navigator.clipboard.writeText(key);
-                                setMessage({ type: 'success', text: channelText.toast.apiKeyCopied });
-                              }
-                            }}
-                            className="shrink-0 text-badge-accent transition-colors hover:text-badge-accent"
-                            title={channelText.actions.copyApiKey}
-                          >
-                            {channelText.actions.copy}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex items-center justify-end gap-1.5">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={isWebMode()}
-                        title={webOnlyNote}
-                        onClick={() => handleToggleConnection(account)}
-                        loading={connectingId === account.id}
-                        leftIcon={
-                          account.status === 'connected' ? (
-                            <PowerOff className="w-3 h-3" />
-                          ) : (
-                            <Power className="w-3 h-3" />
-                          )
-                        }
-                      >
-                        {account.status === 'connected' ? channelText.actions.disconnect : channelText.actions.connect}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={isWebMode()}
-                        title={webOnlyNote}
-                        onClick={() => handleEdit(account)}
-                        leftIcon={<Edit className="w-3 h-3" />}
-                      >
-                        {channelText.actions.edit}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={isWebMode()}
-                        title={webOnlyNote}
-                        onClick={() => handleDelete(account.id)}
-                        leftIcon={<Trash2 className="w-3 h-3 text-badge-danger" />}
-                      >
-                        {channelText.actions.delete}
-                      </Button>
                     </div>
                   </div>
                 ))}

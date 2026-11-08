@@ -5,6 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
 import { zh } from '../../../src/renderer/i18n/zh';
+import { en } from '../../../src/renderer/i18n/en';
 
 const invokeDomain = vi.hoisted(() => vi.fn());
 const useInChat = vi.hoisted(() => vi.fn());
@@ -454,6 +455,9 @@ describe('SaaSConnectorsSection five card states', () => {
     const card = await screen.findByTestId('saas-connector-google-calendar');
     expect(card.textContent).toContain(zh.settings.saasConnectors.providers.googleCalendar);
     expect(card.textContent).toContain(zh.settings.saasConnectors.details.missingClientId);
+    expect(card.textContent).toContain('更新到最新版');
+    expect(card.textContent).toContain('联系管理员');
+    expect(card.textContent).not.toContain('client_id');
     expect(within(card).queryByTestId('saas-card-action-google-calendar')).toBeNull();
     fireEvent.click(card);
     expect(within(screen.getByTestId('saas-detail-google-calendar'))
@@ -573,6 +577,15 @@ describe('SaaSConnectorsSection five card states', () => {
     expect(screen.queryByTestId('saas-connect-feishu')).toBeNull();
     expect(screen.queryByTestId('saas-save-connect-feishu')).toBeNull();
     expect(screen.queryByTestId('saas-disconnect-feishu')).toBeNull();
+  });
+
+  it('keeps the missing-service next step plain and complete in both languages', () => {
+    expect(zh.settings.saasConnectors.details.missingClientId).toContain('更新到最新版');
+    expect(zh.settings.saasConnectors.details.missingClientId).toContain('联系管理员');
+    expect(en.settings.saasConnectors.details.missingClientId).toContain('Update to the latest version');
+    expect(en.settings.saasConnectors.details.missingClientId).toContain('contact your administrator');
+    expect(`${zh.settings.saasConnectors.details.missingClientId} ${en.settings.saasConnectors.details.missingClientId}`)
+      .not.toMatch(/client_id|built-in client/i);
   });
 
   it('fails closed when any oauthStatus field is missing', async () => {
