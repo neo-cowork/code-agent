@@ -6,7 +6,12 @@ import { classifyPermission, type ClassificationResult } from './permissionClass
 import { enforceWriteFenceObligation } from '../sandbox/writeFence';
 import { isExternalSideEffectTool, mustAskUnderAcceptEdits } from './externalSideEffect';
 import { createTraceStep } from '../security/decisionTraceBuilder';
-import { getPermissionModeManager, permissionModeAutoApproves, type PermissionMode } from '../permissions/modes';
+import {
+  getPermissionModeManager,
+  permissionModeAutoApproves,
+  type PermissionMode,
+} from '../permissions/modes';
+import { moreRestrictivePermissionMode } from '../permissions/permissionModeOrdering';
 import { resolveEffectiveSessionMode } from '../permissions/runPolicySnapshot';
 import {
   createHostReason,
@@ -32,15 +37,20 @@ interface PermissionedToolShape {
 /**
  * 会话有效权限档：subagent 走父子收缩后的 override（禁止回读父会话档扩权），
  * 主 agent 走会话档单一真源。
- * override 仍过限流钳制：只收紧不放宽，限流发生在 spawn 之后也生效。
+ * 继承自父级的 override 是权限上限，与 run 有效视图取严：子级不能扩权，父 run
+ * 结束后仍能观察会话收紧。独立 override 保持原语义，只叠加动态限流钳制。
  * N-PERM-POLICYVERSION E1：主 agent 分支改读 run 有效视图——外部来源的档位放宽
  * 对已开始的 run 冻结在起点，收紧与用户 UI 放宽仍立即生效。
  */
 export function resolveSessionPermissionMode(
   override: PermissionMode | undefined,
   sessionId?: string,
+  overrideIsInheritedCeiling = false,
 ): PermissionMode {
   if (override !== undefined) {
+    if (overrideIsInheritedCeiling) {
+      return moreRestrictivePermissionMode(override, resolveEffectiveSessionMode(sessionId));
+    }
     return getPermissionModeManager().clampForRateLimit(override, sessionId);
   }
   return resolveEffectiveSessionMode(sessionId);
