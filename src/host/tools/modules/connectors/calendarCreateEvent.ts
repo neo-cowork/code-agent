@@ -12,6 +12,7 @@ import type {
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { describeAppleScriptWriteFailure } from './appleScriptWriteFailure';
 import { calendarCreateEventSchema as schema } from './calendarCreateEvent.schema';
 
 async function executeCalendarCreateEvent(
@@ -122,7 +123,13 @@ async function executeCalendarCreateEvent(
       },
     };
   } catch (error) {
-    const failure = `Calendar create failed: ${error instanceof Error ? error.message : String(error)}`;
+    const failure = describeAppleScriptWriteFailure(
+      'Calendar',
+      'Calendar create failed',
+      error,
+      ctx.logger,
+      schema.name,
+    );
     return {
       ok: false,
       error: failure,
