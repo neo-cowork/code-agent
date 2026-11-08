@@ -13,6 +13,7 @@ import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { useI18n } from '../../../../hooks/useI18n';
 import { zh, type Translations } from '../../../../i18n';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 import {
   buildLightMemoryIssuePreview,
   countLightMemoryHealthIssues,
@@ -43,7 +44,7 @@ export function LightMemoryHealthPanel({
     ? t.knowledgeMemory.healthCheckingStatus
     : issueCount === 0
       ? t.knowledgeMemory.healthHealthyStatus
-      : t.knowledgeMemory.healthIssueCountStatus.replace('{count}', String(issueCount));
+      : interpolatePlural(t.knowledgeMemory.healthIssueCountStatus, issueCount);
   const statusTone = !health || isLoading
     ? 'border-zinc-700 bg-zinc-900 text-zinc-400'
     : issueCount === 0
@@ -118,7 +119,7 @@ export function MemoryInjectionTraceList({ traces }: { traces: MemoryInjectionTr
           <Zap className="h-3.5 w-3.5 text-zinc-400" />
           <span className="text-xs text-zinc-400">Injection Trace</span>
         </div>
-        <span className="text-[11px] text-zinc-600">{t.knowledgeMemory.countSuffix.replace('{count}', String(traces.length))}</span>
+        <span className="text-[11px] text-zinc-600">{interpolatePlural(t.knowledgeMemory.countSuffix, traces.length)}</span>
       </div>
       <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-2.5">
         {recentTraces.length === 0 ? (
@@ -131,7 +132,7 @@ export function MemoryInjectionTraceList({ traces }: { traces: MemoryInjectionTr
                   {trace.injected ? t.knowledgeMemory.injectionTraceInjected : t.knowledgeMemory.injectionTraceNotInjected}
                 </span>
                 <span className="shrink-0 font-medium text-zinc-300">{trace.blockType}</span>
-                <span className="min-w-0 truncate text-zinc-500">{trace.trigger} · {t.knowledgeMemory.injectionTraceUnitCount.replace('{count}', String(trace.count))} · {trace.chars} chars</span>
+                <span className="min-w-0 truncate text-zinc-500">{trace.trigger} · {interpolatePlural(t.knowledgeMemory.injectionTraceUnitCount, trace.count)} · {trace.chars} chars</span>
                 <span className="ml-auto shrink-0 text-zinc-600">{formatTraceTime(trace.timestamp, t)}</span>
               </div>
             ))}

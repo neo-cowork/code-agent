@@ -24,6 +24,7 @@ import { useSessionStore } from '../../stores/sessionStore';
 import { openSurfaceForArtifact } from '../../services/surfaceIntentDispatcher';
 import { splitCanvasProposalOps, type CanvasApprovalReason } from './canvasProposalApproval';
 import { useI18n } from '../../hooks/useI18n';
+import { interpolatePlural } from '../../i18n/interpolate';
 import { generateMessageId } from '@shared/utils/id';
 
 function makeGenId(): (kind: string, index: number) => string {
@@ -172,7 +173,7 @@ export function useCanvasProposalReview(): CanvasProposalReview {
               id: generateMessageId(),
               role: 'assistant',
               source: 'system',
-              content: directApplyReceipt.replace('{n}', String(outcome.appliedCount)),
+              content: interpolatePlural(directApplyReceipt, outcome.appliedCount),
               timestamp: Date.now(),
             });
           }

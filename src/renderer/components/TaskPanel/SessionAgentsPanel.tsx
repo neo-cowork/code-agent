@@ -14,6 +14,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Bot, ChevronDown, ChevronRight, Clock, Square, X, Zap } from 'lucide-react';
 import { cancelSwarmRunOrFallback } from '../features/swarm/SwarmInlineMonitor';
 import { useI18n } from '../../hooks/useI18n';
+import { interpolatePlural } from '../../i18n/interpolate';
 import { useSessionAgentRows } from '../../hooks/useSessionAgentRows';
 import { useDurableSwarmRunDetail } from '../../hooks/useDurableSwarmRunDetail';
 import { useSessionStore } from '../../stores/sessionStore';
@@ -157,11 +158,11 @@ export const SessionAgentsPanel: React.FC = () => {
   };
 
   const mergeLabel = mergeState === 'merged'
-    ? text.mergeState.merged.replace('{count}', String(rows.filter((row) => row.status !== 'standby').length))
+    ? interpolatePlural(text.mergeState.merged, rows.filter((row) => row.status !== 'standby').length)
     : mergeState === 'reported'
-      ? text.mergeState.reported.replace('{count}', String(rows.filter((row) => row.status !== 'standby').length))
+      ? interpolatePlural(text.mergeState.reported, rows.filter((row) => row.status !== 'standby').length)
       : mergeState === 'conflict'
-        ? text.mergeState.conflict.replace('{count}', String(conflicts.length))
+      ? interpolatePlural(text.mergeState.conflict, conflicts.length)
         : mergeState === 'waiting'
           ? text.mergeState.waiting
           : null;

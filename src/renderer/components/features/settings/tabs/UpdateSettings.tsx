@@ -5,6 +5,7 @@
 import React, { useState, useEffect } from 'react';
 import { Download, RefreshCw, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 import { Button } from '../../../primitives';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { SettingsPage } from '../SettingsLayout';
@@ -1016,7 +1017,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
         title={updateText.install.confirmTitle}
         message={installConfirm?.count == null
           ? updateText.install.confirmUnknownMessage
-          : updateText.install.confirmRunningMessage.replace('{count}', String(installConfirm.count))}
+          : interpolatePlural(updateText.install.confirmRunningMessage, installConfirm.count)}
         confirmText={updateText.install.confirmAction}
         cancelText={updateText.install.confirmCancel}
         onCancel={() => setInstallConfirm(null)}
