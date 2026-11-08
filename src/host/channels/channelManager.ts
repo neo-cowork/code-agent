@@ -329,12 +329,29 @@ export class ChannelManager extends EventEmitter {
     });
 
     // 飞书入站时间：首条立即推，之后节流（含被过滤的消息，用于区分「没送达」和「被过滤」）
+    // 节流期内的事件补一个尾沿推送，否则打开着的设置页会一直停在旧时间。
     let lastInboundPushedAt = 0;
+    let inboundPushTimer: ReturnType<typeof setTimeout> | null = null;
+    const pushInbound = (now: number): void => {
+      lastInboundPushedAt = now;
+      this.emit('accounts_changed', this.getAccounts());
+    };
     channel.on('inbound_event', (at: number) => {
       account.lastInboundAt = at;
       if (lastInboundPushedAt === 0 || at - lastInboundPushedAt >= FEISHU_LAST_INBOUND_PUSH_INTERVAL_MS) {
-        lastInboundPushedAt = at;
-        this.emit('accounts_changed', this.getAccounts());
+        pushInbound(at);
+      } else if (!inboundPushTimer) {
+        inboundPushTimer = setTimeout(() => {
+          inboundPushTimer = null;
+          pushInbound(Date.now());
+        }, lastInboundPushedAt + FEISHU_LAST_INBOUND_PUSH_INTERVAL_MS - at);
+        inboundPushTimer.unref?.();
+      }
+    });
+    channel.on('status_change', (status: ChannelAccountStatus) => {
+      if (status !== 'connected' && inboundPushTimer) {
+        clearTimeout(inboundPushTimer);
+        inboundPushTimer = null;
       }
     });
 

@@ -176,6 +176,38 @@ describe('Feishu last inbound time', () => {
     expect(manager.getAccount(account.id)?.lastInboundAt).toBeGreaterThan(0);
   });
 
+  it('trailing push: a throttled event is pushed at the 60 s mark, and a pending push dies with disconnect', async () => {
+    const { account, url, manager } = await webhookAccount();
+    const pushed: Array<number | undefined> = [];
+    const onChanged = (accounts: ChannelAccount[]) => pushed.push(accounts.find((a) => a.id === account.id)?.lastInboundAt);
+    manager.on('accounts_changed', onChanged);
+    try {
+      vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+      vi.setSystemTime(1_800_000_000_000);
+      await post(url, messageBody({ eventId: 't1', messageId: 'om_t1' }));
+      expect(pushed).toEqual([1_800_000_000_000]);
+
+      vi.setSystemTime(1_800_000_030_000);
+      await post(url, messageBody({ eventId: 't2', messageId: 'om_t2' }));
+      expect(pushed).toHaveLength(1);
+
+      await vi.advanceTimersByTimeAsync(FEISHU_LAST_INBOUND_PUSH_INTERVAL_MS - 30_000);
+      expect(pushed).toHaveLength(2);
+      expect(pushed[1]).toBe(1_800_000_030_000);
+
+      // 再来一条被节流 -> 挂起定时器；断开后不得再推
+      vi.setSystemTime(1_800_000_070_000);
+      await post(url, messageBody({ eventId: 't3', messageId: 'om_t3' }));
+      expect(pushed).toHaveLength(2);
+      await manager.disconnectAccount(account.id);
+      const afterDisconnect = pushed.length;
+      await vi.advanceTimersByTimeAsync(FEISHU_LAST_INBOUND_PUSH_INTERVAL_MS * 2);
+      expect(pushed).toHaveLength(afterDisconnect);
+    } finally {
+      manager.off('accounts_changed', onChanged);
+    }
+  });
+
   it('is runtime-only: stripped on save/load and cleared when disconnected', async () => {
     const { account, url, manager } = await webhookAccount();
     await post(url, messageBody({ eventId: 'e-save', messageId: 'om_save' }));
