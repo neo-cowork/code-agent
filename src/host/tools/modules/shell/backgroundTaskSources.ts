@@ -1,7 +1,10 @@
 import {
   getAllBackgroundTasks,
+  getTaskOutput,
   onBackgroundTaskLifecycleEvent,
   type BackgroundTaskLifecycleEvent,
+  type BackgroundTaskLifecycleEventType,
+  type TaskOutput,
   type TaskInfo,
 } from '../../shell/backgroundTasks';
 import {
@@ -13,6 +16,7 @@ import {
 
 export {
   getAllBackgroundTasks,
+  getTaskOutput,
   getAllPtySessions,
   onBackgroundTaskLifecycleEvent,
   onPtySessionLifecycleEvent,
@@ -20,7 +24,9 @@ export {
 
 export type {
   BackgroundTaskLifecycleEvent,
+  BackgroundTaskLifecycleEventType,
   PtySessionInfo,
   PtySessionLifecycleEvent,
   TaskInfo,
+  TaskOutput,
 };

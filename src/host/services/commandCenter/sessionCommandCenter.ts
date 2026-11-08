@@ -30,6 +30,11 @@ import {
 import type { RuntimeInputMode } from '../../../shared/contract/conversationEnvelope';
 import { RUNTIME_INPUT_REDIRECT_LINE, RUNTIME_INPUT_SUPPLEMENT_LINE } from '../../../shared/constants/runtimeInput';
 import { commandMayAwaitSystemPrompt } from '../../task/macosAutomationPrompt';
+import {
+  getTaskOutput,
+  onBackgroundTaskLifecycleEvent,
+  type BackgroundTaskLifecycleEventType,
+} from '../../tools/modules/shell/backgroundTaskSources';
 
 const logger = createLogger('SessionCommandCenter');
 
@@ -129,6 +134,16 @@ interface SessionCommandCenterDependencies {
   slotRecoveryLocale?: 'zh' | 'en';
 }
 
+interface NestedShellSettlement {
+  activeTaskIds: Set<string>;
+  outputs: string[];
+  failed: boolean;
+  pendingCompletion?: {
+    conclusion?: string;
+    artifacts?: NormalizedToolArtifactMeta[];
+  };
+}
+
 function taskId(): string {
   return `session-work-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -150,6 +165,9 @@ export class SessionCommandCenter {
   private readonly pendingApprovalIdsByTask = new Map<string, Set<string>>();
   /** 本轮审批等待的起点（首张未答审批时刻）；审批清空即删，下一张重新计时。 */
   private readonly approvalWaitStartedAtByTask = new Map<string, number>();
+  /** A delegated run is already the background unit. Nested Bash detaches must finish before it settles. */
+  private readonly nestedShellsByTask = new Map<string, NestedShellSettlement>();
+  private readonly ownerTaskByNestedShellId = new Map<string, SessionCommandTask>();
   private readonly approvalWaitCapMs: number;
   private readonly manager: TaskManager;
   private readonly projectTerminalResult: NonNullable<SessionCommandCenterDependencies['projectTerminalResult']>;
@@ -158,6 +176,7 @@ export class SessionCommandCenter {
   private readonly slotLedgerOptions: NonNullable<SessionCommandCenterDependencies['slotLedgerOptions']>;
   private readonly slotRecoveryLocale?: SessionCommandCenterDependencies['slotRecoveryLocale'];
   private readonly stopAgentEventObservation?: () => void;
+  private readonly stopNestedShellObservation: () => void;
   private readonly onTaskEvent = (event: TaskManagerEvent): void => {
     void this.handleTaskEvent(event);
   };
@@ -185,6 +204,10 @@ export class SessionCommandCenter {
         this.handleAgentProgressEvent(sessionId, event, taskId);
       });
     }
+    this.stopNestedShellObservation = onBackgroundTaskLifecycleEvent((event) => {
+      if (event.type === 'started') return;
+      void this.completeNestedShell(event.task.taskId, event.type);
+    });
   }
 
   async spawn(input: SpawnSessionTaskInput): Promise<SpawnSessionTaskResult> {
@@ -379,10 +402,13 @@ export class SessionCommandCenter {
     }
     for (const ledger of this.ledgers.values()) ledger.dispose();
     this.stopAgentEventObservation?.();
+    this.stopNestedShellObservation();
     this.toolNamesByCallId.clear();
     this.shellCommandsByCallId.clear();
     this.pendingApprovalIdsByTask.clear();
     this.approvalWaitStartedAtByTask.clear();
+    this.nestedShellsByTask.clear();
+    this.ownerTaskByNestedShellId.clear();
   }
 
   private tasks(sessionId: string): Map<string, SessionCommandTask> {
@@ -503,7 +529,22 @@ export class SessionCommandCenter {
       const artifacts = Array.isArray(data?.artifacts)
         ? data.artifacts as NormalizedToolArtifactMeta[]
         : undefined;
-      await this.settle(task, 'completed', conclusion, artifacts);
+      const nestedShells = this.nestedShellsByTask.get(task.id);
+      if (nestedShells?.activeTaskIds.size) {
+        nestedShells.pendingCompletion = { conclusion, artifacts };
+        logger.info('Task completion deferred until nested background shell exits', {
+          taskId: task.id,
+          nestedTaskIds: [...nestedShells.activeTaskIds],
+        });
+        return;
+      }
+      const nestedResult = nestedShells?.outputs.join('\n').trim();
+      await this.settle(
+        task,
+        nestedShells?.failed ? 'failed' : 'completed',
+        nestedResult || conclusion,
+        artifacts,
+      );
       return;
     }
     if (event.type === 'task_error') {
@@ -593,6 +634,12 @@ export class SessionCommandCenter {
     this.shellCommandsByCallId.delete(mapKey);
 
     if (result.success) {
+      const nestedTaskId = result.metadata?.background === true
+        && tool?.toLocaleLowerCase() === 'bash'
+        && typeof result.metadata.taskId === 'string'
+        ? result.metadata.taskId
+        : undefined;
+      if (nestedTaskId) this.trackNestedShell(task, nestedTaskId);
       const failure = task.progress?.lastToolFailure;
       if (failure && failure.tool === tool) {
         const progress = { ...task.progress };
@@ -618,6 +665,51 @@ export class SessionCommandCenter {
     };
     task.updatedAt = Date.now();
     this.projectTask(task);
+  }
+
+  private trackNestedShell(task: SessionCommandTask, nestedTaskId: string): void {
+    const state = this.nestedShellsByTask.get(task.id) ?? {
+      activeTaskIds: new Set<string>(),
+      outputs: [],
+      failed: false,
+    };
+    state.activeTaskIds.add(nestedTaskId);
+    this.nestedShellsByTask.set(task.id, state);
+    this.ownerTaskByNestedShellId.set(nestedTaskId, task);
+    // A very short command can exit between Bash starting it and tool_call_end reaching us.
+    void getTaskOutput(nestedTaskId).then((output) => {
+      if (output && output.status !== 'running') {
+        void this.completeNestedShell(nestedTaskId, output.status);
+      }
+    }).catch((error) => {
+      logger.warn('Failed to reconcile nested background shell state', {
+        taskId: task.id,
+        nestedTaskId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }
+
+  private async completeNestedShell(
+    nestedTaskId: string,
+    terminalStatus: Exclude<BackgroundTaskLifecycleEventType, 'started'>,
+  ): Promise<void> {
+    const task = this.ownerTaskByNestedShellId.get(nestedTaskId);
+    if (!task) return;
+    const output = await getTaskOutput(nestedTaskId);
+    if (output?.status === 'running') return;
+    if (this.ownerTaskByNestedShellId.get(nestedTaskId) !== task) return;
+    this.ownerTaskByNestedShellId.delete(nestedTaskId);
+    const state = this.nestedShellsByTask.get(task.id);
+    if (!state) return;
+    state.activeTaskIds.delete(nestedTaskId);
+    const resultText = output?.output.trim();
+    if (resultText) state.outputs.push(resultText);
+    if (terminalStatus === 'failed' || output?.status === 'failed') state.failed = true;
+    const pending = state.pendingCompletion;
+    if (state.activeTaskIds.size || !pending) return;
+    const detail = state.outputs.join('\n').trim() || pending.conclusion;
+    await this.settle(task, state.failed ? 'failed' : 'completed', detail, pending.artifacts);
   }
 
   private noteApprovalEvent(taskId: string, event: AgentEvent): void {
@@ -720,6 +812,13 @@ export class SessionCommandCenter {
     artifacts?: NormalizedToolArtifactMeta[],
   ): Promise<void> {
     if (TERMINAL.has(task.status)) return;
+    const nestedShells = this.nestedShellsByTask.get(task.id);
+    if (nestedShells) {
+      for (const nestedTaskId of nestedShells.activeTaskIds) {
+        this.ownerTaskByNestedShellId.delete(nestedTaskId);
+      }
+      this.nestedShellsByTask.delete(task.id);
+    }
     this.approvalWaitStartedAtByTask.delete(task.id);
     task.status = status;
     task.detail = detail;
