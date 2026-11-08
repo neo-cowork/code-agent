@@ -45,6 +45,7 @@ vi.mock('../../../../src/host/permissions/modes', () => ({
   getPermissionModeManager: () => ({
     isUnattendedSession: () => sessionState.unattended,
     clampForRateLimit: (mode: string) => mode,
+    getModeForSession: () => 'acceptEdits',
   }),
   permissionModeAutoApproves: (mode: string, level: string) => mode === 'acceptEdits' && level === 'write',
 }));
