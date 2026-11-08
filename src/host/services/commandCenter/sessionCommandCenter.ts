@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import type { AgentEvent, Message, MessageAttachment, TaskProgressData, ToolProgressData } from '../../../shared/contract';
 import type { TaskProgress } from '../../../shared/contract/backgroundTask';
 import type { ToolResult } from '../../../shared/contract/tool';
@@ -32,9 +33,11 @@ import { RUNTIME_INPUT_REDIRECT_LINE, RUNTIME_INPUT_SUPPLEMENT_LINE } from '../.
 import { commandMayAwaitSystemPrompt } from '../../task/macosAutomationPrompt';
 import {
   getTaskOutput,
+  getPtySessionOutput,
   onBackgroundTaskLifecycleEvent,
-  type BackgroundTaskLifecycleEventType,
+  onPtySessionLifecycleEvent,
 } from '../../tools/modules/shell/backgroundTaskSources';
+import { getBackgroundSubagentRegistry } from '../../agent/backgroundSubagentRegistry';
 
 const logger = createLogger('SessionCommandCenter');
 
@@ -135,15 +138,16 @@ interface SessionCommandCenterDependencies {
 }
 
 interface NestedShellSettlement {
-  activeTaskIds: Set<string>;
+  activeWorkIds: Set<string>;
   outputs: string[];
   failed: boolean;
-  pendingCompletion?: {
-    conclusion?: string;
-    artifacts?: NormalizedToolArtifactMeta[];
-  };
+  pendingCompletion?: { conclusion?: string; artifacts?: NormalizedToolArtifactMeta[] };
 }
 
+type NestedWorkKind = 'shell' | 'pty' | 'subagent';
+function nestedWorkKey(kind: NestedWorkKind, id: string): string {
+  return `${kind}:${id}`;
+}
 function taskId(): string {
   return `session-work-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -165,9 +169,9 @@ export class SessionCommandCenter {
   private readonly pendingApprovalIdsByTask = new Map<string, Set<string>>();
   /** 本轮审批等待的起点（首张未答审批时刻）；审批清空即删，下一张重新计时。 */
   private readonly approvalWaitStartedAtByTask = new Map<string, number>();
-  /** A delegated run is already the background unit. Nested Bash detaches must finish before it settles. */
+  /** A delegated run is already the background unit. Nested detached work must finish before it settles. */
   private readonly nestedShellsByTask = new Map<string, NestedShellSettlement>();
-  private readonly ownerTaskByNestedShellId = new Map<string, SessionCommandTask>();
+  private readonly ownerTaskByNestedWorkId = new Map<string, SessionCommandTask>();
   private readonly approvalWaitCapMs: number;
   private readonly manager: TaskManager;
   private readonly projectTerminalResult: NonNullable<SessionCommandCenterDependencies['projectTerminalResult']>;
@@ -177,6 +181,7 @@ export class SessionCommandCenter {
   private readonly slotRecoveryLocale?: SessionCommandCenterDependencies['slotRecoveryLocale'];
   private readonly stopAgentEventObservation?: () => void;
   private readonly stopNestedShellObservation: () => void;
+  private readonly stopNestedPtyObservation: () => void;
   private readonly onTaskEvent = (event: TaskManagerEvent): void => {
     void this.handleTaskEvent(event);
   };
@@ -204,12 +209,11 @@ export class SessionCommandCenter {
         this.handleAgentProgressEvent(sessionId, event, taskId);
       });
     }
-    this.stopNestedShellObservation = onBackgroundTaskLifecycleEvent((event) => {
-      if (event.type === 'started') return;
-      void this.completeNestedShell(event.task.taskId, event.type);
-    });
+    this.stopNestedShellObservation = onBackgroundTaskLifecycleEvent((event) => event.type === 'started'
+      ? undefined : void this.completeNestedWork(nestedWorkKey('shell', event.task.taskId), event.type, undefined, event.task.outputFile));
+    this.stopNestedPtyObservation = onPtySessionLifecycleEvent((event) => event.type === 'started'
+      ? undefined : void this.completeNestedWork(nestedWorkKey('pty', event.session.sessionId), event.type, undefined, event.session.outputFile));
   }
-
   async spawn(input: SpawnSessionTaskInput): Promise<SpawnSessionTaskResult> {
     const ledger = this.ledger(input.sessionId);
     const id = taskId();
@@ -403,12 +407,13 @@ export class SessionCommandCenter {
     for (const ledger of this.ledgers.values()) ledger.dispose();
     this.stopAgentEventObservation?.();
     this.stopNestedShellObservation();
+    this.stopNestedPtyObservation();
     this.toolNamesByCallId.clear();
     this.shellCommandsByCallId.clear();
     this.pendingApprovalIdsByTask.clear();
     this.approvalWaitStartedAtByTask.clear();
     this.nestedShellsByTask.clear();
-    this.ownerTaskByNestedShellId.clear();
+    this.ownerTaskByNestedWorkId.clear();
   }
 
   private tasks(sessionId: string): Map<string, SessionCommandTask> {
@@ -530,12 +535,9 @@ export class SessionCommandCenter {
         ? data.artifacts as NormalizedToolArtifactMeta[]
         : undefined;
       const nestedShells = this.nestedShellsByTask.get(task.id);
-      if (nestedShells?.activeTaskIds.size) {
+      if (nestedShells?.activeWorkIds.size) {
         nestedShells.pendingCompletion = { conclusion, artifacts };
-        logger.info('Task completion deferred until nested background shell exits', {
-          taskId: task.id,
-          nestedTaskIds: [...nestedShells.activeTaskIds],
-        });
+        logger.info('Task completion deferred until nested background work exits', { taskId: task.id, nestedWorkIds: [...nestedShells.activeWorkIds] });
         return;
       }
       const nestedResult = nestedShells?.outputs.join('\n').trim();
@@ -634,12 +636,8 @@ export class SessionCommandCenter {
     this.shellCommandsByCallId.delete(mapKey);
 
     if (result.success) {
-      const nestedTaskId = result.metadata?.background === true
-        && tool?.toLocaleLowerCase() === 'bash'
-        && typeof result.metadata.taskId === 'string'
-        ? result.metadata.taskId
-        : undefined;
-      if (nestedTaskId) this.trackNestedShell(task, nestedTaskId);
+      const nestedWork = this.nestedWorkFromResult(result);
+      if (nestedWork) this.trackNestedWork(task, nestedWork);
       const failure = task.progress?.lastToolFailure;
       if (failure && failure.tool === tool) {
         const progress = { ...task.progress };
@@ -666,52 +664,76 @@ export class SessionCommandCenter {
     task.updatedAt = Date.now();
     this.projectTask(task);
   }
-
-  private trackNestedShell(task: SessionCommandTask, nestedTaskId: string): void {
-    const state = this.nestedShellsByTask.get(task.id) ?? {
-      activeTaskIds: new Set<string>(),
-      outputs: [],
-      failed: false,
-    };
-    state.activeTaskIds.add(nestedTaskId);
-    this.nestedShellsByTask.set(task.id, state);
-    this.ownerTaskByNestedShellId.set(nestedTaskId, task);
-    // A very short command can exit between Bash starting it and tool_call_end reaching us.
-    void getTaskOutput(nestedTaskId).then((output) => {
-      if (output && output.status !== 'running') {
-        void this.completeNestedShell(nestedTaskId, output.status);
-      }
-    }).catch((error) => {
-      logger.warn('Failed to reconcile nested background shell state', {
-        taskId: task.id,
-        nestedTaskId,
-        message: error instanceof Error ? error.message : String(error),
-      });
-    });
+  private nestedWorkFromResult(result: ToolResult): { kind: NestedWorkKind; id: string } | undefined {
+    const metadata = result.metadata;
+    if (metadata?.background === true && typeof metadata.taskId === 'string') return { kind: 'shell', id: metadata.taskId };
+    if (metadata?.pty === true && typeof metadata.sessionId === 'string') return { kind: 'pty', id: metadata.sessionId };
+    const nested = metadata?.result && typeof metadata.result === 'object' && !Array.isArray(metadata.result)
+      ? metadata.result as Record<string, unknown> : undefined;
+    if (metadata?.background !== true && nested?.background !== true) return undefined;
+    const id = [metadata?.agentId, metadata?.runId, nested?.agentId, nested?.runId]
+      .find((value): value is string => typeof value === 'string');
+    return id ? { kind: 'subagent', id } : undefined;
   }
-
-  private async completeNestedShell(
-    nestedTaskId: string,
-    terminalStatus: Exclude<BackgroundTaskLifecycleEventType, 'started'>,
-  ): Promise<void> {
-    const task = this.ownerTaskByNestedShellId.get(nestedTaskId);
+  private trackNestedWork(task: SessionCommandTask, work: { kind: NestedWorkKind; id: string }): void {
+    const workKey = nestedWorkKey(work.kind, work.id);
+    const state = this.nestedShellsByTask.get(task.id) ?? { activeWorkIds: new Set<string>(), outputs: [], failed: false };
+    state.activeWorkIds.add(workKey);
+    this.nestedShellsByTask.set(task.id, state);
+    this.ownerTaskByNestedWorkId.set(workKey, task);
+    const completion = work.kind === 'subagent'
+      ? getBackgroundSubagentRegistry().await(work.id).then((result) => ({
+        status: result?.success === false ? 'failed' as const : 'completed' as const,
+        output: result?.output,
+      }))
+      : work.kind === 'pty'
+        ? getPtySessionOutput(work.id, false).then((output) => output && ({ status: output.status, output: output.output }))
+        : getTaskOutput(work.id).then((output) => output && ({ status: output.status, output: output.output }));
+    void completion.then((output) => {
+      if (output && output.status !== 'running') {
+        void this.completeNestedWork(workKey, output.status, output.output);
+      }
+    }).catch((error) => logger.warn('Failed to reconcile nested background work state', {
+      taskId: task.id, nestedWorkId: workKey, message: error instanceof Error ? error.message : String(error),
+    }));
+  }
+  private async completeNestedWork(workKey: string, terminalStatus: 'completed' | 'failed', directOutput?: string, outputFile?: string): Promise<void> {
+    const task = this.ownerTaskByNestedWorkId.get(workKey);
     if (!task) return;
-    const output = await getTaskOutput(nestedTaskId);
-    if (output?.status === 'running') return;
-    if (this.ownerTaskByNestedShellId.get(nestedTaskId) !== task) return;
-    this.ownerTaskByNestedShellId.delete(nestedTaskId);
+    const [, kind, ...idParts] = workKey.split(':');
+    const workId = idParts.join(':');
+    let observedStatus = terminalStatus;
+    let resultText = directOutput;
+    if (directOutput === undefined) {
+      if (kind === 'subagent') {
+        const handle = getBackgroundSubagentRegistry().getStatus(workId);
+        if (!handle || handle.status === 'running') return;
+        observedStatus = handle.status;
+        resultText = handle.result?.output;
+      } else {
+        const output = await (kind === 'pty' ? getPtySessionOutput(workId, false) : getTaskOutput(workId));
+        if (output?.status === 'running') return;
+        if (output) {
+          observedStatus = output.status;
+          resultText = output.output;
+        } else if (outputFile) {
+          resultText = await readFile(outputFile, 'utf8').catch(() => undefined);
+        } else return;
+      }
+    }
+    if (this.ownerTaskByNestedWorkId.get(workKey) !== task) return;
+    this.ownerTaskByNestedWorkId.delete(workKey);
     const state = this.nestedShellsByTask.get(task.id);
     if (!state) return;
-    state.activeTaskIds.delete(nestedTaskId);
-    const resultText = output?.output.trim();
-    if (resultText) state.outputs.push(resultText);
-    if (terminalStatus === 'failed' || output?.status === 'failed') state.failed = true;
+    state.activeWorkIds.delete(workKey);
+    const trimmedResult = resultText?.trim();
+    if (trimmedResult) state.outputs.push(trimmedResult);
+    if (observedStatus === 'failed') state.failed = true;
     const pending = state.pendingCompletion;
-    if (state.activeTaskIds.size || !pending) return;
+    if (state.activeWorkIds.size || !pending) return;
     const detail = state.outputs.join('\n').trim() || pending.conclusion;
     await this.settle(task, state.failed ? 'failed' : 'completed', detail, pending.artifacts);
   }
-
   private noteApprovalEvent(taskId: string, event: AgentEvent): void {
     if (event.type !== 'permission_request') return;
     const data = event.data as { id?: unknown; resolved?: unknown } | undefined;
@@ -814,8 +836,8 @@ export class SessionCommandCenter {
     if (TERMINAL.has(task.status)) return;
     const nestedShells = this.nestedShellsByTask.get(task.id);
     if (nestedShells) {
-      for (const nestedTaskId of nestedShells.activeTaskIds) {
-        this.ownerTaskByNestedShellId.delete(nestedTaskId);
+      for (const nestedWorkId of nestedShells.activeWorkIds) {
+        this.ownerTaskByNestedWorkId.delete(nestedWorkId);
       }
       this.nestedShellsByTask.delete(task.id);
     }
