@@ -609,6 +609,110 @@ describe('DoomLoopGuard background poll stall window — N-FIX-DOOMLOOP-BG-POLL-
 
     expect(levels).toEqual(['none', 'none', 'none', 'none', 'none', 'none', 'none']);
   });
+
+  it('(vii-a) wait_agent {agentIds:["a1"]} ×4 (25s apart) returning timeout output does not reach doom-loop or doom-loop-abort', () => {
+    let nowMs = 1_762_300_000_000;
+    const guard = new DoomLoopGuard(() => nowMs);
+    const waitCall = call('wait_agent', { agentIds: ['a1'] });
+    const timeoutText = 'Wait results (timeout — some still running):\n\n⏳ [a1] researcher — running (still running)\n   Still in progress after 30000ms timeout';
+    const levels: string[] = [];
+    const signalsList: string[][] = [];
+    for (let i = 0; i < 4; i++) {
+      nowMs += 25_000;
+      levels.push(guard.recordStep([waitCall]).level);
+      signalsList.push(
+        guard.recordResults([{
+          name: 'wait_agent',
+          arguments: { agentIds: ['a1'] },
+          success: true,
+          summary: timeoutText,
+        }]).signals,
+      );
+    }
+    expect(levels).toEqual(['none', 'none', 'none', 'none']);
+    expect(signalsList).toEqual([[], [], ['polling_repeat'], []]);
+  });
+
+  it('(vii-b) wait_agent {agentIds:["a1"]} unchanged for > 5 minutes → doom-loop, then doom-loop-abort', () => {
+    let nowMs = 1_762_300_000_000;
+    const guard = new DoomLoopGuard(() => nowMs);
+    const waitCall = call('wait_agent', { agentIds: ['a1'] });
+    const timeoutText = 'Wait results (timeout — some still running):\n\n⏳ [a1] researcher — running (still running)\n   Still in progress after 30000ms timeout';
+    const stepWait = (advanceMs: number) => {
+      nowMs += advanceMs;
+      const check = guard.recordStep([waitCall]);
+      guard.recordResults([{
+        name: 'wait_agent',
+        arguments: { agentIds: ['a1'] },
+        success: true,
+        summary: timeoutText,
+      }]);
+      return check.level;
+    };
+    expect(stepWait(0)).toBe('none');
+    expect(stepWait(160_000)).toBe('none');
+    expect(stepWait(160_000)).toBe('none'); // streak=3, elapsed=320s > 300s
+    expect(stepWait(20_000)).toBe('doom-loop');
+    expect(stepWait(20_000)).toBe('doom-loop-abort');
+  });
+
+  it('(vii-c) agent_message {action:"status", agentId:"a1"} ×4 (25s apart) within window → no doom-loop/abort; > 5 min → doom-loop-abort', () => {
+    let nowMs = 1_762_300_000_000;
+    const guard = new DoomLoopGuard(() => nowMs);
+    const statusCall = call('agent_message', { action: 'status', agentId: 'a1' });
+    const runningStatusText = 'Agent Status:\n- ID: a1\n- Role: researcher\n- Status: running\n- Task: collect pages';
+    const levels: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      nowMs += 25_000;
+      levels.push(guard.recordStep([statusCall]).level);
+      guard.recordResults([{
+        name: 'agent_message',
+        arguments: { action: 'status', agentId: 'a1' },
+        success: true,
+        summary: runningStatusText,
+      }]);
+    }
+    expect(levels).toEqual(['none', 'none', 'none', 'none']);
+
+    // Now advance past the 5-minute stall window from first poll (already 75s elapsed; add 250s → 325s)
+    nowMs += 250_000;
+    expect(guard.recordStep([statusCall]).level).toBe('none'); // this step's recordResults updates elapsedMs to 325s
+    guard.recordResults([{
+      name: 'agent_message',
+      arguments: { action: 'status', agentId: 'a1' },
+      success: true,
+      summary: runningStatusText,
+    }]);
+    nowMs += 20_000;
+    expect(guard.recordStep([statusCall]).level).toBe('doom-loop');
+    guard.recordResults([{
+      name: 'agent_message',
+      arguments: { action: 'status', agentId: 'a1' },
+      success: true,
+      summary: runningStatusText,
+    }]);
+    nowMs += 20_000;
+    expect(guard.recordStep([statusCall]).level).toBe('doom-loop-abort');
+  });
+
+  it('(vii-d) terminal_wait / terminal_read while a long command is running follow the stall-window rule', () => {
+    let nowMs = 1_762_300_000_000;
+    const guard = new DoomLoopGuard(() => nowMs);
+    const termCall = call('terminal_wait', { session_id: 'pty-1' });
+    const termOutput = '[timeout]\nbuilding project...';
+    const levels: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      nowMs += 25_000;
+      levels.push(guard.recordStep([termCall]).level);
+      guard.recordResults([{
+        name: 'terminal_wait',
+        arguments: { session_id: 'pty-1' },
+        success: true,
+        summary: termOutput,
+      }]);
+    }
+    expect(levels).toEqual(['none', 'none', 'none', 'none']);
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -612,9 +612,19 @@ function normalizeSignalText(message: string): string {
 
 function isPollClassCall(toolCall: { name: string; arguments?: Record<string, unknown> }): boolean {
   const name = toolCall.name.toLowerCase();
-  if (name === 'task_status' || name === 'task_output') return true;
+  if (name === 'task_status' || name === 'task_output' || name === 'terminal_wait' || name === 'terminal_read') {
+    return true;
+  }
+  const args = toolCall.arguments ?? {};
+  if (name === 'wait_agent') {
+    return Array.isArray(args.agentIds) && args.agentIds.some((id) => typeof id === 'string' && id.length > 0);
+  }
+  if (name === 'agent_message') {
+    const action = typeof args.action === 'string' ? args.action.toLowerCase() : '';
+    return action === 'status' && typeof args.agentId === 'string' && args.agentId.length > 0;
+  }
   if (name === 'process') {
-    const action = typeof toolCall.arguments?.action === 'string' ? toolCall.arguments.action.toLowerCase() : '';
+    const action = typeof args.action === 'string' ? args.action.toLowerCase() : '';
     return POLL_ACTIONS.has(action);
   }
   return false;
@@ -624,6 +634,19 @@ function backgroundPollTaskId(call: GuardCallResult): string | null {
   const name = call.name.toLowerCase();
   if (name === 'task_status') return 'task_status';
   const args = call.arguments ?? {};
+  if (name === 'wait_agent') {
+    if (!Array.isArray(args.agentIds)) return null;
+    const ids = args.agentIds.filter((id): id is string => typeof id === 'string' && id.length > 0).sort();
+    return ids.length > 0 ? ids.join(',') : null;
+  }
+  if (name === 'agent_message') {
+    const action = typeof args.action === 'string' ? args.action.toLowerCase() : '';
+    if (action !== 'status') return null;
+    return typeof args.agentId === 'string' && args.agentId.length > 0 ? args.agentId : null;
+  }
+  if (name === 'terminal_wait' || name === 'terminal_read') {
+    return typeof args.session_id === 'string' && args.session_id.length > 0 ? args.session_id : name;
+  }
   if (name === 'process') {
     const action = typeof args.action === 'string' ? args.action.toLowerCase() : '';
     if (!POLL_ACTIONS.has(action)) return null;
