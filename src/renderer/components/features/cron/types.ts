@@ -16,6 +16,7 @@ import { isCronPermissionDeniedMarker } from '@shared/cronPermissionDenied';
 import { CRON_AGENT_TYPES, CRON_EVENT_TRIGGER } from '@shared/constants';
 import { formatCronExpressionLabel, humanizeEverySchedule, type CronHumanLang } from '@shared/cronHumanize';
 import { formatDateTime } from '../../../utils/formatDateTime';
+import { getBuiltinJobDisplay } from './builtinJobDisplay';
 
 export interface CronJobDraft {
   runsOn: CronJobDefinition['runsOn'];
@@ -129,7 +130,7 @@ export function createDefaultCronJobDraft(): CronJobDraft {
     shellUsePty: false,
     toolName: '',
     toolParametersText: '{}',
-    agentType: '',
+    agentType: 'default',
     agentPrompt: '',
     agentContextText: '{}',
     agentRoleId: '',
@@ -544,7 +545,9 @@ export function formatScheduleSummary(
   }
 }
 
-export function formatActionSummary(job: CronJobDefinition): string {
+export function formatActionSummary(job: CronJobDefinition, lang: CronHumanLang = 'zh'): string {
+  const builtin = getBuiltinJobDisplay(job, lang);
+  if (builtin) return builtin.actionLabel;
   switch (job.action.type) {
     case 'shell':
       return job.action.command;
