@@ -258,7 +258,7 @@ Commit message 格式：
 
 输出包含：判断、证据、差距、建议切片。标记每个 topic 的状态。`,
     basePath: '',
-    allowedTools: ['Read', 'Glob', 'Grep', 'WebSearch', 'WebFetch', 'TaskManager', 'MemoryRead'],
+    allowedTools: ['Read', 'Glob', 'Grep', 'WebSearch', 'WebFetch', 'TaskManager', 'MemoryRead', 'Write'],
     disableModelInvocation: false,
     userInvocable: true,
     executionContext: 'inline',
@@ -555,7 +555,7 @@ openpyxl.chart 可嵌入 xlsx，matplotlib 可生成独立 png。图表和数据
 ## 代码风格
 写简洁的 Python，不加多余注释和 print。Excel 文件内：复杂公式加 cell comment 说明。`,
     basePath: '',
-    allowedTools: ['bash', 'read_file', 'read_xlsx', 'write_file', 'edit_file'],
+    allowedTools: ['bash', 'read_file', 'read_xlsx', 'write_file', 'edit_file', 'ExcelAutomate', 'excel_generate'],
     disableModelInvocation: false,
     userInvocable: true,
     executionContext: 'inline',
