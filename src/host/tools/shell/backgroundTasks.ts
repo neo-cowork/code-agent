@@ -46,6 +46,8 @@ export interface TaskState {
   toolCallId?: string;
   ownerAgentId?: string;
   sandboxed?: boolean;
+  stoppedByRequest?: boolean;
+  terminalEventEmitted?: boolean;
   onExit?: () => void;
 }
 
@@ -63,6 +65,7 @@ export interface TaskInfo {
   duration: number;
   exitCode?: number;
   outputFile: string;
+  stoppedByRequest?: boolean;
 }
 
 export interface TaskOutput {
@@ -185,10 +188,17 @@ function toTaskInfo(task: TaskState): TaskInfo {
     duration: (task.endTime || Date.now()) - task.startTime,
     exitCode: task.exitCode,
     outputFile: task.outputFile,
+    ...(task.stoppedByRequest ? { stoppedByRequest: true } : {}),
   };
 }
 
 function emitTaskLifecycleEvent(type: BackgroundTaskLifecycleEventType, task: TaskState): void {
+  // 每个任务最多一条终态事件（进程 close / error / kill 谁先到谁发），否则 CLI TUI 之类
+  // 不去重的订阅方会对同一次停止弹两条消息、发两次系统通知。
+  if (type === 'completed' || type === 'failed') {
+    if (task.terminalEventEmitted) return;
+    task.terminalEventEmitted = true;
+  }
   backgroundTaskEvents.emit('lifecycle', {
     type,
     task: toTaskInfo(task),
@@ -268,7 +278,8 @@ function registerBackgroundTaskProcess(
     const data = chunk.toString();
     const text = stream === 'stderr' ? `[stderr] ${data}` : data;
     taskState.outputSize += text.length;
-    taskState.outputStream?.write(text);
+    // kill 会先 end() 日志流；进程树退出前仍可能有输出到达，写已结束的流会抛 write-after-end。
+    if (taskState.outputStream && !taskState.outputStream.writableEnded) taskState.outputStream.write(text);
     if (taskState.outputSize < MAX_BACKGROUND_OUTPUT) {
       taskState.output.push(text);
     } else if (!taskState.output[taskState.output.length - 1]?.includes('[Output limit reached]')) {
@@ -376,6 +387,7 @@ export function adoptBackgroundTask(
  */
 export async function killBackgroundTask(
   taskId: string,
+  options: { reason?: 'stop' | 'timeout' } = {},
 ): Promise<{ success: boolean; error?: string; message?: string }> {
   const task = backgroundTasks.get(taskId);
   if (!task) {
@@ -383,19 +395,25 @@ export async function killBackgroundTask(
   }
 
   try {
+    // 入口时已结束的任务（completed / failed）不能被 kill 重新标注，也不发生命周期事件。
+    const wasRunning = task.status === 'running';
     // 清理现有定时器
     if (task.timeout) {
       clearTimeout(task.timeout);
     }
 
+    // 超时清扫不是用户/模型的停止请求：不打 stopped 标记，账本仍记 failed。
+    if (wasRunning && options.reason !== 'timeout') task.stoppedByRequest = true;
     task.outputStream?.end();
     // SIGTERM → 宽限 → SIGKILL → 探到整组消失，全在 killProcessTree 内部。
     await killProcessTree(task.process, { posixGroupKill: true });
 
-    // Update status
-    task.status = 'failed';
-    task.endTime = Date.now();
+    if (wasRunning) {
+      task.status = 'failed';
+      task.endTime = task.endTime ?? Date.now();
+    }
     runTaskExitCallback(task);
+    if (wasRunning) emitTaskLifecycleEvent('failed', task);
 
     return {
       success: true,
@@ -507,7 +525,7 @@ export function cleanupTimedOutTasks(): void {
     if (task.status === 'running' && now - task.startTime > task.maxRuntime) {
       console.warn(`[BackgroundTasks] Task ${taskId} timed out, killing...`);
       // 周期清理定时器回调，没有 await 的位置；killBackgroundTask 内部不 reject。
-      void killBackgroundTask(taskId);
+      void killBackgroundTask(taskId, { reason: 'timeout' });
     }
   }
 }

@@ -21,9 +21,6 @@ async function executeCalendarCreateEvent(
   canUseTool: CanUseToolFn,
   onProgress?: ToolProgressFn,
 ): Promise<ToolResult<string>> {
-  if (typeof args.calendar !== 'string' || args.calendar.length === 0) {
-    return { ok: false, error: 'calendar must be a non-empty string', code: 'INVALID_ARGS' };
-  }
   if (typeof args.title !== 'string' || args.title.length === 0) {
     return { ok: false, error: 'title must be a non-empty string', code: 'INVALID_ARGS' };
   }

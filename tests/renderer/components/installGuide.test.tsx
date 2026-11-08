@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import React from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { zh } from '../../../src/renderer/i18n/zh';
 
@@ -41,7 +41,9 @@ describe('InstallGuide', () => {
     expect(window.open).not.toHaveBeenCalled();
   });
 
-  it('falls back to window.open and keeps uninstall as a copyable command', () => {
+  it('falls back to window.open and hides raw uninstall command behind an advanced fold with a risk hint', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(window.navigator, { clipboard: { writeText } });
     openExternalLink.mockReturnValue(false);
     render(<InstallGuide />);
 
@@ -50,6 +52,29 @@ describe('InstallGuide', () => {
 
     fireEvent.click(screen.getByRole('button', { name: zh.settings.localBridge.installGuide.updateAndUninstall }));
     expect(screen.getAllByRole('button', { name: zh.settings.localBridge.installGuide.downloadLatest })).toHaveLength(2);
+    expect(document.body.textContent).toContain(zh.settings.localBridge.installGuide.uninstallDescription);
+    expect(document.body.textContent).not.toContain('sudo rm');
+    expect(document.body.textContent).not.toContain('rm -rf');
+    expect(document.body.textContent).not.toContain('launchctl');
+    expect(document.body.textContent).not.toContain(zh.settings.localBridge.installGuide.uninstallRiskHint);
+
+    fireEvent.click(screen.getByRole('button', { name: zh.settings.localBridge.installGuide.viewManualUninstallSteps }));
+    expect(document.body.textContent).toContain(zh.settings.localBridge.installGuide.uninstallRiskHint);
     expect(document.body.textContent).toContain('launchctl unload');
+    expect(document.body.textContent).toContain('sudo rm -f /usr/local/bin/code-agent-bridge');
+    expect(document.body.textContent).toContain('rm -rf "$HOME/.code-agent-bridge"');
+
+    const codeEl = document.querySelector('code');
+    expect(codeEl?.className).toContain('whitespace-pre-wrap');
+    expect(codeEl?.className).toContain('break-all');
+    expect(codeEl?.className).not.toContain('truncate');
+
+    fireEvent.click(screen.getByTitle(zh.settings.localBridge.installGuide.copyCommand));
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(
+        'launchctl unload "$HOME/Library/LaunchAgents/com.code-agent.bridge.plist" 2>/dev/null; sudo rm -f /usr/local/bin/code-agent-bridge; rm -rf "$HOME/.code-agent-bridge"',
+      );
+      expect(document.body.textContent).toContain(zh.settings.localBridge.installGuide.copied);
+    });
   });
 });

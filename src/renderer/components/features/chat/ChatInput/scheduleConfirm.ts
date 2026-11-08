@@ -2,6 +2,7 @@ import type { CreateCronJobInput } from '../../../../services/cronClient';
 import { CRON_EVENT_TRIGGER } from '@shared/constants';
 import { formatCronExpressionLabel, humanizeEverySchedule, type CronHumanLang } from '@shared/cronHumanize';
 import type { PendingScheduleDraft, ScheduleRestatement } from './useScheduleDraft';
+import { redactCronDisplayText } from '../../cron/types';
 
 interface ScheduleConfirmLabels {
   what: string;
@@ -184,8 +185,8 @@ export function normalizeScheduleDraft(raw: unknown): NormalizedScheduleDraft | 
 function getActionDescription(action: unknown): string {
   if (!isPlainObject(action)) return '';
   switch (asTrimmedString(action.type)) {
-    case 'agent': return asTrimmedString(action.prompt);
-    case 'shell': return asTrimmedString(action.command);
+    case 'agent': return redactCronDisplayText(asTrimmedString(action.prompt));
+    case 'shell': return redactCronDisplayText(asTrimmedString(action.command));
     case 'webhook': return [asTrimmedString(action.method), asTrimmedString(action.url)].filter(Boolean).join(' ');
     default: return '';
   }

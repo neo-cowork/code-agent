@@ -72,6 +72,7 @@ export const renderHumanPipeZh = {
         accessibilitySnapshot: '辅助功能快照',
         capturedAt: '读取时间',
       },
+      completenessWarningNote: '检测到文件可能没写完整。如果内容有缺，告诉 Neo「继续补全」即可。',
     },
     fallbackBanner: {
       summary: '已自动换用备用模型',
@@ -200,6 +201,7 @@ export const renderHumanPipeEn: typeof renderHumanPipeZh = {
         accessibilitySnapshot: 'Accessibility snapshot',
         capturedAt: 'Captured at',
       },
+      completenessWarningNote: 'This file may be incomplete. If anything is missing, tell Neo to "continue and complete it".',
     },
     fallbackBanner: {
       summary: 'Switched to a backup model automatically',

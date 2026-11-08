@@ -50,6 +50,30 @@ afterEach(() => {
 });
 
 describe('CronJobDetail', () => {
+  it('masks credential-like text in action summaries while keeping ordinary text unchanged', () => {
+    const cases = [
+      ['run backup --password=hunter2xyz now', 'run backup --password=***REDACTED*** now'],
+      ['password: hunter2xyz', 'password: ***REDACTED***'],
+      ['token: abcd1234efgh', 'token: ***REDACTED***'],
+      ['echo password policy', 'echo password policy'],
+    ] as const;
+    for (const [prompt, expected] of cases) {
+      expect(formatActionSummary(makeJob({ action: { type: 'agent', agentType: 'default', prompt } }), 'zh'))
+        .toBe(expected);
+    }
+    expect(formatActionSummary(makeJob({ action: { type: 'shell', command: 'echo password policy' } }), 'zh'))
+      .toBe('echo password policy');
+  });
+
+  it('renders the masked agent prompt in the detail action row', () => {
+    render(<CronJobDetail job={makeJob({
+      action: { type: 'agent', agentType: 'default', prompt: 'back up notes --password=hunter2xyz' },
+    })} />);
+    const action = screen.getByTestId('cron-detail-action');
+    expect(action.textContent).toContain('--password=***REDACTED***');
+    expect(action.textContent).not.toContain('hunter2xyz');
+  });
+
   it('业务网格显示下次运行时间', () => {
     const next = Date.now() + 3_600_000;
     render(<CronJobDetail job={makeJob({ nextRunAt: next })} />);
