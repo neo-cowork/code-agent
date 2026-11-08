@@ -575,6 +575,40 @@ describe('DoomLoopGuard background poll stall window — N-FIX-DOOMLOOP-BG-POLL-
     guard.resetAfterHandback();
     expect(pollWith(10_000, '1. 抓站 [completed] id=task_bg_42：已完成抓取')).toBe('none');
   });
+
+  it('(vi) alternating Bash echo probe / task_status {} ×3 rounds (25s apart, same running output) breaks the non-poll streak and never reaches doom-loop or doom-loop-abort', () => {
+    let nowMs = 1_762_300_000_000;
+    const guard = new DoomLoopGuard(() => nowMs);
+    const bashCall = call('Bash', { command: 'echo probe' });
+    const callTaskStatus = call('task_status', {});
+    const runningText = '1. 抓站 [running] id=task_bg_42';
+    const levels: string[] = [];
+
+    for (let round = 0; round < 3; round++) {
+      nowMs += 25_000;
+      levels.push(guard.recordStep([bashCall]).level);
+      guard.recordResults([{
+        name: 'Bash',
+        arguments: { command: 'echo probe' },
+        success: true,
+        summary: 'probe',
+      }]);
+
+      nowMs += 25_000;
+      levels.push(guard.recordStep([callTaskStatus]).level);
+      guard.recordResults([{
+        name: 'task_status',
+        arguments: {},
+        success: true,
+        summary: runningText,
+      }]);
+    }
+    // Even a 4th Bash echo probe after 3 interleaved rounds must not doom-loop or abort
+    nowMs += 25_000;
+    levels.push(guard.recordStep([bashCall]).level);
+
+    expect(levels).toEqual(['none', 'none', 'none', 'none', 'none', 'none', 'none']);
+  });
 });
 
 // ---------------------------------------------------------------------------

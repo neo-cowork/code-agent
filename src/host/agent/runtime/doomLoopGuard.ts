@@ -206,12 +206,17 @@ export class DoomLoopGuard {
     this.actionCycle.push(stepSig);
     if (this.actionCycle.length > ABAB_CYCLE_STEPS) this.actionCycle.shift();
 
-    // L1：逐个调用维护"连续相同"连击（轮询类调用不仅凭参数计入 L1 连击）
+    // L1：逐个调用维护"连续相同"连击（轮询类调用不仅凭参数计入 L1 连击，但打断非轮询连击）
     let lastCall: GuardToolCall | null = null;
     for (const toolCall of toolCalls) {
       lastCall = toolCall;
-      if (isPollClassCall(toolCall)) continue;
       const sig = callSignature(toolCall);
+      if (isPollClassCall(toolCall)) {
+        this.lastCallSignature = sig;
+        this.identicalCallStreak = 0;
+        this.doomLoopNudged = false;
+        continue;
+      }
       if (sig === this.lastCallSignature) {
         this.identicalCallStreak += 1;
       } else {
@@ -231,6 +236,10 @@ export class DoomLoopGuard {
         if (this.pollNudged) return { level: 'doom-loop-abort' };
         this.pollNudged = true;
         return { level: 'doom-loop', nudge: DOOM_LOOP_NUDGE };
+      }
+      this.recentStepSignatures.push(stepSig);
+      if (this.recentStepSignatures.length > REPEATED_STEP_THRESHOLD) {
+        this.recentStepSignatures.shift();
       }
       return { level: 'none' };
     }
