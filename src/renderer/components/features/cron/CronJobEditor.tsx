@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { CronJobDefinition } from '@shared/contract';
 import { validateEventScheduleConstraints, type EventScheduleViolation } from '@shared/cronEventValidation';
-import { CRON_EVENT_TRIGGER, CRON_URGENCY_CRITERIA } from '@shared/constants';
+import { CRON_EVENT_TRIGGER } from '@shared/constants';
 import { isRoleBoundCronJob } from '@shared/cronRoleBinding';
 import { ArrowLeft, Clock, Settings, Terminal } from 'lucide-react';
 import { Modal } from '../../primitives/Modal';
@@ -27,6 +27,7 @@ import {
   type CronTemplate,
 } from './cronTemplates';
 import { CronSimpleCreate } from './CronSimpleCreate';
+import { CronAgentActionFields } from './CronAgentActionFields';
 
 import { SavedRoutineRestate } from './SavedRoutineRestate';
 import { useI18n } from '../../../hooks/useI18n';
@@ -196,12 +197,12 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
     () => [
       { value: 'at', label: '一次性' },
       { value: 'every', label: '间隔循环' },
-      { value: 'cron', label: 'Cron 表达式' },
+      { value: 'cron', label: cc.manualEditor.cronScheduleOption },
       { value: 'event', label: cc.eventScheduleOption },
       { value: 'event-mail', label: cc.eventMailScheduleOption },
       { value: 'event-webhook', label: cc.eventWebhookScheduleOption },
     ],
-    [cc.eventScheduleOption, cc.eventMailScheduleOption, cc.eventWebhookScheduleOption]
+    [cc.eventScheduleOption, cc.eventMailScheduleOption, cc.eventWebhookScheduleOption, cc.manualEditor.cronScheduleOption]
   );
 
   // event 调度的创建期护栏（host createJob 同款）：只允许本机 + Agent 动作。
@@ -708,6 +709,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
             <div className="space-y-3">
               <FormField label="调度类型">
                 <Select
+                  data-testid="cron-schedule-type-select"
                   value={draft.scheduleType}
                   options={scheduleOptions}
                   onChange={(e) => setField('scheduleType', e.target.value as CronJobDraft['scheduleType'])}
@@ -839,35 +841,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
           )}
 
           {draft.actionType === 'agent' && (
-            <>
-              <FormField label="Agent 类型" required error={errors.agentType}>
-                <Input value={draft.agentType} onChange={(e) => setField('agentType', e.target.value)} />
-              </FormField>
-              <FormField label="Prompt" required error={errors.agentPrompt}>
-                <Textarea
-                  value={draft.agentPrompt}
-                  onChange={(e) => setField('agentPrompt', e.target.value)}
-                  minRows={5}
-                />
-              </FormField>
-              <FormField label={cc.urgencyCriteriaLabel} hint={cc.urgencyCriteriaHint}>
-                <Input
-                  value={draft.agentUrgencyCriteria ?? ''}
-                  onChange={(e) => setField('agentUrgencyCriteria', e.target.value)}
-                  maxLength={CRON_URGENCY_CRITERIA.MAX_CHARS}
-                  placeholder={cc.urgencyCriteriaPlaceholder}
-                  data-testid="cron-agent-urgency-criteria"
-                />
-              </FormField>
-              <FormField label="Context (JSON)">
-                <Textarea
-                  value={draft.agentContextText}
-                  onChange={(e) => setField('agentContextText', e.target.value)}
-                  minRows={4}
-                  className="font-mono"
-                />
-              </FormField>
-            </>
+            <CronAgentActionFields draft={draft} setField={setField} errors={errors} />
           )}
 
           {draft.actionType === 'webhook' && (
