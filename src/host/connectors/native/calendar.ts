@@ -116,6 +116,39 @@ async function listCalendars(): Promise<string[]> {
     .filter(Boolean);
 }
 
+async function listWritableCalendars(): Promise<string[]> {
+  const output = await runAppleScript([
+    ...sharedAppleScriptHandlers(),
+    'tell application "Calendar"',
+    'set outputLines to {}',
+    'repeat with cal in every calendar',
+    'if writable of cal then set end of outputLines to my sanitizeText(name of cal)',
+    'end repeat',
+    'return my joinLines(outputLines)',
+    'end tell',
+  ]);
+
+  return output
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function resolveCalendarName(requestedName: string, availableCalendars: string[]): string {
+  const exactMatch = availableCalendars.find((name) => name === requestedName);
+  if (exactMatch) return exactMatch;
+
+  const caseInsensitiveMatches = availableCalendars.filter(
+    (name) => name.toLowerCase() === requestedName.toLowerCase(),
+  );
+  if (caseInsensitiveMatches.length === 1) return caseInsensitiveMatches[0];
+
+  const availableText = availableCalendars.length > 0 ? availableCalendars.join(', ') : '(none)';
+  throw new Error(
+    `No calendar named "${requestedName}". Available calendars: ${availableText}. Omit calendar to use the first writable calendar.`,
+  );
+}
+
 async function probeCalendarAccess(): Promise<string[]> {
   if (process.platform !== 'darwin') {
     calendarReadiness = 'unavailable';
@@ -338,15 +371,12 @@ async function getEvent(payload: Record<string, unknown>): Promise<CalendarEvent
 }
 
 async function createEvent(payload: Record<string, unknown>): Promise<CalendarEventItem> {
-  const calendarName = typeof payload.calendar === 'string' ? payload.calendar.trim() : '';
+  const requestedCalendarName = typeof payload.calendar === 'string' ? payload.calendar.trim() : '';
   const title = typeof payload.title === 'string' ? payload.title.trim() : '';
   const startMs = typeof payload.start_ms === 'number' ? payload.start_ms : NaN;
   const endMs = typeof payload.end_ms === 'number' ? payload.end_ms : startMs + 30 * 60 * 1000;
   const location = typeof payload.location === 'string' ? payload.location.trim() : '';
 
-  if (!calendarName) {
-    throw new Error('calendar is required for create_event');
-  }
   if (!title) {
     throw new Error('title is required for create_event');
   }
@@ -355,6 +385,13 @@ async function createEvent(payload: Record<string, unknown>): Promise<CalendarEv
   }
   if (!Number.isFinite(endMs) || endMs < startMs) {
     throw new Error('end_ms must be greater than or equal to start_ms');
+  }
+  const calendarName = requestedCalendarName
+    ? resolveCalendarName(requestedCalendarName, await listCalendars())
+    : (await listWritableCalendars())[0] ?? '';
+
+  if (!calendarName) {
+    throw new Error('No writable calendar is available. Omit calendar to use the first writable calendar.');
   }
 
   const propertyParts = [
