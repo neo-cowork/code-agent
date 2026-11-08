@@ -217,14 +217,15 @@ describe('outboundSecretMask ② 还原', () => {
   });
 
   it.each([
-    ['sk-', 'https://api.example.com/v1?api_key=sk-Abc123defGHI789xyz&x=1'],
-    ['AIza', `https://maps.example.com/v1?key=1&token=${fakeGoogleApiKey}abcdefghijklmnopqrstuv`],
-  ])('嵌套命中（%s 前缀规则 + url-query-token）：回包不留内层占位符', async (_label, url) => {
+    ['sk-', 'https://api.example.com/v1?api_key=sk-Abc123defGHI789xyz&x=1', 'Abc123defGHI789xyz'],
+    ['AIza', `https://maps.example.com/v1?key=1&token=${fakeGoogleApiKey}abcdefghijklmnopqrstuv`, fakeGoogleApiKey],
+  ])('嵌套命中（%s 前缀规则 + url-query-token）：回包不留内层占位符', async (_label, url, secret) => {
     maskOn();
     const s = applyOutboundSecretMask([{ role: 'user', content: `curl "${url}"` }]);
     const masked = s!.messages[0].content as string;
-    expect(masked).not.toContain('Abc123defGHI789xyz');
-    expect(masked).not.toContain('1234567890abcdefghijklmnopqrstuv');
+    expect(masked).toMatch(PLACEHOLDER_RE);
+    expect(masked).not.toContain(secret);
+    expect(masked).not.toContain(url.split('token=')[1] ?? secret);
     const text = s!.restore({ type: 'text', content: masked });
     expect(text.content).toBe(`curl "${url}"`);
     const obj = s!.restore({
