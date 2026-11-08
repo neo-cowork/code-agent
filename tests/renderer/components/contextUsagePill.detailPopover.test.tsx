@@ -424,22 +424,36 @@ describe('ContextUsagePill — hover 气泡与明细弹层', () => {
 
     for (const windowKnown of [true, false]) {
       pillMocks.appState.language = 'zh';
-      pillMocks.appState.contextHealth = { ...stateBase, windowKnown };
+      pillMocks.appState.contextHealth = { ...stateBase, usagePercent: 10, windowKnown };
       render(<ContextUsagePill />);
       fireEvent.click(pillButton());
       const detailZh = screen.getByTestId('context-health-detail').textContent ?? '';
       for (const term of oldZhTerms) {
         expect(detailZh).not.toContain(term);
       }
+      expect(screen.queryByRole('button', { name: '立即压缩' })).toBeNull();
+      const whatZhLow = screen.getByTestId('context-health-what-this-means').textContent ?? '';
+      expect(whatZhLow).toContain(
+        windowKnown
+          ? '快满时 Neo 会自动整理较早的对话。'
+          : '上限未获取，Neo 仍会在接近上限时自动整理较早的对话。',
+      );
+      expect(whatZhLow).not.toContain('立即压缩');
+      cleanup();
+
+      pillMocks.appState.contextHealth = { ...stateBase, usagePercent: 75, warningLevel: 'warning', windowKnown };
+      render(<ContextUsagePill />);
+      fireEvent.click(pillButton());
+      expect(screen.getByRole('button', { name: '立即压缩' })).toBeTruthy();
       expect(screen.getByTestId('context-health-what-this-means').textContent).toContain(
         windowKnown
           ? '快满时 Neo 会自动整理较早的对话；想现在整理，点「立即压缩」。'
-          : '上限未获取，Neo 仍会在接近上限时自动整理较早的对话。',
+          : '上限未获取，Neo 仍会在接近上限时自动整理较早的对话；想现在整理，点「立即压缩」。',
       );
       cleanup();
 
       pillMocks.appState.language = 'en';
-      pillMocks.appState.contextHealth = { ...stateBase, windowKnown };
+      pillMocks.appState.contextHealth = { ...stateBase, usagePercent: 10, windowKnown };
       render(<ContextUsagePill />);
       fireEvent.click(screen.getByRole('button', { name: 'Context usage' }));
       const detailEn = screen.getByTestId('context-health-detail').textContent ?? '';
@@ -448,10 +462,24 @@ describe('ContextUsagePill — hover 气泡与明细弹层', () => {
       }
       expect(detailEn).toContain('Reused (cheaper)');
       expect(detailEn).toContain('New calculation');
+      expect(screen.queryByRole('button', { name: 'Compact now' })).toBeNull();
+      const whatEnLow = screen.getByTestId('context-health-what-this-means').textContent ?? '';
+      expect(whatEnLow).toContain(
+        windowKnown
+          ? 'When it gets close to full, Neo tidies older conversation automatically.'
+          : 'Limit unavailable; Neo still tidies older conversation automatically when it gets close to full.',
+      );
+      expect(whatEnLow).not.toContain('Compact now');
+      cleanup();
+
+      pillMocks.appState.contextHealth = { ...stateBase, usagePercent: 75, warningLevel: 'warning', windowKnown };
+      render(<ContextUsagePill />);
+      fireEvent.click(screen.getByRole('button', { name: 'Context usage' }));
+      expect(screen.getByRole('button', { name: 'Compact now' })).toBeTruthy();
       expect(screen.getByTestId('context-health-what-this-means').textContent).toContain(
         windowKnown
           ? 'When it gets close to full, Neo tidies older conversation automatically; to tidy now, click "Compact now".'
-          : 'Limit unavailable; Neo still tidies older conversation automatically when it gets close to full.',
+          : 'Limit unavailable; Neo still tidies older conversation automatically when it gets close to full. To tidy now, click "Compact now".',
       );
       cleanup();
     }

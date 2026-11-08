@@ -221,7 +221,9 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
             </div>
 
             <div className="mb-2 text-[11px] text-zinc-400" data-testid="context-health-what-this-means">
-              {windowKnown ? ch.whatThisMeansKnown : ch.whatThisMeansUnknown}
+              {windowKnown
+                ? (canCompact ? ch.whatThisMeansKnownCompactable : ch.whatThisMeansKnown)
+                : (canCompact ? ch.whatThisMeansUnknownCompactable : ch.whatThisMeansUnknown)}
             </div>
 
             {buckets.length > 0 && bucketTotal > 0 && (
