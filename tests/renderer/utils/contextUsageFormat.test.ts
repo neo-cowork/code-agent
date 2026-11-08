@@ -3,6 +3,8 @@ import { ESTIMATE_DEVIATION_DISPLAY_PERCENT } from '../../../src/shared/contract
 import {
   bucketSharePercent,
   clampUsagePercent,
+  formatContextTokenNumber,
+  formatContextTokens,
   formatContextUsagePercent,
   isContextWindowKnown,
   shouldShowEstimateDeviation,
@@ -47,5 +49,13 @@ describe('N-CTXHEALTH-BAR 口径', () => {
     expect(isContextWindowKnown({})).toBe(true);
     expect(isContextWindowKnown({ windowKnown: true })).toBe(true);
     expect(isContextWindowKnown({ windowKnown: false })).toBe(false);
+  });
+
+  it('统一 Token 数值与单位格式化（避免 <1000 裸数、≥1000 精度分裂）', () => {
+    expect(formatContextTokenNumber(21)).toBe('21');
+    expect(formatContextTokenNumber(15360)).toBe('15.4k');
+    expect(formatContextTokenNumber(1500000)).toBe('1.5M');
+    expect(formatContextTokens(21)).toBe('21 Token');
+    expect(formatContextTokens(15360)).toBe('15.4k Token');
   });
 });
