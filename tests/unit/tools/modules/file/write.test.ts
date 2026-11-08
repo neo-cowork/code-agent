@@ -621,8 +621,13 @@ describe('writeModule (native)', () => {
       // success=true but output has warning
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.output).toContain('代码完整性警告');
-        expect(result.output).toContain('未闭合的括号');
+        expect(result.output).toBe(
+          `Created file: ${file} (32 chars)\n\n` +
+          `⚠️ **代码完整性警告**: 检测到文件可能不完整！\n` +
+          `问题:\n- 未闭合的括号: 缺少 1 个闭合符号 (})\n\n` +
+          `**建议**: 请使用 edit_file 工具追加剩余代码，或重新生成完整文件。`,
+        );
+        expect(result.meta?.completenessIssues).toEqual(['未闭合的括号: 缺少 1 个闭合符号 (})']);
         expect(result.meta?.artifact).toMatchObject({
           sourceTool: 'Write',
           path: file,
