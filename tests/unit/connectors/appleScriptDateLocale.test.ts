@@ -113,7 +113,10 @@ describe('locale-independent fetch scripts', () => {
   it('scripts use isoDateText with the shared handler instead of "as text" dates', async () => {
     const scripts: string[] = [];
     mocks.runAppleScript.mockImplementation(async (lines: string[]) => {
-      scripts.push(lines.join('\n'));
+      const script = lines.join('\n');
+      scripts.push(script);
+      if (script.includes('repeat with cal in every calendar')) return 'W';
+      if (script.includes('set newEvent to make new event')) return 'u1|W|t|2026-11-03T22:15:30|2026-11-03T22:15:30|';
       return '';
     });
     await mailConnector.execute('list_messages', { mailbox: 'INBOX' });
@@ -124,8 +127,11 @@ describe('locale-independent fetch scripts', () => {
     await calendarConnector.execute('update_event', { calendar: 'W', event_uid: 'u', title: 't' }).catch(() => undefined);
     await remindersConnector.execute('list_reminders', {});
     await remindersConnector.execute('get_reminder', { list: 'L', reminder_id: 'r' }).catch(() => undefined);
-    expect(scripts).toHaveLength(8);
+    expect(scripts).toHaveLength(9);
     const dateScripts = scripts.filter((script) => !script.includes('repeat with cal in every calendar'));
+    const createWriteScript = scripts.find((script) => script.includes('set newEvent to make new event'));
+    expect(createWriteScript).toBeDefined();
+    expect(createWriteScript).toContain('my isoDateText(start date of newEvent)');
     for (const script of dateScripts) {
       expect(script).toContain('on isoDateText(d)');
       expect(script).toMatch(/my isoDateText\(/);
