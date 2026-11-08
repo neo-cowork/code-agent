@@ -57,7 +57,7 @@ import { connectorRequiredZh } from './connectorRequired';
 import { roleFirstWakeZh } from './roleFirstWake';
 import { roleWakeProposalsZh } from './roleWakeProposals';
 import { permissionRuleNlZh } from './permissionRuleNl';
-import { sessionTaskPresentationZh } from './sessionTaskPresentation';
+import { sessionTaskPresentationZh } from './sessionTaskPresentation'; import { toolResultSummaryZh } from './toolResultSummary';
 
 export const zh = {
   ...canvasActorZh, ...activityPanelZh,
@@ -82,7 +82,7 @@ export const zh = {
   ...roleFirstWakeZh,
   ...roleWakeProposalsZh,
   ...permissionRuleNlZh,
-  ...sessionTaskPresentationZh,
+  ...sessionTaskPresentationZh, ...toolResultSummaryZh,
   // Common
   common: {
     save: '保存',
