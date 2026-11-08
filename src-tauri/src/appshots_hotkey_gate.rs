@@ -97,6 +97,53 @@ pub fn decide_hotkey_install(
     HotkeyInstallDecision::SkipNoPermission
 }
 
+/// 「preflight 说已授权，但装 tap 失败」之后的后续动作（只在显式请求的 Install 分支用到）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContradictionFollowup {
+    /// 与 preflight 一致（装成功），无需后续。
+    Consistent,
+    /// preflight 被推翻且本进程还没发过系统请求 → 发一次。
+    ContradictedRequestOnce,
+    /// preflight 被推翻但本进程已发过请求 → 不再骚扰，只刷新状态。
+    ContradictedLatchedSkip,
+}
+
+impl ContradictionFollowup {
+    /// 取证 reason code；`Consistent` 不写事件。
+    pub const fn reason_code(self) -> Option<&'static str> {
+        match self {
+            Self::Consistent => None,
+            Self::ContradictedRequestOnce => Some("preflight_true_install_failed"),
+            Self::ContradictedLatchedSkip => Some("preflight_true_install_failed_latched_skip"),
+        }
+    }
+}
+
+/// preflight 为真时安装 tap 的结果 → 后续动作。
+pub fn decide_contradiction_followup(
+    install_failed: bool,
+    request_already_sent: bool,
+) -> ContradictionFollowup {
+    match (install_failed, request_already_sent) {
+        (false, _) => ContradictionFollowup::Consistent,
+        (true, false) => ContradictionFollowup::ContradictedRequestOnce,
+        (true, true) => ContradictionFollowup::ContradictedLatchedSkip,
+    }
+}
+
+/// 对外汇报的 permission_granted：preflight 为真，但「被推翻」标记在且 tap 没装上 →
+/// 报未授权，让 UI 给出完整的去设置指引；tap 已装上则以事实为准（视为已授权）。
+pub fn effective_permission_granted(
+    preflight_granted: bool,
+    contradicted: bool,
+    tap_installed: bool,
+) -> bool {
+    if tap_installed {
+        return true;
+    }
+    preflight_granted && !contradicted
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -163,5 +210,38 @@ mod tests {
                 }
             );
         }
+    }
+
+    #[test]
+    fn appshots_hotkey_preflight_true_install_failed_requests_once_then_latches() {
+        assert_eq!(
+            decide_contradiction_followup(true, false),
+            ContradictionFollowup::ContradictedRequestOnce
+        );
+        assert_eq!(
+            decide_contradiction_followup(true, true),
+            ContradictionFollowup::ContradictedLatchedSkip
+        );
+        assert_eq!(
+            decide_contradiction_followup(false, false),
+            ContradictionFollowup::Consistent
+        );
+        assert_eq!(
+            ContradictionFollowup::ContradictedRequestOnce.reason_code(),
+            Some("preflight_true_install_failed")
+        );
+        assert_eq!(
+            ContradictionFollowup::ContradictedLatchedSkip.reason_code(),
+            Some("preflight_true_install_failed_latched_skip")
+        );
+        assert_eq!(ContradictionFollowup::Consistent.reason_code(), None);
+    }
+
+    #[test]
+    fn appshots_hotkey_contradicted_flag_reports_not_granted_until_tap_installed() {
+        assert!(effective_permission_granted(true, false, false));
+        assert!(!effective_permission_granted(true, true, false));
+        assert!(effective_permission_granted(true, true, true));
+        assert!(!effective_permission_granted(false, false, false));
     }
 }
