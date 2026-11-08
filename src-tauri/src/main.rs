@@ -33,6 +33,7 @@ mod native_manifest;
 mod native_notification;
 mod pip;
 mod quit_guard;
+mod quit_dialog_i18n;
 mod resident_host;
 mod resident_host_windows;
 mod traffic_lights;
@@ -2480,15 +2481,16 @@ fn spawn_quit_guard_flow(
                     }
                 }
             }
-            quit_guard::QuitDecision::Confirm(prompt) => {
+            quit_guard::QuitDecision::Confirm { prompt, language } => {
                 let offers_background_continue = matches!(
-                    resident_host::quit_dialog_button_set_current(),
+                    resident_host::quit_dialog_button_set_current(language),
                     resident_host::QuitDialogButtonSet::Three { .. }
                 );
                 show_quit_confirm_dialog(
                     &app,
                     &coordinator,
-                    quit_guard::quit_prompt_text(prompt, offers_background_continue),
+                    quit_guard::quit_prompt_text(prompt, offers_background_continue, language),
+                    language,
                     origin,
                 );
             }
@@ -2511,17 +2513,19 @@ fn show_quit_confirm_dialog(
     app: &AppHandle,
     coordinator: &Arc<quit_guard::QuitCoordinator>,
     message: &str,
+    language: quit_guard::QuitDialogLanguage,
     origin: QuitFlowOrigin,
 ) {
     use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult};
 
-    let button_set = resident_host::quit_dialog_button_set_current();
+    let button_set = resident_host::quit_dialog_button_set_current(language);
+    let dialog_copy = quit_dialog_i18n::dialog_copy(language);
 
     let app = app.clone();
     let coordinator = coordinator.clone();
     app.dialog()
         .message(message)
-        .title(quit_guard::QUIT_DIALOG_TITLE)
+        .title(dialog_copy.title)
         .kind(MessageDialogKind::Warning)
         .buttons(match button_set {
             resident_host::QuitDialogButtonSet::Three { .. } => {
@@ -2550,7 +2554,11 @@ fn show_quit_confirm_dialog(
             };
             let plan = quit_guard::quit_exit_plan(
                 // 按钮组没提供「后台继续」时，该标签即使到达也按取消处理（防御）
-                resident_host::dialog_answer_action_gated(custom_label.as_deref(), button_set),
+                resident_host::dialog_answer_action_gated(
+                    custom_label.as_deref(),
+                    button_set,
+                    language,
+                ),
                 // Windows：stdin EOF 是停机指令，退壳会关掉写端。unix 不是。
                 cfg!(not(unix)),
             );
