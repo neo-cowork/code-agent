@@ -156,4 +156,14 @@ describe('NativeDesktopSection audio readiness & empty state', () => {
     expect(await screen.findByText(en.settings.nativeDesktop.emptyDay)).toBeTruthy();
     expect(await screen.findByText(en.settings.nativeDesktop.audioReadiness.voiceDetectionUnsupported)).toBeTruthy();
   });
+
+  it('maps an unavailable desktop runtime to plain text instead of showing the raw error', async () => {
+    services.getAudioCaptureStatus.mockResolvedValue(makeStatus());
+    services.getNativeDesktopCollectorStatus.mockRejectedValueOnce(new Error('Tauri runtime not available'));
+
+    render(React.createElement(NativeDesktopSection));
+
+    expect(await screen.findByText(zh.settings.nativeDesktop.audioErrors.desktopRuntimeUnavailable)).toBeTruthy();
+    expect(screen.queryByText('Tauri runtime not available')).toBeNull();
+  });
 });

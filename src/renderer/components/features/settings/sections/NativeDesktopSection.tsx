@@ -56,6 +56,7 @@ import {
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { DangerButton } from '../../../primitives/Button';
 import { AudioCaptureReadinessLine, isAudioPrerequisiteCode, loadDayAndHourAudioSegments, NativeDesktopEmptyView } from './audioCaptureReadiness';
+import { getAudioCaptureErrorText } from './audioCaptureError';
 import { AudioRetentionFailureLine } from './audioRetentionFailure';
 import { useI18n } from '../../../../hooks/useI18n';
 import { interpolate } from '../../../../i18n/interpolate';
@@ -727,7 +728,7 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
       setCollectorStatus(status);
       setRecentEvents(events);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(getAudioCaptureErrorText(err, nativeDesktopText.audioErrors));
     } finally {
       const audio = await audioPromise;
       if (audio) setAudioStatus(audio);
@@ -761,7 +762,7 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
       }
       await loadData();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(getAudioCaptureErrorText(err, nativeDesktopText.audioErrors));
     } finally {
       setCollectorBusy(false);
     }
@@ -789,7 +790,7 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
       const latest = await getAudioCaptureStatus();
       if (latest) setAudioStatus(latest);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(getAudioCaptureErrorText(err, nativeDesktopText.audioErrors));
     } finally {
       setClearBusy(false);
     }
@@ -806,7 +807,7 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
       const latest = await getAudioCaptureStatus();
       if (latest) setAudioStatus(latest);
       if (isAudioPrerequisiteCode(msg)) setFailedAudioCode(msg);
-      else setError(msg);
+      else setError(getAudioCaptureErrorText(err, nativeDesktopText.audioErrors));
     } finally {
       setAudioBusy(false);
     }

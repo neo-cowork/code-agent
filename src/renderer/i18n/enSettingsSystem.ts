@@ -371,6 +371,10 @@ export const enSettingsSystem = {
         searchAudio: 'audio',
         searchTranscription: 'transcription',
       },
+      audioErrors: {
+        desktopRuntimeUnavailable: 'Desktop capture is only available in the Agent Neo desktop app.',
+        generic: 'Desktop capture is temporarily unavailable. Please try again later.',
+      },
       units: {
         speechSegmentSuffix: ' speech segments',
         speakerCountSuffix: ' speakers',

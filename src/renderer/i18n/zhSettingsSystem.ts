@@ -373,6 +373,10 @@ export const zhSettingsSystem = {
         searchAudio: '音频',
         searchTranscription: '转写',
       },
+      audioErrors: {
+        desktopRuntimeUnavailable: '桌面采集只在 Agent Neo 桌面版里可用。',
+        generic: '桌面采集暂时不可用，请稍后重试。',
+      },
       units: {
         speechSegmentSuffix: ' 段发言',
         speakerCountSuffix: ' 位说话人',
