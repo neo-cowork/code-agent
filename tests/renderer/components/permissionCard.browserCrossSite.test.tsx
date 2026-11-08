@@ -82,6 +82,8 @@ describe('PermissionCard browser cross-site reason', () => {
     expect(notice).toBeTruthy();
     expect(notice.textContent).toContain('reports.finance-a.example.com');
     expect(notice.textContent).toContain('files.vendor-b.example.org');
+    expect(notice.textContent).toContain('下载文件');
+    expect(notice.textContent).not.toContain('https://');
     // zh copy must not contain raw action name
     expect(notice.textContent).not.toContain('wait_for_download');
   });
@@ -104,6 +106,8 @@ describe('PermissionCard browser cross-site reason', () => {
     expect(notice).toBeTruthy();
     expect(notice.textContent).toContain('reports.finance-a.example.com');
     expect(notice.textContent).toContain('files.vendor-b.example.org');
+    expect(notice.textContent).toContain('downloading files');
+    expect(notice.textContent).not.toContain('https://');
     expect(notice.textContent).not.toContain('wait_for_download');
   });
 
@@ -119,6 +123,25 @@ describe('PermissionCard browser cross-site reason', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(100); });
 
     expect(screen.queryByTestId('permission-browser-cross-site')).toBeNull();
+  });
+
+  it('renders a host reason when an older event has no structured origin list', async () => {
+    state.request = makeRequest({
+      details: {
+        action: 'wait_for_download',
+        browserGrantScope: { action: 'wait_for_download', origin: 'https://files.vendor-b.example.org' },
+      } as PermissionRequest['details'],
+      reason: '本会话此前仅允许在 https://reports.finance-a.example.com 执行 wait_for_download，当前站点为 https://files.vendor-b.example.org，需重新确认',
+    });
+
+    render(<PermissionCard />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+
+    const notice = screen.getByTestId('permission-browser-cross-site');
+    expect(notice.textContent).toContain('reports.finance-a.example.com');
+    expect(notice.textContent).toContain('files.vendor-b.example.org');
+    expect(notice.textContent).toContain('下载文件');
+    expect(notice.textContent).not.toContain('wait_for_download');
   });
 
   it('does not render cross-site notice when browserGrantScope is absent', async () => {

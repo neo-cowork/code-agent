@@ -51,6 +51,26 @@ function sandboxStatusCopy(
   return labels.sandboxDegraded;
 }
 
+function formatBrowserOrigin(origin: string): string {
+  try {
+    const parsed = new URL(origin);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return parsed.host;
+    }
+  } catch {
+    // Host-resolved scopes are valid HTTP(S) origins. Keep an unexpected value
+    // readable rather than hiding the reason if an older event reaches the UI.
+  }
+  return origin.replace(/^https?:\/\//, '').replace(/\/$/, '');
+}
+
+function browserCrossSiteOriginsFromReason(reason: string | undefined, currentOrigin: string): string[] {
+  if (!reason || (!reason.includes('需重新确认') && !reason.toLowerCase().includes('confirm again'))) return [];
+  const current = formatBrowserOrigin(currentOrigin);
+  const origins = reason.match(/https?:\/\/[^\s,，;；。)]+/g) ?? [];
+  return [...new Set(origins.map(formatBrowserOrigin).filter((origin) => origin !== current))];
+}
+
 export function RequestDetails({ request }: RequestDetailsProps) {
   const { language, t } = useI18n();
   const developerMode = useAppStore().developerMode === true;
@@ -88,11 +108,29 @@ export function RequestDetails({ request }: RequestDetailsProps) {
   ) : null;
 
   // 跨站审批提示：同一动作在另一个站点已被允许过，当前站点需重新确认。
-  const crossSiteNotice = details.browserGrantScope && details.browserCrossSiteOrigins && details.browserCrossSiteOrigins.length > 0 ? (
+  const browserCrossSiteOrigins = details.browserGrantScope
+    ? (details.browserCrossSiteOrigins?.length
+      ? details.browserCrossSiteOrigins.map(formatBrowserOrigin)
+      : browserCrossSiteOriginsFromReason(request.reason, details.browserGrantScope.origin))
+    : [];
+  const crossSiteNotice = details.browserGrantScope && (
+    browserCrossSiteOrigins.length > 0
+    || request.reason?.includes('需重新确认')
+    || request.reason?.toLowerCase().includes('confirm again')
+  ) ? (
     <p className="text-xs leading-5 text-zinc-400" data-testid="permission-browser-cross-site">
       {labels.browserCrossSite.reason
-        .replace('{allowed}', details.browserCrossSiteOrigins.join(language === 'zh' ? '、' : ', '))
-        .replace('{current}', details.browserGrantScope.origin)}
+        .replace(
+          '{action}',
+          labels.browserCrossSite.actionLabels[details.browserGrantScope.action] ?? labels.browserCrossSite.fallbackAction,
+        )
+        .replace(
+          '{allowed}',
+          browserCrossSiteOrigins.length > 0
+            ? browserCrossSiteOrigins.join(language === 'zh' ? '、' : ', ')
+            : labels.browserCrossSite.otherSite,
+        )
+        .replace('{current}', formatBrowserOrigin(details.browserGrantScope.origin))}
     </p>
   ) : null;
 

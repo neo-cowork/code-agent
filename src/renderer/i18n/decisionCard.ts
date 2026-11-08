@@ -91,7 +91,7 @@ export const decisionCardZh = {
         denyDesc: '不允许操作该应用',
       },
       browserCrossSite: {
-        reason: '此前已允许在 {allowed} 执行此操作，当前站点是 {current}，需重新确认。',
+        reason: '此前已允许在 {allowed} 执行{action}，当前站点是 {current}，需重新确认。',
         actionLabels: {
           handle_dialog: '处理对话框',
           read_clipboard: '读取剪贴板',
@@ -99,6 +99,8 @@ export const decisionCardZh = {
           wait_for_download: '下载文件',
           open: '打开页面',
         } as Record<string, string>,
+        fallbackAction: '这项操作',
+        otherSite: '另一个站点',
       },
       // ADR-088 敏感步骤交回卡（规格 docs/architecture/sensitive-step-handback.md §3，
       // 文案逐字来自规格，改动必须先改规格）
@@ -357,7 +359,7 @@ export const decisionCardEn: typeof decisionCardZh = {
         denyDesc: 'Do not operate this app',
       },
       browserCrossSite: {
-        reason: 'This action was previously allowed for {allowed}. The current site is {current} — please confirm again.',
+        reason: 'This session already allowed {action} on {allowed}. The current site is {current} — please confirm again.',
         actionLabels: {
           handle_dialog: 'handling dialogs',
           read_clipboard: 'reading the clipboard',
@@ -365,6 +367,8 @@ export const decisionCardEn: typeof decisionCardZh = {
           wait_for_download: 'downloading files',
           open: 'opening a page',
         } as Record<string, string>,
+        fallbackAction: 'this action',
+        otherSite: 'another site',
       },
       // ADR-088 sensitive step hand-back card (spec docs/architecture/sensitive-step-handback.md §3)
       sensitiveStep: {
