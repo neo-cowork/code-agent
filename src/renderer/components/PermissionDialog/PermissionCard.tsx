@@ -72,6 +72,7 @@ function normalizeRequest(
       standingGrantTarget: request.details.standingGrantTarget,
       targetApp: request.details.targetApp,
       browserGrantScope: request.details.browserGrantScope,
+      browserCrossSiteOrigins: request.details.browserCrossSiteOrigins,
       triggeredByAgentMessage: request.details.triggeredByAgentMessage,
       method: request.details.method,
       body: request.details.body,

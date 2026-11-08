@@ -188,6 +188,7 @@ const permissionRequestSchema = typed<PermissionRequest>(z.object({
       action: z.string(),
       origin: z.string(),
     }).optional(),
+    browserCrossSiteOrigins: z.array(z.string()).optional(),
     requestedAccess: z.enum(['read_only', 'read_write']).optional(),
     method: z.string().optional(),
     body: z.string().optional(),

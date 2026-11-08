@@ -87,6 +87,15 @@ export function RequestDetails({ request }: RequestDetailsProps) {
     </p>
   ) : null;
 
+  // 跨站审批提示：同一动作在另一个站点已被允许过，当前站点需重新确认。
+  const crossSiteNotice = details.browserGrantScope && details.browserCrossSiteOrigins && details.browserCrossSiteOrigins.length > 0 ? (
+    <p className="text-xs leading-5 text-zinc-400" data-testid="permission-browser-cross-site">
+      {labels.browserCrossSite.reason
+        .replace('{allowed}', details.browserCrossSiteOrigins.join(language === 'zh' ? '、' : ', '))
+        .replace('{current}', details.browserGrantScope.origin)}
+    </p>
+  ) : null;
+
   // N-WRITEBACK-EDIT：可编辑写回工具把参数全部摊开（含正文），不再用只拼 To/CC 的通用预览，
   // 也不显示按 permissionLevel 推断出来的「修改当前项目文件」边界（对邮件是误导）。
   if (request.rawArgs) {
@@ -95,6 +104,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
         {peerOriginNotice}
         {pluginOriginNotice}
         {externalScopeNotice}
+        {crossSiteNotice}
         <WritebackFieldsView tool={request.tool} args={request.rawArgs} />
         {request.boundary?.id === 'connector.external_write' && (
           <BoundaryDisclosure
@@ -120,6 +130,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       {peerOriginNotice}
       {pluginOriginNotice}
       {externalScopeNotice}
+      {crossSiteNotice}
       {permissionConsequence(request, t) && (
         <p className={`text-xs leading-5 ${type === 'dangerous_command' || request.dangerLevel === 'danger' ? 'text-badge-danger' : 'text-zinc-400'}`} data-testid="permission-consequence">
           {permissionConsequence(request, t)}

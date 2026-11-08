@@ -147,16 +147,29 @@ export function formatBrowserCrossSiteReason(
   scope: BrowserGrantScope | null | undefined,
 ): string | null {
   if (!sessionId || !scope) return null;
+  const origins = getBrowserCrossSiteOrigins(sessionId, scope);
+  if (origins.length === 0) return null;
+  return `本会话此前仅允许在 ${origins.join('、')} 执行 ${scope.action}，当前站点为 ${scope.origin}，需重新确认`;
+}
+
+/**
+ * 返回本会话内同一动作已授权过的、与当前 scope 不同源的 origin 列表。
+ * 供 toolExecutor 透传给渲染层；不含当前 scope.origin。
+ */
+export function getBrowserCrossSiteOrigins(
+  sessionId: string | undefined,
+  scope: BrowserGrantScope | null | undefined,
+): string[] {
+  if (!sessionId || !scope) return [];
   const bucket = sessions.get(sessionId);
-  if (!bucket) return null;
+  if (!bucket) return [];
   const allowedOrigins: string[] = [];
   for (const stored of bucket.values()) {
     if (stored.action === scope.action && stored.origin !== scope.origin && !allowedOrigins.includes(stored.origin)) {
       allowedOrigins.push(stored.origin);
     }
   }
-  if (allowedOrigins.length === 0) return null;
-  return `本会话此前仅允许在 ${allowedOrigins.join('、')} 执行 ${scope.action}，当前站点为 ${scope.origin}，需重新确认`;
+  return allowedOrigins;
 }
 
 export function listBrowserSessionGrants(sessionId?: string): BrowserSessionGrantItem[] {

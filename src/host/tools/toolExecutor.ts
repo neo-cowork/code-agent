@@ -32,6 +32,7 @@ import {
 import { resolvePreAskGrant } from '../permissions/preAskGrant';
 import {
   formatBrowserCrossSiteReason,
+  getBrowserCrossSiteOrigins,
   readBrowserGrantScopeFromPermissionDetails,
   resolveBrowserGrantScope,
 } from '../permissions/browserSessionGrant';
@@ -2141,12 +2142,14 @@ export class ToolExecutor {
       // 只打标：非 external 不写该属性（缺省≠null），不改任何 allow/deny/ask 裁决。
       if (isExternalSideEffectTool(executionToolName)) permissionRequest.riskClass = 'external';
       if (computerApp) permissionRequest.details.targetApp = computerApp;
-      const browserCrossSiteReason = formatBrowserCrossSiteReason(
-        effectiveSessionId,
-        readBrowserGrantScopeFromPermissionDetails(executionToolName, permissionRequest.details),
-      );
+      const browserScope = readBrowserGrantScopeFromPermissionDetails(executionToolName, permissionRequest.details);
+      const browserCrossSiteReason = formatBrowserCrossSiteReason(effectiveSessionId, browserScope);
       if (browserCrossSiteReason) {
         permissionRequest.reason = [permissionRequest.reason, browserCrossSiteReason].filter(Boolean).join('；');
+      }
+      const crossSiteOrigins = getBrowserCrossSiteOrigins(effectiveSessionId, browserScope);
+      if (crossSiteOrigins.length > 0) {
+        permissionRequest.details.browserCrossSiteOrigins = crossSiteOrigins;
       }
 
       // B1 readOnly（审出 HIGH）：最终审批层的自动放行捷径（agentOrchestrator 的

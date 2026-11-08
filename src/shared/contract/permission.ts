@@ -199,6 +199,8 @@ export interface PermissionRequest {
     targetApp?: { bundleId?: string; name: string };
     /** 托管浏览器外部副作用动作的 host 侧授权作用域（按动作 + 站点 origin 会话放行）。 */
     browserGrantScope?: { action: string; origin: string };
+    /** 本会话内同一动作已授权过的其他站点 origin 列表（跨站审批卡渲染用）。 */
+    browserCrossSiteOrigins?: string[];
     /** directory_access：申请的访问档位（request_directory 工具透传） */
     requestedAccess?: 'read_only' | 'read_write';
     /**

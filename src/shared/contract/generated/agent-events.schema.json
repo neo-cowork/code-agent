@@ -1198,6 +1198,12 @@
               ],
               "additionalProperties": false
             },
+            "browserCrossSiteOrigins": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
             "requestedAccess": {
               "type": "string",
               "enum": [

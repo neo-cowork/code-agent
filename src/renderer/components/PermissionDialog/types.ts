@@ -53,6 +53,8 @@ export interface PermissionRequestDetails {
   targetApp?: { bundleId?: string; name: string };
   /** 托管浏览器外部副作用动作的 host 侧授权作用域。 */
   browserGrantScope?: { action: string; origin: string };
+  /** 本会话内同一动作已授权过的其他站点 origin 列表。 */
+  browserCrossSiteOrigins?: string[];
   /** ADR-067 D3：host 透传的 peer 消息触发标注；渲染层只消费，缺省不显示。 */
   triggeredByAgentMessage?: { senderAgentId?: string };
   /** N-HTTPREQ-CONNECTOR-CARD-DISCLOSE：http_request 连接器令牌写调用的原始参数与标记。 */
