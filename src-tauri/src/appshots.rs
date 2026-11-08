@@ -158,11 +158,23 @@ pub struct AppshotsHotkeyStatus {
     pub dev_channel: bool,
 }
 
+/// preflight 为真但 tap 建不起来（装失败）→ 置位；此后状态汇报为未授权，直到 tap 装上。
+#[cfg(target_os = "macos")]
+static HOTKEY_PREFLIGHT_CONTRADICTED: AtomicBool = AtomicBool::new(false);
+/// 每进程至多弹一次系统框：用户拒绝后再点按钮只刷新状态，不再骚扰。
+#[cfg(target_os = "macos")]
+static HOTKEY_REQUEST_SENT: AtomicBool = AtomicBool::new(false);
+
 #[cfg(target_os = "macos")]
 fn hotkey_status_snapshot(app: &AppHandle) -> AppshotsHotkeyStatus {
+    let tap_installed = dual_command_hotkey::tap_installed();
     AppshotsHotkeyStatus {
-        permission_granted: dual_command_hotkey::preflight_listen_event_access(),
-        tap_installed: dual_command_hotkey::tap_installed(),
+        permission_granted: crate::appshots_hotkey_gate::effective_permission_granted(
+            dual_command_hotkey::preflight_listen_event_access(),
+            HOTKEY_PREFLIGHT_CONTRADICTED.load(Ordering::SeqCst),
+            tap_installed,
+        ),
+        tap_installed,
         dev_channel: crate::dev_slot(&app.config().identifier).is_some(),
     }
 }
@@ -189,7 +201,7 @@ pub fn appshots_hotkey_status(app: AppHandle) -> AppshotsHotkeyStatus {
 /// `#[tauri::command]`：显式请求「输入监控」权限（设置页「开启快捷键」按钮）。
 /// 系统框会阻塞到用户回应，所以走 spawn_blocking 而不是冻住主线程；授权了就把 tap
 /// 装上（幂等）。老系统授权后 tap 仍建不起来时，返回值里 granted=true + installed=false，
-/// renderer 显示「已授权，重启 Neo 后生效」。
+/// renderer 显示「已授权，点右侧按钮启用」。
 #[tauri::command]
 pub async fn appshots_request_hotkey_access(app: AppHandle) -> Result<AppshotsHotkeyStatus, String> {
     #[cfg(target_os = "macos")]
@@ -254,13 +266,45 @@ fn record_hotkey_install_error(app: &AppHandle, error: HotkeyInstallError) {
 }
 
 #[cfg(target_os = "macos")]
+fn send_hotkey_access_request_once(app: &AppHandle) {
+    use crate::appshots_hotkey_gate::{
+        classify_listen_event_access_request, HotkeyAccessRequestReasonCode,
+    };
+    if HOTKEY_REQUEST_SENT.load(Ordering::SeqCst) {
+        eprintln!("[appshot-hotkey] reason=request_latched_skip");
+        write_hotkey_access_event(app, "warn", "request_latched_skip", None, None);
+        return;
+    }
+    let request = dual_command_hotkey::request_listen_event_access();
+    let _ = HOTKEY_REQUEST_SENT.swap(true, Ordering::SeqCst);
+    let classification = classify_listen_event_access_request(request.outcome, request.elapsed);
+    let granted = classification.reason_code == HotkeyAccessRequestReasonCode::RequestGranted;
+    eprintln!(
+        "[appshot-hotkey] reason={} elapsed_ms={}",
+        classification.reason_code.as_str(),
+        classification.elapsed_ms
+    );
+    write_hotkey_access_event(
+        app,
+        if granted { "info" } else { "warn" },
+        classification.reason_code.as_str(),
+        Some(classification.elapsed_ms),
+        None,
+    );
+    if granted {
+        match install_on_main_thread(app.clone()) {
+            Ok(()) => HOTKEY_PREFLIGHT_CONTRADICTED.store(false, Ordering::SeqCst),
+            Err(error) => record_hotkey_install_error(app, error),
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
 fn request_hotkey_access_blocking(app: AppHandle) -> AppshotsHotkeyStatus {
     use crate::appshots_hotkey_gate::{
-        classify_listen_event_access_request, decide_hotkey_install,
-        HotkeyAccessRequestReasonCode, HotkeyInstallDecision,
+        decide_contradiction_followup, decide_hotkey_install, ContradictionFollowup,
+        HotkeyInstallDecision,
     };
-    // 每进程至多弹一次系统框：用户拒绝后再点按钮只刷新状态，不再骚扰。
-    static REQUEST_SENT: AtomicBool = AtomicBool::new(false);
     let decision = decide_hotkey_install(
         dual_command_hotkey::preflight_listen_event_access(),
         crate::dev_slot(&app.config().identifier).is_some(),
@@ -270,38 +314,28 @@ fn request_hotkey_access_blocking(app: AppHandle) -> AppshotsHotkeyStatus {
         HotkeyInstallDecision::Install => {
             eprintln!("[appshot-hotkey] reason=already_granted_install");
             write_hotkey_access_event(&app, "info", "already_granted_install", None, None);
-            if let Err(error) = install_on_main_thread(app.clone()) {
-                record_hotkey_install_error(&app, error);
-            }
-        }
-        HotkeyInstallDecision::RequestThenInstallIfGranted => {
-            if REQUEST_SENT.load(Ordering::SeqCst) {
-                eprintln!("[appshot-hotkey] reason=request_latched_skip");
-                write_hotkey_access_event(&app, "warn", "request_latched_skip", None, None);
-            } else {
-                let request = dual_command_hotkey::request_listen_event_access();
-                let _ = REQUEST_SENT.swap(true, Ordering::SeqCst);
-                let classification = classify_listen_event_access_request(request.outcome, request.elapsed);
-                let granted = classification.reason_code == HotkeyAccessRequestReasonCode::RequestGranted;
-                eprintln!(
-                    "[appshot-hotkey] reason={} elapsed_ms={}",
-                    classification.reason_code.as_str(),
-                    classification.elapsed_ms
-                );
-                write_hotkey_access_event(
-                    &app,
-                    if granted { "info" } else { "warn" },
-                    classification.reason_code.as_str(),
-                    Some(classification.elapsed_ms),
-                    None,
-                );
-                if granted {
-                    if let Err(error) = install_on_main_thread(app.clone()) {
-                        record_hotkey_install_error(&app, error);
+            match install_on_main_thread(app.clone()) {
+                Ok(()) => HOTKEY_PREFLIGHT_CONTRADICTED.store(false, Ordering::SeqCst),
+                Err(HotkeyInstallError::Failed(error)) => {
+                    // preflight 说已授权却建不起 tap：preflight 不可信 → 置位，状态改报未授权，
+                    // 并走一次系统请求（每进程至多一次）。
+                    let followup = decide_contradiction_followup(
+                        true,
+                        HOTKEY_REQUEST_SENT.load(Ordering::SeqCst),
+                    );
+                    HOTKEY_PREFLIGHT_CONTRADICTED.store(true, Ordering::SeqCst);
+                    if let Some(reason_code) = followup.reason_code() {
+                        eprintln!("[appshot-hotkey] reason={reason_code} error={error}");
+                        write_hotkey_access_event(&app, "warn", reason_code, None, Some(&error));
+                    }
+                    if followup == ContradictionFollowup::ContradictedRequestOnce {
+                        send_hotkey_access_request_once(&app);
                     }
                 }
+                Err(other) => record_hotkey_install_error(&app, other),
             }
         }
+        HotkeyInstallDecision::RequestThenInstallIfGranted => send_hotkey_access_request_once(&app),
         // 显式请求路径不会返回 Skip 分支；保险起见不装不问。
         _ => {}
     }

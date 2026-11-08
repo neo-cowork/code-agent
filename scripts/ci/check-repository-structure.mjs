@@ -78,7 +78,9 @@ const limits = {
   // 已归入 scripts/lib/，只占 writer 这一个直属名额）。
   // 2026-10-28 +1: scripts/verify-native-manifest.mjs（N-NATIVE-MANIFEST-T5：
   // macOS / Windows 发版门共用的原生依赖清单与闭包校验稳定入口）。
-  directScriptFiles: 169,
+  // 2026-11-08 +1: scripts/i18n-plural-ratchet.mjs（N-FIX-EN-PLURAL-COUNT-GRAMMAR：
+  // renderer 英文计数文案棘轮，package / gates:local 共用的稳定入口）。
+  directScriptFiles: 170,
   // 15: the Poppler promotion boundary is split across two workflows on purpose —
   // build-poppler-sidecar.yml only reviews candidates and can never publish, while
   // promote-poppler-sidecar.yml holds the OSS credentials and publishes them.

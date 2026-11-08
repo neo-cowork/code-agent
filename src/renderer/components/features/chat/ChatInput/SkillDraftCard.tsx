@@ -10,6 +10,7 @@ import { FlaskConical, Check, X, Loader2 } from 'lucide-react';
 import ipcService from '../../../../services/ipcService';
 import { toast } from '../../../../hooks/useToast';
 import { useI18n } from '../../../../hooks/useI18n';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 import type { Translations } from '../../../../i18n/zh';
 import type { SkillDraftOrigin } from '../../../../../shared/contract/agent';
 
@@ -124,7 +125,7 @@ export const SkillDraftCard: React.FC<SkillDraftCardProps> = ({
       <div className="flex items-center gap-2 mb-1">
         <FlaskConical className="w-4 h-4 text-badge-info flex-shrink-0" />
         <span className="text-xs text-badge-info flex-1">
-          {s.bannerPrefix}{drafts.length}{s.bannerSuffix}
+          {s.bannerPrefix}{interpolatePlural(s.bannerSuffix, drafts.length)}
         </span>
         <button
           type="button"

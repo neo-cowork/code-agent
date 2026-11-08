@@ -960,7 +960,7 @@ export const zhSettingsWork = {
       hotkeyDescription: '只有想用左右 Command 快捷键时才需要「输入监控」；不开也能从输入框「+」菜单附上应用截图。',
       hotkeyStatusOff: '未开启',
       hotkeyStatusOn: '已开启',
-      hotkeyStatusNeedsRestart: '已授权，重启 Neo 后生效',
+      hotkeyStatusNeedsRestart: '已授权，点右侧按钮启用',
       hotkeyEnable: '开启快捷键',
       hotkeyOpenSettings: '打开「输入监控」权限设置',
       hotkeyPermissionHint: '如果没有出现系统提示，请点击“打开「输入监控」权限设置”，用“+”按钮添加 Agent Neo 并将开关打开。',

@@ -150,7 +150,7 @@ export const en = {
     cacheSavedLine: 'Cache saved {saved}',
     turnCostLine: 'Last turn ≈ {cost} · {model}',
     turnCostUnknownLine: 'Last turn cost unknown ({model} has no list price)',
-    unknownTurnsNote: '{count} turn(s) with unknown price not included',
+    unknownTurnsNote: { one: '{count} turn with unknown price not included', other: '{count} turns with unknown price not included' },
     estimateDisclaimer: 'List-price estimate, not your bill',
   },
 
@@ -270,7 +270,7 @@ export const en = {
     proposalOpRename: 'label',
     proposalOpDiscard: 'remove',
     proposalOpGenerate: 'generate',
-    proposalEstCost: 'Est. generation cost {amount} ({n} image(s))',
+    proposalEstCost: { one: 'Est. generation cost {amount} ({count} image)', other: 'Est. generation cost {amount} ({count} images)' },
     proposalPaidBadge: 'paid',
     proposalSelectedCount: '{n}/{total} selected',
     proposalNothingSelected: 'Select at least one',
@@ -754,7 +754,7 @@ export const en = {
     patternSequential: 'Sequential',
     patternParallel: 'Parallel',
     patternHierarchical: 'Hierarchical',
-    agentsWorking: '{count} agents collaborating',
+    agentsWorking: { one: '{count} agent collaborating', other: '{count} agents collaborating' },
     // Skills
     unmountSkill: 'Unmount',
     addSkills: 'Add ({count})',
