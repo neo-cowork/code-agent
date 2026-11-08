@@ -50,6 +50,8 @@ interface TraceNodeRendererProps {
   attachments?: import('@shared/contract').MessageAttachment[];
   /** Whether this node is in a currently streaming turn */
   isStreaming?: boolean;
+  /** The external run ledger confirms an unfinished persisted tool is still live. */
+  unfinishedToolIsLive?: boolean;
   /**
    * X5.5-D4/D6：节点处于语音派活任务卡内。徽标已上提到轮层（卡头 AudioLines
    * 图标是这通派活唯一的语音标记），轮内节点级的「语音」小标全部抑制。
@@ -66,6 +68,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
   sessionId,
   attachments,
   isStreaming,
+  unfinishedToolIsLive,
   inVoiceDispatchCard,
   onStreamingDisplayUpdate,
   onRewindUserPrompt,
@@ -109,7 +112,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
       );
       break;
     case 'tool_call':
-      content = <ToolCallNode node={node} sessionId={sessionId} />;
+      content = <ToolCallNode node={node} sessionId={sessionId} unfinishedToolIsLive={unfinishedToolIsLive} />;
       break;
     case 'system':
       content = <SystemNode node={node} sessionId={sessionId} />;
@@ -533,7 +536,7 @@ const AssistantTextNode: React.FC<{
 };
 
 // ---- Tool Call Node ----
-const ToolCallNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, sessionId }) => {
+const ToolCallNode: React.FC<{ node: TraceNode; sessionId?: string; unfinishedToolIsLive?: boolean }> = ({ node, sessionId, unfinishedToolIsLive }) => {
   if (!node.toolCall) return null;
   const interruptionReason = node.metadata?.streamInterruptionReason;
 
@@ -570,7 +573,7 @@ const ToolCallNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node,
       toolCall={toolCall}
       index={0}
       total={1}
-      statusOverride={node.metadata?.streamRecovery || interruptionReason ? 'interrupted' : undefined}
+      statusOverride={node.metadata?.streamRecovery || interruptionReason ? 'interrupted' : unfinishedToolIsLive && node.toolCall.result === undefined ? 'pending' : undefined}
       interruptionReason={interruptionReason ?? (node.metadata?.streamRecovery ? 'app-restart' : undefined)}
       mediaContext={{ sessionId, messageId: node.messageId || node.id }}
     />
