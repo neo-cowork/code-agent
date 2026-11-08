@@ -143,6 +143,27 @@ describe('mailSendModule (native)', () => {
       );
     });
 
+    it('treats a timeout as an unconfirmed write instead of recommending a retry', async () => {
+      const ctx = makeCtx();
+      const rawError = Object.assign(
+        new Error("Command failed: osascript -e 'tell application \"Mail\" to send message'"),
+        { killed: true, signal: 'SIGTERM' },
+      );
+      execMock.mockRejectedValue(rawError);
+      const result = await run(validArgs, ctx);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toMatch(/结果无法确认|could not be confirmed/i);
+        expect(result.error).toMatch(/不要直接重试|do not retry/i);
+        expect(result.error).not.toMatch(/请稍后重试|Please try again later/i);
+        expect(result.error).not.toContain('osascript -e');
+      }
+      expect(ctx.logger.warn).toHaveBeenCalledWith(
+        'mail_send osascript failed',
+        expect.objectContaining({ connector: 'mail', code: 'timeout' }),
+      );
+    });
+
     it('wraps connector errors', async () => {
       execMock.mockRejectedValue(new Error('smtp down'));
       const result = await run(validArgs);

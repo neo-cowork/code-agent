@@ -16,7 +16,7 @@ export function describeAppleScriptWriteFailure(
   toolName: string,
 ): string {
   if (isAppleScriptFailure(error)) {
-    const described = describeAppleScriptFailure(connectorLabel, error);
+    const described = describeAppleScriptFailure(connectorLabel, error, { timeoutContext: 'write' });
     logger.warn(`${toolName} osascript failed`, {
       connector: connectorLabel.toLowerCase(),
       code: described.code,

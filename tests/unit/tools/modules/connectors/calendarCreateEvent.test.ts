@@ -145,6 +145,27 @@ describe('calendarCreateEventModule (native)', () => {
       );
     });
 
+    it('treats a timeout as an unconfirmed write instead of recommending a retry', async () => {
+      const ctx = makeCtx();
+      const rawError = Object.assign(
+        new Error("Command failed: osascript -e 'tell application \"Calendar\" to make new event'"),
+        { killed: true, signal: 'SIGTERM' },
+      );
+      execMock.mockRejectedValue(rawError);
+      const result = await run(validArgs, ctx);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toMatch(/结果无法确认|could not be confirmed/i);
+        expect(result.error).toMatch(/不要直接重试|do not retry/i);
+        expect(result.error).not.toMatch(/请稍后重试|Please try again later/i);
+        expect(result.error).not.toContain('osascript -e');
+      }
+      expect(ctx.logger.warn).toHaveBeenCalledWith(
+        'calendar_create_event osascript failed',
+        expect.objectContaining({ connector: 'calendar', code: 'timeout' }),
+      );
+    });
+
     it('passes through a non-AppleScript connector error unchanged', async () => {
       const ctx = makeCtx();
       execMock.mockRejectedValue(new Error('calendar validation failed'));
