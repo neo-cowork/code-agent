@@ -41,6 +41,11 @@ const PROMPTS = [
     text: '帮我设计这个项目的需求文档',
     expectMissingAttachment: false,
   },
+  {
+    id: 'P5',
+    text: '分析一下 销售数据.xlsx',
+    expectMissingAttachment: true,
+  },
 ] as const;
 
 type PromptId = typeof PROMPTS[number]['id'];
@@ -377,7 +382,7 @@ function parseArgs(argv: string[]): { provider: Provider; expectAfter: boolean }
 
 function afterFailures(results: Record<PromptId, PromptTotals>): string[] {
   const failures: string[] = [];
-  for (const id of ['P1', 'P2'] as const) {
+  for (const id of ['P1', 'P2', 'P5'] as const) {
     if (results[id].maxWorkspaceChecksInRound > 1) {
       failures.push(`${id}: max_workspace_checks=${results[id].maxWorkspaceChecksInRound} (>1)`);
     }

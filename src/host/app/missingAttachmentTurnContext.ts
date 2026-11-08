@@ -128,6 +128,19 @@ function detectMissingAttachmentMention(
       return { matched: true, keyword: match[0] || label };
     }
   }
+
+  // File-name trigger: the text names a file with a known extension that does
+  // NOT exist in the working directory (the existing-file check already ran
+  // above and returned false). Skip if a creation verb precedes the filename.
+  const fileMatches = [...trimmed.matchAll(FILE_WITH_EXTENSION_RE)];
+  for (const fm of fileMatches) {
+    const fileName = fm[1];
+    if (!fileName) continue;
+    const before = trimmed.slice(0, fm.index ?? 0);
+    if (CREATION_VERB_RE.test(before)) continue;
+    return { matched: true, keyword: fileName };
+  }
+
   return { matched: false };
 }
 

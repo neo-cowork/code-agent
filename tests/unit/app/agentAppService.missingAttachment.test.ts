@@ -277,4 +277,64 @@ describe('agentAppService missing-attachment turn context', () => {
     const runOptions = taskManager.startTask.mock.calls[0]?.[3] as { turnSystemContext?: string[] } | undefined;
     expect(baselineTurnContextCount(runOptions)).toBe(1);
   });
+
+  // --- r5: file-name-based detection ---
+
+  it('adds exactly one missing-attachment line and logs keyword when user says "分析一下 销售数据.xlsx" with no upload and no such file', async () => {
+    await createService().sendMessage({
+      sessionId: 'session-miss-1',
+      content: '分析一下 销售数据.xlsx',
+      attachments: [],
+    });
+
+    const runOptions = taskManager.startTask.mock.calls[0]?.[3] as { turnSystemContext?: string[] } | undefined;
+    const nonBrainLines = (runOptions?.turnSystemContext ?? []).filter(
+      (line) => !line.startsWith('<session_command_center>'),
+    );
+    expect(nonBrainLines).toHaveLength(1);
+    expect(nonBrainLines[0]).toContain('本轮未收到任何上传附件');
+
+    expect(loggerSpies.info).toHaveBeenCalledWith(
+      'Missing attachment mention detected on turn start',
+      expect.objectContaining({
+        sessionId: 'session-miss-1',
+        keyword: '销售数据.xlsx',
+        attachments: 0,
+        taskFolderEmpty: true,
+      }),
+    );
+  });
+
+  it('adds no missing-attachment line for "分析一下 销售数据.xlsx" when the file exists in the working directory', async () => {
+    const existingFile = path.join(tmpDir, '销售数据.xlsx');
+    fs.writeFileSync(existingFile, 'dummy', 'utf8');
+
+    await createService().sendMessage({
+      sessionId: 'session-miss-1',
+      content: '分析一下 销售数据.xlsx',
+      attachments: [],
+    });
+
+    const runOptions = taskManager.startTask.mock.calls[0]?.[3] as { turnSystemContext?: string[] } | undefined;
+    expect(baselineTurnContextCount(runOptions)).toBe(0);
+    expect(loggerSpies.info).not.toHaveBeenCalledWith(
+      'Missing attachment mention detected on turn start',
+      expect.anything(),
+    );
+  });
+
+  it('adds no missing-attachment line for creation request "帮我写一个 config.json 的示例"', async () => {
+    await createService().sendMessage({
+      sessionId: 'session-miss-1',
+      content: '帮我写一个 config.json 的示例',
+      attachments: [],
+    });
+
+    const runOptions = taskManager.startTask.mock.calls[0]?.[3] as { turnSystemContext?: string[] } | undefined;
+    expect(baselineTurnContextCount(runOptions)).toBe(0);
+    expect(loggerSpies.info).not.toHaveBeenCalledWith(
+      'Missing attachment mention detected on turn start',
+      expect.anything(),
+    );
+  });
 });
