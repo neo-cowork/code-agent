@@ -11,6 +11,7 @@ import {
 import { wakeSkipSentence } from './wakeSkipSentence';
 import { CronRunsOnPill } from './CronRunsOnSelector';
 import { awaitingApprovalLabel } from './awaitingApprovalLabel';
+import { Badge } from '../../primitives';
 
 interface CronExecutionListProps {
   executions: CronJobExecution[];
@@ -101,24 +102,27 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
                   )}
                   <td className={`whitespace-nowrap ${tdClass}`}>
                     {execution.status === 'running' && (awaitingByJobId?.has(execution.jobId) ?? false) ? (
-                      <span
-                        className="inline-block max-w-[180px] overflow-hidden text-ellipsis whitespace-nowrap rounded-full border border-badge-warning/40 bg-amber-500/15 px-2 py-1 align-middle text-xs text-badge-warning"
+                      <Badge
+                        className="max-w-[180px] overflow-hidden text-ellipsis rounded-full border-badge-warning/40 bg-amber-500/15 px-2 py-1 align-middle text-xs text-badge-warning"
                         data-testid="cron-exec-awaiting-approval"
                         title={awaitingPreview ? cc.awaitingApprovalWithPreview.replace('{preview}', awaitingPreview) : undefined}
                       >
                         {awaitingApprovalLabel(cc.awaitingApprovalWithPreview, awaitingPreview) ?? cc.awaitingApprovalBadge}
-                      </span>
+                      </Badge>
                     ) : permissionDenied ? (
-                      <span
-                        className="rounded-full px-2 py-1 text-xs text-badge-warning bg-amber-500/10"
+                      <Badge
+                        className="rounded-full bg-amber-500/10 px-2 py-1 text-xs text-badge-warning"
                         data-testid="cron-execution-permission-denied"
                       >
                         {cc.permissionDeniedBadge}
-                      </span>
+                      </Badge>
                     ) : (
-                      <span className={`rounded-full px-2 py-1 text-xs ${statusMeta.className}`}>
+                      <Badge
+                        className={`rounded-full px-2 py-1 text-xs ${statusMeta.className}`}
+                        data-testid={`cron-exec-status-${execution.id}`}
+                      >
                         {cc.status[execution.status]}
-                      </span>
+                      </Badge>
                     )}
                   </td>
                   {runsOnByJobId && (

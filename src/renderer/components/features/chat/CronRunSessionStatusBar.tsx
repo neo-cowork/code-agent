@@ -23,6 +23,7 @@ import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { toast } from '../../../hooks/useToast';
 import { classifyPermissionDelivery } from '../../PermissionDialog/permissionDelivery';
+import { Badge, Button } from '../../primitives';
 import {
   clearObservedCronRunStatusForSession,
   composeElapsed,
@@ -188,31 +189,38 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
         data-state="awaiting"
       >
         <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-mark-warning" aria-hidden="true" />
-        <span data-testid="cron-run-status-text">
+        <Badge
+          className="rounded-md border-badge-warning/30 bg-amber-500/10 px-2 py-0.5 text-xs text-badge-warning"
+          data-testid="cron-run-status-text"
+        >
           {copy.awaiting}
           {status.approval.label ? `：${status.approval.label}` : ''}
-        </span>
+        </Badge>
         <span className="flex items-center gap-1.5">
-          <button /* ds-allow:button: 状态行内超小批准按钮（h-6 px-2 text-xs），Button primitive 最小 sm 档更高 */
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
             onClick={() => { void handleApproval('allow'); }}
             disabled={approvalBusy}
-            className="inline-flex h-6 items-center gap-1 rounded-md border border-badge-success/40 bg-emerald-500/10 px-2 text-xs text-badge-success transition-colors hover:bg-emerald-500/20 disabled:opacity-50"
+            className="!h-6 !rounded-md !border !border-badge-success/40 !bg-emerald-500/10 !px-2 !py-0 text-xs !text-badge-success transition-colors hover:!bg-emerald-500/20"
             data-testid="cron-run-status-approve"
           >
             <Check className="h-3 w-3" />
             {copy.approve}
-          </button>
-          <button /* ds-allow:button: 状态行内超小拒绝按钮，同上 */
+          </Button>
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
             onClick={() => { void handleApproval('deny'); }}
             disabled={approvalBusy}
-            className="inline-flex h-6 items-center gap-1 rounded-md border border-border-muted px-2 text-xs text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-50"
+            className="!h-6 !rounded-md !border !border-border-muted !px-2 !py-0 text-xs !text-zinc-400 transition-colors hover:!bg-zinc-800 hover:!text-zinc-200"
             data-testid="cron-run-status-reject"
           >
             <X className="h-3 w-3" />
             {copy.reject}
-          </button>
+          </Button>
         </span>
       </div>
     );
@@ -259,16 +267,23 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
         data-state={status.kind}
       >
         <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-mark-neutral" aria-hidden="true" />
-        <span data-testid="cron-run-status-text">{label}</span>
-        <button /* ds-allow:button: 状态行内超小次级按钮（h-6 px-2 text-xs） */
+        <Badge
+          className="rounded-md border-border-muted bg-zinc-900/40 px-2 py-0.5 text-xs text-zinc-300"
+          data-testid="cron-run-status-text"
+        >
+          {label}
+        </Badge>
+        <Button
           type="button"
+          variant="ghost"
+          size="sm"
           onClick={() => { void handleRerun(); }}
           disabled={isRerunning}
-          className="inline-flex h-6 items-center rounded-md border border-border-muted px-2 text-xs text-zinc-300 transition-colors hover:bg-zinc-800 disabled:opacity-50"
+          className="!h-6 !rounded-md !border !border-border-muted !px-2 !py-0 text-xs !text-zinc-300 transition-colors hover:!bg-zinc-800"
           data-testid="cron-run-status-rerun"
         >
           {copy.rerun}
-        </button>
+        </Button>
       </div>
     );
   }

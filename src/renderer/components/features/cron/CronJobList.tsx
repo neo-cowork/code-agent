@@ -10,6 +10,7 @@ import type { CronRunsOn } from '@shared/contract';
 import { Plus, RefreshCw } from 'lucide-react';
 import { Input } from '../../primitives/Input';
 import { Select } from '../../primitives/Select';
+import { Badge } from '../../primitives';
 import { useCronStore } from '../../../stores/cronStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { getCronTriggerKind } from '../../../utils/cronHumanize';
@@ -172,13 +173,13 @@ export const CronJobList: React.FC<CronJobListProps> = ({ awaitingByJobId }) => 
                         </div>
                       )}
                     </div>
-                    <span
-                      className={`shrink-0 rounded-full px-2 py-1 text-[11px] ${
+                    <Badge
+                      className={`rounded-full px-2 py-1 text-[11px] ${
                         job.enabled ? 'bg-emerald-500/10 text-badge-success' : 'bg-zinc-500/10 text-zinc-300'
                       }`}
                     >
                       {job.enabled ? cc.enabled : cc.disabled}
-                    </span>
+                    </Badge>
                   </div>
 
                   {displayDescription && (
@@ -187,24 +188,24 @@ export const CronJobList: React.FC<CronJobListProps> = ({ awaitingByJobId }) => 
 
                   <div className="mt-3 flex items-center justify-between gap-3 text-xs">
                     {awaitingApproval ? (
-                      <span
-                        className="rounded-full border border-badge-warning/40 bg-amber-500/15 px-2 py-1 text-badge-warning"
+                      <Badge
+                        className="rounded-full border-badge-warning/40 bg-amber-500/15 px-2 py-1 text-badge-warning"
                         data-testid="cron-job-awaiting-approval"
                       >
                         {cc.awaitingApprovalBadge}
-                      </span>
+                      </Badge>
                     ) : (
-                      <span className={`rounded-full px-2 py-1 ${latestMeta.className}`}>
+                      <Badge className={`rounded-full px-2 py-1 ${latestMeta.className}`}>
                         {cc.latest.replace('{label}', latestLabel)}
-                      </span>
+                      </Badge>
                     )}
                     {/* 触发源 chip：信息性标识统一中性 zinc，彩色只留给「要你处理的地方」 */}
-                    <span
-                      className="rounded-full border border-zinc-700/70 bg-zinc-900 px-2 py-0.5 text-[11px] text-zinc-400"
+                    <Badge
+                      className="rounded-full border-zinc-700/70 bg-zinc-900 px-2 py-0.5 text-[11px] text-zinc-400"
                       data-testid="cron-job-trigger-kind"
                     >
                       {cc.triggerKind[triggerKind]}
-                    </span>
+                    </Badge>
                   </div>
                 </button>
               );

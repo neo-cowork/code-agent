@@ -103,7 +103,7 @@ export const OverviewRunHeader: React.FC = () => {
 
   return (
     <div data-testid="overview-run-header" data-run-status={model.status} className="min-w-0">
-      <div className="flex min-w-0 items-center gap-2 px-0.5">
+      <div className="flex min-w-0 flex-wrap items-center gap-2 px-0.5">
         <span
           data-testid="overview-run-header-dot"
           data-tone={model.tone}
@@ -112,7 +112,7 @@ export const OverviewRunHeader: React.FC = () => {
           className={`h-2 w-2 shrink-0 rounded-full ${DOT_CLASS[model.tone]}`}
         />
         <span
-          className="min-w-0 truncate text-sm font-medium text-zinc-100"
+          className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-100"
           data-testid="overview-run-header-title"
           title={model.title}
         >

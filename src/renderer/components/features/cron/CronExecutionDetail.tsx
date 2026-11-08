@@ -8,7 +8,7 @@ import { useAppStore } from '../../../stores/appStore';
 import { useCronStore } from '../../../stores/cronStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
-import { Button } from '../../primitives/Button';
+import { Badge, Button } from '../../primitives';
 import {
   formatDuration,
   formatRunCostUsd,
@@ -156,43 +156,48 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
 
   return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4">
-      <div className="mb-4 flex items-center justify-between">
-        <div>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0 flex-1">
           <h4 className="text-sm font-medium text-zinc-100">{cc.execDetailTitle}</h4>
-          <p className="mt-1 text-xs text-zinc-500">
+          <p className="mt-1 truncate text-xs text-zinc-500">
             {jobName ?? (jobNamesLoaded ? cc.deletedTask : cc.jobNameUnavailable)} · {formatDateTime(execution.startedAt ?? execution.scheduledAt, language)}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
           {execution.sessionId && (
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               onClick={handleOpenSession}
               disabled={isOpeningSession}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-xs text-zinc-300 transition-colors hover:border-zinc-700 hover:bg-zinc-800 disabled:opacity-50"
+              className="!rounded-lg !border !border-zinc-800 !bg-zinc-900 !px-2.5 !py-1 text-xs !text-zinc-300 transition-colors hover:!border-zinc-700 hover:!bg-zinc-800"
             >
               <MessageSquareText className="h-3.5 w-3.5" />
               {isOpeningSession ? cc.execOpeningSession : cc.execOpenSession}
-            </button>
+            </Button>
           )}
           {execution.status === 'running' && awaitingRun != null ? (
-            <span
-              className="rounded-full border border-badge-warning/40 bg-amber-500/15 px-2.5 py-1 text-xs text-badge-warning"
+            <Badge
+              className="rounded-full border-badge-warning/40 bg-amber-500/15 px-2.5 py-1 text-xs text-badge-warning"
               data-testid="cron-exec-detail-awaiting-approval"
             >
               {cc.awaitingApprovalBadge}
-            </span>
+            </Badge>
           ) : permissionDenied ? (
-            <span
-              className="rounded-full px-2.5 py-1 text-xs text-badge-warning bg-amber-500/10"
+            <Badge
+              className="rounded-full bg-amber-500/10 px-2.5 py-1 text-xs text-badge-warning"
               data-testid="cron-exec-detail-permission-denied"
             >
               {cc.permissionDeniedBadge}
-            </span>
+            </Badge>
           ) : (
-            <span className={`rounded-full px-2.5 py-1 text-xs ${statusMeta.className}`}>
+            <Badge
+              className={`rounded-full px-2.5 py-1 text-xs ${statusMeta.className}`}
+              data-testid={`cron-exec-detail-status-${execution.status}`}
+            >
               {cc.status[execution.status]}
-            </span>
+            </Badge>
           )}
         </div>
       </div>

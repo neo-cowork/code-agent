@@ -95,7 +95,7 @@ function StampChip({ segment }: { segment: TurnSegment }) {
       <span
         data-testid="inspector-stamp"
         data-verdict="in_progress"
-        className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-surface-faint px-1.5 py-0.5 text-[10px] text-zinc-400"
+        className="inline-flex shrink-0 items-center gap-1 rounded-md border border-white/[0.08] bg-surface-faint px-1.5 py-0.5 text-[10px] text-zinc-400 whitespace-nowrap"
       >
         <CircleDot className="h-3 w-3" />
         {t.sessionInspector.turnInProgress}
@@ -111,7 +111,7 @@ function StampChip({ segment }: { segment: TurnSegment }) {
       <span
         data-testid="inspector-stamp"
         data-verdict="verified"
-        className="inline-flex items-center gap-1 rounded-md border border-badge-success/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-badge-success"
+        className="inline-flex shrink-0 items-center gap-1 rounded-md border border-badge-success/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-badge-success whitespace-nowrap"
       >
         <CheckCircle2 className="h-3 w-3" />
         {terminalOutcome && (
@@ -132,7 +132,7 @@ function StampChip({ segment }: { segment: TurnSegment }) {
       <span
         data-testid="inspector-stamp"
         data-verdict="undelivered"
-        className="inline-flex items-center gap-1 rounded-md border border-badge-warning/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-badge-warning"
+        className="inline-flex shrink-0 items-center gap-1 rounded-md border border-badge-warning/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-badge-warning whitespace-nowrap"
       >
         <AlertTriangle className="h-3 w-3" />
         <span data-testid="inspector-stamp-qualifier">{stamp.undelivered}</span>
@@ -144,7 +144,7 @@ function StampChip({ segment }: { segment: TurnSegment }) {
       <span
         data-testid="inspector-stamp"
         data-verdict="self_claimed"
-        className="inline-flex items-center gap-1 rounded-md border border-badge-warning/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-badge-warning"
+        className="inline-flex shrink-0 items-center gap-1 rounded-md border border-badge-warning/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-badge-warning whitespace-nowrap"
       >
         <AlertTriangle className="h-3 w-3" />
         {terminalOutcome && (
@@ -165,7 +165,7 @@ function StampChip({ segment }: { segment: TurnSegment }) {
         data-testid="inspector-stamp"
         data-verdict="n_a"
         data-terminal={terminal ?? 'unknown'}
-        className={`inline-flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] ${tone}`}
+        className={`inline-flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] whitespace-nowrap ${tone}`}
       >
         {(terminal === 'failed' || terminal === 'aborted') && <XCircle className="h-3 w-3" />}
         {terminalOutcome.label}

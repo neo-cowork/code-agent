@@ -17,9 +17,8 @@ import {
   UserRound,
   XCircle,
 } from 'lucide-react';
-import { EmptyState } from '../primitives';
+import { Badge, EmptyState } from '../primitives';
 import { Button } from '../primitives/Button';
-import { WorkbenchPill } from '../workbench/WorkbenchPrimitives';
 import type {
   MemoryActivityEvent,
   RunWorkbenchModel,
@@ -141,9 +140,9 @@ export const RunOverview = ({ model, onOpenMemory }: RunOverviewProps) => {
             {isCompleted ? (
               <span className="truncate text-xs text-zinc-300">{run.phase}</span>
             ) : (
-              <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${runStatusClass(run.status)}`}>
+              <Badge className={`rounded-md px-1.5 py-0.5 text-[10px] font-medium ${runStatusClass(run.status)}`}>
                 {getRunUiStatusLabel(run.status, t, run.terminalReason)}
-              </span>
+              </Badge>
             )}
             {run.activeToolName && (
               <span className="truncate text-[11px] text-zinc-500">{run.activeToolName}</span>
@@ -277,9 +276,9 @@ export const TaskDashboardSummary = ({
           className="flex items-center gap-2 px-1 py-1"
         >
           <Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin text-badge-info" />
-          <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${runStatusClass(run.status)}`}>
+          <Badge className={`rounded-md px-1.5 py-0.5 text-[10px] font-medium ${runStatusClass(run.status)}`}>
             {getRunUiStatusLabel(run.status, t, run.terminalReason)}
-          </span>
+          </Badge>
           <span className="min-w-0 flex-1 truncate text-xs text-zinc-200">{run.phase}</span>
           {run.activeToolName && (
             <span className="truncate text-[11px] text-zinc-500">{run.activeToolName}</span>

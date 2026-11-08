@@ -18,7 +18,7 @@ import { formatDateTime } from '../../../utils/formatDateTime';
 import { CronExecutionList } from './CronExecutionList';
 import { CronExecutionDetail } from './CronExecutionDetail';
 import { CLOUD_ROLE_BOUND_ERROR } from './CronCloudRoleRestriction';
-import { Button } from '../../primitives';
+import { Badge, Button } from '../../primitives';
 import { CronRunsOnPill } from './CronRunsOnSelector';
 import { CronResultChannelSummary } from './CronResultChannel';
 import { useEventScheduleNames } from './useChannelCatalog';
@@ -127,20 +127,23 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
     <div className="flex h-full flex-col bg-zinc-900/40">
       <div className="border-b border-zinc-800 p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="text-lg font-semibold text-zinc-100">{displayName}</h3>
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <h3 className="min-w-0 truncate text-lg font-semibold text-zinc-100">{displayName}</h3>
               {awaitingApproval ? (
-                <span
-                  className="rounded-full border border-badge-warning/40 bg-amber-500/15 px-2 py-1 text-xs text-badge-warning"
+                <Badge
+                  className="rounded-full border-badge-warning/40 bg-amber-500/15 px-2 py-1 text-xs text-badge-warning"
                   data-testid="cron-detail-awaiting-approval"
                 >
                   {cc.awaitingApprovalBadge}
-                </span>
+                </Badge>
               ) : (
-                <span className={`rounded-full px-2 py-1 text-xs ${latestMeta.className}`}>
+                <Badge
+                  className={`rounded-full px-2 py-1 text-xs ${latestMeta.className}`}
+                  data-testid="cron-detail-status"
+                >
                   {cc.latest.replace('{label}', latestLabel)}
-                </span>
+                </Badge>
               )}
             </div>
             {awaitingApproval && (
@@ -177,35 +180,47 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
           </div>
 
           <div className="flex flex-wrap items-center gap-1">
-            <button /* ds-allow:button: 详情头部超小文本按钮组（py-1.5 text-xs），primitive 最小 sm 仍更大 */
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
               onClick={() => openEditEditor(job.id)}
-              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+              className="!rounded-lg !px-2.5 !py-1.5 text-xs !text-zinc-400 transition-colors hover:!bg-zinc-800 hover:!text-zinc-200"
             >
               <Pencil className="h-3.5 w-3.5" />
               {cc.edit}
-            </button>
-            <button /* ds-allow:button: 同上，超小文本按钮组 */
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
               onClick={handleToggleEnabled}
-              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+              className="!rounded-lg !px-2.5 !py-1.5 text-xs !text-zinc-400 transition-colors hover:!bg-zinc-800 hover:!text-zinc-200"
             >
               <Power className="h-3.5 w-3.5" />
               {job.enabled ? cc.disable : cc.enable}
-            </button>
-            <button /* ds-allow:button: 同上，超小文本按钮组（蓝色语义） */
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
               onClick={handleTrigger}
               disabled={isTriggering}
-              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-badge-info transition-colors hover:bg-blue-500/10 hover:text-badge-info disabled:opacity-50"
+              className="!rounded-lg !px-2.5 !py-1.5 text-xs !text-badge-info transition-colors hover:!bg-blue-500/10 hover:!text-badge-info"
             >
               <Play className="h-3.5 w-3.5" />
               {isTriggering ? cc.triggering : cc.trigger}
-            </button>
-            <button /* ds-allow:button: 同上，超小文本按钮组（红色语义） */
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
               onClick={handleDelete}
-              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-zinc-500 transition-colors hover:bg-red-500/10 hover:text-badge-danger"
+              className="!rounded-lg !px-2.5 !py-1.5 text-xs !text-zinc-500 transition-colors hover:!bg-red-500/10 hover:!text-badge-danger"
             >
               <Trash2 className="h-3.5 w-3.5" />
               {cc.delete}
-            </button>
+            </Button>
           </div>
         </div>
         {toggleError && (

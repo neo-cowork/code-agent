@@ -28,7 +28,7 @@ export const TurnOutcomeBadge: React.FC<{ turn: TraceTurn; sessionId?: string }>
       <span
         data-testid="turn-outcome-badge"
         data-verdict="verified"
-        className="inline-flex items-center gap-1 rounded-md border border-badge-success/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-badge-success"
+        className="inline-flex shrink-0 items-center gap-1 rounded-md border border-badge-success/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-badge-success whitespace-nowrap"
       >
         <CheckCircle2 className="h-3 w-3" />
         {t.sessionInspector.stamp.verified}
@@ -40,7 +40,7 @@ export const TurnOutcomeBadge: React.FC<{ turn: TraceTurn; sessionId?: string }>
       <span
         data-testid="turn-outcome-badge"
         data-verdict="undelivered"
-        className="inline-flex items-center gap-1 rounded-md border border-badge-warning/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-badge-warning"
+        className="inline-flex shrink-0 items-center gap-1 rounded-md border border-badge-warning/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-badge-warning whitespace-nowrap"
       >
         <AlertTriangle className="h-3 w-3" />
         {t.sessionInspector.stamp.undelivered}
@@ -52,7 +52,7 @@ export const TurnOutcomeBadge: React.FC<{ turn: TraceTurn; sessionId?: string }>
       <span
         data-testid="turn-outcome-badge"
         data-verdict="self_claimed"
-        className="inline-flex items-center gap-1 rounded-md border border-badge-warning/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-badge-warning"
+        className="inline-flex shrink-0 items-center gap-1 rounded-md border border-badge-warning/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-badge-warning whitespace-nowrap"
       >
         <AlertTriangle className="h-3 w-3" />
         {t.sessionInspector.stamp.selfClaimed}
