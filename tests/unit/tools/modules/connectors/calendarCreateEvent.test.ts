@@ -145,6 +145,14 @@ describe('calendarCreateEventModule (native)', () => {
       );
     });
 
+    it('passes through a non-AppleScript connector error unchanged', async () => {
+      const ctx = makeCtx();
+      execMock.mockRejectedValue(new Error('calendar validation failed'));
+      const result = await run(validArgs, ctx);
+      expect(result).toMatchObject({ ok: false, error: 'Calendar create failed: calendar validation failed' });
+      expect(ctx.logger.warn).not.toHaveBeenCalled();
+    });
+
     it('wraps connector errors', async () => {
       execMock.mockRejectedValue(new Error('boom'));
       const result = await run(validArgs);
