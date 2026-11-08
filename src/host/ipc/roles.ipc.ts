@@ -51,6 +51,7 @@ import {
   confirmRoleDraft,
   rejectRoleDraft,
   getFirstWakeSnapshot,
+  consumeFirstWakeSuggestion,
   retryFirstWake,
   skipFirstWake,
   isSafeRoleId,
@@ -806,6 +807,17 @@ const rolesHandlers: RawDomainRouteHandlers<RolesDomainRequest, void> = {
     const result = await skipFirstWake(roleId);
     if (!result.success) {
       return { success: false, error: { code: 'FIRST_WAKE_SKIP_FAILED', message: 'skip failed' } };
+    }
+    return { success: true, data: { success: true } };
+  },
+  firstWakeConsumeSuggestion: async (_ctx, payload) => {
+    const { roleId, title } = (payload ?? {}) as RoleIdPayload & { title?: string };
+    if (!roleId || !isSafeRoleId(roleId) || !title?.trim()) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'a safe roleId and title are required' } };
+    }
+    const result = await consumeFirstWakeSuggestion(roleId, title);
+    if (!result.success) {
+      return { success: false, error: { code: 'FIRST_WAKE_CONSUME_FAILED', message: 'consume failed' } };
     }
     return { success: true, data: { success: true } };
   },
