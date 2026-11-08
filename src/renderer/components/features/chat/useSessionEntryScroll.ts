@@ -181,6 +181,9 @@ export function useSessionEntryScroll({
     const lastIndex = projectionTurnsRef.current.length - 1;
     if (lastIndex < 0) return;
     sessionEntrySettlingRef.current = true;
+    // 结算期间 atBottomStateChange 被屏蔽；入场前 Virtuoso 可能已报过“不在底部”，
+    // 这里先置位，避免估算高度阶段闪出“回到底部”按钮。用户滚动取消时由 onCancel 重算。
+    setIsAtBottom(true);
 
     scheduleAfterLayout(() => {
       if (
