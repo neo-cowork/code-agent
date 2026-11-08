@@ -72,6 +72,7 @@ export class FeishuChannel extends BaseChannelPlugin {
   private client: lark.Client | null = null;
   private wsClient: lark.WSClient | null = null;
   private wsSession: FeishuWsSession | null = null;
+  get feishuSharedAppDetected(): boolean | undefined { return this.wsSession?.sharedAppDetected; }
   private botOpenId: string | null = null;
 
   // Webhook 服务器

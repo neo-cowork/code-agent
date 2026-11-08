@@ -4,6 +4,8 @@
 // 决策：启动只 preflight（静默）；未授权不装不问；Dev 通道启动一律不装；只有设置页的
 // 「开启快捷键」按钮（explicit_request=true）才允许触发系统询问。
 
+use std::time::Duration;
+
 /// `decide_hotkey_install` 的输出；调用方（appshots.rs）按分支落日志 / 装 tap。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HotkeyInstallDecision {
@@ -15,6 +17,64 @@ pub enum HotkeyInstallDecision {
     SkipDevChannel,
     /// 显式请求但尚未授权 → 先 CGRequestListenEventAccess（每进程至多一次），授权了再装。
     RequestThenInstallIfGranted,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ListenEventAccessRequestOutcome {
+    SymbolMissing,
+    ReturnedFalse,
+    ReturnedTrue,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ListenEventAccessRequestReport {
+    pub outcome: ListenEventAccessRequestOutcome,
+    pub elapsed: Duration,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HotkeyAccessRequestReasonCode {
+    RequestSymbolMissing,
+    RequestReturnedFalse,
+    RequestGranted,
+}
+
+impl HotkeyAccessRequestReasonCode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::RequestSymbolMissing => "request_symbol_missing",
+            Self::RequestReturnedFalse => "request_returned_false",
+            Self::RequestGranted => "request_granted",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HotkeyAccessRequestClassification {
+    pub reason_code: HotkeyAccessRequestReasonCode,
+    pub elapsed_ms: u64,
+}
+
+/// 把 FFI 返回形状归一成稳定的取证 reason code，不碰 TCC 或其他系统状态。
+pub fn classify_listen_event_access_request(
+    outcome: ListenEventAccessRequestOutcome,
+    elapsed: Duration,
+) -> HotkeyAccessRequestClassification {
+    let reason_code = match outcome {
+        ListenEventAccessRequestOutcome::SymbolMissing => {
+            HotkeyAccessRequestReasonCode::RequestSymbolMissing
+        }
+        ListenEventAccessRequestOutcome::ReturnedFalse => {
+            HotkeyAccessRequestReasonCode::RequestReturnedFalse
+        }
+        ListenEventAccessRequestOutcome::ReturnedTrue => {
+            HotkeyAccessRequestReasonCode::RequestGranted
+        }
+    };
+    HotkeyAccessRequestClassification {
+        reason_code,
+        elapsed_ms: u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX),
+    }
 }
 
 /// 纯决策：三个布尔进，一个动作出。启动路径传 `explicit_request=false`；设置页
@@ -72,5 +132,36 @@ mod tests {
             RequestThenInstallIfGranted
         );
         assert_eq!(decide_hotkey_install(true, true, true), Install);
+    }
+
+    #[test]
+    fn appshots_hotkey_request_reason_classifier_covers_all_outcomes() {
+        let cases = [
+            (
+                ListenEventAccessRequestOutcome::SymbolMissing,
+                11,
+                HotkeyAccessRequestReasonCode::RequestSymbolMissing,
+            ),
+            (
+                ListenEventAccessRequestOutcome::ReturnedFalse,
+                22,
+                HotkeyAccessRequestReasonCode::RequestReturnedFalse,
+            ),
+            (
+                ListenEventAccessRequestOutcome::ReturnedTrue,
+                33,
+                HotkeyAccessRequestReasonCode::RequestGranted,
+            ),
+        ];
+
+        for (outcome, elapsed_ms, expected_reason_code) in cases {
+            assert_eq!(
+                classify_listen_event_access_request(outcome, Duration::from_millis(elapsed_ms)),
+                HotkeyAccessRequestClassification {
+                    reason_code: expected_reason_code,
+                    elapsed_ms,
+                }
+            );
+        }
     }
 }
