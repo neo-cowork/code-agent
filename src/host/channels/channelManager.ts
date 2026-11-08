@@ -152,6 +152,7 @@ export class ChannelManager extends EventEmitter {
       if (data) {
         const accounts = JSON.parse(data) as ChannelAccount[];
         for (const account of accounts) {
+          delete account.feishuSharedAppDetected;
           this.accounts.set(account.id, account);
         }
         logger.info(`Loaded ${accounts.length} channel accounts`);
@@ -167,7 +168,7 @@ export class ChannelManager extends EventEmitter {
   private saveAccounts(): void {
     try {
       const storage = getSecureStorage();
-      const accounts = Array.from(this.accounts.values());
+      const accounts = Array.from(this.accounts.values()).map(({ feishuSharedAppDetected: _runtimeOnly, ...persisted }) => persisted);
       storage.set(CHANNEL_ACCOUNTS_KEY as never, JSON.stringify(accounts));
     } catch (error) {
       logger.error('Failed to save channel accounts', { error });
@@ -342,11 +343,15 @@ export class ChannelManager extends EventEmitter {
       }
       // 失败原因先翻成人话再落 errorMessage（raw 只进日志）；非失败消息（onReconnecting
       // 的「重连中」）本来就是人话，原样透传。
+      const hadFeishuShared = account.feishuSharedAppDetected;
       this.updateAccountStatus(
         accountId,
         status,
         status === 'error' && error !== undefined ? channelConnectFailureText(error, channelLabel) : error,
       );
+      if (channel instanceof FeishuChannel && hadFeishuShared !== account.feishuSharedAppDetected) {
+        this.emit('accounts_changed', this.getAccounts());
+      }
     });
 
     channel.on('error', (error: Error) => {
@@ -398,8 +403,8 @@ export class ChannelManager extends EventEmitter {
       }
       this.saveAccounts();
       this.connectRetries.reset(accountId);
-      // 状态事件不带这个运行时字段；Telegram 连接成功后单独把账号列表推给设置页。
-      if (channel instanceof TelegramChannel) {
+      // 状态事件不带这个运行时字段；Telegram/Feishu 连接成功后单独把账号列表推给设置页。
+      if (channel instanceof TelegramChannel || channel instanceof FeishuChannel) {
         this.emit('accounts_changed', this.getAccounts());
       }
 
@@ -980,6 +985,14 @@ export class ChannelManager extends EventEmitter {
     if (account) {
       account.status = status;
       account.errorMessage = error;
+      if (status === 'connected') {
+        const active = this.activeChannels.get(accountId) ?? this.connectingChannels.get(accountId);
+        if (active instanceof FeishuChannel && typeof active.feishuSharedAppDetected === 'boolean') {
+          account.feishuSharedAppDetected = active.feishuSharedAppDetected;
+        }
+      } else {
+        delete account.feishuSharedAppDetected;
+      }
       this.accounts.set(accountId, account);
     }
 
