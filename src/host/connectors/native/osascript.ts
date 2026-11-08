@@ -40,7 +40,7 @@ function describeAppleScriptFailureText(
   english: boolean,
   label: string,
   code: AppleScriptFailureCode,
-  timeoutContext?: 'calendar_list_events',
+  timeoutContext?: 'calendar_list_events' | 'write',
 ): string {
   if (english) {
     switch (code) {
@@ -51,6 +51,8 @@ function describeAppleScriptFailureText(
       case 'timeout':
         return timeoutContext === 'calendar_list_events'
           ? `${label} did not respond in time (timeout). Narrow the date range or pass a specific calendar name instead of retrying unchanged.`
+          : timeoutContext === 'write'
+            ? `${label} did not respond in time (timeout). The result could not be confirmed; check ${label} before retrying, and do not retry blindly.`
           : `${label} did not respond in time. Please try again later.`;
       default:
         return `${label}: Read failed, please try again later`;
@@ -64,6 +66,8 @@ function describeAppleScriptFailureText(
     case 'timeout':
       return timeoutContext === 'calendar_list_events'
         ? `${label} 响应超时：请缩小查询时间范围或指定具体日历名称（calendar），不要原样重试。`
+        : timeoutContext === 'write'
+          ? `${label} 响应超时：结果无法确认，请先在 ${label} 中检查是否已完成，不要直接重试。`
         : `${label} 响应超时，请稍后重试。`;
     default:
       return `${label}：读取失败，请稍后重试`;
@@ -78,7 +82,7 @@ function describeAppleScriptFailureText(
 export function describeAppleScriptFailure(
   connectorLabel: string,
   error: unknown,
-  options?: { timeoutContext?: 'calendar_list_events' },
+  options?: { timeoutContext?: 'calendar_list_events' | 'write' },
 ): { message: string; code: AppleScriptFailureCode } {
   const fields = (typeof error === 'object' && error !== null ? error : {}) as {
     killed?: unknown; signal?: unknown; code?: unknown; stderr?: unknown;

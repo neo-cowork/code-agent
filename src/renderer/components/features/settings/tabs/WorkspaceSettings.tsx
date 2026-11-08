@@ -66,6 +66,7 @@ import type {
 } from './workspaceSettingsFormatters';
 import { createLogger } from '../../../../utils/logger';
 import ipcService from '../../../../services/ipcService';
+import { pickWorkingDirectory } from '../../../../services/workingDirectoryPicker';
 
 // 历史公开导出留在原路径（N-MAXLINES-MINEFIELD-2 拆出，消费方无需改 import）。
 export { buildConfigScopeTiles };
@@ -175,7 +176,7 @@ export const WorkspaceSettings: React.FC = () => {
 
   const handlePickDirectory = useCallback(async () => {
     try {
-      const next = await ipcService.invokeDomain<string | null>(IPC_DOMAINS.WORKSPACE, 'selectDirectory');
+      const next = await pickWorkingDirectory(workspaceText.actions.chooseDirectory);
       if (next) {
         setCurrentDir(next);
         await load();
@@ -183,7 +184,7 @@ export const WorkspaceSettings: React.FC = () => {
     } catch (error) {
       logger.error('Failed to pick directory', error);
     }
-  }, [load]);
+  }, [load, workspaceText.actions.chooseDirectory]);
 
   const handleSwitchTo = useCallback(async (path: string) => {
     try {
@@ -234,7 +235,7 @@ export const WorkspaceSettings: React.FC = () => {
 
   const handlePickPinnedDirectory = useCallback(async () => {
     try {
-      const next = await ipcService.invokeDomain<string | null>(IPC_DOMAINS.WORKSPACE, 'selectDirectory');
+      const next = await pickWorkingDirectory(workspaceText.actions.chooseDirectory);
       if (next) {
         setPinnedDirectoryState(next);
         await persistWorkspacePreference({ pinnedDirectory: next });
@@ -242,7 +243,7 @@ export const WorkspaceSettings: React.FC = () => {
     } catch (error) {
       logger.error('Failed to pick pinned directory', error);
     }
-  }, [persistWorkspacePreference]);
+  }, [persistWorkspacePreference, workspaceText.actions.chooseDirectory]);
 
   const handleClearPinnedDirectory = useCallback(async () => {
     setPinnedDirectoryState(null);
