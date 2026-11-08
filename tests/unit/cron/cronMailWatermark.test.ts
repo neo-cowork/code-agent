@@ -152,8 +152,10 @@ describe('CronEventTrigger mail watermark restart persistence', () => {
 
     await vi.advanceTimersByTimeAsync(5_000);
     expect(first.runs).toHaveLength(0);
-    expect(watermarkRow(db)).toMatchObject({ job_id: job.id, binding: 'account-a|INBOX', updated_at: NOW + 5_000 });
-    expect(JSON.parse(watermarkRow(db)?.seen_keys ?? '[]')).toEqual(['account-a|INBOX|1']);
+    const persistedRow = watermarkRow(db);
+    process.stdout.write(`[CronMailWatermarkTest] row ${JSON.stringify(persistedRow)}\n`);
+    expect(persistedRow).toMatchObject({ job_id: job.id, binding: 'account-a|INBOX', updated_at: NOW + 5_000 });
+    expect(JSON.parse(persistedRow?.seen_keys ?? '[]')).toEqual(['account-a|INBOX|1']);
     first.trigger.dispose();
 
     messages.push(mailMessage(2));
