@@ -130,7 +130,7 @@ export function createDefaultCronJobDraft(): CronJobDraft {
     shellUsePty: false,
     toolName: '',
     toolParametersText: '{}',
-    agentType: '',
+    agentType: 'default',
     agentPrompt: '',
     agentContextText: '{}',
     agentRoleId: '',
