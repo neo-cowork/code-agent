@@ -99,6 +99,7 @@ suite('approved rm uses a real seatbelt literal grant', () => {
   it.each([
     ['main-agent', 'slash-tmp', () => slashTmpRoot],
     ['main-agent', 'second-non-workspace', () => outsideRoot],
+    ['sub-agent', 'second-non-workspace', () => outsideRoot],
   ] as const)('approve -> %s deletes one file in %s', async (shape, location, root) => {
     const target = join(root(), `${shape}-${location}.txt`);
     writeFileSync(target, 'remove me');

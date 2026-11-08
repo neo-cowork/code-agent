@@ -1058,7 +1058,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
         ok: false,
         error: withEscalation(withDiagnostics(withOutput(errMsg || 'Command execution failed'))),
         code: 'FS_ERROR',
-        meta: { ...buildSandboxMeta(sandboxDecision), ...((ctx.approvedSandboxWriteFile || sandboxEscalationMeta?.decision === 'approved') && sandboxDecision.sandboxed && sandboxDeniedWritePath([errMsg, String(errObj.stdout || ''), String(errObj.stderr || '')].join('\n')) ? { failureCode: SANDBOX_APPROVED_RM_STILL_DENIED_FAILURE_CODE } : {}), ...(sandboxEscalationMeta ? { sandboxEscalation: sandboxEscalationMeta } : {}), ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
+        meta: { ...buildSandboxMeta(sandboxDecision), ...(ctx.approvedSandboxWriteFile && sandboxDecision.sandboxed && sandboxDeniedWritePath([errMsg, String(errObj.stdout || ''), String(errObj.stderr || '')].join('\n')) ? { failureCode: SANDBOX_APPROVED_RM_STILL_DENIED_FAILURE_CODE } : {}), ...(sandboxEscalationMeta ? { sandboxEscalation: sandboxEscalationMeta } : {}), ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
       };
     } finally {
       // PTY/后台路径把 cleanup 交给执行器的退出回调；这里只收前台路径。
