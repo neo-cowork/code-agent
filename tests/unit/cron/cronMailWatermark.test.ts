@@ -248,6 +248,9 @@ describe('CronEventTrigger mail watermark restart persistence', () => {
       }
       return [...messages];
     });
+    const error = vi.spyOn(console, 'error').mockImplementation((...args) => {
+      process.stderr.write(`${args.join(' ')}\n`);
+    });
     const restarted = createMailHarness(jobs, { listMessages });
     await vi.advanceTimersByTimeAsync(5_000);
     expect(restarted.runs).toHaveLength(0);
@@ -255,5 +258,6 @@ describe('CronEventTrigger mail watermark restart persistence', () => {
     await vi.advanceTimersByTimeAsync(10_000);
     expect(restarted.runs).toHaveLength(1);
     expect(restarted.runs[0].trigger.eventIds).toEqual(['account-a|INBOX|2']);
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('(cause: read-error)'));
   });
 });
