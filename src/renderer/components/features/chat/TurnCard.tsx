@@ -31,6 +31,7 @@ import { ExpandableContent } from './ExpandableContent';
 import { StreamingIndicator, getRunningSubagentCount, getRunningToolStartTime, getStreamingWaitingReason } from './StreamingIndicator';
 import { TurnDiffSummary } from './MessageBubble/TurnDiffSummary';
 import { buildTurnFileChanges } from '../../../utils/turnDiffSummary';
+import { isBareInterruptionNode } from '../../../utils/bareInterruptionNode';
 import { getTurnFinalTextNode, getTurnUserNode } from '../../../utils/turnRailItems';
 import { TurnFeedback } from './TurnFeedback';
 import { MessageContextMenu } from './MessageContextMenu';
@@ -152,13 +153,9 @@ export const TurnCard: React.FC<TurnCardProps> = ({
       .filter((change) => deliverableDiffPaths.has(change.filePath))
       .map((change) => [change.filePath, change]),
   ), [deliverableDiffPaths, turn]);
-  const hasStreamInterruption = useMemo(
-    () => turn.nodes.some((node) => (
-      Boolean(node.metadata?.streamInterruptionReason)
-      || Boolean(node.metadata?.streamRecovery)
-    )),
-    [turn.nodes],
-  );
+  const hasStreamInterruption = useMemo(() => turn.nodes.some((node) => (
+    !isBareInterruptionNode(node) && Boolean(node.metadata?.streamInterruptionReason || node.metadata?.streamRecovery)
+  )), [turn.nodes]);
 
   // 语音派活任务卡（W6-5）：一通电话里派出去的活，整轮折叠成一张任务卡——
   // 卡头说清「这件活是什么 + 谁做的 + 什么结果」，过程（工具调用、中间文本）默认折叠，
