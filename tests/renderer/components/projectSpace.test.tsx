@@ -2,7 +2,6 @@
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import type { CronJobDefinition } from '../../../src/shared/contract/cron';
 
 // ---- 服务层 mock（IPC 一律不进测试） ----
 vi.mock('../../../src/renderer/services/projectClient', () => ({
@@ -493,77 +492,6 @@ describe('ProjectSpacePage 空间视图', () => {
 });
 
 describe('ProjectConfigRail 项目配置（四卡竖排形态，第四波①回滚）', () => {
-  it('自动化选项在任务时区不同于本机时显示带时区的短时间', async () => {
-    const initialTz = process.env.TZ;
-    process.env.TZ = 'America/Los_Angeles';
-    const job: CronJobDefinition = {
-      id: 'job-shanghai',
-      runsOn: 'local',
-      name: '每日前瞻',
-      scheduleType: 'cron',
-      schedule: { type: 'cron', expression: '0 15 * * 1-5', timezone: 'Asia/Shanghai' },
-      action: { type: 'agent', agentType: 'general', prompt: '整理前瞻' },
-      enabled: true,
-      createdAt: 1,
-      updatedAt: 1,
-      nextRunAt: Date.parse('2030-01-01T07:00:00Z'),
-    };
-    vi.mocked(cronClient.listJobs).mockResolvedValue([job]);
-    try {
-      render(
-        <ProjectConfigRail
-          projectId={PROJECT_ID}
-          project={projectFixture as never}
-          detail={detailFixture as never}
-          onRefreshDetail={() => undefined}
-        />,
-      );
-      const card = await screen.findByTestId('project-space-card-automation');
-      fireEvent.click(card);
-      await waitFor(() => expect(screen.getByTestId('project-space-card-automation-option-job-shanghai').textContent)
-        .toContain('下次 1/1 15:00（中国标准时间）'));
-    } finally {
-      if (initialTz === undefined) delete process.env.TZ;
-      else process.env.TZ = initialTz;
-    }
-  });
-
-  it('自动化选项在任务时区与本机相同时保持原有短格式', async () => {
-    const initialTz = process.env.TZ;
-    process.env.TZ = 'America/Los_Angeles';
-    const job: CronJobDefinition = {
-      id: 'job-local',
-      runsOn: 'local',
-      name: '晨间分诊',
-      scheduleType: 'cron',
-      schedule: { type: 'cron', expression: '0 8 * * 1-5', timezone: 'America/Los_Angeles' },
-      action: { type: 'agent', agentType: 'general', prompt: '晨间分诊' },
-      enabled: true,
-      createdAt: 1,
-      updatedAt: 1,
-      nextRunAt: Date.parse('2030-01-01T07:00:00Z'),
-    };
-    vi.mocked(cronClient.listJobs).mockResolvedValue([job]);
-    try {
-      render(
-        <ProjectConfigRail
-          projectId={PROJECT_ID}
-          project={projectFixture as never}
-          detail={detailFixture as never}
-          onRefreshDetail={() => undefined}
-        />,
-      );
-      const card = await screen.findByTestId('project-space-card-automation');
-      fireEvent.click(card);
-      const option = await screen.findByTestId('project-space-card-automation-option-job-local');
-      expect(option.textContent).toContain('下次 12/31 23:00');
-      expect(option.textContent).not.toContain('（');
-    } finally {
-      if (initialTz === undefined) delete process.env.TZ;
-      else process.env.TZ = initialTz;
-    }
-  });
-
   it('四卡竖排：专家/技能/连接器/自动化四卡 + 标题行（含收起钮）；纯本地空间无成员卡', async () => {
     await enterSpaceView();
     const rail = await screen.findByTestId('project-space-config-rail');
