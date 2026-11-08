@@ -1713,7 +1713,10 @@ describe('bashModule sandbox escalation', () => {
     expect(result.ok).toBe(false);
     expect(wrapMock).toHaveBeenCalledTimes(2);
     expect(canUse).toHaveBeenCalledTimes(2);
-    if (!result.ok) expect(result.meta?.sandboxEscalation).toEqual({ path: deniedPath, decision: 'approved' });
+    if (!result.ok) {
+      expect(result.meta?.sandboxEscalation).toEqual({ path: deniedPath, decision: 'approved' });
+      expect(result.meta?.failureCode).toBe('sandbox-approved-rm-still-denied');
+    }
   });
 
   it('does not remember an approval across invocations', async () => {
