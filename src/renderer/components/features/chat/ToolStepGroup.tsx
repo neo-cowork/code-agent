@@ -31,13 +31,14 @@ import { useI18n } from '../../../hooks/useI18n';
 import { getDeferredContentStyle } from '../../../utils/turnContentVisibility';
 import { findPendingPlanApproval, getPlanApprovalRecord } from '../../../utils/planApprovalView';
 import { PlanApprovalEvidence } from '../../PlanApprovalCard';
-import { isDelegationTool } from '../../../utils/agentActivity';
+import { isDelegationTool, isTaskTerminalStatus } from '../../../utils/agentActivity';
 import { getHumanToolLabel } from '../../../utils/toolHumanLabel';
 import { buildToolStatusLineCopy } from '../../../utils/toolStatusLinePresentation';
 import { resolveStreamInterruptionOutcomeKey } from '../../../i18n/outcomeWords';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useMessageActionStore } from '../../../stores/messageActionStore';
+import { useBackgroundTaskStore } from '../../../stores/backgroundTaskStore';
 import { Button } from '../../primitives/Button';
 import { redactCredentialText } from '@shared/security/secretPatterns';
 import { isToolCallAwaitingApproval } from '../../../utils/sessionNeedsInput';
@@ -71,8 +72,9 @@ function isStaleUnfinishedToolCall(
   toolCall: NonNullable<TraceNode['toolCall']>,
   awaitingApproval: boolean,
   sessionLive: boolean,
+  backgroundTaskActive = false,
 ): boolean {
-  return !awaitingApproval && toolCall.result === undefined && !sessionLive;
+  return !awaitingApproval && toolCall.result === undefined && !sessionLive && !backgroundTaskActive;
 }
 
 // 只消费「等审批 / 在线运行 / 已有结果」三种形态；陈旧未完成的调用必须先被
@@ -95,6 +97,17 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   receiptTimestamp,
 }) => {
   const { t } = useI18n();
+  const backgroundTasks = useBackgroundTaskStore((state) => state.tasks);
+  const activeBackgroundToolCallIds = useMemo(() => new Set(
+    backgroundTasks
+      .filter((task) => task.toolCallId && !isTaskTerminalStatus(task.status))
+      .map((task) => task.toolCallId as string),
+  ), [backgroundTasks]);
+  const completedBackgroundToolCallIds = useMemo(() => new Set(
+    backgroundTasks
+      .filter((task) => task.toolCallId && task.status === 'completed')
+      .map((task) => task.toolCallId as string),
+  ), [backgroundTasks]);
   const nodes = useMemo(() => sourceNodes.map((node) => {
     const tc = node.toolCall;
     if (!tc || getToolPreflightKind({ name: tc.name, result: tc.result === undefined ? undefined : {
@@ -119,9 +132,15 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   const streamVisibleNodes = useMemo(
     () => nodes.filter((n) => {
       const name = n.toolCall?.name;
-      return !name || !isInternalStreamTool(name);
+      if (name && isInternalStreamTool(name)) return false;
+      // 已完成后台任务的 live 工具节点若暂缺 result，隐藏这条瞬态残影；delegate_task
+      // 仍保留，由任务台账投成完整的已完成回执。
+      if (n.toolCall?.result === undefined
+        && completedBackgroundToolCallIds.has(n.toolCall?.id ?? '')
+        && !isDelegationTool(name ?? '')) return false;
+      return true;
     }),
-    [nodes],
+    [completedBackgroundToolCallIds, nodes],
   );
   const label = useMemo(() => {
     if (streamVisibleNodes.length === 0) return '';
@@ -132,7 +151,12 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         const awaitingApproval = isToolCallAwaitingApproval(tc.id, sessionId, permissionState);
         // 陈旧未完成（会话已离线）：与展开行同一句中断文案（buildToolStatusLineCopy
         // 就是 ToolHeader 渲染 interrupted 态用的那个装配器），不进进行时词表。
-        if (isStaleUnfinishedToolCall(tc, awaitingApproval, sessionLive)) {
+        if (isStaleUnfinishedToolCall(
+          tc,
+          awaitingApproval,
+          sessionLive,
+          activeBackgroundToolCallIds.has(tc.id),
+        )) {
           const staleLine = buildToolStatusLineCopy({
             status: 'interrupted',
             toolCall: {
@@ -201,7 +225,12 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       }
       // 陈旧未完成（会话已离线）：不进进行时/未成功词表，统一用展开行同源的
       // 中断结局词收口（多步组没有逐条人话行，只报结局词，明细展开可看）。
-      if (isStaleUnfinishedToolCall(tc, isToolCallAwaitingApproval(tc.id, sessionId, permissionState), sessionLive)) {
+      if (isStaleUnfinishedToolCall(
+        tc,
+        isToolCallAwaitingApproval(tc.id, sessionId, permissionState),
+        sessionLive,
+        activeBackgroundToolCallIds.has(tc.id),
+      )) {
         staleUnfinished += 1;
         continue;
       }
@@ -216,7 +245,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       blockedCommands ? t.deliveryExperience.blockedCommands.replace('{count}', String(blockedCommands)) : '',
       blockedSteps ? t.deliveryExperience.blockedSteps.replace('{count}', String(blockedSteps)) : '',
     ].filter(Boolean).join(t.deliveryExperience.labelSeparator);
-  }, [permissionState, sessionId, sessionLive, streamVisibleNodes, t]);
+  }, [activeBackgroundToolCallIds, permissionState, sessionId, sessionLive, streamVisibleNodes, t]);
 
   const status = useMemo<'pending-approval' | 'streaming' | 'partial' | 'error' | 'ok'>(() => {
     let hasError = false;
@@ -234,7 +263,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       // 无 result 且会话已离线 = 陈旧未完成（FB-595）：不点亮 running，否则回合收尾后
       // 折叠头仍挂「运行中 ·」，与展开行的「已中断」打架。文案由 label 那边统一收口。
       if (tc.result === undefined) {
-        if (sessionLive) hasRunning = true;
+        if (sessionLive || activeBackgroundToolCallIds.has(tc.id)) hasRunning = true;
         continue;
       }
       if (tc.success === false) hasError = true;
@@ -245,7 +274,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     if (hasError && (hasSuccess || hasRunning)) return 'partial';
     if (hasError) return 'error';
     return hasRunning ? 'streaming' : 'ok';
-  }, [nodes, permissionState, sessionLive, sessionId]);
+  }, [activeBackgroundToolCallIds, nodes, permissionState, sessionLive, sessionId]);
 
   // 构造 ToolCallDisplay 需要的 ToolCall 对象
   const toolCalls = useMemo<ToolCall[]>(() => {

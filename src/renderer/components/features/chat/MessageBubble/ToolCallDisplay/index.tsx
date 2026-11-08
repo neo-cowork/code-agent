@@ -35,7 +35,7 @@ import { neoUIActionRouter } from '../../../../../services/neoUIActionRouter';
 import { useI18n } from '../../../../../hooks/useI18n';
 import { useBackgroundTaskStore } from '../../../../../stores/backgroundTaskStore';
 import { useAgentTreeSnapshot } from '../../../../../hooks/useAgentTreeSnapshot';
-import { isDelegationTool } from '../../../../../utils/agentActivity';
+import { isDelegationTool, isTaskTerminalStatus } from '../../../../../utils/agentActivity';
 import { DelegationHeader, DelegationReceipt } from './DelegationReceipt';
 import {
   deriveDelegationPresentation,
@@ -174,6 +174,14 @@ export function ToolCallDisplay({
       ),
     };
   }, [agentTree?.nodes, backgroundTasks, delegationTool, toolCall]);
+  const backgroundTaskStatus = useMemo<ToolStatus | null>(() => {
+    const task = backgroundTasks.find((candidate) => candidate.toolCallId === toolCall.id);
+    // 普通工具已有真实 result 时以执行回执为准；delegate_task 的 result 只代表派单
+    // accepted，后续任务终态仍由台账覆盖。
+    if (!task || (toolCall.result && !delegationTool)) return null;
+    if (task.status === 'completed') return 'success';
+    return isTaskTerminalStatus(task.status) ? 'error' : 'pending';
+  }, [backgroundTasks, delegationTool, toolCall.id, toolCall.result]);
 
   // Calculate status
   const derivedStatus: ToolStatus = useMemo(() => {
@@ -187,8 +195,11 @@ export function ToolCallDisplay({
     if (delegationPresentation?.state === 'working') return 'pending';
     if (delegationPresentation?.state === 'completed') return 'success';
     if (delegationPresentation?.state === 'failed') return 'error';
+    // 后台任务台账是工具是否仍在跑/已经收口的权威源。live 消息偶尔会暂缺
+    // tool_call_end；此时不能仅因前台会话 idle 就把已接受或已完成的后台步骤判成中断。
+    if (backgroundTaskStatus) return backgroundTaskStatus;
     return getToolStatus(toolCall, currentSessionId, processingSessionIds);
-  }, [awaitingApproval, delegationPresentation?.state, toolCall, currentSessionId, processingSessionIds, receipt, statusOverride]);
+  }, [awaitingApproval, backgroundTaskStatus, delegationPresentation?.state, toolCall, currentSessionId, processingSessionIds, receipt, statusOverride]);
   // 收口时内存消息会先终态，随后持久化列表回填；回填窗口里同一 call 可能短暂缺 result。
   // 一旦同一 toolCall 到达成功/失败，renderer 不再把它降回 pending/interrupted。
   const terminalStatusRef = useRef<{ toolCallId: string; status: ToolStatus | null }>({

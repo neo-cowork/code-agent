@@ -117,11 +117,11 @@ export function deriveDelegationPresentation(
   tasks: Task[],
   agentNodes: AgentTreeNode[],
 ): DelegationPresentation | null {
-  if (!toolCall.result) return null;
   if (toolCall.name === 'delegate_task') {
     const task = tasks.find((candidate) => candidate.toolCallId === toolCall.id);
     return task ? fromTask(task) : null;
   }
+  if (!toolCall.result) return null;
   if (toolCall.name === 'spawn_agent') {
     const agentId = extractSpawnAgentId(toolCall);
     if (!agentId) return null;
