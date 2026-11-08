@@ -405,14 +405,17 @@ export async function killPtySession(
   }
 
   try {
+    const wasRunning = session.status === 'running';
     // 终止前打标，退出回调才不会先报 failed；超时清扫不算停止请求。
-    if (session.status === 'running' && options.reason !== 'timeout') session.stoppedByRequest = true;
+    if (wasRunning && options.reason !== 'timeout') session.stoppedByRequest = true;
     await terminatePtyProcess(session);
     session.outputStream?.end();
 
-    // Update status
-    session.status = 'failed';
-    session.endTime = Date.now();
+    // 入口时已结束的会话不重新标注
+    if (wasRunning) {
+      session.status = 'failed';
+      session.endTime = Date.now();
+    }
     runPtySessionExitCallback(session);
 
     if (session.timeout) {

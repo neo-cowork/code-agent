@@ -267,4 +267,31 @@ posixOnly('后台任务停机收尸', () => {
       shutdownEventBus();
     }
   }, 30000);
+
+  it('kill on an already completed task keeps it completed with only the task_completed notice', async () => {
+    const cwd = mkdtempSync(`${tmpdir()}/neo-bgtask-`);
+    const ledger = new BackgroundTaskLedger();
+    const detach = installBackgroundTaskEventAdapters(ledger);
+    try {
+      const started = startBackgroundTask('echo finished-ok', cwd, 30_000, {
+        sessionId: 'session-kill-done',
+        displayCommand: 'echo finished-ok',
+      });
+      expect(started.success).toBe(true);
+      startedTaskIds.push(started.taskId!);
+      await waitFor(() => ledger.getTask(`shell:${started.taskId}`)?.status === 'completed');
+
+      const killResult = await killBackgroundTask(started.taskId!);
+      expect(killResult.success).toBe(true);
+      await new Promise((resolve) => { setTimeout(resolve, 200); });
+
+      expect(ledger.getTask(`shell:${started.taskId}`)?.status).toBe('completed');
+      expect(getAllBackgroundTasks().find((t) => t.taskId === started.taskId)?.status).toBe('completed');
+      const notifications = ledger.drainNotifications('session-kill-done');
+      expect(notifications.map((n) => n.type)).toEqual(['task_completed']);
+    } finally {
+      detach();
+      shutdownEventBus();
+    }
+  }, 30000);
 });

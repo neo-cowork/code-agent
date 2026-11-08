@@ -387,22 +387,25 @@ export async function killBackgroundTask(
   }
 
   try {
+    // 入口时已结束的任务（completed / failed）不能被 kill 重新标注，也不发生命周期事件。
+    const wasRunning = task.status === 'running';
     // 清理现有定时器
     if (task.timeout) {
       clearTimeout(task.timeout);
     }
 
     // 超时清扫不是用户/模型的停止请求：不打 stopped 标记，账本仍记 failed。
-    if (task.status === 'running' && options.reason !== 'timeout') task.stoppedByRequest = true;
+    if (wasRunning && options.reason !== 'timeout') task.stoppedByRequest = true;
     task.outputStream?.end();
     // SIGTERM → 宽限 → SIGKILL → 探到整组消失，全在 killProcessTree 内部。
     await killProcessTree(task.process, { posixGroupKill: true });
 
-    // Update status
-    task.status = 'failed';
-    task.endTime = task.endTime ?? Date.now();
+    if (wasRunning) {
+      task.status = 'failed';
+      task.endTime = task.endTime ?? Date.now();
+    }
     runTaskExitCallback(task);
-    emitTaskLifecycleEvent('failed', task);
+    if (wasRunning) emitTaskLifecycleEvent('failed', task);
 
     return {
       success: true,
