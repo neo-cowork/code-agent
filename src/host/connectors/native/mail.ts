@@ -221,30 +221,44 @@ function collectMimeTextParts(raw: string, parts: MimePart[]): void {
   if (/^text\/(?:plain|html)\b/i.test(contentType)) parts.push(part);
 }
 
-function decodeQuotedPrintable(value: string): string {
+function mimeCharset(contentType: string): string {
+  const match = contentType.match(/charset\s*=\s*(?:"([^"]+)"|([^;\s]+))/i);
+  const charset = (match?.[1] || match?.[2] || 'utf-8').trim().toLowerCase();
+  return /^(?:gbk|gb2312|gb18030|cp936)$/.test(charset) ? 'gb18030' : charset;
+}
+
+function decodeMimeBytes(bytes: Buffer, charset: string): string {
+  try {
+    return new TextDecoder(charset, { fatal: true, ignoreBOM: true }).decode(bytes);
+  } catch {
+    return '';
+  }
+}
+
+function decodeQuotedPrintable(value: string, charset: string): string {
   const withoutSoftBreaks = value.replace(/=[\r\n]+/g, '');
-  const chunks: Buffer[] = [];
+  const bytes: number[] = [];
   for (let index = 0; index < withoutSoftBreaks.length;) {
     const encoded = withoutSoftBreaks.slice(index).match(/^=([0-9a-f]{2})/i);
     if (encoded) {
-      chunks.push(Buffer.from([Number.parseInt(encoded[1], 16)]));
+      bytes.push(Number.parseInt(encoded[1], 16));
       index += 3;
     } else {
       const character = withoutSoftBreaks[index];
-      chunks.push(Buffer.from(character));
+      bytes.push(...Buffer.from(character));
       index += 1;
     }
   }
-  return Buffer.concat(chunks).toString('utf8');
+  return decodeMimeBytes(Buffer.from(bytes), charset);
 }
 
-function decodeMimeBody(value: string, transferEncoding: string): string {
-  if (/quoted-printable/i.test(transferEncoding)) return decodeQuotedPrintable(value);
+function decodeMimeBody(value: string, transferEncoding: string, charset: string): string {
+  if (/quoted-printable/i.test(transferEncoding)) return decodeQuotedPrintable(value, charset);
   if (!/base64/i.test(transferEncoding)) return value;
 
   const compact = value.replace(/\s+/g, '');
   if (!compact || compact.length % 4 === 1 || !/^[a-z0-9+/]*={0,2}$/i.test(compact)) return '';
-  return Buffer.from(compact, 'base64').toString('utf8');
+  return decodeMimeBytes(Buffer.from(compact, 'base64'), charset);
 }
 
 function decodeHtmlEntities(value: string): string {
@@ -287,7 +301,11 @@ function extractMailSourceText(source: string): string {
   ];
 
   for (const part of orderedParts) {
-    const decoded = decodeMimeBody(part.body, part.headers['content-transfer-encoding'] || '');
+    const decoded = decodeMimeBody(
+      part.body,
+      part.headers['content-transfer-encoding'] || '',
+      mimeCharset(part.headers['content-type'] || ''),
+    );
     const visible = visibleMimeText(decoded, part.headers['content-type'] || '');
     if (visible && !looksLikeMimeNoise(visible)) return visible.slice(0, MAX_EXTRACTED_MAIL_BODY_LENGTH);
   }

@@ -92,6 +92,21 @@ describe('native Mail body placeholder handling', () => {
     expect(resultContent(result)).toBe('Security alert body');
   });
 
+  it('decodes a GB2312 quoted-printable source part using its declared charset', async () => {
+    mocks.runAppleScript
+      .mockResolvedValueOnce(mailLine(''))
+      .mockResolvedValueOnce([
+        'Content-Type: text/plain; charset=GB2312',
+        'Content-Transfer-Encoding: quoted-printable',
+        '',
+        '=C4=E3=BA=C3',
+      ].join('\n'));
+
+    const result = await mailConnector.execute('read_message', READ_ARGS);
+
+    expect(resultContent(result)).toBe('你好');
+  });
+
   it('returns the explicit image/attachment notice when the source has no extractable text', async () => {
     mocks.runAppleScript
       .mockResolvedValueOnce(mailLine('', 2, 'photo.png; scan.pdf'))
