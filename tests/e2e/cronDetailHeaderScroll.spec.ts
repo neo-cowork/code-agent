@@ -18,6 +18,7 @@ test.setTimeout(120_000);
 const require_ = createRequire(import.meta.url);
 const REPO_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const SHOT_DIR = path.join(process.cwd(), 'test-results');
+const SCREENSHOT_DIR = process.env.CRON_DETAIL_SCREENSHOT_DIR || SHOT_DIR;
 const DATA_DIR = process.env.CODE_AGENT_E2E_DATA_DIR
   || path.join(os.tmpdir(), `code-agent-e2e-data-${process.env.E2E_WEB_PORT || '8180'}`);
 
@@ -217,8 +218,8 @@ async function assertDetailScrollable(
   const runs = header.locator('xpath=following-sibling::div[1]');
   await setDetailScroll(detailRoot, 0);
 
-  fs.mkdirSync(SHOT_DIR, { recursive: true });
-  await page.screenshot({ path: path.join(SHOT_DIR, `cron-detail-header-${tag}-before.png`) });
+  fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
+  await page.screenshot({ path: path.join(SCREENSHOT_DIR, `cron-detail-header-${tag}-before.png`) });
 
   await setDetailScroll(detailRoot, 0);
   const initial = await snapshot(detailRoot);
@@ -242,7 +243,7 @@ async function assertDetailScrollable(
   expect(fullyInside(revealed.mode, revealed.clip), 'mode switch is fully visible after detail scroll').toBe(true);
   expect(fullyInside(revealed.lastDecision, revealed.clip), 'last would-act row is fully visible after detail scroll').toBe(true);
   await setDetailScroll(detailRoot, decisionScrollTop);
-  await page.screenshot({ path: path.join(SHOT_DIR, `cron-detail-header-${tag}-after.png`) });
+  await page.screenshot({ path: path.join(SCREENSHOT_DIR, `cron-detail-header-${tag}-after.png`) });
 
   await advanced.scrollIntoViewIfNeeded();
   await setDetailScroll(detailRoot, await detailRoot.evaluate((element) => element.scrollTop));
