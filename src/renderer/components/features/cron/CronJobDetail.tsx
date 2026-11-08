@@ -15,6 +15,12 @@ import {
   getLatestExecutionStatus,
 } from './types';
 import { formatDateTime } from '../../../utils/formatDateTime';
+import {
+  cronJobUsesDifferentTimeZone,
+  formatCronJobDateTime,
+  formatCronJobLocalDateTime,
+  formatCronScheduleLabelWithZone,
+} from '../../../utils/formatCronJobTime';
 import { CronExecutionList } from './CronExecutionList';
 import { CronExecutionDetail } from './CronExecutionDetail';
 import { CLOUD_ROLE_BOUND_ERROR } from './CronCloudRoleRestriction';
@@ -98,6 +104,10 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
   const builtinDisplay = getBuiltinJobDisplay(job, language);
   const displayName = builtinDisplay?.name ?? job.name;
   const displayDescription = builtinDisplay?.description ?? job.description;
+  const cronTimeZone = job.schedule.type === 'cron' ? job.schedule.timezone : undefined;
+  const scheduleSummary = job.schedule.type === 'cron'
+    ? formatCronScheduleLabelWithZone(job.schedule.expression, job.schedule.timezone, language)
+    : formatScheduleSummary(job, language, eventNamesFor(job));
 
   const handleToggleEnabled = async () => {
     setToggleError(null);
@@ -218,12 +228,19 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
             同一件事不再拆成四张卡各说一遍 */}
         <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-950/50 px-4 py-3">
           <div className="flex flex-wrap items-center gap-x-8 gap-y-1.5">
-            <SummaryItem label={cc.cardSchedule} value={formatScheduleSummary(job, language, eventNamesFor(job))} />
+            <SummaryItem label={cc.cardSchedule} value={scheduleSummary} />
             <SummaryItem
               label={cc.cardNextRun}
-              value={job.enabled && job.nextRunAt != null ? formatDateTime(job.nextRunAt, language) : '—'}
+              value={job.enabled && job.nextRunAt != null
+                ? formatCronJobDateTime(job.nextRunAt, cronTimeZone, language)
+                : '—'}
               testId="cron-detail-next-run"
             />
+            {job.enabled && job.nextRunAt != null && cronJobUsesDifferentTimeZone(cronTimeZone) && (
+              <div className="basis-full text-xs text-zinc-500" data-testid="cron-detail-local-next-run">
+                {cc.localNextRun.replace('{time}', formatCronJobLocalDateTime(job.nextRunAt, language))}
+              </div>
+            )}
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-x-8 gap-y-1.5 border-t border-zinc-800/70 pt-2">
             <SummaryItem label={cc.cardEnabledState} value={job.enabled ? cc.enabled : cc.disabled} />

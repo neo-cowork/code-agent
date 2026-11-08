@@ -138,6 +138,49 @@ describe('CronJobDetail', () => {
       useAppStore.setState({ language: initialLanguage });
     }
   });
+
+  it('任务时区不同于本机时，详情计划/下次运行同区显示并补充本机时间', () => {
+    const initialTz = process.env.TZ;
+    const initialLanguage = useAppStore.getState().language;
+    process.env.TZ = 'America/Los_Angeles';
+    useAppStore.setState({ language: 'zh' });
+    try {
+      render(<CronJobDetail job={makeJob({
+        name: '每日前瞻',
+        schedule: { type: 'cron', expression: '0 15 * * 1-5', timezone: 'Asia/Shanghai' },
+        nextRunAt: Date.parse('2026-11-09T07:00:00Z'),
+      })} />);
+      expect(screen.getByTestId('cron-detail-next-run').textContent).toContain('2026/11/09 15:00（中国标准时间）');
+      expect(screen.getByTestId('cron-detail-next-run').textContent).not.toContain('23:00');
+      expect(screen.getByTestId('cron-detail-local-next-run').textContent).toBe('你本机的时间 2026/11/08 23:00');
+      expect(screen.getByText('工作日 15:00（中国标准时间）')).toBeTruthy();
+    } finally {
+      if (initialTz === undefined) delete process.env.TZ;
+      else process.env.TZ = initialTz;
+      useAppStore.setState({ language: initialLanguage });
+    }
+  });
+
+  it('同区或无效时区不显示本机对照行', () => {
+    const initialTz = process.env.TZ;
+    process.env.TZ = 'America/Los_Angeles';
+    try {
+      const nextRunAt = Date.parse('2026-11-09T07:00:00Z');
+      const { rerender } = render(<CronJobDetail job={makeJob({
+        schedule: { type: 'cron', expression: '0 15 * * 1-5', timezone: 'America/Los_Angeles' },
+        nextRunAt,
+      })} />);
+      expect(screen.queryByTestId('cron-detail-local-next-run')).toBeNull();
+      rerender(<CronJobDetail job={makeJob({
+        schedule: { type: 'cron', expression: '0 15 * * 1-5', timezone: 'Not/AZone' },
+        nextRunAt,
+      })} />);
+      expect(screen.queryByTestId('cron-detail-local-next-run')).toBeNull();
+    } finally {
+      if (initialTz === undefined) delete process.env.TZ;
+      else process.env.TZ = initialTz;
+    }
+  });
 });
 
 it('offers the self-check in the detail of a newly created group listener', async () => {
