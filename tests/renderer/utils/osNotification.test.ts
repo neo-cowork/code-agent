@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
 
@@ -283,5 +285,38 @@ describe('osNotification', () => {
       expect(reports()).toHaveLength(1);
       expect(reports()[0][2]).toMatchObject({ mode: 'web' });
     });
+  });
+
+  it('never mixes modern UNUserNotificationCenter with legacy tauri-plugin-notification in Rust sources', () => {
+    const tauriRoot = path.resolve(__dirname, '../../../src-tauri');
+    const cargoToml = fs.readFileSync(path.join(tauriRoot, 'Cargo.toml'), 'utf8');
+    if (!cargoToml.includes('tauri-plugin-notification')) {
+      return;
+    }
+
+    const collectRsFiles = (dir: string): string[] => {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      const files: string[] = [];
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          files.push(...collectRsFiles(fullPath));
+        } else if (entry.isFile() && entry.name.endsWith('.rs')) {
+          files.push(fullPath);
+        }
+      }
+      return files;
+    };
+
+    const rsFiles = collectRsFiles(path.join(tauriRoot, 'src'));
+    const unUserNotificationCenterToken = ['UNUser', 'NotificationCenter'].join('');
+    const offenders = rsFiles
+      .filter((filePath) => fs.readFileSync(filePath, 'utf8').includes(unUserNotificationCenterToken))
+      .map((filePath) => path.relative(tauriRoot, filePath));
+
+    expect(
+      offenders,
+      'tauri-plugin-notification (via notify-rust -> mac-notification-sys) delivers macOS banners through the legacy NSUserNotificationCenter API. Calling UNUserNotificationCenter in the same process causes macOS usernoted to reject legacy connections ("Legacy client ... connecting to modern client. You can\'t mix modern clients with legacy clients.") and silently deny all system notifications.',
+    ).toEqual([]);
   });
 });
