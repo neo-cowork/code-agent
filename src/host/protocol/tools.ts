@@ -27,6 +27,7 @@ import type {
   ConversationExecutionIntent,
   WorkbenchToolScope,
 } from '@shared/contract/conversationEnvelope';
+import type { PermissionApprovalSource } from '@shared/contract/permission';
 import type { SwarmRunScope } from '@shared/contract/swarm';
 import type { WorkspaceScope } from '@shared/contract/project';
 import type { AgentEvent } from './events';
@@ -418,7 +419,7 @@ export type CanUseToolFn = (
 ) => Promise<CanUseToolResult>;
 
 export type CanUseToolResult =
-  | { allow: true }
+  | { allow: true; approvalSource?: PermissionApprovalSource }
   | { allow: false; reason: string };
 
 // ----------------------------------------------------------------------------

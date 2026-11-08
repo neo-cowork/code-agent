@@ -7,7 +7,7 @@ import type {
   ToolDefinition,
 } from '../../shared/contract';
 import type { PermissionBoundaryRef } from '../../shared/contract/permissionBoundary';
-import type { PermissionRequestReason } from '../../shared/contract/permission';
+import type { PermissionAskResult, PermissionRequestReason } from '../../shared/contract/permission';
 import type {
   ConversationExecutionIntent,
   WorkbenchToolScope,
@@ -60,6 +60,8 @@ export interface ToolContext {
   workingDirectory: string;
 
   requestPermission: (request: PermissionRequestData) => Promise<boolean>;
+  /** Per-request rich results used only while a child approval is bridged to its parent. */
+  permissionAskResults?: WeakMap<PermissionRequestData, PermissionAskResult>;
   abortSignal?: AbortSignal;
   /** Runtime stop hook used by terminal browser guards. */
   forceFinalResponse?: (reason: string, prompt?: string) => void;

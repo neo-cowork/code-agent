@@ -1311,11 +1311,13 @@ export class ToolExecutor {
       // 直接交富对象会让 `if (!approved)` 那类调用点把 `{approved:false}` 恒真成静默 fail-open。
       // N-SANDBOX-ESCALATE-APPROVAL-LEDGER：内层 ask 也要落权限账本（外层 ask 在下方权限闸
       // 已记，#1664 只修了外层）；ask 抛错时不落账、原样上抛，行为与改动前一致。
+      permissionAskResults: new WeakMap(),
       requestPermission: async (request) => {
         beginApprovalWait(options.currentToolCallId, effectiveSessionId);
         try {
           const askStartedAt = Date.now();
           const ask = normalizePermissionAskResult(await this.requestPermission(request));
+          context.permissionAskResults?.set(request, ask);
           if (!request.ledgerRecordedByChild) recordInToolPermissionAsk(
             request, ask, askStartedAt, effectiveSessionId, this.ledgerOrigin,
             getApprovalWaitMs(options.currentToolCallId, Date.now()),

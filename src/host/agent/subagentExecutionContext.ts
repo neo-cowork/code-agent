@@ -82,7 +82,10 @@ export function createProtocolSubagentExecutionContext(
             ledgerRecordedByChild: true,
           },
         );
-        return result.allow;
+        if (!result.allow) return false;
+        return result.approvalSource
+          ? { approved: true, approvalSource: result.approvalSource }
+          : true;
       },
     },
     hooks: ctx.hookManager as SubagentHookPort | undefined,

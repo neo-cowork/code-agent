@@ -297,7 +297,7 @@ describe('ToolExecutor 工具体内 ask → 权限账本（N-SANDBOX-ESCALATE-AP
     expect(innerAskRows()[0]).toMatchObject({
       sessionId: 'child-session',
       historyOutcome: 'ask-approved',
-      reason: 'unspecified',
+      reason: 'user',
       origin: 'subagent',
     });
   });

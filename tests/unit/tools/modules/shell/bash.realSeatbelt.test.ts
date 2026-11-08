@@ -15,6 +15,13 @@ import { getToolCache } from '../../../../../src/host/services/infra/toolCache';
 import { getProtocolRegistry } from '../../../../../src/host/tools/protocolRegistry';
 import { bashModule } from '../../../../../src/host/tools/modules/shell/bash';
 import { ToolExecutor } from '../../../../../src/host/tools/toolExecutor';
+import { createProtocolSubagentExecutionContext } from '../../../../../src/host/agent/subagentExecutionContext';
+import {
+  buildCanUseToolFromLegacy,
+  buildProtocolContext,
+} from '../../../../../src/host/tools/dispatch/shadowAdapter';
+import { getToolResolver } from '../../../../../src/host/tools/dispatch/toolResolver';
+import { getToolLedgerSink } from '../../../../../src/host/tools/toolLedgerSink';
 import type { PermissionRequestData } from '../../../../../src/host/tools/types';
 import type { CanUseToolFn, ToolContext } from '../../../../../src/host/protocol/tools';
 import { buildRuleString } from '../../../../../src/shared/permissionRuleTranslate';
@@ -92,7 +99,6 @@ suite('approved rm uses a real seatbelt literal grant', () => {
   it.each([
     ['main-agent', 'slash-tmp', () => slashTmpRoot],
     ['main-agent', 'second-non-workspace', () => outsideRoot],
-    ['sub-agent', 'second-non-workspace', () => outsideRoot],
   ] as const)('approve -> %s deletes one file in %s', async (shape, location, root) => {
     const target = join(root(), `${shape}-${location}.txt`);
     writeFileSync(target, 'remove me');
@@ -112,6 +118,71 @@ suite('approved rm uses a real seatbelt literal grant', () => {
     expect(result.success, result.error).toBe(true);
     expect(requests).toHaveLength(1);
     expect(existsSync(target)).toBe(false);
+  });
+
+  it('real parent protocol bridge -> child approval grants the first sandboxed rm and one ledger row', async () => {
+    const target = join(outsideRoot, 'protocol-subagent.txt');
+    const parentProbe = join(workspace, 'parent-protocol-probe.txt');
+    writeFileSync(target, 'remove me');
+    writeFileSync(parentProbe, 'parent probe');
+    const requests: PermissionRequestData[] = [];
+    const appendPermissionDecision = vi.spyOn(getToolLedgerSink(), 'appendPermissionDecision');
+
+    const parentExecutor = new ToolExecutor({
+      workingDirectory: workspace,
+      ledgerOrigin: 'eval',
+      requestPermission: async (request) => {
+        requests.push(request);
+        return { approved: true, approvalSource: 'user' as const };
+      },
+      dispatchTool: async (_toolName, _params, legacyContext) => {
+        const parentContext = legacyContext;
+        parentContext.modelConfig = { provider: 'mock', model: 'mock-model' };
+        parentContext.resolver = getToolResolver();
+        const protocolContext = buildProtocolContext({
+          sessionId: 'real-seatbelt-parent-session',
+          workingDirectory: workspace,
+          legacyCtx: parentContext,
+          resolver: getToolResolver(),
+        });
+        const subagentContext = createProtocolSubagentExecutionContext(
+          protocolContext,
+          buildCanUseToolFromLegacy(parentContext, 'spawn_agent'),
+        );
+        const childExecutor = new ToolExecutor({
+          workingDirectory: workspace,
+          ledgerOrigin: 'subagent',
+          forcePermissionHandler: true,
+          requestPermission: (request) => subagentContext.permission.request(request),
+        });
+        childExecutor.setAuditEnabled(false);
+        return childExecutor.execute('Bash', { command: `rm ${shellQuote(target)}` }, {
+          sessionId: 'real-seatbelt-child-session',
+          agentId: 'coder-real-seatbelt',
+          spawnDepth: 1,
+          spawnTreeId: 'tree-real-seatbelt-protocol',
+        });
+      },
+    });
+    parentExecutor.setAuditEnabled(false);
+
+    try {
+      const result = await parentExecutor.execute(
+        'ListDirectory',
+        { path: workspace },
+        { sessionId: 'real-seatbelt-parent-session', currentToolCallId: 'real-seatbelt-parent-call' },
+      );
+
+      console.log(`REAL_SEATBELT_PROTOCOL_SUBAGENT_AFTER_APPROVE: ${rawLs(target)}`);
+      expect(result.success, result.error).toBe(true);
+      expect(requests.filter((request) => request.tool.toLowerCase() === 'bash')).toHaveLength(1);
+      expect(existsSync(target)).toBe(false);
+      expect(appendPermissionDecision.mock.calls.filter(([row]) => (
+        row as { historyOutcome?: string }
+      ).historyOutcome === 'ask-approved' && (row as { toolName?: string }).toolName?.toLowerCase() === 'bash')).toHaveLength(1);
+    } finally {
+      appendPermissionDecision.mockRestore();
+    }
   });
 
   it('public Bash entry deletes the approved file under os.tmpdir with the real sandbox', async () => {
