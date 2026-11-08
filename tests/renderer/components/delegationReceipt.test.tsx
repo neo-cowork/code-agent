@@ -119,6 +119,29 @@ function completedSpawnCall(): ToolCall {
   };
 }
 
+const REAL_DELEGATE_TASK_OUTPUT = `Agent [Researcher] completed:
+
+Notion: - Cost: $20/month; sync: database and page export.
+- Cost: $20/month
+
+Stats:
+- Iterations: 2
+- Tools used: web_search
+- Cost: $0.0169`;
+
+function completedDelegateTaskCall(): ToolCall {
+  return {
+    id: 'delegate-call-completed',
+    name: 'delegate_task',
+    arguments: { description: '调研 Notion 和 Obsidian 的定价与同步方式，列表对比返回' },
+    result: {
+      toolCallId: 'delegate-call-completed',
+      success: true,
+      output: REAL_DELEGATE_TASK_OUTPUT,
+    },
+  };
+}
+
 beforeEach(() => {
   mocks.tasks = [];
   mocks.snapshot = null;
@@ -301,6 +324,17 @@ describe('delegation receipt', () => {
     expect(missing.container.textContent).not.toContain('- Pipeline ID: agent_explore_7b8c452a');
     expect(missing.container.textContent).not.toContain('- Cost: $0.0000');
     expect(spawnCall.result?.output).toBe(REAL_SPAWN_AGENT_OUTPUT);
+  });
+
+  it('hides delegate_task host cost in the fallthrough while preserving child result cost text', () => {
+    const delegateCallWithResult = completedDelegateTaskCall();
+    const view = renderCall(delegateCallWithResult);
+    fireEvent.click(view.getByTestId('tool-call-row-delegate_task'));
+    fireEvent.click(view.getByText(/展开剩余/));
+
+    expect(view.container.textContent).toContain('- Cost: $20/month');
+    expect(view.container.textContent).not.toContain('- Cost: $0.0169');
+    expect(delegateCallWithResult.result?.output).toBe(REAL_DELEGATE_TASK_OUTPUT);
   });
 });
 
