@@ -293,7 +293,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
       {/* Result section */}
       {result && (
         <div className="animate-fadeIn">
-          {!imageResult && !videoResult && !genericMediaAsset && !generatedFileResult && (!createdFilePath || hasCompletenessIssues(result.metadata)) && (
+          {!imageResult && !videoResult && !genericMediaAsset && !generatedFileResult && !createdFilePath && (
             <div className="flex items-center gap-2 text-xs font-medium text-gray-500 mb-2">
               <span>{result.success ? copy.result : copy.error}</span>
               <div className="flex-1 h-px bg-gray-700/50" />
@@ -407,7 +407,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                       : result.error
                         ? stripAnsiCodes(result.error)
                         : typeof result.output === 'string'
-                          ? replaceCompletenessWarningInOutput(name, cleanToolResultDisplayText(name, stripAnsiCodes(result.output), copy), result.metadata, t.rendererHumanPipe.toolDetails.completenessWarningNote)
+                          ? replaceCompletenessWarningInOutput(name, cleanToolResultDisplayText(name, stripAnsiCodes(result.output), copy), result.metadata, t.rendererHumanPipe.toolDetails.completenessWarningNote, !createdFilePath)
                           : JSON.stringify(result.output, null, 2)
                   }
                   lineCap={isShellTool(name) ? SHELL_RESULT_BODY_LINE_CAP : RESULT_BODY_LINE_CAP}

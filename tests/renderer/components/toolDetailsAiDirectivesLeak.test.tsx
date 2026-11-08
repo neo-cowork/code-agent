@@ -186,6 +186,7 @@ describe('N-FIX-ERROR-CARD-AI-DIRECTIVES-LEAK — renderer cards for all 4 scene
 
       const writeZhMarkup = renderToStaticMarkup(<ToolDetails toolCall={writeCall} />);
       expect(writeZhMarkup).toContain('检测到文件可能没写完整。如果内容有缺，告诉 Neo「继续补全」即可。');
+      expect(writeZhMarkup).not.toContain('Created file:');
       assertNoForbiddenStrings(writeZhMarkup);
 
       // 2b. Real Edit result with broken JSON

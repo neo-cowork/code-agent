@@ -42,12 +42,14 @@ export function replaceCompletenessWarningInOutput(
   output: string,
   metadata: Record<string, unknown> | null | undefined,
   replacementNote: string,
+  preservePrefix = true,
 ): string {
   if (!COMPLETENESS_WARNING_TOOL_NAMES.has(toolName) || !output || !hasCompletenessIssues(metadata)) {
     return output;
   }
   const markerIndex = output.indexOf(COMPLETENESS_WARNING_MARKER);
   if (markerIndex < 0) return output;
+  if (!preservePrefix) return replacementNote;
   const prefix = output.slice(0, markerIndex).trimEnd();
   if (!prefix) return replacementNote;
   return `${prefix}\n\n${replacementNote}`;
