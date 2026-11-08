@@ -55,6 +55,8 @@ function failureAction(kind: CronFailurePresentationKind): 'model' | 'account' |
 interface CronExecutionDetailProps {
   execution: CronJobExecution | null;
   jobName?: string;
+  /** Complete catalog has loaded; otherwise an absent name is not evidence of deletion. */
+  jobNamesLoaded?: boolean;
   runsOn?: CronJobDefinition['runsOn'];
   /** 等批准运行（N-CRON-UNATTENDED-BASH-PARK-STUCK）：状态 chip 换 amber 徽章 + 一句提示 + 去处理。 */
   awaitingRun?: { executionId: string | null; commandPreview?: string } | null;
@@ -64,6 +66,7 @@ interface CronExecutionDetailProps {
 export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
   execution,
   jobName,
+  jobNamesLoaded = true,
   runsOn = 'local',
   awaitingRun = null,
   onReviewAwaiting,
@@ -157,7 +160,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
         <div>
           <h4 className="text-sm font-medium text-zinc-100">{cc.execDetailTitle}</h4>
           <p className="mt-1 text-xs text-zinc-500">
-            {jobName ?? cc.deletedTask} · {formatDateTime(execution.startedAt ?? execution.scheduledAt, language)}
+            {jobName ?? (jobNamesLoaded ? cc.deletedTask : cc.jobNameUnavailable)} · {formatDateTime(execution.startedAt ?? execution.scheduledAt, language)}
           </p>
         </div>
         <div className="flex items-center gap-2">

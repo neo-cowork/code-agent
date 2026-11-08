@@ -87,6 +87,8 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
   const cc = t.cronCenter;
   const {
     jobs,
+    allJobs,
+    jobNamesLoaded,
     stats,
     selectedJobId,
     isEditorOpen,
@@ -227,8 +229,8 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
   );
 
   const jobNameById = useMemo(
-    () => Object.fromEntries(jobs.map((job) => [job.id, job.name])),
-    [jobs]
+    () => Object.fromEntries([...allJobs, ...jobs].map((job) => [job.id, job.name])),
+    [allJobs, jobs]
   );
 
   const runsOnByJobId = useMemo(
@@ -386,6 +388,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
                 selectedExecutionId={selectedExecutionId}
                 onSelectExecution={setSelectedExecutionId}
                 jobNameById={jobNameById}
+                jobNamesLoaded={jobNamesLoaded}
                 runsOnByJobId={runsOnByJobId}
                 awaitingByJobId={awaitingByJobId}
               />
@@ -393,6 +396,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
                 <CronExecutionDetail
                   execution={selectedExecution}
                   jobName={selectedExecution ? jobNameById[selectedExecution.jobId] : undefined}
+                  jobNamesLoaded={jobNamesLoaded}
                   runsOn={selectedExecution?.runsOn ?? (selectedExecution ? runsOnByJobId[selectedExecution.jobId] : undefined)}
                   awaitingRun={selectedExecution ? awaitingByJobId.get(selectedExecution.jobId) ?? null : null}
                   onReviewAwaiting={() => setActiveTab('runs')}

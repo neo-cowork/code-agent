@@ -75,6 +75,8 @@ beforeEach(() => {
   openBudgetSettings.mockReset();
   useCronStore.setState({
     jobs: [],
+    allJobs: [],
+    jobNamesLoaded: false,
     stats: null,
     latestExecutions: {},
     executionsByJobId: {},
@@ -163,6 +165,79 @@ describe('CronCenterPanel 双 tab（批C4 WorkBuddy 式改造）', () => {
     await vi.waitFor(() => {
       expect(screen.getByText('每日晨报')).toBeTruthy();
     });
+  });
+
+  it('任务列表按启用状态过滤时，运行记录仍使用完整任务目录', async () => {
+    const { cronClient } = await import('../../../src/renderer/services/cronClient');
+    const disabledJob = { id: 'job-disabled', name: '停用任务', enabled: false };
+    vi.mocked(cronClient.listJobs).mockImplementation(async (filter) => (filter ? [] : [disabledJob] as never));
+    vi.mocked(cronClient.getRecentExecutions).mockResolvedValue([{
+      id: 'exec-disabled',
+      jobId: disabledJob.id,
+      status: 'completed',
+      scheduledAt: 1,
+      startedAt: 1,
+      completedAt: 2,
+      duration: 1,
+      retryAttempt: 0,
+    } as never]);
+    useCronStore.setState({ filterMode: 'enabled' });
+
+    render(<CronCenterPanel onClose={() => undefined} />);
+    screen.getByTestId('cron-center-tab-runs').click();
+    expect(await screen.findByText('停用任务')).toBeTruthy();
+    expect(screen.queryByText('已删除的任务')).toBeNull();
+    screen.getByText('停用任务').click();
+    await waitFor(() => expect(screen.getByText(/停用任务 ·/)).toBeTruthy());
+    expect(screen.queryByText('已删除的任务')).toBeNull();
+  });
+
+  it('任务目录仍在加载或加载失败时，不把运行误报为已删除', async () => {
+    const { cronClient } = await import('../../../src/renderer/services/cronClient');
+    let resolveAllJobs!: (jobs: never[]) => void;
+    vi.mocked(cronClient.listJobs).mockImplementation((filter) => filter
+      ? Promise.resolve([])
+      : new Promise((resolve) => { resolveAllJobs = resolve; }));
+    vi.mocked(cronClient.getRecentExecutions).mockResolvedValue([{
+      id: 'exec-loading',
+      jobId: 'job-loading',
+      status: 'completed',
+      scheduledAt: 1,
+      startedAt: 1,
+      completedAt: 2,
+      duration: 1,
+      retryAttempt: 0,
+    } as never]);
+    useCronStore.setState({ filterMode: 'enabled' });
+
+    render(<CronCenterPanel onClose={() => undefined} />);
+    screen.getByTestId('cron-center-tab-runs').click();
+    expect(await screen.findByText('任务名称暂不可用')).toBeTruthy();
+    expect(screen.queryByText('已删除的任务')).toBeNull();
+
+    await act(async () => { resolveAllJobs([]); });
+    await waitFor(() => expect(screen.getByText('已删除的任务')).toBeTruthy());
+  });
+
+  it('任务目录初次加载失败时，不把运行误报为已删除', async () => {
+    const { cronClient } = await import('../../../src/renderer/services/cronClient');
+    vi.mocked(cronClient.listJobs).mockRejectedValue(new Error('catalog unavailable'));
+    vi.mocked(cronClient.getRecentExecutions).mockResolvedValue([{
+      id: 'exec-failed-catalog',
+      jobId: 'job-failed-catalog',
+      status: 'completed',
+      scheduledAt: 1,
+      startedAt: 1,
+      completedAt: 2,
+      duration: 1,
+      retryAttempt: 0,
+    } as never]);
+    useCronStore.setState({ filterMode: 'enabled' });
+
+    render(<CronCenterPanel onClose={() => undefined} />);
+    screen.getByTestId('cron-center-tab-runs').click();
+    expect(await screen.findByText('任务名称暂不可用')).toBeTruthy();
+    expect(screen.queryByText('已删除的任务')).toBeNull();
   });
 
   it('运行记录 tab 用同一日归集函数显示今天的成本小计', async () => {
