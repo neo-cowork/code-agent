@@ -12,6 +12,7 @@ vi.mock('../../../src/renderer/services/cronClient', () => ({ cronClient: { list
 import { SidebarCapabilityZone } from '../../../src/renderer/components/features/sidebar/SidebarCapabilityZone';
 import { useCronStore } from '../../../src/renderer/stores/cronStore';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { MEMORY_CONSOLIDATION } from '../../../src/shared/constants/memory';
 
 function makeJob(overrides: Partial<CronJobDefinition>): CronJobDefinition {
   return { id: 'job-1', runsOn: 'local', name: '英语单词', scheduleType: 'cron', schedule: { type: 'cron', expression: '30 8 * * *' }, action: { type: 'agent', agentType: 'general', prompt: '每天推荐 5 个英语单词' }, enabled: true, createdAt: 1, updatedAt: 1, ...overrides };
@@ -91,5 +92,24 @@ describe('SidebarCapabilityZone', () => {
     listJobs.mockResolvedValue([]); getStats.mockResolvedValue(makeStats(0)); render(<SidebarCapabilityZone />);
     screen.getByTestId('sidebar-capability-automation').click();
     expect(useAppStore.getState().showCronCenter).toBe(true);
+  });
+  it('内置记忆整理任务在侧栏下次运行提示中按语言展示名称', async () => {
+    const builtinJob = makeJob({
+      id: 'builtin-mem',
+      name: '[Maintenance] Light Memory consolidation',
+      tags: [MEMORY_CONSOLIDATION.JOB_TAG],
+      nextRunAt: Date.now() + 3_600_000,
+    });
+    useAppStore.setState({ language: 'zh' });
+    listJobs.mockResolvedValue([builtinJob]); getStats.mockResolvedValue(makeStats(0));
+    const { rerender } = render(<SidebarCapabilityZone />);
+    const automation = screen.getByTestId('sidebar-capability-automation');
+    await waitFor(() => expect(automation.getAttribute('title')).toMatch(/下次 .+ · 记忆整理/));
+    expect(automation.getAttribute('title')).not.toContain('[Maintenance]');
+
+    useAppStore.setState({ language: 'en' });
+    rerender(<SidebarCapabilityZone />);
+    expect(automation.getAttribute('title')).toContain('[Maintenance] Light Memory consolidation');
+    useAppStore.setState({ language: 'zh' });
   });
 });
