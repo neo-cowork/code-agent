@@ -40,6 +40,7 @@ import { useI18n } from '../../../../hooks/useI18n';
 import { zh } from '../../../../i18n/zh';
 import { CompanionSection } from '../sections/CompanionSection';
 import { TelegramGroupAccessPrerequisite, TelegramPrivacyModeHint } from './TelegramPrivacyModeHint';
+import { FeishuSharedAppHint } from './FeishuSharedAppHint';
 
 const logger = createLogger('ChannelsSettings');
 
@@ -955,6 +956,7 @@ export const ChannelsSettings: React.FC = () => {
                         </div>
                       )}
                       <TelegramPrivacyModeHint account={account} />
+                      <FeishuSharedAppHint account={account} />
                     </div>
 
                     <div className="min-w-0 text-xs text-zinc-400">

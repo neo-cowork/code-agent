@@ -40,6 +40,7 @@ const MIGRATED: string[] = [
   'tabs/WorkspaceSettings.tsx',
   'tabs/ChannelsSettings.tsx',
   'tabs/TelegramPrivacyModeHint.tsx',
+  'tabs/FeishuSharedAppHint.tsx',
   'tabs/MemoryTab.tsx',
   'tabs/MemoryEntriesManager.tsx',
   'tabs/PrivacySettings.tsx',
