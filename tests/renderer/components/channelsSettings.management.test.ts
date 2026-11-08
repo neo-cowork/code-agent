@@ -128,11 +128,13 @@ describe('ChannelsSettings management helpers', () => {
 
   it('keeps compact config summaries stable for table rows', () => {
     expect(getChannelTypeLabel('feishu', channelTypes)).toBe('飞书');
+    expect(getChannelTypeLabel('feishu', channelTypes, en.settings.channels.typeNames)).toBe('Feishu');
     expect(getChannelConfigSummary(accounts[0])).toBe(`${channelsText.configSummary.portPrefix}8080`);
-    expect(getChannelConfigSummary(accounts[1])).toBe('Webhook 3201');
+    expect(getChannelConfigSummary(accounts[1])).toBe(`${channelsText.configSummary.webhookPortPrefix}3201`);
+    expect(getChannelConfigSummary(accounts[1], en.settings.channels.configSummary)).toBe('Webhook port 3201');
     expect(getChannelConfigSummary(accounts[2])).toBe(`2${channelsText.configSummary.allowlistUserSuffix}`);
     expect(getChannelTypeLabel('lark', channelTypes)).toBe('Lark');
-    expect(getChannelConfigSummary(accounts[3])).toBe('Webhook 3301');
+    expect(getChannelConfigSummary(accounts[3])).toBe(`${channelsText.configSummary.webhookPortPrefix}3301`);
   });
 
   it('uses readable privacy copy instead of raw enum labels', () => {
