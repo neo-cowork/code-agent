@@ -70,6 +70,10 @@ describe('delegate_session', () => {
     });
     const result = await executeDelegateSession({ action: 'delegate_existing', candidateSetId: projection.candidateSetId, candidateRef: projection.candidates[0].candidateRef, text: 'do it' }, ctx, async () => ({ allow: true }));
     expect(result.ok).toBe(true);
+    if (result.ok === true) {
+      expect(result.meta).not.toHaveProperty('reused');
+      expect(JSON.parse(result.output)).not.toHaveProperty('reused');
+    }
     expect(new SessionDelegationRepository(db).listByTargetSession('target')).toHaveLength(1);
     expect(db.prepare('SELECT count(*) AS count FROM queued_inputs').get()).toMatchObject({ count: 1 });
     expect(notify).toHaveBeenCalledWith('target');
@@ -172,8 +176,8 @@ describe('delegate_session', () => {
     });
     const result = await executeDelegateSession({ action: 'delegate_existing', candidateSetId: projection.candidateSetId, candidateRef: projection.candidates[0].candidateRef, text: 'do it' }, ctx, async () => ({ allow: true }));
     if (result.ok !== true) throw new Error('active reuse must stay a success receipt');
-    expect(result.meta).toMatchObject({ delegationId: 'd-1', status: 'active' });
-    expect(JSON.parse(result.output)).toMatchObject({ delegationId: 'd-1', status: 'active' });
+    expect(result.meta).toMatchObject({ delegationId: 'd-1', status: 'active', reused: true });
+    expect(JSON.parse(result.output)).toMatchObject({ delegationId: 'd-1', status: 'active', reused: true });
     expect(db.prepare('SELECT count(*) AS count FROM queued_inputs').get()).toMatchObject({ count: 1 });
     expect(notify).not.toHaveBeenCalled();
     db.close();
@@ -628,16 +632,16 @@ describe('delegate_session origin turn identity (FB-772)', () => {
     text,
   });
 
-  it('turn A 后 turn B：同 origin session 同 target 不同正文 → 第二条入队，两行 origin_turn_id 与 submission_key 互不相同', async () => {
+  it('run A 后 run B：同 origin session 同 target 不同正文 → 第二条入队，两行 origin_turn_id 与 submission_key 互不相同', async () => {
     process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
     const { db, projection, runtime } = fixture();
     try {
-      const first = await executeDelegateSession(delegateArgs(projection, 'first body'), turnCtx(runtime, { turnId: 'turn-A' }), async () => ({ allow: true }));
-      const second = await executeDelegateSession(delegateArgs(projection, 'second body'), turnCtx(runtime, { turnId: 'turn-B' }), async () => ({ allow: true }));
-      if (first.ok !== true) throw new Error('turn-A delegation must be admitted');
-      if (second.ok !== true) throw new Error(`turn-B delegation must be enqueued, got: ${(second as { error?: string }).error ?? 'unknown'}`);
+      const first = await executeDelegateSession(delegateArgs(projection, 'first body'), turnCtx(runtime, { runId: 'run-A', turnId: 'turn-A' }), async () => ({ allow: true }));
+      const second = await executeDelegateSession(delegateArgs(projection, 'second body'), turnCtx(runtime, { runId: 'run-B', turnId: 'turn-B' }), async () => ({ allow: true }));
+      if (first.ok !== true) throw new Error('run-A delegation must be admitted');
+      if (second.ok !== true) throw new Error(`run-B delegation must be enqueued, got: ${(second as { error?: string }).error ?? 'unknown'}`);
       const rows = db.prepare('SELECT origin_turn_id, submission_key FROM session_delegations ORDER BY origin_turn_id').all() as Array<{ origin_turn_id: string; submission_key: string }>;
-      expect(rows.map((row) => row.origin_turn_id)).toEqual(['turn-A', 'turn-B']);
+      expect(rows.map((row) => row.origin_turn_id)).toEqual(['run-A', 'run-B']);
       expect(rows.map((row) => row.origin_turn_id)).not.toContain('unknown-turn');
       expect(rows[0].submission_key).not.toBe(rows[1].submission_key);
       expect(db.prepare('SELECT count(*) AS count FROM queued_inputs').get()).toMatchObject({ count: 2 });
@@ -646,16 +650,19 @@ describe('delegate_session origin turn identity (FB-772)', () => {
     }
   });
 
-  it('同轮 + 同正文 → reused 回执照实报 active，不产生第二行', async () => {
+  it('同 runId + 不同 turnId + 同正文（FB-873 同轮多步重复委托）→ 1 行委托 + 1 行排队，第二次回执带 reused: true', async () => {
     process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
     const { db, projection, runtime } = fixture();
     try {
-      const first = await executeDelegateSession(delegateArgs(projection, 'same body'), turnCtx(runtime, { turnId: 'turn-A' }), async () => ({ allow: true }));
-      const second = await executeDelegateSession(delegateArgs(projection, 'same body'), turnCtx(runtime, { turnId: 'turn-A' }), async () => ({ allow: true }));
-      if (first.ok !== true) throw new Error('first same-turn delegation must be admitted');
-      if (second.ok !== true) throw new Error('identical same-turn replay must be reused, not rejected');
+      const first = await executeDelegateSession(delegateArgs(projection, 'same body'), turnCtx(runtime, { runId: 'run-1', turnId: 'step-1' }), async () => ({ allow: true }));
+      const second = await executeDelegateSession(delegateArgs(projection, 'same body'), turnCtx(runtime, { runId: 'run-1', turnId: 'step-2' }), async () => ({ allow: true }));
+      if (first.ok !== true) throw new Error('first delegation in run must be admitted');
+      if (second.ok !== true) throw new Error('second identical delegation in same run must be reused, not rejected');
+      expect(first.meta).not.toHaveProperty('reused');
+      expect(JSON.parse(first.output)).not.toHaveProperty('reused');
       expect(second.meta?.delegationId).toBe(first.meta?.delegationId);
-      expect(second.meta).toMatchObject({ status: 'active' });
+      expect(second.meta).toMatchObject({ status: 'active', reused: true });
+      expect(JSON.parse(second.output)).toMatchObject({ delegationId: first.meta?.delegationId, status: 'active', reused: true });
       expect(db.prepare('SELECT count(*) AS count FROM session_delegations').get()).toMatchObject({ count: 1 });
       expect(db.prepare('SELECT count(*) AS count FROM queued_inputs').get()).toMatchObject({ count: 1 });
     } finally {
@@ -667,8 +674,8 @@ describe('delegate_session origin turn identity (FB-772)', () => {
     process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
     const { db, projection, runtime } = fixture();
     try {
-      const first = await executeDelegateSession(delegateArgs(projection, 'first body'), turnCtx(runtime, { turnId: 'turn-A' }), async () => ({ allow: true }));
-      const second = await executeDelegateSession(delegateArgs(projection, 'different body'), turnCtx(runtime, { turnId: 'turn-A' }), async () => ({ allow: true }));
+      const first = await executeDelegateSession(delegateArgs(projection, 'first body'), turnCtx(runtime, { runId: 'run-A', turnId: 'step-1' }), async () => ({ allow: true }));
+      const second = await executeDelegateSession(delegateArgs(projection, 'different body'), turnCtx(runtime, { runId: 'run-A', turnId: 'step-2' }), async () => ({ allow: true }));
       expect(first.ok).toBe(true);
       if (second.ok !== false) throw new Error('same-turn different-content replay must stay a G4 rejection');
       expect(second.code).toBe('DELEGATION_REJECTED');
@@ -681,14 +688,15 @@ describe('delegate_session origin turn identity (FB-772)', () => {
     }
   });
 
-  it('ctx 无 turnId 但有 runId → 以 runId 作发起轮身份落行（runs 与用户轮一一对应）', async () => {
+  it('ctx 优先取 runId 作发起轮身份（即便同时携带每步变化的 turnId）；仅在 runId 缺失时回退 turnId', async () => {
     process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
     const { db, projection, runtime } = fixture();
     try {
-      const result = await executeDelegateSession(delegateArgs(projection, 'run-scoped body'), turnCtx(runtime, { runId: 'run-7' }), async () => ({ allow: true }));
-      if (result.ok !== true) throw new Error('runId-only context must fall back to the run id, not refuse');
-      const rows = db.prepare('SELECT origin_turn_id FROM session_delegations').all() as Array<{ origin_turn_id: string }>;
-      expect(rows.map((row) => row.origin_turn_id)).toEqual(['run-7']);
+      const both = await executeDelegateSession(delegateArgs(projection, 'run-scoped body'), turnCtx(runtime, { runId: 'run-7', turnId: 'step-99' }), async () => ({ allow: true }));
+      const turnOnly = await executeDelegateSession(delegateArgs(projection, 'turn-fallback body'), turnCtx(runtime, { turnId: 'turn-fallback-only' }), async () => ({ allow: true }));
+      if (both.ok !== true || turnOnly.ok !== true) throw new Error('both contexts must be admitted');
+      const rows = db.prepare('SELECT origin_turn_id FROM session_delegations ORDER BY created_at, origin_turn_id').all() as Array<{ origin_turn_id: string }>;
+      expect(rows.map((row) => row.origin_turn_id)).toEqual(['run-7', 'turn-fallback-only']);
       expect(loggerWarn).not.toHaveBeenCalled();
     } finally {
       db.close();
