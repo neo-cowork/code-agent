@@ -5,6 +5,13 @@ import path from 'node:path';
 import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 
+declare global {
+  interface Window {
+    __NARROW_TEXT_WRAP_READY__?: boolean;
+    __NARROW_SET_LANGUAGE__?: (language: string) => void;
+  }
+}
+
 describe('narrow text wrapping production surfaces', () => {
   let server: ViteDevServer;
   let browser: Browser;
@@ -176,7 +183,7 @@ describe('narrow text wrapping production surfaces', () => {
       await page.waitForSelector('[data-testid="overview-run-header"]');
 
       const measurements = await page.evaluate(() => {
-        const lineCount = (element) => {
+        const lineCount = (element: Element): number => {
           const childNodes = Array.from(element.childNodes);
           const tops = (childNodes.length > 0 ? childNodes : [element])
             .flatMap((node) => {
@@ -198,15 +205,15 @@ describe('narrow text wrapping production surfaces', () => {
           }
           return rows;
         };
-        const exact = (root, text) => {
-          const candidates = Array.from(root.querySelectorAll('*')).filter((element) => element.textContent?.trim() === text);
+        const exact = (root: Element, text: string): Element | undefined => {
+          const candidates = Array.from(root.querySelectorAll('*')).filter((element: Element) => element.textContent?.trim() === text);
           return candidates.find((element) => element.tagName === 'SPAN') || candidates[0];
         };
-        const panel = (name) => document.querySelector('[data-surface="' + name + '"]');
-        const read = (name, selectors) => {
+        const panel = (name: string): Element | null => document.querySelector('[data-surface="' + name + '"]');
+        const read = (name: string, selectors: Record<string, string>): Record<string, number> => {
           const root = panel(name);
           if (!root) throw new Error('Missing surface ' + name);
-          const result = {};
+          const result: Record<string, number> = {};
           for (const [label, selector] of Object.entries(selectors)) {
             const element = root.querySelector(selector);
             if (!element) throw new Error('Missing selector ' + selector + ' on ' + name);
@@ -215,13 +222,15 @@ describe('narrow text wrapping production surfaces', () => {
           return result;
         };
         const channels = panel('channels');
+        if (!channels) throw new Error('Missing channels surface');
         const channelLabels = ['断开', '编辑', '删除', '连接'];
         const channelCounts = Object.fromEntries(channelLabels.map((label) => {
           const element = exact(channels, label);
           if (!element) throw new Error('Missing channel action ' + label);
           return [label, lineCount(element)];
         }));
-        const sweep = Object.fromEntries(Array.from(document.querySelectorAll('[data-surface]')).map((surface) => {
+        type SweepFailure = { text: string; testId: string | null; lines: number };
+        const sweepEntries: Array<[string, { count: number; failures: SweepFailure[] }]> = Array.from(document.querySelectorAll('[data-surface]')).map((surface) => {
           const candidates = Array.from(surface.querySelectorAll('button, [class*="rounded"]')).filter((element) => {
             const text = element.textContent?.trim() || '';
             if (!text || text.length > 8 || /\s/.test(text)) return false;
@@ -236,11 +245,14 @@ describe('narrow text wrapping production surfaces', () => {
             testId: element.getAttribute('data-testid'),
             lines: lineCount(element),
           }));
-          return [surface.getAttribute('data-surface'), {
+          return [surface.getAttribute('data-surface') ?? '', {
             count: details.length,
             failures: details.filter((item) => item.lines !== 1),
           }];
-        }));
+        });
+        const sweep = Object.fromEntries(sweepEntries);
+        const primitiveSensorElement = document.querySelector('[data-testid="narrow-primitive-sensor"] span');
+        if (!primitiveSensorElement) throw new Error('Missing primitive sensor');
         return {
           runDetailInterrupted: read('run-detail-interrupted', { '已中断': '[data-testid="cron-exec-detail-status-interrupted"]' }),
           runDetailAwaiting: read('run-detail-awaiting', { '等你批准': '[data-testid="cron-exec-detail-awaiting-approval"]', '打开会话': '[data-testid="cron-exec-detail-open-session"]' }),
@@ -249,22 +261,23 @@ describe('narrow text wrapping production surfaces', () => {
           taskPanelInterrupted: read('task-panel-interrupted', { '已中断': '[data-testid="cron-run-status-text"]' }),
           overviewRunHeader: Boolean(document.querySelector('[data-testid="overview-run-header"]')),
           channels: channelCounts,
-          primitiveSensor: lineCount(document.querySelector('[data-testid="narrow-primitive-sensor"] span')),
-          overflow: Object.fromEntries(Array.from(document.querySelectorAll('[data-surface]')).map((element) => [
-            element.getAttribute('data-surface'), { scrollWidth: element.scrollWidth, clientWidth: element.clientWidth },
+          primitiveSensor: lineCount(primitiveSensorElement),
+          overflow: Object.fromEntries(Array.from(document.querySelectorAll('[data-surface]')).map((element): [string, { scrollWidth: number; clientWidth: number }] => [
+            element.getAttribute('data-surface') ?? '', { scrollWidth: element.scrollWidth, clientWidth: element.clientWidth },
           ])),
           sweep,
         };
       });
       console.log('narrowTextWrap measurements', JSON.stringify(measurements));
       await page.evaluate(() => {
+        if (!window.__NARROW_SET_LANGUAGE__) throw new Error('Missing language hook');
         window.__NARROW_SET_LANGUAGE__('en');
       });
       await page.waitForFunction(() => document.querySelector('[data-surface="channels"]')?.textContent?.includes('Disconnect'));
       const channelsEnglish = await page.evaluate(() => {
         const root = document.querySelector('[data-surface="channels"]');
         if (!root) throw new Error('Missing channels surface');
-        const lineCount = (element) => {
+        const lineCount = (element: Element): number => {
           const range = document.createRange();
           range.selectNodeContents(element);
           return new Set(Array.from(range.getClientRects()).map((rect) => Math.round(rect.top * 10) / 10)).size;
@@ -277,10 +290,8 @@ describe('narrow text wrapping production surfaces', () => {
         }));
       });
       console.log('narrowTextWrap English channel measurements', JSON.stringify(channelsEnglish));
-      for (const surface of Object.values(measurements)) {
-        if (surface && typeof surface === 'object' && 'scrollWidth' in surface) {
-          expect(surface.scrollWidth).toBeLessThanOrEqual(surface.clientWidth + 1);
-        }
+      for (const surface of Object.values(measurements.overflow)) {
+        expect(surface.scrollWidth).toBeLessThanOrEqual(surface.clientWidth + 1);
       }
       const lines = [
         ...Object.values(measurements.runDetailInterrupted),
