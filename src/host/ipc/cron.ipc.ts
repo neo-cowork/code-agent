@@ -284,7 +284,8 @@ const cronHandlers: RawDomainRouteHandlers<CronDomainRequest, void> = {
       ? getTaskManager().handlePermissionResponse(sessionId, requestId, 'allow')
       : 'no_session';
     // 同一轮并行发出、已先停车的兄弟写请求：授权范围内的一并放行（范围外的仍等人逐个批）。
-    const siblings = sessionId
+    // 仅 granted：kept_existing 时没有落库新授权，兄弟请求不在授权范围内，只放行被点的这一条。
+    const siblings = sessionId && grant.status === 'granted'
       ? parkedSiblingsCoveredByGrant(repo.listByKindAndStatus('tool_approval', 'pending'), sessionId, grant.folder, requestId)
       : [];
     for (const siblingId of siblings) {

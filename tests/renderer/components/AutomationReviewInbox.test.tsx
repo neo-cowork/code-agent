@@ -666,6 +666,36 @@ describe('AutomationReviewInbox', () => {
         .toBe('Always allow this task to write the "morning-notes" folder');
     });
 
+    it('同会话同文件夹的 3 个待批写合并成一张卡；批准/拒绝对整组逐条回传；无文件夹的行不合并', async () => {
+      const folder = '/Users/leo/Documents/morning-notes';
+      listParkedApprovals.mockResolvedValue([
+        ...['today-plan.md', 'reading-list.md', 'follow-ups.md'].map((n, i) =>
+          makeParked({ id: `perm_g${i}`, argsPreview: `${folder}/${n}`, writeGrantFolder: folder })),
+        makeParked({ id: 'perm_home', argsPreview: '/Users/leo/shopping-list.md' }),
+      ]);
+      render(<AutomationReviewInbox />);
+      await screen.findAllByTestId('parked-approval-item');
+      expect(screen.getAllByTestId('parked-approval-item')).toHaveLength(2);
+      expect(screen.getAllByTestId('parked-allow-folder')).toHaveLength(1);
+      expect(screen.getAllByTestId('parked-approval-item')[0].textContent).toContain('写入 3 个文件到「morning-notes」文件夹');
+      ipcInvoke.mockClear();
+      fireEvent.click(screen.getAllByTestId('parked-approve')[0]);
+      await waitFor(() => expect(ipcInvoke).toHaveBeenCalledTimes(3));
+      expect(ipcInvoke.mock.calls.map((c) => c[1]).sort()).toEqual(['perm_g0', 'perm_g1', 'perm_g2']);
+    });
+
+    it('kept_existing：被点的由 host 放行，同卡其余逐条批准', async () => {
+      const folder = '/Users/leo/Documents/morning-notes';
+      listParkedApprovals.mockResolvedValue(['a.md', 'b.md'].map((n, i) =>
+        makeParked({ id: `perm_k${i}`, argsPreview: `${folder}/${n}`, writeGrantFolder: folder })));
+      grant().mockResolvedValue({ grant: { status: 'kept_existing' }, released: true });
+      ipcInvoke.mockClear();
+      render(<AutomationReviewInbox />);
+      fireEvent.click(await screen.findByTestId('parked-allow-folder'));
+      await waitFor(() => expect(grant()).toHaveBeenCalledWith('perm_k0'));
+      await waitFor(() => expect(ipcInvoke).toHaveBeenCalledWith('agent:permission-response', 'perm_k1', 'allow', 'session-1'));
+    });
+
     it('无 writeGrantFolder（如写进 $HOME）不出第三个按钮，批准/拒绝照旧', async () => {
       listParkedApprovals.mockResolvedValue([makeParked({ id: 'perm_nofold' })]);
       render(<AutomationReviewInbox />);

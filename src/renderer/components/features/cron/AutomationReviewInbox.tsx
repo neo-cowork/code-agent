@@ -66,6 +66,31 @@ interface AutomationReviewInboxProps {
   refreshSignal?: string | number;
 }
 
+/** 同一会话 + 同一可授权文件夹的待批写文件合并成一张卡（用户一次被问一次）。无 writeGrantFolder 的行仍一文件一卡。 */
+type ParkedDisplayItem = ParkedApprovalInboxItem & { groupIds?: string[]; groupPaths?: string[] };
+
+function groupParkedWrites(rows: ParkedApprovalInboxItem[]): ParkedDisplayItem[] {
+  const out: ParkedDisplayItem[] = [];
+  const groups = new Map<string, ParkedDisplayItem>();
+  for (const row of rows) {
+    if (row.status !== 'pending' || !row.writeGrantFolder || !row.sessionId) {
+      out.push(row);
+      continue;
+    }
+    const key = `${row.sessionId}\u0000${row.writeGrantFolder}`;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.groupIds!.push(row.id);
+      existing.groupPaths!.push(row.argsPreview ?? '');
+    } else {
+      const group: ParkedDisplayItem = { ...row, groupIds: [row.id], groupPaths: [row.argsPreview ?? ''] };
+      groups.set(key, group);
+      out.push(group);
+    }
+  }
+  return out;
+}
+
 function folderDisplayName(folder: string): string {
   const parts = folder.split(/[\\/]+/).filter(Boolean);
   return parts[parts.length - 1] ?? folder;
@@ -144,10 +169,13 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
     };
   }, [load]);
 
-  const handleResolveParked = async (item: ParkedApprovalInboxItem, response: PermissionResponse) => {
+  const handleResolveParked = async (item: ParkedDisplayItem, response: PermissionResponse) => {
     if (item.status !== 'pending') return; // orphaned 不可操作
     setBusyId(item.id);
     try {
+      for (const id of (item.groupIds ?? [item.id]).slice(1)) {
+        await ipcService.invoke(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, id, response, item.sessionId ?? undefined);
+      }
       // 复用会话审批 IPC：同一 requestId 命中内存 pending，走 first-responder-wins 裁决口。
       // 宿主已死（进程重启）时 host 会把行标 orphaned 并回报 outcome——必须告知用户，
       // 不能让点击看起来「没反应」（2026-07-26 真机 D0）。
@@ -166,7 +194,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
   };
 
   // 一键授权此任务写这个文件夹：host 重新推导文件夹 + 落库授权 + 放行本次请求（专用 IPC，不传路径）。
-  const handleGrantFolder = async (item: ParkedApprovalInboxItem) => {
+  const handleGrantFolder = async (item: ParkedDisplayItem) => {
     if (item.status !== 'pending') return;
     setBusyId(item.id);
     try {
@@ -174,6 +202,10 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
       if (!result || result.grant.status === 'rejected' || !result.released) {
         toast.info(cc.parkedResolveStale);
       } else if (result.grant.status === 'kept_existing') {
+        // 没有新授权落库：只有被点的这条已放行，同卡其余文件逐个照常批准。
+        for (const id of (item.groupIds ?? [item.id]).slice(1)) {
+          await ipcService.invoke(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, id, 'allow', item.sessionId ?? undefined);
+        }
         toast.info(cc.parkedAllowFolderKept);
       }
     } catch {
@@ -239,11 +271,11 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
               {parked.some((item) => item.status !== 'voided') && (
                 <div className="mb-2 flex items-center gap-2 text-xs font-medium text-badge-warning">
                   <ShieldAlert className="h-3.5 w-3.5" />
-                  {interpolatePlural(cc.parkedTitle, parked.filter((item) => item.status === 'pending').length)}
+                  {interpolatePlural(cc.parkedTitle, groupParkedWrites(parked).filter((item) => item.status === 'pending').length)}
                 </div>
               )}
               <div className="space-y-1.5">
-                {parked.map((item) => {
+                {groupParkedWrites(parked).map((item) => {
                   if (item.status === 'voided') {
                     return (
                       <div
@@ -299,7 +331,9 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                         <div className="flex items-center gap-1.5 truncate text-sm text-zinc-200">
                           {isPairing
                             ? cc.pairingTitle.replace('{channel}', item.pairingChannel === 'lark' ? 'Lark' : 'Feishu')
-                            : (item.displayTool ?? item.tool)}
+                            : item.groupIds && item.groupIds.length > 1 && item.writeGrantFolder
+                              ? cc.parkedWriteGroupTitle.replace('{count}', String(item.groupIds.length)).replace('{folder}', folderDisplayName(item.writeGrantFolder))
+                              : (item.displayTool ?? item.tool)}
                           {isExternal && (
                             <span className="shrink-0 rounded bg-orange-500/15 px-1.5 py-0.5 text-[10px] text-badge-warning">
                               {cc.parkedExternalBadge}
@@ -326,9 +360,11 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                           <div
                             className="truncate text-[11px] text-zinc-400"
                             data-testid="parked-args-preview"
-                            title={item.argsPreview}
+                            title={item.groupPaths ? item.groupPaths.join('\n') : item.argsPreview}
                           >
-                            {cc.parkedArgsPreviewLabel}{item.argsPreview}
+                            {cc.parkedArgsPreviewLabel}{item.groupPaths && item.groupPaths.length > 1
+                              ? item.groupPaths.map((p) => folderDisplayName(p)).join(cc.parkedGroupFileSep)
+                              : item.argsPreview}
                           </div>
                         )}
                         <div className="text-[11px] text-zinc-500">
