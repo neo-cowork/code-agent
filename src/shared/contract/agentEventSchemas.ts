@@ -180,6 +180,7 @@ const permissionRequestSchema = typed<PermissionRequest>(z.object({
     affectedFileCount: z.number().int().nonnegative().optional(),
     targetKind: z.enum(FILE_TARGET_KINDS).optional(),
     standingGrantTarget: z.string().optional(),
+    browserSessionGrant: z.object({ target: z.string().nullable(), previousOrigins: z.array(z.string()) }).optional(),
     targetApp: z.object({
       bundleId: z.string().optional(),
       name: z.string(),

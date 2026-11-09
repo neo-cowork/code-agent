@@ -49,6 +49,7 @@ export interface ToolApprovalPayload {
    * 有它 = 该行可铸造 target 粒度长期授权（收件箱审批卡出「每次都允许发 <target>」按钮）。
    */
   standingGrantTarget?: string | null;
+  browserSessionGrant?: import('./permission').PermissionRequest['details']['browserSessionGrant'];
   /**
    * 跨重启找回这条调用的引用（N-PARKED-APPROVAL-SURVIVE-RESTART-PERSIST）。仅当 sessionId 与
    * toolCallId（parentToolUseId）都真实存在时写入；messageId 在权限请求路径上没有真源，

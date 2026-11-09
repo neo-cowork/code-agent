@@ -28,6 +28,7 @@ import {
   noteUnattendedApprovalTimeout,
   UNATTENDED_APPROVAL_TIMEOUT,
 } from './unattendedApprovalTerminal';
+import { recordBrowserSessionGrant } from '../permissions/browserSessionGrant';
 import { getConfirmationGate } from './confirmationGate';
 import { mintAppGrantSession, mintAppGrantStanding } from '../permissions/appGrantStore';
 import { mintTool24hGrant, mintToolRunGrant } from '../permissions/toolGrantStore';
@@ -121,6 +122,7 @@ function recordHumanGrant(
     return;
   }
   if (updatedArgs && response !== 'allow') return;
+  if (recordBrowserSessionGrant(response, request)) return;
   const app = request.details?.targetApp;
   if (response === 'allow_session' && request.sessionId) {
     if (app?.name) mintAppGrantSession(request.sessionId, app);
@@ -602,6 +604,10 @@ export class OrchestratorPermissionIsland {
       }
     }
 
+    // Browser approvals use the existing durable ledger, including interactive cards.
+    const browserRepo = fullRequest.details.browserSessionGrant ? this.getPendingApprovalRepo() : null;
+    if (browserRepo) return this.parkApproval(fullRequest, permissionLevel, browserRepo);
+
     // 有审批 UI 的交互会话一直等待真人裁决；无 UI 的 headless 路径仍按 60s/5min
     // fail-closed，和 createCLIPermissionHandler 的 no-approval-ui 判据保持同一环境边界。
     // 交互路径的 30min 计时器只留泄漏诊断，不删除请求、不发 timeout 终态。
@@ -815,6 +821,7 @@ export class OrchestratorPermissionIsland {
         riskClass: isExternalSideEffectTool(fullRequest.tool) ? 'external' : null,
         // B4：external+可提取 target 时非空 → 收件箱审批卡出「每次都允许发 <target>」铸权入口。
         standingGrantTarget: fullRequest.details?.standingGrantTarget ?? null,
+        ...(fullRequest.details.browserSessionGrant ? { browserSessionGrant: fullRequest.details.browserSessionGrant, displayAction: fullRequest.reason } : {}),
       };
       try {
         repo.insert({
