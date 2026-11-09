@@ -35,6 +35,20 @@ describe('subagent failure guidance', () => {
     }
   });
 
+  it('corrects an invalid foreground wait without suggesting a spending increase', () => {
+    const result = withMultiagentMeta(
+      { ok: false, error: 'foregroundBlockingBudgetMs must be less than role execution timeout (1200000 >= 900000)' },
+      ctx, 'spawn_agent', { failureCode: AgentFailureCode.InvalidArguments },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('Retry with foregroundBlockingBudgetMs below roleExecutionTimeout');
+      expect(result.error).toContain('omit foregroundBlockingBudgetMs');
+      expect(result.error).toContain('background mode (waitForCompletion: false)');
+      expect(result.error).not.toContain('maxBudget');
+    }
+  });
+
   it('keeps successful child output unchanged', () => {
     expect(withMultiagentMeta({ ok: true, output: 'done' }, ctx, 'Task', {})).toMatchObject({ output: 'done' });
   });

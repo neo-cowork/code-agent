@@ -195,6 +195,8 @@ export function resolveToolTerminalOutcomeKey(
       return 'failed-approval-denied';
     case AgentFailureCode.Timeout:
       return 'failed-timeout';
+    case AgentFailureCode.InvalidArguments:
+      return 'failed-tool';
     case AgentFailureCode.BudgetExhausted:
       return 'failed-budget';
     case AgentFailureCode.DependencyFailed:

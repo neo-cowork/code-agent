@@ -572,3 +572,25 @@ describe('humanizeToolFailureReason — 裸工程错误码翻成人话 + 下一�
   });
 
 });
+
+
+describe('foreground wait validation copy', () => {
+  const error = 'foregroundBlockingBudgetMs must be less than role execution timeout (1200000 >= 900000)';
+  it.each([
+    [zh, '助手设置的等待时间超过了允许的上限，需要缩短', '这次任务的额度已经用完'],
+    [en, 'The wait time the assistant set exceeds the allowed limit and must be shortened.', 'This task used up its budget'],
+  ] as const)('shows the wait correction and preserves genuine budget copy (%#)', (t, expected, budgetCopy) => {
+    const call = makeToolCall({ name: 'spawn_agent', result: {
+      toolCallId: 'wait-argument', success: false, error,
+      metadata: { failureCode: 'invalid-arguments' },
+    } });
+    expect(humanizeToolFailureReason(call, t)).toBe(expected);
+    expect(humanizeToolFailureReason(call, t)).not.toMatch(/budget|quota|额度|预算|充值/iu);
+    expect(resolveToolTerminalOutcomeKey(call)).toBe('failed-tool');
+    // Historical rows may retain only the original English validation error.
+    expect(humanizeToolFailureReason({ ...call, result: { ...call.result!, metadata: {} } }, t)).toBe(expected);
+    const exhausted = { ...call, result: { ...call.result!, error: 'budget exhausted', metadata: { failureCode: 'budget-exhausted' } } };
+    expect(humanizeToolFailureReason(exhausted, t)).toBe(budgetCopy);
+    expect(resolveToolTerminalOutcomeKey(exhausted)).toBe('failed-budget');
+  });
+});
