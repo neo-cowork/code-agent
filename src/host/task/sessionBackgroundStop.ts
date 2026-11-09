@@ -41,6 +41,8 @@ export function stopSessionBackgroundWork(input: SessionBackgroundStopInput): Pr
     });
   }
   if (pending.size === 0) return Promise.resolve();
+  const firedAt = Date.now();
+  logger.info('Session stop: background abort issued', { sessionId: input.sessionId, taskIds: [...pending.keys()] });
 
   const waitMs = input.settleWaitMs ?? CANCELLATION_TIMEOUTS.SESSION_BACKGROUND_SETTLE_WAIT;
   const unsettled = new Set(pending.keys());
@@ -50,7 +52,12 @@ export function stopSessionBackgroundWork(input: SessionBackgroundStopInput): Pr
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<void>((resolve) => { timer = setTimeout(resolve, waitMs); });
   return Promise.race([Promise.allSettled(tracked).then(() => undefined), timeout]).then(() => {
-    if (unsettled.size > 0) {
+    if (unsettled.size === 0) {
+      logger.info('Session stop: background work settled', {
+        sessionId: input.sessionId,
+        elapsedMs: Date.now() - firedAt,
+      });
+    } else {
       logger.warn('Background work did not settle after session stop', {
         sessionId: input.sessionId,
         waitMs,
