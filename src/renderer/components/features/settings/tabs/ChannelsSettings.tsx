@@ -164,7 +164,7 @@ const ChannelFilterButton: React.FC<{
   <button
     type="button"
     onClick={onClick}
-    className={`h-7 rounded-md px-2.5 text-xs transition-colors ${
+    className={`shrink-0 whitespace-nowrap h-7 rounded-md px-2.5 text-xs transition-colors ${
       active
         ? 'bg-zinc-200 text-zinc-950'
         : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
@@ -926,7 +926,7 @@ export const ChannelsSettings: React.FC = () => {
                       </div>
 
                       <div>
-                        <span className="inline-flex h-6 items-center rounded-md bg-zinc-800 px-2 text-xs text-zinc-300">
+                        <span className="shrink-0 whitespace-nowrap inline-flex h-6 items-center rounded-md bg-zinc-800 px-2 text-xs text-zinc-300">
                           {getChannelTypeLabel(account.type, channelTypes, channelText.typeNames)}
                         </span>
                       </div>
@@ -969,7 +969,7 @@ export const ChannelsSettings: React.FC = () => {
                         )}
                       </div>
 
-                      <div className="flex items-center justify-end gap-1.5">
+                      <div className="flex flex-wrap items-center justify-end gap-1.5">
                         <Button
                           size="sm"
                           variant="ghost"
