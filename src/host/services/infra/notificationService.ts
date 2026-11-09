@@ -276,7 +276,14 @@ class NotificationService implements Disposable {
   /**
    * 格式化时长显示
    */
-  private formatDuration(ms: number): string {
+  private formatDuration(ms: number, locale: NotificationDigestLocale = 'zh'): string {
+    if (locale === 'en') {
+      if (ms < 1000) return 'under 1 sec';
+      const secs = Math.round(ms / 1000);
+      if (secs < 60) return `${secs} sec`;
+      const mins = Math.floor(secs / 60);
+      return secs % 60 === 0 ? `${mins} min` : `${mins} min ${secs % 60} sec`;
+    }
     if (ms < 1000) return '不到 1 秒';
     const seconds = Math.round(ms / 1000);
     if (seconds < 60) return `${seconds} 秒`;
@@ -380,15 +387,22 @@ class NotificationService implements Disposable {
     const { sessionTitle, summary, duration, toolsUsed } = data;
 
     // 构建通知内容
+    const en = readNotificationLocale() === 'en';
     let body = '';
     if (summary) {
       body = summary;
     } else if (toolsUsed.length > 0) {
-      body = `使用了 ${toolsUsed.length} 个工具`;
+      body = en
+        ? `Used ${toolsUsed.length} ${toolsUsed.length === 1 ? 'tool' : 'tools'}`
+        : `使用了 ${toolsUsed.length} 个工具`;
     }
-    body += `\n耗时: ${this.formatDuration(duration)}`;
+    body += en
+      ? `\nDuration: ${this.formatDuration(duration, 'en')}`
+      : `\n耗时: ${this.formatDuration(duration)}`;
 
-    const title = `${data.succeeded === false ? '任务失败' : '任务完成'} - ${sessionTitle}`;
+    const failed = data.succeeded === false;
+    const shell = en ? (failed ? 'Task failed' : 'Task completed') : (failed ? '任务失败' : '任务完成');
+    const title = `${shell} - ${sessionTitle}`;
     const disposition = this.enqueueBudgeted({
       intent,
       urgent: options?.urgent,
