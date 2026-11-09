@@ -16,6 +16,8 @@ export type StoppedTaskStatus = 'completed' | 'failed';
 export interface StoppedTaskOutcome {
   status: StoppedTaskStatus;
   detail: string;
+  /** 没做完就停下时给用户看的那一句（确定性、不依赖模型转述）；正常结束为 undefined。 */
+  notice?: string;
 }
 
 function pageClause(lastUrl: string | undefined): string {
@@ -35,20 +37,18 @@ export function resolveStoppedTaskOutcome(input: {
     if (input.stepCap) {
       const max = input.stepCap.max;
       const head = `后台任务做到第 ${max} 步（上限 ${max} 步）就用完了步数，${pageClause(input.lastUrl)}还没有得出最终结果。你可以回复「继续」让它接着做，或者把任务缩小一些（比如只看其中一个网站）再试一次。`;
-      return { status: 'failed', detail: detail ? `${head}\n\n它停下前留下的说明：${detail}` : head };
+      return { status: 'failed', detail: detail ? `${head}\n\n它停下前留下的说明：${detail}` : head, notice: head };
     }
     if (!detail) {
-      return {
-        status: 'failed',
-        detail: `后台任务停下来了，${pageClause(input.lastUrl)}但没有留下最终结果。你可以回复「继续」让它接着做，或者把任务缩小一些（比如只看其中一个网站）再试一次。`,
-      };
+      const notice = `后台任务停下来了，${pageClause(input.lastUrl)}但没有留下最终结果。你可以回复「继续」让它接着做，或者把任务缩小一些（比如只看其中一个网站）再试一次。`;
+      return { status: 'failed', detail: notice, notice };
     }
     return { status: 'completed', detail };
   }
   const code = inferAgentFailureCode({ error: detail, defaultCode: AgentFailureCode.Unknown });
   const reason = describeSubagentStopReason(detail || '执行失败', code);
-  return {
-    status: 'failed',
-    detail: input.lastUrl && reason === detail ? `${detail}（${pageClause(input.lastUrl).replace(/，$/, '')}）` : reason,
-  };
+  const failedDetail = input.lastUrl && reason === detail
+    ? `${detail}（${pageClause(input.lastUrl).replace(/，$/, '')}）`
+    : reason;
+  return { status: 'failed', detail: failedDetail, notice: failedDetail };
 }

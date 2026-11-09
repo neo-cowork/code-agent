@@ -60,6 +60,8 @@ export interface SessionCommandTask {
   summary?: string;
   /** 模型侧结果文本：detail 规范化后按 SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS 封顶（超限带截断标记）；UI/账本仍读 240 字 summary。 */
   resultText?: string;
+  /** 没做完就停下时的那一句白话说明（见 sessionTaskStopConclusion）；projectTerminalResult 据此直接写进对话。 */
+  stopNotice?: string;
   attachments?: MessageAttachment[];
   options?: AgentRunOptions;
   parentRunId?: string;
@@ -519,6 +521,7 @@ export class SessionCommandCenter {
           ? { stepCap: { max: task.options?.maxIterations ?? getMaxIterations() } }
           : {}),
       });
+      task.stopNotice = stopped.notice;
       await this.settle(task, stopped.status, stopped.detail, stopped.status === 'completed' ? artifacts : undefined);
       return;
     }
@@ -528,6 +531,7 @@ export class SessionCommandCenter {
         detail: typeof data?.error === 'string' ? data.error : '执行失败',
         lastUrl: this.lastUrlByTask.get(task.id),
       });
+      task.stopNotice = stopped.notice;
       await this.settle(task, 'failed', stopped.detail);
       return;
     }
@@ -891,6 +895,17 @@ async function projectTerminalResult(
       },
     },
   });
+  // 没做完就停：不依赖前台模型转述，直接把白话结论写进对话（用户只看得到助手消息）。
+  if (task.stopNotice && status === 'failed') {
+    const notice: Message = {
+      id: `session-task-stop-notice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      role: 'assistant',
+      content: `「${task.shortName}」${task.stopNotice}`,
+      timestamp: Date.now(),
+    };
+    await getSessionManager().addMessageToSession(task.sessionId, notice);
+    getTaskManager().emitAgentEventForSession(task.sessionId, { type: 'message', data: notice });
+  }
 }
 
 let singleton: SessionCommandCenter | null = null;

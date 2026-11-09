@@ -5,6 +5,21 @@ import type { AgentEvent } from '../../../src/shared/contract';
 import { SessionCommandCenter } from '../../../src/host/services/commandCenter/sessionCommandCenter';
 import { resetSessionTaskConcurrencyPoolForTest } from '../../../src/host/services/commandCenter/sessionTaskSlotLedger';
 import { resetBackgroundTaskLedgerForTest } from '../../../src/host/task/backgroundTaskLedger';
+const sink = vi.hoisted(() => ({
+  added: [] as Array<{ role: string; content: string }>,
+  emitted: [] as Array<{ type: string; data: { role: string; content: string } }>,
+}));
+vi.mock('../../../src/host/services/infra/sessionManager', () => ({
+  getSessionManager: () => ({
+    addMessageToSession: vi.fn(async (_sid: string, m: { role: string; content: string }) => { sink.added.push(m); }),
+  }),
+}));
+vi.mock('../../../src/host/task/TaskManager', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getTaskManager: () => ({
+    emitAgentEventForSession: (_sid: string, e: { type: string; data: { role: string; content: string } }) => { sink.emitted.push(e); },
+  }),
+}));
 import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
 
 const SCOPE = createWorkspaceScope('project-stop', [{
@@ -93,5 +108,27 @@ describe('session task (delegate_task) stop conclusion', () => {
     manager.emitTask({ type: 'task_completed', sessionId: 'session-stop', data: { taskId, conclusion: '三条热搜摘要已写好。' } });
     await vi.waitFor(() => expect(projected).toHaveLength(1));
     expect(projected[0]).toMatchObject({ status: 'completed', resultText: '三条热搜摘要已写好。' });
+  });
+
+  it('writes the stop sentence into the conversation as an assistant message (default projection)', async () => {
+    sink.added.length = 0; sink.emitted.length = 0;
+    const manager = new FakeTaskManager();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, { wakeForegroundBrain: vi.fn() });
+    const spawned = await center.spawn({
+      sessionId: 'session-stop', title: '百度热搜', shortName: '百度热搜', laneKey: 'baidu',
+      submissionKey: 'baidu-2', prompt: '打开百度首页并总结', workspaceScope: SCOPE,
+    });
+    if (spawned.outcome === 'requires_choice') throw new Error('unexpected');
+    manager.emitAgent('session-stop', { type: 'tool_call_start', data: { id: 'c1', name: 'Browser', arguments: { url: 'https://baike.baidu.com' } } } as AgentEvent, spawned.task.id);
+    manager.emitAgent('session-stop', { type: 'error', data: { message: 'Max iterations reached', code: 'MAX_ITERATIONS_REACHED' } } as AgentEvent, spawned.task.id);
+    manager.emitTask({ type: 'task_completed', sessionId: 'session-stop', data: { taskId: spawned.task.id, conclusion: '工具已禁用。' } });
+    await vi.waitFor(() => expect(sink.added.filter((m) => m.role === 'assistant')).toHaveLength(1));
+    const notice = sink.added.find((m) => m.role === 'assistant')!;
+    expect(notice.content).toMatch(/^「百度热搜」后台任务做到第 \d+ 步（上限 \d+ 步）就用完了步数，最后停留在页面https:\/\/baike\.baidu\.com，/);
+    expect(notice.content).toContain('继续');
+    expect(sink.emitted).toHaveLength(1);
+    expect(sink.emitted[0].data.content).toBe(notice.content);
+    // 正常结束不额外写助手消息
+    expect(sink.added.filter((m) => m.role === 'system')).toHaveLength(1);
   });
 });
