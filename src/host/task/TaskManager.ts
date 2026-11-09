@@ -467,7 +467,7 @@ export class TaskManager extends EventEmitter {
     const state = this.getSessionState(sessionId);
 
     if (state.status === 'queued') {
-      await this.cancelTask(sessionId);
+      await this.cancelTask(sessionId, { keepBackground: true });
       await this.startTask(sessionId, message, attachments, options, messageMetadata, clientMessageId);
       return { outcome: 'steered' };
     }
@@ -548,9 +548,12 @@ export class TaskManager extends EventEmitter {
    *
    * @param sessionId - 会话 ID
    */
-  async cancelTask(sessionId: string): Promise<void> {
+  async cancelTask(sessionId: string, options?: { keepBackground?: boolean }): Promise<void> {
     // 后台级联必须先于下面所有按前台状态的 early-return：前台 idle（委派后的常态）时也要停后台。
-    const backgroundSettled = this.cancelSessionBackgroundWork(sessionId);
+    // keepBackground：只想摘掉前台（排队中被改道、切会话、进程收尾）的内部调用不是用户 Stop，不动后台。
+    const backgroundSettled = options?.keepBackground
+      ? Promise.resolve()
+      : this.cancelSessionBackgroundWork(sessionId);
     try {
       await this.cancelForegroundTask(sessionId);
     } finally {
@@ -945,12 +948,12 @@ export class TaskManager extends EventEmitter {
 
     // 取消所有排队任务
     for (const sessionId of [...this.waitingQueue]) {
-      await this.cancelTask(sessionId);
+      await this.cancelTask(sessionId, { keepBackground: true });
     }
 
     // 取消所有运行中任务
     for (const sessionId of this.activeOrchestrators.keys()) {
-      await this.cancelTask(sessionId);
+      await this.cancelTask(sessionId, { keepBackground: true });
     }
 
     // 清理信号量等待

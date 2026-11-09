@@ -197,6 +197,15 @@ describe('TaskManager.cancelTask 后台级联', () => {
     expect(taskOf('session-a', stuck).status).not.toBe('cancelled');
   });
 
+  it('keepBackground（切会话/改道/收尾）不是用户 Stop：后台任务不被动', async () => {
+    const id = await spawnRunning('session-a', 1);
+
+    await manager.cancelTask('session-a', { keepBackground: true });
+
+    expect(fakes.instances[0].cancel).not.toHaveBeenCalled();
+    expect(taskOf('session-a', id).status).toBe('running');
+  });
+
   it('某个任务取消抛错：其余任务照常被 abort，cancelTask 不抛', async () => {
     await spawnRunning('session-a', 1);
     await spawnRunning('session-a', 2);
