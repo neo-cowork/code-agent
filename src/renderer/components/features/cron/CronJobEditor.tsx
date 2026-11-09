@@ -190,9 +190,9 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
     : step === 'simple'
       ? cc.simpleTitle
       : step === 'pick'
-        ? '选择任务模板'
+        ? cc.pickTitle
         : step === 'fill'
-          ? (selectedTemplate ? getTemplateDisplayCopy(selectedTemplate, cc.templates).name : '') || '填写参数'
+          ? (selectedTemplate ? getTemplateDisplayCopy(selectedTemplate, cc.templates).name : '') || cc.fillTitleFallback
           : cc.manualTitle;
 
   const scheduleOptions = useMemo(

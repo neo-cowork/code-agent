@@ -210,6 +210,8 @@ export const cronCenterZh = {
     execStopReason: '为什么停了',
     // 简单创建流（A3）
     simpleTitle: '添加自动化',
+    pickTitle: '选择任务模板',
+    fillTitleFallback: '填写参数',
     simpleGoalLabel: '想让 Neo 定期做什么',
     simpleGoalPlaceholder: '例如：读一遍我关注的竞品动态，整理成简报',
     simpleGoalRequired: '先告诉我要做什么',
@@ -715,6 +717,8 @@ export const cronCenterEn: typeof cronCenterZh = {
     execResult: 'Result',
     execStopReason: 'Why it stopped',
     simpleTitle: 'New automation',
+    pickTitle: 'Choose a template',
+    fillTitleFallback: 'Fill in the details',
     simpleGoalLabel: 'What should Neo do on schedule',
     simpleGoalPlaceholder: 'e.g. Read competitor updates I follow and write a brief',
     simpleGoalRequired: 'Tell me what to do first',
