@@ -3369,6 +3369,10 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     this.ensureDb();
     return this.memoryRepo.deleteMemories(filter, journal);
   }
+  appendFileMemoryJournal(input: Parameters<MemoryRepository['appendFileMemoryJournal']>[0]): void {
+    this.ensureDb();
+    this.memoryRepo.appendFileMemoryJournal(input);
+  }
   listMemoryJournal(request: { entryId?: string; memoryId?: string; limit?: number }): MemoryChangeJournalRow[] {
     this.ensureDb();
     return this.memoryRepo.listMemoryJournal(request);
