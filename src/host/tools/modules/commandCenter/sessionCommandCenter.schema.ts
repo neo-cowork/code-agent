@@ -75,7 +75,7 @@ export const cancelTaskSchema: ToolSchema = {
 
 export const taskStatusSchema: ToolSchema = {
   name: 'task_status',
-  description: '后台任务状态；追问时先调用。仅按刚读为 running 才说仍在运行，不估剩余时间。',
+  description: '任务状态（含 spawn_agent 子代理）。追问时调用；仅刚读为 running 才说在跑，不估时。',
   outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',

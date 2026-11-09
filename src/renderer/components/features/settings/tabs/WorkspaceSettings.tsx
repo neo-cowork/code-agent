@@ -31,6 +31,7 @@ import type {
   ConfigWriteRecommendation,
 } from '@shared/contract/configScope';
 import { Button } from '../../../primitives';
+import { useAppStore } from '../../../../stores/appStore';
 import { useComposerStore } from '../../../../stores/composerStore';
 import { useWorkbenchBrowserSession } from '../../../../hooks/useWorkbenchBrowserSession';
 import {
@@ -77,6 +78,8 @@ export const WorkspaceSettings: React.FC = () => {
   const workspaceText = t.settings.workspace;
   const browserSessionMode = useComposerStore((s) => s.browserSessionMode);
   const setBrowserSessionMode = useComposerStore((s) => s.setBrowserSessionMode);
+  const workingDirectory = useAppStore((s) => s.workingDirectory);
+  const setWorkingDirectory = useAppStore((s) => s.setWorkingDirectory);
   const browserSession = useWorkbenchBrowserSession();
 
   const [currentDir, setCurrentDir] = useState<string | null>(null);
@@ -147,7 +150,8 @@ export const WorkspaceSettings: React.FC = () => {
     };
   }, [selectedDetail]);
 
-  const rows = useMemo(() => buildRecentRows(currentDir, recentDirs), [currentDir, recentDirs]);
+  const displayedCurrentDir = currentDir ?? workingDirectory;
+  const rows = useMemo(() => buildRecentRows(displayedCurrentDir, recentDirs), [displayedCurrentDir, recentDirs]);
   const configScopeTiles = useMemo(() => buildConfigScopeTiles(configScope), [configScope]);
   const browserOptions = useMemo(
     () => BROWSER_OPTIONS.map((option) => ({
@@ -179,21 +183,24 @@ export const WorkspaceSettings: React.FC = () => {
       const next = await pickWorkingDirectory(workspaceText.actions.chooseDirectory);
       if (next) {
         setCurrentDir(next);
+        setWorkingDirectory(next);
         await load();
       }
     } catch (error) {
       logger.error('Failed to pick directory', error);
     }
-  }, [load, workspaceText.actions.chooseDirectory]);
+  }, [load, setWorkingDirectory, workspaceText.actions.chooseDirectory]);
 
   const handleSwitchTo = useCallback(async (path: string) => {
     try {
       await ipcService.invokeDomain<string | null>(IPC_DOMAINS.WORKSPACE, 'setCurrent', { dir: path });
+      setCurrentDir(path);
+      setWorkingDirectory(path);
       await load();
     } catch (error) {
       logger.error('Failed to switch workspace', error);
     }
-  }, [load]);
+  }, [load, setWorkingDirectory]);
 
   const handleRemoveRecent = useCallback(async (path: string) => {
     try {
@@ -275,7 +282,7 @@ export const WorkspaceSettings: React.FC = () => {
         <div className="rounded-lg border border-zinc-700/70 bg-zinc-900/60">
           <div className="grid grid-cols-2 gap-px border-b border-zinc-700/60 bg-zinc-800/80 lg:grid-cols-4">
             {[
-              [workspaceText.summary.currentCwd, currentDir ?? workspaceText.values.notSet, workspaceText.summary.currentCwdCaption],
+              [workspaceText.summary.currentCwd, displayedCurrentDir ?? workspaceText.values.notSet, workspaceText.summary.currentCwdCaption],
               [workspaceText.summary.defaultOpenTarget, describeOpenTarget(defaultOpenTarget, workspaceText.openTargets), workspaceText.summary.defaultOpenTargetCaption],
               [workspaceText.summary.localBridge, getDesktopShellLabel(), isWebMode() ? workspaceText.summary.localBridgeWebCaption : workspaceText.summary.localBridgeIpcCaption],
               [workspaceText.summary.recentCount, String(rows.length), workspaceText.summary.recentCountCaption],
@@ -287,15 +294,15 @@ export const WorkspaceSettings: React.FC = () => {
               </div>
             ))}
           </div>
-          {currentDir && (
+          {displayedCurrentDir && (
             <div className="flex items-center gap-2 px-3 py-2 text-xs text-zinc-400">
               <Folder className="h-3.5 w-3.5 text-zinc-500" />
-              <span className="flex-1 truncate font-mono" title={currentDir}>{currentDir}</span>
+              <span className="flex-1 truncate font-mono" title={displayedCurrentDir}>{displayedCurrentDir}</span>
               <Button
                 size="sm"
                 variant="ghost"
                 disabled={isWebMode()}
-                onClick={() => handleReveal(currentDir)}
+                onClick={() => handleReveal(displayedCurrentDir)}
                 leftIcon={<ExternalLink className="h-3.5 w-3.5" />}
               >
                 {workspaceText.actions.revealInFinder}

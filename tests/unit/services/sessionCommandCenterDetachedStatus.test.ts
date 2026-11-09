@@ -69,7 +69,7 @@ describe('executeTaskStatus detached subagents', () => {
     const status = await executeTaskStatus({}, context(sessionId), allow);
 
     expect(status).toMatchObject({ ok: true });
-    expect(status.output).toContain(`后台子代理 1. FA [running] id=${agentId}`);
+    expect(status.output).toContain(`1. Folder A [running] id=${agentId}`);
     expect(status.output).not.toContain('当前会话还没有后台任务');
     pending.resolve(result('folder A summary'));
     await getBackgroundSubagentRegistry().await(agentId);
@@ -89,7 +89,7 @@ describe('executeTaskStatus detached subagents', () => {
     const after = await executeTaskStatus({}, context(sessionId), allow);
 
     expect(before.output).toContain('[running]');
-    expect(after.output).toContain(`后台子代理 1. FB [done] id=${agentId}：folder B summary`);
+    expect(after.output).toContain(`1. Folder B [completed] id=${agentId}：folder B summary`);
   });
 
   it('reports a SpawnGuard subagent while running and after completion', async () => {
@@ -110,8 +110,8 @@ describe('executeTaskStatus detached subagents', () => {
     await pending.promise;
     const after = await executeTaskStatus({}, context(sessionId), allow);
 
-    expect(before.output).toContain(`后台子代理 1. Folder C [running] id=${agentId}`);
-    expect(after.output).toContain(`后台子代理 1. Folder C [done] id=${agentId}：folder C summary`);
+    expect(before.output).toContain(`1. Folder C [running] id=${agentId}`);
+    expect(after.output).toContain(`1. Folder C [completed] id=${agentId}：folder C summary`);
   });
 
   it('keeps the existing empty text when no task registry has this session', async () => {
@@ -139,8 +139,8 @@ describe('executeTaskStatus detached subagents', () => {
 
     const status = await executeTaskStatus({}, context(sessionId), allow);
 
-    expect(status.output).toContain(`后台子代理 1. Explorer [running] id=${backgroundId}`);
-    expect(status.output).not.toContain('后台子代理 2.');
+    expect(status.output).toContain(`1. Explorer [running] id=${backgroundId}`);
+    expect(status.output).not.toContain('2. ');
     expect(status.output).not.toContain('agent_explore_linked');
     pending.resolve(result('folder B summary'));
     await getBackgroundSubagentRegistry().await(backgroundId);
@@ -153,7 +153,7 @@ describe('executeTaskStatus detached subagents', () => {
 
     const status = await executeTaskStatus({}, context(sessionId), allow);
 
-    expect(status.output).toContain(`后台子代理 1. 总结B [running] id=${agentId}`);
+    expect(status.output).toContain(`1. 总结B [running] id=${agentId}`);
     pending.resolve(result('done'));
     await getBackgroundSubagentRegistry().await(agentId);
   });
@@ -168,7 +168,7 @@ describe('executeTaskStatus detached subagents', () => {
 
     const status = await executeTaskStatus({}, context(sessionId), allow);
 
-    expect(status.output).toContain('[done]');
+    expect(status.output).toContain('[completed]');
     expect(status.output).toContain('五条客户回访集中在交付时间。');
     expect(status.output).not.toContain('completed task');
     expect(status.output).not.toContain('Stats');

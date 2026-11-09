@@ -75,8 +75,9 @@ export function getChannelPrivacyModeCopy(
 export function getChannelTypeLabel(
   type: ChannelType,
   channelTypes: ChannelTypeInfo[],
+  typeNames: Record<string, string> = zh.settings.channels.typeNames,
 ): string {
-  return channelTypes.find((channelType) => channelType.type === type)?.name || type;
+  return typeNames[type] || channelTypes.find((channelType) => channelType.type === type)?.name || type;
 }
 
 export function getChannelConfigSummary(
@@ -90,12 +91,12 @@ export function getChannelConfigSummary(
 
   if (account.type === 'feishu') {
     const config = account.config as FeishuChannelConfig;
-    return config.useWebSocket ? labels.webSocket : `Webhook ${config.webhookPort || 3200}`;
+    return config.useWebSocket ? labels.webSocket : `${labels.webhookPortPrefix}${config.webhookPort || 3200}`;
   }
 
   if (account.type === 'lark') {
     const config = account.config as LarkChannelConfig;
-    return config.useWebSocket ? labels.webSocket : `Webhook ${config.webhookPort || 3200}`;
+    return config.useWebSocket ? labels.webSocket : `${labels.webhookPortPrefix}${config.webhookPort || 3200}`;
   }
 
   if (account.type === 'telegram') {
@@ -931,13 +932,12 @@ export const ChannelsSettings: React.FC = () => {
                         {getTypeIcon(account.type)}
                         <div className="min-w-0">
                           <div className="truncate text-sm font-medium text-zinc-200">{account.name}</div>
-                          <div className="mt-1 truncate text-xs text-zinc-500">{account.id}</div>
                         </div>
                       </div>
 
                       <div>
                         <span className="inline-flex h-6 items-center rounded-md bg-zinc-800 px-2 text-xs text-zinc-300">
-                          {getChannelTypeLabel(account.type, channelTypes)}
+                          {getChannelTypeLabel(account.type, channelTypes, channelText.typeNames)}
                         </span>
                       </div>
 

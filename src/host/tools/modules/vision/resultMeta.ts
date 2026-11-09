@@ -4,6 +4,7 @@ import type { ToolExecutionResult } from '../../types';
 import type { ToolArtifact, ToolArtifactKind } from '../../../../shared/contract/artifactBlob';
 import { createFileArtifact, createVirtualArtifact, inferArtifactKind } from '../../artifacts/artifactMeta';
 import { adaptLegacyResult } from '../_helpers/legacyAdapter';
+import { compactSurfaceExecutionMetadata } from '../../../../shared/utils/surfaceExecutionProjection';
 
 const SENSITIVE_KEY_PATTERN = /(api[-_]?key|token|secret|password|authorization|cookie|base64)/i;
 const CONTENT_KEY_PATTERN = /(content|text|prompt|task|value)/i;
@@ -348,7 +349,7 @@ export async function adaptVisionLegacyResult(
   options: VisionResultMetaOptions,
 ): Promise<ToolResult<string>> {
   const adapted = adaptLegacyResult(result);
-  const legacyMetadata = result.metadata ?? {};
+  const legacyMetadata = compactSurfaceExecutionMetadata(result.metadata ?? {});
   const artifacts = await collectArtifacts(result, legacyMetadata, options.tool, options.ctx);
   const action = inferAction(options.tool, options.args, options.defaultAction);
   const target = inferTarget(options.args, legacyMetadata, options.target);
@@ -361,7 +362,6 @@ export async function adaptVisionLegacyResult(
       action,
       target,
       request: buildRequestSummary(options.args),
-      legacyMetadata,
       ...(artifacts.length > 0 ? { artifact: artifacts[0], artifacts } : {}),
     },
   };
