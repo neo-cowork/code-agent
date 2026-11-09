@@ -63,18 +63,19 @@ const BUILTIN_EN_COPY: Record<BuiltinJobTag, BuiltinJobDisplay> = {
   },
 };
 
+function isBuiltinTag(tag: string): tag is BuiltinJobTag {
+  return tag === MEMORY_CONSOLIDATION.JOB_TAG
+    || tag === DREAM_CRON_JOB_TAG
+    || tag === DISTILL_CRON_JOB_TAG;
+}
+
 function findBuiltinTag(tags?: string[]): BuiltinJobTag | null {
-  if (!tags || tags.length === 0) return null;
-  for (const tag of tags) {
-    if (
-      tag === MEMORY_CONSOLIDATION.JOB_TAG ||
-      tag === DREAM_CRON_JOB_TAG ||
-      tag === DISTILL_CRON_JOB_TAG
-    ) {
-      return tag;
-    }
-  }
-  return null;
+  return tags?.find(isBuiltinTag) ?? null;
+}
+
+/** Internal classification tags stay in storage/search, never in display copy. */
+export function getVisibleJobTags(job: Pick<CronJobDefinition, 'tags'>): string[] {
+  return job.tags?.filter((tag) => !isBuiltinTag(tag)) ?? [];
 }
 
 export function getBuiltinJobDisplay(

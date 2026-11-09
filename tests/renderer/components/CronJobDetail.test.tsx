@@ -397,6 +397,32 @@ describe('Group listener receipt check', () => {
       }
     });
 
+    it.each([builtinMemoryJob, builtinDreamJob, builtinDistillJob].flatMap((job) =>
+      (['en', 'zh'] as const).map((language) => ({ job, language })),
+    ))('hides built-in internal tags and preserves extra tags: $job.id ($language)', ({ job, language }) => {
+      useAppStore.setState({ language });
+      const storedTags = [...(job.tags ?? []), 'personal', 'light-memory-consolidation-notes'];
+      const taggedJob = { ...job, tags: [...storedTags] };
+      const { rerender } = render(<CronJobDetail job={job} />);
+      for (const tag of job.tags ?? []) {
+        expect(screen.queryByText(`#${tag}`, { exact: true })).toBeNull();
+      }
+
+      rerender(<CronJobDetail job={taggedJob} />);
+      for (const tag of job.tags ?? []) {
+        expect(screen.queryByText(`#${tag}`, { exact: true })).toBeNull();
+      }
+      expect(screen.getByText('#personal')).toBeTruthy();
+      expect(screen.getByText('#light-memory-consolidation-notes')).toBeTruthy();
+      expect(taggedJob.tags).toEqual(storedTags);
+    });
+
+    it.each(['en', 'zh'] as const)('preserves ordinary user job tags (%s)', (language) => {
+      useAppStore.setState({ language });
+      render(<CronJobDetail job={userJob} />);
+      expect(screen.getByText('#study')).toBeTruthy();
+    });
+
     it('普通用户任务在中英文下均原样展示存储的名称、描述与动作', () => {
       useAppStore.setState({ language: 'zh' });
       const { rerender } = render(<CronJobDetail job={userJob} />);
