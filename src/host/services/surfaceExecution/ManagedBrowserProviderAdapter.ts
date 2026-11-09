@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { takeHostDomSnapshot } from '../infra/browser/domSnapshotHandoff';
 import type { ToolContext, ToolExecutionResult } from '../../tools/types';
 import {
   browserPool,
@@ -152,8 +153,11 @@ function artifactRefsFromResult(result: ToolExecutionResult): string[] {
 }
 
 function domSnapshotFromResult(result: ToolExecutionResult): BrowserDomSnapshot | null {
-  const candidate = result.metadata?.domSnapshot;
-  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return null;
+  const raw = result.metadata?.domSnapshot;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  // browser_action keeps only a summary in metadata; the full record is parked host-side by snapshotId.
+  const summaryId = (raw as { snapshotId?: unknown }).snapshotId;
+  const candidate = (typeof summaryId === 'string' ? takeHostDomSnapshot(summaryId) : null) ?? raw;
   const snapshot = candidate as Partial<BrowserDomSnapshot>;
   if (typeof snapshot.snapshotId !== 'string'
     || typeof snapshot.tabId !== 'string'

@@ -641,6 +641,7 @@ export class SessionAutomationService {
         jobId: origin.id,
         executionId: session.sourceRunId ?? null,
         requestId: row.id,
+        sessionId,
         requestedAt: payload.requestedAt ?? row.submittedAt,
         ...((payload.argsPreview ?? payload.argsSummary) ? { commandPreview: payload.argsPreview ?? payload.argsSummary } : {}),
       });
