@@ -117,7 +117,7 @@ describe('parent ownership across follow-up and background completion', () => {
     expect(deps.addMessage).toHaveBeenCalledWith(expect.objectContaining({ content: 'completed output' }));
     expect(await repository.listChildRuns(parentInput.runId)).toEqual([]);
     expect(loggerState.info).toHaveBeenCalledWith(expect.stringContaining('without durable'), expect.objectContaining({ reason: 'parent_run_not_durable', parentRunId: parentInput.runId }));
-    console.info('A follow-up log:', ...loggerState.info.mock.calls.find(call => call[1]?.reason === 'parent_run_not_durable')!);
+    process.stdout.write(`A follow-up log: ${JSON.stringify(loggerState.info.mock.calls.find(call => call[1]?.reason === 'parent_run_not_durable'))}\n`);
   });
 
   it('A diagnosis: session conflicts reject plain registration too, rather than creating an ownerless run', async () => {
@@ -171,7 +171,7 @@ describe('parent ownership across follow-up and background completion', () => {
     await endParent(status);
     await expect(checkpoint.complete(true)).resolves.toBeUndefined();
     expect(loggerState.info).toHaveBeenCalledWith(expect.stringContaining('checkpoint skipped'), expect.objectContaining({ reason: 'parent_run_not_durable', runId: parentInput.runId }));
-    console.info('B skip log:', ...loggerState.info.mock.calls.find(call => call[1]?.reason === 'parent_run_not_durable')!);
+    process.stdout.write(`B skip log: ${JSON.stringify(loggerState.info.mock.calls.find(call => call[1]?.reason === 'parent_run_not_durable'))}\n`);
   });
 
   it('B: a terminal queued between ownership check and completion is tolerated', async () => {

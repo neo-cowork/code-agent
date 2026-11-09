@@ -419,11 +419,11 @@ function mergeContextRecord(
   // 重启孤儿收口：context 记录本身不携带生命周期，活着的证据只来自「本进程刚
   // 更新过它」。上一进程写下的记录（updatedAt 早于本进程启动）没有活着的执行
   // 方，收成 cancelled（已停）；renderer 的口径是 unknown→工作中，照旧落 unknown
-  // 就是重启后幽灵「工作中」行的来源。本进程内的记录维持 unknown（宁可在干），
+  // 就是重启后幽灵「工作中」行的来源。有显式图终态的记录保留终态；其余本进程记录维持 unknown（宁可在干），
   // 与 spawnGuard/registry 的活状态由优先级自然裁决。
-  const status: AgentTreeNodeStatus = record.updatedAt < HOST_PROCESS_BOOT_MS
+  const status: AgentTreeNodeStatus = record.terminalStatus ?? (record.updatedAt < HOST_PROCESS_BOOT_MS
     ? 'cancelled'
-    : 'unknown';
+    : 'unknown');
   applyStatus(node, status, 'subagentContext', statusPriorities);
   node.updatedAt = Math.max(node.updatedAt ?? 0, record.updatedAt);
   const activeTool = activeToolFromContext(record);
