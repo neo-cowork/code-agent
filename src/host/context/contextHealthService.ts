@@ -94,6 +94,14 @@ function persistProviderUsage(sessionId: string, providerUsage: ProviderContextU
   }
 }
 
+function invalidatePersistedProviderUsage(sessionId: string, updatedAt?: number): void {
+  try {
+    getDatabase().saveSessionRuntimeState(sessionId, { lastProviderUsageJson: null }, updatedAt);
+  } catch (error) {
+    logger.debug('Failed to invalidate persisted provider context usage:', error);
+  }
+}
+
 // ----------------------------------------------------------------------------
 // Context Health Service
 // ----------------------------------------------------------------------------
@@ -227,6 +235,10 @@ export class ContextHealthService {
     this.sessionStates.set(sessionId, health);
     if (useProviderTruth && providerUsage) {
       persistProviderUsage(sessionId, providerUsage);
+    } else {
+      // 本次快照不是 provider 实报（估算 / 中断轮 / 无 usage / 用户消息后快照）：
+      // 旧的持久化实报已落后于当前历史，清掉，重启后才会回落到估算而不是读到陈旧值
+      invalidatePersistedProviderUsage(sessionId);
     }
     try {
       getSessionStateManager().updateContextHealth(sessionId, health);
@@ -272,15 +284,7 @@ export class ContextHealthService {
    */
   cleanup(sessionId: string, updatedAt?: number): void {
     this.sessionStates.delete(sessionId);
-    try {
-      getDatabase().saveSessionRuntimeState(
-        sessionId,
-        { lastProviderUsageJson: null },
-        updatedAt,
-      );
-    } catch (error) {
-      logger.debug('Failed to invalidate persisted provider context usage:', error);
-    }
+    invalidatePersistedProviderUsage(sessionId, updatedAt);
   }
 
   /**
