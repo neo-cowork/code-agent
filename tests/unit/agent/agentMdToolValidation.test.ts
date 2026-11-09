@@ -118,8 +118,12 @@ describe('loadAgentMdFiles 工具名校验', () => {
 describe('loadAgentMdFiles legacy calendar migration', () => {
   const fixtures = path.join(import.meta.dirname, 'fixtures/legacy-calendar');
 
-  it.each(['日历助理RR21', '日历助理RR21B', '日程管家'])('migrates real legacy fixture %s, backs up original, and is idempotent', async (role) => {
-    const original = await fs.readFile(path.join(fixtures, `${role}.md`), 'utf-8');
+  it.each([
+    ['日历助理RR21', 'calendar-assistant-rr21.md'],
+    ['日历助理RR21B', 'calendar-assistant-rr21b.md'],
+    ['日程管家', 'schedule-steward.md'],
+  ])('migrates real legacy fixture %s, backs up original, and is idempotent', async (role, fixtureName) => {
+    const original = await fs.readFile(path.join(fixtures, fixtureName), 'utf-8');
     const file = path.join(dir, `${role}.md`);
     await fs.writeFile(file, original);
     const agents = await loadAgentMdFiles(dir);
@@ -220,7 +224,7 @@ describe('loadAgentMdFiles legacy calendar migration', () => {
   });
 
   it('read-only directory warns with reason and still returns the in-memory migration', async () => {
-    const original = await fs.readFile(path.join(fixtures, '日历助理RR21.md'), 'utf-8');
+    const original = await fs.readFile(path.join(fixtures, 'calendar-assistant-rr21.md'), 'utf-8');
     const file = path.join(dir, 'readonly.md');
     await fs.writeFile(file, original);
     await fs.chmod(dir, 0o500);
