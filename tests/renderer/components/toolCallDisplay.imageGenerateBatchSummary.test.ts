@@ -6,6 +6,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { ToolCall } from '../../../src/shared/contract';
+import { en } from '../../../src/renderer/i18n/en';
 import { summarizeTool } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/summarizers';
 
 function imageGenerateCall(metadata: Record<string, unknown>): ToolCall {
@@ -23,13 +24,13 @@ describe('summarizeTool image_generate batch metadata', () => {
       imagePath: '/repo/batch-1.png',
       outputPath: '/repo/batch-1.png',
       outputImagePaths: ['/repo/batch-1.png', '/repo/batch-2.png'],
-    }))).toBe('batch-1.png +1 more');
+    }), en)).toBe('batch-1.png +1 more');
   });
 
   it('keeps the single-image label unchanged', () => {
     expect(summarizeTool(imageGenerateCall({
       imagePath: '/repo/single.png',
       outputPath: '/repo/single.png',
-    }))).toBe('single.png');
+    }), en)).toBe('single.png');
   });
 });

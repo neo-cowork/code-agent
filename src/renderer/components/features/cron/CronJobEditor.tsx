@@ -28,6 +28,7 @@ import {
 } from './cronTemplates';
 import { CronSimpleCreate } from './CronSimpleCreate';
 import { CronAgentActionFields } from './CronAgentActionFields';
+import { CronDurationField } from './CronDurationField';
 
 import { SavedRoutineRestate } from './SavedRoutineRestate';
 import { useI18n } from '../../../hooks/useI18n';
@@ -52,7 +53,7 @@ interface CronJobEditorProps {
   onClose: () => void;
 }
 
-type FieldErrors = Partial<Record<keyof CronJobDraft, string>> & { form?: string; eventForm?: boolean };
+type FieldErrors = Partial<Record<keyof CronJobDraft, string>> & { form?: string; eventForm?: boolean; templateForm?: boolean };
 
 type EditorTab = 'basic' | 'action' | 'advanced';
 
@@ -195,14 +196,14 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
 
   const scheduleOptions = useMemo(
     () => [
-      { value: 'at', label: '一次性' },
-      { value: 'every', label: '间隔循环' },
+      { value: 'at', label: cc.manualEditor.oneTimeScheduleOption },
+      { value: 'every', label: cc.manualEditor.intervalScheduleOption },
       { value: 'cron', label: cc.manualEditor.cronScheduleOption },
       { value: 'event', label: cc.eventScheduleOption },
       { value: 'event-mail', label: cc.eventMailScheduleOption },
       { value: 'event-webhook', label: cc.eventWebhookScheduleOption },
     ],
-    [cc.eventScheduleOption, cc.eventMailScheduleOption, cc.eventWebhookScheduleOption, cc.manualEditor.cronScheduleOption]
+    [cc.eventScheduleOption, cc.eventMailScheduleOption, cc.eventWebhookScheduleOption, cc.manualEditor]
   );
 
   // event 调度的创建期护栏（host createJob 同款）：只允许本机 + Agent 动作。
@@ -235,6 +236,13 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
   useEffect(() => {
     if (errors.eventForm && !eventViolation) setErrors((prev) => ({ ...prev, form: undefined, eventForm: false }));
   }, [errors.eventForm, eventViolation]);
+  useEffect(() => {
+    if (!errors.templateForm || !selectedTemplate) return;
+    const missing = selectedTemplate.fields.filter((f) => f.required && !templateValues[f.key]?.trim());
+    setErrors((prev) => !prev.templateForm ? prev : missing.length > 0
+      ? { ...prev, form: `请填写：${missing.map((f) => f.label).join('、')}` }
+      : { ...prev, form: undefined, templateForm: false });
+  }, [errors.templateForm, selectedTemplate, templateValues]);
   const cloudRoleBound = isCloudRoleBoundAgentDraft(draft);
   const setField = <K extends keyof CronJobDraft>(key: K, value: CronJobDraft[K]) => {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -272,7 +280,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
     // Validate required fields
     const missing = selectedTemplate.fields.filter((f) => f.required && !templateValues[f.key]?.trim());
     if (missing.length > 0) {
-      setErrors({ form: `请填写：${missing.map((f) => f.label).join('、')}` });
+      setErrors({ form: `请填写：${missing.map((f) => f.label).join('、')}`, templateForm: true });
       return;
     }
 
@@ -894,7 +902,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       {activeTab === 'advanced' && (
         <div className="space-y-3">
           <p className="text-xs text-zinc-500">配置重试策略和执行超时，通常保持默认即可。</p>
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3">
             <FormField label="最大重试次数">
               <Input
                 type="number"
@@ -903,22 +911,16 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                 placeholder="0"
               />
             </FormField>
-            <FormField label="重试间隔 (ms)">
-              <Input
-                type="number"
-                value={draft.retryDelay}
-                onChange={(e) => setField('retryDelay', e.target.value)}
-                placeholder="不限"
-              />
-            </FormField>
-            <FormField label="执行超时 (ms)">
-              <Input
-                type="number"
-                value={draft.timeout}
-                onChange={(e) => setField('timeout', e.target.value)}
-                placeholder="不限"
-              />
-            </FormField>
+            <CronDurationField
+              label={cc.manualEditor.retryDelayLabel} value={draft.retryDelay} onChange={(value) => setField('retryDelay', value)}
+              placeholder={cc.manualEditor.retryDelayPlaceholder} hint={cc.manualEditor.retryDelayHint} invalidMessage={cc.manualEditor.durationInvalid}
+              testId="cron-retry-delay" unitLabels={cc.manualEditor.durationUnits} maxUnit="minutes"
+            />
+            <CronDurationField
+              label={cc.manualEditor.timeoutLabel} value={draft.timeout} onChange={(value) => setField('timeout', value)}
+              placeholder={cc.manualEditor.timeoutPlaceholder} invalidMessage={cc.manualEditor.durationInvalid}
+              testId="cron-timeout" unitLabels={cc.manualEditor.durationUnits} maxUnit="hours"
+            />
           </div>
           {draft.runsOn !== 'cloud' && (
             <div className="grid gap-3 sm:grid-cols-2">
