@@ -227,6 +227,17 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                         data-testid="parked-approval-voided"
                       >
                         <div className="truncate text-sm text-zinc-200">{item.displayTool ?? item.tool}</div>
+                        {item.sessionTitle && <div className="text-xs text-zinc-400">{item.sessionTitle}</div>}
+                        <div className="text-[11px] text-zinc-500">
+                          {cc.parkedStartedAt.replace('{time}', new Date(item.requestedAt).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN', {
+                            month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+                          }))}
+                        </div>
+                        {item.argsPreview && (
+                          <div className="truncate text-[11px] text-zinc-400" data-testid="parked-args-preview">
+                            {cc.parkedArgsPreviewLabel}{item.argsPreview}
+                          </div>
+                        )}
                         <div className="text-[11px] text-zinc-500">
                           {/* 收口句按当前语言展示（老行持久化的是中文原句）；非收口文本原样保留 */}
                           {cc.parkedVoidedLabel}：{localizeParkedApprovalClosureText(item.voidReason, t) ?? item.voidReason}

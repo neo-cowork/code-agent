@@ -27,7 +27,6 @@ export const cronCenterZh = {
     tabJobs: '自动化任务',
     tabRuns: '运行记录',
     close: '关闭自动化面板',
-    // 页首三格状态条（数据：cronStore.stats + 收件箱待过目数）
     statRunning: '运行中',
     statPendingReview: '待过目',
     statRate: '成功率',
@@ -37,7 +36,6 @@ export const cronCenterZh = {
     budgetSummaryUnavailable: '用量暂不可用',
     budgetSettingsAction: '去设置上限 →',
     loading: '正在加载任务…',
-    // 列表
     listTitle: '任务',
     listSubtitle: '一次性或循环，按计划自动执行',
     refresh: '刷新列表',
@@ -98,7 +96,6 @@ export const cronCenterZh = {
     loginWallNotificationBody: '请在 Neo 浏览器中登录 {site}，然后下一次定时运行才能继续。',
     loginWallError: '你需要在 Neo 浏览器中登录 {site}，这次定时运行已停止。',
     loginWallOpenSite: '在 Neo 浏览器中登录',
-    // 失败人话（N-CRON-FAIL-PLAIN）：一句原因 + 一个下一步。重置时间由调用方填好，取不到用「以服务商为准」。
     failureNotificationTitle: '定时任务没跑成 · {name}',
     failureToastView: '查看',
     missedAlertsMerged: '有 {count} 条提醒需要你处理',
@@ -116,11 +113,9 @@ export const cronCenterZh = {
     failureActionRunAgain: '立即重跑',
     failureActionCheckAccount: '检查账号设置',
     failureTechnical: '查看技术详情',
-    // 需处理（N-CRON-RUN-COMPLETED-BUT-DENIED）：被拒且无产出的运行不算「成功」。
     permissionDeniedBadge: '需处理',
     permissionDeniedTitle: '有命令没获批准',
     permissionDeniedSentence: '「{summary}」没有获批准（{reason}），这次运行没有产出。',
-    // 四条原因措辞与 host 完成通知同源（shared/cronPermissionDenied，Rework r2）
     permissionDeniedReasonUser: cronPermissionDeniedReasonText('user', 'zh'),
     permissionDeniedReasonTimeout: cronPermissionDeniedReasonText('timeout', 'zh'),
     permissionDeniedReasonCancelled: cronPermissionDeniedReasonText('cancelled', 'zh'),
@@ -134,7 +129,6 @@ export const cronCenterZh = {
       heartbeat: '心跳',
       external_event: '事件',
     },
-    // 详情
     detailEmptyTitle: '选择一个任务查看详情',
     detailEmptySub: '也可以直接新建第一个任务',
     descriptionGuide: '让 Neo 给这个任务写一句描述',
@@ -165,7 +159,6 @@ export const cronCenterZh = {
     cardTimeout: '超时',
     historyTitle: '执行历史',
     historyEmpty: '还没有执行记录，点击「手动触发」运行一次',
-    // 执行记录
     execEmpty: '还没有执行记录',
     execSelectHint: '选择一条执行记录查看详情',
     execDetailTitle: '执行详情',
@@ -184,13 +177,11 @@ export const cronCenterZh = {
     colExitCode: '退出码',
     execSession: '运行会话',
     execLocation: '执行位置',
-    // 事件触发的 run 记录：触发源标签（channel = 通道消息，mail = 邮件轮询）
     execTriggerSource: '触发源',
     triggerSourceChannel: '通道',
     triggerSourceMail: '邮件',
     execCompletedAt: '完成时间',
     execRetryCount: '重试次数',
-    // 运行成本（N-CRON-RUN-LEDGER-VISIBLE）：单次成本 + 每日小计 + 唤醒未运行原因
     colCost: '成本',
     wakeSkipTitle: '未运行原因',
     wakeSkipSilentLevel: '未运行：角色处于静默档，不主动醒来',
@@ -208,7 +199,6 @@ export const cronCenterZh = {
     execError: '错误',
     execResult: '结果',
     execStopReason: '为什么停了',
-    // 简单创建流（A3）
     simpleTitle: '添加自动化',
     simpleGoalLabel: '想让 Neo 定期做什么',
     simpleGoalPlaceholder: '例如：读一遍我关注的竞品动态，整理成简报',
@@ -217,7 +207,6 @@ export const cronCenterZh = {
     simpleNamePlaceholder: '不填就用目标开头',
     simpleRoleLabel: '以谁的身份跑（可选）',
     simpleRoleNone: '不指定',
-    // 晨间分诊填参：可选，把这次分诊交给一位持久化角色
     templateRoleLabel: '交给哪位角色（可选）',
     templateRoleNone: '不指定',
     simpleArchiveLabel: '产出归档到（可选）',
@@ -241,7 +230,6 @@ export const cronCenterZh = {
     resultPushListFailed: '暂时无法读取会话，可手动填写接收会话 ID。',
     resultPushAccountUnavailable: '之前保存的推送目标“{value}”对应的通道已不可用。原配置已保留，重新选择或改为不推送后再保存。',
     resultPushConversationUnavailable: '之前保存的接收会话已不可用。原配置已保留，重新选择后再保存。',
-    // 手动配置页的人话字段（N-FIX-CRON-EDITOR-AGENT-ACTION-DEV-FIELDS）
     manualEditor: {
       oneTimeScheduleOption: '一次性',
       intervalScheduleOption: '间隔循环',
@@ -267,17 +255,13 @@ export const cronCenterZh = {
         distill: { name: '经验提炼', description: '适合从重复工作中提炼可复用的流程。' },
       },
     },
-    // 事件触发（N-CRON-EVENT-CREATE-UI）：通道消息 / 群监听调度
     eventScheduleOption: '通道消息（群监听）',
     eventAccountLabel: '触发账号',
     eventAccountPlaceholder: '选择一个已连接账号',
     eventAccountUnavailable: '之前绑定的触发账号“{value}”已不可用。原配置已保留，重新选择后再保存。',
     eventNoAccounts: '还没有连接消息通道，事件触发无从绑定账号。',
-    // 新邮件（邮件触发）调度（N-TRIGGER-MAIL-CREATE-ENTRY-K1）：账号/邮箱下拉 + 不可用三态
     eventMailScheduleOption: '新邮件（邮件触发）',
-    // 已落库的 webhook 任务在编辑器里的调度类型（创建菜单不提供这一项）。
     eventWebhookScheduleOption: '外部系统通知触发（Webhook 投递）',
-    // Webhook 触发（N-CRON-WEBHOOK-CLOUD-HOOK-FU1）：云端服务设置卡 + 编辑器门 + 一次性链接卡 + 详情块
     cloudSettings: {
       title: '云端计划任务服务',
       description: 'Webhook 触发需要它：Sentry、Linear 等外部系统把事件发到云端链接，Neo 通过这个服务收到并启动任务。',
@@ -342,16 +326,12 @@ export const cronCenterZh = {
     eventConstraintsHint: '事件触发任务只能在本机运行，动作固定为 Agent 任务；必须设置「单次预算上限 (USD)」。',
     eventBudgetLabel: '单次预算上限 (USD)',
     eventBudgetHint: '事件触发任务必填：本次运行花费超过该金额即停车并自动停用。',
-    // shared 校验器（cronEventValidation）reason → 用户能照着改的中文提示；
-    // 判据与文案原文在 shared 层（= createJob 抛的），这里只做呈现映射。
-    // Record 键集 = reason 全集：校验器新增 reason 时 zh/en 都必须补齐词条。
     eventValidation: {
       'invalid-schedule': '先选一个触发账号：通道消息触发需要绑定一个已连接的消息通道账号。',
       'requires-local': '事件触发任务只能在本机运行，执行位置请保持「本地」。',
       'agent-only': '事件触发任务只支持 Agent 动作，请把动作类型换成 Agent 任务。',
       'requires-budget': '事件触发任务必须设置单次预算上限：请在「单次预算上限 (USD)」里填一个大于 0 的数，单次运行花费超过它就会停车并自动停用。',
     } satisfies Record<EventScheduleValidationReason, string>,
-    // /schedule 确认卡的 event 草案行（N-CRON-EVENT-CREATE-CHAT）：群行/预算行的标签与兜底。
     eventConfirmGroup: '监听哪个群',
     eventConfirmGroupFallback: '还没选：在下方选择触发账号和群',
     eventConfirmGroupAnyChat: '该账号的任意会话',
@@ -413,6 +393,7 @@ export const cronCenterZh = {
     parkedExternalBadge: '对外操作',
     parkedOrphaned: '已过期（应用重启）',
     parkedVoidedLabel: '已作废',
+    parkedStartedAt: '开始于 {time}',
     parkedResolveStale: '该审批已失效（发起它的运行已结束），已标记过期',
     parkedResolveFailed: '操作没有生效，请重试',
     parkedWaiting: '等待 {duration}',
@@ -912,6 +893,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     parkedExternalBadge: 'External',
     parkedOrphaned: 'Expired (app restarted)',
     parkedVoidedLabel: 'Voided',
+    parkedStartedAt: 'Started {time}',
     parkedResolveStale: 'This approval is stale (its run has ended) and was marked expired',
     parkedResolveFailed: 'That did not go through — please retry',
     parkedWaiting: 'Waiting {duration}',
