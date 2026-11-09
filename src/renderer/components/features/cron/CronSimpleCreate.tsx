@@ -287,7 +287,7 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
         </FormField>
       )}
 
-      <div className="flex items-center justify-end gap-2 pt-2">
+      <div className="sticky -bottom-4 z-10 -mx-6 flex items-center justify-end gap-2 border-t border-zinc-700 bg-zinc-900 px-6 py-4">
         <Button onClick={handleSubmit} loading={submitting}>
           {cc.simpleCreateCta}
         </Button>
