@@ -42,8 +42,15 @@ vi.mock('../../../../src/host/config/configPaths', () => ({
   getAgentsMdDir: () => ({ user: path.join(mockConfigDir.dir, 'agents') }),
 }));
 
+// Match production's unsupported electron alias; notificationService itself stays real.
+vi.mock('../../../../src/host/platform', () => ({
+  Notification: { isSupported: () => false },
+  broadcastToRenderer: vi.fn(),
+}));
+
 vi.mock('../../../../src/host/services/infra/logger', () => ({
   createLogger: () => mockLogger,
+  logger: mockLogger,
 }));
 
 vi.mock('../../../../src/host/services/infra/sessionManager', () => ({
@@ -129,6 +136,8 @@ import { sanitizeTopicList } from '../../../../src/shared/roleTopicList';
 import { ensureRoleAssetDirs, appendRoleHistory, loadRoleHistory } from '../../../../src/host/services/roleAssets/roleAssetService';
 import { getRoleHistoryPath } from '../../../../src/host/services/roleAssets/roleAssetPaths';
 import { ROLE_PROACTIVITY } from '../../../../src/shared/constants';
+
+import { notificationService } from '../../../../src/host/services/infra/notificationService';
 
 const RESEARCHER = '研究员';
 const TODAY = new Date().toISOString().slice(0, 10);
@@ -321,6 +330,55 @@ describe('roleProactivity', () => {
   // --------------------------------------------------------------------------
 
   describe('wakeRole 醒来循环', () => {
+    describe('realtime desktop output through notificationService', () => {
+      beforeEach(() => {
+        vi.stubEnv('CODE_AGENT_NOTIFICATION_DRY_RUN', '1');
+        notificationService.clearRecentNotifications();
+      });
+      afterEach(() => {
+        notificationService.clearRecentNotifications();
+        vi.unstubAllEnvs();
+      });
+
+      it('realtime wakeRole records exactly one notice with the wake session id and dispatch log', async () => {
+        mockSettings.value = { roleAssets: { proactivity: { defaultLevel: 'realtime' } } };
+        await seedProductHistory(RESEARCHER);
+        primeWakeRun('report');
+        const result = await wakeRole(RESEARCHER, 'cadence');
+        expect(result).toMatchObject({ status: 'completed', decision: 'report', sessionId: 'wake-session-1' });
+        expect(notificationService.getRecentNotifications()).toEqual([
+          expect.objectContaining({
+            type: 'task_complete', sessionId: result.sessionId, delivery: 'dry_run',
+            title: `${RESEARCHER} · ${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}`, body: '检查完毕。',
+          }),
+        ]);
+        expect(mockLogger.info).toHaveBeenCalledWith('Notification dispatched', {
+          intent: 'task_complete', sessionId: result.sessionId,
+        });
+      });
+
+      it.each(['daily', 'silent'] as const)('%s wakeRole records no desktop notice', async (level) => {
+        mockSettings.value = { roleAssets: { proactivity: { defaultLevel: level } } };
+        await seedProductHistory(RESEARCHER);
+        primeWakeRun('report');
+        const result = await wakeRole(RESEARCHER, 'cadence');
+        expect(result.status).toBe(level === 'silent' ? 'skipped' : 'completed');
+        expect(notificationService.getRecentNotifications()).toEqual([]);
+        expect(mockLogger.info).not.toHaveBeenCalledWith('Notification dispatched', expect.anything());
+      });
+
+      it('realtime wakeRole silence decision records no desktop notice', async () => {
+        mockSettings.value = { roleAssets: { proactivity: { defaultLevel: 'realtime' } } };
+        await seedProductHistory(RESEARCHER);
+        primeWakeRun('silence');
+        const result = await wakeRole(RESEARCHER, 'cadence');
+        expect(result).toMatchObject({ status: 'completed', decision: 'silence' });
+        expect(mockSessionManager.archiveSession).toHaveBeenCalledWith('wake-session-1');
+        expect(notificationService.getRecentNotifications()).toEqual([]);
+        expect(mockLogger.info).not.toHaveBeenCalledWith('Notification dispatched', expect.anything());
+      });
+    });
+
     it('出厂默认（silent，无任何配置）下醒来被跳过，不烧 token', async () => {
       freezeClockAt('23:00');
       try {

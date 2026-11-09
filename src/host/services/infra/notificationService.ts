@@ -441,6 +441,24 @@ class NotificationService implements Disposable {
     logger.info('Task resume notification sent', { sessionId: data.sessionId, autoResumeCount: data.autoResumeCount });
   }
 
+  /** Realtime role output keeps its wake session as the notification click target. */
+  notifyRoleWakeOutput(data: { sessionId: string; title: string; body: string }): void {
+    if (!this.isIntentAllowed('task_complete')) return;
+    if (!this.shouldNotify()) return;
+
+    const disposition = this.enqueueBudgeted({
+      intent: 'task_complete',
+      type: 'task_complete',
+      sessionId: data.sessionId,
+      title: sanitizeNotificationText(data.title, 120),
+      body: sanitizeNotificationText(data.body, 320),
+      delivery: {},
+    });
+    if (disposition === 'delivered') {
+      logger.info('Notification dispatched', { intent: 'task_complete', sessionId: data.sessionId });
+    }
+  }
+
   /**
    * 发送插件主动请求的系统通知。插件没有目标会话，因此通知点击只负责唤起应用，
    * 不会尝试切换到不存在的会话。
