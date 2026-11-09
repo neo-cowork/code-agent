@@ -37,12 +37,15 @@ describe('persisted background-task status card', () => {
         // Copied from neo-realrun db snapshots: model-facing output and metadata stay together.
         const toolCall: ToolCall = {
           id: result.toolCallId, name: 'task_status', arguments: {}, result,
+          // Real persisted shape: the model used the raw tool name as its short description.
+          shortDescription: 'Use task_status',
         };
         const expected = labels[locale][status as keyof typeof labels.zh];
         const assertVisible = (text: string) => {
           expect(text).toContain(result.metadata.sessionTask.tasks[0].shortName);
           expect(text).toContain(expected);
           expect(text).not.toMatch(/\[(?:running|completed|failed|cancelled)\]|id=|session-work-|\bDone\b/);
+          expect(text).not.toMatch(/task_status|delegate_task|cancel_task/);
           if (locale === 'zh') expect(text).not.toMatch(/\b(?:Running|Completed|Failed|Interrupted)\b/);
         };
         const mount = () => render(<ToolCallDisplay toolCall={JSON.parse(JSON.stringify(toolCall))} index={0} total={1} />);
