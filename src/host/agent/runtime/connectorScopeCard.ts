@@ -9,7 +9,7 @@
 
 import type { AgentEvent, ToolResult } from '../../../shared/contract';
 import { getMcpPermissionPageUrl, MCP_PERMISSION_PAGE_URLS } from '../../../shared/constants';
-import { MCP_INSUFFICIENT_SCOPE_METADATA_KEY } from '../../mcp/mcpErrors';
+import { MCP_AUTHORIZATION_REQUIRED_METADATA_KEY, MCP_INSUFFICIENT_SCOPE_METADATA_KEY } from '../../mcp/mcpErrors';
 
 export function buildInsufficientScopeConnectorEvent(
   result: Pick<ToolResult, 'success' | 'metadata'>,
@@ -35,4 +35,37 @@ export function buildInsufficientScopeConnectorEvent(
       }],
     },
   };
+}
+
+/**
+ * MCP 401（服务端要求重新授权）→ connector_required(reason:'lost_login')。
+ * 401 不区分过期与撤销，所以只带 mcp_oauth_authorization_required，卡片文案只说「需要重新授权」。
+ * 每次失败的工具调用至多一张；与 insufficient_scope 互斥（同一失败只会带其中一个标记）。
+ */
+function buildLostLoginConnectorEvent(
+  result: Pick<ToolResult, 'success' | 'metadata'>,
+): AgentEvent | null {
+  if (result.success) return null;
+  const metadata = result.metadata as Record<string, unknown> | undefined;
+  if (!metadata?.[MCP_AUTHORIZATION_REQUIRED_METADATA_KEY]) return null;
+  const server = metadata.serverName ?? metadata.server;
+  if (typeof server !== 'string' || !server) return null;
+  return {
+    type: 'connector_required',
+    data: {
+      connectors: [{
+        id: server,
+        source: 'selected',
+        reason: 'lost_login',
+        lostCode: 'mcp_oauth_authorization_required',
+      }],
+    },
+  };
+}
+
+/** 工具失败 → 连接卡事件（权限范围不足优先，其次登录丢失）；两处发射点（引擎 / 子代理）共用。 */
+export function buildConnectorToolFailureEvent(
+  result: Pick<ToolResult, 'success' | 'metadata'>,
+): AgentEvent | null {
+  return buildInsufficientScopeConnectorEvent(result) ?? buildLostLoginConnectorEvent(result);
 }

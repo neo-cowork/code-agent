@@ -29,6 +29,14 @@ if (args[0] === 'auth' && args[1] === 'status') {
     setInterval(() => {}, 1000);
   } else {
     if (mode === 'status-fail') process.exit(1);
+    if (mode === 'status-not-configured') {
+      process.stderr.write('profile "neo" not found: not configured\\n');
+      process.exit(1);
+    }
+    if (mode === 'status-signed-out') {
+      process.stdout.write(JSON.stringify({ identities: { user: { available: false } }, identity: 'bot' }));
+      process.exit(0);
+    }
     process.stdout.write(JSON.stringify({
       identities: { user: { available: true, openId: 'ou_fake', userName: 'Neo User', tenantName: 'Neo Corp' } },
       identity: 'user',
@@ -162,6 +170,24 @@ describe('Feishu lark-cli driver', () => {
       identity: 'none',
       stale: true,
     });
+  });
+
+  it('tags only the two CONFIRMED lost-login probes with a machine reason (signed-out, not-configured); install-missing and unclassified failures stay untagged', async () => {
+    const signedOut = await fixture('status-signed-out');
+    await expect(signedOut.driver.status()).resolves.toMatchObject({ connected: false, lostReason: 'cli_not_logged_in' });
+
+    const notConfigured = await fixture('status-not-configured');
+    const configured = await notConfigured.driver.status();
+    expect(configured).toMatchObject({ connected: false, lostReason: 'cli_missing_configuration' });
+    expect(configured.stale).toBeUndefined();
+
+    const unclassified = await fixture('status-fail');
+    expect((await unclassified.driver.status()).lostReason).toBeUndefined();
+    const missingBinary = createLarkCliDriver({
+      dataDir: path.join(path.dirname(unclassified.logPath), 'missing-2'),
+      timeoutMs: 100,
+    });
+    expect((await missingBinary.status()).lostReason).toBeUndefined();
   });
 
   it('reuses status inside the TTL and refreshes after expiry', async () => {

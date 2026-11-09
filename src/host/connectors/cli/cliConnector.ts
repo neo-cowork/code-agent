@@ -29,6 +29,11 @@ export interface CliConnectorStatus {
   connected: boolean;
   identity: string;
   stale?: boolean;
+  /**
+   * Machine reason for connected:false, only for the two CONFIRMED lost-login
+   * probes (connector-lost-login-signals.md). Never set for stale/timeout/other failures.
+   */
+  lostReason?: 'cli_not_logged_in' | 'cli_missing_configuration';
   /** The connector can be repaired from settings when installation failed. */
   installState?: 'failed';
   user?: {
@@ -473,6 +478,7 @@ export function createCliConnector(
       return {
         connected,
         identity,
+        ...(!connected ? { lostReason: 'cli_not_logged_in' as const } : {}),
         ...(openId || name || tenantName ? {
           user: {
             ...(openId ? { openId } : {}),
@@ -493,7 +499,12 @@ export function createCliConnector(
         cachedStatusAvailable: Boolean(statusCache.value),
       });
       if (isMissingConfiguration(error, descriptor)) {
-        return { connected: false, identity: descriptor.status.disconnectedIdentity };
+        return {
+          connected: false,
+          identity: descriptor.status.disconnectedIdentity,
+          // ENOENT = CLI 没装，不是登录丢失证据；只有 CLI 自己报「未配置/未登录」才算 CONFIRMED
+          ...(systemErrorCode(error) === 'ENOENT' ? {} : { lostReason: 'cli_missing_configuration' as const }),
+        };
       }
       return {
         ...(statusCache.value ?? {
