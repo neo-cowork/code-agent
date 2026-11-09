@@ -27,8 +27,71 @@ import {
 import { isForbiddenWriteNameUnderRoot, isProtectedWritePath } from '../sandbox/sensitivePaths';
 import { createLogger } from '../services/infra/logger';
 import { expandTilde, resolveInputPath } from '../tools/utils/resolveInputPath';
+import { getPermissionModeManager } from '../permissions/modes';
+import { getDatabase } from '../services/core/databaseService';
+import { normalizeCronJobRow } from './cronNormalizers';
 
 const logger = createLogger('CronWriteGrant');
+
+/** Run before registering jobs: old workspace approvals are the sole migration evidence. */
+export async function backfillCronWriteScopes(updatedAt = Date.now()): Promise<void> {
+  const db = getDatabase().getDb();
+  if (!db) throw new Error('CRON_WRITE_GRANT_BACKFILL_DATABASE_UNAVAILABLE');
+  db.prepare(`CREATE TABLE IF NOT EXISTS cron_write_grant_migration (
+    version INTEGER PRIMARY KEY, completed_at INTEGER NOT NULL
+  )`).run();
+  if (db.prepare('SELECT version FROM cron_write_grant_migration WHERE version = 1').get()) return;
+  const previousWriters = new Set((db.prepare(`
+    SELECT DISTINCT json_extract(s.origin, '$.id') AS job_id
+    FROM permission_decisions p JOIN sessions s ON s.id = p.session_id
+    WHERE p.tool_name IN ('Write', 'Edit', 'write_file', 'edit_file')
+      AND p.final_outcome = 'allow' AND p.reason = '写入项目目录内'
+      AND json_valid(s.origin)
+      AND json_extract(s.origin, '$.kind') IN ('cron', 'heartbeat')
+  `).all() as Array<{ job_id: string }>).map((row) => row.job_id));
+  const updates: Array<{ id: string; metadata: string }> = [];
+  for (const row of db.prepare('SELECT * FROM cron_jobs').all()) {
+    const job = normalizeCronJobRow(row);
+    if (!job || !previousWriters.has(job.id) || writeGrantRootFromMetadata(job.metadata)) continue;
+    const root = cronWriteScopeFolder(job, await sourceSessionWorkingDirectory(job));
+    if (!root || !path.isAbsolute(root)) continue;
+    updates.push({ id: job.id, metadata: JSON.stringify({ ...job.metadata, [CRON_WRITE_GRANT_METADATA_KEY]: root }) });
+  }
+  const markDone = () => db.prepare('INSERT INTO cron_write_grant_migration (version, completed_at) VALUES (1, ?)').run(updatedAt);
+  if (updates.length) {
+    db.transaction(() => {
+      for (const update of updates) {
+        db.prepare('UPDATE cron_jobs SET metadata = ?, updated_at = ? WHERE id = ?').run(update.metadata, updatedAt, update.id);
+      }
+      markDone();
+    })();
+  } else {
+    markDone();
+  }
+  logger.info('Schedule write grant backfill completed', { backfilled: updates.length });
+}
+
+/** Route scheduled file mutations through the existing grant/park authority, even after W1 approves. */
+export async function requiresScheduleWriteGrant(
+  request: { type: string; details?: { path?: unknown } },
+  sessionId: string | undefined,
+  workingDirectory: string,
+  workspaceRoot: string | undefined,
+): Promise<boolean> {
+  const { type } = request;
+  if ((type !== 'file_write' && type !== 'file_edit')
+    || !getPermissionModeManager().isUnattendedSession(sessionId)) return false;
+  // Only replace the in-workspace shortcut; outside-workspace policy stays unchanged.
+  const target = request.details?.path;
+  if (!workspaceRoot || typeof target !== 'string'
+    || !isPathWithinWriteGrantRoot(resolveInputPath(target, workingDirectory), workspaceRoot)) return false;
+  const session = await scheduleWriteGrantSession(sessionId);
+  if (!session) return false;
+  logger.info('Scheduled file write requires grant check in orchestratorPermissions', {
+    sessionId, type, branch: session.root ? 'check-granted-path' : 'park-missing-grant',
+  });
+  return true;
+}
 
 /** CronService 暴露给本模块的最小宿主面（同 rememberCronLoginPassThroughOrigin 的注入形态）。 */
 export interface CronWriteGrantHost {
@@ -182,11 +245,14 @@ export async function approveByScheduleWriteGrant(request: {
     request.forceConfirm === true
     && (request.forceConfirmBoundaryOnly !== true
       || request.reasonCode !== PermissionRequestReason.FileWriteOutsideWorkspace)
-  ) return undefined;
+  ) {
+    logger.info('Schedule write grant declined (independent confirmation required)', { sessionId: request.sessionId });
+    return undefined;
+  }
   const grantSession = await scheduleWriteGrantSession(request.sessionId);
   const grantRoot = grantSession?.root;
   if (!grantRoot) {
-    logger.debug('Schedule write grant not applicable (no grant on the session origin)', {
+    logger.info('Schedule write grant not applicable (no grant on the session origin)', {
       sessionId: request.sessionId,
       type: request.type,
     });
@@ -249,6 +315,7 @@ export async function approveByScheduleWriteGrant(request: {
     logger.info('Schedule write grant declined a protected write path', { target, grantRoot });
     return undefined;
   }
+  logger.info('Schedule write grant approved the target', { sessionId: request.sessionId, target, grantRoot });
   return { approved: true, approvalSource: 'schedule-write-grant' };
 }
 
@@ -257,7 +324,7 @@ export async function approveByScheduleWriteGrant(request: {
  * workingDirectory 一并带回（相对路径目标的归一锚点；缺失则相对目标 fail-closed 拒）。
  */
 async function scheduleWriteGrantSession(sessionId: string | undefined): Promise<
-  { root: string; workingDirectory?: string } | undefined
+  { root?: string; workingDirectory?: string } | undefined
 > {
   if (!sessionId) return undefined;
   try {
@@ -266,7 +333,6 @@ async function scheduleWriteGrantSession(sessionId: string | undefined): Promise
     const origin = session?.origin;
     if (origin?.kind !== 'cron' && origin?.kind !== 'heartbeat') return undefined;
     const root = writeGrantRootFromMetadata(origin.metadata);
-    if (!root) return undefined;
     return { root, workingDirectory: session?.workingDirectory };
   } catch (error) {
     logger.warn('Failed to read the session origin, treating the write scope as ungranted', { error });
