@@ -142,7 +142,6 @@ export function textArtifact(
     name,
     mimeType: 'text/plain',
     contentLength: output.length,
-    preview: output.slice(0, 500),
     metadata,
   });
 }
@@ -219,7 +218,6 @@ export function withMultiagentMeta(
       ...(result.meta ?? {}),
       ...structuredMeta,
       artifact,
-      artifacts: [artifact],
     },
   } satisfies SuccessResult;
 }
