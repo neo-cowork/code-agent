@@ -290,7 +290,8 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
     enabled: draft.enabled,
     maxRetries: parseOptionalNumber(draft.maxRetries) ?? 0,
     retryDelay: parseOptionalNumber(draft.retryDelay),
-    timeout: parseOptionalNumber(draft.timeout),
+    // Explicit null survives JSON transport so clearing overrides the previous value.
+    timeout: parseOptionalNumber(draft.timeout) ?? null,
     // 清空/不支持的额度字段必须送 null 而不是 undefined：HTTP 传输 JSON.stringify 会丢
     // undefined 键，而 host updateJob 是 {...existing, ...updates} 合并——缺键=保留旧值，
     // 「清空上限」会静默不生效，编辑带 maxRuns 的任务上云端也会把旧值继承回去

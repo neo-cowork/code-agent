@@ -43,6 +43,7 @@ vi.mock('../../../src/host/services/infra/notificationService', () => ({
   notificationService: { notifyTaskComplete: vi.fn(), notifyNeedsInput: vi.fn() },
 }));
 import { CronService } from '../../../src/host/cron/cronService';
+import { buildCronApiAddParams } from '../../../src/host/cron/cronApiClient';
 import { normalizeCronJobRow } from '../../../src/host/cron/cronNormalizers';
 import { buildCronJobInput, buildDraftFromJob } from '../../../src/renderer/components/features/cron/types';
 const SCHEMA = `
@@ -144,6 +145,12 @@ describe('unlimited timeout real SQLite round trip', () => {
     expect(read(created.id).job.timeout).toBeUndefined();
     state.db!.prepare("UPDATE cron_jobs SET runs_on = 'cloud' WHERE id = ?").run(created.id);
     expect(read(created.id).job.timeout).toBe(60_000);
+  });
+  it('null cloud timeout is omitted from the JSON cloud payload', async () => {
+    const created = await service().createJob({ ...input(), runsOn: 'cloud', timeout: null });
+    const payload = buildCronApiAddParams({ ...created, timeout: null });
+    expect(payload.payload).not.toHaveProperty('timeoutSeconds');
+    expect(JSON.parse(JSON.stringify(payload)).payload).not.toHaveProperty('timeoutSeconds');
   });
   it.each([null, 0, -1, NaN, Infinity])('unset/invalid timeout %s persists NULL', async (timeout) => {
     const host = service();

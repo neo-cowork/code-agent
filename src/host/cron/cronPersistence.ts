@@ -103,7 +103,7 @@ export async function saveCronJob(
       minimumIntervalSecondsForLocation(job.runsOn),
       job.resultChannel ?? null, cloudJobId ?? null,
       job.enabled ? 1 : 0, job.maxRetries || 0, job.retryDelay ?? null,
-      job.timeout || 60000, job.tags ? JSON.stringify(job.tags) : null,
+      (typeof job.timeout === 'number' && Number.isFinite(job.timeout) && job.timeout > 0 ? job.timeout : undefined) ?? null, job.tags ? JSON.stringify(job.tags) : null,
       job.metadata ? JSON.stringify(job.metadata) : '{}',
       job.createdAt, job.updatedAt,
     );
