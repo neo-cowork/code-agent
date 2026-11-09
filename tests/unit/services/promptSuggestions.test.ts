@@ -44,6 +44,15 @@ describe('generateContextSuggestions', () => {
     expect(out).toEqual([]);
   });
 
+  it('takes whole words at the window edge (no partial term like "cur")', async () => {
+    reply('Check the occurrence log\nRetry curl once more');
+    const out = await generateContextSuggestions([
+      { role: 'user', content: "please don't use Bash or curl for this" },
+      { role: 'assistant', content: 'ok' },
+    ]);
+    expect(out.map(s => s.text)).toEqual(['Check the occurrence log']);
+  });
+
   it('leaves suggestions untouched when no ban is present', async () => {
     reply('- 总结这份文档\n- 导出为表格');
     const out = await generateContextSuggestions([

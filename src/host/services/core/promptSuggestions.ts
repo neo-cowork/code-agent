@@ -12,7 +12,7 @@ const ASSISTANT_MESSAGE_MAX_CHARS = 300;
 
 // 禁止语境词 + 其后约 15 字符内的 ASCII 词（如 "不要用 Bash/curl" → bash, curl）
 const BAN_TERM_PATTERN =
-  /(?:不要|别|不用|禁止|不许|不能|不准|don't|do not|never|\bno\b)[^\n]{0,15}/gi;
+  /(?:不要|别|不用|禁止|不许|不能|不准|don't|do not|never|\bno\b)[^\n]{0,15}[A-Za-z0-9_.-]*/gi;
 
 function extractBannedTerms(messages: Array<{ role: string; content?: string }>): string[] {
   const terms = new Set<string>();
