@@ -45,6 +45,7 @@ import {
   loadRoleHistory,
   deleteScopedMemory,
   writeScopedMemory,
+  readScopedMemory,
   resolveRoleProactivityConfig,
   syncCadenceJobs,
   listRoleDrafts,
@@ -78,6 +79,7 @@ import { TOOL_ALIASES } from '../services/toolSearch/deferredTools';
 import { getProtocolRegistry } from '../tools/protocolRegistry';
 import { findRecommendedMcpServer } from '../../shared/constants/mcpCatalog';
 import { isManifestBackedAgentEngineKind } from '../../shared/externalEngineManifest';
+import { journalScopedMemoryChange } from '../memory/scopedMemoryJournal';
 
 const logger = createLogger('RolesIPC');
 
@@ -379,6 +381,17 @@ async function handleDetail(roleId: string): Promise<RolePanelDetail> {
         ? normalizeBuiltinDefinition(definition) !== normalizeBuiltinDefinition(builtinFactoryDefinition)
         : undefined)
     : packState?.locallyModified;
+  const lastChanges = new Map<string, { actor: string; timestamp: number }>();
+  try {
+    for (const change of getDatabase().latestMemoryChanges()) {
+      if (change.entryId) lastChanges.set(change.entryId, { actor: change.actor, timestamp: change.timestamp });
+    }
+  } catch (error) {
+    logger.warn('Role detail memory journal lookup failed (detail kept)', {
+      roleId,
+      reason: error instanceof Error ? error.message : String(error),
+    });
+  }
   return {
     roleId,
     definition,
@@ -389,6 +402,7 @@ async function handleDetail(roleId: string): Promise<RolePanelDetail> {
       description: m.description,
       content: m.content,
       updatedAt: m.updatedAt,
+      lastChange: lastChanges.get(`role:${roleId}:${m.filename}`),
     })),
     // 与 lastWork 同一边界收口：详情页「记录」tab 也不吐内部产物标签与文件系统路径
     history: history.map((line) => sanitizeLastWork(line)).filter(Boolean),
@@ -526,10 +540,19 @@ const rolesHandlers: RawDomainRouteHandlers<RolesDomainRequest, void> = {
         error: { code: 'INVALID_ARGS', message: 'roleId, filename, name, description, content are required' },
       };
     }
+    const previousText = await readScopedMemory({ scope: 'role', roleId }, filename);
     const filePath = await writeScopedMemory(
       { scope: 'role', roleId },
       { filename, name, description, content },
     );
+    try {
+      journalScopedMemoryChange(`role:${roleId}:${path.basename(filePath)}`, previousText, await fs.readFile(filePath, 'utf-8'), { actor: 'user_manual' });
+    } catch (error) {
+      logger.warn('Manual role memory journal append failed (memory write kept)', {
+        roleId, filename,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
     return { success: true, data: { path: filePath } };
   },
   exportMemories: async (_ctx, payload) => {
