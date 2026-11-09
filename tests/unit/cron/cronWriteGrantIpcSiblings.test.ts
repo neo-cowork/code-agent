@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const h = vi.hoisted(() => ({
   grantResult: undefined as unknown,
   rows: [] as Array<{ id: string; kind: string; status: string; payloadJson: string }>,
-  respond: vi.fn(() => 'delivered'),
+  respond: vi.fn((_sessionId: string, _requestId: string, _response: string) => 'delivered'),
 }));
 
 vi.mock('../../../src/host/cron/cronService', () => ({

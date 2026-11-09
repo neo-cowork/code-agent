@@ -32,7 +32,7 @@ import { grantWriteFolderFromParkedApproval, parkedSiblingsCoveredByGrant } from
 import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
 import { getPermissionModeManager, resetPermissionModeManager } from '../../../src/host/permissions/modes';
 import { PermissionRequestReason } from '../../../src/shared/contract/permission';
-import type { AppSettings, PermissionAskResult } from '../../../src/shared/contract';
+import type { AppSettings, PermissionAskResult, PermissionRequest } from '../../../src/shared/contract';
 import type { PendingApprovalRepository } from '../../../src/host/services/core/repositories/PendingApprovalRepository';
 import type { CronJobDefinition } from '../../../src/shared/contract/cron';
 
@@ -89,7 +89,7 @@ function makeIsland(repo: PendingApprovalRepository) {
 }
 
 // W3 outside_project：无绑定文件夹的 cron 任务对绝对路径写的真实形态。
-const w3Write = (target: string) => ({
+const w3Write = (target: string): Omit<PermissionRequest, 'id' | 'timestamp'> => ({
   type: 'file_write',
   tool: 'Write',
   forceConfirm: true,
