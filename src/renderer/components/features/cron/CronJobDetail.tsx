@@ -330,7 +330,7 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
 
 const InfoCard: React.FC<{ label: string; value: string; testId?: string }> = ({ label, value, testId }) => (
   <div className="rounded-xl border border-zinc-800 bg-zinc-950/50 p-3" data-testid={testId}>
-    <div className="text-xs text-zinc-500">{label}</div>
+    <div className="truncate text-xs text-zinc-500" title={label}>{label}</div>
     <div className="mt-1 text-sm text-zinc-200">{value}</div>
   </div>
 );

@@ -168,6 +168,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
           {execution.sessionId && (
             <button
               type="button"
+              data-testid="cron-exec-detail-open-session"
               onClick={handleOpenSession}
               disabled={isOpeningSession}
               className="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-xs text-zinc-300 transition-colors hover:border-zinc-700 hover:bg-zinc-800 disabled:opacity-50"
