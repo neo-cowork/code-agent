@@ -110,6 +110,8 @@ describe('placeholder display uses the current UI language', () => {
   });
   it('preserves named conversations and localises appshot fallback', () => {
     expect(getDisplaySessionTitle('Trip planning', 'zh')).toBe('Trip planning');
+    expect(getDisplaySessionTitle('Session Native Workspace', 'zh')).toBe('Session Native Workspace');
+    expect(getDisplaySessionTitle('CLI Session notes', 'en')).toBe('CLI Session notes');
     expect(getDisplaySessionTitle('<appshot>capture</appshot>', 'en')).toBe('Appshot conversation');
     expect(getDisplaySessionTitle('<appshot>capture</appshot>', 'zh')).toBe('Appshot 会话');
   });

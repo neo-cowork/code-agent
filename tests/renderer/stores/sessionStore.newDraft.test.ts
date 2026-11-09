@@ -74,5 +74,7 @@ describe('blank placeholder titles in either UI language', () => {
   });
   it('keeps a named empty conversation distinct from a blank draft', () => {
     expect(isBlankNewSession(session({ title: 'Trip planning' }))).toBe(false);
+    expect(isBlankNewSession(session({ title: 'Session Native Workspace' }))).toBe(false);
+    expect(isBlankNewSession(session({ title: 'CLI Session notes' }))).toBe(false);
   });
 });
