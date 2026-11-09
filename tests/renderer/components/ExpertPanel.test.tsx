@@ -886,4 +886,114 @@ describe('ExpertPanel', () => {
       vi.useRealTimers();
     }
   });
+
+  function make22Experts(): RolePanelEntry[] {
+    const categories = ['product', 'research', 'design-creative', 'development', 'content-marketing', 'data-analysis'] as const;
+    return Array.from({ length: 22 }, (_, index) => {
+      const n = index + 1;
+      const isUncategorized = n > 20;
+      const category = isUncategorized ? undefined : categories[index % categories.length];
+      return makeEntry({
+        roleId: `expert-${String(n).padStart(2, '0')}`,
+        displayName: n === 7 ? '沈知微' : n === 15 ? '陆青野' : `专家${String(n).padStart(2, '0')}`,
+        profession: n === 7 ? '法务合规顾问' : n === 15 ? '增长分析师' : `专职顾问${n}`,
+        description: n === 7 ? '审阅合同条款与隐私风险' : n === 15 ? '负责漏斗转化与留存拆解' : `负责领域工作事项 ${n}`,
+        tags: n === 7 ? ['合同审阅', '合规'] : n === 15 ? ['漏斗分析', 'AB测试'] : [`标签${n}`],
+        category,
+        source: n <= 18 ? 'builtin' : 'user',
+      });
+    });
+  }
+
+  it('22 位专家时输入名字、职业、描述、标签或分类显示名可实时过滤卡片（我的与发现均生效）', async () => {
+    listRoles.mockResolvedValue(make22Experts());
+    render(<ExpertPanel />);
+    fireEvent.click(screen.getByTestId('expert-tab-mine'));
+    await waitFor(() => expect(screen.getByTestId('expert-search-input')).toBeTruthy());
+    expect(screen.getAllByTestId(/^expert-card-/)).toHaveLength(22);
+
+    const searchInput = screen.getByTestId('expert-search-input') as HTMLInputElement;
+    expect(searchInput.getAttribute('placeholder')).toBe('搜索专家');
+    expect(searchInput.getAttribute('aria-label')).toBe('搜索专家');
+
+    for (const [query, expectedIds] of [
+      ['  知微  ', ['expert-07']],
+      ['漏斗转化', ['expert-15']],
+      ['ab测试', ['expert-15']],
+      ['其他', ['expert-21', 'expert-22']],
+    ] as const) {
+      fireEvent.change(searchInput, { target: { value: query } });
+      expect(screen.getAllByTestId(/^expert-card-/)).toHaveLength(expectedIds.length);
+      for (const id of expectedIds) expect(screen.getByTestId(`expert-card-${id}`)).toBeTruthy();
+    }
+
+    fireEvent.click(screen.getByTestId('expert-tab-discover'));
+    const discoverSearch = screen.getByTestId('expert-search-input') as HTMLInputElement;
+    expect(discoverSearch.value).toBe('');
+    expect(screen.getAllByTestId(/^expert-card-/)).toHaveLength(18);
+    fireEvent.change(discoverSearch, { target: { value: '隐私风险' } });
+    expect(screen.getAllByTestId(/^expert-card-/)).toHaveLength(1);
+    expect(screen.getByTestId('expert-card-expert-07')).toBeTruthy();
+  });
+
+  it('搜索与分类 chip 交集过滤，且分类 chips 保持稳定并实时显示搜索命中数', async () => {
+    listRoles.mockResolvedValue(make22Experts());
+    render(<ExpertPanel />);
+    fireEvent.click(screen.getByTestId('expert-tab-mine'));
+    await waitFor(() => expect(screen.getByTestId('expert-search-input')).toBeTruthy());
+
+    const chipAll = screen.getByTestId('expert-category-chip-all');
+    const chipProduct = screen.getByTestId('expert-category-chip-product');
+    const chipDesign = screen.getByTestId('expert-category-chip-design-creative');
+    expect(chipAll.textContent).toContain('22');
+    expect(chipProduct.textContent).toContain('4');
+    expect(chipDesign.textContent).toContain('3');
+
+    fireEvent.change(screen.getByTestId('expert-search-input'), { target: { value: '专职顾问' } });
+    expect(chipAll.textContent).toContain('20');
+    expect(chipProduct.textContent).toContain('3');
+    expect(chipDesign.textContent).toContain('2');
+    expect(screen.getByTestId('expert-category-chip-__uncategorized__')).toBeTruthy();
+
+    fireEvent.click(chipProduct);
+    expect(chipProduct.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getAllByTestId(/^expert-card-/)).toHaveLength(3);
+    expect(screen.getByTestId('expert-card-expert-01')).toBeTruthy();
+    expect(screen.queryByTestId('expert-card-expert-07')).toBeNull();
+  });
+
+  it('搜索无匹配时展示含关键词的人话空态与「清除搜索」按钮，点击恢复全部列表', async () => {
+    listRoles.mockResolvedValue(make22Experts());
+    render(<ExpertPanel />);
+    fireEvent.click(screen.getByTestId('expert-tab-mine'));
+    await waitFor(() => expect(screen.getByTestId('expert-search-input')).toBeTruthy());
+    fireEvent.change(screen.getByTestId('expert-search-input'), { target: { value: '量子炼金术士' } });
+    expect(screen.queryAllByTestId(/^expert-card-/)).toHaveLength(0);
+    const emptyBox = screen.getByTestId('expert-search-empty');
+    expect(emptyBox.textContent).toContain('没有找到匹配「量子炼金术士」的专家。');
+    expect(emptyBox.textContent).not.toContain('你的专家货架还是空的');
+    expect(emptyBox.textContent).not.toContain('还没有专家');
+    fireEvent.click(screen.getByTestId('expert-search-clear'));
+    expect((screen.getByTestId('expert-search-input') as HTMLInputElement).value).toBe('');
+    expect(screen.queryByTestId('expert-search-empty')).toBeNull();
+    expect(screen.getAllByTestId(/^expert-card-/)).toHaveLength(22);
+  });
+
+  it('在「我的」与「发现」之间切换时自动清空搜索词', async () => {
+    listRoles.mockResolvedValue(make22Experts());
+    render(<ExpertPanel />);
+    fireEvent.click(screen.getByTestId('expert-tab-mine'));
+    await waitFor(() => expect(screen.getByTestId('expert-search-input')).toBeTruthy());
+    fireEvent.change(screen.getByTestId('expert-search-input'), { target: { value: '沈知微' } });
+    expect(screen.getAllByTestId(/^expert-card-/)).toHaveLength(1);
+    fireEvent.click(screen.getByTestId('expert-tab-discover'));
+    expect((screen.getByTestId('expert-search-input') as HTMLInputElement).value).toBe('');
+    expect(screen.getAllByTestId(/^expert-card-/)).toHaveLength(18);
+    fireEvent.change(screen.getByTestId('expert-search-input'), { target: { value: '陆青野' } });
+    expect(screen.getAllByTestId(/^expert-card-/)).toHaveLength(1);
+    fireEvent.click(screen.getByTestId('expert-tab-mine'));
+    expect((screen.getByTestId('expert-search-input') as HTMLInputElement).value).toBe('');
+    expect(screen.getAllByTestId(/^expert-card-/)).toHaveLength(22);
+  });
+
 });

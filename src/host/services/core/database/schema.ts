@@ -580,6 +580,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       session_id TEXT PRIMARY KEY,
       compression_state_json TEXT,
       persistent_system_context_json TEXT NOT NULL DEFAULT '[]',
+      last_provider_usage_json TEXT,
       updated_at INTEGER NOT NULL,
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
     )

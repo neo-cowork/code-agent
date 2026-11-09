@@ -597,6 +597,7 @@ export const zhSettingsSystem = {
       section: {
         title: '本地桥接服务',
         description: '本地桥接服务允许 Web 端操作本地文件系统。安装后即可在浏览器中使用完整的文件操作能力。',
+        serviceAddress: '服务地址：',
       },
       status: {
         connected: '已连接',

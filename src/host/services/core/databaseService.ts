@@ -3268,6 +3268,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     state: {
       compressionStateJson?: string | null;
       persistentSystemContext?: string[];
+      lastProviderUsageJson?: string | null;
     },
     updatedAt?: number
   ): void {
@@ -3277,6 +3278,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   getSessionRuntimeState(sessionId: string): {
     compressionStateJson: string | null;
     persistentSystemContext: string[];
+    lastProviderUsageJson: string | null;
   } | null {
     this.ensureDb();
     return this.sessionRepo.getSessionRuntimeState(sessionId);

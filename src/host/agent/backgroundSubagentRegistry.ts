@@ -359,6 +359,11 @@ export class BackgroundSubagentRegistry {
     return [...this.entries.values()].map((entry) => this.toHandle(entry));
   }
 
+  /** 当前会话的所有后台 subagent 状态快照，包含已完成和失败的条目。 */
+  listBySession(sessionId: string): BackgroundSubagentHandle[] {
+    return this.list().filter((handle) => handle.sessionId === sessionId);
+  }
+
   private toHandle(entry: BackgroundSubagentEntry): BackgroundSubagentHandle {
     const { done: _done, liveProgress: _liveProgress, ...handle } = entry;
     return handle;

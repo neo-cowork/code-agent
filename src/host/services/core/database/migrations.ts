@@ -44,6 +44,10 @@ export function applySessionsMigrations(db: BetterSqlite3.Database, logger: Logg
     safeExec(db, sql, logger);
   }
 
+  // Persist the last provider-reported context usage so a renderer reload can
+  // restore the same ring value before the next inference runs.
+  safeExec(db, 'ALTER TABLE session_runtime_state ADD COLUMN last_provider_usage_json TEXT', logger);
+
   // 2026-04-15: 彻底移除废弃的 sessions.generation_id 列
   // 背景：2026-04-12 的 refactor (8a68ee85) 把运行时会话分代字段抹掉了，
   // 但 sessions 表的 `generation_id TEXT NOT NULL` 没跟着放宽；SessionRepository
