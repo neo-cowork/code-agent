@@ -3,6 +3,7 @@
 import { createLogger } from '../services/infra/logger';
 import { CANCELLATION_TIMEOUTS } from '../../shared/constants';
 import { getBackgroundSubagentRegistry } from '../agent/backgroundSubagentRegistry';
+import { getSwarmServices, hasSwarmServices } from '../agent/swarmServices';
 import type { BackgroundTaskRun } from './taskManagerTypes';
 
 const logger = createLogger('SessionBackgroundStop');
@@ -17,6 +18,25 @@ interface SessionBackgroundStopInput {
 /** 调用返回时所有 abort 已经发出；返回的 promise 在全部收线或超时后 resolve（永不 reject）。 */
 export function stopSessionBackgroundWork(input: SessionBackgroundStopInput): Promise<void> {
   const pending = new Map<string, Promise<unknown>>();
+
+  // detached/adopted spawn_agent 子代理登记在 SpawnGuard（不在 backgroundRuns/registry 的 abort 里）：
+  // 与桌面 agentAppService.cancel 同款扇出，先放审批等待再 abort，避免审批挂住的子代理拖死收线。
+  // 重复触发幂等（已取消的不再计数）。
+  if (hasSwarmServices()) {
+    try {
+      const services = getSwarmServices();
+      services.planApproval.cancelSession(input.sessionId, 'user-cancel');
+      services.launchApproval.cancelSession(input.sessionId, 'user-cancel');
+      const cancelled = services.spawnGuard.cancelSession(input.sessionId, 'user-cancel');
+      services.parallelCoordinators.abortSession(input.sessionId, 'user-cancel');
+      if (cancelled > 0) logger.info('Session stop: spawnGuard cancelled subagents', { sessionId: input.sessionId, cancelled });
+    } catch (error) {
+      logger.warn('Session stop: subagent fan-out failed', {
+        sessionId: input.sessionId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 
   for (const run of input.backgroundRuns.values()) {
     if (run.sessionId !== input.sessionId || run.status !== 'running') continue;

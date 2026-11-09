@@ -83,6 +83,9 @@ import { TaskManager } from '../../../src/host/task/TaskManager';
 import { SessionCommandCenter, type SessionCommandTask } from '../../../src/host/services/commandCenter/sessionCommandCenter';
 import { resetSessionTaskConcurrencyPoolForTest } from '../../../src/host/services/commandCenter/sessionTaskSlotLedger';
 import { getBackgroundTaskLedger, resetBackgroundTaskLedgerForTest } from '../../../src/host/task/backgroundTaskLedger';
+import { getSpawnGuard, resetSpawnGuard } from '../../../src/host/agent/spawnGuard';
+import { createScopedSwarmAgentId } from '../../../src/shared/contract/swarm';
+import { registerSwarmServices, resetSwarmServices } from '../../../src/host/agent/swarmServices';
 import { getBackgroundSubagentRegistry } from '../../../src/host/agent/backgroundSubagentRegistry';
 
 function spawnInput(sessionId: string, index: number, extra: Record<string, unknown> = {}) {
@@ -250,6 +253,41 @@ describe('TaskManager.cancelTask 后台级联', () => {
     expect(abortA).toHaveBeenCalledTimes(1);
     expect(abortOther).not.toHaveBeenCalled();
     expect(registry.listBySession('session-reg-a').find((h) => h.agentId === agentId)?.status).not.toBe('running');
+  });
+
+  it('SpawnGuard 登记的 detached/adopted spawn_agent 子代理随 Stop 取消，别的会话的不受影响（web 路由与桌面共用）', async () => {
+    resetSpawnGuard();
+    const guard = getSpawnGuard();
+    const planCancel = vi.fn();
+    registerSwarmServices({
+      spawnGuard: guard,
+      planApproval: { cancelSession: planCancel },
+      launchApproval: { cancelSession: vi.fn() },
+      parallelCoordinators: { abortSession: vi.fn() },
+    } as never);
+    try {
+      const scopeA = { sessionId: 'session-sg-a', runId: 'run-a', treeId: 'tree-a' };
+      const scopeB = { sessionId: 'session-sg-b', runId: 'run-b', treeId: 'tree-b' };
+      const controllerA = new AbortController();
+      const controllerB = new AbortController();
+      const pending = new Promise<never>(() => undefined);
+      guard.register(createScopedSwarmAgentId(scopeA, 'agent_adopted_0'), 'coder', '盯网页', pending, controllerA, { scope: scopeA });
+      guard.register(createScopedSwarmAgentId(scopeB, 'agent_adopted_0'), 'coder', '盯网页', pending, controllerB, { scope: scopeB });
+
+      await manager.cancelTask('session-sg-a');
+
+      expect(controllerA.signal.aborted).toBe(true);
+      expect(controllerB.signal.aborted).toBe(false);
+      expect(planCancel).toHaveBeenCalledWith('session-sg-a', 'user-cancel');
+
+      const keep = new AbortController();
+      const scopeC = { sessionId: 'session-sg-c', runId: 'run-c', treeId: 'tree-c' };
+      guard.register(createScopedSwarmAgentId(scopeC, 'agent_adopted_0'), 'coder', 't', pending, keep, { scope: scopeC });
+      await manager.cancelTask('session-sg-c', { keepBackground: true });
+      expect(keep.signal.aborted).toBe(false);
+    } finally {
+      resetSwarmServices();
+    }
   });
 
   it('自然失败仍是 failed，不被当成用户取消', async () => {
