@@ -9,6 +9,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { StreamInterruptionReason, ToolCall } from '@shared/contract';
 import type { SessionMediaContext } from '@shared/utils/sessionMediaAssets';
 import { useAppStore } from '../../../../../stores/appStore';
+import { useParkedToolCallIds } from '../../../../../stores/parkedApprovalStore';
 import { isToolCallAwaitingApproval } from '../../../../../utils/sessionNeedsInput';
 import { useSessionStore } from '../../../../../stores/sessionStore';
 import { ToolHeader } from './ToolHeader';
@@ -149,11 +150,13 @@ export function ToolCallDisplay({
   const queuedPermissionRequests = useAppStore((state) => state.queuedPermissionRequests);
   const backgroundTasks = useBackgroundTaskStore((state) => state.tasks);
   const sessionId = mediaContext?.sessionId || currentSessionId;
+  const parkedToolCallIdsBySession = useParkedToolCallIds(sessionId, toolCall.result === undefined);
   const awaitingApproval = toolCall.result === undefined
     && isToolCallAwaitingApproval(toolCall.id, sessionId, {
       pendingPermissionRequest,
       pendingPermissionSessionId,
       queuedPermissionRequests,
+      parkedToolCallIdsBySession,
     });
   const delegationTool = isDelegationTool(toolCall.name);
   const { snapshot: agentTree } = useAgentTreeSnapshot(

@@ -80,6 +80,8 @@ export interface ParkedApprovalInboxItem {
   id: string;
   kind?: 'tool_approval' | 'directory_access' | 'channel_pairing';
   sessionId: string | null;
+  /** 原始 assistant tool_call id；渲染端据此把「等批准」精确对到会话里那一步。老行没有。 */
+  toolCallId?: string;
   tool: string;
   displayTool?: string;
   /** epoch ms，UI 算等待时长 */

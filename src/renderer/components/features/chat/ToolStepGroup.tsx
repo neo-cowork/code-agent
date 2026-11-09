@@ -36,6 +36,7 @@ import { getHumanToolLabel } from '../../../utils/toolHumanLabel';
 import { buildToolStatusLineCopy } from '../../../utils/toolStatusLinePresentation';
 import { resolveStreamInterruptionOutcomeKey } from '../../../i18n/outcomeWords';
 import { useAppStore } from '../../../stores/appStore';
+import { useParkedToolCallIds } from '../../../stores/parkedApprovalStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useMessageActionStore } from '../../../stores/messageActionStore';
 import { Button } from '../../primitives/Button';
@@ -110,11 +111,17 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   const pendingPermissionSessionId = useAppStore((state) => state.pendingPermissionSessionId);
   const queuedPermissionRequests = useAppStore((state) => state.queuedPermissionRequests);
   const sessionLive = useSessionLive(sessionId);
+  const hasUnfinishedCall = useMemo(
+    () => sourceNodes.some((node) => node.toolCall && node.toolCall.result === undefined),
+    [sourceNodes],
+  );
+  const parkedToolCallIdsBySession = useParkedToolCallIds(sessionId, hasUnfinishedCall);
   const permissionState = useMemo(() => ({
     pendingPermissionRequest,
     pendingPermissionSessionId,
     queuedPermissionRequests,
-  }), [pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests]);
+    parkedToolCallIdsBySession,
+  }), [pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests, parkedToolCallIdsBySession]);
   // 主流可见节点：过滤 ToolSearch 等纯内部动作（仍可在混合组的展开明细里看到）
   const streamVisibleNodes = useMemo(
     () => nodes.filter((n) => {
@@ -129,7 +136,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       const tc = streamVisibleNodes[0].toolCall;
       if (tc) {
         const connectorId = findConnectorIdForToolName(tc.name);
-        const awaitingApproval = isToolCallAwaitingApproval(tc.id, sessionId, permissionState);
+        const awaitingApproval = tc.result === undefined && isToolCallAwaitingApproval(tc.id, sessionId, permissionState);
         // 陈旧未完成（会话已离线）：与展开行同一句中断文案（buildToolStatusLineCopy
         // 就是 ToolHeader 渲染 interrupted 态用的那个装配器），不进进行时词表。
         if (isStaleUnfinishedToolCall(tc, awaitingApproval, sessionLive)) {
@@ -201,13 +208,13 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       }
       // 陈旧未完成（会话已离线）：不进进行时/未成功词表，统一用展开行同源的
       // 中断结局词收口（多步组没有逐条人话行，只报结局词，明细展开可看）。
-      if (isStaleUnfinishedToolCall(tc, isToolCallAwaitingApproval(tc.id, sessionId, permissionState), sessionLive)) {
+      if (isStaleUnfinishedToolCall(tc, tc.result === undefined && isToolCallAwaitingApproval(tc.id, sessionId, permissionState), sessionLive)) {
         staleUnfinished += 1;
         continue;
       }
       const stepStatus = benign
         ? 'completed'
-        : resolveTraceToolStepStatus(tc, isToolCallAwaitingApproval(tc.id, sessionId, permissionState));
+        : resolveTraceToolStepStatus(tc, tc.result === undefined && isToolCallAwaitingApproval(tc.id, sessionId, permissionState));
       byStatus.set(stepStatus, [...(byStatus.get(stepStatus) ?? []), tc.name]);
     }
     return [
