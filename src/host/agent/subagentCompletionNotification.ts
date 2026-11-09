@@ -1,6 +1,7 @@
 import { SUBAGENT_COMPLETION_NOTIFICATIONS } from '../../shared/constants';
 import { buildSpillNotice, spillToolResultArchive, type ToolResultArchiveRef } from '../utils/toolResultSpill';
-import type { AgentFailureCode } from '../../shared/contract/agentFailure';
+import { AgentFailureCode, inferAgentFailureCode } from '../../shared/contract/agentFailure';
+import { describeSubagentStopReason } from './subagentFailureReason';
 
 export type SubagentCompletionStatus = 'completed' | 'failed' | 'cancelled' | 'killed' | 'stalled';
 export type SubagentCompletionKind = 'user_visible' | 'internal' | 'shell';
@@ -76,7 +77,10 @@ function buildOutputSummary(input: BuildSubagentCompletionRecordInput): {
   summary: string;
   archiveRef?: ToolResultArchiveRef;
 } {
-  const raw = input.output || input.error || '';
+  // Restart recovery is an internal diagnostic protocol, separate from active-run stop delivery.
+  const raw = input.status === 'failed' && !input.output && input.failureCode !== AgentFailureCode.ParentGone
+    ? describeSubagentStopReason(input.error || '', inferAgentFailureCode({ failureCode: input.failureCode, error: input.error }))
+    : input.output || input.error || '';
   if (!raw) {
     return { summary: input.status === 'completed' ? 'No output was returned.' : 'No error output was returned.' };
   }

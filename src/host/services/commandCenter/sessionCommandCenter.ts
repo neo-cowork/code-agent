@@ -759,7 +759,6 @@ export class SessionCommandCenter {
     if (TERMINAL.has(task.status)) return;
     if (status === 'failed' && !task.stopped) {
       const stopped = resolveStoppedTaskOutcome({ status: 'failed', detail, lastUrl: this.lastUrlByTask.get(task.id) });
-      detail = stopped.detail;
       task.stopped = { content: stopped.notice ?? stopped.detail, kind: stopped.kind ?? 'error' };
     }
     this.approvalWaitStartedAtByTask.delete(task.id);

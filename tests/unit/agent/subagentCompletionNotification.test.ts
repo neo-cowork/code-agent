@@ -57,3 +57,15 @@ describe('subagent completion response contract', () => {
     expect(reminder).not.toContain('- subagent-42 (reviewer):');
   });
 });
+
+describe('failed active-run completion reasons', () => {
+  it('uses the shared Chinese wrapper without asking the wake model to deliver the stop', () => {
+    const record = buildSubagentCompletionRecord({
+      agentId: 'failed-browser', title: '百科摘要', status: 'failed', kind: 'internal',
+      error: 'inference provider returned 429',
+    });
+    expect(record.summary).toContain('模型服务暂时出错或请求太频繁');
+    expect(record.summary).not.toMatch(/inference|provider|429/);
+    expect(record.content).toContain('没有后续动作时，不要回复用户');
+  });
+});
