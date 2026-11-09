@@ -38,6 +38,8 @@ export interface AgentTreeSpawnAgentSource {
   id: string;
   role: string;
   treeId?: string;
+  sessionId?: string;
+  completion?: { title?: string };
   parentId?: string;
   status: ManagedAgentStatus;
   task: string;
@@ -340,6 +342,7 @@ function mergeSpawnAgent(
   const node = ensureNode(nodes, agent.id, agent.role);
   addSource(node, 'spawnGuard');
   node.role = agent.role;
+  node.displayName = agent.completion?.title ?? node.displayName;
   node.task = agent.task;
   if (agent.parentId) node.parentId = agent.parentId;
   if (agent.createdAt) node.createdAt = agent.createdAt;
@@ -418,14 +421,19 @@ function mergeContextRecord(
   const role = record.snapshot?.previews[0]?.role ?? 'agent';
   const node = ensureNode(nodes, record.agentId, role);
   addSource(node, 'subagentContext');
-  // 重启孤儿收口：context 记录本身不携带生命周期，活着的证据只来自「本进程刚
-  // 更新过它」。上一进程写下的记录（updatedAt 早于本进程启动）没有活着的执行
-  // 方，收成 cancelled（已停）；renderer 的口径是 unknown→工作中，照旧落 unknown
-  // 就是重启后幽灵「工作中」行的来源。本进程内的记录维持 unknown（宁可在干），
-  // 与 spawnGuard/registry 的活状态由优先级自然裁决。
-  const status: AgentTreeNodeStatus = record.updatedAt < HOST_PROCESS_BOOT_MS
-    ? 'cancelled'
-    : 'unknown';
+  const lifecycle = record.lifecycle;
+  // Persisted terminal facts survive restart; only unfinished records use the orphan heuristic.
+  const status: AgentTreeNodeStatus = lifecycle && lifecycle.status !== 'running'
+    ? lifecycle.status
+    : record.updatedAt < HOST_PROCESS_BOOT_MS ? 'cancelled' : 'unknown';
+  if (lifecycle) {
+    node.displayName = lifecycle.displayName;
+    node.role = lifecycle.role ?? node.role;
+    node.background = lifecycle.background || node.background;
+    node.task ??= lifecycle.task;
+    node.createdAt ??= lifecycle.startedAt;
+    node.completedAt ??= lifecycle.finishedAt;
+  }
   applyStatus(node, status, 'subagentContext', statusPriorities);
   node.updatedAt = Math.max(node.updatedAt ?? 0, record.updatedAt);
   const activeTool = activeToolFromContext(record);
@@ -452,6 +460,9 @@ function mergeBackgroundAgent(
 ): void {
   const node = ensureNode(nodes, handle.agentId, 'background');
   addSource(node, 'backgroundRegistry');
+  node.background = true;
+  node.task ??= handle.title;
+  if (node.role === 'background' && handle.role) node.role = handle.role;
   if (handle.startedAt && !node.createdAt) node.createdAt = handle.startedAt;
   if (handle.finishedAt) node.completedAt = handle.finishedAt;
   node.updatedAt = handle.finishedAt ?? handle.startedAt ?? node.updatedAt;
@@ -559,10 +570,16 @@ export function buildAgentTreeSnapshot(sources: AgentTreeSnapshotSources = {}): 
   const nodes = new Map<string, AgentTreeNode>();
   const statusPriorities = new Map<string, number>();
   const sessionId = sources.sessionId?.trim() || undefined;
+  const registryAliases = new Map<string, string>();
+  for (const record of sources.contextRecords ?? []) {
+    if ((!sessionId || record.sessionId === sessionId) && record.lifecycle?.backgroundAgentId) {
+      registryAliases.set(record.lifecycle.backgroundAgentId, record.agentId);
+    }
+  }
   const contextAgentIds = new Set((sources.contextRecords ?? []).map((record) => record.agentId));
 
   for (const agent of sources.spawnAgents ?? []) {
-    if (sessionId && agent.treeId && agent.treeId !== sessionId && !contextAgentIds.has(agent.id)) {
+    if (sessionId && (agent.sessionId ? agent.sessionId !== sessionId : agent.treeId !== sessionId && !contextAgentIds.has(agent.id))) {
       continue;
     }
     mergeSpawnAgent(nodes, statusPriorities, agent);
@@ -571,9 +588,13 @@ export function buildAgentTreeSnapshot(sources: AgentTreeSnapshotSources = {}): 
     mergeParallelTask(nodes, statusPriorities, task);
   }
   for (const handle of sources.backgroundAgents ?? []) {
-    mergeBackgroundAgent(nodes, statusPriorities, handle);
+    if (sessionId && handle.sessionId !== sessionId) continue;
+    mergeBackgroundAgent(nodes, statusPriorities, {
+      ...handle, agentId: registryAliases.get(handle.agentId) ?? handle.agentId,
+    });
   }
   for (const record of sources.contextRecords ?? []) {
+    if (sessionId && record.sessionId !== sessionId) continue;
     mergeContextRecord(nodes, statusPriorities, record);
   }
   for (const worktree of sources.worktrees ?? []) {
