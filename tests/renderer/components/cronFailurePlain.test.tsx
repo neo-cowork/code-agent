@@ -142,6 +142,16 @@ describe('cron failure notification copy', () => {
     }
   });
 
+  it('英文 host 标题（[Scheduled] 前缀）同样解析出任务名，不回落原标题', () => {
+    const en = translateCronOsNotification({
+      code: 'CRON_FAILURE',
+      title: 'Task failed - [Scheduled] Morning notes',
+      body: 'Scheduled task failed',
+      failureKind: 'cloud_unavailable',
+    }, cronCenterEn.cronCenter, 'en');
+    expect(en.title).toBe("Scheduled task didn't finish · Morning notes");
+  });
+
   it('云端调度器不可用：OS 通知按语言出人话', () => {
     const zh = translateCronOsNotification({
       code: 'CRON_FAILURE',
