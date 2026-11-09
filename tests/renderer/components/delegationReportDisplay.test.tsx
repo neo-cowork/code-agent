@@ -163,3 +163,17 @@ it.each([zh, en])('uses the localized action instead of a model-authored interna
     .toBe(t.toolStepHumanize.subagentSpawnFallback);
   expect(call.shortDescription).toBe('Use spawn_agent');
 });
+
+describe('delegation report keeps actionable stats notes', () => {
+  it('shows worktree branch and missing-tools lines but not other stats', () => {
+    const call = taskCall();
+    call.name = 'spawn_agent';
+    call.result!.output = `Agent [Explorer] completed task:\n\nTask: Fix it.\n\nResult:\n${report}\n\nStats:\n- Iterations: 2\n- Tools used: Read\n- Agent ID: a1\n- Missing tools: Grep（声明的工具未全部装配，该子代理能力可能不完整）\n- Worktree: preserved at /tmp/wt/agent-1 (branch: agent/a1) — review and merge changes`;
+    const out = toDelegationDisplayToolCall(call, zh).result?.output ?? '';
+    expect(out).toContain('Missing tools: Grep');
+    expect(out).toContain('branch: agent/a1');
+    expect(out).toContain('review and merge changes');
+    expect(out).not.toContain('/tmp/wt');
+    for (const token of ['Stats:', 'Iterations:', 'Tools used:', 'Agent ID']) expect(out).not.toContain(token);
+  });
+});

@@ -45,7 +45,11 @@ function reportBody(output: string): string {
     : -1;
   const start = resultMarker >= 0 ? resultMarker + '\n\nResult:\n'.length : envelope[0].length;
   const stats = text.lastIndexOf(TASK_STATS_MARKER);
-  return text.slice(start, stats >= start ? stats : undefined).trim();
+  const body = text.slice(start, stats >= start ? stats : undefined).trim();
+  if (stats < start) return body;
+  // Stats are internal bookkeeping, but these two lines are actionable for the user.
+  const notes = text.slice(stats).split('\n').filter((line) => /^- (?:Worktree|Missing tools): /.test(line));
+  return notes.length ? `${body}\n\n${notes.join('\n')}` : body;
 }
 
 // Display-only filenames: preserve public URLs and relative paths, including report content.
