@@ -80,7 +80,9 @@ const limits = {
   // macOS / Windows 发版门共用的原生依赖清单与闭包校验稳定入口）。
   // 2026-11-08 +1: scripts/i18n-plural-ratchet.mjs（N-FIX-EN-PLURAL-COUNT-GRAMMAR：
   // renderer 英文计数文案棘轮，package / gates:local 共用的稳定入口）。
-  directScriptFiles: 170,
+  // 2026-11-08 +1: scripts/verify-fresh-user.mjs（N-DEV-CLEAN-FIRST-LAUNCH-HOST：
+  // headless 真首次启动验证入口；任务书固定引用直属路径，不能下沉到子目录）。
+  directScriptFiles: 171,
   // 15: the Poppler promotion boundary is split across two workflows on purpose —
   // build-poppler-sidecar.yml only reviews candidates and can never publish, while
   // promote-poppler-sidecar.yml holds the OSS credentials and publishes them.

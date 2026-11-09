@@ -9,7 +9,7 @@ export const zhSettingsWork = {
       saving: '保存中…',
       actions: {
         chooseDirectory: '选择目录',
-        revealInFinder: '在 Finder 打开',
+        revealInFinder: '在访达中打开',
         change: '更换',
         clear: '清除',
         refresh: '刷新',
@@ -473,7 +473,7 @@ export const zhSettingsWork = {
         memoriesExportEmptyHint: '暂无记忆可导出',
         memoriesExportDone: '已导出到 {path}',
         memoriesExportFailed: '导出失败：{message}',
-        memoriesRevealFolder: '在 Finder 中显示',
+        memoriesRevealFolder: '在访达中显示',
         memoriesRevealFolderFailed: '打开文件夹失败：{message}',
         historyTitle: '工作履历',
         historyDescription: '该角色参与过的产物清单（最新在后）。',
@@ -972,7 +972,7 @@ export const zhSettingsWork = {
       configActions: {
         openTitle: '用默认编辑器打开（不存在则创建空模板）',
         open: '打开',
-        revealTitle: '在 Finder 中显示',
+        revealTitle: '在访达中显示',
         locate: '定位',
       },
       toggle: {
