@@ -92,9 +92,10 @@ export function buildSimpleDraft(
 
 interface CronSimpleCreateProps {
   onDone: () => void;
+  onDraftChange?: (draft: CronJobDraft) => void;
 }
 
-export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) => {
+export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone, onDraftChange }) => {
   const { t } = useI18n();
   const cc = t.cronCenter;
   const createJob = useCronStore((state) => state.createJob);
@@ -122,6 +123,19 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
     listRoles().then(setRoles).catch(() => setRoles([]));
     listProjects().then(setProjects).catch(() => setProjects([]));
   }, []);
+
+  useEffect(() => {
+    onDraftChange?.({
+      ...buildSimpleDraft(
+        goal, name, compileSimpleSchedule({ freq, time, weekday, intervalHours, onceAt }),
+        roleId, libraryProjectId, runsOn, resultChannel, urgencyCriteria, maxRunBudget,
+      ),
+      // Switching forms preserves unfinished input, without creation-time defaults or validation.
+      name,
+      agentPrompt: goal,
+    });
+  }, [onDraftChange, goal, name, freq, time, weekday, intervalHours, onceAt,
+    roleId, libraryProjectId, runsOn, resultChannel, urgencyCriteria, maxRunBudget]);
 
   const handleSubmit = async () => {
     if (!goal.trim()) {
