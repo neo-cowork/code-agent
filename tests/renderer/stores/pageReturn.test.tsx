@@ -162,6 +162,24 @@ describe('app startup return-to through useLedgerDeepLink and real session initi
     expect(warn.mock.calls.filter((call) => String(call[0]).includes('Snapshot storage'))).toHaveLength(2);
   });
 
+  it('unsupported secondary pages do not turn into a remembered chat', async () => {
+    await boot();
+    fireEvent.pointerDown(window);
+    await act(async () => { await sessions.useSessionStore.getState().switchSession('older'); });
+    act(() => { app.useAppStore.getState().setShowLibraryPanel(true); });
+    window.dispatchEvent(new Event('pagehide'));
+    expect(sessionStorage.getItem(key)).toBeNull();
+  });
+
+  it('startup replay expires even without user input', async () => {
+    seed({ page: 'automation', runs: true });
+    await boot();
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 8_001);
+    await act(async () => { await sessions.useSessionStore.getState().switchSession('latest'); });
+    expect(app.useAppStore.getState().showCronCenter).toBe(false);
+    expect(sessions.useSessionStore.getState().currentSessionId).toBe('latest');
+  });
+
   it('StrictMode consumes once and still restores', async () => {
     seed({ page: 'automation', runs: true });
     render(<React.StrictMode><Probe /></React.StrictMode>);

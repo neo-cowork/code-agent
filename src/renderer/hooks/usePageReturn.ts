@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef } from 'react';
 import { UI } from '@shared/constants';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore, whenInitialSessionStateSettled } from '../stores/sessionStore';
+import { SECONDARY_PAGES_CLOSED } from '../stores/secondaryPages';
 import { DEFAULT_SETTINGS_TAB, SETTINGS_TAB_IDS, type SettingsTab } from '../utils/settingsTabs';
 import { createLogger } from '../utils/logger';
 
@@ -59,6 +60,11 @@ function write(): void {
       ? { page: 'automation', runs: app.cronCenterRunsRequested || automationRuns }
       : { page: 'chat' };
   try {
+    const secondaryKeys = Object.keys(SECONDARY_PAGES_CLOSED) as (keyof typeof SECONDARY_PAGES_CLOSED)[];
+    if (!app.showSettings && !app.showCronCenter && secondaryKeys.some((key) => Boolean(app[key]))) {
+      window.sessionStorage.removeItem(STORAGE_KEY);
+      return; // Unsupported secondary pages retain the existing cold-boot behaviour.
+    }
     window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
       version: 1, sessionId: useSessionStore.getState().currentSessionId, position,
     } satisfies Snapshot));
