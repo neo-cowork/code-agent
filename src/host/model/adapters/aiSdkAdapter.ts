@@ -54,6 +54,7 @@ import {
 } from '../../../shared/constants';
 import { resolveModelCapabilities } from '../modelCapabilityMatrix';
 import { resolveProviderBaseUrl, resolveProviderApiKey } from '../providers/providerResolution';
+import { describeBadSuccessBody, isRetryableBadSuccessBody, toBadSuccessBodyUserError, BAD_SUCCESS_BODY_MAX_RETRIES } from '../providers/badSuccessBody';
 import {
   withTransientRetry,
   isRetryableModelCallError,
@@ -714,6 +715,8 @@ async function generateViaAiSdk(params: {
             maxRetries: 0,
           });
         } catch (err) {
+          const badBody = describeBadSuccessBody(err);
+          if (badBody) logger.warn(badBody);
           if (guard.timedOut() && !signal?.aborted) {
             throw makeInferenceClientTimeoutError(requestTimeoutMs, err);
           }
@@ -740,7 +743,7 @@ async function generateViaAiSdk(params: {
     );
   } catch (err) {
     logInferenceFailure(err, 'generateText', config, messages);
-    throw err;
+    throw toBadSuccessBodyUserError(err);
   }
 
   let responseText = result.text;
@@ -830,6 +833,7 @@ async function streamViaAiSdk(params: {
   // 首字节看门狗超时驱动的重试单独计数（issue #1989，对齐非流式 maxTimeoutRetries）：
   // 每次首字节超时最坏烧满 firstByteMs 窗口，与普通瞬态错误分开封顶。
   let timeoutRetriesUsed = 0;
+  let badBodyRetriesUsed = 0;
   // 续接 attempt 的 accumulator 断点态 seed（见 seedAccumulatorFromBreakpoint）；null = 全新累积器。
   let resumeSeed: StreamAccumulator | null = null;
   // 断流 attempt 已上报 usage 的累积（刀 3 合并记账）：成功时并入最终 usage = Σ attempts。
@@ -1035,6 +1039,9 @@ async function streamViaAiSdk(params: {
       // 可重试判定要作用在「改写后的有效错误」上：看门狗超时的原始 err 是 'aborted'
       // （不是瞬态文案），改写后的 'first-byte/stream inactivity timeout' 才是。
       const effectiveErr = watchdogTimedOut ? new Error(msg, { cause: err }) : err;
+      const badBody = describeBadSuccessBody(err);
+      if (badBody) logger.warn(badBody);
+      const badBodyCapHit = isRetryableBadSuccessBody(err) && badBodyRetriesUsed >= BAD_SUCCESS_BODY_MAX_RETRIES;
       // emittedOutput 闸门：已向用户吐过 delta → 绝不重试（避免重复 emit）；只在首个可见
       // delta 之前的瞬态失败才重试，复用模型调用层统一可重试判定（status 429/5xx +
       // 网络瞬态文案/code，401/403/400 等确定性错误不重试）。
@@ -1042,12 +1049,13 @@ async function streamViaAiSdk(params: {
       // 每次最坏烧满 firstByteMs 窗口，预算耗尽即落终错（provider fallback 还有机会）。
       const timeoutCapHit = watchdogTimedOut && timeoutRetriesUsed >= INFERENCE_TIMEOUTS.TIMEOUT_RETRY_MAX;
       if (timeoutCapHit) logger.warn(`[AiSdkAdapter] 首字节超时重试已达上限 (${INFERENCE_TIMEOUTS.TIMEOUT_RETRY_MAX})，放弃重试: "${msg}"`);
-      if (!emittedOutput && attempt < maxRetries && !signal?.aborted && !timeoutCapHit && isRetryableModelCallError(effectiveErr)) {
+      if (!emittedOutput && attempt < maxRetries && !signal?.aborted && !timeoutCapHit && !badBodyCapHit && isRetryableModelCallError(effectiveErr)) {
         // 挂起只认可停靠 run 的调用链（runWithQuotaWaitSuspendEligibility）；其余调用方
         // 保持首字节前封顶重试，耗尽后照常走 provider 降级，绝不静默转取消。
         const quotaSuspend = watchdogTimedOut || !isQuotaWaitSuspendEligible() ? null : quotaSuspendErrorFor(err);
         if (quotaSuspend) throw quotaSuspend;
         if (watchdogTimedOut) timeoutRetriesUsed += 1;
+        if (isRetryableBadSuccessBody(err)) badBodyRetriesUsed += 1;
         // B1 续接 attempt 的首字节前瞬态失败：断点态不能随「全新累积器」重置丢掉
         // （resumeSeed 已在循环顶消费）——挂回后再 continue，重试仍是 prefix 形状。
         if (accResumedFromBreakpoint) resumeSeed = acc;
@@ -1124,11 +1132,12 @@ async function streamViaAiSdk(params: {
         if (!signal?.aborted) continue;
       }
       healthMonitor.recordFailure(config.provider, { cancelled: isCancellationError(err, signal), model: config.model, error: err });
+      const finalErr = toBadSuccessBodyUserError(effectiveErr);
       if (!signal?.aborted) {
-        onStream({ type: 'error', error: summarizeModelErrorForUser(msg), ...(code ? { errorCode: code } : {}) });
+        onStream({ type: 'error', error: summarizeModelErrorForUser(finalErr instanceof Error ? finalErr.message : msg), ...(code ? { errorCode: code } : {}) });
       }
       logInferenceFailure(effectiveErr, 'streamText', config, messages);
-      throw effectiveErr;
+      throw finalErr;
     }
   }
 }
