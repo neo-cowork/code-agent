@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DoomLoopGuard } from '../../../src/host/agent/runtime/doomLoopGuard';
 import {
   answerDoomLoopHandback,
+  emitDoomLoopStopNotice,
   releaseDoomLoopHandbackForSteer,
   settleDoomLoopHandback,
 } from '../../../src/host/agent/runtime/doomLoopHandback';
@@ -125,5 +126,24 @@ describe('doom loop handback', () => {
     expect(onEvent).toHaveBeenCalledWith({ type: 'doom_loop_handback', data: { sessionId: 'desk-1' } });
     controller.abort();
     await expect(pending).resolves.toBe('stop');
+  });
+
+  it('stop 后留一条助手消息：按用户语言说明卡住并提示可以回复换思路', async () => {
+    const persisted: Array<{ role: string; content: string }> = [];
+    const assembly = { generateId: () => 'm1', addAndPersistMessage: vi.fn(async (m) => { persisted.push(m); }) };
+    const onEvent = vi.fn();
+    const make = (text: string) => ({
+      messages: [{ role: 'user', content: text }],
+      turn: { effortLevel: 'medium' },
+      onEvent,
+    }) as never;
+
+    await emitDoomLoopStopNotice(make('做一份家庭月度开支表'), assembly as never);
+    await emitDoomLoopStopNotice(make('make a budget sheet'), assembly as never);
+
+    expect(persisted[0]).toMatchObject({ role: 'assistant' });
+    expect(persisted[0].content).toContain('重复同一个步骤');
+    expect(persisted[1].content).toContain('stuck repeating the same step');
+    expect(onEvent).toHaveBeenCalledWith({ type: 'message', data: persisted[0] });
   });
 });
