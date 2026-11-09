@@ -64,6 +64,18 @@ class FakeTaskManager extends EventEmitter {
   }
 }
 
+type WakeForeground = (
+  task: SessionCommandTask,
+  status: 'completed' | 'failed' | 'cancelled',
+) => Promise<void>;
+
+function createWakeForegroundMock() {
+  return Object.assign(
+    vi.fn<WakeForeground>().mockResolvedValue(undefined),
+    { cancelPendingWake: vi.fn() },
+  );
+}
+
 function input(index: number, laneKey = `lane-${index}`) {
   return {
     sessionId: 'session-a',
@@ -86,7 +98,7 @@ describe('SessionCommandCenter', () => {
     const manager = new FakeTaskManager();
     const center = new SessionCommandCenter(manager as unknown as TaskManager, {
       projectTerminalResult: vi.fn(),
-      wakeForegroundBrain: vi.fn(),
+      wakeForegroundBrain: createWakeForegroundMock(),
     });
     const spawned = await center.spawn({
       ...input(1),
@@ -129,7 +141,7 @@ describe('SessionCommandCenter', () => {
     const manager = new FakeTaskManager();
     const center = new SessionCommandCenter(manager as unknown as TaskManager, {
       projectTerminalResult: vi.fn(),
-      wakeForegroundBrain: vi.fn(),
+      wakeForegroundBrain: createWakeForegroundMock(),
     });
 
     const first = await center.spawn(input(1, 'report'));
@@ -248,7 +260,7 @@ describe('SessionCommandCenter', () => {
     const manager = new FakeTaskManager();
     const center = new SessionCommandCenter(manager as unknown as TaskManager, {
       projectTerminalResult: vi.fn(),
-      wakeForegroundBrain: vi.fn().mockRejectedValue(new Error('wake failed')),
+      wakeForegroundBrain: createWakeForegroundMock().mockRejectedValue(new Error('wake failed')),
     });
     const first = await center.spawn(input(1, 'report'));
     await center.spawn(input(2, 'report'));
@@ -310,7 +322,7 @@ describe('SessionCommandCenter', () => {
     const manager = new FakeTaskManager();
     const center = new SessionCommandCenter(manager as unknown as TaskManager, {
       projectTerminalResult: vi.fn(),
-      wakeForegroundBrain: vi.fn(),
+      wakeForegroundBrain: createWakeForegroundMock(),
     });
     const first = await center.spawn(input(1));
     if (first.outcome === 'requires_choice') throw new Error('unexpected admission result');
@@ -341,7 +353,7 @@ describe('SessionCommandCenter', () => {
     const manager = new FakeTaskManager();
     const center = new SessionCommandCenter(manager as unknown as TaskManager, {
       projectTerminalResult: vi.fn(),
-      wakeForegroundBrain: vi.fn(),
+      wakeForegroundBrain: createWakeForegroundMock(),
     });
     const first = await center.spawn(input(1, 'report'));
     await center.spawn(input(2, 'research'));
@@ -366,9 +378,7 @@ describe('SessionCommandCenter', () => {
   it('cascades a session Stop to running and queued tasks without approvals or a foreground wake', async () => {
     const manager = new FakeTaskManager();
     const pendingApprovals = new Set<string>();
-    const wakeForegroundBrain = Object.assign(vi.fn().mockResolvedValue(undefined), {
-      cancelPendingWake: vi.fn(),
-    });
+    const wakeForegroundBrain = createWakeForegroundMock();
     const center = new SessionCommandCenter(manager as unknown as TaskManager, {
       projectTerminalResult: vi.fn(),
       wakeForegroundBrain,
@@ -416,7 +426,7 @@ describe('SessionCommandCenter', () => {
     const manager = new FakeTaskManager();
     const center = new SessionCommandCenter(manager as unknown as TaskManager, {
       projectTerminalResult: vi.fn(),
-      wakeForegroundBrain: vi.fn(),
+      wakeForegroundBrain: createWakeForegroundMock(),
       persistMemberInput: vi.fn().mockResolvedValue(undefined),
     });
     await center.spawn(input(1, 'report'));
@@ -441,7 +451,7 @@ describe('SessionCommandCenter', () => {
     const manager = new FakeTaskManager();
     const center = new SessionCommandCenter(manager as unknown as TaskManager, {
       projectTerminalResult: vi.fn(),
-      wakeForegroundBrain: vi.fn(),
+      wakeForegroundBrain: createWakeForegroundMock(),
     });
     const first = await center.spawn(input(1, 'report'));
     if (first.outcome === 'requires_choice') throw new Error('unexpected admission result');
@@ -478,7 +488,7 @@ describe('SessionCommandCenter', () => {
     const persistMemberInput = vi.fn().mockResolvedValue(undefined);
     const center = new SessionCommandCenter(manager as unknown as TaskManager, {
       projectTerminalResult: vi.fn(),
-      wakeForegroundBrain: vi.fn(),
+      wakeForegroundBrain: createWakeForegroundMock(),
       persistMemberInput,
     });
     await center.spawn(input(1, 'report'));
@@ -504,7 +514,7 @@ describe('SessionCommandCenter', () => {
     const manager = new FakeTaskManager();
     const center = new SessionCommandCenter(manager as unknown as TaskManager, {
       projectTerminalResult: vi.fn(),
-      wakeForegroundBrain: vi.fn(),
+      wakeForegroundBrain: createWakeForegroundMock(),
       persistMemberInput: vi.fn().mockRejectedValue(new Error('db down')),
     });
     await center.spawn(input(1, 'report'));
@@ -1079,7 +1089,7 @@ describe('model-facing task result text', () => {
       .spyOn(getSessionManager(), 'addMessageToSession')
       .mockResolvedValue(undefined);
     const center = new SessionCommandCenter(manager as unknown as TaskManager, {
-      wakeForegroundBrain: vi.fn(),
+      wakeForegroundBrain: createWakeForegroundMock(),
     });
     try {
       const spawned = await spawnAndSettle(center, manager, conclusion);
@@ -1114,7 +1124,7 @@ describe('model-facing task result text', () => {
       .spyOn(getSessionManager(), 'addMessageToSession')
       .mockResolvedValue(undefined);
     const center = new SessionCommandCenter(manager as unknown as TaskManager, {
-      wakeForegroundBrain: vi.fn(),
+      wakeForegroundBrain: createWakeForegroundMock(),
     });
     try {
       await spawnAndSettle(center, manager, conclusion);
