@@ -230,11 +230,11 @@ export function buildForegroundToolFaceNarrowingNotice(
   const present = after.map((tool) => tool.name);
   const namesBrowser = browserPromptWords().some((word) => lower.includes(word));
   if (namesBrowser && !present.some((name) => BROWSER_FACE_TOOLS.has(normalized(name)))) {
-    return `<tool-face-narrowing>\nReason: the foreground face defers browser interaction to a background task. The user asked for browser work. Do not retry a browser tool. Exit: call ${exit} with the complete request and tell the user in one plain sentence that it runs in the background browser and a task card will show the result.\n</tool-face-narrowing>`;
+    return `<tool-face-narrowing>\nReason: the foreground face defers browser interaction to a background task. The user asked for browser work. Do not retry a browser tool. Exit, only if the user wants the browser operated now: call ${exit} with the complete request and tell the user in one plain sentence that it runs in the background browser and a task card will show the result. If the user is only asking how to do something, answer directly and do not delegate.\n</tool-face-narrowing>`;
   }
   const namesShell = SHELL_PROMPT_WORDS.some((word) => lower.includes(word));
   if (namesShell && !present.some((name) => isBashToolName(name))) {
-    return `<tool-face-narrowing>\nReason: the foreground face defers shell commands to a background task. The user asked for a shell command. Do not retry Bash. Exit: call ${exit} with the complete command and report that it is running in the background; the command has not run in this turn.\n</tool-face-narrowing>`;
+    return `<tool-face-narrowing>\nReason: the foreground face defers shell commands to a background task. The user asked for a shell command. Do not retry Bash. Exit, only if the user wants a command run now: call ${exit} with the complete command and report that it is running in the background; the command has not run in this turn. If the user is only asking how to do something, answer directly and do not delegate.\n</tool-face-narrowing>`;
   }
   return undefined;
 }
@@ -253,13 +253,16 @@ export function appendToolFaceNotice(
 export function buildTurnToolFaceNotices(
   runtime: {
     turn: { runUserPrompt: string };
-    messages: readonly { role: string; content: string }[];
+    messages: readonly { role: string; content: string; toolCalls?: readonly { name: string }[] }[];
     allowedToolNames?: readonly string[];
   },
   after: readonly { name: string }[],
 ): string[] {
   const prompt = runtime.turn.runUserPrompt || runtime.messages.filter((message) => message.role === 'user').at(-1)?.content || '';
-  const narrowing = buildForegroundToolFaceNarrowingNotice(prompt, after);
+  const lastUser = runtime.messages.map((m) => m.role).lastIndexOf('user');
+  const delegatedThisTurn = runtime.messages.slice(lastUser + 1).some((m) =>
+    m.toolCalls?.some((call) => ['delegate_task', 'spawn_agent'].includes(normalized(call.name))));
+  const narrowing = delegatedThisTurn ? undefined : buildForegroundToolFaceNarrowingNotice(prompt, after);
   const connector = buildUnusableConnectorNotice(runtime.allowedToolNames);
   if (narrowing) logger.info('[TurnToolFace] tool-face-narrowing note injected', { toolCount: after.length });
   if (connector) logger.info('[TurnToolFace] connector-not-ready note injected', { toolCount: after.length });

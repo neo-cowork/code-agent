@@ -231,6 +231,28 @@ describe('turn tool-face gate (through inference)', () => {
     expect(sentSystemText(ctx)).toContain('<tool-face-narrowing>');
   });
 
+  it('how-to question about the command line: note is conditional and says to answer directly', async () => {
+    const prompt = '命令行里怎么查看端口占用';
+    const ctx = buildCtx(prompt, getTextForegroundToolNamesForPrompt(prompt));
+    await inference(ctx);
+    const system = sentSystemText(ctx);
+    expect(system).toContain('only if the user wants a command run now');
+    expect(system).toContain('answer directly and do not delegate');
+    expect(system).not.toContain('Exit: call');
+  });
+
+  it('second iteration after delegate_task in the same turn gets no narrowing note', async () => {
+    const prompt = '用浏览器打开 example.com 告诉我标题';
+    const ctx = buildCtx(prompt, getTextForegroundToolNamesForPrompt(prompt));
+    ctx.runtime.messages.push({
+      role: 'assistant',
+      content: '',
+      toolCalls: [{ id: 'c1', name: 'delegate_task', arguments: {} }],
+    });
+    await inference(ctx);
+    expect(sentSystemText(ctx)).not.toContain('<tool-face-narrowing>');
+  });
+
   it('a prompt that names no Bash/browser gets no narrowing note', async () => {
     const prompt = '请快速回答这个问题';
     const ctx = buildCtx(prompt, getTextForegroundToolNamesForPrompt(prompt));
