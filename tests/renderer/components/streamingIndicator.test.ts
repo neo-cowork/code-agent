@@ -77,7 +77,7 @@ describe('StreamingIndicator state', () => {
   });
 });
 
-// 产品拍板翻案：思考流式进行中由展开的 ThinkingDigestBanner 独占信号，
+// 产品拍板翻案：思考流式进行中由默认收起的 ThinkingDigestBanner（「正在思考… · Ns」单行）独占信号，
 // StreamingIndicator 只保留非思考阶段的呼吸光标与具名等待。
 describe('StreamingIndicator rendering', () => {
   it('does not own or render a thinking label', () => {
