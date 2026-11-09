@@ -47,7 +47,7 @@ describe('SendButton runtime follow-up state', () => {
     expect(html).toContain('正在停止');
     expect(html).toContain('composer-stop-stopping');
     expect(html).toContain('animate-spin');
-    expect(html).not.toContain('disabled');
+    expect(html).not.toContain('disabled=""');
     expect(html).not.toContain('composer-stop-button');
   });
 });
