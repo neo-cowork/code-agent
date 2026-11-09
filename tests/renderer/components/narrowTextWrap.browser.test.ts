@@ -186,6 +186,9 @@ const { CronJobList } = await import('/components/features/cron/CronJobList.tsx'
 const { OverviewRunHeader } = await import('/components/TaskPanel/OverviewRunHeader.tsx');
 const { ChannelsSettings } = await import('/components/features/settings/tabs/ChannelsSettings.tsx');
 const { ProjectMembersCard } = await import('/components/features/projectSpace/ProjectMembersCard.tsx');
+const { Badge } = await import('/components/primitives/Badge.tsx');
+const { Button } = await import('/components/primitives/Button.tsx');
+const { Unplug } = await import('/@id/lucide-react');
 const { CronRunSessionStatusBar } = await import('/components/features/chat/CronRunSessionStatusBar.tsx');
 const { useAppStore } = await import('/stores/appStore.ts');
 const { useCronStore } = await import('/stores/cronStore.ts');
@@ -271,6 +274,7 @@ createRoot(document.getElementById('root')).render(h('main', { style: { width: '
   surface('job-list', 360, h(CronJobList, {})),
   surface('task-panel', 320, h(React.Fragment, null, h(OverviewRunHeader), h(CronRunSessionStatusBar, { sessionId: 'task-panel-session' }))),
   surface('project-members-column', 200, h(ProjectMembersCard, { projectId: 'p1', onInvite: noop })),
+  surface('primitive-narrow-cell', 56, h('div', null, h(Badge, { className: 'text-xs' }, '已中断'), h('div', null, h(Button, { size: 'sm', variant: 'ghost', leftIcon: h(Unplug, { className: 'w-3 h-3' }) }, '断开连接')))),
   surface('channels-table', 1200, h(ChannelsSettings)),
   surface('channels-table-narrow', 820, h(ChannelsSettings)),
 ));
@@ -350,6 +354,10 @@ describe('narrow text wrapping on production surfaces (element-agnostic gate)', 
         expect(presence.channelRows).toBeGreaterThanOrEqual(5);
         expect(presence.telegramPrivacyBadge).toBeGreaterThan(0);
         for (const surface of report.surfaces) {
+          // primitive-narrow-cell 故意比内容窄：nowrap 的结局是横向溢出（可接受），竖排才是缺陷
+          if (surface.surface !== 'primitive-narrow-cell') {
+            expect(surface.overflowPx, `surface ${surface.surface} gained horizontal overflow (main: 0)`).toBe(0);
+          }
           expect(surface.textElements, `surface ${surface.surface} measured nothing`).toBeGreaterThan(0);
         }
         allFailures.push(...report.failures);
