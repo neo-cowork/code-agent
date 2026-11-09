@@ -1,3 +1,4 @@
+import { resolveStoppedTaskOutcome } from './sessionTaskStopConclusion';
 import type { AgentEvent, Message, MessageAttachment, TaskProgressData, ToolProgressData } from '../../../shared/contract';
 import type { TaskProgress } from '../../../shared/contract/backgroundTask';
 import type { ToolResult } from '../../../shared/contract/tool';
@@ -144,6 +145,8 @@ export class SessionCommandCenter {
   private readonly ledgers = new Map<string, SessionTaskSlotLedger>();
   /** 在途工具调用的名字（`${taskId}:${toolCallId}` → 工具名）；tool_call_end 即删，只活在途调用。 */
   private readonly toolNamesByCallId = new Map<string, string>();
+  /** 每个任务最近一次工具调用带的网址：任务没做完就停时，结论里说「最后停留在哪」。 */
+  private readonly lastUrlByTask = new Map<string, string>();
   /** 在途 shell 调用的命令文本（key 同 toolNamesByCallId），只供回收时判断是否可能卡在系统授权框。 */
   private readonly shellCommandsByCallId = new Map<string, string>();
   /** permission_request ids still unresolved on the agent event stream, per task. */
@@ -503,11 +506,22 @@ export class SessionCommandCenter {
       const artifacts = Array.isArray(data?.artifacts)
         ? data.artifacts as NormalizedToolArtifactMeta[]
         : undefined;
-      await this.settle(task, 'completed', conclusion, artifacts);
+      // 没做完就停下（撞步数上限 / 最后一轮没有结论）：换成白话结论，且不再标「已完成」。
+      const stopped = resolveStoppedTaskOutcome({
+        status: 'completed',
+        detail: conclusion,
+        lastUrl: this.lastUrlByTask.get(task.id),
+      });
+      await this.settle(task, stopped.status, stopped.detail, stopped.status === 'completed' ? artifacts : undefined);
       return;
     }
     if (event.type === 'task_error') {
-      await this.settle(task, 'failed', typeof data?.error === 'string' ? data.error : '执行失败');
+      const stopped = resolveStoppedTaskOutcome({
+        status: 'failed',
+        detail: typeof data?.error === 'string' ? data.error : '执行失败',
+        lastUrl: this.lastUrlByTask.get(task.id),
+      });
+      await this.settle(task, 'failed', stopped.detail);
       return;
     }
     if (event.type === 'task_cancelled') {
@@ -544,6 +558,8 @@ export class SessionCommandCenter {
       const call = event.data as { id?: unknown; name?: unknown; arguments?: unknown } | undefined;
       if (typeof call?.id === 'string' && typeof call.name === 'string') {
         this.toolNamesByCallId.set(`${taskId}:${call.id}`, call.name);
+        const url = (call.arguments as { url?: unknown } | undefined)?.url;
+        if (typeof url === 'string' && url && url !== 'about:blank') this.lastUrlByTask.set(taskId, url);
         const command = (call.arguments as { command?: unknown } | undefined)?.command;
         if (/bash|shell/i.test(call.name) && typeof command === 'string') {
           this.shellCommandsByCallId.set(`${taskId}:${call.id}`, command);
@@ -721,6 +737,7 @@ export class SessionCommandCenter {
   ): Promise<void> {
     if (TERMINAL.has(task.status)) return;
     this.approvalWaitStartedAtByTask.delete(task.id);
+    this.lastUrlByTask.delete(task.id);
     task.status = status;
     task.detail = detail;
     task.summary = compactSummary(
