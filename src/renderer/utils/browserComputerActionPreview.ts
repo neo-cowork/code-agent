@@ -287,7 +287,7 @@ function buildBrowserSummary(action: string, args: Record<string, unknown>): {
     case 'get_elements':
       return { summary: '读取页面元素', target: asString(args.selector) };
     case 'get_dom_snapshot':
-      return { summary: '读取 DOM snapshot' };
+      return { summary: '读取页面结构' };
     case 'get_a11y_snapshot':
       return { summary: '读取 accessibility snapshot' };
     case 'get_workbench_state':
@@ -610,9 +610,9 @@ export function summarizeBrowserComputerActionResult(
           ?? countArray(dom?.interactive)
           ?? countNumber(dom?.interactiveCount);
         if (headings !== null || interactive !== null) {
-          return `DOM snapshot: ${headings ?? 0} headings · ${interactive ?? 0} interactive`;
+          return `页面结构：${headings ?? 0} 个标题 · ${interactive ?? 0} 个可点元素`;
         }
-        return 'DOM snapshot 已读取';
+        return '页面结构已读取';
       }
       case 'get_a11y_snapshot':
         return 'Accessibility snapshot 已读取';
