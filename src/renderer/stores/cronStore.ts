@@ -273,9 +273,18 @@ export const useCronStore = create<CronState>()((set, get) => ({
   },
 
   triggerJob: async (jobId) => {
-    const execution = await cronClient.triggerJob(jobId);
-    await Promise.all([get().loadExecutions(jobId), get().loadStats()]);
-    return execution;
+    const pending = cronClient.triggerJob(jobId);
+    const refresh = () => Promise.all([get().loadExecutions(jobId), get().loadStats()]);
+    // The host persists a running execution before the long-running IPC settles.
+    // Retry discovery while it is pending in case the first read races persistence.
+    const timer = setInterval(() => { void refresh(); }, 2000);
+    void refresh();
+    try {
+      return await pending;
+    } finally {
+      clearInterval(timer);
+      await refresh();
+    }
   },
 
   setEventActionMode: async (jobId, mode) => {
