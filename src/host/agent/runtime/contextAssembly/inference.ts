@@ -20,7 +20,7 @@ import { filterToolDefinitionsByStrictSkillBoundary } from '../../../tools/skill
 import { trackNode } from '../../../observability/posthogNode';
 import { POSTHOG_EVENTS } from '../../../../shared/observability/posthog-events';
 import { filterToolsByRunPolicyObserved } from '../toolRunPolicy';
-import { appendToolFaceNotice, buildForegroundToolFaceNarrowingNoticeForRuntime } from '../turnToolFace';
+import { appendToolFaceNotice, buildTurnToolFaceNotices } from '../turnToolFace';
 import {
   stripImagesFromMessages,
   extractUserRequestText,
@@ -365,7 +365,6 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       after: tools.length,
     });
   }
-  const runPolicyToolsBeforeNarrowing = tools;
   const runPolicyToolsAfterNarrowing = tools = filterToolsByRunPolicyObserved(tools, ctx.runtime);
   if (isArtifactRepairMode(ctx)) {
     const before = tools.length;
@@ -392,10 +391,10 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
   let effectiveTools = tools;
   let effectiveConfig = ctx.runtime.modelConfig;
   let artifactRequest = false, pendingCapabilityFallback: ModelFallbackInfo | null = null;
-  const toolFaceNotice = buildForegroundToolFaceNarrowingNoticeForRuntime(ctx.runtime, runPolicyToolsBeforeNarrowing, runPolicyToolsAfterNarrowing);
+  const toolFaceNotices = buildTurnToolFaceNotices(ctx.runtime, runPolicyToolsAfterNarrowing);
 
   const builtModelMessages = await ctx.buildModelMessages();
-  let modelMessages: ModelMessage[] = appendToolFaceNotice(builtModelMessages, toolFaceNotice);
+  let modelMessages: ModelMessage[] = appendToolFaceNotice(builtModelMessages, toolFaceNotices);
   if (ctx.runtime.control.forceFinalResponsePrompt) {
     modelMessages = [
       ...modelMessages,

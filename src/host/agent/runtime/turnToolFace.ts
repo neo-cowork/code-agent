@@ -16,6 +16,7 @@ import { getConnectorRegistry } from '../../connectors/registry';
 import { findConnectorIdForToolName } from '../../../shared/contract/workbenchTools';
 import { isExternalSideEffectTool } from '../../tools/externalSideEffect';
 import { isBashToolName } from '../../tools/toolNames';
+import { DEFERRED_TOOLS_META } from '../../services/toolSearch/deferredToolsData';
 import { resolveRoleToolBoundary } from '../../services/roleAssets/rolePersonalization';
 
 const logger = createLogger('TurnToolFace');
@@ -129,14 +130,20 @@ export async function resolveRoleWakeRequiredToolNames(
   });
 }
 
-/** Keep an observable reason when a declared native connector cannot be used. */
-export function logUnusableDeclaredConnectorTools(declaredTools: readonly string[] | undefined): void {
-  if (!declaredTools?.length) return;
+export interface UnusableDeclaredConnector {
+  connectorId: string;
+  reason: string;
+}
+
+/** Declared native connectors that cannot serve a call right now, with a distinguishable reason. */
+export function findUnusableDeclaredConnectors(declaredTools: readonly string[] | undefined): UnusableDeclaredConnector[] {
+  if (!declaredTools?.length) return [];
   const connectorIds = new Set(
     declaredTools
       .map((name) => findConnectorIdForToolName(name))
       .filter((id): id is string => Boolean(id)),
   );
+  const unusable: UnusableDeclaredConnector[] = [];
   for (const connectorId of connectorIds) {
     try {
       const enabled = getConfigService().getSettings().connectors?.enabledNative?.includes(connectorId) === true;
@@ -149,12 +156,7 @@ export function logUnusableDeclaredConnectorTools(declaredTools: readonly string
           : readiness === 'failed' || readiness === 'unavailable'
             ? `readiness-${readiness}`
             : undefined;
-      if (reason) {
-        logger.warn('[TurnToolFace] Declared connector tool retained but connector is unusable', {
-          connectorId,
-          reason,
-        });
-      }
+      if (reason) unusable.push({ connectorId, reason });
     } catch (error) {
       logger.warn('[TurnToolFace] Declared connector tool retained but readiness is unavailable', {
         connectorId,
@@ -163,56 +165,103 @@ export function logUnusableDeclaredConnectorTools(declaredTools: readonly string
       });
     }
   }
+  return unusable;
 }
 
-function userNamedToolNames(prompt: string, removed: readonly string[]): string[] {
-  const lower = prompt.toLowerCase();
-  return removed.filter((toolName) => {
-    const name = normalized(toolName);
-    if (isBashToolName(toolName)) {
-      return ['bash', 'shell', 'terminal', '命令行', '终端', '脚本执行'].some((word) => lower.includes(word));
-    }
-    if (['browser', 'browser_action', 'browser_navigate', 'computer_use'].includes(name)) {
-      return ['browser', '浏览器', '网页', 'computer_use', 'browser_action'].some((word) => lower.includes(word));
-    }
-    return lower.includes(name);
-  });
+/** Keep an observable reason when a declared native connector cannot be used. */
+export function logUnusableDeclaredConnectorTools(declaredTools: readonly string[] | undefined): void {
+  for (const { connectorId, reason } of findUnusableDeclaredConnectors(declaredTools)) {
+    logger.warn('[TurnToolFace] Declared connector tool retained but connector is unusable', { connectorId, reason });
+  }
 }
 
-/** Short model-facing exit for a named tool removed by the foreground face. */
+const CONNECTOR_DISPLAY_NAMES: Readonly<Record<string, string>> = {
+  calendar: '日历',
+  mail: '邮件',
+  reminders: '提醒事项',
+  photos: '照片',
+};
+
+/**
+ * Model-facing line for declared/wake-required connectors the user must fix.
+ * Only user-fixable states (not enabled / not authorised / not ready) are
+ * surfaced, each with where to fix it; never framed as a capability fault.
+ */
+export function buildUnusableConnectorNotice(allowedToolNames: readonly string[] | undefined): string | undefined {
+  const unusable = findUnusableDeclaredConnectors(allowedToolNames);
+  if (unusable.length === 0) return undefined;
+  const names = unusable.map(({ connectorId }) => CONNECTOR_DISPLAY_NAMES[connectorId] ?? connectorId).join('、');
+  return `<connector-not-ready>\nThe user's ${names} connector is not connected or not authorised, so its tools cannot return data right now. If the task needs it, tell the user in one plain sentence to reconnect it under Settings > Connectors (设置 > 连接器), then continue with whatever else you can do. Do not call this a capability error, a bug or an "abnormal capability".\n</connector-not-ready>`;
+}
+
+const BROWSER_FACE_TOOLS = new Set(['browser', 'browser_action', 'browser_navigate', 'computer_use']);
+const SHELL_PROMPT_WORDS = ['bash', 'shell', '终端', '命令行'];
+
+/**
+ * Words by which the user names browser work, taken from the tool registry
+ * (tool name + the Chinese head of its short description) rather than a
+ * private list. Bash is not a deferred tool and has no registry entry, so it
+ * keeps the tool name plus the plain shell/terminal words.
+ */
+function browserPromptWords(): string[] {
+  const meta = DEFERRED_TOOLS_META.find((entry) => normalized(entry.name) === 'browser');
+  if (!meta) return [];
+  const head = meta.shortDescription.split(/[（(]/)[0].replace(/自动化$/, '').trim();
+  return [normalized(meta.name), head].filter(Boolean);
+}
+
+function exitToolName(after: readonly { name: string }[]): string | undefined {
+  const names = new Set(after.map((tool) => normalized(tool.name)));
+  return ['delegate_task', 'spawn_agent'].find((name) => names.has(name));
+}
+
+/**
+ * Short model-facing reason + exit when the user names Bash or browser work
+ * and the final foreground tool table has no such tool. Fires on absence, not
+ * on removal: deferred browser tools are never in the pre-narrowing table.
+ */
 export function buildForegroundToolFaceNarrowingNotice(
   prompt: string,
-  before: readonly { name: string }[],
   after: readonly { name: string }[],
 ): string | undefined {
-  const kept = new Set(after.map((tool) => normalized(tool.name)));
-  const removed = before.filter((tool) => !kept.has(normalized(tool.name))).map((tool) => tool.name);
-  const named = userNamedToolNames(prompt, removed);
-  if (named.length === 0) return undefined;
-  const browser = named.some((name) => ['browser', 'browser_action', 'browser_navigate', 'computer_use'].includes(normalized(name)));
-  if (browser) {
-    return '<tool-face-narrowing>\nReason: the foreground face defers browser interaction to a background task. The user asked for browser work. Do not retry the removed browser tool. Exit: call delegate_task with the complete request and report that it is running in the background.\n</tool-face-narrowing>';
+  const exit = exitToolName(after);
+  if (!exit) return undefined;
+  const lower = prompt.toLowerCase();
+  const present = after.map((tool) => tool.name);
+  const namesBrowser = browserPromptWords().some((word) => lower.includes(word));
+  if (namesBrowser && !present.some((name) => BROWSER_FACE_TOOLS.has(normalized(name)))) {
+    return `<tool-face-narrowing>\nReason: the foreground face defers browser interaction to a background task. The user asked for browser work. Do not retry a browser tool. Exit: call ${exit} with the complete request and tell the user in one plain sentence that it runs in the background browser and a task card will show the result.\n</tool-face-narrowing>`;
   }
-  return '<tool-face-narrowing>\nReason: the foreground face defers shell commands to a background task. The user asked for a shell command. Do not retry the removed Bash tool. Exit: call delegate_task with the complete command and report that it is running in the background; the command has not run in this turn.\n</tool-face-narrowing>';
+  const namesShell = SHELL_PROMPT_WORDS.some((word) => lower.includes(word));
+  if (namesShell && !present.some((name) => isBashToolName(name))) {
+    return `<tool-face-narrowing>\nReason: the foreground face defers shell commands to a background task. The user asked for a shell command. Do not retry Bash. Exit: call ${exit} with the complete command and report that it is running in the background; the command has not run in this turn.\n</tool-face-narrowing>`;
+  }
+  return undefined;
 }
 
 export function appendToolFaceNotice(
   messages: readonly ModelMessage[],
-  notice: string | undefined,
+  notices: readonly (string | undefined)[],
 ): ModelMessage[] {
-  if (!notice) return [...messages];
+  const present = notices.filter((notice): notice is string => Boolean(notice));
   return [
     ...messages,
-    { role: 'system', content: notice, transient: true },
+    ...present.map((notice) => ({ role: 'system' as const, content: notice, transient: true })),
   ];
 }
 
-export function buildForegroundToolFaceNarrowingNoticeForRuntime(
-  runtime: { turn: { runUserPrompt: string }; messages: readonly { role: string; content: string }[] },
-  before: readonly { name: string }[],
+export function buildTurnToolFaceNotices(
+  runtime: {
+    turn: { runUserPrompt: string };
+    messages: readonly { role: string; content: string }[];
+    allowedToolNames?: readonly string[];
+  },
   after: readonly { name: string }[],
-): string | undefined {
+): string[] {
   const prompt = runtime.turn.runUserPrompt || runtime.messages.filter((message) => message.role === 'user').at(-1)?.content || '';
-  return buildForegroundToolFaceNarrowingNotice(prompt, before, after);
+  const narrowing = buildForegroundToolFaceNarrowingNotice(prompt, after);
+  const connector = buildUnusableConnectorNotice(runtime.allowedToolNames);
+  if (narrowing) logger.info('[TurnToolFace] tool-face-narrowing note injected', { toolCount: after.length });
+  if (connector) logger.info('[TurnToolFace] connector-not-ready note injected', { toolCount: after.length });
+  return [narrowing, connector].filter((notice): notice is string => Boolean(notice));
 }
-

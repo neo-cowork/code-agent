@@ -2,14 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import { resolveAgent } from '../../../src/host/agent/agentRegistry';
 import {
-  buildForegroundToolFaceNarrowingNotice,
   buildRoleWakeToolNames,
   resolveRoleWakeRequiredToolNames,
 } from '../../../src/host/agent/runtime/turnToolFace';
 import { withSessionCommandCenterBrain, getTextForegroundToolNamesForPrompt } from '../../../src/host/app/sessionCommandCenterBrain';
 import { getAllToolDefinitions } from '../../../src/host/tools/dispatch/toolDefinitions';
 import { getTextForegroundToolNames } from '../../../src/host/tools/protocolRegistry';
-import { browserActionSchema } from '../../../src/host/plugins/builtin/browserControl/browserAction.schema';
 
 describe('turn tool-face contract', () => {
   it('role chat keeps the foreground face and every declared role tool', () => {
@@ -34,19 +32,6 @@ describe('turn tool-face contract', () => {
       definitions,
     });
     expect(direct).toEqual(required);
-  });
-
-  it('foreground named Bash and browser work get a reason plus background exit', () => {
-    const before = [...getAllToolDefinitions(), browserActionSchema];
-    const after = before.filter((tool) => !['Bash', 'browser', 'browser_action', 'browser_navigate', 'computer_use'].includes(tool.name));
-    const shellNotice = buildForegroundToolFaceNarrowingNotice('用终端执行 ls', before, after);
-    const browserNotice = buildForegroundToolFaceNarrowingNotice('用浏览器打开 example.com', before, after);
-    expect(shellNotice).toContain('delegate_task');
-    expect(shellNotice).toContain('background task');
-    expect(browserNotice).toContain('delegate_task');
-    expect(browserNotice).toContain('browser interaction');
-    expect(shellNotice).not.toContain('disabled by permission policy');
-    expect(browserNotice).not.toContain('disabled by permission policy');
   });
 
   it('MiMo foreground keeps delegate_task while deferred web and browser tools stay out', () => {

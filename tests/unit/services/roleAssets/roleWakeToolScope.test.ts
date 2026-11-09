@@ -13,6 +13,7 @@ import { toRoleBoundaryRunAllowlist } from '../../../../src/host/services/roleAs
 const SCOPE_ROLE = 'scope-keeper';
 const DENY_ROLE = 'boundary-empty';
 const UNDECLARED_ROLE = 'undeclared-tools';
+const MEMORY_ONLY_ROLE = 'memory-only-triage';
 const DECLARED_TOOLS = ['Read', 'Bash', 'mail_send', 'mcp__lark__im.v1.message.create'];
 const KEPT_TOOLS = ['Read', 'Bash'];
 const OUTSIDE_TOOL = 'Write';
@@ -147,7 +148,8 @@ vi.mock('../../../../src/cli/bootstrap', () => ({
   }),
 }));
 
-import { wakeRole } from '../../../../src/host/services/roleAssets/roleProactivity';
+import { getProtocolRegistry } from '../../../../src/host/tools/protocolRegistry';
+import { wakeRole, resolveWakeRunToolScope } from '../../../../src/host/services/roleAssets/roleProactivity';
 import { ensureRoleAssetDirs, appendRoleHistory } from '../../../../src/host/services/roleAssets/roleAssetService';
 import { writeRolePersonalization } from '../../../../src/host/services/roleAssets/rolePersonalization';
 
@@ -205,12 +207,25 @@ describe('role wake tool scope', () => {
       if (roleId === SCOPE_ROLE) return { id: roleId, tools: DECLARED_TOOLS };
       if (roleId === DENY_ROLE) return { id: roleId, tools: ['mail_send', 'mcp__lark__im.v1.message.create'] };
       if (roleId === UNDECLARED_ROLE) return { id: roleId, tools: [] };
+      if (roleId === MEMORY_ONLY_ROLE) return { id: roleId, tools: ['MemoryWrite'] };
       return undefined;
     });
   });
 
   afterEach(async () => {
     await fs.rm(harness.configDir, { recursive: true, force: true });
+  });
+
+  it('MemoryWrite-only role wakes with read tools of the connected calendar/mail/reminders and no writes', async () => {
+    mockSettings.value = { connectors: { enabledNative: ['calendar', 'mail', 'reminders'] } };
+    await ensureRoleAssetDirs(MEMORY_ONLY_ROLE);
+    getProtocolRegistry();
+    const scope = await resolveWakeRunToolScope(MEMORY_ONLY_ROLE, ['Calendar', 'Mail', 'Reminders']);
+    const allowed = new Set(scope.allowedToolNames ?? []);
+    expect(allowed.has('MemoryWrite')).toBe(true);
+    for (const name of ['calendar', 'mail', 'reminders']) expect(allowed.has(name), name).toBe(true);
+    expect(allowed.has('calendar_create_event')).toBe(false);
+    expect(allowed.has('mail_send')).toBe(false);
   });
 
   it('headless CLI 醒来：声明外工具与对外副作用工具不进工具表，边界掏空时是拒绝全部哨兵', async () => {
