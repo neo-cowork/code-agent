@@ -6,9 +6,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
 
+const routeLog = vi.hoisted(() => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }));
 vi.mock('../../../src/host/services/infra/logger', async (importOriginal) => ({
   ...await importOriginal<typeof import('../../../src/host/services/infra/logger')>(),
-  createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+  createLogger: () => routeLog,
 }));
 vi.mock('../../../src/host/mcp/logCollector.js', () => ({
   logCollector: { agent: vi.fn() },
@@ -56,6 +57,8 @@ const createRoleInvocation = {
 };
 
 beforeEach(() => {
+  routeLog.info.mockClear();
+  routeLog.warn.mockClear();
   resolveSkillInvocationMock.mockReset();
   resolveSkillInvocationMock.mockImplementation(async (text: string) =>
     text.trim().startsWith('/create-role') ? createRoleInvocation : null,
@@ -212,5 +215,26 @@ describe('自然语言种子使用内置技能契约', () => {
       expect(context.contextModifier.toolBoundary).toMatchObject({ skillName: 'create-role', strict: true });
       expect(context.contextModifier.toolBoundary?.allowedTools).toContain('propose_role');
     }
+  });
+});
+
+
+describe('自然语言首轮经 sticky 路径的诊断', () => {
+  const text = '帮我创建一个日程管家专家，负责看日历和提醒';
+
+  it('记录原话和已解析技能', async () => {
+    expect(await resolveStickyStrictSkillInvocation(mkCtx([userMsg(text)]), text)).toBe(createRoleInvocation);
+    expect(routeLog.info).toHaveBeenCalledWith('[AgentLoop] Natural-language create-role route fired', {
+      matchedText: text, resolvedSkill: 'create-role',
+    });
+  });
+
+  it('技能缺失时仍通过共同路由记录可区分原因', async () => {
+    resolveSkillInvocationMock.mockResolvedValue(null);
+    expect(await resolveStickyStrictSkillInvocation(mkCtx([userMsg(text)]), text)).toBeNull();
+    expect(routeLog.warn).toHaveBeenCalledWith(
+      '[AgentLoop] Natural-language create-role route matched but create-role skill not resolvable',
+      { reason: 'skill not found in discovery', matchedText: text },
+    );
   });
 });

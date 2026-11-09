@@ -43,7 +43,7 @@ function findLatestStrictSkillSeed(ctx: RuntimeContext): StrictSkillSeed | null 
     }
     const seed = matchRoleAuthoringSeed(msg.content);
     if (seed) {
-      return { text: seed.text, index: i };
+      return { text: msg.content, index: i };
     }
   }
   return null;
@@ -117,7 +117,9 @@ export async function resolveStickyStrictSkillInvocation(
     return null;
   }
 
-  const invocation = await resolveSkillInvocation(seed.text, ctx.workingDirectory);
+  const invocation = matchRoleAuthoringSeed(seed.text)?.kind === 'natural-language'
+    ? await resolveNaturalLanguageCreateRoleInvocation(ctx, seed.text)
+    : await resolveSkillInvocation(seed.text, ctx.workingDirectory);
   if (!invocation || !isStickyStrictSkill(invocation)) {
     return null;
   }
