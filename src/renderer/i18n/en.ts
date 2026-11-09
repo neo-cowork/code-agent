@@ -48,7 +48,6 @@ import { voiceAuditEn } from './voiceAudit';
 import { sessionInspectorEn } from './sessionInspector';
 import { artifactShareEn } from './artifactShare';
 import { receiptPresentationEn } from './receiptPresentation';
-import { roleEditReceiptEn } from './roleEditReceipt';
 import { renderHumanPipeEn } from './renderHumanPipe';
 import { outcomeWordsEn } from './outcomeWords';
 import { engineModelPanelEn } from './engineModelPanel';
@@ -76,7 +75,6 @@ export const en = {
   ...generativeUIEn,
   ...workbenchTabsEn,
   ...receiptPresentationEn,
-  ...roleEditReceiptEn,
   ...renderHumanPipeEn,
   ...outcomeWordsEn, ...engineModelPanelEn,
   ...jevAdvisoryEn,
