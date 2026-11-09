@@ -42,6 +42,7 @@ import { WakeRationaleNote, wakeRationaleFromMetadata } from './WakeRationaleNot
 import { TurnTimelineNodeRenderer } from './TraceTimelineNodes';
 import { MessageContextFrame, MessageContextMenu } from './MessageContextMenu';
 import { messageContextMenuId } from './useMessageContextInterventions';
+import { StepLimitContinue } from './StepLimitContinue';
 
 interface TraceNodeRendererProps {
   node: TraceNode;
@@ -148,6 +149,9 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
   return (
     <div data-trace-node-id={node.id} data-trace-node-type={node.type}>
       {content}
+      {node.type === 'assistant_text' && node.feedbackEligible && node.metadata?.stoppedByStepLimit && (
+        <StepLimitContinue sessionId={sessionId} messageId={node.messageId ?? node.id} />
+      )}
     </div>
   );
 };
