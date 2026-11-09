@@ -14,7 +14,7 @@
 // 与技能包同套体系），直接按 SKILL_CATEGORIES 顺序推导；无 category 的自建角色归「其他」。
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { Quote, RefreshCw, UserRound, Users } from 'lucide-react';
+import { Quote, RefreshCw, Search, UserRound, Users } from 'lucide-react';
 import type { RolePanelEntry } from '@shared/contract/roleAssets';
 import type { TeamRecipe } from '@shared/contract/teamRecipe';
 import { TEAM_RECIPES } from '@shared/constants/teamRecipeCatalog';
@@ -40,10 +40,12 @@ import { useI18n } from '../../../hooks/useI18n';
 import { toast } from '../../../hooks/useToast';
 import { Button } from '../../primitives/Button';
 import { Badge } from '../../primitives/Badge';
+import { Input } from '../../primitives/Input';
 import { RoleAvatarTile } from './RoleAvatarTile';
 import { RolePackHealthNotice, RolePackShelf } from './RolePackShelf';
+import { RecentlyDeletedRoles } from './RecentlyDeletedRoles';
 import { TeamRecipeDetailPage } from './TeamRecipeDetailPage';
-import { groupRolesByCategory } from './roleCategoryGroups';
+import { groupRolesByCategory, matchesRoleSearch } from './roleCategoryGroups';
 import { HubTabHeader } from '../capabilityHub/HubTabHeader';
 
 type ExpertTab = 'mine' | 'discover';
@@ -54,6 +56,32 @@ const SHELF_CARD_CLASS = 'flex flex-col gap-2.5 rounded-xl border border-zinc-80
 const SHELF_TAG_CLASS = 'rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400';
 /** 云货架拉取超过这个时长就当作超时，给可退出的空态 + 重试，不再让「正在加载…」常驻 */
 const ROLE_PACKS_LOAD_TIMEOUT_MS = 8000;
+
+function matchesSearchFields(query: string, fields: ReadonlyArray<string | undefined>): boolean {
+  const normalized = query.trim().toLocaleLowerCase();
+  if (!normalized) return true;
+  return fields.some((field) => field?.toLocaleLowerCase().includes(normalized) ?? false);
+}
+
+function matchesTeamRecipeSearch(recipe: TeamRecipe, query: string): boolean {
+  return matchesSearchFields(query, [recipe.name, recipe.description, ...(recipe.tags ?? [])]);
+}
+
+function matchesRolePackSearch(
+  item: RolePackListItem,
+  query: string,
+  categoryLabels: { categories: Record<string, string>; uncategorized: string },
+): boolean {
+  const { entry } = item;
+  return matchesSearchFields(query, [
+    entry.displayName || entry.visual.displayName || entry.roleId,
+    entry.visual.profession,
+    entry.description,
+    ...(entry.tags ?? []),
+    ...entry.visual.tags,
+    categoryLabels.categories[entry.visual.category] ?? categoryLabels.uncategorized,
+  ]);
+}
 
 /** 来源徽标文案：复用设置页角色卡的同一套口径（预设/自建/项目/缺定义），不再另造一套词 */
 function expertSourceLabel(entry: RolePanelEntry, sourceText: Record<string, string>): string {
@@ -140,6 +168,7 @@ export const ExpertPanel: React.FC = () => {
   const [rolePacksError, setRolePacksError] = useState(false);
   const [rolePacksTimedOut, setRolePacksTimedOut] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [busyRolePackId, setBusyRolePackId] = useState<string | null>(null);
   const [userRecipes, setUserRecipes] = useState<TeamRecipe[]>([]);
   const [selectedRecipe, setSelectedRecipe] = useState<{ recipe: TeamRecipe; editable: boolean } | null>(null);
@@ -199,9 +228,10 @@ export const ExpertPanel: React.FC = () => {
     return () => clearTimeout(timer);
   }, [rolePacksLoading]);
 
-  // 切 tab 时分类过滤回到「全部」，避免「我的」里选的分类把「发现」过滤空
+  // 切 tab 时分类过滤与搜索词回到初始态，避免「我的」里选的分类或搜索词把「发现」过滤空
   useEffect(() => {
     setSelectedCategory('all');
+    setSearchQuery('');
   }, [tab]);
 
   const invite = (entry: RolePanelEntry, seed?: string) => {
@@ -264,14 +294,31 @@ export const ExpertPanel: React.FC = () => {
   // 分类 chips 推导口径：category 是角色数据的现成字段（SkillCategory 子集），
   // 直接复用 groupRolesByCategory（顺序跟 SKILL_CATEGORIES，无 category 归「其他」），
   // 不另起 tag 聚类——tags 是自由文本，聚出来不可控。
-  const categoryGroups = groupRolesByCategory(shown, {
+  const categoryLabels = {
     categories: t.settings.roles.categories,
     uncategorized: t.settings.roles.uncategorizedCategory,
-  });
+  };
+  const categoryGroups = groupRolesByCategory(shown, categoryLabels);
+  const searchedShown = shown.filter((entry) => matchesRoleSearch(entry, searchQuery, categoryLabels));
   const activeCategory = categoryGroups.some((group) => group.key === selectedCategory) ? selectedCategory : 'all';
-  const filteredShown = activeCategory === 'all'
+  const categoryFiltered = activeCategory === 'all'
     ? shown
     : categoryGroups.find((group) => group.key === activeCategory)?.entries ?? [];
+  const filteredShown = categoryFiltered.filter((entry) => matchesRoleSearch(entry, searchQuery, categoryLabels));
+  const searchActive = searchQuery.trim().length > 0;
+  const filteredBuiltinRecipes = TEAM_RECIPES.filter((recipe) => matchesTeamRecipeSearch(recipe, searchQuery));
+  const filteredUserRecipes = userRecipes.filter((recipe) => matchesTeamRecipeSearch(recipe, searchQuery));
+  const filteredRolePacks = rolePacks.filter((item) => matchesRolePackSearch(item, searchQuery, categoryLabels));
+  const discoverHasSearchMatch = filteredShown.length > 0
+    || filteredBuiltinRecipes.length > 0
+    || filteredUserRecipes.length > 0
+    || filteredRolePacks.length > 0;
+  const showSearchEmpty = !loading
+    && shown.length > 0
+    && searchActive
+    && (tab === 'mine'
+      ? filteredShown.length === 0
+      : !discoverHasSearchMatch);
   const rolePacksByRoleId = new Map(rolePacks.map((item) => [item.entry.roleId, item]));
 
   // 请专家团=请专家同交互（负责人 2026-08-05 拍板）：不弹主题输入、不直接发起会话，
@@ -356,6 +403,7 @@ export const ExpertPanel: React.FC = () => {
                   </button>
                 ))}
               </div>
+              {tab === 'mine' ? <RecentlyDeletedRoles onRestored={async () => { setEntries(await listRoles()); }} /> : null}
               <Button
                 variant="ghost"
                 size="sm"
@@ -374,9 +422,30 @@ export const ExpertPanel: React.FC = () => {
             </>
           )}
         >
+          {!loading && shown.length > 0 ? (
+            <div className="w-56">
+              <Input
+                type="search"
+                inputSize="sm"
+                data-testid="expert-search-input"
+                aria-label={text.searchAria}
+                placeholder={text.searchPlaceholder}
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                leftIcon={<Search className="h-3.5 w-3.5" />}
+              />
+            </div>
+          ) : null}
           {!loading && categoryGroups.length > 0 ? (
             <div className="flex flex-wrap items-center gap-1.5" data-testid="expert-category-chips">
-              {[{ key: 'all', label: text.categoryAll, count: shown.length }, ...categoryGroups.map((group) => ({ key: group.key, label: group.label, count: group.entries.length }))].map((chip) => (
+              {[
+                { key: 'all', label: text.categoryAll, count: searchedShown.length },
+                ...categoryGroups.map((group) => ({
+                  key: group.key,
+                  label: group.label,
+                  count: group.entries.filter((entry) => matchesRoleSearch(entry, searchQuery, categoryLabels)).length,
+                })),
+              ].map((chip) => (
                 <button /* ds-allow:button: 分类过滤 chip（aria-pressed 切换胶囊），Button primitive 无 chip/筛选语义变体 */
                   key={chip.key}
                   type="button"
@@ -420,12 +489,30 @@ export const ExpertPanel: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-6">
-            {tab === 'discover' ? (
-              <section aria-labelledby="team-recipes-title">
+            {showSearchEmpty ? (
+              <div
+                data-testid="expert-search-empty"
+                className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-zinc-700/70 p-8 text-center text-sm text-zinc-500"
+              >
+                <span>{text.searchNoResults.replace('{query}', searchQuery.trim())}</span>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  data-testid="expert-search-clear"
+                  onClick={() => setSearchQuery('')}
+                >
+                  {text.clearSearch}
+                </Button>
+              </div>
+            ) : null}
+
+            {tab === 'discover' && (!searchActive || filteredBuiltinRecipes.length > 0 || filteredUserRecipes.length > 0) ? (
+              <section aria-labelledby="team-recipes-title" data-testid="team-recipes-section">
                 <h2 id="team-recipes-title" className="mb-3 text-sm font-medium text-zinc-200">{t.team.sectionTitle}</h2>
+                {!searchActive || filteredBuiltinRecipes.length > 0 ? <>
                 <h3 className="mb-2 text-xs font-medium text-zinc-400">{t.team.builtinRecipes}</h3>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {TEAM_RECIPES.map((recipe) => {
+                  {filteredBuiltinRecipes.map((recipe) => {
                     const quickPrompt = recipe.quickPrompts?.[0];
                     return (
                     <div
@@ -473,10 +560,12 @@ export const ExpertPanel: React.FC = () => {
                     );
                   })}
                 </div>
+                </> : null}
+                {!searchActive || filteredUserRecipes.length > 0 ? <>
                 <h3 className="mb-2 mt-5 text-xs font-medium text-zinc-400">{t.team.myRecipes}</h3>
-                {userRecipes.length === 0 ? <p data-testid="team-my-recipes-empty" className="text-xs text-zinc-500">{t.team.myRecipesEmpty}</p> : null}
+                {!searchActive && userRecipes.length === 0 ? <p data-testid="team-my-recipes-empty" className="text-xs text-zinc-500">{t.team.myRecipesEmpty}</p> : null}
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {userRecipes.map((recipe) => (
+                  {filteredUserRecipes.map((recipe) => (
                     <div key={recipe.id} data-testid={`team-recipe-${recipe.id}`} className={SHELF_CARD_CLASS}>
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-2.5">
@@ -500,12 +589,13 @@ export const ExpertPanel: React.FC = () => {
                     </div>
                   ))}
                 </div>
+                </> : null}
               </section>
             ) : null}
 
             {tab === 'discover' ? (
               <RolePackShelf
-                items={rolePacks}
+                items={filteredRolePacks}
                 loading={rolePacksLoading}
                 error={rolePacksError}
                 timedOut={rolePacksTimedOut}
@@ -514,6 +604,7 @@ export const ExpertPanel: React.FC = () => {
                 onInstall={(roleId) => { void installWithElevation(roleId); }}
                 onUninstall={(roleId) => { void runRolePackAction(roleId, uninstallRolePack); }}
                 onRetryMissingSkills={(roleId) => { void runRolePackAction(roleId, retryRolePackMissingSkills); }}
+                hideWhenEmpty={searchActive}
               />
             ) : null}
 
@@ -583,22 +674,24 @@ export const ExpertPanel: React.FC = () => {
             {/* 卡片区一律扁平 3 列（2026-07-27 审美关拍板：分类靠上面的 chips 表达，
                 「全部」chip 就是原先的分组总览）。此前「全部」态在网格里插 col-span-full 的
                 分类小标题，每个分类只有 1–2 人时每行就只剩一张卡，看着像单列。 */}
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {filteredShown.map((entry) => (
-                <ExpertCard
-                  key={entry.roleId}
-                  entry={entry}
-                  tab={tab}
-                  text={text}
-                  sourceText={t.settings.roles.card.source}
-                  rolePacksByRoleId={rolePacksByRoleId}
-                  busyRolePackId={busyRolePackId}
-                  onRetryMissingSkills={(roleId) => { void runRolePackAction(roleId, retryRolePackMissingSkills); }}
-                  onDetail={() => openExpertRoleDetail(entry.roleId)}
-                  onInvite={(seed) => invite(entry, seed)}
-                />
-              ))}
-            </div>
+            {filteredShown.length > 0 ? (
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {filteredShown.map((entry) => (
+                  <ExpertCard
+                    key={entry.roleId}
+                    entry={entry}
+                    tab={tab}
+                    text={text}
+                    sourceText={t.settings.roles.card.source}
+                    rolePacksByRoleId={rolePacksByRoleId}
+                    busyRolePackId={busyRolePackId}
+                    onRetryMissingSkills={(roleId) => { void runRolePackAction(roleId, retryRolePackMissingSkills); }}
+                    onDetail={() => openExpertRoleDetail(entry.roleId)}
+                    onInvite={(seed) => invite(entry, seed)}
+                  />
+                ))}
+              </div>
+            ) : null}
           </div>
         )}
           </>
