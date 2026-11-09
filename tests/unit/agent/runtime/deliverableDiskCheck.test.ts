@@ -690,6 +690,39 @@ describe('deliverable placeholder content gate (N-ARTIFACT-PLACEHOLDER-GATE)', (
     expect(result.prompt).toContain(path.join(workRoot, 'report.docx'));
   });
 
+  it('real docx with raw Markdown text triggers markdown_residue repair and its own final note', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    const { Document, Packer, Paragraph, TextRun } = await import('docx');
+    const filePath = path.join(workRoot, 'marked.docx');
+    writeFileSync(filePath, await Packer.toBuffer(new Document({
+      sections: [{ children: [new Paragraph({
+        children: [new TextRun({ text: '- **会议时间**：2026-11-09 09:00' })],
+      })] }],
+    })));
+    const result = await placeholderGate({ finalText: '已生成 `marked.docx`，请查收。' });
+    expect(result.action).toBe('repair');
+    if (result.action !== 'repair') return;
+    expect(result.missing[0].kind).toBe('markdown_residue');
+    expect(result.prompt).toContain('用真实粗体/斜体 run');
+    expect(result.prompt).toContain('DOCX 正文残留 Markdown 标记');
+    expect(result.prompt).toContain('marked.docx');
+
+    const exhausted = await placeholderGate({ finalText: '已生成 `marked.docx`，请查收。', repairsUsed: 1 });
+    expect(exhausted.action).toBe('pass');
+    if (exhausted.action !== 'pass') return;
+    expect(exhausted.content).toContain('仍有字面 Markdown 标记');
+    expect(exhausted.content).not.toContain('文件不存在');
+  });
+
+  it('real clean docx has no markdown_residue miss', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    await writeDocxFixture('clean-markers.docx', ['会议时间：2026-11-09 09:00', '结论：通过。']);
+    const result = await placeholderGate({ finalText: '已生成 `clean-markers.docx`，请查收。' });
+    expect(result.action).toBe('pass');
+    if (result.action !== 'pass') return;
+    expect(result.missing).toEqual([]);
+  });
+
   it('xlsx deliverable with TBD cell triggers repair with sheet and row location', async () => {
     mkdirSync(workRoot, { recursive: true });
     await writeXlsxFixture('data.xlsx', [['项目', '数值'], ['需求 A', '3'], ['合计', 'TBD']]);
