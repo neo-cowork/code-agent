@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RolePanelEntry } from '../../../src/shared/contract/roleAssets';
 import type { RolePackListItem } from '../../../src/renderer/services/rolesClient';
@@ -111,5 +111,40 @@ describe('ExpertPanel Discover search', () => {
     expect(screen.getByTestId('team-recipe-contract-team')).toBeTruthy();
     expect(screen.getByTestId('role-pack-card-合同云专家')).toBeTruthy();
     expect(screen.getByTestId('role-pack-card-视觉云专家')).toBeTruthy();
+  });
+
+  it('云货架加载中或超时时无本地命中仍显示搜索空态、状态提示和重试入口', async () => {
+    vi.useFakeTimers();
+    try {
+      listRoles.mockResolvedValue([makeEntry()]);
+      listRolePacks.mockReturnValue(new Promise(() => {}));
+      render(<ExpertPanel />);
+      await act(async () => {});
+      fireEvent.click(screen.getByTestId('expert-tab-discover'));
+      fireEvent.change(screen.getByTestId('expert-search-input'), { target: { value: '量子炼金术士' } });
+      expect(screen.getByTestId('expert-search-empty')).toBeTruthy();
+      expect(screen.getByRole('heading', { name: '更多专家' })).toBeTruthy();
+      expect(screen.getByText('正在加载更多专家…')).toBeTruthy();
+
+      await act(async () => { vi.advanceTimersByTime(9000); });
+      expect(screen.getByTestId('expert-search-empty')).toBeTruthy();
+      expect(screen.queryByText('正在加载更多专家…')).toBeNull();
+      expect(screen.getByTestId('role-pack-load-timeout')).toBeTruthy();
+      expect(screen.getByRole('button', { name: '重试' })).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('云货架失败时无本地命中仍显示搜索空态和重试入口', async () => {
+    listRoles.mockResolvedValue([makeEntry()]);
+    listRolePacks.mockRejectedValue(new Error('offline'));
+    render(<ExpertPanel />);
+    fireEvent.click(screen.getByTestId('expert-tab-discover'));
+    await waitFor(() => expect(screen.getByTestId('expert-search-input')).toBeTruthy());
+    fireEvent.change(screen.getByTestId('expert-search-input'), { target: { value: '量子炼金术士' } });
+    await waitFor(() => expect(screen.getByTestId('role-pack-load-error')).toBeTruthy());
+    expect(screen.getByTestId('expert-search-empty')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '重试' })).toBeTruthy();
   });
 });

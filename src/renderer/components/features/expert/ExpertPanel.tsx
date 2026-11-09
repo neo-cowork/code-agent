@@ -317,7 +317,7 @@ export const ExpertPanel: React.FC = () => {
     && searchActive
     && (tab === 'mine'
       ? filteredShown.length === 0
-      : !discoverHasSearchMatch && !rolePacksLoading && !rolePacksError);
+      : !discoverHasSearchMatch);
   const rolePacksByRoleId = new Map(rolePacks.map((item) => [item.entry.roleId, item]));
 
   // 请专家团=请专家同交互（负责人 2026-08-05 拍板）：不弹主题输入、不直接发起会话，

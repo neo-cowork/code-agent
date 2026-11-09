@@ -75,7 +75,7 @@ interface RolePackShelfProps {
   onInstall: (roleId: string) => void;
   onUninstall: (roleId: string) => void;
   onRetryMissingSkills: (roleId: string) => void;
-  /** 搜索态下不显示没有命中的云货架分区，避免空标题把匹配结果推到首屏之外。 */
+  /** 搜索无命中时隐藏空货架；加载、超时与失败仍保留状态提示和重试入口。 */
   hideWhenEmpty?: boolean;
 }
 
@@ -94,7 +94,7 @@ export const RolePackShelf: React.FC<RolePackShelfProps> = ({
   const { t } = useI18n();
   const text = t.rolePack;
 
-  if (hideWhenEmpty && items.length === 0) return null;
+  if (hideWhenEmpty && !loading && !error && items.length === 0) return null;
 
   return (
     <section aria-labelledby="role-pack-shelf-title">
