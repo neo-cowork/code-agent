@@ -5,7 +5,7 @@
 // ============================================================================
 
 import { IPC_DOMAINS } from '@shared/ipc';
-import type { RoleFirstWakeSnapshot, RolePanelEntry, RoleWakeProposal } from '@shared/contract/roleAssets';
+import type { RoleFirstWakeSnapshot, RolePanelEntry, RoleWakeProposal, TrashedRoleEntry } from '@shared/contract/roleAssets';
 import type { RolePackEntry } from '@shared/contract/rolePackRegistry';
 import ipcService from './ipcService';
 
@@ -37,6 +37,14 @@ export interface RolePackActionResult {
 
 export async function listRoles(): Promise<RolePanelEntry[]> {
   return ipcService.invokeDomain<RolePanelEntry[]>(IPC_DOMAINS.ROLES, 'list');
+}
+
+export async function listDeletedRoles(): Promise<TrashedRoleEntry[]> {
+  return ipcService.invokeDomain<TrashedRoleEntry[]>(IPC_DOMAINS.ROLES, 'listDeletedRoles');
+}
+
+export async function restoreDeletedRole(trashId: string): Promise<{ roleId: string }> {
+  return ipcService.invokeDomain<{ roleId: string }>(IPC_DOMAINS.ROLES, 'restoreDeletedRole', { trashId });
 }
 
 /** roles IPC firstWakeGet。无状态文件时宿主返回 null。 */
