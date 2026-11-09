@@ -108,3 +108,23 @@ describe('manual trigger refresh', () => {
     }
   });
 });
+
+
+describe('selected job history sync', () => {
+  it('discovers a scheduled execution in the selected history and updates its terminal state', async () => {
+    const running = makeRow(20, 'running');
+    useCronStore.setState({ selectedJobId: 'job-1' });
+    vi.mocked(cronClient.getRecentExecutions).mockResolvedValue([running]);
+    vi.mocked(cronClient.getExecutions).mockResolvedValue([running]);
+    await useCronStore.getState().syncRunningExecutions();
+    expect(useCronStore.getState().executionsByJobId['job-1']).toEqual([running]);
+    expect(useCronStore.getState().latestExecutions['job-1']).toEqual(running);
+
+    const completed: CronJobExecution = { ...running, status: 'completed', completedAt: 30 };
+    vi.mocked(cronClient.getRecentExecutions).mockResolvedValue([completed]);
+    vi.mocked(cronClient.getExecutions).mockResolvedValue([completed]);
+    await useCronStore.getState().syncRunningExecutions();
+    expect(useCronStore.getState().executionsByJobId['job-1']).toEqual([completed]);
+    expect(useCronStore.getState().latestExecutions['job-1']).toEqual(completed);
+  });
+});

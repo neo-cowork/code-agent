@@ -213,7 +213,13 @@ export const useCronStore = create<CronState>()((set, get) => ({
           ...(latestChanged ? { latestExecutions } : {}),
         };
       });
-      if (changed) await get().loadStats();
+      if (changed) {
+        const { selectedJobId } = get();
+        await Promise.all([
+          get().loadStats(),
+          ...(selectedJobId ? [get().loadExecutions(selectedJobId)] : []),
+        ]);
+      }
     } catch (error) {
       logger.warn('Failed to sync running cron executions', { error });
     }
