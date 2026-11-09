@@ -3,7 +3,7 @@
 // Enhanced with unified pipeline (T4)
 // ============================================================================
 
-import { publishEnvAssistToolNotice } from '../envAssist/toolNotice';
+import { publishEnvAssistToolNotice } from '../permissions/envAssist/toolNotice';
 import { buildInsufficientScopeConnectorEvent } from './runtime/connectorScopeCard';
 import { resolveSubagentPreset } from './subagentFirstRunPreset';
 import type { AgentMessageOrigin } from './messageOrigin';

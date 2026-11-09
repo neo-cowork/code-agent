@@ -1,5 +1,5 @@
 import { getToolAttemptTrace, shouldFreezeNonReadWhileAwaitingUser, buildAwaitingUserBlockedResult, AWAITING_USER_FREEZE_NOTICE } from './toolAttemptTrace';
-import { publishEnvAssistToolNotice } from '../../envAssist/toolNotice';
+import { publishEnvAssistToolNotice } from '../../permissions/envAssist/toolNotice';
 import { buildInsufficientScopeConnectorEvent } from './connectorScopeCard';
 import { emitBatchTerminatedToolResult, emitForceFinalSkippedToolResult } from './forceFinalSeal';
 import { mintDelegatedTurnOrigin, mintUserTurnOrigin } from '../messageOrigin';

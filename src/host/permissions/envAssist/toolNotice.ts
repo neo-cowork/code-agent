@@ -1,5 +1,5 @@
-import type { AgentEvent, Message, ToolResult } from '../../shared/contract';
-import { getSessionManager } from '../services';
+import type { AgentEvent, Message, ToolResult } from '../../../shared/contract';
+import { getSessionManager } from '../../services';
 import { classifyEnvBlocker } from './classify';
 import { canOpenEnvSettings } from './settingsPane';
 

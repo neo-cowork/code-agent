@@ -1,4 +1,4 @@
-import type { EnvAssistNotice, EnvBlockerClass } from '../../shared/contract/envAssist';
+import type { EnvAssistNotice, EnvBlockerClass } from '../../../shared/contract/envAssist';
 import { detectScreenshotFailureCause } from './screenshotFailureCause';
 
 const AUTOMATION_TARGETS: Readonly<Record<string, string>> = {

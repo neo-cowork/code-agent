@@ -4,7 +4,7 @@ import { ipcHost } from '../platform';
 import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import { getDatabase } from '../services/core/databaseService';
 import { getSessionManager } from '../services';
-import { canOpenEnvSettings, openEnvSettings } from '../envAssist/settingsPane';
+import { canOpenEnvSettings, openEnvSettings } from '../permissions/envAssist/settingsPane';
 
 async function findNotice(id: string): Promise<EnvAssistNotice | undefined> {
   const messageId = `env-assist:${id}`;

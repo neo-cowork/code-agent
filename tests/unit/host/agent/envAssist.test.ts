@@ -44,7 +44,7 @@ vi.mock('../../../../src/host/services', () => ({
   BudgetAlertLevel: {},
 }));
 
-vi.mock('../../../../src/host/envAssist/settingsPane', () => ({ canOpenEnvSettings: () => true, openEnvSettings: vi.fn() }));
+vi.mock('../../../../src/host/permissions/envAssist/settingsPane', () => ({ canOpenEnvSettings: () => true, openEnvSettings: vi.fn() }));
 
 vi.mock('../../../../src/host/services/citation/citationService', () => ({
   getCitationService: () => ({

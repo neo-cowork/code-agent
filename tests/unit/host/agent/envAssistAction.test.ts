@@ -4,7 +4,7 @@ const calls = vi.hoisted(() => ({ exec: vi.fn() }));
 vi.mock('node:child_process', async (importOriginal) => ({ ...await importOriginal<object>(), execFile: calls.exec }));
 import { registerEnvAssistHandlers } from '../../../../src/host/ipc/envAssist.ipc';
 import { ipcHost } from '../../../../src/host/platform';
-import { openEnvSettings } from '../../../../src/host/envAssist/settingsPane';
+import { openEnvSettings } from '../../../../src/host/permissions/envAssist/settingsPane';
 import type { HandlerFn } from '../../../../src/host/platform';
 
 describe('envAssist.act native opening through installed IPC', () => {
