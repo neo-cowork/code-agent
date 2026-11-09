@@ -18,6 +18,7 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-react';
+import { FormField, Input } from '../../../composites/FormField';
 import { Button, Modal } from '../../../primitives';
 import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
 import { createLogger } from '../../../../utils/logger';
@@ -44,7 +45,7 @@ import { TelegramGroupAccessPrerequisite, TelegramPrivacyModeBadge, TelegramPriv
 import { FeishuSharedAppHint } from './FeishuSharedAppHint';
 import { FeishuLastInboundLine } from './FeishuLastInboundLine';
 import {
-  buildChannelConfig, ChannelRequiredField, clearChannelFormError, validateChannelRequiredFields, type ChannelFormErrors,
+  buildChannelConfig, ChannelRequiredField, clearChannelFormError, validateChannelForm, type ChannelFormErrors,
 } from './channelFormValidation';
 
 const logger = createLogger('ChannelsSettings');
@@ -265,6 +266,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
     (account?.config as TelegramChannelConfig)?.groupAccessMode || 'allowlist'
   );
   const [errors, setErrors] = useState<ChannelFormErrors>({});
+  const portInputRef = React.useRef<HTMLInputElement>(null);
   const nameInputRef = React.useRef<HTMLInputElement>(null);
   const appIdInputRef = React.useRef<HTMLInputElement>(null);
   const appSecretInputRef = React.useRef<HTMLInputElement>(null);
@@ -281,20 +283,22 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    const nextErrors = validateChannelRequiredFields(
+    const nextErrors = validateChannelForm(
       { name, type, appId, appCredential: appSecret, botToken },
       {
+        port: channelText.modal.portInvalidError,
         name: channelText.modal.nameRequiredError,
         appId: channelText.modal.appIdRequiredError,
         appCredential: channelText.modal.appCredentialRequiredError,
         botToken: channelText.modal.botTokenRequiredError,
       },
+      portInputRef.current,
     );
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors);
       const firstMissingField = Object.keys(nextErrors)[0] as keyof ChannelFormErrors;
       const firstMissingInput = {
-        name: nameInputRef, appId: appIdInputRef, appCredential: appSecretInputRef, botToken: botTokenInputRef,
+        port: portInputRef, name: nameInputRef, appId: appIdInputRef, appCredential: appSecretInputRef, botToken: botTokenInputRef,
       }[firstMissingField];
       firstMissingInput?.current?.focus();
       return;
@@ -397,18 +401,11 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
           {/* HTTP API 配置 */}
           {type === 'http-api' && (
             <>
-              <div>
-                <label className="block text-sm text-zinc-400 mb-1">{channelText.modal.portLabel}</label>
-                <input
-                  type="number"
-                  value={apiPort}
-                  onChange={(e) => setApiPort(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
-                  placeholder="8080"
-                  min={1}
-                  max={65535}
-                />
-              </div>
+              <FormField label={channelText.modal.portLabel} error={errors.port} htmlFor={`${formId}-port`}>
+                <Input ref={portInputRef} type="number" value={apiPort}
+                  onChange={(e) => updateField('port', setApiPort)(e.target.value)}
+                  placeholder="8080" min={1} max={65535} />
+              </FormField>
               <div>
                 <label className="block text-sm text-zinc-400 mb-1">
                   API Key
@@ -520,18 +517,11 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
                       className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm text-zinc-400 mb-1">{channelText.modal.webhookPortLabel}</label>
-                    <input
-                      type="number"
-                      value={webhookPort}
-                      onChange={(e) => setWebhookPort(e.target.value)}
-                      className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
-                      placeholder="3200"
-                      min={1}
-                      max={65535}
-                    />
-                  </div>
+                  <FormField label={channelText.modal.webhookPortLabel} error={errors.port} htmlFor={`${formId}-port`}>
+                    <Input ref={portInputRef} type="number" value={webhookPort}
+                      onChange={(e) => updateField('port', setWebhookPort)(e.target.value)}
+                      placeholder="3200" min={1} max={65535} />
+                  </FormField>
                   <div className="p-3 bg-zinc-800 rounded-lg border border-zinc-700">
                     <p className="text-xs text-zinc-400">
                       <strong className="text-zinc-400">{channelText.modal.configTipsTitle}</strong>

@@ -271,7 +271,7 @@ export const enSettingsWork = {
         editTitle: 'Edit channel',
         nameLabel: 'Name',
         namePlaceholder: 'e.g. Test API',
-        nameRequiredError: 'Enter a name', appIdRequiredError: 'Enter an App ID',
+        portInvalidError: 'Enter a whole-number port from 1 to 65535', nameRequiredError: 'Enter a name', appIdRequiredError: 'Enter an App ID',
         appCredentialRequiredError: 'Enter an App Secret', botTokenRequiredError: 'Enter a bot token',
         showSensitiveValue: 'Show secret', hideSensitiveValue: 'Hide secret', showToken: 'Show token', hideToken: 'Hide token',
         typeLabel: 'Channel type',

@@ -272,7 +272,7 @@ export const zhSettingsWork = {
         editTitle: '编辑通道',
         nameLabel: '名称',
         namePlaceholder: '例如: 测试 API',
-        nameRequiredError: '请填写名称', appIdRequiredError: '请填写 App ID',
+        portInvalidError: '请输入 1 到 65535 之间的整数端口', nameRequiredError: '请填写名称', appIdRequiredError: '请填写 App ID',
         appCredentialRequiredError: '请填写 App Secret', botTokenRequiredError: '请填写 Bot Token',
         showSensitiveValue: '显示密钥', hideSensitiveValue: '隐藏密钥', showToken: '显示 Token', hideToken: '隐藏 Token',
         typeLabel: '通道类型',

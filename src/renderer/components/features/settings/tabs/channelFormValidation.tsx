@@ -10,7 +10,7 @@ import type {
 } from '@shared/contract/channel';
 
 export type ChannelRequiredField = 'name' | 'appId' | 'appCredential' | 'botToken';
-export type ChannelFormErrors = Partial<Record<ChannelRequiredField, string>>;
+export type ChannelFormErrors = Partial<Record<ChannelRequiredField | 'port', string>>;
 
 interface ChannelFormValues {
   name: string;
@@ -109,7 +109,7 @@ export const ChannelRequiredField: React.FC<ChannelRequiredFieldProps> = ({
 
 export function clearChannelFormError(
   current: ChannelFormErrors,
-  field: ChannelRequiredField,
+  field: keyof ChannelFormErrors,
 ): ChannelFormErrors {
   if (!current[field]) return current;
   const next = { ...current };
@@ -117,9 +117,10 @@ export function clearChannelFormError(
   return next;
 }
 
-export function validateChannelRequiredFields(
+export function validateChannelForm(
   values: ChannelFormValues,
-  copy: ChannelRequiredFieldCopy,
+  copy: ChannelRequiredFieldCopy & { port: string },
+  portInput: HTMLInputElement | null,
 ): ChannelFormErrors {
   const errors: ChannelFormErrors = {};
 
@@ -134,6 +135,9 @@ export function validateChannelRequiredFields(
     errors.botToken = copy.botToken;
   }
 
+  // noValidate suppresses bubbles; retain range, step and bad-input constraints.
+  if (portInput && !portInput.validity.valid) errors.port = copy.port;
+
   return errors;
 }
 
@@ -143,7 +147,7 @@ export function buildChannelConfig(values: ChannelConfigValues): ChannelAccountC
   if (type === 'http-api') {
     return {
       type,
-      port: parseInt(values.apiPort) || 8080,
+      port: Number(values.apiPort) || 8080,
       apiKey: values.httpCredential || crypto.randomUUID().replace(/-/g, ''),
       enableCors: values.enableCors,
       privacyMode,
@@ -158,7 +162,7 @@ export function buildChannelConfig(values: ChannelConfigValues): ChannelAccountC
       encryptKey: values.encryptKey || undefined,
       verificationToken: values.verificationToken || undefined,
       useWebSocket: values.useWebSocket,
-      webhookPort: parseInt(values.webhookPort) || 3200,
+      webhookPort: Number(values.webhookPort) || 3200,
       outboundAllowlist: values.outboundTargets
         .split(/[,\n]/)
         .map((target) => target.trim())

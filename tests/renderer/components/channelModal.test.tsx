@@ -146,6 +146,65 @@ describe('ChannelModal required-field validation', () => {
   });
 });
 
+describe('ChannelModal port constraints with noValidate', () => {
+  for (const [language, locale, errorText] of [
+    ['zh', zh, '请输入 1 到 65535 之间的整数端口'],
+    ['en', en, 'Enter a whole-number port from 1 to 65535'],
+  ] as const) {
+    for (const type of ['http-api', 'feishu', 'lark'] as const) {
+      const setup = () => {
+        useAppStore.setState({ language });
+        const onSave = vi.fn();
+        render(<ChannelModal channelTypes={channelTypes} onSave={onSave} onClose={() => {}} />);
+        fireEvent.change(screen.getAllByRole('combobox')[0]!, { target: { value: type } });
+        fireEvent.change(screen.getByPlaceholderText(locale.settings.channels.modal.namePlaceholder), { target: { value: 'acct' } });
+        if (type !== 'http-api') {
+          fireEvent.change(screen.getByPlaceholderText('cli_xxxxxxxxxx'), { target: { value: 'cli_x' } });
+          fireEvent.change(screen.getByRole('dialog').querySelector('input[type="password"]')!, { target: { value: 'secret' } });
+          fireEvent.click(screen.getByRole('checkbox', { name: locale.settings.channels.modal.webSocketLabel }));
+        }
+        return { onSave, port: screen.getByRole('spinbutton'), submit: screen.getByRole('button', { name: locale.settings.channels.actions.add }) };
+      };
+      it.each(['70000', '-5', '0', '65536', '1.5'])(`${language} ${type} rejects invalid port %s and recovers`, (value) => {
+        const { onSave, port, submit } = setup();
+        fireEvent.change(port, { target: { value } });
+        fireEvent.click(submit);
+        expect(onSave).not.toHaveBeenCalled();
+        expect(screen.getByText(errorText)).toBeTruthy();
+        expect(document.activeElement).toBe(port);
+        fireEvent.change(port, { target: { value: '8081' } });
+        expect(screen.queryByText(errorText)).toBeNull();
+        fireEvent.click(submit);
+        expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+          config: expect.objectContaining({ [type === 'http-api' ? 'port' : 'webhookPort']: 8081 }),
+        }));
+      });
+      it.each(['1', '65535', '', '1e3'])(`${language} ${type} accepts port %s preserving numeric value or empty default`, (value) => {
+        const { onSave, port, submit } = setup();
+        fireEvent.change(port, { target: { value } });
+        fireEvent.click(submit);
+        expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+          config: expect.objectContaining({
+            [type === 'http-api' ? 'port' : 'webhookPort']: value ? Number(value) : type === 'http-api' ? 8080 : 3200,
+          }),
+        }));
+      });
+      if (type !== 'http-api') {
+        it(`${language} ${type} ignores an unmounted webhook port in WebSocket mode`, () => {
+          const { onSave, port, submit } = setup();
+          fireEvent.change(port, { target: { value: '70000' } });
+          fireEvent.click(submit);
+          expect(onSave).not.toHaveBeenCalled();
+          fireEvent.click(screen.getByRole('checkbox', { name: locale.settings.channels.modal.webSocketLabel }));
+          expect(screen.queryByRole('spinbutton')).toBeNull();
+          fireEvent.click(submit);
+          expect(onSave).toHaveBeenCalledTimes(1);
+        });
+      }
+    }
+  }
+});
+
 // 验证 ChannelModal 从手搓 fixed-inset-0 表单弹窗迁移到 Modal primitive 后行为不回归
 describe('ChannelModal (Modal primitive 迁移验证)', () => {
   it('新增态：走 Modal primitive（role=dialog + aria-modal），标题/字段/footer 齐全', () => {
