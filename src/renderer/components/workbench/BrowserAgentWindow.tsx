@@ -1,3 +1,4 @@
+import { realPageValue } from './browserAgentWindowPageUrl';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
@@ -143,7 +144,7 @@ export const BrowserAgentWindow: React.FC = () => {
   // page_load / framenavigated 会刷新 URL·title·canGoBack 并广播——managed tab 是实时真源。
   // surface origin/title 仅在 managed 尚未回填时兜底；running 仍以 surface 会话存在为准
   // （防默认单例 running=false 把状态点刷灰）。
-  const managedUrl = managedSession.activeTab?.url || preview?.url || null;
+  const managedUrl = realPageValue(managedSession.activeTab?.url) || realPageValue(preview?.url);
   const managedTitle = managedSession.activeTab?.title || preview?.title || null;
   const running = Boolean(browserSurfaceSessionId) || managedSession.running;
   const activeTitle = managedTitle

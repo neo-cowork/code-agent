@@ -1,6 +1,6 @@
 import { SUBAGENT_COMPLETION_NOTIFICATIONS } from '../../shared/constants';
 import { buildSpillNotice, spillToolResultArchive, type ToolResultArchiveRef } from '../utils/toolResultSpill';
-import type { AgentFailureCode } from '../../shared/contract/agentFailure';
+import { AgentFailureCode } from '../../shared/contract/agentFailure';
 
 export type SubagentCompletionStatus = 'completed' | 'failed' | 'cancelled' | 'killed' | 'stalled';
 export type SubagentCompletionKind = 'user_visible' | 'internal' | 'shell';
@@ -61,13 +61,21 @@ function scopeDedupePrefix(input: SubagentCompletionScope): string {
   return `${input.sessionId ?? 'global'}:${input.runId ?? 'session'}:${input.treeId ?? 'default'}`;
 }
 
-function buildCompletionAckInstruction(kind: SubagentCompletionKind, title: string): string {
+function buildCompletionAckInstruction(
+  kind: SubagentCompletionKind,
+  title: string,
+  stoppedEarly: boolean,
+): string {
   const namingRule = `提到子代理时，只能使用通知中的标题「${title}」，禁止使用 [agent]、[worker]、agent 或 worker 等泛称。`;
   if (kind === 'user_visible') {
     return `回应要求：结果已经展示给用户，不要复述子代理的原始结果；只用一句话归纳本批通知里的全部完成项。${namingRule}`;
   }
   if (kind === 'shell') {
     return `回应要求：用简短、非技术化的话向用户说明「${title}」的执行结果和下一步，不要只罗列退出码、日志或命令细节。${namingRule}`;
+  }
+  if (stoppedEarly) {
+    // 后台任务没做完就停了：用户在等结果，不能静默收场（N-FIX-BROWSER-TASK-CONTEXT-BLOAT-SILENT-END）。
+    return `回应要求：「${title}」没有做完就停了。先完成必要的后续动作，然后用一两句非技术化的话告诉用户它做到哪、为什么停、下一步可以怎么做；不要贴原始报错。${namingRule}`;
   }
   return `回应要求：结果只在内部上下文中。先完成必要的后续动作；没有后续动作时，不要回复用户。${namingRule}`;
 }
@@ -141,7 +149,13 @@ export function buildSubagentCompletionRecord(input: BuildSubagentCompletionReco
       : undefined,
     next_action: input.nextAction ?? `Use collect_agent("${input.agentId}") to inspect the final result.`,
   };
-  const ackInstruction = buildCompletionAckInstruction(kind, title);
+  const ackInstruction = buildCompletionAckInstruction(
+    kind,
+    title,
+    input.status === 'failed'
+      && input.failureCode !== AgentFailureCode.CancelledByUser
+      && input.failureCode !== AgentFailureCode.CancelledByParent,
+  );
   const content = `<subagent_notification>\n${JSON.stringify(payload, null, 2)}\n<completion_ack_instruction>\n${ackInstruction}\n</completion_ack_instruction>\n</subagent_notification>`;
   return {
     agentId: input.agentId,

@@ -37,6 +37,20 @@ describe('subagent completion response contract', () => {
     expect(record.content).toContain('没有后续动作时，不要回复用户');
   });
 
+  it('does not let a failed internal background task end silently', () => {
+    const record = buildSubagentCompletionRecord({
+      agentId: 'subagent-43',
+      title: '维基摘要',
+      kind: 'internal',
+      status: 'failed',
+      error: '后台任务做到第 3 步（上限 3 步）就用完了步数，还没有得出最终结果。',
+    });
+
+    expect(record.content).toContain('没有做完就停了');
+    expect(record.content).toContain('告诉用户它做到哪');
+    expect(record.content).not.toContain('不要回复用户');
+  });
+
   it('asks for a non-technical result brief and next step after a shell completion', () => {
     const record = completion('shell');
 
