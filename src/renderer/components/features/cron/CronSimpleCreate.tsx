@@ -14,7 +14,7 @@ import { CRON_URGENCY_CRITERIA } from '@shared/constants';
 import { Button } from '../../primitives/Button';
 import { FormField } from '../../composites/FormField';
 import { Input } from '../../primitives/Input';
-import { TimeInput24 } from '../../primitives';
+import { DateTimeInput24, TimeInput24 } from '../../primitives';
 import { Select } from '../../primitives/Select';
 import { Textarea } from '../../primitives/Textarea';
 import { useCronStore } from '../../../stores/cronStore';
@@ -277,7 +277,14 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
         )}
         {freq === 'once' && (
           <FormField label={cc.simpleOnceAtLabel}>
-            <Input type="datetime-local" value={onceAt} onChange={(e) => setOnceAt(e.target.value)} />
+            <DateTimeInput24
+              testId="cron-simple-once"
+              value={onceAt}
+              onChange={setOnceAt}
+              dateLabel={cc.simpleDateLabel}
+              hourLabel={cc.simpleHourLabel}
+              minuteLabel={cc.simpleMinuteLabel}
+            />
           </FormField>
         )}
       </div>
