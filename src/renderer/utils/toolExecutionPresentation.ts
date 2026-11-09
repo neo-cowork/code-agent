@@ -195,6 +195,8 @@ export function resolveToolTerminalOutcomeKey(
       return 'failed-approval-denied';
     case AgentFailureCode.Timeout:
       return 'failed-timeout';
+    case AgentFailureCode.InvalidArguments:
+      return 'failed-tool';
     case AgentFailureCode.BudgetExhausted:
       return 'failed-budget';
     case AgentFailureCode.DependencyFailed:
@@ -367,6 +369,9 @@ export function humanizeToolError(
     toolResultCode: metadata?.code,
     defaultCode: AgentFailureCode.Unknown,
   });
+  if (failureCode === AgentFailureCode.InvalidArguments) {
+    return { summary: t.toolStepHumanize.failureCodes['invalid-arguments'] };
+  }
   if (failureCode === AgentFailureCode.PermissionDenied) {
     return {
       summary: t.outcomeWords['failed-approval-denied'].timeline.label,
