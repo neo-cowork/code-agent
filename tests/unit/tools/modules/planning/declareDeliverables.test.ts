@@ -6,6 +6,7 @@ import type {
 } from '../../../../../src/host/protocol/tools';
 import { ToolRegistry } from '../../../../../src/host/tools/registry';
 import { registerMigratedTools } from '../../../../../src/host/tools/modules';
+import { stashDeclareOutcome } from '../../../../../src/host/tools/modules/planning/declareDeliverablesOutcomeStore';
 import { declareDeliverablesModule } from '../../../../../src/host/tools/modules/planning/declareDeliverables';
 
 function makeLogger(): Logger {
@@ -46,18 +47,21 @@ describe('declareDeliverablesModule', () => {
     expect(handler.schema.category).toBe('planning');
   });
 
-  it('fallback executor returns an ok no-op result', async () => {
+  it('executor returns the recorded outcome handed over by the runtime gate (no internal jargon)', async () => {
     const handler = await declareDeliverablesModule.createHandler();
-    const result = await handler.execute(
-      { final_artifacts: ['dist/index.html'], scratch_dir: 'draft' },
-      makeCtx(),
-      allowAll,
-    );
+    stashDeclareOutcome('test-session', 'call-ok', { success: true, text: '已记录最终产物声明。' });
+    stashDeclareOutcome('test-session', 'call-bad', { success: false, text: '声明已拒绝：final_artifacts 不能为空' });
 
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.output).toContain('declare_deliverables');
-      expect(result.output).toContain('无副作用');
-    }
+    const ok = await handler.execute({}, makeCtx({ currentToolCallId: 'call-ok' }), allowAll);
+    const bad = await handler.execute({}, makeCtx({ currentToolCallId: 'call-bad' }), allowAll);
+
+    expect(ok).toEqual({ ok: true, output: '已记录最终产物声明。' });
+    expect(bad).toEqual({ ok: false, error: '声明已拒绝：final_artifacts 不能为空' });
+  });
+
+  it('without a recorded outcome it still answers in plain language', async () => {
+    const handler = await declareDeliverablesModule.createHandler();
+    const result = await handler.execute({ final_artifacts: ['a.md'] }, makeCtx({ currentToolCallId: 'none' }), allowAll);
+    expect(result).toEqual({ ok: true, output: '已收到最终产物声明。' });
   });
 });
