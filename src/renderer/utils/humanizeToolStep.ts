@@ -473,10 +473,10 @@ export function humanizeToolStep(
       return buildDomainActionSentence('mcp', mcp.tool, status, a, t, mcp.server);
     }
     case 'subagentSpawn': {
-      const role = typeof a.role === 'string' ? a.role.trim() : '';
-      const description = name === 'spawn_agent'
-        ? role ? agentRoleLabel(role, t.agentRoleLabels) : firstString(a, ['description'])
-        : firstString(a, ['description']);
+      const roleArg = name === 'Task' ? a.subagent_type : a.role;
+      const role = name === 'Explore' ? 'explore' : typeof roleArg === 'string' ? roleArg.trim() : '';
+      const description = (name === 'Task' ? firstString(a, ['description']) : '')
+        || (role ? agentRoleLabel(role, t.agentRoleLabels) : firstString(a, ['description']));
       return description
         ? h.subagentSpawn.replace('{description}', description)
         : h.subagentSpawnFallback;

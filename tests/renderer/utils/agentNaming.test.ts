@@ -48,15 +48,39 @@ describe('spawned agent naming through public entries', () => {
     expect(humanizeToolStep('spawn_agent', { task: longTask }, zh)).toBe(zh.toolStepHumanize.subagentSpawnFallback);
   });
 
-  it.each(['Task', 'AgentSpawn', 'Explore'])('%s keeps its contracted short description', (tool) => {
-    expect(humanizeToolStep(tool, { description: '整理周报', prompt: longTask, role: 'coder' }, zh))
+  it.each([
+    ['AgentSpawn', { role: 'coder', task: longTask }, '编程员', 'Coder'],
+    ['AgentSpawn', { role: '资料整理专家', task: longTask }, '资料整理专家', '资料整理专家'],
+    ['AgentSpawn', { role: 'custom_ascii_role', task: longTask }, '助手', 'Assistant'],
+    ['Explore', { prompt: longTask }, '调研员', 'Researcher'],
+    ['Explore', { prompt: longTask, subagent_type: 'explore' }, '调研员', 'Researcher'],
+    ['Task', { prompt: longTask, subagent_type: 'coder' }, '编程员', 'Coder'],
+    ['Task', { prompt: longTask, subagent_type: 'reviewer', description: '  ' }, '审阅员', 'Reviewer'],
+    ['Task', { prompt: longTask, subagent_type: 'custom_ascii_role' }, '助手', 'Assistant'],
+  ])('schema-shaped %s resolves a short name without description (%j)', (tool, args, chinese, english) => {
+    for (const [t, expected] of [[zh, chinese], [en, english]] as const) {
+      const step = humanizeToolStep(tool, args, t);
+      expect(step).toBe(t.toolStepHumanize.subagentSpawn.replace('{description}', expected));
+      expect(step).not.toContain(longTask);
+    }
+  });
+
+  it('Task keeps its optional short description ahead of subagent_type', () => {
+    expect(humanizeToolStep('Task', { description: '整理周报', prompt: longTask, subagent_type: 'coder' }, zh))
       .toBe('启动了代理 — 整理周报');
   });
 
   it.each(['pending-approval', 'running', 'completed', 'failed'] as const)('uses a role label in the %s step', (status) => {
-    const step = humanizeToolStep('spawn_agent', { role: 'coder', task: longTask }, zh, undefined, status);
-    expect(step).toContain('编程员');
-    expect(step).not.toContain(longTask);
+    for (const [tool, args, label] of [
+      ['spawn_agent', { role: 'coder', task: longTask }, '编程员'],
+      ['AgentSpawn', { role: 'coder', task: longTask }, '编程员'],
+      ['Explore', { prompt: longTask }, '调研员'],
+      ['Task', { prompt: longTask, subagent_type: 'coder' }, '编程员'],
+    ] as const) {
+      const step = humanizeToolStep(tool, args, zh, undefined, status);
+      expect(step).toContain(label);
+      expect(step).not.toContain(longTask);
+    }
   });
 
   it('preserves Team member names', () => {
