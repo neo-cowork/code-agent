@@ -1014,7 +1014,7 @@ export class MessageProcessor {
           toolName: spam.toolName,
           count: spam.count,
         });
-        this.contextAssembly.injectSystemMessage(buildToolSpamHint(spam.toolName!, spam.count), 'tool-spam-hint');
+        this.contextAssembly.injectSystemMessage(buildToolSpamHint(spam.toolName ?? '', spam.count), 'tool-spam-hint');
         this.guardState.searchSpamWarningEmitted = true;
       }
     }
