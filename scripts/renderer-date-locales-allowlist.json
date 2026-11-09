@@ -1,0 +1,122 @@
+[
+  {
+    "file": "utils/formatNextRun.ts",
+    "call": "date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })",
+    "count": 1,
+    "reason": "Today-only next-run label displays a time, without a date."
+  },
+  {
+    "file": "utils/formatCronJobTime.ts",
+    "call": "date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })",
+    "count": 1,
+    "reason": "Today-only cron label displays a time in the existing schedule timezone."
+  },
+  {
+    "file": "utils/formatCronJobTime.ts",
+    "call": "date.toLocaleTimeString(locale, { timeZone: resolved, hour: '2-digit', minute: '2-digit', })",
+    "count": 1,
+    "reason": "Today-only cron label displays a time in the existing schedule timezone."
+  },
+  {
+    "file": "components/ReceiptRows.tsx",
+    "call": "new Date(item.createdAt).toLocaleTimeString(language === 'zh' ? 'zh-CN' : 'en-US', { hour: '2-digit', minute: '2-digit', })",
+    "count": 1,
+    "reason": "Receipt row displays only the time."
+  },
+  {
+    "file": "hooks/usePreviewFileMetadata.ts",
+    "call": "new Date(input.entry.completedAt ?? input.metadata?.modifiedAt ?? Date.now()) .toLocaleTimeString(input.language === 'en' ? 'en-US' : 'zh-CN', { hour: '2-digit', minute: '2-digit', })",
+    "count": 1,
+    "reason": "Preview metadata clock displays only the time."
+  },
+  {
+    "file": "components/workbench/AgentPointerOverlay.tsx",
+    "call": "new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', })",
+    "count": 1,
+    "reason": "Pointer activity label displays only the time."
+  },
+  {
+    "file": "components/TaskPanel/SessionInspector/turnDevtools.tsx",
+    "call": "new Date(call.ts).toLocaleTimeString(undefined, { hour12: false })",
+    "count": 1,
+    "reason": "Inspector tool event displays only the time."
+  },
+  {
+    "file": "components/TaskPanel/SessionInspector/turnRow.tsx",
+    "call": "new Date(segment.startedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })",
+    "count": 2,
+    "reason": "Inspector segment label displays only the time."
+  },
+  {
+    "file": "components/features/chat/TurnCard.tsx",
+    "call": "new Date(turn.startTime).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', })",
+    "count": 1,
+    "reason": "Turn header displays only the time."
+  },
+  {
+    "file": "components/features/computerUse/ComputerUseContent.tsx",
+    "call": "new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })",
+    "count": 1,
+    "reason": "Computer-use timeline displays only the time."
+  },
+  {
+    "file": "components/features/voice/VoiceAuditDialog.tsx",
+    "call": "new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })",
+    "count": 1,
+    "reason": "Voice audit event displays only the time, including seconds."
+  },
+  {
+    "file": "components/features/knowledge/LibraryPanel.tsx",
+    "call": "new Date(item.updatedAt).toLocaleDateString(language === 'zh' ? 'zh-CN' : 'en-US')",
+    "count": 1,
+    "reason": "Library update column displays only the date."
+  },
+  {
+    "file": "components/features/expert/MemberConversationView.tsx",
+    "call": "new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })",
+    "count": 1,
+    "reason": "Member conversation header displays only the time, including seconds."
+  },
+  {
+    "file": "components/features/lab/gpt1/RealModePanel.tsx",
+    "call": "new Date(log.timestamp).toLocaleTimeString()",
+    "count": 1,
+    "reason": "Lab log timestamp displays only the time."
+  },
+  {
+    "file": "components/features/chat/MessageBubble/ToolCallDisplay/index.tsx",
+    "call": "new Date(receipt.createdAt).toLocaleTimeString(language === 'zh' ? 'zh-CN' : 'en-US', { hour: '2-digit', minute: '2-digit', })",
+    "count": 1,
+    "reason": "Tool receipt label displays only the time."
+  },
+  {
+    "file": "components/features/settings/tabs/KnowledgeInboxSection.tsx",
+    "call": "date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })",
+    "count": 1,
+    "reason": "Inbox grouping date omits the time."
+  },
+  {
+    "file": "components/features/settings/tabs/MemoryDiagnosticsSections.tsx",
+    "call": "date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })",
+    "count": 1,
+    "reason": "Diagnostic event label displays only the time."
+  },
+  {
+    "file": "components/features/settings/tabs/MemoryEntriesManager.tsx",
+    "call": "new Date(timestamp).toLocaleDateString(locale, { month: 'short', day: 'numeric' })",
+    "count": 1,
+    "reason": "Entry date and pause-since date omit the time."
+  },
+  {
+    "file": "components/features/settings/tabs/MemoryEntriesManager.tsx",
+    "call": "new Date(selectedEntry.injectionPaused.since).toLocaleDateString(localeForLanguage(language))",
+    "count": 1,
+    "reason": "Entry date and pause-since date omit the time."
+  },
+  {
+    "file": "components/features/settings/tabs/MemoryTab.tsx",
+    "call": "date.toLocaleDateString(locale, { month: 'short', day: 'numeric' })",
+    "count": 1,
+    "reason": "Memory file modification date omits the time."
+  }
+]
