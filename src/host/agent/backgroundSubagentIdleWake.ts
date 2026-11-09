@@ -78,7 +78,7 @@ async function flushWake(sessionId: string): Promise<void> {
         undefined,
         {
           mode: 'normal',
-          historyVisibility: 'meta',
+          inputHistoryVisibility: 'meta',
           maxIterations: 1,
         },
         messageMetadata,

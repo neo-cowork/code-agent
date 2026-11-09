@@ -94,7 +94,7 @@ describe('background subagent idle wake', () => {
       undefined,
       expect.objectContaining({
         mode: 'normal',
-        historyVisibility: 'meta',
+        inputHistoryVisibility: 'meta',
         maxIterations: 1,
       }),
       expect.objectContaining({
@@ -105,6 +105,9 @@ describe('background subagent idle wake', () => {
       }),
       expect.stringContaining('background-subagent:idle-session:'),
     );
+
+    // 只隐藏通知输入；整轮 meta 会把最后的助手汇报一起隐藏。
+    expect(taskManagerMocks.startTask.mock.calls[0]?.[3]).not.toHaveProperty('historyVisibility');
 
     // 唤醒即消费：队列里不能再有这个 session 的记录（防止下一个工具结果双投递）
     expect(getBackgroundSubagentRegistry().drainCompletionNotifications({ sessionId: 'idle-session' })).toEqual([]);
