@@ -71,7 +71,7 @@ import { addAndPersistMessage } from '../../../../src/host/agent/runtime/context
 import { SessionRepository } from '../../../../src/host/services/core/repositories/SessionRepository';
 import { applySchema } from '../../../../src/host/services/core/database/schema';
 import { projectTurns } from '../../../../src/renderer/hooks/useTurnProjection';
-import { app } from '../../../../src/host/platform';
+import { getConfigService } from '../../../../src/host/services/core/configService';
 import { createLogger } from '../../../../src/host/services/infra/logger';
 
 const sessionId = 'preview-repair-session';
@@ -122,8 +122,12 @@ function harness(persistMessage = vi.fn(async (_message: Message) => {})) {
   return { ctx, events, healthRunner, check, finish, persistMessage, contextAssembly };
 }
 
-beforeEach(() => { Object.defineProperty(app, 'getLocale', { value: () => 'zh-CN', configurable: true }); });
-afterEach(() => { Reflect.deleteProperty(app, 'getLocale'); vi.restoreAllMocks(); });
+vi.mock('../../../../src/host/services/core/configService', () => ({
+  getConfigService: vi.fn(() => ({ getSettings: () => ({ ui: { language: 'zh' } }) })),
+}));
+
+beforeEach(() => { vi.mocked(getConfigService).mockReturnValue({ getSettings: () => ({ ui: { language: 'zh' } }) } as never); });
+afterEach(() => { vi.restoreAllMocks(); });
 
 describe('web preview repair finalization and persistence', () => {
   it('forces exactly one recheck at turn end when the file was not rewritten', async () => {
