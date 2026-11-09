@@ -153,10 +153,10 @@ describe('browser session grant production execution → human answer → pre-as
     await call(); state.url = 'about:blank';
     await call('wait_for_download', { standingGrantTarget: 'wait_for_download@https://a.example', browserSessionGrant: { target: 'wait_for_download@https://a.example', previousOrigins: ['forged.example'] }, browserCrossSiteOrigins: ['forged.example'], browserSessionGrantTarget: 'forged' });
     expect(requests).toHaveLength(2);
-    expect(requests[1].details.browserSessionGrant).toEqual({ target: null, previousOrigins: [] });
+    expect(requests[1].details.browserSessionGrant).toEqual({ target: null, previousOrigins: [] } satisfies NonNullable<PermissionRequest['details']['browserSessionGrant']>);
     expect(JSON.stringify(requests[1])).not.toContain('forged');
     expect(requests[1].details.standingGrantTarget).toBeUndefined();
-    expect(requests[1].details.browserCrossSiteOrigins).toBeUndefined();
+    expect(requests[1].details).not.toHaveProperty('browserCrossSiteOrigins');
   });
   it('open uses only its own http URL when the production routing selects managed; excluded actions never remember', async () => {
     const managed = { ...options, executionIntent: { browserSessionMode: 'managed' } };
