@@ -87,7 +87,7 @@ describe('ProjectConfigRail cron timezone', () => {
       renderRail();
       fireEvent.click(await screen.findByTestId('project-space-card-automation'));
       await waitFor(() => expect(screen.getByTestId('project-space-card-automation-option-job-Asia/Shanghai').textContent)
-        .toContain('下次 1/1 15:00（中国标准时间）'));
+        .toContain('下次 01/01 15:00（中国标准时间）'));
     } finally {
       if (initialTz === undefined) delete process.env.TZ;
       else process.env.TZ = initialTz;

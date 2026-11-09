@@ -84,7 +84,7 @@ describe('SidebarCapabilityZone', () => {
       getStats.mockResolvedValue(makeStats(0));
       render(<SidebarCapabilityZone />);
       await waitFor(() => expect(screen.getByTestId('sidebar-capability-automation').getAttribute('title'))
-        .toBe('下次 1/1 15:00（中国标准时间） · 英语单词'));
+        .toBe('下次 01/01 15:00（中国标准时间） · 英语单词'));
     } finally {
       if (initialTz === undefined) delete process.env.TZ;
       else process.env.TZ = initialTz;
