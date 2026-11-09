@@ -6,6 +6,7 @@ export enum AgentFailureCode {
   BlockedByParentRole = 'blocked-by-parent-role',
   PermissionDenied = 'permission-denied',
   ToolUnavailable = 'tool-unavailable',
+  InvalidArguments = 'invalid-arguments',
   BudgetExhausted = 'budget-exhausted',
   Timeout = 'timeout',
   ParentGone = 'parent-gone',
@@ -104,6 +105,9 @@ export function inferAgentFailureCode(input: {
   }
   if (normalized.includes('worktree') && (normalized.includes('create') || normalized.includes('add'))) {
     return AgentFailureCode.WorktreeCreateFailed;
+  }
+  if (normalized.startsWith('foregroundblockingbudgetms must be less than role execution timeout (')) {
+    return AgentFailureCode.InvalidArguments;
   }
   if (normalized.includes('timeout') || normalized.includes('timed out')) {
     return AgentFailureCode.Timeout;
