@@ -44,7 +44,8 @@ function controlForLabel(label: string): HTMLInputElement | HTMLSelectElement | 
 
 function openActionTab(job: CronJobDefinition): void {
   render(<CronJobEditor isOpen job={job} onClose={() => undefined} />);
-  fireEvent.click(screen.getByText('执行动作'));
+  const copy = useAppStore.getState().language === 'en' ? cronCenterEn : cronCenterZh;
+  fireEvent.click(screen.getByText(copy.cronCenter.editorChrome.tabs.action));
 }
 
 async function openNewManualAgent(): Promise<void> {

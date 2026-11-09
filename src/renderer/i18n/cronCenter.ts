@@ -3,6 +3,7 @@
 import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 import type { EventScheduleValidationReason } from '@shared/cronEventValidation';
 import { cronPermissionDeniedReasonText } from '@shared/cronPermissionDenied';
+import { cronEditorChromeEn, cronEditorChromeZh } from './cronEditorChrome';
 // 自动化面板词条（features/cron 全家桶）—— zh/en 同文件相邻维护。
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮（同 sidebar.ts / chatInput.ts 先例）。
 // 注：types.ts 里的 formatActionSummary/formatDateTime 等格式化函数文案暂未迁移
@@ -12,6 +13,7 @@ import { cronPermissionDeniedReasonText } from '@shared/cronPermissionDenied';
 
 export const cronCenterZh = {
   cronCenter: {
+    ...cronEditorChromeZh,
     groupListenCheck: {
       title: '检查群消息是否连通',
       start: '发条测试消息',
@@ -527,6 +529,7 @@ export const cronCenterZh = {
 
 export const cronCenterEn: typeof cronCenterZh = {
   cronCenter: {
+    ...cronEditorChromeEn,
     groupListenCheck: {
       title: 'Check group message reception',
       start: 'Send a test message',

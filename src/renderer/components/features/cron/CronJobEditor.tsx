@@ -61,10 +61,10 @@ type EditorTab = 'basic' | 'action' | 'advanced';
 /** Creation flow: simple (default) → pick template → fill fields → (or manual) */
 type CreationStep = 'simple' | 'pick' | 'fill' | 'manual';
 
-const TABS: { key: EditorTab; label: string; icon: React.ReactNode }[] = [
-  { key: 'basic', label: '基本设置', icon: <Clock className="h-3.5 w-3.5" /> },
-  { key: 'action', label: '执行动作', icon: <Terminal className="h-3.5 w-3.5" /> },
-  { key: 'advanced', label: '高级选项', icon: <Settings className="h-3.5 w-3.5" /> },
+const TABS: { key: EditorTab; icon: React.ReactNode }[] = [
+  { key: 'basic', icon: <Clock className="h-3.5 w-3.5" /> },
+  { key: 'action', icon: <Terminal className="h-3.5 w-3.5" /> },
+  { key: 'advanced', icon: <Settings className="h-3.5 w-3.5" /> },
 ];
 
 /** draft 形状 → shared 校验器口径（与 buildCronJobInput 提交前兜底用同一份判据）。 */
@@ -190,9 +190,9 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
     : step === 'simple'
       ? cc.simpleTitle
       : step === 'pick'
-        ? '选择任务模板'
+        ? cc.editorChrome.selectTemplateTitle
         : step === 'fill'
-          ? (selectedTemplate ? getTemplateDisplayCopy(selectedTemplate, cc.templates).name : '') || '填写参数'
+          ? (selectedTemplate ? getTemplateDisplayCopy(selectedTemplate, cc.templates).name : '') || cc.editorChrome.fillTemplateTitle
           : cc.manualTitle;
 
   const scheduleOptions = useMemo(
@@ -210,15 +210,15 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
   // event 调度的创建期护栏（host createJob 同款）：只允许本机 + Agent 动作。
   const actionOptions = useMemo(
     () => (isEventScheduleKind(draft.scheduleType)
-      ? [{ value: 'agent', label: 'Agent 任务' }]
+      ? [{ value: 'agent', label: cc.editorChrome.agentActionOption }]
       : [
-        { value: 'shell', label: 'Shell 命令' },
-        { value: 'tool', label: 'Tool 调用' },
-        { value: 'agent', label: 'Agent 任务' },
+        { value: 'shell', label: cc.editorChrome.shellActionOption },
+        { value: 'tool', label: cc.editorChrome.toolActionOption },
+        { value: 'agent', label: cc.editorChrome.agentActionOption },
         { value: 'webhook', label: 'Webhook' },
-        { value: 'ipc', label: 'IPC 消息' },
+        { value: 'ipc', label: cc.editorChrome.ipcActionOption },
       ]),
-    [draft.scheduleType]
+    [draft.scheduleType, cc.editorChrome]
   );
 
   // 从别的调度切到 event 系（或复制出 event 任务）时钉死护栏前置项：本机 + Agent。
@@ -241,9 +241,9 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
     if (!errors.templateForm || !selectedTemplate) return;
     const missing = selectedTemplate.fields.filter((f) => f.required && !templateValues[f.key]?.trim());
     setErrors((prev) => !prev.templateForm ? prev : missing.length > 0
-      ? { ...prev, form: `请填写：${missing.map((f) => f.label).join('、')}` }
+      ? { ...prev, form: cc.editorChrome.requiredFieldsError.replace('{fields}', missing.map((f) => f.label).join(cc.editorChrome.fieldListSeparator)) }
       : { ...prev, form: undefined, templateForm: false });
-  }, [errors.templateForm, selectedTemplate, templateValues]);
+  }, [errors.templateForm, selectedTemplate, templateValues, cc.editorChrome]);
   const cloudRoleBound = isCloudRoleBoundAgentDraft(draft);
   const setField = <K extends keyof CronJobDraft>(key: K, value: CronJobDraft[K]) => {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -281,7 +281,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
     // Validate required fields
     const missing = selectedTemplate.fields.filter((f) => f.required && !templateValues[f.key]?.trim());
     if (missing.length > 0) {
-      setErrors({ form: `请填写：${missing.map((f) => f.label).join('、')}`, templateForm: true });
+      setErrors({ form: cc.editorChrome.requiredFieldsError.replace('{fields}', missing.map((f) => f.label).join(cc.editorChrome.fieldListSeparator)), templateForm: true });
       return;
     }
 
@@ -476,7 +476,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
             onClick={() => setStep('manual')}
             className="text-zinc-500 transition-colors hover:text-zinc-300"
           >
-            跳过模板，手动配置
+            {cc.editorChrome.skipTemplate}
           </button>
         </div>
       </Modal>
@@ -494,10 +494,10 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
         footer={(
           <>
             <Button variant="ghost" onClick={onClose} disabled={submitting}>
-              取消
+              {cc.editorChrome.cancel}
             </Button>
             <Button onClick={handleTemplateSubmit} loading={submitting}>
-              创建任务
+              {cc.editorChrome.createTask}
             </Button>
           </>
         )}
@@ -508,7 +508,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
             className="inline-flex items-center gap-1.5 text-xs text-zinc-500 transition-colors hover:text-zinc-300"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
-            返回选择模板
+            {cc.editorChrome.backToTemplates}
           </button>
         </div>
 
@@ -631,8 +631,8 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       size="lg"
       footer={(
         <>
-          <Button variant="ghost" onClick={onClose} disabled={submitting}>取消</Button>
-          <Button onClick={handleSubmit} loading={submitting} disabled={cloudRoleBound || webhookGated}>{job ? '保存修改' : '创建任务'}</Button>
+          <Button variant="ghost" onClick={onClose} disabled={submitting}>{cc.editorChrome.cancel}</Button>
+          <Button onClick={handleSubmit} loading={submitting} disabled={cloudRoleBound || webhookGated}>{job ? cc.editorChrome.saveChanges : cc.editorChrome.createTask}</Button>
         </>
       )}
     >
@@ -644,7 +644,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
             className="inline-flex items-center gap-1.5 text-xs text-zinc-500 transition-colors hover:text-zinc-300"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
-            返回选择模板
+            {cc.editorChrome.backToTemplates}
           </button>
         </div>
       )}
@@ -662,7 +662,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
             }`}
           >
             {tab.icon}
-            {tab.label}
+            {cc.editorChrome.tabs[tab.key]}
           </button>
         ))}
       </div>
@@ -677,30 +677,30 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       {activeTab === 'basic' && (
         <div className="space-y-4">
           <div className="space-y-3">
-            <FormField label="任务名称" required error={errors.name}>
+            <FormField label={cc.editorChrome.taskNameLabel} required error={errors.name}>
               <Input
                 value={draft.name}
                 onChange={(e) => setField('name', e.target.value)}
-                placeholder="例如：每日数据备份"
+                placeholder={cc.editorChrome.taskNamePlaceholder}
               />
             </FormField>
-            <FormField label="描述">
+            <FormField label={cc.editorChrome.descriptionLabel}>
               <Textarea
                 value={draft.description}
                 onChange={(e) => setField('description', e.target.value)}
                 minRows={2}
-                placeholder="简要说明任务用途"
+                placeholder={cc.editorChrome.descriptionPlaceholder}
               />
             </FormField>
             <div className="grid gap-3 sm:grid-cols-2">
-              <FormField label="标签">
+              <FormField label={cc.editorChrome.tagsLabel}>
                 <Input
                   value={draft.tagsText}
                   onChange={(e) => setField('tagsText', e.target.value)}
                   placeholder="daily, backup"
                 />
               </FormField>
-              <FormField label="状态">
+              <FormField label={cc.editorChrome.statusLabel}>
                 <label className="flex h-9 items-center gap-2 text-sm text-zinc-300">
                   <input
                     type="checkbox"
@@ -729,10 +729,10 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
           <div className="border-t border-zinc-800 pt-4">
             <h4 className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-zinc-500">
               <Clock className="h-3.5 w-3.5" />
-              调度方式
+              {cc.editorChrome.scheduleSectionTitle}
             </h4>
             <div className="space-y-3">
-              <FormField label="调度类型">
+              <FormField label={cc.editorChrome.scheduleTypeLabel}>
                 <Select
                   data-testid="cron-schedule-type-select"
                   value={draft.scheduleType}
@@ -786,7 +786,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       {/* Tab: 执行动作 */}
       {activeTab === 'action' && (
         <div className="space-y-3">
-          <FormField label="动作类型">
+          <FormField label={cc.editorChrome.actionTypeLabel}>
             <Select
               value={draft.actionType}
               options={actionOptions}
@@ -796,7 +796,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
 
           {draft.actionType === 'shell' && (
             <>
-              <FormField label="命令" required error={errors.shellCommand}>
+              <FormField label={cc.editorChrome.commandLabel} required error={errors.shellCommand}>
                 <Textarea
                   value={draft.shellCommand}
                   onChange={(e) => setField('shellCommand', e.target.value)}
@@ -806,14 +806,14 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                 />
               </FormField>
               <div className="grid gap-3 sm:grid-cols-2">
-                <FormField label="工作目录">
+                <FormField label={cc.editorChrome.workingDirectoryLabel}>
                   <Input
                     value={draft.shellCwd}
                     onChange={(e) => setField('shellCwd', e.target.value)}
-                    placeholder="默认为项目根目录"
+                    placeholder={cc.editorChrome.workingDirectoryPlaceholder}
                   />
                 </FormField>
-                <FormField label="终端模式">
+                <FormField label={cc.editorChrome.terminalModeLabel}>
                   <label className="flex h-9 items-center gap-2 text-sm text-zinc-300">
                     <input
                       type="checkbox"
@@ -821,7 +821,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                       onChange={(e) => setField('shellUsePty', e.target.checked)}
                       className="rounded border-zinc-700 bg-zinc-800"
                     />
-                    使用 PTY（交互式命令）
+                    {cc.editorChrome.usePtyLabel}
                   </label>
                 </FormField>
               </div>
@@ -830,10 +830,10 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
 
           {draft.actionType === 'tool' && (
             <>
-              <FormField label="Tool 名称" required error={errors.toolName}>
+              <FormField label={cc.editorChrome.toolNameLabel} required error={errors.toolName}>
                 <Input value={draft.toolName} onChange={(e) => setField('toolName', e.target.value)} />
               </FormField>
-              <FormField label="参数 (JSON)">
+              <FormField label={cc.editorChrome.toolParametersLabel}>
                 <Textarea
                   value={draft.toolParametersText}
                   onChange={(e) => setField('toolParametersText', e.target.value)}
@@ -911,9 +911,9 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       {/* Tab: 高级选项 */}
       {activeTab === 'advanced' && (
         <div className="space-y-3">
-          <p className="text-xs text-zinc-500">配置重试策略和执行超时，通常保持默认即可。</p>
+          <p className="text-xs text-zinc-500">{cc.editorChrome.advancedIntro}</p>
           <div className="grid gap-3">
-            <FormField label="最大重试次数">
+            <FormField label={cc.editorChrome.maxRetriesLabel}>
               <Input
                 type="number"
                 value={draft.maxRetries}
@@ -934,7 +934,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
           </div>
           {draft.runsOn !== 'cloud' && (
             <div className="grid gap-3 sm:grid-cols-2">
-              <FormField label="单次预算上限 (USD)" hint="本次运行花费超过该金额即停车并自动停用，留空为不限。">
+              <FormField label={cc.editorChrome.runBudgetLabel} hint={cc.editorChrome.runBudgetHint}>
                 <Input
                   type="number"
                   value={draft.maxRunBudget}
@@ -943,21 +943,21 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                     if (isEventScheduleKind(draft.scheduleType)) setEventField('maxRunBudget', e.target.value);
                     else setField('maxRunBudget', e.target.value);
                   }}
-                  placeholder="不限"
+                  placeholder={cc.editorChrome.unlimitedPlaceholder}
                   data-testid="cron-budget-limit-input"
                 />
               </FormField>
               <FormField
-                label="运行次数上限"
+                label={cc.editorChrome.maxRunsLabel}
                 hint={job?.maxRuns != null && job.runCount != null
-                  ? `已运行 ${job.runCount}/${job.maxRuns} 次，到数自动停用；重新启用后计数清零。留空为不限。`
-                  : '到数自动停用并通知；重新启用后计数清零。留空为不限。'}
+                  ? cc.editorChrome.maxRunsHintWithProgress.replace('{runCount}', String(job.runCount)).replace('{maxRuns}', String(job.maxRuns))
+                  : cc.editorChrome.maxRunsHint}
               >
                 <Input
                   type="number"
                   value={draft.maxRuns}
                   onChange={(e) => setField('maxRuns', e.target.value)}
-                  placeholder="不限"
+                  placeholder={cc.editorChrome.unlimitedPlaceholder}
                   data-testid="cron-maxruns-limit-input"
                 />
               </FormField>

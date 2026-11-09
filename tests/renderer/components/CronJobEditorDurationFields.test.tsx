@@ -32,7 +32,8 @@ function makeJob(overrides: Partial<CronJobDefinition> = {}): CronJobDefinition 
 
 function openAdvanced(job: CronJobDefinition): void {
   render(<CronJobEditor isOpen job={job} onClose={() => undefined} />);
-  fireEvent.click(screen.getByText('高级选项'));
+  const copy = useAppStore.getState().language === 'en' ? cronCenterEn : cronCenterZh;
+  fireEvent.click(screen.getByText(copy.cronCenter.editorChrome.tabs.advanced));
 }
 
 beforeEach(() => {
