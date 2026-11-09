@@ -52,7 +52,7 @@ interface CronJobEditorProps {
   onClose: () => void;
 }
 
-type FieldErrors = Partial<Record<keyof CronJobDraft, string>> & { form?: string; eventForm?: boolean };
+type FieldErrors = Partial<Record<keyof CronJobDraft, string>> & { form?: string; eventForm?: boolean; templateForm?: boolean };
 
 type EditorTab = 'basic' | 'action' | 'advanced';
 
@@ -235,6 +235,13 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
   useEffect(() => {
     if (errors.eventForm && !eventViolation) setErrors((prev) => ({ ...prev, form: undefined, eventForm: false }));
   }, [errors.eventForm, eventViolation]);
+  useEffect(() => {
+    if (!errors.templateForm || !selectedTemplate) return;
+    const missing = selectedTemplate.fields.filter((f) => f.required && !templateValues[f.key]?.trim());
+    setErrors((prev) => !prev.templateForm ? prev : missing.length > 0
+      ? { ...prev, form: `请填写：${missing.map((f) => f.label).join('、')}` }
+      : { ...prev, form: undefined, templateForm: false });
+  }, [errors.templateForm, selectedTemplate, templateValues]);
   const cloudRoleBound = isCloudRoleBoundAgentDraft(draft);
   const setField = <K extends keyof CronJobDraft>(key: K, value: CronJobDraft[K]) => {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -272,7 +279,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
     // Validate required fields
     const missing = selectedTemplate.fields.filter((f) => f.required && !templateValues[f.key]?.trim());
     if (missing.length > 0) {
-      setErrors({ form: `请填写：${missing.map((f) => f.label).join('、')}` });
+      setErrors({ form: `请填写：${missing.map((f) => f.label).join('、')}`, templateForm: true });
       return;
     }
 
