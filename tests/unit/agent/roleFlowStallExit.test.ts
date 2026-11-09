@@ -228,3 +228,37 @@ describe('propose_role 已成功后不再误报停摆', () => {
     expect(assembly.persisted.filter((m) => m.metadata?.roleFlowStalled)).toEqual([]);
   });
 });
+
+describe('用户结束角色流程', () => {
+  it('问答卡选择先别建时不落停摆消息', async () => {
+    const ctx = mkCtx([
+      SEED,
+      { id: 'a-question', role: 'assistant', content: '', timestamp: 2, toolCalls: [{ id: 'q1', name: 'AskUserQuestion', arguments: { questions: [{"header": "主要职责", "question": "这个角色主要帮你干什么活？", "options": [{"label": "整理信息做研究", "description": "上网查资料、汇总对比、写出结论"}, {"label": "写文档做汇报", "description": "写方案、纪要、PPT、报告类产出"}, {"label": "处理数据和表格", "description": "读写 Excel、统计分析、出图表"}, {"label": "自动化跑腿", "description": "定时任务、批量处理文件等重复活"}], "multiSelect": false}, {"header": "需要能力", "question": "它需要哪些能力？（可多选，我会按最少够用来配）", "options": [{"label": "联网搜索", "description": "上网查资料、抓网页内容"}, {"label": "读写本地文件", "description": "查看和生成文档、表格等文件"}, {"label": "运行命令", "description": "执行脚本、跑测试等（权限较高，会说明）"}, {"label": "记忆和日程", "description": "记住你的偏好、读写提醒和日历"}], "multiSelect": true}]} }] },
+      { id: 't-answer', role: 'tool', content: '', timestamp: 3, toolResults: [{ toolCallId: 'q1', success: true, output: 'User responses:\n[主要职责]: 先别建，现有够用\n[需要能力]: 先别建，现有够用' }] },
+    ]);
+    const assembly = mkAssembly();
+    expect(await settleRoleFlowStallOnTextBreak({ ctx, assembly, boundary: createRoleBoundary, finalText: '好的，先使用现有角色。' })).toBe(false);
+    expect(assembly.persisted).toEqual([]);
+    expect(ctx.onEvent).not.toHaveBeenCalled();
+  });
+
+  it('用户之后要求继续时不沿用之前的拒绝', async () => {
+    const ctx = mkCtx([SEED, { id: 'u-no', role: 'user', content: '先别建', timestamp: 2 }, { id: 'u-yes', role: 'user', content: '继续创建', timestamp: 3 }]);
+    expect(await settleRoleFlowStallOnTextBreak({ ctx, assembly: mkAssembly(), boundary: createRoleBoundary, finalText: '正在准备。' })).toBe(true);
+  });
+
+  it('无头未回答输出中的不要创建不视为用户拒绝', async () => {
+    const ctx = mkCtx([SEED, { id: 'a', role: 'assistant', content: '', timestamp: 2, toolCalls: [{ id: 'q', name: 'AskUserQuestion', arguments: {} }] }, { id: 't', role: 'tool', content: '', timestamp: 3, toolResults: [{ toolCallId: 'q', success: true, output: '[用户未响应 - CLI 模式无法交互]\n不要创建文件' }] }]);
+    expect(await settleRoleFlowStallOnTextBreak({ ctx, assembly: mkAssembly(), boundary: createRoleBoundary, finalText: '正在准备。' })).toBe(true);
+  });
+
+  it('确认卡已生成的真实消息形状不落停摆消息', async () => {
+    const messages = proposeHistory(true);
+    messages[2].toolResults![0].output = '已为「晨报摘要员」生成草稿，确认卡已弹出，等待用户点击确认。';
+    const ctx = mkCtx(messages);
+    const assembly = mkAssembly();
+    expect(await settleRoleFlowStallOnTextBreak({ ctx, assembly, boundary: createRoleBoundary, finalText: '请在确认卡上点击确认完成创建' })).toBe(false);
+    expect(assembly.persisted.filter((message) => message.metadata?.roleFlowStalled)).toEqual([]);
+    expect(ctx.onEvent).not.toHaveBeenCalled();
+  });
+});

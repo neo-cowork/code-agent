@@ -64,6 +64,38 @@ function hasProposedRoleSinceSeed(messages: readonly Message[]): boolean {
   return proposeCallIds.some((id) => succeeded.has(id));
 }
 
+// Only explicit decisions about building/editing the role count; do not interpret
+// arbitrary tool output (including unanswered-question fallback) as user intent.
+const DECLINED_ROLE = /(?:先别|暂时不|不要|无需|不用|不需要)\s*(?:帮我)?\s*(?:创建|新建|建立|生成|做|建|修改|改)|(?:don't|do not|never)\s+(?:create|make|edit)/i;
+
+function userDeclinedSinceSeed(messages: readonly Message[]): boolean {
+  const questionCalls = new Set<string>();
+  let latestDecision: string | undefined;
+  for (const msg of messages) {
+    if (msg.visibility === 'rewound') continue;
+    if (msg.role === 'user' && !msg.isMeta) {
+      if (/^\/(?:create-role|edit-role)(?:\s|$)/.test(msg.content.trim())) {
+        questionCalls.clear();
+        latestDecision = undefined;
+      } else {
+        latestDecision = msg.content;
+      }
+    }
+    for (const call of msg.toolCalls ?? []) {
+      if (msg.role === 'assistant' && /^(?:ask_user_question|AskUserQuestion)$/.test(call.name)) {
+        questionCalls.add(call.id);
+        if (call.result?.success && call.result.output?.startsWith('User responses:\n')) latestDecision = call.result.output.split('\n').slice(1).map((line) => line.replace(/^\[[^\]]+\]:\s*/, '')).join('\n');
+      }
+    }
+    for (const result of msg.toolResults ?? []) {
+      if (result.success && questionCalls.has(result.toolCallId) && result.output?.startsWith('User responses:\n')) {
+        latestDecision = result.output.split('\n').slice(1).map((line) => line.replace(/^\[[^\]]+\]:\s*/, '')).join('\n');
+      }
+    }
+  }
+  return latestDecision !== undefined && DECLINED_ROLE.test(latestDecision);
+}
+
 /** settle 需要的宿主窄面：事件出口。 */
 type RoleFlowStallContext = Pick<RuntimeContext, 'sessionId' | 'onEvent' | 'messages'>;
 
@@ -78,24 +110,6 @@ export interface RoleFlowStallInput {
   readonly assembly: RoleFlowStallAssembly;
   readonly boundary: SkillToolBoundary | undefined;
   readonly finalText: string;
-}
-
-/**
- * 停摆判定（纯函数）：
- * - 建/改角色的 strict 边界仍激活（exit_role_flow 成功后边界会被清掉，天然排除显式退出）；
- * - 本会话没有 pending 角色草稿（有草稿 = 确认卡在场，空闲是正常等确认），
- *   且种子之后没有成功的 propose_role（草稿被确认/移走后查不到，不等于没产出）；
- * - 收尾文本里没有问句（？/?）——留给用户问题的一轮是合法访谈收尾，不打扰。
- */
-function shouldSurfaceRoleFlowStall(
-  boundary: SkillToolBoundary | undefined,
-  finalText: string,
-  hasPendingDraft: boolean,
-  hasProposedRole: boolean,
-): boolean {
-  if (!boundary?.strict || !ROLE_AUTHORING_STRICT_SKILLS.has(boundary.skillName)) return false;
-  if (hasPendingDraft || hasProposedRole) return false;
-  return !/[?？]/.test(finalText);
 }
 
 function stallNoticeContent(skillName: string): string {
@@ -124,8 +138,15 @@ export async function settleRoleFlowStallOnTextBreak(input: RoleFlowStallInput):
   }
 
   const turnKey = latestUserMessageId(input.ctx.messages);
-  if (stallSurfacedTurnByRun.get(input.ctx) === turnKey) return false;
-  if (!shouldSurfaceRoleFlowStall(input.boundary, input.finalText, hasPendingDraft, hasProposedRoleSinceSeed(input.ctx.messages))) {
+  const reason = stallSurfacedTurnByRun.get(input.ctx) === turnKey ? 'already surfaced'
+    : !input.boundary?.strict || !ROLE_AUTHORING_STRICT_SKILLS.has(input.boundary.skillName) ? 'inactive boundary'
+    : hasPendingDraft ? 'pending draft'
+    : hasProposedRoleSinceSeed(input.ctx.messages) ? 'successful propose_role'
+    : userDeclinedSinceSeed(input.ctx.messages) ? 'user declined'
+    : /[?？]/.test(input.finalText) ? 'question'
+    : undefined;
+  if (reason) {
+    logger.info(`[AgentLoop] Role flow stall exit suppressed: ${reason}`, { sessionId: input.ctx.sessionId });
     return false;
   }
   stallSurfacedTurnByRun.set(input.ctx, turnKey);
@@ -141,7 +162,7 @@ export async function settleRoleFlowStallOnTextBreak(input: RoleFlowStallInput):
   try {
     await input.assembly.addAndPersistMessage(message);
     input.ctx.onEvent({ type: 'message', data: message });
-    logger.info('[AgentLoop] Role flow stall exit surfaced', { sessionId: input.ctx.sessionId, skillName });
+    logger.info('[AgentLoop] Role flow stall exit surfaced: true stall', { sessionId: input.ctx.sessionId, skillName });
     return true;
   } catch (error) {
     logger.warn('[AgentLoop] Role flow stall exit message not persisted', {
