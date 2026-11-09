@@ -635,7 +635,7 @@ export const ChatView: React.FC = () => {
           return true;
         };
         const localModelReady = !isAuthenticated && await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get')
-          .then(hasConfiguredDefaultRuntimeModel, () => false);
+          .then((settings) => hasConfiguredDefaultRuntimeModel(settings, { allowCloudManaged: false }), () => false);
         return (await (localModelReady ? sendConfiguredMessage() : requireAuthAsync(sendConfiguredMessage))) === true;
       },
     });

@@ -508,13 +508,25 @@ describe('ChatView send authentication', () => {
     },
   };
 
-  for (const { name, authenticated } of [
-    { name: 'signed in path unchanged', authenticated: true },
-    { name: 'signed out + local model configured sends without auth modal', authenticated: false },
+  const managedModel = {
+    models: {
+      ...configuredModel.models,
+      default: 'custom-team-relay',
+      providers: {
+        ...configuredModel.models.providers,
+        'custom-team-relay': { enabled: true, managedByCloud: true, apiKeyConfigured: true },
+      },
+    },
+  };
+
+  for (const { name, authenticated, settings } of [
+    { name: 'signed in path unchanged', authenticated: true, settings: configuredModel },
+    { name: 'signed in + cloud-managed default sends unchanged', authenticated: true, settings: managedModel },
+    { name: 'signed out + local model configured sends without auth modal', authenticated: false, settings: configuredModel },
   ]) {
     it(name, async () => {
       useAuthStore.setState({ isAuthenticated: authenticated });
-      settingsInvokeMock.mockResolvedValue(configuredModel);
+      settingsInvokeMock.mockResolvedValue(settings);
       render(React.createElement(ChatView));
       const input = screen.getByLabelText('chat-input-field') as HTMLInputElement;
       fireEvent.change(input, { target: { value: prompt } });
@@ -528,6 +540,10 @@ describe('ChatView send authentication', () => {
 
   for (const { name, settings } of [
     { name: 'no model', settings: { models: { providers: {} } } },
+    { name: 'cloud-managed default with stored credentials and a local alternative', settings: managedModel },
+    { name: 'cloud-managed default without exposed credentials', settings: {
+      models: { ...managedModel.models, providers: { 'custom-team-relay': { enabled: true, managedByCloud: true } } },
+    } },
     { name: 'disabled default provider', settings: { models: { ...configuredModel.models, providers: { xiaomi: { enabled: false, apiKeyConfigured: true } } } } },
     { name: 'default provider without credentials', settings: { models: { ...configuredModel.models, providers: { xiaomi: { enabled: true, apiKeyConfigured: false } } } } },
   ]) {
@@ -538,8 +554,10 @@ describe('ChatView send authentication', () => {
       const input = screen.getByLabelText('chat-input-field') as HTMLInputElement;
       fireEvent.change(input, { target: { value: prompt } });
       fireEvent.submit(screen.getByTestId('chat-input'));
-      await waitFor(() => expect(useAuthStore.getState().showAuthModal).toBe(true));
-      expect(sendMessageMock).not.toHaveBeenCalled();
+      await waitFor(() => {
+        expect(sendMessageMock).not.toHaveBeenCalled();
+        expect(useAuthStore.getState().showAuthModal).toBe(true);
+      });
       expect(input.value).toBe(prompt);
     });
   }
