@@ -12,6 +12,7 @@ import { recordBackgroundTaskStopNote } from '../services/commandCenter/backgrou
 // 时回填状态与结果。getStatus / await 凭 agentId 查状态、取结果。
 // ============================================================================
 
+import { resolveStoppedTaskOutcome } from '../services/commandCenter/sessionTaskStopConclusion';
 import { describeSubagentStopReason } from './subagentFailureReason';
 import { randomUUID } from 'node:crypto';
 import type { SubagentResult } from './subagentExecutorTypes';
@@ -271,7 +272,12 @@ export class BackgroundSubagentRegistry {
   ): Promise<SubagentResult | undefined> {
     return (async (): Promise<SubagentResult | undefined> => {
       try {
-        const result = await promise;
+        const returned = await promise;
+        const empty = returned.success && !returned.output.trim()
+          ? resolveStoppedTaskOutcome({ status: 'completed', detail: '' }) : undefined;
+        const result: SubagentResult = empty
+          ? { ...returned, success: false, output: empty.detail, error: empty.detail, stopKind: 'no_conclusion' }
+          : returned;
         const entry = this.entries.get(agentId);
         if (entry) {
           entry.status = result.success ? 'completed' : 'failed';
@@ -421,16 +427,6 @@ export class BackgroundSubagentRegistry {
       runId: input.runId,
       treeId: input.treeId,
     });
-    const cancelled = entry.failureCode === AgentFailureCode.CancelledByUser
-      || entry.failureCode === AgentFailureCode.CancelledByParent;
-    if (entry.status === 'failed' && entry.sessionId && !cancelled) {
-      try {
-        await recordBackgroundTaskStopNote(entry.sessionId, record.title, entry.error ?? record.summary, {
-          taskId: entry.agentId,
-          kind: entry.result?.stopKind ?? 'error',
-        });
-      } catch (error) { logger.warn('Failed to record background stop note', error); }
-    }
     if (!this.queuedNotificationKeys.has(record.dedupeKey)) {
       this.queuedNotificationKeys.add(record.dedupeKey);
       this.pendingNotifications.push(record);
@@ -488,16 +484,6 @@ export class BackgroundSubagentRegistry {
       }),
       dedupeKey: `${input.runId}:stall:${input.epoch}`,
     };
-    const cancelled = entry.failureCode === AgentFailureCode.CancelledByUser
-      || entry.failureCode === AgentFailureCode.CancelledByParent;
-    if (entry.status === 'failed' && entry.sessionId && !cancelled) {
-      try {
-        await recordBackgroundTaskStopNote(entry.sessionId, record.title, entry.error ?? record.summary, {
-          taskId: entry.agentId,
-          kind: entry.result?.stopKind ?? 'error',
-        });
-      } catch (error) { logger.warn('Failed to record background stop note', error); }
-    }
     if (!this.queuedNotificationKeys.has(record.dedupeKey)) {
       this.queuedNotificationKeys.add(record.dedupeKey);
       this.pendingNotifications.push(record);

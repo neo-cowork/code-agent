@@ -585,7 +585,7 @@ export class SessionCommandCenter {
     if (event.type === 'tool_call_end') {
       const result = event.data as ToolResult;
       const tool = this.toolNamesByCallId.get(`${taskId}:${result.toolCallId}`);
-      if (tool === 'Browser' && typeof result.output === 'string') {
+      if ((tool === 'Browser' || tool === 'browser_action' || tool === 'browser_navigate') && typeof result.output === 'string') {
         const page = browserPageFromOutput(result.output);
         if (page) this.lastUrlByTask.set(taskId, page);
       }

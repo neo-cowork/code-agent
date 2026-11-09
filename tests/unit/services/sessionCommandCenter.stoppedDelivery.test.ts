@@ -12,6 +12,7 @@ const h = vi.hoisted(() => ({
   db: undefined as unknown as Database.Database,
   variant: 'step_cap' as 'step_cap' | 'error' | 'no_conclusion' | 'completed',
   events: [] as AgentEvent[],
+  pageOutput: '',
 }));
 const storage = {
   addMessageToSession: async (sessionId: string, message: Message) => {
@@ -41,7 +42,7 @@ vi.mock('../../../src/host/agent/agentOrchestrator', () => ({
         id: 'browser-1', name: 'Browser', arguments: { action: 'navigate', url: 'https://baike.baidu.com/item/%E9%B9%88%E9%B9%95' },
       } } as AgentEvent);
       await this.options.onEvent({ type: 'tool_call_end', data: {
-        toolCallId: 'browser-1', success: true, output: 'URL: https://baike.baidu.com/item/%E9%B9%88%E9%B9%95\nTitle: 鹈鹕_百度百科',
+        toolCallId: 'browser-1', success: true, output: h.pageOutput,
       } });
       if (h.variant === 'error') throw new Error('inference provider returned 429');
       if (h.variant === 'step_cap') await this.options.onEvent({ type: 'error', data: {
@@ -51,6 +52,7 @@ vi.mock('../../../src/host/agent/agentOrchestrator', () => ({
   },
 }));
 
+import { BackgroundSubagentRegistry } from '../../../src/host/agent/backgroundSubagentRegistry';
 import { TaskManager } from '../../../src/host/task/TaskManager';
 import { SessionCommandCenter } from '../../../src/host/services/commandCenter/sessionCommandCenter';
 import { resetSessionTaskConcurrencyPoolForTest } from '../../../src/host/services/commandCenter/sessionTaskSlotLedger';
@@ -65,6 +67,7 @@ beforeEach(() => {
   h.db = new Database(':memory:');
   h.db.exec('CREATE TABLE messages (id TEXT PRIMARY KEY, sessionId TEXT, json TEXT)');
   h.events = [];
+  h.pageOutput = 'URL: https://baike.baidu.com/item/%E9%B9%88%E9%B9%95\nTitle: 鹈鹕_百度百科';
   resetSessionTaskConcurrencyPoolForTest();
   resetBackgroundTaskLedgerForTest();
   manager = new TaskManager();
@@ -113,6 +116,39 @@ describe('background stop delivery through SessionCommandCenter + TaskManager pe
     expect(nodes.find((n) => n.id === notes[0].id)).toMatchObject({ type: 'system', content: notes[0].content });
     expect(h.events.filter((e) => e.type === 'message' && e.data.metadata?.backgroundTaskStopped)).toHaveLength(1);
     console.log(`${kind}: ${JSON.stringify(notes[0])}; foreground unchanged; assistant rows=1; error nodes=0`);
+  });
+
+  it.each([
+    ['https://baike.baidu.com/item/%E9%B9%88%E9%B9%95', 'https://baike.baidu.com/item/鹈鹕'],
+    ['https://example.com/%E0%A4%A', 'https://example.com/%E0%A4%A'],
+  ])('uses a decodeURI-safe URL when the last page has no title: %s', async (url, expected) => {
+    h.pageOutput = `URL: ${url}`;
+    const notes = (await stop('step_cap')).filter((m) => m.metadata?.backgroundTaskStopped);
+    expect(notes).toHaveLength(1);
+    expect(notes[0].content).toContain(`最后停留在页面${expected}`);
+  });
+
+  it('uses the latest DOM snapshot page title after navigation', async () => {
+    h.pageOutput = 'DOM snapshot snapshot-example\nurl: https://baike.baidu.com/item/人工智能\ntitle: 人工智能_百度百科';
+    const notes = (await stop('step_cap')).filter((m) => m.metadata?.backgroundTaskStopped);
+    expect(notes[0].content).toContain('最后停留在页面「人工智能_百度百科」');
+  });
+
+  it.each(['returned_error', 'thrown_error', 'empty_success'] as const)('registry sibling %s uses the same system delivery channel', async (variant) => {
+    const registry = new BackgroundSubagentRegistry();
+    const id = registry.spawn(async () => {
+      if (variant === 'thrown_error') throw new Error('模型错误：inference provider returned 429');
+      return { success: variant === 'empty_success', output: '', error: variant === 'empty_success' ? undefined : 'inference provider returned 429', toolsUsed: [], iterations: 2 };
+    }, { sessionId: 'session-stop', title: '百科摘要', suppressIdleWake: true });
+    await registry.await(id);
+    const notes = rows().filter((m) => m.metadata?.backgroundTaskStopped);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatchObject({ role: 'system', metadata: { backgroundTaskStopped: {
+      taskId: id, kind: variant === 'empty_success' ? 'no_conclusion' : 'error',
+    } } });
+    expect(notes[0].content).toContain('继续');
+    expect(notes[0].content).not.toMatch(/429|inference|provider/);
+    expect(rows().filter((m) => m.role === 'assistant')).toHaveLength(0);
   });
 
   it('does not announce a normal completion as stopped', async () => {

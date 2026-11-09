@@ -20,8 +20,8 @@ export function readableBrowserPage(url: string, title?: string): string {
 }
 
 export function browserPageFromOutput(output: string): string | undefined {
-  const title = [...output.matchAll(/^Title: (.+)$/gm)].pop()?.[1]?.trim();
-  const url = [...output.matchAll(/^(?:URL|Navigated to): (\S+)$/gm)].pop()?.[1];
+  const title = [...output.matchAll(/^Title: (.+)$/gmi)].pop()?.[1]?.trim();
+  const url = [...output.matchAll(/^(?:URL|Navigated to): (\S+)$/gmi)].pop()?.[1];
   return title || (url && url !== 'about:blank') ? readableBrowserPage(url ?? '', title) : undefined;
 }
 
@@ -36,8 +36,8 @@ function findLastPage(messages: readonly CapMessage[]): string | undefined {
     const message = messages[i];
     if (message.role !== 'user' || typeof message.content !== 'string') continue;
     if (!message.content.startsWith('Tool results:')) continue;
-    const titles = [...message.content.matchAll(/^Title: (.+)$/gm)].map((m) => m[1].trim());
-    const urls = [...message.content.matchAll(/^(?:URL|Navigated to): (\S+)$/gm)]
+    const titles = [...message.content.matchAll(/^Title: (.+)$/gmi)].map((m) => m[1].trim());
+    const urls = [...message.content.matchAll(/^(?:URL|Navigated to): (\S+)$/gmi)]
       .map((m) => m[1])
       .filter((url) => url !== 'about:blank');
     const title = titles.filter((t) => t && t !== 'New Tab').pop();

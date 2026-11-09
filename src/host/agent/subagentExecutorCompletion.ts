@@ -228,8 +228,8 @@ export function finalizeSubagentSuccess(
 
   const noConclusion = !finalOutput && !stepCapConclusion
     ? resolveStoppedTaskOutcome({ status: 'completed', detail: '' }).detail : undefined;
-  if (stepCapConclusion || noConclusion) {
-    const stopConclusion = stepCapConclusion ?? noConclusion!;
+  const stopConclusion = stepCapConclusion ?? noConclusion;
+  if (stopConclusion) {
     terminal.status = 'failed';
     terminal.error = stopConclusion;
     return {

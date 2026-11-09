@@ -22,7 +22,7 @@ const REASON_BY_CODE: Partial<Record<AgentFailureCode, string>> = {
 /** 已经是中文的报错原样保留；英文/未知报错换成按失败码归类的白话原因。 */
 export function describeSubagentStopReason(rawError: string, code: AgentFailureCode): string {
   // 已经是中文的句子（步数用尽结论、取消说明等）本身就是给用户看的，原样放行不重复包装。
-  if (HAN_RE.test(rawError)) return rawError.trim();
+  if (HAN_RE.test(rawError) && !/\b(?:Error|Exception|provider|inference|HTTP|stack)\b/i.test(rawError)) return rawError.trim();
   const reason = REASON_BY_CODE[code] ?? '运行中遇到了意外错误';
   return `后台任务中途停止了：${reason}。你可以回复「继续」让它重试，已经看过的内容不会丢。`;
 }
