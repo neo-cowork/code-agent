@@ -1,4 +1,4 @@
- 
+import { noteFirstModelRequestPhase } from '../firstModelRequestWatch';
 // ContextAssembly - Inference orchestration and model fallback.
 import type { AgentEvent, ToolCall, ToolDefinition } from '../../../../shared/contract';
 import type { ModelResponse } from '../../../agent/loopTypes';
@@ -260,6 +260,7 @@ export function resolveMainChatModelDecision(
     });
     ctx.runtime.stats.setTurnModelDecision(emittedDecision);
   }
+  noteFirstModelRequestPhase('provider_dispatch');
   logger.info('[AgentLoop] Model decision resolved', {
     requestedProvider: emittedDecision.requestedProvider,
     requestedModel: emittedDecision.requestedModel,
@@ -268,7 +269,6 @@ export function resolveMainChatModelDecision(
     reason: emittedDecision.reason,
     billingMode: emittedDecision.billingMode,
   });
-
   return adapted;
 }
 

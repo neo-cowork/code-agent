@@ -7,6 +7,7 @@
 // ============================================================================
 
 import { PROVIDER_CONCURRENCY_LIMITS, normalizeProviderId } from '../../shared/constants';
+import { noteFirstModelRequestPhase } from '../agent/runtime/firstModelRequestWatch';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('ConcurrencyLimiter');
@@ -72,7 +73,8 @@ export class ConcurrencyLimiter {
       throw new Error('Request was cancelled');
     }
 
-    return new Promise((resolve, reject) => {
+    noteFirstModelRequestPhase('provider_queue');
+    return new Promise<void>((resolve, reject) => {
       if (signal) {
         signal.addEventListener('abort', () => {
           const idx = this.queue.findIndex(item => item.resolve === resolve);
@@ -85,7 +87,7 @@ export class ConcurrencyLimiter {
 
       this.queue.push({ resolve, reject });
       this.tryNext();
-    });
+    }).then(() => { noteFirstModelRequestPhase('provider_dispatch', 'provider_queue'); });
   }
 
   release(): void {
