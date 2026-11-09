@@ -34,7 +34,7 @@ import {
 
 import { writeTurnSnapshot } from './turnSnapshotWriter';
 import { maybePauseForStep } from './stepPause';
-import { activateMaxStepsFinalResponse, bindGoalWallClockForContext, createResourceWarning, ensureMaxStepsWrapUp } from './maxStepsFallback';
+import { activateMaxStepsFinalResponse, bindGoalWallClockForContext, createResourceWarning, createStepWarning, ensureMaxStepsWrapUp } from './maxStepsFallback';
 import { DoomLoopGuard } from './doomLoopGuard';
 import { createJevWarden } from './jevWarden';
 import { runToolStepGuardRails } from './toolStepGuardRails';
@@ -362,7 +362,9 @@ export class ConversationRuntime {
     let softValidationRetries = 0;
     let resourceFinalAttempted = false;
     const wallClock = bindGoalWallClockForContext(this.ctx);
-    const warnResources = createResourceWarning(this.ctx, (text, source) => this.contextAssembly.injectSystemMessage(text, source), wallClock.getElapsedMs);
+    const injectWarning: Parameters<typeof createResourceWarning>[1] = (text, source) => this.contextAssembly.injectSystemMessage(text, source);
+    const warnResources = createResourceWarning(this.ctx, injectWarning, wallClock.getElapsedMs);
+    const warnSteps = createStepWarning(this.ctx, injectWarning);
     let userTurnId: string | undefined;
     let terminal: RunTerminalInfo = { status: 'completed' };
     let runError: unknown;
@@ -401,6 +403,7 @@ export class ConversationRuntime {
           resourceFinalAttempted = true;
         }
         warnResources();
+        warnSteps(iterations);
 
         // Max-steps 兜底（借鉴 MiMoCode max-steps.txt）：进入最后一轮时禁用工具，
         // 强制纯文本三段式总结（已完成/未完成/建议下一步），避免步数耗尽无收尾直接断流。
