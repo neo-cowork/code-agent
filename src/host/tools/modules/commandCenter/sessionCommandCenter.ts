@@ -20,6 +20,7 @@ import {
   steerTaskSchema,
   taskStatusSchema,
 } from './sessionCommandCenter.schema';
+import { listDetachedSubagentStatuses } from './detachedSubagentStatus';
 
 const WORKSPACE_REQUIRED_MESSAGE = '没有可写的项目根，请先选择项目或添加目录。';
 
@@ -210,14 +211,19 @@ export async function executeTaskStatus(
   const session = requireSession(ctx);
   if (typeof session !== 'string') return session;
   const tasks = getSessionCommandCenter().list(session);
-  if (tasks.length === 0) return { ok: true, output: '当前会话还没有后台任务。' };
+  const detached = listDetachedSubagentStatuses(session);
+  if (tasks.length === 0 && detached.length === 0) return { ok: true, output: '当前会话还没有后台任务。' };
+  const taskLines = tasks.map((task, index) => {
+    // resultText 优先：240 字 summary 会截断「改走 Bash curl 审批」这类可执行提示（FB-577）
+    const resultText = task.resultText ?? task.summary;
+    return `${index + 1}. ${task.shortName} [${task.status}] id=${task.id}${resultText ? `：${resultText}` : ''}`;
+  });
+  const detachedLines = detached.map((agent, index) =>
+    `后台子代理 ${index + 1}. ${agent.shortName} [${agent.state}] id=${agent.id}${agent.summary ? `：${agent.summary}` : ''}`,
+  );
   return {
     ok: true,
-    output: tasks.map((task, index) => {
-      // resultText 优先：240 字 summary 会截断「改走 Bash curl 审批」这类可执行提示（FB-577）
-      const resultText = task.resultText ?? task.summary;
-      return `${index + 1}. ${task.shortName} [${task.status}] id=${task.id}${resultText ? `：${resultText}` : ''}`;
-    }).join('\n'),
+    output: [...taskLines, ...detachedLines].join('\n'),
     meta: sessionTaskMeta('status', tasks),
   };
 }

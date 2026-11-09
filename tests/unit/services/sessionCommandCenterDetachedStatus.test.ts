@@ -1,0 +1,122 @@
+import { EventEmitter } from 'node:events';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { TaskManager } from '../../../src/host/task/TaskManager';
+import type { ToolContext, CanUseToolFn } from '../../../src/host/protocol/tools';
+import {
+  executeTaskStatus,
+} from '../../../src/host/tools/modules/commandCenter/sessionCommandCenter';
+import {
+  getSessionCommandCenter,
+  resetSessionCommandCenterForTest,
+} from '../../../src/host/services/commandCenter/sessionCommandCenter';
+import { getBackgroundSubagentRegistry } from '../../../src/host/agent/backgroundSubagentRegistry';
+import { getSpawnGuard, resetSpawnGuard } from '../../../src/host/agent/spawnGuard';
+import type { SubagentResult } from '../../../src/host/agent/subagentExecutorTypes';
+
+const taskManagerHolder = vi.hoisted(() => ({ manager: undefined as unknown }));
+vi.mock('../../../src/host/task/TaskManager', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getTaskManager: () => taskManagerHolder.manager,
+}));
+
+class FakeTaskManager extends EventEmitter {
+  observeAgentEvents(): () => void {
+    return () => undefined;
+  }
+}
+
+const allow: CanUseToolFn = async () => ({ allow: true });
+
+function context(sessionId: string): ToolContext {
+  return {
+    sessionId,
+    abortSignal: new AbortController().signal,
+  } as unknown as ToolContext;
+}
+
+function result(output: string): SubagentResult {
+  return { success: true, output, toolsUsed: [], iterations: 1 };
+}
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((accept) => { resolve = accept; });
+  return { promise, resolve };
+}
+
+describe('executeTaskStatus detached subagents', () => {
+  beforeEach(() => {
+    taskManagerHolder.manager = new FakeTaskManager() as unknown as TaskManager;
+    resetSessionCommandCenterForTest();
+    resetSpawnGuard();
+  });
+
+  afterEach(() => {
+    getSessionCommandCenter();
+    resetSessionCommandCenterForTest();
+    resetSpawnGuard();
+    taskManagerHolder.manager = undefined;
+  });
+
+  it('reports a running registry subagent through the production entry', async () => {
+    const sessionId = 'detached-status-registry-running';
+    const pending = deferred<SubagentResult>();
+    const agentId = getBackgroundSubagentRegistry().spawn(() => pending.promise, {
+      sessionId,
+      title: 'Folder A',
+    });
+
+    const status = await executeTaskStatus({}, context(sessionId), allow);
+
+    expect(status).toMatchObject({ ok: true });
+    expect(status.output).toContain(`后台子代理 1. FA [running] id=${agentId}`);
+    expect(status.output).not.toContain('当前会话还没有后台任务');
+    pending.resolve(result('folder A summary'));
+    await getBackgroundSubagentRegistry().await(agentId);
+  });
+
+  it('reports the registry result after a subagent finishes between two calls', async () => {
+    const sessionId = 'detached-status-registry-finished';
+    const pending = deferred<SubagentResult>();
+    const agentId = getBackgroundSubagentRegistry().spawn(() => pending.promise, {
+      sessionId,
+      title: 'Folder B',
+    });
+
+    const before = await executeTaskStatus({}, context(sessionId), allow);
+    pending.resolve(result('folder B summary'));
+    await getBackgroundSubagentRegistry().await(agentId);
+    const after = await executeTaskStatus({}, context(sessionId), allow);
+
+    expect(before.output).toContain('[running]');
+    expect(after.output).toContain(`后台子代理 1. FB [done] id=${agentId}：folder B summary`);
+  });
+
+  it('reports a SpawnGuard subagent while running and after completion', async () => {
+    const sessionId = 'detached-status-spawn-guard';
+    const pending = deferred<SubagentResult>();
+    const agentId = 'agent_explore_detached-status';
+    getSpawnGuard().register(
+      agentId,
+      'explore',
+      'Folder C',
+      pending.promise,
+      new AbortController(),
+      { treeId: sessionId, completion: { title: 'Folder C' } },
+    );
+
+    const before = await executeTaskStatus({}, context(sessionId), allow);
+    pending.resolve(result('folder C summary'));
+    await pending.promise;
+    const after = await executeTaskStatus({}, context(sessionId), allow);
+
+    expect(before.output).toContain(`后台子代理 1. FC [running] id=${agentId}`);
+    expect(after.output).toContain(`后台子代理 1. FC [done] id=${agentId}：folder C summary`);
+  });
+
+  it('keeps the existing empty text when no task registry has this session', async () => {
+    const status = await executeTaskStatus({}, context('detached-status-empty'), allow);
+
+    expect(status).toEqual({ ok: true, output: '当前会话还没有后台任务。' });
+  });
+});
