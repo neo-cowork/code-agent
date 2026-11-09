@@ -111,6 +111,21 @@ describe('ModelSettings management helpers', () => {
     expect(row.selectedModelLabel).toBe('GPT-5.4 Mini');
   });
 
+  it('uses the localized provider name when the stored displayName is still the built-in default', () => {
+    const rows = buildProviderManagementRows({
+      providers: [{ ...openaiProvider, name: '本地化名称' }],
+      config: { ...config, provider: 'moonshot', model: 'kimi-k2.5' },
+      providerConfigs: { openai: { enabled: false, displayName: 'OpenAI' } },
+    });
+    expect(rows[0].name).toBe('本地化名称');
+    const renamed = buildProviderManagementRows({
+      providers: [{ ...openaiProvider, name: '本地化名称' }],
+      config: { ...config, provider: 'moonshot', model: 'kimi-k2.5' },
+      providerConfigs: { openai: { enabled: false, displayName: 'My Relay' } },
+    });
+    expect(renamed[0].name).toBe('My Relay');
+  });
+
   it('pins the default provider to the top of the management list', () => {
     const rows = buildProviderManagementRows({
       providers: [moonshotProvider, openaiProvider],

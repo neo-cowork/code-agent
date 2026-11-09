@@ -236,7 +236,8 @@ export function buildProviderManagementRows({
     const rowDefaultModel = providerConfig?.model || registryInfo?.defaultModel || runtimeModels[0]?.id || '-';
     return {
       id: provider.id,
-      name: providerConfig?.displayName || provider.name,
+      // 存的名字还是内置英文默认名（没被用户改过）→ 用已本地化的 provider.name，避免中文页冒出 "Custom Provider"
+      name: providerConfig?.displayName && providerConfig.displayName !== registryInfo?.displayName ? providerConfig.displayName : provider.name,
       ...(normalizeProviderIcon(providerConfig?.icon) ? { icon: normalizeProviderIcon(providerConfig?.icon) } : {}),
       favorite: providerConfig?.favorite === true,
       description: `${provider.description}${providerConfig?.protocol === 'claude' ? labels.claudeProtocolSuffix : ''}`,

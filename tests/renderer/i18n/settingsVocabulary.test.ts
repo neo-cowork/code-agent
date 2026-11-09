@@ -63,6 +63,7 @@ describe('settingsVocabulary', () => {
     ]) {
       expect(s, s).not.toMatch(ENGLISH_TERMS);
     }
+    expect(m.providers.custom.name).toBe('自定义模型服务');
     expect(m.connection.baseUrlHint).toContain('/v1');
     expect(m.connection.baseUrlHint).toContain('Claude');
     expect(collect(en.settings.model.list).join('|')).toContain('Provider');
