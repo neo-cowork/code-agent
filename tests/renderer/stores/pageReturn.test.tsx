@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 let sessions: typeof import('../../../src/renderer/stores/sessionStore');
 let app: typeof import('../../../src/renderer/stores/appStore');
 let entry: typeof import('../../../src/renderer/hooks/useLedgerDeepLink');
 let position: typeof import('../../../src/renderer/hooks/usePageReturn');
+let pagehideListeners: MockInstance<typeof window.addEventListener>;
 const key = 'neo:page-return';
 const rawSession = (id: string, updatedAt: number) => ({
   id, title: id, createdAt: 1, updatedAt, messageCount: 2, turnCount: 1,
@@ -33,6 +34,7 @@ function seed(page: object, sessionId: string | null = 'older') {
 
 beforeEach(async () => {
   vi.resetModules();
+  pagehideListeners = vi.spyOn(window, 'addEventListener');
   window.history.replaceState({}, '', '/');
   sessionStorage.clear();
   const invoke = vi.fn(async (_domain: string, action: string, args?: { sessionId?: string }) => {
@@ -51,7 +53,13 @@ beforeEach(async () => {
   entry = await import('../../../src/renderer/hooks/useLedgerDeepLink');
   position = await import('../../../src/renderer/hooks/usePageReturn');
 });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(() => {
+  cleanup();
+  for (const [type, listener, options] of pagehideListeners.mock.calls) {
+    if (type === 'pagehide') window.removeEventListener(type, listener, options);
+  }
+  vi.restoreAllMocks();
+});
 
 describe('app startup return-to through useLedgerDeepLink and real session initializer', () => {
   it('restore automation+runs after init and a second same-id startup switch', async () => {
@@ -178,6 +186,18 @@ describe('app startup return-to through useLedgerDeepLink and real session initi
     await act(async () => { await sessions.useSessionStore.getState().switchSession('latest'); });
     expect(app.useAppStore.getState().showCronCenter).toBe(false);
     expect(sessions.useSessionStore.getState().currentSessionId).toBe('latest');
+  });
+
+  it('pagehide writer survives App unmount into ErrorBoundary', async () => {
+    await boot();
+    render(<VisibleRuns />);
+    act(() => { app.useAppStore.getState().openCronCenterRuns(); });
+    cleanup(); // ErrorBoundary has replaced the App; its reload button still uses pagehide.
+    expect(sessionStorage.getItem(key)).toBeNull();
+    window.dispatchEvent(new Event('pagehide'));
+    expect(JSON.parse(sessionStorage.getItem(key)!)).toMatchObject({
+      position: { page: 'automation', runs: true },
+    });
   });
 
   it('StrictMode consumes once and still restores', async () => {

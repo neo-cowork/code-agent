@@ -89,6 +89,8 @@ export function usePageReturn(): void {
   const pending = useRef<Snapshot | null | undefined>(undefined);
   useEffect(() => {
     if (pending.current === undefined) pending.current = consume();
+    // A document-lifetime listener also survives App unmounting into ErrorBoundary.
+    // addEventListener deduplicates this module-stable callback during StrictMode replay.
     window.addEventListener('pagehide', write);
     const snapshot = pending.current;
     let active = true;
@@ -152,7 +154,7 @@ export function usePageReturn(): void {
     }
     return () => {
       stop();
-      window.removeEventListener('pagehide', write);
+      // Keep the writer for an ErrorBoundary reload; the document owns its lifetime.
     };
   }, []);
 }
