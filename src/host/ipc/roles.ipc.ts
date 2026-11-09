@@ -55,6 +55,7 @@ import {
   skipFirstWake,
   isSafeRoleId,
   trashUserRole,
+  listTrashedRoles,
   restoreTrashedRole,
 } from '../services/roleAssets';
 import { writeRoleProactivityConfig } from '../services/roleAssets/roleProactivityWrite';
@@ -715,6 +716,7 @@ const rolesHandlers: RawDomainRouteHandlers<RolesDomainRequest, void> = {
     });
     return { success: true, data: { roleId: result.roleId } };
   },
+  listDeletedRoles: async (_ctx, _payload) => ({ success: true, data: await listTrashedRoles() }),
   // --- 对话式建角色：草稿队列（role-creation-flow） ---
   listDrafts: async (_ctx, _payload) => {
     return { success: true, data: await listRoleDrafts() };

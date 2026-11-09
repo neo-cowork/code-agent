@@ -174,6 +174,37 @@ describe('SessionManager cloud sync notifications', () => {
     });
   });
 
+  it('fresh-user mode skips the cloud pull while inactive mode still pulls', async () => {
+    const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'session-manager-fresh-user-'));
+    const cloudRow = {
+      id: 'remote-fresh', title: 'Remote', model_provider: 'openai', model_name: 'gpt-5',
+      working_directory: '/repo/cloud', created_at: 10, updated_at: 20, is_deleted: false,
+    };
+    supabaseLimitMock.mockResolvedValue({ data: [cloudRow], error: null });
+    const { SessionManager } = await import('../../../../src/host/services/infra/sessionManager');
+    const manager = new SessionManager();
+
+    vi.stubEnv('CODE_AGENT_FRESH_USER', 'fresh-test');
+    vi.stubEnv('CODE_AGENT_BUNDLE_ID', 'com.linchen.code-agent.dev');
+    vi.stubEnv('CODE_AGENT_DATA_DIR', dataDir);
+    try {
+      await manager.listSessions();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(supabaseFromMock).not.toHaveBeenCalled();
+      expect(dbMock.createSessionWithId).not.toHaveBeenCalled();
+
+      vi.stubEnv('CODE_AGENT_FRESH_USER', '');
+      await manager.listSessions();
+      await vi.waitFor(() => {
+        expect(supabaseFromMock).toHaveBeenCalledWith('sessions');
+        expect(dbMock.createSessionWithId).toHaveBeenCalled();
+      });
+    } finally {
+      vi.unstubAllEnvs();
+      await fs.rm(dataDir, { recursive: true, force: true });
+    }
+  });
+
   it('resolves a canonical Project before writing a newly discovered cloud session', async () => {
     supabaseLimitMock.mockResolvedValue({
       data: [{

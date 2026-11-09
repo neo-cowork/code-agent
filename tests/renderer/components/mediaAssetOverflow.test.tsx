@@ -57,7 +57,7 @@ describe('对话图产物按钮条：固定折叠规则', () => {
     expect(screen.getByTestId('media-asset-overflow-more')).toBeTruthy();
 
     // 四个次要动作不能作为条上按钮出现（菜单未展开时它们根本不该被渲染）
-    for (const title of ['放大查看', '打开', '保存', '在 Finder 中显示']) {
+    for (const title of ['放大查看', '打开', '保存', '在访达中显示']) {
       expect(screen.queryByTitle(title)).toBeNull();
     }
   });
