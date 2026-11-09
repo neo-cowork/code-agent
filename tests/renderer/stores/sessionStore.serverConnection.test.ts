@@ -30,6 +30,10 @@ describe('createSession during a network outage', () => {
       const toast = useToastStore.getState().toasts.at(-1)?.message;
       expect(toast).toContain(getServerReconnectingMessage());
       expect(toast).not.toMatch(/Load failed|TypeError/);
+      expect(toast).toBe(language === 'zh'
+        ? '新建会话失败：正在重新连接后台服务，请稍后再试'
+        : 'Failed to create session: Reconnecting to the background service — please try again in a moment');
+      if (language === 'en') expect(toast).not.toContain('新建会话失败');
       expect(useSessionStore.getState().error).toBe(getServerReconnectingMessage());
       await vi.advanceTimersByTimeAsync(timing.PROBE_INTERVAL_MS);
     }
@@ -37,6 +41,10 @@ describe('createSession during a network outage', () => {
       fetchMock.mockImplementation(async () => new Response(JSON.stringify({ error: { message: 'Business failure' } }), { status }));
       expect(await useSessionStore.getState().createSession('Weekly report')).toBeNull();
       expect(useToastStore.getState().toasts.at(-1)?.message).toContain('Business failure');
+      expect(useToastStore.getState().toasts.at(-1)?.message).toBe(language === 'zh'
+        ? '新建会话失败：Business failure'
+        : 'Failed to create session: Business failure');
+      expect(useSessionStore.getState().error).toBe('Business failure');
     }
   });
 });

@@ -10,6 +10,7 @@ import { useComposerStore } from './composerStore';
 import { isDraftOrSpaceScopeKey } from './composerScopeModel';
 import { excludeBusySessions, type DraftBusySignals } from './sessionDraftBusyGuard';
 import { toast } from '../hooks/useToast';
+import { languages } from '../i18n';
 
 const logger = createLogger('SessionCreate');
 
@@ -292,7 +293,8 @@ export async function executeCreateSession(
     logger.error('Failed to create session', error);
     const reason = error instanceof Error ? error.message : 'Failed to create session';
     set({ error: reason, isLoading: false });
-    toast.error(`新建会话失败：${reason}`);
+    const prefix = languages[useAppStore.getState().language].sidebar.createSessionFailedPrefix;
+    toast.error(`${prefix}${reason}`);
     return null;
   }
 }
