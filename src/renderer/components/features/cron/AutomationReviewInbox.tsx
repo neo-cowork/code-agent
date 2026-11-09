@@ -582,6 +582,11 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                                 {maxRunsReached.summary ?? cc.inboxMaxRunsReached.replace('{count}', String(maxRunsReached.maxRuns))}
                               </div>
                             )}
+                            {record.config?.pendingReview?.connectorLost && (
+                              <div className="truncate text-[11px] text-badge-warning" data-testid="automation-review-connector-lost">
+                                {record.config.pendingReview.connectorLost.summary}
+                              </div>
+                            )}
                             {urgencyRaw && (
                               <div className="whitespace-pre-wrap break-words text-[11px] text-zinc-500" data-testid="automation-urgency-raw">
                                 {cc.inboxUrgencyRawPrefix}{urgencyRaw}
