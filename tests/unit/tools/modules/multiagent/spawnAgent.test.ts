@@ -256,6 +256,30 @@ describe('spawn_agent dispatch to protocol-native service', () => {
     expect(onProgress).toHaveBeenCalledWith({ stage: 'completing', percent: 100 });
   });
 
+  it('stores the report only once while preserving artifact identity', async () => {
+    const marker = 'A tested recovery plan is missing.';
+    executeSpawnAgentMock.mockResolvedValue({ success: true, output: marker });
+    const handler = await spawnAgentModule.createHandler();
+    const result = await handler.execute({ role: 'explore', task: 'Review risks' }, makeCtx(), allowAll);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(JSON.stringify(result).split(marker)).toHaveLength(2);
+    expect(result.meta?.artifact).toMatchObject({
+      artifactId: expect.any(String), name: 'spawn_agent result', contentLength: marker.length,
+    });
+  });
+
+  it('stores the foreground budget hand-off output once', async () => {
+    const marker = 'Agent [Explorer] exceeded foreground budget and continues in background:';
+    executeSpawnAgentMock.mockResolvedValue({ success: true, output: `${marker}\n- foreground_budget_ms=1000` });
+    const handler = await spawnAgentModule.createHandler();
+    const result = await handler.execute({ role: 'explore', task: 'Review risks' }, makeCtx(), allowAll);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(JSON.stringify(result).split(marker)).toHaveLength(2);
+    expect(result.meta?.artifacts).toBeUndefined();
+  });
+
   it('normalizes public role aliases before dispatching to native spawn', async () => {
     executeSpawnAgentMock.mockResolvedValue({
       success: true,
