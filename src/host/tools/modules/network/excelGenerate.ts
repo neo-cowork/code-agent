@@ -34,6 +34,13 @@ interface ExcelGenerateParams {
   sheet_name?: string;
 }
 
+function stripInlineMarkdown(text: string): string {
+  return text
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/`([^`]+)`/g, '$1');
+}
+
 interface ThemeConfig {
   headerBgColor: string;
   headerFontColor: string;
@@ -254,7 +261,7 @@ export async function executeExcelGenerate(
     const worksheet = workbook.addWorksheet(sheet_name);
     const headers = Object.keys(tableData[0]);
 
-    worksheet.addRow([title]);
+    worksheet.addRow([stripInlineMarkdown(title)]);
     const titleRow = worksheet.getRow(1);
     titleRow.font = {
       bold: true,
@@ -267,7 +274,7 @@ export async function executeExcelGenerate(
 
     worksheet.addRow([]);
 
-    worksheet.addRow(headers);
+    worksheet.addRow(headers.map(stripInlineMarkdown));
     const headerRow = worksheet.getRow(3);
     headerRow.font = {
       bold: true,
@@ -287,7 +294,10 @@ export async function executeExcelGenerate(
     });
 
     tableData.forEach((row, rowIdx) => {
-      const values = headers.map((h) => row[h]);
+      const values = headers.map((h) => {
+        const value = row[h];
+        return typeof value === 'string' ? stripInlineMarkdown(value) : value;
+      });
       const excelRow = worksheet.addRow(values);
 
       excelRow.fill = {

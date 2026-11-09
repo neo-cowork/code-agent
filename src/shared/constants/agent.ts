@@ -74,7 +74,8 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // sys-v105：压缩 task_status 描述，保持模型可见的后台子代理提示在上下文预算内。
 // sys-v106：N-FIX-BROWSER-TASK-CONTEXT-BLOAT-SNAPSHOT——get_dom_snapshot 改紧凑逐行输出（refId | tag | label）+
 // 字符预算 + offset 分页；browser_action schema 新增 offset，targetRef 描述改为 refId 行。
-export const PROMPT_VERSION = 'sys-v106' as const;
+// sys-v107：docx_generate 明确任务文件夹就是当前工作目录，避免从输入文件目录推导输出路径。
+export const PROMPT_VERSION = 'sys-v107' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =
