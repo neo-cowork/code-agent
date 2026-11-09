@@ -19,7 +19,7 @@ describe('generateContextSuggestions', () => {
     await generateContextSuggestions(messages);
     const prompt = quickTask.mock.calls[0][0] as string;
     expect(prompt).toContain('尊重用户在对话中提出的任何拒绝、禁止、限制或偏好，后说的优先');
-    expect(prompt).toContain('不要出现命令行、终端、端口、进程、shell 等字眼');
+    expect(prompt).toContain('不要出现命令行、终端、端口、进程、shell、ping、工具、后台任务、代理等技术字眼');
     expect(prompt).toContain('请不要用 Bash 或 curl'); // 9th-from-last message, outside old 6-window
     expect(prompt).toContain('TAIL_MARK'); // beyond old 300-char cut
   });
@@ -51,6 +51,29 @@ describe('generateContextSuggestions', () => {
       { role: 'assistant', content: 'ok' },
     ]);
     expect(out.map(s => s.text)).toEqual(['Check the occurrence log']);
+  });
+
+  it('FB-704 set: filter drops the curl chip; port/process chips are guarded only by the prompt rule', async () => {
+    reply('重新执行该 curl 命令\n检查 18931 端口是否在监听\n查看占用端口的进程');
+    const out = await generateContextSuggestions([
+      { role: 'user', content: '读一下 http://192.168.1.20:18931/status' },
+      { role: 'assistant', content: '我用 curl 试了，连不上' },
+      { role: 'user', content: '不要用 Bash 或 curl，公司电脑拦命令行，原因是安全策略' },
+      { role: 'assistant', content: '好的，不用命令行' },
+    ]);
+    // The user only banned bash/curl: the deterministic filter removes just the curl chip.
+    expect(out.map(s => s.text)).toEqual(['检查 18931 端口是否在监听', '查看占用端口的进程']);
+    // The prompt (not the filter) is what keeps port/process wording out of chips.
+    expect(quickTask.mock.calls[0][0]).toContain('不要出现命令行、终端、端口、进程');
+  });
+
+  it('accepted over-block: a non-ban phrase like "不能打开 PDF" also drops chips naming pdf', async () => {
+    reply('把 PDF 转成文字\n直接贴文字内容给我');
+    const out = await generateContextSuggestions([
+      { role: 'user', content: '我不能打开 PDF 文件' },
+      { role: 'assistant', content: '好的' },
+    ]);
+    expect(out.map(s => s.text)).toEqual(['直接贴文字内容给我']);
   });
 
   it('leaves suggestions untouched when no ban is present', async () => {
