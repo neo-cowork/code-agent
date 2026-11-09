@@ -9,24 +9,24 @@ import type {
   LarkChannelConfig,
 } from '@shared/contract/channel';
 
-export type ChannelRequiredField = 'name' | 'appId' | 'appSecret' | 'botToken';
+export type ChannelRequiredField = 'name' | 'appId' | 'appCredential' | 'botToken';
 export type ChannelFormErrors = Partial<Record<ChannelRequiredField, string>>;
 
 interface ChannelFormValues {
   name: string;
   type: ChannelType;
   appId: string;
-  appSecret: string;
+  appCredential: string;
   botToken: string;
 }
 
 interface ChannelConfigValues {
   type: ChannelType;
   apiPort: string;
-  apiKey: string;
+  httpCredential: string;
   enableCors: boolean;
   appId: string;
-  appSecret: string;
+  appCredential: string;
   encryptKey: string;
   verificationToken: string;
   webhookPort: string;
@@ -44,7 +44,7 @@ interface ChannelConfigValues {
 interface ChannelRequiredFieldCopy {
   name: string;
   appId: string;
-  appSecret: string;
+  appCredential: string;
   botToken: string;
 }
 
@@ -57,10 +57,10 @@ interface ChannelRequiredFieldProps {
   onChange: (value: string) => void;
   placeholder?: string;
   type?: InputProps['type'];
-  showSecret?: boolean;
-  onToggleSecret?: () => void;
-  showSecretLabel?: string;
-  hideSecretLabel?: string;
+  showSensitiveValue?: boolean;
+  onToggleSensitiveValue?: () => void;
+  showSensitiveValueLabel?: string;
+  hideSensitiveValueLabel?: string;
 }
 
 export const ChannelRequiredField: React.FC<ChannelRequiredFieldProps> = ({
@@ -72,10 +72,10 @@ export const ChannelRequiredField: React.FC<ChannelRequiredFieldProps> = ({
   onChange,
   placeholder,
   type = 'text',
-  showSecret = false,
-  onToggleSecret,
-  showSecretLabel,
-  hideSecretLabel,
+  showSensitiveValue = false,
+  onToggleSensitiveValue,
+  showSensitiveValueLabel,
+  hideSensitiveValueLabel,
 }) => {
   const field = (
     <FormField label={label} required error={error} htmlFor={id}>
@@ -90,18 +90,18 @@ export const ChannelRequiredField: React.FC<ChannelRequiredFieldProps> = ({
     </FormField>
   );
 
-  if (!onToggleSecret) return field;
+  if (!onToggleSensitiveValue) return field;
 
   return (
     <div className="relative">
       {field}
       <button
         type="button"
-        onClick={onToggleSecret}
+        onClick={onToggleSensitiveValue}
         className="absolute right-3 top-8 text-zinc-500 hover:text-zinc-400"
-        aria-label={showSecret ? hideSecretLabel : showSecretLabel}
+        aria-label={showSensitiveValue ? hideSensitiveValueLabel : showSensitiveValueLabel}
       >
-        {showSecret ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+        {showSensitiveValue ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
       </button>
     </div>
   );
@@ -127,7 +127,7 @@ export function validateChannelRequiredFields(
 
   if (values.type === 'feishu' || values.type === 'lark') {
     if (!values.appId.trim()) errors.appId = copy.appId;
-    if (!values.appSecret.trim()) errors.appSecret = copy.appSecret;
+    if (!values.appCredential.trim()) errors.appCredential = copy.appCredential;
   }
 
   if (values.type === 'telegram' && !values.botToken.trim()) {
@@ -144,7 +144,7 @@ export function buildChannelConfig(values: ChannelConfigValues): ChannelAccountC
     return {
       type,
       port: parseInt(values.apiPort) || 8080,
-      apiKey: values.apiKey || crypto.randomUUID().replace(/-/g, ''),
+      apiKey: values.httpCredential || crypto.randomUUID().replace(/-/g, ''),
       enableCors: values.enableCors,
       privacyMode,
     };
@@ -154,7 +154,7 @@ export function buildChannelConfig(values: ChannelConfigValues): ChannelAccountC
     return {
       type,
       appId: values.appId,
-      appSecret: values.appSecret,
+      appSecret: values.appCredential,
       encryptKey: values.encryptKey || undefined,
       verificationToken: values.verificationToken || undefined,
       useWebSocket: values.useWebSocket,

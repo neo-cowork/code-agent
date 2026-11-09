@@ -44,8 +44,7 @@ import { TelegramGroupAccessPrerequisite, TelegramPrivacyModeBadge, TelegramPriv
 import { FeishuSharedAppHint } from './FeishuSharedAppHint';
 import { FeishuLastInboundLine } from './FeishuLastInboundLine';
 import {
-  buildChannelConfig, ChannelRequiredField, clearChannelFormError, validateChannelRequiredFields,
-  type ChannelFormErrors,
+  buildChannelConfig, ChannelRequiredField, clearChannelFormError, validateChannelRequiredFields, type ChannelFormErrors,
 } from './channelFormValidation';
 
 const logger = createLogger('ChannelsSettings');
@@ -72,8 +71,9 @@ export function getChannelPrivacyModeCopy(
   mode: ChannelPrivacyMode,
   options: ChannelPrivacyModeOption[] = CHANNEL_PRIVACY_MODE_OPTIONS,
 ): { label: string; description: string } {
-  return options.find((option) => option.value === mode)
-    ?? options[0]!;
+  const copy = options.find((option) => option.value === mode) ?? options[0];
+  if (!copy) throw new Error('Channel privacy mode options are empty');
+  return copy;
 }
 
 export function getChannelTypeLabel(
@@ -282,11 +282,11 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
     e.preventDefault();
 
     const nextErrors = validateChannelRequiredFields(
-      { name, type, appId, appSecret, botToken },
+      { name, type, appId, appCredential: appSecret, botToken },
       {
         name: channelText.modal.nameRequiredError,
         appId: channelText.modal.appIdRequiredError,
-        appSecret: channelText.modal.appSecretRequiredError,
+        appCredential: channelText.modal.appCredentialRequiredError,
         botToken: channelText.modal.botTokenRequiredError,
       },
     );
@@ -294,7 +294,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
       setErrors(nextErrors);
       const firstMissingField = Object.keys(nextErrors)[0] as keyof ChannelFormErrors;
       const firstMissingInput = {
-        name: nameInputRef, appId: appIdInputRef, appSecret: appSecretInputRef, botToken: botTokenInputRef,
+        name: nameInputRef, appId: appIdInputRef, appCredential: appSecretInputRef, botToken: botTokenInputRef,
       }[firstMissingField];
       firstMissingInput?.current?.focus();
       return;
@@ -303,10 +303,10 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
     const config = buildChannelConfig({
       type,
       apiPort,
-      apiKey,
+      httpCredential: apiKey,
       enableCors,
       appId,
-      appSecret,
+      appCredential: appSecret,
       encryptKey,
       verificationToken,
       webhookPort,
@@ -457,16 +457,16 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
               />
               <ChannelRequiredField
                 label="App Secret"
-                error={errors.appSecret}
+                error={errors.appCredential}
                 id={`${formId}-app-secret`}
                 inputRef={appSecretInputRef}
                 value={appSecret}
-                onChange={updateField('appSecret', setAppSecret)}
+                onChange={updateField('appCredential', setAppSecret)}
                 type={showSecrets ? 'text' : 'password'}
-                showSecret={showSecrets}
-                onToggleSecret={() => setShowSecrets(!showSecrets)}
-                showSecretLabel={channelText.modal.showSecret}
-                hideSecretLabel={channelText.modal.hideSecret}
+                showSensitiveValue={showSecrets}
+                onToggleSensitiveValue={() => setShowSecrets(!showSecrets)}
+                showSensitiveValueLabel={channelText.modal.showSensitiveValue}
+                hideSensitiveValueLabel={channelText.modal.hideSensitiveValue}
               />
               <div className="rounded-lg border border-zinc-700 bg-zinc-800 p-3">
                 <label className="flex items-center gap-2 text-sm text-zinc-300">
@@ -562,10 +562,10 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
                 value={botToken}
                 onChange={updateField('botToken', setBotToken)}
                 type={showSecrets ? 'text' : 'password'}
-                showSecret={showSecrets}
-                onToggleSecret={() => setShowSecrets(!showSecrets)}
-                showSecretLabel={channelText.modal.showToken}
-                hideSecretLabel={channelText.modal.hideToken}
+                showSensitiveValue={showSecrets}
+                onToggleSensitiveValue={() => setShowSecrets(!showSecrets)}
+                showSensitiveValueLabel={channelText.modal.showToken}
+                hideSensitiveValueLabel={channelText.modal.hideToken}
                 placeholder={channelText.modal.botTokenPlaceholder}
               />
               <div>

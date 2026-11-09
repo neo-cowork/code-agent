@@ -36,8 +36,8 @@ describe('ChannelModal required-field validation', () => {
   for (const [language, locale] of [['zh', zh], ['en', en]] as const) {
     for (const [type, errorKeys] of [
       ['http-api', ['nameRequiredError']],
-      ['feishu', ['nameRequiredError', 'appIdRequiredError', 'appSecretRequiredError']],
-      ['lark', ['nameRequiredError', 'appIdRequiredError', 'appSecretRequiredError']],
+      ['feishu', ['nameRequiredError', 'appIdRequiredError', 'appCredentialRequiredError']],
+      ['lark', ['nameRequiredError', 'appIdRequiredError', 'appCredentialRequiredError']],
       ['telegram', ['nameRequiredError', 'botTokenRequiredError']],
     ] as const) {
       it(`${language} ${type}: empty submit stays inline and localized`, () => {
