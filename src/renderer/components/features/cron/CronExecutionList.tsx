@@ -1,5 +1,5 @@
 import React from 'react';
-import type { CronJobDefinition, CronJobExecution } from '@shared/contract';
+import type { CronJobDefinition, CronJobExecution, CronPermissionDeniedMarker } from '@shared/contract';
 import { useI18n } from '../../../hooks/useI18n';
 import {
   formatDuration,
@@ -84,6 +84,21 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
               dailyBudget: cc.wakeSkipDailyBudget,
               quietHours: cc.wakeSkipQuietHours,
             });
+            const deniedMarker = permissionDenied
+              ? (execution.result as { permissionDenied: CronPermissionDeniedMarker }).permissionDenied
+              : undefined;
+            const deniedReasons = {
+              user: cc.permissionDeniedReasonUser,
+              timeout: cc.permissionDeniedReasonTimeout,
+              cancelled: cc.permissionDeniedReasonCancelled,
+              other: cc.permissionDeniedReasonOther,
+            };
+            const deniedSentence = deniedMarker
+              ? [...new Set(deniedMarker.steps.map((step) => step.reason))]
+                .map((reason) => cc.permissionDeniedListSentence.replace('{reason}', deniedReasons[reason]))
+                .join(' ')
+              : undefined;
+            const rowReason = deniedSentence ?? wakeSkipText;
             const costRunsOn = execution.runsOn ?? runsOnByJobId?.[execution.jobId];
             const awaitingPreview = awaitingByJobId?.get(execution.jobId)?.commandPreview;
             const isSelected = execution.id === selectedExecutionId;
@@ -139,7 +154,7 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
                     {execution.exitCode != null ? execution.exitCode : '—'}
                   </td>
                 </tr>
-                {wakeSkipText && (
+                {rowReason && (
                   <tr
                     className={`cursor-pointer transition-colors ${rowTone}`}
                     onClick={() => onSelectExecution(execution.id)}
@@ -148,9 +163,9 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
                     <td
                       colSpan={columnCount}
                       className="px-2 pb-2 text-xs text-zinc-500"
-                      data-testid="cron-wake-skip-reason"
+                      data-testid={deniedSentence ? 'cron-execution-permission-denied-reason' : 'cron-wake-skip-reason'}
                     >
-                      {wakeSkipText}
+                      {rowReason}
                     </td>
                   </tr>
                 )}
