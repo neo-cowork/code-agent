@@ -37,8 +37,45 @@ const TASK_PRIVATE_RESULT_LINE = /^- Cost:(?:\s|$)/;
 const TASK_STATS_MARKER = '\nStats:\n';
 const WAIT_AGENT_STATS_COST = /^(\s+Stats:.*?),\s+\$\d+(?:\.\d+)?\s*$/;
 
-/** Keep the host's orchestration receipt model-visible while hiding its private bookkeeping in UI details. */
-export function toDelegationDisplayToolCall(toolCall: ToolCall): ToolCall {
+function withoutRepeatedReport(toolCall: ToolCall): ToolCall {
+  const result = toolCall.result;
+  const metadata = result?.metadata;
+  const nested = metadata?.result;
+  if (!result?.success || typeof result.output !== 'string'
+    || metadata?.artifactRole !== 'multiagent-result'
+    || !nested || typeof nested !== 'object' || Array.isArray(nested)) return toolCall;
+  const fields = nested as Record<string, unknown>;
+  if (typeof fields.output !== 'string' || !fields.output.trim()) return toolCall;
+
+  // Compare the report itself, excluding only the producer's known receipt envelope.
+  // A matching prefix/subset is not enough: different findings must remain available.
+  const normalize = (text: string) => text.replace(/\s+/g, ' ').trim();
+  const candidate = normalize(fields.output);
+  let report = result.output.replace(/\r\n/g, '\n');
+  const envelope = /^Agent \[[^\n]+\] completed[^\n]*:\n\n/.exec(report);
+  if (envelope) {
+    const resultMarker = envelope[0].endsWith(' completed task:\n\n')
+      ? report.indexOf('\n\nResult:\n')
+      : -1;
+    const reportStart = resultMarker >= 0
+      ? resultMarker + '\n\nResult:\n'.length
+      : envelope[0].length;
+    const statsStart = report.lastIndexOf(TASK_STATS_MARKER);
+    report = report.slice(reportStart, statsStart >= reportStart ? statsStart : undefined);
+  }
+  if (normalize(result.output) !== candidate && normalize(report) !== candidate) return toolCall;
+
+  const displayFields = { ...fields };
+  delete displayFields.output;
+  return {
+    ...toolCall,
+    result: { ...result, metadata: { ...metadata, result: displayFields } },
+  };
+}
+
+/** Keep stored/model-facing receipts intact; project a single report for UI details. */
+export function toDelegationDisplayToolCall(storedToolCall: ToolCall): ToolCall {
+  const toolCall = withoutRepeatedReport(storedToolCall);
   const result = toolCall.result;
   const output = result?.output;
   if (!result || typeof output !== 'string') return toolCall;
