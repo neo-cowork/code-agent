@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({
   messages: new Map<string, any[]>(),
+  runtimeStates: new Map<string, { lastProviderUsageJson: string | null }>(),
 }));
 
 const database = vi.hoisted(() => ({
@@ -16,7 +17,15 @@ const database = vi.hoisted(() => ({
     turnCount: state.messages.get(sessionId)?.filter((message) => message.role === 'user').length ?? 0,
   })),
   getDb: vi.fn(() => null),
-  getSessionRuntimeState: vi.fn(() => null as { lastProviderUsageJson: string | null } | null),
+  getSessionRuntimeState: vi.fn((sessionId: string) => state.runtimeStates.get(sessionId) ?? null),
+  saveSessionRuntimeState: vi.fn((sessionId: string, patch: { lastProviderUsageJson?: string | null }) => {
+    const previous = state.runtimeStates.get(sessionId);
+    state.runtimeStates.set(sessionId, {
+      lastProviderUsageJson: patch.lastProviderUsageJson !== undefined
+        ? patch.lastProviderUsageJson
+        : (previous?.lastProviderUsageJson ?? null),
+    });
+  }),
   getMessageById: vi.fn(() => null as any),
   getRecentMessages: vi.fn((sessionId: string, messageLimit: number) => (
     (state.messages.get(sessionId) ?? []).slice(-messageLimit)
@@ -189,8 +198,8 @@ describe('SessionManager context health invalidation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     state.messages.clear();
+    state.runtimeStates.clear();
     getContextHealthService().clear();
-    database.getSessionRuntimeState.mockReturnValue(null);
   });
 
   it('invalidates health when replaceMessages removes persisted history', async () => {
@@ -224,7 +233,7 @@ describe('SessionManager context health invalidation', () => {
   it('restores the last provider context usage after the in-memory health cache is empty', async () => {
     const sessionId = 'reload-provider-health';
     state.messages.set(sessionId, [{ id: 'u1', role: 'user', content: 'short prompt', timestamp: 1 }]);
-    database.getSessionRuntimeState.mockReturnValue({
+    state.runtimeStates.set(sessionId, {
       lastProviderUsageJson: JSON.stringify({ inputTokens: 1200, cacheReadTokens: 800, provider: 'xiaomi' }),
     });
 
@@ -238,5 +247,52 @@ describe('SessionManager context health invalidation', () => {
     expect(refreshed.tokenSource).toBe('provider');
     expect(refreshed.currentTokens).toBe(2000);
     expect(refreshed.estimatedTokens).toBeDefined();
+  });
+
+  it('invalidates persisted provider usage when replaceMessages rewrites history', async () => {
+    const sessionId = 'replace-messages-provider-health';
+    const oldMessages = [{
+      id: 'old-user',
+      role: 'user' as const,
+      content: '旧历史'.repeat(500),
+      timestamp: 1,
+    }];
+    const replacement = [{
+      id: 'summary',
+      role: 'assistant' as const,
+      content: '压缩后的短摘要',
+      timestamp: 2,
+    }];
+    state.messages.set(sessionId, oldMessages);
+    const stale = getContextHealthService().update(
+      sessionId,
+      [{ role: 'user', content: oldMessages[0].content }],
+      '',
+      'gpt-5.5',
+      undefined,
+      undefined,
+      undefined,
+      { inputTokens: 1200, cacheReadTokens: 800, provider: 'xiaomi' },
+    );
+    expect(stale.tokenSource).toBe('provider');
+    expect(state.runtimeStates.get(sessionId)?.lastProviderUsageJson).toContain('1200');
+
+    await new SessionManager().replaceMessages(sessionId, replacement, 42);
+    expect(database.saveSessionRuntimeState).toHaveBeenLastCalledWith(
+      sessionId,
+      { lastProviderUsageJson: null },
+      42,
+    );
+
+    const refreshed = await resolveContextHealthForSession({
+      getAppService: () => ({
+        getMessages: async (requestedSessionId: string) => state.messages.get(requestedSessionId) ?? [],
+        getModelOverride: () => undefined,
+      }) as never,
+    }, sessionId);
+
+    expect(refreshed.tokenSource).toBe('estimated');
+    expect(refreshed.currentTokens).toBeLessThan(stale.currentTokens);
+    expect(refreshed.currentTokens).not.toBe(2000);
   });
 });

@@ -270,8 +270,17 @@ export class ContextHealthService {
   /**
    * 清理会话状态
    */
-  cleanup(sessionId: string): void {
+  cleanup(sessionId: string, updatedAt?: number): void {
     this.sessionStates.delete(sessionId);
+    try {
+      getDatabase().saveSessionRuntimeState(
+        sessionId,
+        { lastProviderUsageJson: null },
+        updatedAt,
+      );
+    } catch (error) {
+      logger.debug('Failed to invalidate persisted provider context usage:', error);
+    }
   }
 
   /**

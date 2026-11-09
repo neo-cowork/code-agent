@@ -587,7 +587,7 @@ async function compactSessionOnce(
   }
 
   try {
-    await getSessionManager().replaceMessages(sessionId, newMessages);
+    await getSessionManager().replaceMessages(sessionId, newMessages, compactedAt);
 
     const compactedMessageIds = newMessages
       .filter((message) => message.compaction)

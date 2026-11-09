@@ -1052,11 +1052,11 @@ export class SessionManager implements Disposable {
     return db.getMessages(sessionId, limit, undefined, options);
   }
 
-  async replaceMessages(sessionId: string, messages: Message[]): Promise<void> {
+  async replaceMessages(sessionId: string, messages: Message[], updatedAt?: number): Promise<void> {
     const db = getDatabase();
     this.assertAccessibleSession(sessionId);
-    db.replaceMessages(sessionId, messages);
-    getContextHealthService().cleanup(sessionId);
+    db.replaceMessages(sessionId, messages, updatedAt);
+    getContextHealthService().cleanup(sessionId, updatedAt);
 
     if (this.sessionCache.has(sessionId)) {
       const cached = this.sessionCache.get(sessionId)!;
