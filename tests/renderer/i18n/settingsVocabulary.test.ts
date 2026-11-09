@@ -24,9 +24,9 @@ describe('settingsVocabulary', () => {
     expect(settingsVocabularyZh).toEqual({
       provider: human('provider'),
       baseUrl: human('baseUrl'),
-      apiKey: human('apiKey'),
+      keyLabel: human('apiKey'),
     });
-    expect(settingsVocabularyZh).toEqual({ provider: '模型服务', baseUrl: '接口地址', apiKey: '密钥' });
+    expect(settingsVocabularyZh).toEqual({ provider: '模型服务', baseUrl: '接口地址', keyLabel: '密钥' });
   });
 
   it('改词表即改渲染端词汇（同一份 JSON）', async () => {
@@ -39,7 +39,7 @@ describe('settingsVocabulary', () => {
       ] },
     }));
     const mod = await import('../../../src/renderer/i18n/settingsVocabulary');
-    expect(mod.settingsVocabularyZh).toEqual({ provider: '服务X', baseUrl: '地址Y', apiKey: '钥匙Z' });
+    expect(mod.settingsVocabularyZh).toEqual({ provider: '服务X', baseUrl: '地址Y', keyLabel: '钥匙Z' });
     const zhModels = await import('../../../src/renderer/i18n/zhSettingsModels');
     expect(zhModels.zhSettingsModels.model.addProvider.title).toBe('新增服务X');
   });
@@ -65,7 +65,7 @@ describe('settingsVocabulary', () => {
     }
     // 同页同一概念只有一个词：小节标题、连接表单密钥标签取自词汇
     expect(m.providerSection.title).toBe(settingsVocabularyZh.provider);
-    expect(m.connection.apiKey).toBe(settingsVocabularyZh.apiKey);
+    expect(m.connection.apiKey).toBe(settingsVocabularyZh.keyLabel);
     expect(m.header.selectableLabel).toBe('显示在模型选择里');
     expect(m.models.selectableLabel).toBe('显示在模型选择里');
     expect(m.models.selectionHint).toContain('显示在模型选择里');

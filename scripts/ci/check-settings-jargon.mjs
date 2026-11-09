@@ -117,7 +117,7 @@ export function compareToBaseline(counts, baseline) {
     const allowed = base ? base.count : 0;
     if (cur.count > allowed) {
       failures.push(
-        `${file} 的「${term}」命中 ${cur.count} 处 > 基线 ${allowed}。词表建议写「${cur.human}」（settingsVocabulary.provider/baseUrl/apiKey）。\n` +
+        `${file} 的「${term}」命中 ${cur.count} 处 > 基线 ${allowed}。词表建议写「${cur.human}」（settingsVocabulary.provider/baseUrl/keyLabel）。\n` +
           cur.samples.map((s) => `    ${s}`).join('\n'),
       );
     } else if (cur.count < allowed) {

@@ -27,5 +27,5 @@ export const settingsVocabularyZh = {
   /** Base URL → 接口地址 */
   baseUrl: humanById('baseUrl'),
   /** API Key → 密钥 */
-  apiKey: humanById('apiKey'),
+  keyLabel: humanById('apiKey'),
 };
