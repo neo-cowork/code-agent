@@ -72,6 +72,22 @@ describe('BackgroundSubagentRegistry', () => {
     expect(status?.failureCode).toBe(AgentFailureCode.Unknown);
   });
 
+  it('wraps an English error on a failed (non-thrown) result and keeps a Chinese one as is', async () => {
+    const reg = new BackgroundSubagentRegistry();
+    const english = reg.spawn(async () => ({
+      success: false, output: '', error: 'inference provider unavailable', toolsUsed: [], iterations: 1,
+    }));
+    const chinese = reg.spawn(async () => ({
+      success: false, output: '', error: '后台任务做到第 3 步（上限 3 步）就用完了步数。', toolsUsed: [], iterations: 3,
+    }));
+    await reg.await(english);
+    await reg.await(chinese);
+
+    expect(reg.getStatus(english)?.error).toContain('模型服务暂时出错或请求太频繁');
+    expect(reg.getStatus(english)?.error).not.toContain('inference');
+    expect(reg.getStatus(chinese)?.error).toBe('后台任务做到第 3 步（上限 3 步）就用完了步数。');
+  });
+
   it('turns an English provider error into a plain Chinese reason for the conversation', async () => {
     const reg = new BackgroundSubagentRegistry();
     const agentId = reg.spawn(async () => { throw new Error('429 Too Many Requests from provider'); });

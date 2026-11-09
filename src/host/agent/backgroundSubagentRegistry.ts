@@ -276,12 +276,14 @@ export class BackgroundSubagentRegistry {
           entry.status = result.success ? 'completed' : 'failed';
           entry.result = result;
           if (!result.success) {
-            entry.error = result.error ?? 'Subagent failed';
+            const rawError = result.error ?? 'Subagent failed';
             entry.failureCode = inferAgentFailureCode({
               failureCode: result.failureCode,
               cancellationReason: result.cancellationReason,
               error: result.error,
             });
+            entry.error = describeSubagentStopReason(rawError, entry.failureCode);
+            if (entry.error !== rawError) logger.warn(`background subagent ${agentId} failed: ${rawError}`);
           }
           entry.finishedAt = this.now();
           this.recordCompletion(entry, options);

@@ -15,12 +15,14 @@ const REASON_BY_CODE: Partial<Record<AgentFailureCode, string>> = {
   [AgentFailureCode.PermissionDenied]: '需要的操作没有获得许可',
   [AgentFailureCode.ToolUnavailable]: '需要用的功能当前不可用',
   [AgentFailureCode.ParentGone]: '发起它的对话已经结束',
+  [AgentFailureCode.CancelledByUser]: '被取消了',
+  [AgentFailureCode.CancelledByParent]: '被取消了',
 };
 
 /** 已经是中文的报错原样保留；英文/未知报错换成按失败码归类的白话原因。 */
 export function describeSubagentStopReason(rawError: string, code: AgentFailureCode): string {
-  const reason = HAN_RE.test(rawError)
-    ? rawError.trim()
-    : (REASON_BY_CODE[code] ?? '运行中遇到了意外错误');
+  // 已经是中文的句子（步数用尽结论、取消说明等）本身就是给用户看的，原样放行不重复包装。
+  if (HAN_RE.test(rawError)) return rawError.trim();
+  const reason = REASON_BY_CODE[code] ?? '运行中遇到了意外错误';
   return `后台任务中途停止了：${reason}。你可以回复「继续」让它重试，已经看过的内容不会丢。`;
 }
