@@ -380,6 +380,7 @@ class SpawnGuard {
     const agent: ManagedAgent = {
       id,
       completion: options.completion,
+      ...(options.backgroundAgentId ? { backgroundAgentId: options.backgroundAgentId } : {}),
       role,
       treeId,
       sessionId: scope?.sessionId,

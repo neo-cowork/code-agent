@@ -483,6 +483,7 @@ export async function executeSpawnAgent(
         guard.register(agentId, role || 'dynamic', task, promise, abortController, {
           treeId,
           completion: { title: agentName, kind: 'user_visible' },
+          ...(context.events.backgroundDurableAgentId ? { backgroundAgentId: context.events.backgroundDurableAgentId } : {}),
           parentId: context.spawnParentAgentId,
           slotAcquired: true,
           scope: context.swarmRunScope,

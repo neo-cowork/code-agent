@@ -24,6 +24,8 @@ import type { AgentMessage } from './messageOrigin';
 export interface ManagedAgent {
   id: string;
   completion?: { title?: string; kind?: SubagentCompletionKind };
+  /** run_in_background 外层登记在 BackgroundSubagentRegistry 的 agentId（同一个后台子代理的另一份记录） */
+  backgroundAgentId?: string;
   role: string;
   treeId: string;
   sessionId?: string;
@@ -85,6 +87,7 @@ export interface RegisterOptions {
   slotAcquired?: boolean;
   scope?: SwarmRunScope;
   completion?: { title?: string; kind?: SubagentCompletionKind };
+  backgroundAgentId?: string;
 }
 
 export interface SpawnGuardScopeFilter {

@@ -33,6 +33,11 @@ function shortName(value: string | undefined, fallback: string): string {
   return fallbackChars.slice(0, 4).join('') || '任务';
 }
 
+function displayName(name: string | undefined, fallback: string | undefined, fallbackId: string): string {
+  const trimmed = name?.trim();
+  return trimmed ? Array.from(trimmed).slice(0, 16).join('') : shortName(fallback, fallbackId);
+}
+
 function stateForBackground(handle: BackgroundSubagentHandle): DetachedSubagentState {
   if (handle.status === 'running') return 'running';
   return handle.status === 'completed' ? 'done' : 'failed';
@@ -48,13 +53,13 @@ function summaryFor(result: { output?: string; error?: string } | undefined): st
   return summary ? summary.slice(0, 240) : undefined;
 }
 
-function fromBackgroundRegistry(sessionId: string): DetachedSubagentStatus[] {
+function fromBackgroundRegistry(sessionId: string, displayNames: Map<string, string>): DetachedSubagentStatus[] {
   return getBackgroundSubagentRegistry()
     .list()
     .filter((handle) => handle.sessionId === sessionId)
     .map((handle) => ({
       id: handle.agentId,
-      shortName: shortName(handle.title, handle.agentId),
+      shortName: displayName(displayNames.get(handle.agentId), handle.title, handle.agentId),
       state: stateForBackground(handle),
       ...(handle.status !== 'running'
         ? { summary: summaryFor({ output: handle.result?.output, error: handle.error }) }
@@ -62,23 +67,34 @@ function fromBackgroundRegistry(sessionId: string): DetachedSubagentStatus[] {
     }));
 }
 
-function fromSpawnGuard(sessionId: string): DetachedSubagentStatus[] {
-  return getSpawnGuard()
-    .list({ sessionId })
-    .map((agent) => ({
-      id: agent.id,
-      shortName: shortName(agent.completion?.title, agent.task),
-      state: stateForSpawnGuard(agent),
-      ...(agent.status !== 'running' && agent.status !== 'running-recovered'
-        ? { summary: summaryFor({ output: agent.result?.output, error: agent.error }) }
-        : {}),
-    }));
+function fromSpawnGuard(agents: ManagedAgent[]): DetachedSubagentStatus[] {
+  return agents.map((agent) => ({
+    id: agent.id,
+    shortName: displayName(agent.completion?.title, agent.task, agent.id),
+    state: stateForSpawnGuard(agent),
+    ...(agent.status !== 'running' && agent.status !== 'running-recovered'
+      ? { summary: summaryFor({ output: agent.result?.output, error: agent.error }) }
+      : {}),
+  }));
 }
 
-/** Merge the two existing detached-agent registries, preferring the background entry when both track one id. */
+/**
+ * Merge the two existing detached-agent registries. A run_in_background helper is tracked in both
+ * (registry id + an inner SpawnGuard id linked by `backgroundAgentId`); list it once, under the
+ * registry entry, named after the agent's display name.
+ */
 export function listDetachedSubagentStatuses(sessionId: string): DetachedSubagentStatus[] {
+  const guardAgents = getSpawnGuard().list({ sessionId });
+  const displayNames = new Map<string, string>();
+  const linkedGuardIds = new Set<string>();
+  for (const agent of guardAgents) {
+    if (!agent.backgroundAgentId) continue;
+    linkedGuardIds.add(agent.id);
+    if (agent.completion?.title) displayNames.set(agent.backgroundAgentId, agent.completion.title);
+  }
   const byId = new Map<string, DetachedSubagentStatus>();
-  for (const status of [...fromBackgroundRegistry(sessionId), ...fromSpawnGuard(sessionId)]) {
+  const unlinkedGuard = guardAgents.filter((agent) => !linkedGuardIds.has(agent.id));
+  for (const status of [...fromBackgroundRegistry(sessionId, displayNames), ...fromSpawnGuard(unlinkedGuard)]) {
     if (!byId.has(status.id)) byId.set(status.id, status);
   }
   return [...byId.values()];

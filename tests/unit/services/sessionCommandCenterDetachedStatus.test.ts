@@ -110,13 +110,39 @@ describe('executeTaskStatus detached subagents', () => {
     await pending.promise;
     const after = await executeTaskStatus({}, context(sessionId), allow);
 
-    expect(before.output).toContain(`后台子代理 1. FC [running] id=${agentId}`);
-    expect(after.output).toContain(`后台子代理 1. FC [done] id=${agentId}：folder C summary`);
+    expect(before.output).toContain(`后台子代理 1. Folder C [running] id=${agentId}`);
+    expect(after.output).toContain(`后台子代理 1. Folder C [done] id=${agentId}：folder C summary`);
   });
 
   it('keeps the existing empty text when no task registry has this session', async () => {
     const status = await executeTaskStatus({}, context('detached-status-empty'), allow);
 
     expect(status).toEqual({ ok: true, output: '当前会话还没有后台任务。' });
+  });
+
+  it('lists one run_in_background helper once, named after its agent', async () => {
+    const sessionId = 'detached-status-linked';
+    const pending = deferred<SubagentResult>();
+    const backgroundId = getBackgroundSubagentRegistry().spawn(() => pending.promise, {
+      sessionId,
+      title: 'Read all five notes in folder-b and summarize them',
+      role: 'explore',
+    });
+    getSpawnGuard().register(
+      'agent_explore_linked',
+      'explore',
+      'Read all five notes in folder-b and summarize them',
+      pending.promise,
+      new AbortController(),
+      { treeId: sessionId, completion: { title: 'Explorer' }, backgroundAgentId: backgroundId },
+    );
+
+    const status = await executeTaskStatus({}, context(sessionId), allow);
+
+    expect(status.output).toContain(`后台子代理 1. Explorer [running] id=${backgroundId}`);
+    expect(status.output).not.toContain('后台子代理 2.');
+    expect(status.output).not.toContain('agent_explore_linked');
+    pending.resolve(result('folder B summary'));
+    await getBackgroundSubagentRegistry().await(backgroundId);
   });
 });
