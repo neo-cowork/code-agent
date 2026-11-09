@@ -2,11 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const coordinatorState = vi.hoisted(() => ({ execute: vi.fn() }));
 const factoryState = vi.hoisted(() => ({ create: vi.fn() }));
-const loggerState = vi.hoisted(() => ({ warn: vi.fn(), info: vi.fn() }));
+const loggerState = vi.hoisted(() => ({ warn: vi.fn(), info: vi.fn(), error: vi.fn() }));
 const sessionManagerState = vi.hoisted(() => ({ addMessageToSession: vi.fn() }));
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
-  createLogger: () => ({ info: loggerState.info, warn: loggerState.warn, error: vi.fn(), debug: vi.fn() }),
+  createLogger: () => ({ info: loggerState.info, warn: loggerState.warn, error: loggerState.error, debug: vi.fn() }),
 }));
 vi.mock('../../../src/host/agent/autoAgentCoordinator', () => ({
   getAutoAgentCoordinator: () => ({ execute: coordinatorState.execute }),
@@ -59,12 +59,12 @@ function makeDeps() {
   };
 }
 
-function run(deps: ReturnType<typeof makeDeps>) {
+function run(deps: ReturnType<typeof makeDeps>, onEvent: Parameters<typeof runAutoAgentMode>[3] = vi.fn()) {
   return runAutoAgentMode(
     'do the work',
     'do the work with context',
     { taskType: 'work', executionStrategy: 'sequential', confidence: 0.9 } as never,
-    vi.fn(),
+    onEvent,
     { provider: 'mock', model: 'mock-model' } as never,
     deps,
     'session-auto-1',
@@ -111,9 +111,20 @@ describe('parent ownership across follow-up and background completion', () => {
   });
 
   it('A: completes auto-agent follow-up with a registered non-durable parent', async () => {
+    // Persist a running parent, then release this process ownership: the follow-up
+    // retains its run identity but must not mutate the owner's durable record.
+    await registry.startDurable(parentInput);
+    await registry.releaseDurable(parentInput.runId);
     registry.start(parentInput);
     const deps = makeDeps();
-    await expect(withRunTraceContext(trace, () => run(deps))).resolves.toBeUndefined();
+    const onEvent = vi.fn();
+    factoryState.create.mockReturnValue(['rail', 'cycling'].map(id => ({ id, name: id, systemPrompt: `Research ${id}`, tools: ['Read'] })));
+    await expect(withRunTraceContext(trace, () => run(deps, onEvent))).resolves.toBeUndefined();
+    expect((await repository.get(parentInput.runId))?.status).not.toBe('failed');
+    expect(await repository.get(parentInput.runId)).not.toBeNull();
+    expect(registry.get(parentInput.runId)).toBeDefined();
+    expect(loggerState.error).not.toHaveBeenCalled();
+    expect(JSON.stringify([...onEvent.mock.calls, ...deps.addMessage.mock.calls, ...sessionManagerState.addMessageToSession.mock.calls, ...loggerState.error.mock.calls, ...loggerState.warn.mock.calls])).not.toMatch(/owner lease/i);
     expect(deps.addMessage).toHaveBeenCalledWith(expect.objectContaining({ content: 'completed output' }));
     expect(await repository.listChildRuns(parentInput.runId)).toEqual([]);
     expect(loggerState.info).toHaveBeenCalledWith(expect.stringContaining('without durable'), expect.objectContaining({ reason: 'parent_run_not_durable', parentRunId: parentInput.runId }));
