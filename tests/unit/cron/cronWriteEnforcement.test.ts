@@ -1,0 +1,184 @@
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AppSettings } from '../../../src/shared/contract';
+import type { DatabaseService } from '../../../src/host/services/core/databaseService';
+import type { SessionManager } from '../../../src/host/services/infra/sessionManager';
+
+const state = vi.hoisted(() => {
+  const webMode = process.env.CODE_AGENT_WEB_MODE;
+  process.env.CODE_AGENT_WEB_MODE = 'true';
+  return { webMode,
+  db: undefined as DatabaseService | undefined,
+  sessions: undefined as SessionManager | undefined,
+};
+});
+vi.mock('../../../src/host/services/core/databaseService', async (importOriginal) => ({
+  ...await importOriginal<object>(), getDatabase: () => state.db,
+}));
+vi.mock('../../../src/host/services/infra/sessionManager', async (importOriginal) => ({
+  ...await importOriginal<object>(), getSessionManager: () => state.sessions,
+}));
+vi.mock('../../../src/host/services', () => ({ getSessionManager: () => state.sessions }));
+vi.mock('../../../src/host/services/infra/notificationService', () => ({
+  notificationService: { notifyNeedsInput: vi.fn(), notifyTaskComplete: vi.fn() },
+}));
+vi.mock('../../../src/host/services/infra/logger', () => {
+  const logger = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
+  return { logger, createLogger: () => logger };
+});
+vi.mock('../../../src/host/tools/shell/dynamicDescription', () => ({ generateBashDescription: async () => null }));
+
+vi.unmock('better-sqlite3');
+
+import { DatabaseService as Database } from '../../../src/host/services/core/databaseService';
+import { SessionManager as Sessions } from '../../../src/host/services/infra/sessionManager';
+import { CronService } from '../../../src/host/cron/cronService';
+import { createCronAgentSession } from '../../../src/host/cron/cronAgentSession';
+import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
+import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
+import { mintToolRunGrant } from '../../../src/host/permissions/toolGrantStore';
+import { resetPermissionModeManager } from '../../../src/host/permissions/modes';
+import { resolveSessionDefaultModelConfig } from '../../../src/host/services/core/sessionDefaults';
+import { getToolCache } from '../../../src/host/services/infra/toolCache';
+
+afterAll(() => {
+  if (state.webMode === undefined) delete process.env.CODE_AGENT_WEB_MODE;
+  else process.env.CODE_AGENT_WEB_MODE = state.webMode;
+});
+
+let folder: string;
+let cron: CronService;
+let island: OrchestratorPermissionIsland;
+let sourceId: string;
+
+beforeEach(async () => {
+  folder = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'schedule-write-enforcement-')));
+  state.db = new Database(folder);
+  await state.db.initialize();
+  state.sessions = new Sessions();
+  sourceId = (await state.sessions.createSession({ title: 'Daily notes', workingDirectory: folder, modelConfig: resolveSessionDefaultModelConfig() })).id;
+  cron = new CronService();
+  getToolCache().clear();
+  island = new OrchestratorPermissionIsland({
+    getSettings: () => ({ permissions: { autoApprove: { read: false, write: false, execute: false, network: false }, blockedCommands: [] } }) as unknown as AppSettings,
+    isDevModeAutoApproveEnabled: () => false,
+    getExecutionTopology: () => 'async_agent',
+    hasApprovalUi: () => false,
+    onEvent: vi.fn(),
+    injectedPendingApprovalRepo: state.db.getPendingApprovalRepo(),
+  });
+});
+
+afterEach(async () => {
+  for (const row of state.db!.getPendingApprovalRepo().listByKindAndStatus('tool_approval', 'pending')) island.resolveParkedApproval(row.id, 'deny');
+  await cron.dispose();
+  await state.sessions!.dispose();
+  state.db!.close();
+  resetPermissionModeManager();
+  rmSync(folder, { recursive: true, force: true });
+});
+
+async function job() {
+  return cron.createJob({
+    name: 'Morning to-do list', scheduleType: 'cron', schedule: { type: 'cron', expression: '0 8 * * *' },
+    action: { type: 'agent', agentType: 'default', prompt: 'Write today’s to-do list into notes.md', context: { sourceSessionId: sourceId } },
+    enabled: false,
+  });
+}
+
+async function execute(jobId: string, tool = 'Write', filePath = path.join(folder, 'notes.md')) {
+  const definition = cron.getJob(jobId)!;
+  // Production session creation supplies both origin and unattended registration.
+  const session = await createCronAgentSession(definition, definition.action);
+  const executor = new ToolExecutor({ workingDirectory: folder, requestPermission: (request) => island.requestPermission(request) });
+  executor.setAuditEnabled(false);
+  const promise = executor.execute(tool, tool === 'Edit'
+    ? { file_path: filePath, edits: [{ old_text: 'Monday', new_text: 'Tuesday' }] }
+    : { file_path: filePath, content: 'Monday: review the plan\n' }, { sessionId: session.id });
+  return { promise, session };
+}
+
+async function parked() {
+  await vi.waitFor(() => expect(state.db!.getPendingApprovalRepo().listByKindAndStatus('tool_approval', 'pending')).toHaveLength(1));
+  return state.db!.getPendingApprovalRepo().listByKindAndStatus('tool_approval', 'pending')[0];
+}
+
+describe('scheduled writes through ToolExecutor → orchestratorPermissions', () => {
+  it('no grant parks before writing; plain Allow writes the file', async () => {
+    const task = await job();
+    const run = await execute(task.id);
+    const pending = await parked();
+    expect(pending.coordinatorId).toBe(run.session.id);
+    expect(existsSync(path.join(folder, 'notes.md'))).toBe(false);
+    expect(island.resolveParkedApproval(pending.id, 'allow')).toBe(true);
+    expect((await run.promise).success).toBe(true);
+    expect(readFileSync(path.join(folder, 'notes.md'), 'utf8')).toContain('Monday');
+  });
+
+  it('grant authorizes a relative Write with schedule-write-grant provenance; revoke parks again', async () => {
+    const task = await job();
+    await cron.grantWriteScope(task.id);
+    const run = await execute(task.id, 'Write', 'notes.md');
+    expect((await run.promise).success).toBe(true);
+    expect(state.db!.getPermissionDecisionsBySession(run.session.id)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ finalOutcome: 'allow', reason: 'schedule-write-grant' }),
+    ]));
+    await cron.revokeWriteScope(task.id);
+    const revoked = await execute(task.id, 'Edit', 'notes.md');
+    const pending = await parked();
+    expect(readFileSync(path.join(folder, 'notes.md'), 'utf8')).toContain('Monday');
+    island.resolveParkedApproval(pending.id, 'deny');
+    expect((await revoked.promise).success).toBe(false);
+  });
+
+  it('heartbeat writes cannot bypass folder consent through skill or tool grants', async () => {
+    const task = await job();
+    await cron.updateJob(task.id, { action: { type: 'agent', agentType: 'default', prompt: 'Write the morning plan', context: { sourceSessionId: sourceId, heartbeatTask: true } } });
+    const definition = cron.getJob(task.id)!;
+    const session = await createCronAgentSession(definition, definition.action);
+    expect(session.origin?.kind).toBe('heartbeat');
+    mintToolRunGrant(session.id, 'Write');
+    const executor = new ToolExecutor({ workingDirectory: folder, requestPermission: (request) => island.requestPermission(request) });
+    executor.setAuditEnabled(false);
+    const run = executor.execute('Write', { file_path: 'notes.md', content: 'Morning plan\n' }, {
+      sessionId: session.id, preApprovedTools: new Set(['Write']),
+    });
+    const pending = await parked();
+    expect(existsSync(path.join(folder, 'notes.md'))).toBe(false);
+    island.resolveParkedApproval(pending.id, 'deny');
+    expect((await run).success).toBe(false);
+  });
+
+  it('a non-cron unattended channel session keeps its in-folder automatic approval', async () => {
+    const session = await state.sessions!.createSession({
+      title: 'Channel notes', workingDirectory: folder, modelConfig: resolveSessionDefaultModelConfig(), origin: { kind: 'channel', id: 'channel-notes' },
+    });
+    const requestPermission = vi.fn((request: Parameters<OrchestratorPermissionIsland['requestPermission']>[0]) => island.requestPermission(request));
+    const executor = new ToolExecutor({ workingDirectory: folder, requestPermission });
+    executor.setAuditEnabled(false);
+    expect((await executor.execute('Write', { file_path: 'notes.md', content: 'Channel notes\n' }, { sessionId: session.id })).success).toBe(true);
+    expect(requestPermission).not.toHaveBeenCalled();
+    expect(readFileSync(path.join(folder, 'notes.md'), 'utf8')).toBe('Channel notes\n');
+  });
+
+  it('startup backfills only historical scheduled in-folder writers once, including after revoke', async () => {
+    const old = await job();
+    const fresh = await job();
+    const historical = await createCronAgentSession(old, old.action);
+    state.db!.appendPermissionDecision({
+      sessionId: historical.id, toolName: 'Write', summary: 'notes.md', finalOutcome: 'allow',
+      historyOutcome: 'auto-approve', reason: '写入项目目录内', durationMs: 0, recordedAt: Date.now(),
+    });
+    await cron.initialize();
+    expect(cron.getJob(old.id)?.metadata?.writeGrantRoot).toBe(folder);
+    expect(cron.getJob(fresh.id)?.metadata?.writeGrantRoot).toBeUndefined();
+    await cron.revokeWriteScope(old.id);
+    await cron.dispose();
+    cron = new CronService();
+    await cron.initialize();
+    expect(cron.getJob(old.id)?.metadata?.writeGrantRoot).toBeUndefined();
+    expect(state.db!.getDb()!.prepare('SELECT COUNT(*) AS count FROM cron_write_grant_migration').get()).toEqual({ count: 1 });
+  });
+});
