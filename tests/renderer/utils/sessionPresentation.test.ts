@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSessionSearchText, getSessionStatusPresentation } from '../../../src/renderer/utils/sessionPresentation';
+import { buildSessionSearchText, getSessionStatusPresentation, getDisplaySessionTitle } from '../../../src/renderer/utils/sessionPresentation';
 import type { SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 
 describe('sessionPresentation', () => {
@@ -100,5 +100,17 @@ describe('sessionPresentation', () => {
     expect(text).toContain('/repo/code-agent');
     expect(text).toContain('browser');
     expect(text).toContain('执行中');
+  });
+});
+
+describe('placeholder display uses the current UI language', () => {
+  it.each(['新对话', 'New conversation', 'New Chat', '新会话', '', null, undefined])('localises %j without rewriting storage', (title) => {
+    expect(getDisplaySessionTitle(title, 'en')).toBe('New conversation');
+    expect(getDisplaySessionTitle(title, 'zh')).toBe('新对话');
+  });
+  it('preserves named conversations and localises appshot fallback', () => {
+    expect(getDisplaySessionTitle('Trip planning', 'zh')).toBe('Trip planning');
+    expect(getDisplaySessionTitle('<appshot>capture</appshot>', 'en')).toBe('Appshot conversation');
+    expect(getDisplaySessionTitle('<appshot>capture</appshot>', 'zh')).toBe('Appshot 会话');
   });
 });

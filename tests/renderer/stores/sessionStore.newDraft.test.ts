@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findReusableNewSessionDraft } from '../../../src/renderer/stores/sessionStore';
+import { findReusableNewSessionDraft, isBlankNewSession } from '../../../src/renderer/stores/sessionStore';
 import type { SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 
 function session(overrides: Partial<SessionWithMeta>): SessionWithMeta {
@@ -59,5 +59,20 @@ describe('findReusableNewSessionDraft', () => {
       todos: [],
       workingDirectory: null,
     })?.id).toBe('draft-1');
+  });
+});
+
+describe('blank placeholder titles in either UI language', () => {
+  it.each(['新对话', 'New conversation', 'New Chat', '新会话', ''])('recognises %j without changing stored text', (title) => {
+    const draft = session({ title });
+    expect(isBlankNewSession(draft)).toBe(true);
+    expect(findReusableNewSessionDraft({ sessions: [draft], currentSessionId: draft.id, messages: [], todos: [] })).toBe(draft);
+    expect(draft.title).toBe(title);
+    expect(isBlankNewSession({ ...draft, messageCount: 1 })).toBe(false);
+    expect(isBlankNewSession({ ...draft, turnCount: 1 })).toBe(false);
+    expect(isBlankNewSession({ ...draft, isArchived: true })).toBe(false);
+  });
+  it('keeps a named empty conversation distinct from a blank draft', () => {
+    expect(isBlankNewSession(session({ title: 'Trip planning' }))).toBe(false);
   });
 });
