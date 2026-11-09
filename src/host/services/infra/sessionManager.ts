@@ -1071,6 +1071,7 @@ export class SessionManager implements Disposable {
   getSessionRuntimeState(sessionId: string): {
     compressionStateJson: string | null;
     persistentSystemContext: string[];
+    lastProviderUsageJson: string | null;
   } | null {
     const db = getDatabase();
     if (!this.getAccessibleStoredSession(sessionId)) {

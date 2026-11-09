@@ -12,6 +12,14 @@ vi.mock('../../../src/host/session/sessionStateManager', () => ({
   getSessionStateManager: () => ({ updateContextHealth: vi.fn() }),
 }));
 
+const database = vi.hoisted(() => ({
+  saveSessionRuntimeState: vi.fn(),
+}));
+
+vi.mock('../../../src/host/services/core/databaseService', () => ({
+  getDatabase: () => database,
+}));
+
 import { ContextHealthService, type ContextMessage } from '../../../src/host/context/contextHealthService';
 
 const MESSAGES: ContextMessage[] = [
@@ -63,6 +71,7 @@ describe('ContextHealthService — provider 真源总量（N-CTXTRUTH）', () =>
 
   beforeEach(() => {
     service = new ContextHealthService();
+    database.saveSessionRuntimeState.mockClear();
   });
 
   it('provider 回报时：currentTokens=实报总量（含 cache），tokenSource=provider，带估算对照', () => {
@@ -82,6 +91,13 @@ describe('ContextHealthService — provider 真源总量（N-CTXTRUTH）', () =>
     // 估算对照保留（缩放前总量），供弹层显示估/实偏差
     expect(health.estimatedTokens).toBe(estimated);
     expect(health.windowKnown).toBe(true);
+    expect(database.saveSessionRuntimeState).toHaveBeenCalledWith('s1', {
+      lastProviderUsageJson: JSON.stringify({
+        inputTokens: 8000,
+        cacheReadTokens: 1500,
+        cacheCreationTokens: 500,
+      }),
+    });
   });
 
   it('查不到模型窗口时 windowKnown=false，maxTokens 仍是 128k 兜底', () => {
