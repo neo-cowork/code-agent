@@ -5,6 +5,7 @@
 // 意图状态机没有复位到 none 的入口——用例按序先测「非 background」再切 background。
 // ============================================================================
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { PARKED_APPROVAL_ENTRY_PATH } from '../../../../src/shared/parkedApprovalLocation';
 import { IPC_CHANNELS } from '../../../../src/shared/ipc';
 
 const platformMocks = vi.hoisted(() => ({
@@ -60,7 +61,7 @@ describe('needs-input 原生通知兜底（fallback B）', () => {
     notificationService.notifyNeedsInput({
       sessionId: 's1',
       title: '有操作等你确认',
-      body: '无人值守任务请求执行 write_file，已挂起等待你在收件箱确认。',
+      body: `无人值守任务请求执行 write_file，已暂停等你批准，到${PARKED_APPROVAL_ENTRY_PATH}处理。`,
     });
     // renderer toast 照发（壳重开后仍有落点）+ host 原生兜底
     expect(platformMocks.broadcast).toHaveBeenCalledTimes(1);
