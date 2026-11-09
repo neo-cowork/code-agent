@@ -39,7 +39,7 @@ describe('recordDeclareDeliverables', () => {
     expect(outcomes?.size).toBe(1);
     const outcome = outcomes?.get('tc-declare_deliverables');
     expect(outcome?.success).toBe(true);
-    expect(outcome?.text).toContain('<deliverables-declared>');
+    expect(outcome?.text).toContain('已记录最终产物声明');
     expect(outcome?.text).toContain('dist/index.html');
     expect(outcome?.text).toContain('draft');
   });
@@ -70,7 +70,7 @@ describe('recordDeclareDeliverables', () => {
       ?.get('tc-declare_deliverables');
     expect(ctx.artifact.declaredDeliverables).toBe(previous);
     expect(outcome?.success).toBe(false);
-    expect(outcome?.text).toContain('<deliverables-declaration-rejected>');
+    expect(outcome?.text).toContain('declare_deliverables 声明已拒绝');
     expect(outcome?.text).toContain('final_artifacts');
   });
 });
@@ -85,5 +85,11 @@ describe('applyDeclareDeliverablesOutcome', () => {
     expect(results[0]).toMatchObject({ success: false, error: 'rejected' });
     expect(results[0].output).toBeUndefined();
     expect(results[1]).toMatchObject({ success: true, output: 'search hits' });
+  });
+
+  it('does not rewrite a result that already failed before the executor ran', () => {
+    const results: ToolResult[] = [{ toolCallId: 'a', success: false, error: 'blocked by hook' }];
+    applyDeclareDeliverablesOutcome(results, new Map([['a', { success: true, text: 'ok' }]]));
+    expect(results[0]).toMatchObject({ success: false, error: 'blocked by hook' });
   });
 });

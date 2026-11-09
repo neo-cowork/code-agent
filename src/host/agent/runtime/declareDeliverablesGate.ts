@@ -4,6 +4,10 @@
 
 import type { ToolCall, ToolResult } from '../../../shared/contract';
 import type { RuntimeContext } from './runtimeContext';
+import {
+  stashDeclareOutcome,
+  type DeclareDeliverablesOutcome,
+} from '../../tools/modules/planning/declareDeliverablesOutcomeStore';
 
 function formatPathList(paths: string[]): string {
   return paths.map((item) => `- ${item}`).join('\n');
@@ -15,10 +19,8 @@ function formatScratchDir(scratchDir: string | undefined): string {
 
 function buildRejectionMessage(reason: string): string {
   return [
-    '<deliverables-declaration-rejected>',
     `declare_deliverables 声明已拒绝：${reason}。`,
     '请重新调用 declare_deliverables，并提供非空的 final_artifacts 字符串数组。',
-    '</deliverables-declaration-rejected>',
   ].join('\n');
 }
 
@@ -48,12 +50,6 @@ function validateArguments(args: Record<string, unknown> | undefined): {
   return { ok: true, finalArtifacts, scratchDir: rawScratchDir };
 }
 
-export interface DeclareDeliverablesOutcome {
-  success: boolean;
-  /** success 时是确认文本；失败时是拒绝原因（沿用既有拒绝话术）。 */
-  text: string;
-}
-
 /**
  * 只做 declare_deliverables 的副作用：写入 RuntimeContext.artifact.declaredDeliverables，
  * 算出确认/拒绝文本。不再提前结束本轮——调用本身随整批走普通「落库 + 执行」链路，
@@ -78,7 +74,9 @@ export function recordDeclareDeliverables(
         status: 'rejected',
         reason: validation.reason,
       });
-      outcomes.set(declarationCall.id, { success: false, text: buildRejectionMessage(validation.reason) });
+      const rejected = { success: false, text: buildRejectionMessage(validation.reason) };
+      outcomes.set(declarationCall.id, rejected);
+      stashDeclareOutcome(ctx.sessionId, declarationCall.id, rejected);
       continue;
     }
 
@@ -100,7 +98,6 @@ export function recordDeclareDeliverables(
     });
 
     const text = [
-      '<deliverables-declared>',
       previous ? '已覆盖之前的声明。' : '已记录最终产物声明。',
       '最终产物：',
       formatPathList(validation.finalArtifacts),
@@ -112,14 +109,14 @@ export function recordDeclareDeliverables(
         `草稿目录：${formatScratchDir(previous.scratchDir)}`,
       ].join('\n') : '',
       '后续写入、验证和收尾请对齐本声明；如最终路径需要变更，请先重新调用 declare_deliverables。',
-      '</deliverables-declared>',
     ].filter(Boolean).join('\n');
     outcomes.set(declarationCall.id, { success: true, text });
+    stashDeclareOutcome(ctx.sessionId, declarationCall.id, { success: true, text });
   }
   return outcomes;
 }
 
-/** 把执行器返回的兜底结果盖成运行时记录的确认/拒绝文本（就地改写 results）。 */
+/** executor 没取到记账结果时的兜底：把成功结果盖成运行时记录的确认/拒绝文本（就地改写 results）。 */
 export function applyDeclareDeliverablesOutcome(
   results: ToolResult[],
   outcomes: Map<string, DeclareDeliverablesOutcome> | null,
@@ -127,7 +124,8 @@ export function applyDeclareDeliverablesOutcome(
   if (!outcomes) return;
   for (const result of results) {
     const outcome = outcomes.get(result.toolCallId);
-    if (!outcome) continue;
+    // 引擎在 executor 之前已失败（参数校验 / hook 拦截）：事件已按那条失败发出，不再改写，保持事件与落库一致。
+    if (!outcome || !result.success) continue;
     result.success = outcome.success;
     if (outcome.success) {
       result.output = outcome.text;

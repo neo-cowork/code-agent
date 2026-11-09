@@ -66,6 +66,8 @@ vi.mock('../../../src/host/mcp/logCollector.js', () => ({
   },
 }));
 
+import { ToolExecutionEngine } from '../../../src/host/agent/runtime/toolExecutionEngine';
+import { executeDeclareDeliverables } from '../../../src/host/tools/modules/planning/declareDeliverables';
 import { MessageProcessor } from '../../../src/host/agent/runtime/messageProcessor';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
@@ -185,6 +187,25 @@ function toolUseResponse(calls: Array<{ id: string; name: string; arguments: Rec
   } as unknown as ModelResponse;
 }
 
+/** 真 ToolExecutionEngine + 真 declare_deliverables executor，只有最末端的 toolExecutor 外壳是 stub。 */
+function makeRealEngine(ctx: Record<string, unknown>, deps: ReturnType<typeof buildDeps>) {
+  ctx.toolExecutor = {
+    execute: vi.fn(async (_name: string, args: Record<string, unknown>, toolCtx: Record<string, unknown>) => {
+      const r = await executeDeclareDeliverables(args, toolCtx as never, (async () => ({ allowed: true })) as never);
+      return r.ok
+        ? { toolCallId: '', success: true, output: r.output }
+        : { toolCallId: '', success: false, error: r.error };
+    }),
+  };
+  const engine = new ToolExecutionEngine(ctx as unknown as RuntimeContext);
+  engine.setModules(
+    deps.contextAssembly as never,
+    deps.runFinalizer as never,
+    { setPlanMode: vi.fn(), isPlanMode: vi.fn().mockReturnValue(false) } as never,
+  );
+  return engine;
+}
+
 const EVENT_PROC = { endSpan: vi.fn() } as never;
 
 describe('declare_deliverables 不吞整批', () => {
@@ -213,7 +234,7 @@ describe('declare_deliverables 不吞整批', () => {
     expect(assistant?.toolCalls?.map((c) => c.name)).toEqual(['declare_deliverables', 'WebSearch']);
     const results = deps.persisted.find((m) => m.role === 'tool')?.toolResults ?? [];
     expect(results.find((r) => r.toolCallId === 'dd-1')).toMatchObject({ success: true });
-    expect(results.find((r) => r.toolCallId === 'dd-1')?.output).toContain('<deliverables-declared>');
+    expect(results.find((r) => r.toolCallId === 'dd-1')?.output).toContain('已记录最终产物声明');
     expect(results.find((r) => r.toolCallId === 'ws-1')).toMatchObject({ success: true, output: 'search hits' });
   });
 
@@ -336,5 +357,31 @@ describe('declare_deliverables 不吞整批', () => {
     expect(results.every((r) => r.success === false)).toBe(true);
     expect(results.find((r) => r.toolCallId === 'ws-1')?.metadata).toMatchObject({ code: 'TOOL_DISABLED_FOR_RUN' });
     expect(results.find((r) => r.toolCallId === 'dd-1')?.metadata).toMatchObject({ code: 'TOOL_BATCH_SKIPPED' });
+  });
+
+  it.each([
+    ['合法参数', DECLARE_CALL, true],
+    ['非法参数', { id: 'dd-1', name: 'declare_deliverables', arguments: {} }, false],
+  ])('tool_call_end 事件与落库结果一致，且不含内部兜底话术（%s）', async (_label, call, expectOk) => {
+    // 事件发出即序列化（真实前端拿到的是当时的快照），避免后续就地改写让断言假绿
+    const emitted: Array<{ type: string; data: { toolCallId?: string; success?: boolean; output?: string; error?: string } }> = [];
+    const ctx = buildCtx({
+      sessionId: 'sess-declare-event',
+      onEvent: vi.fn((event: unknown) => { emitted.push(JSON.parse(JSON.stringify(event))); }),
+    });
+    const deps = buildDeps(ctx);
+    const processor = makeProcessor(ctx, deps, makeRealEngine(ctx, deps));
+
+    await processor.handleToolResponse(toolUseResponse([call]), false, 1, EVENT_PROC);
+
+    const endEvent = emitted.find((e) => e.type === 'tool_call_end' && e.data.toolCallId === 'dd-1');
+    const persisted = deps.persisted.find((m) => m.role === 'tool')?.toolResults?.find((r) => r.toolCallId === 'dd-1');
+    expect(endEvent?.data.success).toBe(expectOk);
+    expect(persisted?.success).toBe(expectOk);
+    expect(endEvent?.data.output).toBe(persisted?.output);
+    expect(endEvent?.data.error).toBe(persisted?.error);
+    expect(JSON.stringify(endEvent?.data)).not.toContain('兜底');
+    if (expectOk) expect(endEvent?.data.output).toContain('已记录最终产物声明');
+    else expect(endEvent?.data.error).toContain('final_artifacts');
   });
 });
