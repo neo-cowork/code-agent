@@ -50,6 +50,37 @@ afterEach(() => {
 });
 
 describe('CronJobDetail', () => {
+  describe('detail duration units', () => {
+    const initialLanguage = useAppStore.getState().language;
+    afterEach(() => useAppStore.setState({ language: initialLanguage }));
+
+    const cases = [
+      [120000, '2 分钟', '2 minutes'],
+      [1500, '1.5 秒', '1.5 seconds'],
+      [3600000, '1 小时', '1 hour'],
+      [90000, '90 秒', '90 seconds'],
+      [0, '0 秒', '0 seconds'],
+      [undefined, '—', '—'],
+      [null, '—', '—'],
+      [1, '0.001 秒', '0.001 seconds'],
+      [1000, '1 秒', '1 second'],
+      [60000, '1 分钟', '1 minute'],
+    ] as const;
+    for (const language of ['zh', 'en'] as const) {
+      it.each(cases)(`${language} retry delay and timeout %s -> %s / %s without raw ms`, (value, zh, en) => {
+        useAppStore.setState({ language });
+        const { container } = render(<CronJobDetail job={makeJob({ retryDelay: value as number | undefined, timeout: value as number | undefined })} />);
+        const advanced = screen.getByTestId('cron-detail-advanced');
+        const expected = language === 'zh' ? zh : en;
+        for (const label of language === 'zh' ? ['重试间隔', '超时'] : ['Retry delay', 'Timeout']) {
+          expect(screen.getByText(label).parentElement?.textContent).toBe(`${label}${expected}`);
+        }
+        expect(advanced.textContent).not.toContain('ms');
+        expect(container.textContent).not.toContain('ms');
+      });
+    }
+  });
+
   it('masks credential-like text in action summaries while keeping ordinary text unchanged', () => {
     const cases = [
       ['run backup --password=hunter2xyz now', 'run backup --password=***REDACTED*** now'],

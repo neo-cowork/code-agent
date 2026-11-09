@@ -35,6 +35,7 @@ import { CronJobApprovalHint } from './CronJobApprovalHint';
 import { getBuiltinJobDisplay } from './builtinJobDisplay';
 import { isWebhookCronJob } from '@shared/cronWebhookJob';
 import { CronWriteScopePanel } from './CronWriteScopePanel';
+import { formatDetailDuration } from './formatDetailDuration';
 
 interface CronJobDetailProps {
   job: CronJobDefinition | null;
@@ -280,8 +281,8 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
             <InfoCard label={cc.cardCreatedAt} value={formatDateTime(job.createdAt, language)} />
             <InfoCard label={cc.cardUpdatedAt} value={formatDateTime(job.updatedAt, language)} />
             <InfoCard label={cc.cardMaxRetries} value={job.maxRetries != null ? String(job.maxRetries) : '0'} />
-            <InfoCard label={cc.cardRetryDelay} value={job.retryDelay != null ? `${job.retryDelay}ms` : '—'} />
-            <InfoCard label={cc.cardTimeout} value={job.timeout != null ? `${job.timeout}ms` : '—'} />
+            <InfoCard label={cc.cardRetryDelay} value={formatDetailDuration(job.retryDelay, cc.detailDurationUnits)} />
+            <InfoCard label={cc.cardTimeout} value={formatDetailDuration(job.timeout, cc.detailDurationUnits)} />
           </div>
         </details>
 
