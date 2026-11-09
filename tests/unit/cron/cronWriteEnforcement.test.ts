@@ -163,12 +163,12 @@ describe('scheduled writes through ToolExecutor → orchestratorPermissions', ()
     expect(readFileSync(path.join(folder, 'notes.md'), 'utf8')).toBe('Channel notes\n');
   });
 
-  it('startup backfills only historical scheduled in-folder writers once, including after revoke', async () => {
+  it.each(['Write', 'Edit', 'Append', 'write_file', 'edit_file', 'append_file'])('startup backfills historical %s-only scheduled writers once, including after revoke', async (toolName) => {
     const old = await job();
     const fresh = await job();
     const historical = await createCronAgentSession(old, old.action);
     state.db!.appendPermissionDecision({
-      sessionId: historical.id, toolName: 'Write', summary: 'notes.md', finalOutcome: 'allow',
+      sessionId: historical.id, toolName, summary: 'notes.md', finalOutcome: 'allow',
       historyOutcome: 'auto-approve', reason: '写入项目目录内', durationMs: 0, recordedAt: Date.now(),
     });
     await cron.initialize();

@@ -44,7 +44,7 @@ export async function backfillCronWriteScopes(updatedAt = Date.now()): Promise<v
   const previousWriters = new Set((db.prepare(`
     SELECT DISTINCT json_extract(s.origin, '$.id') AS job_id
     FROM permission_decisions p JOIN sessions s ON s.id = p.session_id
-    WHERE p.tool_name IN ('Write', 'Edit', 'write_file', 'edit_file')
+    WHERE p.tool_name IN ('Write', 'Edit', 'Append', 'write_file', 'edit_file', 'append_file')
       AND p.final_outcome = 'allow' AND p.reason = '写入项目目录内'
       AND json_valid(s.origin)
       AND json_extract(s.origin, '$.kind') IN ('cron', 'heartbeat')
