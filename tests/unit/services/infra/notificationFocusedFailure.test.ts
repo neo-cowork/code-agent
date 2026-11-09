@@ -71,7 +71,7 @@ describe('ordinary completion with a real live AppWindow', () => {
     reportFocus(false);
     notificationService.notifyTaskComplete(task);
     expect(broadcastToRenderer).toHaveBeenCalledWith(IPC_CHANNELS.NOTIFICATION_SHOW, expect.objectContaining({ title: '任务完成 - Weekly report' }));
-    expect(logs.info).toHaveBeenCalledWith('Notification dispatched to renderer', { sessionTitle: task.sessionTitle });
+    expect(logs.info).toHaveBeenCalledWith('Notification dispatched to renderer', expect.objectContaining({ sessionId: task.sessionId, title: `任务完成 - ${task.sessionTitle}`, notificationId: expect.any(String), via: 'immediate' }));
     expect(logs.warn).not.toHaveBeenCalled();
   });
 
