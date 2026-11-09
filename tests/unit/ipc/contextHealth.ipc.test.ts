@@ -438,6 +438,7 @@ describe('resolveContextHealthForSession', () => {
     expect(compactMocks.sessionManager.replaceMessages).toHaveBeenCalledWith(
       sessionId,
       expect.any(Array),
+      expect.any(Number),
     );
     expect(compactMocks.state.persistedMessages.some((message) => message.compaction?.type === 'compaction')).toBe(true);
     expect(compactMocks.database.saveSessionRuntimeState).toHaveBeenCalledWith(
