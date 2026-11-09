@@ -9,7 +9,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChannelAccount } from '../../../src/shared/contract/channel';
 import type { CronJobDefinition } from '../../../src/shared/contract/cron';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
-import { cronCenterZh } from '../../../src/renderer/i18n/cronCenter';
+import { cronCenterEn, cronCenterZh } from '../../../src/renderer/i18n/cronCenter';
+import { ScheduleConfirmCard } from '../../../src/renderer/components/features/chat/ChatInput/ScheduleConfirmCard';
 
 const ipc = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -138,5 +139,108 @@ describe('event validation jumps to the basic tab', () => {
     expect(screen.getAllByText(copy.eventMailInvalidAccount)).toHaveLength(2);
     expect(scrollIntoView).toHaveBeenCalled();
     expect(cronStore.updateJob).not.toHaveBeenCalled();
+  });
+
+  it('event-channel: submit with empty budget → red box → type 0.5 → red box gone, no inline requires-budget text', async () => {
+    render(<CronJobEditor isOpen job={makeJob({ maxRunBudget: null })} onClose={() => undefined} />);
+
+    fireEvent.click(screen.getByText('保存修改'));
+    expect(await screen.findByTestId('cron-event-validation')).toBeTruthy();
+    expect(screen.getAllByText(copy.eventValidation['requires-budget'])).toHaveLength(2);
+
+    const budget = screen.getByLabelText(/^单次预算上限/) as HTMLInputElement;
+    fireEvent.change(budget, { target: { value: '0.5' } });
+
+    await waitFor(() => {
+      expect(screen.queryByText(copy.eventValidation['requires-budget'])).toBeNull();
+      expect(screen.queryByTestId('cron-event-validation')).toBeNull();
+    });
+  });
+
+  it('event-mail: submit with empty budget → red box → type 0.5 → red box gone, no inline requires-budget text', async () => {
+    render(
+      <CronJobEditor
+        isOpen
+        job={makeJob({
+          schedule: {
+            type: 'event', source: 'connector', connector: 'mail', accountId: '_icloud', mailbox: 'INBOX', eventName: 'message',
+          },
+          maxRunBudget: null,
+        })}
+        onClose={() => undefined}
+      />,
+    );
+
+    fireEvent.click(screen.getByText('保存修改'));
+    expect(await screen.findByTestId('cron-event-mail-validation')).toBeTruthy();
+    expect(screen.getAllByText(copy.eventValidation['requires-budget'])).toHaveLength(2);
+
+    const budget = screen.getByLabelText(/^单次预算上限/) as HTMLInputElement;
+    fireEvent.change(budget, { target: { value: '0.5' } });
+
+    await waitFor(() => {
+      expect(screen.queryByText(copy.eventValidation['requires-budget'])).toBeNull();
+      expect(screen.queryByTestId('cron-event-mail-validation')).toBeNull();
+    });
+  });
+
+  it('non-event form error is NOT cleared by editing the budget field', async () => {
+    cronStore.updateJob.mockRejectedValueOnce(new Error('后端保存失败'));
+    render(<CronJobEditor isOpen job={makeJob({ maxRunBudget: 1 })} onClose={() => undefined} />);
+
+    fireEvent.click(screen.getByText('保存修改'));
+    expect(await screen.findByText('后端保存失败')).toBeTruthy();
+
+    const budget = screen.getByLabelText(/^单次预算上限/) as HTMLInputElement;
+    fireEvent.change(budget, { target: { value: '0.5' } });
+
+    expect(screen.getByText('后端保存失败')).toBeTruthy();
+  });
+
+  it('eventConstraintsHint and eventValidation["requires-budget"] in zh and en contain no direction words and render on editor + confirm card', () => {
+    const strings = [
+      cronCenterZh.cronCenter.eventConstraintsHint,
+      cronCenterZh.cronCenter.eventValidation['requires-budget'],
+      cronCenterEn.cronCenter.eventConstraintsHint,
+      cronCenterEn.cronCenter.eventValidation['requires-budget'],
+    ];
+    for (const s of strings) {
+      expect(s).not.toMatch(/上方|下方|\babove\b|\bbelow\b/i);
+    }
+    expect(cronCenterZh.cronCenter.eventConstraintsHint).toContain('单次预算上限 (USD)');
+    expect(cronCenterZh.cronCenter.eventValidation['requires-budget']).toContain('单次预算上限 (USD)');
+    expect(cronCenterEn.cronCenter.eventConstraintsHint).toContain('Per-run budget cap (USD)');
+    expect(cronCenterEn.cronCenter.eventValidation['requires-budget']).toContain('Per-run budget cap (USD)');
+
+    const { unmount } = render(<CronJobEditor isOpen job={makeJob({ maxRunBudget: 0.5 })} onClose={() => undefined} />);
+    const editorHint = screen.getByTestId('cron-event-constraints-hint').textContent ?? '';
+    expect(editorHint).toBe(copy.eventConstraintsHint);
+    expect(editorHint).not.toMatch(/上方|下方|\babove\b|\bbelow\b/i);
+    unmount();
+
+    render(
+      <ScheduleConfirmCard
+        draft={{
+          input: {
+            name: '盯群',
+            description: '关注群消息',
+            enabled: true,
+            scheduleType: 'event',
+            schedule: { type: 'event', source: 'channel', accountId: 'account-feishu', eventName: 'message' },
+            action: { type: 'agent', agentType: 'default', prompt: '处理' },
+            runsOn: 'local',
+            maxRunBudget: 0.5,
+          },
+          description: '关注群消息',
+          sourceSessionId: null,
+        }}
+        confirming={false}
+        onConfirm={() => undefined}
+        onDismiss={() => undefined}
+      />,
+    );
+    const confirmHint = screen.getByTestId('cron-event-constraints-hint').textContent ?? '';
+    expect(confirmHint).toBe(copy.eventConstraintsHint);
+    expect(confirmHint).not.toMatch(/上方|下方|\babove\b|\bbelow\b/i);
   });
 });

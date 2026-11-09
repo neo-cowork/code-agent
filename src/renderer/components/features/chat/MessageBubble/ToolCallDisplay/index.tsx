@@ -24,6 +24,7 @@ import {
   humanizeToolFailureReason,
   isEscalatedToolError,
 } from '../../../../../utils/toolExecutionPresentation';
+import { hasCompletenessIssues, replaceCompletenessWarningInOutput } from '../../../../../utils/toolOutputCompletenessWarning';
 import type { Translations } from '../../../../../i18n';
 import { computeBashPreviewLines } from './bashOutputPreview';
 import {
@@ -40,6 +41,7 @@ import { DelegationHeader, DelegationReceipt } from './DelegationReceipt';
 import {
   deriveDelegationPresentation,
   resolveAgentActivityTarget,
+  toDelegationDisplayToolCall,
 } from './delegationPresentation';
 import { humanizeToolStep } from '../../../../../utils/humanizeToolStep';
 import { getHumanToolLabel } from '../../../../../utils/toolHumanLabel';
@@ -358,7 +360,7 @@ export function ToolCallDisplay({
       {expanded && !receipt && (
         <div className="ml-6 animate-fadeIn">
           <ToolDetails
-            toolCall={toolCall}
+            toolCall={toDelegationDisplayToolCall(toolCall)}
             compact={compact}
             mediaContext={{
               ...mediaContext,
@@ -394,8 +396,21 @@ function ToolReceiptMeta({ receipt }: { receipt: ToolReceiptPresentation }) {
 }
 
 function ReceiptDetail({ receipt, toolCall }: { receipt: ToolReceiptPresentation; toolCall: ToolCall }) {
+  const { t } = useI18n();
   const raw = receipt.detail || toolCall.result?.output || toolCall.result?.error;
-  if (!raw) return null;
+  const hideCreatedFilePrefix = toolCall.name === 'Write'
+    && toolCall.result?.success === true
+    && hasCompletenessIssues(toolCall.result.metadata);
+  const displayRaw = typeof raw === 'string'
+    ? replaceCompletenessWarningInOutput(
+        toolCall.name,
+        raw,
+        toolCall.result?.metadata,
+        t.rendererHumanPipe.toolDetails.completenessWarningNote,
+        !hideCreatedFilePrefix,
+      )
+    : raw;
+  if (!displayRaw) return null;
   return (
     <pre
       className={`ml-6 mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md border px-2.5 py-2 text-[11px] leading-relaxed animate-fadeIn ${
@@ -405,7 +420,7 @@ function ReceiptDetail({ receipt, toolCall }: { receipt: ToolReceiptPresentation
       }`}
       data-testid="tool-step-receipt-detail"
     >
-      {raw}
+      {typeof displayRaw === 'string' ? displayRaw : JSON.stringify(displayRaw, null, 2)}
     </pre>
   );
 }

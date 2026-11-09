@@ -26,6 +26,7 @@ import type {
   RoleFirstWakeStateName,
 } from '../../../shared/contract/roleAssets';
 import type { CapabilityCenterItem } from '../../../shared/contract/capability';
+import type { Message } from '../../../shared/contract/message';
 import { getAgentsMdDir } from '../../config/configPaths';
 import { parseAgentMdVisual } from '../../agent/hybrid/agentMdLoader';
 import { getRoleFirstWakePath, isSafeRoleId } from './roleAssetPaths';
@@ -423,6 +424,7 @@ async function defaultFirstWakeRunner(input: {
       await orchestrator.sendMessage(input.prompt, undefined, {
         mode: 'normal',
         inputSource: 'automation',
+        inputHistoryVisibility: 'meta',
         systemInstructions: [UNATTENDED_TRUST_NOTICE],
         disableAutoAgent: true,
         agentOverrideId: input.roleId,
@@ -465,6 +467,16 @@ async function defaultFirstWakeRunner(input: {
     config.originKind = 'headless';
     config.allowedToolNames = input.allowedToolNames;
 
+    const firstWakeUserMessage: Message = {
+      id: `first-wake-user-${Date.now()}`,
+      role: 'user',
+      content: input.prompt,
+      timestamp: Date.now(),
+      isMeta: true,
+      source: 'system',
+    };
+    await sessionManager.addMessageToSession(input.sessionId, firstWakeUserMessage);
+
     let lastEventAssistantContent = '';
     const agentLoop = createAgentLoop(
       config,
@@ -476,14 +488,7 @@ async function defaultFirstWakeRunner(input: {
           }
         }
       },
-      [
-        {
-          id: `first-wake-user-${Date.now()}`,
-          role: 'user',
-          content: input.prompt,
-          timestamp: Date.now(),
-        },
-      ],
+      [firstWakeUserMessage],
       input.sessionId,
     );
     await agentLoop.run(input.prompt);
@@ -575,6 +580,47 @@ export async function skipFirstWake(roleId: string): Promise<{ success: boolean 
     return { success: true };
   } catch (error) {
     logger.warn('First wake skip failed', { roleId, error: String(error) });
+    return { success: false };
+  }
+}
+
+/** 点一条建议：只消费匹配标题，保留其余建议；最后一条消费后封成 skipped。 */
+export async function consumeFirstWakeSuggestion(
+  roleId: string,
+  title: string,
+): Promise<{ success: boolean }> {
+  try {
+    const trimmed = title.trim();
+    if (!isSafeRoleId(roleId) || !trimmed) return { success: false };
+    const current = await readFirstWakeState(roleId);
+    if (!current) {
+      logger.info('First wake suggestion consume missed (state missing)', { roleId, title: trimmed });
+      return { success: true };
+    }
+    if (current.state === 'skipped') {
+      logger.info('First wake suggestion consume missed (already skipped)', { roleId, title: trimmed });
+      return { success: true };
+    }
+    const index = current.suggestions.findIndex((suggestion) => suggestion.title === trimmed);
+    if (index < 0) {
+      logger.info('First wake suggestion consume missed (title not found)', { roleId, title: trimmed });
+      return { success: true };
+    }
+    const suggestions = current.suggestions.filter((_suggestion, suggestionIndex) => suggestionIndex !== index);
+    await writeFirstWakeState(roleId, {
+      ...current,
+      state: suggestions.length === 0 ? 'skipped' : current.state,
+      suggestions,
+    });
+    logger.info('First wake suggestion consumed by user', {
+      roleId,
+      title: trimmed,
+      previousState: current.state,
+      remaining: suggestions.length,
+    });
+    return { success: true };
+  } catch (error) {
+    logger.warn('First wake suggestion consume failed', { roleId, title, error: String(error) });
     return { success: false };
   }
 }

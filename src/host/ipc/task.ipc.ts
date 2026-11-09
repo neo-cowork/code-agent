@@ -14,6 +14,13 @@ import { TaskSchemas, type TaskDomainRequest } from '../../shared/ipc/schemas/ta
 import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import type { TaskManager, SessionState, TaskManagerEvent } from '../task';
 import { createLogger } from '../services/infra/logger';
+import { getBackgroundTaskLedger } from '../task/backgroundTaskLedger';
+import {
+  getAllPtySessions,
+  getBackgroundTask,
+  killBackgroundTask,
+  killPtySession,
+} from '../tools/modules/shell/backgroundTaskSources';
 
 const logger = createLogger('TaskIPC');
 
@@ -81,10 +88,53 @@ interface BackgroundTaskIdPayload {
 }
 
 async function handleCancelBackgroundTask(
-  taskManager: TaskManager,
+  taskManager: TaskManager | null,
   payload: BackgroundTaskIdPayload
 ): Promise<boolean> {
-  return taskManager.cancelBackgroundTask(payload.taskId);
+  try {
+    let cancelled = false;
+    const ledgerTask = getBackgroundTaskLedger().getTask(payload.taskId);
+    const originalTaskId = ledgerTask?.kind === 'shell'
+      && typeof ledgerTask.metadata?.originalTaskId === 'string'
+      ? ledgerTask.metadata.originalTaskId
+      : null;
+    const originalPtySessionId = ledgerTask?.kind === 'pty'
+      ? (typeof ledgerTask.metadata?.originalSessionId === 'string'
+          ? ledgerTask.metadata.originalSessionId
+          : payload.taskId.startsWith('pty:')
+            ? payload.taskId.slice('pty:'.length)
+            : null)
+      : null;
+
+    if (originalTaskId) {
+      const shellTask = getBackgroundTask(originalTaskId);
+      if (shellTask?.status === 'running') {
+        cancelled = (await killBackgroundTask(originalTaskId)).success;
+      }
+    } else if (originalPtySessionId) {
+      const ptySession = getAllPtySessions()
+        .find((session) => session.sessionId === originalPtySessionId);
+      if (ptySession?.status === 'running') {
+        cancelled = (await killPtySession(originalPtySessionId)).success;
+      }
+    } else if (taskManager) {
+      cancelled = await taskManager.cancelBackgroundTask(payload.taskId);
+    }
+
+    logger.info('Background task stop', {
+      taskId: payload.taskId,
+      outcome: cancelled ? 'stopped' : 'not_stopped',
+      cancelled,
+    });
+    return cancelled;
+  } catch (error) {
+    logger.info('Background task stop', {
+      taskId: payload.taskId,
+      outcome: 'error',
+      cancelled: false,
+    });
+    throw error;
+  }
 }
 
 function handleGetState(
@@ -181,6 +231,7 @@ interface TaskRouteCtx {
  * 返回安全默认且静默；写/控制类动作（含未知 action）返回结构化 unavailable 响应，并按 action 只打一次 debug。
  */
 function taskManagerUnavailableGuard(action: unknown, ctx: TaskRouteCtx): IPCResponse | null {
+  if (action === 'cancelBackgroundTask') return null;
   if (ctx.getTaskManager()) return null;
   switch (action) {
     case 'getAllStates':
@@ -231,9 +282,13 @@ const taskRoutes = defineDomainRoutes<TaskDomainRequest, TaskRouteCtx>(
     },
     // 行级停单个 delegate_task 后台任务（SessionAgentsPanel）：TaskManager 既有
     // cancelBackgroundTask(taskId)，此前只有 cancel_task 工具内部用，IPC 无出口。
-    cancelBackgroundTask: async (ctx, payload) => ({
-      cancelled: await handleCancelBackgroundTask(bridgedTaskManager(ctx), payload as BackgroundTaskIdPayload),
-    }),
+    cancelBackgroundTask: async (ctx, payload) => {
+      const taskManager = ctx.getTaskManager();
+      if (taskManager) ensureTaskEventBridge(taskManager);
+      return {
+        cancelled: await handleCancelBackgroundTask(taskManager, payload as BackgroundTaskIdPayload),
+      };
+    },
     getState: (ctx, payload) => handleGetState(bridgedTaskManager(ctx), payload as TaskIdPayload),
     getAllStates: (ctx) => handleGetAllStates(bridgedTaskManager(ctx)),
     getQueue: (ctx) => handleGetQueue(bridgedTaskManager(ctx)),

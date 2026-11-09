@@ -32,6 +32,7 @@ import { CronJobEditor } from './CronJobEditor';
 import { CronExecutionList } from './CronExecutionList';
 import { CronExecutionDetail } from './CronExecutionDetail';
 import { CronDailyCostSummary } from './CronDailyCostSummary';
+import { getBuiltinJobDisplay } from './builtinJobDisplay';
 import { WebModeBanner } from '../settings/WebModeBanner';
 import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 import { Button } from '../../primitives';
@@ -83,10 +84,12 @@ const StatusTile: React.FC<{ label: string; value: string; attention?: boolean; 
 );
 
 export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const cc = t.cronCenter;
   const {
     jobs,
+    allJobs,
+    jobNamesLoaded,
     stats,
     selectedJobId,
     isEditorOpen,
@@ -227,8 +230,10 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
   );
 
   const jobNameById = useMemo(
-    () => Object.fromEntries(jobs.map((job) => [job.id, job.name])),
-    [jobs]
+    () => Object.fromEntries(
+      [...allJobs, ...jobs].map((job) => [job.id, getBuiltinJobDisplay(job, language)?.name ?? job.name]),
+    ),
+    [allJobs, jobs, language]
   );
 
   const runsOnByJobId = useMemo(
@@ -386,12 +391,15 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
                 selectedExecutionId={selectedExecutionId}
                 onSelectExecution={setSelectedExecutionId}
                 jobNameById={jobNameById}
+                jobNamesLoaded={jobNamesLoaded}
                 runsOnByJobId={runsOnByJobId}
                 awaitingByJobId={awaitingByJobId}
               />
               <div className="min-w-0">
                 <CronExecutionDetail
                   execution={selectedExecution}
+                  jobName={selectedExecution ? jobNameById[selectedExecution.jobId] : undefined}
+                  jobNamesLoaded={jobNamesLoaded}
                   runsOn={selectedExecution?.runsOn ?? (selectedExecution ? runsOnByJobId[selectedExecution.jobId] : undefined)}
                   awaitingRun={selectedExecution ? awaitingByJobId.get(selectedExecution.jobId) ?? null : null}
                   onReviewAwaiting={() => setActiveTab('runs')}

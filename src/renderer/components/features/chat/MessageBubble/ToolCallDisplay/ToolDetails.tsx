@@ -33,18 +33,20 @@ import {
   buildToolErrorActions,
   isToolInterruptionPlaceholder,
 } from '../../../../../utils/toolExecutionPresentation';
+import { hasCompletenessIssues, replaceCompletenessWarningInOutput } from '../../../../../utils/toolOutputCompletenessWarning';
 import { readHostReasonFromMetadata } from '../../../../../utils/hostReasonPresentation';
+import { cleanToolResultDisplayText } from '../../../../../utils/toolResultDisplayText';
 import { useI18n } from '../../../../../hooks/useI18n';
 import type { Translations } from '../../../../../i18n';
 import { useMessageActionStore } from '../../../../../stores/messageActionStore';
 import { copyPathToClipboard } from '../../../../../utils/platform';
+import { formatSessionTaskOutput } from '../../../../../utils/sessionTaskPresentation';
 import {
   ImageResultDisplay,
   GenericMediaResultDisplay,
   FileResultDisplay,
   VideoResultDisplay,
 } from './ToolResultMediaDisplays';
-
 // Shiki 高亮内核按需动态加载,只在真的渲染 JSON 高亮时才下载。
 const LazyShikiCodeBlock = lazy(() => import('../ShikiCodeBlock'));
 
@@ -344,7 +346,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
           )}
 
           {/* Standard result output */}
-          {!imageResult && !videoResult && !genericMediaAsset && !generatedFileResult && !createdFilePath && (
+          {!imageResult && !videoResult && !genericMediaAsset && !generatedFileResult && (!createdFilePath || hasCompletenessIssues(result.metadata)) && (
             <>
               {browserComputerNextSteps.length > 0 && (
                 <BrowserComputerNextStepActions actions={browserComputerNextSteps} copy={copy} />
@@ -406,7 +408,13 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                       : result.error
                         ? stripAnsiCodes(result.error)
                         : typeof result.output === 'string'
-                          ? stripAnsiCodes(result.output)
+                          ? replaceCompletenessWarningInOutput(
+                            name,
+                            cleanToolResultDisplayText(name, stripAnsiCodes(formatSessionTaskOutput(result.metadata, result.output, t)), copy),
+                            result.metadata,
+                            t.rendererHumanPipe.toolDetails.completenessWarningNote,
+                            !createdFilePath,
+                          )
                           : JSON.stringify(result.output, null, 2)
                   }
                   lineCap={isShellTool(name) ? SHELL_RESULT_BODY_LINE_CAP : RESULT_BODY_LINE_CAP}

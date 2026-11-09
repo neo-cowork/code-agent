@@ -51,10 +51,12 @@ import {
   confirmRoleDraft,
   rejectRoleDraft,
   getFirstWakeSnapshot,
+  consumeFirstWakeSuggestion,
   retryFirstWake,
   skipFirstWake,
   isSafeRoleId,
   trashUserRole,
+  listTrashedRoles,
   restoreTrashedRole,
 } from '../services/roleAssets';
 import { writeRoleProactivityConfig } from '../services/roleAssets/roleProactivityWrite';
@@ -715,6 +717,7 @@ const rolesHandlers: RawDomainRouteHandlers<RolesDomainRequest, void> = {
     });
     return { success: true, data: { roleId: result.roleId } };
   },
+  listDeletedRoles: async (_ctx, _payload) => ({ success: true, data: await listTrashedRoles() }),
   // --- 对话式建角色：草稿队列（role-creation-flow） ---
   listDrafts: async (_ctx, _payload) => {
     return { success: true, data: await listRoleDrafts() };
@@ -806,6 +809,17 @@ const rolesHandlers: RawDomainRouteHandlers<RolesDomainRequest, void> = {
     const result = await skipFirstWake(roleId);
     if (!result.success) {
       return { success: false, error: { code: 'FIRST_WAKE_SKIP_FAILED', message: 'skip failed' } };
+    }
+    return { success: true, data: { success: true } };
+  },
+  firstWakeConsumeSuggestion: async (_ctx, payload) => {
+    const { roleId, title } = (payload ?? {}) as RoleIdPayload & { title?: string };
+    if (!roleId || !isSafeRoleId(roleId) || !title?.trim()) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'a safe roleId and title are required' } };
+    }
+    const result = await consumeFirstWakeSuggestion(roleId, title);
+    if (!result.success) {
+      return { success: false, error: { code: 'FIRST_WAKE_CONSUME_FAILED', message: 'consume failed' } };
     }
     return { success: true, data: { success: true } };
   },

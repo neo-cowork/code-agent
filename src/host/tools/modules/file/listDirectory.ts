@@ -20,6 +20,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { isPlannedSessionWorkDirectory } from '../../../config/sessionWorkDirectory';
 import { buildSpillNotice, spillToolResultArchive, type ToolResultArchiveRef } from '../../../utils/toolResultSpill';
 import { listDirectorySchema as schema } from './listDirectory.schema';
 
@@ -46,6 +47,7 @@ const MAX_LIMIT = 1000;
 const DISCOVERY_ARCHIVE_CHAR_LIMIT = 12_000;
 const NEXT_READ_HINT =
   '\n[next-read] Before Edit or overwrite Write on any listed file path, call Read on that exact file first.';
+const PLANNED_EMPTY_FOLDER_OUTPUT = '(empty — this task folder has no files yet)';
 
 const IGNORED_DIRS = new Set([
   'node_modules', '.git', 'dist', 'build', '.next', 'coverage', '__pycache__',
@@ -312,6 +314,51 @@ class ListDirectoryHandler implements ToolHandler<Record<string, unknown>, strin
     } catch (err) {
       const e = err as NodeJS.ErrnoException;
       if (e.code === 'ENOENT') {
+        if (isPlannedSessionWorkDirectory(dirPath)) {
+          const output = `${PLANNED_EMPTY_FOLDER_OUTPUT}\n\nnextOffset: null`;
+          onProgress?.({ stage: 'completing', percent: 100 });
+          ctx.logger.info('ListDirectory done (planned empty session work directory)', { dirPath, recursive });
+          return {
+            ok: true,
+            output,
+            meta: {
+              dirPath,
+              recursive,
+              maxDepth,
+              offset,
+              limit,
+              sort,
+              respectGitignore,
+              entryCount: 0,
+              fileCount: 0,
+              directoryCount: 0,
+              entries: [],
+              nextOffset: null,
+              entriesTruncated: false,
+              artifact: createVirtualArtifact({
+                sourceTool: schema.name,
+                kind: 'text',
+                sessionId: ctx.sessionId,
+                name: `Directory: ${path.basename(dirPath) || dirPath}`,
+                mimeType: 'text/plain',
+                contentLength: output.length,
+                preview: output.slice(0, 500),
+                metadata: {
+                  dirPath,
+                  recursive,
+                  maxDepth,
+                  offset,
+                  limit,
+                  nextOffset: null,
+                  entryCount: 0,
+                  fileCount: 0,
+                  directoryCount: 0,
+                  entriesTruncated: false,
+                },
+              }),
+            },
+          };
+        }
         return { ok: false, error: `Directory not found: ${dirPath}`, code: 'ENOENT' };
       }
       return { ok: false, error: e.message ?? 'Failed to list directory', code: 'FS_ERROR' };

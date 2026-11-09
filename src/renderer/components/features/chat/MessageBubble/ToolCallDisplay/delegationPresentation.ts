@@ -32,6 +32,46 @@ export interface DelegationPresentation {
   sessionId?: string;
 }
 
+const SPAWN_AGENT_PRIVATE_RESULT_LINE = /^- (?:Agent ID|Pipeline ID|Cost):(?:\s|$)/;
+const TASK_PRIVATE_RESULT_LINE = /^- Cost:(?:\s|$)/;
+const TASK_STATS_MARKER = '\nStats:\n';
+const WAIT_AGENT_STATS_COST = /^(\s+Stats:.*?),\s+\$\d+(?:\.\d+)?\s*$/;
+
+/** Keep the host's orchestration receipt model-visible while hiding its private bookkeeping in UI details. */
+export function toDelegationDisplayToolCall(toolCall: ToolCall): ToolCall {
+  const result = toolCall.result;
+  const output = result?.output;
+  if (!result || typeof output !== 'string') return toolCall;
+
+  if (toolCall.name === 'wait_agent') {
+    const visibleOutput = output.split('\n')
+      .map((line) => line.replace(WAIT_AGENT_STATS_COST, '$1'))
+      .join('\n');
+    return visibleOutput === output
+      ? toolCall
+      : { ...toolCall, result: { ...result, output: visibleOutput } };
+  }
+
+  if (toolCall.name !== 'spawn_agent' && toolCall.name !== 'Task') return toolCall;
+
+  const statsIndex = output.lastIndexOf(TASK_STATS_MARKER);
+  if (statsIndex < 0) return toolCall;
+  const statsStart = statsIndex + TASK_STATS_MARKER.length;
+  const privateResultLine = toolCall.name === 'spawn_agent'
+    ? SPAWN_AGENT_PRIVATE_RESULT_LINE
+    : TASK_PRIVATE_RESULT_LINE;
+  const visibleOutput = output.slice(0, statsStart) + output.slice(statsStart)
+    .split('\n')
+    .filter((line) => !privateResultLine.test(line))
+    .join('\n');
+  if (visibleOutput === output) return toolCall;
+
+  return {
+    ...toolCall,
+    result: { ...result, output: visibleOutput },
+  };
+}
+
 function basename(value: string): string {
   const normalized = value.split(/[?#]/, 1)[0] || value;
   return normalized.split(/[\\/]/).filter(Boolean).pop() || value;

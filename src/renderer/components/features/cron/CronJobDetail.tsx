@@ -15,6 +15,12 @@ import {
   getLatestExecutionStatus,
 } from './types';
 import { formatDateTime } from '../../../utils/formatDateTime';
+import {
+  cronJobUsesDifferentTimeZone,
+  formatCronJobDateTime,
+  formatCronJobLocalDateTime,
+  formatCronScheduleLabelWithZone,
+} from '../../../utils/formatCronJobTime';
 import { CronExecutionList } from './CronExecutionList';
 import { CronExecutionDetail } from './CronExecutionDetail';
 import { CLOUD_ROLE_BOUND_ERROR } from './CronCloudRoleRestriction';
@@ -26,6 +32,7 @@ import { CronGroupListenCheck } from './CronGroupListenCheck';
 import { CronWebhookLinkBlock } from './CronWebhookLinkBlock';
 import { CronEventDecisionsPanel } from './CronEventDecisionsPanel';
 import { awaitingApprovalLabel } from './awaitingApprovalLabel';
+import { getBuiltinJobDisplay } from './builtinJobDisplay';
 import { isWebhookCronJob } from '@shared/cronWebhookJob';
 import { CronWriteScopePanel } from './CronWriteScopePanel';
 
@@ -94,6 +101,13 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
   const latestMeta = getLatestExecutionStatus(latest);
   const latestLabel = cc.status[latest?.status ?? 'none'];
   const awaitingApproval = awaitingRun != null;
+  const builtinDisplay = getBuiltinJobDisplay(job, language);
+  const displayName = builtinDisplay?.name ?? job.name;
+  const displayDescription = builtinDisplay?.description ?? job.description;
+  const cronTimeZone = job.schedule.type === 'cron' ? job.schedule.timezone : undefined;
+  const scheduleSummary = job.schedule.type === 'cron'
+    ? formatCronScheduleLabelWithZone(job.schedule.expression, job.schedule.timezone, language)
+    : formatScheduleSummary(job, language, eventNamesFor(job));
 
   const handleToggleEnabled = async () => {
     setToggleError(null);
@@ -106,7 +120,7 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
   };
 
   const handleDelete = async () => {
-    if (!window.confirm(cc.confirmDelete.replace('{name}', job.name))) return;
+    if (!window.confirm(cc.confirmDelete.replace('{name}', displayName))) return;
     await deleteJob(job.id);
   };
 
@@ -120,12 +134,12 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
   };
 
   return (
-    <div className="flex h-full flex-col bg-zinc-900/40">
+    <div className="flex h-full flex-col overflow-y-auto bg-zinc-900/40 contain-size">
       <div className="border-b border-zinc-800 p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-lg font-semibold text-zinc-100">{job.name}</h3>
+              <h3 className="text-lg font-semibold text-zinc-100">{displayName}</h3>
               {awaitingApproval ? (
                 <span
                   className="rounded-full border border-badge-warning/40 bg-amber-500/15 px-2 py-1 text-xs text-badge-warning"
@@ -157,8 +171,8 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
               </div>
             )}
             <div className="mt-2 max-w-3xl text-sm">
-              {job.description ? (
-                <p className="text-zinc-400">{job.description}</p>
+              {displayDescription ? (
+                <p className="text-zinc-400">{displayDescription}</p>
               ) : (
                 // 引导文案 + 入口样式（不接功能）：虚线描边 = 可补全的占位，不是报错
                 <span
@@ -214,16 +228,23 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
             同一件事不再拆成四张卡各说一遍 */}
         <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-950/50 px-4 py-3">
           <div className="flex flex-wrap items-center gap-x-8 gap-y-1.5">
-            <SummaryItem label={cc.cardSchedule} value={formatScheduleSummary(job, language, eventNamesFor(job))} />
+            <SummaryItem label={cc.cardSchedule} value={scheduleSummary} />
             <SummaryItem
               label={cc.cardNextRun}
-              value={job.enabled && job.nextRunAt != null ? formatDateTime(job.nextRunAt, language) : '—'}
+              value={job.enabled && job.nextRunAt != null
+                ? formatCronJobDateTime(job.nextRunAt, cronTimeZone, language)
+                : '—'}
               testId="cron-detail-next-run"
             />
+            {job.enabled && job.nextRunAt != null && cronJobUsesDifferentTimeZone(cronTimeZone) && (
+              <div className="basis-full text-xs text-zinc-500" data-testid="cron-detail-local-next-run">
+                {cc.localNextRun.replace('{time}', formatCronJobLocalDateTime(job.nextRunAt, language))}
+              </div>
+            )}
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-x-8 gap-y-1.5 border-t border-zinc-800/70 pt-2">
             <SummaryItem label={cc.cardEnabledState} value={job.enabled ? cc.enabled : cc.disabled} />
-            <SummaryItem label={cc.cardAction} value={formatActionSummary(job)} />
+            <SummaryItem label={cc.cardAction} value={formatActionSummary(job, language)} testId="cron-detail-action" />
             <CronResultChannelSummary value={job.resultChannel} />
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-zinc-800/70 pt-2">
@@ -286,7 +307,7 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
         )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-hidden p-5">
+      <div className="min-h-[200px] p-5">
         <div className="mb-3 flex items-center gap-2">
           <Activity className="h-4 w-4 text-badge-info" />
           <h4 className="text-sm font-medium text-zinc-100">{cc.historyTitle}</h4>
@@ -306,7 +327,7 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
               />
             </section>
             <section className="min-h-0 overflow-y-auto">
-              <CronExecutionDetail execution={selectedExecution} runsOn={job.runsOn} />
+              <CronExecutionDetail execution={selectedExecution} jobName={job.name} runsOn={job.runsOn} />
             </section>
           </div>
         )}

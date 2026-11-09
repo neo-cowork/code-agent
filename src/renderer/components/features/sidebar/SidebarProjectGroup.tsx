@@ -12,9 +12,8 @@ import {
   Settings2,
   SquarePen,
 } from 'lucide-react';
-import { IPC_DOMAINS } from '@shared/ipc';
 import { isWebMode } from '../../../utils/platform';
-import ipcService from '../../../services/ipcService';
+import { pickWorkingDirectory } from '../../../services/workingDirectoryPicker';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
 import {
   buildSidebarProjectSummary,
@@ -187,7 +186,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
   const handlePickWorkspaceDirectory = async () => {
     setMenuOpen(false);
     try {
-      const next = await ipcService.invokeDomain<string | null>(IPC_DOMAINS.WORKSPACE, 'selectDirectory');
+      const next = await pickWorkingDirectory(t.sidebar.selectDirectoryTitle);
       if (next) {
         await createWorkspaceChat(next, next);
       }

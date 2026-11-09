@@ -9,16 +9,11 @@ import { useI18n } from '../../../hooks/useI18n';
 import { ContextHealthDetailPopover } from './ContextHealthDetailPopover';
 import {
   clampUsagePercent,
+  formatContextTokenNumber,
   formatContextUsagePercent,
   isContextWindowKnown,
 } from '../../../utils/contextUsageFormat';
 import { OPEN_CONTEXT_HEALTH_EVENT } from '../../../utils/workbenchViews';
-
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1000) return `${(n / 1000).toFixed(0)}k`;
-  return String(n);
-}
 
 type Tone = 'normal' | 'warning' | 'critical';
 
@@ -120,11 +115,11 @@ export const ContextUsagePill: React.FC = () => {
           ? (windowKnown
             ? ch.usageTitle
               .replace('{percent}', displayPct)
-              .replace('{used}', formatTokens(currentTokens))
-              .replace('{max}', formatTokens(maxTokens))
-            : `${ch.windowUnknownBadge} · ${ch.tokensFraction
-              .replace('{used}', formatTokens(currentTokens))
-              .replace('{max}', formatTokens(maxTokens))}`)
+              .replace('{used}', formatContextTokenNumber(currentTokens))
+              .replace('{max}', formatContextTokenNumber(maxTokens))
+            : ch.windowUnknownTitle
+              .replace('{used}', formatContextTokenNumber(currentTokens))
+              .replace('{max}', formatContextTokenNumber(maxTokens)))
           : ch.waitingFirstTurn}
       >
         <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="transform -rotate-90">
@@ -158,19 +153,23 @@ export const ContextUsagePill: React.FC = () => {
             {hasData
               ? (windowKnown
                 ? ch.usageSummary.replace('{percent}', displayPct).replace('{remaining}', displayRemainingPct)
-                : ch.windowUnknownSummary)
+                : ch.windowUnknownSummary.replace('{used}', formatContextTokenNumber(currentTokens)))
               : ch.waitingFirstTurn}
           </div>
           <div className="mt-1 text-[11px] leading-tight text-zinc-400 tabular-nums">
             {hasData
-              ? ch.tokensFraction.replace('{used}', formatTokens(currentTokens)).replace('{max}', formatTokens(maxTokens))
+              ? (windowKnown
+                ? ch.tokensFraction
+                  .replace('{used}', formatContextTokenNumber(currentTokens))
+                  .replace('{max}', formatContextTokenNumber(maxTokens))
+                : ch.windowUnknownSubline.replace('{max}', formatContextTokenNumber(maxTokens)))
               : ch.waitingCapacity}
           </div>
 
           {compactResult && (
             <div className="mt-2 text-[11px] text-badge-success">
               {compactResult.totalSavedTokens > 0
-                ? ch.freedTokens.replace('{tokens}', formatTokens(compactResult.totalSavedTokens))
+                ? ch.freedTokens.replace('{tokens}', formatContextTokenNumber(compactResult.totalSavedTokens))
                 : ch.compactedCount.replace('{count}', String(compactResult.compressionCount))}
             </div>
           )}

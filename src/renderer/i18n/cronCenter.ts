@@ -24,7 +24,7 @@ export const cronCenterZh = {
     },
     title: '自动化',
     subtitle: '按计划执行，结果回来给你过目',
-    tabJobs: '定时任务',
+    tabJobs: '自动化任务',
     tabRuns: '运行记录',
     close: '关闭自动化面板',
     // 页首三格状态条（数据：cronStore.stats + 收件箱待过目数）
@@ -56,6 +56,7 @@ export const cronCenterZh = {
     awaitingApprovalAction: '去处理',
     awaitingApprovalWithPreview: '等你批准：{preview}',
     nextRun: '下次 {time}',
+    localNextRun: '你本机的时间 {time}',
     locationFilterAll: '全部',
     locationLocal: '本地',
     locationCloud: '云端',
@@ -152,6 +153,10 @@ export const cronCenterZh = {
     locationCreatedImmutable: '创建后不可更改',
     copyByLocation: '按新位置复制一份',
     copyTitle: '按新位置复制任务',
+    editTitle: '编辑自动化',
+    manualTitle: '手动配置自动化',
+    enableAfterCreate: '创建后立即启用',
+    enabledStatus: '启用',
     advancedSection: '高级参数',
     cardCreatedAt: '创建时间',
     cardUpdatedAt: '更新时间',
@@ -166,6 +171,9 @@ export const cronCenterZh = {
     execDetailTitle: '执行详情',
     execOpenSession: '打开会话',
     execOpeningSession: '打开中',
+    deletedTask: '已删除的任务',
+    jobNameUnavailable: '任务名称暂不可用',
+    linkedSession: '已关联的会话',
     colJob: '任务',
     colStatus: '状态',
     colLocation: '位置',
@@ -230,6 +238,32 @@ export const cronCenterZh = {
     resultPushListFailed: '暂时无法读取会话，可手动填写接收会话 ID。',
     resultPushAccountUnavailable: '之前保存的推送目标“{value}”对应的通道已不可用。原配置已保留，重新选择或改为不推送后再保存。',
     resultPushConversationUnavailable: '之前保存的接收会话已不可用。原配置已保留，重新选择后再保存。',
+    // 手动配置页的人话字段（N-FIX-CRON-EDITOR-AGENT-ACTION-DEV-FIELDS）
+    manualEditor: {
+      oneTimeScheduleOption: '一次性',
+      intervalScheduleOption: '间隔循环',
+      cronScheduleOption: '按固定时间重复（Cron 表达式）',
+      retryDelayLabel: '重试间隔',
+      timeoutLabel: '执行超时',
+      retryDelayPlaceholder: '自动',
+      timeoutPlaceholder: '不限',
+      retryDelayHint: '留空会自动逐步增加等待时间（30 秒到 15 分钟）。',
+      durationInvalid: '请输入有效的非负时长。',
+      durationUnits: { seconds: '秒', minutes: '分钟', hours: '小时' },
+      agentTypeLabel: 'Agent 类型',
+      taskInstructionsLabel: '任务指令',
+      extraParametersDisclosure: '高级：附加参数（可选）',
+      extraParametersHint: '填写 JSON 对象，为任务传入额外参数。没有附加参数时保持空白或 {} 即可。',
+      extraParametersExample: '示例：{"channel":"feishu"}',
+      extraParametersInputLabel: '附加参数（JSON）',
+      unknownAgentTypeDescription: '这是已有设置，除非你主动选择其他类型，否则会保留原值。',
+      agentTypes: {
+        default: { name: '通用助手（推荐）', description: '按任务指令完成一般工作。' },
+        heartbeat: { name: '定时巡检', description: '适合按计划重复检查并汇报结果。' },
+        dream: { name: '记忆整理', description: '适合复盘近期会话并整理长期记忆。' },
+        distill: { name: '经验提炼', description: '适合从重复工作中提炼可复用的流程。' },
+      },
+    },
     // 事件触发（N-CRON-EVENT-CREATE-UI）：通道消息 / 群监听调度
     eventScheduleOption: '通道消息（群监听）',
     eventAccountLabel: '触发账号',
@@ -239,7 +273,7 @@ export const cronCenterZh = {
     // 新邮件（邮件触发）调度（N-TRIGGER-MAIL-CREATE-ENTRY-K1）：账号/邮箱下拉 + 不可用三态
     eventMailScheduleOption: '新邮件（邮件触发）',
     // 已落库的 webhook 任务在编辑器里的调度类型（创建菜单不提供这一项）。
-    eventWebhookScheduleOption: 'Webhook 投递',
+    eventWebhookScheduleOption: '外部系统通知触发（Webhook 投递）',
     // Webhook 触发（N-CRON-WEBHOOK-CLOUD-HOOK-FU1）：云端服务设置卡 + 编辑器门 + 一次性链接卡 + 详情块
     cloudSettings: {
       title: '云端计划任务服务',
@@ -302,7 +336,7 @@ export const cronCenterZh = {
     eventChatManualLabel: '会话 / 群 ID（可选）',
     eventChatManualPlaceholder: '粘贴会话或群的 ID，留空 = 任意会话',
     eventChatManualHint: '该通道不能自动列出会话。请打开对应会话详情复制 ID；留空 = 任意会话。',
-    eventConstraintsHint: '事件触发任务只能在本机运行，动作固定为 Agent 任务；单次预算上限必须设置（就在下方）。',
+    eventConstraintsHint: '事件触发任务只能在本机运行，动作固定为 Agent 任务；必须设置「单次预算上限 (USD)」。',
     eventBudgetLabel: '单次预算上限 (USD)',
     eventBudgetHint: '事件触发任务必填：本次运行花费超过该金额即停车并自动停用。',
     // shared 校验器（cronEventValidation）reason → 用户能照着改的中文提示；
@@ -312,7 +346,7 @@ export const cronCenterZh = {
       'invalid-schedule': '先选一个触发账号：通道消息触发需要绑定一个已连接的消息通道账号。',
       'requires-local': '事件触发任务只能在本机运行，执行位置请保持「本地」。',
       'agent-only': '事件触发任务只支持 Agent 动作，请把动作类型换成 Agent 任务。',
-      'requires-budget': '事件触发任务必须设置单次预算上限：在上方「单次预算上限 (USD)」里填一个大于 0 的数，单次运行花费超过它就会停车并自动停用。',
+      'requires-budget': '事件触发任务必须设置单次预算上限：请在「单次预算上限 (USD)」里填一个大于 0 的数，单次运行花费超过它就会停车并自动停用。',
     } satisfies Record<EventScheduleValidationReason, string>,
     // /schedule 确认卡的 event 草案行（N-CRON-EVENT-CREATE-CHAT）：群行/预算行的标签与兜底。
     eventConfirmGroup: '监听哪个群',
@@ -369,7 +403,7 @@ export const cronCenterZh = {
     inboxUrgencySectionFyi: '仅供参考',
     inboxUrgencyBadge: '今日必办',
     inboxUrgencyRawPrefix: '原文：',
-    parkedTitle: '{count} 个操作等你确认',
+    parkedTitle: { one: '{count} 个操作等你确认', other: '{count} 个操作等你确认' },
     parkedApprove: '批准',
     parkedReject: '拒绝',
     parkedExternalBadge: '对外操作',
@@ -400,6 +434,21 @@ export const cronCenterZh = {
     // 定时任务模板的展示文案（按模板 id 索引，组件经 getTemplateDisplayCopy 取用）；
     // 没登记词条的存量模板用模板对象内的兜底文案。新模板文案一律走这里。
     templates: {
+      'daily-lookahead': {
+        name: '每日前瞻',
+        description: '备好今天剩余时间和明天的安排',
+        scheduleLabel: '工作日 15:00',
+      },
+      'daily-review': {
+        name: '每日回顾',
+        description: '回顾今天的进展和待续事项',
+        scheduleLabel: '工作日 17:30',
+      },
+      'weekly-review': {
+        name: '每周回顾',
+        description: '总结本周并备好下周重点',
+        scheduleLabel: '每周四 17:30',
+      },
       'morning-triage': {
         name: '晨间分诊',
         description: '汇总昨晚到现在的未读邮件、消息和日历变动',
@@ -436,9 +485,11 @@ export const cronCenterZh = {
       wouldActSectionTitle: '会接单但未执行',
       otherDecisionsTitle: '其余决策',
       ruleLabel: '命中规则：{rule}',
-      eventLabel: '事件 {id}',
+      mailFallback: '第 {number} 封邮件', genericEvent: '一个事件',
       actionLabel: '拦下的动作 · {tool}',
       targetLabel: '发往 {target}',
+      details: '查看详情', detailRule: '规则', detailDecision: '决策', detailReason: '原因', detailTime: '运行时间',
+      detailRun: '运行记录', detailEventId: '原始事件编号', copy: '复制', copied: '已复制', unavailableValue: '暂无',
       decision: {
         acted: '已执行',
         would_act: '本会执行',
@@ -484,7 +535,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     },
     title: 'Automations',
     subtitle: 'Runs on schedule, results come back for review',
-    tabJobs: 'Scheduled jobs',
+    tabJobs: 'Automation tasks',
     tabRuns: 'Run history',
     close: 'Close automations',
     statRunning: 'Running',
@@ -514,6 +565,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     awaitingApprovalAction: 'Review',
     awaitingApprovalWithPreview: 'Needs your approval: {preview}',
     nextRun: 'Next {time}',
+    localNextRun: 'Your local time {time}',
     locationFilterAll: 'All',
     locationLocal: 'Local',
     locationCloud: 'Cloud',
@@ -605,6 +657,10 @@ export const cronCenterEn: typeof cronCenterZh = {
     locationCreatedImmutable: 'Cannot be changed after creation',
     copyByLocation: 'Copy to a new location',
     copyTitle: 'Copy task to a new location',
+    editTitle: 'Edit automation',
+    manualTitle: 'Set up manually',
+    enableAfterCreate: 'Enable right after creating',
+    enabledStatus: 'Enabled',
     advancedSection: 'Advanced',
     cardCreatedAt: 'Created',
     cardUpdatedAt: 'Updated',
@@ -618,6 +674,9 @@ export const cronCenterEn: typeof cronCenterZh = {
     execDetailTitle: 'Run details',
     execOpenSession: 'Open session',
     execOpeningSession: 'Opening',
+    deletedTask: 'Deleted task',
+    jobNameUnavailable: 'Task name unavailable',
+    linkedSession: 'Linked session',
     colJob: 'Job',
     colStatus: 'Status',
     colLocation: 'Location',
@@ -679,6 +738,32 @@ export const cronCenterEn: typeof cronCenterZh = {
     resultPushListFailed: 'Conversations could not be loaded. Enter the destination conversation ID manually.',
     resultPushAccountUnavailable: 'The channel for the saved destination “{value}” is no longer available. The original setting is preserved until you choose another destination or turn delivery off and save.',
     resultPushConversationUnavailable: 'The saved destination conversation is no longer available. The original setting is preserved until you choose another conversation and save.',
+    // Plain-language fields in the manual editor (N-FIX-CRON-EDITOR-AGENT-ACTION-DEV-FIELDS)
+    manualEditor: {
+      oneTimeScheduleOption: 'One-time',
+      intervalScheduleOption: 'Repeat at an interval',
+      cronScheduleOption: 'Repeat at fixed times (Cron expression)',
+      retryDelayLabel: 'Retry interval',
+      timeoutLabel: 'Execution timeout',
+      retryDelayPlaceholder: 'Auto',
+      timeoutPlaceholder: 'Unlimited',
+      retryDelayHint: 'Leave blank for automatic increasing waits (30 seconds to 15 minutes).',
+      durationInvalid: 'Enter a valid non-negative duration.',
+      durationUnits: { seconds: 'seconds', minutes: 'minutes', hours: 'hours' },
+      agentTypeLabel: 'Agent type',
+      taskInstructionsLabel: 'Task instructions',
+      extraParametersDisclosure: 'Advanced: extra parameters (optional)',
+      extraParametersHint: 'Enter a JSON object to pass extra parameters to the task. Leave it blank or use {} when none are needed.',
+      extraParametersExample: 'Example: {"channel":"feishu"}',
+      extraParametersInputLabel: 'Extra parameters (JSON)',
+      unknownAgentTypeDescription: 'This is an existing setting and stays unchanged unless you choose another type.',
+      agentTypes: {
+        default: { name: 'General assistant (recommended)', description: 'Follows the task instructions for general work.' },
+        heartbeat: { name: 'Scheduled check', description: 'Best for repeated checks and reporting the result.' },
+        dream: { name: 'Memory review', description: 'Best for reviewing recent sessions and organizing durable memory.' },
+        distill: { name: 'Experience distillation', description: 'Best for turning repeated work into reusable workflows.' },
+      },
+    },
     // Event-triggered schedules (N-CRON-EVENT-CREATE-UI): channel message / group listen
     eventScheduleOption: 'Channel message (group listen)',
     eventAccountLabel: 'Trigger account',
@@ -687,7 +772,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     eventNoAccounts: 'No messaging channels connected yet — an event trigger needs an account to bind to.',
     // New-mail (mail trigger) schedules (N-TRIGGER-MAIL-CREATE-ENTRY-K1): account/mailbox dropdowns + three unavailable states
     eventMailScheduleOption: 'New mail (mail trigger)',
-    eventWebhookScheduleOption: 'Webhook delivery',
+    eventWebhookScheduleOption: 'Triggered by an external system (Webhook delivery)',
     // Webhook trigger (N-CRON-WEBHOOK-CLOUD-HOOK-FU1): cloud settings card + editor gate + one-time link card + detail block
     cloudSettings: {
       title: 'Cloud scheduler',
@@ -750,7 +835,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     eventChatManualLabel: 'Chat / group ID (optional)',
     eventChatManualPlaceholder: 'Paste the chat or group ID; empty = any chat',
     eventChatManualHint: 'This channel cannot list conversations automatically. Open the chat details and copy its ID; leave empty for any chat.',
-    eventConstraintsHint: 'Event-triggered jobs run on this machine only, use an Agent action, and require a per-run budget cap (set it just below).',
+    eventConstraintsHint: 'Event-triggered jobs run on this machine only, use an Agent action, and require a "Per-run budget cap (USD)".',
     eventBudgetLabel: 'Per-run budget cap (USD)',
     eventBudgetHint: 'Required for event jobs: the run stops and the job is disabled once spending exceeds this cap.',
     // reason → user-facing copy, mapped from the shared validator (cronEventValidation);
@@ -760,7 +845,7 @@ export const cronCenterEn: typeof cronCenterZh = {
       'invalid-schedule': 'Pick a trigger account first: a channel-message trigger needs a connected messaging account.',
       'requires-local': 'Event-triggered jobs run on this machine only — keep the execution location on Local.',
       'agent-only': 'Event-triggered jobs only support agent actions — switch the action type to Agent.',
-      'requires-budget': 'Event-triggered jobs need a per-run budget cap: enter a number greater than 0 in "Per-run budget cap (USD)" above; a run stops and the job is disabled once spending exceeds it.',
+      'requires-budget': 'Event-triggered jobs need a per-run budget cap: enter a number greater than 0 in "Per-run budget cap (USD)"; a run stops and the job is disabled once spending exceeds it.',
     } satisfies Record<EventScheduleValidationReason, string>,
     // /schedule confirm-card rows for event drafts (N-CRON-EVENT-CREATE-CHAT).
     eventConfirmGroup: 'Which group to watch',
@@ -813,7 +898,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     inboxUrgencySectionFyi: 'FYI',
     inboxUrgencyBadge: 'Must do today',
     inboxUrgencyRawPrefix: 'Raw: ',
-    parkedTitle: '{count} action(s) waiting for you to confirm',
+    parkedTitle: { one: '{count} action waiting for you to confirm', other: '{count} actions waiting for you to confirm' },
     parkedApprove: 'Approve',
     parkedReject: 'Reject',
     parkedExternalBadge: 'External',
@@ -840,6 +925,21 @@ export const cronCenterEn: typeof cronCenterZh = {
     templateReenable: 'Re-enable',
     templateEnableFailed: 'Failed to enable — please try again',
     templates: {
+      'daily-lookahead': {
+        name: 'Daily lookahead',
+        description: 'Prepare the rest of today and tomorrow’s plans',
+        scheduleLabel: 'Weekdays at 15:00',
+      },
+      'daily-review': {
+        name: 'Daily review',
+        description: 'Review today’s progress and follow-ups',
+        scheduleLabel: 'Weekdays at 17:30',
+      },
+      'weekly-review': {
+        name: 'Weekly review',
+        description: 'Summarize this week and prepare next week’s priorities',
+        scheduleLabel: 'Thursdays at 17:30',
+      },
       'morning-triage': {
         name: 'Morning triage',
         description: 'Round up unread mail, messages, and calendar changes since last night',
@@ -874,9 +974,11 @@ export const cronCenterEn: typeof cronCenterZh = {
       wouldActSectionTitle: 'Would act (not executed)',
       otherDecisionsTitle: 'Other decisions',
       ruleLabel: 'Matched rule: {rule}',
-      eventLabel: 'Event {id}',
+      mailFallback: 'Mail No. {number}', genericEvent: 'An event',
       actionLabel: 'Intercepted action · {tool}',
       targetLabel: 'To {target}',
+      details: 'View details', detailRule: 'Rule', detailDecision: 'Decision', detailReason: 'Reason', detailTime: 'Run time',
+      detailRun: 'Run', detailEventId: 'Raw event ID', copy: 'Copy', copied: 'Copied', unavailableValue: 'Not available',
       decision: {
         acted: 'Acted',
         would_act: 'Would act',
