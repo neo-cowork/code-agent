@@ -318,6 +318,47 @@ describe('CronSimpleCreate', () => {
     expect(document.body.textContent).not.toMatch(/AM|PM/);
   });
 
+  it('只跑一次：en-US h12 区域下是日期框 + 24 小时下拉，无 AM/PM、无 datetime-local', () => {
+    stubTwelveHourLocale();
+    const { container } = render(<CronSimpleCreate onDone={() => undefined} />);
+    fireEvent.change(screen.getByDisplayValue('每天'), { target: { value: 'once' } });
+
+    expect(container.querySelector('input[type="datetime-local"]')).toBeNull();
+    expect((screen.getByTestId('cron-simple-once-date') as HTMLInputElement).value).toBe('');
+    expect(screen.getByTestId('cron-simple-once').querySelectorAll('select').length).toBe(2);
+    expect(document.body.textContent).not.toMatch(/AM|PM/);
+  });
+
+  it('只跑一次：选日期 + 15 点保存 → at 的 datetime 是所选本地时间', async () => {
+    createJob.mockImplementation(async (input) => ({
+      ...(input as object), id: 'once-job', createdAt: 1, updatedAt: 1,
+    } as CronJobDefinition));
+    const onDone = vi.fn();
+    render(<CronSimpleCreate onDone={onDone} />);
+    fireEvent.change(screen.getByPlaceholderText(/竞品动态/), { target: { value: '周五提醒发周报' } });
+    fireEvent.change(screen.getByDisplayValue('每天'), { target: { value: 'once' } });
+    fireEvent.change(screen.getByTestId('cron-simple-once-date'), { target: { value: '2026-11-10' } });
+    fireEvent.change(screen.getByTestId('cron-simple-once-time-hour'), { target: { value: '15' } });
+    fireEvent.click(screen.getByText('创建自动化'));
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    const submitted = createJob.mock.calls[0][0] as CronJobDefinition;
+    expect(submitted.schedule).toEqual({ type: 'at', datetime: new Date('2026-11-10T15:00').toISOString() });
+    // 存下来的字符串仍是 yyyy-MM-ddTHH:mm 本地时间串（回读编辑器时的契约）
+    const loaded = buildDraftFromJob({ ...submitted, id: 'j', createdAt: 1, updatedAt: 1 });
+    expect(loaded.atDatetime).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+    expect(loaded.atDatetime).toBe('2026-11-10T15:00');
+  });
+
+  it('只跑一次：没选日期提交 → 日期框仍为空且显示“请选择执行时间”，不调 createJob', async () => {
+    render(<CronSimpleCreate onDone={() => undefined} />);
+    fireEvent.change(screen.getByPlaceholderText(/竞品动态/), { target: { value: '周五提醒发周报' } });
+    fireEvent.change(screen.getByDisplayValue('每天'), { target: { value: 'once' } });
+    fireEvent.click(screen.getByText('创建自动化'));
+    expect(await screen.findByText('请选择执行时间')).toBeTruthy();
+    expect((screen.getByTestId('cron-simple-once-date') as HTMLInputElement).value).toBe('');
+    expect(createJob).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['zh', '紧急判据（可选）', /老板发来的邮件/, '设置后，非今日必办'],
     ['en', 'Urgency rule (optional)', /only mail from my boss/, 'With a rule set, non-urgent runs'],
