@@ -378,9 +378,8 @@ export class SubagentPipeline {
       }
     }
 
-    // 5. When not auto-approved, hard-deny only explicit out-of-workdir paths;
-    // path-less requests (e.g. Bash commands) pass through to the normal
-    // ToolExecutor ask/classifier pipeline with a warning and audit note.
+    // 5. Non-auto-approved operations pass through to ToolExecutor for
+    // classification and approval; this gate never grants the operation itself.
     if (!autoApproved) {
       // In subagent context, we allow read operations but log them
       if (request.permissionLevel === 'read') {
@@ -394,25 +393,23 @@ export class SubagentPipeline {
           return { allowed: true, warnings };
         }
 
-        // Deny for operations outside working directory in non-autoApprove mode
+        // Let the existing approval pipeline decide this outside-path operation.
+        warnings.push(`${request.permissionLevel} operation outside working directory forwarded to approval pipeline`);
         this.addAuditEntry({
           timestamp: Date.now(),
           agentId: context.agentId,
           agentName: context.agentName,
-          action: 'permission_denied',
+          action: 'tool_execute',
           details: {
             tool: request.toolName,
             permissionLevel: request.permissionLevel,
             path: request.path,
             command: request.command,
+            note: 'requires_approval_pipeline',
           },
         });
 
-        return {
-          allowed: false,
-          reason: `Permission denied: ${request.path} is outside this agent's working directory ${context.workingDirectory}`,
-          warnings,
-        };
+        return { allowed: true, warnings };
       }
 
       warnings.push(`${request.permissionLevel} operation without explicit path forwarded to approval pipeline`);

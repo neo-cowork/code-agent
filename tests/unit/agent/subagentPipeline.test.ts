@@ -492,7 +492,7 @@ describe('SubagentPipeline', () => {
       expect(ordinaryExecute.warnings).toContain('execute operation without explicit path forwarded to approval pipeline');
     });
 
-    it('explains when a requested path is outside the agent working directory', () => {
+    it.each(['write', 'execute', 'network'] as const)('forwards outside-path %s operations to approval with an audit note', (permissionLevel) => {
       const agentDef = {
         id: 'strict-path-agent',
         name: 'Strict Path Agent',
@@ -508,13 +508,16 @@ describe('SubagentPipeline', () => {
 
       const result = pipeline.checkToolExecution(context, {
         toolName: 'write_file',
-        permissionLevel: 'write',
+        permissionLevel,
         path: outsidePath,
       });
 
-      expect(result.allowed).toBe(false);
-      expect(result.reason).toContain(outsidePath);
-      expect(result.reason).toContain(workingDirectory);
+      expect(result.allowed).toBe(true);
+      expect(result.warnings).toContain(`${permissionLevel} operation outside working directory forwarded to approval pipeline`);
+      expect(pipeline.getAuditLog()).toContainEqual(expect.objectContaining({
+        action: 'tool_execute',
+        details: expect.objectContaining({ path: outsidePath, note: 'requires_approval_pipeline' }),
+      }));
     });
 
     it('allows development preset Bash `ls` (no path) when execute is not auto-approved', () => {
