@@ -2,6 +2,7 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { assembleSidebarCronRows } from '../../../src/renderer/components/features/sidebar/sidebarCronRunFolding';
 import { SidebarProjectGroup } from '../../../src/renderer/components/features/sidebar/SidebarProjectGroup';
 import type { SidebarSessionItemSharedProps } from '../../../src/renderer/components/features/sidebar/SidebarSessionItem';
 import { splitCronSessionTitleParts } from '../../../src/renderer/utils/sessionPresentation';
@@ -24,6 +25,7 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
 afterEach(() => {
   i18nState.language = 'zh';
   cleanup();
+  useSessionStore.setState({ runningSessionIds: new Set(), sessionRuntimes: new Map() });
 });
 
 function session(id: string, title: string, updatedAt: number) {
@@ -124,6 +126,48 @@ function renderGroup(overrides: Partial<Parameters<typeof SidebarProjectGroup>[0
 }
 
 describe('SidebarProjectGroup cron run folding', () => {
+  it.each(['cron', 'heartbeat'])('never folds or caps a running %s run, including expanded history', (kind) => {
+    const active = { ...session('active', '晨会摘要', 1), origin: { kind, id: 'job-1' } };
+    const sessions = [
+      ...Array.from({ length: 6 }, (_, i) => ({ ...session(`plain-${i}`, '工作摘要', 10 - i), origin: { kind: 'manual' } })),
+      session('latest', '最近完成', 3), active, session('finished', '以前完成', 0),
+    ];
+    const plan = {
+      sessions, aggregatesByTaskId: { 'job-1': { runCount: 3, latestSessionId: 'latest' } },
+      expandedTaskIds: new Set<string>(), currentSessionId: null, hasSearchFilters: false,
+      rowCap: 5, showAllRows: false, runningSessionIds: new Set(['active']),
+    };
+    expect(assembleSidebarCronRows(plan).find((row) => row.session.id === 'active')).toEqual({ session: active, indented: false });
+    expect(assembleSidebarCronRows(plan).some((row) => row.session.id === 'finished')).toBe(false);
+    const expanded = assembleSidebarCronRows({ ...plan, expandedTaskIds: new Set(['job-1']) });
+    expect(expanded.filter((row) => row.session.id === 'active')).toEqual([{ session: active, indented: false }]);
+    expect(expanded.find((row) => row.session.id === 'finished')?.indented).toBe(true);
+  });
+
+  it.each(['persisted', 'runtime', 'task'])('keeps an off-cap running row with %s activity and the existing indicator', (source) => {
+    useSessionStore.getState().updateSessionRuntime({ sessionId: 'active', status: 'running', activeAgentCount: 0 });
+    const active = { ...session('active', '[Schedule] 晨会摘要', 1), status: source === 'persisted' ? 'running' : 'idle' };
+    const sessions = [
+      ...Array.from({ length: 6 }, (_, i) => ({ ...session(`plain-${i}`, '工作摘要', 10 - i), origin: { kind: 'manual' } })),
+      session('latest', '最近完成', 3), active, session('finished', '以前完成', 0),
+    ];
+    const { unmount } = renderGroup({
+      group: { key: '__chats__', name: '快速对话', paths: [], isUncategorized: true, sessions, latestActivityAt: 10 },
+      sessionItemProps: sharedSessionProps({
+        cronRunAggregatesByTaskId: { 'job-1': { runCount: 3, latestSessionId: 'latest' } },
+        sessionRuntimes: source === 'runtime' ? useSessionStore.getState().sessionRuntimes : new Map(),
+        sessionStates: source === 'task' ? { active: { status: 'running' } } as any : {},
+      }),
+    });
+    const row = screen.getByTestId('sidebar-session-active');
+    expect(row.closest('[data-sidebar-group-rows]')?.getAttribute('data-sidebar-group-rows')).toBe('__chats__');
+    expect(row.querySelector('.animate-spin')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('sidebar-cron-run-toggle'));
+    expect(screen.getAllByTestId('sidebar-session-active')).toHaveLength(1);
+    expect(row.closest('[data-testid="sidebar-cron-older-run"]')).toBeNull();
+    unmount();
+  });
+
   it('folds older runs, shows xN on the latest row, and expands them locally', () => {
     renderGroup();
 
