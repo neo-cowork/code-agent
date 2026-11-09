@@ -461,6 +461,7 @@ function mergeBackgroundAgent(
   const node = ensureNode(nodes, handle.agentId, 'background');
   addSource(node, 'backgroundRegistry');
   node.background = true;
+  node.displayName ||= handle.displayName;
   node.task ??= handle.title;
   if (node.role === 'background' && handle.role) node.role = handle.role;
   if (handle.startedAt && !node.createdAt) node.createdAt = handle.startedAt;

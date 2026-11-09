@@ -144,3 +144,18 @@ it('unfinished old contexts remain cancelled, never resurrected by the new lifec
     lifecycle: { status: 'running', displayName: 'Interrupted helper', task: 'Read notes', background: true, startedAt: beforeBoot } });
   expect(getAgentTreeSnapshot({ sessionId: id }).nodes[0].status).toBe('cancelled');
 });
+
+it('keeps the spawn name before the executor context exists', async () => {
+  const id = session();
+  let resolve!: (value: SubagentResult) => void;
+  const promise = new Promise<SubagentResult>((done) => { resolve = done; });
+  const registry = getBackgroundSubagentRegistry();
+  const agentId = registry.spawn(() => promise, {
+    sessionId: id, title: 'Read all folder-b notes', role: 'explore', displayName: '总结B',
+  });
+  const status = await executeTaskStatus({}, context(id), allow);
+  expect(status.ok && status.output).toContain(`总结B [running] id=${agentId}`);
+  expect(getAgentTreeSnapshot({ sessionId: id }).nodes).toHaveLength(1);
+  resolve(result());
+  await registry.await(agentId);
+});
