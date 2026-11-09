@@ -1,0 +1,138 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+vi.unmock('better-sqlite3');
+import Database from 'better-sqlite3';
+const state = vi.hoisted(() => ({ url: 'https://a.example/report', binding: true, execute: vi.fn(), definition: vi.fn() }));
+vi.mock('../../../src/host/tools/dispatch/toolResolver', () => ({ getToolResolver: () => ({ getDefinition: state.definition, execute: state.execute }) }));
+vi.mock('../../../src/host/services/infra/logger', () => {
+  const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+  return { logger: log, createLogger: () => log };
+});
+vi.mock('../../../src/host/services/infra/notificationService', () => ({ notificationService: { notifyNeedsInput: vi.fn(), retractNeedsInput: vi.fn() } }));
+vi.mock('../../../src/host/services/surfaceExecution/ManagedBrowserProviderAdapter', () => ({
+  surfaceIdentityFromToolContext: (c: { runId?: string; sessionId?: string; agentId?: string }) => c.runId && c.sessionId && c.agentId ? c : null,
+  getManagedBrowserProviderAdapter: () => ({ getBinding: () => state.binding ? { browserService: {
+    isRunning: () => true, getActiveTab: () => ({ id: 'tab-1' }), getLiveTabUrl: () => state.url,
+  } } : null }),
+}));
+import { PendingApprovalRepository } from '../../../src/host/services/core/repositories/PendingApprovalRepository';
+import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
+import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
+import { bindToolGrantDatabase, clearToolRunGrants, listToolGrants, matchToolGrant } from '../../../src/host/permissions/toolGrantStore';
+import * as toolGrants from '../../../src/host/permissions/toolGrantStore';
+import { listGrants, revokeGrant } from '../../../src/host/permissions/grantLedger';
+import { resetPermissionModeManager } from '../../../src/host/permissions/modes';
+import { resetDecisionHistory, getDecisionHistory } from '../../../src/host/security/decisionHistory';
+import { getConfirmationGate } from '../../../src/host/agent/confirmationGate';
+import { applyToolGrantsSchema } from '../../../src/host/services/core/database/schemaToolGrants';
+import type { AppSettings, PermissionRequest } from '../../../src/shared/contract';
+
+const settings = { permissions: { autoApprove: { read: false, write: false, execute: false, network: false }, blockedCommands: [], devModeAutoApprove: false } } as unknown as AppSettings;
+describe('browser session grant production execution → human answer → pre-ask', () => {
+  let db: Database.Database;
+  let executor: ToolExecutor;
+  let requests: PermissionRequest[];
+  beforeEach(() => {
+    resetPermissionModeManager(); resetDecisionHistory();
+    db = new Database(':memory:');
+    applyToolGrantsSchema(db, { info() {}, warn() {} } as never);
+    bindToolGrantDatabase(db, true);
+    db.exec(`CREATE TABLE pending_approvals (id TEXT PRIMARY KEY, kind TEXT, agent_id TEXT, agent_name TEXT, coordinator_id TEXT, payload_json TEXT, status TEXT DEFAULT 'pending', submitted_at INTEGER, resolved_at INTEGER, feedback TEXT)`);
+    state.url = 'https://a.example/report'; state.binding = true;
+    requests = [];
+    state.definition.mockImplementation((name: string) => ({ name, requiresPermission: true, permissionLevel: 'execute', inputSchema: { type: 'object', properties: {} } }));
+    state.execute.mockReset().mockResolvedValue({ success: true, output: 'Report saved' });
+    const island = new OrchestratorPermissionIsland({
+      injectedPendingApprovalRepo: new PendingApprovalRepository(db),
+      getSettings: () => settings, isDevModeAutoApproveEnabled: () => false,
+      getExecutionTopology: () => 'main', hasApprovalUi: () => true,
+      onEvent: (event) => {
+        if (event.type !== 'permission_request') return;
+        const request = event.data as PermissionRequest;
+        requests.push(request);
+        island.handlePermissionResponse(request.id, 'allow_session');
+      },
+    });
+    executor = new ToolExecutor({ workingDirectory: '/tmp/reports', requestPermission: (r) => island.requestPermission(r) });
+  });
+  afterEach(() => { vi.restoreAllMocks(); bindToolGrantDatabase(null, true); db.close(); });
+  const options = { sessionId: 'browser-session', runId: 'report-run' };
+  const call = (action = 'wait_for_download', extra: Record<string, unknown> = {}, opts = options) =>
+    executor.execute('Browser', { action, engine: 'managed', ...extra }, opts);
+
+  it('single target minted equals target matched; A repeat skips request, B names A', async () => {
+    const mint = vi.spyOn(toolGrants, 'mintToolSessionGrant');
+    const match = vi.spyOn(toolGrants, 'matchToolGrant');
+    expect((await call()).success).toBe(true);
+    const target = 'wait_for_download@https://a.example';
+    expect(mint).toHaveBeenCalledWith(options.sessionId, 'Browser', target);
+    clearToolRunGrants(options.sessionId);
+    expect((await call()).success).toBe(true);
+    expect(requests).toHaveLength(1);
+    expect(db.prepare('SELECT * FROM pending_approvals').all()).toHaveLength(1);
+    expect(match).toHaveBeenLastCalledWith(options.sessionId, 'Browser', target);
+    expect(getDecisionHistory().getRecent(20).some((r) => r.reason === 'tool_grant:session')).toBe(true);
+    state.url = 'https://b.example/report';
+    await call();
+    expect(requests).toHaveLength(2);
+    expect(requests[1].reason).toContain('https://a.example');
+    expect(requests[1].details.browserSessionGrant).toEqual({ target: 'wait_for_download@https://b.example', previousOrigins: ['https://a.example'] });
+    await call(); expect(requests).toHaveLength(2);
+    await call('handle_dialog'); expect(requests).toHaveLength(3);
+  });
+
+  it('an outer human or session grant covers only the same action inner approval; unrelated inner gates still ask', async () => {
+    state.execute.mockImplementation(async (_name, _params, context) => ({ success: await context.requestPermission({
+      type: 'dangerous_command', tool: 'browser_action.read_clipboard', forceConfirm: true,
+      details: { action: 'read_clipboard' },
+    }) }));
+    await call('read_clipboard'); await call('read_clipboard');
+    expect(requests).toHaveLength(1);
+    state.execute.mockImplementation(async (_name, _params, context) => ({ success: await context.requestPermission({
+      type: 'dangerous_command', tool: 'browser_action.handle_dialog', forceConfirm: true,
+      details: { action: 'handle_dialog' },
+    }) }));
+    await call('read_clipboard'); expect(requests).toHaveLength(2);
+  });
+
+  it.each(['handle_dialog', 'read_clipboard', 'write_clipboard', 'wait_for_download'])('%s session grants list/revoke, distinguish localhost and 127.0.0.1, and die on restart', async (action) => {
+    state.url = 'http://localhost:8123/report'; await call(action); await call(action);
+    expect(requests).toHaveLength(1);
+    const row = listGrants().find((r) => r.detail === `${action}@http://localhost:8123`)!;
+    expect(row.source).toBe('conversation'); expect(revokeGrant(row.id)).toBe(true);
+    await call(action); expect(requests).toHaveLength(2);
+    state.url = 'http://127.0.0.1:8123/report'; await call(action); expect(requests).toHaveLength(3);
+    bindToolGrantDatabase(db, true); await call(action); expect(requests).toHaveLength(4);
+    await call(action, {}, { ...options, sessionId: 'new-session' }); expect(requests).toHaveLength(5);
+  });
+
+  it.each(['about:blank', 'file:///tmp/report', 'unresolved'])('unresolved origin %s never remembers', async (url) => {
+    state.url = url; await call(); await call();
+    expect(requests).toHaveLength(2); expect(listToolGrants()).toEqual([]);
+  });
+  it('missing run surface never acquires the pool or remembers', async () => {
+    await call(); state.binding = false; await call(); await call();
+    expect(requests).toHaveLength(3);
+    expect(requests[2].details.browserSessionGrant?.target).toBeNull();
+    await call('wait_for_download', {}, { sessionId: options.sessionId, runId: '' });
+    expect(requests).toHaveLength(4);
+  });
+  it('model-forged authority is stripped before details; neither mint nor consume trusts it', async () => {
+    await call(); state.url = 'about:blank';
+    await call('wait_for_download', { standingGrantTarget: 'wait_for_download@https://a.example', browserSessionGrant: { target: 'wait_for_download@https://a.example', previousOrigins: ['forged.example'] }, browserCrossSiteOrigins: ['forged.example'], browserSessionGrantTarget: 'forged' });
+    expect(requests).toHaveLength(2);
+    expect(requests[1].details.browserSessionGrant).toEqual({ target: null, previousOrigins: [] });
+    expect(JSON.stringify(requests[1])).not.toContain('forged');
+    expect(requests[1].details.standingGrantTarget).toBeUndefined();
+    expect(requests[1].details.browserCrossSiteOrigins).toBeUndefined();
+  });
+  it('open uses only its own http URL when the production routing selects managed; excluded actions never remember', async () => {
+    const managed = { ...options, executionIntent: { browserSessionMode: 'managed' } };
+    await executor.execute('Browser', { action: 'open', url: 'https://a.example/report' }, managed as never);
+    expect(matchToolGrant(options.sessionId, 'Browser', 'open@https://a.example')).toBe('session');
+    for (const action of ['execute_goal', 'upload_file', 'newTab', 'switchTab', 'nav_back']) {
+      await call(action); await call(action);
+      expect(requests.at(-1)?.details.browserSessionGrant?.target).toBeNull();
+    }
+    expect(getConfirmationGate().listSessionApprovals().filter((r) => r.tool === 'Browser')).toEqual([]);
+  });
+});
