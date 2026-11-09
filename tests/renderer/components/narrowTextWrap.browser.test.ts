@@ -185,6 +185,7 @@ const { CronJobDetail } = await import('/components/features/cron/CronJobDetail.
 const { CronJobList } = await import('/components/features/cron/CronJobList.tsx');
 const { OverviewRunHeader } = await import('/components/TaskPanel/OverviewRunHeader.tsx');
 const { ChannelsSettings } = await import('/components/features/settings/tabs/ChannelsSettings.tsx');
+const { ProjectMembersCard } = await import('/components/features/projectSpace/ProjectMembersCard.tsx');
 const { CronRunSessionStatusBar } = await import('/components/features/chat/CronRunSessionStatusBar.tsx');
 const { useAppStore } = await import('/stores/appStore.ts');
 const { useCronStore } = await import('/stores/cronStore.ts');
@@ -232,6 +233,10 @@ useSessionStore.setState({
 useTaskStore.setState({ sessionStates: { 'task-panel-session': { status: 'error', error: '用户中断' }, 'awaiting-session': { status: 'running' } } });
 
 const invokeDomain = async (_domain, action) => {
+  if (action === 'listMembers') return { success: true, data: [
+    { userId: 'u-owner', displayName: '王小明的周报整理空间', role: 'owner' },
+    { userId: 'u-member', displayName: '李华', role: 'member' },
+  ] };
   if (action === 'getExecutions') return { success: true, data: [interrupted] };
   if (action === 'listParkedApprovals') return { success: true, data: [] };
   if (action === 'getVoidedApprovalReason') return { success: true, data: null };
@@ -265,6 +270,7 @@ createRoot(document.getElementById('root')).render(h('main', { style: { width: '
   surface('job-detail', 420, h(CronJobDetail, { job })),
   surface('job-list', 360, h(CronJobList, {})),
   surface('task-panel', 320, h(React.Fragment, null, h(OverviewRunHeader), h(CronRunSessionStatusBar, { sessionId: 'task-panel-session' }))),
+  surface('project-members-column', 200, h(ProjectMembersCard, { projectId: 'p1', onInvite: noop })),
   surface('channels-table', 1200, h(ChannelsSettings)),
   surface('channels-table-narrow', 820, h(ChannelsSettings)),
 ));
@@ -321,6 +327,7 @@ describe('narrow text wrapping on production surfaces (element-agnostic gate)', 
       await page.waitForFunction(() => window.__NARROW_READY__ === true);
       await page.waitForSelector('[data-testid="channel-account-row"]');
       await page.waitForSelector('[data-testid="overview-run-header"]');
+      await page.waitForSelector('[data-testid="project-space-members-role-u-owner"]');
       await page.waitForSelector('[data-testid="cron-exec-detail-open-session"]');
 
       const allFailures: ElementFailure[] = [];
