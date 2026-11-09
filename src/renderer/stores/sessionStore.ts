@@ -255,7 +255,7 @@ interface SessionActions {
   updateSessionEngine: (sessionId: string, engine: Partial<AgentEngineSessionMetadata>) => Promise<void>;
   updateSessionMemoryMode: (sessionId: string, memoryMode: Session['memoryMode']) => Promise<void>;
   suppressMemoryEntryForSession: (sessionId: string, entryId: string) => Promise<void>;
-  markSessionUnread: (sessionId: string) => void;
+  markSessionUnread: (sessionId: string, options?: { includeCurrent?: boolean }) => void;
   markSessionRead: (sessionId: string) => void;
   isSessionUnread: (sessionId: string) => boolean;
   updateSessionRuntime: (event: SessionStatusUpdateEvent) => void;
@@ -819,9 +819,9 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       }
     },
 
-    markSessionUnread: (sessionId: string) => {
+    markSessionUnread: (sessionId: string, options) => {
       const { currentSessionId, unreadSessionIds } = get();
-      if (currentSessionId === sessionId) return;
+      if (currentSessionId === sessionId && !options?.includeCurrent) return;
 
       const newUnreadIds = new Set(unreadSessionIds);
       newUnreadIds.add(sessionId);
