@@ -3,7 +3,7 @@
 // 桌面通知服务 - 在 App 非焦点时发送任务完成通知
 // ============================================================================
 
-import { Notification, AppWindow, broadcastToRenderer } from '../../platform';
+import { Notification, broadcastToRenderer } from '../../platform';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import type { CronFailurePresentationKind } from '../../../shared/utils/cronFailureClassification';
 import { createLogger } from './logger';
@@ -16,6 +16,7 @@ import {
 } from './notificationPolicy';
 import { getConfigService } from '../core/configService';
 import { getDaemonQuitIntent } from '../daemon/quitIntent';
+import { desktopPresence } from '../companion/desktopPresence';
 import { getDurableResumeNotificationText } from '../../../shared/i18n/durableResumeNotification';
 import {
   getNotificationDigestText,
@@ -166,9 +167,15 @@ class NotificationService implements Disposable {
    * 默认只在 App 窗口非焦点时发送；needs_input / 失败类 / force 绕过焦点门
    */
   private shouldNotify(force = false): boolean {
-    if (!this.enabled) return false;
+    if (!this.enabled) {
+      logger.info('Notification not delivered', { reason: 'notifications-disabled' });
+      return false;
+    }
     if (this.isDryRun()) return true;
-    if (!Notification.isSupported()) return false;
+    if (!Notification.isSupported()) {
+      logger.info('Notification not delivered', { reason: 'notifications-unsupported' });
+      return false;
+    }
 
     // force：后台任务（loop/定时任务）完成——绕过焦点门，无论 app 前台/后台都提醒。
     // 这类任务是用户主动发起、默默长跑、完成才冒头，提醒符合预期，不算打扰。
@@ -176,8 +183,17 @@ class NotificationService implements Disposable {
     if (force) return true;
 
     // 前台 agent 任务：仅在 app 整体失焦时提醒，避免你正盯着看时被打扰。
-    const focusedWindow = AppWindow.getFocusedWindow();
-    return focusedWindow === null;
+    const focused = desktopPresence.isWindowFocused();
+    if (focused === null) {
+      logger.warn('Notification focus unknown', { reason: 'no fresh presence report' });
+      return true;
+    }
+    if (focused) {
+      logger.info('Notification not delivered', { reason: 'app-focused', source: 'desktop-presence' });
+      return false;
+    }
+    logger.info('Notification focus gate passed', { reason: 'app-blurred', source: 'desktop-presence' });
+    return true;
   }
 
   /**
@@ -361,12 +377,12 @@ class NotificationService implements Disposable {
    */
   notifyTaskComplete(data: TaskNotificationData, options?: { force?: boolean; urgent?: boolean }): void {
     const intent: NotificationIntent = data.succeeded === false ? 'task_failed' : 'task_complete';
-    if (!this.isIntentAllowed(intent)) return;
-    // 失败类通知不受焦点门限制：用户盯着别的会话时也不能错过失败。
-    if (!this.shouldNotify(options?.force || intent === 'task_failed')) {
-      logger.debug('Skip notification - app is focused');
+    if (!this.isIntentAllowed(intent)) {
+      logger.info('Notification not delivered', { reason: 'intent-blocked-by-policy', intent });
       return;
     }
+    // 失败类通知不受焦点门限制：用户盯着别的会话时也不能错过失败。
+    if (!this.shouldNotify(options?.force || intent === 'task_failed')) return;
 
     const { sessionTitle, summary, duration, toolsUsed } = data;
 
@@ -430,11 +446,11 @@ class NotificationService implements Disposable {
    * 不会尝试切换到不存在的会话。
    */
   notifyPlugin(data: { title: string; body: string }): void {
-    if (!this.isIntentAllowed('plugin')) return;
-    if (!this.shouldNotify()) {
-      logger.debug('Skip plugin notification - app is focused');
+    if (!this.isIntentAllowed('plugin')) {
+      logger.info('Notification not delivered', { reason: 'intent-blocked-by-policy', intent: 'plugin' });
       return;
     }
+    if (!this.shouldNotify()) return;
 
     this.enqueueBudgeted({
       intent: 'plugin',
