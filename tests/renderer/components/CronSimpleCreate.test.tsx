@@ -163,7 +163,10 @@ describe('CronSimpleCreate', () => {
     fireEvent.change(screen.getByPlaceholderText(/竞品动态/), {
       target: { value: '每天帮我盯一下竞品发布' },
     });
-    fireEvent.click(screen.getByText('创建自动化'));
+    const createButton = screen.getByRole('button', { name: '创建自动化' });
+    expect(createButton.parentElement?.className).toContain('sticky');
+    expect(createButton.parentElement?.className).toContain('-bottom-4');
+    fireEvent.click(createButton);
     await waitFor(() => {
       expect(onDone).toHaveBeenCalled();
     });
