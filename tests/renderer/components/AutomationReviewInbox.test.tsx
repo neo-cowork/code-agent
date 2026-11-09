@@ -552,6 +552,51 @@ describe('AutomationReviewInbox', () => {
     expect(screen.getByTestId('parked-approval-group').textContent).toContain('1 个操作等你确认');
   });
 
+  it.each(['zh', 'en'] as const)('voided duplicate scenario: six distinguishable cards with names, local 24h time and previews (%s)', async (language) => {
+    i18nState.language = language;
+    const names = ['Sort this month’s invoices', 'Write the weekly report', 'Organize client receipts'];
+    const base = new Date(2026, 10, 7, 0, 32).getTime();
+    const items = Array.from({ length: 6 }, (_, index) => makeParked({
+      id: `void-${index}`, status: 'voided', tool: index < 4 ? 'Bash' : 'Write',
+      sessionId: `chat-${index % 3}`, sessionTitle: names[index % 3],
+      requestedAt: base + index * 60_000, argsPreview: index % 3 ? undefined : 'invoice-export --token=***REDACTED***',
+      voidReason: '这一步等你确认超过 24 小时，已自动作废，没有执行。',
+    }));
+    listParkedApprovals.mockResolvedValue(items);
+    render(<AutomationReviewInbox />);
+    await waitFor(() => expect(screen.getAllByTestId('parked-approval-voided')).toHaveLength(6));
+    const cards = screen.getAllByTestId('parked-approval-voided');
+    expect(new Set(cards.map((card) => card.textContent)).size).toBe(6);
+    cards.forEach((card, index) => {
+      const time = new Date(items[index].requestedAt).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN', {
+        month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+      });
+      expect(card.textContent).toContain(names[index % 3]);
+      expect(card.textContent).toContain(`${language === 'en' ? 'Started' : '开始于'} ${time}`);
+      expect(card.textContent).not.toMatch(/session_|chat-|AM|PM/);
+      expect(card.querySelector('button')).toBeNull();
+      expect([...card.children].every((line) => line.textContent?.trim())).toBe(true);
+      console.log(`${language} voided card ${index + 1}: ${card.textContent}`);
+    });
+    expect(screen.getAllByTestId('parked-args-preview')).toHaveLength(2);
+    expect(cards[0].textContent).toContain(`${language === 'en' ? 'Arguments: ' : '参数：'}invoice-export --token=***REDACTED***`);
+    // Same tool, reason and session; only requestedAt differs (indices 0 and 3).
+    expect(cards[0].textContent).not.toBe(cards[3].textContent);
+  });
+
+  it('voided deleted-session and old-row cards omit missing title and preview without empty elements', async () => {
+    listParkedApprovals.mockResolvedValue([makeParked({
+      id: 'deleted-approval', sessionId: 'session_deleted', status: 'voided',
+      voidReason: '这一步等你确认超过 24 小时，已自动作废，没有执行。',
+    })]);
+    render(<AutomationReviewInbox />);
+    const card = await screen.findByTestId('parked-approval-voided');
+    expect(card.textContent).not.toContain('session_deleted');
+    expect(card.children).toHaveLength(3);
+    expect([...card.children].every((line) => line.textContent?.trim())).toBe(true);
+    expect(screen.queryByTestId('parked-args-preview')).toBeNull();
+  });
+
   it('REALRUN ②：只有 voided 项时不出「0 个操作等你确认」标题', async () => {
     listParkedApprovals.mockResolvedValue([
       makeParked({ id: 'perm_void', status: 'voided', tool: 'Bash', voidReason: 'x' }),
