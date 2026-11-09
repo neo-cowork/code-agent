@@ -49,12 +49,15 @@ async function flushWake(sessionId: string): Promise<void> {
     recordFailure = async (error: unknown): Promise<void> => {
       const task = records[0];
       if (!task) return;
+      const firstLine = task.title.trim().split(/\r?\n/, 1)[0].trim();
+      const characters = Array.from(firstLine);
+      const shortName = characters.length > 24 ? `${characters.slice(0, 24).join('').trimEnd()}…` : firstLine;
       const message = error instanceof Error ? error.message : String(error);
       try {
         const { formatBackgroundWakeFailureNote, recordBackgroundWakeFailureNote } = await import('../services/commandCenter/foregroundWake');
         await recordBackgroundWakeFailureNote(
           sessionId,
-          formatBackgroundWakeFailureNote(task.title),
+          formatBackgroundWakeFailureNote(shortName),
           { taskId: task.agentId, reason: message.includes('no live owner lease') ? 'owner_missing' : 'wake_failed' },
         );
       } catch (noteError) {

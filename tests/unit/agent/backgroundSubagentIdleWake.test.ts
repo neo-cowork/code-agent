@@ -37,11 +37,12 @@ function subagentResult(output: string): SubagentResult {
 }
 
 /** 往真单例 registry 播种一条已完成的后台任务（生产路径同款：完成记录只能经 drain 消费）。 */
-async function seedCompletion(agentId: string, sessionId: string): Promise<void> {
+async function seedCompletion(agentId: string, sessionId: string, title?: string): Promise<void> {
   getBackgroundSubagentRegistry().spawn(async () => subagentResult(`${agentId} done`), {
     agentId,
     sessionId,
     role: 'coder',
+    title,
     suppressIdleWake: true, // 播种阶段不触发 wake，由测试显式 schedule
   });
   await vi.advanceTimersByTimeAsync(0);
@@ -152,6 +153,26 @@ describe('background subagent idle wake', () => {
       'wake failed: coder',
       { taskId: 'agent-failed', reason: 'owner_missing' },
     );
+  });
+
+
+  it.each([
+    ['  百度页面摘要  \n使用 browser_action / Playwright；失败后改用 WebFetch。', '百度页面摘要'],
+    ['打开百度首页并浏览其中两个页面然后整理成可直接阅读的简短中文摘要\n用 WebFetch 抓取。', '打开百度首页并浏览其中两个页面然后整理成可直接阅…'],
+  ])('uses a short first-line name in a failed wake note: %s', async (title, shortName) => {
+    taskManagerMocks.getSessionState.mockReturnValue({ status: 'idle' });
+    taskManagerMocks.startTask.mockRejectedValue(new Error('model unavailable'));
+    await seedCompletion('agent-long-title', 'short-name-session', title);
+    scheduleBackgroundSubagentIdleWake(trigger('agent-long-title', 'short-name-session'));
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(wakeNoteMocks.format).toHaveBeenCalledWith(shortName);
+    expect(wakeNoteMocks.record).toHaveBeenCalledWith(
+      'short-name-session',
+      `wake failed: ${shortName}`,
+      { taskId: 'agent-long-title', reason: 'wake_failed' },
+    );
+    expect(wakeNoteMocks.format.mock.calls[0]?.[0]).not.toMatch(/browser_action|Playwright|WebFetch|\n/);
   });
 
   it('records the note when starting the notification turn throws directly', async () => {
