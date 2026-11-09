@@ -19,6 +19,7 @@ async function flushWake(sessionId: string): Promise<void> {
   const batch = pendingWakeBySession.get(sessionId);
   if (!batch) return;
   pendingWakeBySession.delete(sessionId);
+  let recordFailure: ((error: unknown) => Promise<void>) | undefined;
 
   try {
     const { getTaskManager } = await import('../task/TaskManager');
@@ -45,23 +46,54 @@ async function flushWake(sessionId: string): Promise<void> {
       },
     };
 
-    await taskManager.startTask(
-      sessionId,
-      content,
-      undefined,
-      {
-        mode: 'normal',
-        historyVisibility: 'meta',
-        maxIterations: 1,
-      },
-      messageMetadata,
-      `background-subagent:${sessionId}:${Date.now()}`,
-    );
+    recordFailure = async (error: unknown): Promise<void> => {
+      const task = records[0];
+      if (!task) return;
+      const message = error instanceof Error ? error.message : String(error);
+      try {
+        const { formatBackgroundWakeFailureNote, recordBackgroundWakeFailureNote } = await import('../services/commandCenter/foregroundWake');
+        await recordBackgroundWakeFailureNote(
+          sessionId,
+          formatBackgroundWakeFailureNote(task.title),
+          { taskId: task.agentId, reason: message.includes('no live owner lease') ? 'owner_missing' : 'wake_failed' },
+        );
+      } catch (noteError) {
+        logger.warn('Background subagent wake failure note not recorded', {
+          sessionId,
+          taskId: task.agentId,
+          error: String(noteError),
+        });
+      }
+    };
+    let failureMessage: string | undefined;
+    const stopObserving = taskManager.observeAgentEvents((eventSessionId, event, taskId) => {
+      if (eventSessionId !== sessionId || taskId || event.type !== 'error' || failureMessage) return;
+      const data = event.data as { message?: unknown };
+      failureMessage = typeof data.message === 'string' ? data.message : String(data.message);
+    });
+    try {
+      await taskManager.startTask(
+        sessionId,
+        content,
+        undefined,
+        {
+          mode: 'normal',
+          historyVisibility: 'meta',
+          maxIterations: 1,
+        },
+        messageMetadata,
+        `background-subagent:${sessionId}:${Date.now()}`,
+      );
+    } finally {
+      stopObserving();
+    }
+    if (failureMessage) await recordFailure(failureMessage);
   } catch (error) {
     logger.warn('Failed to wake idle parent session for background subagent completion', {
       sessionId,
       error: String(error),
     });
+    await recordFailure?.(error);
   }
 }
 

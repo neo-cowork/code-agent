@@ -7,6 +7,16 @@ import type { SubagentCompletionRecord } from '../../../src/host/agent/subagentC
 const taskManagerMocks = vi.hoisted(() => ({
   getSessionState: vi.fn(),
   startTask: vi.fn(),
+  observeAgentEvents: vi.fn(),
+}));
+const wakeNoteMocks = vi.hoisted(() => ({
+  format: vi.fn((shortName: string) => `wake failed: ${shortName}`),
+  record: vi.fn(),
+}));
+
+vi.mock('../../../src/host/services/commandCenter/foregroundWake', () => ({
+  formatBackgroundWakeFailureNote: wakeNoteMocks.format,
+  recordBackgroundWakeFailureNote: wakeNoteMocks.record,
 }));
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
@@ -55,6 +65,11 @@ describe('background subagent idle wake', () => {
     vi.useFakeTimers();
     taskManagerMocks.getSessionState.mockReset();
     taskManagerMocks.startTask.mockReset();
+    taskManagerMocks.observeAgentEvents.mockReset();
+    taskManagerMocks.observeAgentEvents.mockReturnValue(vi.fn());
+    wakeNoteMocks.format.mockClear();
+    wakeNoteMocks.record.mockReset();
+    wakeNoteMocks.record.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -112,5 +127,41 @@ describe('background subagent idle wake', () => {
     const busy = getBackgroundSubagentRegistry().drainCompletionNotifications({ sessionId: 'busy-session' });
     expect(busy).toHaveLength(1);
     expect(busy[0]?.agentId).toBe('agent-running');
+  });
+
+  it('records the existing user-visible note when the notification turn emits an error', async () => {
+    taskManagerMocks.getSessionState.mockReturnValue({ status: 'idle' });
+    taskManagerMocks.startTask.mockImplementation(async () => {
+      const observer = taskManagerMocks.observeAgentEvents.mock.calls[0]?.[0];
+      if (!observer) throw new Error('Expected the wake error observer');
+      observer('failed-session', {
+        type: 'error',
+        data: { message: 'Durable Run run-parent has no live owner lease' },
+      });
+    });
+    await seedCompletion('agent-failed', 'failed-session');
+    scheduleBackgroundSubagentIdleWake(trigger('agent-failed', 'failed-session'));
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(wakeNoteMocks.format).toHaveBeenCalledWith('coder');
+    expect(wakeNoteMocks.record).toHaveBeenCalledWith(
+      'failed-session',
+      'wake failed: coder',
+      { taskId: 'agent-failed', reason: 'owner_missing' },
+    );
+  });
+
+  it('records the note when starting the notification turn throws directly', async () => {
+    taskManagerMocks.getSessionState.mockReturnValue({ status: 'idle' });
+    taskManagerMocks.startTask.mockRejectedValue(new Error('model unavailable'));
+    await seedCompletion('agent-throws', 'throwing-session');
+    scheduleBackgroundSubagentIdleWake(trigger('agent-throws', 'throwing-session'));
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(wakeNoteMocks.record).toHaveBeenCalledWith(
+      'throwing-session',
+      'wake failed: coder',
+      { taskId: 'agent-throws', reason: 'wake_failed' },
+    );
   });
 });
