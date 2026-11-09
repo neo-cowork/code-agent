@@ -30,6 +30,8 @@ import { CronSimpleCreate } from './CronSimpleCreate';
 import { CronAgentActionFields } from './CronAgentActionFields';
 import { CronDurationField } from './CronDurationField';
 
+import { CRON_CLOUD_NOT_CONFIGURED } from '@shared/constants/cronErrors';
+import { CronCloudCreateNotice } from './CronCloudCreateNotice';
 import { SavedRoutineRestate } from './SavedRoutineRestate';
 import { useI18n } from '../../../hooks/useI18n';
 import { showCronLoginWallWarning } from './cronLoginWallNotice';
@@ -44,7 +46,8 @@ import { CLOUD_ROLE_BOUND_ERROR, CronCloudRoleRestriction, isCloudRoleBoundAgent
 import { CronWebhookScheduleFields } from './CronWebhookScheduleFields';
 import { CronWebhookCreatedView } from './CronWebhookCreatedView';
 import { useCronWebhookGate } from './useCronWebhookGate';
-import { takeCronEditorDraft } from './cronEditorDraftStash';
+import { stashCronEditorDraft, takeCronEditorDraft } from './cronEditorDraftStash';
+import { openCloudCronSettings as gotoCloudSettingsForCreate } from '../../../utils/cronCloudSettingsNavigation';
 import { useScrollToEventValidation } from './useScrollToEventValidation';
 
 interface CronJobEditorProps {
@@ -54,7 +57,7 @@ interface CronJobEditorProps {
   onClose: () => void;
 }
 
-type FieldErrors = Partial<Record<keyof CronJobDraft, string>> & { form?: string; eventForm?: boolean; templateForm?: boolean };
+type FieldErrors = Partial<Record<keyof CronJobDraft, string>> & { form?: string; eventForm?: boolean; templateForm?: boolean; cloudUnconfigured?: boolean };
 
 type EditorTab = 'basic' | 'action' | 'advanced';
 
@@ -113,7 +116,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
     if (message.includes('Local jobs must have an interval')) return cc.localIntervalHint;
     if (message.includes(CLOUD_ROLE_BOUND_ERROR)) return cc.cloudRoleBoundHint;
     if (message.includes('runsOn is immutable')) return cc.locationImmutable;
-    return message || fallback;
+    return fallback;
   };
   const { createJob, updateJob } = useCronStore();
   const openSettingsTab = useAppStore((state) => state.openSettingsTab);
@@ -318,7 +321,9 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       }
       onClose();
     } catch (error) {
-      setErrors({ form: saveErrorMessage(error, cc.simpleCreateFailed) });
+      setErrors(error instanceof Error && 'code' in error && error.code === CRON_CLOUD_NOT_CONFIGURED
+        ? { cloudUnconfigured: true }
+        : { form: saveErrorMessage(error, cc.simpleCreateFailed) });
     } finally {
       setSubmitting(false);
     }
@@ -371,11 +376,22 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       }
       onClose();
     } catch (error) {
-      setErrors({ form: saveErrorMessage(error, cc.simpleCreateFailed) });
+      setErrors(error instanceof Error && 'code' in error && error.code === CRON_CLOUD_NOT_CONFIGURED
+        ? { cloudUnconfigured: true }
+        : { form: saveErrorMessage(error, cc.simpleCreateFailed) });
     } finally {
       setSubmitting(false);
     }
   };
+
+  const cloudNotice = errors.cloudUnconfigured && <CronCloudCreateNotice
+    onSwitchLocal={() => { setDraft((current) => ({ ...current, runsOn: 'local' })); setErrors({}); }}
+    onSettings={() => {
+      const filled = step === 'fill' && selectedTemplate ? selectedTemplate.generate(templateValues) : draft;
+      stashCronEditorDraft({ ...filled, runsOn: draft.runsOn });
+      gotoCloudSettingsForCreate();
+    }}
+  />;
 
   // ── Saved restate view（角色绑定任务保存成功后）─────────────────────
   if (savedJob) {
@@ -512,6 +528,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
           </button>
         </div>
 
+        {cloudNotice}
         {errors.form && (
           <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-badge-danger">
             {errors.form}
@@ -667,6 +684,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
         ))}
       </div>
 
+      {cloudNotice}
       {errors.form && (
         <div className="mb-4 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-badge-danger">
           {errors.form}

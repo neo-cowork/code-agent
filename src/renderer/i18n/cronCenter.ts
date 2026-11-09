@@ -12,6 +12,11 @@ import { cronPermissionDeniedReasonText } from '@shared/cronPermissionDenied';
 
 export const cronCenterZh = {
   cronCenter: {
+    cloudCreate: {
+      unconfigured: '云端服务尚未配置，这个任务暂时无法在云端运行。',
+      switchLocal: '改在这台电脑运行',
+      settings: '去配置云端服务',
+    },
     groupListenCheck: {
       title: '检查群消息是否连通',
       start: '发条测试消息',
@@ -527,6 +532,11 @@ export const cronCenterZh = {
 
 export const cronCenterEn: typeof cronCenterZh = {
   cronCenter: {
+    cloudCreate: {
+      unconfigured: 'The cloud service is not configured yet, so this task cannot run in the cloud.',
+      switchLocal: 'Run on this computer instead',
+      settings: 'Go to cloud settings',
+    },
     groupListenCheck: {
       title: 'Check group message reception',
       start: 'Send a test message',

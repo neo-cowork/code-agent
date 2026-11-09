@@ -9,6 +9,7 @@ export interface ScheduleRestatement {
 
 export interface PendingScheduleDraft {
   input: CreateCronJobInput;
+  creationErrorCode?: string;
   restatement?: ScheduleRestatement;
   description: string;
   handoffPrompt?: string;
