@@ -21,7 +21,7 @@ export interface SavedRoutineChannelCatalog {
 
 /**
  * resultChannel（"<账号名或类型>:<会话id>"）→ 展示标签。未设置给空串（由调用方
- * 落到「自动化审核收件箱」）；目录命中账号时账号名 + 已知会话标题，会话不在目录
+ * 落到「自动化」→「运行记录」）；目录命中账号时账号名 + 已知会话标题，会话不在目录
  * 就只给账号名；账号已不在（unknown account）也给账号名一段，绝不拼出原始串。
  */
 export function resolveSavedRoutineChannelLabel(
