@@ -847,15 +847,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       const attachment = await buildMentionAttachment({ path: row.path, name: row.name, workingDirectory });
       // 读盘期间用户可能继续输入：以最新文本重定位触发词，找不到就交给对账把 chip 补到末尾
       const result = mergeAttachments(attachmentsRef.current, [attachment], UI.MAX_ATTACHMENTS_DROP);
-      const chipAttachment = result.duplicates[0]?.existing ?? attachment;
       const freshCaret = editor.getCaretOffset();
       const freshBefore = latestValueRef.current.slice(0, freshCaret);
       const freshMatch = freshBefore.match(/@([^\s@]*)$/);
       if (freshMatch) {
-        editor.replaceRangeWithChip(freshCaret - freshMatch[0].length, freshCaret, {
-          key: `file:${chipAttachment.id}`,
+        const triggerStart = freshCaret - freshMatch[0].length;
+        if (result.skippedCount > 0) editor.replaceRangeWithText(triggerStart, freshCaret, '');
+        else editor.replaceRangeWithChip(triggerStart, freshCaret, {
+          key: `file:${attachment.id}`,
           kind: 'file',
-          id: chipAttachment.id,
+          id: attachment.id,
         });
       }
       setAttachments(result.attachments);
