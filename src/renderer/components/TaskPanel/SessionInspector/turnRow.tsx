@@ -60,17 +60,19 @@ function resolveTerminalOutcome(segment: TurnSegment, t: Translations) {
     ? t.outcomeWords['failed-approval-denied'].badge
     : failedCode === AgentFailureCode.Timeout
       ? t.outcomeWords['failed-timeout'].badge
-      : failedCode === AgentFailureCode.BudgetExhausted
-        ? t.outcomeWords['failed-budget'].badge
-        : failedCode === AgentFailureCode.DependencyFailed || failedCode === AgentFailureCode.DependencyMissing
-          ? t.outcomeWords['failed-dependency'].badge
-          : failedCode === AgentFailureCode.ModelError
-            ? t.outcomeWords['failed-model'].badge
-            : failedCode === AgentFailureCode.ToolUnavailable
-              ? t.outcomeWords['failed-unavailable'].badge
-              : segment.failedToolCount > 0
-                ? t.outcomeWords['failed-tool'].badge
-                : t.outcomeWords['failed-unknown'].badge;
+      : failedCode === AgentFailureCode.InvalidArguments
+        ? t.outcomeWords['failed-tool'].badge
+        : failedCode === AgentFailureCode.BudgetExhausted
+          ? t.outcomeWords['failed-budget'].badge
+          : failedCode === AgentFailureCode.DependencyFailed || failedCode === AgentFailureCode.DependencyMissing
+            ? t.outcomeWords['failed-dependency'].badge
+            : failedCode === AgentFailureCode.ModelError
+              ? t.outcomeWords['failed-model'].badge
+              : failedCode === AgentFailureCode.ToolUnavailable
+                ? t.outcomeWords['failed-unavailable'].badge
+                : segment.failedToolCount > 0
+                  ? t.outcomeWords['failed-tool'].badge
+                  : t.outcomeWords['failed-unknown'].badge;
   return terminal === 'completed'
     ? t.outcomeWords.completed.badge
     : terminal === 'cancelled'
