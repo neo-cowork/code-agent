@@ -13,6 +13,7 @@
 // 文案不持久化（metadata 只存 category + 排障字段），这里按 category 查 i18n 表。
 // ============================================================================
 
+import { EnvAssistCard } from './EnvAssistCard';
 import React, { useCallback } from 'react';
 import { AlertTriangle, Copy, KeyRound, MessageSquarePlus, RotateCcw, SwitchCamera } from 'lucide-react';
 import type { AgentErrorCategory, AgentErrorMetadata } from '@shared/contract';
@@ -160,6 +161,7 @@ export function buildAgentErrorReport(args: {
   t: Translations;
 }): string {
   const { error, title, suggestion, sessionId, t } = args;
+  if (error.envAssist) return '';
   const labels = t.agentError.report;
   const lines: string[] = [
     `## ${labels.title}`,
@@ -427,6 +429,7 @@ export const AgentErrorPresentation: React.FC<{
   /** 同因连续段（投影层推导）。latest=false 的失败轮压成灰字行；缺失按单次失败。 */
   run?: AgentErrorRunInfo;
 }> = (props) => {
+  if (props.error.envAssist) return <EnvAssistCard notice={props.error.envAssist} />;
   // 同一轮内的重复失败上报（两条用户消息之间同因再次落错）：同一失败，不渲染。
   if (props.run?.duplicate) return null;
   // rate_limited 不参与折叠：保持既有的时间线灰字行 + 重试路径。

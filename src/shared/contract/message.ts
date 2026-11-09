@@ -2,6 +2,7 @@
 // Message Types
 // ============================================================================
 
+import type { EnvAssistNotice } from './envAssist';
 import type { ToolCall, ToolResult } from './tool';
 import type { WorkbenchMessageMetadata } from './conversationEnvelope';
 import type { MemberInputMessageMetadata } from './memberInput';
@@ -274,6 +275,7 @@ export type AgentErrorCategory =
  * 刻意不存 title/suggestion 文案——文案随 i18n 走，存下来会把语言钉死在持久化数据里。
  */
 export interface AgentErrorMetadata {
+  envAssist?: EnvAssistNotice;
   category: AgentErrorCategory;
   /** host 侧错误码（RUN_FAILED / CONTEXT_LENGTH_EXCEEDED / …） */
   code?: string;
@@ -375,6 +377,7 @@ export interface MessageMetadata {
   agentTeam?: AgentTeamMessageMetadata;
   /** agent 运行失败的结构化错误（会话区渲染 AgentErrorCard），见 AgentErrorMetadata */
   agentError?: AgentErrorMetadata;
+  envAssist?: EnvAssistNotice;
   automation?: SessionAutomationMessageMetadata;
   /**
    * 角色醒来主动消息的打扰理由。解析自 <rationale>/<evidence>；

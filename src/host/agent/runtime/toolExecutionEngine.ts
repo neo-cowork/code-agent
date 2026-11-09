@@ -1,4 +1,5 @@
 import { getToolAttemptTrace, shouldFreezeNonReadWhileAwaitingUser, buildAwaitingUserBlockedResult, AWAITING_USER_FREEZE_NOTICE } from './toolAttemptTrace';
+import { publishEnvAssistToolNotice } from '../../envAssist/toolNotice';
 import { buildInsufficientScopeConnectorEvent } from './connectorScopeCard';
 import { emitBatchTerminatedToolResult, emitForceFinalSkippedToolResult } from './forceFinalSeal';
 import { mintDelegatedTurnOrigin, mintUserTurnOrigin } from '../messageOrigin';
@@ -902,6 +903,7 @@ export class ToolExecutionEngine {
 
       // Awaited: the Jev advisory scan inside must settle before the result is
       // emitted (tool_call_end) or persisted, so its metadata is deterministic.
+      await publishEnvAssistToolNotice({ toolName: toolCall.name, result: toolResult, modelResult: normalizedResult, sessionId: this.ctx.sessionId, runId: this.ctx.runId, onEvent: this.ctx.onEvent });
       await handleToolResultBookkeeping({
         ctx: this.ctx,
         contextAssembly: this.contextAssembly,

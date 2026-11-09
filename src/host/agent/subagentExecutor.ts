@@ -3,6 +3,7 @@
 // Enhanced with unified pipeline (T4)
 // ============================================================================
 
+import { publishEnvAssistToolNotice } from '../envAssist/toolNotice';
 import { buildInsufficientScopeConnectorEvent } from './runtime/connectorScopeCard';
 import { resolveSubagentPreset } from './subagentFirstRunPreset';
 import type { AgentMessageOrigin } from './messageOrigin';
@@ -896,6 +897,7 @@ export class SubagentExecutor {
                   subagentPolicy,
                 },
               ).finally(markToolEnd);
+              await publishEnvAssistToolNotice({ toolName: toolCall.name, result, sessionId: context.sessionId, runId: executionRunId, onEvent: (event) => context.events.emit(event.type, event.data) });
               descendantUsage = addSubagentUsage(descendantUsage, result.metadata);
               // MCP 权限范围不足：子代理（文字前台委派的常见路径）的失败也要给用户一张「重新授权」卡
               const scopeCard = buildInsufficientScopeConnectorEvent(result);
