@@ -140,3 +140,23 @@ describe('locale-independent fetch scripts', () => {
     }
   });
 });
+
+describe('reminder creation read-back', () => {
+  it('reads the stored remind-me date in the create transaction and parses it', async () => {
+    mocks.runAppleScript.mockResolvedValueOnce('r-created|提醒事项|Report|false|2026-11-09T09:00:00');
+    const result = await remindersConnector.execute('create_reminder', {
+      title: 'Report', remind_at_ms: new Date(2026, 10, 9, 9).getTime(),
+    });
+    expect(result.data).toMatchObject({ remindAtMs: new Date(2026, 10, 9, 9).getTime() });
+    const script = mocks.runAppleScript.mock.calls[0][0].join('\n');
+    expect(script).toContain('set rawRemindDate to remind me date of newReminder');
+    expect(script).toContain('my isoDateText(rawRemindDate)');
+    expect(script).toContain('set remind me date of newReminder to remindDate');
+  });
+
+  it('reads an actual missing date as null', async () => {
+    mocks.runAppleScript.mockResolvedValueOnce('r-created|提醒事项|Report|false|');
+    const result = await remindersConnector.execute('create_reminder', { title: 'Report' });
+    expect(result.data).toMatchObject({ remindAtMs: null });
+  });
+});

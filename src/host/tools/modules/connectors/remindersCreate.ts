@@ -50,9 +50,22 @@ function buildRemindersCreateSuccessResult(
       };
   ctx.logger.debug('reminders_create', { list: reminder.list, title: reminder.title });
   const notes = typeof args.notes === 'string' ? args.notes : '';
-  const remindAtMs = typeof args.remind_at_ms === 'number' ? args.remind_at_ms : null;
-  const remindAtText = remindAtMs ? formatConnectorTime(remindAtMs) : '';
-  const baseOutput = `已创建提醒：\n- [${reminder.list}] ${reminder.title}${reminder.completed ? ' (completed)' : ''}`;
+  // Only the connector's read-back is authoritative, including an explicit null.
+  const remindAtMs = typeof reminder.remindAtMs === 'number' && Number.isFinite(reminder.remindAtMs)
+    ? reminder.remindAtMs : null;
+  let remindAtText: string;
+  if (remindAtMs !== null) {
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const parts = new Intl.DateTimeFormat('zh-CN', {
+      timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23', weekday: 'short',
+    }).formatToParts(new Date(remindAtMs));
+    const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)!.value;
+    remindAtText = `${part('year')}-${part('month')}-${part('day')} ${part('hour')}:${part('minute')}（${part('weekday')}，${timeZone}）`;
+  } else {
+    remindAtText = reminder.remindAtMs === null ? '未设置' : '无法确认，请在提醒事项中查看';
+  }
+  const baseOutput = `已创建提醒：\n- [${reminder.list}] ${reminder.title}${reminder.completed ? ' (completed)' : ''}\n提醒时间：${remindAtText}`;
   const output = reconciledNote ? `${baseOutput}\n${reconciledNote}` : baseOutput;
 
   return {
