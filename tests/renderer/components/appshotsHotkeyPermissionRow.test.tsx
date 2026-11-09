@@ -7,6 +7,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { AppshotsSettings } from '../../../src/renderer/components/features/settings/tabs/AppshotsSettings';
 import ipcService from '../../../src/renderer/services/ipcService';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { en } from '../../../src/renderer/i18n/en';
+import { zh } from '../../../src/renderer/i18n/zh';
 
 const facadeInvoke = vi.hoisted(() => vi.fn());
 const openSettings = vi.hoisted(() => vi.fn());
@@ -70,6 +73,24 @@ describe('AppshotsSettings 快捷键（⌘+⌘）输入监控权限行', () => {
 
   afterEach(() => {
     cleanup();
+    useAppStore.setState({ language: 'zh' });
+  });
+
+  it.each([
+    ['zh', zh, /若热键无反应，请.*重启应用/],
+    ['en', en, /If the shortcut does not respond,.*restart the app/i],
+  ] as const)('权限说明（%s）只把重启归因于屏幕录制，并指向实时快捷键按钮文案', async (language, locale, shortcutRestartPattern) => {
+    useAppStore.setState({ language });
+    platform.current = 'win32';
+    const permissionsDescription = locale.settings.appshots.permissionsDescription;
+    const hotkeyEnable = locale.settings.appshots.hotkeyEnable;
+    renderTab();
+
+    const description = screen.getByText(permissionsDescription);
+    expect(description.textContent).toContain(language === 'zh' ? '屏幕录制' : 'Screen Recording');
+    expect(description.textContent).toMatch(language === 'zh' ? /屏幕录制.{0,30}重启应用一次/ : /Screen Recording in System Settings, restart the app once/);
+    expect(description.textContent).toContain(hotkeyEnable);
+    expect(description.textContent).not.toMatch(shortcutRestartPattern);
   });
 
   it('非 macOS：隐藏快捷键权限行且不查询或请求输入监控权限', async () => {
