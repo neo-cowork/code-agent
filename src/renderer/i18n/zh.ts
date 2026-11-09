@@ -1,3 +1,4 @@
+import { agentRoleLabelsZh } from './agentRoleLabels';
 // ============================================================================
 // Chinese (Simplified) Translations - 简体中文
 // ============================================================================
@@ -60,6 +61,7 @@ import { permissionRuleNlZh } from './permissionRuleNl';
 import { sessionTaskPresentationZh } from './sessionTaskPresentation'; import { toolResultSummaryZh } from './toolResultSummary';
 
 export const zh = {
+  ...agentRoleLabelsZh,
   ...canvasActorZh, ...activityPanelZh,
   ...imageNarrationZh, ...mermaidZh,
   ...voiceAuditZh,

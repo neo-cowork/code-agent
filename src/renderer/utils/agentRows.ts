@@ -1,3 +1,4 @@
+import { agentRoleLabel } from './agentRoleLabel';
 // ============================================================================
 // agentRows - 「本会话的代理」统一行模型（N-L6-AGENTVIEW）
 // ----------------------------------------------------------------------------
@@ -147,7 +148,7 @@ export function buildAgentRows(input: {
       key: node.id,
       kind: 'agent',
       roleId: node.role,
-      name: node.role,
+      name: agentRoleLabel(node.role),
       isLead: false,
       status,
       failureReason: node.failureReason,

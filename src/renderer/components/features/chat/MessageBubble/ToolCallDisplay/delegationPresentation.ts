@@ -1,3 +1,4 @@
+import { agentRoleLabel } from '../../../../../utils/agentRoleLabel';
 import type { AgentTreeNode } from '@shared/contract/agentTree';
 import type { LastToolFailure, LastToolStep, Task, TaskOutputRef } from '@shared/contract/backgroundTask';
 import type { ToolCall } from '@shared/contract';
@@ -135,7 +136,7 @@ function fromAgent(node: AgentTreeNode): DelegationPresentation {
   const terminal = state !== 'working';
   return {
     state,
-    title: node.task?.trim() || node.role,
+    title: agentRoleLabel(node.role),
     lastToolStep: node.lastToolStep,
     activityIds: [node.id],
     stepCount: terminal ? completedStepCount(node.lastToolStep, undefined) : undefined,
