@@ -243,6 +243,8 @@ describe('modelRuntime', () => {
 
     expect(hasConfiguredRuntimeModels(keyedSettings)).toBe(true);
     expect(hasConfiguredRuntimeModels(localSettings)).toBe(true);
+    expect(hasConfiguredDefaultRuntimeModel(keyedSettings, { allowCloudManaged: false })).toBe(true);
+    expect(hasConfiguredDefaultRuntimeModel(localSettings, { allowCloudManaged: false })).toBe(true);
   });
 
   it('accepts cloud-managed providers as configured without exposing keys', () => {
@@ -274,6 +276,23 @@ describe('modelRuntime', () => {
       providerTransportLabel: 'OpenAI-compatible',
       providerEndpoint: 'https://relay.example.com/openai',
     }));
+  });
+
+  it.each([false, true])('excludes cloud-managed default with stored credentials=%s from local-only readiness', (apiKeyConfigured) => {
+    const settings = {
+      models: {
+        default: 'custom-team-relay',
+        defaultProvider: 'xiaomi',
+        providers: {
+          xiaomi: { enabled: true, apiKeyConfigured: true },
+          'custom-team-relay': { enabled: true, managedByCloud: true, apiKeyConfigured },
+        },
+      },
+    } as unknown as AppSettings;
+
+    expect(hasConfiguredDefaultRuntimeModel(settings)).toBe(true);
+    expect(hasConfiguredDefaultRuntimeModel(settings, { allowCloudManaged: true })).toBe(true);
+    expect(hasConfiguredDefaultRuntimeModel(settings, { allowCloudManaged: false })).toBe(false);
   });
 
   it('requires the active default provider to be configured before send', () => {
