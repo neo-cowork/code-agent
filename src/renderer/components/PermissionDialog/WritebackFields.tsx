@@ -8,6 +8,7 @@
 // 字段表来自 @shared/contract 的 EDITABLE_TOOL_FIELDS，renderer 不自持一份。
 // ============================================================================
 
+import { formatDateTime } from '../../utils/formatDateTime';
 import React, { useState } from 'react';
 import { EDITABLE_TOOL_FIELDS, type EditableField } from '@shared/contract';
 import { Input } from '../primitives/Input';
@@ -80,7 +81,7 @@ function localDatetimeToIso(value: string, millis: number): string {
 function formattedDatetime(raw: unknown, language: string): string {
   const date = typeof raw === 'number' || typeof raw === 'string' ? new Date(raw) : null;
   if (!date || Number.isNaN(date.getTime())) return '';
-  return date.toLocaleString(language === 'en' ? 'en-US' : 'zh-CN');
+  return formatDateTime(date, language === 'en' ? 'en' : 'zh');
 }
 
 export function draftFromArgs(tool: string, args: Record<string, unknown>): WritebackDraft {

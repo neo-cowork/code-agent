@@ -1,3 +1,4 @@
+import { formatDateTime } from '../../../utils/formatDateTime';
 import React from 'react';
 import {
   AlertTriangle,
@@ -26,7 +27,6 @@ import type { ProjectStatus } from '@shared/contract/project';
 import { Z_LAYERS } from '../../../styles/zLayers';
 import { useI18n } from '../../../hooks/useI18n';
 import type { Language, Translations } from '../../../i18n';
-import { localeForLanguage } from '../../../utils/i18nTime';
 
 export interface SidebarProjectDrawerSession {
   id: string;
@@ -106,7 +106,7 @@ function formatRelativeUpdatedAt(timestamp: number | undefined, language: Langua
   if (!timestamp || !Number.isFinite(timestamp)) {
     return null;
   }
-  return new Date(timestamp).toLocaleString(localeForLanguage(language));
+  return formatDateTime(timestamp, language);
 }
 
 function getGoalStatusIcon(status: SidebarProjectGoalMeta['status']): React.ReactNode {

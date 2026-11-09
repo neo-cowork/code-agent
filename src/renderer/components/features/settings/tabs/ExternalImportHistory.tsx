@@ -1,3 +1,4 @@
+import { formatDateTime } from '../../../../utils/formatDateTime';
 import React, { useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight, History } from 'lucide-react';
 import {
@@ -10,7 +11,7 @@ import { useI18n } from '../../../../hooks/useI18n';
 import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { useExternalImportHistoryStore } from '../../../../stores/externalImportHistoryStore';
-import { formatRelativeTime, localeForLanguage } from '../../../../utils/i18nTime';
+import { formatRelativeTime } from '../../../../utils/i18nTime';
 import { Button } from '../../../primitives';
 
 type ExternalImportCopy = ReturnType<typeof useI18n>['t']['settings']['externalImport'];
@@ -74,7 +75,7 @@ export const ExternalImportHistory: React.FC = () => {
                   copy={copy}
                   expanded={expandedId === entry.id}
                   onToggle={() => setExpandedId((current) => current === entry.id ? null : entry.id)}
-                  absoluteTime={new Date(entry.at).toLocaleString(localeForLanguage(language))}
+                  absoluteTime={formatDateTime(entry.at, language)}
                   relativeTime={formatRelativeTime(t, entry.at)}
                 />
               ))}

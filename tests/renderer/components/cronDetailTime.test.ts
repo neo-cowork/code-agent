@@ -1,7 +1,7 @@
 // ============================================================================
 // formatDateTime 语言感知档（N-CRON-DETAIL-TIME-FORMAT-MIXED / FB-567+FB-570）：
 // zh 固定 24 小时制 `YYYY/MM/DD HH:mm`（手工拼，不跟机器 locale 走）；
-// en 维持 en-US 原样。与 cronRunListTime.test.ts 同层，钉详情页时间口径。
+// en 同样固定 24 小时制。与 cronRunListTime.test.ts 同层，钉详情页时间口径。
 // N-CRON-DETAIL-TIME-FORMAT-MIXED-FU1：实现迁到 src/renderer/utils/formatDateTime.ts
 // 供全 renderer 复用，钉的还是同一个函数。
 // ============================================================================
@@ -33,9 +33,9 @@ describe('formatDateTime (detail time, language-aware)', () => {
     expect(formatDateTime(AT)).toBe('2026/11/09 04:00');
   });
 
-  it('en：维持 en-US 原样（英文 UI 行为不变）', () => {
-    expect(formatDateTime(AT, 'en')).toBe('11/9/2026, 4:00:00 AM');
-    expect(formatDateTime(PM, 'en')).toBe('11/9/2026, 4:05:00 PM');
+  it('en：与中文使用同一零填充的 24 小时格式', () => {
+    expect(formatDateTime(AT, 'en')).toBe('2026/11/09 04:00');
+    expect(formatDateTime(PM, 'en')).toBe('2026/11/09 16:05');
   });
 
   it('兜底文案保留：未设置 / 无效时间', () => {
@@ -58,6 +58,6 @@ describe('formatDateTime (detail time, language-aware)', () => {
       updatedAt: 0,
     };
     expect(formatScheduleSummary(job, 'zh')).toBe('一次性 · 2026/11/09 04:00');
-    expect(formatScheduleSummary(job, 'en')).toBe('一次性 · 11/9/2026, 4:00:00 AM');
+    expect(formatScheduleSummary(job, 'en')).toBe('一次性 · 2026/11/09 04:00');
   });
 });

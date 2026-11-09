@@ -2,6 +2,7 @@
 // NativeConnectorsSection - 原生连接器（macOS Calendar/Mail/Reminders）开关
 // ============================================================================
 
+import { formatDateTime } from '../../../../utils/formatDateTime';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   CalendarDays,
@@ -247,12 +248,7 @@ export function getRuntimeConnectorLifecycleRequest(
 
 function formatCheckedAt(checkedAt: number | undefined, locale: string): string | null {
   if (!checkedAt) return null;
-  return new Date(checkedAt).toLocaleString(locale, {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return formatDateTime(checkedAt, locale.startsWith('en') ? 'en' : 'zh');
 }
 
 function formatActionLabels(actions: NativeConnectorUiAction[], text: NativeConnectorsText): string {

@@ -13,6 +13,7 @@
 // 文案不持久化（metadata 只存 category + 排障字段），这里按 category 查 i18n 表。
 // ============================================================================
 
+import { formatDateTime } from '../../../utils/formatDateTime';
 import React, { useCallback } from 'react';
 import { AlertTriangle, Copy, KeyRound, MessageSquarePlus, RotateCcw, SwitchCamera } from 'lucide-react';
 import type { AgentErrorCategory, AgentErrorMetadata } from '@shared/contract';
@@ -98,7 +99,7 @@ function buildTechnicalItems(
 function formatResetTime(resetAt: string, locale: string): string | null {
   const date = new Date(resetAt);
   if (!Number.isFinite(date.getTime())) return null;
-  return date.toLocaleString(locale, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+  return formatDateTime(date, locale.startsWith('en') ? 'en' : 'zh');
 }
 
 /** 按 category 查 i18n 文案；context_length 的建议带 token 数模板，usage_limit 带窗口词与恢复时间。 */

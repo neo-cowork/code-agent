@@ -4,6 +4,7 @@
 // 侧栏自动化行与协作空间自动化卡弹窗复用同一套，不重写。
 // ============================================================================
 
+import { formatDateTime } from './formatDateTime';
 import { formatCronJobShortTime } from './formatCronJobTime';
 
 /** 下次运行时间：今天只显 HH:mm，其他日期带月日；定时任务可指定其时区。 */
@@ -18,5 +19,5 @@ export function formatNextRun(ts: number, locale: string, timeZone?: string): st
     && date.getDate() === now.getDate();
   const time = date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
   if (sameDay) return time;
-  return `${date.toLocaleDateString(locale, { month: 'numeric', day: 'numeric' })} ${time}`;
+  return formatDateTime(date, locale.startsWith('en') ? 'en' : 'zh').slice(5);
 }

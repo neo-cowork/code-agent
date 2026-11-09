@@ -3,6 +3,7 @@
 // 支持导出为 Markdown 和 JSON 格式
 // ============================================================================
 
+import { formatDateTime } from '../../../utils/formatDateTime';
 import React, { useState, useCallback } from 'react';
 import { X, Download, FileText, FileJson, Check, Copy } from 'lucide-react';
 import type { Message } from '@shared/contract';
@@ -37,7 +38,7 @@ interface ExportModalProps {
 
 function formatMessageToMarkdown(message: Message, surfaceToolCallIds: ReadonlySet<string>): string {
   const role = message.role === 'user' ? '**用户**' : '**助手**';
-  const timestamp = new Date(message.timestamp).toLocaleString('zh-CN');
+  const timestamp = formatDateTime(message.timestamp);
   let content = message.content;
 
   // 处理工具调用
@@ -68,7 +69,7 @@ function formatMessageToMarkdown(message: Message, surfaceToolCallIds: ReadonlyS
 }
 
 export function exportToMarkdown(title: string, messages: Message[]): string {
-  const header = `# ${title}\n\n导出时间：${new Date().toLocaleString('zh-CN')}\n\n---\n\n`;
+  const header = `# ${title}\n\n导出时间：${formatDateTime(new Date())}\n\n---\n\n`;
   const safeMessages = sanitizeMessagesForBrowserComputerExport(messages);
   const surfaceToolCallIds = new Set<string>();
   for (const message of safeMessages) {

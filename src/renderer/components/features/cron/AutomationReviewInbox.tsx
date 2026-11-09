@@ -10,6 +10,7 @@
 // 只作刷新信号；标题与 tile 都读服务侧按任务折算的 countPendingReview。
 // ============================================================================
 
+import { formatDateTime } from '../../../utils/formatDateTime';
 import React, { useCallback, useEffect, useState } from 'react';
 import type { CronUrgency, PermissionResponse, SessionAutomationRecord } from '@shared/contract';
 import type { ParkedApprovalInboxItem } from '@shared/contract/pendingApproval';
@@ -448,7 +449,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                                   )
                                   : cc.inboxMissedAt.replace(
                                     '{time}',
-                                    new Date(record.config.missedNotice.scheduledAt).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN'),
+                                    formatDateTime(record.config.missedNotice.scheduledAt, language),
                                   )}
                               </div>
                             ) : record.config?.loginWall ? (
@@ -460,9 +461,9 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                                 {isCloud
                                   ? cc.inboxCloudCompleted.replace(
                                     '{time}',
-                                    new Date(record.config.pendingReview.at).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN'),
+                                    formatDateTime(record.config.pendingReview.at, language),
                                   )
-                                  : new Date(record.config.pendingReview.at).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN')}
+                                  : formatDateTime(record.config.pendingReview.at, language)}
                               </div>
                             )}
                           </div>

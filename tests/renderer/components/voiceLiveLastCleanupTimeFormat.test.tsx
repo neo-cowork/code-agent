@@ -2,7 +2,7 @@
 // ============================================================================
 // VoiceLiveSettingsSection 录音台账「最近清理」时间口径（N-CRON-DETAIL-TIME-FORMAT-MIXED-FU1 返修）：
 // recordCallsLastCleanup 模板里的 {time} 改走 utils/formatDateTime(at, uiLanguage)，
-// zh 24 小时制带年份、绝不跟机器 locale 出 AM/PM；en 维持 en-US 原样。
+// zh 24 小时制带年份、绝不跟机器 locale 出 AM/PM；en 同样固定 24 小时制。
 // 注意组件内的 language state 是语音会话语言（auto/zh/en），与 UI 语言无关——
 // 这里只驱动 useI18n 的 UI 语言。
 // ============================================================================
@@ -39,7 +39,7 @@ import { useAppStore } from '../../../src/renderer/stores/appStore';
 // 本地时区构造（不跨时区换算），任何 TZ 下时分字段都是构造值本身。
 const CLEANUP_AT = new Date(2026, 10, 9, 16, 5, 0).getTime(); // 2026-11-09 16:05
 const ZH = '2026/11/09 16:05';
-const EN = '11/9/2026, 4:05:00 PM';
+const EN = '2026/11/09 16:05';
 
 const OVERVIEW = {
   dir: '/tmp/voice-recordings',
@@ -82,12 +82,12 @@ describe('VoiceLiveSettingsSection 录音最近清理行（跟随 UI language）
     expect(screen.getByTestId('call-recording-cleanup').textContent).not.toMatch(/AM|PM/);
   });
 
-  it('en UI：维持 en-US 原样（英文 UI 行为不变）', async () => {
+  it('en UI：与中文使用同一 24 小时格式', async () => {
     useAppStore.setState({ language: 'en' });
     render(<VoiceLiveSettingsSection />);
     await waitFor(() => {
       expect(screen.getByTestId('call-recording-cleanup').textContent).toContain(`Last cleanup: ${EN}`);
     });
-    expect(screen.getByTestId('call-recording-cleanup').textContent).not.toContain('16:05');
+    expect(screen.getByTestId('call-recording-cleanup').textContent).not.toMatch(/\b[AP]M\b/);
   });
 });

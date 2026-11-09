@@ -2,8 +2,10 @@
 // CaptureDetail - 采集内容详情视图
 // ============================================================================
 
+import { formatDateTime } from '../../../utils/formatDateTime';
 import React, { Suspense, lazy } from 'react';
 import { X, Globe, ExternalLink, Clock, Tag } from 'lucide-react';
+import { useI18n } from '../../../hooks/useI18n';
 import type { CaptureItem } from '@shared/contract/capture';
 
 // 懒加载 markdown（react-markdown + remark/rehype 链），避免进首屏 modulepreload。
@@ -15,6 +17,7 @@ interface CaptureDetailProps {
 }
 
 export const CaptureDetail: React.FC<CaptureDetailProps> = ({ item, onClose }) => {
+  const { language } = useI18n();
   return (
     <div className="flex flex-col h-full bg-zinc-900 border-l border-zinc-700">
       {/* 头部 */}
@@ -44,7 +47,7 @@ export const CaptureDetail: React.FC<CaptureDetailProps> = ({ item, onClose }) =
         )}
         <span className="inline-flex items-center gap-1">
           <Clock className="w-3 h-3" />
-          {new Date(item.createdAt).toLocaleString('zh-CN')}
+          {formatDateTime(item.createdAt, language)}
         </span>
         {item.tags.length > 0 && (
           <span className="inline-flex items-center gap-1">

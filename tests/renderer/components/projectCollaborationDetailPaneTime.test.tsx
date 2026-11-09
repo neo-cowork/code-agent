@@ -2,7 +2,7 @@
 // ProjectCollaborationDetailPane 时间口径（N-CRON-DETAIL-TIME-FORMAT-MIXED-FU1）：
 // topic 详情「更新于」行的裸 toLocaleString 改走 formatTime(ts, lang) →
 // utils/formatDateTime，lang 由 useI18n 注入；zh 24 小时制带年份、绝不跟机器
-// locale 出 AM/PM；en 维持 en-US 原样。messagesByConversation 注入空表绕开 IPC
+// locale 出 AM/PM；en 同样固定 24 小时制。messagesByConversation 注入空表绕开 IPC
 //（ADR-035 的 fixture 注入口）。
 // ============================================================================
 import React from 'react';
@@ -62,10 +62,10 @@ describe('ProjectCollaborationDetailPane 时间口径（跟随 UI language）', 
     expect(html).not.toMatch(/AM|PM/);
   });
 
-  it('en UI：维持 en-US 原样（英文 UI 行为不变）', () => {
+  it('en UI：与中文使用同一 24 小时格式', () => {
     i18nState.language = 'en';
     const html = renderPane();
-    expect(html).toContain('11/9/2026, 4:05:00 PM');
-    expect(html).not.toContain('16:05');
+    expect(html).toContain('2026/11/09 16:05');
+    expect(html).not.toMatch(/\b[AP]M\b/);
   });
 });

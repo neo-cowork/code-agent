@@ -1,3 +1,4 @@
+import { formatDateTime } from '../../../../utils/formatDateTime';
 import type { CreateCronJobInput } from '../../../../services/cronClient';
 import { CRON_EVENT_TRIGGER } from '@shared/constants';
 import { formatCronExpressionLabel, humanizeEverySchedule, type CronHumanLang } from '@shared/cronHumanize';
@@ -210,9 +211,7 @@ function formatScheduleWhenLabel(
         ? schedule.datetime
         : Date.parse(String(schedule.datetime));
       return Number.isFinite(ts)
-        ? new Date(ts).toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US', {
-          month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
-        })
+        ? formatDateTime(ts, lang)
         : (lang === 'zh' ? '一次性' : 'Once');
     }
     case 'cron':

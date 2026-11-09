@@ -4,6 +4,7 @@
 // props 全量透传现有 state/回调，行为零变化；三分区逻辑后续只加在本组件，不回填主文件。
 // ============================================================================
 
+import { formatDateTime } from '../../../utils/formatDateTime';
 import React, { useCallback } from 'react';
 import { ChevronRight, Cloud, Loader2, Plus } from 'lucide-react';
 import { PLAIN_CHAT_SUMMARY_LABEL } from '@shared/contract/sessionWorkspace';
@@ -13,7 +14,6 @@ import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useSessionUIStore, type SessionStatusFilter } from '../../../stores/sessionUIStore';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
-import { localeForLanguage } from '../../../utils/i18nTime';
 import { getDisplaySessionTitle, getSessionStatusPresentation } from '../../../utils/sessionPresentation';
 import { hasSessionDeliverySignals } from '../../../utils/sessionRecoveryHints';
 import { PlanetSphere } from '../../brand/PlanetSphere';
@@ -146,7 +146,7 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
           showStatusBadge: status.showBadge,
           typeLabel: getSessionTypeLabel(session.type),
           summary: hasMeaningfulSummary ? snapshotSummary : undefined,
-          lastActiveTitle: new Date(latestActivityAt).toLocaleString(localeForLanguage(language)),
+          lastActiveTitle: formatDateTime(latestActivityAt, language),
           workingDirectory: session.workingDirectory,
           gitBranch: session.gitBranch,
           prLabel: session.prLink ? `PR #${session.prLink.number}` : undefined,

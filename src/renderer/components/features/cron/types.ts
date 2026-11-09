@@ -475,13 +475,13 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
 // 详情页时间统一走 utils/formatDateTime（FB-567/FB-570；N-CRON-DETAIL-TIME-FORMAT-MIXED-FU1
 // 迁出供全 renderer 复用）。运行列表仍用 formatRunListTime（月/日短格式，避免撑出容器）。
 
-/** 运行记录表的时间：月/日 + 时/分。详情仍用完整本地时间，避免两列日期把表撑出容器。 */
+/** Run table: MM/DD HH:mm in the current local year; YYYY/MM/DD HH:mm otherwise. */
 export function formatRunListTime(value?: string | number): string {
   if (value == null) return '—';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '—';
-  const pad = (part: number) => String(part).padStart(2, '0');
-  return `${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  const full = formatDateTime(date);
+  return date.getFullYear() === new Date().getFullYear() ? full.slice(5) : full;
 }
 
 export function formatDuration(ms?: number): string {

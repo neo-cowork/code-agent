@@ -2,7 +2,7 @@
 // ============================================================================
 // DataSettings 遥测最近事件行时间口径（N-CRON-DETAIL-TIME-FORMAT-MIXED-FU1 返修）：
 // formatLastEventAt 走相对时段分支之外（>=24h）落到 utils/formatDateTime(ts, lang)，
-// zh 24 小时制带年份、绝不跟机器 locale 出 AM/PM；en 维持 en-US 原样。
+// zh 24 小时制带年份、绝不跟机器 locale 出 AM/PM；en 同样固定 24 小时制。
 // 这是返修④的「设置页渲染证据」：中文 UI 下 DataSettings 真渲染出 24 小时制串。
 // ============================================================================
 import React from 'react';
@@ -42,7 +42,7 @@ import { useAppStore } from '../../../src/renderer/stores/appStore';
 // formatDateTime 分支，时分字段在任何 TZ 下都是构造值本身。
 const LAST_EVENT_AT = new Date(2025, 0, 9, 16, 5, 0).getTime();
 const ZH = '2025/01/09 16:05';
-const EN = '1/9/2025, 4:05:00 PM';
+const EN = '2025/01/09 16:05';
 
 beforeEach(() => {
   h.invoke.mockReset();
@@ -78,13 +78,13 @@ describe('DataSettings 遥测最近事件行（跟随 UI language）', () => {
     expect(container.textContent).not.toMatch(/AM|PM/);
   });
 
-  it('en UI：维持 en-US 原样（英文 UI 行为不变）', async () => {
+  it('en UI：与中文使用同一 24 小时格式', async () => {
     useAppStore.setState({ language: 'en' });
     const { container } = render(<DataSettings />);
     await waitFor(() => {
       expect(container.textContent).toContain(`Latest event: ${EN}`);
     });
     expect(container.textContent).toContain(`Upload failed 2 times · latest ${EN}`);
-    expect(container.textContent).not.toContain('16:05');
+    expect(container.textContent).not.toMatch(/\b[AP]M\b/);
   });
 });

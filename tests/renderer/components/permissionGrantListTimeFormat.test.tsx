@@ -2,7 +2,7 @@
 // ============================================================================
 // PermissionGrantList 授权时间口径（N-CRON-DETAIL-TIME-FORMAT-MIXED-FU1 返修）：
 // grantedOn/expiresOn 模板里的 {date} 改走 utils/formatDateTime(value, language)，
-// zh 24 小时制带年份、绝不跟机器 locale 出 AM/PM；en 维持 en-US 原样。
+// zh 24 小时制带年份、绝不跟机器 locale 出 AM/PM；en 同样固定 24 小时制。
 // ============================================================================
 import React from 'react';
 import { cleanup, render, waitFor } from '@testing-library/react';
@@ -28,8 +28,8 @@ const GRANTED_AT = new Date(2026, 10, 9, 16, 5, 0).getTime(); // 2026-11-09 16:0
 const EXPIRES_AT = new Date(2026, 10, 9, 17, 30, 0).getTime(); // 2026-11-09 17:30
 const ZH = '2026/11/09 16:05';
 const ZH_EXPIRES = '2026/11/09 17:30';
-const EN = '11/9/2026, 4:05:00 PM';
-const EN_EXPIRES = '11/9/2026, 5:30:00 PM';
+const EN = '2026/11/09 16:05';
+const EN_EXPIRES = '2026/11/09 17:30';
 
 function grantsPayload() {
   return [
@@ -57,13 +57,13 @@ describe('PermissionGrantList 授权/有效期时间（跟随 UI language）', (
     expect(container.textContent).not.toMatch(/AM|PM/);
   });
 
-  it('en UI：维持 en-US 原样（英文 UI 行为不变）', async () => {
+  it('en UI：与中文使用同一 24 小时格式', async () => {
     useAppStore.setState({ language: 'en' });
     const { container } = render(<PermissionGrantList />);
     await waitFor(() => {
       expect(container.textContent).toContain(`Granted ${EN}`);
     });
     expect(container.textContent).toContain(`Valid until ${EN_EXPIRES}`);
-    expect(container.textContent).not.toContain('16:05');
+    expect(container.textContent).not.toMatch(/\b[AP]M\b/);
   });
 });

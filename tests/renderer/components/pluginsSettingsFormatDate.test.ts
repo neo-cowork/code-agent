@@ -2,7 +2,7 @@
 // PluginsSettings formatDate 时间口径（N-CRON-DETAIL-TIME-FORMAT-MIXED-FU1）：
 // 插件安装时间 / marketplace 更新时间改走 utils/formatDateTime(value, lang)，
 // 纯 helper 加第三个 lang 参数（调用方 PluginsSettings 传 UI language）；
-// zh 24 小时制带年份、绝不跟机器 locale 出 AM/PM；en 维持 en-US 原样。
+// zh 24 小时制带年份、绝不跟机器 locale 出 AM/PM；en 同样固定 24 小时制。
 // ============================================================================
 import { describe, expect, it } from 'vitest';
 import { formatDate } from '../../../src/renderer/components/features/settings/tabs/PluginsSettings.helpers';
@@ -19,9 +19,9 @@ describe('PluginsSettings formatDate（跟随 UI language）', () => {
     expect(formatDate(UPDATED_AT, zh.settings.plugins.date, 'zh')).toBe('2026/11/09 17:30');
   });
 
-  it('en：维持 en-US 原样（英文 UI 行为不变）', () => {
-    expect(formatDate(INSTALLED_AT, en.settings.plugins.date, 'en')).toBe('11/9/2026, 4:05:00 PM');
-    expect(formatDate(UPDATED_AT, en.settings.plugins.date, 'en')).toBe('11/9/2026, 5:30:00 PM');
+  it('en：与中文使用同一零填充的 24 小时格式', () => {
+    expect(formatDate(INSTALLED_AT, en.settings.plugins.date, 'en')).toBe('2026/11/09 16:05');
+    expect(formatDate(UPDATED_AT, en.settings.plugins.date, 'en')).toBe('2026/11/09 17:30');
   });
 
   it('缺值/非法值维持原口径（labels.unknown / 原样返回）', () => {

@@ -3,7 +3,7 @@
 // 协作两屏时间口径（N-CRON-DETAIL-TIME-FORMAT-MIXED-FU1 返修）：
 // ProjectCollaborationPanel TopicRow 与 CloudCollabCardsSection CloudCardRow 的
 // 「请求人 + 更新时间」行，裸 toLocaleString 改走 utils/formatDateTime(ts, language)，
-// zh 24 小时制带年份、绝不跟机器 locale 出 AM/PM；en 维持 en-US 原样。
+// zh 24 小时制带年份、绝不跟机器 locale 出 AM/PM；en 同样固定 24 小时制。
 // ============================================================================
 import React from 'react';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
@@ -38,7 +38,7 @@ import { ProjectCollaborationPanel } from '../../../src/renderer/components/feat
 // 本地时区构造（不跨时区换算），任何 TZ 下时分字段都是构造值本身。
 const UPDATED_AT = new Date(2026, 10, 9, 16, 5, 0).getTime(); // 2026-11-09 16:05
 const ZH = '2026/11/09 16:05';
-const EN = '11/9/2026, 4:05:00 PM';
+const EN = '2026/11/09 16:05';
 
 const CARD: CloudCollabCard = {
   localCardId: 'card-a',
@@ -91,14 +91,14 @@ describe('CloudCollabCardsSection 云卡行更新时间（跟随 UI language）'
     expect(row.textContent).not.toMatch(/AM|PM/);
   });
 
-  it('en UI：维持 en-US 原样（英文 UI 行为不变）', async () => {
+  it('en UI：与中文使用同一 24 小时格式', async () => {
     i18nState.language = 'en';
     render(<CloudCollabCardsSection projectId="proj-c1" />);
     const row = await screen.findByTestId('cloud-collab-card-card-a');
     await waitFor(() => {
       expect(row.textContent).toContain(EN);
     });
-    expect(row.textContent).not.toContain('16:05');
+    expect(row.textContent).not.toMatch(/\b[AP]M\b/);
   });
 });
 
@@ -113,12 +113,12 @@ describe('ProjectCollaborationPanel topic 行更新时间（跟随 UI language�
     expect(html).not.toMatch(/AM|PM/);
   });
 
-  it('en UI：维持 en-US 原样（英文 UI 行为不变）', () => {
+  it('en UI：与中文使用同一 24 小时格式', () => {
     i18nState.language = 'en';
     const html = renderToStaticMarkup(
       <ProjectCollaborationPanel projectId="proj-1" details={[DETAIL]} />,
     );
     expect(html).toContain(EN);
-    expect(html).not.toContain('16:05');
+    expect(html).not.toMatch(/\b[AP]M\b/);
   });
 });
