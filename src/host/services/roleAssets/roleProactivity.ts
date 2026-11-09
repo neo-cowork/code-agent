@@ -22,6 +22,7 @@ import type { SessionAutomationEventKind, SessionAutomationStatus } from '../../
 import { isExternalSideEffectTool } from '../../tools/externalSideEffect';
 import { getKnownToolNames } from '../../tools/knownToolNames';
 import { resolveRoleToolBoundary, toRoleBoundaryRunAllowlist } from './rolePersonalization';
+import { resolveRoleWakeRequiredToolNames } from '../../agent/runtime/turnToolFace';
 import { correctDecisionForUnreadableSources, lastWakeDateFromHistory, resolveWakeExternalDelta, storeWakeProposalsFromWake } from './roleWakeFindWork';
 import {
   observeGoalPauseFromEvents,
@@ -731,13 +732,9 @@ export async function syncCadenceJobs(): Promise<{ registered: string[]; removed
 
 // 内部 helpers
 /**
- * 醒来 run 的工具面。
- * 角色声明了工具：从声明出发，先丢掉对外副作用工具（醒来时没有人在场），
- * 再套 resolveRoleToolBoundary，空结果用拒绝全部哨兵而不是「不限制」。
- * 角色没声明工具（空或缺失）：不发明白名单，只把已知名册里的对外副作用工具放进 deniedToolNames。
- * wake_noop 不在这条路径上使用，不额外塞进名单。
+ * 醒来 run 的工具面：声明工具是 floor；连接源只补只读工具。无声明且无连接源时保留旧的 denied-only 形态。
  */
-export async function resolveWakeRunToolScope(roleId: string): Promise<{
+export async function resolveWakeRunToolScope(roleId: string, connectedSourceNames?: readonly string[], definitions?: readonly { name: string; permissionLevel: 'read' | 'write' | 'execute' | 'network' }[]): Promise<{
   allowedToolNames?: string[];
   deniedToolNames?: string[];
 }> {
@@ -750,6 +747,8 @@ export async function resolveWakeRunToolScope(roleId: string): Promise<{
   }
 
   if (!declared || declared.length === 0) {
+    const connectedReadTools = await resolveWakeRequiredToolNames(declared, connectedSourceNames, definitions);
+    if (connectedReadTools?.length) return { allowedToolNames: connectedReadTools };
     // 已知名册不含运行时才连上的 MCP 名。角色把这类名字写进 tools 时，走下面的声明过滤。
     const deniedToolNames = new Set<string>();
     for (const name of getKnownToolNames()) {
@@ -759,10 +758,15 @@ export async function resolveWakeRunToolScope(roleId: string): Promise<{
     return deniedToolNames.size > 0 ? { deniedToolNames: [...deniedToolNames] } : {};
   }
 
-  const withoutExternal = declared.filter((tool) => !isExternalSideEffectTool(tool));
-  const boundary = resolveRoleToolBoundary(roleId, withoutExternal);
-  const allowed = boundary ? boundary.allowedTools : withoutExternal;
+  const wakeTools = await resolveWakeRequiredToolNames(declared, connectedSourceNames, definitions)
+    ?? declared.filter((tool) => !isExternalSideEffectTool(tool));
+  const boundary = resolveRoleToolBoundary(roleId, wakeTools);
+  const allowed = boundary ? boundary.allowedTools : wakeTools;
   return { allowedToolNames: toRoleBoundaryRunAllowlist(allowed) };
+}
+async function resolveWakeRequiredToolNames(declared: readonly string[] | undefined, connectedSourceNames?: readonly string[], definitions?: readonly { name: string; permissionLevel: 'read' | 'write' | 'execute' | 'network' }[]): Promise<string[] | undefined> {
+  const sources = connectedSourceNames ?? await (await import('./roleFirstWake')).listConnectedSourceNames();
+  return resolveRoleWakeRequiredToolNames(declared, sources, definitions);
 }
 
 /** headless 醒来路径：cli/bootstrap createAgentLoop（与 /api/run 同源的执行链路）。 webServer（发行版后端）没有 Electron main 的 TaskManager orchestrator，走这条。 角色 system prompt 和记忆注入块通过 config.systemPrompt 附加；工具面走 resolveWakeRunToolScope。 */

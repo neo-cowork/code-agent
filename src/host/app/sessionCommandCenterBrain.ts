@@ -12,6 +12,8 @@ import type { MessageAttachment } from '../../shared/contract/message';
 import type { ConversationModelSpec } from '../../shared/contract/conversationEnvelope';
 
 const logger = createLogger('ForegroundBrainBudget');
+import { resolveAgent } from '../agent/agentRegistry';
+import { buildRoleChatToolNames } from '../agent/runtime/turnToolFace';
 
 // 不导出：web/桌面两条装配路都经 getSessionCommandCenterBrainContextForPrompt 取块，
 // 导出常量只会引回「第二条装配路直接拼常量」的旧形态（rework r1）。
@@ -203,6 +205,9 @@ export function withSessionCommandCenterBrain(
   lastAssistantStoppedByStepLimit = false,
 ): AppServiceRunOptions {
   const text = prompt ?? '';
+  const declaredRoleTools = options?.agentOverrideId
+    ? resolveAgent(options.agentOverrideId)?.tools
+    : undefined;
   const turnSystemContext = [
     ...(options?.turnSystemContext ?? []),
     ...getSessionCommandCenterBrainContextForPrompt(text),
@@ -211,7 +216,11 @@ export function withSessionCommandCenterBrain(
     ...(options ?? {}),
     mode: options?.mode ?? 'normal',
     maxIterations: resolveForegroundBrainTurnBudget(text, lastAssistantStoppedByStepLimit, options?.maxIterations),
-    allowedToolNames: getTextForegroundToolNamesForPrompt(text, options?.toolScope?.allowedConnectorIds, imageTurn),
+    allowedToolNames: buildRoleChatToolNames(
+      getTextForegroundToolNamesForPrompt(text, options?.toolScope?.allowedConnectorIds, imageTurn),
+      declaredRoleTools,
+      options?.agentOverrideId ?? undefined,
+    ),
     foregroundToolFace: true,
     turnSystemContext,
   };

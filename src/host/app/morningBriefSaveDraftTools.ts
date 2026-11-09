@@ -1,4 +1,5 @@
 import { isMorningBriefSaveDraftReply } from './sessionCommandCenterBrain';
+import { buildRoleChatToolNames } from '../agent/runtime/turnToolFace';
 
 // 存草稿轮、角色又没开邮件（未声明 mail/mail_draft）时整批撤下的工具名（FB-726）：
 // - mail 连接器三件套：没有邮件权限的角色不该看到任何发信面——此前只撤 mail_draft，
@@ -14,8 +15,18 @@ export function applyMorningBriefSaveDraftRoleTools(
   prompt: string,
   allowedToolNames: string[] | undefined,
   roleTools: readonly string[] | undefined,
+  roleId?: string,
 ): string[] | undefined {
-  if (!allowedToolNames || !isMorningBriefSaveDraftReply(prompt) || !roleTools?.length) return allowedToolNames;
-  if (roleTools.some((tool) => tool === 'mail' || tool === 'mail_draft')) return allowedToolNames;
-  return allowedToolNames.filter((tool) => !SAVE_DRAFT_NO_MAIL_REMOVE.has(tool));
+  if (!allowedToolNames) return undefined;
+  if (!isMorningBriefSaveDraftReply(prompt) || !roleTools?.length) {
+    return buildRoleChatToolNames(allowedToolNames, roleTools, roleId);
+  }
+  if (roleTools.some((tool) => tool === 'mail' || tool === 'mail_draft')) {
+    return buildRoleChatToolNames(allowedToolNames, roleTools, roleId);
+  }
+  return buildRoleChatToolNames(
+    allowedToolNames.filter((tool) => !SAVE_DRAFT_NO_MAIL_REMOVE.has(tool)),
+    roleTools,
+    roleId,
+  );
 }

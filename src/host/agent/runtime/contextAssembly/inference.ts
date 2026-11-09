@@ -20,6 +20,7 @@ import { filterToolDefinitionsByStrictSkillBoundary } from '../../../tools/skill
 import { trackNode } from '../../../observability/posthogNode';
 import { POSTHOG_EVENTS } from '../../../../shared/observability/posthog-events';
 import { filterToolsByRunPolicyObserved } from '../toolRunPolicy';
+import { appendToolFaceNotice, buildForegroundToolFaceNarrowingNoticeForRuntime } from '../turnToolFace';
 import {
   stripImagesFromMessages,
   extractUserRequestText,
@@ -364,9 +365,8 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       after: tools.length,
     });
   }
-  // 收窄可观测性（narrowedBy: 'run_policy'）与 A6/A8 对齐，实现挪进 toolRunPolicy.ts
-  // 就近维护，避免本文件（god-file 守门 max-lines: 1000）被这几行推过线。
-  tools = filterToolsByRunPolicyObserved(tools, ctx.runtime);
+  const runPolicyToolsBeforeNarrowing = tools;
+  const runPolicyToolsAfterNarrowing = tools = filterToolsByRunPolicyObserved(tools, ctx.runtime);
   if (isArtifactRepairMode(ctx)) {
     const before = tools.length;
     const phase = ctx.runtime.artifact.repairGuard?.phase ?? 'initial_repair';
@@ -391,11 +391,11 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
   tools = [...tools].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   let effectiveTools = tools;
   let effectiveConfig = ctx.runtime.modelConfig;
-  // 有效行已经顶到 max-lines=1000，两个旗标挤在一行，给发送前的工具表指纹留出调用。
   let artifactRequest = false, pendingCapabilityFallback: ModelFallbackInfo | null = null;
+  const toolFaceNotice = buildForegroundToolFaceNarrowingNoticeForRuntime(ctx.runtime, runPolicyToolsBeforeNarrowing, runPolicyToolsAfterNarrowing);
 
   const builtModelMessages = await ctx.buildModelMessages();
-  let modelMessages: ModelMessage[] = builtModelMessages;
+  let modelMessages: ModelMessage[] = appendToolFaceNotice(builtModelMessages, toolFaceNotice);
   if (ctx.runtime.control.forceFinalResponsePrompt) {
     modelMessages = [
       ...modelMessages,

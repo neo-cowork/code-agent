@@ -1331,8 +1331,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       }
 
       config.searchEnabled = body.searchEnabled ?? true;
-      // 桌面主链走本路由而非 appService.sendMessage 的 envelope 分支——
-      // 逐轮设置必须在这里落进 options，否则 renderer 带了也会被丢（QE-01 真机抓获）。
+      // 桌面主链走本路由而非 appService.sendMessage 的 envelope 分支，逐轮设置必须在这里落进 options。
       config.thinkingEnabled = body.thinkingEnabled ?? true;
       if (body.effortLevel !== undefined) config.effortLevel = body.effortLevel;
 
@@ -1349,6 +1348,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             model: config.modelConfig,
           }),
           config.agentOverride?.tools,
+          config.agentOverride?.id,
         );
         config.foregroundToolFace = true;
         // 回合级规则块（如存草稿）与工具面同一真源，都从 sessionCommandCenterBrain 取，

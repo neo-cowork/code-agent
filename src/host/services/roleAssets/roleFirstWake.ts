@@ -334,11 +334,11 @@ function parseFirstWakeSuggestions(
  * 两条路都再 ∩ permissionLevel=read——写/执行/网络与非只读 MCP 一律出局；
  * 空结果用拒绝全部哨兵表达，不是「不限制」。
  */
-async function resolveFirstWakeAllowedToolNames(roleId: string): Promise<string[]> {
+async function resolveFirstWakeAllowedToolNames(roleId: string, connectedSourceNames?: readonly string[]): Promise<string[]> {
   const { getAllToolDefinitions } = await import('../../tools/dispatch/toolDefinitions');
   const definitions = getAllToolDefinitions();
   const levelByName = new Map(definitions.map((definition) => [definition.name, definition.permissionLevel]));
-  const wakeScope = await resolveWakeRunToolScope(roleId);
+  const wakeScope = await resolveWakeRunToolScope(roleId, connectedSourceNames, definitions);
   const candidates = wakeScope.allowedToolNames ?? definitions.map((definition) => definition.name);
   const readOnly = candidates.filter(
     (name) => levelByName.get(name) === 'read' && name !== WAKE_NOOP_TOOL_NAME,
@@ -725,8 +725,8 @@ async function runFirstWake(roleId: string, deps?: FirstWakeDeps): Promise<void>
     const current = await readFirstWakeState(roleId);
     if (current?.state !== 'pending') return;
 
-    const allowedToolNames = await resolveFirstWakeAllowedToolNames(roleId);
     const sourceNames = await listConnectedSourceNames();
+    const allowedToolNames = await resolveFirstWakeAllowedToolNames(roleId, sourceNames);
     const sourcesMode = sourceNames.length > 0 ? 'connected' : 'none';
     const userExpectation = readRolePersonalization(roleId).userExpectation;
     const prompt = sourcesMode === 'connected'
