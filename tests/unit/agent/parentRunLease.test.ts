@@ -160,14 +160,14 @@ describe('parent ownership across follow-up and background completion', () => {
     // The parent's own finalization settles outstanding operations before completion.
     if (status === 'completed') {
       const envelope = (await repository.get(parentInput.runId))!;
-      await registry.checkpointDurable(parentInput.runId, { now: Date.now(), events: [{ type: 'parent_operations_settled', payload: {}, recordedAt: Date.now() }], status: 'running', state: { schemaVersion: 1, kind: 'native' }, pendingOperations: envelope.pendingOperations?.map(op => ({ ...op, status: 'abandoned' as const })) });
+      await registry.checkpointDurable(parentInput.runId, { now: Date.now(), events: [{ type: 'parent_operations_settled', payload: {}, recordedAt: Date.now() }], status: 'running', state: { schemaVersion: 1, kind: 'native' }, pendingOperations: (envelope.pendingOperations ?? []).map(op => ({ ...op, status: 'abandoned' as const })) });
     }
     await registry.terminalDurable(parentInput.runId, { now: Date.now(), status, event: { type: `run_${status}`, payload: {}, recordedAt: Date.now() } });
   }
 
   it.each(['completed', 'failed'] as const)('B: late tool success survives a %s parent', async status => {
     await registry.startDurable(parentInput);
-    const checkpoint = await prepareNativeToolCheckpoint({ runId: parentInput.runId, sourceMessageId: 'message-1', toolName: 'WebSearch', toolDefinition: { name: 'WebSearch', description: 'Research destinations', inputSchema: { type: 'object', properties: {} }, requiresPermission: false, permissionLevel: 'read' }, toolCallId: 'search', executionId: 'execution-search', startedAt: Date.now() });
+    const checkpoint = await prepareNativeToolCheckpoint({ runId: parentInput.runId, sourceMessageId: 'message-1', toolName: 'WebSearch', toolDefinition: { name: 'WebSearch', description: 'Research destinations', inputSchema: { type: 'object', properties: {} }, outputSchema: { type: 'object', properties: {} }, requiresPermission: false, permissionLevel: 'read' }, toolCallId: 'search', executionId: 'execution-search', startedAt: Date.now() });
     await endParent(status);
     await expect(checkpoint.complete(true)).resolves.toBeUndefined();
     expect(loggerState.info).toHaveBeenCalledWith(expect.stringContaining('checkpoint skipped'), expect.objectContaining({ reason: 'parent_run_not_durable', runId: parentInput.runId }));
@@ -176,7 +176,7 @@ describe('parent ownership across follow-up and background completion', () => {
 
   it('B: a terminal queued between ownership check and completion is tolerated', async () => {
     await registry.startDurable(parentInput);
-    const checkpoint = await prepareNativeToolCheckpoint({ runId: parentInput.runId, sourceMessageId: 'message-1', toolName: 'Read', toolDefinition: { name: 'Read', description: 'Read notes', inputSchema: { type: 'object', properties: {} }, requiresPermission: false, permissionLevel: 'read' }, executionId: 'read', startedAt: Date.now() });
+    const checkpoint = await prepareNativeToolCheckpoint({ runId: parentInput.runId, sourceMessageId: 'message-1', toolName: 'Read', toolDefinition: { name: 'Read', description: 'Read notes', inputSchema: { type: 'object', properties: {} }, outputSchema: { type: 'object', properties: {} }, requiresPermission: false, permissionLevel: 'read' }, executionId: 'read', startedAt: Date.now() });
     const terminal = registry.terminalDurable(parentInput.runId, { now: Date.now(), status: 'failed', event: { type: 'run_failed', payload: {}, recordedAt: Date.now() } });
     const completed = checkpoint.complete(true);
     await terminal;
@@ -186,7 +186,7 @@ describe('parent ownership across follow-up and background completion', () => {
 
   it('B: a live owner does not hide a real tool checkpoint failure', async () => {
     await registry.startDurable(parentInput);
-    const checkpoint = await prepareNativeToolCheckpoint({ runId: parentInput.runId, sourceMessageId: 'message-1', toolName: 'Read', toolDefinition: { name: 'Read', description: 'Read notes', inputSchema: { type: 'object', properties: {} }, requiresPermission: false, permissionLevel: 'read' }, executionId: 'read', startedAt: Date.now() });
+    const checkpoint = await prepareNativeToolCheckpoint({ runId: parentInput.runId, sourceMessageId: 'message-1', toolName: 'Read', toolDefinition: { name: 'Read', description: 'Read notes', inputSchema: { type: 'object', properties: {} }, outputSchema: { type: 'object', properties: {} }, requiresPermission: false, permissionLevel: 'read' }, executionId: 'read', startedAt: Date.now() });
     const failure = new Error('storage unavailable');
     vi.spyOn(registry, 'checkpointNativeToolOperation').mockRejectedValueOnce(failure);
     await expect(checkpoint.complete(true)).rejects.toBe(failure);
@@ -203,7 +203,7 @@ describe('parent ownership across follow-up and background completion', () => {
 
   it('B sibling: late model success preserves the result and logs missing ownership', async () => {
     await registry.startDurable(parentInput);
-    const ctx = { runtime: { runId: parentInput.runId, messages: [{ role: 'user', id: 'message-1', content: 'Compare rail options' }], turn: { currentTurnId: 'model-turn' }, goalMode: null, control: {} } } as Parameters<typeof withNativeModelOperation>[0];
+    const ctx = { runtime: { runId: parentInput.runId, messages: [{ role: 'user', id: 'message-1', content: 'Compare rail options' }], turn: { currentTurnId: 'model-turn' }, goalMode: null, control: { isCancelled: false, isInterrupted: false } } } as unknown as Parameters<typeof withNativeModelOperation>[0];
     const result = await withNativeModelOperation(ctx, { provider: 'test', model: 'test' } as never, new AbortController().signal, async () => { await endParent('completed'); return 'Rail summary'; });
     expect(result).toBe('Rail summary');
     expect(loggerState.info).toHaveBeenCalledWith(expect.stringContaining('checkpoint skipped'), expect.objectContaining({ reason: 'parent_run_not_durable', status: 'succeeded' }));
