@@ -63,7 +63,7 @@ vi.mock('../../../../src/host/cron/cronService', () => ({ getCronService: vi.fn(
 import { registerRolesHandlers } from '../../../../src/host/ipc/roles.ipc';
 import { enqueueFirstWake, getFirstWakeSnapshot, skipFirstWake } from '../../../../src/host/services/roleAssets/roleFirstWake';
 
-const ROLE_ID = 'calendar-lifecycle';
+const ROLE_ID = '小历';
 const EVENTS = [
   { title: '项目周会', start: '2026-11-10T09:00:00', preparation: '整理项目周会的议程和待确认事项' },
   { title: '客户方案评审', start: '2026-11-11T14:00:00', preparation: '准备客户方案评审的材料清单' },
@@ -71,7 +71,7 @@ const EVENTS = [
 ];
 const AGENT_MD = [
   '---',
-  'name: calendar-lifecycle',
+  'name: 小历',
   'description: 根据日历安排整理会议准备与日程建议',
   'display-name: 小历',
   'profession: 日程规划专家',
