@@ -14,7 +14,10 @@ function expectPlain(text: string) {
   for (const term of bannedTerms) expect(text.toLowerCase(), term).not.toContain(term.toLowerCase());
 }
 
-function makeCtx(maxIterations = 8) {
+function makeCtx(
+  maxIterations = 8,
+  modifiedFiles: ReturnType<RuntimeContext['nudgeManager']['getModifiedFilesSince']> = ['sample.html'],
+) {
   return {
     maxIterations,
     workingDirectory: '/workspace/project',
@@ -23,7 +26,7 @@ function makeCtx(maxIterations = 8) {
     messages: [],
     circuitBreaker: { isTripped: () => false },
     goalTracker: { getGoalSummary: () => ({ goal: '汇报演示稿', pending: ['合成八页演示稿', '检查版式'] }) },
-    nudgeManager: { getModifiedFilesSince: () => ['sample.html'] },
+    nudgeManager: { getModifiedFilesSince: () => modifiedFiles },
     onEvent: vi.fn(),
   } as unknown as RuntimeContext;
 }
@@ -85,10 +88,7 @@ describe('plain-language run handoff', () => {
   });
 
   it('shows friendly file paths in the deterministic fallback', async () => {
-    const ctx = makeCtx(4);
-    ctx.nudgeManager = {
-      getModifiedFilesSince: () => ['/workspace/project/samples/business.html', '/private/cache/preview.html'],
-    } as never;
+    const ctx = makeCtx(4, ['/workspace/project/samples/business.html', '/private/cache/preview.html']);
     activateMaxStepsFinalResponse(ctx);
     const persist = vi.fn();
     await ensureMaxStepsWrapUp(ctx, { generateId: () => 'fallback', addAndPersistMessage: persist }, 4);
@@ -100,8 +100,7 @@ describe('plain-language run handoff', () => {
   });
 
   it.each([true, false])('persists an honest plain fallback with pending items (visible output: %s)', async (hasOutput) => {
-    const ctx = makeCtx(4);
-    if (!hasOutput) ctx.nudgeManager = { getModifiedFilesSince: () => [] } as never;
+    const ctx = makeCtx(4, hasOutput ? ['sample.html'] : []);
     activateMaxStepsFinalResponse(ctx);
     const persist = vi.fn();
     await ensureMaxStepsWrapUp(ctx, { generateId: () => 'fallback', addAndPersistMessage: persist }, 4);
