@@ -10,13 +10,13 @@
 ## 0. 要爸拍板的几件事（人话版）
 
 1. **一个统一出口**：所有环境类失败（失败卡、停车卡）共用同一张「环境提示卡」——一句人话 + 一个直达按钮，不出现错误码、不出现 TCC / osascript 原文。同一任务里同一类问题只出现一次。（§4）
-2. **Neo 能自己修的绝不打扰用户**：缺运行时自己装并显示进度、额度用完自己换一个能用的模型并告诉用户、断网自己等并重试。用户只做「只有用户的手能做的那一步」。（§3、§6）
+2. **Neo 能自己修的绝不打扰用户**：缺运行时自己装并显示进度、额度用完先挑好一个能用的模型、**问用户一句再换**（爸 11-09 定：换模型一律先问），断网自己等并重试。用户只做「只有用户的手能做的那一步」。（§3、§6）
 3. **诊断绝不弹系统授权框**：诊断只用「被动探针」（只读状态 API），弹框的动作只在用户点按钮之后才会发生。靠代码结构 + 静态门 + 故障注入测试三层保证。（§5）
 4. **修完自动续做**：失败的那次工具调用被「停车」成可恢复状态，探针确认修好后沿用同一个 run 接着干，用户不用再说一遍。（§7）
 5. **确认不了怎么办**：超时 / 用户拒绝时，老实说「还没检测到」，给一个不依赖该修复的替代路径，仍然不出现原文。（§8）
 6. **范围**：先做 macOS（桌面包 + web 构建里同一宿主）；Windows 只做「老实说不支持 + 替代路径」，不做深链。
 
-建议：全按本稿推进；唯一需要爸明确定的取舍是 §10 的两条（拒绝后多久可以再问；额度换模型是否需要确认）。
+**爸 11-09 已拍板**：§10 第 1 条按建议；第 2 条改为「换模型一律先问用户」。其余全按本稿推进。
 
 ## 1. 现状（全部引自本仓库代码，grep 为准）
 
@@ -73,8 +73,8 @@
 | 6 | `perm_files`（macOS 文件和文件夹 / 完全磁盘访问，如下载、桌面、文稿） | 读文件 `EPERM`/`EACCES` 且 Neo 白名单已放行（区分于 `directory_access` 停车）；`desktop.ipc.ts:46` 已有 FDA 深链 | 先试 `request_directory` 路径内的合法入口 | 「打开文件和文件夹设置」→ `…?Privacy_FilesAndFolders`（待真机验证）；仅当确需 FDA 时用 `…?Privacy_AllFiles`（已有） | 对同一路径做一次只读 `access()` 复查（不弹框），1.5s / 120s | 自动续做 |
 | 7 | `runtime_missing`（LibreOffice / Python / 其他 optional 资产） | 工具模块自己的状态：`isLibreOfficeAvailable`/`getLibreOfficeCandidates`、`getPythonEnvState`（phase: installed/installing/failed/unsupported）、`getRuntimeAssetsStatus` | **自己装**：`ensureLibreOffice()` / `ensurePythonEnv()`（已存在，单飞去重）；进度百分比取 `setInstallPercent` 写入的状态（Python 经 `pythonEnv/status.ts` 的 `state.percent` 读出，LibreOffice 经 `libreOffice/status.ts`），经 §4 卡片在聊天里显示「正在准备 PPT 转换组件 42%」；先找已有再装（E5）；sha256 校验已由安装器做 | 一般**无**。仅在：磁盘不足 / 离线 / 校验失败 / Windows 不支持 时才出现按钮（「重试安装」或「改用别的方式」） | 每 1s 读安装状态（进程内，零成本），无硬超时但 5 分钟无进度变化判失败 | 装好即自动重跑那一次工具调用（沿用 toolCallId） |
 | 8 | `login_expired`（MCP OAuth / CLI 连接器 / 外部引擎） | MCP：`client.getServerState` + 401/403 挑战（`mcpScopeUpgrade`）；CLI：`cliConnector` 的 `authSteps` 状态；引擎：`AgentEngineFailureDiagnostics.reliability.authState==='needs_login'` | 先静默刷新 token / 重连一次（不丢 client 注册）；失败再进入用户一步 | 「重新登录「飞书」」→ 宿主调 `reauthorizeMcpServer(client, serverName, requiredScope)`，浏览器授权页自动打开（已有 `pty-url` 流程） | `waitForPendingOAuthAuthorization` 之后读 `client.isConnected(serverName)`；`OAUTH_FLOW_TIMEOUT_MS`（`oauthCoordinator`）超时 | 连接后自动续做 |
-| 9 | `quota_exhausted`（余额不足 / 配额用尽 / 套餐窗口用尽） | `classifyModelErrorMessage` → `quota_exhausted`、HTTP 402、`AgentErrorCategory` 的 `insufficient_balance` / `usage_limit`（带 `resetAt`）、引擎侧 `quotaState` | **自己换模型**：在 `PROVIDER_FALLBACK_CHAIN`（`shared/constants/providers.ts:423`）里挑「有 key、能力够（视觉/长上下文/工具）」的下一个，沿用 `inferenceProviderFallback.ts` 的降级执行；告诉用户「X 额度用完了，已改用 Y 继续」（§6）。`usage_limit` 且窗口很快恢复（`resetAt` 近）→ 走现有 `armQuotaWaitOnPark` | 仅当**没有任何可用模型**时：「去添加一个模型」→ App 内设置→模型页（非外链）；或「充值」外链（provider 控制台，无深链则不显示） | 换模型后即时（下一次请求成功即确认）；充值类每 10s 用一次廉价探测（`/models` 或最小请求）轮询，最多 10 分钟 | 自动续做 |
-| 10 | `model_capability`（模型不支持图片/工具/温度） | `classifyModelErrorMessage` 的 `unsupported_temperature`、`fallback_not_configured`；`image_payload`；`model_not_found` | 自动降参重试（温度 1）；自动换到能力够的模型并说明 | 同 9 的「没有可用模型」分支 | 同 9 | 自动续做 |
+| 9 | `quota_exhausted`（余额不足 / 配额用尽 / 套餐窗口用尽） | `classifyModelErrorMessage` → `quota_exhausted`、HTTP 402、`AgentErrorCategory` 的 `insufficient_balance` / `usage_limit`（带 `resetAt`）、引擎侧 `quotaState` | **挑好模型、问一句再换**（爸 11-09：不自动换）：在 `PROVIDER_FALLBACK_CHAIN`（`shared/constants/providers.ts:423`）里挑「有 key、能力够（视觉/长上下文/工具）」的下一个，沿用 `inferenceProviderFallback.ts` 的降级执行；卡片问「Kimi 的额度用完了，要改用 DeepSeek 接着做吗？」+ 一个确认按钮，用户点了才换并续做（§6）。`usage_limit` 且窗口很快恢复（`resetAt` 近）→ 走现有 `armQuotaWaitOnPark` | 仅当**没有任何可用模型**时：「去添加一个模型」→ App 内设置→模型页（非外链）；或「充值」外链（provider 控制台，无深链则不显示） | 换模型后即时（下一次请求成功即确认）；充值类每 10s 用一次廉价探测（`/models` 或最小请求）轮询，最多 10 分钟 | 自动续做 |
+| 10 | `model_capability`（模型不支持图片/工具/温度） | `classifyModelErrorMessage` 的 `unsupported_temperature`、`fallback_not_configured`；`image_payload`；`model_not_found` | 自动降参重试（温度 1，同一模型，不算换模型）；需要换到能力够的模型时同 9：挑好后问一句再换 | 同 9 的「没有可用模型」分支 | 同 9 | 自动续做 |
 | 11 | `offline`（无网 / 代理失效 / 上游 5xx） | 引擎侧 `network` 分类（`ECONNREFUSED/ENOTFOUND/fetch failed/502-504`）；`upstream_unavailable`；两点探测（目标 provider 端点 + 一个中立端点）区分「全断网」与「仅该服务」；国际 API 需 `HTTPS_PROXY`（见 `.claude/rules/security.md`） | 指数退避重试 3 次；仅该服务不可达 → 走 9 的换模型；全断网 → 停车等待恢复 | 全断网：**无按钮**，卡片只说「网络断了，恢复后我会自动继续」；仅当判断为代理问题：「打开网络设置」→ `…?Network`（待真机验证） | 每 5s 两点探测，最长 10 分钟（超时 → §8） | 恢复后自动续做 |
 | 12 | `first_launch`（全新安装：无 key、无数据目录、权限全空） | `getRuntimeAssetsStatus`、`NativePermissionSnapshot.summary`、`resolveModelConfig` 日志里的「未配置 API Key」 | 建目录、解包随包资产、预热 optional 资产（不弹任何系统框） | 仅「没有任何模型 key」时一次：「添加模型」→ App 内设置；**权限一律不在首启预先要**（E1：用到才要） | 读 `configService.getApiKey` | 无原任务时不适用；有则自动续做 |
 
@@ -164,7 +164,7 @@ export interface EnvAssistNotice {
 
 - `perm_automation`：「要看你的日程，需要你允许 Neo 控制「日历」。」〔去允许〕
 - `runtime_missing`（fixing）：「正在准备 PPT 转换组件…42%（只需一次）」
-- `quota_exhausted`（resolved）：「Kimi 的额度用完了，已改用 DeepSeek 接着做。」
+- `quota_exhausted`（needs_user）：「Kimi 的额度用完了，要改用 DeepSeek 接着做吗？」按钮「改用 DeepSeek 继续」。点后（resolved）：「已改用 DeepSeek 接着做。」
 - `login_expired`：「飞书登录过期了，登录一下我就继续。」〔重新登录飞书〕
 - `offline`：「网络断了，恢复后我会自动继续。」（无按钮）
 
@@ -187,7 +187,7 @@ export interface EnvAssistNotice {
 | 自修 | 挂接点（要改/要接的代码位置） | 说明 |
 |------|------------------------------|------|
 | **运行时自动安装 + 聊天内进度** | `src/host/runtime/libreOffice/ensure.ts`（`setInstallPercent`）、`src/host/runtime/pythonEnv/ensure.ts`（`getInflight`、进度百分比）、`src/host/tools/media/officeRaster.ts`（`isLibreOfficeAvailable` / `getLibreOfficePath` 里那句英文异常）、`src/host/tools/modules/shell/managedPythonEnv.ts` | 新增统一 `EnvRuntimeAdapter`：`{ id, isReady(), ensure(onProgress) }` 把三套安装（LibreOffice / Python / manifest 资产 `installRuntimeAssetFromManifest`）适配成一个接口，不重写安装逻辑。工具模块缺运行时时**不再抛英文字符串**，而是抛 `EnvBlockedError({ class:'runtime_missing', target:'libreoffice' })`；`getLibreOfficePath` 的 `'LibreOffice preview is being prepared…'` 改为该异常。进度经 `env_assist_notice` 推到聊天，设置页 `RuntimeAssetRow.tsx` 读同一份状态，二者不再各自维护 |
-| **额度 → 换可用模型并说明** | `src/shared/constants/providers.ts:423` `PROVIDER_FALLBACK_CHAIN`；`src/host/agent/runtime/contextAssembly/inferenceProviderFallback.ts`（降级执行 + trace）；`src/host/agent/orchestrator/modelConfigResolver.ts`（`resolveRunModelConfig` 新增 `pickAvailableModel(need)`：过滤「有 key / 未被本任务标记为耗尽 / 能力满足」）；`src/shared/modelErrorDiagnostics.ts`（分类结果加 `envClass`）；渲染层 `fallbackNotice.ts` 的 `ModelFallbackNoticePayload` 并入 `EnvAssistNotice`（`doneKey` 承载「已改用 Y」） | 复用已有降级链而不是新造一套；新增的只是「**说明**」与「**本任务内记住耗尽的 provider**，不再重复撞」。`usage_limit`+近 `resetAt` 仍走 `armQuotaWaitOnPark` |
+| **额度 → 挑好可用模型、问一句再换**（爸 11-09：不自动换） | `src/shared/constants/providers.ts:423` `PROVIDER_FALLBACK_CHAIN`；`src/host/agent/runtime/contextAssembly/inferenceProviderFallback.ts`（降级执行 + trace）；`src/host/agent/orchestrator/modelConfigResolver.ts`（`resolveRunModelConfig` 新增 `pickAvailableModel(need)`：过滤「有 key / 未被本任务标记为耗尽 / 能力满足」）；`src/shared/modelErrorDiagnostics.ts`（分类结果加 `envClass`）；渲染层 `fallbackNotice.ts` 的 `ModelFallbackNoticePayload` 并入 `EnvAssistNotice`（`doneKey` 承载「已改用 Y」） | 复用已有降级链而不是新造一套；新增的只是「**说明**」与「**本任务内记住耗尽的 provider**，不再重复撞」。`usage_limit`+近 `resetAt` 仍走 `armQuotaWaitOnPark` |
 | **只读诊断永不弹框** | 新目录 `src/host/envAssist/probes/`（§5）；Rust 侧 `src-tauri/src/native_desktop.rs` 新增 `automation`/`inputMonitoring` 被动探针并把它们并入既有 `NativePermissionSnapshot`（`nativeDesktop.ts` 已有 `automation`、`inputMonitoring` kind，无需改类型） | web 构建：宿主进程在同一台机器，经 `desktop.ipc.ts` 里已有的 `execFile('open', …)` 路径打开深链（该文件 `:225` 已为 FDA 这样做）；探针在 web 构建里无原生桥 → 走 §5 降级留痕 |
 | **统一归类入口** | 新 `src/host/envAssist/classify.ts`：吸收 `osascript.ts` 的 `isAppleEventsDenied`/`describeAppleScriptFailure`、`screenshotFailureCause.ts`、`photos.ts` 私有判断、`modelErrorDiagnostics.ts`、`agentEngineFailureDiagnostics.ts` 的 `category`，输出 `{class, target}`。旧函数保留为薄封装（避免大面积改调用方），其中 `describeAppleScriptFailure` 的 `not_authorized` 分支不再返回「请在系统设置…」整句，只返回类别（原 message 仅写 host 日志，沿用 `appleScriptFailureLogDetail`） | 修一类不修一个：所有「把环境错误改成人话」的地方都经过这一层 |
 
@@ -224,7 +224,7 @@ export interface EnvAssistNotice {
 | **S3** | 停车 + 自动续跑泛化 | `interruptCause:'env_blocked'`；`envResumeWaiter`（泛化 `quotaWaitTimer`）；`EnvBlockedError`；重放同 toolCallId；写操作不自动重放 | 真跑「把这封邮件存草稿」且 Mail 自动化被拒：授权后**不重发指令**，草稿自己存好；重启 Neo 后停车仍在 | 高：durable run / 账本 / 幂等；必须 fault-injection（授权后进程被杀再恢复） | N-QUOTA-429-PLAIN-NOTICE 系列中「等待后自动继续」的部分（`quota_wait` 成为 `quota_exhausted` 的一个实现） |
 | **S4** | Apple Events 类（邮件/日历/提醒/照片）接入 | `osascript.ts` `describeAppleScriptFailure`、`mail/calendar/reminders/photos.ts` 改抛 `EnvBlockedError`；Automation 深链；目标 App 自启 | 「帮我看下今天的日程」（日历未授权）与「把这封邮件存草稿」（邮件自动化被拒）各一轮：提示一次、授权后自己完成；另跑「系统框点不允许」分支，卡片转 `declined` 且任务以部分结果收尾 | 中：`describeAppleScriptFailureText` 有现成测试，需同步改而非删 | 连接器诊断区散单（原生连接器部分） |
 | **S5** | 运行时按需安装 + 聊天进度 | `EnvRuntimeAdapter` 统一 LibreOffice / Python / manifest 资产；`officeRaster.ts` 英文异常 → `EnvBlockedError`；`RuntimeAssetRow.tsx` 读同一份进度 | 真跑「把下载文件夹的 PPT 转成 PDF」且**本机无 LibreOffice**：聊天里出现「正在准备…%」恰一次，装完 PDF 自己产出；离线分支显示 §8 文案 | 中：下载 ~数百 MB、磁盘/离线/校验失败；Windows 走 `unsupported` | N-PY-RUNTIME（按需安装的聊天侧部分；设置页已有 K2 行保留） |
-| **S6** | 额度/能力 → 自动换模型并说明 | `pickAvailableModel`；`PROVIDER_FALLBACK_CHAIN` 消费；`ModelFallbackNoticePayload` 并入 `EnvAssistNotice.doneKey`；本任务内记住耗尽 provider；429 / 402 / usage_limit 白话；「无可用模型」分支 | 真跑一个普通任务，把当前模型的 key 换成会 429/402 的（用 `~/.ship/grab/realrun-dev-model` 指定的 dogfood 模型作为后备）：Neo 自动换模型完成，卡片一句话说明且仅一次；后备也不可用时出现「添加模型」一个按钮 | 中：换模型改变成本与能力，涉及 §10 取舍 1；改模型可见请求组装需重录快照（`acceptance:snapshot-replay:record`） | N-QUOTA-429-PLAIN-NOTICE 系列（文案与降级说明部分） |
+| **S6** | 额度/能力 → 挑好模型、问一句再换 | `pickAvailableModel`；`PROVIDER_FALLBACK_CHAIN` 消费；`ModelFallbackNoticePayload` 并入 `EnvAssistNotice.doneKey`；本任务内记住耗尽 provider；429 / 402 / usage_limit 白话；「无可用模型」分支 | 真跑一个普通任务，把当前模型的 key 换成会 429/402 的（用 `~/.ship/grab/realrun-dev-model` 指定的 dogfood 模型作为后备）：卡片恰一次、问「要改用 X 继续吗」+ 一个按钮；**未点前不发出任何对新模型的请求**（trace/请求日志为证）；点后自动完成原任务；后备也不可用时出现「添加模型」一个按钮 | 中：换模型改变成本与能力，涉及 §10 取舍 1；改模型可见请求组装需重录快照（`acceptance:snapshot-replay:record`） | N-QUOTA-429-PLAIN-NOTICE 系列（文案与降级说明部分） |
 | **S7** | 登录过期统一 | MCP `reauthorizeMcpServer`、`cliConnector.authSteps`、引擎 `needs_login` 接入 `login_expired`；成功后续跑 | 真跑一个依赖已过期飞书/外部连接器的任务：一句话 +「重新登录」；登录后任务自己完成；中途取消 → §8 文案 | 中：OAuth 浏览器流程、web 构建与桌面差异；先静默刷新再提示 | 连接器诊断区散单（连接器重登部分） |
 | **S8** | 断网 + 全新首启 | `offline` 两点探测与退避、全断网停车；`first_launch` 无 key 才提示、权限不预先要 | 真跑：断网（关代理/断网络）时发任务，恢复后自己完成，全程无按钮；全新数据目录首启发一个任务，只在需要时出现一次「添加模型」 | 低–中：探测端点的选择与代理环境（国际 API 需 `HTTPS_PROXY`）；首启要新数据目录（用 `rm -rf ~/.code-agent-devN`，不要开新槽） | —（首启/断网此前无单；N-QUOTA-429 系列里的「网络」文案） |
 | **S9** | 防回退门 | 一道静态门：用户可见字符串里出现 `-1743`/`osascript`/`Apple events`/`TCC`/`/login`/`/model` 即红；`AgentErrorMetadata.rawMessage` 在 `envAssist` 存在时不得出现在渲染产物 | 先造一个反例（把某处文案改回含 `-1743`）确认门变红，再还原（变异验证） | 低 | 防止「同类文案外露」再立一串单（爸 11-08 规则） |
@@ -245,7 +245,7 @@ export interface EnvAssistNotice {
 ## 10. 需要爸拍板的两条取舍
 
 1. **用户拒绝之后，多久之内不再问同一类？** 建议：本任务内绝不再问；跨任务默认可再问，但同一对象 24 小时内只问一次；设置里提供「不再提示」。备选：永不再问（容易变成永久残缺能力）。
-2. **额度用尽自动换模型要不要先问？** 建议：**不问**（「只显示用户必须亲手做的那一步」），但仅在「同档位或更低价」时静默换；换到明显更贵的模型时才出现一个确认按钮。备选：一律先问（违背本单目标）。
+2. **额度用尽自动换模型要不要先问？** ~~建议：不问，仅同档位或更低价时静默换~~ → **爸 11-09 定：一律先问**。Neo 先挑好能用的模型，卡片问一句、一个确认按钮，用户点了才换；换模型改变成本与能力，属于用户该点头的事。第 1 条按建议执行。
 
 ## 11. 不做什么
 
