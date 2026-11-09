@@ -1315,7 +1315,7 @@ export class ToolExecutor {
       // N-SANDBOX-ESCALATE-APPROVAL-LEDGER：内层 ask 也要落权限账本（外层 ask 在下方权限闸
       // 已记，#1664 只修了外层）；ask 抛错时不落账、原样上抛，行为与改动前一致。
       requestPermission: async (request) => {
-        if (browserApprovedAction === request.tool && request.details?.action === params.action) return true;
+        if (browserApprovedAction && browserApprovedAction === request.tool && request.details?.action === params.action) return true;
         beginApprovalWait(options.currentToolCallId, effectiveSessionId);
         try {
           const askStartedAt = Date.now();

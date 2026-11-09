@@ -62,6 +62,7 @@ describe('browser session card', () => {
     storeState.request = { id: `browser-${language}`, tool: 'Browser', type: 'command', timestamp: 1,
       details: { action: 'wait_for_download', browserSessionGrant: { target: 'wait_for_download@http://127.0.0.1:8123', previousOrigins: ['http://localhost:8123'] } } };
     const { container } = render(<PermissionCard />);
+    expect(screen.getByText(language === 'en' ? 'Website action' : '网站操作')).toBeTruthy();
     const reason = screen.getByTestId('browser-session-reason');
     expect(reason.textContent).toContain('http://localhost:8123');
     expect(reason.textContent).toContain('http://127.0.0.1:8123');

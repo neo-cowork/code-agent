@@ -1,4 +1,5 @@
 export const browserSessionGrantZh = {
+  title: '网站操作',
   question: '允许 Neo 在 {site}{action}吗？',
   unknownSite: '当前页面',
   actions: { open: '打开网页', handle_dialog: '处理网页对话框', read_clipboard: '读取剪贴板', write_clipboard: '写入剪贴板', wait_for_download: '等待下载' } as Record<string, string>,
@@ -8,6 +9,7 @@ export const browserSessionGrantZh = {
   sessionDesc: '仅允许在这个网站进行同类操作；其他网站仍会询问。',
 };
 export const browserSessionGrantEn: typeof browserSessionGrantZh = {
+  title: 'Website action',
   question: 'Allow Neo to {action} on {site}?',
   unknownSite: 'the current page',
   actions: { open: 'open the page', handle_dialog: 'handle a page dialog', read_clipboard: 'read the clipboard', write_clipboard: 'write to the clipboard', wait_for_download: 'wait for a download' },

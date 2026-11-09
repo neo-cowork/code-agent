@@ -442,6 +442,8 @@ export function PermissionCard({
     : '';
   const title = sandboxEscalation
     ? p.sandboxEscalationTitle
+    : request.details.browserSessionGrant
+    ? browserCopy.title
     : appGrantCard
     ? p.computerApp.title.replace('{app}', request.details.targetApp?.name ?? '')
     : isMeetingCreate
