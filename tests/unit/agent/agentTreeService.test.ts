@@ -145,6 +145,35 @@ describe('agentTreeService', () => {
     });
   });
 
+  it('presents a user-cancelled background subagent as cancelled, while a real failure stays failed', () => {
+    const snapshot = buildAgentTreeSnapshot({
+      now: 1000,
+      sessionId: 'session-1',
+      backgroundAgents: [
+        {
+          agentId: 'bg-stopped',
+          status: 'failed',
+          startedAt: 10,
+          finishedAt: 20,
+          error: 'aborted',
+          failureCode: AgentFailureCode.CancelledByUser,
+        },
+        {
+          agentId: 'bg-broken',
+          status: 'failed',
+          startedAt: 10,
+          finishedAt: 20,
+          error: 'model exploded',
+          failureCode: AgentFailureCode.ModelError,
+        },
+      ],
+    });
+    const byId = new Map(snapshot.nodes.map((node) => [node.id, node]));
+    expect(byId.get('bg-stopped')?.status).toBe('cancelled');
+    expect(byId.get('bg-stopped')?.lastEvent?.summary).not.toContain('遇到问题');
+    expect(byId.get('bg-broken')?.status).toBe('failed');
+  });
+
   it('attaches worktree review metadata and ADR-029 evidence refs without inventing a new evidence shape', () => {
     const evidence: EvidenceRef = {
       id: 'evidence-diff-1',
