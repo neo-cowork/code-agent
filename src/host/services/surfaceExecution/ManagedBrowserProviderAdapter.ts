@@ -34,6 +34,7 @@ import {
 } from './BrowserResumeStateStore';
 import { importBrowserStorageStateForOrigin } from './CronBrowserLoginState';
 import { MANAGED_BROWSER_DEFAULT_LEASE_TTL_MS } from '../infra/browser/managedBrowserHelpers';
+import { compactSurfaceExecutionMetadata } from '../../../shared/utils/surfaceExecutionProjection';
 
 const DEFAULT_PROVIDER = 'system-chrome-cdp';
 const SURFACE_PROFILE_TTL_MS = 30 * 60_000;
@@ -791,19 +792,20 @@ export class ManagedBrowserProviderAdapter {
       actionResult?: unknown;
     },
   ): ToolExecutionResult {
+    const metadata = compactSurfaceExecutionMetadata({
+      ...(result.metadata || {}),
+      provider: binding.provider,
+      engine: 'managed',
+      surfaceSessionId: binding.surfaceSessionId,
+      surfaceExecutionSessionV1: surface.session,
+      ...(surface.observation ? { surfaceObservationV1: surface.observation } : {}),
+      ...(surface.actionResult ? { surfaceExecutionActionResultV1: surface.actionResult } : {}),
+      surfaceExecutionEventsV1: surface.events,
+      managedProfileMode: binding.profileMode,
+    });
     return {
       ...result,
-      metadata: {
-        ...(result.metadata || {}),
-        provider: binding.provider,
-        engine: 'managed',
-        surfaceSessionId: binding.surfaceSessionId,
-        surfaceExecutionSessionV1: surface.session,
-        ...(surface.observation ? { surfaceObservationV1: surface.observation } : {}),
-        ...(surface.actionResult ? { surfaceExecutionActionResultV1: surface.actionResult } : {}),
-        surfaceExecutionEventsV1: surface.events,
-        managedProfileMode: binding.profileMode,
-      },
+      metadata,
     };
   }
 
