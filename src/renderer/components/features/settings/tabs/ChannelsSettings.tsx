@@ -906,8 +906,8 @@ export const ChannelsSettings: React.FC = () => {
             </div>
           ) : (
             <div className="overflow-x-auto rounded-lg border border-zinc-800">
-              <div className="min-w-[760px]">
-                <div className="grid grid-cols-[minmax(220px,1.5fr)_120px_150px_minmax(160px,1fr)_210px] items-center border-b border-zinc-800 bg-zinc-900/80 px-3 py-2 text-xs font-medium text-zinc-500">
+              <div className="min-w-[842px]">
+                <div className="grid grid-cols-[minmax(200px,1.5fr)_120px_150px_minmax(140px,1fr)_232px] items-center border-b border-zinc-800 bg-zinc-900/80 px-3 py-2 text-xs font-medium text-zinc-500">
                   <div>{channelText.table.account}</div>
                   <div>{channelText.table.type}</div>
                   <div>{channelText.table.status}</div>
@@ -917,7 +917,7 @@ export const ChannelsSettings: React.FC = () => {
 
                 {filteredAccounts.map((account) => (
                   <div key={account.id} className="border-b border-zinc-800 bg-zinc-900/30 last:border-b-0 hover:bg-zinc-800/50" data-testid="channel-account-row">
-                    <div className="grid min-h-[72px] grid-cols-[minmax(220px,1.5fr)_120px_150px_minmax(160px,1fr)_210px] items-center px-3 py-3" data-testid="channel-account-grid-row">
+                    <div className="grid min-h-[72px] grid-cols-[minmax(200px,1.5fr)_120px_150px_minmax(140px,1fr)_232px] items-center px-3 py-3" data-testid="channel-account-grid-row">
                       <div className="flex min-w-0 items-center gap-3">
                         {getTypeIcon(account.type)}
                         <div className="min-w-0">
