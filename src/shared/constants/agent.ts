@@ -70,7 +70,9 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // sys-v102：整合 list_experts 可选 name 参数，支持 edit-role 从当前槽读取
 // 持久化专家定义；合并后模型可见面未在任一侧单独记录。
 // sys-v103：native Reminders/Calendar create 的目标名称改为可选，并说明本地化名称校验。
-export const PROMPT_VERSION = 'sys-v103' as const;
+// sys-v104：N-FIX-BROWSER-TASK-CONTEXT-BLOAT-SNAPSHOT——get_dom_snapshot 改紧凑逐行输出（refId | tag | label）+
+// 字符预算 + offset 分页；browser_action schema 新增 offset，targetRef 描述改为 refId 行。
+export const PROMPT_VERSION = 'sys-v104' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =
