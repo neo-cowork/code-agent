@@ -374,7 +374,7 @@ function matchesUiScript(text: string, t: Translations): boolean {
 }
 
 /** 模型有时把内部工具名当描述（"Use task_status"）；含原始工具名作独立词的描述不可用，退回本地化模板。 */
-function mentionsRawToolName(text: string, toolName: string): boolean {
+export function mentionsRawToolName(text: string, toolName: string): boolean {
   if (!toolName) return false;
   const escaped = toolName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`(^|[^A-Za-z0-9_])${escaped}($|[^A-Za-z0-9_])`, 'i').test(text);
