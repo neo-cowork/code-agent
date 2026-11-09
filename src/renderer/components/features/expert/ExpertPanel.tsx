@@ -43,6 +43,7 @@ import { Badge } from '../../primitives/Badge';
 import { Input } from '../../primitives/Input';
 import { RoleAvatarTile } from './RoleAvatarTile';
 import { RolePackHealthNotice, RolePackShelf } from './RolePackShelf';
+import { RecentlyDeletedRoles } from './RecentlyDeletedRoles';
 import { TeamRecipeDetailPage } from './TeamRecipeDetailPage';
 import { groupRolesByCategory, matchesRoleSearch } from './roleCategoryGroups';
 import { HubTabHeader } from '../capabilityHub/HubTabHeader';
@@ -402,6 +403,7 @@ export const ExpertPanel: React.FC = () => {
                   </button>
                 ))}
               </div>
+              {tab === 'mine' ? <RecentlyDeletedRoles onRestored={async () => { setEntries(await listRoles()); }} /> : null}
               <Button
                 variant="ghost"
                 size="sm"

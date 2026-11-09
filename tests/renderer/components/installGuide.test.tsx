@@ -5,7 +5,11 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { zh } from '../../../src/renderer/i18n/zh';
 
-const openExternalLink = vi.hoisted(() => vi.fn());
+const { openExternalLink, mockStartPolling, mockStopPolling } = vi.hoisted(() => ({
+  openExternalLink: vi.fn(),
+  mockStartPolling: vi.fn(),
+  mockStopPolling: vi.fn(),
+}));
 
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({
   useI18n: () => ({ t: zh, language: 'zh' }),
@@ -15,7 +19,18 @@ vi.mock('../../../src/renderer/utils/platform', () => ({
   openExternalLink,
 }));
 
+vi.mock('../../../src/renderer/stores/localBridgeStore', () => ({
+  useLocalBridgeStore: () => ({
+    status: 'disconnected',
+    version: null,
+    latestVersion: null,
+    startPolling: mockStartPolling,
+    stopPolling: mockStopPolling,
+  }),
+}));
+
 import { InstallGuide } from '../../../src/renderer/components/features/settings/sections/localBridge/InstallGuide';
+import { LocalBridgeSection } from '../../../src/renderer/components/features/settings/sections/localBridge/LocalBridgeSection';
 
 const DOWNLOAD_PAGE_URL = 'https://agentneo.vercel.app/#download';
 
@@ -76,5 +91,19 @@ describe('InstallGuide', () => {
       );
       expect(document.body.textContent).toContain(zh.settings.localBridge.installGuide.copied);
     });
+  });
+
+  it('keeps the service address in the expanded body instead of the status header', () => {
+    render(<LocalBridgeSection />);
+
+    const header = screen.getByRole('button', { name: /本地桥接服务/ });
+    expect(header.textContent).not.toContain('9527');
+    expect(screen.getByText(/localhost:9527/)).toBeTruthy();
+
+    fireEvent.click(header);
+    expect(screen.queryByText(/localhost:9527/)).toBeNull();
+
+    fireEvent.click(header);
+    expect(screen.getByText(/localhost:9527/)).toBeTruthy();
   });
 });

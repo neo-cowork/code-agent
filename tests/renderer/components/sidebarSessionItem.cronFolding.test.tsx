@@ -7,8 +7,24 @@ import type { SidebarSessionItemSharedProps } from '../../../src/renderer/compon
 import { splitCronSessionTitleParts } from '../../../src/renderer/utils/sessionPresentation';
 import { MessageContent } from '../../../src/renderer/components/features/chat/MessageBubble/MessageContent';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
+import { formatLocalDateTime } from '../../../src/renderer/utils/i18nTime';
 
-afterEach(() => cleanup());
+const i18nState = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }));
+
+vi.mock('../../../src/renderer/hooks/useI18n', async () => {
+  const [{ zh }, { en }] = await Promise.all([
+    import('../../../src/renderer/i18n/zh'),
+    import('../../../src/renderer/i18n/en'),
+  ]);
+  return {
+    useI18n: () => ({ t: i18nState.language === 'zh' ? zh : en, language: i18nState.language }),
+  };
+});
+
+afterEach(() => {
+  i18nState.language = 'zh';
+  cleanup();
+});
 
 function session(id: string, title: string, updatedAt: number) {
   return {
@@ -118,13 +134,23 @@ describe('SidebarProjectGroup cron run folding', () => {
 
     const toggle = screen.getByTestId('sidebar-cron-run-toggle');
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.getAttribute('title')).toBe(`展开其余运行 · 最近一次 ${formatLocalDateTime(3, 'zh')}`);
     fireEvent.click(toggle);
     expect(screen.getByTestId('sidebar-session-run-old-1')).toBeTruthy();
     expect(screen.getByTestId('sidebar-session-run-old-2')).toBeTruthy();
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(toggle.getAttribute('title')).toBe(`收起其余运行 · 最近一次 ${formatLocalDateTime(3, 'zh')}`);
 
     fireEvent.click(toggle);
     expect(screen.queryByTestId('sidebar-session-run-old-1')).toBeNull();
+  });
+
+  it('localizes the latest-run time in the fold-toggle tooltip', () => {
+    i18nState.language = 'en';
+    renderGroup();
+
+    const toggle = screen.getByTestId('sidebar-cron-run-toggle');
+    expect(toggle.getAttribute('title')).toBe(`Show older runs · latest ${formatLocalDateTime(3, 'en')}`);
   });
 
   it('expands each task under its own latest row and leaves the group cap in place', () => {
