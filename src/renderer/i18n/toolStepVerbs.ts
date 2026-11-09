@@ -114,6 +114,7 @@ interface ToolStepVerbBundle {
     'gateway-timeout': string;
     'tool-unavailable': string;
     'blocked-by-parent-role': string;
+    'invalid-arguments': string;
     'budget-exhausted': string;
     'parent-gone': string;
     'cancelled-by-user': string;
@@ -216,6 +217,7 @@ export const toolStepVerbsZh: ToolStepVerbBundle = {
     'gateway-timeout': '服务暂时没有响应',
     'tool-unavailable': '所需能力当前不可用',
     'blocked-by-parent-role': '当前角色不允许这一步',
+    'invalid-arguments': '助手设置的等待时间超过了允许的上限，需要缩短',
     'budget-exhausted': '这次任务的额度已经用完',
     'parent-gone': '上级任务已经结束',
     'cancelled-by-user': '已按你的操作取消',
@@ -276,6 +278,7 @@ export const toolStepVerbsEn: ToolStepVerbBundle = {
     'gateway-timeout': 'The service did not respond in time',
     'tool-unavailable': 'The required capability is unavailable',
     'blocked-by-parent-role': 'This step is not allowed for the current role',
+    'invalid-arguments': 'The wait time the assistant set exceeds the allowed limit and must be shortened.',
     'budget-exhausted': 'This task used up its budget',
     'parent-gone': 'The parent task has already ended',
     'cancelled-by-user': 'Cancelled as requested',

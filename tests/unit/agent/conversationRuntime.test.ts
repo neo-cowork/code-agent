@@ -2152,6 +2152,10 @@ describe('ConversationRuntime', () => {
         expect.any(Number),
         expect.objectContaining({ status: 'aborted' }),
       );
+      // 卡死 stop 后聊天里要有一句人话（无界面 / 无人值守原本静默）
+      expect(modules.contextAssembly.addAndPersistMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ role: 'assistant', content: expect.stringContaining('重复同一个步骤') }),
+      );
     });
 
     it('auto-continues empty text output with a nudge, capped (roadmap 1.2 L3)', async () => {
