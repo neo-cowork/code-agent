@@ -45,10 +45,22 @@ const BUILTIN_ZH_COPY: Record<BuiltinJobTag, BuiltinJobDisplay> = {
   },
 };
 
-const BUILTIN_EN_ACTION_LABEL: Record<BuiltinJobTag, string> = {
-  [MEMORY_CONSOLIDATION.JOB_TAG]: 'Memory consolidation',
-  [DREAM_CRON_JOB_TAG]: 'Review conversations',
-  [DISTILL_CRON_JOB_TAG]: 'Distill workflows',
+const BUILTIN_EN_COPY: Record<BuiltinJobTag, BuiltinJobDisplay> = {
+  [MEMORY_CONSOLIDATION.JOB_TAG]: {
+    name: 'Memory cleanup',
+    description: 'Regularly tidies your memory files and merges duplicates without losing information.',
+    actionLabel: 'Memory consolidation',
+  },
+  [DREAM_CRON_JOB_TAG]: {
+    name: 'Conversation review',
+    description: 'Regularly reviews recent conversations and saves verified long-term information to memory.',
+    actionLabel: 'Review conversations',
+  },
+  [DISTILL_CRON_JOB_TAG]: {
+    name: 'Workflow refinement',
+    description: 'Regularly reviews recent conversations and turns repeated approaches into reusable command or skill drafts.',
+    actionLabel: 'Distill workflows',
+  },
 };
 
 function findBuiltinTag(tags?: string[]): BuiltinJobTag | null {
@@ -73,11 +85,7 @@ export function getBuiltinJobDisplay(
   if (!tag) return null;
 
   if (language === 'en') {
-    return {
-      name: job.name,
-      description: job.description ?? '',
-      actionLabel: BUILTIN_EN_ACTION_LABEL[tag],
-    };
+    return BUILTIN_EN_COPY[tag];
   }
 
   return BUILTIN_ZH_COPY[tag];

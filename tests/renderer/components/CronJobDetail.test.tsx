@@ -352,12 +352,12 @@ describe('Group listener receipt check', () => {
       expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining('记忆整理'));
     });
 
-    it('英文界面下内置记忆任务详情保持英文原名与原描述，动作显示 "Memory consolidation" 而非 memory-consolidation', () => {
+    it('英文界面下内置记忆任务详情显示用户文案，动作显示 "Memory consolidation" 而非 memory-consolidation', () => {
       useAppStore.setState({ language: 'en' });
       render(<CronJobDetail job={builtinMemoryJob} />);
 
-      expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('[Maintenance] Light Memory consolidation');
-      expect(screen.getByText('Compress ~/.code-agent/memory without losing information (quick model).')).toBeTruthy();
+      expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('Memory cleanup');
+      expect(screen.getByText('Regularly tidies your memory files and merges duplicates without losing information.')).toBeTruthy();
       expect(screen.getByTestId('cron-detail-action').textContent).toBe('ActionMemory consolidation');
       expect(screen.getByTestId('cron-detail-action').textContent).not.toContain('memory-consolidation');
     });
@@ -378,14 +378,23 @@ describe('Group listener receipt check', () => {
 
       useAppStore.setState({ language: 'en' });
       rerender(<CronJobDetail job={builtinDreamJob} />);
-      expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('[Maintenance] Dream memory consolidation');
+      expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('Conversation review');
       expect(screen.getByText('Review conversations')).toBeTruthy();
       expect(container.textContent).not.toContain('/dream --auto');
 
       rerender(<CronJobDetail job={builtinDistillJob} />);
-      expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('[Maintenance] Distill workflow packaging');
+      expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('Workflow refinement');
       expect(screen.getByText('Distill workflows')).toBeTruthy();
       expect(container.textContent).not.toContain('/distill --auto');
+    });
+
+    it.each([builtinMemoryJob, builtinDreamJob, builtinDistillJob])('every built-in tag has English user copy: $id', (job) => {
+      const display = getBuiltinJobDisplay(job, 'en');
+      expect(display).not.toBeNull();
+      for (const value of [display?.name, display?.description]) {
+        expect(value?.trim().length).toBeGreaterThan(0);
+        expect(value).not.toMatch(/\[Maintenance\]|~\/|[\u3400-\u9fff]/);
+      }
     });
 
     it('普通用户任务在中英文下均原样展示存储的名称、描述与动作', () => {
@@ -409,8 +418,8 @@ describe('Group listener receipt check', () => {
         actionLabel: '整理记忆',
       });
       expect(getBuiltinJobDisplay(builtinMemoryJob, 'en')).toEqual({
-        name: '[Maintenance] Light Memory consolidation',
-        description: 'Compress ~/.code-agent/memory without losing information (quick model).',
+        name: 'Memory cleanup',
+        description: 'Regularly tidies your memory files and merges duplicates without losing information.',
         actionLabel: 'Memory consolidation',
       });
       expect(getBuiltinJobDisplay(builtinDreamJob, 'zh')).toEqual({
@@ -419,8 +428,8 @@ describe('Group listener receipt check', () => {
         actionLabel: '回顾对话',
       });
       expect(getBuiltinJobDisplay(builtinDreamJob, 'en')).toEqual({
-        name: '[Maintenance] Dream memory consolidation',
-        description: 'Review recent sessions and write History-verified durable memory.',
+        name: 'Conversation review',
+        description: 'Regularly reviews recent conversations and saves verified long-term information to memory.',
         actionLabel: 'Review conversations',
       });
       expect(getBuiltinJobDisplay(builtinDistillJob, 'zh')).toEqual({
@@ -429,8 +438,8 @@ describe('Group listener receipt check', () => {
         actionLabel: '提炼流程',
       });
       expect(getBuiltinJobDisplay(builtinDistillJob, 'en')).toEqual({
-        name: '[Maintenance] Distill workflow packaging',
-        description: 'Review recent sessions and package repeated workflows into command/skill drafts.',
+        name: 'Workflow refinement',
+        description: 'Regularly reviews recent conversations and turns repeated approaches into reusable command or skill drafts.',
         actionLabel: 'Distill workflows',
       });
       expect(getBuiltinJobDisplay(userJob, 'zh')).toBeNull();
