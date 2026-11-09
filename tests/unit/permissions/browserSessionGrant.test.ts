@@ -24,7 +24,7 @@ import { resetPermissionModeManager } from '../../../src/host/permissions/modes'
 import { resetDecisionHistory, getDecisionHistory } from '../../../src/host/security/decisionHistory';
 import { getConfirmationGate } from '../../../src/host/agent/confirmationGate';
 import { applyToolGrantsSchema } from '../../../src/host/services/core/database/schemaToolGrants';
-import type { AppSettings, PermissionRequest } from '../../../src/shared/contract';
+import type { AppSettings, PermissionRequest, PermissionAskResult } from '../../../src/shared/contract';
 
 const settings = { permissions: { autoApprove: { read: false, write: false, execute: false, network: false }, blockedCommands: [], devModeAutoApprove: false } } as unknown as AppSettings;
 describe('browser session grant production execution → human answer → pre-ask', () => {
@@ -59,6 +59,38 @@ describe('browser session grant production execution → human answer → pre-as
   const call = (action = 'wait_for_download', extra: Record<string, unknown> = {}, opts = options) =>
     executor.execute('Browser', { action, engine: 'managed', ...extra }, opts);
 
+  it.each(['wait_for_download@https://a.example', null])('interactive browser request with target %s times out without UI at 60 seconds', async (target) => {
+    vi.useFakeTimers();
+    const onEvent = vi.fn();
+    const island = new OrchestratorPermissionIsland({
+      injectedPendingApprovalRepo: new PendingApprovalRepository(db),
+      getSettings: () => settings, isDevModeAutoApproveEnabled: () => false,
+      getExecutionTopology: () => 'main', hasApprovalUi: () => false, onEvent,
+    });
+    let result: PermissionAskResult | undefined;
+    const pending = island.requestPermission({
+      tool: 'Browser', type: 'command', sessionId: options.sessionId,
+      details: { action: 'wait_for_download', browserSessionGrant: { target, previousOrigins: [] } },
+    });
+    void pending.then((value) => { result = value; });
+    try {
+      await vi.advanceTimersByTimeAsync(59_999);
+      expect(result).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(result).toEqual({ approved: false, denialSource: 'timeout' });
+      await expect(pending).resolves.toEqual({ approved: false, denialSource: 'timeout' });
+      expect(island.listPendingRequests()).toHaveLength(0);
+      expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'permission_request', data: expect.objectContaining({ resolved: true, decision: 'timeout' }),
+      }));
+      expect(db.prepare('SELECT * FROM pending_approvals').all()).toHaveLength(0);
+    } finally {
+      island.drainPendingPermissions();
+      await pending;
+      vi.useRealTimers();
+    }
+  });
+
   it('single target minted equals target matched; A repeat skips request, B names A', async () => {
     const mint = vi.spyOn(toolGrants, 'mintToolSessionGrant');
     const match = vi.spyOn(toolGrants, 'matchToolGrant');
@@ -68,7 +100,8 @@ describe('browser session grant production execution → human answer → pre-as
     clearToolRunGrants(options.sessionId);
     expect((await call()).success).toBe(true);
     expect(requests).toHaveLength(1);
-    expect(db.prepare('SELECT * FROM pending_approvals').all()).toHaveLength(1);
+    // Interactive requests retain main's in-memory watchdog path, without durable parking.
+    expect(db.prepare('SELECT * FROM pending_approvals').all()).toHaveLength(0);
     expect(match).toHaveBeenLastCalledWith(options.sessionId, 'Browser', target);
     expect(getDecisionHistory().getRecent(20).some((r) => r.reason === 'tool_grant:session')).toBe(true);
     state.url = 'https://b.example/report';

@@ -604,10 +604,6 @@ export class OrchestratorPermissionIsland {
       }
     }
 
-    // Browser approvals use the existing durable ledger, including interactive cards.
-    const browserRepo = fullRequest.details.browserSessionGrant ? this.getPendingApprovalRepo() : null;
-    if (browserRepo) return this.parkApproval(fullRequest, permissionLevel, browserRepo);
-
     // 有审批 UI 的交互会话一直等待真人裁决；无 UI 的 headless 路径仍按 60s/5min
     // fail-closed，和 createCLIPermissionHandler 的 no-approval-ui 判据保持同一环境边界。
     // 交互路径的 30min 计时器只留泄漏诊断，不删除请求、不发 timeout 终态。
