@@ -236,7 +236,12 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
         .then((results) => {
           if (cancelled) return;
           const typedResults = results as CrossSessionSearchResults | null | undefined;
-          const messageHits = (typedResults?.results ?? []).filter((item) => item.sessionArchived !== true);
+          // 传输层（网页版 httpTransport）把失败吞成 undefined 而不是 reject；
+          // 宿主的成功响应一定带 results 数组（没搜到是空数组）——缺了就是失败，不是「没结果」。
+          if (!typedResults || !Array.isArray(typedResults.results)) {
+            throw new Error('SESSION_SEARCH returned no result payload');
+          }
+          const messageHits = typedResults.results.filter((item) => item.sessionArchived !== true);
           setMessageSearchHitsBySessionId(buildSidebarMessageSearchHitGroups(messageHits, restrictedSet));
           if (restrictedSet) {
             setRemoteSearchSessions([]);
@@ -250,7 +255,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
               synthesizeSearchSession(item.sessionId, item.sessionTitle, item.sessionUpdatedAt ?? item.timestamp),
             );
           }
-          for (const match of typedResults?.titleMatches ?? []) {
+          for (const match of typedResults.titleMatches ?? []) {
             if (!remote.has(match.sessionId)) {
               remote.set(match.sessionId, synthesizeSearchSession(match.sessionId, match.title, match.updatedAt));
             }

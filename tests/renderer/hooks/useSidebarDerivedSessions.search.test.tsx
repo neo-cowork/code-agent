@@ -359,6 +359,16 @@ describe('useSidebarDerivedSessions search results', () => {
     expect(screen.queryByText(zh.sidebar.noMatchedSessions)).toBeNull();
   });
 
+  it('treats an empty response (web transport swallows failures into undefined) as a failed search', async () => {
+    state.session.sessions = [];
+    ipc.invoke.mockImplementation(async () => undefined);
+    renderDialog();
+    await waitFor(() => {
+      expect(screen.queryByText(zh.sidebar.searchFailed)).not.toBeNull();
+    });
+    expect(screen.queryByText(zh.sidebar.noMatchedSessions)).toBeNull();
+  });
+
   it('still shows the no-signal copy when nothing matches anywhere', async () => {
     state.session.sessions = [];
     ipc.invoke.mockImplementation(async () => searchResponse({ titleMatches: [] }));
