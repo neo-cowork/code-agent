@@ -585,6 +585,7 @@ describe('foreground wait validation copy', () => {
       metadata: { failureCode: 'invalid-arguments' },
     } });
     expect(humanizeToolFailureReason(call, t)).toBe(expected);
+    expect(humanizeToolError(error, call.name, t, call.result?.metadata)).toEqual({ summary: expected });
     expect(humanizeToolFailureReason(call, t)).not.toMatch(/budget|quota|额度|预算|充值/iu);
     expect(resolveToolTerminalOutcomeKey(call)).toBe('failed-tool');
     // Historical rows may retain only the original English validation error.
