@@ -595,6 +595,7 @@ export const enSettingsSystem = {
       section: {
         title: 'Local bridge service',
         description: 'The local bridge service lets the web app operate the local file system. Once installed, full file operations are available in the browser.',
+        serviceAddress: 'Service address:',
       },
       status: {
         connected: 'Connected',

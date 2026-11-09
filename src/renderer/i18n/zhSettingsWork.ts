@@ -255,10 +255,17 @@ export const zhSettingsWork = {
       ],
       configSummary: {
         portPrefix: '端口 ',
+        webhookPortPrefix: 'Webhook 端口 ',
         allowlistUserSuffix: ' 个白名单用户',
-        longPolling: 'Long Polling',
+        longPolling: '长轮询',
         webSocket: '长连接',
         configured: '已配置',
+      },
+      typeNames: {
+        'http-api': 'HTTP API',
+        feishu: '飞书',
+        lark: 'Lark',
+        telegram: 'Telegram',
       },
       modal: {
         addTitle: '添加通道',
