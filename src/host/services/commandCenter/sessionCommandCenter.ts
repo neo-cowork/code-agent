@@ -29,6 +29,7 @@ import {
   resolveSessionCommandTaskApprovalWaitCapMs,
 } from '../../../shared/constants/sessionCommandCenter';
 import type { RuntimeInputMode } from '../../../shared/contract/conversationEnvelope';
+import { CANCELLATION_TIMEOUTS } from '../../../shared/constants/timeouts';
 import { RUNTIME_INPUT_REDIRECT_LINE, RUNTIME_INPUT_SUPPLEMENT_LINE } from '../../../shared/constants/runtimeInput';
 import { commandMayAwaitSystemPrompt } from '../../task/macosAutomationPrompt';
 
@@ -384,34 +385,60 @@ export class SessionCommandCenter {
     const active = this.active(sessionId);
     let cancelled = 0;
     let failed = 0;
+    const unsettledIds: string[] = [];
 
     this.cancellingSessions.add(sessionId);
     try {
+      // 每个任务的取消都在循环里同步发出（async 函数的同步前缀已调到 cancelBackgroundTask/settle），
+      // 再统一等；某个任务无视 abort 不会挡住别的任务，更不会挡住前台。
+      const pending: Array<{ id: string; done: Promise<void> }> = [];
       for (const snapshot of active) {
         const task = this.tasksBySession.get(sessionId)?.get(snapshot.id);
         if (!task || TERMINAL.has(task.status) || task.status === 'cancelling') continue;
         this.suppressForegroundWakeTaskIds.add(task.id);
-        try {
-          if (task.status === 'queued') {
-            await this.settle(task, 'cancelled');
-            cancelled += 1;
-            continue;
-          }
+        const done = (async () => {
+          try {
+            if (task.status === 'queued') {
+              await this.settle(task, 'cancelled');
+              cancelled += 1;
+              return;
+            }
 
-          const accepted = await this.manager.cancelBackgroundTask(task.id);
-          if (accepted && !TERMINAL.has(task.status)) {
-            task.status = 'cancelling';
-            task.updatedAt = Date.now();
-            this.projectTask(task);
-          } else if (!TERMINAL.has(task.status)) {
-            // The manager may have dropped the run just before the request. Settle the
-            // command-center projection so the UI cannot remain stuck in running.
-            await this.settle(task, 'cancelled');
+            const accepted = await this.manager.cancelBackgroundTask(task.id);
+            if (accepted && !TERMINAL.has(task.status)) {
+              task.status = 'cancelling';
+              task.updatedAt = Date.now();
+              this.projectTask(task);
+            } else if (!TERMINAL.has(task.status)) {
+              // The manager may have dropped the run just before the request. Settle the
+              // command-center projection so the UI cannot remain stuck in running.
+              await this.settle(task, 'cancelled');
+            }
+            cancelled += 1;
+          } catch {
+            failed += 1;
           }
-          cancelled += 1;
-        } catch {
-          failed += 1;
-        }
+        })();
+        pending.push({ id: task.id, done });
+      }
+
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timedOut = new Promise<'timeout'>((resolve) => {
+        timer = setTimeout(() => resolve('timeout'), CANCELLATION_TIMEOUTS.BACKGROUND_CANCEL_SETTLE_WAIT);
+      });
+      const settled = new Set<string>();
+      const all = Promise.allSettled(pending.map(({ id, done }) => done.then(() => { settled.add(id); })));
+      await Promise.race([all, timedOut]);
+      if (timer) clearTimeout(timer);
+      for (const { id } of pending) if (!settled.has(id)) unsettledIds.push(id);
+      if (unsettledIds.length > 0) {
+        // 取消已发出（abort 已触发），只是收尾没在上限内返回：计入已停止请求，但留痕。
+        cancelled += unsettledIds.length;
+        logger.warn('Background task cancel did not settle before timeout', {
+          sessionId,
+          taskIds: unsettledIds,
+          timeoutMs: CANCELLATION_TIMEOUTS.BACKGROUND_CANCEL_SETTLE_WAIT,
+        });
       }
     } finally {
       this.cancellingSessions.delete(sessionId);

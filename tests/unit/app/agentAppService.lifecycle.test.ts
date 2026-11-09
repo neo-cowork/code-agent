@@ -869,11 +869,14 @@ describe('AgentAppService lifecycle routing', () => {
     },
   );
 
-  it('cascades user cancellation to command-center tasks before the foreground and skips session-switch', async () => {
+  it('cascades user cancellation to command-center tasks without gating the foreground abort, and skips session-switch', async () => {
     const order: string[] = [];
-    commandCenterState.cancelAllForSession.mockImplementation(async () => {
+    let releaseBackground!: () => void;
+    commandCenterState.cancelAllForSession.mockImplementation(() => {
       order.push('background');
-      return 2;
+      return new Promise<number>((resolve) => {
+        releaseBackground = () => resolve(2);
+      });
     });
     taskManager.getSessionState.mockReturnValue({ status: 'running' });
     taskManager.cancelTask.mockImplementation(async () => {
@@ -881,10 +884,13 @@ describe('AgentAppService lifecycle routing', () => {
     });
     const service = createService(taskManager);
 
-    await service.cancel('session-1', 'user-cancel');
+    const pending = service.cancel('session-1', 'user-cancel');
 
+    // 后台取消 promise 一直悬着时，前台 abort 已先发出，后台随后同步发出。
+    expect(order).toEqual(['foreground', 'background']);
     expect(commandCenterState.cancelAllForSession).toHaveBeenCalledWith('session-1', 'user-cancel');
-    expect(order).toEqual(['background', 'foreground']);
+    releaseBackground();
+    await pending;
 
     commandCenterState.cancelAllForSession.mockClear();
     taskManager.cancelTask.mockClear();

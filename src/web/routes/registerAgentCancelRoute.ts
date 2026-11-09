@@ -100,8 +100,12 @@ export function registerAgentCancelRoute(
       return;
     }
 
-    const backgroundTasksStopped = await cancelSessionBackgroundTasks(target.context.sessionId);
-    await target.cancel('user');
+    // 前台 abort 先发（不 await），后台取消紧随其后同步发出；两者并行收尾。
+    // 后台 run 无视 abort 也不能拖住前台停止。
+    const foregroundCancel = target.cancel('user');
+    const backgroundCancel = cancelSessionBackgroundTasks(target.context.sessionId);
+    await foregroundCancel;
+    const backgroundTasksStopped = await backgroundCancel;
 
     // Honest response: only claim "Cancelled" after the run left the active set
     // (registry unregister) or durable facts report terminal. Primary consumer

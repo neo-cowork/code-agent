@@ -360,4 +360,37 @@ describe('registerAgentCancelRoute honest cancel settlement (A3)', () => {
     });
     expect(cancelSessionBackgroundTasks).toHaveBeenCalledWith('session-background-only');
   });
+
+  it('aborts the foreground immediately even while background cancellation never settles', async () => {
+    const registry = new RunRegistry();
+    const handle = registry.start({
+      runId: 'run-fg-first',
+      sessionId: 'session-fg-first',
+      workspace: '/tmp/native-run-workspace',
+    });
+    const foregroundCancel = vi.fn(async () => {
+      registry.unregister(handle.context.runId, handle);
+    });
+    await handle.attach({ cancel: foregroundCancel });
+    let releaseBackground!: () => void;
+    const cancelSessionBackgroundTasks = vi.fn(() => new Promise<number>((resolve) => {
+      releaseBackground = () => resolve(2);
+    }));
+    await start(registry, undefined, undefined, cancelSessionBackgroundTasks);
+
+    const pending = fetch(`${baseUrl}/api/cancel`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId: 'session-fg-first' }),
+    });
+
+    await vi.waitFor(() => expect(cancelSessionBackgroundTasks).toHaveBeenCalledWith('session-fg-first'));
+    // 后台取消还悬着，前台 abort 已经发出。
+    expect(foregroundCancel).toHaveBeenCalledWith('user');
+
+    releaseBackground();
+    const response = await pending;
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ message: 'Cancelled', backgroundTasksStopped: 2 });
+  });
 });

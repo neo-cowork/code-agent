@@ -49,6 +49,24 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+describe('task.ipc cancel：前台先停，后台收尾不挡前台', () => {
+  it('foreground cancelTask fires before and independent of a never-settling background cancel', async () => {
+    const m = makeManager();
+    const call = register(() => m);
+    let releaseBackground!: () => void;
+    cancelAllForSession.mockImplementationOnce(() => new Promise<number>((resolve) => {
+      releaseBackground = () => resolve(1);
+    }));
+
+    const pending = call(null, { action: 'cancel', payload: { sessionId: 's1' } } as IPCRequest);
+
+    expect(m.cancelTask).toHaveBeenCalledWith('s1');
+    await vi.waitFor(() => expect(cancelAllForSession).toHaveBeenCalledWith('s1', 'user-cancel'));
+    releaseBackground();
+    await expect(pending).resolves.toEqual({ success: true, data: null });
+  });
+});
+
 describe('task.ipc dispatch 特征：manager 可用', () => {
   it('start / interrupt / cancel / cleanup 委派并返回 null；getState 透传 sessionId', async () => {
     const m = makeManager();

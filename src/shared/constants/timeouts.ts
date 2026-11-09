@@ -436,6 +436,8 @@ export const CANCELLATION_TIMEOUTS = {
   GRACEFUL_SHUTDOWN_GRACE: 5_000,
   /** Phase 3 flush 持久化最大耗时（防 fs lock 卡死） */
   FLUSH_TIMEOUT: 2_000,
+  /** 会话 Stop 并发取消后台委派任务后，等它们收尾的上限；超时只告警，不挡前台 */
+  BACKGROUND_CANCEL_SETTLE_WAIT: 3_000,
   /**
    * `/api/cancel` 等待 durable/registry 终态的上限。
    * 超时后返回 cancel_requested，避免对调用方谎称 Cancelled。

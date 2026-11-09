@@ -27,7 +27,7 @@ import {
   resolveSessionCommandTaskIdleTimeoutMs,
   resolveSessionCommandTaskApprovalWaitCapMs,
 } from '../../../src/shared/constants/sessionCommandCenter';
-import { INTERACTION_TIMEOUTS } from '../../../src/shared/constants/timeouts';
+import { CANCELLATION_TIMEOUTS, INTERACTION_TIMEOUTS } from '../../../src/shared/constants/timeouts';
 
 // N-FIX-WEBFETCH-BLOCK-PRIVATE-NET-FU2：executeTaskStatus 走单例指挥台，单例构造默认拿
 // 真实 getTaskManager()——未 initialize 时 startBackgroundTask 同步抛错，任务会被立刻
@@ -487,6 +487,39 @@ describe('SessionCommandCenter', () => {
     await expect(center.cancelAllForSession('session-a', 'user-cancel')).resolves.toBe(0);
     expect(manager.cancelBackgroundTask).toHaveBeenCalledTimes(1);
     center.dispose();
+  });
+
+  it('fires every background cancel at once and returns within the timeout when one never settles', async () => {
+    vi.useFakeTimers();
+    try {
+      const manager = new FakeTaskManager();
+      const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+        projectTerminalResult: vi.fn(),
+        wakeForegroundBrain: createWakeForegroundMock(),
+      });
+      const first = await center.spawn(input(1, 'lane-a'));
+      const second = await center.spawn(input(2, 'lane-b'));
+      if (first.outcome === 'requires_choice' || second.outcome === 'requires_choice') {
+        throw new Error('unexpected admission result');
+      }
+      manager.cancelBackgroundTask.mockImplementation(() => new Promise<boolean>(() => {}));
+
+      let returned: number | undefined;
+      const call = center.cancelAllForSession('session-a', 'user-cancel').then((count) => { returned = count; });
+
+      // 同步阶段：两个任务的 abort 都已发出，没有任何后台 promise 落地。
+      expect(manager.cancelBackgroundTask).toHaveBeenCalledTimes(2);
+      expect(manager.cancelBackgroundTask).toHaveBeenCalledWith(first.task.id);
+      expect(manager.cancelBackgroundTask).toHaveBeenCalledWith(second.task.id);
+      expect(returned).toBeUndefined();
+
+      await vi.advanceTimersByTimeAsync(CANCELLATION_TIMEOUTS.BACKGROUND_CANCEL_SETTLE_WAIT);
+      await call;
+      expect(returned).toBe(2);
+      center.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // 顺手抓到的老病：resolve() 经 list() 返回快照拷贝，steer 改的 prompt 从没落到台账那份，

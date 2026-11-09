@@ -906,57 +906,69 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         const externalHandle = this.durableRunReadService
           ? durableExternalHandle
           : registeredHandle;
-        if (normalizedReason === 'user-cancel' || normalizedReason === 'parent-cancel') {
-          await getSessionCommandCenter().cancelAllForSession(resolvedSessionId, normalizedReason);
-        }
-        if (externalHandle) {
-          await externalHandle.cancel(normalizedReason === 'session-switch' ? 'session-switch' : 'user');
-          return;
-        }
-        // Release run-scoped waiters before awaiting the primary task shutdown.
-        // A subagent can be blocked on plan/launch approval while the primary
-        // orchestrator waits for that subagent to exit, so reversing this order
-        // would deadlock session cancellation.
-        if (
-          hasSwarmServices() &&
-          (normalizedReason === 'user-cancel' ||
-            normalizedReason === 'session-switch' ||
-            normalizedReason === 'parent-cancel')
-        ) {
-          try {
-            const services = getSwarmServices();
-            services.planApproval.cancelSession(resolvedSessionId, normalizedReason);
-            services.launchApproval.cancelSession(resolvedSessionId, normalizedReason);
-            const cancelled = services.spawnGuard.cancelSession(resolvedSessionId, normalizedReason);
-            if (cancelled > 0) {
-              logger.info(
-                `[appService.cancel] spawnGuard cancelled ${cancelled} subagents reason=${normalizedReason}`,
-              );
-            }
-            services.parallelCoordinators.abortSession(resolvedSessionId, normalizedReason);
-          } catch (err) {
-            logger.warn('[appService.cancel] subagent cascade fan-out failed', err);
+        // 前台 abort 先发（内部函数同步前缀已调到 externalHandle.cancel / tm.cancelTask），
+        // 随后同步发出后台取消，最后一起等：后台 run 无视 abort 也不能拖住前台停止。
+        const cancelForeground = async (): Promise<void> => {
+          if (externalHandle) {
+            await externalHandle.cancel(normalizedReason === 'session-switch' ? 'session-switch' : 'user');
+            return;
           }
-        }
+          // Release run-scoped waiters before awaiting the primary task shutdown.
+          // A subagent can be blocked on plan/launch approval while the primary
+          // orchestrator waits for that subagent to exit, so reversing this order
+          // would deadlock session cancellation.
+          if (
+            hasSwarmServices() &&
+            (normalizedReason === 'user-cancel' ||
+              normalizedReason === 'session-switch' ||
+              normalizedReason === 'parent-cancel')
+          ) {
+            try {
+              const services = getSwarmServices();
+              services.planApproval.cancelSession(resolvedSessionId, normalizedReason);
+              services.launchApproval.cancelSession(resolvedSessionId, normalizedReason);
+              const cancelled = services.spawnGuard.cancelSession(resolvedSessionId, normalizedReason);
+              if (cancelled > 0) {
+                logger.info(
+                  `[appService.cancel] spawnGuard cancelled ${cancelled} subagents reason=${normalizedReason}`,
+                );
+              }
+              services.parallelCoordinators.abortSession(resolvedSessionId, normalizedReason);
+            } catch (err) {
+              logger.warn('[appService.cancel] subagent cascade fan-out failed', err);
+            }
+          }
 
-        const state = tm.getSessionState(resolvedSessionId);
-        if (isTaskManagerOwnedRunState(state.status)) {
-          await tm.cancelTask(resolvedSessionId);
-        } else {
-          // 停靠待「继续」的 durable run（quota_wait / user_stop / guard_halt）没有活 loop：
-          // TaskManager 是 idle，orchestrator.cancel 对已结束的 loop 只发事件，parked run 会一直
-          // waiting、quotaWaitTimer 到点仍自动续跑——与用户显式取消相反。走 web /api/cancel 同款
-          // terminalRecoveredWaitingRun 终态化（同时清 due timer），命中即收工。
-          const parked = await this.externalRunRegistry?.terminalRecoveredWaitingRun({ sessionId: resolvedSessionId });
-          if (parked) return;
-          const orchestrator = this.getOrchestratorOrThrow(resolvedSessionId);
-          // Legacy orchestrator.cancel signature accepts 'user' | 'session-switch'
-          // — map our cascade reasons back for backward compatibility.
-          const legacyReason = normalizedReason === 'session-switch'
-            ? 'session-switch'
-            : 'user';
-          await orchestrator.cancel(legacyReason);
-        }
+          const state = tm.getSessionState(resolvedSessionId);
+          if (isTaskManagerOwnedRunState(state.status)) {
+            await tm.cancelTask(resolvedSessionId);
+          } else {
+            // 停靠待「继续」的 durable run（quota_wait / user_stop / guard_halt）没有活 loop：
+            // TaskManager 是 idle，orchestrator.cancel 对已结束的 loop 只发事件，parked run 会一直
+            // waiting、quotaWaitTimer 到点仍自动续跑——与用户显式取消相反。走 web /api/cancel 同款
+            // terminalRecoveredWaitingRun 终态化（同时清 due timer），命中即收工。
+            const parked = await this.externalRunRegistry?.terminalRecoveredWaitingRun({ sessionId: resolvedSessionId });
+            if (parked) return;
+            const orchestrator = this.getOrchestratorOrThrow(resolvedSessionId);
+            // Legacy orchestrator.cancel signature accepts 'user' | 'session-switch'
+            // — map our cascade reasons back for backward compatibility.
+            const legacyReason = normalizedReason === 'session-switch'
+              ? 'session-switch'
+              : 'user';
+            await orchestrator.cancel(legacyReason);
+          }
+        };
+        const foregroundCancel = cancelForeground();
+        const backgroundCancel = normalizedReason === 'user-cancel' || normalizedReason === 'parent-cancel'
+          ? getSessionCommandCenter()
+            .cancelAllForSession(resolvedSessionId, normalizedReason)
+            .catch((err: unknown) => {
+              logger.warn('[appService.cancel] background task cascade failed', err);
+              return 0;
+            })
+          : undefined;
+        await foregroundCancel;
+        await backgroundCancel;
       } finally {
         this.cancelInFlight.delete(resolvedSessionId);
       }

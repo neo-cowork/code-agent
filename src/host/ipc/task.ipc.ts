@@ -78,9 +78,13 @@ async function handleCancelTask(
   payload: TaskIdPayload
 ): Promise<void> {
   // TaskPanel 的整会话取消也是用户 Stop：一并停掉该会话的后台委派任务
+  // 前台 cancel 先发（不 await），后台取消同步紧随，并行收尾
+  const foregroundCancel = taskManager.cancelTask(payload.sessionId);
   const { getSessionCommandCenter } = await import('../services/commandCenter/sessionCommandCenter');
-  await getSessionCommandCenter().cancelAllForSession(payload.sessionId, 'user-cancel');
-  await taskManager.cancelTask(payload.sessionId);
+  await Promise.all([
+    foregroundCancel,
+    getSessionCommandCenter().cancelAllForSession(payload.sessionId, 'user-cancel'),
+  ]);
 }
 
 interface BackgroundTaskIdPayload {
