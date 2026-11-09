@@ -84,6 +84,8 @@ export const workbenchTabsZh = {
       notReadyTitle: '浏览器还没准备好',
       idleTitle: 'Neo 还没开始操作网页',
       idleHint: 'Neo 开始浏览网页时，这里会实时显示它在看什么、点了什么。',
+      backgroundBusyTitle: 'Neo 正在后台浏览器里操作',
+      backgroundBusyHint: '页面还没加载出来，加载好后这里会显示它最后看到的页面。',
       connecting: '正在接入现场…',
       streamUnavailable: '暂时接不到实时画面，下面的指针仍在跟随 Neo 的操作。',
       pointerNarration: {
@@ -255,6 +257,8 @@ export const workbenchTabsEn: typeof workbenchTabsZh = {
       notReadyTitle: 'Browser is not ready',
       idleTitle: 'Neo has not started browsing',
       idleHint: 'Once Neo starts browsing, you will see what it looks at and clicks here in real time.',
+      backgroundBusyTitle: 'Neo is working in the background browser',
+      backgroundBusyHint: 'The page has not loaded yet. Once it does, the last page Neo saw will show here.',
       connecting: 'Connecting to the live view…',
       streamUnavailable: 'The live picture is unavailable right now; the pointer below still follows what Neo does.',
       pointerNarration: {
