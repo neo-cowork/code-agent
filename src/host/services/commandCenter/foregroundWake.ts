@@ -23,17 +23,17 @@ import { getSessionManager, type SessionWithMessages } from '../infra/sessionMan
 import { createLogger } from '../infra/logger';
 import type { SessionCommandTask } from './sessionCommandCenter';
 
-import { WAKE_NOOP_TOOL_NAME } from '../../../shared/constants/agent';
+import { FOREGROUND_WAKE_MARKER, WAKE_NOOP_TOOL_NAME } from '../../../shared/constants/agent';
 import { getAgentErrorMessage } from '../../../shared/utils/agentErrorClassification';
 
 const FOREGROUND_WAKE_CONTRACT = [
-  '<background_task_hidden_wake>',
+  FOREGROUND_WAKE_MARKER,
   '这一轮由后台任务终态触发，不是用户正在等待你确认的消息。',
   '不要写“收到”“好的”等承接语，不要把后台结果当成用户消息引用。',
   '只有存在对用户有信息量的交付物、结论，或失败后需要用户决定时，才输出文字；直接给结论。',
   '需要继续执行时调用 delegate_task。',
   `没有值得告知用户的内容时，只调用 ${WAKE_NOOP_TOOL_NAME}，不要输出任何文字。`,
-  '</background_task_hidden_wake>',
+  FOREGROUND_WAKE_MARKER.replace('<', '</'),
 ].join('\n');
 
 type WakeStatus = 'completed' | 'failed' | 'cancelled';

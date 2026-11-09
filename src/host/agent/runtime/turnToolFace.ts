@@ -15,6 +15,7 @@ import { getConfigService } from '../../services/core/configService';
 import { getConnectorRegistry } from '../../connectors/registry';
 import { findConnectorIdForToolName } from '../../../shared/contract/workbenchTools';
 import { isExternalSideEffectTool } from '../../tools/externalSideEffect';
+import { FOREGROUND_WAKE_MARKER } from '../../../shared/constants/agent';
 import { isBashToolName } from '../../tools/toolNames';
 import { DEFERRED_TOOLS_META } from '../../services/toolSearch/deferredToolsData';
 import { resolveRoleToolBoundary } from '../../services/roleAssets/rolePersonalization';
@@ -262,7 +263,8 @@ export function buildTurnToolFaceNotices(
   const lastUser = runtime.messages.map((m) => m.role).lastIndexOf('user');
   const delegatedThisTurn = runtime.messages.slice(lastUser + 1).some((m) =>
     m.toolCalls?.some((call) => ['delegate_task', 'spawn_agent'].includes(normalized(call.name))));
-  const narrowing = delegatedThisTurn ? undefined : buildForegroundToolFaceNarrowingNotice(prompt, after);
+  const isWakeTurn = prompt.includes(FOREGROUND_WAKE_MARKER);
+  const narrowing = delegatedThisTurn || isWakeTurn ? undefined : buildForegroundToolFaceNarrowingNotice(prompt, after);
   const connector = buildUnusableConnectorNotice(runtime.allowedToolNames);
   if (narrowing) logger.info('[TurnToolFace] tool-face-narrowing note injected', { toolCount: after.length });
   if (connector) logger.info('[TurnToolFace] connector-not-ready note injected', { toolCount: after.length });

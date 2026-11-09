@@ -12,6 +12,8 @@ import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
 import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 import { resetToolSearchService } from '../../../src/host/services/toolSearch/toolSearchService';
 import { resetProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
+import { applyTurnSystemContext } from '../../../src/host/agent/orchestratorTurnContext';
+import { FOREGROUND_WAKE_MARKER } from '../../../src/shared/constants/agent';
 import { resolveAgent } from '../../../src/host/agent/agentRegistry';
 import { resolveRoleWakeRequiredToolNames } from '../../../src/host/agent/runtime/turnToolFace';
 import { withSessionCommandCenterBrain, getTextForegroundToolNamesForPrompt } from '../../../src/host/app/sessionCommandCenterBrain';
@@ -250,6 +252,16 @@ describe('turn tool-face gate (through inference)', () => {
       toolCalls: [{ id: 'c1', name: 'delegate_task', arguments: {} }],
     });
     await inference(ctx);
+    expect(sentSystemText(ctx)).not.toContain('<tool-face-narrowing>');
+  });
+
+  it('background-task completion wake turn gets no narrowing note even when the summary mentions the browser', async () => {
+    const contract = `${FOREGROUND_WAKE_MARKER}\n这一轮由后台任务终态触发。\n${FOREGROUND_WAKE_MARKER.replace('<', '</')}`;
+    const goal = '后台任务 网页标题 已完成，结果摘要：用浏览器打开 example.com，页面标题原文：**Example Domain**。';
+    const prompt = applyTurnSystemContext(goal, { turnSystemContext: [contract] } as never, null, () => null);
+    const ctx = buildCtx(prompt, getTextForegroundToolNamesForPrompt(prompt));
+    await inference(ctx);
+    expect(finalTable(ctx)).toContain('delegate_task');
     expect(sentSystemText(ctx)).not.toContain('<tool-face-narrowing>');
   });
 
