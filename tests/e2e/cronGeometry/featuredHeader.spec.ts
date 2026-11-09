@@ -3,6 +3,13 @@ import { dismissFirstRunDialogs } from '../firstRunDialogs';
 
 test.describe.configure({ mode: 'serial' });
 
+test.afterEach(async ({ page }) => {
+  await page.evaluate(async () => {
+    const response = await window.domainAPI?.invoke('settings', 'set', { ui: { language: 'zh' } });
+    if (!response?.success) throw new Error('Could not restore the E2E UI language');
+  });
+});
+
 for (const language of ['zh', 'en'] as const) {
   test(`recommended block stays above the fully visible detail header (${language})`, async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
