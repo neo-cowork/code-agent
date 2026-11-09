@@ -11,6 +11,7 @@
 import { writeFile, readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { createLogger } from '../services/infra/logger';
+import { getSubagentContextStore } from '../context/subagentContextStore';
 import type { SubagentResult } from './subagentExecutorTypes';
 import {
   collectDescendantAgentIds,
@@ -406,6 +407,7 @@ class SpawnGuard {
           a.result = result;
           a.error = result.error;
           a.completedAt = Date.now();
+          this.recordTerminalContext(id, a.status);
           logger.info(`[${id}] Agent completed (${a.status}) in ${a.completedAt - a.createdAt}ms`);
           this.fireOnComplete(a);
           this.releaseAgentSlot(a);
@@ -417,6 +419,7 @@ class SpawnGuard {
           a.status = 'failed';
           a.error = err instanceof Error ? err.message : 'Unknown error';
           a.completedAt = Date.now();
+          this.recordTerminalContext(id, 'failed');
           logger.warn(`[${id}] Agent failed: ${a.error}`);
           this.fireOnComplete(a);
           this.releaseAgentSlot(a);
@@ -425,6 +428,15 @@ class SpawnGuard {
     );
 
     logger.info(`[${id}] Registered (${role}), tree: ${treeId}, parent: ${parentId ?? 'none'}, running: ${this.getRunningCount(scope)}/${this.maxAgents}`);
+  }
+
+  private recordTerminalContext(id: string, status: ManagedAgentStatus): void {
+    if (status !== 'completed' && status !== 'failed') return;
+    try {
+      getSubagentContextStore().markTerminal(id, status);
+    } catch (error) {
+      logger.warn(`[${id}] Could not record terminal status in subagent context store`, error);
+    }
   }
 
   /**

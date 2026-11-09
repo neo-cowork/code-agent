@@ -209,6 +209,10 @@ export async function executeSpawnAgent(
       tools = customTools || getAgentTools(agentConfig);
     }
 
+    // 模型给了 name 就用它当展示名，让 A/B 两个同角色助手在面板与状态里分得开。
+    const requestedName = typeof params.name === 'string' ? params.name.trim() : '';
+    if (requestedName) agentName = requestedName;
+
     const engineResolution = resolveSpawnAgentEngine(params.engine, parallel, !!isDynamicMode, role);
     if ('error' in engineResolution) return { success: false, error: engineResolution.error };
 

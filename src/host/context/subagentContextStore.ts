@@ -28,6 +28,8 @@ export interface SubagentContextRecord {
   annotations?: Record<string, SubagentContextAnnotation>;
   compressionState?: CompressionState;
   maxTokens?: number;
+  /** 子代理跑完时由 SpawnGuard 写入；重启后据此还原终态，而不是把上一进程的记录一律当作已取消。 */
+  terminalStatus?: 'completed' | 'failed';
   updatedAt: number;
 }
 
@@ -168,6 +170,16 @@ export class SubagentContextStore {
     if (expiredPruned || this.store.size > 0) {
       this.persistToDisk();
     }
+  }
+
+  markTerminal(agentId: string, terminalStatus: 'completed' | 'failed'): void {
+    let changed = false;
+    for (const record of this.store.values()) {
+      if (record.agentId !== agentId || record.terminalStatus === terminalStatus) continue;
+      record.terminalStatus = terminalStatus;
+      changed = true;
+    }
+    if (changed) this.persistToDisk();
   }
 
   get(sessionId: string, agentId: string): SubagentContextRecord | null {

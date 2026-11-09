@@ -199,6 +199,20 @@ describe('agentTreeService', () => {
       expect(node?.statusLabel).toBe('已取消');
     });
 
+    it('keeps the recorded terminal status of a helper that finished in the previous process', () => {
+      const snapshot = buildAgentTreeSnapshot({
+        sessionId: 'session-1',
+        contextRecords: [
+          { ...contextRecord('done-before-restart', Date.now() - 60_000), terminalStatus: 'completed' as const },
+          { ...contextRecord('failed-before-restart', Date.now() - 60_000), terminalStatus: 'failed' as const },
+        ],
+      });
+
+      expect(snapshot.nodes.find((item) => item.id === 'done-before-restart')?.status).toBe('completed');
+      expect(snapshot.nodes.find((item) => item.id === 'done-before-restart')?.statusLabel).toBe('已完成');
+      expect(snapshot.nodes.find((item) => item.id === 'failed-before-restart')?.status).toBe('failed');
+    });
+
     it('keeps a fresh in-process context record as unknown (better say working than dead)', () => {
       const snapshot = buildAgentTreeSnapshot({
         sessionId: 'session-1',

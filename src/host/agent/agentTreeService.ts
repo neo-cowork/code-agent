@@ -421,9 +421,9 @@ function mergeContextRecord(
   // 方，收成 cancelled（已停）；renderer 的口径是 unknown→工作中，照旧落 unknown
   // 就是重启后幽灵「工作中」行的来源。本进程内的记录维持 unknown（宁可在干），
   // 与 spawnGuard/registry 的活状态由优先级自然裁决。
-  const status: AgentTreeNodeStatus = record.updatedAt < HOST_PROCESS_BOOT_MS
-    ? 'cancelled'
-    : 'unknown';
+  // 记录里带终态（SpawnGuard 在子代理跑完时写入）就直接用，重启后「已完成」不会变「已取消」。
+  const status: AgentTreeNodeStatus = record.terminalStatus
+    ?? (record.updatedAt < HOST_PROCESS_BOOT_MS ? 'cancelled' : 'unknown');
   applyStatus(node, status, 'subagentContext', statusPriorities);
   node.updatedAt = Math.max(node.updatedAt ?? 0, record.updatedAt);
   const activeTool = activeToolFromContext(record);
