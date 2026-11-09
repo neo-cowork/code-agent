@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render } from '@testing-library/react';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { en } from '../../../src/renderer/i18n/en';
+import { humanizeToolStep } from '../../../src/renderer/utils/humanizeToolStep';
 import type { ToolCall } from '../../../src/shared/contract';
 import { toDelegationDisplayToolCall } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/delegationPresentation';
 
@@ -150,4 +151,15 @@ it('shortens local paths in report and title while preserving links and relative
   const projected = toDelegationDisplayToolCall(call, zh);
   expect(projected.result?.output).toBe('Read "notes.txt" and plan.txt; see https://example.com/home/notes.txt and ./notes.txt.');
   expect(projected.shortDescription).toBe('Review notes.txt');
+});
+
+
+it.each([zh, en])('uses the localized action instead of a model-authored internal tool name', (t) => {
+  const call = taskCall('', 'spawn_agent');
+  call.shortDescription = 'Use spawn_agent';
+  const projected = toDelegationDisplayToolCall(call, t);
+  expect(projected.shortDescription).toBeUndefined();
+  expect(humanizeToolStep(projected.name, projected.arguments, t, projected.shortDescription))
+    .toBe(t.toolStepHumanize.subagentSpawnFallback);
+  expect(call.shortDescription).toBe('Use spawn_agent');
 });

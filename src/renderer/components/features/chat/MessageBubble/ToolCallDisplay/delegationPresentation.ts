@@ -112,6 +112,7 @@ export function toDelegationDisplayToolCall(storedToolCall: ToolCall, t: Transla
     && storedToolCall.result?.metadata?.artifactRole !== 'multiagent-result') return storedToolCall;
   const toolCall = withoutRepeatedReport(storedToolCall);
   const result = toolCall.result;
+  const shortDescription = toolCall.shortDescription;
   let output = result?.output;
   if (typeof output === 'string') {
     if (result?.success) {
@@ -127,7 +128,13 @@ export function toDelegationDisplayToolCall(storedToolCall: ToolCall, t: Transla
   return {
     ...toolCall,
     arguments: displayArgument(toolCall.arguments) as ToolCall['arguments'],
-    ...(toolCall.shortDescription ? { shortDescription: displayPaths(toolCall.shortDescription) } : {}),
+    ...(shortDescription ? {
+      // Model-authored bookkeeping such as "Use spawn_agent" must not override
+      // the existing localized tool-action template (including in English UI).
+      shortDescription: [...RESULT_TOOLS].some((name) => shortDescription.includes(name))
+        ? undefined
+        : displayPaths(shortDescription),
+    } : {}),
     ...(result ? { result: { ...result, output } } : {}),
   };
 }
