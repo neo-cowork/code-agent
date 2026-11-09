@@ -2,6 +2,8 @@ import type { EvidenceRef } from '../contract/evidence';
 import type {
   SurfaceExecutionEventV1,
   SurfaceKind,
+  SurfaceActionResultV1,
+  SurfaceObservationV1,
   SurfaceTargetRefV1,
 } from '../contract/surfaceExecution';
 import {
@@ -35,6 +37,57 @@ export interface ProjectLegacySurfaceEventInput {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * Persist only the evidence-card projection of an observation. The full element
+ * refs remain in the process-local SurfaceObservationRegistry for click fences;
+ * persisted tool metadata only needs their count and kinds.
+ */
+function compactSurfaceObservationForMetadata(
+  observation: SurfaceObservationV1,
+): Record<string, unknown> {
+  const { elementRefs, ...rest } = observation;
+  return {
+    ...rest,
+    elementCount: elementRefs.length,
+    elementKinds: Array.from(new Set(elementRefs.map((element) => element.kind))),
+  };
+}
+
+function compactSurfaceActionResultForMetadata(
+  actionResult: SurfaceActionResultV1,
+): Record<string, unknown> {
+  return {
+    ...actionResult,
+    ...(actionResult.successorState
+      ? { successorState: compactSurfaceObservationForMetadata(actionResult.successorState) }
+      : {}),
+  };
+}
+
+export function compactSurfaceExecutionMetadata(
+  metadata: Record<string, unknown>,
+): Record<string, unknown> {
+  const observation = isRecord(metadata.surfaceObservationV1)
+    && Array.isArray(metadata.surfaceObservationV1.elementRefs)
+    ? compactSurfaceObservationForMetadata(metadata.surfaceObservationV1 as unknown as SurfaceObservationV1)
+    : metadata.surfaceObservationV1;
+  const actionResult = isRecord(metadata.surfaceExecutionActionResultV1)
+    && isRecord(metadata.surfaceExecutionActionResultV1.successorState)
+    && Array.isArray(metadata.surfaceExecutionActionResultV1.successorState.elementRefs)
+    ? compactSurfaceActionResultForMetadata(metadata.surfaceExecutionActionResultV1 as unknown as SurfaceActionResultV1)
+    : metadata.surfaceExecutionActionResultV1;
+  if (observation === metadata.surfaceObservationV1 && actionResult === metadata.surfaceExecutionActionResultV1) {
+    return metadata;
+  }
+  return {
+    ...metadata,
+    ...(observation !== metadata.surfaceObservationV1 ? { surfaceObservationV1: observation } : {}),
+    ...(actionResult !== metadata.surfaceExecutionActionResultV1
+      ? { surfaceExecutionActionResultV1: actionResult }
+      : {}),
+  };
 }
 
 function asEvidenceRefs(metadata: Record<string, unknown> | undefined): string[] {

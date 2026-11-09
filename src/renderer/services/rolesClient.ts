@@ -57,6 +57,11 @@ export async function skipFirstWake(roleId: string): Promise<{ success: boolean 
   return ipcService.invokeDomain<{ success: boolean }>(IPC_DOMAINS.ROLES, 'firstWakeSkip', { roleId });
 }
 
+/** roles IPC firstWakeConsumeSuggestion。只移除匹配标题的首次醒来建议。 */
+export async function consumeFirstWakeSuggestion(roleId: string, title: string): Promise<{ success: boolean }> {
+  return ipcService.invokeDomain<{ success: boolean }>(IPC_DOMAINS.ROLES, 'firstWakeConsumeSuggestion', { roleId, title });
+}
+
 /** roles IPC firstWakeRetry。failed 终态复位 pending 重新排队（其余终态宿主拒绝）。 */
 export async function retryFirstWake(roleId: string): Promise<{ retried: boolean }> {
   return ipcService.invokeDomain<{ retried: boolean }>(IPC_DOMAINS.ROLES, 'firstWakeRetry', { roleId });
