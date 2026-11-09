@@ -41,7 +41,7 @@ const GOOD_SSE = [
 ].map((c) => `data: ${JSON.stringify(c)}\n\n`).join('') + 'data: [DONE]\n\n';
 
 // 每次请求按队列出：数组耗尽后一律回好体
-let queue: Array<BadName | 'good'> = [];
+let queue: Array<BadName | 'good' | 'sse_text_plain' | 'sse_json'> = [];
 let hits = 0;
 let streamRequests = 0;
 const server = http.createServer((req, res) => {
@@ -55,6 +55,12 @@ const server = http.createServer((req, res) => {
     if (next === 'good') {
       res.writeHead(200, { 'content-type': wantsStream ? 'text/event-stream' : 'application/json' });
       res.end(wantsStream ? GOOD_SSE : GOOD_JSON);
+      return;
+    }
+    if (next === 'sse_text_plain' || next === 'sse_json') {
+      // 合法 SSE，但中转站把 content-type 标成 text/plain / application/json
+      res.writeHead(200, { 'content-type': next === 'sse_json' ? 'application/json' : 'text/plain' });
+      res.end(GOOD_SSE);
       return;
     }
     const bad = BAD[next];
@@ -131,5 +137,17 @@ describe.each(['generate', 'stream'] as const)('inferenceViaAiSdk 2xx 坏响应�
       await promise.catch(() => undefined);
       expect(hits).toBe(1);
     }
+  }, 30000);
+});
+
+describe('inferenceViaAiSdk 流式：content-type 标错的合法 SSE', () => {
+  it.each(['sse_text_plain', 'sse_json'] as const)('%s：不被当坏体，不重试，正常出字', async (name) => {
+    queue = [name];
+    const { promise, chunks } = run('stream');
+    const res = await promise;
+    expect(res.content).toBe('hello');
+    expect(hits).toBe(1);
+    expect(warns.some((w) => w.includes('2xx 响应体不可用'))).toBe(false);
+    expect(chunks.some((c) => c.type === 'error')).toBe(false);
   }, 30000);
 });

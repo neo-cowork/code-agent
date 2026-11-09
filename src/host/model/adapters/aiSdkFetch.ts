@@ -165,8 +165,31 @@ export function makeAiSdkFetch(
   const nonSseBody = /json|html|text\/plain/.test(contentType) || response.headers['content-length'] === '0';
   if (wantsStream && nonSseBody && response.status >= 200 && response.status < 300 && isNodeReadable(response.data)) {
     const chunks: Buffer[] = [];
+    const iterator = (response.data as AsyncIterable<Uint8Array>)[Symbol.asyncIterator]();
     try {
-      for await (const chunk of response.data) chunks.push(Buffer.from(chunk as Uint8Array));
+      // content-type 不可信：中转站常把合法 SSE 标成 text/plain / application/json（SDK 的 SSE 解析不看它）。
+      // 先偷看首个非空块，以 SSE 字段（data:/event:/id:/retry:/注释行）开头就当流，把首块接回去原样放行。
+      for (;;) {
+        const first = await iterator.next();
+        if (first.done) break;
+        const buf = Buffer.from(first.value);
+        if (buf.length === 0) continue;
+        if (/^\s*(?:data|event|id|retry):|^\s*:/.test(buf.toString('utf8', 0, 64))) {
+          const rest = (async function* () { yield buf; for (;;) { const n = await iterator.next(); if (n.done) return; yield n.value; } })();
+          return new Response(responseBodyForFetch(Readable.from(rest), response.status), {
+            status: response.status,
+            statusText: response.statusText,
+            headers: responseHeaders(response.headers),
+          });
+        }
+        chunks.push(buf);
+        break;
+      }
+      for (;;) {
+        const n = await iterator.next();
+        if (n.done) break;
+        chunks.push(Buffer.from(n.value));
+      }
     } catch (readErr) {
       if (signal?.aborted) throw readErr;
       // 体读到一半被掐：与 generateText 的「Failed to process successful response」同形态。
