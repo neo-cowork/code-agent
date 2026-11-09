@@ -1,6 +1,7 @@
 import type { AgentTreeNode } from '@shared/contract/agentTree';
 import type { LastToolFailure, LastToolStep, Task, TaskOutputRef } from '@shared/contract/backgroundTask';
 import type { ToolCall } from '@shared/contract';
+import type { Translations } from '../../../../../i18n';
 import {
   isAgentNodeTerminalStatus,
   isLastToolFailureVisible,
@@ -32,20 +33,28 @@ export interface DelegationPresentation {
   sessionId?: string;
 }
 
+type DelegationDisplayCopy = Translations['rendererHumanPipe']['toolDetails']['delegation'];
+
+const SPAWN_AGENT_ID_RESULT_LINE = /^- Agent ID:(?:\s|$)/;
 const SPAWN_AGENT_PRIVATE_RESULT_LINE = /^- (?:Agent ID|Pipeline ID|Cost):(?:\s|$)/;
 const TASK_PRIVATE_RESULT_LINE = /^- Cost:(?:\s|$)/;
 const TASK_STATS_MARKER = '\nStats:\n';
+const WAIT_AGENT_ICON_ID = /^([⏳📄✅❌🚫🛑] )\[[^\]\r\n]+\] /u;
+const WAIT_AGENT_NOT_FOUND = /^\[[^\]\r\n]+\] NOT FOUND$/;
 const WAIT_AGENT_STATS_COST = /^(\s+Stats:.*?),\s+\$\d+(?:\.\d+)?\s*$/;
 
 /** Keep the host's orchestration receipt model-visible while hiding its private bookkeeping in UI details. */
-export function toDelegationDisplayToolCall(toolCall: ToolCall): ToolCall {
+export function toDelegationDisplayToolCall(toolCall: ToolCall, copy: DelegationDisplayCopy): ToolCall {
   const result = toolCall.result;
   const output = result?.output;
   if (!result || typeof output !== 'string') return toolCall;
 
   if (toolCall.name === 'wait_agent') {
     const visibleOutput = output.split('\n')
-      .map((line) => line.replace(WAIT_AGENT_STATS_COST, '$1'))
+      .map((line) => line
+        .replace(WAIT_AGENT_ICON_ID, '$1')
+        .replace(WAIT_AGENT_NOT_FOUND, copy.waitAgentNotFound)
+        .replace(WAIT_AGENT_STATS_COST, '$1'))
       .join('\n');
     return visibleOutput === output
       ? toolCall
@@ -55,15 +64,62 @@ export function toDelegationDisplayToolCall(toolCall: ToolCall): ToolCall {
   if (toolCall.name !== 'spawn_agent' && toolCall.name !== 'Task') return toolCall;
 
   const statsIndex = output.lastIndexOf(TASK_STATS_MARKER);
-  if (statsIndex < 0) return toolCall;
+  if (statsIndex < 0) {
+    if (toolCall.name !== 'spawn_agent') return toolCall;
+    const visibleOutput = output.split('\n')
+      .filter((line) => !SPAWN_AGENT_ID_RESULT_LINE.test(line))
+      .join('\n');
+    return visibleOutput === output
+      ? toolCall
+      : { ...toolCall, result: { ...result, output: visibleOutput } };
+  }
+
+  let inResultBody = false;
+  let taskLabelMapped = false;
+  const visibleHead = output.slice(0, statsIndex).split('\n').map((line, index) => {
+    if (index === 0 && toolCall.name === 'spawn_agent') {
+      const header = line.match(/^Agent \[([^\]]+)\] completed task:$/);
+      if (header) return copy.spawnCompleted.replace('{name}', header[1]);
+    }
+    if (index === 0 && toolCall.name === 'Task') {
+      const header = line.match(/^Agent \[([^\]]+)\] completed(?: \((.*)\))?:$/);
+      if (header) {
+        const template = header[2] === undefined ? copy.taskCompleted : copy.taskCompletedWithDescription;
+        return template.replace('{name}', header[1]).replace('{description}', header[2] ?? '');
+      }
+    }
+    if (toolCall.name === 'spawn_agent' && !inResultBody) {
+      if (!taskLabelMapped && (line === 'Task:' || line.startsWith('Task: '))) {
+        taskLabelMapped = true;
+        return line.replace('Task:', copy.taskLabel);
+      }
+      if (line === 'Result:') {
+        inResultBody = true;
+        return copy.resultLabel;
+      }
+    }
+    return line;
+  }).join('\n');
+
   const statsStart = statsIndex + TASK_STATS_MARKER.length;
   const privateResultLine = toolCall.name === 'spawn_agent'
     ? SPAWN_AGENT_PRIVATE_RESULT_LINE
     : TASK_PRIVATE_RESULT_LINE;
-  const visibleOutput = output.slice(0, statsStart) + output.slice(statsStart)
+  const visibleStats = output.slice(statsStart)
     .split('\n')
     .filter((line) => !privateResultLine.test(line))
+    .map((line) => {
+      const iterations = line.match(/^- Iterations: (\d+)$/);
+      if (iterations) return copy.iterations.replace('{count}', iterations[1]);
+      const tools = line.match(/^- Tools used: (.*)$/);
+      if (tools) {
+        const visibleTools = tools[1] === 'none' ? copy.noTools : tools[1];
+        return copy.toolsUsed.replace('{tools}', visibleTools);
+      }
+      return line;
+    })
     .join('\n');
+  const visibleOutput = `${visibleHead}\n${copy.statsLabel}\n${visibleStats}`;
   if (visibleOutput === output) return toolCall;
 
   return {

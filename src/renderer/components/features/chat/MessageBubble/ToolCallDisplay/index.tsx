@@ -359,7 +359,7 @@ export function ToolCallDisplay({
       {expanded && !receipt && (
         <div className="ml-6 animate-fadeIn">
           <ToolDetails
-            toolCall={toDelegationDisplayToolCall(toolCall)}
+            toolCall={toDelegationDisplayToolCall(toolCall, t.rendererHumanPipe.toolDetails.delegation)}
             compact={compact}
             mediaContext={{
               ...mediaContext,
