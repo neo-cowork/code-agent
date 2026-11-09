@@ -39,6 +39,10 @@ vi.mock('../../../src/host/tools/dispatch/toolResolver', () => ({
   getToolResolver: () => ({ name: 'mock-tool-resolver' }),
 }));
 
+vi.mock('../../../src/host/app/applicationRunRegistry', () => ({
+  getConfiguredApplicationRunRegistry: () => ({ hasDurableOwner: () => true }),
+}));
+
 import { runAutoAgentMode } from '../../../src/host/agent/orchestrator/autoAgentRunner';
 
 function makeTaskListManager() {

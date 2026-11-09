@@ -153,6 +153,12 @@ export class AutoAgentDurableRuntime {
           reason,
           event: { type: `agent_team_${status}`, payload: { runtime: 'auto_agent' }, recordedAt: terminalAt + 1 },
         });
+        if (!this.parentHost.hasDurableOwner(input.parentRunId)) {
+          logger.info('Auto agent parent terminal projection skipped after parent owner ended', {
+            parentRunId: input.parentRunId, runId, reason: 'parent_run_not_durable',
+          });
+          return;
+        }
         await this.parentHost.prepareAgentTeamChild({
           parentRunId: input.parentRunId,
           teamRunId: runId,

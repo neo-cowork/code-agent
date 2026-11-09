@@ -22,6 +22,7 @@ import { GraphEventCompatibilityAdapter } from '../../orchestration/graphEventCo
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { getAutoAgentDurableRuntime } from '../autoAgentDurableRuntime';
+import { getConfiguredApplicationRunRegistry } from '../../app/applicationRunRegistry';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import type { AgentNoticeEvent } from '../../../shared/ipc/handlers';
 
@@ -162,7 +163,17 @@ export async function runAutoAgentMode(
   const traceContext = getActiveRunTraceContext();
   const durableRuntime = getAutoAgentDurableRuntime();
   const canonicalWorkspace = path.resolve(deps.workingDirectory);
-  const durableController = durableRuntime && traceContext && deps.sourceMessageId
+  const registry = getConfiguredApplicationRunRegistry();
+  const parentDurable = traceContext && registry?.hasDurableOwner(traceContext.runId);
+  if (durableRuntime && traceContext && deps.sourceMessageId && !parentDurable) {
+    logger.info('Parent run is not durable, starting auto agent without durable child', {
+      parentRunId: traceContext.runId,
+      parentRegistered: registry?.get(traceContext.runId) !== undefined,
+      sessionId,
+      reason: 'parent_run_not_durable',
+    });
+  }
+  const durableController = durableRuntime && traceContext && deps.sourceMessageId && parentDurable
     ? await durableRuntime.start({
         parentRunId: traceContext.runId,
         sessionId: sessionId || 'unknown',
