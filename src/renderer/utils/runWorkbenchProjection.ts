@@ -139,6 +139,19 @@ function completionSignal(turn: TraceTurn | null): string | undefined {
   return undefined;
 }
 
+function toolStepOutcome(turn: TraceTurn | null): { failed: number; total: number } | undefined {
+  if (!turn) return undefined;
+  let failed = 0;
+  let total = 0;
+  for (const node of turn.nodes) {
+    const call = node.toolCall;
+    if (!call || call._streaming || call.result === undefined) continue;
+    total += 1;
+    if (call.success === false) failed += 1;
+  }
+  return total > 0 ? { failed, total } : undefined;
+}
+
 export function buildRunUiState(args: BuildRunWorkbenchModelInput): RunUiState {
   const turn = latestTurn(args.projection);
   const toolCall = lastToolCall(turn);
@@ -161,6 +174,7 @@ export function buildRunUiState(args: BuildRunWorkbenchModelInput): RunUiState {
     ...describeBlocked(firstBlockedReason(turn)),
     completionSignal: completionSignal(turn),
     ...(status === 'cancelled' && turn ? { terminalReason: turn.nodes.some((node) => node.metadata?.workbench?.runCancellation?.reason === 'client_disconnect') ? 'client_disconnect' as const : isIdleReapedRun(turn) ? 'idle_reaped' as const : undefined } : {}),
+    toolStepOutcome: toolStepOutcome(turn),
     startedAt: turn?.startTime,
     endedAt: turn?.endTime,
   };

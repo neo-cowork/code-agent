@@ -12,6 +12,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { BackgroundSessionPanel } from '../../../src/renderer/components/features/background/BackgroundSessionPanel';
+import { useTaskStore } from '../../../src/renderer/stores/taskStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import type { BackgroundSessionInfo } from '../../../src/shared/contract/sessionState';
 import { BACKGROUND_TASK_CANCELLED, RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../src/shared/constants';
@@ -79,7 +80,7 @@ describe('状态行映射（经渲染）', () => {
     cleanup();
 
     renderPanelWith(backgroundTask({ status: 'completed', completionMessage: BACKGROUND_TASK_CANCELLED }));
-    expect(itemLine()).toBe('已停止');
+    expect(itemLine()).toBe('已取消');
   });
 
   it('其余消息原样展示（engine 终态消息直通）', () => {
@@ -110,10 +111,10 @@ describe('面板终态渲染（spinner 必须停 + 结果行必须给）', () =>
       .toBe('已达轮次上限，已停止（部分结果已保留）');
   });
 
-  it('用户取消（USER_CANCELLED code）：spinner 停 + 已停止行', () => {
+  it('用户取消（USER_CANCELLED code）：spinner 停 + 已取消行', () => {
     renderPanelWith(backgroundTask({ status: 'completed', completionMessage: BACKGROUND_TASK_CANCELLED }));
     expect(screen.getByTestId('background-session-item').querySelector('.animate-spin')).toBeNull();
-    expect(screen.getByTestId('background-session-item-line').textContent).toBe('已停止');
+    expect(screen.getByTestId('background-session-item-line').textContent).toBe('已取消');
   });
 
   it('成功：spinner 停 + 已完成行；失败空消息：执行失败行', () => {
@@ -124,5 +125,19 @@ describe('面板终态渲染（spinner 必须停 + 结果行必须给）', () =>
 
     renderPanelWith(backgroundTask({ status: 'failed' }));
     expect(screen.getByTestId('background-session-item-line').textContent).toBe('执行失败');
+  });
+});
+
+describe('前台已停止时后台行的词跟终态走', () => {
+  afterEach(() => {
+    cleanup();
+    useSessionStore.setState({ backgroundSessions: [] });
+    useTaskStore.setState({ sessionStates: {} });
+  });
+
+  it('taskStore 判定 cancelled 而条目仍 running：行里是「已取消」而不是计时', () => {
+    useTaskStore.setState({ sessionStates: { s1: { status: 'cancelled' } } });
+    renderPanelWith(backgroundTask({ status: 'running' }));
+    expect(itemLine()).toBe('已取消');
   });
 });
