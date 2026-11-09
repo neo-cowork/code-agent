@@ -200,6 +200,7 @@ export function registerChannelHandlers(
     async (_, accountId: string): Promise<{ success: boolean; error?: string }> => {
       logger.info('Connecting channel account', { accountId });
       try {
+        await channelManager.updateAccount(accountId, { enabled: true });
         await channelManager.connectAccount(accountId);
         return { success: true };
       } catch (error) {
@@ -217,6 +218,7 @@ export function registerChannelHandlers(
       logger.info('Disconnecting channel account', { accountId });
       try {
         await channelManager.disconnectAccount(accountId);
+        await channelManager.updateAccount(accountId, { enabled: false });
         return { success: true };
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';
