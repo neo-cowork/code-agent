@@ -102,7 +102,7 @@ describe('foreground task-result wake', () => {
     expect(options.historyVisibility).toBeUndefined();
     expect(options.allowedToolNames).toContain(WAKE_NOOP_TOOL_NAME);
     expect(options.turnSystemContext?.join('\n')).toContain('<background_task_hidden_wake>');
-    expect(options.turnSystemContext?.join('\n')).toContain('不要不说一声就重新委派');
+    expect(options.turnSystemContext?.join('\n')).toContain('做到第几步（共几步）、最后停在哪个页面或环节、下一步怎么办');
     expect(options.turnSystemContext?.join('\n')).toContain(`只调用 ${WAKE_NOOP_TOOL_NAME}`);
     expect(options.turnSystemContext).toContain(SESSION_COMMAND_CENTER_BRAIN_CONTEXT);
     expect(manager.setSessionContext).toHaveBeenCalledWith('session-a', session.messages);
