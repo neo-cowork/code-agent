@@ -181,7 +181,7 @@ const gates = [
   {
     ci: 'swarm-ci / smoke / Static gates / settings-jargon',
     command: 'node',
-    args: ['scripts/check-settings-jargon.mjs'],
+    args: ['scripts/ci/check-settings-jargon.mjs'],
   },
   {
     ci: 'swarm-ci / smoke / Host Chinese error literal ratchet',

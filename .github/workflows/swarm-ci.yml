@@ -65,8 +65,8 @@ on:
       - 'scripts/design-system-zindex-allowlist.json'
       - 'scripts/check-token-integrity.mjs'
       - 'scripts/check-copy.mjs'
-      - 'scripts/check-settings-jargon.mjs'
-      - 'scripts/settings-jargon-baseline.json'
+      - 'scripts/ci/check-settings-jargon.mjs'
+      - 'scripts/ci/settings-jargon-baseline.json'
       - 'src/renderer/i18n/settingsTerms.json'
       - 'scripts/host-chinese-error-ratchet.mjs'
       - 'scripts/attention-budget-ratchet.mjs'
@@ -249,7 +249,7 @@ jobs:
           node scripts/check-design-system.mjs
           node scripts/check-token-integrity.mjs
           node scripts/check-copy.mjs
-          node scripts/check-settings-jargon.mjs
+          node scripts/ci/check-settings-jargon.mjs
 
       - name: Host Chinese error literal ratchet
         # P2 工具错误文案分层保护门：只扫描 host/tools + host/memory 的 error 属性，

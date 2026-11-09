@@ -6,22 +6,22 @@
 // 规则：扫描面内「含 CJK 的字符串/JSX 文本」若命中 mode=enforce 的 term（忽略大小写、
 //       单复数、空格/连字符变体；allow 里的字面量先抹掉），则必须在 baseline 里有
 //       (文件, 词) 条目且命中数 <= baseline.count，否则红。mode=report 只列出不拦。
-// baseline：scripts/settings-jargon-baseline.json，每条带 reason（归属单号或 unowned stock），
+// baseline：scripts/ci/settings-jargon-baseline.json，每条带 reason（归属单号或 unowned stock），
 //           count 只降不升；实际低于 count 时提示收紧（不拦）。
 // 豁免：违规所在物理行带 `// jargon-allow: <理由>`。
 // 扫描面：src/renderer/i18n/zhSettings*.ts、onboarding.ts、components/features/settings/**/*.tsx
 //
-// 用法：node scripts/check-settings-jargon.mjs [--root <仓库根>] [--baseline <文件>]
+// 用法：node scripts/ci/check-settings-jargon.mjs [--root <仓库根>] [--baseline <文件>]
 // ============================================================================
 
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { extractStrings } from './check-copy.mjs';
+import { extractStrings } from '../check-copy.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-const defaultRoot = path.resolve(scriptDir, '..');
+const defaultRoot = path.resolve(scriptDir, '../..');
 const CJK_RE = /[㐀-鿿]/;
 export const ALLOW_COMMENT = 'jargon-allow:';
 
