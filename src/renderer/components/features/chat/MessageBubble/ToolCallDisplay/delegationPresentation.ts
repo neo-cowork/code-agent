@@ -1,6 +1,7 @@
 import type { AgentTreeNode } from '@shared/contract/agentTree';
 import type { LastToolFailure, LastToolStep, Task, TaskOutputRef } from '@shared/contract/backgroundTask';
 import type { ToolCall } from '@shared/contract';
+import type { Translations } from '../../../../../i18n';
 import {
   isAgentNodeTerminalStatus,
   isLastToolFailureVisible,
@@ -32,10 +33,53 @@ export interface DelegationPresentation {
   sessionId?: string;
 }
 
-const SPAWN_AGENT_PRIVATE_RESULT_LINE = /^- (?:Agent ID|Pipeline ID|Cost):(?:\s|$)/;
-const TASK_PRIVATE_RESULT_LINE = /^- Cost:(?:\s|$)/;
 const TASK_STATS_MARKER = '\nStats:\n';
-const WAIT_AGENT_STATS_COST = /^(\s+Stats:.*?),\s+\$\d+(?:\.\d+)?\s*$/;
+const RESULT_TOOLS = new Set(['Task', 'spawn_agent', 'AgentSpawn', 'wait_agent']);
+
+function reportBody(output: string): string {
+  const text = output.replace(/\r\n/g, '\n');
+  const envelope = /^Agent \[[^\n]+\] completed[^\n]*:\n\n/.exec(text);
+  if (!envelope) return text;
+  const resultMarker = envelope[0].endsWith(' completed task:\n\n')
+    ? text.indexOf('\n\nResult:\n')
+    : -1;
+  const start = resultMarker >= 0 ? resultMarker + '\n\nResult:\n'.length : envelope[0].length;
+  const stats = text.lastIndexOf(TASK_STATS_MARKER);
+  return text.slice(start, stats >= start ? stats : undefined).trim();
+}
+
+// Display-only filenames: preserve public URLs and relative paths, including report content.
+function displayPaths(text: string): string {
+  return text
+    .replace(/(["'`])((?:file:\/\/)?(?:\/(?:Users|home|tmp|var|private|workspace|workspaces|Volumes|mnt|opt|srv)\/|[A-Za-z]:[\\/])[^\n]*?)\1/g,
+      (_match, quote: string, path: string) => `${quote}${basename(path)}${quote}`)
+    .replace(/(^|[\s(<])(?:file:\/\/)?((?:\/(?:Users|home|tmp|var|private|workspace|workspaces|Volumes|mnt|opt|srv)\/|[A-Za-z]:[\\/])[^\s"'`<>()[\]]+)/g,
+      (_match, prefix: string, path: string) => `${prefix}${basename(path)}`);
+}
+
+function displayArgument(value: unknown): unknown {
+  if (typeof value === 'string') return displayPaths(value);
+  if (Array.isArray(value)) return value.map(displayArgument);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, displayArgument(child)]));
+  }
+  return value;
+}
+
+function waitReport(output: string, t: Translations): string {
+  return output.replace(/^Wait results \([^\n]*\):\n*/, '').split('\n').flatMap((line) => {
+    const status = /^\S+ \[[^\]]+\] .* — ([\w-]+) \([^\n]*\)$/.exec(line)?.[1];
+    if (status) {
+      if (status === 'completed') return [];
+      return [status === 'running' || status === 'running-recovered'
+        ? t.chat.delegationReceipt.working
+        : t.chat.delegationReceipt.failed];
+    }
+    if (/^ {3}(?:Stats: \d+ iterations, \d+ tools|Still in progress after \d+ms timeout)/.test(line)) return [];
+    if (/^\[[^\]]+\] NOT FOUND$/.test(line)) return [t.chat.delegationReceipt.failed];
+    return [line.replace(/^ {3}Result: /, '').replace(/^ {3}Error: /, `${t.chat.delegationReceipt.failed}: `)];
+  }).join('\n').trim();
+}
 
 function withoutRepeatedReport(toolCall: ToolCall): ToolCall {
   const result = toolCall.result;
@@ -51,18 +95,7 @@ function withoutRepeatedReport(toolCall: ToolCall): ToolCall {
   // A matching prefix/subset is not enough: different findings must remain available.
   const normalize = (text: string) => text.replace(/\s+/g, ' ').trim();
   const candidate = normalize(fields.output);
-  let report = result.output.replace(/\r\n/g, '\n');
-  const envelope = /^Agent \[[^\n]+\] completed[^\n]*:\n\n/.exec(report);
-  if (envelope) {
-    const resultMarker = envelope[0].endsWith(' completed task:\n\n')
-      ? report.indexOf('\n\nResult:\n')
-      : -1;
-    const reportStart = resultMarker >= 0
-      ? resultMarker + '\n\nResult:\n'.length
-      : envelope[0].length;
-    const statsStart = report.lastIndexOf(TASK_STATS_MARKER);
-    report = report.slice(reportStart, statsStart >= reportStart ? statsStart : undefined);
-  }
+  const report = reportBody(result.output);
   if (normalize(result.output) !== candidate && normalize(report) !== candidate) return toolCall;
 
   const displayFields = { ...fields };
@@ -73,39 +106,29 @@ function withoutRepeatedReport(toolCall: ToolCall): ToolCall {
   };
 }
 
-/** Keep stored/model-facing receipts intact; project a single report for UI details. */
-export function toDelegationDisplayToolCall(storedToolCall: ToolCall): ToolCall {
+/** Keep stored/model-facing receipts intact; project the user's report for every card surface. */
+export function toDelegationDisplayToolCall(storedToolCall: ToolCall, t: Translations): ToolCall {
+  if (!RESULT_TOOLS.has(storedToolCall.name)
+    && storedToolCall.result?.metadata?.artifactRole !== 'multiagent-result') return storedToolCall;
   const toolCall = withoutRepeatedReport(storedToolCall);
   const result = toolCall.result;
-  const output = result?.output;
-  if (!result || typeof output !== 'string') return toolCall;
-
-  if (toolCall.name === 'wait_agent') {
-    const visibleOutput = output.split('\n')
-      .map((line) => line.replace(WAIT_AGENT_STATS_COST, '$1'))
-      .join('\n');
-    return visibleOutput === output
-      ? toolCall
-      : { ...toolCall, result: { ...result, output: visibleOutput } };
+  let output = result?.output;
+  if (typeof output === 'string') {
+    if (result?.success) {
+      if (/^Agent \[[^\n]+\] (?:exceeded foreground budget and continues in background|spawned in background):/.test(output)
+        || /^已在后台开始处理「/.test(output)) {
+        output = t.chat.delegationReceipt.working;
+      } else {
+        output = toolCall.name === 'wait_agent' ? waitReport(output, t) : reportBody(output);
+      }
+    }
+    output = displayPaths(output);
   }
-
-  if (toolCall.name !== 'spawn_agent' && toolCall.name !== 'Task') return toolCall;
-
-  const statsIndex = output.lastIndexOf(TASK_STATS_MARKER);
-  if (statsIndex < 0) return toolCall;
-  const statsStart = statsIndex + TASK_STATS_MARKER.length;
-  const privateResultLine = toolCall.name === 'spawn_agent'
-    ? SPAWN_AGENT_PRIVATE_RESULT_LINE
-    : TASK_PRIVATE_RESULT_LINE;
-  const visibleOutput = output.slice(0, statsStart) + output.slice(statsStart)
-    .split('\n')
-    .filter((line) => !privateResultLine.test(line))
-    .join('\n');
-  if (visibleOutput === output) return toolCall;
-
   return {
     ...toolCall,
-    result: { ...result, output: visibleOutput },
+    arguments: displayArgument(toolCall.arguments) as ToolCall['arguments'],
+    ...(toolCall.shortDescription ? { shortDescription: displayPaths(toolCall.shortDescription) } : {}),
+    ...(result ? { result: { ...result, output } } : {}),
   };
 }
 
@@ -140,7 +163,7 @@ function fromTask(task: Task): DelegationPresentation {
       : 'failed';
   return {
     state,
-    title: task.title,
+    title: displayPaths(task.title),
     lastToolStep: task.progress?.lastToolStep,
     activityIds: taskActivityIds(task),
     sessionId: task.sessionId,
@@ -172,7 +195,7 @@ function fromAgent(node: AgentTreeNode): DelegationPresentation {
   const terminal = state !== 'working';
   return {
     state,
-    title: node.task?.trim() || node.role,
+    title: displayPaths(node.task?.trim() || node.role),
     lastToolStep: node.lastToolStep,
     activityIds: [node.id],
     stepCount: terminal ? completedStepCount(node.lastToolStep, undefined) : undefined,

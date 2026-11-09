@@ -1,6 +1,10 @@
+// @vitest-environment jsdom
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render } from '@testing-library/react';
+import { zh } from '../../../src/renderer/i18n/zh';
+import { en } from '../../../src/renderer/i18n/en';
 import type { ToolCall } from '../../../src/shared/contract';
 import { toDelegationDisplayToolCall } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/delegationPresentation';
 
@@ -12,6 +16,8 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   return { useI18n: () => ({ t: zh, language: 'zh' }) };
 });
 import { ToolDetails } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/ToolDetails';
+
+afterEach(cleanup);
 
 const report = 'Recovery has not been tested.\nPayment failures are not monitored.';
 function taskCall(extraOutput = report, name = 'Task'): ToolCall {
@@ -29,10 +35,10 @@ describe('delegation report display projection', () => {
   it('omits a whitespace-equivalent second report from the display copy, retaining the stored field', () => {
     const call = taskCall('  Recovery has not been tested.\r\n\tPayment failures are not monitored.  ');
     const stored = JSON.stringify(call);
-    const visible = toDelegationDisplayToolCall(call);
+    const visible = toDelegationDisplayToolCall(call, zh);
     expect(visible.result?.metadata?.result).toEqual({ iterations: 2 });
     expect(JSON.stringify(call)).toBe(stored);
-    expect(visible.result?.output).toBe(call.result?.output);
+    expect(visible.result?.output).toBe(report);
     const html = renderToStaticMarkup(<ToolDetails compact toolCall={visible} />);
     expect(html.split('Recovery has not been tested.')).toHaveLength(2);
   });
@@ -43,21 +49,21 @@ describe('delegation report display projection', () => {
     '',
   ])('retains genuinely different output: %s', (different) => {
     const call = taskCall(different);
-    expect(toDelegationDisplayToolCall(call).result?.metadata?.result).toEqual({ output: different, iterations: 2 });
+    expect(toDelegationDisplayToolCall(call, zh).result?.metadata?.result).toEqual({ output: different, iterations: 2 });
   });
 
   it('compares the complete visible output as well as the report inside its envelope', () => {
     const call = taskCall();
     const nested = call.result!.metadata!.result as Record<string, unknown>;
     nested.output = call.result!.output;
-    expect(toDelegationDisplayToolCall(call).result?.metadata?.result).toEqual({ iterations: 2 });
+    expect(toDelegationDisplayToolCall(call, zh).result?.metadata?.result).toEqual({ iterations: 2 });
   });
 
   it('handles the spawn_agent task/result envelope without discarding task text from storage', () => {
     const call = taskCall(report, 'spawn_agent');
     call.result!.output = `Agent [Explorer] completed task:\n\nTask: Review notes.\n\nResult:\n${report}\n\nStats:\n- Iterations: 2`;
     const stored = JSON.stringify(call);
-    const visible = toDelegationDisplayToolCall(call);
+    const visible = toDelegationDisplayToolCall(call, zh);
     expect(visible.result?.metadata?.result).toEqual({ iterations: 2 });
     expect(JSON.stringify(call)).toBe(stored);
   });
@@ -66,12 +72,82 @@ describe('delegation report display projection', () => {
     const call = taskCall();
     call.result!.success = false;
     call.result!.error = 'Review interrupted';
-    expect(toDelegationDisplayToolCall(call).result?.metadata?.result).toEqual({ output: report, iterations: 2 });
+    expect(toDelegationDisplayToolCall(call, zh).result?.metadata?.result).toEqual({ output: report, iterations: 2 });
   });
 
   it('compares content even without a decorated Task envelope', () => {
     const call = taskCall(report, 'AgentSpawn');
     call.result!.output = report;
-    expect(toDelegationDisplayToolCall(call).result?.metadata?.result).toEqual({ iterations: 2 });
+    expect(toDelegationDisplayToolCall(call, zh).result?.metadata?.result).toEqual({ iterations: 2 });
   });
+});
+
+const storedReportOutput = "Agent [Explorer] completed task:\n\nTask: Read the file notes.txt in the working directory (/tmp/review-workspace/notes.txt). Identify and list the THREE biggest risks described in it. For each risk give: a short risk name, what it is, why it matters (potential impact), and the line number(s) in notes.txt where you found the evidence. Do not invent anything not present in the file. Return a concise structured summary I can relay to a non-programmer user.\n\nResult:\n## Three Biggest Risks in notes.txt\n\nAll evidence is on **line 1** of notes.txt (the file is a single line of text).\n\n**1. No tested backup restoration process**\n- **What it is:** The release has no backup restoration process that has been tested.\n- **Why it matters:** If data is lost or corrupted, there's no proven way to get it back — recovery could fail or take much longer than expected.\n- **Evidence:** line 1\n\n**2. Shared customer data access for the whole team**\n- **What it is:** Access to customer data is shared across the entire team (no individual/limited access).\n- **Why it matters:** Increases the risk of accidental or intentional misuse, and makes it hard to trace who accessed or changed what.\n- **Evidence:** line 1\n\n**3. No monitoring for failed payment transactions**\n- **What it is:** The payment integration has no monitoring in place for failed transactions.\n- **Why it matters:** Failed payments could go unnoticed, leading to lost revenue, unpaid orders, and customers not being notified.\n- **Evidence:** line 1\n\n---\n\n**Note:** The file also mentions a broken office coffee machine (line 1), but that's not a project/customer risk, so it's excluded from the top three.\n\n**Relevant file paths:**\n- /tmp/review-workspace/notes.txt\n\nStats:\n- Iterations: 2\n- Tools used: Read\n- Agent ID: agent_explore_4ce9cbd1-9d6b-4616-bada-30b53825e99f\n- Pipeline ID: agent_explore_4ce9cbd1-9d6b-4616-bada-30b53825e99f\n- Cost: $0.0000";
+
+describe('human-facing subagent result cards', () => {
+  it.each(['Task', 'spawn_agent', 'AgentSpawn'])('renders the stored %s report once without bookkeeping or absolute paths', (name) => {
+    const output = name === 'Task'
+      ? `Agent [Explorer] completed (review):\n\n${storedReportOutput.split('\n\nResult:\n')[1]}`
+      : storedReportOutput;
+    const call: ToolCall = {
+      id: 'stored-risk-review', name, arguments: { task: 'Review /tmp/review-workspace/notes.txt' },
+      result: { toolCallId: 'stored-risk-review', success: true, output,
+        metadata: { tool: name, artifactRole: 'multiagent-result', result: { agentId: 'review-agent' } } },
+    };
+    const original = JSON.stringify(call);
+    const visible = toDelegationDisplayToolCall(call, zh);
+    const view = render(<ToolDetails compact toolCall={visible} />);
+    const expand = view.queryByRole('button', { name: /展开剩余/ });
+    if (expand) fireEvent.click(expand);
+    const text = view.container.textContent ?? '';
+    expect(text.split('The release has no backup restoration process that has been tested.')).toHaveLength(2);
+    for (const token of ['Agent [Explorer]', 'Task:', 'Result:', 'Stats:', 'Iterations:', 'Tools used:', '/tmp/review-workspace']) {
+      expect(text).not.toContain(token);
+    }
+    expect(text).toContain('notes.txt');
+    expect(JSON.stringify(visible.arguments)).not.toContain('/tmp/');
+    expect(JSON.stringify(call)).toBe(original);
+  });
+});
+
+it.each([zh, en])('localizes background receipts without exposing task ids or polling instructions', (t) => {
+  for (const name of ['Task', 'spawn_agent', 'AgentSpawn']) {
+    for (const output of [
+      'Agent [Explorer] exceeded foreground budget and continues in background:\n- task_id=review-agent\n- status=running\n- foreground_budget_ms=1000\nUse collect_agent("review-agent") to fetch the result.',
+      'Agent [Explorer] spawned in background:\n- Agent ID: review-agent\n- Task: Review /tmp/project/notes.txt\n- Status: running\nUse wait_agent to wait.',
+      '已在后台开始处理「检查计划」，完成后会通知你。\n- Agent ID: review-agent',
+    ]) {
+      const call = taskCall('', name);
+      call.result!.output = output;
+      const original = JSON.stringify(call);
+      const projected = toDelegationDisplayToolCall(call, t);
+      expect(projected.result?.output).toBe(t.chat.delegationReceipt.working);
+      expect(JSON.stringify(call)).toBe(original);
+    }
+  }
+});
+
+it.each([zh, en])('renders wait_agent reports and localized pending states without bookkeeping', (t) => {
+  const call = taskCall('', 'wait_agent');
+  call.result!.output = `Wait results (timeout):\n\n✅ [review-agent] explore — completed (1200ms)\n   Result: ${report}\n   /tmp/project/notes.txt\n   Stats: 2 iterations, 1 tools, $0.0000\n\n⏳ [pending-agent] explore — running (1000ms)\n   Still in progress after 1000ms timeout`;
+  const original = JSON.stringify(call);
+  const projected = toDelegationDisplayToolCall(call, t);
+  const view = render(<ToolDetails compact toolCall={projected} />);
+  const text = view.container.textContent ?? '';
+  expect(text.split('Recovery has not been tested.')).toHaveLength(2);
+  expect(text).toContain(t.chat.delegationReceipt.working);
+  expect(text).toContain('notes.txt');
+  for (const token of ['Wait results', 'Result:', 'Stats:', 'iterations', 'review-agent', 'pending-agent', '/tmp/project']) {
+    expect(text).not.toContain(token);
+  }
+  expect(JSON.stringify(call)).toBe(original);
+});
+
+it('shortens local paths in report and title while preserving links and relative paths', () => {
+  const call = taskCall('', 'spawn_agent');
+  call.result!.output = 'Read "/tmp/review plan/notes.txt" and C:\\work\\plan.txt; see https://example.com/home/notes.txt and ./notes.txt.';
+  call.shortDescription = 'Review /tmp/project/notes.txt';
+  const projected = toDelegationDisplayToolCall(call, zh);
+  expect(projected.result?.output).toBe('Read "notes.txt" and plan.txt; see https://example.com/home/notes.txt and ./notes.txt.');
+  expect(projected.shortDescription).toBe('Review notes.txt');
 });
