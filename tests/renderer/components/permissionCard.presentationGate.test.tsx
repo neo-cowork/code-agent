@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { PermissionRequest } from '../../../src/shared/contract';
 import { PermissionRequestReason } from '../../../src/shared/contract';
+import { permissionRequestTypeForLevel } from '../../../src/host/tools/permissionRequestType';
+import { boundaryIdForRequestType } from '../../../src/host/tools/permissionBoundaryMapping';
 import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 
 const state = vi.hoisted(() => ({
@@ -52,42 +54,47 @@ const explicitNonShellTools = [
 const bannedNonShell = ['命令', 'command', '覆盖本机系统', 'overwrite local system'];
 const bannedRead = ['写入', '覆盖', 'write', 'overwrite'];
 
-function requestForTool(
-  tool: string,
-  schema?: { permissionLevel: string; category: string },
-): PermissionRequest {
-  const isExplicit = explicitNonShellTools.includes(tool as (typeof explicitNonShellTools)[number]);
-  const permissionType = isExplicit
-    ? 'command'
-    : schema?.permissionLevel === 'network'
-      ? 'network'
-      : schema?.permissionLevel === 'write'
-        ? 'file_write'
-        : schema?.permissionLevel === 'dangerous'
-          ? 'dangerous_command'
-          : 'command';
-  const details: Record<string, unknown> = {
-    preview: { type: 'generic', summary: `${tool} approval details` },
-  };
-  if (permissionType === 'file_read') details.path = '/workspace/example.txt';
-  if (permissionType === 'file_write') details.path = '/workspace/example.txt';
-  if (permissionType === 'network') {
-    details.server = 'example-service';
-    details.toolName = 'approve';
+type GateSchema = {
+  permissionLevel: string;
+  category: string;
+  inputSchema?: { properties?: Record<string, { type?: string }>; required?: string[] };
+};
+
+/** Realistic params from the tool's own input schema (required fields only). */
+function sampleParams(schema?: GateSchema): Record<string, unknown> {
+  const properties = schema?.inputSchema?.properties ?? {};
+  const names = schema?.inputSchema?.required?.length ? schema.inputSchema.required : Object.keys(properties).slice(0, 1);
+  const params: Record<string, unknown> = {};
+  for (const name of names) {
+    const type = properties[name]?.type;
+    params[name] = type === 'number' || type === 'integer' ? 3
+      : type === 'boolean' ? true
+      : type === 'array' ? ['example']
+      : type === 'object' ? {}
+      : name.toLowerCase().includes('url') ? 'https://example.com' : `example-${name}`;
   }
+  return params;
+}
+
+// Shapes below are what the host builds: registry tools go through the toolExecutor default branch
+// (type from permissionRequestTypeForLevel, details = { ...params }, no preview); explicit
+// construction sites carry the details/preview/reason those sites really supply.
+function requestForTool(tool: string, schema?: GateSchema): PermissionRequest {
+  const isExplicit = explicitNonShellTools.includes(tool as (typeof explicitNonShellTools)[number]);
+  const permissionType = isExplicit ? 'command' : permissionRequestTypeForLevel(schema?.permissionLevel ?? 'execute');
+  let details: Record<string, unknown> = { ...sampleParams(schema) };
+  let reason: string | undefined;
   if (tool === 'Browser') {
-    details.action = 'navigate';
-    details.url = 'https://example.com';
+    details = { action: 'navigate', url: 'https://example.com' };
   } else if (tool === 'set_role_proactivity') {
-    details.preview = { type: 'generic', summary: '提醒频率：每天一次 -> 实时' };
+    details = { preview: { type: 'generic', summary: '提醒频率：每天一次 -> 实时' } };
   } else if (tool === 'spawn_agent') {
-    details.role = 'explorer';
-    details.task = 'Inspect the repository';
+    details = { role: 'explorer', task: 'Inspect the repository' };
   } else if (tool === 'browser_action.write_clipboard') {
-    details.action = 'write_clipboard';
-    details.textLength = 5;
-  } else if (schema?.category === 'shell') {
-    details.command = 'echo approval';
+    details = { action: 'write_clipboard', textLength: 5 };
+  } else if (tool === 'SessionManager') {
+    details = {};
+    reason = 'Archive the selected session';
   }
   return {
     id: `approval-${tool}`,
@@ -95,17 +102,9 @@ function requestForTool(
     tool,
     type: permissionType as PermissionRequest['type'],
     details: details as PermissionRequest['details'],
-    reason: tool === 'SessionManager' ? 'Archive the selected session' : undefined,
-    reasonCode: permissionType === 'network' ? PermissionRequestReason.NetworkEgress : PermissionRequestReason.Unknown,
-    boundary: {
-      id: permissionType === 'network'
-        ? 'network.web_request'
-        : permissionType === 'file_read'
-          ? 'file.project_read'
-          : permissionType === 'file_write'
-            ? 'file.project_write'
-            : 'command.shell',
-    },
+    reason,
+    reasonCode: PermissionRequestReason.Unknown,
+    boundary: { id: boundaryIdForRequestType(permissionType) },
     dangerLevel: 'normal',
     timestamp: 1,
   };
@@ -134,6 +133,8 @@ describe('PermissionCard shared presentation gate', () => {
         if (tool !== 'Browser' && tool !== 'set_role_proactivity' && tool !== 'spawn_agent' && tool !== 'browser_action.write_clipboard') {
           neutralByDefault.push(tool);
         }
+        expect(zh, `${tool} must not wear the shell terminal icon`).not.toContain('lucide-terminal');
+        if (request.type === 'command') expect(zh).toContain('permission-action-icon');
         for (const banned of bannedNonShell) {
           expect(`${zh}\n${en}`, `${tool} must be neutral in both languages`).not.toContain(banned);
         }
@@ -182,6 +183,11 @@ describe('PermissionCard shared presentation gate', () => {
       const request = requestForTool(tool, { permissionLevel: 'execute', category: 'planning' });
       expect(render(request, 'zh')).toContain(zhTitle);
       expect(render(request, 'en')).toContain(enTitle);
+    }
+    const role = requestForTool('set_role_proactivity');
+    for (const lang of ['zh', 'en'] as const) {
+      const html = render(role, lang);
+      expect(html.split('提醒频率：每天一次 -&gt; 实时').length - 1, `role preview summary once (${lang})`).toBe(1);
     }
   });
 });

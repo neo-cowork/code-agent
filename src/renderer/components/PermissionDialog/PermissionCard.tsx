@@ -32,7 +32,7 @@ import {
   validateWritebackDraft,
   type WritebackDraft,
 } from './WritebackFields';
-import { defaultPermissionViewMode, isGenericCommandRequest, isDangerousRequestShape, isSafeDefaultDeny, permissionSummary, permissionTitle } from './permissionPresentation';
+import { defaultPermissionViewMode, isGenericCommandRequest, isDangerousRequestShape, isSafeDefaultDeny, permissionIcon, permissionSummary, permissionTitle } from './permissionPresentation';
 import { isSandboxEscalation, sandboxEscalationDeniedPath, sandboxEscalationQuestion } from './sandboxEscalationPresentation';
 import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
 import { SensitiveStepHandbackCard } from './SensitiveStepHandbackCard';
@@ -473,7 +473,7 @@ export function PermissionCard({
     ? <CalendarPlus size={20} />
     : isRemindersWrite
       ? <ListTodo size={20} />
-      : editable ? <Mail size={20} /> : config.icon;
+      : editable ? <Mail size={20} /> : (permissionIcon(request) ?? config.icon);
   const question = sandboxEscalation
     ? sandboxEscalationQuestion(request.reason, permissionSummary(request, t))
     : appGrantCard && !isDangerous

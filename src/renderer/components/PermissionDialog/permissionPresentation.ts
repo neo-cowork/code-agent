@@ -1,3 +1,5 @@
+import React from 'react';
+import { Bot, Clipboard, Globe, Settings2, ShieldCheck } from 'lucide-react';
 import type { Translations } from '../../hooks/useI18n';
 import type { Language } from '../../i18n';
 import type { DecisionCardViewMode } from '../DecisionCard';
@@ -83,11 +85,24 @@ function isNonShellRequest(request: PermissionRequest): boolean {
 }
 
 function safeNonShellDetail(request: PermissionRequest): string | undefined {
-  const candidate = request.details.preview?.summary?.trim() || request.reason?.trim();
+  // RequestDetails 已渲染 details.preview.summary；后果行再复述一遍就是同一行出现两次。
+  const candidate = request.reason?.trim();
   if (!candidate) return undefined;
   if (/命令|command|覆盖本机系统|overwrite local system/iu.test(candidate)) return undefined;
   if (request.type === 'file_read' && /写入|覆盖|write|overwrite/iu.test(candidate)) return undefined;
   return candidate;
+}
+
+/** Icon override so non-shell cards do not wear the shell terminal icon. Shell cards keep the config icon. */
+export function permissionIcon(request: PermissionRequest): React.ReactElement | undefined {
+  if (!isNonShellRequest(request)) return undefined;
+  const key = nonShellPresentationKey(request);
+  const Icon = key === 'browser' ? Globe
+    : key === 'roleProactivity' ? Settings2
+    : key === 'spawnAgent' ? Bot
+    : key === 'browserClipboardWrite' ? Clipboard
+    : ShieldCheck;
+  return React.createElement('span', { 'data-testid': 'permission-action-icon' }, React.createElement(Icon, { size: 20 }));
 }
 
 /** Title override for command-shaped requests that are not shell actions. */
