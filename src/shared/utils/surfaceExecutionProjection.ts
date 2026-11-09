@@ -44,7 +44,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * refs remain in the process-local SurfaceObservationRegistry for click fences;
  * persisted tool metadata only needs their count and kinds.
  */
-export function compactSurfaceObservationForMetadata(
+function compactSurfaceObservationForMetadata(
   observation: SurfaceObservationV1,
 ): Record<string, unknown> {
   const { elementRefs, ...rest } = observation;
@@ -55,7 +55,7 @@ export function compactSurfaceObservationForMetadata(
   };
 }
 
-export function compactSurfaceActionResultForMetadata(
+function compactSurfaceActionResultForMetadata(
   actionResult: SurfaceActionResultV1,
 ): Record<string, unknown> {
   return {
