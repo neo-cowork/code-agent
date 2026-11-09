@@ -6,6 +6,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import type { CronJobDefinition } from '@shared/contract';
+import type { AwaitingApprovalRun } from '@shared/contract/sessionAutomation';
 import { Activity, ChevronRight, Copy, LockKeyhole, Pencil, Play, Power, Sparkles, Trash2 } from 'lucide-react';
 import { useCronStore } from '../../../stores/cronStore';
 import { useI18n } from '../../../hooks/useI18n';
@@ -31,7 +32,7 @@ import { useEventScheduleNames } from './useChannelCatalog';
 import { CronGroupListenCheck } from './CronGroupListenCheck';
 import { CronWebhookLinkBlock } from './CronWebhookLinkBlock';
 import { CronEventDecisionsPanel } from './CronEventDecisionsPanel';
-import { awaitingApprovalLabel } from './awaitingApprovalLabel';
+import { CronJobApprovalHint } from './CronJobApprovalHint';
 import { getBuiltinJobDisplay } from './builtinJobDisplay';
 import { isWebhookCronJob } from '@shared/cronWebhookJob';
 import { CronWriteScopePanel } from './CronWriteScopePanel';
@@ -39,11 +40,12 @@ import { CronWriteScopePanel } from './CronWriteScopePanel';
 interface CronJobDetailProps {
   job: CronJobDefinition | null;
   /** 等批准运行（N-CRON-UNATTENDED-BASH-PARK-STUCK）：头 chip 换 amber 徽章 + 一句提示 + 去处理。 */
-  awaitingRun?: { executionId: string | null; commandPreview?: string } | null;
+  awaitingRun?: AwaitingApprovalRun | null;
   onReviewAwaiting?: () => void;
+  onApprovalResolved?: () => Promise<void>;
 }
 
-export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun = null, onReviewAwaiting }) => {
+export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun = null, onReviewAwaiting, onApprovalResolved }) => {
   const { t, language } = useI18n();
   const cc = t.cronCenter;
   const {
@@ -153,22 +155,13 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
                 </span>
               )}
             </div>
-            {awaitingApproval && (
-              <div
-                className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-badge-warning/30 bg-amber-500/5 px-3 py-2"
-                data-testid="cron-detail-awaiting-approval-hint"
-              >
-                <span className="text-xs text-zinc-400">{awaitingApprovalLabel(cc.awaitingApprovalWithPreview, awaitingRun?.commandPreview) ?? cc.awaitingApprovalHint}</span>
-                <Button
-                  type="button"
-                  variant="primary"
-                  size="sm"
-                  onClick={onReviewAwaiting}
-                  data-testid="cron-detail-awaiting-approval-action"
-                >
-                  {cc.awaitingApprovalAction}
-                </Button>
-              </div>
+            {awaitingRun && (
+              <CronJobApprovalHint
+                key={awaitingRun.requestId}
+                run={awaitingRun}
+                onReview={onReviewAwaiting}
+                onResolved={onApprovalResolved}
+              />
             )}
             <div className="mt-2 max-w-3xl text-sm">
               {displayDescription ? (
