@@ -17,6 +17,7 @@ function expectPlain(text: string) {
 function makeCtx(maxIterations = 8) {
   return {
     maxIterations,
+    workingDirectory: '/workspace/project',
     control: ControlState.forTest({}),
     stats: { runStartTime: 100 },
     messages: [],
@@ -60,6 +61,8 @@ describe('plain-language run handoff', () => {
   it('builds a plain three-part prompt while retaining the hard no-call rule', () => {
     expectPlain(buildMaxStepsPrompt());
     expect(buildMaxStepsPrompt()).toContain('Do NOT make any tool calls');
+    expect(buildMaxStepsPrompt()).toContain('workspace-relative links and friendly filenames');
+    expect(buildMaxStepsPrompt()).toContain('never expose internal directories or raw commands');
     expect(buildMaxStepsPrompt()).toContain('已完成');
     expect(buildMaxStepsPrompt()).toContain('未完成');
     expect(buildMaxStepsPrompt()).toContain('回复「继续」');
@@ -79,6 +82,21 @@ describe('plain-language run handoff', () => {
     expect(ctx.control.forceFinalResponsePrompt).toContain('未完成');
     activateMaxStepsFinalResponse(ctx);
     expect(ctx.control.forceFinalResponseReason).toBe('resource-limit-reached');
+  });
+
+  it('shows friendly file paths in the deterministic fallback', async () => {
+    const ctx = makeCtx(4);
+    ctx.nudgeManager = {
+      getModifiedFilesSince: () => ['/workspace/project/samples/business.html', '/private/cache/preview.html'],
+    } as never;
+    activateMaxStepsFinalResponse(ctx);
+    const persist = vi.fn();
+    await ensureMaxStepsWrapUp(ctx, { generateId: () => 'fallback', addAndPersistMessage: persist }, 4);
+    const text = persist.mock.calls[0][0].content;
+    expect(text).toContain('samples/business.html、preview.html');
+    expect(text).not.toContain('/workspace/project');
+    expect(text).not.toContain('/private/cache');
+    expectPlain(text);
   });
 
   it.each([true, false])('persists an honest plain fallback with pending items (visible output: %s)', async (hasOutput) => {
