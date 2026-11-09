@@ -235,9 +235,10 @@ async function runSpawnAgent(
   if (args.run_in_background === true) {
     const bgController = new AbortController();
     const backgroundRole = typeof normalizedArgs.role === 'string' ? normalizedArgs.role : undefined;
-    const backgroundTitle = typeof normalizedArgs.task === 'string' && normalizedArgs.task.trim()
+    const requestedName = typeof normalizedArgs.name === 'string' ? normalizedArgs.name.trim() : '';
+    const backgroundTitle = requestedName || (typeof normalizedArgs.task === 'string' && normalizedArgs.task.trim()
       ? normalizedArgs.task.trim()
-      : (backgroundRole ?? '后台任务');
+      : (backgroundRole ?? '后台任务'));
     const declaredOutputs = getDeclaredOutputsForRole(backgroundRole);
     // N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO：后台 lane 不走 AgentLoop.run，工作目录的
     // 占用计数（workDirectoryMaterializer）此前只由前台 run 持有——前台一收线，懒开的

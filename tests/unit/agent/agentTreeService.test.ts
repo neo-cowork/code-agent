@@ -244,6 +244,20 @@ describe('agentTreeService', () => {
     });
   });
 
+  it('shows one run_in_background helper as one node when registry and SpawnGuard track it under two ids', () => {
+    const snapshot = buildAgentTreeSnapshot({
+      sessionId: 'session-1',
+      spawnAgents: [{
+        id: 'agent_explore_x', role: 'explore', treeId: 'session-1', status: 'running',
+        task: 'summarise folder-b', backgroundAgentId: 'subagent-bg-x', createdAt: 10,
+      }],
+      backgroundAgents: [{ agentId: 'subagent-bg-x', status: 'running', sessionId: 'session-1', startedAt: 10 }],
+    });
+
+    expect(snapshot.nodes.map((n) => n.id)).toEqual(['agent_explore_x']);
+    expect(snapshot.nodes[0].sources).toEqual(expect.arrayContaining(['spawnGuard', 'backgroundRegistry']));
+  });
+
   it('sources.ownershipConflicts 原样带进 snapshot.summary（path/ownerAgentId/requesterAgentId）', () => {
     const snapshot = buildAgentTreeSnapshot({
       now: 300,

@@ -38,6 +38,12 @@ function displayName(name: string | undefined, fallback: string | undefined, fal
   return trimmed ? Array.from(trimmed).slice(0, 16).join('') : shortName(fallback, fallbackId);
 }
 
+/** spawn 的 name 会被登记成后台条目的 title；一小段不含空白的文字当名字用，长任务描述仍走缩写。 */
+function nameLikeTitle(title: string | undefined): string | undefined {
+  const trimmed = title?.trim();
+  return trimmed && !/\s/.test(trimmed) && Array.from(trimmed).length <= 16 ? trimmed : undefined;
+}
+
 function stateForBackground(handle: BackgroundSubagentHandle): DetachedSubagentState {
   if (handle.status === 'running') return 'running';
   return handle.status === 'completed' ? 'done' : 'failed';
@@ -49,7 +55,10 @@ function stateForSpawnGuard(agent: ManagedAgent): DetachedSubagentState {
 }
 
 function summaryFor(result: { output?: string; error?: string } | undefined): string | undefined {
-  const summary = result?.output?.trim() || result?.error?.trim();
+  const output = result?.output;
+  const body = output?.match(/^Agent \[[^\]]*\] completed task:[\s\S]*?\n\nResult:\n([\s\S]*?)(?:\n\nStats:|$)/)?.[1]
+    ?? output?.replace(/^Agent \[[^\]]*\] completed task:\s*/, '');
+  const summary = body?.trim() || result?.error?.trim();
   return summary ? summary.slice(0, 240) : undefined;
 }
 
@@ -59,7 +68,7 @@ function fromBackgroundRegistry(sessionId: string, displayNames: Map<string, str
     .filter((handle) => handle.sessionId === sessionId)
     .map((handle) => ({
       id: handle.agentId,
-      shortName: displayName(displayNames.get(handle.agentId), handle.title, handle.agentId),
+      shortName: displayName(displayNames.get(handle.agentId) ?? nameLikeTitle(handle.title), handle.title, handle.agentId),
       state: stateForBackground(handle),
       ...(handle.status !== 'running'
         ? { summary: summaryFor({ output: handle.result?.output, error: handle.error }) }

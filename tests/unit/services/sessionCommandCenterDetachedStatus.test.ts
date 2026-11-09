@@ -145,4 +145,32 @@ describe('executeTaskStatus detached subagents', () => {
     pending.resolve(result('folder B summary'));
     await getBackgroundSubagentRegistry().await(backgroundId);
   });
+
+  it('names a helper by the name the model gave, before SpawnGuard has registered it', async () => {
+    const sessionId = 'detached-status-named';
+    const pending = deferred<SubagentResult>();
+    const agentId = getBackgroundSubagentRegistry().spawn(() => pending.promise, { sessionId, title: '总结B' });
+
+    const status = await executeTaskStatus({}, context(sessionId), allow);
+
+    expect(status.output).toContain(`后台子代理 1. 总结B [running] id=${agentId}`);
+    pending.resolve(result('done'));
+    await getBackgroundSubagentRegistry().await(agentId);
+  });
+
+  it('drops the "Agent [name] completed task:" header from a finished helper summary', async () => {
+    const sessionId = 'detached-status-header';
+    const agentId = getBackgroundSubagentRegistry().spawn(
+      async () => result('Agent [总结B] completed task:\n\nTask: 读取 folder-b\n\nResult:\n五条客户回访集中在交付时间。\n\nStats:\n- Iterations: 3'),
+      { sessionId, title: '总结B' },
+    );
+    await getBackgroundSubagentRegistry().await(agentId);
+
+    const status = await executeTaskStatus({}, context(sessionId), allow);
+
+    expect(status.output).toContain('[done]');
+    expect(status.output).toContain('五条客户回访集中在交付时间。');
+    expect(status.output).not.toContain('completed task');
+    expect(status.output).not.toContain('Stats');
+  });
 });

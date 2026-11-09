@@ -39,6 +39,8 @@ export interface AgentTreeSpawnAgentSource {
   role: string;
   treeId?: string;
   parentId?: string;
+  /** run_in_background 外层在 BackgroundSubagentRegistry 里登记的 id；同一个助手合并成一个节点。 */
+  backgroundAgentId?: string;
   status: ManagedAgentStatus;
   task: string;
   result?: SubagentResult;
@@ -447,8 +449,9 @@ function mergeBackgroundAgent(
   nodes: Map<string, AgentTreeNode>,
   statusPriorities: Map<string, number>,
   handle: BackgroundSubagentHandle,
+  nodeId: string = handle.agentId,
 ): void {
-  const node = ensureNode(nodes, handle.agentId, 'background');
+  const node = ensureNode(nodes, nodeId, 'background');
   addSource(node, 'backgroundRegistry');
   if (handle.startedAt && !node.createdAt) node.createdAt = handle.startedAt;
   if (handle.finishedAt) node.completedAt = handle.finishedAt;
@@ -568,8 +571,12 @@ export function buildAgentTreeSnapshot(sources: AgentTreeSnapshotSources = {}): 
   for (const task of sources.parallelTasks ?? []) {
     mergeParallelTask(nodes, statusPriorities, task);
   }
+  const linkedBackgroundIds = new Map<string, string>();
+  for (const agent of sources.spawnAgents ?? []) {
+    if (agent.backgroundAgentId) linkedBackgroundIds.set(agent.backgroundAgentId, agent.id);
+  }
   for (const handle of sources.backgroundAgents ?? []) {
-    mergeBackgroundAgent(nodes, statusPriorities, handle);
+    mergeBackgroundAgent(nodes, statusPriorities, handle, linkedBackgroundIds.get(handle.agentId));
   }
   for (const record of sources.contextRecords ?? []) {
     mergeContextRecord(nodes, statusPriorities, record);
