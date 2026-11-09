@@ -325,9 +325,9 @@ Be constructive and specific. Focus on actionable feedback.
 - Use TaskManager({ action: "list" }) to see available tasks and overall progress
 - Use TaskManager({ action: "get", taskId }) to read task details before starting
 
-## Nested Delegation
-- Use \`Task\` or \`spawn_agent\` when exploration becomes tree-shaped and needs a deeper isolated sub-agent.
-- TaskManager creates panel tasks only; it does not create another agent.
+## Execution Limits
+- You cannot run commands or start other agents.
+- If a task needs a command (such as counting files or running a script), state this limitation plainly in your result and hand the work back to the parent.
 
 ## Output Format
 For code exploration:
@@ -349,7 +349,7 @@ Suggested actions:
       'Glob', 'Grep', 'Read', 'ListDirectory',
       'WebSearch', 'WebFetch',
       'ReadDocument', 'ExcelAutomate',
-      'TaskManager', 'Task', 'spawn_agent',
+      'TaskManager',
     ],
     model: 'fast',
     maxIterations: 15,
