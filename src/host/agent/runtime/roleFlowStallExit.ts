@@ -64,9 +64,10 @@ function hasProposedRoleSinceSeed(messages: readonly Message[]): boolean {
   return proposeCallIds.some((id) => succeeded.has(id));
 }
 
-// Only explicit decisions about building/editing the role count; do not interpret
-// arbitrary tool output (including unanswered-question fallback) as user intent.
-const DECLINED_ROLE = /(?:先别|暂时不|不要|无需|不用|不需要)\s*(?:帮我)?\s*(?:创建|新建|建立|生成|做|建|修改|改)|(?:don't|do not|never)\s+(?:create|make|edit)/i;
+// A complete decision clause must omit the object or name the role itself.
+// Capability constraints (e.g. 不需要生成图片 / don't make it too formal) are
+// requirements, not a decision to end role authoring.
+const DECLINED_ROLE = /(?:^|[，。！？；,.!?;\n])\s*(?:(?:先别|暂时不|不要|无需|不用|不需要)\s*(?:帮我)?\s*(?:创建|新建|建立|生成|做|建|修改|改)(?:\s*(?:这个|新)?角色)?(?:了)?|(?:don't|do not|never)\s+(?:create|make|edit)(?:\s+(?:(?:a|the|this|new)\s+)?role)?(?:\s+(?:now|yet))?)\s*(?=$|[，。！？；,.!?;\n])/i;
 
 function userDeclinedSinceSeed(messages: readonly Message[]): boolean {
   const questionCalls = new Set<string>();

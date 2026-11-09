@@ -262,3 +262,53 @@ describe('用户结束角色流程', () => {
     expect(ctx.onEvent).not.toHaveBeenCalled();
   });
 });
+
+
+describe('r1: 角色能力需求中的否定不等于放弃建角色', () => {
+  const requirementAnswers = [
+    '不需要生成图片',
+    '它不需要生成图片，只要文字摘要',
+    '不要做数据分析',
+    '不用改格式',
+    "don't make it too formal",
+  ];
+
+  for (const answerSource of ['user', 'question'] as const) {
+    it.each(requirementAnswers)(`${answerSource}: %s 后纯进度收尾仍落一条停摆消息`, async (answer) => {
+      const answerMessages: Message[] = answerSource === 'user'
+        ? [{ id: 'u-answer', role: 'user', content: answer, timestamp: 3 }]
+        : [
+          { id: 'a-question', role: 'assistant', content: '', timestamp: 2, toolCalls: [{
+            id: 'q-requirement', name: 'AskUserQuestion', arguments: { questions: [{
+              header: '需要能力', question: '它需要哪些能力？（可多选，我会按最少够用来配）',
+              options: [
+                { label: '联网搜索', description: '上网查资料、抓网页内容' },
+                { label: '读写本地文件', description: '查看和生成文档、表格等文件' },
+              ], multiSelect: true,
+            }] },
+          }] },
+          { id: 't-answer', role: 'tool', content: '', timestamp: 3, toolResults: [{
+            toolCallId: 'q-requirement', success: true, output: `User responses:\n[需要能力]: ${answer}`,
+          }] },
+        ];
+      const ctx = mkCtx([SEED, ...answerMessages]);
+      const assembly = mkAssembly();
+      const input = { ctx, assembly, boundary: createRoleBoundary, finalText: '第一步：分析需求。' };
+      expect(await settleRoleFlowStallOnTextBreak(input)).toBe(true);
+      expect(await settleRoleFlowStallOnTextBreak(input)).toBe(false);
+      expect(assembly.persisted).toHaveLength(1);
+      expect(assembly.persisted[0].metadata?.roleFlowStalled).toEqual({ skillName: 'create-role' });
+      expect(ctx.onEvent).toHaveBeenCalledTimes(1);
+    });
+  }
+
+  it.each(['先别建，现有够用', '不用创建了', '不要新建角色', '暂时不修改角色', "don't create a role"])(
+    '明确针对角色的拒绝仍抑制提示: %s', async (answer) => {
+      const ctx = mkCtx([SEED, { id: 'u-decline', role: 'user', content: answer, timestamp: 2 }]);
+      const assembly = mkAssembly();
+      expect(await settleRoleFlowStallOnTextBreak({ ctx, assembly, boundary: createRoleBoundary, finalText: '好的，暂不创建。' })).toBe(false);
+      expect(assembly.persisted).toEqual([]);
+      expect(ctx.onEvent).not.toHaveBeenCalled();
+    },
+  );
+});
