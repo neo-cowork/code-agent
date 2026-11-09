@@ -107,6 +107,7 @@ export class ConfigService implements IReadConfigService {
   private configWatcher: FSWatcher | null = null;
   private configWatchTimer: ReturnType<typeof setTimeout> | null = null;
   private lastSelfWriteAt = 0;
+  private lastSelfWriteContent = '';
   private settingsUpdatedListeners: Array<(settings: AppSettings) => void> = [];
 
   constructor() {
@@ -220,9 +221,12 @@ export class ConfigService implements IReadConfigService {
    * 刻意不做 restoreFromKeychain / migrate / save —— 那些是启动一次性逻辑,
    * 且 save 会写盘从而触发 watcher 回环。
    */
-  async reloadFromDisk(): Promise<boolean> {
+  async reloadFromDisk(skipUnchangedSelfWrite = false): Promise<boolean> {
     try {
       const data = await fs.readFile(this.configPath, 'utf-8');
+      if (skipUnchangedSelfWrite
+        && Date.now() - this.lastSelfWriteAt < CONFIG_SELF_WRITE_WINDOW_MS
+        && data === this.lastSelfWriteContent) return false;
       const loaded = parseJsonValue(data);
       if (!isRecord(loaded)) {
         logger.warn('Config reload skipped: file is not a JSON object');
@@ -246,7 +250,7 @@ export class ConfigService implements IReadConfigService {
 
   /**
    * 监听 config.json 的外部改动并热重载。app 内通过 updateSettings 的修改
-   * 会经 save() 标记 lastSelfWriteAt 被跳过,只响应外部编辑。
+   * 经 save() 记录写入时间与内容，watcher 只跳过内容未变的自身写入。
    * @param onReloaded 热重载成功后的回调(供上层广播给 renderer 等)
    */
   startWatchingConfigFile(onReloaded?: () => void): void {
@@ -256,11 +260,9 @@ export class ConfigService implements IReadConfigService {
     try {
       this.configWatcher = watch(dir, (_eventType, filename) => {
         if (filename !== base) return;
-        // 跳过本进程 save() 触发的写入,避免热重载回环
-        if (Date.now() - this.lastSelfWriteAt < CONFIG_SELF_WRITE_WINDOW_MS) return;
         if (this.configWatchTimer) clearTimeout(this.configWatchTimer);
         this.configWatchTimer = setTimeout(() => {
-          void this.reloadFromDisk().then((ok) => {
+          void this.reloadFromDisk(true).then((ok) => {
             if (ok && onReloaded) onReloaded();
           });
         }, CONFIG_WATCH_DEBOUNCE_MS);
@@ -1129,9 +1131,11 @@ export class ConfigService implements IReadConfigService {
       // Save config (API keys are stored in SecureStorage, not here)
       const toSave = this.sanitizeSettingsForSave(this.settings);
 
+      const serialized = JSON.stringify(toSave, null, 2);
       // mode 只在新建文件时生效；存量文件靠启动扫层收紧（config/dataDirPermissions）
-      await fs.writeFile(this.configPath, JSON.stringify(toSave, null, 2), { mode: 0o600 });
-      // 标记本进程刚写过盘,让 config 热重载 watcher 忽略这次自身写入
+      await fs.writeFile(this.configPath, serialized, { mode: 0o600 });
+      // watcher 只忽略内容相同的自身写入，窗口内的外部编辑仍会生效
+      this.lastSelfWriteContent = serialized;
       this.lastSelfWriteAt = Date.now();
 
       // Also sync key settings to Keychain for persistence across reinstalls

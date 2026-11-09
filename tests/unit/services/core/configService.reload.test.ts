@@ -1,7 +1,15 @@
 import { mkdtemp, readFile, writeFile } from 'fs/promises';
+import { readFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+const loggerMock = {
+  debug: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+};
 
 const secureStorageMock = {
   getSettingsFromKeychain: vi.fn(async () => null),
@@ -23,6 +31,7 @@ async function loadConfigServiceForDataDir(dataDir: string) {
   loadUserRules.mockClear();
   setProviderConcurrencyOverrides.mockClear();
   setProviderProxyOverrides.mockClear();
+  loggerMock.warn.mockClear();
 
   vi.doMock('../../../../src/host/platform', () => ({
     app: {
@@ -37,12 +46,7 @@ async function loadConfigServiceForDataDir(dataDir: string) {
     getSecureStorage: () => secureStorageMock,
   }));
   vi.doMock('../../../../src/host/services/infra/logger', () => ({
-    createLogger: () => ({
-      debug: vi.fn(),
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-    }),
+    createLogger: () => loggerMock,
   }));
   vi.doMock('../../../../src/host/permissions/policyEngine', () => ({
     getPolicyEngine: () => ({ loadUserRules }),
@@ -113,7 +117,7 @@ describe('ConfigService.reloadFromDisk', () => {
     expect(onDisk).toEqual(minimal);
   });
 
-  it('returns false on invalid JSON and leaves memory untouched', async () => {
+  it('returns false and warns on invalid JSON and non-object files without changing memory', async () => {
     const dataDir = await createDataDir();
     const configPath = join(dataDir, 'config.json');
     const { ConfigService } = await loadConfigServiceForDataDir(dataDir);
@@ -123,9 +127,60 @@ describe('ConfigService.reloadFromDisk', () => {
     const before = service.getSettings().models.default;
     await writeFile(configPath, '{ this is not valid json');
 
-    const ok = await service.reloadFromDisk();
-
-    expect(ok).toBe(false);
+    expect(await service.reloadFromDisk()).toBe(false);
     expect(service.getSettings().models.default).toBe(before);
+    expect(loggerMock.warn).toHaveBeenCalledWith('Config reload skipped: file is not a JSON object');
+
+    await writeFile(configPath, '[]');
+
+    expect(await service.reloadFromDisk()).toBe(false);
+    expect(service.getSettings().models.default).toBe(before);
+    expect(loggerMock.warn).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('ConfigService config.json watcher', () => {
+  it('hot-reloads hand-edited deny rules without a later settings save writing them back', async () => {
+    const webServerSource = readFileSync(join(process.cwd(), 'src/web/webServer.ts'), 'utf8');
+    expect(webServerSource).toContain('configService.startWatchingConfigFile()');
+
+    const dataDir = await createDataDir();
+    const configPath = join(dataDir, 'config.json');
+    const { ConfigService } = await loadConfigServiceForDataDir(dataDir);
+    const service = new ConfigService();
+    await service.initialize();
+    await service.updateSettings({
+      permissions: { ...service.getSettings().permissions, deny: [] },
+    });
+    service.startWatchingConfigFile();
+
+    try {
+      const handEdited = JSON.parse(await readFile(configPath, 'utf8')) as {
+        permissions?: { deny?: string[] };
+      };
+      handEdited.permissions = { ...handEdited.permissions, deny: ['Bash(ls *)'] };
+      loadUserRules.mockClear();
+      await writeFile(configPath, JSON.stringify(handEdited, null, 2));
+
+      await vi.waitFor(() => {
+        expect(loadUserRules).toHaveBeenCalledWith(
+          expect.objectContaining({ deny: ['Bash(ls *)'] }),
+          'external',
+        );
+      }, { timeout: 4000, interval: 50 });
+      expect(service.getSettings().permissions.deny).toEqual(['Bash(ls *)']);
+
+      await service.updateSettings({
+        permissions: { ...service.getSettings().permissions, ask: ['Bash(pwd *)'] },
+      });
+
+      const onDisk = JSON.parse(await readFile(configPath, 'utf8')) as {
+        permissions: { deny: string[]; ask: string[] };
+      };
+      expect(onDisk.permissions.deny).toEqual(['Bash(ls *)']);
+      expect(onDisk.permissions.ask).toEqual(['Bash(pwd *)']);
+    } finally {
+      service.stopWatchingConfigFile();
+    }
   });
 });
