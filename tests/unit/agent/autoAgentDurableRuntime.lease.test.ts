@@ -28,8 +28,9 @@ function createStack(processInstanceId = 'process-1', leaseDurationMs = 750) {
   return { db, repository, kernel };
 }
 
-function createParentHost(): AgentTeamDurableParentHost {
+function createParentHost(): AgentTeamDurableParentHost & { hasDurableOwner(runId: string): boolean } {
   return {
+    hasDurableOwner: vi.fn().mockReturnValue(true),
     prepareAgentTeamChild: vi.fn().mockResolvedValue(undefined),
     projectAgentTeamChildTerminal: vi.fn().mockResolvedValue(undefined),
   };
@@ -170,4 +171,31 @@ describe('AutoAgentDurableRuntime lease ownership', () => {
       db.close();
     }
   });
+
+  it('finishes its owned graph after the parent lease is released while it runs', async () => {
+    const { db, repository, kernel } = createStack('process-detached', 60_000);
+    const registry = new RunRegistry();
+    registry.configureDurableKernel(kernel);
+    try {
+      const parent = await registry.startDurable({
+        runId: 'run-detached-parent', sessionId: 'session-detached', workspace: '/tmp/auto',
+      });
+      const runtime = new AutoAgentDurableRuntime(kernel, registry);
+      const controller = await runtime.start({
+        parentRunId: parent.context.runId, sessionId: 'session-detached', sourceMessageId: 'message-detached',
+        workspace: { root: '/tmp/auto', cwd: '/tmp/auto', fingerprint: 'workspace-fingerprint' },
+        graphId: 'auto-agent:session-detached', sideEffect: true,
+      });
+      await registry.releaseDurable(parent.context.runId, parent);
+      expect(registry.hasDurableOwner(parent.context.runId)).toBe(false);
+
+      await expect(controller.terminal('completed')).resolves.toBeUndefined();
+
+      expect(await repository.get(controller.runId)).toMatchObject({ status: 'completed' });
+    } finally {
+      registry.clear();
+      db.close();
+    }
+  });
+
 });

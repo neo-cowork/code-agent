@@ -30,14 +30,22 @@ function stableAutoAgentRunId(parentRunId: string, sourceMessageId: string): str
 export class AutoAgentDurableRuntime {
   constructor(
     private readonly kernel: RunKernelAdapter,
-    private readonly parentHost: AgentTeamDurableParentHost,
+    private readonly parentHost: AgentTeamDurableParentHost & { hasDurableOwner(runId: string): boolean },
   ) {}
 
   async start(input: AutoAgentDurableStartInput): Promise<AutoAgentDurableController> {
     const now = input.now ?? Date.now();
     const runId = stableAutoAgentRunId(input.parentRunId, input.sourceMessageId);
     const logicalOperationId = `auto-agent:${input.sourceMessageId}`;
-    await this.parentHost.prepareAgentTeamChild({
+    // A detached completion can inherit the finished foreground trace. Correlation
+    // is not ownership: only link to a parent that still owns its durable run.
+    const linkedParent = this.parentHost.hasDurableOwner(input.parentRunId);
+    if (!linkedParent) {
+      logger.info('Auto agent parent is no longer active; starting a standalone durable run', {
+        parentRunId: input.parentRunId, runId, sessionId: input.sessionId,
+      });
+    }
+    if (linkedParent) await this.parentHost.prepareAgentTeamChild({
       parentRunId: input.parentRunId,
       teamRunId: runId,
       treeId: input.graphId,
@@ -73,7 +81,7 @@ export class AutoAgentDurableRuntime {
       runId,
       sessionId: input.sessionId,
       engine: { kind: 'agent_team', treeId: input.graphId },
-      parentRunId: input.parentRunId,
+      ...(linkedParent ? { parentRunId: input.parentRunId } : {}),
       now,
       initialEngineCursor: cursor,
       initialPendingOperations: [operation],
@@ -153,6 +161,7 @@ export class AutoAgentDurableRuntime {
           reason,
           event: { type: `agent_team_${status}`, payload: { runtime: 'auto_agent' }, recordedAt: terminalAt + 1 },
         });
+        if (!linkedParent || !this.parentHost.hasDurableOwner(input.parentRunId)) return;
         await this.parentHost.prepareAgentTeamChild({
           parentRunId: input.parentRunId,
           teamRunId: runId,

@@ -59,6 +59,7 @@ function makeTaskListManager() {
 
 function makeDeps() {
   return {
+    requestPermission: vi.fn(async () => false),
     workingDirectory: '/tmp/project',
     sessionId: 'session-auto-1',
     sourceMessageId: 'message-auto-1',
