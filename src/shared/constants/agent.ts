@@ -71,7 +71,8 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // 持久化专家定义；合并后模型可见面未在任一侧单独记录。
 // sys-v103：native Reminders/Calendar create 的目标名称改为可选，并说明本地化名称校验。
 // sys-v104：task_status 描述纳入 spawn_agent 后台子代理的真实状态。
-export const PROMPT_VERSION = 'sys-v104' as const;
+// sys-v105：压缩 task_status 描述，保持模型可见的后台子代理提示在上下文预算内。
+export const PROMPT_VERSION = 'sys-v105' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =
