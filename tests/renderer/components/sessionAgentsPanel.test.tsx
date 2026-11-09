@@ -16,6 +16,7 @@ import { IPC_CHANNELS, IPC_DOMAINS } from '../../../src/shared/ipc';
 const invokeMock = vi.fn();
 const invokeDomainMock = vi.fn();
 const appState = {
+  language: 'zh' as const,
   setWorkbenchCollapsed: vi.fn(),
   pendingPermissionRequest: null as { resolved?: boolean; agentId?: string; runId?: string } | null,
   pendingPermissionSessionId: null as string | null,
