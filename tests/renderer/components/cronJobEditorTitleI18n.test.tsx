@@ -26,7 +26,7 @@ import * as templates from '../../../src/renderer/components/features/cron/cronT
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 
 const HAN_RE = /\p{Script=Han}/u;
-const HAN_ESCAPE_RE = /\\u(?:4[e-f]|[5-8][0-9a-f]|9[0-9a-f])[0-9a-f]{2}/i;
+const UNICODE_ESCAPE_RE = /\\u([0-9a-f]{4})/gi;
 
 afterEach(() => {
   cleanup();
@@ -104,7 +104,8 @@ describe('CronJobEditor template title i18n', () => {
     expect(statement).toContain('cc.pickTitle');
     const code = statement.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
     expect(code).not.toMatch(HAN_RE);
-    expect(code).not.toMatch(HAN_ESCAPE_RE);
+    const decoded = code.replace(UNICODE_ESCAPE_RE, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+    expect(decoded).not.toMatch(HAN_RE);
     console.log(`const title extracted statement length=${statement.length}`);
   });
 });
