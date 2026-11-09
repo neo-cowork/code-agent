@@ -13,7 +13,7 @@ export interface NotificationBudgetTimer {
 }
 
 interface NotificationBudgetOptions<T extends NotificationBudgetItem> {
-  deliver: (item: T) => void;
+  deliver: (item: T, via: 'immediate' | 'window-end') => void;
   deliverDigest: (items: readonly T[]) => void;
   now?: () => number;
   setTimer?: (callback: () => void, delayMs: number) => NotificationBudgetTimer;
@@ -24,7 +24,7 @@ interface NotificationBudgetOptions<T extends NotificationBudgetItem> {
 export type NotificationBudgetDisposition = 'delivered' | 'held';
 
 export class NotificationBudget<T extends NotificationBudgetItem> {
-  private readonly deliver: (item: T) => void;
+  private readonly deliver: (item: T, via: 'immediate' | 'window-end') => void;
   private readonly deliverDigest: (items: readonly T[]) => void;
   private readonly now: () => number;
   private readonly setTimer: (callback: () => void, delayMs: number) => NotificationBudgetTimer;
@@ -45,11 +45,11 @@ export class NotificationBudget<T extends NotificationBudgetItem> {
 
   enqueue(item: T): NotificationBudgetDisposition {
     if (item.intent === 'needs_input' || item.intent === 'task_failed' || item.urgent === true) {
-      this.deliver(item);
+      this.deliver(item, 'immediate');
       return 'delivered';
     }
     if (this.windowStartedAt === null) {
-      this.deliver(item);
+      this.deliver(item, 'immediate');
       this.openWindow();
       return 'delivered';
     }
@@ -57,15 +57,27 @@ export class NotificationBudget<T extends NotificationBudgetItem> {
     return 'held';
   }
 
-  clear(): void {
+  getWindowRemainingMs(): number {
+    return this.windowStartedAt === null
+      ? 0
+      : Math.max(0, NOTIFICATION_BUDGET.WINDOW_MS - (this.now() - this.windowStartedAt));
+  }
+
+  getHeldCount(): number {
+    return this.held.length;
+  }
+
+  clear(): T[] {
+    const dropped = this.held;
     if (this.timer) this.clearTimer(this.timer);
     this.timer = undefined;
     this.windowStartedAt = null;
     this.held = [];
+    return dropped;
   }
 
-  dispose(): void {
-    this.clear();
+  dispose(): T[] {
+    return this.clear();
   }
 
   private openWindow(): void {
@@ -81,7 +93,7 @@ export class NotificationBudget<T extends NotificationBudgetItem> {
     this.held = [];
     if (held.length === 0) return;
     if (held.length === 1) {
-      this.deliver(held[0]);
+      this.deliver(held[0], 'window-end');
       return;
     }
     this.deliverDigest(held);
