@@ -33,6 +33,9 @@ export {
 // TimeInput24
 export { TimeInput24 } from './TimeInput24';
 
+// DateTimeInput24
+export { DateTimeInput24 } from './DateTimeInput24';
+
 // Modal
 export { Modal, ModalHeader, ModalFooter } from './Modal';
 export type { ModalProps, ModalSize, ModalHeaderProps, ModalFooterProps } from './Modal';
