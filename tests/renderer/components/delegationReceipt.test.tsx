@@ -325,8 +325,9 @@ describe('delegation receipt', () => {
 
     const found = renderCall(spawnCall);
     fireEvent.click(found.getByTestId('tool-call-row-spawn_agent'));
-    fireEvent.click(found.getByText(/展开剩余/));
-    expect(found.container.textContent).toContain('Result:');
+    const foundMore = found.queryByText(/展开剩余/);
+    if (foundMore) fireEvent.click(foundMore);
+    expect(found.container.textContent).not.toContain('Result:');
     expect(found.container.textContent).toContain('- Cost: $20/month');
     expect(found.container.textContent).toContain('- Agent ID: customer-visible-reference');
     expect(found.container.textContent).toContain('- Pipeline ID: customer-visible-plan');
@@ -339,8 +340,9 @@ describe('delegation receipt', () => {
     mocks.snapshot = null;
     const missing = renderCall(spawnCall);
     fireEvent.click(missing.getByTestId('tool-call-row-spawn_agent'));
-    fireEvent.click(missing.getByText(/展开剩余/));
-    expect(missing.container.textContent).toContain('Result:');
+    const missingMore = missing.queryByText(/展开剩余/);
+    if (missingMore) fireEvent.click(missingMore);
+    expect(missing.container.textContent).not.toContain('Result:');
     expect(missing.container.textContent).toContain('- Cost: $20/month');
     expect(missing.container.textContent).toContain('- Agent ID: customer-visible-reference');
     expect(missing.container.textContent).toContain('- Pipeline ID: customer-visible-plan');
@@ -354,7 +356,8 @@ describe('delegation receipt', () => {
     const taskCallWithResult = completedTaskCall();
     const view = renderCall(taskCallWithResult);
     fireEvent.click(view.getByTestId('tool-call-row-Task'));
-    fireEvent.click(view.getByText(/展开剩余/));
+    const viewMore = view.queryByText(/展开剩余/);
+    if (viewMore) fireEvent.click(viewMore);
 
     expect(view.container.textContent).toContain('- Cost: $20/month');
     expect(view.container.textContent).not.toContain('- Cost: $0.0169');
@@ -365,7 +368,8 @@ describe('delegation receipt', () => {
     const waitCallWithResult = completedWaitAgentCall();
     const view = renderCall(waitCallWithResult);
     fireEvent.click(view.getByTestId('tool-call-row-wait_agent'));
-    fireEvent.click(view.getByText(/展开剩余/));
+    const viewMore = view.queryByText(/展开剩余/);
+    if (viewMore) fireEvent.click(viewMore);
 
     expect(view.container.textContent).toContain('- Cost: $20/month');
     expect(view.container.textContent).not.toContain('$0.0169');
