@@ -63,6 +63,15 @@ describe('settingsVocabulary', () => {
     ]) {
       expect(s, s).not.toMatch(ENGLISH_TERMS);
     }
+    // 同页同一概念只有一个词：小节标题、连接表单密钥标签取自词汇
+    expect(m.providerSection.title).toBe(settingsVocabularyZh.provider);
+    expect(m.connection.apiKey).toBe(settingsVocabularyZh.apiKey);
+    expect(m.header.selectableLabel).toBe('显示在模型选择里');
+    expect(m.models.selectableLabel).toBe('显示在模型选择里');
+    expect(m.models.selectionHint).toContain('显示在模型选择里');
+    for (const gone of ['模型提供商', 'API 密钥', '进模型选择页', '进选择页']) {
+      expect(collect(m).join('|'), gone).not.toContain(gone);
+    }
     expect(m.providers.custom.name).toBe('自定义模型服务');
     expect(m.connection.baseUrlHint).toContain('/v1');
     expect(m.connection.baseUrlHint).toContain('Claude');
