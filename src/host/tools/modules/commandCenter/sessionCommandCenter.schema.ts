@@ -75,7 +75,7 @@ export const cancelTaskSchema: ToolSchema = {
 
 export const taskStatusSchema: ToolSchema = {
   name: 'task_status',
-  description: '读取当前会话后台任务的真实状态。用户追问进度、完成情况或有哪些活在跑时必须先调用。',
+  description: '读取当前会话后台任务和 spawn_agent 后台子代理的真实状态。用户追问进度、完成情况或有哪些活在跑时必须先调用。',
   outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
