@@ -75,7 +75,7 @@ export const cancelTaskSchema: ToolSchema = {
 
 export const taskStatusSchema: ToolSchema = {
   name: 'task_status',
-  description: '读取当前会话后台任务的真实状态。用户追问进度、完成情况或有哪些活在跑时必须先调用。只有刚读到的状态写明 running 时才描述任务仍在运行，不要估算剩余时间。',
+  description: '后台任务状态；追问时先调用。仅按刚读为 running 才说仍在运行，不估剩余时间。',
   outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
