@@ -44,7 +44,7 @@ describe('subagent failure guidance', () => {
     if (!result.ok) {
       expect(result.error).toContain('Retry with foregroundBlockingBudgetMs below roleExecutionTimeout');
       expect(result.error).toContain('omit foregroundBlockingBudgetMs');
-      expect(result.error).toContain('background mode (waitForCompletion: false)');
+      expect(result.error).toContain('background mode (run_in_background: true)');
       expect(result.error).not.toContain('maxBudget');
     }
   });

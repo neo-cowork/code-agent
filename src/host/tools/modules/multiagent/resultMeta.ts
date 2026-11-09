@@ -13,7 +13,7 @@ const NEXT_STEP: Record<AgentFailureCode, string> = {
   [AgentFailureCode.BlockedByParentRole]: 'Use a task within the parent role boundary; do not bypass the role restriction.',
   [AgentFailureCode.PermissionDenied]: 'Request approval through the permission flow before retrying.',
   [AgentFailureCode.ToolUnavailable]: 'Check the registered tool and capability requirements before retrying.',
-  [AgentFailureCode.InvalidArguments]: 'Retry with foregroundBlockingBudgetMs below roleExecutionTimeout, omit foregroundBlockingBudgetMs, or use background mode (waitForCompletion: false).',
+  [AgentFailureCode.InvalidArguments]: 'Retry with foregroundBlockingBudgetMs below roleExecutionTimeout, omit foregroundBlockingBudgetMs, or use background mode (run_in_background: true).',
   [AgentFailureCode.BudgetExhausted]: 'Do not redispatch unchanged. Narrow the task, or explicitly raise maxBudget with a reason.',
   [AgentFailureCode.Timeout]: 'Split the task into smaller steps, or explicitly increase the execution time allowance.',
   [AgentFailureCode.ParentGone]: 'The parent run ended. Wait for a new authorized parent task.',
