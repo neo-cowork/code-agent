@@ -50,6 +50,12 @@ export interface ToolApprovalPayload {
    */
   standingGrantTarget?: string | null;
   /**
+   * 「一键授权此任务写这个文件夹」候选（realpath 后的绝对路径）。仅无人值守 cron/heartbeat 的
+   * file_write/file_edit 在守卫通过时由 host 写入；缺省 = 不出按钮、逐文件审批。
+   * 授权动作不信任它：host 从 argsSummary 重新推导并对账。
+   */
+  writeGrantFolder?: string;
+  /**
    * 跨重启找回这条调用的引用（N-PARKED-APPROVAL-SURVIVE-RESTART-PERSIST）。仅当 sessionId 与
    * toolCallId（parentToolUseId）都真实存在时写入；messageId 在权限请求路径上没有真源，
    * 缺省不填——不许为凑形状发明一个。
@@ -93,6 +99,8 @@ export interface ParkedApprovalInboxItem {
   standingGrantTarget?: string | null;
   /** 脱敏 + 截断的参数预览；老行没有该字段，收件箱按缺省不渲染。 */
   argsPreview?: string;
+  /** 可一键授权的文件夹（绝对路径，仅用于 title 与取文件夹名）；缺省不出第三个按钮。 */
+  writeGrantFolder?: string;
   /** ADR-088 敏感步骤交回；非交回行缺省，收件箱按普通停车行渲染。 */
   sensitiveStep?: ToolApprovalPayload['sensitiveStep'];
   pairingCode?: string;

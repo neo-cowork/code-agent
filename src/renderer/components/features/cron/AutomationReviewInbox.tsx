@@ -16,6 +16,7 @@ import type { ParkedApprovalInboxItem } from '@shared/contract/pendingApproval';
 import { isCronUrgency } from '@shared/cronUrgency';
 import { isCronPermissionDeniedMarker } from '@shared/cronPermissionDenied';
 import { Check, CircleCheck, Cloud, ExternalLink, Inbox, MessageSquareText, ShieldAlert, ShieldCheck, X } from 'lucide-react';
+import { cronClient } from '../../../services/cronClient';
 import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
 import ipcService from '../../../services/ipcService';
 import { IPC_CHANNELS } from '@shared/ipc';
@@ -63,6 +64,11 @@ interface AutomationReviewInboxProps {
    * 收件箱随之重拉 listParkedApprovals——「去处理」才不会落到不含该审批的旧快照。
    */
   refreshSignal?: string | number;
+}
+
+function folderDisplayName(folder: string): string {
+  const parts = folder.split(/[\\/]+/).filter(Boolean);
+  return parts[parts.length - 1] ?? folder;
 }
 
 export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ onPendingCountChange, refreshSignal }) => {
@@ -156,6 +162,25 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
     } finally {
       setBusyId(null);
       load(); // 无论成败都刷新：orphaned 转灰态 / 失败恢复可点
+    }
+  };
+
+  // 一键授权此任务写这个文件夹：host 重新推导文件夹 + 落库授权 + 放行本次请求（专用 IPC，不传路径）。
+  const handleGrantFolder = async (item: ParkedApprovalInboxItem) => {
+    if (item.status !== 'pending') return;
+    setBusyId(item.id);
+    try {
+      const result = await cronClient.grantWriteFolderFromParkedApproval(item.id);
+      if (!result || result.grant.status === 'rejected' || !result.released) {
+        toast.info(cc.parkedResolveStale);
+      } else if (result.grant.status === 'kept_existing') {
+        toast.info(cc.parkedAllowFolderKept);
+      }
+    } catch {
+      toast.error(cc.parkedResolveFailed);
+    } finally {
+      setBusyId(null);
+      load();
     }
   };
 
@@ -331,6 +356,18 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                             >
                               <ShieldCheck className="h-3.5 w-3.5" />
                               {cc.parkedAlwaysAllow.replace('{target}', item.standingGrantTarget ?? '')}
+                            </button>
+                          )}
+                          {item.writeGrantFolder && (
+                            <button /* ds-allow:button: 同上，收件箱行内超小文本按钮 */
+                              onClick={() => handleGrantFolder(item)}
+                              disabled={busyId === item.id}
+                              className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-badge-warning transition-colors hover:bg-amber-500/10 hover:text-badge-warning disabled:opacity-50"
+                              data-testid="parked-allow-folder"
+                              title={cc.parkedAllowFolderTitle.replace('{path}', item.writeGrantFolder)}
+                            >
+                              <ShieldCheck className="h-3.5 w-3.5" />
+                              {cc.parkedAllowFolder.replace('{folder}', folderDisplayName(item.writeGrantFolder))}
                             </button>
                           )}
                           <button /* ds-allow:button: 同上，收件箱行内超小文本按钮 */

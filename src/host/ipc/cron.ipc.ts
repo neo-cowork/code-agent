@@ -266,6 +266,27 @@ const cronHandlers: RawDomainRouteHandlers<CronDomainRequest, void> = {
     const job = await cronService.grantWriteScope(jobId);
     return { success: true, data: job } satisfies IPCResponse;
   },
+  // 审批卡「一键允许此任务写这个文件夹」：授权 + 放行当前停车请求（专用动作，文件夹 host 侧重推导）。
+  grantWriteFolderFromParkedApproval: async (_ctx, payload) => {
+    const requestId = getStringField(payload, 'requestId');
+    if (!requestId) throw new Error('Invalid parked approval request id');
+    const { getDatabase } = await import('../services/core/databaseService');
+    const repo = getDatabase().getPendingApprovalRepo();
+    const grant = await getCronService().grantWriteFolderFromParkedApproval(requestId, (id) => repo.getById(id));
+    if (grant.status === 'rejected') {
+      logger.warn('Parked write folder grant rejected', { requestId, reason: grant.reason });
+      return { success: true, data: { grant, released: false } } satisfies IPCResponse;
+    }
+    const sessionId = getStringField(JSON.parse(repo.getById(requestId)?.payloadJson ?? '{}'), 'sessionId');
+    const { getTaskManager } = await import('../task/TaskManager');
+    const outcome = sessionId
+      ? getTaskManager().handlePermissionResponse(sessionId, requestId, 'allow')
+      : 'no_session';
+    logger.info('Parked write folder grant applied, request released', {
+      requestId, status: grant.status, folder: grant.folder, jobId: grant.jobId, outcome,
+    });
+    return { success: true, data: { grant, released: outcome === 'delivered' } } satisfies IPCResponse;
+  },
   revokeWriteScope: async (_ctx, payload) => {
     const cronService = getCronService();
     const jobId = getStringField(payload, 'jobId');

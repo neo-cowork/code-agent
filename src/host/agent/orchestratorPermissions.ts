@@ -15,7 +15,7 @@ import { generatePermissionRequestId } from '../../shared/utils/id';
 import type { ExecutionTopology } from '../permissions';
 import { getPermissionModeManager } from '../permissions/modes';
 import { isUnattendedAllowedReadOnlyTool } from '../permissions/unattendedReadOnlyTools';
-import { approveByScheduleWriteGrant } from '../cron/cronWriteGrant';
+import { approveByScheduleWriteGrant, writeGrantFolderForParking } from '../cron/cronWriteGrant';
 import { getSessionAutomationService } from '../services/sessionAutomation/sessionAutomationService';
 import { notificationService } from '../services/infra/notificationService';
 import type { PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
@@ -573,6 +573,10 @@ export class OrchestratorPermissionIsland {
         return scheduleGrant;
       }
     }
+    // 一键授权候选文件夹：停车前算好随载荷落库，收件箱卡据此出第三个按钮（守卫在 cronWriteGrant）。
+    const writeGrantFolder = unattended
+      ? await writeGrantFolderForParking(request)
+      : undefined;
     // cron/heartbeat/channel/语音派都走停车审批，24h backstop 只负责泄漏兜底；
     // 60s 终态仅保留给显式登记的旧兼容会话。
     if (unattended || voice) {
@@ -586,6 +590,7 @@ export class OrchestratorPermissionIsland {
           approvalTerminal
             ? 'unattended'
             : getPermissionModeManager().isUnattendedApprovalDegrade(fullRequest.sessionId) ? 'degrade' : 'backstop',
+          writeGrantFolder,
         );
       }
     } else {
@@ -711,6 +716,7 @@ export class OrchestratorPermissionIsland {
     repo: PendingApprovalRepository,
     kind: PendingApprovalKind = 'tool_approval',
     deadline: 'unattended' | 'backstop' | 'degrade' = 'backstop',
+    writeGrantFolder?: string,
   ): Promise<PermissionAskResult> {
     const releaseHold = holdStallClock(fullRequest.sessionId);
     return new Promise<PermissionAskResult>((resolve) => {
@@ -802,6 +808,7 @@ export class OrchestratorPermissionIsland {
           }
           : {}),
         ...(argsPreview ? { argsPreview } : {}),
+        ...(writeGrantFolder ? { writeGrantFolder } : {}),
         // ADR-088 敏感步骤交回：收件箱/会话卡据此渲染单状态交回卡（展示元数据，无秘密本体）。
         ...(fullRequest.details?.sensitiveStep
           ? { sensitiveStep: fullRequest.details.sensitiveStep }

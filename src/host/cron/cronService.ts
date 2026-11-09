@@ -88,6 +88,7 @@ import { cronLoginWallMetadata } from './cronLoginWall';
 import { rememberCronLoginPassThroughOrigin } from './cronLoginWallPersistence';
 import {
   grantCronWriteScope,
+  grantWriteFolderFromParkedApproval,
   revokeCronWriteScope,
   stripWriteGrantRoot,
 } from './cronWriteGrant';
@@ -412,6 +413,14 @@ export class CronService implements Disposable {
     return grantCronWriteScope(jobId, {
       loadActiveJob: (id) => this.jobs.get(id),
       persistJob: (job) => this.persistJob(job),
+    });
+  }
+
+  /** 审批卡一键授权：只认 requestId，文件夹由 cronWriteGrant 从停车载荷重新推导。 */
+  async grantWriteFolderFromParkedApproval(requestId: string, getParkedRow: Parameters<typeof grantWriteFolderFromParkedApproval>[1]['getParkedRow']) {
+    return grantWriteFolderFromParkedApproval(requestId, {
+      getParkedRow,
+      host: { loadActiveJob: (id) => this.jobs.get(id), persistJob: (job) => this.persistJob(job) },
     });
   }
 
