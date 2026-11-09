@@ -340,7 +340,7 @@ describe('BackgroundSubagent durable ledger (N-BGSPAWN-DURABLE)', () => {
 
     expect(executed).toBe(false);
     expect(reg.getStatus(agentId)).toMatchObject({ status: 'failed' });
-    expect(reg.getStatus(agentId)?.error).toContain('Durable Run persistence is unavailable');
+    expect(reg.getStatus(agentId)?.error).toContain('后台任务中途停止了');
   });
 
   it('waitForBackgroundSubagentDurableLedger：configure 后 resolve，超时 reject', async () => {

@@ -68,8 +68,18 @@ describe('BackgroundSubagentRegistry', () => {
     await reg.await(agentId);
     const status = reg.getStatus(agentId);
     expect(status?.status).toBe('failed');
-    expect(status?.error).toContain('boom');
+    expect(status?.error).toBe('后台任务中途停止了：运行中遇到了意外错误。你可以回复「继续」让它重试，已经看过的内容不会丢。');
     expect(status?.failureCode).toBe(AgentFailureCode.Unknown);
+  });
+
+  it('turns an English provider error into a plain Chinese reason for the conversation', async () => {
+    const reg = new BackgroundSubagentRegistry();
+    const agentId = reg.spawn(async () => { throw new Error('429 Too Many Requests from provider'); });
+
+    await reg.await(agentId);
+    const status = reg.getStatus(agentId);
+    expect(status?.error).toContain('模型服务暂时出错或请求太频繁');
+    expect(status?.error).not.toMatch(/429|Too Many/);
   });
 
   it('marks failed result payloads as failed and keeps their unified failure code', async () => {

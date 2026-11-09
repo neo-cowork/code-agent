@@ -1032,7 +1032,7 @@ export class SubagentExecutor {
         }
       }
 
-      return finalizeSubagentSuccess(completionDeps, { iterations, latestContextSnapshot });
+      return finalizeSubagentSuccess(completionDeps, { iterations, latestContextSnapshot, maxIterations, messages });
     } catch (error) {
       return handleSubagentFailure(completionDeps, { error, iterations, latestContextSnapshot });
     } finally {

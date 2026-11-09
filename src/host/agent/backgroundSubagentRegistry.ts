@@ -11,6 +11,7 @@
 // 时回填状态与结果。getStatus / await 凭 agentId 查状态、取结果。
 // ============================================================================
 
+import { describeSubagentStopReason } from './subagentFailureReason';
 import { randomUUID } from 'node:crypto';
 import type { SubagentResult } from './subagentExecutorTypes';
 import { AgentFailureCode, inferAgentFailureCode, type AgentFailureCode as AgentFailureCodeType } from '../../shared/contract/agentFailure';
@@ -291,8 +292,10 @@ export class BackgroundSubagentRegistry {
         const entry = this.entries.get(agentId);
         if (entry) {
           entry.status = 'failed';
-          entry.error = err instanceof Error ? err.message : String(err);
+          const rawError = err instanceof Error ? err.message : String(err);
           entry.failureCode = inferAgentFailureCode({ error: err, defaultCode: undefined });
+          entry.error = describeSubagentStopReason(rawError, entry.failureCode);
+          logger.warn(`background subagent ${agentId} stopped on error: ${rawError}`);
           entry.finishedAt = this.now();
           this.recordCompletion(entry, options);
           await this.finalizeDurable(options.durableSession ?? null, entry);
