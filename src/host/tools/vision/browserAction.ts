@@ -168,7 +168,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
       },
       destinationTargetRef: {
         type: ['object', 'string'],
-        description: 'Fresh destination targetRef for drag (pass the targetRef object from get_dom_snapshot interactiveElements, or just its refId string). Both drag endpoints must come from the same current DOM snapshot.',
+        description: 'Fresh destination targetRef for drag (pass the refId from a get_dom_snapshot element line). Both drag endpoints must come from the same current DOM snapshot.',
         additionalProperties: true,
       },
       text: {
