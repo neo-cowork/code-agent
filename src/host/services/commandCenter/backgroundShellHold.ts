@@ -33,9 +33,10 @@ function readLaunchedShellId(result: ToolResult): string | undefined {
 }
 
 function tailOutput(output: string): string {
-  const text = output.trim();
+  // 按字符（code point）截断：按 UTF-16 单元切会把代理对（emoji 等）劈成半个字符
+  const chars = Array.from(output.trim());
   const limit = SUBAGENT_COMPLETION_NOTIFICATIONS.INLINE_OUTPUT_LIMIT;
-  return text.length > limit ? `…${text.slice(-limit)}` : text;
+  return chars.length > limit ? `…${chars.slice(-limit).join('')}` : chars.join('');
 }
 
 function describeExit(shellId: string, fallbackExitCode: number | undefined): string {

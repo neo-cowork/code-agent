@@ -266,6 +266,20 @@ describe('SessionCommandCenter holds settle while the child own background shell
     expect(h.woken[0].resultText).toContain('没有成功完成');
   });
 
+  it('truncates long multibyte shell output on character boundaries (strict UTF-8 safe)', async () => {
+    const h = current = await harness();
+    // 奇数个字符 + emoji（代理对），保证 4096 的截断线恰好落在代理对中间时也不劈字符
+    const shellId = startShell(`sleep 1; ${JSON.stringify(process.execPath)} -e "process.stdout.write('x' + '汉😀'.repeat(3000))"`);
+    h.callBash(shellId, 'call-bg');
+    h.complete('已启动。');
+    await waitFor(() => h.woken.length === 1);
+    const text = h.woken[0].resultText ?? '';
+    expect(text).toContain('😀');
+    expect(text).not.toContain('\ufffd');
+    expect(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(text)).toBe(false);
+    expect(() => new TextDecoder('utf-8', { fatal: true }).decode(Buffer.from(text, 'utf8'))).not.toThrow();
+  });
+
   it('drops the held state when the task is cancelled', async () => {
     const h = current = await harness();
     const shellId = startShell('sleep 1; echo late');
