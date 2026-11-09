@@ -437,3 +437,29 @@ export async function grantWriteFolderFromParkedApproval(
   logger.info('Write scope granted from parked approval card', { jobId, root: folder, requestId });
   return { status: 'granted', folder, jobId };
 }
+
+/**
+ * 授权落库后，同一会话里「同一轮并行发出、已先一步停车」的兄弟写请求（模型一次并行发 3 个
+ * Write 的真实形态：3 条停车行同时落库，授权只在其中一条的卡上点）。逐条用与停车时同一套
+ * 推导重算文件夹，等于刚授权的文件夹才返回——不在授权范围内的写仍留给人逐个批。
+ */
+export function parkedSiblingsCoveredByGrant(
+  rows: Array<{ id: string; payloadJson: string }>,
+  sessionId: string,
+  folder: string,
+  exceptRequestId: string,
+): string[] {
+  const covered: string[] = [];
+  for (const row of rows) {
+    if (row.id === exceptRequestId) continue;
+    try {
+      const payload = JSON.parse(row.payloadJson) as { sessionId?: string | null; type?: string; argsSummary?: string };
+      if (payload.sessionId !== sessionId) continue;
+      if (payload.type !== 'file_write' && payload.type !== 'file_edit') continue;
+      if (writeGrantFolderForTarget(payload.argsSummary) === folder) covered.push(row.id);
+    } catch {
+      // 损坏的 payload 不放行
+    }
+  }
+  return covered;
+}

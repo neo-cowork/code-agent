@@ -28,7 +28,7 @@ vi.mock('../../../src/host/services/infra/notificationService', () => ({
   notificationService: { notifyTaskComplete: vi.fn(), notifyNeedsInput: vi.fn() },
 }));
 
-import { grantWriteFolderFromParkedApproval } from '../../../src/host/cron/cronWriteGrant';
+import { grantWriteFolderFromParkedApproval, parkedSiblingsCoveredByGrant } from '../../../src/host/cron/cronWriteGrant';
 import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
 import { getPermissionModeManager, resetPermissionModeManager } from '../../../src/host/permissions/modes';
 import { PermissionRequestReason } from '../../../src/shared/contract/permission';
@@ -149,6 +149,29 @@ describe('审批卡一键授权：无绑定文件夹任务写 3 个文件只停 
         .resolves.toEqual({ approved: true, approvalSource: 'schedule-write-grant' });
     }
     expect(repo.insert).toHaveBeenCalledTimes(1);
+  });
+
+  it('模型一次并行发 3 个 Write（3 条停车行同时在）：授权后同文件夹的兄弟请求一并放行，范围外的不动', async () => {
+    const { repo, rows } = makeRepo();
+    const island = makeIsland(repo);
+    const parked = ['today-plan.md', 'reading-list.md', 'follow-ups.md'].map((n) => island.requestPermission(w3Write(path.join(notesDir, n))));
+    const other = island.requestPermission(w3Write(path.join(home, 'Documents', 'elsewhere.md')));
+    await flush();
+    expect(repo.insert).toHaveBeenCalledTimes(4);
+    const [firstId] = [...rows.keys()];
+    const { host } = makeHost();
+    const grant = await grantWriteFolderFromParkedApproval(firstId, { getParkedRow: (rid) => rows.get(rid) ?? null, host });
+    expect(grant.status).toBe('granted');
+    const siblings = parkedSiblingsCoveredByGrant(
+      [...rows.entries()].map(([id, r]) => ({ id, payloadJson: r.payloadJson })), SESSION, notesDir, firstId,
+    );
+    expect(siblings).toHaveLength(2);
+    for (const id of [firstId, ...siblings]) island.handlePermissionResponse(id, 'allow');
+    await expect(Promise.all(parked)).resolves.toEqual([
+      expect.objectContaining({ approved: true }), expect.objectContaining({ approved: true }), expect.objectContaining({ approved: true }),
+    ]);
+    expect(await stillPending(other)).toBe(true);
+    island.drainPendingPermissions();
   });
 
   it('不点按钮：逐文件审批照旧（3 个文件停 3 次）', async () => {

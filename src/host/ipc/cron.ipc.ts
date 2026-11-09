@@ -8,6 +8,7 @@ import type { RawDomainRouteHandlers } from '../../shared/ipc/domainRoutes';
 import { CronSchemas, type CronDomainRequest } from '../../shared/ipc/schemas/cron';
 import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import { getCronService } from '../cron/cronService';
+import { parkedSiblingsCoveredByGrant } from '../cron/cronWriteGrant';
 import { CloudNotConfiguredError } from '../cron/cronCloudErrors';
 import { getConnectorRegistry } from '../connectors/registry';
 import { isAppleEventsDenied } from '../connectors/native/osascript';
@@ -282,8 +283,15 @@ const cronHandlers: RawDomainRouteHandlers<CronDomainRequest, void> = {
     const outcome = sessionId
       ? getTaskManager().handlePermissionResponse(sessionId, requestId, 'allow')
       : 'no_session';
+    // 同一轮并行发出、已先停车的兄弟写请求：授权范围内的一并放行（范围外的仍等人逐个批）。
+    const siblings = sessionId
+      ? parkedSiblingsCoveredByGrant(repo.listByKindAndStatus('tool_approval', 'pending'), sessionId, grant.folder, requestId)
+      : [];
+    for (const siblingId of siblings) {
+      if (sessionId) getTaskManager().handlePermissionResponse(sessionId, siblingId, 'allow');
+    }
     logger.info('Parked write folder grant applied, request released', {
-      requestId, status: grant.status, folder: grant.folder, jobId: grant.jobId, outcome,
+      requestId, status: grant.status, folder: grant.folder, jobId: grant.jobId, outcome, siblingsReleased: siblings.length,
     });
     return { success: true, data: { grant, released: outcome === 'delivered' } } satisfies IPCResponse;
   },
