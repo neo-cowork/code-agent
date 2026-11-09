@@ -12,9 +12,9 @@ import { AgentFailureCode, inferAgentFailureCode } from '../../../shared/contrac
 import type { MessageMetadata } from '../../../shared/contract';
 import { describeSubagentStopReason } from '../../agent/subagentFailureReason';
 
-export type StoppedTaskStatus = 'completed' | 'failed';
+type StoppedTaskStatus = 'completed' | 'failed';
 
-export interface StoppedTaskOutcome {
+interface StoppedTaskOutcome {
   status: StoppedTaskStatus;
   detail: string;
   /** 没做完就停下时给用户看的那一句（确定性、不依赖模型转述）；正常结束为 undefined。 */
