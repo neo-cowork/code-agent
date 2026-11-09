@@ -64,6 +64,8 @@ describe('cloud creation recovery', () => {
     const copy = (language === 'zh' ? cronCenterZh : cronCenterEn).cronCenter.cloudCreate;
     expect(screen.getByText(copy.unconfigured)).toBeTruthy();
     expect(screen.getByText(copy.settings)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText((language === 'zh' ? cronCenterZh : cronCenterEn).cronCenter.executionLocationTitle), { target: { value: 'local' } });
+    expect(onDraftChange).toHaveBeenCalledWith({ ...draft, creationErrorCode: undefined, input: { ...draft.input, runsOn: 'local' } });
     fireEvent.click(screen.getByText(copy.switchLocal));
     expect(onDraftChange).toHaveBeenCalledWith({ ...draft, creationErrorCode: undefined, input: { ...draft.input, runsOn: 'local' } });
   });
