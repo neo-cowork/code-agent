@@ -13,6 +13,7 @@
 // first-responder-wins，重复点击/多口抢答天然幂等）。
 // ============================================================================
 
+import { PARKED_APPROVAL_ENTRY_PATH } from '../../../shared/parkedApprovalLocation';
 import { approvalParkEvents } from '../../agent/approvalParkEvents';
 import { getChannelManager } from '../channelManager';
 import { getSessionManager } from '../../services';
@@ -97,13 +98,13 @@ export function decodeApprovalValue(value: string | undefined | null): DecodedAp
   return { resolution: r, approvalId: a, sessionId: s };
 }
 
-/** 卡片人话正文：工具名 + external 徽标 + 「收件箱也能处理」提示。 */
+/** 卡片人话正文：工具名 + external 徽标 + 真实页面入口提示。 */
 function buildParkedCardText(tool: string, riskClass: string | null | undefined): string {
   const lines = ['**有操作等你确认**', `无人值守任务想执行 \`${tool}\`。`];
   if (riskClass === 'external') {
     lines.push('⚠️ 离开本机：该操作会发送到外部，发出后收不回。');
   }
-  lines.push('在收件箱也能处理；点下方按钮可直接批准或拒绝。');
+  lines.push(`在${PARKED_APPROVAL_ENTRY_PATH}也能处理；点下方按钮可直接批准或拒绝。`);
   return lines.join('\n');
 }
 
