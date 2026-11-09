@@ -62,7 +62,7 @@ function isNaturalLanguageCreateRoleRequest(userText: string): boolean {
   return !NL_QUESTION.test(clause);
 }
 
-export type RoleAuthoringSeed =
+type RoleAuthoringSeed =
   | { kind: 'slash'; skillName: 'create-role' | 'edit-role'; text: string }
   | { kind: 'natural-language'; skillName: 'create-role'; text: string };
 

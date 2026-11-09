@@ -6,7 +6,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
 
-vi.mock('../../../src/host/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../src/host/services/infra/logger')>(),
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }));
 vi.mock('../../../src/host/mcp/logCollector.js', () => ({
@@ -185,5 +186,31 @@ describe('自然语言建角色路由', () => {
   it('否定句不是种子 → 不恢复', async () => {
     const ctx = mkCtx([userMsg('不要创建专家'), assistantMsg('好的')]);
     expect(await resolveStickyStrictSkillInvocation(ctx, '每天早上八点')).toBeNull();
+  });
+});
+
+
+describe('自然语言种子使用内置技能契约', () => {
+  it.each(['创建', '新建', '建立'].flatMap((verb) =>
+    ['专家', '角色', '助理'].map((noun) => `帮我${verb}一个日程管家${noun}`),
+  ))('%s 首轮及访谈回复恢复真实 strict 工具集', async (text) => {
+    const { resolveSkillInvocationFromSkills, buildSkillInvocationContext } = await vi.importActual<
+      typeof import('../../../src/host/services/skills/skillInvocationResolver')
+    >('../../../src/host/services/skills/skillInvocationResolver');
+    const { BUILTIN_SKILLS } = await import('../../../src/host/services/skills/builtinSkillsData');
+    resolveSkillInvocationMock.mockImplementation(async (request: string) =>
+      resolveSkillInvocationFromSkills(request, BUILTIN_SKILLS),
+    );
+    const slash = resolveSkillInvocationFromSkills(`/create-role ${text}`, BUILTIN_SKILLS);
+    for (const messages of [[userMsg(text)], [userMsg(text), assistantMsg('多久检查一次？'), userMsg('每天早上')]]) {
+      const invocation = await resolveStickyStrictSkillInvocation(mkCtx(messages), messages.at(-1)!.content);
+      expect(invocation).toEqual(slash);
+      expect(invocation?.skill.strictToolset).toBe(true);
+      const context = await buildSkillInvocationContext(invocation!, '/tmp/wd');
+      const slashContext = await buildSkillInvocationContext(slash!, '/tmp/wd');
+      expect(context).toEqual(slashContext);
+      expect(context.contextModifier.toolBoundary).toMatchObject({ skillName: 'create-role', strict: true });
+      expect(context.contextModifier.toolBoundary?.allowedTools).toContain('propose_role');
+    }
   });
 });
