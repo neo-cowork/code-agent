@@ -162,7 +162,9 @@ describe('SessionCommandCenter holds settle while the child own background shell
     await waitFor(() => h.woken.length === 1);
     expect(h.woken[0].status).toBe('completed');
     expect(h.woken[0].resultText).toContain('BG-RR50-DONE-1');
-    expect(h.woken[0].resultText).toContain(sentence);
+    expect(h.woken[0].resultText).not.toContain(sentence);
+    expect(h.woken[0].resultText).not.toContain('仍在运行');
+    expect(h.woken[0].resultText).not.toContain('已启动');
     expect(h.status()).toBe('completed');
   });
 
@@ -290,6 +292,7 @@ describe('SessionCommandCenter holds settle while the child own background shell
       await vi.advanceTimersByTimeAsync(5 * 60_000 + 1);
       expect(h.status()).toBe('completed');
       expect(h.woken[0].resultText).toContain('后台命令仍在运行');
+      expect(h.woken[0].resultText).toContain('任务启动时的说明：已启动。');
     } finally {
       vi.useRealTimers();
       if (shellId) await killBackgroundTask(shellId);

@@ -512,8 +512,10 @@ export class SessionCommandCenter {
       const artifacts = Array.isArray(data?.artifacts)
         ? data.artifacts as NormalizedToolArtifactMeta[]
         : undefined;
-      const held = this.shellHold.hold(task.id, ({ note }) => {
-        const detail = [note, conclusion].filter(Boolean).join('\n');
+      const held = this.shellHold.hold(task.id, ({ note, exited }) => {
+        // 命令已退出：命令结果就是结果，子 run 启动时的说明（「已启动…仍在运行」）已过时，不带入。
+        // 到上限仍在运行：说明当前状态，并把启动说明明确标成早先的说明。
+        const detail = exited || !conclusion ? note : `${note} 任务启动时的说明：${conclusion}`;
         void this.settle(task, 'completed', detail, artifacts);
       });
       if (held) {

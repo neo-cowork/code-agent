@@ -15,6 +15,8 @@ import {
 export interface BackgroundShellHoldRelease {
   /** 命令退出后的摘要（含输出）；超时则是「仍在运行」说明。 */
   note: string;
+  /** true = 命令已退出（note 即最终结果）；false = 到上限仍在运行。 */
+  exited: boolean;
 }
 
 interface Pending {
@@ -68,22 +70,22 @@ export class BackgroundShellHold {
     if (!shellId || getBackgroundTask(shellId)?.status !== 'running') return false;
 
     const pending: Pending = { shellId };
-    const release = (note: string): void => {
+    const release = (note: string, exited: boolean): void => {
       if (this.pendingByTask.get(taskId) !== pending) return;
       this.drop(taskId);
-      onRelease({ note });
+      onRelease({ note, exited });
     };
     pending.unsubscribe = onBackgroundTaskLifecycleEvent((event) => {
       if (event.task.taskId !== shellId || event.type === 'started') return;
-      release(describeExit(shellId, event.task.exitCode));
+      release(describeExit(shellId, event.task.exitCode), true);
     });
     pending.timer = setTimeout(
-      () => release('后台命令仍在运行，结果出来后不会再自动汇报；需要时请再查看它的输出。'),
+      () => release('后台命令仍在运行，结果出来后不会再自动汇报；需要时请再查看它的输出。', false),
       MCP_TIMEOUTS.IDLE_REAP_TTL,
     );
     this.pendingByTask.set(taskId, pending);
     // 订阅前命令恰好已退出：补一次检查，避免永远等不到事件
-    if (getBackgroundTask(shellId)?.status !== 'running') release(describeExit(shellId, undefined));
+    if (getBackgroundTask(shellId)?.status !== 'running') release(describeExit(shellId, undefined), true);
     return true;
   }
 
