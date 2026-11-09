@@ -147,6 +147,8 @@ export interface ChatInputProps {
   hasStoppableBackgroundWork?: boolean;
   /** 运行中输入正在接入 */
   isInterrupting?: boolean;
+  /** 用户已请求停止，等待前后台任务全部收线 */
+  isStopping?: boolean;
   /** 停止处理回调 */
   onStop?: () => void;
   /** parked durable run 的用户继续回调 */
@@ -299,6 +301,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   isProcessing,
   hasStoppableBackgroundWork,
   isInterrupting,
+  isStopping,
   onStop,
   onContinue,
   hasContinuation,
@@ -1665,6 +1668,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               configured={liveVoiceAvailability.configured}
               isProcessing={Boolean(isProcessing)}
               isInterrupting={isInterrupting}
+              isStopping={isStopping}
               hasContent={hasContent}
               hasContinuation={Boolean(hasContinuation)}
               onStop={onStop}

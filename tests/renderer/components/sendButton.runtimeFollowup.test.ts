@@ -34,4 +34,20 @@ describe('SendButton runtime follow-up state', () => {
     expect(draft).toContain('发送消息');
     expect(draft).not.toContain('continue-run-button');
   });
+
+  it('keeps the stopping state clickable and spinning while background work winds down', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(SendButton, {
+        isProcessing: true,
+        isStopping: true,
+        hasContent: false,
+      }),
+    );
+
+    expect(html).toContain('正在停止');
+    expect(html).toContain('composer-stop-stopping');
+    expect(html).toContain('animate-spin');
+    expect(html).not.toContain('disabled');
+    expect(html).not.toContain('composer-stop-button');
+  });
 });

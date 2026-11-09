@@ -5,6 +5,7 @@
 import React from 'react';
 import { ArrowUp, Square, Loader2, RotateCcw } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
+import { IconButton } from '../../../primitives';
 
 export interface SendButtonProps {
   /** 是否禁用 */
@@ -13,6 +14,8 @@ export interface SendButtonProps {
   isProcessing?: boolean;
   /** 运行中输入正在接入（显示旋转加载图标） */
   isInterrupting?: boolean;
+  /** 停止请求已发出，等待运行时收线 */
+  isStopping?: boolean;
   /** 是否有内容可发送 */
   hasContent?: boolean;
   /** Empty ordinary send can continue a step-limited turn. */
@@ -42,6 +45,7 @@ export const SendButton: React.FC<SendButtonProps> = ({
   disabled = false,
   isProcessing = false,
   isInterrupting = false,
+  isStopping = false,
   hasContent = false,
   canSendEmpty = false,
   hasContinuation = false,
@@ -57,6 +61,21 @@ export const SendButton: React.FC<SendButtonProps> = ({
   // 配色仍走主题 token（bg-brand 等），不改成字面白色——浅色主题下 --zinc-900 是
   // rgb(250,250,250)，白底按钮压在上面约 1.02:1，等于隐形。
   const baseIconButtonClass = 'relative flex-shrink-0 h-7 w-7 rounded-full grid place-items-center transition-all duration-200 focus-visible:outline-hidden before:absolute before:content-[\'\'] before:top-0 before:-bottom-4 before:-left-0.5 before:-right-3.5';
+
+  // 停止已发出但后台任务仍在收线：保持可点（再点一次是幂等的重发），不置灰。
+  if (isStopping) {
+    return (
+      <IconButton
+        type="button"
+        onClick={onStop}
+        size="sm"
+        icon={<Loader2 className="h-3.5 w-3.5 animate-spin" />}
+        aria-label={t.chatInput.stoppingAria}
+        data-testid="composer-stop-stopping"
+        className={`${baseIconButtonClass} p-0 bg-zinc-700/90 text-zinc-200 hover:bg-zinc-600 active:scale-95`}
+      />
+    );
+  }
 
   // 运行中输入接入中：显示旋转加载图标
   if (isInterrupting) {
@@ -90,14 +109,15 @@ export const SendButton: React.FC<SendButtonProps> = ({
   // 处理中 + 无内容：显示停止按钮
   if (isProcessing) {
     return (
-      <button
+      <IconButton
         type="button"
         onClick={onStop}
+        size="sm"
+        icon={<Square className="h-3.5 w-3.5 fill-current stroke-[2.2]" />}
+        data-testid="composer-stop-button"
         className={`${baseIconButtonClass} bg-zinc-700/90 text-zinc-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] hover:bg-zinc-600 active:scale-95`}
         aria-label={t.chatInput.stopAria}
-      >
-        <Square className="h-3 w-3 fill-current stroke-[2.2]" />
-      </button>
+      />
     );
   }
 
