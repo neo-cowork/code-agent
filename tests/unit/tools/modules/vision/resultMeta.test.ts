@@ -55,6 +55,108 @@ import { computerUseModule } from '../../../../../src/host/plugins/builtin/compu
 import { screenshotModule } from '../../../../../src/host/plugins/builtin/computerUse/screenshot';
 import { guiAgentModule } from '../../../../../src/host/plugins/builtin/computerUse/guiAgent';
 
+function makeEightyElementBrowserMetadata(): Record<string, unknown> {
+  const interactiveElements = Array.from({ length: 80 }, (_, index) => {
+    const refId = `browser-ref-${index}`;
+    const selector = `main article:nth-of-type(${index + 1}) a[data-index="${index}"]`;
+    return {
+      tag: index % 2 ? 'a' : 'button',
+      role: index % 2 ? 'link' : 'button',
+      text: `Headline ${index} with realistic page copy`,
+      selectorHint: selector,
+      backendNodeId: index + 100,
+      rect: { x: index * 3, y: index * 7, width: 180, height: 32 },
+      targetRef: {
+        refId,
+        source: 'dom',
+        selector,
+        frameId: 'managed-frame-1',
+        documentRevision: 'document-revision-1',
+        tabId: 'managed-tab-1',
+        snapshotId: 'snapshot-1',
+        capturedAtMs: 1_700_000_000_000,
+        ttlMs: 30_000,
+        confidence: 1,
+        backendNodeId: index + 100,
+      },
+    };
+  });
+  const elementRefs = interactiveElements.map((element) => ({
+    kind: 'browser-element',
+    ref: element.targetRef.refId,
+    stateId: 'surface-state-1',
+    tabRef: 'managed-tab-1',
+    frameRef: 'managed-frame-1',
+    documentRevision: 'document-revision-1',
+    backendNodeId: element.backendNodeId,
+    role: element.role,
+    name: element.text,
+    bounds: element.rect,
+    selectorFallback: element.selectorHint,
+  }));
+  const target = {
+    kind: 'browser',
+    browserInstanceId: 'browser-1',
+    windowRef: 'window-1',
+    tabRef: 'managed-tab-1',
+    documentRevision: 'document-revision-1',
+    origin: 'https://example.test',
+  };
+  return {
+    url: 'https://example.test/wiki',
+    domSnapshot: {
+      snapshotId: 'snapshot-1',
+      tabId: 'managed-tab-1',
+      capturedAtMs: 1_700_000_000_000,
+      url: 'https://example.test/wiki',
+      title: 'Example headlines',
+      headings: ['Top stories'],
+      interactiveElements,
+    },
+    surfaceObservationV1: {
+      version: 1,
+      stateId: 'surface-state-1',
+      target,
+      providerGeneration: 'provider-1',
+      observedAt: 1_700_000_000_000,
+      expiresAt: 1_700_000_030_000,
+      elementRefs,
+      evidenceAssetIds: ['dom:snapshot-1'],
+      redactionStatus: 'clean',
+      lifecycle: 'fresh',
+    },
+    surfaceExecutionSessionV1: {
+      version: 1,
+      sessionId: 'surface-session-1',
+      conversationId: 'vision-contract-session',
+      runId: 'run-1',
+      agentId: 'agent-1',
+      surface: 'browser',
+      provider: 'managed',
+      state: 'running',
+      activeTarget: target,
+    },
+    surfaceExecutionEventsV1: [{
+      version: 1,
+      eventId: 'surface-event-1',
+      sequence: 1,
+      sessionId: 'surface-session-1',
+      conversationId: 'vision-contract-session',
+      runId: 'run-1',
+      agentId: 'agent-1',
+      surface: 'browser',
+      phase: 'observe',
+      status: 'succeeded',
+      userSummary: 'Observed browser',
+      evidenceRefs: ['dom:snapshot-1'],
+      artifactRefs: [],
+      availableControls: ['end_session'],
+      startedAt: 1_700_000_000_000,
+      completedAt: 1_700_000_000_100,
+    }],
+  };
+}
+
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 }
@@ -200,8 +302,8 @@ describe('vision wrapper ToolResult contract', () => {
         action: expectedAction,
         target: expectedTarget,
         request: expect.any(Object),
-        legacyMetadata,
       });
+      expect(result.meta).not.toHaveProperty('legacyMetadata');
       expect(result.meta?.legacyFlag).toBe(legacyMetadata.legacyFlag);
       expect(result.meta?.artifact).toMatchObject({
         kind: expectedArtifactKind,
@@ -268,10 +370,9 @@ describe('vision wrapper ToolResult contract', () => {
       tool: 'computer_use',
       action: 'observe',
       target: 'Safari',
-      legacyMetadata: {
-        code: 'COMPUTER_SURFACE_BLOCKED',
-      },
+      code: 'COMPUTER_SURFACE_BLOCKED',
     });
+    expect(result.meta).not.toHaveProperty('legacyMetadata');
     expect(result.meta?.artifact).toMatchObject({
       kind: 'image',
       sourceTool: 'computer_use',
@@ -322,5 +423,37 @@ describe('vision wrapper ToolResult contract', () => {
       sourceKey: 'browserArtifact',
       legacyBrowserArtifact: expect.objectContaining({ artifactId: 'download_1' }),
     });
+  });
+
+  it('bounds persisted 80-element browser metadata through the public handler', async () => {
+    const metadata = makeEightyElementBrowserMetadata();
+    legacyExecute.browserAction.mockResolvedValueOnce({
+      success: true,
+      output: JSON.stringify(metadata.domSnapshot),
+      metadata,
+    });
+
+    const handler = await browserActionModule.createHandler();
+    const result = await handler.execute(
+      { action: 'get_dom_snapshot' },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const serialized = JSON.stringify(result.meta);
+    expect(serialized.length).toBeLessThan(60_000);
+    expect(result.meta).not.toHaveProperty('legacyMetadata');
+    expect(result.meta?.domSnapshot).toEqual(metadata.domSnapshot);
+    expect(result.meta?.surfaceObservationV1).toMatchObject({
+      stateId: 'surface-state-1',
+      target: metadata.surfaceObservationV1 && (metadata.surfaceObservationV1 as Record<string, unknown>).target,
+      elementCount: 80,
+      elementKinds: ['browser-element'],
+      evidenceAssetIds: ['dom:snapshot-1'],
+      redactionStatus: 'clean',
+    });
+    expect(result.meta?.surfaceObservationV1).not.toHaveProperty('elementRefs');
   });
 });
