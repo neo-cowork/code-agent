@@ -48,6 +48,7 @@ import { voiceAuditZh } from './voiceAudit';
 import { sessionInspectorZh } from './sessionInspector';
 import { artifactShareZh } from './artifactShare';
 import { receiptPresentationZh } from './receiptPresentation';
+import { roleEditReceiptZh } from './roleEditReceipt';
 import { renderHumanPipeZh } from './renderHumanPipe';
 import { outcomeWordsZh } from './outcomeWords';
 import { engineModelPanelZh } from './engineModelPanel';
@@ -73,6 +74,7 @@ export const zh = {
   ...generativeUIZh,
   ...workbenchTabsZh,
   ...receiptPresentationZh,
+  ...roleEditReceiptZh,
   ...renderHumanPipeZh,
   ...outcomeWordsZh,
   ...engineModelPanelZh,
