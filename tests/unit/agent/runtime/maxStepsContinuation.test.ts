@@ -101,7 +101,7 @@ describe('foreground step-limit continuation', () => {
   });
 
   it('a follow-up starts from iteration 0 through foreground options -> AgentLoop -> real runtime loop', async () => {
-    const { loop, ctx } = foreground();
+    let { loop, ctx } = foreground();
     const turns: number[] = [];
     const langfuse = { endSpan: vi.fn(), startSpan: vi.fn(), logEvent: vi.fn() };
     vi.spyOn(ConversationRuntime.prototype, 'initializeRun').mockImplementation(async () => {
@@ -126,6 +126,13 @@ describe('foreground step-limit continuation', () => {
     await loop.run('read the handoff notes');
     expect(turns).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     expect(ctx.messages.at(-1)?.metadata?.stoppedByStepLimit).toBe(true);
+    const continued = foreground();
+    continued.ctx.messages.push(...ctx.messages);
+    loop = continued.loop;
+    ctx = continued.ctx;
+    expect(ctx.foregroundToolFace).toBe(true);
+    expect(ctx.maxIterations).toBe(8);
+    expect(ctx.turnTrace.turnIndex).toBe(0);
     turns.length = 0;
     vi.mocked(ContextAssembly.prototype.inference).mockResolvedValue({ type: 'text', content: 'Continued the work.', finishReason: 'stop' });
     await loop.run('Continue');
