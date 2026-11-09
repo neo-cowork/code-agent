@@ -78,10 +78,8 @@ import { ComposerChipsRow } from './ComposerChipsRow';
 import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
 import { ModelSwitcher } from '../../../StatusBar/ModelSwitcher';
 import ipcService from '../../../../services/ipcService';
-import {
-  invokeNativeCommandAction,
-  isNativeCommandRuntimeAvailable,
-} from '../../../../services/nativeCommandFacade';
+import { invokeNativeCommandAction, isNativeCommandRuntimeAvailable } from '../../../../services/nativeCommandFacade';
+import { toast } from '../../../../hooks/useToast';
 import { goalComposerDraftToParsed } from './parseGoalCommand';
 import { LoopStatusBar } from './LoopStatusBar';
 import { ScheduleComposerCard } from './ScheduleComposerCard';
@@ -90,11 +88,7 @@ import { GoalConfirmCard } from './GoalConfirmCard';
 import { SeedComposerCard, type SeedComposerKind } from './SeedComposerCard';
 import { buildVerifyCandidates } from './goalConfirm';
 import { readWorkspaceFile } from '../../../design/designFiles';
-import {
-  buildDirectRoutingPlaceholder,
-  getPreferredAgentMentionToken,
-  isLeadingAgentMentionInput,
-} from './agentMentionRouting';
+import { buildDirectRoutingPlaceholder, getPreferredAgentMentionToken, isLeadingAgentMentionInput } from './agentMentionRouting';
 import { useDragAndDrop } from './useDragAndDrop';
 import { useChatInputEnvelope } from './useChatInputEnvelope';
 import { useChatInputAgentCommand } from './useChatInputAgentCommand';
@@ -107,10 +101,8 @@ import { UnsentDraftNotice } from './UnsentDraftNotice';
 import { AgentCommandAutocomplete } from './AgentCommandAutocomplete';
 import { useScheduleDraft } from './useScheduleDraft';
 import { useChatInputComposerActions } from './useChatInputComposerActions';
-import {
-  clearDebugDraftParamsFromCurrentUrl,
-  readDebugDraftFromLocation,
-} from './debugDraftUrl';
+import { clearDebugDraftParamsFromCurrentUrl, readDebugDraftFromLocation } from './debugDraftUrl';
+import { mergeAttachments } from './attachmentDedupe';
 import { getTrailingSlashToken } from './slashPickerModel';
 import type { InlineChipRef } from './composerRichTextModel';
 import type { InlineChipView } from './InlineComposerChip';
@@ -334,6 +326,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [editingQueuedInputId, setEditingQueuedInputId] = useState<string | null>(null);
 
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
+  const attachmentsRef = useRef(attachments); attachmentsRef.current = attachments;
   const [sessionReferences, setSessionReferences] = useState<ConversationSessionReference[]>([]);
   const [artifactReferences, setArtifactReferences] = useState<ConversationArtifactReference[]>([]);
   const pendingResendClientMessageIdRef = useRef<string | null>(null);
@@ -712,9 +705,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   // Expose addAttachments to parent via ref (for global drop zone)
   useImperativeHandle(ref, () => ({
     addAttachments: (items: MessageAttachment[]) => {
-      if (items.length > 0) {
-        setAttachments((prev) => [...prev, ...items].slice(0, UI.MAX_ATTACHMENTS_DROP));
-      }
+      if (items.length === 0) return;
+      const result = mergeAttachments(attachmentsRef.current, items, UI.MAX_ATTACHMENTS_DROP);
+      setAttachments(result.attachments);
+      if (result.skippedCount > 0) toast.show('warning', t.chatInput.attachmentAlreadyAdded.replace('{name}', result.duplicates[0]?.incoming.name ?? ''));
     },
     setDraft: (draft) => {
       const mode = composerEditModeState(
@@ -748,7 +742,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       setValue((prev) => appendComposerPrompt(prev, prompt));
       inputAreaRef.current?.focus();
     },
-  }), [inlineChips, pendingAppshot]);
+  }), [inlineChips, pendingAppshot, t.chatInput.attachmentAlreadyAdded]);
 
   useEffect(() => {
     setVoiceInputContext(null);
@@ -852,20 +846,23 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     void (async () => {
       const attachment = await buildMentionAttachment({ path: row.path, name: row.name, workingDirectory });
       // 读盘期间用户可能继续输入：以最新文本重定位触发词，找不到就交给对账把 chip 补到末尾
+      const result = mergeAttachments(attachmentsRef.current, [attachment], UI.MAX_ATTACHMENTS_DROP);
+      const chipAttachment = result.duplicates[0]?.existing ?? attachment;
       const freshCaret = editor.getCaretOffset();
       const freshBefore = latestValueRef.current.slice(0, freshCaret);
       const freshMatch = freshBefore.match(/@([^\s@]*)$/);
       if (freshMatch) {
         editor.replaceRangeWithChip(freshCaret - freshMatch[0].length, freshCaret, {
-          key: `file:${attachment.id}`,
+          key: `file:${chipAttachment.id}`,
           kind: 'file',
-          id: attachment.id,
+          id: chipAttachment.id,
         });
       }
-      setAttachments((prev) => [...prev, attachment].slice(0, UI.MAX_ATTACHMENTS_DROP));
+      setAttachments(result.attachments);
+      if (result.skippedCount > 0) toast.show('warning', t.chatInput.attachmentAlreadyAdded.replace('{name}', attachment.name));
     })();
     editor.focus();
-  }, [currentSessionId]);
+  }, [currentSessionId, t.chatInput.attachmentAlreadyAdded]);
   const replaceAtTriggerWithChip = useCallback((chip: InlineChipRef) => {
     const editor = inputAreaRef.current;
     if (!editor) return;

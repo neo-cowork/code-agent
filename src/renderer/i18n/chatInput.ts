@@ -33,6 +33,7 @@ export const chatInputZh = {
     attachFolderFiles: '{count} 个文件',
     attachPages: '{count} 页',
     attachRemoveAria: '移除附件 {name}',
+    attachmentAlreadyAdded: '{name} 已添加，无需重复添加',
     connectorIconRemoveAria: '取消挂载 {name}',
     // 底栏图标 / 框内胶囊的「来源三态」小卡：回答「这是啥、谁放的、为什么在」。
     // 状态词（已连接 / 未连接 / 去能力中心连接）逐字复用 expert.roleSkills，不给用户第二套说法。
@@ -506,6 +507,7 @@ export const chatInputEn: typeof chatInputZh = {
     attachFolderFiles: '{count} files',
     attachPages: '{count} pages',
     attachRemoveAria: 'Remove attachment {name}',
+    attachmentAlreadyAdded: '{name} is already attached',
     connectorIconRemoveAria: 'Unmount {name}',
     connectorSource: {
       expertNeeds: 'Needed by {expert}',
