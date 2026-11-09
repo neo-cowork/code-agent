@@ -163,7 +163,7 @@ describe('scheduled writes through ToolExecutor → orchestratorPermissions', ()
     expect(readFileSync(path.join(folder, 'notes.md'), 'utf8')).toBe('Channel notes\n');
   });
 
-  it.each(['Write', 'Edit', 'Append', 'write_file', 'edit_file', 'append_file'])('startup backfills historical %s-only scheduled writers once, including after revoke', async (toolName) => {
+  it.each(['Write', 'Edit', 'Append', 'write_file', 'edit_file', 'append_file', 'DocEdit', 'docx_generate', 'excel_generate'])('startup backfills historical %s-only scheduled writers once, including after revoke', async (toolName) => {
     const old = await job();
     const fresh = await job();
     const historical = await createCronAgentSession(old, old.action);
@@ -180,5 +180,50 @@ describe('scheduled writes through ToolExecutor → orchestratorPermissions', ()
     await cron.initialize();
     expect(cron.getJob(old.id)?.metadata?.writeGrantRoot).toBeUndefined();
     expect(state.db!.getDb()!.prepare('SELECT COUNT(*) AS count FROM cron_write_grant_migration').get()).toEqual({ count: 1 });
+  });
+});
+
+describe('scheduled Office writes (path from file_path | path | output_path) obey the same grant', () => {
+  const cases: Array<{ tool: string; ext: string; params: (target: string) => Record<string, unknown> }> = [
+    { tool: 'docx_generate', ext: 'report.docx', params: (target) => ({ output_path: target, title: 'Daily report', content: '# Daily report\n\nAll good.\n' }) },
+    { tool: 'excel_generate', ext: 'report.xlsx', params: (target) => ({ output_path: target, title: 'Daily report', data: 'name,count\nnotes,1' }) },
+    { tool: 'DocEdit', ext: 'report.xlsx', params: (target) => ({ file_path: target, operations: [{ action: 'set_cell', cell: 'A1', value: 1 }] }) },
+  ];
+
+  async function run(taskId: string, tool: string, params: Record<string, unknown>) {
+    const definition = cron.getJob(taskId)!;
+    const session = await createCronAgentSession(definition, definition.action);
+    const executor = new ToolExecutor({ workingDirectory: folder, requestPermission: (request) => island.requestPermission(request) });
+    executor.setAuditEnabled(false);
+    return { promise: executor.execute(tool, params, { sessionId: session.id }), session };
+  }
+
+  it.each(cases)('$tool: no grant parks with nothing written; grant approves via schedule-write-grant; revoke parks again', async ({ tool, ext, params }) => {
+    const target = path.join(folder, ext);
+    const task = await job();
+
+    const first = await run(task.id, tool, params(target));
+    const pending = await parked();
+    expect(pending.coordinatorId).toBe(first.session.id);
+    expect(existsSync(target)).toBe(false);
+    island.resolveParkedApproval(pending.id, 'deny');
+    await first.promise;
+
+    await cron.grantWriteScope(task.id);
+    const granted = await run(task.id, tool, params(target));
+    await granted.promise;
+    expect(state.db!.getPermissionDecisionsBySession(granted.session.id)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ finalOutcome: 'allow', reason: 'schedule-write-grant' }),
+    ]));
+    expect(state.db!.getPendingApprovalRepo().listByKindAndStatus('tool_approval', 'pending')).toHaveLength(0);
+    if (tool !== 'DocEdit') expect(existsSync(target)).toBe(true);
+
+    await cron.revokeWriteScope(task.id);
+    const revoked = await run(task.id, tool, params(path.join(folder, `again-${ext}`)));
+    const again = await parked();
+    expect(again.coordinatorId).toBe(revoked.session.id);
+    expect(existsSync(path.join(folder, `again-${ext}`))).toBe(false);
+    island.resolveParkedApproval(again.id, 'deny');
+    await revoked.promise;
   });
 });

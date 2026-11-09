@@ -27,6 +27,7 @@ import {
 import { isForbiddenWriteNameUnderRoot, isProtectedWritePath } from '../sandbox/sensitivePaths';
 import { createLogger } from '../services/infra/logger';
 import { expandTilde, resolveInputPath } from '../tools/utils/resolveInputPath';
+import { writeTargetPathOf } from '../tools/writeTargetPath';
 import { getPermissionModeManager } from '../permissions/modes';
 import { getDatabase } from '../services/core/databaseService';
 import { normalizeCronJobRow } from './cronNormalizers';
@@ -44,7 +45,8 @@ export async function backfillCronWriteScopes(updatedAt = Date.now()): Promise<v
   const previousWriters = new Set((db.prepare(`
     SELECT DISTINCT json_extract(s.origin, '$.id') AS job_id
     FROM permission_decisions p JOIN sessions s ON s.id = p.session_id
-    WHERE p.tool_name IN ('Write', 'Edit', 'Append', 'write_file', 'edit_file', 'append_file')
+    WHERE p.tool_name IN ('Write', 'Edit', 'Append', 'write_file', 'edit_file', 'append_file',
+                          'DocEdit', 'docx_generate', 'excel_generate')
       AND p.final_outcome = 'allow' AND p.reason = '写入项目目录内'
       AND json_valid(s.origin)
       AND json_extract(s.origin, '$.kind') IN ('cron', 'heartbeat')
@@ -73,7 +75,7 @@ export async function backfillCronWriteScopes(updatedAt = Date.now()): Promise<v
 
 /** Route scheduled file mutations through the existing grant/park authority, even after W1 approves. */
 export async function requiresScheduleWriteGrant(
-  request: { type: string; details?: { path?: unknown } },
+  request: { type: string; tool?: string; details?: Record<string, unknown> },
   sessionId: string | undefined,
   workingDirectory: string,
   workspaceRoot: string | undefined,
@@ -82,7 +84,7 @@ export async function requiresScheduleWriteGrant(
   if ((type !== 'file_write' && type !== 'file_edit')
     || !getPermissionModeManager().isUnattendedSession(sessionId)) return false;
   // Only replace the in-workspace shortcut; outside-workspace policy stays unchanged.
-  const target = request.details?.path;
+  const target = writeTargetPathOf(request.tool, request.details);
   if (!workspaceRoot || typeof target !== 'string'
     || !isPathWithinWriteGrantRoot(resolveInputPath(target, workingDirectory), workspaceRoot)) return false;
   const session = await scheduleWriteGrantSession(sessionId);
@@ -258,7 +260,8 @@ export async function approveByScheduleWriteGrant(request: {
     });
     return undefined;
   }
-  const rawTarget = request.details?.path ?? request.details?.filePath;
+  const rawTarget = writeTargetPathOf(request.tool, request.details)
+    ?? (typeof request.details?.filePath === 'string' ? request.details.filePath : undefined);
   if (!rawTarget) {
     logger.info('Schedule write grant declined the target (no file path on the request)', {
       sessionId: request.sessionId,
