@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { shouldCreateRoleDirectly } from '../../../../src/host/services/roleAssets/roleCreationIntent';
+import { matchRoleAuthoringSeed, shouldCreateRoleDirectly } from '../../../../src/host/services/roleAssets/roleCreationIntent';
 
 describe('shouldCreateRoleDirectly', () => {
   it.each([
@@ -29,5 +29,44 @@ describe('shouldCreateRoleDirectly', () => {
     '',
   ])('含糊或模型提议仍需确认：%s', (text) => {
     expect(shouldCreateRoleDirectly(text)).toBe(false);
+  });
+});
+
+describe('matchRoleAuthoringSeed 自然语言建角色', () => {
+  it.each([
+    '帮我创建一个专家：每天帮我查日历里的日程，并读写我的笔记（备忘录）',
+    '帮我创建一个日程管家专家，负责看日历和提醒',
+    '帮我创建角色，负责盯竞品',
+    '新建角色 日程管家',
+    '新建一个盯竞品的研究员角色',
+    '帮我建立一个会议纪要助理',
+    '给我建立一个助理，管日程',
+    '帮我招一个客服助理',
+    '直接创建一个日历专家',
+  ])('肯定句 → create-role 自然语言种子：%s', (text) => {
+    expect(matchRoleAuthoringSeed(text)).toEqual({
+      kind: 'natural-language', skillName: 'create-role', text: `/create-role ${text}`,
+    });
+  });
+
+  it.each([
+    '不要创建专家',
+    '要不要创建专家',
+    '怎么创建专家？',
+    '如何新建角色',
+    '能不能创建一个助理吗',
+    '删除专家',
+    '列出我创建的专家',
+    '查看我的角色',
+    '编辑日程管家角色',
+    '帮我写一份周报',
+    '',
+  ])('否定/疑问/已有专家/无关 → 不匹配：%s', (text) => {
+    expect(matchRoleAuthoringSeed(text)).toBeNull();
+  });
+
+  it('斜杠种子保持识别', () => {
+    expect(matchRoleAuthoringSeed('/create-role 日历')).toMatchObject({ kind: 'slash', skillName: 'create-role' });
+    expect(matchRoleAuthoringSeed('/edit-role 日历')).toMatchObject({ kind: 'slash', skillName: 'edit-role' });
   });
 });

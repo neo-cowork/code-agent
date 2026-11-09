@@ -312,3 +312,15 @@ describe('r1: 角色能力需求中的否定不等于放弃建角色', () => {
     },
   );
 });
+
+describe('自然语言种子', () => {
+  it('自然语言建角色种子之后已成功 propose_role → 查不到 pending 草稿也不判停摆', async () => {
+    const history = proposeHistory(true);
+    history[0] = { ...SEED, content: '帮我创建一个日程管家专家，负责看日历和提醒' };
+    listRoleDraftsMock.mockResolvedValue([]);
+    const fired = await settleRoleFlowStallOnTextBreak({
+      ctx: mkCtx(history), assembly: mkAssembly(), boundary: createRoleBoundary, finalText: '好了。',
+    });
+    expect(fired).toBe(false);
+  });
+});

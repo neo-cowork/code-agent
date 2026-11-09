@@ -15,6 +15,7 @@ import type { Message } from '../../../shared/contract';
 import type { SystemEventMessageMetadata } from '../../../shared/contract/systemEventRegistry';
 import type { SkillToolBoundary } from '../../../shared/contract/agentSkill';
 import type { RuntimeContext } from './runtimeContext';
+import { matchRoleAuthoringSeed } from '../../services/roleAssets/roleCreationIntent';
 import { listRoleDrafts } from '../../services/roleAssets/roleDraftQueue';
 import { createLogger } from '../../services/infra/logger';
 
@@ -44,7 +45,7 @@ function hasProposedRoleSinceSeed(messages: readonly Message[]): boolean {
   let seedIndex = -1;
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
-    if (msg?.role === 'user' && msg.visibility !== 'rewound' && /^\/(?:create-role|edit-role)(?:\s|$)/.test(msg.content.trim())) {
+    if (msg?.role === 'user' && msg.visibility !== 'rewound' && matchRoleAuthoringSeed(msg.content)) {
       seedIndex = i;
       break;
     }
@@ -75,7 +76,7 @@ function userDeclinedSinceSeed(messages: readonly Message[]): boolean {
   for (const msg of messages) {
     if (msg.visibility === 'rewound') continue;
     if (msg.role === 'user' && !msg.isMeta) {
-      if (/^\/(?:create-role|edit-role)(?:\s|$)/.test(msg.content.trim())) {
+      if (matchRoleAuthoringSeed(msg.content)) {
         questionCalls.clear();
         latestDecision = undefined;
       } else {

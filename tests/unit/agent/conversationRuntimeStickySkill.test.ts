@@ -23,7 +23,7 @@ vi.mock('../../../src/host/services/roleAssets/roleDraftQueue', () => ({
   listRoleDrafts: (...args: unknown[]) => listRoleDraftsMock(...args),
 }));
 
-import { resolveStickyStrictSkillInvocation } from '../../../src/host/agent/runtime/conversationRuntimeStickySkill';
+import { resolveStickyStrictSkillInvocation, resolveNaturalLanguageCreateRoleInvocation } from '../../../src/host/agent/runtime/conversationRuntimeStickySkill';
 import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
 
 const SESSION_ID = 'session-1';
@@ -150,5 +150,40 @@ describe('resolveStickyStrictSkillInvocation 退出条件', () => {
     ]);
     const result = await resolveStickyStrictSkillInvocation(ctx, '帮我写个周报');
     expect(result).toBeNull();
+  });
+});
+
+describe('自然语言建角色路由', () => {
+  const NL = '帮我创建一个日程管家专家，负责看日历和提醒';
+
+  it('自然语言意图 → 按 /create-role <原话> 解析出 strict 技能', async () => {
+    const result = await resolveNaturalLanguageCreateRoleInvocation(mkCtx([userMsg(NL)]), NL);
+    expect(result).toBe(createRoleInvocation);
+    expect(resolveSkillInvocationMock).toHaveBeenCalledWith(`/create-role ${NL}`, '/tmp/wd');
+  });
+
+  it.each(['不要创建专家', '要不要创建专家', '怎么创建专家？', '删除专家', '帮我写周报', '/create-role 日历'])(
+    '否定/疑问/无关/斜杠 → 不路由：%s',
+    async (text) => {
+      expect(await resolveNaturalLanguageCreateRoleInvocation(mkCtx([userMsg(text)]), text)).toBeNull();
+      expect(resolveSkillInvocationMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it('技能解析不到 → null（warn 留痕）', async () => {
+    resolveSkillInvocationMock.mockResolvedValue(null);
+    expect(await resolveNaturalLanguageCreateRoleInvocation(mkCtx([userMsg(NL)]), NL)).toBeNull();
+  });
+
+  it('自然语言种子之后的普通回复 → 仍恢复 strict 技能（粘滞）', async () => {
+    const ctx = mkCtx([userMsg(NL), assistantMsg('你想让它多久查一次日历？', ['ask_user_question'])]);
+    const result = await resolveStickyStrictSkillInvocation(ctx, '每天早上八点');
+    expect(result).toBe(createRoleInvocation);
+    expect(resolveSkillInvocationMock).toHaveBeenCalledWith(`/create-role ${NL}`, '/tmp/wd');
+  });
+
+  it('否定句不是种子 → 不恢复', async () => {
+    const ctx = mkCtx([userMsg('不要创建专家'), assistantMsg('好的')]);
+    expect(await resolveStickyStrictSkillInvocation(ctx, '每天早上八点')).toBeNull();
   });
 });
