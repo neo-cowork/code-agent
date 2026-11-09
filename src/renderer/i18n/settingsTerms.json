@@ -1,0 +1,9 @@
+{
+  "_comment": "设置页中文文案的白话词表 —— 渲染端词汇模块 settingsVocabulary.ts 与门脚本 scripts/check-settings-jargon.mjs 共读这一份。mode=enforce：中文设置文案里出现 term 即拦（baseline 存量除外）；mode=report：只列出不拦。allow：先从串里抹掉再匹配的字面量（品牌名、/v1 等）。",
+  "terms": [
+    { "id": "provider", "term": "Provider", "human": "模型服务", "mode": "enforce", "allow": [] },
+    { "id": "baseUrl", "term": "Base URL", "human": "接口地址", "mode": "enforce", "allow": ["/v1"] },
+    { "id": "apiKey", "term": "API Key", "human": "密钥", "mode": "enforce", "allow": [] },
+    { "id": "mcp", "term": "MCP", "human": "MCP", "mode": "report", "allow": [], "note": "MCP 是真实的标签页名，改名是产品决策，只列出不拦" }
+  ]
+}

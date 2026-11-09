@@ -1,0 +1,10 @@
+{
+  "_comment": "check-settings-jargon.mjs 的存量基线：每条 (file, term) 的命中数只降不升，reason 写归属单号或 unowned stock。清零后删条目。",
+  "entries": [
+    { "file": "src/renderer/i18n/zhSettingsModels.ts", "term": "Provider", "count": 3, "reason": "unowned stock：插件能力种类字面量 provider/theme/UI（技术种类名，非用户面「模型服务」），产品是否改名待定" },
+    { "file": "src/renderer/i18n/zhSettingsCore.ts", "term": "Provider", "count": 1, "reason": "unowned stock：未保存修改离开提示；该文件 ~200-203 行由 N-FIX-NOTIFY-PERM-UNKNOWN-COPY 施工中，本单不碰" },
+    { "file": "src/renderer/i18n/zhSettingsCore.ts", "term": "API Key", "count": 6, "reason": "unowned stock：TypeSafe 搜索源 API Key 文案，其他页面由各自单清理" },
+    { "file": "src/renderer/i18n/zhSettingsWork.ts", "term": "API Key", "count": 4, "reason": "unowned stock：开放接口页「复制 API Key」/X-API-Key 头/密钥列表说明，非模型页" },
+    { "file": "src/renderer/i18n/zhSettingsWork.ts", "term": "Provider", "count": 4, "reason": "N-FIX-SETTINGS-ENGINEERING-JARGON-SCREENMEM-STT：屏幕记忆页 OpenChronicle / Native Desktop provider 工程词" }
+  ]
+}
