@@ -142,6 +142,61 @@ describe('buildCronJobInput agent options', () => {
 });
 
 describe('CronSimpleCreate', () => {
+  it.each([
+    ['zh', '单次花费上限（美元，可选）', '超过该金额会停止本次运行并停用任务；留空表示不限。', '不限'],
+    ['en', 'Per-run spending cap (USD, optional)', 'Over this amount the run stops and the task is switched off; leave empty for no limit.', 'No limit'],
+  ] as const)('本地创建表单显示预算字段（%s）', (language, label, hint, placeholder) => {
+    useAppStore.setState({ language });
+    render(<CronSimpleCreate onDone={() => undefined} />);
+
+    expect(screen.getByText(label)).toBeTruthy();
+    expect(screen.getByText(hint)).toBeTruthy();
+    expect(screen.getByTestId('cron-budget-limit-input')).toHaveProperty('placeholder', placeholder);
+  });
+
+  it('created job carries maxRunBudget typed in the simple form', async () => {
+    createJob.mockImplementation(async (input) => ({
+      ...(input as object), id: 'budget-job', createdAt: 1, updatedAt: 1,
+    } as CronJobDefinition));
+    const onDone = vi.fn();
+    render(<CronSimpleCreate onDone={onDone} />);
+    fireEvent.change(screen.getByPlaceholderText(/竞品动态/), { target: { value: '每个工作日总结 notes.txt' } });
+    fireEvent.change(screen.getByTestId('cron-budget-limit-input'), { target: { value: '2' } });
+    fireEvent.click(screen.getByText('创建自动化'));
+
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    expect(createJob.mock.calls[0][0]).toMatchObject({ maxRunBudget: 2 });
+  });
+
+  it('空预算创建为不限（null）', async () => {
+    createJob.mockImplementation(async (input) => ({
+      ...(input as object), id: 'unlimited-job', createdAt: 1, updatedAt: 1,
+    } as CronJobDefinition));
+    const onDone = vi.fn();
+    render(<CronSimpleCreate onDone={onDone} />);
+    fireEvent.change(screen.getByPlaceholderText(/竞品动态/), { target: { value: '每个工作日总结 notes.txt' } });
+    fireEvent.click(screen.getByText('创建自动化'));
+
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    expect(createJob.mock.calls[0][0]).toMatchObject({ maxRunBudget: null });
+  });
+
+  it('切换云端隐藏预算字段并丢弃先前输入', async () => {
+    createJob.mockImplementation(async (input) => ({
+      ...(input as object), id: 'cloud-budget-job', createdAt: 1, updatedAt: 1,
+    } as CronJobDefinition));
+    const onDone = vi.fn();
+    render(<CronSimpleCreate onDone={onDone} />);
+    fireEvent.change(screen.getByPlaceholderText(/竞品动态/), { target: { value: '云端总结简报' } });
+    fireEvent.change(screen.getByTestId('cron-budget-limit-input'), { target: { value: '2' } });
+    fireEvent.click(screen.getByTestId('cron-runs-on-cloud'));
+    expect(screen.queryByTestId('cron-budget-limit-input')).toBeNull();
+    fireEvent.click(screen.getByText('创建自动化'));
+
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    expect(createJob.mock.calls[0][0]).toMatchObject({ runsOn: 'cloud', maxRunBudget: null });
+  });
+
   it('空目标提交显示校验提示且不调 createJob', async () => {
     render(<CronSimpleCreate onDone={() => undefined} />);
     fireEvent.click(screen.getByText('创建自动化'));

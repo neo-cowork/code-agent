@@ -24,6 +24,7 @@ import { listRoles } from '../../../services/rolesClient';
 import { buildCronJobInput, createDefaultCronJobDraft, type CronJobDraft } from './types';
 import { CronRunsOnSelector } from './CronRunsOnSelector';
 import { CronResultChannelField } from './CronResultChannel';
+import { CronRunBudgetField } from './CronRunBudgetField';
 import { showCronLoginWallWarning } from './cronLoginWallNotice';
 import { CLOUD_ROLE_BOUND_ERROR } from './CronCloudRoleRestriction';
 import { SavedRoutineRestate } from './SavedRoutineRestate';
@@ -71,6 +72,7 @@ export function buildSimpleDraft(
   runsOn: CronJobDraft['runsOn'] = 'local',
   resultChannel = '',
   urgencyCriteria = '',
+  maxRunBudget = '',
 ): CronJobDraft {
   return {
     ...createDefaultCronJobDraft(),
@@ -83,6 +85,7 @@ export function buildSimpleDraft(
     agentLibraryProjectId: libraryProjectId || '',
     resultChannel,
     agentUrgencyCriteria: urgencyCriteria,
+    maxRunBudget,
     ...schedule,
   };
 }
@@ -107,6 +110,7 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
   const [runsOn, setRunsOn] = useState<CronJobDraft['runsOn']>('local');
   const [resultChannel, setResultChannel] = useState('');
   const [urgencyCriteria, setUrgencyCriteria] = useState('');
+  const [maxRunBudget, setMaxRunBudget] = useState('');
   const [roles, setRoles] = useState<RolePanelEntry[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -136,6 +140,7 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
         runsOn,
         resultChannel,
         runsOn === 'local' ? urgencyCriteria : '',
+        runsOn === 'local' ? maxRunBudget : '',
       );
       const created = await createJob(buildCronJobInput(draft));
       showCronLoginWallWarning(created, { warning: cc.loginWallWarning, openSite: cc.loginWallOpenSite });
@@ -292,6 +297,10 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
             options={cc.weekdays.map((label, index) => ({ value: String(index), label }))}
           />
         </FormField>
+      )}
+
+      {runsOn === 'local' && (
+        <CronRunBudgetField value={maxRunBudget} onChange={setMaxRunBudget} />
       )}
 
       <div className="sticky -bottom-4 z-10 -mx-6 flex items-center justify-end gap-2 border-t border-zinc-700 bg-zinc-900 px-6 py-4">
