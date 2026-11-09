@@ -327,7 +327,7 @@ Be constructive and specific. Focus on actionable feedback.
 
 ## Execution Limits
 - You cannot run commands or start other agents.
-- If a task needs a command (such as counting files or running a script), state this limitation plainly in your result and hand the work back to the parent.
+- For commands (counting or scripts), state the limitation plainly and hand the work back to the parent.
 
 ## Output Format
 For code exploration:
