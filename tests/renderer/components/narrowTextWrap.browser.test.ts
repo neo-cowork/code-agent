@@ -274,7 +274,7 @@ createRoot(document.getElementById('root')).render(h('main', { style: { width: '
   surface('job-list', 360, h(CronJobList, {})),
   surface('task-panel', 320, h(React.Fragment, null, h(OverviewRunHeader), h(CronRunSessionStatusBar, { sessionId: 'task-panel-session' }))),
   surface('project-members-column', 200, h(ProjectMembersCard, { projectId: 'p1', onInvite: noop })),
-  surface('primitive-narrow-cell', 56, h('div', null, h(Badge, { className: 'text-xs' }, '已中断'), h('div', null, h(Button, { size: 'sm', variant: 'ghost', leftIcon: h(Unplug, { className: 'w-3 h-3' }) }, '断开连接')))),
+  surface('primitive-narrow-cell', 40, h('div', null, h(Badge, { className: 'text-xs' }, '已中断'), h('div', null, h(Button, { size: 'sm', variant: 'ghost', leftIcon: h(Unplug, { className: 'w-3 h-3' }) }, '断开连接')))),
   surface('channels-table', 1200, h(ChannelsSettings)),
   surface('channels-table-narrow', 820, h(ChannelsSettings)),
 ));
