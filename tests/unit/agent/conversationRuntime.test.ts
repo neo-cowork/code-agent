@@ -701,6 +701,26 @@ describe('ConversationRuntime', () => {
       expect(controller.signal.aborted).toBe(true);
     });
 
+    it('persists one streamed model response exactly once across cancellation and settled resume', async () => {
+      const persisted: Array<{ role: string; content: string }> = [];
+      const persistMessage = vi.fn(async (message) => { persisted.push(message); });
+      ctx.persistMessage = persistMessage;
+      ctx.turn.appendStreamedContent('The project still needs a recovery rehearsal.');
+
+      await runtime.cancel('user');
+      ctx.control.markSettled();
+      runtime.resume();
+      await runtime.cancel('user');
+      await runtime.cancel('session-switch');
+
+      const assistantWrites = persisted.filter((message) => message.role === 'assistant');
+      expect(assistantWrites).toHaveLength(1);
+      expect(assistantWrites[0].content).toBe('The project still needs a recovery rehearsal.\n\n[cancelled]');
+      expect(persistMessage).toHaveBeenCalledTimes(1);
+      expect(ctx.messages.filter((message) => message.role === 'assistant')).toHaveLength(1);
+      expect(ctx.turn.lastStreamedContent).toBe('');
+    });
+
     it('persists partial streamed assistant content as cancelled marker', async () => {
       const persistMessage = vi.fn();
       ctx.turn.appendStreamedContent('partial response');
@@ -2151,6 +2171,10 @@ describe('ConversationRuntime', () => {
         expect.anything(),
         expect.any(Number),
         expect.objectContaining({ status: 'aborted' }),
+      );
+      // 卡死 stop 后聊天里要有一句人话（无界面 / 无人值守原本静默）
+      expect(modules.contextAssembly.addAndPersistMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ role: 'assistant', content: expect.stringContaining('重复同一个步骤') }),
       );
     });
 

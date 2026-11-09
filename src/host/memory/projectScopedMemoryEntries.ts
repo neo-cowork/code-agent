@@ -34,6 +34,9 @@ import {
 } from '../services/roleAssets/roleAssetService';
 import { createLogger } from '../services/infra/logger';
 
+import { annotateLastChange, type MemoryEntryDatabase } from './memoryEntryRuntime';
+import { journalScopedMemoryChange } from './scopedMemoryJournal';
+
 const logger = createLogger('ProjectScopedMemoryEntries');
 
 const ENTRY_ID_PREFIX = 'project:';
@@ -213,9 +216,10 @@ async function listProjectScopedMemoryEntries(): Promise<MemoryEntry[]> {
 }
 
 /** 把项目层条目 overlay 进页面列表结果：追加 + 计入 light_file + 维持 updatedAt 倒序。 */
-export async function overlayProjectScopedEntries(result: MemoryEntryListResult): Promise<MemoryEntryListResult> {
+export async function overlayProjectScopedEntries(result: MemoryEntryListResult, db?: MemoryEntryDatabase): Promise<MemoryEntryListResult> {
   const projectEntries = await listProjectScopedMemoryEntries();
   if (projectEntries.length === 0) return result;
+  annotateLastChange(projectEntries, db);
   return {
     entries: [...result.entries, ...projectEntries].sort((a, b) => b.updatedAt - a.updatedAt),
     sourceCounts: {
@@ -278,6 +282,14 @@ export async function updateProjectScopedMemoryEntry(request: MemoryEntryUpdateR
   logger.info('Project memory updated from settings page', { projectKey: ref.projectKey, filename: ref.filename });
 
   const [updatedContent, stat] = await Promise.all([fs.readFile(filePath, 'utf-8'), fs.stat(filePath)]);
+  try {
+    journalScopedMemoryChange(request.entryId, content, updatedContent, { actor: 'user_manual' });
+  } catch (error) {
+    logger.warn('Manual project memory journal append failed (memory write kept)', {
+      entryId: request.entryId,
+      reason: error instanceof Error ? error.message : String(error),
+    });
+  }
   const workspacePath = await readProjectWorkspacePath(ref.projectKey);
   return {
     entry: projectMemoryFileToEntry(ref.projectKey, ref.filename, updatedContent, stat.mtimeMs, workspacePath),
