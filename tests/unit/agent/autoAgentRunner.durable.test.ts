@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const coordinatorState = vi.hoisted(() => ({ execute: vi.fn() }));
 const factoryState = vi.hoisted(() => ({ create: vi.fn() }));
@@ -22,10 +22,12 @@ vi.mock('../../../src/host/agent/dynamicAgentFactory', () => ({
 vi.mock('../../../src/host/agent/agentRequirementsAnalyzer', () => ({
   getAgentRequirementsAnalyzer: () => ({ analyze: vi.fn() }),
 }));
-vi.mock('../../../src/host/agent/autoAgentDurableRuntime', () => ({
+vi.mock('../../../src/host/agent/autoAgentDurableRuntime', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../src/host/agent/autoAgentDurableRuntime')>(),
   getAutoAgentDurableRuntime: () => ({ start: durableState.start }),
 }));
-vi.mock('../../../src/host/telemetry/runTraceContext', () => ({
+vi.mock('../../../src/host/telemetry/runTraceContext', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../src/host/telemetry/runTraceContext')>(),
   getActiveRunTraceContext: () => ({ runId: 'run-parent' }),
 }));
 vi.mock('../../../src/host/services', () => ({
@@ -39,9 +41,11 @@ vi.mock('../../../src/host/tools/dispatch/toolResolver', () => ({
   getToolResolver: () => ({ name: 'mock-tool-resolver' }),
 }));
 
-vi.mock('../../../src/host/app/applicationRunRegistry', () => ({
-  getConfiguredApplicationRunRegistry: () => ({ hasDurableOwner: () => true }),
-}));
+vi.unmock('better-sqlite3');
+import Database from 'better-sqlite3';
+import { getApplicationRunRegistry, resetApplicationRunRegistryForTests } from '../../../src/host/app/applicationRunRegistry';
+import { DurableRunKernel } from '../../../src/host/runtime/durableRunKernel';
+import { DurableRunRepository } from '../../../src/host/services/core/repositories/DurableRunRepository';
 
 import { runAutoAgentMode } from '../../../src/host/agent/orchestrator/autoAgentRunner';
 
@@ -87,8 +91,22 @@ function run(deps: ReturnType<typeof makeDeps>) {
 }
 
 describe('runAutoAgentMode durable terminal containment', () => {
-  beforeEach(() => {
+  let db: Database.Database;
+  afterEach(() => {
+    resetApplicationRunRegistryForTests();
+    db.close();
+  });
+  beforeEach(async () => {
     vi.clearAllMocks();
+    db = new Database(':memory:');
+    db.pragma('foreign_keys = ON');
+    const repository = new DurableRunRepository(db);
+    repository.migrate();
+    const registry = getApplicationRunRegistry();
+    registry.configureDurableKernel(new DurableRunKernel({
+      stores: repository, ownerId: 'host', processInstanceId: 'terminal-test', leaseDurationMs: 60_000,
+    }));
+    await registry.startDurable({ runId: 'run-parent', sessionId: 'session-auto-1', workspace: '/tmp/project' });
     factoryState.create.mockReturnValue([{
       id: 'agent-worker',
       name: 'Worker',
