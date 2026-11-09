@@ -16,6 +16,10 @@ const databaseState = vi.hoisted(() => ({
   db: null as BetterSqlite3.Database | null,
 }));
 
+const classifierState = vi.hoisted(() => ({
+  withoutTrustBoundary: false,
+}));
+
 vi.mock('../../../src/host/tools/dispatch/toolResolver', () => ({
   getToolResolver: () => ({
     getDefinition: resolverState.getDefinition,
@@ -28,6 +32,31 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
     getDb: () => databaseState.db,
   }),
 }));
+
+vi.mock('../../../src/host/tools/toolPermissionClassification', async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import('../../../src/host/tools/toolPermissionClassification')
+  >();
+  return {
+    ...actual,
+    resolveToolPermissionClassification: async (
+      input: Parameters<typeof actual.resolveToolPermissionClassification>[0],
+    ) => {
+      const result = await actual.resolveToolPermissionClassification(input);
+      const traceRule = result.traceStep?.rule;
+      if (
+        classifierState.withoutTrustBoundary
+        && (traceRule === 'B1: sensitive_credential_read'
+          || traceRule === 'B1: git_remote_or_credential_write')
+      ) {
+        // Keep the real deterministic B1 classification while isolating its own
+        // grant hard gate from the classifier's separate trust-boundary marker.
+        return { ...result, trustBoundary: false };
+      }
+      return result;
+    },
+  };
+});
 
 vi.mock('../../../src/host/services/infra/logger', () => {
   const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -100,6 +129,7 @@ describe('ToolExecutor grant hard gates', () => {
     getToolCache().clear();
     getPermissionClassifier().clearCache();
     resetConfirmationGate();
+    classifierState.withoutTrustBoundary = false;
   });
 
   afterEach(async () => {
@@ -178,6 +208,7 @@ describe('ToolExecutor grant hard gates', () => {
   }
 
   it('credential reads remain gated after run and 24h Bash grants', async () => {
+    classifierState.withoutTrustBoundary = true;
     await expectCardForBothGrantTiers(
       'Bash',
       { command: 'cat ~/.ssh/id_rsa' },
@@ -186,6 +217,7 @@ describe('ToolExecutor grant hard gates', () => {
   });
 
   it('git remote changes remain gated after run and 24h Bash grants', async () => {
+    classifierState.withoutTrustBoundary = true;
     await expectCardForBothGrantTiers(
       'Bash',
       { command: 'git remote set-url origin https://example.invalid/repo.git' },
