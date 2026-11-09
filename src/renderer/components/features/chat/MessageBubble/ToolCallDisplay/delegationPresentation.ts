@@ -8,7 +8,7 @@ import {
   taskActivityIds,
 } from '../../../../../utils/agentActivity';
 
-type DelegationReceiptState = 'working' | 'completed' | 'failed';
+type DelegationReceiptState = 'working' | 'completed' | 'failed' | 'cancelled';
 
 interface DelegationReceiptOutput {
   id: string;
@@ -60,7 +60,9 @@ function fromTask(task: Task): DelegationPresentation {
     ? 'working'
     : task.status === 'completed'
       ? 'completed'
-      : 'failed';
+      : task.status === 'cancelled'
+        ? 'cancelled'
+        : 'failed';
   return {
     state,
     title: task.title,

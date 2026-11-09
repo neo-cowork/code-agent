@@ -26,7 +26,7 @@ export function DelegationReceipt({ presentation }: { presentation: DelegationPr
   const pendingPermissionRequest = useAppStore((state) => state.pendingPermissionRequest);
   const pendingPermissionSessionId = useAppStore((state) => state.pendingPermissionSessionId);
   const queuedPermissionRequests = useAppStore((state) => state.queuedPermissionRequests);
-  const toolFailure = presentation.state === 'working'
+  const toolFailure = presentation.state === 'working' || presentation.state === 'cancelled'
     ? undefined
     : describeLastToolFailure(presentation.toolFailure, t);
 

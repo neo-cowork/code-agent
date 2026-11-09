@@ -18,6 +18,10 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: h.logError, debug: h.logDebug }),
 }));
 vi.mock('../../../src/host/platform', () => ({ broadcastToRenderer: vi.fn() }));
+const cancelAllForSession = vi.hoisted(() => vi.fn(async (..._a: unknown[]) => 0));
+vi.mock('../../../src/host/services/commandCenter/sessionCommandCenter', () => ({
+  getSessionCommandCenter: () => ({ cancelAllForSession }),
+}));
 
 import { registerTaskHandlers } from '../../../src/host/ipc/task.ipc';
 import { broadcastToRenderer } from '../../../src/host/platform';
@@ -56,6 +60,7 @@ describe('task.ipc dispatch 特征：manager 可用', () => {
     expect(m.interruptTask).toHaveBeenCalledWith('s1');
     expect(await call(null, { action: 'cancel', payload: { sessionId: 's1' } } as IPCRequest)).toEqual({ success: true, data: null });
     expect(m.cancelTask).toHaveBeenCalledWith('s1');
+    expect(cancelAllForSession).toHaveBeenCalledWith('s1', 'user-cancel');
     expect(await call(null, { action: 'cleanup', payload: { sessionId: 's1' } } as IPCRequest)).toEqual({ success: true, data: null });
     expect(m.cleanup).toHaveBeenCalledWith('s1');
     expect(await call(null, { action: 'getState', payload: { sessionId: 's9' } } as IPCRequest)).toEqual({ success: true, data: { status: 'running' } });

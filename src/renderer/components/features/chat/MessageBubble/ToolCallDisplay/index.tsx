@@ -186,6 +186,7 @@ export function ToolCallDisplay({
     if (toolCall.result?.metadata?.recovered === true) return 'success';
     if (delegationPresentation?.state === 'working') return 'pending';
     if (delegationPresentation?.state === 'completed') return 'success';
+    if (delegationPresentation?.state === 'cancelled') return 'interrupted';
     if (delegationPresentation?.state === 'failed') return 'error';
     return getToolStatus(toolCall, currentSessionId, processingSessionIds);
   }, [awaitingApproval, delegationPresentation?.state, toolCall, currentSessionId, processingSessionIds, receipt, statusOverride]);
