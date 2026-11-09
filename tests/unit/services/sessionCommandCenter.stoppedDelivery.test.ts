@@ -3,24 +3,26 @@ vi.unmock('better-sqlite3');
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentEvent, Message } from '../../../src/shared/contract';
 import type { ConfigService } from '../../../src/host/services/core/configService';
-import { RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../src/shared/constants';
+import { DEFAULT_MODEL, DEFAULT_PROVIDER, RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../src/shared/constants';
+import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
+import { applyTestSessionSchema } from '../../utils/applyTestSessionSchema';
 import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
 import { projectTurns } from '../../../src/renderer/hooks/useTurnProjection';
 
 const h = vi.hoisted(() => ({
   manager: undefined as unknown,
   db: undefined as unknown as Database.Database,
+  repository: undefined as unknown as SessionRepository,
   variant: 'step_cap' as 'step_cap' | 'error' | 'no_conclusion' | 'completed',
   events: [] as AgentEvent[],
   pageOutput: '',
 }));
 const storage = {
   addMessageToSession: async (sessionId: string, message: Message) => {
-    h.db.prepare('INSERT INTO messages VALUES (?, ?, ?)').run(message.id, sessionId, JSON.stringify(message));
+    h.repository.addMessage(sessionId, message);
   },
   updateMessage: async (id: string, patch: Partial<Message>) => {
-    const row = h.db.prepare('SELECT json FROM messages WHERE id=?').get(id) as { json: string };
-    h.db.prepare('UPDATE messages SET json=? WHERE id=?').run(JSON.stringify({ ...JSON.parse(row.json), ...patch }), id);
+    h.repository.updateMessage(id, patch);
   },
 };
 vi.mock('../../../src/host/services/infra/sessionManager', () => ({ getSessionManager: () => storage }));
@@ -59,13 +61,19 @@ import { resetSessionTaskConcurrencyPoolForTest } from '../../../src/host/servic
 import { resetBackgroundTaskLedgerForTest } from '../../../src/host/task/backgroundTaskLedger';
 
 function rows(): Message[] {
-  return (h.db.prepare('SELECT json FROM messages ORDER BY rowid').all() as Array<{ json: string }>).map((r) => JSON.parse(r.json));
+  return h.repository.getMessages('session-stop');
 }
 let center: SessionCommandCenter;
 let manager: TaskManager;
 beforeEach(() => {
   h.db = new Database(':memory:');
-  h.db.exec('CREATE TABLE messages (id TEXT PRIMARY KEY, sessionId TEXT, json TEXT)');
+  applyTestSessionSchema(h.db);
+  h.repository = new SessionRepository(h.db);
+  h.repository.createSession({
+    id: 'session-stop', title: '百科摘要',
+    modelConfig: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL },
+    createdAt: 1, updatedAt: 1,
+  });
   h.events = [];
   h.pageOutput = 'URL: https://baike.baidu.com/item/%E9%B9%88%E9%B9%95\nTitle: 鹈鹕_百度百科';
   resetSessionTaskConcurrencyPoolForTest();
