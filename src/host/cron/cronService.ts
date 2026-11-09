@@ -54,6 +54,7 @@ import {
   scheduleBoundToDate,
 } from './cronExecutionPolicy';
 import { CronCloudRuntime } from './cronCloudRuntime';
+import { CloudNotConfiguredError } from './cronCloudErrors';
 import { CronEventTrigger, assertEventScheduleConstraints, hasExplicitChatListenBinding } from './cronEventTrigger';
 import { CronWebhookRelay, assertWebhookScheduleCloudConfigured } from './cronWebhookRelay';
 import { runWebhookHookOp } from './cronWebhookHookOps';
@@ -291,6 +292,10 @@ export class CronService implements Disposable {
     if (definition.schedule?.type === 'event' && definition.schedule.source === 'webhook') {
       // webhook 源（N-CRON-WEBHOOK-CLOUD-HOOK）：hook 活在云端中继后面，没配置就建不成。
       assertWebhookScheduleCloudConfigured(this.cloudRuntime.isConfigured());
+    }
+
+    if (runsOn === 'cloud' && definition.enabled && !this.cloudRuntime.isConfigured()) {
+      throw new CloudNotConfiguredError('Cloud scheduler is not configured');
     }
 
     const job: CronJobDefinition = {
