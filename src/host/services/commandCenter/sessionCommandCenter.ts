@@ -1,3 +1,5 @@
+import { RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../shared/constants';
+import { getMaxIterations } from '../cloud/featureFlagService';
 import { resolveStoppedTaskOutcome } from './sessionTaskStopConclusion';
 import type { AgentEvent, Message, MessageAttachment, TaskProgressData, ToolProgressData } from '../../../shared/contract';
 import type { TaskProgress } from '../../../shared/contract/backgroundTask';
@@ -147,6 +149,8 @@ export class SessionCommandCenter {
   private readonly toolNamesByCallId = new Map<string, string>();
   /** 每个任务最近一次工具调用带的网址：任务没做完就停时，结论里说「最后停留在哪」。 */
   private readonly lastUrlByTask = new Map<string, string>();
+  /** 主循环报过「撞步数上限」的任务（agent error 事件 code）。 */
+  private readonly stepCapHitTasks = new Set<string>();
   /** 在途 shell 调用的命令文本（key 同 toolNamesByCallId），只供回收时判断是否可能卡在系统授权框。 */
   private readonly shellCommandsByCallId = new Map<string, string>();
   /** permission_request ids still unresolved on the agent event stream, per task. */
@@ -511,6 +515,9 @@ export class SessionCommandCenter {
         status: 'completed',
         detail: conclusion,
         lastUrl: this.lastUrlByTask.get(task.id),
+        ...(this.stepCapHitTasks.has(task.id)
+          ? { stepCap: { max: task.options?.maxIterations ?? getMaxIterations() } }
+          : {}),
       });
       await this.settle(task, stopped.status, stopped.detail, stopped.status === 'completed' ? artifacts : undefined);
       return;
@@ -551,6 +558,9 @@ export class SessionCommandCenter {
       this.ledger(sessionId).touch(taskId);
     }
     this.noteApprovalEvent(taskId, event);
+    if (event.type === 'error' && (event.data as { code?: unknown } | undefined)?.code === RUN_ERROR_CODE_MAX_ITERATIONS) {
+      this.stepCapHitTasks.add(taskId);
+    }
 
     // tool_call_start 只记「这个 call id 是哪个工具」，供 tool_call_end 落
     // lastToolFailure.tool / 对比同名工具的后续成功；end 时即删，map 只活在途调用。
@@ -738,6 +748,7 @@ export class SessionCommandCenter {
     if (TERMINAL.has(task.status)) return;
     this.approvalWaitStartedAtByTask.delete(task.id);
     this.lastUrlByTask.delete(task.id);
+    this.stepCapHitTasks.delete(task.id);
     task.status = status;
     task.detail = detail;
     task.summary = compactSummary(

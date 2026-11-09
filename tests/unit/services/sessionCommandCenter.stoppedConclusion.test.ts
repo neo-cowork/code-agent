@@ -1,6 +1,5 @@
 import { EventEmitter } from 'node:events';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
 import type { TaskManager, TaskManagerEvent } from '../../../src/host/task/TaskManager';
 import type { AgentEvent } from '../../../src/shared/contract';
 import { SessionCommandCenter } from '../../../src/host/services/commandCenter/sessionCommandCenter';
@@ -51,22 +50,22 @@ describe('session task (delegate_task) stop conclusion', () => {
     resetBackgroundTaskLedgerForTest();
   });
 
-  it('pins the max-steps marker to the real main-loop wording', () => {
-    const source = readFileSync('src/host/agent/runtime/maxStepsFallback.ts', 'utf8');
-    expect(source).toContain('已达最大执行轮次');
-  });
-
-  it('does not report a step-cap run as completed and names the last page', async () => {
+  it('does not report a step-cap run as completed: step M of M, last page, next step', async () => {
     const { manager, projected, taskId, visit } = await setup();
     visit('https://www.baidu.com');
+    manager.emitAgent('session-stop', {
+      type: 'error', data: { message: 'Max iterations reached', code: 'MAX_ITERATIONS_REACHED' },
+    } as AgentEvent, taskId);
     manager.emitTask({
       type: 'task_completed', sessionId: 'session-stop',
-      data: { taskId, conclusion: '⚠️ 已达最大执行轮次（3 轮），任务未全部完成，执行已停止。\n\n**为什么停：** 达到单次运行的最大执行轮次上限（3 轮）。可以发新指令让我从当前进度继续，或把任务拆小后重试。' },
+      data: { taskId, conclusion: '已达本任务最大步数上限，工具已禁用，以下为文本总结。尚未打开词条。' },
     });
     await vi.waitFor(() => expect(projected).toHaveLength(1));
     expect(projected[0].status).toBe('failed');
-    expect(projected[0].resultText).toContain('已达最大执行轮次（3 轮）');
+    expect(projected[0].resultText).toMatch(/第 \d+ 步（上限 \d+ 步）就用完了步数/);
     expect(projected[0].resultText).toContain('最后停留在页面https://www.baidu.com');
+    expect(projected[0].resultText).toContain('继续');
+    expect(projected[0].resultText).toContain('尚未打开词条');
   });
 
   it('turns an empty conclusion into a plain failed result instead of "任务已完成"', async () => {
