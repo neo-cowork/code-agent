@@ -14,7 +14,7 @@ const option = (name, fallback) => {
   return index < 0 ? fallback : process.argv[index + 1];
 };
 const root = path.resolve(option('root', 'src/renderer'));
-const allowlistPath = option('allowlist', 'scripts/renderer-date-locales-allowlist.json');
+const allowlistPath = option('allowlist', 'scripts/ci/renderer-date-locales-allowlist.json');
 // Only shrink: changing this cap to admit new exceptions weakens the ratchet.
 const BASELINE = 21;
 const errors = [];

@@ -13,11 +13,11 @@ function fixture(source: string, entries: unknown[] = []) {
   writeFileSync(path.join(folder, 'Ignored.test.tsx'), 'new Date().toLocaleString();');
   const allowlist = path.join(folder, 'allowlist.json');
   writeFileSync(allowlist, JSON.stringify(entries));
-  return spawnSync(process.execPath, ['scripts/check-renderer-date-locales.mjs', '--root', folder, '--allowlist', allowlist], { encoding: 'utf8' });
+  return spawnSync(process.execPath, ['scripts/ci/check-renderer-date-locales.mjs', '--root', folder, '--allowlist', allowlist], { encoding: 'utf8' });
 }
 describe('renderer bare Date locale ratchet', () => {
   it('passes the non-test renderer tree with reasoned, bounded exceptions', () => {
-    const result = spawnSync(process.execPath, ['scripts/check-renderer-date-locales.mjs'], { encoding: 'utf8' });
+    const result = spawnSync(process.execPath, ['scripts/ci/check-renderer-date-locales.mjs'], { encoding: 'utf8' });
     expect(result.stderr).toBe('');
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('PASS renderer date locales');
