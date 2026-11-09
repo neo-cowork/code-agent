@@ -497,6 +497,20 @@ describe('recordCronAutomationExecution', () => {
     expect(arg.configPatch).toEqual({ pendingReview: { resultSessionId: 'result-sess', at: 1234 } });
   });
 
+  it('retains the entire parsed summary across both persistence preview caps', async () => {
+    const { parseCronRunDigest } = await import('../../../src/shared/cronRunDigest');
+    const full = '本周完成客户访谈，整理需求并确认下周计划。'.repeat(80) + '\n最后一句必须完整保留。';
+    await recordCronAutomationExecution(
+      def({ action: { type: 'agent', agentType: 'default', prompt: '周报' } }),
+      exec({ status: 'completed', sessionId: 'result-sess', result: { digest: parseCronRunDigest(`<cron_summary>${full}</cron_summary>`) } }),
+      identityRuntime,
+    );
+    const digest = service.recordEvent.mock.calls[0][0].configPatch.pendingReview.digest;
+    expect(digest.summaryLine).toMatch(/。…$/);
+    expect(digest.summaryLine.length).toBeLessThanOrEqual(120);
+    expect(digest.summaryText).toBe(full);
+  });
+
   it('透传定时任务结果 digest 的产物数和首行摘要，并省略空 digest', async () => {
     await recordCronAutomationExecution(
       def({
@@ -524,6 +538,7 @@ describe('recordCronAutomationExecution', () => {
         digest: {
           artifactCount: 2,
           summaryLine: '第一行摘要',
+          summaryText: '第一行摘要  \n第二行摘要',
           artifacts: [
             { path: 'report.md', openable: false },
             { path: 'chart.png', openable: false },

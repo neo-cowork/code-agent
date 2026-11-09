@@ -21,9 +21,29 @@ describe('parseCronRunDigest', () => {
   it('caps an over-long summary at 1000 characters and ignores content outside the block', () => {
     const summary = 'a'.repeat(1001);
     expect(parseCronRunDigest(`外部文字<cron_summary>${summary}</cron_summary>外部文字`)).toEqual({
-      summary: 'a'.repeat(1000),
+      summary: `${'a'.repeat(999)}…`,
+      fullSummary: summary,
       artifacts: [],
     });
+  });
+
+  it.each(['。', '！', '？', '.', '!', '?', '\n'])(
+    'ends a long preview at the last sentence boundary %j and retains the full summary', (end) => {
+      const complete = '甲'.repeat(700) + end + '乙'.repeat(200) + end;
+      const original = complete + '尾'.repeat(300);
+      const result = parseCronRunDigest(`<cron_summary>${original}</cron_summary>`);
+      expect(result.summary).toBe(`${complete.trimEnd()}…`);
+      expect(result.fullSummary).toBe(original);
+    },
+  );
+
+  it('falls back to the last word boundary and preserves summaries at or below the cap', () => {
+    const complete = 'weekly report '.repeat(70).trimEnd();
+    const original = `${complete} ${'remaining'.repeat(40)}`;
+    expect(parseCronRunDigest(`<cron_summary>${original}</cron_summary>`).summary).toBe(`${complete}…`);
+    for (const text of ['短摘要。', 'x'.repeat(1000)]) {
+      expect(parseCronRunDigest(`<cron_summary>${text}</cron_summary>`)).toEqual({ summary: text, artifacts: [] });
+    }
   });
 
   it('limits extracted artifacts to ten lines', () => {
