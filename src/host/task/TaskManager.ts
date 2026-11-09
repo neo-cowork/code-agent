@@ -39,10 +39,12 @@ import { MULTIAGENT_TOOL_NAMES } from '../../shared/constants/tools';
 import { SESSION_COMMAND_CENTER_TOOL_NAMES } from '../../shared/constants/sessionCommandCenter';
 import { collectToolArtifactsFromMetadata } from '../../shared/contract/artifactBlob';
 import { isDeliverableArtifact } from '../../shared/contract/artifactRoleRegistry';
+import { stopSessionBackgroundWork } from './sessionBackgroundStop';
 import { persistTaskManagerEvent, type TurnState } from './taskManagerEventPersistence';
 import { isTaskDeliveryFailed } from './taskDeliveryVerdict';
 import {
   DEFAULT_CONFIG,
+  SESSION_STOP_REQUESTED_EVENT,
   type BackgroundTaskRun,
   type BackgroundTaskRunStatus,
   type OrchestratorWrapper,
@@ -547,6 +549,30 @@ export class TaskManager extends EventEmitter {
    * @param sessionId - 会话 ID
    */
   async cancelTask(sessionId: string): Promise<void> {
+    // 后台级联必须先于下面所有按前台状态的 early-return：前台 idle（委派后的常态）时也要停后台。
+    const backgroundSettled = this.cancelSessionBackgroundWork(sessionId);
+    try {
+      await this.cancelForegroundTask(sessionId);
+    } finally {
+      await backgroundSettled;
+    }
+  }
+
+  /**
+   * 用户 Stop 的后台级联：同步 abort 该会话全部运行中后台任务（指挥台委派任务 +
+   * run_in_background 子代理），返回的 promise 限时等待收线（永不 reject）。
+   * 无前台 orchestrator 的入口（web /api/cancel 的 idle 会话）直接调用本方法。
+   */
+  cancelSessionBackgroundWork(sessionId: string): Promise<void> {
+    this.emit(SESSION_STOP_REQUESTED_EVENT, { type: SESSION_STOP_REQUESTED_EVENT, sessionId });
+    return stopSessionBackgroundWork({
+      sessionId,
+      backgroundRuns: this.backgroundRuns,
+      cancelBackgroundTask: (taskId) => this.cancelBackgroundTask(taskId),
+    });
+  }
+
+  private async cancelForegroundTask(sessionId: string): Promise<void> {
     const state = this.sessionStates.get(sessionId);
     if (!state) {
       logger.warn(`Session ${sessionId} not found`);
