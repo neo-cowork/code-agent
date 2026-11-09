@@ -18,6 +18,8 @@ interface NotificationBudgetOptions<T extends NotificationBudgetItem> {
   now?: () => number;
   setTimer?: (callback: () => void, delayMs: number) => NotificationBudgetTimer;
   clearTimer?: (timer: NotificationBudgetTimer) => void;
+  /** 暂存队列变化（新增暂存 / 窗口收尾 / clear）时回调，用于落盘；dispose 不触发。 */
+  onHeldChange?: (held: readonly T[]) => void;
 }
 
 /** enqueue 的去向：立即投递（豁免/开窗首条）还是暂存等窗口收尾。 */
@@ -29,6 +31,7 @@ export class NotificationBudget<T extends NotificationBudgetItem> {
   private readonly now: () => number;
   private readonly setTimer: (callback: () => void, delayMs: number) => NotificationBudgetTimer;
   private readonly clearTimer: (timer: NotificationBudgetTimer) => void;
+  private readonly onHeldChange: ((held: readonly T[]) => void) | undefined;
   private held: T[] = [];
   private timer: NotificationBudgetTimer | undefined;
   private windowStartedAt: number | null = null;
@@ -38,6 +41,7 @@ export class NotificationBudget<T extends NotificationBudgetItem> {
     this.deliverDigest = options.deliverDigest;
     this.now = options.now ?? Date.now;
     this.setTimer = options.setTimer ?? ((callback, delayMs) => setTimeout(callback, delayMs));
+    this.onHeldChange = options.onHeldChange;
     this.clearTimer = options.clearTimer ?? ((timer) => {
       clearTimeout(timer as ReturnType<typeof setTimeout>);
     });
@@ -54,18 +58,25 @@ export class NotificationBudget<T extends NotificationBudgetItem> {
       return 'delivered';
     }
     this.held.push(item);
+    this.onHeldChange?.(this.held);
     return 'held';
   }
 
   clear(): void {
+    this.stop();
+    this.held = [];
+    this.onHeldChange?.(this.held);
+  }
+
+  /** 退出：只停定时器。暂存队列已落盘，留给下次启动补发，不能在这里清掉。 */
+  dispose(): void {
+    this.stop();
+  }
+
+  private stop(): void {
     if (this.timer) this.clearTimer(this.timer);
     this.timer = undefined;
     this.windowStartedAt = null;
-    this.held = [];
-  }
-
-  dispose(): void {
-    this.clear();
   }
 
   private openWindow(): void {
@@ -80,6 +91,7 @@ export class NotificationBudget<T extends NotificationBudgetItem> {
     this.windowStartedAt = null;
     this.held = [];
     if (held.length === 0) return;
+    this.onHeldChange?.(this.held);
     if (held.length === 1) {
       this.deliver(held[0]);
       return;

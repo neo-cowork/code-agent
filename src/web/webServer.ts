@@ -668,6 +668,8 @@ async function initializeServices(): Promise<void> {
   // must not sit in front of /api/health or Tauri's first window navigation.
   const capabilityBootstrap = startWebCapabilityBootstrap(configService);
   bootMark('capability-bootstrap-kickoff'); // 非阻塞：应≈0ms
+  // 上次进程在预算窗口内退出/崩溃遗留的暂存通知：等首个 renderer 就绪后补发一条汇总。
+  void rendererWindowReady.then(() => notificationService.replayPersistedHeld());
   if (databaseForDurableRun) {
     startDurableRunStartup({
       capabilityBootstrap,
