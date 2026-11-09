@@ -67,17 +67,10 @@ vi.mock('../../../src/host/mcp/logCollector.js', () => ({
 }));
 
 import { MessageProcessor } from '../../../src/host/agent/runtime/messageProcessor';
-import { ToolExecutionEngine } from '../../../src/host/agent/runtime/toolExecutionEngine';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
 import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
 import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
-
-type DeepPartial<T> = T extends (infer U)[]
-  ? DeepPartial<U>[]
-  : T extends object
-    ? { -readonly [P in keyof T]?: DeepPartial<T[P]> }
-    : T;
 
 const DECLARE_CALL = { id: 'dd-1', name: 'declare_deliverables', arguments: { final_artifacts: ['/tmp/code-agent-test/brief.md'] } };
 const SEARCH_CALL = { id: 'ws-1', name: 'WebSearch', arguments: { query: 'remote collaboration tools' } };
@@ -190,17 +183,6 @@ function toolUseResponse(calls: Array<{ id: string; name: string; arguments: Rec
     toolCalls: calls,
     runtimeDiagnostics: { visibleToolNames: VISIBLE },
   } as unknown as ModelResponse;
-}
-
-/** 组装一个真 ToolExecutionEngine（gate stack 全真，只有最末端的 toolExecutor 是 spy）。 */
-function makeRealEngine(ctx: Record<string, unknown>, deps: ReturnType<typeof buildDeps>) {
-  const engine = new ToolExecutionEngine(ctx as unknown as RuntimeContext);
-  engine.setModules(
-    deps.contextAssembly as never,
-    deps.runFinalizer as never,
-    { setPlanMode: vi.fn(), isPlanMode: vi.fn().mockReturnValue(false) } as never,
-  );
-  return engine;
 }
 
 const EVENT_PROC = { endSpan: vi.fn() } as never;
