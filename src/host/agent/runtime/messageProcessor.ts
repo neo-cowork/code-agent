@@ -680,6 +680,7 @@ export class MessageProcessor {
         ].join('\n'),
         'tool-policy-guard',
       );
+      await sealBouncedToolCalls({ ctx: this.ctx, contextAssembly: this.contextAssembly }, response, toolCalls, 'denied', new Set(deniedToolCalls.map((denied) => denied.id)));
       if (this.guardState.toolCallRetryCount > this.ctx.maxToolCallRetries) {
         const finalMessage: Message = {
           id: this.contextAssembly.generateId(),
@@ -693,10 +694,7 @@ export class MessageProcessor {
         await this.contextAssembly.addAndPersistMessage(finalMessage);
         this.ctx.onEvent({ type: 'message', data: finalMessage });
         this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.turn.currentTurnId, '', response.thinking, this.ctx.contextHealth.currentSystemPromptHash);
-        this.ctx.onEvent({
-          type: 'turn_end',
-          data: { turnId: this.ctx.turn.currentTurnId },
-        });
+        this.ctx.onEvent({ type: 'turn_end', data: { turnId: this.ctx.turn.currentTurnId } });
         return 'break';
       }
       return 'continue';

@@ -316,4 +316,25 @@ describe('declare_deliverables 不吞整批', () => {
     expect(deps.persisted.find((m) => m.role === 'assistant')?.toolCalls?.[0]?.id).toBe('ws-1');
     expect(deps.persisted.find((m) => m.role === 'tool')?.toolResults?.[0]).toMatchObject({ toolCallId: 'ws-1', success: false });
   });
+
+  it('run 级禁用工具：整批调用和每条合成失败结果都落库（含批内被连带跳过的调用）', async () => {
+    const ctx = buildCtx({ deniedToolNames: ['WebSearch'], maxToolCallRetries: 3 });
+    const deps = buildDeps(ctx);
+    const toolEngine = { executeToolsWithHooks: vi.fn() };
+    const processor = makeProcessor(ctx, deps, toolEngine);
+
+    const action = await processor.handleToolResponse(toolUseResponse([DECLARE_CALL, SEARCH_CALL]), false, 1, EVENT_PROC);
+
+    expect(action).toBe('continue');
+    expect(toolEngine.executeToolsWithHooks).not.toHaveBeenCalled();
+    const messages = (ctx as unknown as { messages: Message[] }).messages;
+    const assistantIdx = messages.findIndex((m) => m.role === 'assistant' && m.toolCalls?.length === 2);
+    expect(assistantIdx).toBeGreaterThan(0);
+    const results = messages[assistantIdx + 1].toolResults ?? [];
+    expect(messages[assistantIdx + 1].role).toBe('tool');
+    expect(results.map((r) => r.toolCallId).sort()).toEqual(['dd-1', 'ws-1']);
+    expect(results.every((r) => r.success === false)).toBe(true);
+    expect(results.find((r) => r.toolCallId === 'ws-1')?.metadata).toMatchObject({ code: 'TOOL_DISABLED_FOR_RUN' });
+    expect(results.find((r) => r.toolCallId === 'dd-1')?.metadata).toMatchObject({ code: 'TOOL_BATCH_SKIPPED' });
+  });
 });
