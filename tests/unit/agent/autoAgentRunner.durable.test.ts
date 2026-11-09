@@ -70,12 +70,12 @@ function makeDeps() {
   };
 }
 
-function run(deps: ReturnType<typeof makeDeps>) {
+function run(deps: ReturnType<typeof makeDeps>, onEvent = vi.fn()) {
   return runAutoAgentMode(
     'do the work',
     'do the work with context',
     { taskType: 'work', executionStrategy: 'sequential', confidence: 0.9 } as never,
-    vi.fn(),
+    onEvent,
     { provider: 'mock', model: 'mock-model' } as never,
     deps,
     'session-auto-1',
@@ -139,6 +139,33 @@ describe('runAutoAgentMode durable terminal containment', () => {
       'Auto Agent durable terminal projection failed; preserving successful graph result',
       { runId: 'auto-child', reason: 'other', error: 'disk full' },
     );
+  });
+
+
+  it.each([
+    { output: '## 主 Agent (综合处理)\n\nSubagent completed without output', success: true, failedChild: false, reason: 'empty_output' },
+    { output: '   ', success: true, failedChild: false, reason: 'empty_output' },
+    { output: '部分完成的内容', success: false, failedChild: false, reason: 'agent_failed' },
+    { output: '部分完成的内容', success: true, failedChild: true, reason: 'agent_failed' },
+  ])('signals unavailable report without publishing it: $reason / $output', async ({ output, success, failedChild, reason }) => {
+    coordinatorState.execute.mockResolvedValue({
+      success, strategy: 'sequential',
+      results: failedChild ? [{ agentId: 'failed-child', agentName: 'Worker', status: 'failed', result: { success: false, output: 'retry exhausted' } }] : [],
+      aggregatedOutput: output, totalDuration: 1, totalIterations: 1, totalCost: 0, errors: [],
+    });
+    const deps = makeDeps();
+    const onEvent = vi.fn();
+
+    await expect(run(deps, onEvent)).resolves.toBeUndefined();
+
+    expect(deps.addMessage).not.toHaveBeenCalled();
+    expect(sessionManagerState.addMessageToSession).not.toHaveBeenCalled();
+    expect(onEvent.mock.calls.filter(([event]) => event.type === 'message')).toEqual([]);
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'error',
+      data: { message: 'AUTO_AGENT_REPORT_UNAVAILABLE', details: { reason } },
+    });
+    expect(loggerState.warn).toHaveBeenCalledWith('Auto Agent report unavailable', { sessionId: 'session-auto-1', reason });
   });
 
   it('still propagates a real graph failure', async () => {

@@ -241,8 +241,19 @@ export async function runAutoAgentMode(
     throw error;
   }
 
-  // Process result
-  if (result.success && result.aggregatedOutput) {
+  // A completed graph can still lack a usable report (or contain failed children).
+  // Emit the failure before publishing any assistant text so wake callers can use
+  // their existing failure note instead of exposing an internal placeholder.
+  const reportFailure = !result.success || result.results.some((entry) =>
+    entry.status !== 'completed' || entry.result?.success === false)
+    ? 'agent_failed'
+    : !result.aggregatedOutput.trim() || /^\s*Subagent completed without output\s*$/m.test(result.aggregatedOutput)
+      ? 'empty_output'
+      : undefined;
+  if (reportFailure) {
+    logger.warn('Auto Agent report unavailable', { sessionId, reason: reportFailure });
+    onEvent({ type: 'error', data: { message: 'AUTO_AGENT_REPORT_UNAVAILABLE', details: { reason: reportFailure } } });
+  } else {
     const assistantMessage: Message = {
       id: deps.generateId(),
       role: 'assistant',
