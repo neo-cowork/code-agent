@@ -84,7 +84,7 @@ export interface SubagentCompletionState {
   iterations: number;
   /** 步数上限与对话记录：步数用尽且无文字时据此拼收尾话术 */
   maxIterations?: number;
-  messages?: ReadonlyArray<{ role: string; content?: unknown }>;
+  messages?: ReadonlyArray<{ role: string; content?: unknown; toolCalls?: ReadonlyArray<{ arguments?: Record<string, unknown> }> }>;
   latestContextSnapshot: SubagentContextSnapshot;
 }
 

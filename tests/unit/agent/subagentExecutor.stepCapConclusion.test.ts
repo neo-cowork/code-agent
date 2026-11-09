@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const DURABLE_AGENT_ID = 'subagent-bg-cap';
 
 const mocks = vi.hoisted(() => {
+  const pageInfo = { value: null as string | null };
   const responses: Array<Record<string, unknown>> = [];
   const state = { progressError: false, spent: 0 };
   const inference = vi.fn(async () => {
@@ -27,7 +28,7 @@ const mocks = vi.hoisted(() => {
     recordTokenUsage: vi.fn(() => { state.spent += 1.25; }),
     recordToolUsage: vi.fn(),
   };
-  return { responses, state, inference, noteLiveProgress, pipeline, pipelineContext };
+  return { pageInfo, responses, state, inference, noteLiveProgress, pipeline, pipelineContext };
 });
 
 vi.mock('../../../src/host/model/modelRouter', () => ({
@@ -50,7 +51,7 @@ vi.mock('../../../src/host/agent/subagentPipeline', () => ({
 
 vi.mock('../../../src/host/agent/subagentToolRuntime', () => ({
   createSubagentToolRuntime: () => ({
-    executor: { execute: vi.fn(async () => ({ success: true, output: 'Navigated to: https://zh.wikipedia.org/wiki/Foo\nTitle: 福 - 维基百科' })) },
+    executor: { execute: vi.fn(async () => ({ success: true, output: mocks.pageInfo.value ?? 'Navigated to: https://zh.wikipedia.org/wiki/Foo\nTitle: 福 - 维基百科' })) },
     policy: {},
   }),
 }));
@@ -243,6 +244,22 @@ describe('SubagentExecutor step cap conclusion', () => {
     expect(result.output).toContain('继续');
     expect(result.error).toBe(result.output);
     expect(result.output).not.toContain('Subagent completed without output');
+  });
+
+  it('falls back to the last requested url when tool results carry no page info', async () => {
+    const fetchCall = (i: number) => ({
+      type: 'tool_use', content: '',
+      toolCalls: [{ id: `f-${i}`, name: 'Read', arguments: { url: `http://www.sina.com.cn/p${i}` } }],
+      usage: { inputTokens: 1, outputTokens: 1 },
+    });
+    mocks.responses.push(fetchCall(1), fetchCall(2));
+    mocks.pageInfo.value = 'plain text without page markers';
+
+    const result = await new SubagentExecutor().execute(createRequest(2));
+
+    mocks.pageInfo.value = null;
+    expect(result.success).toBe(false);
+    expect(result.output).toContain('最后停留在页面http://www.sina.com.cn/p2');
   });
 
   it('still completes normally when the last round produced text', async () => {

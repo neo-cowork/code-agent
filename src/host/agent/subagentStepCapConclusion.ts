@@ -9,6 +9,7 @@
 interface CapMessage {
   role: string;
   content?: unknown;
+  toolCalls?: ReadonlyArray<{ arguments?: Record<string, unknown> }>;
 }
 
 const PAGE_TITLE_MAX = 40;
@@ -33,6 +34,13 @@ function findLastPage(messages: readonly CapMessage[]): string | undefined {
     if (title && url) return `「${clip(title, PAGE_TITLE_MAX)}」（${clip(url, 80)}）`;
     if (title) return `「${clip(title, PAGE_TITLE_MAX)}」`;
     if (url) return clip(url, 80);
+  }
+  // 工具结果里没有页面信息（如抓取类工具）时，退回到最后一次带网址的调用入参。
+  for (let i = messages.length - 1; i >= 0; i--) {
+    for (const call of [...(messages[i].toolCalls ?? [])].reverse()) {
+      const url = call.arguments?.url;
+      if (typeof url === 'string' && url && url !== 'about:blank') return clip(url, 80);
+    }
   }
   return undefined;
 }
