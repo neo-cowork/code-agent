@@ -14,11 +14,11 @@ function listTsx(dir: string): string[] {
   });
 }
 
-/** 一行 className 看起来像手写 pill：rounded/rounded-full + text-xs|[10px]|[11px] + px-，且没有任何防折行类。 */
+/** 一行 className 看起来像手写 pill：rounded(-full|-sm|-md|-lg|-xl) + text-xs|[10px]|[11px] + px-，且没有任何防折行类。 */
 function isUnprotectedPillLine(line: string): boolean {
   if (!line.includes('className') || line.includes('<Badge')) return false;
   const tokens = line.split(/[\s"'`{}=]+/);
-  const rounded = tokens.includes('rounded') || tokens.includes('rounded-full');
+  const rounded = tokens.some((t) => /^rounded(-(full|sm|md|lg|xl))?$/.test(t));
   const small = tokens.some((t) => t === 'text-xs' || t === 'text-[10px]' || t === 'text-[11px]');
   const padded = tokens.some((t) => t.startsWith('px-'));
   if (!rounded || !small || !padded) return false;
