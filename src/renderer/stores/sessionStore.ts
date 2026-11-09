@@ -26,7 +26,7 @@ import {
   forgetConversationFramesInMemory,
 } from './sessionTerminalFrames';
 import { executeCreateSession } from './sessionCreate';
-import { bumpSessionsLocalVersion, executeLoadOlderSessions, executeLoadSessions } from './sessionListPagination';
+import { bumpSessionsLocalVersion, executeLoadOlderSessions, executeLoadSessions, withOpenedSessionOutsideWindow } from './sessionListPagination';
 import { mergeSnapshotWithLiveTail } from './sessionSnapshotMerge';
 import { groupRunsByTask, type CronRunGroups } from '@shared/cronRunDigest';
 import { recoveryLoadLightsTurn, runtimeStatusCountsAsRunning } from './parkedContinueTurn';
@@ -436,9 +436,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             unreadSessionIds: nextUnreadIds,
             hasOlderMessages: totalCount > loadedMessages.length,
             isLoadingOlder: false,
-            sessions: get().sessions.map((item) =>
-              item.id === sessionId ? deriveCurrentSessionMeta(normalizedSession, loadedMessages) : item
-            ),
+            // 从搜索打开的老会话不在已加载分页里：补进 sessions，顶栏标题才查得到
+            sessions: withOpenedSessionOutsideWindow(get().sessions, deriveCurrentSessionMeta(normalizedSession, loadedMessages)),
           });
           // 宿主说这个会话还有活跃 run（刷新/切回来最常见）：前端运行态纯内存，不接回来
           // 就显示空闲——后台还在跑时停止按钮消失、排队卡邀请「立即发送」，一点就撞车

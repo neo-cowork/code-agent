@@ -15,6 +15,7 @@ import type {
   CrossSessionSearchOptions,
   CrossSessionSearchResults,
   CrossSessionSearchResultItem,
+  CrossSessionSearchTitleMatch,
   SessionReviewItemsRequest,
 } from '../../shared/ipc/types';
 import {
@@ -28,6 +29,8 @@ import {
 } from '../session/localCache';
 import { SESSION_SEARCH } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
+import { getAuthService } from '../services/auth/authService';
+import type { SessionSearchMetaRow } from '../services/core/repositories/sessionSearchMeta';
 import { assertAdminAccess } from './adminGuard';
 import { getArtifactIssueRepository } from '../services/core/repositories/ArtifactIssueRepository';
 import { installDomainRoutes } from './domainRoutes/registry';
@@ -78,7 +81,7 @@ export function registerSessionHandlers(
 
   // Cross-session search
   ipcMain.handle(IPC_CHANNELS.SESSION_SEARCH, async (_, payload: { query: string; options?: CrossSessionSearchOptions }) => {
-    return performCrossSessionSearch(payload.query, payload.options, requireAppService);
+    return performCrossSessionSearch(payload.query, payload.options);
   });
 
   ipcMain.handle(IPC_CHANNELS.SESSION_LIST_REVIEW_ITEMS, async (_, payload: SessionReviewItemsRequest): Promise<Record<string, AdminReviewQueueItem[]>> => {
@@ -216,10 +219,31 @@ async function resolveSessionSearchFtsSource(): Promise<SessionSearchFtsSource |
   }
 }
 
+async function resolveSessionSearchDatabase(): Promise<
+  ReturnType<typeof import('../services/core/databaseService').getDatabase> | undefined
+> {
+  try {
+    const { getDatabase } = await import('../services/core/databaseService');
+    const database = getDatabase();
+    return database.isReady ? database : undefined;
+  } catch (error) {
+    logger.warn('Cross-session search: database unavailable for session metadata', { error });
+    return undefined;
+  }
+}
+
+function resolveOwnerUserId(): string | null {
+  try {
+    return getAuthService().getCurrentUser()?.id ?? null;
+  } catch (error) {
+    logger.warn('Cross-session search: current user unavailable, treating as signed-out owner', { error });
+    return null;
+  }
+}
+
 export async function performCrossSessionSearch(
   query: string,
   options: CrossSessionSearchOptions | undefined,
-  getAppService: () => AgentApplicationService
 ): Promise<CrossSessionSearchResults> {
   if (!query.trim()) {
     return { query, totalMatches: 0, sessionsWithMatches: 0, results: [], searchTime: 0, truncated: false };
@@ -243,30 +267,56 @@ export async function performCrossSessionSearch(
     includeContext: 80,
   }, ftsSource);
 
-  // Build session title map from app service
-  const sessionTitleMap: Map<string, string> = new Map();
-  try {
-    const sessions = await getAppService().listSessions({ includeArchived: true });
-    for (const s of sessions) {
-      sessionTitleMap.set(s.id, s.title);
+  // 逐个命中会话取标题/更新时间/归档标记（全库命中的会话常不在侧栏已加载的第一页里），
+  // 同时按当前登录用户过滤归属；取不到的会话（已删除/他人会话）不出现在结果里。
+  const database = await resolveSessionSearchDatabase();
+  const ownerUserId = resolveOwnerUserId();
+  let metaById: Map<string, SessionSearchMetaRow> | undefined;
+  if (database) {
+    try {
+      const rows = database.getSessionSearchMeta(
+        searchResults.results.map((r) => r.sessionId),
+        ownerUserId,
+      );
+      metaById = new Map(rows.map((row) => [row.sessionId, row]));
+    } catch (error) {
+      logger.warn('Cross-session search: session metadata lookup failed, results carry no titles', { error });
     }
-  } catch {
-    // If listing sessions fails, proceed without titles
   }
 
-  const results: CrossSessionSearchResultItem[] = searchResults.results.map((r) => ({
-    sessionId: r.sessionId,
-    sessionTitle: sessionTitleMap.get(r.sessionId),
-    messageId: r.message.id,
-    messageIndex: r.messageIndex,
-    turnNumber: r.turnNumber,
-    role: r.message.role,
-    timestamp: r.message.timestamp,
-    matchOffset: r.matches[0]?.start,
-    relevance: r.relevance,
-    snippet: r.snippet,
-    matchCount: r.matches.length,
-  }));
+  let titleMatches: CrossSessionSearchTitleMatch[] | undefined;
+  if (database) {
+    try {
+      const allowed = options?.sessionIds && options.sessionIds.length > 0 ? new Set(options.sessionIds) : undefined;
+      titleMatches = database
+        .searchSessionTitles(query, ownerUserId, SESSION_SEARCH.TITLE_MATCH_LIMIT)
+        .filter((row) => !allowed || allowed.has(row.sessionId))
+        .map((row) => ({ sessionId: row.sessionId, title: row.title, updatedAt: row.updatedAt }));
+    } catch (error) {
+      logger.warn('Cross-session search: session title match failed', { error });
+    }
+  }
+
+  const results: CrossSessionSearchResultItem[] = searchResults.results
+    .filter((r) => !metaById || metaById.has(r.sessionId))
+    .map((r) => {
+      const meta = metaById?.get(r.sessionId);
+      return {
+        sessionId: r.sessionId,
+        sessionTitle: meta?.title,
+        sessionUpdatedAt: meta?.updatedAt,
+        sessionArchived: meta?.archived,
+        messageId: r.message.id,
+        messageIndex: r.messageIndex,
+        turnNumber: r.turnNumber,
+        role: r.message.role,
+        timestamp: r.message.timestamp,
+        matchOffset: r.matches[0]?.start,
+        relevance: r.relevance,
+        snippet: r.snippet,
+        matchCount: r.matches.length,
+      };
+    });
 
   return {
     query: searchResults.query,
@@ -275,5 +325,6 @@ export async function performCrossSessionSearch(
     results,
     searchTime: searchResults.searchTime,
     truncated: searchResults.truncated,
+    ...(titleMatches ? { titleMatches } : {}),
   };
 }
