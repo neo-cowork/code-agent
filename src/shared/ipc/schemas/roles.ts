@@ -23,6 +23,7 @@ const RolesDomainRequestSchema = z.object({
     'list',
     'listBindings',
     'listBoundCronJobs',
+    'listDeletedRoles',
     'listDrafts',
     'rejectDraft',
     'removeBinding',

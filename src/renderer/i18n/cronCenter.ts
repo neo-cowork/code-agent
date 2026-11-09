@@ -240,7 +240,16 @@ export const cronCenterZh = {
     resultPushConversationUnavailable: '之前保存的接收会话已不可用。原配置已保留，重新选择后再保存。',
     // 手动配置页的人话字段（N-FIX-CRON-EDITOR-AGENT-ACTION-DEV-FIELDS）
     manualEditor: {
+      oneTimeScheduleOption: '一次性',
+      intervalScheduleOption: '间隔循环',
       cronScheduleOption: '按固定时间重复（Cron 表达式）',
+      retryDelayLabel: '重试间隔',
+      timeoutLabel: '执行超时',
+      retryDelayPlaceholder: '自动',
+      timeoutPlaceholder: '不限',
+      retryDelayHint: '留空会自动逐步增加等待时间（30 秒到 15 分钟）。',
+      durationInvalid: '请输入有效的非负时长。',
+      durationUnits: { seconds: '秒', minutes: '分钟', hours: '小时' },
       agentTypeLabel: 'Agent 类型',
       taskInstructionsLabel: '任务指令',
       extraParametersDisclosure: '高级：附加参数（可选）',
@@ -731,7 +740,16 @@ export const cronCenterEn: typeof cronCenterZh = {
     resultPushConversationUnavailable: 'The saved destination conversation is no longer available. The original setting is preserved until you choose another conversation and save.',
     // Plain-language fields in the manual editor (N-FIX-CRON-EDITOR-AGENT-ACTION-DEV-FIELDS)
     manualEditor: {
+      oneTimeScheduleOption: 'One-time',
+      intervalScheduleOption: 'Repeat at an interval',
       cronScheduleOption: 'Repeat at fixed times (Cron expression)',
+      retryDelayLabel: 'Retry interval',
+      timeoutLabel: 'Execution timeout',
+      retryDelayPlaceholder: 'Auto',
+      timeoutPlaceholder: 'Unlimited',
+      retryDelayHint: 'Leave blank for automatic increasing waits (30 seconds to 15 minutes).',
+      durationInvalid: 'Enter a valid non-negative duration.',
+      durationUnits: { seconds: 'seconds', minutes: 'minutes', hours: 'hours' },
       agentTypeLabel: 'Agent type',
       taskInstructionsLabel: 'Task instructions',
       extraParametersDisclosure: 'Advanced: extra parameters (optional)',
