@@ -44,6 +44,90 @@ function isOutsideWorkspace(request: PermissionRequest): boolean {
   return request.boundary?.id === 'file.external_read' || request.boundary?.id === 'file.external_write';
 }
 
+const SHELL_TOOL_NAMES = new Set([
+  'bash',
+  'process',
+  'grep',
+  'glob',
+  'git_diff',
+  'git_commit',
+  'git_worktree',
+  'kill_shell',
+  'task_output',
+]);
+
+function isShellAction(request: PermissionRequest): boolean {
+  if (typeof request.details.command === 'string' && request.details.command.trim() !== '') return true;
+  const tool = request.tool.trim().toLowerCase();
+  return SHELL_TOOL_NAMES.has(tool)
+    || tool.startsWith('terminal_')
+    || tool.startsWith('shell_')
+    || tool.startsWith('acp:terminal/');
+}
+
+type NonShellPresentationKey = 'browser' | 'roleProactivity' | 'spawnAgent' | 'browserClipboardWrite';
+
+function nonShellPresentationKey(request: PermissionRequest): NonShellPresentationKey | undefined {
+  const tool = request.tool.trim().toLowerCase();
+  if (tool === 'browser' || tool === 'browser_navigate' || (tool === 'browser_action' && request.details.action === 'navigate')) {
+    return 'browser';
+  }
+  if (tool === 'set_role_proactivity') return 'roleProactivity';
+  if (tool === 'spawn_agent' || tool === 'agentspawn') return 'spawnAgent';
+  if (tool === 'browser_action.write_clipboard' || tool === 'write_clipboard') return 'browserClipboardWrite';
+  return undefined;
+}
+
+function isNonShellRequest(request: PermissionRequest): boolean {
+  return (request.type === 'command' || request.type === 'dangerous_command') && !isShellAction(request);
+}
+
+function safeNonShellDetail(request: PermissionRequest): string | undefined {
+  const candidate = request.details.preview?.summary?.trim() || request.reason?.trim();
+  if (!candidate) return undefined;
+  if (/命令|command|覆盖本机系统|overwrite local system/iu.test(candidate)) return undefined;
+  if (request.type === 'file_read' && /写入|覆盖|write|overwrite/iu.test(candidate)) return undefined;
+  return candidate;
+}
+
+/** Title override for command-shaped requests that are not shell actions. */
+export function permissionTitle(request: PermissionRequest, t: Translations): string | undefined {
+  if (!isNonShellRequest(request)) return undefined;
+  const p = t.decisionCard.permission;
+  switch (nonShellPresentationKey(request)) {
+    case 'browser':
+      return p.titleBrowserNavigation;
+    case 'roleProactivity':
+      return p.titleRoleProactivity;
+    case 'spawnAgent':
+      return p.titleSpawnAgent;
+    case 'browserClipboardWrite':
+      return p.titleBrowserClipboardWrite;
+    default:
+      return p.titleAction;
+  }
+}
+
+function nonShellConsequence(request: PermissionRequest, t: Translations): string {
+  const p = t.decisionCard.permission;
+  switch (nonShellPresentationKey(request)) {
+    case 'browser': {
+      const url = request.details.url?.trim();
+      return url
+        ? p.consequenceBrowserVisit.replace('{target}', redactCredentialText(url))
+        : p.consequenceAction;
+    }
+    case 'roleProactivity':
+      return safeNonShellDetail(request) ?? p.consequenceAction;
+    case 'spawnAgent':
+      return safeNonShellDetail(request) ?? p.consequenceSpawnAgent;
+    case 'browserClipboardWrite':
+      return p.consequenceBrowserClipboardWrite;
+    default:
+      return safeNonShellDetail(request) ?? p.consequenceAction;
+  }
+}
+
 function isDeletionRequest(request: PermissionRequest): boolean {
   const flags = request.details.commandSecurityFlags ?? [];
   return request.type === 'file_delete'
@@ -104,6 +188,7 @@ export function permissionSummary(request: PermissionRequest, t: Translations, l
   const target = fileTarget(request);
   const compactTarget = target ? compactFileTarget(target) : undefined;
   const qualifier = isOutsideWorkspace(request) ? `（${p.workspaceOutside}）` : '';
+  if (isNonShellRequest(request)) return p.questionAction;
   if (
     request.reasonCode === PermissionRequestReason.UncertainWriteTargetWithPathDeny
     && !isDeletionRequest(request)
@@ -159,6 +244,7 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
   if (request.details.targetApp?.name && request.forceConfirm !== true && !isDangerousRequestShape(request)) {
     return undefined;
   }
+  if (isNonShellRequest(request)) return nonShellConsequence(request, t);
   const p = t.decisionCard.permission;
   if (isGenericCommandRequest(request)) return p.genericApprovalDescription;
   const commandDeleteTarget = request.details.command?.match(/\brm\s+(?:(?:-[^\s]+|--[^\s]+)\s+)*(?:"([^"]+)"|'([^']+)'|([^\s;&|]+))/u);
@@ -191,7 +277,8 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
     return p.consequenceUncertainWriteTarget;
   }
   if (isOutsideWorkspace(request)) {
-    return p.consequenceOutside
+    const outsideCopy = request.type === 'file_read' ? p.consequenceReadOutside : p.consequenceOutside;
+    return outsideCopy
       .replace('{target}', safeTarget ?? p.targetFallback)
       .replace('{count}', fileCountText(count, t));
   }

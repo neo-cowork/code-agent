@@ -32,7 +32,7 @@ import {
   validateWritebackDraft,
   type WritebackDraft,
 } from './WritebackFields';
-import { defaultPermissionViewMode, isGenericCommandRequest, isDangerousRequestShape, isSafeDefaultDeny, permissionSummary } from './permissionPresentation';
+import { defaultPermissionViewMode, isGenericCommandRequest, isDangerousRequestShape, isSafeDefaultDeny, permissionSummary, permissionTitle } from './permissionPresentation';
 import { isSandboxEscalation, sandboxEscalationDeniedPath, sandboxEscalationQuestion } from './sandboxEscalationPresentation';
 import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
 import { SensitiveStepHandbackCard } from './SensitiveStepHandbackCard';
@@ -468,13 +468,7 @@ export function PermissionCard({
           ? w.remindersCreateTitle
           : request.tool === 'reminders_update'
             ? w.remindersUpdateTitle
-            : editable
-              ? w.mailSendTitle
-              : isDangerous
-                ? getPermissionConfig('command').title
-                : isGenericCommandCard
-                  ? p.genericApprovalTitle
-                  : config.title;
+            : editable ? w.mailSendTitle : (permissionTitle(request, t) ?? (isDangerous ? getPermissionConfig('command').title : isGenericCommandCard ? p.genericApprovalTitle : config.title));
   const icon = isMeetingCreate || isCalendarWrite
     ? <CalendarPlus size={20} />
     : isRemindersWrite

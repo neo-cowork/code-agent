@@ -144,10 +144,11 @@ describe('PermissionCard computer app grant', () => {
     expect(container.textContent).toContain('允许执行这条命令');
   });
 
-  it('keeps the command wording for forceConfirm requests', () => {
+  it('uses neutral wording for non-shell forceConfirm requests', () => {
     state.request = computerRequest(true);
     const { container } = render(<PermissionCard />);
-    expect(container.textContent).toContain('允许执行这条命令');
+    expect(container.textContent).toContain('允许这次操作');
+    expect(container.textContent).not.toContain('命令');
   });
 
   it('maps the three buttons to standing, session, and deny without touching permission memory', () => {
