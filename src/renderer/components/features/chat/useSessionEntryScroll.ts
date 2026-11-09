@@ -159,8 +159,33 @@ export function useSessionEntryScroll({
     entry.hasTurns = true;
     entry.pending = true;
     entry.resetBottom = true;
-    entry.interactionAt = userScrollLastInteractionAtRef.current;
   }
+  const currentEntry = entryRef.current;
+  if (turns.length === 0) {
+    currentEntry.pending = false;
+    currentEntry.resetBottom = false;
+    sessionEntrySettlingRef.current = false;
+  } else if (currentEntry.pending) {
+    sessionEntrySettlingRef.current = true;
+  }
+
+  const scrollerElement = scrollerElementRef.current;
+  useEffect(() => {
+    if (!currentEntry.pending || !scrollerElement) return;
+    const cancelPending = () => {
+      currentEntry.pending = false;
+      currentEntry.resetBottom = false;
+      sessionEntrySettlingRef.current = false;
+    };
+    scrollerElement.addEventListener('wheel', cancelPending, { passive: true });
+    scrollerElement.addEventListener('touchmove', cancelPending, { passive: true });
+    scrollerElement.addEventListener('keydown', cancelPending);
+    return () => {
+      scrollerElement.removeEventListener('wheel', cancelPending);
+      scrollerElement.removeEventListener('touchmove', cancelPending);
+      scrollerElement.removeEventListener('keydown', cancelPending);
+    };
+  }, [currentEntry, scrollerElement, sessionEntrySettlingRef, turns.length]);
 
   const previousSessionIdRef = useRef(sessionId);
   useEffect(() => {
@@ -171,8 +196,10 @@ export function useSessionEntryScroll({
 
   return useCallback(() => {
     const entry = entryRef.current;
-    if (!entry.pending || entry.sessionId !== sessionId || projectionTurnsRef.current.length === 0) return;
+    if (!entry.pending || entry.sessionId !== sessionId) return;
     entry.pending = false;
+    sessionEntrySettlingRef.current = false;
+    if (projectionTurnsRef.current.length === 0) return;
     if (entry.resetBottom) {
       entry.resetBottom = false;
       setIsAtBottom(true);
