@@ -27,7 +27,10 @@ import {
   flushSubagentCancellation,
   getSubagentIdleTimeout,
 } from './subagentExecutorCancellation';
+import { resolveStoppedTaskOutcome } from '../services/commandCenter/sessionTaskStopConclusion';
+import { buildStepCapConclusion } from './subagentStepCapConclusion';
 import {
+  AgentFailureCode,
   agentFailureCodeFromCancellationReason,
   inferAgentFailureCode,
 } from '../../shared/contract/agentFailure';
@@ -80,6 +83,9 @@ export interface SubagentCompletionDeps {
 
 export interface SubagentCompletionState {
   iterations: number;
+  /** 步数上限与对话记录：步数用尽且无文字时据此拼收尾话术 */
+  maxIterations?: number;
+  messages?: ReadonlyArray<{ role: string; content?: unknown; toolCalls?: ReadonlyArray<{ arguments?: Record<string, unknown> }> }>;
   latestContextSnapshot: SubagentContextSnapshot;
 }
 
@@ -169,6 +175,9 @@ export function finalizeSubagentSuccess(
   } = deps;
   const { iterations, latestContextSnapshot } = state;
   const finalOutput = answerLedger.settled();
+  const stepCapConclusion = !finalOutput && state.maxIterations !== undefined && iterations >= state.maxIterations
+    ? buildStepCapConclusion({ iterations, maxIterations: state.maxIterations, messages: state.messages ?? [] })
+    : undefined;
 
   // Get final cost
   cleanupTimer();
@@ -178,7 +187,7 @@ export function finalizeSubagentSuccess(
   // Record final output in transcript and close AgentTask lifecycle
   agentTask.appendTranscript({
     role: 'assistant',
-    content: finalOutput || 'Subagent completed without output',
+    content: finalOutput || stepCapConclusion || 'Subagent completed without output',
     timestamp: Date.now(),
   });
   agentTask.stop();
@@ -215,6 +224,28 @@ export function finalizeSubagentSuccess(
 
     // 角色参与记录：主 run 结束后据此触发 event 醒来（内部文档 §2.2）
     recordRoleParticipation(sessionId, config.roleId);
+  }
+
+  const noConclusion = !finalOutput && !stepCapConclusion
+    ? resolveStoppedTaskOutcome({ status: 'completed', detail: '' }).detail : undefined;
+  if (stepCapConclusion || noConclusion) {
+    const stopConclusion = stepCapConclusion ?? noConclusion!;
+    terminal.status = 'failed';
+    terminal.error = stopConclusion;
+    return {
+      success: false,
+      output: appendSubagentLeftoverShellReport(stopConclusion, leftoverReport),
+      error: stopConclusion,
+      toolsUsed: [...new Set(toolsUsed)],
+      toolCallCount: turnObservability.getToolCallCount(),
+      iterations,
+      tokensUsed: getTotalTokens(),
+      cost: getTotalCost(),
+      agentId: executionAgentId,
+      contextSnapshot: latestContextSnapshot,
+      failureCode: stepCapConclusion ? AgentFailureCode.BudgetExhausted : AgentFailureCode.Unknown,
+      stopKind: stepCapConclusion ? 'step_cap' : 'no_conclusion',
+    };
   }
 
   terminal.status = 'completed';

@@ -50,6 +50,7 @@ const SAMPLE_PAYLOADS: { [K in UserVisibleSystemEventKey]: NonNullable<MessageMe
   voiceWorkSettled: { workItemId: WORK_ITEM_ID, title: '买菜', outcome: 'done' },
   agentRecoveryNotice: { kind: 'vision_tool_unsupported' },
   roleFlowStalled: { skillName: 'create-role' },
+  backgroundTaskStopped: { taskId: 'task-stop', kind: 'step_cap' },
   backgroundWakeFailed: { taskId: 'session-work-1', reason: 'wake_failed' },
   turnCheckoutNote: {
     operation: 'checkout',

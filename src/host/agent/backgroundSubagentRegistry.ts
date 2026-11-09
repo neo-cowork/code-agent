@@ -1,3 +1,4 @@
+import { recordBackgroundTaskStopNote } from '../services/commandCenter/backgroundTaskStopNote';
 // ============================================================================
 // 后台 subagent 注册表 — 进程内后台执行 + 稳定 agent_id（Kimi 借鉴 #2 / ADR-025）
 // ============================================================================
@@ -11,6 +12,7 @@
 // 时回填状态与结果。getStatus / await 凭 agentId 查状态、取结果。
 // ============================================================================
 
+import { describeSubagentStopReason } from './subagentFailureReason';
 import { randomUUID } from 'node:crypto';
 import type { SubagentResult } from './subagentExecutorTypes';
 import { AgentFailureCode, inferAgentFailureCode, type AgentFailureCode as AgentFailureCodeType } from '../../shared/contract/agentFailure';
@@ -275,15 +277,17 @@ export class BackgroundSubagentRegistry {
           entry.status = result.success ? 'completed' : 'failed';
           entry.result = result;
           if (!result.success) {
-            entry.error = result.error ?? 'Subagent failed';
+            const rawError = result.error ?? 'Subagent failed';
             entry.failureCode = inferAgentFailureCode({
               failureCode: result.failureCode,
               cancellationReason: result.cancellationReason,
               error: result.error,
             });
+            entry.error = describeSubagentStopReason(rawError, entry.failureCode);
+            if (entry.error !== rawError) logger.warn(`background subagent ${agentId} failed: ${rawError}`);
           }
           entry.finishedAt = this.now();
-          this.recordCompletion(entry, options);
+          await this.recordCompletion(entry, options);
           await this.finalizeDurable(options.durableSession ?? null, entry);
         }
         return result;
@@ -291,10 +295,12 @@ export class BackgroundSubagentRegistry {
         const entry = this.entries.get(agentId);
         if (entry) {
           entry.status = 'failed';
-          entry.error = err instanceof Error ? err.message : String(err);
+          const rawError = err instanceof Error ? err.message : String(err);
           entry.failureCode = inferAgentFailureCode({ error: err, defaultCode: undefined });
+          entry.error = describeSubagentStopReason(rawError, entry.failureCode);
+          logger.warn(`background subagent ${agentId} stopped on error: ${rawError}`);
           entry.finishedAt = this.now();
-          this.recordCompletion(entry, options);
+          await this.recordCompletion(entry, options);
           await this.finalizeDurable(options.durableSession ?? null, entry);
         }
         return undefined;
@@ -302,7 +308,7 @@ export class BackgroundSubagentRegistry {
     })();
   }
 
-  private recordCompletion(entry: BackgroundSubagentEntry, options: BackgroundSubagentOptions): void {
+  private async recordCompletion(entry: BackgroundSubagentEntry, options: BackgroundSubagentOptions): Promise<void> {
     this.liveProgressByAgent.delete(entry.agentId);
     if (options.completionNotificationGate?.suppress) return;
     const record = buildSubagentCompletionRecord({
@@ -324,12 +330,20 @@ export class BackgroundSubagentRegistry {
       runId: entry.runId,
       treeId: entry.treeId,
     });
+    const cancelled = entry.failureCode === AgentFailureCode.CancelledByUser
+      || entry.failureCode === AgentFailureCode.CancelledByParent;
+    if (entry.status === 'failed' && entry.sessionId && !cancelled) {
+      try {
+        await recordBackgroundTaskStopNote(entry.sessionId, record.title, entry.error ?? record.summary, {
+          taskId: entry.agentId,
+          kind: entry.result?.stopKind ?? 'error',
+        });
+      } catch (error) { logger.warn('Failed to record background stop note', error); }
+    }
     if (!this.queuedNotificationKeys.has(record.dedupeKey)) {
       this.queuedNotificationKeys.add(record.dedupeKey);
       this.pendingNotifications.push(record);
     }
-    const cancelled = entry.failureCode === AgentFailureCode.CancelledByUser
-      || entry.failureCode === AgentFailureCode.CancelledByParent;
     if (!options.suppressIdleWake && !cancelled) {
       void options.onComplete?.(record);
     }
@@ -407,6 +421,16 @@ export class BackgroundSubagentRegistry {
       runId: input.runId,
       treeId: input.treeId,
     });
+    const cancelled = entry.failureCode === AgentFailureCode.CancelledByUser
+      || entry.failureCode === AgentFailureCode.CancelledByParent;
+    if (entry.status === 'failed' && entry.sessionId && !cancelled) {
+      try {
+        await recordBackgroundTaskStopNote(entry.sessionId, record.title, entry.error ?? record.summary, {
+          taskId: entry.agentId,
+          kind: entry.result?.stopKind ?? 'error',
+        });
+      } catch (error) { logger.warn('Failed to record background stop note', error); }
+    }
     if (!this.queuedNotificationKeys.has(record.dedupeKey)) {
       this.queuedNotificationKeys.add(record.dedupeKey);
       this.pendingNotifications.push(record);
@@ -464,6 +488,16 @@ export class BackgroundSubagentRegistry {
       }),
       dedupeKey: `${input.runId}:stall:${input.epoch}`,
     };
+    const cancelled = entry.failureCode === AgentFailureCode.CancelledByUser
+      || entry.failureCode === AgentFailureCode.CancelledByParent;
+    if (entry.status === 'failed' && entry.sessionId && !cancelled) {
+      try {
+        await recordBackgroundTaskStopNote(entry.sessionId, record.title, entry.error ?? record.summary, {
+          taskId: entry.agentId,
+          kind: entry.result?.stopKind ?? 'error',
+        });
+      } catch (error) { logger.warn('Failed to record background stop note', error); }
+    }
     if (!this.queuedNotificationKeys.has(record.dedupeKey)) {
       this.queuedNotificationKeys.add(record.dedupeKey);
       this.pendingNotifications.push(record);

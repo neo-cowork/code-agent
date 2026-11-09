@@ -75,6 +75,8 @@ export interface SubagentResult {
    */
   cancellationReason?: CancellationReason;
   failureCode?: AgentFailureCode;
+  /** Deterministic early-stop category, independent of failure-code billing/cancellation semantics. */
+  stopKind?: 'step_cap' | 'no_conclusion';
   /**
    * N-SUBAGENT-ZEROTOOLS：声明了但（触发按需连接后仍）未装配上的工具名。
    * 全部未装配时配合 failureCode: ToolUnavailable 结构化失败；

@@ -1,3 +1,8 @@
+import { recordBackgroundTaskStopNote } from './backgroundTaskStopNote';
+import { readableBrowserPage, browserPageFromOutput } from '../../agent/subagentStepCapConclusion';
+import { RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../shared/constants';
+import { getMaxIterations } from '../cloud/featureFlagService';
+import { resolveStoppedTaskOutcome } from './sessionTaskStopConclusion';
 import type { AgentEvent, Message, MessageAttachment, TaskProgressData, ToolProgressData } from '../../../shared/contract';
 import type { TaskProgress } from '../../../shared/contract/backgroundTask';
 import type { ToolResult } from '../../../shared/contract/tool';
@@ -57,6 +62,7 @@ export interface SessionCommandTask {
   summary?: string;
   /** 模型侧结果文本：detail 规范化后按 SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS 封顶（超限带截断标记）；UI/账本仍读 240 字 summary。 */
   resultText?: string;
+  stopped?: { content: string; kind: 'step_cap' | 'no_conclusion' | 'error' };
   attachments?: MessageAttachment[];
   options?: AgentRunOptions;
   parentRunId?: string;
@@ -144,6 +150,10 @@ export class SessionCommandCenter {
   private readonly ledgers = new Map<string, SessionTaskSlotLedger>();
   /** 在途工具调用的名字（`${taskId}:${toolCallId}` → 工具名）；tool_call_end 即删，只活在途调用。 */
   private readonly toolNamesByCallId = new Map<string, string>();
+  /** 每个任务最近一次工具调用带的网址：任务没做完就停时，结论里说「最后停留在哪」。 */
+  private readonly lastUrlByTask = new Map<string, string>();
+  /** 主循环报过「撞步数上限」的任务（agent error 事件 code）。 */
+  private readonly stepCapHitTasks = new Set<string>();
   /** 在途 shell 调用的命令文本（key 同 toolNamesByCallId），只供回收时判断是否可能卡在系统授权框。 */
   private readonly shellCommandsByCallId = new Map<string, string>();
   /** permission_request ids still unresolved on the agent event stream, per task. */
@@ -503,11 +513,27 @@ export class SessionCommandCenter {
       const artifacts = Array.isArray(data?.artifacts)
         ? data.artifacts as NormalizedToolArtifactMeta[]
         : undefined;
-      await this.settle(task, 'completed', conclusion, artifacts);
+      // 没做完就停下（撞步数上限 / 最后一轮没有结论）：换成白话结论，且不再标「已完成」。
+      const stopped = resolveStoppedTaskOutcome({
+        status: 'completed',
+        detail: conclusion,
+        lastUrl: this.lastUrlByTask.get(task.id),
+        ...(this.stepCapHitTasks.has(task.id)
+          ? { stepCap: { max: task.options?.maxIterations ?? getMaxIterations() } }
+          : {}),
+      });
+      if (stopped.notice && stopped.kind) task.stopped = { content: stopped.notice, kind: stopped.kind };
+      await this.settle(task, stopped.status, stopped.detail, stopped.status === 'completed' ? artifacts : undefined);
       return;
     }
     if (event.type === 'task_error') {
-      await this.settle(task, 'failed', typeof data?.error === 'string' ? data.error : '执行失败');
+      const stopped = resolveStoppedTaskOutcome({
+        status: 'failed',
+        detail: typeof data?.error === 'string' ? data.error : '执行失败',
+        lastUrl: this.lastUrlByTask.get(task.id),
+      });
+      if (stopped.notice && stopped.kind) task.stopped = { content: stopped.notice, kind: stopped.kind };
+      await this.settle(task, 'failed', stopped.detail);
       return;
     }
     if (event.type === 'task_cancelled') {
@@ -537,6 +563,9 @@ export class SessionCommandCenter {
       this.ledger(sessionId).touch(taskId);
     }
     this.noteApprovalEvent(taskId, event);
+    if (event.type === 'error' && (event.data as { code?: unknown } | undefined)?.code === RUN_ERROR_CODE_MAX_ITERATIONS) {
+      this.stepCapHitTasks.add(taskId);
+    }
 
     // tool_call_start 只记「这个 call id 是哪个工具」，供 tool_call_end 落
     // lastToolFailure.tool / 对比同名工具的后续成功；end 时即删，map 只活在途调用。
@@ -544,6 +573,8 @@ export class SessionCommandCenter {
       const call = event.data as { id?: unknown; name?: unknown; arguments?: unknown } | undefined;
       if (typeof call?.id === 'string' && typeof call.name === 'string') {
         this.toolNamesByCallId.set(`${taskId}:${call.id}`, call.name);
+        const url = (call.arguments as { url?: unknown } | undefined)?.url;
+        if (typeof url === 'string' && url && url !== 'about:blank') this.lastUrlByTask.set(taskId, readableBrowserPage(url));
         const command = (call.arguments as { command?: unknown } | undefined)?.command;
         if (/bash|shell/i.test(call.name) && typeof command === 'string') {
           this.shellCommandsByCallId.set(`${taskId}:${call.id}`, command);
@@ -552,7 +583,13 @@ export class SessionCommandCenter {
       return;
     }
     if (event.type === 'tool_call_end') {
-      this.applyToolCallEnd(task, event.data as ToolResult);
+      const result = event.data as ToolResult;
+      const tool = this.toolNamesByCallId.get(`${taskId}:${result.toolCallId}`);
+      if (tool === 'Browser' && typeof result.output === 'string') {
+        const page = browserPageFromOutput(result.output);
+        if (page) this.lastUrlByTask.set(taskId, page);
+      }
+      this.applyToolCallEnd(task, result);
       return;
     }
     if (event.type !== 'task_progress') return;
@@ -720,7 +757,14 @@ export class SessionCommandCenter {
     artifacts?: NormalizedToolArtifactMeta[],
   ): Promise<void> {
     if (TERMINAL.has(task.status)) return;
+    if (status === 'failed' && !task.stopped) {
+      const stopped = resolveStoppedTaskOutcome({ status: 'failed', detail, lastUrl: this.lastUrlByTask.get(task.id) });
+      detail = stopped.detail;
+      task.stopped = { content: stopped.notice ?? stopped.detail, kind: stopped.kind ?? 'error' };
+    }
     this.approvalWaitStartedAtByTask.delete(task.id);
+    this.lastUrlByTask.delete(task.id);
+    this.stepCapHitTasks.delete(task.id);
     task.status = status;
     task.detail = detail;
     task.summary = compactSummary(
@@ -848,6 +892,11 @@ async function projectTerminalResult(
   // 模型读的是 resultText（1500 封顶带截断标记），不是 240 字 summary；
   // backgroundTaskResult.metadata 的 reader 只取 taskId/artifacts，不拿它当 UI 文案。
   const resultText = task.resultText ?? task.summary;
+  if (task.stopped) {
+    await recordBackgroundTaskStopNote(task.sessionId, task.shortName, task.stopped.content, {
+      taskId: task.id, kind: task.stopped.kind,
+    });
+  }
   await getSessionManager().addMessageToSession(task.sessionId, {
     id: `session-task-result-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     role: 'system',

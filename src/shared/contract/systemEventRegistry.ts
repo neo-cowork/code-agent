@@ -51,6 +51,7 @@ export const USER_VISIBLE_SYSTEM_EVENT_REGISTRY = {
   // 怎么继续/放弃——替代「模型念完步骤就空闲、什么都没落」的静默死局。
   roleFlowStalled: { presentation: 'info', attach: 'current-turn' },
   // 后台任务结束后前台自动汇报失败：任务结果已在会话里，告诉用户这一步没成，别留空白。
+  backgroundTaskStopped: { presentation: 'info', attach: 'current-turn' },
   backgroundWakeFailed: { presentation: 'info', attach: 'current-turn' },
 } as const satisfies Record<string, UserVisibleSystemEventSpec>;
 

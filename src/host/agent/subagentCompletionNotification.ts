@@ -1,3 +1,5 @@
+import { describeSubagentStopReason } from './subagentFailureReason';
+import { inferAgentFailureCode } from '../../shared/contract/agentFailure';
 import { SUBAGENT_COMPLETION_NOTIFICATIONS } from '../../shared/constants';
 import { buildSpillNotice, spillToolResultArchive, type ToolResultArchiveRef } from '../utils/toolResultSpill';
 import type { AgentFailureCode } from '../../shared/contract/agentFailure';
@@ -76,7 +78,9 @@ function buildOutputSummary(input: BuildSubagentCompletionRecordInput): {
   summary: string;
   archiveRef?: ToolResultArchiveRef;
 } {
-  const raw = input.output || input.error || '';
+  const raw = input.status === 'failed'
+    ? describeSubagentStopReason(input.error || input.output || '', inferAgentFailureCode({ failureCode: input.failureCode, error: input.error }))
+    : input.output || input.error || '';
   if (!raw) {
     return { summary: input.status === 'completed' ? 'No output was returned.' : 'No error output was returned.' };
   }
