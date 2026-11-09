@@ -38,14 +38,7 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-it('Escape in create name closes only editor and retains center list and detail', async () => {
-  const onClose = vi.fn();
-  render(<CronCenterPanel onClose={onClose} />);
-  await waitFor(() => expect(useCronStore.getState().isLoading).toBe(false));
-  act(() => useCronStore.getState().openCreateEditor());
-  const input = within(screen.getByRole('dialog')).getByPlaceholderText('不填就用目标开头');
-  input.focus();
-  fireEvent.change(input, { target: { value: 'Weekly summary' } });
+function escapeWithBrowserCheckpoint(input: HTMLElement): void {
   // Browsers run a microtask checkpoint between native document/window callbacks.
   // jsdom's dispatchEvent does not; flush the real store's pending React update
   // after Modal's document handler to reproduce that browser scheduling boundary.
@@ -56,9 +49,49 @@ it('Escape in create name closes only editor and retains center list and detail'
   } finally {
     document.removeEventListener('keydown', flushDiscreteUpdates);
   }
+}
+
+it('Escape in create name closes only editor and retains center list and detail', async () => {
+  const onClose = vi.fn();
+  render(<CronCenterPanel onClose={onClose} />);
+  await waitFor(() => expect(useCronStore.getState().isLoading).toBe(false));
+  fireEvent.click(screen.getByRole('button', { name: '新建', exact: true }));
+  const input = within(screen.getByRole('dialog')).getByPlaceholderText('不填就用目标开头');
+  input.focus();
+  fireEvent.change(input, { target: { value: 'Weekly summary' } });
+  escapeWithBrowserCheckpoint(input);
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   expect(onClose).not.toHaveBeenCalled();
   expect(useCronStore.getState().isEditorOpen).toBe(false);
   expect(screen.getByTestId('cron-center-scroll')).toBeTruthy();
   expect(screen.getAllByText('Weekly report').length).toBeGreaterThanOrEqual(2);
+});
+
+it('Escape in existing job editor closes only editor and retains center list and detail', async () => {
+  const onClose = vi.fn();
+  render(<CronCenterPanel onClose={onClose} />);
+  const edit = await screen.findByRole('button', { name: '编辑', exact: true });
+  fireEvent.click(edit);
+  const input = within(screen.getByRole('dialog')).getByDisplayValue('Weekly report');
+  input.focus();
+  escapeWithBrowserCheckpoint(input);
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(useCronStore.getState().isEditorOpen).toBe(false);
+  expect(onClose).not.toHaveBeenCalled();
+  expect(screen.getByTestId('cron-center-scroll')).toBeTruthy();
+  expect(screen.getAllByText('Weekly report').length).toBeGreaterThanOrEqual(2);
+});
+
+it('second Escape after editor closes calls center onClose exactly once', async () => {
+  const onClose = vi.fn();
+  render(<CronCenterPanel onClose={onClose} />);
+  await waitFor(() => expect(useCronStore.getState().isLoading).toBe(false));
+  fireEvent.click(screen.getByRole('button', { name: '新建', exact: true }));
+  const input = within(screen.getByRole('dialog')).getByPlaceholderText('不填就用目标开头');
+  input.focus();
+  escapeWithBrowserCheckpoint(input);
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(onClose).not.toHaveBeenCalled();
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+  expect(onClose).toHaveBeenCalledTimes(1);
 });
