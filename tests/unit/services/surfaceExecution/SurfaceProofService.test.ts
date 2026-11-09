@@ -48,6 +48,49 @@ function identity(surface: SurfaceKind) {
 }
 
 describe('SurfaceProofService', () => {
+  it('keeps compact persisted observation summaries usable for evidence cards', () => {
+    const result = service.finalizeToolResult({
+      toolName: 'browser_action',
+      action: 'get_dom_snapshot',
+      surface: 'browser',
+      identity: identity('browser'),
+      result: {
+        success: true,
+        metadata: {
+          surfaceSessionId: 'surface-browser',
+          surfaceObservationV1: {
+            version: 1,
+            stateId: 'browser-state-compact',
+            target: {
+              kind: 'browser',
+              browserInstanceId: 'browser-managed-1',
+              windowRef: 'window-managed-1',
+              tabRef: 'tab-managed-1',
+              documentRevision: 'document-compact',
+            },
+            providerGeneration: 'provider-1',
+            observedAt: 400,
+            expiresAt: 30_400,
+            elementCount: 80,
+            elementKinds: ['browser-element'],
+            evidenceAssetIds: ['browser-dom-compact'],
+            redactionStatus: 'clean',
+          },
+          surfaceExecutionEventsV1: [event({ surface: 'browser' })],
+        },
+      },
+    });
+
+    expect(result.metadata?.surfaceEvidenceCardV1).toMatchObject({
+      source: 'browser',
+      redactionStatus: 'clean',
+      inspection: {
+        captureState: 'captured',
+        inspectedBy: { method: 'dom' },
+      },
+    });
+  });
+
   it('projects verified Browser before/after evidence and checklist onto the owned event', () => {
     const result = service.finalizeToolResult({
       toolName: 'browser_action',

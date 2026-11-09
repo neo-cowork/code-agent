@@ -36,6 +36,7 @@ import { evaluateToolSlotDataDirAccess, FOREIGN_SLOT_DATA_DIR_CODE, type SlotDat
 import { createFileCheckpointIfNeeded } from './middleware/fileCheckpointMiddleware';
 import { getFileCheckpointService } from '../services/checkpoint';
 import { getConfirmationGate } from '../agent/confirmationGate';
+import type { ConfirmationPreview } from '../../shared/contract/confirmation';
 import { computeLedgerArgsSurvival } from '../agent/parkedApprovalSurvival';
 import {
   bashCommandRequiresPermission,
@@ -2036,6 +2037,31 @@ export class ToolExecutor {
       // ADR-088 一期：密码框输入交回用户。敏感判定必须早于 resolvePreAskGrant 消费——
       // 已记住的应用授权压不掉交回卡；未命中才进入既有按应用审批链（规格 §2 判定顺序）。
       const cuaSensitiveStep = classifyCuaSensitiveStep(executionToolName, params);
+      // E2 必须先于已记住授权消费：确认门是独立硬门，授权命中不能跳过它。
+      // buildPreview / assessRiskLevel / shouldConfirm 都是纯读；失败时沿用原有
+      // fail-open 语义，只记录 debug 并按“不强制确认”处理。
+      let confirmationPreview: ConfirmationPreview | undefined;
+      let confirmationRiskLevel: 'low' | 'medium' | 'high' = 'low';
+      let shouldForceConfirm = false;
+      try {
+        const gate = getConfirmationGate();
+        confirmationPreview = gate.buildPreview(executionToolName, params);
+        confirmationRiskLevel = gate.assessRiskLevel(executionToolName, params);
+        shouldForceConfirm = gate.shouldConfirm(
+          {
+            toolName: executionToolName,
+            params,
+            preview: confirmationPreview,
+            riskLevel: confirmationRiskLevel,
+          },
+          effectiveSessionId || 'global',
+        );
+      } catch (error) {
+        confirmationPreview = undefined;
+        confirmationRiskLevel = 'low';
+        shouldForceConfirm = false;
+        logger.debug('ConfirmationGate preview error:', error);
+      }
       const preAsk = needsUserApproval ? resolvePreAskGrant({
         toolName: executionToolName,
         sessionId: effectiveSessionId,
@@ -2046,7 +2072,9 @@ export class ToolExecutor {
           || policyForcesConfirmation || unresolvedWriteTargetForcesAsk
           || Boolean(boundaryViolation) || readOnlyForcesConfirmation
           || peerOriginForcesConfirmation || launderRetryForcesAsk
-          || Boolean(cuaSensitiveStep),
+          || Boolean(cuaSensitiveStep) || boundaryAskForcesConfirmation
+          || Boolean(deterministicAskReason) || this.forcePermissionHandler
+          || shouldForceConfirm,
       }) : null;
       if (preAsk) {
         needsUserApproval = false;
@@ -2200,33 +2228,16 @@ export class ToolExecutor {
       permissionRequest.decisionTrace = traceBuilder.build('ask');
 
       // E2: 确认门控 - 为高风险写操作附加预览并强制确认
-      try {
-        const gate = getConfirmationGate();
-        const preview = gate.buildPreview(executionToolName, params);
-        const riskLevel = gate.assessRiskLevel(executionToolName, params);
-        const shouldForceConfirm = gate.shouldConfirm(
-          {
-            toolName: executionToolName,
-            params,
-            preview,
-            riskLevel,
-          },
-          effectiveSessionId || 'global'
-        );
-
-        if (preview) {
-          permissionRequest.details.preview = preview;
-        }
-        if (shouldForceConfirm) {
-          permissionRequest.forceConfirm = true;
-          // 确认门也是 forceConfirm 成因之一：boundary-only 标记必须摘掉（返修 r2）。
-          permissionRequest.forceConfirmBoundaryOnly = false;
-          permissionRequest.dangerLevel = riskLevel === 'high'
-            ? 'danger'
-            : (riskLevel === 'medium' ? 'warning' : 'normal');
-        }
-      } catch (error) {
-        logger.debug('ConfirmationGate preview error:', error);
+      if (confirmationPreview) {
+        permissionRequest.details.preview = confirmationPreview;
+      }
+      if (shouldForceConfirm) {
+        permissionRequest.forceConfirm = true;
+        // 确认门也是 forceConfirm 成因之一：boundary-only 标记必须摘掉（返修 r2）。
+        permissionRequest.forceConfirmBoundaryOnly = false;
+        permissionRequest.dangerLevel = confirmationRiskLevel === 'high'
+          ? 'danger'
+          : (confirmationRiskLevel === 'medium' ? 'warning' : 'normal');
       }
 
       // ADR-088 一期：敏感步骤交回卡（放在确认门之后，details 整体替换——被键入的文本、

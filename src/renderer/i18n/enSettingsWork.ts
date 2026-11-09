@@ -254,10 +254,17 @@ export const enSettingsWork = {
       ],
       configSummary: {
         portPrefix: 'Port ',
+        webhookPortPrefix: 'Webhook port ',
         allowlistUserSuffix: ' allowlisted users',
         longPolling: 'Long Polling',
         webSocket: 'Long connection',
         configured: 'Configured',
+      },
+      typeNames: {
+        'http-api': 'HTTP API',
+        feishu: 'Feishu',
+        lark: 'Lark',
+        telegram: 'Telegram',
       },
       modal: {
         addTitle: 'Add channel',
