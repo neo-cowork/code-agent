@@ -154,9 +154,18 @@ describe('审批卡一键授权：无绑定文件夹任务写 3 个文件只停 
   it('模型一次并行发 3 个 Write（3 条停车行同时在）：授权后同文件夹的兄弟请求一并放行，范围外的不动', async () => {
     const { repo, rows } = makeRepo();
     const island = makeIsland(repo);
-    const parked = ['today-plan.md', 'reading-list.md', 'follow-ups.md'].map((n) => island.requestPermission(w3Write(path.join(notesDir, n))));
-    const other = island.requestPermission(w3Write(path.join(home, 'Documents', 'elsewhere.md')));
-    await flush();
+    // 请求先后发出、都不等应答（授权前 4 条同时挂着）；逐条排空是因为 vitest 下并发首次动态导入
+    // mock 模块会互相卡住（真 webServer 下三条真并行停车，见证据档真跑一节）。
+    const promises: Array<Promise<PermissionAskResult>> = [];
+    for (const target of [
+      ...['today-plan.md', 'reading-list.md', 'follow-ups.md'].map((n) => path.join(notesDir, n)),
+      path.join(home, 'Documents', 'elsewhere.md'),
+    ]) {
+      promises.push(island.requestPermission(w3Write(target)));
+      for (let i = 0; i < 3; i += 1) await flush();
+    }
+    const parked = promises.slice(0, 3);
+    const other = promises[3];
     expect(repo.insert).toHaveBeenCalledTimes(4);
     const [firstId] = [...rows.keys()];
     const { host } = makeHost();
