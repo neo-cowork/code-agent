@@ -2036,8 +2036,10 @@ describe('MessageProcessor persistence', () => {
       expect.stringContaining('The repair guard has been cleared. Retry the user requested action with the full tool set if needed.'),
       'artifact-validation',
     );
-    expect(contextAssembly.addAndPersistMessage).not.toHaveBeenCalled();
-    expect(ctx.messages).toHaveLength(0);
+    // 提前解除修复闸不能吞调用：assistant 调用 + 合成失败 tool 结果都要落库
+    expect(contextAssembly.addAndPersistMessage).toHaveBeenCalledTimes(2);
+    expect(ctx.messages).toHaveLength(2);
+    expect(ctx.messages[1]).toMatchObject({ role: 'tool', toolResults: [{ toolCallId: 'tool-1', success: false }] });
     expect(toolEngine.executeToolsWithHooks).not.toHaveBeenCalled();
   });
 
@@ -2119,8 +2121,10 @@ describe('MessageProcessor persistence', () => {
       expect.stringContaining('requested tools: Edit'),
       'artifact-validation',
     );
-    expect(contextAssembly.addAndPersistMessage).not.toHaveBeenCalled();
-    expect(ctx.messages).toHaveLength(0);
+    // 提前解除修复闸不能吞调用：assistant 调用 + 合成失败 tool 结果都要落库
+    expect(contextAssembly.addAndPersistMessage).toHaveBeenCalledTimes(2);
+    expect(ctx.messages).toHaveLength(2);
+    expect(ctx.messages[1]).toMatchObject({ role: 'tool', toolResults: [{ toolCallId: 'tool-1', success: false }] });
     expect(toolEngine.executeToolsWithHooks).not.toHaveBeenCalled();
   });
 
