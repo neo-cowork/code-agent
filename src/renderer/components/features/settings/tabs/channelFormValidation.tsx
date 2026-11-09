@@ -12,7 +12,7 @@ import type {
 export type ChannelRequiredField = 'name' | 'appId' | 'appSecret' | 'botToken';
 export type ChannelFormErrors = Partial<Record<ChannelRequiredField, string>>;
 
-export interface ChannelFormValues {
+interface ChannelFormValues {
   name: string;
   type: ChannelType;
   appId: string;
@@ -20,7 +20,7 @@ export interface ChannelFormValues {
   botToken: string;
 }
 
-export interface ChannelConfigValues {
+interface ChannelConfigValues {
   type: ChannelType;
   apiPort: string;
   apiKey: string;
@@ -41,14 +41,14 @@ export interface ChannelConfigValues {
   privacyMode: ChannelPrivacyMode;
 }
 
-export interface ChannelRequiredFieldCopy {
+interface ChannelRequiredFieldCopy {
   name: string;
   appId: string;
   appSecret: string;
   botToken: string;
 }
 
-export interface ChannelRequiredFieldProps {
+interface ChannelRequiredFieldProps {
   label: string;
   error?: string;
   id: string;

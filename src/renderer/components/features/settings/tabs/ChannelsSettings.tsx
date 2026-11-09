@@ -44,11 +44,8 @@ import { TelegramGroupAccessPrerequisite, TelegramPrivacyModeBadge, TelegramPriv
 import { FeishuSharedAppHint } from './FeishuSharedAppHint';
 import { FeishuLastInboundLine } from './FeishuLastInboundLine';
 import {
-  buildChannelConfig,
-  ChannelRequiredField,
+  buildChannelConfig, ChannelRequiredField, clearChannelFormError, validateChannelRequiredFields,
   type ChannelFormErrors,
-  clearChannelFormError,
-  validateChannelRequiredFields,
 } from './channelFormValidation';
 
 const logger = createLogger('ChannelsSettings');
@@ -297,10 +294,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
       setErrors(nextErrors);
       const firstMissingField = Object.keys(nextErrors)[0] as keyof ChannelFormErrors;
       const firstMissingInput = {
-        name: nameInputRef,
-        appId: appIdInputRef,
-        appSecret: appSecretInputRef,
-        botToken: botTokenInputRef,
+        name: nameInputRef, appId: appIdInputRef, appSecret: appSecretInputRef, botToken: botTokenInputRef,
       }[firstMissingField];
       firstMissingInput?.current?.focus();
       return;
