@@ -34,7 +34,8 @@ import { generateMessageId } from '../../../shared/utils/id';
 import { getAttachmentId } from '../../../shared/utils/messageAttachments';
 import { getSessionManager } from '../../services';
 import { extractArtifacts } from '../artifactExtractor';
-import { handleDeclareDeliverablesGate } from './declareDeliverablesGate';
+import { applyDeclareDeliverablesOutcome, recordDeclareDeliverables } from './declareDeliverablesGate';
+import { sealBouncedToolCalls } from './bouncedToolCallSeal';
 import { handleGoalCompletionGate } from './goalCompletionGate';
 import {
   fingerprintToolCall,
@@ -701,14 +702,10 @@ export class MessageProcessor {
       return 'continue';
     }
 
-    // Artifact contract：拦截 declare_deliverables → 写入本轮最终产物路径声明。
-    const declareDeliverablesResult = handleDeclareDeliverablesGate(this.ctx, this.contextAssembly, toolCalls);
-    if (declareDeliverablesResult) return declareDeliverablesResult;
-
     // Goal mode：拦截 attempt_completion → 双闸验证（闸1 确定性 verifyCommand + 闸2 软评审 reviewCondition）。
     // 完成判定权在代码层，模型无法靠"自称完成"绕过（拒绝 Ralph）。详见 goalCompletionGate。
     const goalGateResult = await handleGoalCompletionGate(this.ctx, this.contextAssembly, toolCalls, iterations);
-    if (goalGateResult) return goalGateResult;
+    if (goalGateResult) return goalGateResult === 'continue' ? sealBouncedToolCalls({ ctx: this.ctx, contextAssembly: this.contextAssembly }, response, toolCalls, 'goal') : goalGateResult;
 
     const activeRepairGuard = this.ctx.artifact.repairGuard;
     if (activeRepairGuard && await maybeClearCompletedArtifactRepairGuardBeforeAdmission(
@@ -716,9 +713,7 @@ export class MessageProcessor {
       this.contextAssembly,
       activeRepairGuard,
       requestedToolNames,
-    )) {
-      return 'continue';
-    }
+    )) return sealBouncedToolCalls({ ctx: this.ctx, contextAssembly: this.contextAssembly }, response, toolCalls, 'repair');
 
     const visibleToolNames = new Set(response.runtimeDiagnostics?.visibleToolNames || []);
     const unavailableToolCalls = visibleToolNames.size > 0
@@ -741,6 +736,9 @@ export class MessageProcessor {
       // 让代执行与普通调用共用同一个 executeToolsWithHooks 入口（审批链零旁路）。
       if (admission !== 'proceed') return admission;
     }
+
+    // Artifact contract：declare_deliverables 只记账，调用随整批走普通落库 + 执行链路，结果在执行后盖章。
+    const declareOutcomes = recordDeclareDeliverables(this.ctx, toolCalls);
 
     logger.debug(` Tool calls received: ${toolCalls.length} calls`);
 
@@ -802,6 +800,7 @@ export class MessageProcessor {
     logger.debug('[AgentLoop] Starting executeToolsWithHooks...');
     const toolResults = await this.toolEngine.executeToolsWithHooks(toolCalls);
     logger.debug(` executeToolsWithHooks completed, ${toolResults.length} results`);
+    applyDeclareDeliverablesOutcome(toolResults, declareOutcomes);
 
     if (this.ctx.control.isCancelled || this.ctx.control.isInterrupted || this.ctx.control.runAbortController?.signal.aborted) {
       logger.info('[AgentLoop] Run stop detected after tool execution; persisting cancelled tool-call closures');

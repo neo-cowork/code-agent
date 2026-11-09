@@ -86,7 +86,7 @@ import { TOOL_ARGS_REPAIR_MAX_ATTEMPTS } from '../../../shared/constants/repair'
 import { classifyIntent } from '../../telemetry/intentClassifier';
 import { markDistilledSkillTurnSignal } from '../../services/skills/distillSignalStore';
 import { emitGoalAbort } from './goalAbort';
-import { releaseDoomLoopHandbackForSteer } from './doomLoopHandback';
+import { emitDoomLoopStopNotice, releaseDoomLoopHandbackForSteer } from './doomLoopHandback';
 import { markStreamSnapshotInterruptionReason } from '../../session/streamSnapshot';
 import { persistInputRedirectReceipt } from './inputRedirectReceipt';
 import { takeSteerEmptyReinferenceFailure } from './steerEmptyReinference';
@@ -731,7 +731,7 @@ export class ConversationRuntime {
             runTools: () => this.messageProcessor.handleToolResponse(response, wasForceExecuted, iterations, langfuse),
           });
           if (rails.outcome === 'retry') continue;
-          if (rails.outcome === 'abort') { terminal = { status: 'aborted' }; break; }
+          if (rails.outcome === 'abort') { await emitDoomLoopStopNotice(this.ctx, this.contextAssembly); terminal = { status: 'aborted' }; break; }
           const toolAction = rails.toolAction;
           if (
             toolAction === 'continue-soft-validation'

@@ -1,143 +1,89 @@
 import { describe, expect, it, vi } from 'vitest';
-import { handleDeclareDeliverablesGate } from '../../../../src/host/agent/runtime/declareDeliverablesGate';
+import {
+  applyDeclareDeliverablesOutcome,
+  recordDeclareDeliverables,
+} from '../../../../src/host/agent/runtime/declareDeliverablesGate';
 import type { RuntimeContext } from '../../../../src/host/agent/runtime/runtimeContext';
-import type { ContextAssembly } from '../../../../src/host/agent/runtime/contextAssembly';
-import type { ToolCall } from '../../../../src/shared/contract';
+import type { ToolCall, ToolResult } from '../../../../src/shared/contract';
 import { ArtifactState } from '../../../../src/host/agent/runtime/artifactState';
 
 function makeCtx(overrides: Partial<RuntimeContext> = {}) {
-  const turnTrace = { record: vi.fn() };
   return {
     workingDirectory: '/tmp/workspace',
     sessionId: 's1',
-    turnTrace,
+    turnTrace: { record: vi.fn() },
     artifact: ArtifactState.forTest(),
     ...overrides,
   } as unknown as RuntimeContext;
-}
-
-function makeContextAssembly() {
-  const injectSystemMessage = vi.fn();
-  return {
-    contextAssembly: { injectSystemMessage } as unknown as ContextAssembly,
-    injectSystemMessage,
-  };
 }
 
 function toolCall(name: string, args: Record<string, unknown> = {}): ToolCall {
   return { id: `tc-${name}`, name, arguments: args };
 }
 
-describe('handleDeclareDeliverablesGate', () => {
+describe('recordDeclareDeliverables', () => {
   it('returns null and leaves ctx unchanged when no declare_deliverables call exists', () => {
     const ctx = makeCtx();
-    const { contextAssembly, injectSystemMessage } = makeContextAssembly();
-
-    const result = handleDeclareDeliverablesGate(ctx, contextAssembly, [
-      toolCall('Read', { file_path: 'README.md' }),
-    ]);
-
-    expect(result).toBeNull();
+    expect(recordDeclareDeliverables(ctx, [toolCall('Read', { file_path: 'README.md' })])).toBeNull();
     expect(ctx.artifact.declaredDeliverables).toBeUndefined();
-    expect(injectSystemMessage).not.toHaveBeenCalled();
   });
 
-  it('valid call records declared deliverables and injects confirmation', () => {
+  it('valid call records the declaration and returns confirmation text (no early exit signal)', () => {
     const ctx = makeCtx();
-    const { contextAssembly, injectSystemMessage } = makeContextAssembly();
-    const before = Date.now();
-
-    const result = handleDeclareDeliverablesGate(ctx, contextAssembly, [
-      toolCall('declare_deliverables', {
-        final_artifacts: ['dist/index.html', '/tmp/workspace/report.md'],
-        scratch_dir: 'draft',
-      }),
+    const outcomes = recordDeclareDeliverables(ctx, [
+      toolCall('declare_deliverables', { final_artifacts: ['dist/index.html'], scratch_dir: 'draft' }),
+      toolCall('WebSearch', { query: 'x' }),
     ]);
-    const after = Date.now();
-
-    expect(result).toBe('continue');
-    expect(ctx.artifact.declaredDeliverables?.finalArtifacts).toEqual(['dist/index.html', '/tmp/workspace/report.md']);
+    expect(ctx.artifact.declaredDeliverables?.finalArtifacts).toEqual(['dist/index.html']);
     expect(ctx.artifact.declaredDeliverables?.scratchDir).toBe('draft');
-    expect(ctx.artifact.declaredDeliverables?.declaredAtMs).toBeGreaterThanOrEqual(before);
-    expect(ctx.artifact.declaredDeliverables?.declaredAtMs).toBeLessThanOrEqual(after);
-    expect(injectSystemMessage).toHaveBeenCalledTimes(1);
-    expect(injectSystemMessage).toHaveBeenCalledWith(
-      expect.stringContaining('<deliverables-declared>'),
-      'deliverables-gate',
-    );
-    expect(injectSystemMessage).toHaveBeenCalledWith(
-      expect.stringContaining('dist/index.html'),
-      'deliverables-gate',
-    );
-    expect(injectSystemMessage).toHaveBeenCalledWith(
-      expect.stringContaining('draft'),
-      'deliverables-gate',
-    );
+    expect(outcomes?.size).toBe(1);
+    const outcome = outcomes?.get('tc-declare_deliverables');
+    expect(outcome?.success).toBe(true);
+    expect(outcome?.text).toContain('<deliverables-declared>');
+    expect(outcome?.text).toContain('dist/index.html');
+    expect(outcome?.text).toContain('draft');
   });
 
   it('second valid call overrides the previous declaration and says so', () => {
     const ctx = makeCtx({
       artifact: ArtifactState.forTest({
-        declaredDeliverables: {
-        finalArtifacts: ['old/game.html'],
-        scratchDir: 'old-draft',
-        declaredAtMs: 1,
-      },
+        declaredDeliverables: { finalArtifacts: ['old/game.html'], scratchDir: 'old-draft', declaredAtMs: 1 },
       }),
     });
-    const { contextAssembly, injectSystemMessage } = makeContextAssembly();
-
-    const result = handleDeclareDeliverablesGate(ctx, contextAssembly, [
-      toolCall('declare_deliverables', {
-        final_artifacts: ['new/index.html'],
-        scratch_dir: 'new-draft',
-      }),
+    const outcomes = recordDeclareDeliverables(ctx, [
+      toolCall('declare_deliverables', { final_artifacts: ['new/index.html'], scratch_dir: 'new-draft' }),
     ]);
-
-    expect(result).toBe('continue');
     expect(ctx.artifact.declaredDeliverables?.finalArtifacts).toEqual(['new/index.html']);
-    expect(ctx.artifact.declaredDeliverables?.scratchDir).toBe('new-draft');
-    expect(injectSystemMessage).toHaveBeenCalledWith(
-      expect.stringContaining('已覆盖之前的声明'),
-      'deliverables-gate',
-    );
-    expect(injectSystemMessage).toHaveBeenCalledWith(
-      expect.stringContaining('old/game.html'),
-      'deliverables-gate',
-    );
-    expect(injectSystemMessage).toHaveBeenCalledWith(
-      expect.stringContaining('new/index.html'),
-      'deliverables-gate',
-    );
+    const text = outcomes?.get('tc-declare_deliverables')?.text ?? '';
+    expect(text).toContain('已覆盖之前的声明');
+    expect(text).toContain('old/game.html');
+    expect(text).toContain('new/index.html');
   });
 
   it.each([
     ['missing final_artifacts', {}],
     ['empty final_artifacts', { final_artifacts: [] }],
-  ])('invalid call (%s) does not mutate ctx and injects rejection', (_label, args) => {
-    const previous = {
-      finalArtifacts: ['existing/final.html'],
-      scratchDir: 'scratch',
-      declaredAtMs: 123,
-    };
-    const ctx = makeCtx({ artifact: ArtifactState.forTest({
-  declaredDeliverables: previous,
-}) });
-    const { contextAssembly, injectSystemMessage } = makeContextAssembly();
-
-    const result = handleDeclareDeliverablesGate(ctx, contextAssembly, [
-      toolCall('declare_deliverables', args),
-    ]);
-
-    expect(result).toBe('continue');
+  ])('invalid call (%s) does not mutate ctx and yields a failed outcome with the reason', (_label, args) => {
+    const previous = { finalArtifacts: ['existing/final.html'], scratchDir: 'scratch', declaredAtMs: 123 };
+    const ctx = makeCtx({ artifact: ArtifactState.forTest({ declaredDeliverables: previous }) });
+    const outcome = recordDeclareDeliverables(ctx, [toolCall('declare_deliverables', args)])
+      ?.get('tc-declare_deliverables');
     expect(ctx.artifact.declaredDeliverables).toBe(previous);
-    expect(injectSystemMessage).toHaveBeenCalledWith(
-      expect.stringContaining('<deliverables-declaration-rejected>'),
-      'deliverables-gate',
-    );
-    expect(injectSystemMessage).toHaveBeenCalledWith(
-      expect.stringContaining('final_artifacts'),
-      'deliverables-gate',
-    );
+    expect(outcome?.success).toBe(false);
+    expect(outcome?.text).toContain('<deliverables-declaration-rejected>');
+    expect(outcome?.text).toContain('final_artifacts');
+  });
+});
+
+describe('applyDeclareDeliverablesOutcome', () => {
+  it('overwrites only the declare result and leaves other results untouched', () => {
+    const results: ToolResult[] = [
+      { toolCallId: 'a', success: true, output: 'executor fallback' },
+      { toolCallId: 'b', success: true, output: 'search hits' },
+    ];
+    applyDeclareDeliverablesOutcome(results, new Map([['a', { success: false, text: 'rejected' }]]));
+    expect(results[0]).toMatchObject({ success: false, error: 'rejected' });
+    expect(results[0].output).toBeUndefined();
+    expect(results[1]).toMatchObject({ success: true, output: 'search hits' });
   });
 });
