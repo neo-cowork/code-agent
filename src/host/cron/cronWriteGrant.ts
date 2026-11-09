@@ -270,7 +270,7 @@ async function scheduleWriteGrantSession(sessionId: string | undefined): Promise
 }
 
 interface CronSessionOrigin {
-  jobId: string;
+  jobId?: string;
   root?: string;
   workingDirectory?: string;
 }
@@ -281,7 +281,7 @@ async function cronSessionOrigin(sessionId: string | undefined): Promise<CronSes
     const { getSessionManager } = await import('../services/infra/sessionManager');
     const session = await getSessionManager().getSession(sessionId).catch(() => null);
     const origin = session?.origin;
-    if ((origin?.kind !== 'cron' && origin?.kind !== 'heartbeat') || !origin.id) return undefined;
+    if (origin?.kind !== 'cron' && origin?.kind !== 'heartbeat') return undefined;
     return {
       jobId: origin.id,
       root: writeGrantRootFromMetadata(origin.metadata),
@@ -407,7 +407,7 @@ export async function grantWriteFolderFromParkedApproval(
   if (row.kind !== 'tool_approval' || row.status !== 'pending') return { status: 'rejected', reason: 'not_pending' };
   let payload: { sessionId?: string | null; type?: string; argsSummary?: string; writeGrantFolder?: string };
   try {
-    payload = JSON.parse(row.payloadJson);
+    payload = JSON.parse(row.payloadJson) as typeof payload;
   } catch {
     return { status: 'rejected', reason: 'not_found' };
   }
@@ -418,13 +418,14 @@ export async function grantWriteFolderFromParkedApproval(
   if (!folder || folder !== payload.writeGrantFolder) return { status: 'rejected', reason: 'folder_mismatch' };
   const origin = await cronSessionOrigin(payload.sessionId ?? undefined);
   if (!origin) return { status: 'rejected', reason: 'no_cron_origin' };
-  const active = deps.host.loadActiveJob(origin.jobId);
-  if (!active) return { status: 'rejected', reason: 'job_missing' };
+  const jobId = origin.jobId;
+  const active = jobId ? deps.host.loadActiveJob(jobId) : undefined;
+  if (!jobId || !active) return { status: 'rejected', reason: 'job_missing' };
   const existingRoot = writeGrantRootFromMetadata(active.definition.metadata);
   if (existingRoot) {
-    if (existingRoot === folder) return { status: 'granted', folder, jobId: origin.jobId };
-    logger.info('Write folder grant kept the existing root (not overwritten)', { jobId: origin.jobId, existingRoot, folder });
-    return { status: 'kept_existing', folder, existingRoot, jobId: origin.jobId };
+    if (existingRoot === folder) return { status: 'granted', folder, jobId };
+    logger.info('Write folder grant kept the existing root (not overwritten)', { jobId: jobId, existingRoot, folder });
+    return { status: 'kept_existing', folder, existingRoot, jobId };
   }
   const updated: CronJobDefinition = {
     ...active.definition,
@@ -433,6 +434,6 @@ export async function grantWriteFolderFromParkedApproval(
   };
   await deps.host.persistJob(updated);
   active.definition = updated;
-  logger.info('Write scope granted from parked approval card', { jobId: origin.jobId, root: folder, requestId });
-  return { status: 'granted', folder, jobId: origin.jobId };
+  logger.info('Write scope granted from parked approval card', { jobId, root: folder, requestId });
+  return { status: 'granted', folder, jobId };
 }

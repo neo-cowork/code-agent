@@ -574,7 +574,8 @@ export class OrchestratorPermissionIsland {
       }
     }
     // 一键授权候选文件夹：停车前算好随载荷落库，收件箱卡据此出第三个按钮（守卫在 cronWriteGrant）。
-    const writeGrantFolder = unattended
+    // 类型门放调用侧：非文件写请求不多让出一拍微任务（停车事件的同步时序不变）。
+    const writeGrantFolder = unattended && (request.type === 'file_write' || request.type === 'file_edit')
       ? await writeGrantFolderForParking(request)
       : undefined;
     // cron/heartbeat/channel/语音派都走停车审批，24h backstop 只负责泄漏兜底；
