@@ -145,7 +145,7 @@ describe('SidebarProjectGroup cron run folding', () => {
   });
 
   it.each(['persisted', 'runtime', 'task'])('keeps an off-cap running row with %s activity and the existing indicator', (source) => {
-    useSessionStore.getState().updateSessionRuntime({ sessionId: 'active', status: 'running', activeAgentCount: 0 });
+    useSessionStore.getState().updateSessionRuntime({ sessionId: 'active', status: 'running', activeAgentCount: 0, contextHealth: null });
     const active = { ...session('active', '[Schedule] 晨会摘要', 1), status: source === 'persisted' ? 'running' : 'idle' };
     const sessions = [
       ...Array.from({ length: 6 }, (_, i) => ({ ...session(`plain-${i}`, '工作摘要', 10 - i), origin: { kind: 'manual' } })),
