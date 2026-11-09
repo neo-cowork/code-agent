@@ -844,11 +844,15 @@ export function hasConfiguredRuntimeModels(settings?: AppSettings | null): boole
   return buildRuntimeModelOptions(settings).length > 0;
 }
 
-export function hasConfiguredDefaultRuntimeModel(settings?: AppSettings | null): boolean {
+export function hasConfiguredDefaultRuntimeModel(
+  settings?: AppSettings | null,
+  options: { allowCloudManaged?: boolean } = {},
+): boolean {
   if (!settings?.models) return false;
   const providerId = resolveConfiguredDefaultProvider(settings.models, settings.models.default as ModelProvider);
   const providerConfig = settings.models.providers?.[providerId];
   if (!providerConfig || providerConfig.enabled === false) return false;
+  if (options.allowCloudManaged === false && providerConfig.managedByCloud) return false;
   return isRuntimeProviderAvailable(providerId, providerConfig);
 }
 
