@@ -7,7 +7,7 @@ interface AttachmentMergeResult {
 }
 
 function isSameAttachment(a: MessageAttachment, b: MessageAttachment): boolean {
-  if (a.path && b.path) return a.path === b.path;
+  if (a.path && b.path && a.path === b.path) return true;
   if (a.name !== b.name || a.size !== b.size || a.data !== b.data) return false;
   if (a.category === 'folder' || b.category === 'folder') {
     return JSON.stringify(a.files ?? []) === JSON.stringify(b.files ?? []);

@@ -59,6 +59,7 @@ async function processFile(file: File): Promise<MessageAttachment> {
     size: file.size,
     mimeType: file.type,
     data: await readFile(file, isImage),
+    path: `/tmp/web-upload-${attachmentId}/${file.name}`,
   };
 }
 
