@@ -1,3 +1,4 @@
+import type { RunCancelReason } from '../runtime/runContext';
 // ============================================================================
 // Agent Loop - Core event loop for AI agent execution
 // Enhanced with Manus-style persistent planning hooks
@@ -492,7 +493,7 @@ export class AgentLoop {
     return this.runFinalizer.whenSessionEndMemoryWorkSettled();
   }
 
-  async cancel(reason?: 'user' | 'session-switch' | 'idle-reaped'): Promise<void> {
+  async cancel(reason?: RunCancelReason): Promise<void> {
     await this.conversationRuntime.cancel(reason);
   }
 

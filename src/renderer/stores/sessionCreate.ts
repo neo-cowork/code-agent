@@ -10,6 +10,7 @@ import { useComposerStore } from './composerStore';
 import { isDraftOrSpaceScopeKey } from './composerScopeModel';
 import { excludeBusySessions, type DraftBusySignals } from './sessionDraftBusyGuard';
 import { toast } from '../hooks/useToast';
+import { getSessionTitlePlaceholder } from '../utils/sessionTitlePlaceholder';
 
 const logger = createLogger('SessionCreate');
 
@@ -146,7 +147,7 @@ export async function executeCreateSession(
       ? readOnboardingDefaultEngine(newSessionWorkingDirectory).catch(() => null)
       : Promise.resolve(null);
     const nextTitle = title?.trim() || '新对话';
-    if (nextTitle === '新对话') {
+    if (getSessionTitlePlaceholder(nextTitle, useAppStore.getState().language) !== null) {
       useAppshotsStore.getState().clear();
       const reusableSession = findReusableNewSessionDraft({
         sessions: excludeBusySessions(
