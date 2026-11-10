@@ -2,6 +2,7 @@ import React from 'react';
 import { useI18n } from '../../../../../hooks/useI18n';
 import { useAppStore } from '../../../../../stores/appStore';
 import { describeLastToolFailure, describeLastToolStep, resolveAgentActivityStepStatus } from '../../../../../utils/agentActivity';
+import { agentFailureCopy } from '../../../../../utils/agentFailureCopy';
 import { openExternalLink } from '../../../../../utils/platform';
 import type { DelegationPresentation } from './delegationPresentation';
 
@@ -26,6 +27,8 @@ export function DelegationReceipt({ presentation }: { presentation: DelegationPr
   const pendingPermissionRequest = useAppStore((state) => state.pendingPermissionRequest);
   const pendingPermissionSessionId = useAppStore((state) => state.pendingPermissionSessionId);
   const queuedPermissionRequests = useAppStore((state) => state.queuedPermissionRequests);
+  const failure = (presentation.failureCode ? agentFailureCopy(presentation.failureCode, t) : null)
+    ?? presentation.failure;
   const toolFailure = presentation.state === 'working'
     ? undefined
     : describeLastToolFailure(presentation.toolFailure, t);
@@ -69,9 +72,9 @@ export function DelegationReceipt({ presentation }: { presentation: DelegationPr
           ))}
         </div>
       )}
-      {presentation.failure && (
+      {failure && (
         <div className="line-clamp-2 break-words text-badge-danger" data-testid="delegation-failure">
-          {presentation.failure}
+          {failure}
         </div>
       )}
       {toolFailure && (
