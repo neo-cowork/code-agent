@@ -16,7 +16,7 @@ import type {
 import { bashSchema as schema } from './bash.schema';
 import { BASH, OS_SANDBOX_CODES, SANDBOX_APPROVED_RM_STILL_DENIED_FAILURE_CODE } from '../../../../shared/constants';
 import { HostReasonCode, createHostReason } from '../../../../shared/contract/permission';
-import { startBackgroundTask } from '../../shell/backgroundTasks';
+import { BACKGROUND_TASK_MAX_RUNTIME, startBackgroundTask } from '../../shell/backgroundTasks';
 import { handoverTimedOutCommand } from '../../shell/timeoutHandover';
 import { checkNoWaitCommand, clampToShortTier, exceededShortTierMessage, resolveForegroundTimeoutTier } from '../../shell/foregroundTier';
 import { runForegroundCommand } from './foregroundCommand';
@@ -509,7 +509,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           cwd: workingDirectory,
           cols,
           rows,
-          maxRuntime: timeout,
+          maxRuntime: !waitForCompletion && !shortTier ? (args.timeout as number | undefined) ?? BACKGROUND_TASK_MAX_RUNTIME : timeout,
           sessionId: ctx.sessionId,
           toolCallId: ctx.currentToolCallId,
           env: childEnv.env,
@@ -655,7 +655,7 @@ Use process_kill to terminate the session.`;
       }
       let result: ReturnType<typeof startBackgroundTask>;
       try {
-        result = startBackgroundTask(sandboxed.command, workingDirectory, timeout, {
+        result = startBackgroundTask(sandboxed.command, workingDirectory, shortTier ? timeout : (args.timeout as number | undefined) ?? BACKGROUND_TASK_MAX_RUNTIME, {
           sessionId: ctx.sessionId,
           toolCallId: ctx.currentToolCallId, ownerAgentId: ctx.agentId, displayCommand: normalizedCommand,
           env: childEnv.env,
