@@ -19,6 +19,7 @@ vi.mock('../../../src/renderer/components/features/cron/useChannelCatalog', () =
 vi.mock('../../../src/renderer/services/rolesClient', () => ({ listRoles: vi.fn().mockResolvedValue([]) }));
 
 import { ScheduleConfirmCard } from '../../../src/renderer/components/features/chat/ChatInput/ScheduleConfirmCard';
+import { PendingRoutineRestate } from '../../../src/renderer/components/features/cron/PendingRoutineRestate';
 import { SavedRoutineRestate } from '../../../src/renderer/components/features/cron/SavedRoutineRestate';
 
 afterEach(cleanup);
@@ -55,4 +56,9 @@ it.each(['zh', 'en'] as const)('production result rows without resultChannel (%s
   const savedRow = saved.container.querySelector('[data-saved-routine-row="result"]');
   expect(savedRow?.textContent).toBe(`${t.scheduleConfirm.result}${t.scheduleConfirm.reviewInbox}`);
   process.stdout.write(`DOM ${language} SavedRoutineRestate result: ${savedRow?.outerHTML}\n`);
+  saved.unmount();
+  const pending = render(<PendingRoutineRestate input={job} confirming={false} onConfirm={vi.fn()} onBack={vi.fn()} />);
+  const pendingRow = pending.container.querySelector('[data-pending-routine-row="result"]');
+  expect(pendingRow?.textContent).toBe(`${t.scheduleConfirm.result}${t.scheduleConfirm.reviewInbox}`);
+  process.stdout.write(`DOM ${language} PendingRoutineRestate result: ${pendingRow?.outerHTML}\n`);
 });
