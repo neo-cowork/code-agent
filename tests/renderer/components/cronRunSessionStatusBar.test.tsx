@@ -551,7 +551,7 @@ it('reveals the identical complete multi-line shell preview without trimming or 
   const command = '  grep -n "行动项" $(find . -name "*.txt") | sort\n' + '# preserve bytes '.repeat(30) + '\n';
   listParkedApprovalsMock.mockResolvedValue([{
     id: 'raw-command', sessionId: 'session-1', tool: 'Bash', requestedAt: 1,
-    status: 'pending', argsPreview: command,
+    status: 'pending', argsPreview: command.slice(0, 40) + '…', commandPreview: command,
   }]);
   render(<CronRunSessionStatusBar sessionId="session-1" />);
   const toggle = await screen.findByTestId('cron-run-command-toggle');

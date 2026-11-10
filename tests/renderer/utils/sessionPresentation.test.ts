@@ -137,6 +137,7 @@ describe('automation titles stay localized at display time', () => {
       expect(getDisplaySessionTitle(`[Channel] Work · ${id}`, 'zh')).toBe('渠道 · Work');
     }
     expect(getDisplaySessionTitle('[Channel] Work · Design team', 'en')).toBe('Channel · Work · Design team');
+    expect(getDisplaySessionTitle('[Channel] Work · EngineeringCommunicationChannel', 'en')).toBe('Channel · Work · EngineeringCommunicationChannel');
     expect(getDisplaySessionTitle('Ordinary · title', 'zh')).toBe('Ordinary · title');
   });
 });

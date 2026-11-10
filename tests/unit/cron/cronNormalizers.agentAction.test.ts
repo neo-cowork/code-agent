@@ -284,3 +284,41 @@ describe('cronAgentRunHasAlert — 值得打扰矩阵', () => {
     expect(cronAgentRunHasAlert({ notifyWhen: '   ' }, { isExternalWatch: false, finalAssistantText: '普通正文' })).toBe(true);
   });
 });
+
+
+describe('buildCronAgentActionResult — artifact provenance', () => {
+  const text = '<cron_summary>Read notes\nartifact: ./notes.md\nartifact: notes.md（仅读取）\nartifact: summary.md\nartifact: https://example.com/report\n</cron_summary>';
+  const read = { id: 'read', name: 'Read', arguments: { file_path: '/workspace/notes.md' } };
+  const edit = { id: 'edit', name: 'Edit', arguments: { file_path: './notes.md' } };
+  const make = (writeSuccess?: boolean) => buildCronAgentActionResult(
+    { agentType: 'default', prompt: 'weekly report' }, undefined, 'run', text, false, false, undefined,
+    {
+      workingDirectory: '/workspace',
+      messages: [
+        { role: 'assistant', toolCalls: [read, ...(writeSuccess === undefined ? [] : [edit])] },
+        { role: 'tool', toolResults: [
+          { toolCallId: 'read', success: true, output: 'notes' },
+          ...(writeSuccess === undefined ? [] : [{ toolCallId: 'edit', success: writeSuccess, output: '' }]),
+        ] },
+      ],
+    },
+  );
+  it('drops only-read notes, including annotations, while retaining outputs and URLs', () => {
+    expect(make().digest?.artifacts).toEqual(['summary.md', 'https://example.com/report']);
+    expect(make(false).digest?.artifacts).toEqual(['summary.md', 'https://example.com/report']);
+  });
+  it('keeps a file read then successfully changed, and leaves calls without a scan untouched', () => {
+    expect(make(true).digest?.artifacts).toContain('./notes.md');
+    expect(buildCronAgentActionResult({ agentType: 'default', prompt: 'p' }, undefined, 's', text, false).digest?.artifacts)
+      .toContain('./notes.md');
+  });
+  it.each(['Write', 'write_file', 'Append', 'append_file', 'edit_file'])('keeps successful %s outputs even when read first', (name) => {
+    const built = buildCronAgentActionResult({ agentType: 'default', prompt: 'p' }, undefined, 's', text, false, false, undefined, {
+      workingDirectory: '/workspace', messages: [
+        { role: 'assistant', toolCalls: [read, { ...edit, name }] },
+        { role: 'tool', toolResults: [{ toolCallId: 'read', success: true }, { toolCallId: 'edit', success: true }] },
+      ],
+    });
+    expect(built.digest?.artifacts).toContain('./notes.md');
+  });
+});

@@ -533,6 +533,7 @@ export const cronCenterZh = {
 };
 
 export const cronCenterEn: typeof cronCenterZh = {
+  ...automationPresentationEn,
   cronCenter: {
     parkedVoided: parkedApprovalVoidedEn,
     groupListenCheck: {

@@ -413,6 +413,7 @@ describe('file selection patterns use plain step copy', () => {
   it.each(['Glob', 'glob', 'Grep', 'grep'])('%s humanizes wildcard and file-glob patterns', (tool) => {
     expect(humanizeToolStep(tool, { pattern: '**/*' }, zh)).toBe('查看了文件夹里的文件');
     expect(humanizeToolStep(tool, { pattern: '**/*' }, en)).toBe('Viewed files in the folder');
+    expect(humanizeToolStep(tool, { pattern: '**/*' }, en, 'Find files matching **/*')).toBe('Viewed files in the folder');
     expect(humanizeToolStep(tool, { pattern: '**/*.md' }, zh)).toBe('查找了 .md 文件');
     expect(humanizeToolStep(tool, { pattern: '*.md' }, en)).toBe('Looked for .md files');
     expect(humanizeToolStep(tool, { pattern: 'src/**/*.{ts,tsx}' }, zh)).toBe('查看了文件夹里的文件');

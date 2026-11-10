@@ -447,6 +447,19 @@ export function humanizeToolStep(
       : t.toolStepHumanize.statusForms[status].declared[stepLabel];
   }
 
+  if (toolKind === 'search') {
+    const pattern = typeof args?.pattern === 'string' ? args.pattern.trim() : '';
+    // Recognize file selection syntax, not ordinary words or content regexes.
+    const fileGlob = /[*?]/.test(pattern) && /^[\w./{}[\],?*!-]+$/.test(pattern)
+      && !/[^/]\.\*[^/]/.test(pattern);
+    if (fileGlob || /^(?:\.\*|\^\.\*\$)$/.test(pattern)) {
+      const extension = /(?:^|\/)\*\.([a-z\d]+)$/i.exec(pattern)?.[1];
+      return extension
+        ? t.automationPresentation.findExtension.replace('{extension}', extension)
+        : t.automationPresentation.browseFiles;
+    }
+  }
+
   const schemaDescription = BASH_TOOLS.has(name)
     ? firstString(args ?? {}, ['description'])
     : '';
@@ -487,16 +500,6 @@ export function humanizeToolStep(
       return command ? h.bash.replace('{command}', command) : h.bashFallback;
     }
     case 'search': {
-      const pattern = typeof a.pattern === 'string' ? a.pattern.trim() : '';
-      // Recognize file selection syntax, not ordinary words or content regexes.
-      const fileGlob = /[*?]/.test(pattern) && /^[\w./{}[\],?*!-]+$/.test(pattern)
-        && !/[^/]\.\*[^/]/.test(pattern);
-      if (fileGlob || /^(?:\.\*|\^\.\*\$)$/.test(pattern)) {
-        const extension = /(?:^|\/)\*\.([a-z\d]+)$/i.exec(pattern)?.[1];
-        return extension
-          ? t.automationPresentation.findExtension.replace('{extension}', extension)
-          : t.automationPresentation.browseFiles;
-      }
       const query = firstString(a, ['pattern', 'query']);
       return query ? h.search.replace('{query}', query) : h.searchFallback;
     }

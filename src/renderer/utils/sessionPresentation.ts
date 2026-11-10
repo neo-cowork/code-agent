@@ -85,7 +85,7 @@ export function getDisplaySessionTitle(title?: string | null, language: Language
     const prefix = kind === 'channel' ? t.automationPresentation.channel
       : kind === 'heartbeat' ? t.cronCenter.triggerKind.heartbeat : t.cronCenter.triggerKind.cron;
     const name = kind === 'channel'
-      ? match[2].replace(/\s*·\s*(?:[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}|(?:oc|ou|chat|ch)_[\w-]+|[a-z\d_-]{24,}|\d{8,})$/i, '').trim()
+      ? match[2].replace(/\s*·\s*(?:[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}|(?:oc|ou|chat|ch)_[\w-]+|(?=[a-z\d_-]*\d)[a-z\d_-]{24,}|\d{8,})$/i, '').trim()
       : match[2];
     return name ? `${prefix} · ${name}` : prefix;
   }

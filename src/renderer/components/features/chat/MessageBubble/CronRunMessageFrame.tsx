@@ -6,6 +6,7 @@
 import React, { useMemo } from 'react';
 import { resolveCronArtifactsForReview } from '@shared/cronArtifactPath';
 import { splitCronRunMessage } from '@shared/cronRunMessage';
+import { useCronStore } from '../../../../stores/cronStore';
 import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { useI18n } from '../../../../hooks/useI18n';
@@ -68,6 +69,15 @@ export const CronRunMessageFrame: React.FC<{
   renderSlice: (text: string) => React.ReactNode;
 }> = ({ source, sessionId, renderSlice }) => {
   const cwd = useRunWorkingDirectory(sessionId);
+  const session = useSessionStore((state) => state.sessions.find((item) => item.id === (sessionId || state.currentSessionId)));
+  const execution = useCronStore((state) => session?.origin?.id
+    ? state.executionsByJobId[session.origin.id]?.find((item) => item.id === session.sourceRunId)
+    : undefined);
+  const result = execution?.result;
+  const storedDigest = result && typeof result === 'object' && 'digest' in result ? result.digest : undefined;
+  const storedArtifacts = storedDigest && typeof storedDigest === 'object' && 'artifacts' in storedDigest
+    && Array.isArray(storedDigest.artifacts) && storedDigest.artifacts.every((item: unknown) => typeof item === 'string')
+    ? storedDigest.artifacts as string[] : undefined;
   const segments = useMemo(() => splitCronRunMessage(source), [source]);
   return (
     <>
@@ -77,7 +87,9 @@ export const CronRunMessageFrame: React.FC<{
             <CronRunSummaryCard
               key={`summary-${index}`}
               text={segment.text}
-              artifacts={resolveCronArtifactsForReview(segment.artifacts, cwd)}
+              artifacts={resolveCronArtifactsForReview(
+                storedArtifacts ?? (session?.sourceRunId ? [] : segment.artifacts), cwd,
+              )}
               renderSlice={renderSlice}
             />
           );

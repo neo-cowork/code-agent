@@ -93,6 +93,8 @@ export interface ParkedApprovalInboxItem {
   standingGrantTarget?: string | null;
   /** 脱敏 + 截断的参数预览；老行没有该字段，收件箱按缺省不渲染。 */
   argsPreview?: string;
+  /** Complete redacted shell command for one-click inspection; never truncated. */
+  commandPreview?: string;
   /** ADR-088 敏感步骤交回；非交回行缺省，收件箱按普通停车行渲染。 */
   sensitiveStep?: ToolApprovalPayload['sensitiveStep'];
   pairingCode?: string;

@@ -20,6 +20,7 @@ import { declaresCronUrgencyQuiet, parseUrgencyHeader } from '../../shared/cronU
 import { isCronPermissionDeniedMarker } from '../../shared/cronPermissionDenied';
 import type { CronPermissionDeniedMarker, CronUrgency } from '../../shared/contract/sessionAutomation';
 
+import { filterReadOnlyCronArtifacts, type CronRunArtifactContext } from './cronRunArtifacts';
 import type { UnattendedApprovalDenial } from '../agent/unattendedApprovalTerminal';
 
 export interface CronAgentActionResult {
@@ -124,8 +125,10 @@ export function buildCronAgentActionResult(
   quietWatchRound: boolean,
   notifyQuietRound = false,
   permissionDenied?: CronPermissionDeniedMarker,
+  artifactContext?: CronRunArtifactContext,
 ): CronAgentActionResult & { skipped?: boolean; reason?: string } {
-  const digest = parseCronRunDigest(finalAssistantText);
+  const parsedDigest = parseCronRunDigest(finalAssistantText);
+  const digest = artifactContext ? filterReadOnlyCronArtifacts(parsedDigest, artifactContext) : parsedDigest;
   const { urgency, raw: urgencyRaw } = parseUrgencyHeader(digest.summary ?? finalAssistantText);
   const alertReason = !notifyQuietRound && action.notifyWhen?.trim()
     ? extractCronAlertText(finalAssistantText)

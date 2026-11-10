@@ -60,7 +60,7 @@ function findParkedApprovalForSession(
     id: pending.id,
     requestedAt: pending.requestedAt,
     label: awaitingLabelFromParked(pending, runCommandLabel),
-    command: pending.tool?.toLowerCase() === 'bash' ? pending.argsPreview : undefined,
+    command: pending.tool?.toLowerCase() === 'bash' ? pending.commandPreview ?? pending.argsPreview : undefined,
   };
 }
 
@@ -99,6 +99,7 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
     try {
       const executions = await cronClient.getExecutions(jobId, 20);
       const nextExecution = findCronExecutionForSession(executions, { executionId, sessionId });
+      useCronStore.setState((state) => ({ executionsByJobId: { ...state.executionsByJobId, [jobId]: executions } }));
       if (nextExecution) missingFetchesRef.current = 0;
       else missingFetchesRef.current += 1;
       setExecution(nextExecution);
