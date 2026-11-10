@@ -960,7 +960,7 @@ describe('N-CRON-SKIPPED-DELIVERY quiet watch rounds', () => {
     const service = new CronService();
     const job = await service.createJob(agentJob({}));
 
-    const runs = [];
+    const runs: Array<import('../../../src/shared/contract/cron').CronJobExecution | null> = [];
     for (let i = 0; i < 3; i += 1) runs.push(await service.triggerJob(job.id));
 
     expect(runs.map((run) => run?.pushNote)).toEqual(['pushed', 'duplicate', 'duplicate']);
