@@ -18,6 +18,7 @@ import {
 } from '../../../connectors/native/osascript';
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { remindersCreateSchema as schema } from './remindersCreate.schema';
+import { formatConnectorTime } from './connectorTime';
 
 const RECONCILE_LIMIT = 200;
 const REMIND_AT_TOLERANCE_MS = 60_000;
@@ -50,7 +51,7 @@ function buildRemindersCreateSuccessResult(
   ctx.logger.debug('reminders_create', { list: reminder.list, title: reminder.title });
   const notes = typeof args.notes === 'string' ? args.notes : '';
   const remindAtMs = typeof args.remind_at_ms === 'number' ? args.remind_at_ms : null;
-  const remindAtText = remindAtMs ? new Date(remindAtMs).toLocaleString('zh-CN') : '';
+  const remindAtText = remindAtMs ? formatConnectorTime(remindAtMs) : '';
   const baseOutput = `已创建提醒：\n- [${reminder.list}] ${reminder.title}${reminder.completed ? ' (completed)' : ''}`;
   const output = reconciledNote ? `${baseOutput}\n${reconciledNote}` : baseOutput;
 
