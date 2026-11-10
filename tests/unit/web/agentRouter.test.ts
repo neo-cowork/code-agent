@@ -2067,8 +2067,8 @@ describe('createAgentRouter', () => {
       expect(new Set(handles.map((handle) => handle.context.sessionId)).size).toBe(2);
       expect(handles.every((handle) => handle.context.sessionId.startsWith('web-session-'))).toBe(true);
 
-      controllerA.abort();
-      controllerB.abort();
+      await disconnectAndStop(controllerA);
+      await disconnectAndStop(controllerB);
       loopA.release();
       loopB.release();
       await waitForAssertion(() => expect(runRegistry.size).toBe(0), 3000);

@@ -830,7 +830,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
     let runContext: RunContext | undefined;
     let runHandle: RunHandle | undefined;
-    let cloudRunTerminalState: CloudRunState;
+    let cloudRunTerminalState: CloudRunState | undefined;
     let foregroundPermissionIsland: OrchestratorPermissionIsland | undefined;
     const durableRunLifecycle = createAgentDurableRouteRunLifecycle({
       runRegistry,
@@ -1809,7 +1809,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         sessionId,
         triggerDrain: queuedInputDrain.handleReleasedSession,
       });
-      if (transport.cloudRunId) cloudRunRuntime.settle(transport.cloudRunId, cloudRunTerminalState);
+      if (transport.cloudRunId) cloudRunRuntime.settle(transport.cloudRunId, cloudRunTerminalState ?? 'failed');
       runController.destroy();
       // Telemetry: 结束会话追踪（写入聚合指标到 telemetry_sessions）
       try {
