@@ -193,6 +193,18 @@ describe('音频采集状态机', () => {
     expect(svc.startAudio).not.toHaveBeenCalled(); // manualAudioActive 已 true
   });
 
+  it('启动过程抛错 → 复位 manualAudioActive，下一次启动不走“已在采集”分支', async () => {
+    const call = await setup();
+    svc.startAudio.mockClear();
+    svc.startAudio.mockRejectedValueOnce(new Error('dlopen failed'));
+    const failed = await call('startAudioCapture', {});
+    expect(failed.success).toBe(false);
+    svc.startAudio.mockResolvedValueOnce(undefined);
+    const res = await call('startAudioCapture', {});
+    expect(svc.startAudio).toHaveBeenCalledTimes(2);
+    expect(res.success).toBe(true);
+  });
+
   it('启动后 not capturing（录音组件缺失）→ AUDIO_START_FAILED 返回枚举码与缺失列表', async () => {
     const call = await setup();
     svc.audioStatus = {

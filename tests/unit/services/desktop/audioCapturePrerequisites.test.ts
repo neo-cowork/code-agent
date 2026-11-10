@@ -33,11 +33,12 @@ vi.mock('../../../../src/host/config/configPaths', () => ({
   getUserConfigDir: () => mocks.userConfigDir,
 }));
 
-import { getAudioCaptureStatus } from '../../../../src/host/services/desktop/desktopAudioCapture';
+import { getAudioCaptureStatus, startDesktopAudioCapture } from '../../../../src/host/services/desktop/desktopAudioCapture';
 
 const originalPlatform = process.platform;
 const originalArch = process.arch;
 const originalHome = process.env.CODE_AGENT_HOME;
+const originalDataDir = process.env.CODE_AGENT_DATA_DIR;
 
 function setRuntimeTarget(platform: NodeJS.Platform, arch: string): void {
   Object.defineProperty(process, 'platform', { configurable: true, value: platform });
@@ -53,6 +54,7 @@ describe('getAudioCaptureStatus prerequisites (computed without starting capture
     setRuntimeTarget('darwin', 'arm64');
     tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'audio-prereq-home-'));
     process.env.CODE_AGENT_HOME = tempHome;
+    process.env.CODE_AGENT_DATA_DIR = path.join(tempHome, 'data');
     mocks.userConfigDir = path.join(tempHome, '.code-agent');
 
     existingPaths = new Set<string>();
@@ -81,6 +83,8 @@ describe('getAudioCaptureStatus prerequisites (computed without starting capture
     setRuntimeTarget(originalPlatform, originalArch);
     if (originalHome === undefined) delete process.env.CODE_AGENT_HOME;
     else process.env.CODE_AGENT_HOME = originalHome;
+    if (originalDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
+    else process.env.CODE_AGENT_DATA_DIR = originalDataDir;
   });
 
   it('all ready: returns empty missingPrerequisites when recorder, transcription engine, and voice detection are present', () => {
@@ -152,5 +156,30 @@ describe('getAudioCaptureStatus prerequisites (computed without starting capture
     const x64Status = getAudioCaptureStatus();
     expect(x64Status.prerequisites.voiceDetection).toBe('unsupported');
     expect(x64Status.missingPrerequisites).toEqual(['voice_detection_unsupported']);
+  });
+  it('voice-detection runtime load throws (broken native binding): status resolves and reports voice detection missing', () => {
+    existingPaths.add('/opt/homebrew/bin/ffmpeg');
+    existingPaths.add('/opt/homebrew/bin/whisper-cpp');
+    mocks.loadVadRuntime.mockImplementation(() => {
+      throw new Error('dlopen failed');
+    });
+
+    const status = getAudioCaptureStatus();
+    expect(status.prerequisites.voiceDetection).toBe('missing');
+    expect(status.missingPrerequisites).toEqual(['voice_detection_missing']);
+  });
+
+  it('a start attempt that hits the runtime throw leaves the service not capturing, so a second start is a fresh attempt', async () => {
+    existingPaths.add('/opt/homebrew/bin/ffmpeg');
+    existingPaths.add('/opt/homebrew/bin/whisper-cpp');
+    mocks.loadVadRuntime.mockImplementation(() => {
+      throw new Error('dlopen failed');
+    });
+
+    await startDesktopAudioCapture(undefined, 'microphone');
+    expect(getAudioCaptureStatus().capturing).toBe(false);
+    await startDesktopAudioCapture(undefined, 'microphone');
+    expect(getAudioCaptureStatus().capturing).toBe(false);
+    expect(mocks.loadVadRuntime.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 });

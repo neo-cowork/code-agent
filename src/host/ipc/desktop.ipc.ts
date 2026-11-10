@@ -483,11 +483,17 @@ const desktopHandlers: RawDomainRouteHandlers<DesktopDomainRequest, NativeDeskto
       }
     }
     manualAudioActive = true;
-    await startDesktopAudioCapture(fifoPath, mode);
-    const audioSt = getAudioCaptureStatus() as ReturnType<typeof getAudioCaptureStatus> & {
+    let audioSt: ReturnType<typeof getAudioCaptureStatus> & {
       prerequisites?: AudioCapturePrerequisites;
       missingPrerequisites?: AudioCaptureMissingPrerequisiteCode[];
     };
+    try {
+      await startDesktopAudioCapture(fifoPath, mode);
+      audioSt = getAudioCaptureStatus();
+    } catch (error) {
+      manualAudioActive = false;
+      throw error;
+    }
     if (!audioSt.capturing) {
       manualAudioActive = false;
       const prereqs = audioSt.prerequisites;

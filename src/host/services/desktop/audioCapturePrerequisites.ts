@@ -8,7 +8,10 @@ import type {
   AudioCaptureVoiceDetectionState,
 } from '@shared/contract/audioCapture';
 import { getUserConfigDir } from '../../config/configPaths';
-import { loadVadRuntime } from './audioVadRuntime';
+import { createLogger } from '../infra/logger';
+import { loadVadRuntime, type VadRuntimeLoadResult } from './audioVadRuntime';
+
+const logger = createLogger('AudioCapturePrerequisites');
 
 const FFMPEG_PATHS = ['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/usr/bin/ffmpeg'];
 const REC_PATHS = ['/opt/homebrew/bin/rec', '/usr/local/bin/rec', '/usr/bin/rec'];
@@ -68,7 +71,15 @@ function detectVoiceDetectionState(moduleDir = __dirname): AudioCaptureVoiceDete
   if (process.platform === 'darwin' && process.arch === 'x64') {
     return 'unsupported';
   }
-  const runtime = loadVadRuntime(moduleDir);
+  let runtime: VadRuntimeLoadResult;
+  try {
+    runtime = loadVadRuntime(moduleDir);
+  } catch (error) {
+    logger.warn('[音频采集] 语音检测运行组件加载抛错，按缺失处理', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return 'missing';
+  }
   if (runtime.ok) return 'ready';
   if (
     runtime.reason === 'missing-runtime'
