@@ -62,6 +62,21 @@ describe('Bash background runtime selection', () => {
     expect(mocks.foreground).not.toHaveBeenCalled();
   });
 
+  it.each([0, -1, '30000', 'invalid', null, Number.NaN, false].flatMap((timeout) => [
+    { timeout, pty: false }, { timeout, pty: true },
+  ]))('uses the background limit for invalid timeout $timeout with PTY=$pty', async ({ timeout, pty }) => {
+    expect((await execute({ command: 'date', run_in_background: true, pty, timeout })).ok).toBe(true);
+    if (pty) {
+      expect(mocks.pty).toHaveBeenCalledWith(expect.objectContaining({ maxRuntime: BACKGROUND_TASK_MAX_RUNTIME }));
+      expect(mocks.background).not.toHaveBeenCalled();
+    } else {
+      expect(mocks.background).toHaveBeenCalledExactlyOnceWith(
+        'date', expect.any(String), BACKGROUND_TASK_MAX_RUNTIME, expect.any(Object),
+      );
+      expect(mocks.pty).not.toHaveBeenCalled();
+    }
+  });
+
   it('uses the background limit after an implicit ampersand rewrite', async () => {
     expect((await execute({ command: 'date &' })).ok).toBe(true);
     expect(mocks.background.mock.calls[0]?.slice(0, 3)).toEqual(['date', expect.any(String), BACKGROUND_TASK_MAX_RUNTIME]);
