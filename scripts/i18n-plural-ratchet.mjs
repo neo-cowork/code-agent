@@ -62,6 +62,54 @@ for (const file of files) {
   visit(sourceFile);
 }
 
+// Component copy must use the shared translations too. Match syntax nodes rather
+// than source lines so multiline JSX/templates are checked and comments are not.
+const componentFiles = sourceFiles(path.join(repoRoot, 'src/renderer/components'))
+  .filter((file) => file.endsWith('.tsx'));
+// Existing exceptions only: each entry needs { file, text, reason }. Remove an
+// entry when fixed; do not add new leaks. No exceptions remain at introduction.
+const inlineCountAllowlist = [];
+const usedExceptions = new Set();
+let inlineCountHits = 0;
+for (const file of componentFiles) {
+  const sourceText = fs.readFileSync(file, 'utf8');
+  const sourceFile = ts.createSourceFile(file, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const relative = path.relative(repoRoot, file).split(path.sep).join('/');
+  const report = (node) => {
+    inlineCountHits++;
+    const text = node.getText(sourceFile);
+    const exception = inlineCountAllowlist.find((entry) => entry.file === relative && entry.text === text && entry.reason);
+    if (exception) {
+      usedExceptions.add(exception);
+    } else {
+      findings.push(`${relative}:${lineOf(sourceFile, node)} rendered inline count must use i18n: ${text}`);
+    }
+  };
+  const visit = (node) => {
+    if (ts.isJsxText(node)) {
+      const siblings = node.parent.children;
+      const index = siblings.indexOf(node);
+      const previous = siblings[index - 1];
+      const next = siblings[index + 1];
+      // {count} lines, including the old line{count > 1 ? 's' : ''}.
+      const afterCount = previous && ts.isJsxExpression(previous) && /^\s*lines?\b/.test(node.text);
+      const suffix = next && ts.isJsxExpression(next) && next.expression;
+      const inlineSuffix = /\bline$/.test(node.text.trimEnd()) && suffix && ts.isConditionalExpression(suffix)
+        && [suffix.whenTrue, suffix.whenFalse].some((branch) => ts.isStringLiteral(branch) && branch.text === 's');
+      if (afterCount || inlineSuffix) report(node);
+    } else if (ts.isTemplateSpan(node) && /^\s+lines?\b/.test(node.literal.text)) {
+      // `${count} lines`, including a template returned from a render helper.
+      report(node);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+}
+for (const entry of inlineCountAllowlist) {
+  if (!usedExceptions.has(entry)) findings.push(`stale inline count exception: ${entry.file} (${entry.reason})`);
+}
+console.log(`[i18n-plural-ratchet] scanned ${componentFiles.length} renderer components; inline count hits=${inlineCountHits}; allowed=${usedExceptions.size}`);
+
 if (findings.length > 0) {
   console.error(`[i18n-plural-ratchet] ✗ found ${findings.length} invalid English count phrase(s)`);
   for (const finding of findings) console.error(`[i18n-plural-ratchet] ${finding}`);

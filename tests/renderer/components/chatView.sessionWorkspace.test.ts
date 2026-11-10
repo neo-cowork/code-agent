@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 
 import React from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 const sendMessageMock = vi.hoisted(() => vi.fn(async () => {}));
 const ipcInvokeMock = vi.hoisted(() => vi.fn(async () => undefined));
+const settingsInvokeMock = vi.hoisted(() => vi.fn<() => Promise<unknown>>(async () => { throw new Error('test boundary'); }));
 
 const sessionState = {
   currentSessionId: 'session-1',
@@ -96,7 +97,7 @@ vi.mock('../../../src/renderer/stores/sessionStore', async (importOriginal) => (
 vi.mock('../../../src/renderer/services/ipcService', () => {
   const ipc = {
     invoke: ipcInvokeMock,
-    invokeDomain: vi.fn(async () => { throw new Error('test boundary'); }),
+    invokeDomain: settingsInvokeMock,
     on: vi.fn(() => () => {}),
   };
   return { default: ipc, ipcService: ipc };
@@ -173,12 +174,6 @@ vi.mock('../../../src/renderer/hooks/useAgent', () => ({
   }),
 }));
 
-vi.mock('../../../src/renderer/hooks/useRequireAuth', () => ({
-  useRequireAuth: () => ({
-    requireAuthAsync: async (fn: () => unknown) => fn(),
-  }),
-}));
-
 vi.mock('../../../src/renderer/hooks/useTurnProjection', () => ({
   useTurnProjection: () => ({ turns: [] }),
 }));
@@ -215,7 +210,9 @@ vi.mock('../../../src/renderer/components/features/chat/ChatInput', () => ({
         'data-testid': 'chat-input',
         onSubmit: (event: React.FormEvent) => {
           event.preventDefault();
-          void onSend({ content: value, context: {} });
+          void onSend({ content: value, context: {} }).then((accepted) => {
+            if (accepted) setValue('');
+          });
         },
       },
       React.createElement('input', {
@@ -285,6 +282,17 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
 import { ChatView, buildDefaultSuggestions } from '../../../src/renderer/components/ChatView';
 import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
+
+import { useAuthStore } from '../../../src/renderer/stores/authStore';
+
+beforeEach(() => {
+  useAuthStore.setState({ isAuthenticated: true, showAuthModal: false });
+  sendMessageMock.mockClear();
+  appState.openSettingsTab.mockClear();
+  window.domainAPI = { invoke: vi.fn(async () => ({ success: true, data: null })) } as typeof window.domainAPI;
+  settingsInvokeMock.mockReset().mockRejectedValue(new Error('test boundary'));
+});
+afterEach(() => { cleanup(); window.domainAPI = undefined; });
 
 const defaultSuggestions = buildDefaultSuggestions(zh);
 
@@ -487,5 +495,81 @@ describe('ChatView session shell', () => {
       window.domainAPI = undefined;
       sessionState.pendingUserQuestionsBySessionId = new Map();
     }
+  });
+});
+
+
+describe('ChatView send authentication', () => {
+  const prompt = 'Summarize the risks of a four-day working week';
+  const configuredModel = {
+    models: {
+      default: 'xiaomi', defaultProvider: 'xiaomi',
+      providers: { xiaomi: { enabled: true, apiKeyConfigured: true } },
+    },
+  };
+
+  const managedModel = {
+    models: {
+      ...configuredModel.models,
+      default: 'custom-team-relay',
+      providers: {
+        ...configuredModel.models.providers,
+        'custom-team-relay': { enabled: true, managedByCloud: true, apiKeyConfigured: true },
+      },
+    },
+  };
+
+  for (const { name, authenticated, settings } of [
+    { name: 'signed in path unchanged', authenticated: true, settings: configuredModel },
+    { name: 'signed in + cloud-managed default sends unchanged', authenticated: true, settings: managedModel },
+    { name: 'signed out + local model configured sends without auth modal', authenticated: false, settings: configuredModel },
+  ]) {
+    it(name, async () => {
+      useAuthStore.setState({ isAuthenticated: authenticated });
+      settingsInvokeMock.mockResolvedValue(settings);
+      render(React.createElement(ChatView));
+      const input = screen.getByLabelText('chat-input-field') as HTMLInputElement;
+      fireEvent.change(input, { target: { value: prompt } });
+      fireEvent.submit(screen.getByTestId('chat-input'));
+      await waitFor(() => expect(sendMessageMock).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ content: prompt })));
+      await waitFor(() => expect(input.value).toBe(''));
+      expect(useAuthStore.getState().showAuthModal).toBe(false);
+      expect(appState.openSettingsTab).not.toHaveBeenCalled();
+    });
+  }
+
+  for (const { name, settings } of [
+    { name: 'no model', settings: { models: { providers: {} } } },
+    { name: 'cloud-managed default with stored credentials and a local alternative', settings: managedModel },
+    { name: 'cloud-managed default without exposed credentials', settings: {
+      models: { ...managedModel.models, providers: { 'custom-team-relay': { enabled: true, managedByCloud: true } } },
+    } },
+    { name: 'disabled default provider', settings: { models: { ...configuredModel.models, providers: { xiaomi: { enabled: false, apiKeyConfigured: true } } } } },
+    { name: 'default provider without credentials', settings: { models: { ...configuredModel.models, providers: { xiaomi: { enabled: true, apiKeyConfigured: false } } } } },
+  ]) {
+    it(`signed out + ${name} opens modal, does not send, preserves draft`, async () => {
+      useAuthStore.setState({ isAuthenticated: false });
+      settingsInvokeMock.mockResolvedValue(settings);
+      render(React.createElement(ChatView));
+      const input = screen.getByLabelText('chat-input-field') as HTMLInputElement;
+      fireEvent.change(input, { target: { value: prompt } });
+      fireEvent.submit(screen.getByTestId('chat-input'));
+      await waitFor(() => {
+        expect(sendMessageMock).not.toHaveBeenCalled();
+        expect(useAuthStore.getState().showAuthModal).toBe(true);
+      });
+      expect(input.value).toBe(prompt);
+    });
+  }
+
+  it('signed out settings lookup failure retains login gate and draft', async () => {
+    useAuthStore.setState({ isAuthenticated: false });
+    render(React.createElement(ChatView));
+    const input = screen.getByLabelText('chat-input-field') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: prompt } });
+    fireEvent.submit(screen.getByTestId('chat-input'));
+    await waitFor(() => expect(useAuthStore.getState().showAuthModal).toBe(true));
+    expect(sendMessageMock).not.toHaveBeenCalled();
+    expect(input.value).toBe(prompt);
   });
 });

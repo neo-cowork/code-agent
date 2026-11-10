@@ -130,6 +130,34 @@ describe.skipIf(!realPtyAvailable)('task.ipc — real background PTY row stop', 
     await rm(tempDir, { recursive: true, force: true });
   });
 
+  it('real bashModule PTY background sleep 0 reaches the ledger as completed with empty output', async () => {
+    const handler = await bashModule.createHandler();
+    const sessionId = 'session-real-pty-exit';
+    const started = await handler.execute({ command: 'sleep 0', run_in_background: true, pty: true }, {
+      sessionId,
+      workingDir: tempDir,
+      abortSignal: new AbortController().signal,
+      logger: makeLogger(),
+      emit: () => undefined,
+      policyEnforcer: null,
+      currentToolCallId: 'tool-real-pty-exit',
+    }, async () => ({ allow: true }));
+    expect(started.ok).toBe(true);
+    const ptyId = started.ok && typeof started.meta?.sessionId === 'string' ? started.meta.sessionId : '';
+    expect(ptyId).not.toBe('');
+    startedSessionIds.push(ptyId);
+    expect(getPtySession(ptyId)?.pty.pid).toBeGreaterThan(0);
+    const ledger = getBackgroundTaskLedger();
+    expect(await waitFor(() => ledger.getTask(`pty:${ptyId}`)?.status === 'completed', 5_000)).toBe(true);
+    expect(getPtySession(ptyId)).toMatchObject({ status: 'completed', exitCode: 0 });
+    const row = ledger.getTask(`pty:${ptyId}`);
+    expect(row).toMatchObject({ status: 'completed', failure: undefined, outputRefs: [expect.objectContaining({ size: 0 })] });
+    expect(ledger.drainNotifications(sessionId)).toEqual([
+      expect.objectContaining({ taskId: row?.id, type: 'task_completed' }),
+    ]);
+    process.stdout.write(`${JSON.stringify({ ledgerId: row?.id, status: row?.status, exitCode: 0, failure: row?.failure ?? null, logSize: row?.outputRefs[0]?.size })}\n`);
+  });
+
   it('kills a real Bash PTY background process when IPC receives its pty ledger row id', async () => {
     const handler = await bashModule.createHandler();
     const context: ToolContext = {

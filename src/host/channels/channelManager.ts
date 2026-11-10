@@ -152,6 +152,10 @@ export class ChannelManager extends EventEmitter {
       if (data) {
         const accounts = JSON.parse(data) as ChannelAccount[];
         for (const account of accounts) {
+          if (account.status === 'connected' || account.status === 'connecting') {
+            account.status = 'disconnected';
+            delete account.errorMessage;
+          }
           delete account.feishuSharedAppDetected;
           delete account.lastInboundAt;
           this.accounts.set(account.id, account);
