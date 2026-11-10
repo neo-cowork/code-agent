@@ -536,6 +536,11 @@ describe('POST /run clientMessageId idempotent replay', () => {
     expect(mockCreateAgentLoop).toHaveBeenCalledTimes(1);
 
     controller.abort();
+    const stopped = await fetch(`${baseUrl}/api/cancel`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ runId: activeRunId }),
+    });
+    expect(stopped.ok).toBe(true);
     await waitForAssertion(() => expect(runRegistry.hasSession('session-idem-active')).toBe(false));
   });
 
@@ -838,6 +843,11 @@ describe('POST /run clientMessageId idempotent replay', () => {
     expect(persistedMessages.filter((m) => m.id === 'msg-r2-a' && m.role === 'user')).toHaveLength(1);
 
     controller.abort();
+    const stopped = await fetch(`${baseUrl}/api/cancel`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ runId: activeRunId }),
+    });
+    expect(stopped.ok).toBe(true);
     await waitForAssertion(() => expect(runRegistry.hasSession('session-r2-active')).toBe(false));
   });
 
