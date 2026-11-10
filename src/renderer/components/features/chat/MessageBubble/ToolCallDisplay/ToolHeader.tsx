@@ -15,6 +15,7 @@ import {
   getToolFilePath,
   computerLabelArgs,
   humanizeToolStep,
+  parseDelegateSessionReceipt,
   isInternalStreamTool,
   toolNameForDetail,
 } from '../../../../../utils/humanizeToolStep';
@@ -111,6 +112,7 @@ export function ToolHeader({
               ? 'failed'
               : 'completed',
         toolCall.stepLabel,
+        { delegationReceipt: toolCall.name === 'delegate_session' ? parseDelegateSessionReceipt(toolCall.result) : undefined },
       ));
   const statusLabel = assembled
     ? assembled.terminal
@@ -164,7 +166,7 @@ export function ToolHeader({
 
       {/* 有文件路径时主行可点进右栏预览（读取了/编辑了/写入了 …）；
           点名字看文件，父行其余区域仍负责展开/折叠明细。 */}
-      {filePath ? (
+      {filePath && !preflight ? (
         <button
           type="button"
           data-testid="tool-header-open-preview"
