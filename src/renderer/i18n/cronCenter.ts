@@ -1,5 +1,5 @@
+import { cronRoutineRestateEn, cronRoutineRestateZh } from './cronRoutineRestate';
 // ============================================================================
-
 import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 import type { EventScheduleValidationReason } from '@shared/cronEventValidation';
 import { cronPermissionDeniedReasonText } from '@shared/cronPermissionDenied';
@@ -9,7 +9,6 @@ import { cronPermissionDeniedReasonText } from '@shared/cronPermissionDenied';
 // （中文兜底）；调度摘要的人话翻译走 utils/cronHumanize.ts（zh/en 双份，随 lang 参数），
 // 不再往本文件塞词条。其余遗留随收尾清扫批一并处理。
 // ============================================================================
-
 export const cronCenterZh = {
   cronCenter: {
     groupListenCheck: {
@@ -164,6 +163,11 @@ export const cronCenterZh = {
     cardMaxRetries: '最大重试',
     cardRetryDelay: '重试间隔',
     cardTimeout: '超时',
+    detailDurationUnits: {
+      seconds: { one: '秒', other: '秒' },
+      minutes: { one: '分钟', other: '分钟' },
+      hours: { one: '小时', other: '小时' },
+    },
     historyTitle: '执行历史',
     historyEmpty: '还没有执行记录，点击「手动触发」运行一次',
     // 执行记录
@@ -377,17 +381,7 @@ export const cronCenterZh = {
     simpleCreateCta: '创建自动化',
     simpleCreateFailed: '创建失败',
     // 保存后复述视图（N-ROLE-ROUTINE-RESTATE）：行标签复用 chatInput 的 scheduleConfirm
-    savedRestateTitle: '已保存 · 这个自动化会这样做',
-    savedRestateDone: '完成',
-    savedRestateWhenEvent: '有新消息到达时',
-    savedRestateRolePrefix: '由 {role} 执行：',
-    // 停用副本的第四行「状态」（N-ROLE-ROUTINE-RESTATE-FU1-FU1）
-    savedRestateStatusLabel: '状态',
-    savedRestateStatusPaused: '当前已停用，点启用后才会按时跑',
-    // 手动编辑器 Agent 动作：自定义紧急判据（N-CRON-MORNING-TRIAGE-URGENCY-RULE）
-    urgencyCriteriaLabel: '紧急判据（可选）',
-    urgencyCriteriaPlaceholder: '例如：只有老板发来的邮件算今天必须处理',
-    urgencyCriteriaHint: '设置后，非今日必办（可以稍后 / 仅供参考）的运行不再弹通知，安静等在待过目列表里。',
+    ...cronRoutineRestateZh,
     inboxTitle: '{count} 条待过目',
     inboxAllClear: '都过目完了 ✓',
     inboxOpenResult: '查看结果',
@@ -673,6 +667,11 @@ export const cronCenterEn: typeof cronCenterZh = {
     cardMaxRetries: 'Max retries',
     cardRetryDelay: 'Retry delay',
     cardTimeout: 'Timeout',
+    detailDurationUnits: {
+      seconds: { one: 'second', other: 'seconds' },
+      minutes: { one: 'minute', other: 'minutes' },
+      hours: { one: 'hour', other: 'hours' },
+    },
     historyTitle: 'Run history',
     historyEmpty: 'No runs yet — click “Run now” to try it once',
     execEmpty: 'No runs yet',
@@ -880,15 +879,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     weekdays: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
     simpleCreateCta: 'Create automation',
     simpleCreateFailed: 'Failed to create',
-    savedRestateTitle: 'Saved · what this automation will do',
-    savedRestateDone: 'Done',
-    savedRestateWhenEvent: 'When a new message arrives',
-    savedRestateRolePrefix: 'Run by {role}: ',
-    savedRestateStatusLabel: 'Status',
-    savedRestateStatusPaused: 'Currently paused — it will only run on schedule after you turn it on.',
-    urgencyCriteriaLabel: 'Urgency rule (optional)',
-    urgencyCriteriaPlaceholder: 'e.g. only mail from my boss counts as must-do today',
-    urgencyCriteriaHint: 'With a rule set, non-urgent runs (can wait / FYI) skip notifications and wait quietly in the review list.',
+    ...cronRoutineRestateEn,
     inboxTitle: '{count} to review',
     inboxAllClear: 'All reviewed ✓',
     inboxOpenResult: 'View result',
