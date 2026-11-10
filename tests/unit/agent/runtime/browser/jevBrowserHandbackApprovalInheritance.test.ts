@@ -17,8 +17,8 @@ type StubSurface = Pick<
 >;
 
 const pool = vi.hoisted(() => ({ service: null as unknown }));
-vi.mock(import('../../../../../src/host/services/infra/browserPool'), async (importOriginal) => ({
-  ...await importOriginal(),
+vi.mock('../../../../../src/host/services/infra/browserPool', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../../../src/host/services/infra/browserPool')>(),
   getBrowserService: () => pool.service,
 }));
 
