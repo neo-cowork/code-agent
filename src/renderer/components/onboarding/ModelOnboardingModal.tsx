@@ -642,7 +642,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
                     : 'border-transparent border-b-zinc-700 text-zinc-500 hover:bg-zinc-900/50 hover:text-zinc-300'
                 }`}
               >
-                API Key
+                {text.keyFieldLabel}
               </button>
             </div>
 
@@ -757,7 +757,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
                     )}
                   </div>
                   <div>
-                    <label className="mb-2 block text-sm text-zinc-200">API Key</label>
+                    <label className="mb-2 block text-sm text-zinc-200">{text.keyFieldLabel}</label>
                     <Input
                       type="password"
                       value={apiKey}

@@ -9,7 +9,7 @@
 // baseline：scripts/ci/settings-jargon-baseline.json，每条带 reason（归属单号或 unowned stock），
 //           count 只降不升；实际低于 count 时提示收紧（不拦）。
 // 豁免：违规所在物理行带 `// jargon-allow: <理由>`。
-// 扫描面：src/renderer/i18n/zhSettings*.ts、onboarding.ts、components/features/settings/**/*.tsx
+// 扫描面：src/renderer/i18n/zhSettings*.ts、onboarding.ts、components/features/settings/**/*.tsx、components/onboarding/ModelOnboardingModal.tsx
 //
 // 用法：node scripts/ci/check-settings-jargon.mjs [--root <仓库根>] [--baseline <文件>]
 // ============================================================================
@@ -28,6 +28,7 @@ export const ALLOW_COMMENT = 'jargon-allow:';
 const TERMS_REL = 'src/renderer/i18n/settingsTerms.json';
 const I18N_REL = 'src/renderer/i18n';
 const SETTINGS_COMPONENTS_REL = 'src/renderer/components/features/settings';
+const ONBOARDING_COMPONENT_REL = 'src/renderer/components/onboarding/ModelOnboardingModal.tsx';
 
 const toPosix = (v) => v.split(path.sep).join('/');
 
@@ -60,6 +61,8 @@ function listScanFiles(root) {
   };
   const compDir = path.join(root, SETTINGS_COMPONENTS_REL);
   if (fs.existsSync(compDir)) walk(compDir);
+  const modal = path.join(root, ONBOARDING_COMPONENT_REL);
+  if (fs.existsSync(modal)) files.push(modal);
   return files.sort();
 }
 

@@ -852,7 +852,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
     toast.success(modelText.toast.modelAdded);
   }, [config, effectiveBaseUrl, effectiveProtocol, hasStoredApiKey, manualModelId, manualModelLabel, markDirty, modelText.toast.modelAdded, modelText.toast.modelIdRequired, onChange]);
 
-  const providerTitle = currentProviderConfig?.displayName || selectedProviderRow?.name || config.provider;
+  const providerTitle = selectedProviderRow?.name || currentProviderConfig?.displayName || config.provider;
   const providerIcon = normalizeProviderIcon(currentProviderConfig?.icon) || providerTitle.slice(0, 1).toUpperCase();
   const providerIconIsImage = isProviderImageIcon(providerIcon);
   const providerIconImageSource = useProviderIconImageSource(providerIcon);

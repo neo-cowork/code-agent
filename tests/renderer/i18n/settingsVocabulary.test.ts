@@ -77,5 +77,7 @@ describe('settingsVocabulary', () => {
     expect(m.connection.baseUrlHint).toContain('Claude');
     expect(collect(en.settings.model.list).join('|')).toContain('Provider');
     expect(en.onboarding.baseUrlLabel).toBe('Base URL');
+    expect(zh.onboarding.keyFieldLabel).toBe(settingsVocabularyZh.keyLabel);
+    expect(en.onboarding.keyFieldLabel).toBe('API Key');
   });
 });
