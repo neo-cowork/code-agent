@@ -214,7 +214,7 @@ export interface EnvAssistNotice {
 | 额度：无任何可用模型 | 「现有的模型都用不了了，添加一个我就能继续。」 | 「添加模型」→ App 内设置 | 无；诚实停在这里，不假装 |
 | 断网超过 10 分钟 | 「还是没连上网。联网后点一下，我从刚才的地方继续。」 | 「现在继续」（`recheck`） | 保持停车，不丢任务 |
 
-## 9. 子工单拆分（不立单，只列在此）
+## 9. 子工单拆分（已立单）
 
 每张的验收**必须含一次真实用户任务在 web 构建或 Dev 包上的运行 + 截图**，并证明「提示只出现一次 + 授权/安装后任务自己完成」。截图走 `WEB-SHOT-RECIPE`，真跑 Neo 走 `neo-realrun.mjs`（`REALRUN-RECIPE`），引用原始文件里能证明走到了该分支的那一行。
 
@@ -225,10 +225,24 @@ export interface EnvAssistNotice {
 | **S3** | 停车 + 自动续跑泛化 | `interruptCause:'env_blocked'`；`envResumeWaiter`（泛化 `quotaWaitTimer`）；`EnvBlockedError`；重放同 toolCallId；写操作不自动重放 | 真跑「把这封邮件存草稿」且 Mail 自动化被拒：授权后**不重发指令**，草稿自己存好；重启 Neo 后停车仍在 | 高：durable run / 账本 / 幂等；必须 fault-injection（授权后进程被杀再恢复） | N-QUOTA-429-PLAIN-NOTICE 系列中「等待后自动继续」的部分（`quota_wait` 成为 `quota_exhausted` 的一个实现） |
 | **S4** | Apple Events 类（邮件/日历/提醒/照片）接入 | `osascript.ts` `describeAppleScriptFailure`、`mail/calendar/reminders/photos.ts` 改抛 `EnvBlockedError`；Automation 深链；目标 App 自启 | 「帮我看下今天的日程」（日历未授权）与「把这封邮件存草稿」（邮件自动化被拒）各一轮：提示一次、授权后自己完成；另跑「系统框点不允许」分支，卡片转 `declined` 且任务以部分结果收尾 | 中：`describeAppleScriptFailureText` 有现成测试，需同步改而非删 | 连接器诊断区散单（原生连接器部分） |
 | **S5** | 运行时按需安装 + 聊天进度 | `EnvRuntimeAdapter` 统一 LibreOffice / Python / manifest 资产；`officeRaster.ts` 英文异常 → `EnvBlockedError`；`RuntimeAssetRow.tsx` 读同一份进度 | 真跑「把下载文件夹的 PPT 转成 PDF」且**本机无 LibreOffice**：聊天里出现「正在准备…%」恰一次，装完 PDF 自己产出；离线分支显示 §8 文案 | 中：下载 ~数百 MB、磁盘/离线/校验失败；Windows 走 `unsupported` | N-PY-RUNTIME（按需安装的聊天侧部分；设置页已有 K2 行保留） |
-| **S6** | 额度/能力 → 挑好模型、问一句再换 | `pickAvailableModel`；`PROVIDER_FALLBACK_CHAIN` 消费；`ModelFallbackNoticePayload` 并入 `EnvAssistNotice.doneKey`；本任务内记住耗尽 provider；429 / 402 / usage_limit 白话；「无可用模型」分支 | 真跑一个普通任务，把当前模型的 key 换成会 429/402 的（用 `~/.ship/grab/realrun-dev-model` 指定的 dogfood 模型作为后备）：卡片恰一次、问「要改用 X 继续吗」+ 一个按钮；**未点前不发出任何对新模型的请求**（trace/请求日志为证）；点后自动完成原任务；后备也不可用时出现「添加模型」一个按钮 | 中：换模型改变成本与能力，涉及 §10 取舍 1；改模型可见请求组装需重录快照（`acceptance:snapshot-replay:record`） | N-QUOTA-429-PLAIN-NOTICE 系列（文案与降级说明部分） |
+| **S6** | 额度/能力 → 挑好模型、问一句再换 | `pickAvailableModel`；`PROVIDER_FALLBACK_CHAIN` 消费；`ModelFallbackNoticePayload` 并入 `EnvAssistNotice.doneKey`；本任务内记住耗尽 provider；429 / 402 / usage_limit 白话；「无可用模型」分支 | 真跑一个普通任务，把当前模型的 key 换成会 429/402 的（用 `~/.ship/grab/realrun-dev-model` 指定的 dogfood 模型作为后备）：卡片恰一次、问「要改用 X 继续吗」+ 一个按钮；**未点前不发出任何对新模型的请求**（trace/请求日志为证）；点后自动完成原任务；后备也不可用时出现「添加模型」一个按钮 | 中：换模型改变成本与能力，涉及 §10 取舍 2；改模型可见请求组装需重录快照（`acceptance:snapshot-replay:record`） | N-QUOTA-429-PLAIN-NOTICE 系列（文案与降级说明部分） |
 | **S7** | 登录过期统一 | MCP `reauthorizeMcpServer`、`cliConnector.authSteps`、引擎 `needs_login` 接入 `login_expired`；成功后续跑 | 真跑一个依赖已过期飞书/外部连接器的任务：一句话 +「重新登录」；登录后任务自己完成；中途取消 → §8 文案 | 中：OAuth 浏览器流程、web 构建与桌面差异；先静默刷新再提示 | 连接器诊断区散单（连接器重登部分） |
 | **S8** | 断网 + 全新首启 | `offline` 两点探测与退避、全断网停车；`first_launch` 无 key 才提示、权限不预先要 | 真跑：断网（关代理/断网络）时发任务，恢复后自己完成，全程无按钮；全新数据目录首启发一个任务，只在需要时出现一次「添加模型」 | 低–中：探测端点的选择与代理环境（国际 API 需 `HTTPS_PROXY`）；首启要新数据目录（用 `rm -rf ~/.code-agent-devN`，不要开新槽） | —（首启/断网此前无单；N-QUOTA-429 系列里的「网络」文案） |
 | **S9** | 防回退门 | 一道静态门：用户可见字符串里出现 `-1743`/`osascript`/`Apple events`/`TCC`/`/login`/`/model` 即红；`AgentErrorMetadata.rawMessage` 在 `envAssist` 存在时不得出现在渲染产物 | 先造一个反例（把某处文案改回含 `-1743`）确认门变红，再还原（变异验证） | 低 | 防止「同类文案外露」再立一串单（爸 11-08 规则） |
+
+已立单的 fleet 账本票号（2026-11-10 核对）：
+
+- S1 → `N-ENV-ASSIST-S1-NOTICE`（已开工，分支 `mq/env-assist-s1-notice`）
+- S2 → `N-ENV-ASSIST-S2-PROBES`
+- S3 → `N-ENV-ASSIST-S3-RESUME`
+- S4 → `N-ENV-ASSIST-S4-APPLE-EVENTS`
+- S5 → `N-ENV-ASSIST-S5-RUNTIME`
+- S6 → `N-ENV-ASSIST-S6-MODEL-ASK`
+- S7 → `N-ENV-ASSIST-S7-RELOGIN`
+- S8 → `N-ENV-ASSIST-S8-OFFLINE-FIRSTRUN`
+- S9 → `N-ENV-ASSIST-S9-LEAK-GATE`
+
+账本登记的依赖：S2、S9 ← S1；S3 ← S1；S4 ← S2、S3；S5、S6、S7、S8 ← S1、S3。
 
 顺序建议：S1 → S2 → S3 → S4 → S5 → S6 → S7 → S8 → S9；S2 与 S3 可并行。S1–S3 是地基，S4 起每张都带真实任务验收。
 
@@ -241,7 +255,7 @@ export interface EnvAssistNotice {
 | N-QUOTA-429-PLAIN-NOTICE 系列 | S6（白话 + 换模型说明）+ S3（等待后自动续跑） |
 | N-PY-RUNTIME（按需安装） | S5 |
 
-> 说明：本稿所在环境无 `fleet` 命令，未能 `fleet show` 逐条读散单正文；上表依据任务书对四组散单的描述 + 仓库里对应代码（`RuntimeAssetRow.tsx` 注释自称 N-PY-RUNTIME-K2；`quotaWaitTimer.ts`/`quotaWaitNotice.tsx` 即 429 系列产物）推定。立单前需用 `fleet show` 核对每张散单的真实范围，不一致处以散单为准并回改本表。
+> 说明：上表已于 2026-11-10 对照 fleet 账本逐条核对——N-FIX-DESKTOP-DIAG-RESOURCE-ROWS、N-QUOTA-429-PLAIN-NOTICE、N-PY-RUNTIME 三组散单均已关单（N-FIX-DESKTOP-DIAG 的 FU1-FU1 是「N missing」摘要文案本地化、在途，与本卡无关；429 系列还开着 FU1-FU2 双错误卡与 FU3 真机额度核对；N-PY-RUNTIME 的 K1–K3 已关，真机核对 FU1、K3-FU1、K3-REALRUN 仍开着），开着的不影响本映射；连接器诊断区无单，保持为描述。
 
 ## 10. 爸 11-09 已拍板的两条取舍（正式决定）
 
