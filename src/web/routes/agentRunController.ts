@@ -72,7 +72,7 @@ export class AgentRunController {
     this.deps.logger.warn(
       `[AgentRouter] SSE client disconnected, cancelling run ${this.deps.runId} for ${this.deps.sessionId}`,
     );
-    void runHandle.cancel('user').catch((error) => {
+    void runHandle.cancel('client-disconnect').catch((error) => {
       this.deps.logger.warn(`[AgentRouter] Failed to cancel disconnected run ${this.deps.runId}:`, error);
     });
   };

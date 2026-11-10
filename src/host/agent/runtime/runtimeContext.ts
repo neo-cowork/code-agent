@@ -123,6 +123,8 @@ export interface RuntimeContext {
   readonly systemPromptStore?: Pick<SystemPromptCache, 'store' | 'get'>;
   readonly inferenceOptions?: InferenceOptions;
   readonly historyVisibility?: 'visible' | 'meta';
+  /** Auxiliary runs keep their provider usage out of the session's main ring. */
+  readonly publishContextHealth?: boolean;
   readonly unattendedTurn?: boolean;
   readonly deniedToolNames?: string[];
   readonly allowedToolNames?: string[];

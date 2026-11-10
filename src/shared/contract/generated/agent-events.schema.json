@@ -2733,7 +2733,10 @@
           "properties": {
             "reason": {
               "type": "string",
-              "const": "idle_reaped"
+              "enum": [
+                "idle_reaped",
+                "client_disconnect"
+              ]
             }
           },
           "required": [

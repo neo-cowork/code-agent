@@ -10,6 +10,19 @@ export function localeForLanguage(language: Language): string {
   return language === 'zh' ? 'zh-CN' : 'en-US';
 }
 
+/** Compact local date and time used where adjacent runs need to be distinguishable. */
+export function formatLocalDateTime(timestamp: number, language: Language, now: Date = new Date()): string {
+  const date = new Date(timestamp);
+  const includeYear = date.getFullYear() !== now.getFullYear();
+  return new Intl.DateTimeFormat(localeForLanguage(language), {
+    ...(includeYear ? { year: 'numeric' as const } : {}),
+    month: language === 'zh' ? 'long' : 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date);
+}
+
 /** 相对时间：刚刚 / N分钟前 / N小时前 / N天前 / N个月前 */
 export function formatRelativeTime(t: Translations, timestamp: number, now: number = Date.now()): string {
   const minutes = Math.floor((now - timestamp) / 60000);

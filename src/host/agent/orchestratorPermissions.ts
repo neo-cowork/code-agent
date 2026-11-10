@@ -9,6 +9,7 @@ import { isApprovePermissionResponse } from '../../shared/contract/permission';
 import type { ToolApprovalPayload, PendingApprovalKind } from '../../shared/contract/pendingApproval';
 import { INTERACTION_TIMEOUTS } from '../../shared/constants/timeouts';
 import { PARKED_APPROVAL_PREVIEW_MAX_CHARS } from '../../shared/constants/pendingApproval';
+import { PARKED_APPROVAL_ENTRY_PATH } from '../../shared/parkedApprovalLocation';
 import { PARKED_APPROVAL_CLOSURE_SENTENCES } from '../../shared/parkedApprovalClosure';
 import { redactCommandSecrets } from '../security/secretRedaction';
 import { generatePermissionRequestId } from '../../shared/utils/id';
@@ -841,8 +842,8 @@ export class OrchestratorPermissionIsland {
       if (fullRequest.sessionId) {
         try {
           // N-PERM-NL-RULES-K2：handback 停车用专属文案（这一步要你亲手做，不是等你批准）。
-          // 同一请求随后经 permission_request 事件再进落库通知口，dedupeKey 同键去重——
-          // 停车口先发，所以用户只看到这一条（handback 文案优先于通用「需要授权」）。
+          // 停车口先发；同一条请求随后经 permission_request 事件再进落库通知口，
+          // 同键去重，用户只看到这一条（handback 文案优先于通用「需要授权」）。
           notificationService.notifyNeedsInput(fullRequest.handback
             ? {
               sessionId: fullRequest.sessionId,
@@ -853,7 +854,7 @@ export class OrchestratorPermissionIsland {
             : {
               sessionId: fullRequest.sessionId,
               title: '有操作等你确认',
-              body: `无人值守任务请求执行 ${fullRequest.tool}，已挂起等待你在收件箱确认。`,
+              body: `无人值守任务请求执行 ${fullRequest.tool}，已暂停等你批准，到${PARKED_APPROVAL_ENTRY_PATH}处理。`,
               dedupeKey: fullRequest.id,
             });
         } catch (err) {

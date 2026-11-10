@@ -95,13 +95,13 @@ ${browserJevStepDescriptionSuffix()}
         description: '[Playwright] CSS selector for element interactions',
       },
       targetRef: {
-        type: 'object',
-        description: '[Playwright] Fresh target reference returned by get_dom_snapshot',
+        type: ['object', 'string'],
+        description: '[Playwright] Fresh target reference returned by get_dom_snapshot: pass the refId shown at the start of each get_dom_snapshot element line (the targetRef object form is also accepted), e.g. {"action":"click","targetRef":"<refId>"}.',
         additionalProperties: true,
       },
       destinationTargetRef: {
-        type: 'object',
-        description: '[Playwright] Fresh destination target reference for drag',
+        type: ['object', 'string'],
+        description: '[Playwright] Fresh destination target reference for drag (pass the refId from a get_dom_snapshot element line).',
         additionalProperties: true,
       },
       text: {
@@ -164,6 +164,10 @@ ${browserJevStepDescriptionSuffix()}
       tabId: {
         type: 'string',
         description: '[Playwright] Target tab ID (optional, uses active tab)',
+      },
+      offset: {
+        type: 'number',
+        description: '[Playwright] get_dom_snapshot only: index of the first interactive element to list (default 0). Use the offset from the "+K more elements" line to page.',
       },
       timeout: {
         type: 'number',

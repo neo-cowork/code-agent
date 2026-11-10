@@ -1,6 +1,7 @@
 export type PreviewHealthLocale = 'zh' | 'en';
 
 export type PreviewHealthMessageKey =
+  | 'categorySeparator'
   | 'skipped'
   | 'routeInAppPassed'
   | 'routeInAppFindings'
@@ -27,6 +28,7 @@ export type PreviewHealthMessageKey =
 
 const messages: Record<PreviewHealthLocale, Record<PreviewHealthMessageKey, string>> = {
   zh: {
+    categorySeparator: '、',
     blank_body_text: '页面空白',
     horizontal_overflow: '内容超出页面宽度',
     console_error: '页面运行报错',
@@ -53,6 +55,7 @@ const messages: Record<PreviewHealthLocale, Record<PreviewHealthMessageKey, stri
     webRepairRemaining: '网页仍有 {count} 个问题：{categories}',
   },
   en: {
+    categorySeparator: ', ',
     blank_body_text: 'blank page',
     horizontal_overflow: 'content wider than the page',
     console_error: 'page reports errors',

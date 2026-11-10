@@ -190,4 +190,54 @@ describe('useSidebarDerivedSessions search results', () => {
     expect(screen.queryByText('Needle archived session')).toBeNull();
     expect(screen.queryByText('命中 1 条消息')).not.toBeNull();
   });
+
+  it('orders same-title results newest first and keeps input order for equal update times', async () => {
+    state.ui.searchQuery = '停车A';
+    state.session.sessions = [
+      {
+        id: 'same-title-first',
+        title: '[Schedule] 停车A-无目录',
+        projectId: 'project-1',
+        workingDirectory: '/repo',
+        status: 'active',
+        messageCount: 1,
+        turnCount: 1,
+        createdAt: 100,
+        updatedAt: 500,
+      },
+      {
+        id: 'same-title-second',
+        title: '[Schedule] 停车A-无目录',
+        projectId: 'project-1',
+        workingDirectory: '/repo',
+        status: 'active',
+        messageCount: 1,
+        turnCount: 1,
+        createdAt: 90,
+        updatedAt: 500,
+      },
+      {
+        id: 'same-title-newest',
+        title: '[Schedule] 停车A-无目录',
+        projectId: 'project-1',
+        workingDirectory: '/repo',
+        status: 'active',
+        messageCount: 1,
+        turnCount: 1,
+        createdAt: 80,
+        updatedAt: 700,
+      },
+    ];
+    const SearchOrderHarness = () => {
+      const derived = useSidebarDerivedSessions({ canOpenSessionReplay: false });
+      return <output data-testid="search-order">{derived.searchResultSessions.map((session) => session.id).join(',')}</output>;
+    };
+
+    render(<SearchOrderHarness />);
+    await waitFor(() => {
+      expect(screen.getByTestId('search-order').textContent).toBe(
+        'same-title-newest,same-title-first,same-title-second',
+      );
+    });
+  });
 });

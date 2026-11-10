@@ -93,6 +93,7 @@ export async function executeToolSearch(
       sessionId: ctx.sessionId,
       rerank: resolveJevSkillRerankOptions(),
       ...(ctx.deniedToolNames?.length ? { deniedToolNames: ctx.deniedToolNames } : {}),
+      ...(ctx.toolScope ? { toolScope: ctx.toolScope } : {}),
     });
 
     // 与 mcpUnified 同一份口径：本轮收窄生效时，不把范围外的工具搜出来——
