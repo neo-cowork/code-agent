@@ -1,3 +1,4 @@
+import type { RunCancelReason } from '../../runtime/runContext';
 // ============================================================================
 // ConversationRuntime — Main loop, step execution, plan mode, cancel/interrupt/steer
 // Extracted from AgentLoop
@@ -34,7 +35,7 @@ import {
 
 import { writeTurnSnapshot } from './turnSnapshotWriter';
 import { maybePauseForStep } from './stepPause';
-import { activateMaxStepsFinalResponse, bindGoalWallClockForContext, createResourceWarning, ensureMaxStepsWrapUp } from './maxStepsFallback';
+import { activateMaxStepsFinalResponse, bindGoalWallClockForContext, createResourceWarning, createStepWarning, ensureMaxStepsWrapUp } from './maxStepsFallback';
 import { DoomLoopGuard } from './doomLoopGuard';
 import { createJevWarden } from './jevWarden';
 import { runToolStepGuardRails } from './toolStepGuardRails';
@@ -362,7 +363,9 @@ export class ConversationRuntime {
     let softValidationRetries = 0;
     let resourceFinalAttempted = false;
     const wallClock = bindGoalWallClockForContext(this.ctx);
-    const warnResources = createResourceWarning(this.ctx, (text, source) => this.contextAssembly.injectSystemMessage(text, source), wallClock.getElapsedMs);
+    const injectWarning: Parameters<typeof createResourceWarning>[1] = (text, source) => this.contextAssembly.injectSystemMessage(text, source);
+    const warnResources = createResourceWarning(this.ctx, injectWarning, wallClock.getElapsedMs);
+    const warnSteps = createStepWarning(this.ctx, injectWarning);
     let userTurnId: string | undefined;
     let terminal: RunTerminalInfo = { status: 'completed' };
     let runError: unknown;
@@ -401,6 +404,7 @@ export class ConversationRuntime {
           resourceFinalAttempted = true;
         }
         warnResources();
+        warnSteps(iterations);
 
         // Max-steps 兜底（借鉴 MiMoCode max-steps.txt）：进入最后一轮时禁用工具，
         // 强制纯文本三段式总结（已完成/未完成/建议下一步），避免步数耗尽无收尾直接断流。
@@ -1157,13 +1161,14 @@ export class ConversationRuntime {
    * 这一条：2026-08-01 真机实测，转向那条路只 abortInference 不留 partial，被打断
    * 那一轮写了一半的长回答在库里一个字都没有。
    */
-  private async preserveStreamedPartial(suffix: string, options: { persistMarkerWithoutText?: boolean } = {}): Promise<InputRedirectReceiptMetadata['partial']> {
+  private async preserveStreamedPartial(suffix: string, options: { persistMarkerWithoutText?: boolean; metadata?: Message['metadata'] } = {}): Promise<InputRedirectReceiptMetadata['partial']> {
     const streamedContent = this.ctx.turn.lastStreamedContent;
     if (!streamedContent && !options.persistMarkerWithoutText) return { charCount: 0 };
     const partialMessage: Message = {
       id: generateMessageId(),
       role: 'assistant',
       content: streamedContent ? streamedContent + suffix : suffix.trim(),
+      ...(options.metadata ? { metadata: options.metadata } : {}),
       timestamp: Date.now(),
     };
     this.ctx.messages.push(partialMessage);
@@ -1180,18 +1185,18 @@ export class ConversationRuntime {
     };
   }
 
-  async cancel(reason?: 'user' | 'session-switch' | 'idle-reaped'): Promise<void> {
+  async cancel(reason?: RunCancelReason): Promise<void> {
     // 回复已经完成落库、但 run 还没从 registry 注销的尾窗里，cancel 必须是安全 no-op。
     // 这时再标 cancelled / preserve partial 会把同一条完整回复追加标记后写成第二行。
     if (this.ctx.control.isSettled) return;
 
-    markStreamSnapshotInterruptionReason({ workingDir: this.ctx.workingDirectory, sessionId: this.ctx.sessionId }, reason === 'session-switch' || reason === 'idle-reaped' ? reason : 'user');
+    markStreamSnapshotInterruptionReason({ workingDir: this.ctx.workingDirectory, sessionId: this.ctx.sessionId }, reason === 'client-disconnect' ? 'stream-break' : reason === 'session-switch' || reason === 'idle-reaped' ? reason : 'user');
     this.ctx.control.markCancelled(reason);
 
     await this.preserveStreamedPartial(
-      reason === 'session-switch' ? '\n\n[未完成 — 切换会话中断]' : '\n\n[cancelled]',
+      reason === 'client-disconnect' ? '\n\n[连接中断 — 部分回答已保留]' : reason === 'session-switch' ? '\n\n[未完成 — 切换会话中断]' : '\n\n[cancelled]',
       // tool-only 流也落 marker；中断投影会过滤它，不形成第三行。
-      { persistMarkerWithoutText: true },
+      { persistMarkerWithoutText: true, ...(reason === 'client-disconnect' ? { metadata: { streamInterruptionReason: 'stream-break' as const, workbench: { runCancellation: { status: 'cancelled' as const, cancelledAt: Date.now(), reason: 'client_disconnect' } } } } : {}) },
     );
     this.ctx.control.abortInference();
     this.ctx.control.abortRun();

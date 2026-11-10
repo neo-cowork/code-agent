@@ -285,8 +285,8 @@ export function createPtySession(options: {
     });
 
     // Handle PTY exit
-    ptyProcess.onExit(({ exitCode }) => {
-      sessionState.status = exitCode === 0 ? 'completed' : 'failed';
+    ptyProcess.onExit(({ exitCode, signal }) => {
+      sessionState.status = exitCode === 0 && (signal === undefined || signal === 0) ? 'completed' : 'failed';
       sessionState.exitCode = exitCode;
       sessionState.endTime = Date.now();
 

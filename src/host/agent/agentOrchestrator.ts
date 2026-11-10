@@ -1,3 +1,4 @@
+import type { RunCancelReason } from '../runtime/runContext';
 import { cancelTimeWakesOnUserReturn } from '../services/wake/userReturn';
 // ============================================================================
 // Agent Orchestrator - Main controller for the AI agent
@@ -314,7 +315,7 @@ export class AgentOrchestrator {
     queuePendingSteerMessagesOrWarn(sessionId, asQueueable, logContext, logger);
   }
 
-  async cancel(reason?: 'user' | 'session-switch' | 'idle-reaped'): Promise<void> {
+  async cancel(reason?: RunCancelReason): Promise<void> {
     logger.info('Cancel requested', { reason });
     const sessionId = this.sessionId ?? getSessionManager().getCurrentSessionId();
 
@@ -340,7 +341,7 @@ export class AgentOrchestrator {
         this.agentLoop = null;
         this.onEvent({
           type: 'agent_cancelled',
-          data: reason === 'idle-reaped' ? { reason: 'idle_reaped' } : null,
+          data: reason === 'client-disconnect' ? { reason: 'client_disconnect' } : reason === 'idle-reaped' ? { reason: 'idle_reaped' } : null,
           sessionId,
         } as AgentEvent & { sessionId?: string });
       }
@@ -357,7 +358,7 @@ export class AgentOrchestrator {
 
     this.onEvent({
       type: 'agent_cancelled',
-      data: reason === 'idle-reaped' ? { reason: 'idle_reaped' } : null,
+      data: reason === 'client-disconnect' ? { reason: 'client_disconnect' } : reason === 'idle-reaped' ? { reason: 'idle_reaped' } : null,
       sessionId,
     } as AgentEvent & { sessionId?: string });
   }
