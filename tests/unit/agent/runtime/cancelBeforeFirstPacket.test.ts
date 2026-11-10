@@ -106,7 +106,7 @@ describe('AgentOrchestrator Stop before first model packet', () => {
   });
 
   it.each([false, true])('never-resolving inference (first packet=%s): three Stops settle once within 3 seconds', async (firstPacket) => {
-    const run = orchestrator.sendMessage('Read the meeting notes and write a one-page summary.', undefined, { disableAutoAgent: true });
+    const run = orchestrator.sendMessage('Read the meeting notes and write a one-page summary.', undefined, { mode: 'normal', disableAutoAgent: true });
     await vi.waitFor(() => expect(requestStarted).toBe(true));
     if (firstPacket) await onStream?.({ type: 'text', content: '已读完会议记录。' });
     expect(runtime.turn.lastStreamedContent).toBe(firstPacket ? '已读完会议记录。' : '');
@@ -151,7 +151,7 @@ describe('AgentOrchestrator Stop before first model packet', () => {
       await assemblyGate;
       return build.call(this);
     });
-    const run = orchestrator.sendMessage('Summarize the meeting notes.', undefined, { disableAutoAgent: true });
+    const run = orchestrator.sendMessage('Summarize the meeting notes.', undefined, { mode: 'normal', disableAutoAgent: true });
     await vi.waitFor(() => expect(assemblyStarted).toBe(true));
     expect(runtime.control.abortController).toBeNull();
     const stop = orchestrator.cancel('user');
@@ -169,7 +169,7 @@ describe('AgentOrchestrator Stop before first model packet', () => {
       await stream?.({ type: 'text', content: '会议摘要：周三完成反馈归类，下周一评审改进计划。' });
       return { type: 'text', content: '会议摘要：周三完成反馈归类，下周一评审改进计划。' };
     });
-    await orchestrator.sendMessage('Summarize these meeting notes in one sentence.', undefined, { disableAutoAgent: true });
+    await orchestrator.sendMessage('Summarize these meeting notes in one sentence.', undefined, { mode: 'normal', disableAutoAgent: true });
     await Promise.all(writes);
     expect(runtime.control.isSettled).toBe(true);
     expect(store.sessions?.getSession('cancel-session')?.status).toBe('completed');
