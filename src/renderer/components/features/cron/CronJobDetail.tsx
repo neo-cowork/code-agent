@@ -32,9 +32,10 @@ import { CronGroupListenCheck } from './CronGroupListenCheck';
 import { CronWebhookLinkBlock } from './CronWebhookLinkBlock';
 import { CronEventDecisionsPanel } from './CronEventDecisionsPanel';
 import { CronJobApprovalHint } from './CronJobApprovalHint';
-import { getBuiltinJobDisplay } from './builtinJobDisplay';
+import { getBuiltinJobDisplay, getVisibleJobTags } from './builtinJobDisplay';
 import { isWebhookCronJob } from '@shared/cronWebhookJob';
 import { CronWriteScopePanel } from './CronWriteScopePanel';
+import { formatDetailDuration } from './formatDetailDuration';
 
 interface CronJobDetailProps {
   job: CronJobDefinition | null;
@@ -110,6 +111,7 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
   const builtinDisplay = getBuiltinJobDisplay(job, language);
   const displayName = builtinDisplay?.name ?? job.name;
   const displayDescription = builtinDisplay?.description ?? job.description;
+  const displayTags = getVisibleJobTags(job);
   const cronTimeZone = job.schedule.type === 'cron' ? job.schedule.timezone : undefined;
   const scheduleSummary = job.schedule.type === 'cron'
     ? formatCronScheduleLabelWithZone(job.schedule.expression, job.schedule.timezone, language)
@@ -287,14 +289,14 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
             <InfoCard label={cc.cardCreatedAt} value={formatDateTime(job.createdAt, language)} />
             <InfoCard label={cc.cardUpdatedAt} value={formatDateTime(job.updatedAt, language)} />
             <InfoCard label={cc.cardMaxRetries} value={job.maxRetries != null ? String(job.maxRetries) : '0'} />
-            <InfoCard label={cc.cardRetryDelay} value={job.retryDelay != null ? `${job.retryDelay}ms` : '—'} />
-            <InfoCard label={cc.cardTimeout} value={job.timeout != null ? `${job.timeout}ms` : '—'} />
+            <InfoCard label={cc.cardRetryDelay} value={formatDetailDuration(job.retryDelay, cc.detailDurationUnits)} />
+            <InfoCard label={cc.cardTimeout} value={formatDetailDuration(job.timeout, cc.detailDurationUnits)} />
           </div>
         </details>
 
-        {job.tags && job.tags.length > 0 && (
+        {displayTags.length > 0 && (
           <div className="mt-4 flex flex-wrap gap-2">
-            {job.tags.map((tag) => (
+            {displayTags.map((tag) => (
               <span
                 key={tag}
                 className="rounded-full bg-zinc-800 px-2.5 py-1 text-xs text-zinc-300"
@@ -333,7 +335,7 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
               />
             </section>
             <section className="min-h-0 overflow-y-auto">
-              <CronExecutionDetail execution={selectedExecution} jobName={job.name} runsOn={job.runsOn} />
+              <CronExecutionDetail execution={selectedExecution} jobName={displayName} runsOn={job.runsOn} />
             </section>
           </div>
         )}

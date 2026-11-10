@@ -88,4 +88,14 @@ describe('TurnRail', () => {
     fireEvent.click(screen.getByRole('button', { name: '第 3 轮' }));
     expect(screen.getAllByRole('listitem')).toHaveLength(8);
   });
+
+  it('刻度按可用高度收缩：每格 flex-shrink 且有最小高度，条内不再固定 10px 撑出滚动', () => {
+    const view = render(<TurnRail items={items(45)} activeTurnId="turn-3" onJump={vi.fn()} />);
+    const tick = screen.getByRole('button', { name: '回到第 30 轮' });
+    expect(tick.style.flex).toBe('0 1 10px');
+    expect(tick.style.minHeight).toBe('3px');
+    expect(tick.style.height).toBe('');
+    const scroller = view.container.querySelector('[data-testid="turn-rail-ticks"] > div')!;
+    expect(scroller.className).toContain('flex-col');
+  });
 });
