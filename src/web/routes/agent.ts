@@ -133,6 +133,8 @@ import { IPC_CHANNELS } from '../../shared/ipc';
 import { OrchestratorPermissionIsland } from '../../host/agent/orchestratorPermissions';
 import type { AgentEvent, PermissionRequest } from '../../shared/contract';
 import { getScriptedRunPermissionHandler } from '../../host/permissions/scriptedRunPermissionPolicy';
+import { beginRunUserRuleContext, endRunPolicy } from '../../host/permissions/runPolicySnapshot';
+import { resolveRunInitiatingText } from '../../host/permissions/runInitiatingText';
 import { getConfigService as getHostConfigService } from '../../host/services/core/configService';
 import {
   registerForegroundPermissionIsland,
@@ -1648,6 +1650,14 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         };
         runEventCollector.observe(cancelledEvent, runController.emitAgentEvent(cancelledEvent));
       } else {
+        // K2（N-PERM-NL-RULES-K2）：桌面聊天不经 AgentOrchestrator，本轮的角色与发起话在这里
+        // 盖章（只盖章不冻结，权限视图不变）——带角色范围的一句话规则才认得出这是谁的 run，
+        // 「我说了才做」才有用户原话可比。发起话取 visiblePrompt（用户打的字），不是拼了
+        // 能力上下文/斜杠命令展开的 modelFacePrompt。下面 finally 里 endRunPolicy 配对清除。
+        beginRunUserRuleContext(runContext.runId, sessionId, {
+          roleId: config.agentOverride?.id,
+          initiatingText: resolveRunInitiatingText(visiblePrompt, { historyVisibility: body.historyVisibility }),
+        });
         await agentLoop.run(modelFacePrompt, visiblePrompt);
       }
 
@@ -1812,6 +1822,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         throw error;
       }
     } finally {
+      if (runContext) endRunPolicy(runContext.runId);
       // N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO：run 收线只清本 run 自己的（无 runId/agentId
       // 身份）挂起审批；后台任务/子代理 lane 的审批消费方还活着，机器拒绝会让「批准后后台任务
       // 继续」变成不可能，卡也会跟着变成点了就 unknown_request 的死卡。还留着后台审批的岛

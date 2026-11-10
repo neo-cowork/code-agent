@@ -152,6 +152,26 @@ export function beginRunPolicy(
   trimJournalToActiveSnapshots();
 }
 
+/**
+ * N-PERM-NL-RULES-K2：只盖章、不冻结。给不经 AgentOrchestrator 的 run 入口用（桌面聊天的
+ * /api/run 自己起 AgentLoop）——这些入口历来读活状态，这里只登记本轮的角色与发起话：
+ * 规则/exec/档位/enforcer 四个组件都不捕获（undefined = 各自回落活状态），权限视图
+ * 与登记前完全一致。同样与 endRunPolicy 配对，run 结束盖章即清。
+ */
+export function beginRunUserRuleContext(
+  runId: string,
+  sessionId: string | undefined,
+  context: { roleId?: string; initiatingText?: string },
+): void {
+  runsById.set(runId, { runId, sessionId, watermark: currentPolicyMutationSeq(), userRuleContext: context });
+  if (sessionId) {
+    const stack = activeRunsBySession.get(sessionId) ?? [];
+    stack.push(runId);
+    activeRunsBySession.set(sessionId, stack);
+  }
+  trimJournalToActiveSnapshots();
+}
+
 /** run 终点丢快照。未 begin 过的 runId 是无害 no-op。同会话还有活跃 run 时回落到次新的。 */
 export function endRunPolicy(runId: string): void {
   const snapshot = runsById.get(runId);
