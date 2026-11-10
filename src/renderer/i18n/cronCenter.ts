@@ -1,4 +1,5 @@
 import { cronRoutineRestateEn, cronRoutineRestateZh } from './cronRoutineRestate';
+import { parkedApprovalVoidedEn, parkedApprovalVoidedZh } from './parkedApprovalVoided';
 // ============================================================================
 import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 import type { EventScheduleValidationReason } from '@shared/cronEventValidation';
@@ -11,6 +12,7 @@ import { cronPermissionDeniedReasonText } from '@shared/cronPermissionDenied';
 // ============================================================================
 export const cronCenterZh = {
   cronCenter: {
+    parkedVoided: parkedApprovalVoidedZh,
     groupListenCheck: {
       title: '检查群消息是否连通',
       start: '发条测试消息',
@@ -530,6 +532,7 @@ export const cronCenterZh = {
 
 export const cronCenterEn: typeof cronCenterZh = {
   cronCenter: {
+    parkedVoided: parkedApprovalVoidedEn,
     groupListenCheck: {
       title: 'Check group message reception',
       start: 'Send a test message',
