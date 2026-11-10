@@ -282,6 +282,23 @@ describe('contextAssembly inference —— B2 诚实分段与重发收编（ADR-
     expect(streamedText(ctx)).toBe('断点片段。续答正文。');
   });
 
+  it('persists one assistant partial when the same response receives repeated stream-break signals', async () => {
+    const ctx = buildCtx({ persistMessage: vi.fn().mockResolvedValue(undefined) } as any);
+    ctx.runtime.modelRouter.inference = vi.fn((_messages, _tools, _cfg, onStream?: StreamCallback) => {
+      onStream?.({ type: 'text', content: 'The project still needs a recovery rehearsal.' });
+      onStream?.({ type: 'stream_break', error: 'ECONNRESET' });
+      onStream?.({ type: 'stream_break', error: 'ECONNRESET' });
+      return Promise.resolve({ type: 'text' as const, content: '', finishReason: 'stop' });
+    });
+
+    await inference(ctx);
+    const persist = vi.mocked(ctx.runtime.persistMessage as unknown as ReturnType<typeof vi.fn>);
+    const assistantWrites = persist.mock.calls.filter(([message]) => message.role === 'assistant');
+    expect(assistantWrites).toHaveLength(1);
+    expect(assistantWrites[0][0].content).toBe('The project still needs a recovery rehearsal.\n\n[连接中断 — 部分回答已保留]');
+    expect(ctx.runtime.turn.lastStreamedContent).toBe('');
+  });
+
   it('reconnecting（刀 4 信号）：转成 stream_reconnecting agent 事件（turnId + n/N + 分档），呈现层据此内嵌状态行', async () => {
     const ctx = buildCtx({ persistMessage: vi.fn().mockResolvedValue(undefined) } as any);
     ctx.runtime.modelRouter.inference = vi.fn((_messages, _tools, _cfg, onStream?: StreamCallback) => {

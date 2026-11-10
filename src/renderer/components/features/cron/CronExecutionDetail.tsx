@@ -12,7 +12,7 @@ import { Button } from '../../primitives/Button';
 import {
   formatDuration,
   formatRunCostUsd,
-  getExecutionStatusMeta,
+  getLatestExecutionStatus,
   isPermissionDeniedExecution,
   prettyJson,
 } from './types';
@@ -109,7 +109,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
     );
   }
 
-  const statusMeta = getExecutionStatusMeta(execution.status);
+  const statusMeta = getLatestExecutionStatus(execution, cc);
   // 需处理（N-CRON-RUN-COMPLETED-BUT-DENIED）：被拒且无产出的完成运行换琥珀徽章 + 一句话 + 重跑。
   const deniedCandidate = isPermissionDeniedExecution(execution)
     ? (execution.result as { permissionDenied?: unknown }).permissionDenied
@@ -188,11 +188,11 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
               className="rounded-full px-2.5 py-1 text-xs text-badge-warning bg-amber-500/10"
               data-testid="cron-exec-detail-permission-denied"
             >
-              {cc.permissionDeniedBadge}
+              {statusMeta.label}
             </span>
           ) : (
             <span className={`rounded-full px-2.5 py-1 text-xs ${statusMeta.className}`}>
-              {cc.status[execution.status]}
+              {statusMeta.label}
             </span>
           )}
         </div>
@@ -235,7 +235,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
         <Info label={cc.colScheduledAt} value={formatDateTime(execution.scheduledAt, language)} />
         <Info label={cc.colStartedAt} value={formatDateTime(execution.startedAt, language)} />
         <Info label={cc.execCompletedAt} value={formatDateTime(execution.completedAt, language)} />
-        <Info label={cc.colDuration} value={formatDuration(execution.duration)} />
+        <Info label={cc.colDuration} value={formatDuration(execution.duration, language)} />
         <Info label={cc.colCost} value={formatRunCostUsd(execution.cost, execution.runsOn ?? runsOn)} testId="cron-execution-cost" />
         <Info label={cc.execRetryCount} value={String(execution.retryAttempt)} />
         <Info label={cc.colExitCode} value={execution.exitCode != null ? String(execution.exitCode) : '—'} />

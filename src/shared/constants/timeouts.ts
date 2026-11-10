@@ -273,6 +273,8 @@ export const TEST_TIMEOUTS = {
 
 /** Startup gates must not remain blocked forever when the renderer signal is lost. */
 export const STARTUP_TIMEOUTS = {
+  /** Warn once when an accepted send has not dispatched its first main-model request. */
+  FIRST_MODEL_REQUEST_WARN_MS: 30_000,
   RENDERER_WINDOW_READY: 5_000,
 } as const;
 
