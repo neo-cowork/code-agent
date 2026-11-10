@@ -88,6 +88,84 @@ function renderCall(toolCall = delegateCall()) {
   return render(<ToolCallDisplay toolCall={toolCall} index={0} total={1} />);
 }
 
+const REAL_SPAWN_AGENT_OUTPUT = `Agent [Explorer] completed task:
+
+Task: 判断 2+2 等于多少。不要使用任何工具，只直接返回结论（一个数字）。
+
+Result:
+4
+- Cost: $20/month
+- Agent ID: customer-visible-reference
+- Pipeline ID: customer-visible-plan
+
+Stats:
+- Iterations: 1
+- Tools used: none
+- Agent ID: agent_explore_7b8c452a-826d-4f84-a500-83beaa6c8015
+- Pipeline ID: agent_explore_7b8c452a-826d-4f84-a500-83beaa6c8015
+- Cost: $0.0000`;
+
+function completedSpawnCall(): ToolCall {
+  return {
+    id: 'spawn-call-completed',
+    name: 'spawn_agent',
+    arguments: { role: 'explore', task: '判断 2+2 等于多少。不要使用任何工具，只直接返回结论（一个数字）。', run_in_background: false },
+    result: {
+      toolCallId: 'spawn-call-completed',
+      success: true,
+      output: REAL_SPAWN_AGENT_OUTPUT,
+      metadata: { agentId: 'agent_explore_7b8c452a-826d-4f84-a500-83beaa6c8015', cost: 0 },
+    },
+  };
+}
+
+const REAL_TASK_OUTPUT = `Agent [Researcher] completed (定价与同步方式):
+
+Notion: - Cost: $20/month; sync: database and page export.
+- Cost: $20/month
+
+Stats:
+- Iterations: 2
+- Tools used: none
+- Cost: $0.0169`;
+
+function completedTaskCall(): ToolCall {
+  return {
+    id: 'task-call-completed',
+    name: 'Task',
+    arguments: {
+      description: '定价与同步方式',
+      prompt: '调研 Notion 和 Obsidian 的定价与同步方式，列表对比返回',
+      subagent_type: 'explore',
+    },
+    result: {
+      toolCallId: 'task-call-completed',
+      success: true,
+      output: REAL_TASK_OUTPUT,
+    },
+  };
+}
+
+const REAL_WAIT_AGENT_OUTPUT = `Wait results (all done):
+
+✅ [agent_explore] explore — completed (1200ms)
+   Result: Notion and Obsidian comparison:
+   - Cost: $20/month
+   Stats: 2 iterations, 1 tools, $0.0169`;
+
+function completedWaitAgentCall(): ToolCall {
+  return {
+    id: 'wait-call-completed',
+    name: 'wait_agent',
+    arguments: { agentIds: ['agent_explore'] },
+    result: {
+      toolCallId: 'wait-call-completed',
+      success: true,
+      output: REAL_WAIT_AGENT_OUTPUT,
+    },
+  };
+}
+
 beforeEach(() => {
   mocks.tasks = [];
   mocks.snapshot = null;
@@ -222,6 +300,80 @@ describe('delegation receipt', () => {
     view.rerender(<ToolCallDisplay toolCall={spawnCall} index={0} total={1} />);
     expect(view.getByTestId('delegation-receipt')).toBeTruthy();
     expect(view.getByText('已完成')).toBeTruthy();
+  });
+
+  it('keeps spawn_agent bookkeeping model-facing but hides it in expanded details with or without the tree node', () => {
+    const spawnCall = completedSpawnCall();
+    const completedNode = {
+      id: 'agent_explore_7b8c452a-826d-4f84-a500-83beaa6c8015',
+      role: 'explore',
+      status: 'completed' as const,
+      statusLabel: '已完成',
+      task: '判断 2+2 等于多少。不要使用任何工具，只直接返回结论（一个数字）。',
+      children: [],
+      worktreeState: { status: 'none' as const },
+      budgetSummary: {},
+      evidenceRefs: [],
+      sources: ['spawnGuard' as const],
+    };
+    mocks.snapshot = {
+      generatedAt: 5,
+      roots: [completedNode],
+      nodes: [completedNode],
+      summary: { total: 1, running: 0, completed: 1, failed: 0, cancelled: 0, blocked: 0, withWorktree: 0, ownershipConflicts: [] },
+    };
+
+    const found = renderCall(spawnCall);
+    fireEvent.click(found.getByTestId('tool-call-row-spawn_agent'));
+    const foundMore = found.queryByText(/展开剩余/);
+    if (foundMore) fireEvent.click(foundMore);
+    expect(found.container.textContent).not.toContain('Result:');
+    expect(found.container.textContent).toContain('- Cost: $20/month');
+    expect(found.container.textContent).toContain('- Agent ID: customer-visible-reference');
+    expect(found.container.textContent).toContain('- Pipeline ID: customer-visible-plan');
+    expect(found.container.textContent).not.toContain('- Agent ID: agent_explore_7b8c452a');
+    expect(found.container.textContent).not.toContain('- Pipeline ID: agent_explore_7b8c452a');
+    expect(found.container.textContent).not.toContain('- Cost: $0.0000');
+    expect(spawnCall.result?.output).toBe(REAL_SPAWN_AGENT_OUTPUT);
+    found.unmount();
+
+    mocks.snapshot = null;
+    const missing = renderCall(spawnCall);
+    fireEvent.click(missing.getByTestId('tool-call-row-spawn_agent'));
+    const missingMore = missing.queryByText(/展开剩余/);
+    if (missingMore) fireEvent.click(missingMore);
+    expect(missing.container.textContent).not.toContain('Result:');
+    expect(missing.container.textContent).toContain('- Cost: $20/month');
+    expect(missing.container.textContent).toContain('- Agent ID: customer-visible-reference');
+    expect(missing.container.textContent).toContain('- Pipeline ID: customer-visible-plan');
+    expect(missing.container.textContent).not.toContain('- Agent ID: agent_explore_7b8c452a');
+    expect(missing.container.textContent).not.toContain('- Pipeline ID: agent_explore_7b8c452a');
+    expect(missing.container.textContent).not.toContain('- Cost: $0.0000');
+    expect(spawnCall.result?.output).toBe(REAL_SPAWN_AGENT_OUTPUT);
+  });
+
+  it('hides Task host cost in the fallthrough while preserving child result cost text', () => {
+    const taskCallWithResult = completedTaskCall();
+    const view = renderCall(taskCallWithResult);
+    fireEvent.click(view.getByTestId('tool-call-row-Task'));
+    const viewMore = view.queryByText(/展开剩余/);
+    if (viewMore) fireEvent.click(viewMore);
+
+    expect(view.container.textContent).toContain('- Cost: $20/month');
+    expect(view.container.textContent).not.toContain('- Cost: $0.0169');
+    expect(taskCallWithResult.result?.output).toBe(REAL_TASK_OUTPUT);
+  });
+
+  it('hides wait_agent host cost while preserving the child result cost text', () => {
+    const waitCallWithResult = completedWaitAgentCall();
+    const view = renderCall(waitCallWithResult);
+    fireEvent.click(view.getByTestId('tool-call-row-wait_agent'));
+    const viewMore = view.queryByText(/展开剩余/);
+    if (viewMore) fireEvent.click(viewMore);
+
+    expect(view.container.textContent).toContain('- Cost: $20/month');
+    expect(view.container.textContent).not.toContain('$0.0169');
+    expect(waitCallWithResult.result?.output).toBe(REAL_WAIT_AGENT_OUTPUT);
   });
 });
 

@@ -27,6 +27,10 @@ function parseClock(minute: string, hour: string): string | null {
  */
 function humanizeCronExpression(expression: string, lang: CronHumanLang): string | null {
   const fields = expression.trim().split(/\s+/);
+  if (fields.length === 6) {
+    if (fields[0] !== '0') return null;
+    fields.shift();
+  }
   if (fields.length !== 5) return null;
   const [minute, hour, dayOfMonth, month, dayOfWeek] = fields;
   if (month !== '*') return null;

@@ -70,11 +70,11 @@ export function useCronOsNotification(
     // 在那之前桌面端只走下面的旧 onAction 路径（读最近一条事件，桌面端通常根本不触发）。
     // 按通知类型落点，且每个 id 只处理一次。会话/jobId/登录墙落点全在 openForEvent
     // （含「无会话仅 jobId → Center」）；这里只补本单独有的一步：needs-input 且有待审批
-    // 卡时落自动化中心「运行」收件箱，而不是会话。
+    // 卡时落「自动化」→「运行记录」。
     const routeClick = async (event: NotificationShowEvent) => {
       const needsInput = event.urgent === true && event.failure !== true;
       if (needsInput && event.sessionId) {
-        // 待审批卡只在自动化中心「运行」收件箱里，会话内没有；有 pending 项就落收件箱。
+        // 待审批卡在「自动化」→「运行记录」；有 pending 项就打开该页。
         let parked = false;
         try {
           const items = await sessionAutomationClient.listParkedApprovals();
@@ -147,7 +147,7 @@ export function useCronOsNotification(
           urgent: event.urgent === true,
           failure: event.failure === true,
           viewingSession,
-          onOpen: () => openForEvent(event),
+          onOpen: () => { void routeClick(event); },
           openLabel: copyRef.current.failureToastView,
         });
       },
@@ -162,7 +162,7 @@ export function useCronOsNotification(
       const message = spec.count > 1
         ? c.missedAlertsMerged.replace('{count}', String(spec.count))
         : `${notice.title}: ${notice.body}`;
-      const action = { label: c.failureToastView, onClick: () => openForEvent(spec.latest) };
+      const action = { label: c.failureToastView, onClick: () => { void routeClick(spec.latest); } };
       if (spec.type === 'error') toast.error(message, action, MISSED_ALERT_TOAST_MS);
       else toast.warning(message, action, MISSED_ALERT_TOAST_MS);
     };

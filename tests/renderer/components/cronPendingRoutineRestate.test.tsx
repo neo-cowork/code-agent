@@ -165,7 +165,8 @@ describe('CronSimpleCreate · 无角色任务先复述后保存', () => {
     expect(mocks.createJob).not.toHaveBeenCalled();
     // 表单状态没被重置：目标还在，时间还是 09:00。
     expect((screen.getByPlaceholderText(/竞品动态/) as HTMLTextAreaElement).value).toBe('每天盯一下竞品发布');
-    expect((screen.getByDisplayValue('09:00') as HTMLInputElement).value).toBe('09:00');
+    expect((screen.getByTestId('cron-simple-time-hour') as HTMLSelectElement).value).toBe('09');
+    expect((screen.getByTestId('cron-simple-time-minute') as HTMLSelectElement).value).toBe('00');
 
     // 改完目标再提交：卡上的 what 跟新值走。
     fireEvent.change(screen.getByPlaceholderText(/竞品动态/), { target: { value: '改成盯新版本发布' } });

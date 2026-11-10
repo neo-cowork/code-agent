@@ -41,7 +41,10 @@ describe('TelegramPrivacyModeHint', () => {
         account={telegramAccount({ groupAccessMode: 'all_members', telegramCanReadAllGroupMessages: false })}
       />,
     );
-    expect(screen.getByTestId('telegram-privacy-mode-hint').textContent).toBe(WARNING);
+    const hint = screen.getByTestId('telegram-privacy-mode-hint');
+    expect(hint.getAttribute('role')).toBe('status');
+    expect(screen.getByText(zh.settings.channels.modal.telegramPrivacyModeTitle)).toBeTruthy();
+    expect(screen.getByText(WARNING).textContent).toBe(WARNING);
   });
 
   it('hides the hint when getMe reported true', () => {

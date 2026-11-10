@@ -1,5 +1,7 @@
 // Manual GLM replay for N-DELEGATE-WORKDIR-LAZY-FU1-FU1. Not a vitest file.
 // Usage: npx tsx tests/manual/delegateWorkdirLiveCases.manual.ts
+// 429 fallback required by the unattended worker contract:
+//   npx tsx tests/manual/delegateWorkdirLiveCases.manual.ts --provider=xiaomi
 // Key: ZHIPU_CODING_API_KEY from ~/.code-agent/.env. Never print the key.
 //
 // Sibling of delegateWorkdirLive.manual.ts (parent ticket). That file proved the
@@ -18,7 +20,7 @@
 // hooks recycle a metadata-only folder at run end.
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir, userInfo } from 'node:os';
 import path from 'node:path';
 import type { ToolCall, ToolResult } from '../../src/shared/contract';
@@ -27,8 +29,10 @@ import type { ToolSchema } from '../../src/host/protocol/tools';
 import type { RuntimeContext } from '../../src/host/agent/runtime/runtimeContext';
 import type { StreamSnapshot } from '../../src/host/model/providers/sseStream';
 
-const GLM_URL = 'https://open.bigmodel.cn/api/coding/paas/v4/chat/completions';
-const GLM_MODEL = 'glm-5.3';
+const USE_XIAOMI_FALLBACK = process.argv.includes('--provider=xiaomi');
+const LIVE_PROVIDER = USE_XIAOMI_FALLBACK ? 'xiaomi' : 'zhipu';
+const LIVE_MODEL = USE_XIAOMI_FALLBACK ? 'mimo-v2.6-flash' : 'glm-5.3';
+const ZHIPU_URL = 'https://open.bigmodel.cn/api/coding/paas/v4/chat/completions';
 const REALRUN7_PROMPT = [
   '请依次做三件事：',
   '1) 在本机提醒事项里创建一条提醒，标题 fu1-reminder；',
@@ -44,16 +48,27 @@ function scrub(text: string): string {
   return text.split(ACCOUNT).join('USER').split(HOME_DIR).join('~');
 }
 
-function loadKey(): string {
+function loadEnvValue(name: string): string {
   const envPath = path.join(HOME_DIR, '.code-agent', '.env');
   for (const line of readFileSync(envPath, 'utf8').split('\n')) {
-    const match = /^ZHIPU_CODING_API_KEY=(.*)$/.exec(line.trim());
+    const match = new RegExp(`^${name}=(.*)$`).exec(line.trim());
     if (!match) continue;
     const key = match[1].replace(/^"|"$/g, '').trim();
     if (!key) break;
     return key;
   }
-  throw new Error('ZHIPU_CODING_API_KEY missing');
+  throw new Error(`${name} missing`);
+}
+
+function loadLiveConfig(): { apiKey: string; url: string } {
+  if (!USE_XIAOMI_FALLBACK) {
+    return { apiKey: loadEnvValue('ZHIPU_CODING_API_KEY'), url: ZHIPU_URL };
+  }
+  const baseUrl = loadEnvValue('XIAOMI_API_URL').replace(/\/$/, '');
+  return {
+    apiKey: loadEnvValue('XIAOMI_API_KEY'),
+    url: `${baseUrl}/chat/completions`,
+  };
 }
 
 interface GlmToolCall {
@@ -81,18 +96,19 @@ function toDefinition(schema: ToolSchema): ToolDefinition {
 
 async function glmChat(
   apiKey: string,
+  url: string,
   tools: unknown[],
   messages: Array<{ role: string; content: string }>,
   toolChoice: 'auto' | 'required',
 ): Promise<{ model?: string; message: GlmMessage; toolChoice: 'auto' | 'required' }> {
-  const response = await fetch(GLM_URL, {
+  const response = await fetch(url, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: GLM_MODEL,
+      model: LIVE_MODEL,
       temperature: 0,
       messages,
       ...(tools.length > 0 ? { tools, tool_choice: toolChoice } : {}),
@@ -100,7 +116,7 @@ async function glmChat(
   });
   const body = await response.text();
   if (!response.ok) {
-    throw new Error(`GLM ${response.status}: ${body.slice(0, 400)}`);
+    throw new Error(`${LIVE_PROVIDER} ${response.status}: ${body.slice(0, 400)}`);
   }
   const parsed = JSON.parse(body) as {
     model?: string;
@@ -113,13 +129,14 @@ async function glmChat(
 
 async function glmToolCalls(
   apiKey: string,
+  url: string,
   tools: unknown[],
   messages: Array<{ role: string; content: string }>,
 ): Promise<{ model?: string; calls: GlmToolCall[]; text: string; toolChoice: 'auto' | 'required' }> {
-  let turn = await glmChat(apiKey, tools, messages, 'auto');
+  let turn = await glmChat(apiKey, url, tools, messages, 'auto');
   let calls = turn.message.tool_calls ?? [];
   if (calls.length === 0) {
-    turn = await glmChat(apiKey, tools, messages, 'required');
+    turn = await glmChat(apiKey, url, tools, messages, 'required');
     calls = turn.message.tool_calls ?? [];
   }
   return {
@@ -145,9 +162,10 @@ function summarizeCall(call: GlmToolCall): string {
   return `${name} ${args.slice(0, 240)}`;
 }
 
-function lsRaw(target: string): string {
+function lsRaw(target: string, option = '-la'): string {
   try {
-    return execFileSync('ls', ['-la', target], { encoding: 'utf8' });
+    const output = execFileSync('ls', [option, target], { encoding: 'utf8' });
+    return option === '-A' ? output.trim() || '<empty>' : output;
   } catch (error) {
     const failed = error as { stdout?: string; stderr?: string; message?: string };
     return `${failed.stdout ?? ''}${failed.stderr ?? failed.message ?? 'ls failed'}`;
@@ -183,7 +201,7 @@ async function makeEngine(workingDirectory: string, sessionId: string): Promise<
   });
   const ctx = {
     systemPrompt: '',
-    modelConfig: { provider: 'openai', model: GLM_MODEL },
+    modelConfig: { provider: LIVE_PROVIDER, model: LIVE_MODEL },
     toolExecutor: { execute },
     messages: [],
     onEvent: () => undefined,
@@ -289,8 +307,8 @@ function snapshotOf(content: string, isFinal: boolean): StreamSnapshot {
 }
 
 async function main(): Promise<void> {
-  const apiKey = loadKey();
-  const outDir = path.join(HOME_DIR, 'work', 'out', 'N-DELEGATE-WORKDIR-LAZY-FU1-FU1');
+  const { apiKey, url } = loadLiveConfig();
+  const outDir = path.join(HOME_DIR, 'work', 'out', 'N-FIX-DELEGATE-WORKDIR-LAZY-FU1-FU1-FU1');
   const tempHome = mkdtempSync(path.join(tmpdir(), 'delegate-workdir-cases-'));
   const dataDir = path.join(tempHome, '.code-agent');
   mkdirSync(dataDir, { recursive: true });
@@ -321,6 +339,9 @@ async function main(): Promise<void> {
     const { convertToolsToOpenAI } = await import('../../src/host/model/providers/shared');
     const { delegateTaskSchema } = await import('../../src/host/tools/modules/commandCenter/sessionCommandCenter.schema');
     const { bashSchema } = await import('../../src/host/tools/modules/shell/bash.schema');
+    const { remindersCreateSchema } = await import('../../src/host/tools/modules/connectors/remindersCreate.schema');
+    const { calendarCreateEventSchema } = await import('../../src/host/tools/modules/connectors/calendarCreateEvent.schema');
+    const { mailDraftSchema } = await import('../../src/host/tools/modules/connectors/mailDraft.schema');
     const { planSessionWorkDirectory } = await import('../../src/host/config/sessionWorkDirectory');
     const {
       beginWorkDirectoryRun,
@@ -329,9 +350,17 @@ async function main(): Promise<void> {
     } = await import('../../src/host/agent/runtime/workDirectoryMaterializer');
     const { createSnapshotHandler } = await import('../../src/host/session/streamSnapshot');
     const { getToolDefinitionWithCloudMeta } = await import('../../src/host/tools/dispatch/toolDefinitions');
+    const { getProtocolRegistry } = await import('../../src/host/tools/protocolRegistry');
+    const {
+      hasProtocolTool,
+      registerProtocolTool,
+      unregisterProtocolTool,
+    } = await import('../../src/host/tools/protocolToolRegistration');
+    const { getSkillWatcher, resetSkillWatcher } = await import('../../src/host/services/skills/skillWatcher');
+    const { updateSkillWatcher } = await import('../../src/host/agent/orchestrator/workspaceServices');
 
     const root = getDefaultWorkDirectory();
-    log(`model=${GLM_MODEL}`);
+    log(`provider=${LIVE_PROVIDER} model=${LIVE_MODEL}`);
     log(`defaultRoot=${root}`);
     lsRoot(root, 'BEFORE all cases');
 
@@ -364,11 +393,11 @@ async function main(): Promise<void> {
     // fail silently (realpath ENOENT) — no folder may appear.
     const aWriter = inferenceSnapshot(dirA, 'session-case-a', 'run-case-a', 'turn-case-a-1');
     aWriter(snapshotOf('好的，我们聊聊。', true));
-    const aChat = await glmChat(apiKey, [], [
+    const aChat = await glmChat(apiKey, url, [], [
       { role: 'user', content: '用一句话介绍一下你自己，不要调用任何工具。' },
     ], 'auto');
     log(`case a glm model=${aChat.model ?? 'unknown'} text=${scrub(aChat.message.content ?? '').slice(0, 160)}`);
-    check(aChat.message.tool_calls === undefined, 'case a: model replied with text only (no tools offered)');
+    check((aChat.message.tool_calls?.length ?? 0) === 0, 'case a: model replied with text only (no tools offered)');
     endWorkDirectoryRun(dirA);
     log(`case a dir exists after run end=${existsSync(dirA)}`);
     lsRoot(root, 'after case a run end');
@@ -381,7 +410,7 @@ async function main(): Promise<void> {
     const bParentTools = convertToolsToOpenAI([toDefinition(delegateTaskSchema)]);
     beginWorkDirectoryRun(dirB);
     inferenceSnapshot(dirB, 'session-case-b', 'run-case-b', 'turn-case-b-1')(snapshotOf('我先派后台任务。', true));
-    const bParent = await glmToolCalls(apiKey, bParentTools, [{ role: 'user', content: REALRUN7_PROMPT }]);
+    const bParent = await glmToolCalls(apiKey, url, bParentTools, [{ role: 'user', content: REALRUN7_PROMPT }]);
     log(`case b parent glm model=${bParent.model ?? 'unknown'} toolChoice=${bParent.toolChoice} calls=${bParent.calls.length}`);
     log(`case b parent text=${bParent.text.slice(0, 200)}`);
     for (const call of bParent.calls) log(`case b parent tool ${summarizeCall(call)}`);
@@ -406,12 +435,101 @@ async function main(): Promise<void> {
     lsRoot(root, 'after case b run end');
     check(!existsSync(dirB), 'case b: delegate_task-only turn leaves NO folder');
 
+    // ===== CASE (f): delegate_task -> connector-only sub-agent + production watcher =====
+    log('================ CASE f: connector-only sub-agent + skill watcher ================');
+    const dirF = await plan('后台连接器任务');
+    log(`case f plannedDir=${dirF}`);
+    mkdirSync(root, { recursive: true });
+    const rootBeforeF = readdirSync(root).sort();
+    log('--- case f ls -A default root BEFORE ---');
+    log(lsRaw(root, '-A'));
+
+    const seedProject = path.join(tempHome, 'existing-project-for-skill-watcher');
+    mkdirSync(seedProject, { recursive: true });
+    await getSkillWatcher().initialize(seedProject);
+    await updateSkillWatcher(dirF);
+    log(`case f dir exists after production updateSkillWatcher=${existsSync(dirF)}`);
+    check(!existsSync(dirF), 'case f: production skill watcher does NOT create the absent planned dir');
+
+    const fParent = await glmToolCalls(apiKey, url, bParentTools, [{ role: 'user', content: REALRUN7_PROMPT }]);
+    log(`case f parent glm model=${fParent.model ?? 'unknown'} toolChoice=${fParent.toolChoice} calls=${fParent.calls.length}`);
+    for (const call of fParent.calls) log(`case f parent tool ${summarizeCall(call)}`);
+    check(fParent.calls.some((call) => call.function?.name === delegateTaskSchema.name), 'case f: parent model called delegate_task');
+    const fParentEngine = await makeEngine(dirF, 'session-case-f-parent');
+    for (const call of fParent.calls) {
+      const name = call.function?.name ?? '';
+      await fParentEngine.executeToolsWithHooks([{
+        id: call.id ?? `case-f-parent-${name}`,
+        name,
+        arguments: parseArguments(call.function?.arguments),
+      }]);
+    }
+    check(!existsSync(dirF), 'case f: delegate_task dispatch leaves the planned dir absent');
+
+    getProtocolRegistry();
+    const connectorSchemas = [remindersCreateSchema, calendarCreateEventSchema, mailDraftSchema] as const;
+    const registeredForReplay = connectorSchemas
+      .filter((schema) => !hasProtocolTool(schema.name))
+      .map((schema) => {
+        registerProtocolTool(schema, async () => {
+          throw new Error(`loader for ${schema.name} must not run in connector-only replay`);
+        });
+        return schema.name;
+      });
+    const connectorPrompts: Array<{ schema: typeof connectorSchemas[number]; prompt: string }> = [
+      { schema: remindersCreateSchema, prompt: '创建一条提醒，清单 Reminders，标题 fu1-reminder。必须调用提供的工具。' },
+      { schema: calendarCreateEventSchema, prompt: '创建一个日程，日历 Work，标题 fu1-event，开始时间使用 1794070800000。必须调用提供的工具。' },
+      { schema: mailDraftSchema, prompt: '保存一封邮件草稿，主题 fu1-draft，收件人 me@example.com，不要发送。必须调用提供的工具。' },
+    ];
+
+    beginWorkDirectoryRun(dirF);
+    const fSnapshot = inferenceSnapshot(dirF, 'session-case-f-subagent', 'run-case-f', 'turn-case-f');
+    const fEngine = await makeEngine(dirF, 'session-case-f-subagent');
+    const fToolNames: string[] = [];
+    for (const { schema, prompt } of connectorPrompts) {
+      const definition = getToolDefinitionWithCloudMeta(schema.name);
+      check(definition !== undefined, `case f: ${schema.name} registered through the real protocol registry`);
+      const offered = convertToolsToOpenAI([toDefinition(schema)]);
+      const turn = await glmChat(apiKey, url, offered, [
+        { role: 'system', content: '你是后台子代理。只能调用提供的连接器工具；不得调用 Bash、Write 或任何文件工具。' },
+        { role: 'user', content: prompt },
+      ], 'required');
+      const calls = turn.message.tool_calls ?? [];
+      log(`case f sub-agent model=${turn.model ?? 'unknown'} offered=${schema.name} calls=${calls.length}`);
+      for (const call of calls) {
+        const name = call.function?.name ?? '';
+        fToolNames.push(name);
+        log(`case f sub-agent tool ${summarizeCall(call)}`);
+        const results = await fEngine.executeToolsWithHooks([{
+          id: call.id ?? `case-f-${name}`,
+          name,
+          arguments: parseArguments(call.function?.arguments),
+        }]);
+        log(`case f engine ${name} success=${results.every((result) => result.success)}`);
+      }
+      check(calls.some((call) => call.function?.name === schema.name), `case f: model called ${schema.name}`);
+      check(!existsSync(dirF), `case f: ${schema.name} did not materialize the planned dir`);
+    }
+    fSnapshot(snapshotOf('提醒、日程和邮件草稿均已通过连接器处理。', true));
+    endWorkDirectoryRun(dirF);
+    for (const name of registeredForReplay) unregisterProtocolTool(name);
+    resetSkillWatcher();
+
+    check(fToolNames.length === 3, 'case f: sub-agent made exactly three connector calls');
+    check(fToolNames.every((name) => connectorSchemas.some((schema) => schema.name === name)), 'case f: sub-agent used connector tools only (no Bash)');
+    log(`case f connector tools=${fToolNames.join(',')}`);
+    const rootAfterF = readdirSync(root).sort();
+    log('--- case f ls -A default root AFTER sub-agent completed ---');
+    log(lsRaw(root, '-A'));
+    check(JSON.stringify(rootAfterF) === JSON.stringify(rootBeforeF), 'case f: default root listing is identical before/after');
+    check(!existsSync(dirF), 'case f: completed connector-only background task leaves NO 任务_ folder');
+
     // ============ shared: drive a delegated sub-agent turn via GLM ============
     const subagentTurn = async (dir: string, sessionId: string, runId: string, caseLabel: string) => {
       const bashTools = convertToolsToOpenAI([toDefinition(bashSchema)]);
       const writer1 = inferenceSnapshot(dir, sessionId, runId, `${caseLabel}-t1`);
       writer1(snapshotOf('我先看一下现在的时间。', true));
-      const bash = await glmToolCalls(apiKey, bashTools, [
+      const bash = await glmToolCalls(apiKey, url, bashTools, [
         { role: 'system', content: '你是后台执行助手。本机没有提醒事项/日历/邮件连接器。只能用 Bash 完成用户请求，先跑 date 确认环境。不要把结果写进任何文件。' },
         { role: 'user', content: REALRUN7_PROMPT },
       ]);

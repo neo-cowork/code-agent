@@ -10,6 +10,17 @@ export function withBackgroundDurableAgentId(events: SubagentEventPort, agentId:
     emit: (event, data) => events.emit(event, data),
     progress: (stage, detail, percent) => events.progress?.(stage, detail, percent),
     backgroundDurableAgentId: agentId,
+    detached: true,
+  };
+}
+
+/** Per-child copy of the parent's port so a later adoption flips only this child's `detached`. */
+export function forkSubagentEventPort(events: SubagentEventPort, detached: boolean): SubagentEventPort {
+  return {
+    emit: (event, data) => events.emit(event, data),
+    progress: (stage, detail, percent) => events.progress?.(stage, detail, percent),
+    ...(events.backgroundDurableAgentId ? { backgroundDurableAgentId: events.backgroundDurableAgentId } : {}),
+    detached: detached || Boolean(events.detached),
   };
 }
 

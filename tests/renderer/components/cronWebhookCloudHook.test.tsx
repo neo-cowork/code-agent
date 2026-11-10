@@ -176,7 +176,7 @@ describe('⑤b 编辑器门', () => {
     fireEvent.change(await screen.findByLabelText(/^单次预算上限/), { target: { value: '0.5' } });
     fireEvent.click(screen.getByText('执行动作'));
     fireEvent.change(controlForLabel('Agent 类型'), { target: { value: 'default' } });
-    fireEvent.change(controlForLabel('Prompt'), { target: { value: 'p' } });
+    fireEvent.change(controlForLabel('任务指令'), { target: { value: 'p' } });
     fireEvent.click(screen.getByText('创建任务'));
     // 无角色任务先过保存前确认卡（N-CRON-MORNING-TRIAGE-REST1），确认后才创建 +
     // register → 一次性链接卡（CronWebhookCreatedView 行为不变）。
@@ -205,7 +205,7 @@ describe('⑤b 编辑器门', () => {
     fireEvent.change(await screen.findByLabelText(/^单次预算上限/), { target: { value: '0.5' } });
     fireEvent.click(screen.getByText('执行动作'));
     fireEvent.change(controlForLabel('Agent 类型'), { target: { value: 'default' } });
-    fireEvent.change(controlForLabel('Prompt'), { target: { value: 'p' } });
+    fireEvent.change(controlForLabel('任务指令'), { target: { value: 'p' } });
     fireEvent.click(screen.getByText('创建任务'));
     fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
 

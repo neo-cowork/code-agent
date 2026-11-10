@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { CronJobDefinition } from '@shared/contract';
-import { CRON_EVENT_TRIGGER, CRON_URGENCY_CRITERIA } from '@shared/constants';
+import { CRON_EVENT_TRIGGER } from '@shared/constants';
 import { isRoleBoundCronJob } from '@shared/cronRoleBinding';
 import { ArrowLeft, Clock, Settings, Terminal } from 'lucide-react';
 import { Modal } from '../../primitives/Modal';
@@ -27,6 +27,8 @@ import {
 } from './cronTemplates';
 import { CronSimpleCreate } from './CronSimpleCreate';
 import { eventViolationFromDraft, isEventScheduleKind } from './cronEditorEventGuard';
+import { CronAgentActionFields } from './CronAgentActionFields';
+import { CronDurationField } from './CronDurationField';
 
 import { SavedRoutineRestate } from './SavedRoutineRestate';
 import { PendingRoutineRestate } from './PendingRoutineRestate';
@@ -35,10 +37,12 @@ import { useI18n } from '../../../hooks/useI18n';
 import { showCronLoginWallWarning } from './cronLoginWallNotice';
 import { CronRunsOnSelector } from './CronRunsOnSelector';
 import { CronResultChannelField } from './CronResultChannel';
+import { CronRunBudgetField } from './CronRunBudgetField';
 import { CronEventScheduleFields } from './CronEventScheduleFields';
 import { CronMailEventFields, mailEventValidationMessage } from './CronMailEventFields';
 import { CronScheduleFields } from './CronScheduleFields';
 import { CronTemplateRoleField } from './CronTemplateRoleField';
+import { CLOUD_ROLE_BOUND_ERROR, CronCloudRoleRestriction, isCloudRoleBoundAgentDraft } from './CronCloudRoleRestriction';
 import { CronWebhookScheduleFields } from './CronWebhookScheduleFields';
 import { CronWebhookCreatedView } from './CronWebhookCreatedView';
 import { useCronWebhookGate } from './useCronWebhookGate';
@@ -52,7 +56,7 @@ interface CronJobEditorProps {
   onClose: () => void;
 }
 
-type FieldErrors = Partial<Record<keyof CronJobDraft, string>> & { form?: string };
+type FieldErrors = Partial<Record<keyof CronJobDraft, string>> & { form?: string; eventForm?: boolean; templateForm?: boolean };
 
 type EditorTab = 'basic' | 'action' | 'advanced';
 
@@ -72,6 +76,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
     const message = error instanceof Error ? error.message : '';
     if (message.includes('Cloud jobs must have an interval')) return cc.cloudIntervalHint;
     if (message.includes('Local jobs must have an interval')) return cc.localIntervalHint;
+    if (message.includes(CLOUD_ROLE_BOUND_ERROR)) return cc.cloudRoleBoundHint;
     if (message.includes('runsOn is immutable')) return cc.locationImmutable;
     return message || fallback;
   };
@@ -179,7 +184,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
   }, [isOpen, job, copySource, cc.locationCloud, cc.locationLocal]);
 
   const title = job
-    ? '编辑定时任务'
+    ? cc.editTitle
     : copySource
       ? cc.copyTitle
     : step === 'simple'
@@ -188,18 +193,18 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
         ? '选择任务模板'
         : step === 'fill'
           ? (selectedTemplate ? getTemplateDisplayCopy(selectedTemplate, cc.templates).name : '') || '填写参数'
-          : '手动配置任务';
+          : cc.manualTitle;
 
   const scheduleOptions = useMemo(
     () => [
-      { value: 'at', label: '一次性' },
-      { value: 'every', label: '间隔循环' },
-      { value: 'cron', label: 'Cron 表达式' },
+      { value: 'at', label: cc.manualEditor.oneTimeScheduleOption },
+      { value: 'every', label: cc.manualEditor.intervalScheduleOption },
+      { value: 'cron', label: cc.manualEditor.cronScheduleOption },
       { value: 'event', label: cc.eventScheduleOption },
       { value: 'event-mail', label: cc.eventMailScheduleOption },
       { value: 'event-webhook', label: cc.eventWebhookScheduleOption },
     ],
-    [cc.eventScheduleOption, cc.eventMailScheduleOption, cc.eventWebhookScheduleOption]
+    [cc.eventScheduleOption, cc.eventMailScheduleOption, cc.eventWebhookScheduleOption, cc.manualEditor]
   );
 
   // event 调度的创建期护栏（host createJob 同款）：只允许本机 + Agent 动作。
@@ -228,12 +233,25 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
   // reason → 本地化文案（用户看到的不是 createJob 的英文原文）；且只在闸门打开
   // （提交过/动过事件字段）后才显示，选完调度类型不立刻报。
   const eventViolation = isEventScheduleKind(draft.scheduleType) ? eventViolationFromDraft(draft) : null;
-  const eventValidationMessage = eventValidationArmed && eventViolation
-    ? cc.eventValidation[eventViolation.reason]
-    : null;
-
+  const eventValidationMessage = eventValidationArmed && eventViolation ? cc.eventValidation[eventViolation.reason] : null;
+  useEffect(() => {
+    if (errors.eventForm && !eventViolation) setErrors((prev) => ({ ...prev, form: undefined, eventForm: false }));
+  }, [errors.eventForm, eventViolation]);
+  useEffect(() => {
+    if (!errors.templateForm || !selectedTemplate) return;
+    const missing = selectedTemplate.fields.filter((f) => f.required && !templateValues[f.key]?.trim());
+    setErrors((prev) => !prev.templateForm ? prev : missing.length > 0
+      ? { ...prev, form: `请填写：${missing.map((f) => f.label).join('、')}` }
+      : { ...prev, form: undefined, templateForm: false });
+  }, [errors.templateForm, selectedTemplate, templateValues]);
+  const cloudRoleBound = isCloudRoleBoundAgentDraft(draft);
   const setField = <K extends keyof CronJobDraft>(key: K, value: CronJobDraft[K]) => {
     setDraft((current) => ({ ...current, [key]: value }));
+  };
+  const setEventField = <K extends keyof CronJobDraft>(key: K, value: CronJobDraft[K]) => {
+    setField(key, value);
+    setEventValidationArmed(true);
+    setErrors((prev) => (prev.eventForm ? { ...prev, form: undefined, eventForm: false } : prev));
   };
 
   const handlePickTemplate = (tpl: CronTemplate) => {
@@ -263,7 +281,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
     // Validate required fields
     const missing = selectedTemplate.fields.filter((f) => f.required && !templateValues[f.key]?.trim());
     if (missing.length > 0) {
-      setErrors({ form: `请填写：${missing.map((f) => f.label).join('、')}` });
+      setErrors({ form: `请填写：${missing.map((f) => f.label).join('、')}`, templateForm: true });
       return;
     }
 
@@ -272,7 +290,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
     if (selectedTemplate.event) {
       const violation = eventViolationFromDraft(draft);
       if (violation) {
-        setErrors({ form: cc.eventValidation[violation.reason] });
+        setErrors({ form: cc.eventValidation[violation.reason], eventForm: true });
         return;
       }
     }
@@ -290,6 +308,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
         : selectedTemplate.generate(templateValues);
       // event 任务钉本机（填参步骤不渲染运行位置选择）；其余模板沿用用户的选择。
       generatedDraft.runsOn = selectedTemplate.event ? 'local' : draft.runsOn;
+      if (!selectedTemplate.event) generatedDraft.maxRunBudget = draft.runsOn === 'local' ? draft.maxRunBudget : '';
       const input = buildCronJobInput(generatedDraft);
       // 无角色任务先挂起出复述卡；角色绑定（如晨间分诊选了角色）照旧直存。
       await gateOrPersist(input, 'create');
@@ -320,6 +339,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
             form: draft.scheduleType === 'event-mail'
               ? mailEventValidationMessage(violation, cc)
               : cc.eventValidation[violation.reason],
+            eventForm: true,
           });
           return;
         }
@@ -327,9 +347,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       const input = buildCronJobInput(draft);
       await gateOrPersist(input, job ? 'update' : 'create');
     } catch (error) {
-      setErrors({
-        form: saveErrorMessage(error, cc.simpleCreateFailed),
-      });
+      setErrors({ form: saveErrorMessage(error, cc.simpleCreateFailed) });
     } finally {
       setSubmitting(false);
     }
@@ -568,20 +586,28 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
             <CronEventScheduleFields
               accountId={draft.eventAccountId}
               chatId={draft.eventChatId}
-              onAccountChange={(eventAccountId) => setField('eventAccountId', eventAccountId)}
-              onChatChange={(eventChatId) => setField('eventChatId', eventChatId)}
+              onAccountChange={(eventAccountId) => setEventField('eventAccountId', eventAccountId)}
+              onChatChange={(eventChatId) => setEventField('eventChatId', eventChatId)}
               maxRunBudget={draft.maxRunBudget}
-              onBudgetChange={(maxRunBudget) => setField('maxRunBudget', maxRunBudget)}
+              onBudgetChange={(maxRunBudget) => setEventField('maxRunBudget', maxRunBudget)}
               validationMessage={(() => {
                 const violation = eventViolationFromDraft(draft);
                 return violation ? cc.eventValidation[violation.reason] : null;
               })()}
             />
           ) : (
-            <CronRunsOnSelector
-              value={draft.runsOn}
-              onChange={(runsOn) => setField('runsOn', runsOn)}
-            />
+            <>
+              <CronRunsOnSelector
+                value={draft.runsOn}
+                onChange={(runsOn) => setField('runsOn', runsOn)}
+              />
+              {draft.runsOn === 'local' && (
+                <CronRunBudgetField
+                  value={draft.maxRunBudget}
+                  onChange={(maxRunBudget) => setField('maxRunBudget', maxRunBudget)}
+                />
+              )}
+            </>
           )}
         </div>
       </Modal>
@@ -597,12 +623,8 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       size="lg"
       footer={(
         <>
-          <Button variant="ghost" onClick={onClose} disabled={submitting}>
-            取消
-          </Button>
-          <Button onClick={handleSubmit} loading={submitting} disabled={webhookGated}>
-            {job ? '保存修改' : '创建任务'}
-          </Button>
+          <Button variant="ghost" onClick={onClose} disabled={submitting}>取消</Button>
+          <Button onClick={handleSubmit} loading={submitting} disabled={cloudRoleBound || webhookGated}>{job ? '保存修改' : '创建任务'}</Button>
         </>
       )}
     >
@@ -678,7 +700,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                     onChange={(e) => setField('enabled', e.target.checked)}
                     className="rounded border-zinc-700 bg-zinc-800"
                   />
-                  创建后立即启用
+                  {job ? cc.enabledStatus : cc.enableAfterCreate}
                 </label>
               </FormField>
             </div>
@@ -694,6 +716,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
             onChange={(runsOn) => setField('runsOn', runsOn)}
             readOnly={Boolean(job) || isEventScheduleKind(draft.scheduleType)}
           />
+          <CronCloudRoleRestriction draft={draft} message={cc.cloudRoleBoundHint} />
 
           <div className="border-t border-zinc-800 pt-4">
             <h4 className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-zinc-500">
@@ -703,6 +726,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
             <div className="space-y-3">
               <FormField label="调度类型">
                 <Select
+                  data-testid="cron-schedule-type-select"
                   value={draft.scheduleType}
                   options={scheduleOptions}
                   onChange={(e) => setField('scheduleType', e.target.value as CronJobDraft['scheduleType'])}
@@ -715,19 +739,10 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                 <CronEventScheduleFields
                   accountId={draft.eventAccountId}
                   chatId={draft.eventChatId}
-                  onAccountChange={(eventAccountId) => {
-                    setField('eventAccountId', eventAccountId);
-                    setEventValidationArmed(true);
-                  }}
-                  onChatChange={(eventChatId) => {
-                    setField('eventChatId', eventChatId);
-                    setEventValidationArmed(true);
-                  }}
+                  onAccountChange={(eventAccountId) => setEventField('eventAccountId', eventAccountId)}
+                  onChatChange={(eventChatId) => setEventField('eventChatId', eventChatId)}
                   maxRunBudget={draft.maxRunBudget}
-                  onBudgetChange={(maxRunBudget) => {
-                    setField('maxRunBudget', maxRunBudget);
-                    setEventValidationArmed(true);
-                  }}
+                  onBudgetChange={(maxRunBudget) => setEventField('maxRunBudget', maxRunBudget)}
                   validationMessage={eventValidationMessage}
                 />
               )}
@@ -738,10 +753,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                   configured={cloud.configured}
                   onGotoSettings={gotoCloudSettings}
                   maxRunBudget={draft.maxRunBudget}
-                  onBudgetChange={(maxRunBudget) => {
-                    setField('maxRunBudget', maxRunBudget);
-                    setEventValidationArmed(true);
-                  }}
+                  onBudgetChange={(maxRunBudget) => setEventField('maxRunBudget', maxRunBudget)}
                   validationMessage={eventValidationMessage}
                 />
               )}
@@ -750,19 +762,10 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                 <CronMailEventFields
                   accountId={draft.eventMailAccountId}
                   mailbox={draft.eventMailMailbox}
-                  onAccountChange={(eventMailAccountId) => {
-                    setField('eventMailAccountId', eventMailAccountId);
-                    setEventValidationArmed(true);
-                  }}
-                  onMailboxChange={(eventMailMailbox) => {
-                    setField('eventMailMailbox', eventMailMailbox);
-                    setEventValidationArmed(true);
-                  }}
+                  onAccountChange={(eventMailAccountId) => setEventField('eventMailAccountId', eventMailAccountId)}
+                  onMailboxChange={(eventMailMailbox) => setEventField('eventMailMailbox', eventMailMailbox)}
                   maxRunBudget={draft.maxRunBudget}
-                  onBudgetChange={(maxRunBudget) => {
-                    setField('maxRunBudget', maxRunBudget);
-                    setEventValidationArmed(true);
-                  }}
+                  onBudgetChange={(maxRunBudget) => setEventField('maxRunBudget', maxRunBudget)}
                   // 与通道分支同一道显示闸门：光选「新邮件」不填不挨红框（r2 口径）。
                   violation={eventValidationArmed ? eventViolation : null}
                 />
@@ -834,35 +837,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
           )}
 
           {draft.actionType === 'agent' && (
-            <>
-              <FormField label="Agent 类型" required error={errors.agentType}>
-                <Input value={draft.agentType} onChange={(e) => setField('agentType', e.target.value)} />
-              </FormField>
-              <FormField label="Prompt" required error={errors.agentPrompt}>
-                <Textarea
-                  value={draft.agentPrompt}
-                  onChange={(e) => setField('agentPrompt', e.target.value)}
-                  minRows={5}
-                />
-              </FormField>
-              <FormField label={cc.urgencyCriteriaLabel} hint={cc.urgencyCriteriaHint}>
-                <Input
-                  value={draft.agentUrgencyCriteria ?? ''}
-                  onChange={(e) => setField('agentUrgencyCriteria', e.target.value)}
-                  maxLength={CRON_URGENCY_CRITERIA.MAX_CHARS}
-                  placeholder={cc.urgencyCriteriaPlaceholder}
-                  data-testid="cron-agent-urgency-criteria"
-                />
-              </FormField>
-              <FormField label="Context (JSON)">
-                <Textarea
-                  value={draft.agentContextText}
-                  onChange={(e) => setField('agentContextText', e.target.value)}
-                  minRows={4}
-                  className="font-mono"
-                />
-              </FormField>
-            </>
+            <CronAgentActionFields draft={draft} setField={setField} errors={errors} />
           )}
 
           {draft.actionType === 'webhook' && (
@@ -929,7 +904,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       {activeTab === 'advanced' && (
         <div className="space-y-3">
           <p className="text-xs text-zinc-500">配置重试策略和执行超时，通常保持默认即可。</p>
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3">
             <FormField label="最大重试次数">
               <Input
                 type="number"
@@ -938,22 +913,16 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                 placeholder="0"
               />
             </FormField>
-            <FormField label="重试间隔 (ms)">
-              <Input
-                type="number"
-                value={draft.retryDelay}
-                onChange={(e) => setField('retryDelay', e.target.value)}
-                placeholder="不限"
-              />
-            </FormField>
-            <FormField label="执行超时 (ms)">
-              <Input
-                type="number"
-                value={draft.timeout}
-                onChange={(e) => setField('timeout', e.target.value)}
-                placeholder="不限"
-              />
-            </FormField>
+            <CronDurationField
+              label={cc.manualEditor.retryDelayLabel} value={draft.retryDelay} onChange={(value) => setField('retryDelay', value)}
+              placeholder={cc.manualEditor.retryDelayPlaceholder} hint={cc.manualEditor.retryDelayHint} invalidMessage={cc.manualEditor.durationInvalid}
+              testId="cron-retry-delay" unitLabels={cc.manualEditor.durationUnits} maxUnit="minutes"
+            />
+            <CronDurationField
+              label={cc.manualEditor.timeoutLabel} value={draft.timeout} onChange={(value) => setField('timeout', value)}
+              placeholder={cc.manualEditor.timeoutPlaceholder} invalidMessage={cc.manualEditor.durationInvalid}
+              testId="cron-timeout" unitLabels={cc.manualEditor.durationUnits} maxUnit="hours"
+            />
           </div>
           {draft.runsOn !== 'cloud' && (
             <div className="grid gap-3 sm:grid-cols-2">
@@ -962,9 +931,9 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                   type="number"
                   value={draft.maxRunBudget}
                   onChange={(e) => {
-                    setField('maxRunBudget', e.target.value);
                     // event 任务的预算也在这里改（与事件字段同一 draft 字段），同步开闸。
-                    if (isEventScheduleKind(draft.scheduleType)) setEventValidationArmed(true);
+                    if (isEventScheduleKind(draft.scheduleType)) setEventField('maxRunBudget', e.target.value);
+                    else setField('maxRunBudget', e.target.value);
                   }}
                   placeholder="不限"
                   data-testid="cron-budget-limit-input"

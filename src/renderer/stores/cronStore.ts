@@ -20,6 +20,9 @@ export type CronJobFilterMode = 'all' | 'enabled' | 'disabled';
 
 interface CronState {
   jobs: CronJobDefinition[];
+  /** Complete job catalog used for cross-job run labels; `jobs` may be filter-scoped. */
+  allJobs: CronJobDefinition[];
+  jobNamesLoaded: boolean;
   stats: CronServiceStats | null;
   latestExecutions: Record<string, CronJobExecution | null>;
   executionsByJobId: Record<string, CronJobExecution[]>;
@@ -68,6 +71,8 @@ async function loadLatestExecution(jobId: string): Promise<CronJobExecution | nu
 
 export const useCronStore = create<CronState>()((set, get) => ({
   jobs: [],
+  allJobs: [],
+  jobNamesLoaded: false,
   stats: null,
   latestExecutions: {},
   executionsByJobId: {},
@@ -94,11 +99,15 @@ export const useCronStore = create<CronState>()((set, get) => ({
     const { filterMode, selectedJobId } = get();
     set({ isLoading: true, error: null });
 
-    try {
-      const jobs = await cronClient.listJobs(
-        filterMode === 'all' ? undefined : { enabled: filterMode === 'enabled' }
-      );
+    const filter = filterMode === 'all' ? undefined : { enabled: filterMode === 'enabled' };
+    const filteredJobsPromise = cronClient.listJobs(filter);
+    // The visible task list may be filtered; run records still need the complete catalog
+    // so a disabled task is not mistaken for a deleted one.
+    const allJobsPromise = filterMode === 'all' ? filteredJobsPromise : cronClient.listJobs();
+    const [filteredResult, allResult] = await Promise.allSettled([filteredJobsPromise, allJobsPromise]);
 
+    if (filteredResult.status === 'fulfilled') {
+      const jobs = filteredResult.value;
       const latestPairs = await Promise.all(
         jobs.map(async (job) => [job.id, await loadLatestExecution(job.id)] as const)
       );
@@ -114,14 +123,22 @@ export const useCronStore = create<CronState>()((set, get) => ({
         latestExecutions,
         selectedJobId: nextSelectedJobId,
       });
-    } catch (error) {
-      logger.error('Failed to load cron jobs', error);
+    } else {
+      logger.error('Failed to load cron jobs', filteredResult.reason);
       set({
-        error: error instanceof Error ? error.message : 'Failed to load cron jobs',
+        error: filteredResult.reason instanceof Error ? filteredResult.reason.message : 'Failed to load cron jobs',
       });
-    } finally {
-      set({ isLoading: false });
     }
+
+    if (allResult.status === 'fulfilled') {
+      set({ allJobs: allResult.value, jobNamesLoaded: true });
+    } else {
+      logger.warn('Failed to load complete cron job catalog', {
+        errorMessage: allResult.reason instanceof Error ? allResult.reason.message : String(allResult.reason),
+      });
+    }
+
+    set({ isLoading: false });
   },
 
   loadStats: async () => {

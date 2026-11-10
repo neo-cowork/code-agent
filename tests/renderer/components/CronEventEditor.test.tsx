@@ -144,7 +144,7 @@ async function fillEventJob(options: { chat?: 'group' | 'manual' | 'none'; budge
 
   fireEvent.click(screen.getByText('执行动作'));
   fireEvent.change(controlForLabel('Agent 类型'), { target: { value: 'default' } });
-  fireEvent.change(controlForLabel('Prompt'), { target: { value: '处理新消息' } });
+  fireEvent.change(controlForLabel('任务指令'), { target: { value: '处理新消息' } });
 
   // 回到基本设置页：事件字段与内联护栏提示挂在这里（tab 卸载式渲染）。
   fireEvent.click(screen.getByText('基本设置'));
@@ -629,7 +629,7 @@ describe('connector:mail 任务可编辑可改绑（N-TRIGGER-MAIL-CREATE-ENTRY-
     // Agent 动作参数与通道 event 流同一道（动作类型已被护栏钉成 Agent）。
     fireEvent.click(screen.getByText('执行动作'));
     fireEvent.change(controlForLabel('Agent 类型'), { target: { value: 'default' } });
-    fireEvent.change(controlForLabel('Prompt'), { target: { value: '处理新邮件' } });
+    fireEvent.change(controlForLabel('任务指令'), { target: { value: '处理新邮件' } });
     fireEvent.click(screen.getByText('基本设置'));
     fireEvent.click(screen.getByText('创建任务'));
     // 无角色任务先过保存前确认卡（N-CRON-MORNING-TRIAGE-REST1），确认才落库。
