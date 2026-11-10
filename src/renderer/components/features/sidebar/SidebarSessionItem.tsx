@@ -147,7 +147,8 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   const sessionTurnActive = useSessionTurnActive(session.id);
   const failedCurrentRequest = useSessionStore((state) => state.currentSessionId === session.id && hasFailedCurrentRequest(state.messages));
   const liveBackgroundCount = useLiveBackgroundAgentCount(session.id, session.status === 'error' || session.status === 'running', session.status === 'running' && !failedCurrentRequest);
-  const status = getSessionStatusPresentation({
+  const terminalFailure = liveBackgroundCount === 0 && (failedCurrentRequest || session.status === 'error');
+  const status = getSessionStatusPresentation(terminalFailure ? { sessionStatus: 'error' } : {
     backgroundSession,
     runtime: sessionRuntime,
     taskState: sessionStates[session.id],
