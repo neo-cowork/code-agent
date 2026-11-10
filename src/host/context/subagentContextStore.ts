@@ -28,6 +28,17 @@ export interface SubagentContextRecord {
   annotations?: Record<string, SubagentContextAnnotation>;
   compressionState?: CompressionState;
   maxTokens?: number;
+  /** Persisted execution facts; context snapshots themselves do not imply liveness. */
+  lifecycle?: {
+    status: 'running' | 'completed' | 'failed' | 'cancelled';
+    displayName: string;
+    role?: string;
+    task: string;
+    background: boolean;
+    backgroundAgentId?: string;
+    startedAt: number;
+    finishedAt?: number;
+  };
   updatedAt: number;
   /** Explicit graph lifecycle for members that have no SpawnGuard entry. */
   terminalStatus?: 'completed' | 'failed' | 'cancelled';
@@ -153,6 +164,7 @@ export class SubagentContextStore {
 
     this.store.set(buildKey(sessionId, agentId), {
       ...record,
+      lifecycle: record.lifecycle ?? this.store.get(buildKey(sessionId, agentId))?.lifecycle,
       sessionId,
       agentId,
       messages: record.messages.map(cloneMessage),

@@ -262,13 +262,13 @@ describe('CronJobList 内置维护任务本地化展示（N-FIX-BUILTIN-CRON-JOB
     expect(screen.getByText('每天早上背 5 个单词')).toBeTruthy();
   });
 
-  it('英文界面下内置记忆任务保持英文原名与原描述，普通用户任务原样渲染', () => {
+  it('英文界面下内置记忆任务使用用户文案，普通用户任务原样渲染', () => {
     useAppStore.setState({ language: 'en' });
     useCronStore.setState({ jobs: [builtinMemoryJob, userJob] });
     render(<CronJobList />);
 
-    expect(screen.getByText('[Maintenance] Light Memory consolidation')).toBeTruthy();
-    expect(screen.getByText('Compress ~/.code-agent/memory without losing information (quick model).')).toBeTruthy();
+    expect(screen.getByText('Memory cleanup')).toBeTruthy();
+    expect(screen.getByText('Regularly tidies your memory files and merges duplicates without losing information.')).toBeTruthy();
     expect(screen.getByText('每日英语单词')).toBeTruthy();
   });
 
