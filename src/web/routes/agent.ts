@@ -1,4 +1,4 @@
- 
+import { watchFirstModelRequest } from '../../host/agent/runtime/firstModelRequestWatch';
 import { expandSlashPromptForModel } from './agentSlashExpansion';
 import { Router } from 'express';
 import type { Request, Response } from 'express';
@@ -129,11 +129,12 @@ import {
 } from '../../host/services/agentEngine/externalEngineResumeBuilders';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { OrchestratorPermissionIsland } from '../../host/agent/orchestratorPermissions';
-import type { PermissionRequest } from '../../shared/contract';
+import type { AgentEvent, PermissionRequest } from '../../shared/contract';
 import { getScriptedRunPermissionHandler } from '../../host/permissions/scriptedRunPermissionPolicy';
 import { getConfigService as getHostConfigService } from '../../host/services/core/configService';
 import {
   registerForegroundPermissionIsland,
+  reregisterForegroundPermissionIsland,
   unregisterForegroundPermissionIsland,
 } from '../foregroundPermissionRegistry';
 import {
@@ -515,8 +516,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     return outcome.outcome === 'queued' ? 'queued' : 'steered';
   });
 
-  // ── Agent Run (SSE streaming) ──────────────────────────────────────
-  async function runAgentTurn(
+  const runAgentTurn = (...args: Parameters<typeof runObservedAgentTurn>): Promise<void> =>
+    watchFirstModelRequest(args[0].sessionId, () => runObservedAgentTurn(...args));
+  async function runObservedAgentTurn(
     body: AgentRunBody,
     res: Response,
     transport: (
@@ -526,8 +528,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           /** ADR-072 K1C：投递层校验过的委托来源标记（带外，客户端永远给不了）。 */
           delegationOrigin?: import('../../shared/contract/queuedInput').DelegationOriginMarker;
           onDurableActivated?: (activation: { runId: string; activatedAt: number }) => void;
-          /**
-           * 幂等重放命中：不建新 run，调用方按既有 runId 收口回执（不再发 run_started）。
+          /** 幂等重放命中：不建新 run，调用方按既有 runId 收口回执（不再发 run_started）。
            * 离线调用方传了它才允许重放收口；不传（drain / send-now idle 排队投递）时
            * 一律落回真实起跑——没有回执通道的重放会被上层当成功结算（drainOne 标
            * consumed），上一轮失败后的重投就被静默吞掉（rework r1）。
@@ -913,6 +914,23 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       eventFilter,
     });
 
+    // N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO：后台 lane 的审批可以在 run 收线**之后**
+    // 才抛（ask 晚于 finalize 几秒）。收线清理看到「岛上无 pending」已把岛注销，迟到的
+    // permission_request 照常发事件，但注册表里没有这座岛——快照补全列不出它、点击应答
+    // 落 unknown_request。收线后岛再抛未裁决审批时把**自己**挂回注册表；新 run 已注册
+    // 自己的岛时 reregister 不回占，且 resolved 收卡事件（超时/drain）绝不把空岛挂回。
+    const emitIslandEvent = (event: AgentEvent): void => {
+      if (
+        event.type === 'permission_request'
+        && !event.data?.resolved
+        && runController.settled
+        && foregroundPermissionIsland
+      ) {
+        reregisterForegroundPermissionIsland(sessionId, foregroundPermissionIsland);
+      }
+      runController.emitAgentEvent(event);
+    };
+
     if (transport.connectedClient) {
       res.once('close', runController.cancelForDisconnect);
       res.off('close', markPreflightDisconnected);
@@ -1083,7 +1101,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             isDevModeAutoApproveEnabled: () => acpConfigService.isDevModeAutoApproveEnabled(),
             getExecutionTopology: () => 'main',
             hasApprovalUi: (request) => liveHasApprovalUi(sessionId, request, deps.hasCompanionApprovalUi),
-            onEvent: (event) => runController.emitAgentEvent(event),
+            onEvent: emitIslandEvent,
           });
           registerForegroundPermissionIsland(sessionId, foregroundPermissionIsland);
         } else if (selectedEngine.kind === 'dsh_cli') {
@@ -1471,7 +1489,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         isDevModeAutoApproveEnabled: () => configService.isDevModeAutoApproveEnabled(),
         getExecutionTopology: () => 'main',
         hasApprovalUi: (request) => liveHasApprovalUi(sessionId, request, deps.hasCompanionApprovalUi),
-        onEvent: (event) => runController.emitAgentEvent(event),
+        onEvent: emitIslandEvent,
       });
       registerForegroundPermissionIsland(sessionId, foregroundPermissionIsland);
       const scripted = getScriptedRunPermissionHandler();
@@ -1790,8 +1808,12 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         throw error;
       }
     } finally {
-      foregroundPermissionIsland?.drainPendingPermissions();
-      if (foregroundPermissionIsland) {
+      // N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO：run 收线只清本 run 自己的（无 runId/agentId
+      // 身份）挂起审批；后台任务/子代理 lane 的审批消费方还活着，机器拒绝会让「批准后后台任务
+      // 继续」变成不可能，卡也会跟着变成点了就 unknown_request 的死卡。还留着后台审批的岛
+      // 继续注册，让迟到的点击仍能送达（下次同会话新 run 注册时才收口）。
+      foregroundPermissionIsland?.drainPendingPermissions('deny', { skipBackgroundLanes: true });
+      if (foregroundPermissionIsland && !foregroundPermissionIsland.hasPendingRequests()) {
         unregisterForegroundPermissionIsland(sessionId, foregroundPermissionIsland);
       }
       runController.markSettled();

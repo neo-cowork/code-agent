@@ -23,6 +23,7 @@ import { SettingsSchemas, type SettingsDomainRequest } from '../../shared/ipc/sc
 import { WindowSchemas, type WindowDomainRequest } from '../../shared/ipc/schemas/window';
 import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import { bindAppGrantDatabase } from '../permissions/appGrantStore';
+import { bindToolGrantDatabase } from '../permissions/toolGrantStore';
 import { listGrants as listLedgerGrants, revokeGrant as revokeLedgerGrant } from '../permissions/grantLedger';
 import { extractDocxParagraphsFromBuffer } from '../tools/artifacts/docxParagraphLocator';
 import {
@@ -468,6 +469,14 @@ async function handleGetBudgetStatus(): Promise<unknown> {
   const { getBudgetService } = await import('../services/core/budgetService');
   const service = getBudgetService('foreground');
   const unattendedService = getBudgetService('unattended');
+  try {
+    unattendedService.assertHydrated();
+  } catch (error) {
+    // 失败要可见：让 UI 显示「用量暂不可用」，而不是把重启后的空历史当成 $0.00。
+    const reason = (error as { reason?: string }).reason === 'not_ready' ? 'not_ready' : 'read_failed';
+    logger.warn(`unattended budget status unavailable (${reason})`, error);
+    throw error;
+  }
   const foregroundStatus = service.checkBudget();
   const unattendedStatus = unattendedService.checkBudget();
   // 状态（含用量百分比/告警级别）+ 配置（enabled/上限）+ 缓存节省 + token 用量汇总一并回给 UI
@@ -548,6 +557,8 @@ function bindLiveAppGrantDatabase(): void {
   const { getDatabase } = require('../services/core/databaseService') as typeof import('../services/core/databaseService');
   const db = getDatabase().getDb();
   if (db) bindAppGrantDatabase(db);
+  // N-PERM-GRANT-TIERS：台账列/撤 24h 档工具授权也要拿到活库绑定。
+  if (db) bindToolGrantDatabase(db);
 }
 
 const settingsHandlers: DomainRouteHandlers<SettingsDomainRequest, SettingsRouteCtx> = {

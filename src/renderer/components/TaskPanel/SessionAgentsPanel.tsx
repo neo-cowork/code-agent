@@ -10,10 +10,11 @@
 // 面板不画输入框：对代理续话是后置单 N-SUBAGENT-INPUT。
 // ============================================================================
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Bot, ChevronDown, ChevronRight, Clock, Square, X, Zap } from 'lucide-react';
 import { cancelSwarmRunOrFallback } from '../features/swarm/SwarmInlineMonitor';
 import { useI18n } from '../../hooks/useI18n';
+import { interpolatePlural } from '../../i18n/interpolate';
 import { useSessionAgentRows } from '../../hooks/useSessionAgentRows';
 import { useDurableSwarmRunDetail } from '../../hooks/useDurableSwarmRunDetail';
 import { useSessionStore } from '../../stores/sessionStore';
@@ -21,6 +22,7 @@ import { useAppStore } from '../../stores/appStore';
 import { useSwarmStore } from '../../stores/swarmStore';
 import { useComposerStore } from '../../stores/composerStore';
 import { useMemberViewStore } from '../../stores/memberViewStore';
+import { useBackgroundTaskStore } from '../../stores/backgroundTaskStore';
 import { useVoiceLiveRuntime } from '../../hooks/useVoiceLiveRuntime';
 import { deriveAgentMergeState } from '../../utils/agentMergeState';
 import { isAgentRowQuiet } from '../../utils/agentRowStall';
@@ -62,6 +64,7 @@ export const SessionAgentsPanel: React.FC = () => {
   const voiceCallLive = voiceRuntime.phase === 'live' || voiceRuntime.phase === 'connecting';
   const voiceActiveAgentId = voiceRuntime.activeAgentId;
   const [stoppingKey, setStoppingKey] = useState<string | null>(null);
+  const [stopHintKey, setStopHintKey] = useState<string | null>(null);
   const [stoppingAll, setStoppingAll] = useState(false);
   const [eventsOpen, setEventsOpen] = useState(false);
 
@@ -76,6 +79,16 @@ export const SessionAgentsPanel: React.FC = () => {
     const timer = window.setInterval(() => setHintNow(Date.now()), AGENT_STALL_HINT_TICK_MS);
     return () => window.clearInterval(timer);
   }, [anyWorking]);
+  // 审批放行时刻（按行 key）：hold 从 approval 掉下来的那一刻记下，isAgentRowQuiet 据此重开窗口。
+  // 在渲染期维护（幂等：只由「上一渲染 held → 本渲染不 held」触发），避免 effect 晚一拍导致放行 tick 闪提示。
+  const heldKeysRef = useRef<Set<string>>(new Set());
+  const releasedAtRef = useRef<Map<string, number>>(new Map());
+  const heldNow = new Set(rows.filter((row) => row.hold === 'approval').map((row) => row.key));
+  for (const key of heldKeysRef.current) {
+    if (!heldNow.has(key)) releasedAtRef.current.set(key, Date.now());
+  }
+  for (const key of heldNow) releasedAtRef.current.delete(key);
+  heldKeysRef.current = heldNow;
   const totalTokens = durableDetail
     ? durableDetail.run.totalTokensIn + durableDetail.run.totalTokensOut
     : 0;
@@ -104,8 +117,13 @@ export const SessionAgentsPanel: React.FC = () => {
   const stopRow = async (row: AgentRow) => {
     if (stoppingKey) return;
     setStoppingKey(row.key);
+    setStopHintKey(null);
     try {
-      await stopSessionAgent(row, sessionId, activeRunId ?? undefined);
+      const result = await stopSessionAgent(row, sessionId, activeRunId ?? undefined);
+      if (result !== 'stopped') setStopHintKey(row.key);
+      if (row.kind === 'task') {
+        await useBackgroundTaskStore.getState().refreshTasks().catch(() => undefined);
+      }
     } finally {
       setStoppingKey(null);
     }
@@ -140,11 +158,11 @@ export const SessionAgentsPanel: React.FC = () => {
   };
 
   const mergeLabel = mergeState === 'merged'
-    ? text.mergeState.merged.replace('{count}', String(rows.filter((row) => row.status !== 'standby').length))
+    ? interpolatePlural(text.mergeState.merged, rows.filter((row) => row.status !== 'standby').length)
     : mergeState === 'reported'
-      ? text.mergeState.reported.replace('{count}', String(rows.filter((row) => row.status !== 'standby').length))
+      ? interpolatePlural(text.mergeState.reported, rows.filter((row) => row.status !== 'standby').length)
       : mergeState === 'conflict'
-        ? text.mergeState.conflict.replace('{count}', String(conflicts.length))
+      ? interpolatePlural(text.mergeState.conflict, conflicts.length)
         : mergeState === 'waiting'
           ? text.mergeState.waiting
           : null;
@@ -262,9 +280,17 @@ export const SessionAgentsPanel: React.FC = () => {
                     >
                       {statusLabel(row)}
                     </span>
+                    {stopHintKey === row.key && (
+                      <span
+                        data-testid={`agents-panel-stop-hint-${row.key}`}
+                        className="text-[10px] text-badge-warning"
+                      >
+                        · {text.panel.stopFailedHint}
+                      </span>
+                    )}
                     {/* N-FIX-WF-STALL-SPAWN-AGENT：spawn_agent 静默子代理的行级软提示， */}
                     {/* 文案复用 workflowStall.quiet（与 composer 工具条 90s 提示同一词条）。 */}
-                    {isAgentRowQuiet(row, hintNow) && (
+                    {isAgentRowQuiet(row, hintNow, releasedAtRef.current.get(row.key)) && (
                       <span
                         data-testid={`agents-panel-quiet-${row.key}`}
                         className="truncate text-[10px] text-badge-warning"

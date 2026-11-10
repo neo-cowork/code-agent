@@ -78,10 +78,8 @@ import { ComposerChipsRow } from './ComposerChipsRow';
 import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
 import { ModelSwitcher } from '../../../StatusBar/ModelSwitcher';
 import ipcService from '../../../../services/ipcService';
-import {
-  invokeNativeCommandAction,
-  isNativeCommandRuntimeAvailable,
-} from '../../../../services/nativeCommandFacade';
+import { invokeNativeCommandAction, isNativeCommandRuntimeAvailable } from '../../../../services/nativeCommandFacade';
+import { toast } from '../../../../hooks/useToast';
 import { goalComposerDraftToParsed } from './parseGoalCommand';
 import { LoopStatusBar } from './LoopStatusBar';
 import { ScheduleComposerCard } from './ScheduleComposerCard';
@@ -90,11 +88,7 @@ import { GoalConfirmCard } from './GoalConfirmCard';
 import { SeedComposerCard, type SeedComposerKind } from './SeedComposerCard';
 import { buildVerifyCandidates } from './goalConfirm';
 import { readWorkspaceFile } from '../../../design/designFiles';
-import {
-  buildDirectRoutingPlaceholder,
-  getPreferredAgentMentionToken,
-  isLeadingAgentMentionInput,
-} from './agentMentionRouting';
+import { buildDirectRoutingPlaceholder, getPreferredAgentMentionToken, isLeadingAgentMentionInput } from './agentMentionRouting';
 import { useDragAndDrop } from './useDragAndDrop';
 import { useChatInputEnvelope } from './useChatInputEnvelope';
 import { useChatInputAgentCommand } from './useChatInputAgentCommand';
@@ -107,10 +101,8 @@ import { UnsentDraftNotice } from './UnsentDraftNotice';
 import { AgentCommandAutocomplete } from './AgentCommandAutocomplete';
 import { useScheduleDraft } from './useScheduleDraft';
 import { useChatInputComposerActions } from './useChatInputComposerActions';
-import {
-  clearDebugDraftParamsFromCurrentUrl,
-  readDebugDraftFromLocation,
-} from './debugDraftUrl';
+import { clearDebugDraftParamsFromCurrentUrl, readDebugDraftFromLocation } from './debugDraftUrl';
+import { mergeAttachments } from './attachmentDedupe';
 import { getTrailingSlashToken } from './slashPickerModel';
 import type { InlineChipRef } from './composerRichTextModel';
 import type { InlineChipView } from './InlineComposerChip';
@@ -120,6 +112,7 @@ import { AgentChip } from './AgentChip';
 import { MountedConnectorIcons } from './MountedConnectorIcons';
 import { getAgentSlashCommandQuery } from './agentCommand';
 import { ComposerUploadStatus } from './ComposerUploadStatus';
+import { ComposerRejectedUploadsNotice } from './ComposerRejectedUploadsNotice';
 import { QueuedInputTray } from './QueuedInputTray';
 import { composerEditModeState } from './composerEditMode';
 import { useBundledCapabilityStore } from '../../../../stores/bundledCapabilityStore';
@@ -333,6 +326,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [editingQueuedInputId, setEditingQueuedInputId] = useState<string | null>(null);
 
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
+  const attachmentsRef = useRef(attachments); attachmentsRef.current = attachments;
   const [sessionReferences, setSessionReferences] = useState<ConversationSessionReference[]>([]);
   const [artifactReferences, setArtifactReferences] = useState<ConversationArtifactReference[]>([]);
   const pendingResendClientMessageIdRef = useRef<string | null>(null);
@@ -587,6 +581,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         id: attachment.id,
         label: attachment.name,
         category: attachment.category,
+        thumbnail: attachment.category === 'image' ? attachment.thumbnail : undefined,
       });
     }
     for (const item of pinnedLibraryItems) {
@@ -711,9 +706,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   // Expose addAttachments to parent via ref (for global drop zone)
   useImperativeHandle(ref, () => ({
     addAttachments: (items: MessageAttachment[]) => {
-      if (items.length > 0) {
-        setAttachments((prev) => [...prev, ...items].slice(0, UI.MAX_ATTACHMENTS_DROP));
-      }
+      if (items.length === 0) return;
+      const result = mergeAttachments(attachmentsRef.current, items, UI.MAX_ATTACHMENTS_DROP);
+      setAttachments(result.attachments);
+      if (result.skippedCount > 0) toast.show('warning', t.chatInput.attachmentAlreadyAdded.replace('{name}', result.duplicates[0]?.incoming.name ?? ''));
     },
     setDraft: (draft) => {
       const mode = composerEditModeState(
@@ -747,7 +743,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       setValue((prev) => appendComposerPrompt(prev, prompt));
       inputAreaRef.current?.focus();
     },
-  }), [inlineChips, pendingAppshot]);
+  }), [inlineChips, pendingAppshot, t.chatInput.attachmentAlreadyAdded]);
 
   useEffect(() => {
     setVoiceInputContext(null);
@@ -851,20 +847,24 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     void (async () => {
       const attachment = await buildMentionAttachment({ path: row.path, name: row.name, workingDirectory });
       // 读盘期间用户可能继续输入：以最新文本重定位触发词，找不到就交给对账把 chip 补到末尾
+      const result = mergeAttachments(attachmentsRef.current, [attachment], UI.MAX_ATTACHMENTS_DROP);
       const freshCaret = editor.getCaretOffset();
       const freshBefore = latestValueRef.current.slice(0, freshCaret);
       const freshMatch = freshBefore.match(/@([^\s@]*)$/);
       if (freshMatch) {
-        editor.replaceRangeWithChip(freshCaret - freshMatch[0].length, freshCaret, {
+        const triggerStart = freshCaret - freshMatch[0].length;
+        if (result.skippedCount > 0) editor.replaceRangeWithText(triggerStart, freshCaret, '');
+        else editor.replaceRangeWithChip(triggerStart, freshCaret, {
           key: `file:${attachment.id}`,
           kind: 'file',
           id: attachment.id,
         });
       }
-      setAttachments((prev) => [...prev, attachment].slice(0, UI.MAX_ATTACHMENTS_DROP));
+      setAttachments(result.attachments);
+      if (result.skippedCount > 0) toast.show('warning', t.chatInput.attachmentAlreadyAdded.replace('{name}', attachment.name));
     })();
     editor.focus();
-  }, [currentSessionId]);
+  }, [currentSessionId, t.chatInput.attachmentAlreadyAdded]);
   const replaceAtTriggerWithChip = useCallback((chip: InlineChipRef) => {
     const editor = inputAreaRef.current;
     if (!editor) return;
@@ -900,8 +900,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     onSessionSelect: handleAtSessionSelect,
     onArtifactSelect: handleAtArtifactSelect,
   });
-  const { search: searchAtMention, dismiss: dismissAtMention } = atMention;
-
   // Track input changes for @ autocomplete and / command palette
   const handleValueChange = useCallback((newValue: string) => {
     setValue(newValue);
@@ -910,7 +908,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     }
     if (newValue.toLowerCase().startsWith('/agent ')) {
       setShowSlashPopover(false);
-      dismissAtMention();
+      atMention.dismiss();
       return;
     }
     // 触发词识别是光标位置感知的：只看光标前的纯文本算尾 token
@@ -921,17 +919,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     if (slashToken) {
       setShowSlashPopover(true);
       setSlashFilter(slashToken.query);
-      dismissAtMention();
+      atMention.dismiss();
       return;
     }
     setShowSlashPopover(false);
     if (isLeadingAgentMentionInput(newValue, swarmAgents)) {
-      dismissAtMention();
+      atMention.dismiss();
       return;
     }
     // Check for @ pattern at cursor position
-    searchAtMention(newValue, caret);
-  }, [dismissAtMention, pendingPromptCommand, searchAtMention, swarmAgents]);
+    atMention.search(newValue, caret);
+  }, [atMention.dismiss, atMention.search, pendingPromptCommand, swarmAgents]);
 
   const focusComposer = useCallback(() => {
     requestAnimationFrame(() => inputAreaRef.current?.focus());
@@ -1040,6 +1038,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     onSteer,
     onComposerDraftOptimisticClear: composerDraft.noteOptimisticClear,
     onComposerDraftSendSettled: composerDraft.noteSendSettled,
+    onDraftCleared: atMention.dismiss,
     onQueuedInputChanged: () => setQueuedInputRevision((value) => value + 1),
     agentEntries,
     buildEnvelope,
@@ -1360,6 +1359,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           <SlotEntry id="upload">
             <ComposerUploadStatus active={isUploading} pendingSend={pendingUploadSend} />
           </SlotEntry>
+
+          <SlotEntry id="rejected-uploads"><ComposerRejectedUploadsNotice /></SlotEntry>
 
           {/* Combo Skill suggestion card（L4 建议层） */}
           <SlotEntry id="combo-skill" active={Boolean(comboSuggestion)}>

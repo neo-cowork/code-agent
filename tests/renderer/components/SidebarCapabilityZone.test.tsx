@@ -12,6 +12,7 @@ vi.mock('../../../src/renderer/services/cronClient', () => ({ cronClient: { list
 import { SidebarCapabilityZone } from '../../../src/renderer/components/features/sidebar/SidebarCapabilityZone';
 import { useCronStore } from '../../../src/renderer/stores/cronStore';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { MEMORY_CONSOLIDATION } from '../../../src/shared/constants/memory';
 
 function makeJob(overrides: Partial<CronJobDefinition>): CronJobDefinition {
   return { id: 'job-1', runsOn: 'local', name: '英语单词', scheduleType: 'cron', schedule: { type: 'cron', expression: '30 8 * * *' }, action: { type: 'agent', agentType: 'general', prompt: '每天推荐 5 个英语单词' }, enabled: true, createdAt: 1, updatedAt: 1, ...overrides };
@@ -70,6 +71,46 @@ describe('SidebarCapabilityZone', () => {
     expect(automation.textContent).not.toMatch(/\d{2}:\d{2}/);
     expect(automation.textContent).not.toContain('英语单词');
   });
+  it('任务时区不同于本机时，侧栏悬浮提示按任务时区显示并标出时区名', async () => {
+    const initialTz = process.env.TZ;
+    const initialLanguage = useAppStore.getState().language;
+    process.env.TZ = 'America/Los_Angeles';
+    useAppStore.setState({ language: 'zh' });
+    try {
+      listJobs.mockResolvedValue([makeJob({
+        nextRunAt: Date.parse('2030-01-01T07:00:00Z'),
+        schedule: { type: 'cron', expression: '0 15 * * 1-5', timezone: 'Asia/Shanghai' },
+      })]);
+      getStats.mockResolvedValue(makeStats(0));
+      render(<SidebarCapabilityZone />);
+      await waitFor(() => expect(screen.getByTestId('sidebar-capability-automation').getAttribute('title'))
+        .toBe('下次 1/1 15:00（中国标准时间） · 英语单词'));
+    } finally {
+      if (initialTz === undefined) delete process.env.TZ;
+      else process.env.TZ = initialTz;
+      useAppStore.setState({ language: initialLanguage });
+    }
+  });
+  it('任务时区与本机相同时，侧栏悬浮提示保持原有短格式', async () => {
+    const initialTz = process.env.TZ;
+    const initialLanguage = useAppStore.getState().language;
+    process.env.TZ = 'America/Los_Angeles';
+    useAppStore.setState({ language: 'zh' });
+    try {
+      listJobs.mockResolvedValue([makeJob({
+        nextRunAt: Date.parse('2030-01-01T07:00:00Z'),
+        schedule: { type: 'cron', expression: '0 23 * * 1-5', timezone: 'America/Los_Angeles' },
+      })]);
+      getStats.mockResolvedValue(makeStats(0));
+      render(<SidebarCapabilityZone />);
+      await waitFor(() => expect(screen.getByTestId('sidebar-capability-automation').getAttribute('title'))
+        .toBe('下次 12/31 23:00 · 英语单词'));
+    } finally {
+      if (initialTz === undefined) delete process.env.TZ;
+      else process.env.TZ = initialTz;
+      useAppStore.setState({ language: initialLanguage });
+    }
+  });
   it('启用任务数收进悬浮提示，禁用任务不参与计数', async () => {
     listJobs.mockResolvedValue([makeJob({ id: 'enabled', nextRunAt: undefined }), makeJob({ id: 'disabled', enabled: false, nextRunAt: undefined })]); getStats.mockResolvedValue(makeStats(0)); render(<SidebarCapabilityZone />);
     await waitFor(() => expect(screen.getByTestId('sidebar-capability-automation').getAttribute('title')).toBe('1 个任务'));
@@ -91,5 +132,24 @@ describe('SidebarCapabilityZone', () => {
     listJobs.mockResolvedValue([]); getStats.mockResolvedValue(makeStats(0)); render(<SidebarCapabilityZone />);
     screen.getByTestId('sidebar-capability-automation').click();
     expect(useAppStore.getState().showCronCenter).toBe(true);
+  });
+  it('内置记忆整理任务在侧栏下次运行提示中按语言展示名称', async () => {
+    const builtinJob = makeJob({
+      id: 'builtin-mem',
+      name: '[Maintenance] Light Memory consolidation',
+      tags: [MEMORY_CONSOLIDATION.JOB_TAG],
+      nextRunAt: Date.now() + 3_600_000,
+    });
+    useAppStore.setState({ language: 'zh' });
+    listJobs.mockResolvedValue([builtinJob]); getStats.mockResolvedValue(makeStats(0));
+    const { rerender } = render(<SidebarCapabilityZone />);
+    const automation = screen.getByTestId('sidebar-capability-automation');
+    await waitFor(() => expect(automation.getAttribute('title')).toMatch(/下次 .+ · 记忆整理/));
+    expect(automation.getAttribute('title')).not.toContain('[Maintenance]');
+
+    useAppStore.setState({ language: 'en' });
+    rerender(<SidebarCapabilityZone />);
+    expect(automation.getAttribute('title')).toContain('[Maintenance] Light Memory consolidation');
+    useAppStore.setState({ language: 'zh' });
   });
 });

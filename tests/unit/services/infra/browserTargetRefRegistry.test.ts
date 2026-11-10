@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { BrowserTargetRefRegistry } from '../../../../src/host/services/infra/browser/targetRefRegistry';
+import { dragBrowserTargetRefs } from '../../../../src/host/services/infra/browser/browserSurfaceInteractions';
 import type {
   BrowserTab,
   BrowserTargetRef,
@@ -71,6 +72,9 @@ function fakeTab(options: {
       context: () => ({ newCDPSession: async () => session }),
       mouse: {
         click: async (x: number, y: number) => options.mouseClicks?.push({ x, y }),
+        move: vi.fn(async () => undefined),
+        down: vi.fn(async () => undefined),
+        up: vi.fn(async () => undefined),
       },
     } as unknown as BrowserTab['page'],
   };
@@ -216,5 +220,53 @@ describe('BrowserTargetRefRegistry owner and document fences', () => {
     await expect(registry.resolve(secondInner, () => fakeTab())).resolves.toMatchObject({
       targetRef: secondInner,
     });
+  });
+
+  it('resolves bare refId string targetRef for click, type (fill), and drag while keeping object form working', async () => {
+    const registry = new BrowserTargetRefRegistry();
+    const snapshotId = registry.createSnapshotId();
+    const sourceRef = targetRef(snapshotId);
+    const destRef: BrowserTargetRef = {
+      ...targetRef(snapshotId),
+      refId: `tref_${snapshotId}_2`,
+      selector: '#dropzone',
+      backendNodeId: 43,
+    };
+    const runtimeCalls: Array<Record<string, unknown>> = [];
+    const mouseClicks: Array<{ x: number; y: number }> = [];
+    const tab = fakeTab({ mouseClicks, runtimeCalls });
+    registry.addRecords([record(sourceRef), record(destRef)]);
+
+    // Bare refId string form for click, type (fill), and drag
+    await expect(registry.click(sourceRef.refId, () => tab)).resolves.toEqual(sourceRef);
+    await expect(registry.fill(sourceRef.refId, 'typed via string ref', () => tab)).resolves.toEqual(sourceRef);
+    await expect(dragBrowserTargetRefs({
+      sourceTargetRefInput: sourceRef.refId,
+      destinationTargetRefInput: destRef.refId,
+      registry,
+      getTab: () => tab,
+    })).resolves.toEqual({
+      source: sourceRef,
+      destination: destRef,
+    });
+
+    // Object form still works for click, type (fill), and drag
+    await expect(registry.click(sourceRef, () => tab)).resolves.toEqual(sourceRef);
+    await expect(registry.fill(sourceRef, 'typed via object ref', () => tab)).resolves.toEqual(sourceRef);
+    await expect(dragBrowserTargetRefs({
+      sourceTargetRefInput: sourceRef,
+      destinationTargetRefInput: destRef,
+      registry,
+      getTab: () => tab,
+    })).resolves.toEqual({
+      source: sourceRef,
+      destination: destRef,
+    });
+
+    expect(mouseClicks).toEqual([{ x: 60, y: 45 }, { x: 60, y: 45 }]);
+    expect(runtimeCalls.some((call) => (
+      String(call.functionDeclaration).includes('HTMLInputElement')
+      && JSON.stringify(call.arguments) === JSON.stringify([{ value: 'typed via string ref' }])
+    ))).toBe(true);
   });
 });

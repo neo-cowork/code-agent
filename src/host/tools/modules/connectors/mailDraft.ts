@@ -14,6 +14,7 @@ import type {
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { describeAppleScriptWriteFailure } from './appleScriptWriteFailure';
 import { mailDraftSchema as schema } from './mailDraft.schema';
 
 function normalizeAddresses(value: unknown): string[] {
@@ -140,7 +141,13 @@ async function executeMailDraft(
       },
     };
   } catch (error) {
-    const failure = `Mail draft failed: ${error instanceof Error ? error.message : String(error)}`;
+    const failure = describeAppleScriptWriteFailure(
+      'Mail',
+      'Mail draft failed',
+      error,
+      ctx.logger,
+      schema.name,
+    );
     const to = normalizeAddresses(args.to);
     return {
       ok: false,

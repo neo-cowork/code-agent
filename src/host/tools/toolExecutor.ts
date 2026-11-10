@@ -36,6 +36,7 @@ import { evaluateToolSlotDataDirAccess, FOREIGN_SLOT_DATA_DIR_CODE, type SlotDat
 import { createFileCheckpointIfNeeded } from './middleware/fileCheckpointMiddleware';
 import { getFileCheckpointService } from '../services/checkpoint';
 import { getConfirmationGate } from '../agent/confirmationGate';
+import type { ConfirmationPreview } from '../../shared/contract/confirmation';
 import { computeLedgerArgsSurvival } from '../agent/parkedApprovalSurvival';
 import {
   bashCommandRequiresPermission,
@@ -95,6 +96,7 @@ import {
 } from '../sandbox/osSandboxPolicy';
 import { resolveBackgroundWorkspaceAuthority } from '../runtime/workspaceAuthority';
 import { resolveWorkspacePath } from '../runtime/workspaceScope';
+import { skillBoundaryAllowsTool } from './skillBoundaryScope';
 import { isDangerousCommand, sanitizeToolParams, toolMatchesPatternSet, truncateToolOutput } from './toolExecutorHelpers';
 import { prepareNativeToolCheckpoint } from './nativeToolCheckpoint';
 import { annotateToolExecution, beginApprovalWait, endApprovalWait, getApprovalWaitMs, reportUndeclaredToolParams, requestPermissionWithTelemetry } from './toolExecutionTelemetry';
@@ -310,6 +312,8 @@ export interface ToolExecutorConfig {
    * （否则父会话开 bypass 时被收缩的子 agent 会借会话档扩权）。主 agent 不传。
    */
   permissionModeOverride?: PermissionMode;
+  /** Treat permissionModeOverride as an inherited ceiling and apply later session tightening. */
+  permissionModeOverrideIsInheritedCeiling?: boolean;
   /** Present only for immutable per-run executors. */
   runContext?: RunContext;
   /** Optional final dispatch hop. Returning null falls back to the protocol resolver. */
@@ -472,6 +476,7 @@ export class ToolExecutor {
   private executionTopology: ExecutionTopology;
   private auditEnabled = true;
   private permissionModeOverride?: PermissionMode;
+  private readonly permissionModeOverrideIsInheritedCeiling: boolean;
   private readonly forcePermissionHandler: boolean;
   private readonly ledgerOrigin: ToolLedgerOrigin;
   private readonly telemetryCollector?: TelemetryCollector;
@@ -482,6 +487,7 @@ export class ToolExecutor {
     this.requestPermission = config.requestPermission;
     this.workingDirectory = nodePath.resolve(config.workingDirectory);
     this.permissionModeOverride = config.permissionModeOverride;
+    this.permissionModeOverrideIsInheritedCeiling = config.permissionModeOverrideIsInheritedCeiling === true;
     this.forcePermissionHandler = config.forcePermissionHandler === true;
     this.runContext = config.runContext;
     this.dispatchTool = config.dispatchTool;
@@ -524,6 +530,7 @@ export class ToolExecutor {
       workingDirectory: runContext.cwd,
       // run-scoped 派生必须继承收缩档，否则子 agent 的 effectiveMode 在此丢失、扩权洞重开
       permissionModeOverride: this.permissionModeOverride,
+      permissionModeOverrideIsInheritedCeiling: this.permissionModeOverrideIsInheritedCeiling,
       executionTopology: this.executionTopology,
       runContext,
       dispatchTool: dispatchTool ?? this.dispatchTool,
@@ -908,6 +915,7 @@ export class ToolExecutor {
           failureCode: AgentFailureCode.PermissionDenied,
           slotName: slotAccess.slotName,
           slotRoot: slotAccess.slotRoot,
+          hostReason: createHostReason(HostReasonCode.ForeignDataDir, slotAccess.reason),
         },
       };
     }
@@ -1229,6 +1237,7 @@ export class ToolExecutor {
 
     const executionTopology = options.executionTopology ?? this.executionTopology;
     let guardFabricForcesApproval = false;
+    let guardFabricAskRuleOnly = false;
     let guardFabricTraceStep: import('../../shared/contract/decisionTrace').DecisionStep | undefined;
     const guardFabricGate = evaluateGuardFabricGate({
       executionToolName,
@@ -1253,10 +1262,14 @@ export class ToolExecutor {
       return {
         success: false,
         error: guardFabricGate.deny.error,
+        metadata: guardFabricGate.deny.hostReason
+          ? { hostReason: guardFabricGate.deny.hostReason }
+          : undefined,
       };
     }
     if (guardFabricGate.forceApproval) {
       guardFabricForcesApproval = true;
+      guardFabricAskRuleOnly = guardFabricGate.userAskRuleOnly === true;
       guardFabricTraceStep = guardFabricGate.traceStep;
     }
 
@@ -1504,12 +1517,16 @@ export class ToolExecutor {
     // 只约束 requiresPermission 的工具（只读工具不受限）。
     const boundaryViolation = options.skillToolBoundary
       && toolDef.requiresPermission
-      && !toolMatchesPatternSet(executionToolName, params, new Set(options.skillToolBoundary.allowedTools))
+      && !skillBoundaryAllowsTool(options.skillToolBoundary, executionToolName, params)
       ? options.skillToolBoundary
       : undefined;
 
     // B1 第 4 档「只读探索」判定：语义与档位改写规则集中在 toolPermissionClassification.ts
-    const sessionPermissionMode = resolveSessionPermissionMode(this.permissionModeOverride, options.sessionId);
+    const sessionPermissionMode = resolveSessionPermissionMode(
+      this.permissionModeOverride,
+      options.sessionId,
+      this.permissionModeOverrideIsInheritedCeiling,
+    );
     // PROTECTED_WRITE_PATHS：policyEnforcer 之后、prefix_rule 之前。allow / hook 预批 /
     // classifier W1 / acceptEdits 都不能放行；只有 bypassPermissions 档保持放行语义。
     const protectedWriteForcesConfirmation = sessionPermissionMode !== 'bypassPermissions'
@@ -1846,7 +1863,7 @@ export class ToolExecutor {
           'ask',
           `命令无法可靠拆词，审批结果不能放行：${commandAnalysisFailedReason}`,
         );
-      } else if (!guardFabricForcesApproval) {
+      } else if (!guardFabricForcesApproval || guardFabricAskRuleOnly) {
         try {
           // 三分支解析 + readOnly/档位改写规则见 toolPermissionClassification.ts
           // Protected write means "cannot auto-approve", not "skip the classifier".
@@ -1869,6 +1886,18 @@ export class ToolExecutor {
             sessionPermissionMode,
             peerOriginForcesConfirmation,
             launderRetryForcesAsk,
+            browserSubmitProbe: async () => {
+              const {
+                getManagedBrowserProviderAdapter,
+                surfaceIdentityFromToolContext,
+              } = await import('../services/surfaceExecution/ManagedBrowserProviderAdapter');
+              const surfaceIdentity = surfaceIdentityFromToolContext(context);
+              if (surfaceIdentity) {
+                return getManagedBrowserProviderAdapter().getBrowserService(surfaceIdentity);
+              }
+              const { getBrowserService } = await import('../services/infra/browserPool');
+              return getBrowserService(context.agentId);
+            },
           });
           // B1: EXTERNAL 风险类打标进 decisionTrace（result='allow'，不改变审批结果，仅供
           // B2 无人值守停车 / B4 target 授权与审计消费）。此处入 traceBuilder 覆盖 deny/ask 路径；
@@ -1885,6 +1914,7 @@ export class ToolExecutor {
             classification.decision === 'approve'
             && !this.forcePermissionHandler
             && !protectedWriteForcesConfirmation
+            && !guardFabricForcesApproval
             && !computerApp
           ) {
             logger.info('Auto-approved by classifier', {
@@ -2007,6 +2037,31 @@ export class ToolExecutor {
       // ADR-088 一期：密码框输入交回用户。敏感判定必须早于 resolvePreAskGrant 消费——
       // 已记住的应用授权压不掉交回卡；未命中才进入既有按应用审批链（规格 §2 判定顺序）。
       const cuaSensitiveStep = classifyCuaSensitiveStep(executionToolName, params);
+      // E2 必须先于已记住授权消费：确认门是独立硬门，授权命中不能跳过它。
+      // buildPreview / assessRiskLevel / shouldConfirm 都是纯读；失败时沿用原有
+      // fail-open 语义，只记录 debug 并按“不强制确认”处理。
+      let confirmationPreview: ConfirmationPreview | undefined;
+      let confirmationRiskLevel: 'low' | 'medium' | 'high' = 'low';
+      let shouldForceConfirm = false;
+      try {
+        const gate = getConfirmationGate();
+        confirmationPreview = gate.buildPreview(executionToolName, params);
+        confirmationRiskLevel = gate.assessRiskLevel(executionToolName, params);
+        shouldForceConfirm = gate.shouldConfirm(
+          {
+            toolName: executionToolName,
+            params,
+            preview: confirmationPreview,
+            riskLevel: confirmationRiskLevel,
+          },
+          effectiveSessionId || 'global',
+        );
+      } catch (error) {
+        confirmationPreview = undefined;
+        confirmationRiskLevel = 'low';
+        shouldForceConfirm = false;
+        logger.debug('ConfirmationGate preview error:', error);
+      }
       const preAsk = needsUserApproval ? resolvePreAskGrant({
         toolName: executionToolName,
         sessionId: effectiveSessionId,
@@ -2017,7 +2072,9 @@ export class ToolExecutor {
           || policyForcesConfirmation || unresolvedWriteTargetForcesAsk
           || Boolean(boundaryViolation) || readOnlyForcesConfirmation
           || peerOriginForcesConfirmation || launderRetryForcesAsk
-          || Boolean(cuaSensitiveStep),
+          || Boolean(cuaSensitiveStep) || boundaryAskForcesConfirmation
+          || Boolean(deterministicAskReason) || this.forcePermissionHandler
+          || shouldForceConfirm,
       }) : null;
       if (preAsk) {
         needsUserApproval = false;
@@ -2171,33 +2228,16 @@ export class ToolExecutor {
       permissionRequest.decisionTrace = traceBuilder.build('ask');
 
       // E2: 确认门控 - 为高风险写操作附加预览并强制确认
-      try {
-        const gate = getConfirmationGate();
-        const preview = gate.buildPreview(executionToolName, params);
-        const riskLevel = gate.assessRiskLevel(executionToolName, params);
-        const shouldForceConfirm = gate.shouldConfirm(
-          {
-            toolName: executionToolName,
-            params,
-            preview,
-            riskLevel,
-          },
-          effectiveSessionId || 'global'
-        );
-
-        if (preview) {
-          permissionRequest.details.preview = preview;
-        }
-        if (shouldForceConfirm) {
-          permissionRequest.forceConfirm = true;
-          // 确认门也是 forceConfirm 成因之一：boundary-only 标记必须摘掉（返修 r2）。
-          permissionRequest.forceConfirmBoundaryOnly = false;
-          permissionRequest.dangerLevel = riskLevel === 'high'
-            ? 'danger'
-            : (riskLevel === 'medium' ? 'warning' : 'normal');
-        }
-      } catch (error) {
-        logger.debug('ConfirmationGate preview error:', error);
+      if (confirmationPreview) {
+        permissionRequest.details.preview = confirmationPreview;
+      }
+      if (shouldForceConfirm) {
+        permissionRequest.forceConfirm = true;
+        // 确认门也是 forceConfirm 成因之一：boundary-only 标记必须摘掉（返修 r2）。
+        permissionRequest.forceConfirmBoundaryOnly = false;
+        permissionRequest.dangerLevel = confirmationRiskLevel === 'high'
+          ? 'danger'
+          : (confirmationRiskLevel === 'medium' ? 'warning' : 'normal');
       }
 
       // ADR-088 一期：敏感步骤交回卡（放在确认门之后，details 整体替换——被键入的文本、

@@ -26,6 +26,7 @@ import ipcService from '../../../services/ipcService';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import { toast } from '../../../hooks/useToast';
 import { isPreviewable } from '../../../utils/previewable';
 import { copyPathToClipboard, isWebMode, openExternalLink } from '../../../utils/platform';
@@ -201,7 +202,7 @@ export const LibraryPanel: React.FC = () => {
       if (paths.length === 0) throw new Error(t.library.importFailed);
       const result = await importLibraryFiles({ paths, projectId });
       if (result.items.length > 0) {
-        toast.success(t.library.importedCount.replace('{count}', String(result.items.length)));
+        toast.success(interpolatePlural(t.library.importedCount, result.items.length));
       }
       for (const err of result.errors) {
         toast.error(`${t.library.importFailed}: ${err.message}`);
@@ -518,7 +519,7 @@ export const LibraryPanel: React.FC = () => {
                           <button type="button" onClick={() => toggleGroup(group.id)} className="inline-flex items-center gap-1.5 hover:text-zinc-100" aria-expanded={!collapsed}>
                             {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                             <span>{group.name}</span>
-                            <span className="text-[11px] font-normal text-zinc-500">{t.library.groupCount.replace('{count}', String(group.items.length))}</span>
+                            <span className="text-[11px] font-normal text-zinc-500">{interpolatePlural(t.library.groupCount, group.items.length)}</span>
                           </button>
                         </th>
                       </tr>

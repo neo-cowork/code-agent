@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { DecisionStep, DecisionTrace } from '../../shared/contract/decisionTrace';
+import { HostReasonCode, createHostReason, type HostReasonPayload } from '../../shared/contract/permission';
 import { getGuardFabric, type ExecutionTopology } from '../permissions';
 import { resolveGuardLevel } from '../permissions/guardFabric';
 import type { PermissionLevel } from '../../shared/contract/tool';
@@ -10,6 +11,8 @@ import { getPolicyEngine } from '../permissions/policyEngine';
 import { resolveEffectivePolicyRules } from '../permissions/runPolicySnapshot';
 import { createLogger } from '../services/infra/logger';
 import { createTraceBuilder } from '../security/decisionTraceBuilder';
+import { isBashToolName } from './toolNames';
+import { matchUserAskRule } from './userAskRuleGate';
 
 const logger = createLogger('GuardFabricGate');
 
@@ -28,9 +31,13 @@ export interface GuardFabricGateResult {
   deny?: {
     error: string;
     reason: string;
+    /** 结构化原因（稳定 code + toolName 元数据），renderer 登记表直查，不落英文原句。 */
+    hostReason?: HostReasonPayload;
     trace?: DecisionTrace;
   };
   forceApproval?: boolean;
+  /** forceApproval 仅来自用户 ask 规则：分类器仍要跑（deny 兜底），但 approve 不得放行。 */
+  userAskRuleOnly?: boolean;
   traceStep?: DecisionStep;
 }
 
@@ -68,9 +75,11 @@ function evaluateUserDeny(input: GuardFabricGateInput): GuardFabricGateResult['d
   const trace = createTraceBuilder(input.executionToolName)
     .addStep('policy_enforcer', matchedRule.id, 'deny', reason)
     .build('deny');
+  const error = `Blocked by your permission deny rule (${matchedRule.name}). This tool call is denied by the user's settings; do not retry it or try to achieve the same effect another way.`;
   return {
-    error: `Blocked by your permission deny rule (${matchedRule.name}). This tool call is denied by the user's settings; do not retry it or try to achieve the same effect another way.`,
+    error,
     reason,
+    hostReason: createHostReason(HostReasonCode.PermissionDeniedUserRule, error, { toolName: input.executionToolName }),
     trace,
   };
 }
@@ -87,9 +96,11 @@ function evaluateBuiltinHardDeny(input: GuardFabricGateInput): GuardFabricGateRe
   const trace = createTraceBuilder(input.executionToolName)
     .addStep('policy_enforcer', rule.id, 'deny', reason)
     .build('deny');
+  const error = `Blocked by built-in safety rule (${rule.name}): ${rule.reason}. Do not retry. Write inside the workspace/project directory instead, or ask the user to make this change themselves.`;
   return {
-    error: `Blocked by built-in safety rule (${rule.name}): ${rule.reason}. Do not retry. Write inside the workspace/project directory instead, or ask the user to make this change themselves.`,
+    error,
     reason,
+    hostReason: createHostReason(HostReasonCode.PermissionDeniedSafetyRule, error, { toolName: input.executionToolName }),
     trace,
   };
 }
@@ -101,10 +112,23 @@ export function evaluateGuardFabricGate(input: GuardFabricGateInput): GuardFabri
   const builtinDeny = evaluateBuiltinHardDeny(input);
   if (builtinDeny) return { deny: builtinDeny };
 
+  // 用户 ask 规则（Bash(rm *) → ask）命中：强制进审批，不被自动放行捷径越过。
+  // deny 已在上面先行；非 main 拓扑的 topology 裁决（deny）仍优先于这里的 ask。
+  const userAsk = isBashToolName(input.policyToolName) && typeof input.params.command === 'string'
+    ? matchUserAskRule(buildPolicyRequest(input), input.sessionId, input.executionToolName)
+    : undefined;
+  const askResult: GuardFabricGateResult = userAsk ? { forceApproval: true, userAskRuleOnly: true, traceStep: userAsk.traceStep } : {};
+
   if (input.topology === 'main') {
-    return {};
+    return askResult;
   }
 
+  const topologyResult = evaluateTopologyGate(input);
+  if (topologyResult.deny || topologyResult.forceApproval) return topologyResult;
+  return askResult;
+}
+
+function evaluateTopologyGate(input: GuardFabricGateInput): GuardFabricGateResult {
   try {
     const guardDecision = getGuardFabric().evaluate({
       tool: input.policyToolName,

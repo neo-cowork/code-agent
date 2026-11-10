@@ -21,10 +21,12 @@ import ipcService from '../../../services/ipcService';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { CRON_REVIEW_INBOX_TIMEOUTS } from '@shared/constants';
 import { createLogger } from '../../../utils/logger';
+import { localizeParkedApprovalClosureText } from '../../../utils/toolExecutionPresentation';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useCronStore } from '../../../stores/cronStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import { toast } from '../../../hooks/useToast';
 import { Button } from '../../primitives/Button';
 import { SensitiveStepParkedRow } from '../../PermissionDialog/SensitiveStepHandbackCard';
@@ -212,7 +214,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
               {parked.some((item) => item.status !== 'voided') && (
                 <div className="mb-2 flex items-center gap-2 text-xs font-medium text-badge-warning">
                   <ShieldAlert className="h-3.5 w-3.5" />
-                  {cc.parkedTitle.replace('{count}', String(parked.filter((item) => item.status === 'pending').length))}
+                  {interpolatePlural(cc.parkedTitle, parked.filter((item) => item.status === 'pending').length)}
                 </div>
               )}
               <div className="space-y-1.5">
@@ -226,7 +228,8 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                       >
                         <div className="truncate text-sm text-zinc-200">{item.displayTool ?? item.tool}</div>
                         <div className="text-[11px] text-zinc-500">
-                          {cc.parkedVoidedLabel}：{item.voidReason}
+                          {/* 收口句按当前语言展示（老行持久化的是中文原句）；非收口文本原样保留 */}
+                          {cc.parkedVoidedLabel}：{localizeParkedApprovalClosureText(item.voidReason, t) ?? item.voidReason}
                         </div>
                       </div>
                     );

@@ -586,7 +586,17 @@ export const enSettingsModels = {
       grid: {
         title: 'All connectors',
         description: 'Browse by service source and where it runs. Connected services stay separate from services you can discover.',
-        connectedSummarySuffix: ' MCP servers connected',
+        connectedSummaryPrefix: 'Connected ',
+        connectedSummaryMiddle: ' of ',
+        connectedSummarySuffix: '',
+        cardStatus: {
+          connected: 'Connected',
+          connectsWhenNeeded: 'Connects when needed',
+          disabled: 'Disabled',
+          connectionFailed: 'Connection failed',
+          connecting: 'Connecting',
+          notConnected: 'Not connected',
+        },
         sections: {
           saas: {
             title: 'Work accounts and online services',
@@ -632,11 +642,11 @@ export const enSettingsModels = {
         addServerFailed: 'Failed to add server',
       },
       trustSummary: {
-        authReauthorizeHint: 'OAuth/token needs reauthorization',
-        authMaskedHint: 'credentials are masked by default and not shown in the list',
+        authReauthorizeHint: 'Reconnect your account to continue',
+        authMaskedHint: 'Passwords and keys are never shown in plain text',
         toolUnit: 'tools',
         resourceUnit: 'resources',
-        approvalNotice: 'destructive/openWorld calls still require approval',
+        approvalNotice: 'Actions that may change data or reach the outside network still ask you first',
       },
       management: {
         title: 'MCP console',

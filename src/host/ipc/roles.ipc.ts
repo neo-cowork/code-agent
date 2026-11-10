@@ -51,14 +51,16 @@ import {
   confirmRoleDraft,
   rejectRoleDraft,
   getFirstWakeSnapshot,
+  consumeFirstWakeSuggestion,
   retryFirstWake,
   skipFirstWake,
   isSafeRoleId,
   trashUserRole,
+  listTrashedRoles,
   restoreTrashedRole,
 } from '../services/roleAssets';
+import { writeRoleProactivityConfig } from '../services/roleAssets/roleProactivityWrite';
 import type { RoleMemoryFile } from '../services/roleAssets/roleAssetService';
-import { sanitizeTopicList } from '../services/roleAssets/wakeRationale';
 import { handleSaveTextToDownloads } from './workspaceSaveExport';
 import { getDatabase } from '../services/core/databaseService';
 import { getCronService } from '../cron/cronService';
@@ -76,6 +78,12 @@ import { TOOL_ALIASES } from '../services/toolSearch/deferredTools';
 import { getProtocolRegistry } from '../tools/protocolRegistry';
 import { findRecommendedMcpServer } from '../../shared/constants/mcpCatalog';
 import { isManifestBackedAgentEngineKind } from '../../shared/externalEngineManifest';
+
+import { randomUUID } from 'crypto';
+import type { Message } from '../../shared/contract/message';
+import type { SystemEventMessageMetadata } from '../../shared/contract/systemEventRegistry';
+import { getSessionManager } from '../services/infra/sessionManager';
+import { getTaskManager } from '../task/TaskManager';
 
 const logger = createLogger('RolesIPC');
 
@@ -287,6 +295,10 @@ const PROACTIVITY_LEVELS: ReadonlySet<string> = new Set(['silent', 'daily', 'rea
 // 面板需要按 roleId 对照预设清单还原成 'builtin'（显示"预设"标签）
 const builtinRoleIdSet = new Set<string>(BUILTIN_ROLE_IDS);
 
+function normalizeBuiltinDefinition(definition: string): string {
+  return definition.replace(/\r\n/g, '\n').trimEnd();
+}
+
 async function loadFrontmatterVisual(roleId: string): Promise<RoleVisual> {
   try {
     return parseAgentMdVisual(await fs.readFile(path.join(getAgentsMdDir().user, `${roleId}.md`), 'utf-8'));
@@ -358,13 +370,21 @@ async function handleDetail(roleId: string): Promise<RolePanelDetail> {
     ...getProtocolRegistry().getSchemas().map((tool) => tool.name),
     ...Object.keys(TOOL_ALIASES),
   ])].sort();
-  const packState = builtinRoleIdSet.has(roleId) ? null : await getInstalledRolePackState(roleId);
-  const factory = builtinRoleIdSet.has(roleId)
-    ? { agentMd: BUILTIN_ROLES.find((role) => role.id === roleId)?.agentMd }
+  const isBuiltin = builtinRoleIdSet.has(roleId);
+  const builtinFactoryDefinition = isBuiltin ? BUILTIN_ROLES.find((role) => role.id === roleId)?.agentMd : undefined;
+  const packState = isBuiltin ? null : await getInstalledRolePackState(roleId);
+  const factory = isBuiltin
+    ? { agentMd: builtinFactoryDefinition }
     : packState ? await getRolePackFactoryDefinition(roleId) : null;
-  const restore = builtinRoleIdSet.has(roleId)
+  const restore = isBuiltin
     ? { available: Boolean(factory?.agentMd) }
     : packState ? { available: Boolean(factory?.agentMd), ...(!factory?.agentMd ? { disabledReason: '当前无法取得云端出厂定义' } : {}) } : undefined;
+  // 已发布模板若未来变更，仍持有旧模板的用户会被判为已修改；当前没有历史基线。
+  const locallyModified = isBuiltin
+    ? (definition != null && builtinFactoryDefinition != null
+        ? normalizeBuiltinDefinition(definition) !== normalizeBuiltinDefinition(builtinFactoryDefinition)
+        : undefined)
+    : packState?.locallyModified;
   return {
     roleId,
     definition,
@@ -380,7 +400,7 @@ async function handleDetail(roleId: string): Promise<RolePanelDetail> {
     history: history.map((line) => sanitizeLastWork(line)).filter(Boolean),
     proactivity,
     visual: getBuiltinRoleVisual(roleId) ?? (definition ? parseAgentMdVisual(definition) : {}),
-    isBuiltin: builtinRoleIdSet.has(roleId),
+    isBuiltin,
     personalization: readRolePersonalization(roleId),
     ...(parsed?.connectors?.length
       ? {
@@ -393,7 +413,7 @@ async function handleDetail(roleId: string): Promise<RolePanelDetail> {
         }
       : {}),
     ...(parsed ? { equipment: { skills: parsed.skills ?? [], tools: parsed.tools, model: parsed.model, ...(parsed.engine ? { engine: parsed.engine } : {}), ...(parsed.modelOverride ? { modelOverride: parsed.modelOverride } : {}), ...(parsed.permissionPreset ? { permissionPreset: parsed.permissionPreset } : {}), maxIterations: parsed.maxIterations, availableSkills, availableTools } } : {}),
-    ...(packState ? { locallyModified: packState.locallyModified } : {}),
+    ...(locallyModified !== undefined ? { locallyModified } : {}),
     ...(restore ? { restore } : {}),
   };
 }
@@ -456,8 +476,8 @@ async function handleRestoreFactory(roleId: string): Promise<void> {
 }
 
 /**
- * 设置角色主动性：写入 settings.roleAssets.proactivity.roles[roleId]（最高优先级），
- * 然后立即同步 cadence cron（开 → 注册闹钟；关 → 删除闹钟），不用等重启。
+ * 设置角色主动性：写 settings 覆盖层 + 立即同步 cadence cron。
+ * 写路径单一真源在 roleProactivityWrite（chat 工具 set_role_proactivity 共用），IPC 层只做参数校验。
  */
 async function handleSetProactivity(
   roleId: string,
@@ -467,32 +487,7 @@ async function handleSetProactivity(
   topicsInclude?: string[],
   topicsExclude?: string[],
 ) {
-  const { getConfigService } = await import('../services/core/configService');
-  await getConfigService().updateSettings({
-    roleAssets: {
-      proactivity: {
-        roles: {
-          [roleId]: {
-            level,
-            ...(cadence ? { cadence } : {}),
-            // null 要写进去（mergeSettings 只对非 null 对象递归，null 直接覆盖 = 清除）；
-            // undefined 才是"本次不动这个字段"。数组整份覆盖（含空数组 = 清除）。
-            ...(quietHours !== undefined ? { quietHours } : {}),
-            ...(topicsInclude !== undefined ? { topicsInclude: sanitizeTopicList(topicsInclude) } : {}),
-            ...(topicsExclude !== undefined ? { topicsExclude: sanitizeTopicList(topicsExclude) } : {}),
-          },
-        },
-      },
-    },
-  });
-
-  // cron 同步失败不阻塞设置保存（headless 测试环境可能没有 cron 服务），下次启动会兜底同步
-  const synced = await syncCadenceJobs().catch((error) => {
-    logger.warn('syncCadenceJobs after setProactivity failed (will sync on next startup)', error);
-    return null;
-  });
-
-  return { proactivity: await resolveRoleProactivityConfig(roleId), synced };
+  return writeRoleProactivityConfig(roleId, { level, cadence, quietHours, topicsInclude, topicsExclude });
 }
 
 // ----------------------------------------------------------------------------
@@ -728,6 +723,7 @@ const rolesHandlers: RawDomainRouteHandlers<RolesDomainRequest, void> = {
     });
     return { success: true, data: { roleId: result.roleId } };
   },
+  listDeletedRoles: async (_ctx, _payload) => ({ success: true, data: await listTrashedRoles() }),
   // --- 对话式建角色：草稿队列（role-creation-flow） ---
   listDrafts: async (_ctx, _payload) => {
     return { success: true, data: await listRoleDrafts() };
@@ -740,6 +736,32 @@ const rolesHandlers: RawDomainRouteHandlers<RolesDomainRequest, void> = {
     const result = await confirmRoleDraft(draftId);
     if (!result.success) {
       return { success: false, error: { code: 'CONFIRM_FAILED', message: result.error ?? 'confirm failed' } };
+    }
+    if (result.sessionId && result.roleId) {
+      try {
+        const change = result.change;
+        const message: Message = {
+          id: randomUUID(),
+          role: 'system',
+          content: 'Expert updated.',
+          timestamp: Date.now(),
+          metadata: {
+            roleEditReceipt: {
+              roleId: result.roleId,
+              addedTools: change?.addedTools ?? [],
+              removedTools: change?.removedTools ?? [],
+              descriptionChanged: change?.descriptionChanged ?? false,
+              promptChanged: Boolean(change && (change.promptLinesAdded || change.promptLinesRemoved)),
+              diffAvailable: change != null,
+            },
+          } satisfies SystemEventMessageMetadata,
+        };
+        await getSessionManager().addMessageToSession(result.sessionId, message);
+        getTaskManager().emitAgentEventForSession(result.sessionId, { type: 'message', data: message });
+        logger.info('Role edit receipt recorded by confirmDraft', { sessionId: result.sessionId, roleId: result.roleId, messageId: message.id });
+      } catch (error) {
+        logger.warn('Role edit receipt failed (confirm unaffected)', { sessionId: result.sessionId, reason: String(error) });
+      }
     }
     return { success: true, data: result };
   },
@@ -819,6 +841,17 @@ const rolesHandlers: RawDomainRouteHandlers<RolesDomainRequest, void> = {
     const result = await skipFirstWake(roleId);
     if (!result.success) {
       return { success: false, error: { code: 'FIRST_WAKE_SKIP_FAILED', message: 'skip failed' } };
+    }
+    return { success: true, data: { success: true } };
+  },
+  firstWakeConsumeSuggestion: async (_ctx, payload) => {
+    const { roleId, title } = (payload ?? {}) as RoleIdPayload & { title?: string };
+    if (!roleId || !isSafeRoleId(roleId) || !title?.trim()) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'a safe roleId and title are required' } };
+    }
+    const result = await consumeFirstWakeSuggestion(roleId, title);
+    if (!result.success) {
+      return { success: false, error: { code: 'FIRST_WAKE_CONSUME_FAILED', message: 'consume failed' } };
     }
     return { success: true, data: { success: true } };
   },

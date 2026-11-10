@@ -202,6 +202,8 @@ export interface AppState {
   capabilityHubTab: CapabilityHubTab;
   expertPanelTab: 'mine' | 'discover';
   showCronCenter: boolean;
+  /** 一次性请求：自动化中心切到「运行」页（通知点击落到待审批卡）；面板消费后清空。 */
+  cronCenterRunsRequested: boolean;
   showTimeCapabilityCenter: boolean;
   showFileExplorer: boolean;
   voicePasteStatus: 'idle' | 'recording' | 'transcribing' | 'processing';
@@ -361,6 +363,8 @@ export interface AppState {
   /** 回到会话区：关掉互斥表里所有二级页。侧栏选会话/新建任务时调用。 */
   closeSecondaryPages: () => void;
   setShowCronCenter: (show: boolean) => void;
+  openCronCenterRuns: () => void;
+  clearCronCenterRunsRequest: () => void;
   setShowTimeCapabilityCenter: (show: boolean) => void;
   setShowFileExplorer: (show: boolean) => void;
   setVoicePasteStatus: (status: 'idle' | 'recording' | 'transcribing' | 'processing') => void;
@@ -424,7 +428,13 @@ export interface AppState {
     options?: { front?: boolean }
   ) => void;
   shiftQueuedPermissionRequest: (sessionId: string) => PermissionRequest | null;
-  clearPermissionRequestsForSession: (sessionId: string) => void;
+  /**
+   * run 终态（agent_complete / agent_cancelled / error / stream_end）的会话内清理：
+   * 只收没有 run 身份的前台请求；后台任务/子代理（runId/agentId）的审批卡保留。
+   */
+  clearForegroundPermissionRequestsForSession: (sessionId: string) => void;
+  /** 后台任务自己的 run 收线（subagent_run_end）：按 lane 身份收掉它的死卡。 */
+  removePermissionRequestsForBackgroundRun: (identity: { runId?: string | null; agentId?: string | null }) => void;
   setSessionTaskProgress: (sessionId: string, progress: TaskProgressData | null) => void;
   setSessionTaskComplete: (sessionId: string, complete: TaskCompleteData | null) => void;
 

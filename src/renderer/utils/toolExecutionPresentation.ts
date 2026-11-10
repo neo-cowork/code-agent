@@ -5,7 +5,7 @@ import type { ToolCapabilitySource } from '../types/runWorkbench';
 import type { Translations } from '../i18n';
 import { readHostReasonFromMetadata, resolveHostReasonCopy } from './hostReasonPresentation';
 import { redactCredentialText } from '@shared/security/secretPatterns';
-import { isParkedApprovalClosureSentence } from '@shared/parkedApprovalClosure';
+import { isParkedApprovalClosureSentence, lookupParkedApprovalClosureKey } from '@shared/parkedApprovalClosure';
 
 /**
  * 判定一条工具结果是否「自动加载重试」的良性内部状态（success:false 但不是真失败）。
@@ -38,7 +38,7 @@ export function formatToolDuration(duration?: number): string | null {
 }
 
 /** 工具错误类别（驱动 banner 升级 + 操作按钮决策，P0 失败去噪）。 */
-export type ToolErrorKind =
+type ToolErrorKind =
   | 'quota'        // 额度/余额/欠费耗尽
   | 'rate_limit'   // 429 限流
   | 'auth'         // 401/403 鉴权
@@ -48,7 +48,7 @@ export type ToolErrorKind =
   | 'auto_loaded'; // 工具自动加载重试（benign）
 
 /** 建议的主操作（驱动「重试 / 去设置」按钮）。 */
-export type ToolErrorAction = 'retry' | 'settings';
+type ToolErrorAction = 'retry' | 'settings';
 
 export interface HumanizedToolError {
   /** 一行人话摘要，替代满屏原始报错 */
@@ -195,6 +195,8 @@ export function resolveToolTerminalOutcomeKey(
       return 'failed-approval-denied';
     case AgentFailureCode.Timeout:
       return 'failed-timeout';
+    case AgentFailureCode.InvalidArguments:
+      return 'failed-tool';
     case AgentFailureCode.BudgetExhausted:
       return 'failed-budget';
     case AgentFailureCode.DependencyFailed:
@@ -260,6 +262,9 @@ const REGISTERED_TOOL_ERROR_CODES: ReadonlySet<RegisteredToolErrorCode> = new Se
   'INJECTION_CEILING',
   'MUSIC_SERVICE_UNAVAILABLE',
   'MUSIC_SERVICE_UNAVAILABLE_NO_ALTERNATIVE',
+  'WORKTREE_NO_REPO',
+  'WORKTREE_NO_COMMITS',
+  'WORKTREE_CREATE_FAILED',
 ]);
 
 /**
@@ -351,7 +356,7 @@ export function humanizeToolError(
     });
     const outcome = structuredFailureCode === AgentFailureCode.Timeout
       ? t.outcomeWords['failed-timeout'].timeline
-      : structuredFailureCode === AgentFailureCode.PermissionDenied
+      : structuredFailureCode === AgentFailureCode.PermissionDenied && metadata?.code !== 'FOREIGN_SLOT_DATA_DIR'
         ? t.outcomeWords['failed-approval-denied'].timeline
         : null;
     return {
@@ -364,6 +369,9 @@ export function humanizeToolError(
     toolResultCode: metadata?.code,
     defaultCode: AgentFailureCode.Unknown,
   });
+  if (failureCode === AgentFailureCode.InvalidArguments) {
+    return { summary: t.toolStepHumanize.failureCodes['invalid-arguments'] };
+  }
   if (failureCode === AgentFailureCode.PermissionDenied) {
     return {
       summary: t.outcomeWords['failed-approval-denied'].timeline.label,
@@ -437,18 +445,42 @@ export function humanizeToolError(
 }
 
 /**
- * metadata.failureCode → 一句人话。翻到了就停，不再拼 failureReasonMissing / fallbackSummary。
+ * metadata.failureCode（或 spawn_agent 错误文本归并出的 AgentFailureCode）→ 一句人话。
+ * 翻到了就停，不再拼 failureReasonMissing / fallbackSummary。
  * timeout / permission-denied 不进这张表，仍走下面已有的分类文案，避免打乱既有状态词。
  */
 function mapToolFailureCodeCopy(
   metadata: Record<string, unknown> | null | undefined,
   t: Translations,
+  toolName?: string,
+  error?: string,
 ): string | null {
-  const raw = metadata?.failureCode;
+  const raw = typeof metadata?.failureCode === 'string' && metadata.failureCode
+    ? metadata.failureCode
+    : toolName === 'spawn_agent'
+      ? inferAgentFailureCode({
+          error,
+          defaultCode: AgentFailureCode.Unknown,
+        })
+      : undefined;
   if (typeof raw !== 'string' || !raw) return null;
   const table = t.toolStepHumanize.failureCodes;
   if (!Object.prototype.hasOwnProperty.call(table, raw)) return null;
   return table[raw as keyof typeof table];
+}
+
+/**
+ * metadata.code 的裸工程码（ENOENT / INVALID_ARGS / FS_ERROR 这类，host 工具直发、未登记进
+ * toolErrors.codes）→ 一句人话 + 下一步（FB-746）。登记表外的全大写码走 generic 兜底句；
+ * 翻不动的（数字退出码 / HTTP nnn / 小写杂串）返回 null，调用方保持「错误码 X」原样。
+ * 原始码仍在展开详情的 error 原文里可见，不丢排错信息。
+ */
+function mapRawToolCodeCopy(code: string, t: Translations): string | null {
+  const table = t.toolStepHumanize.rawFailureCodes as Record<string, string | undefined>;
+  const mapped = table[code];
+  if (mapped) return mapped;
+  if (/^[A-Z][A-Z0-9_]*$/.test(code)) return t.toolStepHumanize.rawFailureCodeFallback;
+  return null;
 }
 
 /**
@@ -461,13 +493,24 @@ function isDeclinedSandboxEscalation(metadata: Record<string, unknown> | null | 
   return (escalation as { decision?: unknown }).decision === 'declined';
 }
 
+/**
+ * 停车审批收口句的展示侧翻译：台账/收件箱持久化的是中文原句（老行也不会重写），
+ * 拿原句做精确匹配换出当前语言的同义句。差一个字的文本返回 null，调用方回退原文。
+ */
+export function localizeParkedApprovalClosureText(text: unknown, t: Translations): string | null {
+  if (!isParkedApprovalClosureSentence(text)) return null;
+  const key = lookupParkedApprovalClosureKey(text);
+  return key === null ? null : t.toolStepHumanize.parkedClosure[key];
+}
+
 /** 停车审批被自动收口（没有执行）的 denied 结果：「未执行 · <原因句>」，不读作执行失败。 */
 export function resolveParkedApprovalClosureCopy(
   toolCall: Pick<ToolCall, 'result'>,
   t: Translations,
 ): string | null {
   const error = toolCall.result?.error;
-  return isParkedApprovalClosureSentence(error) ? `${t.toolStepHumanize.notRunPrefix} · ${error}` : null;
+  const localized = localizeParkedApprovalClosureText(error, t);
+  return localized === null ? null : `${t.toolStepHumanize.notRunPrefix} · ${localized}`;
 }
 
 export function humanizeToolFailureReason(toolCall: Pick<ToolCall, 'name' | 'result'>, t: Translations): string {
@@ -480,7 +523,7 @@ export function humanizeToolFailureReason(toolCall: Pick<ToolCall, 'name' | 'res
     return t.decisionCard.permission.sandboxEscalationDeclined;
   }
   const error = result?.error || (typeof result?.output === 'string' ? result.output : undefined);
-  const mappedFailureCode = mapToolFailureCodeCopy(metadata, t);
+  const mappedFailureCode = mapToolFailureCodeCopy(metadata, t, toolCall.name, error);
   if (mappedFailureCode) return mappedFailureCode;
   // hostReason 登记表要排在 preflight 之前：那 7 个 permission host code 各有专属文案
   // （「你拒绝了写入 report.md」/「审批超时」…），而 preflight 只会给一句笼统的
@@ -507,7 +550,10 @@ export function humanizeToolFailureReason(toolCall: Pick<ToolCall, 'name' | 'res
   if (classifiedCode) return classifiedCode.detail ?? classifiedCode.summary;
 
   const code = sanitizeCodeParamValue(metadata?.code);
-  if (code) return t.toolStepHumanize.failureCode.replace('{code}', code);
+  if (code) {
+    // 先查裸码人话表（FB-746），翻不动才退回「错误码 X」——数字退出码与 HTTP nnn 不进表，原样保留。
+    return mapRawToolCodeCopy(code, t) ?? t.toolStepHumanize.failureCode.replace('{code}', code);
+  }
 
   const exitCodeMetadata = sanitizeCodeParamValue(metadata?.exitCode);
   if (exitCodeMetadata) return t.toolStepHumanize.failureCode.replace('{code}', exitCodeMetadata);

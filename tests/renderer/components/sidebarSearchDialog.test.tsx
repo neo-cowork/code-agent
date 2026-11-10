@@ -4,10 +4,17 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 import { SidebarSearchDialog } from '../../../src/renderer/components/features/sidebar/SidebarSearchDialog';
+import { formatLocalDateTime } from '../../../src/renderer/utils/i18nTime';
 
+const i18nState = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }));
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
-  const { zh } = await import('../../../src/renderer/i18n/zh');
-  return { useI18n: () => ({ t: zh, language: 'zh' }) };
+  const [{ zh }, { en }] = await Promise.all([
+    import('../../../src/renderer/i18n/zh'),
+    import('../../../src/renderer/i18n/en'),
+  ]);
+  return {
+    useI18n: () => ({ t: i18nState.language === 'zh' ? zh : en, language: i18nState.language }),
+  };
 });
 
 const sessions = [
@@ -51,7 +58,10 @@ const messageHits = {
   },
 };
 
-afterEach(cleanup);
+afterEach(() => {
+  i18nState.language = 'zh';
+  cleanup();
+});
 
 describe('SidebarSearchDialog', () => {
   it('shows message-hit counts and moves the search scope controls into the dialog', () => {
@@ -81,6 +91,66 @@ describe('SidebarSearchDialog', () => {
     ).toBe('text');
     expect(screen.getByRole('textbox', { name: '搜索会话标题与消息内容' }).parentElement?.querySelector('svg')?.classList.contains('h-4')).toBe(true);
     expect(screen.getByRole('textbox', { name: '搜索会话标题与消息内容' }).parentElement?.querySelector('svg')?.classList.contains('w-4')).toBe(true);
+  });
+
+  it('shows distinct local update times for same-title rows in zh and en without leaking internal identifiers', () => {
+    const year = new Date().getFullYear();
+    const timestamps = [
+      new Date(year, 10, 8, 15, 3).getTime(),
+      new Date(year, 10, 8, 13, 45).getTime(),
+      new Date(year, 10, 7, 21, 10).getTime(),
+      new Date(year, 10, 6, 9, 5).getTime(),
+    ];
+    const sameTitleSessions = timestamps.map((updatedAt, index) => ({
+      ...sessions[0],
+      id: `same-title-${index}`,
+      title: '[Schedule] 停车A-无目录',
+      updatedAt,
+    }));
+    const view = render(
+      <SidebarSearchDialog
+        isOpen
+        query="停车A"
+        onQueryChange={vi.fn()}
+        onClose={vi.fn()}
+        sessions={sameTitleSessions}
+        currentSessionId={null}
+        messageSearchHitsBySessionId={{}}
+        messageSearchLoading={false}
+        effectiveSearchScope="all"
+        setSearchScope={vi.fn()}
+        canSearchCurrentProject
+        onSelectSession={vi.fn()}
+      />,
+    );
+
+    const zhRows = screen.getAllByRole('option');
+    const zhTimes = zhRows.map((row) => row.querySelector('[data-testid="sidebar-search-session-time"]')?.textContent);
+    expect(zhTimes).toEqual(timestamps.map((timestamp) => formatLocalDateTime(timestamp, 'zh')));
+    expect(new Set(zhTimes).size).toBe(4);
+    expect(zhRows.map((row) => row.textContent).join(' ')).not.toMatch(/session_|[0-9a-f]{8}-[0-9a-f-]{27,}|\/(?:Users|tmp|repo)\//i);
+
+    i18nState.language = 'en';
+    view.rerender(
+      <SidebarSearchDialog
+        isOpen
+        query="停车A"
+        onQueryChange={vi.fn()}
+        onClose={vi.fn()}
+        sessions={sameTitleSessions}
+        currentSessionId={null}
+        messageSearchHitsBySessionId={{}}
+        messageSearchLoading={false}
+        effectiveSearchScope="all"
+        setSearchScope={vi.fn()}
+        canSearchCurrentProject
+        onSelectSession={vi.fn()}
+      />,
+    );
+    const enRows = screen.getAllByRole('option');
+    expect(enRows.map((row) => row.querySelector('[data-testid="sidebar-search-session-time"]')?.textContent)).toEqual(
+      timestamps.map((timestamp) => formatLocalDateTime(timestamp, 'en')),
+    );
   });
 
   it('selects a session and conditionally removes the dialog from the DOM', async () => {

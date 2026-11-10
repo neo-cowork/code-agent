@@ -25,6 +25,8 @@ const hostReasonZh = {
   [HostReasonCode.PermissionDeniedCancelled]: { summary: '本次运行已取消，{toolName}没有执行' },
   [HostReasonCode.PermissionDeniedFailClosed]: { summary: '审批链路暂时不可用，{toolName}已按安全规则拒绝' },
   [HostReasonCode.PermissionDeniedScripted]: { summary: '评测策略拒绝了{toolName}' },
+  [HostReasonCode.PermissionDeniedUserRule]: { summary: '{toolName}被你设置的权限规则拦下了，没有执行', detail: '想允许的话，请到「设置 → 权限与安全」的「用户级权限规则」里修改或删除对应规则，再重新发起。' },
+  [HostReasonCode.PermissionDeniedSafetyRule]: { summary: '{toolName}触碰了 Neo 的内置安全底线，已被拦截，没有执行', detail: '这类操作（如改系统目录、读取 SSH 密钥）Neo 不会代做。请改在工作文件夹内操作，或自己手动完成。' },
   [HostReasonCode.DecisionPolicy]: { summary: '权限策略完成检查' },
   [HostReasonCode.DecisionGuard]: { summary: '运行安全规则完成检查' },
   [HostReasonCode.DecisionClassifier]: { summary: '工具安全分类完成检查' },
@@ -43,6 +45,9 @@ const hostReasonZh = {
   [HostReasonCode.OsSandboxApplied]: { summary: '命令将在操作系统沙箱中执行' },
   [HostReasonCode.OsSandboxDegraded]: { summary: '操作系统沙箱未套用，将在无隔离环境下执行' },
   [HostReasonCode.OsSandboxUnavailable]: { summary: '操作系统沙箱不可用，已拒绝执行' },
+  [HostReasonCode.UploadExpired]: { summary: '这个上传的文件已过期，读取不了', detail: '请重新上传该文件。' },
+  [HostReasonCode.ToolArgsInvalid]: { summary: '{toolName}的调用缺少必要信息，没有执行' },
+  [HostReasonCode.ForeignDataDir]: { summary: '这是 Neo 另一份独立数据目录，当前不能直接读取', detail: '需要的话，直接告诉 Neo 你想找什么。' },
 } satisfies Record<HostReasonCode, { summary: string; detail?: string }>;
 
 const hostReasonEn: typeof hostReasonZh = {
@@ -68,6 +73,8 @@ const hostReasonEn: typeof hostReasonZh = {
   [HostReasonCode.PermissionDeniedCancelled]: { summary: 'This run was cancelled, so {toolName} did not run' },
   [HostReasonCode.PermissionDeniedFailClosed]: { summary: 'The approval path is unavailable, so {toolName} was denied by the safety policy' },
   [HostReasonCode.PermissionDeniedScripted]: { summary: 'The evaluation policy denied {toolName}' },
+  [HostReasonCode.PermissionDeniedUserRule]: { summary: '{toolName} was blocked by one of your permission rules and was not run', detail: 'To allow it, edit or remove that rule under Settings → Permissions & security (User-level permission rules), then ask again.' },
+  [HostReasonCode.PermissionDeniedSafetyRule]: { summary: "{toolName} hit one of Neo's built-in safety rules and was blocked; it did not run", detail: 'Neo does not perform this kind of action (such as modifying system directories or reading SSH keys). Work inside the workspace folder instead, or make the change yourself.' },
   [HostReasonCode.DecisionPolicy]: { summary: 'Permission policy check completed' },
   [HostReasonCode.DecisionGuard]: { summary: 'Runtime safety check completed' },
   [HostReasonCode.DecisionClassifier]: { summary: 'Tool safety classification completed' },
@@ -86,6 +93,9 @@ const hostReasonEn: typeof hostReasonZh = {
   [HostReasonCode.OsSandboxApplied]: { summary: 'The command will run inside the OS sandbox' },
   [HostReasonCode.OsSandboxDegraded]: { summary: 'The OS sandbox was not applied; the command will run without isolation' },
   [HostReasonCode.OsSandboxUnavailable]: { summary: 'The OS sandbox is unavailable, so the command was refused' },
+  [HostReasonCode.UploadExpired]: { summary: 'This uploaded file has expired and cannot be read', detail: 'Please upload the file again.' },
+  [HostReasonCode.ToolArgsInvalid]: { summary: 'This action was missing required information and did not run' },
+  [HostReasonCode.ForeignDataDir]: { summary: 'This belongs to a separate Neo data directory and cannot be read from here', detail: 'If you need something from it, just tell Neo what you are looking for.' },
 };
 // agentError 域词条（AgentErrorCard 会话区错误卡片）—— zh/en 同文件相邻维护。
 // 卡片文案按 category 表驱动：title 一句话说发生了什么，suggestion 给建议动作，
