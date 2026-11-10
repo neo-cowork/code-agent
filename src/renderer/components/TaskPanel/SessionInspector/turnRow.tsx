@@ -1,3 +1,4 @@
+import { resolveRunCancellationOutcomeKey } from '../../../i18n/outcomeWords';
 // ============================================================================
 // SessionInspector 层1 轮行（N-LEDGER-UX1：A 汇总句可展开 / B 异常黄条 / C 活行）
 // ----------------------------------------------------------------------------
@@ -60,23 +61,23 @@ function resolveTerminalOutcome(segment: TurnSegment, t: Translations) {
     ? t.outcomeWords['failed-approval-denied'].badge
     : failedCode === AgentFailureCode.Timeout
       ? t.outcomeWords['failed-timeout'].badge
-      : failedCode === AgentFailureCode.BudgetExhausted
-        ? t.outcomeWords['failed-budget'].badge
-        : failedCode === AgentFailureCode.DependencyFailed || failedCode === AgentFailureCode.DependencyMissing
-          ? t.outcomeWords['failed-dependency'].badge
-          : failedCode === AgentFailureCode.ModelError
-            ? t.outcomeWords['failed-model'].badge
-            : failedCode === AgentFailureCode.ToolUnavailable
-              ? t.outcomeWords['failed-unavailable'].badge
-              : segment.failedToolCount > 0
-                ? t.outcomeWords['failed-tool'].badge
-                : t.outcomeWords['failed-unknown'].badge;
+      : failedCode === AgentFailureCode.InvalidArguments
+        ? t.outcomeWords['failed-tool'].badge
+        : failedCode === AgentFailureCode.BudgetExhausted
+          ? t.outcomeWords['failed-budget'].badge
+          : failedCode === AgentFailureCode.DependencyFailed || failedCode === AgentFailureCode.DependencyMissing
+            ? t.outcomeWords['failed-dependency'].badge
+            : failedCode === AgentFailureCode.ModelError
+              ? t.outcomeWords['failed-model'].badge
+              : failedCode === AgentFailureCode.ToolUnavailable
+                ? t.outcomeWords['failed-unavailable'].badge
+                : segment.failedToolCount > 0
+                  ? t.outcomeWords['failed-tool'].badge
+                  : t.outcomeWords['failed-unknown'].badge;
   return terminal === 'completed'
     ? t.outcomeWords.completed.badge
     : terminal === 'cancelled'
-      ? (segment.stamp?.cancelReason === 'idle_reaped'
-        ? t.outcomeWords['failed-idle-reaped'].badge
-        : t.outcomeWords['cancelled-by-user'].badge)
+      ? t.outcomeWords[resolveRunCancellationOutcomeKey(segment.stamp?.cancelReason)].badge
       : terminal === 'interrupted'
         ? t.outcomeWords['interrupted-restart'].badge
         : terminal === 'failed'

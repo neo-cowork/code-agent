@@ -12,7 +12,7 @@ import { acquireLaunchSlot, type LaunchSlot } from '../../../services/infra/play
 import { ARTIFACT_PREVIEW_HEALTH } from '../../../../shared/constants/previewHealth';
 import { formatPreviewHealthMessage } from '../../../../shared/i18n/previewHealth';
 import { createLogger } from '../../../services/infra/logger';
-import { app } from '../../../platform';
+import { readPreviewHealthLocale } from './previewHealthLocale';
 import { waitForCdpEndpoint, stopChromeProcess } from './chromeProcess';
 import {
   artifactFileUrl,
@@ -63,7 +63,7 @@ export interface ArtifactPreviewHealthSummary {
 }
 
 function getPreviewHealthLocale(options?: ArtifactPreviewHealthOptions): string | null {
-  return options?.locale ?? app.getLocale?.() ?? null;
+  return options?.locale ?? readPreviewHealthLocale();
 }
 
 function skippedArtifactPreviewHealth(reason: string, locale?: string | null): ArtifactPreviewHealthSummary {

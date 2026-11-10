@@ -13,7 +13,7 @@
 // 矮屏不低于 420px、整页可滚到达。
 // ============================================================================
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Clock3, WalletCards } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { useCronStore } from '../../../stores/cronStore';
@@ -22,6 +22,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import ipcService from '../../../services/ipcService';
 import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
 import type { AwaitingApprovalRun } from '@shared/contract/sessionAutomation';
+import { usePageReturnPosition } from '../../../hooks/usePageReturn';
 import { createLogger } from '../../../utils/logger';
 import { openBudgetSettings } from '../../../utils/budgetSettingsNavigation';
 import { CronJobList } from './CronJobList';
@@ -107,6 +108,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
   const [activeTab, setActiveTab] = useState<CronCenterTab>(
     () => (readCronSearchParam('cronTab') === 'runs' ? 'runs' : 'jobs'),
   );
+  usePageReturnPosition({ page: 'automation', runs: activeTab === 'runs' });
   const runsRequested = useAppStore((s) => s.cronCenterRunsRequested);
   useEffect(() => {
     if (!runsRequested) return;
@@ -137,6 +139,26 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
   // 无人值守停车可见性（N-CRON-UNATTENDED-BASH-PARK-STUCK）：仅在面板挂载且存在 running
   // 执行时每 2s 拉「等批准」运行（批准/拒绝后下一轮即消失，任务行回到运行中）。
   const [awaitingRuns, setAwaitingRuns] = useState<AwaitingApprovalRun[]>([]);
+  const discoverParkedRun = useCallback(() => { void syncRunningExecutions(); }, [syncRunningExecutions]);
+  const awaitingLoadVersion = useRef(0);
+  const [inboxRefreshVersion, setInboxRefreshVersion] = useState(0);
+  const loadAwaitingRuns = useCallback(async () => {
+    const version = ++awaitingLoadVersion.current;
+    try {
+      const runs = await sessionAutomationClient.listAwaitingApprovalRuns();
+      if (version === awaitingLoadVersion.current) setAwaitingRuns(Array.isArray(runs) ? runs : []);
+    } catch (error) {
+      logger.warn('Failed to load awaiting-approval runs', {
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }, []);
+  const handleApprovalResolved = useCallback(async () => {
+    // Refresh all mounted surfaces even when the request was stale or delivery failed.
+    setInboxRefreshVersion((version) => version + 1);
+    refreshPendingReviewCount();
+    await Promise.all([loadAwaitingRuns(), syncRunningExecutions()]);
+  }, [loadAwaitingRuns, refreshPendingReviewCount, syncRunningExecutions]);
   // running 信号在两个 tab 来源不同：任务 tab 只有各 job 的最近一次执行
   // （latestExecutions，refresh 时拉），运行记录 tab 才有跨任务 recentExecutions；
   // 两个都看，否则默认任务 tab 永远不会开始轮询。
@@ -148,28 +170,18 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
       setAwaitingRuns((prev) => (prev.length === 0 ? prev : []));
       return;
     }
-    let active = true;
     const load = () => {
-      // 批准后命令跑完、host 写 completed，渲染端不重拉就永远停在「运行中」：随同一拍校正执行记录。
+      // 批准后命令跑完、host 写 completed，渲染端不重拉就永远停在「运行中」。
       void syncRunningExecutions();
-      void sessionAutomationClient
-        .listAwaitingApprovalRuns()
-        .then((runs) => {
-          if (active) setAwaitingRuns(Array.isArray(runs) ? runs : []);
-        })
-        .catch((error) => {
-          logger.warn('Failed to load awaiting-approval runs', {
-            errorMessage: error instanceof Error ? error.message : String(error),
-          });
-        });
+      void loadAwaitingRuns();
     };
     load();
     const timer = window.setInterval(load, 2000);
     return () => {
-      active = false;
+      awaitingLoadVersion.current += 1;
       window.clearInterval(timer);
     };
-  }, [hasRunningExecution, syncRunningExecutions]);
+  }, [hasRunningExecution, loadAwaitingRuns, syncRunningExecutions]);
   const awaitingByJobId = useMemo(() => {
     const map = new Map<string, AwaitingApprovalRun>();
     for (const run of awaitingRuns) map.set(run.jobId, run);
@@ -208,7 +220,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !isEditorOpen) onClose();
+      if (event.key === 'Escape' && !event.defaultPrevented && !isEditorOpen) onClose();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -356,7 +368,12 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
             归属「运行记录」——它是运行结果里需要人过目的子集。refreshSignal 让
             常驻收件箱在停车集合变化时重拉（Rework r1），「去处理」不再落到旧快照。 */}
         <div className={activeTab === 'runs' ? undefined : 'hidden'}>
-          <AutomationReviewInbox onPendingCountChange={refreshPendingReviewCount} refreshSignal={awaitingRefreshSignal} />
+          <AutomationReviewInbox
+            onPendingCountChange={refreshPendingReviewCount}
+            onParkedResolved={handleApprovalResolved}
+            onParkedChange={discoverParkedRun}
+            refreshSignal={inboxRefreshVersion ? `${awaitingRefreshSignal}:${inboxRefreshVersion}` : awaitingRefreshSignal}
+          />
         </div>
 
         {activeTab === 'jobs' ? (
@@ -375,6 +392,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
                     job={selectedJob}
                     awaitingRun={selectedJob ? awaitingByJobId.get(selectedJob.id) ?? null : null}
                     onReviewAwaiting={() => setActiveTab('runs')}
+                    onApprovalResolved={handleApprovalResolved}
                   />
                 )}
               </div>

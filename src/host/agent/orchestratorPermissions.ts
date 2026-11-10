@@ -9,6 +9,7 @@ import { isApprovePermissionResponse } from '../../shared/contract/permission';
 import type { ToolApprovalPayload, PendingApprovalKind } from '../../shared/contract/pendingApproval';
 import { INTERACTION_TIMEOUTS } from '../../shared/constants/timeouts';
 import { PARKED_APPROVAL_PREVIEW_MAX_CHARS } from '../../shared/constants/pendingApproval';
+import { PARKED_APPROVAL_ENTRY_PATH } from '../../shared/parkedApprovalLocation';
 import { PARKED_APPROVAL_CLOSURE_SENTENCES } from '../../shared/parkedApprovalClosure';
 import { redactCommandSecrets } from '../security/secretRedaction';
 import { generatePermissionRequestId } from '../../shared/utils/id';
@@ -190,6 +191,7 @@ export class OrchestratorPermissionIsland {
     isDevModeAutoApproveEnabled,
     getExecutionTopology,
     hasApprovalUi,
+    isDetachedRun = () => false,
     onEvent,
     injectedPendingApprovalRepo,
   }: {
@@ -197,6 +199,7 @@ export class OrchestratorPermissionIsland {
     isDevModeAutoApproveEnabled: () => boolean;
     getExecutionTopology: () => ExecutionTopology;
     hasApprovalUi: (request: PermissionRequest) => boolean;
+    isDetachedRun?: () => boolean;
     onEvent: (event: AgentEvent) => void;
     injectedPendingApprovalRepo?: PendingApprovalRepository;
   }) {
@@ -204,6 +207,7 @@ export class OrchestratorPermissionIsland {
     this.isDevModeAutoApproveEnabled = isDevModeAutoApproveEnabled;
     this.getExecutionTopology = getExecutionTopology;
     this.hasApprovalUi = hasApprovalUi;
+    this.isDetachedRun = isDetachedRun;
     this.onEvent = onEvent;
     this.injectedPendingApprovalRepo = injectedPendingApprovalRepo;
   }
@@ -211,6 +215,7 @@ export class OrchestratorPermissionIsland {
   private readonly getSettings: () => AppSettings;
   private readonly isDevModeAutoApproveEnabled: () => boolean;
   private readonly getExecutionTopology: () => ExecutionTopology;
+  private readonly isDetachedRun: () => boolean;
   private readonly hasApprovalUi: (request: PermissionRequest) => boolean;
   private readonly onEvent: (event: AgentEvent) => void;
 
@@ -537,6 +542,7 @@ export class OrchestratorPermissionIsland {
     // 而迟到的点击又落进静默丢弃分支，用户只看到「失败」且毫无线索。
     // 判据与抬严同源（isLiveVoiceSession = 通话中 或 语音派的 run 还在飞）。
     const approvalTerminal = getPermissionModeManager().isUnattendedApprovalTerminal(fullRequest.sessionId);
+    const detached = this.isDetachedRun();
     const unattended = getPermissionModeManager().isUnattendedSession(fullRequest.sessionId);
     const voice = getPermissionModeManager().isLiveVoiceSession(fullRequest.sessionId);
 
@@ -575,7 +581,7 @@ export class OrchestratorPermissionIsland {
     }
     // cron/heartbeat/channel/语音派都走停车审批，24h backstop 只负责泄漏兜底；
     // 60s 终态仅保留给显式登记的旧兼容会话。
-    if (unattended || voice) {
+    if (detached || unattended || voice) {
       const parkRepo = this.getPendingApprovalRepo();
       if (parkRepo) {
         return this.parkApproval(
@@ -583,9 +589,11 @@ export class OrchestratorPermissionIsland {
           permissionLevel,
           parkRepo,
           'tool_approval',
-          approvalTerminal
-            ? 'unattended'
-            : getPermissionModeManager().isUnattendedApprovalDegrade(fullRequest.sessionId) ? 'degrade' : 'backstop',
+          detached
+            ? 'degrade'
+            : approvalTerminal
+              ? 'unattended'
+              : getPermissionModeManager().isUnattendedApprovalDegrade(fullRequest.sessionId) ? 'degrade' : 'backstop',
         );
       }
     } else {
@@ -673,6 +681,21 @@ export class OrchestratorPermissionIsland {
 
       const watchdog = setInterval(() => {
         try {
+          // A refresh may detach a run after this approval was already shown.
+          // Move the same request into the durable inbox; do not auto-grant it.
+          if (this.isDetachedRun()) {
+            const repo = this.getPendingApprovalRepo();
+            if (repo) {
+              clearInterval(watchdog);
+              this.pendingPermissions.delete(fullRequest.id);
+              void this.parkApproval(fullRequest, permissionLevel, repo, 'tool_approval', 'degrade').then(resolve, (error) => {
+                safeWarn('Detached approval could not be parked; denying', error);
+                this.resolveParkedApproval(fullRequest.id, 'deny', undefined, 'fail-closed');
+                resolve({ approved: false, denialSource: 'fail-closed' });
+              });
+              return;
+            }
+          }
           if (!this.hasApprovalUi(fullRequest)) { advanceWithoutUi(); return; }
           withoutUiMs = 0;
           withUiMs += APPROVAL_UI_RECHECK_MS;
@@ -835,9 +858,9 @@ export class OrchestratorPermissionIsland {
           notificationService.notifyNeedsInput({
             sessionId: fullRequest.sessionId,
             title: '有操作等你确认',
-            body: `无人值守任务请求执行 ${fullRequest.tool}，已挂起等待你在收件箱确认。`,
+            body: `无人值守任务请求执行 ${fullRequest.tool}，已暂停等你批准，到${PARKED_APPROVAL_ENTRY_PATH}处理。`,
             // 停车口先发；同一条请求随后经 permission_request 事件再进落库通知口，
-            // 同键去重，用户只看到这一条更具体的「去收件箱确认」横幅。
+            // 同键去重，用户只看到这一条更具体的「到自动化的运行记录处理」横幅。
             dedupeKey: fullRequest.id,
           });
         } catch (err) {

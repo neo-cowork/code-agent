@@ -1,5 +1,7 @@
+import type { AgentFailureCode } from '@shared/contract/agentFailure';
 import type { ToolStepLabelKey, ToolStepStatus } from '@shared/contract';
 import { PARKED_APPROVAL_CLOSURE_SENTENCES } from '@shared/parkedApprovalClosure';
+import { SANDBOX_APPROVED_RM_STILL_DENIED_FAILURE_CODE } from '@shared/constants';
 
 type DeclaredVerbForms = Record<ToolStepLabelKey, string>;
 
@@ -28,6 +30,11 @@ interface ToolStepVerbSet {
   subagentMessage: string;
   agentConversation: string;
   agentConversationFallback: string;
+  delegateSession: {
+    target: string; targetFallback: string; delegate_existing: string; create_new: string;
+    correct: string; stop: string; resume: string; unknown: string; reused: string;
+  };
+  listSessionCandidates: string;
   delegateTask: string;
   delegateTaskFallback: string;
   taskStatus: string;
@@ -104,11 +111,13 @@ interface ToolStepVerbBundle {
    * 按 Record<共享键联合, string> 收口：host 新增收口原因而任一语言表漏配时，这里直接编译红。
    */
   parkedClosure: Record<keyof typeof PARKED_APPROVAL_CLOSURE_SENTENCES, string>;
+  agentFailureReasons: Record<AgentFailureCode.Timeout | AgentFailureCode.PermissionDenied | AgentFailureCode.Unknown, string>;
   failureCodes: {
     'worktree-create-failed': string;
     'gateway-timeout': string;
     'tool-unavailable': string;
     'blocked-by-parent-role': string;
+    'invalid-arguments': string;
     'budget-exhausted': string;
     'parent-gone': string;
     'cancelled-by-user': string;
@@ -117,12 +126,15 @@ interface ToolStepVerbBundle {
     'dependency-missing': string;
     'workflow-stage-failed': string;
     'model-error': string;
+    [SANDBOX_APPROVED_RM_STILL_DENIED_FAILURE_CODE]: string;
   };
 }
 
 export const toolStepVerbsZh: ToolStepVerbBundle = {
   statusForms: {
     'pending-approval': {
+      delegateSession: { target: '「{target}」', targetFallback: '另一个对话', delegate_existing: '请求把任务交给{target}', create_new: '请求新建对话并交给它', correct: '请求调整对{target}的委托', stop: '请求停止对{target}的委托', resume: '请求恢复对{target}的委托', unknown: '请求处理一项跨对话委托', reused: '已送达过，未重复发送' },
+      listSessionCandidates: '请求查找可委托的对话',
       declared: { tmeetMeetingListUpcoming: '请求查询待开始/进行中的会议', tmeetMeetingListEnded: '请求查询近 30 天已结束的会议', tmeetMeetingCreate: '请求创建会议', tmeetMeetingSearch: '请求搜索会议' },
       read: '请求读取 {target}', readFallback: '请求读取一个文件', write: '请求写入 {target}', writeFallback: '请求写入一个文件',
       edit: '请求编辑 {target}', editFallback: '请求编辑一个文件', bash: '请求运行命令 {command}', bashFallback: '请求运行一条命令',
@@ -136,6 +148,8 @@ export const toolStepVerbsZh: ToolStepVerbBundle = {
       group: { explored: '请求查看 {count} 次内容', ran: '请求运行 {count} 条命令', searchedWeb: '请求联网查询 {count} 次', mcp: '请求调用 {count} 次工具', subagent: '请求派发 {count} 次代理任务', planned: '请求更新 {count} 次任务', skill: '请求使用 {count} 次技能', used: '请求执行 {count} 个步骤' },
     },
     running: {
+      delegateSession: { target: '「{target}」', targetFallback: '另一个对话', delegate_existing: '正在把任务交给{target}', create_new: '正在新建对话并交给它', correct: '正在调整对{target}的委托', stop: '正在停止对{target}的委托', resume: '正在恢复对{target}的委托', unknown: '正在处理一项跨对话委托', reused: '已送达过，未重复发送' },
+      listSessionCandidates: '正在查找可委托的对话',
       declared: { tmeetMeetingListUpcoming: '正在查询待开始/进行中的会议', tmeetMeetingListEnded: '正在查询近 30 天已结束的会议', tmeetMeetingCreate: '正在创建会议', tmeetMeetingSearch: '正在搜索会议' },
       read: '正在读取 {target}', readFallback: '正在读取文件', write: '正在写入 {target}', writeFallback: '正在写入文件',
       edit: '正在编辑 {target}', editFallback: '正在编辑文件', bash: '正在运行命令 {command}', bashFallback: '正在运行命令',
@@ -149,6 +163,8 @@ export const toolStepVerbsZh: ToolStepVerbBundle = {
       group: { explored: '正在查看 {count} 次内容', ran: '正在运行 {count} 条命令', searchedWeb: '正在联网查询 {count} 次', mcp: '正在调用 {count} 次工具', subagent: '正在派发 {count} 次代理任务', planned: '正在更新 {count} 次任务', skill: '正在使用 {count} 次技能', used: '正在执行 {count} 个步骤' },
     },
     failed: {
+      delegateSession: { target: '「{target}」', targetFallback: '另一个对话', delegate_existing: '把任务交给{target}未成功', create_new: '新建对话并委托未成功', correct: '调整对{target}的委托未成功', stop: '停止对{target}的委托未成功', resume: '恢复对{target}的委托未成功', unknown: '处理跨对话委托未成功', reused: '已送达过，未重复发送' },
+      listSessionCandidates: '查找可委托的对话未成功',
       declared: { tmeetMeetingListUpcoming: '查询待开始/进行中的会议未成功', tmeetMeetingListEnded: '查询近 30 天已结束的会议未成功', tmeetMeetingCreate: '创建会议未成功', tmeetMeetingSearch: '搜索会议未成功' },
       read: '读取 {target} 未成功', readFallback: '读取文件未成功', write: '写入 {target} 未成功', writeFallback: '写入文件未成功',
       edit: '编辑 {target} 未成功', editFallback: '编辑文件未成功', bash: '运行命令 {command} 未成功', bashFallback: '运行命令未成功',
@@ -200,11 +216,17 @@ export const toolStepVerbsZh: ToolStepVerbBundle = {
   },
   rawFailureCodeFallback: '这一步没有成功，展开可查看详情',
   parkedClosure: { ...PARKED_APPROVAL_CLOSURE_SENTENCES },
+  agentFailureReasons: {
+    timeout: '处理时间超过了限制',
+    'permission-denied': '需要的权限没有通过',
+    unknown: '失败原因还不明确',
+  },
   failureCodes: {
     'worktree-create-failed': '无法为这次任务准备运行环境',
     'gateway-timeout': '服务暂时没有响应',
     'tool-unavailable': '所需能力当前不可用',
     'blocked-by-parent-role': '当前角色不允许这一步',
+    'invalid-arguments': '助手设置的等待时间超过了允许的上限，需要缩短',
     'budget-exhausted': '这次任务的额度已经用完',
     'parent-gone': '上级任务已经结束',
     'cancelled-by-user': '已按你的操作取消',
@@ -213,20 +235,27 @@ export const toolStepVerbsZh: ToolStepVerbBundle = {
     'dependency-missing': '还缺少必要的前置条件',
     'workflow-stage-failed': '这一阶段没有完成',
     'model-error': '模型没有给出可用结果',
+    [SANDBOX_APPROVED_RM_STILL_DENIED_FAILURE_CODE]: '你已批准删除该文件，但沙盒仍然拒绝了删除；可以在访达里手动删除，或将文件移到当前工作目录后再试',
   },
 };
 
 export const toolStepVerbsEn: ToolStepVerbBundle = {
   statusForms: {
     'pending-approval': {
+      delegateSession: { target: '“{target}”', targetFallback: 'another conversation', delegate_existing: 'Request to send the task to {target}', create_new: 'Request to create a conversation and send it the task', correct: 'Request to adjust the delegation to {target}', stop: 'Request to stop the delegation to {target}', resume: 'Request to resume the delegation to {target}', unknown: 'Request to handle a cross-conversation delegation', reused: 'Already delivered; not sent again' },
+      listSessionCandidates: 'Request to find conversations for delegation',
       declared: { tmeetMeetingListUpcoming: 'Request to check upcoming/in-progress meetings', tmeetMeetingListEnded: 'Request to check meetings ended in the last 30 days', tmeetMeetingCreate: 'Request to create a meeting', tmeetMeetingSearch: 'Request to search meetings' },
       read: 'Request to read {target}', readFallback: 'Request to read a file', write: 'Request to write {target}', writeFallback: 'Request to write a file', edit: 'Request to edit {target}', editFallback: 'Request to edit a file', bash: 'Request to run command {command}', bashFallback: 'Request to run a command', search: 'Request to search for {query}', searchFallback: 'Request to search content', listDir: 'Request to view the {target} directory', listDirFallback: 'Request to view a directory', webSearch: 'Request to search the web for {query}', webSearchFallback: 'Request to search the web', webFetch: 'Request to open {target}', webFetchFallback: 'Request to open a web page', mcpTool: 'Request to call {server}', channelMessage: 'Request to send a message in {channel}', subagentSpawn: 'Request to start an agent — {description}', subagentSpawnFallback: 'Request to start an agent', subagentMessage: 'Request to message an agent', agentConversation: 'Request to contact {name}', agentConversationFallback: 'Request to contact an agent', delegateTask: 'Request to start background task: {description}', delegateTaskFallback: 'Request to start a background task', taskStatus: 'Request to check background task progress', steerTask: 'Request to adjust a background task', cancelTask: 'Request to cancel a background task', todo: 'Request to update the to-do list', planUpdate: 'Request to update the plan', planRead: 'Request to view the plan', taskManager: 'Request to update tasks', skill: 'Request to use the {skill} skill', skillFallback: 'Request to use a skill', screenshot: 'Request to take a screenshot', askUser: 'Request to ask you a question', memoryStore: 'Request to save a memory', memorySearch: 'Request to search memory', toolSearch: 'Request to look up available tools', fallbackNeutral: 'Request to run a tool operation', connectorFallbackAction: { queryStatus: 'Request to check connection status', queryCollections: 'Request to list available collections', queryItems: 'Request to query items', query: 'Request to query information', create: 'Request to create content', update: 'Request to update content', delete: 'Request to delete content' }, group: { explored: 'Request to inspect content {count} times', ran: 'Request to run {count} commands', searchedWeb: 'Request to search the web {count} times', mcp: 'Request to call tools {count} times', subagent: 'Request to dispatch {count} agent tasks', planned: 'Request to update tasks {count} times', skill: 'Request to use skills {count} times', used: 'Request to run {count} steps' },
     },
     running: {
+      delegateSession: { target: '“{target}”', targetFallback: 'another conversation', delegate_existing: 'Sending the task to {target}', create_new: 'Creating a conversation and sending it the task', correct: 'Adjusting the delegation to {target}', stop: 'Stopping the delegation to {target}', resume: 'Resuming the delegation to {target}', unknown: 'Handling a cross-conversation delegation', reused: 'Already delivered; not sent again' },
+      listSessionCandidates: 'Finding conversations for delegation',
       declared: { tmeetMeetingListUpcoming: 'Checking upcoming/in-progress meetings', tmeetMeetingListEnded: 'Checking meetings ended in the last 30 days', tmeetMeetingCreate: 'Creating a meeting', tmeetMeetingSearch: 'Searching meetings' },
       read: 'Reading {target}', readFallback: 'Reading a file', write: 'Writing {target}', writeFallback: 'Writing a file', edit: 'Editing {target}', editFallback: 'Editing a file', bash: 'Running command {command}', bashFallback: 'Running a command', search: 'Searching for {query}', searchFallback: 'Searching content', listDir: 'Viewing the {target} directory', listDirFallback: 'Viewing a directory', webSearch: 'Searching the web for {query}', webSearchFallback: 'Searching the web', webFetch: 'Opening {target}', webFetchFallback: 'Opening a web page', mcpTool: 'Calling {server}', channelMessage: 'Sending a message in {channel}', subagentSpawn: 'Starting an agent — {description}', subagentSpawnFallback: 'Starting an agent', subagentMessage: 'Messaging an agent', agentConversation: 'Talking to {name}', agentConversationFallback: 'Talking to an agent', delegateTask: 'Starting background task: {description}', delegateTaskFallback: 'Starting a background task', taskStatus: 'Checking background task progress', steerTask: 'Adjusting a background task', cancelTask: 'Cancelling a background task', todo: 'Updating the to-do list', planUpdate: 'Updating the plan', planRead: 'Viewing the plan', taskManager: 'Updating tasks', skill: 'Using the {skill} skill', skillFallback: 'Using a skill', screenshot: 'Taking a screenshot', askUser: 'Waiting for your answer', memoryStore: 'Saving a memory', memorySearch: 'Searching memory', toolSearch: 'Looking up available tools', fallbackNeutral: 'Running a tool operation', connectorFallbackAction: { queryStatus: 'Checking connection status', queryCollections: 'Listing available collections', queryItems: 'Querying items', query: 'Querying information', create: 'Creating content', update: 'Updating content', delete: 'Deleting content' }, group: { explored: 'Inspecting content {count} times', ran: 'Running {count} commands', searchedWeb: 'Searching the web {count} times', mcp: 'Calling tools {count} times', subagent: 'Dispatching {count} agent tasks', planned: 'Updating tasks {count} times', skill: 'Using skills {count} times', used: 'Running {count} steps' },
     },
     failed: {
+      delegateSession: { target: '“{target}”', targetFallback: 'another conversation', delegate_existing: 'Could not send the task to {target}', create_new: 'Could not create a conversation and delegate the task', correct: 'Could not adjust the delegation to {target}', stop: 'Could not stop the delegation to {target}', resume: 'Could not resume the delegation to {target}', unknown: 'Could not handle the cross-conversation delegation', reused: 'Already delivered; not sent again' },
+      listSessionCandidates: 'Could not find conversations for delegation',
       declared: { tmeetMeetingListUpcoming: 'Could not check upcoming/in-progress meetings', tmeetMeetingListEnded: 'Could not check meetings ended in the last 30 days', tmeetMeetingCreate: 'Could not create a meeting', tmeetMeetingSearch: 'Could not search meetings' },
       read: 'Could not read {target}', readFallback: 'Could not read a file', write: 'Could not write {target}', writeFallback: 'Could not write a file', edit: 'Could not edit {target}', editFallback: 'Could not edit a file', bash: 'Could not run command {command}', bashFallback: 'Could not run a command', search: 'Could not search for {query}', searchFallback: 'Could not search content', listDir: 'Could not view the {target} directory', listDirFallback: 'Could not view a directory', webSearch: 'Could not search the web for {query}', webSearchFallback: 'Could not search the web', webFetch: 'Could not open {target}', webFetchFallback: 'Could not open a web page', mcpTool: 'Could not call {server}', channelMessage: 'Could not send a message in {channel}', subagentSpawn: 'Could not start an agent — {description}', subagentSpawnFallback: 'Could not start an agent', subagentMessage: 'Could not message an agent', agentConversation: 'Could not contact {name}', agentConversationFallback: 'Could not contact an agent', delegateTask: 'Could not start background task: {description}', delegateTaskFallback: 'Could not start a background task', taskStatus: 'Could not check background task progress', steerTask: 'Could not adjust a background task', cancelTask: 'Could not cancel a background task', todo: 'Could not update the to-do list', planUpdate: 'Could not update the plan', planRead: 'Could not view the plan', taskManager: 'Could not update tasks', skill: 'Could not use the {skill} skill', skillFallback: 'Could not use a skill', screenshot: 'Could not take a screenshot', askUser: 'Could not ask you a question', memoryStore: 'Could not save a memory', memorySearch: 'Could not search memory', toolSearch: 'Could not look up available tools', fallbackNeutral: 'Could not run the tool operation', connectorFallbackAction: { queryStatus: 'Could not check connection status', queryCollections: 'Could not list available collections', queryItems: 'Could not query items', query: 'Could not query information', create: 'Could not create content', update: 'Could not update content', delete: 'Could not delete content' }, group: { explored: 'Could not inspect content {count} times', ran: 'Could not run {count} commands', searchedWeb: 'Could not search the web {count} times', mcp: 'Could not call tools {count} times', subagent: 'Could not dispatch {count} agent tasks', planned: 'Could not update tasks {count} times', skill: 'Could not use skills {count} times', used: 'Could not run {count} steps' },
     },
@@ -254,11 +283,17 @@ export const toolStepVerbsEn: ToolStepVerbBundle = {
     runEndedAfterRestart: 'The run this step belonged to has already ended, so it did not run; you will be asked again the next time it triggers.',
     argsUnavailable: 'After the app restarted, the full details of this step could not be found, so it was not run for safety.',
   },
+  agentFailureReasons: {
+    timeout: 'This task exceeded its time limit',
+    'permission-denied': 'The required permission was not granted',
+    unknown: 'The cause of the failure is not yet known',
+  },
   failureCodes: {
     'worktree-create-failed': 'Could not prepare the workspace for this task',
     'gateway-timeout': 'The service did not respond in time',
     'tool-unavailable': 'The required capability is unavailable',
     'blocked-by-parent-role': 'This step is not allowed for the current role',
+    'invalid-arguments': 'The wait time the assistant set exceeds the allowed limit and must be shortened.',
     'budget-exhausted': 'This task used up its budget',
     'parent-gone': 'The parent task has already ended',
     'cancelled-by-user': 'Cancelled as requested',
@@ -267,5 +302,6 @@ export const toolStepVerbsEn: ToolStepVerbBundle = {
     'dependency-missing': 'A required earlier step is missing',
     'workflow-stage-failed': 'This stage did not finish',
     'model-error': 'The model did not return a usable result',
+    [SANDBOX_APPROVED_RM_STILL_DENIED_FAILURE_CODE]: 'You approved deleting this file, but the sandbox still blocked it. Delete it manually in Finder, or move it into the working folder and try again',
   },
 };
