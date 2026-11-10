@@ -1182,7 +1182,7 @@ export class ConversationRuntime {
   async cancel(reason?: 'user' | 'session-switch' | 'idle-reaped'): Promise<void> {
     // 回复已经完成落库、但 run 还没从 registry 注销的尾窗里，cancel 必须是安全 no-op。
     // 这时再标 cancelled / preserve partial 会把同一条完整回复追加标记后写成第二行。
-    if (this.ctx.control.isSettled) return;
+    if (this.ctx.control.isSettled || this.ctx.control.isCancelled) return;
 
     markStreamSnapshotInterruptionReason({ workingDir: this.ctx.workingDirectory, sessionId: this.ctx.sessionId }, reason === 'session-switch' || reason === 'idle-reaped' ? reason : 'user');
     this.ctx.control.markCancelled(reason);

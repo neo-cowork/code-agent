@@ -83,6 +83,8 @@ export class ControlState {
 
   setInferenceAbortController(controller: AbortController | null): void {
     this._abortController = controller;
+    // Stop can arrive during request assembly, before this controller is attached.
+    if (controller && this._isCancelled) controller.abort();
   }
 
   setRunAbortController(controller: AbortController | null): void {
