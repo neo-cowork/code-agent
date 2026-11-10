@@ -359,7 +359,8 @@ class SpawnGuard {
     }
 
     const agent: ManagedAgent = {
-      waiterAgentId,      parentRunId: options.parentRunId ?? scope?.parentNativeRunId,
+      waiterAgentId,
+      parentRunId: options.parentRunId ?? scope?.parentNativeRunId,
       background: options.background,
       id,
       completion: options.completion,
@@ -736,7 +737,7 @@ class SpawnGuard {
    * Also auto-queue a notification for the parent agent to pick up.
    */
   private fireOnComplete(agent: ManagedAgent): void {
-    finishManagedAgentChildren(agent, this.agents, (child) => this.cancelAgent(child, 'parent-cancel'));
+    if (agent.parentRunId || agent.background !== undefined) finishManagedAgentChildren(agent, this.agents, (child) => this.cancelAgent(child, 'parent-cancel'));
     persistManagedAgentTerminal(agent);
     // Auto-queue notification for parent agent (Codex-style async notification)
     this.pendingNotifications.push({
