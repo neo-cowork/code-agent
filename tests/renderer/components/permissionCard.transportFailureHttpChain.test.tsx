@@ -45,7 +45,7 @@ const appState = vi.hoisted(() => ({
 // setPendingPermissionRequest 做成有状态实现：catch 里的「留卡」恢复调用会真切回
 // appState.request，卡是否还在 DOM 里可以被直接断言。
 vi.mock('../../../src/renderer/stores/appStore', () => ({
-  useAppStore: () => ({
+  useAppStore: Object.assign(() => ({
     pendingPermissionRequest: appState.request,
     pendingPermissionSessionId: appState.sessionId,
     setPendingPermissionRequest: (req: PermissionRequest | null, sessionId: string | null) => {
@@ -57,7 +57,7 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
     language: 'zh',
     setLanguage: () => {},
     cloudUIStrings: undefined,
-  }),
+  }), { getState: () => ({ language: 'zh' }) }),
 }));
 
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
@@ -212,7 +212,7 @@ describe('PermissionCard transport failure over the real HTTP chain', () => {
         text: async () => JSON.stringify({ error: 'boom' }),
         json: async () => ({}),
       })) as unknown as typeof fetch,
-      '审批应答发送失败 (500): boom',
+      'Neo 暂时无法完成请求，请稍后重试。',
     );
   });
 
