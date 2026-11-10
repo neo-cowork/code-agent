@@ -224,7 +224,7 @@ export const InputAddMenu: React.FC<Props> = ({
     id: item.id,
     label: item.label,
     sublabel: item.kind !== 'skill' && expertOptionalIds.has(item.id)
-      ? t.chatInput.connectorSource.menuRecommended.replace('{expert}', activeExpert?.name || activeExpert?.id || '')
+      ? t.chatInput.connectorSource.menuRecommended.replace('{expert}', activeExpert?.displayName || activeExpert?.name || activeExpert?.id || '')
       : undefined,
     description: item.kind === 'skill'
       ? item.description
@@ -243,7 +243,7 @@ export const InputAddMenu: React.FC<Props> = ({
   }));
   const expertItems: InputAddSubmenuItem[] = expertEntries.map((entry) => ({
     id: entry.id,
-    label: entry.name || entry.id,
+    label: entry.displayName || entry.name || entry.id,
     sublabel: entry.profession,
     description: entry.description,
     selected: entry.id === activeAgentId,
