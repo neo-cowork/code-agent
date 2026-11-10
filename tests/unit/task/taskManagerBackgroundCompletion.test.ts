@@ -166,6 +166,23 @@ describe('task_complete 的后台收口（完成通知/面板状态）', () => {
     expect(notifyState.notifyTaskComplete).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-1' }));
   });
 
+  it('whenAgentEventsSettled waits for in-flight (un-awaited) event handling of that session only', async () => {
+    const manager = newManager() as unknown as {
+      trackEventHandling: (sessionId: string, handling: Promise<void>) => Promise<void>;
+      whenAgentEventsSettled: (sessionId: string) => Promise<void>;
+    };
+    let finish!: () => void;
+    manager.trackEventHandling('session-1', new Promise<void>((resolve) => { finish = resolve; }));
+    let settled = false;
+    const waiting = manager.whenAgentEventsSettled('session-1').then(() => { settled = true; });
+    await manager.whenAgentEventsSettled('other-session');
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    finish();
+    await waiting;
+    expect(settled).toBe(true);
+  });
+
   it('ordinary scheduled session task_complete keeps its generic completion notice', async () => {
     sessionManagerState.getSession.mockResolvedValue({
       id: 'session-1', title: '每周简报', type: 'schedule',

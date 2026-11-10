@@ -754,8 +754,8 @@ export class TaskManager extends EventEmitter {
 
   /** orchestrator 不 await onEvent：run 返回时 task_complete 的落库/收口链可能还在跑，等它们排空。 */
   async whenAgentEventsSettled(sessionId: string): Promise<void> {
-    while (this.inflightEventHandlers.get(sessionId)?.size) {
-      await Promise.allSettled([...this.inflightEventHandlers.get(sessionId)!]);
+    for (let pending = this.inflightEventHandlers.get(sessionId); pending?.size; pending = this.inflightEventHandlers.get(sessionId)) {
+      await Promise.allSettled([...pending]);
     }
   }
 

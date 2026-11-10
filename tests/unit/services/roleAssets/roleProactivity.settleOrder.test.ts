@@ -1,4 +1,3 @@
-import { UNATTENDED_TRUST_NOTICE } from '../../../../src/shared/unattendedTrust';
 // wakeRole × 真实通知链：orchestrator 不 await onEvent，task_complete 的收口链在 run 返回之后才落地。
 // 此时不能多出通用「任务完成」通知抢走角色摘要通知的预算。
 
