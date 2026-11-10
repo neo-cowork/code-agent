@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { assertDogfoodVerificationAccount, resolveDevVerificationDataDir, signInDogfoodVerificationAccount } from '../../scripts/lib/verificationAccount';
 
 vi.mock('../../scripts/verify-slotless.mjs', () => ({ readDogfoodCredentials: () => ({ email: 'dogfood@example.test', password: 'fixture-password' }) }));
-afterEach(() => { vi.unstubAllGlobals(); });
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 const dogfood = { isAuthenticated: true, sessionTrustState: 'verified', hasCachedAdminClaim: false, user: { email: 'dogfood@example.test', isAdmin: false } };
 
 describe('already-running Dev app account admission', () => {
@@ -49,12 +49,14 @@ describe('already-running Dev app account admission', () => {
 });
 
 describe('fresh isolated telemetry host sign-in', () => {
-  it('checks the real sign-in reply instead of the synthetic dev-API getStatus', async () => {
+  it('checks the real sign-in reply without polluting the telemetry --json output', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response(JSON.stringify({ success: true, data: { success: true, user: dogfood.user } })));
     vi.stubGlobal('fetch', fetch);
     await signInDogfoodVerificationAccount('http://127.0.0.1:49001', 'fixture');
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(String(fetch.mock.calls[0][0])).toContain('/auth/signInEmail');
+    expect(log).not.toHaveBeenCalled();
   });
 
   it('rejects failed actual sign-in even when HTTP succeeded', async () => {

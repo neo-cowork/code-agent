@@ -49,5 +49,4 @@ export async function signInDogfoodVerificationAccount(url: string, token: strin
   if (!data?.success || data.user?.email !== credentials.email || data.user.isAdmin === true) {
     throw new Error('dogfood account sign-in was rejected');
   }
-  console.log('NEO_VERIFY_AUTH=signInDogfood (fresh dogfood account sign-in)');
 }
