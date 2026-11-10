@@ -271,6 +271,6 @@ external ports. The real consumer round-trip proves
 
 `waiting` additionally projects `durableWaitingInput=true`. A durable terminal view blocks later native control attempts even if the process-local `RunRegistry` no longer has a live handle.
 
-The Web agent route owns one `AgentDurableRouteRunLifecycle` per request. It creates the run before SSE headers, keeps terminal state private, and makes terminal/release idempotent. Pre-stream and mid-stream client disconnects both commit `run_cancelled`; the public event name cannot diverge from the durable terminal type.
+The Web agent route owns one `AgentDurableRouteRunLifecycle` per request. It creates the run before SSE headers, keeps terminal state private, and makes terminal/release idempotent. After SSE starts, client disconnects detach the run: execution and durable completion continue, and events are mirrored to the global stream for reattachment. Explicit Stop still cancels. An accepted request that loses its client during preflight also continues detached; explicit Stop remains the cancellation path.
 
 External adapters cannot promote process exit into success. `ExternalEngineDurableLifecycle.finish()` commits `completed` only when the normalized adapter result is completed and carries parsed terminal evidence. Exit code zero with empty final output is `failed`; cancellation wins over a late result. The resulting durable projection is then mapped back to session status, so adapter result, run envelope, `/api/sessions`, and renderer cannot report conflicting terminal states.

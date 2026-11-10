@@ -11,6 +11,7 @@
 // ============================================================================
 
 import type { AgentErrorMetadata } from '../contract';
+import { RUN_ERROR_CODE_MAX_ITERATIONS } from '../constants';
 import { hasInsufficientBalanceSignal } from './providerError';
 
 type AgentErrorPayload = Record<string, unknown>;
@@ -68,6 +69,8 @@ export function classifyAgentError(
   context?: { modelId?: string },
 ): AgentErrorMetadata | null {
   const payload = normalizeAgentErrorPayload(data);
+  if (payload.code === RUN_ERROR_CODE_MAX_ITERATIONS
+    && isRecord(payload.details) && payload.details.stoppedByStepLimit === true) return null;
   const message = getAgentErrorMessage(payload);
   if (!message) return null;
 

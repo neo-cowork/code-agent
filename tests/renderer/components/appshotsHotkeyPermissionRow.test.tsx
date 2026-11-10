@@ -76,21 +76,92 @@ describe('AppshotsSettings 快捷键（⌘+⌘）输入监控权限行', () => {
     useAppStore.setState({ language: 'zh' });
   });
 
-  it.each([
-    ['zh', zh, /若热键无反应，请.*重启应用/],
-    ['en', en, /If the shortcut does not respond,.*restart the app/i],
-  ] as const)('权限说明（%s）只把重启归因于屏幕录制，并指向实时快捷键按钮文案', async (language, locale, shortcutRestartPattern) => {
-    useAppStore.setState({ language });
-    platform.current = 'win32';
-    const permissionsDescription = locale.settings.appshots.permissionsDescription;
-    const hotkeyEnable = locale.settings.appshots.hotkeyEnable;
-    renderTab();
+  describe.each([
+    ['zh', zh, '应用截图需要「屏幕录制」截窗、「辅助功能」读取窗口文本。在系统设置里允许「屏幕录制」后，请重启应用一次。若快捷键无反应，请点击下方快捷键行中的「开启快捷键」。'],
+    ['en', en, 'App screenshots need Screen Recording to capture windows and Accessibility to read window text. After you allow Screen Recording in System Settings, restart the app once. If the shortcut does not respond, click "Enable shortcut" in the shortcut row below.'],
+  ] as const)('权限说明（%s）', (language, locale, oldFullDescription) => {
+    const text = locale.settings.appshots;
 
-    const description = screen.getByText(permissionsDescription);
-    expect(description.textContent).toContain(language === 'zh' ? '屏幕录制' : 'Screen Recording');
-    expect(description.textContent).toMatch(language === 'zh' ? /屏幕录制.{0,30}重启应用一次/ : /Screen Recording in System Settings, restart the app once/);
-    expect(description.textContent).toContain(hotkeyEnable);
-    expect(description.textContent).not.toMatch(shortcutRestartPattern);
+    function description() {
+      return screen.getByText((_, element) => element?.tagName === 'P'
+        && element.textContent?.startsWith(text.permissionsDescription) === true);
+    }
+
+    function expectBaseOnly() {
+      expect(description().textContent).toBe(text.permissionsDescription);
+      expect(description().textContent).toMatch(language === 'zh'
+        ? /屏幕录制.{0,30}重启应用一次/
+        : /Screen Recording in System Settings, restart the app once/);
+      expect(description().textContent).not.toContain(text.permissionsHotkeyHint.trim());
+      expect(description().textContent).not.toContain(text.hotkeyEnable);
+      expect(screen.queryByRole('button', { name: text.hotkeyEnable })).toBeNull();
+    }
+
+    beforeEach(() => {
+      useAppStore.setState({ language });
+    });
+
+    it('row hidden (non-macOS): 保留屏幕录制重启说明，不指向缺失的快捷键按钮', async () => {
+      platform.current = 'win32';
+      mockHotkey({ permissionGranted: false, tapInstalled: false, devChannel: false });
+      renderTab();
+
+      await waitFor(() => expect(facadeInvoke).toHaveBeenCalledWith('setAppshotsEnabled', { enabled: true }));
+      expect(screen.queryByTestId('appshots-hotkey-permission-row')).toBeNull();
+      expectBaseOnly();
+    });
+
+    it('button visible (not granted): 与修改前完整文案逐字一致', async () => {
+      mockHotkey({ permissionGranted: false, tapInstalled: false, devChannel: true });
+      renderTab();
+
+      await screen.findByRole('button', { name: text.hotkeyEnable });
+      expect(description().textContent).toBe(oldFullDescription);
+      expect(description().textContent).not.toMatch(language === 'zh'
+        ? /若快捷键无反应，请.*重启应用/
+        : /If the shortcut does not respond,.*restart the app/i);
+    });
+
+    it('granted-but-not-installed: 按钮与快捷键提示同时保留', async () => {
+      mockHotkey({ permissionGranted: true, tapInstalled: false, devChannel: true });
+      renderTab();
+
+      await screen.findByRole('button', { name: text.hotkeyEnable });
+      expect(description().textContent).toBe(oldFullDescription);
+    });
+
+    it('tap installed: 行仍显示，隐藏按钮与快捷键提示', async () => {
+      mockHotkey({ permissionGranted: true, tapInstalled: true, devChannel: false });
+      renderTab();
+
+      const row = await screen.findByTestId('appshots-hotkey-permission-row');
+      expect(row.textContent).toContain(text.hotkeyStatusOn);
+      expectBaseOnly();
+    });
+
+    it('status error (old shell): 隐藏行与快捷键提示', async () => {
+      mockHotkey(new Error('command appshots_hotkey_status not found'));
+      renderTab();
+
+      await waitFor(() => expect(facadeInvoke).toHaveBeenCalledWith('setAppshotsEnabled', { enabled: true }));
+      expect(facadeInvoke).toHaveBeenCalledWith('getAppshotsHotkeyStatus');
+      expect(screen.queryByTestId('appshots-hotkey-permission-row')).toBeNull();
+      expectBaseOnly();
+    });
+
+    it('post-click: 请求返回已安装后，快捷键提示与按钮一起消失', async () => {
+      mockHotkey({ permissionGranted: false, tapInstalled: false, devChannel: false });
+      renderTab();
+
+      const button = await screen.findByRole('button', { name: text.hotkeyEnable });
+      expect(description().textContent).toBe(oldFullDescription);
+      fireEvent.click(button);
+
+      await waitFor(() => expect(screen.queryByRole('button', { name: text.hotkeyEnable })).toBeNull());
+      expect(facadeInvoke).toHaveBeenCalledWith(REQUEST_COMMAND);
+      expect(screen.getByTestId('appshots-hotkey-permission-row').textContent).toContain(text.hotkeyStatusOn);
+      expectBaseOnly();
+    });
   });
 
   it('非 macOS：隐藏快捷键权限行且不查询或请求输入监控权限', async () => {
