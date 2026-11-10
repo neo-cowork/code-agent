@@ -166,7 +166,7 @@ export function ToolHeader({
 
       {/* 有文件路径时主行可点进右栏预览（读取了/编辑了/写入了 …）；
           点名字看文件，父行其余区域仍负责展开/折叠明细。 */}
-      {filePath ? (
+      {filePath && !preflight ? (
         <button
           type="button"
           data-testid="tool-header-open-preview"
