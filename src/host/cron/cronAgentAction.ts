@@ -99,6 +99,8 @@ export async function executeCronAgentAction(
   // cron/heartbeat 无人值守会话标 async_agent（2026-07-13 拍板）：bash 走
   // ask+forceConfirm，无人应答由 requestPermission 60s 超时 deny 兜底，
   // 与 readOnly 会话档双保险。必须在 sendMessage 前标注。
+  const optInPersonalSkillIds = normalizePersonalSkillIds(action.allowedPersonalSkillIds);
+  const timeZone = definition.schedule.type === 'cron' ? definition.schedule.timezone : undefined;
   orchestrator.setExecutionTopology('async_agent');
   if (cronSession.workingDirectory) {
     tm.setWorkingDirectory(cronSession.id, cronSession.workingDirectory);
@@ -109,7 +111,7 @@ export async function executeCronAgentAction(
     mode: 'normal',
     ...await buildCronAgentRunOptions(action.roleId, cronSession.workingDirectory),
     eventFilter: BACKGROUND_AGENT_EVENT_FILTER,
-    toolScope: { optInPersonalSkillIds: normalizePersonalSkillIds(action.allowedPersonalSkillIds) },
+    toolScope: { optInPersonalSkillIds },
   };
   agentRunOptions.systemInstructions = [UNATTENDED_TRUST_NOTICE];
   const previousSnapshot = ctx?.[CRON_AGENT_SNAPSHOT.CONTEXT_KEY];
@@ -133,7 +135,7 @@ export async function executeCronAgentAction(
       // 用户消息标 memoryTainted（跳过自动记忆写）。调度触发的 run 字节不变。
       const sendMessage = () => orchestrator.sendMessage(
         buildCronAgentPrompt(action.prompt, previousSnapshot, snapshotTrackingEnabled, undefined, action.urgencyCriteria, action.notifyWhen,
-          definition.schedule.type === 'cron' ? definition.schedule.timezone : undefined, action.allowedPersonalSkillIds)
+          timeZone, action.allowedPersonalSkillIds)
           + (eventPayloadBlock === undefined ? '' : `\n\n${eventPayloadBlock}`),
         undefined,
         agentRunOptions,

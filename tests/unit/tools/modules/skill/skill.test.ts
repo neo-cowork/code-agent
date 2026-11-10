@@ -334,10 +334,14 @@ describe('skillModule (native)', () => {
       );
       expect(allowlistedUnattended.ok).toBe(true);
 
+      expect((await run({ command: 'wechat-local-query' }, makeCtx({
+        sessionId: 'cron-session', toolScope: { optInPersonalSkillIds: ['wechat-local-query'] },
+      }))).ok).toBe(true);
+
       for (const nonUserSkill of ['builtin-skill', 'project-skill', 'plugin-skill']) {
         const res = await run(
           { command: nonUserSkill },
-          makeCtx({ sessionId: 'cron-session' }),
+          makeCtx({ sessionId: 'cron-session', toolScope: { optInPersonalSkillIds: ['wechat-local-query'] } }),
         );
         expect(res.ok).toBe(true);
       }
