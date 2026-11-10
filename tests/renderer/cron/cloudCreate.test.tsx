@@ -40,6 +40,8 @@ describe('cloud creation recovery', () => {
     fireEvent.click(screen.getByText('基本设置'));
     fireEvent.click(screen.getByText('云端', { exact: true }));
     fireEvent.click(screen.getByText('创建任务'));
+    expect(create).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
     await screen.findByText(cronCenterZh.cronCenter.cloudCreate.unconfigured);
     expect(document.body.textContent).not.toContain('internal sentinel');
     expect(create).toHaveBeenLastCalledWith(expect.objectContaining({ runsOn: 'cloud' }));
@@ -47,7 +49,34 @@ describe('cloud creation recovery', () => {
     expect((control('任务名称') as HTMLInputElement).value).toBe('GitHub 通知摘要');
     create.mockResolvedValue({ id: 'local-summary', runsOn: 'local' });
     fireEvent.click(screen.getByText('创建任务'));
+    expect(create).toHaveBeenCalledTimes(1);
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
     await waitFor(() => expect(create).toHaveBeenLastCalledWith(expect.objectContaining({ runsOn: 'local', name: 'GitHub 通知摘要' })));
+  });
+
+  it.each(['simple editor', 'template'])('keeps the review gate and local recovery in %s', async entry => {
+    render(<CronJobEditor isOpen job={null} onClose={vi.fn()} />);
+    if (entry === 'template') {
+      fireEvent.click(screen.getByText('从模板创建'));
+      fireEvent.click(screen.getByText('网页更新提醒'));
+      fireEvent.change(screen.getByPlaceholderText('粘贴要关注的网页地址'), { target: { value: 'https://github.com/notifications' } });
+    } else {
+      fireEvent.change(document.querySelector('textarea')!, { target: { value: '整理未读 GitHub 通知并发给我' } });
+    }
+    fireEvent.click(screen.getByTestId('cron-runs-on-cloud'));
+    fireEvent.click(screen.getByText(entry === 'template' ? '创建任务' : '创建自动化'));
+    expect(create).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
+    await screen.findByText(cronCenterZh.cronCenter.cloudCreate.unconfigured);
+    expect(document.body.textContent).not.toContain('internal sentinel');
+    expect(screen.queryByTestId('cron-pending-routine-restate')).toBeNull();
+    const rejected = create.mock.calls[0][0];
+    fireEvent.click(screen.getByText(cronCenterZh.cronCenter.cloudCreate.switchLocal));
+    create.mockResolvedValue({ id: 'local-summary', runsOn: 'local' });
+    fireEvent.click(screen.getByText(entry === 'template' ? '创建任务' : '创建自动化'));
+    expect(create).toHaveBeenCalledTimes(1);
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
+    await waitFor(() => expect(create).toHaveBeenLastCalledWith({ ...rejected, runsOn: 'local' }));
   });
 
   it.each(['zh', 'en'] as const)('chat card localizes the reason and preserves the task when switching (%s)', language => {

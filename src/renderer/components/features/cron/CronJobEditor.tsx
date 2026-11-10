@@ -140,6 +140,11 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       onClose();
       return true;
     } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === CRON_CLOUD_NOT_CONFIGURED) {
+        setErrors({ cloudUnconfigured: true });
+        backToEdit();
+        return false;
+      }
       setErrors({ form: saveErrorMessage(error, cc.simpleCreateFailed) });
       return false;
     } finally {

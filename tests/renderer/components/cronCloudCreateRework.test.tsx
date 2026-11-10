@@ -111,6 +111,10 @@ describe('PR #3083 Important regressions', () => {
         fireEvent.click(screen.getByText('创建自动化'));
       }
     }
+    if (entry !== 'featured template') {
+      expect(createJob).not.toHaveBeenCalled();
+      fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
+    }
     await waitFor(() => expect(createJob).toHaveBeenCalledTimes(1));
     expect(await screen.findByText(reason)).toBeTruthy();
   });

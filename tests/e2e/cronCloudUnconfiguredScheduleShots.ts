@@ -151,6 +151,8 @@ test('en editor unconfigured: localized notice and both recovery options', async
   await form.locator('textarea').fill(fixedDraft('en').action.prompt);
   await form.getByTestId('cron-runs-on-cloud').click();
   await form.getByRole('button', { name: 'Create automation', exact: true }).click();
+  await expect(page.getByTestId('cron-pending-routine-restate')).toBeVisible();
+  await page.getByTestId('cron-pending-routine-confirm').click();
   await noticeShot(page, 'cron-cloud-unconfigured-editor-en', 'en');
 });
 
@@ -164,5 +166,7 @@ test('en template unconfigured: localized notice and both recovery options', asy
   await page.getByPlaceholder('粘贴要关注的网页地址', { exact: true }).fill('https://github.com/notifications');
   await page.getByRole('dialog').getByTestId('cron-runs-on-cloud').click();
   await page.getByRole('dialog').getByRole('button', { name: '创建任务', exact: true }).click();
+  await expect(page.getByTestId('cron-pending-routine-restate')).toBeVisible();
+  await page.getByTestId('cron-pending-routine-confirm').click();
   await noticeShot(page, 'cron-cloud-unconfigured-template-en', 'en');
 });

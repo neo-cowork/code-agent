@@ -139,6 +139,11 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
       onDone();
       return true;
     } catch (err) {
+      if (err instanceof Error && 'code' in err && err.code === CRON_CLOUD_NOT_CONFIGURED) {
+        setCloudUnconfigured(true);
+        backToEdit();
+        return false;
+      }
       const message = err instanceof Error ? err.message : '';
       setError(message.includes(CLOUD_ROLE_BOUND_ERROR)
         ? cc.cloudRoleBoundHint
