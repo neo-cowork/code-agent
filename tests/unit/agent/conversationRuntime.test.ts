@@ -1552,8 +1552,14 @@ describe('ConversationRuntime', () => {
       const result = await runtime.initializeRun('描述改成专盯 AI 赛道竞品的高级研究员，加 WebFetch。');
 
       expect(result?.isSimpleTask).toBe(false);
-      expect(resolveSkillInvocation).toHaveBeenNthCalledWith(1, '描述改成专盯 AI 赛道竞品的高级研究员，加 WebFetch。', '/tmp/test');
-      expect(resolveSkillInvocation).toHaveBeenNthCalledWith(2, '/edit-role 研究员', '/tmp/test');
+      expect(resolveSkillInvocation).toHaveBeenNthCalledWith(1, '描述改成专盯 AI 赛道竞品的高级研究员，加 WebFetch。', '/tmp/test', {
+        sessionId: 'test-session-1',
+        toolScope: undefined,
+      });
+      expect(resolveSkillInvocation).toHaveBeenNthCalledWith(2, '/edit-role 研究员', '/tmp/test', {
+        sessionId: 'test-session-1',
+        toolScope: undefined,
+      });
       expect(ctx.turn.activeSkillInvocation).toMatchObject({
         skillName: 'edit-role',
         matchKind: 'slash',

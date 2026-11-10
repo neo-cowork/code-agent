@@ -94,6 +94,9 @@ export interface ToolSearchOptions {
   /** 当前 run 明确禁用的工具；搜索结果和延迟加载都必须排除。 */
   deniedToolNames?: readonly string[];
 
+  /** 当前 run 的显式工具与技能作用域（用于无人值守个人技能过滤等）。 */
+  toolScope?: import('./conversationEnvelope').WorkbenchToolScope;
+
   /** Optional Jev rerank seam. The caller owns production gating and judge construction. */
   rerank?: {
     judge: JevSkillRerankJudge;
@@ -126,6 +129,9 @@ export interface DeferredToolMeta {
 
   /** 插件 id（插件注册的工具元数据携带，deferred-tools 摘要按它分组） */
   pluginId?: string;
+
+  /** Skill 来源（当 source === 'dynamic' 且为虚拟 skill 项时记录，供按 run 过滤个人技能） */
+  skillSource?: import('./agentSkill').SkillSource;
 
   /** 搜索提示关键词（MCP 工具可通过 _meta['anthropic/searchHint'] 提供） */
   searchHint?: string[];
