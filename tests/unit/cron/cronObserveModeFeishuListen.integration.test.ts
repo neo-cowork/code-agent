@@ -5,7 +5,7 @@ import { PassThrough } from 'node:stream';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import type BetterSqlite3 from 'better-sqlite3';
 import type { PermissionRequestData } from '../../../src/host/tools/types';
 
@@ -82,6 +82,7 @@ import * as observe from '../../../src/host/cron/cronObserveMode';
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import { getToolCache } from '../../../src/host/services/infra/toolCache';
+import { createLogger } from '../../../src/host/services/infra/logger';
 import { resetPermissionModeManager } from '../../../src/host/permissions/modes';
 import { applySchema } from '../../../src/host/services/core/database/schema';
 import { loadCronEventDecisions, sqliteCronEventDecisionStore } from '../../../src/host/cron/cronEventDecisionLedger';
@@ -92,7 +93,7 @@ const RULE = 'if the message contains RR51-PING reply RR51-PONG 收到';
 const MESSAGE_ID = 'om_rr51_1';
 const COMMAND = `lark-cli im +messages-reply --message-id ${MESSAGE_ID} --text "RR51-PONG 收到"`;
 const SELECT_DECISIONS = 'SELECT * FROM cron_event_decisions WHERE job_id = ?';
-const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+const logger = createLogger('CronObserveModeFeishuListenTest');
 
 function proof(line: string) {
   process.stdout.write(`${line}\n`);
@@ -105,7 +106,7 @@ let executor: ToolExecutor;
 let requestPermission: ReturnType<typeof vi.fn<(request: PermissionRequestData) => Promise<boolean>>>;
 let messages: Array<{ role: string; content: string }>;
 let runEvents: Array<{ type: string; data: unknown }>;
-let enterObserve: ReturnType<typeof vi.spyOn<typeof observe, 'enterObserveModeForCronRun'>>;
+let enterObserve: MockInstance<typeof observe.enterObserveModeForCronRun>;
 
 function decisionRows() {
   return state.db!.prepare(SELECT_DECISIONS).all(job.id);
@@ -164,7 +165,7 @@ beforeEach(async () => {
       proof(`[PATH] executeCronAgentAction -> enterObserveModeForCronRun session=${sessionId} mode=${job.actionMode}`);
       messages.push({ role: 'user', content: prompt });
       const result = await executor.execute('Bash', { command: COMMAND }, {
-        sessionId, emitEvent: (event) => runEvents.push({ type: event.type, data: 'data' in event ? event.data : undefined }),
+        sessionId, emitEvent: (type, data) => runEvents.push({ type, data }),
       });
       if (result.metadata?.code === 'OBSERVE_MODE_RECORDED') {
         proof(`[PATH] enterObserveModeForCronRun registered session=${sessionId}; real ToolExecutor returned OBSERVE_MODE_RECORDED`);
