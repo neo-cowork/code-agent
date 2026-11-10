@@ -495,6 +495,11 @@ export const RENDERER_POLLING = {
   BACKOFF_FACTOR: 2,
   /** 传输层连接错误日志节流窗口：同一通道在此窗口内最多打一条，防后端不可达时刷屏 */
   TRANSPORT_ERROR_LOG_THROTTLE: 10_000,
+  /**
+   * 页面启动时 host 推来的审批快照（snapshot:true）先于 agent:event 监听器注册到达，
+   * 在此窗口内注册的新监听器补发一次（N-FIX-BGPANEL-STOP-TERMINAL-FU1-FU1-FU1）。
+   */
+  SSE_PERMISSION_SNAPSHOT_REPLAY_WINDOW: 10_000,
 } as const;
 
 /** 工具执行超时警告阈值 (ms)，按工具名或前缀匹配 */
