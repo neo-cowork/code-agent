@@ -31,7 +31,7 @@ export const previewWorkspaceZh = {
       refresh: '刷新',
       longScreenshotHtmlOnly: '长图仅支持 HTML 预览',
       exportLongScreenshot: '导出长图',
-      revealInFinder: '在 Finder 中显示',
+      revealInFinder: '在访达中显示',
       openWithDefault: '用默认程序打开',
       copyPath: '复制文件路径',
       moreActions: '更多操作',

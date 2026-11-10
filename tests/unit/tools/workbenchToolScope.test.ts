@@ -5,10 +5,12 @@ import { CONNECTOR_TOOL_NAMES } from '../../../src/shared/contract/workbenchTool
 import {
   filterToolDefinitionsByWorkbenchScope,
   isSkillCommandAllowedByWorkbenchScope,
+  isSkillHiddenForRun,
   isToolCallAllowedByWorkbenchScope,
   isToolNameAllowedByWorkbenchScope,
   normalizeWorkbenchToolScope,
 } from '../../../src/host/tools/workbenchToolScope';
+import { getPermissionModeManager, resetPermissionModeManager } from '../../../src/host/permissions/modes';
 
 function makeTool(name: string): ToolDefinition {
   return {
@@ -94,6 +96,32 @@ describe('workbenchToolScope', () => {
     expect(isSkillCommandAllowedByWorkbenchScope('ship-skill', {
       allowedSkillIds: ['review-skill'],
     })).toBe(false);
+  });
+
+  it('hides user-source skills in unattended sessions unless listed in allowedSkillIds', () => {
+    resetPermissionModeManager();
+    const pm = getPermissionModeManager();
+    pm.markUnattendedSession('unattended-session');
+
+    expect(isSkillHiddenForRun(
+      { name: 'wechat-local-query', source: 'user' },
+      { sessionId: 'unattended-session' },
+    )).toBe(true);
+    expect(isSkillHiddenForRun(
+      { name: 'wechat-local-query', source: 'user' },
+      { sessionId: 'foreground-session' },
+    )).toBe(false);
+    expect(isSkillHiddenForRun(
+      { name: 'wechat-local-query', source: 'user' },
+      { sessionId: 'unattended-session', toolScope: { allowedSkillIds: ['wechat-local-query'] } },
+    )).toBe(false);
+    for (const source of ['builtin', 'project', 'plugin', 'cloud', 'library'] as const) {
+      expect(isSkillHiddenForRun(
+        { name: `${source}-skill`, source },
+        { sessionId: 'unattended-session' },
+      )).toBe(false);
+    }
+    resetPermissionModeManager();
   });
 
   // 元工具（mcp / MCPUnified）把 server 放在参数里，按工具名判不到——dispatch 门要读 args.server，

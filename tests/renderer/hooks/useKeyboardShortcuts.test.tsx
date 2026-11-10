@@ -11,6 +11,8 @@ const keybindingsRuntime = vi.hoisted(() => ({
   keybindings: {
     bindings: {
       'session.stop': { enabled: true, accelerator: 'Escape' },
+      // N-CRON-WEBHOOK-CLOUD-HOOK-FU1-FU2：settings.open 的签名态测试依赖这条默认绑定
+      'settings.open': { enabled: true, accelerator: 'Cmd+,' },
     } as Record<string, { enabled: boolean; accelerator: string | null }>,
     globalHotkeysEnabled: false,
   },
@@ -41,6 +43,10 @@ const appState = vi.hoisted(() => ({
   openWorkspacePreview: vi.fn(),
   showSettings: false,
   isProcessing: false,
+}));
+const authState = vi.hoisted(() => ({ isAuthenticated: false, showAuthModal: false, setShowAuthModal: vi.fn() }));
+vi.mock('../../../src/renderer/stores/authStore', () => ({
+  useAuthStore: { getState: () => authState },
 }));
 const sessionState = vi.hoisted(() => ({
   currentSessionId: 'session-current',
@@ -189,6 +195,7 @@ describe('useKeyboardShortcuts global hotkey registration', () => {
     keybindingsRuntime.keybindings = {
       bindings: {
         'session.stop': { enabled: true, accelerator: 'Escape' },
+        'settings.open': { enabled: true, accelerator: 'Cmd+,' },
       },
       globalHotkeysEnabled: false,
     };
@@ -213,5 +220,43 @@ describe('useKeyboardShortcuts global hotkey registration', () => {
         ],
       });
     });
+  });
+});
+
+describe('signed-out settings entry', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    appState.pendingPermissionRequest = null;
+    appState.showSettings = false;
+    appState.setShowSettings.mockImplementation((show: boolean) => { appState.showSettings = show; });
+    authState.isAuthenticated = false;
+    authState.showAuthModal = true;
+    authState.setShowAuthModal.mockImplementation((show: boolean) => { authState.showAuthModal = show; });
+  });
+  afterEach(() => {
+    cleanup();
+    appState.setShowSettings.mockReset();
+    appState.showSettings = false;
+    authState.showAuthModal = false;
+  });
+
+  it('Cmd+, opens Settings and dismisses the covering auth dialog while signed out', async () => {
+    renderHook(() => useKeyboardShortcuts());
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: ',', metaKey: true, bubbles: true }));
+    });
+    expect(authState.isAuthenticated).toBe(false);
+    expect(appState.showSettings).toBe(true);
+    expect(authState.showAuthModal).toBe(false);
+    expect(authState.setShowAuthModal.mock.invocationCallOrder[0]).toBeLessThan(appState.setShowSettings.mock.invocationCallOrder[0]);
+  });
+
+  it('respects enableSettings=false without dismissing the auth dialog', async () => {
+    renderHook(() => useKeyboardShortcuts({ enableSettings: false }));
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: ',', metaKey: true, bubbles: true }));
+    });
+    expect(appState.showSettings).toBe(false);
+    expect(authState.showAuthModal).toBe(true);
   });
 });

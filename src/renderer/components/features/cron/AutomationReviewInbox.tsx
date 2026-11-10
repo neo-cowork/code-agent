@@ -26,6 +26,7 @@ import { useSessionStore } from '../../../stores/sessionStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useCronStore } from '../../../stores/cronStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import { toast } from '../../../hooks/useToast';
 import { Button } from '../../primitives/Button';
 import { SensitiveStepParkedRow } from '../../PermissionDialog/SensitiveStepHandbackCard';
@@ -33,6 +34,17 @@ import { openCronLoginWallSite } from './cronLoginWallNotice';
 import { CronReviewDigest } from './CronReviewDigest';
 
 const logger = createLogger('AutomationReviewInbox');
+
+// Decode only the persisted restart marker; never change host/storage titles.
+function voidedToolTitle(title: string, copy: ReturnType<typeof useI18n>['t']['cronCenter']['parkedVoided']): string {
+  const storedPrefix = '重启前发起 · ';
+  const restarted = title.startsWith(storedPrefix);
+  const name = restarted ? title.slice(storedPrefix.length) : title;
+  const key = name.toLowerCase();
+  const known = Object.hasOwn(copy.tools, key) ? copy.tools[key as keyof typeof copy.tools] : undefined;
+  const humanName = known ?? (/\s|[\u3400-\u9fff:：]/u.test(name) && !name.startsWith('mcp__') ? name : copy.action);
+  return `${restarted ? copy.restartPrefix : ''}${humanName}`;
+}
 
 function reviewResultSessionId(record: SessionAutomationRecord): string | undefined {
   return record.config?.pendingReview?.resultSessionId ?? record.resultSessionId;
@@ -56,6 +68,8 @@ function formatWaiting(requestedAt: number): string {
 interface AutomationReviewInboxProps {
   /** 待过目条数变化时回传（加载/刷新后都会调一次），供页首状态条显示 */
   onPendingCountChange?: (count: number) => void;
+  onParkedResolved?: () => void;
+  onParkedChange?: () => void;
   /**
    * 外部新鲜度信号（Rework r1）：收件箱常驻挂载、只在 mount 时拉一次，停车审批
    * 发生在面板开着时不会自动出现。父级在等批准集合变化（出现/消失）时变更本值，
@@ -64,13 +78,14 @@ interface AutomationReviewInboxProps {
   refreshSignal?: string | number;
 }
 
-export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ onPendingCountChange, refreshSignal }) => {
+export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ onPendingCountChange, refreshSignal, onParkedResolved, onParkedChange }) => {
   const { t, language } = useI18n();
   const cc = t.cronCenter;
   const switchSession = useSessionStore((state) => state.switchSession);
   const setShowCronCenter = useAppStore((state) => state.setShowCronCenter);
   const [items, setItems] = useState<SessionAutomationRecord[]>([]);
   const [parked, setParked] = useState<ParkedApprovalInboxItem[]>([]);
+  const [voidedExpanded, setVoidedExpanded] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   // 标题与页首 tile 同一口径：服务侧 countPendingReview（按任务折算）。失败时保留上次值（从未成功过则标题回落到记录数）。
   const [reviewCount, setReviewCount] = useState<number | null>(null);
@@ -111,9 +126,13 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
       })
       .catch(warnFailed('pending review count'));
     sessionAutomationClient.listParkedApprovals()
-      .then((rows) => setParked(rows ?? []))
+      .then((rows) => {
+        const list = rows ?? [];
+        if (list.some((row) => row.status === 'pending')) onParkedChange?.();
+        setParked(list);
+      })
       .catch(warnFailed('parked approvals'));
-  }, [onPendingCountChange]);
+  }, [onPendingCountChange, onParkedChange]);
 
   useEffect(() => {
     load();
@@ -155,6 +174,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
     } finally {
       setBusyId(null);
       load(); // 无论成败都刷新：orphaned 转灰态 / 失败恢复可点
+      onParkedResolved?.();
     }
   };
 
@@ -188,6 +208,8 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
     if (siteOrigin) openCronLoginWallSite(siteOrigin, record.sourceRefId);
   };
 
+  const voided = parked.filter((item) => item.status === 'voided');
+  const foldVoided = voided.length >= 2;
   const hasContent = items.length > 0 || parked.length > 0;
   const urgencyGroups: Record<CronUrgency, SessionAutomationRecord[]> = {
     must_today: [],
@@ -213,26 +235,11 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
               {parked.some((item) => item.status !== 'voided') && (
                 <div className="mb-2 flex items-center gap-2 text-xs font-medium text-badge-warning">
                   <ShieldAlert className="h-3.5 w-3.5" />
-                  {cc.parkedTitle.replace('{count}', String(parked.filter((item) => item.status === 'pending').length))}
+                  {interpolatePlural(cc.parkedTitle, parked.filter((item) => item.status === 'pending').length)}
                 </div>
               )}
               <div className="space-y-1.5">
-                {parked.map((item) => {
-                  if (item.status === 'voided') {
-                    return (
-                      <div
-                        key={item.id}
-                        className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2 opacity-50"
-                        data-testid="parked-approval-voided"
-                      >
-                        <div className="truncate text-sm text-zinc-200">{item.displayTool ?? item.tool}</div>
-                        <div className="text-[11px] text-zinc-500">
-                          {/* 收口句按当前语言展示（老行持久化的是中文原句）；非收口文本原样保留 */}
-                          {cc.parkedVoidedLabel}：{localizeParkedApprovalClosureText(item.voidReason, t) ?? item.voidReason}
-                        </div>
-                      </div>
-                    );
-                  }
+                {parked.filter((item) => item.status !== 'voided').map((item) => {
                   const isOrphaned = item.status === 'orphaned';
                   const isPairing = item.kind === 'channel_pairing';
                   const isExternal = item.riskClass === 'external';
@@ -286,19 +293,19 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                           </div>
                         )}
                         {isPairing && item.pairingSender && (
-                          <div className="truncate text-[11px] text-zinc-400">
+                          <div className="whitespace-pre-wrap break-words text-[11px] text-zinc-400">
                             {cc.pairingSender.replace('{sender}', item.pairingSender)}
                           </div>
                         )}
                         {scopeNote && (
-                          <div className="truncate text-[11px] text-badge-warning/80" data-testid="parked-scope-note">
+                          <div className="whitespace-pre-wrap break-words text-[11px] text-badge-warning/80" data-testid="parked-scope-note">
                             {scopeNote}
                           </div>
                         )}
                         {/* 参数预览（host 已脱敏 + 截断）：一眼看清这步要干什么；老行没有该字段不渲染 */}
                         {!isPairing && item.argsPreview && (
                           <div
-                            className="truncate text-[11px] text-zinc-400"
+                            className="whitespace-pre-wrap break-words text-[11px] text-zinc-400"
                             data-testid="parked-args-preview"
                             title={item.argsPreview}
                           >
@@ -346,6 +353,22 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                     </div>
                   );
                 })}
+                {foldVoided && (
+                  <div className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-1 text-xs text-zinc-500" data-testid="parked-approval-voided-summary">
+                    <span>{cc.parkedVoided.summary.replace('{count}', String(voided.length))}</span>
+                    <Button variant="ghost" size="sm" aria-expanded={voidedExpanded} data-testid="parked-approval-voided-toggle" onClick={() => setVoidedExpanded((expanded) => !expanded)}>
+                      {voidedExpanded ? cc.parkedVoided.collapse : cc.parkedVoided.expand}
+                    </Button>
+                  </div>
+                )}
+                {(!foldVoided || voidedExpanded) && voided.map((item) => (
+                  <div key={item.id} className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2 opacity-50" data-testid="parked-approval-voided">
+                    <div className="truncate text-sm text-zinc-200">{voidedToolTitle(item.displayTool ?? item.tool, cc.parkedVoided)}</div>
+                    <div className="text-[11px] text-zinc-500">
+                      {cc.parkedVoidedLabel}：{localizeParkedApprovalClosureText(item.voidReason, t) ?? item.voidReason}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -429,12 +452,12 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                               />
                             )}
                             {maxRunsReached && (
-                              <div className="truncate text-[11px] text-badge-warning" data-testid="automation-review-max-runs">
+                              <div className="whitespace-pre-wrap break-words text-[11px] text-badge-warning" data-testid="automation-review-max-runs">
                                 {maxRunsReached.summary ?? cc.inboxMaxRunsReached.replace('{count}', String(maxRunsReached.maxRuns))}
                               </div>
                             )}
                             {urgencyRaw && (
-                              <div className="truncate text-[11px] text-zinc-500" data-testid="automation-urgency-raw">
+                              <div className="whitespace-pre-wrap break-words text-[11px] text-zinc-500" data-testid="automation-urgency-raw">
                                 {cc.inboxUrgencyRawPrefix}{urgencyRaw}
                               </div>
                             )}

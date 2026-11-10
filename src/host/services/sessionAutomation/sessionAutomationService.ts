@@ -196,7 +196,9 @@ function formatShortRemaining(ts?: number): string | undefined {
 
 function buildCreationMessage(record: SessionAutomationRecord): string {
   const lines = [`自动化已创建：${record.title}`];
-  if (record.cadenceLabel) lines.push(`频率：${record.cadenceLabel}`);
+  if (record.cadenceLabel && record.config?.scheduleType !== 'at') {
+    lines.push(`频率：${record.cadenceLabel}`);
+  }
   const nextRun = formatTimestamp(record.nextRunAt);
   if (nextRun) lines.push(`下次运行：${nextRun}`);
   lines.push(`状态：${statusLabel(record.status)}`);
@@ -640,6 +642,7 @@ export class SessionAutomationService {
         jobId: origin.id,
         executionId: session.sourceRunId ?? null,
         requestId: row.id,
+        sessionId,
         requestedAt: payload.requestedAt ?? row.submittedAt,
         ...((payload.argsPreview ?? payload.argsSummary) ? { commandPreview: payload.argsPreview ?? payload.argsSummary } : {}),
       });

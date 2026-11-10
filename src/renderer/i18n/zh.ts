@@ -57,6 +57,7 @@ import { connectorRequiredZh } from './connectorRequired';
 import { roleFirstWakeZh } from './roleFirstWake';
 import { roleWakeProposalsZh } from './roleWakeProposals';
 import { permissionRuleNlZh } from './permissionRuleNl';
+import { sessionTaskPresentationZh } from './sessionTaskPresentation'; import { toolResultSummaryZh } from './toolResultSummary'; import { codeBlockZh } from './codeBlock';
 
 export const zh = {
   ...canvasActorZh, ...activityPanelZh,
@@ -81,6 +82,7 @@ export const zh = {
   ...roleFirstWakeZh,
   ...roleWakeProposalsZh,
   ...permissionRuleNlZh,
+  ...sessionTaskPresentationZh, ...toolResultSummaryZh, ...codeBlockZh,
   // Common
   common: {
     save: '保存',
@@ -148,7 +150,7 @@ export const zh = {
     cacheSavedLine: '缓存已省 {saved}',
     turnCostLine: '本轮 ≈ {cost} · {model}',
     turnCostUnknownLine: '本轮费用未知（{model} 无刊例价）',
-    unknownTurnsNote: '{count} 轮未知价未计入',
+    unknownTurnsNote: { one: '{count} 轮未知价未计入', other: '{count} 轮未知价未计入' },
     estimateDisclaimer: '刊例估算，非实际账单',
   },
 
@@ -268,7 +270,7 @@ export const zh = {
     proposalOpRename: '改标签',
     proposalOpDiscard: '淘汰',
     proposalOpGenerate: '生成图',
-    proposalEstCost: '预估生成花费 {amount}（{n} 张）',
+    proposalEstCost: { one: '预估生成花费 {amount}（{count} 张）', other: '预估生成花费 {amount}（{count} 张）' },
     proposalPaidBadge: '付费',
     proposalSelectedCount: '已选 {n}/{total}',
     proposalNothingSelected: '至少选一项',
@@ -321,7 +323,7 @@ export const zh = {
     importImage: '添加图片',
     importHint: '也可直接往画布粘贴(⌘V)或拖入图片；导入后选中即可圈选重绘',
     addReference: '添加参考图',
-    referenceHint: '参考图会在生成时作为视觉参考一并发给模型（万相当前支持 1 张，多张取第一张）',
+    referenceHint: '参考图会在生成时作为视觉参考一并发给模型（最多 3 张；选中多张时按选择顺序作为图1/图2/图3，并改用多图编辑模型出图，单价高于单张参考图）',
     referenceBadge: '参考',
     layerPanelTitle: '图层',
     sidePanelExpand: '展开画布面板',
@@ -758,7 +760,7 @@ export const zh = {
     patternSequential: '顺序协作',
     patternParallel: '并行协作',
     patternHierarchical: '层级编排',
-    agentsWorking: '{count} 个 Agent 协同工作中',
+    agentsWorking: { one: '{count} 个 Agent 协同工作中', other: '{count} 个 Agent 协同工作中' },
     // Skills
     unmountSkill: '卸载',
     addSkills: '添加 ({count})',
@@ -970,7 +972,8 @@ export const zh = {
     buttonTitle: '当前会话权限档',
     menuTitle: '会话权限档',
     bypassConfirmText: '将自动批准文件写入和命令执行，只适合完全可信的工作区。',
-    enable: '开启',
+    enable: '开启', retry: '重试',
+    enableError: { forbidden: '完全访问需要管理员身份，你的账号没有这个权限', pending: '账号资料暂时没取到，请稍后重试', other: '没能开启完全访问，请稍后再试' },
   },
 
   skillRecommendations: {

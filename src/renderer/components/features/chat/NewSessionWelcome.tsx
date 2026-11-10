@@ -269,9 +269,9 @@ export const NewSessionWelcome: React.FC<{
           </div>
         )}
 
-        {showSuggestions && (expertRoleId ? (
+        {expertRoleId ? (
           // 专家空态：只摆角色自己的建议（醒来提议 + 快捷开场 prompt，≤4 张，同一
-          // 一键直发 / 填草稿行为）；角色没有任何既有建议时一张不摆，绝不回退到
+          // 一键直发 / 填草稿行为），不受工作区或 pin 材料影响；角色没有建议时不摆，绝不回退到
           // 与专家无关的通用职场模板卡。
           expert !== null && expert.cards.length > 0 && (
             <div className="grid grid-cols-2 gap-3">
@@ -285,7 +285,7 @@ export const NewSessionWelcome: React.FC<{
               ))}
             </div>
           )
-        ) : (
+        ) : showSuggestions && (
           <div className="grid grid-cols-2 gap-3">
             {suggestions.map((suggestion, index) => (
               <SuggestionCard
@@ -296,7 +296,7 @@ export const NewSessionWelcome: React.FC<{
               />
             ))}
           </div>
-        ))}
+        )}
       </div>
     </div>
   );

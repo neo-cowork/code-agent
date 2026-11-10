@@ -42,8 +42,8 @@ const CommandBlock: React.FC<CommandBlockProps> = ({ label, command, copyTitle, 
   return (
     <div className="space-y-1">
       <span className="text-xs text-zinc-400">{label}</span>
-      <div className="flex items-center gap-2">
-        <code className="flex-1 text-xs text-zinc-300 bg-zinc-800 px-2 py-1.5 rounded font-mono truncate">
+      <div className="flex items-start gap-2">
+        <code className="flex-1 text-xs text-zinc-300 bg-zinc-800 px-2 py-1.5 rounded font-mono whitespace-pre-wrap break-all">
           {command}
         </code>
         <button
@@ -71,6 +71,7 @@ export const InstallGuide: React.FC = () => {
   const { t } = useI18n();
   const installText = t.settings.localBridge.installGuide;
   const [showMore, setShowMore] = useState(false);
+  const [showManualUninstall, setShowManualUninstall] = useState(false);
   const platform = useMemo(() => detectPlatform(), []);
 
   const handleDownload = () => {
@@ -113,12 +114,28 @@ export const InstallGuide: React.FC = () => {
             <span className="text-xs text-zinc-400">{installText.update}</span>
             <div><Button size="sm" variant="secondary" onClick={handleDownload}>{installText.downloadLatest}</Button></div>
           </div>
-          <CommandBlock
-            label={installText.uninstall}
-            command={uninstallCommands[platform]}
-            copyTitle={installText.copyCommand}
-            copiedLabel={installText.copied}
-          />
+          <div className="space-y-2">
+            <span className="text-xs text-zinc-400">{installText.uninstall}</span>
+            <p className="text-xs text-zinc-400">{installText.uninstallDescription}</p>
+            <button /* ds-allow:button: 本地桥接手动卸载高级折叠触发器，纯文本 chevron 行，Button primitive 变体会强加按钮内边距与背景 */
+              onClick={() => setShowManualUninstall(!showManualUninstall)}
+              className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
+            >
+              {showManualUninstall ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+              {installText.viewManualUninstallSteps}
+            </button>
+            {showManualUninstall && (
+              <div className="space-y-2 pl-2 border-l-2 border-zinc-700">
+                <p className="text-xs text-badge-warning">{installText.uninstallRiskHint}</p>
+                <CommandBlock
+                  label={installText.uninstall}
+                  command={uninstallCommands[platform]}
+                  copyTitle={installText.copyCommand}
+                  copiedLabel={installText.copied}
+                />
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

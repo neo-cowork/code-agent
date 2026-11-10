@@ -6,6 +6,11 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { AgentFailureCode } from '../../../src/shared/contract/agentFailure';
+import type { ToolCall } from '../../../src/shared/contract';
+import { en } from '../../../src/renderer/i18n/en';
+import { DelegationReceipt } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/DelegationReceipt';
+import { deriveDelegationPresentation } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/delegationPresentation';
 import { zh } from '../../../src/renderer/i18n/zh';
 import type { AgentTreeNode, AgentTreeSnapshot } from '../../../src/shared/contract/agentTree';
 import type { Task } from '../../../src/shared/contract/backgroundTask';
@@ -13,6 +18,7 @@ import type { SwarmAgentContextSnapshot, SwarmAgentState } from '../../../src/sh
 import type { SwarmRunAgentRecord, SwarmRunDetail, SwarmRunListItem } from '../../../src/shared/contract/swarmTrace';
 import { IPC_CHANNELS, IPC_DOMAINS } from '../../../src/shared/ipc';
 
+let language: 'zh' | 'en' = 'zh';
 const invokeMock = vi.fn();
 const invokeDomainMock = vi.fn();
 const appState = {
@@ -22,7 +28,7 @@ const appState = {
   queuedPermissionRequests: {} as Record<string, Array<{ resolved?: boolean; agentId?: string; runId?: string }>>,
 };
 
-vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: zh }) }));
+vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: language === 'zh' ? zh : en }) }));
 vi.mock('../../../src/renderer/stores/appStore', () => {
   // 工厂在组件 import 时求值，早于 const 初始化：必须延迟解引用
   const useAppStore = (selector: (state: typeof appState) => unknown) => selector(appState);
@@ -118,6 +124,7 @@ function backgroundTask(overrides: Partial<Task>): Task {
 
 describe('SessionAgentsPanel', () => {
   beforeEach(() => {
+    language = 'zh';
     invokeMock.mockReset();
     invokeMock.mockResolvedValue([]);
     invokeDomainMock.mockReset();
@@ -137,6 +144,84 @@ describe('SessionAgentsPanel', () => {
     (window as unknown as { domainAPI?: unknown }).domainAPI = undefined;
   });
   afterEach(() => cleanup());
+
+  describe.each(['zh', 'en'] as const)('failure reasons in %s', (uiLanguage) => {
+    beforeEach(() => { language = uiLanguage; });
+
+    function assertReason(actual: string | null | undefined, code: AgentFailureCode) {
+      const text = (uiLanguage === 'zh' ? zh : en).toolStepHumanize;
+      const copy = { ...text.failureCodes, ...text.agentFailureReasons }[code];
+      expect(actual).toBe(copy);
+      expect(actual).not.toMatch(uiLanguage === 'en' ? /[\u3400-\u9fff]/ : /[A-Za-z]{2,}/);
+    }
+
+    // Intentionally use the other UI language as the host fallback to catch old raw reads.
+    function failedNode(code?: AgentFailureCode): AgentTreeNode {
+      return treeNode({
+        status: 'failed', task: 'Review notes', failureCode: code,
+        failureReason: uiLanguage === 'en' ? '主机返回的失败原因' : 'Host failure reason.',
+      });
+    }
+
+    function receipt(node: AgentTreeNode) {
+      const call: ToolCall = {
+        id: 'spawn-notes', name: 'spawn_agent', arguments: { task: 'Review notes' },
+        result: { toolCallId: 'spawn-notes', success: false, metadata: { agentId: node.id } },
+      };
+      const presentation = deriveDelegationPresentation(call, [], [node]);
+      expect(presentation).not.toBeNull();
+      return presentation!;
+    }
+
+    it.each(Object.values(AgentFailureCode))('panel localizes %s through real row assembly', async (code) => {
+      mockTree(snapshotOf([failedNode(code)]));
+      render(<SessionAgentsPanel />);
+      const status = await screen.findByTestId('agents-panel-status-agent-9');
+      const prefix = (uiLanguage === 'zh' ? zh : en).expert.memberBar.panel.status.failed + '：';
+      expect(status.textContent?.startsWith(prefix)).toBe(true);
+      assertReason(status.textContent?.slice(prefix.length), code);
+    });
+
+    it.each(Object.values(AgentFailureCode))('derived delegation receipt localizes %s', (code) => {
+      render(<DelegationReceipt presentation={receipt(failedNode(code))} />);
+      assertReason(screen.getByTestId('delegation-failure').textContent, code);
+    });
+
+    it('preserves missing-code node and task fallbacks', async () => {
+      const node = failedNode();
+      mockTree(snapshotOf([node]));
+      useBackgroundTaskStore.setState({ tasks: [backgroundTask({
+        status: 'failed', failure: { message: 'Original task reason' }, toolCallId: 'delegate-notes',
+      })] });
+      render(<SessionAgentsPanel />);
+      expect((await screen.findByTestId('agents-panel-status-agent-9')).textContent).toContain(node.failureReason);
+      expect(screen.getByTestId('agents-panel-status-task-1').textContent).toContain('Original task reason');
+      const view = render(<DelegationReceipt presentation={receipt(node)} />);
+      expect(view.getByTestId('delegation-failure').textContent).toBe(node.failureReason);
+      view.unmount();
+      const call: ToolCall = {
+        id: 'delegate-notes', name: 'delegate_task', arguments: {},
+        result: { toolCallId: 'delegate-notes', success: true },
+      };
+      const presentation = deriveDelegationPresentation(call, useBackgroundTaskStore.getState().tasks, []);
+      expect(presentation).not.toBeNull();
+      render(<DelegationReceipt presentation={presentation!} />);
+      expect(screen.getByTestId('delegation-failure').textContent).toBe('Original task reason');
+    });
+
+    it('shows a coded reason even without a host fallback', () => {
+      render(<DelegationReceipt presentation={receipt({ ...failedNode(AgentFailureCode.Timeout), failureReason: undefined })} />);
+      assertReason(screen.getByTestId('delegation-failure').textContent, AgentFailureCode.Timeout);
+    });
+
+    it('does not create a delegation receipt for the invalid wait before node registration', () => {
+      const call: ToolCall = {
+        id: 'invalid-wait', name: 'spawn_agent', arguments: { foregroundBlockingBudgetMs: 1_200_000 },
+        result: { toolCallId: 'invalid-wait', success: false, metadata: { failureCode: AgentFailureCode.InvalidArguments } },
+      };
+      expect(deriveDelegationPresentation(call, [], [])).toBeNull();
+    });
+  });
 
   it('没有代理时给空态', async () => {
     render(<SessionAgentsPanel />);
@@ -273,9 +358,15 @@ describe('SessionAgentsPanel', () => {
   });
 
   it('行级停：普通代理走 agent.closeAgent，后台任务走 task.cancelBackgroundTask', async () => {
-    const domainApiInvoke = vi.fn().mockResolvedValue(true);
-    (window as unknown as { domainAPI?: unknown }).domainAPI = { invoke: domainApiInvoke };
-    mockTree(snapshotOf([treeNode({})]));
+    invokeDomainMock.mockImplementation((domain: unknown, action: unknown) => {
+      if (domain === IPC_DOMAINS.AGENT && action === 'getTree') {
+        return Promise.resolve(snapshotOf([treeNode({})]));
+      }
+      if (action === 'closeAgent' || action === 'cancelBackgroundTask') {
+        return Promise.resolve({ cancelled: true });
+      }
+      return Promise.resolve(null);
+    });
     useBackgroundTaskStore.setState({ tasks: [backgroundTask({})] });
 
     render(<SessionAgentsPanel />);
@@ -286,9 +377,59 @@ describe('SessionAgentsPanel', () => {
     }));
 
     fireEvent.click(screen.getByTestId('agents-panel-stop-task-1'));
-    await waitFor(() => expect(domainApiInvoke).toHaveBeenCalledWith(IPC_DOMAINS.TASK, 'cancelBackgroundTask', {
+    await waitFor(() => expect(invokeDomainMock).toHaveBeenCalledWith(IPC_DOMAINS.TASK, 'cancelBackgroundTask', {
       taskId: 'task-1',
     }));
+  });
+
+  it('真实 buildAgentRows shell 行收到 cancelled:false 时显示停止提示', async () => {
+    invokeDomainMock.mockImplementation((domain: unknown, action: unknown) => {
+      if (domain === IPC_DOMAINS.AGENT && action === 'getTree') return Promise.resolve(snapshotOf([]));
+      if (domain === IPC_DOMAINS.TASK && action === 'cancelBackgroundTask') {
+        return Promise.resolve({ cancelled: false });
+      }
+      return Promise.resolve(null);
+    });
+    useBackgroundTaskStore.setState({
+      tasks: [backgroundTask({
+        id: 'shell:row-false',
+        kind: 'shell',
+        source: 'shell',
+        title: 'sleep 600',
+        metadata: { originalTaskId: 'row-false' },
+      })],
+    });
+
+    render(<SessionAgentsPanel />);
+    fireEvent.click(await screen.findByTestId('agents-panel-stop-shell:row-false'));
+
+    const hint = await screen.findByTestId('agents-panel-stop-hint-shell:row-false');
+    expect(hint.textContent).toContain('这个任务已经结束或无法停止');
+  });
+
+  it('真实 buildAgentRows shell 行遇到 IPC rejection 时显示停止提示', async () => {
+    invokeDomainMock.mockImplementation((domain: unknown, action: unknown) => {
+      if (domain === IPC_DOMAINS.AGENT && action === 'getTree') return Promise.resolve(snapshotOf([]));
+      if (domain === IPC_DOMAINS.TASK && action === 'cancelBackgroundTask') {
+        return Promise.reject(new Error('transport closed'));
+      }
+      return Promise.resolve(null);
+    });
+    useBackgroundTaskStore.setState({
+      tasks: [backgroundTask({
+        id: 'shell:row-error',
+        kind: 'shell',
+        source: 'shell',
+        title: 'sleep 600',
+        metadata: { originalTaskId: 'row-error' },
+      })],
+    });
+
+    render(<SessionAgentsPanel />);
+    fireEvent.click(await screen.findByTestId('agents-panel-stop-shell:row-error'));
+
+    const hint = await screen.findByTestId('agents-panel-stop-hint-shell:row-error');
+    expect(hint.textContent).toContain('这个任务已经结束或无法停止');
   });
 
   it('停止全部对所有可停行走各自通道', async () => {

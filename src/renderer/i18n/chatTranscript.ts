@@ -21,7 +21,7 @@ chat: {
   // 编队信号（等子任务）：无数字版——单个子任务或计数不可用时用
   waitingSubagent: '代理工作中',
   // 编队信号带真实并发数版，{count} 来自当前回合仍在运行的子任务工具调用数
-  waitingSubagentFleet: '{count} 个代理并行中',
+  waitingSubagentFleet: { one: '{count} 个代理并行中', other: '{count} 个代理并行中' },
   activityIdle: '正在整理任务…',
   delegationReceipt: {
     working: '代理工作中',
@@ -39,8 +39,8 @@ chat: {
   sendingMessage: '正在发送消息…', queuedStarting: '已排队，正在启动…', preparingReply: '正在准备…', organizingStreamingReply: '正在整理回复…',
   organizingReply: '正在组织回答…',
   thinkingDigest: '思考',
-  thinkingSegments: ' · {count} 段',
-  thinkingDurationSeconds: '{seconds}s', thinkingActiveWithDuration: '正在思考… · {duration}', thinkingDigestWithDuration: '思考 {duration} · {count} 段',
+  thinkingSegments: { one: ' · {count} 段', other: ' · {count} 段' },
+  thinkingDurationSeconds: '{seconds}s', thinkingActiveWithDuration: '正在思考… · {duration}', thinkingDigestWithDuration: { one: '思考 {duration} · {count} 段', other: '思考 {duration} · {count} 段' },
   expandThinking: '展开思考',
   collapseThinking: '收起思考',
   unknownTool: '未知工具',
@@ -271,6 +271,8 @@ toolStepHumanize: {
   subagentMessage: '给代理发了条消息',
   agentConversation: '正在跟 {name} 说话',
   agentConversationFallback: '正在跟代理说话',
+  delegateSession: { target: '「{target}」', targetFallback: '另一个对话', delegate_existing: '已把任务交给{target}', create_new: '已新建对话{target}并交给它', correct: '已调整对{target}的委托', stop: '已停止对{target}的委托', resume: '已恢复对{target}的委托', unknown: '处理了一项跨对话委托', reused: '已送达过，未重复发送' },
+  listSessionCandidates: '已查找可委托的对话',
   delegateTask: '派出后台任务：{description}',
   delegateTaskFallback: '派出后台任务',
   taskStatus: '查看后台任务进度',
@@ -562,7 +564,7 @@ chat: {
   // Fleet signal (waiting on subtasks): no-count version — single subtask or count unavailable
   waitingSubagent: 'Agent working',
   // Fleet signal with the real concurrency count; {count} comes from the turn's still-running subtask tool calls
-  waitingSubagentFleet: '{count} agents working in parallel',
+  waitingSubagentFleet: { one: '{count} agent working in parallel', other: '{count} agents working in parallel' },
   activityIdle: 'Organizing the task…',
   delegationReceipt: {
     working: 'Agent working',
@@ -580,8 +582,8 @@ chat: {
   sendingMessage: 'Sending message…', queuedStarting: 'Queued, starting…', preparingReply: 'Preparing…', organizingStreamingReply: 'Organizing the reply…',
   organizingReply: 'Organizing the reply…',
   thinkingDigest: 'Thinking',
-  thinkingSegments: ' · {count} segments',
-  thinkingDurationSeconds: '{seconds}s', thinkingActiveWithDuration: 'Thinking… · {duration}', thinkingDigestWithDuration: 'Thought for {duration} · {count} segments',
+  thinkingSegments: { one: ' · {count} segment', other: ' · {count} segments' },
+  thinkingDurationSeconds: '{seconds}s', thinkingActiveWithDuration: 'Thinking… · {duration}', thinkingDigestWithDuration: { one: 'Thought for {duration} · {count} segment', other: 'Thought for {duration} · {count} segments' },
   expandThinking: 'Expand thinking',
   collapseThinking: 'Collapse thinking',
   unknownTool: 'Unknown tool',
@@ -812,6 +814,8 @@ toolStepHumanize: {
   subagentMessage: 'Sent a message to an agent',
   agentConversation: 'Talking to {name}',
   agentConversationFallback: 'Talking to an agent',
+  delegateSession: { target: '“{target}”', targetFallback: 'another conversation', delegate_existing: 'Sent the task to {target}', create_new: 'Created conversation {target} and sent it the task', correct: 'Adjusted the delegation to {target}', stop: 'Stopped the delegation to {target}', resume: 'Resumed the delegation to {target}', unknown: 'Handled a cross-conversation delegation', reused: 'Already delivered; not sent again' },
+  listSessionCandidates: 'Found conversations for delegation',
   delegateTask: 'Started background task: {description}',
   delegateTaskFallback: 'Started a background task',
   taskStatus: 'Checked background task progress',

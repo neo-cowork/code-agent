@@ -55,6 +55,7 @@ import { killPortHolder } from './portCleanup';
 import { setDelegationEnqueueSignal } from '../host/services/delegation/delegationEnqueueSignal';
 
 const logger = createLogger('WebServer');
+let configService: import('../host/services/core/configService').ConfigService;
 
 // ── Boot timing instrumentation ─────────────────────────────────────
 // 结构化启动分段耗时。每段边界打点，listen 时输出一张 delta 表，用于对账
@@ -507,8 +508,10 @@ async function initializeServices(): Promise<void> {
 
   // 1. 初始化 ConfigService（main 模块的单例，IPC handler 通过 getConfigService() 获取）
   const { initConfigService } = await import('../host/services/core/configService');
-  const configService = initConfigService();
+  configService = initConfigService();
   await configService.initialize().then(() => logger.info('ConfigService initialized'));
+  configService.startWatchingConfigFile();
+  process.once('exit', () => configService.stopWatchingConfigFile());
   (await import('../host/observability/privacyGate')).installPrivacyGate(configService);
   bootMark('configService');
 
@@ -970,7 +973,7 @@ function registerHandlers(): void {
       }
     },
     getPlanningService: () => null,
-    getTaskManager: () => null,
+    getTaskManager: () => getTaskManager(),
     getCurrentSessionId: () => currentSessionId,
     setCurrentSessionId: (id: string) => {
       currentSessionId = id;
@@ -1096,8 +1099,7 @@ async function main(): Promise<void> {
   // 启动早期崩溃。uncaughtExceptionMonitor 只旁观，不改变崩溃行为。
   installExitCauseProbes();
   if (process.env.CODE_AGENT_COMPILE_WARMUP === '1') {
-    await runCompileWarmup();
-    return;
+    return runCompileWarmup();
   }
   bootMark('main:start');
   const port = parseInt(process.env.WEB_PORT || String(WEB_SERVER_DEFAULTS.PORT), 10);
@@ -1218,6 +1220,7 @@ async function main(): Promise<void> {
   // 'stdin-error'；无参调用 = daemon rechecker 触发。落盘在 shutdownCause.ts。
   const shutdown = async (source?: string) => {
     recordShutdownCause(source ?? 'daemon-rechecker');
+    configService.stopWatchingConfigFile();
     console.log('\nShutting down...');
     // 宽限期是有限的（Rust 侧 GRACEFUL_SHUTDOWN_TIMEOUT 到点就 SIGKILL），关库是这段
     // 时间里唯一不能省的一步——前面的清理任何一个卡住，都会把预算吃光，最后仍然被

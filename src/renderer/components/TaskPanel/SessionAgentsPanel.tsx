@@ -14,6 +14,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Bot, ChevronDown, ChevronRight, Clock, Square, X, Zap } from 'lucide-react';
 import { cancelSwarmRunOrFallback } from '../features/swarm/SwarmInlineMonitor';
 import { useI18n } from '../../hooks/useI18n';
+import { interpolatePlural } from '../../i18n/interpolate';
 import { useSessionAgentRows } from '../../hooks/useSessionAgentRows';
 import { useDurableSwarmRunDetail } from '../../hooks/useDurableSwarmRunDetail';
 import { useSessionStore } from '../../stores/sessionStore';
@@ -21,10 +22,12 @@ import { useAppStore } from '../../stores/appStore';
 import { useSwarmStore } from '../../stores/swarmStore';
 import { useComposerStore } from '../../stores/composerStore';
 import { useMemberViewStore } from '../../stores/memberViewStore';
+import { useBackgroundTaskStore } from '../../stores/backgroundTaskStore';
 import { useVoiceLiveRuntime } from '../../hooks/useVoiceLiveRuntime';
 import { deriveAgentMergeState } from '../../utils/agentMergeState';
 import { isAgentRowQuiet } from '../../utils/agentRowStall';
 import { stopSessionAgent } from '../../utils/stopSessionAgent';
+import { agentFailureCopy } from '../../utils/agentFailureCopy';
 import type { AgentRow } from '../../utils/agentRows';
 import { RoleInitialAvatar } from '../features/expert/RoleInitialAvatar';
 import { DiscussionStream } from '../features/swarm/DiscussionStream';
@@ -62,6 +65,7 @@ export const SessionAgentsPanel: React.FC = () => {
   const voiceCallLive = voiceRuntime.phase === 'live' || voiceRuntime.phase === 'connecting';
   const voiceActiveAgentId = voiceRuntime.activeAgentId;
   const [stoppingKey, setStoppingKey] = useState<string | null>(null);
+  const [stopHintKey, setStopHintKey] = useState<string | null>(null);
   const [stoppingAll, setStoppingAll] = useState(false);
   const [eventsOpen, setEventsOpen] = useState(false);
 
@@ -114,8 +118,13 @@ export const SessionAgentsPanel: React.FC = () => {
   const stopRow = async (row: AgentRow) => {
     if (stoppingKey) return;
     setStoppingKey(row.key);
+    setStopHintKey(null);
     try {
-      await stopSessionAgent(row, sessionId, activeRunId ?? undefined);
+      const result = await stopSessionAgent(row, sessionId, activeRunId ?? undefined);
+      if (result !== 'stopped') setStopHintKey(row.key);
+      if (row.kind === 'task') {
+        await useBackgroundTaskStore.getState().refreshTasks().catch(() => undefined);
+      }
     } finally {
       setStoppingKey(null);
     }
@@ -141,8 +150,10 @@ export const SessionAgentsPanel: React.FC = () => {
     const labels = text.panel.status;
     if (row.hold === 'approval') return labels.needsApproval;
     if (row.status === 'failed') {
-      return row.failureReason
-        ? `${labels.failed}：${row.failureReason}`
+      const reason = (row.node?.failureCode ? agentFailureCopy(row.node.failureCode, t) : null)
+        ?? row.failureReason;
+      return reason
+        ? `${labels.failed}：${reason}`
         : labels.failed;
     }
     if (row.status === 'cancelled') return labels.stopped;
@@ -150,11 +161,11 @@ export const SessionAgentsPanel: React.FC = () => {
   };
 
   const mergeLabel = mergeState === 'merged'
-    ? text.mergeState.merged.replace('{count}', String(rows.filter((row) => row.status !== 'standby').length))
+    ? interpolatePlural(text.mergeState.merged, rows.filter((row) => row.status !== 'standby').length)
     : mergeState === 'reported'
-      ? text.mergeState.reported.replace('{count}', String(rows.filter((row) => row.status !== 'standby').length))
+      ? interpolatePlural(text.mergeState.reported, rows.filter((row) => row.status !== 'standby').length)
       : mergeState === 'conflict'
-        ? text.mergeState.conflict.replace('{count}', String(conflicts.length))
+      ? interpolatePlural(text.mergeState.conflict, conflicts.length)
         : mergeState === 'waiting'
           ? text.mergeState.waiting
           : null;
@@ -272,6 +283,14 @@ export const SessionAgentsPanel: React.FC = () => {
                     >
                       {statusLabel(row)}
                     </span>
+                    {stopHintKey === row.key && (
+                      <span
+                        data-testid={`agents-panel-stop-hint-${row.key}`}
+                        className="text-[10px] text-badge-warning"
+                      >
+                        · {text.panel.stopFailedHint}
+                      </span>
+                    )}
                     {/* N-FIX-WF-STALL-SPAWN-AGENT：spawn_agent 静默子代理的行级软提示， */}
                     {/* 文案复用 workflowStall.quiet（与 composer 工具条 90s 提示同一词条）。 */}
                     {isAgentRowQuiet(row, hintNow, releasedAtRef.current.get(row.key)) && (

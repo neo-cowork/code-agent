@@ -90,7 +90,7 @@ export interface CronJobDefinition {
   /** Delay between retries in milliseconds */
   retryDelay?: number;
   /** Timeout for job execution in milliseconds */
-  timeout?: number;
+  timeout?: number | null;
   /** Tags for categorization */
   tags?: string[];
   /** Custom metadata */
@@ -199,6 +199,8 @@ export interface CronEventDecision {
   kind: 'event' | 'action';
   /** Platform message id / mail id / webhook delivery id (event rows). */
   eventId?: string;
+  /** Event rows: user-readable sender/subject label when the source provides one. */
+  eventLabel?: string;
   decision: CronEventDecisionOutcome;
   /** One-line reason (model-stated, drop cause or failure). */
   reason: string;
@@ -495,7 +497,14 @@ export interface CronJobExecution {
   cost?: number;
   /** Trigger descriptor: why this run happened (event runs only). */
   trigger?: CronExecutionTrigger;
+  /** Result-push outcome when a push target is configured and nothing failed: pushed, or why nothing was sent. Not a failure. */
+  pushNote?: CronPushNote;
 }
+
+export const CRON_PUSH_NOTES = [
+  'pushed', 'duplicate', 'empty-body', 'empty-result', 'observe-mode', 'quiet-watch-round', 'notify-quiet-round',
+] as const;
+export type CronPushNote = (typeof CRON_PUSH_NOTES)[number];
 
 /**
  * Heartbeat configuration

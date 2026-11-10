@@ -311,7 +311,7 @@ export function MediaAssetActionBar({
       icon: <Folder className="h-3.5 w-3.5" />,
       menuIcon: <Folder className="h-3.5 w-3.5 text-zinc-500" />,
       label: 'Finder',
-      title: '在 Finder 中显示',
+      title: '在访达中显示',
       run: () => void revealMediaAsset(asset),
     },
   };

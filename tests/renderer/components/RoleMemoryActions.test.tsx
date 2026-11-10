@@ -1,5 +1,5 @@
 // ============================================================================
-// RoleMemoryActions - 角色记忆区的「导出全部 / 在 Finder 中显示」动作
+// RoleMemoryActions - 角色记忆区的「导出全部 / 在访达中显示」动作
 // N-ROLE-MEMORY-EXPORT：① 有记忆时两个按钮都在 ② 0 条时导出禁用并给提示
 // ③ web 模式（无文件系统）隐藏 Finder 按钮 ④ 导出成功 toast 报落盘路径
 // ============================================================================
@@ -45,7 +45,7 @@ describe('RoleMemoryActions', () => {
     expect((screen.getByTestId('role-memory-export') as HTMLButtonElement).disabled).toBe(false);
     expect(screen.getByTestId('role-memory-export').textContent).toContain('导出全部记忆');
     expect((screen.getByTestId('role-memory-reveal') as HTMLButtonElement).disabled).toBe(false);
-    expect(screen.getByTestId('role-memory-reveal').textContent).toContain('在 Finder 中显示');
+    expect(screen.getByTestId('role-memory-reveal').textContent).toContain('在访达中显示');
     // 有记忆时不显示「无可导出」提示
     expect(screen.queryByTestId('role-memory-export-hint')).toBeNull();
   });

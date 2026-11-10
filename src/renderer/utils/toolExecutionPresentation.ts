@@ -173,6 +173,7 @@ export function resolveToolTerminalOutcomeKey(
 
   const cancellationReason = result?.metadata?.cancellationReason;
   if (typeof cancellationReason === 'string') {
+    if (cancellationReason === 'client-disconnect' || cancellationReason === 'client_disconnect') return 'interrupted-stream-break';
     if (cancellationReason === 'user-cancel' || cancellationReason === 'user_cancelled') {
       return 'cancelled-by-user';
     }
@@ -195,6 +196,8 @@ export function resolveToolTerminalOutcomeKey(
       return 'failed-approval-denied';
     case AgentFailureCode.Timeout:
       return 'failed-timeout';
+    case AgentFailureCode.InvalidArguments:
+      return 'failed-tool';
     case AgentFailureCode.BudgetExhausted:
       return 'failed-budget';
     case AgentFailureCode.DependencyFailed:
@@ -354,7 +357,7 @@ export function humanizeToolError(
     });
     const outcome = structuredFailureCode === AgentFailureCode.Timeout
       ? t.outcomeWords['failed-timeout'].timeline
-      : structuredFailureCode === AgentFailureCode.PermissionDenied
+      : structuredFailureCode === AgentFailureCode.PermissionDenied && metadata?.code !== 'FOREIGN_SLOT_DATA_DIR'
         ? t.outcomeWords['failed-approval-denied'].timeline
         : null;
     return {
@@ -367,6 +370,9 @@ export function humanizeToolError(
     toolResultCode: metadata?.code,
     defaultCode: AgentFailureCode.Unknown,
   });
+  if (failureCode === AgentFailureCode.InvalidArguments) {
+    return { summary: t.toolStepHumanize.failureCodes['invalid-arguments'] };
+  }
   if (failureCode === AgentFailureCode.PermissionDenied) {
     return {
       summary: t.outcomeWords['failed-approval-denied'].timeline.label,
@@ -440,14 +446,24 @@ export function humanizeToolError(
 }
 
 /**
- * metadata.failureCode → 一句人话。翻到了就停，不再拼 failureReasonMissing / fallbackSummary。
+ * metadata.failureCode（或 spawn_agent 错误文本归并出的 AgentFailureCode）→ 一句人话。
+ * 翻到了就停，不再拼 failureReasonMissing / fallbackSummary。
  * timeout / permission-denied 不进这张表，仍走下面已有的分类文案，避免打乱既有状态词。
  */
 function mapToolFailureCodeCopy(
   metadata: Record<string, unknown> | null | undefined,
   t: Translations,
+  toolName?: string,
+  error?: string,
 ): string | null {
-  const raw = metadata?.failureCode;
+  const raw = typeof metadata?.failureCode === 'string' && metadata.failureCode
+    ? metadata.failureCode
+    : toolName === 'spawn_agent'
+      ? inferAgentFailureCode({
+          error,
+          defaultCode: AgentFailureCode.Unknown,
+        })
+      : undefined;
   if (typeof raw !== 'string' || !raw) return null;
   const table = t.toolStepHumanize.failureCodes;
   if (!Object.prototype.hasOwnProperty.call(table, raw)) return null;
@@ -508,7 +524,7 @@ export function humanizeToolFailureReason(toolCall: Pick<ToolCall, 'name' | 'res
     return t.decisionCard.permission.sandboxEscalationDeclined;
   }
   const error = result?.error || (typeof result?.output === 'string' ? result.output : undefined);
-  const mappedFailureCode = mapToolFailureCodeCopy(metadata, t);
+  const mappedFailureCode = mapToolFailureCodeCopy(metadata, t, toolCall.name, error);
   if (mappedFailureCode) return mappedFailureCode;
   // hostReason 登记表要排在 preflight 之前：那 7 个 permission host code 各有专属文案
   // （「你拒绝了写入 report.md」/「审批超时」…），而 preflight 只会给一句笼统的

@@ -30,12 +30,14 @@ import {
   stripSensitiveStepParams,
 } from '../permissions/cuaSensitiveStep';
 import { resolvePreAskGrant } from '../permissions/preAskGrant';
+import { requiresScheduleWriteGrant } from '../cron/cronWriteGrant';
 import { createLogger } from '../services/infra/logger';
 import { getAuditLogger, maskSensitiveData, isKnownSafeCommand, validateCommand, getShellSafetyMode, getExecPolicyStore, getPolicyEnforcer, type PolicyEnforcer, type PolicyCheckResult, type ValidationResult } from '../security';
 import { evaluateToolSlotDataDirAccess, FOREIGN_SLOT_DATA_DIR_CODE, type SlotDataDirAccess } from '../security/slotDataDirGuard';
 import { createFileCheckpointIfNeeded } from './middleware/fileCheckpointMiddleware';
 import { getFileCheckpointService } from '../services/checkpoint';
 import { getConfirmationGate } from '../agent/confirmationGate';
+import type { ConfirmationPreview } from '../../shared/contract/confirmation';
 import { computeLedgerArgsSurvival } from '../agent/parkedApprovalSurvival';
 import {
   bashCommandRequiresPermission,
@@ -47,6 +49,7 @@ import type { NeoTagRunContext } from '../../shared/contract/tag';
 import type { SwarmRunScope } from '../../shared/contract/swarm';
 import { createTraceBuilder } from '../security/decisionTraceBuilder';
 import { denyConcreteShellWritePath } from './shell/writePathPolicyDeny';
+import { approvedSingleFileRmGrantForToolApproval } from './shell/approvedRmGrant';
 import { getPluginIdForTool, getPluginOriginForTool } from '../plugins/pluginToolOrigin';
 import { getWriteIsolationManager, getWriteIsolationScope, type WriteIsolationMetadata } from '../security/writeIsolation';
 import type { HookManager } from '../hooks/hookManager';
@@ -914,6 +917,7 @@ export class ToolExecutor {
           failureCode: AgentFailureCode.PermissionDenied,
           slotName: slotAccess.slotName,
           slotRoot: slotAccess.slotRoot,
+          hostReason: createHostReason(HostReasonCode.ForeignDataDir, slotAccess.reason),
         },
       };
     }
@@ -1310,12 +1314,14 @@ export class ToolExecutor {
       // 直接交富对象会让 `if (!approved)` 那类调用点把 `{approved:false}` 恒真成静默 fail-open。
       // N-SANDBOX-ESCALATE-APPROVAL-LEDGER：内层 ask 也要落权限账本（外层 ask 在下方权限闸
       // 已记，#1664 只修了外层）；ask 抛错时不落账、原样上抛，行为与改动前一致。
+      permissionAskResults: new WeakMap(),
       requestPermission: async (request) => {
         beginApprovalWait(options.currentToolCallId, effectiveSessionId);
         try {
           const askStartedAt = Date.now();
           const ask = normalizePermissionAskResult(await this.requestPermission(request));
-          recordInToolPermissionAsk(
+          context.permissionAskResults?.set(request, ask);
+          if (!request.ledgerRecordedByChild) recordInToolPermissionAsk(
             request, ask, askStartedAt, effectiveSessionId, this.ledgerOrigin,
             getApprovalWaitMs(options.currentToolCallId, Date.now()),
           );
@@ -1727,8 +1733,10 @@ export class ToolExecutor {
     }
 
     // Check permission if required
+    const scheduleWriteGrantRequired = await requiresScheduleWriteGrant(this.buildPermissionRequest(toolDef, params), effectiveSessionId, this.executionCwd, this.writeWorkspaceRoot);
     // Skill 系统：预授权工具跳过普通权限检查（但不能跳过边界违规或 consequence hard deny）
     const isPreApproved = !boundaryViolation
+      && !scheduleWriteGrantRequired
       && !guardFabricForcesApproval
       && !protectedWriteForcesConfirmation
       && !peerOriginForcesConfirmation
@@ -1798,7 +1806,6 @@ export class ToolExecutor {
         }
       }
     }
-
     if ((toolDef.requiresPermission || readArgumentForcesClassification || cuaAppGrantForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk) && (commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || protectedWriteForcesConfirmation || policyForcesConfirmation || unresolvedWriteTargetForcesAsk || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk || (!isPreApproved && !isSafeCommand))) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
@@ -1910,6 +1917,7 @@ export class ToolExecutor {
           }
           if (
             classification.decision === 'approve'
+            && !scheduleWriteGrantRequired
             && !this.forcePermissionHandler
             && !protectedWriteForcesConfirmation
             && !guardFabricForcesApproval
@@ -2035,6 +2043,31 @@ export class ToolExecutor {
       // ADR-088 一期：密码框输入交回用户。敏感判定必须早于 resolvePreAskGrant 消费——
       // 已记住的应用授权压不掉交回卡；未命中才进入既有按应用审批链（规格 §2 判定顺序）。
       const cuaSensitiveStep = classifyCuaSensitiveStep(executionToolName, params);
+      // E2 必须先于已记住授权消费：确认门是独立硬门，授权命中不能跳过它。
+      // buildPreview / assessRiskLevel / shouldConfirm 都是纯读；失败时沿用原有
+      // fail-open 语义，只记录 debug 并按“不强制确认”处理。
+      let confirmationPreview: ConfirmationPreview | undefined;
+      let confirmationRiskLevel: 'low' | 'medium' | 'high' = 'low';
+      let shouldForceConfirm = false;
+      try {
+        const gate = getConfirmationGate();
+        confirmationPreview = gate.buildPreview(executionToolName, params);
+        confirmationRiskLevel = gate.assessRiskLevel(executionToolName, params);
+        shouldForceConfirm = gate.shouldConfirm(
+          {
+            toolName: executionToolName,
+            params,
+            preview: confirmationPreview,
+            riskLevel: confirmationRiskLevel,
+          },
+          effectiveSessionId || 'global',
+        );
+      } catch (error) {
+        confirmationPreview = undefined;
+        confirmationRiskLevel = 'low';
+        shouldForceConfirm = false;
+        logger.debug('ConfirmationGate preview error:', error);
+      }
       const preAsk = needsUserApproval ? resolvePreAskGrant({
         toolName: executionToolName,
         sessionId: effectiveSessionId,
@@ -2045,7 +2078,10 @@ export class ToolExecutor {
           || policyForcesConfirmation || unresolvedWriteTargetForcesAsk
           || Boolean(boundaryViolation) || readOnlyForcesConfirmation
           || peerOriginForcesConfirmation || launderRetryForcesAsk
-          || Boolean(cuaSensitiveStep),
+          || Boolean(cuaSensitiveStep) || boundaryAskForcesConfirmation
+          || Boolean(deterministicAskReason) || this.forcePermissionHandler
+          || scheduleWriteGrantRequired
+          || shouldForceConfirm,
       }) : null;
       if (preAsk) {
         needsUserApproval = false;
@@ -2199,33 +2235,16 @@ export class ToolExecutor {
       permissionRequest.decisionTrace = traceBuilder.build('ask');
 
       // E2: 确认门控 - 为高风险写操作附加预览并强制确认
-      try {
-        const gate = getConfirmationGate();
-        const preview = gate.buildPreview(executionToolName, params);
-        const riskLevel = gate.assessRiskLevel(executionToolName, params);
-        const shouldForceConfirm = gate.shouldConfirm(
-          {
-            toolName: executionToolName,
-            params,
-            preview,
-            riskLevel,
-          },
-          effectiveSessionId || 'global'
-        );
-
-        if (preview) {
-          permissionRequest.details.preview = preview;
-        }
-        if (shouldForceConfirm) {
-          permissionRequest.forceConfirm = true;
-          // 确认门也是 forceConfirm 成因之一：boundary-only 标记必须摘掉（返修 r2）。
-          permissionRequest.forceConfirmBoundaryOnly = false;
-          permissionRequest.dangerLevel = riskLevel === 'high'
-            ? 'danger'
-            : (riskLevel === 'medium' ? 'warning' : 'normal');
-        }
-      } catch (error) {
-        logger.debug('ConfirmationGate preview error:', error);
+      if (confirmationPreview) {
+        permissionRequest.details.preview = confirmationPreview;
+      }
+      if (shouldForceConfirm) {
+        permissionRequest.forceConfirm = true;
+        // 确认门也是 forceConfirm 成因之一：boundary-only 标记必须摘掉（返修 r2）。
+        permissionRequest.forceConfirmBoundaryOnly = false;
+        permissionRequest.dangerLevel = confirmationRiskLevel === 'high'
+          ? 'danger'
+          : (confirmationRiskLevel === 'medium' ? 'warning' : 'normal');
       }
 
       // ADR-088 一期：敏感步骤交回卡（放在确认门之后，details 整体替换——被键入的文本、
@@ -2334,9 +2353,9 @@ export class ToolExecutor {
         });
         return { success: true, result: resolution.result, metadata: resolution.metadata };
       }
-
       if (approved) {
         const approvalSource = ask.approvalSource ?? 'unspecified';
+        context.approvedToolCall = { toolName: executionToolName, args: params, sandboxWriteFile: approvedSingleFileRmGrantForToolApproval({ approvalSource: ask.approvalSource, toolName: policyToolName, params, permissionRequest, sessionId: effectiveSessionId, context, abortSignal: options.abortSignal, workingDirectory: bashWorkingDirectory, policyEnforcer }) };
         traceBuilder.addStep('plan_approval', 'ask_approved', 'allow', `审批放行（来源：${approvalSource}）`);
         // ADR-067 D4：按**实际批准生效的参数**重算指纹后复位——审批卡上改过参数时
         // params 已是编辑后的那份（上面的 applyEditedArgs 只在这里替换）：批准 B 只清
@@ -2537,11 +2556,11 @@ export class ToolExecutor {
           workspaceScope: this.runContext?.workspaceScope,
         };
       }, this.executionCwd);
-
       // Execute the tool via protocol resolver
       context.approvedToolCall = {
         toolName: executionToolName,
         args: params,
+        ...(context.approvedToolCall?.sandboxWriteFile ? { sandboxWriteFile: context.approvedToolCall.sandboxWriteFile } : {}),
       };
       logger.debug('Dispatching to protocol resolver', { toolName: executionToolName, requestedToolName });
       executionLedger.begin();

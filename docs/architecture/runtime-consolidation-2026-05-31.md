@@ -73,7 +73,7 @@ Admin / Observability
 | `ConfigService.applyProviderProxyOverrides` | settings runtime | 将 UI 保存的 provider 代理模式热更新到 provider shared layer。 |
 | `src/host/model/modelRouterPolicy.ts` | model runtime | provider fallback、artifact fallback 和 retry 判断的纯策略层。 |
 | `src/host/model/providers/providerHttp.ts` / `providerJson.ts` / `providerResponseParsers.ts` | model runtime | provider HTTP、JSON 和响应解析 helper。 |
-| `src/web/routes/agentRunController.ts` | web app-host | SSE 写入、terminal 去重、disconnect cancel、session status 更新。 |
+| `src/web/routes/agentRunController.ts` | web app-host | SSE 写入、terminal 去重、disconnect detach、session status 更新。 |
 | `src/web/routes/agentRunEventCollector.ts` | web app-host | active run event 收集和 replay/eval 证据聚合。 |
 | `src/web/routes/background.ts` | web app-host | move-to-background / move-to-foreground 控制面。 |
 | `src/web/routes/adminReviewQueue.ts` | web app-host | artifact issue 的 admin review queue API。 |

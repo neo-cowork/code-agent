@@ -3,8 +3,64 @@ import path from 'node:path';
 import { homedir } from 'node:os';
 import type { OsSandboxDecision, OsSandboxPermissionMode } from '../../sandbox/osSandboxPolicy';
 import { resolveCanonicalRunPath } from '../../runtime/runContext';
+import { parseShellCommand } from '../../security/commandParse';
 import type { PolicyEnforcer } from '../../security/policyEnforcer';
 import { denyConcreteShellWritePath } from './writePathPolicyDeny';
+
+function expandLeadingHome(rawPath: string): string {
+  const home = homedir();
+  if (rawPath === '~') return home;
+  if (rawPath.startsWith('~/')) return path.join(home, rawPath.slice(2));
+  if (rawPath === '$HOME' || rawPath === '${HOME}') return home;
+  if (rawPath.startsWith('$HOME/')) return path.join(home, rawPath.slice(6));
+  if (rawPath.startsWith('${HOME}/')) return path.join(home, rawPath.slice(8));
+  return rawPath;
+}
+
+/**
+ * Extract one literal file operand from a single plain `rm` command. The only
+ * accepted options are `--`, `-f`, and `--force`; recursive, compound,
+ * redirected, expanded, and multi-target commands stay on the ordinary path.
+ */
+function extractApprovedSingleFileRmTarget(
+  command: string,
+  workingDirectory: string,
+): string | undefined {
+  const parsed = parseShellCommand(command);
+  if (parsed.parsingFailed || parsed.trailingOperator || parsed.writeTargets.length > 0 || parsed.uncertain.length > 0) {
+    return undefined;
+  }
+  if (parsed.segments.length !== 1) return undefined;
+  const segment = parsed.segments[0];
+  if (
+    segment.terminator !== null
+    || segment.redirects.length > 0
+    || segment.reads.length > 0
+    || path.posix.basename(segment.words[0] ?? '') !== 'rm'
+  ) return undefined;
+
+  const operands: string[] = [];
+  let dashDash = false;
+  for (const arg of segment.words.slice(1)) {
+    if (!dashDash && arg === '--') {
+      dashDash = true;
+      continue;
+    }
+    if (!dashDash && arg.startsWith('-') && arg !== '-') {
+      if (arg !== '-f' && arg !== '--force') return undefined;
+      continue;
+    }
+    operands.push(arg);
+  }
+  if (operands.length !== 1) return undefined;
+  const rawOperand = operands[0];
+  if (!rawOperand || /[$`*?{}]/.test(rawOperand)) return undefined;
+  const expanded = expandLeadingHome(rawOperand);
+  const candidate = path.isAbsolute(expanded)
+    ? path.resolve(expanded)
+    : path.resolve(workingDirectory, expanded);
+  return candidate;
+}
 
 export interface SandboxEscalationEligibilityInput {
   sandboxDecision: Pick<OsSandboxDecision, 'sandboxed'>;
@@ -160,6 +216,17 @@ export function shouldOfferEscalation(input: SandboxEscalationEligibilityInput):
     return undefined;
   }
   return resolvedPath;
+}
+
+/** Mint the literal write path covered by one approved plain single-file rm. */
+export function approvedSingleFileRmGrant(
+  command: string,
+  input: Omit<SandboxEscalationEligibilityInput, 'deniedPath' | 'deniedPathCreatesDirectory'>,
+): string | undefined {
+  const deniedPath = extractApprovedSingleFileRmTarget(command, input.workingDirectory);
+  return deniedPath && escalationTarget(deniedPath) === 'file'
+    ? shouldOfferEscalation({ ...input, deniedPath, deniedPathCreatesDirectory: false })
+    : undefined;
 }
 
 /** Return the one directory subtree that may be offered for a single foreground retry. */

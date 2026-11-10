@@ -1,4 +1,5 @@
 import { CRON_AGENT_SNAPSHOT, EXTERNAL_WATCH } from './constants';
+import { truncateSummaryAtBoundary } from './truncateSummary';
 import type { SessionOriginKind } from './contract/session';
 
 const CRON_SUMMARY_BLOCK_PATTERN = /<cron_summary\s*>([\s\S]*?)<\/cron_summary\s*>/i;
@@ -23,6 +24,8 @@ export function extractCronAlertText(raw: string): string {
 
 export interface CronRunDigest {
   summary?: string;
+  /** Original summary when the bounded preview omits text. */
+  fullSummary?: string;
   artifacts: string[];
 }
 
@@ -61,9 +64,11 @@ export function parseCronRunDigest(text: unknown): CronRunDigest {
       summaryLines.push(line);
     }
 
-    const summary = summaryLines.join('\n').trim().slice(0, 1000).trimEnd();
+    const fullSummary = summaryLines.join('\n').trim();
+    const summary = truncateSummaryAtBoundary(fullSummary, 1000);
     return {
       ...(summary ? { summary } : {}),
+      ...(summary !== fullSummary ? { fullSummary } : {}),
       artifacts,
     };
   } catch {

@@ -1,4 +1,4 @@
- 
+import { noteFirstModelRequestPhase } from '../firstModelRequestWatch';
 // ContextAssembly - Inference orchestration and model fallback.
 import type { AgentEvent, ToolCall, ToolDefinition } from '../../../../shared/contract';
 import type { ModelResponse } from '../../../agent/loopTypes';
@@ -260,6 +260,7 @@ export function resolveMainChatModelDecision(
     });
     ctx.runtime.stats.setTurnModelDecision(emittedDecision);
   }
+  noteFirstModelRequestPhase('provider_dispatch');
   logger.info('[AgentLoop] Model decision resolved', {
     requestedProvider: emittedDecision.requestedProvider,
     requestedModel: emittedDecision.requestedModel,
@@ -268,7 +269,6 @@ export function resolveMainChatModelDecision(
     reason: emittedDecision.reason,
     billingMode: emittedDecision.billingMode,
   });
-
   return adapted;
 }
 
@@ -688,13 +688,13 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
     // 2026-08-01 真机实测修掉的那个 bug），这里只负责把攒满一整句的正文发给前端。
     const contentStreamFilter = createDocumentEvidenceStream(ctx.runtime.messages, (text) => emitAssistantMessageDelta(ctx, 'content', text));
 
-    // 原始 chunk 边来边进 turn（abort 时留住半截），同时喂给按整段判定的证据流。
     const pushContent = (text: string) => { ctx.runtime.turn.appendStreamedContent(text); contentStreamFilter.push(text); };
     // ADR-068 D4：无人值守轮（loop/cron·heartbeat·channel 会话、async_agent、goal）续接取高预算，同 run 连续断流轮数到阈值熔断（预算 0）；前台不传，adapter 用默认预算
     const unattendedRun = ctx.runtime.unattendedTurn === true || ctx.runtime.budgetScope === 'unattended' || Boolean(ctx.runtime.goalMode);
     const streamReconnectMax = unattendedRun ? (ctx.inferenceRecovery.consecutiveStreamBreakRounds >= UNATTENDED_STREAM_BREAK_CIRCUIT ? 0 : UNATTENDED_STREAM_RECONNECT_MAX) : undefined;
     let streamBrokeThisRound = false; let roundSucceeded = false;
     const streamCallback: StreamCallback = async (chunk) => {
+      if (inferenceAbortController.signal.aborted || ctx.runtime.control.isCancelled) return;
       if (typeof chunk === 'string') {
         pushContent(chunk);
       } else if (chunk.type === 'text') {
