@@ -706,7 +706,14 @@ describe('delegate_session origin turn identity (FB-772)', () => {
       expect(second).toMatchObject({ ok: true, meta: { delegationId, reused: true, status: 'terminal_observed', runStatus } });
       if (!second.ok) throw new Error(second.error);
       expect(JSON.parse(second.output)).toMatchObject({ delegationId, reused: true, status: 'terminal_observed', runStatus });
-      expect(JSON.parse(second.output).message).toContain('already delivered');
+      const receipt = JSON.parse(second.output);
+      expect(receipt.message).toContain('already delivered');
+      expect(receipt.message).not.toContain('from status/runStatus');
+      expect(receipt.message).toContain('Never quote the raw status');
+      expect(receipt.stateDescription).toBe(runStatus === 'completed'
+        ? 'The target session has finished this request.'
+        : 'The target session tried this request but it failed.');
+      expect(receipt.stateDescription).not.toMatch(/terminal_observed|completed|failed_|runStatus/);
       expect(db.prepare('SELECT * FROM queued_inputs').all()).toEqual(queuedBefore);
       expect(repository.get(delegationId)).toEqual(delegationBefore);
       expect(db.prepare('SELECT count(*) AS count FROM session_delegations').get()).toEqual({ count: 1 });

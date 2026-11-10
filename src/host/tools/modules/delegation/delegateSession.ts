@@ -50,6 +50,16 @@ function rejection(code: string, detail: string, gate?: string): ToolResult<stri
   return { ok: false, code: 'DELEGATION_REJECTED', error: `${code}: ${detail}.${REJECTION_SUFFIX}`, meta: { code, gate: gate ?? 'none' } };
 }
 
+// 回执给模型的用户向状态描述：模型只复述这句，不得引用 status/runStatus 原始枚举。
+function plainStateOf(status: SessionDelegationRecord['status'], runStatus?: RunStatus): string {
+  if (runStatus === 'completed') return 'The target session has finished this request.';
+  if (runStatus === 'failed') return 'The target session tried this request but it failed.';
+  if (runStatus === 'cancelled') return 'The target session stopped before finishing this request.';
+  if (runStatus) return 'The target session is still working on this request.';
+  if (status === 'terminal_observed') return 'The target session has finished this request.';
+  return 'The target session has received this request and will handle it shortly.';
+}
+
 function successfulOutput(input: { delegationId: string; targetName: string; queuedAhead: number; status: SessionDelegationRecord['status']; runStatus?: RunStatus; reused?: true }): ToolResult<string> {
   const payload = {
     delegationId: input.delegationId,
@@ -59,7 +69,8 @@ function successfulOutput(input: { delegationId: string; targetName: string; que
     queuedAhead: input.queuedAhead,
     ...(input.reused ? {
       reused: true as const,
-      message: 'This request was already delivered; no second request was sent. Tell the user it was already delivered and describe the current state from status/runStatus. Do not retry or describe this as a rejection or an idempotency conflict.',
+      stateDescription: plainStateOf(input.status, input.runStatus),
+      message: 'This request was already delivered; no second request was sent. Tell the user it was already delivered, and describe the current state using the wording in stateDescription. Never quote the raw status or runStatus values to the user. Do not retry or describe this as a rejection or an idempotency conflict.',
     } : {}),
   };
   return {
