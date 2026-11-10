@@ -351,8 +351,8 @@ describe('propose_role tool', () => {
       expect(result.ok).toBe(true);
       const out = (result as { output: string }).output;
       expect(out).toContain('本次相对当前定义的改动');
-      expect(out).toContain('- 新增工具：WebSearch');
-      expect(out).not.toContain('移除工具');
+      expect(out).toContain('- 新增能力：联网搜索（WebSearch）');
+      expect(out).not.toContain('移除能力');
       expect(out).not.toContain('描述有改动');
       expect(out).not.toContain('系统提示词');
     });
@@ -361,8 +361,16 @@ describe('propose_role tool', () => {
       await seed(baseMd('Read', '规则一\n规则二'));
       const { result } = await edit(['Read', 'WebSearch'], '规则一\n规则二\n规则三');
       const out = (result as { output: string }).output;
-      expect(out).toContain('- 新增工具：WebSearch');
+      expect(out).toContain('- 新增能力：联网搜索（WebSearch）');
       expect(out).toContain('- 系统提示词：新增 1 行、删除 0 行');
+    });
+
+    it('改动清单用中文能力名：新增连接器工具显示「日历」，移除核心工具 Write 显示「写入和编辑文件」', async () => {
+      await seed(baseMd('Read\n  - Write', '规则一'));
+      const { result } = await edit(['Read', 'calendar', 'calendar_create_event'], '规则一');
+      const out = (result as { output: string }).output;
+      expect(out).toContain('- 新增能力：日历（calendar、calendar_create_event）');
+      expect(out).toContain('- 移除能力：写入和编辑文件（Write）');
     });
 
     it('读不到当前定义：明说读不到并 warn 带原因，不静默', async () => {

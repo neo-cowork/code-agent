@@ -15,4 +15,10 @@ describe('edit-role 内置 skill 的最小改动规则', () => {
   it('用户已点名改动时不再主动邀请别的改动', () => {
     expect(skill!.promptContent).toContain('不要再问别的、也不要主动提议其他改动');
   });
+
+  it('直接给出日历等连接器的真实工具名，不让模型去 Grep 源码找', () => {
+    const text = skill!.promptContent;
+    expect(text).toContain('calendar_create_event');
+    expect(text).toContain('不要**去 Grep / Glob 源码找名字');
+  });
 });

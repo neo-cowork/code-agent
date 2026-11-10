@@ -30,6 +30,7 @@ import {
 } from '../../../services/roleAssets/roleDraftQueue';
 import { buildRoleCreatedSummary } from '../../../services/roleAssets/roleCreatedSummary';
 import { shouldCreateRoleDirectly } from '../../../services/roleAssets/roleCreationIntent';
+import { groupRoleToolsByAbility } from '../../../../shared/contract/roleToolAbility';
 import { diffRoleDefinition } from '../../../services/roleAssets/roleEditChange';
 import { getAgentsMdDir } from '../../../config/configPaths';
 import { parseAgentMd } from '../../../agent/hybrid/agentMdLoader';
@@ -136,16 +137,16 @@ async function buildChangeBlock(
       { description: previous.description, tools: previous.tools, systemPrompt: previous.prompt },
       next,
     );
-    const items: string[] = [];
-    if (change.addedTools.length) items.push(`- 新增工具：${change.addedTools.join('、')}`);
-    if (change.removedTools.length) items.push(`- 移除工具：${change.removedTools.join('、')}`);
+    const abilityLine = (verb: string, names: string[]) => groupRoleToolsByAbility(names)
+      .map((g) => `- ${verb}能力：${g.label}（${g.toolNames.join('、')}）`);
+    const items: string[] = [...abilityLine('新增', change.addedTools), ...abilityLine('移除', change.removedTools)];
     if (change.descriptionChanged) items.push('- 描述有改动');
     if (change.promptLinesAdded || change.promptLinesRemoved) {
       items.push(`- 系统提示词：新增 ${change.promptLinesAdded} 行、删除 ${change.promptLinesRemoved} 行`);
     }
     const body = items.length ? items.join('\n') : '- 与当前定义完全一致（没有任何改动）';
     return `${header}${body}\n` +
-      '对照用户这次点名要改的内容：清单里凡是用户没提的改动，都要从草稿里去掉并重新调用本工具；回复用户时只如实说清单里的改动，不要多说也不要少说。\n';
+      '对照用户这次点名要改的内容：清单里凡是用户没提的改动，都要从草稿里去掉并重新调用本工具；回复用户时只如实说清单里的改动，不要多说也不要少说；对用户只说中文能力名（括号里的工具 id 只是给你对照用的，不要写进回复）。\n';
   } catch (error) {
     ctx.logger.warn('propose_role could not read current definition for change list', {
       roleId,

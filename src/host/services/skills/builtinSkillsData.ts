@@ -5,6 +5,7 @@
 
 import type { ParsedSkill } from '../../../shared/contract/agentSkill';
 import type { SkillCategory } from '../../../shared/contract/skillRepository';
+import { CONNECTOR_TOOL_NAMES } from '../../../shared/contract/workbenchTools';
 import { DREAM_SKILL_PROMPT } from '../../agent/dreamPrompt';
 import { DISTILL_SKILL_PROMPT } from '../../agent/distillPrompt';
 import { FRONTEND_SLIDES_BUILTIN_SKILLS } from './builtinFrontendSlides';
@@ -1658,6 +1659,10 @@ end tell
 - **editingRoleId**：等于被修改角色的名字（与 roleId 相同——本期不支持改名）
 - **roleId**：保持与 editingRoleId 一致（不要改名；用户若想改名，告诉他本期暂不支持）
 - **description / category / tools / systemPrompt**：合并后的完整新定义（不是只填改动的部分——是整份覆盖）
+  - 日历 / 邮件 / 提醒事项这类连接器能力的真实工具名在下面，直接用，**不要**去 Grep / Glob 源码找名字：
+    - 日历：${CONNECTOR_TOOL_NAMES.calendar.join('、')}（只看日程用 calendar；要新建 / 修改 / 删除日程再加对应的 *_event）
+    - 邮件：${CONNECTOR_TOOL_NAMES.mail.join('、')}
+    - 提醒事项：${CONNECTOR_TOOL_NAMES.reminders.join('、')}
   - tools 以现有定义为准，只增减用户点名的那几个，不要重新挑选；增减能力时用一句话告诉用户你动了哪些（尤其 Bash / 写文件这种高权限）
   - tools 只能写真实存在的工具名（沿用现有定义里的名字，或用 \`list_experts\` 里见过的名字），不要自己编；需要的能力没有对应工具就如实告诉用户，草稿里不要放假名字
 \`propose_role\` 会生成**修改草稿**并在聊天里弹出确认卡。草稿不会自动入库。
