@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const THEMES = ['corporate', 'minimal', 'bold-editorial'];
 const SOFFICE_FIXED_PATHS = [
@@ -92,10 +92,18 @@ function sampleIndex(slide) {
   return Math.max(Number(slide.index) || 2, 2);
 }
 
-function run(cmd, args, label) {
+function run(cmd, args, label, reason = 'sample render failed') {
   const result = spawnSync(cmd, args, { encoding: 'utf8', timeout: STEP_TIMEOUT_MS });
   if (result.status !== 0) {
-    throw new Error(`${label} failed (status ${result.status}): ${(result.stderr || result.stdout || '').trim().slice(0, 500)}`);
+    const stderr = result.stderr || '';
+    const stdout = result.stdout || '';
+    const error = new Error(`${label} failed: ${JSON.stringify({
+      status: result.status, signal: result.signal, error: result.error?.message ?? null,
+      stderr: stderr.slice(0, 500), stdout: stdout.slice(0, 500),
+    })}`);
+    error.reason = /sandbox[^\n]*deny[^\n]*write|deny[^\n]*file-write/i.test(stderr)
+      ? 'sandbox denied write' : reason;
+    throw error;
   }
 }
 
@@ -103,11 +111,11 @@ function pdfToPng(pdf, png) {
   const pdftoppm = findOnPath('pdftoppm') || ['/opt/homebrew/bin/pdftoppm', '/usr/local/bin/pdftoppm'].find(isExecutable);
   if (pdftoppm) {
     const prefix = png.replace(/\.png$/, '');
-    run(pdftoppm, ['-png', '-r', '80', '-singlefile', pdf, prefix], 'pdftoppm');
+    run(pdftoppm, ['-png', '-r', '80', '-singlefile', pdf, prefix], 'pdftoppm', 'pdf-to-png failed');
     return;
   }
   log('lookup failed: pdftoppm not found, falling back to sips');
-  run('sips', ['-s', 'format', 'png', pdf, '--out', png], 'sips');
+  run('sips', ['-s', 'format', 'png', pdf, '--out', png], 'sips', 'pdf-to-png failed');
 }
 
 function renderSample({ soffice, mergeScript, slide, theme, outDir, work }) {
@@ -120,12 +128,23 @@ function renderSample({ soffice, mergeScript, slide, theme, outDir, work }) {
   const profile = path.join(work, `profile-${theme}`);
   run(
     soffice,
-    [`-env:UserInstallation=file://${profile}`, '--headless', '--convert-to', 'pdf', '--outdir', deck, pptx],
+    [
+      `-env:UserInstallation=${pathToFileURL(profile).href}`,
+      // Without this bootstrap setting, access(/tmp, W_OK) fails the write fence and
+      // LibreOffice falls back to /OSL_PIPE_*. Keep the owner-approved socket path.
+      ...(process.platform === 'darwin' ? ['-env:OSL_SOCKET_PATH=/private/tmp'] : []),
+      '--headless', '--convert-to', 'pdf', '--outdir', deck, pptx,
+    ],
     `soffice (${theme})`,
+    'soffice render failed',
   );
   const png = path.join(outDir, `${theme}.png`);
   pdfToPng(path.join(deck, `${theme}.pdf`), png);
-  if (!fs.existsSync(png) || fs.statSync(png).size === 0) throw new Error(`empty PNG for ${theme}`);
+  if (!fs.existsSync(png) || fs.statSync(png).size === 0) {
+    const error = new Error(`empty PNG for ${theme}`);
+    error.reason = 'pdf-to-png failed';
+    throw error;
+  }
   return { theme, png };
 }
 
@@ -153,5 +172,5 @@ try {
 } catch (error) {
   // Rendering broke after LibreOffice was found: report unavailable so the skill falls back to text options.
   log(`render failed: ${error instanceof Error ? error.message : String(error)}`);
-  console.log(JSON.stringify({ available: false, reason: 'sample render failed' }));
+  console.log(JSON.stringify({ available: false, reason: error.reason || 'sample render failed' }));
 }
