@@ -6,7 +6,7 @@ import { AppWindow, shell } from '../platform';
 import path from 'path';
 import { createLogger } from '../services/infra/logger';
 import { initContextHealthService } from '../context/contextHealthService';
-import { initSessionStateManager } from '../session/sessionStateManager';
+import { getSessionStateManager, initSessionStateManager } from '../session/sessionStateManager';
 
 const logger = createLogger('Window');
 
@@ -24,6 +24,7 @@ export function getMainWindow(): AppWindow | null {
  */
 export function setMainWindow(window: AppWindow | null): void {
   mainWindow = window;
+  getSessionStateManager().setMainWindow(window);
 }
 
 /**

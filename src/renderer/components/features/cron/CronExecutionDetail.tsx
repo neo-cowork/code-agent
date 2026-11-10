@@ -10,18 +10,19 @@ import { useSessionStore } from '../../../stores/sessionStore';
 import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
 import { Button } from '../../primitives/Button';
 import {
-  formatDateTime,
   formatDuration,
   formatRunCostUsd,
-  getExecutionStatusMeta,
+  getLatestExecutionStatus,
   isPermissionDeniedExecution,
   prettyJson,
 } from './types';
+import { formatDateTime } from '../../../utils/formatDateTime';
 import { CronRunsOnPill } from './CronRunsOnSelector';
 import { cronLoginWallCopy, openCronLoginWallSite } from './cronLoginWallNotice';
 import { cronFailureSentence } from './cronFailureNotice';
 import { wakeSkipSentence } from './wakeSkipSentence';
 import { awaitingApprovalLabel } from './awaitingApprovalLabel';
+import { localizeParkedApprovalClosureText } from '../../../utils/toolExecutionPresentation';
 
 const CLOUD_NOT_WIRED = 'Cloud execution is not wired yet (N-L3-MINLOOP-SRV).';
 const TIME_LIMIT = /Cron job run exceeded its (\d+(?:\.\d+)?)s time limit\./;
@@ -54,6 +55,9 @@ function failureAction(kind: CronFailurePresentationKind): 'model' | 'account' |
 
 interface CronExecutionDetailProps {
   execution: CronJobExecution | null;
+  jobName?: string;
+  /** Complete catalog has loaded; otherwise an absent name is not evidence of deletion. */
+  jobNamesLoaded?: boolean;
   runsOn?: CronJobDefinition['runsOn'];
   /** 等批准运行（N-CRON-UNATTENDED-BASH-PARK-STUCK）：状态 chip 换 amber 徽章 + 一句提示 + 去处理。 */
   awaitingRun?: { executionId: string | null; commandPreview?: string } | null;
@@ -62,6 +66,8 @@ interface CronExecutionDetailProps {
 
 export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
   execution,
+  jobName,
+  jobNamesLoaded = true,
   runsOn = 'local',
   awaitingRun = null,
   onReviewAwaiting,
@@ -69,6 +75,11 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
   const { t, language } = useI18n();
   const cc = t.cronCenter;
   const switchSession = useSessionStore((state) => state.switchSession);
+  const sessionTitle = useSessionStore((state) => (
+    execution?.sessionId
+      ? state.sessions.find((session) => session.id === execution.sessionId)?.title
+      : undefined
+  ));
   const setShowCronCenter = useAppStore((state) => state.setShowCronCenter);
   const [isOpeningSession, setIsOpeningSession] = useState(false);
   const [isRerunning, setIsRerunning] = useState(false);
@@ -98,7 +109,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
     );
   }
 
-  const statusMeta = getExecutionStatusMeta(execution.status);
+  const statusMeta = getLatestExecutionStatus(execution, cc);
   // 需处理（N-CRON-RUN-COMPLETED-BUT-DENIED）：被拒且无产出的完成运行换琥珀徽章 + 一句话 + 重跑。
   const deniedCandidate = isPermissionDeniedExecution(execution)
     ? (execution.result as { permissionDenied?: unknown }).permissionDenied
@@ -149,7 +160,9 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h4 className="text-sm font-medium text-zinc-100">{cc.execDetailTitle}</h4>
-          <p className="mt-1 text-xs text-zinc-500">{execution.id}</p>
+          <p className="mt-1 text-xs text-zinc-500">
+            {jobName ?? (jobNamesLoaded ? cc.deletedTask : cc.jobNameUnavailable)} · {formatDateTime(execution.startedAt ?? execution.scheduledAt, language)}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           {execution.sessionId && (
@@ -175,11 +188,11 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
               className="rounded-full px-2.5 py-1 text-xs text-badge-warning bg-amber-500/10"
               data-testid="cron-exec-detail-permission-denied"
             >
-              {cc.permissionDeniedBadge}
+              {statusMeta.label}
             </span>
           ) : (
             <span className={`rounded-full px-2.5 py-1 text-xs ${statusMeta.className}`}>
-              {cc.status[execution.status]}
+              {statusMeta.label}
             </span>
           )}
         </div>
@@ -204,7 +217,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
       )}
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <Info label={cc.execSession} value={execution.sessionId || '—'} />
+        <Info label={cc.execSession} value={execution.sessionId ? (sessionTitle ?? cc.linkedSession) : '—'} />
         <div className="rounded-lg border border-zinc-800 bg-zinc-900/70 p-3">
           <div className="text-xs text-zinc-500">{cc.execLocation}</div>
           <div className="mt-1">
@@ -222,7 +235,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
         <Info label={cc.colScheduledAt} value={formatDateTime(execution.scheduledAt, language)} />
         <Info label={cc.colStartedAt} value={formatDateTime(execution.startedAt, language)} />
         <Info label={cc.execCompletedAt} value={formatDateTime(execution.completedAt, language)} />
-        <Info label={cc.colDuration} value={formatDuration(execution.duration)} />
+        <Info label={cc.colDuration} value={formatDuration(execution.duration, language)} />
         <Info label={cc.colCost} value={formatRunCostUsd(execution.cost, execution.runsOn ?? runsOn)} testId="cron-execution-cost" />
         <Info label={cc.execRetryCount} value={String(execution.retryAttempt)} />
         <Info label={cc.colExitCode} value={execution.exitCode != null ? String(execution.exitCode) : '—'} />
@@ -231,7 +244,9 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
       {stopReason && stopReason.sessionId === reasonSessionId && (
         <section className="mt-4" data-testid="cron-exec-stop-reason">
           <h5 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">{cc.execStopReason}</h5>
-          <p className="text-sm text-zinc-100" data-testid="cron-exec-stop-reason-text">{stopReason.text}</p>
+          <p className="text-sm text-zinc-100" data-testid="cron-exec-stop-reason-text">
+            {localizeParkedApprovalClosureText(stopReason.text, t) ?? stopReason.text}
+          </p>
         </section>
       )}
 

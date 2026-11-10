@@ -23,6 +23,7 @@ import { getLangfuseService, getBudgetService, BudgetAlertLevel } from '../../se
 import { RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../shared/constants';
 import { logCollector } from '../../mcp/logCollector.js';
 import { createLogger } from '../../services/infra/logger';
+import { buildEmptyFinalError, hasVisibleAssistantTextAfterLastUser } from './emptyFinalError';
 import { trackNode } from '../../observability/posthogNode';
 import { silence } from '../../utils/errorHandling';
 import type { BudgetEventData } from '../../../shared/contract';
@@ -72,6 +73,7 @@ import { captureTurnDiff } from '../../services/checkpoint/turnDiffService';
 import { emitGoalAbort } from './goalAbort';
 import { finalizeWebDeliverablePreviewRepairs } from './webDeliverablePreviewRepair';
 import { clearAskUserQuestionReplay } from '../../tools/modules/planning/askUserQuestionReplay';
+import { clearToolRunGrants } from '../../permissions/toolGrantStore';
 
 const logger = createLogger('AgentLoop');
 
@@ -150,33 +152,6 @@ function formatTerminalError(error: unknown): string {
   // 先过模型错误分类：鉴权失败/欠费等换成人话 + 建议（内部错误如 runId 原样透出）
   const raw = error === undefined ? 'Unknown runtime error' : formatThrownError(error);
   return summarizeModelErrorForUser(raw, getModelErrorStatus(error));
-}
-
-/**
- * 「这轮有没有看得见的最终回复」判定：最后一条 user 之后存在正文非空的 assistant。
- * （N-CHAT-EMPTY-FINAL-NO-EXIT：完成必须有非空最终回复，不许用排除法兜底）。
- * 运行中转向（injectSteerMessage）会把 role:'user' 推进同一轮 history，最终回复在转向之后。
- */
-function hasVisibleAssistantTextAfterLastUser(messages: Message[]): boolean {
-  let seenLastUser = false;
-
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message.role === 'user') {
-      seenLastUser = true;
-      break;
-    }
-
-    if (message.role !== 'assistant') {
-      continue;
-    }
-
-    if (typeof message.content === 'string' && message.content.trim().length > 0) {
-      return true;
-    }
-  }
-
-  return !seenLastUser;
 }
 
 function hasTerminalWakeNoopAfterLastUser(messages: Message[]): boolean {
@@ -352,6 +327,10 @@ export class RunFinalizer {
     // runId 缺省时退化为 session 级整清（评测/旧路径无 runId，缓存本就随 run 生灭）。
     clearAskUserQuestionReplay(this.ctx.sessionId, this.ctx.runId?.trim() || undefined);
 
+    // 「到这次做完为止」run 档工具授权随 run 结束失效（N-PERM-GRANT-TIERS）：
+    // 本轮结束 = 承诺兑现，该会话下一次同类操作重新询问。内存操作，不会抛。
+    clearToolRunGrants(this.ctx.sessionId);
+
     let terminalStatus = terminal.status
       ?? (this.ctx.control.isCancelled
         ? 'cancelled'
@@ -399,7 +378,7 @@ export class RunFinalizer {
       && this.ctx.unattendedTurn !== true
     ) {
       terminalStatus = 'failed';
-      terminalError = new Error('任务已结束，执行记录和产物已保留。这一轮没有生成最终说明，请直接查看上面的工具结果。');
+      terminalError = buildEmptyFinalError(this.ctx.messages);
     }
 
     const runEvent = getRunTerminalPostHogEvent(terminalStatus);
@@ -546,7 +525,7 @@ export class RunFinalizer {
       this.ctx,
       terminalStatus,
       completionSummary,
-      terminalStatus === 'cancelled' && this.ctx.control.cancelReason === 'idle-reaped' ? 'idle_reaped' : undefined,
+      terminalStatus === 'cancelled' ? (this.ctx.control.cancelReason === 'client-disconnect' ? 'client_disconnect' : this.ctx.control.cancelReason === 'idle-reaped' ? 'idle_reaped' : undefined) : undefined,
     );
 
     await this.emitTurnDiff();
@@ -559,7 +538,7 @@ export class RunFinalizer {
     if (terminalEventType === 'agent_cancelled') {
       this.ctx.onEvent({
         type: 'agent_cancelled',
-        data: this.ctx.control.cancelReason === 'idle-reaped' ? { reason: 'idle_reaped' } : null,
+        data: this.ctx.control.cancelReason === 'client-disconnect' ? { reason: 'client_disconnect' } : this.ctx.control.cancelReason === 'idle-reaped' ? { reason: 'idle_reaped' } : null,
       });
     } else {
       this.ctx.onEvent({ type: terminalEventType, data: null });

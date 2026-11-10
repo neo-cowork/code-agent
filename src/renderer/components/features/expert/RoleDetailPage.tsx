@@ -38,7 +38,7 @@ import { RoleWakeLedger } from "./RoleWakeLedger";
 import { RoleBindingsSection } from "../settings/tabs/RoleBindingsSection";
 import { RoleMemoryActions } from "./RoleMemoryActions";
 import { useAppStore } from "../../../stores/appStore";
-import { Button, TimeInput24 } from "../../primitives";
+import { Badge, Button, TimeInput24 } from "../../primitives";
 import { FullScreenPage, FullScreenPageHeader } from "../shared/FullScreenPage";
 import { RoleBasicTab } from './RoleBasicTab';
 import { RoleEquipmentTab } from './RoleEquipmentTab';
@@ -377,7 +377,14 @@ const MemoryRow: React.FC<MemoryRowProps> = ({ roleId, memory, onChanged }) => {
     <div className="rounded-lg border border-zinc-700/60 bg-zinc-900/40 p-3">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium text-zinc-200">{memory.name}</div>
+          <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-zinc-200">
+            {memory.name}
+            {memory.lastChange?.actor === 'role_wake' ? (
+              <Badge title={t.expert.roleDetail.roleWakeTooltip} className="border-border-default bg-surface-hover text-[10px] text-text-secondary">
+                {t.expert.roleDetail.roleWakeLabel}
+              </Badge>
+            ) : null}
+          </div>
           <div className="mt-0.5 text-xs text-zinc-500">
             {memory.description}
           </div>

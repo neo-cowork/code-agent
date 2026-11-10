@@ -57,6 +57,7 @@ import { connectorRequiredEn } from './connectorRequired';
 import { roleFirstWakeEn } from './roleFirstWake';
 import { roleWakeProposalsEn } from './roleWakeProposals';
 import { permissionRuleNlEn } from './permissionRuleNl';
+import { sessionTaskPresentationEn } from './sessionTaskPresentation'; import { toolResultSummaryEn } from './toolResultSummary'; import { codeBlockEn } from './codeBlock';
 // satisfies（而非 `: Translations` 注解）：key 集合必须与 zh 完全一致——zh 多 key /
 // en 缺 key / en 多 key 都在此报红，同时保留 en 自身的推断类型。zh.ts 是形状真源
 //（Translations = typeof zh），与叶子先例 artifactShare.ts 的 satisfies 锁同范式。
@@ -82,6 +83,7 @@ export const en = {
   ...roleFirstWakeEn,
   ...roleWakeProposalsEn,
   ...permissionRuleNlEn,
+  ...sessionTaskPresentationEn, ...toolResultSummaryEn, ...codeBlockEn,
   // Common
   common: {
     save: 'Save',
@@ -148,7 +150,7 @@ export const en = {
     cacheSavedLine: 'Cache saved {saved}',
     turnCostLine: 'Last turn ≈ {cost} · {model}',
     turnCostUnknownLine: 'Last turn cost unknown ({model} has no list price)',
-    unknownTurnsNote: '{count} turn(s) with unknown price not included',
+    unknownTurnsNote: { one: '{count} turn with unknown price not included', other: '{count} turns with unknown price not included' },
     estimateDisclaimer: 'List-price estimate, not your bill',
   },
 
@@ -268,7 +270,7 @@ export const en = {
     proposalOpRename: 'label',
     proposalOpDiscard: 'remove',
     proposalOpGenerate: 'generate',
-    proposalEstCost: 'Est. generation cost {amount} ({n} image(s))',
+    proposalEstCost: { one: 'Est. generation cost {amount} ({count} image)', other: 'Est. generation cost {amount} ({count} images)' },
     proposalPaidBadge: 'paid',
     proposalSelectedCount: '{n}/{total} selected',
     proposalNothingSelected: 'Select at least one',
@@ -752,7 +754,7 @@ export const en = {
     patternSequential: 'Sequential',
     patternParallel: 'Parallel',
     patternHierarchical: 'Hierarchical',
-    agentsWorking: '{count} agents collaborating',
+    agentsWorking: { one: '{count} agent collaborating', other: '{count} agents collaborating' },
     // Skills
     unmountSkill: 'Unmount',
     addSkills: 'Add ({count})',

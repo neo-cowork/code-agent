@@ -78,7 +78,7 @@ describe('task.ipc — TaskManager unavailable', () => {
     registerTaskHandlers(ipc as never, () => null);
     const handler = ipc.getHandler();
 
-    const actions = ['start', 'interrupt', 'cancel', 'cancelBackgroundTask', 'getState', 'cleanup'] as const;
+    const actions = ['start', 'interrupt', 'cancel', 'getState', 'cleanup'] as const;
     for (const action of actions) {
       const res = await handler({}, { action, payload: { sessionId: 's1' } });
       expect(res.success).toBe(false);
@@ -89,6 +89,18 @@ describe('task.ipc — TaskManager unavailable', () => {
 
     expect(logState.errorLog).not.toHaveBeenCalled();
     expect(logState.debugLog.mock.calls.length).toBe(actions.length);
+  });
+
+  it('TaskManager 缺席时 cancelBackgroundTask 仍返回 shell 控制路径的真实结果', async () => {
+    const ipc = makeFakeIpc();
+    registerTaskHandlers(ipc as never, () => null);
+    const handler = ipc.getHandler();
+
+    const res = await handler({}, {
+      action: 'cancelBackgroundTask',
+      payload: { taskId: 'shell:unknown-task' },
+    });
+    expect(res).toEqual({ success: true, data: { cancelled: false } });
   });
 
   it('renderer 轮询类读操作返回安全默认且不打 debug', async () => {

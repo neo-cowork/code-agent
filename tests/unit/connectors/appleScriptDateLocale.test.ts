@@ -52,7 +52,9 @@ describe.each(FIXTURES)('%s (%s)', (_name, raw, expected) => {
 
   it('calendar list / get / create / update', async () => {
     const line = `u1|Work|Meet|${raw}|${raw}|Room|n|`;
-    mocks.runAppleScript.mockResolvedValueOnce(line);
+    mocks.runAppleScript
+      .mockResolvedValueOnce('Work')
+      .mockResolvedValueOnce(line);
     const list = await calendarConnector.execute('list_events', {
       from_ms: EXPECTED - 86_400_000, to_ms: EXPECTED + 86_400_000,
     });
@@ -63,7 +65,9 @@ describe.each(FIXTURES)('%s (%s)', (_name, raw, expected) => {
     const got = (await calendarConnector.execute('get_event', { calendar: 'Work', event_uid: 'u1' })).data as typeof ev;
     expect([got.startAtMs, got.endAtMs]).toEqual([expected, expected]);
 
-    mocks.runAppleScript.mockResolvedValueOnce(`u1|Work|Meet|${raw}|${raw}|Room`);
+    mocks.runAppleScript
+      .mockResolvedValueOnce('Work')
+      .mockResolvedValueOnce(`u1|Work|Meet|${raw}|${raw}|Room`);
     const created = (await calendarConnector.execute('create_event', {
       calendar: 'Work', title: 'Meet', start_ms: EXPECTED,
     })).data as typeof ev;
@@ -109,19 +113,26 @@ describe('locale-independent fetch scripts', () => {
   it('scripts use isoDateText with the shared handler instead of "as text" dates', async () => {
     const scripts: string[] = [];
     mocks.runAppleScript.mockImplementation(async (lines: string[]) => {
-      scripts.push(lines.join('\n'));
+      const script = lines.join('\n');
+      scripts.push(script);
+      if (script.includes('repeat with cal in every calendar')) return 'W';
+      if (script.includes('set newEvent to make new event')) return 'u1|W|t|2026-11-03T22:15:30|2026-11-03T22:15:30|';
       return '';
     });
     await mailConnector.execute('list_messages', { mailbox: 'INBOX' });
     await mailConnector.execute('read_message', { mailbox: 'INBOX', message_id: 1 }).catch(() => undefined);
-    await calendarConnector.execute('list_events', {});
+    await calendarConnector.execute('list_events', { calendar: 'W' });
     await calendarConnector.execute('get_event', { calendar: 'W', event_uid: 'u' }).catch(() => undefined);
     await calendarConnector.execute('create_event', { calendar: 'W', title: 't', start_ms: 1 }).catch(() => undefined);
     await calendarConnector.execute('update_event', { calendar: 'W', event_uid: 'u', title: 't' }).catch(() => undefined);
     await remindersConnector.execute('list_reminders', {});
     await remindersConnector.execute('get_reminder', { list: 'L', reminder_id: 'r' }).catch(() => undefined);
-    expect(scripts).toHaveLength(8);
-    for (const script of scripts) {
+    expect(scripts).toHaveLength(9);
+    const dateScripts = scripts.filter((script) => !script.includes('repeat with cal in every calendar'));
+    const createWriteScript = scripts.find((script) => script.includes('set newEvent to make new event'));
+    expect(createWriteScript).toBeDefined();
+    expect(createWriteScript).toContain('my isoDateText(start date of newEvent)');
+    for (const script of dateScripts) {
       expect(script).toContain('on isoDateText(d)');
       expect(script).toMatch(/my isoDateText\(/);
       expect(script).not.toMatch(/(date received|start date|end date)[^)]*\) as text/);

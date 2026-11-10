@@ -329,7 +329,7 @@ function writePrivateJson(filePath, value) {
   chmodSync(filePath, 0o600);
 }
 
-async function reservePort() {
+export async function reservePort() {
   return await new Promise((resolve, reject) => {
     const server = net.createServer();
     server.unref();
@@ -347,7 +347,7 @@ async function reservePort() {
   });
 }
 
-function ensureDist(reuseDist) {
+export function ensureDist(reuseDist) {
   const webServer = path.join(repoRoot, 'dist', 'web', 'webServer.cjs');
   const renderer = path.join(repoRoot, 'dist', 'renderer', 'index.html');
   if (!reuseDist) {
@@ -365,7 +365,7 @@ function ensureDist(reuseDist) {
   return webServer;
 }
 
-async function waitForHealth(child, url, timeoutMs = 120_000) {
+export async function waitForHealth(child, url, timeoutMs = 120_000) {
   const deadline = Date.now() + timeoutMs;
   let lastError = 'not started';
   while (Date.now() < deadline) {

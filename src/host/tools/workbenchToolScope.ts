@@ -1,4 +1,5 @@
 import type { ToolDefinition } from '../../shared/contract';
+import type { ParsedSkill } from '../../shared/contract/agentSkill';
 import type { WorkbenchToolScope } from '../../shared/contract/conversationEnvelope';
 import {
   CONNECTOR_TOOL_NAMES,
@@ -6,6 +7,7 @@ import {
   extractMcpServerIdFromToolName,
   isConnectorToolName,
 } from '../../shared/contract/workbenchTools';
+import { getPermissionModeManager } from '../permissions/modes';
 
 function normalizeIds(ids?: string[]): string[] {
   return Array.from(new Set((ids || []).map((id) => id.trim()).filter(Boolean)));
@@ -121,6 +123,27 @@ export function isSkillCommandAllowedByWorkbenchScope(
   }
 
   return normalizedScope.allowedSkillIds.includes(skillName);
+}
+
+/**
+ * Unattended runs hide personally installed (`source === 'user'`) skills by default
+ * unless the skill name is explicitly listed in `toolScope.allowedSkillIds`.
+ */
+export function isSkillHiddenForRun(
+  skill: Pick<ParsedSkill, 'name' | 'source'>,
+  options?: { sessionId?: string; toolScope?: WorkbenchToolScope },
+): boolean {
+  if (!options?.sessionId || !getPermissionModeManager().isUnattendedSession(options.sessionId)) {
+    return false;
+  }
+  if (skill.source !== 'user') {
+    return false;
+  }
+  const normalizedScope = normalizeWorkbenchToolScope(options.toolScope);
+  if (normalizedScope?.allowedSkillIds?.includes(skill.name)) {
+    return false;
+  }
+  return true;
 }
 
 export function filterToolDefinitionsByWorkbenchScope(

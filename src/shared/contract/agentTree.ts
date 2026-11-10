@@ -77,6 +77,8 @@ export interface AgentWorktreeReview extends AgentWorktreeArtifact {
 export interface AgentTreeNode {
   id: string;
   role: string;
+  displayName?: string;
+  background?: boolean;
   status: AgentTreeNodeStatus;
   statusLabel: string;
   parentId?: string;

@@ -77,7 +77,7 @@ describe('listAwaitingApprovalRuns (host join, N-CRON-UNATTENDED-BASH-PARK-STUCK
     const out = svc.listAwaitingApprovalRuns();
 
     expect(out).toHaveLength(1);
-    expect(out[0]).toMatchObject({ jobId: 'job-1', executionId: 'exec-1', requestId: 'req-1', requestedAt: 5_000 });
+    expect(out[0]).toMatchObject({ jobId: 'job-1', executionId: 'exec-1', requestId: 'req-1', sessionId: 'sess-cron', requestedAt: 5_000 });
   });
 
   it('⑤ commandPreview 取 argsPreview，缺省回落 argsSummary，都没有则不带该字段', async () => {
@@ -128,10 +128,22 @@ describe('listAwaitingApprovalRuns (host join, N-CRON-UNATTENDED-BASH-PARK-STUCK
     const out = svc.listAwaitingApprovalRuns();
 
     expect(out).toHaveLength(1);
-    expect(out[0]).toMatchObject({ jobId: 'job-hb', executionId: null, requestId: 'req-hb' });
+    expect(out[0]).toMatchObject({ jobId: 'job-hb', executionId: null, requestId: 'req-hb', sessionId: 'sess-hb' });
     expect(warn).toHaveBeenCalledWith(
       'Awaiting-approval run skipped: no sessionId',
       expect.objectContaining({ requestId: 'req-nosid' }),
     );
+  });
+
+  it('returns the coordinator sessionId when the payload omits it, for directory approval resolution', async () => {
+    insertSession('sess-directory', { kind: 'cron', id: 'job-directory' }, 'exec-directory');
+    db.prepare(
+      "INSERT INTO pending_approvals (id, kind, status, payload_json, coordinator_id, submitted_at) VALUES ('req-directory', 'directory_access', 'pending', '{}', 'sess-directory', 9)",
+    ).run();
+    const { SessionAutomationService } = await import('../../../src/host/services/sessionAutomation/sessionAutomationService');
+    expect(new SessionAutomationService().listAwaitingApprovalRuns()).toEqual([{
+      jobId: 'job-directory', executionId: 'exec-directory', requestId: 'req-directory',
+      sessionId: 'sess-directory', requestedAt: 9,
+    }]);
   });
 });
