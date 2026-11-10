@@ -310,6 +310,8 @@ export interface InputRedirectReceiptMetadata {
 }
 
 export interface MessageMetadata {
+  /** Foreground turn ended at its step limit; a new user turn can continue it. */
+  stoppedByStepLimit?: true;
   /**
    * Marks a role:user message injected into an active run by runtime steer.
    * The message remains visible and durable, but does not start a new turn
@@ -432,6 +434,16 @@ export interface MessageMetadata {
   backgroundWakeFailed?: {
     taskId: string;
     reason: 'owner_missing' | 'wake_failed';
+  };
+  /** Persisted receipt after the user confirms an existing expert edit. */
+  roleEditReceipt?: {
+    roleId: string;
+    addedTools: string[];
+    removedTools: string[];
+    descriptionChanged: boolean;
+    promptChanged: boolean;
+    /** False when the old definition was unavailable; never claim nothing changed in that case. */
+    diffAvailable?: boolean;
   };
   /** User-visible audit note for atomic turn checkout / Redo, including partial outcomes. */
   turnCheckoutNote?: {

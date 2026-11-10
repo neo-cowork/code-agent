@@ -54,6 +54,22 @@ describe('describeAppleScriptFailure', () => {
       .toMatch(/did not respond in time \(timeout\).*Narrow the date range or pass a specific calendar name/);
   });
 
+  it('gives cautious list-reminders timeout guidance in zh and en without claiming an unmeasured cause', () => {
+    const timeout = execError('', { killed: true, signal: 'SIGTERM' });
+    const zh = describeAppleScriptFailure('Reminders', timeout, { timeoutContext: 'list_reminders' });
+    expect(zh.code).toBe('timeout');
+    expect(zh.message).toMatch(/读取提醒超时.*打开 Reminders.*授权提示.*列表名称.*减少读取条数/);
+    expect(zh.message).not.toMatch(FORBIDDEN);
+    configState.language = 'en';
+    const en = describeAppleScriptFailure('Reminders', timeout, { timeoutContext: 'list_reminders' });
+    expect(en.message).toMatch(/took too long to read reminders.*pending permission prompt.*specific list name or a lower limit/);
+    expect(en.message).not.toMatch(FORBIDDEN);
+    const denied = describeAppleScriptFailure('Reminders', execError('(-1743)'), { timeoutContext: 'list_reminders' });
+    expect(denied.code).toBe('not_authorized');
+    expect(denied.message).toMatch(/access was denied.*System Settings/);
+    expect(denied.message).not.toMatch(FORBIDDEN);
+  });
+
   it('uses non-retry guidance for write timeouts', () => {
     const timeout = execError('', { killed: true, signal: 'SIGTERM' });
     const mail = describeAppleScriptFailure('Mail', timeout, { timeoutContext: 'write' });

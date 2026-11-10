@@ -7,7 +7,7 @@ import type {
   ToolDefinition,
 } from '../../shared/contract';
 import type { PermissionBoundaryRef } from '../../shared/contract/permissionBoundary';
-import type { PermissionRequestReason } from '../../shared/contract/permission';
+import type { PermissionAskResult, PermissionRequestReason } from '../../shared/contract/permission';
 import type {
   ConversationExecutionIntent,
   WorkbenchToolScope,
@@ -60,6 +60,8 @@ export interface ToolContext {
   workingDirectory: string;
 
   requestPermission: (request: PermissionRequestData) => Promise<boolean>;
+  /** Per-request rich results used only while a child approval is bridged to its parent. */
+  permissionAskResults?: WeakMap<PermissionRequestData, PermissionAskResult>;
   abortSignal?: AbortSignal;
   /** Runtime stop hook used by terminal browser guards. */
   forceFinalResponse?: (reason: string, prompt?: string) => void;
@@ -193,6 +195,8 @@ export interface ToolContext {
   approvedToolCall?: {
     toolName: string;
     args: Record<string, unknown>;
+    /** One literal file grant minted by the approval boundary for this exact call. */
+    sandboxWriteFile?: string;
   };
   /** 当前 turn 的显式工具作用域 */
   toolScope?: WorkbenchToolScope;
@@ -243,6 +247,13 @@ export interface PermissionRequestData {
    */
   argsFingerprint?: string;
   ledgerFaithful?: boolean;
+  /**
+   * True when a child ToolExecutor (e.g. subagentToolRuntime) forwards its own
+   * permission ask through the parent's canUseTool / requestPermission and will
+   * record the ledger row itself (with origin='subagent'), preventing a duplicate
+   * parent recordInToolPermissionAsk entry.
+   */
+  ledgerRecordedByChild?: boolean;
 }
 
 export interface ToolExecutionResult {

@@ -581,6 +581,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         id: attachment.id,
         label: attachment.name,
         category: attachment.category,
+        thumbnail: attachment.category === 'image' ? attachment.thumbnail : undefined,
       });
     }
     for (const item of pinnedLibraryItems) {

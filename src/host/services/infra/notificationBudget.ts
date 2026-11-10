@@ -13,7 +13,7 @@ export interface NotificationBudgetTimer {
 }
 
 interface NotificationBudgetOptions<T extends NotificationBudgetItem> {
-  deliver: (item: T) => void;
+  deliver: (item: T, via: 'immediate' | 'window-end') => void;
   deliverDigest: (items: readonly T[]) => void;
   now?: () => number;
   setTimer?: (callback: () => void, delayMs: number) => NotificationBudgetTimer;
@@ -26,7 +26,7 @@ interface NotificationBudgetOptions<T extends NotificationBudgetItem> {
 export type NotificationBudgetDisposition = 'delivered' | 'held';
 
 export class NotificationBudget<T extends NotificationBudgetItem> {
-  private readonly deliver: (item: T) => void;
+  private readonly deliver: (item: T, via: 'immediate' | 'window-end') => void;
   private readonly deliverDigest: (items: readonly T[]) => void;
   private readonly now: () => number;
   private readonly setTimer: (callback: () => void, delayMs: number) => NotificationBudgetTimer;
@@ -49,11 +49,11 @@ export class NotificationBudget<T extends NotificationBudgetItem> {
 
   enqueue(item: T): NotificationBudgetDisposition {
     if (item.intent === 'needs_input' || item.intent === 'task_failed' || item.urgent === true) {
-      this.deliver(item);
+      this.deliver(item, 'immediate');
       return 'delivered';
     }
     if (this.windowStartedAt === null) {
-      this.deliver(item);
+      this.deliver(item, 'immediate');
       this.openWindow();
       return 'delivered';
     }
@@ -62,15 +62,33 @@ export class NotificationBudget<T extends NotificationBudgetItem> {
     return 'held';
   }
 
-  clear(): void {
+  getWindowRemainingMs(): number {
+    return this.windowStartedAt === null
+      ? 0
+      : Math.max(0, NOTIFICATION_BUDGET.WINDOW_MS - (this.now() - this.windowStartedAt));
+  }
+
+  getHeldCount(): number {
+    return this.held.length;
+  }
+
+  clear(): T[] {
+    const dropped = this.held;
     this.stop();
     this.held = [];
     this.onHeldChange?.(this.held);
+    return dropped;
   }
 
-  /** 退出：只停定时器。暂存队列已落盘，留给下次启动补发，不能在这里清掉。 */
-  dispose(): void {
+  /**
+   * 退出：只停定时器，不触发落盘回调——暂存队列已在每次暂存时落盘，留给下次启动补发。
+   * 返回此刻仍在暂存的条目，供调用方记「已留待下次启动」。
+   */
+  dispose(): T[] {
+    const kept = this.held;
     this.stop();
+    this.held = [];
+    return kept;
   }
 
   private stop(): void {
@@ -93,7 +111,7 @@ export class NotificationBudget<T extends NotificationBudgetItem> {
     if (held.length === 0) return;
     this.onHeldChange?.(this.held);
     if (held.length === 1) {
-      this.deliver(held[0]);
+      this.deliver(held[0], 'window-end');
       return;
     }
     this.deliverDigest(held);

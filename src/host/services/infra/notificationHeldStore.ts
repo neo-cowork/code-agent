@@ -13,6 +13,7 @@ import type { NotificationBudgetItem } from './notificationBudget';
 const logger = createLogger('NotificationHeldStore');
 
 export type PersistedHeldItem = NotificationBudgetItem & {
+  id: string;
   type: string;
   body: string;
   delivery: Record<string, unknown>;
@@ -27,7 +28,7 @@ function heldFilePath(): string {
 function isPersistedItem(value: unknown): value is PersistedHeldItem {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Record<string, unknown>;
-  return typeof v.intent === 'string' && typeof v.type === 'string' && typeof v.title === 'string'
+  return typeof v.id === 'string' && typeof v.intent === 'string' && typeof v.type === 'string' && typeof v.title === 'string'
     && typeof v.body === 'string' && typeof v.sessionId === 'string'
     && typeof v.delivery === 'object' && v.delivery !== null;
 }

@@ -168,9 +168,11 @@ function toListEntry(
   agent: Pick<CoreAgentConfig, 'id' | 'name' | 'description' | 'model' | 'readonly' | 'tools' | 'inputs' | 'outputs' | 'visual' | 'connectors'>,
   source: AgentSource,
 ): AgentListEntry {
+  const displayName = agent.visual?.displayName?.trim() || getBuiltinRoleVisual(agent.id)?.displayName?.trim();
   return {
     id: agent.id,
     name: agent.name,
+    ...(displayName ? { displayName } : {}),
     description: agent.description,
     source,
     modelTier: agent.model,

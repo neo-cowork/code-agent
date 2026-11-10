@@ -17,6 +17,7 @@ import { Button } from './primitives';
 /** 顶部细条；ok 态整条不渲染。视觉范式对齐 ModelSetupPendingBanner（琥珀=降级非致命）。 */
 export const ServerConnectionBanner: React.FC = () => {
   const status = useServerConnectionStore((state) => state.status);
+  const retryState = useServerConnectionStore((state) => state.retryState);
   const { t } = useI18n();
   if (status === 'ok') return null;
 
@@ -31,18 +32,21 @@ export const ServerConnectionBanner: React.FC = () => {
         unavailable ? 'border-red-500/30 bg-red-500/10' : 'border-amber-500/30 bg-amber-500/10'
       }`}
     >
-      <span className="min-w-0 flex-1 truncate">
-        {unavailable ? text.unavailable : text.recovering}
-      </span>
+      <div className="min-w-0 flex-1">
+        <span>{unavailable ? text.unavailable : text.recovering}</span>
+        {unavailable && retryState === 'failed' && (
+          <div>{text.retryFailed}</div>
+        )}
+      </div>
       {unavailable && (
         <>
-          {/* Tauri 模式页面未必能自愈（服务由壳拉起），恢复动作指向弹窗/重开应用；
+          {/* Tauri 模式页面未必能自愈（服务由壳拉起），重试检查连接，退出再重开才启动服务；
               web 模式刷新页面即可。 */}
-          <span className="hidden truncate sm:inline">
+          <span className="min-w-0 flex-1">
             {isTauriMode() ? text.unavailableHintTauri : text.unavailableHintWeb}
           </span>
-          <Button size="sm" variant="secondary" onClick={retryNow}>
-            {text.retry}
+          <Button size="sm" variant="secondary" onClick={retryNow} loading={retryState === 'checking'}>
+            {retryState === 'checking' ? text.checking : text.retry}
           </Button>
         </>
       )}

@@ -102,6 +102,7 @@ interface NotificationDeliveryPayload {
 }
 
 interface BudgetedNotification extends NotificationBudgetItem {
+  id: string;
   type: RecordedNotification['type'];
   body: string;
   delivery: Omit<NotificationDeliveryPayload, 'id' | 'title' | 'body' | 'sessionId'>;
@@ -116,7 +117,7 @@ class NotificationService implements Disposable {
   /** 已按 dedupeKey 投递过的 needs-input 键（有界，见 NEEDS_INPUT_DEDUPE_KEY_LIMIT）。 */
   private deliveredNeedsInputKeys: Set<string> = new Set();
   private readonly budget = new NotificationBudget<BudgetedNotification>({
-    deliver: (item) => this.deliverNow(item),
+    deliver: (item, via) => this.deliverNow(item, via),
     deliverDigest: (items) => this.deliverDigest(items),
     onHeldChange: (held) => this.persistHeld(held),
   });
@@ -158,7 +159,7 @@ class NotificationService implements Disposable {
       return;
     }
     logger.info('Held notifications replayed', { reason: 'budget-replayed', count: items.length, oldestAgeMs });
-    if (items.length === 1) this.deliverNow(items[0]);
+    if (items.length === 1) this.deliverNow(items[0], 'window-end');
     else this.deliverDigest(items);
   }
 
@@ -181,12 +182,11 @@ class NotificationService implements Disposable {
     return process.env.CODE_AGENT_NOTIFICATION_DRY_RUN === '1';
   }
 
-  private record(notification: Omit<RecordedNotification, 'id' | 'createdAt' | 'delivery'>): RecordedNotification {
+  private record(notification: Omit<RecordedNotification, 'createdAt' | 'delivery'>): RecordedNotification {
     const entry: RecordedNotification = {
       ...notification,
       title: sanitizeNotificationText(notification.title, 120),
       body: sanitizeNotificationText(notification.body, 320),
-      id: `notification_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       createdAt: Date.now(),
       delivery: this.isDryRun() ? 'dry_run' : 'sent',
     };
@@ -206,7 +206,7 @@ class NotificationService implements Disposable {
     this.deliveredNeedsInputKeys.clear();
     this.carriedOver = [];
     this.carriedOverLoaded = true;
-    this.budget.clear();
+    this.logDropped(this.budget.clear(), 'budget-cleared');
   }
 
   /**
@@ -248,8 +248,9 @@ class NotificationService implements Disposable {
    * 图标与身份，点击经 onAction 跳到对应会话。替代旧的 osascript（无图标、点击不回调）。
    * dry-run 下只记录不投递（E2E 用 getRecent 断言，不真弹）。
    */
-  private deliverNow(item: BudgetedNotification): void {
+  private deliverNow(item: BudgetedNotification, via: 'immediate' | 'window-end' | 'digest'): void {
     const entry = this.record({
+      id: item.id,
       type: item.type,
       sessionId: item.sessionId,
       title: item.title,
@@ -262,19 +263,32 @@ class NotificationService implements Disposable {
       sessionId: entry.sessionId,
       ...item.delivery,
     });
+    logger.info('Notification dispatched to renderer', {
+      notificationId: entry.id, intent: item.intent, type: item.type,
+      sessionId: entry.sessionId, title: entry.title, via,
+    });
+  }
+
+  private logDropped(items: readonly BudgetedNotification[], reason: 'budget-cleared'): void {
+    for (const item of items) logger.info('Notification dropped', { notificationId: item.id, reason });
   }
 
   private deliverDigest(items: readonly BudgetedNotification[]): void {
     const text = getNotificationDigestText(readNotificationLocale());
-    logger.info('Notification folded into digest', { reason: 'budget-digest', count: items.length });
+    const digestNotificationId = `notification_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    logger.info('Notification folded into digest', {
+      reason: 'budget-digest', count: items.length,
+      digestNotificationId, heldNotificationIds: items.map((item) => item.id),
+    });
     this.deliverNow({
+      id: digestNotificationId,
       intent: 'task_complete',
       type: 'digest',
       sessionId: '',
       title: text.title(items.length),
       body: text.body(items.map((item) => item.title), items.length),
       delivery: {},
-    });
+    }, 'digest');
   }
 
   private deliver(payload: NotificationDeliveryPayload): void {
@@ -302,10 +316,18 @@ class NotificationService implements Disposable {
     });
   }
 
-  private enqueueBudgeted(item: BudgetedNotification): NotificationBudgetDisposition {
+  private enqueueBudgeted(notification: Omit<BudgetedNotification, 'id'>): NotificationBudgetDisposition {
+    const item: BudgetedNotification = {
+      ...notification,
+      id: `notification_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    };
     const disposition = this.budget.enqueue(item);
     if (disposition !== 'held') return disposition;
-    logger.info('Notification held by budget', { reason: 'budget-held', intent: item.intent, sessionId: item.sessionId });
+    logger.info('Notification held by budget', {
+      reason: 'budget-held', notificationId: item.id, intent: item.intent, sessionId: item.sessionId,
+      windowRemainingMs: this.budget.getWindowRemainingMs(), heldCount: this.budget.getHeldCount(),
+      note: 'folded by budget, not delivered individually',
+    });
     if (!item.delivery.markSessionUnread) return disposition;
     this.broadcastSessionAttentionMark(item.sessionId);
     delete item.delivery.markSessionUnread;
@@ -450,7 +472,7 @@ class NotificationService implements Disposable {
     const failed = data.succeeded === false;
     const shell = en ? (failed ? 'Task failed' : 'Task completed') : (failed ? '任务失败' : '任务完成');
     const title = `${shell} - ${sessionTitle}`;
-    const disposition = this.enqueueBudgeted({
+    this.enqueueBudgeted({
       intent,
       urgent: options?.urgent,
       type: intent,
@@ -466,7 +488,6 @@ class NotificationService implements Disposable {
         ...(intent === 'task_failed' ? { urgent: true, failure: true, markSessionUnread: true } : {}),
       },
     });
-    if (disposition === 'delivered') logger.info('Notification dispatched to renderer', { sessionTitle });
   }
 
   /** Background restart-resume is silent in the chat surface, so expose one system signal. */
@@ -477,7 +498,7 @@ class NotificationService implements Disposable {
     // 兜底会话名必须与通知同语言，所以在这里（知道 locale 的一方）落兜底，调用方传原始标题。
     const title = text.resumingTitle(data.sessionTitle || text.untitledSession);
     const body = text.resumingBody(data.autoResumeCount);
-    this.enqueueBudgeted({
+    const disposition = this.enqueueBudgeted({
       intent: 'task_resuming',
       type: 'task_resuming',
       sessionId: data.sessionId,
@@ -485,7 +506,33 @@ class NotificationService implements Disposable {
       body,
       delivery: { markSessionUnread: true },
     });
-    logger.info('Task resume notification sent', { sessionId: data.sessionId, autoResumeCount: data.autoResumeCount });
+    if (disposition === 'delivered') logger.info('Task resume notification sent', { sessionId: data.sessionId, autoResumeCount: data.autoResumeCount });
+  }
+
+  /** Realtime role output keeps its wake session as the notification click target. */
+  notifyRoleWakeOutput(data: { sessionId: string; title: string; body: string }): void {
+    if (!this.isIntentAllowed('task_complete')) return;
+    if (!this.shouldNotify()) return;
+
+    // Advance summaries contain an internal goal state/proposal, not a user-facing result.
+    const goalStatus = /^\[goal:(met|aborted)\]/.exec(data.body)?.[1];
+    const en = readNotificationLocale() === 'en';
+    const body = goalStatus === 'aborted'
+      ? (en ? 'The check did not finish. Open the conversation to review progress.' : '本次巡检未完成，打开会话查看已有进展。')
+      : goalStatus === 'met'
+        ? (en ? 'The check is complete. Open the conversation to see the results.' : '巡检已完成，打开会话查看结果。')
+        : data.body;
+    const disposition = this.enqueueBudgeted({
+      intent: 'task_complete',
+      type: 'task_complete',
+      sessionId: data.sessionId,
+      title: sanitizeNotificationText(data.title, 120),
+      body: sanitizeNotificationText(body, 320),
+      delivery: {},
+    });
+    if (disposition === 'delivered') {
+      logger.info('Notification dispatched', { intent: 'task_complete', sessionId: data.sessionId });
+    }
   }
 
   /**
@@ -499,7 +546,7 @@ class NotificationService implements Disposable {
     }
     if (!this.shouldNotify()) return;
 
-    this.enqueueBudgeted({
+    const disposition = this.enqueueBudgeted({
       intent: 'plugin',
       type: 'plugin',
       sessionId: '',
@@ -507,7 +554,7 @@ class NotificationService implements Disposable {
       body: data.body,
       delivery: {},
     });
-    logger.info('Plugin notification sent', { title: data.title });
+    if (disposition === 'delivered') logger.info('Plugin notification sent', { title: data.title });
   }
 
   /**
@@ -534,7 +581,7 @@ class NotificationService implements Disposable {
       : data.status === 'unverified'
         ? '这件语音派出的任务在通话结束后跑完了，但没有留下产物，请你自己确认一下结果。'
         : `这件语音派出的任务在通话结束后失败了：${data.detail?.trim() || '未给出原因'}`;
-    this.enqueueBudgeted({
+    const disposition = this.enqueueBudgeted({
       intent,
       type: intent,
       sessionId: data.sessionId,
@@ -545,7 +592,7 @@ class NotificationService implements Disposable {
         ...(intent === 'task_failed' ? { urgent: true, failure: true } : {}),
       },
     });
-    logger.info('Voice work settlement notification sent', {
+    if (disposition === 'delivered') logger.info('Voice work settlement notification sent', {
       sessionId: data.sessionId,
       taskTitle: data.taskTitle,
       status: data.status,
@@ -562,7 +609,10 @@ class NotificationService implements Disposable {
     if (this.disposed) return;
     this.disposed = true;
     this.enabled = false;
-    this.budget.dispose();
+    // 暂存队列每次暂存时已落盘；退出不是丢弃，留给下次启动补发（见 replayPersistedHeld）。
+    for (const item of this.budget.dispose()) {
+      logger.info('Notification persisted for next start', { notificationId: item.id, reason: 'service-disposed' });
+    }
   }
 
   setEnabled(enabled: boolean): void {
