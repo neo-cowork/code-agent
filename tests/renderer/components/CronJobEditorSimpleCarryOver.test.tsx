@@ -120,6 +120,9 @@ describe('simple -> manual via the real CronJobEditor link', () => {
     change(screen.getByPlaceholderText(/竞品动态/), goal);
     change(screen.getByTestId('cron-budget-limit-input'), '0.02');
     fireEvent.click(screen.getByText('创建自动化'));
+    const confirmSave = await screen.findByTestId('cron-pending-routine-confirm');
+    expect(createJob).not.toHaveBeenCalled();
+    fireEvent.click(confirmSave);
     await waitFor(() => expect(createJob).toHaveBeenCalledTimes(1));
     const job = await createJob.mock.results[0].value;
     expect(job.maxRunBudget).toBe(0.02);
