@@ -12,7 +12,7 @@ import { Z_LAYERS } from '../../styles/zLayers';
 const focusableSelector =
   'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), [contenteditable="true"]';
 
-type EscapeHandlerRef = { current: () => void };
+type EscapeHandlerRef = { current: (event: KeyboardEvent) => void };
 
 const modalStack: string[] = [];
 const modalEscapeHandlers = new Map<string, EscapeHandlerRef>();
@@ -22,7 +22,7 @@ const handleDocumentKeyDown = (e: KeyboardEvent) => {
 
   const topmostModalId = modalStack[modalStack.length - 1];
   if (topmostModalId) {
-    modalEscapeHandlers.get(topmostModalId)?.current();
+    modalEscapeHandlers.get(topmostModalId)?.current(e);
   }
 };
 
@@ -95,10 +95,11 @@ export const Modal: React.FC<ModalProps> = ({
   const modalRef = useRef<HTMLDivElement>(null);
   const modalId = useId();
   const headerId = useId();
-  const escapeHandlerRef = useRef<() => void>(() => undefined);
+  const escapeHandlerRef = useRef<(event: KeyboardEvent) => void>(() => undefined);
 
-  escapeHandlerRef.current = () => {
+  escapeHandlerRef.current = (event) => {
     if (closeOnEsc && onClose) {
+      event.preventDefault();
       onClose();
     }
   };
