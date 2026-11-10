@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
 import type { AudioCapturePrerequisites } from '../../../src/shared/contract/audioCapture';
+import type * as NativeDesktop from '../../../src/renderer/services/nativeDesktop';
 import type { AudioCaptureStatus } from '../../../src/renderer/services/nativeDesktop';
 
 const services = vi.hoisted(() => ({
@@ -12,7 +13,7 @@ const services = vi.hoisted(() => ({
   clearAudioRecordings: vi.fn(),
   getNativeDesktopCollectorStatus: vi.fn(async () => ({ running: false })),
   listRecentNativeDesktopEvents: vi.fn(async () => []),
-  listAudioSegments: vi.fn(async () => []),
+  listAudioSegments: vi.fn<typeof NativeDesktop.listAudioSegments>(async () => []),
   startNativeDesktopCollector: vi.fn(),
   stopNativeDesktopCollector: vi.fn(),
   startAudioCapture: vi.fn(),

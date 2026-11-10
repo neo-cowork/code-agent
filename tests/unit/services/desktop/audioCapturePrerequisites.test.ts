@@ -2,10 +2,12 @@ import childProcess from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import * as ort from 'onnxruntime-node';
+import type { loadVadRuntime } from '../../../../src/host/services/desktop/audioVadRuntime';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  loadVadRuntime: vi.fn(),
+  loadVadRuntime: vi.fn<typeof loadVadRuntime>(),
   userConfigDir: '/tmp/audio-prereq-config',
 }));
 
@@ -20,7 +22,7 @@ vi.mock('../../../../src/host/services/infra/logger', () => ({
 
 vi.mock('../../../../src/host/services/desktop/audioVadRuntime', () => ({
   isOrtTensor: vi.fn(() => false),
-  loadVadRuntime: (...args: unknown[]) => mocks.loadVadRuntime(...args),
+  loadVadRuntime: mocks.loadVadRuntime,
 }));
 
 vi.mock('../../../../src/host/services/desktop/nativeDesktopService', () => ({
@@ -42,21 +44,9 @@ function setRuntimeTarget(platform: NodeJS.Platform, arch: string): void {
   Object.defineProperty(process, 'arch', { configurable: true, value: arch });
 }
 
-class FakeInferenceSession {
-  static async create() {
-    return { run: async () => ({}) };
-  }
-}
-function FakeTensor() {}
-const realOrtShape = {
-  InferenceSession: FakeInferenceSession,
-  Tensor: FakeTensor as unknown as new (...args: unknown[]) => unknown,
-};
-
 describe('getAudioCaptureStatus prerequisites (computed without starting capture)', () => {
   let tempHome: string;
   let existingPaths: Set<string>;
-  let dirEntries: Map<string, string[]>;
 
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -66,21 +56,18 @@ describe('getAudioCaptureStatus prerequisites (computed without starting capture
     mocks.userConfigDir = path.join(tempHome, '.code-agent');
 
     existingPaths = new Set<string>();
-    dirEntries = new Map<string, string[]>();
 
     vi.spyOn(fs, 'existsSync').mockImplementation((p: fs.PathLike) => {
       return existingPaths.has(String(p));
     });
-    vi.spyOn(fs, 'readdirSync').mockImplementation(((p: fs.PathLike) => {
-      return (dirEntries.get(String(p)) ?? []) as unknown as ReturnType<typeof fs.readdirSync>;
-    }) as typeof fs.readdirSync);
-    vi.spyOn(childProcess, 'execFileSync').mockImplementation(((cmd: string) => {
+    vi.spyOn(fs, 'readdirSync').mockReturnValue([]);
+    vi.spyOn(childProcess, 'execFileSync').mockImplementation((cmd) => {
       throw new Error(`which ${cmd} not found`);
-    }) as typeof childProcess.execFileSync);
+    });
 
     mocks.loadVadRuntime.mockReturnValue({
       ok: true,
-      ort: realOrtShape,
+      ort,
       modelPath: '/fake/silero_vad_v5.onnx',
     });
   });
