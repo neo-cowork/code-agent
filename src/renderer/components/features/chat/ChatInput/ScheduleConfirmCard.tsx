@@ -17,7 +17,6 @@ import { CronMailEventFields } from '../../cron/CronMailEventFields';
 import type { CreateCronJobInput } from '../../../../services/cronClient';
 import type { PendingScheduleDraft } from './useScheduleDraft';
 import { CRON_CLOUD_NOT_CONFIGURED } from '@shared/constants/cronErrors';
-import { useCronCloudConfig } from '../../cron/useCronCloudConfig';
 import { useScheduleSettingsDraftStore } from '../../../../stores/scheduleSettingsDraftStore';
 import { openCloudCronSettings } from '../../../../utils/cronCloudSettingsNavigation';
 import { CronCloudCreateNotice } from '../../cron/CronCloudCreateNotice';
@@ -110,9 +109,6 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
   const { t, language } = useI18n();
   const labels = t.scheduleConfirm;
   const cc = t.cronCenter;
-  const cloud = useCronCloudConfig();
-  const cloudUnconfigured = draft.input.runsOn === 'cloud' && draft.input.enabled
-    && !cloud.loading && !cloud.configured;
   const rows = useMemo(
     () => buildScheduleConfirmRows(draft, labels, language, {
       group: cc.eventConfirmGroup,
@@ -354,7 +350,7 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
             onChange={(event) => onDraftChange({ ...draft, creationErrorCode: undefined, input: { ...draft.input, runsOn: event.target.value === 'cloud' ? 'cloud' : 'local' } })}
           />
         </label>}
-        {(cloudUnconfigured || draft.creationErrorCode === CRON_CLOUD_NOT_CONFIGURED) && <CronCloudCreateNotice
+        {draft.creationErrorCode === CRON_CLOUD_NOT_CONFIGURED && <CronCloudCreateNotice
           onSettings={() => {
             useScheduleSettingsDraftStore.getState().stashDraft({ ...draft, creationErrorCode: undefined });
             openCloudCronSettings('chat');
@@ -503,7 +499,7 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
           size="sm"
           onClick={() => void onConfirm()}
           loading={confirming}
-          disabled={Boolean(eventViolation) || groupNamedUnresolved || cloudUnconfigured}
+          disabled={Boolean(eventViolation) || groupNamedUnresolved}
           leftIcon={<Check className="h-3 w-3" />}
         >
           {labels.confirm}

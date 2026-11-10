@@ -22,6 +22,7 @@ function fixedDraft(language: 'zh' | 'en') {
 async function scenario(page: Page, language: 'zh' | 'en', initiallyConfigured = false) {
   let configured = initiallyConfigured;
   const created: CreateCronJobDefinition[] = [];
+  const attempts: CreateCronJobDefinition[] = [];
   await page.route('**/api/domain/settings/get', async route => {
     const response = await route.fetch();
     const body = await response.json();
@@ -38,7 +39,9 @@ async function scenario(page: Page, language: 'zh' | 'en', initiallyConfigured =
   // Capture the actual renderer payload; creation is replayed because no cloud service is used.
   await page.route('**/api/domain/cron/createJob', async route => {
     const input = route.request().postDataJSON().payload as CreateCronJobDefinition;
+    attempts.push(input);
     if (input.runsOn === 'cloud' && input.enabled && !configured) {
+      console.log(`BLOCKED ${language} ${JSON.stringify(input)}`);
       await route.fulfill({ json: { success: false, error: { code: CRON_CLOUD_NOT_CONFIGURED, message: 'Cloud scheduler is not configured' } } });
       return;
     }
@@ -53,7 +56,7 @@ async function scenario(page: Page, language: 'zh' | 'en', initiallyConfigured =
     await button.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => {});
     if (await button.isVisible()) await button.click();
   }
-  return { created, configureCloud: () => { configured = true; } };
+  return { created, attempts, configureCloud: () => { configured = true; } };
 }
 
 async function openSchedule(page: Page, language: 'zh' | 'en') {
@@ -85,8 +88,10 @@ async function noticeShot(page: Page, name: string, language: 'zh' | 'en') {
 test('zh /schedule unconfigured: local recovery keeps the draft and creates a local job', async ({ page }) => {
   const fixture = await scenario(page, 'zh');
   const card = await openSchedule(page, 'zh');
+  await card.locator('[data-schedule-confirm-submit]').click();
   await noticeShot(page, 'cron-cloud-unconfigured-chat-zh', 'zh');
-  await expect(card.locator('[data-schedule-confirm-submit]')).toBeDisabled();
+  expect(fixture.attempts).toHaveLength(1);
+  expect(fixture.attempts[0]).toMatchObject({ enabled: true, runsOn: 'cloud' });
   expect(fixture.created).toHaveLength(0);
   await card.getByRole('button', { name: cronCenterZh.cronCenter.cloudCreate.switchLocal, exact: true }).click();
   await expect(card.locator('select')).toHaveValue('local');
@@ -99,7 +104,8 @@ test('zh /schedule unconfigured: local recovery keeps the draft and creates a lo
 
 test('en /schedule unconfigured: English notice has both actions and no Chinese copy', async ({ page }) => {
   await scenario(page, 'en');
-  await openSchedule(page, 'en');
+  const card = await openSchedule(page, 'en');
+  await card.locator('[data-schedule-confirm-submit]').click();
   await noticeShot(page, 'cron-cloud-unconfigured-chat-en', 'en');
 });
 
@@ -120,6 +126,7 @@ test('zh /schedule configured: no notice and confirmation still creates a cloud 
 test('zh /schedule settings round trip returns to the same chat draft', async ({ page }) => {
   const fixture = await scenario(page, 'zh');
   const card = await openSchedule(page, 'zh');
+  await card.locator('[data-schedule-confirm-submit]').click();
   await card.getByRole('button', { name: cronCenterZh.cronCenter.cloudCreate.settings, exact: true }).click();
   await expect(card).toHaveCount(0);
   const settings = page.getByRole('dialog', { name: '设置', exact: true });
