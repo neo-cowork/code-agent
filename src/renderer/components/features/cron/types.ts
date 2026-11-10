@@ -575,7 +575,7 @@ export function redactCronDisplayText(value: string): string {
   );
 }
 
-export function getExecutionStatusMeta(status: CronJobStatus): { label: string; className: string } {
+function getExecutionStatusMeta(status: CronJobStatus): { label: string; className: string } {
   switch (status) {
     case 'completed':
       return { label: '成功', className: 'text-badge-success bg-emerald-500/10' };
@@ -618,11 +618,16 @@ export function prettyJson(value: unknown): string {
   }
 }
 
+/** Shared localized verdict for run rows, run details and latest-run summaries. */
 export function getLatestExecutionStatus(
-  execution?: CronJobExecution | null
+  execution: CronJobExecution | null | undefined,
+  copy: { status: Record<CronJobStatus | 'none', string>; permissionDeniedBadge: string },
 ): { label: string; className: string } {
   if (!execution) {
-    return { label: '未执行', className: 'text-zinc-300 bg-zinc-500/10' };
+    return { label: copy.status.none, className: 'text-zinc-300 bg-zinc-500/10' };
   }
-  return getExecutionStatusMeta(execution.status);
+  if (isPermissionDeniedExecution(execution)) {
+    return { label: copy.permissionDeniedBadge, className: 'text-badge-warning bg-amber-500/10' };
+  }
+  return { label: copy.status[execution.status], className: getExecutionStatusMeta(execution.status).className };
 }
