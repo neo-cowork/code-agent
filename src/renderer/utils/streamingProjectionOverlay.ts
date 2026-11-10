@@ -1,3 +1,4 @@
+import { getActiveConversationTurnIndex, getLastConversationTurnIndex } from './conversationTurns';
 import type { Message } from '@shared/contract';
 import type { TraceNode, TraceProjection, TraceTurn } from '@shared/contract/trace';
 import type { StreamingMessageDelta } from '../stores/streamingMessageAccumulatorStore';
@@ -176,8 +177,6 @@ function concatenatedAssistantText(nodes: TraceNode[], messageId: string, fallba
 }
 
 function getTargetTurnIndex(projection: TraceProjection, turns: TraceTurn[]): number {
-  if (projection.activeTurnIndex >= 0 && projection.activeTurnIndex < turns.length) {
-    return projection.activeTurnIndex;
-  }
-  return turns.length - 1;
+  const activeIndex = getActiveConversationTurnIndex({ ...projection, turns });
+  return activeIndex >= 0 ? activeIndex : getLastConversationTurnIndex(turns);
 }

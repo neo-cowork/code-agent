@@ -1,3 +1,4 @@
+import { getLastConversationTurnIndex } from '../utils/conversationTurns';
 import { useMemo } from 'react';
 import type { TraceProjection, TraceTurn } from '@shared/contract/trace';
 import type {
@@ -37,7 +38,7 @@ export function extractCurrentTurnArtifactOwnership(
   projection: TraceProjection,
   workingDirectory?: string | null,
 ): CurrentTurnArtifactOwnershipView | null {
-  const currentTurn = projection.turns[projection.turns.length - 1];
+  const currentTurn = projection.turns[getLastConversationTurnIndex(projection.turns)];
   if (!currentTurn) {
     return null;
   }
