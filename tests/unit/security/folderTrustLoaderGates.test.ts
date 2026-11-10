@@ -89,7 +89,8 @@ describe('folder trust loader gates', () => {
     homeDir = path.join(tmpRoot, 'home');
     dataDir = path.join(tmpRoot, 'data');
     projectDir = path.join(tmpRoot, 'project');
-    await fs.mkdir(projectDir, { recursive: true });
+    // Bound parent instruction discovery to this fixture, not the shared temp tree.
+    await fs.mkdir(path.join(projectDir, '.git'), { recursive: true });
     vi.stubEnv('HOME', homeDir);
     vi.stubEnv('CODE_AGENT_HOME', homeDir);
     vi.stubEnv('CODE_AGENT_DATA_DIR', dataDir);
