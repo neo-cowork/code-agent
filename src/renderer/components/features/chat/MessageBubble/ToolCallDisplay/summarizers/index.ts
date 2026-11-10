@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { ToolCall } from '@shared/contract';
+import type { Translations } from '../../../../../../i18n';
 import { summarizeBash } from './bashSummarizer';
 import { summarizeGrep } from './grepSummarizer';
 import { summarizeGlob } from './globSummarizer';
@@ -15,7 +16,7 @@ import { summarizeBrowserComputerActionResult } from '../../../../../../utils/br
  * Generate a smart summary for a tool call result
  * Returns null if no summary is available
  */
-export function summarizeTool(toolCall: ToolCall): string | null {
+export function summarizeTool(toolCall: ToolCall, t: Translations): string | null {
   if (!toolCall.result) return null;
 
   const { name, result } = toolCall;
@@ -40,7 +41,7 @@ export function summarizeTool(toolCall: ToolCall): string | null {
   // Select summarizer based on tool type
   switch (name) {
     case 'Bash':
-      return summarizeBash(toolCall);
+      return summarizeBash(toolCall, t);
 
     case 'Grep':
       return summarizeGrep(toolCall);
@@ -50,13 +51,13 @@ export function summarizeTool(toolCall: ToolCall): string | null {
 
     case 'Read':
     case 'read_pdf':
-      return summarizeRead(toolCall);
+      return summarizeRead(toolCall, t);
 
     case 'Edit':
-      return summarizeEdit(toolCall);
+      return summarizeEdit(toolCall, t);
 
     case 'Write':
-      return summarizeWrite(toolCall);
+      return summarizeWrite(toolCall, t);
 
     case 'list_directory':
       return summarizeListDirectory(toolCall);
@@ -83,7 +84,7 @@ export function summarizeTool(toolCall: ToolCall): string | null {
       return summarizeWebSearch(toolCall);
 
     case 'web_fetch':
-      return summarizeWebFetch(toolCall);
+      return summarizeWebFetch(toolCall, t);
 
     case 'AskUserQuestion':
       return summarizeAskUser(toolCall);
@@ -221,7 +222,7 @@ function summarizeWebSearch(toolCall: ToolCall): string | null {
   return summary;
 }
 
-function summarizeWebFetch(toolCall: ToolCall): string | null {
+function summarizeWebFetch(toolCall: ToolCall, t: Translations): string | null {
   const output = toolCall.result?.output;
   if (!output) return null;
 
@@ -232,7 +233,7 @@ function summarizeWebFetch(toolCall: ToolCall): string | null {
   if (chars > 5000) {
     return `~${Math.round(chars / 1024)}KB`;
   }
-  return `${lines} lines`;
+  return t.toolResultSummary.lineCount.replace('{count}', String(lines));
 }
 
 function summarizeAskUser(toolCall: ToolCall): string | null {

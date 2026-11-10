@@ -20,18 +20,36 @@ async function dismissOverlays(page: Page): Promise<void> {
   await dismissFirstRunDialogs(page);
   for (const name of ['关闭', '信任并加载']) {
     const btn = page.getByRole('dialog').getByRole('button', { name }).first();
-    await btn.waitFor({ state: 'visible', timeout: 3_000 }).catch(() => {});
+    await btn.waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
     if (await btn.isVisible().catch(() => false)) {
       await btn.click();
       await expect(btn).toBeHidden({ timeout: 10_000 });
     }
   }
   const backToApp = page.getByRole('button', { name: '返回应用' });
-  await backToApp.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => {});
+  await backToApp.waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {});
   if (await backToApp.isVisible().catch(() => false)) {
     await backToApp.click();
     await expect(backToApp).toBeHidden({ timeout: 10_000 });
   }
+  // Model onboarding can route through Settings a few seconds after mount on
+  // a fresh web data directory. Close that late overlay before the chat step.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const settingsClose = page.getByRole('dialog', { name: '设置' }).getByRole('button', { name: '关闭' });
+    if (await settingsClose.isVisible().catch(() => false)) {
+      await settingsClose.click();
+      await expect(settingsClose).toBeHidden({ timeout: 10_000 });
+    }
+    const lateBackToApp = page.getByRole('button', { name: '返回应用' });
+    if (await lateBackToApp.isVisible().catch(() => false)) {
+      await lateBackToApp.click();
+      await expect(lateBackToApp).toBeHidden({ timeout: 10_000 });
+    }
+    await page.waitForTimeout(1_000);
+  }
+  await page.waitForTimeout(5_000);
+  await page.keyboard.press('Escape').catch(() => {});
+  await expect(page.getByTestId('settings-panel')).toBeHidden({ timeout: 10_000 }).catch(() => {});
 }
 
 async function getAuthToken(page: Page): Promise<string> {
@@ -165,4 +183,69 @@ test('成员视图底部输入框给运行中的后台任务补一句：回执�
       && message.content.includes('期间用户直接给它补了 1 句')
     ));
   }, { timeout: 45_000, intervals: [1000, 2000] }).toBe(true);
+});
+
+test('真实 web IPC：聊天派出的后台成员行级停止后离开工作中', async ({ page, request }) => {
+  await page.goto('/');
+  await expect(page.locator('.h-screen')).toBeVisible({ timeout: 15_000 });
+  const token = await getAuthToken(page);
+  const sessionResponse = await request.post('/api/domain/session/create', {
+    data: { payload: { title: `行级停止 web IPC ${Date.now()}` } },
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(sessionResponse.ok(), await sessionResponse.text()).toBe(true);
+  const sessionId = ((await sessionResponse.json()) as { data: { id: string } }).data.id;
+
+  // This is a real chat turn through the web server. The local E2E model calls
+  // delegate_task with a background prompt that waits on AskUserQuestion.
+  const runResponse = await request.post('/api/run', {
+    data: {
+      sessionId,
+      prompt: 'E2E_SESSION_COMMAND_CENTER SECOND',
+      clientMessageId: `row-stop-${Date.now()}`,
+    },
+    headers: { Authorization: `Bearer ${token}` },
+    timeout: 60_000,
+  });
+  expect(runResponse.ok(), `${runResponse.status()} ${(await runResponse.text()).slice(0, 500)}`).toBe(true);
+
+  const listTasks = async (): Promise<Array<Record<string, unknown>>> => {
+    const response = await request.post('/api/domain/backgroundTasks/listTasks', {
+      data: { payload: {} },
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(response.ok(), await response.text()).toBe(true);
+    const body = await response.json() as { data?: unknown };
+    return Array.isArray(body.data) ? body.data as Array<Record<string, unknown>> : [];
+  };
+  await expect.poll(async () => {
+    const tasks = await listTasks();
+    return tasks.some((candidate) => (
+      candidate.sessionId === sessionId
+      && candidate.title === '后台审批验收'
+      && typeof candidate.id === 'string'
+      && candidate.id.startsWith('session-work-')
+      && candidate.status === 'running'
+    ));
+  }, { timeout: 30_000, intervals: [250, 500] }).toBe(true);
+  const task = (await listTasks()).find((candidate) => (
+    candidate.sessionId === sessionId
+    && candidate.title === '后台审批验收'
+    && typeof candidate.id === 'string'
+    && candidate.id.startsWith('session-work-')
+  ));
+  expect(task).toBeDefined();
+  const taskId = task!.id as string;
+
+  const stopResponse = await request.post('/api/domain/task/cancelBackgroundTask', {
+    data: { payload: { taskId } },
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(stopResponse.ok(), await stopResponse.text()).toBe(true);
+  expect((await stopResponse.json()) as { data?: { cancelled?: boolean } }).toMatchObject({ data: { cancelled: true } });
+
+  await expect.poll(async () => {
+    const tasks = await listTasks();
+    return tasks.find((candidate) => candidate.id === taskId)?.status ?? null;
+  }, { timeout: 10_000, intervals: [250, 500] }).not.toBe('running');
 });

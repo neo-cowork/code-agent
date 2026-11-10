@@ -7,7 +7,7 @@ import type { SessionWithMeta } from '../../../stores/sessionStore';
 import type { CronTaskRunAggregate } from '../../../hooks/useCronRunGroups';
 import type { SessionState } from '../../../stores/taskStore';
 import { getDisplaySessionTitle, getSessionStatusPresentation, splitCronSessionTitleParts } from '../../../utils/sessionPresentation';
-import { localeForLanguage } from '../../../utils/i18nTime';
+import { formatLocalDateTime, localeForLanguage } from '../../../utils/i18nTime';
 import { useI18n } from '../../../hooks/useI18n';
 import { SidebarMessageHitList } from './SidebarMessageHitList';
 import { getSidebarCronTaskId } from './sidebarCronRunFolding';
@@ -183,6 +183,10 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   const forkParentSessionId = getForkParentSessionId(session);
   const cronTaskId = getSidebarCronTaskId(session);
   const cronRunAggregate = cronTaskId ? cronRunAggregatesByTaskId?.[cronTaskId] : undefined;
+  const latestRunTime = formatLocalDateTime(latestActivityAt, language);
+  const cronRunsToggleLabel = cronRunsExpanded
+    ? projectCopy.cronRunsCollapseWithLatestTime.replace('{time}', latestRunTime)
+    : projectCopy.cronRunsExpandWithLatestTime.replace('{time}', latestRunTime);
   // 档位前缀（[Schedule] 等）不进截断段：前缀固定宽，名字才是截断的尾巴，
   // 行宽吃紧时先省略名字尾部，不让「[Schedule] …」把任务名整个吞掉。
   const cronTitleParts = splitCronSessionTitleParts(displayTitle);
@@ -280,8 +284,8 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
               data-testid="sidebar-cron-run-toggle"
               data-task-id={cronTaskId}
               aria-expanded={cronRunsExpanded}
-              aria-label={cronRunsExpanded ? projectCopy.cronRunsCollapse : projectCopy.cronRunsExpand}
-              title={cronRunsExpanded ? projectCopy.cronRunsCollapse : projectCopy.cronRunsExpand}
+              aria-label={cronRunsToggleLabel}
+              title={cronRunsToggleLabel}
               onClick={(event) => {
                 event.stopPropagation();
                 onToggleCronRuns(cronTaskId);

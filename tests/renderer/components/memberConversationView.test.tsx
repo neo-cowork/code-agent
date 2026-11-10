@@ -580,11 +580,12 @@ describe('成员对话页', () => {
     useBackgroundTaskStore.setState({ tasks: [task] });
     useSessionStore.setState({ currentSessionId: 'session-1', messages: [] });
     useMemberViewStore.setState({ viewingMemberId: 'task-7' });
-    const domainInvoke = vi.fn().mockResolvedValue(null);
-    (window as unknown as { domainAPI?: unknown }).domainAPI = { invoke: domainInvoke };
     invokeDomainMock.mockImplementation((domain: unknown, action: unknown) => {
       if (domain === IPC_DOMAINS.AGENT && action === 'sendMemberInput') {
         return Promise.resolve({ outcome: 'delivered', effect: 'now', persisted: true });
+      }
+      if (domain === IPC_DOMAINS.TASK && action === 'cancelBackgroundTask') {
+        return Promise.resolve({ cancelled: true });
       }
       return Promise.resolve(null);
     });
@@ -602,8 +603,11 @@ describe('成员对话页', () => {
     expect(useSessionStore.getState().messages).toHaveLength(0);
 
     fireEvent.click(screen.getByTestId('member-view-stop'));
-    await waitFor(() => expect(domainInvoke).toHaveBeenCalledWith(IPC_DOMAINS.TASK, 'cancelBackgroundTask', { taskId: 'task-7' }));
-    (window as unknown as { domainAPI?: unknown }).domainAPI = undefined;
+    await waitFor(() => expect(invokeDomainMock).toHaveBeenCalledWith(
+      IPC_DOMAINS.TASK,
+      'cancelBackgroundTask',
+      { taskId: 'task-7' },
+    ));
   });
 
   it('后台任务排队中送到但记录没写成：清草稿并提示别重发（任务书已经改了，重发会重复追加）', async () => {

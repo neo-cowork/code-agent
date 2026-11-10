@@ -67,6 +67,14 @@ export interface RolePanelEntry {
   quickPrompts?: string[];
 }
 
+/** A user-created expert currently held in the 30-day trash window. */
+export interface TrashedRoleEntry {
+  trashId: string;
+  roleId: string;
+  displayName: string;
+  deletedAt: string;
+}
+
 // ----------------------------------------------------------------------------
 // 专家默认资料架（Batch 3 E3，调研文档 §4.1）
 // ----------------------------------------------------------------------------

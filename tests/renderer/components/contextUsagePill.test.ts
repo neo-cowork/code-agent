@@ -74,7 +74,7 @@ describe('ContextUsagePill', () => {
 
     expect(html).toContain('aria-label="上下文使用"');
     // 「标记」是 token 的机翻，中文里没这个说法也不帮任何人做决策（2026-08-01 改）
-    expect(html).toContain('82% 已用 · 82k/100k Token');
+    expect(html).toContain('82% 已用 · 82.0k/100.0k Token');
     expect(html).not.toContain('标记');
     expect(html).toContain('<svg');
     expect(html).not.toContain('data-testid="context-usage-percent"');

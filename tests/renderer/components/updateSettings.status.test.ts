@@ -526,6 +526,57 @@ describe('UpdateSettings status visibility', () => {
     }), updateText.desktopShell.summary)).toBe(updateText.desktopShell.summary.error);
   });
 
+  it('lists every desktop shell resource row with missing entries first', () => {
+    const rows = getDesktopShellDiagnosticRows(desktopShellDiagnostics({
+      resources: [
+        {
+          id: 'better-sqlite3-native',
+          label: 'better-sqlite3 native module',
+          kind: 'native-module',
+          path: '/app/node_modules/better-sqlite3/build/Release/better_sqlite3.node',
+          required: true,
+          status: 'present',
+        },
+        {
+          id: 'required-resource',
+          label: 'Required resource',
+          kind: 'resource',
+          path: '/app/dist/required.dat',
+          required: true,
+          status: 'missing',
+        },
+        {
+          id: 'optional-resource',
+          label: 'Optional resource',
+          kind: 'resource',
+          path: '/app/dist/optional.dat',
+          required: false,
+          status: 'present',
+        },
+      ],
+    }));
+    const resourceRows = rows.filter((row) => row.key?.startsWith('resource:'));
+
+    expect(rows).toContainEqual({ label: updateText.desktopShell.diagnosticLabels.resourceCheck, value: '1 missing · required-resource' });
+    expect(resourceRows.map((row) => row.key)).toEqual([
+      'resource:required-resource',
+      'resource:better-sqlite3-native',
+      'resource:optional-resource',
+    ]);
+    expect(resourceRows[0]).toEqual(expect.objectContaining({
+      label: 'Required resource (required-resource)',
+      value: `${updateText.desktopShell.diagnosticLabels.resourceMissing} · /app/dist/required.dat`,
+    }));
+    expect(resourceRows[1]).toEqual(expect.objectContaining({
+      label: 'better-sqlite3 native module (better-sqlite3-native)',
+      value: expect.stringContaining(updateText.desktopShell.diagnosticLabels.resourcePresent),
+    }));
+    expect(resourceRows[2]).toEqual(expect.objectContaining({
+      label: 'Optional resource (optional-resource)',
+      value: `${updateText.desktopShell.diagnosticLabels.resourcePresent} · ${updateText.desktopShell.diagnosticLabels.resourceOptional} · /app/dist/optional.dat`,
+    }));
+  });
+
   it('renders desktop shell diagnostics rows without exposing raw tokens', () => {
     const rows = getDesktopShellDiagnosticRows(desktopShellDiagnostics({
       renderer: {

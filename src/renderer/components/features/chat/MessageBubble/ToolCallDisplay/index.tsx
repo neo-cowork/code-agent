@@ -24,6 +24,7 @@ import {
   humanizeToolFailureReason,
   isEscalatedToolError,
 } from '../../../../../utils/toolExecutionPresentation';
+import { hasCompletenessIssues, replaceCompletenessWarningInOutput } from '../../../../../utils/toolOutputCompletenessWarning';
 import type { Translations } from '../../../../../i18n';
 import { computeBashPreviewLines } from './bashOutputPreview';
 import {
@@ -40,6 +41,7 @@ import { DelegationHeader, DelegationReceipt } from './DelegationReceipt';
 import {
   deriveDelegationPresentation,
   resolveAgentActivityTarget,
+  toDelegationDisplayToolCall,
 } from './delegationPresentation';
 import { humanizeToolStep } from '../../../../../utils/humanizeToolStep';
 import { getHumanToolLabel } from '../../../../../utils/toolHumanLabel';
@@ -140,6 +142,7 @@ export function ToolCallDisplay({
   const toolCall = useMemo(() => getToolPreflightKind(originalToolCall) === 'question' && originalToolCall.result
     ? { ...originalToolCall, result: { ...originalToolCall.result, success: false, error: originalToolCall.result.error ?? originalToolCall.result.output } }
     : originalToolCall, [originalToolCall]);
+  const displayToolCall = useMemo(() => toDelegationDisplayToolCall(toolCall, t), [toolCall, t]);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const processingSessionIds = useAppStore((state) => state.processingSessionIds);
   const pendingPermissionRequest = useAppStore((state) => state.pendingPermissionRequest);
@@ -285,7 +288,7 @@ export function ToolCallDisplay({
         {delegationPresentation
           ? <DelegationHeader presentation={delegationPresentation} />
           : <ToolHeader
-              toolCall={toolCall}
+              toolCall={displayToolCall}
               status={status}
               awaitingApproval={awaitingApproval}
               interruptionReason={interruptionReason}
@@ -297,7 +300,7 @@ export function ToolCallDisplay({
         )}
         {!receipt && status !== 'error' && toolCall.result && toolCall.result.metadata?.recovered !== true && !delegationPresentation && !expanded && !isBashTool(toolCall) && status !== 'interrupted' && (
           <span className="min-w-0 max-w-[220px] shrink truncate text-xs text-zinc-500">
-            <ResultSummary toolCall={toolCall} inline />
+            <ResultSummary toolCall={displayToolCall} inline />
           </span>
         )}
       </div>
@@ -347,17 +350,17 @@ export function ToolCallDisplay({
 
       {/* Bash inline output - when collapsed, show command output preview */}
       {!expanded && isBashTool(toolCall) && toolCall.result && (
-        <BashOutputPreview toolCall={toolCall} status={status} quietError={quietError} />
+        <BashOutputPreview toolCall={displayToolCall} status={status} quietError={quietError} />
       )}
 
       {/* Expanded details - indented under tool name */}
       {expanded && receipt && (
-        <ReceiptDetail receipt={receipt} toolCall={toolCall} />
+        <ReceiptDetail receipt={receipt} toolCall={displayToolCall} />
       )}
       {expanded && !receipt && (
         <div className="ml-6 animate-fadeIn">
           <ToolDetails
-            toolCall={toolCall}
+            toolCall={displayToolCall}
             compact={compact}
             mediaContext={{
               ...mediaContext,
@@ -393,8 +396,21 @@ function ToolReceiptMeta({ receipt }: { receipt: ToolReceiptPresentation }) {
 }
 
 function ReceiptDetail({ receipt, toolCall }: { receipt: ToolReceiptPresentation; toolCall: ToolCall }) {
+  const { t } = useI18n();
   const raw = receipt.detail || toolCall.result?.output || toolCall.result?.error;
-  if (!raw) return null;
+  const hideCreatedFilePrefix = toolCall.name === 'Write'
+    && toolCall.result?.success === true
+    && hasCompletenessIssues(toolCall.result.metadata);
+  const displayRaw = typeof raw === 'string'
+    ? replaceCompletenessWarningInOutput(
+        toolCall.name,
+        raw,
+        toolCall.result?.metadata,
+        t.rendererHumanPipe.toolDetails.completenessWarningNote,
+        !hideCreatedFilePrefix,
+      )
+    : raw;
+  if (!displayRaw) return null;
   return (
     <pre
       className={`ml-6 mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md border px-2.5 py-2 text-[11px] leading-relaxed animate-fadeIn ${
@@ -404,7 +420,7 @@ function ReceiptDetail({ receipt, toolCall }: { receipt: ToolReceiptPresentation
       }`}
       data-testid="tool-step-receipt-detail"
     >
-      {raw}
+      {typeof displayRaw === 'string' ? displayRaw : JSON.stringify(displayRaw, null, 2)}
     </pre>
   );
 }

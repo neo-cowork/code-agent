@@ -108,6 +108,29 @@ describe('模板卡连接器状态三态渲染', () => {
   });
 });
 
+describe('模板卡计划时区口径', () => {
+  it('不同区模板标出时区，本地模板保持原文，并同步 zh/en 文案', () => {
+    const initialTz = process.env.TZ;
+    const initialLanguage = useAppStore.getState().language;
+    process.env.TZ = 'America/Los_Angeles';
+    try {
+      useAppStore.setState({ language: 'zh' });
+      const { rerender } = render(<CronFeaturedTemplates />);
+      expect(screen.getByText('工作日 15:00（中国标准时间）')).toBeTruthy();
+      expect(screen.getByText('工作日 08:30')).toBeTruthy();
+
+      useAppStore.setState({ language: 'en' });
+      rerender(<CronFeaturedTemplates />);
+      expect(screen.getByText('Weekdays at 15:00 (China Standard Time)')).toBeTruthy();
+      expect(screen.getByText('Weekdays 08:30')).toBeTruthy();
+    } finally {
+      if (initialTz === undefined) delete process.env.TZ;
+      else process.env.TZ = initialTz;
+      useAppStore.setState({ language: initialLanguage });
+    }
+  });
+});
+
 describe('gateHint：未连接时点击不禁用，给出指名提示 + 跳转能力中心', () => {
   it('点击未连接依赖的模板：按钮未被禁用，仍会创建任务，并显示 gateHint', async () => {
     mockMcpServerStates = [];
