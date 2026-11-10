@@ -32,7 +32,7 @@ import {
   validateWritebackDraft,
   type WritebackDraft,
 } from './WritebackFields';
-import { defaultPermissionViewMode, isDangerousRequestShape, isSafeDefaultDeny, permissionSummary } from './permissionPresentation';
+import { defaultPermissionViewMode, isGenericCommandRequest, isDangerousRequestShape, isSafeDefaultDeny, permissionSummary } from './permissionPresentation';
 import { isSandboxEscalation, sandboxEscalationDeniedPath, sandboxEscalationQuestion } from './sandboxEscalationPresentation';
 import { SensitiveStepHandbackCard } from './SensitiveStepHandbackCard';
 import { classifyPermissionDelivery } from './permissionDelivery';
@@ -441,6 +441,14 @@ export function PermissionCard({
   const contentTitle = editable && typeof request.rawArgs?.title === 'string'
     ? request.rawArgs.title.trim()
     : '';
+  const isGenericCommandCard = isGenericCommandRequest(request);
+  const hasDetailFields = Boolean(
+    request.details.command ||
+    request.details.path ||
+    request.details.filePath ||
+    request.details.url ||
+    request.details.changes
+  );
   const title = sandboxEscalation
     ? p.sandboxEscalationTitle
     : appGrantCard
@@ -455,7 +463,13 @@ export function PermissionCard({
           ? w.remindersCreateTitle
           : request.tool === 'reminders_update'
             ? w.remindersUpdateTitle
-            : editable ? w.mailSendTitle : (isDangerous ? getPermissionConfig('command').title : config.title);
+            : editable
+              ? w.mailSendTitle
+              : isDangerous
+                ? getPermissionConfig('command').title
+                : isGenericCommandCard
+                  ? p.genericApprovalTitle
+                  : config.title;
   const icon = isMeetingCreate || isCalendarWrite
     ? <CalendarPlus size={20} />
     : isRemindersWrite
@@ -586,8 +600,8 @@ export function PermissionCard({
               {sandboxPath}
             </p>
           ) : null}
-          {/* 停车审批参数预览（host 已脱敏 + 截断）：一眼看清这步要干什么，缺省不渲染 */}
-          {request.argsPreview && (
+          {/* 停车审批参数预览（host 已脱敏 + 截断）：一眼看清这步要干什么，缺省或 RequestDetails 已展示同源字段时不重复渲染 */}
+          {request.argsPreview && !hasDetailFields && (
             <div className="rounded-lg bg-zinc-900/60 px-2.5 py-1.5" data-testid="permission-args-preview">
               <span className="text-[11px] text-zinc-500">{p.argsPreviewLabel}</span>
               <p className="mt-0.5 break-all text-xs leading-5 text-zinc-300">{request.argsPreview}</p>

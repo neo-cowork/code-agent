@@ -13,6 +13,7 @@ import type {
 } from '../../shared/contract/confirmation';
 import { aggregateEditArgsText } from '../../shared/utils/editToolArgs';
 import { canonicalizeCommand } from '../security/canonicalizeCommand';
+import { isSensitiveLogKey, redactCommandSecrets } from '../security/secretRedaction';
 import { isBashToolName } from '../tools/toolNames';
 
 // 危险工具列表
@@ -250,11 +251,34 @@ export class ConfirmationGate {
         };
       }
 
-      default:
+      case 'spawn_agent': {
+        const role = normalizeString(params.role);
+        const task = redactCommandSecrets(normalizeString(params.task)).slice(0, 200);
+        const prefix = role ? `派出子代理（${role}）` : '派出子代理';
+        return {
+          type: 'generic',
+          summary: `${prefix}：${task}`,
+        };
+      }
+
+      default: {
+        const lines: string[] = [];
+        for (const [key, rawValue] of Object.entries(params)) {
+          if (lines.length >= 3) break;
+          if (typeof rawValue !== 'string') continue;
+          const trimmed = rawValue.trim();
+          if (!trimmed) continue;
+          const safeVal = isSensitiveLogKey(key)
+            ? '***REDACTED***'
+            : redactCommandSecrets(trimmed).slice(0, 120);
+          lines.push(`${key}: ${safeVal}`);
+        }
         return {
           type: 'generic',
           summary: `执行工具 ${toolName}`,
+          ...(lines.length > 0 ? { diff: lines.join('\n') } : {}),
         };
+      }
     }
   }
 
