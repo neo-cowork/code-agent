@@ -1,3 +1,4 @@
+import { BackgroundChildrenNotice } from './BackgroundChildrenNotice';
 // ============================================================================
 // AgentErrorCard - 会话区运行失败卡片
 // ============================================================================
@@ -253,6 +254,8 @@ const AgentErrorCard: React.FC<{
         )}
       </div>
 
+      <BackgroundChildrenNotice sessionId={sessionId} />
+
       {ranOnModel && (
         <div className="mt-1.5 pl-[22px] font-mono text-[10px] text-text-tertiary">{ranOnModel}</div>
       )}
@@ -384,6 +387,7 @@ const RateLimitedErrorLine: React.FC<{
     >
       <AlertTriangle className="h-3.5 w-3.5 shrink-0 self-center text-badge-warning" aria-hidden="true" />
       <span>{t.agentError.rateLimitedInline}</span>
+      <BackgroundChildrenNotice sessionId={sessionId} />
       <span aria-hidden="true">·</span>
       <button /* ds-allow:button: 时间线灰字行的行内文字链接，不使用按钮外壳 */
         type="button"

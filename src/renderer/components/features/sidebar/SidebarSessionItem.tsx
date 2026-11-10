@@ -1,3 +1,6 @@
+import { useSessionStore } from '../../../stores/sessionStore';
+import { hasFailedCurrentRequest } from '../../../utils/overviewRunHeader';
+import { useLiveBackgroundAgentCount } from '../../../hooks/useLiveBackgroundAgentCount';
 import React from 'react';
 import { Archive, ArchiveRestore, AudioLines, CheckSquare, ChevronRight, GitFork, Loader2, Pin, Square } from 'lucide-react';
 import type { SessionRuntimeSummary } from '@shared/ipc';
@@ -142,6 +145,8 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   const backgroundSession = backgroundSessionMap.get(session.id);
   const surfaceExecutionSession = useSurfaceExecutionRunSession(session.id);
   const sessionTurnActive = useSessionTurnActive(session.id);
+  const failedCurrentRequest = useSessionStore((state) => state.currentSessionId === session.id && hasFailedCurrentRequest(state.messages));
+  const liveBackgroundCount = useLiveBackgroundAgentCount(session.id, session.status === 'error' || session.status === 'running', session.status === 'running' && !failedCurrentRequest);
   const status = getSessionStatusPresentation({
     backgroundSession,
     runtime: sessionRuntime,
@@ -153,7 +158,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   });
   const localizedStatusLabel =
     status.kind === 'error' ? t.common.error : status.kind === 'incomplete' ? t.common.incomplete : status.label;
-  const isRunning = sessionTurnActive && (status.kind === 'live' || status.kind === 'background');
+  const isRunning = liveBackgroundCount > 0 || (!failedCurrentRequest && session.status !== 'error' && sessionTurnActive && (status.kind === 'live' || status.kind === 'background'));
   const attentionDotClass = getAttentionDotClassName(status.kind);
   const waitingDetail = status.kind === 'approval' ? getWaitingDetailForSession?.(session.id) : undefined;
   const waitingAppName = waitingDetail?.kind === 'permission' ? waitingDetail.appName : undefined;
@@ -322,7 +327,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
             {surfaceExecutionSession ? (
               <SurfaceExecutionRunStatus session={surfaceExecutionSession} />
             ) : isRunning ? (
-              <Loader2 className="w-3 h-3 text-badge-success/80 animate-spin" aria-label={localizedStatusLabel} />
+              <Loader2 data-testid="session-active-dot" className="w-3 h-3 text-badge-success/80 animate-spin" aria-label={localizedStatusLabel} />
             ) : attentionDotClass ? (
               <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${attentionDotClass}`} aria-label={localizedStatusLabel} />
             ) : isUnread && !multiSelectMode ? (
