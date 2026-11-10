@@ -137,6 +137,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
   // 无人值守停车可见性（N-CRON-UNATTENDED-BASH-PARK-STUCK）：仅在面板挂载且存在 running
   // 执行时每 2s 拉「等批准」运行（批准/拒绝后下一轮即消失，任务行回到运行中）。
   const [awaitingRuns, setAwaitingRuns] = useState<AwaitingApprovalRun[]>([]);
+  const discoverParkedRun = useCallback(() => { void syncRunningExecutions(); }, [syncRunningExecutions]);
   const awaitingLoadVersion = useRef(0);
   const [inboxRefreshVersion, setInboxRefreshVersion] = useState(0);
   const loadAwaitingRuns = useCallback(async () => {
@@ -168,7 +169,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
       return;
     }
     const load = () => {
-      // 批准后命令跑完、host 写 completed，渲染端不重拉就永远停在「运行中」：随同一拍校正执行记录。
+      // 批准后命令跑完、host 写 completed，渲染端不重拉就永远停在「运行中」。
       void syncRunningExecutions();
       void loadAwaitingRuns();
     };
@@ -367,6 +368,8 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
         <div className={activeTab === 'runs' ? undefined : 'hidden'}>
           <AutomationReviewInbox
             onPendingCountChange={refreshPendingReviewCount}
+            onParkedResolved={handleApprovalResolved}
+            onParkedChange={discoverParkedRun}
             refreshSignal={inboxRefreshVersion ? `${awaitingRefreshSignal}:${inboxRefreshVersion}` : awaitingRefreshSignal}
           />
         </div>
