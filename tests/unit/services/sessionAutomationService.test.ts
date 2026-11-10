@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Message } from '../../../src/shared/contract';
 
 type Row = {
   id: string;
@@ -21,7 +22,7 @@ type ParkedRow = { id: string; kind: string; status: string; payloadJson: string
 const state = vi.hoisted(() => ({
   rows: new Map<string, Row>(),
   parkedRows: new Map<string, ParkedRow>(),
-  messages: [] as Array<{ sessionId: string; message: unknown }>,
+  messages: [] as Array<{ sessionId: string; message: Message }>,
   taskStarts: [] as Array<{ sessionId: string; message: string; clientMessageId?: string }>,
   broadcasts: [] as Array<{ channel: string; data: unknown }>,
   sessionStatus: 'idle' as string,
@@ -109,7 +110,7 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
 
 vi.mock('../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({
-    addMessageToSession: vi.fn(async (sessionId: string, message: unknown) => {
+    addMessageToSession: vi.fn(async (sessionId: string, message: Message) => {
       state.messages.push({ sessionId, message });
     }),
   }),
