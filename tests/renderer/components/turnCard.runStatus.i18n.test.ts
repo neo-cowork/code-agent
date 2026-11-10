@@ -60,4 +60,29 @@ describe('TurnCard — 顶部状态条 en 态接线（不中英混排）', () =>
     expect(html).toContain('2 tool calls');
     expect(html).not.toContain('正在停止');
   });
+
+  it('blocked 轮次的阶段文案不外露模型把工具名当描述的 shortDescription', () => {
+    const turn: TraceTurn = {
+      turnNumber: 1,
+      turnId: 'turn-1',
+      status: 'error',
+      startTime: 100,
+      nodes: [
+        { id: 'user-1', type: 'user', content: 'check', timestamp: 100 },
+        {
+          id: 'tc-1', type: 'tool_call', content: '', timestamp: 200,
+          toolCall: { id: 'c1', name: 'task_status', args: {}, success: true, result: 'ok', shortDescription: 'Use task_status' },
+        } as TraceTurn['nodes'][number],
+      ],
+    };
+
+    const html = renderToStaticMarkup(
+      React.createElement(TurnCard, { turn, defaultExpanded: true }),
+    );
+    const header = html.slice(html.indexOf('data-testid="turn-run-header"'));
+
+    expect(header).toContain('Checked background task progress');
+    expect(header).not.toContain('task_status');
+    expect(header).not.toContain('工具 ');
+  });
 });

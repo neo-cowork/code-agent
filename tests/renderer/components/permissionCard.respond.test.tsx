@@ -133,7 +133,7 @@ describe('PermissionCard respond path', () => {
     });
     render(<PermissionCard />);
 
-    fireEvent.keyDown(window, { key: 's' });
+    fireEvent.keyDown(window, { key: 'N', shiftKey: true });
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledTimes(1);
@@ -145,7 +145,7 @@ describe('PermissionCard respond path', () => {
       expect(toastError).toHaveBeenCalledWith(expect.stringContaining('请重试'));
     });
 
-    fireEvent.keyDown(window, { key: 's' });
+    fireEvent.keyDown(window, { key: 'N', shiftKey: true });
 
     await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(setPendingPermissionRequest).toHaveBeenLastCalledWith(null));
