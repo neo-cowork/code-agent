@@ -146,6 +146,7 @@ export async function ensureMaxStepsWrapUp(
     role: 'assistant',
     content: buildMaxStepsPartialResultContent(ctx, ctx.maxIterations),
     timestamp: Date.now(),
+    ...(ctx.foregroundToolFace ? { metadata: { stoppedByStepLimit: true as const } } : {}),
   };
   await contextAssembly.addAndPersistMessage(partialMessage);
   ctx.onEvent({ type: 'message', data: partialMessage });

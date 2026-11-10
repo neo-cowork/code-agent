@@ -1,3 +1,4 @@
+import { noteFirstModelRequestDispatched } from '../../agent/runtime/firstModelRequestWatch';
 // ============================================================================
 // OpenAI-Compatible SSE Stream Handler
 // 共享的 SSE 流式解析逻辑，消除 4 个 provider 的重复代码
@@ -351,6 +352,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
       timeout,
     };
 
+    noteFirstModelRequestDispatched(options.provider);
     const req = httpModule.request(reqOptions, (res) => {
       clearHeadersTimer(); // 响应头已到，交给阶段1 firstByteTimer 接管
       if (res.statusCode !== 200) {
