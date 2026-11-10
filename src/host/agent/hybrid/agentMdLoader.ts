@@ -186,7 +186,7 @@ export function updateAgentMdBody(content: string, body: string): string {
  * Returns null if the file has no valid frontmatter.
  */
 export function parseAgentMd(content: string, filename: string): CoreAgentConfig | null {
-  const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+  const frontmatterMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
   if (!frontmatterMatch) return null;
 
   const frontmatter = parseSimpleYaml(frontmatterMatch[1]);
@@ -242,7 +242,7 @@ export function parseAgentMd(content: string, filename: string): CoreAgentConfig
  */
 function parseSimpleYaml(yaml: string): Record<string, unknown> {
   const result: Record<string, unknown> = {};
-  const lines = yaml.split('\n');
+  const lines = yaml.split(/\r?\n/);
   let currentKey: string | null = null;
   let currentArray: string[] | null = null;
 
@@ -310,10 +310,55 @@ function parseSimpleYaml(yaml: string): Record<string, unknown> {
 }
 
 const logger = createLogger('AgentMdLoader');
+const LEGACY_TOOL_NAMES = new Map([
+  ['tmeetCalendarList', 'calendar'],
+  ['tmeetCalendarRead', 'calendar'],
+]);
+const reportedUnknownTools = new Set<string>();
+const reportedMigrations = new Set<string>();
+
+/** Repair only the tools field; every other frontmatter byte and the body stay intact. */
+async function migrateLegacyTools(agent: CoreAgentConfig, file: string, content: string): Promise<void> {
+  const oldNames = [...new Set(agent.tools.filter((name) => LEGACY_TOOL_NAMES.has(name)))];
+  if (oldNames.length === 0) return;
+  agent.tools = [...new Set(agent.tools.map((name) => LEGACY_TOOL_NAMES.get(name) ?? name))];
+  const match = content.match(/^(---\r?\n)([\s\S]*?)(\r?\n---[\s\S]*)$/);
+  if (!match) return;
+  const newline = match[1].endsWith('\r\n') ? '\r\n' : '\n';
+  const frontmatter = match[2].replace(
+    /(^|\r?\n)tools:[^\r\n]*(?:\r?\n[ \t]+-[^\r\n]*)*/,
+    (_field, prefix: string) => `${prefix}${block('tools', agent.tools, newline)}`,
+  );
+  const rewritten = `${match[1]}${frontmatter}${match[3]}`;
+  const date = new Date().toISOString().slice(0, 10).replaceAll('-', '');
+  try {
+    // Exclusive creation preserves the first original, including on watcher re-entry.
+    try {
+      await fs.writeFile(`${file}.bak-${date}`, content, { flag: 'wx', mode: 0o600 });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    }
+    await fs.writeFile(file, rewritten, 'utf-8');
+  } catch (error) {
+    logger.warn('Legacy agent tools migration could not be saved; using migrated tools in memory', {
+      role: agent.name,
+      file,
+      reason: error instanceof Error ? error.message : String(error),
+    });
+  }
+  if (!reportedMigrations.has(file)) {
+    reportedMigrations.add(file);
+    logger.info(`Agent tools migrated: ${agent.name}: ${oldNames.join(', ')} -> calendar`, {
+      file,
+      oldNames,
+      tools: agent.tools,
+    });
+  }
+}
 
 /**
  * 启动期工具名校验：agent.md 写错工具名此前静默丢弃（模型永远拿不到这件工具，
- * 用户也看不出为什么），这里改成点名报错。
+ * 用户也看不出为什么），这里按文件与未知名组合仅警告一次。
  *
  * 注册表没起来时**不校验**并明说跳过了——空注册表下校验会把所有工具判成不存在。
  */
@@ -324,7 +369,10 @@ function reportUnknownAgentTools(agent: CoreAgentConfig, file: string): void {
   }
   const unknown = findUnknownToolNames(agent.tools, getKnownToolNames());
   if (unknown.length === 0) return;
-  logger.error(describeUnknownTools(agent.name, unknown), {
+  const key = JSON.stringify([path.resolve(file), [...new Set(unknown.map((item) => item.name))].sort()]);
+  if (reportedUnknownTools.has(key)) return;
+  reportedUnknownTools.add(key);
+  logger.warn(describeUnknownTools(agent.name, unknown), {
     file,
     unknownTools: unknown.map((item) => item.name),
   });
@@ -343,6 +391,7 @@ export async function loadAgentMdFiles(dir: string): Promise<CoreAgentConfig[]> 
     const content = await fs.readFile(filePath, 'utf-8');
     const agent = parseAgentMd(content, entry.name);
     if (agent) {
+      await migrateLegacyTools(agent, filePath, content);
       reportUnknownAgentTools(agent, filePath);
       agents.push(agent);
     }
