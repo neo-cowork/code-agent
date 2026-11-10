@@ -199,6 +199,52 @@ describe('delegate_task overflow choice in host', () => {
     expect(tasks.find((t) => t.shortName === '任务3')?.status).toBe('running');
   });
 
+  it.each(['missing', 'ambiguous', 'rejected'] as const)(
+    'does not claim cancellation or create a replacement when cancel is %s', async (outcome) => {
+      const session = 'session-cancel-failure';
+      await executeDelegateTask(taskArgs(1), toolContext(session), allow);
+      await executeDelegateTask(taskArgs(2), toolContext(session), allow);
+      const center = getSessionCommandCenter();
+      const cancel = vi.spyOn(center, 'cancel');
+      if (outcome === 'rejected') fakeManager.cancelBackgroundTask.mockResolvedValueOnce(false);
+      else if (outcome === 'ambiguous') cancel.mockResolvedValueOnce({ outcome, candidates: center.active(session) });
+      else cancel.mockResolvedValueOnce({ outcome });
+      promptMock.mockResolvedValueOnce({
+        status: 'answered', response: { requestId: 'cancel-failure', answers: { 任务已满: '替换任务1' } },
+      });
+      const result = await executeDelegateTask(taskArgs(3), toolContext(session), allow);
+      assert(result.ok);
+      expect(result.output).not.toMatch(/已停止|已请求停止/);
+      expect(result.output).toContain('尚未创建');
+      expect(result.output).toContain('没有加入排队');
+      expect(result.output).toContain('回复“排队”');
+      expect(center.list(session)).toHaveLength(2);
+      expect(result.meta).toBeUndefined();
+      cancel.mockRestore();
+    },
+  );
+
+  it.each([
+    ['排队', false, 'queued', 'queued'],
+    ['替换任务1', false, 'accepted', 'running'],
+    ['替换任务1', true, 'queued', 'queued'],
+  ] as const)('preserves localized receipt metadata for %s with delayed cancellation %s', async (answer, delayed, outcome, status) => {
+    const session = 'session-receipt';
+    await executeDelegateTask(taskArgs(1), toolContext(session), allow);
+    await executeDelegateTask(taskArgs(2), toolContext(session), allow);
+    if (delayed) fakeManager.cancelBackgroundTask.mockResolvedValueOnce(true);
+    promptMock.mockResolvedValueOnce({
+      status: 'answered', response: { requestId: 'receipt', answers: { 任务已满: answer } },
+    });
+    const result = await executeDelegateTask(taskArgs(3), toolContext(session), allow);
+    assert(result.ok);
+    expect(result.meta).toEqual({ sessionTask: { outcome, tasks: [{ shortName: '任务3', status }] } });
+    if (delayed) {
+      expect(result.output).toContain('已请求停止「任务1」');
+      expect(result.output).not.toContain('已停止「任务1」');
+    }
+  });
+
   it('when user chooses Not now (暂不创建), creates no task and does not queue', async () => {
     const session = 'session-not-now';
     await executeDelegateTask(taskArgs(1), toolContext(session), allow);

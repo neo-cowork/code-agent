@@ -108,6 +108,17 @@ function sessionTaskMeta(
   };
 }
 
+function delegateTaskReceipt(
+  result: Exclude<SpawnSessionTaskResult, { outcome: 'requires_choice' }>,
+  prefix = '',
+): ToolResult<string> {
+  return {
+    ok: true,
+    output: prefix + describeDelegateTaskResult(result),
+    meta: sessionTaskMeta(result.outcome === 'started' ? 'accepted' : result.outcome, [result.task]),
+  };
+}
+
 export async function executeDelegateTask(
   args: Record<string, unknown>,
   ctx: ToolContext,
@@ -164,16 +175,10 @@ export async function executeDelegateTask(
   if (result.outcome === 'requires_choice') {
     const choiceResult = await resolveOverflowChoiceInHost(spawnInput, result.active, ctx.abortSignal);
     onProgress?.({ stage: 'completing', percent: 100 });
-    return { ok: true, output: choiceResult };
+    return choiceResult;
   }
   onProgress?.({ stage: 'completing', percent: 100 });
-  if (result.outcome === 'reused') {
-    return { ok: true, output: describeDelegateTaskResult(result), meta: sessionTaskMeta('reused', [result.task]) };
-  }
-  if (result.outcome === 'queued') {
-    return { ok: true, output: describeDelegateTaskResult(result), meta: sessionTaskMeta('queued', [result.task]) };
-  }
-  return { ok: true, output: describeDelegateTaskResult(result), meta: sessionTaskMeta('accepted', [result.task]) };
+  return delegateTaskReceipt(result);
 }
 
 function buildOverflowQuestionOptions(
@@ -212,7 +217,7 @@ async function resolveOverflowChoiceInHost(
   spawnInput: SpawnSessionTaskInput,
   active: SessionCommandTask[],
   abortSignal: AbortSignal,
-): Promise<string> {
+): Promise<ToolResult<string>> {
   const { shortName, sessionId } = spawnInput;
   const { options, replaceable } = buildOverflowQuestionOptions(shortName, active);
   const question = replaceable.length > 0
@@ -234,17 +239,17 @@ async function resolveOverflowChoiceInHost(
 
   const answer = extractOverflowAnswer(promptResult);
   if (!answer) {
-    return describeOverflowUnansweredFallback(shortName);
+    return { ok: true, output: describeOverflowUnansweredFallback(shortName) };
   }
   if (answer === OVERFLOW_DECLINE_OPTION_LABEL) {
-    return `用户选择了暂不创建，后台任务「${shortName}」未创建，也未加入排队。`;
+    return { ok: true, output: `用户选择了暂不创建，后台任务「${shortName}」未创建，也未加入排队。` };
   }
   if (answer === OVERFLOW_QUEUE_OPTION_LABEL) {
     const queued = await getSessionCommandCenter().spawn({ ...spawnInput, queueWhenFull: true });
     if (queued.outcome === 'requires_choice') {
-      return describeOverflowUnansweredFallback(shortName);
+      return { ok: true, output: describeOverflowUnansweredFallback(shortName) };
     }
-    return describeDelegateTaskResult(queued);
+    return delegateTaskReceipt(queued);
   }
 
   const matchedReplace = replaceable.find((entry) => entry.label === answer)
@@ -254,19 +259,24 @@ async function resolveOverflowChoiceInHost(
 
   if (matchedReplace) {
     const center = getSessionCommandCenter();
-    await center.cancel(sessionId, matchedReplace.task.id);
+    const cancellation = await center.cancel(sessionId, matchedReplace.task.id);
+    if (cancellation.outcome !== 'resolved') {
+      return { ok: true, output: describeOverflowUnansweredFallback(shortName) };
+    }
+    const stopped = center.list(sessionId).find((task) => task.id === cancellation.task.id)?.status === 'cancelled';
+    const cancellationReceipt = `${stopped ? '已停止' : '已请求停止'}「${cancellation.task.shortName}」。`;
     const restarted = await center.spawn(spawnInput);
     if (restarted.outcome !== 'requires_choice') {
-      return `已停止「${matchedReplace.task.shortName}」。${describeDelegateTaskResult(restarted)}`;
+      return delegateTaskReceipt(restarted, cancellationReceipt);
     }
     const queuedAfterCancel = await center.spawn({ ...spawnInput, queueWhenFull: true });
     if (queuedAfterCancel.outcome !== 'requires_choice') {
-      return `已请求停止「${matchedReplace.task.shortName}」。${describeDelegateTaskResult(queuedAfterCancel)}`;
+      return delegateTaskReceipt(queuedAfterCancel, cancellationReceipt);
     }
-    return describeOverflowUnansweredFallback(shortName);
+    return { ok: true, output: describeOverflowUnansweredFallback(shortName) };
   }
 
-  return describeOverflowUnansweredFallback(shortName);
+  return { ok: true, output: describeOverflowUnansweredFallback(shortName) };
 }
 
 export async function executeSteerTask(
