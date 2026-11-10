@@ -609,7 +609,7 @@ describe('AgentErrorPresentation 连续同因失败折叠', () => {
           <AgentErrorPresentation
             key={node.id}
             error={node.metadata!.agentError!}
-            messageId={node.messageId}
+            messageId={node.messageId ?? node.id}
             sessionId="session-1"
             run={node.agentErrorRun}
           />
