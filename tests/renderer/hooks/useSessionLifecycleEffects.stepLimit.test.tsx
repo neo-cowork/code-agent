@@ -28,7 +28,7 @@ describe('useSessionLifecycleEffects step-limit error subscription', () => {
       id: 'summary', role: 'assistant', content: 'Saved progress; more notes remain.', timestamp: 1,
       ...(marked ? { metadata: { stoppedByStepLimit: true } } : {}),
     }] });
-    vi.spyOn(useSessionStore.getState(), 'refreshContextHealth').mockResolvedValue(undefined);
+    vi.spyOn(useSessionStore.getState(), 'refreshContextHealth').mockResolvedValue(null);
     useAppStore.getState().setSessionProcessing(sessionId, true);
     useTerminalRunGuardStore.getState().rearmForNewRun(sessionId);
     const props = {
@@ -40,7 +40,7 @@ describe('useSessionLifecycleEffects step-limit error subscription', () => {
       enqueuePermissionRequest: vi.fn(), updateMessage: vi.fn(),
     } as unknown as AgentEffectsProps;
     const hook = renderHook(() => useSessionLifecycleEffects(props));
-    await act(async () => listener?.({ type: 'error', sessionId, data: {
+    await act(async () => listener?.({ type: 'error', sessionId, streamEpoch: 'http:step-limit-test', seq: 1, data: {
       message: 'Max iterations reached', code: RUN_ERROR_CODE_MAX_ITERATIONS,
       ...(marked ? { details: { stoppedByStepLimit: true } } : {}),
     } }));
