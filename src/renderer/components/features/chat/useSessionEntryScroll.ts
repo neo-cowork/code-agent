@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
 import type { VirtuosoHandle } from 'react-virtuoso';
 import type { TraceTurn } from '@shared/contract/trace';
@@ -28,6 +28,8 @@ export function isScrollerNearBottom(
 }
 
 const SETTLE_STABLE_FRAMES = 16;
+/** 兜底：入场结算任何路径都没走到揭示时，最迟这么久后强制显示列表，避免空白。 */
+const ENTRY_REVEAL_FAILSAFE_MS = 2000;
 
 interface BottomSettlementOptions {
   turnsAtJump: TraceTurn[];
@@ -112,6 +114,12 @@ interface SessionEntryScrollState {
   interactionAt: number;
 }
 
+export interface SessionEntryScroll {
+  noteRange: () => void;
+  /** 入场结算收敛前为 true，调用方据此隐藏列表。 */
+  entryHidden: boolean;
+}
+
 interface SessionEntryScrollOptions {
   sessionId: string;
   turns: TraceTurn[];
@@ -138,7 +146,18 @@ export function useSessionEntryScroll({
   sessionEntrySettlingRef,
   userScrollLastInteractionAtRef,
   setIsAtBottom,
-}: SessionEntryScrollOptions): () => void {
+}: SessionEntryScrollOptions): SessionEntryScroll {
+  // 长会话首帧由 Virtuoso 按预估高度（defaultItemHeight）定位，真实行高测出后才收敛到底部，
+  // 期间用户会看到中段内容再滑到底。入场结算收敛前把列表隐藏（仍参与布局与测量），收敛/取消后揭示。
+  const [revealedSessionId, setRevealedSessionId] = useState<string | null>(null);
+  const entryHidden = turns.length > 0 && revealedSessionId !== sessionId;
+  const reveal = useCallback(() => setRevealedSessionId(sessionId), [sessionId]);
+  useEffect(() => {
+    if (!entryHidden) return;
+    const timer = setTimeout(reveal, ENTRY_REVEAL_FAILSAFE_MS);
+    return () => clearTimeout(timer);
+  }, [entryHidden, reveal]);
+
   const entryRef = useRef<SessionEntryScrollState>({
     sessionId,
     hasTurns: turns.length > 0,
@@ -169,7 +188,7 @@ export function useSessionEntryScroll({
     setIsAtBottom(true);
   }, [sessionId, setIsAtBottom]);
 
-  return useCallback(() => {
+  const noteRange = useCallback(() => {
     const entry = entryRef.current;
     if (!entry.pending || entry.sessionId !== sessionId || projectionTurnsRef.current.length === 0) return;
     entry.pending = false;
@@ -177,9 +196,15 @@ export function useSessionEntryScroll({
       entry.resetBottom = false;
       setIsAtBottom(true);
     }
-    if (outputFollowStreamingRef.current || userScrollLastInteractionAtRef.current !== entry.interactionAt) return;
+    if (outputFollowStreamingRef.current || userScrollLastInteractionAtRef.current !== entry.interactionAt) {
+      reveal();
+      return;
+    }
     const lastIndex = projectionTurnsRef.current.length - 1;
-    if (lastIndex < 0) return;
+    if (lastIndex < 0) {
+      reveal();
+      return;
+    }
     sessionEntrySettlingRef.current = true;
     // 结算期间 atBottomStateChange 被屏蔽；入场前 Virtuoso 可能已报过“不在底部”，
     // 这里先置位，避免估算高度阶段闪出“回到底部”按钮。用户滚动取消时由 onCancel 重算。
@@ -192,6 +217,7 @@ export function useSessionEntryScroll({
         || userScrollLastInteractionAtRef.current !== entry.interactionAt
       ) {
         sessionEntrySettlingRef.current = false;
+        reveal();
         return;
       }
       keepActiveOutputVisibleRef.current = true;
@@ -211,9 +237,11 @@ export function useSessionEntryScroll({
         onSettled: () => {
           sessionEntrySettlingRef.current = false;
           setIsAtBottom(true);
+          reveal();
         },
         onCancel: () => {
           sessionEntrySettlingRef.current = false;
+          reveal();
           const scroller = scrollerElementRef.current;
           if (scroller && scroller.scrollHeight > 0) {
             setIsAtBottom(scroller.scrollHeight <= scroller.clientHeight || isScrollerNearBottom(scroller));
@@ -221,5 +249,6 @@ export function useSessionEntryScroll({
         },
       });
     });
-  }, [projectionTurnsRef, sessionId, setIsAtBottom, userScrollLastInteractionAtRef, outputFollowStreamingRef, keepActiveOutputVisibleRef, virtuosoRef, scrollerElementRef, activeDisplayScrollCancelRef, sessionEntrySettlingRef]);
+  }, [reveal, projectionTurnsRef, sessionId, setIsAtBottom, userScrollLastInteractionAtRef, outputFollowStreamingRef, keepActiveOutputVisibleRef, virtuosoRef, scrollerElementRef, activeDisplayScrollCancelRef, sessionEntrySettlingRef]);
+  return { noteRange, entryHidden };
 }
