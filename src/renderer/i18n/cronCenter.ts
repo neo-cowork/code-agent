@@ -164,6 +164,11 @@ export const cronCenterZh = {
     cardMaxRetries: '最大重试',
     cardRetryDelay: '重试间隔',
     cardTimeout: '超时',
+    detailDurationUnits: {
+      seconds: { one: '秒', other: '秒' },
+      minutes: { one: '分钟', other: '分钟' },
+      hours: { one: '小时', other: '小时' },
+    },
     historyTitle: '执行历史',
     historyEmpty: '还没有执行记录，点击「手动触发」运行一次',
     // 执行记录
@@ -673,6 +678,11 @@ export const cronCenterEn: typeof cronCenterZh = {
     cardMaxRetries: 'Max retries',
     cardRetryDelay: 'Retry delay',
     cardTimeout: 'Timeout',
+    detailDurationUnits: {
+      seconds: { one: 'second', other: 'seconds' },
+      minutes: { one: 'minute', other: 'minutes' },
+      hours: { one: 'hour', other: 'hours' },
+    },
     historyTitle: 'Run history',
     historyEmpty: 'No runs yet — click “Run now” to try it once',
     execEmpty: 'No runs yet',
