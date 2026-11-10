@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { EnvAssistNotice } from '../../../../src/shared/contract';
+import type { EnvAssistNotice } from '../../../../src/shared/contract/envAssist';
 const calls = vi.hoisted(() => ({ exec: vi.fn() }));
 vi.mock('node:child_process', async (importOriginal) => ({ ...await importOriginal<object>(), execFile: calls.exec }));
 import { registerEnvAssistHandlers } from '../../../../src/host/ipc/envAssist.ipc';

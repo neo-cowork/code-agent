@@ -18,7 +18,8 @@ import { registerEnvAssistHandlers } from '../../../../src/host/ipc/envAssist.ip
 import { handlers } from '../../../../src/host/platform/ipcRegistry';
 import { ipcHost } from '../../../../src/host/platform';
 import { IPC_DOMAINS } from '../../../../src/shared/ipc';
-import type { Message, EnvAssistNotice } from '../../../../src/shared/contract';
+import type { Message } from '../../../../src/shared/contract';
+import type { EnvAssistNotice } from '../../../../src/shared/contract/envAssist';
 
 const serviceMocks = vi.hoisted(() => ({
   messages: [] as Message[],

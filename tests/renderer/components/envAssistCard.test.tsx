@@ -2,7 +2,7 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { EnvAssistNotice } from '../../../src/shared/contract';
+import type { EnvAssistNotice } from '../../../src/shared/contract/envAssist';
 
 const mocks = vi.hoisted(() => ({ language: 'zh', invoke: vi.fn() }));
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
