@@ -21,6 +21,10 @@ import {
   type UserVisibleSystemEventKey,
   type UserVisibleSystemEventSpec,
 } from '../../../src/shared/contract/systemEventRegistry';
+import { buildTurnRailItems } from '../../../src/renderer/utils/turnRailItems';
+import { buildRunUiState } from '../../../src/renderer/utils/runWorkbenchProjection';
+import { applyStreamingMessageDeltasToProjection } from '../../../src/renderer/utils/streamingProjectionOverlay';
+import { applyVoicePartialsToProjection } from '../../../src/renderer/utils/voicePartialOverlay';
 import { projectTurns } from '../../../src/renderer/hooks/useTurnProjection';
 
 const SESSION_ID = 'session-1';
@@ -167,6 +171,11 @@ describe('用户可见 system 事件登记制（P0-2）', () => {
       expect(node?.content).toBe(`事件 ${key} 的用户可见正文`);
       expect(node?.metadata?.[key]).toEqual(SAMPLE_PAYLOADS[key]);
 
+      if (spec.attach === 'standalone') {
+        expect(turns).toHaveLength(2);
+        expect(turns[0]).toEqual(project(plainTurn())[0]);
+        expect(turns[1]).toMatchObject({ standalone: true, status: 'completed', nodes: [node] });
+      }
       if (spec.attach === 'matched-turn') {
         // 派活轮之后另开过一轮，事件仍要挂回派活轮，不挂到最新轮上。
         const hostTurn = turns.find((turn) => turn.nodes.some((n) => n.id === `sys-${key}`));
@@ -176,6 +185,60 @@ describe('用户可见 system 事件登记制（P0-2）', () => {
       }
     });
   }
+
+  it('appends an edit receipt after the completed answer without changing that turn', () => {
+    const before = project(plainTurn());
+    const turns = project([...plainTurn(), systemEventMessage('roleEditReceipt')]);
+    expect(turns).toHaveLength(2);
+    expect(turns[0]).toEqual(before[0]);
+    expect(turns[1]).toMatchObject({ standalone: true, nodes: [{ id: 'sys-roleEditReceipt' }] });
+    expect(buildTurnRailItems(turns)).toEqual(buildTurnRailItems(before));
+  });
+
+  it('starts the next user turn after the receipt and keeps it active', () => {
+    const messages: Message[] = [...plainTurn(), systemEventMessage('roleEditReceipt'),
+      { id: 'u2', role: 'user', content: 'Summarize the industry headlines', timestamp: 10_000 }];
+    const projection = projectTurns(messages, SESSION_ID, true);
+    expect(projection.turns.map((turn) => turn.nodes[0].id)).toEqual(['u1', 'sys-roleEditReceipt', 'u2']);
+    expect(projection.activeTurnIndex).toBe(2);
+    expect(buildTurnRailItems(projection.turns).map((turn) => turn.turnId)).toEqual(['turn-1', 'turn-3']);
+  });
+
+  it('projects a receipt with no earlier turn as an inactive standalone entry', () => {
+    const projection = projectTurns([systemEventMessage('roleEditReceipt')], SESSION_ID, true);
+    expect(projection.turns).toHaveLength(1);
+    expect(projection.turns[0]).toMatchObject({ standalone: true, status: 'completed' });
+    expect(projection.activeTurnIndex).toBe(-1);
+    expect(buildTurnRailItems(projection.turns)).toEqual([]);
+  });
+
+  it('keeps later assistant messages and current-turn events on the conversational turn', () => {
+    const turns = project([...plainTurn(), systemEventMessage('roleEditReceipt'),
+      systemEventMessage('roleFlowStalled'),
+      { id: 'a2', role: 'assistant', content: 'Your draft is ready.', timestamp: 10_000 }]);
+    expect(turns).toHaveLength(2);
+    expect(turns[0].nodes.map((node) => node.id)).toEqual(['u1', 'a1-text', 'sys-roleFlowStalled', 'a2-text']);
+    expect(turns[1].nodes.map((node) => node.id)).toEqual(['sys-roleEditReceipt']);
+  });
+
+  it('keeps workbench, streaming fallback and voice overlays off the receipt', () => {
+    const messages = [...plainTurn(), systemEventMessage('roleEditReceipt')];
+    const idle = projectTurns(messages, SESSION_ID, false);
+    const active = projectTurns(messages, SESSION_ID, true);
+    expect(active.activeTurnIndex).toBe(0);
+    expect(active.turns[1].status).toBe('completed');
+    expect(buildRunUiState({ projection: idle, sessionId: SESSION_ID })).toEqual(
+      buildRunUiState({ projection: projectTurns(plainTurn(), SESSION_ID, false), sessionId: SESSION_ID }),
+    );
+    const overlaid = applyStreamingMessageDeltasToProjection(idle, [
+      ...messages, { id: 'pending', role: 'assistant', content: '', timestamp: 10_000 },
+    ], { pending: { contentDelta: 'More details', reasoningDelta: '', updatedAt: 10_000 } });
+    expect(overlaid.turns[0].nodes.at(-1)?.content).toBe('More details');
+    expect(overlaid.turns[1]).toEqual(idle.turns[1]);
+    const voice = applyVoicePartialsToProjection(idle, { live: true, user: 'Next topic', assistant: '', startedAt: 10_000 });
+    expect(voice.activeTurnIndex).toBe(2);
+    expect(voice.turns[1]).toEqual(idle.turns[1]);
+  });
 
   it.each(['done', 'unverified', 'failed', 'cancelled'] as const)(
     '生产落库形状的 settlement %s 按 workItemId 对回同一张卡',
