@@ -16,7 +16,7 @@ import type {
 import { bashSchema as schema } from './bash.schema';
 import { BASH, OS_SANDBOX_CODES, SANDBOX_APPROVED_RM_STILL_DENIED_FAILURE_CODE } from '../../../../shared/constants';
 import { HostReasonCode, createHostReason } from '../../../../shared/contract/permission';
-import { startBackgroundTask } from '../../shell/backgroundTasks';
+import { resolveBackgroundTaskName, startBackgroundTask } from '../../shell/backgroundTasks';
 import { handoverTimedOutCommand } from '../../shell/timeoutHandover';
 import { checkNoWaitCommand, clampToShortTier, exceededShortTierMessage, resolveForegroundTimeoutTier } from '../../shell/foregroundTier';
 import { runForegroundCommand } from './foregroundCommand';
@@ -518,7 +518,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           // secret vars would leak straight back in (ptyExecutor spreads
           // process.env UNDER the passed env) — so never inherit.
           inheritProcessEnv: false,
-          sandboxed: sandboxDecision.sandboxed,
+          sandboxed: sandboxDecision.sandboxed, displayName: resolveBackgroundTaskName(args.description, normalizedCommand),
           ...(sandboxCleanup ? { onExit: cleanupSandbox } : {}),
         });
       } catch (error) {
@@ -657,7 +657,7 @@ Use process_kill to terminate the session.`;
       try {
         result = startBackgroundTask(sandboxed.command, workingDirectory, timeout, {
           sessionId: ctx.sessionId,
-          toolCallId: ctx.currentToolCallId, ownerAgentId: ctx.agentId, displayCommand: normalizedCommand,
+          toolCallId: ctx.currentToolCallId, ownerAgentId: ctx.agentId, displayCommand: resolveBackgroundTaskName(args.description, normalizedCommand),
           env: childEnv.env,
           sandboxed: sandboxDecision.sandboxed,
           ...(sandboxCleanup ? { onExit: cleanupSandbox } : {}),
@@ -821,7 +821,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
             command: sandboxedCommand,
             cwd: workingDirectory,
             sessionId: ctx.sessionId,
-            toolCallId: ctx.currentToolCallId, ownerAgentId: ctx.agentId, displayCommand: normalizedCommand,
+            toolCallId: ctx.currentToolCallId, ownerAgentId: ctx.agentId, displayCommand: resolveBackgroundTaskName(args.description, normalizedCommand),
             sandboxed: sandboxDecision.sandboxed,
             onExit: cleanupSandbox,
             stdout,

@@ -340,6 +340,18 @@ function registerBackgroundTaskProcess(
 }
 
 /**
+ * One user-readable name for a background shell/PTY task: the model's Bash `description`
+ * when usable (single line, <= 60 chars), else the unwrapped original command.
+ */
+export function resolveBackgroundTaskName(description: unknown, command: string): string {
+  if (typeof description === 'string') {
+    const trimmed = description.trim();
+    if (trimmed && !/[\r\n]/.test(trimmed) && trimmed.length <= 60) return trimmed;
+  }
+  return command;
+}
+
+/**
  * Start a background task
  */
 export function startBackgroundTask(

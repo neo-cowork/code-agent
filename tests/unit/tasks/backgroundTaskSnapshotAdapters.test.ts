@@ -181,6 +181,19 @@ describe('backgroundTaskSnapshotAdapters', () => {
     expect(ledger.drainNotifications('session-1')).toEqual([]);
   });
 
+  it('shell task wrapped in sandbox-exec without displayCommand falls back to Shell <id8>; message has no log path', () => {
+    const ledger = new BackgroundTaskLedger();
+    syncShellTaskSnapshotToLedger({
+      taskId: 'abcdef123456', status: 'completed', command: 'sandbox-exec -f /var/folders/x/profile-1.sb /bin/sh -c "x"',
+      cwd: '/repo', sessionId: 's-wrap', startTime: 1_000, endTime: 2_000, duration: 1_000, exitCode: 0,
+      outputFile: '/tmp/wrap.log',
+    }, ledger);
+    expect(ledger.getTask('shell:abcdef123456')?.title).toBe('Shell abcdef12');
+    const [n] = ledger.drainNotifications('s-wrap');
+    expect(n?.message).not.toMatch(/sandbox-exec|\.log/);
+    expect(n?.payload).toMatchObject({ outputFile: '/tmp/wrap.log' });
+  });
+
   it('maps stopped shell snapshots to cancelled with displayCommand and task_cancelled notification', () => {
     mocks.getAllBackgroundTasks.mockReturnValue([
       {
