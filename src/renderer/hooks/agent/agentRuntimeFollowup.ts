@@ -5,6 +5,7 @@ import { useAppStore } from '../../stores/appStore';
 import type { SessionStatus as TaskSessionStatus } from '../../stores/taskStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { environmentProtocolUnsupportedMessage } from '../../i18n/executionEnvironment';
+import { rejectedRequestMessage } from '../../i18n/agentRunErrors';
 import { getApiBaseUrl } from '../../api/transport';
 
 export function isRuntimeBusyStatus(status: TaskSessionStatus | undefined): boolean {
@@ -47,10 +48,18 @@ export function getAgentSendFailureMessage(error: unknown): string {
       : '';
   const message = raw.trim();
   // ADR-081 协议版本闸：宿主只回稳定码，用户可见句子由 i18n 给，不透传原始报错。
-  return environmentProtocolUnsupportedMessage(error, useAppStore.getState().language)
-    ?? (message
-      ? `Error: ${message}`
-      : 'Error: 消息发送失败，但前端没有收到具体错误。请查看后台日志。');
+  const language = useAppStore.getState().language;
+  const protocolMessage = environmentProtocolUnsupportedMessage(error, language);
+  if (protocolMessage) return protocolMessage;
+  // 400/422（含 PROMPT_REQUIRED）：气泡只给下一步提示，原始响应体 warn 留痕。
+  const rejected = rejectedRequestMessage(error, language);
+  if (rejected) {
+    console.warn('[AgentSend] request rejected by host:', raw);
+    return rejected;
+  }
+  return message
+    ? `Error: ${message}`
+    : 'Error: 消息发送失败，但前端没有收到具体错误。请查看后台日志。';
 }
 
 export function getRuntimeInputMode(context?: ConversationEnvelopeContext): RuntimeInputMode {

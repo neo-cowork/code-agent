@@ -1,3 +1,4 @@
+import { getLastConversationTurnIndex } from '../utils/conversationTurns';
 import { useMemo } from 'react';
 import type { TraceProjection } from '@shared/contract/trace';
 import type {
@@ -27,7 +28,7 @@ export interface CurrentTurnCapabilityScopeState extends CurrentTurnCapabilitySc
 export function extractCurrentTurnCapabilityScope(
   projection: TraceProjection,
 ): CurrentTurnCapabilityScopeView | null {
-  const currentTurn = projection.turns[projection.turns.length - 1];
+  const currentTurn = projection.turns[getLastConversationTurnIndex(projection.turns)];
   if (!currentTurn) {
     return null;
   }
@@ -53,7 +54,7 @@ export function extractCurrentTurnCapabilityScope(
 function extractCurrentTurnWorkbenchSnapshot(
   projection: TraceProjection,
 ): TurnWorkbenchSnapshot | null {
-  const currentTurn = projection.turns[projection.turns.length - 1];
+  const currentTurn = projection.turns[getLastConversationTurnIndex(projection.turns)];
   if (!currentTurn) {
     return null;
   }
