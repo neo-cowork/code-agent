@@ -254,6 +254,20 @@ describe('buildSavedRoutineRestateRows', () => {
     expect(rows[0].value).toBe('由 小星 执行：记录里的名字');
   });
 
+  it('what 行只遮罩展示值，保存记录里的 prompt 保持原文', () => {
+    const prompt = '备份笔记 --password=hunter2xyz';
+    const rows = buildSavedRoutineRestateRows({
+      job: agentJob({ action: { type: 'agent', agentType: 'default', prompt, roleId: 'role-x' } }),
+      roleDisplayName: '小星',
+      channelLabel: '',
+      labels,
+    });
+    expect(rows[0].value).toBe('由 小星 执行：备份笔记 --password=***REDACTED***');
+    expect(rows[0].value).not.toContain('hunter2xyz');
+    expect((agentJob({ action: { type: 'agent', agentType: 'default', prompt, roleId: 'role-x' } }).action as { prompt: string }).prompt)
+      .toBe(prompt);
+  });
+
   // N-ROLE-ROUTINE-RESTATE-FU1-FU1：copy-to-cloud 一律 enabled:false，用户读着
   // 「每天 09:00」会以为它会跑——停用副本必须出第四行「状态」讲清楚。
   it('停用副本追加第四行「状态」，启用任务保持恰好三行', () => {

@@ -44,7 +44,8 @@ function isEmptyOutputFile(outputFile?: string): boolean {
   return size === undefined || size === 0;
 }
 
-function mapShellStatus(status: ShellLikeStatus, outputFile?: string): TaskStatus {
+function mapShellStatus(status: ShellLikeStatus, outputFile?: string, stoppedByRequest?: boolean): TaskStatus {
+  if (stoppedByRequest) return 'cancelled';
   if (status === 'completed') return isEmptyOutputFile(outputFile) ? 'failed' : 'completed';
   if (status === 'failed') return 'failed';
   return 'running';
@@ -108,7 +109,10 @@ function buildTerminalMessage(args: {
   if (args.status === 'completed') {
     return `${args.label} 已完成${duration}${log}`;
   }
-  const exitCode = args.exitCode != null ? `，退出码 ${args.exitCode}` : '';
+  if (args.status === 'cancelled') {
+    return `${args.label} 已停止${duration}`;
+  }
+  const exitCode = args.exitCode != null && args.exitCode !== 0 ? `，退出码 ${args.exitCode}` : '';
   return withAutomationPromptTimeoutHint(
     `${args.label} 失败${exitCode}${duration}${log}`,
     args.locale ?? 'zh',
@@ -138,8 +142,16 @@ function queueTerminalNotification(args: {
     id: `${args.taskId}:terminal:${args.status}`,
     taskId: args.taskId,
     sessionId: args.sessionId,
-    type: args.status === 'completed' ? 'task_completed' : 'task_failed',
-    title: args.status === 'completed' ? '后台任务完成' : '后台任务失败',
+    type: args.status === 'completed'
+      ? 'task_completed'
+      : args.status === 'cancelled'
+        ? 'task_cancelled'
+        : 'task_failed',
+    title: args.status === 'completed'
+      ? '后台任务完成'
+      : args.status === 'cancelled'
+        ? '任务已停止'
+        : '后台任务失败',
     message: buildTerminalMessage({
       label: args.title,
       status: args.status,
@@ -187,8 +199,9 @@ export function syncShellTaskSnapshotToLedger(
   task: TaskInfo,
   ledger: BackgroundTaskLedger = getBackgroundTaskLedger(),
 ): void {
-  const status = mapShellStatus(task.status, task.outputFile);
+  const status = mapShellStatus(task.status, task.outputFile, task.stoppedByRequest);
   const taskId = `shell:${task.taskId}`;
+  const label = task.displayCommand?.trim() || task.command || `Shell ${task.taskId.slice(0, 8)}`;
   const previous = ledger.getTask(taskId);
   const recoveryStatus = status === 'running' ? 'running-live' : status;
   const automationPromptLikely = isLikelyUnansweredMacOsAutomationPrompt({
@@ -204,7 +217,7 @@ export function syncShellTaskSnapshotToLedger(
     sessionId: task.sessionId,
     toolCallId: task.toolCallId,
     source: 'shell',
-    title: task.command || `Shell ${task.taskId.slice(0, 8)}`,
+    title: label,
     summary: task.outputFile,
     command: task.command,
     cwd: task.cwd,
@@ -237,7 +250,7 @@ export function syncShellTaskSnapshotToLedger(
     taskId,
     sessionId: task.sessionId,
     source: 'shell',
-    title: task.command || `Shell ${task.taskId.slice(0, 8)}`,
+    title: label,
     status,
     durationMs: task.duration,
     exitCode: task.exitCode,
@@ -276,7 +289,7 @@ export function syncPtySessionSnapshotToLedger(
   session: PtySessionInfo,
   ledger: BackgroundTaskLedger = getBackgroundTaskLedger(),
 ): void {
-  const status = mapShellStatus(session.status, session.outputFile);
+  const status = mapShellStatus(session.status, session.outputFile, session.stoppedByRequest);
   const taskId = `pty:${session.sessionId}`;
   const command = [session.command, ...session.args].filter(Boolean).join(' ');
   const previous = ledger.getTask(taskId);

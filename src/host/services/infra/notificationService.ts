@@ -3,7 +3,7 @@
 // 桌面通知服务 - 在 App 非焦点时发送任务完成通知
 // ============================================================================
 
-import { Notification, AppWindow, broadcastToRenderer } from '../../platform';
+import { Notification, broadcastToRenderer } from '../../platform';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import type { CronFailurePresentationKind } from '../../../shared/utils/cronFailureClassification';
 import { createLogger } from './logger';
@@ -16,6 +16,7 @@ import {
 } from './notificationPolicy';
 import { getConfigService } from '../core/configService';
 import { getDaemonQuitIntent } from '../daemon/quitIntent';
+import { desktopPresence } from '../companion/desktopPresence';
 import { getDurableResumeNotificationText } from '../../../shared/i18n/durableResumeNotification';
 import {
   getNotificationDigestText,
@@ -100,6 +101,7 @@ interface NotificationDeliveryPayload {
 }
 
 interface BudgetedNotification extends NotificationBudgetItem {
+  id: string;
   type: RecordedNotification['type'];
   body: string;
   delivery: Omit<NotificationDeliveryPayload, 'id' | 'title' | 'body' | 'sessionId'>;
@@ -112,7 +114,7 @@ class NotificationService implements Disposable {
   /** 已按 dedupeKey 投递过的 needs-input 键（有界，见 NEEDS_INPUT_DEDUPE_KEY_LIMIT）。 */
   private deliveredNeedsInputKeys: Set<string> = new Set();
   private readonly budget = new NotificationBudget<BudgetedNotification>({
-    deliver: (item) => this.deliverNow(item),
+    deliver: (item, via) => this.deliverNow(item, via),
     deliverDigest: (items) => this.deliverDigest(items),
   });
 
@@ -135,12 +137,11 @@ class NotificationService implements Disposable {
     return process.env.CODE_AGENT_NOTIFICATION_DRY_RUN === '1';
   }
 
-  private record(notification: Omit<RecordedNotification, 'id' | 'createdAt' | 'delivery'>): RecordedNotification {
+  private record(notification: Omit<RecordedNotification, 'createdAt' | 'delivery'>): RecordedNotification {
     const entry: RecordedNotification = {
       ...notification,
       title: sanitizeNotificationText(notification.title, 120),
       body: sanitizeNotificationText(notification.body, 320),
-      id: `notification_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       createdAt: Date.now(),
       delivery: this.isDryRun() ? 'dry_run' : 'sent',
     };
@@ -158,7 +159,7 @@ class NotificationService implements Disposable {
   clearRecentNotifications(): void {
     this.recentNotifications = [];
     this.deliveredNeedsInputKeys.clear();
-    this.budget.clear();
+    this.logDropped(this.budget.clear(), 'budget-cleared');
   }
 
   /**
@@ -166,9 +167,15 @@ class NotificationService implements Disposable {
    * 默认只在 App 窗口非焦点时发送；needs_input / 失败类 / force 绕过焦点门
    */
   private shouldNotify(force = false): boolean {
-    if (!this.enabled) return false;
+    if (!this.enabled) {
+      logger.info('Notification not delivered', { reason: 'notifications-disabled' });
+      return false;
+    }
     if (this.isDryRun()) return true;
-    if (!Notification.isSupported()) return false;
+    if (!Notification.isSupported()) {
+      logger.info('Notification not delivered', { reason: 'notifications-unsupported' });
+      return false;
+    }
 
     // force：后台任务（loop/定时任务）完成——绕过焦点门，无论 app 前台/后台都提醒。
     // 这类任务是用户主动发起、默默长跑、完成才冒头，提醒符合预期，不算打扰。
@@ -176,8 +183,17 @@ class NotificationService implements Disposable {
     if (force) return true;
 
     // 前台 agent 任务：仅在 app 整体失焦时提醒，避免你正盯着看时被打扰。
-    const focusedWindow = AppWindow.getFocusedWindow();
-    return focusedWindow === null;
+    const focused = desktopPresence.isWindowFocused();
+    if (focused === null) {
+      logger.warn('Notification focus unknown', { reason: 'no fresh presence report' });
+      return true;
+    }
+    if (focused) {
+      logger.info('Notification not delivered', { reason: 'app-focused', source: 'desktop-presence' });
+      return false;
+    }
+    logger.info('Notification focus gate passed', { reason: 'app-blurred', source: 'desktop-presence' });
+    return true;
   }
 
   /**
@@ -185,8 +201,9 @@ class NotificationService implements Disposable {
    * 图标与身份，点击经 onAction 跳到对应会话。替代旧的 osascript（无图标、点击不回调）。
    * dry-run 下只记录不投递（E2E 用 getRecent 断言，不真弹）。
    */
-  private deliverNow(item: BudgetedNotification): void {
+  private deliverNow(item: BudgetedNotification, via: 'immediate' | 'window-end' | 'digest'): void {
     const entry = this.record({
+      id: item.id,
       type: item.type,
       sessionId: item.sessionId,
       title: item.title,
@@ -199,19 +216,32 @@ class NotificationService implements Disposable {
       sessionId: entry.sessionId,
       ...item.delivery,
     });
+    logger.info('Notification dispatched to renderer', {
+      notificationId: entry.id, intent: item.intent, type: item.type,
+      sessionId: entry.sessionId, title: entry.title, via,
+    });
+  }
+
+  private logDropped(items: readonly BudgetedNotification[], reason: 'budget-cleared' | 'service-disposed'): void {
+    for (const item of items) logger.info('Notification dropped', { notificationId: item.id, reason });
   }
 
   private deliverDigest(items: readonly BudgetedNotification[]): void {
     const text = getNotificationDigestText(readNotificationLocale());
-    logger.info('Notification folded into digest', { reason: 'budget-digest', count: items.length });
+    const digestNotificationId = `notification_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    logger.info('Notification folded into digest', {
+      reason: 'budget-digest', count: items.length,
+      digestNotificationId, heldNotificationIds: items.map((item) => item.id),
+    });
     this.deliverNow({
+      id: digestNotificationId,
       intent: 'task_complete',
       type: 'digest',
       sessionId: '',
       title: text.title(items.length),
       body: text.body(items.map((item) => item.title), items.length),
       delivery: {},
-    });
+    }, 'digest');
   }
 
   private deliver(payload: NotificationDeliveryPayload): void {
@@ -239,10 +269,18 @@ class NotificationService implements Disposable {
     });
   }
 
-  private enqueueBudgeted(item: BudgetedNotification): NotificationBudgetDisposition {
+  private enqueueBudgeted(notification: Omit<BudgetedNotification, 'id'>): NotificationBudgetDisposition {
+    const item: BudgetedNotification = {
+      ...notification,
+      id: `notification_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    };
     const disposition = this.budget.enqueue(item);
     if (disposition !== 'held') return disposition;
-    logger.info('Notification held by budget', { reason: 'budget-held', intent: item.intent, sessionId: item.sessionId });
+    logger.info('Notification held by budget', {
+      reason: 'budget-held', notificationId: item.id, intent: item.intent, sessionId: item.sessionId,
+      windowRemainingMs: this.budget.getWindowRemainingMs(), heldCount: this.budget.getHeldCount(),
+      note: 'folded by budget, not delivered individually',
+    });
     if (!item.delivery.markSessionUnread) return disposition;
     this.broadcastSessionAttentionMark(item.sessionId);
     delete item.delivery.markSessionUnread;
@@ -260,7 +298,14 @@ class NotificationService implements Disposable {
   /**
    * 格式化时长显示
    */
-  private formatDuration(ms: number): string {
+  private formatDuration(ms: number, locale: NotificationDigestLocale = 'zh'): string {
+    if (locale === 'en') {
+      if (ms < 1000) return 'under 1 sec';
+      const secs = Math.round(ms / 1000);
+      if (secs < 60) return `${secs} sec`;
+      const mins = Math.floor(secs / 60);
+      return secs % 60 === 0 ? `${mins} min` : `${mins} min ${secs % 60} sec`;
+    }
     if (ms < 1000) return '不到 1 秒';
     const seconds = Math.round(ms / 1000);
     if (seconds < 60) return `${seconds} 秒`;
@@ -354,26 +399,33 @@ class NotificationService implements Disposable {
    */
   notifyTaskComplete(data: TaskNotificationData, options?: { force?: boolean; urgent?: boolean }): void {
     const intent: NotificationIntent = data.succeeded === false ? 'task_failed' : 'task_complete';
-    if (!this.isIntentAllowed(intent)) return;
-    // 失败类通知不受焦点门限制：用户盯着别的会话时也不能错过失败。
-    if (!this.shouldNotify(options?.force || intent === 'task_failed')) {
-      logger.debug('Skip notification - app is focused');
+    if (!this.isIntentAllowed(intent)) {
+      logger.info('Notification not delivered', { reason: 'intent-blocked-by-policy', intent });
       return;
     }
+    // 失败类通知不受焦点门限制：用户盯着别的会话时也不能错过失败。
+    if (!this.shouldNotify(options?.force || intent === 'task_failed')) return;
 
     const { sessionTitle, summary, duration, toolsUsed } = data;
 
     // 构建通知内容
+    const en = readNotificationLocale() === 'en';
     let body = '';
     if (summary) {
       body = summary;
     } else if (toolsUsed.length > 0) {
-      body = `使用了 ${toolsUsed.length} 个工具`;
+      body = en
+        ? `Used ${toolsUsed.length} ${toolsUsed.length === 1 ? 'tool' : 'tools'}`
+        : `使用了 ${toolsUsed.length} 个工具`;
     }
-    body += `\n耗时: ${this.formatDuration(duration)}`;
+    body += en
+      ? `\nDuration: ${this.formatDuration(duration, 'en')}`
+      : `\n耗时: ${this.formatDuration(duration)}`;
 
-    const title = `${data.succeeded === false ? '任务失败' : '任务完成'} - ${sessionTitle}`;
-    const disposition = this.enqueueBudgeted({
+    const failed = data.succeeded === false;
+    const shell = en ? (failed ? 'Task failed' : 'Task completed') : (failed ? '任务失败' : '任务完成');
+    const title = `${shell} - ${sessionTitle}`;
+    this.enqueueBudgeted({
       intent,
       urgent: options?.urgent,
       type: intent,
@@ -389,7 +441,6 @@ class NotificationService implements Disposable {
         ...(intent === 'task_failed' ? { urgent: true, failure: true, markSessionUnread: true } : {}),
       },
     });
-    if (disposition === 'delivered') logger.info('Notification dispatched to renderer', { sessionTitle });
   }
 
   /** Background restart-resume is silent in the chat surface, so expose one system signal. */
@@ -400,7 +451,7 @@ class NotificationService implements Disposable {
     // 兜底会话名必须与通知同语言，所以在这里（知道 locale 的一方）落兜底，调用方传原始标题。
     const title = text.resumingTitle(data.sessionTitle || text.untitledSession);
     const body = text.resumingBody(data.autoResumeCount);
-    this.enqueueBudgeted({
+    const disposition = this.enqueueBudgeted({
       intent: 'task_resuming',
       type: 'task_resuming',
       sessionId: data.sessionId,
@@ -408,7 +459,7 @@ class NotificationService implements Disposable {
       body,
       delivery: { markSessionUnread: true },
     });
-    logger.info('Task resume notification sent', { sessionId: data.sessionId, autoResumeCount: data.autoResumeCount });
+    if (disposition === 'delivered') logger.info('Task resume notification sent', { sessionId: data.sessionId, autoResumeCount: data.autoResumeCount });
   }
 
   /**
@@ -416,13 +467,13 @@ class NotificationService implements Disposable {
    * 不会尝试切换到不存在的会话。
    */
   notifyPlugin(data: { title: string; body: string }): void {
-    if (!this.isIntentAllowed('plugin')) return;
-    if (!this.shouldNotify()) {
-      logger.debug('Skip plugin notification - app is focused');
+    if (!this.isIntentAllowed('plugin')) {
+      logger.info('Notification not delivered', { reason: 'intent-blocked-by-policy', intent: 'plugin' });
       return;
     }
+    if (!this.shouldNotify()) return;
 
-    this.enqueueBudgeted({
+    const disposition = this.enqueueBudgeted({
       intent: 'plugin',
       type: 'plugin',
       sessionId: '',
@@ -430,7 +481,7 @@ class NotificationService implements Disposable {
       body: data.body,
       delivery: {},
     });
-    logger.info('Plugin notification sent', { title: data.title });
+    if (disposition === 'delivered') logger.info('Plugin notification sent', { title: data.title });
   }
 
   /**
@@ -457,7 +508,7 @@ class NotificationService implements Disposable {
       : data.status === 'unverified'
         ? '这件语音派出的任务在通话结束后跑完了，但没有留下产物，请你自己确认一下结果。'
         : `这件语音派出的任务在通话结束后失败了：${data.detail?.trim() || '未给出原因'}`;
-    this.enqueueBudgeted({
+    const disposition = this.enqueueBudgeted({
       intent,
       type: intent,
       sessionId: data.sessionId,
@@ -468,7 +519,7 @@ class NotificationService implements Disposable {
         ...(intent === 'task_failed' ? { urgent: true, failure: true } : {}),
       },
     });
-    logger.info('Voice work settlement notification sent', {
+    if (disposition === 'delivered') logger.info('Voice work settlement notification sent', {
       sessionId: data.sessionId,
       taskTitle: data.taskTitle,
       status: data.status,
@@ -485,7 +536,7 @@ class NotificationService implements Disposable {
     if (this.disposed) return;
     this.disposed = true;
     this.enabled = false;
-    this.budget.dispose();
+    this.logDropped(this.budget.dispose(), 'service-disposed');
   }
 
   setEnabled(enabled: boolean): void {

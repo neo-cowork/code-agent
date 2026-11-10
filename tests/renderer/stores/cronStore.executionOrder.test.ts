@@ -11,6 +11,7 @@ import type { CronJobExecution, CronJobStatus } from '../../../src/shared/contra
 vi.mock('../../../src/renderer/services/cronClient', () => ({
   cronClient: {
     listJobs: vi.fn().mockResolvedValue([]),
+    triggerJob: vi.fn(),
     getStats: vi.fn().mockResolvedValue(null),
     getExecutions: vi.fn().mockResolvedValue([]),
     getRecentExecutions: vi.fn().mockResolvedValue([]),
@@ -81,5 +82,49 @@ describe('loadExecutions 执行顺序归一（新→旧）', () => {
     const state = useCronStore.getState();
     expect(state.executionsByJobId['job-1']).toEqual([]);
     expect(state.latestExecutions['job-1']).toBeNull();
+  });
+});
+
+
+describe('manual trigger refresh', () => {
+  it('propagates trigger errors after refreshing', async () => {
+    vi.mocked(cronClient.triggerJob).mockRejectedValue(new Error('trigger failed'));
+    vi.mocked(cronClient.getExecutions).mockResolvedValue([]);
+    await expect(useCronStore.getState().triggerJob('job-1')).rejects.toThrow('trigger failed');
+    expect(cronClient.getExecutions).toHaveBeenCalled();
+  });
+  it('discovers a running execution and count while the trigger IPC remains pending', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(cronClient.triggerJob).mockReturnValue(new Promise(() => {}));
+      vi.mocked(cronClient.getExecutions).mockResolvedValue([makeRow(10, 'running')] as never);
+      vi.mocked(cronClient.getStats).mockResolvedValue({ jobsByStatus: { running: 1 } } as never);
+      void useCronStore.getState().triggerJob('job-1');
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(useCronStore.getState().latestExecutions['job-1']?.status).toBe('running');
+      expect(useCronStore.getState().stats?.jobsByStatus.running).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+
+describe('selected job history sync', () => {
+  it('discovers a scheduled execution in the selected history and updates its terminal state', async () => {
+    const running = makeRow(20, 'running');
+    useCronStore.setState({ selectedJobId: 'job-1' });
+    vi.mocked(cronClient.getRecentExecutions).mockResolvedValue([running]);
+    vi.mocked(cronClient.getExecutions).mockResolvedValue([running]);
+    await useCronStore.getState().syncRunningExecutions();
+    expect(useCronStore.getState().executionsByJobId['job-1']).toEqual([running]);
+    expect(useCronStore.getState().latestExecutions['job-1']).toEqual(running);
+
+    const completed: CronJobExecution = { ...running, status: 'completed', completedAt: 30 };
+    vi.mocked(cronClient.getRecentExecutions).mockResolvedValue([completed]);
+    vi.mocked(cronClient.getExecutions).mockResolvedValue([completed]);
+    await useCronStore.getState().syncRunningExecutions();
+    expect(useCronStore.getState().executionsByJobId['job-1']).toEqual([completed]);
+    expect(useCronStore.getState().latestExecutions['job-1']).toEqual(completed);
   });
 });

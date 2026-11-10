@@ -273,9 +273,15 @@ describe('SessionAgentsPanel', () => {
   });
 
   it('行级停：普通代理走 agent.closeAgent，后台任务走 task.cancelBackgroundTask', async () => {
-    const domainApiInvoke = vi.fn().mockResolvedValue(true);
-    (window as unknown as { domainAPI?: unknown }).domainAPI = { invoke: domainApiInvoke };
-    mockTree(snapshotOf([treeNode({})]));
+    invokeDomainMock.mockImplementation((domain: unknown, action: unknown) => {
+      if (domain === IPC_DOMAINS.AGENT && action === 'getTree') {
+        return Promise.resolve(snapshotOf([treeNode({})]));
+      }
+      if (action === 'closeAgent' || action === 'cancelBackgroundTask') {
+        return Promise.resolve({ cancelled: true });
+      }
+      return Promise.resolve(null);
+    });
     useBackgroundTaskStore.setState({ tasks: [backgroundTask({})] });
 
     render(<SessionAgentsPanel />);
@@ -286,9 +292,59 @@ describe('SessionAgentsPanel', () => {
     }));
 
     fireEvent.click(screen.getByTestId('agents-panel-stop-task-1'));
-    await waitFor(() => expect(domainApiInvoke).toHaveBeenCalledWith(IPC_DOMAINS.TASK, 'cancelBackgroundTask', {
+    await waitFor(() => expect(invokeDomainMock).toHaveBeenCalledWith(IPC_DOMAINS.TASK, 'cancelBackgroundTask', {
       taskId: 'task-1',
     }));
+  });
+
+  it('真实 buildAgentRows shell 行收到 cancelled:false 时显示停止提示', async () => {
+    invokeDomainMock.mockImplementation((domain: unknown, action: unknown) => {
+      if (domain === IPC_DOMAINS.AGENT && action === 'getTree') return Promise.resolve(snapshotOf([]));
+      if (domain === IPC_DOMAINS.TASK && action === 'cancelBackgroundTask') {
+        return Promise.resolve({ cancelled: false });
+      }
+      return Promise.resolve(null);
+    });
+    useBackgroundTaskStore.setState({
+      tasks: [backgroundTask({
+        id: 'shell:row-false',
+        kind: 'shell',
+        source: 'shell',
+        title: 'sleep 600',
+        metadata: { originalTaskId: 'row-false' },
+      })],
+    });
+
+    render(<SessionAgentsPanel />);
+    fireEvent.click(await screen.findByTestId('agents-panel-stop-shell:row-false'));
+
+    const hint = await screen.findByTestId('agents-panel-stop-hint-shell:row-false');
+    expect(hint.textContent).toContain('这个任务已经结束或无法停止');
+  });
+
+  it('真实 buildAgentRows shell 行遇到 IPC rejection 时显示停止提示', async () => {
+    invokeDomainMock.mockImplementation((domain: unknown, action: unknown) => {
+      if (domain === IPC_DOMAINS.AGENT && action === 'getTree') return Promise.resolve(snapshotOf([]));
+      if (domain === IPC_DOMAINS.TASK && action === 'cancelBackgroundTask') {
+        return Promise.reject(new Error('transport closed'));
+      }
+      return Promise.resolve(null);
+    });
+    useBackgroundTaskStore.setState({
+      tasks: [backgroundTask({
+        id: 'shell:row-error',
+        kind: 'shell',
+        source: 'shell',
+        title: 'sleep 600',
+        metadata: { originalTaskId: 'row-error' },
+      })],
+    });
+
+    render(<SessionAgentsPanel />);
+    fireEvent.click(await screen.findByTestId('agents-panel-stop-shell:row-error'));
+
+    const hint = await screen.findByTestId('agents-panel-stop-hint-shell:row-error');
+    expect(hint.textContent).toContain('这个任务已经结束或无法停止');
   });
 
   it('停止全部对所有可停行走各自通道', async () => {
