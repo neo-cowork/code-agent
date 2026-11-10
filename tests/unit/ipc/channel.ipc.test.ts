@@ -99,7 +99,7 @@ const inboxItem: ChannelInboxItem = {
 
 describe('channel.ipc inbox handlers', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     channelState.listeners.clear();
     channelState.manager.getAccounts.mockReturnValue([]);
     channelState.manager.getRegisteredChannelTypes.mockReturnValue([]);
@@ -109,6 +109,38 @@ describe('channel.ipc inbox handlers', () => {
       supported: true,
       conversations: [{ id: 'oc_group', name: '林晨, 苏三' }],
     });
+  });
+
+  it('persists enabled before user Connect', async () => {
+    const ipc = createMockIpcMain();
+    registerChannelHandlers(ipc.ipcHost as never, () => null);
+    await expect(ipc.invoke(CHANNEL_CHANNELS.CONNECT_ACCOUNT, 'account-1')).resolves.toEqual({ success: true });
+    expect(channelState.manager.updateAccount).toHaveBeenCalledWith('account-1', { enabled: true });
+    expect(channelState.manager.updateAccount.mock.invocationCallOrder[0]).toBeLessThan(channelState.manager.connectAccount.mock.invocationCallOrder[0]);
+  });
+
+  it('persists disabled after successful user Disconnect', async () => {
+    const ipc = createMockIpcMain();
+    registerChannelHandlers(ipc.ipcHost as never, () => null);
+    await expect(ipc.invoke(CHANNEL_CHANNELS.DISCONNECT_ACCOUNT, 'account-1')).resolves.toEqual({ success: true });
+    expect(channelState.manager.updateAccount).toHaveBeenCalledWith('account-1', { enabled: false });
+    expect(channelState.manager.disconnectAccount.mock.invocationCallOrder[0]).toBeLessThan(channelState.manager.updateAccount.mock.invocationCallOrder[0]);
+  });
+
+  it('does not disable the account when Disconnect fails', async () => {
+    const ipc = createMockIpcMain();
+    registerChannelHandlers(ipc.ipcHost as never, () => null);
+    channelState.manager.disconnectAccount.mockRejectedValueOnce(new Error('disconnect failed'));
+    await expect(ipc.invoke(CHANNEL_CHANNELS.DISCONNECT_ACCOUNT, 'account-1')).resolves.toEqual({ success: false, error: 'disconnect failed' });
+    expect(channelState.manager.updateAccount).not.toHaveBeenCalled();
+  });
+
+  it('does not connect when persisting user intent fails', async () => {
+    const ipc = createMockIpcMain();
+    registerChannelHandlers(ipc.ipcHost as never, () => null);
+    channelState.manager.updateAccount.mockRejectedValueOnce(new Error('update failed'));
+    await expect(ipc.invoke(CHANNEL_CHANNELS.CONNECT_ACCOUNT, 'account-1')).resolves.toEqual({ success: false, error: 'update failed' });
+    expect(channelState.manager.connectAccount).not.toHaveBeenCalled();
   });
 
   it('lists sendable conversations for a selected channel account', async () => {

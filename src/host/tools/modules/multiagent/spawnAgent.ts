@@ -59,6 +59,12 @@ const ROLE_ALIASES: Record<string, string> = {
   planner: 'plan',
 };
 
+function shortBackgroundTitle(title: string): string {
+  const normalized = title.replace(/\s+/g, ' ').trim();
+  const chars = Array.from(normalized);
+  return chars.length > 30 ? `${chars.slice(0, 29).join('')}…` : normalized;
+}
+
 function normalizeRole(role: unknown): unknown {
   if (typeof role !== 'string') return role;
   return ROLE_ALIASES[role] ?? ROLE_ALIASES[role.toLowerCase()] ?? role;
@@ -253,6 +259,8 @@ async function runSpawnAgent(
       }
     }, {
       title: backgroundTitle,
+      ...(typeof normalizedArgs.name === 'string' && normalizedArgs.name.trim()
+        ? { displayName: normalizedArgs.name.trim() } : {}),
       completionKind: backgroundRole === 'awaiter' ? 'shell' : 'internal',
       sessionId: ctx.sessionId,
       ...(ctx.runId ? { runId: ctx.runId } : {}),
@@ -270,7 +278,7 @@ async function runSpawnAgent(
     return withMultiagentMeta(
       {
         ok: true,
-        output: `已在后台启动子 agent（agent_id: ${agentId}），前台不阻塞。用该 agent_id 查询状态或获取最终结果。`,
+        output: `已在后台开始处理「${shortBackgroundTitle(backgroundTitle)}」，做完后结果会自动回到这个对话，你可以继续做别的事。\n- Agent ID: ${agentId}`,
       },
       ctx,
       schemaName,

@@ -702,4 +702,11 @@ describe('MCPSettings status', () => {
     expect(html).not.toContain('NativeConnectorsDiagnostics');
     expect(screen.queryByTestId('mcp-trust-summary-note')).toBeNull();
   });
+
+  it('keeps the Chinese runtime diagnostics subtitle free of the English connector term', () => {
+    render(React.createElement(MCPSettings));
+
+    const description = screen.getByText(mcpText.diagnostics.description);
+    expect(description.textContent).not.toMatch(/connector/i);
+  });
 });

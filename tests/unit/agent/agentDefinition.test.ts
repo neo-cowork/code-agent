@@ -142,6 +142,14 @@ describe('AgentDefinition - Hybrid Architecture', () => {
         expect(agent.tools).not.toContain('Bash');
       });
 
+      it('should expose no spawning tools and hand command work back to the parent', () => {
+        expect(agent.tools).not.toContain('Task');
+        expect(agent.tools).not.toContain('spawn_agent');
+        expect(agent.tools).toContain('TaskManager');
+        expect(String(agent.prompt)).toContain('You cannot run commands or start other agents');
+        expect(String(agent.prompt)).toContain('hand the work back to the parent');
+      });
+
       it('should be in exploration layer', () => {
         expect(agent.coordination?.layer).toBe('exploration');
       });
@@ -251,7 +259,7 @@ describe('AgentDefinition - Hybrid Architecture', () => {
       });
 
       it('exposes nested delegation tools to core subagents that may offload context', () => {
-        for (const id of ['coder', 'reviewer', 'explore', 'plan'] as const) {
+        for (const id of ['coder', 'reviewer', 'plan'] as const) {
           const tools = getAgentTools(getPredefinedAgent(id));
           expect(tools).toContain('Task');
           expect(tools).toContain('spawn_agent');

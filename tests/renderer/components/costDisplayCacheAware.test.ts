@@ -5,6 +5,7 @@ import {
 } from '../../../src/renderer/components/StatusBar/CostDisplay';
 import type { BudgetStatusView } from '../../../src/renderer/hooks/useBudgetStatus';
 import { zh } from '../../../src/renderer/i18n/zh';
+import { interpolatePlural } from '../../../src/renderer/i18n/interpolate';
 
 // WP2-2a：CostDisplay cache-aware 口径的纯函数单测
 
@@ -81,7 +82,7 @@ describe('buildCostTitle', () => {
       usd: null, source: 'unknown', modelId: 'my-relay-model', inputTokens: 1, outputTokens: 1,
     }, 3);
     expect(unknown).toContain('my-relay-model');
-    expect(unknown).toContain(zh.statusBar.unknownTurnsNote.replace('{count}', '3'));
+    expect(unknown).toContain(interpolatePlural(zh.statusBar.unknownTurnsNote, 3));
     expect(unknown).not.toContain('$NaN');
   });
 });

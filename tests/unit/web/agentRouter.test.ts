@@ -933,7 +933,7 @@ describe('createAgentRouter', () => {
 
       controller.abort();
       await waitForAssertion(() => {
-        expect(mockCancel).toHaveBeenCalledWith('user');
+        expect(mockCancel).toHaveBeenCalledWith('client-disconnect');
       });
     });
 
@@ -964,7 +964,7 @@ describe('createAgentRouter', () => {
       expect(config.requestedAgentId).toBe('explore');
 
       controller.abort();
-      await waitForAssertion(() => expect(mockCancel).toHaveBeenCalledWith('user'));
+      await waitForAssertion(() => expect(mockCancel).toHaveBeenCalledWith('client-disconnect'));
     });
 
     it('显式选择解析失败 → SSE routing_resolved 降级信号（fallbackToDefault+requestedAgentId），不再静默', async () => {
@@ -1003,7 +1003,7 @@ describe('createAgentRouter', () => {
 
       controller.abort();
       await waitForAssertion(() => {
-        expect(mockCancel).toHaveBeenCalledWith('user');
+        expect(mockCancel).toHaveBeenCalledWith('client-disconnect');
       });
     });
 
@@ -1032,7 +1032,7 @@ describe('createAgentRouter', () => {
 
       controller.abort();
       await waitForAssertion(() => {
-        expect(mockCancel).toHaveBeenCalledWith('user');
+        expect(mockCancel).toHaveBeenCalledWith('client-disconnect');
       });
     });
 
@@ -1058,7 +1058,7 @@ describe('createAgentRouter', () => {
 
       controller.abort();
       await waitForAssertion(() => {
-        expect(mockCancel).toHaveBeenCalledWith('user');
+        expect(mockCancel).toHaveBeenCalledWith('client-disconnect');
       });
     });
 
@@ -1085,7 +1085,7 @@ describe('createAgentRouter', () => {
 
       controller.abort();
       await waitForAssertion(() => {
-        expect(mockCancel).toHaveBeenCalledWith('user');
+        expect(mockCancel).toHaveBeenCalledWith('client-disconnect');
       });
     });
   });
@@ -1110,7 +1110,7 @@ describe('createAgentRouter', () => {
     controller.abort();
 
     await waitForAssertion(() => {
-      expect(mockCancel).toHaveBeenCalledWith('user');
+      expect(mockCancel).toHaveBeenCalledWith('client-disconnect');
     });
   });
 
@@ -1164,7 +1164,7 @@ describe('createAgentRouter', () => {
 
       controller.abort();
       await waitForAssertion(() => {
-        expect(mockCancel).toHaveBeenCalledWith('user');
+        expect(mockCancel).toHaveBeenCalledWith('client-disconnect');
       });
       await response.text().catch(() => undefined);
     } finally {
@@ -1216,7 +1216,7 @@ describe('createAgentRouter', () => {
       expect(await repository.get(liveRunId!)).toMatchObject({ status: 'running', sessionId });
 
       controller.abort();
-      await waitForAssertion(() => expect(mockCancel).toHaveBeenCalledWith('user'));
+      await waitForAssertion(() => expect(mockCancel).toHaveBeenCalledWith('client-disconnect'));
       await response.text().catch(() => undefined);
     } finally {
       beforeCrash.clear();
@@ -1352,7 +1352,7 @@ describe('createAgentRouter', () => {
     });
 
     controller.abort();
-    await waitForAssertion(() => expect(cancelPriorRun).toHaveBeenCalledWith('user'), 3000);
+    await waitForAssertion(() => expect(cancelPriorRun).toHaveBeenCalledWith('client-disconnect'), 3000);
     await vi.waitFor(() => {
       expect(new QueuedInputRepository(queuedInputTestDb!).getById('drained-user')).toMatchObject({
         status: 'consumed',
@@ -1474,7 +1474,7 @@ describe('createAgentRouter', () => {
     await steerPersistenceStarted;
 
     controller.abort();
-    await waitForAssertion(() => expect(cancelActiveRun).toHaveBeenCalledWith('user'), 3000);
+    await waitForAssertion(() => expect(cancelActiveRun).toHaveBeenCalledWith('client-disconnect'), 3000);
     releaseSteerPersistence?.();
 
     const steerResponse = await steerResponsePromise;

@@ -1,3 +1,4 @@
+import { noteFirstModelRequestDispatched } from '../../agent/runtime/firstModelRequestWatch';
 // ============================================================================
 // ClaudeProvider - Anthropic Claude API Provider 实现
 // 自有 SSE 解析 + Messages API 格式 + Prompt Caching + Thinking
@@ -74,6 +75,7 @@ function claudeSSEStream(options: {
       timeout: PROVIDER_TIMEOUT,
     };
 
+    noteFirstModelRequestDispatched('claude');
     const req = httpModule.request(reqOptions, (res) => {
       logger.info(`[Claude] SSE response status: ${res.statusCode}`);
       if (res.statusCode !== 200) {

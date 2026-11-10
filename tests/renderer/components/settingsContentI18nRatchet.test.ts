@@ -41,6 +41,8 @@ const MIGRATED: string[] = [
   'tabs/ChannelsSettings.tsx',
   'tabs/ChannelAccountWarningStrip.tsx',
   'tabs/TelegramPrivacyModeHint.tsx',
+  'tabs/FeishuSharedAppHint.tsx',
+  'tabs/FeishuLastInboundLine.tsx',
   'tabs/MemoryTab.tsx',
   'tabs/MemoryEntriesManager.tsx',
   'tabs/PrivacySettings.tsx',

@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Brain, ChevronDown, ChevronRight } from 'lucide-react';
 import type { TraceTurn } from '@shared/contract/trace';
 import { useI18n } from '../../../hooks/useI18n';
+import { interpolate, interpolatePlural } from '../../../i18n/interpolate';
 import { sanitizeThinkingForDisplay } from '../../../utils/toolGrouping';
 
 export interface TurnThinkingSegment {
@@ -78,7 +79,7 @@ export const ThinkingDigestBanner: React.FC<ThinkingDigestBannerProps> = ({
   turnEndTime,
 }) => {
   const { t } = useI18n();
-  const [expanded, setExpanded] = useState(Boolean(activeSegmentId));
+  const [expanded, setExpanded] = useState(false);
   const [userInteracted, setUserInteracted] = useState(false);
   const [now, setNow] = useState(Date.now);
   const [observedEndedAt, setObservedEndedAt] = useState<Record<string, number>>({});
@@ -99,21 +100,8 @@ export const ThinkingDigestBanner: React.FC<ThinkingDigestBannerProps> = ({
       setNow(timestamp);
     }
 
-    if (!userInteracted) {
-      if (activeSegmentId && activeSegmentId !== previousActiveSegmentId) {
-        setExpanded(true);
-        shouldFollowBottomRef.current = true;
-      } else if (
-        previousActiveSegmentId
-        && !activeSegmentId
-        && hasNonThinkingContentAfterThinking
-      ) {
-        setExpanded(false);
-      }
-    }
-
     previousActiveSegmentIdRef.current = activeSegmentId;
-  }, [activeSegmentId, hasNonThinkingContentAfterThinking, userInteracted]);
+  }, [activeSegmentId, hasNonThinkingContentAfterThinking]);
 
   useEffect(() => {
     if (!activeSegmentId) return;
@@ -143,9 +131,7 @@ export const ThinkingDigestBanner: React.FC<ThinkingDigestBannerProps> = ({
   );
   const digestLabel = activeSegmentId
     ? t.chat.thinkingActiveWithDuration.replace('{duration}', duration)
-    : t.chat.thinkingDigestWithDuration
-      .replace('{duration}', duration)
-      .replace('{count}', String(segments.length));
+    : interpolate(interpolatePlural(t.chat.thinkingDigestWithDuration, segments.length), { duration });
 
   return (
     <div

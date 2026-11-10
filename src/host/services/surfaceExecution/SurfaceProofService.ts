@@ -299,6 +299,9 @@ function collectCandidates(
 
 function elementKinds(value: unknown): string[] {
   const record = recordValue(value);
+  if (Array.isArray(record?.elementKinds)) {
+    return record.elementKinds.filter((kind): kind is string => typeof kind === 'string');
+  }
   return (Array.isArray(record?.elementRefs) ? record.elementRefs : [])
     .flatMap((item) => stringValue(recordValue(item)?.kind) ?? []);
 }
