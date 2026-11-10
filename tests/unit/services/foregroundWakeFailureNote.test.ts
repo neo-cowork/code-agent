@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentEvent, Message } from '../../../src/shared/contract';
 import { findRegisteredSystemEvent } from '../../../src/shared/contract/systemEventRegistry';
+import { BACKGROUND_WAKE_DEFER_NOTICE_MS } from '../../../src/shared/constants/sessionCommandCenter';
 import type { SessionCommandTask } from '../../../src/host/services/commandCenter/sessionCommandCenter';
 import type { AgentOrchestrator } from '../../../src/host/agent/agentOrchestrator';
 import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
@@ -10,6 +11,7 @@ import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
 const h = vi.hoisted(() => ({
   added: [] as Array<{ sessionId: string; message: Message }>,
   emitted: [] as Array<{ sessionId: string; event: AgentEvent }>,
+  busy: false,
 }));
 
 const orchestrator = {
@@ -20,7 +22,7 @@ const orchestrator = {
 };
 vi.mock('../../../src/host/task/TaskManager', () => ({
   getTaskManager: () => ({
-    getSessionState: () => ({ status: 'idle' }),
+    getSessionState: () => ({ status: h.busy ? 'running' : 'idle' }),
     getWaitingQueue: () => [],
     hasActivePrimaryRun: () => false,
     getOrCreateCurrentOrchestrator: () => orchestrator,
@@ -28,6 +30,7 @@ vi.mock('../../../src/host/task/TaskManager', () => ({
     setWorkingDirectory: vi.fn(),
     on: vi.fn(),
     onRunIdle: vi.fn(),
+    observeAgentEvents: vi.fn(() => () => undefined),
     emitAgentEventForSession: (sessionId: string, event: AgentEvent) => {
       h.emitted.push({ sessionId, event });
     },
@@ -65,10 +68,12 @@ describe('foreground wake failure note (default dependencies)', () => {
   beforeEach(() => {
     h.added.length = 0;
     h.emitted.length = 0;
+    h.busy = false;
     orchestrator.sendMessage.mockImplementation(async () => {
       throw new Error('Durable Run run-x has no live owner lease');
     });
   });
+  afterEach(() => { vi.useRealTimers(); });
 
   it('persists and broadcasts a note that the renderer registry recognises', async () => {
     await createForegroundWake()(task, 'completed');
@@ -80,6 +85,26 @@ describe('foreground wake failure note (default dependencies)', () => {
     expect(registered?.key).toBe('backgroundWakeFailed');
     expect(message.metadata?.backgroundWakeFailed).toEqual({ taskId: 'task-n', reason: 'owner_missing' });
     expect(h.emitted).toEqual([{ sessionId: 'session-n', event: { type: 'message', data: message } }]);
+  });
+
+  it('persists and broadcasts the registered deferred-wake note after the cap', async () => {
+    vi.useFakeTimers();
+    h.busy = true;
+    await createForegroundWake()(task, 'completed');
+
+    expect(h.emitted[0]).toMatchObject({
+      sessionId: 'session-n',
+      event: { type: 'task_progress', data: { step: '后台任务已完成，等待汇报' } },
+    });
+    await vi.advanceTimersByTimeAsync(BACKGROUND_WAKE_DEFER_NOTICE_MS);
+
+    expect(h.added).toHaveLength(1);
+    const { message } = h.added[0];
+    const registered = findRegisteredSystemEvent(message.metadata);
+    expect(registered?.key).toBe('backgroundWakeDeferred');
+    expect(message.content).toBe('后台任务「t」已完成，结果见上方的任务结果；当前步骤结束后，我会继续汇报。');
+    expect(message.metadata?.backgroundWakeDeferred).toEqual({ taskId: 'task-n', outcome: 'completed' });
+    expect(h.emitted.at(-1)).toEqual({ sessionId: 'session-n', event: { type: 'message', data: message } });
   });
 
   it('persists and broadcasts one registered note when a resolving wake reports RUN_FAILED', async () => {
