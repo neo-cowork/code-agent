@@ -116,7 +116,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
     if (message.includes('Local jobs must have an interval')) return cc.localIntervalHint;
     if (message.includes(CLOUD_ROLE_BOUND_ERROR)) return cc.cloudRoleBoundHint;
     if (message.includes('runsOn is immutable')) return cc.locationImmutable;
-    return fallback;
+    return message || fallback;
   };
   const { createJob, updateJob } = useCronStore();
   const openSettingsTab = useAppStore((state) => state.openSettingsTab);

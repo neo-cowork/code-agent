@@ -167,7 +167,7 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
         ? cc.cloudIntervalHint
         : message.includes('Local jobs must have an interval')
           ? cc.localIntervalHint
-          : cc.simpleCreateFailed);
+          : message || cc.simpleCreateFailed);
     } finally {
       setSubmitting(false);
     }

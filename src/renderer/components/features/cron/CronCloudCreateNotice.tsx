@@ -15,7 +15,7 @@ export function CronCloudCreateNotice({ onSwitchLocal, onSettings = openCloudCro
       <p>{copy.unconfigured}</p>
       <div className="flex flex-wrap gap-2">
         {onSwitchLocal && <Button size="sm" variant="secondary" onClick={onSwitchLocal}>{copy.switchLocal}</Button>}
-        <Button size="sm" variant="ghost" onClick={onSettings}>{copy.settings}</Button>
+        <Button size="sm" variant="ghost" onClick={() => onSettings()}>{copy.settings}</Button>
       </div>
     </div>
   );

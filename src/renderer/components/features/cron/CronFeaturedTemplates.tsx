@@ -88,7 +88,7 @@ export const CronFeaturedTemplates: React.FC = () => {
       }
     } catch (err) {
       if (err instanceof Error && 'code' in err && err.code === CRON_CLOUD_NOT_CONFIGURED) setCloudTemplate(template);
-      else setError(cc.templateEnableFailed);
+      else setError(err instanceof Error && err.message ? err.message : cc.templateEnableFailed);
     } finally {
       setPendingId(null);
     }
