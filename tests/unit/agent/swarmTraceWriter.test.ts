@@ -237,6 +237,20 @@ describe('SwarmTraceWriter', () => {
     expect(detail.run.errorSummary).toContain('timeout');
   });
 
+  it('中文供应商限流措辞归为 rate_limit', async () => {
+    const scope = makeScope();
+    emitter.started(scope, 1);
+    emitter.agentAdded(scope, { id: 'a1', name: 'A', role: 'a' });
+    emitter.agentUpdated(scope, 'a1', { status: 'running', startTime: 0 });
+    emitter.agentFailed(scope, 'a1', '您的账户已达到速率限制，请您控制请求频率');
+    emitter.completed(scope, { total: 1, completed: 0, failed: 1, parallelPeak: 1, totalTime: 100 });
+
+    await writer.drain();
+
+    const detail = repo.getRunDetail(createSwarmTraceStorageId(scope))!;
+    expect(detail.agents[0].failureCategory).toBe('rate_limit');
+  });
+
   it('cancelled 只关闭显式目标 scope', async () => {
     const scope = makeScope();
     emitter.started(scope, 2);
