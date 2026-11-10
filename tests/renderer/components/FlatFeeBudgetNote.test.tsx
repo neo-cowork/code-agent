@@ -8,6 +8,7 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 }));
 
 import { FlatFeeBudgetNote } from '../../../src/renderer/components/features/cron/FlatFeeBudgetNote';
+import { CronRunBudgetField } from '../../../src/renderer/components/features/cron/CronRunBudgetField';
 import { CronWebhookScheduleFields } from '../../../src/renderer/components/features/cron/CronWebhookScheduleFields';
 import { CronMailEventFields } from '../../../src/renderer/components/features/cron/CronMailEventFields';
 import { CronEventScheduleFields } from '../../../src/renderer/components/features/cron/CronEventScheduleFields';
@@ -60,5 +61,19 @@ describe('FlatFeeBudgetNote', () => {
     setModel('zhipu', 'glm-5.3', 'zh');
     renderAll();
     expect(screen.queryAllByTestId('flat-fee-budget-note')).toHaveLength(0);
+  });
+
+  it('普通 cron 编辑器的「单次花费上限」：包月模型显示，deepseek-chat 不显示', () => {
+    setModel('xiaomi', 'mimo-v2.6-flash', 'zh');
+    const { container } = render(<CronRunBudgetField value="" onChange={() => undefined} />);
+    const input = screen.getByTestId('cron-budget-limit-input');
+    const note = screen.getByTestId('flat-fee-budget-note');
+    expect(input.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    cleanup();
+    setModel('deepseek', 'deepseek-chat', 'zh');
+    const again = render(<CronRunBudgetField value="" onChange={() => undefined} />);
+    expect(screen.queryByTestId('flat-fee-budget-note')).toBeNull();
+    expect(container).toBeTruthy();
+    again.unmount();
   });
 });
