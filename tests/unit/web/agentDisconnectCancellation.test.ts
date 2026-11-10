@@ -1,6 +1,6 @@
 import express from 'express';
 import http from 'node:http';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -46,25 +46,24 @@ async function setup(text = 'Weekly summary so far') {
     tryGetSessionManager: async () => null,
   });
   return { handle, control, cancel, controller,
+    hasPersistedInterruption: () => existsSync(file),
     persisted: () => JSON.parse(readFileSync(file, 'utf8')) as Message[],
     snapshot: () => loadStreamSnapshot({ workingDir: workspace, sessionId: context.sessionId }),
   };
 }
 
-describe('SSE disconnect cancellation through the production controller and real run handle/runtime', () => {
-  it.each(['Weekly summary so far', ''])('persists a connection break, including tool-only streams (%j)', async (text) => {
+describe('SSE disconnect through the production controller and real run handle/runtime', () => {
+  it.each(['Weekly summary so far', ''])('keeps the runtime and snapshot active, including tool-only streams (%j)', async (text) => {
     const state = await setup(text);
     state.controller.cancelForDisconnect();
-    await vi.waitFor(() => expect(state.control.isCancelled).toBe(true));
-    await state.cancel.mock.results[0].value;
-    expect(state.cancel).toHaveBeenCalledExactlyOnceWith('client-disconnect');
-    expect(state.control.cancelReason).toBe('client-disconnect');
-    expect(state.snapshot()?.interruptionReason).toBe('stream-break');
-    expect(state.snapshot()?.interruptionReason).not.toBe('user');
-    expect(state.persisted()[0]).toMatchObject({
-      metadata: { streamInterruptionReason: 'stream-break', workbench: { runCancellation: { reason: 'client_disconnect' } } },
-    });
-    expect(state.persisted()[0].content).not.toContain('[cancelled]');
+    await Promise.resolve();
+    expect(state.cancel).not.toHaveBeenCalled();
+    expect(state.control.isCancelled).toBe(false);
+    expect(state.control.cancelReason).toBeUndefined();
+    expect(state.controller.detached).toBe(true);
+    expect(state.snapshot()).toMatchObject({ content: text, isFinal: false });
+    expect(state.snapshot()?.interruptionReason).toBeUndefined();
+    expect(state.hasPersistedInterruption()).toBe(false);
     state.controller.destroy();
   });
 

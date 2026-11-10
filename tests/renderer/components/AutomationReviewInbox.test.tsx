@@ -553,7 +553,8 @@ describe('AutomationReviewInbox', () => {
       expect(screen.getByTestId('parked-approval-voided')).toBeTruthy();
     });
     const voided = screen.getByTestId('parked-approval-voided');
-    expect(voided.textContent).toContain('Bash');
+    expect(voided.textContent).toContain('运行命令');
+    expect(voided.textContent).not.toContain('Bash');
     expect(voided.textContent).toContain('这一步等你确认超过 24 小时，已自动作废，没有执行。');
     expect(voided.querySelector('button')).toBeNull();
     expect(screen.getAllByTestId('parked-approve')).toHaveLength(1);

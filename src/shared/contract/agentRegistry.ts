@@ -12,6 +12,7 @@ export type AgentSource = 'builtin' | 'user' | 'project';
 export interface AgentListEntry {
   id: string;
   name: string;
+  displayName?: string;
   description: string;
   source: AgentSource;
   /** Builtin tier 字段；自定义 agent 可能复用 'balanced' 字符串 */

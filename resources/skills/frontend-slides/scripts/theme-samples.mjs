@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const THEMES = ['corporate', 'minimal', 'bold-editorial'];
 const SOFFICE_FIXED_PATHS = [
@@ -16,6 +16,9 @@ const SOFFICE_FIXED_PATHS = [
   '/usr/local/bin/libreoffice',
 ];
 const STEP_TIMEOUT_MS = 120_000;
+// macOS: under the app's write fence LibreOffice finds /tmp unwritable and puts its
+// single-instance socket at the filesystem root. Pin the directory the sandbox allows.
+const OFFICE_SOCKET_DIR = process.platform === 'darwin' ? '/private/tmp' : '';
 
 function log(message) {
   console.error(`[theme-samples] ${message}`);
@@ -92,22 +95,77 @@ function sampleIndex(slide) {
   return Math.max(Number(slide.index) || 2, 2);
 }
 
-function run(cmd, args, label) {
+function run(cmd, args, label, reason = 'sample render failed') {
   const result = spawnSync(cmd, args, { encoding: 'utf8', timeout: STEP_TIMEOUT_MS });
   if (result.status !== 0) {
-    throw new Error(`${label} failed (status ${result.status}): ${(result.stderr || result.stdout || '').trim().slice(0, 500)}`);
+    const stderr = result.stderr || '';
+    const stdout = result.stdout || '';
+    const error = new Error(`${label} failed: ${JSON.stringify({
+      status: result.status, signal: result.signal, error: result.error?.message ?? null,
+      stderr: stderr.slice(0, 500), stdout: stdout.slice(0, 500),
+    })}`);
+    error.reason = reason;
+    throw error;
   }
+}
+
+function writable(dir) {
+  try {
+    fs.accessSync(dir, fs.constants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function probeWrite(dir) {
+  const file = path.join(dir, `.theme-samples-probe-${process.pid}`);
+  try {
+    fs.writeFileSync(file, '');
+    fs.rmSync(file, { force: true });
+    return null;
+  } catch (error) {
+    return error.code || String(error);
+  }
+}
+
+// Binds a socket named like LibreOffice's own, in the directory LibreOffice would use: the
+// one passed to it, else the first writable of /tmp and /var/tmp, else the filesystem root.
+function probeOfficeSocket() {
+  const dir = OFFICE_SOCKET_DIR || ['/tmp', '/var/tmp'].find(writable) || '/';
+  const target = path.join(dir, `OSL_PIPE_${process.getuid()}_SingleOfficeIPC_probe${process.pid}`);
+  const bind = "const s=require('net').createServer();s.on('error',e=>console.log(e.code));s.listen(process.argv[1],()=>{console.log('OK');s.close()})";
+  const result = spawnSync(process.execPath, ['-e', bind, target], { encoding: 'utf8', timeout: STEP_TIMEOUT_MS });
+  const code = (result.stdout || '').trim() || `no result (${result.error?.message ?? `status ${result.status}`})`;
+  return { target, code: code === 'OK' ? null : code };
+}
+
+// A sandbox denial goes to the kernel log, never to the failed child's stderr. So after a
+// failure, repeat the same kinds of access here: EPERM means the sandbox refused it.
+function sandboxDenial(error, work, out) {
+  if (error.code === 'EPERM') return 'sandbox denied write';
+  const probes = [work, out].filter(Boolean).map((dir) => ({ name: 'write', target: dir, code: probeWrite(dir) }));
+  if (error.reason === 'soffice render failed' && process.platform !== 'win32') {
+    probes.push({ name: 'socket', ...probeOfficeSocket() });
+  }
+  let reason = null;
+  for (const { name, target, code } of probes) {
+    if (!code) continue;
+    log(`probe failed: ${name} ${target} -> ${code}`);
+    if (code === 'EPERM') reason ??= `sandbox denied ${name}`;
+  }
+  return reason;
 }
 
 function pdfToPng(pdf, png) {
   const pdftoppm = findOnPath('pdftoppm') || ['/opt/homebrew/bin/pdftoppm', '/usr/local/bin/pdftoppm'].find(isExecutable);
   if (pdftoppm) {
     const prefix = png.replace(/\.png$/, '');
-    run(pdftoppm, ['-png', '-r', '80', '-singlefile', pdf, prefix], 'pdftoppm');
+    run(pdftoppm, ['-png', '-r', '80', '-singlefile', pdf, prefix], 'pdftoppm', 'pdf-to-png failed');
     return;
   }
   log('lookup failed: pdftoppm not found, falling back to sips');
-  run('sips', ['-s', 'format', 'png', pdf, '--out', png], 'sips');
+  run('sips', ['-s', 'format', 'png', pdf, '--out', png], 'sips', 'pdf-to-png failed');
 }
 
 function renderSample({ soffice, mergeScript, slide, theme, outDir, work }) {
@@ -120,12 +178,21 @@ function renderSample({ soffice, mergeScript, slide, theme, outDir, work }) {
   const profile = path.join(work, `profile-${theme}`);
   run(
     soffice,
-    [`-env:UserInstallation=file://${profile}`, '--headless', '--convert-to', 'pdf', '--outdir', deck, pptx],
+    [
+      `-env:UserInstallation=${pathToFileURL(profile).href}`,
+      ...(OFFICE_SOCKET_DIR ? [`-env:OSL_SOCKET_PATH=${OFFICE_SOCKET_DIR}`] : []),
+      '--headless', '--convert-to', 'pdf', '--outdir', deck, pptx,
+    ],
     `soffice (${theme})`,
+    'soffice render failed',
   );
   const png = path.join(outDir, `${theme}.png`);
   pdfToPng(path.join(deck, `${theme}.pdf`), png);
-  if (!fs.existsSync(png) || fs.statSync(png).size === 0) throw new Error(`empty PNG for ${theme}`);
+  if (!fs.existsSync(png) || fs.statSync(png).size === 0) {
+    const error = new Error(`empty PNG for ${theme}`);
+    error.reason = 'pdf-to-png failed';
+    throw error;
+  }
   return { theme, png };
 }
 
@@ -138,13 +205,18 @@ function main() {
   }
   const slide = pickSlide(dir);
   const mergeScript = path.join(path.dirname(fileURLToPath(import.meta.url)), 'merge-to-pptx-hybrid.mjs');
-  fs.mkdirSync(out, { recursive: true });
-  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'fs-theme-samples-'));
+  let work = '';
   try {
+    fs.mkdirSync(out, { recursive: true });
+    work = fs.mkdtempSync(path.join(os.tmpdir(), 'fs-theme-samples-'));
     const samples = THEMES.map((theme) => renderSample({ soffice, mergeScript, slide, theme, outDir: out, work }));
     console.log(JSON.stringify({ available: true, slide: slide.index, samples }));
+  } catch (error) {
+    // Probe while the work directory still exists.
+    error.reason = sandboxDenial(error, work, out) || error.reason;
+    throw error;
   } finally {
-    fs.rmSync(work, { recursive: true, force: true });
+    if (work) fs.rmSync(work, { recursive: true, force: true });
   }
 }
 
@@ -153,5 +225,5 @@ try {
 } catch (error) {
   // Rendering broke after LibreOffice was found: report unavailable so the skill falls back to text options.
   log(`render failed: ${error instanceof Error ? error.message : String(error)}`);
-  console.log(JSON.stringify({ available: false, reason: 'sample render failed' }));
+  console.log(JSON.stringify({ available: false, reason: error.reason || 'sample render failed' }));
 }

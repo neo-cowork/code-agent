@@ -92,8 +92,15 @@ const localIso = (date: Date) => {
     + `T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
     + `${sign}${pad(Math.floor(absolute / 60))}:${pad(absolute % 60)}`;
 };
-const localInput = (date: Date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
-  + `T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+function changeDatetime(field: string, value: string) {
+  const [date, time] = value.split('T');
+  const [hour, minute] = time.split(':');
+  const input = screen.getByTestId(`writeback-edit-${field}-date`) as HTMLInputElement;
+  expect(input.type).toBe('date');
+  fireEvent.change(input, { target: { value: date } });
+  fireEvent.change(screen.getByTestId(`writeback-edit-${field}-time-hour`), { target: { value: hour } });
+  fireEvent.change(screen.getByTestId(`writeback-edit-${field}-time-minute`), { target: { value: minute } });
+}
 
 function nativeRequest(
   id: string,
@@ -257,9 +264,7 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     fireEvent.click(screen.getByRole('button', { name: /改一改再创建/ }));
     fireEvent.change(screen.getByTestId('writeback-edit-subject'), { target: { value: 'product sync' } });
     const editedStart = new Date('2026-08-26T09:15:00+08:00');
-    const startInput = screen.getByTestId('writeback-edit-start') as HTMLInputElement;
-    expect(startInput.type).toBe('datetime-local');
-    fireEvent.change(startInput, { target: { value: localInput(editedStart) } });
+    changeDatetime('start', `${editedStart.getFullYear()}-${pad(editedStart.getMonth() + 1)}-${pad(editedStart.getDate())}T${pad(editedStart.getHours())}:${pad(editedStart.getMinutes())}`);
     fireEvent.click(screen.getByRole('button', { name: '创建 · 修改后允许' }));
 
     await waitFor(() => {
@@ -311,9 +316,7 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     state.request = calendarCreateRequest;
     render(<PermissionCard />);
     enterEdit();
-    const input = screen.getByTestId('writeback-edit-start_ms') as HTMLInputElement;
-    expect(input.type).toBe('datetime-local');
-    fireEvent.change(input, { target: { value: '2026-08-26T09:15' } });
+    changeDatetime('start_ms', '2026-08-26T09:15');
     fireEvent.click(screen.getByRole('button', { name: '创建 · 修改后允许' }));
 
     await waitFor(() => {
@@ -336,8 +339,7 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     state.request = remindersCreateRequest;
     render(<PermissionCard />);
     enterEdit();
-    const input = screen.getByTestId('writeback-edit-remind_at_ms') as HTMLInputElement;
-    fireEvent.change(input, { target: { value: '2026-08-26T17:45' } });
+    changeDatetime('remind_at_ms', '2026-08-26T17:45');
     fireEvent.click(screen.getByRole('button', { name: '创建 · 修改后允许' }));
 
     await waitFor(() => {
@@ -362,7 +364,7 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     state.request = native;
     render(<PermissionCard />);
     enterEdit();
-    fireEvent.change(screen.getByTestId(`writeback-edit-${field}`), { target: { value } });
+    changeDatetime(field, value);
     fireEvent.click(screen.getByRole('button', { name: '更新 · 修改后允许' }));
 
     await waitFor(() => {
@@ -384,7 +386,7 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     }, '提醒事项');
     render(<PermissionCard />);
     enterEdit();
-    expect((screen.getByTestId('writeback-edit-remind_at_ms') as HTMLInputElement).value).toBe('');
+    expect((screen.getByTestId('writeback-edit-remind_at_ms-date') as HTMLInputElement).value).toBe('');
     fireEvent.click(screen.getByRole('button', { name: '创建 · 修改后允许' }));
 
     await waitFor(() => {
@@ -402,7 +404,7 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     state.request = calendarCreateRequest;
     render(<PermissionCard />);
     enterEdit();
-    fireEvent.change(screen.getByTestId('writeback-edit-end_ms'), { target: { value: '2026-08-26T08:59' } });
+    changeDatetime('end_ms', '2026-08-26T08:59');
     const submit = screen.getByRole('button', { name: '创建 · 修改后允许' }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
     expect(screen.getByText('结束时间不能早于开始时间')).toBeTruthy();
@@ -410,6 +412,32 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     fireEvent.click(submit);
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it.each(['calendar_create_event', 'reminders_create'])('en-US hour12：%s 编辑控件为 24 小时，未触碰日期保留秒和毫秒', async (tool) => {
+    vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({
+      locale: 'en-US', calendar: 'gregory', numberingSystem: 'latn',
+      timeZone: 'America/Los_Angeles', hourCycle: 'h12', hour12: true,
+    });
+    const millis = new Date(2026, 10, 12, 23, 45, 37, 123).getTime();
+    const field = tool === 'calendar_create_event' ? 'start_ms' : 'remind_at_ms';
+    state.request = nativeRequest(`precision-${tool}`, tool, {
+      title: '发送周报', [field]: millis,
+    }, tool === 'calendar_create_event' ? '日历' : '提醒事项');
+    const { container } = render(<PermissionCard />);
+    enterEdit();
+    expect(new Intl.DateTimeFormat().resolvedOptions().hour12).toBe(true);
+    expect(container.querySelector('input[type="datetime-local"], input[type="time"]')).toBeNull();
+    expect((screen.getByTestId(`writeback-edit-${field}-date`) as HTMLInputElement).value).toBe('2026-11-12');
+    expect((screen.getByTestId(`writeback-edit-${field}-time-hour`) as HTMLSelectElement).value).toBe('23');
+    expect((screen.getByTestId(`writeback-edit-${field}-time-minute`) as HTMLSelectElement).value).toBe('45');
+    expect(screen.getByTestId('writeback-edit-form').textContent).not.toMatch(/AM|PM/);
+    fireEvent.click(screen.getByRole('button', { name: '创建 · 修改后允许' }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith(
+      IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, `precision-${tool}`, 'allow', 'request-session',
+      expect.objectContaining({ [field]: millis }),
+    ));
+    vi.restoreAllMocks();
   });
 
   it('日期时间格式无效时保留独立原因码', () => {
