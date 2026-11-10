@@ -310,6 +310,8 @@ export interface InputRedirectReceiptMetadata {
 }
 
 export interface MessageMetadata {
+  /** Foreground turn ended at its step limit; a new user turn can continue it. */
+  stoppedByStepLimit?: true;
   /**
    * Marks a role:user message injected into an active run by runtime steer.
    * The message remains visible and durable, but does not start a new turn
