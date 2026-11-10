@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const worktreeMocks = vi.hoisted(() => ({
@@ -72,5 +73,11 @@ describe('background spawn_agent worktree note', () => {
     const pending = withBackgroundWorktreeNote(Promise.resolve(ok), new Promise<string>(() => {}), 'agent-1');
     await vi.advanceTimersByTimeAsync(20_000);
     await expect(pending).resolves.toBe(ok);
+  });
+
+  it('wires the settled note into the adopted foreground spawn (static contract)', () => {
+    const source = readFileSync('src/host/agent/multiagentTools/spawnSingleAgent.ts', 'utf8');
+    expect(source).toMatch(/onSettled: settleWorktreeNote/);
+    expect(source).toMatch(/adoptForegroundSubagent\(\{\s*promise: worktreeInfo \? withBackgroundWorktreeNote\(promise, worktreeNoteSettled, agentId\) : promise/);
   });
 });

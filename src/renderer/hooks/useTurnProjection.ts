@@ -688,7 +688,11 @@ export function projectTurns(
           return;
         }
         const projectedContent = streamBreakKeptSegment ? stripStreamBreakMarker(content) : content;
-        if (streamBreakKeptSegment && !projectedContent.trim()) return;
+        if (streamBreakKeptSegment && !projectedContent.trim()) {
+          const bare = bareInterruptionNode(msg, messages, streamInterruptionReason);
+          if (bare) turn.nodes.push(bare);
+          return;
+        }
         // 模型回显：小模型有时把工具结果 JSON 当正文复述，整段吞掉不当答案渲染。
         if (isToolResultEcho(content)) return;
         // 去重：连续相同的模型决策只在首个节点显示，避免每条消息都刷"用户选择 mimo"
