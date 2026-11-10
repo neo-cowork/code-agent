@@ -30,6 +30,7 @@ import { withMultiagentMeta } from './resultMeta';
 import { getBackgroundSubagentRegistry } from '../../../agent/backgroundSubagentRegistry';
 import { withBackgroundDurableAgentId } from '../../../agent/backgroundSubagentLiveProgress';
 import { scheduleBackgroundSubagentIdleWake } from '../../../agent/backgroundSubagentIdleWake';
+import { beginWorkDirectoryRun, endWorkDirectoryRun } from '../../../agent/runtime/workDirectoryMaterializer';
 import type { SubagentResult } from '../../../agent/subagentExecutorTypes';
 import {
   AgentFailureCode,
@@ -58,6 +59,12 @@ const ROLE_ALIASES: Record<string, string> = {
   planner: 'plan',
 };
 
+function shortBackgroundTitle(title: string): string {
+  const normalized = title.replace(/\s+/g, ' ').trim();
+  const chars = Array.from(normalized);
+  return chars.length > 30 ? `${chars.slice(0, 29).join('')}…` : normalized;
+}
+
 function normalizeRole(role: unknown): unknown {
   if (typeof role !== 'string') return role;
   return ROLE_ALIASES[role] ?? ROLE_ALIASES[role.toLowerCase()] ?? role;
@@ -82,6 +89,90 @@ function normalizeSpawnArgs(args: Record<string, unknown>): Record<string, unkno
   }
 
   return normalized;
+}
+
+/**
+ * 后台 lane 的执行体（ADR-025 A1）：独立 AbortController、事件带 durable agentId、
+ * 拓扑标 async_agent（bash 走 ask+forceConfirm）。执行结果重投影回 SubagentResult——
+ * N-BGSPAWN-DURABLE 顺手修的 cost/tokensUsed 与 N-SUBAGENT-ZEROTOOLS 的缺失清单
+ * 都在这一步捞回，完成通知 + collect_agent 才看得见。
+ */
+async function runBackgroundSubagent(
+  normalizedArgs: Record<string, unknown>,
+  executionContext: SubagentExecutionContext,
+  bgController: AbortController,
+  agentId: string,
+): Promise<SubagentResult> {
+  const bgResult = await executeSpawnAgent(normalizedArgs, {
+    ...executionContext,
+    events: withBackgroundDurableAgentId(executionContext.events, agentId),
+    abortSignal: bgController.signal,
+    // 后台子 agent 标 async_agent（2026-07-13 拍板）：bash 走 ask+forceConfirm
+    executionTopology: 'async_agent',
+  });
+  const failureCode = bgResult.success ? undefined : inferAgentFailureCode({
+    failureCode: bgResult.metadata?.failureCode,
+    error: bgResult.error,
+    defaultCode: AgentFailureCode.ModelError,
+  });
+  // N-SUBAGENT-ZEROTOOLS 返修 Important 2：service 层放在 metadata 里的缺失清单
+  // 在这次重投影里捞回 SubagentResult，否则后台路径（完成通知 + collect_agent）
+  // 全程看不到「声明的工具未全部装配」的事实。
+  const missingTools = Array.isArray(bgResult.metadata?.missingTools)
+    ? bgResult.metadata.missingTools.filter((name): name is string => typeof name === 'string')
+    : undefined;
+  // N-BGSPAWN-DURABLE 顺手修：metadata 里的 cost/tokensUsed 之前被这步重投影丢掉，
+  // 后台子代理「花了多少钱」连内存里都看不到（完成通知 stats.cost 恒 undefined）。
+  const cost = typeof bgResult.metadata?.cost === 'number' ? bgResult.metadata.cost : undefined;
+  const tokensUsed = typeof bgResult.metadata?.tokensUsed === 'number'
+    ? bgResult.metadata.tokensUsed
+    : undefined;
+  return {
+    success: bgResult.success,
+    output: bgResult.success && typeof bgResult.output === 'string' ? bgResult.output : '',
+    error: bgResult.success ? undefined : bgResult.error,
+    toolsUsed: [],
+    iterations: 0,
+    ...(cost !== undefined ? { cost } : {}),
+    ...(tokensUsed !== undefined ? { tokensUsed } : {}),
+    ...(failureCode ? { failureCode } : {}),
+    ...(missingTools && missingTools.length > 0 ? { missingTools } : {}),
+  };
+}
+
+/**
+ * 派发入口的输入校验（N-CAP-NOTICE-LEAK）：空/缺 task 的 spawn 在后台分支会
+ * 先注册一个注定失败的占位子 agent（真机实录：模型把注入块当任务、派占位后台
+ * 任务后整轮失败），agents 数组缺 task 更会在 service 层炸裸 TypeError。这里
+ * 提前返回可读的 INVALID_ARGS，让模型立刻拿到能自我纠正的错误，而不是等到
+ * 完成通知才知道失败。只做输入校验，不改派发语义。
+ */
+function validateSpawnArgs(args: Record<string, unknown>): string | null {
+  const parallelSpawn = args.parallel === true
+    && Array.isArray(args.agents)
+    && args.agents.length > 0;
+  if (parallelSpawn) {
+    const agents = args.agents as unknown[];
+    for (let index = 0; index < agents.length; index++) {
+      const agent = agents[index];
+      if (!agent || typeof agent !== 'object') {
+        return `agents[${index}] 必须是带 role 和 task 的对象。`;
+      }
+      const item = agent as Record<string, unknown>;
+      if (typeof item.role !== 'string' || !item.role.trim()) {
+        return `agents[${index}].role 缺失或为空：并行起团每一项都要 role + task。`;
+      }
+      if (typeof item.task !== 'string' || !item.task.trim()) {
+        return `agents[${index}].task 缺失或为空：并行起团每一项都要 role + task。`;
+      }
+    }
+    return null;
+  }
+  const task = args.task;
+  if (typeof task !== 'string' || !task.trim()) {
+    return 'spawn_agent 需要非空 task（单发传 role+task，动态代理传 customPrompt+task）；并行起团传 parallel=true + agents 数组（每项 role+task）。';
+  }
+  return null;
 }
 
 async function runSpawnAgent(
@@ -118,6 +209,14 @@ async function runSpawnAgent(
       meta: { failureCode: AgentFailureCode.ModelError },
     };
   }
+  const invalidArgs = validateSpawnArgs(args);
+  if (invalidArgs) {
+    return {
+      ok: false,
+      error: invalidArgs,
+      code: 'INVALID_ARGS',
+    };
+  }
 
   onProgress?.({ stage: 'starting', detail: schemaName });
   const normalizedArgs = normalizeSpawnArgs(args);
@@ -146,44 +245,22 @@ async function runSpawnAgent(
       ? normalizedArgs.task.trim()
       : (backgroundRole ?? '后台任务');
     const declaredOutputs = getDeclaredOutputsForRole(backgroundRole);
+    // N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO：后台 lane 不走 AgentLoop.run，工作目录的
+    // 占用计数（workDirectoryMaterializer）此前只由前台 run 持有——前台一收线，懒开的
+    // 会话目录就被回收，后台子代理随后的 Bash spawn cwd ENOENT，批准后的「任务继续」
+    // 必然失败。后台 lane 活多久，目录就占多久。
+    const bgWorkDir = ctx.workingDir;
+    beginWorkDirectoryRun(bgWorkDir);
     const agentId = getBackgroundSubagentRegistry().spawn(async (): Promise<SubagentResult> => {
-      const bgResult = await executeSpawnAgent(normalizedArgs, {
-        ...executionContext,
-        events: withBackgroundDurableAgentId(executionContext.events, agentId),
-        abortSignal: bgController.signal,
-        // 后台子 agent 标 async_agent（2026-07-13 拍板）：bash 走 ask+forceConfirm
-        executionTopology: 'async_agent',
-      });
-      const failureCode = bgResult.success ? undefined : inferAgentFailureCode({
-        failureCode: bgResult.metadata?.failureCode,
-        error: bgResult.error,
-        defaultCode: AgentFailureCode.ModelError,
-      });
-      // N-SUBAGENT-ZEROTOOLS 返修 Important 2：service 层放在 metadata 里的缺失清单
-      // 在这次重投影里捞回 SubagentResult，否则后台路径（完成通知 + collect_agent）
-      // 全程看不到「声明的工具未全部装配」的事实。
-      const missingTools = Array.isArray(bgResult.metadata?.missingTools)
-        ? bgResult.metadata.missingTools.filter((name): name is string => typeof name === 'string')
-        : undefined;
-      // N-BGSPAWN-DURABLE 顺手修：metadata 里的 cost/tokensUsed 之前被这步重投影丢掉，
-      // 后台子代理「花了多少钱」连内存里都看不到（完成通知 stats.cost 恒 undefined）。
-      const cost = typeof bgResult.metadata?.cost === 'number' ? bgResult.metadata.cost : undefined;
-      const tokensUsed = typeof bgResult.metadata?.tokensUsed === 'number'
-        ? bgResult.metadata.tokensUsed
-        : undefined;
-      return {
-        success: bgResult.success,
-        output: bgResult.success && typeof bgResult.output === 'string' ? bgResult.output : '',
-        error: bgResult.success ? undefined : bgResult.error,
-        toolsUsed: [],
-        iterations: 0,
-        ...(cost !== undefined ? { cost } : {}),
-        ...(tokensUsed !== undefined ? { tokensUsed } : {}),
-        ...(failureCode ? { failureCode } : {}),
-        ...(missingTools && missingTools.length > 0 ? { missingTools } : {}),
-      };
+      try {
+        return await runBackgroundSubagent(normalizedArgs, executionContext, bgController, agentId);
+      } finally {
+        endWorkDirectoryRun(bgWorkDir);
+      }
     }, {
       title: backgroundTitle,
+      ...(typeof normalizedArgs.name === 'string' && normalizedArgs.name.trim()
+        ? { displayName: normalizedArgs.name.trim() } : {}),
       completionKind: backgroundRole === 'awaiter' ? 'shell' : 'internal',
       sessionId: ctx.sessionId,
       ...(ctx.runId ? { runId: ctx.runId } : {}),
@@ -201,7 +278,7 @@ async function runSpawnAgent(
     return withMultiagentMeta(
       {
         ok: true,
-        output: `已在后台启动子 agent（agent_id: ${agentId}），前台不阻塞。用该 agent_id 查询状态或获取最终结果。`,
+        output: `已在后台开始处理「${shortBackgroundTitle(backgroundTitle)}」，做完后结果会自动回到这个对话，你可以继续做别的事。\n- Agent ID: ${agentId}`,
       },
       ctx,
       schemaName,

@@ -8,6 +8,7 @@ import { Archive, Check, ChevronDown, File, Folder, X, RefreshCw, ExternalLink, 
 import { IPC_DOMAINS } from '@shared/ipc';
 import { useAppStore } from '../stores/appStore';
 import { useI18n } from '../hooks/useI18n';
+import { formatDateTime } from '../utils/formatDateTime';
 import { createLogger } from '../utils/logger';
 import { isWebMode, copyPathToClipboard } from '../utils/platform';
 import { inlineHtmlAssets } from '../utils/inlineHtmlAssets';
@@ -235,7 +236,9 @@ export function PreviewErrorState({
 export function PresentationPreview({ content }: { content: string }) {
   const { t } = useI18n();
   const pv = t.previewWorkspace.preview;
-  const pagePreview = parsePresentationPagePreview(content);
+  // 同一份缓存 content 在纯重渲染间保持同一对象：picker 的 effect 依赖
+  // preview 的引用稳定性，避免重试结果被重渲染打回缓存里的旧状态。
+  const pagePreview = useMemo(() => parsePresentationPagePreview(content), [content]);
   if (pagePreview) {
     return (
       <div className="h-full overflow-auto bg-zinc-950 p-4">
@@ -805,7 +808,7 @@ export const PreviewPanel: React.FC = () => {
                 </button>
                 {publishInfo.publishedVersions.map((version, index) => (
                   <button /* ds-allow:button: 版本菜单紧凑文字项 */ key={version.version} type="button" onClick={() => handleVersionSelect(version)} className={`flex w-full items-center justify-between gap-3 rounded px-2.5 py-2 text-left text-xs hover:bg-zinc-700 ${selectedPublishedVersion?.version === version.version ? 'bg-teal-500/10 text-badge-success' : 'text-zinc-300'}`}>
-                    <span>v{version.version} {index === 0 ? t.deliverable.currentPublished : new Date(version.publishedAt).toLocaleDateString()}</span>
+                    <span>v{version.version} {index === 0 ? t.deliverable.currentPublished : formatDateTime(version.publishedAt, language)}</span>
                     {selectedPublishedVersion?.version === version.version && <Check className="h-3.5 w-3.5" />}
                   </button>
                 ))}

@@ -23,6 +23,7 @@ import { getLangfuseService, getBudgetService, BudgetAlertLevel } from '../../se
 import { RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../shared/constants';
 import { logCollector } from '../../mcp/logCollector.js';
 import { createLogger } from '../../services/infra/logger';
+import { buildEmptyFinalError, hasVisibleAssistantTextAfterLastUser } from './emptyFinalError';
 import { trackNode } from '../../observability/posthogNode';
 import { silence } from '../../utils/errorHandling';
 import type { BudgetEventData } from '../../../shared/contract';
@@ -30,7 +31,7 @@ import { getContextHealthService } from '../../context/contextHealthService';
 import { resolveContextWindow } from '../../model/modelLimits';
 import { getModelErrorStatus, summarizeModelErrorForUser } from '../../../shared/modelErrorDiagnostics';
 import { formatThrownError } from '../../../shared/utils/providerError';
-import { getModelAuthFailureMarker, getModelQuotaFailureMarker, getModelUnavailableMarker } from '../../model/errorClassifier';
+import { getModelAuthFailureMarker, getModelQuotaFailureMarker, getModelUnavailableMarker, getModelUsageLimitFailureMarker } from '../../model/errorClassifier';
 
 // Import refactored modules
 import type {
@@ -72,6 +73,7 @@ import { captureTurnDiff } from '../../services/checkpoint/turnDiffService';
 import { emitGoalAbort } from './goalAbort';
 import { finalizeWebDeliverablePreviewRepairs } from './webDeliverablePreviewRepair';
 import { clearAskUserQuestionReplay } from '../../tools/modules/planning/askUserQuestionReplay';
+import { clearToolRunGrants } from '../../permissions/toolGrantStore';
 
 const logger = createLogger('AgentLoop');
 
@@ -152,33 +154,6 @@ function formatTerminalError(error: unknown): string {
   return summarizeModelErrorForUser(raw, getModelErrorStatus(error));
 }
 
-/**
- * 「这轮有没有看得见的最终回复」判定：最后一条 user 之后存在正文非空的 assistant。
- * （N-CHAT-EMPTY-FINAL-NO-EXIT：完成必须有非空最终回复，不许用排除法兜底）。
- * 运行中转向（injectSteerMessage）会把 role:'user' 推进同一轮 history，最终回复在转向之后。
- */
-function hasVisibleAssistantTextAfterLastUser(messages: Message[]): boolean {
-  let seenLastUser = false;
-
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message.role === 'user') {
-      seenLastUser = true;
-      break;
-    }
-
-    if (message.role !== 'assistant') {
-      continue;
-    }
-
-    if (typeof message.content === 'string' && message.content.trim().length > 0) {
-      return true;
-    }
-  }
-
-  return !seenLastUser;
-}
-
 function hasTerminalWakeNoopAfterLastUser(messages: Message[]): boolean {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
@@ -187,6 +162,25 @@ function hasTerminalWakeNoopAfterLastUser(messages: Message[]): boolean {
       message.role === 'assistant'
       && message.isMeta === true
       && message.toolCalls?.some((toolCall) => toolCall.name === 'wake_noop')
+    ) return true;
+  }
+  return false;
+}
+
+/**
+ * A successful tool can explicitly own the next visible UI (for example the
+ * direct-created role card plus first wake). This is a host-authored result
+ * marker, not a model argument, and is the only other valid silent terminal.
+ */
+function hasToolOwnedTerminalAfterLastUser(messages: Message[]): boolean {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role === 'user') return false;
+    if (
+      message.role === 'tool'
+      && message.toolResults?.some((result) => (
+        result.success && result.metadata?.endRunWithoutAssistant === true
+      ))
     ) return true;
   }
   return false;
@@ -333,6 +327,10 @@ export class RunFinalizer {
     // runId 缺省时退化为 session 级整清（评测/旧路径无 runId，缓存本就随 run 生灭）。
     clearAskUserQuestionReplay(this.ctx.sessionId, this.ctx.runId?.trim() || undefined);
 
+    // 「到这次做完为止」run 档工具授权随 run 结束失效（N-PERM-GRANT-TIERS）：
+    // 本轮结束 = 承诺兑现，该会话下一次同类操作重新询问。内存操作，不会抛。
+    clearToolRunGrants(this.ctx.sessionId);
+
     let terminalStatus = terminal.status
       ?? (this.ctx.control.isCancelled
         ? 'cancelled'
@@ -374,12 +372,13 @@ export class RunFinalizer {
       terminalStatus === 'completed'
       && !hasVisibleAssistantTextAfterLastUser(this.ctx.messages)
       && !hasTerminalWakeNoopAfterLastUser(this.ctx.messages)
+      && !hasToolOwnedTerminalAfterLastUser(this.ctx.messages)
       && !this.ctx.circuitBreaker.isTripped()
       && iterations < this.ctx.maxIterations
       && this.ctx.unattendedTurn !== true
     ) {
       terminalStatus = 'failed';
-      terminalError = new Error('任务已结束，执行记录和产物已保留。这一轮没有生成最终说明，请直接查看上面的工具结果。');
+      terminalError = buildEmptyFinalError(this.ctx.messages);
     }
 
     const runEvent = getRunTerminalPostHogEvent(terminalStatus);
@@ -402,7 +401,7 @@ export class RunFinalizer {
         });
       }
       logger.error('[AgentLoop] Loop exited due to runtime error', terminalError);
-      const marker = getModelAuthFailureMarker(terminalError) ?? getModelUnavailableMarker(terminalError) ?? getModelQuotaFailureMarker(terminalError);
+      const marker = getModelAuthFailureMarker(terminalError) ?? getModelUnavailableMarker(terminalError) ?? getModelUsageLimitFailureMarker(terminalError) ?? getModelQuotaFailureMarker(terminalError);
       // 带上这一轮真正跑的模型：手机据此判断用户是否已经换走，换了就不再挂「换一个可用模型」。
       const modelFailure = marker && { ...marker, provider: marker.provider ?? this.ctx.modelConfig.provider, model: marker.model ?? this.ctx.modelConfig.model };
       logCollector.agent('ERROR', `Agent run failed: ${errorMessage}`);
@@ -522,7 +521,12 @@ export class RunFinalizer {
       });
     }
 
-    await recordTurnOutcomeStamp(this.ctx, terminalStatus, completionSummary);
+    await recordTurnOutcomeStamp(
+      this.ctx,
+      terminalStatus,
+      completionSummary,
+      terminalStatus === 'cancelled' ? (this.ctx.control.cancelReason === 'client-disconnect' ? 'client_disconnect' : this.ctx.control.cancelReason === 'idle-reaped' ? 'idle_reaped' : undefined) : undefined,
+    );
 
     await this.emitTurnDiff();
 
@@ -531,7 +535,14 @@ export class RunFinalizer {
     const terminalEventType = getRunTerminalAgentEventType(terminalStatus);
     logger.debug(`[AgentLoop] ========== run() END, emitting ${terminalEventType} ==========`);
     logCollector.agent('INFO', `Agent run ${terminalStatus}, ${iterations} iterations`);
-    this.ctx.onEvent({ type: terminalEventType, data: null });
+    if (terminalEventType === 'agent_cancelled') {
+      this.ctx.onEvent({
+        type: 'agent_cancelled',
+        data: this.ctx.control.cancelReason === 'client-disconnect' ? { reason: 'client_disconnect' } : this.ctx.control.cancelReason === 'idle-reaped' ? { reason: 'idle_reaped' } : null,
+      });
+    } else {
+      this.ctx.onEvent({ type: terminalEventType, data: null });
+    }
 
     // === Mechanism Stats (observability) ===
     logger.info(`[AgentLoop] === Mechanism Stats ===`);

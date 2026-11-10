@@ -40,6 +40,7 @@ import {
 import { createHealthRouter } from './routes/health';
 import { createQuitGuardRouter } from './routes/quitGuard';
 import { getCronService } from '../host/cron/cronService';
+import { getConfigService } from '../host/services/core/configService';
 import { isDurableRunGateOpen } from './routes/agentDurableRouteLifecycle';
 import { createSettingsRouter } from './routes/settings';
 import { createExtractRouter } from './routes/extract';
@@ -67,6 +68,7 @@ import { createCompanionProvisioningRouter } from './routes/companionProvisionin
 import { CompanionGateway } from '../host/services/companion/CompanionGateway';
 import { companionApnsOutboxTransport } from '../host/services/companion/companionApnsProvider';
 import { CompanionPushOutbox, loadPushWrapKeySync } from '../host/services/companion/CompanionPushOutbox';
+import { desktopPresence } from '../host/services/companion/desktopPresence';
 import { projectCompanionEvent } from '../host/services/companion/projectCompanionEvent';
 import { CompanionApprovalService } from '../host/services/companion/CompanionApprovalService';
 import { CompanionQuestionService } from '../host/services/companion/CompanionQuestionService';
@@ -186,6 +188,10 @@ async function readQuitGuardSnapshot(): Promise<{ activeRuns: number; armedSched
   return { activeRuns, armedSchedules: countArmedSchedules() };
 }
 
+function readQuitGuardLanguage(): 'zh' | 'en' {
+  return getConfigService().getSettings().ui.language === 'en' ? 'en' : 'zh';
+}
+
 /**
  * 获取 Supabase client + user_id（用于 Web 模式云端持久化）
  */
@@ -263,6 +269,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
   // ── Quit guard：鉴权后的在跑任务 / 已启用定时任务计数 ───────────────
   app.use('/api', createQuitGuardRouter({
     getSnapshot: readQuitGuardSnapshot,
+    getLanguage: readQuitGuardLanguage,
   }));
 
   // ── File upload ─────────────────────────────────────────────────────
@@ -510,6 +517,9 @@ export function createApp(deps: CreateAppDeps): express.Express {
         wrapKey: loadPushWrapKeySync(resolveCodeAgentDataDir()),
         apnsKeyPath: apns.apnsKeyPath,
         send: apns.send,
+        // 桌面在场抑制（N-NOTIFY-PRESENCE-HEARTBEAT）：与 notification IPC 的 reportPresence
+        // 共享同一单例——renderer 心跳写进去，这里读出来压掉普通完成推送。
+        presence: desktopPresence,
       });
       void services.library.cleanup().catch((error) => {
         logger.warn('Companion deleted-session cleanup unavailable', error);

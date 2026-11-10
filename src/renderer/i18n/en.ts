@@ -19,6 +19,7 @@ import { decisionCardEn } from './decisionCard';
 import { planApprovalEn } from './planApproval';
 import { taskStatusPanelsEn } from './taskStatusPanels';
 import { noticesEn } from './notices';
+import { serverConnectionEn } from './serverConnection';
 import { agentErrorEn } from './agentError';
 import { labEn } from './lab';
 import { labGpt1En } from './labGpt1';
@@ -56,6 +57,7 @@ import { connectorRequiredEn } from './connectorRequired';
 import { roleFirstWakeEn } from './roleFirstWake';
 import { roleWakeProposalsEn } from './roleWakeProposals';
 import { permissionRuleNlEn } from './permissionRuleNl';
+import { sessionTaskPresentationEn } from './sessionTaskPresentation'; import { toolResultSummaryEn } from './toolResultSummary'; import { codeBlockEn } from './codeBlock';
 // satisfies（而非 `: Translations` 注解）：key 集合必须与 zh 完全一致——zh 多 key /
 // en 缺 key / en 多 key 都在此报红，同时保留 en 自身的推断类型。zh.ts 是形状真源
 //（Translations = typeof zh），与叶子先例 artifactShare.ts 的 satisfies 锁同范式。
@@ -81,6 +83,7 @@ export const en = {
   ...roleFirstWakeEn,
   ...roleWakeProposalsEn,
   ...permissionRuleNlEn,
+  ...sessionTaskPresentationEn, ...toolResultSummaryEn, ...codeBlockEn,
   // Common
   common: {
     save: 'Save',
@@ -147,7 +150,7 @@ export const en = {
     cacheSavedLine: 'Cache saved {saved}',
     turnCostLine: 'Last turn ≈ {cost} · {model}',
     turnCostUnknownLine: 'Last turn cost unknown ({model} has no list price)',
-    unknownTurnsNote: '{count} turn(s) with unknown price not included',
+    unknownTurnsNote: { one: '{count} turn with unknown price not included', other: '{count} turns with unknown price not included' },
     estimateDisclaimer: 'List-price estimate, not your bill',
   },
 
@@ -196,6 +199,9 @@ export const en = {
     slidesPreviewHint: 'Render the real layout of the current outline (local, free)',
     slidesPreviewing: 'Rendering preview…',
     slidesPreviewMissing: 'The pixel preview component is being prepared in the background. Retry in a moment; check progress in Settings > Local capabilities.',
+    slidesPreviewOffline: 'Network unavailable: the LibreOffice download source could not be reached, so the pixel preview component was not installed. Check the network, then retry in Settings > Local capabilities.',
+    slidesPreviewInstallFailed: 'The pixel preview component (LibreOffice) did not finish installing. Retry in Settings > Local capabilities; if it keeps failing, open the install log.',
+    slidesPreviewUnsupported: 'Automatic install of the pixel preview component is not supported on this platform; only the text outline is available.',
     slidesKindCover: 'Cover',
     slidesKindContent: 'Content',
     slidesKindEnd: 'End',
@@ -264,7 +270,7 @@ export const en = {
     proposalOpRename: 'label',
     proposalOpDiscard: 'remove',
     proposalOpGenerate: 'generate',
-    proposalEstCost: 'Est. generation cost {amount} ({n} image(s))',
+    proposalEstCost: { one: 'Est. generation cost {amount} ({count} image)', other: 'Est. generation cost {amount} ({count} images)' },
     proposalPaidBadge: 'paid',
     proposalSelectedCount: '{n}/{total} selected',
     proposalNothingSelected: 'Select at least one',
@@ -600,12 +606,7 @@ export const en = {
       simple: {
         name: 'Simple',
         description: 'Clean interface for beginners',
-        features: [
-          'Basic chat interface',
-          'Essential tools only',
-          'Minimal configuration',
-          'Auto-generated prompts',
-        ],
+        features: ['Basic chat interface', 'Essential tools only', 'Minimal configuration', 'Auto-generated prompts'],
       },
       standard: {
         name: 'Standard',
@@ -655,8 +656,8 @@ export const en = {
   about: {
     title: 'About',
     version: 'Version',
-    buildInfo: '{branch} @ {commitShort} ({builtAt})',
-    buildUnknown: 'unknown',
+    buildBranch: 'branch {branch}',
+    buildCommit: 'build {commitShort}',
     description:
       'Agent Neo is an eval-driven, multi-model AI assistant for life and work tasks. It combines local execution, files and desktop control, external agent handoffs, and acceptance checks in one traceable context.',
     capabilities: 'Core Capabilities',
@@ -753,7 +754,7 @@ export const en = {
     patternSequential: 'Sequential',
     patternParallel: 'Parallel',
     patternHierarchical: 'Hierarchical',
-    agentsWorking: '{count} agents collaborating',
+    agentsWorking: { one: '{count} agent collaborating', other: '{count} agents collaborating' },
     // Skills
     unmountSkill: 'Unmount',
     addSkills: 'Add ({count})',
@@ -951,6 +952,7 @@ export const en = {
   ...planApprovalEn,
   ...taskStatusPanelsEn,
   ...noticesEn,
+  ...serverConnectionEn,
   ...agentErrorEn,
   ...labEn,
   ...labGpt1En,

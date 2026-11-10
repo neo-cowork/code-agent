@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CronJobDefinition } from '../../../src/shared/contract/cron';
 
@@ -14,6 +14,8 @@ vi.mock('../../../src/renderer/services/cronClient', () => ({
 
 import { CronJobList } from '../../../src/renderer/components/features/cron/CronJobList';
 import { useCronStore } from '../../../src/renderer/stores/cronStore';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { MEMORY_CONSOLIDATION } from '../../../src/shared/constants/memory';
 
 function makeJob(overrides: Partial<CronJobDefinition>): CronJobDefinition {
   return {
@@ -73,6 +75,63 @@ describe('CronJobList 人话副标题 + 触发源 chip', () => {
     });
     render(<CronJobList />);
     expect(screen.getByTestId('cron-job-schedule-summary').textContent).toBe('自定义时间 · 0 9 * * 1,3,5');
+  });
+
+  it('任务时区不同于本机时，计划与下次运行都按任务时区并标出时区名', () => {
+    const initialTz = process.env.TZ;
+    const initialLanguage = useAppStore.getState().language;
+    process.env.TZ = 'America/Los_Angeles';
+    useAppStore.setState({ language: 'zh' });
+    try {
+      useCronStore.setState({
+        jobs: [makeJob({
+          name: '每日前瞻',
+          schedule: { type: 'cron', expression: '0 15 * * 1-5', timezone: 'Asia/Shanghai' },
+          nextRunAt: Date.parse('2026-11-09T07:00:00Z'),
+        })],
+      });
+      render(<CronJobList />);
+      expect(screen.getByTestId('cron-job-schedule-summary').textContent).toBe('工作日 15:00（中国标准时间）');
+      expect(screen.getByTestId('cron-job-next-run').textContent).toContain('下次 2026/11/09 15:00（中国标准时间）');
+    } finally {
+      if (initialTz === undefined) delete process.env.TZ;
+      else process.env.TZ = initialTz;
+      useAppStore.setState({ language: initialLanguage });
+    }
+  });
+
+  it('同区、空区和无效区都不追加时区后缀，并在无效区回退本机时间', () => {
+    const initialTz = process.env.TZ;
+    process.env.TZ = 'America/Los_Angeles';
+    try {
+      const nextRunAt = Date.parse('2026-11-09T07:00:00Z');
+      const { rerender } = render(<CronJobList />);
+      const renderJob = (timezone: string | undefined) => {
+        useCronStore.setState({
+          jobs: [makeJob({
+            schedule: { type: 'cron', expression: '0 15 * * 1-5', timezone },
+            nextRunAt,
+          })],
+        });
+        rerender(<CronJobList />);
+      };
+
+      renderJob('America/Los_Angeles');
+      expect(screen.getByTestId('cron-job-schedule-summary').textContent).toBe('工作日 15:00');
+      expect(screen.getByTestId('cron-job-next-run').textContent).toContain('下次 2026/11/08 23:00');
+      expect(screen.getByTestId('cron-job-next-run').textContent).not.toContain('（');
+
+      renderJob(undefined);
+      expect(screen.getByTestId('cron-job-schedule-summary').textContent).toBe('工作日 15:00');
+      expect(screen.getByTestId('cron-job-next-run').textContent).toContain('下次 2026/11/08 23:00');
+
+      renderJob('Not/AZone');
+      expect(screen.getByTestId('cron-job-schedule-summary').textContent).toBe('工作日 15:00');
+      expect(screen.getByTestId('cron-job-next-run').textContent).toContain('下次 2026/11/08 23:00');
+    } finally {
+      if (initialTz === undefined) delete process.env.TZ;
+      else process.env.TZ = initialTz;
+    }
   });
 
   it('every 调度：每 2 小时 + 循环 chip', () => {
@@ -142,5 +201,88 @@ describe('CronJobList 人话副标题 + 触发源 chip', () => {
       expect(pill.classList.contains('shrink-0')).toBe(true);
       expect(pill.classList.contains('whitespace-nowrap')).toBe(true);
     }
+  });
+});
+
+describe('CronJobList 等你批准 badge（N-CRON-UNATTENDED-BASH-PARK-STUCK-VISIBLE）', () => {
+  it('map 命中的 job 显示 amber badge，未命中的 job 保持原状态 chip；map 清空后 badge 消失', () => {
+    useCronStore.setState({
+      jobs: [makeJob({ id: 'job-1', name: '每日晨报' }), makeJob({ id: 'job-2', name: '周报盘点' })],
+    });
+    const { rerender } = render(<CronJobList awaitingByJobId={new Map([['job-1', { jobId: 'job-1' }]])} />);
+
+    const badges = screen.getAllByTestId('cron-job-awaiting-approval');
+    expect(badges).toHaveLength(1);
+    expect(badges[0].textContent).toBe('等你批准');
+    expect(badges[0].classList.contains('text-badge-warning')).toBe(true);
+    expect(badges[0].closest('button')!.textContent).toContain('每日晨报');
+
+    const otherRow = screen.getByText('周报盘点').closest('button')!;
+    expect(otherRow.querySelector('[data-testid="cron-job-awaiting-approval"]')).toBeNull();
+
+    rerender(<CronJobList awaitingByJobId={new Map()} />);
+    expect(screen.queryByTestId('cron-job-awaiting-approval')).toBeNull();
+  });
+});
+
+describe('CronJobList 内置维护任务本地化展示（N-FIX-BUILTIN-CRON-JOB-ENGLISH-COPY）', () => {
+  const initialLanguage = useAppStore.getState().language;
+  afterEach(() => {
+    useAppStore.setState({ language: initialLanguage });
+  });
+
+  const builtinMemoryJob = makeJob({
+    id: 'builtin-mem',
+    name: '[Maintenance] Light Memory consolidation',
+    description: 'Compress ~/.code-agent/memory without losing information (quick model).',
+    action: { type: 'memory-consolidation', dryRun: true },
+    tags: [MEMORY_CONSOLIDATION.JOB_TAG],
+  });
+
+  const userJob = makeJob({
+    id: 'user-job',
+    name: '每日英语单词',
+    description: '每天早上背 5 个单词',
+    action: { type: 'agent', agentType: 'default', prompt: '推荐 5 个单词' },
+    tags: ['study'],
+  });
+
+  it('中文界面下内置记忆任务显示「记忆整理」与中文描述，不含 [Maintenance] 或路径；普通用户任务原样渲染', () => {
+    useAppStore.setState({ language: 'zh' });
+    useCronStore.setState({ jobs: [builtinMemoryJob, userJob] });
+    const { container } = render(<CronJobList />);
+
+    expect(screen.getByText('记忆整理')).toBeTruthy();
+    expect(screen.getByText('定期整理你的记忆文件，合并重复内容，不会丢失信息。')).toBeTruthy();
+    expect(container.textContent).not.toContain('[Maintenance]');
+    expect(container.textContent).not.toContain('Light Memory consolidation');
+    expect(container.textContent).not.toContain('~/.code-agent/memory');
+
+    expect(screen.getByText('每日英语单词')).toBeTruthy();
+    expect(screen.getByText('每天早上背 5 个单词')).toBeTruthy();
+  });
+
+  it('英文界面下内置记忆任务使用用户文案，普通用户任务原样渲染', () => {
+    useAppStore.setState({ language: 'en' });
+    useCronStore.setState({ jobs: [builtinMemoryJob, userJob] });
+    render(<CronJobList />);
+
+    expect(screen.getByText('Memory cleanup')).toBeTruthy();
+    expect(screen.getByText('Regularly tidies your memory files and merges duplicates without losing information.')).toBeTruthy();
+    expect(screen.getByText('每日英语单词')).toBeTruthy();
+  });
+
+  it('搜索同时匹配存储原名与本地化显示名/描述', () => {
+    useAppStore.setState({ language: 'zh' });
+    useCronStore.setState({ jobs: [builtinMemoryJob, userJob], searchQuery: '记忆整理' });
+    const { rerender } = render(<CronJobList />);
+    expect(screen.getByText('记忆整理')).toBeTruthy();
+    expect(screen.queryByText('每日英语单词')).toBeNull();
+
+    act(() => {
+      useCronStore.setState({ searchQuery: 'Light Memory' });
+    });
+    rerender(<CronJobList />);
+    expect(screen.getByText('记忆整理')).toBeTruthy();
   });
 });

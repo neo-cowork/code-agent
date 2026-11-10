@@ -36,6 +36,8 @@ import { BackgroundSessionPanel } from './features/background';
 import { SessionRecapBanner } from './features/chat/SessionRecapBanner';
 import { RoleFirstWakeThreadBanner } from './features/chat/RoleFirstWakeCard';
 import { ForkSourceHint } from './features/chat/ForkSourceHint';
+import { CronRunSessionIntro } from './features/chat/CronRunSessionIntro';
+import { CronRunSessionStatusBar } from './features/chat/CronRunSessionStatusBar';
 import { ChatTraceFallback } from './features/chat/ChatTraceFallback';
 import { ErrorBoundary } from './ErrorBoundary';
 import { ActiveConversationRewindBanner } from './features/chat/ActiveConversationRewindBanner';
@@ -108,8 +110,9 @@ import {
 } from '../utils/sendWithImmediateAssistantFeedback';
 import { isChatSendAccepted } from '../utils/chatSendState';
 import { useImportedSessionResumeSend } from '../hooks/useImportedSessionResume';
+import { useCronRunFollowUpSend } from '../hooks/useCronRunFollowUpSend';
 import { useAssistantFeedbackEvents } from './features/chat/useAssistantFeedbackEvents';
-import { DurableResumeNotice, suppressLegacyInterruptionDecision, useDurableContinueVisible, useDurableResumeContinuation, useGuardedDurableContinue } from './features/chat/durableResume';
+import { DurableResumeNotice, shouldShowParkedNotice, suppressLegacyInterruptionDecision, useAbandonParkedRun, useDurableContinueVisible, useDurableResumeContinuation, useGuardedDurableContinue } from './features/chat/durableResume';
 import { QuotaWaitNotice } from './features/chat/quotaWaitNotice';
 import { ConnectorRequiredCards } from './features/chat/connectorRequiredCard';
 // Zustand selectors must return a referentially stable fallback. A fresh [] here makes
@@ -124,6 +127,8 @@ export const ChatView: React.FC = () => {
   const effortLevelExplicit = useModeStore((state) => state.effortLevelExplicit);
   const appWorkingDirectory = useAppStore((state) => state.workingDirectory);
   const setAppWorkingDirectory = useAppStore((state) => state.setWorkingDirectory);
+  // 首次醒来卡可见时，空会话的欢迎空态让位（RoleFirstWakeCard 挂载时写入）
+  const firstWakeCardRoleId = useAppStore((state) => state.firstWakeCardRoleId);
   const setComposerWorkingDirectory = useComposerStore((state) => state.setWorkingDirectory);
   const viewingMemberId = useMemberViewStore((state) => state.viewingMemberId);
   const setTaskPlan = useAppStore((state) => state.setTaskPlan);
@@ -428,7 +433,7 @@ export const ChatView: React.FC = () => {
     return () => window.removeEventListener('bridge-tool-call', handler);
   }, [bridgeStatus, bridgeVersion, workingDirectory, t]);
 
-  const { requireAuthAsync } = useRequireAuth();
+  const { isAuthenticated, requireAuthAsync } = useRequireAuth();
 
   // 目录选择并入新任务流程（批C2）：沿用原 SidebarWorkspaceRow 的同一条数据通道——
   // composer + appStore 同写，并持久化到当前会话，让工作区分组归位、agent 拿到正确 cwd。
@@ -463,9 +468,28 @@ export const ChatView: React.FC = () => {
   // virtuoso 每渲染在 layout effect 里全量发布 props，发布即通知订阅者
   // （useSyncExternalStore → forceStoreRerender），于是"ChatView 渲染"被放大成
   // 同步嵌套更新；只要上游有一条高频重渲染源，就会打满 React 的 50 层嵌套上限。
+  // 定时任务运行记录的首气泡上方另挂一行「定时任务自动运行」小标
+  // （N-UI-CRON-RUN-RECORD-CLEAR），与分叉提示共用同一 memo 槽位。
   const forkSourceHint = React.useMemo(
-    () => <ForkSourceHint sessionId={currentSessionId} />,
+    () => (
+      <>
+        <CronRunSessionIntro sessionId={currentSessionId} />
+        <ForkSourceHint sessionId={currentSessionId} />
+      </>
+    ),
     [currentSessionId],
+  );
+  const isCronRunSession = useSessionStore((state) => {
+    if (!currentSessionId) return false;
+    const kind = state.sessions?.find((session) => session.id === currentSessionId)?.origin?.kind;
+    return kind === 'cron' || kind === 'heartbeat';
+  });
+  // 同一 memo 纪律：状态行也是 itemContent 依赖（首条用户消息下方），
+  // 数据轮询/计时都收在组件内部，这里的引用只随会话切换变化。非定时运行会话传 undefined，
+  // 让 TurnCard 知道只有定时运行首轮才由外部状态行接管过程与用时。
+  const cronRunStatusBar = React.useMemo(
+    () => (currentSessionId && isCronRunSession) ? <CronRunSessionStatusBar sessionId={currentSessionId} /> : undefined,
+    [currentSessionId, isCronRunSession],
   );
   const projection = React.useMemo(
     () => applyVoicePartialsToProjection(
@@ -482,6 +506,13 @@ export const ChatView: React.FC = () => {
       voiceCallPhase, voiceCallSessionId, voicePartialUser, voicePartialAssistant, voiceStartedAt,
     ],
   );
+  // EmptySessionArea 真正展示 NewSessionWelcome 的同一条件。专家空态已经把 pending
+  // wake proposals 画成起手卡，此时顶部 banner 必须让位，避免同一提议出现两次。
+  const isEmptySessionWelcomeVisible = projection.turns.length === 0
+    && !isHydratingSession
+    && Boolean(currentSessionId)
+    && !isSessionLoading
+    && !firstWakeCardRoleId;
 
   useEffect(() => {
     recordStreamingPerformanceCounter('stream.projection.base_commit');
@@ -549,8 +580,6 @@ export const ChatView: React.FC = () => {
       return true;
     }
   }, [openSettingsTab, t]);
-
-  // 发送消息需要登录
   // @neo 提交分支已移除（2026-07-29 拍板）：输入框不再有工作卡/续接交互，
   // @neo 字样按普通文本消息发送；工作卡从 Neo 协同页发起。
   const handleSendEnvelope = useCallback(async (envelope: ConversationEnvelope): Promise<boolean> => {
@@ -573,7 +602,7 @@ export const ChatView: React.FC = () => {
         sessionId: feedbackSessionId ?? undefined,
       })),
       send: async () => {
-        const didSend = await requireAuthAsync(async () => {
+        const sendConfiguredMessage = async () => {
           const modelReady = await ensureModelConfigured();
           if (!modelReady) return false;
           const delivery = await sendMessage(outboundEnvelope);
@@ -593,21 +622,21 @@ export const ChatView: React.FC = () => {
             }));
           }
           // 🔴 这里**照改前一样返回 true**（只要真的调到了 sendMessage）。
-          //
           // 这个返回值同时被 composer 当作「要不要回滚草稿」的信号。把它改成真实投递
           // 结果，等于把一条改前根本走不到的回滚路径接通了 —— 于是「回滚会覆盖用户在
           // 这期间新做的任何操作」变成实际问题，而"用户可能动过的项"是**没有边界的
           // 枚举**：文本、附件、appshot、会话引用、产物引用、命令 chip、团队预选……
           // ai-review 连着九轮各点出一项，每轮补一个判据都只是把边界往外挪一格。
-          //
           // 收口方式：投递失败不回滚草稿。失败用户气泡留在时间线上，恢复靠气泡上的
           // 「编辑重发」（原文+附件填回 composer，复用原 clientMessageId）和错误卡
           // 重试锚点（retryPrompt / retryAttachments / retryClientMessageId /
-          // retrySessionId）。真正没发出去的两种情况（未登录、模型没配）仍然返回 false、
+          // retrySessionId）。真正没发出去的情况（未登录且模型没配、模型不可用）仍然返回 false、
           // 照旧回滚，那条路改前就在，行为不变。
           return true;
-        });
-        return didSend === true;
+        };
+        const localModelReady = !isAuthenticated && await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get')
+          .then((settings) => hasConfiguredDefaultRuntimeModel(settings, { allowCloudManaged: false }), () => false);
+        return (await (localModelReady ? sendConfiguredMessage() : requireAuthAsync(sendConfiguredMessage))) === true;
       },
     });
     // 跳过提问后的 placeholder 出口（R5 帧 8）：下一条普通消息真的发出去了才恢复常规文案。
@@ -617,7 +646,7 @@ export const ChatView: React.FC = () => {
     return sent;
   }, [
     currentSessionId,
-    ensureModelConfigured,
+    ensureModelConfigured, isAuthenticated,
     requireAuthAsync,
     sendMessage,
     skippedQuestionSessionId,
@@ -626,6 +655,11 @@ export const ChatView: React.FC = () => {
   // 导入的外部历史会话：发送即 fork 出 Neo 原生子会话再投递（原记录只读）。
   const handleSendEnvelopeWithImportResume = useImportedSessionResumeSend(
     handleSendEnvelope,
+    getVisibleMessagesForSend,
+  );
+  // 定时任务运行记录会话：发送同样 fork 出子会话带走任务+结果再投递（原记录只读）。
+  const handleSendEnvelopeWithCronFollowUp = useCronRunFollowUpSend(
+    handleSendEnvelopeWithImportResume,
     getVisibleMessagesForSend,
   );
 
@@ -645,11 +679,12 @@ export const ChatView: React.FC = () => {
   }, [currentSessionId, streamSnapshot?.turnId]);
 
   const handleSendMessage = useCallback(async (content: string, attachments?: MessageAttachment[]) => {
-    return handleSendEnvelopeWithImportResume(buildEnvelope(content, attachments));
-  }, [buildEnvelope, handleSendEnvelopeWithImportResume]);
+    return handleSendEnvelopeWithCronFollowUp(buildEnvelope(content, attachments));
+  }, [buildEnvelope, handleSendEnvelopeWithCronFollowUp]);
 
   const durableContinue = useGuardedDurableContinue(durableResume?.interruptCause, useDurableResumeContinuation(currentSessionId));
   const showDurableContinue = useDurableContinueVisible(durableResume, effectiveIsProcessing);
+  const durableAbandon = useAbandonParkedRun(currentSessionId, durableResume?.runId);
 
   // D-1「重试该轮」锚点：streamSnapshot.turnId 是每轮流式开始时现铸的 UUID（streamHandler.ts
   // beginTurn(generateMessageId())），跟触发它的用户消息 id 毫无关联，snapshot 里也没有任何
@@ -695,20 +730,20 @@ export const ChatView: React.FC = () => {
       kind: 'start',
       goal: start.goalText,
     }));
-    void handleSendEnvelopeWithImportResume(start.envelope).then((sent) => {
+    void handleSendEnvelopeWithCronFollowUp(start.envelope).then((sent) => {
       if (!sent) {
         useAppStore.getState().clearGoalRun(currentSessionId);
       }
     }).catch(() => {
       useAppStore.getState().clearGoalRun(currentSessionId);
     });
-  }, [pendingProjectGoalChatSeed, currentSessionId, effectiveIsProcessing, buildEnvelope, handleSendEnvelopeWithImportResume]);
+  }, [pendingProjectGoalChatSeed, currentSessionId, effectiveIsProcessing, buildEnvelope, handleSendEnvelopeWithCronFollowUp]);
 
   // 项目协作空间底部输入框：composer 已建好新会话、乐观上屏首条用户消息（落地即在
   // 时间线上）并落 seed（完整 envelope，clientMessageId 与乐观消息同 id）。
   // 消费端抽到 useProjectChatSeed（可单测）：目标会话就绪后把 envelope 真正发给 agent
   // （sendMessage 按 id 去重不双份）；发送失败回滚乐观消息。
-  useProjectChatSeedConsumption({ currentSessionId, effectiveIsProcessing, handleSendEnvelope: handleSendEnvelopeWithImportResume });
+  useProjectChatSeedConsumption({ currentSessionId, effectiveIsProcessing, handleSendEnvelope: handleSendEnvelopeWithCronFollowUp });
 
   const handleRequestPromptRewind = useCallback((messageId: string, content: string) => {
     if (!currentSessionId) return;
@@ -855,7 +890,7 @@ export const ChatView: React.FC = () => {
 
         <SurfaceExecutionChatPanel conversationId={currentSessionId} />
 
-        <RoleFirstWakeThreadBanner />
+        <RoleFirstWakeThreadBanner suppressWakeProposals={isEmptySessionWelcomeVisible} />
 
         {/* Messages - Turn-based trace view（查看某位成员时整块换成他的对话）
             负 margin 把主栏让出的滚动条窄带要回：Virtuoso 滚动条摆进窄带，
@@ -869,17 +904,23 @@ export const ChatView: React.FC = () => {
             // 三态分明（工单 2026-08-01）：加载中（hydration 未完）→ 骨架屏；
             // 真空会话（hydration 完成且零消息）→ #874 的「继续上次的会话」空态；
             // 冷启动未定会话 → 空白占位。加载中绝不能误渲染成空态/欢迎页。
+            // 首次醒来卡在场时空态让位（2026-11-05 owner 返修）：不要再叠
+            // 「继续上次的会话」标题和四张起手卡，卡消失后恢复原空态。
             <EmptySessionArea
               isHydratingSession={isHydratingSession}
               settled={!!currentSessionId && !isSessionLoading}
-              welcome={
+              welcome={isEmptySessionWelcomeVisible ? (
                 <NewSessionWelcome
                   onSend={handleSendMessage}
+                  // FB-580：composer 有字/附件/chip 时点示例卡改为填充草稿（不发送、
+                  // 不丢已有内容，模板空行接在现有文本后）；空 composer 保持一键直发。
+                  isComposerOccupied={() => Boolean(chatInputRef.current?.hasDraftOccupancy())}
+                  onFillDraft={(prompt) => chatInputRef.current?.appendDraftPrompt(prompt)}
                   workingDirectory={currentSessionWorkingDirectory}
                   workbenchSnapshot={currentSession?.workbenchSnapshot}
                   session={currentSession}
                 />
-              }
+              ) : null}
             />
           ) : (
             // 会话级错误边界：消息区一旦渲染失败（如虚拟列表反馈环打满 React 嵌套
@@ -898,6 +939,7 @@ export const ChatView: React.FC = () => {
                 activeMatchIndex={activeMatchIndex}
                 onRewindUserPrompt={handleRequestPromptRewind}
                 beforeFirstUserMessage={forkSourceHint}
+                afterFirstUserMessage={cronRunStatusBar}
                 onInterruptionPointVisibilityChange={setInterruptionPointInViewport}
                 suppressActiveBusySignal={pendingAssistantFeedback !== null}
               />
@@ -983,6 +1025,9 @@ export const ChatView: React.FC = () => {
 
           {isDurableAutoResuming && <DurableResumeNotice text={t.chat.durableResumeNotice} />}
           {isDurableResumeQueued && <DurableResumeNotice text={t.chat.durableResumeQueuedNotice} />}
+          {shouldShowParkedNotice(showDurableContinue, durableResume) && <DurableResumeNotice text={t.chat.durableStoppedNotice} actions={
+            <button /* ds-allow:button: 停靠行的放弃按钮沿用 DoomLoopHandbackBar 紧凑文本按钮样式 */ type="button" className="rounded-md border border-zinc-700 px-2 py-1 text-[11px] text-zinc-200" onClick={durableAbandon.onAbandon}>{t.chat.durableAbandon}</button>
+          } />}
           <ConnectorRequiredCards />
           {durableResume?.quotaWait && <QuotaWaitNotice dueAt={durableResume.quotaWait.dueAt} duePassed={durableResume.quotaWait.duePassed} onCancel={() => { cancel(); }} onRetryNow={() => { durableContinue.onContinue(); }} />}
 
@@ -999,13 +1044,14 @@ export const ChatView: React.FC = () => {
           <GoalStatusBar />
           <DoomLoopHandbackBar sessionId={currentSessionId} />
           {durableContinue.confirmDialog}
+          {durableAbandon.confirmDialog}
 
           {/* 后台任务面板（2026-10-11 rework）：composer 正上方的列内文档流块。
               原全局 fixed bottom-4 浮层会盖住发送键/模型切换/上下文表（无槽验收实测），
               迁入聊天列后参与布局，几何上不可能再压 composer。 */}
           <BackgroundSessionPanel />
 
-          <ChatInput ref={chatInputRef} onSend={handleSendEnvelopeWithImportResume} onSteer={handleSteerEnvelope}
+          <ChatInput ref={chatInputRef} onSend={handleSendEnvelopeWithCronFollowUp} onSteer={handleSteerEnvelope}
             disabled={effectiveIsProcessing || isCreatingSession} isProcessing={effectiveIsProcessing}
             hasStoppableBackgroundWork={hasStoppableSwarmWork} isInterrupting={isInterrupting} onStop={cancel} hasContinuation={showDurableContinue}
             onContinue={durableContinue.onContinue} hasPlan={false} placeholder={currentSessionId === skippedQuestionSessionId ? t.userQuestion.skippedPlaceholder : undefined} />

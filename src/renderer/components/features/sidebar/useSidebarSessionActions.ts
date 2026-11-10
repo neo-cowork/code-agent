@@ -1,5 +1,4 @@
 import React, { useCallback, type Dispatch, type SetStateAction } from 'react';
-import { IPC_DOMAINS } from '@shared/ipc';
 import { useAppStore } from '../../../stores/appStore';
 import type { CreateSessionOptions, SessionWithMeta } from '../../../stores/sessionStore';
 import type { PendingSessionSearchJump } from '../../../stores/sessionUIStore';
@@ -21,7 +20,7 @@ import type {
   SidebarProjectGoalMeta,
   SidebarProjectMeta,
 } from '../../../utils/sidebarProjectSummary';
-import ipcService from '../../../services/ipcService';
+import { pickWorkingDirectory } from '../../../services/workingDirectoryPicker';
 
 const SIDEBAR_GROUP_COLLAPSE_DELAY_MS = 160;
 
@@ -201,17 +200,14 @@ export function useSidebarSessionActions(
       return;
     }
     try {
-      const directory = await ipcService.invokeDomain<string | null>(
-        IPC_DOMAINS.WORKSPACE,
-        'selectDirectory',
-      );
+      const directory = await pickWorkingDirectory(t.sidebar.selectDirectoryTitle);
       if (directory) {
         await createWorkspaceChat(directory, directory);
       }
     } catch (error) {
       console.error('Failed to create independent space:', error);
     }
-  }, [createWorkspaceChat, creatingWorkspaceKey, isCreatingSession]);
+  }, [createWorkspaceChat, creatingWorkspaceKey, isCreatingSession, t]);
 
   const handleNewWorkspaceChat = async (
     e: React.MouseEvent,

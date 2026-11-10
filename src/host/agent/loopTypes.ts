@@ -93,6 +93,8 @@ export interface AgentLoopConfig {
   maxIterations?: number;
   /** 当前 run 写入模型历史但不进入用户可见聊天历史。 */
   historyVisibility?: 'visible' | 'meta';
+  /** Whether this run may publish context health to the session's main ring. */
+  publishContextHealth?: boolean;
   /** 无人值守轮（ADR-068 D4 断流续接分档）；缺省前台。 */
   unattendedTurn?: boolean;
   /** 当前 run 禁用的工具名。 */

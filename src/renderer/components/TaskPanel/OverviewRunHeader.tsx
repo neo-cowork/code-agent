@@ -1,3 +1,4 @@
+import { resolveRunCancellationOutcomeKey } from '../../i18n/outcomeWords';
 // ============================================================================
 // OverviewRunHeader —— 概览四模块 · 模块一「任务」：细进度线（2026-08-04 拍板二/三）
 // ----------------------------------------------------------------------------
@@ -78,11 +79,11 @@ export const OverviewRunHeader: React.FC = () => {
   if (!model) return null;
 
   const wt = t.workbenchTabs;
-  const cancelledOutcome = t.outcomeWords['cancelled-by-user'].timeline;
+  const cancelledOutcome = t.outcomeWords[resolveRunCancellationOutcomeKey(runWorkbench.run.terminalReason)].timeline;
   const failedOutcome = t.outcomeWords['failed-unknown'].timeline;
   const toneLabel = model.tone === 'waiting'
     ? wt.overviewRunWaitingApproval
-    : model.outcome === 'cancelled'
+    : (model.outcome === 'cancelled' || model.outcome === 'idle-reaped')
       ? cancelledOutcome.label
       : model.outcome === 'error'
         ? failedOutcome.label
@@ -94,7 +95,7 @@ export const OverviewRunHeader: React.FC = () => {
   const phaseLine = model.tone === 'waiting'
     ? wt.overviewRunWaitingApproval
     : model.outcome
-      ? (model.outcome === 'cancelled'
+      ? ((model.outcome === 'cancelled' || model.outcome === 'idle-reaped')
         ? `${cancelledOutcome.label} · ${cancelledOutcome.reason}`
         : `${failedOutcome.label} · ${failedOutcome.reason}`)
       : model.phase;

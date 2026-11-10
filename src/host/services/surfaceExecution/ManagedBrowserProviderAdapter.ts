@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { takeHostDomSnapshot } from '../infra/browser/domSnapshotHandoff';
 import type { ToolContext, ToolExecutionResult } from '../../tools/types';
 import {
   browserPool,
@@ -34,6 +35,7 @@ import {
 } from './BrowserResumeStateStore';
 import { importBrowserStorageStateForOrigin } from './CronBrowserLoginState';
 import { MANAGED_BROWSER_DEFAULT_LEASE_TTL_MS } from '../infra/browser/managedBrowserHelpers';
+import { compactSurfaceExecutionMetadata } from '../../../shared/utils/surfaceExecutionProjection';
 
 const DEFAULT_PROVIDER = 'system-chrome-cdp';
 const SURFACE_PROFILE_TTL_MS = 30 * 60_000;
@@ -151,8 +153,11 @@ function artifactRefsFromResult(result: ToolExecutionResult): string[] {
 }
 
 function domSnapshotFromResult(result: ToolExecutionResult): BrowserDomSnapshot | null {
-  const candidate = result.metadata?.domSnapshot;
-  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return null;
+  const raw = result.metadata?.domSnapshot;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  // browser_action keeps only a summary in metadata; the full record is parked host-side by snapshotId.
+  const summaryId = (raw as { snapshotId?: unknown }).snapshotId;
+  const candidate = (typeof summaryId === 'string' ? takeHostDomSnapshot(summaryId) : null) ?? raw;
   const snapshot = candidate as Partial<BrowserDomSnapshot>;
   if (typeof snapshot.snapshotId !== 'string'
     || typeof snapshot.tabId !== 'string'
@@ -791,19 +796,20 @@ export class ManagedBrowserProviderAdapter {
       actionResult?: unknown;
     },
   ): ToolExecutionResult {
+    const metadata = compactSurfaceExecutionMetadata({
+      ...(result.metadata || {}),
+      provider: binding.provider,
+      engine: 'managed',
+      surfaceSessionId: binding.surfaceSessionId,
+      surfaceExecutionSessionV1: surface.session,
+      ...(surface.observation ? { surfaceObservationV1: surface.observation } : {}),
+      ...(surface.actionResult ? { surfaceExecutionActionResultV1: surface.actionResult } : {}),
+      surfaceExecutionEventsV1: surface.events,
+      managedProfileMode: binding.profileMode,
+    });
     return {
       ...result,
-      metadata: {
-        ...(result.metadata || {}),
-        provider: binding.provider,
-        engine: 'managed',
-        surfaceSessionId: binding.surfaceSessionId,
-        surfaceExecutionSessionV1: surface.session,
-        ...(surface.observation ? { surfaceObservationV1: surface.observation } : {}),
-        ...(surface.actionResult ? { surfaceExecutionActionResultV1: surface.actionResult } : {}),
-        surfaceExecutionEventsV1: surface.events,
-        managedProfileMode: binding.profileMode,
-      },
+      metadata,
     };
   }
 

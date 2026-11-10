@@ -44,6 +44,7 @@ import {
   type MailEventFields,
 } from './cronMailPoller';
 import { resolveCronEventActionMode } from '../../shared/cronEventActionMode';
+import { truncateObserveText } from '../tools/observeModeGate';
 import { sqliteCronEventDecisionStore, type CronEventDecisionStore } from './cronEventDecisionLedger';
 import {
   buildEventDecisionInstruction,
@@ -523,10 +524,20 @@ export class CronEventTrigger {
       console.error(`[CronEventTrigger] Event run failed for job ${jobId}:`, error);
     }
     try {
+      const carriedEventLabels = carried.reduce<Record<string, string>>((labels, event) => {
+        if (!event.mail) return labels;
+        const label = truncateObserveText(
+          [event.senderName, event.mail.subject].map((part) => part.trim()).filter(Boolean).join(' · '),
+          CRON_EVENT_DECISIONS.MAX_EVENT_LABEL_CHARS,
+        );
+        if (label) labels[event.messageId] = label;
+        return labels;
+      }, {});
       this.decisionStore.record(settleEventRunDecisions({
         jobId,
         mode: resolveCronEventActionMode(definition) ?? 'observe',
         carriedEventIds: carried.map((event) => event.messageId),
+        ...(Object.keys(carriedEventLabels).length > 0 ? { carriedEventLabels } : {}),
         dropped: droppedEvents,
         execution,
         runError,

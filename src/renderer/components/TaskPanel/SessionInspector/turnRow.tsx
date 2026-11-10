@@ -1,3 +1,4 @@
+import { resolveRunCancellationOutcomeKey } from '../../../i18n/outcomeWords';
 // ============================================================================
 // SessionInspector 层1 轮行（N-LEDGER-UX1：A 汇总句可展开 / B 异常黄条 / C 活行）
 // ----------------------------------------------------------------------------
@@ -20,6 +21,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useI18n } from '../../../hooks/useI18n';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import { fill } from './format';
 import type { TurnSegment } from './model';
 import { TurnDevtools } from './turnDevtools';
@@ -59,21 +61,23 @@ function resolveTerminalOutcome(segment: TurnSegment, t: Translations) {
     ? t.outcomeWords['failed-approval-denied'].badge
     : failedCode === AgentFailureCode.Timeout
       ? t.outcomeWords['failed-timeout'].badge
-      : failedCode === AgentFailureCode.BudgetExhausted
-        ? t.outcomeWords['failed-budget'].badge
-        : failedCode === AgentFailureCode.DependencyFailed || failedCode === AgentFailureCode.DependencyMissing
-          ? t.outcomeWords['failed-dependency'].badge
-          : failedCode === AgentFailureCode.ModelError
-            ? t.outcomeWords['failed-model'].badge
-            : failedCode === AgentFailureCode.ToolUnavailable
-              ? t.outcomeWords['failed-unavailable'].badge
-              : segment.failedToolCount > 0
-                ? t.outcomeWords['failed-tool'].badge
-                : t.outcomeWords['failed-unknown'].badge;
+      : failedCode === AgentFailureCode.InvalidArguments
+        ? t.outcomeWords['failed-tool'].badge
+        : failedCode === AgentFailureCode.BudgetExhausted
+          ? t.outcomeWords['failed-budget'].badge
+          : failedCode === AgentFailureCode.DependencyFailed || failedCode === AgentFailureCode.DependencyMissing
+            ? t.outcomeWords['failed-dependency'].badge
+            : failedCode === AgentFailureCode.ModelError
+              ? t.outcomeWords['failed-model'].badge
+              : failedCode === AgentFailureCode.ToolUnavailable
+                ? t.outcomeWords['failed-unavailable'].badge
+                : segment.failedToolCount > 0
+                  ? t.outcomeWords['failed-tool'].badge
+                  : t.outcomeWords['failed-unknown'].badge;
   return terminal === 'completed'
     ? t.outcomeWords.completed.badge
     : terminal === 'cancelled'
-      ? t.outcomeWords['cancelled-by-user'].badge
+      ? t.outcomeWords[resolveRunCancellationOutcomeKey(segment.stamp?.cancelReason)].badge
       : terminal === 'interrupted'
         ? t.outcomeWords['interrupted-restart'].badge
         : terminal === 'failed'
@@ -119,7 +123,7 @@ function StampChip({ segment }: { segment: TurnSegment }) {
         <span data-testid="inspector-stamp-qualifier">{stamp.evidencedQualifier}</span>
         {segment.stamp.evidenceCount > 0 && (
           <span className="opacity-70">
-            · {fill(t.sessionInspector.evidenceCount, { count: String(segment.stamp.evidenceCount) })}
+            · {interpolatePlural(t.sessionInspector.evidenceCount, segment.stamp.evidenceCount)}
           </span>
         )}
       </span>
@@ -183,11 +187,11 @@ function TurnActivitySummary({ segment }: { segment: TurnSegment }) {
   const detail = t.sessionInspector.activityDetail;
   const [showDetail, setShowDetail] = useState(false);
   const parts: string[] = [];
-  if (segment.toolCounts.read > 0) parts.push(fill(activity.read, { count: String(segment.toolCounts.read) }));
-  if (segment.toolCounts.write > 0) parts.push(fill(activity.write, { count: String(segment.toolCounts.write) }));
-  if (segment.toolCounts.command > 0) parts.push(fill(activity.command, { count: String(segment.toolCounts.command) }));
-  if (segment.toolCounts.browser > 0) parts.push(fill(activity.browser, { count: String(segment.toolCounts.browser) }));
-  if (segment.toolCounts.other > 0) parts.push(fill(activity.otherTool, { count: String(segment.toolCounts.other) }));
+  if (segment.toolCounts.read > 0) parts.push(interpolatePlural(activity.read, segment.toolCounts.read));
+  if (segment.toolCounts.write > 0) parts.push(interpolatePlural(activity.write, segment.toolCounts.write));
+  if (segment.toolCounts.command > 0) parts.push(interpolatePlural(activity.command, segment.toolCounts.command));
+  if (segment.toolCounts.browser > 0) parts.push(interpolatePlural(activity.browser, segment.toolCounts.browser));
+  if (segment.toolCounts.other > 0) parts.push(interpolatePlural(activity.otherTool, segment.toolCounts.other));
   // A：≥2 次工具调用才给明细入口；单工具轮不聚合、保持原样
   const hasDetail = segment.toolDispatches.length >= 2;
   return (

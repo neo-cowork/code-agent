@@ -71,6 +71,13 @@ export const enSettingsSystem = {
         cacheClearedPrefix: 'Cleared ',
         cacheClearedSuffix: ' local cache records',
       },
+      cacheRetention: {
+        failedPermission: '{count} cache items could not be deleted: no delete permission. Check the data folder permissions in Finder and try again',
+        failedOther: '{count} cache items could not be deleted and this cleanup did not finish. You can retry later',
+        openFolder: 'Open data folder',
+        retry: 'Retry',
+        details: 'Details',
+      },
       persistence: {
         title: 'History persistence is unavailable',
         degradedTitle: 'Storage is degraded',
@@ -164,7 +171,7 @@ export const enSettingsSystem = {
         installedNeedsRestart: 'Update downloaded and installed. Restart Agent Neo to apply it.',
         installFailed: 'Update installation failed, please try again later',
         confirmTitle: 'Install update?',
-        confirmRunningMessage: 'This will interrupt {count} running task(s). The app restarts automatically after installing. Continue?',
+        confirmRunningMessage: { one: 'This will interrupt {count} running task. The app restarts automatically after installing. Continue?', other: 'This will interrupt {count} running tasks. The app restarts automatically after installing. Continue?' },
         confirmUnknownMessage: 'Unable to confirm whether tasks are running. The app restarts automatically after installing and may interrupt them. Continue?',
         confirmAction: 'Install anyway',
         confirmCancel: 'Cancel',
@@ -266,6 +273,12 @@ export const enSettingsSystem = {
           bootStage: 'Boot stage',
           channelIsolation: 'Channel isolation',
           resourceCheck: 'Resource check',
+          resourcePresent: 'present',
+          resourceMissing: 'missing',
+          resourceNotExecutable: 'not executable',
+          resourceUnknown: 'unknown',
+          resourceOptional: 'optional',
+          copyPath: 'Copy path',
           runtimeAssets: 'Runtime assets',
           runtimeLedger: 'Runtime asset ledger',
           systemPermissions: 'System permissions',
@@ -283,6 +296,7 @@ export const enSettingsSystem = {
     webModeBanner: {
       desktopOnlyFeature: 'Some features are only available in the desktop app',
       desktopOnlyLabel: '(desktop app)',
+      channelsManageDesktopOnly: 'The web app can only view channel accounts and their status. To add, connect/disconnect, edit or delete them, use the desktop Agent Neo app.',
     },
     nativeDesktop: {
       meetingAppNames: [
@@ -380,6 +394,12 @@ export const enSettingsSystem = {
           photos: 'Search and organize the local photo library.',
           reminders: 'Read and manage reminders on this Mac.',
         },
+        statusDetail: {
+          ready: 'Local access check passed; ready to use.',
+          unchecked: 'Enabled, but local access hasn\'t been checked yet. Click “Check” to open the app or request system permission.',
+          failed: 'The access check didn\'t pass. Click “Repair permissions”, then try again.',
+          unavailable: 'Only available on macOS.',
+        },
       },
       loading: 'Loading…',
       otherConnectors: 'Other connectors',
@@ -442,7 +462,7 @@ export const enSettingsSystem = {
       clientSecretSaved: 'App Secret saved ✓',
       availableActionsPrefix: 'Available actions: ',
       details: {
-        missingClientId: 'This build does not include a client_id, so authorization cannot start.',
+        missingClientId: 'This version cannot connect to this service yet. Update to the latest version or contact your administrator.',
         needsSecret: 'Enter your App Secret before connecting. Find it in the Feishu Open Platform console.',
         ready: 'Ready to connect. This opens the Feishu authorization page in your system browser and returns to Neo automatically.',
         noSecretRequired: 'This provider does not require an App Secret, so you can connect directly.',
@@ -581,6 +601,7 @@ export const enSettingsSystem = {
       section: {
         title: 'Local bridge service',
         description: 'The local bridge service lets the web app operate the local file system. Once installed, full file operations are available in the browser.',
+        serviceAddress: 'Service address:',
       },
       status: {
         connected: 'Connected',
@@ -601,9 +622,13 @@ export const enSettingsSystem = {
         copied: 'Copied',
         autoDetect: 'Auto-detected',
         install: 'Install',
+        downloadLatest: 'Download latest version',
         updateAndUninstall: 'Update & uninstall',
         update: 'Update',
         uninstall: 'Uninstall',
+        uninstallDescription: 'If you no longer need the local bridge you can uninstall it: this stops the background service and deletes its local files, and needs the terminal.',
+        viewManualUninstallSteps: 'View manual uninstall steps (advanced)',
+        uninstallRiskHint: 'The sudo part needs the admin password, and the command deletes the local bridge folder; please confirm before running.',
       },
       workingDirectory: {
         emptyDirectory: '(empty directory)',

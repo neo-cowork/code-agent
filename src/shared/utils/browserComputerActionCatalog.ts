@@ -146,6 +146,8 @@ const BROWSER_ACTION_CATALOG: ActionCatalogMap = {
   forward: { ...WRITE_BROWSER_DEFAULTS, consequence: "no_external_side_effect" },
   reload: { ...WRITE_BROWSER_DEFAULTS, consequence: "no_external_side_effect" },
   set_viewport: { ...WRITE_BROWSER_DEFAULTS, consequence: "no_external_side_effect" },
+  // Most clicks are local page interactions. Permission classification probes
+  // the live target because a submit control can send form data or cross origin.
   click: { ...WRITE_BROWSER_DEFAULTS, consequence: "no_external_side_effect" },
   click_text: { ...WRITE_BROWSER_DEFAULTS, consequence: "no_external_side_effect" },
   type: { ...WRITE_BROWSER_DEFAULTS, consequence: "no_external_side_effect" },
@@ -176,6 +178,7 @@ const BROWSER_ACTION_CATALOG: ActionCatalogMap = {
     evidenceKind: "artifact",
     approvalKind: "tool_executor_file",
   },
+  // Filling fields alone sends nothing; submission is classified on the click.
   fill_form: { ...WRITE_BROWSER_DEFAULTS, consequence: "no_external_side_effect" },
   // execute_goal stays in the catalog for runtime lookup. Schema enum and
   // description advertise it only when CODE_AGENT_BROWSER_JEV_STEP=1. Calling
@@ -183,6 +186,15 @@ const BROWSER_ACTION_CATALOG: ActionCatalogMap = {
   // loop escalates approval itself (payment/delete/auth forceConfirm); catalog
   // matches handle_dialog: write + tool_executor, not high_risk.
   execute_goal: { ...WRITE_BROWSER_DEFAULTS, consequence: "external_side_effect" },
+  // OS-level system-browser actions exposed by the model-facing `Browser` tool.
+  // They drive the user's real browser, so they keep asking.
+  open: { ...WRITE_BROWSER_DEFAULTS, consequence: "external_side_effect" },
+  nav_back: { ...WRITE_BROWSER_DEFAULTS, consequence: "external_side_effect" },
+  nav_forward: { ...WRITE_BROWSER_DEFAULTS, consequence: "external_side_effect" },
+  refresh: { ...WRITE_BROWSER_DEFAULTS, consequence: "external_side_effect" },
+  close_window: { ...WRITE_BROWSER_DEFAULTS, consequence: "external_side_effect" },
+  newTab: { ...WRITE_BROWSER_DEFAULTS, consequence: "external_side_effect" },
+  switchTab: { ...WRITE_BROWSER_DEFAULTS, consequence: "external_side_effect" },
   list_tabs: {
     ...READ_BROWSER_DEFAULTS,
     consequence: "no_external_side_effect",
@@ -377,7 +389,7 @@ export function normalizeBrowserComputerCatalogToolName(
   toolName: unknown,
 ): BrowserComputerCatalogTool | null {
   if (typeof toolName !== "string") return null;
-  if (toolName === "browser_action") return "browser_action";
+  if (toolName === "browser_action" || toolName === "Browser") return "browser_action";
   if (toolName === "computer_use" || toolName === "Computer" || toolName === "computer") {
     return "computer_use";
   }

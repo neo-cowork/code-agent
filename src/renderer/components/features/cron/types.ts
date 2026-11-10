@@ -12,8 +12,12 @@ import type {
   WebhookAction,
 } from '@shared/contract';
 import { validateEventScheduleConstraints } from '@shared/cronEventValidation';
-import { CRON_EVENT_TRIGGER } from '@shared/constants';
+import { isCronPermissionDeniedMarker } from '@shared/cronPermissionDenied';
+import { CRON_AGENT_TYPES, CRON_EVENT_TRIGGER } from '@shared/constants';
 import { formatCronExpressionLabel, humanizeEverySchedule, type CronHumanLang } from '@shared/cronHumanize';
+import { redactCommandKeywordSecrets, redactCredentialText } from '@shared/security/secretPatterns';
+import { formatDateTime } from '../../../utils/formatDateTime';
+import { getBuiltinJobDisplay } from './builtinJobDisplay';
 
 export interface CronJobDraft {
   runsOn: CronJobDefinition['runsOn'];
@@ -127,7 +131,7 @@ export function createDefaultCronJobDraft(): CronJobDraft {
     shellUsePty: false,
     toolName: '',
     toolParametersText: '{}',
-    agentType: '',
+    agentType: 'default',
     agentPrompt: '',
     agentContextText: '{}',
     agentRoleId: '',
@@ -286,7 +290,8 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
     enabled: draft.enabled,
     maxRetries: parseOptionalNumber(draft.maxRetries) ?? 0,
     retryDelay: parseOptionalNumber(draft.retryDelay),
-    timeout: parseOptionalNumber(draft.timeout),
+    // Explicit null survives JSON transport so clearing overrides the previous value.
+    timeout: parseOptionalNumber(draft.timeout) ?? null,
     // 清空/不支持的额度字段必须送 null 而不是 undefined：HTTP 传输 JSON.stringify 会丢
     // undefined 键，而 host updateJob 是 {...existing, ...updates} 合并——缺键=保留旧值，
     // 「清空上限」会静默不生效，编辑带 maxRuns 的任务上云端也会把旧值继承回去
@@ -407,6 +412,9 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
     if (!draft.agentType.trim()) {
       throw new Error('Agent 类型不能为空');
     }
+    if (!(CRON_AGENT_TYPES as readonly string[]).includes(draft.agentType.trim())) {
+      throw new Error(`Agent 类型“${draft.agentType.trim()}”不存在，可选值：${CRON_AGENT_TYPES.join('、')}。`);
+    }
     if (!draft.agentPrompt.trim()) {
       throw new Error('Prompt 不能为空');
     }
@@ -465,27 +473,37 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
   };
 }
 
-export function formatDateTime(value?: string | number): string {
-  if (value == null) return '未设置';
-  const date = typeof value === 'number' ? new Date(value) : new Date(value);
-  if (Number.isNaN(date.getTime())) return '无效时间';
-  return date.toLocaleString();
-}
+// 详情页时间统一走 utils/formatDateTime（FB-567/FB-570；N-CRON-DETAIL-TIME-FORMAT-MIXED-FU1
+// 迁出供全 renderer 复用）。运行列表仍用 formatRunListTime（月/日短格式，避免撑出容器）。
 
 /** 运行记录表的时间：月/日 + 时/分。详情仍用完整本地时间，避免两列日期把表撑出容器。 */
 export function formatRunListTime(value?: string | number): string {
   if (value == null) return '—';
-  const date = typeof value === 'number' ? new Date(value) : new Date(value);
+  const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '—';
   const pad = (part: number) => String(part).padStart(2, '0');
   return `${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-export function formatDuration(ms?: number): string {
-  if (ms == null) return '—';
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${(ms / 60_000).toFixed(1)}m`;
+/**
+ * 运行耗时的人话显示：<1s / N 秒 / X 分 Y 秒 / X 小时 Y 分 / X 天 Y 小时，末尾为 0 的部分省略。
+ * 先取整到秒再按余数拆分，59.9s 才会正确进位成 1 分。
+ */
+export function formatDuration(ms?: number | null, lang: CronHumanLang = 'zh'): string {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return '—';
+  const zh = lang === 'zh';
+  if (ms === 0) return '0s';
+  if (ms < 1000) return '<1s';
+  const total = Math.round(ms / 1000);
+  const units = zh ? ['天', '小时', '分', '秒'] : ['d', 'h', 'm', 's'];
+  const sizes = [86400, 3600, 60, 1];
+  const start = sizes.findIndex((size) => total >= size);
+  const major = Math.floor(total / sizes[start]);
+  const minor = start + 1 < sizes.length ? Math.floor((total % sizes[start]) / sizes[start + 1]) : 0;
+  const part = (value: number, unit: string) => (zh ? `${value} ${unit}` : `${value}${unit}`);
+  const text = [part(major, units[start])];
+  if (minor > 0) text.push(part(minor, units[start + 1]));
+  return text.join(' ');
 }
 
 /** 单次运行/每日小计的美元显示（保留 4 位小数）。无模型调用与云端运行都是 dash。 */
@@ -507,7 +525,7 @@ export function formatScheduleSummary(
 ): string {
   switch (job.schedule.type) {
     case 'at':
-      return `一次性 · ${formatDateTime(job.schedule.datetime)}`;
+      return `一次性 · ${formatDateTime(job.schedule.datetime, lang)}`;
     case 'every': {
       if ((job.schedule.unit as string) === 'weeks') {
         return `不支持的周间隔 · ${job.schedule.interval} weeks`;
@@ -543,16 +561,18 @@ export function formatScheduleSummary(
   }
 }
 
-export function formatActionSummary(job: CronJobDefinition): string {
+export function formatActionSummary(job: CronJobDefinition, lang: CronHumanLang = 'zh'): string {
+  const builtin = getBuiltinJobDisplay(job, lang);
+  if (builtin) return builtin.actionLabel;
   switch (job.action.type) {
     case 'shell':
-      return job.action.command;
+      return redactCronDisplayText(job.action.command);
     case 'tool':
       return `${job.action.toolName}()`;
     case 'agent':
       // agentType 是自由文本标签（'default' / 'heartbeat'），不是注册表键，执行链只用 roleId+prompt。
       // 直接显示它等于往列表里种一行 "default agent" 这种没信息量的开发者字串。
-      return job.action.prompt;
+      return redactCronDisplayText(job.action.prompt);
     case 'webhook':
       return `${job.action.method} ${job.action.url}`;
     case 'ipc':
@@ -562,7 +582,15 @@ export function formatActionSummary(job: CronJobDefinition): string {
   }
 }
 
-export function getExecutionStatusMeta(status: CronJobStatus): { label: string; className: string } {
+/** Renderer-only masking for user-visible automation text; stored actions stay byte-identical. */
+export function redactCronDisplayText(value: string): string {
+  return redactCommandKeywordSecrets(
+    redactCredentialText(value, { redacted: '***REDACTED***' }),
+    { redacted: '***REDACTED***' },
+  );
+}
+
+function getExecutionStatusMeta(status: CronJobStatus): { label: string; className: string } {
   switch (status) {
     case 'completed':
       return { label: '成功', className: 'text-badge-success bg-emerald-500/10' };
@@ -581,6 +609,20 @@ export function getExecutionStatusMeta(status: CronJobStatus): { label: string; 
   }
 }
 
+/**
+ * 完成态运行是否要按「需处理」呈现（N-CRON-RUN-COMPLETED-BUT-DENIED）：结果带
+ * permissionDenied 标记 = 有命令没获批准且没有产出。状态仍是 completed——调用方
+ * 只换徽章文案与配色，不改任何状态语义。旧结果无标记恒 false（绿色成功不变）。
+ */
+export function isPermissionDeniedExecution(
+  execution: Pick<CronJobExecution, 'status' | 'result'>,
+): boolean {
+  const result = execution.result;
+  return execution.status === 'completed'
+    && typeof result === 'object' && result !== null
+    && isCronPermissionDeniedMarker((result as { permissionDenied?: unknown }).permissionDenied);
+}
+
 export function prettyJson(value: unknown): string {
   if (value == null) return '—';
   if (typeof value === 'string') return value;
@@ -591,11 +633,16 @@ export function prettyJson(value: unknown): string {
   }
 }
 
+/** Shared localized verdict for run rows, run details and latest-run summaries. */
 export function getLatestExecutionStatus(
-  execution?: CronJobExecution | null
+  execution: CronJobExecution | null | undefined,
+  copy: { status: Record<CronJobStatus | 'none', string>; permissionDeniedBadge: string },
 ): { label: string; className: string } {
   if (!execution) {
-    return { label: '未执行', className: 'text-zinc-300 bg-zinc-500/10' };
+    return { label: copy.status.none, className: 'text-zinc-300 bg-zinc-500/10' };
   }
-  return getExecutionStatusMeta(execution.status);
+  if (isPermissionDeniedExecution(execution)) {
+    return { label: copy.permissionDeniedBadge, className: 'text-badge-warning bg-amber-500/10' };
+  }
+  return { label: copy.status[execution.status], className: getExecutionStatusMeta(execution.status).className };
 }

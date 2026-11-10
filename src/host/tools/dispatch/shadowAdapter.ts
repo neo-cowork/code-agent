@@ -16,7 +16,11 @@ import type {
   PlanModeController,
 } from '../../protocol/tools';
 import type { AgentEvent } from '../../protocol/events';
-import type { ToolContext as LegacyToolContext, ToolExecutionResult } from '../types';
+import type {
+  PermissionRequestData,
+  ToolContext as LegacyToolContext,
+  ToolExecutionResult,
+} from '../types';
 import { hasProtocolTool, resolveProtocolTool } from '../protocolToolRegistration';
 import { sameToolName } from '../toolNames';
 import { getActiveRunTraceContext } from '../../telemetry/runTraceContext';
@@ -121,6 +125,10 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
 
   return {
     runId: input.runId,
+    // FB-772：委托幂等键（submission_key）按发起轮 origin_turn_id 派生，漏搬 =
+    // 协议工具恒看到 undefined，delegate_session 只能落跨轮共享的 'unknown-turn'
+    // 常量，同目标第二个不同正文的委托被 G4 误拒。
+    turnId: input.legacyCtx.turnId,
     sourceMessageId: input.legacyCtx.sourceMessageId,
     sessionId: input.sessionId ?? 'protocol-unknown',
     workspace: input.workspace,
@@ -142,6 +150,7 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
     foregroundToolFace: legacy?.foregroundToolFace === true ? true : undefined,
     skillDiscoveryService: legacy?.skillDiscoveryService,
     telemetryCollector: legacy?.telemetryCollector,
+    neoTag: input.legacyCtx.neoTag,
     // PTC 再入口原样透传：由 ToolExecutor 绑定，adapter 只搬运不改写
     // （漏搬 = PTC 通道在真实调用路径上恒关闭，而单测里注入 ctx 又永远是通的）。
     executeTool: legacy?.executeTool as ProtocolToolContext['executeTool'],
@@ -177,6 +186,7 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
     toolScope: legacy?.toolScope as ProtocolToolContext['toolScope'],
     executionIntent: legacy?.executionIntent as ProtocolToolContext['executionIntent'],
     traceContext: getActiveRunTraceContext(),
+    approvedSandboxWriteFile: input.legacyCtx.approvedToolCall?.sandboxWriteFile,
     directiveMemoryWriteGrant: input.legacyCtx.directiveMemoryWriteGrant,
   };
 }
@@ -222,7 +232,7 @@ export function buildCanUseToolFromLegacy(
             : 'command');
 
     try {
-      const allowed = await legacyCtx.requestPermission({
+      const permissionRequest: PermissionRequestData = {
         sessionId: requestHint?.sessionId,
         agentId: requestHint?.agentId,
         runId: requestHint?.runId,
@@ -234,9 +244,15 @@ export function buildCanUseToolFromLegacy(
         reason: requestHint?.reason ?? cleanReason ?? `protocol tool ${requestedToolName}`,
         dangerLevel: requestHint?.dangerLevel,
         decisionTrace: requestHint?.decisionTrace as never,
-      });
+        ...(requestHint?.ledgerRecordedByChild ? { ledgerRecordedByChild: true } : {}),
+      };
+      const allowed = await legacyCtx.requestPermission(permissionRequest);
+      const ask = legacyCtx.permissionAskResults?.get(permissionRequest);
       return allowed
-        ? { allow: true }
+        ? {
+            allow: true,
+            ...(ask?.approved && ask.approvalSource ? { approvalSource: ask.approvalSource } : {}),
+          }
         : { allow: false, reason: reason ?? 'denied by user' };
     } catch (err) {
       return {

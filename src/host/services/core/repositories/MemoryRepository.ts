@@ -39,7 +39,7 @@ function parseJsonRecord(value: unknown): Record<string, unknown> {
 const journalLogger = createLogger('MemoryRepository');
 
 /** 记忆变更日志（N-MEM-JOURNAL-SOURCEJUMP）：before/after 快照 = {summary,status,content} 的截断 JSON */
-function journalSnapshot(record: MemoryRecord): string {
+function journalSnapshot(record: Pick<MemoryRecord, 'summary' | 'status' | 'content'>): string {
   const snapshot = JSON.stringify({
     summary: record.summary ?? null,
     status: record.status ?? 'active',
@@ -528,6 +528,26 @@ export class MemoryRepository {
     }));
   }
 
+  /** File-based entries keep their external key without creating a memories-table mirror. */
+  appendFileMemoryJournal(input: {
+    entryId: string;
+    before: Pick<MemoryRecord, 'summary' | 'status' | 'content'> | null;
+    after: Pick<MemoryRecord, 'summary' | 'status' | 'content'>;
+    journal: MemoryChangeJournalContext;
+    timestamp?: number;
+  }): void {
+    this.insertJournalRow({
+      timestamp: input.timestamp ?? Date.now(),
+      operation: input.before === null ? 'create' : 'update',
+      memoryId: input.entryId,
+      entryId: input.entryId,
+      actor: input.journal.actor,
+      beforeContent: input.before ? journalSnapshot(input.before) : null,
+      afterContent: journalSnapshot(input.after),
+      sessionId: input.journal.sessionId ?? null,
+    });
+  }
+
   /**
    * 追加一行变更日志。fail-safe：日志写失败只 warn，绝不拦记忆写入本身
    * （与 trace finalizer 同款纪律）。
@@ -545,25 +565,32 @@ export class MemoryRepository {
       ?? before?.sessionId
       ?? null;
     const entryId = journalEntryId(after?.metadata ?? anchor.metadata ?? {});
+    this.insertJournalRow({
+      timestamp: Date.now(),
+      operation,
+      memoryId: anchor.id,
+      entryId,
+      actor: journal?.actor ?? 'unknown',
+      beforeContent: before ? journalSnapshot(before) : null,
+      afterContent: after ? journalSnapshot(after) : null,
+      sessionId,
+    });
+  }
+
+  private insertJournalRow(row: Omit<MemoryChangeJournalRow, 'id'>): void {
     try {
       this.db.prepare(`
         INSERT INTO memory_change_journal (timestamp, operation, memory_id, entry_id, actor, before_content, after_content, session_id)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        Date.now(),
-        operation,
-        anchor.id,
-        entryId,
-        journal?.actor ?? 'unknown',
-        before ? journalSnapshot(before) : null,
-        after ? journalSnapshot(after) : null,
-        sessionId,
+        row.timestamp, row.operation, row.memoryId, row.entryId, row.actor,
+        row.beforeContent, row.afterContent, row.sessionId,
       );
     } catch (error) {
       journalLogger.warn('Memory change journal append failed (memory write kept)', {
-        memoryId: anchor.id,
-        operation,
-        actor: journal?.actor ?? 'unknown',
+        memoryId: row.memoryId,
+        operation: row.operation,
+        actor: row.actor,
         error: error instanceof Error ? error.message : String(error),
       });
     }

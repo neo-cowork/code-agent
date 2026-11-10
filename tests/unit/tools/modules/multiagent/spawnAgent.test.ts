@@ -25,6 +25,7 @@ import {
   spawnAgentModule,
   agentSpawnModule,
 } from '../../../../../src/host/tools/modules/multiagent/spawnAgent';
+import { executeTaskStatus } from '../../../../../src/host/tools/modules/commandCenter/sessionCommandCenter';
 import { getBackgroundSubagentRegistry } from '../../../../../src/host/agent/backgroundSubagentRegistry';
 
 function makeLogger(): Logger {
@@ -47,6 +48,14 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
 
 const allowAll: CanUseToolFn = async () => ({ allow: true });
 const denyAll: CanUseToolFn = async () => ({ allow: false, reason: 'no' });
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -126,6 +135,83 @@ describe('spawn_agent five-link gates', () => {
     if (!result.ok) expect(result.code).toBe('NOT_INITIALIZED');
     expect(executeSpawnAgentMock).not.toHaveBeenCalled();
   });
+
+  // N-CAP-NOTICE-LEAK：派发入口输入校验。空/缺 task 的后台 spawn 修复前会先
+  // 注册一个注定失败的占位子 agent（真机：模型把注入块当任务派「跳过占位」，
+  // 占位子代理失败、主会话整轮失败）；agents 数组缺 task 会在 service 层炸裸
+  // TypeError。入口提前返回可读 INVALID_ARGS，模型立刻能自我纠正。
+  it('run_in_background + 空 task → 入口 INVALID_ARGS，不注册占位后台子代理', async () => {
+    const before = getBackgroundSubagentRegistry().list().length;
+    const handler = await spawnAgentModule.createHandler();
+    const result = await handler.execute(
+      { role: 'coder', run_in_background: true },
+      makeCtx(),
+      allowAll,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('INVALID_ARGS');
+      expect(result.error).toContain('task');
+    }
+    expect(executeSpawnAgentMock).not.toHaveBeenCalled();
+    expect(getBackgroundSubagentRegistry().list().length).toBe(before);
+  });
+
+  it('task 为空白字符串 → 同样 INVALID_ARGS（空白不当作有效任务）', async () => {
+    const handler = await spawnAgentModule.createHandler();
+    const result = await handler.execute(
+      { role: 'coder', task: '   ', run_in_background: true },
+      makeCtx(),
+      allowAll,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('INVALID_ARGS');
+    expect(executeSpawnAgentMock).not.toHaveBeenCalled();
+  });
+
+  it('parallel agents 缺 task → 入口 INVALID_ARGS，可读错误指明是第几项', async () => {
+    const handler = await spawnAgentModule.createHandler();
+    const result = await handler.execute(
+      { parallel: true, agents: [{ role: 'coder', task: 'ok' }, { role: 'explorer' }] },
+      makeCtx(),
+      allowAll,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('INVALID_ARGS');
+      expect(result.error).toContain('agents[1].task');
+    }
+    expect(executeSpawnAgentMock).not.toHaveBeenCalled();
+  });
+
+  it('parallel agents 缺 role → 入口 INVALID_ARGS', async () => {
+    const handler = await spawnAgentModule.createHandler();
+    const result = await handler.execute(
+      { parallel: true, agents: [{ task: '做点什么' }] },
+      makeCtx(),
+      allowAll,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('INVALID_ARGS');
+      expect(result.error).toContain('agents[0].role');
+    }
+    expect(executeSpawnAgentMock).not.toHaveBeenCalled();
+  });
+
+  it('合法后台 spawn 不受入口校验影响：照常注册后台子代理', async () => {
+    executeSpawnAgentMock.mockResolvedValue({ success: true, output: 'bg done' });
+    const handler = await spawnAgentModule.createHandler();
+    const result = await handler.execute(
+      { role: 'coder', task: 'background work', run_in_background: true },
+      makeCtx(),
+      allowAll,
+    );
+    expect(result.ok).toBe(true);
+    await vi.waitFor(() => {
+      expect(executeSpawnAgentMock).toHaveBeenCalled();
+    });
+  });
 });
 
 describe('spawn_agent dispatch to protocol-native service', () => {
@@ -168,6 +254,30 @@ describe('spawn_agent dispatch to protocol-native service', () => {
     );
     expect(onProgress).toHaveBeenCalledWith({ stage: 'starting', detail: 'spawn_agent' });
     expect(onProgress).toHaveBeenCalledWith({ stage: 'completing', percent: 100 });
+  });
+
+  it('stores the report only once while preserving artifact identity', async () => {
+    const marker = 'A tested recovery plan is missing.';
+    executeSpawnAgentMock.mockResolvedValue({ success: true, output: marker });
+    const handler = await spawnAgentModule.createHandler();
+    const result = await handler.execute({ role: 'explore', task: 'Review risks' }, makeCtx(), allowAll);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(JSON.stringify(result).split(marker)).toHaveLength(2);
+    expect(result.meta?.artifact).toMatchObject({
+      artifactId: expect.any(String), name: 'spawn_agent result', contentLength: marker.length,
+    });
+  });
+
+  it('stores the foreground budget hand-off output once', async () => {
+    const marker = 'Agent [Explorer] exceeded foreground budget and continues in background:';
+    executeSpawnAgentMock.mockResolvedValue({ success: true, output: `${marker}\n- foreground_budget_ms=1000` });
+    const handler = await spawnAgentModule.createHandler();
+    const result = await handler.execute({ role: 'explore', task: 'Review risks' }, makeCtx(), allowAll);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(JSON.stringify(result).split(marker)).toHaveLength(2);
+    expect(result.meta?.artifacts).toBeUndefined();
   });
 
   it('normalizes public role aliases before dispatching to native spawn', async () => {
@@ -238,6 +348,87 @@ describe('spawn_agent dispatch to protocol-native service', () => {
     expect(childSignal).not.toBe(parent.signal);
     parent.abort('parent-finished');
     expect(childSignal?.aborted).toBe(false);
+  });
+
+  it('run_in_background receipt is user-facing and task_status lists the running sub-agent', async () => {
+    const sessionId = 'background-status-running-session';
+    const gate = deferred<{ success: true; output: string }>();
+    executeSpawnAgentMock.mockReturnValue(gate.promise);
+    const handler = await spawnAgentModule.createHandler();
+    const result = await handler.execute(
+      { role: 'coder', task: '整理三份会议笔记中的行动项', run_in_background: true },
+      makeCtx({ sessionId }),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.output).toContain('已在后台开始处理「整理三份会议笔记中的行动项」');
+    expect(result.output).toContain('- Agent ID: ');
+    expect(result.output).not.toContain('前台不阻塞');
+    expect(result.output).not.toContain('查询状态');
+
+    const agentId = result.meta?.agentId as string;
+    await vi.waitFor(() => expect(getBackgroundSubagentRegistry().getStatus(agentId)?.status).toBe('running'));
+    const status = await executeTaskStatus({}, makeCtx({ sessionId }), allowAll);
+    expect(status).toEqual({
+      ok: true,
+      output: expect.stringContaining(`1. coder [running] id=${agentId} duration=`),
+      meta: { sessionTask: { outcome: 'status', tasks: [] } },
+    });
+
+    gate.resolve({ success: true, output: '已列出行动项' });
+    await vi.waitFor(() => expect(getBackgroundSubagentRegistry().getStatus(agentId)?.status).toBe('completed'));
+  });
+
+  it('task_status lists a completed spawn_agent sub-agent with its result', async () => {
+    const sessionId = 'background-status-completed-session';
+    executeSpawnAgentMock.mockResolvedValue({ success: true, output: '行动项：确认负责人和截止时间' });
+    const handler = await spawnAgentModule.createHandler();
+    const result = await handler.execute(
+      { role: 'coder', task: '完成会议笔记整理', run_in_background: true },
+      makeCtx({ sessionId }),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const agentId = result.meta?.agentId as string;
+    await vi.waitFor(() => expect(getBackgroundSubagentRegistry().getStatus(agentId)?.status).toBe('completed'));
+
+    const status = await executeTaskStatus({}, makeCtx({ sessionId }), allowAll);
+    expect(status).toEqual({
+      ok: true,
+      output: expect.stringContaining(`1. coder [completed] id=${agentId} duration=0 s：行动项：确认负责人和截止时间`),
+      meta: { sessionTask: { outcome: 'status', tasks: [] } },
+    });
+  });
+
+  it('task_status scopes spawn_agent sub-agents to the current session and keeps empty sessions explicit', async () => {
+    const sessionId = 'background-status-scope-source';
+    executeSpawnAgentMock.mockResolvedValue({ success: true, output: 'done' });
+    const handler = await spawnAgentModule.createHandler();
+    const result = await handler.execute(
+      { role: 'coder', task: '仅属于源会话的后台任务', run_in_background: true },
+      makeCtx({ sessionId }),
+      allowAll,
+    );
+    expect(result.ok).toBe(true);
+    await vi.waitFor(() => expect(getBackgroundSubagentRegistry().listBySession(sessionId)).toHaveLength(1));
+
+    const otherSessionStatus = await executeTaskStatus(
+      {},
+      makeCtx({ sessionId: 'background-status-scope-other' }),
+      allowAll,
+    );
+    expect(otherSessionStatus).toEqual({ ok: true, output: '当前会话还没有后台任务。' });
+
+    const emptySessionStatus = await executeTaskStatus(
+      {},
+      makeCtx({ sessionId: 'background-status-empty-session' }),
+      allowAll,
+    );
+    expect(emptySessionStatus).toEqual({ ok: true, output: '当前会话还没有后台任务。' });
   });
 
   it('run_in_background 标 executionTopology=async_agent（2026-07-13 拓扑激活批）', async () => {

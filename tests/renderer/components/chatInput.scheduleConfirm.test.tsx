@@ -346,6 +346,24 @@ describe('scheduled task confirmation', () => {
   });
 });
 
+describe('buildScheduleConfirmRows display redaction', () => {
+  it('masks an action prompt used as the what fallback without changing the input payload', () => {
+    const prompt = 'back up notes --password=hunter2xyz';
+    const input = {
+      ...rowInput,
+      name: '',
+      description: '',
+      action: { type: 'agent', agentType: 'default', prompt },
+    } as CreateCronJobInput;
+    const rows = buildScheduleConfirmRows(
+      { input, restatement: undefined },
+      rowLabels,
+    );
+    expect(rows.find((row) => row.key === 'what')?.value).toBe('back up notes --password=***REDACTED***');
+    expect((input.action as { prompt: string }).prompt).toBe(prompt);
+  });
+});
+
 // ①（N-CRON-RESTATE-HUMAN-WHEN）：when 行按 UI 语言走 cronHumanize 人话文案；
 // 复杂表达式带「自定义时间 / Custom schedule」前缀，at 按语言本地化日期。
 describe('buildScheduleConfirmRows — when 行按 UI 语言说人话', () => {
@@ -641,7 +659,8 @@ describe('ScheduleConfirmCard — 卡内编辑', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '编辑 什么时候' }));
     fireEvent.change(screen.getByLabelText('什么时候'), { target: { value: 'daily' } });
-    fireEvent.change(screen.getByLabelText('时间'), { target: { value: '08:30' } });
+    fireEvent.change(screen.getByLabelText('小时'), { target: { value: '08' } });
+    fireEvent.change(screen.getByLabelText('分钟'), { target: { value: '30' } });
     fireEvent.click(screen.getByText('保存'));
 
     expect(onDraftChange).toHaveBeenCalledTimes(1);
@@ -660,7 +679,8 @@ describe('ScheduleConfirmCard — 卡内编辑', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '编辑 什么时候' }));
     fireEvent.change(screen.getByLabelText('什么时候'), { target: { value: 'weekly' } });
-    fireEvent.change(screen.getByLabelText('时间'), { target: { value: '09:00' } });
+    fireEvent.change(screen.getByLabelText('小时'), { target: { value: '09' } });
+    fireEvent.change(screen.getByLabelText('分钟'), { target: { value: '00' } });
     fireEvent.change(screen.getByLabelText('星期几'), { target: { value: '3' } });
     fireEvent.click(screen.getByText('保存'));
     expect((onDraftChange.mock.calls[0]?.[0] as PendingScheduleDraft).input.schedule)
@@ -673,6 +693,39 @@ describe('ScheduleConfirmCard — 卡内编辑', () => {
     fireEvent.click(screen.getByText('保存'));
     expect((onDraftChange.mock.calls[0]?.[0] as PendingScheduleDraft).input.schedule)
       .toEqual({ type: 'every', interval: 4, unit: 'hours' });
+  });
+
+  it('when 行：一次性档用日期 + 24 小时下拉，预填已存时间，保存为 at yyyy-MM-ddTHH:mm', () => {
+    const onDraftChange = vi.fn();
+    const { container } = render(
+      <ScheduleConfirmCard
+        draft={agentDraft({ schedule: { type: 'at', datetime: '2026-11-10T09:00:00' } })}
+        confirming={false}
+        onConfirm={vi.fn()}
+        onDismiss={vi.fn()}
+        onDraftChange={onDraftChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑 什么时候' }));
+    expect(container.querySelector('input[type="datetime-local"]')).toBeNull();
+    expect(screen.getByLabelText('日期')).toHaveProperty('value', '2026-11-10');
+    expect(screen.getByLabelText('小时')).toHaveProperty('value', '09');
+    fireEvent.change(screen.getByLabelText('小时'), { target: { value: '15' } });
+    fireEvent.click(screen.getByText('保存'));
+
+    expect((onDraftChange.mock.calls[0]?.[0] as PendingScheduleDraft).input.schedule)
+      .toEqual({ type: 'at', datetime: '2026-11-10T15:00' });
+  });
+
+  it('when 行：一次性档没选日期时日期框为空且保存不可用', () => {
+    const { container } = render(
+      <ScheduleConfirmCard draft={agentDraft()} confirming={false} onConfirm={vi.fn()} onDismiss={vi.fn()} onDraftChange={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '编辑 什么时候' }));
+    fireEvent.change(screen.getByLabelText('什么时候'), { target: { value: 'once' } });
+    expect(screen.getByLabelText('日期')).toHaveProperty('value', '');
+    expect((container.querySelector('[data-schedule-when-apply]') as HTMLButtonElement).hasAttribute('disabled')).toBe(true);
   });
 
   it('when 行：复杂表达式保持原样（keep 档），选了频率才可应用', () => {
@@ -694,7 +747,8 @@ describe('ScheduleConfirmCard — 卡内编辑', () => {
 
     // 选「每天」后输入出现、应用可用，应用即覆盖复杂表达式
     fireEvent.change(screen.getByLabelText('什么时候'), { target: { value: 'daily' } });
-    fireEvent.change(screen.getByLabelText('时间'), { target: { value: '09:15' } });
+    fireEvent.change(screen.getByLabelText('小时'), { target: { value: '09' } });
+    fireEvent.change(screen.getByLabelText('分钟'), { target: { value: '15' } });
     fireEvent.click(screen.getByText('保存'));
     expect((onDraftChange.mock.calls[0]?.[0] as PendingScheduleDraft).input.schedule)
       .toEqual({ type: 'cron', expression: '15 9 * * *' });
@@ -707,7 +761,8 @@ describe('ScheduleConfirmCard — 卡内编辑', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: '编辑 什么时候' }));
-    fireEvent.change(screen.getByLabelText('时间'), { target: { value: '23:59' } });
+    fireEvent.change(screen.getByLabelText('小时'), { target: { value: '23' } });
+    fireEvent.change(screen.getByLabelText('分钟'), { target: { value: '59' } });
     fireEvent.click(screen.getByText('不改了'));
     expect(onDraftChange).not.toHaveBeenCalled();
   });

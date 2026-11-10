@@ -491,7 +491,10 @@ describe('MessageProcessor persistence', () => {
     );
 
     expect(action).toBe('break');
-    expect(persistedMessages[0]).toMatchObject({
+    // 被禁用的调用先带合成失败结果落库，随后才是收尾说明
+    expect(persistedMessages[0]).toMatchObject({ role: 'assistant', toolCalls: [{ id: 'tool-1' }] });
+    expect(persistedMessages[1]).toMatchObject({ role: 'tool', toolResults: [{ toolCallId: 'tool-1', success: false }] });
+    expect(persistedMessages[2]).toMatchObject({
       id: 'assistant-denied-1',
       role: 'assistant',
       isMeta: true,
@@ -508,10 +511,15 @@ describe('MessageProcessor persistence', () => {
   it('keeps AskUserQuestion explicit when only task-splitting tools are denied', async () => {
     const contextAssembly = {
       injectSystemMessage: vi.fn(),
+      generateId: vi.fn(() => 'msg-x'),
+      addAndPersistMessage: vi.fn(),
     };
     const processor = createProcessor({
       stats: RunStatsState.forTest(),
       control: ControlState.forTest(),
+      onEvent: vi.fn(),
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 4096 },
+      turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1' } as never),
       deniedToolNames: ['Task', 'AgentSpawn'],
       maxToolCallRetries: 2,
       contextHealth: ContextHealthState.forTest(),
@@ -608,6 +616,91 @@ describe('MessageProcessor persistence', () => {
     expect(runFinalizer.autoAdvanceTodos).not.toHaveBeenCalled();
     expect(ctx.telemetryAdapter.onTurnEnd).not.toHaveBeenCalled();
     expect(ctx.onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'turn_end' }));
+  });
+
+  it('ends after a direct role creation result without asking the model for a duplicate announcement', async () => {
+    const ctx = {
+      artifact: ArtifactState.forTest(),
+      sessionId: 'runtime-session-1',
+      messages: [],
+      stats: RunStatsState.forTest({ totalToolCallCount: 0 } as never),
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.6-flash', maxTokens: 4096 },
+      contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
+      control: ControlState.forTest({ isCancelled: false, isInterrupted: false } as never),
+      turn: TurnState.forTest({
+        effortLevel: 'medium',
+        currentTurnId: 'turn-1',
+        currentIterationSpanId: 'iteration-1',
+        toolsUsedInTurn: [],
+      } as never),
+      onEvent: vi.fn(),
+      telemetryAdapter: { onTurnEnd: vi.fn() },
+      nudgeManager: {
+        checkProgressState: vi.fn(),
+        checkPostForceExecute: vi.fn(),
+      },
+      autoApprovePlan: false,
+    };
+    const contextAssembly = {
+      stripInternalFormatMimicry: vi.fn((content: string) => content),
+      generateId: vi.fn()
+        .mockReturnValueOnce('assistant-message-1')
+        .mockReturnValueOnce('tool-message-1'),
+      addAndPersistMessage: vi.fn(async (message) => {
+        ctx.messages.push(message as never);
+      }),
+      flushHookMessageBuffer: vi.fn(),
+      updateContextHealth: vi.fn(),
+      checkAndAutoCompress: vi.fn(),
+      maybeInjectThinking: vi.fn(),
+    };
+    const runFinalizer = {
+      emitTaskProgress: vi.fn(),
+      tryParseTodosFromResponse: vi.fn(),
+      autoAdvanceTodos: vi.fn(),
+    };
+    const toolEngine = {
+      executeToolsWithHooks: vi.fn(async () => [{
+        toolCallId: 'tool-1',
+        success: true,
+        output: 'The host already installed this role.',
+        metadata: { directCreated: true, endRunWithoutAssistant: true },
+      }]),
+    };
+    const processor = createProcessor(
+      ctx as DeepPartial<RuntimeContext>,
+      contextAssembly,
+      runFinalizer,
+      toolEngine,
+    );
+
+    const action = await processor.handleToolResponse(
+      {
+        type: 'tool_use',
+        content: '我给它配好了需要的能力。',
+        toolCalls: [{ id: 'tool-1', name: 'propose_role', arguments: { roleId: '日历助理' } }],
+      } as ModelResponse,
+      false,
+      1,
+      { endSpan: vi.fn() },
+    );
+
+    expect(action).toBe('break');
+    expect(ctx.messages).toHaveLength(2);
+    expect(ctx.messages).toEqual([
+      expect.objectContaining({ id: 'assistant-message-1', role: 'assistant' }),
+      expect.objectContaining({
+        id: 'tool-message-1',
+        role: 'tool',
+        toolResults: [expect.objectContaining({
+          success: true,
+          metadata: expect.objectContaining({ endRunWithoutAssistant: true }),
+        })],
+      }),
+    ]);
+    expect(contextAssembly.checkAndAutoCompress).not.toHaveBeenCalled();
+    expect(ctx.telemetryAdapter.onTurnEnd).toHaveBeenCalledWith('turn-1', '', undefined, 'hash-1');
+    expect(ctx.onEvent).toHaveBeenCalledWith({ type: 'turn_end', data: { turnId: 'turn-1' } });
   });
 
   it('转向时给在途工具结果打上 staleIntent，并把作废提示放进下一次推理', async () => {
@@ -1951,8 +2044,10 @@ describe('MessageProcessor persistence', () => {
       expect.stringContaining('The repair guard has been cleared. Retry the user requested action with the full tool set if needed.'),
       'artifact-validation',
     );
-    expect(contextAssembly.addAndPersistMessage).not.toHaveBeenCalled();
-    expect(ctx.messages).toHaveLength(0);
+    // 提前解除修复闸不能吞调用：assistant 调用 + 合成失败 tool 结果都要落库
+    expect(contextAssembly.addAndPersistMessage).toHaveBeenCalledTimes(2);
+    expect(ctx.messages).toHaveLength(2);
+    expect(ctx.messages[1]).toMatchObject({ role: 'tool', toolResults: [{ toolCallId: 'tool-1', success: false }] });
     expect(toolEngine.executeToolsWithHooks).not.toHaveBeenCalled();
   });
 
@@ -2034,8 +2129,10 @@ describe('MessageProcessor persistence', () => {
       expect.stringContaining('requested tools: Edit'),
       'artifact-validation',
     );
-    expect(contextAssembly.addAndPersistMessage).not.toHaveBeenCalled();
-    expect(ctx.messages).toHaveLength(0);
+    // 提前解除修复闸不能吞调用：assistant 调用 + 合成失败 tool 结果都要落库
+    expect(contextAssembly.addAndPersistMessage).toHaveBeenCalledTimes(2);
+    expect(ctx.messages).toHaveLength(2);
+    expect(ctx.messages[1]).toMatchObject({ role: 'tool', toolResults: [{ toolCallId: 'tool-1', success: false }] });
     expect(toolEngine.executeToolsWithHooks).not.toHaveBeenCalled();
   });
 

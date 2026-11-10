@@ -4,6 +4,9 @@ import type { MessageAttachment } from '@shared/contract';
 import type { SpeechTranscribeResult } from '@shared/contract';
 import type { ConversationVoiceInputMetadata } from '@shared/contract/conversationEnvelope';
 import { UI } from '@shared/constants';
+import { useI18n } from '../../../../hooks/useI18n';
+import { toast } from '../../../../hooks/useToast';
+import { mergeAttachments } from './attachmentDedupe';
 import type { InputAreaRef } from './InputArea';
 
 type VoiceInputContextValue = {
@@ -14,7 +17,7 @@ type VoiceInputContextValue = {
 export interface UseChatInputComposerActionsParams {
   processFile: (file: File) => Promise<MessageAttachment | null>;
   inputAreaRef: React.RefObject<InputAreaRef | null>;
-  setIsUploading: React.Dispatch<React.SetStateAction<boolean>>;
+  setIsUploading: (uploading: boolean) => void;
   setAttachments: React.Dispatch<React.SetStateAction<MessageAttachment[]>>;
   setValue: React.Dispatch<React.SetStateAction<string>>;
   setVoiceInputContext: React.Dispatch<React.SetStateAction<VoiceInputContextValue>>;
@@ -34,6 +37,18 @@ export function useChatInputComposerActions(params: UseChatInputComposerActionsP
     setValue,
     setVoiceInputContext,
   } = params;
+  const { t } = useI18n();
+
+  const appendAttachments = useCallback((incoming: MessageAttachment[], cap: number) => {
+    if (incoming.length === 0) return;
+    setAttachments((prev) => {
+      const result = mergeAttachments(prev, incoming, cap);
+      if (result.skippedCount > 0) {
+        toast.show('warning', t.chatInput.attachmentAlreadyAdded.replace('{name}', result.duplicates[0]?.incoming.name ?? ''));
+      }
+      return result.attachments;
+    });
+  }, [setAttachments, t.chatInput.attachmentAlreadyAdded]);
 
   // 处理文件选择
   const handleFileSelect = async (files: FileList) => {
@@ -44,9 +59,7 @@ export function useChatInputComposerActions(params: UseChatInputComposerActionsP
         const attachment = await processFile(file);
         if (attachment) newAttachments.push(attachment);
       }
-      if (newAttachments.length > 0) {
-        setAttachments((prev) => [...prev, ...newAttachments].slice(0, UI.MAX_ATTACHMENTS_FILE_SELECT));
-      }
+      appendAttachments(newAttachments, UI.MAX_ATTACHMENTS_FILE_SELECT);
     } finally {
       setIsUploading(false);
     }
@@ -57,13 +70,11 @@ export function useChatInputComposerActions(params: UseChatInputComposerActionsP
     setIsUploading(true);
     try {
       const attachment = await processFile(file);
-      if (attachment) {
-        setAttachments((prev) => [...prev, attachment].slice(0, UI.MAX_ATTACHMENTS_FILE_SELECT));
-      }
+      if (attachment) appendAttachments([attachment], UI.MAX_ATTACHMENTS_FILE_SELECT);
     } finally {
       setIsUploading(false);
     }
-  }, [processFile, setAttachments, setIsUploading]);
+  }, [processFile, appendAttachments, setIsUploading]);
 
   // 移除附件
   const removeAttachment = (id: string) => {

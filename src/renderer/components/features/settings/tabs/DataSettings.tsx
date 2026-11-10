@@ -36,7 +36,13 @@ import {
   shouldShowPersistenceWarning,
 } from '../../../../services/persistenceHealth';
 import { useI18n } from '../../../../hooks/useI18n';
+import { formatDateTime } from '../../../../utils/formatDateTime';
+import type { Language } from '../../../../i18n';
 import { zh } from '../../../../i18n/zh';
+import {
+  CacheRetentionFailureLine,
+  type CacheRetentionStatus,
+} from '../sections/cacheRetentionFailure';
 
 const logger = createLogger('DataSettings');
 type DataSettingsText = typeof zh.settings.data;
@@ -287,17 +293,18 @@ interface TelemetryHealthSummary {
 function formatLastEventAt(
   ts: number | null,
   text: DataSettingsText['telemetry']['time'] = DEFAULT_DATA_SETTINGS_TEXT.telemetry.time,
+  lang: Language = 'zh',
 ): string {
   if (!ts) return text.noEvents;
   const delta = Date.now() - ts;
   if (delta < 60_000) return text.justNow;
   if (delta < 3_600_000) return `${Math.floor(delta / 60_000)}${text.minuteSuffix}`;
   if (delta < 86_400_000) return `${Math.floor(delta / 3_600_000)}${text.hourSuffix}`;
-  return new Date(ts).toLocaleString();
+  return formatDateTime(ts, lang);
 }
 
 export const DataSettings: React.FC = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const dataText = t.settings.data;
   const isAdmin = useAuthStore((s) => s.user?.isAdmin === true);
   const [stats, setStats] = useState<DataStats | null>(null);
@@ -315,6 +322,7 @@ export const DataSettings: React.FC = () => {
     uploadFailureCount: 0,
   });
   const [persistenceHealth, setPersistenceHealth] = useState<PersistenceHealth | null>(null);
+  const [cacheRetention, setCacheRetention] = useState<CacheRetentionStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isClearing, setIsClearing] = useState(false);
   const [isClearingSnapshots, setIsClearingSnapshots] = useState(false);
@@ -333,6 +341,11 @@ export const DataSettings: React.FC = () => {
     fetchWebPersistenceHealth()
       .then(setPersistenceHealth)
       .catch(() => setPersistenceHealth(null));
+
+    // 缓存清理失败行的状态读取：失败只留痕，不影响数据页其余内容
+    ipcService.invokeDomain<CacheRetentionStatus>(IPC_DOMAINS.DATA, 'getCacheRetentionStatus')
+      .then((status) => setCacheRetention(status ?? null))
+      .catch((error) => logger.warn('Failed to load cache retention status', { error }));
 
     try {
       const [dataStats, snapStats] = await Promise.all([
@@ -461,6 +474,15 @@ export const DataSettings: React.FC = () => {
     }
   };
 
+  const handleRetryCacheRetention = async () => {
+    try {
+      const status = await ipcService.invokeDomain<CacheRetentionStatus>(IPC_DOMAINS.DATA, 'retryCacheRetention');
+      setCacheRetention(status ?? null);
+    } catch (error) {
+      logger.warn('Failed to retry cache retention', { error });
+    }
+  };
+
   const handleClearToolCache = async () => {
     setIsClearing(true);
     setMessage(null);
@@ -499,6 +521,16 @@ export const DataSettings: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {cacheRetention && cacheRetention.failedCurrent > 0 && (
+        <CacheRetentionFailureLine
+          failedCount={cacheRetention.failedCurrent}
+          lastError={cacheRetention.lastError}
+          dataDir={cacheRetention.dataDir}
+          text={dataText.cacheRetention}
+          onRetry={handleRetryCacheRetention}
+        />
       )}
 
       {message && (
@@ -645,7 +677,7 @@ export const DataSettings: React.FC = () => {
               </span>
               <span className="text-zinc-400">
                 {dataText.telemetry.recentPrefix}
-                {formatLastEventAt(telemetrySummary.lastEventAt, dataText.telemetry.time)}
+                {formatLastEventAt(telemetrySummary.lastEventAt, dataText.telemetry.time, language)}
               </span>
               {telemetrySummary.lastUploadError && (
                 <span
@@ -654,7 +686,7 @@ export const DataSettings: React.FC = () => {
                 >
                   {dataText.telemetry.uploadFailedSummary
                     .replace('{count}', String(telemetrySummary.uploadFailureCount))
-                    .replace('{time}', formatLastEventAt(telemetrySummary.lastUploadErrorAt, dataText.telemetry.time))}
+                    .replace('{time}', formatLastEventAt(telemetrySummary.lastUploadErrorAt, dataText.telemetry.time, language))}
                 </span>
               )}
             </div>

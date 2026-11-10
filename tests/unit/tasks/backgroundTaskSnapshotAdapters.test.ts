@@ -27,6 +27,8 @@ import { getEventBus, shutdownEventBus } from '../../../src/host/services/eventi
 import {
   installBackgroundTaskEventAdapters,
   syncBackgroundTaskSnapshotsToLedger,
+  syncShellTaskSnapshotToLedger,
+  syncPtySessionSnapshotToLedger,
 } from '../../../src/host/task/backgroundTaskSnapshotAdapters';
 import type {
   BackgroundTaskLifecycleEvent,
@@ -179,7 +181,59 @@ describe('backgroundTaskSnapshotAdapters', () => {
     expect(ledger.drainNotifications('session-1')).toEqual([]);
   });
 
-  it('maps completed shell and pty snapshots with empty output to failed', async () => {
+  it('maps stopped shell snapshots to cancelled with displayCommand and task_cancelled notification', () => {
+    mocks.getAllBackgroundTasks.mockReturnValue([
+      {
+        taskId: 'shell-stopped',
+        status: 'failed',
+        stoppedByRequest: true,
+        command: 'sandbox-exec -f /tmp/profile.sb /bin/sh -c "sleep 600 && echo done"',
+        displayCommand: 'sleep 600 && echo done',
+        cwd: '/repo',
+        sessionId: 'session-stop',
+        toolCallId: 'tool-stop',
+        startTime: 1_000,
+        endTime: 1_500,
+        duration: 500,
+        outputFile: '/tmp/shell-stopped.log',
+      },
+    ]);
+    mocks.getAllPtySessions.mockReturnValue([]);
+
+    const ledger = new BackgroundTaskLedger();
+    syncBackgroundTaskSnapshotsToLedger(ledger);
+    syncBackgroundTaskSnapshotsToLedger(ledger);
+
+    const shellTask = ledger.getTask('shell:shell-stopped');
+    expect(shellTask).toMatchObject({
+      kind: 'shell',
+      source: 'shell',
+      title: 'sleep 600 && echo done',
+      status: 'cancelled',
+      command: 'sandbox-exec -f /tmp/profile.sb /bin/sh -c "sleep 600 && echo done"',
+      sessionId: 'session-stop',
+      toolCallId: 'tool-stop',
+      completedAt: 1_500,
+      durationMs: 500,
+      failure: undefined,
+    });
+
+    const notifications = ledger.drainNotifications('session-stop');
+    expect(notifications).toEqual([
+      expect.objectContaining({
+        id: 'shell:shell-stopped:terminal:cancelled',
+        taskId: 'shell:shell-stopped',
+        type: 'task_cancelled',
+        title: '任务已停止',
+        message: 'sleep 600 && echo done 已停止，耗时 不到 1 秒',
+      }),
+    ]);
+    expect(notifications[0]?.message).not.toContain('sandbox-exec');
+    expect(notifications[0]?.message).not.toContain('失败');
+    expect(notifications[0]?.message).not.toContain('退出码');
+  });
+
+  it('maps completed shell and pty snapshots with empty output to completed', async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), 'background-empty-output-'));
     try {
       const emptyShellLog = path.join(tempDir, 'empty-shell.log');
@@ -234,21 +288,13 @@ describe('backgroundTaskSnapshotAdapters', () => {
       syncBackgroundTaskSnapshotsToLedger(ledger);
 
       expect(ledger.getTask('shell:empty-shell')).toMatchObject({
-        status: 'failed',
-        failure: {
-          message: 'Process completed with exit code 0 but produced no output.',
-          exitCode: 0,
-          category: 'empty_output',
-        },
+        status: 'completed',
+        failure: undefined,
         outputRefs: [expect.objectContaining({ size: 0 })],
       });
       expect(ledger.getTask('pty:empty-pty')).toMatchObject({
-        status: 'failed',
-        failure: {
-          message: 'Process completed with exit code 0 but produced no output.',
-          exitCode: 0,
-          category: 'empty_output',
-        },
+        status: 'completed',
+        failure: undefined,
         outputRefs: [expect.objectContaining({ size: 0 })],
       });
       expect(ledger.getTask('shell:non-empty-shell')).toMatchObject({
@@ -258,6 +304,27 @@ describe('backgroundTaskSnapshotAdapters', () => {
       });
     } finally {
       await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    { status: 'completed' as const, exitCode: 0, stoppedByRequest: false, expected: 'completed' },
+    { status: 'failed' as const, exitCode: 3, stoppedByRequest: false, expected: 'failed' },
+    { status: 'failed' as const, exitCode: undefined, stoppedByRequest: true, expected: 'cancelled' },
+  ])('public snapshot entries preserve $expected with missing logs', ({ status, exitCode, stoppedByRequest, expected }) => {
+    const ledger = new BackgroundTaskLedger();
+    const shared = { status, exitCode, stoppedByRequest, command: 'true', cwd: '/repo', startTime: 1_000, duration: 100 };
+    syncShellTaskSnapshotToLedger({ ...shared, taskId: 'missing-shell', outputFile: '/missing/shell.log' }, ledger);
+    syncPtySessionSnapshotToLedger({
+      ...shared, sessionId: 'missing-pty', args: [], cols: 80, rows: 24, outputFile: '',
+    }, ledger);
+
+    for (const id of ['shell:missing-shell', 'pty:missing-pty']) {
+      expect(ledger.getTask(id)?.status).toBe(expected);
+      expect(ledger.getTask(id)?.failure).toEqual(expected === 'failed'
+        ? { message: 'Process exited with code 3', exitCode: 3, category: 'command_failed' }
+        : undefined);
+      expect(ledger.getTask(id)?.outputRefs[0]?.size).toBeUndefined();
     }
   });
 

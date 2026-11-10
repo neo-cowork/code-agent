@@ -21,7 +21,7 @@ export function ResultSummary({ toolCall, inline = false }: Props) {
   const isError = toolCall.result && !toolCall.result.success;
   const summary = isError
     ? resolveCollapsedFailureSummary(toolCall, t)
-    : collapsedSuccessSummary(summarizeTool(toolCall), toolCall);
+    : collapsedSuccessSummary(summarizeTool(toolCall, t), toolCall);
 
   if (!summary) return null;
 

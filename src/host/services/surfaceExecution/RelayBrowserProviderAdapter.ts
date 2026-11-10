@@ -27,6 +27,7 @@ import {
   type SurfaceRuntimeIdentityV1,
 } from './SurfaceExecutionRuntime';
 import { SurfaceExecutionRuntimeError } from './SurfaceExecutionRuntimeError';
+import { compactSurfaceExecutionMetadata } from '../../../shared/utils/surfaceExecutionProjection';
 
 const RELAY_PROVIDER = 'browser-relay';
 const DEFAULT_LEASE_TTL_MS = 5 * 60_000;
@@ -682,13 +683,13 @@ export class RelayBrowserProviderAdapter {
       return {
         success: false,
         error: wrapped.surfaceResult.error?.message || `${input.action} postcondition failed.`,
-        metadata: {
+        metadata: compactSurfaceExecutionMetadata({
           provider: RELAY_PROVIDER,
           engine: 'relay',
           surfaceSessionId: binding.surfaceSessionId,
           relayLeaseId: binding.hostLeaseId,
           ...metadata,
-        },
+        }),
       };
     }
     return this.success(wrapped.providerResult.output || `${input.action} delivered to the leased tab.`, binding, metadata);
@@ -865,13 +866,13 @@ export class RelayBrowserProviderAdapter {
     return {
       success: true,
       output,
-      metadata: {
+      metadata: compactSurfaceExecutionMetadata({
         provider: RELAY_PROVIDER,
         engine: 'relay',
         surfaceSessionId: binding.surfaceSessionId,
         relayLeaseId: binding.hostLeaseId,
         ...metadata,
-      },
+      }),
     };
   }
 

@@ -28,12 +28,14 @@ import {
 import { deriveSessionWorkbenchSnapshot, toSessionWorkbenchProvenance } from '../../../shared/contract/sessionWorkspace';
 import { SESSION_PROJECT_PINNED_METADATA_KEY, UNSORTED_PROJECT_ID } from '@shared/contract/project';
 import { createLogger } from './logger';
+import { isCloudSessionListSkipped } from './cloudSessionListGate';
 import { sanitizeSurfaceExecutionSessionExport } from '../../session/surfaceExecutionSessionExport';
 import { stripLegacyForkClaims } from '../sessionFork/portability';
 import { getContextHealthService } from '../../context/contextHealthService';
 import { stampAssistantMessageCorrelation } from '../../session/assistantCorrelation';
 import { getTelemetryCollector } from '../../telemetry';
 import { clearSessionRuntimeCaches } from '../../session/sessionCacheLifecycle';
+import { removeToolScreenshotDir } from '../../tools/utils/toolScreenshotDir';
 
 import { Disposable, getServiceRegistry } from '../serviceRegistry';
 const logger = createLogger('SessionManager');
@@ -260,6 +262,7 @@ export class SessionManager implements Disposable {
       if (originKind === 'cron' || originKind === 'heartbeat' || originKind === 'channel') {
         permissionManager.markUnattendedSession(session.id);
         markShortTierSession(session.id);
+        if (originKind !== 'channel') permissionManager.markUnattendedApprovalDegrade(session.id);
       }
       permissionManager.initSessionMode(session.id);
     } catch (err) {
@@ -499,6 +502,7 @@ export class SessionManager implements Disposable {
    * 从云端同步会话列表（仅元数据）
    */
   private async syncSessionListFromCloud(): Promise<void> {
+    if (isCloudSessionListSkipped()) return;
     const authService = getAuthService();
     const user = authService.getCurrentUser();
     if (!user || !isSupabaseInitialized()) return;
@@ -813,6 +817,9 @@ export class SessionManager implements Disposable {
     await this.deleteTerminalFrames(sessionId);
     db.deleteSession(sessionId);
 
+    // 工具截图目录随会话回收（内部自吞失败，只 warn 不阻断删除）
+    await removeToolScreenshotDir(sessionId);
+
     // 清除缓存
     this.sessionCache.delete(sessionId);
     if (this.currentSessionId === sessionId) {
@@ -830,6 +837,8 @@ export class SessionManager implements Disposable {
     clearSessionRuntimeCaches(sessionId); if (getDatabase().getSession(sessionId)) throw new Error('SESSION_NOT_DELETED');
     await (await import('../surfaceExecution/ManagedBrowserProviderAdapter')).getManagedBrowserProviderAdapter().clearConversationResumeState(sessionId);
     await this.deleteTerminalFrames(sessionId);
+    // 工具截图目录随会话回收（内部自吞失败，只 warn 不阻断）
+    await removeToolScreenshotDir(sessionId);
   }
 
   /**
@@ -1043,11 +1052,11 @@ export class SessionManager implements Disposable {
     return db.getMessages(sessionId, limit, undefined, options);
   }
 
-  async replaceMessages(sessionId: string, messages: Message[]): Promise<void> {
+  async replaceMessages(sessionId: string, messages: Message[], updatedAt?: number): Promise<void> {
     const db = getDatabase();
     this.assertAccessibleSession(sessionId);
-    db.replaceMessages(sessionId, messages);
-    getContextHealthService().cleanup(sessionId);
+    db.replaceMessages(sessionId, messages, updatedAt);
+    getContextHealthService().cleanup(sessionId, updatedAt);
 
     if (this.sessionCache.has(sessionId)) {
       const cached = this.sessionCache.get(sessionId)!;
@@ -1062,6 +1071,7 @@ export class SessionManager implements Disposable {
   getSessionRuntimeState(sessionId: string): {
     compressionStateJson: string | null;
     persistentSystemContext: string[];
+    lastProviderUsageJson: string | null;
   } | null {
     const db = getDatabase();
     if (!this.getAccessibleStoredSession(sessionId)) {
