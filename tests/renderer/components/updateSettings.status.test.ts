@@ -557,7 +557,7 @@ describe('UpdateSettings status visibility', () => {
     }));
     const resourceRows = rows.filter((row) => row.key?.startsWith('resource:'));
 
-    expect(rows).toContainEqual({ label: updateText.desktopShell.diagnosticLabels.resourceCheck, value: '1 missing · required-resource' });
+    expect(rows).toContainEqual({ label: updateText.desktopShell.diagnosticLabels.resourceCheck, value: '缺失 1 项 · required-resource' });
     expect(resourceRows.map((row) => row.key)).toEqual([
       'resource:required-resource',
       'resource:better-sqlite3-native',
@@ -706,6 +706,10 @@ describe('UpdateSettings status visibility', () => {
     expect(rows).toContainEqual({
       label: 'channel:data dir',
       value: 'ok · /Users/x/.code-agent-dev',
+    });
+    expect(rows).toContainEqual({
+      label: updateText.desktopShell.diagnosticLabels.runtimeAssets,
+      value: '已安装 1 项 · 内置 1 项 · 缺失 0 项',
     });
     expect(rows).toContainEqual({ label: updateText.desktopShell.diagnosticLabels.runtimeLedger, value: '1 registered · 1 hashed · 1 min-shell' });
     expect(rows).toContainEqual({

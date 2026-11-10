@@ -16,6 +16,7 @@ import { createLogger } from '../infra/logger';
 import type { SessionCommandTask } from './sessionCommandCenter';
 
 import { WAKE_NOOP_TOOL_NAME } from '../../../shared/constants/agent';
+import { getAgentErrorMessage } from '../../../shared/utils/agentErrorClassification';
 
 const FOREGROUND_WAKE_CONTRACT = [
   '<background_task_hidden_wake>',
@@ -87,24 +88,34 @@ function hasQueuedUserInput(sessionId: string): boolean {
   }
 }
 
+export function formatBackgroundWakeFailureNote(shortName: string): string {
+  return `后台任务「${shortName}」已结束，结果见上方的任务结果；自动汇报这一步没能完成，需要的话可以直接问我。`;
+}
+
+export async function recordBackgroundWakeFailureNote(
+  sessionId: string,
+  content: string,
+  detail: { taskId: string; reason: 'owner_missing' | 'wake_failed' },
+): Promise<void> {
+  // 必须带登记键：渲染端按 systemEventRegistry 放行，无 metadata 的 system 消息一律被投影层跳过
+  const message: Message = {
+    id: `session-wake-note-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    role: 'system',
+    content,
+    timestamp: Date.now(),
+    metadata: { backgroundWakeFailed: detail } satisfies SystemEventMessageMetadata,
+  };
+  await getSessionManager().addMessageToSession(sessionId, message);
+  // 在线会话立即可见（该 system 'message' 事件只广播、不会被 TaskManager 二次落库）
+  getTaskManager().emitAgentEventForSession(sessionId, { type: 'message', data: message });
+}
+
 const defaultDependencies: ForegroundWakeDependencies = {
   getTaskManager,
   loadSession: (sessionId) => getSessionManager().getSession(sessionId, Number.MAX_SAFE_INTEGER),
   hasQueuedUserInput,
   isVoiceSession: (sessionId) => getPermissionModeManager().isLiveVoiceSession(sessionId),
-  recordWakeFailureNote: async (sessionId, content, detail) => {
-    // 必须带登记键：渲染端按 systemEventRegistry 放行，无 metadata 的 system 消息一律被投影层跳过
-    const message: Message = {
-      id: `session-wake-note-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      role: 'system',
-      content,
-      timestamp: Date.now(),
-      metadata: { backgroundWakeFailed: detail } satisfies SystemEventMessageMetadata,
-    };
-    await getSessionManager().addMessageToSession(sessionId, message);
-    // 在线会话立即可见（该 system 'message' 事件只广播、不会被 TaskManager 二次落库）
-    getTaskManager().emitAgentEventForSession(sessionId, { type: 'message', data: message });
-  },
+  recordWakeFailureNote: recordBackgroundWakeFailureNote,
   logger,
 };
 
@@ -257,16 +268,23 @@ export function createForegroundWake(
         maxIterations: SESSION_COMMAND_CENTER_WAKE_MAX_ITERATIONS,
         turnSystemContext: [FOREGROUND_WAKE_CONTRACT],
       });
+      let capturedError: string | null = null;
       const options = {
         ...brainOptions,
         mode: 'normal',
         inputHistoryVisibility: 'meta',
         runRegistration: 'auxiliary',
         maxIterations: SESSION_COMMAND_CENTER_WAKE_MAX_ITERATIONS,
+        disableAutoAgent: true,
         allowedToolNames: Array.from(new Set([
           ...(brainOptions.allowedToolNames ?? []),
           WAKE_NOOP_TOOL_NAME,
         ])),
+        terminalErrorSink: (data: unknown) => {
+          if (capturedError === null) {
+            capturedError = getAgentErrorMessage(data) ?? 'wake turn failed';
+          }
+        },
       } satisfies AgentRunOptions;
 
       consecutiveBySession.set(sessionId, {
@@ -280,19 +298,23 @@ export function createForegroundWake(
         consecutive: consecutive + 1,
       });
       turnRan = true;
+      let thrownError: string | null = null;
       try {
         await orchestrator.sendMessage(wakePrompt(task, status), undefined, options);
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        thrownError = error instanceof Error ? error.message : String(error);
+      }
+      const failureMessage = capturedError ?? thrownError;
+      if (failureMessage !== null) {
         // 失败原因分开记：owner lease 缺失是 run 注册问题，其余是唤醒轮自身失败
-        const ownerMissing = message.includes('no live owner lease');
+        const ownerMissing = failureMessage.includes('no live owner lease');
         dependencies.logger.warn(
           `Foreground wake failed: ${ownerMissing ? 'owner missing' : 'wake turn failed'}`,
-          { sessionId, taskId: task.id, message },
+          { sessionId, taskId: task.id, message: failureMessage },
         );
         await dependencies.recordWakeFailureNote(
           sessionId,
-          `后台任务「${task.shortName}」已结束，结果见上方的任务结果；自动汇报这一步没能完成，需要的话可以直接问我。`,
+          formatBackgroundWakeFailureNote(task.shortName),
           { taskId: task.id, reason: ownerMissing ? 'owner_missing' : 'wake_failed' },
         ).catch((noteError) => {
           dependencies.logger.warn('Foreground wake failure note not recorded', {

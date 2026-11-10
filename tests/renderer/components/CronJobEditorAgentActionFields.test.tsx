@@ -89,6 +89,8 @@ describe('manual cron agent action fields', () => {
 
     expect((screen.getByTestId('cron-agent-task-instructions') as HTMLTextAreaElement).value).toBe(rawPrompt);
     fireEvent.click(screen.getByText('保存修改'));
+    expect(updateJob).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
 
     await waitFor(() => expect(updateJob).toHaveBeenCalledTimes(1));
     expect(updateJob.mock.calls[0]?.[1]).toMatchObject({ action: { type: 'agent', prompt: rawPrompt } });
@@ -113,6 +115,8 @@ describe('manual cron agent action fields', () => {
     fireEvent.click(screen.getByText('执行动作'));
     fireEvent.change(screen.getByTestId('cron-agent-task-instructions'), { target: { value: '整理今天的工作' } });
     fireEvent.click(screen.getByText('创建任务'));
+    expect(createJob).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
 
     await waitFor(() => expect(createJob).toHaveBeenCalledTimes(1));
     expect(createJob.mock.calls[0]?.[0]).toMatchObject({
@@ -163,6 +167,8 @@ describe('manual cron agent action fields', () => {
 
     fireEvent.change(screen.getByTestId('cron-agent-context-input'), { target: { value: contextText } });
     fireEvent.click(screen.getByText('保存修改'));
+    expect(updateJob).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
 
     await waitFor(() => expect(updateJob).toHaveBeenCalledTimes(1));
     expect(updateJob.mock.calls[0]?.[1]).toMatchObject({ action: { type: 'agent', context: {} } });

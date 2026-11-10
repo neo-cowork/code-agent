@@ -18,10 +18,13 @@ import { bindCloudRunAccountSource } from '../cloudRun/cloudRunLedger';
 import type { AuthUser, AuthStatus } from '../../../shared/contract';
 import { createLogger } from '../infra/logger';
 import { withTimeout } from '../infra/timeoutController';
+import { AUTH_TIMEOUTS } from '../../../shared/constants';
 
 const logger = createLogger('AuthService');
 const AUTH_BACKEND_UNAVAILABLE_ERROR = 'AUTH_BACKEND_UNAVAILABLE';
 const EXPLICIT_SIGN_OUT_EVENT_WINDOW_MS = 10_000;
+
+export type SessionValidationOutcome = 'verified' | 'expired' | 'deferred' | 'no-session';
 
 export interface AuthResult {
   success: boolean;
@@ -72,6 +75,7 @@ function parseCachedAuthUser(serializedUser: string): AuthUser | null {
 class AuthService {
   private currentUser: AuthUser | null = null;
   private sessionTrustState: SessionTrustState = 'none';
+  private revalidateInFlight: Promise<SessionValidationOutcome> | null = null;
   private onAuthChangeCallbacks: AuthChangeCallback[] = [];
   private initialized: boolean = false;
   private sessionExpired: boolean = false; // 2c(ADR-030): 曾登录但 session 不可恢复
@@ -215,13 +219,13 @@ class AuthService {
   /**
    * 后台验证 session，不阻塞启动
    */
-  private async validateSessionInBackground(): Promise<void> {
+  private async validateSessionInBackground(): Promise<SessionValidationOutcome> {
     try {
       const supabase = getSupabase();
       // withTimeout 自动清理 timer，避免胜者侧 leak
       const result = (await withTimeout(
         supabase.auth.getSession(),
-        5000,
+        AUTH_TIMEOUTS.SESSION_FETCH_MS,
         'Session fetch timeout',
       )) as { data: { session: { user?: SupabaseUser } | null } } | null;
       const session = result?.data?.session;
@@ -234,6 +238,7 @@ class AuthService {
         this.sessionTrustState = 'verified';
         this.cacheUser(freshUser);
         this.notifyAuthChange(freshUser);
+        return 'verified';
       } else if (this.currentUser) {
         // Session 无效但有缓存用户：曾登录但 session 不可恢复（过期/失效）。
         // 2c(ADR-030): 仍清除无效会话（避免下游拿 null-JWT 去写 RLS 表失败），但置 sessionExpired，
@@ -244,7 +249,9 @@ class AuthService {
         this.clearCachedUser();
         this.sessionExpired = true;
         this.notifyAuthChange(null);
+        return 'expired';
       }
+      return 'no-session';
     } catch (error) {
       // 网络错误时保持缓存用户，不清除
       if (this.currentUser) {
@@ -252,7 +259,24 @@ class AuthService {
       } else {
         logger.warn(' Background session validation failed:', error);
       }
+      return 'deferred';
     }
+  }
+
+  /**
+   * 按需重校验 session（single-flight）：启动后台校验超时后信任态会一直停在 'cached'，
+   * 需要已验证身份的操作（如开启完全访问）调用它补一次，而不必重启应用。
+   */
+  revalidateSession(): Promise<SessionValidationOutcome> {
+    if (!this.revalidateInFlight) {
+      this.revalidateInFlight = this.validateSessionInBackground()
+        .then((outcome) => {
+          logger.info(' Session revalidation finished:', { outcome, trust: this.sessionTrustState });
+          return outcome;
+        })
+        .finally(() => { this.revalidateInFlight = null; });
+    }
+    return this.revalidateInFlight;
   }
 
   /**

@@ -9,7 +9,6 @@ import { envelopeWebAgentEvent } from '../helpers/agentStreamCursor';
 import type { AgentSessionManagerLike } from './agentRouteTypes';
 import type { WebRouteLogger } from './routeTypes';
 import type { RunHandle } from '../../host/runtime/runContext';
-import { isBackgroundContinueActive } from '../../host/services/daemon/quitIntent';
 import {
   shouldDeliverAgentEvent,
   type AgentEventFilter,
@@ -48,8 +47,7 @@ function isTerminalErrorEvent(event: AgentEvent): boolean {
 
 export class AgentRunController {
   private runSettled = false;
-  private clientDisconnected = false;
-  /** 壳以「后台继续」退出：SSE 断了但 run 继续，事件改走全局广播。 */
+  /** SSE 断开后 run 继续，事件改走全局广播，供重连客户端接收。 */
   private detachedForBackground = false;
   private runHadTerminalError = false;
   private terminalFailure: unknown = null;
@@ -59,22 +57,12 @@ export class AgentRunController {
   private readonly agentSSEBatcher;
 
   readonly cancelForDisconnect = (): void => {
-    if (this.runSettled || this.clientDisconnected || this.detachedForBackground) return;
-    // ADR-083：壳选了「后台继续」后断开的 SSE 不是用户取消，run 要跑完并落库。
-    // 显式 Stop 走 POST /api/cancel，不依赖 SSE close，不受影响。
-    if (isBackgroundContinueActive()) {
-      this.detachedForBackground = true;
-      return;
-    }
-    this.clientDisconnected = true;
-    const runHandle = this.deps.runHandle;
-    if (!runHandle) return;
-    this.deps.logger.warn(
-      `[AgentRouter] SSE client disconnected, cancelling run ${this.deps.runId} for ${this.deps.sessionId}`,
+    if (this.runSettled || this.detachedForBackground) return;
+    // 传输断线不代表用户停止；显式 Stop 仍只走 POST /api/cancel。
+    this.detachedForBackground = true;
+    this.deps.logger.info(
+      `[AgentRouter] SSE client disconnected, run ${this.deps.runId} continues detached`,
     );
-    void runHandle.cancel('user').catch((error) => {
-      this.deps.logger.warn(`[AgentRouter] Failed to cancel disconnected run ${this.deps.runId}:`, error);
-    });
   };
 
   constructor(private readonly deps: AgentRunControllerDeps) {
@@ -84,8 +72,8 @@ export class AgentRunController {
     );
   }
 
-  get disconnected(): boolean {
-    return this.clientDisconnected;
+  get detached(): boolean {
+    return this.detachedForBackground;
   }
 
   /** run 是否已收线（markSettled 之后）。岛在收线后抛审批时据此挂回注册表。 */

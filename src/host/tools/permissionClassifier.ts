@@ -46,6 +46,7 @@ import {
   ddCopiesWorkspaceFile, gitMutationReason, hasPositiveAllowCandidate, isNpmPublishDryRun, isPathInside, isSensitiveMemoryPath, readPathCandidates,
   recursivelyRemovesPath, resolveCandidatePath,
 } from './permissionClassifierShell';
+import { GENERATOR_WRITE_TOOLS, writeTargetPathOf } from './writeTargetPath';
 
 export { bashCommandRequiresPermission };
 
@@ -209,7 +210,6 @@ const WRITE_TOOLS = new Set([
 
 // 生成器类写入工具的路径是可选参数：缺省时产物落在会话工作目录（resolveInputPath
 // 对 fileName 的行为），按 workingDirectory 本身参与边界判断即可。
-const GENERATOR_WRITE_TOOLS = new Set(['docx_generate', 'excel_generate']);
 
 export function readArgumentsRequirePermission(
   toolName: string,
@@ -827,8 +827,7 @@ export class PermissionClassifier {
     context: ClassificationContext,
     startTime: number
   ): ClassificationResult | null {
-    const filePath = (args.file_path as string) || (args.path as string) || (args.output_path as string)
-      || (GENERATOR_WRITE_TOOLS.has(toolName) ? '.' : undefined);
+    const filePath = writeTargetPathOf(toolName, args);
     if (!filePath) {
       const reason = '文件路径缺失';
       return {
