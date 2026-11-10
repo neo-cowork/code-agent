@@ -8,6 +8,7 @@ import { en } from '../../../src/renderer/i18n/en';
 import { humanizeToolStep } from '../../../src/renderer/utils/humanizeToolStep';
 import type { ToolCall } from '../../../src/shared/contract';
 import { toDelegationDisplayToolCall } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/delegationPresentation';
+import { getToolStatusLabel } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/statusLabels';
 
 vi.mock('../../../src/renderer/stores/appStore', () => ({
   useAppStore: (selector: (state: unknown) => unknown) => selector({ openPreview: vi.fn(), openSettingsTab: vi.fn() }),
@@ -175,5 +176,40 @@ describe('delegation report keeps actionable stats notes', () => {
     expect(out).toContain('review and merge changes');
     expect(out).not.toContain('/tmp/wt');
     for (const token of ['Stats:', 'Iterations:', 'Tools used:', 'Agent ID']) expect(out).not.toContain(token);
+  });
+});
+
+describe('background hand-off row', () => {
+  it.each(['', '\n', '（', '：', '，', '「', '【', '、'])('shortens paths after %j in every projected surface', (prefix) => {
+    const call = taskCall('', 'spawn_agent');
+    const text = `${prefix}/Users/tester/project/notes.md）`;
+    const expected = `${prefix}notes.md）`;
+    call.arguments = { task: text };
+    call.shortDescription = text;
+    call.result!.output = text;
+    const stored = JSON.stringify(call);
+    const projected = toDelegationDisplayToolCall(call, zh);
+    expect(projected.arguments.task).toBe(expected);
+    expect(projected.shortDescription).toBe(expected);
+    expect(projected.result?.output).toBe(expected);
+    expect(humanizeToolStep(projected.name, projected.arguments, zh)).not.toContain('/Users/');
+    expect(JSON.stringify(call)).toBe(stored);
+  });
+
+  it('keeps CJK punctuation between adjacent paths and preserves public URLs', () => {
+    const call = taskCall('', 'spawn_agent');
+    call.result!.output = '阅读（/tmp/project/a.md、/tmp/project/b.md），参考：https://example.com/Users/team/notes.md';
+    expect(toDelegationDisplayToolCall(call, zh).result?.output)
+      .toBe('阅读（a.md、b.md），参考：https://example.com/Users/team/notes.md');
+  });
+
+  it.each([zh, en])('labels a projected background receipt as dispatched, not completed', (t) => {
+    const call = taskCall('', 'spawn_agent');
+    call.result!.output = 'Agent [Explorer] exceeded foreground budget and continues in background:\n- status=running';
+    call.result!.metadata = { background: true, transferredToBackground: true };
+    const projected = toDelegationDisplayToolCall(call, t);
+    expect(projected.result?.output).toBe(t.chat.delegationReceipt.working);
+    expect(getToolStatusLabel(projected, 'success', t)).toBe(t.chat.delegationReceipt.dispatched);
+    expect(getToolStatusLabel(taskCall('', 'spawn_agent'), 'success', t)).toBe(t.chat.delegationReceipt.completed);
   });
 });

@@ -57,7 +57,7 @@ function displayPaths(text: string): string {
   return text
     .replace(/(["'`])((?:file:\/\/)?(?:\/(?:Users|home|tmp|var|private|workspace|workspaces|Volumes|mnt|opt|srv)\/|[A-Za-z]:[\\/])[^\n]*?)\1/g,
       (_match, quote: string, path: string) => `${quote}${basename(path)}${quote}`)
-    .replace(/(^|[\s(<])(?:file:\/\/)?((?:\/(?:Users|home|tmp|var|private|workspace|workspaces|Volumes|mnt|opt|srv)\/|[A-Za-z]:[\\/])[^\s"'`<>()[\]]+)/g,
+    .replace(/(^|[\s(<（：，「【、])(?:file:\/\/)?((?:\/(?:Users|home|tmp|var|private|workspace|workspaces|Volumes|mnt|opt|srv)\/|[A-Za-z]:[\\/])[^\s"'`<>()[\]（）：，。「」【】、]+)/g,
       (_match, prefix: string, path: string) => `${prefix}${basename(path)}`);
 }
 
