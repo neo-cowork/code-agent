@@ -462,6 +462,14 @@ describe('AutomationReviewInbox', () => {
   });
 
   // B2 停车审批分组
+  it('refreshes awaiting runs immediately after an approval answer', async () => {
+    const onParkedResolved = vi.fn();
+    listParkedApprovals.mockResolvedValue([makeParked({})]);
+    render(<AutomationReviewInbox onParkedResolved={onParkedResolved} />);
+    fireEvent.click(await screen.findByTestId('parked-approve'));
+    await waitFor(() => expect(onParkedResolved).toHaveBeenCalledTimes(1));
+  });
+
   it('渲染「等待批准的操作」分组，批准回传 permissionResponse（同一 requestId）', async () => {
     listParkedApprovals.mockResolvedValueOnce([makeParked({ id: 'perm_req_1', sessionId: 'session-1' })]).mockResolvedValue([]);
     render(<AutomationReviewInbox />);
@@ -794,6 +802,39 @@ describe('pending review count parity', () => {
 // listParkedApprovals；停车发生在面板开着时，徽章亮了但收件箱还是旧快照，「去处理」
 // 落到不含该审批的收件箱。修复：面板把等批准集合指纹作为 refreshSignal 传入，指纹变化
 // 收件箱即重拉。本用例走真收件箱 + 真面板（本文件 CronJobList/Detail 打桩、收件箱不打桩）。
+describe('scheduled parked run discovery', () => {
+  it('discovers a parked scheduled run through the mounted inbox', async () => {
+    const running = { id: 'scheduled-exec', jobId: 'scheduled-job', status: 'running', scheduledAt: 1, startedAt: 1, retryAttempt: 0 };
+    vi.mocked(cronClient.listJobs).mockResolvedValue([]);
+    vi.mocked(cronClient.getExecutions).mockResolvedValue([]);
+    vi.mocked(cronClient.getRecentExecutions).mockResolvedValue([]);
+    render(<CronCenterPanel onClose={() => undefined} />);
+    fireEvent.click(screen.getByTestId('cron-center-tab-runs'));
+    await waitFor(() => expect(listParkedApprovals).toHaveBeenCalled());
+    vi.mocked(cronClient.getRecentExecutions).mockResolvedValue([running] as never);
+    listParkedApprovals.mockResolvedValue([makeParked({ id: 'scheduled-permission' })]);
+    awaitingRunsMock.value = [{ jobId: 'scheduled-job', executionId: 'scheduled-exec', requestId: 'scheduled-permission', requestedAt: 1 }];
+    await waitFor(() => expect(screen.getByTestId('cron-exec-awaiting-approval')).toBeTruthy(), { timeout: 12000 });
+  }, 15000);
+});
+
+describe('approval badge refresh', () => {
+  it('clears the run badge immediately when the inbox answers', async () => {
+    const running = { id: 'exec-now', jobId: 'job-now', status: 'running', scheduledAt: 1, startedAt: 1, retryAttempt: 0 };
+    vi.mocked(cronClient.getRecentExecutions).mockResolvedValue([running] as never);
+    vi.mocked(cronClient.getExecutions).mockResolvedValue([running] as never);
+    vi.mocked(cronClient.listJobs).mockResolvedValue([{ id: 'job-now', name: '摘要', scheduleType: 'every', schedule: { type: 'every', interval: 1, unit: 'days' }, action: { type: 'agent', agentType: 'default', prompt: '摘要' }, runsOn: 'local', enabled: true }] as never);
+    awaitingRunsMock.value = [{ jobId: 'job-now', executionId: 'exec-now', requestId: 'perm_req_1', requestedAt: 1 }];
+    listParkedApprovals.mockResolvedValue([makeParked({})]);
+    ipcInvoke.mockImplementation(async () => { awaitingRunsMock.value = []; return { outcome: 'delivered' }; });
+    render(<CronCenterPanel onClose={() => undefined} />);
+    fireEvent.click(screen.getByTestId('cron-center-tab-runs'));
+    await screen.findByTestId('cron-exec-awaiting-approval');
+    fireEvent.click(await screen.findByTestId('parked-approve'));
+    await waitFor(() => expect(screen.queryByTestId('cron-exec-awaiting-approval')).toBeNull(), { timeout: 900 });
+  });
+});
+
 describe('awaiting-approval refresh signal (Rework r1)', () => {
   it('面板开着时停车出现：等批准轮询发现后，收件箱不重挂载也拉到该审批卡', async () => {
     awaitingRunsMock.value = [];
