@@ -66,6 +66,12 @@ export const DAG_SCHEDULER = {
   DEFAULT_MAX_RETRIES: 0,
 } as const;
 
+/** 账号会话校验超时 */
+export const AUTH_TIMEOUTS = {
+  /** 拉取 supabase session 的超时（启动后台校验与按需重校验共用） */
+  SESSION_FETCH_MS: 5_000,
+} as const;
+
 /** 服务初始化超时 */
 export const SERVICE_TIMEOUTS = {
   /** MCP 连接 */

@@ -988,6 +988,7 @@ export class BrowserService implements Disposable {
     const launched = await launchSystemChromeCdpBrowser({
       resolution,
       profileDir: this.profileDir,
+      temporaryProfile: this.isolatedProfileDir !== null,
       mode: this.mode,
       viewport: this.viewport,
       proxy: this.proxyConfig,

@@ -3,6 +3,7 @@ import type { Response } from 'express';
 import { AgentRunController } from '../../../src/web/routes/agentRunController';
 import { buildTurnTerminalFailure } from '../../../src/web/routes/agentTurnTerminalFailure';
 import type { WebRouteLogger } from '../../../src/web/routes/routeTypes';
+import { RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../src/shared/constants';
 
 const logger: WebRouteLogger = {
   info: () => {},
@@ -21,6 +22,22 @@ function createController(): AgentRunController {
 }
 
 describe('buildTurnTerminalFailure', () => {
+  it.each([true, false])('foreground step-limit marker=%s controls persisted failure card', (marked) => {
+    const controller = createController();
+    controller.emitAgentEvent({ type: 'error', data: {
+      message: 'Max iterations reached', code: RUN_ERROR_CODE_MAX_ITERATIONS,
+      ...(marked ? { details: { stoppedByStepLimit: true } } : {}),
+    } });
+    const result = buildTurnTerminalFailure({
+      errorData: controller.lastTerminalErrorData, fallbackMessage: null,
+      modelId: 'test-model', runCancelled: false,
+    });
+    expect(controller.hadTerminalError).toBe(true);
+    if (marked) expect(result).toBeNull();
+    else expect(result?.agentError).toMatchObject({ category: 'generic', code: RUN_ERROR_CODE_MAX_ITERATIONS });
+    controller.destroy();
+  });
+
   it('取消轮不落失败记录（用户主动停不算失败）', () => {
     expect(buildTurnTerminalFailure({
       errorData: { message: 'x', code: 'RUN_FAILED' },

@@ -16,6 +16,7 @@ const chipMocks = vi.hoisted(() => ({
     entries: [{
       id: 'lanxi',
       name: '岚析',
+      displayName: undefined as string | undefined,
       description: '',
       source: 'user',
       modelTier: 'balanced',
@@ -83,5 +84,33 @@ describe('AgentChip 可删除（20d）', () => {
     const { container } = render(<AgentChip onOpenAgentCommand={vi.fn()} />);
     expect(container.firstChild).toBeNull();
     chipMocks.appState.activeAgentId = 'lanxi';
+  });
+});
+
+describe('AgentChip display name', () => {
+  it('uses 日历专家 instead of fixture-role for chip, avatar, title and removal', () => {
+    const entry = chipMocks.agentRegistryState.entries[0];
+    const original = { ...entry };
+    try {
+      Object.assign(entry, { id: 'fixture-role', name: 'fixture-role', displayName: '日历专家' });
+      chipMocks.appState.activeAgentId = 'fixture-role';
+      render(<AgentChip onOpenAgentCommand={vi.fn()} />);
+      const chip = screen.getByTestId('chat-input-agent-chip');
+      expect(chip.textContent).toContain('日历专家');
+      expect(chip.textContent).not.toContain('fixture-role');
+      for (const value of [chip.title, screen.getByTestId('chat-input-agent-chip-remove').getAttribute('aria-label'), screen.getByTestId('role-initial-avatar-fixture-role').getAttribute('aria-label')]) {
+        expect(value).toContain('日历专家');
+        expect(value).not.toContain('fixture-role');
+      }
+      expect(chip.title).toContain('内容主理人');
+    } finally {
+      Object.assign(entry, original);
+      chipMocks.appState.activeAgentId = 'lanxi';
+    }
+  });
+
+  it('falls back to name without displayName', () => {
+    render(<AgentChip onOpenAgentCommand={vi.fn()} />);
+    expect(screen.getByTestId('chat-input-agent-chip').textContent).toContain('岚析');
   });
 });
