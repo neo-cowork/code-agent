@@ -188,6 +188,28 @@ describe('subagent pipeline gate & approval bubble-up (N-SUBAGENT-APPROVAL-BUBBL
     expect(resolverState.execute).not.toHaveBeenCalled();
   });
 
+  it.each(['strict', 'development'] as const)('never lets the classifier auto-approve an out-of-workspace temp-dir Write in %s mode', async (preset) => {
+    const tempPath = '/tmp/subagent-outside-gate.sh';
+    const { executor, policy, permissionRequest } = buildPipelineRuntime({
+      preset,
+      workingDirectory: '/work/project',
+      requestPermission: async () => false,
+    });
+
+    const result = await executor.execute(
+      'Write',
+      { file_path: tempPath, content: 'echo hi' },
+      { sessionId: 'session-pipeline-gate', subagentPolicy: policy },
+    );
+
+    expect(permissionRequest).toHaveBeenCalledTimes(1);
+    expect(permissionRequest).toHaveBeenCalledWith(expect.objectContaining({
+      tool: 'Write', details: expect.objectContaining({ path: tempPath }), forceConfirm: true,
+    }));
+    expect(result.success).toBe(false);
+    expect(resolverState.execute).not.toHaveBeenCalled();
+  });
+
   it.each(['strict', 'development'] as const)('parks an out-of-workspace Write until approve once in %s mode', async (preset) => {
     const workingDirectory = '/work/project';
     const outsidePath = '/work/outside/approve.txt';

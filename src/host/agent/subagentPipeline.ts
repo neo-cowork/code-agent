@@ -41,6 +41,8 @@ function isDelegationTool(toolName: string): boolean {
 export interface PipelineCheckResult {
   allowed: boolean;
   reason?: string;
+  /** Outside-workdir operation: the approval pipeline must ask; classifier/convenience grants may not approve it. */
+  forceConfirm?: boolean;
   warnings: string[];
 }
 
@@ -409,7 +411,7 @@ export class SubagentPipeline {
           },
         });
 
-        return { allowed: true, warnings };
+        return { allowed: true, forceConfirm: true, warnings };
       }
 
       warnings.push(`${request.permissionLevel} operation without explicit path forwarded to approval pipeline`);

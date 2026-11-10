@@ -514,6 +514,7 @@ describe('SubagentPipeline', () => {
 
       expect(result.allowed).toBe(true);
       expect(result.warnings).toContain(`${permissionLevel} operation outside working directory forwarded to approval pipeline`);
+      expect(result.forceConfirm).toBe(true);
       expect(pipeline.getAuditLog()).toContainEqual(expect.objectContaining({
         action: 'tool_execute',
         details: expect.objectContaining({ path: outsidePath, note: 'requires_approval_pipeline' }),
