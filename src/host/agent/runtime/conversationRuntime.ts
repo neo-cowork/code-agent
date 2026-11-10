@@ -35,7 +35,7 @@ import {
 
 import { writeTurnSnapshot } from './turnSnapshotWriter';
 import { maybePauseForStep } from './stepPause';
-import { activateMaxStepsFinalResponse, bindGoalWallClockForContext, createResourceWarning, ensureMaxStepsWrapUp } from './maxStepsFallback';
+import { activateMaxStepsFinalResponse, bindGoalWallClockForContext, createResourceWarning, createStepWarning, ensureMaxStepsWrapUp } from './maxStepsFallback';
 import { DoomLoopGuard } from './doomLoopGuard';
 import { createJevWarden } from './jevWarden';
 import { runToolStepGuardRails } from './toolStepGuardRails';
@@ -363,7 +363,9 @@ export class ConversationRuntime {
     let softValidationRetries = 0;
     let resourceFinalAttempted = false;
     const wallClock = bindGoalWallClockForContext(this.ctx);
-    const warnResources = createResourceWarning(this.ctx, (text, source) => this.contextAssembly.injectSystemMessage(text, source), wallClock.getElapsedMs);
+    const injectWarning: Parameters<typeof createResourceWarning>[1] = (text, source) => this.contextAssembly.injectSystemMessage(text, source);
+    const warnResources = createResourceWarning(this.ctx, injectWarning, wallClock.getElapsedMs);
+    const warnSteps = createStepWarning(this.ctx, injectWarning);
     let userTurnId: string | undefined;
     let terminal: RunTerminalInfo = { status: 'completed' };
     let runError: unknown;
@@ -402,6 +404,7 @@ export class ConversationRuntime {
           resourceFinalAttempted = true;
         }
         warnResources();
+        warnSteps(iterations);
 
         // Max-steps 兜底（借鉴 MiMoCode max-steps.txt）：进入最后一轮时禁用工具，
         // 强制纯文本三段式总结（已完成/未完成/建议下一步），避免步数耗尽无收尾直接断流。
@@ -884,7 +887,14 @@ export class ConversationRuntime {
     preloadToolsForIntent(startupTaskFeatures, this.ctx.sessionId);
     try {
       const resolvedSkill =
-        await raceStartupStep(this.ctx, resolveSkillInvocation(userRequest, this.ctx.workingDirectory), 'skill_discovery')
+        await raceStartupStep(
+          this.ctx,
+          resolveSkillInvocation(userRequest, this.ctx.workingDirectory, {
+            sessionId: this.ctx.sessionId,
+            toolScope: this.ctx.toolScope,
+          }),
+          'skill_discovery',
+        )
         ?? await raceStartupStep(this.ctx, resolveStickyStrictSkillInvocation(this.ctx, userRequest), 'skill_discovery');
       if (isStartupAborted(this.ctx)) return null;
       // 单轮文件交付轮丢弃裸词别名注入（sticky 来源只可能是 slash 种子，不受影响）
