@@ -116,6 +116,12 @@ describe('settings search index', () => {
     }
   });
 
+  it('finds manualDesktopActivity via audio/record/transcription/microphone keywords', () => {
+    for (const q of ['audio', 'record', 'recording', 'transcription', 'microphone', '录音', '音频', '转写', '麦克风']) {
+      expect(searchSettings(q).map((entry) => entry.labelKey)).toContain('manualDesktopActivity');
+    }
+  });
+
   it('only references registered settings tabs', () => {
     const registered = new Set<string>(SETTINGS_TAB_IDS);
     for (const entry of SETTINGS_INDEX) {
