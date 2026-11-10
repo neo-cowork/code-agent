@@ -11,7 +11,6 @@ import { ToolCallDisplay } from '../../../src/renderer/components/features/chat/
 import type { PermissionRequest } from '../../../src/shared/contract/permission';
 
 const mocks = vi.hoisted(() => ({
-  language: 'zh' as 'zh' | 'en',
   tasks: [] as Task[],
   snapshot: null as AgentTreeSnapshot | null,
   openPreview: vi.fn(),
@@ -38,7 +37,7 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
   useAppStore: (selector?: (state: {
     processingSessionIds: Set<string>;
     openPreview: typeof mocks.openPreview;
-    language: 'zh' | 'en';
+    language: 'zh';
     setLanguage: ReturnType<typeof vi.fn>;
     cloudUIStrings: undefined;
     pendingPermissionRequest: PermissionRequest | null;
@@ -49,7 +48,7 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
     const state = {
       processingSessionIds: new Set<string>(),
       openPreview: mocks.openPreview,
-      language: mocks.language,
+      language: 'zh' as const,
       setLanguage: vi.fn(),
       cloudUIStrings: undefined as undefined,
       pendingPermissionRequest: mocks.pendingPermissionRequest,
@@ -120,28 +119,6 @@ function completedSpawnCall(): ToolCall {
   };
 }
 
-const REAL_BACKGROUND_SPAWN_OUTPUT = `Agent [研-异步书面更新] spawned in background:
-- Agent ID: agent_explore_background_receipt
-- Task: 调研远程团队为什么使用异步书面更新
-- Status: running
-- Mode: declarative
-- Running agents: 1
-
-Use wait_agent to block until done, or close_agent to cancel.`;
-
-function backgroundSpawnCall(): ToolCall {
-  return {
-    id: 'spawn-call-background',
-    name: 'spawn_agent',
-    arguments: { role: 'explore', task: '调研远程团队为什么使用异步书面更新', run_in_background: true },
-    result: {
-      toolCallId: 'spawn-call-background',
-      success: true,
-      output: REAL_BACKGROUND_SPAWN_OUTPUT,
-    },
-  };
-}
-
 const REAL_TASK_OUTPUT = `Agent [Researcher] completed (定价与同步方式):
 
 Notion: - Cost: $20/month; sync: database and page export.
@@ -174,8 +151,7 @@ const REAL_WAIT_AGENT_OUTPUT = `Wait results (all done):
 ✅ [agent_explore] explore — completed (1200ms)
    Result: Notion and Obsidian comparison:
    - Cost: $20/month
-   Stats: 2 iterations, 1 tools, $0.0169
-[agent_missing] NOT FOUND`;
+   Stats: 2 iterations, 1 tools, $0.0169`;
 
 function completedWaitAgentCall(): ToolCall {
   return {
@@ -191,7 +167,6 @@ function completedWaitAgentCall(): ToolCall {
 }
 
 beforeEach(() => {
-  mocks.language = 'zh';
   mocks.tasks = [];
   mocks.snapshot = null;
   mocks.openPreview.mockReset();
@@ -327,45 +302,8 @@ describe('delegation receipt', () => {
     expect(view.getByText('已完成')).toBeTruthy();
   });
 
-  it('hides the background spawn agent id in details while the raw receipt still resolves the agent node', () => {
-    const spawnCall = backgroundSpawnCall();
-    const rawSpawnCall = structuredClone(spawnCall);
-    const runningNode = {
-      id: 'agent_explore_background_receipt',
-      role: '研-异步书面更新',
-      status: 'running' as const,
-      statusLabel: '正在处理',
-      task: '调研远程团队为什么使用异步书面更新',
-      children: [],
-      lastToolStep: { tool: 'WebSearch', target: '异步协作', at: 4 },
-      worktreeState: { status: 'none' as const },
-      budgetSummary: {},
-      evidenceRefs: [],
-      sources: ['spawnGuard' as const],
-    };
-    mocks.snapshot = {
-      generatedAt: 5,
-      roots: [runningNode],
-      nodes: [runningNode],
-      summary: { total: 1, running: 1, completed: 0, failed: 0, cancelled: 0, blocked: 0, withWorktree: 0, ownershipConflicts: [] },
-    };
-
-    const view = renderCall(spawnCall);
-    expect(view.getByTestId('delegation-activity')).toBeTruthy();
-    fireEvent.click(view.getByTestId('tool-call-row-spawn_agent'));
-    const more = view.queryByText(/展开剩余/);
-    if (more) fireEvent.click(more);
-
-    expect(view.container.textContent).toContain('Agent [研-异步书面更新] spawned in background:');
-    expect(view.container.textContent).toContain('- Task: 调研远程团队为什么使用异步书面更新');
-    expect(view.container.textContent).not.toContain('- Agent ID:');
-    expect(view.container.textContent).not.toContain('agent_explore_background_receipt');
-    expect(spawnCall).toStrictEqual(rawSpawnCall);
-  });
-
-  it('keeps spawn_agent bookkeeping model-facing but localizes expanded details with or without the tree node', () => {
+  it('keeps spawn_agent bookkeeping model-facing but hides it in expanded details with or without the tree node', () => {
     const spawnCall = completedSpawnCall();
-    const rawSpawnCall = structuredClone(spawnCall);
     const completedNode = {
       id: 'agent_explore_7b8c452a-826d-4f84-a500-83beaa6c8015',
       role: 'explore',
@@ -387,99 +325,96 @@ describe('delegation receipt', () => {
 
     const found = renderCall(spawnCall);
     fireEvent.click(found.getByTestId('tool-call-row-spawn_agent'));
-    fireEvent.click(found.getByText(/展开剩余/));
-    expect(found.container.textContent).toContain('子代理「Explorer」已完成任务：');
-    expect(found.container.textContent).toContain('任务： 判断 2+2 等于多少。');
-    expect(found.container.textContent).toContain('结果：\n4\n- Cost: $20/month');
-    expect(found.container.textContent).toContain('统计：\n- 执行轮数：1\n- 使用的工具：无');
+    const foundMore = found.queryByText(/展开剩余/);
+    if (foundMore) fireEvent.click(foundMore);
+    expect(found.container.textContent).not.toContain('Result:');
+    expect(found.container.textContent).toContain('- Cost: $20/month');
     expect(found.container.textContent).toContain('- Agent ID: customer-visible-reference');
     expect(found.container.textContent).toContain('- Pipeline ID: customer-visible-plan');
     expect(found.container.textContent).not.toContain('- Agent ID: agent_explore_7b8c452a');
     expect(found.container.textContent).not.toContain('- Pipeline ID: agent_explore_7b8c452a');
     expect(found.container.textContent).not.toContain('- Cost: $0.0000');
+    expect(spawnCall.result?.output).toBe(REAL_SPAWN_AGENT_OUTPUT);
     found.unmount();
 
     mocks.snapshot = null;
     const missing = renderCall(spawnCall);
     fireEvent.click(missing.getByTestId('tool-call-row-spawn_agent'));
-    fireEvent.click(missing.getByText(/展开剩余/));
-    expect(missing.container.textContent).toContain('子代理「Explorer」已完成任务：');
-    expect(missing.container.textContent).toContain('结果：\n4\n- Cost: $20/month');
-    expect(missing.container.textContent).toContain('统计：\n- 执行轮数：1\n- 使用的工具：无');
+    const missingMore = missing.queryByText(/展开剩余/);
+    if (missingMore) fireEvent.click(missingMore);
+    expect(missing.container.textContent).not.toContain('Result:');
+    expect(missing.container.textContent).toContain('- Cost: $20/month');
     expect(missing.container.textContent).toContain('- Agent ID: customer-visible-reference');
     expect(missing.container.textContent).toContain('- Pipeline ID: customer-visible-plan');
     expect(missing.container.textContent).not.toContain('- Agent ID: agent_explore_7b8c452a');
     expect(missing.container.textContent).not.toContain('- Pipeline ID: agent_explore_7b8c452a');
     expect(missing.container.textContent).not.toContain('- Cost: $0.0000');
-    for (const scaffolding of ['completed task:', 'Result:', 'Stats:', 'Iterations', 'Tools used']) {
-      expect(missing.container.textContent).not.toContain(scaffolding);
-    }
-    expect(spawnCall).toStrictEqual(rawSpawnCall);
+    expect(spawnCall.result?.output).toBe(REAL_SPAWN_AGENT_OUTPUT);
   });
 
-  it('localizes Task completion scaffolding while preserving the child result and hiding host cost', () => {
+  it('hides Task host cost in the fallthrough while preserving child result cost text', () => {
     const taskCallWithResult = completedTaskCall();
-    const rawTaskCall = structuredClone(taskCallWithResult);
     const view = renderCall(taskCallWithResult);
     fireEvent.click(view.getByTestId('tool-call-row-Task'));
-    fireEvent.click(view.getByText(/展开剩余/));
+    const viewMore = view.queryByText(/展开剩余/);
+    if (viewMore) fireEvent.click(viewMore);
 
-    expect(view.container.textContent).toContain('子代理「Researcher」已完成（定价与同步方式）：');
-    expect(view.container.textContent).toContain('Notion: - Cost: $20/month; sync: database and page export.');
-    expect(view.container.textContent).toContain('统计：\n- 执行轮数：2\n- 使用的工具：无');
+    expect(view.container.textContent).toContain('- Cost: $20/month');
     expect(view.container.textContent).not.toContain('- Cost: $0.0169');
-    for (const scaffolding of ['completed (', 'Result:', 'Stats:', 'Iterations', 'Tools used']) {
-      expect(view.container.textContent).not.toContain(scaffolding);
-    }
-    expect(taskCallWithResult).toStrictEqual(rawTaskCall);
+    expect(taskCallWithResult.result?.output).toBe(REAL_TASK_OUTPUT);
   });
 
-  it.each(['spawn_agent', 'Task'] as const)('keeps %s English scaffolding in English locale and never translates child prose', (name) => {
-    mocks.language = 'en';
-    const call = name === 'spawn_agent' ? completedSpawnCall() : completedTaskCall();
-    const original = structuredClone(call);
-    const view = renderCall(call);
-    fireEvent.click(view.getByTestId(`tool-call-row-${name}`));
-    const more = view.queryByText(/Show .* more lines/);
-    if (more) fireEvent.click(more);
-    expect(view.container.textContent).toContain('Agent [');
-    expect(view.container.textContent).toContain('Stats:\n- Iterations:');
-    expect(view.container.textContent).toContain('- Tools used: none');
-    expect(view.container.textContent).not.toContain('执行轮数');
-    expect(call).toStrictEqual(original);
-  });
+  it('hides wait_agent host cost while preserving the child result cost text', () => {
+    const waitCallWithResult = completedWaitAgentCall();
+    const view = renderCall(waitCallWithResult);
+    fireEvent.click(view.getByTestId('tool-call-row-wait_agent'));
+    const viewMore = view.queryByText(/展开剩余/);
+    if (viewMore) fireEvent.click(viewMore);
 
-  it.each(['spawn_agent', 'Task'] as const)('preserves every byte of %s child prose including scaffold-like lines', (name) => {
-    const body = 'Result:\nStats:\n- Iterations: 42\n- Tools used: none\n- Agent ID: customer-reference\n中文与 emoji 📄\n';
-    const call = name === 'spawn_agent' ? completedSpawnCall() : completedTaskCall();
-    call.result!.output = name === 'spawn_agent'
-      ? `Agent [Explorer] completed task:\n\nTask: 研究协作方式\n\nResult:\n${body}\nStats:\n- Iterations: 1\n- Tools used: WebSearch, Read\n- Agent ID: agent_private`
-      : `Agent [Explorer] completed:\n\n${body}\nStats:\n- Iterations: 1\n- Tools used: WebSearch, Read`;
-    const original = structuredClone(call);
+    expect(view.container.textContent).toContain('- Cost: $20/month');
+    expect(view.container.textContent).not.toContain('$0.0169');
+    expect(waitCallWithResult.result?.output).toBe(REAL_WAIT_AGENT_OUTPUT);
+  });
+});
+
+// Integration guard: exercise the production component after main's report-only projection.
+describe('delegation receipt — integrated display projection', () => {
+  const backgroundOutput = `Agent [Explorer] spawned in background:
+- Agent ID: agent_explore_background_receipt
+- Task: 调研异步书面更新
+- Status: running
+- Mode: declarative
+- Running agents: 1
+
+Use wait_agent to block until done, or close_agent to cancel.`;
+
+  it.each([
+    ['background spawn', 'spawn_agent', backgroundOutput, '代理工作中', ['agent_explore_background_receipt', 'spawned in background:']],
+    ['completed spawn', 'spawn_agent', REAL_SPAWN_AGENT_OUTPUT, '- Agent ID: customer-visible-reference', ['completed task:', '- Iterations: 1', '- Tools used: none']],
+    ['completed Task', 'Task', REAL_TASK_OUTPUT, 'Notion: - Cost: $20/month; sync: database and page export.', ['completed (', '- Iterations: 2', '- Tools used: none']],
+    ['wait result', 'wait_agent', `${REAL_WAIT_AGENT_OUTPUT}\n[agent_missing] NOT FOUND`, 'Notion and Obsidian comparison:', ['[agent_explore]', '[agent_missing]', 'NOT FOUND']],
+  ] as const)('preserves the complete raw tool call when rendering %s', (_shape, name, output, expected, hidden) => {
+    const call: ToolCall = {
+      id: 'integration-raw-call',
+      name,
+      arguments: name === 'wait_agent'
+        ? { agentIds: ['agent_explore', 'agent_missing'] }
+        : { role: 'explore', task: '调研异步书面更新' },
+      result: {
+        toolCallId: 'integration-raw-call',
+        success: true,
+        output,
+        metadata: { agentId: 'agent_explore_background_receipt' },
+      },
+    };
+    const raw = structuredClone(call);
     const view = renderCall(call);
     fireEvent.click(view.getByTestId(`tool-call-row-${name}`));
     const more = view.queryByText(/展开剩余/);
     if (more) fireEvent.click(more);
-    expect(view.container.textContent).toContain(body);
-    expect(view.container.textContent).toContain('- 使用的工具：WebSearch, Read');
-    expect(call).toStrictEqual(original);
-  });
-
-  it('hides wait_agent ids and host cost while preserving role, status, duration and child result text', () => {
-    const waitCallWithResult = completedWaitAgentCall();
-    const rawWaitCall = structuredClone(waitCallWithResult);
-    const view = renderCall(waitCallWithResult);
-    fireEvent.click(view.getByTestId('tool-call-row-wait_agent'));
-    fireEvent.click(view.getByText(/展开剩余/));
-
-    expect(view.container.textContent).toContain('✅ explore — completed (1200ms)');
-    expect(view.container.textContent).toContain('未找到子代理');
-    expect(view.container.textContent).toContain('Result: Notion and Obsidian comparison:');
-    expect(view.container.textContent).toContain('- Cost: $20/month');
-    expect(view.container.textContent).not.toContain('[agent_explore]');
-    expect(view.container.textContent).not.toContain('[agent_missing]');
-    expect(view.container.textContent).not.toContain('$0.0169');
-    expect(waitCallWithResult).toStrictEqual(rawWaitCall);
+    expect(view.container.textContent).toContain(expected);
+    for (const text of hidden) expect(view.container.textContent).not.toContain(text);
+    expect(call).toStrictEqual(raw);
   });
 });
 

@@ -24,6 +24,7 @@ import { SKILL_CHANNELS } from '@shared/ipc/channels';
 import type { Project, ProjectCapabilitySelection, ProjectDetail } from '@shared/contract/project';
 import type { CronJobDefinition } from '@shared/contract';
 import { useI18n } from '../../../hooks/useI18n';
+import { getBuiltinJobDisplay } from '../cron/builtinJobDisplay';
 import * as projectClient from '../../../services/projectClient';
 import * as rolesClient from '../../../services/rolesClient';
 import { cronClient } from '../../../services/cronClient';
@@ -287,12 +288,12 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
   // ---- 自动化（cron agent 任务的 libraryProjectId） ----
   const automationSelected = agentJobs
     .filter((job) => job.action.type === 'agent' && job.action.libraryProjectId === projectId)
-    .map((job) => ({ id: job.id, label: job.name }));
+    .map((job) => ({ id: job.id, label: getBuiltinJobDisplay(job, language)?.name ?? job.name }));
   const automationOptions = agentJobs
     .filter((job) => !(job.action.type === 'agent' && job.action.libraryProjectId === projectId))
     .map((job) => ({
       id: job.id,
-      label: job.name,
+      label: getBuiltinJobDisplay(job, language)?.name ?? job.name,
       // 调度时间人话复用侧栏能力区 formatNextRun 样板（utils/formatNextRun），不重写
       description: job.nextRunAt != null
         ? ps.automationNextRun.replace(

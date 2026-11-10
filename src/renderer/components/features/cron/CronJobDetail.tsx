@@ -4,7 +4,7 @@
 // 收在「高级参数」折叠区；无描述时显示引导文案（入口样式，不接功能）。
 // ============================================================================
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { CronJobDefinition } from '@shared/contract';
 import type { AwaitingApprovalRun } from '@shared/contract/sessionAutomation';
 import { Activity, ChevronRight, Copy, LockKeyhole, Pencil, Play, Power, Sparkles, Trash2 } from 'lucide-react';
@@ -32,7 +32,7 @@ import { CronGroupListenCheck } from './CronGroupListenCheck';
 import { CronWebhookLinkBlock } from './CronWebhookLinkBlock';
 import { CronEventDecisionsPanel } from './CronEventDecisionsPanel';
 import { CronJobApprovalHint } from './CronJobApprovalHint';
-import { getBuiltinJobDisplay } from './builtinJobDisplay';
+import { getBuiltinJobDisplay, getVisibleJobTags } from './builtinJobDisplay';
 import { isWebhookCronJob } from '@shared/cronWebhookJob';
 import { CronWriteScopePanel } from './CronWriteScopePanel';
 
@@ -60,6 +60,11 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
   const [isTriggering, setIsTriggering] = useState(false);
   const [toggleError, setToggleError] = useState<string | null>(null);
+  const approvalEntry = useRef<HTMLDivElement>(null);
+  const awaitingByJobId = useMemo(
+    () => job && awaitingRun ? new Map([[job.id, awaitingRun]]) : undefined,
+    [job, awaitingRun],
+  );
   // event 摘要的账号/群显示名（通道目录）；目录没有的回落 id。挂在早退 return 之前（hook 不得条件调用）。
   const eventNamesFor = useEventScheduleNames();
 
@@ -99,12 +104,13 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
   }
 
   const latest = latestExecutions[job.id];
-  const latestMeta = getLatestExecutionStatus(latest);
-  const latestLabel = cc.status[latest?.status ?? 'none'];
+  const latestMeta = getLatestExecutionStatus(latest, cc);
+  const latestLabel = latestMeta.label;
   const awaitingApproval = awaitingRun != null;
   const builtinDisplay = getBuiltinJobDisplay(job, language);
   const displayName = builtinDisplay?.name ?? job.name;
   const displayDescription = builtinDisplay?.description ?? job.description;
+  const displayTags = getVisibleJobTags(job);
   const cronTimeZone = job.schedule.type === 'cron' ? job.schedule.timezone : undefined;
   const scheduleSummary = job.schedule.type === 'cron'
     ? formatCronScheduleLabelWithZone(job.schedule.expression, job.schedule.timezone, language)
@@ -155,12 +161,14 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
               )}
             </div>
             {awaitingRun && (
-              <CronJobApprovalHint
-                key={awaitingRun.requestId}
-                run={awaitingRun}
-                onReview={onReviewAwaiting}
-                onResolved={onApprovalResolved}
-              />
+              <div ref={approvalEntry} tabIndex={-1}>
+                <CronJobApprovalHint
+                  key={awaitingRun.requestId}
+                  run={awaitingRun}
+                  onReview={onReviewAwaiting}
+                  onResolved={onApprovalResolved}
+                />
+              </div>
             )}
             <div className="mt-2 max-w-3xl text-sm">
               {displayDescription ? (
@@ -285,9 +293,9 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
           </div>
         </details>
 
-        {job.tags && job.tags.length > 0 && (
+        {displayTags.length > 0 && (
           <div className="mt-4 flex flex-wrap gap-2">
-            {job.tags.map((tag) => (
+            {displayTags.map((tag) => (
               <span
                 key={tag}
                 className="rounded-full bg-zinc-800 px-2.5 py-1 text-xs text-zinc-300"
@@ -315,11 +323,18 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
                 executions={executions}
                 runsOnByJobId={{ [job.id]: job.runsOn }}
                 selectedExecutionId={selectedExecutionId}
-                onSelectExecution={setSelectedExecutionId}
+                awaitingByJobId={awaitingByJobId}
+                onSelectExecution={(executionId) => {
+                  setSelectedExecutionId(executionId);
+                  if (awaitingRun?.executionId === executionId) {
+                    approvalEntry.current?.scrollIntoView({ block: 'nearest' });
+                    approvalEntry.current?.focus({ preventScroll: true });
+                  }
+                }}
               />
             </section>
             <section className="min-h-0 overflow-y-auto">
-              <CronExecutionDetail execution={selectedExecution} jobName={job.name} runsOn={job.runsOn} />
+              <CronExecutionDetail execution={selectedExecution} jobName={displayName} runsOn={job.runsOn} />
             </section>
           </div>
         )}
