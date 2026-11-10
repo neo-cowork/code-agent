@@ -591,7 +591,10 @@ export function normalizeCronJobRow(row: unknown): CronJobDefinition | null {
     retryDelay: readOptionalNumberField(row, 'retry_delay') === CRON_GUARDRAILS.LEGACY_DEFAULT_RETRY_DELAY_MS
       ? undefined
       : readOptionalNumberField(row, 'retry_delay'),
-    timeout: readOptionalNumberField(row, 'timeout'),
+    // Local legacy saves wrote the default even for unlimited; cloud keeps its real limit.
+    timeout: runsOn !== 'cloud' && readOptionalNumberField(row, 'timeout') === CRON_GUARDRAILS.LEGACY_DEFAULT_TIMEOUT_MS
+      ? undefined
+      : readOptionalNumberField(row, 'timeout'),
     tags: normalizeTags(parseJsonValue(row.tags)),
     metadata: normalizeUnknownRecord(parseJsonValue(row.metadata)),
     createdAt,

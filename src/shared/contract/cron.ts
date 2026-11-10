@@ -90,7 +90,7 @@ export interface CronJobDefinition {
   /** Delay between retries in milliseconds */
   retryDelay?: number;
   /** Timeout for job execution in milliseconds */
-  timeout?: number;
+  timeout?: number | null;
   /** Tags for categorization */
   tags?: string[];
   /** Custom metadata */
