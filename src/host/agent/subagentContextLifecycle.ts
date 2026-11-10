@@ -7,7 +7,8 @@ export async function withPersistedSubagentLifecycle(
   run: () => Promise<SubagentResult>,
 ): Promise<SubagentResult> {
   const { context, config, prompt } = request;
-  const agentId = context.executionAgentId || context.spawnGuardId || context.agentId;
+  // agentId may identify the caller of a nested tool, not this execution.
+  const agentId = context.executionAgentId || context.spawnGuardId;
   if (context.suppressContextPublishing || !context.sessionId || !agentId) return run();
   const store = getSubagentContextStore();
   const startedAt = Date.now();

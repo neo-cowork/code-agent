@@ -15,6 +15,7 @@ vi.mock('../../../src/host/context/subagentContextStore', async (importOriginal)
   return { ...actual, getSubagentContextStore: () => store };
 });
 
+import { createProtocolSubagentExecutionContext } from '../../../src/host/agent/subagentExecutionContext';
 import { getAgentTreeSnapshot } from '../../../src/host/agent/agentTreeService';
 import { getBackgroundSubagentRegistry } from '../../../src/host/agent/backgroundSubagentRegistry';
 import { getSpawnGuard, resetSpawnGuard } from '../../../src/host/agent/spawnGuard';
@@ -158,4 +159,96 @@ it('keeps the spawn name before the executor context exists', async () => {
   expect(getAgentTreeSnapshot({ sessionId: id }).nodes).toHaveLength(1);
   resolve(result());
   await registry.await(agentId);
+});
+
+
+it.each(['Explore', 'Skill:notes'])('%s inherits only parent agentId without overwriting parent lifecycle or messages', async (name) => {
+  const id = session();
+  const parent = startHelper(id, '总结B', false);
+  const store = getSubagentContextStore();
+  try {
+    const initial = store.get(id, parent.agentId);
+    if (!initial) throw new Error('Missing parent context');
+    store.upsert({ ...initial, messages: [{
+      id: 'parent-progress', role: 'assistant', content: 'Reading folder B notes', timestamp: Date.now(),
+    }] });
+    const before = store.get(id, parent.agentId);
+    if (!before) throw new Error('Missing populated parent context');
+    const nestedContext = createProtocolSubagentExecutionContext({
+      ...context(id), agentId: parent.agentId,
+      modelConfig: { provider: 'test', model: 'test-model' },
+      resolver: { getDefinition: () => undefined },
+    }, allow);
+    expect(nestedContext.agentId).toBe(parent.agentId);
+    expect(nestedContext.executionAgentId).toBeUndefined();
+    expect(nestedContext.spawnGuardId).toBeUndefined();
+    let during: ReturnType<typeof store.get> = null;
+    const nestedResult = await withPersistedSubagentLifecycle({
+      prompt: 'Inspect one note',
+      config: { name, systemPrompt: 'Inspect notes.', availableTools: ['Read'] },
+      context: nestedContext,
+    }, async () => {
+      during = store.get(id, parent.agentId);
+      return result();
+    });
+    expect(nestedResult).toEqual(result());
+    const after = store.get(id, parent.agentId);
+    if (!after) throw new Error('Missing parent context after nested execution');
+    expect({ during, after }).toEqual({ during: before, after: before });
+    expect(store.list(id)).toHaveLength(1);
+    expect(getAgentTreeSnapshot({ sessionId: id }).nodes[0]).toMatchObject({
+      id: parent.agentId, displayName: '总结B', status: 'running', background: true,
+    });
+    const status = await executeTaskStatus({}, context(id), allow);
+    expect(status.ok && status.output).toContain('总结B [running]');
+    expect(status.ok && status.output).not.toContain(name);
+
+    // Reload the real parent record as if the host restarted before the parent finished.
+    const beforeBoot = Date.now() - process.uptime() * 1000 - 1000;
+    const file = path.join(diskDir, `nested-${name.replace(/[^a-z]/gi, '-')}.json`);
+    new SubagentContextStore(file).upsert({ ...after, updatedAt: beforeBoot });
+    const reloaded = new SubagentContextStore(file).get(id, parent.agentId);
+    if (!reloaded) throw new Error('Missing reloaded parent context');
+    resetSpawnGuard();
+    store.upsert(reloaded);
+    expect(getAgentTreeSnapshot({ sessionId: id }).nodes[0]).toMatchObject({
+      displayName: '总结B', status: 'cancelled',
+    });
+    expect(store.get(id, parent.agentId)?.messages).toEqual(before.messages);
+  } finally {
+    parent.resolve(result());
+    await parent.promise;
+  }
+});
+
+
+it.each(['executionAgentId', 'spawnGuardId'] as const)('%s records the child instead of inherited parent agentId', async (identityField) => {
+  const id = session();
+  const parent = startHelper(id, '总结B', false);
+  const store = getSubagentContextStore();
+  const before = store.get(id, parent.agentId);
+  try {
+    const nestedContext = createProtocolSubagentExecutionContext({
+      ...context(id), agentId: parent.agentId,
+      modelConfig: { provider: 'test', model: 'test-model' },
+      resolver: { getDefinition: () => undefined },
+    }, allow);
+    const childId = `nested-child-${identityField}`;
+    await withPersistedSubagentLifecycle({
+      prompt: 'Inspect a note',
+      config: { name: 'Nested reader', systemPrompt: 'Read notes.', availableTools: ['Read'] },
+      context: { ...nestedContext, [identityField]: childId },
+    }, async () => result());
+    expect(store.get(id, parent.agentId)).toEqual(before);
+    expect(store.get(id, childId)?.lifecycle).toMatchObject({
+      status: 'completed', displayName: 'Nested reader',
+    });
+    expect(getAgentTreeSnapshot({ sessionId: id }).nodes.map(({ id, status }) => ({ id, status })))
+      .toEqual(expect.arrayContaining([
+        { id: parent.agentId, status: 'running' }, { id: childId, status: 'completed' },
+      ]));
+  } finally {
+    parent.resolve(result());
+    await parent.promise;
+  }
 });
