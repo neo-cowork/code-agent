@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
 import { zh } from '../../../src/renderer/i18n/zh';
+import { getHumanToolLabel } from '../../../src/renderer/utils/toolHumanLabel';
 
 const invokeDomain = vi.hoisted(() => vi.fn());
 
@@ -78,9 +79,10 @@ describe('PrivacySettings permission grants', () => {
     expect(await screen.findAllByTestId('permission-grant-row')).toHaveLength(3);
     // 三种条目都呈现：应用名 / 工具+对象 / 会话内工具。
     expect(screen.getByText('Notes')).toBeTruthy();
-    expect(screen.getByText('mail_send')).toBeTruthy();
+    const humanLabel = (toolName: string) => getHumanToolLabel({ toolName, labels: zh.receiptPresentation.humanToolLabels });
+    expect(screen.getByText(humanLabel('mail_send'))).toBeTruthy();
     expect(screen.getByText(/team@example.com/)).toBeTruthy();
-    expect(screen.getByText('bash')).toBeTruthy();
+    expect(screen.getByText(humanLabel('bash'))).toBeTruthy();
     // scope 与来源可见（scope 在组合行里，按行内文本断言）。
     const rows = screen.getAllByTestId('permission-grant-row');
     expect(rows.some((row) => row.textContent?.includes(zh.settings.privacy.permissionGrants.scope.always))).toBe(true);
