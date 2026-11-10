@@ -91,6 +91,8 @@ describe('cloud copy role restriction', () => {
     openCopy();
 
     fireEvent.click(screen.getByRole('button', { name: '创建任务' }));
+    expect(createJob).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
 
     expect(await screen.findByText(zhReason)).toBeTruthy();
     expect(screen.queryByText(new RegExp(CLOUD_ROLE_BOUND_ERROR))).toBeNull();

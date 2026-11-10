@@ -6,6 +6,10 @@ import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { describe, expect, it } from 'vitest';
+import { quote } from 'shell-quote';
+import { wrapCommandForSandbox } from '../../../../src/host/sandbox/manager';
+import { resolveSandboxNetworkPolicy } from '../../../../src/host/sandbox/networkPolicy';
+import { generateProfile, type SeatbeltConfig } from '../../../../src/host/sandbox/seatbelt';
 
 function repoRoot(): string {
   let dir = path.dirname(fileURLToPath(import.meta.url));
@@ -101,9 +105,203 @@ describe('frontend-slides theme-samples script', () => {
     // 显式 LIBREOFFICE_PATH 是权威来源：指向不存在的文件 = 本机视为没装，即使系统别处装了 LibreOffice。
     const result = run(deck, { PATH: emptyBin, LIBREOFFICE_PATH: path.join(emptyBin, 'soffice') });
     expect(result.status, result.stderr).toBe(0);
-    expect(JSON.parse(result.stdout.trim()).available).toBe(false);
+    expect(JSON.parse(result.stdout.trim())).toEqual({ available: false, reason: 'LibreOffice (soffice) not found' });
     expect(result.stderr).toContain('lookup failed');
   });
+});
+
+describe('frontend-slides theme-samples diagnostics and sandbox', () => {
+  function fakeSoffice(body: string) {
+    const deck = makeDeck();
+    const fake = path.join(deck, 'fake-soffice');
+    fs.writeFileSync(fake, `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+    return { deck, fake };
+  }
+
+  it.each([
+    ['stderr tail', 'echo conversion-broke >&2; echo conversion-output; exit 7', 'soffice render failed', 'conversion-broke', '"status":7'],
+    ['empty stderr', 'exit 1', 'soffice render failed', '"stderr":""', '"status":1'],
+    ['signal', 'kill -TERM $$', 'soffice render failed', '"signal":"SIGTERM"', '"status":null'],
+    // stderr text is not evidence of a denial: a real one never reaches the child's stderr.
+    ['denial-looking stderr', 'echo "Sandbox: soffice deny(1) file-write-create /blocked" >&2; exit 1', 'soffice render failed', 'file-write-create /blocked', '"status":1'],
+  ])('soffice non-zero reports %s and a distinct reason', (_name, body, reason, tail, status) => {
+    const { deck, fake } = fakeSoffice(body);
+    try {
+      const result = run(deck, { ...process.env, LIBREOFFICE_PATH: fake });
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout.trim().split('\n')).toHaveLength(1);
+      expect(JSON.parse(result.stdout)).toEqual({ available: false, reason });
+      expect(result.stderr).toContain(tail);
+      expect(result.stderr).toContain(status);
+      expect(result.stderr).toContain('"error":null');
+      expect(result.stderr).toContain('"signal":');
+      if (body.includes('conversion-output')) expect(result.stderr).toContain('conversion-output');
+    } finally {
+      fs.rmSync(deck, { recursive: true, force: true });
+    }
+  });
+
+  it('includes spawn errors when an executable has a missing interpreter', () => {
+    const { deck, fake } = fakeSoffice('exit 0');
+    fs.writeFileSync(fake, '#!/nonexistent-theme-samples-interpreter\n');
+    try {
+      const result = run(deck, { ...process.env, LIBREOFFICE_PATH: fake });
+      expect(JSON.parse(result.stdout)).toEqual({ available: false, reason: 'soffice render failed' });
+      const details = JSON.parse(result.stderr.slice(result.stderr.indexOf('{"status"')));
+      expect(details.status).toBe(null);
+      expect(details.signal).toBe(null);
+      expect(details.error).toContain('ENOENT');
+      expect(details.stderr).toBe('');
+    } finally {
+      fs.rmSync(deck, { recursive: true, force: true });
+    }
+  });
+
+  it('caps both stderr and stdout diagnostics at 500 characters', () => {
+    const { deck, fake } = fakeSoffice(`echo '${'e'.repeat(600)}' >&2; echo '${'o'.repeat(600)}'; exit 1`);
+    try {
+      const result = run(deck, { ...process.env, LIBREOFFICE_PATH: fake });
+      const details = JSON.parse(result.stderr.slice(result.stderr.indexOf('{"status"')));
+      expect(details.stderr).toBe('e'.repeat(500));
+      expect(details.stdout).toBe('o'.repeat(500));
+    } finally {
+      fs.rmSync(deck, { recursive: true, force: true });
+    }
+  });
+
+  it('distinguishes pdf-to-png failure from soffice failure', () => {
+    const { deck, fake } = fakeSoffice('exit 0');
+    const converter = path.join(deck, 'pdftoppm');
+    fs.writeFileSync(converter, '#!/bin/sh\necho png-converter-broke >&2\nexit 9\n', { mode: 0o755 });
+    try {
+      const result = run(deck, { ...process.env, LIBREOFFICE_PATH: fake, PATH: `${deck}${path.delimiter}${process.env.PATH}` });
+      expect(JSON.parse(result.stdout)).toEqual({ available: false, reason: 'pdf-to-png failed' });
+      expect(result.stderr).toContain('png-converter-broke');
+      expect(result.stderr).toContain('"status":9');
+    } finally {
+      fs.rmSync(deck, { recursive: true, force: true });
+    }
+  });
+
+  it('places the profile and conversion output within generateProfile writable roots', () => {
+    const { deck, fake } = fakeSoffice('for arg; do echo "$arg" >&2; done; exit 1');
+    try {
+      const result = run(deck, { ...process.env, LIBREOFFICE_PATH: fake });
+      const details = JSON.parse(result.stderr.slice(result.stderr.indexOf('{"status"')));
+      const args = details.stderr.trim().split('\n') as string[];
+      const profile = fileURLToPath(args.find((arg) => arg.startsWith('-env:UserInstallation='))!.slice('-env:UserInstallation='.length));
+      const output = args[args.indexOf('--outdir') + 1];
+      const config: SeatbeltConfig = {
+        allowNetwork: false, readPaths: [], writePaths: [deck], executePaths: [],
+        allowProcessExec: true, allowProcessFork: true, envPassthrough: [], customEnv: {},
+        workingDirectory: deck, allowWorkingDirectoryWrite: false, sensitivePaths: [],
+      };
+      const roots = [...generateProfile(config).matchAll(/\(allow file-write\* \(subpath "([^"]+)"\)\)/g)].map((match) => match[1]);
+      for (const target of [profile, output, path.join(deck, 'theme-samples')]) {
+        // The work tree is already removed by the script; canonicalize its surviving parent.
+        const canonical = path.join(fs.realpathSync(os.tmpdir()), path.relative(os.tmpdir(), target));
+        expect(roots.some((root) => canonical.startsWith(`${root}/`)), target).toBe(true);
+      }
+    } finally {
+      fs.rmSync(deck, { recursive: true, force: true });
+    }
+  });
+
+  const SANDBOX = process.platform === 'darwin' && spawnSync('which', ['sandbox-exec']).status === 0;
+
+  // The wrapper Bash uses: script, soffice and the script's own probes all run inside the real profile.
+  function runSandboxed(deck: string, argv: string[], env: NodeJS.ProcessEnv = process.env) {
+    const command = quote([process.execPath, ...argv]);
+    const wrapped = wrapCommandForSandbox(command, {
+      workingDirectory: deck, allowNetwork: resolveSandboxNetworkPolicy({ command }),
+    });
+    try {
+      return spawnSync('/bin/sh', ['-c', wrapped.command], { cwd: deck, encoding: 'utf8', env, timeout: 180_000 });
+    } finally {
+      wrapped.cleanup();
+    }
+  }
+  // Not under any write root of the profile (those are TMPDIR, the deck and /dev).
+  const outsideRoots = (name: string) => `/private/tmp/theme-samples-${name}-${process.pid}`;
+
+  it.skipIf(!SANDBOX || !SOFFICE)('real Bash sandbox wrapper renders 3 non-empty PNGs', () => {
+    const deck = makeDeck();
+    try {
+      const result = runSandboxed(deck, [script, deck]);
+      expect(result.status, result.stderr).toBe(0);
+      const out = JSON.parse(result.stdout.trim());
+      expect(out.available, result.stderr).toBe(true);
+      expect(out.samples.map((sample: { theme: string }) => sample.theme)).toEqual(['corporate', 'minimal', 'bold-editorial']);
+      for (const sample of out.samples) expect(fs.statSync(sample.png).size).toBeGreaterThan(0);
+    } finally {
+      fs.rmSync(deck, { recursive: true, force: true });
+    }
+  }, 240_000);
+
+  it.skipIf(!SANDBOX)('real sandbox: a conversion failure with nothing denied stays "soffice render failed"', () => {
+    const { deck, fake } = fakeSoffice('echo conversion-broke >&2; exit 7');
+    try {
+      const result = runSandboxed(deck, [script, deck], { ...process.env, LIBREOFFICE_PATH: fake });
+      expect(JSON.parse(result.stdout), result.stderr).toEqual({ available: false, reason: 'soffice render failed' });
+      expect(result.stderr).toContain('conversion-broke');
+      expect(result.stderr).not.toContain('probe failed');
+    } finally {
+      fs.rmSync(deck, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  it.skipIf(!SANDBOX)('real sandbox: an output directory the script may not create is "sandbox denied write"', () => {
+    const { deck, fake } = fakeSoffice('exit 0');
+    const out = outsideRoots('nodir');
+    try {
+      const result = runSandboxed(deck, [script, deck, '--out', out], { ...process.env, LIBREOFFICE_PATH: fake });
+      expect(JSON.parse(result.stdout), result.stderr).toEqual({ available: false, reason: 'sandbox denied write' });
+      expect(result.stderr).toContain(`EPERM: operation not permitted, mkdir '${out}'`);
+      expect(fs.existsSync(out)).toBe(false);
+    } finally {
+      fs.rmSync(out, { recursive: true, force: true });
+      fs.rmSync(deck, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  it.skipIf(!SANDBOX || !SOFFICE)('real sandbox: an existing output directory outside the write roots is "sandbox denied write"', () => {
+    const deck = makeDeck();
+    const out = outsideRoots('rodir');
+    fs.mkdirSync(out);
+    try {
+      const result = runSandboxed(deck, [script, deck, '--out', out]);
+      expect(JSON.parse(result.stdout), result.stderr).toEqual({ available: false, reason: 'sandbox denied write' });
+      expect(result.stderr).toContain(`probe failed: write ${out} -> EPERM`);
+      expect(fs.readdirSync(out)).toEqual([]);
+    } finally {
+      fs.rmSync(out, { recursive: true, force: true });
+      fs.rmSync(deck, { recursive: true, force: true });
+    }
+  }, 240_000);
+
+  // Real soffice, real profile, real denial: without the socket-directory flag LibreOffice binds
+  // /OSL_PIPE_* at the filesystem root, the kernel refuses, and soffice exits 1 printing nothing.
+  it.skipIf(!SANDBOX || !SOFFICE)('real sandbox: soffice denied its IPC socket is "sandbox denied socket", not a render failure', () => {
+    const deck = makeDeck();
+    const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'theme-samples-noflag-'));
+    try {
+      for (const file of ['merge-to-pptx-hybrid.mjs', 'merge-to-pptx-hybrid.bundle.mjs']) {
+        fs.copyFileSync(path.join(path.dirname(script), file), path.join(copy, file));
+      }
+      const source = fs.readFileSync(script, 'utf8');
+      const withoutFlag = source.replace("? '/private/tmp' : ''", "? '' : ''");
+      expect(withoutFlag).not.toBe(source);
+      fs.writeFileSync(path.join(copy, 'theme-samples.mjs'), withoutFlag);
+
+      const result = runSandboxed(deck, [path.join(copy, 'theme-samples.mjs'), deck]);
+      expect(JSON.parse(result.stdout), result.stderr).toEqual({ available: false, reason: 'sandbox denied socket' });
+      expect(result.stderr).toMatch(/probe failed: socket \/OSL_PIPE_\d+_SingleOfficeIPC_probe\d+ -> EPERM/);
+      expect(result.stderr).toContain('soffice (corporate) failed: {"status":1,"signal":null,"error":null,"stderr":"","stdout":""}');
+    } finally {
+      fs.rmSync(copy, { recursive: true, force: true });
+      fs.rmSync(deck, { recursive: true, force: true });
+    }
+  }, 240_000);
 });
 
 describe('frontend-slides SKILL.md sample-pick step', () => {
