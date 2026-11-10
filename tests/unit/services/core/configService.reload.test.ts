@@ -1,5 +1,5 @@
 import { mkdtemp, readFile, writeFile } from 'fs/promises';
-import { readFileSync } from 'fs';
+import { readFileSync, type FSWatcher } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -21,17 +21,28 @@ const secureStorageMock = {
 
 // 提到顶层以便断言 reload 重跑了注入全局状态的 apply 函数
 const loadUserRules = vi.fn();
+const watchers: FSWatcher[] = [];
 const setProviderConcurrencyOverrides = vi.fn();
 const setProviderProxyOverrides = vi.fn();
 
 async function loadConfigServiceForDataDir(dataDir: string) {
   vi.resetModules();
+  vi.doMock('fs', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('fs')>();
+    return { ...actual, watch: (...args: Parameters<typeof actual.watch>) => {
+      const watcher = actual.watch(...args);
+      vi.spyOn(watcher, 'unref');
+      watchers.push(watcher);
+      return watcher;
+    } };
+  });
   secureStorageMock.getSettingsFromKeychain.mockClear();
   secureStorageMock.saveSettingsToKeychain.mockClear();
   loadUserRules.mockClear();
   setProviderConcurrencyOverrides.mockClear();
   setProviderProxyOverrides.mockClear();
   loggerMock.warn.mockClear();
+  loggerMock.info.mockClear();
 
   vi.doMock('../../../../src/host/platform', () => ({
     app: {
@@ -65,17 +76,19 @@ async function createDataDir(): Promise<string> {
   return mkdtemp(join(tmpdir(), 'code-agent-config-reload-'));
 }
 
-describe('ConfigService.reloadFromDisk', () => {
-  afterEach(() => {
-    vi.doUnmock('../../../../src/host/platform');
-    vi.doUnmock('../../../../src/host/services/core/secureStorage');
-    vi.doUnmock('../../../../src/host/services/infra/logger');
-    vi.doUnmock('../../../../src/host/permissions/policyEngine');
-    vi.doUnmock('../../../../src/host/model/concurrencyLimiter');
-    vi.doUnmock('../../../../src/host/model/providers/shared');
-    vi.resetModules();
-  });
+afterEach(() => {
+  vi.doUnmock('../../../../src/host/platform');
+  vi.doUnmock('../../../../src/host/services/core/secureStorage');
+  vi.doUnmock('../../../../src/host/services/infra/logger');
+  vi.doUnmock('../../../../src/host/permissions/policyEngine');
+  vi.doUnmock('../../../../src/host/model/concurrencyLimiter');
+  vi.doUnmock('../../../../src/host/model/providers/shared');
+  for (const watcher of watchers.splice(0)) watcher.close();
+  vi.doUnmock('fs');
+  vi.resetModules();
+});
 
+describe('ConfigService.reloadFromDisk', () => {
   it('picks up external edits into memory and re-runs apply hooks', async () => {
     const dataDir = await createDataDir();
     const configPath = join(dataDir, 'config.json');
@@ -140,6 +153,29 @@ describe('ConfigService.reloadFromDisk', () => {
 });
 
 describe('ConfigService config.json watcher', () => {
+  it('warns without throwing when the config directory is missing', async () => {
+    const dataDir = join(await createDataDir(), 'missing');
+    const { ConfigService } = await loadConfigServiceForDataDir(dataDir);
+    const service = new ConfigService();
+    expect(() => service.startWatchingConfigFile()).not.toThrow();
+    expect(loggerMock.warn).toHaveBeenCalledWith(
+      'Failed to watch config file', expect.objectContaining({ error: expect.any(String) }),
+    );
+    service.stopWatchingConfigFile();
+  });
+
+  it('watches a missing config file without retaining the process and closes on stop', async () => {
+    const dataDir = await createDataDir();
+    const { ConfigService } = await loadConfigServiceForDataDir(dataDir);
+    const service = new ConfigService();
+    service.startWatchingConfigFile();
+    const watcher = watchers.at(-1)!;
+    const closed = new Promise<void>((resolve) => watcher.once('close', resolve));
+    expect(watcher.unref).toHaveBeenCalledOnce();
+    service.stopWatchingConfigFile();
+    await closed;
+  });
+
   it('hot-reloads hand-edited deny rules without a later settings save writing them back', async () => {
     const webServerSource = readFileSync(join(process.cwd(), 'src/web/webServer.ts'), 'utf8');
     expect(webServerSource).toContain('configService.startWatchingConfigFile()');
@@ -179,6 +215,18 @@ describe('ConfigService config.json watcher', () => {
       };
       expect(onDisk.permissions.deny).toEqual(['Bash(ls *)']);
       expect(onDisk.permissions.ask).toEqual(['Bash(pwd *)']);
+      expect(loggerMock.info).toHaveBeenCalledWith('Config hot-reloaded from disk');
+
+      const before = service.getSettings();
+      loggerMock.warn.mockClear();
+      for (const invalid of ['{ invalid json', '[]']) {
+        await writeFile(configPath, invalid);
+        await vi.waitFor(() => {
+          expect(loggerMock.warn).toHaveBeenCalledWith('Config reload skipped: file is not a JSON object');
+        }, { timeout: 4000, interval: 50 });
+        expect(service.getSettings()).toEqual(before);
+        loggerMock.warn.mockClear();
+      }
     } finally {
       service.stopWatchingConfigFile();
     }

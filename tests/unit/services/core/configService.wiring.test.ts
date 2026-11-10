@@ -11,6 +11,7 @@ describe('ConfigService webServer watcher wiring', () => {
     const stopped = source.indexOf('configService.stopWatchingConfigFile()', shutdown);
     const databaseClosed = source.indexOf('closeAllDatabaseConnections()', stopped);
 
+    expect(source).toContain("process.once('exit', () => configService.stopWatchingConfigFile())");
     expect(initialized).toBeGreaterThanOrEqual(0);
     expect(started).toBeGreaterThan(initialized);
     expect(shutdown).toBeGreaterThan(started);

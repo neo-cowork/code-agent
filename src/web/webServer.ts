@@ -511,6 +511,7 @@ async function initializeServices(): Promise<void> {
   configService = initConfigService();
   await configService.initialize().then(() => logger.info('ConfigService initialized'));
   configService.startWatchingConfigFile();
+  process.once('exit', () => configService.stopWatchingConfigFile());
   (await import('../host/observability/privacyGate')).installPrivacyGate(configService);
   bootMark('configService');
 
@@ -1098,8 +1099,7 @@ async function main(): Promise<void> {
   // 启动早期崩溃。uncaughtExceptionMonitor 只旁观，不改变崩溃行为。
   installExitCauseProbes();
   if (process.env.CODE_AGENT_COMPILE_WARMUP === '1') {
-    await runCompileWarmup();
-    return;
+    return runCompileWarmup();
   }
   bootMark('main:start');
   const port = parseInt(process.env.WEB_PORT || String(WEB_SERVER_DEFAULTS.PORT), 10);

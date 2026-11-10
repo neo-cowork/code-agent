@@ -266,7 +266,9 @@ export class ConfigService implements IReadConfigService {
             if (ok && onReloaded) onReloaded();
           });
         }, CONFIG_WATCH_DEBOUNCE_MS);
+        this.configWatchTimer.unref();
       });
+      this.configWatcher.unref();
       this.configWatcher.on('error', (error) => {
         logger.warn('Config watcher error (non-fatal)', { error: String(error) });
       });
