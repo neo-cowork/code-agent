@@ -72,8 +72,17 @@ export function matchesSessionStatusFilter(
   }
 }
 
+/** 读不到 store（测试桩/早期启动）按中文，展示层不许因语言读取而抛。 */
+function currentUiLanguage(): 'zh' | 'en' {
+  try {
+    return useAppStore.getState().language === 'en' ? 'en' : 'zh';
+  } catch {
+    return 'zh';
+  }
+}
+
 export function getDisplaySessionTitle(title?: string | null): string {
-  const language = useAppStore.getState().language === 'en' ? 'en' : 'zh';
+  const language = currentUiLanguage();
   const rawTitle = title?.trim() ?? '';
   const stripped = stripAppshotBlocks(rawTitle);
   if (stripped && !stripped.trim().startsWith('<appshot')) {
