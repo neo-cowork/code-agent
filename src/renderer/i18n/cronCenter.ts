@@ -1,6 +1,5 @@
 import { cronRoutineRestateEn, cronRoutineRestateZh } from './cronRoutineRestate';
 // ============================================================================
-
 import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 import type { EventScheduleValidationReason } from '@shared/cronEventValidation';
 import { cronPermissionDeniedReasonText } from '@shared/cronPermissionDenied';
@@ -10,7 +9,6 @@ import { cronPermissionDeniedReasonText } from '@shared/cronPermissionDenied';
 // （中文兜底）；调度摘要的人话翻译走 utils/cronHumanize.ts（zh/en 双份，随 lang 参数），
 // 不再往本文件塞词条。其余遗留随收尾清扫批一并处理。
 // ============================================================================
-
 export const cronCenterZh = {
   cronCenter: {
     groupListenCheck: {
