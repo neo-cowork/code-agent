@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-/* global clearInterval, fetch, process, setInterval, setTimeout, URL */
+/* global clearInterval, fetch, setInterval, setTimeout, URL */
 // N-L7-PREVGEN-MUTE: one paid real-runtime call. Never retries a call.
 
+import { assertIsolatedVerificationDir } from '../lib/verificationIsolation.ts';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -16,7 +17,7 @@ function arg(name, fallback) {
 }
 
 const url = arg('--url', 'http://127.0.0.1:8187');
-const dataDir = arg('--data-dir', path.join(os.homedir(), '.code-agent-dev7'));
+const dataDir = assertIsolatedVerificationDir(arg('--data-dir', process.env.NEO_VERIFY_DATA_DIR || process.env.CODE_AGENT_DATA_DIR));
 const outPath = arg('--out', path.join(os.tmpdir(), 'prevgen-fallback-real-runtime.json'));
 const costAck = process.argv.includes('--cost-ack');
 if (!costAck) throw new Error('Refusing paid voice call without --cost-ack');

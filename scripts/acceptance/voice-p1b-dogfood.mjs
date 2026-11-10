@@ -1,4 +1,5 @@
-/* global console, document, fetch, process, window */
+import { assertIsolatedVerificationDir } from '../lib/verificationIsolation.ts';
+/* global document, fetch, window */
 // ============================================================================
 // voice-p1b 真机验证 + 审美截图脚本（Dev 包）
 //
@@ -109,14 +110,7 @@ async function main() {
   fs.mkdirSync(OUT_DIR, { recursive: true });
 
   // 0. Dev 包 webServer 存活 + bundle 指纹（pid 是诊断字段，走鉴权 detail 路由）
-  const dataDir = (() => {
-    const portMatch = /:(\d{2,5})\/?$/.exec(URL_BASE);
-    const slot = portMatch ? Number(portMatch[1]) - 8180 : 1;
-    if (Number.isInteger(slot) && slot >= 1 && slot <= 9) {
-      return path.join(os.homedir(), slot === 1 ? '.code-agent-dev' : `.code-agent-dev${slot}`);
-    }
-    return path.join(os.homedir(), '.code-agent-dev');
-  })();
+  const dataDir = assertIsolatedVerificationDir(process.env.NEO_VERIFY_DATA_DIR || process.env.CODE_AGENT_DATA_DIR);
   const token = (() => {
     try {
       return fs.readFileSync(path.join(dataDir, '.dev-token'), 'utf8').trim() || null;

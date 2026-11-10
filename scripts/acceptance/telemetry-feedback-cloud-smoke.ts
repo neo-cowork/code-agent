@@ -1,6 +1,8 @@
+import { isolatedVerificationEnv } from '../lib/verificationIsolation.ts';
+import { seedVerificationModels } from '../lib/verificationModelSeed.ts';
 import { spawn, type ChildProcessByStdio } from 'child_process';
 import type { Readable } from 'node:stream';
-import { copyFileSync, existsSync, mkdtempSync, rmSync } from 'fs';
+import { existsSync, mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import type { Browser, Page } from 'playwright';
@@ -97,15 +99,10 @@ async function ensureBuild(skipBuild: boolean): Promise<void> {
   await runCommand(npmCommand(), ['run', 'build:renderer'], 'build:renderer');
 }
 
-function prepareTempDataDir(): string {
+async function prepareTempDataDir(): Promise<string> {
   const dataDir = mkdtempSync(join(tmpdir(), 'agent-neo-telemetry-feedback-'));
   const sourceDir = `${process.env.HOME}/.code-agent`;
-  for (const fileName of ['.env', '.secure-key', 'secure-storage.json']) {
-    const source = join(sourceDir, fileName);
-    if (existsSync(source)) {
-      copyFileSync(source, join(dataDir, fileName));
-    }
-  }
+  await seedVerificationModels(sourceDir, dataDir);
   return dataDir;
 }
 
@@ -115,6 +112,7 @@ function startAppHost(port: number, dataDir: string): { child: ChildProcessByStd
     cwd: process.cwd(),
     env: {
       ...process.env,
+      ...isolatedVerificationEnv(dataDir),
       WEB_HOST: '127.0.0.1',
       WEB_PORT: String(port),
       CODE_AGENT_DATA_DIR: dataDir,
@@ -354,7 +352,7 @@ async function runSmoke(options: {
 
   const port = options.port ?? await getFreePort();
   const baseUrl = `http://127.0.0.1:${port}`;
-  const dataDir = prepareTempDataDir();
+  const dataDir = await prepareTempDataDir();
   const server = startAppHost(port, dataDir);
   let chromeSession: SystemChromeSession | null = null;
 

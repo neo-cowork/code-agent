@@ -1,4 +1,5 @@
-/* global Buffer, console, fetch, process, setTimeout, window */
+import { assertIsolatedVerificationDir } from '../lib/verificationIsolation.ts';
+/* global Buffer, fetch, setTimeout, window */
 // ADR-054 batch 1 real-runtime acceptance against an installed Agent Neo Dev host.
 //
 // This intentionally uses the real DashScope realtime connection and the real task
@@ -12,7 +13,7 @@ import path from 'node:path';
 import { chromium } from 'playwright';
 
 const BASE_URL = process.env.CODE_AGENT_URL?.trim() || 'http://127.0.0.1:8181';
-const DATA_DIR = process.env.CODE_AGENT_DATA_DIR?.trim() || path.join(os.homedir(), '.code-agent-dev');
+const DATA_DIR = assertIsolatedVerificationDir(process.env.NEO_VERIFY_DATA_DIR || process.env.CODE_AGENT_DATA_DIR);
 const EXPECTED_ROOT = process.env.ADR054_EXPECTED_ROOT?.trim() || process.cwd();
 const LOG_PATH = path.join(DATA_DIR, 'logs', `code-agent-${new Date().toISOString().slice(0, 10)}.log`);
 const OUT_DIR = process.env.ADR054_EVIDENCE_DIR?.trim()
