@@ -59,6 +59,7 @@ const LEAK_FIXTURES = {
       file: '/private/tmp/neo-run-98123/draft.md',
     },
     result: {
+      toolCallId: 'toolu_01A2B3C4D5E6F7G8H9',
       success: true,
       output:
         'accepted：已向 ou_98a7b6c5d4e3f2a1 同步草稿（操作号 toolu_01A2B3C4D5E6F7G8H9，工具 memory_search / read_file）',
@@ -105,6 +106,7 @@ const LEAK_FIXTURES = {
       command: 'sandbox-exec -f /tmp/seatbelt-profile.sb sh -c "npm test"',
     },
     result: {
+      toolCallId: 'call_err_9988776655',
       success: false,
       error:
         'interrupted: process crashed · tool call was cancelled · sandbox-exec -f /tmp/seatbelt-profile.sb · {"code":"E_SANDBOX_CRASH","session":"session_1762451092123_abcd12"}',
@@ -180,7 +182,8 @@ describe('Internal-text leak dynamic scan across 4 key surfaces', () => {
 
     const traceNode: TraceNode = {
       id: 'node-1',
-      type: 'tool',
+      type: 'tool_call',
+      content: '',
       timestamp: 1_762_000_000_000,
       toolCall: {
         id: rawToolCall.id,

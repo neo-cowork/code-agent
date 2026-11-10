@@ -7,6 +7,7 @@ import {
   loadAndValidateAllowlist,
   loadAndValidateDynamicAllowlist,
   scanRendererStatic,
+// @ts-expect-error —— 纯 JS 静态门脚本，无类型声明（与 checkCopyGate.test.ts 同做法）
 } from '../../scripts/internal-text-leak-gate.mjs';
 
 const tempDirs: string[] = [];

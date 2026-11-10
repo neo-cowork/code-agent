@@ -646,5 +646,41 @@
     "rule": "raw_json",
     "sample": "JSON.stringify(task.output.data, null, 2)",
     "reason": "unowned — needs a ticket"
+  },
+  {
+    "file": "src/renderer/components/features/cron/CronEventDecisionsPanel.tsx",
+    "rule": "uuid",
+    "sample": "{row.runId}",
+    "reason": "N-FIX-CRON-EVENT-DECISION-ENGLISH-RAW-ID merged (#2944) after this gate was written: id shown only in the expanded detail row with a copy button; unowned — needs a ticket to decide whether it collapses into Details"
+  },
+  {
+    "file": "src/renderer/components/features/cron/CronEventDecisionsPanel.tsx",
+    "rule": "uuid",
+    "sample": "{copyButton(row.runId, 'cron-event-decision-copy-run')}",
+    "reason": "N-FIX-CRON-EVENT-DECISION-ENGLISH-RAW-ID merged (#2944) after this gate was written: id shown only in the expanded detail row with a copy button; unowned — needs a ticket to decide whether it collapses into Details"
+  },
+  {
+    "file": "src/renderer/components/features/cron/CronEventDecisionsPanel.tsx",
+    "rule": "uuid",
+    "sample": "{copy.detailEventId}",
+    "reason": "N-FIX-CRON-EVENT-DECISION-ENGLISH-RAW-ID merged (#2944) after this gate was written: id shown only in the expanded detail row with a copy button; unowned — needs a ticket to decide whether it collapses into Details"
+  },
+  {
+    "file": "src/renderer/components/features/cron/CronEventDecisionsPanel.tsx",
+    "rule": "uuid",
+    "sample": "{row.eventId}",
+    "reason": "N-FIX-CRON-EVENT-DECISION-ENGLISH-RAW-ID merged (#2944) after this gate was written: id shown only in the expanded detail row with a copy button; unowned — needs a ticket to decide whether it collapses into Details"
+  },
+  {
+    "file": "src/renderer/components/features/cron/CronEventDecisionsPanel.tsx",
+    "rule": "uuid",
+    "sample": "{copyButton(row.eventId, 'cron-event-decision-copy-event')}",
+    "reason": "N-FIX-CRON-EVENT-DECISION-ENGLISH-RAW-ID merged (#2944) after this gate was written: id shown only in the expanded detail row with a copy button; unowned — needs a ticket to decide whether it collapses into Details"
+  },
+  {
+    "file": "src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/index.tsx",
+    "rule": "raw_json",
+    "sample": "{typeof displayRaw === 'string' ? displayRaw : JSON.stringify(displayRaw, null, 2)}",
+    "reason": "unowned — needs a ticket (raw receipt detail <pre> introduced on main after this gate was written)"
   }
 ]
