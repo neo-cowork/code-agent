@@ -340,7 +340,9 @@ describe('SqliteBackgroundTaskStore', () => {
 
       db.close();
       db = new Database(dbPath);
-      const restarted = new BackgroundTaskLedger({ store: new SqliteBackgroundTaskStore(db) });
+      const restartedStore = new SqliteBackgroundTaskStore(db);
+      const restarted = new BackgroundTaskLedger({ store: restartedStore });
+      expect(restartedStore.listBySession('session-d').map((t) => t.id)).toEqual([]);
       expect(restarted.listTasks({ sessionId: 'session-d' })).toEqual([]);
       expect(restarted.listTasks({ sessionId: 'session-other' }).map((t) => t.id)).toEqual(['shell:other']);
       // 台账行本身没被删，只是被标记隐藏
