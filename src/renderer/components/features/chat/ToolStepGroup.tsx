@@ -73,9 +73,9 @@ function isStaleUnfinishedToolCall(
   toolCall: NonNullable<TraceNode['toolCall']>,
   awaitingApproval: boolean,
   sessionLive: boolean,
-  backgroundTaskActive = false,
+  backgroundTaskSettled = false,
 ): boolean {
-  return !awaitingApproval && toolCall.result === undefined && !sessionLive && !backgroundTaskActive;
+  return !awaitingApproval && toolCall.result === undefined && !sessionLive && !backgroundTaskSettled;
 }
 
 // 只消费「等审批 / 在线运行 / 已有结果」三种形态；陈旧未完成的调用必须先被
@@ -83,9 +83,10 @@ function isStaleUnfinishedToolCall(
 function resolveTraceToolStepStatus(
   toolCall: NonNullable<TraceNode['toolCall']>,
   awaitingApproval: boolean,
+  ledgerCompleted = false,
 ): ToolStepStatus {
   if (awaitingApproval) return 'pending-approval';
-  if (toolCall.result === undefined) return 'running';
+  if (toolCall.result === undefined) return ledgerCompleted ? 'completed' : 'running';
   return toolCall.success === false ? 'failed' : 'completed';
 }
 
@@ -162,7 +163,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           tc,
           awaitingApproval,
           sessionLive,
-          activeBackgroundToolCallIds.has(tc.id),
+          activeBackgroundToolCallIds.has(tc.id) || completedBackgroundToolCallIds.has(tc.id),
         )) {
           const staleLine = buildToolStatusLineCopy({
             status: 'interrupted',
@@ -180,7 +181,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           });
           return `${connector} · ${staleLine}`;
         }
-        const stepStatus = resolveTraceToolStepStatus(tc, awaitingApproval);
+        const stepStatus = resolveTraceToolStepStatus(tc, awaitingApproval, completedBackgroundToolCallIds.has(tc.id));
         const preflight = toolPreflightCopy({ name: tc.name, arguments: tc.args, result: tc.result === undefined ? undefined : {
           toolCallId: tc.id, success: tc.success ?? true, error: tc.success === false ? tc.result : undefined, output: tc.result, metadata: tc.metadata,
         } }, t);
@@ -237,14 +238,18 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         tc,
         isToolCallAwaitingApproval(tc.id, sessionId, permissionState),
         sessionLive,
-        activeBackgroundToolCallIds.has(tc.id),
+        activeBackgroundToolCallIds.has(tc.id) || completedBackgroundToolCallIds.has(tc.id),
       )) {
         staleUnfinished += 1;
         continue;
       }
       const stepStatus = benign
         ? 'completed'
-        : resolveTraceToolStepStatus(tc, isToolCallAwaitingApproval(tc.id, sessionId, permissionState));
+        : resolveTraceToolStepStatus(
+          tc,
+          isToolCallAwaitingApproval(tc.id, sessionId, permissionState),
+          completedBackgroundToolCallIds.has(tc.id),
+        );
       byStatus.set(stepStatus, [...(byStatus.get(stepStatus) ?? []), tc.name]);
     }
     return [
@@ -253,7 +258,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       blockedCommands ? t.deliveryExperience.blockedCommands.replace('{count}', String(blockedCommands)) : '',
       blockedSteps ? t.deliveryExperience.blockedSteps.replace('{count}', String(blockedSteps)) : '',
     ].filter(Boolean).join(t.deliveryExperience.labelSeparator);
-  }, [activeBackgroundToolCallIds, permissionState, sessionId, sessionLive, streamVisibleNodes, t]);
+  }, [activeBackgroundToolCallIds, completedBackgroundToolCallIds, permissionState, sessionId, sessionLive, streamVisibleNodes, t]);
 
   const status = useMemo<'pending-approval' | 'streaming' | 'partial' | 'error' | 'ok'>(() => {
     let hasError = false;

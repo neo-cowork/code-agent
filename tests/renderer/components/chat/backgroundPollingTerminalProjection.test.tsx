@@ -481,4 +481,23 @@ describe('后台轮询后的终态投影', () => {
     expect(text).not.toContain('已中断');
   });
 
+  it('折叠组头：无 result 的 delegate_task 在台账已完成时不写已中断/未成功', () => {
+    useBackgroundTaskStore.setState({ tasks: [task({ title: '整理本周周报并生成摘要' })] });
+    const delegateNode = (id: string): TraceNode => ({
+      id: `node-${id}`, type: 'tool_call', content: '', timestamp: 10,
+      toolCall: { id, name: 'delegate_task', args: { title: '整理本周周报并生成摘要' } },
+    });
+    const single = renderToolNodes([delegateNode(DELEGATE_CALL_ID)]);
+    cleanup();
+    useBackgroundTaskStore.setState({ tasks: [task({ title: '整理本周周报并生成摘要' }), task({ id: 'task-b', toolCallId: 'call-delegate-b', title: '整理本周周报并生成摘要' })] });
+    render(<ToolStepGroup nodes={[delegateNode(DELEGATE_CALL_ID), delegateNode('call-delegate-b')]} sessionId={SESSION_ID} />);
+    const multi = document.body.textContent ?? '';
+    console.log('R5_COLLAPSED_HEADER_RAW', JSON.stringify({ single, multi }));
+    for (const text of [single, multi]) {
+      expect(text).not.toContain('已中断');
+      expect(text).not.toContain('未成功');
+    }
+    expect(single).toContain('整理本周周报并生成摘要');
+  });
+
 });
