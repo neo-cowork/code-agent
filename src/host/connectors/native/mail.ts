@@ -4,7 +4,9 @@
 
 import fs from 'fs';
 import type { Connector, ConnectorExecutionResult, ConnectorStatus } from '../base';
+import { createLogger } from '../../services/infra/logger';
 import {
+  appleScriptFailureLogDetail,
   describeAppleScriptFailure,
   escapeAppleScriptString,
   isAppleScriptFailure,
@@ -12,6 +14,8 @@ import {
   runAppleScript,
   sharedAppleScriptHandlers,
 } from './osascript';
+
+const logger = createLogger('NativeMail', { lane: 'mcp' });
 
 interface MailAccountItem {
   name: string;
@@ -346,7 +350,16 @@ async function readMessageSource(
   );
   try {
     return await runAppleScript(lines);
-  } catch {
+  } catch (error) {
+    logger.warn('Mail source fallback failed', {
+      mailbox: mailboxName,
+      account: accountName,
+      messageId,
+      reason: isAppleScriptFailure(error)
+        ? describeAppleScriptFailure('Mail', error).code
+        : 'unexpected_error',
+      detail: appleScriptFailureLogDetail(error),
+    });
     return '';
   }
 }

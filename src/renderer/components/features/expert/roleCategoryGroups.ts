@@ -22,6 +22,31 @@ function categoryLabel(category: SkillCategory, labels: RoleCategoryLabels): str
   return labels.categories[category];
 }
 
+function resolveCategoryDisplayLabel(entry: RolePanelEntry, labels: RoleCategoryLabels): string {
+  if (entry.category) {
+    const label = categoryLabel(entry.category, labels);
+    if (label) return label;
+  }
+  return labels.uncategorized;
+}
+
+/**
+ * 专家搜索过滤（纯函数）：按去首尾空白、大小写不敏感子串匹配：
+ * displayName || roleId、profession、description、tags、分类显示名。
+ */
+export function matchesRoleSearch(entry: RolePanelEntry, query: string, labels: RoleCategoryLabels): boolean {
+  const normalized = query.trim().toLocaleLowerCase();
+  if (!normalized) return true;
+  const fields: Array<string | undefined> = [
+    entry.displayName || entry.roleId,
+    entry.profession,
+    entry.description,
+    ...(entry.tags ?? []),
+    resolveCategoryDisplayLabel(entry, labels),
+  ];
+  return fields.some((field) => field?.toLocaleLowerCase().includes(normalized) ?? false);
+}
+
 /**
  * 按产物分类对角色分组（纯函数，供 UI + 单测）。
  * - 顺序跟随 SKILL_CATEGORIES，空分类不出现

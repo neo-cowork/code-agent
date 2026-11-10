@@ -7,6 +7,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { AppshotsSettings } from '../../../src/renderer/components/features/settings/tabs/AppshotsSettings';
 import ipcService from '../../../src/renderer/services/ipcService';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { en } from '../../../src/renderer/i18n/en';
+import { zh } from '../../../src/renderer/i18n/zh';
 
 const facadeInvoke = vi.hoisted(() => vi.fn());
 const openSettings = vi.hoisted(() => vi.fn());
@@ -70,6 +73,24 @@ describe('AppshotsSettings 快捷键（⌘+⌘）输入监控权限行', () => {
 
   afterEach(() => {
     cleanup();
+    useAppStore.setState({ language: 'zh' });
+  });
+
+  it.each([
+    ['zh', zh, /若热键无反应，请.*重启应用/],
+    ['en', en, /If the shortcut does not respond,.*restart the app/i],
+  ] as const)('权限说明（%s）只把重启归因于屏幕录制，并指向实时快捷键按钮文案', async (language, locale, shortcutRestartPattern) => {
+    useAppStore.setState({ language });
+    platform.current = 'win32';
+    const permissionsDescription = locale.settings.appshots.permissionsDescription;
+    const hotkeyEnable = locale.settings.appshots.hotkeyEnable;
+    renderTab();
+
+    const description = screen.getByText(permissionsDescription);
+    expect(description.textContent).toContain(language === 'zh' ? '屏幕录制' : 'Screen Recording');
+    expect(description.textContent).toMatch(language === 'zh' ? /屏幕录制.{0,30}重启应用一次/ : /Screen Recording in System Settings, restart the app once/);
+    expect(description.textContent).toContain(hotkeyEnable);
+    expect(description.textContent).not.toMatch(shortcutRestartPattern);
   });
 
   it('非 macOS：隐藏快捷键权限行且不查询或请求输入监控权限', async () => {
@@ -154,13 +175,48 @@ describe('AppshotsSettings 快捷键（⌘+⌘）输入监控权限行', () => {
     expect(screen.queryByRole('button', { name: '开启快捷键' })).toBeNull();
   });
 
-  it('granted but not installed: 显示「已授权，重启 Neo 后生效」', async () => {
+  it('granted but not installed (dev): 显示「开启快捷键」按钮，不出现「重启」字样', async () => {
     mockHotkey({ permissionGranted: true, tapInstalled: false, devChannel: true });
     renderTab();
 
     const row = await screen.findByTestId('appshots-hotkey-permission-row');
-    expect(row.textContent).toContain('已授权，重启 Neo 后生效');
+    expect(row.textContent).not.toContain('重启');
+    expect(row.textContent).toContain('已授权，点右侧按钮启用');
+    expect(screen.getByRole('button', { name: '开启快捷键' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '打开「输入监控」权限设置' })).toBeNull();
+    expect(screen.queryByTestId('appshots-hotkey-permission-hint')).toBeNull();
+  });
+
+  it('granted but not installed: 点击按钮调用请求命令，返回已装上后显示「已开启」', async () => {
+    mockHotkey({ permissionGranted: true, tapInstalled: false, devChannel: true });
+    renderTab();
+    await screen.findByTestId('appshots-hotkey-permission-row');
+
+    fireEvent.click(screen.getByRole('button', { name: '开启快捷键' }));
+
+    await waitFor(() => {
+      expect(facadeInvoke).toHaveBeenCalledWith(REQUEST_COMMAND);
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('appshots-hotkey-permission-row').textContent).toContain('已开启');
+    });
     expect(screen.queryByRole('button', { name: '开启快捷键' })).toBeNull();
+  });
+
+  it('granted but not installed: 请求返回未授权（preflight 被推翻）→「未开启」+ 两个按钮 + 提示', async () => {
+    mockHotkey(
+      { permissionGranted: true, tapInstalled: false, devChannel: true },
+      { permissionGranted: false, tapInstalled: false, devChannel: true },
+    );
+    renderTab();
+    await screen.findByTestId('appshots-hotkey-permission-row');
+
+    fireEvent.click(screen.getByRole('button', { name: '开启快捷键' }));
+
+    await screen.findByTestId('appshots-hotkey-permission-hint');
+    expect(screen.getByTestId('appshots-hotkey-permission-row').textContent).toContain('未开启');
+    expect(screen.getByRole('button', { name: '开启快捷键' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '打开「输入监控」权限设置' })).toBeTruthy();
   });
 
   it('status 命令缺失（老 shell）：整行隐藏且不发请求', async () => {

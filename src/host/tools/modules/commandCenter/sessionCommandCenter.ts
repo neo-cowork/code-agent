@@ -14,6 +14,8 @@ import {
   type SpawnSessionTaskResult,
 } from '../../../services/commandCenter/sessionCommandCenter';
 import { resolveBackgroundWorkspaceAuthority } from '../../../runtime/workspaceAuthority';
+import { getBackgroundSubagentRegistry } from '../../../agent/backgroundSubagentRegistry';
+import { formatBackgroundSubagentRows } from './backgroundSubagentTaskRows';
 import {
   cancelTaskSchema,
   delegateTaskSchema,
@@ -210,14 +212,18 @@ export async function executeTaskStatus(
   const session = requireSession(ctx);
   if (typeof session !== 'string') return session;
   const tasks = getSessionCommandCenter().list(session);
-  if (tasks.length === 0) return { ok: true, output: '当前会话还没有后台任务。' };
+  const backgroundSubagents = getBackgroundSubagentRegistry().listBySession(session);
+  if (tasks.length === 0 && backgroundSubagents.length === 0) {
+    return { ok: true, output: '当前会话还没有后台任务。' };
+  }
+  const taskRows = tasks.map((task, index) => {
+    // resultText 优先：240 字 summary 会截断「改走 Bash curl 审批」这类可执行提示（FB-577）
+    const resultText = task.resultText ?? task.summary;
+    return `${index + 1}. ${task.shortName} [${task.status}] id=${task.id}${resultText ? `：${resultText}` : ''}`;
+  });
   return {
     ok: true,
-    output: tasks.map((task, index) => {
-      // resultText 优先：240 字 summary 会截断「改走 Bash curl 审批」这类可执行提示（FB-577）
-      const resultText = task.resultText ?? task.summary;
-      return `${index + 1}. ${task.shortName} [${task.status}] id=${task.id}${resultText ? `：${resultText}` : ''}`;
-    }).join('\n'),
+    output: [...taskRows, ...formatBackgroundSubagentRows(backgroundSubagents, tasks.length)].join('\n'),
     meta: sessionTaskMeta('status', tasks),
   };
 }

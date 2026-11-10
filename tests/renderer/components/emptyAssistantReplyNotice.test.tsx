@@ -127,7 +127,7 @@ describe.each(['zh', 'en'] as const)('空回复行呈现 (%s)', (language) => {
     );
     const text = document.body.textContent ?? '';
     const expectedReason = language === 'zh' ? '你停止了这次执行' : 'You stopped this run';
-    const expectedChangeSummary = language === 'zh' ? '已编辑 1 个文件' : 'Edited 1 file(s)';
+    const expectedChangeSummary = language === 'zh' ? '已编辑 1 个文件' : 'Edited 1 file';
     console.log(`[${language}] (c) Write then cancelled DOM text:`, JSON.stringify(text));
     expect(text).toContain(expectedReason);
     expect(text).toContain(expectedChangeSummary);

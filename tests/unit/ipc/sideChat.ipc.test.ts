@@ -88,6 +88,7 @@ describe('side chat IPC', () => {
     vi.spyOn(SessionManager.prototype, 'getSessionRuntimeState').mockReturnValue({
       compressionStateJson: null,
       persistentSystemContext: [],
+      lastProviderUsageJson: null,
     });
     vi.spyOn(SessionManager.prototype, 'getRecentMessages').mockResolvedValue(seededMessages);
     registerSideChatHandlers();
