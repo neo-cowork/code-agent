@@ -82,7 +82,7 @@ describe('PrivacySettings permission grants', () => {
     const humanLabel = (toolName: string) => getHumanToolLabel({ toolName, labels: zh.receiptPresentation.humanToolLabels });
     expect(screen.getByText(humanLabel('mail_send'))).toBeTruthy();
     expect(screen.getByText(/team@example.com/)).toBeTruthy();
-    expect(screen.getByText(humanLabel('bash'))).toBeTruthy();
+    expect(screen.getByText('运行命令')).toBeTruthy();
     // scope 与来源可见（scope 在组合行里，按行内文本断言）。
     const rows = screen.getAllByTestId('permission-grant-row');
     expect(rows.some((row) => row.textContent?.includes(zh.settings.privacy.permissionGrants.scope.always))).toBe(true);

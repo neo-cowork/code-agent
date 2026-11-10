@@ -23,12 +23,6 @@ describe('getHumanToolLabel', () => {
   });
 
   it.each([
-    ['Bash', '运行命令', 'Run command'],
-    ['bash', '运行命令', 'Run command'],
-    ['Write', '写入文件', 'Write file'],
-    ['write_file', '写入文件', 'Write file'],
-    ['Edit', '编辑文件', 'Edit file'],
-    ['edit_file', '编辑文件', 'Edit file'],
     ['web_fetch', '网页抓取', 'Web fetch'],
     ['WebSearch', '联网搜索', 'Web search'],
     ['analyst · Read', '读取文件', 'Read file'],
@@ -66,5 +60,14 @@ describe('getHumanToolLabel', () => {
     ));
 
     expect(missing, `连接器工具缺少人话标签：${missing.join(', ')}`).toEqual([]);
+  });
+
+  it('Bash/Write/Edit 不进共享映射：审批记录靠 connectorLabel !== request.tool 去重前缀', () => {
+    for (const toolName of ['Bash', 'Write', 'Edit']) {
+      expect(getHumanToolLabel({
+        toolName,
+        labels: zh.receiptPresentation.humanToolLabels,
+      })).toBe(toolName);
+    }
   });
 });

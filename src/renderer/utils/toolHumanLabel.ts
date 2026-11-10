@@ -12,11 +12,6 @@ const CONNECTOR_LABEL_KEYS: Record<string, keyof HumanToolLabels['connectors']> 
 };
 
 const TOOL_LABEL_KEYS: Record<string, keyof HumanToolLabels['tools']> = {
-  bash: 'runCommand',
-  write: 'writeFile',
-  writefile: 'writeFile',
-  edit: 'editFile',
-  editfile: 'editFile',
   webfetch: 'webFetch',
   websearch: 'webSearch',
   read: 'readFile',
