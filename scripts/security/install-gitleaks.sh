@@ -37,7 +37,10 @@ url="https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
 
-curl -fsSL "$url" -o "$tmpdir/gitleaks.tar.gz"
+# GitHub release downloads can return a transient 5xx before scanning starts.
+# Retry only curl's transient failures; checksum/version verification still fails closed.
+curl --retry 3 --retry-delay 2 --retry-max-time 120 --connect-timeout 15 --max-time 60 \
+  -fsSL "$url" -o "$tmpdir/gitleaks.tar.gz"
 actual=$(openssl dgst -sha256 "$tmpdir/gitleaks.tar.gz" | awk '{print $NF}')
 if [ "$actual" != "$sum" ]; then
   echo "install-gitleaks: checksum mismatch for ${asset}" >&2

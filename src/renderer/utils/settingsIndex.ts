@@ -155,7 +155,26 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
 
   // Screen Memory
   { tab: 'openchronicle', labelKey: 'automaticScreenMemory', keywords: ['screen memory', 'openchronicle', 'daemon', 'desktop activity'] },
-  { tab: 'openchronicle', labelKey: 'manualDesktopActivity', keywords: ['native desktop', 'tauri', 'desktop', 'desktop activity', 'screenshot', 'recording'] },
+  {
+    tab: 'openchronicle',
+    labelKey: 'manualDesktopActivity',
+    keywords: [
+      'native desktop',
+      'tauri',
+      'desktop',
+      'desktop activity',
+      'screenshot',
+      'recording',
+      'record',
+      'audio',
+      'transcription',
+      'microphone',
+      zh.settings.nativeDesktop.recording.record,
+      zh.settings.nativeDesktop.audioMode.microphone,
+      zh.settings.nativeDesktop.audioReadiness.searchAudio,
+      zh.settings.nativeDesktop.audioReadiness.searchTranscription,
+    ],
+  },
 
   // Privacy
   { tab: 'privacy', labelKey: 'permissionDataBoundary', keywords: ['privacy boundary', 'permission boundary', 'data boundary', 'local first', 'cloud exception', 'diagnostic exception'] },

@@ -1,15 +1,17 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, renderHook, waitFor } from '@testing-library/react';
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { KeybindingActionId } from '../../../src/shared/keybindings';
 import { GLOBAL_HOTKEY_REGISTRATION_CHANGED_EVENT } from '../../../src/renderer/services/globalHotkeyRegistration';
+import { useAuthStore } from '../../../src/renderer/stores/authStore';
 import { useBundledCapabilityStore } from '../../../src/renderer/stores/bundledCapabilityStore';
 
 const dial = vi.hoisted(() => vi.fn());
 const hangUp = vi.hoisted(() => vi.fn());
 const invokeNativeCommandAction = vi.hoisted(() => vi.fn());
 const listenerState = vi.hoisted(() => ({
+  settingsCallback: null as null | (() => void),
   callback: null as null | ((event: { payload: { actionId: KeybindingActionId; accelerator: string } }) => void),
 }));
 const voiceState = vi.hoisted(() => ({ phase: 'idle' as 'idle' | 'connecting' | 'live' | 'error' }));
@@ -80,8 +82,9 @@ vi.mock('../../../src/renderer/services/nativeCommandFacade', () => ({
   isNativeCommandRuntimeAvailable: () => true,
 }));
 vi.mock('../../../src/renderer/services/tauriPluginFacade', () => ({
-  listenTauriEvent: vi.fn(async (_eventName, callback) => {
-    listenerState.callback = callback;
+  listenTauriEvent: vi.fn(async (eventName, callback) => {
+    if (eventName === 'keybindings:global_hotkey') listenerState.callback = callback;
+    if (eventName === 'menu:open-settings') listenerState.settingsCallback = callback;
     return vi.fn();
   }),
 }));
@@ -102,6 +105,8 @@ describe('voice.callToggle global hotkey', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     listenerState.callback = null;
+    listenerState.settingsCallback = null;
+    useAuthStore.setState({ isAuthenticated: false, showAuthModal: false });
     voiceState.phase = 'idle';
     useBundledCapabilityStore.setState({
       installed: {
@@ -113,6 +118,17 @@ describe('voice.callToggle global hotkey', () => {
   });
 
   afterEach(cleanup);
+
+  it('routes the native settings menu separately from the voice hotkey and dismisses auth', async () => {
+    useAuthStore.setState({ showAuthModal: true });
+    renderHook(() => useKeyboardShortcuts());
+    await waitFor(() => expect(listenerState.settingsCallback).not.toBeNull());
+    await act(async () => { listenerState.settingsCallback?.(); });
+    expect(appState.setShowSettings).toHaveBeenCalledWith(true);
+    expect(useAuthStore.getState().showAuthModal).toBe(false);
+    expect(useAuthStore.getState().isAuthenticated).toBe(false);
+    expect(dial).not.toHaveBeenCalled();
+  });
 
   it('dials through the existing bridge after Rust releases the focused-window event', async () => {
     const getUserMedia = vi.fn();

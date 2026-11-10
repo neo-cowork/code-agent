@@ -4,10 +4,11 @@ import type { SessionRuntimeSummary } from '@shared/ipc';
 import type { BackgroundSessionInfo } from '@shared/contract/sessionState';
 import { stripAppshotBlocks } from '@shared/contract/appshot';
 import { localizeAppshotSessionTitle } from '@shared/sessionTitlePlaceholder';
-import { useAppStore } from '../stores/appStore';
 import type { SessionWithMeta } from '../stores/sessionStore';
 import type { SessionStatusFilter } from '../stores/sessionUIStore';
 import type { SessionState as TaskSessionState } from '../stores/taskStore';
+import { languages, type Language } from '../i18n';
+import { getSessionTitlePlaceholder } from './sessionTitlePlaceholder';
 
 export type SessionStatusKind = 'background' | 'live' | 'approval' | 'paused' | 'error' | 'done' | 'incomplete' | 'idle';
 
@@ -72,26 +73,18 @@ export function matchesSessionStatusFilter(
   }
 }
 
-/** 读不到 store（测试桩/早期启动）按中文，展示层不许因语言读取而抛。 */
-function currentUiLanguage(): 'zh' | 'en' {
-  try {
-    return useAppStore.getState().language === 'en' ? 'en' : 'zh';
-  } catch {
-    return 'zh';
-  }
-}
-
-export function getDisplaySessionTitle(title?: string | null): string {
-  const language = currentUiLanguage();
+export function getDisplaySessionTitle(title?: string | null, language: Language = 'zh'): string {
   const rawTitle = title?.trim() ?? '';
+  const placeholder = getSessionTitlePlaceholder(rawTitle, language);
+  if (placeholder !== null) return placeholder;
   const stripped = stripAppshotBlocks(rawTitle);
   if (stripped && !stripped.trim().startsWith('<appshot')) {
     return localizeAppshotSessionTitle(stripped, language);
   }
   if (rawTitle.startsWith('<appshot')) {
-    return localizeAppshotSessionTitle('Appshot 会话', language);
+    return languages[language].sidebar.appshotSessionTitle;
   }
-  return rawTitle || (language === 'en' ? 'Untitled session' : '未命名会话');
+  return rawTitle || languages[language].sidebar.unnamedSessionTitle;
 }
 
 // cron/heartbeat 会话标题的档位前缀，形状与 host 侧 formatCronAgentSessionTitle

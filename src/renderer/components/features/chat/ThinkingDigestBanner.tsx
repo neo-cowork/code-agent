@@ -79,7 +79,7 @@ export const ThinkingDigestBanner: React.FC<ThinkingDigestBannerProps> = ({
   turnEndTime,
 }) => {
   const { t } = useI18n();
-  const [expanded, setExpanded] = useState(Boolean(activeSegmentId));
+  const [expanded, setExpanded] = useState(false);
   const [userInteracted, setUserInteracted] = useState(false);
   const [now, setNow] = useState(Date.now);
   const [observedEndedAt, setObservedEndedAt] = useState<Record<string, number>>({});
@@ -100,21 +100,8 @@ export const ThinkingDigestBanner: React.FC<ThinkingDigestBannerProps> = ({
       setNow(timestamp);
     }
 
-    if (!userInteracted) {
-      if (activeSegmentId && activeSegmentId !== previousActiveSegmentId) {
-        setExpanded(true);
-        shouldFollowBottomRef.current = true;
-      } else if (
-        previousActiveSegmentId
-        && !activeSegmentId
-        && hasNonThinkingContentAfterThinking
-      ) {
-        setExpanded(false);
-      }
-    }
-
     previousActiveSegmentIdRef.current = activeSegmentId;
-  }, [activeSegmentId, hasNonThinkingContentAfterThinking, userInteracted]);
+  }, [activeSegmentId, hasNonThinkingContentAfterThinking]);
 
   useEffect(() => {
     if (!activeSegmentId) return;

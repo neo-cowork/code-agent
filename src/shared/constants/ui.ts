@@ -16,6 +16,8 @@ export const UI = {
   STARTUP_UPDATE_CHECK_DELAY: 2000,
   /** 启动延迟-API Key 检查 (ms) */
   STARTUP_API_KEY_CHECK_DELAY: 1500,
+  /** 冷启动会话切换期间重新摊开返回页的窗口 (ms) */
+  STARTUP_PAGE_REAPPLY_WINDOW: 8_000,
   /** 面板刷新间隔 (ms) */
   PANEL_REFRESH_INTERVAL: 30000,
   /** 云任务刷新间隔 (ms) */
