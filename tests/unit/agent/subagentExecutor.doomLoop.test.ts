@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 
 const mocks = vi.hoisted(() => {
   const responses: Array<Record<string, unknown>> = [];
@@ -9,7 +10,7 @@ const mocks = vi.hoisted(() => {
     if (!response) throw new Error('Missing mocked inference response');
     return response;
   });
-  const toolExecute = vi.fn(async (name: string) => ({
+  const toolExecute = vi.fn<ToolExecutor['execute']>(async (name) => ({
     success: true,
     output: `${name} partial output`,
   }));

@@ -16,7 +16,7 @@ import type { RuntimeInputMode } from '@shared/contract/conversationEnvelope';
 import { generateMessageId } from '@shared/utils/id';
 import ipcService from '../../../services/ipcService';
 import { useI18n } from '../../../hooks/useI18n';
-import { interpolate } from '../../../i18n/interpolate';
+import { interpolate, interpolatePlural } from '../../../i18n/interpolate';
 import { useSessionStore } from '../../../stores/sessionStore';
 
 export interface MemberInputTarget {
@@ -136,7 +136,7 @@ export const MemberInputBar: React.FC<{
         }
         const reasonText = receipt.detail === 'finished' ? text.rejectFinished : text.rejectNotFound;
         const leftover = receipt.undeliveredCount
-          ? interpolate(text.undeliveredFollowUps, { count: receipt.undeliveredCount })
+          ? interpolatePlural(text.undeliveredFollowUps, receipt.undeliveredCount)
           : '';
         return `${text.receiptRejected}：${reasonText}${leftover ? ` ${leftover}` : ''}`;
       }

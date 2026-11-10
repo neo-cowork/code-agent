@@ -13,10 +13,12 @@ import { attachDocumentOrigin, describeDocumentEvidenceProblems, documentClaimPr
 // Enhanced with Manus-style persistent planning hooks
 // ============================================================================
 
-import type {
-  ToolCall,
-  ToolResult,
-  AgentEvent,
+import {
+  createHostReason,
+  HostReasonCode,
+  type ToolCall,
+  type ToolResult,
+  type AgentEvent,
 } from '../../../shared/contract';
 import { getLangfuseService } from '../../services';
 import { logCollector } from '../../mcp/logCollector.js';
@@ -669,6 +671,9 @@ export class ToolExecutionEngine {
             expected: issue.expected,
             actual: issue.actual,
           })),
+          hostReason: createHostReason(HostReasonCode.ToolArgsInvalid, injectMessage, {
+            toolName: toolCall.name,
+          }),
         },
       };
 

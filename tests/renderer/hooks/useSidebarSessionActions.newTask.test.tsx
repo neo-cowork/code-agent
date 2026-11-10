@@ -1,14 +1,27 @@
 // @vitest-environment jsdom
 import { act, renderHook } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { useSidebarSessionActions } from '../../../src/renderer/components/features/sidebar/useSidebarSessionActions';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
 
 const invokeDomain = vi.hoisted(() => vi.fn());
+const dialogMocks = vi.hoisted(() => ({
+  open: vi.fn(),
+}));
+
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: { invokeDomain },
 }));
+
+vi.mock('@tauri-apps/plugin-dialog', () => ({
+  open: dialogMocks.open,
+}));
+
+afterEach(() => {
+  vi.clearAllMocks();
+  delete (window as any).__TAURI_INTERNALS__;
+});
 
 describe('useSidebarSessionActions new task', () => {
   it('creates a plain session and brackets the request with the creating state', async () => {
@@ -61,6 +74,8 @@ describe('useSidebarSessionActions new task', () => {
   });
 
   it('creates an independent space from the selected working directory', async () => {
+    (window as any).__TAURI_INTERNALS__ = {};
+    dialogMocks.open.mockResolvedValueOnce('/workspace/selected');
     invokeDomain.mockResolvedValue('/workspace/selected');
     const createSession = vi.fn(async () => ({
       id: 'workspace-session',
@@ -103,7 +118,14 @@ describe('useSidebarSessionActions new task', () => {
       await view.result.current.handleNewIndependentSpace();
     });
 
-    expect(invokeDomain).toHaveBeenCalledWith(IPC_DOMAINS.WORKSPACE, 'selectDirectory');
+    expect(dialogMocks.open).toHaveBeenCalledWith({
+      directory: true,
+      multiple: false,
+      title: '选择工作目录',
+    });
+    expect(invokeDomain).toHaveBeenCalledWith(IPC_DOMAINS.WORKSPACE, 'setCurrent', {
+      dir: '/workspace/selected',
+    });
     expect(createSession).toHaveBeenCalledWith('新对话', {
       workingDirectory: '/workspace/selected',
     });

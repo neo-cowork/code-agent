@@ -53,7 +53,7 @@ vi.mock('../../src/host/tools/dispatch/toolResolver', () => {
     requiresPermission: false,
     permissionLevel: 'read' as const,
   };
-  const defs: Record<string, unknown> = { bash: bashDef, write_file: writeDef, read_file: readDef };
+  const defs: Record<string, unknown> = { bash: bashDef, write_file: writeDef, Write: { ...writeDef, name: 'Write' }, read_file: readDef };
   const fakeResolver = {
     list: () => Object.keys(defs),
     getDefinition: (name: string) => defs[name],
@@ -265,6 +265,47 @@ describe('Skill allowed-tools boundary (GAP-001)', () => {
         skillToolBoundary: boundary,
       });
       expect(permissionRequested).toBe(true);
+    });
+  });
+
+  describe('别名折叠', () => {
+    it('executor: declared write_file covers a Write call (no boundary ask); mail-like undeclared tool still asks', async () => {
+      let asked = false;
+      const executor = makeExecutor(() => { asked = true; });
+      const boundary = { skillName: 's', allowedTools: ['write_file'] };
+      await executor.execute('Write', { file_path: '/tmp/out.txt', content: 'x' }, {
+        skillToolBoundary: boundary,
+        preApprovedTools: new Set(['Write']),
+      });
+      expect(asked).toBe(false);
+      await executor.execute('bash', { command: 'ls' }, { skillToolBoundary: boundary });
+      expect(asked).toBe(true);
+    });
+
+    it('declared write_file allows a Write call; mail_send and undeclared tools still violate', async () => {
+      const { skillBoundaryAllowsTool } = await import('../../src/host/tools/skillBoundaryScope');
+      const boundary = { skillName: 's', allowedTools: ['write_file'] };
+      expect(skillBoundaryAllowsTool(boundary, 'Write', {})).toBe(true);
+      expect(skillBoundaryAllowsTool(boundary, 'Edit', {})).toBe(false);
+      expect(skillBoundaryAllowsTool(boundary, 'mail_send', {})).toBe(false);
+      const scoped = { skillName: 's', allowedTools: ['Bash(git:*)'] };
+      expect(skillBoundaryAllowsTool(scoped, 'Bash', { command: 'git status' })).toBe(true);
+      expect(skillBoundaryAllowsTool(scoped, 'Bash', { command: 'npm install' })).toBe(false);
+    });
+  });
+
+  describe('别名折叠不得放宽权限', () => {
+    it('semantic/many-to-one aliases are not authorization-equivalent', async () => {
+      const { skillBoundaryAllowsTool } = await import('../../src/host/tools/skillBoundaryScope');
+      const shot = { skillName: 's', allowedTools: ['screenshot'] };
+      expect(skillBoundaryAllowsTool(shot, 'screenshot', {})).toBe(true);
+      expect(skillBoundaryAllowsTool(shot, 'computer_use', {})).toBe(false);
+      expect(skillBoundaryAllowsTool(shot, 'Computer', {})).toBe(false);
+      const create = { skillName: 's', allowedTools: ['create_session'] };
+      expect(skillBoundaryAllowsTool(create, 'archive_session', {})).toBe(false);
+      expect(skillBoundaryAllowsTool(create, 'SessionManager', {})).toBe(false);
+      const cu = { skillName: 's', allowedTools: ['computer_use'] };
+      expect(skillBoundaryAllowsTool(cu, 'screenshot', {})).toBe(false);
     });
   });
 

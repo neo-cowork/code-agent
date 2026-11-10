@@ -355,7 +355,7 @@ export async function runStartupContextAssembly(
   if (ctx.hookManager) {
     const promptResult = await raceStartupStep(
       ctx,
-      ctx.hookManager.triggerUserPromptSubmit(options.userMessage, ctx.sessionId),
+      ctx.hookManager.triggerUserPromptSubmit(options.userMessage, ctx.sessionId), 'user_prompt_hook',
     );
     if (isStartupAborted(ctx)) return 'aborted';
     if (promptResult && !promptResult.shouldProceed) {
@@ -379,7 +379,7 @@ export async function runStartupContextAssembly(
 
   // Session start hooks run once per chat session; per-turn hooks stay on UserPromptSubmit/PreToolUse/PostToolUse.
   if (isFirstUserTurn && ctx.hookManager) {
-    const sessionResult = await raceStartupStep(ctx, ctx.hookManager.triggerSessionStart(ctx.sessionId));
+    const sessionResult = await raceStartupStep(ctx, ctx.hookManager.triggerSessionStart(ctx.sessionId), 'session_start_hook');
     if (isStartupAborted(ctx)) return 'aborted';
     if (sessionResult?.message) {
       contextAssembly.injectSystemMessage(
@@ -396,7 +396,7 @@ export async function runStartupContextAssembly(
   }
 
   if (isFirstUserTurn) {
-    await raceStartupStep(ctx, injectRecentConversations(ctx, contextAssembly));
+    await raceStartupStep(ctx, injectRecentConversations(ctx, contextAssembly), 'recent_conversations');
     if (isStartupAborted(ctx)) return 'aborted';
   }
 
@@ -405,7 +405,7 @@ export async function runStartupContextAssembly(
     try {
       const recovery = await raceStartupStep(
         ctx,
-        getSessionRecoveryService().checkPreviousSession(ctx.sessionId, ctx.workingDirectory),
+        getSessionRecoveryService().checkPreviousSession(ctx.sessionId, ctx.workingDirectory), 'session_recovery',
       );
       if (isStartupAborted(ctx)) return 'aborted';
       if (recovery) {
@@ -422,15 +422,15 @@ export async function runStartupContextAssembly(
 
   // seed memory 检索是分析口径：query 只用用户原话。注入块（含 <repeated_workarounds>）
   // 混进 query 会把无关的历史记忆召回（N-CAP-NOTICE-LEAK）。
-  await raceStartupStep(ctx, injectSeedMemory(ctx, contextAssembly, options.analysisUserRequest ?? options.userMessage));
+  await raceStartupStep(ctx, injectSeedMemory(ctx, contextAssembly, options.analysisUserRequest ?? options.userMessage), 'seed_memory');
   if (isStartupAborted(ctx)) return 'aborted';
 
-  await raceStartupStep(ctx, options.injectActivityContext({ includeDesktopActivity: !options.isSimpleTask }));
+  await raceStartupStep(ctx, options.injectActivityContext({ includeDesktopActivity: !options.isSimpleTask }), 'activity_context');
   if (isStartupAborted(ctx)) return 'aborted';
 
   if (!options.isSimpleTask) {
     try {
-      await raceStartupStep(ctx, options.bootstrapDesktopDerivedContext(options.userMessage));
+      await raceStartupStep(ctx, options.bootstrapDesktopDerivedContext(options.userMessage), 'desktop_context');
     } catch (error) {
       // Graceful: desktop-derived 上下文（todos/task sync）依赖 DB，DB 未初始化或瞬时不可用时
       // 绝不能阻断整个 run（与 injectActivityContext / 会话恢复 / seed memory 同款降级）。

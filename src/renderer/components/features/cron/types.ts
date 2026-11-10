@@ -15,7 +15,9 @@ import { validateEventScheduleConstraints } from '@shared/cronEventValidation';
 import { isCronPermissionDeniedMarker } from '@shared/cronPermissionDenied';
 import { CRON_AGENT_TYPES, CRON_EVENT_TRIGGER } from '@shared/constants';
 import { formatCronExpressionLabel, humanizeEverySchedule, type CronHumanLang } from '@shared/cronHumanize';
+import { redactCommandKeywordSecrets, redactCredentialText } from '@shared/security/secretPatterns';
 import { formatDateTime } from '../../../utils/formatDateTime';
+import { getBuiltinJobDisplay } from './builtinJobDisplay';
 
 export interface CronJobDraft {
   runsOn: CronJobDefinition['runsOn'];
@@ -129,7 +131,7 @@ export function createDefaultCronJobDraft(): CronJobDraft {
     shellUsePty: false,
     toolName: '',
     toolParametersText: '{}',
-    agentType: '',
+    agentType: 'default',
     agentPrompt: '',
     agentContextText: '{}',
     agentRoleId: '',
@@ -544,16 +546,18 @@ export function formatScheduleSummary(
   }
 }
 
-export function formatActionSummary(job: CronJobDefinition): string {
+export function formatActionSummary(job: CronJobDefinition, lang: CronHumanLang = 'zh'): string {
+  const builtin = getBuiltinJobDisplay(job, lang);
+  if (builtin) return builtin.actionLabel;
   switch (job.action.type) {
     case 'shell':
-      return job.action.command;
+      return redactCronDisplayText(job.action.command);
     case 'tool':
       return `${job.action.toolName}()`;
     case 'agent':
       // agentType 是自由文本标签（'default' / 'heartbeat'），不是注册表键，执行链只用 roleId+prompt。
       // 直接显示它等于往列表里种一行 "default agent" 这种没信息量的开发者字串。
-      return job.action.prompt;
+      return redactCronDisplayText(job.action.prompt);
     case 'webhook':
       return `${job.action.method} ${job.action.url}`;
     case 'ipc':
@@ -563,7 +567,15 @@ export function formatActionSummary(job: CronJobDefinition): string {
   }
 }
 
-export function getExecutionStatusMeta(status: CronJobStatus): { label: string; className: string } {
+/** Renderer-only masking for user-visible automation text; stored actions stay byte-identical. */
+export function redactCronDisplayText(value: string): string {
+  return redactCommandKeywordSecrets(
+    redactCredentialText(value, { redacted: '***REDACTED***' }),
+    { redacted: '***REDACTED***' },
+  );
+}
+
+function getExecutionStatusMeta(status: CronJobStatus): { label: string; className: string } {
   switch (status) {
     case 'completed':
       return { label: '成功', className: 'text-badge-success bg-emerald-500/10' };
@@ -606,11 +618,16 @@ export function prettyJson(value: unknown): string {
   }
 }
 
+/** Shared localized verdict for run rows, run details and latest-run summaries. */
 export function getLatestExecutionStatus(
-  execution?: CronJobExecution | null
+  execution: CronJobExecution | null | undefined,
+  copy: { status: Record<CronJobStatus | 'none', string>; permissionDeniedBadge: string },
 ): { label: string; className: string } {
   if (!execution) {
-    return { label: '未执行', className: 'text-zinc-300 bg-zinc-500/10' };
+    return { label: copy.status.none, className: 'text-zinc-300 bg-zinc-500/10' };
   }
-  return getExecutionStatusMeta(execution.status);
+  if (isPermissionDeniedExecution(execution)) {
+    return { label: copy.permissionDeniedBadge, className: 'text-badge-warning bg-amber-500/10' };
+  }
+  return { label: copy.status[execution.status], className: getExecutionStatusMeta(execution.status).className };
 }
