@@ -367,6 +367,7 @@ import { assembleDurableRun, type DurableRunApplicationRuntime } from '../host/a
 import { resolveDurableRunRollout } from '../host/app/durableRunRollout';
 import type { PendingDevPermissionRequest } from './routes/dev';
 import { createApp, type CreateAppDeps } from './app';
+import { handleServerError } from './middleware/serverErrors';
 import { acquireDaemonLock, releaseDaemonLock } from '../host/services/daemon/daemonLock';
 import type { DaemonIdleSnapshot } from '../host/services/daemon/daemonIdle';
 import { createDaemonResidencyReporter } from '../host/services/daemon/daemonStateReporter';
@@ -1173,6 +1174,7 @@ async function main(): Promise<void> {
     registerQueuedInputSendNowHook: (sendNow) => { onQueuedInputSendNow = sendNow; },
     onRendererReady: () => resolveRendererWindowReady?.(),
   });
+  app.use(handleServerError(logger));
   queuedInputStartupSweep.maybeRun();
 
   const server = attachHostWebSocketUpgradeDispatcher(http.createServer(app));

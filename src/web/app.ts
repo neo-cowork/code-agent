@@ -10,6 +10,7 @@ import { CompanionFileService } from '../host/services/companion/CompanionFileSe
 //
 // ============================================================================
 
+import { observeServerErrors } from './middleware/serverErrors';
 import path from 'path';
 import express from 'express';
 import type { Request, Response } from 'express';
@@ -239,6 +240,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
   wireGenerativeUiEditProjectionInvalidation();
 
   // CORS — restrict to known origins
+  app.use(observeServerErrors(logger));
   app.use(corsMiddleware);
 
   // Rate limiting
