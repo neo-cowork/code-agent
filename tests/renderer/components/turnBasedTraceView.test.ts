@@ -289,9 +289,10 @@ describe('TurnBasedTraceView session entry scrolling', () => {
     expect(view.queryByRole('button', { name: BTN })).toBeNull();
 
     state.top = 2_000;
+    // 真实 Virtuoso 的 atBottomStateChange 只在状态变化时发出：pending 期间吞掉的 false
+    // 不会重发，滚轮必须在没有再次回调的情况下让按钮出现（cancelPending 从 scroller 重算）。
     act(() => {
       fireEvent.wheel(scroller, { deltaY: -400 });
-      mocks.virtuosoProps.atBottomStateChange(false);
     });
     expect(view.queryByRole('button', { name: BTN })).toBeTruthy();
 
@@ -316,13 +317,33 @@ describe('TurnBasedTraceView session entry scrolling', () => {
     act(() => { fireEvent.wheel(scroller, { deltaY: -400 }); });
 
     view.rerender(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1, 45) }));
+    // rangeChanged 之后不再补发 atBottomStateChange(false)：resetBottom 不得强置 true，
+    // interactionAt 不一致的早退路径要从 scroller 重算，按钮才能如实出现。
     act(() => {
       mocks.virtuosoProps.rangeChanged({ startIndex: 1_000_000, endIndex: 1_000_002 });
-      mocks.virtuosoProps.atBottomStateChange(false);
       flushAnimationFrames();
       vi.runOnlyPendingTimers();
     });
 
+    expect(mocks.scrollToIndex).not.toHaveBeenCalled();
+    expect(view.queryByRole('button', { name: BTN })).toBeTruthy();
+  });
+
+  it('shows the jump button when the user scrolls between the first range and the settle frame', () => {
+    const view = render(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1, 45) }));
+    const { scroller, state } = mountLongScroller(view);
+    act(() => {
+      mocks.virtuosoProps.rangeChanged({ startIndex: 1_000_000, endIndex: 1_000_002 });
+    });
+    // 回调已把 isAtBottom 强置 true、结算帧还没跑：窗口内的滚轮会被结算屏蔽吞掉 false，
+    // 结算帧取消时必须从 scroller 重算，按钮才不会凭空消失。
+    state.top = 2_000;
+    act(() => { fireEvent.wheel(scroller, { deltaY: -400 }); });
+
+    act(() => {
+      flushAnimationFrames();
+      vi.runOnlyPendingTimers();
+    });
     expect(mocks.scrollToIndex).not.toHaveBeenCalled();
     expect(view.queryByRole('button', { name: BTN })).toBeTruthy();
   });

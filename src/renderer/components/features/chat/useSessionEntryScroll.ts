@@ -27,6 +27,14 @@ export function isScrollerNearBottom(
   return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= threshold;
 }
 
+// scroller 还没量出尺寸时无从判断，返回 null 表示保持现状，不要硬猜。
+function computeScrollerAtBottom(
+  scroller: Pick<HTMLElement, 'scrollHeight' | 'scrollTop' | 'clientHeight'> | null,
+): boolean | null {
+  if (!scroller || scroller.scrollHeight <= 0) return null;
+  return scroller.scrollHeight <= scroller.clientHeight || isScrollerNearBottom(scroller);
+}
+
 const SETTLE_STABLE_FRAMES = 16;
 
 interface BottomSettlementOptions {
@@ -169,13 +177,24 @@ export function useSessionEntryScroll({
     sessionEntrySettlingRef.current = true;
   }
 
+  // 入场 pending 期间 sessionEntrySettlingRef 屏蔽了 Virtuoso 的 atBottomStateChange，
+  // 而它只在状态变化时发出——被吞掉的 false 不会重发。凡 pending/结算结束却没落到底部
+  // 的路径都必须按 scroller 实况重算一次，否则 isAtBottom 卡在过期的 true，按钮消失。
+  const setIsAtBottomFromScroller = useCallback(() => {
+    const atBottom = computeScrollerAtBottom(scrollerElementRef.current);
+    if (atBottom !== null) setIsAtBottom(atBottom);
+  }, [scrollerElementRef, setIsAtBottom]);
+
   const scrollerElement = scrollerElementRef.current;
   useEffect(() => {
     if (!currentEntry.pending || !scrollerElement) return;
     const cancelPending = () => {
+      // pending 结束后监听器可能仍挂着（deps 不含 pending），这里挡掉，避免干扰结算期状态。
+      if (!currentEntry.pending) return;
       currentEntry.pending = false;
       currentEntry.resetBottom = false;
       sessionEntrySettlingRef.current = false;
+      setIsAtBottomFromScroller();
     };
     scrollerElement.addEventListener('wheel', cancelPending, { passive: true });
     scrollerElement.addEventListener('touchmove', cancelPending, { passive: true });
@@ -185,7 +204,7 @@ export function useSessionEntryScroll({
       scrollerElement.removeEventListener('touchmove', cancelPending);
       scrollerElement.removeEventListener('keydown', cancelPending);
     };
-  }, [currentEntry, scrollerElement, sessionEntrySettlingRef, turns.length]);
+  }, [currentEntry, scrollerElement, sessionEntrySettlingRef, setIsAtBottomFromScroller, turns.length]);
 
   const previousSessionIdRef = useRef(sessionId);
   useEffect(() => {
@@ -199,11 +218,11 @@ export function useSessionEntryScroll({
     if (!entry.pending || entry.sessionId !== sessionId) return;
     entry.pending = false;
     sessionEntrySettlingRef.current = false;
+    // 先按 scroller 实况重算：下面的早退路径（流式跟随、用户已滚动、投影还没建好）
+    // 不再强置 true，用户在 pending 期间的滚动不会被过期 isAtBottom 吞掉。
+    setIsAtBottomFromScroller();
     if (projectionTurnsRef.current.length === 0) return;
-    if (entry.resetBottom) {
-      entry.resetBottom = false;
-      setIsAtBottom(true);
-    }
+    entry.resetBottom = false;
     if (outputFollowStreamingRef.current || userScrollLastInteractionAtRef.current !== entry.interactionAt) return;
     const lastIndex = projectionTurnsRef.current.length - 1;
     if (lastIndex < 0) return;
@@ -213,12 +232,11 @@ export function useSessionEntryScroll({
     setIsAtBottom(true);
 
     scheduleAfterLayout(() => {
-      if (
-        entryRef.current !== entry
-        || outputFollowStreamingRef.current
-        || userScrollLastInteractionAtRef.current !== entry.interactionAt
-      ) {
+      // 会话已切换：settling 归新会话的渲染入口管，过期的帧不许碰它。
+      if (entryRef.current !== entry) return;
+      if (outputFollowStreamingRef.current || userScrollLastInteractionAtRef.current !== entry.interactionAt) {
         sessionEntrySettlingRef.current = false;
+        setIsAtBottomFromScroller();
         return;
       }
       keepActiveOutputVisibleRef.current = true;
@@ -241,12 +259,9 @@ export function useSessionEntryScroll({
         },
         onCancel: () => {
           sessionEntrySettlingRef.current = false;
-          const scroller = scrollerElementRef.current;
-          if (scroller && scroller.scrollHeight > 0) {
-            setIsAtBottom(scroller.scrollHeight <= scroller.clientHeight || isScrollerNearBottom(scroller));
-          }
+          setIsAtBottomFromScroller();
         },
       });
     });
-  }, [projectionTurnsRef, sessionId, setIsAtBottom, userScrollLastInteractionAtRef, outputFollowStreamingRef, keepActiveOutputVisibleRef, virtuosoRef, scrollerElementRef, activeDisplayScrollCancelRef, sessionEntrySettlingRef]);
+  }, [projectionTurnsRef, sessionId, setIsAtBottom, setIsAtBottomFromScroller, userScrollLastInteractionAtRef, outputFollowStreamingRef, keepActiveOutputVisibleRef, virtuosoRef, scrollerElementRef, activeDisplayScrollCancelRef, sessionEntrySettlingRef]);
 }
