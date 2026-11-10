@@ -124,10 +124,14 @@ export const NlRuleTranslator: React.FC<{ onSaved?: () => void }> = ({ onSaved }
           ...(selectedRoleId ? { roleId: selectedRoleId } : {}),
           ...(selectedBehavior === 'preapprove' && phrases ? { phrases: [...phrases] } : {}),
         };
-        const exists = savedRules.nlRules.some((saved) => saved.behavior === entry.behavior
-          && saved.rule === entry.rule && (saved.roleId ?? '') === (entry.roleId ?? ''));
+        // 同一条规则（档位+规则+角色）已存在 → 用卡上这条替换它：触发短语不在「同一条」的
+        // 判据里，原样写回会把用户刚确认的新短语悄悄丢掉、旧短语继续生效。
+        const isSame = (saved: NlPermissionRuleEntry) => saved.behavior === entry.behavior
+          && saved.rule === entry.rule && (saved.roleId ?? '') === (entry.roleId ?? '');
         const patch: Partial<AppSettings['permissions']> = {
-          nlRules: exists ? savedRules.nlRules : [...savedRules.nlRules, entry],
+          nlRules: savedRules.nlRules.some(isSame)
+            ? savedRules.nlRules.map((saved) => (isSame(saved) ? entry : saved))
+            : [...savedRules.nlRules, entry],
         };
         await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', { permissions: patch } as Partial<AppSettings>);
       } else {
