@@ -16,7 +16,7 @@ import {
 } from '../../../services/commandCenter/sessionCommandCenter';
 import { resolveBackgroundWorkspaceAuthority } from '../../../runtime/workspaceAuthority';
 import { promptUserInChat, type PromptUserResult } from '../../utils/userQuestionPrompt';
-import { getBackgroundSubagentRegistry } from '../../../agent/backgroundSubagentRegistry';
+import { getAgentTreeSnapshot } from '../../../agent/agentTreeService';
 import { formatBackgroundSubagentRows } from './backgroundSubagentTaskRows';
 import {
   cancelTaskSchema,
@@ -310,7 +310,8 @@ export async function executeTaskStatus(
   const session = requireSession(ctx);
   if (typeof session !== 'string') return session;
   const tasks = getSessionCommandCenter().list(session);
-  const backgroundSubagents = getBackgroundSubagentRegistry().listBySession(session);
+  const snapshot = getAgentTreeSnapshot({ sessionId: session });
+  const backgroundSubagents = snapshot.nodes.filter((node) => node.background);
   if (tasks.length === 0 && backgroundSubagents.length === 0) {
     return { ok: true, output: '当前会话还没有后台任务。' };
   }
@@ -321,7 +322,7 @@ export async function executeTaskStatus(
   });
   return {
     ok: true,
-    output: [...taskRows, ...formatBackgroundSubagentRows(backgroundSubagents, tasks.length)].join('\n'),
+    output: [...taskRows, ...formatBackgroundSubagentRows(backgroundSubagents, tasks.length, snapshot.generatedAt, tasks.some((task) => task.status === 'running'))].join('\n'),
     meta: sessionTaskMeta('status', tasks),
   };
 }

@@ -63,6 +63,17 @@ describe('buildCronAgentPrompt delivery digest instruction', () => {
       expect(prompt).toContain('urgency: must_today|can_wait|fyi');
     }
   });
+
+  it('includes the missing personal chat source sentence without mentioning any checkbox or setting', () => {
+    const enabled = buildCronAgentPrompt('检查', null, true, new Date('2026-09-30T00:00:00.000Z'));
+    const disabled = buildCronAgentPrompt('检查', null, false, new Date('2026-09-30T00:00:00.000Z'));
+
+    for (const prompt of [enabled, disabled]) {
+      expect(prompt).toContain('未读取：微信/IM（定时任务默认不读个人聊天记录）');
+      expect(prompt).toContain('不要搜索或调用读取个人聊天记录的工具、技能或命令行');
+      expect(prompt).not.toMatch(/勾选|复选框|开关|设置|checkbox|setting/i);
+    }
+  });
 });
 
 describe('buildCronAgentPrompt urgencyCriteria（N-CRON-MORNING-TRIAGE-URGENCY-RULE）', () => {
@@ -92,12 +103,14 @@ describe('buildCronAgentPrompt urgencyCriteria（N-CRON-MORNING-TRIAGE-URGENCY-R
     + `今天本地 00:00 = ${todayEpoch}（Unix 秒），次日本地 00:00 = ${tomorrowEpoch}（Unix 秒）。`
     + '其他相对时间以【当前时间】为基准，不要用你训练时的日期。';
   // 改动前的 deliveryDigestInstruction 原文（缺省判据路径必须逐字节复现）。
+  const personalChatSourceRule =
+    '若任务涉及微信/IM 等个人聊天来源，不要搜索或调用读取个人聊天记录的工具、技能或命令行，直接在产出中单独写一行「未读取：微信/IM（定时任务默认不读个人聊天记录）」。';
   const deliveryDigest =
     '最后请在回复末尾追加简短的 <cron_summary>...</cron_summary> 块：先写结果摘要；每个生成的文件或可访问产物另起一行，格式为 artifact: <path>。'
     + '摘要的第一行可以标注紧急程度，格式为 urgency: must_today|can_wait|fyi（must_today = 今天需要用户处理，can_wait = 可以稍后处理，fyi = 仅供参考）。';
   const snapshotGuidance = '回复末尾请用 <cron_snapshot>...</cron_snapshot> 包住本次需要记住的简短快照，供下次对比。';
-  const expectedEnabled = ['检查', '', timeAnchor, '', snapshotGuidance, '', deliveryDigest].join('\n');
-  const expectedDisabled = ['检查', '', timeAnchor, '', deliveryDigest].join('\n');
+  const expectedEnabled = ['检查', '', timeAnchor, '', personalChatSourceRule, '', snapshotGuidance, '', deliveryDigest].join('\n');
+  const expectedDisabled = ['检查', '', timeAnchor, '', personalChatSourceRule, '', deliveryDigest].join('\n');
 
   afterEach(() => {
     vi.doUnmock('../../../src/shared/todayAnchor');
@@ -121,7 +134,7 @@ describe('buildCronAgentPrompt urgencyCriteria（N-CRON-MORNING-TRIAGE-URGENCY-R
   it('带上旧快照时缺省判据的产出同样逐字节相同', async () => {
     const withSnapshot = await buildWithFrozenAnchor('检查', '旧快照内容', true, NOW);
     expect(withSnapshot).toBe(
-      ['检查', '', timeAnchor, '', '上次运行看到的快照：', '<previous_snapshot>', '旧快照内容', '</previous_snapshot>', '',
+      ['检查', '', timeAnchor, '', personalChatSourceRule, '', '上次运行看到的快照：', '<previous_snapshot>', '旧快照内容', '</previous_snapshot>', '',
         '请把上面的快照和本次看到的内容对比，这次只需要说明变化。', '', snapshotGuidance, '', deliveryDigest].join('\n'),
     );
   });
@@ -170,12 +183,14 @@ describe('buildCronAgentPrompt notifyWhen（N-CRON-RESTATE-HUMAN-WHEN）', () =>
     + `若要按「今天/本地当天」查询时间戳，直接用这两个算好的值，不要自己换算年份：`
     + `今天本地 00:00 = ${todayEpoch}（Unix 秒），次日本地 00:00 = ${tomorrowEpoch}（Unix 秒）。`
     + '其他相对时间以【当前时间】为基准，不要用你训练时的日期。';
+  const personalChatSourceRule =
+    '若任务涉及微信/IM 等个人聊天来源，不要搜索或调用读取个人聊天记录的工具、技能或命令行，直接在产出中单独写一行「未读取：微信/IM（定时任务默认不读个人聊天记录）」。';
   const deliveryDigest =
     '最后请在回复末尾追加简短的 <cron_summary>...</cron_summary> 块：先写结果摘要；每个生成的文件或可访问产物另起一行，格式为 artifact: <path>。'
     + '摘要的第一行可以标注紧急程度，格式为 urgency: must_today|can_wait|fyi（must_today = 今天需要用户处理，can_wait = 可以稍后处理，fyi = 仅供参考）。';
   const snapshotGuidance = '回复末尾请用 <cron_snapshot>...</cron_snapshot> 包住本次需要记住的简短快照，供下次对比。';
-  const expectedEnabled = ['检查', '', timeAnchor, '', snapshotGuidance, '', deliveryDigest].join('\n');
-  const expectedDisabled = ['检查', '', timeAnchor, '', deliveryDigest].join('\n');
+  const expectedEnabled = ['检查', '', timeAnchor, '', personalChatSourceRule, '', snapshotGuidance, '', deliveryDigest].join('\n');
+  const expectedDisabled = ['检查', '', timeAnchor, '', personalChatSourceRule, '', deliveryDigest].join('\n');
   const RULE = '只有需要今天处理的紧急事项';
 
   afterEach(() => {
