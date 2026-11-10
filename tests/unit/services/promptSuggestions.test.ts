@@ -127,3 +127,38 @@ describe('generateContextSuggestions ban extraction is narrow', () => {
     expect((await generateContextSuggestions(msgs)).map(s => s.text)).toEqual(['再用 curl 试试']);
   });
 });
+
+describe('generateContextSuggestions ban list stops at the end of the ban clause', () => {
+  beforeEach(() => quickTask.mockReset());
+  const run = async (userText: string, chips: string) => {
+    quickTask.mockResolvedValue({ success: true, content: chips });
+    const out = await generateContextSuggestions([
+      { role: 'user', content: userText },
+      { role: 'assistant', content: 'ok' },
+    ]);
+    return out.map(s => s.text);
+  };
+
+  it("\"don't use curl, use wget instead\" bans only curl (preferred alternative survives)", async () => {
+    expect(await run("don't use curl, use wget instead", 'Use wget instead\nRe-run the curl command\nTry wget with a proxy')).toEqual([
+      'Use wget instead',
+      'Try wget with a proxy',
+    ]);
+  });
+
+  it("\"don't use curl and then retry\" bans only curl", async () => {
+    expect(await run("don't use curl and then retry", 'Then check the logs\nRetry the curl call')).toEqual(['Then check the logs']);
+  });
+
+  it('"don\'t use bash or curl" still bans both names', async () => {
+    expect(await run("don't use bash or curl", 'Run bash again\nRetry with curl\nShare the page text')).toEqual(['Share the page text']);
+  });
+
+  it('「不要用 curl，改用浏览器」 does not ban 浏览器 and drops only curl', async () => {
+    expect(await run('不要用 curl，改用浏览器', '用浏览器打开页面\n再跑一次 curl')).toEqual(['用浏览器打开页面']);
+  });
+
+  it('"and" inside a longer word does not extend the list', async () => {
+    expect(await run("don't use curl android", 'Open the android app')).toEqual(['Open the android app']);
+  });
+});

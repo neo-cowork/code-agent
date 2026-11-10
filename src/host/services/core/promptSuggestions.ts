@@ -14,13 +14,15 @@ const ASSISTANT_MESSAGE_MAX_CHARS = 300;
 // 如 "不要用 Bash/curl" → bash, curl；"don't use curl or wget" → curl, wget。
 // 只认这种明确的「别用某工具」结构，"don't put it in the README"、"No, use Python"、「识别 Excel」不触发。
 const BAN_NAME = '[A-Za-z][A-Za-z0-9_.-]{2,}';
+// 列表续接处遇到动词/虚词即停（"curl, use wget" 停在 use；"curl and then retry" 停在 then），不再往后收词
+const STOP_WORDS = 'use|using|then|just|instead|retry|try|run|please|but|so|because|it|this|that|the|a|an|also|again|and|or|with|for|any|them|those|you';
 const BAN_TERM_PATTERN = new RegExp(
   '(?:(?:不要|不用|禁止|不许|不能|不准|别)(?:再用|再|使用|调用|执行|运行|用|跑|去)|' +
     "\\b(?:don['’]t|do not|never|must not)\\s+(?:use|using|run|call|rely on)\\b)\\s*" +
-    `(${BAN_NAME}(?:\\s*(?:[/、,，&]|和|或|and|or)\\s*${BAN_NAME})*)`,
+    `(${BAN_NAME}(?:\\s*(?:[/、,，&]|和|或|(?:and|or)\\b)\\s*(?!(?:${STOP_WORDS})\\b)${BAN_NAME})*)`,
   'gi',
 );
-const NON_TOOL_WORDS = new Set(['the', 'any', 'this', 'that', 'for', 'with', 'and', 'you', 'tool', 'tools', 'command', 'commands', 'line', 'anything', 'them', 'those']);
+const NON_TOOL_WORDS = new Set([...STOP_WORDS.split('|'), 'tool', 'tools', 'command', 'commands', 'line', 'anything']);
 
 function extractBannedTerms(messages: Array<{ role: string; content?: string }>): string[] {
   const terms = new Set<string>();
@@ -29,7 +31,7 @@ function extractBannedTerms(messages: Array<{ role: string; content?: string }>)
     for (const match of m.content.matchAll(BAN_TERM_PATTERN)) {
       for (const word of match[1].match(new RegExp(BAN_NAME, 'g')) ?? []) {
         const lower = word.toLowerCase().replace(/[.-]+$/, '');
-        if (lower.length >= 3 && !NON_TOOL_WORDS.has(lower) && !['and', 'or'].includes(lower)) terms.add(lower);
+        if (lower.length >= 3 && !NON_TOOL_WORDS.has(lower)) terms.add(lower);
       }
     }
   }
