@@ -82,7 +82,8 @@ vi.mock('../../../src/renderer/services/nativeCommandFacade', () => ({
   isNativeCommandRuntimeAvailable,
 }));
 vi.mock('../../../src/renderer/services/tauriPluginFacade', () => ({
-  listenTauriEvent: vi.fn(),
+  // menu:open-settings 监听在 isTauriRuntime()=true 时挂载，需返回 unlisten Promise
+  listenTauriEvent: vi.fn(() => Promise.resolve(() => {})),
 }));
 
 import { useKeyboardShortcuts } from '../../../src/renderer/hooks/useKeyboardShortcuts';
