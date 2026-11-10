@@ -6,6 +6,7 @@ import type { PermissionRequest } from '../../../src/shared/contract';
 import { PermissionRequestReason } from '../../../src/shared/contract';
 import { permissionRequestTypeForLevel } from '../../../src/host/tools/permissionRequestType';
 import { boundaryIdForRequestType } from '../../../src/host/tools/permissionBoundaryMapping';
+import type { ToolSchema } from '../../../src/host/protocol/tools';
 import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 
 const state = vi.hoisted(() => ({
@@ -56,11 +57,7 @@ const bannedNonShell = ['命令', 'command', '覆盖本机系统', 'overwrite lo
 const bannedFileTitles = ['创建文件', '编辑文件', '读取文件', 'Create file', 'Edit file', 'Read file'];
 const bannedRead = ['写入', '覆盖', 'write', 'overwrite'];
 
-type GateSchema = {
-  permissionLevel: string;
-  category: string;
-  inputSchema?: { properties?: Record<string, { type?: string }>; required?: string[] };
-};
+type GateSchema = Pick<ToolSchema, 'permissionLevel' | 'category'> & Partial<Pick<ToolSchema, 'inputSchema'>>;
 
 /** Realistic params from the tool's own input schema (required fields only). */
 function sampleParams(schema?: GateSchema): Record<string, unknown> {
