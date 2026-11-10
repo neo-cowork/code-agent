@@ -114,3 +114,5 @@ keyless 确定性假模型（`CODE_AGENT_E2E_LOCAL_AGENT_MODEL=1`）真会话的
 - Same ticket, final hint refinement: background mode names the protocol `run_in_background: true` entry (which bypasses foreground waiting), rather than leaving an excessive foregroundBlockingBudgetMs alongside waitForCompletion:false. Re-recorded 7 cases / 16 turns after this model-visible text change; same date-only canonical drift, corpus preserved.
 
 - 2026-11-09 N-FIX-SEND-FIRST-MODEL-CALL-6MIN-DELAY: `npm run acceptance:snapshot-replay:record` 重录 7 条会话 / 16 轮并自验通过；仅增加首请求等待阶段日志，协议、渲染、持久层快照字节均无漂移。
+
+- 2026-11-10 / N-FIX-STOP-BEFORE-FIRST-RESPONSE-STUCK-RUNNING: abort settlement and stale-stream rejection change only runtime control; request assembly is unchanged. `npm run acceptance:snapshot-replay:record` recorded and self-verified 7 sessions / 16 rounds. All 16 canonical requests match the committed corpus after normalizing only the English `<env>` date (2026-11-09 to 2026-11-10); render/state sidecars have no changes. Existing corpus bytes retained.
