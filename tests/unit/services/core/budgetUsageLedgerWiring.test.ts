@@ -37,6 +37,8 @@ describe('BudgetService → usage_ledger 接线（A7）', () => {
       cacheReadTokens: 200,
       cacheCreationTokens: 50,
       recordedAt: 123456,
+      scope: 'foreground',
+      serviceTier: undefined,
     });
   });
 

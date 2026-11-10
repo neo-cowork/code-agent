@@ -4,7 +4,7 @@
 
 import React, { forwardRef, type InputHTMLAttributes, type ReactNode } from 'react';
 
-export type InputType = 'text' | 'password' | 'search' | 'email' | 'number' | 'time' | 'datetime-local';
+export type InputType = 'text' | 'password' | 'search' | 'email' | 'number' | 'time' | 'date' | 'datetime-local';
 
 export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> {
   /** Input type */

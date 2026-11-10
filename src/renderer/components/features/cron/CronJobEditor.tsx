@@ -35,6 +35,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import { showCronLoginWallWarning } from './cronLoginWallNotice';
 import { CronRunsOnSelector } from './CronRunsOnSelector';
 import { CronResultChannelField } from './CronResultChannel';
+import { CronRunBudgetField } from './CronRunBudgetField';
 import { CronEventScheduleFields } from './CronEventScheduleFields';
 import { CronMailEventFields, mailEventValidationMessage } from './CronMailEventFields';
 import { CronScheduleFields } from './CronScheduleFields';
@@ -307,6 +308,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
         : selectedTemplate.generate(templateValues);
       // event 任务钉本机（填参步骤不渲染运行位置选择）；其余模板沿用用户的选择。
       generatedDraft.runsOn = selectedTemplate.event ? 'local' : draft.runsOn;
+      if (!selectedTemplate.event) generatedDraft.maxRunBudget = draft.runsOn === 'local' ? draft.maxRunBudget : '';
       const input = buildCronJobInput(generatedDraft);
       const created = await createJob(input);
       showCronLoginWallWarning(created, { warning: cc.loginWallWarning, openSite: cc.loginWallOpenSite });
@@ -602,10 +604,18 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
               })()}
             />
           ) : (
-            <CronRunsOnSelector
-              value={draft.runsOn}
-              onChange={(runsOn) => setField('runsOn', runsOn)}
-            />
+            <>
+              <CronRunsOnSelector
+                value={draft.runsOn}
+                onChange={(runsOn) => setField('runsOn', runsOn)}
+              />
+              {draft.runsOn === 'local' && (
+                <CronRunBudgetField
+                  value={draft.maxRunBudget}
+                  onChange={(maxRunBudget) => setField('maxRunBudget', maxRunBudget)}
+                />
+              )}
+            </>
           )}
         </div>
       </Modal>

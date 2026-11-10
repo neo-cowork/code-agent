@@ -25,3 +25,15 @@ export const COMPUTER_BATCH = {
 /** browser_action secretRef：只允许解析此前缀的环境变量；`<NAME>_ORIGINS` 为该密钥的站点白名单。 */
 export const BROWSER_SECRET_ENV_PREFIX = 'CODE_AGENT_BROWSER_SECRET_';
 export const BROWSER_SECRET_ORIGINS_SUFFIX = '_ORIGINS';
+
+/** browser_action get_dom_snapshot 给模型看的紧凑文本预算（字符）。超出时截断并提示 offset 翻页。 */
+export const BROWSER_SNAPSHOT = {
+  /** 模型可见快照文本的字符上限（含头部、标题、元素行与溢出提示行） */
+  MAX_CHARS: 8_000,
+  /** 单个标题文本的字符上限 */
+  HEADING_TEXT_MAX_CHARS: 80,
+  /** 单行元素描述（text/ariaLabel/placeholder）的字符上限 */
+  ELEMENT_LABEL_MAX_CHARS: 80,
+  /** 头部 url 行的字符上限（data:/长 query 的 URL 会撑爆预算） */
+  URL_MAX_CHARS: 300,
+} as const;
