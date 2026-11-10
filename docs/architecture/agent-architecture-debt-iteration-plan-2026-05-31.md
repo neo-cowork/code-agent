@@ -90,7 +90,7 @@ Deliverables:
 - Break `dev.ts <-> devTelemetrySeedRoutes.ts` by moving shared helpers into a neutral service.
 - Pass provider identity through provider fetch helpers where the provider is known.
 - Extract pure artifact/fallback policy helpers from `modelRouter`.
-- Extract an `agentRunController` from `src/web/routes/agent.ts` for SSE writes, terminal-event dedupe, disconnect cancellation, and run status updates.
+- Extract an `agentRunController` from `src/web/routes/agent.ts` for SSE writes, terminal-event dedupe, disconnect detachment, and run status updates.
 
 Verification:
 

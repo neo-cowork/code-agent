@@ -33,12 +33,13 @@ function makeRepo() {
   };
 }
 
-function makeIsland(repo: PendingApprovalRepository, onEvent = vi.fn()) {
+function makeIsland(repo: PendingApprovalRepository, onEvent = vi.fn(), isDetachedRun = () => false) {
   return new OrchestratorPermissionIsland({
     getSettings: () => settings(),
     isDevModeAutoApproveEnabled: () => false,
     getExecutionTopology: () => 'async_agent',
     hasApprovalUi: () => false,
+    isDetachedRun,
     onEvent,
     injectedPendingApprovalRepo: repo,
   });
@@ -66,6 +67,26 @@ describe('cron/heartbeat 停车审批 30 分钟降级拒绝', () => {
   afterEach(() => {
     vi.useRealTimers();
     resetPermissionModeManager();
+  });
+
+  it.each([false, true])('detached foreground approval parks and denies after the shared bound (already pending=%s)', async (alreadyPending) => {
+    const repo = makeRepo();
+    let detached = !alreadyPending;
+    const island = makeIsland(repo, vi.fn(), () => detached);
+    const result = island.requestPermission(bash('foreground-detached'));
+    await vi.advanceTimersByTimeAsync(0);
+    if (alreadyPending) {
+      expect(repo.insert).not.toHaveBeenCalled();
+      detached = true;
+      await vi.advanceTimersToNextTimerAsync();
+    }
+    expect(repo.insert).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(DEGRADE_MS - 1);
+    expect(await isStillPending(result)).toBe(true);
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(result).resolves.toMatchObject({ approved: false, denialSource: 'timeout' });
+    expect(repo.resolve).toHaveBeenCalledWith(expect.objectContaining({ status: 'rejected' }));
+    expect(takeUnattendedApprovalDenials('foreground-detached')).toHaveLength(1);
   });
 
   it('cron 29:59 仍挂着，30:00 拒绝并带原因码与「未读取」指引；channel 30:00 仍挂着', async () => {

@@ -16,6 +16,7 @@ import { createLogger } from '../infra/logger';
 import type { SessionCommandTask } from './sessionCommandCenter';
 
 import { WAKE_NOOP_TOOL_NAME } from '../../../shared/constants/agent';
+import { getAgentErrorMessage } from '../../../shared/utils/agentErrorClassification';
 
 const FOREGROUND_WAKE_CONTRACT = [
   '<background_task_hidden_wake>',
@@ -267,6 +268,7 @@ export function createForegroundWake(
         maxIterations: SESSION_COMMAND_CENTER_WAKE_MAX_ITERATIONS,
         turnSystemContext: [FOREGROUND_WAKE_CONTRACT],
       });
+      let capturedError: string | null = null;
       const options = {
         ...brainOptions,
         mode: 'normal',
@@ -278,6 +280,11 @@ export function createForegroundWake(
           ...(brainOptions.allowedToolNames ?? []),
           WAKE_NOOP_TOOL_NAME,
         ])),
+        terminalErrorSink: (data: unknown) => {
+          if (capturedError === null) {
+            capturedError = getAgentErrorMessage(data) ?? 'wake turn failed';
+          }
+        },
       } satisfies AgentRunOptions;
 
       consecutiveBySession.set(sessionId, {
@@ -291,15 +298,19 @@ export function createForegroundWake(
         consecutive: consecutive + 1,
       });
       turnRan = true;
+      let thrownError: string | null = null;
       try {
         await orchestrator.sendMessage(wakePrompt(task, status), undefined, options);
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        thrownError = error instanceof Error ? error.message : String(error);
+      }
+      const failureMessage = capturedError ?? thrownError;
+      if (failureMessage !== null) {
         // 失败原因分开记：owner lease 缺失是 run 注册问题，其余是唤醒轮自身失败
-        const ownerMissing = message.includes('no live owner lease');
+        const ownerMissing = failureMessage.includes('no live owner lease');
         dependencies.logger.warn(
           `Foreground wake failed: ${ownerMissing ? 'owner missing' : 'wake turn failed'}`,
-          { sessionId, taskId: task.id, message },
+          { sessionId, taskId: task.id, message: failureMessage },
         );
         await dependencies.recordWakeFailureNote(
           sessionId,
