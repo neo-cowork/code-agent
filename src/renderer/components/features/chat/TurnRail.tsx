@@ -16,8 +16,9 @@ interface TurnRailProps {
   onJump: (turnId: string) => void;
 }
 
-/** 相邻两格的固定间距：条的长度跟轮数走，超出高度时条内滚动 */
+/** 每格的理想高度；轮数多、窗口矮时按 flex 收缩（最低 TICK_MIN_PX），条内不滚动 */
 const TICK_PITCH_PX = 10;
+const TICK_MIN_PX = 3;
 // 聊天列窄于 640px 时收成小按钮：容器查询断点与 TurnBasedTraceView 的 @container 配对。
 // 类名必须写成字面量——Tailwind 按源码扫描完整类名，模板字符串拼出来的不会被生成（09-02 真机实付）。
 const WIDE_ONLY = '@max-[640px]:hidden';
@@ -66,7 +67,7 @@ export const TurnRail: React.FC<TurnRailProps> = ({ items, activeTurnId, onJump 
         >
           ≡
         </button>
-        <div className="relative min-h-0 flex-1 overflow-y-auto overflow-x-visible [scrollbar-width:none]">
+        <div className="relative min-h-0 flex-1 flex flex-col overflow-y-auto overflow-x-visible [scrollbar-width:none]">
           {items.map((item) => {
             const isActive = item.turnId === activeTurnId;
             const showingPreview = item.turnId === previewTurnId;
@@ -83,7 +84,7 @@ export const TurnRail: React.FC<TurnRailProps> = ({ items, activeTurnId, onJump 
                 onMouseLeave={() => setPreviewTurnId(null)}
                 onFocus={() => setPreviewTurnId(item.turnId)}
                 onBlur={() => setPreviewTurnId(null)}
-                style={{ height: TICK_PITCH_PX }}
+                style={{ flex: `0 1 ${TICK_PITCH_PX}px`, minHeight: TICK_MIN_PX }}
                 className="group flex w-5 items-center justify-end"
               >
                 <span

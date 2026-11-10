@@ -5,6 +5,7 @@ import { createLogger } from '../../../utils/logger';
 import { useSessionStore } from '../../../stores/sessionStore';
 import ipcService from '../../../services/ipcService';
 import type { AgentEffectsProps } from '../useAgentEffects';
+import { isWindowAway } from '../../../utils/osNotification';
 import { getAgentEventSessionId, isAgentEventForCurrentSession } from '../agentEventSession';
 
 const logger = createLogger('useAgent');
@@ -15,7 +16,8 @@ type AgentEvent = (AgentEventBody & { sessionId?: string })
 export interface TaskProgressEventDeps {
   debug: (message: string, context: Record<string, unknown>) => void;
   getCurrentSessionId: () => string | null;
-  markSessionUnread: (sessionId: string) => void;
+  isWindowAway: () => boolean;
+  markSessionUnread: (sessionId: string, options?: { includeCurrent?: boolean }) => void;
   now: () => number;
   setLastEventAt: (timestamp: number) => void;
   setSessionTaskComplete: AgentEffectsProps['setSessionTaskComplete'];
@@ -104,6 +106,10 @@ export function applyTaskProgressEvent(
         if (!isCurrentSessionEvent) {
           deps.debug('Task completed in different session, marking as unread', { eventSessionId });
           deps.markSessionUnread(eventSessionId);
+        } else if (deps.isWindowAway()) {
+          // 当前会话在后台完成：用户没在看，照样留未读点；回到窗口时由 Sidebar 清除。
+          deps.debug('Task completed in current session while window away, marking as unread', { eventSessionId });
+          deps.markSessionUnread(eventSessionId, { includeCurrent: true });
         }
       }
       break;
@@ -126,7 +132,8 @@ export const useTaskProgressEffects = ({
       applyTaskProgressEvent(event, {
         debug: (message, context) => logger.debug(message, context),
         getCurrentSessionId: () => useSessionStore.getState().currentSessionId,
-        markSessionUnread: (sessionId) => useSessionStore.getState().markSessionUnread(sessionId),
+        isWindowAway,
+        markSessionUnread: (sessionId, options) => useSessionStore.getState().markSessionUnread(sessionId, options),
         now: Date.now,
         setLastEventAt: (timestamp) => {
           lastEventAtRef.current = timestamp;
