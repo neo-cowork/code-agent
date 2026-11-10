@@ -12,7 +12,7 @@ import { Button } from '../../primitives/Button';
 import {
   formatDuration,
   formatRunCostUsd,
-  getExecutionStatusMeta,
+  getLatestExecutionStatus,
   isPermissionDeniedExecution,
   prettyJson,
 } from './types';
@@ -109,7 +109,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
     );
   }
 
-  const statusMeta = getExecutionStatusMeta(execution.status);
+  const statusMeta = getLatestExecutionStatus(execution, cc);
   // 需处理（N-CRON-RUN-COMPLETED-BUT-DENIED）：被拒且无产出的完成运行换琥珀徽章 + 一句话 + 重跑。
   const deniedCandidate = isPermissionDeniedExecution(execution)
     ? (execution.result as { permissionDenied?: unknown }).permissionDenied
@@ -188,11 +188,11 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
               className="rounded-full px-2.5 py-1 text-xs text-badge-warning bg-amber-500/10"
               data-testid="cron-exec-detail-permission-denied"
             >
-              {cc.permissionDeniedBadge}
+              {statusMeta.label}
             </span>
           ) : (
             <span className={`rounded-full px-2.5 py-1 text-xs ${statusMeta.className}`}>
-              {cc.status[execution.status]}
+              {statusMeta.label}
             </span>
           )}
         </div>
