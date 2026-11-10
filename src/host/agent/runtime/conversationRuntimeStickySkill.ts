@@ -119,7 +119,10 @@ export async function resolveStickyStrictSkillInvocation(
 
   const invocation = matchRoleAuthoringSeed(seed.text)?.kind === 'natural-language'
     ? await resolveNaturalLanguageCreateRoleInvocation(ctx, seed.text)
-    : await resolveSkillInvocation(seed.text, ctx.workingDirectory);
+    : await resolveSkillInvocation(seed.text, ctx.workingDirectory, {
+      sessionId: ctx.sessionId,
+      toolScope: ctx.toolScope,
+    });
   if (!invocation || !isStickyStrictSkill(invocation)) {
     return null;
   }
@@ -149,7 +152,10 @@ export async function resolveNaturalLanguageCreateRoleInvocation(
   if (seed?.kind !== 'natural-language') {
     return null;
   }
-  const invocation = await resolveSkillInvocation(seed.text, ctx.workingDirectory);
+  const invocation = await resolveSkillInvocation(seed.text, ctx.workingDirectory, {
+    sessionId: ctx.sessionId,
+    toolScope: ctx.toolScope,
+  });
   if (invocation?.skill.name !== seed.skillName) {
     logger.warn('[AgentLoop] Natural-language create-role route matched but create-role skill not resolvable', {
       reason: invocation ? `resolved other skill: ${invocation.skill.name}` : 'skill not found in discovery',

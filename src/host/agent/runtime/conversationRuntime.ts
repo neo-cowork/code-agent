@@ -887,7 +887,14 @@ export class ConversationRuntime {
     preloadToolsForIntent(startupTaskFeatures, this.ctx.sessionId);
     try {
       const resolvedSkill =
-        await raceStartupStep(this.ctx, resolveSkillInvocation(userRequest, this.ctx.workingDirectory), 'skill_discovery')
+        await raceStartupStep(
+          this.ctx,
+          resolveSkillInvocation(userRequest, this.ctx.workingDirectory, {
+            sessionId: this.ctx.sessionId,
+            toolScope: this.ctx.toolScope,
+          }),
+          'skill_discovery',
+        )
         ?? await raceStartupStep(this.ctx, resolveStickyStrictSkillInvocation(this.ctx, userRequest), 'skill_discovery')
         ?? await raceStartupStep(this.ctx, resolveNaturalLanguageCreateRoleInvocation(this.ctx, userRequest), 'skill_discovery');
       if (isStartupAborted(this.ctx)) return null;

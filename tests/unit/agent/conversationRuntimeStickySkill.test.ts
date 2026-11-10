@@ -163,7 +163,9 @@ describe('自然语言建角色路由', () => {
   it('自然语言意图 → 按 /create-role <原话> 解析出 strict 技能', async () => {
     const result = await resolveNaturalLanguageCreateRoleInvocation(mkCtx([userMsg(NL)]), NL);
     expect(result).toBe(createRoleInvocation);
-    expect(resolveSkillInvocationMock).toHaveBeenCalledWith(`/create-role ${NL}`, '/tmp/wd');
+    expect(resolveSkillInvocationMock).toHaveBeenCalledWith(`/create-role ${NL}`, '/tmp/wd', {
+      sessionId: SESSION_ID, toolScope: undefined,
+    });
   });
 
   it.each(['不要创建专家', '要不要创建专家', '怎么创建专家？', '删除专家', '帮我写周报', '/create-role 日历'])(
@@ -183,7 +185,9 @@ describe('自然语言建角色路由', () => {
     const ctx = mkCtx([userMsg(NL), assistantMsg('你想让它多久查一次日历？', ['ask_user_question'])]);
     const result = await resolveStickyStrictSkillInvocation(ctx, '每天早上八点');
     expect(result).toBe(createRoleInvocation);
-    expect(resolveSkillInvocationMock).toHaveBeenCalledWith(`/create-role ${NL}`, '/tmp/wd');
+    expect(resolveSkillInvocationMock).toHaveBeenCalledWith(`/create-role ${NL}`, '/tmp/wd', {
+      sessionId: SESSION_ID, toolScope: undefined,
+    });
   });
 
   it('否定句不是种子 → 不恢复', async () => {
@@ -256,4 +260,24 @@ describe('non-expert tasks must not activate or seed the strict flow', () => {
     expect(await resolveStickyStrictSkillInvocation(followUp, '继续')).toBeNull();
     expect(resolveSkillInvocationMock).not.toHaveBeenCalled();
   });
+});
+
+
+describe('merged discovery scope is preserved across role routes', () => {
+  it.each(['natural fallback', 'natural sticky', 'slash sticky'] as const)(
+    'forwards session scope and honours a filtered-out skill: %s', async (route) => {
+      const text = '帮我创建一个日程管家专家，负责看日历和提醒';
+      const seed = route === 'slash sticky' ? `/create-role ${text}` : text;
+      const toolScope = { allowedSkillIds: ['triage'] };
+      const ctx = { ...mkCtx([userMsg(seed)]), toolScope };
+      resolveSkillInvocationMock.mockResolvedValue(null);
+      const result = route === 'natural fallback'
+        ? await resolveNaturalLanguageCreateRoleInvocation(ctx, text)
+        : await resolveStickyStrictSkillInvocation(ctx, '每天早上八点');
+      expect(result).toBeNull();
+      expect(resolveSkillInvocationMock).toHaveBeenCalledWith(`/create-role ${text}`, '/tmp/wd', {
+        sessionId: SESSION_ID, toolScope,
+      });
+    },
+  );
 });
