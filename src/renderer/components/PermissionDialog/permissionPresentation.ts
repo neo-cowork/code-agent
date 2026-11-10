@@ -78,6 +78,8 @@ export function isDangerousRequestShape(request: PermissionRequest): boolean {
 export function isGenericCommandRequest(request: PermissionRequest): boolean {
   return request.type === 'command'
     && request.tool.trim().toLowerCase() !== 'bash'
+    // App-specific consent keeps its existing force-confirm command warning.
+    && !request.details.targetApp?.name
     && !request.details.command;
 }
 
