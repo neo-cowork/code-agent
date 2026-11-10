@@ -341,8 +341,48 @@ describe('foreground task-result wake', () => {
     await createForegroundWake(dependencies())(task(), 'completed');
     expect(wakeLogger.warn).toHaveBeenCalledWith(
       'Foreground wake failed: owner missing',
-      expect.objectContaining({ taskId: 'task-1' }),
+      expect.objectContaining({
+        taskId: 'task-1',
+        message: 'Durable Run run-1 has no live owner lease',
+      }),
     );
+  });
+
+  it('records the note once when the wake turn resolves after capturing a terminal RUN_FAILED error', async () => {
+    sendMessage.mockImplementationOnce(async (_prompt: string, _attachments: unknown, options: { terminalErrorSink?: (data: unknown) => void }) => {
+      options.terminalErrorSink?.({ code: 'RUN_FAILED', message: 'model 502 bad gateway' });
+    });
+    const recordWakeFailureNote = vi.fn(async () => undefined);
+    await createForegroundWake(dependencies({ recordWakeFailureNote }))(task(), 'completed');
+
+    expect(wakeLogger.warn).toHaveBeenCalledTimes(1);
+    expect(wakeLogger.warn).toHaveBeenCalledWith(
+      'Foreground wake failed: wake turn failed',
+      expect.objectContaining({ sessionId: 'session-a', taskId: 'task-1', message: 'model 502 bad gateway' }),
+    );
+    expect(recordWakeFailureNote).toHaveBeenCalledTimes(1);
+    expect(recordWakeFailureNote).toHaveBeenCalledWith(
+      'session-a',
+      expect.stringContaining('任务结果'),
+      { taskId: 'task-1', reason: 'wake_failed' },
+    );
+  });
+
+  it('does not record a duplicate note when both terminalErrorSink and a thrown exception occur', async () => {
+    sendMessage.mockImplementationOnce(async (_prompt: string, _attachments: unknown, options: { terminalErrorSink?: (data: unknown) => void }) => {
+      options.terminalErrorSink?.({ message: 'first captured error' });
+      options.terminalErrorSink?.({ message: 'second captured error' });
+      throw new Error('rethrown error');
+    });
+    const recordWakeFailureNote = vi.fn(async () => undefined);
+    await createForegroundWake(dependencies({ recordWakeFailureNote }))(task(), 'completed');
+
+    expect(wakeLogger.warn).toHaveBeenCalledTimes(1);
+    expect(wakeLogger.warn).toHaveBeenCalledWith(
+      'Foreground wake failed: wake turn failed',
+      expect.objectContaining({ message: 'first captured error' }),
+    );
+    expect(recordWakeFailureNote).toHaveBeenCalledTimes(1);
   });
 
   // N-SUBAGENT-INPUT：用户绕过团长直接给任务补过话，收工摘要要带一句让团长汇总时不漏

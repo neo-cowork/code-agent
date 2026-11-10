@@ -219,6 +219,36 @@ describe('fast gate fail-closed contracts', () => {
     ]);
     expect(renderReceipt({ ...receipt, status: 'failed', error: 'budget exceeded' })[0]).toContain('FAILED: budget exceeded');
     expect(digest('private-v1')).not.toBe(digest('private-v2'));
+    for (const mode of ['ran', 'reused']) {
+      const privateCheck = { mode, inputHash: digest('private-inputs') };
+      const persisted = JSON.parse(JSON.stringify({ ...receipt, privateCheck }));
+      expect(persisted.privateCheck).toEqual(privateCheck);
+      expect(renderReceipt(persisted)).toContain(`private check: ${mode} inputHash=${privateCheck.inputHash.slice(0, 16)}`);
+      expect(renderReceipt({ ...persisted, status: 'failed', error: 'check failed' })).toContain(`private check: ${mode} inputHash=${privateCheck.inputHash.slice(0, 16)}`);
+    }
+  });
+  it('records private check metadata and logs it on success and failure in the actual gate body', async () => {
+    const source = fs.readFileSync(path.join(root, 'scripts/gates-fast.mjs'), 'utf8');
+    const body = source.slice(source.indexOf("  await gate('private',"), source.indexOf("  await gate('src-typecheck',"));
+    const execute = new Function('gate', 'runPrivateCheckCached', 'command', 'receipt', 'root', 'privateRoot', 'process', 'console', `return (async () => { ${body} })();`);
+    for (const failing of [false, true]) {
+      const receipt: { privateCheck?: { mode: string; inputHash: string } } = {};
+      const privateCheck = { mode: 'ran', inputHash: digest('real-inputs') };
+      const logs: string[] = [];
+      const commands: string[][] = [];
+      const invocation = execute(async (_id: string, _required: boolean, callback: () => Promise<void>) => callback(),
+        async ({ run }: { run: () => Promise<void> }) => {
+          await run();
+          if (failing) throw Object.assign(new Error('check failed'), { privateCheck });
+          return privateCheck;
+        }, async (argv: string[]) => { commands.push(argv); }, receipt, root, 'private-fixture', process,
+        { log: (line: string) => logs.push(line) });
+      if (failing) await expect(invocation).rejects.toThrow('check failed');
+      else await invocation;
+      expect(receipt.privateCheck).toEqual(privateCheck);
+      expect(commands).toEqual([[process.execPath, 'scripts/ci/check-casebank-answers.mjs', '--require-private']]);
+      expect(logs).toEqual([`private check: ran inputHash=${privateCheck.inputHash.slice(0, 16)}`]);
+    }
   });
   it('checks committed prompt changes with an empty index using base/head', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fast-prompt-contract-'));

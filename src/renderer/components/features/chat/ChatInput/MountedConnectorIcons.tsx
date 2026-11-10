@@ -131,7 +131,7 @@ export const MountedConnectorIcons: React.FC = () => {
 
   const visibleManual = manualExpanded ? manual : manual.slice(0, MAX_VISIBLE_MANUAL);
   const overflowCount = manual.length - Math.min(manual.length, MAX_VISIBLE_MANUAL);
-  const expertName = expert?.name || expert?.id || '';
+  const expertName = expert?.displayName || expert?.name || expert?.id || '';
 
   const statusLine = (item: Pick<ExpertConnectorSourceItem, 'status'>) => (
     <p className="mt-0.5 flex items-center gap-1 text-[11px] text-zinc-400">

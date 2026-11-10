@@ -1,20 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Message } from '../../../src/shared/contract';
+import type { AgentEvent, Message } from '../../../src/shared/contract';
 import { findRegisteredSystemEvent } from '../../../src/shared/contract/systemEventRegistry';
 import { BACKGROUND_WAKE_DEFER_NOTICE_MS } from '../../../src/shared/constants/sessionCommandCenter';
 import type { SessionCommandTask } from '../../../src/host/services/commandCenter/sessionCommandCenter';
+import type { AgentOrchestrator } from '../../../src/host/agent/agentOrchestrator';
+import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
 
 // 走默认依赖（产线路径）：唤醒轮失败后落的那句人话必须带登记键，否则渲染端投影层会把
 // 无 metadata 的 role:'system' 消息整条跳过，用户什么都看不到。
 const h = vi.hoisted(() => ({
   added: [] as Array<{ sessionId: string; message: Message }>,
-  emitted: [] as Array<{ sessionId: string; event: { type: string; data: unknown } }>,
+  emitted: [] as Array<{ sessionId: string; event: AgentEvent }>,
   busy: false,
 }));
 
 const orchestrator = {
   isProcessing: () => false,
-  sendMessage: vi.fn(async () => { throw new Error('Durable Run run-x has no live owner lease'); }),
+  sendMessage: vi.fn<AgentOrchestrator['sendMessage']>(async () => {
+    throw new Error('Durable Run run-x has no live owner lease');
+  }),
 };
 vi.mock('../../../src/host/task/TaskManager', () => ({
   getTaskManager: () => ({
@@ -27,7 +31,7 @@ vi.mock('../../../src/host/task/TaskManager', () => ({
     on: vi.fn(),
     onRunIdle: vi.fn(),
     observeAgentEvents: vi.fn(() => () => undefined),
-    emitAgentEventForSession: (sessionId: string, event: { type: string; data: unknown }) => {
+    emitAgentEventForSession: (sessionId: string, event: AgentEvent) => {
       h.emitted.push({ sessionId, event });
     },
   }),
@@ -53,13 +57,22 @@ vi.mock('../../../src/host/permissions/modes', () => ({
 
 import { createForegroundWake } from '../../../src/host/services/commandCenter/foregroundWake';
 
-const task = {
+const task: SessionCommandTask = {
   id: 'task-n', sessionId: 'session-n', title: 't', shortName: '报告', laneKey: 'l', submissionKey: 's',
-  prompt: 'p', workspaceScope: {}, status: 'completed', attempt: 1, createdAt: 1, updatedAt: 2, summary: 'ok',
-} as unknown as SessionCommandTask;
+  prompt: 'p', workspaceScope: createWorkspaceScope('wake-note-project', [{
+    sourceId: 'wake-note-source', path: '/tmp/p', role: 'primary', access: 'read_write',
+  }]), status: 'completed', attempt: 1, createdAt: 1, updatedAt: 2, summary: 'ok',
+};
 
 describe('foreground wake failure note (default dependencies)', () => {
-  beforeEach(() => { h.added.length = 0; h.emitted.length = 0; h.busy = false; });
+  beforeEach(() => {
+    h.added.length = 0;
+    h.emitted.length = 0;
+    h.busy = false;
+    orchestrator.sendMessage.mockImplementation(async () => {
+      throw new Error('Durable Run run-x has no live owner lease');
+    });
+  });
   afterEach(() => { vi.useRealTimers(); });
 
   it('persists and broadcasts a note that the renderer registry recognises', async () => {
@@ -92,5 +105,19 @@ describe('foreground wake failure note (default dependencies)', () => {
     expect(message.content).toBe('后台任务「t」已完成，结果见上方的任务结果；当前步骤结束后，我会继续汇报。');
     expect(message.metadata?.backgroundWakeDeferred).toEqual({ taskId: 'task-n', outcome: 'completed' });
     expect(h.emitted.at(-1)).toEqual({ sessionId: 'session-n', event: { type: 'message', data: message } });
+  });
+
+  it('persists and broadcasts one registered note when a resolving wake reports RUN_FAILED', async () => {
+    orchestrator.sendMessage.mockImplementationOnce(async (_prompt, _attachments, options) => {
+      options?.terminalErrorSink?.({ code: 'RUN_FAILED', message: '401 invalid api key' });
+    });
+
+    await createForegroundWake()(task, 'completed');
+
+    expect(h.added).toHaveLength(1);
+    const { message } = h.added[0];
+    expect(message.metadata?.backgroundWakeFailed).toEqual({ taskId: 'task-n', reason: 'wake_failed' });
+    expect(h.emitted.filter((e) => e.event.type === 'error')).toEqual([]);
+    expect(h.emitted).toEqual([{ sessionId: 'session-n', event: { type: 'message', data: message } }]);
   });
 });
