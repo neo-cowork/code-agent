@@ -744,7 +744,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const replanned = await maybeReplanSessionWorkDirectory({
         workingDirectory: sessionRowWorkingDirectory,
         sessionTitle: persistedSession?.title,
-        firstUserMessage: (await sessionManagerForRun.getMessages?.(sessionId))?.find((message) => message.role === 'user'),
+        loadFirstUserMessage: async () => (await sessionManagerForRun?.getMessages?.(sessionId, 1))?.find((message) => message.role === 'user'),
         reservedPaths: workDirReservations,
       });
       const diverted = replanned

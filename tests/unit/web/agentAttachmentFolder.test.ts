@@ -1,6 +1,6 @@
 import express from 'express';
 import type { Server } from 'node:http';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -10,7 +10,7 @@ import { createCLIAgent } from '../../../src/cli/adapter';
 import { RunRegistry } from '../../../src/host/runtime/runRegistry';
 import { resolveDurableRunRollout } from '../../../src/host/app/durableRunRollout';
 import { setDbAvailable } from '../../../src/web/helpers/sessionCache';
-import { inMemorySessionsProjection, sessionMessagesProjection } from '../../../src/web/helpers/webSessionStore';
+import { inMemorySessionsProjection, seedSessionMessagesFromPersisted, sessionMessagesProjection } from '../../../src/web/helpers/webSessionStore';
 
 const mocks = vi.hoisted(() => ({
   language: 'zh',
@@ -51,23 +51,25 @@ let home: string;
 let session: Session;
 let messages: Message[];
 const registry = new RunRegistry();
+const getMessages = vi.fn<(id: string, limit?: number) => Promise<Message[]>>();
 const updateSession = vi.fn(async (_id: string, updates: Partial<Session>) => { Object.assign(session, updates); });
 const attachment = { id: 'budget', name: 'sub/Q3-budget.xlsx', type: 'file', category: 'data', size: 1, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
 
 beforeEach(async () => {
   vi.clearAllMocks();
   mocks.language = 'zh';
-  mocks.run.mockResolvedValue(undefined);
+  mocks.run.mockReset().mockResolvedValue(undefined);
   home = await mkdtemp(path.join(tmpdir(), 'route-attachment-folder-'));
   vi.stubEnv('CODE_AGENT_HOME', home);
   vi.stubEnv('CODE_AGENT_DATA_DIR', path.join(home, '.code-agent'));
   setDbAvailable(true);
   messages = [];
+  getMessages.mockReset().mockImplementation(async (_id, limit) => limit === undefined ? messages : messages.slice(0, limit));
   session = { id: 'attachment-session', title: 'New Session', createdAt: 1, updatedAt: 1 } as Session;
   mocks.db.getSession.mockImplementation(() => session);
   const sm = {
     getSession: async () => ({ ...session, messages }),
-    getMessages: async () => messages,
+    getMessages,
     updateSession,
     addMessageToSession: async (_id: string, message: Message) => { messages.push(message); },
   };
@@ -134,5 +136,58 @@ describe('POST /api/run attachment-only folder naming', () => {
   it('preserves prompt naming when attachments are also present', async () => {
     await run('Summarize this budget, please', [attachment]);
     expect(session.workingDirectory).toMatch(/_Summarize this budget$/);
+  });
+});
+
+
+describe('follow-up folder replanning reads', () => {
+  let readsBeforeRun: unknown[][];
+  function seedFollowUp(workingDirectory: string, title = 'Budget review') {
+    readsBeforeRun = [];
+    mocks.run.mockImplementationOnce(async () => { readsBeforeRun = getMessages.mock.calls.map(call => [...call]); });
+    session.workingDirectory = workingDirectory;
+    session.title = title;
+    messages = [{ id: 'first-user', role: 'user', content: '', timestamp: 1,
+      attachments: [{ ...attachment, type: 'file', category: 'data' }] }];
+    // Ordinary inference history is already hydrated: isolate the extra preflight read.
+    seedSessionMessagesFromPersisted(session.id, messages);
+  }
+
+  it.each(['chosen folder', 'default root', 'outside-root planned name', 'materialized', 'placeholder title', 'degraded title'])(
+    'does not read messages when replan rejects a %s', async scenario => {
+      let workingDirectory = path.join(home, 'Neo', `任务_${today()}_Q3-budget`);
+      if (scenario === 'chosen folder') workingDirectory = path.join(home, 'chosen-budget');
+      if (scenario === 'default root') workingDirectory = path.join(home, 'Neo');
+      if (scenario === 'outside-root planned name') workingDirectory = path.join(home, `任务_${today()}_Q3-budget`);
+      if (scenario === 'materialized') await mkdir(workingDirectory, { recursive: true });
+      seedFollowUp(workingDirectory, scenario === 'placeholder title' ? 'New Session'
+        : scenario === 'degraded title' ? 'Budget...' : 'Budget review');
+      getMessages.mockRejectedValue(new Error('unnecessary preflight read'));
+      await run('Which department exceeded its budget?');
+      expect(readsBeforeRun).toEqual([]);
+      expect(session.workingDirectory).toBe(workingDirectory);
+      expect(mocks.run).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('limits the attachment guard lookup to the first persisted row', async () => {
+    const workingDirectory = path.join(home, 'Neo', `任务_${today()}_Q3-budget`);
+    seedFollowUp(workingDirectory, 'sub/Q3-budget.xlsx');
+    await run('Which department exceeded its budget?');
+    expect(readsBeforeRun).toEqual([[session.id, 1]]);
+    expect(session.workingDirectory).toBe(workingDirectory);
+    expect(mocks.run).toHaveBeenCalledOnce();
+  });
+
+  it('retains the planned attachment path and runs when the guard lookup fails', async () => {
+    const workingDirectory = path.join(home, 'Neo', `任务_${today()}_Q3-budget`);
+    seedFollowUp(workingDirectory, 'sub/Q3-budget.xlsx');
+    getMessages.mockRejectedValue(new Error('first message read unavailable'));
+    await run('Which department exceeded its budget?');
+    expect(session.workingDirectory).toBe(workingDirectory);
+    expect(updateSession).not.toHaveBeenCalledWith(session.id, expect.objectContaining({
+      workingDirectory: expect.any(String),
+    }));
+    expect(mocks.run).toHaveBeenCalledOnce();
   });
 });

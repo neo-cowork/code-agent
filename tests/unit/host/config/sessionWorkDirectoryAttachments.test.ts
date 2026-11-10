@@ -66,7 +66,7 @@ describe('attachment-derived names survive automatic titles before materializati
   it.each(['Appshot 会话', 'sub/Q3-budget.xlsx', '预算分析'])('preserves the attachment-derived plan for %s', async sessionTitle => {
     const workingDirectory = await planSessionWorkDirectory({ attachments: [file('sub/Q3-budget.xlsx')], env });
     await expect(maybeReplanSessionWorkDirectory({
-      workingDirectory, sessionTitle, firstUserMessage: { content: '', attachments: [attachment] }, env,
+      workingDirectory, sessionTitle, loadFirstUserMessage: async () => ({ content: '', attachments: [attachment] }), env,
     })).resolves.toBeUndefined();
   });
 
@@ -76,14 +76,14 @@ describe('attachment-derived names survive automatic titles before materializati
       const workingDirectory = await planSessionWorkDirectory({ attachments, env });
       expect(workingDirectory).toMatch(/-2$/);
       await expect(maybeReplanSessionWorkDirectory({
-        workingDirectory, sessionTitle: 'Appshot 会话', firstUserMessage: { content: '', attachments }, env,
+        workingDirectory, sessionTitle: 'Appshot 会话', loadFirstUserMessage: async () => ({ content: '', attachments }), env,
       })).resolves.toBeUndefined();
   });
 
   it.each(['', 'Summarize this budget'])('does not suppress normal smart-title replan for an unrelated current folder (%s)', async content => {
     const workingDirectory = await planSessionWorkDirectory({ userMessage: 'Earlier folder', env });
     const result = await maybeReplanSessionWorkDirectory({
-      workingDirectory, sessionTitle: 'Budget review', firstUserMessage: { content, attachments: [attachment] }, env,
+      workingDirectory, sessionTitle: 'Budget review', loadFirstUserMessage: async () => ({ content, attachments: [attachment] }), env,
     });
     expect(result && path.basename(result)).toMatch(/_Budget review$/);
   });
@@ -92,7 +92,7 @@ describe('attachment-derived names survive automatic titles before materializati
     const workingDirectory = await planSessionWorkDirectory({ userMessage: 'Q3-budget', env });
     const result = await maybeReplanSessionWorkDirectory({
       workingDirectory, sessionTitle: 'Budget review',
-      firstUserMessage: { content: 'Q3-budget', attachments: [attachment] }, env,
+      loadFirstUserMessage: async () => ({ content: 'Q3-budget', attachments: [attachment] }), env,
     });
     expect(result && path.basename(result)).toMatch(/_Budget review$/);
   });

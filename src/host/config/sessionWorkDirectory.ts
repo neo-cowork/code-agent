@@ -38,6 +38,9 @@ import { getConfigService } from '../services/core/configService';
 import { isPlaceholderSessionTitle } from '../../shared/sessionTitlePlaceholder';
 import { getDefaultWorkDirectory } from './configPaths';
 import { isPathWithinRoot } from '../runtime/workspaceScope';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('SessionWorkDirectory');
 
 export interface SessionWorkDirectoryOptions {
   /** 会话标题；占位标题（「新对话」等）视为没有标题 */
@@ -65,8 +68,8 @@ export interface ReplanSessionWorkDirectoryOptions {
   sessionTitle?: string;
   /** 首条用户消息；标题若只是它的降级截断（前缀 / 派生 / 以 `...` 结尾）则不重规划 */
   userMessage?: string;
-  /** 首条用户消息；空文字且当前目录来自附件时保留附件名，避免自动标题覆盖。 */
-  firstUserMessage?: Pick<Message, 'content' | 'attachments'>;
+  /** 仅在目录可重规划时读取首条消息；失败保留当前目录，不阻断会话。 */
+  loadFirstUserMessage?: () => Promise<Pick<Message, 'content' | 'attachments'> | undefined>;
   env?: NodeJS.ProcessEnv;
   /** 其它会话行已记下的占用路径；本会话自己的当前路径会自动从占用集中剔除 */
   reservedPaths?: readonly string[];
@@ -325,12 +328,6 @@ export async function maybeReplanSessionWorkDirectory(
   if (!title || !current) return undefined;
   const currentFolderName = path.basename(current);
   if (!PLANNED_FOLDER_NAME_PATTERN.test(currentFolderName)) return undefined;
-  const attachmentTitle = !options.firstUserMessage?.content.trim()
-    ? attachmentFolderTitle(options.firstUserMessage?.attachments)
-    : undefined;
-  const currentTitle = currentFolderName.replace(PLANNED_FOLDER_NAME_PATTERN, '');
-  if (attachmentTitle && (currentTitle === attachmentTitle
-    || currentTitle.replace(/-\d+$/, '') === attachmentTitle)) return undefined;
   if (isDegradedFallbackTitle(title, {
     userMessage: options.userMessage,
     currentFolderName,
@@ -338,6 +335,19 @@ export async function maybeReplanSessionWorkDirectory(
   const root = getDefaultWorkDirectory(options.env);
   if (!isPathWithinRoot(current, root) || path.resolve(current) === path.resolve(root)) return undefined;
   if (await existsOnDisk(current)) return undefined;
+  let firstUserMessage: Pick<Message, 'content' | 'attachments'> | undefined;
+  try {
+    firstUserMessage = await options.loadFirstUserMessage?.();
+  } catch (error) {
+    logger.warn('Failed to read first message for work directory replan; keeping current directory:', error);
+    return undefined;
+  }
+  const attachmentTitle = !firstUserMessage?.content.trim()
+    ? attachmentFolderTitle(firstUserMessage?.attachments)
+    : undefined;
+  const currentTitle = currentFolderName.replace(PLANNED_FOLDER_NAME_PATTERN, '');
+  if (attachmentTitle && (currentTitle === attachmentTitle
+    || currentTitle.replace(/-\d+$/, '') === attachmentTitle)) return undefined;
   const currentResolved = path.resolve(current);
   const reservedForReplan = (options.reservedPaths ?? []).filter(
     (candidate) => candidate.trim() && path.resolve(candidate) !== currentResolved,
