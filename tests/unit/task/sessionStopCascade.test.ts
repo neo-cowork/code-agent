@@ -314,8 +314,8 @@ describe('TaskManager.cancelTask 后台级联', () => {
       now: 1000,
       sessionId: 'session-1',
       backgroundAgents: [
-        { agentId: 'bg-stopped', status: 'failed', startedAt: 10, finishedAt: 20, error: 'aborted', failureCode: AgentFailureCode.CancelledByUser },
-        { agentId: 'bg-broken', status: 'failed', startedAt: 10, finishedAt: 20, error: 'model exploded', failureCode: AgentFailureCode.ModelError },
+        { agentId: 'bg-stopped', sessionId: 'session-1', status: 'failed', startedAt: 10, finishedAt: 20, error: 'aborted', failureCode: AgentFailureCode.CancelledByUser },
+        { agentId: 'bg-broken', sessionId: 'session-1', status: 'failed', startedAt: 10, finishedAt: 20, error: 'model exploded', failureCode: AgentFailureCode.ModelError },
       ],
     });
     const byId = new Map(snapshot.nodes.map((node) => [node.id, node]));
