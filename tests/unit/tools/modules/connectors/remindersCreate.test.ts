@@ -418,7 +418,7 @@ describe('reminder time receipt contract', () => {
     execMock.mockResolvedValue({ data: {
       id: 'r-time', list: '提醒事项', title: args.title, completed: false, remindAtMs: ms,
     } });
-    const canUseTool = vi.fn(async (name: string, params: Record<string, unknown>) => {
+    const canUseTool = vi.fn<CanUseToolFn>(async (name, params) => {
       const preview = new ConfirmationGate().buildPreview(name, params);
       expect(preview?.summary).toBe('创建提醒');
       expect(preview?.diff).toContain(new Date(ms).toLocaleString('zh-CN'));
@@ -479,7 +479,7 @@ describe('remind_at_local through public execute', () => {
     const args = { title: 'Time contract', remind_at_local: local };
     const ms = Date.parse(instant);
     execMock.mockResolvedValue({ data: { id: 'r-local', list: '提醒事项', title: args.title, completed: false, remindAtMs: ms } });
-    const permission = vi.fn(async (tool: string, normalized: Record<string, unknown>) => {
+    const permission = vi.fn<CanUseToolFn>(async (tool, normalized) => {
       expect(normalized).toEqual({ title: args.title, remind_at_ms: ms });
       expect(new ConfirmationGate().buildPreview(tool, normalized)?.diff).toContain(new Date(ms).toLocaleString('zh-CN'));
       return { allow: true };
