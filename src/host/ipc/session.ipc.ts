@@ -256,10 +256,13 @@ export async function performCrossSessionSearch(
   // FTS 数据源（全库检索）；DB 不可用时回落内存 LRU 搜索（原行为）
   const ftsSource = await resolveSessionSearchFtsSource();
 
+  const ownerUserId = resolveOwnerUserId();
   const searchManager = getDefaultSearchManager();
   const searchResults = searchManager.search(query, {
     limit: options?.limit ?? 30,
     sessionIds: options?.sessionIds,
+    // 归档/已删除/他人会话在 SQL 层就排除：否则它们先占满 FTS 候选与 limit，后置过滤后只剩空
+    activeSessionScope: { userId: ownerUserId },
     role: options?.role,
     caseSensitive: options?.caseSensitive ?? false,
     sortBy: 'relevance',
@@ -270,7 +273,6 @@ export async function performCrossSessionSearch(
   // 逐个命中会话取标题/更新时间/归档标记（全库命中的会话常不在侧栏已加载的第一页里），
   // 同时按当前登录用户过滤归属；取不到的会话（已删除/他人会话）不出现在结果里。
   const database = await resolveSessionSearchDatabase();
-  const ownerUserId = resolveOwnerUserId();
   let metaById: Map<string, SessionSearchMetaRow> | undefined;
   if (database) {
     try {

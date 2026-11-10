@@ -239,4 +239,21 @@ describe('cross-session search hydration', () => {
       expect.objectContaining({ error: expect.any(Error) }),
     );
   });
+  it('asks the FTS source for active sessions of the current owner only (filter runs before the candidate LIMIT)', async () => {
+    mocks.auth.userId = 'user-9';
+    const db = mocks.database as Record<string, unknown>;
+    db.searchSessionMessagesFts = vi.fn().mockReturnValue([]);
+    db.countSessionMessagesFts = vi.fn().mockReturnValue({ matches: 0, sessions: 0 });
+    try {
+      await performCrossSessionSearch('common-word', undefined);
+      expect(db.searchSessionMessagesFts).toHaveBeenCalledWith(
+        'common-word',
+        expect.objectContaining({ activeSessionScope: { userId: 'user-9' } }),
+      );
+      expect((db.searchSessionMessagesFts as ReturnType<typeof vi.fn>).mock.calls[0][1]).not.toHaveProperty('sessionIds', expect.anything());
+    } finally {
+      delete db.searchSessionMessagesFts;
+      delete db.countSessionMessagesFts;
+    }
+  });
 });
