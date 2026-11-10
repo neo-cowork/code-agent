@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Sparkles, Check, X, Trash2, Coins, AlertTriangle } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
+import { interpolate, interpolatePlural } from '../../i18n/interpolate';
 import { Button } from '../primitives/Button';
 import type { CanvasOpProposal, CanvasProposalOp, CanvasProposalOpSource } from '@shared/contract';
 import { isGenerateOp } from '@shared/contract';
@@ -282,7 +283,7 @@ export const CanvasProposalReviewBar: React.FC<{
           className="mt-2 flex items-center gap-1.5 rounded-md border border-badge-warning/25 bg-amber-500/[0.08] px-2 py-1.5 text-xs text-badge-warning"
         >
           <Coins className="h-3.5 w-3.5 shrink-0" />
-          <span>{s.proposalEstCost.replace('{amount}', formatCny(genCost.amount)).replace('{n}', String(genCost.count))}</span>
+          <span>{interpolate(interpolatePlural(s.proposalEstCost, genCost.count), { amount: formatCny(genCost.amount) })}</span>
         </div>
       ) : null}
       <div className="mt-2 flex items-center justify-end gap-2">

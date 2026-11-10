@@ -149,6 +149,69 @@ describe('delegate_session chain operations', () => {
     post.close();
   });
 
+  it('correct of two different delegations in the same run (different step turnIds) both succeed independently', async () => {
+    process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
+    const db = new Database(':memory:');
+    applySchema(db, { info() {}, warn() {}, error() {}, debug() {} } as never);
+    const seed = (delegationId: string, targetSessionId: string, originTurnId: string, content: string) => {
+      const targetIdentity = `session:${targetSessionId}`;
+      const submissionKey = deriveSubmissionKey({ originSessionId: 'origin', originTurnId, action: 'delegate_existing', targetIdentity });
+      const actionFingerprint = deriveActionFingerprint({ action: 'delegate_existing', targetIdentity, content, attachmentRefs: [] });
+      commitDelegation(db, {
+        delegationId,
+        originSessionId: 'origin',
+        originTurnId,
+        disposition: 'delegate_existing',
+        targetSessionId,
+        submissionKey,
+        actionFingerprint,
+        envelope: { content, sessionId: targetSessionId },
+        now: 1,
+      });
+    };
+    seed('d-1', 'target-1', 'run-seed-1', 'work 1');
+    seed('d-2', 'target-2', 'run-seed-2', 'work 2');
+
+    let seq = 0;
+    const runtime = {
+      getDb: () => db,
+      getSessionRow: (id: string) => ({ id, title: id, workingDirectory: '/workspace', sessionType: 'chat', engineKind: 'native' }),
+      getWorkspaceRoots: () => ['/workspace'],
+      getRuns: () => [],
+      getRun: () => undefined,
+      getPermissionMode: () => 'default',
+      evaluateFolderTrust: async () => ({ state: 'trusted', blockedItems: 0 }),
+      now: () => 2,
+      notifyEnqueued: () => {},
+      randomId: (prefix: string) => `${prefix}c_${++seq}`,
+    };
+    const stepCtx = (turnId: string) => ({
+      sessionId: 'origin',
+      runId: 'run-same',
+      turnId,
+      workspace: '/workspace',
+      workingDir: '/workspace',
+      modelConfig: { provider: 'local', model: 'test' },
+      abortSignal: new AbortController().signal,
+      delegationRuntime: runtime,
+    } as never);
+    const allow = async () => ({ allow: true as const });
+
+    try {
+      const first = await executeDelegateSession({ action: 'correct', delegationId: 'd-1', text: 'updated 1' }, stepCtx('step-1'), allow);
+      const second = await executeDelegateSession({ action: 'correct', delegationId: 'd-2', text: 'updated 2' }, stepCtx('step-2'), allow);
+      expect(first.ok).toBe(true);
+      expect(second.ok).toBe(true);
+      const repo = new SessionDelegationRepository(db);
+      expect(repo.get('d-1')?.status).toBe('superseded');
+      expect(repo.get('d-2')?.status).toBe('superseded');
+      expect(repo.get('delegation_c_1')).toMatchObject({ status: 'active', originTurnId: 'run-same', supersedesDelegationId: 'd-1' });
+      expect(repo.get('delegation_c_2')).toMatchObject({ status: 'active', originTurnId: 'run-same', supersedesDelegationId: 'd-2' });
+    } finally {
+      db.close();
+    }
+  });
+
   // ---------------------------------------------------------------------------
   // ⑤ 的归属/状态口径：非本发起会话的 delegationId、状态不符 → 一律 invalid_call
   // ---------------------------------------------------------------------------

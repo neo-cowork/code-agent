@@ -51,6 +51,9 @@ export const LocalBridgeSection: React.FC = () => {
       {/* Accordion Body */}
       {isExpanded && (
         <div className="px-4 pb-4 space-y-4 border-t border-zinc-700 pt-4">
+          <p className="text-xs text-zinc-500">
+            {bridgeText.serviceAddress} localhost:9527
+          </p>
           {isConnected ? (
             <>
               <VersionInfo version={version} latestVersion={latestVersion} />
