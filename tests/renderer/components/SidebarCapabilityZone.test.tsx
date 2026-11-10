@@ -149,7 +149,7 @@ describe('SidebarCapabilityZone', () => {
 
     useAppStore.setState({ language: 'en' });
     rerender(<SidebarCapabilityZone />);
-    expect(automation.getAttribute('title')).toContain('[Maintenance] Light Memory consolidation');
+    expect(automation.getAttribute('title')).toContain('Memory cleanup');
     useAppStore.setState({ language: 'zh' });
   });
 });

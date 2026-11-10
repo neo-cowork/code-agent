@@ -24,7 +24,8 @@ const SPAWN_AGENT_PATH = path.resolve(
 );
 
 describe('executeSpawnAgent 拓扑标注接线', () => {
-  const source = readFileSync(SPAWN_AGENT_PATH, 'utf8');
+  const source = readFileSync(SPAWN_AGENT_PATH, 'utf8')
+    + readFileSync(path.join(path.dirname(SPAWN_AGENT_PATH), 'spawnSingleAgent.ts'), 'utf8');
 
   it('后台分支注入 executionTopology=async_agent（尊重显式标注）', () => {
     expect(source).toMatch(
