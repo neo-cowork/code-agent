@@ -393,6 +393,7 @@ export async function runBrowserVisualSmoke(
         ...buildSystemChromeCdpArgs({
           cdpPort: port,
           profileDir: visualProfileDir,
+          mockKeychain: true,
           headless: true,
           viewport: { width: 1280, height: 720 },
         }),

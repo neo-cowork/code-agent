@@ -27,11 +27,12 @@ export interface UserVisibleSystemEventSpec {
   subtype?: NonNullable<TraceNode['subtype']>;
   /**
    * 挂轮策略：
+   * - standalone：独立追加为会话条目，不成为当前轮或活动轮；
    * - current-turn：挂当前轮，没有轮就独立成轮；
    * - matched-turn：按 payload.workItemId 对回带 voiceDispatch 的派活轮，
    *   对不上时节点类退到当前轮/独立成轮，settle 类直接丢弃（章不能盖到别人的活头上）。
    */
-  attach: 'current-turn' | 'matched-turn';
+  attach: 'current-turn' | 'matched-turn' | 'standalone';
 }
 
 /**
@@ -47,12 +48,14 @@ export const USER_VISIBLE_SYSTEM_EVENT_REGISTRY = {
   // 与「弹 toast 打断」的 agent:notice 通道正交（ADR：2026-08-08 notification 零消费者工单乙类）。
   agentRecoveryNotice: { presentation: 'info', attach: 'current-turn' },
   turnCheckoutNote: { presentation: 'info', attach: 'current-turn' },
-  roleEditReceipt: { presentation: 'info', attach: 'current-turn' },
+  roleEditReceipt: { presentation: 'info', attach: 'standalone' },
   // 建/改角色严格流程停摆出口（FB-327）：轮末无草稿也无问句时，告诉用户流程没产出、
   // 怎么继续/放弃——替代「模型念完步骤就空闲、什么都没落」的静默死局。
   roleFlowStalled: { presentation: 'info', attach: 'current-turn' },
   // 后台任务结束后前台自动汇报失败：任务结果已在会话里，告诉用户这一步没成，别留空白。
   backgroundWakeFailed: { presentation: 'info', attach: 'current-turn' },
+  // 后台任务结束后前台轮仍忙：超过等待上限只留一句说明，不抢占、不改变唤醒时机。
+  backgroundWakeDeferred: { presentation: 'info', attach: 'current-turn' },
 } as const satisfies Record<string, UserVisibleSystemEventSpec>;
 
 export type UserVisibleSystemEventKey = keyof typeof USER_VISIBLE_SYSTEM_EVENT_REGISTRY;

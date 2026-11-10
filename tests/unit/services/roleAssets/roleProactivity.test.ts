@@ -42,8 +42,15 @@ vi.mock('../../../../src/host/config/configPaths', () => ({
   getAgentsMdDir: () => ({ user: path.join(mockConfigDir.dir, 'agents') }),
 }));
 
+// Match production's unsupported electron alias; notificationService itself stays real.
+vi.mock('../../../../src/host/platform', () => ({
+  Notification: { isSupported: () => false },
+  broadcastToRenderer: vi.fn(),
+}));
+
 vi.mock('../../../../src/host/services/infra/logger', () => ({
   createLogger: () => mockLogger,
+  logger: mockLogger,
 }));
 
 vi.mock('../../../../src/host/services/infra/sessionManager', () => ({
@@ -130,16 +137,12 @@ import { ensureRoleAssetDirs, appendRoleHistory, loadRoleHistory } from '../../.
 import { getRoleHistoryPath } from '../../../../src/host/services/roleAssets/roleAssetPaths';
 import { ROLE_PROACTIVITY } from '../../../../src/shared/constants';
 
+import { notificationService } from '../../../../src/host/services/infra/notificationService';
+
 const RESEARCHER = '研究员';
 const TODAY = new Date().toISOString().slice(0, 10);
 
-/**
- * 把假时钟冻到 TODAY 当天的指定时刻。
- *
- * 不要写死某个日期：履历是按 TODAY（真实时钟）播种的，而 wakeRole 数「今天醒了几次」
- * 用的是当前时钟。两者一旦跨天错开，预算护栏就数到 0 而静默失效——测试会在写死的
- * 那天绿、第二天开始红。
- */
+/** 把假时钟冻到 TODAY 当天的指定时刻（不写死日期：履历按真实时钟播种，跨天错开会让预算护栏静默失效）。 */
 function freezeClockAt(hhmm: string): void {
   vi.useFakeTimers();
   vi.setSystemTime(new Date(`${TODAY}T${hhmm}:00`));
@@ -183,9 +186,7 @@ describe('roleProactivity', () => {
     await fs.rm(mockConfigDir.dir, { recursive: true, force: true });
   });
 
-  // --------------------------------------------------------------------------
   // 配置解析与决策解析
-  // --------------------------------------------------------------------------
 
   describe('配置与决策解析', () => {
     it('出厂默认（无任何配置）为静默档：功能默认关闭，opt-in', async () => {
@@ -316,11 +317,90 @@ describe('roleProactivity', () => {
     });
   });
 
-  // --------------------------------------------------------------------------
   // 醒来循环（设计 §3 八步）
-  // --------------------------------------------------------------------------
 
   describe('wakeRole 醒来循环', () => {
+    describe('realtime desktop output through notificationService', () => {
+      beforeEach(() => {
+        vi.stubEnv('CODE_AGENT_NOTIFICATION_DRY_RUN', '1');
+        notificationService.clearRecentNotifications();
+      });
+      afterEach(() => {
+        notificationService.clearRecentNotifications();
+        vi.unstubAllEnvs();
+      });
+
+      it('realtime wakeRole records exactly one notice with the wake session id and dispatch log', async () => {
+        mockSettings.value = { roleAssets: { proactivity: { defaultLevel: 'realtime' } } };
+        await seedProductHistory(RESEARCHER);
+        primeWakeRun('report');
+        const result = await wakeRole(RESEARCHER, 'cadence');
+        expect(result).toMatchObject({ status: 'completed', decision: 'report', sessionId: 'wake-session-1' });
+        expect(notificationService.getRecentNotifications()).toEqual([
+          expect.objectContaining({
+            type: 'task_complete', sessionId: result.sessionId, delivery: 'dry_run',
+            title: `${RESEARCHER} · ${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}`, body: '检查完毕。',
+          }),
+        ]);
+        expect(mockLogger.info).toHaveBeenCalledWith('Notification dispatched', {
+          intent: 'task_complete', sessionId: result.sessionId,
+        });
+      });
+
+      it('realtime notice body is plain text: Markdown syntax is stripped, words kept', async () => {
+        mockSettings.value = { roleAssets: { proactivity: { defaultLevel: 'realtime' } } };
+        await seedProductHistory(RESEARCHER);
+        primeWakeRun('report');
+        const md = '## 汇报\n1. **观测数量明显上升**：12 → 18\n2. 看 `栖息点` 与 [报告](https://x.test/a) 的变化' + '。补充说明'.repeat(80);
+        mockSessionManager.getSession.mockResolvedValue({ id: 'wake-session-1', messages: [
+          { id: 'm2', role: 'assistant', content: `${md}<decision>report</decision>`, timestamp: 2 },
+        ] });
+        await wakeRole(RESEARCHER, 'cadence');
+        const [notice] = notificationService.getRecentNotifications();
+        expect(notice.body).not.toMatch(/\*\*|#|`|\]\(/);
+        expect(notice.body).toContain('观测数量明显上升：12 → 18');
+        expect(notice.body).toMatch(/栖息点 与 报告 的变化.*…$/);
+        expect(notice.body.length).toBeLessThanOrEqual(320);
+      });
+
+      it.each(['met', 'aborted'] as const)('realtime advance %s notice uses a human outcome, not internal goal markup', async (status) => {
+        mockSettings.value = { roleAssets: { proactivity: { defaultLevel: 'realtime' } } };
+        await seedProductHistory(RESEARCHER);
+        primeWakeRun('advance');
+        mockSessionManager.getSession.mockResolvedValue({ id: 'wake-session-1', messages: [
+          { id: 'm2', role: 'assistant', content: '<goal>核对观察记录</goal><decision>advance</decision>', timestamp: 2 },
+        ] });
+        mockSessionEvents.getEventsByType.mockReturnValue([{ eventData: { status } }]);
+        const result = await wakeRole(RESEARCHER, 'cadence');
+        expect(result.advanceGoalStatus).toBe(status);
+        expect(notificationService.getRecentNotifications()).toEqual([expect.objectContaining({
+          sessionId: result.sessionId, title: `${RESEARCHER} · ${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}`,
+          body: status === 'met' ? '巡检已完成，打开会话查看结果。' : '本次巡检未完成，打开会话查看已有进展。',
+        })]);
+      });
+
+      it.each(['daily', 'silent'] as const)('%s wakeRole records no desktop notice', async (level) => {
+        mockSettings.value = { roleAssets: { proactivity: { defaultLevel: level } } };
+        await seedProductHistory(RESEARCHER);
+        primeWakeRun('report');
+        const result = await wakeRole(RESEARCHER, 'cadence');
+        expect(result.status).toBe(level === 'silent' ? 'skipped' : 'completed');
+        expect(notificationService.getRecentNotifications()).toEqual([]);
+        expect(mockLogger.info).not.toHaveBeenCalledWith('Notification dispatched', expect.anything());
+      });
+
+      it('realtime wakeRole silence decision records no desktop notice', async () => {
+        mockSettings.value = { roleAssets: { proactivity: { defaultLevel: 'realtime' } } };
+        await seedProductHistory(RESEARCHER);
+        primeWakeRun('silence');
+        const result = await wakeRole(RESEARCHER, 'cadence');
+        expect(result).toMatchObject({ status: 'completed', decision: 'silence' });
+        expect(mockSessionManager.archiveSession).toHaveBeenCalledWith('wake-session-1');
+        expect(notificationService.getRecentNotifications()).toEqual([]);
+        expect(mockLogger.info).not.toHaveBeenCalledWith('Notification dispatched', expect.anything());
+      });
+    });
+
     it('出厂默认（silent，无任何配置）下醒来被跳过，不烧 token', async () => {
       freezeClockAt('23:00');
       try {
@@ -742,9 +822,7 @@ describe('roleProactivity', () => {
     });
   });
 
-  // --------------------------------------------------------------------------
   // event 触发链（设计 §2.2）— E2E AC5 的确定性兜底
-  // --------------------------------------------------------------------------
 
   describe('event 触发链（recordRoleParticipation → triggerEventWakes）', () => {
     it('长任务跑完触发参与的持久化角色醒来，过滤非持久化参与者', async () => {
@@ -841,9 +919,7 @@ describe('roleProactivity', () => {
     });
   });
 
-  // --------------------------------------------------------------------------
   // 无人值守挂死双闸（D3）：醒来 run 墙钟超时 + goal 暂停（anti_spin）即中止
-  // --------------------------------------------------------------------------
 
   describe('无人值守挂死双闸（超时 + goal 暂停）', () => {
     it('醒来 run 永不返回 → 注入短超时切断：抛可区分超时错误、cancel 底层 run、warn 原因', async () => {

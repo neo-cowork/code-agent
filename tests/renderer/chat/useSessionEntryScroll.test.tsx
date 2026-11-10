@@ -80,4 +80,13 @@ describe('useSessionEntryScroll · 入场隐藏', () => {
     rerender({ ...props, sessionId: 's2', turns: turns(10), projectionTurnsRef: { current: turns(10) } });
     expect(result.current.entryHidden).toBe(true);
   });
+
+  it('pending 期间用户滚轮取消入场（main #3091 路径）时也揭示', async () => {
+    const props = setup('s1', turns(45));
+    document.body.appendChild(props.scrollerElementRef.current);
+    const { result } = renderHook(() => useSessionEntryScroll(props));
+    expect(result.current.entryHidden).toBe(true);
+    await act(async () => { props.scrollerElementRef.current.dispatchEvent(new Event('wheel')); });
+    expect(result.current.entryHidden).toBe(false);
+  });
 });
