@@ -19,6 +19,8 @@ export type PermissionType =
 // 审批级别
 export type ApprovalLevel =
   | 'once'      // 允许一次
+  | 'run'       // 到这轮任务结束
+  | '24h'       // 24 小时内允许
   | 'deny'      // 拒绝
   | 'session'   // 本次会话允许
   | 'always'    // 始终允许

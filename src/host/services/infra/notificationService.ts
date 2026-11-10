@@ -462,6 +462,32 @@ class NotificationService implements Disposable {
     if (disposition === 'delivered') logger.info('Task resume notification sent', { sessionId: data.sessionId, autoResumeCount: data.autoResumeCount });
   }
 
+  /** Realtime role output keeps its wake session as the notification click target. */
+  notifyRoleWakeOutput(data: { sessionId: string; title: string; body: string }): void {
+    if (!this.isIntentAllowed('task_complete')) return;
+    if (!this.shouldNotify()) return;
+
+    // Advance summaries contain an internal goal state/proposal, not a user-facing result.
+    const goalStatus = /^\[goal:(met|aborted)\]/.exec(data.body)?.[1];
+    const en = readNotificationLocale() === 'en';
+    const body = goalStatus === 'aborted'
+      ? (en ? 'The check did not finish. Open the conversation to review progress.' : '本次巡检未完成，打开会话查看已有进展。')
+      : goalStatus === 'met'
+        ? (en ? 'The check is complete. Open the conversation to see the results.' : '巡检已完成，打开会话查看结果。')
+        : data.body;
+    const disposition = this.enqueueBudgeted({
+      intent: 'task_complete',
+      type: 'task_complete',
+      sessionId: data.sessionId,
+      title: sanitizeNotificationText(data.title, 120),
+      body: sanitizeNotificationText(body, 320),
+      delivery: {},
+    });
+    if (disposition === 'delivered') {
+      logger.info('Notification dispatched', { intent: 'task_complete', sessionId: data.sessionId });
+    }
+  }
+
   /**
    * 发送插件主动请求的系统通知。插件没有目标会话，因此通知点击只负责唤起应用，
    * 不会尝试切换到不存在的会话。
