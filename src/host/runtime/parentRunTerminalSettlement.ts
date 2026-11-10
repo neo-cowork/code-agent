@@ -23,8 +23,9 @@ export async function settleParentRunTerminal(envelope: RunEnvelope, getHandle: 
       if (agent.scope?.parentNativeRunId === envelope.runId) guard.cancel(agent.id);
     }
     for (const agentId of getSingleSpawnChildren(scope)) guard.cancel(agentId);
-    // A child terminal must not settle the foreground session's panel row.
-    if (!envelope.parentRunId) {
+    // A child terminal must not settle the foreground session's panel row. A failed parent is left to the
+    // TaskManager rejection path (markFailed with the real error); cancelling it here would show "stopped".
+    if (!envelope.parentRunId && envelope.status === 'cancelled') {
       const { getBackgroundTaskManager } = await import('../session/backgroundTaskManager');
       await getBackgroundTaskManager().markCompleted(envelope.sessionId, BACKGROUND_TASK_CANCELLED);
     }

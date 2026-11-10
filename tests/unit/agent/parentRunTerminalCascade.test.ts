@@ -13,6 +13,7 @@ import { registerSingleSpawnVisibility, resetSingleSpawnVisibilityRegistry } fro
 import { getSpawnGuard, resetSpawnGuard } from '../../../src/host/agent/spawnGuard';
 import { getAgentTreeSnapshot } from '../../../src/host/agent/agentTreeService';
 import { getBackgroundTaskManager, resetBackgroundTaskManager } from '../../../src/host/session/backgroundTaskManager';
+import { settleBackgroundRunOnRejection } from '../../../src/host/task/backgroundTaskTerminal';
 import { createScopedSwarmAgentId } from '../../../src/shared/contract/swarm';
 import { BACKGROUND_TASK_CANCELLED } from '../../../src/shared/constants';
 import { notificationService } from '../../../src/host/services';
@@ -21,7 +22,7 @@ import type { SubagentResult } from '../../../src/host/agent/subagentExecutorTyp
 afterEach(() => { resetSpawnGuard(); resetBackgroundTaskManager(); resetSingleSpawnVisibilityRegistry(); vi.clearAllMocks(); });
 
 describe('parent terminal settles member and background panel together', () => {
-  it.each([{ status: 'cancelled', standalone: false }, { status: 'failed', standalone: false }, { status: 'cancelled', standalone: true }, { status: 'failed', standalone: true }] as const)('$status parent (standalone=$standalone) cancels both running helpers and stops the panel entry', async ({ status, standalone }) => {
+  it.each([{ status: 'cancelled', standalone: false }, { status: 'failed', standalone: false }, { status: 'cancelled', standalone: true }, { status: 'failed', standalone: true }] as const)('$status parent (standalone=$standalone) cancels both running helpers and settles the panel entry', async ({ status, standalone }) => {
     const db = new Database(':memory:');
     const repository = new DurableRunRepository(db);
     repository.migrate();
@@ -69,9 +70,19 @@ describe('parent terminal settles member and background panel together', () => {
       expect(otherController.signal.aborted).toBe(false);
       expect(getAgentTreeSnapshot({ sessionId: otherScope.sessionId }).summary.running).toBe(1);
       expect(helpers.every(helper => helper.controller.signal.aborted)).toBe(true);
-      expect(panel.getAllTasks()).toEqual([expect.objectContaining({ sessionId, status: 'completed', completionMessage: BACKGROUND_TASK_CANCELLED })]);
+      if (status === 'cancelled') {
+        expect(panel.getAllTasks()).toEqual([expect.objectContaining({ sessionId, status: 'completed', completionMessage: BACKGROUND_TASK_CANCELLED })]);
+        expect(notificationService.notifyTaskComplete).toHaveBeenCalledTimes(1);
+      } else {
+        // A failed parent must leave the root entry to the TaskManager rejection path (real error, no "stopped").
+        expect(notificationService.notifyTaskComplete).not.toHaveBeenCalled();
+        settleBackgroundRunOnRejection(sessionId, 'provider exploded');
+        expect(panel.getAllTasks()).toEqual([expect.objectContaining({ sessionId, status: 'failed', completionMessage: 'provider exploded' })]);
+        expect(panel.getAllTasks()[0].completionMessage).not.toBe(BACKGROUND_TASK_CANCELLED);
+        expect(notificationService.notifyTaskComplete).toHaveBeenCalledTimes(1);
+        expect(notificationService.notifyTaskComplete).toHaveBeenCalledWith(expect.objectContaining({ sessionId, summary: expect.not.stringContaining('任务已停止') }), expect.anything());
+      }
       expect(panel.getAllTasks().filter(task => task.status === 'running')).toHaveLength(0);
-      expect(notificationService.notifyTaskComplete).toHaveBeenCalledTimes(1);
       process.stdout.write(`parent=${status} members=${JSON.stringify(tree.nodes.map(node => ({ id: node.id, status: node.status })))} running=${tree.summary.running} panel=${JSON.stringify(panel.getAllTasks())}\n`);
       await Promise.all(helpers.map(helper => helper.promise));
       expect(getAgentTreeSnapshot({ sessionId }).nodes.every(node => node.status === 'cancelled')).toBe(true);
