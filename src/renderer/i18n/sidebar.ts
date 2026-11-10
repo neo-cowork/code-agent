@@ -81,6 +81,8 @@ export const sidebarZh = {
     menuSettings: '设置',
     menuSignOut: '退出登录',
     signIn: '登录',
+    signedOutSettings: '设置',
+    skipSignInSetup: '先不登录，去配置模型/通道',
     // 数据集标记 toast
     markedAsDataset: '已标记为 {role}',
     updateDatasetFailed: '更新数据集标记失败：{message}',
@@ -444,6 +446,8 @@ export const sidebarEn: typeof sidebarZh = {
     menuSettings: 'Settings',
     menuSignOut: 'Sign out',
     signIn: 'Sign in',
+    signedOutSettings: 'Settings',
+    skipSignInSetup: 'Skip sign-in and set up a model or channel',
     markedAsDataset: 'Marked as {role}',
     updateDatasetFailed: 'Failed to update dataset label: {message}',
     newSessionTitle: 'New conversation',
