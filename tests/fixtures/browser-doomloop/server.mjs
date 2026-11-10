@@ -30,6 +30,7 @@ const pages = {
       '</header>' +
       '<input id="readonlyInput" value="locked" readonly>' +
       '<button id="hiddenClick" style="display:none">Hidden fixture action</button>' +
+      '<div style="position:relative;width:160px;height:40px"><button id="coveredClick">Covered action</button><div id="clickOverlay" style="position:absolute;inset:0;z-index:2">Overlay</div></div>' +
       '<input class="dup-input" name="dup1" style="display:none"><input class="dup-input" name="dup2" style="display:none">' +
       `<p id="searchResult">${q ? `Article: ${q} — desktop app framework` : ''}</p>`,
     );

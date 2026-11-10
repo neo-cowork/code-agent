@@ -3,6 +3,12 @@ import { BROWSER_TIMEOUTS } from '../../../shared/constants/timeouts';
 import type { BrowserService, ElementInfo } from '../../services/infra/browserService.js';
 
 const CONSECUTIVE_FAILURE_STOP_THRESHOLD = 2;
+const PLAYWRIGHT_ERROR_MESSAGE_LIMIT = 2_000;
+
+function isNonSelectorBrowserError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /No active tab|Target closed|Target page, context or browser has been closed|browser has been closed|Execution context was destroyed/i.test(message);
+}
 
 interface SelectorFailureState {
   selector: string;
@@ -174,7 +180,8 @@ async function inspectSelectorFailureOnPage(
       }
       return { matchCount, visibleCount, notEditable, innerWidth };
     })()`, tabId);
-  } catch {
+  } catch (error) {
+    if (isNonSelectorBrowserError(error)) throw error;
     return { matchCount: -1, visibleCount: 0, notEditable: false, innerWidth: fallbackWidth };
   }
 }
@@ -187,15 +194,18 @@ async function formatSelectorFillError(args: {
   action?: 'fill' | 'click';
 }): Promise<string> {
   const { browserService, selector, error, tabId, action = 'fill' } = args;
+  if (isNonSelectorBrowserError(error)) throw error;
   const rawMessage = error instanceof Error ? error.message : String(error);
   const diag = await inspectSelectorFailureOnPage(browserService, selector, tabId);
+  browserService.logger.log('ERROR', `Action "${action}" selector "${selector}" failed: ${rawMessage}`);
   const width = diag.innerWidth;
   const widthNote = width !== null
     ? ` (current innerWidth=${width}px; the page may be showing a narrow/compact layout)`
     : ' (the page may be showing a narrow/compact layout)';
   const nextStep =
     'Take a snapshot with browser_action.get_dom_snapshot and use a targetRef for a visible element, ' +
-    'or construct the search URL directly with browser_action.navigate.';
+    'or construct the search URL directly with browser_action.navigate.' +
+    `\nPlaywright: ${rawMessage.slice(0, PLAYWRIGHT_ERROR_MESSAGE_LIMIT)}`;
 
   if (/strict mode violation|resolved to \d+ elements/i.test(rawMessage) || diag.matchCount > 1) {
     const countLabel = diag.matchCount > 1 ? ` (${diag.matchCount} matches)` : '';
@@ -248,8 +258,9 @@ export async function executeSelectorClickWithFastFail(args: {
     return { success: true, output: `Clicked element: ${selector}`,
       metadata: { pointerTarget: { label: selector, selector, boundingBox } } };
   } catch (error) {
+    const formatted = await formatSelectorFillError({ ...args, error, action: 'click' });
     noteSelectorFailure(state, selector, currentUrl);
-    return { success: false, error: await formatSelectorFillError({ ...args, error, action: 'click' }) };
+    return { success: false, error: formatted };
   }
 }
 
@@ -271,7 +282,8 @@ export async function executeSelectorTypeWithFastFail(args: {
     let boundingBox: ElementInfo['rect'] | null = null;
     try {
       boundingBox = await browserService.getElementBoundingBox(selector, tabId);
-    } catch {
+    } catch (error) {
+      if (isNonSelectorBrowserError(error)) throw error;
       boundingBox = null;
     }
     return {
@@ -286,8 +298,8 @@ export async function executeSelectorTypeWithFastFail(args: {
       },
     };
   } catch (error) {
-    noteSelectorFailure(state, selector, currentUrl);
     const formatted = await formatSelectorFillError({ browserService, selector, error, tabId });
+    noteSelectorFailure(state, selector, currentUrl);
     return {
       success: false,
       error: formatted,
@@ -311,8 +323,8 @@ export async function executeFillFormWithFastFail(args: {
       await browserService.fillForm({ [selector]: value }, tabId);
       noteSelectorSuccess(state, getLiveUrl(browserService, tabId) || currentUrl);
     } catch (error) {
-      noteSelectorFailure(state, selector, currentUrl);
       const formatted = await formatSelectorFillError({ browserService, selector, error, tabId });
+      noteSelectorFailure(state, selector, currentUrl);
       return {
         success: false,
         error: formatted,

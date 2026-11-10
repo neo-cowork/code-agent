@@ -40,6 +40,41 @@ describe('browser_action selector fill fast-fail & consecutive retry stop-loss',
     await svc.newTab(`${baseUrl}/wiki-search`);
   }, TEST_TIMEOUT_MS);
 
+  it('preserves closed-target errors without consuming the selector streak', async () => {
+    const svc = browserPool.acquire(AGENT_ID);
+    await browserActionTool.execute({ action: 'navigate', url: `${baseUrl}/wiki-search` }, ctx);
+    await svc.getActiveTab()!.page.close();
+    try {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const result = await browserActionTool.execute({ action: 'click', selector: '#searchToggle' }, ctx);
+        console.log(`[lifecycle] attempt=${attempt + 1} error=${result.error}`);
+        expect(result.success).toBe(false);
+        expect(result.error).toMatch(/No active tab|Target closed|has been closed/);
+        expect(result.error).not.toContain('Cannot click selector');
+        expect(result.error).not.toContain('Do not retry this selector');
+        expect(result.error).toContain('Recent Logs');
+      }
+    } finally {
+      await svc.newTab(`${baseUrl}/wiki-search`);
+    }
+  }, TEST_TIMEOUT_MS);
+
+  it('preserves overlay interception clues and logs selector errors', async () => {
+    await browserActionTool.execute({ action: 'navigate', url: `${baseUrl}/wiki-search` }, ctx);
+    const log = vi.spyOn(browserPool.acquire(AGENT_ID).logger, 'log');
+    try {
+      const result = await browserActionTool.execute({ action: 'click', selector: '#coveredClick' }, ctx);
+      console.log(`[overlay] error=${result.error}`);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('not actionable');
+      expect(result.error).toContain('Playwright:');
+      expect(result.error).toContain('intercepts pointer events');
+      expect(log).toHaveBeenCalledWith('ERROR', expect.stringMatching(/Action "click" selector "#coveredClick" failed:.*Timeout/s));
+    } finally {
+      log.mockRestore();
+    }
+  }, TEST_TIMEOUT_MS);
+
   afterAll(async () => {
     await browserPool.releaseAgent(AGENT_ID).catch(() => undefined);
     await new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()));
