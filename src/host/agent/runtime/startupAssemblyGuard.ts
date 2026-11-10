@@ -13,6 +13,7 @@
 // （finalizeRun → agent_cancelled → 编排侧 user_stop 停靠）。
 
 import type { RuntimeContext } from './runtimeContext';
+import { noteFirstModelRequestPhase, type FirstModelRequestPhase } from './firstModelRequestWatch';
 
 export function isStartupAborted(ctx: RuntimeContext): boolean {
   return ctx.control.isCancelled || ctx.control.isInterrupted;
@@ -27,7 +28,8 @@ export function startupStepAbandoned<T>(ctx: RuntimeContext, stepResult: T | und
   return stepResult === undefined && isStartupAborted(ctx);
 }
 
-export async function raceStartupStep<T>(ctx: RuntimeContext, step: Promise<T>): Promise<T | undefined> {
+export async function raceStartupStep<T>(ctx: RuntimeContext, step: Promise<T>, phase?: FirstModelRequestPhase): Promise<T | undefined> {
+  if (phase) noteFirstModelRequestPhase(phase);
   const signal = ctx.control.runAbortController?.signal;
   if (!signal) return step;
   if (signal.aborted) {

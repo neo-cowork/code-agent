@@ -66,6 +66,12 @@ export const DAG_SCHEDULER = {
   DEFAULT_MAX_RETRIES: 0,
 } as const;
 
+/** 账号会话校验超时 */
+export const AUTH_TIMEOUTS = {
+  /** 拉取 supabase session 的超时（启动后台校验与按需重校验共用） */
+  SESSION_FETCH_MS: 5_000,
+} as const;
+
 /** 服务初始化超时 */
 export const SERVICE_TIMEOUTS = {
   /** MCP 连接 */
@@ -97,7 +103,7 @@ export const INTERACTION_TIMEOUTS = {
    * 等待用户，等待期间由 beginHumanWait/endHumanWait 暂停该会话的工具计时。
    */
   PARKED_APPROVAL: 86_400_000,
-  /** cron/heartbeat 停车审批无人应答的降级期限（30 分钟）；channel/voice 仍走上面的 24h 兜底。 */
+  /** cron/heartbeat 及断线续跑的停车审批无人应答降级期限（30 分钟）；channel/voice 仍走 24h 兜底。 */
   UNATTENDED_PARKED_APPROVAL_DEGRADE: 1_800_000,
   /** MCP Elicitation 用户输入超时 */
   MCP_ELICITATION: 60_000,
@@ -225,6 +231,8 @@ export const BROWSER_TIMEOUTS = {
   ACTION_DEFAULT: 30_000,
   /** 等待选择器超时 */
   WAIT_SELECTOR: 5_000,
+  /** 选择器填写（page.fill）快速失败超时 */
+  FILL_SELECTOR: 5_000,
   /** 等待超时 */
   WAIT_DEFAULT: 1_000,
   /** Computer Use 等待超时 */
@@ -273,6 +281,8 @@ export const TEST_TIMEOUTS = {
 
 /** Startup gates must not remain blocked forever when the renderer signal is lost. */
 export const STARTUP_TIMEOUTS = {
+  /** Warn once when an accepted send has not dispatched its first main-model request. */
+  FIRST_MODEL_REQUEST_WARN_MS: 30_000,
   RENDERER_WINDOW_READY: 5_000,
 } as const;
 

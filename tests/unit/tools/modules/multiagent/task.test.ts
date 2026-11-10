@@ -129,7 +129,7 @@ describe('Task 深度闸（N-EVAL-ORCHARM 的「不扇出」机制）', () => {
   it('spawnMaxDepth=1 与不传时第一层照常放行（不误伤存量路径）', async () => {
     executorExecuteMock.mockResolvedValue({ success: true, output: 'ok', iterations: 1, toolsUsed: [] });
     const handler = await taskModule.createHandler();
-    for (const ctx of [makeCtx({ spawnMaxDepth: 1 } as Partial<ToolContext>), makeCtx()]) {
+    for (const ctx of [makeCtx({ spawnMaxDepth: 1, subagent: { agentRole: 'coder' } } as Partial<ToolContext>), makeCtx()]) {
       const result = await handler.execute({ prompt: 'hi', subagent_type: 'coder' }, ctx, allowAll);
       expect(result.ok).toBe(true);
     }
@@ -370,8 +370,8 @@ describe('Task happy / failure', () => {
           tokensUsed: 345,
         },
         artifact: expect.objectContaining({ kind: 'text', sourceTool: 'Task' }),
-        artifacts: [expect.objectContaining({ kind: 'text', sourceTool: 'Task' })],
       });
+      expect(result.meta?.artifacts).toBeUndefined();
       expect(result.meta?.artifact).toMatchObject({
         metadata: expect.objectContaining({
           tool: 'Task',

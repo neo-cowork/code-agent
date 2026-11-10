@@ -178,6 +178,35 @@ describe('专家空会话的起手卡：只摆角色既有数据，最多四张'
     expect(screen.queryByTestId('role-wake-proposals-card')).toBeNull();
   });
 
+  it('继承工作区的专家空会话仍在 welcome 展示提议与开场卡，banner 不重复', async () => {
+    const currentSession = expertThreadSession({ workingDirectory: '/repo/project' });
+    listRoles.mockResolvedValue([{ ...ROLE, quickPrompts: ['整理本周进展', '提取会议待办'] }]);
+    listWakeProposals.mockResolvedValue([{ title: '提议甲', prompt: '提议甲的委托' }]);
+    useSessionStore.setState({
+      currentSessionId: currentSession.id,
+      sessions: [currentSession] as never,
+    });
+
+    render(
+      <>
+        <RoleFirstWakeThreadBanner suppressWakeProposals />
+        <NewSessionWelcome
+          onSend={vi.fn()}
+          session={currentSession}
+          workingDirectory={currentSession.workingDirectory}
+        />
+      </>,
+    );
+
+    await waitFor(() => expect(screen.getAllByText('提议甲')).toHaveLength(1));
+    expect(screen.getByRole('button', { name: '整理本周进展' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '提取会议待办' })).toBeTruthy();
+    expect(screen.queryByTestId('role-wake-proposals-card')).toBeNull();
+    for (const suggestion of Object.values(zh.chat.suggestions)) {
+      expect(screen.queryByText(suggestion.title)).toBeNull();
+    }
+  });
+
   it('醒来提议 + 快捷开场 prompt 超过四条时只摆四张，醒来提议优先', async () => {
     listRoles.mockResolvedValue([
       {
@@ -283,6 +312,23 @@ describe('专家空会话的起手卡：只摆角色既有数据，最多四张'
 });
 
 describe('非角色空会话：行为原样保留', () => {
+  it('继承工作区的非专家空会话仍不展示通用卡', () => {
+    const currentSession = session({ title: '新对话', workingDirectory: '/repo/project' });
+    render(
+      <NewSessionWelcome
+        onSend={vi.fn()}
+        session={currentSession}
+        workingDirectory={currentSession.workingDirectory}
+      />,
+    );
+
+    for (const suggestion of Object.values(zh.chat.suggestions)) {
+      expect(screen.queryByText(suggestion.title)).toBeNull();
+    }
+    expect(listRoles).not.toHaveBeenCalled();
+    expect(listWakeProposals).not.toHaveBeenCalled();
+  });
+
   it('真·新会话仍是欢迎页 + 通用建议卡', () => {
     render(<NewSessionWelcome onSend={vi.fn()} session={session({ title: '新对话' })} />);
 

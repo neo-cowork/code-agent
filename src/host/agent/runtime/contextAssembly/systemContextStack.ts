@@ -12,6 +12,7 @@ import type { ContextAssemblyCtx } from './shared';
 import type { AdvisoryTailKey } from '../turnState';
 import { persistRuntimeState } from '../runtimeStatePersistence';
 import { attachMessageCorrelation } from '../turnQuality';
+import { MAX_STEPS_REASON } from '../maxStepsFallback';
 import { getHarnessKnob } from '../harnessKnobs';
 import {
   logger,
@@ -247,6 +248,11 @@ class MessagePersistenceError extends Error {
 }
 
 export async function addAndPersistMessage(ctx: ContextAssemblyCtx, message: Message): Promise<void> {
+  if (ctx.runtime.foregroundToolFace && ctx.runtime.maxIterations > 1
+    && ctx.runtime.control.forceFinalResponseReason === MAX_STEPS_REASON
+    && message.role === 'assistant' && !message.toolCalls?.length) {
+    message.metadata = { ...message.metadata, stoppedByStepLimit: true };
+  }
   message.metadata = attachMessageCorrelation(ctx.runtime, message.metadata);
   if (ctx.runtime.historyVisibility === 'meta') {
     message.isMeta = true;

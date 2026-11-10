@@ -30,6 +30,7 @@ import {
   stripSensitiveStepParams,
 } from '../permissions/cuaSensitiveStep';
 import { resolvePreAskGrant } from '../permissions/preAskGrant';
+import { requiresScheduleWriteGrant } from '../cron/cronWriteGrant';
 import { createLogger } from '../services/infra/logger';
 import { getAuditLogger, maskSensitiveData, isKnownSafeCommand, validateCommand, getShellSafetyMode, getExecPolicyStore, getPolicyEnforcer, type PolicyEnforcer, type PolicyCheckResult, type ValidationResult } from '../security';
 import { evaluateToolSlotDataDirAccess, FOREIGN_SLOT_DATA_DIR_CODE, type SlotDataDirAccess } from '../security/slotDataDirGuard';
@@ -48,6 +49,7 @@ import type { NeoTagRunContext } from '../../shared/contract/tag';
 import type { SwarmRunScope } from '../../shared/contract/swarm';
 import { createTraceBuilder } from '../security/decisionTraceBuilder';
 import { denyConcreteShellWritePath } from './shell/writePathPolicyDeny';
+import { approvedSingleFileRmGrantForToolApproval } from './shell/approvedRmGrant';
 import { getPluginIdForTool, getPluginOriginForTool } from '../plugins/pluginToolOrigin';
 import { getWriteIsolationManager, getWriteIsolationScope, type WriteIsolationMetadata } from '../security/writeIsolation';
 import type { HookManager } from '../hooks/hookManager';
@@ -1312,12 +1314,14 @@ export class ToolExecutor {
       // 直接交富对象会让 `if (!approved)` 那类调用点把 `{approved:false}` 恒真成静默 fail-open。
       // N-SANDBOX-ESCALATE-APPROVAL-LEDGER：内层 ask 也要落权限账本（外层 ask 在下方权限闸
       // 已记，#1664 只修了外层）；ask 抛错时不落账、原样上抛，行为与改动前一致。
+      permissionAskResults: new WeakMap(),
       requestPermission: async (request) => {
         beginApprovalWait(options.currentToolCallId, effectiveSessionId);
         try {
           const askStartedAt = Date.now();
           const ask = normalizePermissionAskResult(await this.requestPermission(request));
-          recordInToolPermissionAsk(
+          context.permissionAskResults?.set(request, ask);
+          if (!request.ledgerRecordedByChild) recordInToolPermissionAsk(
             request, ask, askStartedAt, effectiveSessionId, this.ledgerOrigin,
             getApprovalWaitMs(options.currentToolCallId, Date.now()),
           );
@@ -1729,8 +1733,10 @@ export class ToolExecutor {
     }
 
     // Check permission if required
+    const scheduleWriteGrantRequired = await requiresScheduleWriteGrant(this.buildPermissionRequest(toolDef, params), effectiveSessionId, this.executionCwd, this.writeWorkspaceRoot);
     // Skill 系统：预授权工具跳过普通权限检查（但不能跳过边界违规或 consequence hard deny）
     const isPreApproved = !boundaryViolation
+      && !scheduleWriteGrantRequired
       && !guardFabricForcesApproval
       && !protectedWriteForcesConfirmation
       && !peerOriginForcesConfirmation
@@ -1800,7 +1806,6 @@ export class ToolExecutor {
         }
       }
     }
-
     if ((toolDef.requiresPermission || readArgumentForcesClassification || cuaAppGrantForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk) && (commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || protectedWriteForcesConfirmation || policyForcesConfirmation || unresolvedWriteTargetForcesAsk || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk || (!isPreApproved && !isSafeCommand))) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
@@ -1912,6 +1917,7 @@ export class ToolExecutor {
           }
           if (
             classification.decision === 'approve'
+            && !scheduleWriteGrantRequired
             && !this.forcePermissionHandler
             && !protectedWriteForcesConfirmation
             && !guardFabricForcesApproval
@@ -2074,6 +2080,7 @@ export class ToolExecutor {
           || peerOriginForcesConfirmation || launderRetryForcesAsk
           || Boolean(cuaSensitiveStep) || boundaryAskForcesConfirmation
           || Boolean(deterministicAskReason) || this.forcePermissionHandler
+          || scheduleWriteGrantRequired
           || shouldForceConfirm,
       }) : null;
       if (preAsk) {
@@ -2346,9 +2353,9 @@ export class ToolExecutor {
         });
         return { success: true, result: resolution.result, metadata: resolution.metadata };
       }
-
       if (approved) {
         const approvalSource = ask.approvalSource ?? 'unspecified';
+        context.approvedToolCall = { toolName: executionToolName, args: params, sandboxWriteFile: approvedSingleFileRmGrantForToolApproval({ approvalSource: ask.approvalSource, toolName: policyToolName, params, permissionRequest, sessionId: effectiveSessionId, context, abortSignal: options.abortSignal, workingDirectory: bashWorkingDirectory, policyEnforcer }) };
         traceBuilder.addStep('plan_approval', 'ask_approved', 'allow', `审批放行（来源：${approvalSource}）`);
         // ADR-067 D4：按**实际批准生效的参数**重算指纹后复位——审批卡上改过参数时
         // params 已是编辑后的那份（上面的 applyEditedArgs 只在这里替换）：批准 B 只清
@@ -2549,11 +2556,11 @@ export class ToolExecutor {
           workspaceScope: this.runContext?.workspaceScope,
         };
       }, this.executionCwd);
-
       // Execute the tool via protocol resolver
       context.approvedToolCall = {
         toolName: executionToolName,
         args: params,
+        ...(context.approvedToolCall?.sandboxWriteFile ? { sandboxWriteFile: context.approvedToolCall.sandboxWriteFile } : {}),
       };
       logger.debug('Dispatching to protocol resolver', { toolName: executionToolName, requestedToolName });
       executionLedger.begin();

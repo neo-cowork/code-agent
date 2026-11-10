@@ -1,3 +1,4 @@
+import { noteFirstModelRequestPhase } from '../firstModelRequestWatch';
 import type { ModelResponse } from '../../../agent/loopTypes';
 import { getTelemetryService } from '../../../telemetry/telemetryService';
 import type { ContextAssemblyCtx } from './shared';
@@ -6,6 +7,7 @@ export async function runInferenceWithTelemetry(
   ctx: ContextAssemblyCtx,
   run: () => Promise<ModelResponse>,
 ): Promise<ModelResponse> {
+  noteFirstModelRequestPhase('model_decision');
   const startedAt = Date.now();
   let modelSpanId: string | undefined;
   ctx.runtime.stats.setLastModelTraceSpan(undefined);

@@ -98,7 +98,12 @@ function desktopShellDiagnostics(): DesktopShellDiagnostics {
         status: 'present',
       },
     ],
-    runtimeAssets: null,
+    runtimeAssets: {
+      runtimeBaseDir: '/tmp/neo-runtime',
+      activeManifestPath: '/tmp/neo-runtime/active.json',
+      assets: [],
+      summary: { installed: 1, bundledFallback: 2, missing: 3, unsupported: 0 },
+    },
     nativePermissions: null,
     rendererBundle: null,
     issues: [],
@@ -184,9 +189,23 @@ describe.each([
       }
     }
 
-    const summaryRow = screen.getByText(text.desktopShell.diagnosticLabels.resourceCheck).parentElement as HTMLElement;
-    expect(summaryRow.textContent).toContain(
-      '3 missing · better-sqlite3-native, required-resource, optional-resource',
-    );
+    const labels = text.desktopShell.diagnosticLabels;
+    const summaryRow = screen.getByText(labels.resourceCheck).parentElement as HTMLElement;
+    const runtimeAssetsRow = screen.getByText(labels.runtimeAssets).parentElement as HTMLElement;
+    const expectedResourceSummary = `${labels.resourceMissingCount.replace('{count}', '3')} · better-sqlite3-native, required-resource, optional-resource`;
+    const expectedRuntimeAssetsSummary = [
+      labels.runtimeInstalledCount.replace('{count}', '1'),
+      labels.runtimeBundledCount.replace('{count}', '2'),
+      labels.runtimeMissingCount.replace('{count}', '3'),
+    ].join(' · ');
+    expect(summaryRow.textContent).toContain(expectedResourceSummary);
+    expect(runtimeAssetsRow.textContent).toContain(expectedRuntimeAssetsSummary);
+    if (locale === 'zh') {
+      expect(`${summaryRow.textContent} ${runtimeAssetsRow.textContent}`).not.toMatch(/\b(?:missing|present|installed|bundled)\b/);
+      console.log('[desktop-shell-summary zh]', JSON.stringify({
+        resourceCheck: summaryRow.textContent,
+        runtimeAssets: runtimeAssetsRow.textContent,
+      }));
+    }
   });
 });

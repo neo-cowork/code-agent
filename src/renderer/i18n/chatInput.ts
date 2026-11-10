@@ -14,6 +14,7 @@ export const chatInputZh = {
   ...turnFeedbackWhyZh,
   ...wakeRationaleZh,
   chatInput: {
+    stepLimitContinue: '继续',
     viewPlan: '查看实现计划',
     processingFiles: '文件处理中…',
     pendingSendUploadWaiting: '正在上传，完成后自动发送',
@@ -489,6 +490,7 @@ export const chatInputEn: typeof chatInputZh = {
   ...turnFeedbackWhyEn,
   ...wakeRationaleEn,
   chatInput: {
+    stepLimitContinue: 'Continue',
     viewPlan: 'View implementation plan',
     processingFiles: 'Processing files…',
     pendingSendUploadWaiting: 'Uploading — your message will send when it finishes',
