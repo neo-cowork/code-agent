@@ -164,6 +164,7 @@ describe('停车审批 → 批准 → 命令完成：三个 host 视图里的运
 
     const parked = await views('parked');
     expect(parked.db_row[0]).toMatch(/:running$/);
+    expect(service.getStats().jobsByStatus.running).toBe(1);
 
     const requestId = events[0].data!.id!;
     expect(island.resolveParkedApproval(requestId, 'allow')).toBe(true);

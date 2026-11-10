@@ -14,6 +14,7 @@ export const chatInputZh = {
   ...turnFeedbackWhyZh,
   ...wakeRationaleZh,
   chatInput: {
+    stepLimitContinue: '继续',
     viewPlan: '查看实现计划',
     processingFiles: '文件处理中…',
     pendingSendUploadWaiting: '正在上传，完成后自动发送',
@@ -136,6 +137,7 @@ export const chatInputZh = {
     weekdayLabel: '星期几',
     intervalHoursLabel: '间隔（小时）',
     onceAtLabel: '执行时间',
+    dateLabel: '日期',
     weekdays: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'],
     notifyEditPlaceholder: '留空 = 每次运行都通知',
   },
@@ -488,6 +490,7 @@ export const chatInputEn: typeof chatInputZh = {
   ...turnFeedbackWhyEn,
   ...wakeRationaleEn,
   chatInput: {
+    stepLimitContinue: 'Continue',
     viewPlan: 'View implementation plan',
     processingFiles: 'Processing files…',
     pendingSendUploadWaiting: 'Uploading — your message will send when it finishes',
@@ -607,6 +610,7 @@ export const chatInputEn: typeof chatInputZh = {
     weekdayLabel: 'Weekday',
     intervalHoursLabel: 'Interval (hours)',
     onceAtLabel: 'Run at',
+    dateLabel: 'Date',
     weekdays: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
     notifyEditPlaceholder: 'Leave empty to notify on every run',
   },

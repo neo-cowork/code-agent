@@ -52,7 +52,7 @@ import { SessionForkError } from '../../../shared/contract/sessionFork';
 // Re-export types from repositories（保持外部调用方零修改）
 export type { StoredSession, StoredMessage, MemoryRecord, UserPreference, ProjectKnowledge, ToolExecution, AnnotationRow } from './repositories';
 
-import { SessionRepository, SessionForkRepository, SessionForkWorkspaceRepository, ConversationBranchRepository, SessionForkPortabilityRepository, digestSessionForkAnchorMessage, isCompletedSessionForkAnchor, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, AnnotationRepository, ProjectRepository, PendingApprovalRepository, GenerativeUIRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, VoiceCallAuditRepository, type VoiceAuditMessage, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution, SwarmLedgerRepository, UsageLedgerRepository, type UsageLedgerEntryInput, type UsageLedgerEntry, type AnnotationRow, AgentWakeRepository, TurnCostRepository, findLatestExpertThreadSession } from './repositories';
+import { SessionRepository, SessionForkRepository, SessionForkWorkspaceRepository, ConversationBranchRepository, SessionForkPortabilityRepository, digestSessionForkAnchorMessage, isCompletedSessionForkAnchor, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, AnnotationRepository, ProjectRepository, PendingApprovalRepository, GenerativeUIRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, VoiceCallAuditRepository, type VoiceAuditMessage, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution, SwarmLedgerRepository, UsageLedgerRepository, BudgetStateUnavailableError, type UsageLedgerEntryInput, type UsageLedgerEntry, type AnnotationRow, AgentWakeRepository, TurnCostRepository, findLatestExpertThreadSession } from './repositories';
 import type {
   CreateForkRepositoryInput,
   CreateForkRepositoryResult,
@@ -950,6 +950,33 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       recordLedgerWriteError(err, (message, data) => logger.warn(message, data));
       if (err instanceof DatabaseReadOnlyError) return;
       logger.warn('[DatabaseService] appendUsageRecord failed (ignored):', err);
+    }
+  }
+
+  /**
+   * 读取某预算 scope 的持久化周期起点 + 起点之后的账本行。与 append 不同，这里**不吞错**：
+   * 调用方需要区分「db 未就绪」与「读取失败」，不能把空结果当成 $0.00。
+   */
+  readBudgetScopeState(scope: string, sinceFloor: number): { periodStart: number | null; entries: UsageLedgerEntry[] } {
+    if (!this.db || !this.usageLedgerRepo) {
+      throw new BudgetStateUnavailableError('not_ready', 'database not initialised');
+    }
+    try {
+      const periodStart = this.usageLedgerRepo.getPeriodStart(scope);
+      const entries = this.usageLedgerRepo.getByScopeSince(scope, Math.max(periodStart ?? 0, sinceFloor));
+      return { periodStart, entries };
+    } catch (err) {
+      throw new BudgetStateUnavailableError('read_failed', err instanceof Error ? err.message : String(err), { cause: err });
+    }
+  }
+
+  /** 持久化预算周期起点。fail-safe（与账本写入同口径），失败只记 warn。 */
+  setBudgetPeriodStart(scope: string, periodStart: number, updatedAt: number): void {
+    try {
+      if (!this.db || !this.usageLedgerRepo) return;
+      this.usageLedgerRepo.setPeriodStart(scope, periodStart, updatedAt);
+    } catch (err) {
+      logger.warn('[DatabaseService] setBudgetPeriodStart failed (ignored):', err);
     }
   }
 
@@ -3353,6 +3380,10 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   deleteMemories(filter: { type?: string; category?: string; source?: string; projectPath?: string; sessionId?: string }, journal?: MemoryChangeJournalContext): number {
     this.ensureDb();
     return this.memoryRepo.deleteMemories(filter, journal);
+  }
+  appendFileMemoryJournal(input: Parameters<MemoryRepository['appendFileMemoryJournal']>[0]): void {
+    this.ensureDb();
+    this.memoryRepo.appendFileMemoryJournal(input);
   }
   listMemoryJournal(request: { entryId?: string; memoryId?: string; limit?: number }): MemoryChangeJournalRow[] {
     this.ensureDb();
