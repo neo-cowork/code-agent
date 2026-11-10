@@ -207,6 +207,7 @@ describe('parent ownership across follow-up and background completion', () => {
     await registry.startDurable(parentInput);
     const runtime = new AutoAgentDurableRuntime(kernel, registry);
     const controller = await runtime.start({ parentRunId: parentInput.runId, sessionId: parentInput.sessionId, sourceMessageId: 'message-1', workspace: { root: '/tmp/project', cwd: '/tmp/project', fingerprint: 'project' }, graphId: 'graph', sideEffect: false });
+    if (!controller) throw new Error('live parent must yield a durable auto child');
     await endParent('failed');
     await expect(controller.terminal('completed')).resolves.toBeUndefined();
     expect(await repository.get(controller.runId)).toMatchObject({ status: 'completed' });
