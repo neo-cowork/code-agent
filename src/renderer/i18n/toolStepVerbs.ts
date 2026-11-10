@@ -1,5 +1,6 @@
 import type { ToolStepLabelKey, ToolStepStatus } from '@shared/contract';
 import { PARKED_APPROVAL_CLOSURE_SENTENCES } from '@shared/parkedApprovalClosure';
+import { SANDBOX_APPROVED_RM_STILL_DENIED_FAILURE_CODE } from '@shared/constants';
 
 type DeclaredVerbForms = Record<ToolStepLabelKey, string>;
 
@@ -123,6 +124,7 @@ interface ToolStepVerbBundle {
     'dependency-missing': string;
     'workflow-stage-failed': string;
     'model-error': string;
+    [SANDBOX_APPROVED_RM_STILL_DENIED_FAILURE_CODE]: string;
   };
 }
 
@@ -226,6 +228,7 @@ export const toolStepVerbsZh: ToolStepVerbBundle = {
     'dependency-missing': '还缺少必要的前置条件',
     'workflow-stage-failed': '这一阶段没有完成',
     'model-error': '模型没有给出可用结果',
+    [SANDBOX_APPROVED_RM_STILL_DENIED_FAILURE_CODE]: '你已批准删除该文件，但沙盒仍然拒绝了删除；可以在访达里手动删除，或将文件移到当前工作目录后再试',
   },
 };
 
@@ -287,5 +290,6 @@ export const toolStepVerbsEn: ToolStepVerbBundle = {
     'dependency-missing': 'A required earlier step is missing',
     'workflow-stage-failed': 'This stage did not finish',
     'model-error': 'The model did not return a usable result',
+    [SANDBOX_APPROVED_RM_STILL_DENIED_FAILURE_CODE]: 'You approved deleting this file, but the sandbox still blocked it. Delete it manually in Finder, or move it into the working folder and try again',
   },
 };
