@@ -75,6 +75,12 @@ export function isDangerousRequestShape(request: PermissionRequest): boolean {
     || (request.type === 'command' && isDangerousCommand(request.details.command));
 }
 
+export function isGenericCommandRequest(request: PermissionRequest): boolean {
+  return request.type === 'command'
+    && request.tool.trim().toLowerCase() !== 'bash'
+    && !request.details.command;
+}
+
 export function defaultPermissionViewMode(request: PermissionRequest): DecisionCardViewMode {
   if (request.rawArgs || isOutsideWorkspace(request) || isSafeDefaultDeny(request)) return 'expanded';
   return request.type === 'file_read' || request.type === 'file_write' || request.type === 'file_edit'
@@ -84,6 +90,7 @@ export function defaultPermissionViewMode(request: PermissionRequest): DecisionC
 
 export function permissionSummary(request: PermissionRequest, t: Translations, language: Language = 'zh'): string {
   const p = t.decisionCard.permission;
+  if (isGenericCommandRequest(request)) return p.genericApprovalQuestion;
   const target = fileTarget(request);
   const compactTarget = target ? compactFileTarget(target) : undefined;
   const qualifier = isOutsideWorkspace(request) ? `（${p.workspaceOutside}）` : '';
@@ -143,6 +150,7 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
     return undefined;
   }
   const p = t.decisionCard.permission;
+  if (isGenericCommandRequest(request)) return p.genericApprovalDescription;
   const commandDeleteTarget = request.details.command?.match(/\brm\s+(?:(?:-[^\s]+|--[^\s]+)\s+)*(?:"([^"]+)"|'([^']+)'|([^\s;&|]+))/u);
   const target = request.details.affectedPath
     || fileTarget(request)

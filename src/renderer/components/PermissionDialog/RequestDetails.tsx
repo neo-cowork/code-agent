@@ -15,7 +15,7 @@ import { Eye, EyeOff } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { useAppStore } from '../../stores/appStore';
 import { resolveHostReasonCopy } from '../../utils/hostReasonPresentation';
-import { permissionConsequence } from './permissionPresentation';
+import { isDangerousRequestShape, permissionConsequence } from './permissionPresentation';
 import { ConnectorWriteDisclosure } from './ConnectorWriteDisclosure';
 import { estimateMediaPriceCny } from './mediaPriceEstimate';
 import { formatCny } from '@shared/media/imageCost';
@@ -139,7 +139,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
           label={labels.detailCommand}
           value={details.command}
           isCode
-          isDangerous={type === 'dangerous_command'}
+          isDangerous={isDangerousRequestShape(request)}
           collapsible={type === 'command'}
         />
       )}

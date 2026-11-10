@@ -174,6 +174,21 @@ describe('PermissionCard command de-dup, spawn_agent summary, and long script co
     expect(container.querySelector('[data-testid="permission-command-fold"]')).toBeNull();
   });
 
+  it.each(['dangerLevel', 'commandPattern'] as const)('never folds a red command card: %s', (shape) => {
+    const lines = Array.from({ length: 40 }, (_, i) => `printf 'photo-${i + 1}\\n'`);
+    if (shape === 'commandPattern') lines[29] = 'rm -rf /tmp/obsolete-photo-copies';
+    const command = lines.join('\n');
+    state.request = {
+      id: `red-${shape}`, sessionId: 'session-current', tool: 'Bash', type: 'command',
+      ...(shape === 'dangerLevel' ? { dangerLevel: 'danger' as const } : {}),
+      details: { command }, timestamp: 1,
+    };
+    const { container } = render(<PermissionCard />);
+    expect(container.textContent).toContain(command);
+    expect(container.querySelector('[data-testid="permission-command-fold"]')).toBeNull();
+    expect(screen.queryByRole('button', { name: '展开全部' })).toBeNull();
+  });
+
   it('(d) renders spawn_agent with generic approval title and role+task summary, not 执行命令 or bare 执行工具 spawn_agent', () => {
     const gate = new ConfirmationGate();
     const params = {
@@ -198,6 +213,10 @@ describe('PermissionCard command de-dup, spawn_agent summary, and long script co
     expect(textZh).not.toContain('执行命令');
     expect(textZh).toContain('派出子代理（数据分析师）：汇总本周销售日报并输出关键异常指标');
     expect(textZh).not.toContain('执行工具 spawn_agent');
+    expect(textZh).not.toContain('允许执行这条命令');
+    expect(textZh).not.toContain('将执行有风险命令');
+    expect(textZh).toContain('允许进行以下操作？');
+    expect(textZh).toContain('请确认下面的任务和操作范围。');
     unmount();
 
     // Also verify English title
@@ -205,6 +224,10 @@ describe('PermissionCard command de-dup, spawn_agent summary, and long script co
     const enRender = render(<PermissionCard />);
     const textEn = enRender.container.textContent || '';
     expect(textEn).toContain('Needs your approval');
+    expect(textEn).toContain('Allow the following operation?');
+    expect(textEn).toContain('Review the task and scope below before approving.');
+    expect(textEn).not.toContain('Allow running this command');
+    expect(textEn).not.toContain('Runs a risky command');
     expect(textEn).toContain('派出子代理（数据分析师）：汇总本周销售日报并输出关键异常指标');
   });
 });

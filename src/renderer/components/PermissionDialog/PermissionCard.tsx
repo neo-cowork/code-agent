@@ -32,15 +32,11 @@ import {
   validateWritebackDraft,
   type WritebackDraft,
 } from './WritebackFields';
-import { defaultPermissionViewMode, isDangerousRequestShape, isSafeDefaultDeny, permissionSummary } from './permissionPresentation';
+import { defaultPermissionViewMode, isGenericCommandRequest, isDangerousRequestShape, isSafeDefaultDeny, permissionSummary } from './permissionPresentation';
 import { isSandboxEscalation, sandboxEscalationDeniedPath, sandboxEscalationQuestion } from './sandboxEscalationPresentation';
 import { SensitiveStepHandbackCard } from './SensitiveStepHandbackCard';
 import { classifyPermissionDelivery } from './permissionDelivery';
 import { logPermissionClickExit } from '../../services/permissionClickLog';
-
-function isBashToolName(toolName: string): boolean {
-  return toolName.trim().toLowerCase() === 'bash';
-}
 
 // 将共享类型的 PermissionRequest 转换为本地类型
 function normalizeRequest(
@@ -441,10 +437,7 @@ export function PermissionCard({
   const contentTitle = editable && typeof request.rawArgs?.title === 'string'
     ? request.rawArgs.title.trim()
     : '';
-  const isGenericCommandCard =
-    request.type === 'command' &&
-    !isBashToolName(request.tool) &&
-    !request.details.command;
+  const isGenericCommandCard = isGenericCommandRequest(request);
   const hasDetailFields = Boolean(
     request.details.command ||
     request.details.path ||
