@@ -21,6 +21,16 @@ function makeCtx(): ToolContext {
   } as unknown as ToolContext;
 }
 
+function makeConnector(execute: Connector['execute']): Connector {
+  return {
+    id: 'calendar',
+    label: 'Calendar',
+    capabilities: ['list_events'],
+    getStatus: async () => ({ connected: true, readiness: 'ready', capabilities: ['list_events'] }),
+    execute,
+  };
+}
+
 const allowAll: CanUseToolFn = async () => ({ allow: true });
 const registry = getConnectorRegistry();
 
@@ -58,12 +68,7 @@ describe('calendar connector time output', () => {
       ],
     });
     registry.unregister('calendar');
-    registry.register({
-      id: 'calendar',
-      label: 'Calendar',
-      capabilities: ['list_events'],
-      execute,
-    } as Connector);
+    registry.register(makeConnector(execute));
 
     const result = await runCalendar();
 
@@ -84,12 +89,7 @@ describe('calendar connector time output', () => {
   it('puts the now line before the empty result too', async () => {
     const execute = vi.fn().mockResolvedValue({ data: [] });
     registry.unregister('calendar');
-    registry.register({
-      id: 'calendar',
-      label: 'Calendar',
-      capabilities: ['list_events'],
-      execute,
-    } as Connector);
+    registry.register(makeConnector(execute));
 
     const result = await runCalendar();
 
