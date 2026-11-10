@@ -153,6 +153,7 @@ export class SubagentContextStore {
 
     this.store.set(buildKey(sessionId, agentId), {
       ...record,
+      lifecycleStatus: record.lifecycleStatus ?? this.store.get(buildKey(sessionId, agentId))?.lifecycleStatus,
       sessionId,
       agentId,
       messages: record.messages.map(cloneMessage),

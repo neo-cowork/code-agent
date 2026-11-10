@@ -66,6 +66,10 @@ describe('production parent terminal and live child projection', () => {
     await background.promise;
     expect(getSpawnGuard().get('background')?.status).toBe('completed');
     expect(workingCount()).toBe(0);
+    const finalContext = getSubagentContextStore().get('session', 'background')!;
+    const lateContext = { ...finalContext };
+    delete lateContext.lifecycleStatus;
+    getSubagentContextStore().upsert(lateContext); // a late executor context flush must not erase its actual terminal fact
     getSpawnGuard().cleanup(-1);
     expect(workingCount()).toBe(0); // completion survives guard cleanup in the same process; no recovery/restart or status rewrites
   });
