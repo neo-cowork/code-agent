@@ -11,7 +11,7 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
 }));
 
 import { applySchema } from '../../../src/host/services/core/database/schema';
-import type { CronExecutionTrigger, CronJobDefinition } from '../../../src/shared/contract/cron';
+import type { CronExecutionTrigger, CronJobDefinition, EventConnectorMailScheduleConfig } from '../../../src/shared/contract/cron';
 import type { CronMailReader } from '../../../src/host/cron/cronMailPoller';
 import {
   CronEventTrigger,
@@ -31,7 +31,9 @@ interface CapturedRun {
   payloadBlock: string;
 }
 
-function mailJob(overrides: Partial<CronJobDefinition> = {}): CronJobDefinition {
+type MailJobDefinition = CronJobDefinition & { schedule: EventConnectorMailScheduleConfig };
+
+function mailJob(overrides: Partial<MailJobDefinition> = {}): MailJobDefinition {
   return {
     id: 'mail-watermark-job',
     name: 'watch inbox',
