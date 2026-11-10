@@ -293,19 +293,19 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                           </div>
                         )}
                         {isPairing && item.pairingSender && (
-                          <div className="truncate text-[11px] text-zinc-400">
+                          <div className="whitespace-pre-wrap break-words text-[11px] text-zinc-400">
                             {cc.pairingSender.replace('{sender}', item.pairingSender)}
                           </div>
                         )}
                         {scopeNote && (
-                          <div className="truncate text-[11px] text-badge-warning/80" data-testid="parked-scope-note">
+                          <div className="whitespace-pre-wrap break-words text-[11px] text-badge-warning/80" data-testid="parked-scope-note">
                             {scopeNote}
                           </div>
                         )}
                         {/* 参数预览（host 已脱敏 + 截断）：一眼看清这步要干什么；老行没有该字段不渲染 */}
                         {!isPairing && item.argsPreview && (
                           <div
-                            className="truncate text-[11px] text-zinc-400"
+                            className="whitespace-pre-wrap break-words text-[11px] text-zinc-400"
                             data-testid="parked-args-preview"
                             title={item.argsPreview}
                           >
@@ -452,12 +452,12 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                               />
                             )}
                             {maxRunsReached && (
-                              <div className="truncate text-[11px] text-badge-warning" data-testid="automation-review-max-runs">
+                              <div className="whitespace-pre-wrap break-words text-[11px] text-badge-warning" data-testid="automation-review-max-runs">
                                 {maxRunsReached.summary ?? cc.inboxMaxRunsReached.replace('{count}', String(maxRunsReached.maxRuns))}
                               </div>
                             )}
                             {urgencyRaw && (
-                              <div className="truncate text-[11px] text-zinc-500" data-testid="automation-urgency-raw">
+                              <div className="whitespace-pre-wrap break-words text-[11px] text-zinc-500" data-testid="automation-urgency-raw">
                                 {cc.inboxUrgencyRawPrefix}{urgencyRaw}
                               </div>
                             )}
