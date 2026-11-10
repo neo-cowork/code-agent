@@ -48,12 +48,12 @@ import {
   recordExternalEngineFailure,
 } from './agentEngineFailureRecorder';
 import { buildTurnTerminalFailure } from './agentTurnTerminalFailure';
+import { getAgentErrorMessage } from '../../shared/utils/agentErrorClassification';
 import { createMarkSessionExecutionEnvironment } from '../../host/services/cloudRun/sessionExecutionEnvironmentMarker';
 import { checkEnvironmentProtocol } from './environmentProtocolGate';
 import {
   AgentRunBodySchema,
-  AgentToolResultBodySchema,
-  type AgentRunBody,
+  AgentToolResultBodySchema, type AgentRunBody,
 } from './agentBodySchemas';
 import { registerAgentLifecycleControlRoutes } from './agentLifecycleControls';
 import { upgradeLegacyAnchor } from '../../host/tools/artifacts/artifactLocatorHost';
@@ -1674,7 +1674,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // 云同步自带 try/catch，失败不改变这一轮的结果。
       const finalStatus: SessionStatus = runEventCollector.runCancelled
         ? 'interrupted'
-        : runController.hadTerminalError
+        : runController.hadTerminalError && (turnTerminalFailure !== null || !getAgentErrorMessage(runController.lastTerminalErrorData))
           ? 'error'
           : 'completed';
       cloudRunTerminalState = finalStatus === 'completed'

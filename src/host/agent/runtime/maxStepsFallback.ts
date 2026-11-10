@@ -12,6 +12,7 @@ import { goalTokensUsedWithSwarm } from './swarmGoalIntegration';
 import { createLogger } from '../../services/infra/logger';
 import { createHumanWaitBoundTimeout } from '../../services/infra/timeoutController';
 import type { Message } from '../../../shared/contract';
+import { RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../shared/constants';
 import type { RuntimeContext } from './runtimeContext';
 import type { ContextAssembly } from './contextAssembly';
 import type { ContextInjectionSource } from '../../../shared/contract/contextView';
@@ -19,6 +20,18 @@ import type { ContextInjectionSource } from '../../../shared/contract/contextVie
 const logger = createLogger('MaxStepsFallback');
 
 export const MAX_STEPS_REASON = 'max-steps-reached';
+
+export function buildMaxStepsErrorData(ctx: RuntimeContext) {
+  const lastAssistant = [...ctx.messages].reverse().find((message) => message.role === 'assistant');
+  const stoppedByStepLimit = ctx.foregroundToolFace && ctx.maxIterations > 1
+    && lastAssistant !== undefined && lastAssistant.timestamp >= ctx.stats.runStartTime
+    && lastAssistant?.metadata?.stoppedByStepLimit === true;
+  return {
+    message: 'Max iterations reached',
+    ...(ctx.maxIterations > 1 ? { code: RUN_ERROR_CODE_MAX_ITERATIONS } : {}),
+    ...(stoppedByStepLimit ? { details: { stoppedByStepLimit: true } } : {}),
+  };
+}
 
 export function buildMaxStepsPrompt(): string {
   return [
