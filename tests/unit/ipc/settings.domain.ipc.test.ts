@@ -33,6 +33,7 @@ const env = vi.hoisted(() => ({
     getTokenUsageSummary: vi.fn(() => ({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 })),
   },
   unattendedBudget: {
+    assertHydrated: vi.fn(),
     checkBudget: vi.fn(() => ({ used: 2 })),
     getConfig: vi.fn(() => ({ enabled: true, maxBudget: 3 })),
   },

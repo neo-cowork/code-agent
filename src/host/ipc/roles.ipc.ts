@@ -81,6 +81,12 @@ import { findRecommendedMcpServer } from '../../shared/constants/mcpCatalog';
 import { isManifestBackedAgentEngineKind } from '../../shared/externalEngineManifest';
 import { journalScopedMemoryChange } from '../memory/scopedMemoryJournal';
 
+import { randomUUID } from 'crypto';
+import type { Message } from '../../shared/contract/message';
+import type { SystemEventMessageMetadata } from '../../shared/contract/systemEventRegistry';
+import { getSessionManager } from '../services/infra/sessionManager';
+import { getTaskManager } from '../task/TaskManager';
+
 const logger = createLogger('RolesIPC');
 
 const ROLE_HISTORY_PREFIX = /^-\s*/;
@@ -753,6 +759,32 @@ const rolesHandlers: RawDomainRouteHandlers<RolesDomainRequest, void> = {
     const result = await confirmRoleDraft(draftId);
     if (!result.success) {
       return { success: false, error: { code: 'CONFIRM_FAILED', message: result.error ?? 'confirm failed' } };
+    }
+    if (result.sessionId && result.roleId) {
+      try {
+        const change = result.change;
+        const message: Message = {
+          id: randomUUID(),
+          role: 'system',
+          content: 'Expert updated.',
+          timestamp: Date.now(),
+          metadata: {
+            roleEditReceipt: {
+              roleId: result.roleId,
+              addedTools: change?.addedTools ?? [],
+              removedTools: change?.removedTools ?? [],
+              descriptionChanged: change?.descriptionChanged ?? false,
+              promptChanged: Boolean(change && (change.promptLinesAdded || change.promptLinesRemoved)),
+              diffAvailable: change != null,
+            },
+          } satisfies SystemEventMessageMetadata,
+        };
+        await getSessionManager().addMessageToSession(result.sessionId, message);
+        getTaskManager().emitAgentEventForSession(result.sessionId, { type: 'message', data: message });
+        logger.info('Role edit receipt recorded by confirmDraft', { sessionId: result.sessionId, roleId: result.roleId, messageId: message.id });
+      } catch (error) {
+        logger.warn('Role edit receipt failed (confirm unaffected)', { sessionId: result.sessionId, reason: String(error) });
+      }
     }
     return { success: true, data: result };
   },
