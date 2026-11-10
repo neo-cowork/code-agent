@@ -965,7 +965,8 @@ export const en = {
     buttonTitle: 'Current session permission tier',
     menuTitle: 'Session permission tier',
     bypassConfirmText: 'File writes and command executions will be auto-approved. Only for fully trusted workspaces.',
-    enable: 'Enable',
+    enable: 'Enable', retry: 'Retry',
+    enableError: { forbidden: 'Full Access requires an administrator. Your account does not have this permission.', pending: "Couldn't load your account details yet. Please try again shortly.", other: "Couldn't turn on Full Access. Please try again later." },
   },
 
   skillRecommendations: {

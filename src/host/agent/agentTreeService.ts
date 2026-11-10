@@ -120,7 +120,7 @@ function failureReason(code: AgentFailureCode): string {
     case AgentFailureCode.ToolUnavailable:
       return '需要的能力当前不可用';
     case AgentFailureCode.InvalidArguments:
-      return 'The wait time the assistant set exceeds the allowed limit and must be shortened.';
+      return '助手设置的等待时间超过了允许的上限，需要缩短';
     case AgentFailureCode.BudgetExhausted:
       return '可用预算已经用完';
     case AgentFailureCode.Timeout:
