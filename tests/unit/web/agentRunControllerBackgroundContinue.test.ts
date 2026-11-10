@@ -14,10 +14,10 @@ vi.mock('../../../src/web/helpers/sse', () => ({
 }));
 
 const { AgentRunController } = await import('../../../src/web/routes/agentRunController');
-const { setDaemonQuitIntent, noteGlobalClientAttached, getDaemonQuitIntent } =
+const { setDaemonQuitIntent, getDaemonQuitIntent } =
   await import('../../../src/host/services/daemon/quitIntent');
 
-const DISCONNECT_LOG = 'SSE client disconnected, cancelling run';
+const DISCONNECT_LOG = '[AgentRouter] SSE client disconnected, run run-1 continues detached';
 
 function setup() {
   const res = { writableEnded: false, destroyed: false, write: () => true, end: () => undefined } as unknown as Response;
@@ -40,14 +40,21 @@ function disconnect(res: Response) {
 }
 
 function loggedDisconnect(logger: ReturnType<typeof setup>['logger']) {
-  return logger.warn.mock.calls.some((c) => String(c[0]).includes(DISCONNECT_LOG));
+  return logger.info.mock.calls.filter((c) => c[0] === DISCONNECT_LOG).length;
 }
 
 describe('cancelForDisconnect × quit intent', () => {
+  it('settled runs do not detach or log on normal response close', () => {
+    const { controller, logger } = setup();
+    controller.markSettled();
+    controller.cancelForDisconnect();
+    expect(controller.detached).toBe(false);
+    expect(loggedDisconnect(logger)).toBe(0);
+  });
   beforeEach(() => {
     broadcastSSE.mockClear();
     sendSSE.mockClear();
-    // 模块态：每个用例重新声明 background（会清掉重接入标记）
+    // Each case starts from the same shell intent; transport detach is independent.
     setDaemonQuitIntent('background');
   });
 
@@ -58,8 +65,7 @@ describe('cancelForDisconnect × quit intent', () => {
     controller.cancelForDisconnect();
 
     expect(cancel).not.toHaveBeenCalled();
-    expect(controller.disconnected).toBe(false);
-    expect(loggedDisconnect(logger)).toBe(false);
+    expect(loggedDisconnect(logger)).toBe(1);
 
     controller.emitAgentEvent({ type: 'agent_complete', data: undefined } as never);
     controller.flush();
@@ -81,22 +87,25 @@ describe('cancelForDisconnect × quit intent', () => {
     }));
   });
 
-  it('过期意图：background 后新客户端接入全局 SSE，再断线仍 cancel', () => {
-    noteGlobalClientAttached();
+  it('background 意图失效或改为 stop，再断线仍继续', () => {
+    setDaemonQuitIntent('stop');
     const { res, cancel, controller } = setup();
     disconnect(res);
     controller.cancelForDisconnect();
 
-    expect(cancel).toHaveBeenCalledWith('client-disconnect');
+    expect(cancel).not.toHaveBeenCalled();
+    expect(controller.detached).toBe(true);
   });
 
-  it('接入全局 SSE 不改写意图本身：留守判据读到的仍是 background（armed schedules 不丢）', () => {
-    noteGlobalClientAttached();
+  it('断线不改写壳意图本身：armed schedules 留守判据不丢', () => {
+    const { res, controller } = setup();
+    disconnect(res);
+    controller.cancelForDisconnect();
     expect(getDaemonQuitIntent()).toBe('background');
   });
 
-  it('壳重新声明 background 后重新生效', () => {
-    noteGlobalClientAttached();
+  it('壳重新声明 background 不影响断线续跑', () => {
+    setDaemonQuitIntent('stop');
     setDaemonQuitIntent('background');
     const { res, cancel, controller } = setup();
     disconnect(res);
@@ -105,14 +114,16 @@ describe('cancelForDisconnect × quit intent', () => {
     expect(cancel).not.toHaveBeenCalled();
   });
 
-  it('对照：intent=stop 断线照常 cancel 并打日志', () => {
+  it('intent=stop 也不能把断线当显式 Stop；重复 close 只记录一次', () => {
     setDaemonQuitIntent('stop');
     const { res, cancel, logger, controller } = setup();
     disconnect(res);
     controller.cancelForDisconnect();
 
-    expect(cancel).toHaveBeenCalledWith('client-disconnect');
-    expect(controller.disconnected).toBe(true);
-    expect(loggedDisconnect(logger)).toBe(true);
+    expect(cancel).not.toHaveBeenCalled();
+    expect(controller.detached).toBe(true);
+    setDaemonQuitIntent('stop');
+    controller.cancelForDisconnect();
+    expect(loggedDisconnect(logger)).toBe(1);
   });
 });

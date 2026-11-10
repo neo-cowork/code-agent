@@ -972,7 +972,8 @@ export const zh = {
     buttonTitle: '当前会话权限档',
     menuTitle: '会话权限档',
     bypassConfirmText: '将自动批准文件写入和命令执行，只适合完全可信的工作区。',
-    enable: '开启',
+    enable: '开启', retry: '重试',
+    enableError: { forbidden: '完全访问需要管理员身份，你的账号没有这个权限', pending: '账号资料暂时没取到，请稍后重试', other: '没能开启完全访问，请稍后再试' },
   },
 
   skillRecommendations: {

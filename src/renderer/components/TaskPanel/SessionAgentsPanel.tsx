@@ -27,6 +27,7 @@ import { useVoiceLiveRuntime } from '../../hooks/useVoiceLiveRuntime';
 import { deriveAgentMergeState } from '../../utils/agentMergeState';
 import { isAgentRowQuiet } from '../../utils/agentRowStall';
 import { stopSessionAgent } from '../../utils/stopSessionAgent';
+import { agentFailureCopy } from '../../utils/agentFailureCopy';
 import type { AgentRow } from '../../utils/agentRows';
 import { RoleInitialAvatar } from '../features/expert/RoleInitialAvatar';
 import { DiscussionStream } from '../features/swarm/DiscussionStream';
@@ -149,8 +150,10 @@ export const SessionAgentsPanel: React.FC = () => {
     const labels = text.panel.status;
     if (row.hold === 'approval') return labels.needsApproval;
     if (row.status === 'failed') {
-      return row.failureReason
-        ? `${labels.failed}：${row.failureReason}`
+      const reason = (row.node?.failureCode ? agentFailureCopy(row.node.failureCode, t) : null)
+        ?? row.failureReason;
+      return reason
+        ? `${labels.failed}：${reason}`
         : labels.failed;
     }
     if (row.status === 'cancelled') return labels.stopped;
