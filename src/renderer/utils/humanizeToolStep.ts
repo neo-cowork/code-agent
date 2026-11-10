@@ -375,6 +375,13 @@ function matchesUiScript(text: string, t: Translations): boolean {
   return CJK_PATTERN.test(t.toolStepHumanize.writeFallback) === CJK_PATTERN.test(text);
 }
 
+/** 模型有时把内部工具名当描述（"Use task_status"）；含原始工具名作独立词的描述不可用，退回本地化模板。 */
+export function mentionsRawToolName(text: string, toolName: string): boolean {
+  if (!toolName) return false;
+  const escaped = toolName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^A-Za-z0-9_])${escaped}($|[^A-Za-z0-9_])`, 'i').test(text);
+}
+
 /**
  * 把单个工具调用合成一句步骤人话。模型自写的 shortDescription（产品视角语义标签）
  * 优先级最高——比机械模板更贴近"在干什么"；没有（或语种与界面不一致）时按工具
@@ -396,7 +403,9 @@ export function parseDelegateSessionReceipt(result?: { success?: boolean; output
     const value: unknown = JSON.parse(result.output);
     if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
     const receipt = value as Record<string, unknown>;
-    if (receipt.status !== 'active') return undefined;
+    // 宿主回执的 status 随生命周期变化（active / terminal_observed / stopped…），
+    // 这里只认"成功形状"：有 delegationId 与 status 即可，不按具体状态值挡。
+    if (typeof receipt.delegationId !== 'string' || !receipt.delegationId || typeof receipt.status !== 'string') return undefined;
     return {
       target: typeof receipt.target === 'string' ? takePreview(receipt.target) || undefined : undefined,
       reused: receipt.reused === true,
@@ -451,6 +460,7 @@ export function humanizeToolStep(
     && status === 'completed'
     && preferredDescription
     && matchesUiScript(preferredDescription, t)
+    && !mentionsRawToolName(preferredDescription, name)
   ) {
     return preferredDescription;
   }

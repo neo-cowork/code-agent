@@ -1009,6 +1009,12 @@ export class SubagentExecutor {
               },
             ),
           }));
+          doomLoopGuard.recordResults(telemetryToolCalls.map((call) => ({
+            name: call.name,
+            arguments: call.arguments,
+            success: call.success,
+            summary: call.resultSummary ?? call.error ?? '',
+          })));
           contextProjection.recordToolResults(messages[messages.length - 1], assistantToolCalls, toolResults);
           doomLoopGuard.injectPendingNudge(messages);
           pushObservabilityMessage({

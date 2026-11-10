@@ -55,6 +55,8 @@ import {
 } from './nativeDesktopActivityModel';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { DangerButton } from '../../../primitives/Button';
+import { AudioCaptureReadinessLine, isAudioPrerequisiteCode, loadDayAndHourAudioSegments, NativeDesktopEmptyView } from './audioCaptureReadiness';
+import { getAudioCaptureErrorText } from './audioCaptureError';
 import { AudioRetentionFailureLine } from './audioRetentionFailure';
 import { useI18n } from '../../../../hooks/useI18n';
 import { interpolate } from '../../../../i18n/interpolate';
@@ -487,24 +489,25 @@ const AppGroupCard: React.FC<{
 const HourDetailPanel: React.FC<{
   block: HourBlock;
   date: Date;
+  dayEventCount: number;
+  capturing: boolean;
   meetingAppNames: Set<string>;
   text: NativeDesktopText;
-}> = ({ block, date, meetingAppNames, text }) => {
+}> = ({ block, date, dayEventCount, capturing, meetingAppNames, text }) => {
   const [lightboxPath, setLightboxPath] = useState<string | null>(null);
   const [audioSegs, setAudioSegs] = useState<AudioSegment[]>([]);
+  const [dayAudioCount, setDayAudioCount] = useState<number>(0);
   const [collapsedApps, setCollapsedApps] = useState<Set<string>>(new Set());
   const [meetingDetailApp, setMeetingDetailApp] = useState<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const appGroupRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
-  // Load audio segments for this hour (with periodic refresh)
   useEffect(() => {
     const load = () => {
-      const dayStart = new Date(date);
-      dayStart.setHours(block.hour, 0, 0, 0);
-      const dayEnd = new Date(date);
-      dayEnd.setHours(block.hour, 59, 59, 999);
-      listAudioSegments(dayStart.getTime(), dayEnd.getTime()).then(setAudioSegs);
+      void loadDayAndHourAudioSegments(date, block.hour, listAudioSegments).then((r) => {
+        setDayAudioCount(r.dayCount);
+        setAudioSegs(r.hourSegments as AudioSegment[]);
+      });
     };
     load();
     const timer = window.setInterval(load, 5000);
@@ -522,12 +525,11 @@ const HourDetailPanel: React.FC<{
 
   if (block.eventCount === 0 && audioSegs.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full text-zinc-600">
-        <div className="text-center">
-          <Monitor className="w-8 h-8 mx-auto mb-2 text-zinc-700" />
-          <div className="text-sm">{text.emptyHour}</div>
-        </div>
-      </div>
+      <NativeDesktopEmptyView
+        emptyDay={dayEventCount === 0 && dayAudioCount === 0 && !capturing}
+        icon={<Monitor className="w-8 h-8 mx-auto mb-2 text-zinc-700" />}
+        text={text}
+      />
     );
   }
 
@@ -709,6 +711,7 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedHour, setSelectedHour] = useState<number>(new Date().getHours());
   const [audioStatus, setAudioStatus] = useState<AudioCaptureStatus | null>(null);
+  const [failedAudioCode, setFailedAudioCode] = useState<Parameters<typeof AudioCaptureReadinessLine>[0]['failedCode']>(null);
   const [audioBusy, setAudioBusy] = useState(false);
   const [clearBusy, setClearBusy] = useState(false);
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
@@ -716,18 +719,19 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
   const hourListRef = useRef<HTMLDivElement>(null);
 
   const loadData = useCallback(async () => {
+    const audioPromise = getAudioCaptureStatus();
     try {
-      const [status, events, audio] = await Promise.all([
+      const [status, events] = await Promise.all([
         getNativeDesktopCollectorStatus(),
         listRecentNativeDesktopEvents(50),
-        getAudioCaptureStatus(),
       ]);
       setCollectorStatus(status);
       setRecentEvents(events);
-      if (audio) setAudioStatus(audio);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(getAudioCaptureErrorText(err, nativeDesktopText.audioErrors));
     } finally {
+      const audio = await audioPromise;
+      if (audio) setAudioStatus(audio);
       setLoading(false);
     }
   }, []);
@@ -758,7 +762,7 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
       }
       await loadData();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(getAudioCaptureErrorText(err, nativeDesktopText.audioErrors));
     } finally {
       setCollectorBusy(false);
     }
@@ -786,7 +790,7 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
       const latest = await getAudioCaptureStatus();
       if (latest) setAudioStatus(latest);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(getAudioCaptureErrorText(err, nativeDesktopText.audioErrors));
     } finally {
       setClearBusy(false);
     }
@@ -795,16 +799,25 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
   const handleToggleAudio = async () => {
     setAudioBusy(true);
     setError(null);
+    setFailedAudioCode(null);
     try {
-      const result = audioStatus?.capturing
-        ? await stopAudioCapture()
-        : await startAudioCapture(audioCaptureMode);
-      setAudioStatus(result);
+      setAudioStatus(audioStatus?.capturing ? await stopAudioCapture() : await startAudioCapture(audioCaptureMode));
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      const msg = err instanceof Error ? err.message : String(err);
+      const latest = await getAudioCaptureStatus();
+      if (latest) setAudioStatus(latest);
+      if (isAudioPrerequisiteCode(msg)) setFailedAudioCode(msg);
+      else setError(getAudioCaptureErrorText(err, nativeDesktopText.audioErrors));
     } finally {
       setAudioBusy(false);
     }
+  };
+
+  const handleRecheckAudio = async () => {
+    setError(null);
+    setFailedAudioCode(null);
+    const latest = await getAudioCaptureStatus();
+    if (latest) setAudioStatus(latest);
   };
 
   const navigateDate = (delta: number) => {
@@ -944,6 +957,13 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
         </div>
       </div>
 
+      <AudioCaptureReadinessLine
+        status={audioStatus}
+        mode={audioCaptureMode}
+        failedCode={failedAudioCode}
+        text={nativeDesktopText.audioReadiness}
+        onRecheck={() => { void handleRecheckAudio(); }}
+      />
       <div className="flex flex-wrap items-center gap-3 border-b border-zinc-800/50 px-5 py-2 shrink-0">
         <span className="text-[11px] text-zinc-400">
           {interpolate(nativeDesktopText.audioRetention.rule, { hours: AUDIO_RETENTION_HOURS })}
@@ -1018,6 +1038,8 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
             <HourDetailPanel
               block={selectedBlock}
               date={currentDate}
+              dayEventCount={totalEvents}
+              capturing={Boolean(audioStatus?.capturing)}
               meetingAppNames={meetingAppNames}
               text={nativeDesktopText}
             />

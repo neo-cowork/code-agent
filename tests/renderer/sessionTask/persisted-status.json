@@ -1,0 +1,81 @@
+{
+  "running": {
+    "toolCallId": "call_9e8f13cac0734b4285369604",
+    "success": true,
+    "output": "1. 周报 [running] id=session-work-1794231752639-6dxbew",
+    "duration": 4,
+    "metadata": {
+      "sessionTask": {
+        "outcome": "status",
+        "tasks": [
+          {
+            "shortName": "周报",
+            "status": "running"
+          }
+        ]
+      },
+      "executionStarted": true,
+      "fromCache": false
+    }
+  },
+  "completed": {
+    "toolCallId": "call_7f928dacd90d444f8d8e08d1",
+    "success": true,
+    "output": "1. 周报 [completed] id=session-work-1794231752639-6dxbew：周报已生成并回读确认完整。 - **输出文件**：`weekly-report.md`（与三份原始记录同目录） - **章节结构**：标题（2026年11月9日~11月15日）→ 本周概要 → 产品 / 研发 / 运营分板块（各含：本周进展与决策、风险与阻塞、行动项）→ 下周计划 → 行动项汇总表 - **行动项数量**：7 条（产品 2、研发 3、运营 2），负责人或截止时间缺失处均标注\"未提及\" 周报内容全部来自三份会议记录，已回读全文确认无占位符残留。",
+    "duration": 3,
+    "metadata": {
+      "sessionTask": {
+        "outcome": "status",
+        "tasks": [
+          {
+            "shortName": "周报",
+            "status": "completed",
+            "detail": "周报已生成并回读确认完整。 - **输出文件**：`weekly-report.md`（与三份原始记录同目录） - **章节结构**：标题（2026年11月9日~11月15日）→ 本周概要 → 产品 / 研发 / 运营分板块（各含：本周进展与决策、风险与阻塞、行动项）→ 下周计划 → 行动项汇总表 - **行动项数量**：7 条（产品 2、研发 3、运营 2），负责人或截止时间缺失处均标注\"未提及\" 周报内容全部来自三份会议记录，已回读全文确认无占位符残留。"
+          }
+        ]
+      },
+      "executionStarted": true,
+      "fromCache": false
+    }
+  },
+  "cancelled": {
+    "toolCallId": "call_668c389e334047f0aeedaded",
+    "success": true,
+    "output": "1. 审计 [cancelled] id=session-work-1794231970158-hodb4i：任务已取消。",
+    "duration": 3,
+    "metadata": {
+      "sessionTask": {
+        "outcome": "status",
+        "tasks": [
+          {
+            "shortName": "审计",
+            "status": "cancelled",
+            "detail": "任务已取消。"
+          }
+        ]
+      },
+      "executionStarted": true,
+      "fromCache": false
+    }
+  },
+  "failed": {
+    "toolCallId": "call_d2b95bf5ebc74d05a082c568",
+    "success": true,
+    "output": "1. 风险 [failed] id=session-work-1794232062173-im2mjz：后台任务失败：命令已 10 秒没有响应",
+    "duration": 3,
+    "metadata": {
+      "sessionTask": {
+        "outcome": "status",
+        "tasks": [
+          {
+            "shortName": "风险",
+            "status": "failed",
+            "detail": "后台任务失败：命令已 10 秒没有响应"
+          }
+        ]
+      },
+      "executionStarted": true,
+      "fromCache": false
+    }
+  }
+}
