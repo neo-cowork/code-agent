@@ -300,6 +300,9 @@ export async function recordCronAutomationExecution(
           ...(urgencyRaw ? { urgencyRaw } : {}),
           ...(digest ? { digest } : {}),
           ...(permissionDenied ? { permissionDenied } : {}),
+          // 同次运行里已写入的「连接器未登录」提示与同日去重记录：recordEvent 只做 config 浅合并，
+          // 这里整体替换 pendingReview，必须带上，否则会被抹掉
+          ...(existing?.config?.pendingReview?.connectorLost ? { connectorLost: existing.config.pendingReview.connectorLost } : {}),
         } } }
         : loginWall
           ? { configPatch: { loginWall: { siteOrigin: loginWall.siteOrigin, at: execution.completedAt ?? Date.now() } } }

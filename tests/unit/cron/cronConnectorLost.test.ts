@@ -59,6 +59,8 @@ import type { CronJobDefinition } from '../../../src/shared/contract/cron';
 const EVIDENCE = process.env.FU4_RAW_OUT ?? '/dev/null';
 let dir: string;
 
+const completedExecution = (id: string) => ({ id, jobId: 'job-1', status: 'completed', sessionId: `session-of-${id}`, completedAt: Date.now(), result: {} }) as never;
+
 const job = {
   id: 'job-1',
   name: '每日读飞书',
@@ -158,5 +160,16 @@ describe('cron 无人值守运行发现 MCP 401 → 收件箱每连接器每日�
     expect(state.messages.map((m) => m.id)).toEqual(['automation:connector_lost:feishu:2031-09-01']);
     expect(JSON.stringify(automationRows())).toContain('今天的定时运行没能读取「');
     replaceCliConnectorConnectionStatusCache([]);
+  });
+
+  it('同次运行随后的 recordCronAutomationExecution 不抹掉 connectorLost（提示行与同日去重记录保留）', async () => {
+    const { recordCronAutomationExecution } = await import('../../../src/host/cron/cronAutomationBridge');
+    vi.setSystemTime(new Date(2031, 10, 1, 9, 0, 0));
+    await executeCronAgentAction(host, job, job.action as never, 'e8');
+    await recordCronAutomationExecution(job, completedExecution('e8'), (d) => d as never);
+    const pending = (automationRows()[0].config_json as { pendingReview: { resultSessionId?: string; connectorLost?: { days: Record<string, string>; summary: string } } }).pendingReview;
+    expect(pending.resultSessionId).toBe('session-of-e8');
+    expect(pending.connectorLost?.days).toEqual({ notion: '2031-11-01' });
+    expect(pending.connectorLost?.summary).toContain('今天的定时运行没能读取');
   });
 });
