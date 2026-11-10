@@ -99,6 +99,39 @@ afterEach(() => {
 });
 
 describe('无人值守等批准可见性（N-CRON-UNATTENDED-BASH-PARK-STUCK-VISIBLE）', () => {
+  it.each(['allow', 'deny'] as const)('history row shares the inline approval state and clears immediately after %s', async (response) => {
+    awaitingRunsMock = [{ jobId: 'job-1', executionId: 'exec-1', requestId: 'req-1', sessionId: 'sess-1', requestedAt: 1 }];
+    const scroll = vi.fn();
+    const originalScroll = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = scroll;
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === IPC_CHANNELS.AGENT_PERMISSION_RESPONSE) {
+        awaitingRunsMock = [];
+        return { outcome: 'delivered' };
+      }
+      return [];
+    });
+    try {
+      render(<CronCenterPanel onClose={() => undefined} />);
+      const badge = await screen.findByTestId('cron-exec-awaiting-approval');
+      expect(badge.textContent).toBe('等你批准');
+      fireEvent.click(badge);
+      const entry = screen.getByTestId('cron-detail-awaiting-approval-hint').parentElement;
+      expect(scroll).toHaveBeenCalledWith({ block: 'nearest' });
+      expect(document.activeElement).toBe(entry);
+      expect(screen.getByTestId('cron-center-tab-jobs').getAttribute('aria-selected')).toBe('true');
+      expect(screen.getAllByTestId('cron-detail-parked-approve')).toHaveLength(1);
+      fireEvent.click(screen.getByTestId(response === 'allow' ? 'cron-detail-parked-approve' : 'cron-detail-parked-reject'));
+      await vi.waitFor(() => {
+        expect(screen.queryByTestId('cron-exec-awaiting-approval')).toBeNull();
+        expect(screen.queryByTestId('cron-detail-awaiting-approval-hint')).toBeNull();
+      }, { timeout: 900 });
+      expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, 'req-1', response, 'sess-1');
+    } finally {
+      HTMLElement.prototype.scrollIntoView = originalScroll;
+    }
+  });
+
   it.each(['allow', 'deny'] as const)('Jobs inline %s sends requestId/sessionId and refreshes every surface before the next poll', async (response) => {
     awaitingRunsMock = [{ jobId: 'job-1', executionId: 'exec-1', requestId: 'req-1', sessionId: 'sess-1', requestedAt: 1 }];
     let finish!: (result: { outcome: string }) => void;

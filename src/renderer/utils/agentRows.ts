@@ -148,7 +148,7 @@ export function buildAgentRows(input: {
       key: node.id,
       kind: 'agent',
       roleId: node.role,
-      name: agentRoleLabel(node.role),
+      name: agentRoleLabel(node.displayName || node.role),
       isLead: false,
       status,
       failureReason: node.failureReason,

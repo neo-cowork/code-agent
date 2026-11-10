@@ -35,7 +35,7 @@ export interface CreateRunContextInput {
   goalRecoverySnapshotProvider?: () => GoalRecoverySnapshot | undefined;
 }
 
-export type RunCancelReason = 'user' | 'session-switch';
+export type RunCancelReason = 'user' | 'session-switch' | 'idle-reaped' | 'client-disconnect';
 
 export class SteerUnsupportedError extends Error {
   readonly code = 'STEER_UNSUPPORTED';

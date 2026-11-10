@@ -18,6 +18,7 @@ import {
 } from '../../../connectors/native/osascript';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { calendarSchema as schema } from './calendar.schema';
+import { formatConnectorNow, formatConnectorTime } from './connectorTime';
 
 type CalendarAction = 'get_status' | 'list_calendars' | 'list_events';
 
@@ -39,8 +40,8 @@ interface CalendarEvent {
 }
 
 function formatEvent(event: CalendarEvent): string {
-  const start = event.startAtMs ? new Date(event.startAtMs).toLocaleString('zh-CN') : '未知开始时间';
-  const end = event.endAtMs ? new Date(event.endAtMs).toLocaleString('zh-CN') : '未知结束时间';
+  const start = event.startAtMs ? formatConnectorTime(event.startAtMs) : '未知开始时间';
+  const end = event.endAtMs ? formatConnectorTime(event.endAtMs) : '未知结束时间';
   const location = event.location ? ` | ${event.location}` : '';
   const uid = event.uid ? `\n  uid: ${event.uid}` : '';
   return `- [${event.calendar}] ${event.title}\n  ${start} -> ${end}${location}${uid}`;
@@ -154,7 +155,7 @@ async function executeCalendar(
     const baseOutput = events.length > 0
       ? `日历事件 (${events.length})：\n${events.map(formatEvent).join('\n')}`
       : '没有找到匹配的日历事件。';
-    const output = `${baseOutput}${unreadNote}`;
+    const output = `${formatConnectorNow()}\n${baseOutput}${unreadNote}`;
     return {
       ok: true,
       output,

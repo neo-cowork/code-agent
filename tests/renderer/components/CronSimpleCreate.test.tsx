@@ -163,6 +163,8 @@ describe('CronSimpleCreate', () => {
     fireEvent.change(screen.getByPlaceholderText(/竞品动态/), { target: { value: '每个工作日总结 notes.txt' } });
     fireEvent.change(screen.getByTestId('cron-budget-limit-input'), { target: { value: '2' } });
     fireEvent.click(screen.getByText('创建自动化'));
+    expect(createJob).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
 
     await waitFor(() => expect(onDone).toHaveBeenCalled());
     expect(createJob.mock.calls[0][0]).toMatchObject({ maxRunBudget: 2 });
@@ -176,6 +178,8 @@ describe('CronSimpleCreate', () => {
     render(<CronSimpleCreate onDone={onDone} />);
     fireEvent.change(screen.getByPlaceholderText(/竞品动态/), { target: { value: '每个工作日总结 notes.txt' } });
     fireEvent.click(screen.getByText('创建自动化'));
+    expect(createJob).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
 
     await waitFor(() => expect(onDone).toHaveBeenCalled());
     expect(createJob.mock.calls[0][0]).toMatchObject({ maxRunBudget: null });
@@ -192,6 +196,8 @@ describe('CronSimpleCreate', () => {
     fireEvent.click(screen.getByTestId('cron-runs-on-cloud'));
     expect(screen.queryByTestId('cron-budget-limit-input')).toBeNull();
     fireEvent.click(screen.getByText('创建自动化'));
+    expect(createJob).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
 
     await waitFor(() => expect(onDone).toHaveBeenCalled());
     expect(createJob.mock.calls[0][0]).toMatchObject({ runsOn: 'cloud', maxRunBudget: null });
@@ -206,7 +212,7 @@ describe('CronSimpleCreate', () => {
     expect(createJob).not.toHaveBeenCalled();
   });
 
-  it('填目标提交后走 createJob，产出 agent+cron 任务', async () => {
+  it('填目标提交后先出保存前确认卡，确认才走 createJob，产出 agent+cron 任务', async () => {
     createJob.mockImplementation(async (input) => ({
       ...(input as object),
       id: 'new-job',
@@ -222,6 +228,12 @@ describe('CronSimpleCreate', () => {
     expect(createButton.parentElement?.className).toContain('sticky');
     expect(createButton.parentElement?.className).toContain('-bottom-4');
     fireEvent.click(createButton);
+    // 无角色任务：先复述，createJob 不被调用（N-CRON-MORNING-TRIAGE-REST1）。
+    await waitFor(() => {
+      expect(screen.getByTestId('cron-pending-routine-restate')).toBeTruthy();
+    });
+    expect(createJob).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('cron-pending-routine-confirm'));
     await waitFor(() => {
       expect(onDone).toHaveBeenCalled();
     });
@@ -251,6 +263,8 @@ describe('CronSimpleCreate', () => {
     fireEvent.click(screen.getByTestId('cron-runs-on-cloud'));
     fireEvent.change(screen.getByPlaceholderText(/竞品动态/), { target: { value: '整理云端简报' } });
     fireEvent.click(screen.getByText('创建自动化'));
+    await waitFor(() => expect(screen.getByTestId('cron-pending-routine-restate')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('cron-pending-routine-confirm'));
     await waitFor(() => expect(createJob).toHaveBeenCalled());
     expect(createJob.mock.calls[0][0]).toMatchObject({ runsOn: 'cloud' });
   });
@@ -276,6 +290,8 @@ describe('CronSimpleCreate', () => {
     fireEvent.click(screen.getByTestId('cron-runs-on-cloud'));
     fireEvent.change(screen.getByPlaceholderText(/竞品动态/), { target: { value: '整理云端简报' } });
     fireEvent.click(screen.getByText('创建自动化'));
+    expect(createJob).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
     await waitFor(() => expect(createJob).toHaveBeenCalled());
     expect(await screen.findByText(/只能在本机运行/)).toBeTruthy();
     expect(screen.queryByText(/Role-bound/)).toBeNull();
@@ -296,6 +312,8 @@ describe('CronSimpleCreate', () => {
     fireEvent.change(screen.getByTestId('cron-simple-time-hour'), { target: { value: '08' } });
     fireEvent.change(screen.getByTestId('cron-simple-time-minute'), { target: { value: '30' } });
     fireEvent.click(screen.getByText('创建自动化'));
+    expect(createJob).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
     await waitFor(() => {
       expect(onDone).toHaveBeenCalled();
     });
@@ -340,6 +358,8 @@ describe('CronSimpleCreate', () => {
     fireEvent.change(screen.getByTestId('cron-simple-once-date'), { target: { value: '2026-11-10' } });
     fireEvent.change(screen.getByTestId('cron-simple-once-time-hour'), { target: { value: '15' } });
     fireEvent.click(screen.getByText('创建自动化'));
+    expect(createJob).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
     await waitFor(() => expect(onDone).toHaveBeenCalled());
     const submitted = createJob.mock.calls[0][0] as CronJobDefinition;
     expect(submitted.schedule).toEqual({ type: 'at', datetime: new Date('2026-11-10T15:00').toISOString() });
@@ -383,6 +403,8 @@ describe('CronSimpleCreate', () => {
     }
     if (cloudFirst) fireEvent.click(screen.getByTestId('cron-runs-on-cloud'));
     fireEvent.click(screen.getByText('创建自动化'));
+    expect(createJob).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
     await waitFor(() => expect(onDone).toHaveBeenCalled());
     return createJob.mock.calls[0][0] as CronJobDefinition;
   }
@@ -412,6 +434,8 @@ describe('CronSimpleCreate', () => {
     fireEvent.click(screen.getByTestId('cron-runs-on-cloud'));
     expect(screen.queryByTestId('cron-simple-urgency-criteria')).toBeNull();
     fireEvent.click(screen.getByText('创建自动化'));
+    expect(createJob).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
     await waitFor(() => expect(onDone).toHaveBeenCalled());
     const submitted = createJob.mock.calls[0][0] as CronJobDefinition;
     expect(submitted.runsOn).toBe('cloud');

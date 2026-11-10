@@ -137,6 +137,8 @@ describe('N-CRON-BUDGET-EXPOSE 编辑器额度字段', () => {
     render(<CronJobEditor isOpen job={null} copySource={makeJob({ maxRuns: 3 })} onClose={() => undefined} />);
 
     fireEvent.click(screen.getByText('创建任务'));
+    // 无角色任务先过保存前确认卡（N-CRON-MORNING-TRIAGE-REST1），确认才落库。
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
 
     await waitFor(() => expect(createJob).toHaveBeenCalledTimes(1), { timeout: 3000 });
     expect(createJob.mock.calls[0]?.[0]).toMatchObject({ runsOn: 'cloud', maxRuns: null });
@@ -201,6 +203,8 @@ describe('N-CRON-BUDGET-EXPOSE 编辑器额度字段', () => {
     fireEvent.click(await screen.findByText('每日前瞻'));
     fireEvent.change(screen.getByTestId('cron-budget-limit-input'), { target: { value: '2' } });
     fireEvent.click(screen.getByText('创建任务'));
+    expect(createJob).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
 
     await waitFor(() => expect(createJob).toHaveBeenCalledTimes(1));
     expect(createJob.mock.calls[0]?.[0]).toMatchObject({ maxRunBudget: 2 });

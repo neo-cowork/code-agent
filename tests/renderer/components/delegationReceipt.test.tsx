@@ -377,6 +377,47 @@ describe('delegation receipt', () => {
   });
 });
 
+// Integration guard: exercise the production component after main's report-only projection.
+describe('delegation receipt — integrated display projection', () => {
+  const backgroundOutput = `Agent [Explorer] spawned in background:
+- Agent ID: agent_explore_background_receipt
+- Task: 调研异步书面更新
+- Status: running
+- Mode: declarative
+- Running agents: 1
+
+Use wait_agent to block until done, or close_agent to cancel.`;
+
+  it.each([
+    ['background spawn', 'spawn_agent', backgroundOutput, '代理工作中', ['agent_explore_background_receipt', 'spawned in background:']],
+    ['completed spawn', 'spawn_agent', REAL_SPAWN_AGENT_OUTPUT, '- Agent ID: customer-visible-reference', ['completed task:', '- Iterations: 1', '- Tools used: none']],
+    ['completed Task', 'Task', REAL_TASK_OUTPUT, 'Notion: - Cost: $20/month; sync: database and page export.', ['completed (', '- Iterations: 2', '- Tools used: none']],
+    ['wait result', 'wait_agent', `${REAL_WAIT_AGENT_OUTPUT}\n[agent_missing] NOT FOUND`, 'Notion and Obsidian comparison:', ['[agent_explore]', '[agent_missing]', 'NOT FOUND']],
+  ] as const)('preserves the complete raw tool call when rendering %s', (_shape, name, output, expected, hidden) => {
+    const call: ToolCall = {
+      id: 'integration-raw-call',
+      name,
+      arguments: name === 'wait_agent'
+        ? { agentIds: ['agent_explore', 'agent_missing'] }
+        : { role: 'explore', task: '调研异步书面更新' },
+      result: {
+        toolCallId: 'integration-raw-call',
+        success: true,
+        output,
+        metadata: { agentId: 'agent_explore_background_receipt' },
+      },
+    };
+    const raw = structuredClone(call);
+    const view = renderCall(call);
+    fireEvent.click(view.getByTestId(`tool-call-row-${name}`));
+    const more = view.queryByText(/展开剩余/);
+    if (more) fireEvent.click(more);
+    expect(view.container.textContent).toContain(expected);
+    for (const text of hidden) expect(view.container.textContent).not.toContain(text);
+    expect(call).toStrictEqual(raw);
+  });
+});
+
 // ── N-APPROVAL-PENDING-STATUS-COPY：审批卡还挂着时，工作行不得谎报「发送了邮件」 ──
 
 function pendingMailRequest(overrides: Partial<PermissionRequest> = {}): PermissionRequest {
