@@ -52,7 +52,7 @@ function longSessionProjection(turnCount = 2): TraceProjection {
     turns: Array.from({ length: turnCount }, (_, index) => index + 1).map((turnNumber) => ({
       turnNumber,
       turnId: `turn-${turnNumber}`,
-      status: (turnNumber === 2 ? 'streaming' : 'completed') as const,
+      status: turnNumber === 2 ? ('streaming' as const) : ('completed' as const),
       startTime: turnNumber * 1_000,
       endTime: turnNumber * 1_000 + 500,
       nodes: [
