@@ -38,7 +38,7 @@ it('two failure cards + one live background child: one notice on the last card, 
   expect(nodes.length).toBeGreaterThanOrEqual(3);
   const view = render(<>{nodes.map((node, index) => (
     <div key={index} data-testid={`card-${index}`}>
-      <TraceNodeRenderer node={node} messageId={node.messageId ?? ''} sessionId="session-1" />
+      <TraceNodeRenderer node={node} sessionId="session-1" />
     </div>
   ))}</>);
   await act(async () => { await vi.advanceTimersByTimeAsync(0); });
