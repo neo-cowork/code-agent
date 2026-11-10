@@ -1,25 +1,48 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import type { MessageAttachment } from '../../../src/shared/contract';
-import {
-  AttachmentDisplay,
-  getAttachmentMediaState,
-} from '../../../src/renderer/components/features/chat/MessageBubble/AttachmentPreview';
+import { AttachmentDisplay } from '../../../src/renderer/components/features/chat/MessageBubble/AttachmentPreview';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
+
+beforeEach(() => {
+  useAppStore.setState({ language: 'zh' });
+});
 
 describe('MessageBubble media and channel affordances', () => {
+  // N-FIX-ATTACHMENT-ONLY-SEND-MISSING-PROMPT-FU1：状态标签改经 i18n 渲染，
+  // 不再对内部函数断言——统一走 AttachmentDisplay 渲染输出。
   it('normalizes attachment media lifecycle states', () => {
-    expect(getAttachmentMediaState({ id: 'a1', name: 'voice.wav', type: 'file', category: 'audio', size: 1, mimeType: 'audio/wav', mediaState: 'transcribing' } as MessageAttachment))
-      .toMatchObject({ label: '转写中', tone: 'active', spinning: true });
-    expect(getAttachmentMediaState({
-      id: 'a2',
-      name: 'photo.png',
-      type: 'image',
-      category: 'image',
-      mimeType: 'image/png',
-      size: 1,
-      metadata: { materializationState: 'failed' },
-    } as MessageAttachment)).toMatchObject({ label: '处理失败', tone: 'danger' });
+    const html = renderToStaticMarkup(
+      React.createElement(AttachmentDisplay, {
+        attachments: [
+          {
+            id: 'voice-1',
+            name: 'voice.wav',
+            type: 'file',
+            category: 'audio',
+            mimeType: 'audio/wav',
+            path: '/tmp/voice.wav',
+            size: 1024,
+            mediaState: 'transcribing',
+          },
+          {
+            id: 'photo-1',
+            name: 'photo.png',
+            type: 'image',
+            category: 'image',
+            mimeType: 'image/png',
+            path: '/tmp/photo.png',
+            size: 1024,
+            metadata: { materializationState: 'failed' },
+          },
+        ] satisfies MessageAttachment[],
+      }),
+    );
+
+    expect(html).toContain('voice.wav');
+    expect(html).toContain('转写中');
+    expect(html).toContain('处理失败');
   });
 
   it('renders visible attachment status badges', () => {
