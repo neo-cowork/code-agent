@@ -423,6 +423,9 @@ describe('background task settlement wake with a real RunRegistry', () => {
           persistedNotes.push(message);
           realManager.emitAgentEventForSession(sessionId, { type: 'message', data: message });
         },
+        recordWakeDeferredNote: async () => undefined,
+        setTimeout: () => 1,
+        clearTimeout: () => undefined,
         logger: { info, warn },
       });
 
