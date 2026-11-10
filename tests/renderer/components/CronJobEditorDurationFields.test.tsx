@@ -86,13 +86,13 @@ describe('cron duration fields', () => {
     expect(payload.timeout).not.toBeNaN();
   });
 
-  it('keeps blank values undefined and preserves untouched stored milliseconds', async () => {
+  it('sends null for blank timeout and preserves untouched stored milliseconds', async () => {
     const blankUpdate = vi.fn(async (id: string, input: Partial<CronJobDefinition>) => ({ ...makeJob(), id, ...input }));
     useCronStore.setState({ updateJob: blankUpdate });
     openAdvanced(makeJob({ retryDelay: undefined, timeout: undefined }));
     fireEvent.click(screen.getByText('保存修改'));
     await waitFor(() => expect(blankUpdate).toHaveBeenCalledTimes(1));
-    expect(blankUpdate.mock.calls[0]?.[1]).toMatchObject({ retryDelay: undefined, timeout: undefined });
+    expect(blankUpdate.mock.calls[0]?.[1]).toMatchObject({ retryDelay: undefined, timeout: null });
 
     cleanup();
     const untouchedUpdate = vi.fn(async (id: string, input: Partial<CronJobDefinition>) => ({ ...makeJob(), id, ...input }));

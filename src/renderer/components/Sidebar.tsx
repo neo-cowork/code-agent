@@ -27,6 +27,7 @@ import { toast } from '../hooks/useToast';
 import { IconButton, UndoToast } from './primitives';
 import { ConfirmDialog } from './composites/ConfirmDialog';
 import { createLogger } from '../utils/logger';
+import { useClearCurrentUnreadOnReturn } from './features/sidebar/useClearCurrentUnreadOnReturn';
 import { SessionContextMenu, type ContextMenuItem } from './features/sidebar/SessionContextMenu';
 import { SidebarSessionList } from './features/sidebar/SidebarSessionList';
 import { SidebarCapabilityZone } from './features/sidebar/SidebarCapabilityZone';
@@ -164,6 +165,7 @@ export const Sidebar: React.FC = () => {
       unsubscribe?.();
     };
   }, [markSessionUnread]);
+  useClearCurrentUnreadOnReturn();
   const {
     pinnedSessionIds,
     togglePin,

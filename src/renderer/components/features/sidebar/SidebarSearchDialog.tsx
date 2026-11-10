@@ -167,7 +167,7 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm">
-                        {getDisplaySessionTitle(session.title)}
+                        {getDisplaySessionTitle(session.title, language)}
                         {session.id === currentSessionId && (
                           <span className="ml-2 text-[11px] text-badge-info">{sb.currentSession}</span>
                         )}

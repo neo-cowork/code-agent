@@ -1,3 +1,4 @@
+import { resolveRunCancellationOutcomeKey } from '../../../i18n/outcomeWords';
 // ============================================================================
 // SessionInspector 层1 轮行（N-LEDGER-UX1：A 汇总句可展开 / B 异常黄条 / C 活行）
 // ----------------------------------------------------------------------------
@@ -76,9 +77,7 @@ function resolveTerminalOutcome(segment: TurnSegment, t: Translations) {
   return terminal === 'completed'
     ? t.outcomeWords.completed.badge
     : terminal === 'cancelled'
-      ? (segment.stamp?.cancelReason === 'idle_reaped'
-        ? t.outcomeWords['failed-idle-reaped'].badge
-        : t.outcomeWords['cancelled-by-user'].badge)
+      ? t.outcomeWords[resolveRunCancellationOutcomeKey(segment.stamp?.cancelReason)].badge
       : terminal === 'interrupted'
         ? t.outcomeWords['interrupted-restart'].badge
         : terminal === 'failed'

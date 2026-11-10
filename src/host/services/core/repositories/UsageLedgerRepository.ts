@@ -21,6 +21,21 @@ export interface UsageLedgerEntryInput {
   cacheCreationTokens?: number;
   /** 记录时间戳（毫秒），由调用方传入 */
   recordedAt: number;
+  /** 预算归属，缺省 foreground */
+  scope?: 'foreground' | 'unattended';
+  serviceTier?: string;
+}
+
+/** 预算状态读取失败的可区分原因：db 未就绪 vs 读取抛错。 */
+export class BudgetStateUnavailableError extends Error {
+  constructor(
+    readonly reason: 'not_ready' | 'read_failed',
+    message: string,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options);
+    this.name = 'BudgetStateUnavailableError';
+  }
 }
 
 export interface UsageLedgerEntry extends UsageLedgerEntryInput {
@@ -38,6 +53,8 @@ function rowToEntry(row: SQLiteRow): UsageLedgerEntry {
     cacheReadTokens: row.cache_read_tokens == null ? undefined : Number(row.cache_read_tokens),
     cacheCreationTokens: row.cache_creation_tokens == null ? undefined : Number(row.cache_creation_tokens),
     recordedAt: Number(row.recorded_at),
+    scope: row.scope === 'unattended' ? 'unattended' : 'foreground',
+    serviceTier: (row.service_tier as string | null) ?? undefined,
   };
 }
 
@@ -48,8 +65,8 @@ export class UsageLedgerRepository {
   append(input: UsageLedgerEntryInput): void {
     this.db.prepare(`
       INSERT INTO usage_ledger
-        (session_id, model, provider, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, recorded_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        (session_id, model, provider, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, recorded_at, scope, service_tier)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       input.sessionId ?? null,
       input.model,
@@ -59,7 +76,30 @@ export class UsageLedgerRepository {
       input.cacheReadTokens ?? null,
       input.cacheCreationTokens ?? null,
       input.recordedAt,
+      input.scope ?? 'foreground',
+      input.serviceTier ?? null,
     );
+  }
+
+  /** 某 scope 自 since（含）起的用量记录，按时间升序 */
+  getByScopeSince(scope: string, since: number): UsageLedgerEntry[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM usage_ledger WHERE scope = ? AND recorded_at >= ? ORDER BY recorded_at ASC, id ASC
+    `).all(scope, since) as SQLiteRow[];
+    return rows.map(rowToEntry);
+  }
+
+  getPeriodStart(scope: string): number | null {
+    const row = this.db.prepare(`SELECT period_start FROM budget_period_state WHERE scope = ?`).get(scope) as
+      { period_start?: number } | undefined;
+    return row?.period_start == null ? null : Number(row.period_start);
+  }
+
+  setPeriodStart(scope: string, periodStart: number, updatedAt: number): void {
+    this.db.prepare(`
+      INSERT INTO budget_period_state (scope, period_start, updated_at) VALUES (?, ?, ?)
+      ON CONFLICT(scope) DO UPDATE SET period_start = excluded.period_start, updated_at = excluded.updated_at
+    `).run(scope, periodStart, updatedAt);
   }
 
   /** 某会话的用量记录（按时间升序） */

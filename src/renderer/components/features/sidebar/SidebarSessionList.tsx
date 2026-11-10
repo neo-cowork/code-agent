@@ -137,7 +137,7 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
 
         return {
           id: session.id,
-          title: getDisplaySessionTitle(session.title),
+          title: getDisplaySessionTitle(session.title, language),
           statusLabel:
             status.kind === 'error'
               ? t.common.error
@@ -170,6 +170,7 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
       reviewItemsBySessionId,
       sessionRuntimes,
       sessionStates,
+      language,
       t,
     ],
   );

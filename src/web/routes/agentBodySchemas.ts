@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { MessageAttachment } from '../../shared/contract/message';
 import type { ConversationEnvelopeContext } from '../../shared/contract/conversationEnvelope';
 import type { AgentEventFilter } from '../../host/protocol/events/eventFilter';
+import { PROMPT_REQUIRED } from '../../shared/contract/agentRunErrors';
 import type { TurnEnvironmentSelection } from '../../shared/contract/executionEnvironment';
 
 const LooseObjectSchema = z.object({}).passthrough();
@@ -43,7 +44,8 @@ export const GoalBodySchema = z.object({
 });
 
 export const AgentRunBodySchema = z.object({
-  prompt: z.string().min(1),
+  // 空文本只在带附件时放行（只发文件的消息）；纯空白且无附件仍拒绝。
+  prompt: z.string(),
   project: z.string().optional(),
   sessionDir: z.string().optional(),
   model: z.string().optional(),
@@ -60,7 +62,19 @@ export const AgentRunBodySchema = z.object({
   historyVisibility: z.enum(['visible', 'meta']).optional(),
   disableAutoAgent: z.boolean().optional(),
   environmentSelection: TurnEnvironmentSelectionBodySchema.optional(),
-}).passthrough();
+}).passthrough().refine(
+  (body) => body.prompt.trim().length > 0 || (body.attachments?.length ?? 0) > 0,
+  { path: ['prompt'], message: PROMPT_REQUIRED },
+);
+
+/**
+ * 判断 /run 校验失败是不是「提示词缺失/为空且没有附件」——用于回稳定码 PROMPT_REQUIRED。
+ * prompt 类型错（如数字）等其它字段问题不算，响应保持原样。
+ */
+export function isPromptRequiredFailure(error: z.ZodError, rawBody: unknown): boolean {
+  if (error.issues.some((issue) => issue.path[0] === 'prompt' && issue.code === 'custom')) return true;
+  return typeof rawBody === 'object' && rawBody !== null && (rawBody as { prompt?: unknown }).prompt === undefined;
+}
 
 export type AgentRunBody = z.infer<typeof AgentRunBodySchema>;
 
