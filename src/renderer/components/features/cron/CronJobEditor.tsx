@@ -106,6 +106,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
   useScrollToEventValidation(eventFocusTick);
 
   // Template-based creation state
+  const [simpleDraft, setSimpleDraft] = useState<CronJobDraft>(createDefaultCronJobDraft);
   const [step, setStep] = useState<CreationStep>('simple');
   const [selectedTemplate, setSelectedTemplate] = useState<CronTemplate | null>(null);
   const [templateValues, setTemplateValues] = useState<Record<string, string>>({});
@@ -412,7 +413,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
   if (!job && step === 'simple') {
     return (
       <Modal isOpen={isOpen} onClose={onClose} title={title} size="lg">
-        <CronSimpleCreate onDone={onClose} />
+        <CronSimpleCreate onDone={onClose} onDraftChange={setSimpleDraft} />
         <div className="mt-4 flex items-center justify-center gap-4 border-t border-zinc-800 pt-3 text-xs">
           <button /* ds-allow:button: 纯文本次级链接（text-xs 无底色），primitive 变体会渲染按钮外观 */
             onClick={() => setStep('pick')}
@@ -422,7 +423,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
           </button>
           <span className="h-3 w-px bg-zinc-800" />
           <button /* ds-allow:button: 同上，纯文本次级链接 */
-            onClick={() => setStep('manual')}
+            onClick={() => { setDraft(simpleDraft); setStep('manual'); }}
             className="text-zinc-500 transition-colors hover:text-zinc-300"
           >
             {cc.manualConfig}
