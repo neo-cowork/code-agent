@@ -712,6 +712,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           ? await planSessionWorkDirectory({
             sessionTitle: persistedSession?.title,
             userMessage: prompt,
+            attachments: body.attachments,
             reservedPaths: workDirReservations,
           })
           : await ensureDefaultWebWorkingDirectory();
@@ -743,6 +744,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const replanned = await maybeReplanSessionWorkDirectory({
         workingDirectory: sessionRowWorkingDirectory,
         sessionTitle: persistedSession?.title,
+        firstUserMessage: (await sessionManagerForRun.getMessages?.(sessionId))?.find((message) => message.role === 'user'),
         reservedPaths: workDirReservations,
       });
       const diverted = replanned

@@ -33,6 +33,7 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import type { Message, MessageAttachment } from '../../shared/contract/message';
 import { getConfigService } from '../services/core/configService';
 import { isPlaceholderSessionTitle } from '../../shared/sessionTitlePlaceholder';
 import { getDefaultWorkDirectory } from './configPaths';
@@ -43,6 +44,8 @@ export interface SessionWorkDirectoryOptions {
   sessionTitle?: string;
   /** 首条用户消息；没有可用标题时取第一个分句当目录名（不再拦腰截断句子） */
   userMessage?: string;
+  /** 空消息首轮以首个非空附件名兜底；文件去扩展名，文件夹保留名称。 */
+  attachments?: readonly Pick<MessageAttachment, 'name' | 'category'>[];
   /** 目录名里的 MMDD 取这个时间戳（缺省 Date.now()），本地时区 */
   now?: number;
   /** 语言档：zh → 任务_ 前缀，en → Task_ 前缀；缺省读 ui.language，读失败按 zh */
@@ -62,6 +65,8 @@ export interface ReplanSessionWorkDirectoryOptions {
   sessionTitle?: string;
   /** 首条用户消息；标题若只是它的降级截断（前缀 / 派生 / 以 `...` 结尾）则不重规划 */
   userMessage?: string;
+  /** 首条用户消息；空文字且当前目录来自附件时保留附件名，避免自动标题覆盖。 */
+  firstUserMessage?: Pick<Message, 'content' | 'attachments'>;
   env?: NodeJS.ProcessEnv;
   /** 其它会话行已记下的占用路径；本会话自己的当前路径会自动从占用集中剔除 */
   reservedPaths?: readonly string[];
@@ -185,8 +190,16 @@ function buildSessionFolderBaseName(options: SessionWorkDirectoryOptions): strin
   const prefix = (options.language ?? readUiLanguage()) === 'en' ? 'Task' : '任务';
   const title = sanitizeFolderTitle(usableSessionTitle(options.sessionTitle) ?? '')
     ?? sanitizeFolderTitle(options.userMessage ?? '')
+    ?? (!options.userMessage?.trim() ? attachmentFolderTitle(options.attachments) : undefined)
     ?? 'untitled';
   return `${prefix}_${mmdd}_${title}`;
+}
+
+function attachmentFolderTitle(attachments: SessionWorkDirectoryOptions['attachments']): string | undefined {
+  const first = attachments?.find((attachment) => attachment.name.trim());
+  if (!first) return undefined;
+  const basename = first.name.trim().split('/').pop() ?? '';
+  return sanitizeFolderTitle(first.category === 'folder' ? basename : path.parse(basename).name);
 }
 
 async function existsOnDisk(target: string): Promise<boolean> {
@@ -312,6 +325,12 @@ export async function maybeReplanSessionWorkDirectory(
   if (!title || !current) return undefined;
   const currentFolderName = path.basename(current);
   if (!PLANNED_FOLDER_NAME_PATTERN.test(currentFolderName)) return undefined;
+  const attachmentTitle = !options.firstUserMessage?.content.trim()
+    ? attachmentFolderTitle(options.firstUserMessage?.attachments)
+    : undefined;
+  const currentTitle = currentFolderName.replace(PLANNED_FOLDER_NAME_PATTERN, '');
+  if (attachmentTitle && (currentTitle === attachmentTitle
+    || currentTitle.replace(/-\d+$/, '') === attachmentTitle)) return undefined;
   if (isDegradedFallbackTitle(title, {
     userMessage: options.userMessage,
     currentFolderName,
