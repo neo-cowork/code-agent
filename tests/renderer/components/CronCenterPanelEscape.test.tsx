@@ -55,7 +55,7 @@ it('Escape in create name closes only editor and retains center list and detail'
   const onClose = vi.fn();
   render(<CronCenterPanel onClose={onClose} />);
   await waitFor(() => expect(useCronStore.getState().isLoading).toBe(false));
-  fireEvent.click(screen.getByRole('button', { name: '新建', exact: true }));
+  fireEvent.click(screen.getByRole('button', { name: '新建' }));
   const input = within(screen.getByRole('dialog')).getByPlaceholderText('不填就用目标开头');
   input.focus();
   fireEvent.change(input, { target: { value: 'Weekly summary' } });
@@ -70,7 +70,7 @@ it('Escape in create name closes only editor and retains center list and detail'
 it('Escape in existing job editor closes only editor and retains center list and detail', async () => {
   const onClose = vi.fn();
   render(<CronCenterPanel onClose={onClose} />);
-  const edit = await screen.findByRole('button', { name: '编辑', exact: true });
+  const edit = await screen.findByRole('button', { name: '编辑' });
   fireEvent.click(edit);
   const input = within(screen.getByRole('dialog')).getByDisplayValue('Weekly report');
   input.focus();
@@ -86,7 +86,7 @@ it('second Escape after editor closes calls center onClose exactly once', async 
   const onClose = vi.fn();
   render(<CronCenterPanel onClose={onClose} />);
   await waitFor(() => expect(useCronStore.getState().isLoading).toBe(false));
-  fireEvent.click(screen.getByRole('button', { name: '新建', exact: true }));
+  fireEvent.click(screen.getByRole('button', { name: '新建' }));
   const input = within(screen.getByRole('dialog')).getByPlaceholderText('不填就用目标开头');
   input.focus();
   escapeWithBrowserCheckpoint(input);
