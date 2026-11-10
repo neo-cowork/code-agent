@@ -109,6 +109,24 @@ export function getSystemChromeExecutable(
   return '/usr/bin/google-chrome';
 }
 
+/** Keep disposable profiles away from the macOS login keychain. */
+export function resolveSystemChromeKeychainMode(input: {
+  temporaryProfile: boolean;
+  platform: NodeJS.Platform;
+  loginKeychainExists: boolean;
+}): {
+  mockKeychain: boolean;
+  reason: 'ephemeral-profile' | 'persistent-keychain-ok' | 'persistent-keychain-missing';
+} {
+  if (input.temporaryProfile) {
+    return { mockKeychain: input.platform === 'darwin', reason: 'ephemeral-profile' };
+  }
+  if (input.platform === 'darwin' && !input.loginKeychainExists) {
+    return { mockKeychain: true, reason: 'persistent-keychain-missing' };
+  }
+  return { mockKeychain: false, reason: 'persistent-keychain-ok' };
+}
+
 export function buildSystemChromeCdpArgs(args: {
   cdpPort: number;
   profileDir: string;
@@ -118,7 +136,7 @@ export function buildSystemChromeCdpArgs(args: {
   /**
    * 一次性临时 profile（mkdtemp）必须传 true：新 profile 首启会往系统钥匙串写
    * "Chrome Safe Storage" 密钥，测试/校验 spawn 上下文里拿不到钥匙串时 macOS 会
-   * 反复弹 "Keychain Not Found" 系统框。持久 profile（managed browser）禁止开——
+   * 反复弹 "Keychain Not Found" 系统框。持久 profile 有登录钥匙串时禁止开——
    * mock 钥匙串会让已用真密钥加密的 cookie 解不开。
    */
   mockKeychain?: boolean;
