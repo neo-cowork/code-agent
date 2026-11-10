@@ -295,7 +295,14 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
       label: job.name,
       // 调度时间人话复用侧栏能力区 formatNextRun 样板（utils/formatNextRun），不重写
       description: job.nextRunAt != null
-        ? ps.automationNextRun.replace('{time}', formatNextRun(job.nextRunAt, localeForLanguage(language)))
+        ? ps.automationNextRun.replace(
+          '{time}',
+          formatNextRun(
+            job.nextRunAt,
+            localeForLanguage(language),
+            job.schedule.type === 'cron' ? job.schedule.timezone : undefined,
+          ),
+        )
         : undefined,
     }));
   const handleSelectAutomation = (jobId: string) => {

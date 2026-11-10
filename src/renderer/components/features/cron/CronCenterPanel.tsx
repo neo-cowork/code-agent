@@ -13,10 +13,11 @@
 // 矮屏不低于 420px、整页可滚到达。
 // ============================================================================
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Clock3, WalletCards } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { useCronStore } from '../../../stores/cronStore';
+import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
 import ipcService from '../../../services/ipcService';
 import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
@@ -31,6 +32,7 @@ import { CronJobEditor } from './CronJobEditor';
 import { CronExecutionList } from './CronExecutionList';
 import { CronExecutionDetail } from './CronExecutionDetail';
 import { CronDailyCostSummary } from './CronDailyCostSummary';
+import { getBuiltinJobDisplay } from './builtinJobDisplay';
 import { WebModeBanner } from '../settings/WebModeBanner';
 import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 import { Button } from '../../primitives';
@@ -82,10 +84,12 @@ const StatusTile: React.FC<{ label: string; value: string; attention?: boolean; 
 );
 
 export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const cc = t.cronCenter;
   const {
     jobs,
+    allJobs,
+    jobNamesLoaded,
     stats,
     selectedJobId,
     isEditorOpen,
@@ -98,34 +102,60 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
     recentExecutions,
     loadRecentExecutions,
     latestExecutions,
+    syncRunningExecutions,
   } = useCronStore();
   const [activeTab, setActiveTab] = useState<CronCenterTab>(
     () => (readCronSearchParam('cronTab') === 'runs' ? 'runs' : 'jobs'),
   );
+  const runsRequested = useAppStore((s) => s.cronCenterRunsRequested);
+  useEffect(() => {
+    if (!runsRequested) return;
+    setActiveTab('runs');
+    useAppStore.getState().clearCronCenterRunsRequest();
+  }, [runsRequested]);
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(
     () => readCronSearchParam('execution'),
   );
   // 待过目数以 IPC countPendingReview（服务侧按**任务**折算）为真源：收件箱的回传只当
   // 「列表变了，该重取了」的触发信号（回传值是按记录数，同一任务跑 3 轮会虚报 3）。
-  // IPC 失败时回落回传值并 warn 留痕，不静默吞。回调必须稳定（收件箱 effect 依赖它）。
-  const [pendingReviewCount, setPendingReviewCount] = useState(0);
-  const refreshPendingReviewCount = useCallback((inboxRecordCount: number) => {
+  // IPC 失败时保留上次值并 warn 留痕（从未成功过为 null，tile 显示破折号），不回落成假 0。
+  // 回调必须稳定（收件箱 effect 依赖它）。
+  const [pendingReviewCount, setPendingReviewCount] = useState<number | null>(null);
+  const refreshPendingReviewCount = useCallback(() => {
     void sessionAutomationClient
       .countPendingReview()
       .then((count) => {
         if (typeof count === 'number') setPendingReviewCount(count);
       })
       .catch((error) => {
-        logger.warn('Failed to load per-task pending review count, falling back to inbox record count', {
+        logger.warn('Failed to load per-task pending review count, keeping last known value', {
           errorMessage: error instanceof Error ? error.message : String(error),
         });
-        setPendingReviewCount(inboxRecordCount);
       });
   }, []);
   const [unattendedBudgetStatus, setUnattendedBudgetStatus] = useState<UnattendedBudgetStatus | null>(null);
   // 无人值守停车可见性（N-CRON-UNATTENDED-BASH-PARK-STUCK）：仅在面板挂载且存在 running
   // 执行时每 2s 拉「等批准」运行（批准/拒绝后下一轮即消失，任务行回到运行中）。
   const [awaitingRuns, setAwaitingRuns] = useState<AwaitingApprovalRun[]>([]);
+  const awaitingLoadVersion = useRef(0);
+  const [inboxRefreshVersion, setInboxRefreshVersion] = useState(0);
+  const loadAwaitingRuns = useCallback(async () => {
+    const version = ++awaitingLoadVersion.current;
+    try {
+      const runs = await sessionAutomationClient.listAwaitingApprovalRuns();
+      if (version === awaitingLoadVersion.current) setAwaitingRuns(Array.isArray(runs) ? runs : []);
+    } catch (error) {
+      logger.warn('Failed to load awaiting-approval runs', {
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }, []);
+  const handleApprovalResolved = useCallback(async () => {
+    // Refresh all mounted surfaces even when the request was stale or delivery failed.
+    setInboxRefreshVersion((version) => version + 1);
+    refreshPendingReviewCount();
+    await Promise.all([loadAwaitingRuns(), syncRunningExecutions()]);
+  }, [loadAwaitingRuns, refreshPendingReviewCount, syncRunningExecutions]);
   // running 信号在两个 tab 来源不同：任务 tab 只有各 job 的最近一次执行
   // （latestExecutions，refresh 时拉），运行记录 tab 才有跨任务 recentExecutions；
   // 两个都看，否则默认任务 tab 永远不会开始轮询。
@@ -137,26 +167,18 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
       setAwaitingRuns((prev) => (prev.length === 0 ? prev : []));
       return;
     }
-    let active = true;
     const load = () => {
-      void sessionAutomationClient
-        .listAwaitingApprovalRuns()
-        .then((runs) => {
-          if (active) setAwaitingRuns(Array.isArray(runs) ? runs : []);
-        })
-        .catch((error) => {
-          logger.warn('Failed to load awaiting-approval runs', {
-            errorMessage: error instanceof Error ? error.message : String(error),
-          });
-        });
+      // 批准后命令跑完、host 写 completed，渲染端不重拉就永远停在「运行中」：随同一拍校正执行记录。
+      void syncRunningExecutions();
+      void loadAwaitingRuns();
     };
     load();
     const timer = window.setInterval(load, 2000);
     return () => {
-      active = false;
+      awaitingLoadVersion.current += 1;
       window.clearInterval(timer);
     };
-  }, [hasRunningExecution]);
+  }, [hasRunningExecution, loadAwaitingRuns, syncRunningExecutions]);
   const awaitingByJobId = useMemo(() => {
     const map = new Map<string, AwaitingApprovalRun>();
     for (const run of awaitingRuns) map.set(run.jobId, run);
@@ -217,8 +239,10 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
   );
 
   const jobNameById = useMemo(
-    () => Object.fromEntries(jobs.map((job) => [job.id, job.name])),
-    [jobs]
+    () => Object.fromEntries(
+      [...allJobs, ...jobs].map((job) => [job.id, getBuiltinJobDisplay(job, language)?.name ?? job.name]),
+    ),
+    [allJobs, jobs, language]
   );
 
   const runsOnByJobId = useMemo(
@@ -267,7 +291,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
                 }`}
               >
                 {label}
-                {key === 'runs' && pendingReviewCount > 0 && (
+                {key === 'runs' && (pendingReviewCount ?? 0) > 0 && (
                   <span
                     data-testid="cron-center-runs-badge"
                     className="absolute -right-1 -top-1 rounded-full border border-badge-warning/40 bg-amber-500/20 px-1 text-[9px] leading-3 text-badge-warning"
@@ -290,8 +314,8 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
           />
           <StatusTile
             label={cc.statPendingReview}
-            value={String(pendingReviewCount)}
-            attention={pendingReviewCount > 0}
+            value={pendingReviewCount === null ? '—' : String(pendingReviewCount)}
+            attention={(pendingReviewCount ?? 0) > 0}
             testId="cron-status-pending"
           />
           <StatusTile
@@ -341,7 +365,10 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
             归属「运行记录」——它是运行结果里需要人过目的子集。refreshSignal 让
             常驻收件箱在停车集合变化时重拉（Rework r1），「去处理」不再落到旧快照。 */}
         <div className={activeTab === 'runs' ? undefined : 'hidden'}>
-          <AutomationReviewInbox onPendingCountChange={refreshPendingReviewCount} refreshSignal={awaitingRefreshSignal} />
+          <AutomationReviewInbox
+            onPendingCountChange={refreshPendingReviewCount}
+            refreshSignal={inboxRefreshVersion ? `${awaitingRefreshSignal}:${inboxRefreshVersion}` : awaitingRefreshSignal}
+          />
         </div>
 
         {activeTab === 'jobs' ? (
@@ -360,6 +387,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
                     job={selectedJob}
                     awaitingRun={selectedJob ? awaitingByJobId.get(selectedJob.id) ?? null : null}
                     onReviewAwaiting={() => setActiveTab('runs')}
+                    onApprovalResolved={handleApprovalResolved}
                   />
                 )}
               </div>
@@ -376,12 +404,15 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
                 selectedExecutionId={selectedExecutionId}
                 onSelectExecution={setSelectedExecutionId}
                 jobNameById={jobNameById}
+                jobNamesLoaded={jobNamesLoaded}
                 runsOnByJobId={runsOnByJobId}
                 awaitingByJobId={awaitingByJobId}
               />
               <div className="min-w-0">
                 <CronExecutionDetail
                   execution={selectedExecution}
+                  jobName={selectedExecution ? jobNameById[selectedExecution.jobId] : undefined}
+                  jobNamesLoaded={jobNamesLoaded}
                   runsOn={selectedExecution?.runsOn ?? (selectedExecution ? runsOnByJobId[selectedExecution.jobId] : undefined)}
                   awaitingRun={selectedExecution ? awaitingByJobId.get(selectedExecution.jobId) ?? null : null}
                   onReviewAwaiting={() => setActiveTab('runs')}

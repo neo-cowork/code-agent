@@ -2,7 +2,8 @@
 // ConcurrencyLimiter Tests
 // ============================================================================
 
-import { afterEach, describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import { streamText, generateText } from 'ai';
 import {
   ConcurrencyLimiter,
   getEffectiveProviderConcurrency,
@@ -10,9 +11,23 @@ import {
   getProviderLimiter,
   setProviderConcurrencyOverrides,
 } from '../../../src/host/model/concurrencyLimiter';
+import { inferenceViaAiSdk } from '../../../src/host/model/adapters/aiSdkAdapter';
+import type { ModelConfig } from '../../../src/shared/contract';
+
+vi.mock('../../../src/host/model/providers/providerResolution', () => ({
+  resolveProviderBaseUrl: () => 'https://test.local/v1',
+  resolveProviderApiKey: () => 'test-key',
+}));
+
+vi.mock('ai', async (importActual) => {
+  const actual = await importActual<typeof import('ai')>();
+  return { ...actual, streamText: vi.fn(), generateText: vi.fn() };
+});
 
 afterEach(() => {
   setProviderConcurrencyOverrides({});
+  vi.mocked(streamText).mockReset();
+  vi.mocked(generateText).mockReset();
 });
 
 describe('ConcurrencyLimiter', () => {
@@ -95,5 +110,76 @@ describe('getProviderLimiter', () => {
     expect(getProviderConcurrencyKey(' anthropic ')).toBe('claude');
     expect(getEffectiveProviderConcurrency('claude')).toBe(2);
     expect(getProviderLimiter('anthropic')).toBe(getProviderLimiter('claude'));
+  });
+});
+
+describe('inferenceViaAiSdk shared concurrency gate (foreground + background-style requests)', () => {
+  const config: ModelConfig = {
+    provider: 'openai',
+    model: 'gpt-5.4',
+    temperature: 0.7,
+  } as ModelConfig;
+
+  async function measureForegroundAndBackgroundMaxInFlight(): Promise<number> {
+    let activeInFlight = 0;
+    let maxInFlight = 0;
+
+    vi.mocked(streamText).mockImplementation((() => {
+      activeInFlight++;
+      maxInFlight = Math.max(maxInFlight, activeInFlight);
+      return {
+        stream: (async function* () {
+          try {
+            await new Promise((r) => setTimeout(r, 30));
+            yield { type: 'text-delta', text: 'foreground-ok' };
+            yield { type: 'finish', finishReason: 'stop', totalUsage: { inputTokens: 10, outputTokens: 5 } };
+          } finally {
+            activeInFlight--;
+          }
+        })(),
+      };
+    }) as unknown as typeof streamText);
+
+    vi.mocked(generateText).mockImplementation((async () => {
+      activeInFlight++;
+      maxInFlight = Math.max(maxInFlight, activeInFlight);
+      try {
+        await new Promise((r) => setTimeout(r, 30));
+        return {
+          text: 'background-ok',
+          toolCalls: [],
+          reasoningText: '',
+          usage: { inputTokens: 12, outputTokens: 6 },
+          finishReason: 'stop',
+        };
+      } finally {
+        activeInFlight--;
+      }
+    }) as unknown as typeof generateText);
+
+    const [fgRes, bgRes] = await Promise.all([
+      inferenceViaAiSdk([{ role: 'user', content: 'fg' }], [], config, () => {}),
+      inferenceViaAiSdk([{ role: 'user', content: 'bg' }], [], config, undefined),
+    ]);
+
+    expect(fgRes.content).toBe('foreground-ok');
+    expect(bgRes.content).toBe('background-ok');
+    return maxInFlight;
+  }
+
+  it('serializes foreground and background-style requests to max in-flight = 1 when provider cap is 1', async () => {
+    setProviderConcurrencyOverrides({
+      openai: { maxConcurrent: 1, minIntervalMs: 0 },
+    });
+
+    const maxInFlight = await measureForegroundAndBackgroundMaxInFlight();
+    expect(maxInFlight).toBe(1);
+  });
+
+  it('allows foreground and background-style requests to overlap at max in-flight = 2 when no cap is set', async () => {
+    setProviderConcurrencyOverrides({});
+
+    const maxInFlight = await measureForegroundAndBackgroundMaxInFlight();
+    expect(maxInFlight).toBe(2);
   });
 });

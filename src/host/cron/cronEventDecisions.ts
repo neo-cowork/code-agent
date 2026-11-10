@@ -11,6 +11,7 @@
 
 import type { CronEventActionMode, CronEventDecisionOutcome, EventScheduleConfig } from '../../shared/contract/cron';
 import { CRON_EVENT_DECISIONS, CRON_EVENT_TRIGGER } from '../../shared/constants';
+import { buildCronEventDecisionText } from '../../shared/cronEventDecisionText';
 import { truncateObserveText } from '../tools/observeModeGate';
 import type { CronEventDecisionInput } from './cronEventDecisionLedger';
 
@@ -44,17 +45,23 @@ export const CRON_EVENT_DECISION_BLOCK_PATTERN = new RegExp(`<${TAG}\\b[^>]*>[\\
 export function describeEventScheduleRule(schedule: EventScheduleConfig): string {
   if (schedule.source === 'channel') {
     return truncateObserveText(
-      `channel message · account ${schedule.accountId}${schedule.chatId ? ` · chat ${schedule.chatId}` : ' · any chat'}`,
+      buildCronEventDecisionText(schedule.chatId ? 'channelChatRule' : 'channelAnyChatRule', {
+        account: schedule.accountId,
+        ...(schedule.chatId ? { chat: schedule.chatId } : {}),
+      }),
       CRON_EVENT_DECISIONS.MAX_REASON_CHARS,
     );
   }
   if (schedule.source === 'connector') {
     return truncateObserveText(
-      `mail message · account ${schedule.accountId} · mailbox ${schedule.mailbox ?? 'INBOX'}`,
+      buildCronEventDecisionText('mailRule', {
+        account: schedule.accountId,
+        mailbox: schedule.mailbox ?? 'INBOX',
+      }),
       CRON_EVENT_DECISIONS.MAX_REASON_CHARS,
     );
   }
-  return 'webhook delivery · per-job hook URL';
+  return buildCronEventDecisionText('webhookRule');
 }
 
 /** 事件 run 的说明行（在 untrusted 块之前、块外）：要求模型逐事件陈述处理与否及一句话理由。 */
@@ -100,14 +107,63 @@ function readStatedDecisions(result: unknown): Map<string, StatedEventDecision> 
   return stated;
 }
 
+/**
+ * 携带 id → 模型陈述：先精确匹配；剩下的携带 id 只在「唯一无歧义」时放宽——
+ * 恰有一条未被认领的陈述 id 与它互为前缀（忽略大小写/首尾空白，典型是模型抄长十六进制
+ * id 时多/少写了末尾字符）。多于一条或没有 → 不匹配，走兜底。不做编辑距离模糊匹配。
+ */
+function matchStatedDecisions(
+  carried: readonly string[],
+  stated: Map<string, StatedEventDecision>,
+): Map<string, StatedEventDecision> {
+  const matched = new Map<string, StatedEventDecision>();
+  const claimed = new Set<string>();
+  for (const id of carried) {
+    const exact = stated.get(id);
+    if (exact) {
+      matched.set(id, exact);
+      claimed.add(exact.eventId);
+    }
+  }
+  const norm = (id: string) => id.trim().toLowerCase();
+  for (const id of carried) {
+    if (matched.has(id)) continue;
+    const key = norm(id);
+    if (!key) continue;
+    const candidates = [...stated.values()].filter((d) => {
+      if (claimed.has(d.eventId)) return false;
+      const other = norm(d.eventId);
+      return other.length > 0 && (other.startsWith(key) || key.startsWith(other));
+    });
+    if (candidates.length !== 1) continue;
+    // 另一个未匹配的携带 id 也对上同一条陈述 → 有歧义，两边都不认。
+    const rivals = carried.filter((c) => c !== id && !matched.has(c) && (norm(c).startsWith(norm(candidates[0].eventId)) || norm(candidates[0].eventId).startsWith(norm(c))));
+    if (rivals.length > 0) continue;
+    matched.set(id, candidates[0]);
+    claimed.add(candidates[0].eventId);
+  }
+  return matched;
+}
+
+/** 兜底原因的补充说明：区分「没陈述」「陈述了但 id 对不上」「结果里根本没有 eventDecisions 字段」。 */
+function describeUnmatched(result: unknown, stated: Map<string, StatedEventDecision>): string {
+  const raw = result && typeof result === 'object' ? (result as Record<string, unknown>).eventDecisions : undefined;
+  if (!result || typeof result !== 'object' || (raw !== undefined && !Array.isArray(raw))) {
+    return buildCronEventDecisionText('missingDecisions');
+  }
+  if (stated.size === 0) return buildCronEventDecisionText('missingReason');
+  const ids = truncateObserveText([...stated.keys()].join(', '), CRON_EVENT_DECISIONS.MAX_REASON_CHARS);
+  return buildCronEventDecisionText('mismatchedDecisionIds', { ids });
+}
+
 function dropReason(cause: CronEventDropCause): string {
   switch (cause) {
     case 'queue_overflow':
-      return `pending queue overflow (limit ${CRON_EVENT_TRIGGER.PENDING_QUEUE_MAX}); oldest event dropped`;
+      return buildCronEventDecisionText('queueOverflow', { limit: CRON_EVENT_TRIGGER.PENDING_QUEUE_MAX });
     case 'carry_limit':
-      return `per-run carry limit (${CRON_EVENT_TRIGGER.MAX_EVENTS_PER_RUN} events) exceeded`;
+      return buildCronEventDecisionText('carryLimit', { limit: CRON_EVENT_TRIGGER.MAX_EVENTS_PER_RUN });
     case 'automation_inactive':
-      return 'automation was disabled or removed before the batch ran';
+      return buildCronEventDecisionText('automationInactive');
   }
 }
 
@@ -152,6 +208,8 @@ export interface EventRunSettlementInput {
   jobId: string;
   mode: CronEventActionMode;
   carriedEventIds: readonly string[];
+  /** User-readable labels keyed by carried event id (mail sender + subject today). */
+  carriedEventLabels?: Readonly<Record<string, string>>;
   dropped: readonly CronDroppedEvent[];
   /** executeEventJob 的返回值（CronJobExecution）；抛错时 undefined。 */
   execution: unknown;
@@ -174,22 +232,46 @@ export function settleEventRunDecisions(input: EventRunSettlementInput): CronEve
   if (run?.status !== 'completed') {
     const cause = run?.error
       ?? (input.runError instanceof Error ? input.runError.message : input.runError !== undefined ? String(input.runError) : undefined);
+    const status = run?.status ?? 'failed to start';
     const reason = truncateObserveText(
-      `run ${run?.status ?? 'failed to start'}${cause ? `: ${cause}` : ''}`,
+      buildCronEventDecisionText(cause ? 'runFailedWithCause' : 'runFailedWithoutCause', {
+        status,
+        ...(cause ? { cause } : {}),
+      }),
       CRON_EVENT_DECISIONS.MAX_REASON_CHARS,
     );
     for (const eventId of input.carriedEventIds) {
-      rows.push({ jobId: input.jobId, kind: 'event', eventId, decision: 'unavailable', reason, ...withRun, ...withRule });
+      const eventLabel = input.carriedEventLabels?.[eventId];
+      rows.push({
+        jobId: input.jobId,
+        kind: 'event',
+        eventId,
+        ...(eventLabel ? { eventLabel } : {}),
+        decision: 'unavailable',
+        reason,
+        ...withRun,
+        ...withRule,
+      });
     }
     return [...rows, ...droppedEventDecisions(input.jobId, input.dropped, runId, input.matchedRule)];
   }
 
   const stated = readStatedDecisions(run.result);
-  const fallback = fallbackDecision(input, run, runId);
+  const matched = matchStatedDecisions(input.carriedEventIds, stated);
   for (const eventId of input.carriedEventIds) {
-    const decision = stated.get(eventId);
+    const decision = matched.get(eventId);
+    const eventLabel = input.carriedEventLabels?.[eventId];
     if (!decision) {
-      rows.push({ jobId: input.jobId, kind: 'event', eventId, ...fallback, ...withRun, ...withRule });
+      const fallback = fallbackDecision(input, run, runId, describeUnmatched(run.result, stated));
+      rows.push({
+        jobId: input.jobId,
+        kind: 'event',
+        eventId,
+        ...(eventLabel ? { eventLabel } : {}),
+        ...fallback,
+        ...withRun,
+        ...withRule,
+      });
       continue;
     }
     const outcome: CronEventDecisionOutcome = decision.action === 'ignore'
@@ -199,8 +281,9 @@ export function settleEventRunDecisions(input: EventRunSettlementInput): CronEve
       jobId: input.jobId,
       kind: 'event',
       eventId,
+      ...(eventLabel ? { eventLabel } : {}),
       decision: outcome,
-      reason: decision.reason || (decision.action === 'act' ? 'model chose to act' : 'model chose to ignore'),
+      reason: decision.reason || buildCronEventDecisionText(decision.action === 'act' ? 'modelAct' : 'modelIgnore'),
       ...withRun,
       // 模型说了命中哪条规则就用模型的，否则回落配置推导的规则。
       matchedRule: decision.rule ?? input.matchedRule,
@@ -217,14 +300,15 @@ function fallbackDecision(
   input: EventRunSettlementInput,
   run: SettledRun,
   runId: string | undefined,
+  why: string,
 ): { decision: CronEventDecisionOutcome; reason: string } {
   if (input.mode === 'observe') {
     return runId && input.observeActionCount(runId) > 0
-      ? { decision: 'would_act', reason: 'outbound action intercepted in observe mode (no per-event reason stated)' }
-      : { decision: 'ignored', reason: 'no outbound action attempted (no per-event reason stated)' };
+      ? { decision: 'would_act', reason: buildCronEventDecisionText('observeIntercepted', { why }) }
+      : { decision: 'ignored', reason: buildCronEventDecisionText('noOutboundAction', { why }) };
   }
   const result = run.result && typeof run.result === 'object' ? run.result as Record<string, unknown> : {};
   return result.skipped === true || result.notifySuppressed === true
-    ? { decision: 'ignored', reason: 'run stayed quiet (no alert; no per-event reason stated)' }
-    : { decision: 'acted', reason: 'run completed and reported (no per-event reason stated)' };
+    ? { decision: 'ignored', reason: buildCronEventDecisionText('runQuiet', { why }) }
+    : { decision: 'acted', reason: buildCronEventDecisionText('runReported', { why }) };
 }

@@ -27,6 +27,8 @@ export function isScrollerNearBottom(
   return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= threshold;
 }
 
+const SETTLE_STABLE_FRAMES = 16;
+
 interface BottomSettlementOptions {
   turnsAtJump: TraceTurn[];
   projectionTurnsRef: RefObject<TraceTurn[]>;
@@ -49,6 +51,8 @@ export function startBottomSettlement({
   onCancel = () => undefined,
 }: BottomSettlementOptions): void {
   let remainingFrames = 60;
+  let stableFrames = 0;
+  let lastScrollHeight = -1;
   let settled = false;
   let frame: number | ReturnType<typeof setTimeout> | null = null;
   const cancelSettlement = () => {
@@ -76,9 +80,15 @@ export function startBottomSettlement({
       return;
     }
     const scroller = scrollerElementRef.current;
-    if (scroller) scroller.scrollTop = scroller.scrollHeight;
+    if (scroller) {
+      scroller.scrollTop = scroller.scrollHeight;
+      const atBottom = scroller.scrollHeight === lastScrollHeight
+        && scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= 1;
+      stableFrames = atBottom ? stableFrames + 1 : 0;
+      lastScrollHeight = scroller.scrollHeight;
+    }
     remainingFrames -= 1;
-    if (remainingFrames <= 0) {
+    if (remainingFrames <= 0 || stableFrames >= SETTLE_STABLE_FRAMES) {
       settled = true;
       onSettled();
       cancelSettlement();
@@ -168,11 +178,12 @@ export function useSessionEntryScroll({
       setIsAtBottom(true);
     }
     if (outputFollowStreamingRef.current || userScrollLastInteractionAtRef.current !== entry.interactionAt) return;
-    const scroller = scrollerElementRef.current;
-    if (scroller && scroller.scrollHeight > scroller.clientHeight && isScrollerNearBottom(scroller)) return;
     const lastIndex = projectionTurnsRef.current.length - 1;
     if (lastIndex < 0) return;
     sessionEntrySettlingRef.current = true;
+    // 结算期间 atBottomStateChange 被屏蔽；入场前 Virtuoso 可能已报过“不在底部”，
+    // 这里先置位，避免估算高度阶段闪出“回到底部”按钮。用户滚动取消时由 onCancel 重算。
+    setIsAtBottom(true);
 
     scheduleAfterLayout(() => {
       if (

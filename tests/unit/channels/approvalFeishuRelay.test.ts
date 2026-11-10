@@ -8,6 +8,7 @@
 // 真机卡片交互链路由主控 dogfood（单测挡不住回调链，见 #642/A2）——这里锁住编解码与路由。
 // ============================================================================
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { PARKED_APPROVAL_ENTRY_PATH } from '../../../src/shared/parkedApprovalLocation';
 import { EventEmitter } from 'events';
 import type { Server } from 'http';
 import type { AddressInfo } from 'net';
@@ -138,6 +139,8 @@ describe('ApprovalFeishuRelay', () => {
     expect(chatId).toBe('oc_1');
     expect(text).toContain('mail_send');
     expect(text).toContain('离开本机');
+    expect(text).toContain(`在${PARKED_APPROVAL_ENTRY_PATH}也能处理；点下方按钮可直接批准或拒绝。`);
+    expect(text).not.toMatch(/收件箱|inbox/i);
     expect(buttons).toHaveLength(2);
     expect(decodeApprovalValue(buttons[0].value)).toEqual({
       resolution: 'allow',

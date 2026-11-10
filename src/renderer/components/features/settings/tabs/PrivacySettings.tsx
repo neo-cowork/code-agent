@@ -38,6 +38,7 @@ import { Button } from '../../../primitives';
 import PermissionGrantList from './PermissionGrantList';
 import type { SettingsTab } from '../../../../utils/settingsTabs';
 import { useI18n } from '../../../../hooks/useI18n';
+import { formatDateTime } from '../../../../utils/formatDateTime';
 import { zh } from '../../../../i18n/zh';
 import { useAuthStore } from '../../../../stores/authStore';
 import {
@@ -162,7 +163,7 @@ function OutboundMaskReceiptCard(props: {
   expanded: boolean;
   onToggleExpand: () => void;
 }): React.ReactElement {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const receiptText = t.settings.outboundMaskReceipt;
   const lastRecord = props.records.length > 0 ? props.records[props.records.length - 1] : undefined;
   const replacements = lastRecord?.replacements ?? [];
@@ -184,7 +185,7 @@ function OutboundMaskReceiptCard(props: {
   const metaLine = [
     lastRecord?.provider,
     lastRecord?.model,
-    lastRecord ? new Date(lastRecord.timestamp).toLocaleTimeString() : undefined,
+    lastRecord ? formatDateTime(lastRecord.timestamp, language) : undefined,
   ].filter(Boolean).join(' · ');
 
   return (
@@ -543,12 +544,12 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
       >
         <p className="mb-3 text-xs text-zinc-400">
           <a
-            href="https://github.com/baochipham942-eng/code-agent/blob/main/docs/NOTICE.md"
+            href="https://github.com/neo-cowork/code-agent/blob/main/docs/NOTICE.md"
             target="_blank"
             rel="noreferrer"
             className="text-badge-info underline underline-offset-2 hover:text-badge-info"
             onClick={(event) => {
-              if (openExternalLink('https://github.com/baochipham942-eng/code-agent/blob/main/docs/NOTICE.md')) {
+              if (openExternalLink('https://github.com/neo-cowork/code-agent/blob/main/docs/NOTICE.md')) {
                 event.preventDefault();
               }
             }}

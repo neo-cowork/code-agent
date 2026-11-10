@@ -10,9 +10,11 @@ import type { RolePanelEntry } from '@shared/contract/roleAssets';
 import { isRoleBoundCronJob } from '@shared/cronRoleBinding';
 import type { Project } from '@shared/contract/project';
 import { suggestCronStaggerMinute } from '@shared/cronStagger';
+import { CRON_URGENCY_CRITERIA } from '@shared/constants';
 import { Button } from '../../primitives/Button';
 import { FormField } from '../../composites/FormField';
 import { Input } from '../../primitives/Input';
+import { DateTimeInput24, TimeInput24 } from '../../primitives';
 import { Select } from '../../primitives/Select';
 import { Textarea } from '../../primitives/Textarea';
 import { useCronStore } from '../../../stores/cronStore';
@@ -22,7 +24,9 @@ import { listRoles } from '../../../services/rolesClient';
 import { buildCronJobInput, createDefaultCronJobDraft, type CronJobDraft } from './types';
 import { CronRunsOnSelector } from './CronRunsOnSelector';
 import { CronResultChannelField } from './CronResultChannel';
+import { CronRunBudgetField } from './CronRunBudgetField';
 import { showCronLoginWallWarning } from './cronLoginWallNotice';
+import { CLOUD_ROLE_BOUND_ERROR } from './CronCloudRoleRestriction';
 import { SavedRoutineRestate } from './SavedRoutineRestate';
 
 export type SimpleFrequency = 'daily' | 'weekdays' | 'weekly' | 'hourly' | 'once';
@@ -67,6 +71,8 @@ export function buildSimpleDraft(
   libraryProjectId?: string,
   runsOn: CronJobDraft['runsOn'] = 'local',
   resultChannel = '',
+  urgencyCriteria = '',
+  maxRunBudget = '',
 ): CronJobDraft {
   return {
     ...createDefaultCronJobDraft(),
@@ -78,6 +84,8 @@ export function buildSimpleDraft(
     agentRoleId: roleId || '',
     agentLibraryProjectId: libraryProjectId || '',
     resultChannel,
+    agentUrgencyCriteria: urgencyCriteria,
+    maxRunBudget,
     ...schedule,
   };
 }
@@ -101,6 +109,8 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
   const [libraryProjectId, setLibraryProjectId] = useState('');
   const [runsOn, setRunsOn] = useState<CronJobDraft['runsOn']>('local');
   const [resultChannel, setResultChannel] = useState('');
+  const [urgencyCriteria, setUrgencyCriteria] = useState('');
+  const [maxRunBudget, setMaxRunBudget] = useState('');
   const [roles, setRoles] = useState<RolePanelEntry[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -129,6 +139,8 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
         libraryProjectId,
         runsOn,
         resultChannel,
+        runsOn === 'local' ? urgencyCriteria : '',
+        runsOn === 'local' ? maxRunBudget : '',
       );
       const created = await createJob(buildCronJobInput(draft));
       showCronLoginWallWarning(created, { warning: cc.loginWallWarning, openSite: cc.loginWallOpenSite });
@@ -139,7 +151,9 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
       onDone();
     } catch (err) {
       const message = err instanceof Error ? err.message : '';
-      setError(message.includes('Cloud jobs must have an interval')
+      setError(message.includes(CLOUD_ROLE_BOUND_ERROR)
+        ? cc.cloudRoleBoundHint
+        : message.includes('Cloud jobs must have an interval')
         ? cc.cloudIntervalHint
         : message.includes('Local jobs must have an interval')
           ? cc.localIntervalHint
@@ -171,6 +185,18 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
           minRows={3}
         />
       </FormField>
+
+      {runsOn === 'local' && (
+        <FormField label={cc.urgencyCriteriaLabel} hint={cc.urgencyCriteriaHint}>
+          <Input
+            value={urgencyCriteria}
+            onChange={(e) => setUrgencyCriteria(e.target.value)}
+            maxLength={CRON_URGENCY_CRITERIA.MAX_CHARS}
+            placeholder={cc.urgencyCriteriaPlaceholder}
+            data-testid="cron-simple-urgency-criteria"
+          />
+        </FormField>
+      )}
 
       <FormField label={cc.simpleNameLabel}>
         <Input
@@ -224,7 +250,13 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
 
         {needTime && (
           <FormField label={cc.simpleTimeLabel}>
-            <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+            <TimeInput24
+              testId="cron-simple-time"
+              value={time}
+              onChange={setTime}
+              hourLabel={cc.simpleHourLabel}
+              minuteLabel={cc.simpleMinuteLabel}
+            />
           </FormField>
         )}
         {needTime && time.endsWith(':00') && (
@@ -245,7 +277,14 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
         )}
         {freq === 'once' && (
           <FormField label={cc.simpleOnceAtLabel}>
-            <Input type="datetime-local" value={onceAt} onChange={(e) => setOnceAt(e.target.value)} />
+            <DateTimeInput24
+              testId="cron-simple-once"
+              value={onceAt}
+              onChange={setOnceAt}
+              dateLabel={cc.simpleDateLabel}
+              hourLabel={cc.simpleHourLabel}
+              minuteLabel={cc.simpleMinuteLabel}
+            />
           </FormField>
         )}
       </div>
@@ -260,7 +299,11 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
         </FormField>
       )}
 
-      <div className="flex items-center justify-end gap-2 pt-2">
+      {runsOn === 'local' && (
+        <CronRunBudgetField value={maxRunBudget} onChange={setMaxRunBudget} />
+      )}
+
+      <div className="sticky -bottom-4 z-10 -mx-6 flex items-center justify-end gap-2 border-t border-zinc-700 bg-zinc-900 px-6 py-4">
         <Button onClick={handleSubmit} loading={submitting}>
           {cc.simpleCreateCta}
         </Button>

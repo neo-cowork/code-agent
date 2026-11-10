@@ -4,6 +4,7 @@ vi.unmock('better-sqlite3');
 
 // ADR-072 E6 打点：捕获 PostHog 与 host log 的结局记录（两处都 mock，测试不写真日志）。
 const loggerInfo = vi.hoisted(() => vi.fn());
+const loggerWarn = vi.hoisted(() => vi.fn());
 const trackNodeCalls: Array<{ event: string; properties?: Record<string, unknown> }> = [];
 vi.mock('../../../../../src/host/observability/posthogNode', () => ({
   trackNode: vi.fn((event: string, properties?: Record<string, unknown>) => {
@@ -14,7 +15,7 @@ vi.mock('../../../../../src/host/services/infra/logger', async (importOriginal) 
   const mod = await importOriginal<typeof import('../../../../../src/host/services/infra/logger')>();
   return {
     ...mod,
-    createLogger: () => ({ info: loggerInfo, warn: () => {}, error: () => {}, debug: () => {} }),
+    createLogger: () => ({ info: loggerInfo, warn: loggerWarn, error: () => {}, debug: () => {} }),
   };
 });
 
@@ -43,6 +44,7 @@ afterEach(() => {
   setRuntime(undefined);
   trackNodeCalls.length = 0;
   loggerInfo.mockClear();
+  loggerWarn.mockClear();
 });
 
 describe('delegate_session', () => {
@@ -68,6 +70,10 @@ describe('delegate_session', () => {
     });
     const result = await executeDelegateSession({ action: 'delegate_existing', candidateSetId: projection.candidateSetId, candidateRef: projection.candidates[0].candidateRef, text: 'do it' }, ctx, async () => ({ allow: true }));
     expect(result.ok).toBe(true);
+    if (result.ok === true) {
+      expect(result.meta).not.toHaveProperty('reused');
+      expect(JSON.parse(result.output)).not.toHaveProperty('reused');
+    }
     expect(new SessionDelegationRepository(db).listByTargetSession('target')).toHaveLength(1);
     expect(db.prepare('SELECT count(*) AS count FROM queued_inputs').get()).toMatchObject({ count: 1 });
     expect(notify).toHaveBeenCalledWith('target');
@@ -170,8 +176,8 @@ describe('delegate_session', () => {
     });
     const result = await executeDelegateSession({ action: 'delegate_existing', candidateSetId: projection.candidateSetId, candidateRef: projection.candidates[0].candidateRef, text: 'do it' }, ctx, async () => ({ allow: true }));
     if (result.ok !== true) throw new Error('active reuse must stay a success receipt');
-    expect(result.meta).toMatchObject({ delegationId: 'd-1', status: 'active' });
-    expect(JSON.parse(result.output)).toMatchObject({ delegationId: 'd-1', status: 'active' });
+    expect(result.meta).toMatchObject({ delegationId: 'd-1', status: 'active', reused: true });
+    expect(JSON.parse(result.output)).toMatchObject({ delegationId: 'd-1', status: 'active', reused: true });
     expect(db.prepare('SELECT count(*) AS count FROM queued_inputs').get()).toMatchObject({ count: 1 });
     expect(notify).not.toHaveBeenCalled();
     db.close();
@@ -572,6 +578,146 @@ describe('delegate_session outcome telemetry (ADR-072 E6)', () => {
       expect(resumed.ok).toBe(false);
       expect(resumed.meta).toEqual({ code: 'target_busy', gate: 'none' });
       expect(lastOutcome().properties).toEqual({ outcome: 'rejected', code: 'target_busy', gate: 'none', action: 'resume' });
+    } finally {
+      db.close();
+    }
+  });
+});
+
+// ============================================================================
+// FB-772 发起轮身份：submission_key 按 origin_turn_id 派生
+// （session\0turn\0action\0target）。旧代码在 ctx.turnId 缺失时落 'unknown-turn'
+// 跨轮共享常量，同 origin session 同目标第二个不同正文的委托被 G4 误拒。
+// 这里钉住四条边界：跨轮不同正文各自入队；同轮同正文重用不重复入队；同轮不同
+// 正文仍是 G4（显式钉在测试名里）；turn/run 双缺拒绝且零落行、warn 点名双缺。
+// ============================================================================
+describe('delegate_session origin turn identity (FB-772)', () => {
+  function fixture() {
+    const db = new Database(':memory:');
+    applySchema(db, { info() {}, warn() {}, error() {}, debug() {} } as never);
+    const now = 100;
+    const sessions = [{ id: 'target', title: 'Target', workingDirectory: '/workspace/origin', updatedAt: now, sessionType: 'chat' as const, engineKind: 'native' }];
+    const projection = projectSessionCandidates(sessions, { originSessionId: 'origin', now, secret: getDelegationCandidateSecret() });
+    const runtime = {
+      getDb: () => db,
+      listSessions: () => sessions,
+      getSessionRow: (id: string) => id === 'target' ? { id, title: 'Target', workingDirectory: '/workspace/origin', sessionType: 'chat', engineKind: 'native', modelConfig: { provider: 'local', model: 'test' } } : null,
+      getWorkspaceRoots: () => ['/workspace'],
+      getRuns: () => [],
+      getRun: () => undefined,
+      getPermissionMode: () => 'default',
+      evaluateFolderTrust: async () => ({ state: 'trusted', blockedItems: 0 }),
+      notifyEnqueued: () => {},
+      now: () => now,
+    };
+    return { db, projection, runtime };
+  }
+
+  const turnCtx = (runtime: unknown, overrides: { turnId?: string; runId?: string } = {}) => ({
+    sessionId: 'origin',
+    turnId: overrides.turnId,
+    runId: overrides.runId,
+    workingDir: '/workspace/origin',
+    workspace: '/workspace/origin',
+    modelConfig: { provider: 'local', model: 'test' },
+    workspaceScope: { projectId: 'p', primaryRoot: '/workspace/origin', roots: [{ sourceId: 's', path: '/workspace/origin', access: 'read_write', role: 'primary' }], version: '1' },
+    abortSignal: new AbortController().signal,
+    delegationRuntime: runtime,
+  } as never);
+
+  const delegateArgs = (projection: ReturnType<typeof projectSessionCandidates>, text: string) => ({
+    action: 'delegate_existing',
+    candidateSetId: projection.candidateSetId,
+    candidateRef: projection.candidates[0].candidateRef,
+    text,
+  });
+
+  it('run A 后 run B：同 origin session 同 target 不同正文 → 第二条入队，两行 origin_turn_id 与 submission_key 互不相同', async () => {
+    process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
+    const { db, projection, runtime } = fixture();
+    try {
+      const first = await executeDelegateSession(delegateArgs(projection, 'first body'), turnCtx(runtime, { runId: 'run-A', turnId: 'turn-A' }), async () => ({ allow: true }));
+      const second = await executeDelegateSession(delegateArgs(projection, 'second body'), turnCtx(runtime, { runId: 'run-B', turnId: 'turn-B' }), async () => ({ allow: true }));
+      if (first.ok !== true) throw new Error('run-A delegation must be admitted');
+      if (second.ok !== true) throw new Error(`run-B delegation must be enqueued, got: ${(second as { error?: string }).error ?? 'unknown'}`);
+      const rows = db.prepare('SELECT origin_turn_id, submission_key FROM session_delegations ORDER BY origin_turn_id').all() as Array<{ origin_turn_id: string; submission_key: string }>;
+      expect(rows.map((row) => row.origin_turn_id)).toEqual(['run-A', 'run-B']);
+      expect(rows.map((row) => row.origin_turn_id)).not.toContain('unknown-turn');
+      expect(rows[0].submission_key).not.toBe(rows[1].submission_key);
+      expect(db.prepare('SELECT count(*) AS count FROM queued_inputs').get()).toMatchObject({ count: 2 });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('同 runId + 不同 turnId + 同正文（FB-873 同轮多步重复委托）→ 1 行委托 + 1 行排队，第二次回执带 reused: true', async () => {
+    process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
+    const { db, projection, runtime } = fixture();
+    try {
+      const first = await executeDelegateSession(delegateArgs(projection, 'same body'), turnCtx(runtime, { runId: 'run-1', turnId: 'step-1' }), async () => ({ allow: true }));
+      const second = await executeDelegateSession(delegateArgs(projection, 'same body'), turnCtx(runtime, { runId: 'run-1', turnId: 'step-2' }), async () => ({ allow: true }));
+      if (first.ok !== true) throw new Error('first delegation in run must be admitted');
+      if (second.ok !== true) throw new Error('second identical delegation in same run must be reused, not rejected');
+      expect(first.meta).not.toHaveProperty('reused');
+      expect(JSON.parse(first.output)).not.toHaveProperty('reused');
+      expect(second.meta?.delegationId).toBe(first.meta?.delegationId);
+      expect(second.meta).toMatchObject({ status: 'active', reused: true });
+      expect(JSON.parse(second.output)).toMatchObject({ delegationId: first.meta?.delegationId, status: 'active', reused: true });
+      expect(db.prepare('SELECT count(*) AS count FROM session_delegations').get()).toMatchObject({ count: 1 });
+      expect(db.prepare('SELECT count(*) AS count FROM queued_inputs').get()).toMatchObject({ count: 1 });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('same turn + same target + different content → idempotency_conflict G4（显式钉住不变）', async () => {
+    process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
+    const { db, projection, runtime } = fixture();
+    try {
+      const first = await executeDelegateSession(delegateArgs(projection, 'first body'), turnCtx(runtime, { runId: 'run-A', turnId: 'step-1' }), async () => ({ allow: true }));
+      const second = await executeDelegateSession(delegateArgs(projection, 'different body'), turnCtx(runtime, { runId: 'run-A', turnId: 'step-2' }), async () => ({ allow: true }));
+      expect(first.ok).toBe(true);
+      if (second.ok !== false) throw new Error('same-turn different-content replay must stay a G4 rejection');
+      expect(second.code).toBe('DELEGATION_REJECTED');
+      expect(second.meta).toEqual({ code: 'idempotency_conflict', gate: 'G4' });
+      expect(second.error).toContain('same submission key with a different payload');
+      expect(db.prepare('SELECT count(*) AS count FROM session_delegations').get()).toMatchObject({ count: 1 });
+      expect(db.prepare('SELECT count(*) AS count FROM queued_inputs').get()).toMatchObject({ count: 1 });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('ctx 优先取 runId 作发起轮身份（即便同时携带每步变化的 turnId）；仅在 runId 缺失时回退 turnId', async () => {
+    process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
+    const { db, projection, runtime } = fixture();
+    try {
+      const both = await executeDelegateSession(delegateArgs(projection, 'run-scoped body'), turnCtx(runtime, { runId: 'run-7', turnId: 'step-99' }), async () => ({ allow: true }));
+      const turnOnly = await executeDelegateSession(delegateArgs(projection, 'turn-fallback body'), turnCtx(runtime, { turnId: 'turn-fallback-only' }), async () => ({ allow: true }));
+      if (both.ok !== true || turnOnly.ok !== true) throw new Error('both contexts must be admitted');
+      const rows = db.prepare('SELECT origin_turn_id FROM session_delegations ORDER BY created_at, origin_turn_id').all() as Array<{ origin_turn_id: string }>;
+      expect(rows.map((row) => row.origin_turn_id)).toEqual(['run-7', 'turn-fallback-only']);
+      expect(loggerWarn).not.toHaveBeenCalled();
+    } finally {
+      db.close();
+    }
+  });
+
+  it('turnId 与 runId 双缺 → 结构化拒绝 + warn 点名双缺 + 零落行（绝不落共享常量）', async () => {
+    process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
+    const { db, projection, runtime } = fixture();
+    try {
+      const result = await executeDelegateSession(delegateArgs(projection, 'orphan body'), turnCtx(runtime), async () => ({ allow: true }));
+      if (result.ok !== false) throw new Error('missing turn and run identity must be a rejection');
+      expect(result.code).toBe('DELEGATION_REJECTED');
+      expect(result.error.startsWith('invalid_call:')).toBe(true);
+      expect(result.error).toContain('ctx.turnId and ctx.runId are empty');
+      expect(result.error).toContain('Nothing was delegated');
+      expect(loggerWarn).toHaveBeenCalledTimes(1);
+      const warnText = String(loggerWarn.mock.calls[0]?.[0] ?? '');
+      expect(warnText).toContain('ctx.turnId is empty and ctx.runId is empty');
+      expect(db.prepare('SELECT count(*) AS count FROM session_delegations').get()).toMatchObject({ count: 0 });
+      expect(db.prepare('SELECT count(*) AS count FROM queued_inputs').get()).toMatchObject({ count: 0 });
     } finally {
       db.close();
     }

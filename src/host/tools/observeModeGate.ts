@@ -16,6 +16,8 @@ import {
   normalizeBrowserComputerCatalogToolName,
 } from '../../shared/utils/browserComputerActionCatalog';
 import { extractStandingGrantTarget, isExternalSideEffectTool } from './externalSideEffect';
+import { getObserveConnectorCliAction } from './observeModeConnectorCli';
+import { isBashToolName } from './toolNames';
 import type { ToolExecutionResult } from './types';
 
 /** 一次被拦下的对外动作：工具名 / 目标（取得到才有）/ 本会发出什么的一行摘要。 */
@@ -39,6 +41,9 @@ export function enterObserveMode(sessionId: string, sink: ObserveModeSink): () =
 
 /** 观察档要拦的调用：EXTERNAL 出站工具，或后果目录里标为对外副作用的浏览器/电脑动作。 */
 function isObserveInterceptedToolCall(toolName: string, params: Record<string, unknown>): boolean {
+  if (isBashToolName(toolName) && typeof params.command === 'string') {
+    return getObserveConnectorCliAction(params.command) !== null;
+  }
   if (isExternalSideEffectTool(toolName)) return true;
   if (!normalizeBrowserComputerCatalogToolName(toolName)) return false;
   const entry = getStrictBrowserComputerActionCatalogForArgs({ toolName, arguments: params });
@@ -82,10 +87,15 @@ export function interceptObserveModeToolCall(
   if (sessionId === undefined) return null;
   const sink = observedSessions.get(sessionId);
   if (!sink || !isObserveInterceptedToolCall(toolName, params)) return null;
+  const connectorAction = isBashToolName(toolName) && typeof params.command === 'string'
+    ? getObserveConnectorCliAction(params.command) : null;
   const target = isExternalSideEffectTool(toolName)
     ? extractStandingGrantTarget(toolName, params) ?? undefined
     : undefined;
-  const interception: ObserveModeInterception = {
+  const interception: ObserveModeInterception = connectorAction ? {
+    ...connectorAction,
+    summary: truncateObserveText(connectorAction.summary, CRON_EVENT_DECISIONS.MAX_SUMMARY_CHARS),
+  } : {
     toolName,
     ...(target ? { target } : {}),
     summary: summarizeOutboundParams(params),

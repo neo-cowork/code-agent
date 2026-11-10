@@ -173,7 +173,7 @@ export const zhSettingsSystem = {
         installedNeedsRestart: '更新已下载安装完成，请重启 Agent Neo 生效',
         installFailed: '更新安装失败，请稍后重试',
         confirmTitle: '确认安装更新？',
-        confirmRunningMessage: '会中断 {count} 个正在进行的任务。安装完成后应用会自动重启，是否继续？',
+        confirmRunningMessage: { one: '会中断 {count} 个正在进行的任务。安装完成后应用会自动重启，是否继续？', other: '会中断 {count} 个正在进行的任务。安装完成后应用会自动重启，是否继续？' },
         confirmUnknownMessage: '无法确认是否有正在进行的任务，安装后应用会自动重启并可能中断任务。是否继续？',
         confirmAction: '仍要安装',
         confirmCancel: '取消',
@@ -275,6 +275,12 @@ export const zhSettingsSystem = {
           bootStage: '启动阶段',
           channelIsolation: '通道隔离',
           resourceCheck: '资源检查',
+          resourcePresent: '存在',
+          resourceMissing: '缺失',
+          resourceNotExecutable: '不可执行',
+          resourceUnknown: '未知',
+          resourceOptional: '可选',
+          copyPath: '复制路径',
           runtimeAssets: '运行资源',
           runtimeLedger: '运行资源账本',
           systemPermissions: '系统权限',
@@ -292,6 +298,7 @@ export const zhSettingsSystem = {
     webModeBanner: {
       desktopOnlyFeature: '部分功能仅在桌面版可用',
       desktopOnlyLabel: '(桌面版)',
+      channelsManageDesktopOnly: 'Web 版只能查看通道账号和状态；添加、连接/断开、编辑、删除请在桌面版 Agent Neo 里操作。',
     },
     nativeDesktop: {
       meetingAppNames: [
@@ -451,7 +458,7 @@ export const zhSettingsSystem = {
       clientSecretSaved: 'App Secret 已保存 ✓',
       availableActionsPrefix: '可用动作: ',
       details: {
-        missingClientId: '这个包里没有内置 client_id，当前无法发起授权。',
+        missingClientId: '此版本暂时无法连接该服务。请更新到最新版，或联系管理员。',
         needsSecret: '连接前需要先填写 App Secret，应用凭证可在飞书开放平台后台获取。',
         ready: '可以连接了。点击后将在系统浏览器打开飞书授权页，授权完成会自动回到 Neo。',
         noSecretRequired: '该服务商不需要 App Secret，可直接连接。',
@@ -590,6 +597,7 @@ export const zhSettingsSystem = {
       section: {
         title: '本地桥接服务',
         description: '本地桥接服务允许 Web 端操作本地文件系统。安装后即可在浏览器中使用完整的文件操作能力。',
+        serviceAddress: '服务地址：',
       },
       status: {
         connected: '已连接',
@@ -610,9 +618,13 @@ export const zhSettingsSystem = {
         copied: '已复制',
         autoDetect: '自动检测',
         install: '安装',
+        downloadLatest: '下载最新版',
         updateAndUninstall: '更新 & 卸载',
         update: '更新',
         uninstall: '卸载',
+        uninstallDescription: '如果不再需要本地桥接服务，可以将其卸载：这会停止后台服务并删除其本地文件，需要在终端中操作。',
+        viewManualUninstallSteps: '查看手动卸载步骤（高级）',
+        uninstallRiskHint: '其中 sudo 步骤需要输入系统管理员密码，命令会删除本地桥接目录，执行前请先确认。',
       },
       workingDirectory: {
         emptyDirectory: '(空目录)',

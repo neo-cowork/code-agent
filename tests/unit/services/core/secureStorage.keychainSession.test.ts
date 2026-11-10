@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { PROD_BUNDLE_ID } from '../../../../src/shared/devSlot';
 
 const keytarMock = vi.hoisted(() => {
   const entries = new Map<string, string>();
@@ -34,6 +35,7 @@ describe('SecureStorage Keychain session account', () => {
   const originalCliMode = process.env.CODE_AGENT_CLI_MODE;
   const originalDataDir = process.env.CODE_AGENT_DATA_DIR;
   const originalWebMode = process.env.CODE_AGENT_WEB_MODE;
+  const originalFreshUser = process.env.CODE_AGENT_FRESH_USER;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -54,6 +56,8 @@ describe('SecureStorage Keychain session account', () => {
     else process.env.CODE_AGENT_DATA_DIR = originalDataDir;
     if (originalWebMode === undefined) delete process.env.CODE_AGENT_WEB_MODE;
     else process.env.CODE_AGENT_WEB_MODE = originalWebMode;
+    if (originalFreshUser === undefined) delete process.env.CODE_AGENT_FRESH_USER;
+    else process.env.CODE_AGENT_FRESH_USER = originalFreshUser;
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
@@ -103,6 +107,66 @@ describe('SecureStorage Keychain session account', () => {
       'code-agent',
       'supabase-session',
       'production-session',
+    );
+  });
+
+  it('uses a distinct fresh-user account and preserves the slot account when inactive', async () => {
+    process.env.CODE_AGENT_BUNDLE_ID = 'com.linchen.code-agent.dev';
+    process.env.CODE_AGENT_FRESH_USER = 'fresh-test';
+    const { getSecureStorage } = await import('../../../../src/host/services/core/secureStorage');
+    const storage = getSecureStorage();
+
+    await storage.saveSessionToKeychain('fresh-session');
+    await expect(storage.getSessionFromKeychain()).resolves.toBe('fresh-session');
+    await storage.clearSessionFromKeychain();
+
+    delete process.env.CODE_AGENT_FRESH_USER;
+    await storage.saveSessionToKeychain('slot-session');
+    await expect(storage.getSessionFromKeychain()).resolves.toBe('slot-session');
+
+    expect(keytarMock.setPassword).toHaveBeenNthCalledWith(
+      1,
+      'code-agent',
+      'supabase-session:com.linchen.code-agent.dev:fresh-fresh-test',
+      'fresh-session',
+    );
+    expect(keytarMock.getPassword).toHaveBeenNthCalledWith(
+      1,
+      'code-agent',
+      'supabase-session:com.linchen.code-agent.dev:fresh-fresh-test',
+    );
+    expect(keytarMock.deletePassword).toHaveBeenCalledWith(
+      'code-agent',
+      'supabase-session:com.linchen.code-agent.dev:fresh-fresh-test',
+    );
+    expect(keytarMock.setPassword).toHaveBeenNthCalledWith(
+      2,
+      'code-agent',
+      'supabase-session:com.linchen.code-agent.dev',
+      'slot-session',
+    );
+  });
+
+  it.each([
+    ['production id', PROD_BUNDLE_ID, 'supabase-session'],
+    ['unset id', undefined, 'supabase-session'],
+    ['developer suffix', `${PROD_BUNDLE_ID}.developer`, 'supabase-session'],
+    ['zero-padded dev suffix', `${PROD_BUNDLE_ID}.dev02`, 'supabase-session'],
+  ])('keeps the legacy account for %s when fresh mode is ignored', async (_label, bundleId, account) => {
+    process.env.CODE_AGENT_FRESH_USER = 'fresh-test';
+    if (bundleId === undefined) delete process.env.CODE_AGENT_BUNDLE_ID;
+    else process.env.CODE_AGENT_BUNDLE_ID = bundleId;
+    const { getSecureStorage } = await import('../../../../src/host/services/core/secureStorage');
+    const storage = getSecureStorage();
+
+    await storage.saveSessionToKeychain('inactive-session');
+
+    expect(process.env.CODE_AGENT_DATA_DIR).toBe(dataDir);
+    expect(keytarMock.setPassword).toHaveBeenCalledWith('code-agent', account, 'inactive-session');
+    expect(keytarMock.setPassword).not.toHaveBeenCalledWith(
+      'code-agent',
+      expect.stringContaining(':fresh-'),
+      expect.any(String),
     );
   });
 

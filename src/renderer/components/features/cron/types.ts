@@ -12,8 +12,12 @@ import type {
   WebhookAction,
 } from '@shared/contract';
 import { validateEventScheduleConstraints } from '@shared/cronEventValidation';
-import { CRON_EVENT_TRIGGER } from '@shared/constants';
+import { isCronPermissionDeniedMarker } from '@shared/cronPermissionDenied';
+import { CRON_AGENT_TYPES, CRON_EVENT_TRIGGER } from '@shared/constants';
 import { formatCronExpressionLabel, humanizeEverySchedule, type CronHumanLang } from '@shared/cronHumanize';
+import { redactCommandKeywordSecrets, redactCredentialText } from '@shared/security/secretPatterns';
+import { formatDateTime } from '../../../utils/formatDateTime';
+import { getBuiltinJobDisplay } from './builtinJobDisplay';
 
 export interface CronJobDraft {
   runsOn: CronJobDefinition['runsOn'];
@@ -127,7 +131,7 @@ export function createDefaultCronJobDraft(): CronJobDraft {
     shellUsePty: false,
     toolName: '',
     toolParametersText: '{}',
-    agentType: '',
+    agentType: 'default',
     agentPrompt: '',
     agentContextText: '{}',
     agentRoleId: '',
@@ -407,6 +411,9 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
     if (!draft.agentType.trim()) {
       throw new Error('Agent 类型不能为空');
     }
+    if (!(CRON_AGENT_TYPES as readonly string[]).includes(draft.agentType.trim())) {
+      throw new Error(`Agent 类型“${draft.agentType.trim()}”不存在，可选值：${CRON_AGENT_TYPES.join('、')}。`);
+    }
     if (!draft.agentPrompt.trim()) {
       throw new Error('Prompt 不能为空');
     }
@@ -465,12 +472,8 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
   };
 }
 
-export function formatDateTime(value?: string | number): string {
-  if (value == null) return '未设置';
-  const date = typeof value === 'number' ? new Date(value) : new Date(value);
-  if (Number.isNaN(date.getTime())) return '无效时间';
-  return date.toLocaleString();
-}
+// 详情页时间统一走 utils/formatDateTime（FB-567/FB-570；N-CRON-DETAIL-TIME-FORMAT-MIXED-FU1
+// 迁出供全 renderer 复用）。运行列表仍用 formatRunListTime（月/日短格式，避免撑出容器）。
 
 /** 运行记录表的时间：月/日 + 时/分。详情仍用完整本地时间，避免两列日期把表撑出容器。 */
 export function formatRunListTime(value?: string | number): string {
@@ -507,7 +510,7 @@ export function formatScheduleSummary(
 ): string {
   switch (job.schedule.type) {
     case 'at':
-      return `一次性 · ${formatDateTime(job.schedule.datetime)}`;
+      return `一次性 · ${formatDateTime(job.schedule.datetime, lang)}`;
     case 'every': {
       if ((job.schedule.unit as string) === 'weeks') {
         return `不支持的周间隔 · ${job.schedule.interval} weeks`;
@@ -543,16 +546,18 @@ export function formatScheduleSummary(
   }
 }
 
-export function formatActionSummary(job: CronJobDefinition): string {
+export function formatActionSummary(job: CronJobDefinition, lang: CronHumanLang = 'zh'): string {
+  const builtin = getBuiltinJobDisplay(job, lang);
+  if (builtin) return builtin.actionLabel;
   switch (job.action.type) {
     case 'shell':
-      return job.action.command;
+      return redactCronDisplayText(job.action.command);
     case 'tool':
       return `${job.action.toolName}()`;
     case 'agent':
       // agentType 是自由文本标签（'default' / 'heartbeat'），不是注册表键，执行链只用 roleId+prompt。
       // 直接显示它等于往列表里种一行 "default agent" 这种没信息量的开发者字串。
-      return job.action.prompt;
+      return redactCronDisplayText(job.action.prompt);
     case 'webhook':
       return `${job.action.method} ${job.action.url}`;
     case 'ipc':
@@ -560,6 +565,14 @@ export function formatActionSummary(job: CronJobDefinition): string {
     default:
       return (job.action as { type: string }).type;
   }
+}
+
+/** Renderer-only masking for user-visible automation text; stored actions stay byte-identical. */
+export function redactCronDisplayText(value: string): string {
+  return redactCommandKeywordSecrets(
+    redactCredentialText(value, { redacted: '***REDACTED***' }),
+    { redacted: '***REDACTED***' },
+  );
 }
 
 export function getExecutionStatusMeta(status: CronJobStatus): { label: string; className: string } {
@@ -579,6 +592,20 @@ export function getExecutionStatusMeta(status: CronJobStatus): { label: string; 
     default:
       return { label: '待执行', className: 'text-zinc-300 bg-zinc-500/10' };
   }
+}
+
+/**
+ * 完成态运行是否要按「需处理」呈现（N-CRON-RUN-COMPLETED-BUT-DENIED）：结果带
+ * permissionDenied 标记 = 有命令没获批准且没有产出。状态仍是 completed——调用方
+ * 只换徽章文案与配色，不改任何状态语义。旧结果无标记恒 false（绿色成功不变）。
+ */
+export function isPermissionDeniedExecution(
+  execution: Pick<CronJobExecution, 'status' | 'result'>,
+): boolean {
+  const result = execution.result;
+  return execution.status === 'completed'
+    && typeof result === 'object' && result !== null
+    && isCronPermissionDeniedMarker((result as { permissionDenied?: unknown }).permissionDenied);
 }
 
 export function prettyJson(value: unknown): string {

@@ -67,6 +67,14 @@ export interface RolePanelEntry {
   quickPrompts?: string[];
 }
 
+/** A user-created expert currently held in the 30-day trash window. */
+export interface TrashedRoleEntry {
+  trashId: string;
+  roleId: string;
+  displayName: string;
+  deletedAt: string;
+}
+
 // ----------------------------------------------------------------------------
 // 专家默认资料架（Batch 3 E3，调研文档 §4.1）
 // ----------------------------------------------------------------------------
@@ -169,10 +177,12 @@ export interface RoleFirstWakeSnapshot {
   sessionId?: string;
   /** connected = 提示词带了已连接源名单；none = 无已连接源（引导连接，不编造建议） */
   sourcesMode: 'connected' | 'none';
+  /** 已连接源的名字（failed 时卡片用来区分「没能看你的日历/你的数据」）。 */
+  sources?: string[];
   suggestions: RoleFirstWakeSuggestion[];
-  /** 自我介绍正文：最终输出去掉建议块、trim、最多 1200 字。没有正文时缺省。 */
+  /** 开场正文：最终输出去掉建议块、trim、最多 1200 字。没有正文时缺省。 */
   intro?: string;
-  /** 失败短因（无堆栈）。仅 failed 时有。 */
+  /** 失败短因（无堆栈，仅在开发者模式原样展示；普通用户走 classifyAgentError 映射）。 */
   failureReason?: string;
 }
 

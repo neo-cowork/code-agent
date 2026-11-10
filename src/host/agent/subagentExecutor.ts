@@ -3,6 +3,7 @@
 // Enhanced with unified pipeline (T4)
 // ============================================================================
 
+import { buildInsufficientScopeConnectorEvent } from './runtime/connectorScopeCard';
 import { resolveSubagentPreset } from './subagentFirstRunPreset';
 import type { AgentMessageOrigin } from './messageOrigin';
 import type { ToolCall } from '../../shared/contract';
@@ -85,7 +86,7 @@ import { createSubagentTurnObservability } from './subagentTurnTrace';
 import { noteSubagentLiveProgress } from './backgroundSubagentLiveProgress';
 import {
   handleSubagentAbort,
-  finalizeSubagentSuccess,
+  finalizeSubagentSuccess, appendSubagentLeftoverShellReport, reportSubagentLeftoverShells,
   handleSubagentFailure,
   type SubagentCompletionDeps,
   type SubagentCompletionTerminal,
@@ -363,8 +364,8 @@ export class SubagentExecutor {
       sessionId,
       effectiveMode: subagentEffectiveMode,
       identity: turnObservability.identity,
-      allowedToolNames: allowedNames,
-      checkToolExecution: (request) => pipeline.checkToolExecution(pipelineContext, request).allowed,
+      allowedToolNames: allowedNames, policyName: effectivePreset,
+      checkToolExecution: (request) => pipeline.checkToolExecution(pipelineContext, request),
     });
     const subagentToolExecutor = toolRuntime.executor;
     const subagentPolicy = toolRuntime.policy;
@@ -449,7 +450,7 @@ export class SubagentExecutor {
         .catch(silence(logger, 'triggerSubagentStop:early-failure', 'warn'));
       return {
         success: false,
-        output: '',
+        output: appendSubagentLeftoverShellReport('', reportSubagentLeftoverShells(executionAgentId, 'early-failure')),
         error,
         toolsUsed: [],
         iterations: 0,
@@ -896,6 +897,9 @@ export class SubagentExecutor {
                 },
               ).finally(markToolEnd);
               descendantUsage = addSubagentUsage(descendantUsage, result.metadata);
+              // MCP 权限范围不足：子代理（文字前台委派的常见路径）的失败也要给用户一张「重新授权」卡
+              const scopeCard = buildInsufficientScopeConnectorEvent(result);
+              if (scopeCard) context.events.emit(scopeCard.type, scopeCard.data);
               const toolDuration = Date.now() - toolStartTime;
               toolResults.push(
                 `Tool ${toolCall.name}: ${result.success ? 'Success' : 'Failed'}\n${result.output || result.error || ''}`

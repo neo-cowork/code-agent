@@ -19,6 +19,7 @@ import { decisionCardZh } from './decisionCard';
 import { planApprovalZh } from './planApproval';
 import { taskStatusPanelsZh } from './taskStatusPanels';
 import { noticesZh } from './notices';
+import { serverConnectionZh } from './serverConnection';
 import { agentErrorZh } from './agentError';
 import { labZh } from './lab';
 import { labGpt1Zh } from './labGpt1';
@@ -56,6 +57,7 @@ import { connectorRequiredZh } from './connectorRequired';
 import { roleFirstWakeZh } from './roleFirstWake';
 import { roleWakeProposalsZh } from './roleWakeProposals';
 import { permissionRuleNlZh } from './permissionRuleNl';
+import { sessionTaskPresentationZh } from './sessionTaskPresentation'; import { toolResultSummaryZh } from './toolResultSummary';
 
 export const zh = {
   ...canvasActorZh, ...activityPanelZh,
@@ -80,6 +82,7 @@ export const zh = {
   ...roleFirstWakeZh,
   ...roleWakeProposalsZh,
   ...permissionRuleNlZh,
+  ...sessionTaskPresentationZh, ...toolResultSummaryZh,
   // Common
   common: {
     save: '保存',
@@ -147,7 +150,7 @@ export const zh = {
     cacheSavedLine: '缓存已省 {saved}',
     turnCostLine: '本轮 ≈ {cost} · {model}',
     turnCostUnknownLine: '本轮费用未知（{model} 无刊例价）',
-    unknownTurnsNote: '{count} 轮未知价未计入',
+    unknownTurnsNote: { one: '{count} 轮未知价未计入', other: '{count} 轮未知价未计入' },
     estimateDisclaimer: '刊例估算，非实际账单',
   },
 
@@ -196,6 +199,9 @@ export const zh = {
     slidesPreviewHint: '渲染当前大纲的真实排版（本地转换，免费）',
     slidesPreviewing: '正在渲染预览…',
     slidesPreviewMissing: '正在后台准备像素预览组件。请稍候片刻再试；进度可在「设置 > 本机功能」查看。',
+    slidesPreviewOffline: '网络不可用：连不上 LibreOffice 下载源，像素预览组件没装上。检查网络后到「设置 > 本机功能」点「重试」。',
+    slidesPreviewInstallFailed: '像素预览组件（LibreOffice）安装没有完成。到「设置 > 本机功能」点「重试」；仍失败可打开安装日志。',
+    slidesPreviewUnsupported: '当前平台不支持自动安装像素预览组件，暂时只能看文字大纲。',
     slidesKindCover: '封面',
     slidesKindContent: '内容',
     slidesKindEnd: '结尾',
@@ -264,7 +270,7 @@ export const zh = {
     proposalOpRename: '改标签',
     proposalOpDiscard: '淘汰',
     proposalOpGenerate: '生成图',
-    proposalEstCost: '预估生成花费 {amount}（{n} 张）',
+    proposalEstCost: { one: '预估生成花费 {amount}（{count} 张）', other: '预估生成花费 {amount}（{count} 张）' },
     proposalPaidBadge: '付费',
     proposalSelectedCount: '已选 {n}/{total}',
     proposalNothingSelected: '至少选一项',
@@ -655,8 +661,8 @@ export const zh = {
   about: {
     title: '关于',
     version: '版本',
-    buildInfo: '{branch} @ {commitShort}（{builtAt}）',
-    buildUnknown: '未知',
+    buildBranch: '分支 {branch}',
+    buildCommit: '构建 {commitShort}',
     description:
       'Agent Neo 是评测驱动的多模型生活 / 工作 AI 助手，面向资料处理、项目推进、编程交付和本地桌面执行；支持 Native / Codex CLI / Claude Code 等 Agent Engine，并把过程、验证和结果留在同一条可追踪上下文里。',
     capabilities: '核心能力',
@@ -754,7 +760,7 @@ export const zh = {
     patternSequential: '顺序协作',
     patternParallel: '并行协作',
     patternHierarchical: '层级编排',
-    agentsWorking: '{count} 个 Agent 协同工作中',
+    agentsWorking: { one: '{count} 个 Agent 协同工作中', other: '{count} 个 Agent 协同工作中' },
     // Skills
     unmountSkill: '卸载',
     addSkills: '添加 ({count})',
@@ -953,6 +959,7 @@ export const zh = {
   ...planApprovalZh,
   ...taskStatusPanelsZh,
   ...noticesZh,
+  ...serverConnectionZh,
   ...agentErrorZh,
   ...labZh,
   ...labGpt1Zh,

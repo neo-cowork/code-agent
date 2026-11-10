@@ -1,6 +1,48 @@
 import { CRON_AGENT_SNAPSHOT } from '../../shared/constants';
 import { formatTodayAnchor } from '../../shared/todayAnchor';
 
+function resolveTimeZone(timeZone?: string): string {
+  if (timeZone) {
+    try {
+      new Intl.DateTimeFormat(undefined, { timeZone });
+      return timeZone;
+    } catch {
+      // 非法 IANA 名：回落宿主时区（保持旧行为）
+    }
+  }
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+}
+
+function zonedParts(date: Date, timeZone: string): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const p of new Intl.DateTimeFormat('en-US', {
+    timeZone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }).formatToParts(date)) {
+    if (p.type !== 'literal') out[p.type] = Number(p.value);
+  }
+  return out;
+}
+
+/** 该时刻 timeZone 相对 UTC 的偏移（毫秒）。 */
+function zoneOffsetMs(date: Date, timeZone: string): number {
+  const q = zonedParts(date, timeZone);
+  const wall = Date.UTC(q.year, q.month - 1, q.day, q.hour, q.minute, q.second);
+  return wall - Math.floor(date.getTime() / 1000) * 1000;
+}
+
+/** timeZone 内 y-m-d 00:00 的 Unix 秒；在候选午夜处重算偏移，跨 DST 安全。 */
+function zonedMidnightEpoch(y: number, m: number, d: number, timeZone: string): number {
+  const wall = Date.UTC(y, m - 1, d);
+  const guess = wall - zoneOffsetMs(new Date(wall), timeZone);
+  return Math.floor((wall - zoneOffsetMs(new Date(guess), timeZone)) / 1000);
+}
+
+function formatZonedMinute(date: Date, timeZone: string): string {
+  const q = zonedParts(date, timeZone);
+  const two = (n: number) => String(n).padStart(2, '0');
+  return `${q.year}-${two(q.month)}-${two(q.day)} ${two(q.hour)}:${two(q.minute)}`;
+}
+
 /**
  * 只有开了变化追踪的任务才包装 prompt；没开的任务原样发送，行为完全不变。
  *
@@ -15,18 +57,20 @@ export function buildCronAgentPrompt(
   now: Date = new Date(),
   urgencyCriteria?: string,
   notifyWhen?: string,
+  timeZone?: string,
 ): string {
   // 注入当前时间锚点：LLM 默认拿训练期日期，会把「今天/明天」算成过去时间。
   // 真机 dogfood(2026-07-24)证明「只给 ISO 时间」不够：GLM-5 认出了今天日期，却仍把
   // 本地当天 epoch 算成 2025 年、错时区——模型的 epoch 算术不可信。所以直接把算好的
   // 当天/次日本地 00:00 的 Unix 秒喂给它，让它照抄不换算。
-  // ponytail: 用机器本地时区（目标用户=Asia/Shanghai）；跨时区 cron 需按 job 时区算，届时接 tz 库。
-  const todayAnchor = formatTodayAnchor(now);
-  const startOfDay = new Date(todayAnchor.year, todayAnchor.month - 1, todayAnchor.day, 0, 0, 0, 0);
-  const todayEpoch = Math.floor(startOfDay.getTime() / 1000);
-  const tomorrowEpoch = todayEpoch + 86400;
+  // 一次运行只认一个时区：job 的 schedule.timezone（croner 也按它触发）；缺省/非法回落宿主时区。
+  const zone = resolveTimeZone(timeZone);
+  const todayAnchor = formatTodayAnchor(now, zone);
+  const todayEpoch = zonedMidnightEpoch(todayAnchor.year, todayAnchor.month, todayAnchor.day, zone);
+  const next = new Date(Date.UTC(todayAnchor.year, todayAnchor.month - 1, todayAnchor.day + 1));
+  const tomorrowEpoch = zonedMidnightEpoch(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate(), zone);
   const timeAnchor =
-    `【当前时间】${now.toISOString()}（UTC）。今天本地日期是 ${todayAnchor.isoDate}。`
+    `【当前时间】${now.toISOString()}（UTC）。时区 ${zone}，当地时间 ${formatZonedMinute(now, zone)}，今天本地日期是 ${todayAnchor.isoDate}。`
     + `若要按「今天/本地当天」查询时间戳，直接用这两个算好的值，不要自己换算年份：`
     + `今天本地 00:00 = ${todayEpoch}（Unix 秒），次日本地 00:00 = ${tomorrowEpoch}（Unix 秒）。`
     + '其他相对时间以【当前时间】为基准，不要用你训练时的日期。';

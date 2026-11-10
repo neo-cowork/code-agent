@@ -811,11 +811,11 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
   // ============================================================================
   // 注：propose_role 只在 create-role / edit-role skill 上下文里用。它不是 core 工具
   // （避免污染普通会话），但必须登记为 deferred 工具，否则 deferred-loading 模式下
-  // selectTool 查不到它 → skill allowedTools 声明了也无法加载 → 模型看不见 → 无确认卡。
+  // selectTool 查不到它 → skill allowedTools 声明了也无法加载 → 模型看不见 → 无法建角色。
   // 进入对应 skill 时由 getDeferredToolsToPreloadForTurn 按 skillToolBoundary 预加载。
   {
     name: 'propose_role',
-    shortDescription: '对话式建/改角色：把起草好的角色定义入队为草稿，等用户确认落盘',
+    shortDescription: '对话式建/改角色：明确要求直接创建时落盘，否则展示确认草稿',
     tags: ['planning'],
     aliases: ['propose role', 'draft role', 'create role', 'edit role', '建角色', '改角色'],
     source: 'builtin',
@@ -873,6 +873,13 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     shortDescription: '列出本机可用于组队的权威专家名册（起草团队前先调它，别用 Bash/Glob 猜角色）',
     tags: ['planning'],
     aliases: ['list experts', 'list roles', 'available experts', '专家名册', '有哪些专家', '可用角色'],
+    source: 'builtin',
+  },
+  {
+    name: 'set_role_proactivity',
+    shortDescription: '对话里改角色主动性：打扰频率/每天一次/免打扰时段/话题增删，确认卡复述旧->新后写入',
+    tags: ['planning'],
+    aliases: ['set proactivity', 'role proactivity', '每天只说一次', '一天一次', '别报天气', '少烦我', '太吵了', '别打扰我', '免打扰', '改主动性'],
     source: 'builtin',
   },
   {

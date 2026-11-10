@@ -179,6 +179,58 @@ describe('backgroundTaskSnapshotAdapters', () => {
     expect(ledger.drainNotifications('session-1')).toEqual([]);
   });
 
+  it('maps stopped shell snapshots to cancelled with displayCommand and task_cancelled notification', () => {
+    mocks.getAllBackgroundTasks.mockReturnValue([
+      {
+        taskId: 'shell-stopped',
+        status: 'failed',
+        stoppedByRequest: true,
+        command: 'sandbox-exec -f /tmp/profile.sb /bin/sh -c "sleep 600 && echo done"',
+        displayCommand: 'sleep 600 && echo done',
+        cwd: '/repo',
+        sessionId: 'session-stop',
+        toolCallId: 'tool-stop',
+        startTime: 1_000,
+        endTime: 1_500,
+        duration: 500,
+        outputFile: '/tmp/shell-stopped.log',
+      },
+    ]);
+    mocks.getAllPtySessions.mockReturnValue([]);
+
+    const ledger = new BackgroundTaskLedger();
+    syncBackgroundTaskSnapshotsToLedger(ledger);
+    syncBackgroundTaskSnapshotsToLedger(ledger);
+
+    const shellTask = ledger.getTask('shell:shell-stopped');
+    expect(shellTask).toMatchObject({
+      kind: 'shell',
+      source: 'shell',
+      title: 'sleep 600 && echo done',
+      status: 'cancelled',
+      command: 'sandbox-exec -f /tmp/profile.sb /bin/sh -c "sleep 600 && echo done"',
+      sessionId: 'session-stop',
+      toolCallId: 'tool-stop',
+      completedAt: 1_500,
+      durationMs: 500,
+      failure: undefined,
+    });
+
+    const notifications = ledger.drainNotifications('session-stop');
+    expect(notifications).toEqual([
+      expect.objectContaining({
+        id: 'shell:shell-stopped:terminal:cancelled',
+        taskId: 'shell:shell-stopped',
+        type: 'task_cancelled',
+        title: '任务已停止',
+        message: 'sleep 600 && echo done 已停止，耗时 不到 1 秒',
+      }),
+    ]);
+    expect(notifications[0]?.message).not.toContain('sandbox-exec');
+    expect(notifications[0]?.message).not.toContain('失败');
+    expect(notifications[0]?.message).not.toContain('退出码');
+  });
+
   it('maps completed shell and pty snapshots with empty output to failed', async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), 'background-empty-output-'));
     try {

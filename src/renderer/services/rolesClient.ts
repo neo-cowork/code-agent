@@ -5,7 +5,7 @@
 // ============================================================================
 
 import { IPC_DOMAINS } from '@shared/ipc';
-import type { RoleFirstWakeSnapshot, RolePanelEntry, RoleWakeProposal } from '@shared/contract/roleAssets';
+import type { RoleFirstWakeSnapshot, RolePanelEntry, RoleWakeProposal, TrashedRoleEntry } from '@shared/contract/roleAssets';
 import type { RolePackEntry } from '@shared/contract/rolePackRegistry';
 import ipcService from './ipcService';
 
@@ -39,6 +39,14 @@ export async function listRoles(): Promise<RolePanelEntry[]> {
   return ipcService.invokeDomain<RolePanelEntry[]>(IPC_DOMAINS.ROLES, 'list');
 }
 
+export async function listDeletedRoles(): Promise<TrashedRoleEntry[]> {
+  return ipcService.invokeDomain<TrashedRoleEntry[]>(IPC_DOMAINS.ROLES, 'listDeletedRoles');
+}
+
+export async function restoreDeletedRole(trashId: string): Promise<{ roleId: string }> {
+  return ipcService.invokeDomain<{ roleId: string }>(IPC_DOMAINS.ROLES, 'restoreDeletedRole', { trashId });
+}
+
 /** roles IPC firstWakeGet。无状态文件时宿主返回 null。 */
 export async function getFirstWake(roleId: string): Promise<RoleFirstWakeSnapshot | null> {
   return ipcService.invokeDomain<RoleFirstWakeSnapshot | null>(IPC_DOMAINS.ROLES, 'firstWakeGet', { roleId });
@@ -47,6 +55,16 @@ export async function getFirstWake(roleId: string): Promise<RoleFirstWakeSnapsho
 /** roles IPC firstWakeSkip。把 pending / running / completed / failed 封成 skipped。 */
 export async function skipFirstWake(roleId: string): Promise<{ success: boolean }> {
   return ipcService.invokeDomain<{ success: boolean }>(IPC_DOMAINS.ROLES, 'firstWakeSkip', { roleId });
+}
+
+/** roles IPC firstWakeConsumeSuggestion。只移除匹配标题的首次醒来建议。 */
+export async function consumeFirstWakeSuggestion(roleId: string, title: string): Promise<{ success: boolean }> {
+  return ipcService.invokeDomain<{ success: boolean }>(IPC_DOMAINS.ROLES, 'firstWakeConsumeSuggestion', { roleId, title });
+}
+
+/** roles IPC firstWakeRetry。failed 终态复位 pending 重新排队（其余终态宿主拒绝）。 */
+export async function retryFirstWake(roleId: string): Promise<{ retried: boolean }> {
+  return ipcService.invokeDomain<{ retried: boolean }>(IPC_DOMAINS.ROLES, 'firstWakeRetry', { roleId });
 }
 
 /** roles IPC wakeProposalsList。每日醒来「外部增量」给出的一键工作提议（pending）。 */

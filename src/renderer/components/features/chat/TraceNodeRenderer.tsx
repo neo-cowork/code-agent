@@ -32,7 +32,9 @@ import { Archive, AudioLines, ChevronDown, ChevronRight, AlertTriangle, Copy, Ch
 import { UI } from '@shared/constants';
 import { humanizeToolError } from '../../../utils/toolExecutionPresentation';
 import { useI18n } from '../../../hooks/useI18n';
+import { getRoleToolCapabilities } from '../../../utils/roleToolCapabilities';
 import { interpolate } from '../../../i18n/interpolate';
+import { getStreamInterruptionReasonLabel } from '../../../utils/streamInterruptionPresentation';
 import { useMessageActionStore } from '../../../stores/messageActionStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useStreamResumeStore } from '../../../stores/streamResumeStore';
@@ -49,6 +51,8 @@ interface TraceNodeRendererProps {
   attachments?: import('@shared/contract').MessageAttachment[];
   /** Whether this node is in a currently streaming turn */
   isStreaming?: boolean;
+  /** The external run ledger confirms an unfinished persisted tool is still live. */
+  unfinishedToolIsLive?: boolean;
   /**
    * X5.5-D4/D6：节点处于语音派活任务卡内。徽标已上提到轮层（卡头 AudioLines
    * 图标是这通派活唯一的语音标记），轮内节点级的「语音」小标全部抑制。
@@ -65,6 +69,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
   sessionId,
   attachments,
   isStreaming,
+  unfinishedToolIsLive,
   inVoiceDispatchCard,
   onStreamingDisplayUpdate,
   onRewindUserPrompt,
@@ -108,7 +113,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
       );
       break;
     case 'tool_call':
-      content = <ToolCallNode node={node} sessionId={sessionId} />;
+      content = <ToolCallNode node={node} sessionId={sessionId} unfinishedToolIsLive={unfinishedToolIsLive} />;
       break;
     case 'system':
       content = <SystemNode node={node} sessionId={sessionId} />;
@@ -387,6 +392,10 @@ const AssistantTextNode: React.FC<{
   // （历史消息、仍在思考中的节点）保持原样不渲染，不动既有折叠/思考展示逻辑。
   const isActiveEmptyGap =
     turnStreaming && !hasRenderableContent && !(node.thinking || node.reasoning)?.trim();
+  const bareStopReason = !node.content && !node.metadata?.agentError ? node.metadata?.streamInterruptionReason : undefined;
+  if (bareStopReason) {
+    return <div data-testid="bare-interruption-note" className="py-1 text-xs text-zinc-500">{getStreamInterruptionReasonLabel(bareStopReason, t)}</div>;
+  }
   if (!hasRenderableContent) {
     if (!isActiveEmptyGap) return null;
     return (
@@ -510,12 +519,14 @@ const AssistantTextNode: React.FC<{
         </div>
       )}
 
-      {/* 运行失败的结构化错误卡片（替代旧版 merge 进正文的 ⚠ 文本） */}
+      {/* 运行失败的结构化错误卡片（替代旧版 merge 进正文的 ⚠ 文本）。
+          run 是投影层推导的同因连续段：早先的失败轮降为灰字行，只有最新一轮整卡。 */}
       {node.metadata?.agentError && (
         <AgentErrorPresentation
           error={node.metadata.agentError}
           messageId={messageId}
           sessionId={sessionId}
+          run={node.agentErrorRun}
         />
       )}
 
@@ -526,7 +537,7 @@ const AssistantTextNode: React.FC<{
 };
 
 // ---- Tool Call Node ----
-const ToolCallNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, sessionId }) => {
+const ToolCallNode: React.FC<{ node: TraceNode; sessionId?: string; unfinishedToolIsLive?: boolean }> = ({ node, sessionId, unfinishedToolIsLive }) => {
   if (!node.toolCall) return null;
   const interruptionReason = node.metadata?.streamInterruptionReason;
 
@@ -563,7 +574,7 @@ const ToolCallNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node,
       toolCall={toolCall}
       index={0}
       total={1}
-      statusOverride={node.metadata?.streamRecovery || interruptionReason ? 'interrupted' : undefined}
+      statusOverride={node.metadata?.streamRecovery || interruptionReason ? 'interrupted' : unfinishedToolIsLive && node.toolCall.result === undefined ? 'pending' : undefined}
       interruptionReason={interruptionReason ?? (node.metadata?.streamRecovery ? 'app-restart' : undefined)}
       mediaContext={{ sessionId, messageId: node.messageId || node.id }}
     />
@@ -626,6 +637,33 @@ const SystemErrorNode: React.FC<{ node: TraceNode }> = ({ node }) => {
 const SystemNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, sessionId }) => {
   const [expanded, setExpanded] = useState(false);
   const { t } = useI18n();
+
+  const receipt = node.metadata?.roleEditReceipt;
+  if (receipt) {
+    const copy = t.roleEditReceipt;
+    const unchanged = !receipt.addedTools.length && !receipt.removedTools.length
+      && !receipt.descriptionChanged && !receipt.promptChanged;
+    const title = (receipt.diffAvailable === false ? copy.unavailable : unchanged ? copy.unchanged : copy.updated)
+      .replace('{role}', receipt.roleId);
+    const capabilities = (toolNames: string[]) => getRoleToolCapabilities({
+      toolNames,
+      capabilityLabels: t.receiptPresentation.roleCapabilityLabels,
+      humanToolLabels: t.receiptPresentation.humanToolLabels,
+    }).join(t.receiptPresentation.roleCapabilityLabels.separator);
+    return (
+      <div className="mx-3 my-1.5 rounded-md border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-xs text-zinc-400">
+        <div className="font-medium text-zinc-300">{title}</div>
+        {receipt.diffAvailable !== false && !unchanged && (
+          <div className="mt-1">
+            {receipt.addedTools.length > 0 && <div>{copy.added.replace('{tools}', capabilities(receipt.addedTools))}</div>}
+            {receipt.removedTools.length > 0 && <div>{copy.removed.replace('{tools}', capabilities(receipt.removedTools))}</div>}
+            <div>{receipt.descriptionChanged ? copy.descriptionChanged : copy.descriptionUnchanged}</div>
+            <div>{receipt.promptChanged ? copy.promptChanged : copy.promptUnchanged}</div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   const checkoutNote = node.metadata?.turnCheckoutNote;
   if (checkoutNote) {

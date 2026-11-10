@@ -10,9 +10,11 @@ import React from 'react';
 import { isHourAlignedCronExpression, suggestCronStaggerMinute } from '@shared/cronStagger';
 import { FormField } from '../../composites/FormField';
 import { Input } from '../../primitives/Input';
+import { DateTimeInput24 } from '../../primitives/DateTimeInput24';
 import { Select } from '../../primitives/Select';
 import { useI18n } from '../../../hooks/useI18n';
 import type { CronJobDraft } from './types';
+import { localCronTimezone } from './localTimezone';
 
 interface CronScheduleFieldsProps {
   draft: Pick<
@@ -31,12 +33,13 @@ export const CronScheduleFields: React.FC<CronScheduleFieldsProps> = ({ draft, s
     <>
       {draft.scheduleType === 'at' && (
         <FormField label="执行时间" required error={errors.atDatetime}>
-          <Input
-            type="text"
+          <DateTimeInput24
+            testId="cron-editor-at"
             value={draft.atDatetime}
-            onChange={(e) => setField('atDatetime', e.target.value)}
-            placeholder="2026-03-19T09:00"
-            className="font-mono"
+            onChange={(value) => setField('atDatetime', value)}
+            dateLabel={cc.simpleDateLabel}
+            hourLabel={cc.simpleHourLabel}
+            minuteLabel={cc.simpleMinuteLabel}
           />
         </FormField>
       )}
@@ -111,7 +114,7 @@ export const CronScheduleFields: React.FC<CronScheduleFieldsProps> = ({ draft, s
               <Input
                 value={draft.cronTimezone}
                 onChange={(e) => setField('cronTimezone', e.target.value)}
-                placeholder="Asia/Shanghai"
+                placeholder={localCronTimezone()}
               />
             </FormField>
           </div>

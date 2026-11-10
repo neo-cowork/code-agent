@@ -1,12 +1,20 @@
 // @vitest-environment jsdom
-import { act, cleanup, renderHook } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 import { cronCenterZh } from '../../../src/renderer/i18n/cronCenter';
 import { useToastStore } from '../../../src/renderer/hooks/useToast';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 
-const handlers = vi.hoisted(() => ({ show: null as null | ((e: unknown) => void) }));
+const handlers = vi.hoisted(() => ({
+  show: null as null | ((e: unknown) => void),
+  click: null as null | (() => void),
+  parked: [] as Array<{ sessionId: string; status: string }>,
+}));
+vi.mock('../../../src/renderer/services/sessionAutomationClient', () => ({
+  sessionAutomationClient: { listParkedApprovals: vi.fn(async () => handlers.parked) },
+}));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: {
     on: (channel: string, cb: (e: unknown) => void) => {
@@ -17,10 +25,20 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 }));
 vi.mock('../../../src/renderer/utils/osNotification', () => ({
   postOsNotification: vi.fn(),
-  registerNotificationClick: vi.fn(async () => undefined),
+  registerNotificationClick: vi.fn(async (cb: () => void) => { handlers.click = cb; }),
+  reportNotificationHandled: vi.fn(),
 }));
 
 import { useCronOsNotification } from '../../../src/renderer/hooks/useCronOsNotification';
+import { postOsNotification } from '../../../src/renderer/utils/osNotification';
+
+const originalOpenCronCenterRuns = useAppStore.getState().openCronCenterRuns;
+
+beforeEach(() => {
+  handlers.parked = [];
+  handlers.click = null;
+  useAppStore.setState({ showCronCenter: false, cronCenterRunsRequested: false, openCronCenterRuns: originalOpenCronCenterRuns });
+});
 
 afterEach(() => {
   cleanup();
@@ -31,8 +49,40 @@ afterEach(() => {
 const copy = cronCenterZh.cronCenter;
 const fail = (id: string, sessionId: string) =>
   ({ id, title: '任务失败 - X', body: 'b', sessionId, urgent: true, failure: true });
+const needsInput = (id: string, sessionId: string, dedupeKey: string) =>
+  ({ id, title: '有操作等你确认', body: '无人值守任务请求执行 write_file', sessionId, urgent: true, dedupeKey });
+const retract = (dedupeKey: string) =>
+  ({ id: 'r1', title: '', body: '', sessionId: '', retract: true, dedupeKey });
 
 describe('useCronOsNotification 回到前台补提醒', () => {
+  it.each(['OS click', 'missed alert 查看', 'foreground 查看'])(
+    '%s on needs-input with a pending parked row calls openCronCenterRuns',
+    async (route) => {
+      const focus = vi.spyOn(document, 'hasFocus').mockReturnValue(route === 'foreground 查看');
+      useSessionStore.setState({ currentSessionId: 'other' });
+      handlers.parked = [{ sessionId: 'sess-1', status: 'pending' }];
+      const open = vi.fn();
+      const openCronCenterRuns = vi.spyOn(useAppStore.getState(), 'openCronCenterRuns');
+      renderHook(() => useCronOsNotification(copy, open));
+      handlers.show!(needsInput('n1', 'sess-1', 'perm-1'));
+      if (route === 'OS click') {
+        handlers.click!();
+      } else if (route === 'missed alert 查看') {
+        focus.mockReturnValue(true);
+        act(() => { window.dispatchEvent(new Event('focus')); });
+        const notice = useToastStore.getState().toasts[0];
+        expect(notice.action?.label).toBe('查看');
+        notice.action!.onClick();
+      } else {
+        const options = vi.mocked(postOsNotification).mock.calls.at(-1)![1]!;
+        options.onOpen!();
+      }
+      await waitFor(() => expect(openCronCenterRuns).toHaveBeenCalledTimes(1));
+      expect(useAppStore.getState().cronCenterRunsRequested).toBe(true);
+      expect(open).not.toHaveBeenCalled();
+    },
+  );
+
   it('失焦到达，聚焦后恰好一条带「查看」的 toast，打开对应会话', () => {
     const focus = vi.spyOn(document, 'hasFocus').mockReturnValue(false);
     useToastStore.setState({ toasts: [] });
@@ -85,5 +135,41 @@ describe('useCronOsNotification 回到前台补提醒', () => {
     focus.mockReturnValue(true);
     act(() => { window.dispatchEvent(new Event('focus')); });
     expect(useToastStore.getState().toasts).toHaveLength(0);
+  });
+
+  it('审批裁决后的 retract 到达：被撤回的 needs-input 不再补提醒，另一条失败提醒保留', () => {
+    const focus = vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    useSessionStore.setState({ currentSessionId: 'other' });
+    const open = vi.fn();
+    renderHook(() => useCronOsNotification(copy, open));
+    handlers.show!(needsInput('n1', 'sess-1', 'perm-1'));
+    handlers.show!(fail('2', 'sess-2'));
+    handlers.show!(retract('perm-1'));
+    focus.mockReturnValue(true);
+    act(() => { window.dispatchEvent(new Event('focus')); });
+    const toasts = useToastStore.getState().toasts;
+    expect(toasts).toHaveLength(1);
+    expect(toasts[0].type).toBe('error');
+    toasts[0].action!.onClick();
+    expect(open).toHaveBeenCalledWith('sess-2');
+  });
+
+  it('唯一的 needs-input 被撤回后：回来一条 toast 都不弹', () => {
+    const focus = vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    useSessionStore.setState({ currentSessionId: 'other' });
+    renderHook(() => useCronOsNotification(copy, vi.fn()));
+    handlers.show!(needsInput('n1', 'sess-1', 'perm-1'));
+    handlers.show!(retract('perm-1'));
+    focus.mockReturnValue(true);
+    act(() => { window.dispatchEvent(new Event('focus')); });
+    expect(useToastStore.getState().toasts).toHaveLength(0);
+  });
+
+  it('retract 事件本身不弹 OS 通知', () => {
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    renderHook(() => useCronOsNotification(copy, vi.fn()));
+    vi.mocked(postOsNotification).mockClear();
+    handlers.show!(retract('perm-1'));
+    expect(postOsNotification).not.toHaveBeenCalled();
   });
 });

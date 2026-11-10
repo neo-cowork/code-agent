@@ -10,6 +10,7 @@ import { useCronStore } from '../../../stores/cronStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { formatNextRun } from '../../../utils/formatNextRun';
+import { getBuiltinJobDisplay } from '../cron/builtinJobDisplay';
 import { SidebarDoctorAlert } from './SidebarDoctorAlert';
 
 export const SidebarCapabilityZone: React.FC = () => {
@@ -41,17 +42,27 @@ export const SidebarCapabilityZone: React.FC = () => {
   const runningCount = stats?.jobsByStatus?.running ?? 0;
   const enabledJobs = useMemo(() => jobs.filter((job) => job.enabled), [jobs]);
   const nextJob = useMemo(() => {
-    let candidate: { name: string; at: number } | null = null;
+    let candidate: { name: string; at: number; timeZone?: string } | null = null;
     const now = Date.now();
     for (const job of enabledJobs) {
       if (job.nextRunAt == null || job.nextRunAt < now) continue;
-      if (!candidate || job.nextRunAt < candidate.at) candidate = { name: job.name, at: job.nextRunAt };
+      const displayName = getBuiltinJobDisplay(job, language)?.name ?? job.name;
+      if (!candidate || job.nextRunAt < candidate.at) {
+        candidate = {
+          name: displayName,
+          at: job.nextRunAt,
+          timeZone: job.schedule.type === 'cron' ? job.schedule.timezone : undefined,
+        };
+      }
     }
     return candidate;
-  }, [enabledJobs]);
+  }, [enabledJobs, language]);
   // 计划详情只走 title 悬浮提示；侧栏行本身保持「图标 + 标题」的统一节奏。
   const subtitle = nextJob
-    ? cz.automationNext.replace('{time}', formatNextRun(nextJob.at, language === 'zh' ? 'zh-CN' : 'en-US')).replace('{name}', nextJob.name)
+    ? cz.automationNext.replace(
+      '{time}',
+      formatNextRun(nextJob.at, language === 'zh' ? 'zh-CN' : 'en-US', nextJob.timeZone),
+    ).replace('{name}', nextJob.name)
     : enabledJobs.length > 0
       ? cz.automationCount.replace('{count}', String(enabledJobs.length))
       : cz.automationEmpty;

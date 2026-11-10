@@ -156,6 +156,7 @@ export const MODEL_PRICING_PER_1M: Record<string, ModelPricingEntry> = {
   'moonshot-v1-32k': { input: 0.24, output: 0.24 },
   'moonshot-v1-128k': { input: 0.6, output: 0.6 },
   // 小米 MiMo（Token Plan Max 包月，配额内不计费）
+  'mimo-v2.6-flash': { input: 0, output: 0 },
   'mimo-v2.5-pro': { input: 0, output: 0 },
   'mimo-v2.5': { input: 0, output: 0 },
   'mimo-v2-pro': { input: 0, output: 0 },
@@ -252,12 +253,6 @@ export const VIDEO_PRICING_CNY_PER_SEC: Record<string, number> = {
   'doubao-seedance-2-0-fast-260128': 0.08,
   default: 0.03,
 };
-
-/** 设计画布视频产物默认模型 id（供 composer 预估成本查表）。 */
-export const DESIGN_VIDEO_MODELS = {
-  t2v: 'wan2.7-t2v',
-  i2v: 'wanx2.1-i2v-turbo',
-} as const;
 
 /**
  * 音乐生成定价（每首，人民币元）。单一真源——禁在业务代码散落音乐价格字面量。

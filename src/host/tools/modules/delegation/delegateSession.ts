@@ -28,17 +28,38 @@ const logger = createLogger('DelegateSession');
 
 const REJECTION_SUFFIX = ' Nothing was delegated. Ask the user with AskUserQuestion; do not retry with create_new.';
 
+// FB-772 / FB-873：origin_turn_id 参与 submission_key 派生（session\0turn\0action\0target）。
+// ctx.turnId 是单次模型推理步（agent step）id，由 streamHandler 每步重新生成；
+// ctx.runId 与用户发起轮（user turn）一一对应。优先用 ctx.runId 作发起轮身份，
+// 保证同一用户轮内多次迭代调用 delegate_session 命中同一 submission_key；
+// 仅在 ctx.runId 缺失时回退 ctx.turnId，二者双缺则拒绝并告警，绝不回退跨轮共享常量。
+function originTurnIdOf(ctx: Parameters<ToolHandler['execute']>[1]): string {
+  const runId = typeof ctx.runId === 'string' && ctx.runId.trim().length > 0 ? ctx.runId : undefined;
+  if (runId !== undefined) return runId;
+  const turnId = typeof ctx.turnId === 'string' && ctx.turnId.trim().length > 0 ? ctx.turnId : undefined;
+  if (turnId !== undefined) return turnId;
+  logger.warn('[DelegateSession] origin turn identity missing: ctx.turnId is empty and ctx.runId is empty; refusing to derive a submission key (no cross-turn constant fallback)');
+  throw new Error('delegate_session requires an origin turn identity; both ctx.turnId and ctx.runId are empty');
+}
+
 // ADR-072 E6 打点：meta 只带 code/gate 两个枚举值（无内容、无 id、无路径），
 // 记录层从这里读，避免解析模型可见的 error 文本。
 function rejection(code: string, detail: string, gate?: string): ToolResult<string> {
   return { ok: false, code: 'DELEGATION_REJECTED', error: `${code}: ${detail}.${REJECTION_SUFFIX}`, meta: { code, gate: gate ?? 'none' } };
 }
 
-function successfulOutput(input: { delegationId: string; targetName: string; queuedAhead: number }): ToolResult<string> {
+function successfulOutput(input: { delegationId: string; targetName: string; queuedAhead: number; reused?: true }): ToolResult<string> {
+  const payload = {
+    delegationId: input.delegationId,
+    target: input.targetName,
+    status: 'active',
+    queuedAhead: input.queuedAhead,
+    ...(input.reused ? { reused: true as const } : {}),
+  };
   return {
     ok: true,
-    output: JSON.stringify({ delegationId: input.delegationId, target: input.targetName, status: 'active', queuedAhead: input.queuedAhead }),
-    meta: { delegationId: input.delegationId, target: input.targetName, status: 'active', queuedAhead: input.queuedAhead },
+    output: JSON.stringify(payload),
+    meta: { ...payload },
   };
 }
 
@@ -102,7 +123,7 @@ async function buildSnapshot(
   }
   return {
     originSessionId: ctx.sessionId,
-    originTurnId: ctx.turnId ?? 'unknown-turn',
+    originTurnId: originTurnIdOf(ctx),
     ...(hostWorkspaceRoot ? { hostWorkspaceRoot } : {}),
     ...(candidateSet ? {
       candidates: {
@@ -199,7 +220,7 @@ async function admissionFor(
   const db = runtime.getDb();
   const existing = db ? new SessionDelegationRepository(db).getBySubmissionKey(deriveSubmissionKey({
     originSessionId: ctx.sessionId,
-    originTurnId: ctx.turnId ?? 'unknown-turn',
+    originTurnId: originTurnIdOf(ctx),
     action: call.action,
     targetIdentity,
   })) : null;
@@ -267,7 +288,7 @@ async function runDelegateSession(
       if (row && row.status !== 'active') {
         return rejection('delegation_not_active', `existing delegation ${row.delegationId} is ${row.status}; it is not revived on retry, re-issue the task as a new delegation`);
       }
-      return successfulOutput({ delegationId: admission.result.delegationId, targetName: runtime.getSessionRow(row?.targetSessionId ?? '')?.title ?? 'session', queuedAhead: 0 });
+      return successfulOutput({ delegationId: admission.result.delegationId, targetName: runtime.getSessionRow(row?.targetSessionId ?? '')?.title ?? 'session', queuedAhead: 0, reused: true });
     }
     if (call.action === 'stop' || call.action === 'resume' || call.action === 'correct') {
       return executeChain(call, admission.row ?? null, ctx, runtime);
@@ -299,7 +320,7 @@ async function executeNewDelegation(
   const input = {
     delegationId,
     originSessionId: ctx.sessionId,
-    originTurnId: ctx.turnId ?? 'unknown-turn',
+    originTurnId: originTurnIdOf(ctx),
     disposition: call.action as 'delegate_existing' | 'create_new',
     targetSessionId: targetId,
     submissionKey: admission.result.submissionKey,
@@ -392,7 +413,7 @@ async function executeChain(
     const newTarget = row.targetSessionId;
     const target = runtime.getSessionRow(newTarget);
     const targetIdentity = `session:${newTarget}`;
-    const submissionKey = deriveSubmissionKey({ originSessionId: ctx.sessionId, originTurnId: ctx.turnId ?? 'unknown-turn', action: 'correct', targetIdentity: `delegation:${row.delegationId}` });
+    const submissionKey = deriveSubmissionKey({ originSessionId: ctx.sessionId, originTurnId: originTurnIdOf(ctx), action: 'correct', targetIdentity: `delegation:${row.delegationId}` });
     // The new queue row is a normal delegate_existing delivery; its stored
     // disposition must match the fingerprint used by K1C at delivery time.
     const actionFingerprint = deriveActionFingerprint({ action: 'delegate_existing', targetIdentity, content: call.content, attachmentRefs: [] });
@@ -400,7 +421,7 @@ async function executeChain(
     const envelope: ConversationEnvelope = { ...(oldEnvelope ?? { sessionId: newTarget }), content: call.content, sessionId: newTarget, options: target?.modelConfig ? { modelSpec: target.modelConfig } : oldEnvelope?.options };
     const committed = commitDelegation(
       db,
-      { delegationId: newId, originSessionId: ctx.sessionId, originTurnId: ctx.turnId ?? 'unknown-turn', disposition: 'delegate_existing', targetSessionId: newTarget, submissionKey, actionFingerprint, envelope, supersedesDelegationId: row.delegationId, now },
+      { delegationId: newId, originSessionId: ctx.sessionId, originTurnId: originTurnIdOf(ctx), disposition: 'delegate_existing', targetSessionId: newTarget, submissionKey, actionFingerprint, envelope, supersedesDelegationId: row.delegationId, now },
       undefined,
       {
         supersededDelegationId: row.delegationId,

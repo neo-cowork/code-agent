@@ -11,9 +11,10 @@ import type { TraceNode, TraceTurn } from '@shared/contract/trace';
 import type { TurnDiffEventData, TurnDiffFileChange } from '@shared/contract/turnDiff';
 import { aggregateEditArgsText } from '@shared/utils/editToolArgs';
 import { measureStreamingPerformanceTiming } from './streamingPerformanceMetrics';
+import { hasCompletenessIssues } from './toolOutputCompletenessWarning';
 import { diffLines } from 'diff';
 
-export const FILE_WRITE_TOOLS = ['Edit', 'Write', 'edit_file', 'write_file'];
+const FILE_WRITE_TOOLS = ['Edit', 'Write', 'edit_file', 'write_file'];
 
 export type FileChange = TurnDiffFileChange;
 
@@ -59,6 +60,7 @@ export function isFileChangeCardOwnedNode(node: TraceNode): boolean {
   const tc = node.toolCall;
   if (!FILE_WRITE_TOOLS.includes(tc.name)) return false;
   if (!hasCompletedSuccessfulResult(tc)) return false;
+  if (hasCompletenessIssues(tc.metadata)) return false;
   return resolveFileChangePath(tc) !== null;
 }
 

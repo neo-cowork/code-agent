@@ -23,8 +23,18 @@ const SESSION_ID = 'session-1';
 const createRoleBoundary = { skillName: 'create-role', allowedTools: ['propose_role', 'exit_role_flow', 'list_experts', 'ask_user_question', 'read_file', 'glob', 'grep'], strict: true as const };
 const editRoleBoundary = { skillName: 'edit-role', allowedTools: ['propose_role', 'exit_role_flow', 'list_experts', 'read_file', 'ask_user_question', 'glob', 'grep'], strict: true as const };
 
-function mkCtx() {
-  return { sessionId: SESSION_ID, onEvent: vi.fn() };
+const SEED: Message = { id: 'u-seed', role: 'user', content: '/create-role 一个晨报摘要员', timestamp: 1 };
+
+function proposeHistory(success: boolean): Message[] {
+  return [
+    SEED,
+    { id: 'a1', role: 'assistant', content: '', timestamp: 2, toolCalls: [{ id: 'tc-1', name: 'propose_role', arguments: {} }] },
+    { id: 't1', role: 'tool', content: '', timestamp: 3, toolResults: [{ toolCallId: 'tc-1', success, ...(success ? { output: 'ok' } : { error: 'bad' }) }] },
+  ] as Message[];
+}
+
+function mkCtx(messages: Message[] = [SEED]) {
+  return { sessionId: SESSION_ID, onEvent: vi.fn(), messages };
 }
 
 function mkAssembly() {
@@ -150,4 +160,155 @@ describe('settleRoleFlowStallOnTextBreak 落卡', () => {
     expect(fired).toBe(false);
     expect(ctx.onEvent).not.toHaveBeenCalled();
   });
+});
+
+
+// N-ROLE-STALL-FALSE-ALARM-AFTER-CONFIRM
+describe('propose_role 已成功后不再误报停摆', () => {
+  it('种子后有成功 propose_role + 草稿已被确认移走（列表为空）→ 不落卡不发事件', async () => {
+    const ctx = mkCtx(proposeHistory(true));
+    const assembly = mkAssembly();
+    const fired = await settleRoleFlowStallOnTextBreak({
+      ctx, assembly, boundary: createRoleBoundary, finalText: '已创建，谢谢。',
+    });
+    expect(fired).toBe(false);
+    expect(assembly.addAndPersistMessage).not.toHaveBeenCalled();
+    expect(ctx.onEvent).not.toHaveBeenCalled();
+  });
+
+  it('同上但 listRoleDrafts 读盘失败 → 仍不误报', async () => {
+    listRoleDraftsMock.mockRejectedValue(new Error('disk error'));
+    const ctx = mkCtx(proposeHistory(true));
+    const assembly = mkAssembly();
+    const fired = await settleRoleFlowStallOnTextBreak({
+      ctx, assembly, boundary: createRoleBoundary, finalText: '已创建。',
+    });
+    expect(fired).toBe(false);
+    expect(assembly.addAndPersistMessage).not.toHaveBeenCalled();
+    expect(ctx.onEvent).not.toHaveBeenCalled();
+  });
+
+  it('propose_role 结果 success:false → 仍判停摆', async () => {
+    const assembly = mkAssembly();
+    const fired = await settleRoleFlowStallOnTextBreak({
+      ctx: mkCtx(proposeHistory(false)), assembly, boundary: createRoleBoundary, finalText: '失败了。',
+    });
+    expect(fired).toBe(true);
+    expect(assembly.persisted).toHaveLength(1);
+  });
+
+  it('成功的 propose_role 在更早的 /create-role 种子之前 → 不算本次流程的产出，仍判停摆', async () => {
+    const messages = [...proposeHistory(true), { id: 'u-seed2', role: 'user', content: '/create-role 另一个', timestamp: 9 } as Message];
+    const fired = await settleRoleFlowStallOnTextBreak({
+      ctx: mkCtx(messages), assembly: mkAssembly(), boundary: createRoleBoundary, finalText: '好了。',
+    });
+    expect(fired).toBe(true);
+  });
+
+  it('同一轮连续两次 settle → 只落一条；下一轮（新 user 消息）可再落', async () => {
+    const ctx = mkCtx();
+    const assembly = mkAssembly();
+    const input = { ctx, assembly, boundary: createRoleBoundary, finalText: '好了。' };
+    expect(await settleRoleFlowStallOnTextBreak(input)).toBe(true);
+    expect(await settleRoleFlowStallOnTextBreak(input)).toBe(false);
+    expect(assembly.persisted).toHaveLength(1);
+    expect(ctx.onEvent).toHaveBeenCalledTimes(1);
+    ctx.messages.push({ id: 'u-next', role: 'user', content: '继续', timestamp: 20 } as Message);
+    expect(await settleRoleFlowStallOnTextBreak(input)).toBe(true);
+    expect(assembly.persisted).toHaveLength(2);
+  });
+
+  it('回放 propose_role 成功 → 确认（草稿移除）→ 收尾文本：持久化序列里没有停摆消息', async () => {
+    const ctx = mkCtx(proposeHistory(true));
+    const assembly = mkAssembly();
+    listRoleDraftsMock.mockResolvedValueOnce([{ sessionId: SESSION_ID }]); // 确认前：卡在场
+    await settleRoleFlowStallOnTextBreak({ ctx, assembly, boundary: createRoleBoundary, finalText: '草稿好了。' });
+    listRoleDraftsMock.mockResolvedValue([]); // 用户点了确认，草稿目录被删
+    await settleRoleFlowStallOnTextBreak({ ctx, assembly, boundary: createRoleBoundary, finalText: '角色已创建。' });
+    expect(assembly.persisted.filter((m) => m.metadata?.roleFlowStalled)).toEqual([]);
+  });
+});
+
+describe('用户结束角色流程', () => {
+  it('问答卡选择先别建时不落停摆消息', async () => {
+    const ctx = mkCtx([
+      SEED,
+      { id: 'a-question', role: 'assistant', content: '', timestamp: 2, toolCalls: [{ id: 'q1', name: 'AskUserQuestion', arguments: { questions: [{"header": "主要职责", "question": "这个角色主要帮你干什么活？", "options": [{"label": "整理信息做研究", "description": "上网查资料、汇总对比、写出结论"}, {"label": "写文档做汇报", "description": "写方案、纪要、PPT、报告类产出"}, {"label": "处理数据和表格", "description": "读写 Excel、统计分析、出图表"}, {"label": "自动化跑腿", "description": "定时任务、批量处理文件等重复活"}], "multiSelect": false}, {"header": "需要能力", "question": "它需要哪些能力？（可多选，我会按最少够用来配）", "options": [{"label": "联网搜索", "description": "上网查资料、抓网页内容"}, {"label": "读写本地文件", "description": "查看和生成文档、表格等文件"}, {"label": "运行命令", "description": "执行脚本、跑测试等（权限较高，会说明）"}, {"label": "记忆和日程", "description": "记住你的偏好、读写提醒和日历"}], "multiSelect": true}]} }] },
+      { id: 't-answer', role: 'tool', content: '', timestamp: 3, toolResults: [{ toolCallId: 'q1', success: true, output: 'User responses:\n[主要职责]: 先别建，现有够用\n[需要能力]: 先别建，现有够用' }] },
+    ]);
+    const assembly = mkAssembly();
+    expect(await settleRoleFlowStallOnTextBreak({ ctx, assembly, boundary: createRoleBoundary, finalText: '好的，先使用现有角色。' })).toBe(false);
+    expect(assembly.persisted).toEqual([]);
+    expect(ctx.onEvent).not.toHaveBeenCalled();
+  });
+
+  it('用户之后要求继续时不沿用之前的拒绝', async () => {
+    const ctx = mkCtx([SEED, { id: 'u-no', role: 'user', content: '先别建', timestamp: 2 }, { id: 'u-yes', role: 'user', content: '继续创建', timestamp: 3 }]);
+    expect(await settleRoleFlowStallOnTextBreak({ ctx, assembly: mkAssembly(), boundary: createRoleBoundary, finalText: '正在准备。' })).toBe(true);
+  });
+
+  it('无头未回答输出中的不要创建不视为用户拒绝', async () => {
+    const ctx = mkCtx([SEED, { id: 'a', role: 'assistant', content: '', timestamp: 2, toolCalls: [{ id: 'q', name: 'AskUserQuestion', arguments: {} }] }, { id: 't', role: 'tool', content: '', timestamp: 3, toolResults: [{ toolCallId: 'q', success: true, output: '[用户未响应 - CLI 模式无法交互]\n不要创建文件' }] }]);
+    expect(await settleRoleFlowStallOnTextBreak({ ctx, assembly: mkAssembly(), boundary: createRoleBoundary, finalText: '正在准备。' })).toBe(true);
+  });
+
+  it('确认卡已生成的真实消息形状不落停摆消息', async () => {
+    const messages = proposeHistory(true);
+    messages[2].toolResults![0].output = '已为「晨报摘要员」生成草稿，确认卡已弹出，等待用户点击确认。';
+    const ctx = mkCtx(messages);
+    const assembly = mkAssembly();
+    expect(await settleRoleFlowStallOnTextBreak({ ctx, assembly, boundary: createRoleBoundary, finalText: '请在确认卡上点击确认完成创建' })).toBe(false);
+    expect(assembly.persisted.filter((message) => message.metadata?.roleFlowStalled)).toEqual([]);
+    expect(ctx.onEvent).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('r1: 角色能力需求中的否定不等于放弃建角色', () => {
+  const requirementAnswers = [
+    '不需要生成图片',
+    '它不需要生成图片，只要文字摘要',
+    '不要做数据分析',
+    '不用改格式',
+    "don't make it too formal",
+  ];
+
+  for (const answerSource of ['user', 'question'] as const) {
+    it.each(requirementAnswers)(`${answerSource}: %s 后纯进度收尾仍落一条停摆消息`, async (answer) => {
+      const answerMessages: Message[] = answerSource === 'user'
+        ? [{ id: 'u-answer', role: 'user', content: answer, timestamp: 3 }]
+        : [
+          { id: 'a-question', role: 'assistant', content: '', timestamp: 2, toolCalls: [{
+            id: 'q-requirement', name: 'AskUserQuestion', arguments: { questions: [{
+              header: '需要能力', question: '它需要哪些能力？（可多选，我会按最少够用来配）',
+              options: [
+                { label: '联网搜索', description: '上网查资料、抓网页内容' },
+                { label: '读写本地文件', description: '查看和生成文档、表格等文件' },
+              ], multiSelect: true,
+            }] },
+          }] },
+          { id: 't-answer', role: 'tool', content: '', timestamp: 3, toolResults: [{
+            toolCallId: 'q-requirement', success: true, output: `User responses:\n[需要能力]: ${answer}`,
+          }] },
+        ];
+      const ctx = mkCtx([SEED, ...answerMessages]);
+      const assembly = mkAssembly();
+      const input = { ctx, assembly, boundary: createRoleBoundary, finalText: '第一步：分析需求。' };
+      expect(await settleRoleFlowStallOnTextBreak(input)).toBe(true);
+      expect(await settleRoleFlowStallOnTextBreak(input)).toBe(false);
+      expect(assembly.persisted).toHaveLength(1);
+      expect(assembly.persisted[0].metadata?.roleFlowStalled).toEqual({ skillName: 'create-role' });
+      expect(ctx.onEvent).toHaveBeenCalledTimes(1);
+    });
+  }
+
+  it.each(['先别建，现有够用', '不用创建了', '不要新建角色', '暂时不修改角色', "don't create a role"])(
+    '明确针对角色的拒绝仍抑制提示: %s', async (answer) => {
+      const ctx = mkCtx([SEED, { id: 'u-decline', role: 'user', content: answer, timestamp: 2 }]);
+      const assembly = mkAssembly();
+      expect(await settleRoleFlowStallOnTextBreak({ ctx, assembly, boundary: createRoleBoundary, finalText: '好的，暂不创建。' })).toBe(false);
+      expect(assembly.persisted).toEqual([]);
+      expect(ctx.onEvent).not.toHaveBeenCalled();
+    },
+  );
 });
