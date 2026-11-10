@@ -6,7 +6,7 @@
 import { stripAppshotBlocks } from './contract/appshot';
 
 /** 纯 appshot 会话的固定名（按语言）。存量行里的中文名在展示层经 localizeAppshotSessionTitle 转换。 */
-const APPSHOT_SESSION_TITLE = { zh: 'Appshot 会话', en: 'Appshot session' } as const;
+const APPSHOT_SESSION_TITLE = { zh: 'Appshot 会话', en: 'Appshot conversation' } as const;
 type TitleLanguage = keyof typeof APPSHOT_SESSION_TITLE;
 
 /** 英文 UI 下把存量/新写入的 Appshot 固定名显示成英文；其它标题原样返回。 */
