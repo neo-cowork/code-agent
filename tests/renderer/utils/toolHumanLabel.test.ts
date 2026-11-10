@@ -23,6 +23,12 @@ describe('getHumanToolLabel', () => {
   });
 
   it.each([
+    ['Bash', '运行命令', 'Run command'],
+    ['bash', '运行命令', 'Run command'],
+    ['Write', '写入文件', 'Write file'],
+    ['write_file', '写入文件', 'Write file'],
+    ['Edit', '编辑文件', 'Edit file'],
+    ['edit_file', '编辑文件', 'Edit file'],
     ['web_fetch', '网页抓取', 'Web fetch'],
     ['WebSearch', '联网搜索', 'Web search'],
     ['analyst · Read', '读取文件', 'Read file'],

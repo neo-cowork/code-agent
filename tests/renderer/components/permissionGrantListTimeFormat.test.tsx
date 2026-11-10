@@ -140,3 +140,40 @@ describe('PermissionGrantList time-boxed tool grants', () => {
     expect(invokeDomain).toHaveBeenLastCalledWith('domain:settings', 'revokePermissionGrant', { id: 'tool-timed-row' });
   });
 });
+
+
+describe('PermissionGrantList human tool names', () => {
+  it.each(['zh', 'en'] as const)('%s labels all tool grant kinds through the shared human-label layer', async (language) => {
+    useAppStore.setState({ language });
+    invokeDomain.mockResolvedValue([
+      { id: 'run', kind: 'tool-timed', label: 'Bash', source: 'run', grantedAt: GRANTED_AT, expiresAt: null },
+      { id: 'day', kind: 'tool-timed', label: 'mail_send', source: '24h', grantedAt: GRANTED_AT, expiresAt: Date.now() + 121 * 60_000 },
+      { id: 'write', kind: 'tool-session', label: 'Write', source: 'conversation', grantedAt: GRANTED_AT, expiresAt: null },
+      { id: 'edit', kind: 'tool-target', label: 'Edit', source: '周报', detail: 'summary.md', grantedAt: GRANTED_AT, expiresAt: null },
+    ]);
+    const view = render(<PermissionGrantList />);
+    const rows = await view.findAllByTestId('permission-grant-row');
+    expect(rows).toHaveLength(4);
+    const names = language === 'zh'
+      ? ['运行命令', '邮件', '写入文件', '编辑文件']
+      : ['Run command', 'Mail', 'Write file', 'Edit file'];
+    for (const [index, name] of names.entries()) {
+      expect(rows[index].querySelector('.text-sm')?.textContent).toBe(name);
+      expect(rows[index].textContent).not.toMatch(/Bash|mail_send/);
+      expect(['Bash', 'mail_send', 'Write', 'Edit']).not.toContain(rows[index].querySelector('.text-sm')?.textContent);
+    }
+    expect(rows[0].textContent).toContain(language === 'zh' ? '本次任务' : 'This task');
+    expect(rows[1].textContent).toContain(language === 'zh' ? '24 小时内' : '24 hours');
+  });
+
+  it.each(['zh', 'en'] as const)('%s preserves app labels even when they match an internal tool name', async (language) => {
+    useAppStore.setState({ language });
+    invokeDomain.mockResolvedValue([
+      { id: 'app', kind: 'app', label: 'Bash', source: 'settings', grantedAt: GRANTED_AT, expiresAt: EXPIRES_AT },
+    ]);
+    const view = render(<PermissionGrantList />);
+    const row = await view.findByTestId('permission-grant-row');
+    expect(row.querySelector('.text-sm')?.textContent).toBe('Bash');
+    expect(row.textContent).toContain(language === 'zh' ? `有效期至 ${ZH_EXPIRES}` : `Valid until ${EN_EXPIRES}`);
+  });
+});
