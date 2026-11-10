@@ -18,7 +18,7 @@ vi.mock('../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({ getSession: async (id: string) => state.sessions[id] ?? null }),
 }));
 vi.mock('../../../src/host/cron/cronService', () => ({
-  getCronService: () => ({ getJob: () => state.job ?? null }),
+  peekCronService: () => ({ getJob: () => state.job ?? null }),
 }));
 vi.mock('../../../src/host/services/infra/logger', () => {
   const fake = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() };

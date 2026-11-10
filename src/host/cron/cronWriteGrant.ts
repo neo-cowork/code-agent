@@ -336,7 +336,7 @@ async function scheduleWriteGrantSession(sessionId: string | undefined): Promise
   const origin = await cronSessionOrigin(sessionId);
   if (!origin) return undefined;
   const root = origin.root ?? await liveJobGrantRoot(origin.jobId);
-  return root ? { root, workingDirectory: origin.workingDirectory } : undefined;
+  return { root, workingDirectory: origin.workingDirectory };
 }
 
 interface CronSessionOrigin {
@@ -366,8 +366,8 @@ async function cronSessionOrigin(sessionId: string | undefined): Promise<CronSes
 async function liveJobGrantRoot(jobId: string | undefined): Promise<string | undefined> {
   if (!jobId) return undefined;
   try {
-    const { getCronService } = await import('./cronService');
-    return writeGrantRootFromMetadata(getCronService().getJob(jobId)?.metadata);
+    const { peekCronService } = await import('./cronService');
+    return writeGrantRootFromMetadata(peekCronService()?.getJob(jobId)?.metadata);
   } catch (error) {
     logger.warn('Failed to read the live cron job for the write grant, treating as ungranted', { jobId, error });
     return undefined;
