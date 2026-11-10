@@ -13,12 +13,16 @@ export function filterReadOnlyCronArtifacts(digest: CronRunDigest, context: Cron
   const calls = new Map(context.messages.flatMap((message) => message.toolCalls ?? []).map((call) => [call.id, call]));
   const reads = new Set<string>();
   const writes = new Set<string>();
+  let hasUntrackedShellWrite = false;
   for (const message of context.messages) {
     for (const result of message.toolResults ?? []) {
       if (!result.success) continue;
       const call = calls.get(result.toolCallId);
       if (!call) continue;
       const name = call.name.toLowerCase();
+      // Shell effects have no per-file provenance in these messages. Preserve
+      // candidates rather than mislabel a file changed through a command as input-only.
+      if (name === 'bash' || name === 'terminal_write') hasUntrackedShellWrite = true;
       const target = call.arguments.file_path ?? call.arguments.path ?? call.arguments.notebook_path;
       if (typeof target !== 'string' || !target.trim()) continue;
       if (name === 'read' || name === 'read_file') reads.add(canonicalPath(target));
@@ -30,6 +34,7 @@ export function filterReadOnlyCronArtifacts(digest: CronRunDigest, context: Cron
   return {
     ...digest,
     artifacts: digest.artifacts.filter((artifact) => {
+      if (hasUntrackedShellWrite) return true;
       if (/^[a-z][a-z\d+.-]*:\/\//i.test(artifact)) return true;
       // Models sometimes append an explanatory parenthesis to the artifact path.
       const unquoted = artifact.replace(/^`(.*)`$/, '$1');

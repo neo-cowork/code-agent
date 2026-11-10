@@ -322,3 +322,18 @@ describe('buildCronAgentActionResult — artifact provenance', () => {
     expect(built.digest?.artifacts).toContain('./notes.md');
   });
 });
+
+
+it('preserves artifacts when a successful shell call could have changed a previously read input', () => {
+  const built = buildCronAgentActionResult({ agentType: 'default', prompt: 'update notes' }, undefined, 's',
+    '<cron_summary>Updated notes\nartifact: notes.md\n</cron_summary>', false, false, undefined, {
+      workingDirectory: '/workspace', messages: [
+        { role: 'assistant', toolCalls: [
+          { id: 'read', name: 'Read', arguments: { file_path: 'notes.md' } },
+          { id: 'shell', name: 'Bash', arguments: { command: 'python update_notes.py' } },
+        ] },
+        { role: 'tool', toolResults: [{ toolCallId: 'read', success: true }, { toolCallId: 'shell', success: true }] },
+      ],
+    });
+  expect(built.digest?.artifacts).toEqual(['notes.md']);
+});
