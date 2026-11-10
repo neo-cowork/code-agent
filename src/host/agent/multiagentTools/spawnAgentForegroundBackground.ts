@@ -29,7 +29,7 @@ export function validateForegroundBlockingBudget(
     success: false,
     error: `foregroundBlockingBudgetMs must be less than role execution timeout (${foregroundBlockingBudgetMs} >= ${roleExecutionTimeout})`,
     metadata: {
-      failureCode: AgentFailureCode.BudgetExhausted,
+      failureCode: AgentFailureCode.InvalidArguments,
       foregroundBlockingBudgetMs,
       roleExecutionTimeout,
     },

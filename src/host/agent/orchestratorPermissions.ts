@@ -9,6 +9,7 @@ import { isApprovePermissionResponse } from '../../shared/contract/permission';
 import type { ToolApprovalPayload, PendingApprovalKind } from '../../shared/contract/pendingApproval';
 import { INTERACTION_TIMEOUTS } from '../../shared/constants/timeouts';
 import { PARKED_APPROVAL_PREVIEW_MAX_CHARS } from '../../shared/constants/pendingApproval';
+import { PARKED_APPROVAL_ENTRY_PATH } from '../../shared/parkedApprovalLocation';
 import { PARKED_APPROVAL_CLOSURE_SENTENCES } from '../../shared/parkedApprovalClosure';
 import { redactCommandSecrets } from '../security/secretRedaction';
 import { generatePermissionRequestId } from '../../shared/utils/id';
@@ -843,9 +844,9 @@ export class OrchestratorPermissionIsland {
           notificationService.notifyNeedsInput({
             sessionId: fullRequest.sessionId,
             title: '有操作等你确认',
-            body: `无人值守任务请求执行 ${fullRequest.tool}，已挂起等待你在收件箱确认。`,
+            body: `无人值守任务请求执行 ${fullRequest.tool}，已暂停等你批准，到${PARKED_APPROVAL_ENTRY_PATH}处理。`,
             // 停车口先发；同一条请求随后经 permission_request 事件再进落库通知口，
-            // 同键去重，用户只看到这一条更具体的「去收件箱确认」横幅。
+            // 同键去重，用户只看到这一条更具体的「到自动化的运行记录处理」横幅。
             dedupeKey: fullRequest.id,
           });
         } catch (err) {

@@ -99,8 +99,8 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
   }
 
   const latest = latestExecutions[job.id];
-  const latestMeta = getLatestExecutionStatus(latest);
-  const latestLabel = cc.status[latest?.status ?? 'none'];
+  const latestMeta = getLatestExecutionStatus(latest, cc);
+  const latestLabel = latestMeta.label;
   const awaitingApproval = awaitingRun != null;
   const builtinDisplay = getBuiltinJobDisplay(job, language);
   const displayName = builtinDisplay?.name ?? job.name;
