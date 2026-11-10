@@ -2,50 +2,26 @@
 // Workspace IPC Handlers - workspace:* 通道
 // ============================================================================
 
-import type { IpcMain, AppWindow } from '../platform';
-import { dialog } from '../platform';
+import { dialog, type IpcMain, type AppWindow } from '../platform';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('WorkspaceIPC');
 import { WorkspaceSchemas, type WorkspaceDomainRequest } from '../../shared/ipc/schemas/workspace';
 import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import { IPC_CHANNELS } from '../../shared/ipc/legacy-channels';
 import { handleSaveTextToDownloads, handleSaveBinaryToDownloads } from './workspaceSaveExport';
 import { htmlToPdf, imageToPdf } from '../services/design/pdfExport';
-import {
-  handleExportCanvasPptx,
-  handleGenerateSlidesDeck,
-  handleGenerateSlidesOutline,
-  handleGenerateSlidesPreview,
-  type GenerateSlidesDeckPayload,
-  type GenerateSlidesOutlinePayload,
-  type GenerateSlidesPreviewPayload,
-} from './workspaceSlidesExport';
+import { handleExportCanvasPptx, handleGenerateSlidesDeck, handleGenerateSlidesOutline, handleGenerateSlidesPreview, type GenerateSlidesDeckPayload, type GenerateSlidesOutlinePayload, type GenerateSlidesPreviewPayload } from './workspaceSlidesExport';
 import { assertWithinDesignDir } from './workspaceDesignPaths';
-import {
-  listBrands as registryListBrands,
-  saveBrand as registrySaveBrand,
-  deleteBrand as registryDeleteBrand,
-  setActiveBrand as registrySetActiveBrand,
-} from '../services/design/brandRegistry';
+import { listBrands as registryListBrands, saveBrand as registrySaveBrand, deleteBrand as registryDeleteBrand, setActiveBrand as registrySetActiveBrand } from '../services/design/brandRegistry';
 import type { BrandContract } from '../../shared/contract/brandContract';
 import { extractBrandFromImage as registryExtractBrand } from '../services/design/brandExtract';
 import { handleGetConfigScope } from './workspaceConfigScope';
-import {
-  handleExportBundle,
-  handleInspectArchive,
-  handleInspectPresentation,
-  handlePreviewPresentation,
-  type WorkspaceExportBundlePayload,
-} from './workspaceArchive.ipc';
+import { handleExportBundle, handleInspectArchive, handleInspectPresentation, handlePreviewPresentation, type WorkspaceExportBundlePayload } from './workspaceArchive.ipc';
 import { classifyPreviewFile, previewHeic, previewLegacyOffice, readTextPreview } from './workspacePreviewFormats';
-import {
-  getPublishState,
-  listPublishedVersions,
-  publishVersion,
-} from '../tools/modules/document/publishedVersions';
+import { getPublishState, listPublishedVersions, publishVersion } from '../tools/modules/document/publishedVersions';
 import { resolveArtifactStandingRefresh } from '../cron/artifactStandingRefresh';
-import {
-  getShareLink,
-  pushLatestToShareLink,
-} from '../tools/modules/document/shareLink';
+import { getShareLink, pushLatestToShareLink } from '../tools/modules/document/shareLink';
 import { handleWorkspaceShareLinkAction } from './workspaceShareLink.ipc';
 export { handleExportBundle, handleInspectArchive, handleInspectPresentation };
 // buildConfigScopeSummary 历史上是 workspace.ipc 的公开导出，保持向后兼容（测试依赖）。
@@ -203,14 +179,17 @@ async function handleSelectDirectory(
   getConfigService: () => ConfigService | null,
 ): Promise<string | null> {
   const mainWindow = getMainWindow();
-  if (!mainWindow) return null;
+  if (!mainWindow) { logger.warn('selectDirectory aborted: no main window'); return null; }
 
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ['openDirectory'],
     title: 'Select Working Directory',
   });
 
-  if (result.canceled || result.filePaths.length === 0) return null;
+  if (result.canceled || result.filePaths.length === 0) {
+    logger.warn('selectDirectory aborted: dialog stub returned canceled or empty filePaths');
+    return null;
+  }
 
   const selectedPath = result.filePaths[0];
   const appService = getAppService();

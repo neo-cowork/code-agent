@@ -2,7 +2,7 @@
 // ============================================================================
 // 2026-07-28 侧栏工作区入口重构（批2.2）：项目行操作收敛为「⋯」菜单 +「新建」按钮。
 //   1. 原 hover 图标簇（设置/控制台/详情/产物）不再独立渲染，全部收进 ⋯ 菜单
-//   2. ⋯ 菜单含新增项「选择工作目录」：走 WORKSPACE.selectDirectory，选中后在该目录新建任务
+//   2. ⋯ 菜单含新增项「选择工作目录」：Tauri 模式下走原生目录选择器 + WORKSPACE.setCurrent，选中后在该目录新建任务
 //   3. 「新建」沿用 p.newSessionIn 语义（在该项目下新建会话）
 //   4. 未分类组（快速对话）两个按钮都不渲染（保持原行为）
 // ============================================================================
@@ -12,10 +12,20 @@ import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { SidebarProjectGroup } from '../../../src/renderer/components/features/sidebar/SidebarProjectGroup';
 import type { SidebarSessionItemSharedProps } from '../../../src/renderer/components/features/sidebar/SidebarSessionItem';
 
+const dialogMocks = vi.hoisted(() => ({
+  open: vi.fn(),
+}));
+
+vi.mock('@tauri-apps/plugin-dialog', () => ({
+  open: dialogMocks.open,
+}));
+
 afterEach(() => {
   cleanup();
+  vi.clearAllMocks();
   delete (window as any).domainAPI;
   delete (window as any).codeAgentDomainAPI;
+  delete (window as any).__TAURI_INTERNALS__;
 });
 
 function sharedSessionProps(): SidebarSessionItemSharedProps {
@@ -117,7 +127,9 @@ describe('SidebarProjectGroup ⋯ 菜单 + 新建（2026-07-28 重构）', () =>
     ]);
   });
 
-  it('「选择工作目录」走 WORKSPACE.selectDirectory 并在选中目录下新建任务', async () => {
+  it('「选择工作目录」走原生目录选择器 + WORKSPACE.setCurrent 并在选中目录下新建任务', async () => {
+    (window as any).__TAURI_INTERNALS__ = {};
+    dialogMocks.open.mockResolvedValueOnce('/picked/dir');
     const invoke = vi.fn(async () => ({ success: true, data: '/picked/dir' }));
     (window as any).domainAPI = { invoke };
     const createWorkspaceChat = vi.fn();
@@ -129,7 +141,12 @@ describe('SidebarProjectGroup ⋯ 菜单 + 新建（2026-07-28 重构）', () =>
     await waitFor(() => {
       expect(createWorkspaceChat).toHaveBeenCalledWith('/picked/dir', '/picked/dir');
     });
-    expect(invoke).toHaveBeenCalledWith('domain:workspace', 'selectDirectory', undefined);
+    expect(dialogMocks.open).toHaveBeenCalledWith({
+      directory: true,
+      multiple: false,
+      title: '选择工作目录',
+    });
+    expect(invoke).toHaveBeenCalledWith('domain:workspace', 'setCurrent', { dir: '/picked/dir' });
     // 菜单选中后关闭
     expect(queryByRole('menuitem')).toBeNull();
   });

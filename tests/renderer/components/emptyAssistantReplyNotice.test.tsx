@@ -5,6 +5,8 @@ import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
 import type { Message } from '../../../src/shared/contract';
+import { hydrateToolCallResults } from '../../../src/renderer/utils/messageHydration';
+import { TurnDiffSummary } from '../../../src/renderer/components/features/chat/MessageBubble/TurnDiffSummary';
 
 let lang: 'zh' | 'en' = 'zh';
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
@@ -69,10 +71,68 @@ describe.each(['zh', 'en'] as const)('空回复行呈现 (%s)', (language) => {
   it.each([['[cancelled]', cancelledOnly], ['[未完成 — 切换会话中断]', switchedOnly]] as const)('(b) 只有 %s 的助手行：不空白、不露括号原文', (marker, row) => {
     lang = language;
     const text = renderHistory([user('u1'), row]);
+    const expectedReason = marker === '[cancelled]'
+      ? (language === 'zh' ? '你停止了这次执行' : 'You stopped this run')
+      : (language === 'zh' ? '切换会话时中断' : 'Interrupted when you switched conversations');
     console.log(`[${language}] (b) ${marker} DOM text:`, JSON.stringify(text));
+    expect(text).toContain(expectedReason);
     expect(text).not.toContain('[cancelled]');
     expect(text).not.toContain('切换会话中断]');
     expect(text.replace('只回答两个字：收到', '').trim().length).toBeGreaterThan(0);
+  });
+
+  it('(c) Write 成功后停止：保留改动摘要与本地化停止说明', () => {
+    lang = language;
+    const writeCallId = 'write-call-1';
+    const filePath = 'notes.md';
+    const persistedMessages: Message[] = [
+      user('u1'),
+      {
+        id: 'a-write',
+        role: 'assistant',
+        content: '',
+        timestamp: 2,
+        toolCalls: [{
+          id: writeCallId,
+          name: 'Write',
+          arguments: { file_path: filePath, content: 'first line\n' },
+        }],
+      },
+      {
+        id: 'tool-write',
+        role: 'tool',
+        content: '',
+        timestamp: 3,
+        toolResults: [{
+          toolCallId: writeCallId,
+          success: true,
+          output: `Created file: ${filePath}`,
+        }],
+      },
+      { ...cancelledOnly, id: 'a-cancelled', timestamp: 4 },
+    ];
+    const messages = hydrateToolCallResults(persistedMessages);
+    const projection = projectTurns(messages, 'session-1', false);
+    const nodes = projection.turns.flatMap((turn) => turn.nodes);
+    expect(nodes.some((node) => node.type === 'tool_call')).toBe(true);
+    render(
+      <>
+        {nodes.map((node, index) => (
+          <TraceNodeRenderer key={index} node={node} sessionId="session-1" />
+        ))}
+        {projection.turns.map((turn) => (
+          <TurnDiffSummary key={turn.turnId} turn={turn} />
+        ))}
+      </>,
+    );
+    const text = document.body.textContent ?? '';
+    const expectedReason = language === 'zh' ? '你停止了这次执行' : 'You stopped this run';
+    const expectedChangeSummary = language === 'zh' ? '已编辑 1 个文件' : 'Edited 1 file';
+    console.log(`[${language}] (c) Write then cancelled DOM text:`, JSON.stringify(text));
+    expect(text).toContain(expectedReason);
+    expect(text).toContain(expectedChangeSummary);
+    expect(text).toContain(filePath);
+    expect(text).not.toContain('[cancelled]');
   });
 
   it('早先 turn 的 recovery 不会吃掉后续 turn 的 [cancelled] 说明', async () => {

@@ -77,6 +77,63 @@ describe('CronJobList 人话副标题 + 触发源 chip', () => {
     expect(screen.getByTestId('cron-job-schedule-summary').textContent).toBe('自定义时间 · 0 9 * * 1,3,5');
   });
 
+  it('任务时区不同于本机时，计划与下次运行都按任务时区并标出时区名', () => {
+    const initialTz = process.env.TZ;
+    const initialLanguage = useAppStore.getState().language;
+    process.env.TZ = 'America/Los_Angeles';
+    useAppStore.setState({ language: 'zh' });
+    try {
+      useCronStore.setState({
+        jobs: [makeJob({
+          name: '每日前瞻',
+          schedule: { type: 'cron', expression: '0 15 * * 1-5', timezone: 'Asia/Shanghai' },
+          nextRunAt: Date.parse('2026-11-09T07:00:00Z'),
+        })],
+      });
+      render(<CronJobList />);
+      expect(screen.getByTestId('cron-job-schedule-summary').textContent).toBe('工作日 15:00（中国标准时间）');
+      expect(screen.getByTestId('cron-job-next-run').textContent).toContain('下次 2026/11/09 15:00（中国标准时间）');
+    } finally {
+      if (initialTz === undefined) delete process.env.TZ;
+      else process.env.TZ = initialTz;
+      useAppStore.setState({ language: initialLanguage });
+    }
+  });
+
+  it('同区、空区和无效区都不追加时区后缀，并在无效区回退本机时间', () => {
+    const initialTz = process.env.TZ;
+    process.env.TZ = 'America/Los_Angeles';
+    try {
+      const nextRunAt = Date.parse('2026-11-09T07:00:00Z');
+      const { rerender } = render(<CronJobList />);
+      const renderJob = (timezone: string | undefined) => {
+        useCronStore.setState({
+          jobs: [makeJob({
+            schedule: { type: 'cron', expression: '0 15 * * 1-5', timezone },
+            nextRunAt,
+          })],
+        });
+        rerender(<CronJobList />);
+      };
+
+      renderJob('America/Los_Angeles');
+      expect(screen.getByTestId('cron-job-schedule-summary').textContent).toBe('工作日 15:00');
+      expect(screen.getByTestId('cron-job-next-run').textContent).toContain('下次 2026/11/08 23:00');
+      expect(screen.getByTestId('cron-job-next-run').textContent).not.toContain('（');
+
+      renderJob(undefined);
+      expect(screen.getByTestId('cron-job-schedule-summary').textContent).toBe('工作日 15:00');
+      expect(screen.getByTestId('cron-job-next-run').textContent).toContain('下次 2026/11/08 23:00');
+
+      renderJob('Not/AZone');
+      expect(screen.getByTestId('cron-job-schedule-summary').textContent).toBe('工作日 15:00');
+      expect(screen.getByTestId('cron-job-next-run').textContent).toContain('下次 2026/11/08 23:00');
+    } finally {
+      if (initialTz === undefined) delete process.env.TZ;
+      else process.env.TZ = initialTz;
+    }
+  });
+
   it('every 调度：每 2 小时 + 循环 chip', () => {
     useCronStore.setState({
       jobs: [makeJob({

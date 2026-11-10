@@ -92,6 +92,9 @@ export enum HostReasonCode {
   OsSandboxApplied = 'OS_SANDBOX_APPLIED',
   OsSandboxDegraded = 'OS_SANDBOX_DEGRADED',
   OsSandboxUnavailable = 'OS_SANDBOX_UNAVAILABLE',
+  UploadExpired = 'UPLOAD_EXPIRED',
+  ToolArgsInvalid = 'TOOL_ARGS_INVALID',
+  ForeignDataDir = 'FOREIGN_DATA_DIR',
 }
 
 export interface HostReasonPayload {

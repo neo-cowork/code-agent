@@ -6,10 +6,10 @@ export const remindersCreateSchema: ToolSchema = {
   description: `Create a new reminder in macOS Reminders via the native connector.
 
 Required parameters:
-- list
 - title
 
 Optional parameters:
+- list
 - notes
 - remind_at_ms
 
@@ -20,7 +20,7 @@ Use this only when the user wants to create a real local reminder.`,
     properties: {
       list: {
         type: 'string',
-        description: 'Target reminder list name.',
+        description: 'Optional reminder list name. Omit to use the default list. If given, use an existing localized name; call the list action first when unsure instead of guessing.',
       },
       title: {
         type: 'string',
@@ -35,7 +35,7 @@ Use this only when the user wants to create a real local reminder.`,
         description: 'Optional reminder time in Unix milliseconds.',
       },
     },
-    required: ['list', 'title'],
+    required: ['title'],
   },
   category: 'mcp',
   permissionLevel: 'write',

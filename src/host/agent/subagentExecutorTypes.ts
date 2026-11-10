@@ -134,6 +134,12 @@ export interface SubagentEventPort {
    * 进度要记到这上面。前台收养路径不设，执行器改用 executionAgentId。
    */
   backgroundDurableAgentId?: string;
+  /**
+   * The child no longer keeps the parent's foreground call alive: run_in_background,
+   * waitForCompletion:false, or foreground-timeout adoption (set at adoption time).
+   * Detached children must not bump the parent's composer stall clock.
+   */
+  detached?: boolean;
 }
 
 export interface SubagentAttachment {

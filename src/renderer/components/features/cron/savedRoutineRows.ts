@@ -11,6 +11,7 @@ import type { ChannelAccount } from '@shared/contract/channel';
 import type { CronHumanLang } from '@shared/cronHumanize';
 import { buildScheduleConfirmRows } from '../chat/ChatInput/scheduleConfirm';
 import { findTargetAccount, parseResultTarget } from './CronResultChannel';
+import { redactCronDisplayText } from './types';
 
 /** 通道目录的最小结构（useChannelCatalog 的返回值可直接喂进来）。 */
 export interface SavedRoutineChannelCatalog {
@@ -90,7 +91,7 @@ export function buildSavedRoutineRestateRows(input: SavedRoutineRestateInput): r
   // 会被截在词中间（rework r1 实录：en 目标复述止于 "turn th"）。goal 才是复述语义源；
   // role-wake 没有 prompt、prompt 空白时回落 buildScheduleConfirmRows 的既有口径
   // （name / 动作描述 / 兜底）。
-  const savedGoal = job.action.type === 'agent' ? job.action.prompt.trim() : '';
+  const savedGoal = job.action.type === 'agent' ? redactCronDisplayText(job.action.prompt.trim()) : '';
   const baseWhat = savedGoal
     || confirmRows.find((row) => row.key === 'what')?.value
     || labels.fallbackWhat;
