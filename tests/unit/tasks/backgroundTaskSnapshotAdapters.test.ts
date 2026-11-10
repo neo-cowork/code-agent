@@ -313,10 +313,10 @@ describe('backgroundTaskSnapshotAdapters', () => {
     { status: 'failed' as const, exitCode: undefined, stoppedByRequest: true, expected: 'cancelled' },
   ])('public snapshot entries preserve $expected with missing logs', ({ status, exitCode, stoppedByRequest, expected }) => {
     const ledger = new BackgroundTaskLedger();
-    const shared = { status, exitCode, stoppedByRequest, command: 'true', cwd: '/repo', startTime: 1_000 };
+    const shared = { status, exitCode, stoppedByRequest, command: 'true', cwd: '/repo', startTime: 1_000, duration: 100 };
     syncShellTaskSnapshotToLedger({ ...shared, taskId: 'missing-shell', outputFile: '/missing/shell.log' }, ledger);
     syncPtySessionSnapshotToLedger({
-      ...shared, sessionId: 'missing-pty', args: [], cols: 80, rows: 24,
+      ...shared, sessionId: 'missing-pty', args: [], cols: 80, rows: 24, outputFile: '',
     }, ledger);
 
     for (const id of ['shell:missing-shell', 'pty:missing-pty']) {
