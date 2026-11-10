@@ -394,6 +394,12 @@ export const enSettingsSystem = {
           photos: 'Search and organize the local photo library.',
           reminders: 'Read and manage reminders on this Mac.',
         },
+        statusDetail: {
+          ready: 'Local access check passed; ready to use.',
+          unchecked: 'Enabled, but local access hasn\'t been checked yet. Click “Check” to open the app or request system permission.',
+          failed: 'The access check didn\'t pass. Click “Repair permissions”, then try again.',
+          unavailable: 'Only available on macOS.',
+        },
       },
       loading: 'Loading…',
       otherConnectors: 'Other connectors',

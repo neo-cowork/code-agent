@@ -18,6 +18,9 @@ export function isOsSandboxEnabled(): boolean {
 /** Doctor / 设置页用的稳定检查项名；渲染层按 name 查找，不要改字符串。 */
 export const OS_SANDBOX_DOCTOR_ITEM_NAME = 'OS sandbox';
 
+/** Renderer-localized result copy when a literal grant still cannot complete the approved rm. */
+export const SANDBOX_APPROVED_RM_STILL_DENIED_FAILURE_CODE = 'sandbox-approved-rm-still-denied';
+
 /**
  * 稳定原因码。host 只传 code，文案在 renderer i18n。
  * 新增码必须同时登记 agentError / decisionCard。
