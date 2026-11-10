@@ -5,7 +5,7 @@
 // zh 24 小时制带年份、绝不跟机器 locale 出 AM/PM；en 维持 en-US 原样。
 // ============================================================================
 import React from 'react';
-import { cleanup, render, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const invokeDomain = vi.hoisted(() => vi.fn());
@@ -65,5 +65,78 @@ describe('PermissionGrantList 授权/有效期时间（跟随 UI language）', (
     });
     expect(container.textContent).toContain(`Valid until ${EN_EXPIRES}`);
     expect(container.textContent).not.toContain('16:05');
+  });
+});
+
+
+describe('PermissionGrantList time-boxed tool grants', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 10, 9, 16, 5, 0));
+  });
+
+  afterEach(() => vi.useRealTimers());
+
+  async function renderTimedGrant(minutes: number | null, language: 'zh' | 'en' = 'zh', detail?: string) {
+    useAppStore.setState({ language });
+    invokeDomain.mockResolvedValue([{
+      id: 'tool-timed-row', kind: 'tool-timed', label: '发送周报',
+      source: minutes === null ? 'run' : '24h', grantedAt: GRANTED_AT,
+      expiresAt: minutes === null ? null : GRANTED_AT + minutes * 60_000, detail,
+    }]);
+    const view = render(<PermissionGrantList />);
+    const row = await view.findByTestId('permission-grant-row');
+    return { ...view, row };
+  }
+
+  it.each([
+    [121, '剩余 3 小时'],
+    [60, '剩余 1 小时'],
+    [42.1, '剩余 43 分钟'],
+    [59.9, '剩余 60 分钟'],
+    [0.1, '剩余 1 分钟'],
+    [0, '剩余 1 分钟'],
+  ])('zh remaining time at %s minutes: %s', async (minutes, expected) => {
+    const { row } = await renderTimedGrant(minutes);
+    expect(row.textContent).toContain('限时放行 · 24 小时内');
+    expect(row.textContent).toContain(`授权于 ${ZH}`);
+    expect(row.textContent).toContain(expected);
+    expect(row.textContent).not.toContain('有效期至');
+    expect(row.textContent).not.toContain('对象：');
+  });
+
+  it('run tier shows 本次任务 and target, with no expiry suffix when null', async () => {
+    const { row } = await renderTimedGrant(null, 'zh', 'team@example.com');
+    expect(row.textContent).toContain('限时放行 · 本次任务');
+    expect(row.textContent).toContain('对象：team@example.com');
+    expect(row.textContent).not.toMatch(/剩余|有效期至/);
+  });
+
+  it('24h tier also shows its target line', async () => {
+    const { row } = await renderTimedGrant(121, 'zh', 'team@example.com');
+    expect(row.textContent).toContain('对象：team@example.com');
+  });
+
+  it.each([[121, '3 h left'], [42.1, '43 min left']])('en remaining time at %s minutes: %s', async (minutes, expected) => {
+    const { row } = await renderTimedGrant(minutes, 'en', 'team@example.com');
+    expect(row.textContent).toContain('Time-boxed allow · 24 hours');
+    expect(row.textContent).toContain(`Granted ${EN}`);
+    expect(row.textContent).toContain(expected);
+    expect(row.textContent).toContain('Target: team@example.com');
+    expect(row.textContent).not.toContain('Valid until');
+  });
+
+  it('en run tier shows This task without a target or expiry suffix', async () => {
+    const { row } = await renderTimedGrant(null, 'en');
+    expect(row.textContent).toContain('Time-boxed allow · This task');
+    expect(row.textContent).not.toMatch(/left|Valid until|Target:/);
+  });
+
+  it('revoke forwards the listed id and removes the row after host acknowledgement', async () => {
+    const { getByTestId, queryByTestId } = await renderTimedGrant(121);
+    invokeDomain.mockResolvedValue({ revoked: true });
+    fireEvent.click(getByTestId('permission-grant-revoke'));
+    await waitFor(() => expect(queryByTestId('permission-grant-row')).toBeNull());
+    expect(invokeDomain).toHaveBeenLastCalledWith('domain:settings', 'revokePermissionGrant', { id: 'tool-timed-row' });
   });
 });
