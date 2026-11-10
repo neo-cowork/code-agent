@@ -33,6 +33,7 @@ vi.mock('../../../src/host/services/core/secureStorage', () => ({
 }));
 vi.mock('../../../src/host/services/core/budgetService', () => ({
   getBudgetService: () => ({
+    assertHydrated: () => undefined,
     checkBudget: () => env.budgetCheck(),
     getConfig: () => ({ enabled: true }),
     getCacheSavingsSummary: () => ({ cacheReadTokens: 0, cacheCreationTokens: 0, netSavedUsd: 0 }),

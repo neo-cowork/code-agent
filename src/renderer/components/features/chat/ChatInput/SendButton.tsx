@@ -15,6 +15,8 @@ export interface SendButtonProps {
   isInterrupting?: boolean;
   /** 是否有内容可发送 */
   hasContent?: boolean;
+  /** Empty ordinary send can continue a step-limited turn. */
+  canSendEmpty?: boolean;
   /** 是否有一个 parked durable run 可由用户继续 */
   hasContinuation?: boolean;
   /** 表单提交类型 */
@@ -41,6 +43,7 @@ export const SendButton: React.FC<SendButtonProps> = ({
   isProcessing = false,
   isInterrupting = false,
   hasContent = false,
+  canSendEmpty = false,
   hasContinuation = false,
   type = 'submit',
   onClick,
@@ -115,8 +118,8 @@ export const SendButton: React.FC<SendButtonProps> = ({
     );
   }
 
-  const isDisabled = disabled || !hasContent;
-  const showActiveState = hasContent && !disabled;
+  const isDisabled = disabled || (!hasContent && !canSendEmpty);
+  const showActiveState = (hasContent || canSendEmpty) && !disabled;
 
   // 如果有 label，显示带文字的按钮
   if (label) {
