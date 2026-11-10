@@ -31,6 +31,12 @@ import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestrat
 import { getPermissionModeManager, resetPermissionModeManager } from '../../../src/host/permissions/modes';
 import { SessionAutomationService } from '../../../src/host/services/sessionAutomation/sessionAutomationService';
 
+// 只有 permissions 影响停车路径；Partial<AppSettings> 是真实形状的子集，再收口到 AppSettings。
+function settingsWithPermissions(permissions: AppSettings['permissions']): AppSettings {
+  const partial: Partial<AppSettings> = { permissions };
+  return partial as AppSettings;
+}
+
 describe('listParkedApprovals toolCallId (real SQLite)', () => {
   let dir: string;
   let db: BetterSqlite3.Database;
@@ -52,9 +58,11 @@ describe('listParkedApprovals toolCallId (real SQLite)', () => {
 
   it('生产停车路径落库的行 → 列表项带 toolCallId', () => {
     const island = new OrchestratorPermissionIsland({
-      getSettings: () => ({
-        permissions: { autoApprove: { read: false, write: false, execute: false, network: false }, blockedCommands: [], devModeAutoApprove: false },
-      } as AppSettings),
+      getSettings: () => settingsWithPermissions({
+        autoApprove: { read: false, write: false, execute: false, network: false },
+        blockedCommands: [],
+        devModeAutoApprove: false,
+      }),
       isDevModeAutoApproveEnabled: () => false,
       getExecutionTopology: () => 'main',
       hasApprovalUi: () => false,
