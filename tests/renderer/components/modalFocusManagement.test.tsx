@@ -149,3 +149,47 @@ describe('Modal focus management', () => {
     expect(document.body.style.overflow).toBe('');
   });
 });
+
+
+describe('Modal Escape handled marker', () => {
+  it('marks a cancelable Escape only when the top modal handles it and still bubbles', () => {
+    const outerClose = vi.fn();
+    const innerClose = vi.fn();
+    const observe = vi.fn();
+    const { rerender } = render(
+      <Modal isOpen onClose={outerClose}>
+        <Modal isOpen={false} onClose={innerClose}>Inner</Modal>
+      </Modal>
+    );
+    rerender(
+      <Modal isOpen onClose={outerClose}>
+        <Modal isOpen onClose={innerClose}>Inner</Modal>
+      </Modal>
+    );
+    window.addEventListener('keydown', observe);
+    try {
+      const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+      fireEvent(document, escape);
+      expect(escape.defaultPrevented).toBe(true);
+      expect(innerClose).toHaveBeenCalledTimes(1);
+      expect(outerClose).not.toHaveBeenCalled();
+      expect(observe).toHaveBeenCalledTimes(1);
+      rerender(
+        <Modal isOpen onClose={outerClose}>
+          <Modal isOpen closeOnEsc={false} onClose={innerClose}>Inner</Modal>
+        </Modal>
+      );
+      const ignored = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+      fireEvent(document, ignored);
+      expect(ignored.defaultPrevented).toBe(false);
+      expect(innerClose).toHaveBeenCalledTimes(1);
+      expect(outerClose).not.toHaveBeenCalled();
+      rerender(<Modal isOpen>Without a close handler</Modal>);
+      const noHandler = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+      fireEvent(document, noHandler);
+      expect(noHandler.defaultPrevented).toBe(false);
+    } finally {
+      window.removeEventListener('keydown', observe);
+    }
+  });
+});
