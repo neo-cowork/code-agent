@@ -70,8 +70,8 @@ function readCronReviewDigest(
 ): NonNullable<SessionAutomationConfig['pendingReview']>['digest'] | undefined {
   if (!isRecord(value) || !Array.isArray(value.artifacts)) return undefined;
   const summary = typeof value.summary === 'string' ? value.summary : undefined;
-  const summaryLine = readCronReviewSummaryLine(summary);
   const fullSummary = typeof value.fullSummary === 'string' ? value.fullSummary : summary;
+  const summaryLine = readCronReviewSummaryLine(fullSummary);
   const summaryText = fullSummary?.split(/\r?\n/).filter((line) => !/^\s*urgency\s*:/i.test(line)).join('\n').trim();
   const artifacts = resolveCronArtifactsForReview(value.artifacts, cwd);
   if (artifacts.length === 0 && !summaryLine) return undefined;

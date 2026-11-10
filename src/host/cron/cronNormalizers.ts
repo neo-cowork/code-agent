@@ -100,8 +100,9 @@ export function cronAgentRunHasAlert(
     return EXTERNAL_WATCH.ALERT_TAG_PATTERN.test(run.finalAssistantText);
   }
   if (action.urgencyCriteria?.trim()) {
+    const digest = parseCronRunDigest(run.finalAssistantText);
     return !declaresCronUrgencyQuiet(
-      parseCronRunDigest(run.finalAssistantText).summary ?? run.finalAssistantText,
+      digest.fullSummary ?? digest.summary ?? run.finalAssistantText,
     );
   }
   return true;
@@ -124,7 +125,7 @@ export function buildCronAgentActionResult(
   permissionDenied?: CronPermissionDeniedMarker,
 ): CronAgentActionResult & { skipped?: boolean; reason?: string } {
   const digest = parseCronRunDigest(finalAssistantText);
-  const { urgency, raw: urgencyRaw } = parseUrgencyHeader(digest.summary ?? finalAssistantText);
+  const { urgency, raw: urgencyRaw } = parseUrgencyHeader(digest.fullSummary ?? digest.summary ?? finalAssistantText);
   const alertReason = !notifyQuietRound && action.notifyWhen?.trim()
     ? extractCronAlertText(finalAssistantText)
     : '';

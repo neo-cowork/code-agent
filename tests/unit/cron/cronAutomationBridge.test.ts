@@ -497,6 +497,19 @@ describe('recordCronAutomationExecution', () => {
     expect(arg.configPatch).toEqual({ pendingReview: { resultSessionId: 'result-sess', at: 1234 } });
   });
 
+  it('retains a review body when the display preview ends at the urgency header', async () => {
+    await recordCronAutomationExecution(
+      def({ action: { type: 'agent', agentType: 'default', prompt: 'report' } }),
+      exec({ status: 'completed', sessionId: 'result-sess', result: { digest: {
+        summary: 'urgency: can_wait…', fullSummary: `urgency: can_wait\n${'正文'.repeat(600)}`, artifacts: [],
+      } } }),
+      identityRuntime,
+    );
+    const digest = service.recordEvent.mock.calls[0][0].configPatch.pendingReview.digest;
+    expect(digest.summaryLine).toBe(`${'正文'.repeat(60).slice(0, 119)}…`);
+    expect(digest.summaryText).toBe('正文'.repeat(600));
+  });
+
   it('retains the entire parsed summary across both persistence preview caps', async () => {
     const { parseCronRunDigest } = await import('../../../src/shared/cronRunDigest');
     const full = '本周完成客户访谈，整理需求并确认下周计划。'.repeat(80) + '\n最后一句必须完整保留。';

@@ -46,6 +46,13 @@ describe('parseCronRunDigest', () => {
     }
   });
 
+  it('does not discard the body at an early header newline', () => {
+    const original = `urgency: can_wait\n${'正文'.repeat(600)}`;
+    const digest = parseCronRunDigest(`<cron_summary>${original}</cron_summary>`);
+    expect(digest.summary).toBe(`${original.slice(0, 999)}…`);
+    expect(digest.fullSummary).toBe(original);
+  });
+
   it('limits extracted artifacts to ten lines', () => {
     const body = Array.from({ length: 12 }, (_, index) => `artifact: /tmp/${index}`).join('\n');
     expect(parseCronRunDigest(`<CRON_SUMMARY>${body}</CRON_SUMMARY>`).artifacts).toEqual(
