@@ -78,7 +78,16 @@ export function getDisplaySessionTitle(title?: string | null, language: Language
   if (placeholder !== null) return placeholder;
   const stripped = stripAppshotBlocks(rawTitle);
   if (stripped && !stripped.trim().startsWith('<appshot')) {
-    return stripped;
+    const match = /^\[(Schedule|Heartbeat|Cron|Channel)\]\s*(.*)$/i.exec(stripped);
+    if (!match) return stripped;
+    const t = languages[language];
+    const kind = match[1].toLowerCase();
+    const prefix = kind === 'channel' ? t.automationPresentation.channel
+      : kind === 'heartbeat' ? t.cronCenter.triggerKind.heartbeat : t.cronCenter.triggerKind.cron;
+    const name = kind === 'channel'
+      ? match[2].replace(/\s*·\s*(?:[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}|(?:oc|ou|chat|ch)_[\w-]+|[a-z\d_-]{24,}|\d{8,})$/i, '').trim()
+      : match[2];
+    return name ? `${prefix} · ${name}` : prefix;
   }
   if (rawTitle.startsWith('<appshot')) {
     return languages[language].sidebar.appshotSessionTitle;
@@ -94,7 +103,20 @@ const CRON_SESSION_TITLE_PREFIX_PATTERN = /^(\[(?:Cron|Schedule|Heartbeat)\])\s+
 /** 把「[Schedule] 周报」拆成 prefix + name；没有档位前缀或前缀后没有名字时返回 null。 */
 export function splitCronSessionTitleParts(title: string): { prefix: string; name: string } | null {
   const match = CRON_SESSION_TITLE_PREFIX_PATTERN.exec(title);
-  if (!match) return null;
+  if (!match) {
+    for (const language of ['zh', 'en'] as const) {
+      for (const prefix of Object.values({
+        cron: languages[language].cronCenter.triggerKind.cron,
+        heartbeat: languages[language].cronCenter.triggerKind.heartbeat,
+      })) {
+        if (title.startsWith(`${prefix} · `)) {
+          const name = title.slice(prefix.length + 3);
+          return name ? { prefix, name } : null;
+        }
+      }
+    }
+    return null;
+  }
   const name = title.slice(match[0].length);
   return name ? { prefix: match[1], name } : null;
 }

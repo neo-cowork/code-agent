@@ -52,7 +52,7 @@ describe('humanizeToolStep — per-category snapshots (zh)', () => {
   });
 
   it('search: Glob pattern', () => {
-    expect(humanizeToolStep('Glob', { pattern: '**/*.ts' }, zh)).toBe('搜索了 **/*.ts');
+    expect(humanizeToolStep('Glob', { pattern: '**/*.ts' }, zh)).toBe('查找了 .ts 文件');
   });
 
   it('listDir', () => {
@@ -405,5 +405,21 @@ describe('isInternalStreamTool / getToolFilePath', () => {
     expect(getToolFilePath('Read', { file_path: '/Users/me/project/docs/report.md' }))
       .toBe('/Users/me/project/docs/report.md');
     expect(getToolFilePath('Bash', { command: 'ls' })).toBeNull();
+  });
+});
+
+
+describe('file selection patterns use plain step copy', () => {
+  it.each(['Glob', 'glob', 'Grep', 'grep'])('%s humanizes wildcard and file-glob patterns', (tool) => {
+    expect(humanizeToolStep(tool, { pattern: '**/*' }, zh)).toBe('查看了文件夹里的文件');
+    expect(humanizeToolStep(tool, { pattern: '**/*' }, en)).toBe('Viewed files in the folder');
+    expect(humanizeToolStep(tool, { pattern: '**/*.md' }, zh)).toBe('查找了 .md 文件');
+    expect(humanizeToolStep(tool, { pattern: '*.md' }, en)).toBe('Looked for .md files');
+    expect(humanizeToolStep(tool, { pattern: 'src/**/*.{ts,tsx}' }, zh)).toBe('查看了文件夹里的文件');
+  });
+  it('preserves ordinary searches and meaningful content regexes', () => {
+    for (const pattern of ['meeting notes', 'TODO', 'error.*timeout', '(foo|bar)']) {
+      expect(humanizeToolStep('Grep', { pattern }, zh)).toBe(`搜索了 ${pattern}`);
+    }
   });
 });

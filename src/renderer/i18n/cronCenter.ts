@@ -1,3 +1,4 @@
+import { automationPresentationEn, automationPresentationZh } from './automationPresentation';
 import { cronRoutineRestateEn, cronRoutineRestateZh } from './cronRoutineRestate';
 import { parkedApprovalVoidedEn, parkedApprovalVoidedZh } from './parkedApprovalVoided';
 // ============================================================================
@@ -11,6 +12,7 @@ import { cronPermissionDeniedReasonText } from '@shared/cronPermissionDenied';
 // 不再往本文件塞词条。其余遗留随收尾清扫批一并处理。
 // ============================================================================
 export const cronCenterZh = {
+  ...automationPresentationZh,
   cronCenter: {
     parkedVoided: parkedApprovalVoidedZh,
     groupListenCheck: {
