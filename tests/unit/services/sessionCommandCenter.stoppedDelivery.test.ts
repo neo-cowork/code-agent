@@ -95,7 +95,7 @@ async function stop(variant: typeof h.variant) {
     sessionId: 'session-stop', title: '百科摘要', shortName: '百科摘要', laneKey: 'baike', submissionKey: 'baike-1',
     prompt: '在后台用浏览器打开百度百科首页，再点开三个词条，给我写个简短摘要',
     workspaceScope: createWorkspaceScope('project-stop', [{ sourceId: 'root', path: '/tmp/stop-project', role: 'primary', access: 'read_write' }]),
-    options: { maxIterations: 3 },
+    options: { mode: 'normal', maxIterations: 3 },
   });
   if (result.outcome === 'requires_choice') throw new Error('unexpected admission result');
   await vi.waitFor(() => expect(rows().some((m) => m.metadata?.backgroundTaskResult)).toBe(true));
@@ -120,7 +120,7 @@ describe('background stop delivery through SessionCommandCenter + TaskManager pe
     if (kind === 'step_cap') expect(notes[0].content).toContain('第 3 步（上限 3 步）');
     if (kind === 'error') expect(notes[0].content).toContain('模型服务暂时出错或请求太频繁');
     const nodes = projectTurns(messages, 'session-stop', false).turns.flatMap((t) => t.nodes);
-    expect(nodes.filter((n) => n.type === 'error')).toHaveLength(0);
+    expect(nodes.filter((n) => n.subtype === 'error')).toHaveLength(0);
     expect(nodes.find((n) => n.id === notes[0].id)).toMatchObject({ type: 'system', content: notes[0].content });
     expect(h.events.filter((e) => e.type === 'message' && e.data.metadata?.backgroundTaskStopped)).toHaveLength(1);
     console.log(`${kind}: ${JSON.stringify(notes[0])}; foreground unchanged; assistant rows=1; error nodes=0`);
