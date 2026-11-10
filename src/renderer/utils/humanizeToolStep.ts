@@ -110,7 +110,7 @@ type ToolCategory =
   | 'read' | 'write' | 'edit' | 'bash' | 'search' | 'listDir'
   | 'webSearch' | 'webFetch' | 'mcpChannel' | 'mcp'
   | 'subagentSpawn' | 'subagentMessage' | 'agentConversation' | 'todo' | 'planUpdate' | 'planRead'
-  | 'delegateTask' | 'taskStatus' | 'steerTask' | 'cancelTask'
+  | 'delegateSession' | 'listSessionCandidates' | 'delegateTask' | 'taskStatus' | 'steerTask' | 'cancelTask'
   | 'taskManager' | 'skill' | 'screenshot' | 'computerUse' | 'browserAction'
   | 'askUser' | 'memoryStore' | 'memorySearch' | 'toolSearch' | 'unknown';
 
@@ -160,6 +160,8 @@ export function classifyToolName(name: string): ToolCategory {
   if (SUBAGENT_SPAWN_TOOLS.has(name)) return 'subagentSpawn';
   if (AGENT_CONVERSATION_TOOLS.has(name)) return 'agentConversation';
   if (SUBAGENT_MESSAGE_TOOLS.has(name)) return 'subagentMessage';
+  if (name === 'delegate_session') return 'delegateSession';
+  if (name === 'list_session_candidates') return 'listSessionCandidates';
   if (DELEGATE_TASK_TOOLS.has(name)) return 'delegateTask';
   if (TASK_STATUS_TOOLS.has(name)) return 'taskStatus';
   if (STEER_TASK_TOOLS.has(name)) return 'steerTask';
@@ -385,6 +387,27 @@ function matchesUiScript(text: string, t: Translations): boolean {
  * status 缺失时回落 completed，与旧调用方同形；待审批、进行中、失败均只读对应词表，
  * 不允许自由描述或完成时模板穿透到未完成态。
  */
+/** Read only the successful, model-visible receipt; never expose bookkeeping or args. */
+export function parseDelegateSessionReceipt(result?: { success?: boolean; output?: unknown }): {
+  target?: string; reused: boolean; queuedAhead?: number;
+} | undefined {
+  if (result?.success !== true || typeof result.output !== 'string') return undefined;
+  try {
+    const value: unknown = JSON.parse(result.output);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+    const receipt = value as Record<string, unknown>;
+    if (receipt.status !== 'active') return undefined;
+    return {
+      target: typeof receipt.target === 'string' ? takePreview(receipt.target) || undefined : undefined,
+      reused: receipt.reused === true,
+      queuedAhead: typeof receipt.queuedAhead === 'number' && Number.isFinite(receipt.queuedAhead)
+        && receipt.queuedAhead >= 0 ? receipt.queuedAhead : undefined,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 export function humanizeToolStep(
   name: string,
   args: Record<string, unknown> | undefined,
@@ -392,19 +415,30 @@ export function humanizeToolStep(
   shortDescription?: string,
   status: ToolStepStatus = 'completed',
   stepLabel?: ToolStepLabelKey,
-  renderContext: { connectorPrefixRendered?: boolean } = {},
+  renderContext: { connectorPrefixRendered?: boolean; delegationReceipt?: ReturnType<typeof parseDelegateSessionReceipt> } = {},
 ): string {
   // ponytail: 只认 pattern 恰好是单个 U+FFFD（替换字符）这一种形状——搜「文档里有没有乱码」
   // 是目前唯一会这么调的用法，写成规则集反而要先编出一批还不存在的用法。天花板：出现第二种
   // 「按字符类排查」的搜索（控制字符、零宽空格）时，换成一张 pattern → 文案的小表。
   if (classifyToolName(name) === 'search' && args?.pattern === '\uFFFD' && status === 'completed') return t.deliveryExperience.checkCharacters;
+  const toolKind = classifyToolName(name);
+  if (toolKind === 'delegateSession' || toolKind === 'listSessionCandidates') {
+    const h = status === 'completed' ? t.toolStepHumanize : t.toolStepHumanize.statusForms[status];
+    if (toolKind === 'listSessionCandidates') return h.listSessionCandidates;
+    const receipt = status === 'completed' ? renderContext.delegationReceipt : undefined;
+    const copy = h.delegateSession;
+    const target = receipt?.target ? copy.target.replace('{target}', receipt.target) : copy.targetFallback;
+    if (receipt?.reused) return receipt.target ? `${copy.reused} · ${target}` : copy.reused;
+    const action = args?.action;
+    const template = action === 'delegate_existing' || action === 'create_new' || action === 'correct'
+      || action === 'stop' || action === 'resume' ? copy[action] : copy.unknown;
+    return template.replace('{target}', target);
+  }
   if (stepLabel) {
     return status === 'completed'
       ? t.toolStepHumanize.declared[stepLabel]
       : t.toolStepHumanize.statusForms[status].declared[stepLabel];
   }
-
-  const toolKind = classifyToolName(name);
 
   const schemaDescription = BASH_TOOLS.has(name)
     ? firstString(args ?? {}, ['description'])
@@ -576,6 +610,8 @@ function groupBucketFor(category: ToolCategory): GroupBucket | null {
     case 'subagentSpawn':
     case 'subagentMessage':
     case 'agentConversation':
+    case 'delegateSession':
+    case 'listSessionCandidates':
     case 'delegateTask':
     case 'taskStatus':
     case 'steerTask':

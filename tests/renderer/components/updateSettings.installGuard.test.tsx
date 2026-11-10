@@ -6,6 +6,7 @@ import { UpdateSettings } from '../../../src/renderer/components/features/settin
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { zh } from '../../../src/renderer/i18n/zh';
+import { interpolatePlural } from '../../../src/renderer/i18n/interpolate';
 import ipcService from '../../../src/renderer/services/ipcService';
 import type { UpdateInfo } from '../../../src/shared/contract';
 
@@ -59,7 +60,7 @@ describe('UpdateSettings install guard', () => {
     useSessionStore.setState({ runningSessionIds: new Set(['s1', 's2']) });
     renderUpdate();
     await clickInstall();
-    await screen.findByText(text.install.confirmRunningMessage.replace('{count}', '2'));
+    await screen.findByText(interpolatePlural(text.install.confirmRunningMessage, 2));
     expect(installUpdate).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: text.install.confirmCancel }));
@@ -75,7 +76,7 @@ describe('UpdateSettings install guard', () => {
     vi.mocked(ipcService.invoke).mockResolvedValue([{ sessionId: 'bg' }] as never);
     renderUpdate();
     await clickInstall();
-    await screen.findByText(text.install.confirmRunningMessage.replace('{count}', '1'));
+    await screen.findByText(interpolatePlural(text.install.confirmRunningMessage, 1));
     expect(installUpdate).not.toHaveBeenCalled();
   });
 

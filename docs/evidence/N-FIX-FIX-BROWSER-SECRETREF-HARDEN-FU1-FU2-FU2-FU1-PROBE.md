@@ -31,7 +31,7 @@
 [04:30:27.119] A1 after takeover (waiting_human)
   result={"success":false,"code":"SECRET_REF_ORIGIN_MISMATCH"}
   sessionStateAfter="waiting_human"  runtimeSessionState="waiting_human"  errorContainsContinue=true
-  browser.serviceKey="surface-b51cf191e5399777610fa924"  poolHasAgent=true  bindingServiceKey 同左
+  browser.serviceRef="surface-b51cf191e5399777610fa924"  poolHasAgent=true  bindingServiceRef 同左
   browser.profileId="isolated-surface-b51cf191e5399777610fa924-browser_session_1793853025554_4n28px"
   browser.running=true  browser.activeTab="http://127.0.0.1:46172/idp"
   cookies=["probe_app@127.0.0.1","probe_idp@127.0.0.1"]   ← exportStorageState 实读
@@ -48,7 +48,7 @@
 ```
 [04:30:27.144] A2 endRun(identity1) returned {"elapsedMs":24}
 [04:30:27.145] A2 after endRun while waiting_human
-  before={"serviceKey":"surface-b51cf191e5399777610fa924","poolHasAgent":true,"profileId":"isolated-…-4n28px","running":true}
+  before={"serviceRef":"surface-b51cf191e5399777610fa924","poolHasAgent":true,"profileId":"isolated-…-4n28px","running":true}
   poolHasAgentDirectAfter=false                 ← 池条目已释放（直接探测，未经过再取用）
   after.bindingServiceKey=null  after.running=false  after.activeTab=null   ← 窗口已关
   profileIdGone=true  isolatedDirsNow=[]        ← 临时 profile 目录已 rm
@@ -68,9 +68,9 @@
 ```
 [04:30:27.145] A3a late Continue threw Cannot resume a Surface session while completed.
 [04:30:27.368] A3a new run in same conversation
-  run1={"serviceKey":"surface-b51cf191e5399777610fa924","profileId":"isolated-…-4n28px"}
-  run2={"serviceKey":"surface-11ce90ed519828487396c8d3","profileId":"isolated-surface-11ce90ed519828487396c8d3-…"}
-  sameServiceKey=false                            ← 新 run 必然新 key（key 含 runId）
+  run1={"serviceRef":"surface-b51cf191e5399777610fa924","profileId":"isolated-…-4n28px"}
+  run2={"serviceRef":"surface-11ce90ed519828487396c8d3","profileId":"isolated-surface-11ce90ed519828487396c8d3-…"}
+  sameServiceRef=false                            ← 新 run 必然新 key（key 含 runId）
   pageMarker="IDP-LOGIN-FORM"                     ← 新 snapshot 里 IdP 显示未登录
   cookiesRun2=["probe_idp@127.0.0.1"]             ← probe_app 消失（probe_idp 是本次访问 /idp 时新发的，判据是 probe_app）
 [04:30:27.374] A3b run2 secretRef mismatch again {"code":"SECRET_REF_ORIGIN_MISMATCH","state":"waiting_human"}

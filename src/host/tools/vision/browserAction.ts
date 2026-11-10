@@ -33,6 +33,8 @@ import {
   withWorkbenchTrace,
 } from './browserActionResultProjection';
 import { maybeExecuteBrowserSurfaceInteraction } from './browserActionSurfaceInteractions';
+import { formatDomSnapshotForModel } from './browserDomSnapshotFormat';
+import { parkHostDomSnapshot } from '../../services/infra/browser/domSnapshotHandoff';
 import { enforceBrowserCaptchaTakeoverGate } from './browserCaptchaGate';
 import { enforceBrowserJevHandbackRiskGate } from './browserRiskGate';
 import { enforceBrowserLoginWallStop } from './browserLoginWallGate';
@@ -160,13 +162,13 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
         description: 'CSS selector for element interactions. Prefer targetRef from get_dom_snapshot when available.',
       },
       targetRef: {
-        type: 'object',
-        description: 'Short-lived target reference returned by get_dom_snapshot interactiveElements[].targetRef',
+        type: ['object', 'string'],
+        description: 'Short-lived target reference returned by get_dom_snapshot: pass the refId shown at the start of each get_dom_snapshot element line (the targetRef object form is also accepted), e.g. {"action":"click","targetRef":"<refId>"}.',
         additionalProperties: true,
       },
       destinationTargetRef: {
-        type: 'object',
-        description: 'Fresh destination targetRef for drag. Both drag endpoints must come from the same current DOM snapshot.',
+        type: ['object', 'string'],
+        description: 'Fresh destination targetRef for drag (pass the refId from a get_dom_snapshot element line). Both drag endpoints must come from the same current DOM snapshot.',
         additionalProperties: true,
       },
       text: {
@@ -202,6 +204,10 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
       tabId: {
         type: 'string',
         description: 'Managed Browser tab reference. Relay never accepts native tab IDs.',
+      },
+      offset: {
+        type: 'number',
+        description: 'get_dom_snapshot only: index of the first interactive element to list (default 0). Use the offset from the "+K more elements" line to page.',
       },
       timeout: {
         type: 'number',
@@ -698,11 +704,13 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
 
         case 'get_dom_snapshot': {
           const snapshot = await browserService.getDomSnapshot(tabId);
+          parkHostDomSnapshot(snapshot);
+          const compact = formatDomSnapshotForModel(snapshot, params.offset);
           return {
             success: true,
-            output: JSON.stringify(snapshot, null, 2),
+            output: compact.output,
             metadata: {
-              domSnapshot: snapshot,
+              domSnapshot: compact.summary,
             },
           };
         }

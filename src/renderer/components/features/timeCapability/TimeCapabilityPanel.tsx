@@ -20,6 +20,7 @@ import {
 } from '@shared/ipc';
 import { useCronStore } from '../../../stores/cronStore';
 import { useAppStore } from '../../../stores/appStore';
+import { useI18n } from '../../../hooks/useI18n';
 import ipcService from '../../../services/ipcService';
 import { useWorkbenchCapabilityRegistry } from '../../../hooks/useWorkbenchCapabilityRegistry';
 import { useCurrentTurnCapabilityScope } from '../../../hooks/useCurrentTurnCapabilityScope';
@@ -38,8 +39,10 @@ import {
   formatScheduleSummary,
   getLatestExecutionStatus,
 } from '../cron/types';
+import { getBuiltinJobDisplay } from '../cron/builtinJobDisplay';
 import { CronJobEditor } from '../cron/CronJobEditor';
 import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
+import { formatCronJobDateTime, formatCronScheduleLabelWithZone } from '../../../utils/formatCronJobTime';
 
 type CalendarActionKey = 'retry' | 'probe' | 'repairPermission' | 'openApp';
 
@@ -74,10 +77,14 @@ function formatDateTime(value?: string | number | null): string {
   });
 }
 
-function formatNextRun(job: CronJobDefinition): string {
+function formatNextRun(job: CronJobDefinition, language: 'zh' | 'en'): string {
   if (!job.enabled) return '未启用';
   if (!job.nextRunAt) return '暂无下次运行';
-  return formatDateTime(job.nextRunAt);
+  return formatCronJobDateTime(
+    job.nextRunAt,
+    job.schedule.type === 'cron' ? job.schedule.timezone : undefined,
+    language,
+  );
 }
 
 function formatCheckedAt(value?: number): string {
@@ -247,6 +254,7 @@ const TimeCapabilityPanel: React.FC = () => {
     closeEditor,
   } = useCronStore();
   const openSettingsTab = useAppStore((state) => state.openSettingsTab);
+  const { t, language } = useI18n();
   const capabilityRegistry = useWorkbenchCapabilityRegistry();
   const currentTurnScope = useCurrentTurnCapabilityScope();
   const {
@@ -361,20 +369,24 @@ const TimeCapabilityPanel: React.FC = () => {
 
   const renderCronJobRow = (job: CronJobDefinition, options?: { showError?: boolean }) => {
     const latest = latestExecutions[job.id];
-    const latestMeta = getLatestExecutionStatus(latest);
+    const latestMeta = getLatestExecutionStatus(latest, t.cronCenter);
     const isTriggering = triggeringJobId === job.id;
+    const displayName = getBuiltinJobDisplay(job, language)?.name ?? job.name;
+    const scheduleSummary = job.schedule.type === 'cron'
+      ? formatCronScheduleLabelWithZone(job.schedule.expression, job.schedule.timezone, language)
+      : formatScheduleSummary(job, language);
     return (
       <div key={job.id} className="grid gap-3 border-t border-zinc-800 px-4 py-3 md:grid-cols-[minmax(0,1.2fr)_150px_120px_auto] md:items-center">
         <div className="min-w-0">
-          <div className="truncate text-sm font-medium text-zinc-100">{job.name}</div>
-          <div className="mt-1 truncate text-xs text-zinc-500">{formatScheduleSummary(job)} · {formatActionSummary(job)}</div>
+          <div className="truncate text-sm font-medium text-zinc-100">{displayName}</div>
+          <div className="mt-1 truncate text-xs text-zinc-500">{scheduleSummary} · {formatActionSummary(job, language)}</div>
           {options?.showError && latest?.error && (
             <div className="mt-1 line-clamp-2 text-xs text-badge-danger">{latest.error}</div>
           )}
         </div>
         <div className="text-xs text-zinc-400">
           <span className="text-zinc-500">下次</span>
-          <div className="mt-1 text-zinc-200">{formatNextRun(job)}</div>
+          <div className="mt-1 text-zinc-200">{formatNextRun(job, language)}</div>
         </div>
         <div>
           <span className={`inline-flex rounded-md px-2 py-1 text-[11px] ${latestMeta.className}`}>

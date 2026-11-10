@@ -7,12 +7,15 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const invokeDomain = vi.hoisted(() => vi.fn());
+const invoke = vi.hoisted(() => vi.fn());
+const toast = vi.hoisted(() => ({ info: vi.fn(), error: vi.fn() }));
+vi.mock('../../../src/renderer/hooks/useToast', () => ({ toast }));
 
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   // invoke/on 供 useChannelCatalog 等子树读取频道列表/监听变更，与本文无关，给空实现即可
   default: {
     invokeDomain,
-    invoke: vi.fn().mockResolvedValue([]),
+    invoke,
     on: vi.fn().mockReturnValue(() => undefined),
   },
 }));
@@ -46,6 +49,8 @@ vi.mock('../../../src/renderer/components/features/settings/WebModeBanner', () =
 import { CronCenterPanel } from '../../../src/renderer/components/features/cron/CronCenterPanel';
 import { useCronStore } from '../../../src/renderer/stores/cronStore';
 import { cronClient } from '../../../src/renderer/services/cronClient';
+import { IPC_CHANNELS } from '../../../src/shared/ipc';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 
 let awaitingRunsMock: unknown[] = [];
 
@@ -53,6 +58,10 @@ beforeEach(() => {
   awaitingRunsMock = [];
   inboxSignals.length = 0;
   invokeDomain.mockReset();
+  invoke.mockReset().mockResolvedValue([]);
+  toast.info.mockReset();
+  toast.error.mockReset();
+  useAppStore.setState({ language: 'zh' });
   invokeDomain.mockImplementation((_domain: string, action: string) => {
     if (action === 'listAwaitingApprovalRuns') return Promise.resolve(awaitingRunsMock);
     return Promise.resolve({
@@ -90,6 +99,112 @@ afterEach(() => {
 });
 
 describe('无人值守等批准可见性（N-CRON-UNATTENDED-BASH-PARK-STUCK-VISIBLE）', () => {
+  it.each(['allow', 'deny'] as const)('history row shares the inline approval state and clears immediately after %s', async (response) => {
+    awaitingRunsMock = [{ jobId: 'job-1', executionId: 'exec-1', requestId: 'req-1', sessionId: 'sess-1', requestedAt: 1 }];
+    const scroll = vi.fn();
+    const originalScroll = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = scroll;
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === IPC_CHANNELS.AGENT_PERMISSION_RESPONSE) {
+        awaitingRunsMock = [];
+        return { outcome: 'delivered' };
+      }
+      return [];
+    });
+    try {
+      render(<CronCenterPanel onClose={() => undefined} />);
+      const badge = await screen.findByTestId('cron-exec-awaiting-approval');
+      expect(badge.textContent).toBe('等你批准');
+      fireEvent.click(badge);
+      const entry = screen.getByTestId('cron-detail-awaiting-approval-hint').parentElement;
+      expect(scroll).toHaveBeenCalledWith({ block: 'nearest' });
+      expect(document.activeElement).toBe(entry);
+      expect(screen.getByTestId('cron-center-tab-jobs').getAttribute('aria-selected')).toBe('true');
+      expect(screen.getAllByTestId('cron-detail-parked-approve')).toHaveLength(1);
+      fireEvent.click(screen.getByTestId(response === 'allow' ? 'cron-detail-parked-approve' : 'cron-detail-parked-reject'));
+      await vi.waitFor(() => {
+        expect(screen.queryByTestId('cron-exec-awaiting-approval')).toBeNull();
+        expect(screen.queryByTestId('cron-detail-awaiting-approval-hint')).toBeNull();
+      }, { timeout: 900 });
+      expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, 'req-1', response, 'sess-1');
+    } finally {
+      HTMLElement.prototype.scrollIntoView = originalScroll;
+    }
+  });
+
+  it.each(['allow', 'deny'] as const)('Jobs inline %s sends requestId/sessionId and refreshes every surface before the next poll', async (response) => {
+    awaitingRunsMock = [{ jobId: 'job-1', executionId: 'exec-1', requestId: 'req-1', sessionId: 'sess-1', requestedAt: 1 }];
+    let finish!: (result: { outcome: string }) => void;
+    invoke.mockImplementation((channel: string) => channel === IPC_CHANNELS.AGENT_PERMISSION_RESPONSE
+      ? new Promise((resolve) => { finish = resolve; }) : Promise.resolve([]));
+    render(<CronCenterPanel onClose={() => undefined} />);
+    const approve = await screen.findByTestId('cron-detail-parked-approve');
+    const reject = screen.getByTestId('cron-detail-parked-reject');
+    expect(approve.textContent).toBe('批准');
+    expect(reject.textContent).toBe('拒绝');
+    const sync = vi.spyOn(useCronStore.getState(), 'syncRunningExecutions');
+    const loadsBefore = invokeDomain.mock.calls.filter(([, action]) => action === 'listAwaitingApprovalRuns').length;
+    fireEvent.click(response === 'allow' ? approve : reject);
+    expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, 'req-1', response, 'sess-1');
+    expect((approve as HTMLButtonElement).disabled).toBe(true);
+    expect((reject as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(reject);
+    expect(invoke.mock.calls.filter(([channel]) => channel === IPC_CHANNELS.AGENT_PERMISSION_RESPONSE)).toHaveLength(1);
+    awaitingRunsMock = [];
+    finish({ outcome: 'delivered' });
+    await vi.waitFor(() => {
+      expect(screen.queryByTestId('cron-detail-awaiting-approval-hint')).toBeNull();
+      expect(screen.queryByTestId('cron-job-awaiting-approval')).toBeNull();
+      expect(sync).toHaveBeenCalled();
+      expect(inboxSignals.at(-1)).toBe(':1');
+      expect(invokeDomain.mock.calls.filter(([, action]) => action === 'listAwaitingApprovalRuns').length).toBeGreaterThan(loadsBefore);
+    }, { timeout: 900 });
+    expect(screen.getByTestId('cron-center-tab-jobs').getAttribute('aria-selected')).toBe('true');
+    fireEvent.click(screen.getByTestId('cron-center-tab-runs'));
+    await vi.waitFor(() => expect(screen.queryByTestId('cron-exec-awaiting-approval')).toBeNull());
+    sync.mockRestore();
+  });
+
+  it.each([{ outcome: 'lost_race' }, { orphaned: true }])('Jobs inline stale approval %j shows the inbox toast and refreshes', async (result) => {
+    awaitingRunsMock = [{ jobId: 'job-1', executionId: 'exec-1', requestId: 'req-stale', requestedAt: 1 }];
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel !== IPC_CHANNELS.AGENT_PERMISSION_RESPONSE) return [];
+      awaitingRunsMock = [];
+      return result;
+    });
+    render(<CronCenterPanel onClose={() => undefined} />);
+    fireEvent.click(await screen.findByTestId('cron-detail-parked-approve'));
+    await vi.waitFor(() => {
+      expect(toast.info).toHaveBeenCalledWith(expect.any(String));
+      expect(screen.queryByTestId('cron-detail-awaiting-approval-hint')).toBeNull();
+      expect(inboxSignals.at(-1)).toBe(':1');
+    }, { timeout: 900 });
+    expect(toast.info.mock.calls[0][0]).toBe('该审批已失效（发起它的运行已结束），已标记过期');
+  });
+
+  it('Jobs inline IPC failure shows the inbox error toast, refreshes and re-enables controls', async () => {
+    awaitingRunsMock = [{ jobId: 'job-1', executionId: 'exec-1', requestId: 'req-1', requestedAt: 1 }];
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === IPC_CHANNELS.AGENT_PERMISSION_RESPONSE) throw new Error('delivery failed');
+      return [];
+    });
+    render(<CronCenterPanel onClose={() => undefined} />);
+    fireEvent.click(await screen.findByTestId('cron-detail-parked-reject'));
+    await vi.waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(expect.any(String));
+      expect((screen.getByTestId('cron-detail-parked-approve') as HTMLButtonElement).disabled).toBe(false);
+      expect(inboxSignals.at(-1)).toBe('req-1:1');
+    }, { timeout: 900 });
+  });
+
+  it('Jobs inline controls reuse English approval labels', async () => {
+    useAppStore.setState({ language: 'en' });
+    awaitingRunsMock = [{ jobId: 'job-1', executionId: 'exec-1', requestId: 'req-1', requestedAt: 1 }];
+    render(<CronCenterPanel onClose={() => undefined} />);
+    expect((await screen.findByTestId('cron-detail-parked-approve')).textContent).toBe('Approve');
+    expect(screen.getByTestId('cron-detail-parked-reject').textContent).toBe('Reject');
+  });
+
   it('有 running 执行且该 job 停在审批：任务列表只给命中 job 换 badge，收尾后 badge 消失', async () => {
     render(<CronCenterPanel onClose={() => undefined} />);
 

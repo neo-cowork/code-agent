@@ -35,6 +35,7 @@ export type BackgroundSubagentStatus = 'running' | 'completed' | 'failed';
 export interface BackgroundSubagentHandle {
   agentId: string;
   title?: string;
+  displayName?: string;
   completionKind?: SubagentCompletionKind;
   status: BackgroundSubagentStatus;
   sessionId?: string;
@@ -65,6 +66,7 @@ export interface BackgroundSubagentScopeFilter {
 export interface BackgroundSubagentOptions {
   agentId?: string;
   title?: string;
+  displayName?: string;
   completionKind?: SubagentCompletionKind;
   sessionId?: string;
   runId?: string;
@@ -123,6 +125,7 @@ export class BackgroundSubagentRegistry {
       ...(options.treeId ? { treeId: options.treeId } : {}),
       ...(options.role ? { role: options.role } : {}),
       ...(options.title ? { title: options.title } : {}),
+      ...(options.displayName ? { displayName: options.displayName } : {}),
       ...(options.completionKind ? { completionKind: options.completionKind } : {}),
       ...(options.declaredOutputs && options.declaredOutputs.length > 0
         ? { declaredOutputs: options.declaredOutputs }
@@ -158,6 +161,7 @@ export class BackgroundSubagentRegistry {
       ...(options.treeId ? { treeId: options.treeId } : {}),
       ...(options.role ? { role: options.role } : {}),
       ...(options.title ? { title: options.title } : {}),
+      ...(options.displayName ? { displayName: options.displayName } : {}),
       ...(options.completionKind ? { completionKind: options.completionKind } : {}),
       ...(options.declaredOutputs && options.declaredOutputs.length > 0
         ? { declaredOutputs: options.declaredOutputs }
@@ -352,6 +356,11 @@ export class BackgroundSubagentRegistry {
   /** 当前所有后台 subagent 的状态快照（UI/诊断用）。 */
   list(): BackgroundSubagentHandle[] {
     return [...this.entries.values()].map((entry) => this.toHandle(entry));
+  }
+
+  /** 当前会话的所有后台 subagent 状态快照，包含已完成和失败的条目。 */
+  listBySession(sessionId: string): BackgroundSubagentHandle[] {
+    return this.list().filter((handle) => handle.sessionId === sessionId);
   }
 
   private toHandle(entry: BackgroundSubagentEntry): BackgroundSubagentHandle {

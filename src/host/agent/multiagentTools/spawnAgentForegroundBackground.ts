@@ -1,5 +1,5 @@
 import type { SubagentResult } from '../subagentExecutorTypes';
-import type { SubagentExecutionContext } from '../subagentExecutorTypes';
+import type { SubagentEventPort, SubagentExecutionContext } from '../subagentExecutorTypes';
 import type { ManagedAgent } from '../spawnGuard';
 import type { MultiagentExecutionResult } from '../multiagentExecutionTypes';
 import type { SwarmRunScope } from '../../../shared/contract/swarm';
@@ -29,7 +29,7 @@ export function validateForegroundBlockingBudget(
     success: false,
     error: `foregroundBlockingBudgetMs must be less than role execution timeout (${foregroundBlockingBudgetMs} >= ${roleExecutionTimeout})`,
     metadata: {
-      failureCode: AgentFailureCode.BudgetExhausted,
+      failureCode: AgentFailureCode.InvalidArguments,
       foregroundBlockingBudgetMs,
       roleExecutionTimeout,
     },
@@ -134,8 +134,10 @@ export function adoptForegroundSubagent(options: {
   task: string;
   agentStartedAt: number;
   foregroundBlockingBudgetMs: number;
+  childEvents: SubagentEventPort;
 }): MultiagentExecutionResult {
-  const { promise, agentId, agentName, role, context, treeId, task, agentStartedAt, foregroundBlockingBudgetMs } = options;
+  const { promise, agentId, agentName, role, context, treeId, task, agentStartedAt, foregroundBlockingBudgetMs, childEvents } = options;
+  childEvents.detached = true;
   const visibilityScope = resolveSingleSpawnRunScope(context, treeId, agentId);
   getBackgroundSubagentRegistry().adopt(promise, {
     agentId,

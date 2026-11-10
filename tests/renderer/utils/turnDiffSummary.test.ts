@@ -64,6 +64,14 @@ describe('buildTurnFileChanges — only completed successful writes are owned', 
     expect(buildTurnFileChanges(turn)).toEqual([]);
     expect(isFileChangeCardOwnedNode(turn.nodes[0])).toBe(false);
   });
+
+  it('keeps a completed Write with completeness issues visible in the node stream', () => {
+    const turn = turnWithWrite(writeArgs, { result: 'Created file: /x/pending.md' });
+    if (!turn.nodes[0].toolCall) throw new Error('fixture tool call missing');
+    turn.nodes[0].toolCall.metadata = { completenessIssues: ['missing closing brace'] };
+
+    expect(isFileChangeCardOwnedNode(turn.nodes[0])).toBe(false);
+  });
 });
 
 describe('buildTurnFileChanges — Bug 1: diff line count on truncated Write content', () => {

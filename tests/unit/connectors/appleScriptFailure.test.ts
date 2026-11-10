@@ -7,7 +7,7 @@ vi.mock('../../../src/host/services/core/configService', () => ({
   getConfigService: () => ({ getSettings: () => ({ ui: { language: configState.language } }) }),
 }));
 
-import { describeAppleScriptFailure } from '../../../src/host/connectors/native/osascript';
+import { describeAppleScriptFailure, sharedAppleScriptHandlers } from '../../../src/host/connectors/native/osascript';
 
 const SCRIPT = 'tell application "Mail"\nset x to every mailbox\nend tell';
 const FORBIDDEN = /osascript|Command failed|tell application|every mailbox/;
@@ -22,7 +22,7 @@ describe('describeAppleScriptFailure', () => {
   const cases: Array<[string, Error, string, RegExp, RegExp]> = [
     ['-1743', execError('Not authorized to send Apple events to Mail. (-1743)'), 'not_authorized', /系统设置.*自动化/, /System Settings > Privacy & Security > Automation/],
     ['-1728', execError('Mail got an error: Can\'t get mailbox "INBOX". (-1728)'), 'not_found', /检查对应账户/, /Check that the account/],
-    ['timeout', execError('', { killed: true, signal: 'SIGTERM' }), 'timeout', /稍后重试/, /try again later/],
+    ['timeout', execError('', { killed: true, signal: 'SIGTERM' }), 'timeout', /响应超时，请稍后重试/, /did not respond in time\. Please try again later/],
     ['unknown', execError('syntax error (-2741)', { code: 1 }), 'read_failed', /读取失败，请稍后重试/, /Read failed, please try again later/],
   ];
 
@@ -42,6 +42,46 @@ describe('describeAppleScriptFailure', () => {
     expect(describeAppleScriptFailure('Mail', Object.assign(new Error('x'), { code: 'ETIMEDOUT' })).code).toBe('timeout');
   });
 
+  it('adds range and calendar guidance only for Calendar list_events timeouts', () => {
+    const timeout = execError('', { killed: true, signal: 'SIGTERM' });
+    const mail = describeAppleScriptFailure('Mail', timeout);
+    expect(mail.message).not.toMatch(/calendar|日历|缩小查询时间范围|Narrow the date range/);
+
+    const calendar = describeAppleScriptFailure('Calendar', timeout, { timeoutContext: 'calendar_list_events' });
+    expect(calendar.message).toMatch(/响应超时.*缩小查询时间范围.*calendar/);
+    configState.language = 'en';
+    expect(describeAppleScriptFailure('Calendar', timeout, { timeoutContext: 'calendar_list_events' }).message)
+      .toMatch(/did not respond in time \(timeout\).*Narrow the date range or pass a specific calendar name/);
+  });
+
+  it('gives cautious list-reminders timeout guidance in zh and en without claiming an unmeasured cause', () => {
+    const timeout = execError('', { killed: true, signal: 'SIGTERM' });
+    const zh = describeAppleScriptFailure('Reminders', timeout, { timeoutContext: 'list_reminders' });
+    expect(zh.code).toBe('timeout');
+    expect(zh.message).toMatch(/读取提醒超时.*打开 Reminders.*授权提示.*列表名称.*减少读取条数/);
+    expect(zh.message).not.toMatch(FORBIDDEN);
+    configState.language = 'en';
+    const en = describeAppleScriptFailure('Reminders', timeout, { timeoutContext: 'list_reminders' });
+    expect(en.message).toMatch(/took too long to read reminders.*pending permission prompt.*specific list name or a lower limit/);
+    expect(en.message).not.toMatch(FORBIDDEN);
+    const denied = describeAppleScriptFailure('Reminders', execError('(-1743)'), { timeoutContext: 'list_reminders' });
+    expect(denied.code).toBe('not_authorized');
+    expect(denied.message).toMatch(/access was denied.*System Settings/);
+    expect(denied.message).not.toMatch(FORBIDDEN);
+  });
+
+  it('uses non-retry guidance for write timeouts', () => {
+    const timeout = execError('', { killed: true, signal: 'SIGTERM' });
+    const mail = describeAppleScriptFailure('Mail', timeout, { timeoutContext: 'write' });
+    expect(mail.message).toMatch(/结果无法确认.*不要直接重试/);
+    expect(mail.message).not.toMatch(/请稍后重试/);
+    configState.language = 'en';
+    expect(describeAppleScriptFailure('Calendar', timeout, { timeoutContext: 'write' }).message)
+      .toMatch(/result could not be confirmed.*check Calendar before retrying/i);
+    expect(describeAppleScriptFailure('Calendar', timeout, { timeoutContext: 'write' }).message)
+      .not.toMatch(/Please try again later/);
+  });
+
   it.runIf(process.platform === 'darwin')('stays clean for a genuine osascript exception', async () => {
     let caught: unknown;
     try {
@@ -50,5 +90,14 @@ describe('describeAppleScriptFailure', () => {
     expect((caught as Error).message).toMatch(/Command failed/);
     const r = describeAppleScriptFailure('Mail', caught);
     expect(r.message).not.toMatch(/osascript|Command failed|tell application|applescript \(\(\(/i);
+  });
+
+  it.runIf(process.platform === 'darwin')('sharedAppleScriptHandlers sanitizeText replaces pipe, cr, lf, crlf, and tab with spaces', async () => {
+    const lines = [
+      ...sharedAppleScriptHandlers(),
+      'return my sanitizeText("Ship" & return & linefeed & "PR" & linefeed & "urgent|today" & tab & "end")',
+    ];
+    const { stdout } = await promisify(execFile)('osascript', lines.flatMap((l) => ['-e', l]));
+    expect(stdout.trim()).toBe('Ship PR urgent today end');
   });
 });

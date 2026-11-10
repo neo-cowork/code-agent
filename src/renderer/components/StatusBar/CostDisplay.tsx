@@ -7,6 +7,7 @@ import { DollarSign } from 'lucide-react';
 import type { CostDisplayProps } from './types';
 import type { BudgetAlertTone, BudgetStatusView } from '../../hooks/useBudgetStatus';
 import { useI18n } from '../../hooks/useI18n';
+import { interpolatePlural } from '../../i18n/interpolate';
 import type { Translations } from '../../i18n';
 import { useStatusStore, type TurnCostInfo } from '../../stores/statusStore';
 
@@ -76,7 +77,7 @@ export function buildCostTitle(
       : t.turnCostUnknownLine.replace('{model}', lastTurnCost.modelId));
   }
   if (unknownCostTurns > 0) {
-    lines.push(t.unknownTurnsNote.replace('{count}', String(unknownCostTurns)));
+    lines.push(interpolatePlural(t.unknownTurnsNote, unknownCostTurns));
   }
   const saved = budget?.cacheSavings?.netSavedUsd ?? 0;
   if (saved >= 0.005) {

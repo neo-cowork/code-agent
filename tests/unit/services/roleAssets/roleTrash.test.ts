@@ -27,6 +27,7 @@ vi.mock('../../../../src/host/services/roleAssets/rolePackInstallService', () =>
 }));
 
 import {
+  listTrashedRoles,
   trashUserRole,
   restoreTrashedRole,
 } from '../../../../src/host/services/roleAssets/roleTrash';
@@ -222,6 +223,33 @@ describe('roleTrash', () => {
       expect(await restoreTrashedRole(trashedAgain.trashId, new Date(t0 + 31 * DAY))).toMatchObject({ success: false, code: 'ROLE_TRASH_NOT_FOUND' });
       // 拒绝的原因是条目真的被清掉了（目录已不在），而不是 restore 自己按时间拒绝
       expect(await exists(path.join(trashDir(), trashedAgain.trashId))).toBe(false);
+    });
+
+    it('listTrashedRoles skips expired entries and returns display names newest first', async () => {
+      await seedUserRole('旧专家', 'old');
+      const old = await trashUserRole('旧专家', new Date('2026-10-01T10:00:00Z'));
+      expect(old.success).toBe(true);
+
+      await seedUserRole('新专家', 'new');
+      await fs.appendFile(path.join(agentsDir(), '新专家.md'), '\n', 'utf-8');
+      const newDefinition = await fs.readFile(path.join(agentsDir(), '新专家.md'), 'utf-8');
+      await fs.writeFile(path.join(agentsDir(), '新专家.md'), newDefinition.replace('description: new', 'description: new\ndisplay-name: 新专家花名'), 'utf-8');
+      const recent = await trashUserRole('新专家', new Date('2026-11-04T10:00:00Z'));
+      expect(recent.success).toBe(true);
+
+      const listed = await listTrashedRoles(new Date('2026-11-08T10:00:00Z'));
+      expect(listed).toHaveLength(1);
+      expect(listed[0]).toMatchObject({
+        trashId: recent.success ? recent.trashId : '',
+        roleId: '新专家',
+        displayName: '新专家花名',
+        deletedAt: '2026-11-04T10:00:00.000Z',
+      });
+
+      const malformedDir = path.join(trashDir(), 'role-malformed');
+      await fs.mkdir(malformedDir, { recursive: true });
+      await fs.writeFile(path.join(malformedDir, 'meta.json'), JSON.stringify({ roleId: '坏条目', deletedAt: '2026-11-07T10:00:00.000Z' }), 'utf-8');
+      expect(await listTrashedRoles(new Date('2026-11-08T10:00:00Z'))).toHaveLength(1);
     });
 
     it('没有 meta.json 的残骸目录（删除中途崩掉的半成品）直接清掉', async () => {
