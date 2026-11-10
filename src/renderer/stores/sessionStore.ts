@@ -33,6 +33,7 @@ import { recoveryLoadLightsTurn, runtimeStatusCountsAsRunning } from './parkedCo
 import { hostStampPredatesTerminal } from './terminalRunGuardStore';
 import { bindInitializedSessionBroadcasts } from './sessionStoreBroadcasts';
 import { openInitialSession } from './sessionBootDraft';
+import { getSessionTitlePlaceholder } from '../utils/sessionTitlePlaceholder';
 
 const logger = createLogger('SessionStore');
 
@@ -154,7 +155,7 @@ export function isBlankNewSession(
   if (session.isArchived || session.status === 'archived') {
     return false;
   }
-  if ((session.title || '').trim() !== '新对话') {
+  if (getSessionTitlePlaceholder(session.title, useAppStore.getState().language) === null) {
     return false;
   }
   return (session.messageCount ?? 0) === 0 && (session.turnCount ?? 0) === 0;
@@ -263,6 +264,8 @@ interface SessionActions {
   getRunningSessionCount: () => number;
   moveToBackground: (sessionId: string) => Promise<boolean>;
   moveToForeground: (sessionId: string) => Promise<void>;
+  stopBackgroundSession: (sessionId: string) => Promise<void>;
+  dismissBackgroundSession: (sessionId: string) => Promise<void>;
   updateBackgroundTask: (event: BackgroundTaskUpdateEvent) => void;
   getBackgroundTaskCount: () => number;
   renameSession: (id: string, title: string) => Promise<void>;
@@ -916,6 +919,23 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         }
       } catch (error) {
         logger.error('Failed to move session to foreground', error);
+      }
+    },
+
+    stopBackgroundSession: async (sessionId: string) => {
+      try {
+        await ipcService.invoke(IPC_CHANNELS.AGENT_CANCEL, { sessionId });
+        logger.info('Background session stop requested', { sessionId });
+      } catch (error) {
+        logger.error('Failed to stop background session', error);
+      }
+    },
+
+    dismissBackgroundSession: async (sessionId: string) => {
+      try {
+        await ipcService.invoke(IPC_CHANNELS.BACKGROUND_DISMISS_TERMINAL, sessionId);
+      } catch (error) {
+        logger.error('Failed to dismiss background session', error);
       }
     },
 

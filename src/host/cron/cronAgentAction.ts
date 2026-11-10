@@ -149,7 +149,8 @@ export async function executeCronAgentAction(
       // 事件触发时通道载荷只以 untrusted 定界块追加在 prompt 尾部，并给该条
       // 用户消息标 memoryTainted（跳过自动记忆写）。调度触发的 run 字节不变。
       const sendMessage = () => orchestrator.sendMessage(
-        buildCronAgentPrompt(action.prompt, previousSnapshot, snapshotTrackingEnabled, undefined, action.urgencyCriteria, action.notifyWhen)
+        buildCronAgentPrompt(action.prompt, previousSnapshot, snapshotTrackingEnabled, undefined, action.urgencyCriteria, action.notifyWhen,
+          definition.schedule.type === 'cron' ? definition.schedule.timezone : undefined)
           + (eventPayloadBlock === undefined ? '' : `\n\n${eventPayloadBlock}`),
         undefined,
         agentRunOptions,

@@ -31,9 +31,24 @@ import {
 import { buildCronJobInput, buildDraftFromJob } from '../../../src/renderer/components/features/cron/types';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 
+// 与 timeInput24.test.tsx 同款：把区域钉成 en-US 十二小时制，验证 24 小时下拉不出现 AM/PM。
+function stubTwelveHourLocale(): void {
+  vi.stubGlobal('navigator', { language: 'en-US' });
+  vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({
+    locale: 'en-US',
+    calendar: 'gregory',
+    numberingSystem: 'latn',
+    timeZone: 'America/Los_Angeles',
+    hourCycle: 'h12',
+    hour12: true,
+  });
+}
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   useAppStore.setState({ language: 'zh' });
 });
 
@@ -127,6 +142,61 @@ describe('buildCronJobInput agent options', () => {
 });
 
 describe('CronSimpleCreate', () => {
+  it.each([
+    ['zh', '单次花费上限（美元，可选）', '超过该金额会停止本次运行并停用任务；留空表示不限。', '不限'],
+    ['en', 'Per-run spending cap (USD, optional)', 'Over this amount the run stops and the task is switched off; leave empty for no limit.', 'No limit'],
+  ] as const)('本地创建表单显示预算字段（%s）', (language, label, hint, placeholder) => {
+    useAppStore.setState({ language });
+    render(<CronSimpleCreate onDone={() => undefined} />);
+
+    expect(screen.getByText(label)).toBeTruthy();
+    expect(screen.getByText(hint)).toBeTruthy();
+    expect(screen.getByTestId('cron-budget-limit-input')).toHaveProperty('placeholder', placeholder);
+  });
+
+  it('created job carries maxRunBudget typed in the simple form', async () => {
+    createJob.mockImplementation(async (input) => ({
+      ...(input as object), id: 'budget-job', createdAt: 1, updatedAt: 1,
+    } as CronJobDefinition));
+    const onDone = vi.fn();
+    render(<CronSimpleCreate onDone={onDone} />);
+    fireEvent.change(screen.getByPlaceholderText(/竞品动态/), { target: { value: '每个工作日总结 notes.txt' } });
+    fireEvent.change(screen.getByTestId('cron-budget-limit-input'), { target: { value: '2' } });
+    fireEvent.click(screen.getByText('创建自动化'));
+
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    expect(createJob.mock.calls[0][0]).toMatchObject({ maxRunBudget: 2 });
+  });
+
+  it('空预算创建为不限（null）', async () => {
+    createJob.mockImplementation(async (input) => ({
+      ...(input as object), id: 'unlimited-job', createdAt: 1, updatedAt: 1,
+    } as CronJobDefinition));
+    const onDone = vi.fn();
+    render(<CronSimpleCreate onDone={onDone} />);
+    fireEvent.change(screen.getByPlaceholderText(/竞品动态/), { target: { value: '每个工作日总结 notes.txt' } });
+    fireEvent.click(screen.getByText('创建自动化'));
+
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    expect(createJob.mock.calls[0][0]).toMatchObject({ maxRunBudget: null });
+  });
+
+  it('切换云端隐藏预算字段并丢弃先前输入', async () => {
+    createJob.mockImplementation(async (input) => ({
+      ...(input as object), id: 'cloud-budget-job', createdAt: 1, updatedAt: 1,
+    } as CronJobDefinition));
+    const onDone = vi.fn();
+    render(<CronSimpleCreate onDone={onDone} />);
+    fireEvent.change(screen.getByPlaceholderText(/竞品动态/), { target: { value: '云端总结简报' } });
+    fireEvent.change(screen.getByTestId('cron-budget-limit-input'), { target: { value: '2' } });
+    fireEvent.click(screen.getByTestId('cron-runs-on-cloud'));
+    expect(screen.queryByTestId('cron-budget-limit-input')).toBeNull();
+    fireEvent.click(screen.getByText('创建自动化'));
+
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    expect(createJob.mock.calls[0][0]).toMatchObject({ runsOn: 'cloud', maxRunBudget: null });
+  });
+
   it('空目标提交显示校验提示且不调 createJob', async () => {
     render(<CronSimpleCreate onDone={() => undefined} />);
     fireEvent.click(screen.getByText('创建自动化'));
@@ -148,7 +218,10 @@ describe('CronSimpleCreate', () => {
     fireEvent.change(screen.getByPlaceholderText(/竞品动态/), {
       target: { value: '每天帮我盯一下竞品发布' },
     });
-    fireEvent.click(screen.getByText('创建自动化'));
+    const createButton = screen.getByRole('button', { name: '创建自动化' });
+    expect(createButton.parentElement?.className).toContain('sticky');
+    expect(createButton.parentElement?.className).toContain('-bottom-4');
+    fireEvent.click(createButton);
     await waitFor(() => {
       expect(onDone).toHaveBeenCalled();
     });
@@ -192,9 +265,98 @@ describe('CronSimpleCreate', () => {
     expect(suggested).toBeGreaterThanOrEqual(1);
     expect(suggested).toBeLessThanOrEqual(59);
 
-    // 时间改成 09:17：不再撞整点，建议消失
-    fireEvent.change(screen.getByDisplayValue('09:00'), { target: { value: '09:17' } });
+    // 分钟下拉改成 17 → 09:17：不再撞整点，建议消失
+    fireEvent.change(screen.getByTestId('cron-simple-time-minute'), { target: { value: '17' } });
     expect(screen.queryByTestId('cron-stagger-hint')).toBeNull();
+  });
+
+  it('云端+角色被宿主拒绝时显示本地化原因而非英文原句', async () => {
+    createJob.mockRejectedValue(new Error('Role-bound agent jobs cannot run on the cloud scheduler'));
+    render(<CronSimpleCreate onDone={() => undefined} />);
+    fireEvent.click(screen.getByTestId('cron-runs-on-cloud'));
+    fireEvent.change(screen.getByPlaceholderText(/竞品动态/), { target: { value: '整理云端简报' } });
+    fireEvent.click(screen.getByText('创建自动化'));
+    await waitFor(() => expect(createJob).toHaveBeenCalled());
+    expect(await screen.findByText(/只能在本机运行/)).toBeTruthy();
+    expect(screen.queryByText(/Role-bound/)).toBeNull();
+  });
+
+  it('选 08:30 保存 → cron 表达式 30 8 * * *（小时/分钟下拉驱动）', async () => {
+    createJob.mockImplementation(async (input) => ({
+      ...(input as object),
+      id: 'new-job-830',
+      createdAt: 1,
+      updatedAt: 1,
+    } as CronJobDefinition));
+    const onDone = vi.fn();
+    render(<CronSimpleCreate onDone={onDone} />);
+    fireEvent.change(screen.getByPlaceholderText(/竞品动态/), {
+      target: { value: '每天八点半盯竞品' },
+    });
+    fireEvent.change(screen.getByTestId('cron-simple-time-hour'), { target: { value: '08' } });
+    fireEvent.change(screen.getByTestId('cron-simple-time-minute'), { target: { value: '30' } });
+    fireEvent.click(screen.getByText('创建自动化'));
+    await waitFor(() => {
+      expect(onDone).toHaveBeenCalled();
+    });
+    const submitted = createJob.mock.calls[0][0] as CronJobDefinition;
+    expect(submitted.schedule).toEqual({ type: 'cron', expression: '30 8 * * *', timezone: undefined });
+  });
+
+  it('en-US h12 区域下时间选择器仍是 24 小时双下拉，无 AM/PM、无原生 time 输入', () => {
+    stubTwelveHourLocale();
+    const { container } = render(<CronSimpleCreate onDone={() => undefined} />);
+
+    expect(container.querySelector('input[type="time"]')).toBeNull();
+    const picker = screen.getByTestId('cron-simple-time');
+    const selects = picker.querySelectorAll('select');
+    expect(selects.length).toBe(2);
+    const hour = screen.getByTestId('cron-simple-time-hour') as HTMLSelectElement;
+    const minute = screen.getByTestId('cron-simple-time-minute') as HTMLSelectElement;
+    expect(hour.value).toBe('09');
+    expect(minute.value).toBe('00');
+    expect(document.body.textContent).not.toMatch(/AM|PM/);
+  });
+
+  it('只跑一次：en-US h12 区域下是日期框 + 24 小时下拉，无 AM/PM、无 datetime-local', () => {
+    stubTwelveHourLocale();
+    const { container } = render(<CronSimpleCreate onDone={() => undefined} />);
+    fireEvent.change(screen.getByDisplayValue('每天'), { target: { value: 'once' } });
+
+    expect(container.querySelector('input[type="datetime-local"]')).toBeNull();
+    expect((screen.getByTestId('cron-simple-once-date') as HTMLInputElement).value).toBe('');
+    expect(screen.getByTestId('cron-simple-once').querySelectorAll('select').length).toBe(2);
+    expect(document.body.textContent).not.toMatch(/AM|PM/);
+  });
+
+  it('只跑一次：选日期 + 15 点保存 → at 的 datetime 是所选本地时间', async () => {
+    createJob.mockImplementation(async (input) => ({
+      ...(input as object), id: 'once-job', createdAt: 1, updatedAt: 1,
+    } as CronJobDefinition));
+    const onDone = vi.fn();
+    render(<CronSimpleCreate onDone={onDone} />);
+    fireEvent.change(screen.getByPlaceholderText(/竞品动态/), { target: { value: '周五提醒发周报' } });
+    fireEvent.change(screen.getByDisplayValue('每天'), { target: { value: 'once' } });
+    fireEvent.change(screen.getByTestId('cron-simple-once-date'), { target: { value: '2026-11-10' } });
+    fireEvent.change(screen.getByTestId('cron-simple-once-time-hour'), { target: { value: '15' } });
+    fireEvent.click(screen.getByText('创建自动化'));
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    const submitted = createJob.mock.calls[0][0] as CronJobDefinition;
+    expect(submitted.schedule).toEqual({ type: 'at', datetime: new Date('2026-11-10T15:00').toISOString() });
+    // 存下来的字符串仍是 yyyy-MM-ddTHH:mm 本地时间串（回读编辑器时的契约）
+    const loaded = buildDraftFromJob({ ...submitted, id: 'j', createdAt: 1, updatedAt: 1 });
+    expect(loaded.atDatetime).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+    expect(loaded.atDatetime).toBe('2026-11-10T15:00');
+  });
+
+  it('只跑一次：没选日期提交 → 日期框仍为空且显示“请选择执行时间”，不调 createJob', async () => {
+    render(<CronSimpleCreate onDone={() => undefined} />);
+    fireEvent.change(screen.getByPlaceholderText(/竞品动态/), { target: { value: '周五提醒发周报' } });
+    fireEvent.change(screen.getByDisplayValue('每天'), { target: { value: 'once' } });
+    fireEvent.click(screen.getByText('创建自动化'));
+    expect(await screen.findByText('请选择执行时间')).toBeTruthy();
+    expect((screen.getByTestId('cron-simple-once-date') as HTMLInputElement).value).toBe('');
+    expect(createJob).not.toHaveBeenCalled();
   });
 
   it.each([

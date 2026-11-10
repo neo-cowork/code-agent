@@ -25,3 +25,13 @@ export function bucketSharePercent(tokens: number, denominator: number): number 
   if (denominator <= 0) return 0;
   return (tokens / denominator) * 100;
 }
+
+export function formatContextTokenNumber(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
+}
+
+export function formatContextTokens(n: number, unit: string = 'Token'): string {
+  return `${formatContextTokenNumber(n)} ${unit}`;
+}

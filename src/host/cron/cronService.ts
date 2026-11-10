@@ -46,7 +46,7 @@ import { addCronRunCostUsd } from '../../shared/cronRunLedger';
 import { getEventBus } from '../services/eventing/bus';
 import { persistCronMissedTrace } from './cronMissedTrace';
 import {
-  assertExecutionLocationConstraints,
+  assertCloudRunnableAction, assertExecutionLocationConstraints,
   assertAgentTypeOnSave,
   computeCronFireJitterMs,
   decideOneTimeJobStartup,
@@ -286,7 +286,7 @@ export class CronService implements Disposable {
     assertSupportedEveryScheduleUnit(definition.schedule); assertAgentTypeOnSave(definition.action);
 
     const runsOn = definition.runsOn ?? 'local';
-    assertExecutionLocationConstraints({ ...definition, runsOn });
+    assertExecutionLocationConstraints({ ...definition, runsOn }); assertCloudRunnableAction({ ...definition, runsOn });
     assertEventScheduleConstraints({ ...definition, runsOn });
     if (definition.schedule?.type === 'event' && definition.schedule.source === 'webhook') {
       // webhook 源（N-CRON-WEBHOOK-CLOUD-HOOK）：hook 活在云端中继后面，没配置就建不成。
@@ -355,7 +355,7 @@ export class CronService implements Disposable {
     // 重新启用已停用任务：运行计数清零、摘掉停用原因（N-CRON-BUDGET-EXPOSE）；只改 maxRuns 不动计数。
     if (updates.enabled === true && !existingJob.definition.enabled) rearmCronRunLimit(updatedJob);
     assertSupportedEveryScheduleUnit(updatedJob.schedule); assertAgentTypeOnSave(updates.action, existingJob.definition.action);
-    assertExecutionLocationConstraints(updatedJob);
+    assertExecutionLocationConstraints(updatedJob); if (updates.enabled === true || updates.action !== undefined) assertCloudRunnableAction(updatedJob);
     assertEventScheduleConstraints(updatedJob);
 
     // Save to database
@@ -886,7 +886,7 @@ export class CronService implements Disposable {
         execution.result = await this.cloudRuntime.runJob(definition);
         execution.status = 'completed';
       } else {
-        const result = await this.executeAction(definition, definition.action, definition.timeout, execution.id, eventPayloadBlock);
+        const result = await this.executeAction(definition, definition.action, definition.timeout ?? undefined, execution.id, eventPayloadBlock);
         if (isCronAgentActionResult(result)) {
           execution.sessionId = result.sessionId;
         }
@@ -1130,7 +1130,7 @@ export class CronService implements Disposable {
     execution.startedAt = Date.now();
 
     try {
-      const result = await this.executeAction(current, current.action, current.timeout, execution.id, eventPayloadBlock);
+      const result = await this.executeAction(current, current.action, current.timeout ?? undefined, execution.id, eventPayloadBlock);
       if (isCronAgentActionResult(result)) {
         execution.sessionId = result.sessionId;
       }
@@ -1302,6 +1302,8 @@ export class CronService implements Disposable {
   }
 
   private persistJob(job: CronJobDefinition, cloudJobId?: string): Promise<void> {
+    // Normalize explicit clears and invalid limits before storing or returning the definition.
+    job.timeout = typeof job.timeout === 'number' && Number.isFinite(job.timeout) && job.timeout > 0 ? job.timeout : undefined;
     return saveCronJob(job, cloudJobId ?? this.jobs.get(job.id)?.cloudJobId);
   }
 

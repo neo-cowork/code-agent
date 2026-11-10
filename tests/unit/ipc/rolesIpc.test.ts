@@ -9,6 +9,15 @@ import os from 'os';
 import type { IPCRequest, IPCResponse } from '../../../src/shared/ipc';
 
 const mockConfigDir = vi.hoisted(() => ({ dir: '' }));
+const receipts = vi.hoisted(() => ({ persist: vi.fn(), broadcast: vi.fn() }));
+vi.mock('../../../src/host/services/infra/sessionManager', () => ({
+  getSessionManager: () => ({ addMessageToSession: receipts.persist }),
+}));
+vi.mock('../../../src/host/task/TaskManager', () => ({
+  getTaskManager: () => ({ emitAgentEventForSession: receipts.broadcast }),
+}));
+vi.mock('../../../src/host/services/roleAssets/roleFirstWake', () => ({ enqueueFirstWake: vi.fn() }));
+import { enqueueRoleDraft, generateRoleAgentMd } from '../../../src/host/services/roleAssets/roleDraftQueue';
 
 vi.mock('../../../src/host/config/configPaths', () => ({
   CONFIG_DIR_NEW: '.code-agent',
@@ -114,7 +123,7 @@ import {
   listScopedMemories,
 } from '../../../src/host/services/roleAssets/roleAssetService';
 import type { RolePanelDetail, RolePanelEntry } from '../../../src/shared/contract/roleAssets';
-import { BUILTIN_ROLES } from '../../../src/host/services/roleAssets/builtinRoles';
+import { BUILTIN_ROLES, installBuiltinRoles } from '../../../src/host/services/roleAssets/builtinRoles';
 
 // 捕获注册的 handler，模拟 ipcHost
 type Handler = (event: unknown, request: IPCRequest) => Promise<IPCResponse>;
@@ -142,6 +151,51 @@ describe('roles.ipc (domain:roles)', () => {
 
   afterEach(async () => {
     await fs.rm(mockConfigDir.dir, { recursive: true, force: true });
+  });
+
+  describe('confirmDraft edit receipt', () => {
+    async function draft(edit = true, validOld = true) {
+      if (edit) {
+        await ensureRoleAssetDirs('研究员');
+        await fs.mkdir(path.join(mockConfigDir.dir, 'agents'), { recursive: true });
+        await fs.writeFile(path.join(mockConfigDir.dir, 'agents', '研究员.md'), validOld
+          ? generateRoleAgentMd({ roleId: '研究员', description: 'Research', tools: ['Read', 'Write'], systemPrompt: 'Cite sources.' })
+          : 'invalid old definition');
+      }
+      const result = await enqueueRoleDraft({
+        roleId: '研究员', editingRoleId: edit ? '研究员' : undefined,
+        description: 'Research', tools: ['read', 'calendar'], systemPrompt: 'Cite sources.\nCheck calendar.', sessionId: 'edit-session',
+      });
+      expect(result.draft).not.toBeNull();
+      return result.draft!.id;
+    }
+    it('persists and broadcasts a registered system receipt through production confirmDraft', async () => {
+      const res = await invoke('confirmDraft', { draftId: await draft() });
+      expect(res.success).toBe(true);
+      expect(receipts.persist).toHaveBeenCalledExactlyOnceWith('edit-session', expect.objectContaining({
+        role: 'system', content: 'Expert updated.',
+        metadata: { roleEditReceipt: { roleId: '研究员', addedTools: ['calendar'], removedTools: ['Write'],
+          descriptionChanged: false, promptChanged: true, diffAvailable: true } },
+      }));
+      expect(receipts.broadcast).toHaveBeenCalledExactlyOnceWith('edit-session', { type: 'message', data: receipts.persist.mock.calls[0][1] });
+    });
+    it('keeps confirmation successful when writing the receipt fails', async () => {
+      receipts.persist.mockRejectedValueOnce(new Error('database unavailable'));
+      expect((await invoke('confirmDraft', { draftId: await draft() })).success).toBe(true);
+      expect(receipts.broadcast).not.toHaveBeenCalled();
+    });
+    it('records an unavailable diff without preventing the edit', async () => {
+      expect((await invoke('confirmDraft', { draftId: await draft(true, false) })).success).toBe(true);
+      expect(receipts.persist).toHaveBeenCalledWith('edit-session', expect.objectContaining({
+        metadata: { roleEditReceipt: expect.objectContaining({ diffAvailable: false }) },
+      }));
+    });
+    it('does not emit an edit receipt for a newly created role or a failed confirm', async () => {
+      expect((await invoke('confirmDraft', { draftId: 'missing' })).success).toBe(false);
+      expect((await invoke('confirmDraft', { draftId: await draft(false) })).success).toBe(true);
+      expect(receipts.persist).not.toHaveBeenCalled();
+      expect(receipts.broadcast).not.toHaveBeenCalled();
+    });
   });
 
   describe('list', () => {
@@ -295,6 +349,42 @@ describe('roles.ipc (domain:roles)', () => {
       const res = await invoke<RolePanelDetail>('detail', { roleId: '孤儿角色' });
       expect(res.success).toBe(true);
       expect(res.data?.definition).toBeNull();
+    });
+
+    it('tracks built-in edits against the installed factory definition and clears them on restore', async () => {
+      const role = BUILTIN_ROLES.find((candidate) => candidate.id === '牧之')!;
+      const installed = await installBuiltinRoles();
+      expect(installed.installedAgents).toContain(role.id);
+
+      const fresh = await invoke<RolePanelDetail>('detail', { roleId: role.id });
+      expect(fresh.data?.locallyModified).toBe(false);
+
+      const update = await invoke('updateVisual', {
+        roleId: role.id,
+        visual: { displayName: '改过的牧之' },
+      });
+      expect(update.success).toBe(true);
+      const modified = await invoke<RolePanelDetail>('detail', { roleId: role.id });
+      expect(modified.data?.locallyModified).toBe(true);
+
+      const restore = await invoke('restoreFactory', { roleId: role.id });
+      expect(restore.success).toBe(true);
+      const restored = await invoke<RolePanelDetail>('detail', { roleId: role.id });
+      expect(restored.data?.locallyModified).toBe(false);
+    });
+
+    it('omits locallyModified when a built-in definition file or factory template is missing', async () => {
+      const activeRole = BUILTIN_ROLES.find((candidate) => candidate.id === '牧之')!;
+      await ensureRoleAssetDirs(activeRole.id);
+      const missingFile = await invoke<RolePanelDetail>('detail', { roleId: activeRole.id });
+      expect(missingFile.data?.locallyModified).toBeUndefined();
+
+      const agentsDir = path.join(mockConfigDir.dir, 'agents');
+      await fs.mkdir(agentsDir, { recursive: true });
+      await fs.writeFile(path.join(agentsDir, '研究员.md'), '---\nname: 研究员\n---\n退役定义', 'utf8');
+      await ensureRoleAssetDirs('研究员');
+      const retired = await invoke<RolePanelDetail>('detail', { roleId: '研究员' });
+      expect(retired.data?.locallyModified).toBeUndefined();
     });
   });
 
@@ -790,6 +880,34 @@ describe('roles.ipc (domain:roles)', () => {
       // 老的还原出厂测试用例语义不回退：自建角色没有 restore 信息
       const detail = await invoke<RolePanelDetail>('detail', { roleId: '撤销角色' });
       expect(detail.data?.isBuiltin).toBe(false);
+    });
+
+    it('listDeletedRoles returns restorable entries through the real roles handler', async () => {
+      await seedUser('回收站专家', '列表展示');
+      const deleted = await invoke<{ trashId: string }>('deleteRole', { roleId: '回收站专家' });
+      expect(deleted.success).toBe(true);
+
+      const entryDir = path.join(mockConfigDir.dir, 'roles-trash', deleted.data!.trashId);
+      const definition = await fs.readFile(path.join(entryDir, 'agent.md'), 'utf-8');
+      await fs.writeFile(path.join(entryDir, 'agent.md'), definition.replace('description: 列表展示', 'description: 列表展示\ndisplay-name: 回收站花名'), 'utf-8');
+
+      const listed = await invoke<import('../../../src/shared/contract/roleAssets').TrashedRoleEntry[]>('listDeletedRoles');
+      expect(listed).toEqual({
+        success: true,
+        data: [expect.objectContaining({
+          trashId: deleted.data!.trashId,
+          roleId: '回收站专家',
+          displayName: '回收站花名',
+          deletedAt: expect.any(String),
+        })],
+      });
+
+      const oldMeta = JSON.parse(await fs.readFile(path.join(entryDir, 'meta.json'), 'utf-8')) as { roleId: string; deletedAt: string };
+      oldMeta.deletedAt = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString();
+      await fs.writeFile(path.join(entryDir, 'meta.json'), JSON.stringify(oldMeta), 'utf-8');
+      const expired = await invoke('listDeletedRoles');
+      expect(expired).toEqual({ success: true, data: [] });
+      await expect(fs.access(entryDir)).rejects.toThrow();
     });
 
     it('缺参 / 未知条目返回稳定错误', async () => {

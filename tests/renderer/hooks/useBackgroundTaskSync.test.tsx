@@ -160,6 +160,37 @@ describe('useBackgroundTaskSync', () => {
     expect(toast.success).toHaveBeenCalledWith('报告生成完成。可在任务面板查看日志。');
   });
 
+  it('renders task_cancelled as info toast and task_failed as error toast', async () => {
+    backgroundTaskStore.drainNotifications.mockResolvedValueOnce([
+      {
+        id: 'notice-cancelled',
+        taskId: 'task-1',
+        sessionId: 'session-current',
+        type: 'task_cancelled',
+        title: '任务已停止',
+        message: 'sleep 600 && echo done 已停止，耗时 不到 1 秒',
+        createdAt: 1,
+      },
+      {
+        id: 'notice-failed',
+        taskId: 'task-2',
+        sessionId: 'session-current',
+        type: 'task_failed',
+        title: '后台任务失败',
+        message: 'npm test 失败，退出码 1',
+        createdAt: 2,
+      },
+    ]);
+    renderHook(() => useBackgroundTaskSync({ pollInterval: 0 }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(toast.info).toHaveBeenCalledWith('sleep 600 && echo done 已停止，耗时 不到 1 秒。可在任务面板查看日志。');
+    expect(toast.error).toHaveBeenCalledWith('npm test 失败，退出码 1。可在任务面板查看日志。');
+  });
+
   it('uses a 30 second fallback only when the native push bridge is available', () => {
     const nativeView = renderHook(() => useBackgroundTaskSync());
     expect(poller.create).toHaveBeenLastCalledWith(

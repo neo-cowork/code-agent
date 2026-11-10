@@ -351,7 +351,7 @@ export async function recordTurnOutcomeStamp(
   ctx: TurnOutcomeStampContext,
   terminal: RunTerminalStatus,
   summary?: CompletionSummaryRecord,
-  cancelReason?: 'idle_reaped',
+  cancelReason?: 'idle_reaped' | 'client_disconnect',
 ): Promise<void> {
   try {
     const outcome = await buildTurnOutcome(ctx, terminal, summary);

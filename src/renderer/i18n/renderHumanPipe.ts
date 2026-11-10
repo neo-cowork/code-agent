@@ -28,6 +28,9 @@ export const renderHumanPipeZh = {
       copied: '已复制',
       copyError: '复制错误',
       retryFromHere: '从此重试',
+      globEmpty: '没有匹配的文件。',
+      directoryEmpty: '这个文件夹是空的。',
+      moreResultsAvailable: '还有更多结果可查看。',
       recovery: {
         launchBrowserTitle: '启动隔离浏览器',
         launchBrowserDetail: '只启动受管浏览器，不执行点击或输入。',
@@ -69,6 +72,7 @@ export const renderHumanPipeZh = {
         accessibilitySnapshot: '辅助功能快照',
         capturedAt: '读取时间',
       },
+      completenessWarningNote: '检测到文件可能没写完整。如果内容有缺，告诉 Neo「继续补全」即可。',
     },
     fallbackBanner: {
       summary: '已自动换用备用模型',
@@ -153,6 +157,9 @@ export const renderHumanPipeEn: typeof renderHumanPipeZh = {
       copied: 'Copied',
       copyError: 'Copy error',
       retryFromHere: 'Retry from here',
+      globEmpty: 'No matching files.',
+      directoryEmpty: 'This folder is empty.',
+      moreResultsAvailable: 'More results are available.',
       recovery: {
         launchBrowserTitle: 'Start isolated browser',
         launchBrowserDetail: 'Starts the managed browser without clicking or typing.',
@@ -194,6 +201,7 @@ export const renderHumanPipeEn: typeof renderHumanPipeZh = {
         accessibilitySnapshot: 'Accessibility snapshot',
         capturedAt: 'Captured at',
       },
+      completenessWarningNote: 'This file may be incomplete. If anything is missing, tell Neo to "continue and complete it".',
     },
     fallbackBanner: {
       summary: 'Switched to a backup model automatically',

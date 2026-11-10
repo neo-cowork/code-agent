@@ -129,4 +129,33 @@ describe('group-listen template fill step', () => {
     expect((payload.action as Record<string, unknown>).prompt).toBe('有人提到发布就总结给我');
     expect((payload.action as Record<string, unknown>).type).toBe('agent');
   });
+
+  it('clears the required-fields banner as the last missing field is filled', async () => {
+    render(<CronJobEditor isOpen job={null} onClose={() => undefined} />);
+    fireEvent.click(screen.getByText('从模板创建'));
+    fireEvent.click(await screen.findByText('飞书表格行变更监听'));
+
+    fireEvent.click(screen.getByText('创建任务'));
+    expect(await screen.findByText('请填写：Base App Token、数据表 ID')).toBeTruthy();
+
+    fireEvent.change(controlForLabel('Base App Token'), { target: { value: 'app_token' } });
+    await waitFor(() => expect(screen.getByText('请填写：数据表 ID')).toBeTruthy());
+    fireEvent.change(controlForLabel('数据表 ID'), { target: { value: 'tbl_123' } });
+    await waitFor(() => expect(screen.queryByText('请填写：数据表 ID')).toBeNull());
+  });
+
+  it('keeps a save error visible while editing a valid template field', async () => {
+    cronStore.createJob.mockRejectedValueOnce(new Error('保存失败'));
+    render(<CronJobEditor isOpen job={null} onClose={() => undefined} />);
+    fireEvent.click(screen.getByText('从模板创建'));
+    fireEvent.click(await screen.findByText('网页更新提醒'));
+
+    const url = controlForLabel('网页地址');
+    fireEvent.change(url, { target: { value: 'https://example.com' } });
+    fireEvent.click(screen.getByText('创建任务'));
+    expect(await screen.findByText('保存失败')).toBeTruthy();
+
+    fireEvent.change(url, { target: { value: 'https://example.org' } });
+    expect(screen.getByText('保存失败')).toBeTruthy();
+  });
 });

@@ -25,6 +25,7 @@ import {
   reportServerUnreachable,
 } from '../utils/serverConnectionMonitor';
 import { getServerConnectionStatus } from '../stores/serverConnectionStore';
+import { logPermissionClickExit } from '../services/permissionClickLog';
 
 type EventCallback = (...args: unknown[]) => void;
 
@@ -835,10 +836,12 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
         if (channel === 'session:create' && typeof bodyPayload === 'string') {
           bodyPayload = { title: bodyPayload };
         }
-        // 后台切换（Tauri IPC 侧是单 string 参数，web 路由吃 {sessionId} 对象）：
+        // 后台切换/清除（Tauri IPC 侧是单 string 参数，web 路由吃 {sessionId} 对象）：
         // 单 string 按同名对象包一层，否则 /background/move-to-* 会以 INVALID_BODY 400。
         if (
-          (channel === 'background:move-to-background' || channel === 'background:move-to-foreground')
+          (channel === 'background:move-to-background'
+            || channel === 'background:move-to-foreground'
+            || channel === 'background:dismiss-terminal')
           && typeof bodyPayload === 'string'
         ) {
           bodyPayload = { sessionId: bodyPayload };
@@ -881,6 +884,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
           );
           recordTransportFailure(channel, response.status, errorMessage || errorBody);
           if (preservesUndeliveredPermissionEnvelope(channel)) {
+            logPermissionClickExit({ requestId: args[0] as string, stage: 'transport-send-failure', sessionId: args[2] as string, error: `审批应答发送失败 (${response.status}): ${errorMessage || errorBody}` });
             throw new PermissionSendFailure(`审批应答发送失败 (${response.status}): ${errorMessage || errorBody}`);
           }
           return normalizeIpcTransportFailure(
@@ -927,6 +931,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
 
         if (preservesUndeliveredPermissionEnvelope(channel)) {
           recordTransportFailure(channel, response.status, '审批应答收到非 JSON 响应');
+          logPermissionClickExit({ requestId: args[0] as string, stage: 'transport-send-failure', sessionId: args[2] as string, error: `审批应答发送失败 (${response.status}): 非 JSON 响应` });
           throw new PermissionSendFailure(`审批应答发送失败 (${response.status}): 非 JSON 响应`);
         }
         return undefined as ReturnType<IpcInvokeHandlers[K]>;
@@ -937,6 +942,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
         recordTransportFailure(channel, null, message);
         // 审批应答的其余传输异常（fetch 拒绝 / token 失效）同样上抛；其余通道照旧坍缩。
         if (preservesUndeliveredPermissionEnvelope(channel)) {
+          logPermissionClickExit({ requestId: args[0] as string, stage: 'transport-send-failure', sessionId: args[2] as string, error: err });
           throw new PermissionSendFailure(message);
         }
         return normalizeIpcTransportFailure(channel, null, message) as ReturnType<IpcInvokeHandlers[K]>;

@@ -6,6 +6,10 @@ import type {
   TaskStatus,
 } from '../../shared/contract/backgroundTask';
 import { isTerminalTaskStatus } from '../../shared/contract/backgroundTask';
+import {
+  type SessionTaskSlotLocale,
+  withAutomationPromptTimeoutHint,
+} from '../../shared/i18n/sessionTaskSlot';
 import type { BackgroundTaskStore } from './backgroundTaskStore';
 import {
   getAllBackgroundTasks,
@@ -17,10 +21,13 @@ import {
 } from '../tools/modules/shell/backgroundTaskSources';
 import { type BackgroundTaskLedger, getBackgroundTaskLedger } from './backgroundTaskLedger';
 import { buildBackgroundTaskRecoveryPlan } from './backgroundTaskRecoveryPlan';
+import { isLikelyUnansweredMacOsAutomationPrompt } from './macosAutomationPrompt';
+import { getConfigService } from '../services/core/configService';
+import { createLogger } from '../services/infra/logger';
 
 type ShellLikeStatus = 'running' | 'completed' | 'failed';
 
-const EMPTY_OUTPUT_MESSAGE = 'Process completed with exit code 0 but produced no output.';
+const logger = createLogger('BackgroundTaskSnapshotAdapters');
 
 function getOutputFileSize(outputFile?: string): number | undefined {
   if (!outputFile) return undefined;
@@ -31,26 +38,18 @@ function getOutputFileSize(outputFile?: string): number | undefined {
   }
 }
 
-function isEmptyOutputFile(outputFile?: string): boolean {
-  const size = getOutputFileSize(outputFile);
-  return size === undefined || size === 0;
-}
-
-function mapShellStatus(status: ShellLikeStatus, outputFile?: string): TaskStatus {
-  if (status === 'completed') return isEmptyOutputFile(outputFile) ? 'failed' : 'completed';
+function mapShellStatus(status: ShellLikeStatus, stoppedByRequest?: boolean): TaskStatus {
+  if (stoppedByRequest) return 'cancelled';
+  if (status === 'completed') return 'completed';
   if (status === 'failed') return 'failed';
   return 'running';
 }
 
 function buildFailure(
-  sourceStatus: ShellLikeStatus,
   mappedStatus: TaskStatus,
   exitCode?: number,
 ): TaskFailure | undefined {
   if (mappedStatus !== 'failed') return undefined;
-  if (sourceStatus === 'completed') {
-    return { message: EMPTY_OUTPUT_MESSAGE, exitCode, category: 'empty_output' };
-  }
   return {
     message: exitCode != null
       ? `Process exited with code ${exitCode}`
@@ -92,14 +91,23 @@ function buildTerminalMessage(args: {
   durationMs?: number;
   exitCode?: number;
   outputFile?: string;
+  automationPromptLikely?: boolean;
+  locale?: SessionTaskSlotLocale;
 }): string {
   const duration = args.durationMs != null ? `，耗时 ${formatDuration(args.durationMs)}` : '';
   const log = args.outputFile ? `，日志 ${args.outputFile}` : '';
   if (args.status === 'completed') {
     return `${args.label} 已完成${duration}${log}`;
   }
-  const exitCode = args.exitCode != null ? `，退出码 ${args.exitCode}` : '';
-  return `${args.label} 失败${exitCode}${duration}${log}`;
+  if (args.status === 'cancelled') {
+    return `${args.label} 已停止${duration}`;
+  }
+  const exitCode = args.exitCode != null && args.exitCode !== 0 ? `，退出码 ${args.exitCode}` : '';
+  return withAutomationPromptTimeoutHint(
+    `${args.label} 失败${exitCode}${duration}${log}`,
+    args.locale ?? 'zh',
+    args.automationPromptLikely,
+  );
 }
 
 function queueTerminalNotification(args: {
@@ -113,6 +121,8 @@ function queueTerminalNotification(args: {
   durationMs?: number;
   exitCode?: number;
   outputFile?: string;
+  automationPromptLikely?: boolean;
+  locale?: SessionTaskSlotLocale;
 }): void {
   if (!args.sessionId || !shouldQueueTerminalNotification(args.previous, args.status)) {
     return;
@@ -122,14 +132,24 @@ function queueTerminalNotification(args: {
     id: `${args.taskId}:terminal:${args.status}`,
     taskId: args.taskId,
     sessionId: args.sessionId,
-    type: args.status === 'completed' ? 'task_completed' : 'task_failed',
-    title: args.status === 'completed' ? '后台任务完成' : '后台任务失败',
+    type: args.status === 'completed'
+      ? 'task_completed'
+      : args.status === 'cancelled'
+        ? 'task_cancelled'
+        : 'task_failed',
+    title: args.status === 'completed'
+      ? '后台任务完成'
+      : args.status === 'cancelled'
+        ? '任务已停止'
+        : '后台任务失败',
     message: buildTerminalMessage({
       label: args.title,
       status: args.status,
       durationMs: args.durationMs,
       exitCode: args.exitCode,
       outputFile: args.outputFile,
+      automationPromptLikely: args.automationPromptLikely,
+      locale: args.locale,
     }),
     payload: {
       taskId: args.taskId,
@@ -152,21 +172,42 @@ function formatDuration(durationMs: number): string {
   return `${minutes} 分 ${remainingSeconds} 秒`;
 }
 
+function getAutomationPromptLocale(sessionId?: string): SessionTaskSlotLocale {
+  try {
+    return getConfigService().getSettings().ui.language;
+  } catch (error) {
+    logger.warn('Failed to read UI locale for macOS Automation failure hint; using Chinese fallback', {
+      reason: 'automation_prompt_locale_read_failed',
+      sessionId,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return 'zh';
+  }
+}
+
 export function syncShellTaskSnapshotToLedger(
   task: TaskInfo,
   ledger: BackgroundTaskLedger = getBackgroundTaskLedger(),
 ): void {
-  const status = mapShellStatus(task.status, task.outputFile);
+  const status = mapShellStatus(task.status, task.stoppedByRequest);
   const taskId = `shell:${task.taskId}`;
+  const label = task.displayCommand?.trim() || task.command || `Shell ${task.taskId.slice(0, 8)}`;
   const previous = ledger.getTask(taskId);
   const recoveryStatus = status === 'running' ? 'running-live' : status;
+  const automationPromptLikely = isLikelyUnansweredMacOsAutomationPrompt({
+    command: task.command,
+    status,
+    exitCode: task.exitCode,
+    outputFile: task.outputFile,
+  });
+  const locale = automationPromptLikely ? getAutomationPromptLocale(task.sessionId) : undefined;
   ledger.upsertTask({
     id: taskId,
     kind: 'shell',
     sessionId: task.sessionId,
     toolCallId: task.toolCallId,
     source: 'shell',
-    title: task.command || `Shell ${task.taskId.slice(0, 8)}`,
+    title: label,
     summary: task.outputFile,
     command: task.command,
     cwd: task.cwd,
@@ -176,7 +217,7 @@ export function syncShellTaskSnapshotToLedger(
     startedAt: task.startTime,
     completedAt: task.endTime,
     durationMs: task.duration,
-    failure: buildFailure(task.status, status, task.exitCode),
+    failure: buildFailure(status, task.exitCode),
     metadata: {
       createdBy: 'neo',
       originalTaskId: task.taskId,
@@ -187,6 +228,8 @@ export function syncShellTaskSnapshotToLedger(
         recoveryStatus,
         outputFile: task.outputFile,
         exitCode: task.exitCode,
+        automationPromptLikely,
+        locale,
       }),
     },
   });
@@ -197,11 +240,13 @@ export function syncShellTaskSnapshotToLedger(
     taskId,
     sessionId: task.sessionId,
     source: 'shell',
-    title: task.command || `Shell ${task.taskId.slice(0, 8)}`,
+    title: label,
     status,
     durationMs: task.duration,
     exitCode: task.exitCode,
     outputFile: task.outputFile,
+    automationPromptLikely,
+    locale,
   });
 
   upsertOutputRef(ledger, {
@@ -234,7 +279,7 @@ export function syncPtySessionSnapshotToLedger(
   session: PtySessionInfo,
   ledger: BackgroundTaskLedger = getBackgroundTaskLedger(),
 ): void {
-  const status = mapShellStatus(session.status, session.outputFile);
+  const status = mapShellStatus(session.status, session.stoppedByRequest);
   const taskId = `pty:${session.sessionId}`;
   const command = [session.command, ...session.args].filter(Boolean).join(' ');
   const previous = ledger.getTask(taskId);
@@ -255,7 +300,7 @@ export function syncPtySessionSnapshotToLedger(
     startedAt: session.startTime,
     completedAt: session.endTime,
     durationMs: session.duration,
-    failure: buildFailure(session.status, status, session.exitCode),
+    failure: buildFailure(status, session.exitCode),
     metadata: {
       createdBy: 'neo',
       originalSessionId: session.sessionId,

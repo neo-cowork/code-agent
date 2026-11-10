@@ -5,7 +5,9 @@
 import type { Connector, ConnectorExecutionResult, ConnectorStatus } from '../base';
 import {
   buildAppleScriptDateVar,
+  describeAppleScriptFailure,
   escapeAppleScriptString,
+  isAppleScriptFailure,
   parseAppleScriptDate,
   runAppleScript,
   sharedAppleScriptHandlers,
@@ -40,12 +42,21 @@ export function resetRemindersConnectorReadiness(): void {
   remindersProbeListEmpty = false;
 }
 
+function markRemindersReadReady(noAccessibleLists = false): void {
+  remindersReadiness = 'ready';
+  remindersProbeCheckedAt = Date.now();
+  remindersProbeError = undefined;
+  remindersProbeListEmpty = noAccessibleLists;
+}
+
 function parseLine(line: string): string[] {
   return line.split('|').map((part) => part.trim());
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return isAppleScriptFailure(error)
+    ? describeAppleScriptFailure('Reminders', error).message
+    : error instanceof Error ? error.message : String(error);
 }
 
 function buildRemindersStatus(capabilities: string[]): ConnectorStatus {
@@ -110,6 +121,21 @@ async function listReminderLists(): Promise<string[]> {
     .filter(Boolean);
 }
 
+function resolveReminderListName(requestedName: string, availableLists: string[]): string {
+  const exactMatch = availableLists.find((name) => name === requestedName);
+  if (exactMatch) return exactMatch;
+
+  const caseInsensitiveMatches = availableLists.filter(
+    (name) => name.toLowerCase() === requestedName.toLowerCase(),
+  );
+  if (caseInsensitiveMatches.length === 1) return caseInsensitiveMatches[0];
+
+  const availableText = availableLists.length > 0 ? availableLists.join(', ') : '(none)';
+  throw new Error(
+    `No reminder list named "${requestedName}". Available lists: ${availableText}. Omit list to use the default list.`,
+  );
+}
+
 async function probeRemindersAccess(): Promise<string[]> {
   if (process.platform !== 'darwin') {
     remindersReadiness = 'unavailable';
@@ -120,10 +146,7 @@ async function probeRemindersAccess(): Promise<string[]> {
 
   try {
     const lists = await listReminderLists();
-    remindersReadiness = 'ready';
-    remindersProbeCheckedAt = Date.now();
-    remindersProbeError = undefined;
-    remindersProbeListEmpty = lists.length === 0;
+    markRemindersReadReady(lists.length === 0);
     return lists;
   } catch (error) {
     remindersReadiness = 'failed';
@@ -152,23 +175,30 @@ async function listReminders(payload: Record<string, unknown>): Promise<Reminder
     lines.push('set targetLists to every list');
   }
 
+  const reminderQuery = includeCompleted
+    ? '(every reminder of reminderList)'
+    : '(every reminder of reminderList whose completed is false)';
   lines.push(
     'repeat with reminderList in targetLists',
-    includeCompleted
-      ? 'set matchingReminders to every reminder of reminderList'
-      : 'set matchingReminders to every reminder of reminderList whose completed is false',
-    'repeat with reminderItem in matchingReminders',
-    'set rawNotes to ""',
+    'set reminderListName to my sanitizeText(name of reminderList)',
+    // Fetch values in bulk; the item loop below only formats local AppleScript lists.
+    `set {reminderIds, reminderNames, reminderCompleted} to {id, name, completed} of ${reminderQuery}`,
+    'set reminderBodies to {}',
     'try',
-    'set rawNotes to body of reminderItem',
+    `set reminderBodies to body of ${reminderQuery}`,
     'end try',
+    'set reminderDates to {}',
+    'try',
+    `set reminderDates to remind me date of ${reminderQuery}`,
+    'end try',
+    'repeat with reminderIndex from 1 to count of reminderIds',
+    'set rawNotes to ""',
+    'if reminderIndex <= (count of reminderBodies) then set rawNotes to item reminderIndex of reminderBodies',
     'set reminderNotes to my sanitizeText(rawNotes)',
     'set rawRemindDate to missing value',
-    'try',
-    'set rawRemindDate to remind me date of reminderItem',
-    'end try',
+    'if reminderIndex <= (count of reminderDates) then set rawRemindDate to item reminderIndex of reminderDates',
     'set remindDateText to my isoDateText(rawRemindDate)',
-    'set reminderLine to (id of reminderItem as text) & "|" & (my sanitizeText(name of reminderList)) & "|" & (my sanitizeText(name of reminderItem)) & "|" & (completed of reminderItem as text) & "|" & reminderNotes & "|" & remindDateText',
+    'set reminderLine to (item reminderIndex of reminderIds as text) & "|" & reminderListName & "|" & (my sanitizeText(item reminderIndex of reminderNames)) & "|" & (item reminderIndex of reminderCompleted as text) & "|" & reminderNotes & "|" & remindDateText',
     'set end of outputLines to reminderLine',
     'set emittedCount to emittedCount + 1',
     'if emittedCount >= reminderLimit then exit repeat',
@@ -238,17 +268,17 @@ async function getReminder(payload: Record<string, unknown>): Promise<ReminderIt
 }
 
 async function createReminder(payload: Record<string, unknown>): Promise<ReminderItem> {
-  const listName = typeof payload.list === 'string' ? payload.list.trim() : '';
+  const requestedListName = typeof payload.list === 'string' ? payload.list.trim() : '';
   const title = typeof payload.title === 'string' ? payload.title.trim() : '';
   const notes = typeof payload.notes === 'string' ? payload.notes.trim() : '';
   const remindAtMs = typeof payload.remind_at_ms === 'number' ? payload.remind_at_ms : undefined;
 
-  if (!listName) {
-    throw new Error('list is required for create_reminder');
-  }
   if (!title) {
     throw new Error('title is required for create_reminder');
   }
+  const listName = requestedListName
+    ? resolveReminderListName(requestedListName, await listReminderLists())
+    : '';
 
   const lines = [
     ...sharedAppleScriptHandlers(),
@@ -260,7 +290,9 @@ async function createReminder(payload: Record<string, unknown>): Promise<Reminde
 
   lines.push(
     'tell application "Reminders"',
-    `tell list "${escapeAppleScriptString(listName)}"`,
+    ...(listName
+      ? [`tell list "${escapeAppleScriptString(listName)}"`]
+      : ['set targetList to default list', 'tell targetList']),
     `set newReminder to make new reminder with properties {name:"${escapeAppleScriptString(title)}"}`,
   );
 
@@ -272,7 +304,7 @@ async function createReminder(payload: Record<string, unknown>): Promise<Reminde
   }
 
   lines.push(
-    `return (id of newReminder as text) & "|" & (my sanitizeText("${escapeAppleScriptString(listName)}")) & "|" & (my sanitizeText(name of newReminder)) & "|" & (completed of newReminder as text)`,
+    `return (id of newReminder as text) & "|" & ${listName ? `(my sanitizeText("${escapeAppleScriptString(listName)}"))` : '(my sanitizeText(name of targetList))'} & "|" & (my sanitizeText(name of newReminder)) & "|" & (completed of newReminder as text)`,
     'end tell',
     'end tell'
   );
@@ -434,6 +466,7 @@ export const remindersConnector: Connector = {
         };
       case 'list_lists': {
         const lists = await listReminderLists();
+        markRemindersReadReady(lists.length === 0);
         return {
           data: lists,
           summary: lists.length > 0 ? `找到 ${lists.length} 个提醒列表` : '没有找到可访问的提醒列表',
@@ -441,6 +474,7 @@ export const remindersConnector: Connector = {
       }
       case 'list_reminders': {
         const reminders = await listReminders(payload);
+        markRemindersReadReady();
         return {
           data: reminders,
           summary: reminders.length > 0 ? `找到 ${reminders.length} 条提醒` : '没有找到匹配的提醒',
@@ -448,6 +482,7 @@ export const remindersConnector: Connector = {
       }
       case 'get_reminder': {
         const reminder = await getReminder(payload);
+        markRemindersReadReady();
         return {
           data: reminder,
           summary: `找到提醒：${reminder.title}`,
