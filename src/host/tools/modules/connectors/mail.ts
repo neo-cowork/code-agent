@@ -26,6 +26,7 @@ import {
 } from '../../../connectors/native/osascript';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { mailSchema as schema } from './mail.schema';
+import { formatConnectorTime } from './connectorTime';
 
 type MailAction = 'get_status' | 'list_accounts' | 'list_mailboxes' | 'list_messages' | 'read_message';
 
@@ -38,7 +39,7 @@ function formatMessage(item: {
   receivedAtMs: number | null;
   read: boolean;
 }): string {
-  const received = item.receivedAtMs ? new Date(item.receivedAtMs).toLocaleString('zh-CN') : '收信时间无法解析';
+  const received = item.receivedAtMs ? formatConnectorTime(item.receivedAtMs) : '收信时间无法解析';
   const scope = [item.account, item.mailbox].filter(Boolean).join(' / ');
   return `- #${item.id} ${item.subject}\n  ${scope || 'Mail'} | ${item.sender} | ${received}${item.read ? ' | 已读' : ' | 未读'}`;
 }
@@ -189,7 +190,7 @@ async function executeMail(
       attachments?: string[];
       attachmentCount?: number;
     };
-    const received = message.receivedAtMs ? new Date(message.receivedAtMs).toLocaleString('zh-CN') : '收信时间无法解析';
+    const received = message.receivedAtMs ? formatConnectorTime(message.receivedAtMs) : '收信时间无法解析';
     const attachmentCount = typeof message.attachmentCount === 'number'
       ? message.attachmentCount
       : (message.attachments?.length || 0);
