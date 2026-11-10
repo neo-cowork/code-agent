@@ -1,4 +1,4 @@
-import { getToolPreflightKind, toolPreflightCopy } from '../../../../../utils/toolPreflightPresentation';
+import { getToolPreflightKind } from '../../../../../utils/toolPreflightPresentation';
 // ============================================================================
 // ToolCallDisplay - Claude Code terminal style tool execution display
 // StatusIndicator (braille spinner) + ToolName + params + ⎿ result summary

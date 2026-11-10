@@ -30,7 +30,8 @@ function sameSets(a: ParkedSets, b: ParkedSets): boolean {
   return ak.every((k) => {
     const x = a[k];
     const y = b[k];
-    return Boolean(x && y) && x!.size === y!.size && [...x!].every((id) => y!.has(id));
+    if (!x || !y) return false;
+    return x.size === y.size && [...x].every((id) => y.has(id));
   });
 }
 
