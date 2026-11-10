@@ -1,4 +1,3 @@
-import type { Translations } from '../../../../../i18n';
 import { humanizeToolStep, parseDelegateSessionReceipt } from '../../../../../utils/humanizeToolStep';
 import type { AgentTreeNode } from '@shared/contract/agentTree';
 import type { LastToolFailure, LastToolStep, Task, TaskOutputRef } from '@shared/contract/backgroundTask';
