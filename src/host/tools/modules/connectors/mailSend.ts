@@ -14,6 +14,7 @@ import type {
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { describeAppleScriptWriteFailure } from './appleScriptWriteFailure';
 import { mailSendSchema as schema } from './mailSend.schema';
 
 async function executeMailSend(
@@ -97,7 +98,13 @@ async function executeMailSend(
       },
     };
   } catch (error) {
-    const failure = `Mail send failed: ${error instanceof Error ? error.message : String(error)}`;
+    const failure = describeAppleScriptWriteFailure(
+      'Mail',
+      'Mail send failed',
+      error,
+      ctx.logger,
+      schema.name,
+    );
     const to = (args.to as unknown[]).filter((item): item is string => typeof item === 'string');
     return {
       ok: false,

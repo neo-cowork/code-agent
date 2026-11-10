@@ -32,6 +32,7 @@ import type { WorkspaceScope } from '../../shared/contract/project';
 import { getModelSessionState } from '../session/modelSessionState';
 import type { RunRegistry } from '../runtime/runRegistry';
 import { getProjectSourceTrustFailureMarker } from '../services/project/projectSourceTrustError';
+import { getBackgroundTaskManager } from '../session/backgroundTaskManager';
 import { settleBackgroundRunOnRejection, type BackgroundRunErrorRecord } from './backgroundTaskTerminal';
 import { getModelAuthFailureMarker } from '../model/errorClassifier';
 import { MULTIAGENT_TOOL_NAMES } from '../../shared/constants/tools';
@@ -214,6 +215,9 @@ export class TaskManager extends EventEmitter {
       logger.warn(`Session ${sessionId} is already ${currentState.status}`);
       throw new Error(`Session ${sessionId} is already ${currentState.status}`);
     }
+
+    // 新一轮在前台起跑：该会话遗留的后台终态行已过期，清掉，否则本轮的完成通知会被后台分支吞掉
+    getBackgroundTaskManager().dismissTerminal(sessionId);
 
     // 尝试获取信号量
     if (this.semaphore.tryAcquire()) {

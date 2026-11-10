@@ -24,7 +24,7 @@ describe('NotificationBudget', () => {
   let now: number;
   let pending: (() => void) | undefined;
   let budget: NotificationBudget<TestItem>;
-  let deliver: Mock<(entry: TestItem) => void>;
+  let deliver: Mock<(entry: TestItem, via: 'immediate' | 'window-end') => void>;
   let deliverDigest: Mock<(entries: readonly TestItem[]) => void>;
   let setTimer: Mock<(callback: () => void, delayMs: number) => NotificationBudgetTimer>;
   let clearTimer: Mock<(handle: NotificationBudgetTimer) => void>;
@@ -66,7 +66,7 @@ describe('NotificationBudget', () => {
     budget.enqueue(second);
 
     expect(deliver).toHaveBeenCalledTimes(1);
-    expect(deliver).toHaveBeenCalledWith(first);
+    expect(deliver).toHaveBeenCalledWith(first, 'immediate');
     expect(deliverDigest).not.toHaveBeenCalled();
     expect(setTimer).toHaveBeenCalledWith(expect.any(Function), NOTIFICATION_BUDGET.WINDOW_MS);
     expect(timer.unref).toHaveBeenCalledTimes(1);
@@ -79,7 +79,7 @@ describe('NotificationBudget', () => {
 
     const next = item('next');
     budget.enqueue(next);
-    expect(deliver).toHaveBeenCalledWith(next);
+    expect(deliver).toHaveBeenCalledWith(next, 'immediate');
     expect(setTimer).toHaveBeenCalledTimes(2);
   });
 
@@ -89,7 +89,7 @@ describe('NotificationBudget', () => {
     budget.enqueue(held);
     advanceWindow();
 
-    expect(deliver).toHaveBeenNthCalledWith(2, held);
+    expect(deliver).toHaveBeenNthCalledWith(2, held, 'window-end');
     expect(deliverDigest).not.toHaveBeenCalled();
     expect(setTimer).toHaveBeenCalledTimes(1);
   });
@@ -121,7 +121,7 @@ describe('NotificationBudget', () => {
 
     const first = item('ordinary-first');
     budget.enqueue(first);
-    expect(deliver).toHaveBeenLastCalledWith(first);
+    expect(deliver).toHaveBeenLastCalledWith(first, 'immediate');
     expect(setTimer).toHaveBeenCalledTimes(1);
   });
 
@@ -135,7 +135,13 @@ describe('NotificationBudget', () => {
   it('clear drops held items and resets the next item to first', () => {
     budget.enqueue(item('first'));
     budget.enqueue(item('held'));
-    budget.clear();
+    expect(budget.getHeldCount()).toBe(1);
+    now += 1000;
+    expect(budget.getWindowRemainingMs()).toBe(NOTIFICATION_BUDGET.WINDOW_MS - 1000);
+    expect(budget.clear()).toEqual([item('held')]);
+    expect(budget.getWindowRemainingMs()).toBe(0);
+    expect(budget.getHeldCount()).toBe(0);
+    expect(budget.dispose()).toEqual([]);
 
     expect(clearTimer).toHaveBeenCalledWith(timer);
     advanceWindow();
@@ -143,7 +149,7 @@ describe('NotificationBudget', () => {
 
     const next = item('after-clear');
     budget.enqueue(next);
-    expect(deliver).toHaveBeenNthCalledWith(2, next);
+    expect(deliver).toHaveBeenNthCalledWith(2, next, 'immediate');
     expect(setTimer).toHaveBeenCalledTimes(2);
   });
 });

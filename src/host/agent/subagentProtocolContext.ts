@@ -1,7 +1,7 @@
-import { getPermissionModeManager } from '../permissions/modes';
 import type { ParentContext } from './childContext';
 import type { SubagentExecutionContext } from './subagentExecutorTypes';
 import { resolveModelDecision } from '../model/modelDecision';
+import { resolveEffectivePolicy } from '../permissions/runPolicySnapshot';
 
 export function resolveSubagentParentContext(
   context: SubagentExecutionContext,
@@ -13,7 +13,7 @@ export function resolveSubagentParentContext(
     hooks: [],
     skills: [],
     mcpConnections: [],
-    permissionMode: getPermissionModeManager().getModeForSession(context.sessionId) as string,
+    permissionMode: resolveEffectivePolicy(context.runId, context.sessionId).mode,
     availableTools: [],
     deny: [],
     ask: [],

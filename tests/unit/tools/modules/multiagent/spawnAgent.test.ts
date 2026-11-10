@@ -25,6 +25,7 @@ import {
   spawnAgentModule,
   agentSpawnModule,
 } from '../../../../../src/host/tools/modules/multiagent/spawnAgent';
+import { executeTaskStatus } from '../../../../../src/host/tools/modules/commandCenter/sessionCommandCenter';
 import { getBackgroundSubagentRegistry } from '../../../../../src/host/agent/backgroundSubagentRegistry';
 
 function makeLogger(): Logger {
@@ -47,6 +48,14 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
 
 const allowAll: CanUseToolFn = async () => ({ allow: true });
 const denyAll: CanUseToolFn = async () => ({ allow: false, reason: 'no' });
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -247,6 +256,30 @@ describe('spawn_agent dispatch to protocol-native service', () => {
     expect(onProgress).toHaveBeenCalledWith({ stage: 'completing', percent: 100 });
   });
 
+  it('stores the report only once while preserving artifact identity', async () => {
+    const marker = 'A tested recovery plan is missing.';
+    executeSpawnAgentMock.mockResolvedValue({ success: true, output: marker });
+    const handler = await spawnAgentModule.createHandler();
+    const result = await handler.execute({ role: 'explore', task: 'Review risks' }, makeCtx(), allowAll);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(JSON.stringify(result).split(marker)).toHaveLength(2);
+    expect(result.meta?.artifact).toMatchObject({
+      artifactId: expect.any(String), name: 'spawn_agent result', contentLength: marker.length,
+    });
+  });
+
+  it('stores the foreground budget hand-off output once', async () => {
+    const marker = 'Agent [Explorer] exceeded foreground budget and continues in background:';
+    executeSpawnAgentMock.mockResolvedValue({ success: true, output: `${marker}\n- foreground_budget_ms=1000` });
+    const handler = await spawnAgentModule.createHandler();
+    const result = await handler.execute({ role: 'explore', task: 'Review risks' }, makeCtx(), allowAll);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(JSON.stringify(result).split(marker)).toHaveLength(2);
+    expect(result.meta?.artifacts).toBeUndefined();
+  });
+
   it('normalizes public role aliases before dispatching to native spawn', async () => {
     executeSpawnAgentMock.mockResolvedValue({
       success: true,
@@ -315,6 +348,87 @@ describe('spawn_agent dispatch to protocol-native service', () => {
     expect(childSignal).not.toBe(parent.signal);
     parent.abort('parent-finished');
     expect(childSignal?.aborted).toBe(false);
+  });
+
+  it('run_in_background receipt is user-facing and task_status lists the running sub-agent', async () => {
+    const sessionId = 'background-status-running-session';
+    const gate = deferred<{ success: true; output: string }>();
+    executeSpawnAgentMock.mockReturnValue(gate.promise);
+    const handler = await spawnAgentModule.createHandler();
+    const result = await handler.execute(
+      { role: 'coder', task: '整理三份会议笔记中的行动项', run_in_background: true },
+      makeCtx({ sessionId }),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.output).toContain('已在后台开始处理「整理三份会议笔记中的行动项」');
+    expect(result.output).toContain('- Agent ID: ');
+    expect(result.output).not.toContain('前台不阻塞');
+    expect(result.output).not.toContain('查询状态');
+
+    const agentId = result.meta?.agentId as string;
+    await vi.waitFor(() => expect(getBackgroundSubagentRegistry().getStatus(agentId)?.status).toBe('running'));
+    const status = await executeTaskStatus({}, makeCtx({ sessionId }), allowAll);
+    expect(status).toEqual({
+      ok: true,
+      output: expect.stringContaining(`1. 整理三份会议笔记中的行动项 [running] id=${agentId}`),
+      meta: { sessionTask: { outcome: 'status', tasks: [] } },
+    });
+
+    gate.resolve({ success: true, output: '已列出行动项' });
+    await vi.waitFor(() => expect(getBackgroundSubagentRegistry().getStatus(agentId)?.status).toBe('completed'));
+  });
+
+  it('task_status lists a completed spawn_agent sub-agent with its result', async () => {
+    const sessionId = 'background-status-completed-session';
+    executeSpawnAgentMock.mockResolvedValue({ success: true, output: '行动项：确认负责人和截止时间' });
+    const handler = await spawnAgentModule.createHandler();
+    const result = await handler.execute(
+      { role: 'coder', task: '完成会议笔记整理', run_in_background: true },
+      makeCtx({ sessionId }),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const agentId = result.meta?.agentId as string;
+    await vi.waitFor(() => expect(getBackgroundSubagentRegistry().getStatus(agentId)?.status).toBe('completed'));
+
+    const status = await executeTaskStatus({}, makeCtx({ sessionId }), allowAll);
+    expect(status).toEqual({
+      ok: true,
+      output: expect.stringContaining(`1. 完成会议笔记整理 [completed] id=${agentId}：行动项：确认负责人和截止时间`),
+      meta: { sessionTask: { outcome: 'status', tasks: [] } },
+    });
+  });
+
+  it('task_status scopes spawn_agent sub-agents to the current session and keeps empty sessions explicit', async () => {
+    const sessionId = 'background-status-scope-source';
+    executeSpawnAgentMock.mockResolvedValue({ success: true, output: 'done' });
+    const handler = await spawnAgentModule.createHandler();
+    const result = await handler.execute(
+      { role: 'coder', task: '仅属于源会话的后台任务', run_in_background: true },
+      makeCtx({ sessionId }),
+      allowAll,
+    );
+    expect(result.ok).toBe(true);
+    await vi.waitFor(() => expect(getBackgroundSubagentRegistry().listBySession(sessionId)).toHaveLength(1));
+
+    const otherSessionStatus = await executeTaskStatus(
+      {},
+      makeCtx({ sessionId: 'background-status-scope-other' }),
+      allowAll,
+    );
+    expect(otherSessionStatus).toEqual({ ok: true, output: '当前会话还没有后台任务。' });
+
+    const emptySessionStatus = await executeTaskStatus(
+      {},
+      makeCtx({ sessionId: 'background-status-empty-session' }),
+      allowAll,
+    );
+    expect(emptySessionStatus).toEqual({ ok: true, output: '当前会话还没有后台任务。' });
   });
 
   it('run_in_background 标 executionTopology=async_agent（2026-07-13 拓扑激活批）', async () => {

@@ -4,6 +4,7 @@ import { AlertTriangle, FolderPlus, Loader2, Settings2, Trash2, X } from 'lucide
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { ProjectDetail, ProjectSourceGitState, ProjectSourceInput } from '@shared/contract/project';
 import ipcService from '../services/ipcService';
+import { pickWorkingDirectory } from '../services/workingDirectoryPicker';
 import {
   deleteProject,
   getProjectDetail,
@@ -82,7 +83,7 @@ export const ProjectSettingsDialog: React.FC<ProjectSettingsDialogProps> = ({
 
   const addFolder = async (manualPath?: string): Promise<void> => {
     const selected = manualPath?.trim()
-      || await ipcService.invokeDomain<string | null>(IPC_DOMAINS.WORKSPACE, 'selectDirectory');
+      || await pickWorkingDirectory(copy.addFolder);
     if (!selected) return;
     await ipcService.invokeDomain(IPC_DOMAINS.FOLDER_TRUST, 'set', {
       workingDirectory: selected,

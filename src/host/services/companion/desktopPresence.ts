@@ -62,6 +62,13 @@ class DesktopPresence implements DesktopPresenceProbe {
     return now - report.lastInputAt <= COMPANION_LIMITS.desktopPresenceFreshMs;
   }
 
+  /** Window focus only; null means no fresh report. Input age and session selection do not matter. */
+  isWindowFocused(now = this.now()): boolean | null {
+    const report = this.latest;
+    if (!report || now - report.receivedAt > COMPANION_LIMITS.desktopPresenceFreshMs) return null;
+    return report.visible && report.focused;
+  }
+
   /** 单向已读：桌面在 created_at 之后看过该会话，还在 pending 的手机推送就不发了。 */
   lastViewedAt(sessionId: string): number | null {
     const at = this.viewedAt.get(sessionId);
