@@ -10,24 +10,34 @@ const CONTEXT_MESSAGE_LIMIT = 10;
 const USER_MESSAGE_MAX_CHARS = 600;
 const ASSISTANT_MESSAGE_MAX_CHARS = 300;
 
-// 禁止语境词 + 其后约 15 字符内的 ASCII 词（如 "不要用 Bash/curl" → bash, curl）
-const BAN_TERM_PATTERN =
-  /(?:不要|别|不用|禁止|不许|不能|不准|don't|do not|never|\bno\b)[^\n]{0,15}[A-Za-z0-9_.-]*/gi;
+// 禁止词 + 紧跟的「用/使用/运行…」动词 + 被禁的 ASCII 名称（可用 / 、, 和 或 and or 连接）
+// 如 "不要用 Bash/curl" → bash, curl；"don't use curl or wget" → curl, wget。
+// 只认这种明确的「别用某工具」结构，"don't put it in the README"、"No, use Python"、「识别 Excel」不触发。
+const BAN_NAME = '[A-Za-z][A-Za-z0-9_.-]{2,}';
+const BAN_TERM_PATTERN = new RegExp(
+  '(?:(?:不要|不用|禁止|不许|不能|不准|别)(?:再用|再|使用|调用|执行|运行|用|跑|去)|' +
+    "\\b(?:don['’]t|do not|never|must not)\\s+(?:use|using|run|call|rely on)\\b)\\s*" +
+    `(${BAN_NAME}(?:\\s*(?:[/、,，&]|和|或|and|or)\\s*${BAN_NAME})*)`,
+  'gi',
+);
+const NON_TOOL_WORDS = new Set(['the', 'any', 'this', 'that', 'for', 'with', 'and', 'you', 'tool', 'tools', 'command', 'commands', 'line', 'anything', 'them', 'those']);
 
 function extractBannedTerms(messages: Array<{ role: string; content?: string }>): string[] {
   const terms = new Set<string>();
   for (const m of messages) {
     if (m.role !== 'user' || !m.content) continue;
     for (const match of m.content.matchAll(BAN_TERM_PATTERN)) {
-      for (const word of match[0].match(/[A-Za-z][A-Za-z0-9_.-]{1,}/g) ?? []) {
-        const lower = word.toLowerCase();
-        if (!['do', 'not', 'dont', 'don', 'never', 'no', 'use', 'the', 'to', 'for', 'this', 'that', 'it', 'any', 'and', 'or', 'my'].includes(lower)) {
-          terms.add(lower);
-        }
+      for (const word of match[1].match(new RegExp(BAN_NAME, 'g')) ?? []) {
+        const lower = word.toLowerCase().replace(/[.-]+$/, '');
+        if (lower.length >= 3 && !NON_TOOL_WORDS.has(lower) && !['and', 'or'].includes(lower)) terms.add(lower);
       }
     }
   }
   return [...terms];
+}
+
+function mentionsTerm(text: string, term: string): boolean {
+  return text.toLowerCase().split(/[^a-z0-9_.-]+/).some(w => w.replace(/^[.-]+|[.-]+$/g, '') === term);
 }
 
 export interface PromptSuggestion {
@@ -48,9 +58,10 @@ export async function generateContextSuggestions(
 ): Promise<PromptSuggestion[]> {
   try {
     // Extract recent conversation context
-    const recentMessages = messages
+    const windowed = messages
       .filter(m => (m.role === 'user' || m.role === 'assistant') && m.content)
-      .slice(-CONTEXT_MESSAGE_LIMIT)
+      .slice(-CONTEXT_MESSAGE_LIMIT);
+    const recentMessages = windowed
       .map(m => {
         const limit = m.role === 'user' ? USER_MESSAGE_MAX_CHARS : ASSISTANT_MESSAGE_MAX_CHARS;
         return `${m.role === 'user' ? '用户' : '助手'}: ${(m.content || '').slice(0, limit)}`;
@@ -82,9 +93,9 @@ ${recentMessages}
       .map(l => l.replace(/^[-•\d.]\s*/, '').trim())
       .filter(l => l.length > 2 && l.length < 50);
 
-    const banned = extractBannedTerms(messages);
+    const banned = extractBannedTerms(windowed);
     const allowed = banned.length
-      ? lines.filter(l => !banned.some(t => l.toLowerCase().includes(t)))
+      ? lines.filter(l => !banned.some(t => mentionsTerm(l, t)))
       : lines;
     if (allowed.length < lines.length) {
       logger.debug('Dropped suggestions containing user-banned terms', { dropped: lines.length - allowed.length });

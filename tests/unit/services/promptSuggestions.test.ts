@@ -67,13 +67,13 @@ describe('generateContextSuggestions', () => {
     expect(quickTask.mock.calls[0][0]).toContain('不要出现命令行、终端、端口、进程');
   });
 
-  it('accepted over-block: a non-ban phrase like "不能打开 PDF" also drops chips naming pdf', async () => {
+  it('a non-ban phrase like "不能打开 PDF" no longer drops chips naming pdf', async () => {
     reply('把 PDF 转成文字\n直接贴文字内容给我');
     const out = await generateContextSuggestions([
       { role: 'user', content: '我不能打开 PDF 文件' },
       { role: 'assistant', content: '好的' },
     ]);
-    expect(out.map(s => s.text)).toEqual(['直接贴文字内容给我']);
+    expect(out.map(s => s.text)).toEqual(['把 PDF 转成文字', '直接贴文字内容给我']);
   });
 
   it('leaves suggestions untouched when no ban is present', async () => {
@@ -83,5 +83,47 @@ describe('generateContextSuggestions', () => {
       { role: 'assistant', content: '好' },
     ]);
     expect(out.map(s => s.text)).toEqual(['总结这份文档', '导出为表格']);
+  });
+});
+
+describe('generateContextSuggestions ban extraction is narrow', () => {
+  beforeEach(() => quickTask.mockReset());
+  const run = async (userText: string, chips: string) => {
+    quickTask.mockResolvedValue({ success: true, content: chips });
+    const out = await generateContextSuggestions([
+      { role: 'user', content: userText },
+      { role: 'assistant', content: 'ok' },
+    ]);
+    return out.map(s => s.text);
+  };
+
+  it("\"don't put it in the README\" bans nothing (no 'in' substring wipe-out)", async () => {
+    expect(await run("don't put it in the README", 'Explain the plan\nFind integration tests')).toEqual([
+      'Explain the plan',
+      'Find integration tests',
+    ]);
+  });
+
+  it('"No, use Python instead" does not ban python', async () => {
+    expect(await run('No, use Python instead', 'Run the Python script')).toEqual(['Run the Python script']);
+  });
+
+  it('「识别 / 区别 / 特别 / 别的」 do not trigger a ban', async () => {
+    expect(await run('帮我识别这张图里的 Excel 表格，特别是区别和别的列', '导出 Excel 表格')).toEqual(['导出 Excel 表格']);
+  });
+
+  it('「不用担心，React 那边我来」 bans nothing', async () => {
+    expect(await run('不用担心，React 那边我来', '检查 React 组件')).toEqual(['检查 React 组件']);
+  });
+
+  it('explicit bans still work, with whole-word matching', async () => {
+    expect(await run("don't use curl or wget", 'Retry with CURL\nUse wget again\nUse curly braces')).toEqual(['Use curly braces']);
+    expect(await run('别用 Bash/curl', '再跑一次 bash 命令\n把内容发给我')).toEqual(['把内容发给我']);
+  });
+
+  it('a ban older than the 10-message window no longer applies', async () => {
+    quickTask.mockResolvedValue({ success: true, content: '再用 curl 试试' });
+    const msgs = [{ role: 'user', content: '不要用 curl' }, ...Array.from({ length: 10 }, (_, i) => ({ role: i % 2 ? 'user' : 'assistant', content: `m${i}` }))];
+    expect((await generateContextSuggestions(msgs)).map(s => s.text)).toEqual(['再用 curl 试试']);
   });
 });
