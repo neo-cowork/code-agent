@@ -108,6 +108,39 @@ describe('task.ipc — real background Bash row stop', () => {
     await rm(tempDir, { recursive: true, force: true });
   });
 
+  it.each([
+    { command: 'sleep 0', exitCode: 0, status: 'completed' },
+    { command: 'exit 3', exitCode: 3, status: 'failed' },
+  ])('real bashModule background $command reaches the ledger as $status', async ({ command, exitCode, status }) => {
+    const handler = await bashModule.createHandler();
+    const sessionId = 'session-real-shell-exit';
+    const started = await handler.execute({ command, run_in_background: true }, {
+      sessionId,
+      workingDir: tempDir,
+      abortSignal: new AbortController().signal,
+      logger: makeLogger(),
+      emit: () => undefined,
+      policyEnforcer: null,
+      currentToolCallId: 'tool-real-shell-exit',
+    }, async () => ({ allow: true }));
+    expect(started.ok).toBe(true);
+    const taskId = started.ok && typeof started.meta?.taskId === 'string' ? started.meta.taskId : '';
+    expect(taskId).not.toBe('');
+    startedTaskIds.push(taskId);
+    const ledger = getBackgroundTaskLedger();
+    expect(await waitFor(() => ledger.getTask(`shell:${taskId}`)?.status === status, 5_000)).toBe(true);
+    expect(getBackgroundTask(taskId)).toMatchObject({ status, exitCode });
+    const row = ledger.getTask(`shell:${taskId}`);
+    expect(row).toMatchObject({ status, outputRefs: [expect.objectContaining({ size: 0 })] });
+    expect(row?.failure).toEqual(exitCode === 0 ? undefined : {
+      message: 'Process exited with code 3', exitCode: 3, category: 'command_failed',
+    });
+    expect(ledger.drainNotifications(sessionId)).toEqual([
+      expect.objectContaining({ taskId: row?.id, type: exitCode === 0 ? 'task_completed' : 'task_failed' }),
+    ]);
+    process.stdout.write(`${JSON.stringify({ command, ledgerId: row?.id, status: row?.status, exitCode, failure: row?.failure ?? null, logSize: row?.outputRefs[0]?.size })}\n`);
+  });
+
   it('kills a real Bash run_in_background process when IPC receives its shell ledger row id', async () => {
     const handler = await bashModule.createHandler();
     const context: ToolContext = {
