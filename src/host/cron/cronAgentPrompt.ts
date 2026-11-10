@@ -1,3 +1,4 @@
+import { normalizePersonalSkillIds } from '../../shared/cronPersonalSkills';
 import { CRON_AGENT_SNAPSHOT } from '../../shared/constants';
 import { formatTodayAnchor } from '../../shared/todayAnchor';
 
@@ -58,6 +59,7 @@ export function buildCronAgentPrompt(
   urgencyCriteria?: string,
   notifyWhen?: string,
   timeZone?: string,
+  allowedPersonalSkillIds?: string[],
 ): string {
   // 注入当前时间锚点：LLM 默认拿训练期日期，会把「今天/明天」算成过去时间。
   // 真机 dogfood(2026-07-24)证明「只给 ISO 时间」不够：GLM-5 认出了今天日期，却仍把
@@ -74,8 +76,8 @@ export function buildCronAgentPrompt(
     + `若要按「今天/本地当天」查询时间戳，直接用这两个算好的值，不要自己换算年份：`
     + `今天本地 00:00 = ${todayEpoch}（Unix 秒），次日本地 00:00 = ${tomorrowEpoch}（Unix 秒）。`
     + '其他相对时间以【当前时间】为基准，不要用你训练时的日期。';
-  const personalChatSourceRule =
-    '若任务涉及微信/IM 等个人聊天来源，不要搜索或调用读取个人聊天记录的工具、技能或命令行，直接在产出中单独写一行「未读取：微信/IM（定时任务默认不读个人聊天记录）」。';
+  const personalChatSourceRule = normalizePersonalSkillIds(allowedPersonalSkillIds)?.length ? '' :
+    '若任务涉及微信/IM 等个人聊天来源，不要搜索或调用读取个人聊天记录的工具、技能或命令行，直接在产出中单独写一行「未读取：微信/IM（定时任务默认不读个人聊天记录；想读，请在任务编辑的「执行动作」页勾选「允许本任务使用这些个人技能」）」。';
   // 用户自定义 must_today 判据（N-CRON-MORNING-TRIAGE-URGENCY-RULE）：给了就替换
   // 括号里 must_today 的内置定义，其余档位定义与 urgency 头格式不动；缺省/空白时
   // 拼回内置定义，产出与旧版逐字节相同。
@@ -92,7 +94,7 @@ export function buildCronAgentPrompt(
     ? `打扰规则（用户设定）：本次运行只有当结果满足「${trimmedNotifyWhen}」时，才在回复末尾追加一行 <cron_alert>用一句话说明满足了什么</cron_alert>；不满足时不要输出 <cron_alert> 标记（该轮将不打扰用户）。`
     : '';
   if (!enabled) {
-    return [prompt, '', timeAnchor, '', personalChatSourceRule, '', deliveryDigestInstruction, ...(notifyGateInstruction ? ['', notifyGateInstruction] : [])].join('\n');
+    return [prompt, '', timeAnchor, ...(personalChatSourceRule ? ['', personalChatSourceRule] : []), '', deliveryDigestInstruction, ...(notifyGateInstruction ? ['', notifyGateInstruction] : [])].join('\n');
   }
 
   const hasSnapshot = typeof snapshot === 'string' && Boolean(snapshot.trim());
@@ -100,8 +102,7 @@ export function buildCronAgentPrompt(
     prompt,
     '',
     timeAnchor,
-    '',
-    personalChatSourceRule,
+    ...(personalChatSourceRule ? ['', personalChatSourceRule] : []),
     ...(hasSnapshot
       ? [
         '',

@@ -1,3 +1,4 @@
+import { normalizePersonalSkillIds } from '../../shared/cronPersonalSkills';
 // ============================================================================
 // CronAgentAction - executeAction 的 agent 分支执行体
 // ============================================================================
@@ -108,6 +109,7 @@ export async function executeCronAgentAction(
     mode: 'normal',
     ...await buildCronAgentRunOptions(action.roleId, cronSession.workingDirectory),
     eventFilter: BACKGROUND_AGENT_EVENT_FILTER,
+    toolScope: { optInPersonalSkillIds: normalizePersonalSkillIds(action.allowedPersonalSkillIds) },
   };
   agentRunOptions.systemInstructions = [UNATTENDED_TRUST_NOTICE];
   const previousSnapshot = ctx?.[CRON_AGENT_SNAPSHOT.CONTEXT_KEY];
@@ -131,7 +133,7 @@ export async function executeCronAgentAction(
       // 用户消息标 memoryTainted（跳过自动记忆写）。调度触发的 run 字节不变。
       const sendMessage = () => orchestrator.sendMessage(
         buildCronAgentPrompt(action.prompt, previousSnapshot, snapshotTrackingEnabled, undefined, action.urgencyCriteria, action.notifyWhen,
-          definition.schedule.type === 'cron' ? definition.schedule.timezone : undefined)
+          definition.schedule.type === 'cron' ? definition.schedule.timezone : undefined, action.allowedPersonalSkillIds)
           + (eventPayloadBlock === undefined ? '' : `\n\n${eventPayloadBlock}`),
         undefined,
         agentRunOptions,
