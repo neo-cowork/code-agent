@@ -68,7 +68,8 @@ describe('subagentExecutor 主循环探活', () => {
 });
 
 describe('executeSpawnAgent 只给后台 detached 子注入探活', () => {
-  const source = readFileSync(SPAWN_AGENT_PATH, 'utf8');
+  const source = readFileSync(SPAWN_AGENT_PATH, 'utf8')
+    + readFileSync(path.join(path.dirname(SPAWN_AGENT_PATH), 'spawnSingleAgent.ts'), 'utf8');
 
   it('注入 isParentAlive 到 executor context', () => {
     expect(source).toMatch(/isParentAlive/);

@@ -290,7 +290,8 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
     enabled: draft.enabled,
     maxRetries: parseOptionalNumber(draft.maxRetries) ?? 0,
     retryDelay: parseOptionalNumber(draft.retryDelay),
-    timeout: parseOptionalNumber(draft.timeout),
+    // Explicit null survives JSON transport so clearing overrides the previous value.
+    timeout: parseOptionalNumber(draft.timeout) ?? null,
     // 清空/不支持的额度字段必须送 null 而不是 undefined：HTTP 传输 JSON.stringify 会丢
     // undefined 键，而 host updateJob 是 {...existing, ...updates} 合并——缺键=保留旧值，
     // 「清空上限」会静默不生效，编辑带 maxRuns 的任务上云端也会把旧值继承回去
@@ -484,11 +485,25 @@ export function formatRunListTime(value?: string | number): string {
   return `${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-export function formatDuration(ms?: number): string {
-  if (ms == null) return '—';
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${(ms / 60_000).toFixed(1)}m`;
+/**
+ * 运行耗时的人话显示：<1s / N 秒 / X 分 Y 秒 / X 小时 Y 分 / X 天 Y 小时，末尾为 0 的部分省略。
+ * 先取整到秒再按余数拆分，59.9s 才会正确进位成 1 分。
+ */
+export function formatDuration(ms?: number | null, lang: CronHumanLang = 'zh'): string {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return '—';
+  const zh = lang === 'zh';
+  if (ms === 0) return '0s';
+  if (ms < 1000) return '<1s';
+  const total = Math.round(ms / 1000);
+  const units = zh ? ['天', '小时', '分', '秒'] : ['d', 'h', 'm', 's'];
+  const sizes = [86400, 3600, 60, 1];
+  const start = sizes.findIndex((size) => total >= size);
+  const major = Math.floor(total / sizes[start]);
+  const minor = start + 1 < sizes.length ? Math.floor((total % sizes[start]) / sizes[start + 1]) : 0;
+  const part = (value: number, unit: string) => (zh ? `${value} ${unit}` : `${value}${unit}`);
+  const text = [part(major, units[start])];
+  if (minor > 0) text.push(part(minor, units[start + 1]));
+  return text.join(' ');
 }
 
 /** 单次运行/每日小计的美元显示（保留 4 位小数）。无模型调用与云端运行都是 dash。 */

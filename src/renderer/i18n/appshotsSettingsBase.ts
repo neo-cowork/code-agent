@@ -18,7 +18,8 @@ export const enAppshotsSettingsBase = {
     },
   },
   permissionsTitle: 'System permissions',
-  permissionsDescription: 'App screenshots need Screen Recording to capture windows and Accessibility to read window text. After you allow Screen Recording in System Settings, restart the app once. If the shortcut does not respond, click "Enable shortcut" in the shortcut row below.',
+  permissionsDescription: 'App screenshots need Screen Recording to capture windows and Accessibility to read window text. After you allow Screen Recording in System Settings, restart the app once.',
+  permissionsHotkeyHint: ' If the shortcut does not respond, click "Enable shortcut" in the shortcut row below.',
   openScreenCapture: 'Open Screen Recording permissions',
   openAccessibility: 'Open Accessibility permissions',
 };
@@ -43,7 +44,8 @@ export const zhAppshotsSettingsBase = {
     },
   },
   permissionsTitle: '系统权限',
-  permissionsDescription: '应用截图需要「屏幕录制」截窗、「辅助功能」读取窗口文本。在系统设置里允许「屏幕录制」后，请重启应用一次。若快捷键无反应，请点击下方快捷键行中的「开启快捷键」。',
+  permissionsDescription: '应用截图需要「屏幕录制」截窗、「辅助功能」读取窗口文本。在系统设置里允许「屏幕录制」后，请重启应用一次。',
+  permissionsHotkeyHint: '若快捷键无反应，请点击下方快捷键行中的「开启快捷键」。',
   openScreenCapture: '打开「屏幕录制」权限设置',
   openAccessibility: '打开「辅助功能」权限设置',
 };
