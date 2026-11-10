@@ -32,7 +32,7 @@ vi.mock('../../../../src/host/services/infra/sessionManager', () => ({
   }),
 }));
 vi.mock('../../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getSettings: () => ({ ui: { language: 'zh' } }) }),
+  getConfigService: () => ({ getSettings: () => ({ ui: { language: 'zh' }, connectors: { enabledNative: ['calendar'] } }) }),
 }));
 vi.mock('../../../../src/host/services/core/sessionDefaults', () => ({
   resolveSessionDefaultModelConfig: () => ({ provider: 'test', model: 'test' }),
@@ -47,11 +47,14 @@ vi.mock('../../../../src/host/agent/agentRegistry', () => ({
 vi.mock('../../../../src/host/services/capabilities/capabilityCenterService', () => ({
   getCapabilityCenterService: () => ({ listCapabilities: harness.listCapabilities }),
 }));
-vi.mock('../../../../src/host/connectors', () => ({
-  getConnectorRegistry: () => ({
-    list: () => [{ id: 'calendar', getCachedStatus: () => ({ readiness: 'ready' }) }],
-  }),
-}));
+vi.mock('../../../../src/host/connectors', () => {
+  const calendar = { id: 'calendar', getCachedStatus: () => ({ readiness: 'ready' }) };
+  return { getConnectorRegistry: () => ({ list: () => [calendar], get: (id: string) => (id === 'calendar' ? calendar : undefined) }) };
+});
+vi.mock('../../../../src/host/connectors/registry', () => {
+  const calendar = { id: 'calendar', getCachedStatus: () => ({ readiness: 'ready' }) };
+  return { getConnectorRegistry: () => ({ list: () => [calendar], get: (id: string) => (id === 'calendar' ? calendar : undefined) }) };
+});
 vi.mock('../../../../src/host/tools/dispatch/toolDefinitions', () => ({
   getAllToolDefinitions: () => [{ name: 'calendar', permissionLevel: 'read' }],
 }));
