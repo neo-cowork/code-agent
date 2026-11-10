@@ -1,11 +1,11 @@
 import { getDatabase } from '../services/core/databaseService';
 
-export interface CronMailWatermark {
+interface CronMailWatermark {
   binding: string;
   seenKeys: string[];
 }
 
-export type CronMailWatermarkLoadResult =
+type CronMailWatermarkLoadResult =
   | { status: 'found'; watermark: CronMailWatermark }
   | { status: 'missing' }
   | { status: 'unavailable' };
