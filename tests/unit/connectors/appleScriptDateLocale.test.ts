@@ -142,6 +142,14 @@ describe('locale-independent fetch scripts', () => {
 });
 
 describe('reminder creation read-back', () => {
+  it('keeps an omitted read-back time unknown instead of throwing or inventing the requested time', async () => {
+    mocks.runAppleScript.mockResolvedValueOnce('r-created|提醒事项|Report|false');
+    const result = await remindersConnector.execute('create_reminder', {
+      title: 'Report', remind_at_ms: 1_800_000_000_000,
+    });
+    expect(result.data).toMatchObject({ id: 'r-created', remindAtMs: undefined });
+  });
+
   it('reads the stored remind-me date in the create transaction and parses it', async () => {
     mocks.runAppleScript.mockResolvedValueOnce('r-created|提醒事项|Report|false|2026-11-09T09:00:00');
     const result = await remindersConnector.execute('create_reminder', {

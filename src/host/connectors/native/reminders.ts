@@ -317,7 +317,7 @@ async function createReminder(payload: Record<string, unknown>): Promise<Reminde
     list,
     title: parsedTitle,
     completed: completedRaw === 'true',
-    remindAtMs: parseAppleScriptDate(remindAtRaw),
+    remindAtMs: remindAtRaw === undefined ? undefined : parseAppleScriptDate(remindAtRaw),
   };
 }
 
