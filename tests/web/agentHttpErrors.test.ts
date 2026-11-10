@@ -1,4 +1,5 @@
 import express from 'express';
+import { resolveDurableRunRollout } from '../../src/host/app/durableRunRollout';
 import type { Server } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAgentRouter } from '../../src/web/routes/agent';
@@ -41,12 +42,13 @@ beforeEach(async () => {
   app.use('/api', createAgentRouter({
     runRegistry: new RunRegistry(), pendingLocalToolCalls: new Map(), logger,
     tryGetSessionManager: async () => ({ getSession: async () => ({
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.6-flash' }, createdAt: 1, updatedAt: 1,
       id: 'photos', title: '照片按日期改名', projectId: 'photo-project', workingDirectory: '/workspace/photos',
     }) }),
     tryGetCLISessionManager: async () => null,
-    getDurableRunRollout: () => ({ policy: { durableActivation: false }, ready: true }),
+    getDurableRunRollout: () => ({ policy: resolveDurableRunRollout({ CODE_AGENT_DURABLE_RUN_MODE: 'legacy' }), ready: true }),
     getSupabaseForSession: async () => null,
-  } as Parameters<typeof createAgentRouter>[0]));
+  }));
   app.get('/explicit-failure', (_req, res) => { res.status(503).json({ error: 'storage unavailable' }); });
   app.use(handleServerError(logger));
   server = app.listen(0, '127.0.0.1');

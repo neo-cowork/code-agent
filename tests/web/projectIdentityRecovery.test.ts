@@ -21,6 +21,10 @@ import { setDbAvailable } from '../../src/web/helpers/sessionCache';
 import { RunRegistry } from '../../src/host/runtime/runRegistry';
 import { workspacePathIdentity } from '../../src/host/runtime/workspaceScope';
 import { createAgentLoop } from '../../src/cli/bootstrap';
+import { createLogger } from '../../src/host/services/infra/logger';
+import { resolveDurableRunRollout } from '../../src/host/app/durableRunRollout';
+import type { HandlerFn } from '../../src/host/platform/ipcTypes';
+import type { StoredSession } from '../../src/host/protocol/types/repositories';
 import type { AgentEvent } from '../../src/shared/contract';
 
 vi.mock('../../src/cli/adapter', () => ({ createCLIAgent: vi.fn(async () => ({ getConfig: () => ({
@@ -44,7 +48,9 @@ beforeEach(async () => {
   root = mkdtempSync(join(tmpdir(), 'project-confirm-')); folder = join(root, 'photos'); mkdirSync(folder);
   previousDataDir = process.env.CODE_AGENT_DATA_DIR; process.env.CODE_AGENT_DATA_DIR = join(root, 'data');
   resetFolderTrustServiceForTest();
-  db = new Database(':memory:'); applySchema(db, logger); applySessionsMigrations(db, logger);
+  db = new Database(':memory:');
+  const schemaLogger = createLogger('ProjectIdentityRecoveryTest');
+  applySchema(db, schemaLogger); applySessionsMigrations(db, schemaLogger);
   const now = Date.now();
   db.prepare('INSERT INTO projects (id,name,workspace_path,workspace_key,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?)')
     .run('photos-project', 'Photos', folder, 'photos-key', 'active', now, now);
@@ -52,19 +58,24 @@ beforeEach(async () => {
     .run('photos-source', 'photos-project', folder, folder, 'primary', 'read_write', 'trusted', now, now);
   const core = getDatabase();
   vi.spyOn(core, 'getProjectRepo').mockReturnValue(new ProjectRepository(db));
-  const session = { id: 'photos', title: 'Photos', projectId: 'photos-project', workingDirectory: folder,
-    modelProvider: 'xiaomi', model: 'mimo-v2.6-flash', createdAt: now, updatedAt: now };
-  vi.spyOn(core, 'getSession').mockReturnValue(session as ReturnType<typeof core.getSession>);
+  const session: StoredSession = { id: 'photos', title: 'Photos', projectId: 'photos-project', workingDirectory: folder,
+    modelConfig: { provider: 'xiaomi', model: 'mimo-v2.6-flash' }, messageCount: 0, createdAt: now, updatedAt: now };
+  vi.spyOn(core, 'getSession').mockReturnValue(session);
   vi.spyOn(getAuthService(), 'getCurrentUser').mockReturnValue(null);
   setDbAvailable(false);
-  const handlers = new Map();
-  registerProjectHandlers({ handle: (channel, handler) => handlers.set(channel, handler) } as Parameters<typeof registerProjectHandlers>[0]);
+  const handlers = new Map<string, HandlerFn>();
+  registerProjectHandlers({
+    handle: (channel, handler) => { handlers.set(channel, handler); },
+    on: vi.fn(),
+    removeHandler: channel => { handlers.delete(channel); },
+    removeAllListeners: vi.fn(),
+  });
   const app = express(); app.use(express.json());
   app.use('/api', createAgentRouter({ runRegistry: new RunRegistry(), pendingLocalToolCalls: new Map(), logger,
     tryGetSessionManager: async () => ({ getSession: async () => session }), tryGetCLISessionManager: async () => null,
     getSupabaseForSession: async () => null,
-    getDurableRunRollout: () => ({ policy: { durableActivation: false }, ready: true }),
-  } as Parameters<typeof createAgentRouter>[0]));
+    getDurableRunRollout: () => ({ policy: resolveDurableRunRollout({ CODE_AGENT_DURABLE_RUN_MODE: 'legacy' }), ready: true }),
+  }));
   app.use('/api', createDomainRouter({ handlers, logger })); app.use(handleServerError(logger));
   server = app.listen(0, '127.0.0.1'); await new Promise<void>(resolve => server.once('listening', resolve));
   const address = server.address(); if (!address || typeof address === 'string') throw new Error('Expected TCP');
