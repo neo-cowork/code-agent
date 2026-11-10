@@ -56,7 +56,7 @@ export const NotificationPermissionRow: React.FC = () => {
     ? 'border-badge-success/30 bg-emerald-500/10 text-badge-success'
     : permission === 'denied'
       ? 'border-badge-danger/30 bg-red-500/10 text-badge-danger'
-      : 'border-badge-warning/30 bg-amber-500/10 text-badge-warning';
+      : 'border-zinc-600 bg-zinc-800/60 text-zinc-400';
 
   return (
     <div
