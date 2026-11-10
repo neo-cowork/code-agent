@@ -9,7 +9,7 @@
 //   2) cuaStatefulComputerUse.schema —— V2 computer_use 描述
 // 改动时保持 ≤ 35 words（token 成本约束）。
 
-/** cua 入口工具描述统一追加的阶梯后缀（31 words）。 */
+/** cua 入口工具描述统一追加的阶梯后缀（≤35 words）。 */
 export const CUA_SCREEN_LADDER_TOOL_SUFFIX =
   'Prefer connectors/files/shell/browser_action. Before first GUI control (including osascript), say one sentence naming the app and why direct control is needed; pure Apple Events data access is exempt.';
 

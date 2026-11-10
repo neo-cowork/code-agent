@@ -75,7 +75,8 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // sys-v106：N-FIX-BROWSER-TASK-CONTEXT-BLOAT-SNAPSHOT——get_dom_snapshot 改紧凑逐行输出（refId | tag | label）+
 // 字符预算 + offset 分页；browser_action schema 新增 offset，targetRef 描述改为 refId 行。
 // sys-v107：首次 GUI 操作前说明应用和原因，涵盖 Bash/osascript；纯 Apple Events 数据访问除外。
-export const PROMPT_VERSION = 'sys-v107' as const;
+// sys-v108：明确首次 GUI 说明和连接器不可用事实必须写入可见 content，而非 reasoning。
+export const PROMPT_VERSION = 'sys-v108' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =
