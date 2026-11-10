@@ -484,11 +484,25 @@ export function formatRunListTime(value?: string | number): string {
   return `${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-export function formatDuration(ms?: number): string {
-  if (ms == null) return '—';
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${(ms / 60_000).toFixed(1)}m`;
+/**
+ * 运行耗时的人话显示：<1s / N 秒 / X 分 Y 秒 / X 小时 Y 分 / X 天 Y 小时，末尾为 0 的部分省略。
+ * 先取整到秒再按余数拆分，59.9s 才会正确进位成 1 分。
+ */
+export function formatDuration(ms?: number | null, lang: CronHumanLang = 'zh'): string {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return '—';
+  const zh = lang === 'zh';
+  if (ms === 0) return '0s';
+  if (ms < 1000) return '<1s';
+  const total = Math.round(ms / 1000);
+  const units = zh ? ['天', '小时', '分', '秒'] : ['d', 'h', 'm', 's'];
+  const sizes = [86400, 3600, 60, 1];
+  const start = sizes.findIndex((size) => total >= size);
+  const major = Math.floor(total / sizes[start]);
+  const minor = start + 1 < sizes.length ? Math.floor((total % sizes[start]) / sizes[start + 1]) : 0;
+  const part = (value: number, unit: string) => (zh ? `${value} ${unit}` : `${value}${unit}`);
+  const text = [part(major, units[start])];
+  if (minor > 0) text.push(part(minor, units[start + 1]));
+  return text.join(' ');
 }
 
 /** 单次运行/每日小计的美元显示（保留 4 位小数）。无模型调用与云端运行都是 dash。 */
