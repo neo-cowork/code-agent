@@ -141,7 +141,10 @@ async function executeReminders(
     };
   } catch (error) {
     const osascriptFailure = isAppleScriptFailure(error);
-    const failure = describeAppleScriptFailure('Reminders', error);
+    const failure = describeAppleScriptFailure(
+      'Reminders', error,
+      action === 'list_reminders' ? { timeoutContext: 'list_reminders' } : undefined,
+    );
     ctx.logger.warn('reminders connector failed', {
       connector: 'reminders',
       code: osascriptFailure ? failure.code : 'connector_error',

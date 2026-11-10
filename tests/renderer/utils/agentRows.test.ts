@@ -192,3 +192,13 @@ describe('applyMemberHolds', () => {
     expect(applyMemberHolds(rows, new Set())[0]?.hold).toBeUndefined();
   });
 });
+
+it('uses the shared snapshot display name to distinguish same-role helpers', () => {
+  const snapshotNodes = ['总结A', '总结B'].map((displayName, index) => ({
+    id: `helper-${index}`, role: 'explore', displayName, status: 'completed' as const,
+    statusLabel: '已完成', children: [], worktreeState: { status: 'none' as const },
+    budgetSummary: {}, evidenceRefs: [], sources: ['subagentContext' as const],
+  }));
+  expect(buildAgentRows({ members: [], nodes: snapshotNodes, tasks: [] }).map((row) => row.name))
+    .toEqual(['总结A', '总结B']);
+});

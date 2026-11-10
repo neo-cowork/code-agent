@@ -51,6 +51,7 @@ export const AppshotsSettings: React.FC = () => {
   // 点过「开启快捷键」后最多轮询 60s（2s 一次）等安装结果；平时不轮询。
   const [hotkeyPollUntil, setHotkeyPollUntil] = useState(0);
   const pollUntilRef = useRef(0);
+  const hotkeyEnableVisible = isMacPlatform && hotkeySupported && !!hotkeyStatus && !hotkeyStatus.tapInstalled;
 
   const refreshHotkeyStatus = useCallback(async () => {
     if (!isMacPlatform || !isNativeCommandRuntimeAvailable()) return;
@@ -230,6 +231,7 @@ export const AppshotsSettings: React.FC = () => {
         <h3 className="text-sm font-medium text-zinc-200 mb-2">{appshotsText.permissionsTitle}</h3>
         <p className="text-xs text-zinc-500 mb-4">
           {appshotsText.permissionsDescription}
+          {hotkeyEnableVisible && appshotsText.permissionsHotkeyHint}
         </p>
         <div className="space-y-2">
           <button
@@ -271,7 +273,7 @@ export const AppshotsSettings: React.FC = () => {
                     ? appshotsText.hotkeyStatusOn
                     : appshotsText.hotkeyStatusNeedsRestart}
               </span>
-              {!hotkeyStatus.tapInstalled && (
+              {hotkeyEnableVisible && (
                 <Button
                   size="sm"
                   variant="secondary"
