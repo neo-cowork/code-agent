@@ -7,7 +7,6 @@
 import { expect, test, type Page } from './fixtures/axeTest';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-
 import { dismissFirstRunDialogs } from './firstRunDialogs';
 import {
   allocatePort,
@@ -27,14 +26,12 @@ import {
   type DbReadback,
   type ServerHandle,
 } from './fixtures/recoveryMatrixHost';
-
 test.describe.configure({ mode: 'default' });
 test.skip(
   process.env.CODE_AGENT_E2E_RECOVERY_MATRIX !== '1',
   '需要 CODE_AGENT_E2E_RECOVERY_MATRIX=1（自管 webServer，不进默认 e2e 批）',
 );
 test.setTimeout(240_000);
-
 const RECOVERY_TESTIDS = [
   'stream-interruption-decision',
   'durable-resume-notice',
@@ -53,21 +50,17 @@ const RECOVERY_TESTIDS = [
   'rate-limited-error-line',
   'chat-welcome-title',
 ];
-
 let current: ServerHandle | null = null;
-
 // cells.jsonl is truncated by the npm script, not here: a red cell restarts the
 // worker, and beforeAll would wipe rows the previous worker already appended.
 test.beforeAll(async () => {
   await mkdir(SHOT_DIR, { recursive: true });
 });
-
 test.afterEach(async () => {
   if (!current) return;
   await stopServer(current).catch(() => undefined);
   current = null;
 });
-
 test('A-continue app restart then 继续', async ({ page }) => {
   const parked = await parkApproval(page, 'A-continue');
   const restarted = await restartServer(requireServer('A-continue'));
@@ -96,7 +89,6 @@ test('A-continue app restart then 继续', async ({ page }) => {
     gap: mergeGap(finished.gap, missingRecoveryGap(before.actions)),
   }, true, false);
 });
-
 test('A-abandon app restart then 放弃', async ({ page }) => {
   const parked = await parkApproval(page, 'A-abandon');
   const restarted = await restartServer(requireServer('A-abandon'));
@@ -125,7 +117,6 @@ test('A-abandon app restart then 放弃', async ({ page }) => {
     gap: mergeGap(finished.gap, missingRecoveryGap(before.actions)),
   }, true, false);
 });
-
 test('B1 provider failure exhausts stream-break retries', async ({ page }) => {
   current = await boot('B1', { extraEnv: { CODE_AGENT_E2E_STREAM_BREAK_FAILURES: '5' } });
   const sessionId = await openComposer(page, current, 'B1 断流耗尽');
@@ -156,7 +147,6 @@ test('B1 provider failure exhausts stream-break retries', async ({ page }) => {
   } catch (error) {
     exhaustedError = error instanceof Error ? error.message : String(error);
   }
-
   const restartedServer = await restartServer(requireServer('B1'), { extraEnv: { CODE_AGENT_E2E_STREAM_BREAK_FAILURES: '5' } });
   current = restartedServer;
   await installSettingsStub(page);
@@ -188,7 +178,6 @@ test('B1 provider failure exhausts stream-break retries', async ({ page }) => {
   const errors = [exhaustedError, restartError].filter((item): item is string => item !== null);
   if (errors.length > 0) throw new Error(errors.join('\n'));
 });
-
 test('B2 provider base URL on a closed local port', async ({ page }) => {
   const closedPort = await allocatePort();
   current = await boot('B2', {
@@ -219,7 +208,6 @@ test('B2 provider base URL on a closed local port', async ({ page }) => {
     notes: 'Config key used: models.providers.openai.baseUrl',
   }, true, false);
 });
-
 test('C-allow parked AskUserQuestion', async ({ page }) => {
   const parked = await parkApproval(page, 'C-allow');
   const before = await captureSurface(page);
@@ -237,7 +225,6 @@ test('C-allow parked AskUserQuestion', async ({ page }) => {
     notes: `session ${parked.sessionId}`,
   }, true, completed);
 });
-
 test('C-deny parked AskUserQuestion', async ({ page }) => {
   const parked = await parkApproval(page, 'C-deny');
   const before = await captureSurface(page);
@@ -257,7 +244,6 @@ test('C-deny parked AskUserQuestion', async ({ page }) => {
     notes: `session ${parked.sessionId}`,
   }, true, hidden);
 });
-
 test('C-foreground E2E_SNAPSHOT_REPLAY_WRITE decision slot', async ({ page }) => {
   current = await boot('C-write');
   await openComposer(page, current, 'C 前台写权限');
@@ -279,15 +265,12 @@ test('C-foreground E2E_SNAPSHOT_REPLAY_WRITE decision slot', async ({ page }) =>
     notes: slot ? 'decision-slot appeared' : 'decision-slot did not appear in web mode',
   }, true, completed || slot);
 });
-
 test('D1 orphan tool call without a begin row', async ({ page }) => {
   await runOrphanCell(page, 'D1', 'D1-no-begin');
 });
-
 test('D2 orphan tool call with a begin row', async ({ page }) => {
   await runOrphanCell(page, 'D2', 'D2-with-begin');
 });
-
 // N-PARKED-APPROVAL-SURVIVE-RESTART-RESUME ⑦：真进程档。cron 派无人值守会话停车一条真
 // Bash 追加写（append 可数：执行两次就有两行）→ SIGKILL → 同数据目录重启 → 幸存卡仍可批 →
 // 真 UI 批准（自动化收件箱 AutomationReviewInbox 的「批准」按钮，rework r2：不许绕 UI 直
@@ -336,7 +319,6 @@ test('G parked tool approval survives SIGKILL restart and runs exactly once', as
   // 发出去就转而轮询 DB 等停车行落库（api 的 90s abort 也要吞掉）。
   void api(current.baseUrl, token, 'POST', '/api/domain/cron/triggerJob', { payload: { jobId } })
     .catch(() => undefined);
-
   // 等停车行真落库（无人值守会话的工具审批走 B2 停车，带 argsRef + 指纹原料才算可存活）。
   const parkedBefore = await waitForParkedToolApproval(current.dirs.dataDir, 60_000);
   expect(parkedBefore.status).toBe('pending');
@@ -344,14 +326,12 @@ test('G parked tool approval survives SIGKILL restart and runs exactly once', as
     sessionId?: string; argsRef?: { toolCallId: string }; displayTool?: string;
   };
   expect(payloadBefore.argsRef?.toolCallId, 'parked row must carry argsRef').toBeTruthy();
-
   // SIGKILL + 同数据目录重启（restartServer 内部 killServer = SIGKILL）。
   const restarted = await restartServer(requireServer('G'));
   current = restarted;
   await installSettingsStub(page);
   await preparePage(page, restarted.baseUrl);
   const afterToken = await getAuthToken(page);
-
   // ① 幸存：仍 pending、标题带「重启前发起」。
   const rowsAfter = await readParkedApprovals(restarted.dirs.dataDir);
   const survivor = rowsAfter.find((row) => row.id === parkedBefore.id);
@@ -360,7 +340,6 @@ test('G parked tool approval survives SIGKILL restart and runs exactly once', as
   const payloadAfter = JSON.parse(survivor?.payloadJson ?? '{}') as { displayTool?: string; sessionId?: string | null };
   expect(payloadAfter.displayTool ?? '').toContain('重启前发起');
   const parkedSessionId = payloadAfter.sessionId ?? payloadBefore.sessionId ?? '';
-
   // ④ 该会话 durable run 停靠 waiting/guard_halt（不被启动清扫自动续跑）；无 durable 行也如实记录。
   const readbackAfterRestart = await readSessionDb(restarted.dirs.dataDir, parkedSessionId);
   const memberRun = readbackAfterRestart.durableRuns.find((run) => run.sessionId === parkedSessionId);
@@ -368,7 +347,6 @@ test('G parked tool approval survives SIGKILL restart and runs exactly once', as
     expect(memberRun.status, 'survivor session run must be parked waiting').toBe('waiting');
     expect(memberRun.interruptCause, 'survivor session run must be guard_halt').toBe('guard_halt');
   }
-
   // ⑦ r2 用户路径：重启后走真 UI——自动化收件箱里应有一张「重启前发起 · Bash」幸存卡，
   // 截图后点它的「批准」（parked-approve）。不再用直连 POST 代替第一下点击。
   await page.getByTestId('sidebar-capability-automation').click();
@@ -376,15 +354,13 @@ test('G parked tool approval survives SIGKILL restart and runs exactly once', as
   // 收件箱挂在「运行记录」tab 下（常驻挂载、jobs tab 用 CSS hidden 藏住），先切 tab。
   await page.getByTestId('cron-center-tab-runs').click();
   const survivorCard = page.getByTestId('parked-approval-item').filter({ hasText: '重启前发起' }).first();
-  await expect(survivorCard, 'survivor card must be visible in the automation review inbox').toBeVisible({ timeout: 15_000 });
+  await expect(survivorCard, 'survivor card must be visible in the Automations → Run history').toBeVisible({ timeout: 15_000 });
   await expect(survivorCard).toContainText('重启前发起 · Bash');
   await page.screenshot({ path: shotPath('G-inbox-survivor'), fullPage: false });
   await survivorCard.getByTestId('parked-approve').click();
-
   // 副作用恰好一次：effect 文件出现且只追加了一行。
   const effectOccurrences = await waitForEffectOccurrences(effectFile, 30_000);
   const exactlyOnce = effectOccurrences === 1;
-
   // 批准的结果在原会话转录里可见：打开该会话，Bash 步骤行是完成形（「运行了命令 …」，
   // 失败形才带「未成功」），展开后能看到执行输出（Bash output 的 [cwd: …] 前缀）。
   // 先落一份页面全文快照再断言，红的时候有现场可查。
@@ -410,14 +386,12 @@ test('G parked tool approval survives SIGKILL restart and runs exactly once', as
   ).toBeVisible({ timeout: 10_000 });
   const resultVisibleInSession = true; // 到这里三道 expect 已过，进 jsonl 记录用
   await page.screenshot({ path: shotPath('G-session-result'), fullPage: false });
-
   // 再点一次（API 投递口等价第二次点击）：不重复执行。
   await api(restarted.baseUrl, afterToken, 'POST', '/api/agent/permission-response', [
     survivor?.id ?? parkedBefore.id, 'allow', parkedSessionId,
   ]).catch(() => undefined);
   await page.waitForTimeout(3_000);
   const finalOccurrences = await countEffectOccurrences(effectFile);
-
   const rowsFinal = await readParkedApprovals(restarted.dirs.dataDir);
   const finalRow = rowsFinal.find((row) => row.id === parkedBefore.id);
   const apiIds = await messageIds(page, restarted, parkedSessionId);
@@ -437,7 +411,7 @@ test('G parked tool approval survives SIGKILL restart and runs exactly once', as
     injection: 'E2E_BACKGROUND_TOOL_APPROVAL via cron agent job (unattended session parks a real Bash append), SIGKILL, restart same data dir',
     statusText: resultLine,
     actions: ['批准（AutomationReviewInbox 幸存卡 parked-approve 按钮）'],
-    actionTaken: 'click 批准 on the survivor card in the automation review inbox',
+    actionTaken: 'click 批准 on the survivor card in the Automations → Run history',
     result: exactlyOnce && finalOccurrences === 1
       ? `inbox approve ran the tool exactly once (${finalOccurrences} line); result visible in session transcript; row=${finalRow?.status}`
       : `side effect count=${finalOccurrences} (expected exactly 1); row=${finalRow?.status}`,
@@ -446,7 +420,6 @@ test('G parked tool approval survives SIGKILL restart and runs exactly once', as
     ...finished,
   }, true, exactlyOnce && finalOccurrences === 1);
 });
-
 async function waitForParkedToolApproval(dataDir: string, timeoutMs: number): Promise<{ id: string; status: string; payloadJson: string }> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
@@ -465,7 +438,6 @@ async function waitForParkedToolApproval(dataDir: string, timeoutMs: number): Pr
     await pageIndependentDelay(1_000);
   }
 }
-
 async function waitForEffectOccurrences(file: string, timeoutMs: number): Promise<number> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
@@ -475,7 +447,6 @@ async function waitForEffectOccurrences(file: string, timeoutMs: number): Promis
     await pageIndependentDelay(500);
   }
 }
-
 async function countEffectOccurrences(file: string): Promise<number> {
   try {
     const content = await readFile(file, 'utf8');
@@ -484,11 +455,9 @@ async function countEffectOccurrences(file: string): Promise<number> {
     return 0;
   }
 }
-
 function pageIndependentDelay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-
 test('E stream break keeps the segment and continues', async ({ page }) => {
   current = await boot('E');
   const sessionId = await openComposer(page, current, 'E 断流续接');
@@ -519,7 +488,6 @@ test('E stream break keeps the segment and continues', async ({ page }) => {
     screenshot: 'test-results/recovery-matrix/E-stream-break.png',
   }, true, part2 || part2AfterReload);
 });
-
 test('F empty final is not injectable today', async () => {
   await publish({
     cell: 'F-empty-final',
@@ -532,7 +500,6 @@ test('F empty final is not injectable today', async () => {
     notes: 'e2eLocalAgentModel.ts has no empty-final marker; adding one is out of scope',
   }, false, false);
 });
-
 async function runOrphanCell(page: Page, variant: 'D1' | 'D2', cell: string): Promise<void> {
   const booted = await boot(cell);
   current = booted;
@@ -577,7 +544,6 @@ async function runOrphanCell(page: Page, variant: 'D1' | 'D2', cell: string): Pr
     ...finished,
   }, true, false);
 }
-
 async function boot(
   label: string,
   options: Omit<Parameters<typeof startServer>[0], 'dirs'> = {},
@@ -590,12 +556,10 @@ async function boot(
     throw new Error(`cell ${label} server did not come back healthy: ${detail}`, { cause: error });
   }
 }
-
 function requireServer(label: string): ServerHandle {
   if (!current) throw new Error(`cell ${label} lost its server`);
   return current;
 }
-
 async function parkApproval(page: Page, label: string): Promise<{ sessionId: string; taskId: string }> {
   current = await boot(label);
   await installSettingsStub(page);
@@ -634,12 +598,10 @@ async function parkApproval(page: Page, label: string): Promise<{ sessionId: str
   await expect(card).toBeVisible({ timeout: 15_000 });
   return { sessionId, taskId };
 }
-
 function parseDelegatedTaskId(output: unknown): string | null {
   const text = typeof output === 'string' ? output : JSON.stringify(output ?? '');
   return text.match(/「[^」]*」\(([^()\s]+)\)/)?.[1] ?? null;
 }
-
 async function expandToolGroup(page: Page): Promise<boolean> {
   const head = page.getByTestId('tool-group-head-label').first();
   if (!(await head.isVisible().catch(() => false))) return false;
@@ -647,7 +609,6 @@ async function expandToolGroup(page: Page): Promise<boolean> {
   if (expanded !== 'true') await head.click();
   return true;
 }
-
 async function openParkedMember(page: Page, taskId: string): Promise<void> {
   const bar = page.getByTestId('session-member-bar-collapsed');
   await expect(bar).toBeVisible({ timeout: 4_000 });
@@ -657,7 +618,6 @@ async function openParkedMember(page: Page, taskId: string): Promise<void> {
   await openMember.click();
   await expect(page.getByTestId('member-conversation-view')).toBeVisible({ timeout: 15_000 });
 }
-
 async function revealApproval(
   page: Page,
   taskId: string,
@@ -686,7 +646,6 @@ async function revealApproval(
     revealedMember: true,
   };
 }
-
 async function openComposer(page: Page, server: ServerHandle, title: string): Promise<string> {
   await installSettingsStub(page);
   await preparePage(page, server.baseUrl);
@@ -696,7 +655,6 @@ async function openComposer(page: Page, server: ServerHandle, title: string): Pr
   await expect(page.getByTestId('chat-composer-textarea')).toBeVisible({ timeout: 15_000 });
   return sessionId;
 }
-
 async function preparePage(page: Page, baseUrl: string): Promise<void> {
   const ssePromise = page.waitForResponse(
     (response) => response.url().includes('/api/events'),
@@ -711,7 +669,6 @@ async function preparePage(page: Page, baseUrl: string): Promise<void> {
   await dismissFirstRunDialogs(page);
   await dismissExtra(page);
 }
-
 async function dismissExtra(page: Page): Promise<void> {
   for (const name of ['关闭', '信任并加载', '返回应用']) {
     const button = page.getByRole('button', { name }).first();
@@ -720,7 +677,6 @@ async function dismissExtra(page: Page): Promise<void> {
     }
   }
 }
-
 async function installSettingsStub(page: Page): Promise<void> {
   await page.unroute('**/api/domain/settings/get').catch(() => undefined);
   await page.route('**/api/domain/settings/get', async (route) => {
@@ -741,7 +697,6 @@ async function installSettingsStub(page: Page): Promise<void> {
     });
   });
 }
-
 async function getAuthToken(page: Page): Promise<string> {
   const token = await page.evaluate(() => (
     (window as unknown as Record<string, unknown>).__CODE_AGENT_TOKEN__ as string | undefined
@@ -749,7 +704,6 @@ async function getAuthToken(page: Page): Promise<string> {
   if (!token) throw new Error('window.__CODE_AGENT_TOKEN__ missing');
   return token;
 }
-
 async function createSession(baseUrl: string, token: string, title: string): Promise<string> {
   const response = await api(baseUrl, token, 'POST', '/api/sessions', { title });
   expect(response.ok, `create session failed: ${response.status} ${response.text.slice(0, 300)}`).toBe(true);
@@ -758,20 +712,17 @@ async function createSession(baseUrl: string, token: string, title: string): Pro
   if (!id) throw new Error('create session returned no id');
   return id;
 }
-
 async function openSession(page: Page, sessionId: string): Promise<void> {
   const item = page.locator(`[data-session-id="${sessionId}"]`).first();
   await expect(item).toBeVisible({ timeout: 15_000 });
   await item.click();
   await expect(item).toHaveAttribute('aria-current', 'true', { timeout: 10_000 });
 }
-
 async function sendComposer(page: Page, text: string): Promise<void> {
   const composer = page.getByTestId('chat-composer-textarea');
   await composer.fill(text);
   await composer.press('Enter');
 }
-
 async function messageIds(page: Page, server: ServerHandle, sessionId: string): Promise<string[]> {
   const token = await getAuthToken(page);
   const response = await api(server.baseUrl, token, 'GET', `/api/sessions/${sessionId}/messages`);
@@ -783,7 +734,6 @@ async function messageIds(page: Page, server: ServerHandle, sessionId: string): 
   const messages = Array.isArray(body.data) ? body.data : body.data?.messages ?? body.messages ?? [];
   return messages.map((message) => message.id).filter((id): id is string => typeof id === 'string');
 }
-
 async function api(
   baseUrl: string,
   token: string,
