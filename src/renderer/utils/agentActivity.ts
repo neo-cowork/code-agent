@@ -146,5 +146,5 @@ export function resolveAgentActivityStepStatus(input: {
 }
 
 export function isDelegationTool(name: string): boolean {
-  return name === 'delegate_task' || name === 'spawn_agent';
+  return name === 'delegate_task' || name === 'spawn_agent' || name === 'delegate_session';
 }

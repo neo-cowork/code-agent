@@ -50,8 +50,10 @@ import {
 import { buildTurnTerminalFailure } from './agentTurnTerminalFailure';
 import { createMarkSessionExecutionEnvironment } from '../../host/services/cloudRun/sessionExecutionEnvironmentMarker';
 import { checkEnvironmentProtocol } from './environmentProtocolGate';
+import { PROMPT_REQUIRED } from '../../shared/contract/agentRunErrors';
 import {
   AgentRunBodySchema,
+  isPromptRequiredFailure,
   AgentToolResultBodySchema,
   type AgentRunBody,
 } from './agentBodySchemas';
@@ -541,9 +543,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       ? body.clientMessageId.trim()
       : undefined;
 
-    if (!prompt) {
+    if (!prompt.trim() && !body.attachments?.length) {
       if (transport.cloudRunId) cloudRunRuntime.settle(transport.cloudRunId, 'failed');
-      res.status(400).json({ error: 'Missing prompt' });
+      res.status(400).json({ error: 'Missing prompt', code: PROMPT_REQUIRED });
       return;
     }
 
@@ -1373,6 +1375,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const requestAttachments = body.attachments ?? [];
       const persistedAttachments = sanitizeAttachmentsForPersistence(requestAttachments);
       const visiblePrompt = stripInlineAttachmentBlocks(prompt);
+      // 只发文件时没有文字可做标题：退回首个附件名，不能落空串。
+      const titleSource = visiblePrompt.trim() || requestAttachments[0]?.name || visiblePrompt;
       const msgId = clientMessageId || generateMessageId();
       // ADR-040：renderer 只报它诚实知道的坐标，revision 在这里读源文件现算。
       // 升不上去（PPT / 缺 sheetName / 文件读不到）就没有 locator，退回 legacy 行为。
@@ -1520,7 +1524,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       if (isNewSession && body.historyVisibility !== 'meta') {
         const current = await (await deps.tryGetSessionManager())?.getSession?.(sessionId, 1);
         if (isPlaceholderSessionTitle(current?.title)) {
-          const title = visiblePrompt.length > 30 ? visiblePrompt.substring(0, 30) + '...' : visiblePrompt;
+          const title = buildSessionTitle(titleSource);
           broadcastSSE('session:updated', { sessionId, updates: { title } });
           broadcastSSE('session:list-updated', undefined);
         }
@@ -1534,7 +1538,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
       userMsgPrePersistedDb = await sessionStore.prePersistUserMessage({
         sessionId,
-        title: buildSessionTitle(visiblePrompt),
+        title: buildSessionTitle(titleSource),
         // preflight 时行还不存在的会话（服务端生成 sessionId 等），行在本轮 pre-persist
         // 才建：目录必须随建行落库——回写守卫要求 persistedSession 非空，跳过它的话
         // 第二轮起会话掉回扁平默认目录，同会话产物分裂（rework r1）
@@ -1576,7 +1580,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           await syncSupabaseSessionRow(sb, {
             sessionId,
             isNewSession,
-            title: buildSessionTitle(visiblePrompt),
+            title: buildSessionTitle(titleSource),
             provider: runModelConfig.provider,
             model: runModelConfig.model,
           });
@@ -1610,7 +1614,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         });
         await sessionStore.commitTurn({
           sessionId,
-          title: buildSessionTitle(visiblePrompt),
+          title: buildSessionTitle(titleSource),
           modelConfig: runModelConfig,
           historyLength: history.length,
           userMessagePrePersistedDb: userMsgPrePersistedDb,
@@ -1642,7 +1646,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       });
       const { assistantMsgId } = await sessionStore.commitTurn({
         sessionId,
-        title: buildSessionTitle(visiblePrompt),
+        title: buildSessionTitle(titleSource),
         modelConfig: runModelConfig,
         historyLength: history.length,
         userMessagePrePersistedDb: userMsgPrePersistedDb,
@@ -1696,7 +1700,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           await syncSupabaseSessionRow(sb, {
             sessionId,
             isNewSession,
-            title: buildSessionTitle(visiblePrompt),
+            title: buildSessionTitle(titleSource),
             provider: runModelConfig.provider,
             model: runModelConfig.model,
           });
@@ -1732,7 +1736,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           // 更新会话标题（第一轮消息时）
           if (isNewSession) {
             await sessionsTable.update({
-              title: buildSessionTitle(visiblePrompt),
+              title: buildSessionTitle(titleSource),
               updated_at: Date.now(),
             }).eq('id', sessionId);
           }
@@ -1854,7 +1858,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     }
     const parsedBody = AgentRunBodySchema.safeParse(req.body);
     if (!parsedBody.success) {
-      res.status(400).json({ error: 'Missing prompt' });
+      res.status(400).json({
+        error: 'Missing prompt',
+        ...(isPromptRequiredFailure(parsedBody.error, req.body) ? { code: PROMPT_REQUIRED } : {}),
+      });
       return;
     }
     // N2：/run 的 context 是 passthrough，客户端可伪造 delegationOrigin——一律剥掉。

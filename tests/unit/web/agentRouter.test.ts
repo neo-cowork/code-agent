@@ -2401,6 +2401,41 @@ describe('createAgentRouter', () => {
     expect(createCLIAgent).not.toHaveBeenCalled();
   });
 
+  it('rejects an empty or whitespace prompt without attachments with the stable PROMPT_REQUIRED code', async () => {
+    for (const prompt of ['', '   ', undefined]) {
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt, sessionId: 'session-empty-prompt' }),
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: 'Missing prompt', code: 'PROMPT_REQUIRED' });
+    }
+    expect(mockCreateAgentLoop).not.toHaveBeenCalled();
+  });
+
+  it('accepts an empty prompt when attachments are present', async () => {
+    mockRun.mockResolvedValueOnce(undefined);
+    const attachment = {
+      id: 'att-only-1',
+      type: 'file',
+      category: 'text',
+      name: 'notes.txt',
+      size: 5,
+      mimeType: 'text/plain',
+      data: 'hello',
+    };
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: '', attachments: [attachment], sessionId: 'session-attachment-only' }),
+    });
+    await response.text();
+
+    expect(response.status).toBe(200);
+    expect(mockCreateAgentLoop).toHaveBeenCalled();
+  });
+
   it('uses clientMessageId as the persisted user message id for /api/run', async () => {
     mockRun.mockResolvedValueOnce(undefined);
 

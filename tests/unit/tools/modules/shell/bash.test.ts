@@ -1699,9 +1699,9 @@ describe('bashModule sandbox escalation', () => {
     }
   });
 
-  it('does not open a second card when the approved retry fails', async () => {
+  it('does not label a generic approved escalation as an rm-specific failure', async () => {
     const deniedPath = resolveCanonicalRunPath(`/tmp/sandbox-escalation-retry-${process.pid}`);
-    const denial = `printf '%s\\n' "EPERM: operation not permitted, open '${deniedPath}'" >&2; exit 1`;
+    const denial = `printf '%s\\n' "cp: ${deniedPath}: Operation not permitted" >&2; exit 1`;
     wrapMock
       .mockReturnValueOnce({ command: denial, cleanup: cleanupMock })
       .mockReturnValueOnce({ command: denial, cleanup: cleanupMock });
@@ -1709,11 +1709,29 @@ describe('bashModule sandbox escalation', () => {
       .mockResolvedValueOnce({ allow: true as const })
       .mockResolvedValueOnce({ allow: true as const });
     const handler = await bashModule.createHandler();
-    const result = await handler.execute({ command: `printf x > ${deniedPath}` }, makeCtx(), canUse);
+    const result = await handler.execute({ command: `cp /tmp/sandbox-escalation-source ${deniedPath}` }, makeCtx(), canUse);
     expect(result.ok).toBe(false);
     expect(wrapMock).toHaveBeenCalledTimes(2);
     expect(canUse).toHaveBeenCalledTimes(2);
-    if (!result.ok) expect(result.meta?.sandboxEscalation).toEqual({ path: deniedPath, decision: 'approved' });
+    if (!result.ok) {
+      expect(result.meta?.sandboxEscalation).toEqual({ path: deniedPath, decision: 'approved' });
+      expect(result.meta?.failureCode).toBeUndefined();
+      expect(result.error).not.toContain('删除');
+    }
+  });
+
+  it('keeps the rm-specific failure code for an approved single-file rm grant', async () => {
+    const deniedPath = resolveCanonicalRunPath(`/tmp/sandbox-escalation-approved-rm-${process.pid}`);
+    const denial = `printf '%s\\n' "rm: ${deniedPath}: Operation not permitted" >&2; exit 1`;
+    wrapMock.mockReturnValueOnce({ command: denial, cleanup: cleanupMock });
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute(
+      { command: `rm ${deniedPath}` },
+      makeCtx({ approvedSandboxWriteFile: deniedPath, policyEnforcer: undefined }),
+      allowAll,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.meta?.failureCode).toBe('sandbox-approved-rm-still-denied');
   });
 
   it('does not remember an approval across invocations', async () => {
