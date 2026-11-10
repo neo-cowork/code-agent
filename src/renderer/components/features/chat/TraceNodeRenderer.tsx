@@ -526,6 +526,7 @@ const AssistantTextNode: React.FC<{
           messageId={messageId}
           sessionId={sessionId}
           run={node.agentErrorRun}
+          lastFailure={node.agentErrorLast}
         />
       )}
 
