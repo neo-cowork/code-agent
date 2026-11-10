@@ -403,7 +403,7 @@ describe('后台轮询后的终态投影', () => {
       },
       {
         id: 'max-steps', role: 'assistant', content: '已达本任务的最大步骤上限，工具已停用。', timestamp: 8,
-        metadata: { agentError: { code: 'MAX_ITERATIONS_REACHED', category: 'generic' } },
+        metadata: { agentError: { code: 'MAX_ITERATIONS_REACHED', category: 'generic', rawMessage: '已达本任务的最大步骤上限，工具已停用。', timestamp: 8 } },
       },
       {
         id: 'background-result', role: 'user', content: '后台任务已完成，结果摘要：检查完成。', timestamp: 9, isMeta: true,
