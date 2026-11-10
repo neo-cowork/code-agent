@@ -33,6 +33,7 @@ import { recoveryLoadLightsTurn, runtimeStatusCountsAsRunning } from './parkedCo
 import { hostStampPredatesTerminal } from './terminalRunGuardStore';
 import { bindInitializedSessionBroadcasts } from './sessionStoreBroadcasts';
 import { openInitialSession } from './sessionBootDraft';
+import { getSessionTitlePlaceholder } from '../utils/sessionTitlePlaceholder';
 
 const logger = createLogger('SessionStore');
 
@@ -154,7 +155,7 @@ export function isBlankNewSession(
   if (session.isArchived || session.status === 'archived') {
     return false;
   }
-  if ((session.title || '').trim() !== '新对话') {
+  if (getSessionTitlePlaceholder(session.title, useAppStore.getState().language) === null) {
     return false;
   }
   return (session.messageCount ?? 0) === 0 && (session.turnCount ?? 0) === 0;

@@ -10,8 +10,11 @@ interface QuitGuardSnapshot {
   armedSchedules: number;
 }
 
+type QuitGuardLanguage = 'zh' | 'en';
+
 interface QuitGuardRouterDeps {
   getSnapshot: () => Promise<QuitGuardSnapshot>;
+  getLanguage?: () => QuitGuardLanguage;
 }
 
 function readIntegerCounts(snapshot: unknown): QuitGuardSnapshot | null {
@@ -36,7 +39,15 @@ export function createQuitGuardRouter(deps: QuitGuardRouterDeps): Router {
         res.status(500).json({ error: 'quit-guard-unavailable' });
         return;
       }
-      res.json(counts);
+      let language: QuitGuardLanguage = 'zh';
+      if (deps.getLanguage) {
+        try {
+          language = deps.getLanguage() === 'en' ? 'en' : 'zh';
+        } catch (error) {
+          logger.warn('quit-guard language unavailable; falling back to zh', error);
+        }
+      }
+      res.json({ ...counts, language });
     } catch (error) {
       logger.warn('quit-guard snapshot unavailable', error);
       res.status(500).json({ error: 'quit-guard-unavailable' });

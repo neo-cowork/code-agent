@@ -4,7 +4,7 @@
 // （如 ECONNRESET socket hang up）绝不出现；取消、中断、完成也逐状态钉死，zh/en 双语。
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RoleBoundCronJob } from '../../../src/shared/contract/roleAssets';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 
@@ -79,6 +79,17 @@ function renderSection(jobs = current) {
   return render(<RoleRoutinesSection roleId={ROLE_ID} jobs={jobs} />);
 }
 
+// 固定本机时区为非 UTC：任务时区 UTC 与本机不同才会带「（协调世界时）」后缀，
+// 否则在 UTC 的 CI runner 上断言会随机器时区抖动。
+// 在模块加载时设置：describe 体内的 zhDetailTime(...) 也在收集阶段按同一时区求值。
+const ORIGINAL_TZ = process.env.TZ;
+process.env.TZ = 'Asia/Shanghai';
+
+afterAll(() => {
+  if (ORIGINAL_TZ === undefined) delete process.env.TZ;
+  else process.env.TZ = ORIGINAL_TZ;
+});
+
 beforeEach(() => {
   current = sampleJobs();
   invokeDomain.mockImplementation((_domain: string, action: string) => {
@@ -121,11 +132,11 @@ function expectLastLine(needle: string): string {
 describe('RoleRoutinesSection', () => {
   it('renders next run and last result for both routines, and keeps the empty state', async () => {
     const { unmount } = renderSection();
-    const nextLabel = zhDetailTime(NEXT_AT);
+    const localNextLabel = zhDetailTime(NEXT_AT);
     const lastLabel = zhDetailTime(LAST_AT);
     const failed = screen.getByTestId('role-bound-automation-daily-report');
     const never = screen.getByTestId('role-bound-automation-weekly-report');
-    expect(failed.textContent).toContain(`下次运行：${nextLabel}`);
+    expect(failed.textContent).toContain('下次运行：2026/10/27 01:00（协调世界时）');
     // 普通失败 = 「没跑成」（运行记录同一口径）；喂进去的 ECONNRESET 原文绝不回显。
     expect(failed.textContent).toContain(`上次运行：${lastLabel} · 没跑成`);
     expect(failed.textContent).not.toContain('ECONNRESET');
@@ -133,7 +144,7 @@ describe('RoleRoutinesSection', () => {
     expect(failed.textContent).not.toContain('命令被拒绝');
     expect(failed.textContent).toContain('前往自动化面板');
     expect(never.textContent).toContain('每 1 天');
-    expect(never.textContent).toContain(`下次运行：${nextLabel}`);
+    expect(never.textContent).toContain(`下次运行：${localNextLabel}`);
     expect(never.textContent).toContain('上次运行：还没跑过');
     unmount();
 

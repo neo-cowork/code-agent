@@ -886,7 +886,7 @@ export class CronService implements Disposable {
         execution.result = await this.cloudRuntime.runJob(definition);
         execution.status = 'completed';
       } else {
-        const result = await this.executeAction(definition, definition.action, definition.timeout, execution.id, eventPayloadBlock);
+        const result = await this.executeAction(definition, definition.action, definition.timeout ?? undefined, execution.id, eventPayloadBlock);
         if (isCronAgentActionResult(result)) {
           execution.sessionId = result.sessionId;
         }
@@ -1130,7 +1130,7 @@ export class CronService implements Disposable {
     execution.startedAt = Date.now();
 
     try {
-      const result = await this.executeAction(current, current.action, current.timeout, execution.id, eventPayloadBlock);
+      const result = await this.executeAction(current, current.action, current.timeout ?? undefined, execution.id, eventPayloadBlock);
       if (isCronAgentActionResult(result)) {
         execution.sessionId = result.sessionId;
       }
@@ -1302,6 +1302,8 @@ export class CronService implements Disposable {
   }
 
   private persistJob(job: CronJobDefinition, cloudJobId?: string): Promise<void> {
+    // Normalize explicit clears and invalid limits before storing or returning the definition.
+    job.timeout = typeof job.timeout === 'number' && Number.isFinite(job.timeout) && job.timeout > 0 ? job.timeout : undefined;
     return saveCronJob(job, cloudJobId ?? this.jobs.get(job.id)?.cloudJobId);
   }
 

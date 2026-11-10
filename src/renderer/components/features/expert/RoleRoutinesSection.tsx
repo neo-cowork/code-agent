@@ -3,7 +3,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { IPC_DOMAINS } from '@shared/ipc';
-import { formatCronExpressionLabel, type CronHumanLang } from '@shared/cronHumanize';
+import type { CronHumanLang } from '@shared/cronHumanize';
 import type { RoleBoundCronJob } from '@shared/contract/roleAssets';
 import type { CronScheduleConfig } from '@shared/contract/cron';
 import ipcService from '../../../services/ipcService';
@@ -11,6 +11,7 @@ import { cronClient } from '../../../services/cronClient';
 import { useI18n } from '../../../hooks/useI18n';
 import { useAppStore } from '../../../stores/appStore';
 import { formatDateTime } from '../../../utils/formatDateTime';
+import { formatCronJobDateTime, formatCronScheduleLabelWithZone } from '../../../utils/formatCronJobTime';
 import { isCronExecutionPermissionDenialError } from '../chat/cronRunSessionStatus';
 import { Button } from '../../primitives/Button';
 import { SettingsSection } from '../settings/SettingsLayout';
@@ -39,7 +40,7 @@ function formatAutomationSchedule(schedule: CronScheduleConfig, text: RoleDetail
         : 'Webhook';
     return `事件触发 · ${binding}`;
   }
-  return formatCronExpressionLabel(schedule.expression, schedule.timezone, lang);
+  return formatCronScheduleLabelWithZone(schedule.expression, schedule.timezone, lang);
 }
 
 function statusLabel(status: RoleBoundCronJob['lastStatus'], words: CronStatusText): string {
@@ -125,7 +126,16 @@ export const RoleRoutinesSection: React.FC<RoleRoutinesSectionProps> = ({
       ) : (
         <div className="space-y-2" data-testid="role-bound-automations-list">
           {rows.map((job) => {
-            const nextRun = job.nextRunAt ? text.automationNextRun.replace('{time}', formatDateTime(job.nextRunAt, language)) : text.automationNoNextRun;
+            const nextRun = job.nextRunAt
+              ? text.automationNextRun.replace(
+                '{time}',
+                formatCronJobDateTime(
+                  job.nextRunAt,
+                  job.schedule.type === 'cron' ? job.schedule.timezone : undefined,
+                  language,
+                ),
+              )
+              : text.automationNoNextRun;
             const toggling = busy?.id === job.id && busy.action === 'toggle';
             const running = busy?.id === job.id && busy.action === 'run';
             const failed = job.lastStatus === 'failed';

@@ -13,6 +13,7 @@ import {
 } from '../../../src/host/app/applicationRunRegistry';
 import { RunRegistry } from '../../../src/host/runtime/runRegistry';
 import * as cronModule from '../../../src/host/cron/cronService';
+import * as configModule from '../../../src/host/services/core/configService';
 
 const HEALTH_KEYS = [
   'status',
@@ -155,8 +156,8 @@ describe('createQuitGuardRouter', () => {
       const response = await fetch(`${baseUrl}/api/quit-guard`);
       const body = await response.json() as Record<string, unknown>;
       expect(response.status).toBe(200);
-      expect(body).toEqual({ activeRuns: 4, armedSchedules: 7 });
-      expect(Object.keys(body)).toEqual(['activeRuns', 'armedSchedules']);
+      expect(body).toEqual({ activeRuns: 4, armedSchedules: 7, language: 'zh' });
+      expect(Object.keys(body)).toEqual(['activeRuns', 'armedSchedules', 'language']);
     } finally {
       await close(server);
     }
@@ -262,9 +263,37 @@ describe('GET /api/quit-guard on createApp', () => {
   it('returns 200 and only integer activeRuns and armedSchedules with a valid token', async () => {
     const result = await getQuitGuard(`Bearer ${SERVER_AUTH_TOKEN}`);
     expect(result.status).toBe(200);
-    expect(Object.keys(result.body)).toEqual(['activeRuns', 'armedSchedules']);
+    expect(Object.keys(result.body)).toEqual(['activeRuns', 'armedSchedules', 'language']);
     expect(Number.isInteger(result.body.activeRuns)).toBe(true);
     expect(Number.isInteger(result.body.armedSchedules)).toBe(true);
+    expect(result.body.language).toBe('zh');
+  });
+
+  it('returns the configured English language for an English UI', async () => {
+    vi.spyOn(configModule, 'getConfigService').mockReturnValue({
+      getSettings: () => ({ ui: { language: 'en' } }),
+    } as never);
+    const result = await getQuitGuard(`Bearer ${SERVER_AUTH_TOKEN}`);
+    expect(result.status).toBe(200);
+    expect(result.body.language).toBe('en');
+  });
+
+  it('returns the configured Chinese language for a Chinese UI', async () => {
+    vi.spyOn(configModule, 'getConfigService').mockReturnValue({
+      getSettings: () => ({ ui: { language: 'zh' } }),
+    } as never);
+    const result = await getQuitGuard(`Bearer ${SERVER_AUTH_TOKEN}`);
+    expect(result.status).toBe(200);
+    expect(result.body.language).toBe('zh');
+  });
+
+  it('returns Chinese and keeps the counts when reading ui.language fails', async () => {
+    vi.spyOn(configModule, 'getConfigService').mockReturnValue({
+      getSettings: () => { throw new Error('settings unavailable'); },
+    } as never);
+    const result = await getQuitGuard(`Bearer ${SERVER_AUTH_TOKEN}`);
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({ activeRuns: 0, armedSchedules: 0, language: 'zh' });
   });
 
   it('counts registry runs and enabled cron jobs, and uses 0 activeRuns when the registry is not configured', async () => {
@@ -276,7 +305,7 @@ describe('GET /api/quit-guard on createApp', () => {
 
     const unconfigured = await getQuitGuard(`Bearer ${SERVER_AUTH_TOKEN}`);
     expect(unconfigured.status).toBe(200);
-    expect(unconfigured.body).toEqual({ activeRuns: 0, armedSchedules: 2 });
+    expect(unconfigured.body).toEqual({ activeRuns: 0, armedSchedules: 2, language: 'zh' });
     expect(listJobs).toHaveBeenCalledWith({ enabled: true });
 
     getApplicationRunRegistry().start({
@@ -286,7 +315,7 @@ describe('GET /api/quit-guard on createApp', () => {
     });
     const running = await getQuitGuard(`Bearer ${SERVER_AUTH_TOKEN}`);
     expect(running.status).toBe(200);
-    expect(running.body).toEqual({ activeRuns: 1, armedSchedules: 2 });
+    expect(running.body).toEqual({ activeRuns: 1, armedSchedules: 2, language: 'zh' });
   });
 
   it('returns 500 and no numeric fields when the snapshot source throws', async () => {

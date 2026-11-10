@@ -11,6 +11,7 @@
 //
 // 渲染方式：React portal 进 contenteditable=false 的 DOM 挂载点（见 composerRichTextModel）。
 
+import { useState } from 'react';
 import { BookOpen, FileOutput, History, Sparkles, Target, X } from 'lucide-react';
 import type { AttachmentCategory } from '../../../../../shared/contract';
 import { useI18n } from '../../../../hooks/useI18n';
@@ -26,6 +27,8 @@ export interface InlineChipView {
   label: string;
   /** kind=file 时的附件类别（决定图标） */
   category?: AttachmentCategory;
+  /** kind=file 且 category=image 时的缩略图（data URL）；缺省或加载失败回退图标 */
+  thumbnail?: string;
 }
 
 export function InlineComposerChip({
@@ -36,6 +39,8 @@ export function InlineComposerChip({
   onRemove: (chip: InlineChipView) => void;
 }) {
   const { t } = useI18n();
+  const [failedThumb, setFailedThumb] = useState<string | null>(null);
+  const showThumb = chip.kind === 'file' && chip.category === 'image' && !!chip.thumbnail && failedThumb !== chip.thumbnail;
 
   const removeAria = chip.kind === 'command'
     ? t.pendingCommand.removeAria.replace('{name}', chip.label)
@@ -83,6 +88,15 @@ export function InlineComposerChip({
         <History className="h-3.5 w-3.5 shrink-0" aria-hidden />
       ) : chip.kind === 'artifact' ? (
         <FileOutput className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      ) : showThumb ? (
+        <img
+          src={chip.thumbnail}
+          alt=""
+          aria-hidden
+          draggable={false}
+          onError={() => setFailedThumb(chip.thumbnail ?? null)}
+          className="h-5 w-5 shrink-0 rounded object-cover"
+        />
       ) : (
         <AttachmentIcon category={chip.category ?? 'document'} className="h-3.5 w-3.5 shrink-0" />
       )}

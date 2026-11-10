@@ -4,6 +4,7 @@
 // 同源保证三者不会互相打架（不会出现复述说扩图、失败句说重绘）。
 // 全部由按钮参数和产出物实测尺寸拼成，不过模型、零成本。
 import type { Translations } from '../../i18n';
+import { interpolatePlural } from '../../i18n/interpolate';
 import {
   aspectOrientation,
   aspectRatioMatches,
@@ -113,14 +114,14 @@ export function buildCanvasBriefing(nt: NarrationText, spec: CanvasOpSpec): stri
     }
     case 'editRegion':
       lines.push(nt.briefingHeader + spec.instruction);
-      lines.push(fill(nt.briefingEditRegion, { count: spec.regionCount }));
+      lines.push(interpolatePlural(nt.briefingEditRegion, spec.regionCount));
       break;
     case 'removeWatermark':
       lines.push(fill(nt.briefingRemoveWatermark, { w: spec.base.width, h: spec.base.height }));
       break;
     case 'annotation':
       lines.push(nt.briefingHeader + spec.instruction);
-      lines.push(fill(nt.briefingAnnotation, { count: spec.shapeCount }));
+      lines.push(interpolatePlural(nt.briefingAnnotation, spec.shapeCount));
       break;
   }
   lines.push(nt.briefingPaidHint);

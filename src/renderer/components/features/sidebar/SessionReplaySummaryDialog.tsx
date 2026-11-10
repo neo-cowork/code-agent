@@ -14,6 +14,7 @@ import type {
 import type { Task } from '@shared/contract/backgroundTask';
 import type { ScriptRunSnapshot } from '@shared/contract/scriptRun';
 import { useI18n } from '../../../hooks/useI18n';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import { formatDateTime } from '../../../utils/formatDateTime';
 import type { SessionReplayEvidence } from '../../../utils/sessionReplayEvidence';
 import {
@@ -393,7 +394,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                     })}
                     {focusedWorkflowRun.agents.length > 6 && (
                       <div className="px-1 text-[10px] text-zinc-600">
-                        {labels.dialog.moreWorkflowAgents.replace('{count}', String(focusedWorkflowRun.agents.length - 6))}
+                        {interpolatePlural(labels.dialog.moreWorkflowAgents, focusedWorkflowRun.agents.length - 6)}
                       </div>
                     )}
                   </div>
@@ -533,7 +534,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                       })}
                       {snapshot.agents.length > 4 && (
                         <div className="px-1 text-[10px] text-zinc-600">
-                          {labels.dialog.moreWorkflowAgents.replace('{count}', String(snapshot.agents.length - 4))}
+                          {interpolatePlural(labels.dialog.moreWorkflowAgents, snapshot.agents.length - 4)}
                         </div>
                       )}
                     </div>
