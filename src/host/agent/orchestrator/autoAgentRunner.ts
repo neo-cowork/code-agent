@@ -241,12 +241,34 @@ export async function runAutoAgentMode(
     throw error;
   }
 
-  // Process result
-  if (result.success && result.aggregatedOutput) {
+  // Publish whatever sections are usable: placeholder sections and failed children are
+  // dropped, the rest still reaches the user. Only an empty remainder is a failed report.
+  const isPlaceholderBody = (text: string) => /^\s*Subagent completed without output\s*$/.test(text);
+  const hasFailedChild = result.results.some((entry) =>
+    entry.status !== 'completed' || entry.result?.success === false);
+  const usableSections = (result.results.length > 0
+    ? result.results.flatMap((entry) => entry.status === 'completed' && entry.result?.success !== false && entry.result?.output
+      ? [{ header: `## ${entry.agentName}`, body: entry.result.output }]
+      : [])
+    : result.aggregatedOutput.split('\n\n---\n\n').map((section) => {
+      const match = /^(## [^\n]*)\n\n([\s\S]*)$/.exec(section);
+      return match ? { header: match[1], body: match[2] } : { header: '', body: section };
+    }))
+    .filter((section) => section.body.trim() && !isPlaceholderBody(section.body));
+  const reportText = usableSections
+    .map((section) => (section.header ? `${section.header}\n\n${section.body}` : section.body))
+    .join('\n\n---\n\n');
+  const reportFailure = !result.success || usableSections.length === 0
+    ? (!result.success || hasFailedChild ? 'agent_failed' : 'empty_output')
+    : undefined;
+  if (reportFailure) {
+    logger.warn('Auto Agent report unavailable', { sessionId, reason: reportFailure });
+    onEvent({ type: 'error', data: { message: 'AUTO_AGENT_REPORT_UNAVAILABLE', details: { reason: reportFailure } } });
+  } else {
     const assistantMessage: Message = {
       id: deps.generateId(),
       role: 'assistant',
-      content: result.aggregatedOutput,
+      content: reportText,
       timestamp: Date.now(),
     };
     stampAssistantMessageCorrelation(assistantMessage);

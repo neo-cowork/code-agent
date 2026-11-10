@@ -666,6 +666,9 @@ export class AgentOrchestrator {
       const executionContent = this.applyTurnSystemContext(content, options, sessionId);
 
       if (options?.disableAutoAgent) {
+        if (requirements.needsAutoAgent) {
+          logger.info('[AutoAgentRouting] skipped: disableAutoAgent option set by system-generated turn (e.g. background notification wake)', { sessionId });
+        }
         requirements.needsAutoAgent = false;
         requirements.executionStrategy = 'sequential';
       }
