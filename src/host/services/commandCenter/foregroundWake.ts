@@ -203,13 +203,14 @@ export function createForegroundWake(
   const emitDeferredProgress = (
     manager: WakeTaskManager,
     pending: PendingWake,
-    turnId?: string,
+    base?: TaskProgressData,
   ): void => {
     manager.emitAgentEventForSession(pending.task.sessionId, {
       type: 'task_progress',
       data: {
-        turnId: turnId ?? `background-wake-deferred-${pending.task.id}`,
+        turnId: `background-wake-deferred-${pending.task.id}`,
         phase: 'thinking',
+        ...base,
         step: BACKGROUND_WAKE_DEFER_PROGRESS[pending.status],
       },
     });
@@ -299,8 +300,13 @@ export function createForegroundWake(
       if (!pendingWake) return;
       const progress = event.data as TaskProgressData;
       if (progress.step === BACKGROUND_WAKE_DEFER_PROGRESS[pendingWake.status]) return;
-      // streamHandler 每轮会再发「分析请求中」；只在尚有 pending wake 时同节拍补回人话。
-      emitDeferredProgress(manager, pendingWake, progress.turnId);
+      // 真实前台进度（工具/百分比/生成/失败）优先原样放行；只替换无工具信息的「分析请求中」文案
+      const hasForegroundDetail = progress.phase !== 'thinking'
+        || progress.tool !== undefined || progress.toolIndex !== undefined
+        || progress.toolTotal !== undefined || progress.progress !== undefined
+        || progress.target !== undefined;
+      if (hasForegroundDetail) return;
+      emitDeferredProgress(manager, pendingWake, progress);
     });
   };
 

@@ -171,6 +171,41 @@ describe('foreground task-result wake', () => {
     );
   });
 
+  it('keeps real foreground tool progress while a wake is deferred, and rewrites only plain thinking', async () => {
+    manager.hasActivePrimaryRun.mockReturnValue(true);
+    const clock = fakeTimer();
+    const wake = createForegroundWake(dependencies({
+      setTimeout: clock.setTimeout,
+      clearTimeout: clock.clearTimeout,
+    }));
+    await wake(task(), 'completed');
+
+    manager.emitAgentEventForSession.mockClear();
+    agentEventObserver?.('session-a', {
+      type: 'task_progress',
+      data: {
+        turnId: 'turn-foreground',
+        phase: 'tool_running',
+        step: '执行命令',
+        tool: 'Bash',
+        toolIndex: 1,
+        toolTotal: 3,
+        progress: 40,
+      },
+    });
+    expect(manager.emitAgentEventForSession).not.toHaveBeenCalled();
+
+    agentEventObserver?.('session-a', {
+      type: 'task_progress',
+      data: { turnId: 'turn-foreground', phase: 'thinking', step: '分析请求中...' },
+    });
+    expect(manager.emitAgentEventForSession).toHaveBeenCalledTimes(1);
+    expect(manager.emitAgentEventForSession).toHaveBeenCalledWith('session-a', {
+      type: 'task_progress',
+      data: { turnId: 'turn-foreground', phase: 'thinking', step: BACKGROUND_WAKE_DEFER_PROGRESS.completed },
+    });
+  });
+
   it('emits deferred status immediately and one visible note at the cap', async () => {
     manager.hasActivePrimaryRun.mockReturnValue(true);
     const clock = fakeTimer();
