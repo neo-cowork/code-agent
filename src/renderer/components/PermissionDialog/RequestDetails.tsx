@@ -16,7 +16,7 @@ import { useI18n } from '../../hooks/useI18n';
 import { useAppStore } from '../../stores/appStore';
 import { resolveHostReasonCopy } from '../../utils/hostReasonPresentation';
 import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
-import { isDangerousRequestShape, isSafeDefaultDeny, permissionConsequence } from './permissionPresentation';
+import { isDangerousRequestShape, isSafeDefaultDeny, isHostDefaultToolPreview, permissionConsequence } from './permissionPresentation';
 import { ConnectorWriteDisclosure } from './ConnectorWriteDisclosure';
 import { estimateMediaPriceCny } from './mediaPriceEstimate';
 import { formatCny } from '@shared/media/imageCost';
@@ -200,7 +200,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       )}
 
       {/* 确认门控 非 diff 预览（命令/网络/通用） */}
-      {details.preview && details.preview.type !== 'diff' && !(details.preview.type === 'command' && details.command) && (
+      {details.preview && details.preview.type !== 'diff' && !(details.preview.type === 'command' && details.command) && !isHostDefaultToolPreview(request) && (
         <div className="mt-4">
           <div className="text-xs text-zinc-400 mb-2">{details.preview.summary}</div>
           {details.preview.diff && (

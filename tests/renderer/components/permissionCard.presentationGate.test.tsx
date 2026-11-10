@@ -45,13 +45,15 @@ import { PermissionCard } from '../../../src/renderer/components/PermissionDialo
 
 const explicitNonShellTools = [
   'Browser',
+  'Browser.click_text',
   'set_role_proactivity',
   'spawn_agent',
   'browser_action.write_clipboard',
   'SessionManager',
 ] as const;
 
-const bannedNonShell = ['命令', 'command', '覆盖本机系统', 'overwrite local system'];
+const bannedNonShell = ['命令', 'command', '覆盖本机系统', 'overwrite local system', '执行工具', 'Execute tool'];
+const bannedFileTitles = ['创建文件', '编辑文件', '读取文件', 'Create file', 'Edit file', 'Read file'];
 const bannedRead = ['写入', '覆盖', 'write', 'overwrite'];
 
 type GateSchema = {
@@ -83,11 +85,20 @@ function requestForTool(tool: string, schema?: GateSchema): PermissionRequest {
   const isExplicit = explicitNonShellTools.includes(tool as (typeof explicitNonShellTools)[number]);
   const permissionType = isExplicit ? 'command' : permissionRequestTypeForLevel(schema?.permissionLevel ?? 'execute');
   let details: Record<string, unknown> = { ...sampleParams(schema) };
+  // Host's dedicated Read/Write/Edit cases put the target at details.path.
+  const fileParam = details.file_path ?? details.path;
+  if (typeof fileParam === 'string' && permissionType.startsWith('file_')) details.path = '/workspace/example.txt';
   let reason: string | undefined;
   if (tool === 'Browser') {
     details = { action: 'navigate', url: 'https://example.com' };
+  } else if (tool === 'Browser.click_text') {
+    // Real run (2026-11-10): Browser click_text on a form submit button; confirmationGate's default
+    // branch adds the generic `执行工具 Browser` preview.
+    details = { action: 'click_text', text: 'Finish', preview: { type: 'generic', summary: '执行工具 Browser' } };
   } else if (tool === 'set_role_proactivity') {
-    details = { preview: { type: 'generic', summary: '提醒频率：每天一次 -> 实时' } };
+    // setRoleProactivity.ts builds details.preview/changes and reason from the same summary text.
+    details = { preview: { type: 'generic', summary: '提醒频率：每天一次 -> 实时' }, changes: '提醒频率：每天一次 -> 实时' };
+    reason = '提醒频率：每天一次 -> 实时';
   } else if (tool === 'spawn_agent') {
     details = { role: 'explorer', task: 'Inspect the repository' };
   } else if (tool === 'browser_action.write_clipboard') {
@@ -99,7 +110,7 @@ function requestForTool(tool: string, schema?: GateSchema): PermissionRequest {
   return {
     id: `approval-${tool}`,
     sessionId: 'session-current',
-    tool,
+    tool: tool === 'Browser.click_text' ? 'Browser' : tool,
     type: permissionType as PermissionRequest['type'],
     details: details as PermissionRequest['details'],
     reason,
@@ -130,13 +141,19 @@ describe('PermissionCard shared presentation gate', () => {
       const zh = render(request, 'zh');
       const en = render(request, 'en');
       if (!shell) {
-        if (tool !== 'Browser' && tool !== 'set_role_proactivity' && tool !== 'spawn_agent' && tool !== 'browser_action.write_clipboard') {
+        if (tool !== 'Browser' && tool !== 'Browser.click_text' && tool !== 'set_role_proactivity' && tool !== 'spawn_agent' && tool !== 'browser_action.write_clipboard') {
           neutralByDefault.push(tool);
         }
         expect(zh, `${tool} must not wear the shell terminal icon`).not.toContain('lucide-terminal');
         if (request.type === 'command') expect(zh).toContain('permission-action-icon');
         for (const banned of bannedNonShell) {
           expect(`${zh}\n${en}`, `${tool} must be neutral in both languages`).not.toContain(banned);
+        }
+        // A file-typed card with no file target is a borrowed file template (real run: TaskManager).
+        if (request.type.startsWith('file_') && !request.details.path) {
+          for (const banned of bannedFileTitles) {
+            expect(`${zh}\n${en}`, `${tool} has no file target, must not use the file template`).not.toContain(banned);
+          }
         }
       }
     }
@@ -170,6 +187,36 @@ describe('PermissionCard shared presentation gate', () => {
       expect(card).toContain('Will visit https://example.com.');
       expect(card).not.toContain('risky command');
       expect(card).not.toContain('overwrite local system');
+    }
+  });
+
+  it('does not call a browser click or submit "open web page" and hides the host default tool preview', () => {
+    const request = requestForTool('Browser.click_text', { permissionLevel: 'execute', category: 'vision' });
+    const zh = render(request, 'zh');
+    const en = render(request, 'en');
+    expect(zh).toContain('操作网页');
+    expect(en).toContain('Act on web page');
+    for (const banned of ['打开网页', 'Open web page', '执行工具', 'Execute tool', 'Browser']) {
+      expect(`${zh}\n${en}`, `click card must not contain ${banned}`).not.toContain(banned);
+    }
+  });
+
+  it('does not render a file template for a file-typed request without a file target (real TaskManager card)', () => {
+    const request: PermissionRequest = {
+      id: 'task-manager',
+      sessionId: 'session-current',
+      tool: 'TaskManager',
+      type: 'file_write',
+      details: { action: 'create' } as PermissionRequest['details'],
+      reasonCode: PermissionRequestReason.Unknown,
+      boundary: { id: boundaryIdForRequestType('file_write') },
+      dangerLevel: 'normal',
+      timestamp: 1,
+    };
+    for (const lang of ['zh', 'en'] as const) {
+      const html = render(request, lang);
+      for (const banned of [...bannedFileTitles, '覆盖', 'overwrite']) expect(html).not.toContain(banned);
+      expect(html).toContain('permission-action-icon');
     }
   });
 
