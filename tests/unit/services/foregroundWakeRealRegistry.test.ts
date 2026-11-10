@@ -53,7 +53,6 @@ class FakeTaskManager extends EventEmitter {
   });
   interruptBackgroundTask = vi.fn().mockResolvedValue(true);
   cancelBackgroundTask = vi.fn().mockResolvedValue(true);
-  observeAgentEvents(): () => void { return () => undefined; }
   emitTask(event: TaskManagerEvent): void {
     const taskId = (event.data as { taskId?: string } | undefined)?.taskId;
     if (taskId && (event.type === 'task_completed' || event.type === 'task_error' || event.type === 'task_cancelled')) {
@@ -74,6 +73,8 @@ class FakeTaskManager extends EventEmitter {
   getWaitingQueue(): string[] { return []; }
   hasActivePrimaryRun(sessionId: string): boolean { return this.registry.hasSession(sessionId); }
   onRunIdle(listener: () => void): () => void { return this.registry.onIdleTransition(listener); }
+  emitAgentEventForSession = vi.fn();
+  observeAgentEvents = vi.fn(() => () => undefined);
   setSessionContext = vi.fn();
   setWorkingDirectory = vi.fn();
 }
@@ -145,11 +146,16 @@ describe('background task settlement wake with a real RunRegistry', () => {
         setWorkingDirectory: manager.setWorkingDirectory,
         on: manager.on.bind(manager),
         off: manager.off.bind(manager),
+        emitAgentEventForSession: manager.emitAgentEventForSession,
+        observeAgentEvents: manager.observeAgentEvents,
       }) as unknown as ReturnType<ForegroundWakeDependencies['getTaskManager']>,
       loadSession: async () => session,
       hasQueuedUserInput: () => queued,
       isVoiceSession: () => false,
       recordWakeFailureNote: async () => undefined,
+      recordWakeDeferredNote: async () => undefined,
+      setTimeout: () => 1,
+      clearTimeout: () => undefined,
       logger: { info, warn },
     };
     center = new SessionCommandCenter(manager as unknown as TaskManager, {
@@ -417,6 +423,9 @@ describe('background task settlement wake with a real RunRegistry', () => {
           persistedNotes.push(message);
           realManager.emitAgentEventForSession(sessionId, { type: 'message', data: message });
         },
+        recordWakeDeferredNote: async () => undefined,
+        setTimeout: () => 1,
+        clearTimeout: () => undefined,
         logger: { info, warn },
       });
 
