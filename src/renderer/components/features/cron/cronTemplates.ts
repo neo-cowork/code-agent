@@ -5,6 +5,10 @@ import { CRON_EVENT_TRIGGER } from '@shared/constants';
 import type { CronJobDraft } from './types';
 import { createDefaultCronJobDraft } from './types';
 import { localCronTimezone } from './localTimezone';
+import { cronCenterEn } from '../../../i18n/cronCenter';
+
+/** 模板草稿的语言档：zh 为存量行为；en 的 name/description 取 cronCenter.templates 英文词条。 */
+export type CronTemplateLanguage = 'zh' | 'en';
 
 // ── Template field definition ───────────────────────────────────────
 
@@ -35,7 +39,11 @@ export interface CronTemplate {
    * generate 的 values 里 accountId/chatId/budget 三键由编辑器在提交时注入。
    */
   event?: boolean;
-  generate: (values: Record<string, string>) => CronJobDraft;
+  /**
+   * language 缺省 zh（存量行为）。en 时只换 name/description 为英文词条；
+   * agentPrompt 仍是中文（已知遗留，未翻译）。
+   */
+  generate: (values: Record<string, string>, language?: CronTemplateLanguage) => CronJobDraft;
 }
 
 // ── Connector dependency status ─────────────────────────────────────
@@ -139,7 +147,7 @@ export function getTemplateDisplayCopy(
 
 // ── Templates ───────────────────────────────────────────────────────
 
-export const CRON_TEMPLATES: CronTemplate[] = [
+const BASE_CRON_TEMPLATES: CronTemplate[] = [
   {
     id: 'daily-lookahead',
     name: '每日前瞻',
@@ -342,6 +350,21 @@ export const CRON_TEMPLATES: CronTemplate[] = [
       }),
   },
 ];
+
+function withLanguage(template: CronTemplate): CronTemplate {
+  const generate = template.generate;
+  return {
+    ...template,
+    generate: (values, language = 'zh') => {
+      const draft = generate(values);
+      const localized: Readonly<Record<string, { name: string; description: string }>> = cronCenterEn.cronCenter.templates;
+      const copy = language === 'en' ? localized[template.id] : undefined;
+      return copy ? { ...draft, name: copy.name, description: copy.description } : draft;
+    },
+  };
+}
+
+export const CRON_TEMPLATES: CronTemplate[] = BASE_CRON_TEMPLATES.map(withLanguage);
 
 export const FEATURED_CRON_TEMPLATES = CRON_TEMPLATES.filter((template) => template.featured);
 

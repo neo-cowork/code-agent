@@ -531,13 +531,15 @@ export class CLISessionManager {
     try {
       const { quickTask, isQuickModelAvailable } = await import('../host/model/quickModel');
       if (!isQuickModelAvailable()) return null;
+      const { buildSessionTitlePrompt } = await import('../shared/sessionTitlePrompt');
+      const { getConfigService } = await import('./bootstrap');
 
       // 截取前 500 字符避免 prompt 太长
       const truncated = message.length > 500 ? message.slice(0, 500) + '...' : message;
 
-      const result = await quickTask(
-        `为以下用户消息生成一个简短的会话标题（10-25字，中文优先，不加引号不加标点）：\n\n${truncated}`
-      );
+      let uiLanguage: 'zh' | 'en' = 'zh';
+      try { uiLanguage = getConfigService().getSettings().ui.language === 'en' ? 'en' : 'zh'; } catch { /* 读不到按中文 */ }
+      const result = await quickTask(buildSessionTitlePrompt(truncated, uiLanguage));
 
       if (result.success && result.content) {
         // 清理：去引号、去标点、限长

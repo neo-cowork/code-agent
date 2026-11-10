@@ -117,6 +117,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
   };
   const { createJob, updateJob } = useCronStore();
   const openSettingsTab = useAppStore((state) => state.openSettingsTab);
+  const templateLanguage = useAppStore((state) => (state.language === 'en' ? 'en' : 'zh'));
   const mcpServerStates = useMcpServerStates();
   const connectedConnectorIds = useMemo(
     () => new Set(
@@ -304,8 +305,8 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
           accountId: draft.eventAccountId,
           chatId: draft.eventChatId,
           budget: draft.maxRunBudget,
-        })
-        : selectedTemplate.generate(templateValues);
+        }, templateLanguage)
+        : selectedTemplate.generate(templateValues, templateLanguage);
       // event 任务钉本机（填参步骤不渲染运行位置选择）；其余模板沿用用户的选择。
       generatedDraft.runsOn = selectedTemplate.event ? 'local' : draft.runsOn;
       if (!selectedTemplate.event) generatedDraft.maxRunBudget = draft.runsOn === 'local' ? draft.maxRunBudget : '';
