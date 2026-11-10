@@ -10,6 +10,7 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
+import { normalizeReminderCreateTime } from '../../reminderCreateTime';
 import { getConnectorRegistry } from '../../../connectors';
 import {
   appleScriptFailureLogDetail,
@@ -60,7 +61,7 @@ function buildRemindersCreateSuccessResult(
       timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
       hour: '2-digit', minute: '2-digit', hourCycle: 'h23', weekday: 'short',
     }).formatToParts(new Date(remindAtMs));
-    const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)!.value;
+    const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? '';
     remindAtText = `${part('year')}-${part('month')}-${part('day')} ${part('hour')}:${part('minute')}（${part('weekday')}，${timeZone}）`;
   } else {
     remindAtText = reminder.remindAtMs === null ? '未设置' : '无法确认，请在提醒事项中查看';
@@ -183,6 +184,10 @@ async function executeRemindersCreate(
   if (typeof args.title !== 'string' || args.title.length === 0) {
     return { ok: false, error: 'title must be a non-empty string', code: 'INVALID_ARGS' };
   }
+
+  const reminderTime = normalizeReminderCreateTime(schema.name, args);
+  if (!reminderTime.ok) return reminderTime;
+  args = reminderTime.args;
 
   const permit = await canUseTool(schema.name, args);
   if (!permit.allow) {

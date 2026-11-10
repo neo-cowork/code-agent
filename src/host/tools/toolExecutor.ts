@@ -1,4 +1,5 @@
 import { EnvBlockedError } from '../permissions/envAssist/EnvBlockedError';
+import { normalizeReminderCreateTime } from './reminderCreateTime';
 import { isEmergencyStopActive } from '../security/emergencyStop';
 import { emergencyStopMessage } from '../../shared/i18n/emergencyStop';
 import { getLocale } from '../platform/appPaths';
@@ -690,6 +691,11 @@ export class ToolExecutor {
     }
 
     const executionToolName = toolDef.name;
+    const reminderTime = normalizeReminderCreateTime(executionToolName, params);
+    if (!reminderTime.ok) {
+      return { success: false, error: reminderTime.error, metadata: { code: reminderTime.code } };
+    }
+    params = reminderTime.args;
     const pluginOrigin = getPluginOriginForTool(executionToolName);
     const pluginId = getPluginIdForTool(executionToolName);
     const policyToolName = normalizeToolName(executionToolName);
