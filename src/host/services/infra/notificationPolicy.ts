@@ -36,9 +36,28 @@ export function evaluateNotificationPolicy(intent: NotificationIntent): Notifica
   return { allowed: false, reason: 'Progress and channel surface updates stay in their own surface.' };
 }
 
+/** OS banners render plain text only: keep the words, drop Markdown syntax. */
+function stripMarkdownForBanner(text: string): string {
+  return text
+    .replace(/```[^\n]*\n?([\s\S]*?)```/g, '$1')
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/^\s*>\s?/gm, '')
+    .replace(/^\s*[-*+]\s+/gm, '')
+    .replace(/^(\s*\d+)\.\s+/gm, '$1. ')
+    .replace(/(\*\*|__)(.+?)\1/g, '$2')
+    .replace(/(?<![\w*])\*(?!\s)([^*\n]+?)\*(?![\w*])/g, '$1')
+    .replace(/~~(.+?)~~/g, '$1')
+    .replace(/`([^`]*)`/g, '$1')
+    .replace(/\*\*|`/g, '');
+}
+
 export function sanitizeNotificationText(value: unknown, maxLength = 240): string {
-  return scrubUserFacingText(value, {
+  const plain = stripMarkdownForBanner(String(value ?? ''));
+  const full = scrubUserFacingText(plain, {
     surface: 'desktop_notification',
-    maxLength,
+    maxLength: Math.max(maxLength * 4, 1000),
   });
+  if (full.length <= maxLength) return full;
+  return `${full.slice(0, Math.max(maxLength - 1, 1)).trimEnd()}…`;
 }

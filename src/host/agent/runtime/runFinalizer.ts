@@ -20,7 +20,7 @@ import { judgeConversation } from '../../lightMemory/conversationJudge';
 import { skipRunAutomaticMemory } from '../../memory/automaticMemoryPolicy';
 import { writeDurableFacts } from '../../lightMemory/durableFactWriter';
 import { getLangfuseService, getBudgetService, BudgetAlertLevel } from '../../services';
-import { RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../shared/constants';
+import { buildMaxStepsErrorData } from './maxStepsFallback';
 import { logCollector } from '../../mcp/logCollector.js';
 import { createLogger } from '../../services/infra/logger';
 import { buildEmptyFinalError, hasVisibleAssistantTextAfterLastUser } from './emptyFinalError';
@@ -481,10 +481,7 @@ export class RunFinalizer {
       // 「部分完成」语义不成立，不带 code 按普通失败退出（ai-review R5 Nit #2005）。
       this.ctx.onEvent({
         type: 'error',
-        data: {
-          message: 'Max iterations reached',
-          ...(this.ctx.maxIterations > 1 ? { code: RUN_ERROR_CODE_MAX_ITERATIONS } : {}),
-        },
+        data: buildMaxStepsErrorData(this.ctx),
       });
 
       // Fire-and-forget: emit StopFailure hook

@@ -8,9 +8,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Shield, ShieldAlert, ShieldCheck, ShieldOff } from 'lucide-react';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
-import ipcService, { invokeDomain } from '../../../../services/ipcService';
+import ipcService, { DomainInvokeError, invokeDomain } from '../../../../services/ipcService';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { useI18n } from '../../../../hooks/useI18n';
+import { Button } from '../../../primitives';
 
 type SessionPermissionMode = 'default' | 'readOnly' | 'acceptEdits' | 'bypassPermissions';
 
@@ -44,6 +45,8 @@ export const PermissionToggle: React.FC<PermissionToggleProps> = ({ disabled }) 
   const [mode, setMode] = useState<SessionPermissionMode>('default');
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmBypass, setConfirmBypass] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [enableFailure, setEnableFailure] = useState<'forbidden' | 'pending' | 'other' | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
   const modeTexts = t.settings.general.permissions.permissionModes;
@@ -78,6 +81,7 @@ export const PermissionToggle: React.FC<PermissionToggleProps> = ({ disabled }) 
       if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
         setMenuOpen(false);
         setConfirmBypass(false);
+        setEnableFailure(null);
       }
     };
     document.addEventListener('mousedown', onPointerDown);
@@ -86,6 +90,8 @@ export const PermissionToggle: React.FC<PermissionToggleProps> = ({ disabled }) 
 
   const applyMode = useCallback(async (next: SessionPermissionMode) => {
     if (!currentSessionId) return;
+    setApplying(true);
+    setEnableFailure(null);
     try {
       const data = await invokeDomain<{ changed?: boolean; mode?: string }>(IPC_DOMAINS.AGENT, 'setSessionPermissionMode', {
         sessionId: currentSessionId,
@@ -95,8 +101,18 @@ export const PermissionToggle: React.FC<PermissionToggleProps> = ({ disabled }) 
       if (isSessionPermissionMode(data?.mode)) {
         setMode(data.mode);
       }
-    } catch {
-      // 设置失败：保持真源状态（下次 refresh 纠正），不做乐观更新
+      if (data?.mode !== next) {
+        // 返回的档位没变成请求的档位：不能当成功关框，保留确认框说明原因
+        setEnableFailure('other');
+        return;
+      }
+    } catch (error) {
+      // 设置失败：保持真源状态，不做乐观更新；确认框保留并说明原因，用户可重试
+      const code = error instanceof DomainInvokeError ? error.code : '';
+      setEnableFailure(code === 'FORBIDDEN' ? 'forbidden' : code === 'ADMIN_VERIFICATION_PENDING' ? 'pending' : 'other');
+      return;
+    } finally {
+      setApplying(false);
     }
     setMenuOpen(false);
     setConfirmBypass(false);
@@ -116,7 +132,7 @@ export const PermissionToggle: React.FC<PermissionToggleProps> = ({ disabled }) 
     <div className="relative" ref={rootRef}>
       <button
         type="button"
-        onClick={() => { setConfirmBypass(false); setMenuOpen((open) => !open); }}
+        onClick={() => { setConfirmBypass(false); setEnableFailure(null); setMenuOpen((open) => !open); }}
         disabled={!interactive}
         title={t.permissionTier.buttonTitle}
         className={`
@@ -161,21 +177,33 @@ export const PermissionToggle: React.FC<PermissionToggleProps> = ({ disabled }) 
       {confirmBypass && (
         <div className="absolute bottom-full left-0 mb-2 w-56 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-50 p-3">
           <p className="text-xs text-zinc-300 mb-3">{t.permissionTier.bypassConfirmText}</p>
+          {enableFailure && (
+            <p role="alert" className="text-xs text-badge-danger mb-3">
+              {enableFailure === 'forbidden'
+                ? t.permissionTier.enableError.forbidden
+                : enableFailure === 'pending'
+                  ? t.permissionTier.enableError.pending
+                  : t.permissionTier.enableError.other}
+            </p>
+          )}
           <div className="flex items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setConfirmBypass(false)}
-              className="px-2.5 py-1 text-xs text-zinc-400 hover:text-zinc-300 transition-colors"
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => { setConfirmBypass(false); setEnableFailure(null); }}
             >
               {t.common.cancel}
-            </button>
-            <button
-              type="button"
-              onClick={() => void applyMode('bypassPermissions')}
-              className="px-2.5 py-1 text-xs font-medium text-white bg-red-600 hover:bg-red-500 rounded-md transition-colors"
-            >
-              {t.permissionTier.enable}
-            </button>
+            </Button>
+            {enableFailure !== 'forbidden' && (
+              <Button
+                variant="danger"
+                size="sm"
+                loading={applying}
+                onClick={() => void applyMode('bypassPermissions')}
+              >
+                {enableFailure === 'pending' ? t.permissionTier.retry : t.permissionTier.enable}
+              </Button>
+            )}
           </div>
         </div>
       )}

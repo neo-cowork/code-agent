@@ -20,6 +20,7 @@ import { resolveBackgroundRunSettlement, settleBackgroundRun } from '../session/
 import { getBackgroundTaskManager } from '../session/backgroundTaskManager';
 import { broadcastToRenderer } from '../platform';
 import { getSessionManager, notificationService } from '../services';
+import { isRoleWakeRunActive } from '../services/roleAssets/wakeRunGuard';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('BackgroundTaskTerminal');
@@ -45,6 +46,8 @@ export async function settleBackgroundOnTaskComplete(
     await backgroundManager.markCompleted(sessionId, data.summary);
     return;
   }
+  // A running role wake publishes its own summary; do not spend its notice budget here.
+  if (isRoleWakeRunActive(sessionId)) return;
   const session = await getSessionManager().getSession(sessionId);
   if (session) {
     notificationService.notifyTaskComplete({

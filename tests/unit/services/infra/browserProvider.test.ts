@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import ts from 'typescript';
 import {
   buildSystemChromeCdpArgs,
   normalizeBrowserProviderPreference,
   resolveBrowserProvider,
   resolveCdpEndpointUrl,
+  resolveSystemChromeKeychainMode,
 } from '../../../../src/host/services/infra/browserProvider';
 
 describe('browser provider resolution', () => {
@@ -128,5 +131,36 @@ describe('browser provider resolution', () => {
     const fetchImpl = async () => new Response('bad request', { status: 400 });
 
     await expect(resolveCdpEndpointUrl(9222, fetchImpl)).resolves.toBe('http://127.0.0.1:9222');
+  });
+});
+
+describe('system Chrome keychain policy', () => {
+  for (const platform of ['darwin', 'linux', 'win32'] as const) {
+    for (const temporaryProfile of [true, false]) {
+      it.each([true, false])(`${platform} temporary=${temporaryProfile} loginKeychainExists=%s`, (loginKeychainExists) => {
+        expect(resolveSystemChromeKeychainMode({ temporaryProfile, platform, loginKeychainExists })).toEqual({
+          mockKeychain: platform === 'darwin' && (temporaryProfile || !loginKeychainExists),
+          reason: temporaryProfile ? 'ephemeral-profile'
+            : platform === 'darwin' && !loginKeychainExists ? 'persistent-keychain-missing' : 'persistent-keychain-ok',
+        });
+      });
+    }
+  }
+
+  it.each(['artifactPage', 'artifactPreviewHealth', 'visualSmoke'])('%s pins its temporary-profile launch to mock keychain', (name) => {
+    const file = `src/host/agent/runtime/browser/${name}.ts`;
+    const source = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
+    const calls: ts.CallExpression[] = [];
+    const visit = (node: ts.Node) => {
+      if (ts.isCallExpression(node) && node.expression.getText(source) === 'buildSystemChromeCdpArgs') calls.push(node);
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+    expect(calls).toHaveLength(1);
+    const options = calls[0].arguments[0];
+    expect(ts.isObjectLiteralExpression(options)).toBe(true);
+    if (!ts.isObjectLiteralExpression(options)) throw new Error('Expected literal launch options');
+    const mock = options.properties.find((prop) => prop.name?.getText(source) === 'mockKeychain');
+    expect(mock && ts.isPropertyAssignment(mock) && mock.initializer.kind === ts.SyntaxKind.TrueKeyword).toBe(true);
   });
 });

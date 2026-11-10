@@ -55,7 +55,7 @@ function isVoiceTurn(turn: TraceTurn): boolean {
 }
 
 export function buildTurnRailItems(turns: readonly TraceTurn[]): TurnRailItem[] {
-  return turns.map((turn) => ({
+  return turns.filter((turn) => !turn.standalone).map((turn) => ({
     turnId: turn.turnId,
     turnNumber: turn.turnNumber,
     prompt: previewText(getTurnUserNode(turn)?.content, PROMPT_PREVIEW_MAX),

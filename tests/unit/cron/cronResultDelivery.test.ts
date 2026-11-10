@@ -56,7 +56,7 @@ describe('deliverCronResultToChannel', () => {
   // 飞书实测回 230001 invalid receive_id（2026-08-24 实测），结果永远到不了群里。
   it('sends to the conversation id from the target, not the account id', async () => {
     const { outcome, persistAction } = deliver(job('feishu:oc_group1'), '简报内容');
-    await expect(outcome).resolves.toEqual({ delivered: true, pushedBody: '简报内容' });
+    await expect(outcome).resolves.toEqual({ delivered: true, pushedBody: '简报内容', note: 'pushed' });
     expect(sendMessage).toHaveBeenCalledWith('account-uuid', 'oc_group1', '简报内容');
     // 真推成功 → lastPushed 写回（合并进 action.context 落库）。
     expect(persistAction).toHaveBeenCalledWith('job-1', expect.objectContaining({
@@ -114,7 +114,7 @@ describe('deliverCronResultToChannel literal dedup against lastPushed (FB-239)',
 
     const { outcome, persistAction } = deliver(definition, '简报内容');
 
-    expect(await outcome).toEqual({ delivered: false });
+    expect(await outcome).toEqual({ delivered: false, note: 'duplicate' });
     expect(sendMessage).not.toHaveBeenCalled();
     expect(persistAction).not.toHaveBeenCalled();
   });
@@ -125,7 +125,7 @@ describe('deliverCronResultToChannel literal dedup against lastPushed (FB-239)',
 
     const result = await deliver(definition, '简报内容。').outcome;
 
-    expect(result).toEqual({ delivered: true, pushedBody: '简报内容。' });
+    expect(result).toEqual({ delivered: true, pushedBody: '简报内容。', note: 'pushed' });
     expect(sendMessage).toHaveBeenCalledWith('account-uuid', 'oc_group1', '简报内容。');
   });
 
@@ -133,8 +133,8 @@ describe('deliverCronResultToChannel literal dedup against lastPushed (FB-239)',
   it('dedups a repeat push after the persisted lastPushed write-back', async () => {
     const definition = job('feishu:oc_group1');
 
-    expect(await deliver(definition, '同正文').outcome).toEqual({ delivered: true, pushedBody: '同正文' });
-    expect(await deliver(definition, '同正文').outcome).toEqual({ delivered: false });
+    expect(await deliver(definition, '同正文').outcome).toEqual({ delivered: true, pushedBody: '同正文', note: 'pushed' });
+    expect(await deliver(definition, '同正文').outcome).toEqual({ delivered: false, note: 'duplicate' });
     expect(sendMessage).toHaveBeenCalledTimes(1);
   });
 
@@ -146,8 +146,8 @@ describe('deliverCronResultToChannel literal dedup against lastPushed (FB-239)',
       action: { type: 'shell', command: 'echo ok' },
     } as CronJobDefinition;
 
-    await expect(deliver(shellDefinition, 'same').outcome).resolves.toEqual({ delivered: true, pushedBody: 'same' });
-    await expect(deliver(shellDefinition, 'same').outcome).resolves.toEqual({ delivered: true, pushedBody: 'same' });
+    await expect(deliver(shellDefinition, 'same').outcome).resolves.toEqual({ delivered: true, pushedBody: 'same', note: 'pushed' });
+    await expect(deliver(shellDefinition, 'same').outcome).resolves.toEqual({ delivered: true, pushedBody: 'same', note: 'pushed' });
     expect(sendMessage).toHaveBeenCalledTimes(2);
   });
 
@@ -161,7 +161,7 @@ describe('deliverCronResultToChannel literal dedup against lastPushed (FB-239)',
 
     const result = await deliver(definition, longBody).outcome;
 
-    expect(result).toEqual({ delivered: false });
+    expect(result).toEqual({ delivered: false, note: 'duplicate' });
     expect(sendMessage).not.toHaveBeenCalled();
 
     // 截断窗口内差一字仍照推，且写回键就是截断后的正文。
@@ -169,6 +169,7 @@ describe('deliverCronResultToChannel literal dedup against lastPushed (FB-239)',
     await expect(deliver(definition, changedBody).outcome).resolves.toEqual({
       delivered: true,
       pushedBody: truncateUtf8Snapshot(changedBody).value,
+      note: 'pushed',
     });
   });
 });
@@ -180,14 +181,14 @@ describe('deliverCronResultToChannel push body sanitization (PR#2060 round 2)', 
     const raw = '巡检完成。<cron_snapshot>{"fingerprint":"abc"}</cron_snapshot><cron_alert>冲突 A</cron_alert> 其余说明 <cron_alert>冲突 B</cron_alert>';
     const result = await deliver(job('feishu:oc_group1'), raw).outcome;
 
-    expect(result).toEqual({ delivered: true, pushedBody: '冲突 A\n冲突 B' });
+    expect(result).toEqual({ delivered: true, pushedBody: '冲突 A\n冲突 B', note: 'pushed' });
     expect(sendMessage).toHaveBeenCalledWith('account-uuid', 'oc_group1', '冲突 A\n冲突 B');
   });
 
   it('strips snapshot blocks from plain bodies without touching the text', async () => {
     const result = await deliver(job('feishu:oc_group1'), '日报正文<cron_snapshot>state</cron_snapshot>').outcome;
 
-    expect(result).toEqual({ delivered: true, pushedBody: '日报正文' });
+    expect(result).toEqual({ delivered: true, pushedBody: '日报正文', note: 'pushed' });
     expect(sendMessage).toHaveBeenCalledWith('account-uuid', 'oc_group1', '日报正文');
   });
 
@@ -195,7 +196,7 @@ describe('deliverCronResultToChannel push body sanitization (PR#2060 round 2)', 
   it('stays quiet when nothing survives sanitization', async () => {
     const result = await deliver(job('feishu:oc_group1'), '<cron_snapshot>only-state</cron_snapshot>').outcome;
 
-    expect(result).toEqual({ delivered: false });
+    expect(result).toEqual({ delivered: false, note: 'empty-body' });
     expect(result.reason).toBeUndefined();
     expect(sendMessage).not.toHaveBeenCalled();
   });
@@ -206,7 +207,7 @@ describe('deliverCronResultToChannel push body sanitization (PR#2060 round 2)', 
       '<cron_summary>已生成日报。\nartifact: /tmp/report.md</cron_summary>',
     ).outcome;
 
-    expect(result).toEqual({ delivered: true, pushedBody: '已生成日报。\nartifact: /tmp/report.md' });
+    expect(result).toEqual({ delivered: true, pushedBody: '已生成日报。\nartifact: /tmp/report.md', note: 'pushed' });
     expect(sendMessage).toHaveBeenCalledWith(
       'account-uuid',
       'oc_group1',
@@ -220,7 +221,7 @@ describe('deliverCronResultToChannel push body sanitization (PR#2060 round 2)', 
       '<cron_snapshot>state</cron_snapshot><cron_summary>已生成日报。</cron_summary>',
     ).outcome;
 
-    expect(result).toEqual({ delivered: true, pushedBody: '已生成日报。' });
+    expect(result).toEqual({ delivered: true, pushedBody: '已生成日报。', note: 'pushed' });
     expect(sendMessage).toHaveBeenCalledWith('account-uuid', 'oc_group1', '已生成日报。');
   });
 
@@ -230,14 +231,14 @@ describe('deliverCronResultToChannel push body sanitization (PR#2060 round 2)', 
       '日报正文<cron_snapshot>state</cron_snapshot><cron_summary>摘要</cron_summary>',
     ).outcome;
 
-    expect(result).toEqual({ delivered: true, pushedBody: '日报正文' });
+    expect(result).toEqual({ delivered: true, pushedBody: '日报正文', note: 'pushed' });
   });
 
   it('keeps the alert inner text when a summary block is also present', async () => {
     const raw = '巡检完成。<cron_snapshot>{"fingerprint":"abc"}</cron_snapshot><cron_alert>冲突 A</cron_alert> 其余说明 <cron_alert>冲突 B</cron_alert><cron_summary>摘要</cron_summary>';
     const result = await deliver(job('feishu:oc_group1'), raw).outcome;
 
-    expect(result).toEqual({ delivered: true, pushedBody: '冲突 A\n冲突 B' });
+    expect(result).toEqual({ delivered: true, pushedBody: '冲突 A\n冲突 B', note: 'pushed' });
   });
 
   // N-CRON-RESTATE-HUMAN-WHEN-FU1: alert 分支改走 shared/cronRunDigest.extractCronAlertText
@@ -252,7 +253,7 @@ describe('deliverCronResultToChannel push body sanitization (PR#2060 round 2)', 
     expect(expected).toBe('数据库连接池耗尽\n磁盘水位超 90%');
     const result = await deliver(job('feishu:oc_group1'), raw).outcome;
 
-    expect(result).toEqual({ delivered: true, pushedBody: expected });
+    expect(result).toEqual({ delivered: true, pushedBody: expected, note: 'pushed' });
     expect(sendMessage).toHaveBeenCalledWith('account-uuid', 'oc_group1', expected);
   });
 });
@@ -287,7 +288,7 @@ describe('deliverCronResultToChannel outbound sensitive guard', () => {
     // 执行记录仍持原文，未被就地改写。
     expect(execution.result).toBe(CARD_BODY);
     // 去重键写回的也是原文：掩码不参与「一字不差」判定。
-    expect(outcome).toEqual({ delivered: true, pushedBody: CARD_BODY });
+    expect(outcome).toEqual({ delivered: true, pushedBody: CARD_BODY, note: 'pushed' });
   });
 
   it('masks mainland resident IDs in pushed bodies too', async () => {
@@ -300,5 +301,69 @@ describe('deliverCronResultToChannel outbound sensitive guard', () => {
     const body = '今日简报：无异常。';
     await deliver(job('feishu:oc_group1'), body).outcome;
     expect(sendMessage).toHaveBeenCalledWith('account-uuid', 'oc_group1', body);
+  });
+});
+
+// N-FIX-CRON-RESULT-PUSH-SILENT-SKIP：配了推送目标却没发出去的每条分支都要在运行记录里留下可区分的码。
+describe('deliverCronResultToChannel push note on the run record', () => {
+  function run(definition: CronJobDefinition, result: unknown, gate?: { skip: 'quiet-watch-round' | 'notify-quiet-round' }) {
+    const execution: CronJobExecution = {
+      id: 'exec-1', jobId: definition.id, runsOn: 'local', status: 'completed', scheduledAt: 1, retryAttempt: 0,
+    };
+    const executions = new Map<string, CronJobExecution[]>([[definition.id, [execution]]]);
+    const outcome = deliverCronResultToChannel(definition, result, executions, execution.id, {
+      getLatestDefinition: () => definition,
+      persistAction: async (_id, action) => { definition.action = action; },
+    }, gate);
+    return { execution, outcome };
+  }
+
+  it('gives each of the four silent branches a different code and never touches status/error', async () => {
+    const withLast = job('feishu:oc_group1');
+    withLast.action = { ...withLast.action, context: { lastPushedResult: '旧内容' } } as typeof withLast.action;
+    const cases: Array<[string, CronJobDefinition, unknown]> = [
+      ['empty-result', job('feishu:oc_group1'), ''],
+      ['empty-body', job('feishu:oc_group1'), `<cron_snapshot>{"a":1}</cron_snapshot>`],
+      ['duplicate', withLast, '旧内容'],
+      ['pushed', job('feishu:oc_group1'), '新内容'],
+    ];
+    const seen: string[] = [];
+    for (const [expected, definition, result] of cases) {
+      const { execution, outcome } = run(definition, result);
+      await outcome;
+      expect(execution.pushNote).toBe(expected);
+      expect(execution.status).toBe('completed');
+      expect(execution.error).toBeUndefined();
+      seen.push(execution.pushNote as string);
+    }
+    expect(new Set(seen).size).toBe(4);
+  });
+
+  it('writes the upstream gate codes only when a push target is configured', async () => {
+    const quiet = run(job('feishu:oc_group1'), undefined, { skip: 'quiet-watch-round' });
+    await quiet.outcome;
+    expect(quiet.execution.pushNote).toBe('quiet-watch-round');
+    const notify = run(job('feishu:oc_group1'), undefined, { skip: 'notify-quiet-round' });
+    await notify.outcome;
+    expect(notify.execution.pushNote).toBe('notify-quiet-round');
+    const none = run(job(undefined), undefined, { skip: 'quiet-watch-round' });
+    await none.outcome;
+    expect(none.execution.pushNote).toBeUndefined();
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('keeps the failure error text unchanged and sets no push note on a send failure', async () => {
+    sendMessage.mockResolvedValueOnce({ success: false, error: 'invalid receive_id' });
+    const { execution, outcome } = run(job('feishu:oc_group1'), '内容');
+    await outcome;
+    expect(execution.error).toBe('结果推送失败：channel rejected the message: invalid receive_id');
+    expect(execution.pushNote).toBeUndefined();
+    expect(execution.status).toBe('completed');
+  });
+
+  it('writes nothing when no push target is configured', async () => {
+    const { execution, outcome } = run(job(undefined), '内容');
+    await outcome;
+    expect(execution.pushNote).toBeUndefined();
   });
 });
