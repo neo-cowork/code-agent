@@ -561,12 +561,12 @@ describe('带图片附件的前台文字轮', () => {
   });
 
   it('桌面入口 withSessionCommandCenterBrain 与 web 同判；无图轮不变', () => {
-    const withImage = withSessionCommandCenterBrain({ modelSpec: textOnly }, prompt, [image]);
+    const withImage = withSessionCommandCenterBrain(undefined, prompt, { attachments: [image], model: textOnly });
     expect(withImage.allowedToolNames).toContain('image_analyze');
-    const noImage = withSessionCommandCenterBrain({ modelSpec: textOnly }, prompt);
+    const noImage = withSessionCommandCenterBrain(undefined, prompt);
     expect(noImage.allowedToolNames).toEqual(getTextForegroundToolNamesForPrompt(prompt));
     expect(noImage.allowedToolNames).not.toContain('image_analyze');
-    expect(withSessionCommandCenterBrain({ modelSpec: vision }, prompt, [image]).allowedToolNames)
+    expect(withSessionCommandCenterBrain(undefined, prompt, { attachments: [image], model: vision }).allowedToolNames)
       .toEqual(noImage.allowedToolNames);
   });
 });
