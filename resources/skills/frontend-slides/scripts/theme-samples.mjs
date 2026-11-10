@@ -16,6 +16,9 @@ const SOFFICE_FIXED_PATHS = [
   '/usr/local/bin/libreoffice',
 ];
 const STEP_TIMEOUT_MS = 120_000;
+// macOS: under the app's write fence LibreOffice finds /tmp unwritable and puts its
+// single-instance socket at the filesystem root. Pin the directory the sandbox allows.
+const OFFICE_SOCKET_DIR = process.platform === 'darwin' ? '/private/tmp' : '';
 
 function log(message) {
   console.error(`[theme-samples] ${message}`);
@@ -101,10 +104,57 @@ function run(cmd, args, label, reason = 'sample render failed') {
       status: result.status, signal: result.signal, error: result.error?.message ?? null,
       stderr: stderr.slice(0, 500), stdout: stdout.slice(0, 500),
     })}`);
-    error.reason = /sandbox[^\n]*deny[^\n]*write|deny[^\n]*file-write/i.test(stderr)
-      ? 'sandbox denied write' : reason;
+    error.reason = reason;
     throw error;
   }
+}
+
+function writable(dir) {
+  try {
+    fs.accessSync(dir, fs.constants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function probeWrite(dir) {
+  const file = path.join(dir, `.theme-samples-probe-${process.pid}`);
+  try {
+    fs.writeFileSync(file, '');
+    fs.rmSync(file, { force: true });
+    return null;
+  } catch (error) {
+    return error.code || String(error);
+  }
+}
+
+// Binds a socket named like LibreOffice's own, in the directory LibreOffice would use: the
+// one passed to it, else the first writable of /tmp and /var/tmp, else the filesystem root.
+function probeOfficeSocket() {
+  const dir = OFFICE_SOCKET_DIR || ['/tmp', '/var/tmp'].find(writable) || '/';
+  const target = path.join(dir, `OSL_PIPE_${process.getuid()}_SingleOfficeIPC_probe${process.pid}`);
+  const bind = "const s=require('net').createServer();s.on('error',e=>console.log(e.code));s.listen(process.argv[1],()=>{console.log('OK');s.close()})";
+  const result = spawnSync(process.execPath, ['-e', bind, target], { encoding: 'utf8', timeout: STEP_TIMEOUT_MS });
+  const code = (result.stdout || '').trim() || `no result (${result.error?.message ?? `status ${result.status}`})`;
+  return { target, code: code === 'OK' ? null : code };
+}
+
+// A sandbox denial goes to the kernel log, never to the failed child's stderr. So after a
+// failure, repeat the same kinds of access here: EPERM means the sandbox refused it.
+function sandboxDenial(error, work, out) {
+  if (error.code === 'EPERM') return 'sandbox denied write';
+  const probes = [work, out].filter(Boolean).map((dir) => ({ name: 'write', target: dir, code: probeWrite(dir) }));
+  if (error.reason === 'soffice render failed' && process.platform !== 'win32') {
+    probes.push({ name: 'socket', ...probeOfficeSocket() });
+  }
+  let reason = null;
+  for (const { name, target, code } of probes) {
+    if (!code) continue;
+    log(`probe failed: ${name} ${target} -> ${code}`);
+    if (code === 'EPERM') reason ??= `sandbox denied ${name}`;
+  }
+  return reason;
 }
 
 function pdfToPng(pdf, png) {
@@ -130,9 +180,7 @@ function renderSample({ soffice, mergeScript, slide, theme, outDir, work }) {
     soffice,
     [
       `-env:UserInstallation=${pathToFileURL(profile).href}`,
-      // Without this bootstrap setting, access(/tmp, W_OK) fails the write fence and
-      // LibreOffice falls back to /OSL_PIPE_*. Keep the owner-approved socket path.
-      ...(process.platform === 'darwin' ? ['-env:OSL_SOCKET_PATH=/private/tmp'] : []),
+      ...(OFFICE_SOCKET_DIR ? [`-env:OSL_SOCKET_PATH=${OFFICE_SOCKET_DIR}`] : []),
       '--headless', '--convert-to', 'pdf', '--outdir', deck, pptx,
     ],
     `soffice (${theme})`,
@@ -157,13 +205,18 @@ function main() {
   }
   const slide = pickSlide(dir);
   const mergeScript = path.join(path.dirname(fileURLToPath(import.meta.url)), 'merge-to-pptx-hybrid.mjs');
-  fs.mkdirSync(out, { recursive: true });
-  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'fs-theme-samples-'));
+  let work = '';
   try {
+    fs.mkdirSync(out, { recursive: true });
+    work = fs.mkdtempSync(path.join(os.tmpdir(), 'fs-theme-samples-'));
     const samples = THEMES.map((theme) => renderSample({ soffice, mergeScript, slide, theme, outDir: out, work }));
     console.log(JSON.stringify({ available: true, slide: slide.index, samples }));
+  } catch (error) {
+    // Probe while the work directory still exists.
+    error.reason = sandboxDenial(error, work, out) || error.reason;
+    throw error;
   } finally {
-    fs.rmSync(work, { recursive: true, force: true });
+    if (work) fs.rmSync(work, { recursive: true, force: true });
   }
 }
 

@@ -122,7 +122,8 @@ describe('frontend-slides theme-samples diagnostics and sandbox', () => {
     ['stderr tail', 'echo conversion-broke >&2; echo conversion-output; exit 7', 'soffice render failed', 'conversion-broke', '"status":7'],
     ['empty stderr', 'exit 1', 'soffice render failed', '"stderr":""', '"status":1'],
     ['signal', 'kill -TERM $$', 'soffice render failed', '"signal":"SIGTERM"', '"status":null'],
-    ['sandbox denial', 'echo "Sandbox: soffice deny(1) file-write-create /blocked" >&2; exit 1', 'sandbox denied write', 'file-write-create /blocked', '"status":1'],
+    // stderr text is not evidence of a denial: a real one never reaches the child's stderr.
+    ['denial-looking stderr', 'echo "Sandbox: soffice deny(1) file-write-create /blocked" >&2; exit 1', 'soffice render failed', 'file-write-create /blocked', '"status":1'],
   ])('soffice non-zero reports %s and a distinct reason', (_name, body, reason, tail, status) => {
     const { deck, fake } = fakeSoffice(body);
     try {
@@ -206,26 +207,101 @@ describe('frontend-slides theme-samples diagnostics and sandbox', () => {
     }
   });
 
-  it.skipIf(process.platform !== 'darwin' || !SOFFICE || spawnSync('which', ['sandbox-exec']).status !== 0)(
-    'real Bash sandbox wrapper renders 3 non-empty PNGs', () => {
-      const deck = makeDeck();
-      const command = quote([process.execPath, script, deck]);
-      const wrapped = wrapCommandForSandbox(command, {
-        workingDirectory: deck, allowNetwork: resolveSandboxNetworkPolicy({ command }),
-      });
-      try {
-        const result = spawnSync('/bin/sh', ['-c', wrapped.command], { cwd: deck, encoding: 'utf8', timeout: 180_000 });
-        expect(result.status, result.stderr).toBe(0);
-        const out = JSON.parse(result.stdout.trim());
-        expect(out.available, result.stderr).toBe(true);
-        expect(out.samples.map((sample: { theme: string }) => sample.theme)).toEqual(['corporate', 'minimal', 'bold-editorial']);
-        for (const sample of out.samples) expect(fs.statSync(sample.png).size).toBeGreaterThan(0);
-      } finally {
-        wrapped.cleanup();
-        fs.rmSync(deck, { recursive: true, force: true });
+  const SANDBOX = process.platform === 'darwin' && spawnSync('which', ['sandbox-exec']).status === 0;
+
+  // The wrapper Bash uses: script, soffice and the script's own probes all run inside the real profile.
+  function runSandboxed(deck: string, argv: string[], env: NodeJS.ProcessEnv = process.env) {
+    const command = quote([process.execPath, ...argv]);
+    const wrapped = wrapCommandForSandbox(command, {
+      workingDirectory: deck, allowNetwork: resolveSandboxNetworkPolicy({ command }),
+    });
+    try {
+      return spawnSync('/bin/sh', ['-c', wrapped.command], { cwd: deck, encoding: 'utf8', env, timeout: 180_000 });
+    } finally {
+      wrapped.cleanup();
+    }
+  }
+  // Not under any write root of the profile (those are TMPDIR, the deck and /dev).
+  const outsideRoots = (name: string) => `/private/tmp/theme-samples-${name}-${process.pid}`;
+
+  it.skipIf(!SANDBOX || !SOFFICE)('real Bash sandbox wrapper renders 3 non-empty PNGs', () => {
+    const deck = makeDeck();
+    try {
+      const result = runSandboxed(deck, [script, deck]);
+      expect(result.status, result.stderr).toBe(0);
+      const out = JSON.parse(result.stdout.trim());
+      expect(out.available, result.stderr).toBe(true);
+      expect(out.samples.map((sample: { theme: string }) => sample.theme)).toEqual(['corporate', 'minimal', 'bold-editorial']);
+      for (const sample of out.samples) expect(fs.statSync(sample.png).size).toBeGreaterThan(0);
+    } finally {
+      fs.rmSync(deck, { recursive: true, force: true });
+    }
+  }, 240_000);
+
+  it.skipIf(!SANDBOX)('real sandbox: a conversion failure with nothing denied stays "soffice render failed"', () => {
+    const { deck, fake } = fakeSoffice('echo conversion-broke >&2; exit 7');
+    try {
+      const result = runSandboxed(deck, [script, deck], { ...process.env, LIBREOFFICE_PATH: fake });
+      expect(JSON.parse(result.stdout), result.stderr).toEqual({ available: false, reason: 'soffice render failed' });
+      expect(result.stderr).toContain('conversion-broke');
+      expect(result.stderr).not.toContain('probe failed');
+    } finally {
+      fs.rmSync(deck, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  it.skipIf(!SANDBOX)('real sandbox: an output directory the script may not create is "sandbox denied write"', () => {
+    const { deck, fake } = fakeSoffice('exit 0');
+    const out = outsideRoots('nodir');
+    try {
+      const result = runSandboxed(deck, [script, deck, '--out', out], { ...process.env, LIBREOFFICE_PATH: fake });
+      expect(JSON.parse(result.stdout), result.stderr).toEqual({ available: false, reason: 'sandbox denied write' });
+      expect(result.stderr).toContain(`EPERM: operation not permitted, mkdir '${out}'`);
+      expect(fs.existsSync(out)).toBe(false);
+    } finally {
+      fs.rmSync(out, { recursive: true, force: true });
+      fs.rmSync(deck, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  it.skipIf(!SANDBOX || !SOFFICE)('real sandbox: an existing output directory outside the write roots is "sandbox denied write"', () => {
+    const deck = makeDeck();
+    const out = outsideRoots('rodir');
+    fs.mkdirSync(out);
+    try {
+      const result = runSandboxed(deck, [script, deck, '--out', out]);
+      expect(JSON.parse(result.stdout), result.stderr).toEqual({ available: false, reason: 'sandbox denied write' });
+      expect(result.stderr).toContain(`probe failed: write ${out} -> EPERM`);
+      expect(fs.readdirSync(out)).toEqual([]);
+    } finally {
+      fs.rmSync(out, { recursive: true, force: true });
+      fs.rmSync(deck, { recursive: true, force: true });
+    }
+  }, 240_000);
+
+  // Real soffice, real profile, real denial: without the socket-directory flag LibreOffice binds
+  // /OSL_PIPE_* at the filesystem root, the kernel refuses, and soffice exits 1 printing nothing.
+  it.skipIf(!SANDBOX || !SOFFICE)('real sandbox: soffice denied its IPC socket is "sandbox denied socket", not a render failure', () => {
+    const deck = makeDeck();
+    const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'theme-samples-noflag-'));
+    try {
+      for (const file of ['merge-to-pptx-hybrid.mjs', 'merge-to-pptx-hybrid.bundle.mjs']) {
+        fs.copyFileSync(path.join(path.dirname(script), file), path.join(copy, file));
       }
-    }, 240_000,
-  );
+      const source = fs.readFileSync(script, 'utf8');
+      const withoutFlag = source.replace("? '/private/tmp' : ''", "? '' : ''");
+      expect(withoutFlag).not.toBe(source);
+      fs.writeFileSync(path.join(copy, 'theme-samples.mjs'), withoutFlag);
+
+      const result = runSandboxed(deck, [path.join(copy, 'theme-samples.mjs'), deck]);
+      expect(JSON.parse(result.stdout), result.stderr).toEqual({ available: false, reason: 'sandbox denied socket' });
+      expect(result.stderr).toMatch(/probe failed: socket \/OSL_PIPE_\d+_SingleOfficeIPC_probe\d+ -> EPERM/);
+      expect(result.stderr).toContain('soffice (corporate) failed: {"status":1,"signal":null,"error":null,"stderr":"","stdout":""}');
+    } finally {
+      fs.rmSync(copy, { recursive: true, force: true });
+      fs.rmSync(deck, { recursive: true, force: true });
+    }
+  }, 240_000);
 });
 
 describe('frontend-slides SKILL.md sample-pick step', () => {
