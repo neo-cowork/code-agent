@@ -64,7 +64,7 @@ describe('PermissionCard grant tiers', () => {
   });
 
   it.each([
-    ['s', 'allow_run', '到这次做完为止'], ['a', 'allow_24h', '24 小时内允许'],
+    ['s', 'allow_run'], ['a', 'allow_24h'],
   ] as const)('shortcut %s sends exactly %s without renderer memory', async (key, response) => {
     render(<PermissionCard />);
     const storage = vi.spyOn(Storage.prototype, 'setItem');
