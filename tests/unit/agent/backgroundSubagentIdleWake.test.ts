@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { scheduleBackgroundSubagentIdleWake } from '../../../src/host/agent/backgroundSubagentIdleWake';
 import { getBackgroundSubagentRegistry } from '../../../src/host/agent/backgroundSubagentRegistry';
+import { getApplicationRunRegistry, resetApplicationRunRegistryForTests } from '../../../src/host/app/applicationRunRegistry';
 import type { SubagentResult } from '../../../src/host/agent/subagentExecutorTypes';
 import type { SubagentCompletionRecord } from '../../../src/host/agent/subagentCompletionNotification';
 
@@ -19,13 +20,15 @@ vi.mock('../../../src/host/services/commandCenter/foregroundWake', () => ({
   recordBackgroundWakeFailureNote: wakeNoteMocks.record,
 }));
 
+const loggerMocks = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+}));
+
 vi.mock('../../../src/host/services/infra/logger', () => ({
-  createLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
+  createLogger: () => loggerMocks,
 }));
 
 vi.mock('../../../src/host/task/TaskManager', () => ({
@@ -64,8 +67,10 @@ function trigger(agentId: string, sessionId: string): SubagentCompletionRecord {
 describe('background subagent idle wake', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    resetApplicationRunRegistryForTests();
     taskManagerMocks.getSessionState.mockReset();
     taskManagerMocks.startTask.mockReset();
+    loggerMocks.info.mockReset();
     taskManagerMocks.observeAgentEvents.mockReset();
     taskManagerMocks.observeAgentEvents.mockReturnValue(vi.fn());
     wakeNoteMocks.format.mockClear();
@@ -75,6 +80,7 @@ describe('background subagent idle wake', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    resetApplicationRunRegistryForTests();
   });
 
   it('batches simultaneous idle completions into one invisible parent turn', async () => {
@@ -132,6 +138,62 @@ describe('background subagent idle wake', () => {
     const busy = getBackgroundSubagentRegistry().drainCompletionNotifications({ sessionId: 'busy-session' });
     expect(busy).toHaveLength(1);
     expect(busy[0]?.agentId).toBe('agent-running');
+  });
+
+  it('does not wake while the real run registry still owns the parent session', async () => {
+    taskManagerMocks.getSessionState.mockReturnValue({ status: 'idle' });
+    taskManagerMocks.startTask.mockResolvedValue(undefined);
+    const registry = getApplicationRunRegistry();
+    const primary = registry.start({
+      runId: 'primary-run',
+      sessionId: 'busy-session',
+      workspace: process.cwd(),
+    });
+
+    await seedCompletion('agent-busy', 'busy-session');
+    scheduleBackgroundSubagentIdleWake(trigger('agent-busy', 'busy-session'));
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(registry.hasSession('busy-session')).toBe(true);
+    expect(taskManagerMocks.startTask).not.toHaveBeenCalled();
+    expect(loggerMocks.info).toHaveBeenCalledWith(
+      'skipped: parent run still registered',
+      { sessionId: 'busy-session' },
+    );
+    expect(getBackgroundSubagentRegistry().drainCompletionNotifications({ sessionId: 'busy-session' })).toHaveLength(1);
+
+    registry.unregister(primary.context.runId, primary);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(taskManagerMocks.startTask).not.toHaveBeenCalled();
+  });
+
+  it('re-schedules one wake after the registered parent run becomes idle', async () => {
+    taskManagerMocks.getSessionState.mockReturnValue({ status: 'idle' });
+    taskManagerMocks.startTask.mockResolvedValue(undefined);
+    const registry = getApplicationRunRegistry();
+    const primary = registry.start({
+      runId: 'primary-run-requeue',
+      sessionId: 'busy-session-requeue',
+      workspace: process.cwd(),
+    });
+
+    await seedCompletion('agent-busy-requeue', 'busy-session-requeue');
+    scheduleBackgroundSubagentIdleWake(trigger('agent-busy-requeue', 'busy-session-requeue'));
+    await vi.advanceTimersByTimeAsync(50);
+    expect(taskManagerMocks.startTask).not.toHaveBeenCalled();
+
+    registry.unregister(primary.context.runId, primary);
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(taskManagerMocks.startTask).toHaveBeenCalledTimes(1);
+    expect(taskManagerMocks.startTask).toHaveBeenCalledWith(
+      'busy-session-requeue',
+      expect.stringContaining('1 background task completed'),
+      undefined,
+      expect.objectContaining({ mode: 'normal', inputHistoryVisibility: 'meta', maxIterations: 1 }),
+      expect.anything(),
+      expect.stringContaining('background-subagent:busy-session-requeue:'),
+    );
   });
 
   it('records the existing user-visible note when the notification turn emits an error', async () => {
