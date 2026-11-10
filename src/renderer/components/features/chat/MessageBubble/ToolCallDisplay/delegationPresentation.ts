@@ -1,4 +1,5 @@
 import { humanizeToolStep, parseDelegateSessionReceipt } from '../../../../../utils/humanizeToolStep';
+import type { AgentFailureCode } from '@shared/contract/agentFailure';
 import type { AgentTreeNode } from '@shared/contract/agentTree';
 import type { LastToolFailure, LastToolStep, Task, TaskOutputRef } from '@shared/contract/backgroundTask';
 import type { ToolCall } from '@shared/contract';
@@ -28,6 +29,7 @@ export interface DelegationPresentation {
   failure?: string;
   /** 子代理在隔离副本里改了文件时，等待合并的分支名（不含路径）。 */
   branch?: string;
+  failureCode?: AgentFailureCode;
   /** 终态任务的结构化工具失败（N-MEDIA-GEN-MUSIC-FALLBACK-FU1）：回执行人话出路用。 */
   toolFailure?: LastToolFailure;
   /** 审批关联键（agentRows.applyMemberHolds 同口径）：task.id / runId / childRunId 或节点 id。 */
@@ -231,6 +233,7 @@ function fromAgent(node: AgentTreeNode): DelegationPresentation {
     }),
     failure: state === 'failed' ? node.failureReason || node.progress : undefined,
     branch: terminal && node.worktreeState.status === 'preserved' ? node.worktreeState.branch : undefined,
+    failureCode: state === 'failed' ? node.failureCode : undefined,
   };
 }
 
