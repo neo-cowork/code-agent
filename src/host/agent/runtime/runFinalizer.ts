@@ -525,7 +525,7 @@ export class RunFinalizer {
       this.ctx,
       terminalStatus,
       completionSummary,
-      terminalStatus === 'cancelled' && this.ctx.control.cancelReason === 'idle-reaped' ? 'idle_reaped' : undefined,
+      terminalStatus === 'cancelled' ? (this.ctx.control.cancelReason === 'client-disconnect' ? 'client_disconnect' : this.ctx.control.cancelReason === 'idle-reaped' ? 'idle_reaped' : undefined) : undefined,
     );
 
     await this.emitTurnDiff();
@@ -538,7 +538,7 @@ export class RunFinalizer {
     if (terminalEventType === 'agent_cancelled') {
       this.ctx.onEvent({
         type: 'agent_cancelled',
-        data: this.ctx.control.cancelReason === 'idle-reaped' ? { reason: 'idle_reaped' } : null,
+        data: this.ctx.control.cancelReason === 'client-disconnect' ? { reason: 'client_disconnect' } : this.ctx.control.cancelReason === 'idle-reaped' ? { reason: 'idle_reaped' } : null,
       });
     } else {
       this.ctx.onEvent({ type: terminalEventType, data: null });

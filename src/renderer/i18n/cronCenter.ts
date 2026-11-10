@@ -120,6 +120,7 @@ export const cronCenterZh = {
     permissionDeniedBadge: '需处理',
     permissionDeniedTitle: '有命令没获批准',
     permissionDeniedSentence: '「{summary}」没有获批准（{reason}），这次运行没有产出。',
+    permissionDeniedListSentence: '有操作没有获批准（{reason}），这次运行没有产出。',
     // 四条原因措辞与 host 完成通知同源（shared/cronPermissionDenied，Rework r2）
     permissionDeniedReasonUser: cronPermissionDeniedReasonText('user', 'zh'),
     permissionDeniedReasonTimeout: cronPermissionDeniedReasonText('timeout', 'zh'),
@@ -163,6 +164,11 @@ export const cronCenterZh = {
     cardMaxRetries: '最大重试',
     cardRetryDelay: '重试间隔',
     cardTimeout: '超时',
+    detailDurationUnits: {
+      seconds: { one: '秒', other: '秒' },
+      minutes: { one: '分钟', other: '分钟' },
+      hours: { one: '小时', other: '小时' },
+    },
     historyTitle: '执行历史',
     historyEmpty: '还没有执行记录，点击「手动触发」运行一次',
     // 执行记录
@@ -631,6 +637,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     permissionDeniedBadge: 'Needs attention',
     permissionDeniedTitle: 'A command was not approved',
     permissionDeniedSentence: '“{summary}” was not approved ({reason}); this run produced nothing.',
+    permissionDeniedListSentence: 'An action was not approved ({reason}); this run produced nothing.',
     permissionDeniedReasonUser: cronPermissionDeniedReasonText('user', 'en'),
     permissionDeniedReasonTimeout: cronPermissionDeniedReasonText('timeout', 'en'),
     permissionDeniedReasonCancelled: cronPermissionDeniedReasonText('cancelled', 'en'),
@@ -671,6 +678,11 @@ export const cronCenterEn: typeof cronCenterZh = {
     cardMaxRetries: 'Max retries',
     cardRetryDelay: 'Retry delay',
     cardTimeout: 'Timeout',
+    detailDurationUnits: {
+      seconds: { one: 'second', other: 'seconds' },
+      minutes: { one: 'minute', other: 'minutes' },
+      hours: { one: 'hour', other: 'hours' },
+    },
     historyTitle: 'Run history',
     historyEmpty: 'No runs yet — click “Run now” to try it once',
     execEmpty: 'No runs yet',

@@ -106,11 +106,22 @@ function candidateEntry(
 }
 
 function formatExists(topic: ProjectMemoryDraftTopic, entry: MemoryEntry): string {
+  const statusReceipt = entry.status === 'candidate'
+    ? [
+      'status: candidate',
+      '仍待确认，需在设置→记忆页确认才生效',
+    ]
+    : entry.status === 'active'
+      ? [
+        'status: active',
+        '已生效',
+      ]
+      : [`status: ${entry.status}`];
   return [
     'exists, not overwritten',
     `topic: ${topic}`,
     `id: ${entry.id}`,
-    `status: ${entry.status}`,
+    ...statusReceipt,
     'content:',
     entry.content,
   ].join('\n');
@@ -118,7 +129,9 @@ function formatExists(topic: ProjectMemoryDraftTopic, entry: MemoryEntry): strin
 
 function formatWritten(topic: ProjectMemoryDraftTopic, entry: MemoryEntry): string {
   return [
-    'Wrote a candidate project memory. status: candidate. It does not take effect until confirmed in Settings -> Memory.',
+    'Wrote a candidate project memory.',
+    'status: candidate',
+    '仍待确认，需在设置→记忆页确认才生效',
     `topic: ${topic}`,
     `id: ${entry.id}`,
     'content:',

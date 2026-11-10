@@ -87,7 +87,7 @@ describe('cancelForDisconnect × quit intent', () => {
     disconnect(res);
     controller.cancelForDisconnect();
 
-    expect(cancel).toHaveBeenCalledWith('user');
+    expect(cancel).toHaveBeenCalledWith('client-disconnect');
   });
 
   it('接入全局 SSE 不改写意图本身：留守判据读到的仍是 background（armed schedules 不丢）', () => {
@@ -111,7 +111,7 @@ describe('cancelForDisconnect × quit intent', () => {
     disconnect(res);
     controller.cancelForDisconnect();
 
-    expect(cancel).toHaveBeenCalledWith('user');
+    expect(cancel).toHaveBeenCalledWith('client-disconnect');
     expect(controller.disconnected).toBe(true);
     expect(loggedDisconnect(logger)).toBe(true);
   });
