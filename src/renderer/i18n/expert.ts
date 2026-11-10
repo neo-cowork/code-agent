@@ -144,6 +144,8 @@ export const expertZh = {
       },
     },
     roleDetail: {
+      roleWakeLabel: '角色唤醒',
+      roleWakeTooltip: '角色醒来时自己记下的',
       maxIterations: '最大迭代次数',
       skills: '技能',
       tools: '工具',
@@ -187,6 +189,7 @@ export const expertZh = {
       title: '最近删除',
       empty: '没有最近删除的专家',
       loading: '正在读取最近删除的专家…',
+      deletedToday: '今天删除 · 还有 {daysLeft} 天可恢复',
       deletedDays: '删除 {days} 天前 · 还有 {daysLeft} 天可恢复',
       restore: '恢复',
       restoring: '恢复中…',
@@ -469,6 +472,8 @@ export const expertEn: typeof expertZh = {
       },
     },
     roleDetail: {
+      roleWakeLabel: 'Role wake',
+      roleWakeTooltip: 'Written by the role itself when it woke up',
       maxIterations: 'Maximum iterations',
       skills: 'Skills',
       tools: 'Tools',
@@ -512,6 +517,7 @@ export const expertEn: typeof expertZh = {
       title: 'Recently deleted',
       empty: 'No recently deleted experts',
       loading: 'Loading recently deleted experts…',
+      deletedToday: 'Deleted today · {daysLeft} days left to restore',
       deletedDays: 'Deleted {days} days ago · {daysLeft} days left to restore',
       restore: 'Restore',
       restoring: 'Restoring…',

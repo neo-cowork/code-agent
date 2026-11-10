@@ -109,6 +109,8 @@ describe('event validation jumps to the basic tab', () => {
     fireEvent.change(budget, { target: { value: '1' } });
     fireEvent.click(screen.getByText('执行动作'));
     fireEvent.click(screen.getByText('保存修改'));
+    expect(cronStore.updateJob).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
     await waitFor(() => expect(cronStore.updateJob).toHaveBeenCalledTimes(1));
   });
 
@@ -189,7 +191,10 @@ describe('event validation jumps to the basic tab', () => {
     render(<CronJobEditor isOpen job={makeJob({ maxRunBudget: 1 })} onClose={() => undefined} />);
 
     fireEvent.click(screen.getByText('保存修改'));
+    expect(cronStore.updateJob).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
     expect(await screen.findByText('后端保存失败')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('cron-pending-routine-back'));
 
     const budget = screen.getByLabelText(/^单次预算上限/) as HTMLInputElement;
     fireEvent.change(budget, { target: { value: '0.5' } });

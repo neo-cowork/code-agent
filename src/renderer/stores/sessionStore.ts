@@ -33,6 +33,7 @@ import { recoveryLoadLightsTurn, runtimeStatusCountsAsRunning } from './parkedCo
 import { hostStampPredatesTerminal } from './terminalRunGuardStore';
 import { bindInitializedSessionBroadcasts } from './sessionStoreBroadcasts';
 import { openInitialSession } from './sessionBootDraft';
+import { getSessionTitlePlaceholder } from '../utils/sessionTitlePlaceholder';
 
 const logger = createLogger('SessionStore');
 
@@ -154,7 +155,7 @@ export function isBlankNewSession(
   if (session.isArchived || session.status === 'archived') {
     return false;
   }
-  if ((session.title || '').trim() !== '新对话') {
+  if (getSessionTitlePlaceholder(session.title, useAppStore.getState().language) === null) {
     return false;
   }
   return (session.messageCount ?? 0) === 0 && (session.turnCount ?? 0) === 0;
@@ -255,7 +256,7 @@ interface SessionActions {
   updateSessionEngine: (sessionId: string, engine: Partial<AgentEngineSessionMetadata>) => Promise<void>;
   updateSessionMemoryMode: (sessionId: string, memoryMode: Session['memoryMode']) => Promise<void>;
   suppressMemoryEntryForSession: (sessionId: string, entryId: string) => Promise<void>;
-  markSessionUnread: (sessionId: string) => void;
+  markSessionUnread: (sessionId: string, options?: { includeCurrent?: boolean }) => void;
   markSessionRead: (sessionId: string) => void;
   isSessionUnread: (sessionId: string) => boolean;
   updateSessionRuntime: (event: SessionStatusUpdateEvent) => void;
@@ -352,8 +353,9 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       // 竞态保护：记录本次切换的版本号，异步完成后检查是否过期
       const switchVersion = ++_switchCounter;
       const previewSession = get().sessions.find((session) => session.id === sessionId) ?? null;
+      const isReload = !!options?.force && currentSessionId === sessionId; // 强刷当前会话不是「打开」，不清未读
       const nextUnreadIds = new Set(unreadSessionIds);
-      nextUnreadIds.delete(sessionId);
+      if (!isReload) nextUnreadIds.delete(sessionId);
 
       useAppStore.getState().setContextHealth(null);
       useAppStore.getState().setWorkingDirectory(previewSession?.workingDirectory ?? null);
@@ -433,7 +435,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             streamSnapshot,
             isLoading: false,
             isHydratingSession: false,
-            unreadSessionIds: nextUnreadIds,
+            unreadSessionIds: isReload ? get().unreadSessionIds : nextUnreadIds,
             hasOlderMessages: totalCount > loadedMessages.length,
             isLoadingOlder: false,
             sessions: get().sessions.map((item) =>
@@ -819,9 +821,9 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       }
     },
 
-    markSessionUnread: (sessionId: string) => {
+    markSessionUnread: (sessionId: string, options) => {
       const { currentSessionId, unreadSessionIds } = get();
-      if (currentSessionId === sessionId) return;
+      if (currentSessionId === sessionId && !options?.includeCurrent) return;
 
       const newUnreadIds = new Set(unreadSessionIds);
       newUnreadIds.add(sessionId);

@@ -22,8 +22,12 @@ vi.mock('../../../../src/host/services/infra/logger', () => ({
   }),
 }));
 
+const builtinSkillsFixture = vi.hoisted(() => ({
+  skills: [] as Array<Record<string, unknown>>,
+}));
+
 vi.mock('../../../../src/host/services/skills/builtinSkills', () => ({
-  getBuiltinSkills: () => [],
+  getBuiltinSkills: () => builtinSkillsFixture.skills,
 }));
 
 vi.mock('../../../../src/host/services/cloud', () => ({
@@ -54,6 +58,7 @@ vi.mock('../../../../src/host/services/skills/skillRepositoryService', () => ({
 }));
 
 import { SkillDiscoveryService } from '../../../../src/host/services/skills/skillDiscoveryService';
+import { getPermissionModeManager, resetPermissionModeManager } from '../../../../src/host/permissions/modes';
 
 async function writeSkill(baseDir: string, name: string, applicability: string[] = []): Promise<void> {
   const skillDir = path.join(baseDir, name);
@@ -97,8 +102,78 @@ describe('Skill enabled gating (disabledSkills blacklist)', () => {
   });
 
   afterEach(async () => {
+    builtinSkillsFixture.skills = [];
+    resetPermissionModeManager();
     vi.unstubAllEnvs();
     await fs.rm(tmpRoot, { recursive: true, force: true });
+  });
+
+  it('hides user-source skills from getSkillsForContext and getUserInvocableSkills in unattended sessions while keeping builtin/project/plugin visible and respecting allowedSkillIds', async () => {
+    builtinSkillsFixture.skills = [
+      {
+        name: 'builtin-skill',
+        description: 'builtin description',
+        depends: [],
+        provides: ['skill:builtin-skill'],
+        promptContent: 'builtin',
+        basePath: '',
+        allowedTools: [],
+        disableModelInvocation: false,
+        userInvocable: true,
+        executionContext: 'inline',
+        source: 'builtin',
+        loaded: true,
+      },
+      {
+        name: 'plugin-skill',
+        description: 'plugin description',
+        depends: [],
+        provides: ['skill:plugin-skill'],
+        promptContent: 'plugin',
+        basePath: '',
+        allowedTools: [],
+        disableModelInvocation: false,
+        userInvocable: true,
+        executionContext: 'inline',
+        source: 'plugin',
+        loaded: true,
+      },
+    ];
+    await writeSkill(path.join(homeDir, '.code-agent', 'skills'), 'wechat-local-query');
+    await writeSkill(path.join(projectDir, '.code-agent', 'skills'), 'project-skill');
+
+    const service = new SkillDiscoveryService({ includeClaudeLegacySkills: false });
+    await service.initialize(projectDir);
+
+    getPermissionModeManager().markUnattendedSession('cron-unattended-1');
+
+    // Foreground session sees user, builtin, plugin, and project skills
+    expect(service.getSkillsForContext({ sessionId: 'foreground-1' }).map((s) => s.name).sort()).toEqual([
+      'builtin-skill',
+      'plugin-skill',
+      'project-skill',
+      'wechat-local-query',
+    ]);
+
+    // Unattended session without allowedSkillIds hides user skill, keeps builtin/plugin/project skills
+    expect(service.getSkillsForContext({ sessionId: 'cron-unattended-1' }).map((s) => s.name).sort()).toEqual([
+      'builtin-skill',
+      'plugin-skill',
+      'project-skill',
+    ]);
+    expect(service.getUserInvocableSkills({ sessionId: 'cron-unattended-1' }).map((s) => s.name).sort()).toEqual([
+      'builtin-skill',
+      'plugin-skill',
+      'project-skill',
+    ]);
+
+    // Unattended session with explicit allowedSkillIds sees the user skill
+    expect(
+      service.getSkillsForContext({
+        sessionId: 'cron-unattended-1',
+        toolScope: { allowedSkillIds: ['wechat-local-query'] },
+      }).map((s) => s.name).sort(),
+    ).toEqual(['builtin-skill', 'plugin-skill', 'project-skill', 'wechat-local-query']);
   });
 
   it('filters disabled skills from getUserInvocableSkills and getSkillsForContext', async () => {
