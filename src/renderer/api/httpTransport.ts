@@ -24,6 +24,7 @@ import {
   getServerReconnectingMessage,
   reportServerUnreachable,
 } from '../utils/serverConnectionMonitor';
+import { getHttpFailureMessage, getHttpFailureCode as parseHttpErrorCode } from '../utils/httpFailureMessage';
 import { getServerConnectionStatus } from '../stores/serverConnectionStore';
 import { logPermissionClickExit } from '../services/permissionClickLog';
 
@@ -362,15 +363,6 @@ function parseHttpErrorMessage(errorBody: string): string {
   return errorBody;
 }
 
-function parseHttpErrorCode(errorBody: string): string | undefined {
-  const parsed = parseJsonValue(errorBody);
-  if (!isRecord(parsed)) return undefined;
-  if (typeof parsed.code === 'string') return parsed.code;
-  return isRecord(parsed.error) && typeof parsed.error.code === 'string'
-    ? parsed.error.code
-    : undefined;
-}
-
 function getRecoverableAuthTokenError(status: number, errorMessage: string): AuthTokenRecovery | null {
   if (status !== 401 && status !== 403) return null;
   const normalized = errorMessage.toLowerCase();
@@ -674,9 +666,9 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
         // 非 2xx 响应：读取错误体并抛出，避免当 SSE 流解析
         if (!response.ok) {
           const errorBody = await response.text();
-          const errorMessage = parseHttpErrorMessage(errorBody);
+          const errorMessage = getHttpFailureMessage(response.status, parseHttpErrorCode(errorBody));
           const errorCode = parseHttpErrorCode(errorBody);
-          const authError = getRecoverableAuthTokenError(response.status, errorMessage);
+          const authError = getRecoverableAuthTokenError(response.status, parseHttpErrorMessage(errorBody));
           if (authError) {
             console.warn('[HttpTransport] local auth token expired:', authError.message);
             throw new Error(authError.message);
@@ -684,7 +676,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
           // 带上 status：调用方要能区分「这个 session 正忙」（409，可排队重发）
           // 和真正的失败。只留一句人话字符串的话，上层只能去正则匹配错误文案。
           throw Object.assign(
-            new Error(`云端代理请求失败 (${response.status}): ${errorMessage}`),
+            new Error(errorMessage),
             { status: response.status, ...(errorCode ? { code: errorCode } : {}) },
           );
         }
@@ -870,8 +862,8 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
         }
         if (!response.ok) {
           const errorBody = await response.text();
-          const errorMessage = parseHttpErrorMessage(errorBody);
-          const authError = getRecoverableAuthTokenError(response.status, errorMessage);
+          const errorMessage = getHttpFailureMessage(response.status, parseHttpErrorCode(errorBody));
+          const authError = getRecoverableAuthTokenError(response.status, parseHttpErrorMessage(errorBody));
           if (authError) {
             console.warn(`[HttpTransport] ${channel} local auth token expired:`, authError.message);
             throw new Error(authError.message);
@@ -880,17 +872,17 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
             `${channel}:${response.status}`,
             `[HttpTransport] ${channel} failed:`,
             response.status,
-            errorMessage || errorBody,
+            errorMessage,
           );
-          recordTransportFailure(channel, response.status, errorMessage || errorBody);
+          recordTransportFailure(channel, response.status, errorMessage, parseHttpErrorCode(errorBody));
           if (preservesUndeliveredPermissionEnvelope(channel)) {
-            logPermissionClickExit({ requestId: args[0] as string, stage: 'transport-send-failure', sessionId: args[2] as string, error: `审批应答发送失败 (${response.status}): ${errorMessage || errorBody}` });
-            throw new PermissionSendFailure(`审批应答发送失败 (${response.status}): ${errorMessage || errorBody}`);
+            logPermissionClickExit({ requestId: args[0] as string, stage: 'transport-send-failure', sessionId: args[2] as string, error: errorMessage });
+            throw Object.assign(new PermissionSendFailure(errorMessage), { status: response.status, code: parseHttpErrorCode(errorBody) });
           }
           return normalizeIpcTransportFailure(
             channel,
             response.status,
-            errorMessage || errorBody,
+            errorMessage,
           ) as ReturnType<IpcInvokeHandlers[K]>;
         }
         clearAuthTokenReloadAttempt();
@@ -1005,12 +997,12 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
 
       if (!res.ok) {
         const errorBody = await res.text();
-        const errorMessage = parseHttpErrorMessage(errorBody);
-        const authError = getRecoverableAuthTokenError(res.status, errorMessage);
+        const errorMessage = getHttpFailureMessage(res.status, parseHttpErrorCode(errorBody));
+        const authError = getRecoverableAuthTokenError(res.status, parseHttpErrorMessage(errorBody));
         if (authError) {
           throw new Error(authError.message);
         }
-        throw new Error(`Upload failed: ${res.status}`);
+        throw Object.assign(new Error(errorMessage), { status: res.status, code: parseHttpErrorCode(errorBody) });
       }
 
       const uploadedPath = extractUploadedPath(await readJsonResponse(res));
@@ -1102,6 +1094,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
         }
         const errorBody = await res.text();
         getRecoverableAuthTokenError(res.status, parseHttpErrorMessage(errorBody));
+        return { success: false, error: getHttpFailureMessage(res.status, parseHttpErrorCode(errorBody)) };
       } catch { /* fallthrough */ }
       return { success: false, error: 'HTTP transport: transcribe not available' };
     },
@@ -1153,8 +1146,9 @@ export function createHttpDomainAPI(baseUrl: string): DomainAPI {
           return readJsonResponse(res) as Promise<IPCResponse<T>>;
         }
 
-        const errorMessage = parseHttpErrorMessage(await res.text());
-        const authError = getRecoverableAuthTokenError(res.status, errorMessage);
+        const errorBody = await res.text();
+        const errorMessage = getHttpFailureMessage(res.status, parseHttpErrorCode(errorBody));
+        const authError = getRecoverableAuthTokenError(res.status, parseHttpErrorMessage(errorBody));
         if (authError) {
           return {
             success: false,
@@ -1168,7 +1162,7 @@ export function createHttpDomainAPI(baseUrl: string): DomainAPI {
         return {
           success: false,
           error: {
-            code: `HTTP_${res.status}`,
+            code: parseHttpErrorCode(errorBody) ?? `HTTP_${res.status}`,
             message: errorMessage,
           },
         };

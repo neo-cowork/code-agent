@@ -30,12 +30,14 @@ describe('runtime follow-up helpers', () => {
   it('uses actionable copy when send-message rejects without an Error message', () => {
     expect(getAgentSendFailureMessage(undefined)).toBe('Error: 消息发送失败，但前端没有收到具体错误。请查看后台日志。');
     expect(getAgentSendFailureMessage(new Error('network down'))).toBe('Error: network down');
+    expect(getAgentSendFailureMessage(Object.assign(new Error('<html>PRIVATE</html>'), { status: 500 })))
+      .toBe('Neo 暂时无法完成请求，请稍后重试。');
   });
 
   // 这一档不是失败：模型上一轮已经答完（用户也看到了），只是 run 还没收干净。
   // 判据必须认结构化 status，不能只靠中文文案——文案一改就静默失效。
   it('recognises the session-busy run conflict from status and from the raw host message', () => {
-    expect(isSessionBusyRunConflict(Object.assign(new Error('云端代理请求失败 (409): x'), { status: 409 })))
+    expect(isSessionBusyRunConflict(Object.assign(new Error('Neo 暂时无法接收请求，请稍后重试。'), { status: 409 })))
       .toBe(true);
     expect(isSessionBusyRunConflict(new Error('Session s1 already has active run run-abc'))).toBe(true);
     expect(isSessionBusyRunConflict(Object.assign(new Error('boom'), { status: 500 }))).toBe(false);

@@ -1,6 +1,7 @@
 // sendMessage 运行态辅助：busy/cancelling 判定、发送失败文案、durable-run 冷启动等待、
 // 会话绑定与 cancel 收敛（从 useAgentIPC 抽出，纯函数搬移，无逻辑改动）。
 import type { ConversationEnvelopeContext, RuntimeInputMode } from '@shared/contract/conversationEnvelope';
+import { getHttpFailureMessage } from '../../utils/httpFailureMessage';
 import { useAppStore } from '../../stores/appStore';
 import type { SessionStatus as TaskSessionStatus } from '../../stores/taskStore';
 import { useSessionStore } from '../../stores/sessionStore';
@@ -40,6 +41,12 @@ export function markLatestUserMessageRunCancelled(cancelledAt: number): void {
 }
 
 export function getAgentSendFailureMessage(error: unknown): string {
+  const protocolMessage = environmentProtocolUnsupportedMessage(error, useAppStore.getState().language);
+  if (protocolMessage) return protocolMessage;
+  if (error instanceof Error && 'status' in error && typeof error.status === 'number') {
+    const code = 'code' in error && typeof error.code === 'string' ? error.code : undefined;
+    return getHttpFailureMessage(error.status, code);
+  }
   const raw = error instanceof Error
     ? error.message
     : typeof error === 'string'
@@ -47,10 +54,9 @@ export function getAgentSendFailureMessage(error: unknown): string {
       : '';
   const message = raw.trim();
   // ADR-081 协议版本闸：宿主只回稳定码，用户可见句子由 i18n 给，不透传原始报错。
-  return environmentProtocolUnsupportedMessage(error, useAppStore.getState().language)
-    ?? (message
-      ? `Error: ${message}`
-      : 'Error: 消息发送失败，但前端没有收到具体错误。请查看后台日志。');
+  return message
+    ? `Error: ${message}`
+    : 'Error: 消息发送失败，但前端没有收到具体错误。请查看后台日志。';
 }
 
 export function getRuntimeInputMode(context?: ConversationEnvelopeContext): RuntimeInputMode {

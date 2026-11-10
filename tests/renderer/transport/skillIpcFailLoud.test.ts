@@ -54,7 +54,7 @@ describe('skill IPC fail-loud', () => {
     globalThis.fetch = originalFetch;
   });
 
-  it('通道未注册（404）时动作路径抛出真因，而不是静默 undefined', async () => {
+  it('通道未注册（404）时动作路径抛出安全文案并保留状态', async () => {
     mockFetchOnce({
       ok: false,
       status: 404,
@@ -64,10 +64,10 @@ describe('skill IPC fail-loud', () => {
 
     await expect(
       invokeSkillIPCOrThrow(SKILL_CHANNELS.REPO_STAGE, 'https://github.com/foo/bar'),
-    ).rejects.toThrow(/Unknown channel: skill:repo:stage/);
+    ).rejects.toMatchObject({ message: 'Neo 暂时无法完成请求，请稍后重试。', status: 404 });
   });
 
-  it('handler 抛错（500）时动作路径带出服务端消息', async () => {
+  it('handler 抛错（500）时动作路径隐藏服务端消息并保留状态', async () => {
     mockFetchOnce({
       ok: false,
       status: 500,
@@ -77,7 +77,7 @@ describe('skill IPC fail-loud', () => {
 
     await expect(
       invokeSkillIPCOrThrow(SKILL_CHANNELS.REPO_CONFIRM, 'stage-1'),
-    ).rejects.toThrow(/skill service not initialized/);
+    ).rejects.toMatchObject({ message: 'Neo 暂时无法完成请求，请稍后重试。', status: 500 });
   });
 
   it('2xx 但 {success:false} 也算失败，不当成空数据吞掉', async () => {
@@ -160,5 +160,7 @@ describe('skill IPC fail-loud', () => {
       (err) => err,
     );
     expect(isSkillFolderTrustError(error)).toBe(true);
+    expect(error).toMatchObject({ code: 'SKILL_FOLDER_TRUST_REQUIRED', status: 500 });
+    expect(error.message).not.toContain('/ws');
   });
 });

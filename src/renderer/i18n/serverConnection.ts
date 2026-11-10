@@ -16,6 +16,13 @@ export const serverConnectionZh = {
     unavailableHintWeb: '也可以刷新页面再试。',
     // /api/run 网络失败时替代裸 `Load failed` 的发送反馈
     sendRetryHint: '正在重新连接后台服务，请稍后再试',
+    requestFailed: 'Neo 暂时无法完成请求，请稍后重试。',
+    invalidRequest: '这次请求无法处理，请调整内容后重试。',
+    accessDenied: '这次操作未获授权，请检查访问权限后重试。',
+    requestTooLarge: '发送的内容太大，请减少附件或内容后重试。',
+    requestBusy: 'Neo 暂时无法接收请求，请稍后重试。',
+    skillFolderTrustRequired: '该文件夹需要信任确认，请在此文件夹中打开会话并确认信任后重试。',
+    folderTrustRequired: '项目文件夹需要重新确认，请在项目设置中检查并信任该文件夹后重试。',
   },
 };
 
@@ -27,5 +34,12 @@ export const serverConnectionEn = {
     unavailableHintTauri: 'Use Retry in the system dialog, or reopen the app.',
     unavailableHintWeb: 'You can also refresh the page to try again.',
     sendRetryHint: 'Reconnecting to the background service — please try again in a moment',
+    requestFailed: 'Neo could not complete the request; please try again in a moment.',
+    invalidRequest: 'This request could not be processed; please adjust the content and try again.',
+    accessDenied: 'This action was not authorized; please check your access and try again.',
+    requestTooLarge: 'The content is too large; please reduce the attachments or text and try again.',
+    requestBusy: 'Neo cannot accept the request right now; please try again in a moment.',
+    skillFolderTrustRequired: 'This folder needs trust confirmation; please open a conversation in the folder and confirm trust, then try again.',
+    folderTrustRequired: 'The project folder needs confirmation; please review and trust it in project settings, then try again.',
   },
 };

@@ -14,12 +14,13 @@ export type TransportFailure = {
   channel: string;
   status: number | null;
   message: string;
+  code?: string;
 };
 
 const lastTransportFailures = new Map<string, TransportFailure>();
 
-export function recordTransportFailure(channel: string, status: number | null, message: string): void {
-  lastTransportFailures.set(channel, { channel, status, message });
+export function recordTransportFailure(channel: string, status: number | null, message: string, code?: string): void {
+  lastTransportFailures.set(channel, { channel, status, message, ...(code ? { code } : {}) });
 }
 
 /** 取走某通道最近一次失败原因（取走即清，避免旧失败泄漏到后续调用） */

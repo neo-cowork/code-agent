@@ -46,9 +46,9 @@ export async function invokeSkillIPCOrThrow<K extends SkillChannel>(
   }
   const failure = takeTransportFailure(channel);
   if (failure) {
-    throw new Error(
+    throw Object.assign(new Error(
       failure.message || `${channel}${failure.status === null ? '' : ` (${failure.status})`}`,
-    );
+    ), { status: failure.status, code: failure.code });
   }
   return result;
 }
@@ -59,12 +59,7 @@ export function describeSkillIpcError(error: unknown, fallback: string): string 
   return message ? `${fallback}：${message}` : fallback;
 }
 
-/**
- * 信任门错误的稳定文案标记：host 信任门（skill.ipc.ts ensureSkillPreferenceDirTrusted）
- * 抛 `该目录未被信任，无法为其配置技能：…`。transport 失败记录只透 message 字符串
- * （TransportFailure 无 code 字段，加字段要动 ~200 个 invoke 调用点共享的通用层），
- * message 前缀匹配是本仓既有约定（参照 FOLDER_TRUST_CONFIRM_REQUIRED_PREFIX）。
- */
+/** Legacy host errors retain this marker; HTTP errors carry a stable code. */
 export const SKILL_FOLDER_TRUST_ERROR_MARKER = '该目录未被信任';
 
 /**
@@ -72,5 +67,8 @@ export const SKILL_FOLDER_TRUST_ERROR_MARKER = '该目录未被信任';
  * 其他错误（后台未就绪、token 失效、磁盘错误…）不出按钮。
  */
 export function isSkillFolderTrustError(error: unknown): boolean {
-  return error instanceof Error && error.message.includes(SKILL_FOLDER_TRUST_ERROR_MARKER);
+  return error instanceof Error && (
+    ('code' in error && error.code === 'SKILL_FOLDER_TRUST_REQUIRED')
+    || error.message.includes(SKILL_FOLDER_TRUST_ERROR_MARKER)
+  );
 }

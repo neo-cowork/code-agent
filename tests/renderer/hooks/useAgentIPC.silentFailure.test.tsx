@@ -156,7 +156,7 @@ describe('useAgentIPC sendMessage silentFailure', () => {
 
   it('delivers to the foreground brain when the host says the session still has an active run', async () => {
     invokeMock.mockRejectedValueOnce(
-      Object.assign(new Error('云端代理请求失败 (409): Session s already has active run run-x'), { status: 409 }),
+      Object.assign(new Error('Neo 暂时无法接收请求，请稍后重试。'), { status: 409 }),
     );
     invokeDomainMock.mockResolvedValueOnce({ outcome: 'steered' });
     const hook = renderSendHook();

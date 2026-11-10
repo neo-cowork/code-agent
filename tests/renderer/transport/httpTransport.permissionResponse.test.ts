@@ -136,7 +136,7 @@ describe('httpTransport keeps the permission response delivery signal intact', (
 
     await expect(
       api.invoke(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, 'req-500', 'allow', 'session-late-click'),
-    ).rejects.toThrow('500');
+    ).rejects.toMatchObject({ message: 'Neo 暂时无法完成请求，请稍后重试。', status: 500 });
     expect(takeTransportFailure(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE)).toMatchObject({ status: 500 });
   });
 

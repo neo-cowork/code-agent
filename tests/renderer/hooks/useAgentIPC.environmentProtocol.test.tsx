@@ -28,7 +28,7 @@ import { useTaskStore } from '../../../src/renderer/stores/taskStore';
 // httpTransport 对非 2xx 的 /api/run 抛的错：message 是通用句，稳定码挂在 code 上。
 function protocolRejection(): Error & { status: number; code: string } {
   return Object.assign(
-    new Error('云端代理请求失败 (400): ENVIRONMENT_PROTOCOL_UNSUPPORTED'),
+    new Error('这次请求无法处理，请调整内容后重试。'),
     { status: 400, code: ENVIRONMENT_PROTOCOL_UNSUPPORTED },
   );
 }
