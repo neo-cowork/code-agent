@@ -56,6 +56,9 @@ export interface BackgroundTaskStore {
   persistTerminalTask(task: Task): void;
   loadTerminalTask(taskId: string): Task | null;
   loadTerminalTasks(filter?: ListTasksFilter): Task[];
+  /** 用户在面板点「清除已结束」后留下的持久标记：这些任务 id 不再出现在列表里。 */
+  markTasksDismissed(taskIds: readonly string[], sessionId: string, dismissedAt?: number): void;
+  loadDismissedTaskIds(): Set<string>;
 }
 
 export class NullBackgroundTaskStore implements BackgroundTaskStore {
@@ -81,6 +84,12 @@ export class NullBackgroundTaskStore implements BackgroundTaskStore {
 
   loadTerminalTasks(_filter: ListTasksFilter = {}): Task[] {
     return [];
+  }
+
+  markTasksDismissed(_taskIds: readonly string[], _sessionId: string, _dismissedAt?: number): void {}
+
+  loadDismissedTaskIds(): Set<string> {
+    return new Set();
   }
 }
 
@@ -190,11 +199,29 @@ export class SqliteBackgroundTaskStore implements BackgroundTaskStore {
     return row ? parsePersistedTask(row.task_json) : null;
   }
 
+  markTasksDismissed(taskIds: readonly string[], sessionId: string, dismissedAt?: number): void {
+    if (taskIds.length === 0) return;
+    const at = dismissedAt ?? Date.now();
+    const insert = this.db.prepare(`
+      INSERT OR REPLACE INTO background_task_dismissed (task_id, session_id, dismissed_at)
+      VALUES (?, ?, ?)
+    `);
+    this.db.transaction((ids: readonly string[]) => {
+      for (const id of ids) insert.run(id, sessionId, at);
+    })(taskIds);
+  }
+
+  loadDismissedTaskIds(): Set<string> {
+    const rows = this.db.prepare('SELECT task_id FROM background_task_dismissed').all() as Array<{ task_id: string }>;
+    return new Set(rows.map((row) => row.task_id));
+  }
+
   loadTerminalTasks(filter: ListTasksFilter = {}): Task[] {
+    const dismissed = this.loadDismissedTaskIds();
     const tasks = [
       ...this.loadPersistedTerminalTasks(),
       ...this.loadCronTerminalTasks(),
-    ].filter((task) => matchesTaskFilter(task, filter));
+    ].filter((task) => !dismissed.has(task.id) && matchesTaskFilter(task, filter));
 
     return tasks.sort(compareTasks).map(cloneTask);
   }
@@ -219,6 +246,13 @@ export class SqliteBackgroundTaskStore implements BackgroundTaskStore {
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_background_task_terminal_session
       ON background_task_terminal_tasks(session_id, updated_at DESC)
+    `);
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS background_task_dismissed (
+        task_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        dismissed_at INTEGER NOT NULL
+      )
     `);
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS background_task_notifications (

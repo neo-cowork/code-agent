@@ -133,6 +133,13 @@ export function registerBackgroundTaskLedgerHandlers(ipcMain: IpcMain): void {
           return await readTaskLog(ledger, payload.taskId, payload.refId);
         }
 
+        case 'dismissTerminalTasks': {
+          syncSnapshots(ledger);
+          const dismissed = ledger.dismissTerminalTasks(payload.sessionId);
+          logger.info('Dismissed ended background tasks', { sessionId: payload.sessionId, count: dismissed.length });
+          return { success: true, data: dismissed } satisfies IPCResponse;
+        }
+
         case 'drainNotifications': {
           return { success: true, data: ledger.drainNotifications(payload.sessionId) } satisfies IPCResponse;
         }

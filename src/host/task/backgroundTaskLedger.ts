@@ -241,12 +241,27 @@ export class BackgroundTaskLedger {
       merged.set(task.id, task);
     }
 
+    const dismissed = this.store?.loadDismissedTaskIds();
     return [...merged.values()]
+      .filter((task) => !dismissed?.has(task.id))
       .filter((task) => !filter.sessionId || task.sessionId === filter.sessionId)
       .filter((task) => !statuses || statuses.has(task.status))
       .filter((task) => !sources || sources.has(task.source))
       .sort(compareTasks)
       .map(cloneTask);
+  }
+
+  /**
+   * 「清除已结束」：把该会话当前所有终态任务（含 cron 派生行）记成持久 dismissed，
+   * 只写标记，不删台账行、不碰日志/输出文件、不动运行中任务。返回被清除的任务 id。
+   */
+  dismissTerminalTasks(sessionId: string, dismissedAt?: number): string[] {
+    this.assertNonEmpty(sessionId, 'session id');
+    const ids = this.listTasks({ sessionId })
+      .filter((task) => isTerminalTaskStatus(task.status))
+      .map((task) => task.id);
+    this.store?.markTasksDismissed(ids, sessionId, dismissedAt);
+    return ids;
   }
 
   hasActiveTasks(): boolean {
@@ -293,6 +308,9 @@ export class BackgroundTaskLedger {
 
   getTask(taskId: string): Task | null {
     this.assertNonEmpty(taskId, 'task id');
+    if (this.store?.loadDismissedTaskIds().has(taskId)) {
+      return null;
+    }
     const task = this.tasks.get(taskId);
     if (task) {
       return cloneTask(task);

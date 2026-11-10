@@ -331,6 +331,23 @@ describe('SessionAgentsPanel', () => {
     expect(screen.getByTestId('agents-panel-status-task-1').textContent).toBe('工作中');
   });
 
+  it('「清除已结束」按钮：有终态后台任务行才出现，zh/en 文案都渲染；运行中任务不触发', async () => {
+    useBackgroundTaskStore.setState({ tasks: [backgroundTask({})] });
+    const { unmount } = render(<SessionAgentsPanel />);
+    await screen.findByTestId('agents-panel-row-task-1');
+    expect(screen.queryAllByTestId('agents-panel-clear-finished')).toHaveLength(0);
+    unmount();
+
+    useBackgroundTaskStore.setState({ tasks: [backgroundTask({ status: 'cancelled', completedAt: 3 })] });
+    const zhRender = render(<SessionAgentsPanel />);
+    expect((await screen.findByTestId('agents-panel-clear-finished')).textContent).toBe('清除已结束');
+    zhRender.unmount();
+
+    language = 'en';
+    render(<SessionAgentsPanel />);
+    expect((await screen.findByTestId('agents-panel-clear-finished')).textContent).toBe('Clear finished');
+  });
+
   it('行级停：专家行走 swarm:cancel-agent（带 activeRunId）', async () => {
     useSwarmStore.setState({ activeRunId: 'logical-run-1' });
     mockLedger([record({ status: 'running', endTime: null, durationMs: null })]);

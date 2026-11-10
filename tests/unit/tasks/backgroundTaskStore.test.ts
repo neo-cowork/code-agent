@@ -294,4 +294,69 @@ describe('SqliteBackgroundTaskStore', () => {
     ).get('shell:bulk-0') as { id?: string } | undefined;
     expect(pruned).toBeUndefined();
   });
+  describe('dismissTerminalTasks (clear finished)', () => {
+    const shellTask = (id: string, sessionId: string, status: 'completed' | 'cancelled' | 'running', updatedAt: number) => ({
+      id,
+      kind: 'shell',
+      sessionId,
+      source: 'shell',
+      title: id,
+      status,
+      createdAt: 100,
+      updatedAt,
+      ...(status === 'running' ? {} : { completedAt: updatedAt }),
+    });
+
+    function seedCron(database: import('better-sqlite3').Database): void {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS cron_executions (
+          id TEXT PRIMARY KEY, job_id TEXT NOT NULL, session_id TEXT, status TEXT NOT NULL,
+          scheduled_at INTEGER NOT NULL, started_at INTEGER, completed_at INTEGER, duration INTEGER,
+          result TEXT, error TEXT, retry_attempt INTEGER NOT NULL DEFAULT 0, exit_code INTEGER
+        );
+      `);
+      database.prepare(`
+        INSERT OR REPLACE INTO cron_executions (id, job_id, session_id, status, scheduled_at, completed_at, retry_attempt)
+        VALUES ('exec-d', 'job-d', 'session-d', 'completed', 1000, 1900, 0)
+      `).run();
+    }
+
+    it('restart: cleared ended rows (incl. cron-derived) stay gone, other sessions and running tasks untouched', async () => {
+      const dbPath = await createDbPath();
+      db = new Database(dbPath);
+      seedCron(db);
+      const ledger = new BackgroundTaskLedger({ store: new SqliteBackgroundTaskStore(db) });
+      ledger.upsertTask(shellTask('shell:done', 'session-d', 'completed', 200));
+      ledger.upsertTask(shellTask('shell:stopped', 'session-d', 'cancelled', 300));
+      ledger.upsertTask(shellTask('shell:other', 'session-other', 'completed', 250));
+      ledger.upsertTask(shellTask('shell:live', 'session-d', 'running', 400));
+      expect(ledger.listTasks({ sessionId: 'session-d' }).map((t) => t.id).sort())
+        .toEqual(['cron:exec-d', 'shell:done', 'shell:live', 'shell:stopped']);
+
+      const dismissed = ledger.dismissTerminalTasks('session-d', 5_000);
+      expect(dismissed.sort()).toEqual(['cron:exec-d', 'shell:done', 'shell:stopped']);
+      expect(ledger.listTasks({ sessionId: 'session-d' }).map((t) => t.id)).toEqual(['shell:live']);
+      expect(ledger.getTask('shell:done')).toBeNull();
+
+      db.close();
+      db = new Database(dbPath);
+      const restarted = new BackgroundTaskLedger({ store: new SqliteBackgroundTaskStore(db) });
+      expect(restarted.listTasks({ sessionId: 'session-d' })).toEqual([]);
+      expect(restarted.listTasks({ sessionId: 'session-other' }).map((t) => t.id)).toEqual(['shell:other']);
+      // 台账行本身没被删，只是被标记隐藏
+      const row = db.prepare('SELECT id FROM background_task_terminal_tasks WHERE id = ?').get('shell:done');
+      expect(row).toBeDefined();
+    });
+
+    it('restart: rows that were not cleared come back', async () => {
+      const dbPath = await createDbPath();
+      db = new Database(dbPath);
+      const ledger = new BackgroundTaskLedger({ store: new SqliteBackgroundTaskStore(db) });
+      ledger.upsertTask(shellTask('shell:keep', 'session-keep', 'completed', 200));
+      db.close();
+      db = new Database(dbPath);
+      const restarted = new BackgroundTaskLedger({ store: new SqliteBackgroundTaskStore(db) });
+      expect(restarted.listTasks({ sessionId: 'session-keep' }).map((t) => t.id)).toEqual(['shell:keep']);
+    });
+  });
 });
