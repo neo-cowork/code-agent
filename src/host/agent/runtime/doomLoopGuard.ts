@@ -51,7 +51,7 @@ const POLLING_REPEAT_THRESHOLD = 3;
  * 轮询次数 ≥ POLLING_REPEAT_THRESHOLD 时，才进入 L1 doom-loop → doom-loop-abort 交还链。
  *
  * 轮询步不走 L1/L2 的前提是这条卡死链真的在跑，所以豁免只给同时满足三条的步：
- * ① 整步只有一个调用，且 pollIdentity 取得到身份（与结果跟踪同一个判据）；
+ * ① 是轮询步（pollStepIdentity：整步只有一个调用，且取得到与结果跟踪同一判据的身份）；
  * ② 上一步的结果已经回灌（recordResults）；③ 回灌的最后一条观察就是这个身份。
  * 多调用步里别的结果会清零或切换轮询键、不回灌结果的调用方（子代理守卫）
  * 根本没有轮询状态——这些形状卡死窗口永远起不来，一律按原 L1/L2 判。
@@ -236,7 +236,7 @@ export class DoomLoopGuard {
 
     // 轮询步：结果链在跟踪这个轮询时不凭参数计 L1/L2，改由"结果不变满卡死窗口"升级
     // （条件见 POLL_STALL_WINDOW_MS）。没有结果证据就落到下面的原 L1/L2。
-    const pollId = toolCalls.length === 1 ? pollIdentity(toolCalls[0]) : null;
+    const pollId = pollStepIdentity(toolCalls);
     if (pollId !== null && resultsFed && pollId === this.pollId) {
       this.identicalCallStreak = 0;
       this.doomLoopNudged = false;
@@ -662,6 +662,16 @@ function pollIdentity(call: { name: string; arguments?: Record<string, unknown> 
   const taskId = args.task_id ?? args.session_id;
   if (typeof taskId === 'string' && taskId.length > 0) return taskId;
   return listsWithoutId ? BACKGROUND_TASK_LIST_POLL : null;
+}
+
+/**
+ * 轮询步的身份：整步只有一个调用且它是轮询，否则 null。只有这种步的"结果不变"
+ * 交给卡死窗口判——DoomLoopGuard.recordStep 和 stagnationDetector 都只认这一个判据。
+ */
+export function pollStepIdentity(
+  toolCalls: readonly { name: string; arguments?: Record<string, unknown> }[],
+): string | null {
+  return toolCalls.length === 1 ? pollIdentity(toolCalls[0]) : null;
 }
 
 function observePoll(summary: string): { status: string; body: string } {
