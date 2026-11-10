@@ -223,6 +223,7 @@ export class AgentLoop {
       planningService: config.planningService,
       inferenceOptions: config.inferenceOptions,
       historyVisibility: config.historyVisibility,
+      publishContextHealth: config.publishContextHealth,
       unattendedTurn: config.unattendedTurn,
       deniedToolNames: config.deniedToolNames,
       allowedToolNames: config.allowedToolNames,

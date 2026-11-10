@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Brain, ChevronDown, ChevronRight } from 'lucide-react';
 import type { TraceTurn } from '@shared/contract/trace';
 import { useI18n } from '../../../hooks/useI18n';
+import { interpolate, interpolatePlural } from '../../../i18n/interpolate';
 import { sanitizeThinkingForDisplay } from '../../../utils/toolGrouping';
 
 export interface TurnThinkingSegment {
@@ -143,9 +144,7 @@ export const ThinkingDigestBanner: React.FC<ThinkingDigestBannerProps> = ({
   );
   const digestLabel = activeSegmentId
     ? t.chat.thinkingActiveWithDuration.replace('{duration}', duration)
-    : t.chat.thinkingDigestWithDuration
-      .replace('{duration}', duration)
-      .replace('{count}', String(segments.length));
+    : interpolate(interpolatePlural(t.chat.thinkingDigestWithDuration, segments.length), { duration });
 
   return (
     <div

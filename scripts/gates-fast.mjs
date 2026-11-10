@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/* global console */
 import fs from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { setTimeout, clearTimeout } from 'node:timers';
@@ -136,7 +135,7 @@ try {
     output = path.join(root, '.reports/gates-fast', `${receipt.receiptId}.json`);
     throw new Error('FAIL: receipt must be outside source or under .reports/gates-fast');
   }
-  if (policy.maxFiles !== 12) throw new Error('FAIL: first-version policy requires 12-file maximum');
+  if (policy.maxFiles !== 16) throw new Error('FAIL: policy requires 16-file maximum');
   validateGateBudgetCoverage(policy, extractGateIds(fs.readFileSync(path.join(root, 'scripts/gates-fast.mjs'), 'utf8')), shipOuterMs);
   if (options.regressions) regressions = JSON.parse(fs.readFileSync(options.regressions, 'utf8'));
   await gate('inputs', true, async () => {
@@ -190,7 +189,7 @@ try {
       let failures = [];
       try { failures = summarizeVitestFailures(JSON.parse(fs.readFileSync(report, 'utf8')), root); } catch { /* 报告没写出来时保留原始失败 */ }
       if (!failures.length) throw error;
-      throw new Error(`${error instanceof Error ? error.message : String(error)}; failed: ${failures.join(' | ')}`);
+      throw new Error(`${error instanceof Error ? error.message : String(error)}; failed: ${failures.join(' | ')}`, { cause: error });
     }
     receipt.report = validateReport(receipt.selectedFiles, JSON.parse(fs.readFileSync(report, 'utf8')), root);
   });

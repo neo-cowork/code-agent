@@ -491,7 +491,10 @@ describe('MessageProcessor persistence', () => {
     );
 
     expect(action).toBe('break');
-    expect(persistedMessages[0]).toMatchObject({
+    // 被禁用的调用先带合成失败结果落库，随后才是收尾说明
+    expect(persistedMessages[0]).toMatchObject({ role: 'assistant', toolCalls: [{ id: 'tool-1' }] });
+    expect(persistedMessages[1]).toMatchObject({ role: 'tool', toolResults: [{ toolCallId: 'tool-1', success: false }] });
+    expect(persistedMessages[2]).toMatchObject({
       id: 'assistant-denied-1',
       role: 'assistant',
       isMeta: true,
@@ -508,10 +511,15 @@ describe('MessageProcessor persistence', () => {
   it('keeps AskUserQuestion explicit when only task-splitting tools are denied', async () => {
     const contextAssembly = {
       injectSystemMessage: vi.fn(),
+      generateId: vi.fn(() => 'msg-x'),
+      addAndPersistMessage: vi.fn(),
     };
     const processor = createProcessor({
       stats: RunStatsState.forTest(),
       control: ControlState.forTest(),
+      onEvent: vi.fn(),
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 4096 },
+      turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1' } as never),
       deniedToolNames: ['Task', 'AgentSpawn'],
       maxToolCallRetries: 2,
       contextHealth: ContextHealthState.forTest(),
@@ -2036,8 +2044,10 @@ describe('MessageProcessor persistence', () => {
       expect.stringContaining('The repair guard has been cleared. Retry the user requested action with the full tool set if needed.'),
       'artifact-validation',
     );
-    expect(contextAssembly.addAndPersistMessage).not.toHaveBeenCalled();
-    expect(ctx.messages).toHaveLength(0);
+    // 提前解除修复闸不能吞调用：assistant 调用 + 合成失败 tool 结果都要落库
+    expect(contextAssembly.addAndPersistMessage).toHaveBeenCalledTimes(2);
+    expect(ctx.messages).toHaveLength(2);
+    expect(ctx.messages[1]).toMatchObject({ role: 'tool', toolResults: [{ toolCallId: 'tool-1', success: false }] });
     expect(toolEngine.executeToolsWithHooks).not.toHaveBeenCalled();
   });
 
@@ -2119,8 +2129,10 @@ describe('MessageProcessor persistence', () => {
       expect.stringContaining('requested tools: Edit'),
       'artifact-validation',
     );
-    expect(contextAssembly.addAndPersistMessage).not.toHaveBeenCalled();
-    expect(ctx.messages).toHaveLength(0);
+    // 提前解除修复闸不能吞调用：assistant 调用 + 合成失败 tool 结果都要落库
+    expect(contextAssembly.addAndPersistMessage).toHaveBeenCalledTimes(2);
+    expect(ctx.messages).toHaveLength(2);
+    expect(ctx.messages[1]).toMatchObject({ role: 'tool', toolResults: [{ toolCallId: 'tool-1', success: false }] });
     expect(toolEngine.executeToolsWithHooks).not.toHaveBeenCalled();
   });
 

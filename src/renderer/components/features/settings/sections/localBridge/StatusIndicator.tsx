@@ -54,7 +54,6 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = ({ status }) => {
     <div className="flex items-center gap-2">
       {icon}
       <span className={`text-sm font-medium ${color}`}>{label}</span>
-      <span className="text-xs text-zinc-500">localhost:9527</span>
     </div>
   );
 };
