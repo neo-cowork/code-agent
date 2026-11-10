@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentEvent, Message } from '../../../src/shared/contract';
 import { findRegisteredSystemEvent } from '../../../src/shared/contract/systemEventRegistry';
 import type { SessionCommandTask } from '../../../src/host/services/commandCenter/sessionCommandCenter';
-import type { AgentRunOptions } from '../../../src/host/research/types';
+import type { AgentOrchestrator } from '../../../src/host/agent/agentOrchestrator';
+import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
 
 // 走默认依赖（产线路径）：唤醒轮失败后落的那句人话必须带登记键，否则渲染端投影层会把
 // 无 metadata 的 role:'system' 消息整条跳过，用户什么都看不到。
@@ -13,7 +14,7 @@ const h = vi.hoisted(() => ({
 
 const orchestrator = {
   isProcessing: () => false,
-  sendMessage: vi.fn(async (_prompt: string, _attachments?: unknown[], _options?: AgentRunOptions) => {
+  sendMessage: vi.fn<AgentOrchestrator['sendMessage']>(async () => {
     throw new Error('Durable Run run-x has no live owner lease');
   }),
 };
@@ -53,10 +54,12 @@ vi.mock('../../../src/host/permissions/modes', () => ({
 
 import { createForegroundWake } from '../../../src/host/services/commandCenter/foregroundWake';
 
-const task = {
+const task: SessionCommandTask = {
   id: 'task-n', sessionId: 'session-n', title: 't', shortName: '报告', laneKey: 'l', submissionKey: 's',
-  prompt: 'p', workspaceScope: {}, status: 'completed', attempt: 1, createdAt: 1, updatedAt: 2, summary: 'ok',
-} as unknown as SessionCommandTask;
+  prompt: 'p', workspaceScope: createWorkspaceScope('wake-note-project', [{
+    sourceId: 'wake-note-source', path: '/tmp/p', role: 'primary', access: 'read_write',
+  }]), status: 'completed', attempt: 1, createdAt: 1, updatedAt: 2, summary: 'ok',
+};
 
 describe('foreground wake failure note (default dependencies)', () => {
   beforeEach(() => {

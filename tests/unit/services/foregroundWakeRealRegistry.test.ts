@@ -19,6 +19,7 @@ import { resetSessionTaskConcurrencyPoolForTest } from '../../../src/host/servic
 import { resetBackgroundTaskLedgerForTest } from '../../../src/host/task/backgroundTaskLedger';
 import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
 import type { AgentRunOptions } from '../../../src/host/research/types';
+import { isTerminalAgentError } from '../../../src/shared/utils/agentErrorClassification';
 
 // N-FIX-BG-TASK-WAKE-NO-OWNER-LEASE：真 RunRegistry（带 durable kernel）+ 真 createForegroundWake +
 // 真 SessionCommandCenter。TaskManager / Orchestrator 只替换到「注册 run」这一步，注册走产线同一个
@@ -272,7 +273,7 @@ describe('background task settlement wake with a real RunRegistry', () => {
         'runNormalMode',
       )
       .mockImplementation(async (_content, onEvent, modelConfig) => {
-        onEvent({ type: 'error', data: { message: 'non-terminal warning', level: 'warning' } });
+        onEvent({ type: 'error', data: { message: 'non-terminal warning', terminal: false } });
         if (loopBehavior === 'run_failed') {
           onEvent({
             type: 'error',
@@ -355,13 +356,13 @@ describe('background task settlement wake with a real RunRegistry', () => {
         expect.objectContaining({ sessionId: SESSION, taskId: 'task-real-1', message: '401 invalid api key' }),
       );
       expect(
-        observed.filter((o) => o.event.type === 'error' && (o.event.data as { level?: string }).level !== 'warning'),
+        observed.filter((o) => o.event.type === 'error' && isTerminalAgentError(o.event.data)),
       ).toEqual([]);
       expect(
-        broadcast.filter((b) => b.event.type === 'error' && (b.event.data as { level?: string }).level !== 'warning'),
+        broadcast.filter((b) => b.event.type === 'error' && isTerminalAgentError(b.event.data)),
       ).toEqual([]);
       expect(
-        observed.filter((o) => o.event.type === 'error' && (o.event.data as { level?: string }).level === 'warning'),
+        observed.filter((o) => o.event.type === 'error' && !isTerminalAgentError(o.event.data)),
       ).toHaveLength(1);
       expect(
         observed.filter(
@@ -384,7 +385,7 @@ describe('background task settlement wake with a real RunRegistry', () => {
         expect.objectContaining({ sessionId: SESSION, taskId: 'task-real-2', message: 'network connection reset' }),
       );
       expect(
-        observed.filter((o) => o.event.type === 'error' && (o.event.data as { level?: string }).level !== 'warning'),
+        observed.filter((o) => o.event.type === 'error' && isTerminalAgentError(o.event.data)),
       ).toEqual([]);
       expect(
         observed.filter(
@@ -400,7 +401,7 @@ describe('background task settlement wake with a real RunRegistry', () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
 
       const terminalObserved = observed.filter(
-        (o) => o.event.type === 'error' && (o.event.data as { level?: string }).level !== 'warning',
+        (o) => o.event.type === 'error' && isTerminalAgentError(o.event.data),
       );
       expect(terminalObserved).toHaveLength(1);
       expect(terminalObserved[0].event.data).toMatchObject({
