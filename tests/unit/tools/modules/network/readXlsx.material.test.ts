@@ -36,13 +36,13 @@ describe('read_xlsx source artifact role', () => {
     ]);
     await workbook.xlsx.writeFile(workbookPath);
     const handler = await readXlsxModule.createHandler();
-    const ctx = {
+    const ctx: ToolContext = {
       sessionId: 'session-1',
       workingDir: workDir,
       abortSignal: new AbortController().signal,
       logger: logger(),
       emit: vi.fn(),
-    } as unknown as ToolContext;
+    };
 
     const results = await Promise.all(Array.from({ length: 4 }, () => (
       handler.execute({ file_path: workbookPath }, ctx, allowAll)
