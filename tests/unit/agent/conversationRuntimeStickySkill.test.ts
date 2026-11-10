@@ -238,3 +238,22 @@ describe('自然语言首轮经 sticky 路径的诊断', () => {
     );
   });
 });
+
+
+describe('non-expert tasks must not activate or seed the strict flow', () => {
+  it.each([
+    '帮我在 postgres 里创建一个只读角色',
+    '帮我创建一个 AWS IAM 角色给 Lambda 用',
+    '创建一个角色，授予数据库只读权限',
+    '帮我创建一个游戏角色',
+    '新建一个小说里的研究员角色',
+    '帮我创建一个助理网页 demo',
+  ])('regular task remains outside create-role on both turns: %s', async (text) => {
+    expect(await resolveNaturalLanguageCreateRoleInvocation(mkCtx([]), text)).toBeNull();
+    const firstTurn = mkCtx([userMsg(text)]);
+    expect(await resolveStickyStrictSkillInvocation(firstTurn, text)).toBeNull();
+    const followUp = mkCtx([userMsg(text), assistantMsg('继续处理任务'), userMsg('继续')]);
+    expect(await resolveStickyStrictSkillInvocation(followUp, '继续')).toBeNull();
+    expect(resolveSkillInvocationMock).not.toHaveBeenCalled();
+  });
+});

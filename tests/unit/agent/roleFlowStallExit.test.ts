@@ -324,3 +324,20 @@ describe('自然语言种子', () => {
     expect(fired).toBe(false);
   });
 });
+
+
+describe('other role meanings do not reset the authoring seed', () => {
+  it.each([
+    '创建一个数据库管理员角色',
+    '帮我创建一个游戏角色',
+    '帮我创建一个助理网页 demo',
+  ])('does not turn an already proposed flow into a stall: %s', async (text) => {
+    const history = proposeHistory(true);
+    history.push({ id: 'other-task', role: 'user', content: text, timestamp: 4 });
+    const assembly = mkAssembly();
+    expect(await settleRoleFlowStallOnTextBreak({
+      ctx: mkCtx(history), assembly, boundary: createRoleBoundary, finalText: '继续处理你的任务。',
+    })).toBe(false);
+    expect(assembly.persisted).toEqual([]);
+  });
+});

@@ -70,3 +70,46 @@ describe('matchRoleAuthoringSeed 自然语言建角色', () => {
     expect(matchRoleAuthoringSeed('/edit-role 日历')).toMatchObject({ kind: 'slash', skillName: 'edit-role' });
   });
 });
+
+
+describe('expert authoring intent must not capture other role meanings', () => {
+  it.each([
+    '帮我在 postgres 里创建一个只读角色',
+    '帮我创建一个 AWS IAM 角色给 Lambda 用',
+    '创建一个 PostgreSQL 只读角色',
+    '新建一个数据库管理员角色',
+    '建立一个 RBAC 角色，权限为只读',
+    '创建一个角色，授予数据库只读权限',
+    '帮我为游戏创建一个角色',
+    '帮我创建一个游戏角色',
+    '帮我创建一个小说角色',
+    '创建一个战士角色，加入游戏',
+    '新建一个游戏法师角色',
+    '创建一个小说中的专家',
+    '新建一个故事里的助理',
+    '新建一个小说里的研究员角色',
+    '创建一个故事中的顾问角色',
+    '帮我创建一个助理网页 demo',
+    '新建一个会议纪要助理网站',
+    '建立一个专家介绍页面',
+    '创建一个日程助理的网页 demo',
+    '帮我创建一个日程助理 web demo',
+    '帮我在网页 demo 里创建一个助理',
+  ])('非专家任务不成为 authoring seed: %s', (text) => {
+    expect(matchRoleAuthoringSeed(text)).toBeNull();
+  });
+
+  it.each([
+    '创建一个 PostgreSQL 专家，负责优化查询',
+    '新建一个 AWS 权限管理助理，帮我审核策略',
+    '建立一个小说写作专家，帮我润色章节',
+    '帮我创建一个网页开发助理，负责做 demo',
+    '创建一个游戏设计师角色，负责分析玩法',
+    '帮我创建一个产品经理角色，负责需求分析',
+    '创建一个角色',
+    '创建一个 PostgreSQL 专家角色，负责优化查询',
+    '新建一个日程助理角色，负责看日历',
+  ])('明确专家工作请求仍匹配: %s', (text) => {
+    expect(matchRoleAuthoringSeed(text)).toMatchObject({ kind: 'natural-language', skillName: 'create-role' });
+  });
+});
