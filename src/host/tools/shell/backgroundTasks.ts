@@ -16,7 +16,7 @@ import { getUserConfigDir } from '../../config/configPaths';
 
 const MAX_BACKGROUND_TASKS = 10;
 const MAX_BACKGROUND_OUTPUT = 1024 * 1024; // 1MB per task
-const BACKGROUND_TASK_MAX_RUNTIME = 10 * 60 * 1000; // 10 minutes
+export const BACKGROUND_TASK_MAX_RUNTIME = 10 * 60 * 1000; // 10 minutes
 const TASK_CLEANUP_INTERVAL = 60 * 1000; // 1 minute
 
 // ============================================================================

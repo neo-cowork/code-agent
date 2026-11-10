@@ -363,3 +363,51 @@ describe('stall log turn record', () => {
     });
   });
 });
+
+describe('自然语言种子', () => {
+  it('自然语言建角色种子之后已成功 propose_role → 查不到 pending 草稿也不判停摆', async () => {
+    const history = proposeHistory(true);
+    history[0] = { ...SEED, content: '帮我创建一个日程管家专家，负责看日历和提醒' };
+    listRoleDraftsMock.mockResolvedValue([]);
+    const fired = await settleRoleFlowStallOnTextBreak({
+      ctx: mkCtx(history), assembly: mkAssembly(), boundary: createRoleBoundary, finalText: '好了。',
+    });
+    expect(fired).toBe(false);
+  });
+});
+
+
+describe('other role meanings do not reset the authoring seed', () => {
+  it.each([
+    '创建一个数据库管理员角色',
+    '帮我创建一个游戏角色',
+    '帮我创建一个助理网页 demo',
+  ])('does not turn an already proposed flow into a stall: %s', async (text) => {
+    const history = proposeHistory(true);
+    history.push({ id: 'other-task', role: 'user', content: text, timestamp: 4 });
+    const assembly = mkAssembly();
+    expect(await settleRoleFlowStallOnTextBreak({
+      ctx: mkCtx(history), assembly, boundary: createRoleBoundary, finalText: '继续处理你的任务。',
+    })).toBe(false);
+    expect(assembly.persisted).toEqual([]);
+  });
+});
+
+
+describe('merged turn logging recognises natural-language seeds', () => {
+  it.each([
+    ['每天早上查一次'],
+    ['帮我创建一个 AWS IAM 角色给 Lambda 用', '继续'],
+  ])('counts follow-up turns without treating resource roles as seeds: %j', async (...replies) => {
+    const messages: Message[] = [
+      { ...SEED, content: '帮我创建一个日程管家专家，负责看日历和提醒' },
+      ...replies.map((content, index) => ({ id: `follow-${index}`, role: 'user' as const, content, timestamp: index + 2 })),
+    ];
+    expect(await settleRoleFlowStallOnTextBreak({
+      ctx: mkCtx(messages), assembly: mkAssembly(), boundary: createRoleBoundary, finalText: '正在准备。',
+    })).toBe(true);
+    expect(logInfo).toHaveBeenCalledWith('[AgentLoop] Role flow stall exit surfaced: true stall', {
+      sessionId: SESSION_ID, skillName: 'create-role', userTurnsSinceSeed: replies.length, turnKind: 'follow-up',
+    });
+  });
+});
