@@ -82,14 +82,17 @@ function handleProbeOutcome(reachable: boolean): void {
   if (reachable) {
     const bannerWasShown = getServerConnectionStatus() !== 'ok';
     stopProbing();
+    useServerConnectionStore.getState().setStatus('ok');
     if (bannerWasShown) {
-      useServerConnectionStore.getState().setStatus('ok');
       if (!reloadedForOutage) {
         reloadedForOutage = true;
         reloadPageOnce();
       }
     }
     return;
+  }
+  if (useServerConnectionStore.getState().retryState === 'checking') {
+    useServerConnectionStore.getState().setRetryState('failed');
   }
   consecutiveProbeFailures += 1;
   const status = getServerConnectionStatus();
@@ -145,7 +148,8 @@ export function reportServerUnreachable(): void {
 
 /** 「重试」按钮的立即探测：不等当前间隔走完，也不重置故障计时（30s 口径不变）。 */
 export function retryNow(): void {
-  if (!probing) return;
+  if (!probing || useServerConnectionStore.getState().retryState === 'checking') return;
+  useServerConnectionStore.getState().setRetryState('checking');
   clearProbeTimer();
   runProbe();
 }

@@ -29,6 +29,7 @@ export const sidebarZh = {
     createProjectPickFolder: '选择目录',
     createProjectSubmit: '创建',
     createProjectFailed: '创建项目失败，请重试',
+    createSessionFailedPrefix: '新建会话失败：',
     confirm: '确定',
     openSearch: '搜索会话',
     searchPlaceholder: '搜索会话…',
@@ -80,11 +81,15 @@ export const sidebarZh = {
     menuSettings: '设置',
     menuSignOut: '退出登录',
     signIn: '登录',
+    signedOutSettings: '设置',
+    skipSignInSetup: '先不登录，去配置模型/通道',
     // 数据集标记 toast
     markedAsDataset: '已标记为 {role}',
     updateDatasetFailed: '更新数据集标记失败：{message}',
     // 会话默认标题
     newSessionTitle: '新对话',
+    unnamedSessionTitle: '未命名会话',
+    appshotSessionTitle: 'Appshot 会话',
     goalSessionTitle: '目标：{title}',
     // 能力区（会话列表上方：自动化 / 专家 / 资料库）
     capabilityZone: {
@@ -393,6 +398,7 @@ export const sidebarEn: typeof sidebarZh = {
     createProjectPickFolder: 'Choose directory',
     createProjectSubmit: 'Create',
     createProjectFailed: 'Failed to create project. Try again.',
+    createSessionFailedPrefix: 'Failed to create session: ',
     confirm: 'Confirm',
     openSearch: 'Search sessions',
     searchPlaceholder: 'Search sessions…',
@@ -440,9 +446,13 @@ export const sidebarEn: typeof sidebarZh = {
     menuSettings: 'Settings',
     menuSignOut: 'Sign out',
     signIn: 'Sign in',
+    signedOutSettings: 'Settings',
+    skipSignInSetup: 'Skip sign-in and set up a model or channel',
     markedAsDataset: 'Marked as {role}',
     updateDatasetFailed: 'Failed to update dataset label: {message}',
     newSessionTitle: 'New conversation',
+    unnamedSessionTitle: 'Untitled conversation',
+    appshotSessionTitle: 'Appshot conversation',
     goalSessionTitle: 'Goal: {title}',
     capabilityZone: {
       automation: 'Automations',

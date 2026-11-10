@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { useMemo } from 'react';
+import { getLastConversationTurnIndex } from '../utils/conversationTurns';
 import type { AgentErrorCategory, Message, MessageMetadata } from '@shared/contract';
 import {
   findRegisteredSystemEvent,
@@ -509,11 +510,7 @@ export function projectTurns(
       continue;
     }
 
-    // 用户可见 system 事件：登记制（P0-2）。role:'system' 的落库消息默认是只给模型看的
-    // 内部指令（真库 635 条 metadata 全 NULL），谁该给用户看由写入侧的登记表
-    //（shared/contract/systemEventRegistry）决定，这里只查表：
-    // - 已登记：按表里的呈现类型/挂轮策略投影（通话摘要、通话失败 #908、派活失败 W6-5、
-    //   派活结局印章 X5.5-A2-a）；
+    // 用户可见 system 事件按登记表投影；内部指令默认不显示。
     // - 未登记但带「事件性」metadata 键：开发档 console.error（契约测试同步报红），
     //   意思是「有人新写了用户可见事件却没登记」；生产档维持现状跳过。
     // 总闸不拆：未匹配的 system 消息一律 continue，绝不外泄给用户。
@@ -551,7 +548,7 @@ export function projectTurns(
       // matched-turn（派活失败 W6-5）：按 workItemId 对回 voiceDispatch 派活轮，
       // 对不上退当前轮，一个轮都没有就独立成轮——失败记录绝不丢，也不留在半空。
       // current-turn（通话摘要 §7.5 / 通话失败 T3-#908）：通话级事件，挂当前轮。
-      const hostTurn = spec.attach === 'matched-turn'
+      const hostTurn = spec.attach === 'standalone' ? undefined : spec.attach === 'matched-turn'
         ? findVoiceWorkTurn(turns, (payload as { workItemId?: string }).workItemId) ?? currentTurn
         : currentTurn;
       if (hostTurn) {
@@ -563,6 +560,7 @@ export function projectTurns(
           turnNumber: turnCounter,
           turnId: `turn-${turnCounter}`,
           nodes: [node],
+          standalone: spec.attach === 'standalone' || undefined,
           status: 'completed',
           startTime: msg.timestamp,
           endTime: msg.timestamp,
@@ -688,7 +686,11 @@ export function projectTurns(
           return;
         }
         const projectedContent = streamBreakKeptSegment ? stripStreamBreakMarker(content) : content;
-        if (streamBreakKeptSegment && !projectedContent.trim()) return;
+        if (streamBreakKeptSegment && !projectedContent.trim()) {
+          const bare = bareInterruptionNode(msg, messages, streamInterruptionReason);
+          if (bare) turn.nodes.push(bare);
+          return;
+        }
         // 模型回显：小模型有时把工具结果 JSON 当正文复述，整段吞掉不当答案渲染。
         if (isToolResultEcho(content)) return;
         // 去重：连续相同的模型决策只在首个节点显示，避免每条消息都刷"用户选择 mimo"
@@ -875,8 +877,9 @@ export function projectTurns(
   // the in-flight task. Normal user turns can still be active while waiting
   // for the first assistant response.
   let activeTurnIndex = -1;
-  if (isProcessing && turns.length > 0) {
-    const latestTurn = turns[turns.length - 1];
+  const latestConversationIndex = getLastConversationTurnIndex(turns);
+  if (isProcessing && latestConversationIndex >= 0) {
+    const latestTurn = turns[latestConversationIndex];
     // 钉在轮尾的通话摘要卡不是活动内容（D5）——判断轮尾时跳过它，否则钉尾会把
     // 在跑的派活轮从 active 上顶下来（lastNode 变成 system，流式标记丢失）。
     const latestNode = lastNonVoiceSummaryNode(latestTurn);
@@ -893,12 +896,13 @@ export function projectTurns(
     // 跳过它，让下面的回扫继续找到真正在跑的那一轮。
     if (latestNode?.type === 'user' && !isDirectRoutedUserTurn && !isVoiceSubtitleTail) {
       latestTurn.status = 'streaming';
-      activeTurnIndex = turns.length - 1;
+      activeTurnIndex = latestConversationIndex;
     }
 
     for (let index = turns.length - 1; index >= 0; index -= 1) {
       if (activeTurnIndex >= 0) break;
       const candidateTurn = turns[index];
+      if (candidateTurn.standalone) continue;
       const lastNode = lastNonVoiceSummaryNode(candidateTurn);
       if (!lastNode) continue;
 

@@ -91,7 +91,7 @@ function markRuntimeSessionCancelled(sessionId: string): void {
 function markLatestUserTurnCancelled(
   draftMessageId: string | null | undefined,
   cancelledAt: number,
-  reason: 'user_cancelled' | 'idle_reaped' = 'user_cancelled',
+  reason: 'user_cancelled' | 'idle_reaped' | 'client_disconnect' = 'user_cancelled',
 ): void {
   const store = useSessionStore.getState();
   const messages = store.messages;
@@ -238,7 +238,7 @@ export const useSessionLifecycleEffects = ({
               markLatestUserTurnCancelled(
                 currentTurnMessageIdRef.current,
                 Date.now(),
-                event.data?.reason === 'idle_reaped' ? 'idle_reaped' : 'user_cancelled',
+                event.data?.reason === 'client_disconnect' ? 'client_disconnect' : event.data?.reason === 'idle_reaped' ? 'idle_reaped' : 'user_cancelled',
               );
               currentTurnMessageIdRef.current = null;
             }

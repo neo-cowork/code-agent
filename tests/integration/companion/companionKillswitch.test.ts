@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.unmock('better-sqlite3');
+
+// Use OS-assigned ports so a running host cannot answer these protocol fixtures.
+vi.mock('../../../src/shared/constants/companion', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/shared/constants/companion')>();
+  return { ...actual, COMPANION_LIMITS: { ...actual.COMPANION_LIMITS, lanPort: 0 } };
+});
 import Database from 'better-sqlite3';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createConnection } from 'node:net';
@@ -360,6 +366,7 @@ describe('companion remote pause: LAN wire and the same phone', () => {
     const restarted = new CompanionGateway(db, { now: () => 1_700_000_000_000 });
     const loadIdentity = vi.fn(async () => hostIdentity);
     const quiet = new LanCompanionManager(restarted, loadIdentity, async () => [{ id: 'shared', title: 'Shared' }]);
+    manager = quiet;
     await quiet.restore();
     expect(loadIdentity).not.toHaveBeenCalled();
     const responderAd = quiet.lanAdvertisement();
