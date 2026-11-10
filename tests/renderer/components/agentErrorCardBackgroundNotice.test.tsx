@@ -49,3 +49,23 @@ it('two failure cards + one live background child: one notice on the last card, 
   await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
   expect(view.queryAllByTestId('background-children-notice')).toHaveLength(0);
 });
+
+it('a remounted latest failure card renders the live count on its first render, before any timer runs', async () => {
+  vi.useFakeTimers();
+  let terminal = false;
+  runtime.invokeDomain.mockImplementation(async () => ({ sessionId: 'session-remount', nodes: [{ background: true, status: terminal ? 'completed' : 'running' }] }));
+  const nodes = projectTurns([user(), fail('network', true)], 'session-remount', false)
+    .turns.flatMap((turn) => turn.nodes).filter((n) => n.metadata?.agentError);
+  const list = (key: string) => (
+    <div key={key}>{nodes.map((node) => <TraceNodeRenderer key={node.id} node={node} sessionId="session-remount" />)}</div>
+  );
+  const view = render(list('a'));
+  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  expect(view.queryAllByTestId('background-children-notice')).toHaveLength(1);
+  // new key => the whole card unmounts and mounts again (the live page does this constantly)
+  view.rerender(list('b'));
+  expect(view.queryAllByTestId('background-children-notice')).toHaveLength(1);
+  terminal = true;
+  await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+  expect(view.queryAllByTestId('background-children-notice')).toHaveLength(0);
+});
