@@ -16,7 +16,7 @@
 5. **确认不了怎么办**：超时 / 用户拒绝时，老实说「还没检测到」，给一个不依赖该修复的替代路径，仍然不出现原文。（§8）
 6. **范围**：先做 macOS（桌面包 + web 构建里同一宿主）；Windows 只做「老实说不支持 + 替代路径」，不做深链。
 
-**爸 11-09 已拍板**：§10 第 1 条按建议；第 2 条改为「换模型一律先问用户」。其余全按本稿推进。
+**爸 11-09 已拍板**：§10 第 1 条（拒绝后本任务内不再问；同一对象跨任务 24 小时内只问一次；设置里有「不再提示」）与第 2 条（换模型一律先问用户）均为正式决定，下文按此写成规范。其余全按本稿推进。
 
 ## 1. 现状（全部引自本仓库代码，grep 为准）
 
@@ -86,6 +86,7 @@
 2. 卡片只有：**一句人话**（`sentenceKey` + `params` → i18n）和 **一个主按钮**（`action`）。进度条是同一句话的一部分，不算第二个动作。
 3. 不出现：错误码、`-1743`、`osascript`、`TCC`、`Apple events`、`/login`、`/model`、引擎名、绝对路径、HTTP 状态码、provider 原始响应体。
 4. **同一任务里同一类只出现一次**：去重键 `dedupeKey = ${runId}|${class}|${target ?? ''}`。重复命中只更新已有卡的 `phase`，不新建卡、不新弹。
+5. **跨任务冷却（爸 11-09 拍板，规范）**：用户拒绝（`declined`）后，除本任务内不再问外，**同一对象 24 小时内跨任务也只问一次**。落地：宿主侧持久化一张 `env_assist_declines` 记录（SQLite，随 `~/.code-agent*/code-agent.db`，重启不丢），键 `${class}|${target ?? ''}`，字段 `declinedAt`、`suppressForever`。新任务命中同键时：`declinedAt` 距今 <24h 或 `suppressForever=true` → **不出 `needs_user` 询问卡**，直接按 §8 的替代路径（`declined` 态的一句话，无按钮）走；≥24h → 恢复询问，且只问一次（再拒绝则重写 `declinedAt`）。「不再提示」是设置里的开关（按类、可撤销），置 `suppressForever`。时间戳按项目规则由调用方传入（`declinedAt` 写入方法接受可选 `now` 参数，未传才 `?? Date.now()`，不在仓储内直接写 `Date.now()`）；冷却只抑制**询问**，探针仍照常被动运行，用户若自己在系统设置里授权了，探针转绿即自动清除该记录并继续。
 
 ### 4.2 宿主 ↔ 渲染层数据契约
 
@@ -206,7 +207,7 @@ export interface EnvAssistNotice {
 | 情形 | 卡片一句话（示意） | 唯一按钮 | 替代路径 |
 |------|-------------------|---------|---------|
 | 权限轮询超时（120s） | 「还没检测到你允许「日历」。如果刚刚已经点了，再查一次；不想开也行，我先做不需要它的部分。」 | 「再查一次」（`recheck`）；次要文字链「先跳过这一步」（`skip_step`，**不算第二个主按钮**，只在 unconfirmed/declined 态出现） | 跳过后 Neo 继续做能做的部分，结尾明确列出「没做的是：看日程（因为没有日历权限）」，仍不出现 TCC 字样 |
-| 系统框里用户点了「不允许」（`request_grant` 立即返回 -1743） | 「好的，这次不看「日历」。需要时再告诉我。」→ `declined` | 无 | 同上，任务以部分结果收尾；**本任务内不再就同一对象追问**（去重键保证）；是否跨任务记住 → 见 §10 |
+| 系统框里用户点了「不允许」（`request_grant` 立即返回 -1743） | 「好的，这次不看「日历」。需要时再告诉我。」→ `declined` | 无 | 同上，任务以部分结果收尾；**本任务内不再就同一对象追问**（去重键保证）；**跨任务：同一对象 24 小时内只问一次**（§4 规则 5 的持久化拒绝记录；冷却期内新任务不出询问卡，直接走本行替代路径），满 24 小时才会再问一次；设置里「不再提示」可永久关闭 |
 | 权限已授但仍被拦（E2：勾了不生效） | 「已经允许了，但需要重启 Neo 才生效。」 | 「重启 Neo 并继续」 | 若重启后仍失败 → 降为 unconfirmed，引导「打开设置、关掉再打开」一次（E2 的修法），不展示 `tccutil` |
 | 运行时安装失败（离线 / 校验失败 / 磁盘满） | 「PPT 转换组件没装上（网络不通）。联网后我会再试，也可以先用不转换的方式。」 | 「重试安装」 | 工具自带降级（如不做 VLM 视觉审查——`pptGenerate.schema.ts` 本就把 LibreOffice 标为可选）；Windows → `unsupported` 直接给替代，不假装能装 |
 | 登录授权被拒 / 超时（`OAUTH_FLOW_TIMEOUT_MS`） | 「飞书还没登录成功。你可以再试一次，或者这次先不用飞书。」 | 「再试一次」 | `mcpReauthorize.ts` 现已「不自动重试」，保持；替代路径：请求用户提供文本/文件走无连接器方案 |
@@ -219,7 +220,7 @@ export interface EnvAssistNotice {
 
 | 编号 | 标题 | 范围 | 验收（真实任务） | 风险 | 替代的散单 |
 |------|------|------|-----------------|------|-----------|
-| **S1** | 统一出口：契约 + 归类 + 卡片 | `shared/contract/envAssist.ts`；`host/envAssist/classify.ts`（吸收 §6 列出的 5 处私有判断）；`EnvAssistCard.tsx`；`AgentErrorCard` / 停车卡委托；去重；`rawMessage` 不外露；141 条日志重新归桶 | 真跑「帮我看下今天的日程」且日历未授权：卡片一句话 + 一个按钮；DOM 里不含 `-1743`/`osascript`/`Apple events`（断言后再截图）；同一任务内再次触发同类不新增卡 | 中：触及 `AgentErrorMetadata` 共享类型与 agent event schema（需 `agent-event-schema-gate --write`）；先过多模型对抗审查 | N-FIX-DESKTOP-DIAG-RESOURCE-ROWS（资源行诊断文案走同一出口）；连接器诊断区的「内部词外露」部分 |
+| **S1** | 统一出口：契约 + 归类 + 卡片 | `shared/contract/envAssist.ts`；`host/envAssist/classify.ts`（吸收 §6 列出的 5 处私有判断）；`EnvAssistCard.tsx`；`AgentErrorCard` / 停车卡委托；去重；**跨任务拒绝冷却（§4 规则 5：`env_assist_declines` 持久化表、24 小时、「不再提示」开关）**；`rawMessage` 不外露；141 条日志重新归桶 | 真跑「帮我看下今天的日程」且日历未授权：卡片一句话 + 一个按钮；DOM 里不含 `-1743`/`osascript`/`Apple events`（断言后再截图）；同一任务内再次触发同类不新增卡；**冷却验收**：点「不允许」使卡转 `declined` → 24 小时内新开一个任务做「帮我看下明天的日程」（同一对象日历）→ **不出询问卡**，只显示替代路径那句话（截图 + 数据库里 `declinedAt` 行为证）；把 `declinedAt` 回拨到 24 小时之前（通过 `now` 参数注入，不改系统时钟）再开新任务 → 恰询问一次；开「不再提示」后即使过期也不再问；中途在系统设置里手动授权 → 探针转绿、记录清除 | 中：触及 `AgentErrorMetadata` 共享类型与 agent event schema（需 `agent-event-schema-gate --write`）；先过多模型对抗审查 | N-FIX-DESKTOP-DIAG-RESOURCE-ROWS（资源行诊断文案走同一出口）；连接器诊断区的「内部词外露」部分 |
 | **S2** | 被动探针 + 无弹框保证 | `host/envAssist/probes/`；Rust 侧新增 `automation`（`AEDeterminePermissionToAutomateTarget(false)`）/`inputMonitoring` 探针与 `automation` 深链分支；`requestGrant` + `ClickToken`；§5 的静态门与故障注入测试 | Dev 包上**授权被重置**后，只做诊断（打开任务触发卡片但不点按钮）全程**零系统弹框**（录屏/截图佐证）；点按钮后恰一次系统框 | 高：原生桥 + entitlement + 目标 App 未运行等边缘；web 构建无原生桥走降级留痕 | —（新能力；吸收 `screenshotFailureCause` 的权限判断） |
 | **S3** | 停车 + 自动续跑泛化 | `interruptCause:'env_blocked'`；`envResumeWaiter`（泛化 `quotaWaitTimer`）；`EnvBlockedError`；重放同 toolCallId；写操作不自动重放 | 真跑「把这封邮件存草稿」且 Mail 自动化被拒：授权后**不重发指令**，草稿自己存好；重启 Neo 后停车仍在 | 高：durable run / 账本 / 幂等；必须 fault-injection（授权后进程被杀再恢复） | N-QUOTA-429-PLAIN-NOTICE 系列中「等待后自动继续」的部分（`quota_wait` 成为 `quota_exhausted` 的一个实现） |
 | **S4** | Apple Events 类（邮件/日历/提醒/照片）接入 | `osascript.ts` `describeAppleScriptFailure`、`mail/calendar/reminders/photos.ts` 改抛 `EnvBlockedError`；Automation 深链；目标 App 自启 | 「帮我看下今天的日程」（日历未授权）与「把这封邮件存草稿」（邮件自动化被拒）各一轮：提示一次、授权后自己完成；另跑「系统框点不允许」分支，卡片转 `declined` 且任务以部分结果收尾 | 中：`describeAppleScriptFailureText` 有现成测试，需同步改而非删 | 连接器诊断区散单（原生连接器部分） |
@@ -242,10 +243,10 @@ export interface EnvAssistNotice {
 
 > 说明：本稿所在环境无 `fleet` 命令，未能 `fleet show` 逐条读散单正文；上表依据任务书对四组散单的描述 + 仓库里对应代码（`RuntimeAssetRow.tsx` 注释自称 N-PY-RUNTIME-K2；`quotaWaitTimer.ts`/`quotaWaitNotice.tsx` 即 429 系列产物）推定。立单前需用 `fleet show` 核对每张散单的真实范围，不一致处以散单为准并回改本表。
 
-## 10. 需要爸拍板的两条取舍
+## 10. 爸 11-09 已拍板的两条取舍（正式决定）
 
-1. **用户拒绝之后，多久之内不再问同一类？** 建议：本任务内绝不再问；跨任务默认可再问，但同一对象 24 小时内只问一次；设置里提供「不再提示」。备选：永不再问（容易变成永久残缺能力）。
-2. **额度用尽自动换模型要不要先问？** ~~建议：不问，仅同档位或更低价时静默换~~ → **爸 11-09 定：一律先问**。Neo 先挑好能用的模型，卡片问一句、一个确认按钮，用户点了才换；换模型改变成本与能力，属于用户该点头的事。第 1 条按建议执行。
+1. **用户拒绝之后，多久之内不再问同一对象？** ~~建议~~ → **爸 11-09 定**：本任务内绝不再问；跨任务同一对象 24 小时内只问一次（冷却期内新任务不出询问卡，改走替代路径）；设置里提供「不再提示」。不采用「永不再问」（会变成永久残缺能力）。规范见 §4 规则 5，实现与验收归 S1（§9）。
+2. **额度用尽自动换模型要不要先问？** ~~建议：不问，仅同档位或更低价时静默换~~ → **爸 11-09 定：一律先问**。Neo 先挑好能用的模型，卡片问一句、一个确认按钮，用户点了才换；换模型改变成本与能力，属于用户该点头的事。第 1 条见上。
 
 ## 11. 不做什么
 
