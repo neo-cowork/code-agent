@@ -38,6 +38,8 @@ vi.mock('../../../src/host/tools/modules/document/shareLink', async (importOrigi
 }));
 
 import { registerWorkspaceHandlers } from '../../../src/host/ipc/workspace.ipc';
+import { AgentAppServiceImpl } from '../../../src/host/app/agentAppService';
+import { TaskManager } from '../../../src/host/task/TaskManager';
 
 type Handler = (event: unknown, request: IPCRequest) => Promise<IPCResponse>;
 let handler: Handler;
@@ -124,5 +126,44 @@ describe('workspace.ipc dispatch 特征：路由与兜底', () => {
     links.setViewport.mockRejectedValueOnce('boom');
     expect(await call('setUserBrowserViewport', { conversationId: 'c1', workspace: '/ws', width: 1, height: 1 }))
       .toEqual({ success: false, error: { code: 'INTERNAL_ERROR', message: 'boom' } });
+  });
+});
+
+describe('workspace.ipc current directory without an active session', () => {
+  it('setCurrent then getCurrent returns null when TaskManager has no current session', async () => {
+    const taskManager = new TaskManager();
+    taskManager.initialize({
+      configService: {} as never,
+      onAgentEvent: vi.fn(),
+    });
+    const appService = new AgentAppServiceImpl(
+      () => taskManager,
+      () => null,
+      () => null,
+      vi.fn(),
+    );
+    const handlers = new Map<string, Handler>();
+    registerWorkspaceHandlers(
+      { handle: (ch: string, fn: Handler) => handlers.set(ch, fn) } as never,
+      () => null,
+      () => appService,
+      () => null,
+      () => links as never,
+    );
+    const invoke = (action: string, payload?: unknown) => (
+      handlers.get(IPC_DOMAINS.WORKSPACE)!(null, { action, payload } as IPCRequest)
+    );
+
+    const setResult = await invoke('setCurrent', { dir: '/picked/folder' });
+    const getResult = await invoke('getCurrent');
+    console.log('[evidence①] workspace domain setCurrent/getCurrent:', JSON.stringify({
+      setResult,
+      getResult,
+      currentSessionId: taskManager.getCurrentSessionId(),
+    }));
+
+    expect(setResult).toEqual({ success: true, data: '/picked/folder' });
+    expect(getResult).toEqual({ success: true, data: null });
+    expect(taskManager.getCurrentSessionId()).toBeNull();
   });
 });

@@ -5,6 +5,7 @@ import type { RuntimeContext } from './runtimeContext';
 export interface PersistedRuntimeState {
   compressionStateJson: string | null;
   persistentSystemContext: string[];
+  lastProviderUsageJson: string | null;
 }
 
 function getReadyDatabase():

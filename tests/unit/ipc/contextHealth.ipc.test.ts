@@ -1,5 +1,5 @@
  
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 const compactMocks = vi.hoisted(() => {
   const state = {
@@ -30,6 +30,7 @@ const compactMocks = vi.hoisted(() => {
     getMessages: vi.fn(() => state.persistedMessages),
     getRecentMessages: vi.fn((_sessionId: string, _messageLimit: number) => state.persistedMessages),
     saveSessionRuntimeState: vi.fn(),
+    getSessionRuntimeState: vi.fn((_sessionId: string): { lastProviderUsageJson: string | null } | null => null),
   };
   const configService = {
     settings: {
@@ -272,6 +273,71 @@ describe('resolveContextHealthForSession', () => {
     expect(getSessionStateManager().getSummary(sessionId)?.contextHealth?.currentTokens).toBe(health.currentTokens);
   });
 
+  describe('persisted provider usage goes stale once history moves past it', () => {
+    const sessionId = 'session-stale-provider-usage';
+    const bigMessages: Message[] = [{
+      id: 'big',
+      role: 'user',
+      content: '这是一段很长的历史，用来让本地估算明显大于旧的实报值。'.repeat(6000),
+      timestamp: 1,
+    }];
+    const toContext = (messages: Message[]) => messages.map((m) => ({ role: m.role, content: m.content }));
+
+    function useStatefulRuntimeStateStore(initial: string | null): void {
+      let stored: string | null = initial;
+      compactMocks.database.saveSessionRuntimeState.mockImplementation(
+        (_id: string, state: { lastProviderUsageJson?: string | null }) => {
+          if (state.lastProviderUsageJson !== undefined) stored = state.lastProviderUsageJson;
+        },
+      );
+      compactMocks.database.getSessionRuntimeState.mockImplementation(() => ({ lastProviderUsageJson: stored }));
+    }
+
+    afterEach(() => {
+      compactMocks.database.saveSessionRuntimeState.mockReset();
+      compactMocks.database.getSessionRuntimeState.mockReset();
+      compactMocks.database.getSessionRuntimeState.mockReturnValue(null);
+    });
+
+    for (const [name, usage] of [
+      ['estimated turn without provider usage', undefined],
+      ['interrupted turn that reported zero usage', { inputTokens: 0 }],
+    ] as const) {
+      it(`after ${name}, a reload estimates the current history instead of reading the old 30000`, async () => {
+        useStatefulRuntimeStateStore(null);
+        const service = getContextHealthService();
+        service.update(sessionId, toContext(bigMessages).slice(0, 1).map((m) => ({ ...m, content: 'hi' })), '', DEFAULT_MODEL, undefined, undefined, undefined, { inputTokens: 30000 });
+        expect(compactMocks.database.getSessionRuntimeState(sessionId)?.lastProviderUsageJson).toContain('30000');
+
+        const estimated = service.update(sessionId, toContext(bigMessages), '', DEFAULT_MODEL, undefined, undefined, undefined, usage);
+        expect(estimated.tokenSource).toBe('estimated');
+        expect(estimated.currentTokens).toBeGreaterThan(60000);
+
+        service.clear();
+        const reloaded = await resolveContextHealthForSession(
+          { getAppService: () => makeAppService(sessionId, bigMessages, DEFAULT_MODEL) },
+          sessionId,
+        );
+        expect(reloaded.tokenSource).toBe('estimated');
+        expect(reloaded.currentTokens).not.toBe(30000);
+        expect(reloaded.currentTokens).toBeGreaterThan(60000);
+      });
+    }
+
+    it('still reloads a fresh provider report as tokenSource=provider', async () => {
+      useStatefulRuntimeStateStore(null);
+      const service = getContextHealthService();
+      service.update(sessionId, toContext(bigMessages), '', DEFAULT_MODEL, undefined, undefined, undefined, { inputTokens: 30000 });
+      service.clear();
+      const reloaded = await resolveContextHealthForSession(
+        { getAppService: () => makeAppService(sessionId, bigMessages, DEFAULT_MODEL) },
+        sessionId,
+      );
+      expect(reloaded.tokenSource).toBe('provider');
+      expect(reloaded.currentTokens).toBe(30000);
+    });
+  });
+
   it('reuses the hydrated session cache without reading messages from DB again', async () => {
     const sessionId = 'session-health-cache-hit';
     const messages: Message[] = [{
@@ -438,6 +504,7 @@ describe('resolveContextHealthForSession', () => {
     expect(compactMocks.sessionManager.replaceMessages).toHaveBeenCalledWith(
       sessionId,
       expect.any(Array),
+      expect.any(Number),
     );
     expect(compactMocks.state.persistedMessages.some((message) => message.compaction?.type === 'compaction')).toBe(true);
     expect(compactMocks.database.saveSessionRuntimeState).toHaveBeenCalledWith(

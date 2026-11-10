@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
+import { en } from '../../../src/renderer/i18n/en';
 import { summarizeTool } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/summarizers';
 import type { ToolCall } from '../../../src/shared/contract/tool';
 
@@ -20,12 +21,12 @@ describe('summarizeTool error line', () => {
   it('跳过 XML 包裹标签行，取第一行人话', () => {
     const summary = summarizeTool(makeCall(
       '<tool-args-validation-error>\n工具 "Write" 参数校验失败（1 处问题）：\n  - 缺少必填参数 `content`\n</tool-args-validation-error>',
-    ));
+    ), en);
     expect(summary).toContain('参数校验失败');
     expect(summary).not.toContain('<tool-args-validation-error>');
   });
 
   it('普通错误仍取第一行', () => {
-    expect(summarizeTool(makeCall('ENOENT: no such file\nstack...'))).toContain('ENOENT');
+    expect(summarizeTool(makeCall('ENOENT: no such file\nstack...'), en)).toContain('ENOENT');
   });
 });

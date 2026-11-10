@@ -25,6 +25,7 @@ import {
 import { createLogger } from '../services/infra/logger';
 import { getSessionStateManager } from '../session/sessionStateManager';
 import { calculateSystemPromptCacheCost } from './contextCacheEconomics';
+import { getDatabase } from '../services/core/databaseService';
 
 /**
  * Extended message type for context health tracking
@@ -81,6 +82,24 @@ function scaleTokenBreakdown(breakdown: TokenBreakdown, scale: number): TokenBre
       : {}),
     ...(breakdown.bySource ? { bySource: scaleSourceBreakdown(breakdown.bySource, scale) } : {}),
   };
+}
+
+function persistProviderUsage(sessionId: string, providerUsage: ProviderContextUsage): void {
+  try {
+    getDatabase().saveSessionRuntimeState(sessionId, {
+      lastProviderUsageJson: JSON.stringify(providerUsage),
+    });
+  } catch (error) {
+    logger.debug('Failed to persist last provider context usage:', error);
+  }
+}
+
+function invalidatePersistedProviderUsage(sessionId: string, updatedAt?: number): void {
+  try {
+    getDatabase().saveSessionRuntimeState(sessionId, { lastProviderUsageJson: null }, updatedAt);
+  } catch (error) {
+    logger.debug('Failed to invalidate persisted provider context usage:', error);
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -214,6 +233,13 @@ export class ContextHealthService {
 
     // 保存状态
     this.sessionStates.set(sessionId, health);
+    if (useProviderTruth && providerUsage) {
+      persistProviderUsage(sessionId, providerUsage);
+    } else {
+      // 本次快照不是 provider 实报（估算 / 中断轮 / 无 usage / 用户消息后快照）：
+      // 旧的持久化实报已落后于当前历史，清掉，重启后才会回落到估算而不是读到陈旧值
+      invalidatePersistedProviderUsage(sessionId);
+    }
     try {
       getSessionStateManager().updateContextHealth(sessionId, health);
     } catch (error) {
@@ -256,8 +282,9 @@ export class ContextHealthService {
   /**
    * 清理会话状态
    */
-  cleanup(sessionId: string): void {
+  cleanup(sessionId: string, updatedAt?: number): void {
     this.sessionStates.delete(sessionId);
+    invalidatePersistedProviderUsage(sessionId, updatedAt);
   }
 
   /**
