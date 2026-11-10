@@ -1,6 +1,6 @@
 // ============================================================================
 // RoleFirstWakeCard — 新专家第一次醒来的开场与建议
-// 确认创建后出现在原确认卡位置，也出现在该专家主会话顶部，直到点建议或先不用。
+// 确认创建后出现在原确认卡位置，也出现在该专家主会话顶部，直到建议都消费完或先不用。
 // 视觉范本 role-wake-prototype-v2.html 屏一/屏二（2026-11-05 owner 返修）：
 // 用户刚在确认卡看过名字与职责——卡片不再有名册行，头像只留首字（名字进
 // aria-label/title）；failed 先说「建好了能用」，再用次要色说哪里没成功，
@@ -14,7 +14,7 @@ import { classifyAgentError } from '@shared/utils/agentErrorClassification';
 import { Button } from '../../primitives/Button';
 import { useI18n } from '../../../hooks/useI18n';
 import { interpolate } from '../../../i18n/interpolate';
-import { getFirstWake, listRoles, retryFirstWake, skipFirstWake } from '../../../services/rolesClient';
+import { consumeFirstWakeSuggestion, getFirstWake, listRoles, retryFirstWake, skipFirstWake } from '../../../services/rolesClient';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { goToExpertThread } from '../../../utils/inviteExpert';
@@ -128,14 +128,16 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
     }
   };
 
-  const handleSuggestion = async (prompt: string) => {
+  const handleSuggestion = async (title: string, prompt: string) => {
     if (busy) return;
     setBusy(true);
     try {
-      await skipFirstWake(roleId);
-      hide();
+      await consumeFirstWakeSuggestion(roleId, title);
+      setSnapshot(await getFirstWake(roleId));
       await goToExpertThread(roleId, { seed: prompt });
     } catch {
+      // 保留卡片时允许用户继续消费其它建议；错误也不锁死卡片。
+    } finally {
       setBusy(false);
     }
   };
@@ -270,7 +272,7 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
                 type="button"
                 disabled={busy}
                 className={outlineButtonClass}
-                onClick={() => { void handleSuggestion(suggestion.prompt); }}
+                onClick={() => { void handleSuggestion(suggestion.title, suggestion.prompt); }}
               >
                 {suggestion.title}
               </button>

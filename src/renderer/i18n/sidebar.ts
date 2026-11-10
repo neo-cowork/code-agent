@@ -85,6 +85,8 @@ export const sidebarZh = {
     updateDatasetFailed: '更新数据集标记失败：{message}',
     // 会话默认标题
     newSessionTitle: '新对话',
+    unnamedSessionTitle: '未命名会话',
+    appshotSessionTitle: 'Appshot 会话',
     goalSessionTitle: '目标：{title}',
     // 能力区（会话列表上方：自动化 / 专家 / 资料库）
     capabilityZone: {
@@ -228,6 +230,8 @@ export const sidebarZh = {
     expandAll: '展开全部 {count} 条',
     cronRunsExpand: '展开其余运行',
     cronRunsCollapse: '收起其余运行',
+    cronRunsExpandWithLatestTime: '展开其余运行 · 最近一次 {time}',
+    cronRunsCollapseWithLatestTime: '收起其余运行 · 最近一次 {time}',
     projectDetailTitle: '项目详情',
     detailLoading: '项目详情加载中',
     goalCountFallback: '{count} 个目标',
@@ -441,6 +445,8 @@ export const sidebarEn: typeof sidebarZh = {
     markedAsDataset: 'Marked as {role}',
     updateDatasetFailed: 'Failed to update dataset label: {message}',
     newSessionTitle: 'New conversation',
+    unnamedSessionTitle: 'Untitled conversation',
+    appshotSessionTitle: 'Appshot conversation',
     goalSessionTitle: 'Goal: {title}',
     capabilityZone: {
       automation: 'Automations',
@@ -574,6 +580,8 @@ export const sidebarEn: typeof sidebarZh = {
     expandAll: 'Show all {count}',
     cronRunsExpand: 'Show older runs',
     cronRunsCollapse: 'Hide older runs',
+    cronRunsExpandWithLatestTime: 'Show older runs · latest {time}',
+    cronRunsCollapseWithLatestTime: 'Hide older runs · latest {time}',
     projectDetailTitle: 'Project details',
     detailLoading: 'Loading project details',
     goalCountFallback: '{count} goals',

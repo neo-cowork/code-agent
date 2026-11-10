@@ -4,6 +4,7 @@ import { ToolSearchService } from '../../../src/host/services/toolSearch/toolSea
 import { DEFERRED_TOOLS_META } from '../../../src/host/services/toolSearch/deferredTools';
 import { getProtocolRegistry, isProtocolToolName, resetProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import { resetToolSearchService } from '../../../src/host/services/toolSearch';
+import { getPermissionModeManager, resetPermissionModeManager } from '../../../src/host/permissions/modes';
 import type { ToolModule, ToolSchema } from '../../../src/host/protocol/tools';
 import type { JevSkillRerankJudge } from '../../../src/shared/contract/toolSearch';
 
@@ -407,6 +408,57 @@ describe('ToolSearchService loadable results', () => {
       canonicalInvocation: 'Skill({"command":"commit"})',
     });
     expect(result.tools[0]?.notCallableReason).toMatch(/Skill tool/i);
+  });
+
+  it('hides user-source skills from tool_search in unattended sessions unless listed in toolScope.allowedSkillIds while keeping builtin/project/plugin visible', async () => {
+    resetPermissionModeManager();
+    const service = new ToolSearchService();
+    service.registerSkill('wechat-local-query', 'Queries WeChat chat history', ['wechat'], 'user');
+    service.registerSkill('project-wechat-helper', 'Project WeChat helper', ['wechat'], 'project');
+    service.registerSkill('builtin-wechat-helper', 'Builtin WeChat helper', ['wechat'], 'builtin');
+    service.registerSkill('plugin-wechat-helper', 'Plugin WeChat helper', ['wechat'], 'plugin');
+
+    getPermissionModeManager().markUnattendedSession('cron-unattended-search');
+
+    // Foreground session sees all skills including user skill
+    const foreground = await service.searchTools('wechat', {
+      maxResults: 5,
+      includeMCP: false,
+      sessionId: 'foreground-search',
+    });
+    expect(foreground.tools.map((t) => t.name).sort()).toEqual([
+      'skill:builtin-wechat-helper',
+      'skill:plugin-wechat-helper',
+      'skill:project-wechat-helper',
+      'skill:wechat-local-query',
+    ]);
+
+    // Unattended session without allowedSkillIds hides user skill, keeps builtin/project/plugin
+    const unattended = await service.searchTools('wechat', {
+      maxResults: 5,
+      includeMCP: false,
+      sessionId: 'cron-unattended-search',
+    });
+    expect(unattended.tools.map((t) => t.name).sort()).toEqual([
+      'skill:builtin-wechat-helper',
+      'skill:plugin-wechat-helper',
+      'skill:project-wechat-helper',
+    ]);
+
+    // Unattended session with explicit allowedSkillIds sees user skill
+    const unattendedOptIn = await service.searchTools('wechat', {
+      maxResults: 5,
+      includeMCP: false,
+      sessionId: 'cron-unattended-search',
+      toolScope: { allowedSkillIds: ['wechat-local-query'] },
+    });
+    expect(unattendedOptIn.tools.map((t) => t.name).sort()).toEqual([
+      'skill:builtin-wechat-helper',
+      'skill:plugin-wechat-helper',
+      'skill:project-wechat-helper',
+      'skill:wechat-local-query',
+    ]);
+    resetPermissionModeManager();
   });
 
   it('reranks required searches but never invokes the judge for select mode', async () => {

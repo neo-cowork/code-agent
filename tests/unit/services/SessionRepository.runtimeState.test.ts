@@ -132,7 +132,23 @@ describe('SessionRepository runtime recovery state', () => {
 
     expect(repo.getSessionRuntimeState('session-1')).toEqual({
       compressionStateJson: '{"commitLog":[{"layer":"snip","operation":"snip","targetMessageIds":["m1"],"timestamp":1}]}',
-      persistentSystemContext: ['remember this']
+      persistentSystemContext: ['remember this'],
+      lastProviderUsageJson: null
+    });
+  });
+
+  it('preserves the last provider usage while compression state is updated', () => {
+    repo.saveSessionRuntimeState('session-1', {
+      lastProviderUsageJson: JSON.stringify({ inputTokens: 1200, cacheReadTokens: 800, provider: 'xiaomi' }),
+    }, 100);
+    repo.saveSessionRuntimeState('session-1', {
+      compressionStateJson: '{"commitLog":[]}',
+    }, 200);
+
+    expect(repo.getSessionRuntimeState('session-1')).toEqual({
+      compressionStateJson: '{"commitLog":[]}',
+      persistentSystemContext: [],
+      lastProviderUsageJson: '{"inputTokens":1200,"cacheReadTokens":800,"provider":"xiaomi"}',
     });
   });
 

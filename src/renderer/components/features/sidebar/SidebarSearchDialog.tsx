@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, MessageSquareText, Search } from 'lucide-react';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { formatLocalDateTime } from '../../../utils/i18nTime';
 import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 import type {
   SidebarMessageSearchHitGroup,
@@ -38,7 +39,7 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
   canSearchCurrentProject,
   onSelectSession,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const sb = t.sidebar;
   const inputRef = useRef<HTMLInputElement>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -164,16 +165,20 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm">
-                        {getDisplaySessionTitle(session.title)}
+                        {getDisplaySessionTitle(session.title, language)}
                         {session.id === currentSessionId && (
                           <span className="ml-2 text-[11px] text-badge-info">{sb.currentSession}</span>
                         )}
                       </span>
-                      {hitGroup && (
-                        <span className="block truncate text-[11px] text-zinc-500">
-                          {sb.messageHits.replace('{count}', String(hitGroup.totalHitCount))}
-                        </span>
-                      )}
+                      <span data-testid="sidebar-search-session-time" className="block truncate text-[11px] text-zinc-500">
+                        {formatLocalDateTime(session.updatedAt, language)}
+                        {hitGroup && (
+                          <>
+                            <span aria-hidden="true"> · </span>
+                            <span>{sb.messageHits.replace('{count}', String(hitGroup.totalHitCount))}</span>
+                          </>
+                        )}
+                      </span>
                     </span>
                   </button>
                 );

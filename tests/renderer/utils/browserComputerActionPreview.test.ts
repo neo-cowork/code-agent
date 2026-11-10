@@ -56,7 +56,7 @@ describe('buildBrowserComputerActionPreview', () => {
       },
     }))).toMatchObject({
       surface: 'browser',
-      summary: '读取 DOM snapshot',
+      summary: '读取页面结构',
       risk: 'read',
       riskLabel: '只读',
     });
@@ -565,7 +565,29 @@ describe('buildBrowserComputerActionPreview', () => {
           },
         },
       },
-    }))).toBe('DOM snapshot: 1 headings · 1 interactive');
+    }))).toBe('页面结构：1 个标题 · 1 个可点元素');
+  });
+
+  it('summarizes get_dom_snapshot from the summary-only metadata (counts, no element list)', () => {
+    expect(summarizeBrowserComputerActionResult(makeToolCall({
+      name: 'browser_action',
+      arguments: { action: 'get_dom_snapshot' },
+      result: {
+        toolCallId: 'tool-1',
+        success: true,
+        output: 'DOM snapshot snapshot_demo\nurl: https://example.com',
+        metadata: {
+          domSnapshot: {
+            snapshotId: 'snapshot_demo',
+            url: 'https://example.com',
+            headingCount: 12,
+            interactiveCount: 80,
+            offset: 0,
+            shownCount: 80,
+          },
+        },
+      },
+    }))).toBe('页面结构：12 个标题 · 80 个可点元素');
   });
 
   it('summarizes browser account state without cookie values', () => {
