@@ -117,6 +117,34 @@ describe('step-limit Continue in the production message list and composer', () =
     expect(send.mock.calls[0][0].content).toBe('改成只列出待确认事项');
   });
 
+  it('keeps Stop clickable through stopping and restores empty-send continuation after settling', () => {
+    const stop = vi.fn();
+    const composer = (processing: boolean, stopping: boolean) => (
+      <ComposerCoreActions
+        actions={[processing ? 'stop' : 'send']} voice={{} as never} sessionId="session"
+        hasMessages configured disabled={processing} isProcessing={processing}
+        isStopping={stopping} hasContent={false} onStop={stop}
+      />
+    );
+    const { rerender } = render(composer(true, false));
+    const before = screen.getByTestId('composer-stop-button') as HTMLButtonElement;
+    expect(before.disabled).toBe(false);
+    fireEvent.click(before);
+    expect(stop).toHaveBeenCalledTimes(1);
+
+    rerender(composer(true, true));
+    const stopping = screen.getByTestId('composer-stop-stopping') as HTMLButtonElement;
+    expect(stopping.disabled).toBe(false);
+    expect(stopping.getAttribute('aria-label')).toBe('正在停止');
+    expect(stopping.innerHTML).toContain('animate-spin');
+    fireEvent.click(stopping);
+    expect(stop).toHaveBeenCalledTimes(2);
+
+    rerender(composer(false, false));
+    expect(screen.queryByTestId('composer-stop-stopping')).toBeNull();
+    expect((screen.getByRole('button', { name: '发送消息' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it('empty-send without a marked summary remains a no-op', async () => {
     useSessionStore.setState({ messages: [history[0]] });
     const { result } = renderHook(() => useChatInputSubmit(params()));

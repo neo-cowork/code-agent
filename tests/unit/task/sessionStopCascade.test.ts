@@ -3,6 +3,8 @@
 // （AgentOrchestrator）这条外部边界上放替身。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CANCELLATION_TIMEOUTS } from '../../../src/shared/constants';
+import { AgentFailureCode } from '../../../src/shared/contract/agentFailure';
+import { buildAgentTreeSnapshot } from '../../../src/host/agent/agentTreeService';
 
 interface FakeOrchestrator {
   label: string;
@@ -305,5 +307,20 @@ describe('TaskManager.cancelTask 后台级联', () => {
     await vi.waitFor(() => expect(taskOf('session-a', id).status).toBe('failed'));
     expect(projectTerminalResult).toHaveBeenCalledWith(expect.objectContaining({ id }), 'failed');
     expect(getBackgroundTaskLedger().getTask(id)).toMatchObject({ status: 'failed' });
+  });
+
+  it('用户取消的后台子代理投影为 cancelled，真实失败仍是 failed', () => {
+    const snapshot = buildAgentTreeSnapshot({
+      now: 1000,
+      sessionId: 'session-1',
+      backgroundAgents: [
+        { agentId: 'bg-stopped', status: 'failed', startedAt: 10, finishedAt: 20, error: 'aborted', failureCode: AgentFailureCode.CancelledByUser },
+        { agentId: 'bg-broken', status: 'failed', startedAt: 10, finishedAt: 20, error: 'model exploded', failureCode: AgentFailureCode.ModelError },
+      ],
+    });
+    const byId = new Map(snapshot.nodes.map((node) => [node.id, node]));
+    expect(byId.get('bg-stopped')?.status).toBe('cancelled');
+    expect(byId.get('bg-stopped')?.lastEvent?.summary).not.toContain('遇到问题');
+    expect(byId.get('bg-broken')?.status).toBe('failed');
   });
 });
