@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CanUseToolFn, ToolContext } from '../../../../src/host/protocol/tools';
@@ -38,7 +39,6 @@ class FakeTaskManager extends EventEmitter {
       type: 'task_cancelled',
       sessionId,
       data: { taskId },
-      timestamp: Date.now(),
     } satisfies TaskManagerEvent);
     return true;
   });
@@ -137,6 +137,7 @@ describe('delegate_task overflow choice in host', () => {
     expect(questions[0].options.length).toBeLessThanOrEqual(4);
 
     expect(third.ok).toBe(true);
+    assert(third.ok);
     expect(third.output).toContain('queued：已把「任务3」');
     const allTasks = getSessionCommandCenter().list(session);
     expect(allTasks).toHaveLength(3);
@@ -168,6 +169,7 @@ describe('delegate_task overflow choice in host', () => {
     ]);
     expect(questions[0].options).toHaveLength(2);
     expect(result).toMatchObject({ ok: true });
+    assert(result.ok);
     expect(result.output).toContain('queued：已把「任务5」');
     expect(getSessionCommandCenter().list(currentSession)).toEqual([
       expect.objectContaining({ shortName: '任务5', status: 'queued' }),
@@ -188,6 +190,7 @@ describe('delegate_task overflow choice in host', () => {
 
     expect(fakeManager.cancelBackgroundTask).toHaveBeenCalledOnce();
     expect(result.ok).toBe(true);
+    assert(result.ok);
     expect(result.output).toContain('已停止「任务1」');
     expect(result.output).toContain('accepted：后台任务「任务3」');
 
@@ -209,6 +212,7 @@ describe('delegate_task overflow choice in host', () => {
     const result = await executeDelegateTask(taskArgs(3), toolContext(session), allow);
 
     expect(result.ok).toBe(true);
+    assert(result.ok);
     expect(result.output).toContain('未创建');
     expect(result.output).toContain('未加入排队');
     expect(getSessionCommandCenter().list(session)).toHaveLength(2);
@@ -229,6 +233,7 @@ describe('delegate_task overflow choice in host', () => {
     const result = await executeDelegateTask(taskArgs(3), toolContext(session), allow);
 
     expect(result.ok).toBe(true);
+    assert(result.ok);
     expect(result.output).toContain('尚未创建');
     expect(result.output).toContain('没有加入排队');
     expect(result.output).toContain('回复“排队”');
