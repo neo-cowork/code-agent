@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessByStdio } from 'node:child_process';
 import { constants as fsConstants } from 'node:fs';
 import { access, mkdir, readFile } from 'node:fs/promises';
+import { StringDecoder } from 'node:string_decoder';
 import path from 'node:path';
 import type { Readable } from 'node:stream';
 import * as pty from 'node-pty';
@@ -108,9 +109,13 @@ function ptyEnvironment(source: NodeJS.ProcessEnv): Record<string, string> {
   );
 }
 
-function appendOutput(current: string, chunk: string | Buffer): string {
-  const next = current + (typeof chunk === 'string' ? chunk : chunk.toString('utf8'));
-  return next.length <= OUTPUT_LIMIT ? next : next.slice(-OUTPUT_LIMIT);
+/** 按字符截尾；不从代理对中间切开，避免留下孤立低位代理（写出时会变成 U+FFFD）。 */
+function appendOutput(current: string, chunk: string): string {
+  const next = current + chunk;
+  if (next.length <= OUTPUT_LIMIT) return next;
+  const tail = next.slice(-OUTPUT_LIMIT);
+  const first = tail.charCodeAt(0);
+  return first >= 0xdc00 && first <= 0xdfff ? tail.slice(1) : tail;
 }
 
 function stripAnsi(value: string): string {
@@ -205,12 +210,15 @@ function waitForChild(
     }, timeoutMs);
     timer.unref?.();
 
+    // 多字节字符可能被管道切在两个 chunk 之间：必须流式解码，不能逐 chunk toString
+    const stdoutDecoder = new StringDecoder('utf8');
+    const stderrDecoder = new StringDecoder('utf8');
     child.stdout.on('data', (chunk: Buffer) => {
-      stdout = appendOutput(stdout, chunk);
+      stdout = appendOutput(stdout, stdoutDecoder.write(chunk));
       emitOutput();
     });
     child.stderr.on('data', (chunk: Buffer) => {
-      stderr = appendOutput(stderr, chunk);
+      stderr = appendOutput(stderr, stderrDecoder.write(chunk));
       emitOutput();
     });
     child.once('error', (error) => {
