@@ -65,6 +65,7 @@ import { parseBtwCommand } from './parseBtwCommand';
 import { shouldClearComposerAfterSend } from './utils';
 import type { ComposerDraftSendOutcome } from './composerDraftStore';
 import { useComposerRejectedUploadsStore } from '../../../../stores/composerRejectedUploadsStore';
+import { useStepLimitContinue } from '../StepLimitContinue';
 
 type VoiceInputContextValue = {
   anchor: string;
@@ -191,6 +192,7 @@ async function settleSendWithinTimeout(
 
 export function useChatInputSubmit(params: UseChatInputSubmitParams) {
   const { t } = useI18n();
+  const stepLimitContinuation = useStepLimitContinue(params.currentSessionId);
   const {
     value,
     attachments,
@@ -431,6 +433,13 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     e?.preventDefault();
     discardPendingScheduleDraft();
     const trimmedValue = (opts?.content ?? value).trim();
+    if (!trimmedValue && attachments.length === 0 && !pendingAppshot && !pendingPromptCommand
+      && !pendingAgentSelection && sessionReferences.length === 0 && artifactReferences.length === 0
+      && !useComposerStore.getState().pendingCommand && !disabled && !isProcessing && !isUploading
+      && stepLimitContinuation.available) {
+      await stepLimitContinuation.continueTurn();
+      return;
+    }
     let preferredAgentIdOverride: string | null | undefined;
     let selectedAgentOverride: ComposerAgentSelection | null | undefined;
     // 任务 17：命令 chip（/goal /schedule /loop /workflow）发送时拼回 `/${id} ` 前缀，

@@ -2,6 +2,7 @@ import React from 'react';
 import type { UseVoiceInputReturn } from '../../../../hooks/useVoiceInput';
 import { SendButton } from './SendButton';
 import { VoiceInputButton } from './VoiceInputButton';
+import { useStepLimitContinue } from '../StepLimitContinue';
 
 const LiveVoiceButton = React.lazy(() => import('../../voice/LiveVoiceButton').then((module) => ({
   default: module.LiveVoiceButton,
@@ -41,39 +42,43 @@ export const ComposerCoreActions: React.FC<ComposerCoreActionsProps> = ({
   hasContinuation,
   onStop,
   onContinue,
-}) => (
-  <div data-testid="composer-core-actions" className="contents">
-    {actions.map((action) => {
-      if (action === 'voice-input') {
-        return <VoiceInputButton key={action} voice={voice} disabled={disabled} />;
-      }
-      if (action === 'live-voice') {
-        if (!sessionId) {
-          throw new Error('composer scheduled live-voice without a sessionId');
+}) => {
+  const stepLimitContinuation = useStepLimitContinue(sessionId);
+  return (
+    <div data-testid="composer-core-actions" className="contents">
+      {actions.map((action) => {
+        if (action === 'voice-input') {
+          return <VoiceInputButton key={action} voice={voice} disabled={disabled} />;
         }
-        return <React.Suspense key={action} fallback={null}>
-          <LiveVoiceButton
-            sessionId={sessionId}
-            hasMessages={hasMessages}
-            disabled={disabled}
-            configured={configured}
+        if (action === 'live-voice' && !stepLimitContinuation.available) {
+          if (!sessionId) {
+            throw new Error('composer scheduled live-voice without a sessionId');
+          }
+          return <React.Suspense key={action} fallback={null}>
+            <LiveVoiceButton
+              sessionId={sessionId}
+              hasMessages={hasMessages}
+              disabled={disabled}
+              configured={configured}
+            />
+          </React.Suspense>;
+        }
+        return (
+          <SendButton
+            key={action}
+            disabled={disabled && !isProcessing}
+            // action==='stop' 已经含「无草稿」判定，所以这里不会误进排队发送分支。
+            isProcessing={isProcessing || action === 'stop'}
+            isInterrupting={isInterrupting}
+            hasContent={hasContent}
+            canSendEmpty={stepLimitContinuation.available}
+            hasContinuation={action === 'continue' && hasContinuation}
+            type="submit"
+            onStop={onStop}
+            onContinue={onContinue}
           />
-        </React.Suspense>;
-      }
-      return (
-        <SendButton
-          key={action}
-          disabled={disabled && !isProcessing}
-          // action==='stop' 已经含「无草稿」判定，所以这里不会误进排队发送分支。
-          isProcessing={isProcessing || action === 'stop'}
-          isInterrupting={isInterrupting}
-          hasContent={hasContent}
-          hasContinuation={action === 'continue' && hasContinuation}
-          type="submit"
-          onStop={onStop}
-          onContinue={onContinue}
-        />
-      );
-    })}
-  </div>
-);
+        );
+      })}
+    </div>
+  );
+};

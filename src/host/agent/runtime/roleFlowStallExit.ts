@@ -35,6 +35,18 @@ function latestUserMessageId(messages: readonly Message[]): string {
   return '';
 }
 
+/** Log-only turn count; meta and rewound messages do not advance the user flow. */
+function userTurnsSinceLatestSeed(messages: readonly Message[]): number {
+  let turns = 0;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.role !== 'user' || msg.isMeta || msg.visibility === 'rewound') continue;
+    if (/^\/(?:create-role|edit-role)(?:\s|$)/.test(msg.content.trim())) return turns;
+    turns++;
+  }
+  return 0;
+}
+
 /**
  * 最近一次 /create-role|/edit-role 种子之后，历史里是否有成功的 propose_role 调用。
  * 有 = 流程已产出过草稿（之后被用户确认、移走或读盘失败都不再是「没产出」），
@@ -163,7 +175,13 @@ export async function settleRoleFlowStallOnTextBreak(input: RoleFlowStallInput):
   try {
     await input.assembly.addAndPersistMessage(message);
     input.ctx.onEvent({ type: 'message', data: message });
-    logger.info('[AgentLoop] Role flow stall exit surfaced: true stall', { sessionId: input.ctx.sessionId, skillName });
+    const userTurnsSinceSeed = userTurnsSinceLatestSeed(input.ctx.messages);
+    logger.info('[AgentLoop] Role flow stall exit surfaced: true stall', {
+      sessionId: input.ctx.sessionId,
+      skillName,
+      userTurnsSinceSeed,
+      turnKind: userTurnsSinceSeed === 0 ? 'seed' : 'follow-up',
+    });
     return true;
   } catch (error) {
     logger.warn('[AgentLoop] Role flow stall exit message not persisted', {
