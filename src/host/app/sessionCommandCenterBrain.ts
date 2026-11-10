@@ -4,6 +4,9 @@ import { getTextForegroundToolNames } from '../tools/protocolRegistry';
 import { detectTaskFeatures } from '../prompts/systemReminders';
 import { getNativeConnectorToolNamesForIntent } from '../connectors/nativeConnectorIntent';
 import { isRoleProactivityChatIntent } from './roleProactivityChatIntent';
+import { resolveModelInfo } from '../model/modelInfo';
+import type { MessageAttachment } from '../../shared/contract/message';
+import type { ConversationModelSpec } from '../../shared/contract/conversationEnvelope';
 
 // 不导出：web/桌面两条装配路都经 getSessionCommandCenterBrainContextForPrompt 取块，
 // 导出常量只会引回「第二条装配路直接拼常量」的旧形态（rework r1）。
@@ -106,9 +109,29 @@ export function getSessionCommandCenterBrainContextForPrompt(prompt: string): st
  * 豁免、deferred 预载的收窄判据三方同判（rework r1：漏传会让白名单放行范围外
  * 连接器写，预载却按收窄不送 schema，两个判决互相矛盾）。无手选时传 undefined。
  */
+/**
+ * 带图片附件的前台文字轮：模型看不见图时补 image_analyze（deferred 工具，进白名单即被预载）。
+ * 无图片、或模型自带视觉时返回 []，工具面与前缀缓存一字不动。
+ * 模型未知（桌面 envelope 未带 modelSpec）按「看不见」处理——多一个工具无害，漏掉则模型无法读图。
+ */
+export interface ForegroundImageTurn {
+  attachments?: readonly MessageAttachment[];
+  model?: ConversationModelSpec;
+}
+
+function getImageAnalyzeToolNamesForTurn(turn?: ForegroundImageTurn): string[] {
+  const hasImage = turn?.attachments?.some(
+    (a) => (a.type === 'image' || a.category === 'image') && Boolean(a.path),
+  );
+  if (!hasImage) return [];
+  const info = turn?.model ? resolveModelInfo(turn.model.provider, turn.model.model) : null;
+  return info?.supportsVision ? [] : ['image_analyze'];
+}
+
 export function getTextForegroundToolNamesForPrompt(
   prompt: string,
   allowedConnectorIds?: readonly string[],
+  imageTurn?: ForegroundImageTurn,
 ): string[] {
   const base = getTextForegroundToolNames();
   const extras: string[] = [];
@@ -123,6 +146,7 @@ export function getTextForegroundToolNamesForPrompt(
   if (isRoleProactivityChatIntent(prompt)) extras.push('set_role_proactivity');
   // 无意图命中时零副作用（不触 configService/registry）。
   extras.push(...getNativeConnectorToolNamesForIntent({ userText: prompt, allowedConnectorIds }));
+  extras.push(...getImageAnalyzeToolNamesForTurn(imageTurn));
   if (extras.length === 0) return base;
   // 存草稿轮 mail_draft 已在 extras 里，连接器扩展会再次带回同名——去重保序。
   return Array.from(new Set([...base, ...extras]));
@@ -131,6 +155,7 @@ export function getTextForegroundToolNamesForPrompt(
 export function withSessionCommandCenterBrain(
   options: AppServiceRunOptions | undefined,
   prompt?: string,
+  attachments?: readonly MessageAttachment[],
 ): AppServiceRunOptions {
   const text = prompt ?? '';
   const turnSystemContext = [
@@ -146,7 +171,10 @@ export function withSessionCommandCenterBrain(
         : SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
       SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
     ),
-    allowedToolNames: getTextForegroundToolNamesForPrompt(text, options?.toolScope?.allowedConnectorIds),
+    allowedToolNames: getTextForegroundToolNamesForPrompt(text, options?.toolScope?.allowedConnectorIds, {
+      attachments,
+      model: options?.modelSpec,
+    }),
     foregroundToolFace: true,
     turnSystemContext,
   };

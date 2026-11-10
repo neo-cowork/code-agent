@@ -533,3 +533,40 @@ describe.skipIf(!darwinForConnectors)('getTextForegroundToolNamesForPrompt — �
     expect(block).toContain('只在工具返回成功后才说已发送或已创建');
   });
 });
+
+// N-FIX-ATTACH-IMAGE-ANALYZE-GLOB-WASTE-FU1：看不见图的模型带图片附件时，前台白名单补 image_analyze。
+describe('带图片附件的前台文字轮', () => {
+  const image = {
+    id: 'a1', type: 'image' as const, category: 'image' as const, name: 'receipt.png',
+    size: 10, mimeType: 'image/png', path: '/tmp/receipt.png',
+  };
+  const textOnly = { provider: 'zhipu', model: 'glm-5' };
+  const vision = { provider: 'claude', model: 'claude-sonnet-4-6' };
+  const prompt = '这张报销单总额是多少？';
+
+  it('文本模型 + 图片：末尾追加 image_analyze，其余与无图轮逐字相同', () => {
+    const base = getTextForegroundToolNamesForPrompt(prompt);
+    const names = getTextForegroundToolNamesForPrompt(prompt, undefined, { attachments: [image], model: textOnly });
+    expect(names).toEqual([...base, 'image_analyze']);
+  });
+
+  it('无图片 / 视觉模型 / 无路径图片 / 非图片附件：与今天逐字相同', () => {
+    const base = getTextForegroundToolNamesForPrompt(prompt);
+    expect(getTextForegroundToolNamesForPrompt(prompt, undefined, { attachments: [], model: textOnly })).toEqual(base);
+    expect(getTextForegroundToolNamesForPrompt(prompt, undefined, { attachments: [image], model: vision })).toEqual(base);
+    expect(getTextForegroundToolNamesForPrompt(prompt, undefined, { attachments: [{ ...image, path: undefined }], model: textOnly })).toEqual(base);
+    expect(getTextForegroundToolNamesForPrompt(prompt, undefined, {
+      attachments: [{ ...image, type: 'file', category: 'pdf' as never }], model: textOnly,
+    })).toEqual(base);
+  });
+
+  it('桌面入口 withSessionCommandCenterBrain 与 web 同判；无图轮不变', () => {
+    const withImage = withSessionCommandCenterBrain({ modelSpec: textOnly }, prompt, [image]);
+    expect(withImage.allowedToolNames).toContain('image_analyze');
+    const noImage = withSessionCommandCenterBrain({ modelSpec: textOnly }, prompt);
+    expect(noImage.allowedToolNames).toEqual(getTextForegroundToolNamesForPrompt(prompt));
+    expect(noImage.allowedToolNames).not.toContain('image_analyze');
+    expect(withSessionCommandCenterBrain({ modelSpec: vision }, prompt, [image]).allowedToolNames)
+      .toEqual(noImage.allowedToolNames);
+  });
+});
