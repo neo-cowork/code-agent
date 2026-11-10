@@ -20,17 +20,15 @@ vi.mock('../../../src/renderer/components/features/cron/useChannelCatalog', () =
 }));
 
 import { CronJobEditor } from '../../../src/renderer/components/features/cron/CronJobEditor';
-import { buildCronJobInput } from '../../../src/renderer/components/features/cron/types';
+import type { CreateCronJobInput } from '../../../src/renderer/services/cronClient';
 import { useCronStore } from '../../../src/renderer/stores/cronStore';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 
-type CreateCronJobInput = ReturnType<typeof buildCronJobInput>;
-
 const goal = "Reply only 'received'";
 const taskName = '周一简报 carry-over';
-const createJob = vi.fn(async (input: CreateCronJobInput) => ({
-  ...input, id: 'carry-over', createdAt: 1, updatedAt: 1,
-} as CronJobDefinition));
+const createJob = vi.fn(async (input: CreateCronJobInput): Promise<CronJobDefinition> => ({
+  ...input, runsOn: input.runsOn ?? 'local', id: 'carry-over', createdAt: 1, updatedAt: 1,
+}));
 
 function field(label: string): HTMLInputElement | HTMLSelectElement {
   const element = screen.getByText(label).parentElement?.querySelector('input,select');
@@ -43,7 +41,7 @@ function change(element: HTMLElement, value: string) {
 function switchManual() { fireEvent.click(screen.getByText('手动配置')); }
 
 async function filledSimple() {
-  render(<CronJobEditor isOpen onClose={() => undefined} />);
+  render(<CronJobEditor isOpen job={null} onClose={() => undefined} />);
   await screen.findByText('简报助手');
   change(screen.getByPlaceholderText(/竞品动态/), goal);
   change(field('名称（可选）'), taskName);
@@ -93,7 +91,7 @@ describe('simple -> manual via the real CronJobEditor link', () => {
   });
 
   it('carries a nondefault cloud run location', async () => {
-    render(<CronJobEditor isOpen onClose={() => undefined} />);
+    render(<CronJobEditor isOpen job={null} onClose={() => undefined} />);
     await screen.findByText('简报助手');
     fireEvent.click(screen.getByTestId('cron-runs-on-cloud'));
     switchManual();
@@ -101,7 +99,7 @@ describe('simple -> manual via the real CronJobEditor link', () => {
   });
 
   it('③ blank name stays blank with placeholder instead of goal-derived fallback', async () => {
-    render(<CronJobEditor isOpen onClose={() => undefined} />);
+    render(<CronJobEditor isOpen job={null} onClose={() => undefined} />);
     await screen.findByText('简报助手');
     change(screen.getByPlaceholderText(/竞品动态/), goal);
     switchManual();
@@ -109,7 +107,7 @@ describe('simple -> manual via the real CronJobEditor link', () => {
   });
 
   it('blank goal switches without validation errors and keeps an empty prompt', async () => {
-    render(<CronJobEditor isOpen onClose={() => undefined} />);
+    render(<CronJobEditor isOpen job={null} onClose={() => undefined} />);
     await screen.findByText('简报助手');
     switchManual();
     expect(screen.queryByText('请填写目标')).toBeNull();
@@ -118,7 +116,7 @@ describe('simple -> manual via the real CronJobEditor link', () => {
   });
 
   it('④ simple creation budget 0.02 survives buildSimpleDraft -> buildCronJobInput -> buildDraftFromJob into Edit advanced', async () => {
-    const view = render(<CronJobEditor isOpen onClose={() => undefined} />);
+    const view = render(<CronJobEditor isOpen job={null} onClose={() => undefined} />);
     change(screen.getByPlaceholderText(/竞品动态/), goal);
     change(screen.getByTestId('cron-budget-limit-input'), '0.02');
     fireEvent.click(screen.getByText('创建自动化'));
