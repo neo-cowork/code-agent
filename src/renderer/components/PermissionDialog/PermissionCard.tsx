@@ -200,6 +200,10 @@ export function PermissionCard({
       return 'deny';
     }
     switch (level) {
+      case 'run':
+        return 'allow_run';
+      case '24h':
+        return 'allow_24h';
       case 'once':
       case 'always':
         return 'allow';
@@ -365,14 +369,14 @@ export function PermissionCard({
           if (!hideStandingGrants) {
             e.preventDefault();
             e.stopPropagation();
-            handleApproval('session');
+            handleApproval(appGrantCard ? 'session' : 'run');
           }
           break;
         case 'a':
           if (!hideStandingGrants) {
             e.preventDefault();
             e.stopPropagation();
-            handleApproval('always');
+            handleApproval(appGrantCard ? 'always' : '24h');
           }
           break;
       }
@@ -416,8 +420,8 @@ export function PermissionCard({
     { id: 'once', label: p.optionOnce, description: p.optionOnceDesc, shortcut: 'y' },
     ...(!hideStandingGrants
       ? [
-          { id: 'session', label: p.optionSession, description: p.optionSessionDesc, shortcut: 's' },
-          { id: 'always', label: p.optionAlways, description: p.optionAlwaysDesc, shortcut: 'a' },
+          { id: 'run', label: p.optionRun, description: p.optionRunDesc, shortcut: 's' },
+          { id: '24h', label: p.option24h, description: p.option24hDesc, shortcut: 'a' },
         ]
       : []),
     { id: 'deny', label: p.optionDeny, description: p.optionDenyDesc, shortcut: 'n' },
