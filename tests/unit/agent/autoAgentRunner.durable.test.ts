@@ -168,6 +168,39 @@ describe('runAutoAgentMode durable terminal containment', () => {
     expect(loggerState.warn).toHaveBeenCalledWith('Auto Agent report unavailable', { sessionId: 'session-auto-1', reason });
   });
 
+  it('publishes the usable sections when one child failed and one has real output', async () => {
+    coordinatorState.execute.mockResolvedValue({
+      success: true, strategy: 'parallel',
+      results: [
+        { agentId: 'a', agentName: 'Worker', status: 'failed', result: { success: false, output: 'retry exhausted' } },
+        { agentId: 'b', agentName: 'Reader', status: 'completed', result: { success: true, output: '已完成的摘要' } },
+        { agentId: 'c', agentName: 'Empty', status: 'completed', result: { success: true, output: 'Subagent completed without output' } },
+      ],
+      aggregatedOutput: '## Worker\n\nretry exhausted\n\n---\n\n## Reader\n\n已完成的摘要\n\n---\n\n## Empty\n\nSubagent completed without output',
+      totalDuration: 1, totalIterations: 1, totalCost: 0, errors: [],
+    });
+    const deps = makeDeps();
+    const onEvent = vi.fn();
+
+    await expect(run(deps, onEvent)).resolves.toBeUndefined();
+
+    expect(deps.addMessage).toHaveBeenCalledWith(expect.objectContaining({ content: '## Reader\n\n已完成的摘要' }));
+    expect(onEvent.mock.calls.filter(([event]) => event.type === 'error')).toEqual([]);
+  });
+
+  it('drops only the placeholder section of an aggregated report without per-agent results', async () => {
+    coordinatorState.execute.mockResolvedValue({
+      success: true, strategy: 'parallel', results: [],
+      aggregatedOutput: '## A\n\n真实内容\n\n---\n\n## B\n\nSubagent completed without output',
+      totalDuration: 1, totalIterations: 1, totalCost: 0, errors: [],
+    });
+    const deps = makeDeps();
+
+    await run(deps);
+
+    expect(deps.addMessage).toHaveBeenCalledWith(expect.objectContaining({ content: '## A\n\n真实内容' }));
+  });
+
   it('still propagates a real graph failure', async () => {
     const failure = new Error('graph execution failed');
     coordinatorState.execute.mockRejectedValue(failure);

@@ -273,6 +273,7 @@ export function createForegroundWake(
         inputHistoryVisibility: 'meta',
         runRegistration: 'auxiliary',
         maxIterations: SESSION_COMMAND_CENTER_WAKE_MAX_ITERATIONS,
+        disableAutoAgent: true,
         allowedToolNames: Array.from(new Set([
           ...(brainOptions.allowedToolNames ?? []),
           WAKE_NOOP_TOOL_NAME,

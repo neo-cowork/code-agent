@@ -97,6 +97,7 @@ describe('background subagent idle wake', () => {
         mode: 'normal',
         inputHistoryVisibility: 'meta',
         maxIterations: 1,
+        disableAutoAgent: true,
       }),
       expect.objectContaining({
         automation: expect.objectContaining({
@@ -155,6 +156,35 @@ describe('background subagent idle wake', () => {
     );
   });
 
+
+  it('does not record a failure note when the wake turn already reported and only hit its one-step budget', async () => {
+    taskManagerMocks.getSessionState.mockReturnValue({ status: 'idle' });
+    taskManagerMocks.startTask.mockImplementation(async () => {
+      const observer = taskManagerMocks.observeAgentEvents.mock.calls[0]?.[0];
+      if (!observer) throw new Error('Expected the wake observer');
+      observer('reported-session', { type: 'message', data: { id: 'm1', role: 'assistant', content: '百度热搜摘要', timestamp: 1 } });
+      observer('reported-session', { type: 'error', data: { message: 'Max iterations reached' } });
+    });
+    await seedCompletion('agent-reported', 'reported-session');
+    scheduleBackgroundSubagentIdleWake(trigger('agent-reported', 'reported-session'));
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(wakeNoteMocks.record).not.toHaveBeenCalled();
+  });
+
+  it('still records the note when the one-step budget ends without any report text', async () => {
+    taskManagerMocks.getSessionState.mockReturnValue({ status: 'idle' });
+    taskManagerMocks.startTask.mockImplementation(async () => {
+      const observer = taskManagerMocks.observeAgentEvents.mock.calls[0]?.[0];
+      if (!observer) throw new Error('Expected the wake observer');
+      observer('silent-session', { type: 'error', data: { message: 'Max iterations reached' } });
+    });
+    await seedCompletion('agent-silent', 'silent-session');
+    scheduleBackgroundSubagentIdleWake(trigger('agent-silent', 'silent-session'));
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(wakeNoteMocks.record).toHaveBeenCalledWith('silent-session', expect.any(String), { taskId: 'agent-silent', reason: 'wake_failed' });
+  });
 
   it.each([
     ['  百度页面摘要  \n使用 browser_action / Playwright；失败后改用 WebFetch。', '百度页面摘要'],

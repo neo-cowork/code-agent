@@ -69,10 +69,26 @@ async function flushWake(sessionId: string): Promise<void> {
       }
     };
     let failureMessage: string | undefined;
+    let reportedToUser = false;
     const stopObserving = taskManager.observeAgentEvents((eventSessionId, event, taskId) => {
-      if (eventSessionId !== sessionId || taskId || event.type !== 'error' || failureMessage) return;
+      if (eventSessionId !== sessionId || taskId) return;
+      if (event.type === 'message') {
+        const message = event.data as { role?: unknown; content?: unknown; toolCalls?: unknown };
+        if (message.role === 'assistant' && typeof message.content === 'string' && message.content.trim()
+          && !(Array.isArray(message.toolCalls) && message.toolCalls.length > 0)) {
+          reportedToUser = true;
+        }
+        return;
+      }
+      if (event.type !== 'error' || failureMessage) return;
       const data = event.data as { message?: unknown };
-      failureMessage = typeof data.message === 'string' ? data.message : String(data.message);
+      const text = typeof data.message === 'string' ? data.message : String(data.message);
+      // 通知轮只有 1 步预算，写完汇报恰好用满；此时的 "Max iterations reached" 不是失败。
+      if (reportedToUser && text === 'Max iterations reached') {
+        logger.info('Background wake turn used its single step to report; ignoring max-iterations marker', { sessionId });
+        return;
+      }
+      failureMessage = text;
     });
     try {
       await taskManager.startTask(
@@ -83,6 +99,7 @@ async function flushWake(sessionId: string): Promise<void> {
           mode: 'normal',
           inputHistoryVisibility: 'meta',
           maxIterations: 1,
+          disableAutoAgent: true,
         },
         messageMetadata,
         `background-subagent:${sessionId}:${Date.now()}`,
