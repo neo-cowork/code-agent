@@ -36,6 +36,7 @@ const serviceMocks = vi.hoisted(() => ({
   },
 }));
 
+vi.mock('../../../../src/host/services/infra/sessionManager', () => ({ getSessionManager: () => serviceMocks.manager }));
 vi.mock('../../../../src/host/services', () => ({
   getConfigService: vi.fn(),
   getAuthService: vi.fn(),

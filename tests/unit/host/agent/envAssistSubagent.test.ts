@@ -44,6 +44,7 @@ const persistence = vi.hoisted(() => ({
   },
 }));
 vi.mock('../../../../src/host/services', () => ({ getSessionManager: () => persistence.manager }));
+vi.mock('../../../../src/host/services/infra/sessionManager', () => ({ getSessionManager: () => persistence.manager }));
 vi.mock('../../../../src/host/permissions/envAssist/settingsPane', () => ({ canOpenEnvSettings: () => true }));
 
 vi.mock('../../../../src/host/model/modelRouter', () => ({

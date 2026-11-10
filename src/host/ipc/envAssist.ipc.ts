@@ -3,7 +3,7 @@ import { EnvAssistSchemas } from '../../shared/ipc/schemas/envAssist';
 import { ipcHost } from '../platform';
 import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import { getDatabase } from '../services/core/databaseService';
-import { getSessionManager } from '../services';
+import { getSessionManager } from '../services/infra/sessionManager';
 import { canOpenEnvSettings, openEnvSettings } from '../permissions/envAssist/settingsPane';
 
 async function findNotice(id: string): Promise<EnvAssistNotice | undefined> {
