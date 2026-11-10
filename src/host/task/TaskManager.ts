@@ -316,6 +316,7 @@ export class TaskManager extends EventEmitter {
     // workspaceScope 仍可缺省：无项目后台 run 可以继续执行读任务，但不会获得写边界。
     if (workspaceScope) orchestrator.setWorkspaceScopeAuthority(workspaceScope);
 
+    const inheritedMessageIds = new Set(session?.messages.map((message) => message.id));
     if (session?.messages.length) orchestrator.setMessages(session.messages);
     if (session?.workingDirectory) {
       orchestrator.setWorkingDirectory(session.workingDirectory, { syncWorkspaceServices: false });
@@ -351,7 +352,7 @@ export class TaskManager extends EventEmitter {
         this.emitEvent('task_cancelled', sessionId, { taskId });
       } else {
         const messages = typeof orchestrator.getMessages === 'function'
-          ? orchestrator.getMessages()
+          ? orchestrator.getMessages().filter((message) => !inheritedMessageIds.has(message.id))
           : [];
         const finalMessage = [...messages]
           .reverse()
