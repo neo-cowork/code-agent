@@ -232,6 +232,7 @@ export const expertZh = {
     },
     roleSkills: {
       title: '技能与工具',
+      toolNeedsCheck: '需核对',
       description: '从这台机器上真实可用的技能和工具里挑，勾了才允许这位专家用。',
       save: '保存',
       saving: '保存中…',
@@ -560,6 +561,7 @@ export const expertEn: typeof expertZh = {
     },
     roleSkills: {
       title: 'Skills and tools',
+      toolNeedsCheck: 'Needs checking',
       description: 'Pick from what is actually available on this machine. Only what you check here is allowed.',
       save: 'Save',
       saving: 'Saving…',
