@@ -19,6 +19,7 @@ import {
   classifyToolName,
   humanizeToolGroupLabel,
   humanizeToolStep,
+  parseDelegateSessionReceipt,
   isInternalStreamTool,
 } from '../../../utils/humanizeToolStep';
 import {
@@ -167,7 +168,8 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           tc.shortDescription,
           stepStatus,
           tc.stepLabel,
-          { connectorPrefixRendered: Boolean(connectorId) },
+          { connectorPrefixRendered: Boolean(connectorId), delegationReceipt: tc.name === 'delegate_session'
+            ? parseDelegateSessionReceipt({ success: tc.success, output: tc.result }) : undefined },
         );
         if (!connectorId) return step;
         const connector = getHumanToolLabel({

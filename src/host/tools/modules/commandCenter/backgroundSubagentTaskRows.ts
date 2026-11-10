@@ -1,4 +1,4 @@
-import type { BackgroundSubagentHandle } from '../../../agent/backgroundSubagentRegistry';
+import type { AgentTreeNode } from '../../../../shared/contract/agentTree';
 import { composeSessionCommandTaskResultText } from '../../../../shared/constants/sessionCommandCenter';
 
 const BACKGROUND_SUBAGENT_TITLE_MAX_CHARS = 30;
@@ -11,20 +11,23 @@ function shortTitle(title: string | undefined): string {
   return `${chars.slice(0, BACKGROUND_SUBAGENT_TITLE_MAX_CHARS - 1).join('')}…`;
 }
 
-function resultOrError(handle: BackgroundSubagentHandle): string | undefined {
-  const detail = handle.status === 'failed'
-    ? handle.error ?? handle.result?.output
-    : handle.result?.output ?? handle.error;
-  return composeSessionCommandTaskResultText(detail);
-}
-
 export function formatBackgroundSubagentRows(
-  handles: BackgroundSubagentHandle[],
+  nodes: AgentTreeNode[],
   startIndex: number,
+  now: number,
+  hasRunningCommandTasks: boolean,
 ): string[] {
-  return handles.map((handle, index) => {
-    const detail = resultOrError(handle);
-    return `${startIndex + index + 1}. ${shortTitle(handle.title)} [${handle.status}] id=${handle.agentId}`
+  const rows = nodes.map((node, index) => {
+    const name = node.displayName || (node.role !== 'background' && node.role !== 'agent' ? node.role : undefined)
+      || shortTitle(node.task);
+    const detail = composeSessionCommandTaskResultText(node.progress);
+    const duration = node.createdAt === undefined ? 'unknown'
+      : `${Math.max(0, Math.round(((node.completedAt ?? now) - node.createdAt) / 1000))} s`;
+    return `${startIndex + index + 1}. ${name} [${node.status}] id=${node.id} duration=${duration}`
       + (detail ? `：${detail}` : '');
   });
+  if (hasRunningCommandTasks || nodes.some((node) => node.status === 'running' || node.status === 'running-recovered' || node.status === 'unknown')) {
+    rows.push('No remaining-time data exists. Do not estimate an ETA. Use only this fresh status read; finished helpers must never be described as running.');
+  }
+  return rows;
 }
