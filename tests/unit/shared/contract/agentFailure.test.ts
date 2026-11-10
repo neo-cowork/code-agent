@@ -14,6 +14,7 @@ describe('AgentFailureCode contract', () => {
       'blocked-by-parent-role',
       'permission-denied',
       'tool-unavailable',
+      'invalid-arguments',
       'budget-exhausted',
       'timeout',
       'parent-gone',
@@ -50,6 +51,14 @@ describe('AgentFailureCode contract', () => {
     expect(inferAgentFailureCode({ error: 'Blocked by failed dependencies: a' })).toBe(AgentFailureCode.DependencyFailed);
     expect(inferAgentFailureCode({ error: 'Unknown workflow: qa' })).toBe(AgentFailureCode.ToolUnavailable);
     expect(inferAgentFailureCode({ error: 'provider inference failed' })).toBe(AgentFailureCode.ModelError);
+  });
+
+  it('keeps wait argument validation distinct from execution exhaustion', () => {
+    const error = 'foregroundBlockingBudgetMs must be less than role execution timeout (1200000 >= 900000)';
+    expect(inferAgentFailureCode({ error })).toBe(AgentFailureCode.InvalidArguments);
+    expect(inferAgentFailureCode({ failureCode: AgentFailureCode.InvalidArguments, error })).toBe(AgentFailureCode.InvalidArguments);
+    expect(inferAgentFailureCode({ error: 'execution timeout' })).toBe(AgentFailureCode.Timeout);
+    expect(inferAgentFailureCode({ error: 'max token budget exhausted' })).toBe(AgentFailureCode.BudgetExhausted);
   });
 
   it('guards persisted strings before consumers treat them as known codes', () => {

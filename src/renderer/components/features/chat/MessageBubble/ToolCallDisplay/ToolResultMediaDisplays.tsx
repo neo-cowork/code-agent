@@ -475,7 +475,7 @@ export function VideoResultDisplay({
               <button
                 onClick={handleShowInFolder}
                 className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-700/50 text-zinc-300 hover:bg-gray-600/50 text-xs"
-                title="在 Finder 中显示"
+                title="在访达中显示"
               >
                 <Folder className="w-3 h-3" />
               </button>

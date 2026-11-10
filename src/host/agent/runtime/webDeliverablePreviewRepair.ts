@@ -13,7 +13,7 @@ import { basename, extname } from 'path';
 import type { Message, ToolCall, ToolResult } from '../../../shared/contract';
 import type { SystemEventMessageMetadata } from '../../../shared/contract/systemEventRegistry';
 import { formatPreviewHealthMessage } from '../../../shared/i18n/previewHealth';
-import { app } from '../../platform';
+import { readPreviewHealthLocale } from './browser/previewHealthLocale';
 import { createLogger } from '../../services/infra/logger';
 import type { ContextAssembly } from './contextAssembly';
 import type { RunFinalizer } from './runFinalizer';
@@ -140,7 +140,7 @@ async function checkWebDeliverablePreview(args: WebDeliverablePreviewRepairArgs)
     state.pending.delete(absolutePath);
     state.reported.add(absolutePath);
   }
-  const locale = app.getLocale?.() ?? null;
+  const locale = readPreviewHealthLocale();
   let helpers: DesignPreviewRepairHelpers;
   let assessment;
   try {
@@ -183,7 +183,7 @@ async function checkWebDeliverablePreview(args: WebDeliverablePreviewRepairArgs)
       ? formatPreviewHealthMessage('webRepairFixed', {}, locale)
       : formatPreviewHealthMessage('webRepairRemaining', {
         count: remaining,
-        categories: categories.map((code) => formatPreviewHealthMessage(code, {}, locale)).join('、'),
+        categories: categories.map((code) => formatPreviewHealthMessage(code, {}, locale)).join(formatPreviewHealthMessage('categorySeparator', {}, locale)),
       }, locale);
     runFinalizer.emitTaskProgress('tool_running', outcome);
     await persistPreviewNotice(args, outcome);

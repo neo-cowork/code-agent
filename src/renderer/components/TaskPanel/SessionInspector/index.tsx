@@ -18,6 +18,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
 import { useI18n } from '../../../hooks/useI18n';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import { useSessionStore } from '../../../stores/sessionStore';
 import {
   fetchSessionTrace,
@@ -100,14 +101,14 @@ function AssemblyPanel({ model }: { model: AssemblyModel }) {
           <div className="flex gap-2">
             <span className="w-20 shrink-0 text-zinc-600">{assembly.compaction}</span>
             <span className="text-zinc-300">
-              {model.compactionCount > 0 ? fill(assembly.compactionSummary, { count: String(model.compactionCount) }) : assembly.compactionNone}
+              {model.compactionCount > 0 ? interpolatePlural(assembly.compactionSummary, model.compactionCount) : assembly.compactionNone}
             </span>
           </div>
           <div className="flex gap-2">
             <span className="w-20 shrink-0 text-zinc-600">{assembly.verification}</span>
             <span className="text-zinc-300">
               {model.verificationCount > 0
-                ? `${fill(assembly.verificationSummary, { count: String(model.verificationCount) })}${model.verificationSkippedCount > 0 ? ` · ${fill(assembly.verificationSkipped, { count: String(model.verificationSkippedCount) })}` : ''}`
+                ? `${interpolatePlural(assembly.verificationSummary, model.verificationCount)}${model.verificationSkippedCount > 0 ? ` · ${interpolatePlural(assembly.verificationSkipped, model.verificationSkippedCount)}` : ''}`
                 : assembly.verificationNone}
             </span>
           </div>
@@ -205,7 +206,7 @@ export const SessionInspector: React.FC<{ targetTurn?: number | null; targetNonc
           className="flex items-start gap-1.5 rounded-md border border-badge-warning/30 bg-amber-500/10 px-2 py-1 text-[11px] text-badge-warning"
         >
           <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
-          {fill(t.sessionInspector.skippedLines, { count: String(read.skippedLines) })}
+          {interpolatePlural(t.sessionInspector.skippedLines, read.skippedLines)}
         </div>
       )}
       <AssemblyPanel model={assemblyModel} />

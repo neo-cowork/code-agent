@@ -5,6 +5,8 @@
 import React, { useState, useMemo } from 'react';
 import { Copy, Check, ChevronDown, ChevronRight } from 'lucide-react';
 import { useI18n } from '../../../../../hooks/useI18n';
+import { openExternalLink } from '../../../../../utils/platform';
+import { Button } from '../../../../primitives';
 
 // ============================================================================
 // Helpers
@@ -40,8 +42,8 @@ const CommandBlock: React.FC<CommandBlockProps> = ({ label, command, copyTitle, 
   return (
     <div className="space-y-1">
       <span className="text-xs text-zinc-400">{label}</span>
-      <div className="flex items-center gap-2">
-        <code className="flex-1 text-xs text-zinc-300 bg-zinc-800 px-2 py-1.5 rounded font-mono truncate">
+      <div className="flex items-start gap-2">
+        <code className="flex-1 text-xs text-zinc-300 bg-zinc-800 px-2 py-1.5 rounded font-mono whitespace-pre-wrap break-all">
           {command}
         </code>
         <button
@@ -69,18 +71,13 @@ export const InstallGuide: React.FC = () => {
   const { t } = useI18n();
   const installText = t.settings.localBridge.installGuide;
   const [showMore, setShowMore] = useState(false);
+  const [showManualUninstall, setShowManualUninstall] = useState(false);
   const platform = useMemo(() => detectPlatform(), []);
 
-  const installCommands: Record<Platform, string> = {
-    macOS: `open ${DOWNLOAD_PAGE_URL}`,
-    Linux: `xdg-open ${DOWNLOAD_PAGE_URL}`,
-    Windows: `Start-Process "${DOWNLOAD_PAGE_URL}"`,
-  };
-
-  const updateCommands: Record<Platform, string> = {
-    macOS: `open ${DOWNLOAD_PAGE_URL}`,
-    Linux: `xdg-open ${DOWNLOAD_PAGE_URL}`,
-    Windows: `Start-Process "${DOWNLOAD_PAGE_URL}"`,
+  const handleDownload = () => {
+    if (!openExternalLink(DOWNLOAD_PAGE_URL)) {
+      window.open(DOWNLOAD_PAGE_URL, '_blank');
+    }
   };
 
   const uninstallCommands: Record<Platform, string> = {
@@ -98,12 +95,10 @@ export const InstallGuide: React.FC = () => {
         <span className="text-xs text-zinc-500">{installText.autoDetect}</span>
       </div>
 
-      <CommandBlock
-        label={installText.install}
-        command={installCommands[platform]}
-        copyTitle={installText.copyCommand}
-        copiedLabel={installText.copied}
-      />
+      <div className="space-y-1">
+        <span className="text-xs text-zinc-400">{installText.install}</span>
+        <div><Button size="sm" variant="secondary" onClick={handleDownload}>{installText.downloadLatest}</Button></div>
+      </div>
 
       <button
         onClick={() => setShowMore(!showMore)}
@@ -115,18 +110,32 @@ export const InstallGuide: React.FC = () => {
 
       {showMore && (
         <div className="space-y-3 pl-2 border-l-2 border-zinc-700">
-          <CommandBlock
-            label={installText.update}
-            command={updateCommands[platform]}
-            copyTitle={installText.copyCommand}
-            copiedLabel={installText.copied}
-          />
-          <CommandBlock
-            label={installText.uninstall}
-            command={uninstallCommands[platform]}
-            copyTitle={installText.copyCommand}
-            copiedLabel={installText.copied}
-          />
+          <div className="space-y-1">
+            <span className="text-xs text-zinc-400">{installText.update}</span>
+            <div><Button size="sm" variant="secondary" onClick={handleDownload}>{installText.downloadLatest}</Button></div>
+          </div>
+          <div className="space-y-2">
+            <span className="text-xs text-zinc-400">{installText.uninstall}</span>
+            <p className="text-xs text-zinc-400">{installText.uninstallDescription}</p>
+            <button /* ds-allow:button: 本地桥接手动卸载高级折叠触发器，纯文本 chevron 行，Button primitive 变体会强加按钮内边距与背景 */
+              onClick={() => setShowManualUninstall(!showManualUninstall)}
+              className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
+            >
+              {showManualUninstall ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+              {installText.viewManualUninstallSteps}
+            </button>
+            {showManualUninstall && (
+              <div className="space-y-2 pl-2 border-l-2 border-zinc-700">
+                <p className="text-xs text-badge-warning">{installText.uninstallRiskHint}</p>
+                <CommandBlock
+                  label={installText.uninstall}
+                  command={uninstallCommands[platform]}
+                  copyTitle={installText.copyCommand}
+                  copiedLabel={installText.copied}
+                />
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

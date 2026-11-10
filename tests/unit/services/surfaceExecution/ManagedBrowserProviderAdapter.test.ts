@@ -389,8 +389,10 @@ describe('ManagedBrowserProviderAdapter', () => {
 
     expect(fake.service.getDomSnapshot).toHaveBeenCalledTimes(2);
     expect(observed.metadata?.surfaceObservationV1).toMatchObject({
-      elementRefs: [{ ref: targetRef.refId }],
+      elementCount: 1,
+      elementKinds: ['browser-element'],
     });
+    expect(observed.metadata?.surfaceObservationV1).not.toHaveProperty('elementRefs');
 
     const clicked = await adapter.execute({
       identity,
@@ -431,10 +433,13 @@ describe('ManagedBrowserProviderAdapter', () => {
         overall: 'delivered_unverified',
         successorState: {
           target: { origin: 'https://example.test' },
-          elementRefs: [{ backendNodeId: 42, selectorFallback: '#save' }],
+          elementCount: 1,
+          elementKinds: ['browser-element'],
         },
       },
     });
+    expect((result.metadata?.surfaceExecutionActionResultV1 as { successorState: Record<string, unknown> })
+      .successorState).not.toHaveProperty('elementRefs');
     const binding = adapter.getBinding(identity);
     expect(binding?.serviceKey).toBe(managedBrowserServiceKey(identity));
     expect(binding?.predecessorStateId).toBe(

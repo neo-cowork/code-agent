@@ -196,6 +196,24 @@ export class PendingApprovalRepository {
     return row ? rowToRecord(row) : null;
   }
 
+  listClosedToolApprovalsWithPrefixStack(prefix: string): PendingApprovalRecord[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT * FROM pending_approvals
+             WHERE kind = 'tool_approval' AND status != 'pending' AND payload_json LIKE ?
+             ORDER BY submitted_at DESC`,
+        )
+        .all(`%${prefix}${prefix}%`) as SQLiteRow[]
+    ).map(rowToRecord);
+  }
+
+  updatePayloadJson(id: string, payloadJson: string): void {
+    this.db
+      .prepare(`UPDATE pending_approvals SET payload_json = ? WHERE id = ?`)
+      .run(payloadJson, id);
+  }
+
   /**
    * 仅用于测试 / 维护工具，业务路径不应使用。
    */

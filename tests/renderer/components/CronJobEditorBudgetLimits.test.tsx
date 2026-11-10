@@ -191,4 +191,18 @@ describe('N-CRON-BUDGET-EXPOSE 编辑器额度字段', () => {
     await waitFor(() => expect(screen.getByText('单次预算上限必须是大于等于 0 的数字')).toBeTruthy());
     expect(updateJob).not.toHaveBeenCalled();
   });
+
+  it('非事件模板填参步骤把单次预算带进创建载荷', async () => {
+    const createJob = vi.fn(async (_input: unknown) => makeJob());
+    useCronStore.setState({ createJob });
+    render(<CronJobEditor isOpen job={null} onClose={() => undefined} />);
+
+    fireEvent.click(screen.getByText('从模板创建'));
+    fireEvent.click(await screen.findByText('每日前瞻'));
+    fireEvent.change(screen.getByTestId('cron-budget-limit-input'), { target: { value: '2' } });
+    fireEvent.click(screen.getByText('创建任务'));
+
+    await waitFor(() => expect(createJob).toHaveBeenCalledTimes(1));
+    expect(createJob.mock.calls[0]?.[0]).toMatchObject({ maxRunBudget: 2 });
+  });
 });
