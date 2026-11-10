@@ -53,7 +53,9 @@ export const DateTimeInput24: React.FC<DateTimeInput24Props> = ({
         disabled={disabled}
         inputSize={size}
         fullWidth={false}
-        className="!w-auto"
+        // WebKit paints today's date as an empty field's hint. Keep it blank
+        // until focused so a hint cannot be mistaken for a selected date.
+        className={`!w-auto ${date ? '' : '[&:not(:focus)::-webkit-datetime-edit]:opacity-0'}`}
         onChange={(event) => {
           const next = event.target.value;
           onChange(/^\d{4}-\d{2}-\d{2}$/.test(next) ? `${next}T${time}${suffix}` : '');
