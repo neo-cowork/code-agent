@@ -116,7 +116,10 @@ export async function resolveStickyStrictSkillInvocation(
     return null;
   }
 
-  const invocation = await resolveSkillInvocation(seed.text, ctx.workingDirectory);
+  const invocation = await resolveSkillInvocation(seed.text, ctx.workingDirectory, {
+    sessionId: ctx.sessionId,
+    toolScope: ctx.toolScope,
+  });
   if (!invocation || !isStickyStrictSkill(invocation)) {
     return null;
   }
