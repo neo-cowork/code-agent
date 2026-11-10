@@ -62,4 +62,14 @@ describe('grantWriteFolderFromParkedApproval 兄弟放行', () => {
     await call();
     expect(h.respond.mock.calls.map((c) => c[1])).toEqual(['req-0']);
   });
+
+  it('同文件夹但 payload 无 writeGrantFolder 的行（非写边界成因停车）不被兄弟放行，仍 pending', async () => {
+    const notes = path.join(dir, 'notes');
+    h.rows = h.rows.map((r, i) => (i === 2
+      ? { ...r, payloadJson: JSON.stringify({ sessionId: 's1', type: 'file_write', argsSummary: path.join(notes, 'c.md') }) }
+      : r));
+    h.grantResult = { status: 'granted', folder: notes, jobId: 'j' };
+    await call();
+    expect(h.respond.mock.calls.map((c) => c[1]).sort()).toEqual(['req-0', 'req-1']);
+  });
 });

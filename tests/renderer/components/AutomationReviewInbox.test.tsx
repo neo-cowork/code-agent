@@ -684,6 +684,19 @@ describe('AutomationReviewInbox', () => {
       expect(ipcInvoke.mock.calls.map((c) => c[1]).sort()).toEqual(['perm_g0', 'perm_g1', 'perm_g2']);
     });
 
+    it('无 writeGrantFolder 的同文件夹行不并入可授权组卡，仍单独一卡', async () => {
+      const folder = '/Users/leo/Documents/morning-notes';
+      listParkedApprovals.mockResolvedValue([
+        makeParked({ id: 'perm_b0', argsPreview: `${folder}/a.md`, writeGrantFolder: folder }),
+        makeParked({ id: 'perm_b1', argsPreview: `${folder}/b.md`, writeGrantFolder: folder }),
+        makeParked({ id: 'perm_other', argsPreview: `${folder}/c.md` }),
+      ]);
+      render(<AutomationReviewInbox />);
+      await screen.findAllByTestId('parked-approval-item');
+      expect(screen.getAllByTestId('parked-approval-item')).toHaveLength(2);
+      expect(screen.getAllByTestId('parked-allow-folder')).toHaveLength(1);
+    });
+
     it('kept_existing：被点的由 host 放行，同卡其余逐条批准', async () => {
       const folder = '/Users/leo/Documents/morning-notes';
       listParkedApprovals.mockResolvedValue(['a.md', 'b.md'].map((n, i) =>

@@ -453,9 +453,14 @@ export function parkedSiblingsCoveredByGrant(
   for (const row of rows) {
     if (row.id === exceptRequestId) continue;
     try {
-      const payload = JSON.parse(row.payloadJson) as { sessionId?: string | null; type?: string; argsSummary?: string };
+      const payload = JSON.parse(row.payloadJson) as {
+        sessionId?: string | null; type?: string; argsSummary?: string; writeGrantFolder?: string;
+      };
       if (payload.sessionId !== sessionId) continue;
       if (payload.type !== 'file_write' && payload.type !== 'file_edit') continue;
+      // writeGrantFolder 是「仅因写边界而停车」的唯一记录（停车时 isBoundaryOnlyAsk 才写入）：
+      // 缺失或不等的行（只读档/guardFabric/确认门/不确定目标等成因）不借授权自动放行。
+      if (payload.writeGrantFolder !== folder) continue;
       if (writeGrantFolderForTarget(payload.argsSummary) === folder) covered.push(row.id);
     } catch {
       // 损坏的 payload 不放行
