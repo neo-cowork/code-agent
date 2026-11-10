@@ -1,13 +1,3 @@
-// ============================================================================
-// SpawnGuard - 子代理并发守卫 + 生命周期管理
-// ============================================================================
-//
-// 借鉴 Codex CLI 的 guards.rs：
-// - 并发限制（MAX_TREE_AGENTS / DEFAULT_SPAWN_DEPTH / HARD_MAX_SPAWN_DEPTH）
-// - 持有 executor promise + AbortController 引用
-// - RAII 风格 reserve/release
-// ============================================================================
-
 import { writeFile, readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { createLogger } from '../services/infra/logger';
@@ -22,7 +12,7 @@ import {
   type SwarmRunRef,
   type SwarmRunScope,
 } from '../../shared/contract/swarm';
-import { buildSubagentCompletionRecord } from './subagentCompletionNotification';
+import { formatManagedAgentNotification, matchesNotificationScope, persistManagedAgentTerminal } from './spawnGuardNotification';
 import {
   createAgentMessage,
   createTextMessage,
@@ -37,7 +27,7 @@ import {
   createSlotCancellationError,
   getSpawnGuardStatePath,
   buildManagedAgentRecoveryPlan,
-  isLiveRunningStatus,
+  isLiveRunningStatus, hasLiveBackgroundAncestor, finishManagedAgentChildren, resolveManagedWaiterId,
   DEFAULT_MAX_AGENTS,
   DEFAULT_MAX_DEPTH,
   HARD_MAX_DEPTH,
@@ -67,21 +57,11 @@ export type {
 
 const logger = createLogger('SpawnGuard');
 
-// ============================================================================
-// Types
-// ============================================================================
-
-// ============================================================================
 // 结构化 Agent 消息协议（本体在 ./messageOrigin，此处 re-export 保持既有 import 路径）
-// ============================================================================
 
 export { createAgentMessage, createTextMessage } from './messageOrigin';
 // AgentMessageType 无仓内 import 消费方（knip 棘轮），不 re-export；spawnGuard 内部自用走上方 import。
 export type { AgentMessage } from './messageOrigin';
-
-// ============================================================================
-// SpawnGuard
-// ============================================================================
 
 class SpawnGuard {
   private agents: Map<string, ManagedAgent> = new Map();
@@ -373,11 +353,14 @@ class SpawnGuard {
     ) {
       throw new Error('Scoped SpawnGuard parent agent id must belong to the same run scope.');
     }
+    const waiterAgentId = resolveManagedWaiterId(options.waiterAgentId, this.agents, scope?.sessionId ?? treeId, options.parentRunId ?? scope?.parentNativeRunId);
     if (!options.slotAcquired) {
       this.incrementSlot(this.resolveSlotIdentity(scope ?? treeId).key);
     }
 
     const agent: ManagedAgent = {
+      waiterAgentId,      parentRunId: options.parentRunId ?? scope?.parentNativeRunId,
+      background: options.background,
       id,
       completion: options.completion,
       role,
@@ -491,7 +474,6 @@ class SpawnGuard {
     }
     return cancelled;
   }
-
   reapOrphanedDescendants(
     reason: string = 'parent-gone',
     scope?: SpawnGuardScopeFilter,
@@ -509,7 +491,6 @@ class SpawnGuard {
     }
     return cancelled;
   }
-
   /**
    * Process-wide shutdown only: cancel every running agent and release slots.
    * User/run/session cancellation must call cancelRun/cancelSession instead.
@@ -566,6 +547,19 @@ class SpawnGuard {
       cancelled += 1;
     }
     return cancelled;
+  }
+
+  /** Close only foreground children owned by this Native run. Detached children keep their wake path. */
+  settleParentRun(sessionId: string, parentRunId: string, cancelled = false): number {
+    let count = 0;
+    for (const agent of this.list({ sessionId })) {
+      if (agent.parentRunId !== parentRunId || !isLiveRunningStatus(agent.status)) continue;
+      if (!cancelled && (agent.background || hasLiveBackgroundAncestor(agent, this.agents))) continue;
+      this.cancelAgent(agent, 'parent-cancel');
+      count++;
+    }
+    if (count) logger.info(`settleParentRun: cancelled ${count} subagents`, { sessionId, parentRunId });
+    return count;
   }
 
   private cancelAgent(agent: ManagedAgent, reason: string): void {
@@ -643,31 +637,7 @@ class SpawnGuard {
    * Format an async notification when an agent completes (Codex-style XML).
    */
   formatNotification(agent: ManagedAgent): string {
-    return buildSubagentCompletionRecord({
-      agentId: agent.id,
-      title: agent.completion?.title ?? agent.task,
-      role: agent.role,
-      kind: agent.completion?.kind,
-      status: agent.status === 'completed'
-        ? 'completed'
-        : agent.status === 'cancelled'
-          ? 'cancelled'
-          : agent.status === 'killed'
-            ? 'killed'
-            : 'failed',
-      output: agent.result?.output,
-      error: agent.error,
-      startedAt: agent.createdAt,
-      finishedAt: agent.completedAt,
-      failureCode: agent.result?.failureCode,
-      missingTools: agent.result?.missingTools,
-      toolsUsed: agent.result?.toolsUsed,
-      iterations: agent.result?.iterations,
-      cost: agent.result?.cost,
-      sessionId: agent.sessionId,
-      runId: agent.runId,
-      treeId: agent.treeId,
-    }).content;
+    return formatManagedAgentNotification(agent);
   }
 
   /**
@@ -766,6 +736,8 @@ class SpawnGuard {
    * Also auto-queue a notification for the parent agent to pick up.
    */
   private fireOnComplete(agent: ManagedAgent): void {
+    finishManagedAgentChildren(agent, this.agents, (child) => this.cancelAgent(child, 'parent-cancel'));
+    persistManagedAgentTerminal(agent);
     // Auto-queue notification for parent agent (Codex-style async notification)
     this.pendingNotifications.push({
       sessionId: agent.sessionId,
@@ -798,7 +770,7 @@ class SpawnGuard {
     const matched: string[] = [];
     const remaining: PendingAgentNotification[] = [];
     for (const entry of this.pendingNotifications) {
-      if (this.matchesNotificationScope(entry, scope)) {
+      if (matchesNotificationScope(entry, scope)) {
         matched.push(entry.content);
       } else {
         remaining.push(entry);
@@ -842,36 +814,16 @@ class SpawnGuard {
     return removed;
   }
 
-  private matchesNotificationScope(
-    entry: PendingAgentNotification,
-    scope: SpawnGuardScopeFilter,
-  ): boolean {
-    if (!entry.sessionId) {
-      return !scope.runId && entry.treeId === scope.sessionId;
-    }
-    if (entry.sessionId !== scope.sessionId) return false;
-    if (scope.runId && entry.runId !== scope.runId) return false;
-    return !scope.treeId || entry.treeId === scope.treeId;
-  }
 
-  /**
-   * Get the list of tools that subagents should NOT have access to.
-   */
   getDisabledTools(): string[] {
     return SUBAGENT_DISABLED_TOOLS;
   }
 
-  /**
-   * Get additional disabled tools for read-only roles (explorer, reviewer).
-   * These roles should not modify files — enforce at tool level, not just prompt level.
-   */
   getReadonlyDisabledTools(): string[] {
     return [...SUBAGENT_DISABLED_TOOLS, ...READONLY_DISABLED_TOOLS];
   }
 
-  // ==========================================================================
   // 状态持久化 + 恢复
-  // ==========================================================================
 
   /**
    * Persist SpawnGuard state to disk for crash recovery.
@@ -901,7 +853,7 @@ class SpawnGuard {
         recoveryPlan: agent.recoveryPlan,
       })),
       pendingNotifications: persistedScope
-        ? this.pendingNotifications.filter((entry) => this.matchesNotificationScope(entry, persistedScope))
+        ? this.pendingNotifications.filter((entry) => matchesNotificationScope(entry, persistedScope))
         : [...this.pendingNotifications],
       persistedAt: Date.now(),
     };
@@ -1015,7 +967,7 @@ class SpawnGuard {
           }
           return { treeId: DEFAULT_TREE_ID, content: entry };
         }
-        if (expectedScope && !guard.matchesNotificationScope(entry, expectedScope)) {
+        if (expectedScope && !matchesNotificationScope(entry, expectedScope)) {
           throw new Error('Persisted SpawnGuard notification scope mismatch.');
         }
         return entry;
@@ -1030,9 +982,7 @@ class SpawnGuard {
   }
 }
 
-// ============================================================================
 // Singleton
-// ============================================================================
 
 let instance: SpawnGuard | null = null;
 

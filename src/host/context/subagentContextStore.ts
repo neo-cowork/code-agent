@@ -21,6 +21,8 @@ export interface SubagentContextAnnotation {
 }
 
 export interface SubagentContextRecord {
+  /** Execution terminal fact, retained when the live guard entry is reaped. */
+  lifecycleStatus?: 'completed' | 'failed' | 'cancelled';
   sessionId: string;
   agentId: string;
   messages: Message[];
@@ -207,6 +209,14 @@ export class SubagentContextStore {
           ? CompressionState.deserialize(record.compressionState)
           : undefined,
       }));
+  }
+
+  markTerminal(sessionId: string, agentId: string, status: NonNullable<SubagentContextRecord['lifecycleStatus']>, timestamp = Date.now()): void {
+    const record = this.store.get(buildKey(sessionId, agentId));
+    if (!record) return;
+    record.lifecycleStatus = status;
+    record.updatedAt = timestamp;
+    this.persistToDisk();
   }
 
   clearSession(sessionId: string): void {

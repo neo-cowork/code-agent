@@ -1,96 +1,42 @@
-// ============================================================================
-// Spawn Agent — execute helpers
-// Gen 7: Multi-Agent capability
-//
-// P1 Wave 3 multiagent native: 原 spawnAgentTool / agentSpawnTool (legacy Tool)
-// 已删除，protocol 入口在 src/host/tools/modules/multiagent/spawnAgent.ts。
-// 本文件仅保留：
-//   - executeSpawnAgent(params, ctx)  — single + parallel mode 入口
-//   - getSpawnedAgent / listSpawnedAgents / SpawnedAgent
-//     已拆至 ./spawnAgentStatus.ts（N-SUBAGENT-ZEROTOOLS 返修：max-lines 硬限）
-//   - DEFAULT_ISOLATION map
-// ============================================================================
-
 import { randomUUID } from 'crypto';
 import type { FullAgentConfig } from '../../../shared/contract/agentTypes';
 import { getSubagentExecutor } from '../subagentExecutor';
-import {
-  getParallelAgentCoordinator,
-  getParallelAgentCoordinatorRegistry,
-  type AgentTask,
-  type ParallelCoordinatorTerminalStatus,
-} from '../parallelAgentCoordinator';
-import {
-  createScopedSwarmAgentId,
-  type SwarmRunScope,
-} from '../../../shared/contract/swarm';
-import {
-  getPredefinedAgent,
-  listPredefinedAgents,
-  getAgentPrompt,
-  getAgentTools,
-  getAgentMaxIterations,
-  getAgentPermissionPreset,
-  getAgentMaxBudget,
-} from '../agentDefinition';
+import { getParallelAgentCoordinator, getParallelAgentCoordinatorRegistry, type ParallelCoordinatorTerminalStatus } from '../parallelAgentCoordinator';
+import { createScopedSwarmAgentId, type SwarmRunScope } from '../../../shared/contract/swarm';
+import { getPredefinedAgent, listPredefinedAgents, getAgentPrompt, getAgentTools, getAgentPermissionPreset, getAgentMaxBudget } from '../agentDefinition';
 import { SUBAGENT_SUFFIXES, type CoreAgentId, isCoreAgent } from '../hybrid/coreAgents';
 import { isToolWriteReadonlyRole } from '../routingToolPolicy';
-import { SWARM_STATUS_REPORT_SUFFIX, parseStatusReport } from './statusReport';
 import { getParallelCancellationResult, isCancelledTaskError } from './parallelCancellation';
-import {
-  SubagentContextBuilder,
-  getAgentContextLevel,
-} from '../subagentContextBuilder';
+import { SubagentContextBuilder, getAgentContextLevel } from '../subagentContextBuilder';
 import { getSwarmEventEmitter } from '../swarmEventPublisher';
-import { resolveAgentDisplayNames } from '../resolveAgentDisplayNames';
 import { checkReadonlyParentRule, type ParentContext } from '../childContext';
 import { resolveSubagentParentContext } from '../subagentProtocolContext';
 import { getSpawnGuard } from '../spawnGuard';
 import { bindFileOwnershipReleaseHook } from '../../services/infra/fileOwnershipRegistry';
 import { bindBrowserPoolReleaseHook } from '../../services/infra/browserPool';
 import { routeFailureCode } from '../../../shared/contract/cancellation';
-import {
-  AgentFailureCode,
-  agentFailureCodeFromCancellationReason,
-  inferAgentFailureCode,
-} from '../../../shared/contract/agentFailure';
+import { AgentFailureCode, agentFailureCodeFromCancellationReason, inferAgentFailureCode } from '../../../shared/contract/agentFailure';
 import { isParentRunAlive } from '../orphanLiveness';
-import {
-  cleanupAgentWorktree,
-  cleanupOrphanedWorktrees,
-  discardAgentWorktree,
-  resolveAgentWorktreeIsolation,
-} from '../agentWorktree';
+import { cleanupAgentWorktree, cleanupOrphanedWorktrees, discardAgentWorktree, resolveAgentWorktreeIsolation } from '../agentWorktree';
 import { capabilityManifestForTools } from '../scriptRuntime/capabilityManifest';
 import { aggregateTeamResults } from '../resultAggregator';
-import { shouldUseForkMode, buildForkContexts, applyCacheControl } from '../forkContext.js';
 import { validateNoCycles, detectCycles } from '../taskDag.js';
-import {
-  buildAgentTeamFailureRecoveryProposal,
-  buildRecoveryPriorProjection,
-  recordLongTaskRecoveryProposal,
-} from '../../handoff/longTaskRecoveryProposal';
-import {
-  shouldActivateCoordinator,
-  createCoordinatorSession,
-} from '../coordinatorMode';
-import {
-  stableAgentTeamRunId,
-} from '../agentTeamDurableAdapter';
+import { buildAgentTeamFailureRecoveryProposal, buildRecoveryPriorProjection, recordLongTaskRecoveryProposal } from '../../handoff/longTaskRecoveryProposal';
+import { shouldActivateCoordinator, createCoordinatorSession } from '../coordinatorMode';
+import { stableAgentTeamRunId } from '../agentTeamDurableAdapter';
 import { withRunTraceContext } from '../../telemetry/runTraceContext';
 import type { AgentTeamDurableController } from '../agentTeamDurableTypes';
 import type { SubagentExecutionContext } from '../subagentExecutorTypes';
 import { forkSubagentEventPort } from '../backgroundSubagentLiveProgress';
 import type { MultiagentExecutionResult } from '../multiagentExecutionTypes';
 import { createAgentTeamGraphCompatibility } from '../agentTeamGraphCompatibility';
-import {
-  requestDurableAgentTeamLaunchApproval,
-  prepareAgentTeamDurableController,
-} from '../agentTeamDurableLaunch';
+import { requestDurableAgentTeamLaunchApproval, prepareAgentTeamDurableController } from '../agentTeamDurableLaunch';
 import { adoptForegroundSubagent, delegateSpawnAgentWorktreeCleanup, finalizeForegroundSpawnAgentWorktree, publishBackgroundSubagentVisibility, raceForegroundBlockingBudget, resolveForegroundBlockingBudgetMs, resolveSingleSpawnRunScope, validateForegroundBlockingBudget } from './spawnAgentForegroundBackground';
 import { resolveSpawnAgentEngine } from './spawnAgentEngine';
 import { rememberMemberEngine } from '../memberRuntimeEngine';
 import { prepareSpawnAgentWorktree } from './spawnAgentWorktree';
+import { parseScopedSwarmAgentId } from '../../../shared/contract/swarm';
+import { buildParallelSpawnTasks, bindParallelSpawnVisibility, prepareParallelForkCache } from './spawnAgentParallel';
 
 /**
  * spawn_agent / AgentSpawn protocol-native execution service.
@@ -99,6 +45,8 @@ export async function executeSpawnAgent(
   params: Record<string, unknown>,
   context: SubagentExecutionContext,
 ): Promise<MultiagentExecutionResult> {
+  const { managedAgentId, ...childContext } = context;
+  context = childContext;
     const parallel = params.parallel as boolean | undefined;
     const agents = params.agents as Array<{ role: string; task: string; name?: string; maxBudget?: number; dependsOn?: string[]; ownedPaths?: string[] }> | undefined;
 
@@ -152,7 +100,7 @@ export async function executeSpawnAgent(
         spawnParentTimeoutMs: context.spawnParentTimeoutMs,
         parentRemainingBudget: context.parentRemainingBudget,
         spawnParentAgentId: context.spawnParentAgentId,
-      });
+      }, Boolean(managedAgentId));
     }
 
     // Single agent mode
@@ -273,7 +221,10 @@ export async function executeSpawnAgent(
     }
 
     // Generate agent ID
-    const localAgentId = `agent_${role || 'dynamic'}_${randomUUID()}`;
+    let localAgentId = `agent_${role || 'dynamic'}_${randomUUID()}`;
+    if (managedAgentId) {
+      localAgentId = parseScopedSwarmAgentId(managedAgentId)?.localAgentId ?? managedAgentId;
+    }
     const agentId = context.swarmRunScope
       ? createScopedSwarmAgentId(context.swarmRunScope, localAgentId)
       : localAgentId;
@@ -482,6 +433,8 @@ export async function executeSpawnAgent(
         // Register with SpawnGuard
         guard.register(agentId, role || 'dynamic', task, promise, abortController, {
           treeId,
+          parentRunId: context.runId,
+          background: Boolean(managedAgentId),
           completion: { title: agentName, kind: 'user_visible' },
           parentId: context.spawnParentAgentId,
           slotAcquired: true,
@@ -588,6 +541,8 @@ Stats:
         // Register with SpawnGuard (auto-tracks completion)
         guard.register(agentId, role || 'dynamic', task, promise, abortController, {
           treeId,
+          parentRunId: context.runId,
+          background: true,
           completion: { title: agentName, kind: 'user_visible' },
           parentId: context.spawnParentAgentId,
           slotAcquired: true,
@@ -677,6 +632,7 @@ export async function launchAgentTeam(agents: Array<{ role: string; task: string
 async function executeParallelAgents(
   agents: Array<{ role: string; task: string; name?: string; maxBudget?: number; dependsOn?: string[]; ownedPaths?: string[] }>,
   context: SubagentExecutionContext,
+  background = false,
 ): Promise<MultiagentExecutionResult> {
   if (!context.sessionId) {
     return {
@@ -761,86 +717,7 @@ async function executeParallelAgents(
     }
   }
 
-  // Convert to AgentTask format
-  // Phase 1: 生成稳定的 ID 并建立 role→id 映射（用于解析 dependsOn）
-  const roleToId = new Map<string, string>();
-  const cwd = context.cwd;
-
-  // Disabled tools lists
-  const disabledTools = guard.getDisabledTools();
-  const readonlyDisabledTools = guard.getReadonlyDisabledTools();
-  // 工具写只读的角色名（供审批卡显示 writeAccess，与下面的工具过滤同一判定，避免两处口径不一）。
-  const toolReadonlyRoleNames = new Set<string>();
-  // A4：实例显示名 —— 模型 name 优先，同批 role 重复才 role-1/role-2
-  const displayNames = resolveAgentDisplayNames(agents);
-
-  const tasks: AgentTask[] = agents.map((agent, index) => {
-    const agentConfig = getPredefinedAgent(agent.role);
-    if (!agentConfig) {
-      const availableIds = listPredefinedAgents().map(a => a.id);
-      throw new Error(
-        `Unknown agent: ${agent.role}. Available agents: ${availableIds.join(', ')}`
-      );
-    }
-
-    // 使用 role_index 作为稳定 ID，避免 Date.now() 导致 dependsOn 无法匹配
-    const taskId = createScopedSwarmAgentId(runScope, `agent_${agent.role}_${index}`);
-    roleToId.set(agent.role, taskId);
-    // 也支持 "role-index" 格式引用
-    roleToId.set(`${agent.role}-${index}`, taskId);
-
-    // 根据 task 内容过滤文档工具 — 代码任务不需要文档/Excel 专用读取工具
-    const DOCUMENT_TOOLS = ['read_pdf', 'read_docx', 'read_xlsx', 'ReadDocument', 'ExcelAutomate'];
-    const taskLower = agent.task.toLowerCase();
-    const needsDocTools = DOCUMENT_TOOLS.some(t => taskLower.includes(t.toLowerCase()))
-      || /\.(pdf|docx|xlsx|doc|xls)\b/.test(taskLower);
-    let tools = getAgentTools(agentConfig);
-    if (!needsDocTools) {
-      tools = tools.filter(t => !DOCUMENT_TOOLS.includes(t));
-    }
-
-    // SpawnGuard: filter disabled tools (P2 + P3 readonly enforcement)
-    // 工具写只读判定走单一真源，与单发路径 (site 1) 共用同一 helper。
-    const isReadonly = isToolWriteReadonlyRole(agent.role, agentConfig);
-    if (isReadonly) toolReadonlyRoleNames.add(agent.role.toLowerCase());
-    const toolsToDisable = isReadonly ? readonlyDisabledTools : disabledTools;
-    tools = tools.filter(t => !toolsToDisable.includes(t));
-
-    // 注入 subagent suffix
-    let systemPrompt = getAgentPrompt(agentConfig);
-    if (isCoreAgent(agent.role)) {
-      const suffix = SUBAGENT_SUFFIXES[agent.role as CoreAgentId];
-      if (suffix) {
-        systemPrompt += suffix;
-      }
-    }
-    // 协作可见性（P1-3）：所有并行子代理统一自报 STATUS/DECISION，喂给讨论流
-    systemPrompt += SWARM_STATUS_REPORT_SUFFIX;
-
-    return {
-      id: taskId,
-      role: agent.role,
-      name: displayNames[index],
-      task: `[工作目录: ${cwd}] 所有文件路径基于此目录。\n\n${agent.task}`,
-      systemPrompt,
-      tools,
-      maxIterations: getAgentMaxIterations(agentConfig),
-      dependsOn: agent.dependsOn,
-      ownedPaths: agent.ownedPaths,
-    };
-  });
-
-  // Phase 2: 解析 dependsOn — 将 role 名称映射到实际 task ID
-  for (const task of tasks) {
-    if (task.dependsOn) {
-      task.dependsOn = task.dependsOn.map(dep => {
-        // 优先精确匹配 task ID
-        if (tasks.some(t => t.id === dep)) return dep;
-        // 再尝试 role→id 映射
-        return roleToId.get(dep) || dep;
-      });
-    }
-  }
+  const { tasks, toolReadonlyRoleNames } = buildParallelSpawnTasks(agents, context, runScope, guard);
 
   const durablePreparation = await prepareAgentTeamDurableController({
     scope: runScope, parentRunId: parentNativeRunId, logicalOperationId, tasks,
@@ -880,6 +757,8 @@ async function executeParallelAgents(
   const coordinator = getParallelAgentCoordinator(runScope);
   try {
     coordinator.initialize({
+      background,
+      waiterAgentId: context.spawnParentAgentId,
       executionContext: {
         ...context,
         spawnTreeId: runScope.treeId,
@@ -931,116 +810,11 @@ async function executeParallelAgents(
     };
   }
 
-  // ========================================================================
-  // Fork Cache: 多 subagent 共享前缀，最大化 Prompt Cache 命中
-  // ========================================================================
-  if (shouldUseForkMode(tasks.length) && context.messages && context.messages.length > 0) {
-    try {
-      const childPrompts = tasks.map(t => t.task);
-      const forkContexts = buildForkContexts({
-        systemPrompt: tasks[0].systemPrompt || '',
-        tools: [], // 工具定义由 executor 注入，此处仅用于缓存前缀
-        messages: context.messages,
-        childPrompts,
-      });
-
-      // 将 fork 后的 childDirective 回写到各 task
-      for (let i = 0; i < tasks.length && i < forkContexts.length; i++) {
-        tasks[i].task = forkContexts[i].childDirective;
-      }
-
-      // 对共享消息应用 cache_control 标记
-      applyCacheControl(context.messages);
-    } catch (err) {
-      // Fork cache 失败不应阻止任务执行
-      console.warn('[SpawnAgent] Fork cache setup failed, continuing without cache optimization:', err);
-    }
-  }
+  prepareParallelForkCache(tasks, context);
 
   const compatibility = createAgentTeamGraphCompatibility({ emitter, scope: runScope, tasks });
 
-  // Bridge coordinator events to swarm events + coordinator session tracking
-  const onTaskStart = (evt: { taskId: string; role: string }) => {
-    emitter.agentUpdated(runScope, evt.taskId, { status: 'running', startTime: Date.now() });
-    // Coordinator mode: 标记任务分配
-    if (coordSession) {
-      const coordTask = coordSession.getTask(evt.taskId);
-      if (coordTask?.status === 'pending') {
-        coordSession.assign(evt.taskId, evt.taskId);
-      }
-    }
-  };
-  const onTaskProgress = (evt: {
-    taskId: string;
-    role: string;
-    snapshot: import('../../../shared/contract/swarm').SwarmAgentContextSnapshot;
-  }) => {
-    emitter.agentUpdated(runScope, evt.taskId, {
-      status: 'running',
-      contextSnapshot: evt.snapshot,
-      toolCalls: evt.snapshot.tools.length,
-    });
-  };
-  const onTaskComplete = (evt: { taskId: string; result: { success: boolean; duration: number; output?: string; error?: string } }) => {
-    if (evt.result.success) {
-      emitter.agentCompleted(runScope, evt.taskId, evt.result.output);
-      coordSession?.complete(evt.taskId, evt.result.output ?? '');
-      // 协作可见性（P1-3）：解析子代理自报的人话状态 / 决策 → 讨论流
-      const report = parseStatusReport(evt.result.output ?? '');
-      const reportRole = tasks.find((t) => t.id === evt.taskId)?.role;
-      const reportAt = Date.now();
-      if (report.status) {
-        emitter.contextUpdate(runScope, { kind: 'status', agentId: evt.taskId, role: reportRole, content: report.status, at: reportAt });
-      }
-      if (report.decision) {
-        emitter.contextUpdate(runScope, { kind: 'decision', agentId: evt.taskId, role: reportRole, content: report.decision, at: reportAt });
-      }
-    } else {
-      const errorMessage = evt.result.error || 'Unknown error';
-      if (isCancelledTaskError(errorMessage)) {
-        emitter.agentUpdated(runScope, evt.taskId, {
-          status: 'cancelled',
-          endTime: Date.now(),
-          error: 'Cancelled',
-        });
-      } else {
-        emitter.agentFailed(runScope, evt.taskId, errorMessage);
-      }
-      coordSession?.fail(evt.taskId, errorMessage);
-    }
-  };
-  const onTaskError = (evt: { taskId: string; error: string }) => {
-    if (isCancelledTaskError(evt.error)) {
-      emitter.agentUpdated(runScope, evt.taskId, {
-        status: 'cancelled',
-        endTime: Date.now(),
-        error: 'Cancelled',
-      });
-    } else {
-      emitter.agentFailed(runScope, evt.taskId, evt.error);
-    }
-    coordSession?.fail(evt.taskId, evt.error);
-  };
-
-  // 协作可见性（P1-3）：SharedContext 发现（discovery）桥接成讨论流事件
-  const onDiscovery = (evt: { taskId?: string; role?: string; finding?: string; key?: string; value?: unknown; at?: number }) => {
-    const content = evt.finding ?? (typeof evt.value === 'string' ? evt.value : evt.key);
-    if (!content) return;
-    emitter.contextUpdate(runScope, {
-      kind: 'finding',
-      agentId: evt.taskId,
-      role: evt.role ?? (evt.taskId ? tasks.find((t) => t.id === evt.taskId)?.role : undefined),
-      content,
-      key: evt.key,
-      at: evt.at ?? Date.now(),
-    });
-  };
-
-  coordinator.on('task:start', onTaskStart);
-  coordinator.on('task:progress', onTaskProgress);
-  coordinator.on('task:complete', onTaskComplete);
-  coordinator.on('task:error', onTaskError);
-  coordinator.on('discovery', onDiscovery);
+  const unbindVisibility = bindParallelSpawnVisibility(coordinator, emitter, runScope, tasks, coordSession);
 
   const onRunAbort = () => coordinator.abortAllRunning('run_cancelled');
   if (context.abortSignal?.aborted) {
@@ -1180,11 +954,7 @@ ${agentSummaries}${coordSession ? '\n\n---\n\n' + coordSession.synthesize() : ''
     };
   } finally {
     // Cleanup event listeners
-    coordinator.off('task:start', onTaskStart);
-    coordinator.off('task:progress', onTaskProgress);
-    coordinator.off('task:complete', onTaskComplete);
-    coordinator.off('task:error', onTaskError);
-    coordinator.off('discovery', onDiscovery);
+    unbindVisibility();
     context.abortSignal?.removeEventListener('abort', onRunAbort);
     if (terminalStatus === 'cancelled') {
       await durableController.cancel('parent-cancel').catch(() => undefined);

@@ -35,6 +35,7 @@ import { extractToolStepTarget } from './toolStepTarget';
 import { getFileOwnershipRegistry } from '../services/infra/fileOwnershipRegistry';
 
 export interface AgentTreeSpawnAgentSource {
+  background?: boolean;
   id: string;
   role: string;
   treeId?: string;
@@ -339,6 +340,7 @@ function mergeSpawnAgent(
 ): void {
   const node = ensureNode(nodes, agent.id, agent.role);
   addSource(node, 'spawnGuard');
+  node.background = agent.background ?? false;
   node.role = agent.role;
   node.task = agent.task;
   if (agent.parentId) node.parentId = agent.parentId;
@@ -418,14 +420,11 @@ function mergeContextRecord(
   const role = record.snapshot?.previews[0]?.role ?? 'agent';
   const node = ensureNode(nodes, record.agentId, role);
   addSource(node, 'subagentContext');
-  // 重启孤儿收口：context 记录本身不携带生命周期，活着的证据只来自「本进程刚
-  // 更新过它」。上一进程写下的记录（updatedAt 早于本进程启动）没有活着的执行
-  // 方，收成 cancelled（已停）；renderer 的口径是 unknown→工作中，照旧落 unknown
-  // 就是重启后幽灵「工作中」行的来源。本进程内的记录维持 unknown（宁可在干），
-  // 与 spawnGuard/registry 的活状态由优先级自然裁决。
-  const status: AgentTreeNodeStatus = record.updatedAt < HOST_PROCESS_BOOT_MS
+  // Completion is recorded by SpawnGuard's normal completion callback. Keep that fact
+  // after live entries are reaped; context-only records without it retain boot recovery semantics.
+  const status: AgentTreeNodeStatus = record.lifecycleStatus ?? (record.updatedAt < HOST_PROCESS_BOOT_MS
     ? 'cancelled'
-    : 'unknown';
+    : 'unknown');
   applyStatus(node, status, 'subagentContext', statusPriorities);
   node.updatedAt = Math.max(node.updatedAt ?? 0, record.updatedAt);
   const activeTool = activeToolFromContext(record);
@@ -452,6 +451,7 @@ function mergeBackgroundAgent(
 ): void {
   const node = ensureNode(nodes, handle.agentId, 'background');
   addSource(node, 'backgroundRegistry');
+  node.background = true;
   if (handle.startedAt && !node.createdAt) node.createdAt = handle.startedAt;
   if (handle.finishedAt) node.completedAt = handle.finishedAt;
   node.updatedAt = handle.finishedAt ?? handle.startedAt ?? node.updatedAt;

@@ -1,3 +1,4 @@
+import { getSpawnGuard } from '../spawnGuard';
 // ============================================================================
 // durableRunTerminal — orchestrator 一侧的 durable run 终态收口
 //
@@ -77,6 +78,9 @@ export async function finalizeOrParkDurableRun(
   terminal: (input: DurableRunTerminalInput) => Promise<void> = finalizeDurableRun,
 ): Promise<void> {
   const dueAt = peekQuotaWaitDueAt(input.runId);
+  if (input.sessionId) {
+    getSpawnGuard().settleParentRun(input.sessionId, input.runId, Boolean(input.cancelled) && dueAt === undefined);
+  }
   const parkable = dueAt !== undefined
     ? canParkResumableUserStop({ ...input, cancelled: true })
     : canParkResumableUserStop(input);
