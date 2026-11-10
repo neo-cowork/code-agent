@@ -204,6 +204,13 @@ describe('用户可见 system 事件登记制（P0-2）', () => {
     },
   );
 
+  it('backgroundTaskStopped 在前台轮结束后到达 → 独立成末尾轮，不并进已完成轮的折叠区', () => {
+    const turns = project([...plainTurn(), systemEventMessage('backgroundTaskStopped')]);
+    const last = turns[turns.length - 1];
+    expect(last.nodes.map((n) => n.id)).toEqual(['sys-backgroundTaskStopped']);
+    expect(turns.slice(0, -1).flatMap((t) => t.nodes).some((n) => n.id === 'sys-backgroundTaskStopped')).toBe(false);
+  });
+
   it('同一条登记事件消息（同 id）被送达两次 → 只投一个节点', () => {
     const sys = systemEventMessage('roleFlowStalled');
     const nodes = project([...plainTurn(), sys, { ...sys }]).flatMap((turn) => turn.nodes);

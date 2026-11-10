@@ -30,8 +30,10 @@ export interface UserVisibleSystemEventSpec {
    * - current-turn：挂当前轮，没有轮就独立成轮；
    * - matched-turn：按 payload.workItemId 对回带 voiceDispatch 的派活轮，
    *   对不上时节点类退到当前轮/独立成轮，settle 类直接丢弃（章不能盖到别人的活头上）。
+   * - standalone-turn：恒独立成轮，排在会话末尾。后台任务结局常在前台回合结束之后才到，
+   *   挂进已完成的轮会被收进「用时 Ns」折叠区，用户在会话末尾什么也看不到。
    */
-  attach: 'current-turn' | 'matched-turn';
+  attach: 'current-turn' | 'matched-turn' | 'standalone-turn';
 }
 
 /**
@@ -52,7 +54,7 @@ export const USER_VISIBLE_SYSTEM_EVENT_REGISTRY = {
   // 怎么继续/放弃——替代「模型念完步骤就空闲、什么都没落」的静默死局。
   roleFlowStalled: { presentation: 'info', attach: 'current-turn' },
   // 后台任务提前停止的确定性说明；独立于助手聚合和前台唤醒。
-  backgroundTaskStopped: { presentation: 'info', attach: 'current-turn' },
+  backgroundTaskStopped: { presentation: 'info', attach: 'standalone-turn' },
   // 后台任务结束后前台自动汇报失败：任务结果已在会话里，告诉用户这一步没成，别留空白。
   backgroundWakeFailed: { presentation: 'info', attach: 'current-turn' },
 } as const satisfies Record<string, UserVisibleSystemEventSpec>;

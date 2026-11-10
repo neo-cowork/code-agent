@@ -553,7 +553,7 @@ export function projectTurns(
       // current-turn（通话摘要 §7.5 / 通话失败 T3-#908）：通话级事件，挂当前轮。
       const hostTurn = spec.attach === 'matched-turn'
         ? findVoiceWorkTurn(turns, (payload as { workItemId?: string }).workItemId) ?? currentTurn
-        : currentTurn;
+        : spec.attach === 'standalone-turn' ? undefined : currentTurn;
       if (hostTurn) {
         hostTurn.nodes.push(node);
         hostTurn.endTime = msg.timestamp;
