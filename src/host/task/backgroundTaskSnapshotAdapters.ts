@@ -112,7 +112,7 @@ function buildTerminalMessage(args: {
   if (args.status === 'cancelled') {
     return `${args.label} 已停止${duration}`;
   }
-  const exitCode = args.exitCode != null ? `，退出码 ${args.exitCode}` : '';
+  const exitCode = args.exitCode != null && args.exitCode !== 0 ? `，退出码 ${args.exitCode}` : '';
   return withAutomationPromptTimeoutHint(
     `${args.label} 失败${exitCode}${duration}${log}`,
     args.locale ?? 'zh',
