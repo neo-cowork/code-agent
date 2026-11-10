@@ -236,7 +236,10 @@ describe('calendarModule (native)', () => {
       execMock.mockResolvedValue({ data: [] });
       const result = await run({ action: 'list_events' });
       expect(result.ok).toBe(true);
-      if (result.ok) expect(result.output).toBe('没有找到匹配的日历事件。');
+      if (result.ok) {
+        expect(result.output).toContain('以下时间均按该时区显示。');
+        expect(result.output).toContain('没有找到匹配的日历事件。');
+      }
     });
   });
 

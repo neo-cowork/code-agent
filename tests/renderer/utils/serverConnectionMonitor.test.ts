@@ -167,8 +167,12 @@ describe('serverConnectionMonitor 状态机', () => {
 
     fetchMock.mockResolvedValueOnce({ ok: true, status: 200 } as unknown as Response);
     monitor.retryNow();
+    expect(store.useServerConnectionStore.getState().retryState).toBe('checking');
     await advance(0); // 不等 PROBE_INTERVAL_MS，立即收口
     expect(statusOf(store)).toBe('ok');
+    expect(store.useServerConnectionStore.getState().retryState).toBe('idle');
+    expect(reloadSpy).toHaveBeenCalledTimes(1);
+    await advance(WEB_SERVER_CONNECTION_MONITOR.PROBE_INTERVAL_MS * 2);
     expect(reloadSpy).toHaveBeenCalledTimes(1);
   });
 
