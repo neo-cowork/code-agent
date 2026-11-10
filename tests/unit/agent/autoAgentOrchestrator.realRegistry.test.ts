@@ -83,6 +83,7 @@ describe('automatic completion follow-up through AgentOrchestrator and real RunR
         isDevModeAutoApproveEnabled: () => false,
       } as unknown as ConfigService,
       runRegistry: registry,
+      hasApprovalUi: () => true,
       getHomeDir: () => '/tmp/auto-followup',
       onEvent: event => { events.push(event); },
     });
