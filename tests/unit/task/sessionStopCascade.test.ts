@@ -6,7 +6,7 @@ import { CANCELLATION_TIMEOUTS } from '../../../src/shared/constants';
 
 interface FakeOrchestrator {
   label: string;
-  cancel: ReturnType<typeof vi.fn>;
+  cancel: ReturnType<typeof vi.fn<(...args: unknown[]) => Promise<void>>>;
   finish: (outcome: 'resolve' | 'reject') => void;
 }
 
@@ -87,6 +87,14 @@ import { getSpawnGuard, resetSpawnGuard } from '../../../src/host/agent/spawnGua
 import { createScopedSwarmAgentId } from '../../../src/shared/contract/swarm';
 import { registerSwarmServices, resetSwarmServices } from '../../../src/host/agent/swarmServices';
 import { getBackgroundSubagentRegistry } from '../../../src/host/agent/backgroundSubagentRegistry';
+import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
+
+const PROJECT_SCOPE = createWorkspaceScope('test-project', [{
+  sourceId: 'test-source',
+  path: '/tmp/project',
+  role: 'primary',
+  access: 'read_write',
+}]);
 
 function spawnInput(sessionId: string, index: number, extra: Record<string, unknown> = {}) {
   return {
@@ -96,6 +104,7 @@ function spawnInput(sessionId: string, index: number, extra: Record<string, unkn
     laneKey: `lane-${sessionId}-${index}`,
     submissionKey: `submission-${sessionId}-${index}`,
     prompt: `盯住 example.org ${index}`,
+    workspaceScope: PROJECT_SCOPE,
     ...extra,
   };
 }
