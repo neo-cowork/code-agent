@@ -80,11 +80,12 @@ async function call(route: Route, messages: unknown[], tools: unknown[]): Promis
   ].join('\n');
   const request = (): Promise<string> => new Promise<string>((resolve, reject) => {
     const child = spawn('curl', [
-      '--silent', '--show-error', '--connect-timeout', '15', '--max-time', '180',
+      '--silent', '--show-error', '--connect-timeout', '60', '--max-time', '180',
       ...(proxy ? ['--proxy', proxy] : ['--noproxy', '*']),
       ...(address ? ['--connect-to', `${new URL(route.baseUrl).hostname}:443:${address}:443`] : []),
       '--config', '-', '--write-out', '\n%{http_code}', `${route.baseUrl}/chat/completions`,
     ], { stdio: ['pipe', 'pipe', 'pipe'] });
+    process.stderr.write(`curl pid=${child.pid ?? 'unknown'} provider=${route.provider}\n`);
     let stdout = '';
     let stderr = '';
     child.stdout.setEncoding('utf8').on('data', (chunk: string) => { stdout += chunk; });
