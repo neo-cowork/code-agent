@@ -191,6 +191,9 @@ describe('SessionCommandCenter holds settle while the child own background shell
       hasQueuedUserInput: () => false,
       isVoiceSession: () => false,
       recordWakeFailureNote: vi.fn(async () => undefined),
+      recordWakeDeferredNote: vi.fn(async () => undefined),
+      setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
+      clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
       logger: { info: vi.fn(), warn: vi.fn() },
     });
     const h = current = await harness((task, status) => wake(task, status as 'completed'));
