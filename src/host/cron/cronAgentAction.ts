@@ -86,6 +86,10 @@ export async function executeCronAgentAction(
     }
   }
 
+  // K2：preapprove 的发起话只认用户写的提示词正文——拼进同条消息的上轮快照（模型写的）
+  // 与事件载荷（外部来的）不算；HEARTBEAT.md 装载的任务出自工作区文件（agent 可写），不声明。
+  const initiatingUserText = ctx?.heartbeatTask ? undefined : action.prompt;
+
   // 通过 TaskManager 获取 orchestrator（避免 cronService → bootstrap 循环依赖）
   const { getTaskManager } = await import('../task');
   const tm = getTaskManager();
@@ -107,6 +111,7 @@ export async function executeCronAgentAction(
     disableAutoAgent: true,
     mode: 'normal',
     ...await buildCronAgentRunOptions(action.roleId, cronSession.workingDirectory),
+    initiatingUserText,
     eventFilter: BACKGROUND_AGENT_EVENT_FILTER,
   };
   agentRunOptions.systemInstructions = [UNATTENDED_TRUST_NOTICE];
