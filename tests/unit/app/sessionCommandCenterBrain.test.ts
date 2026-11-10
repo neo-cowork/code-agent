@@ -167,6 +167,29 @@ describe('ADR-059 声明式文字前台边界', () => {
 });
 
 describe('withSessionCommandCenterBrain', () => {
+  it.each([
+    ['做 PPTX', false, 30], ['做 PPT', false, 30], ['做 Excel 表格', false, 30],
+    ['写 Word 文档', false, 30], ['导出 PDF', false, 30], ['制作 HTML 网页', false, 30],
+    ['今天天气', false, 8], ['帮我查一下', false, 8], ['继续', false, 8],
+    ['继续', true, 30], ['use the second one', true, 30],
+  ])('foreground cap for %s (previous stop=%s) is %i', (prompt, stopped, cap) => {
+    expect(withSessionCommandCenterBrain(undefined, prompt, stopped).maxIterations).toBe(cap);
+  });
+
+  it.each([false, true])('preserves a smaller explicit cap (previous stop=%s)', stopped => {
+    expect(withSessionCommandCenterBrain({ maxIterations: 3 }, '生成 PPTX', stopped).maxIterations).toBe(3);
+  });
+
+  it('keeps the existing number guard for untyped run options', () => {
+    expect(withSessionCommandCenterBrain({ maxIterations: 'invalid' }, '制作 PPTX').maxIterations).toBe(30);
+  });
+
+  it('keeps the deliverable cap within the ordinary execution budget', async () => {
+    const { getBuiltinConfig } = await import('../../../src/host/services/cloud/builtinConfig');
+    expect(withSessionCommandCenterBrain(undefined, '制作 PPTX').maxIterations)
+      .toBeLessThanOrEqual(getBuiltinConfig().featureFlags.maxIterations);
+  });
+
   it('sets the brain allowlist and appends the brain context (which carries the design notice)', () => {
     const options = withSessionCommandCenterBrain(undefined);
 

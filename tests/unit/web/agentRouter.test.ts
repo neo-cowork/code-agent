@@ -1,3 +1,4 @@
+import { foregroundBrainCapCases } from './foregroundBrainCap.cases';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import express from 'express';
 import http from 'http';
@@ -480,6 +481,34 @@ function externalForkContextSource(
 }
 
 describe('createAgentRouter', () => {
+  foregroundBrainCapCases(async ({ prompt, history = [], requestedCap, goal }) => {
+    await closeServer();
+    sessionMessages.delete('cap-session');
+    const logStart = logger.info.mock.calls.length;
+    await startAgentApi({ tryGetSessionManager: async () => ({
+      getSession: async () => ({ id: 'cap-session', workingDirectory: '/tmp/cap-test' }),
+      getMessages: async () => history,
+      addMessageToSession: async () => undefined,
+    }) });
+    const base = await createCLIAgent({});
+    vi.mocked(createCLIAgent).mockResolvedValueOnce({
+      ...base, getConfig: () => ({ ...base.getConfig(), maxIterations: requestedCap }),
+    });
+    mockRun.mockResolvedValueOnce(undefined);
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt, sessionId: 'cap-session',
+        ...(goal ? { goal: { review: 'check result' } } : {}) }),
+    });
+    expect(response.ok).toBe(true);
+    await response.text();
+    return {
+      cap: mockCreateAgentLoop.mock.calls.at(-1)?.[0].maxIterations,
+      logs: logger.info.mock.calls.slice(logStart).map(([message]) => String(message))
+        .filter(message => message.startsWith('Foreground brain budget')),
+    };
+  });
+
   it('restores queued modelSpec into the explicit web run body', () => {
     expect(buildQueuedAgentRunBody({
       content: 'queued follow-up',

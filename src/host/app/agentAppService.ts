@@ -828,7 +828,8 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       prompt: envelope.content,
       hasGoal: Boolean(optionsWithTurnSettings.goal),
     })
-      ? withSessionCommandCenterBrain(optionsWithTurnSettings, envelope.content)
+      ? withSessionCommandCenterBrain(optionsWithTurnSettings, envelope.content,
+        (await getSessionManager().getMessages(resolvedSessionId)).slice().reverse().find(message => message.role === 'assistant' && !message.isMeta && message.visibility !== 'rewound')?.metadata?.stoppedByStepLimit === true)
       : optionsWithTurnSettings;
 
     // 云货架专家首跑：本轮档位钳到最严，让用户看见它每一步要干什么。
@@ -1016,7 +1017,8 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       prompt: envelope.content,
       hasGoal: Boolean(workbenchOptions?.goal),
     })
-      ? withSessionCommandCenterBrain(workbenchOptions, envelope.content)
+      ? withSessionCommandCenterBrain(workbenchOptions, envelope.content,
+        (await getSessionManager().getMessages(resolvedSessionId)).slice().reverse().find(message => message.role === 'assistant' && !message.isMeta && message.visibility !== 'rewound')?.metadata?.stoppedByStepLimit === true)
       : workbenchOptions;
     return tm.interruptAndContinue(
       resolvedSessionId,

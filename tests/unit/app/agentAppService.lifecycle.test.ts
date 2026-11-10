@@ -85,6 +85,7 @@ describe('AgentAppService lifecycle routing', () => {
     setWorkingDirectory: ReturnType<typeof vi.fn>;
   };
 	  let sessionManager: {
+      getMessages: ReturnType<typeof vi.fn>;
 	    getSession: ReturnType<typeof vi.fn>;
 	    listSessions: ReturnType<typeof vi.fn>;
 	    createSession: ReturnType<typeof vi.fn>;
@@ -130,6 +131,7 @@ describe('AgentAppService lifecycle routing', () => {
       setWorkingDirectory: vi.fn(),
     };
 	    sessionManager = {
+      getMessages: vi.fn().mockResolvedValue([]),
 	      getSession: vi.fn().mockResolvedValue({ id: 'session-1', workingDirectory: '/old/project' }),
 	      listSessions: vi.fn().mockResolvedValue([]),
 	      createSession: vi.fn(async (options) => ({
