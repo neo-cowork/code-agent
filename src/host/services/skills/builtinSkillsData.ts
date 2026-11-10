@@ -1660,7 +1660,7 @@ end tell
 - **roleId**：保持与 editingRoleId 一致（不要改名；用户若想改名，告诉他本期暂不支持）
 - **description / category / tools / systemPrompt**：合并后的完整新定义（不是只填改动的部分——是整份覆盖）
   - 日历 / 邮件 / 提醒事项这类连接器能力的真实工具名在下面，直接用，**不要**去 Grep / Glob 源码找名字：
-    - 日历：${CONNECTOR_TOOL_NAMES.calendar.join('、')}（只看日程用 calendar；要新建 / 修改 / 删除日程再加对应的 *_event）
+    - 日历：${CONNECTOR_TOOL_NAMES.calendar.join('、')}（用户只说"加日历能力"、没提新建 / 修改 / 删除，就只加 calendar，**不要反问范围**；用户明确要新建 / 修改 / 删除日程，才加对应的 *_event）
     - 邮件：${CONNECTOR_TOOL_NAMES.mail.join('、')}
     - 提醒事项：${CONNECTOR_TOOL_NAMES.reminders.join('、')}
   - tools 以现有定义为准，只增减用户点名的那几个，不要重新挑选；增减能力时用一句话告诉用户你动了哪些（尤其 Bash / 写文件这种高权限）
