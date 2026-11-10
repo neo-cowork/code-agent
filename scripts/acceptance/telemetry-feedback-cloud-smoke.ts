@@ -1,5 +1,5 @@
 import { isolatedVerificationEnv } from '../lib/verificationIsolation.ts';
-import { seedVerificationModels } from '../lib/verificationModelSeed.ts';
+import { signInDogfoodVerificationAccount } from '../lib/verificationAccount.ts';
 import { spawn, type ChildProcessByStdio } from 'child_process';
 import type { Readable } from 'node:stream';
 import { existsSync, mkdtempSync, rmSync } from 'fs';
@@ -58,7 +58,8 @@ What it validates:
 What it avoids:
   - no external model call
   - no production-only route
-  - no service-role key`);
+  - no service-role key
+  - signs in only the dogfood account from ~/.ship/secrets/neo-dogfood.env`);
 }
 
 function npmCommand(): string {
@@ -99,11 +100,9 @@ async function ensureBuild(skipBuild: boolean): Promise<void> {
   await runCommand(npmCommand(), ['run', 'build:renderer'], 'build:renderer');
 }
 
-async function prepareTempDataDir(): Promise<string> {
-  const dataDir = mkdtempSync(join(tmpdir(), 'agent-neo-telemetry-feedback-'));
-  const sourceDir = `${process.env.HOME}/.code-agent`;
-  await seedVerificationModels(sourceDir, dataDir);
-  return dataDir;
+function prepareTempDataDir(): string {
+  // This smoke makes no model calls and needs no resident config or key material.
+  return mkdtempSync(join(tmpdir(), 'agent-neo-telemetry-feedback-'));
 }
 
 function startAppHost(port: number, dataDir: string): { child: ChildProcessByStdio<null, Readable, Readable>; output: () => string } {
@@ -352,7 +351,7 @@ async function runSmoke(options: {
 
   const port = options.port ?? await getFreePort();
   const baseUrl = `http://127.0.0.1:${port}`;
-  const dataDir = await prepareTempDataDir();
+  const dataDir = prepareTempDataDir();
   const server = startAppHost(port, dataDir);
   let chromeSession: SystemChromeSession | null = null;
 
@@ -375,6 +374,7 @@ async function runSmoke(options: {
     await sseReady;
 
     const token = await getAuthToken(page);
+    await signInDogfoodVerificationAccount(baseUrl, token);
     const sessionId = await createCleanSession(page);
     const turnId = `telemetry-feedback-smoke-${Date.now()}`;
     const marker = `TELEMETRY_FEEDBACK_CLOUD_${Date.now()}`;

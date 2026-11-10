@@ -1,5 +1,5 @@
 /* global AbortController, fetch, TextDecoder, setTimeout */
-import { assertIsolatedVerificationDir } from '../lib/verificationIsolation.ts';
+import { assertDogfoodVerificationAccount } from '../lib/verificationAccount.ts';
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
 import crypto from 'node:crypto';
@@ -38,7 +38,8 @@ export function resolveEnv({ slot }) {
   // Keep this copied source-of-truth formula literal; see docs/plans/2026-08-11-L10剧本runner-设计草案.md §2.1.
   const port = Number.parseInt(process.env.CODE_AGENT_WEB_PORT || '', 10) || 8180 + resolvedSlot;
   const homeDir = os.homedir();
-  const dataDir = assertIsolatedVerificationDir(process.env.NEO_VERIFY_DATA_DIR || process.env.CODE_AGENT_DATA_DIR);
+  const dataDir = path.resolve(process.env.NEO_VERIFY_DATA_DIR || process.env.CODE_AGENT_DATA_DIR
+    || path.join(homeDir, resolvedSlot === 1 ? '.code-agent-dev' : `.code-agent-dev${resolvedSlot}`));
   const tokenPath = path.join(dataDir, '.dev-token');
   const token = fs.existsSync(tokenPath) ? fs.readFileSync(tokenPath, 'utf8').trim() : null;
   return {
@@ -93,6 +94,11 @@ export function isSameGitCommit(left, right) {
 
 export async function assertEnv(env, { requireCommit } = {}) {
   const api = createApi(env);
+  try {
+    await assertDogfoodVerificationAccount(env.baseUrl, env.token);
+  } catch (error) {
+    throw new NotRun('dogfood_account_required', { message: error instanceof Error ? error.message : String(error) });
+  }
   let probe;
   try {
     // build.commit 是 detail-only 字段（同源校验用），createApi 自带 Bearer，走鉴权 detail 路由

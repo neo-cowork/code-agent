@@ -19,7 +19,7 @@
 // 用法：npx tsx scripts/acceptance/voiceprint-realtime-dogfood.ts [--slot 2] [--seconds 75]
 // ============================================================================
 
-import { assertIsolatedVerificationDir } from '../lib/verificationIsolation.ts';
+import { assertDogfoodVerificationAccount, resolveDevVerificationDataDir } from '../lib/verificationAccount.ts';
 import { chromium, type Page } from 'playwright';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -35,7 +35,7 @@ function argValue(name: string, fallback: string): string {
 const SLOT = argValue('--slot', '2');
 const PORT = 8180 + Number(SLOT);
 const URL_BASE = process.env.NEO_VERIFY_URL || process.env.CODE_AGENT_URL || `http://localhost:${PORT}`;
-const DATA_DIR = assertIsolatedVerificationDir(process.env.NEO_VERIFY_DATA_DIR || process.env.CODE_AGENT_DATA_DIR);
+const DATA_DIR = resolveDevVerificationDataDir(URL_BASE, process.env.NEO_VERIFY_DATA_DIR || process.env.CODE_AGENT_DATA_DIR);
 const CALL_SECONDS = Number(argValue('--seconds', '75'));
 const LOG_DIR = path.join(DATA_DIR, 'logs');
 
@@ -128,6 +128,7 @@ async function main(): Promise<void> {
       return null;
     }
   })();
+  await assertDogfoodVerificationAccount(URL_BASE, token);
   const health = await fetch(`${URL_BASE}/api/health/detail`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   }).then((r) => r.json() as Promise<Record<string, unknown>>).catch(() => null);
