@@ -44,7 +44,8 @@ describe('Office generators do not leak inline Markdown stars', () => {
   });
 
   it('ppt_generate strips marked topic and slide text and defaults into the task working directory', async () => {
-    const result = await pptGenerateModule.createHandler().execute({
+    const handler = await pptGenerateModule.createHandler();
+    const result = await handler.execute({
       topic: '**会议**',
       content: '# **标题**\n- **粗体** *斜体* `代码`',
       research: false,
@@ -59,7 +60,8 @@ describe('Office generators do not leak inline Markdown stars', () => {
   });
 
   it('excel_generate strips marked title, headers and cells and defaults into the task working directory', async () => {
-    const result = await excelGenerateModule.createHandler().execute({
+    const handler = await excelGenerateModule.createHandler();
+    const result = await handler.execute({
       title: '**表格**',
       data: '| **事项** | *负责人* | `期限` |\n|---|---|---|\n| **发布** | *张三* | `周一` |',
     }, makeCtx(workingDir), allowAll);

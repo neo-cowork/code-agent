@@ -37,7 +37,7 @@ async function run(
   canUseTool: CanUseToolFn = allowAll,
   onProgress?: (p: { stage: string }) => void,
 ) {
-  const handler = docxGenerateModule.createHandler();
+  const handler = await docxGenerateModule.createHandler();
   return handler.execute(args, ctx, canUseTool, onProgress as never);
 }
 
