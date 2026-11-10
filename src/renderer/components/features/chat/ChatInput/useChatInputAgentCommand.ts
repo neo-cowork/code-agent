@@ -118,14 +118,14 @@ export function useChatInputAgentCommand(params: UseChatInputAgentCommandParams)
     setActiveAgentId(option.id);
     setPendingAgentSelection({
       id: option.id,
-      name: option.name,
+      name: agentEntries.find((entry) => entry.id === option.id)?.displayName || option.name || option.id,
       token: option.token,
       via: 'agent_command',
     });
     setValue((prev) => removeLeadingAgentCommandTrigger(prev));
     setSelectedAgentCommandIndex(index);
     requestAnimationFrame(() => inputAreaRef.current?.focus());
-  }, [agentCommandOptions, inputAreaRef, setActiveAgentId, setPendingAgentSelection, setValue]);
+  }, [agentCommandOptions, agentEntries, inputAreaRef, setActiveAgentId, setPendingAgentSelection, setValue]);
 
   const handleAutocompleteKeyDown = useCallback((e: React.KeyboardEvent<HTMLElement>) => {
     if (isAgentCommandAutocompleteOpen) {

@@ -1,4 +1,5 @@
 import { cronRoutineRestateEn, cronRoutineRestateZh } from './cronRoutineRestate';
+import { parkedApprovalVoidedEn, parkedApprovalVoidedZh } from './parkedApprovalVoided';
 // ============================================================================
 import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 import type { EventScheduleValidationReason } from '@shared/cronEventValidation';
@@ -11,6 +12,7 @@ import { cronPermissionDeniedReasonText } from '@shared/cronPermissionDenied';
 // ============================================================================
 export const cronCenterZh = {
   cronCenter: {
+    parkedVoided: parkedApprovalVoidedZh,
     groupListenCheck: {
       title: '检查群消息是否连通',
       start: '发条测试消息',
@@ -201,6 +203,14 @@ export const cronCenterZh = {
     wakeSkipSilentLevel: '未运行：角色处于静默档，不主动醒来',
     wakeSkipDailyBudget: '未运行：今日唤醒次数已用满（{used}/{max}）',
     wakeSkipQuietHours: '未运行：处于免打扰时段，本次不补',
+    pushNoteTitle: '结果推送',
+    pushNotePushed: '结果已推送',
+    pushNoteDuplicate: '内容与上次相同，未重复推送',
+    pushNoteEmptyBody: '没有可推送的正文，未推送',
+    pushNoteEmptyResult: '这次运行没有产出结果，未推送',
+    pushNoteObserveMode: '观察模式：已拦下，未推送',
+    pushNoteQuietWatchRound: '没有新内容，未推送',
+    pushNoteNotifyQuietRound: '未达到通知条件，未推送',
     dailyCostTitle: '每日成本',
     dailyCostToday: '今天',
     dailyCostYesterday: '昨天',
@@ -522,6 +532,7 @@ export const cronCenterZh = {
 
 export const cronCenterEn: typeof cronCenterZh = {
   cronCenter: {
+    parkedVoided: parkedApprovalVoidedEn,
     groupListenCheck: {
       title: 'Check group message reception',
       start: 'Send a test message',
@@ -703,6 +714,14 @@ export const cronCenterEn: typeof cronCenterZh = {
     wakeSkipSilentLevel: 'Not run: role is set to silent',
     wakeSkipDailyBudget: "Not run: today's wake limit reached ({used}/{max})",
     wakeSkipQuietHours: 'Not run: within quiet hours',
+    pushNoteTitle: 'Result push',
+    pushNotePushed: 'Result pushed',
+    pushNoteDuplicate: 'Content identical to the last push; not pushed again',
+    pushNoteEmptyBody: 'Nothing to push in the body; not pushed',
+    pushNoteEmptyResult: 'This run produced no result; not pushed',
+    pushNoteObserveMode: 'Observe mode: intercepted, not pushed',
+    pushNoteQuietWatchRound: 'Nothing new this round; not pushed',
+    pushNoteNotifyQuietRound: 'Notify condition not met; not pushed',
     dailyCostTitle: 'Daily cost',
     dailyCostToday: 'Today',
     dailyCostYesterday: 'Yesterday',
