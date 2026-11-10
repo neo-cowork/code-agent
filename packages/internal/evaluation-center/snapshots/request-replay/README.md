@@ -111,3 +111,4 @@ keyless 确定性假模型（`CODE_AGENT_E2E_LOCAL_AGENT_MODEL=1`）真会话的
 - 2026-11-09 / N-FIX-TELEMETRY-RECOVERY-NOTICE-AS-USER-MSG / messageBuild.ts 仅对 metadata.telemetryRecovered 的 user 消息补回免责声明，其余消息原数组返回。本机 `acceptance:snapshot-replay:record` 重录并自验通过，快照目录零变更；录制语料无遥测重建消息，因此保留既有快照字节。
 
 - 2026-11-09 N-FIX-SEND-FIRST-MODEL-CALL-6MIN-DELAY: `npm run acceptance:snapshot-replay:record` 重录 7 条会话 / 16 轮并自验通过；仅增加首请求等待阶段日志，协议、渲染、持久层快照字节均无漂移。
+- 2026-11-10 / N-FIX-TELEMETRY-RECOVERY-NOTICE-AS-USER-MSG r2 / 免责声明补回下沉到 compactionService 的转录构建与 checkpointWriterService.trigger；不改请求体里无标记消息的字节。本机重录后快照目录出现 40 个文件的改动，只有日期随时钟漂移的预期（与此前各行同因）——这次没有逐字节核对差异，仅按先例还原；录制语料无遥测重建消息，故保留既有快照字节，同步门通过。

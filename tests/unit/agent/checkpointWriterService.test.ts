@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
+import { TELEMETRY_RECOVERY_NOTICE } from '../../../src/shared/telemetryRecovery';
 import {
   CheckpointWriterService,
   type CheckpointWriterRunner,
@@ -147,5 +148,16 @@ describe('CheckpointWriterService', () => {
     expect(skipped.reason).toBe('periodic-watermark-not-reached');
     expect(started.started).toBe(true);
   });
-});
 
+  it('hands the writer recovered user messages with the telemetry-recovery disclaimer once, via trigger and periodic entries', () => {
+    const runner = vi.fn<CheckpointWriterRunner>(() => new Promise(() => {}));
+    const recovered: Message = { ...message('r1'), content: '写到 ~/[credit card hidden].txt', metadata: { telemetryRecovered: true } };
+    const service = new CheckpointWriterService({ runner, minMessagesBetweenPeriodicWrites: 1 });
+    service.maybeTriggerPeriodic({ sessionId: 'sp', workingDirectory: '/repo', messages: [recovered, message('m2')] });
+    const writerMessages = runner.mock.calls[0][0].messages;
+    expect(writerMessages[0].content.split(TELEMETRY_RECOVERY_NOTICE)).toHaveLength(2);
+    expect(writerMessages[0].content.endsWith('写到 ~/[credit card hidden].txt')).toBe(true);
+    expect(writerMessages[1].content).toBe('message m2');
+    expect(recovered.content).toBe('写到 ~/[credit card hidden].txt');
+  });
+});

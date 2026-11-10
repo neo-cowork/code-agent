@@ -34,7 +34,6 @@ import { getSessionTodos } from '../../../agent/todoParser';
 import { getToolSearchService } from '../../../services/toolSearch';
 import type { CheckAndAutoCompressOptions, ContextAssemblyCtx } from './shared';
 import { cachedReaddirSync, logger } from './shared';
-import { withTelemetryRecoveryNoticeForModel } from '../../../../shared/telemetryRecovery';
 import { persistRuntimeState } from '../runtimeStatePersistence';
 import { getCheckpointWriterService } from '../../checkpointWriterService';
 
@@ -502,7 +501,7 @@ export async function checkAndAutoCompress(
       writerService.trigger({
         sessionId: ctx.runtime.sessionId,
         workingDirectory: ctx.runtime.workingDirectory,
-        messages: withTelemetryRecoveryNoticeForModel(ctx.runtime.messages),
+        messages: ctx.runtime.messages,
         reason: 'pressure',
         rootDir: ctx.runtime.checkpointRootDir,
       });
@@ -600,9 +599,7 @@ export async function checkAndAutoCompress(
     const compactionResult = await compactMessagesWithSummary({
       sessionId: ctx.runtime.sessionId,
       source: 'auto_threshold',
-      messages: withTelemetryRecoveryNoticeForModel(
-        redactExcludedMessagesForCompaction(ctx.runtime.messages, interventions),
-      ),
+      messages: redactExcludedMessagesForCompaction(ctx.runtime.messages, interventions),
       preserveRecentCount: preserveCount,
       systemPrompt: ctx.runtime.systemPrompt,
       modelConfig: ctx.runtime.modelConfig,
