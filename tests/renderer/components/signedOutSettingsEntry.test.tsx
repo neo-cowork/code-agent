@@ -20,9 +20,9 @@ describe('signed-out settings entries', () => {
   ] as const)('shows both footer actions in %s and opens Settings without signing in', (language, signIn, settings) => {
     useAppStore.setState({ language });
     render(<SidebarSignedOutFooter />);
-    fireEvent.click(screen.getByRole('button', { name: signIn, exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: signIn }));
     expect(useAuthStore.getState().showAuthModal).toBe(true);
-    fireEvent.click(screen.getByRole('button', { name: settings, exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: settings }));
     expect(useAppStore.getState().showSettings).toBe(true);
     expect(useAuthStore.getState().showAuthModal).toBe(false);
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
