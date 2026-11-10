@@ -7,8 +7,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
 
+const { logInfo } = vi.hoisted(() => ({ logInfo: vi.fn() }));
+
 vi.mock('../../../src/host/services/infra/logger', () => ({
-  createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+  createLogger: () => ({ debug: vi.fn(), info: logInfo, warn: vi.fn(), error: vi.fn() }),
 }));
 
 const listRoleDraftsMock = vi.fn();
@@ -47,6 +49,7 @@ function mkAssembly() {
 }
 
 beforeEach(() => {
+  logInfo.mockClear();
   listRoleDraftsMock.mockReset();
   listRoleDraftsMock.mockResolvedValue([]);
 });
@@ -311,4 +314,52 @@ describe('r1: 角色能力需求中的否定不等于放弃建角色', () => {
       expect(ctx.onEvent).not.toHaveBeenCalled();
     },
   );
+});
+
+
+describe('stall log turn record', () => {
+  it('seed-turn stall logs seed with zero user turns', async () => {
+    const ctx = mkCtx();
+    const assembly = mkAssembly();
+    expect(await settleRoleFlowStallOnTextBreak({ ctx, assembly, boundary: createRoleBoundary, finalText: '正在准备。' })).toBe(true);
+    expect(logInfo).toHaveBeenCalledWith('[AgentLoop] Role flow stall exit surfaced: true stall', {
+      sessionId: SESSION_ID, skillName: 'create-role', userTurnsSinceSeed: 0, turnKind: 'seed',
+    });
+  });
+
+  it('follow-up role-list question still writes one notice and logs one user turn', async () => {
+    const finalText = '你目前有晨报摘要员和文档整理员两个角色。';
+    const ctx = mkCtx([
+      SEED,
+      { id: 'a-seed', role: 'assistant', content: '正在准备。', timestamp: 2 },
+      { id: 'u-question', role: 'user', content: '我现在有哪些角色', timestamp: 3 },
+      { id: 'a-list', role: 'assistant', content: finalText, timestamp: 4 },
+    ]);
+    const assembly = mkAssembly();
+    const input = { ctx, assembly, boundary: createRoleBoundary, finalText };
+    expect(await settleRoleFlowStallOnTextBreak(input)).toBe(true);
+    expect(await settleRoleFlowStallOnTextBreak(input)).toBe(false);
+    expect(assembly.addAndPersistMessage).toHaveBeenCalledTimes(1);
+    expect(assembly.persisted).toHaveLength(1);
+    expect(assembly.persisted[0].metadata?.roleFlowStalled).toEqual({ skillName: 'create-role' });
+    expect(logInfo).toHaveBeenCalledWith('[AgentLoop] Role flow stall exit surfaced: true stall', {
+      sessionId: SESSION_ID, skillName: 'create-role', userTurnsSinceSeed: 1, turnKind: 'follow-up',
+    });
+  });
+
+  it('counts only live user turns after the latest seed', async () => {
+    const ctx = mkCtx([
+      SEED,
+      { id: 'u-old', role: 'user', content: '之前的问题', timestamp: 2 },
+      { id: 'u-seed-new', role: 'user', content: ' /create-role 新角色', timestamp: 3 },
+      { id: 'u-next', role: 'user', content: '我现在有哪些角色', timestamp: 4 },
+      { id: 'u-meta', role: 'user', content: '/edit-role 元消息', timestamp: 5, isMeta: true },
+      { id: 'u-rewound', role: 'user', content: '/create-role 已撤回', timestamp: 6, visibility: 'rewound' },
+      { id: 'u-again', role: 'user', content: '列一下角色', timestamp: 7 },
+    ]);
+    expect(await settleRoleFlowStallOnTextBreak({ ctx, assembly: mkAssembly(), boundary: createRoleBoundary, finalText: '目前没有角色。' })).toBe(true);
+    expect(logInfo).toHaveBeenCalledWith('[AgentLoop] Role flow stall exit surfaced: true stall', {
+      sessionId: SESSION_ID, skillName: 'create-role', userTurnsSinceSeed: 2, turnKind: 'follow-up',
+    });
+  });
 });
