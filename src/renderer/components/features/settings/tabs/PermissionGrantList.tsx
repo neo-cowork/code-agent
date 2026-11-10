@@ -23,13 +23,23 @@ type PermissionGrantsText = typeof zh.settings.privacy.permissionGrants;
 function scopeLabel(source: string, copy: PermissionGrantsText['scope']): string {
   if (source === 'conversation') return copy.conversation;
   if (source === 'settings') return copy.always;
+  if (source === 'run') return copy.run;
+  if (source === '24h') return copy.hours24;
   return copy.automation.replace('{title}', source);
 }
 
 function kindLabel(kind: PermissionGrantEntry['kind'], copy: PermissionGrantsText['kind']): string {
   if (kind === 'app') return copy.app;
   if (kind === 'tool-target') return copy.toolTarget;
+  if (kind === 'tool-timed') return copy.toolTimed;
   return copy.toolSession;
+}
+
+function remainingTime(expiresAt: number, copy: PermissionGrantsText): string {
+  const minutes = Math.max(1, (expiresAt - Date.now()) / 60_000);
+  return minutes < 60
+    ? copy.remainingMinutes.replace('{n}', String(Math.ceil(minutes)))
+    : copy.remainingHours.replace('{n}', String(Math.ceil(minutes / 60)));
 }
 
 const PermissionGrantList: React.FC = () => {
@@ -85,9 +95,11 @@ const PermissionGrantList: React.FC = () => {
                   {scopeLabel(grant.source, copy.scope)}
                   {' · '}
                   {copy.grantedOn.replace('{date}', formatDateTime(grant.grantedAt, language))}
-                  {grant.expiresAt !== null ? ` · ${copy.expiresOn.replace('{date}', formatDateTime(grant.expiresAt, language))}` : ''}
+                  {grant.expiresAt !== null ? ` · ${grant.kind === 'tool-timed'
+                    ? remainingTime(grant.expiresAt, copy)
+                    : copy.expiresOn.replace('{date}', formatDateTime(grant.expiresAt, language))}` : ''}
                 </div>
-                {grant.kind === 'tool-target' && grant.detail ? (
+                {(grant.kind === 'tool-target' || grant.kind === 'tool-timed') && grant.detail ? (
                   <div className="mt-0.5 truncate text-xs text-zinc-400">{copy.targetLabel.replace('{target}', grant.detail)}</div>
                 ) : null}
               </div>
