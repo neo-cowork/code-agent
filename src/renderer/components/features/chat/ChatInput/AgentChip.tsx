@@ -39,7 +39,7 @@ export const AgentChip: React.FC<AgentChipProps> = ({ onOpenAgentCommand }) => {
     return null;
   }
 
-  const label = activeEntry.name;
+  const label = activeEntry.displayName || activeEntry.name;
   // 删除 = 恢复默认路由（setActiveAgentId(null)），与能力 chip 的 × 同一语义
   const removeAgent = () => setActiveAgentId(null);
 
@@ -67,11 +67,11 @@ export const AgentChip: React.FC<AgentChipProps> = ({ onOpenAgentCommand }) => {
         // 权限档、上下文环、模型芯片都比它弱一档。之前四样东西同权重并排，
         // 用户读不出哪个是人、哪个是设置。
         className="inline-flex h-8 max-w-[220px] items-center gap-1.5 rounded-lg px-1.5 text-sm font-medium text-zinc-100"
-        title={`${t.agentCommand.chipTitlePrefix}${activeEntry.profession ? `${activeEntry.name}（${activeEntry.profession}）` : activeEntry.name}${t.agentCommand.chipTitleSuffix}`}
+        title={`${t.agentCommand.chipTitlePrefix}${activeEntry.profession ? `${label}（${activeEntry.profession}）` : label}${t.agentCommand.chipTitleSuffix}`}
       >
         <RoleInitialAvatar
           roleId={activeEntry.id}
-          name={activeEntry.name}
+          name={label}
           className="h-5 w-5 text-[10px]"
         />
         {/* 花名是主体不许被挤没，职业先 truncate——用户只看花名不知道这专家是干什么的 */}
@@ -85,7 +85,7 @@ export const AgentChip: React.FC<AgentChipProps> = ({ onOpenAgentCommand }) => {
         tabIndex={-1}
         data-testid="chat-input-agent-chip-remove"
         onClick={removeAgent}
-        aria-label={t.agentCommand.chipRemoveAria.replace('{name}', activeEntry.name)}
+        aria-label={t.agentCommand.chipRemoveAria.replace('{name}', label)}
         className="shrink-0 rounded-full p-0.5 text-zinc-400 opacity-0 transition-opacity hover:bg-zinc-600/70 hover:text-zinc-100 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
       >
         <X className="h-3 w-3" aria-hidden />
