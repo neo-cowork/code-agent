@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { TraceTurn } from '../../../src/shared/contract/trace';
 
@@ -67,74 +67,117 @@ function getThinkingToggle(): HTMLButtonElement {
   return screen.getByTestId('thinking-digest').querySelector('button') as HTMLButtonElement;
 }
 
+function getContent(): HTMLElement {
+  return screen.getByTestId('thinking-digest').querySelector('.thinking-digest-content') as HTMLElement;
+}
+
 describe('TurnCard 思考展示状态机', () => {
-  it('reasoning delta 出现时默认展开，并由思考块独占「正在思考」信号', () => {
+  it('流式 reasoning 期间默认收起，只显示「正在思考」一行，思考块独占该信号', () => {
     vi.setSystemTime(baseTime + 2_300);
     render(<TurnCard turn={makeTurn([reasoningNode('reasoning-1', '正在核对文件结构。')])} />);
 
-    expect(getThinkingToggle().getAttribute('aria-expanded')).toBe('true');
-    expect(screen.getByText(/正在思考… · 3s/)).not.toBeNull();
-    expect(screen.getByText('正在核对文件结构。')).not.toBeNull();
+    expect(getThinkingToggle().getAttribute('aria-expanded')).toBe('false');
+    expect(getThinkingToggle().textContent).toContain('正在思考… · 3s');
+    expect(getContent().getAttribute('aria-hidden')).toBe('true');
+    expect(getContent().className).not.toContain('is-expanded');
     expect(screen.getByTestId('streaming-indicator').textContent).toBe('');
   });
 
-  it('自动展开后，第一段正文出现才自动收起成带时长和段数的横幅', async () => {
-    vi.setSystemTime(baseTime + 2_300);
-    const streamingReasoning = reasoningNode('reasoning-1', '先分析约束。');
-    const { rerender } = render(<TurnCard turn={makeTurn([streamingReasoning])} />);
+  it('用户展开后，新文本、工具隔断后的新段、正文与回合完成都不再改动状态', () => {
+    vi.setSystemTime(baseTime + 1_000);
+    const first = reasoningNode('reasoning-1', '第一段。');
+    const { rerender } = render(<TurnCard turn={makeTurn([first])} />);
+
+    fireEvent.click(getThinkingToggle());
     expect(getThinkingToggle().getAttribute('aria-expanded')).toBe('true');
+    expect(getContent().getAttribute('aria-hidden')).toBe('false');
+    expect(screen.getByText('第一段。')).not.toBeNull();
+    expect(screen.getByTestId('thinking-digest').getAttribute('data-user-interacted')).toBe('true');
 
-    // reasoning 与正文之间的空窗仍保持展开；不能把“当前没新 delta”误当成正文边界。
-    rerender(<TurnCard turn={makeTurn([{ ...streamingReasoning }])} />);
-    expect(getThinkingToggle().getAttribute('aria-expanded')).toBe('true');
+    const expectOpen = () => {
+      expect(getThinkingToggle().getAttribute('aria-expanded')).toBe('true');
+      expect(screen.getByTestId('thinking-digest').getAttribute('data-user-interacted')).toBe('true');
+    };
 
-    act(() => vi.setSystemTime(baseTime + 3_600));
-    rerender(<TurnCard turn={makeTurn([{ ...streamingReasoning, content: '第一段正文' }])} />);
+    rerender(<TurnCard turn={makeTurn([{ ...first, reasoning: '第一段。继续推理。' }])} />);
+    expectOpen();
+    expect(screen.getByText('第一段。继续推理。')).not.toBeNull();
 
-    await waitFor(() => expect(getThinkingToggle().getAttribute('aria-expanded')).toBe('false'));
-    expect(getThinkingToggle().textContent).toContain('思考 4s · 1 段');
+    const withTool = [first, toolNode('tool-1', baseTime + 2_000)];
+    rerender(<TurnCard turn={makeTurn(withTool)} />);
+    expectOpen();
+
+    const withSecond = [...withTool, reasoningNode('reasoning-2', '第二段。', baseTime + 3_000)];
+    rerender(<TurnCard turn={makeTurn(withSecond)} />);
+    expectOpen();
+    expect(screen.getByText('2. 第二段。')).not.toBeNull();
+
+    rerender(<TurnCard turn={makeTurn([...withSecond, reasoningNode('answer-1', '', baseTime + 4_000, '正文')])} />);
+    expectOpen();
+
+    rerender(<TurnCard turn={makeTurn([...withSecond, reasoningNode('answer-1', '', baseTime + 4_000, '正文')], 'completed')} />);
+    expectOpen();
+    expect(getThinkingToggle().textContent).toContain('思考');
   });
 
-  it('用户手动收起后，本轮正文与后续 reasoning 段都不能再改动展开状态', async () => {
+  it('用户手动展开再收起后，正文、工具隔断、新 reasoning 段与回合完成都保持收起', () => {
     vi.setSystemTime(baseTime + 1_000);
-    const firstReasoning = reasoningNode('reasoning-1', '第一段。');
-    const { rerender } = render(<TurnCard turn={makeTurn([firstReasoning])} />);
+    const first = reasoningNode('reasoning-1', '第一段。');
+    const { rerender } = render(<TurnCard turn={makeTurn([first])} />);
 
+    fireEvent.click(getThinkingToggle());
     fireEvent.click(getThinkingToggle());
     expect(getThinkingToggle().getAttribute('aria-expanded')).toBe('false');
     expect(screen.getByTestId('thinking-digest').getAttribute('data-user-interacted')).toBe('true');
 
-    rerender(<TurnCard turn={makeTurn([{ ...firstReasoning, content: '正文一' }])} />);
-    await waitFor(() => expect(getThinkingToggle().getAttribute('aria-expanded')).toBe('false'));
+    const expectClosed = () => {
+      expect(getThinkingToggle().getAttribute('aria-expanded')).toBe('false');
+      expect(screen.getByTestId('thinking-digest').getAttribute('data-user-interacted')).toBe('true');
+    };
 
-    rerender(<TurnCard turn={makeTurn([
-      { ...firstReasoning, content: '正文一' },
+    rerender(<TurnCard turn={makeTurn([{ ...first, content: '正文一' }])} />);
+    expectClosed();
+
+    const later = [
+      { ...first, content: '正文一' },
       toolNode('tool-1', baseTime + 2_000),
       reasoningNode('reasoning-2', '第二段。', baseTime + 3_000),
-    ])} />);
-    expect(getThinkingToggle().getAttribute('aria-expanded')).toBe('false');
+    ];
+    rerender(<TurnCard turn={makeTurn(later)} />);
+    expectClosed();
+
+    rerender(<TurnCard turn={makeTurn(later, 'completed')} />);
+    expectClosed();
   });
 
-  it('工具隔断当前段时收起，后续新 reasoning 段流入时再次展开', async () => {
+  it('未交互时，工具隔断、新 reasoning 段与正文出现都保持收起', () => {
     vi.setSystemTime(baseTime + 1_000);
-    const firstReasoning = reasoningNode('reasoning-1', '第一段。');
-    const { rerender } = render(<TurnCard turn={makeTurn([firstReasoning])} />);
-    expect(getThinkingToggle().getAttribute('aria-expanded')).toBe('true');
+    const first = reasoningNode('reasoning-1', '第一段。');
+    const { rerender } = render(<TurnCard turn={makeTurn([first])} />);
+    const expectClosed = () => {
+      expect(getThinkingToggle().getAttribute('aria-expanded')).toBe('false');
+      expect(screen.getByTestId('thinking-digest').getAttribute('data-user-interacted')).toBe('false');
+    };
+    expectClosed();
+
+    rerender(<TurnCard turn={makeTurn([first, toolNode('tool-1', baseTime + 2_000)])} />);
+    expectClosed();
 
     rerender(<TurnCard turn={makeTurn([
-      firstReasoning,
-      toolNode('tool-1', baseTime + 2_000),
-    ])} />);
-    await waitFor(() => expect(getThinkingToggle().getAttribute('aria-expanded')).toBe('false'));
-
-    rerender(<TurnCard turn={makeTurn([
-      firstReasoning,
+      first,
       toolNode('tool-1', baseTime + 2_000),
       reasoningNode('reasoning-2', '第二段。', baseTime + 3_000),
     ])} />);
-    await waitFor(() => expect(getThinkingToggle().getAttribute('aria-expanded')).toBe('true'));
+    expectClosed();
     expect(getThinkingToggle().textContent).toContain('正在思考');
-    expect(screen.getByText('2. 第二段。')).not.toBeNull();
+  });
+
+  it('已完成的回合默认收起，显示带时长和段数的摘要', () => {
+    render(<TurnCard turn={makeTurn([
+      { ...reasoningNode('reasoning-1', '完整思考。'), content: '正文' } as TraceTurn['nodes'][number],
+    ], 'completed')} />);
+    expect(getThinkingToggle().getAttribute('aria-expanded')).toBe('false');
+    expect(getThinkingToggle().textContent).toContain('思考 5s · 1 段');
   });
 
   it('provider 完全没有 reasoning delta 时不出现空思考块', () => {
@@ -173,6 +216,7 @@ describe('思考容器贴底判定', () => {
   it('距底 2px 以内跟随，用户上滚到 3px 后停止抢滚动', () => {
     const firstReasoning = reasoningNode('reasoning-1', '第一行');
     const { rerender } = render(<TurnCard turn={makeTurn([firstReasoning])} />);
+    fireEvent.click(getThinkingToggle());
     const scroller = screen.getByTestId('thinking-digest').querySelector<HTMLElement>(
       '.thinking-digest-scroller',
     )!;
