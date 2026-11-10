@@ -243,7 +243,7 @@ export class AgentOrchestrator {
       sessionId,
       options?.modelSpec,
     );
-    if (sessionId) {
+    if (sessionId && options?.runRegistration !== 'auxiliary') {
       updateContextHealthSnapshot(sessionId, modelConfig.model, this.messageHistory.getMessagesForRun());
     }
 
@@ -989,6 +989,7 @@ export class AgentOrchestrator {
       agentId: routingResolution?.agent?.id ?? 'default',
       agentName: routingResolution?.agent?.name ?? 'default',
       requestedAgentId,
+      publishContextHealth: options?.runRegistration !== 'auxiliary',
       memoryMode: sessionMemoryMode,
       suppressedMemoryEntryIds,
       workingDirectory: runWorkingDirectory,

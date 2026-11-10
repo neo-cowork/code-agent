@@ -451,7 +451,7 @@ export function createMemoryMirrorRecord(
 }
 
 /** 列表附带「最近一次变更」标记（后台写入可见）。读失败只 warn，不连累列表本身。 */
-function annotateLastChange(entries: MemoryEntry[], db: MemoryEntryDatabase | undefined): void {
+export function annotateLastChange(entries: MemoryEntry[], db: MemoryEntryDatabase | undefined): void {
   if (!db || typeof db.latestMemoryChanges !== 'function') return;
   try {
     const changes = db.latestMemoryChanges();

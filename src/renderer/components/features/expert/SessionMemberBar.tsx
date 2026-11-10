@@ -18,6 +18,7 @@ import { useTeamRecipeStore } from '../../../stores/teamRecipeStore';
 import { useAgentRegistryStore } from '../../../stores/agentRegistryStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import type { SwarmAgentState } from '@shared/contract/swarm';
 import type { SwarmRunAgentRecord } from '@shared/contract/swarmTrace';
 import { readPersistedTeamLead, teamRecipeMemberKey } from '@shared/contract/teamRecipe';
@@ -214,16 +215,16 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
   // 「N 个代理工作中 · 名字」。名字说明谁在干活；工具步人话不进折叠条。
   const firstWorking = working[0];
   const summary = standby
-    ? text.collapsedStandby.replace('{count}', String(rows.length))
+    ? interpolatePlural(text.collapsedStandby, rows.length)
     : firstWorking
-      ? `${text.collapsedWorking.replace('{count}', String(working.length))} · ${firstWorking.name}`
+      ? `${interpolatePlural(text.collapsedWorking, working.length)} · ${firstWorking.name}`
       : waiting.length > 0
-        ? text.collapsedWaiting.replace('{count}', String(waiting.length))
+        ? interpolatePlural(text.collapsedWaiting, waiting.length)
         : failed.length > 0
-          ? text.collapsedFailed.replace('{count}', String(failed.length))
+          ? interpolatePlural(text.collapsedFailed, failed.length)
           : cancelled.length > 0
-            ? text.collapsedCancelled.replace('{count}', String(cancelled.length))
-            : text.collapsedDone.replace('{count}', String(rows.length));
+            ? interpolatePlural(text.collapsedCancelled, cancelled.length)
+            : interpolatePlural(text.collapsedDone, rows.length);
   const mergeLabel = mergeState === 'merged'
     ? text.mergeState.chipMerged
     : mergeState === 'reported'

@@ -1,4 +1,4 @@
- 
+import { watchFirstModelRequest } from '../../host/agent/runtime/firstModelRequestWatch';
 import { expandSlashPromptForModel } from './agentSlashExpansion';
 import { Router } from 'express';
 import type { Request, Response } from 'express';
@@ -517,8 +517,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     return outcome.outcome === 'queued' ? 'queued' : 'steered';
   });
 
-  // ── Agent Run (SSE streaming) ──────────────────────────────────────
-  async function runAgentTurn(
+  const runAgentTurn = (...args: Parameters<typeof runObservedAgentTurn>): Promise<void> =>
+    watchFirstModelRequest(args[0].sessionId, () => runObservedAgentTurn(...args));
+  async function runObservedAgentTurn(
     body: AgentRunBody,
     res: Response,
     transport: (
@@ -528,8 +529,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           /** ADR-072 K1C：投递层校验过的委托来源标记（带外，客户端永远给不了）。 */
           delegationOrigin?: import('../../shared/contract/queuedInput').DelegationOriginMarker;
           onDurableActivated?: (activation: { runId: string; activatedAt: number }) => void;
-          /**
-           * 幂等重放命中：不建新 run，调用方按既有 runId 收口回执（不再发 run_started）。
+          /** 幂等重放命中：不建新 run，调用方按既有 runId 收口回执（不再发 run_started）。
            * 离线调用方传了它才允许重放收口；不传（drain / send-now idle 排队投递）时
            * 一律落回真实起跑——没有回执通道的重放会被上层当成功结算（drainOne 标
            * consumed），上一轮失败后的重投就被静默吞掉（rework r1）。

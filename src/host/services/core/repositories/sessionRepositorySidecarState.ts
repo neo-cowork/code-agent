@@ -291,6 +291,7 @@ export function saveSessionRuntimeState(
   state: {
     compressionStateJson?: string | null;
     persistentSystemContext?: string[];
+    lastProviderUsageJson?: string | null;
   },
   updatedAt?: number,
 ): void {
@@ -301,12 +302,16 @@ export function saveSessionRuntimeState(
     state.persistentSystemContext !== undefined
       ? state.persistentSystemContext
       : (existing?.persistentSystemContext ?? []);
+  const lastProviderUsageJson =
+    state.lastProviderUsageJson !== undefined
+      ? state.lastProviderUsageJson
+      : (existing?.lastProviderUsageJson ?? null);
 
   db.prepare(
     `INSERT OR REPLACE INTO session_runtime_state (
-      session_id, compression_state_json, persistent_system_context_json, updated_at
-    ) VALUES (?, ?, ?, ?)`,
-  ).run(sessionId, compressionStateJson, safeJsonStringify(persistentSystemContext), updatedAt ?? Date.now());
+      session_id, compression_state_json, persistent_system_context_json, last_provider_usage_json, updated_at
+    ) VALUES (?, ?, ?, ?, ?)`,
+  ).run(sessionId, compressionStateJson, safeJsonStringify(persistentSystemContext), lastProviderUsageJson, updatedAt ?? Date.now());
 }
 
 export function getSessionRuntimeState(
@@ -315,10 +320,11 @@ export function getSessionRuntimeState(
 ): {
   compressionStateJson: string | null;
   persistentSystemContext: string[];
+  lastProviderUsageJson: string | null;
 } | null {
   const row = db
     .prepare(
-      `SELECT compression_state_json, persistent_system_context_json
+      `SELECT compression_state_json, persistent_system_context_json, last_provider_usage_json
         FROM session_runtime_state
         WHERE session_id = ?`,
     )
@@ -329,5 +335,6 @@ export function getSessionRuntimeState(
   return {
     compressionStateJson: row.compression_state_json == null ? null : String(row.compression_state_json),
     persistentSystemContext: parseJsonArray(row.persistent_system_context_json),
+    lastProviderUsageJson: row.last_provider_usage_json == null ? null : String(row.last_provider_usage_json),
   };
 }

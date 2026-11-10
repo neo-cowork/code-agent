@@ -65,15 +65,18 @@ describe('remindersCreateModule (native)', () => {
       expect(remindersCreateModule.schema.permissionLevel).toBe('write');
       expect(remindersCreateModule.schema.readOnly).toBe(false);
       expect(remindersCreateModule.schema.allowInPlanMode).toBe(false);
-      expect(remindersCreateModule.schema.inputSchema.required).toEqual(['list', 'title']);
+      expect(remindersCreateModule.schema.inputSchema.required).toEqual(['title']);
     });
   });
 
   describe('validation & errors', () => {
-    it('rejects missing list', async () => {
+    it('allows missing list and passes it through to the connector', async () => {
+      execMock.mockResolvedValue({
+        data: { id: 'r-default', list: '提醒事项', title: 'x', completed: false },
+      });
       const result = await run({ title: 'x' });
-      expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.code).toBe('INVALID_ARGS');
+      expect(result.ok).toBe(true);
+      expect(execMock).toHaveBeenCalledWith('create_reminder', { title: 'x' });
     });
 
     it('rejects missing title', async () => {
@@ -82,10 +85,13 @@ describe('remindersCreateModule (native)', () => {
       if (!result.ok) expect(result.code).toBe('INVALID_ARGS');
     });
 
-    it('rejects empty list string', async () => {
+    it('allows an empty list string and passes it through to the connector', async () => {
+      execMock.mockResolvedValue({
+        data: { id: 'r-default', list: '提醒事项', title: 'x', completed: false },
+      });
       const result = await run({ list: '', title: 'x' });
-      expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.code).toBe('INVALID_ARGS');
+      expect(result.ok).toBe(true);
+      expect(execMock).toHaveBeenCalledWith('create_reminder', { list: '', title: 'x' });
     });
 
     it('returns PERMISSION_DENIED when canUseTool denies', async () => {
