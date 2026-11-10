@@ -25,6 +25,7 @@ import { beginArtifactRefresh, finishArtifactRefresh } from './artifactStandingR
 import { runWithCronJobBudget } from './cronExecutionPolicy';
 import { attachCronRunCost, createCronRunCostMeterForExecution } from './cronRunCostMeter';
 import { cronNotifyQuietRound } from './cronFailurePolicy';
+import type { CronResultDeliverySkip } from './cronResultDelivery';
 import { getCronAutomationType } from './cronAutomationBridge';
 import { takeUnattendedApprovalDenials } from '../agent/unattendedApprovalTerminal';
 import { parseStatedEventDecisions } from './cronEventDecisions';
@@ -56,7 +57,7 @@ export interface CronAgentActionHost {
   /** 即 CronService.updateJob：快照写回、常设刷新结算落库。 */
   updateJob: (jobId: string, updates: Partial<Omit<CronJobDefinition, 'id' | 'createdAt'>>) => Promise<unknown>;
   /** 即 CronService.deliverCronResult：安静轮判定通过后的通道推送。 */
-  deliverCronResult: (definition: CronJobDefinition, result: unknown, executionId?: string) => Promise<void>;
+  deliverCronResult: (definition: CronJobDefinition, result: unknown, executionId?: string, gate?: CronResultDeliverySkip) => Promise<void>;
   /** 会话一建好就把 id 记进执行记录并落库：进程在模型跑到一半被杀，运行详情仍能顺着它找到会话与作废审批。 */
   recordSessionId: (executionId: string, sessionId: string) => Promise<void>;
 }
@@ -285,6 +286,9 @@ export async function executeCronAgentAction(
     // 推送正文必须是最后一条 assistant 正文：orchestrator.sendMessage 是 Promise<void>，
     // result 恒 undefined，推它等于永远不推（PR#2060 ai-review Important）。
     await host.deliverCronResult(definition, finalAssistantText || result, executionId);
+  } else {
+    // 不投递，但配了推送目标时在运行记录里留一条「为什么没推」（N-FIX-CRON-RESULT-PUSH-SILENT-SKIP）。
+    await host.deliverCronResult(definition, undefined, executionId, { skip: quietWatchRound ? 'quiet-watch-round' : 'notify-quiet-round' });
   }
 
   // 无新料的监听运行整成 skipped 形状：复用 isSkippedResult 门，

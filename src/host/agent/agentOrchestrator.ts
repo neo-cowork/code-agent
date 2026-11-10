@@ -16,6 +16,7 @@ import type {
 import type { AgentRunOptions, ResearchUserSettings } from '../research/types';
 import { CHANNEL_REPLY_STYLE_INSTRUCTION } from '../channels/channelReplyBrevity';
 import { shouldDeliverAgentEvent } from '../protocol/events/eventFilter';
+import { isTerminalAgentError } from '../../shared/utils/agentErrorClassification';
 import { AgentLoop } from './agentLoop';
 import { buildGoalContract } from './goalModeController';
 import { SYSTEM_PROMPT } from '../prompts/builder';
@@ -257,7 +258,9 @@ export class AgentOrchestrator {
     }
     const telemetryCollector = getTelemetryCollector();
     const sessionAwareOnEvent = (event: AgentEvent) => {
-      if (shouldDeliverAgentEvent(event, options?.eventFilter)) {
+      if (options?.terminalErrorSink && event.type === 'error' && isTerminalAgentError(event.data)) {
+        options.terminalErrorSink(event.data);
+      } else if (shouldDeliverAgentEvent(event, options?.eventFilter)) {
         this.onEvent({ ...event, sessionId } as AgentEvent & { sessionId?: string });
       }
       if (sessionId) {
@@ -655,6 +658,9 @@ export class AgentOrchestrator {
       const executionContent = this.applyTurnSystemContext(content, options, sessionId);
 
       if (options?.disableAutoAgent) {
+        if (requirements.needsAutoAgent) {
+          logger.info('[AutoAgentRouting] skipped: disableAutoAgent option set by system-generated turn (e.g. background notification wake)', { sessionId });
+        }
         requirements.needsAutoAgent = false;
         requirements.executionStrategy = 'sequential';
       }

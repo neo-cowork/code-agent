@@ -29,6 +29,8 @@ const logger = createLogger('Seatbelt', { lane: 'sandbox' });
 export interface SeatbeltConfig {
   /** Allow network access (default: false) */
   allowNetwork: boolean;
+  /** Bash rendering needs LibreOffice's current-user local IPC socket; opt-in only. */
+  allowOfficeIpc?: boolean;
   /** Paths to allow read access */
   readPaths: string[];
   /** Paths to allow write access */
@@ -178,11 +180,23 @@ export function generateProfile(config: SeatbeltConfig): string {
     lines.push('');
   }
 
+  // Owner-approved LibreOffice IPC exception. Never grants IP traffic or outbound sockets.
+  const uid = process.getuid?.();
+  const officeSocket = config.allowOfficeIpc && uid !== undefined
+    ? `^/private/tmp/OSL_PIPE_${uid}_SingleOfficeIPC_[^/]+$`
+    : undefined;
+  if (officeSocket) {
+    lines.push(`(allow network-bind network-inbound (local unix-socket (path-regex #"${officeSocket}")))`);
+  }
+
   // Writes：默认全拒，再按 realpath 放行 /dev + 临时目录 + 工作目录/显式写路径。
   // In-project bash auto-approve (N-WRITETARGET-EXECTIME) depends on this realpath jail.
   lines.push('; Confine writes: deny all, re-allow specific real paths');
   lines.push('(deny file-write*)');
   lines.push('(allow file-write* (subpath "/dev"))');
+  if (officeSocket) {
+    lines.push(`(allow file-write* (regex #"${officeSocket}"))`);
+  }
 
   const writeRoots = new Set<string>();
   writeRoots.add(realPath(process.env.TMPDIR || os.tmpdir() || '/tmp'));

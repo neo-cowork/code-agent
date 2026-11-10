@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Message } from '../../../src/shared/contract';
 
 type Row = {
   id: string;
@@ -21,7 +22,7 @@ type ParkedRow = { id: string; kind: string; status: string; payloadJson: string
 const state = vi.hoisted(() => ({
   rows: new Map<string, Row>(),
   parkedRows: new Map<string, ParkedRow>(),
-  messages: [] as Array<{ sessionId: string; message: unknown }>,
+  messages: [] as Array<{ sessionId: string; message: Message }>,
   taskStarts: [] as Array<{ sessionId: string; message: string; clientMessageId?: string }>,
   broadcasts: [] as Array<{ channel: string; data: unknown }>,
   sessionStatus: 'idle' as string,
@@ -109,7 +110,7 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
 
 vi.mock('../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({
-    addMessageToSession: vi.fn(async (sessionId: string, message: unknown) => {
+    addMessageToSession: vi.fn(async (sessionId: string, message: Message) => {
       state.messages.push({ sessionId, message });
     }),
   }),
@@ -498,6 +499,86 @@ describe('SessionAutomationService', () => {
       const items = new SessionAutomationService().listParkedApprovals();
       expect(items).toHaveLength(1);
       expect(items[0].argsPreview).toBe('npm run gates:fast · ***REDACTED***');
+    });
+  });
+
+  describe('buildCreationMessage card text via recordCreated (N-FIX-AUTOMATION-CREATED-CARD-AT-FREQUENCY-DUP)', () => {
+    it('omits "频率：" on one-shot (scheduleType: "at") tasks and shows only a single "下次运行：" line', async () => {
+      const service = new SessionAutomationService();
+      const targetTs = new Date(2026, 10, 4, 0, 44).getTime();
+
+      await service.recordCreated({
+        id: 'cron:job-at',
+        sourceSessionId: 'session-1',
+        type: 'cron',
+        status: 'active',
+        title: '给张经理回电话',
+        cadenceLabel: '11/04 00:44',
+        nextRunAt: targetTs,
+        sourceRefId: 'job-at',
+        config: { scheduleType: 'at' },
+      });
+
+      const content = state.messages.at(-1)?.message.content ?? '';
+      expect(content).not.toContain('频率：');
+      expect(content.match(/下次运行：/g)).toHaveLength(1);
+      expect(content).toBe('自动化已创建：给张经理回电话\n下次运行：11/04 00:44\n状态：已启用');
+    });
+
+    it('omits both "频率：" and "下次运行：" when a one-shot task has no nextRunAt', async () => {
+      const service = new SessionAutomationService();
+
+      await service.recordCreated({
+        id: 'cron:job-at-invalid',
+        sourceSessionId: 'session-1',
+        type: 'cron',
+        status: 'active',
+        title: '时间无法解析的一次性任务',
+        cadenceLabel: '一次性',
+        nextRunAt: undefined,
+        sourceRefId: 'job-at-invalid',
+        config: { scheduleType: 'at' },
+      });
+
+      const content = state.messages.at(-1)?.message.content ?? '';
+      expect(content).not.toContain('频率：');
+      expect(content).not.toContain('下次运行：');
+      expect(content).toBe('自动化已创建：时间无法解析的一次性任务\n状态：已启用');
+    });
+
+    it('keeps byte-identical "频率：" and "下次运行：" lines for "every" and "cron" tasks', async () => {
+      const service = new SessionAutomationService();
+      const targetTs = new Date(2026, 10, 4, 8, 17).getTime();
+
+      await service.recordCreated({
+        id: 'cron:job-every',
+        sourceSessionId: 'session-1',
+        type: 'cron',
+        status: 'active',
+        title: '每隔三小时巡检',
+        cadenceLabel: '每 3 小时',
+        nextRunAt: targetTs,
+        sourceRefId: 'job-every',
+        config: { scheduleType: 'every' },
+      });
+      expect(state.messages.at(-1)?.message.content).toBe(
+        '自动化已创建：每隔三小时巡检\n频率：每 3 小时\n下次运行：11/04 08:17\n状态：已启用',
+      );
+
+      await service.recordCreated({
+        id: 'cron:job-cron',
+        sourceSessionId: 'session-1',
+        type: 'cron',
+        status: 'active',
+        title: '晨会简报',
+        cadenceLabel: '每天 08:17',
+        nextRunAt: targetTs,
+        sourceRefId: 'job-cron',
+        config: { scheduleType: 'cron' },
+      });
+      expect(state.messages.at(-1)?.message.content).toBe(
+        '自动化已创建：晨会简报\n频率：每天 08:17\n下次运行：11/04 08:17\n状态：已启用',
+      );
     });
   });
 });

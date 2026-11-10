@@ -4,6 +4,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuthStore } from '../stores/authStore';
+import { useAppStore } from '../stores/appStore';
+import { useI18n } from '../hooks/useI18n';
 import { UserPlus, LogIn, KeyRound, ArrowLeft, CheckCircle } from 'lucide-react';
 import { FormField, Input } from './composites/FormField';
 import { Modal } from './primitives/Modal';
@@ -32,6 +34,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setShowAuthModal,
     setError,
   } = useAuthStore();
+
+  const { t } = useI18n();
+  const openSettingsTab = useAppStore((state) => state.openSettingsTab);
 
   const [mode, setMode] = useState<AuthMode>('signin');
   const [email, setEmail] = useState('');
@@ -313,6 +318,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </div>
             )}
           </form>
+          <Button variant="ghost" fullWidth className="mt-4" onClick={() => {
+            onClose();
+            openSettingsTab('model');
+          }}>
+            {t.sidebar.skipSignInSetup}
+          </Button>
         </>
       )}
     </Modal>

@@ -81,7 +81,7 @@ import {
 } from './conversationRuntimeContextBootstrap';
 import { isStartupAborted, raceStartupStep, startupStepAbandoned } from './startupAssemblyGuard';
 import { watchFirstModelRequest, noteFirstModelRequestPhase } from './firstModelRequestWatch';
-import { resolveStickyStrictSkillInvocation } from './conversationRuntimeStickySkill';
+import { resolveStickyStrictSkillInvocation, resolveNaturalLanguageCreateRoleInvocation } from './conversationRuntimeStickySkill';
 import { buildStrictToolsetNotice } from '../../tools/skillBoundaryScope';
 import { extractUserRequest } from '../turnScaffold';
 import { TOOL_ARGS_REPAIR_MAX_ATTEMPTS } from '../../../shared/constants/repair';
@@ -895,7 +895,8 @@ export class ConversationRuntime {
           }),
           'skill_discovery',
         )
-        ?? await raceStartupStep(this.ctx, resolveStickyStrictSkillInvocation(this.ctx, userRequest), 'skill_discovery');
+        ?? await raceStartupStep(this.ctx, resolveStickyStrictSkillInvocation(this.ctx, userRequest), 'skill_discovery')
+        ?? await raceStartupStep(this.ctx, resolveNaturalLanguageCreateRoleInvocation(this.ctx, userRequest), 'skill_discovery');
       if (isStartupAborted(this.ctx)) return null;
       // 单轮文件交付轮丢弃裸词别名注入（sticky 来源只可能是 slash 种子，不受影响）
       const skillInvocation = retainSkillInvocationForTurn(
@@ -1194,7 +1195,7 @@ export class ConversationRuntime {
   async cancel(reason?: RunCancelReason): Promise<void> {
     // 回复已经完成落库、但 run 还没从 registry 注销的尾窗里，cancel 必须是安全 no-op。
     // 这时再标 cancelled / preserve partial 会把同一条完整回复追加标记后写成第二行。
-    if (this.ctx.control.isSettled) return;
+    if (this.ctx.control.isSettled || this.ctx.control.isCancelled) return;
 
     markStreamSnapshotInterruptionReason({ workingDir: this.ctx.workingDirectory, sessionId: this.ctx.sessionId }, reason === 'client-disconnect' ? 'stream-break' : reason === 'session-switch' || reason === 'idle-reaped' ? reason : 'user');
     this.ctx.control.markCancelled(reason);
