@@ -22,6 +22,12 @@ import { requestBrowserUploadApproval } from './browserUploadApproval';
 import { createManagedBrowserOperationId, getManagedBrowserProviderAdapter, surfaceIdentityFromToolContext } from '../../services/surfaceExecution/ManagedBrowserProviderAdapter';
 import { scrubSecretFromMessage, typeSecret } from './browserSecretRefGuard';
 import {
+  executeFillFormWithFastFail,
+  executeSelectorClickWithFastFail,
+  executeSelectorTypeWithFastFail,
+  resetBrowserSelectorFillStreak,
+} from './browserSelectorFillGuard';
+import {
   formatBrowserTargetRefLabel,
   getBrowserTargetRefErrorDetails,
   getScreenshotPathFromResult,
@@ -507,6 +513,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
             workbenchNotes.push('自动创建了空白标签页后继续导航');
           }
           await browserService.navigate(url, tabId);
+          resetBrowserSelectorFillStreak(browserService, tabId);
           const content = await browserService.getPageContent(tabId);
           return {
             success: true,
@@ -516,14 +523,17 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
 
         case 'back':
           await browserService.goBack(tabId);
+          resetBrowserSelectorFillStreak(browserService, tabId);
           return { success: true, output: 'Navigated back' };
 
         case 'forward':
           await browserService.goForward(tabId);
+          resetBrowserSelectorFillStreak(browserService, tabId);
           return { success: true, output: 'Navigated forward' };
 
         case 'reload':
           await browserService.reload(tabId);
+          resetBrowserSelectorFillStreak(browserService, tabId);
           return { success: true, output: 'Page reloaded' };
 
         case 'set_viewport':
@@ -554,45 +564,14 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
           if (!selector) {
             return { success: false, error: 'selector or targetRef required for click' };
           }
-          const clickBoundingBox = await browserService.getElementBoundingBox(selector, tabId);
-          await browserService.click(selector, tabId);
-          return {
-            success: true,
-            output: `Clicked element: ${selector}`,
-            metadata: {
-              pointerTarget: {
-                label: selector,
-                selector,
-                boundingBox: clickBoundingBox,
-              },
-            },
-          };
+          return executeSelectorClickWithFastFail({ browserService, selector, tabId });
         }
 
         case 'click_text': {
           if (!text) {
             return { success: false, error: 'text required for click_text' };
           }
-          const element = await browserService.findElementByText(text, tabId);
-          if (!element) {
-            return { success: false, error: `Element with text "${text}" not found` };
-          }
-          // Click using text selector
-          const tab = browserService.getActiveTab();
-          if (tab) {
-            await tab.page.click(`text=${text}`);
-          }
-          return {
-            success: true,
-            output: `Clicked element with text: "${text}"`,
-            metadata: {
-              pointerTarget: {
-                label: text,
-                selector: `text=${text}`,
-                boundingBox: element.rect,
-              },
-            },
-          };
+          return executeSelectorClickWithFastFail({ browserService, selector: `text=${text}`, tabId });
         }
 
         case 'type': {
@@ -616,19 +595,12 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
           if (!selector) {
             return { success: false, error: 'selector or targetRef required for type' };
           }
-          const typeBoundingBox = await browserService.getElementBoundingBox(selector, tabId);
-          await browserService.type(selector, textToType, tabId);
-          return {
-            success: true,
-            output: `Typed ${textToType.length} chars into ${selector}`,
-            metadata: {
-              pointerTarget: {
-                label: selector,
-                selector,
-                boundingBox: typeBoundingBox,
-              },
-            },
-          };
+          return executeSelectorTypeWithFastFail({
+            browserService,
+            selector,
+            text: textToType,
+            tabId,
+          });
         }
 
         case 'press_key':
@@ -854,9 +826,11 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
           if (!formData) {
             return { success: false, error: 'formData required for fill_form' };
           }
-          await browserService.fillForm(formData, tabId);
-          const fields = Object.keys(formData).join(', ');
-          return { success: true, output: `Filled form fields: ${fields}` };
+          return executeFillFormWithFastFail({
+            browserService,
+            formData,
+            tabId,
+          });
         }
 
         // Logs - for debugging and transparency
