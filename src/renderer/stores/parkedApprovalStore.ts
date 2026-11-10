@@ -18,7 +18,7 @@ interface ParkedApprovalState {
   bySession: ParkedSets;
 }
 
-export const useParkedApprovalStore = create<ParkedApprovalState>(() => ({ bySession: {} }));
+const useParkedApprovalStore = create<ParkedApprovalState>(() => ({ bySession: {} }));
 
 const watchers = new Map<symbol, string>();
 let timer: ReturnType<typeof setInterval> | null = null;

@@ -15,7 +15,7 @@ import { ToolStepGroup } from '../../../src/renderer/components/features/chat/To
 import { ToolCallDisplay } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
-import { refreshParkedApprovals, useParkedApprovalStore } from '../../../src/renderer/stores/parkedApprovalStore';
+import { refreshParkedApprovals } from '../../../src/renderer/stores/parkedApprovalStore';
 
 // 重开的会话：会话在线（processingSessionIds 含它）、没有内存 permission request，
 // 审批只在 pending_approvals 表里（listParkedApprovals 的真实条目形状，含 toolCallId）。
@@ -48,9 +48,10 @@ const bashNode = (extra: Record<string, unknown> = {}) => node('call-b', 'Bash',
 const head = () => screen.getByTestId('tool-group-head-label').textContent ?? '';
 
 describe('重开会话：落库停车审批在折叠头与行上都说「等你确认」', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     listParkedApprovals.mockReset();
-    useParkedApprovalStore.setState({ bySession: {} });
+    listParkedApprovals.mockResolvedValue([]);
+    await refreshParkedApprovals();
     useSessionStore.setState({ currentSessionId: SESSION });
   });
   afterEach(() => {
@@ -109,7 +110,7 @@ describe('重开会话：落库停车审批在折叠头与行上都说「等你�
   it('② 作废：result 已有时，即使列表里还残留该 id 也不算待确认', async () => {
     live('zh');
     listParkedApprovals.mockResolvedValue([parkedItem('call-w')]);
-    useParkedApprovalStore.setState({ bySession: { [SESSION]: new Set(['call-w']) } });
+    await act(async () => { await refreshParkedApprovals(); });
     render(<ToolStepGroup nodes={[writeNode({ success: false, result: '这一步等你确认超过 24 小时，已自动作废，没有执行。' })]} sessionId={SESSION} />);
     expect(head()).not.toMatch(/请求写入|运行中|正在写入/);
   });
