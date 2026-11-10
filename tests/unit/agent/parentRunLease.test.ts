@@ -127,8 +127,8 @@ describe('parent ownership across follow-up and background completion', () => {
     expect(JSON.stringify([...onEvent.mock.calls, ...deps.addMessage.mock.calls, ...sessionManagerState.addMessageToSession.mock.calls, ...loggerState.error.mock.calls, ...loggerState.warn.mock.calls])).not.toMatch(/owner lease/i);
     expect(deps.addMessage).toHaveBeenCalledWith(expect.objectContaining({ content: 'completed output' }));
     expect(await repository.listChildRuns(parentInput.runId)).toEqual([]);
-    expect(loggerState.info).toHaveBeenCalledWith(expect.stringContaining('without durable'), expect.objectContaining({ reason: 'parent_run_not_durable', parentRunId: parentInput.runId }));
-    process.stdout.write(`A follow-up log: ${JSON.stringify(loggerState.info.mock.calls.find(call => call[1]?.reason === 'parent_run_not_durable'))}\n`);
+    expect(loggerState.info).toHaveBeenCalledWith(expect.stringContaining('durable start skipped'), expect.objectContaining({ reason: 'parent_owner_missing', parentRunId: parentInput.runId }));
+    process.stdout.write(`A follow-up log: ${JSON.stringify(loggerState.info.mock.calls.find(call => call[1]?.reason === 'parent_owner_missing'))}\n`);
   });
 
   it('A diagnosis: session conflicts reject plain registration too, rather than creating an ownerless run', async () => {

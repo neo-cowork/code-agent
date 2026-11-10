@@ -3,9 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 
-const loggerState = vi.hoisted(() => ({ warn: vi.fn() }));
+const loggerState = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn() }));
 vi.mock('../../../src/host/services/infra/logger', () => ({
-  createLogger: () => ({ info: vi.fn(), warn: loggerState.warn, error: vi.fn(), debug: vi.fn() }),
+  createLogger: () => ({ info: loggerState.info, warn: loggerState.warn, error: vi.fn(), debug: vi.fn() }),
 }));
 
 import { AutoAgentDurableRuntime } from '../../../src/host/agent/autoAgentDurableRuntime';
@@ -36,8 +36,15 @@ function createParentHost(): AgentTeamDurableParentHost {
   };
 }
 
+async function startRuntime(runtime: AutoAgentDurableRuntime, input: Parameters<AutoAgentDurableRuntime['start']>[0]) {
+  const controller = await runtime.start(input);
+  if (!controller) throw new Error('Expected a durable controller');
+  return controller;
+}
+
 describe('AutoAgentDurableRuntime lease ownership', () => {
   beforeEach(() => {
+    loggerState.info.mockReset();
     loggerState.warn.mockReset();
   });
 
@@ -51,7 +58,7 @@ describe('AutoAgentDurableRuntime lease ownership', () => {
     const { db, repository, kernel } = createStack();
     try {
       const runtime = new AutoAgentDurableRuntime(kernel, createParentHost());
-      const controller = await runtime.start({
+      const controller = await startRuntime(runtime, {
         parentRunId: 'run-parent',
         sessionId: 'session-auto',
         sourceMessageId: 'message-auto',
@@ -93,7 +100,7 @@ describe('AutoAgentDurableRuntime lease ownership', () => {
     const { db, kernel } = createStack();
     try {
       const runtime = new AutoAgentDurableRuntime(kernel, createParentHost());
-      const controller = await runtime.start({
+      const controller = await startRuntime(runtime, {
         parentRunId: 'run-parent',
         sessionId: 'session-auto',
         sourceMessageId: 'message-auto',
@@ -133,7 +140,7 @@ describe('AutoAgentDurableRuntime lease ownership', () => {
         cwd: '/tmp/auto',
       }, now);
       const runtime = new AutoAgentDurableRuntime(kernel, registry);
-      const controller = await runtime.start({
+      const controller = await startRuntime(runtime, {
         parentRunId: 'run-parent',
         sessionId: 'session-auto',
         sourceMessageId: 'message-auto',
@@ -166,6 +173,78 @@ describe('AutoAgentDurableRuntime lease ownership', () => {
         status: 'completed',
         event: { type: 'run_completed', payload: {}, recordedAt: now + 4 },
       })).resolves.toMatchObject({ status: 'completed' });
+    } finally {
+      registry.clear();
+      db.close();
+    }
+  });
+
+  it('skips durable startup when the ambient parent no longer owns a lease', async () => {
+    const { db, kernel } = createStack('process-parent', 60_000);
+    const registry = new RunRegistry();
+    registry.configureDurableKernel(kernel);
+    try {
+      const runtime = new AutoAgentDurableRuntime(kernel, registry);
+      await expect(runtime.start({
+        parentRunId: 'run-parent-already-terminal',
+        sessionId: 'session-auto',
+        sourceMessageId: 'message-auto',
+        workspace: { root: '/tmp/auto', cwd: '/tmp/auto', fingerprint: 'workspace-fingerprint' },
+        graphId: 'auto-agent:session-auto',
+        sideEffect: true,
+      })).resolves.toBeNull();
+      expect(loggerState.info).toHaveBeenCalledWith(
+        'Auto Agent durable start skipped; continuing without durable parent link',
+        expect.objectContaining({
+          parentRunId: 'run-parent-already-terminal',
+          reason: 'parent_owner_missing',
+        }),
+      );
+    } finally {
+      registry.clear();
+      db.close();
+    }
+  });
+
+  it('finishes the auto child without projecting to a parent whose lease already ended', async () => {
+    const { db, repository, kernel } = createStack('process-parent', 60_000);
+    const registry = new RunRegistry();
+    registry.configureDurableKernel(kernel);
+    const now = Date.now();
+    try {
+      await registry.startDurable({
+        runId: 'run-parent',
+        sessionId: 'session-auto',
+        workspace: '/tmp/auto',
+        cwd: '/tmp/auto',
+      }, now);
+      const runtime = new AutoAgentDurableRuntime(kernel, registry);
+      const controller = await startRuntime(runtime, {
+        parentRunId: 'run-parent',
+        sessionId: 'session-auto',
+        sourceMessageId: 'message-auto',
+        workspace: { root: '/tmp/auto', cwd: '/tmp/auto', fingerprint: 'workspace-fingerprint' },
+        graphId: 'auto-agent:session-auto',
+        sideEffect: true,
+        now: now + 1,
+      });
+      await registry.terminalDurable('run-parent', {
+        now: now + 2,
+        status: 'failed',
+        reason: 'parent_ended_before_auto_child',
+        event: { type: 'run_failed', payload: {}, recordedAt: now + 2 },
+      });
+
+      await expect(controller.terminal('completed', undefined, now + 3)).resolves.toBeUndefined();
+      expect(await repository.get(controller.runId)).toMatchObject({ status: 'completed' });
+      expect(loggerState.info).toHaveBeenCalledWith(
+        'Auto Agent durable parent terminal projection skipped',
+        expect.objectContaining({
+          parentRunId: 'run-parent',
+          runId: controller.runId,
+          reason: 'parent_owner_missing',
+        }),
+      );
     } finally {
       registry.clear();
       db.close();
