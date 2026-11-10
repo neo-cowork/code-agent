@@ -43,13 +43,36 @@ describe('NotificationPermissionRow', () => {
     expect(openNativeDesktopSystemSettings).toHaveBeenCalledWith('notifications');
   });
 
-  it('shows Cannot confirm and opens notification settings when unknown', async () => {
+  it('shows a neutral Status unknown chip (not warning/danger) and opens notification settings when unknown', async () => {
     render(<NotificationPermissionRow />);
 
-    expect(await screen.findByText('Cannot confirm')).toBeTruthy();
-    expect(screen.getByText('Neo cannot read the macOS setting; check System Settings.')).toBeTruthy();
+    const chip = await screen.findByTestId('notification-permission-status');
+    expect(chip.textContent).toBe('Status unknown');
+    console.log('unknown chip classes:', chip.className);
+    expect(chip.className).not.toMatch(/warning|danger/);
+    const description = 'You can check in System Settings whether notifications are on.';
+    expect(description).not.toMatch(/cannot read|please check/i);
+    expect(screen.getByText(description)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Open system settings' }));
     expect(openNativeDesktopSystemSettings).toHaveBeenCalledWith('notifications');
+  });
+
+  it('keeps the danger style for denied and uses no Chinese "cannot read" wording when unknown (zh)', async () => {
+    getOsNotificationPermissionSnapshot.mockResolvedValue(permissionSnapshot('denied'));
+    const { unmount } = render(<NotificationPermissionRow />);
+    const denied = await screen.findByTestId('notification-permission-status');
+    console.log('denied chip classes:', denied.className);
+    expect(denied.className).toContain('danger');
+    unmount();
+
+    useAppStore.setState({ language: 'zh' });
+    getOsNotificationPermissionSnapshot.mockResolvedValue(permissionSnapshot('unknown'));
+    render(<NotificationPermissionRow />);
+    const chip = await screen.findByTestId('notification-permission-status');
+    expect(chip.textContent).toBe('状态未知');
+    expect(screen.getByText('可到系统设置确认通知是否已开启。')).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/无法读取|请检查/);
+    expect(chip.className).not.toMatch(/warning|danger/);
   });
 
   it('shows On without a settings button when granted', async () => {

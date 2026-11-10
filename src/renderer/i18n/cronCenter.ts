@@ -121,6 +121,7 @@ export const cronCenterZh = {
     permissionDeniedBadge: '需处理',
     permissionDeniedTitle: '有命令没获批准',
     permissionDeniedSentence: '「{summary}」没有获批准（{reason}），这次运行没有产出。',
+    permissionDeniedListSentence: '有操作没有获批准（{reason}），这次运行没有产出。',
     // 四条原因措辞与 host 完成通知同源（shared/cronPermissionDenied，Rework r2）
     permissionDeniedReasonUser: cronPermissionDeniedReasonText('user', 'zh'),
     permissionDeniedReasonTimeout: cronPermissionDeniedReasonText('timeout', 'zh'),
@@ -622,6 +623,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     permissionDeniedBadge: 'Needs attention',
     permissionDeniedTitle: 'A command was not approved',
     permissionDeniedSentence: '“{summary}” was not approved ({reason}); this run produced nothing.',
+    permissionDeniedListSentence: 'An action was not approved ({reason}); this run produced nothing.',
     permissionDeniedReasonUser: cronPermissionDeniedReasonText('user', 'en'),
     permissionDeniedReasonTimeout: cronPermissionDeniedReasonText('timeout', 'en'),
     permissionDeniedReasonCancelled: cronPermissionDeniedReasonText('cancelled', 'en'),
