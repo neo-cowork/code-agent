@@ -431,8 +431,8 @@ export async function wakeRole(
   }
   if (externalDelta?.section && !excluded) decision = correctDecisionForUnreadableSources({ decision, finalOutput, sourceNames: externalDelta.sourceNames, roleId });
   await storeWakeProposalsFromWake({ roleId, finalOutput, config });
-  let summary = stripWakeMarkup(finalOutput)
-    .slice(0, ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
+  const wakeText = stripWakeMarkup(finalOutput);
+  let summary = wakeText.slice(0, ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
   if (inferredAdvanceProposal && !excluded) {
     logger.info('Wake decision inferred as advance from verifiable next-step signals', {
       roleId,
@@ -475,7 +475,7 @@ export async function wakeRole(
       notificationService.notifyRoleWakeOutput({
         sessionId: session.id,
         title: `${roleId} · ${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}`,
-        body: summary || `角色 ${roleId} 醒来产出了新内容`,
+        body: (advanceGoalStatus ? summary : wakeText) || `角色 ${roleId} 醒来产出了新内容`,
       });
     }
     logger.info('Wake completed with output', { roleId, trigger, decision, sessionId: session.id });

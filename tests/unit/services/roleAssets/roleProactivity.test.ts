@@ -351,7 +351,7 @@ describe('roleProactivity', () => {
         mockSettings.value = { roleAssets: { proactivity: { defaultLevel: 'realtime' } } };
         await seedProductHistory(RESEARCHER);
         primeWakeRun('report');
-        const md = '## 汇报\n1. **观测数量明显上升**：12 → 18\n2. 看 `栖息点` 与 [报告](https://x.test/a) 的变化';
+        const md = '## 汇报\n1. **观测数量明显上升**：12 → 18\n2. 看 `栖息点` 与 [报告](https://x.test/a) 的变化' + '。补充说明'.repeat(80);
         mockSessionManager.getSession.mockResolvedValue({ id: 'wake-session-1', messages: [
           { id: 'm2', role: 'assistant', content: `${md}<decision>report</decision>`, timestamp: 2 },
         ] });
@@ -359,8 +359,8 @@ describe('roleProactivity', () => {
         const [notice] = notificationService.getRecentNotifications();
         expect(notice.body).not.toMatch(/\*\*|#|`|\]\(/);
         expect(notice.body).toContain('观测数量明显上升：12 → 18');
-        expect(notice.body).toContain('栖息点');
-        expect(notice.body).toContain('报告');
+        expect(notice.body).toMatch(/栖息点 与 报告 的变化.*…$/);
+        expect(notice.body.length).toBeLessThanOrEqual(320);
       });
 
       it.each(['met', 'aborted'] as const)('realtime advance %s notice uses a human outcome, not internal goal markup', async (status) => {
