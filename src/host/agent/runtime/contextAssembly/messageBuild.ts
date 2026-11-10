@@ -1006,7 +1006,7 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
       getCheckpointWriterService().maybeTriggerPeriodic({
         sessionId: ctx.runtime.sessionId,
         workingDirectory: ctx.runtime.workingDirectory,
-        messages: ctx.runtime.messages,
+        messages: withTelemetryRecoveryNoticeForModel(ctx.runtime.messages),
         rootDir: ctx.runtime.checkpointRootDir,
       });
     } catch (error) {
