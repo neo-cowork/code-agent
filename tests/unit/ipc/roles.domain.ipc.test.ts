@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IPCRequest, IPCResponse } from '../../../src/shared/ipc';
 
-// roles.ipc.ts 派发特征测试（RQ-183 续作·ROLES 刀迁表前钉住现状）：派发层共 24 个 action，既有 rolesIpc.test.ts 覆盖 list /
+// roles.ipc.ts 派发特征测试（RQ-183 续作·ROLES 刀迁表前钉住现状）：派发层共 25 个 action，既有 rolesIpc.test.ts 覆盖 list /
 // detail / 记忆 / 绑定 / 主动性 / 视觉 / 装备 / 定义正文 / 恢复出厂等 14 个，且未知 action 只断言 code。这里补齐其余：
 // updatePersonalization 四条校验与写入形状、草稿队列 listDrafts / confirmDraft / rejectDraft（含 CONFIRM_FAILED /
-// REJECT_FAILED 缺省文案）、rolePack 四件套（缺 roleId 与动态 import 委派）、首次醒来 firstWakeGet / firstWakeSkip
+// REJECT_FAILED 缺省文案）、rolePack 四件套（缺 roleId 与动态 import 委派）、首次醒来 firstWakeGet / firstWakeSkip / firstWakeConsumeSuggestion
 // （非法 roleId 拒绝、形状透传、FIRST_WAKE_SKIP_FAILED 兜底）、未知 action 的完整文案
 // 'Unknown roles action:'，以及抛错兜底 ROLES_ERROR（Error → message、非 Error → 'Unknown error'，记 error 日志）。
 // 迁表后本文件零改动全绿即行为不变证明。
@@ -22,6 +22,7 @@ const h = vi.hoisted(() => ({
   retryMissingSkills: vi.fn(async (..._a: unknown[]) => ({ retried: 2 })),
   firstWakeSnapshot: vi.fn(async (..._a: unknown[]) => ({ state: 'completed', sourcesMode: 'none', suggestions: [] }) as Record<string, unknown> | null),
   firstWakeSkip: vi.fn(async (..._a: unknown[]) => ({ success: true })),
+  firstWakeConsumeSuggestion: vi.fn(async (..._a: unknown[]) => ({ success: true })),
 }));
 
 vi.mock('../../../src/host/services/infra/logger', async (importOriginal) => ({
@@ -39,6 +40,7 @@ vi.mock('../../../src/host/services/roleAssets', async (importOriginal) => ({
   rejectRoleDraft: (...a: unknown[]) => h.rejectDraft(...a),
   getFirstWakeSnapshot: (...a: unknown[]) => h.firstWakeSnapshot(...a),
   skipFirstWake: (...a: unknown[]) => h.firstWakeSkip(...a),
+  consumeFirstWakeSuggestion: (...a: unknown[]) => h.firstWakeConsumeSuggestion(...a),
 }));
 vi.mock('../../../src/host/services/roleAssets/rolePackInstallService', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../src/host/services/roleAssets/rolePackInstallService')>()),
@@ -155,6 +157,23 @@ describe('roles.ipc dispatch 特征：首次醒来', () => {
     expect(await call('firstWakeSkip', { roleId: 'r1' })).toEqual({
       success: false,
       error: { code: 'FIRST_WAKE_SKIP_FAILED', message: 'skip failed' },
+    });
+  });
+
+  it('firstWakeConsumeSuggestion：roleId/title 校验；成功透传；失败 → FIRST_WAKE_CONSUME_FAILED', async () => {
+    expect(await call('firstWakeConsumeSuggestion', {})).toEqual(invalid('a safe roleId and title are required'));
+    expect(await call('firstWakeConsumeSuggestion', { roleId: 'a/b', title: '建议' })).toEqual(invalid('a safe roleId and title are required'));
+    expect(await call('firstWakeConsumeSuggestion', { roleId: 'r1', title: '   ' })).toEqual(invalid('a safe roleId and title are required'));
+    expect(h.firstWakeConsumeSuggestion).not.toHaveBeenCalled();
+
+    expect(await call('firstWakeConsumeSuggestion', { roleId: 'r1', title: '建议一' }))
+      .toEqual({ success: true, data: { success: true } });
+    expect(h.firstWakeConsumeSuggestion).toHaveBeenCalledWith('r1', '建议一');
+
+    h.firstWakeConsumeSuggestion.mockResolvedValueOnce({ success: false });
+    expect(await call('firstWakeConsumeSuggestion', { roleId: 'r1', title: '建议一' })).toEqual({
+      success: false,
+      error: { code: 'FIRST_WAKE_CONSUME_FAILED', message: 'consume failed' },
     });
   });
 });

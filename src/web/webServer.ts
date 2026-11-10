@@ -970,7 +970,7 @@ function registerHandlers(): void {
       }
     },
     getPlanningService: () => null,
-    getTaskManager: () => null,
+    getTaskManager: () => getTaskManager(),
     getCurrentSessionId: () => currentSessionId,
     setCurrentSessionId: (id: string) => {
       currentSessionId = id;

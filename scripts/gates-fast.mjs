@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/* global console */
 import fs from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { setTimeout, clearTimeout } from 'node:timers';
@@ -9,19 +8,19 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { spawn, execFileSync } from 'node:child_process';
 import { tsImport } from 'tsx/esm/api';
-import { digest, selectTests, validateFiles, validateReport, summarizeVitestFailures, renderReceipt, extractGateIds, validateGateBudgetCoverage, commandDeadline, budgetFailure, changedInputs } from './lib/gates-fast-contract.mjs';
+import { digest, selectTests, validateFiles, validateReport, summarizeVitestFailures, renderReceipt, extractGateIds, validateGateBudgetCoverage, scaleBudgetPolicy, commandDeadline, budgetFailure, changedInputs } from './lib/gates-fast-contract.mjs';
 import { createOwnedTmp } from './lib/tmp-sandbox.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(root);
 const started = performance.now();
 const policyPath = 'scripts/lib/gates-fast-policy.json';
-const policy = JSON.parse(fs.readFileSync(policyPath, 'utf8'));
+const { policy, scale: budgetScale, outerMs: shipOuterMs } = scaleBudgetPolicy(JSON.parse(fs.readFileSync(policyPath, 'utf8')), process.env);
 const receipt = {
   schemaVersion: 2, receiptId: randomUUID(), repo: null, workorder: null,
   status: 'failed', startedAt: new Date().toISOString(), finishedAt: null,
   headSha: null, treeSha: null, baseSha: null, mergeBaseSha: null,
-  policyVersion: policy.version, policyHash: null, lockHash: null, privateInputsHash: null,
+  policyVersion: policy.version, budgetScale, policyHash: null, lockHash: null, privateInputsHash: null,
   nodeVersion: process.version, packageManager: null,
   signer: { kind: 'unsigned-local', identity: null }, prNumber: null, ci: { status: 'pending', runs: [] },
   queueDurationMs: 0, slot: { kind: 'independent-process', pid: process.pid },
@@ -136,8 +135,8 @@ try {
     output = path.join(root, '.reports/gates-fast', `${receipt.receiptId}.json`);
     throw new Error('FAIL: receipt must be outside source or under .reports/gates-fast');
   }
-  if (policy.maxFiles !== 12) throw new Error('FAIL: first-version policy requires 12-file maximum');
-  validateGateBudgetCoverage(policy, extractGateIds(fs.readFileSync(path.join(root, 'scripts/gates-fast.mjs'), 'utf8')));
+  if (policy.maxFiles !== 16) throw new Error('FAIL: policy requires 16-file maximum');
+  validateGateBudgetCoverage(policy, extractGateIds(fs.readFileSync(path.join(root, 'scripts/gates-fast.mjs'), 'utf8')), shipOuterMs);
   if (options.regressions) regressions = JSON.parse(fs.readFileSync(options.regressions, 'utf8'));
   await gate('inputs', true, async () => {
     const { resolveAnswerSideRoot } = await tsImport(path.join(root, 'src/host/testing/answerSide.ts'), import.meta.url);
@@ -190,7 +189,7 @@ try {
       let failures = [];
       try { failures = summarizeVitestFailures(JSON.parse(fs.readFileSync(report, 'utf8')), root); } catch { /* 报告没写出来时保留原始失败 */ }
       if (!failures.length) throw error;
-      throw new Error(`${error instanceof Error ? error.message : String(error)}; failed: ${failures.join(' | ')}`);
+      throw new Error(`${error instanceof Error ? error.message : String(error)}; failed: ${failures.join(' | ')}`, { cause: error });
     }
     receipt.report = validateReport(receipt.selectedFiles, JSON.parse(fs.readFileSync(report, 'utf8')), root);
   });

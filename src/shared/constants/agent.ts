@@ -67,7 +67,14 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // sys-v101：N-FIX-BROWSER-TARGETREF-STRING-WASTE-STEPS 整合合并——browser_action / Browser schema
 // targetRef 与 destinationTargetRef 扩为 ['object', 'string'] 并附单串 refId 示例（模型可见面变化），
 // 与 main 已合入的 sys-v100 撞号，按惯例升版。
-export const PROMPT_VERSION = 'sys-v101' as const;
+// sys-v102：整合 list_experts 可选 name 参数，支持 edit-role 从当前槽读取
+// 持久化专家定义；合并后模型可见面未在任一侧单独记录。
+// sys-v103：native Reminders/Calendar create 的目标名称改为可选，并说明本地化名称校验。
+// sys-v104：task_status 描述纳入 spawn_agent 后台子代理的真实状态。
+// sys-v105：压缩 task_status 描述，保持模型可见的后台子代理提示在上下文预算内。
+// sys-v106：N-FIX-BROWSER-TASK-CONTEXT-BLOAT-SNAPSHOT——get_dom_snapshot 改紧凑逐行输出（refId | tag | label）+
+// 字符预算 + offset 分页；browser_action schema 新增 offset，targetRef 描述改为 refId 行。
+export const PROMPT_VERSION = 'sys-v106' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =

@@ -275,6 +275,7 @@ async function commitCompactionBlock(
 }
 
 export function updateContextHealth(ctx: ContextAssemblyCtx): void {
+  if (ctx.runtime.publishContextHealth === false) return;
   try {
     const contextHealthService = getContextHealthService();
     const model = ctx.runtime.modelConfig.model || DEFAULT_MODELS.chat;

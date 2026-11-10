@@ -20,6 +20,8 @@ import { BUILTIN_ROLE_IDS } from './builtinRoles';
 import { getRoleDir, isSafeRoleId } from './roleAssetPaths';
 import { getInstalledRolePackState } from './rolePackInstallService';
 import { createLogger } from '../infra/logger';
+import { parseAgentMdVisual } from '../../agent/hybrid/agentMdLoader';
+import type { TrashedRoleEntry } from '../../../shared/contract/roleAssets';
 
 const logger = createLogger('RoleTrash');
 
@@ -167,6 +169,57 @@ export async function restoreTrashedRole(trashId: string, now: Date = new Date()
   return { success: true, roleId: meta.roleId };
 }
 
+/** List restorable user roles, newest deletion first, after lazily purging expired entries. */
+export async function listTrashedRoles(now: Date = new Date()): Promise<TrashedRoleEntry[]> {
+  await purgeExpiredTrash(now.getTime());
+
+  let entries: Awaited<ReturnType<typeof listTrashEntries>>;
+  try {
+    entries = await listTrashEntries(getRolesTrashRootDir());
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      logger.warn('Unable to list role trash', { reason: error instanceof Error ? error.message : 'unknown error' });
+    }
+    return [];
+  }
+
+  const listed: TrashedRoleEntry[] = [];
+  for (const entry of entries) {
+    const trashId = entry.name;
+    const entryDir = path.join(getRolesTrashRootDir(), trashId);
+    let meta: RoleTrashMeta;
+    try {
+      meta = JSON.parse(await fs.readFile(path.join(entryDir, ROLE_ASSETS.TRASH_META_FILENAME), 'utf-8')) as RoleTrashMeta;
+    } catch (error) {
+      logger.warn('Skipping role trash entry', {
+        trashId,
+        reason: `unreadable meta.json: ${error instanceof Error ? error.message : 'invalid JSON'}`,
+      });
+      continue;
+    }
+    if (!meta || !isSafeRoleId(meta.roleId) || !meta.deletedAt || !Number.isFinite(Date.parse(meta.deletedAt))) {
+      logger.warn('Skipping role trash entry', { trashId, reason: 'garbled meta.json' });
+      continue;
+    }
+
+    let displayName: string;
+    try {
+      const definition = await fs.readFile(path.join(entryDir, ROLE_ASSETS.TRASH_AGENT_FILENAME), 'utf-8');
+      displayName = parseAgentMdVisual(definition).displayName?.trim() || meta.roleId;
+    } catch (error) {
+      logger.warn('Skipping role trash entry', {
+        trashId,
+        reason: `unreadable agent definition: ${error instanceof Error ? error.message : 'unknown error'}`,
+      });
+      continue;
+    }
+
+    listed.push({ trashId, roleId: meta.roleId, displayName, deletedAt: meta.deletedAt });
+  }
+
+  return listed.sort((left, right) => Date.parse(right.deletedAt) - Date.parse(left.deletedAt));
+}
+
 // ----------------------------------------------------------------------------
 // 惰性过期清理（无新定时器：trash/restore 顺带跑）
 // ----------------------------------------------------------------------------
@@ -192,8 +245,15 @@ async function purgeExpiredTrash(now: number = Date.now()): Promise<{ purged: st
     try {
       const meta = JSON.parse(await fs.readFile(path.join(entryDir, ROLE_ASSETS.TRASH_META_FILENAME), 'utf-8')) as RoleTrashMeta;
       deletedAt = Date.parse(meta.deletedAt);
-    } catch {
+      if (!Number.isFinite(deletedAt)) {
+        logger.warn('Purging malformed role trash entry', { trashId: entry.name, reason: 'invalid deletedAt' });
+      }
+    } catch (error) {
       // meta 缺失/损坏：按残骸处理，直接过期
+      logger.warn('Purging malformed role trash entry', {
+        trashId: entry.name,
+        reason: `unreadable meta.json: ${error instanceof Error ? error.message : 'invalid JSON'}`,
+      });
     }
     if (Number.isFinite(deletedAt) && now - deletedAt < retentionMs) continue;
     await fs.rm(entryDir, { recursive: true, force: true });

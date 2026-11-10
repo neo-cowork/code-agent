@@ -573,7 +573,7 @@ async function handleListMemoryEntries(): Promise<Awaited<ReturnType<typeof list
     const db = getDatabase();
     const result = await listUnifiedMemoryEntries(db);
     annotateInjectionPauses(result, db);
-    return overlayProjectScopedEntries(result);
+    return overlayProjectScopedEntries(result, db);
   } catch (error) {
     logger.warn('Memory entry DB mirror read skipped', {
       error: error instanceof Error ? error.message : String(error),

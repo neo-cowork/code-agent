@@ -23,6 +23,7 @@ import { VOICE_SESSION_MAX_DURATION_MS } from '@shared/constants/voice';
 import { PROVIDER_MODELS, PROVIDER_MODELS_MAP } from '@shared/constants/models';
 import ipcService from '../../../../services/ipcService';
 import { createLogger } from '../../../../utils/logger';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 import { useI18n } from '../../../../hooks/useI18n';
 import { formatDateTime } from '../../../../utils/formatDateTime';
 import { Toggle } from '../../../primitives/Toggle';
@@ -710,7 +711,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
               <>
                 <p className="text-xs text-zinc-400" data-testid="voiceprint-status">
                   {voiceprint.status.registered
-                    ? text.voiceprintStatusRegistered.replace('{count}', String(voiceprint.status.sampleCount ?? 0))
+                    ? interpolatePlural(text.voiceprintStatusRegistered, voiceprint.status.sampleCount ?? 0)
                     : text.voiceprintStatusUnregistered}
                 </p>
                 <div className="flex items-center gap-3">
