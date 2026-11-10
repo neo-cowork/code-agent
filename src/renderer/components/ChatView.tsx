@@ -433,7 +433,7 @@ export const ChatView: React.FC = () => {
     return () => window.removeEventListener('bridge-tool-call', handler);
   }, [bridgeStatus, bridgeVersion, workingDirectory, t]);
 
-  const { requireAuthAsync } = useRequireAuth();
+  const { isAuthenticated, requireAuthAsync } = useRequireAuth();
 
   // 目录选择并入新任务流程（批C2）：沿用原 SidebarWorkspaceRow 的同一条数据通道——
   // composer + appStore 同写，并持久化到当前会话，让工作区分组归位、agent 拿到正确 cwd。
@@ -580,8 +580,6 @@ export const ChatView: React.FC = () => {
       return true;
     }
   }, [openSettingsTab, t]);
-
-  // 发送消息需要登录
   // @neo 提交分支已移除（2026-07-29 拍板）：输入框不再有工作卡/续接交互，
   // @neo 字样按普通文本消息发送；工作卡从 Neo 协同页发起。
   const handleSendEnvelope = useCallback(async (envelope: ConversationEnvelope): Promise<boolean> => {
@@ -604,7 +602,7 @@ export const ChatView: React.FC = () => {
         sessionId: feedbackSessionId ?? undefined,
       })),
       send: async () => {
-        const didSend = await requireAuthAsync(async () => {
+        const sendConfiguredMessage = async () => {
           const modelReady = await ensureModelConfigured();
           if (!modelReady) return false;
           const delivery = await sendMessage(outboundEnvelope);
@@ -624,21 +622,21 @@ export const ChatView: React.FC = () => {
             }));
           }
           // 🔴 这里**照改前一样返回 true**（只要真的调到了 sendMessage）。
-          //
           // 这个返回值同时被 composer 当作「要不要回滚草稿」的信号。把它改成真实投递
           // 结果，等于把一条改前根本走不到的回滚路径接通了 —— 于是「回滚会覆盖用户在
           // 这期间新做的任何操作」变成实际问题，而"用户可能动过的项"是**没有边界的
           // 枚举**：文本、附件、appshot、会话引用、产物引用、命令 chip、团队预选……
           // ai-review 连着九轮各点出一项，每轮补一个判据都只是把边界往外挪一格。
-          //
           // 收口方式：投递失败不回滚草稿。失败用户气泡留在时间线上，恢复靠气泡上的
           // 「编辑重发」（原文+附件填回 composer，复用原 clientMessageId）和错误卡
           // 重试锚点（retryPrompt / retryAttachments / retryClientMessageId /
-          // retrySessionId）。真正没发出去的两种情况（未登录、模型没配）仍然返回 false、
+          // retrySessionId）。真正没发出去的情况（未登录且模型没配、模型不可用）仍然返回 false、
           // 照旧回滚，那条路改前就在，行为不变。
           return true;
-        });
-        return didSend === true;
+        };
+        const localModelReady = !isAuthenticated && await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get')
+          .then((settings) => hasConfiguredDefaultRuntimeModel(settings, { allowCloudManaged: false }), () => false);
+        return (await (localModelReady ? sendConfiguredMessage() : requireAuthAsync(sendConfiguredMessage))) === true;
       },
     });
     // 跳过提问后的 placeholder 出口（R5 帧 8）：下一条普通消息真的发出去了才恢复常规文案。
@@ -648,7 +646,7 @@ export const ChatView: React.FC = () => {
     return sent;
   }, [
     currentSessionId,
-    ensureModelConfigured,
+    ensureModelConfigured, isAuthenticated,
     requireAuthAsync,
     sendMessage,
     skippedQuestionSessionId,

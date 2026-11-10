@@ -17,7 +17,7 @@ import {
   formatScheduleSummary,
   getLatestExecutionStatus,
 } from './types';
-import { formatDateTime } from '../../../utils/formatDateTime';
+import { formatCronJobDateTime, formatCronScheduleLabelWithZone } from '../../../utils/formatCronJobTime';
 import { CronRunsOnPill } from './CronRunsOnSelector';
 import { useEventScheduleNames } from './useChannelCatalog';
 import { getBuiltinJobDisplay } from './builtinJobDisplay';
@@ -140,13 +140,16 @@ export const CronJobList: React.FC<CronJobListProps> = ({ awaitingByJobId }) => 
             {filteredJobs.map((job) => {
               const isSelected = job.id === selectedJobId;
               const latest = latestExecutions[job.id];
-              const latestMeta = getLatestExecutionStatus(latest);
-              const latestLabel = cc.status[latest?.status ?? 'none'];
+              const latestMeta = getLatestExecutionStatus(latest, cc);
+              const latestLabel = latestMeta.label;
               const awaitingApproval = awaitingByJobId?.has(job.id) ?? false;
               const triggerKind = getCronTriggerKind(job);
               const builtinDisplay = getBuiltinJobDisplay(job, language);
               const displayName = builtinDisplay?.name ?? job.name;
               const displayDescription = builtinDisplay?.description ?? job.description;
+              const scheduleSummary = job.schedule.type === 'cron'
+                ? formatCronScheduleLabelWithZone(job.schedule.expression, job.schedule.timezone, language)
+                : formatScheduleSummary(job, language, eventNamesFor(job));
               return (
                 <button /* ds-allow:button: 任务列表行（多行内容左对齐布局），primitive 是居中动作按钮形状不适配 */
                   key={job.id}
@@ -164,11 +167,15 @@ export const CronJobList: React.FC<CronJobListProps> = ({ awaitingByJobId }) => 
                         <CronRunsOnPill runsOn={job.runsOn} localLabel={cc.locationLocal} cloudLabel={cc.locationCloud} />
                       </div>
                       <div className="mt-1 text-xs text-zinc-500" data-testid="cron-job-schedule-summary">
-                        {formatScheduleSummary(job, language, eventNamesFor(job))}
+                        {scheduleSummary}
                       </div>
                       {job.enabled && job.nextRunAt != null && (
                         <div className="mt-0.5 text-xs text-zinc-500" data-testid="cron-job-next-run">
-                          {cc.nextRun.replace('{time}', formatDateTime(job.nextRunAt, language))}
+                          {cc.nextRun.replace('{time}', formatCronJobDateTime(
+                            job.nextRunAt,
+                            job.schedule.type === 'cron' ? job.schedule.timezone : undefined,
+                            language,
+                          ))}
                         </div>
                       )}
                     </div>

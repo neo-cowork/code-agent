@@ -51,10 +51,12 @@ import {
   confirmRoleDraft,
   rejectRoleDraft,
   getFirstWakeSnapshot,
+  consumeFirstWakeSuggestion,
   retryFirstWake,
   skipFirstWake,
   isSafeRoleId,
   trashUserRole,
+  listTrashedRoles,
   restoreTrashedRole,
 } from '../services/roleAssets';
 import { writeRoleProactivityConfig } from '../services/roleAssets/roleProactivityWrite';
@@ -76,6 +78,12 @@ import { TOOL_ALIASES } from '../services/toolSearch/deferredTools';
 import { getProtocolRegistry } from '../tools/protocolRegistry';
 import { findRecommendedMcpServer } from '../../shared/constants/mcpCatalog';
 import { isManifestBackedAgentEngineKind } from '../../shared/externalEngineManifest';
+
+import { randomUUID } from 'crypto';
+import type { Message } from '../../shared/contract/message';
+import type { SystemEventMessageMetadata } from '../../shared/contract/systemEventRegistry';
+import { getSessionManager } from '../services/infra/sessionManager';
+import { getTaskManager } from '../task/TaskManager';
 
 const logger = createLogger('RolesIPC');
 
@@ -715,6 +723,7 @@ const rolesHandlers: RawDomainRouteHandlers<RolesDomainRequest, void> = {
     });
     return { success: true, data: { roleId: result.roleId } };
   },
+  listDeletedRoles: async (_ctx, _payload) => ({ success: true, data: await listTrashedRoles() }),
   // --- 对话式建角色：草稿队列（role-creation-flow） ---
   listDrafts: async (_ctx, _payload) => {
     return { success: true, data: await listRoleDrafts() };
@@ -727,6 +736,32 @@ const rolesHandlers: RawDomainRouteHandlers<RolesDomainRequest, void> = {
     const result = await confirmRoleDraft(draftId);
     if (!result.success) {
       return { success: false, error: { code: 'CONFIRM_FAILED', message: result.error ?? 'confirm failed' } };
+    }
+    if (result.sessionId && result.roleId) {
+      try {
+        const change = result.change;
+        const message: Message = {
+          id: randomUUID(),
+          role: 'system',
+          content: 'Expert updated.',
+          timestamp: Date.now(),
+          metadata: {
+            roleEditReceipt: {
+              roleId: result.roleId,
+              addedTools: change?.addedTools ?? [],
+              removedTools: change?.removedTools ?? [],
+              descriptionChanged: change?.descriptionChanged ?? false,
+              promptChanged: Boolean(change && (change.promptLinesAdded || change.promptLinesRemoved)),
+              diffAvailable: change != null,
+            },
+          } satisfies SystemEventMessageMetadata,
+        };
+        await getSessionManager().addMessageToSession(result.sessionId, message);
+        getTaskManager().emitAgentEventForSession(result.sessionId, { type: 'message', data: message });
+        logger.info('Role edit receipt recorded by confirmDraft', { sessionId: result.sessionId, roleId: result.roleId, messageId: message.id });
+      } catch (error) {
+        logger.warn('Role edit receipt failed (confirm unaffected)', { sessionId: result.sessionId, reason: String(error) });
+      }
     }
     return { success: true, data: result };
   },
@@ -806,6 +841,17 @@ const rolesHandlers: RawDomainRouteHandlers<RolesDomainRequest, void> = {
     const result = await skipFirstWake(roleId);
     if (!result.success) {
       return { success: false, error: { code: 'FIRST_WAKE_SKIP_FAILED', message: 'skip failed' } };
+    }
+    return { success: true, data: { success: true } };
+  },
+  firstWakeConsumeSuggestion: async (_ctx, payload) => {
+    const { roleId, title } = (payload ?? {}) as RoleIdPayload & { title?: string };
+    if (!roleId || !isSafeRoleId(roleId) || !title?.trim()) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'a safe roleId and title are required' } };
+    }
+    const result = await consumeFirstWakeSuggestion(roleId, title);
+    if (!result.success) {
+      return { success: false, error: { code: 'FIRST_WAKE_CONSUME_FAILED', message: 'consume failed' } };
     }
     return { success: true, data: { success: true } };
   },

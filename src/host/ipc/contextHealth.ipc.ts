@@ -4,7 +4,7 @@
 
 import { ipcHost } from '../platform';
 import { IPC_CHANNELS } from '../../shared/ipc';
-import { getContextHealthService } from '../context/contextHealthService';
+import { getContextHealthService, type ProviderContextUsage } from '../context/contextHealthService';
 import { getAutoCompressor } from '../context/autoCompressor';
 import { CompressionState } from '../context/compressionState';
 import { getContextEventLedger } from '../context/contextEventLedger';
@@ -181,6 +181,23 @@ function emptyCompactResult(): CompactResult {
 
 function hasMeasuredUsage(health: ContextHealthState | null | undefined): health is ContextHealthState {
   return Boolean(health && health.currentTokens > 0);
+}
+
+function resolvePersistedProviderUsage(sessionId: string): ProviderContextUsage | undefined {
+  try {
+    const serialized = getDatabase().getSessionRuntimeState(sessionId)?.lastProviderUsageJson;
+    if (!serialized) return undefined;
+    const parsed = JSON.parse(serialized) as Partial<ProviderContextUsage>;
+    if (typeof parsed.inputTokens !== 'number' || parsed.inputTokens <= 0) return undefined;
+    return {
+      inputTokens: parsed.inputTokens,
+      ...(typeof parsed.cacheReadTokens === 'number' ? { cacheReadTokens: parsed.cacheReadTokens } : {}),
+      ...(typeof parsed.cacheCreationTokens === 'number' ? { cacheCreationTokens: parsed.cacheCreationTokens } : {}),
+      ...(typeof parsed.provider === 'string' ? { provider: parsed.provider } : {}),
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 function toContextMessages(messages: Message[]) {
@@ -418,6 +435,7 @@ export async function resolveContextHealthForSession(
 
     const model = resolveModelForSession(appService, sessionId);
     const systemPrompt = resolveSystemPromptForSession(deps, sessionId);
+    const persistedProviderUsage = resolvePersistedProviderUsage(sessionId);
     return contextHealthService.update(
       sessionId,
       toContextMessages(messages),
@@ -426,7 +444,7 @@ export async function resolveContextHealthForSession(
       undefined,
       undefined,
       undefined,
-      undefined,
+      persistedProviderUsage,
       // N-CTXCURRENT: 当前挂载 skills（重启后 mounts 为空 = 当前态本就什么都没挂）
       { skills: getSessionSkillService().getMountedSkillTokens(sessionId) },
     );
@@ -569,7 +587,7 @@ async function compactSessionOnce(
   }
 
   try {
-    await getSessionManager().replaceMessages(sessionId, newMessages);
+    await getSessionManager().replaceMessages(sessionId, newMessages, compactedAt);
 
     const compactedMessageIds = newMessages
       .filter((message) => message.compaction)

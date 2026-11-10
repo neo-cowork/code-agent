@@ -79,6 +79,7 @@ import {
   runStartupContextAssembly,
 } from './conversationRuntimeContextBootstrap';
 import { isStartupAborted, raceStartupStep, startupStepAbandoned } from './startupAssemblyGuard';
+import { watchFirstModelRequest, noteFirstModelRequestPhase } from './firstModelRequestWatch';
 import { resolveStickyStrictSkillInvocation } from './conversationRuntimeStickySkill';
 import { buildStrictToolsetNotice } from '../../tools/skillBoundaryScope';
 import { extractUserRequest } from '../turnScaffold';
@@ -86,7 +87,7 @@ import { TOOL_ARGS_REPAIR_MAX_ATTEMPTS } from '../../../shared/constants/repair'
 import { classifyIntent } from '../../telemetry/intentClassifier';
 import { markDistilledSkillTurnSignal } from '../../services/skills/distillSignalStore';
 import { emitGoalAbort } from './goalAbort';
-import { releaseDoomLoopHandbackForSteer } from './doomLoopHandback';
+import { emitDoomLoopStopNotice, releaseDoomLoopHandbackForSteer } from './doomLoopHandback';
 import { markStreamSnapshotInterruptionReason } from '../../session/streamSnapshot';
 import { persistInputRedirectReceipt } from './inputRedirectReceipt';
 import { takeSteerEmptyReinferenceFailure } from './steerEmptyReinference';
@@ -336,18 +337,17 @@ export class ConversationRuntime {
   }
 
   async run(userMessage: string, displayPrompt?: string): Promise<void> {
-    // Create the run-level AbortController at acceptance time — before initializeRun.
-    // Cancel during slow init (skill resolve / intent / hooks) must still abort a real
-    // controller; creating it only after initializeRun made early cancels no-ops.
+    return watchFirstModelRequest(this.ctx.sessionId, () => this.runObserved(userMessage, displayPrompt));
+  }
+
+  private async runObserved(userMessage: string, displayPrompt?: string): Promise<void> {
+    noteFirstModelRequestPhase('run_started');
     this.ctx.control.setRunAbortController(new AbortController());
 
     const initResult = await this.initializeRun(userMessage);
+    noteFirstModelRequestPhase('context_ready');
     if (!initResult) {
-      // 装配期取消/中断（isStartupAborted 检查点退出）不能走早退——那会绕过 finalizeRun，
-      // run 落不了 cancelled 终态（agent_cancelled 事件缺席，编排侧 user_stop 停靠与
-      // renderer 收尾都拿不到信号）。落入下方正常路径：while 条件首轮即假，terminal 取
-      // cancelled/interrupted，finalizeRun 走既有收尾。非取消的 null（step-by-step /
-      // hook 拦截）保持原早退语义。
+      // Startup cancellation must reach finalizeRun; only an uncancelled hook/step exit returns early.
       if (!this.ctx.control.isCancelled && !this.ctx.control.isInterrupted) {
         this.ctx.control.setRunAbortController(null);
         return; // Early exit (step-by-step mode or hook blocked)
@@ -731,7 +731,7 @@ export class ConversationRuntime {
             runTools: () => this.messageProcessor.handleToolResponse(response, wasForceExecuted, iterations, langfuse),
           });
           if (rails.outcome === 'retry') continue;
-          if (rails.outcome === 'abort') { terminal = { status: 'aborted' }; break; }
+          if (rails.outcome === 'abort') { await emitDoomLoopStopNotice(this.ctx, this.contextAssembly); terminal = { status: 'aborted' }; break; }
           const toolAction = rails.toolAction;
           if (
             toolAction === 'continue-soft-validation'
@@ -853,7 +853,7 @@ export class ConversationRuntime {
 
     // 慢步骤与 run 级 abort 信号竞速 + 每个 await 边界检查取消（N-STOP-DURING-STARTUP）：
     // 启动期点「停止」即刻退出装配，run() 走既有 cancelled 收尾，不再等全部装配跑完。
-    await raceStartupStep(this.ctx, this.initializeUserHooks());
+    await raceStartupStep(this.ctx, this.initializeUserHooks(), 'hook_initialization');
     if (isStartupAborted(this.ctx)) return null;
 
     this.ctx.turn.clearActiveSkill();
@@ -889,8 +889,9 @@ export class ConversationRuntime {
             sessionId: this.ctx.sessionId,
             toolScope: this.ctx.toolScope,
           }),
+          'skill_discovery',
         )
-        ?? await raceStartupStep(this.ctx, resolveStickyStrictSkillInvocation(this.ctx, userRequest));
+        ?? await raceStartupStep(this.ctx, resolveStickyStrictSkillInvocation(this.ctx, userRequest), 'skill_discovery');
       if (isStartupAborted(this.ctx)) return null;
       // 单轮文件交付轮丢弃裸词别名注入（sticky 来源只可能是 slash 种子，不受影响）
       const skillInvocation = retainSkillInvocationForTurn(
@@ -900,7 +901,7 @@ export class ConversationRuntime {
       if (skillInvocation) {
         const skillContext = await raceStartupStep(
           this.ctx,
-          buildSkillInvocationContext(skillInvocation, this.ctx.workingDirectory),
+          buildSkillInvocationContext(skillInvocation, this.ctx.workingDirectory), 'skill_discovery',
         );
         if (startupStepAbandoned(this.ctx, skillContext)) return null;
         this.ctx.turn.activateSkill({
@@ -991,9 +992,9 @@ export class ConversationRuntime {
           }
 
           if (sessionScopedPlanningService) {
-            await raceStartupStep(this.ctx, sessionScopedPlanningService.initialize());
+            await raceStartupStep(this.ctx, sessionScopedPlanningService.initialize(), 'planning_bootstrap');
             const existingPlan = sessionScopedPlanningService.plan.getCurrentPlan()
-              ?? await raceStartupStep(this.ctx, sessionScopedPlanningService.plan.read());
+              ?? await raceStartupStep(this.ctx, sessionScopedPlanningService.plan.read(), 'planning_bootstrap');
             const hasActivePlan = existingPlan && !sessionScopedPlanningService.plan.isComplete();
 
             if (hasActivePlan && existingPlan) {
@@ -1044,7 +1045,7 @@ export class ConversationRuntime {
           // 判定输入只给用户原话：小模型把整条包装体（含 <repeated_workarounds> 注入块）
           // 当成待分析任务去复述，产生 `Judgment fallback used: No JSON found in response`
           // （realrun20 07/08 真机实录，N-CAP-NOTICE-LEAK）。
-          const judgment = await raceStartupStep(this.ctx, orchestrator.judge(userRequest));
+          const judgment = await raceStartupStep(this.ctx, orchestrator.judge(userRequest), 'parallel_judgment');
           if (startupStepAbandoned(this.ctx, judgment)) return null;
 
           if (judgment.shouldParallel && judgment.confidence >= 0.7) {

@@ -456,10 +456,10 @@ mod tests {
         );
         // 退出框按钮组唯一判据是附着是否成立：两键（取消 / 停止并退出）
         assert_eq!(
-            quit_dialog_button_set(windows_attach),
+            quit_dialog_button_set(windows_attach, crate::quit_guard::QuitDialogLanguage::Zh),
             QuitDialogButtonSet::Two {
-                cancel: crate::quit_guard::QUIT_DIALOG_CANCEL_BUTTON,
-                quit: crate::quit_guard::QUIT_DIALOG_QUIT_BUTTON,
+                cancel: "取消",
+                quit: "停止并退出",
             }
         );
     }

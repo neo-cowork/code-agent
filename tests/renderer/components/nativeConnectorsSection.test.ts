@@ -1,11 +1,16 @@
+// @vitest-environment jsdom
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { cleanup, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   ConnectorStatusSummary,
   NativeConnectorInventoryItem,
 } from '../../../src/shared/ipc';
+import { en } from '../../../src/renderer/i18n/en';
+import { zh } from '../../../src/renderer/i18n/zh';
 import {
+  NativeConnectorsSection,
   NativeConnectorItems,
   RuntimeConnectorItems,
   buildNativeConnectorRows,
@@ -17,6 +22,21 @@ import {
   getRuntimeConnectorLifecycleRequest,
   getRuntimeConnectorReadiness,
 } from '../../../src/renderer/components/features/settings/sections/NativeConnectorsSection';
+
+const { mockInvokeDomain, testLocale } = vi.hoisted(() => ({
+  mockInvokeDomain: vi.fn(),
+  testLocale: { value: 'zh' as 'zh' | 'en' },
+}));
+
+vi.mock('../../../src/renderer/hooks/useI18n', () => ({
+  useI18n: () => testLocale.value === 'zh'
+    ? { t: zh, language: 'zh' }
+    : { t: en, language: 'en' },
+}));
+
+vi.mock('../../../src/renderer/services/ipcService', () => ({
+  default: { invokeDomain: mockInvokeDomain },
+}));
 
 const inventory: NativeConnectorInventoryItem[] = [
   { id: 'calendar', label: 'Calendar', enabled: true },
@@ -189,7 +209,7 @@ describe('NativeConnectorItems', () => {
       onLifecycleAction: vi.fn(),
     }));
 
-    expect(html).toContain('Calendar');
+    expect(html).toContain('日历');
     expect(html).toContain('检查失败');
     expect(html).toContain('可用动作: 检查、修复权限、断开、移除');
     expect(html).toContain('Automation denied');
@@ -197,7 +217,7 @@ describe('NativeConnectorItems', () => {
     expect(html).toContain('修复权限');
     expect(html).toContain('断开');
     expect(html).toContain('移除');
-    expect(html).toContain('Mail');
+    expect(html).toContain('邮件');
     expect(html).toContain('已停用');
   });
 
@@ -225,7 +245,7 @@ describe('NativeConnectorItems', () => {
       onLifecycleAction: vi.fn(),
     }));
 
-    expect(html).toContain('Mail');
+    expect(html).toContain('邮件');
     expect(html).toContain('已停用');
     expect(html).not.toContain('<button');
   });
@@ -278,5 +298,68 @@ describe('RuntimeConnectorItems', () => {
 
     expect(html).toContain('重试中');
     expect(html).toContain('disabled=""');
+  });
+});
+
+describe('NativeConnectorsSection diagnostic presentation', () => {
+  const diagnosticInventory: NativeConnectorInventoryItem[] = [
+    { id: 'calendar', label: 'Calendar', enabled: false },
+    { id: 'mail', label: 'Mail', enabled: false },
+  ];
+  const diagnosticStatuses: ConnectorStatusSummary[] = [
+    {
+      id: 'calendar',
+      label: 'Calendar',
+      connected: false,
+      readiness: 'ready',
+      capabilities: [],
+    },
+    {
+      id: 'mail',
+      label: 'Mail',
+      connected: false,
+      readiness: 'ready',
+      capabilities: [],
+    },
+    {
+      id: 'reminders',
+      label: 'Reminders',
+      connected: false,
+      readiness: 'ready',
+      capabilities: [],
+    },
+  ];
+
+  beforeEach(() => {
+    mockInvokeDomain.mockImplementation((_domain: string, action: string) => {
+      if (action === 'listNativeInventory') return Promise.resolve(diagnosticInventory);
+      if (action === 'listStatuses') return Promise.resolve(diagnosticStatuses);
+      return Promise.resolve(undefined);
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+    mockInvokeDomain.mockReset();
+  });
+
+  it('uses localized Chinese labels for both diagnostic row types without internal ids', async () => {
+    testLocale.value = 'zh';
+    render(React.createElement(NativeConnectorsSection));
+
+    expect(await screen.findByText('日历')).toBeTruthy();
+    expect(screen.getByText('邮件')).toBeTruthy();
+    expect(screen.getByText('提醒事项')).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/id:\s*(calendar|mail|reminders)/i);
+  });
+
+  it('uses English labels for both diagnostic row types without internal ids', async () => {
+    testLocale.value = 'en';
+    render(React.createElement(NativeConnectorsSection));
+
+    expect(await screen.findByText('Calendar')).toBeTruthy();
+    expect(screen.getByText('Mail')).toBeTruthy();
+    expect(screen.getByText('Reminders')).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/id:\s*(calendar|mail|reminders)/i);
   });
 });
