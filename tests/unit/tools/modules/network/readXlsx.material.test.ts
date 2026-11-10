@@ -5,6 +5,7 @@ import path from 'node:path';
 import ExcelJS from 'exceljs';
 import type { CanUseToolFn, Logger, ToolContext } from '../../../../../src/host/protocol/tools';
 import { isDeliverableArtifact } from '../../../../../src/shared/contract/artifactRoleRegistry';
+import { collectToolArtifactsFromMetadata } from '../../../../../src/shared/contract/artifactBlob';
 
 vi.mock('../../../../../src/host/tools/dataFingerprint', () => ({
   dataFingerprintStore: { record: vi.fn() },
@@ -47,7 +48,7 @@ describe('read_xlsx source artifact role', () => {
       handler.execute({ file_path: workbookPath }, ctx, allowAll)
     )));
     const artifacts = results.flatMap((result) => (
-      result.ok && result.meta?.artifact ? [result.meta.artifact] : []
+      result.ok ? collectToolArtifactsFromMetadata(result.meta) : []
     ));
 
     expect(results.every((result) => result.ok)).toBe(true);
