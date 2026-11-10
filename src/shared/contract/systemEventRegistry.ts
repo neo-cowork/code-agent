@@ -23,6 +23,8 @@ type SystemEventPresentation = 'error' | 'info' | 'summary' | 'settle';
 
 export interface UserVisibleSystemEventSpec {
   presentation: SystemEventPresentation;
+  /** User-facing text when the persisted content is an internal record. */
+  displayContent?: (metadata: MessageMetadata) => string;
   /** 投出的 TraceNode.subtype；settle 不成节点，无此字段。 */
   subtype?: NonNullable<TraceNode['subtype']>;
   /**
@@ -54,7 +56,11 @@ export const USER_VISIBLE_SYSTEM_EVENT_REGISTRY = {
   roleFlowStalled: { presentation: 'info', attach: 'current-turn' },
   // 后台任务结束后前台自动汇报失败：任务结果已在会话里，告诉用户这一步没成，别留空白。
   backgroundWakeFailed: { presentation: 'info', attach: 'current-turn' },
-  backgroundTaskInterrupted: { presentation: 'info', attach: 'standalone' },
+  backgroundTaskInterrupted: {
+    presentation: 'info',
+    attach: 'standalone',
+    displayContent: (metadata: MessageMetadata) => metadata.backgroundTaskResult?.summary ?? '',
+  },
 } as const satisfies Record<string, UserVisibleSystemEventSpec>;
 
 export type UserVisibleSystemEventKey = keyof typeof USER_VISIBLE_SYSTEM_EVENT_REGISTRY;
