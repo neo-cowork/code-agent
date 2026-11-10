@@ -39,6 +39,11 @@ vi.mock('../../../src/host/tools/middleware/fileCheckpointMiddleware', () => ({
 }));
 
 import { resetDecisionHistory } from '../../../src/host/security/decisionHistory';
+import { createProtocolSubagentExecutionContext } from '../../../src/host/agent/subagentExecutionContext';
+import {
+  buildCanUseToolFromLegacy,
+  buildProtocolContext,
+} from '../../../src/host/tools/dispatch/shadowAdapter';
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 import type { ToolContext } from '../../../src/host/tools/types';
 
@@ -222,6 +227,78 @@ describe('ToolExecutor 工具体内 ask → 权限账本（N-SANDBOX-ESCALATE-AP
       sessionId: 'session-outer-ask-only',
       historyOutcome: 'ask-approved',
       reason: 'user',
+    });
+  });
+
+  it('子代理外层 ask 转发给父审批时，一次用户批准只写一条 permission_decisions', async () => {
+    resolverState.getDefinition.mockImplementation((name: string) => name === 'Write'
+      ? {
+          name: 'Write',
+          description: 'child write',
+          inputSchema: {
+            type: 'object',
+            properties: { file_path: { type: 'string' }, content: { type: 'string' } },
+            required: ['file_path', 'content'],
+          },
+          requiresPermission: true,
+          permissionLevel: 'write',
+        }
+      : {
+          name: 'probe_tool',
+          description: 'parent protocol probe',
+          inputSchema: { type: 'object', properties: {}, required: [] },
+          requiresPermission: false,
+          permissionLevel: 'read',
+        });
+    const userApproval = vi.fn().mockResolvedValue({ approved: true, approvalSource: 'user' });
+    resolverState.execute.mockImplementation(async (name: string, _params: unknown, legacyContext: ToolContext) => {
+      if (name === 'Write') return { success: true, result: 'child-write-done' };
+      const parentContext = {
+        ...legacyContext,
+        modelConfig: { provider: 'mock', model: 'mock-model' },
+        resolver: { getDefinition: resolverState.getDefinition },
+      };
+      const protocolContext = buildProtocolContext({
+        sessionId: 'parent-session',
+        workingDirectory: process.cwd(),
+        legacyCtx: parentContext,
+      });
+      const subagentContext = createProtocolSubagentExecutionContext(
+        protocolContext,
+        buildCanUseToolFromLegacy(parentContext, 'spawn_agent'),
+      );
+      const childExecutor = new ToolExecutor({
+        workingDirectory: process.cwd(),
+        ledgerOrigin: 'subagent',
+        forcePermissionHandler: true,
+        requestPermission: (request) => subagentContext.permission.request(request),
+      });
+      childExecutor.setAuditEnabled(false);
+      return childExecutor.execute('Write', {
+        file_path: `${process.cwd()}/child-ledger-probe.txt`,
+        content: 'probe',
+      }, {
+        sessionId: 'child-session',
+        agentId: 'child-agent',
+        spawnDepth: 1,
+      });
+    });
+    const parentExecutor = new ToolExecutor({
+      requestPermission: userApproval,
+      workingDirectory: process.cwd(),
+    });
+    parentExecutor.setAuditEnabled(false);
+
+    const result = await parentExecutor.execute('probe_tool', {}, { sessionId: 'parent-session' });
+
+    expect(result.success).toBe(true);
+    expect(userApproval).toHaveBeenCalledTimes(1);
+    expect(innerAskRows()).toHaveLength(1);
+    expect(innerAskRows()[0]).toMatchObject({
+      sessionId: 'child-session',
+      historyOutcome: 'ask-approved',
+      reason: 'user',
+      origin: 'subagent',
     });
   });
 });

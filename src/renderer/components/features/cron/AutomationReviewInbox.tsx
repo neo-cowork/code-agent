@@ -57,6 +57,8 @@ function formatWaiting(requestedAt: number): string {
 interface AutomationReviewInboxProps {
   /** 待过目条数变化时回传（加载/刷新后都会调一次），供页首状态条显示 */
   onPendingCountChange?: (count: number) => void;
+  onParkedResolved?: () => void;
+  onParkedChange?: () => void;
   /**
    * 外部新鲜度信号（Rework r1）：收件箱常驻挂载、只在 mount 时拉一次，停车审批
    * 发生在面板开着时不会自动出现。父级在等批准集合变化（出现/消失）时变更本值，
@@ -65,7 +67,7 @@ interface AutomationReviewInboxProps {
   refreshSignal?: string | number;
 }
 
-export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ onPendingCountChange, refreshSignal }) => {
+export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ onPendingCountChange, refreshSignal, onParkedResolved, onParkedChange }) => {
   const { t, language } = useI18n();
   const cc = t.cronCenter;
   const switchSession = useSessionStore((state) => state.switchSession);
@@ -112,9 +114,13 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
       })
       .catch(warnFailed('pending review count'));
     sessionAutomationClient.listParkedApprovals()
-      .then((rows) => setParked(rows ?? []))
+      .then((rows) => {
+        const list = rows ?? [];
+        if (list.some((row) => row.status === 'pending')) onParkedChange?.();
+        setParked(list);
+      })
       .catch(warnFailed('parked approvals'));
-  }, [onPendingCountChange]);
+  }, [onPendingCountChange, onParkedChange]);
 
   useEffect(() => {
     load();
@@ -156,6 +162,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
     } finally {
       setBusyId(null);
       load(); // 无论成败都刷新：orphaned 转灰态 / 失败恢复可点
+      onParkedResolved?.();
     }
   };
 
