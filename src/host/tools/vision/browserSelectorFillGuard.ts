@@ -1,4 +1,5 @@
 import type { ToolExecutionResult } from '../types';
+import { BROWSER_TIMEOUTS } from '../../../shared/constants/timeouts';
 import type { BrowserService, ElementInfo } from '../../services/infra/browserService.js';
 
 const CONSECUTIVE_FAILURE_STOP_THRESHOLD = 2;
@@ -65,6 +66,7 @@ export function resetBrowserSelectorFillStreak(browserService: BrowserService, t
 function checkThirdCallGuard(
   state: SelectorFailureState | null,
   selector: string,
+  action = 'fill',
 ): ToolExecutionResult | null {
   if (!state) return null;
   if (state.selector === selector && state.streak >= CONSECUTIVE_FAILURE_STOP_THRESHOLD) {
@@ -72,8 +74,8 @@ function checkThirdCallGuard(
     return {
       success: false,
       error:
-        `Selector fill stopped: "${selector}" has already failed ${CONSECUTIVE_FAILURE_STOP_THRESHOLD} consecutive times in this tab. ` +
-        `Do not retry this selector. Take a snapshot with browser_action.get_dom_snapshot and use a targetRef for a visible input, ` +
+        `Selector ${action} stopped: "${selector}" has already failed ${CONSECUTIVE_FAILURE_STOP_THRESHOLD} consecutive times in this tab. ` +
+        `Do not retry this selector. Take a snapshot with browser_action.get_dom_snapshot and use a targetRef for a visible element, ` +
         `or construct the search URL directly with browser_action.navigate.`,
     };
   }
@@ -135,7 +137,15 @@ async function inspectSelectorFailureOnPage(
       const innerWidth = typeof window !== 'undefined' ? window.innerWidth : null;
       let elements = [];
       try {
-        elements = Array.from(document.querySelectorAll(sel));
+        if (sel.startsWith('text=')) {
+          const text = sel.slice(5).replace(/\\s+/g, ' ').trim();
+          const normalized = (el) => (el.textContent || '').replace(/\\s+/g, ' ').trim();
+          elements = Array.from(document.querySelectorAll('body *')).filter((el) =>
+            !['SCRIPT', 'STYLE'].includes(el.tagName) && normalized(el).includes(text) &&
+            !Array.from(el.children).some((child) => normalized(child).includes(text)));
+        } else {
+          elements = Array.from(document.querySelectorAll(sel));
+        }
       } catch {
         return { matchCount: -1, visibleCount: 0, notEditable: false, innerWidth };
       }
@@ -174,8 +184,9 @@ async function formatSelectorFillError(args: {
   selector: string;
   error: unknown;
   tabId?: string;
+  action?: 'fill' | 'click';
 }): Promise<string> {
-  const { browserService, selector, error, tabId } = args;
+  const { browserService, selector, error, tabId, action = 'fill' } = args;
   const rawMessage = error instanceof Error ? error.message : String(error);
   const diag = await inspectSelectorFailureOnPage(browserService, selector, tabId);
   const width = diag.innerWidth;
@@ -183,36 +194,63 @@ async function formatSelectorFillError(args: {
     ? ` (current innerWidth=${width}px; the page may be showing a narrow/compact layout)`
     : ' (the page may be showing a narrow/compact layout)';
   const nextStep =
-    'Take a snapshot with browser_action.get_dom_snapshot and use a targetRef for a visible input, ' +
+    'Take a snapshot with browser_action.get_dom_snapshot and use a targetRef for a visible element, ' +
     'or construct the search URL directly with browser_action.navigate.';
 
   if (/strict mode violation|resolved to \d+ elements/i.test(rawMessage) || diag.matchCount > 1) {
     const countLabel = diag.matchCount > 1 ? ` (${diag.matchCount} matches)` : '';
     const hiddenNote = diag.visibleCount === 0 ? widthNote : '';
-    return `Cannot fill selector "${selector}": found several matching elements${countLabel}${hiddenNote}. ${nextStep}`;
+    return `Cannot ${action} selector "${selector}": found several matching elements${countLabel}${hiddenNote}. ${nextStep}`;
   }
 
   if (
-    /not editable|not an <input>|disabled|readonly|read-only|not fillable|cannot be filled/i.test(rawMessage) ||
-    (diag.matchCount === 1 && diag.notEditable)
+    action === 'fill' && (/not editable|not an <input>|disabled|readonly|read-only|not fillable|cannot be filled/i.test(rawMessage) ||
+    (diag.matchCount === 1 && diag.notEditable))
   ) {
     const hiddenNote = diag.visibleCount === 0 ? widthNote : '';
     return `Cannot fill selector "${selector}": element is not editable (disabled, read-only, or not a text input)${hiddenNote}. ${nextStep}`;
   }
 
   if (diag.matchCount === 1 && diag.visibleCount === 0) {
-    return `Cannot fill selector "${selector}": element found but not visible${widthNote}. ${nextStep}`;
+    return `Cannot ${action} selector "${selector}": element found but not visible${widthNote}. ${nextStep}`;
   }
 
   if (diag.matchCount === 0) {
-    return `Cannot fill selector "${selector}": element not found on the current page. ${nextStep}`;
+    return `Cannot ${action} selector "${selector}": element not found on the current page. ${nextStep}`;
   }
 
   if (/not visible|hidden/i.test(rawMessage)) {
-    return `Cannot fill selector "${selector}": element found but not visible${widthNote}. ${nextStep}`;
+    return `Cannot ${action} selector "${selector}": element found but not visible${widthNote}. ${nextStep}`;
+  }
+
+  if (action === 'click') {
+    return `Cannot click selector "${selector}": element is not actionable (disabled, covered, or unstable). ${nextStep}`;
   }
 
   return `Cannot fill selector "${selector}": element not found or not visible within timeout${widthNote}. ${nextStep}`;
+}
+
+export async function executeSelectorClickWithFastFail(args: {
+  browserService: BrowserService;
+  selector: string;
+  tabId?: string;
+}): Promise<ToolExecutionResult> {
+  const { browserService, selector, tabId } = args;
+  const { state, currentUrl } = getOrCreateFailureState(browserService, tabId);
+  const guarded = checkThirdCallGuard(state, selector, 'click');
+  if (guarded) return guarded;
+  try {
+    const boundingBox = selector.startsWith('text=')
+      ? (await browserService.findElementByText(selector.slice(5), tabId))?.rect ?? null
+      : await browserService.getElementBoundingBox(selector, tabId);
+    await browserService.click(selector, tabId, BROWSER_TIMEOUTS.FILL_SELECTOR);
+    noteSelectorSuccess(state, getLiveUrl(browserService, tabId) || currentUrl);
+    return { success: true, output: `Clicked element: ${selector}`,
+      metadata: { pointerTarget: { label: selector, selector, boundingBox } } };
+  } catch (error) {
+    noteSelectorFailure(state, selector, currentUrl);
+    return { success: false, error: await formatSelectorFillError({ ...args, error, action: 'click' }) };
+  }
 }
 
 export async function executeSelectorTypeWithFastFail(args: {

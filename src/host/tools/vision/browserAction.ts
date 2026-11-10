@@ -23,6 +23,7 @@ import { createManagedBrowserOperationId, getManagedBrowserProviderAdapter, surf
 import { scrubSecretFromMessage, typeSecret } from './browserSecretRefGuard';
 import {
   executeFillFormWithFastFail,
+  executeSelectorClickWithFastFail,
   executeSelectorTypeWithFastFail,
   resetBrowserSelectorFillStreak,
 } from './browserSelectorFillGuard';
@@ -563,45 +564,14 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
           if (!selector) {
             return { success: false, error: 'selector or targetRef required for click' };
           }
-          const clickBoundingBox = await browserService.getElementBoundingBox(selector, tabId);
-          await browserService.click(selector, tabId);
-          return {
-            success: true,
-            output: `Clicked element: ${selector}`,
-            metadata: {
-              pointerTarget: {
-                label: selector,
-                selector,
-                boundingBox: clickBoundingBox,
-              },
-            },
-          };
+          return executeSelectorClickWithFastFail({ browserService, selector, tabId });
         }
 
         case 'click_text': {
           if (!text) {
             return { success: false, error: 'text required for click_text' };
           }
-          const element = await browserService.findElementByText(text, tabId);
-          if (!element) {
-            return { success: false, error: `Element with text "${text}" not found` };
-          }
-          // Click using text selector
-          const tab = browserService.getActiveTab();
-          if (tab) {
-            await tab.page.click(`text=${text}`);
-          }
-          return {
-            success: true,
-            output: `Clicked element with text: "${text}"`,
-            metadata: {
-              pointerTarget: {
-                label: text,
-                selector: `text=${text}`,
-                boundingBox: element.rect,
-              },
-            },
-          };
+          return executeSelectorClickWithFastFail({ browserService, selector: `text=${text}`, tabId });
         }
 
         case 'type': {

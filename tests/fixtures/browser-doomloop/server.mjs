@@ -29,6 +29,7 @@ const pages = {
       '<div id="overlayBox" style="display:none"><form onsubmit="event.preventDefault();document.getElementById(\'searchResult\').textContent=\'Article: \'+document.getElementById(\'overlaySearchInput\').value"><input id="overlaySearchInput" name="q" type="search" placeholder="Type search term" aria-label="Search query"><button type="submit" id="overlayGo">Go</button></form></div>' +
       '</header>' +
       '<input id="readonlyInput" value="locked" readonly>' +
+      '<button id="hiddenClick" style="display:none">Hidden fixture action</button>' +
       '<input class="dup-input" name="dup1" style="display:none"><input class="dup-input" name="dup2" style="display:none">' +
       `<p id="searchResult">${q ? `Article: ${q} — desktop app framework` : ''}</p>`,
     );

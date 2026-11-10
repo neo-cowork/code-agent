@@ -45,6 +45,34 @@ describe('browser_action selector fill fast-fail & consecutive retry stop-loss',
     await new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()));
   }, TEST_TIMEOUT_MS);
 
+  it('selector click fails within 6s and rejects its third failure immediately', async () => {
+    await browserActionTool.execute({ action: 'navigate', url: `${baseUrl}/wiki-search` }, ctx);
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const started = Date.now();
+      const result = await browserActionTool.execute({ action: 'click', selector: '#hiddenClick' }, ctx);
+      const elapsed = Date.now() - started;
+      console.log(`[click] attempt=${attempt} elapsedMs=${elapsed} error=${result.error}`);
+      expect(result.success).toBe(false);
+      expect(elapsed).toBeLessThan(attempt === 3 ? 500 : 6_000);
+      expect(result.error).toContain(attempt === 3 ? 'Do not retry this selector' : 'element found but not visible');
+      expect(result.error).toContain('targetRef');
+      if (attempt < 3) expect(result.error).toContain('innerWidth=');
+    }
+  }, TEST_TIMEOUT_MS);
+
+  it('click_text shares fast failure diagnosis and selector stop-loss', async () => {
+    await browserActionTool.execute({ action: 'navigate', url: `${baseUrl}/wiki-search` }, ctx);
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const started = Date.now();
+      const result = await browserActionTool.execute({ action: 'click_text', text: 'Hidden fixture action' }, ctx);
+      expect(result.success).toBe(false);
+      expect(Date.now() - started).toBeLessThan(attempt === 3 ? 500 : 6_000);
+      expect(result.error).toContain(attempt === 3 ? 'Do not retry this selector' : 'element found but not visible');
+    }
+    const success = await browserActionTool.execute({ action: 'click_text', text: 'Search' }, ctx);
+    expect(success.success).toBe(true);
+  }, TEST_TIMEOUT_MS);
+
   it(
     'fails within ~5 s on a CSS media-query hidden input, names "found but not visible" + innerWidth + narrow/compact layout, and points to get_dom_snapshot/targetRef/navigate',
     async () => {

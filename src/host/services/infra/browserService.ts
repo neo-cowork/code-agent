@@ -578,7 +578,7 @@ export class BrowserService implements Disposable {
   // Page Interaction
   // --------------------------------------------------------------------------
 
-  async click(selector: string, tabId?: string): Promise<void> { await this.getTab(tabId).page.click(selector); }
+  async click(selector: string, tabId?: string, timeout?: number): Promise<void> { await this.getTab(tabId).page.click(selector, { timeout }); }
 
   async probeSubmitClick(args: Record<string, unknown>): Promise<BrowserSubmitClickProbeOutcome> {
     try {
