@@ -102,6 +102,7 @@ export interface RolePanelMemory {
   description: string;
   content: string;
   updatedAt: string;
+  lastChange?: { actor: string; timestamp: number };
 }
 
 /** 详情页反向展示的角色 cron 绑定；编辑仍由自动化面板负责。 */

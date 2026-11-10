@@ -57,6 +57,13 @@ export function resolveStreamInterruptionOutcomeKey(
   return STREAM_INTERRUPTION_OUTCOME_KEYS[reason ?? 'app-restart'];
 }
 
+/** Resolve persisted/event cancellation causes without attributing a disconnect to the user. */
+export function resolveRunCancellationOutcomeKey(reason?: string | null): OutcomeKey {
+  if (reason === 'client_disconnect' || reason === 'client-disconnect') return 'interrupted-stream-break';
+  if (reason === 'idle_reaped') return 'failed-idle-reaped';
+  return 'cancelled-by-user';
+}
+
 export const outcomeWordsZh: OutcomeWordsBundle = {
   outcomeWords: {
     'cancelled-by-user': {
