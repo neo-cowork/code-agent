@@ -62,7 +62,7 @@ function scopeDedupePrefix(input: SubagentCompletionScope): string {
 }
 
 function buildCompletionAckInstruction(kind: SubagentCompletionKind, title: string): string {
-  const namingRule = `提到子代理时，只能使用通知中的标题「${title}」，禁止使用 [agent]、[worker]、agent 或 worker 等泛称。`;
+  const namingRule = `提到子代理时，只能使用通知中的标题「${title}」，禁止使用 [agent]、[worker]、agent 或 worker 等泛称。回复中不要提及内部角色名、工具名或标识符。`;
   if (kind === 'user_visible') {
     return `回应要求：结果已经展示给用户，不要复述子代理的原始结果；只用一句话归纳本批通知里的全部完成项。${namingRule}`;
   }
@@ -109,7 +109,7 @@ function buildOutputSummary(input: BuildSubagentCompletionRecordInput): {
 
 export function buildSubagentCompletionRecord(input: BuildSubagentCompletionRecordInput): SubagentCompletionRecord {
   const { summary, archiveRef } = buildOutputSummary(input);
-  const title = input.title?.trim() || input.role?.trim() || input.agentId;
+  const title = input.title?.trim() || '后台任务';
   const kind = input.kind ?? 'internal';
   const durationMs = typeof input.startedAt === 'number' && typeof input.finishedAt === 'number'
     ? Math.max(0, input.finishedAt - input.startedAt)
@@ -117,7 +117,6 @@ export function buildSubagentCompletionRecord(input: BuildSubagentCompletionReco
   const payload = {
     agent_id: input.agentId,
     title,
-    role: input.role,
     completion_kind: kind,
     status: input.status,
     summary,
@@ -181,10 +180,9 @@ export function formatSystemReminderForCompletions(records: readonly SubagentCom
   const title = batchTitle(records);
   const body = records
     .map((record) => {
-      const role = record.role ? ` (${record.role})` : '';
       const duration = typeof record.durationMs === 'number' ? `, duration_ms=${record.durationMs}` : '';
-      const title = record.title || record.role || record.agentId;
-      return `- ${title}${role}: ${statusLabel(record.status)}${duration}\n${record.content}`;
+      const title = record.title.trim() || '后台任务';
+      return `- ${title}: ${statusLabel(record.status)}${duration}\n${record.content}`;
     })
     .join('\n');
   return `<system-reminder>\n${title}\n${body}\n</system-reminder>`;

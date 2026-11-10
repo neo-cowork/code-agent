@@ -433,7 +433,8 @@ export async function executeSingleSpawnAgent(
             : '';
           return {
             success: true,
-            output: `Agent [${agentName}] completed task:
+            // Background completion notifications carry the task result, without role/tool/id wrappers.
+            output: params.run_in_background === true ? `${result.output}${worktreeNote}` : `Agent [${agentName}] completed task:
 
 Task: ${task}
 
@@ -456,7 +457,9 @@ Stats:
         } else {
           return {
             success: false,
-            error: `Agent [${agentName}] failed: ${result.error}${worktreeNote}`,
+            error: params.run_in_background === true
+              ? `${result.error}${worktreeNote}`
+              : `Agent [${agentName}] failed: ${result.error}${worktreeNote}`,
             output: result.output,
             metadata: {
               agentId,
