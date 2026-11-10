@@ -14,7 +14,6 @@ import { useBackgroundTaskStore } from '../stores/backgroundTaskStore';
 import { useWorkflowStore } from '../stores/workflowStore';
 import {
   User,
-  LogIn,
   ChevronDown,
   Trash2,
   Search,
@@ -27,6 +26,7 @@ import { toast } from '../hooks/useToast';
 import { IconButton, UndoToast } from './primitives';
 import { ConfirmDialog } from './composites/ConfirmDialog';
 import { createLogger } from '../utils/logger';
+import { useClearCurrentUnreadOnReturn } from './features/sidebar/useClearCurrentUnreadOnReturn';
 import { SessionContextMenu, type ContextMenuItem } from './features/sidebar/SessionContextMenu';
 import { SidebarSessionList } from './features/sidebar/SidebarSessionList';
 import { SidebarCapabilityZone } from './features/sidebar/SidebarCapabilityZone';
@@ -49,6 +49,7 @@ import { useSidebarSessionActions } from './features/sidebar/useSidebarSessionAc
 import { useSidebarRowActions, resolveRuntimeLogsDir } from './features/sidebar/useSidebarRowActions';
 import { SidebarStatusFilterDropdown } from './features/sidebar/SidebarStatusFilterDropdown';
 import { SidebarAccountMenu } from './features/sidebar/SidebarAccountMenu';
+import { SidebarSignedOutFooter } from './features/sidebar/SidebarSignedOutFooter';
 import { SidebarSearchDialog } from './features/sidebar/SidebarSearchDialog';
 import { SidebarNewTaskRow } from './features/sidebar/SidebarNewTaskRow';
 import { applySessionNotificationAttention } from './features/sidebar/sessionNotificationAttention';
@@ -164,6 +165,7 @@ export const Sidebar: React.FC = () => {
       unsubscribe?.();
     };
   }, [markSessionUnread]);
+  useClearCurrentUnreadOnReturn();
   const {
     pinnedSessionIds,
     togglePin,
@@ -195,7 +197,6 @@ export const Sidebar: React.FC = () => {
     user,
     isAuthenticated,
     isLoading: isAuthLoading,
-    setShowAuthModal,
     sessionTrustState,
     authBackendAvailable,
     hasCachedAdminClaim,
@@ -898,13 +899,7 @@ export const Sidebar: React.FC = () => {
             )}
           </>
         ) : (
-          <button
-            onClick={() => setShowAuthModal(true)}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.08] border border-white/[0.06] text-zinc-400 text-sm font-medium transition-colors"
-          >
-            <LogIn className="w-4 h-4" />
-            {sb.signIn}
-          </button>
+          <SidebarSignedOutFooter />
         )}
       </div>
 

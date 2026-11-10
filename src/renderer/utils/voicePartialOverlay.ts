@@ -1,3 +1,4 @@
+import { getActiveConversationTurnIndex } from './conversationTurns';
 // ============================================================================
 // 通话 partial 字幕的投影叠加（批 H）
 //
@@ -126,11 +127,12 @@ export function applyVoicePartialsToProjection(
     startTime: timestamp,
   };
   const turns = [...projection.turns, turn];
+  const activeIndex = getActiveConversationTurnIndex(projection);
   return {
     ...projection,
     turns,
     // 没有别的轮在流式时才把吸底跟随交给通话轮——正在跑的 run 的输出跟随优先，
     // 别抢它的滚动驱动（单一吸底驱动，批 F 的 F3 结论）。
-    activeTurnIndex: projection.activeTurnIndex >= 0 ? projection.activeTurnIndex : turns.length - 1,
+    activeTurnIndex: activeIndex >= 0 ? activeIndex : turns.length - 1,
   };
 }

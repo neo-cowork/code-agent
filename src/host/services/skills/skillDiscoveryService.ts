@@ -5,6 +5,8 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { ParsedSkill, SkillSource } from '../../../shared/contract/agentSkill';
+import type { WorkbenchToolScope } from '../../../shared/contract/conversationEnvelope';
+import { isSkillHiddenForRun } from '../../tools/workbenchToolScope';
 import { parseSkillMetadataOnly, hasSkillMd } from './skillParser';
 import { bridgeCloudSkill } from './skillBridge';
 import { getBuiltinSkills } from './builtinSkills';
@@ -246,17 +248,27 @@ class SkillDiscoveryService {
     // 4. 加载已启用 marketplace 插件提供的 Skills
     await this.loadFromEnabledMarketplacePlugins();
 
-    // 5. 加载项目级 Skills（最高优先级）
+    // 5. 加载项目级 Skills（最高优先级；跳过与用户级目录重合的物理路径，避免 workingDirectory 退回 HOME 时把 user skill 覆盖成 project）
     if (skillsDirs.project && await isProjectConfigTrusted(this.workingDirectory, 'project-skills')) {
+      const userNewDir = path.resolve(skillsDirs.user.new);
+      const userLegacyDir = path.resolve(skillsDirs.user.legacy);
+      const isSameAsUserDir = (dir: string) => {
+        const resolved = path.resolve(dir);
+        return resolved === userNewDir || resolved === userLegacyDir;
+      };
       if (this.includeClaudeLegacySkills) {
-        await this.scanDirectory(skillsDirs.project.legacy, 'project');
+        if (!isSameAsUserDir(skillsDirs.project.legacy)) {
+          await this.scanDirectory(skillsDirs.project.legacy, 'project');
+        }
       } else {
         logger.debug('Skipping Claude legacy project skills directory by configuration', {
           dir: skillsDirs.project.legacy,
           optInEnv: INCLUDE_CLAUDE_LEGACY_SKILLS_ENV,
         });
       }
-      await this.scanDirectory(skillsDirs.project.new, 'project');
+      if (!isSameAsUserDir(skillsDirs.project.new)) {
+        await this.scanDirectory(skillsDirs.project.new, 'project');
+      }
     }
 
     this.initialized = true;
@@ -665,10 +677,10 @@ class SkillDiscoveryService {
    * 获取可供模型上下文使用的 Skills
    * 排除 disableModelInvocation = true 和被全局禁用的 Skills
    */
-  getSkillsForContext(): ParsedSkill[] {
+  getSkillsForContext(options?: { sessionId?: string; toolScope?: WorkbenchToolScope }): ParsedSkill[] {
     return this.filterApplicableSkills(
       this.getAllSkills().filter(
-        (s) => !s.disableModelInvocation && this.isSkillEnabled(s.name)
+        (s) => !s.disableModelInvocation && this.isSkillEnabled(s.name) && !isSkillHiddenForRun(s, options)
       ),
       'model_context',
     );
@@ -678,10 +690,10 @@ class SkillDiscoveryService {
    * 获取用户可通过 /name 调用的 Skills
    * 排除被全局禁用的 Skills
    */
-  getUserInvocableSkills(): ParsedSkill[] {
+  getUserInvocableSkills(options?: { sessionId?: string; toolScope?: WorkbenchToolScope }): ParsedSkill[] {
     return this.filterApplicableSkills(
       this.getAllSkills().filter(
-        (s) => s.userInvocable && this.isSkillEnabled(s.name)
+        (s) => s.userInvocable && this.isSkillEnabled(s.name) && !isSkillHiddenForRun(s, options)
       ),
       'user_invocation',
     );

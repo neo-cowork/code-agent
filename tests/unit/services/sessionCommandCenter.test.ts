@@ -148,7 +148,7 @@ describe('SessionCommandCenter', () => {
     center.dispose();
   });
 
-  it('keeps model output byte-stable while adding id-free sessionTask metadata for all four outcomes', async () => {
+  it('keeps command-center rows stable and appends the running status guidance with id-free metadata', async () => {
     singletonTaskManagerHolder.manager = new FakeTaskManager();
     resetSessionCommandCenterForTest();
     const allow = vi.fn().mockResolvedValue({ allow: true }) as CanUseToolFn;
@@ -197,7 +197,7 @@ describe('SessionCommandCenter', () => {
       });
       expect(status).toEqual({
         ok: true,
-        output: `1. 首项 [running] id=${tasks[0].id}\n2. 排队 [queued] id=${tasks[1].id}`,
+        output: `1. 首项 [running] id=${tasks[0].id}\n2. 排队 [queued] id=${tasks[1].id}\nNo remaining-time data exists. Do not estimate an ETA. Use only this fresh status read; finished helpers must never be described as running.`,
         meta: {
           sessionTask: {
             outcome: 'status',
