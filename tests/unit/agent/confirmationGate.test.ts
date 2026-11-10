@@ -184,6 +184,47 @@ describe('ConfirmationGate', () => {
       expect(preview!.summary).toContain('npm install');
     });
 
+    it('should build human summary for spawn_agent with role and task', () => {
+      const preview = gate.buildPreview('spawn_agent', {
+        role: 'researcher',
+        task: '调查最近三天的数据趋势并生成简报',
+      });
+      expect(preview).toBeDefined();
+      expect(preview!.type).toBe('generic');
+      expect(preview!.summary).toBe('派出子代理（researcher）：调查最近三天的数据趋势并生成简报');
+    });
+
+    it('should omit parenthesis for spawn_agent when role is empty', () => {
+      const preview = gate.buildPreview('spawn_agent', {
+        role: '  ',
+        task: 'x'.repeat(250),
+      });
+      expect(preview).toBeDefined();
+      expect(preview!.type).toBe('generic');
+      expect(preview!.summary).toBe(`派出子代理：${'x'.repeat(200)}`);
+    });
+
+    it('should return generic preview with up to 3 redacted string param diff lines for default tools', () => {
+      const preview = gate.buildPreview('custom_tool', {
+        query: 'search term',
+        apiKey: 'plain-secret-with-no-recognizable-token-shape',
+        longText: 'a'.repeat(150),
+        fourthParam: 'should not appear',
+        count: 42,
+      });
+      expect(preview).toBeDefined();
+      expect(preview!.type).toBe('generic');
+      expect(preview!.summary).toBe('执行工具 custom_tool');
+      expect(preview!.diff).toBeDefined();
+      const lines = preview!.diff!.split('\n');
+      expect(lines).toHaveLength(3);
+      expect(lines[0]).toBe('query: search term');
+      expect(lines[1]).toBe('apiKey: ***REDACTED***');
+      expect(lines[1]).not.toContain('plain-secret-with-no-recognizable-token-shape');
+      expect(lines[2]).toBe(`longText: ${'a'.repeat(120)}`);
+      expect(preview!.diff).not.toContain('fourthParam');
+    });
+
     it('should return generic preview for non-write tools', () => {
       const preview = gate.buildPreview('read_file', { file_path: '/tmp/a.ts' });
       expect(preview).toBeDefined();
