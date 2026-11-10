@@ -323,7 +323,7 @@ export const en = {
     importImage: 'Add image',
     importHint: 'Or paste (⌘V) / drag images onto the canvas; select an imported image to repaint',
     addReference: 'Add reference',
-    referenceHint: 'Reference images are sent to the model as visual guidance on generate (Wanx supports 1; the first is used)',
+    referenceHint: 'Reference images are sent to the model as visual guidance on generate (up to 3 images; with several selected they are sent in selection order as image 1/2/3 and generation switches to the multi-image edit model, which costs more per image than a single reference)',
     referenceBadge: 'Ref',
     layerPanelTitle: 'Layers',
     sidePanelExpand: 'Expand canvas panel',
@@ -965,7 +965,8 @@ export const en = {
     buttonTitle: 'Current session permission tier',
     menuTitle: 'Session permission tier',
     bypassConfirmText: 'File writes and command executions will be auto-approved. Only for fully trusted workspaces.',
-    enable: 'Enable',
+    enable: 'Enable', retry: 'Retry',
+    enableError: { forbidden: 'Full Access requires an administrator. Your account does not have this permission.', pending: "Couldn't load your account details yet. Please try again shortly.", other: "Couldn't turn on Full Access. Please try again later." },
   },
 
   skillRecommendations: {
