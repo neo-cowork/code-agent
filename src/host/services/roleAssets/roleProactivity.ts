@@ -392,9 +392,9 @@ export async function wakeRole(
       }), {
         roleId,
         sessionId: session.id,
-        phase: 'wake-run',
-        timeoutMs: wakeTimeoutMs,
+        phase: 'wake-run', timeoutMs: wakeTimeoutMs,
         cancel: () => orchestrator.cancel(),
+        settled: () => tm.whenAgentEventsSettled(session.id),
       });
     } finally {
       tm.cleanup(session.id);
@@ -891,6 +891,7 @@ async function launchAdvanceGoalRun(params: {
           phase: 'advance-goal-run',
           timeoutMs: params.timeoutMs,
           cancel: () => orchestrator.cancel(),
+          settled: () => params.taskManager.whenAgentEventsSettled(params.sessionId),
         }),
         {
           roleId: params.roleId,

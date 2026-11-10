@@ -739,6 +739,26 @@ export class TaskManager extends EventEmitter {
     return this.activeOrchestrators.get(id)?.orchestrator;
   }
 
+  private readonly inflightEventHandlers = new Map<string, Set<Promise<void>>>();
+
+  private trackEventHandling(sessionId: string, handling: Promise<void>): Promise<void> {
+    const set = this.inflightEventHandlers.get(sessionId) ?? new Set<Promise<void>>();
+    this.inflightEventHandlers.set(sessionId, set);
+    set.add(handling);
+    void handling.finally(() => {
+      set.delete(handling);
+      if (set.size === 0 && this.inflightEventHandlers.get(sessionId) === set) this.inflightEventHandlers.delete(sessionId);
+    }).catch(() => undefined);
+    return handling;
+  }
+
+  /** orchestrator 不 await onEvent：run 返回时 task_complete 的落库/收口链可能还在跑，等它们排空。 */
+  async whenAgentEventsSettled(sessionId: string): Promise<void> {
+    while (this.inflightEventHandlers.get(sessionId)?.size) {
+      await Promise.allSettled([...this.inflightEventHandlers.get(sessionId)!]);
+    }
+  }
+
   /**
    * 向会话事件流注入一个 AgentEvent（走与 orchestrator onEvent 相同的广播链）。
    * 供不经 orchestrator 的路径（如外部引擎分支）发观测事件，例如
@@ -1128,7 +1148,7 @@ export class TaskManager extends EventEmitter {
       planningService: this.planningService,
       runRegistry: this.runRegistry,
       hasApprovalUi: () => hasInteractiveUi(),
-      onEvent: async (event: AgentEvent) => this.handleAgentEvent(sessionId, event, eventKey),
+      onEvent: async (event: AgentEvent) => this.trackEventHandling(sessionId, this.handleAgentEvent(sessionId, event, eventKey)),
       getHomeDir: () => app.getPath('home'),
       broadcastDAGEvent: (event) => {
         for (const win of AppWindow.getAllWindows()) {
