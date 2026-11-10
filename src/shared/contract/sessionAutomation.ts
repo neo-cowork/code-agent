@@ -134,6 +134,8 @@ export interface SessionAutomationConfig extends Record<string, unknown> {
     digest?: {
       artifactCount: number;
       summaryLine?: string;
+      /** Complete result summary for click-to-expand, without the urgency header. */
+      summaryText?: string;
       artifacts?: Array<{ path: string; openable: boolean }>;
     };
     /** 到达运行次数上限后由 cron 记录的待过目原因。 */
