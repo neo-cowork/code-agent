@@ -11,14 +11,16 @@ describe('/init-memory builtin prompt command', () => {
       source: 'builtin',
     });
     expect(command?.template).toContain('ProposeProjectMemory');
-    expect(command?.template).toContain('Settings -> Memory');
+    expect(command?.template).toContain('设置→记忆页');
     expect(command?.template).toContain('read_docx');
     expect(command?.template).toContain('read_xlsx');
     expect(command?.template).toContain('read_pdf');
     expect(command?.template).toContain('ReadDocument');
     expect(command?.template).toContain('exists, not overwritten');
-    expect(command?.template).toContain('逐字转述工具返回的 status 行及其后面的状态说明');
-    expect(command?.template).toContain('不要把同一条记忆同时描述为 candidate、partly active、pending 或 active');
+    expect(command?.template).toContain('逐字转述工具返回的中文状态说明行');
+    expect(command?.template).toContain('仍待确认，需在设置→记忆页确认才生效');
+    expect(command?.template).toContain('不要把 status: candidate / status: active 这类原始状态行或英文回执句子贴给用户');
+    expect(command?.template).toContain('不要把同一条记忆同时描述为待确认、部分已生效、以设置页为准或已生效');
     expect(command?.description).toBeTruthy();
   });
 

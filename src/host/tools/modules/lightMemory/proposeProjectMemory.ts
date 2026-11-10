@@ -109,12 +109,12 @@ function formatExists(topic: ProjectMemoryDraftTopic, entry: MemoryEntry): strin
   const statusReceipt = entry.status === 'candidate'
     ? [
       'status: candidate',
-      'This draft is still waiting for confirmation in Settings -> Memory; it takes effect only after you confirm it there.',
+      '仍待确认，需在设置→记忆页确认才生效',
     ]
     : entry.status === 'active'
       ? [
         'status: active',
-        'This memory is in effect.',
+        '已生效',
       ]
       : [`status: ${entry.status}`];
   return [
@@ -129,7 +129,9 @@ function formatExists(topic: ProjectMemoryDraftTopic, entry: MemoryEntry): strin
 
 function formatWritten(topic: ProjectMemoryDraftTopic, entry: MemoryEntry): string {
   return [
-    'Wrote a candidate project memory. status: candidate. It does not take effect until confirmed in Settings -> Memory.',
+    'Wrote a candidate project memory.',
+    'status: candidate',
+    '仍待确认，需在设置→记忆页确认才生效',
     `topic: ${topic}`,
     `id: ${entry.id}`,
     'content:',
