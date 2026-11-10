@@ -1277,11 +1277,11 @@ export class SessionManager implements Disposable {
     const session = await this.getSession(sessionId);
     if (!session) return;
 
-    const titleSource = sessionTitleSource(firstMessage);
+    const titleSource = sessionTitleSource(firstMessage, (await import('../../session/sessionTitleHostPrompt')).readUiLanguage());
     if (session.messageCount > 1 || !isProvisionalAutoTitle(session.title, titleSource)) return;
 
     let title = await this.generateSmartTitle(titleSource);
-    if (!title) title = deriveFallbackSessionTitle(firstMessage);
+    if (!title) title = deriveFallbackSessionTitle(titleSource);
 
     // generateSmartTitle 要调小模型，实测能拖几十秒。这段窗口里目标会话可能已被
     // 改名（用户手动重命名，或它先被别的路径命名过），此时再写就是覆盖用户的标题。

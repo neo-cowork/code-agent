@@ -510,17 +510,27 @@ export class CLISessionManager {
   private async maybeUpdateTitle(sessionId: string, firstMessage: string): Promise<void> {
     const session = await this.getSession(sessionId);
     if (!session) return;
-    const titleSource = sessionTitleSource(firstMessage);
+    const uiLanguage = await this.readUiLanguage();
+    const titleSource = sessionTitleSource(firstMessage, uiLanguage);
     // web 预写层的「prompt 头 + ...」临时档也是自动产物，智能标题照常替换。
     if (session.messageCount > 1 || !isProvisionalAutoTitle(session.title, titleSource)) return;
 
     let title = await this.generateSmartTitle(titleSource);
-    if (!title) title = deriveFallbackSessionTitle(firstMessage);
+    if (!title) title = deriveFallbackSessionTitle(firstMessage, uiLanguage);
 
     const latest = await this.getSession(sessionId);
     if (!latest || !isProvisionalAutoTitle(latest.title, titleSource)) return;
 
     await this.updateSession(sessionId, { title });
+  }
+
+  private async readUiLanguage(): Promise<'zh' | 'en'> {
+    try {
+      const { getConfigService } = await import('./bootstrap');
+      return getConfigService().getSettings().ui.language === 'en' ? 'en' : 'zh';
+    } catch {
+      return 'zh';
+    }
   }
 
   /**

@@ -2,7 +2,7 @@
 import { getConfigService } from '../services/core/configService';
 import { buildSessionTitlePrompt, type SessionTitleLanguage } from '../../shared/sessionTitlePrompt';
 
-function readUiLanguage(): SessionTitleLanguage {
+export function readUiLanguage(): SessionTitleLanguage {
   try {
     return getConfigService().getSettings().ui.language === 'en' ? 'en' : 'zh';
   } catch {
