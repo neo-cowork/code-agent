@@ -428,7 +428,7 @@ describe('CronService result channel delivery', () => {
   // 现改为「会话 id 必须原样传给通道」。
   it('pushes a normal cron result to the conversation named by the target', async () => {
     const definition = resultJob({ resultChannel: 'feishu:oc_group1' });
-    await expect(deliver(definition, 'normal result')).resolves.toEqual({ delivered: true, pushedBody: 'normal result' });
+    await expect(deliver(definition, 'normal result')).resolves.toEqual({ delivered: true, pushedBody: 'normal result', note: 'pushed' });
 
     expect(channelState.sendMessage).toHaveBeenCalledWith(
       'feishu-account',
@@ -464,7 +464,7 @@ describe('CronService result channel delivery', () => {
         context: { heartbeatTask: true, channel: 'feishu:oc_group1' },
       },
     });
-    await expect(deliver(definition, 'heartbeat result')).resolves.toEqual({ delivered: true, pushedBody: 'heartbeat result' });
+    await expect(deliver(definition, 'heartbeat result')).resolves.toEqual({ delivered: true, pushedBody: 'heartbeat result', note: 'pushed' });
 
     expect(channelState.sendMessage).toHaveBeenCalledWith(
       'feishu-account',
@@ -950,6 +950,55 @@ describe('N-CRON-SKIPPED-DELIVERY quiet watch rounds', () => {
     await service.triggerJob(job.id);
     expect(channelState.sendMessage).toHaveBeenCalledTimes(3);
 
+    await service.shutdown();
+  });
+
+  // N-FIX-CRON-RESULT-PUSH-SILENT-SKIP ④：FB-690 场景，同一任务连触发 3 次、正文一字不差。
+  // 每条运行记录都要说明推没推、没推的原因；note 必须活过 executeJob 收尾的最终 save。
+  it('records pushed / duplicate / duplicate on three identical manual triggers', async () => {
+    agentRunState.messages = [{ role: 'assistant', content: '同一句话' }];
+    const service = new CronService();
+    const job = await service.createJob(agentJob({}));
+
+    const runs: Array<import('../../../src/shared/contract/cron').CronJobExecution | null> = [];
+    for (let i = 0; i < 3; i += 1) runs.push(await service.triggerJob(job.id));
+
+    expect(runs.map((run) => run?.pushNote)).toEqual(['pushed', 'duplicate', 'duplicate']);
+    expect(runs.map((run) => run?.status)).toEqual(['completed', 'completed', 'completed']);
+    expect(runs.map((run) => run?.error)).toEqual([undefined, undefined, undefined]);
+    // 最终 save 之后库里最后一次写入仍带 push_note（最后一列）。
+    const lastSaved = dbState.savedRows.filter((row) => row[0] === runs[1]?.id).at(-1);
+    expect(lastSaved?.at(-1)).toBe('duplicate');
+    await service.shutdown();
+  });
+
+  it('records the upstream quiet-watch-round gate without pushing or failing', async () => {
+    agentRunState.messages = [{ role: 'assistant', content: '本轮巡检：没有新变化。' }];
+    const service = new CronService();
+    const job = await service.createJob(agentJob({ externalWatch: { source: 'feishu-calendar', calendarId: 'cal-1' } }));
+
+    const execution = await service.triggerJob(job.id);
+
+    expect(execution).toMatchObject({ status: 'completed', pushNote: 'quiet-watch-round' });
+    expect(execution?.error).toBeUndefined();
+    expect(channelState.sendMessage).not.toHaveBeenCalled();
+    await service.shutdown();
+  });
+
+  it('records the upstream notify-quiet-round gate and writes nothing when no push target is set', async () => {
+    agentRunState.messages = [{ role: 'assistant', content: '一切正常。' }];
+    const service = new CronService();
+    const gated = agentJob({});
+    gated.action = { ...gated.action, notifyWhen: '出现异常时' } as typeof gated.action;
+    const job = await service.createJob(gated);
+
+    const execution = await service.triggerJob(job.id);
+    expect(execution).toMatchObject({ status: 'completed', pushNote: 'notify-quiet-round' });
+    expect(channelState.sendMessage).not.toHaveBeenCalled();
+
+    const noTarget = await service.createJob({ ...gated, name: 'no target', resultChannel: undefined });
+    const noTargetRun = await service.triggerJob(noTarget.id);
+    expect(noTargetRun?.pushNote).toBeUndefined();
     await service.shutdown();
   });
 });
