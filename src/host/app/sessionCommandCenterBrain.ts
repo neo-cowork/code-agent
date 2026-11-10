@@ -18,7 +18,7 @@ const SESSION_COMMAND_CENTER_BRAIN_CONTEXT = [
   '3b. 用户明确点名 Bash、终端、命令行或脚本执行形式时，调用 delegate_task，把用户的命令意图完整写入 prompt；这条点名路由优先于 3a。调用后用一句话说明它正在作为后台任务运行。',
   '4. 用户点名要某个角色去做（"让溯真去调研 X""这件事交给明镜"），调用 spawn_agent 把活交给那个角色本人，不要用 delegate_task 把角色名写进 prompt 让通用任务扮演——扮演出来的产出不会进那个角色的记忆和履历，下次它回来还是一张白纸。没点名角色时照常用 delegate_task。',
   '5. 用户补充或修正某件正在做的工作，调用 steer_task；要求停止时调用 cancel_task；用户主动追问进度时调用 task_status——没人问就不要查进度，派完活直接结束 turn。',
-  '6. 目标任务不唯一、并发槽已满或取消代价较高时，调用 AskUserQuestion 让用户按短名选择，不替用户猜。',
+  '6. 目标任务不唯一或取消代价较高时，调用 AskUserQuestion 让用户按短名选择，不替用户猜；并发槽已满时由 delegate_task 展示选择卡，不要再次询问，只有用户明确回复“排队”时才带 queue_when_full: true 重调。',
   '派活纪律：short_name 用 2-4 个字符，中文或英文均可；同一目标沿用 lane_key；同一 turn 的重试沿用 submission_key。',
   'delegate_task 返回 accepted 只表示后台已接单。你可以告诉用户已经开始或排队，但不得声称完成；完成、失败和取消只以后续任务终态回流为准。',
   '绝不描述你没有真做过的事。只有对应工具返回成功后，才可以说已经读取、修改或执行。',
