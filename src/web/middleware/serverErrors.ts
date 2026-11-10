@@ -1,3 +1,4 @@
+import { PROJECT_IDENTITY_CONFIRMATION } from '../../shared/constants/projectIdentityConfirmation';
 import type { ErrorRequestHandler, RequestHandler } from 'express';
 import { ProjectSourceTrustError } from '../../host/services/project/projectSourceTrustError';
 import type { WebRouteLogger } from '../routes/routeTypes';
@@ -44,7 +45,8 @@ export function handleServerError(logger: WebRouteLogger): ErrorRequestHandler {
     }
     res.status(status).json({
       error: error instanceof ProjectSourceTrustError ? 'Project folder needs trust confirmation' : 'Local server request failed',
-      code: error instanceof ProjectSourceTrustError ? 'PROJECT_SOURCE_TRUST'
+      ...(error instanceof ProjectSourceTrustError && error.recoveryToken ? { recoveryToken: error.recoveryToken } : {}),
+      code: error instanceof ProjectSourceTrustError ? (error.recoveryToken ? PROJECT_IDENTITY_CONFIRMATION.CODE : 'PROJECT_SOURCE_TRUST')
         : status >= 500 ? 'INTERNAL_SERVER_ERROR' : `HTTP_${status}`,
     });
   };

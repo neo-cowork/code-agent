@@ -489,10 +489,12 @@ export class FolderTrustService {
     workingDirectory: string,
     state: FolderTrustDecisionState,
     decidedBy = 'user',
+    expectedIdentity?: { ino: string; birthtimeNs: string },
   ): Promise<FolderTrustEvaluation> {
     const canonicalRealpath = await realpathNative(workingDirectory);
-    const identity = await this.readIdentity(canonicalRealpath);
+    let identity = await this.readIdentity(canonicalRealpath);
     const dangerousItems = await this.discoverDangerousItems(canonicalRealpath);
+    if (expectedIdentity) { identity = await this.readIdentity(canonicalRealpath); if (!folderIdentityMatches(expectedIdentity, identity)) throw new Error('FOLDER_IDENTITY_CHANGED'); }
     // 决定与快照都出自这一次扫描：同步缓存要是还留着更旧的一份，下一次 evaluateSync 会拿
     // 缓存里多出来的 gated 项跟新快照比，误判成「内容变了」。用刚扫到的这份覆盖掉。
     this.rememberFullScan(canonicalRealpath, dangerousItems);
@@ -914,8 +916,9 @@ export async function setFolderTrust(
   workingDirectory: string,
   state: FolderTrustDecisionState,
   decidedBy?: string,
+  expectedIdentity?: { ino: string; birthtimeNs: string },
 ): Promise<FolderTrustEvaluation> {
-  return getFolderTrustService().set(workingDirectory, state, decidedBy);
+  return getFolderTrustService().set(workingDirectory, state, decidedBy, expectedIdentity);
 }
 
 export async function revokeFolderTrust(workingDirectory: string): Promise<FolderTrustEvaluation> {

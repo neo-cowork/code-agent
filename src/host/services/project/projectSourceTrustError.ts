@@ -9,6 +9,7 @@ export class ProjectSourceTrustError extends Error {
   constructor(
     readonly kind: ProjectSourceTrustFailureKind,
     readonly sourcePath: string,
+    readonly recoveryToken?: string,
   ) {
     super(ProjectSourceTrustError.messageFor(kind, sourcePath));
     this.name = 'ProjectSourceTrustError';

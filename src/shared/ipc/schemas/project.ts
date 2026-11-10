@@ -16,6 +16,7 @@ const ProjectDomainRequestSchema = z.object({
     'addSource',
     'artifactIssues',
     'artifacts',
+    'confirmMissingSourceIdentity',
     'create',
     'createInvite',
     'createSpace',

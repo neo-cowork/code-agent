@@ -1,3 +1,4 @@
+import { issueProjectIdentityConfirmation } from './projectIdentityConfirmation';
 // ============================================================================
 // ProjectService - 项目空间业务编排（P0-2）
 // ============================================================================
@@ -708,7 +709,7 @@ export class ProjectService {
     for (const source of sources) {
       const identity = workspacePathIdentity(source.canonicalPath);
       const failureKind = sourceTrustFailureKind(source, identity);
-      if (failureKind) throw new ProjectSourceTrustError(failureKind, source.path);
+      if (failureKind) throw new ProjectSourceTrustError(failureKind, source.path, issueProjectIdentityConfirmation(project, sources));
     }
     const scope = createWorkspaceScope(projectId, sources.map((source) => ({
       sourceId: source.id,

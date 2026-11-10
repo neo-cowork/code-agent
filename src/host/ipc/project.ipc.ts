@@ -1,3 +1,4 @@
+import { confirmProjectIdentity } from '../services/project/projectIdentityConfirmation';
 // ============================================================================
 // Project IPC Handlers - domain:project 通道（P0-2 项目空间容器）
 // ============================================================================
@@ -410,6 +411,8 @@ const projectHandlers: RawDomainRouteHandlers<ProjectDomainRequest, void> = {
     const scope = svc.getWorkspaceScope(projectId);
     return { success: true, data: scope ? await getProjectSourceGitStates(scope) : [] };
   },
+
+  confirmMissingSourceIdentity: (_ctx, payload) => confirmProjectIdentity(getProjectService(), payload).then(data => ({ success: true, data })),
 
   updateProject: async (_ctx, payload) => {
     const svc = getProjectService();
