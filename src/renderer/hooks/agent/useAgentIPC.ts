@@ -1,3 +1,4 @@
+import { offerProjectIdentityRecovery } from '../../stores/projectIdentityRecoveryStore';
 // useAgentIPC owns send/cancel IPC calls and direct-routing metadata.
 import { useCallback, type MutableRefObject } from 'react';
 import { generateMessageId } from '@shared/utils/id';
@@ -699,6 +700,7 @@ export function useAgentIPC({
           // clientMessageId。纯附件消息 content 为空，锚点不能按文本判。
           ...(retryAnchor ? { metadata: retryAnchor } : {}),
         };
+        offerProjectIdentityRecovery(errorMessage.id, sendFailure, messagePayload, userMessage);
         addMessage(errorMessage);
         // 按会话清除处理状态
         setSessionProcessing(effectiveSessionId!, false);

@@ -22,6 +22,9 @@ export const serverConnectionZh = {
     requestTooLarge: '发送的内容太大，请减少附件或内容后重试。',
     requestBusy: 'Neo 暂时无法接收请求，请稍后重试。',
     skillFolderTrustRequired: '该文件夹需要信任确认，请在此文件夹中打开会话并确认信任后重试。',
+    folderIdentityConfirmation: '此文件夹需要重新确认，请确认信任后继续发送。',
+    confirmFolderIdentity: '确认信任并发送',
+    dismissFolderIdentity: '暂不确认',
     folderTrustRequired: '项目文件夹需要重新确认，请在项目设置中检查并信任该文件夹后重试。',
   },
 };
@@ -40,6 +43,9 @@ export const serverConnectionEn = {
     requestTooLarge: 'The content is too large; please reduce the attachments or text and try again.',
     requestBusy: 'Neo cannot accept the request right now; please try again in a moment.',
     skillFolderTrustRequired: 'This folder needs trust confirmation; please open a conversation in the folder and confirm trust, then try again.',
+    folderIdentityConfirmation: 'This folder needs to be confirmed again; confirm trust to send your message.',
+    confirmFolderIdentity: 'Confirm trust and send',
+    dismissFolderIdentity: 'Not now',
     folderTrustRequired: 'The project folder needs confirmation; please review and trust it in project settings, then try again.',
   },
 };

@@ -24,7 +24,7 @@ import {
   getServerReconnectingMessage,
   reportServerUnreachable,
 } from '../utils/serverConnectionMonitor';
-import { getHttpFailureMessage, getHttpFailureCode as parseHttpErrorCode } from '../utils/httpFailureMessage';
+import { getHttpFailureMessage, getHttpFailureCode as parseHttpErrorCode, getProjectIdentityRecoveryToken } from '../utils/httpFailureMessage';
 import { getServerConnectionStatus } from '../stores/serverConnectionStore';
 import { logPermissionClickExit } from '../services/permissionClickLog';
 
@@ -677,7 +677,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
           // 和真正的失败。只留一句人话字符串的话，上层只能去正则匹配错误文案。
           throw Object.assign(
             new Error(errorMessage),
-            { status: response.status, ...(errorCode ? { code: errorCode } : {}) },
+            { status: response.status, ...(errorCode ? { code: errorCode } : {}), recoveryToken: getProjectIdentityRecoveryToken(errorBody) },
           );
         }
         clearAuthTokenReloadAttempt();

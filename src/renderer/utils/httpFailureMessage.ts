@@ -1,3 +1,4 @@
+import { PROJECT_IDENTITY_CONFIRMATION } from '@shared/constants/projectIdentityConfirmation';
 import { languages } from '../i18n';
 import { useAppStore } from '../stores/appStore';
 
@@ -5,6 +6,7 @@ import { useAppStore } from '../stores/appStore';
 export function getHttpFailureMessage(status: number, code?: string): string {
   const copy = languages[useAppStore.getState().language === 'en' ? 'en' : 'zh'].serverConnection;
   if (code === 'SKILL_FOLDER_TRUST_REQUIRED') return copy.skillFolderTrustRequired;
+  if (code === PROJECT_IDENTITY_CONFIRMATION.CODE) return copy.folderIdentityConfirmation;
   if (code === 'PROJECT_SOURCE_TRUST') return copy.folderTrustRequired;
   if (status === 401 || status === 403) return copy.accessDenied;
   if (status === 413) return copy.requestTooLarge;
@@ -31,4 +33,12 @@ export function getHttpFailureCode(errorBody: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+export function getProjectIdentityRecoveryToken(body: string): string | undefined {
+  try {
+    const parsed = JSON.parse(body) as { code?: unknown; recoveryToken?: unknown };
+    return parsed.code === PROJECT_IDENTITY_CONFIRMATION.CODE && typeof parsed.recoveryToken === 'string'
+      && /^[0-9a-f-]{36}$/i.test(parsed.recoveryToken) ? parsed.recoveryToken : undefined;
+  } catch { return undefined; }
 }

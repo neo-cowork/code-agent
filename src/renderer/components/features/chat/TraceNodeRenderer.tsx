@@ -1,3 +1,4 @@
+import { ProjectIdentityRecovery } from './ProjectIdentityRecovery';
 // ============================================================================
 // TraceNodeRenderer - Render individual trace nodes by type
 // Reuses existing MessageContent, ToolCallDisplay components; UserNode below
@@ -493,6 +494,8 @@ const AssistantTextNode: React.FC<{
           </MessageContextFrame>
         ) : assistantTextBody
       )}
+
+      <ProjectIdentityRecovery messageId={messageId} />
 
       {/* ADR-068 刀 4（D5）：断流续接状态行——同一 streaming 消息内嵌，一屏一个信号；
           续答恢复（B1 无缝续打 / B2 落到续答段）或终态一到即消除。 */}

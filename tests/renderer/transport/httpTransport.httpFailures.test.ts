@@ -58,6 +58,16 @@ describe('public HTTP send failure copy', () => {
       .rejects.toMatchObject({ status, message });
   });
 
+  it('preserves only the typed missing-identity confirmation token on send errors', async () => {
+    const recoveryToken = '11111111-1111-4111-8111-111111111111';
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      error: 'PRIVATE', code: 'PROJECT_SOURCE_IDENTITY_CONFIRM_REQUIRED', recoveryToken,
+    }), { status: 422 })));
+    await expect(createHttpCodeAgentAPI('').invoke(IPC_CHANNELS.AGENT_SEND_MESSAGE, '照片改名'))
+      .rejects.toMatchObject({ status: 422, code: 'PROJECT_SOURCE_IDENTITY_CONFIRM_REQUIRED', recoveryToken,
+        message: '此文件夹需要重新确认，请确认信任后继续发送。' });
+  });
+
   it('keeps a project trust refusal actionable without granting access', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
       error: 'Project Source trust identity changed: PRIVATE', code: 'PROJECT_SOURCE_TRUST',
