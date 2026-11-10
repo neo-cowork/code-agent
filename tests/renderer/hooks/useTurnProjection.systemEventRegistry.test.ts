@@ -56,6 +56,7 @@ const SAMPLE_PAYLOADS: { [K in UserVisibleSystemEventKey]: NonNullable<MessageMe
   roleFlowStalled: { skillName: 'create-role' },
   roleEditReceipt: { roleId: '研究员', addedTools: ['calendar'], removedTools: [], descriptionChanged: false, promptChanged: false },
   backgroundWakeFailed: { taskId: 'session-work-1', reason: 'wake_failed' },
+  backgroundTaskInterrupted: { taskId: 'session-work-1' },
   turnCheckoutNote: {
     operation: 'checkout',
     state: 'success',
@@ -295,6 +296,20 @@ describe('用户可见 system 事件登记制（P0-2）', () => {
       expect(note?.subtype).not.toBe('error');
       expect(allNodes.some((n) => Boolean(n.metadata?.agentError))).toBe(false);
     }
+  });
+
+  it('projects a restart interruption as a standalone readable note', () => {
+    const content = '[任务结果] 网页标题｜failed｜应用重启时这个后台任务还没做完，已被中断，结果没能送回这里。需要的话请重新发起。';
+    const message = {
+      id: 'session-task-result-interrupted-task-1', role: 'system', content, timestamp: 9_000,
+      metadata: {
+        backgroundTaskInterrupted: { taskId: 'task-1' },
+        backgroundTaskResult: { source: 'agent-result', taskId: 'task-1', shortName: '网页标题', status: 'failed', summary: content },
+      },
+    } satisfies Message;
+    const turns = project([...plainTurn(), message, message]);
+    expect(turns).toHaveLength(2);
+    expect(turns[1]).toMatchObject({ standalone: true, nodes: [{ id: message.id, type: 'system', content }] });
   });
 
   it('底线：裸 role:system（无 metadata）仍被总闸跳过——内部指令不外泄', () => {

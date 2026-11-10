@@ -54,6 +54,7 @@ export const USER_VISIBLE_SYSTEM_EVENT_REGISTRY = {
   roleFlowStalled: { presentation: 'info', attach: 'current-turn' },
   // 后台任务结束后前台自动汇报失败：任务结果已在会话里，告诉用户这一步没成，别留空白。
   backgroundWakeFailed: { presentation: 'info', attach: 'current-turn' },
+  backgroundTaskInterrupted: { presentation: 'info', attach: 'standalone' },
 } as const satisfies Record<string, UserVisibleSystemEventSpec>;
 
 export type UserVisibleSystemEventKey = keyof typeof USER_VISIBLE_SYSTEM_EVENT_REGISTRY;

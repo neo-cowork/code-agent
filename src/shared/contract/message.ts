@@ -457,6 +457,8 @@ export interface MessageMetadata {
   };
   /** 显式改道成功后的动作回执；原话不投成用户气泡。 */
   inputRedirectReceipt?: InputRedirectReceiptMetadata;
+  /** 重启中断的后台任务需要在原会话展示一条提示。 */
+  backgroundTaskInterrupted?: { taskId: string };
   /** 后台任务统一终态投影，供后续 turn 做短名指代与状态追问。 */
   backgroundTaskResult?: {
     source: 'agent-result';
