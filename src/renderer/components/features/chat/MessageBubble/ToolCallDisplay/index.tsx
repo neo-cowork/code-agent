@@ -142,7 +142,6 @@ export function ToolCallDisplay({
   const toolCall = useMemo(() => getToolPreflightKind(originalToolCall) === 'question' && originalToolCall.result
     ? { ...originalToolCall, result: { ...originalToolCall.result, success: false, error: originalToolCall.result.error ?? originalToolCall.result.output } }
     : originalToolCall, [originalToolCall]);
-  const displayToolCall = useMemo(() => toDelegationDisplayToolCall(toolCall, t), [toolCall, t]);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const processingSessionIds = useAppStore((state) => state.processingSessionIds);
   const pendingPermissionRequest = useAppStore((state) => state.pendingPermissionRequest);
@@ -177,6 +176,11 @@ export function ToolCallDisplay({
       ),
     };
   }, [agentTree?.nodes, backgroundTasks, delegationTool, toolCall]);
+
+  const displayToolCall = useMemo(
+    () => toDelegationDisplayToolCall(toolCall, t, delegationPresentation),
+    [toolCall, t, delegationPresentation],
+  );
 
   // Calculate status
   const derivedStatus: ToolStatus = useMemo(() => {

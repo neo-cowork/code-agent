@@ -81,6 +81,8 @@ describe('background subagent idle wake', () => {
         mode: 'normal',
         historyVisibility: 'meta',
         maxIterations: 1,
+        // 通知正文不得被分析器改道 Agent Team（父 run 无 owner lease 会抛错）
+        disableAutoAgent: true,
       }),
       expect.objectContaining({
         automation: expect.objectContaining({

@@ -53,14 +53,19 @@ async function flushWake(sessionId: string): Promise<void> {
         mode: 'normal',
         historyVisibility: 'meta',
         maxIterations: 1,
+        // 唤醒轮只做汇报：通知正文会被需求分析器误判成新任务并改道 Agent Team，
+        // 而父 run 此刻没有 owner lease，起团必抛 "no live owner lease"。
+        disableAutoAgent: true,
       },
       messageMetadata,
       `background-subagent:${sessionId}:${Date.now()}`,
     );
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     logger.warn('Failed to wake idle parent session for background subagent completion', {
       sessionId,
-      error: String(error),
+      reason: message.includes('no live owner lease') ? 'owner_lease_missing' : 'wake_turn_failed',
+      error: message,
     });
   }
 }

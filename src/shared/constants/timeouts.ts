@@ -453,6 +453,8 @@ export const SUBAGENT_EXECUTION_TIMEOUTS = {
   FOREGROUND_TO_BACKGROUND_BUDGET: 600_000,
   /** 子 agent role execution timeout 下限，必须大于前台转后台预算。 */
   ROLE_EXECUTION_MINIMUM: 900_000,
+  /** 后台子代理完成后，等 worktree 清理结果并入完成通知的上限。 */
+  BACKGROUND_WORKTREE_NOTE_WAIT: 15_000,
 } as const;
 
 /** 后台/子 agent 完成提醒预算。 */

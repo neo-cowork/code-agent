@@ -30,6 +30,7 @@ chat: {
     dispatched: '已派出',
     steps: '做了 {count} 步',
     output: '产出',
+    mergeBranch: '改动在分支 {branch}，合并后才会生效',
   },
   taskNotificationWithLog: '{message}。可在任务面板查看日志。',
   // 巡航信号（长任务 ≥45s）：{elapsed} 为 mm:ss 秒表，中性陈述「一切正常」
@@ -571,6 +572,7 @@ chat: {
     dispatched: 'Dispatched',
     steps: 'Completed {count} steps',
     output: 'Output',
+    mergeBranch: 'Changes are on branch {branch}; merge it to apply them',
   },
   taskNotificationWithLog: '{message}. View logs in the task panel.',
   // Cruise signal (long-running tool ≥45s): {elapsed} is the mm:ss stopwatch, a neutral "all is well" statement

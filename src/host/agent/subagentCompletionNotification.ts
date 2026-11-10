@@ -64,7 +64,7 @@ function scopeDedupePrefix(input: SubagentCompletionScope): string {
 function buildCompletionAckInstruction(kind: SubagentCompletionKind, title: string): string {
   const namingRule = `提到子代理时，只能使用通知中的标题「${title}」，禁止使用 [agent]、[worker]、agent 或 worker 等泛称。`;
   if (kind === 'user_visible') {
-    return `回应要求：结果已经展示给用户，不要复述子代理的原始结果；只用一句话归纳本批通知里的全部完成项。${namingRule}`;
+    return `回应要求：用户还没看到子代理的完整结果。本轮不要调用任何工具，直接用用户的语言写一份简明汇报，只写一遍，不要照抄通知原文；子代理改了文件且通知里有分支名时，写出分支名并说明需要合并才会生效；不要出现任务编号、工具名、信封标签或绝对路径。${namingRule}`;
   }
   if (kind === 'shell') {
     return `回应要求：用简短、非技术化的话向用户说明「${title}」的执行结果和下一步，不要只罗列退出码、日志或命令细节。${namingRule}`;

@@ -7,7 +7,8 @@ import { zh } from '../../../src/renderer/i18n/zh';
 import { en } from '../../../src/renderer/i18n/en';
 import { humanizeToolStep } from '../../../src/renderer/utils/humanizeToolStep';
 import type { ToolCall } from '../../../src/shared/contract';
-import { toDelegationDisplayToolCall } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/delegationPresentation';
+import { deriveDelegationPresentation, toDelegationDisplayToolCall } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/delegationPresentation';
+import { DelegationReceipt } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/DelegationReceipt';
 import { getToolStatusLabel } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/statusLabels';
 
 vi.mock('../../../src/renderer/stores/appStore', () => ({
@@ -211,5 +212,38 @@ describe('background hand-off row', () => {
     expect(projected.result?.output).toBe(t.chat.delegationReceipt.working);
     expect(getToolStatusLabel(projected, 'success', t)).toBe(t.chat.delegationReceipt.dispatched);
     expect(getToolStatusLabel(taskCall('', 'spawn_agent'), 'success', t)).toBe(t.chat.delegationReceipt.completed);
+  });
+
+  it.each([[zh, 'completed'], [en, 'completed'], [zh, 'failed'], [en, 'failed']] as const)(
+    'replaces the stored "working" hand-off text once the child finished (%#)',
+    (t, state) => {
+      const call = taskCall('', 'spawn_agent');
+      call.result!.output = 'Agent [Explorer] exceeded foreground budget and continues in background:\n- status=running';
+      call.result!.metadata = { background: true, transferredToBackground: true };
+      const stored = JSON.stringify(call);
+      expect(toDelegationDisplayToolCall(call, t, { state }).result?.output).toBe(t.chat.delegationReceipt[state]);
+      expect(toDelegationDisplayToolCall(call, t, { state: 'working' }).result?.output).toBe(t.chat.delegationReceipt.working);
+      expect(JSON.stringify(call)).toBe(stored);
+    },
+  );
+
+  it('derives the branch to merge from a preserved worktree on a finished agent node only', () => {
+    const call = taskCall('', 'spawn_agent');
+    call.result!.output = 'x';
+    call.result!.metadata = { agentId: 'agent-1' };
+    const node = (status: string, worktree: string) => ({
+      id: 'agent-1', role: 'coder', status, statusLabel: '', children: [], evidenceRefs: [], sources: [],
+      budgetSummary: {}, worktreeState: { status: worktree, branch: 'agent/agent-1' },
+    }) as never;
+    expect(deriveDelegationPresentation(call, [], [node('completed', 'preserved')])?.branch).toBe('agent/agent-1');
+    expect(deriveDelegationPresentation(call, [], [node('completed', 'cleaned')])?.branch).toBeUndefined();
+    expect(deriveDelegationPresentation(call, [], [node('running', 'preserved')])?.branch).toBeUndefined();
+  });
+
+  it('renders the branch line in the finished receipt', () => {
+    const { getByTestId } = render(
+      <DelegationReceipt presentation={{ state: 'completed', title: 't', outputs: [], activityIds: [], branch: 'agent/agent-1' }} />,
+    );
+    expect(getByTestId('delegation-branch').textContent).toBe(zh.chat.delegationReceipt.mergeBranch.replace('{branch}', 'agent/agent-1'));
   });
 });

@@ -69,6 +69,11 @@ export function DelegationReceipt({ presentation }: { presentation: DelegationPr
           ))}
         </div>
       )}
+      {presentation.branch && (
+        <div data-testid="delegation-branch">
+          {t.chat.delegationReceipt.mergeBranch.replace('{branch}', presentation.branch)}
+        </div>
+      )}
       {presentation.failure && (
         <div className="line-clamp-2 break-words text-badge-danger" data-testid="delegation-failure">
           {presentation.failure}
