@@ -56,6 +56,7 @@ import {
 } from '../../../utils/streamingStatePresentation';
 import { isReadOnlyArtifactOwnershipItem } from '../../../utils/artifactOwnership';
 import { useI18n } from '../../../hooks/useI18n';
+import { humanizeToolStep } from '../../../utils/humanizeToolStep';
 import type { Translations } from '../../../i18n';
 import { useMessageActionStore } from '../../../stores/messageActionStore';
 import { useAppStore } from '../../../stores/appStore';
@@ -1005,7 +1006,7 @@ function getTurnRunStatus(turn: TraceTurn, t: Translations, streamingState?: Str
 }
 
 function getTurnPhase(turn: TraceTurn, t: Translations): string | null {
-  if (turn.status === 'error' || turn.nodes.some(node => node.subtype === 'error' || node.metadata?.sendFailed === true || node.turnTimeline?.tone === 'error')) return null;
+  if (turn.nodes.some(node => node.metadata?.sendFailed === true) || (!getLastToolNode(turn) && (turn.status === 'error' || turn.nodes.some(node => node.subtype === 'error' || node.turnTimeline?.tone === 'error')))) return null;
 
   // 这里曾经用路由摘要当轮次阶段（「已指定 岚析 执行」），既是内部审计口径，又跟
   // 旁边的 Auto 徽章自相矛盾。阶段该说这一轮在做什么，落到下面的能力/工具描述。
@@ -1017,7 +1018,7 @@ function getTurnPhase(turn: TraceTurn, t: Translations): string | null {
   }
 
   const lastTool = getLastToolNode(turn)?.toolCall;
-  if (lastTool) return lastTool.shortDescription || `工具 ${lastTool.name}`;
+  if (lastTool) return humanizeToolStep(lastTool.name, lastTool.args, t, lastTool.shortDescription, lastTool.result === undefined || lastTool._streaming ? 'running' : 'completed');
 
   if (turn.status === 'streaming') return null;
 

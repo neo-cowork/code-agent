@@ -193,11 +193,74 @@ describe('音频采集状态机', () => {
     expect(svc.startAudio).not.toHaveBeenCalled(); // manualAudioActive 已 true
   });
 
-  it('启动后 not capturing（sox 缺失）→ AUDIO_START_FAILED 带原因', async () => {
+  it('启动过程抛错 → 复位 manualAudioActive，下一次启动不走“已在采集”分支', async () => {
     const call = await setup();
-    svc.audioStatus = { capturing: false, soxAvailable: false, asrEngine: 'whisper' };
+    svc.startAudio.mockClear();
+    svc.startAudio.mockRejectedValueOnce(new Error('dlopen failed'));
+    const failed = await call('startAudioCapture', {});
+    expect(failed.success).toBe(false);
+    svc.startAudio.mockResolvedValueOnce(undefined);
     const res = await call('startAudioCapture', {});
-    expect(res).toMatchObject({ success: false, error: { code: 'AUDIO_START_FAILED', message: expect.stringContaining('sox') } });
+    expect(svc.startAudio).toHaveBeenCalledTimes(2);
+    expect(res.success).toBe(true);
+  });
+
+  it('启动后 not capturing（录音组件缺失）→ AUDIO_START_FAILED 返回枚举码与缺失列表', async () => {
+    const call = await setup();
+    svc.audioStatus = {
+      capturing: false,
+      soxAvailable: false,
+      asrEngine: 'whisper',
+      prerequisites: {
+        recorder: { microphone: 'missing', systemAudio: 'missing' },
+        transcriptionEngine: 'ready',
+        voiceDetection: 'ready',
+        missing: ['recorder_missing'],
+      },
+      missingPrerequisites: ['recorder_missing'],
+    };
+    const res = await call('startAudioCapture', {});
+    expect(res).toMatchObject({
+      success: false,
+      error: {
+        code: 'AUDIO_START_FAILED',
+        message: 'recorder_missing',
+        details: { missingPrerequisites: ['recorder_missing'] },
+      },
+      data: {
+        capturing: false,
+        missingPrerequisites: ['recorder_missing'],
+      },
+    });
+  });
+
+  it('启动后 not capturing（语音检测未就绪 + 转写引擎缺失）→ AUDIO_START_FAILED 返回对应枚举码', async () => {
+    const call = await setup();
+    svc.audioStatus = {
+      capturing: false,
+      soxAvailable: true,
+      asrEngine: 'none',
+      prerequisites: {
+        recorder: { microphone: 'ready', systemAudio: 'ready' },
+        transcriptionEngine: 'missing',
+        voiceDetection: 'downloadable',
+        missing: ['transcription_engine_missing', 'voice_detection_missing'],
+      },
+      missingPrerequisites: ['transcription_engine_missing', 'voice_detection_missing'],
+    };
+    const res = await call('startAudioCapture', { mode: 'microphone' });
+    expect(res).toMatchObject({
+      success: false,
+      error: {
+        code: 'AUDIO_START_FAILED',
+        message: 'transcription_engine_missing',
+        details: { missingPrerequisites: ['transcription_engine_missing', 'voice_detection_missing'] },
+      },
+      data: {
+        capturing: false,
+        missingPrerequisites: ['transcription_engine_missing', 'voice_detection_missing'],
+      },
+    });
   });
 
   it('stopAudioCapture / getAudioCaptureStatus', async () => {

@@ -19,6 +19,7 @@ vi.mock('../../../../../src/host/connectors', () => ({
 }));
 
 import { calendarUpdateEventModule } from '../../../../../src/host/tools/modules/connectors/calendarUpdateEvent';
+import { formatConnectorTime } from '../../../../../src/host/tools/modules/connectors/connectorTime';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -197,7 +198,7 @@ describe('calendarUpdateEventModule (native)', () => {
         expect(artifact).toMatchObject({
           kind: 'text',
           role: 'receipt',
-          name: `已更新日历事件：Standup v2（${new Date(1700000000000).toLocaleString('zh-CN')}）`,
+          name: `已更新日历事件：Standup v2（${formatConnectorTime(1700000000000)}）`,
         });
         expect(artifact.metadata?.action).toBe('update_event');
         expect(artifact.metadata).toMatchObject({ undoable: true, before });
