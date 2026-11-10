@@ -403,7 +403,9 @@ export function parseDelegateSessionReceipt(result?: { success?: boolean; output
     const value: unknown = JSON.parse(result.output);
     if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
     const receipt = value as Record<string, unknown>;
-    if (receipt.status !== 'active') return undefined;
+    // 宿主回执的 status 随生命周期变化（active / terminal_observed / stopped…），
+    // 这里只认"成功形状"：有 delegationId 与 status 即可，不按具体状态值挡。
+    if (typeof receipt.delegationId !== 'string' || !receipt.delegationId || typeof receipt.status !== 'string') return undefined;
     return {
       target: typeof receipt.target === 'string' ? takePreview(receipt.target) || undefined : undefined,
       reused: receipt.reused === true,
