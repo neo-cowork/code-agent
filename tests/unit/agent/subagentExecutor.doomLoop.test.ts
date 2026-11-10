@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 
 const mocks = vi.hoisted(() => {
   const responses: Array<Record<string, unknown>> = [];
@@ -9,7 +10,7 @@ const mocks = vi.hoisted(() => {
     if (!response) throw new Error('Missing mocked inference response');
     return response;
   });
-  const toolExecute = vi.fn(async (name: string) => ({
+  const toolExecute = vi.fn<ToolExecutor['execute']>(async (name) => ({
     success: true,
     output: `${name} partial output`,
   }));
@@ -229,7 +230,7 @@ function createHarness() {
   const config = {
     name: 'Doom Test Agent',
     systemPrompt: 'Test the background loop.',
-    availableTools: ['Read', 'Grep'],
+    availableTools: ['Read', 'Grep', 'browser_action'],
     maxIterations: 10,
   };
   return { events, request: { prompt: 'Run the test', config, context } };
@@ -335,5 +336,39 @@ describe('SubagentExecutor doom-loop guard', () => {
       error: expect.stringContaining('empty model output'),
     });
     expect(events.find((event) => event.type === 'subagent_run_end')?.data.status).toBe('cancelled');
+  });
+
+  it('injects a same_error_family strategy-change nudge after repeated failed browser actions with varying arguments', async () => {
+    mocks.toolExecute.mockImplementation(async (name: string, args: Record<string, unknown>) => {
+      if (name === 'browser_action' && args?.action === 'type') {
+        return {
+          success: false,
+          error: 'Cannot fill selector "#searchInput": element found but not visible (current innerWidth=500px; the page may be showing a narrow/compact layout). Take a snapshot with browser_action.get_dom_snapshot and use a targetRef for a visible input, or construct the search URL directly with browser_action.navigate.',
+        };
+      }
+      return { success: true, output: `${name} partial output` };
+    });
+
+    mocks.responses.push(
+      toolResponse([{ id: 'b-1', name: 'browser_action', arguments: { action: 'type', selector: '#searchInput', text: 'Tauri' } }]),
+      toolResponse([{ id: 'b-2', name: 'browser_action', arguments: { action: 'type', selector: '#searchInput', text: 'Tauri framework' } }]),
+      toolResponse([{ id: 'b-3', name: 'browser_action', arguments: { action: 'type', selector: '#searchInput', text: 'Tauri app' } }]),
+      textResponse('Switched to direct search URL after same_error_family nudge.'),
+    );
+    const { request } = createHarness();
+
+    const result = await new SubagentExecutor().execute(request);
+
+    expect(result).toMatchObject({
+      success: true,
+      output: 'Switched to direct search URL after same_error_family nudge.',
+      iterations: 4,
+    });
+    expect(mocks.inferenceMessages[3]).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        role: 'system',
+        content: expect.stringContaining('same_error_family'),
+      }),
+    ]));
   });
 });
