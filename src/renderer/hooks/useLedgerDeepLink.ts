@@ -1,4 +1,6 @@
 import { useEffect } from 'react';
+import { UI } from '@shared/constants';
+import { usePageReturn } from './usePageReturn';
 import { useAppStore } from '../stores/appStore';
 
 /** verify-shot 只能打开 URL。返回 true 表示这次查询真的摊开了一页。 */
@@ -18,7 +20,7 @@ function applyLedgerDeepLink(params: URLSearchParams): boolean {
 }
 
 /** 冷启动会连切两次会话（初始化 + 登录重载）。同 id 的第二次只关页、不改 id。 */
-const STARTUP_REAPPLY_WINDOW_MS = 8_000;
+const STARTUP_REAPPLY_WINDOW_MS = UI.STARTUP_PAGE_REAPPLY_WINDOW;
 
 /**
  * `?open=automation|role` 把运行账本页直接摊开。
@@ -26,6 +28,7 @@ const STARTUP_REAPPLY_WINDOW_MS = 8_000;
  * 第二次切换不会让会话订阅看到变化。启动窗口内页被关掉就再摊开；窗口过后不再钉住。
  */
 export function useLedgerDeepLink(): void {
+  usePageReturn();
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (!applyLedgerDeepLink(params)) return;

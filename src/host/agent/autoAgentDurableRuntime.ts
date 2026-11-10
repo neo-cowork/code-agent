@@ -30,22 +30,23 @@ function stableAutoAgentRunId(parentRunId: string, sourceMessageId: string): str
 export class AutoAgentDurableRuntime {
   constructor(
     private readonly kernel: RunKernelAdapter,
-    private readonly parentHost: AgentTeamDurableParentHost & { hasDurableOwner(runId: string): boolean },
+    private readonly parentHost: AgentTeamDurableParentHost & { hasDurableOwner?(runId: string): boolean },
   ) {}
 
-  async start(input: AutoAgentDurableStartInput): Promise<AutoAgentDurableController> {
+  async start(input: AutoAgentDurableStartInput): Promise<AutoAgentDurableController | null> {
     const now = input.now ?? Date.now();
     const runId = stableAutoAgentRunId(input.parentRunId, input.sourceMessageId);
-    const logicalOperationId = `auto-agent:${input.sourceMessageId}`;
-    // A detached completion can inherit the finished foreground trace. Correlation
-    // is not ownership: only link to a parent that still owns its durable run.
-    const linkedParent = this.parentHost.hasDurableOwner(input.parentRunId);
-    if (!linkedParent) {
-      logger.info('Auto agent parent is no longer active; starting a standalone durable run', {
-        parentRunId: input.parentRunId, runId, sessionId: input.sessionId,
+    if (this.parentHost.hasDurableOwner?.(input.parentRunId) === false) {
+      logger.info('Auto Agent durable start skipped; continuing without durable parent link', {
+        parentRunId: input.parentRunId,
+        runId,
+        sessionId: input.sessionId,
+        reason: 'parent_owner_missing',
       });
+      return null;
     }
-    if (linkedParent) await this.parentHost.prepareAgentTeamChild({
+    const logicalOperationId = `auto-agent:${input.sourceMessageId}`;
+    await this.parentHost.prepareAgentTeamChild({
       parentRunId: input.parentRunId,
       teamRunId: runId,
       treeId: input.graphId,
@@ -81,7 +82,7 @@ export class AutoAgentDurableRuntime {
       runId,
       sessionId: input.sessionId,
       engine: { kind: 'agent_team', treeId: input.graphId },
-      ...(linkedParent ? { parentRunId: input.parentRunId } : {}),
+      parentRunId: input.parentRunId,
       now,
       initialEngineCursor: cursor,
       initialPendingOperations: [operation],
@@ -161,7 +162,15 @@ export class AutoAgentDurableRuntime {
           reason,
           event: { type: `agent_team_${status}`, payload: { runtime: 'auto_agent' }, recordedAt: terminalAt + 1 },
         });
-        if (!linkedParent || !this.parentHost.hasDurableOwner(input.parentRunId)) return;
+        if (this.parentHost.hasDurableOwner?.(input.parentRunId) === false) {
+          logger.info('Auto Agent durable parent terminal projection skipped', {
+            parentRunId: input.parentRunId,
+            runId,
+            sessionId: input.sessionId,
+            reason: 'parent_owner_missing',
+          });
+          return;
+        }
         await this.parentHost.prepareAgentTeamChild({
           parentRunId: input.parentRunId,
           teamRunId: runId,

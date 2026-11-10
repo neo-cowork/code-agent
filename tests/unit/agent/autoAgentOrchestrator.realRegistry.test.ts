@@ -113,7 +113,7 @@ describe('automatic completion follow-up through AgentOrchestrator and real RunR
     registry.unregister('run-foreground');
   }
 
-  it('completes with its own durable owner when the inherited foreground lease has ended', async () => {
+  it('completes without a durable link when the inherited foreground lease has ended', async () => {
     const handle = await foreground();
     await finishForeground();
     expect(registry.hasDurableOwner('run-foreground')).toBe(false);
@@ -121,10 +121,6 @@ describe('automatic completion follow-up through AgentOrchestrator and real RunR
     await withRunTraceContext(handle.traceContext!, () => orchestrator.sendMessage('Summarize the completed background result'));
 
     expect(probe.execute).toHaveBeenCalledTimes(1);
-    expect(graphRunId).not.toBe('run-foreground');
-    const graph = await repository.get(graphRunId);
-    expect(graph).toMatchObject({ status: 'completed', owner: { processInstanceId: 'test-process' } });
-    expect(graph).not.toHaveProperty('parentRunId');
     const parent = await repository.get('run-foreground');
     expect(parent).toMatchObject({ status: 'completed' });
     expect(parent?.childRuns ?? []).toEqual([]);
