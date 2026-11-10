@@ -8,7 +8,7 @@ import { Z_LAYERS } from '../../../src/renderer/styles/zLayers';
 
 function expectBottomCenter(element: HTMLElement) {
   expect(element.classList.contains('fixed')).toBe(true);
-  expect(element.classList.contains('bottom-20')).toBe(true);
+  expect(element.classList.contains('bottom-32')).toBe(true);
   expect(element.classList.contains('left-1/2')).toBe(true);
   expect(element.classList.contains('-translate-x-1/2')).toBe(true);
   expect(element.classList.contains('max-w-sm')).toBe(true);

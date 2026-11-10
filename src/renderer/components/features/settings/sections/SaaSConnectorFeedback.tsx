@@ -13,7 +13,7 @@ export const SaaSConnectorFeedback: React.FC<Props> = ({ receipt, error }) => (
       <div
         role="status"
         data-testid="saas-connector-toast"
-        className={`fixed bottom-20 left-1/2 -translate-x-1/2 flex max-w-sm items-center gap-2 rounded-lg border bg-zinc-900 px-3 py-2 text-xs shadow-md dark:shadow-2xl ${
+        className={`fixed bottom-32 left-1/2 -translate-x-1/2 flex max-w-sm items-center gap-2 rounded-lg border bg-zinc-900 px-3 py-2 text-xs shadow-md dark:shadow-2xl ${
           receipt.kind === 'success'
             ? 'border-emerald-500/30 text-badge-success'
             : 'border-amber-500/30 text-badge-warning'
