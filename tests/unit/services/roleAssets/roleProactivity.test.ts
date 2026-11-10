@@ -357,6 +357,22 @@ describe('roleProactivity', () => {
         });
       });
 
+      it.each(['met', 'aborted'] as const)('realtime advance %s notice uses a human outcome, not internal goal markup', async (status) => {
+        mockSettings.value = { roleAssets: { proactivity: { defaultLevel: 'realtime' } } };
+        await seedProductHistory(RESEARCHER);
+        primeWakeRun('advance');
+        mockSessionManager.getSession.mockResolvedValue({ id: 'wake-session-1', messages: [
+          { id: 'm2', role: 'assistant', content: '<goal>核对观察记录</goal><decision>advance</decision>', timestamp: 2 },
+        ] });
+        mockSessionEvents.getEventsByType.mockReturnValue([{ eventData: { status } }]);
+        const result = await wakeRole(RESEARCHER, 'cadence');
+        expect(result.advanceGoalStatus).toBe(status);
+        expect(notificationService.getRecentNotifications()).toEqual([expect.objectContaining({
+          sessionId: result.sessionId, title: `${RESEARCHER} · ${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}`,
+          body: status === 'met' ? '巡检已完成，打开会话查看结果。' : '本次巡检未完成，打开会话查看已有进展。',
+        })]);
+      });
+
       it.each(['daily', 'silent'] as const)('%s wakeRole records no desktop notice', async (level) => {
         mockSettings.value = { roleAssets: { proactivity: { defaultLevel: level } } };
         await seedProductHistory(RESEARCHER);

@@ -15,6 +15,7 @@
 import type { AgentEvent } from '../../shared/contract';
 import type { SessionStatus } from '../../shared/contract/session';
 import { IPC_CHANNELS } from '../../shared/ipc';
+import { ROLE_PROACTIVITY } from '../../shared/constants';
 import { isTerminalAgentError } from '../../shared/utils/agentErrorClassification';
 import { resolveBackgroundRunSettlement, settleBackgroundRun } from '../session/backgroundRunSettlement';
 import { getBackgroundTaskManager } from '../session/backgroundTaskManager';
@@ -46,6 +47,8 @@ export async function settleBackgroundOnTaskComplete(
     return;
   }
   const session = await getSessionManager().getSession(sessionId);
+  // Role wakes publish their own summary after the run; do not spend its notice budget here.
+  if (session?.origin?.kind === 'cron' && session.origin.name === ROLE_PROACTIVITY.CADENCE_JOB_TAG) return;
   if (session) {
     notificationService.notifyTaskComplete({
       sessionId: session.id,

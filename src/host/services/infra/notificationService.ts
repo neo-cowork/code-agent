@@ -467,12 +467,20 @@ class NotificationService implements Disposable {
     if (!this.isIntentAllowed('task_complete')) return;
     if (!this.shouldNotify()) return;
 
+    // Advance summaries contain an internal goal state/proposal, not a user-facing result.
+    const goalStatus = /^\[goal:(met|aborted)\]/.exec(data.body)?.[1];
+    const en = readNotificationLocale() === 'en';
+    const body = goalStatus === 'aborted'
+      ? (en ? 'The check did not finish. Open the conversation to review progress.' : '本次巡检未完成，打开会话查看已有进展。')
+      : goalStatus === 'met'
+        ? (en ? 'The check is complete. Open the conversation to see the results.' : '巡检已完成，打开会话查看结果。')
+        : data.body;
     const disposition = this.enqueueBudgeted({
       intent: 'task_complete',
       type: 'task_complete',
       sessionId: data.sessionId,
       title: sanitizeNotificationText(data.title, 120),
-      body: sanitizeNotificationText(data.body, 320),
+      body: sanitizeNotificationText(body, 320),
       delivery: {},
     });
     if (disposition === 'delivered') {

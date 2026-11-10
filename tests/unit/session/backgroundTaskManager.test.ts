@@ -8,7 +8,7 @@
 //   3. dismissTerminal 只清终态；终态残留条目再次 moveToBackground 重置回 running。
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BACKGROUND_TASK_CANCELLED } from '../../../src/shared/constants';
+import { BACKGROUND_TASK_CANCELLED, ROLE_PROACTIVITY } from '../../../src/shared/constants';
 import type { BackgroundTaskUpdateEvent } from '../../../src/shared/contract/sessionState';
 
 const sessionManagerState = vi.hoisted(() => ({
@@ -114,6 +114,24 @@ describe('终态行常驻（不自动删除）', () => {
     const tasks = getBackgroundTaskManager().getAllTasks();
     expect(tasks).toHaveLength(1);
     expect(tasks[0].status).toBe('failed');
+  });
+});
+
+describe('role wake background completion owns no generic notification', () => {
+  it.each(['task_complete', 'agent_complete'] as const)('%s settles the role panel without a competing notice', async (event) => {
+    sessionManagerState.getSession.mockResolvedValue({
+      id: 'session-1', title: '研究员 · 主动巡检',
+      origin: { kind: 'cron', name: ROLE_PROACTIVITY.CADENCE_JOB_TAG },
+    });
+    await backgroundSession('session-1');
+    if (event === 'task_complete') {
+      await settleBackgroundOnTaskComplete('session-1', 'session-1', { summary: '观察有新变化' });
+    }
+    await closeBackgroundRunAtTerminal('session-1', 'agent_complete', new Map());
+    expect(getBackgroundTaskManager().getAllTasks()).toEqual([
+      expect.objectContaining({ sessionId: 'session-1', status: 'completed', progress: 100 }),
+    ]);
+    expect(notifyState.notifyTaskComplete).not.toHaveBeenCalled();
   });
 });
 

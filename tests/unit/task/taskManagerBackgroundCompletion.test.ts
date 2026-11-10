@@ -6,7 +6,7 @@
 // （error 记账 → agent_complete/agent_cancelled 收口），见 backgroundTaskTerminal.ts。
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { BACKGROUND_TASK_CANCELLED, RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../src/shared/constants';
+import { BACKGROUND_TASK_CANCELLED, ROLE_PROACTIVITY, RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../src/shared/constants';
 import { handleImagePayloadExceededError } from '../../../src/host/agent/runtime/contextAssembly/inferenceImagePayloadError';
 
 const sessionManagerState = vi.hoisted(() => ({
@@ -139,6 +139,32 @@ describe('task_complete 的后台收口（完成通知/面板状态）', () => {
       sessionTitle: '长任务',
       summary: '周报已写好',
     }));
+  });
+
+  it.each(['cadence', 'event', 'first_wake'])('role wake %s task_complete leaves the summary notification budget untouched', async (trigger) => {
+    sessionManagerState.getSession.mockResolvedValue({
+      id: 'session-1', title: '研究员 · 主动巡检', type: 'schedule',
+      origin: { kind: 'cron', name: ROLE_PROACTIVITY.CADENCE_JOB_TAG, metadata: { roleId: '研究员', trigger } },
+    });
+    const manager = newManager();
+    await (manager as unknown as {
+      persistEventToSession: (sessionId: string, event: unknown, snapshot?: unknown, eventKey?: string) => Promise<void>;
+    }).persistEventToSession('session-1', TASK_COMPLETE_EVENT, undefined, 'session-1');
+    expect(notifyState.notifyTaskComplete).not.toHaveBeenCalled();
+    expect(backgroundManagerState.markCompleted).not.toHaveBeenCalled();
+  });
+
+  it('ordinary scheduled session task_complete keeps its generic completion notice', async () => {
+    sessionManagerState.getSession.mockResolvedValue({
+      id: 'session-1', title: '每周简报', type: 'schedule',
+      origin: { kind: 'cron', name: 'weekly-brief' },
+    });
+    const manager = newManager();
+    await (manager as unknown as {
+      persistEventToSession: (sessionId: string, event: unknown, snapshot?: unknown, eventKey?: string) => Promise<void>;
+    }).persistEventToSession('session-1', TASK_COMPLETE_EVENT, undefined, 'session-1');
+    expect(notifyState.notifyTaskComplete).toHaveBeenCalledTimes(1);
+    expect(notifyState.notifyTaskComplete).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-1', summary: '周报已写好' }));
   });
 
   it('子代理的 task_complete（eventKey ≠ sessionId）：不触发后台收口，走原通知路径', async () => {
