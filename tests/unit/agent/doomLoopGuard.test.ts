@@ -713,6 +713,55 @@ describe('DoomLoopGuard background poll stall window — N-FIX-DOOMLOOP-BG-POLL-
     }
     expect(levels).toEqual(['none', 'none', 'none', 'none']);
   });
+
+  it('(R1) task_output {} (no task_id) ×4 with the same output (25s apart) → doom-loop on call 3, doom-loop-abort on call 4', () => {
+    let nowMs = 1_762_300_000_000;
+    const guard = new DoomLoopGuard(() => nowMs);
+    const listCall = call('task_output', {});
+    const listText = 'Found 1 background task(s):\n\n🔄 Task: bg-1\n   Command: npm run build\n   Status: running\n   Duration: 12.0s\n   Output file: /tmp/neo/bg-1.log\n';
+    const levels: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      nowMs += 25_000;
+      levels.push(guard.recordStep([listCall]).level);
+      guard.recordResults([{ name: 'task_output', arguments: {}, success: true, summary: listText }]);
+    }
+    expect(levels).toEqual(['none', 'none', 'doom-loop', 'doom-loop-abort']);
+  });
+
+  it('(R2) process {action:"poll"} (no session_id) ×4 (25s apart) → doom-loop on call 3, doom-loop-abort on call 4', () => {
+    let nowMs = 1_762_300_000_000;
+    const guard = new DoomLoopGuard(() => nowMs);
+    const pollCall = call('process', { action: 'poll' });
+    const levels: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      nowMs += 25_000;
+      levels.push(guard.recordStep([pollCall]).level);
+      guard.recordResults([{
+        name: 'process',
+        arguments: { action: 'poll' },
+        success: false,
+        summary: 'session_id is required for poll action',
+      }]);
+    }
+    expect(levels).toEqual(['none', 'none', 'doom-loop', 'doom-loop-abort']);
+  });
+
+  it('(R3) the step [Bash {command:"npm test"}, task_status {}] ×3 with the same results (25s apart) → repeated-step nudge on step 3', () => {
+    let nowMs = 1_762_300_000_000;
+    const guard = new DoomLoopGuard(() => nowMs);
+    const stepCalls = [call('Bash', { command: 'npm test' }), call('task_status', {})];
+    const checks = [];
+    for (let i = 0; i < 3; i++) {
+      nowMs += 25_000;
+      checks.push(guard.recordStep(stepCalls));
+      guard.recordResults([
+        { name: 'Bash', arguments: { command: 'npm test' }, success: true, summary: 'Tests  3 failed | 12 passed' },
+        { name: 'task_status', arguments: {}, success: true, summary: '1. 抓站 [running] id=task_bg_42' },
+      ]);
+    }
+    expect(checks.map((c) => c.level)).toEqual(['none', 'none', 'repeated-step']);
+    expect(checks[2].nudge).toContain('steps have been identical');
+  });
 });
 
 // ---------------------------------------------------------------------------

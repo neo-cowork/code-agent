@@ -402,7 +402,7 @@ export class DoomLoopGuard {
       return;
     }
     const observed = observePoll(call.summary);
-    // 身份是后台任务（或列表类轮询的工具名），不是整段参数。timeout/block 变化仍算同一次轮询。
+    // 身份是后台任务（或 task_status 工具名），不是整段参数。timeout/block 变化仍算同一次轮询。
     const key = `${taskId}\n${observed.status}\n${observed.body}`;
     const nowMs = this.now();
     if (key === this.pollKey) {
@@ -625,12 +625,10 @@ function normalizeSignalText(message: string): string {
   );
 }
 
-/** 后台任务列表轮询的身份（task_output / Process output 不带 id，见 taskOutput.ts、process.ts handleOutput）。 */
-const BACKGROUND_TASK_LIST_POLL = 'task_output';
-
 /**
  * 轮询身份：这次调用在观察哪个后台对象。recordStep 的豁免和 notePoll 的结果跟踪
- * 只认这一个判据；返回 null = 不是轮询（或没指明对象的无效轮询），按普通调用处理。
+ * 只认这一个判据；返回 null = 不是轮询，或没指明对象（task_output / Process 缺 id），
+ * 按普通调用走原 L1/L2。
  */
 function pollIdentity(call: { name: string; arguments?: Record<string, unknown> }): string | null {
   const name = call.name.toLowerCase();
@@ -649,19 +647,14 @@ function pollIdentity(call: { name: string; arguments?: Record<string, unknown> 
   if (name === 'terminal_wait' || name === 'terminal_read') {
     return typeof args.session_id === 'string' && args.session_id.length > 0 ? args.session_id : name;
   }
-  // 不带 id：task_output 与 Process output 列出全部后台任务，算同一个列表轮询；
-  // Process poll / log 是无效调用（工具回 INVALID_ARGS），不算轮询。
-  let listsWithoutId = true;
   if (name === 'process') {
     const action = typeof args.action === 'string' ? args.action.toLowerCase() : '';
     if (!POLL_ACTIONS.has(action)) return null;
-    listsWithoutId = action === 'output';
   } else if (name !== 'task_output') {
     return null;
   }
   const taskId = args.task_id ?? args.session_id;
-  if (typeof taskId === 'string' && taskId.length > 0) return taskId;
-  return listsWithoutId ? BACKGROUND_TASK_LIST_POLL : null;
+  return typeof taskId === 'string' && taskId.length > 0 ? taskId : null;
 }
 
 /**
