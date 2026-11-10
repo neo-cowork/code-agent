@@ -258,7 +258,7 @@ Commit message 格式：
 
 输出包含：判断、证据、差距、建议切片。标记每个 topic 的状态。`,
     basePath: '',
-    allowedTools: ['Read', 'Glob', 'Grep', 'WebSearch', 'WebFetch', 'TaskManager', 'MemoryRead'],
+    allowedTools: ['Read', 'Glob', 'Grep', 'WebSearch', 'WebFetch', 'TaskManager', 'MemoryRead', 'Write'],
     disableModelInvocation: false,
     userInvocable: true,
     executionContext: 'inline',
@@ -555,7 +555,7 @@ openpyxl.chart 可嵌入 xlsx，matplotlib 可生成独立 png。图表和数据
 ## 代码风格
 写简洁的 Python，不加多余注释和 print。Excel 文件内：复杂公式加 cell comment 说明。`,
     basePath: '',
-    allowedTools: ['bash', 'read_file', 'read_xlsx', 'write_file', 'edit_file'],
+    allowedTools: ['bash', 'read_file', 'read_xlsx', 'write_file', 'edit_file', 'ExcelAutomate', 'excel_generate'],
     disableModelInvocation: false,
     userInvocable: true,
     executionContext: 'inline',
@@ -1643,9 +1643,9 @@ end tell
 
 ### 1. 先载入现有定义（必做）
 要修改的角色名由本次调用的参数给出（消息末尾的 "User provided arguments: <角色名>"；若没有则看用户消息里点名的角色）。
-先用 \`read_file\` 读它的当前定义：\`~/.code-agent/agents/<角色名>.md\`（角色名可中文，原样填，不要翻译/改写）。
+先调用 \`list_experts\` 并传入 \`name="<角色名>"\`（角色名可中文，原样填，不要翻译/改写，不要手拼文件路径去调 \`read_file\`）读取当前槽位里该角色的现有定义。
 读到后，简要复述它现在是什么样（描述 / 有哪些工具 / 大致职责），让用户在已知现状的基础上提改动。
-如果读不到（路径不对或角色不存在），告诉用户没找到这个角色，让他确认名字。
+如果未找到该角色，告诉用户没找到这个角色，让他确认名字；绝不要退回让用户从头口述整份定义。
 
 ### 2. 访谈要改什么（简短）
 基于现有定义问清楚改动点：改描述？加 / 减哪些能力（工具）？调整工作准则或语气？能从用户已说的话推断就别再问。

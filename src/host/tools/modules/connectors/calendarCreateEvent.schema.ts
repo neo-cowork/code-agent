@@ -6,11 +6,11 @@ export const calendarCreateEventSchema: ToolSchema = {
   description: `Create a new event in macOS Calendar via the native connector.
 
 Required parameters:
-- calendar
 - title
 - start_ms
 
 Optional parameters:
+- calendar
 - end_ms
 - location
 
@@ -21,7 +21,7 @@ Use this only when the user wants to create a real local calendar event.`,
     properties: {
       calendar: {
         type: 'string',
-        description: 'Target calendar name.',
+        description: 'Optional calendar name. Omit to use the first writable calendar. If given, use an existing localized name; call the list action first when unsure instead of guessing.',
       },
       title: {
         type: 'string',
@@ -40,7 +40,7 @@ Use this only when the user wants to create a real local calendar event.`,
         description: 'Optional event location.',
       },
     },
-    required: ['calendar', 'title', 'start_ms'],
+    required: ['title', 'start_ms'],
   },
   category: 'mcp',
   permissionLevel: 'write',

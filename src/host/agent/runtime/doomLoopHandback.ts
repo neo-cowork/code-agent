@@ -2,6 +2,8 @@ import { INTERACTION_TIMEOUTS } from '../../../shared/constants/timeouts';
 import { HostReasonCode } from '../../../shared/contract';
 import { hasInteractiveUi } from '../../platform/windowBridge';
 import { noteUnattendedRunTerminal } from '../unattendedApprovalTerminal';
+import type { Message } from '../../../shared/contract';
+import type { ContextAssembly } from './contextAssembly';
 import type { DoomLoopGuard } from './doomLoopGuard';
 import { emitGoalAbort } from './goalAbort';
 import { goalTokensUsedWithSwarm } from './swarmGoalIntegration';
@@ -117,4 +119,31 @@ export async function settleDoomLoopHandback(
   }
   abortGoalIfPending(ctx, iterations);
   return 'stop';
+}
+
+/** 卡死保护终止本次运行时留一句人话；无人值守 / 无界面 / 卡片超时的 stop 原本在聊天里静默。 */
+const NOTICE_ZH = '我在重复同一个步骤，没有进展，所以先停下来了。你可以直接回复告诉我换个思路，或说明想要的结果，我再重新试一次。';
+const NOTICE_EN = 'I got stuck repeating the same step without making progress, so I stopped. Reply and tell me to try another way, or describe the result you want, and I will try again.';
+
+function lastUserText(ctx: RuntimeContext): string {
+  for (let i = ctx.messages.length - 1; i >= 0; i--) {
+    const message = ctx.messages[i];
+    if (message.role === 'user' && typeof message.content === 'string') return message.content;
+  }
+  return '';
+}
+
+export async function emitDoomLoopStopNotice(ctx: RuntimeContext, contextAssembly: ContextAssembly): Promise<void> {
+  const text = lastUserText(ctx);
+  const english = /[A-Za-z]{3}/.test(text) && !/[一-鿿]/.test(text);
+  const message: Message = {
+    id: contextAssembly.generateId(),
+    role: 'assistant',
+    content: english ? NOTICE_EN : NOTICE_ZH,
+    timestamp: Date.now(),
+    effortLevel: ctx.turn.effortLevel,
+    ...(ctx.historyVisibility === 'meta' ? { isMeta: true } : {}),
+  };
+  await contextAssembly.addAndPersistMessage(message);
+  ctx.onEvent({ type: 'message', data: message });
 }

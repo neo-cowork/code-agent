@@ -51,14 +51,16 @@ import {
   confirmRoleDraft,
   rejectRoleDraft,
   getFirstWakeSnapshot,
+  consumeFirstWakeSuggestion,
   retryFirstWake,
   skipFirstWake,
   isSafeRoleId,
   trashUserRole,
+  listTrashedRoles,
   restoreTrashedRole,
 } from '../services/roleAssets';
+import { writeRoleProactivityConfig } from '../services/roleAssets/roleProactivityWrite';
 import type { RoleMemoryFile } from '../services/roleAssets/roleAssetService';
-import { sanitizeTopicList } from '../services/roleAssets/wakeRationale';
 import { handleSaveTextToDownloads } from './workspaceSaveExport';
 import { getDatabase } from '../services/core/databaseService';
 import { getCronService } from '../cron/cronService';
@@ -76,6 +78,12 @@ import { TOOL_ALIASES } from '../services/toolSearch/deferredTools';
 import { getProtocolRegistry } from '../tools/protocolRegistry';
 import { findRecommendedMcpServer } from '../../shared/constants/mcpCatalog';
 import { isManifestBackedAgentEngineKind } from '../../shared/externalEngineManifest';
+
+import { randomUUID } from 'crypto';
+import type { Message } from '../../shared/contract/message';
+import type { SystemEventMessageMetadata } from '../../shared/contract/systemEventRegistry';
+import { getSessionManager } from '../services/infra/sessionManager';
+import { getTaskManager } from '../task/TaskManager';
 
 const logger = createLogger('RolesIPC');
 
@@ -468,8 +476,8 @@ async function handleRestoreFactory(roleId: string): Promise<void> {
 }
 
 /**
- * 设置角色主动性：写入 settings.roleAssets.proactivity.roles[roleId]（最高优先级），
- * 然后立即同步 cadence cron（开 → 注册闹钟；关 → 删除闹钟），不用等重启。
+ * 设置角色主动性：写 settings 覆盖层 + 立即同步 cadence cron。
+ * 写路径单一真源在 roleProactivityWrite（chat 工具 set_role_proactivity 共用），IPC 层只做参数校验。
  */
 async function handleSetProactivity(
   roleId: string,
@@ -479,32 +487,7 @@ async function handleSetProactivity(
   topicsInclude?: string[],
   topicsExclude?: string[],
 ) {
-  const { getConfigService } = await import('../services/core/configService');
-  await getConfigService().updateSettings({
-    roleAssets: {
-      proactivity: {
-        roles: {
-          [roleId]: {
-            level,
-            ...(cadence ? { cadence } : {}),
-            // null 要写进去（mergeSettings 只对非 null 对象递归，null 直接覆盖 = 清除）；
-            // undefined 才是"本次不动这个字段"。数组整份覆盖（含空数组 = 清除）。
-            ...(quietHours !== undefined ? { quietHours } : {}),
-            ...(topicsInclude !== undefined ? { topicsInclude: sanitizeTopicList(topicsInclude) } : {}),
-            ...(topicsExclude !== undefined ? { topicsExclude: sanitizeTopicList(topicsExclude) } : {}),
-          },
-        },
-      },
-    },
-  });
-
-  // cron 同步失败不阻塞设置保存（headless 测试环境可能没有 cron 服务），下次启动会兜底同步
-  const synced = await syncCadenceJobs().catch((error) => {
-    logger.warn('syncCadenceJobs after setProactivity failed (will sync on next startup)', error);
-    return null;
-  });
-
-  return { proactivity: await resolveRoleProactivityConfig(roleId), synced };
+  return writeRoleProactivityConfig(roleId, { level, cadence, quietHours, topicsInclude, topicsExclude });
 }
 
 // ----------------------------------------------------------------------------
@@ -740,6 +723,7 @@ const rolesHandlers: RawDomainRouteHandlers<RolesDomainRequest, void> = {
     });
     return { success: true, data: { roleId: result.roleId } };
   },
+  listDeletedRoles: async (_ctx, _payload) => ({ success: true, data: await listTrashedRoles() }),
   // --- 对话式建角色：草稿队列（role-creation-flow） ---
   listDrafts: async (_ctx, _payload) => {
     return { success: true, data: await listRoleDrafts() };
@@ -752,6 +736,32 @@ const rolesHandlers: RawDomainRouteHandlers<RolesDomainRequest, void> = {
     const result = await confirmRoleDraft(draftId);
     if (!result.success) {
       return { success: false, error: { code: 'CONFIRM_FAILED', message: result.error ?? 'confirm failed' } };
+    }
+    if (result.sessionId && result.roleId) {
+      try {
+        const change = result.change;
+        const message: Message = {
+          id: randomUUID(),
+          role: 'system',
+          content: 'Expert updated.',
+          timestamp: Date.now(),
+          metadata: {
+            roleEditReceipt: {
+              roleId: result.roleId,
+              addedTools: change?.addedTools ?? [],
+              removedTools: change?.removedTools ?? [],
+              descriptionChanged: change?.descriptionChanged ?? false,
+              promptChanged: Boolean(change && (change.promptLinesAdded || change.promptLinesRemoved)),
+              diffAvailable: change != null,
+            },
+          } satisfies SystemEventMessageMetadata,
+        };
+        await getSessionManager().addMessageToSession(result.sessionId, message);
+        getTaskManager().emitAgentEventForSession(result.sessionId, { type: 'message', data: message });
+        logger.info('Role edit receipt recorded by confirmDraft', { sessionId: result.sessionId, roleId: result.roleId, messageId: message.id });
+      } catch (error) {
+        logger.warn('Role edit receipt failed (confirm unaffected)', { sessionId: result.sessionId, reason: String(error) });
+      }
     }
     return { success: true, data: result };
   },
@@ -831,6 +841,17 @@ const rolesHandlers: RawDomainRouteHandlers<RolesDomainRequest, void> = {
     const result = await skipFirstWake(roleId);
     if (!result.success) {
       return { success: false, error: { code: 'FIRST_WAKE_SKIP_FAILED', message: 'skip failed' } };
+    }
+    return { success: true, data: { success: true } };
+  },
+  firstWakeConsumeSuggestion: async (_ctx, payload) => {
+    const { roleId, title } = (payload ?? {}) as RoleIdPayload & { title?: string };
+    if (!roleId || !isSafeRoleId(roleId) || !title?.trim()) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'a safe roleId and title are required' } };
+    }
+    const result = await consumeFirstWakeSuggestion(roleId, title);
+    if (!result.success) {
+      return { success: false, error: { code: 'FIRST_WAKE_CONSUME_FAILED', message: 'consume failed' } };
     }
     return { success: true, data: { success: true } };
   },

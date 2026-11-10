@@ -5,6 +5,7 @@
 // ============================================================================
 import { describe, expect, it } from 'vitest';
 import type { ToolCall } from '../../../src/shared/contract';
+import { en } from '../../../src/renderer/i18n/en';
 import { summarizeTool } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/summarizers';
 
 function editToolCall(id: string, edits: Array<{ old_text: string; new_text: string }>): ToolCall {
@@ -19,7 +20,7 @@ function editToolCall(id: string, edits: Array<{ old_text: string; new_text: str
 describe('summarizeTool — Edit summaries read the registered edits[] shape', () => {
   it('shows the line delta for a real edits[] Edit call', () => {
     expect(
-      summarizeTool(editToolCall('tc-1', [{ old_text: 'line1\nline2', new_text: 'line1\nline2\nline3\nline4' }])),
+      summarizeTool(editToolCall('tc-1', [{ old_text: 'line1\nline2', new_text: 'line1\nline2\nline3\nline4' }]), en),
     ).toBe('+2 lines');
   });
 
@@ -28,13 +29,13 @@ describe('summarizeTool — Edit summaries read the registered edits[] shape', (
       summarizeTool(editToolCall('tc-2', [
         { old_text: 'a', new_text: 'a\nb\nc' },
         { old_text: 'x\ny', new_text: 'x\ny' },
-      ])),
+      ]), en),
     ).toBe('+2 lines');
   });
 
   it('reports 无变化 when every edits[] item is a no-op', () => {
     expect(
-      summarizeTool(editToolCall('tc-3', [{ old_text: 'same', new_text: 'same' }])),
+      summarizeTool(editToolCall('tc-3', [{ old_text: 'same', new_text: 'same' }]), en),
     ).toBe('无变化');
   });
 });

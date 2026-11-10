@@ -29,6 +29,7 @@ const TaskNotificationTypeSchema = z.enum([
   'task_updated',
   'task_completed',
   'task_failed',
+  'task_cancelled',
   'output_added',
   'custom',
 ]);

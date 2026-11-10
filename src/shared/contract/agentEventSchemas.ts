@@ -210,7 +210,7 @@ const permissionRequestSchema = typed<PermissionRequest>(z.object({
   argsPreview: z.string().optional(),
   timestamp: z.number(),
   resolved: z.boolean().optional(),
-  decision: z.enum(['once', 'deny', 'session', 'always', 'never', 'timeout', 'superseded']).optional(),
+  decision: z.enum(['once', 'deny', 'session', 'always', 'run', '24h', 'never', 'timeout', 'superseded']).optional(),
   resolvedBy: z.enum(['companion']).optional(),
   dangerLevel: z.enum(['normal', 'warning', 'danger']).optional(),
   riskClass: z.literal('external').optional(),
@@ -610,7 +610,7 @@ const hostReasonPayloadSchema = typed<HostReasonPayload>(z.object({
   modelText: z.string(),
 }));
 const RoutingResolvedEventSchema = event('routing_resolved', typed<RoutingResolvedEventData>(z.object({ mode: z.enum(['auto', 'explicit']), agentId: z.string(), agentName: z.string(), reason: z.union([z.string(), hostReasonPayloadSchema]), score: z.number(), fallbackToDefault: z.boolean().optional(), requestedAgentId: z.string().optional(), timestamp: z.number().optional() })));
-const ConnectorRequiredEventSchema = event('connector_required', typed<ConnectorRequiredEventData>(z.object({ connectors: z.array(z.object({ id: z.string(), source: z.enum(['selected', 'expert']), reason: z.string() })) })));
+const ConnectorRequiredEventSchema = event('connector_required', typed<ConnectorRequiredEventData>(z.object({ connectors: z.array(z.object({ id: z.string(), source: z.enum(['selected', 'expert']), reason: z.string(), requiredScope: z.string().optional(), helpUrl: z.string().optional() })) })));
 const ArtifactLocatorEventSchema = event('artifact_locator', typed<ArtifactLocatorTelemetryEventData>(z.object({ state: z.enum(['resolved', 'stale', 'blocked']), kind: z.enum(['spreadsheet', 'presentation', 'document']), reason: z.string() })));
 const AgentCompleteEventSchema = event('agent_complete', z.null());
 const AgentCancelledEventSchema = event('agent_cancelled', z.object({ reason: z.literal('idle_reaped') }).nullable());

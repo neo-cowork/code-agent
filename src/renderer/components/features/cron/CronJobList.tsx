@@ -14,12 +14,13 @@ import { useCronStore } from '../../../stores/cronStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { getCronTriggerKind } from '../../../utils/cronHumanize';
 import {
-  formatDateTime,
   formatScheduleSummary,
   getLatestExecutionStatus,
 } from './types';
+import { formatCronJobDateTime, formatCronScheduleLabelWithZone } from '../../../utils/formatCronJobTime';
 import { CronRunsOnPill } from './CronRunsOnSelector';
 import { useEventScheduleNames } from './useChannelCatalog';
+import { getBuiltinJobDisplay } from './builtinJobDisplay';
 
 type LocationFilter = 'all' | CronRunsOn;
 
@@ -53,14 +54,17 @@ export const CronJobList: React.FC<CronJobListProps> = ({ awaitingByJobId }) => 
     return jobs.filter((job) => {
       if (locationFilter !== 'all' && job.runsOn !== locationFilter) return false;
       if (!q) return true;
+      const builtinDisplay = getBuiltinJobDisplay(job, language);
       const haystacks = [
         job.name,
         job.description || '',
+        builtinDisplay?.name || '',
+        builtinDisplay?.description || '',
         job.tags?.join(' ') || '',
       ];
       return haystacks.some((value) => value.toLowerCase().includes(q));
     });
-  }, [jobs, searchQuery, locationFilter]);
+  }, [jobs, searchQuery, locationFilter, language]);
 
   return (
     <div className="flex h-full flex-col border-r border-zinc-800 bg-zinc-950/80">
@@ -140,6 +144,12 @@ export const CronJobList: React.FC<CronJobListProps> = ({ awaitingByJobId }) => 
               const latestLabel = cc.status[latest?.status ?? 'none'];
               const awaitingApproval = awaitingByJobId?.has(job.id) ?? false;
               const triggerKind = getCronTriggerKind(job);
+              const builtinDisplay = getBuiltinJobDisplay(job, language);
+              const displayName = builtinDisplay?.name ?? job.name;
+              const displayDescription = builtinDisplay?.description ?? job.description;
+              const scheduleSummary = job.schedule.type === 'cron'
+                ? formatCronScheduleLabelWithZone(job.schedule.expression, job.schedule.timezone, language)
+                : formatScheduleSummary(job, language, eventNamesFor(job));
               return (
                 <button /* ds-allow:button: 任务列表行（多行内容左对齐布局），primitive 是居中动作按钮形状不适配 */
                   key={job.id}
@@ -153,15 +163,19 @@ export const CronJobList: React.FC<CronJobListProps> = ({ awaitingByJobId }) => 
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex min-w-0 items-center gap-2">
-                        <div className="truncate text-sm font-medium text-zinc-100">{job.name}</div>
+                        <div className="truncate text-sm font-medium text-zinc-100">{displayName}</div>
                         <CronRunsOnPill runsOn={job.runsOn} localLabel={cc.locationLocal} cloudLabel={cc.locationCloud} />
                       </div>
                       <div className="mt-1 text-xs text-zinc-500" data-testid="cron-job-schedule-summary">
-                        {formatScheduleSummary(job, language, eventNamesFor(job))}
+                        {scheduleSummary}
                       </div>
                       {job.enabled && job.nextRunAt != null && (
                         <div className="mt-0.5 text-xs text-zinc-500" data-testid="cron-job-next-run">
-                          {cc.nextRun.replace('{time}', formatDateTime(job.nextRunAt, language))}
+                          {cc.nextRun.replace('{time}', formatCronJobDateTime(
+                            job.nextRunAt,
+                            job.schedule.type === 'cron' ? job.schedule.timezone : undefined,
+                            language,
+                          ))}
                         </div>
                       )}
                     </div>
@@ -174,8 +188,8 @@ export const CronJobList: React.FC<CronJobListProps> = ({ awaitingByJobId }) => 
                     </span>
                   </div>
 
-                  {job.description && (
-                    <div className="mt-2 line-clamp-2 text-xs text-zinc-400">{job.description}</div>
+                  {displayDescription && (
+                    <div className="mt-2 line-clamp-2 text-xs text-zinc-400">{displayDescription}</div>
                   )}
 
                   <div className="mt-3 flex items-center justify-between gap-3 text-xs">

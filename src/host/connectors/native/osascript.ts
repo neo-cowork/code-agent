@@ -40,6 +40,7 @@ function describeAppleScriptFailureText(
   english: boolean,
   label: string,
   code: AppleScriptFailureCode,
+  timeoutContext?: 'calendar_list_events' | 'write',
 ): string {
   if (english) {
     switch (code) {
@@ -48,7 +49,11 @@ function describeAppleScriptFailureText(
       case 'not_found':
         return `${label} could not find the requested mailbox, account or calendar. Check that the account exists in the ${label} app.`;
       case 'timeout':
-        return `${label} did not respond in time. Please try again later.`;
+        return timeoutContext === 'calendar_list_events'
+          ? `${label} did not respond in time (timeout). Narrow the date range or pass a specific calendar name instead of retrying unchanged.`
+          : timeoutContext === 'write'
+            ? `${label} did not respond in time (timeout). The result could not be confirmed; check ${label} before retrying, and do not retry blindly.`
+          : `${label} did not respond in time. Please try again later.`;
       default:
         return `${label}: Read failed, please try again later`;
     }
@@ -59,7 +64,11 @@ function describeAppleScriptFailureText(
     case 'not_found':
       return `${label} 找不到指定的邮箱/账户/日历：请在 ${label} 应用中检查对应账户是否存在。`;
     case 'timeout':
-      return `${label} 响应超时，请稍后重试。`;
+      return timeoutContext === 'calendar_list_events'
+        ? `${label} 响应超时：请缩小查询时间范围或指定具体日历名称（calendar），不要原样重试。`
+        : timeoutContext === 'write'
+          ? `${label} 响应超时：结果无法确认，请先在 ${label} 中检查是否已完成，不要直接重试。`
+        : `${label} 响应超时，请稍后重试。`;
     default:
       return `${label}：读取失败，请稍后重试`;
   }
@@ -73,6 +82,7 @@ function describeAppleScriptFailureText(
 export function describeAppleScriptFailure(
   connectorLabel: string,
   error: unknown,
+  options?: { timeoutContext?: 'calendar_list_events' | 'write' },
 ): { message: string; code: AppleScriptFailureCode } {
   const fields = (typeof error === 'object' && error !== null ? error : {}) as {
     killed?: unknown; signal?: unknown; code?: unknown; stderr?: unknown;
@@ -91,7 +101,10 @@ export function describeAppleScriptFailure(
   } catch {
     english = false;
   }
-  return { message: describeAppleScriptFailureText(english, connectorLabel, code), code };
+  return {
+    message: describeAppleScriptFailureText(english, connectorLabel, code, options?.timeoutContext),
+    code,
+  };
 }
 
 /**
@@ -223,10 +236,10 @@ export function sharedAppleScriptHandlers(): string[] {
     'on sanitizeText(valueText)',
     'if valueText is missing value then return ""',
     'set safeText to valueText as text',
-    'set {oldTID, AppleScript\'s text item delimiters} to {AppleScript\'s text item delimiters, {"|", return, linefeed, tab}}',
-    'set safeText to (text items of safeText) as text',
+    'set {oldTID, AppleScript\'s text item delimiters} to {AppleScript\'s text item delimiters, {"|", return & linefeed, return, linefeed, tab}}',
+    'set textParts to text items of safeText',
     'set AppleScript\'s text item delimiters to " "',
-    'set safeText to safeText as text',
+    'set safeText to textParts as text',
     'set AppleScript\'s text item delimiters to oldTID',
     'return safeText',
     'end sanitizeText',

@@ -26,6 +26,7 @@ import { useSessionStore } from '../../../stores/sessionStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useCronStore } from '../../../stores/cronStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import { toast } from '../../../hooks/useToast';
 import { Button } from '../../primitives/Button';
 import { SensitiveStepParkedRow } from '../../PermissionDialog/SensitiveStepHandbackCard';
@@ -213,7 +214,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
               {parked.some((item) => item.status !== 'voided') && (
                 <div className="mb-2 flex items-center gap-2 text-xs font-medium text-badge-warning">
                   <ShieldAlert className="h-3.5 w-3.5" />
-                  {cc.parkedTitle.replace('{count}', String(parked.filter((item) => item.status === 'pending').length))}
+                  {interpolatePlural(cc.parkedTitle, parked.filter((item) => item.status === 'pending').length)}
                 </div>
               )}
               <div className="space-y-1.5">
