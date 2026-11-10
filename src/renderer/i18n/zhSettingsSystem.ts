@@ -411,6 +411,12 @@ export const zhSettingsSystem = {
           photos: '搜索和整理本机照片图库。',
           reminders: '读取和管理这台 Mac 上的提醒事项。',
         },
+        statusDetail: {
+          ready: '已通过本地授权检查，可以使用。',
+          unchecked: '已启用，但还没检查本地授权；点“检查”后才会打开应用或请求系统授权。',
+          failed: '授权检查没通过，点“修复权限”后再试一次。',
+          unavailable: '仅支持在 macOS 上使用。',
+        },
       },
       loading: '加载中…',
       otherConnectors: '其他连接器',
