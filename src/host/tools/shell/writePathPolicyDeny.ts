@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { homedir } from 'node:os';
 import { getPolicyEngine } from '../../permissions/policyEngine';
-import { resolveEffectivePolicyRules } from '../../permissions/runPolicySnapshot';
+import { resolveEffectivePolicyRules, resolveRunUserRuleContext } from '../../permissions/runPolicySnapshot';
 import type { PolicyCheckResult, PolicyEnforcer } from '../../security/policyEnforcer';
 import { createTraceStep } from '../../security/decisionTraceBuilder';
 
@@ -35,7 +35,12 @@ export function denyConcreteShellWritePath(
     ...(input.pathCandidates ?? []),
     ...pathSpellings(input.resolvedPath, input.workingDirectory),
   ];
-  const matchedRule = getPolicyEngine().matchUserPathDeny(candidates, resolveEffectivePolicyRules(input.sessionId));
+  const matchedRule = getPolicyEngine().matchUserPathDeny(
+    candidates,
+    resolveEffectivePolicyRules(input.sessionId),
+    // 带角色范围的 nlRules deny 只在该角色的 run 上命中（N-PERM-NL-RULES-K2）。
+    resolveRunUserRuleContext(input.sessionId).roleId,
+  );
   if (!matchedRule) return undefined;
 
   const displayPath = input.displayPath ?? input.resolvedPath;

@@ -135,7 +135,18 @@ export function isValidNlPhrase(phrase: unknown): phrase is string {
   return trimmed.length >= 2 && trimmed.length <= 12 && !NL_PHRASE_WILDCARDS.test(trimmed);
 }
 
-function isNlRuleShapeValid(entry: unknown, index: number): { ok: true; value: NlPermissionRuleEntry } | { ok: false; reason: string } {
+/**
+ * 高危探针：这条规则作「放行」用时是否盖到受保护动作（sudo/删根/force push/SSH 密钥/
+ * 系统目录）。匹配器在 host（permissions/permissionRuleDraft.ts 的 isProtectedAllowRule），
+ * shared 侧只收函数——做成**必填**参数，任何校验 nlRules 的调用方都漏不掉这道门。
+ */
+type ProtectedAllowProbe = (rule: string) => boolean;
+
+function isNlRuleShapeValid(
+  entry: unknown,
+  index: number,
+  isProtectedAllow: ProtectedAllowProbe,
+): { ok: true; value: NlPermissionRuleEntry } | { ok: false; reason: string } {
   if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
     return { ok: false, reason: `entry ${index} is not an object` };
   }
@@ -153,6 +164,11 @@ function isNlRuleShapeValid(entry: unknown, index: number): { ok: true; value: N
   const verdict = validateUserPermissionRule(candidate.rule, list);
   if (!verdict.ok) {
     return { ok: false, reason: `entry ${index} rule invalid (${verdict.reason}): ${candidate.rule}` };
+  }
+  // 放行类两档（preapprove 运行时真的免审批；allow 与翻译器同口径一并拒）不得盖到受保护
+  // 动作。此前这道探针只在翻译器里跑，settings set / 改配置文件能绕过（PR #2911）。
+  if (list === 'allow' && isProtectedAllow(candidate.rule.trim())) {
+    return { ok: false, reason: `entry ${index} ${behavior} rule covers a protected action: ${candidate.rule}` };
   }
   if (candidate.roleId !== undefined) {
     if (typeof candidate.roleId !== 'string' || !candidate.roleId.trim() || candidate.roleId.length > 64) {
@@ -172,11 +188,22 @@ function isNlRuleShapeValid(entry: unknown, index: number): { ok: true; value: N
 }
 
 /**
- * 校验单条 nlRules 条目（引擎装载与 UI 保存共用）。deny 一律由既有 user-deny 消费链
- * 硬拒的语义不在这里——这里只管形状与短语/角色规则。
+ * 校验单条 nlRules 条目（引擎装载与保存共用同一个函数，高危探针也在里面）。deny 一律由
+ * 既有 user-deny 消费链硬拒的语义不在这里——这里管形状、短语/角色规则与高危探针。
  */
-export function validateNlPermissionRuleEntry(entry: unknown): { ok: true; value: NlPermissionRuleEntry } | { ok: false; reason: string } {
-  return isNlRuleShapeValid(entry, 0);
+export function validateNlPermissionRuleEntry(
+  entry: unknown,
+  isProtectedAllow: ProtectedAllowProbe,
+): { ok: true; value: NlPermissionRuleEntry } | { ok: false; reason: string } {
+  return isNlRuleShapeValid(entry, 0, isProtectedAllow);
+}
+
+/**
+ * preapprove 触发短语的规范形（去首尾空白、去重、排序）。引擎把它编进规则 id：
+ * 改了短语 = 换了一条规则，热重载才会卸旧装新；顺序/空白不同不算改动。
+ */
+export function canonicalNlPhrases(phrases: readonly string[] | undefined): string[] {
+  return [...new Set((phrases ?? []).map((phrase) => phrase.trim()))].sort();
 }
 
 /**
@@ -187,13 +214,14 @@ export function validateNlPermissionRuleEntry(entry: unknown): { ok: true; value
  */
 export function assertValidNlPermissionRules(
   nlRules: readonly NlPermissionRuleEntry[] | undefined,
-  previous?: readonly NlPermissionRuleEntry[] | undefined,
+  previous: readonly NlPermissionRuleEntry[] | undefined,
+  isProtectedAllow: ProtectedAllowProbe,
 ): void {
   if (!nlRules) return;
   if (previous && nlRules === previous) return;
   const seen = new Set<string>();
   nlRules.forEach((entry, index) => {
-    const verdict = isNlRuleShapeValid(entry, index);
+    const verdict = isNlRuleShapeValid(entry, index, isProtectedAllow);
     if (!verdict.ok) throw new Error(`Invalid nlRules ${verdict.reason}`);
     const key = JSON.stringify([verdict.value.behavior, verdict.value.rule, verdict.value.roleId ?? null]);
     if (seen.has(key)) {

@@ -33,6 +33,7 @@ import {
   migrateQuickFreeTierToOkiFlash,
 } from './configHelpers';
 import { assertValidNlPermissionRules, assertValidUserPermissionRules } from '../../../shared/permissionRuleSyntax';
+import { isProtectedAllowRule } from '../../permissions/permissionRuleDraft';
 import {
   CONFIG_SELF_WRITE_WINDOW_MS,
   CONFIG_WATCH_DEBOUNCE_MS,
@@ -674,8 +675,9 @@ export class ConfigService implements IReadConfigService {
     }
 
     assertValidUserPermissionRules(updates.permissions, this.settings.permissions);
-    // K2 结构化规则同门把关：坏条目在落盘前抛出（与旧三表同一契约，echo 存储跳过）。
-    assertValidNlPermissionRules(updates.permissions?.nlRules, this.settings.permissions?.nlRules);
+    // K2 结构化规则同门把关：坏条目（含 preapprove 盖到受保护动作）在落盘前抛出
+    // （与旧三表同一契约，echo 存储跳过；装载口 loadUserRules 用同一个校验再过一遍）。
+    assertValidNlPermissionRules(updates.permissions?.nlRules, this.settings.permissions?.nlRules, isProtectedAllowRule);
     // Jev 借用 OpenRouter key 的同意时间戳（N-JEV-DEFAULT-ON-CONSENT）：仅首次把
     // openRouterConsent 翻成 true 时落 openRouterConsentAt（调用方显式时间戳优先，
     // 缺省才回落 Date.now()）；重复同意不刷新、撤销同意不删除（历史留痕）；patch 不含

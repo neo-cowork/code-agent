@@ -23,67 +23,70 @@ afterEach(() => {
   resetPolicyEngine();
 });
 
+// 返修 r6：判定序用例的规则从 Bash(git push *) 换成 Bash(npm publish *)——前者在高危探针集里，
+// 装载口现在会跳过它的 preapprove 条目（见 nlRuleProtectedAndReload.test.ts），留着就测不到
+//「preapprove 命中时被更严一档盖过」了。断言一条没少。
 describe('K2 判定序：deny > handback > ask > preapprove 未命中 > preapprove 命中', () => {
   it('同一工具命中多档时按序取最严一档（①）', () => {
     getPolicyEngine().loadUserRules({
       nlRules: [
-        { behavior: 'preapprove', rule: 'Bash(git push *)', phrases: ['让我推'] },
-        { behavior: 'ask', rule: 'Bash(git push *)' },
-        { behavior: 'handback', rule: 'Bash(git push *)' },
+        { behavior: 'preapprove', rule: 'Bash(npm publish *)', phrases: ['让我推'] },
+        { behavior: 'ask', rule: 'Bash(npm publish *)' },
+        { behavior: 'handback', rule: 'Bash(npm publish *)' },
       ],
     });
     beginRunPolicy('k2-run-a', 'k2-session', { roleId: undefined, initiatingText: '让我推一把' });
     // handback 盖过 ask 与 preapprove（即使短语命中）
-    expect(resolveUserRuleOutcomeForTool('k2-session', 'Bash', { command: 'git push origin main' }))
-      .toEqual({ kind: 'handback', rule: 'Bash(git push *)' });
+    expect(resolveUserRuleOutcomeForTool('k2-session', 'Bash', { command: 'npm publish --tag next' }))
+      .toEqual({ kind: 'handback', rule: 'Bash(npm publish *)' });
     endRunPolicy('k2-run-a');
 
     // 去掉 handback 后 ask 盖过 preapprove 命中
     getPolicyEngine().loadUserRules({
       nlRules: [
-        { behavior: 'preapprove', rule: 'Bash(git push *)', phrases: ['让我推'] },
-        { behavior: 'ask', rule: 'Bash(git push *)' },
+        { behavior: 'preapprove', rule: 'Bash(npm publish *)', phrases: ['让我推'] },
+        { behavior: 'ask', rule: 'Bash(npm publish *)' },
       ],
     });
     beginRunPolicy('k2-run-a', 'k2-session', { roleId: undefined, initiatingText: '让我推一把' });
-    expect(resolveUserRuleOutcomeForTool('k2-session', 'Bash', { command: 'git push origin main' }))
-      .toEqual({ kind: 'ask', rule: 'Bash(git push *)' });
+    expect(resolveUserRuleOutcomeForTool('k2-session', 'Bash', { command: 'npm publish --tag next' }))
+      .toEqual({ kind: 'ask', rule: 'Bash(npm publish *)' });
     endRunPolicy('k2-run-a');
 
     getPolicyEngine().loadUserRules({
       nlRules: [
-        { behavior: 'preapprove', rule: 'Bash(git push *)', phrases: ['让我推'] },
-        { behavior: 'handback', rule: 'Bash(git push *)' },
+        { behavior: 'preapprove', rule: 'Bash(npm publish *)', phrases: ['让我推'] },
+        { behavior: 'handback', rule: 'Bash(npm publish *)' },
       ],
     });
     beginRunPolicy('k2-run-a', 'k2-session', { roleId: undefined, initiatingText: '让我推一把' });
-    expect(resolveUserRuleOutcomeForTool('k2-session', 'Bash', { command: 'git push origin main' }))
-      .toEqual({ kind: 'handback', rule: 'Bash(git push *)' });
+    expect(resolveUserRuleOutcomeForTool('k2-session', 'Bash', { command: 'npm publish --tag next' }))
+      .toEqual({ kind: 'handback', rule: 'Bash(npm publish *)' });
     endRunPolicy('k2-run-a');
 
     getPolicyEngine().loadUserRules({
       nlRules: [
-        { behavior: 'preapprove', rule: 'Bash(git push *)', phrases: ['让我推'] },
-        { behavior: 'deny', rule: 'Bash(git push *)' },
+        { behavior: 'preapprove', rule: 'Bash(npm publish *)', phrases: ['让我推'] },
+        { behavior: 'deny', rule: 'Bash(npm publish *)' },
       ],
     });
     beginRunPolicy('k2-run-a', 'k2-session', { roleId: undefined, initiatingText: '让我推一把' });
-    expect(resolveUserRuleOutcomeForTool('k2-session', 'Bash', { command: 'git push origin main' }))
-      .toEqual({ kind: 'denied', rule: 'Bash(git push *)' });
+    expect(resolveUserRuleOutcomeForTool('k2-session', 'Bash', { command: 'npm publish --tag next' }))
+      .toEqual({ kind: 'denied', rule: 'Bash(npm publish *)' });
     endRunPolicy('k2-run-a');
   });
 
   it('旧表 deny 赢过 nlRules 的 handback/ask/preapprove（④：user-deny 仍赢）', () => {
     getPolicyEngine().loadUserRules({
-      deny: ['Bash(git push *)'],
+      deny: ['Bash(npm publish *)'],
       nlRules: [
-        { behavior: 'handback', rule: 'Bash(git push *)' },
-        { behavior: 'preapprove', rule: 'Bash(git push *)', phrases: ['让我推'] },
+        { behavior: 'handback', rule: 'Bash(npm publish *)' },
+        { behavior: 'preapprove', rule: 'Bash(npm publish *)', phrases: ['让我推'] },
       ],
     });
     beginRunPolicy('k2-run-a', 'k2-session', { roleId: undefined, initiatingText: '让我推一把' });
-    expect(resolveUserRuleOutcomeForTool('k2-session', 'Bash', { command: 'git push origin main' }))
-      .toEqual({ kind: 'denied', rule: 'Bash(git push *)' });
+    expect(resolveUserRuleOutcomeForTool('k2-session', 'Bash', { command: 'npm publish --tag next' }))
+      .toEqual({ kind: 'denied', rule: 'Bash(npm publish *)' });
     endRunPolicy('k2-run-a');
   });
 
@@ -103,27 +106,27 @@ describe('K2 判定序：deny > handback > ask > preapprove 未命中 > preappro
 describe('preapprove：触发短语逐字匹配发起话（④）', () => {
   beforeEach(() => {
     getPolicyEngine().loadUserRules({
-      nlRules: [{ behavior: 'preapprove', rule: 'Bash(git push *)', phrases: ['让我推', '推上去'] }],
+      nlRules: [{ behavior: 'preapprove', rule: 'Bash(npm publish *)', phrases: ['让我推', '推上去'] }],
     });
   });
 
   it('发起话包含任一短语 → preapproved（带命中短语与规则）', () => {
     beginRunPolicy('k2-run-a', 'k2-session', { roleId: undefined, initiatingText: '改完了，让我推' });
-    expect(resolveUserRuleOutcomeForTool('k2-session', 'Bash', { command: 'git push origin main' }))
-      .toEqual({ kind: 'preapproved', rule: 'Bash(git push *)', phrase: '让我推' });
+    expect(resolveUserRuleOutcomeForTool('k2-session', 'Bash', { command: 'npm publish --tag next' }))
+      .toEqual({ kind: 'preapproved', rule: 'Bash(npm publish *)', phrase: '让我推' });
     endRunPolicy('k2-run-a');
   });
 
   it('发起话没有短语 → 回落 ask（绝不静默放行）', () => {
     beginRunPolicy('k2-run-a', 'k2-session', { roleId: undefined, initiatingText: '帮我发布新版本' });
-    expect(resolveUserRuleOutcomeForTool('k2-session', 'Bash', { command: 'git push origin main' }))
-      .toEqual({ kind: 'ask', rule: 'Bash(git push *)' });
+    expect(resolveUserRuleOutcomeForTool('k2-session', 'Bash', { command: 'npm publish --tag next' }))
+      .toEqual({ kind: 'ask', rule: 'Bash(npm publish *)' });
     endRunPolicy('k2-run-a');
   });
 
   it('没有活跃 run（无发起话可匹配）→ 同样回落 ask', () => {
-    expect(resolveUserRuleOutcomeForTool('k2-idle', 'Bash', { command: 'git push origin main' }))
-      .toEqual({ kind: 'ask', rule: 'Bash(git push *)' });
+    expect(resolveUserRuleOutcomeForTool('k2-idle', 'Bash', { command: 'npm publish --tag next' }))
+      .toEqual({ kind: 'ask', rule: 'Bash(npm publish *)' });
   });
 
   it('命令不被规则覆盖 → none', () => {

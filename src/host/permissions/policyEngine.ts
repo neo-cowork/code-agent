@@ -13,7 +13,8 @@ import {
   MODE_CONFIGS,
 } from './modes';
 import { parseToolSpecifier, matchSpecifier, type ParsedSpecifier } from './specifierParser';
-import { validateUserPermissionRule, validateNlPermissionRuleEntry } from '../../shared/permissionRuleSyntax';
+import { canonicalNlPhrases, validateUserPermissionRule, validateNlPermissionRuleEntry } from '../../shared/permissionRuleSyntax';
+import { isProtectedAllowRule } from './permissionRuleDraft';
 import type { NlRuleBehavior } from '../../shared/permissionRuleTranslate';
 import type { NlPermissionRuleEntry } from '../../shared/contract/settings';
 import { recordPolicyMutation, type PolicyMutationSource } from './policyMutationSource';
@@ -254,6 +255,15 @@ const BUILT_IN_RULES: PolicyRule[] = [
 // ----------------------------------------------------------------------------
 
 /**
+ * 用户「永不」规则：旧表（id 前缀 user-deny-）与 nlRules（user-nl:deny:，N-PERM-NL-RULES-K2）。
+ * 硬拒类消费端（工具调用口、shell 写路径口、不确定写目标的升档判据）共用这一个判据，
+ * 免得新增一种规则来源时只接上其中一个入口。
+ */
+export function isUserDenyRule(rule: PolicyRule): boolean {
+  return rule.action === 'deny' && (rule.id.startsWith('user-deny-') || rule.id.startsWith('user-nl:deny:'));
+}
+
+/**
  * Permission Policy Engine
  *
  * Evaluates permission requests using:
@@ -313,13 +323,14 @@ export class PolicyEngine {
    * Match a parsed write path against user Tool(path) denies, independent of tool spelling.
    * @param rules 覆盖规则列表（N-PERM-POLICYVERSION E2：传 run 有效视图；缺省活状态）。
    */
-  matchUserPathDeny(pathCandidates: readonly string[], rules?: readonly PolicyRule[]): PolicyRule | null {
+  matchUserPathDeny(pathCandidates: readonly string[], rules?: readonly PolicyRule[], roleId?: string): PolicyRule | null {
     for (const rule of rules ?? this.rules) {
       const specifier = rule.matcher.toolSpecifier;
-      if (!rule.id.startsWith('user-deny-') || rule.action !== 'deny'
-          || specifier?.specifierType !== 'path' || !specifier.specifier) {
+      if (!isUserDenyRule(rule) || specifier?.specifierType !== 'path' || !specifier.specifier) {
         continue;
       }
+      // 带角色范围的 nlRules deny 只在该角色的 run 上生效（roleId 由调用方传 run 盖章值）。
+      if (rule.userNlRule?.roleId && rule.userNlRule.roleId !== roleId) continue;
       if (pathCandidates.some((candidate) => matchSpecifier(specifier, candidate))) return rule;
     }
     return null;
@@ -336,7 +347,7 @@ export class PolicyEngine {
    */
   matchUserDenyRule(request: PolicyRequest, rules?: readonly PolicyRule[]): PolicyRule | null {
     for (const rule of rules ?? this.rules) {
-      if ((rule.id.startsWith('user-deny-') || rule.id.startsWith('user-nl:deny:')) && rule.action === 'deny' && this.matchesRule(request, rule)) {
+      if (isUserDenyRule(rule) && this.matchesRule(request, rule)) {
         return rule;
       }
     }
@@ -515,14 +526,20 @@ export class PolicyEngine {
       action: PermissionAction;
     }> = [];
     for (const raw of rules.nlRules ?? []) {
-      const verdict = validateNlPermissionRuleEntry(raw);
+      // 装载口与保存口同一个校验（含高危探针）：改配置文件/热重载写进来的
+      // preapprove Bash(sudo *) 在这里被跳过，不进引擎（PR #2911）。
+      const verdict = validateNlPermissionRuleEntry(raw, isProtectedAllowRule);
       if (!verdict.ok) {
         logger.warn(`Skipping invalid nl rule: ${JSON.stringify(raw)}`, { reason: verdict.reason });
         continue;
       }
       const entry = { ...verdict.value, rule: verdict.value.rule.trim() };
+      // 短语进 id：id 是「对齐」装载判断规则变没变的唯一依据，短语不在里面时热重载
+      // 改短语会被当成同一条规则跳过，旧短语一直放行到重启（PR #2911）。改短语 = 卸旧
+      // 装新，也因此吃 run 冻结语义（外部来源加短语是放宽，对已开始的 run 冻结）。
+      const phrases = canonicalNlPhrases(entry.phrases);
       nlEntries.push({
-        id: `user-nl:${entry.behavior}:${entry.roleId ?? 'global'}:${entry.rule}`,
+        id: `user-nl:${entry.behavior}:${entry.roleId ?? 'global'}:${entry.rule}${phrases.length > 0 ? `#phrases=${JSON.stringify(phrases)}` : ''}`,
         entry,
         action: NL_ACTION[entry.behavior],
       });

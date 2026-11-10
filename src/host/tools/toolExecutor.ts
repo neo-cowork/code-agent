@@ -109,7 +109,7 @@ import { type ExecutionTopology } from '../permissions';
 import { boundaryIdForRequestType } from './permissionBoundaryMapping';
 import { connectorWritePermissionRequest, findConnectorTokenWrite } from './connectorTokenWrite';
 import { evaluateGuardFabricGate } from './guardFabricGate';
-import { getPolicyEngine } from '../permissions/policyEngine';
+import { getPolicyEngine, isUserDenyRule } from '../permissions/policyEngine';
 import { resolveUserRuleOutcomeForTool, handbackDoneModelText } from '../permissions/userRuleOutcome';
 import { classifyShellDesktopAutomation } from '../permissions/shellDesktopAutomation';
 import { resolveFileTargetKind } from '../permissions/fileTargetKind';
@@ -204,8 +204,7 @@ function hasConfiguredWritePathDeny(policyEnforcer: PolicyEnforcer | null | unde
   // (~/.ssh/**, ~/.aws/**, /etc/**). No file → getPolicyEnforcer returns null.
   if (policyEnforcer?.isActive) return true;
   return resolveEffectivePolicyRules(sessionId).some((rule) =>
-    rule.id.startsWith('user-deny-')
-    && rule.action === 'deny'
+    isUserDenyRule(rule)
     && rule.matcher.toolSpecifier?.specifierType === 'path'
     && Boolean(rule.matcher.toolSpecifier.specifier)
   );
