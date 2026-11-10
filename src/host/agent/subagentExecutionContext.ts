@@ -79,9 +79,13 @@ export function createProtocolSubagentExecutionContext(
             reason: request.reason,
             dangerLevel: request.dangerLevel,
             decisionTrace: request.decisionTrace,
+            ledgerRecordedByChild: true,
           },
         );
-        return result.allow;
+        if (!result.allow) return false;
+        return result.approvalSource
+          ? { approved: true, approvalSource: result.approvalSource }
+          : true;
       },
     },
     hooks: ctx.hookManager as SubagentHookPort | undefined,

@@ -78,6 +78,8 @@ describe('cron duration fields', () => {
     fireEvent.change(retryUnit, { target: { value: 'minutes' } });
     fireEvent.change(timeoutInput, { target: { value: '1.5' } });
     fireEvent.click(screen.getByText('保存修改'));
+    expect(updateJob).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
 
     await waitFor(() => expect(updateJob).toHaveBeenCalledTimes(1));
     const payload = updateJob.mock.calls[0]?.[1];
@@ -91,6 +93,8 @@ describe('cron duration fields', () => {
     useCronStore.setState({ updateJob: blankUpdate });
     openAdvanced(makeJob({ retryDelay: undefined, timeout: undefined }));
     fireEvent.click(screen.getByText('保存修改'));
+    expect(blankUpdate).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
     await waitFor(() => expect(blankUpdate).toHaveBeenCalledTimes(1));
     expect(blankUpdate.mock.calls[0]?.[1]).toMatchObject({ retryDelay: undefined, timeout: null });
 
@@ -102,6 +106,8 @@ describe('cron duration fields', () => {
     expect((screen.getByTestId('cron-retry-delay-unit') as HTMLSelectElement).value).toBe('minutes');
     expect((screen.getByTestId('cron-timeout-input') as HTMLInputElement).value).toBe('90');
     fireEvent.click(screen.getByText('保存修改'));
+    expect(untouchedUpdate).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
     await waitFor(() => expect(untouchedUpdate).toHaveBeenCalledTimes(1));
     expect(untouchedUpdate.mock.calls[0]?.[1]).toMatchObject({ retryDelay: 60_000, timeout: 90_000 });
   });
@@ -116,6 +122,8 @@ describe('cron duration fields', () => {
     fireEvent.change(screen.getByTestId('cron-retry-delay-input'), { target: { value: displayValue } });
     fireEvent.change(screen.getByTestId('cron-retry-delay-unit'), { target: { value: unit } });
     fireEvent.click(screen.getByText('保存修改'));
+    expect(updateJob).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
     await waitFor(() => expect(updateJob).toHaveBeenCalledTimes(1));
     expect(updateJob.mock.calls[0]?.[1].retryDelay).toBe(expectedMilliseconds);
   });
@@ -127,6 +135,8 @@ describe('cron duration fields', () => {
     fireEvent.change(screen.getByTestId('cron-retry-delay-input'), { target: { value: 'not a duration' } });
     expect(screen.getByRole('alert').textContent).toBe(cronCenterZh.cronCenter.manualEditor.durationInvalid);
     fireEvent.click(screen.getByText('保存修改'));
+    expect(updateJob).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
     await waitFor(() => expect(updateJob).toHaveBeenCalledTimes(1));
     expect(updateJob.mock.calls[0]?.[1].retryDelay).toBeUndefined();
   });
@@ -160,7 +170,7 @@ describe('cron duration fields', () => {
     cleanup();
     useAppStore.setState({ language: 'zh' });
     render(<CronJobEditor isOpen job={null} onClose={() => undefined} />);
-    fireEvent.click(screen.getByText('手动配置')); 
+    fireEvent.click(screen.getByText('手动配置'));
     const zhOptions = Array.from(screen.getByTestId('cron-schedule-type-select').querySelectorAll('option')).map((option) => option.textContent);
     expect(zhOptions).toContain(cronCenterZh.cronCenter.manualEditor.oneTimeScheduleOption);
     expect(zhOptions).toContain(cronCenterZh.cronCenter.manualEditor.intervalScheduleOption);

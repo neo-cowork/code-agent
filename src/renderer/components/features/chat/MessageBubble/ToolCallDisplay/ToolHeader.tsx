@@ -15,6 +15,7 @@ import {
   getToolFilePath,
   computerLabelArgs,
   humanizeToolStep,
+  parseDelegateSessionReceipt,
   isInternalStreamTool,
   toolNameForDetail,
 } from '../../../../../utils/humanizeToolStep';
@@ -111,6 +112,7 @@ export function ToolHeader({
               ? 'failed'
               : 'completed',
         toolCall.stepLabel,
+        { delegationReceipt: toolCall.name === 'delegate_session' ? parseDelegateSessionReceipt(toolCall.result) : undefined },
       ));
   const statusLabel = assembled
     ? assembled.terminal
