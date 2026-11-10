@@ -156,7 +156,7 @@ export function buildRunUiState(args: BuildRunWorkbenchModelInput): RunUiState {
     waitingApprovalId: args.pendingApprovalId || undefined,
     ...describeBlocked(firstBlockedReason(turn)),
     completionSignal: completionSignal(turn),
-    ...(status === 'cancelled' && turn && isIdleReapedRun(turn) ? { terminalReason: 'idle_reaped' as const } : {}),
+    ...(status === 'cancelled' && turn ? { terminalReason: turn.nodes.some((node) => node.metadata?.workbench?.runCancellation?.reason === 'client_disconnect') ? 'client_disconnect' as const : isIdleReapedRun(turn) ? 'idle_reaped' as const : undefined } : {}),
     startedAt: turn?.startTime,
     endedAt: turn?.endTime,
   };

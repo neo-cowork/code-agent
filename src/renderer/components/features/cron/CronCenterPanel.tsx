@@ -22,6 +22,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import ipcService from '../../../services/ipcService';
 import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
 import type { AwaitingApprovalRun } from '@shared/contract/sessionAutomation';
+import { usePageReturnPosition } from '../../../hooks/usePageReturn';
 import { createLogger } from '../../../utils/logger';
 import { openBudgetSettings } from '../../../utils/budgetSettingsNavigation';
 import { CronJobList } from './CronJobList';
@@ -107,6 +108,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
   const [activeTab, setActiveTab] = useState<CronCenterTab>(
     () => (readCronSearchParam('cronTab') === 'runs' ? 'runs' : 'jobs'),
   );
+  usePageReturnPosition({ page: 'automation', runs: activeTab === 'runs' });
   const runsRequested = useAppStore((s) => s.cronCenterRunsRequested);
   useEffect(() => {
     if (!runsRequested) return;

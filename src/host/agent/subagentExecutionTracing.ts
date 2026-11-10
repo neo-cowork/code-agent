@@ -4,6 +4,7 @@ import {
   withRunTraceContext,
 } from '../telemetry/runTraceContext';
 import type { SubagentExecutionRequest, SubagentResult } from './subagentExecutorTypes';
+import { withPersistedSubagentLifecycle } from './subagentContextLifecycle';
 import { withFileOwnership } from '../services/infra/fileOwnershipRegistry';
 
 export async function runSubagentExecutionWithTrace(
@@ -17,7 +18,7 @@ export async function runSubagentExecutionWithTrace(
     swarmRunScope: context.swarmRunScope,
     workingDirectory: context.cwd,
     ownedPaths: context.ownedPaths,
-  }, run);
+  }, () => withPersistedSubagentLifecycle(request, run));
   const parentTraceContext = context.traceContext;
   if (!parentTraceContext) return runWithOwnership();
 
