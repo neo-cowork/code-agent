@@ -35,7 +35,7 @@ export interface RunUiState {
   blockedReasonCategory?: TaskBlockedCategory;
   completionSignal?: string;
   /** 系统回收（长时间无进展）而非用户停止；仅 status='cancelled' 时出现 */
-  terminalReason?: 'idle_reaped';
+  terminalReason?: 'idle_reaped' | 'client_disconnect';
   /** 当前轮起止时间（来自 TraceTurn），Overview Run header 的用时来源 */
   startedAt?: number;
   endedAt?: number;
