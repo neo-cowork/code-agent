@@ -5,7 +5,7 @@
 import React, { useState, useEffect } from 'react';
 import { Download, RefreshCw, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
-import { interpolatePlural } from '../../../../i18n/interpolate';
+import { interpolate, interpolatePlural } from '../../../../i18n/interpolate';
 import { Button } from '../../../primitives';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { SettingsPage } from '../SettingsLayout';
@@ -333,17 +333,17 @@ export function getDesktopShellDiagnosticRows(
   rows.push({
     label: labels.resourceCheck,
     value: missingResources.length
-      ? `${missingResources.length} missing · ${missingResources.map((resource) => resource.id).join(', ')}`
-      : `${diagnostics.resources.length} present`,
+      ? `${interpolate(labels.resourceMissingCount, { count: missingResources.length })} · ${missingResources.map((resource) => resource.id).join(', ')}`
+      : interpolate(labels.resourcePresentCount, { count: diagnostics.resources.length }),
   });
   rows.push(...getDesktopShellResourceDiagnosticRows(diagnostics.resources, labels));
   if (diagnostics.runtimeAssets) {
     rows.push({
       label: labels.runtimeAssets,
       value: [
-        `${diagnostics.runtimeAssets.summary.installed} installed`,
-        `${diagnostics.runtimeAssets.summary.bundledFallback} bundled`,
-        `${diagnostics.runtimeAssets.summary.missing} missing`,
+        interpolate(labels.runtimeInstalledCount, { count: diagnostics.runtimeAssets.summary.installed }),
+        interpolate(labels.runtimeBundledCount, { count: diagnostics.runtimeAssets.summary.bundledFallback }),
+        interpolate(labels.runtimeMissingCount, { count: diagnostics.runtimeAssets.summary.missing }),
       ].join(' · '),
     });
     rows.push({
