@@ -247,8 +247,10 @@ describe('turn tool-face gate (through inference)', () => {
     const prompt = '用浏览器打开 example.com 告诉我标题';
     const ctx = buildCtx(prompt, getTextForegroundToolNamesForPrompt(prompt));
     ctx.runtime.messages.push({
+      id: 'assistant-delegate-1',
       role: 'assistant',
       content: '',
+      timestamp: 1,
       toolCalls: [{ id: 'c1', name: 'delegate_task', arguments: {} }],
     });
     await inference(ctx);
