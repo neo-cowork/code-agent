@@ -172,4 +172,46 @@ describe('cron 无人值守运行发现 MCP 401 → 收件箱每连接器每日�
     expect(pending.connectorLost?.days).toEqual({ notion: '2031-11-01' });
     expect(pending.connectorLost?.summary).toContain('今天的定时运行没能读取');
   });
+
+  it('跨天：当天提示留在 pendingReview；次日干净运行不再带 summary 但 days 保留；同日重跑不再写第二条', async () => {
+    const { recordCronAutomationExecution } = await import('../../../src/host/cron/cronAutomationBridge');
+    const lostMessages = () => state.messages.map((m) => m.id).filter((id) => id.startsWith('automation:connector_lost:'));
+    const pendingOf = () => (automationRows()[0].config_json as { pendingReview: { connectorLost?: { days: Record<string, string>; summary?: string } } }).pendingReview.connectorLost;
+    state.orchestratorMessages = [{ role: 'tool', toolResults: [{ toolCallId: 't1', success: false, error: 'Unauthorized', metadata: { mcpAuthorizationRequired: true, server: 'gdrive' } }] }];
+    vi.setSystemTime(new Date(2032, 0, 5, 9, 0, 0));
+    await executeCronAgentAction(host, job, job.action as never, 'd1');
+    await recordCronAutomationExecution(job, completedExecution('d1'), (d) => d as never);
+    expect(pendingOf()?.summary).toContain('gdrive');
+    expect(pendingOf()?.days).toEqual({ gdrive: '2032-01-05' });
+
+    // 同日再跑：去重，不追加消息
+    await executeCronAgentAction(host, job, job.action as never, 'd1b');
+    await recordCronAutomationExecution(job, completedExecution('d1b'), (d) => d as never);
+    expect(lostMessages()).toEqual(['automation:connector_lost:gdrive:2032-01-05']);
+    expect(pendingOf()?.summary?.split('\n')).toHaveLength(1);
+
+    // 次日：用户已重连，干净且完成的运行
+    state.orchestratorMessages = [];
+    vi.setSystemTime(new Date(2032, 0, 6, 9, 0, 0));
+    await executeCronAgentAction(host, job, job.action as never, 'd2');
+    await recordCronAutomationExecution(job, completedExecution('d2'), (d) => d as never);
+    expect(pendingOf()?.summary).toBeUndefined();
+    expect(pendingOf()?.days).toEqual({ gdrive: '2032-01-05' });
+    expect(lostMessages()).toHaveLength(1);
+  });
+
+  it('同一次运行丢了两个连接器：summary 两条都在', async () => {
+    const { recordCronAutomationExecution } = await import('../../../src/host/cron/cronAutomationBridge');
+    state.orchestratorMessages = [{ role: 'tool', toolResults: [
+      { toolCallId: 't1', success: false, error: 'Unauthorized', metadata: { mcpAuthorizationRequired: true, server: 'figma' } },
+      { toolCallId: 't2', success: false, error: 'Unauthorized', metadata: { mcpAuthorizationRequired: true, server: 'linear' } },
+    ] }];
+    vi.setSystemTime(new Date(2032, 3, 1, 9, 0, 0));
+    await executeCronAgentAction(host, job, job.action as never, 'm1');
+    await recordCronAutomationExecution(job, completedExecution('m1'), (d) => d as never);
+    const lost = (automationRows()[0].config_json as { pendingReview: { connectorLost: { summary: string; days: Record<string, string> } } }).pendingReview.connectorLost;
+    expect(lost.summary).toContain('「figma」');
+    expect(lost.summary).toContain('「linear」');
+    expect(Object.keys(lost.days).sort()).toEqual(['figma', 'linear']);
+  });
 });

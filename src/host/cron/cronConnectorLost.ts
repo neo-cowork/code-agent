@@ -17,15 +17,9 @@ import { resolveAgent } from '../agent/agentRegistry';
 import { MCP_AUTHORIZATION_REQUIRED_METADATA_KEY } from '../mcp/mcpErrors';
 import { getCachedCliConnectorConnectionStatus, isCliConnectorId } from '../connectors/cli/cliConnectorStatusCache';
 import { getSessionAutomationService } from '../services/sessionAutomation';
-import { getCronAutomationType } from './cronAutomationBridge';
+import { getCronAutomationType, localDayKey } from './cronAutomationBridge';
 
 const recordedKeys = new Set<string>();
-
-function localDayKey(ms: number): string {
-  const date = new Date(ms);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
 
 function displayName(connectorId: string): string {
   return CLI_CONNECTOR_DESCRIPTORS.find((item) => item.id === connectorId)?.displayName ?? connectorId;
@@ -72,19 +66,21 @@ export async function recordCronConnectorLost(
         recordedKeys.add(eventId);
         continue;
       }
-      const summary = `今天的定时运行没能读取「${displayName(connectorId)}」：它当前未登录。请在聊天或设置里重新连接后再运行。`;
+      const line = `今天的定时运行没能读取「${displayName(connectorId)}」：它当前未登录。请在聊天或设置里重新连接后再运行。`;
+      // 同一天丢了多个连接器：追加而不是覆盖；换了一天则从新一天重新记
+      const summary = previous?.summary && previous.summaryDay === day ? `${previous.summary}\n${line}` : line;
       const recorded = await service.recordEvent({
         type,
         sourceRefId: definition.id,
         event: 'completed',
         status: 'pending_review', // 回流消息标题显示「待过目」；记录自身状态由 recordStatus 钉住不变
         recordStatus: existing?.status,
-        summary,
+        summary: line,
         configPatch: {
           pendingReview: {
             ...(existing?.config?.pendingReview ?? {}),
             at: nowMs,
-            connectorLost: { days: { ...(previous?.days ?? {}), [connectorId]: day }, summary },
+            connectorLost: { days: { ...(previous?.days ?? {}), [connectorId]: day }, summary, summaryDay: day },
           },
         },
         eventId,
