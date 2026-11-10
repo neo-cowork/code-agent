@@ -140,8 +140,8 @@ export const CronJobList: React.FC<CronJobListProps> = ({ awaitingByJobId }) => 
             {filteredJobs.map((job) => {
               const isSelected = job.id === selectedJobId;
               const latest = latestExecutions[job.id];
-              const latestMeta = getLatestExecutionStatus(latest);
-              const latestLabel = cc.status[latest?.status ?? 'none'];
+              const latestMeta = getLatestExecutionStatus(latest, cc);
+              const latestLabel = latestMeta.label;
               const awaitingApproval = awaitingByJobId?.has(job.id) ?? false;
               const triggerKind = getCronTriggerKind(job);
               const builtinDisplay = getBuiltinJobDisplay(job, language);
