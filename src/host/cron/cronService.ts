@@ -87,6 +87,7 @@ import {
 import { cronLoginWallMetadata } from './cronLoginWall';
 import { rememberCronLoginPassThroughOrigin } from './cronLoginWallPersistence';
 import {
+  backfillCronWriteScopes,
   grantCronWriteScope,
   revokeCronWriteScope,
   stripWriteGrantRoot,
@@ -184,6 +185,7 @@ export class CronService implements Disposable {
     await markInterruptedCronExecutions();
 
     // Load jobs from database
+    await backfillCronWriteScopes();
     await this.loadJobsFromDatabase();
     await this.cloudRuntime.reconcile();
 
