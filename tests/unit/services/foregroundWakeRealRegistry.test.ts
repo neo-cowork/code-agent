@@ -45,7 +45,6 @@ class FakeTaskManager extends EventEmitter {
   });
   interruptBackgroundTask = vi.fn().mockResolvedValue(true);
   cancelBackgroundTask = vi.fn().mockResolvedValue(true);
-  observeAgentEvents(): () => void { return () => undefined; }
   emitTask(event: TaskManagerEvent): void { this.emit(event.type, event); }
   // 以下是 foregroundWake 依赖的 TaskManager 面
   getSessionState(): { status: string } { return this.state; }

@@ -174,7 +174,7 @@ describe('foreground task-result wake', () => {
   it('emits deferred status immediately and one visible note at the cap', async () => {
     manager.hasActivePrimaryRun.mockReturnValue(true);
     const clock = fakeTimer();
-    const recordWakeDeferredNote = vi.fn(async () => undefined);
+    const recordWakeDeferredNote = vi.fn(async (_sessionId: string, _content: string, _detail: { taskId: string; outcome: 'completed' | 'failed' }) => undefined);
     const visibleTitle = '运行 sleep 40 并输出 X';
     const internalShortName = 'slee';
     const wake = createForegroundWake(dependencies({
