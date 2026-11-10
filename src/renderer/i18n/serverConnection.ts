@@ -10,8 +10,10 @@ export const serverConnectionZh = {
     // unavailable：壳的重试也失败（用户在系统弹窗选了「稍后」）之后
     unavailable: 'Neo 的后台服务暂时无法恢复',
     retry: '重试',
-    // Tauri 模式：恢复动作指向系统弹窗的「重试」/重开应用（页面此时未必能自愈）
-    unavailableHintTauri: '可在系统弹窗中选择「重试」，或重新打开应用。',
+    checking: '正在检查…',
+    retryFailed: '仍未恢复',
+    // Tauri 模式：重试只检查连接；退出后重新打开 Neo 才会重新启动服务
+    unavailableHintTauri: '可点击「重试」，或退出后重新打开 Neo。',
     // Web 模式：自己刷新页面
     unavailableHintWeb: '也可以刷新页面再试。',
     // /api/run 网络失败时替代裸 `Load failed` 的发送反馈
@@ -34,7 +36,9 @@ export const serverConnectionEn = {
     recovering: "Reconnecting to Neo's background service… this usually recovers by itself in a few seconds",
     unavailable: "Neo's background service could not be restored",
     retry: 'Retry',
-    unavailableHintTauri: 'Use Retry in the system dialog, or reopen the app.',
+    checking: 'Checking…',
+    retryFailed: 'Still not recovered',
+    unavailableHintTauri: 'Press Retry, or quit and reopen Neo.',
     unavailableHintWeb: 'You can also refresh the page to try again.',
     sendRetryHint: 'Reconnecting to the background service — please try again in a moment',
     requestFailed: 'Neo could not complete the request; please try again in a moment.',

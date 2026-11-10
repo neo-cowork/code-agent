@@ -4,6 +4,7 @@ import {
   isSessionBusyRunConflict,
   isRuntimeBusyStatus,
 } from '../../../src/renderer/hooks/agent/agentRuntimeFollowup';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { getRuntimeFollowupFailureMessage } from '../../../src/renderer/hooks/agent/useAgentIPC';
 
 describe('runtime follow-up helpers', () => {
@@ -34,10 +35,47 @@ describe('runtime follow-up helpers', () => {
       .toBe('Neo 暂时无法完成请求，请稍后重试。');
   });
 
+  it.each([
+    ['zh', '请补一句话说明想让我做什么，然后再发送一次。'],
+    ['en', 'Add a sentence saying what you want done, then send again.'],
+  ] as const)('maps PROMPT_REQUIRED and a plain 400 to a plain %s sentence', (language, sentence) => {
+    const original = useAppStore.getState().language;
+    useAppStore.setState({ language: language });
+    try {
+      const coded = Object.assign(new Error('云端代理请求失败 (400): Missing prompt'), { status: 400, code: 'PROMPT_REQUIRED' });
+      const plain = Object.assign(new Error('云端代理请求失败 (400): Missing prompt'), { status: 400 });
+      for (const error of [coded, plain]) {
+        const message = getAgentSendFailureMessage(error);
+        expect(message).toBe(sentence);
+        expect(message).not.toMatch(/云端代理请求失败|Missing prompt|400/);
+      }
+    } finally {
+      useAppStore.setState({ language: original });
+    }
+  });
+
+  it.each([
+    ['zh', '此文件夹需要重新确认，请确认信任后继续发送。', '项目文件夹需要重新确认，请在项目设置中检查并信任该文件夹后重试。'],
+    ['en', 'This folder needs to be confirmed again; confirm trust to send your message.', 'The project folder needs confirmation; please review and trust it in project settings, then try again.'],
+  ] as const)('keeps typed project trust refusals distinct from missing prompts in %s', (language, confirmation, trust) => {
+    const original = useAppStore.getState().language;
+    useAppStore.setState({ language });
+    try {
+      expect(getAgentSendFailureMessage(Object.assign(new Error('<html>PRIVATE</html>'), {
+        status: 422, code: 'PROJECT_SOURCE_IDENTITY_CONFIRM_REQUIRED',
+      }))).toBe(confirmation);
+      expect(getAgentSendFailureMessage(Object.assign(new Error('identity_changed'), {
+        status: 422, code: 'PROJECT_SOURCE_TRUST',
+      }))).toBe(trust);
+    } finally {
+      useAppStore.setState({ language: original });
+    }
+  });
+
   // 这一档不是失败：模型上一轮已经答完（用户也看到了），只是 run 还没收干净。
   // 判据必须认结构化 status，不能只靠中文文案——文案一改就静默失效。
   it('recognises the session-busy run conflict from status and from the raw host message', () => {
-    expect(isSessionBusyRunConflict(Object.assign(new Error('Neo 暂时无法接收请求，请稍后重试。'), { status: 409 })))
+    expect(isSessionBusyRunConflict(Object.assign(new Error('云端代理请求失败 (409): x'), { status: 409 })))
       .toBe(true);
     expect(isSessionBusyRunConflict(new Error('Session s1 already has active run run-abc'))).toBe(true);
     expect(isSessionBusyRunConflict(Object.assign(new Error('boom'), { status: 500 }))).toBe(false);

@@ -755,6 +755,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
     getSupabaseForSession,
     getDurableRunReadService: () => getDurableRunReadService(),
     getTraceReadService: () => traceReadService,
+    hasActiveRun: (sessionId) => runRegistry.hasSession(sessionId),
   }));
 
   // ── Settings (extracted to routes/settings.ts) ─────────────────────
