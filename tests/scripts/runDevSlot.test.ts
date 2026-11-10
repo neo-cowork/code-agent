@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, symlinkSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -96,5 +96,154 @@ describe('run-dev-slot.sh --dry-run', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+
+describe('run-dev-slot.sh --fresh-user', () => {
+  function withStub(callback: (env: NodeJS.ProcessEnv, root: string) => void): void {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'fresh-slot-'));
+    const bin = path.join(root, 'bin');
+    mkdirSync(bin);
+    const stub = path.join(bin, 'pgrep');
+    writeFileSync(stub, '#!/bin/bash\nprintf \'%s\\n\' "$@" > "$PGREP_ARGS"\nexit "${PGREP_STATUS:-1}"\n');
+    chmodSync(stub, 0o755);
+    try {
+      callback({
+        PATH: `${bin}:${process.env.PATH ?? ''}`,
+        PGREP_ARGS: path.join(root, 'pgrep-args'),
+        NEO_FRESH_ROOT: path.join(root, 'fresh root'),
+      }, root);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  it.each(['1', '2', '3', '4', '5', '6', '7', '8', '9'])('prints a fresh foreground command for slot %s without creating a directory', (slot) => {
+    withStub((env) => {
+      const output = runDryRun([slot, '--open-only', '--fresh-user'], env);
+      const appName = slot === '1' ? 'Agent Neo Dev' : `Agent Neo Dev ${slot}`;
+      const lines = output.trim().split('\n');
+      expect(lines[0]).toMatch(new RegExp(
+        `^\\[run-dev-slot\\] would run: open --env CODE_AGENT_DATA_DIR=".*neo-fresh-slot${slot}-\\d{8}-\\d{6}" "/Applications/${appName}\\.app"$`,
+      ));
+      const dir = lines[0].match(/CODE_AGENT_DATA_DIR="([^"]+)"/)?.[1];
+      expect(dir).toBeDefined();
+      expect(lines[1]).toBe(`[run-dev-slot] cleanup: rm -rf "${dir}"`);
+      expect(output).not.toContain('.code-agent-dev');
+      expect(output).not.toContain(path.join(os.homedir(), '.code-agent'));
+      expect(existsSync(env.NEO_FRESH_ROOT!)).toBe(false);
+      expect(readFileSync(env.PGREP_ARGS!, 'utf8')).toBe(
+        `-f\n/Applications/${appName}.app/Contents/MacOS/\n`,
+      );
+    });
+  });
+
+  it.each(['flag', 'environment'])('preserves background launch through the %s form', (form) => {
+    withStub((env) => {
+      const output = runDryRun(['3', '--fresh-user', ...(form === 'flag' ? ['--background'] : [])], {
+        ...env, NEO_SLOT_BACKGROUND: form === 'environment' ? '1' : '0',
+      });
+      expect(output).toMatch(/open --env CODE_AGENT_DATA_DIR=".*neo-fresh-slot3-\d{8}-\d{6}" --env NEO_VERIFY_NO_FOREGROUND=1 -g -j "\/Applications\/Agent Neo Dev 3.app"/);
+    });
+  });
+
+  it.each(['1', '2'])('refuses a running slot %s before the dry-run exit', (slot) => {
+    withStub((env) => {
+      const appName = slot === '1' ? 'Agent Neo Dev' : `Agent Neo Dev ${slot}`;
+      let error: unknown;
+      try {
+        runDryRun([slot, '--open-only', '--fresh-user'], { ...env, PGREP_STATUS: '0' });
+      } catch (caught) {
+        error = caught;
+      }
+      expect(error).toBeDefined();
+      expect((error as { status?: number }).status).toBe(1);
+      expect(outputText((error as { stderr?: unknown }).stderr)).toBe(
+        `Error: slot ${slot} (${appName}) already running; quit it first\n`,
+      );
+      expect(outputText((error as { stdout?: unknown }).stdout)).not.toContain('would run');
+      const pattern = readFileSync(env.PGREP_ARGS!, 'utf8').trim().split('\n');
+      expect(pattern).toEqual(['-f', `/Applications/${appName}.app/Contents/MacOS/`]);
+      const otherName = slot === '1' ? 'Agent Neo Dev 2' : 'Agent Neo Dev';
+      expect(new RegExp(pattern[1]).test(`/Applications/${otherName}.app/Contents/MacOS/code-agent-tauri`)).toBe(false);
+      expect(existsSync(env.NEO_FRESH_ROOT!)).toBe(false);
+    });
+  });
+
+  it.each(['.code-agent', '.code-agent/nested', '.code-agent-x', 'safe/../.code-agent-x'])('rejects a protected root %s', (suffix) => {
+    withStub((env, root) => {
+      expect(() => runDryRun(['--fresh-user'], {
+        ...env, HOME: root, NEO_FRESH_ROOT: path.join(root, suffix),
+      })).toThrow();
+      expect(readdirSync(root).sort()).toEqual(['bin', 'pgrep-args']);
+    });
+  });
+
+  it('rejects a symlink into protected user data', () => {
+    withStub((env, root) => {
+      const protectedRoot = path.join(root, '.code-agent');
+      mkdirSync(protectedRoot);
+      symlinkSync(protectedRoot, path.join(root, 'alias'));
+      expect(() => runDryRun(['--fresh-user'], {
+        ...env, HOME: root, NEO_FRESH_ROOT: path.join(root, 'alias', 'nested'),
+      })).toThrow();
+      expect(readdirSync(protectedRoot)).toEqual([]);
+    });
+  });
+
+  it('creates fresh data only on launch and refuses same-second reuse', () => {
+    withStub((env, root) => {
+      const scripts = path.join(root, 'scripts');
+      const bin = path.join(root, 'bin');
+      mkdirSync(scripts);
+      mkdirSync(path.join(root, 'src-tauri'));
+      const script = path.join(scripts, 'run-dev-slot.sh');
+      copyFileSync(SCRIPT, script);
+      writeFileSync(path.join(root, 'src-tauri', '.dev-slot.json'), JSON.stringify({
+        productName: 'Agent Neo Dev 9', webPort: 8189,
+      }));
+      for (const [name, body] of Object.entries({
+        npm: 'exit 0',
+        date: 'printf "20261109-120000"',
+        open: 'printf "%s\\n" "$@" > "$OPEN_ARGS"\n[ -d "${2#CODE_AGENT_DATA_DIR=}" ]',
+      })) {
+        const stub = path.join(bin, name);
+        writeFileSync(stub, `#!/bin/bash\n${body}\n`);
+        chmodSync(stub, 0o755);
+      }
+      const launchEnv = { ...process.env, ...env, NEO_SLOT_BACKGROUND: '0', OPEN_ARGS: path.join(root, 'open-args') };
+      const run = () => execFileSync('bash', [script, '9', '--fresh-user'], {
+        cwd: root, encoding: 'utf8', env: launchEnv, stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      const output = run();
+      const freshDir = path.join(env.NEO_FRESH_ROOT!, 'neo-fresh-slot9-20261109-120000');
+      expect(existsSync(freshDir)).toBe(true);
+      expect(output).toContain(`cleanup: rm -rf "${freshDir}"`);
+      expect(readFileSync(launchEnv.OPEN_ARGS, 'utf8')).toBe(
+        `--env\nCODE_AGENT_DATA_DIR=${freshDir}\n/Applications/Agent Neo Dev 9.app\n`,
+      );
+      writeFileSync(path.join(freshDir, 'populated'), 'keep');
+      expect(run).toThrow();
+      expect(readFileSync(path.join(freshDir, 'populated'), 'utf8')).toBe('keep');
+    });
+  });
+
+  it('never checks running apps without the fresh flag', () => {
+    withStub((env) => {
+      expect(runDryRun(['2', '--open-only'], { ...env, PGREP_STATUS: '0' })).toContain('would run');
+      expect(existsSync(env.PGREP_ARGS!)).toBe(false);
+    });
+  });
+
+  it('advertises the fresh flag after dry-run in usage', () => {
+    withStub((env) => {
+      try {
+        runDryRun(['--unknown'], env);
+        expect.fail('invalid arguments must fail');
+      } catch (error) {
+        expect(outputText((error as { stderr?: unknown }).stderr)).toMatch(/Usage: .*--dry-run.*--fresh-user/);
+      }
+    });
   });
 });

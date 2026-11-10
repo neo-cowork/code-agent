@@ -273,6 +273,8 @@ async function runSpawnAgent(
     }, {
       agentId: backgroundAgentId,
       title: backgroundTitle,
+      ...(typeof normalizedArgs.name === 'string' && normalizedArgs.name.trim()
+        ? { displayName: normalizedArgs.name.trim() } : {}),
       completionKind: backgroundRole === 'awaiter' ? 'shell' : 'internal',
       sessionId: ctx.sessionId,
       ...(ctx.runId ? { runId: ctx.runId } : {}),

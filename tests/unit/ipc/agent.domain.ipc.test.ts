@@ -22,6 +22,7 @@ vi.mock('../../../src/host/permissions/modes', async (importOriginal) => ({
 }));
 vi.mock('../../../src/host/ipc/adminGuard', () => ({
   getAdminAccessIpcError: () => env.adminIpcError,
+  ensureAdminAccessIpcError: async () => env.adminIpcError,
 }));
 // platform 按 sessionDefaultMode.test.ts 同款最小桩：agent.ipc 的 import 图里有模块在加载期读 app（09-15 草稿首跑实付）
 vi.mock('../../../src/host/platform', () => ({

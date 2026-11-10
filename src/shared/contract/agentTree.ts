@@ -75,10 +75,11 @@ export interface AgentWorktreeReview extends AgentWorktreeArtifact {
 }
 
 export interface AgentTreeNode {
-  /** Detached child that survives a failed primary run. */
-  background?: boolean;
   id: string;
   role: string;
+  displayName?: string;
+  /** Detached child that survives a failed primary run. */
+  background?: boolean;
   status: AgentTreeNodeStatus;
   statusLabel: string;
   parentId?: string;

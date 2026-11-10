@@ -200,7 +200,28 @@ export function hydrateApprovalGatesAtBoot(
       `Kept ${survivors.length} parked tool approval(s) pending across restart (approvable from the message ledger for 24h)`,
     );
   }
+  collapseClosedRestartOriginStacks(repo);
   return { plan, launch, parked, survived: survivors.length };
+}
+
+function collapseClosedRestartOriginStacks(repo: PendingApprovalRepository): void {
+  for (const row of repo.listClosedToolApprovalsWithPrefixStack(RESTART_ORIGIN_PREFIX)) {
+    try {
+      const parsed = JSON.parse(row.payloadJson) as unknown;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
+      const payload = parsed as Partial<ToolApprovalPayload>;
+      if (typeof payload.displayTool !== 'string') continue;
+      const prefixRun = payload.displayTool.match(RESTART_ORIGIN_PREFIX_RUN)?.[0];
+      if (!prefixRun || prefixRun === RESTART_ORIGIN_PREFIX) continue;
+      const displayTool = `${RESTART_ORIGIN_PREFIX}${payload.displayTool.slice(prefixRun.length)}`;
+      repo.updatePayloadJson(row.id, JSON.stringify({ ...payload, displayTool }));
+    } catch (err) {
+      logger.warn('Failed to collapse stacked restart origin on closed parked approval', {
+        requestId: row.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 }
 
 /**

@@ -626,7 +626,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
       includeClaudeLegacySkills: this.includeClaudeLegacySkills,
     });
     await discovery.ensureInitialized(this.workingDirectory);
-    const skillContext = discovery.getSkillsForContext()
+    const skillContext = discovery.getSkillsForContext({ sessionId: this.currentSessionId })
       .map((skill) => skill.name)
       .sort((left, right) => left.localeCompare(right));
     const activations = { ...(this.skillActivations.get(testId) ?? {}) };

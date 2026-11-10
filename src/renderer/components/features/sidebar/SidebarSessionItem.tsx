@@ -181,7 +181,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
     backgroundSession?.backgroundedAt || 0,
   );
   const messageSearchHitGroup = searchQuery.trim() ? messageSearchHitsBySessionId[session.id] : undefined;
-  const displayTitle = getDisplaySessionTitle(session.title);
+  const displayTitle = getDisplaySessionTitle(session.title, language);
   // 这条会话用过实时语音（host 在建连时写进会话 metadata）。是身份不是状态，
   // 所以走行尾的身份轴（右槽），不进讲「此刻怎么了」的状态槽——详见下方渲染处。
   const hadLiveVoice = session.metadata?.hadLiveVoice === true;

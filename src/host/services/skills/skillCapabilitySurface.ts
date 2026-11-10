@@ -1,4 +1,4 @@
-import type { ParsedSkill } from '../../../shared/contract/agentSkill';
+import type { ParsedSkill, SkillSource } from '../../../shared/contract/agentSkill';
 import { TurnTraceRecorder } from '../../agent/runtime/turnTrace';
 import { createLogger } from '../infra/logger';
 import {
@@ -30,7 +30,7 @@ interface SkillCapabilitySurfaceState {
   registryBroker: CapabilityBroker<SkillRegistryCapability>;
 }
 interface SkillRegistryCapability {
-  register(name: string, description: string, aliases?: string[]): void;
+  register(name: string, description: string, aliases?: string[], skillSource?: SkillSource): void;
   unregister(name: string): void;
 }
 const SKILL_REGISTRY_CAPABILITY_KEY: CapabilityKey = 'skill:neo/registration';
@@ -46,8 +46,8 @@ function stateFor(toolSearch: ToolSearchService): SkillCapabilitySurfaceState {
       id: 'tool-search-registry',
       isAvailable: () => true,
       implementation: {
-        register: (name: string, description: string, aliases?: string[]) => (
-          toolSearch.registerSkill(name, description, aliases)
+        register: (name: string, description: string, aliases?: string[], skillSource?: SkillSource) => (
+          toolSearch.registerSkill(name, description, aliases, skillSource)
         ),
         unregister: (name: string) => { toolSearch.unregisterSkill(name); },
       },
@@ -69,7 +69,7 @@ function declarationForSkill(
     async register(context) {
       const registry = registryBroker.resolve(SKILL_REGISTRY_CAPABILITY_KEY);
       await context.register({
-        apply: () => registry.register(skill.name, skill.description, skill.aliases),
+        apply: () => registry.register(skill.name, skill.description, skill.aliases, skill.source),
         inverse: () => { registry.unregister(skill.name); },
       });
     },
@@ -82,6 +82,7 @@ function signature(skill: ParsedSkill): string {
     aliases: skill.aliases ?? [],
     depends: skill.depends,
     provides: skill.provides,
+    source: skill.source,
   });
 }
 

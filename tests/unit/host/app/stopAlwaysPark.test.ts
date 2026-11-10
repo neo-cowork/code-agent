@@ -12,11 +12,12 @@ import {
   mapDurableRunView,
   projectDurableRunToSessionPayload,
 } from '../../../../src/host/app/durableRunReadService';
+import type { Response } from 'express';
+import { AgentRunController } from '../../../../src/web/routes/agentRunController';
 import { DurableRunKernel } from '../../../../src/host/runtime/durableRunKernel';
 import { RunRegistry } from '../../../../src/host/runtime/runRegistry';
 import { DurableRunRepository } from '../../../../src/host/services/core/repositories/DurableRunRepository';
 import {
-  cancelDisconnectedAgentRouteRun,
   createAgentDurableRouteRunLifecycle,
 } from '../../../../src/web/routes/agentDurableRouteLifecycle';
 
@@ -218,24 +219,31 @@ describe('user stop parks a fresh resumable run', () => {
     expect(registry.findRecoveredWaitingRun({ sessionId })).toBeUndefined();
   });
 
-  it('cancelDisconnectedAgentRouteRun stays terminal after a native checkpoint', async () => {
+  it('a disconnected controller keeps its durable run alive through completion after a checkpoint', async () => {
     const sessionId = 'session-cancel-disconnect';
     const { workspace, repository, registry } = openRegistry('cancel-disconnect');
     const run = lifecycle(registry, sessionId, workspace);
     const { runHandle } = await run.start();
     const runId = runHandle.context.runId;
     await checkpointModel(registry, runId, 'message-cancel-disconnect');
-
-    await cancelDisconnectedAgentRouteRun({
-      runRegistry: registry,
-      runHandle,
-      sessionId,
-      durableActivation: true,
+    const controller = new AgentRunController({
+      res: { destroyed: true, writableEnded: false } as Response,
+      runId, sessionId, runHandle, logger, tryGetSessionManager: async () => null,
     });
-
-    expect(await repository.get(runId)).toMatchObject({ status: 'cancelled' });
+    controller.cancelForDisconnect();
+    expect(controller.detached).toBe(true);
+    expect(registry.hasDurableOwner(runId)).toBe(true);
+    expect(await repository.get(runId)).toMatchObject({ status: 'running' });
+    await registry.checkpointNativeModelOperation({
+      runId, sourceMessageId: 'message-cancel-disconnect', provider: 'provider', model: 'model',
+      logicalOperationId: 'turn-message-cancel-disconnect', phase: 'after_model_dispatch', status: 'succeeded',
+    });
+    await run.markSuccess({ finalStatus: 'completed' });
+    await run.release();
+    expect(await repository.get(runId)).toMatchObject({ status: 'completed' });
     expect(registry.findRecoveredWaitingRun({ sessionId })).toBeUndefined();
     expect(registry.hasDurableOwner(runId)).toBe(false);
+    controller.destroy();
   });
 
   it('cancels an auxiliary child that already has a native descriptor instead of parking it', async () => {

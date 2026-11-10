@@ -152,7 +152,7 @@ export function buildAgentRows(input: {
       key: node.id,
       kind: 'agent',
       roleId: node.role,
-      name: node.role,
+      name: node.displayName || node.role,
       isLead: false,
       status,
       failureReason: node.failureReason,

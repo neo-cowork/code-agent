@@ -1,4 +1,5 @@
 import { useLiveBackgroundAgentCount } from '../../hooks/useLiveBackgroundAgentCount';
+import { resolveRunCancellationOutcomeKey } from '../../i18n/outcomeWords';
 // ============================================================================
 // OverviewRunHeader —— 概览四模块 · 模块一「任务」：细进度线（2026-08-04 拍板二/三）
 // ----------------------------------------------------------------------------
@@ -86,9 +87,7 @@ export const OverviewRunHeader: React.FC = () => {
   if (!model) return null;
 
   const wt = t.workbenchTabs;
-  const cancelledOutcome = model.outcome === 'idle-reaped'
-    ? t.outcomeWords['failed-idle-reaped'].timeline
-    : t.outcomeWords['cancelled-by-user'].timeline;
+  const cancelledOutcome = t.outcomeWords[resolveRunCancellationOutcomeKey(runWorkbench.run.terminalReason)].timeline;
   const failedOutcome = t.outcomeWords['failed-unknown'].timeline;
   const toneLabel = model.tone === 'waiting'
     ? wt.overviewRunWaitingApproval

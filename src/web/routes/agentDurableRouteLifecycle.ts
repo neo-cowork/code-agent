@@ -269,25 +269,6 @@ export function resolveAgentDurableActivation(
   return rollout?.policy.durableActivation ?? true;
 }
 
-export async function cancelDisconnectedAgentRouteRun(input: {
-  runRegistry: RunRegistry;
-  runHandle: RunHandle;
-  sessionId: string;
-  durableActivation: boolean;
-}): Promise<void> {
-  await input.runHandle.cancel('user');
-  if (!input.durableActivation) {
-    input.runRegistry.unregister(input.runHandle.context.runId, input.runHandle);
-    return;
-  }
-  await input.runRegistry.terminalDurable(input.runHandle.context.runId, {
-    now: Date.now(),
-    status: 'cancelled',
-    reason: 'client_disconnected_before_stream',
-    event: { type: 'run_cancelled', payload: { sessionId: input.sessionId }, recordedAt: Date.now() },
-  }, input.runHandle);
-}
-
 export async function isDurableTerminalNativeControl(input: {
   readService?: DurableRunReadService;
   runRegistry: RunRegistry;

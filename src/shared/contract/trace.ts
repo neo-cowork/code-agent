@@ -79,6 +79,8 @@ export interface AgentErrorRunInfo {
 }
 
 export interface TraceTurn {
+  /** Standalone system entry: displayed in history, excluded from conversation/run turn selection. */
+  standalone?: boolean;
   turnNumber: number;
   turnId: string;
   nodes: TraceNode[];
