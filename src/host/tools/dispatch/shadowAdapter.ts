@@ -16,7 +16,11 @@ import type {
   PlanModeController,
 } from '../../protocol/tools';
 import type { AgentEvent } from '../../protocol/events';
-import type { ToolContext as LegacyToolContext, ToolExecutionResult } from '../types';
+import type {
+  PermissionRequestData,
+  ToolContext as LegacyToolContext,
+  ToolExecutionResult,
+} from '../types';
 import { hasProtocolTool, resolveProtocolTool } from '../protocolToolRegistration';
 import { sameToolName } from '../toolNames';
 import { getActiveRunTraceContext } from '../../telemetry/runTraceContext';
@@ -182,6 +186,7 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
     toolScope: legacy?.toolScope as ProtocolToolContext['toolScope'],
     executionIntent: legacy?.executionIntent as ProtocolToolContext['executionIntent'],
     traceContext: getActiveRunTraceContext(),
+    approvedSandboxWriteFile: input.legacyCtx.approvedToolCall?.sandboxWriteFile,
     directiveMemoryWriteGrant: input.legacyCtx.directiveMemoryWriteGrant,
   };
 }
@@ -227,7 +232,7 @@ export function buildCanUseToolFromLegacy(
             : 'command');
 
     try {
-      const allowed = await legacyCtx.requestPermission({
+      const permissionRequest: PermissionRequestData = {
         sessionId: requestHint?.sessionId,
         agentId: requestHint?.agentId,
         runId: requestHint?.runId,
@@ -239,9 +244,15 @@ export function buildCanUseToolFromLegacy(
         reason: requestHint?.reason ?? cleanReason ?? `protocol tool ${requestedToolName}`,
         dangerLevel: requestHint?.dangerLevel,
         decisionTrace: requestHint?.decisionTrace as never,
-      });
+        ...(requestHint?.ledgerRecordedByChild ? { ledgerRecordedByChild: true } : {}),
+      };
+      const allowed = await legacyCtx.requestPermission(permissionRequest);
+      const ask = legacyCtx.permissionAskResults?.get(permissionRequest);
       return allowed
-        ? { allow: true }
+        ? {
+            allow: true,
+            ...(ask?.approved && ask.approvalSource ? { approvalSource: ask.approvalSource } : {}),
+          }
         : { allow: false, reason: reason ?? 'denied by user' };
     } catch (err) {
       return {

@@ -9,6 +9,7 @@ import type {
   DeferredToolMeta,
   ToolSearchQueryMode,
 } from '../../../shared/contract/toolSearch';
+import type { SkillSource } from '../../../shared/contract/agentSkill';
 import type { JevChoiceAnswer, JevNoulAnswer } from '../../../shared/constants/jevQuestions';
 import { JEV_SKILL_RERANK_THRESHOLDS, JEV_TIMEOUT_MS } from '../../../shared/constants/jevQuestions';
 import { withTimeout } from '../infra/timeoutController';
@@ -16,6 +17,7 @@ import { DEFERRED_TOOL_LOADING } from '../../../shared/constants/tools';
 import { DEFERRED_TOOLS_META, buildDeferredToolIndex, isCoreToolName, resolveToolAlias } from './deferredTools';
 import { isDecideToolAvailable } from '../../tools/modules/network/decideAvailability';
 import { isToolAvailable } from '../../tools/modules/network/toolAvailability';
+import { isSkillHiddenForRun } from '../../tools/workbenchToolScope';
 import { createLogger } from '../infra/logger';
 
 interface InsertedLoadClaim {
@@ -123,7 +125,15 @@ export class ToolSearchService {
 
     // 获取所有可搜索的工具元数据
     const allTools = this.getAllSearchableTools(includeMCP)
-      .filter((meta) => !deniedToolNames.has(normalizeToolName(meta.name).toLowerCase()));
+      .filter((meta) => !deniedToolNames.has(normalizeToolName(meta.name).toLowerCase()))
+      .filter((meta) => !(
+        meta.source === 'dynamic'
+        && meta.name.startsWith('skill:')
+        && isSkillHiddenForRun(
+          { name: meta.name.slice('skill:'.length), source: meta.skillSource ?? 'builtin' },
+          { sessionId: options.sessionId, toolScope: options.toolScope },
+        )
+      ));
 
     // 计算匹配分数
     const scored: Array<{ meta: DeferredToolMeta; score: number }> = [];
@@ -358,13 +368,14 @@ export class ToolSearchService {
    * 注册 Skill 元数据
    * Skill 作为虚拟工具注册，便于通过 tool_search 发现
    */
-  registerSkill(name: string, description: string, aliases: string[] = []): void {
+  registerSkill(name: string, description: string, aliases: string[] = [], skillSource?: SkillSource): void {
     const meta: DeferredToolMeta = {
       name: `skill:${name}`,
       shortDescription: description,
       tags: ['planning'],
       aliases: Array.from(new Set([name, ...aliases])),
       source: 'dynamic',
+      ...(skillSource ? { skillSource } : {}),
     };
     this.skillsMeta.set(meta.name, meta);
     logger.debug(`Registered skill: ${name}`);
@@ -373,9 +384,9 @@ export class ToolSearchService {
   /**
    * 批量注册 Skills
    */
-  registerSkills(skills: Array<{ name: string; description: string; aliases?: string[] }>): void {
+  registerSkills(skills: Array<{ name: string; description: string; aliases?: string[]; source?: SkillSource }>): void {
     for (const skill of skills) {
-      this.registerSkill(skill.name, skill.description, skill.aliases);
+      this.registerSkill(skill.name, skill.description, skill.aliases, skill.source);
     }
     logger.info(`Registered ${skills.length} skills`);
   }

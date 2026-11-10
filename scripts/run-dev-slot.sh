@@ -13,6 +13,7 @@
 #   bash scripts/run-dev-slot.sh [N] --open-only # 不构建，只拉起已装的槽 N
 #   bash scripts/run-dev-slot.sh [N] --background # 启动时尽量不抢前台
 #   bash scripts/run-dev-slot.sh [N] --dry-run    # 只打印将执行的启动命令
+#   bash scripts/run-dev-slot.sh [N] --fresh-user # 使用独立的新用户目录，退出后手动清理
 #   NEO_SLOT_BACKGROUND=1 bash scripts/run-dev-slot.sh [N] # 等价于 --background
 #
 # Verification limits under --background (expected, not measured):
@@ -39,13 +40,15 @@ SLOT="1"
 OPEN_ONLY=0
 BACKGROUND=0
 DRY_RUN=0
+FRESH_USER=0
 for arg in "$@"; do
   case "$arg" in
     --open-only) OPEN_ONLY=1 ;;
     --background) BACKGROUND=1 ;;
     --dry-run) DRY_RUN=1 ;;
+    --fresh-user) FRESH_USER=1 ;;
     [1-9]) SLOT="$arg" ;;
-    *) echo "Usage: bash scripts/run-dev-slot.sh [NEO_SLOT 1-9] [--open-only] [--background] [--dry-run]" >&2; exit 1 ;;
+    *) echo "Usage: bash scripts/run-dev-slot.sh [NEO_SLOT 1-9] [--open-only] [--background] [--dry-run] [--fresh-user]" >&2; exit 1 ;;
   esac
 done
 
@@ -62,6 +65,35 @@ app_name_for_slot() {
     printf 'Agent Neo Dev %s' "$1"
   fi
 }
+
+FRESH_DIR=""
+if [ "$FRESH_USER" = "1" ]; then
+  APP_NAME="$(app_name_for_slot "$SLOT")"
+  if pgrep -f "/Applications/$APP_NAME.app/Contents/MacOS/" >/dev/null; then
+    echo "Error: slot $SLOT ($APP_NAME) already running; quit it first" >&2
+    exit 1
+  fi
+  # Resolve existing ancestors too, so symlinks and ".." cannot bypass the guard.
+  FRESH_ROOT="$(node -e '
+    const fs = require("fs");
+    const path = require("path");
+    function resolveRoot(value) {
+      const absolute = path.resolve(value);
+      if (fs.existsSync(absolute)) return fs.realpathSync(absolute);
+      return path.join(resolveRoot(path.dirname(absolute)), path.basename(absolute));
+    }
+    const requested = process.env.NEO_FRESH_ROOT || "/tmp";
+    const forbidden = path.join(path.resolve(process.env.HOME), ".code-agent");
+    const root = resolveRoot(requested);
+    if (path.resolve(requested).startsWith(forbidden) ||
+        root.startsWith(resolveRoot(forbidden))) {
+      console.error("Error: NEO_FRESH_ROOT must be outside the user data directory");
+      process.exit(1);
+    }
+    process.stdout.write(path.resolve(requested));
+  ')"
+  FRESH_DIR="$FRESH_ROOT/neo-fresh-slot${SLOT}-$(date +%Y%m%d-%H%M%S)"
+fi
 
 if [ "$OPEN_ONLY" = "0" ] && [ "$DRY_RUN" = "0" ]; then
   cd "$PROJECT_ROOT"
@@ -96,6 +128,9 @@ fi
 
 APP_PATH="/Applications/$APP_NAME.app"
 LAUNCH=(open)
+if [ "$FRESH_USER" = "1" ]; then
+  LAUNCH+=(--env "CODE_AGENT_DATA_DIR=$FRESH_DIR")
+fi
 if [ "$BACKGROUND" = "1" ]; then
   LAUNCH+=(--env NEO_VERIFY_NO_FOREGROUND=1 -g -j)
 fi
@@ -106,6 +141,7 @@ print_launch_command() {
   printf '%s' "${LAUNCH[0]}"
   for arg in "${LAUNCH[@]:1}"; do
     case "$arg" in
+      CODE_AGENT_DATA_DIR=*) printf ' CODE_AGENT_DATA_DIR="%s"' "${arg#CODE_AGENT_DATA_DIR=}" ;;
       NEO_VERIFY_NO_FOREGROUND=1) printf ' %s' "$arg" ;;
       -*) printf ' %s' "$arg" ;;
       *) printf ' "%s"' "$arg" ;;
@@ -113,11 +149,24 @@ print_launch_command() {
   done
 }
 
+print_cleanup_command() {
+  if [ "$FRESH_USER" = "1" ]; then
+    printf '[run-dev-slot] cleanup: rm -rf "%s"\n' "$FRESH_DIR"
+  fi
+}
+
 if [ "$DRY_RUN" = "1" ]; then
   printf '[run-dev-slot] would run: '
   print_launch_command
   printf '\n'
+  print_cleanup_command
   exit 0
+fi
+
+if [ "$FRESH_USER" = "1" ]; then
+  mkdir -p "$FRESH_ROOT"
+  # No -p: a same-second collision must fail rather than reuse populated data.
+  mkdir "$FRESH_DIR"
 fi
 
 echo "[run-dev-slot] 启动 $APP_PATH"
@@ -132,3 +181,5 @@ fi
 echo "[run-dev-slot] 已启动。判定跑在新包上："
 echo "  curl -s http://127.0.0.1:${WEB_PORT}/ | grep -oE 'assets/index-[^\"]*\\.js'"
 echo "  与 app 内 dist/renderer/index.html 引用一致才算。"
+
+print_cleanup_command

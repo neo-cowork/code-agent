@@ -71,6 +71,46 @@ describe('SidebarCapabilityZone', () => {
     expect(automation.textContent).not.toMatch(/\d{2}:\d{2}/);
     expect(automation.textContent).not.toContain('英语单词');
   });
+  it('任务时区不同于本机时，侧栏悬浮提示按任务时区显示并标出时区名', async () => {
+    const initialTz = process.env.TZ;
+    const initialLanguage = useAppStore.getState().language;
+    process.env.TZ = 'America/Los_Angeles';
+    useAppStore.setState({ language: 'zh' });
+    try {
+      listJobs.mockResolvedValue([makeJob({
+        nextRunAt: Date.parse('2030-01-01T07:00:00Z'),
+        schedule: { type: 'cron', expression: '0 15 * * 1-5', timezone: 'Asia/Shanghai' },
+      })]);
+      getStats.mockResolvedValue(makeStats(0));
+      render(<SidebarCapabilityZone />);
+      await waitFor(() => expect(screen.getByTestId('sidebar-capability-automation').getAttribute('title'))
+        .toBe('下次 1/1 15:00（中国标准时间） · 英语单词'));
+    } finally {
+      if (initialTz === undefined) delete process.env.TZ;
+      else process.env.TZ = initialTz;
+      useAppStore.setState({ language: initialLanguage });
+    }
+  });
+  it('任务时区与本机相同时，侧栏悬浮提示保持原有短格式', async () => {
+    const initialTz = process.env.TZ;
+    const initialLanguage = useAppStore.getState().language;
+    process.env.TZ = 'America/Los_Angeles';
+    useAppStore.setState({ language: 'zh' });
+    try {
+      listJobs.mockResolvedValue([makeJob({
+        nextRunAt: Date.parse('2030-01-01T07:00:00Z'),
+        schedule: { type: 'cron', expression: '0 23 * * 1-5', timezone: 'America/Los_Angeles' },
+      })]);
+      getStats.mockResolvedValue(makeStats(0));
+      render(<SidebarCapabilityZone />);
+      await waitFor(() => expect(screen.getByTestId('sidebar-capability-automation').getAttribute('title'))
+        .toBe('下次 12/31 23:00 · 英语单词'));
+    } finally {
+      if (initialTz === undefined) delete process.env.TZ;
+      else process.env.TZ = initialTz;
+      useAppStore.setState({ language: initialLanguage });
+    }
+  });
   it('启用任务数收进悬浮提示，禁用任务不参与计数', async () => {
     listJobs.mockResolvedValue([makeJob({ id: 'enabled', nextRunAt: undefined }), makeJob({ id: 'disabled', enabled: false, nextRunAt: undefined })]); getStats.mockResolvedValue(makeStats(0)); render(<SidebarCapabilityZone />);
     await waitFor(() => expect(screen.getByTestId('sidebar-capability-automation').getAttribute('title')).toBe('1 个任务'));
@@ -109,7 +149,7 @@ describe('SidebarCapabilityZone', () => {
 
     useAppStore.setState({ language: 'en' });
     rerender(<SidebarCapabilityZone />);
-    expect(automation.getAttribute('title')).toContain('[Maintenance] Light Memory consolidation');
+    expect(automation.getAttribute('title')).toContain('Memory cleanup');
     useAppStore.setState({ language: 'zh' });
   });
 });

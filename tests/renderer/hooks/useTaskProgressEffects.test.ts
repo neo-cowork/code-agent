@@ -77,6 +77,7 @@ function createHarness(overrides: Partial<TaskProgressState> = {}) {
   const deps: TaskProgressEventDeps = {
     debug: () => {},
     getCurrentSessionId: () => state.currentSessionId,
+    isWindowAway: () => false,
     markSessionUnread: (sessionId) => {
       state.unreadSessionIds.push(sessionId);
     },

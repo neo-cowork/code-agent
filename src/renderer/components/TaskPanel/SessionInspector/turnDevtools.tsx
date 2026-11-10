@@ -11,6 +11,7 @@
 
 import React from 'react';
 import { useI18n } from '../../../hooks/useI18n';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import { fill } from './format';
 import {
   formatTokenCount,
@@ -66,7 +67,7 @@ function ManifestView({ manifest }: { manifest: RequestManifestView }) {
       </div>
       <div className="pt-1 text-[10px] text-zinc-600">
         {fill(fields.messageList, { count: String(manifest.messageRefs.length) })}
-        {manifest.compactionReplacementCount > 0 && ` · ${fill(fields.compaction, { count: String(manifest.compactionReplacementCount) })}`}
+        {manifest.compactionReplacementCount > 0 && ` · ${interpolatePlural(fields.compaction, manifest.compactionReplacementCount)}`}
       </div>
       <div className="space-y-0.5" data-testid="inspector-manifest-refs">
         {manifest.messageRefs.map((ref, index) => (

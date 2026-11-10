@@ -40,6 +40,7 @@ import {
 import { createHealthRouter } from './routes/health';
 import { createQuitGuardRouter } from './routes/quitGuard';
 import { getCronService } from '../host/cron/cronService';
+import { getConfigService } from '../host/services/core/configService';
 import { isDurableRunGateOpen } from './routes/agentDurableRouteLifecycle';
 import { createSettingsRouter } from './routes/settings';
 import { createExtractRouter } from './routes/extract';
@@ -187,6 +188,10 @@ async function readQuitGuardSnapshot(): Promise<{ activeRuns: number; armedSched
   return { activeRuns, armedSchedules: countArmedSchedules() };
 }
 
+function readQuitGuardLanguage(): 'zh' | 'en' {
+  return getConfigService().getSettings().ui.language === 'en' ? 'en' : 'zh';
+}
+
 /**
  * 获取 Supabase client + user_id（用于 Web 模式云端持久化）
  */
@@ -264,6 +269,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
   // ── Quit guard：鉴权后的在跑任务 / 已启用定时任务计数 ───────────────
   app.use('/api', createQuitGuardRouter({
     getSnapshot: readQuitGuardSnapshot,
+    getLanguage: readQuitGuardLanguage,
   }));
 
   // ── File upload ─────────────────────────────────────────────────────
@@ -747,6 +753,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
     getSupabaseForSession,
     getDurableRunReadService: () => getDurableRunReadService(),
     getTraceReadService: () => traceReadService,
+    hasActiveRun: (sessionId) => runRegistry.hasSession(sessionId),
   }));
 
   // ── Settings (extracted to routes/settings.ts) ─────────────────────

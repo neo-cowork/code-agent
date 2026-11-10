@@ -1,0 +1,119 @@
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { PROD_BUNDLE_ID, devSlotBundleId } from '../../../../src/shared/devSlot';
+
+const loggerMock = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+}));
+
+vi.mock('../../../../src/host/services/infra/logger', () => ({
+  createLogger: () => loggerMock,
+}));
+
+describe('fresh user channel gate', () => {
+  const tempDirs: string[] = [];
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.clearAllMocks();
+    for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  function setActiveEnv(dataDir: string): void {
+    vi.stubEnv('CODE_AGENT_FRESH_USER', 'fresh-test');
+    vi.stubEnv('CODE_AGENT_BUNDLE_ID', devSlotBundleId(1));
+    vi.stubEnv('CODE_AGENT_DATA_DIR', dataDir);
+  }
+
+  it('activates only for a valid name, dev bundle, and explicit non-slot data dir', async () => {
+    const dataDir = mkdtempSync(path.join(os.tmpdir(), 'fresh-user-channel-'));
+    tempDirs.push(dataDir);
+    setActiveEnv(dataDir);
+
+    const { getFreshUserChannelName } = await import('../../../../src/host/services/core/freshUserChannel');
+
+    expect(getFreshUserChannelName()).toBe('fresh-test');
+    expect(loggerMock.info).toHaveBeenCalledWith('Fresh-user gate active', {
+      name: 'fresh-test',
+      bundleId: devSlotBundleId(1),
+    });
+  });
+
+  it.each([
+    ['production bundle', PROD_BUNDLE_ID, 'not dev bundle'],
+    ['unset bundle', undefined, 'not dev bundle'],
+    ['developer bundle suffix', `${PROD_BUNDLE_ID}.developer`, 'not dev bundle'],
+    ['zero-padded dev suffix', `${PROD_BUNDLE_ID}.dev02`, 'not dev bundle'],
+  ])('ignores %s', async (_label, bundleId, reason) => {
+    const dataDir = mkdtempSync(path.join(os.tmpdir(), 'fresh-user-channel-'));
+    tempDirs.push(dataDir);
+    vi.stubEnv('CODE_AGENT_FRESH_USER', 'fresh-test');
+    vi.stubEnv('CODE_AGENT_DATA_DIR', dataDir);
+    if (bundleId === undefined) delete process.env.CODE_AGENT_BUNDLE_ID;
+    else vi.stubEnv('CODE_AGENT_BUNDLE_ID', bundleId);
+
+    const { getFreshUserChannelName } = await import('../../../../src/host/services/core/freshUserChannel');
+
+    expect(getFreshUserChannelName()).toBeNull();
+    expect(loggerMock.warn).toHaveBeenCalledWith(`Fresh-user channel ignored: ${reason}`);
+  });
+
+  it.each([
+    ['production id', PROD_BUNDLE_ID],
+    ['unset id', undefined],
+    ['developer suffix', `${PROD_BUNDLE_ID}.developer`],
+    ['zero-padded dev suffix', `${PROD_BUNDLE_ID}.dev02`],
+  ])('leaves cloud pull enabled for %s', async (_label, bundleId) => {
+    const dataDir = mkdtempSync(path.join(os.tmpdir(), 'fresh-user-channel-'));
+    tempDirs.push(dataDir);
+    vi.stubEnv('CODE_AGENT_FRESH_USER', 'fresh-test');
+    vi.stubEnv('CODE_AGENT_DATA_DIR', dataDir);
+    if (bundleId === undefined) delete process.env.CODE_AGENT_BUNDLE_ID;
+    else vi.stubEnv('CODE_AGENT_BUNDLE_ID', bundleId);
+
+    const { isCloudSessionListSkipped } = await import('../../../../src/host/services/infra/cloudSessionListGate');
+
+    expect(isCloudSessionListSkipped()).toBe(false);
+    expect(process.env.CODE_AGENT_DATA_DIR).toBe(dataDir);
+  });
+
+  it('warns for missing data dir, slot dir, and bad name', async () => {
+    const home = mkdtempSync(path.join(os.tmpdir(), 'fresh-user-home-'));
+    tempDirs.push(home);
+    vi.stubEnv('HOME', home);
+    vi.stubEnv('CODE_AGENT_BUNDLE_ID', devSlotBundleId(1));
+    const { getFreshUserChannelName } = await import('../../../../src/host/services/core/freshUserChannel');
+
+    vi.stubEnv('CODE_AGENT_FRESH_USER', 'fresh-test');
+    delete process.env.CODE_AGENT_DATA_DIR;
+    expect(getFreshUserChannelName()).toBeNull();
+    expect(loggerMock.warn).toHaveBeenLastCalledWith('Fresh-user channel ignored: no explicit data dir');
+
+    vi.stubEnv('CODE_AGENT_DATA_DIR', path.join(home, '.code-agent-dev2'));
+    expect(getFreshUserChannelName()).toBeNull();
+    expect(loggerMock.warn).toHaveBeenLastCalledWith('Fresh-user channel ignored: slot dir');
+
+    vi.stubEnv('CODE_AGENT_DATA_DIR', path.join(home, 'fresh-data'));
+    vi.stubEnv('CODE_AGENT_FRESH_USER', 'Bad_Name');
+    expect(getFreshUserChannelName()).toBeNull();
+    expect(loggerMock.warn).toHaveBeenLastCalledWith('Fresh-user channel ignored: bad name');
+  });
+
+  it('keeps production files and package scripts free of the fresh-user env', () => {
+    const repoRoot = path.resolve(import.meta.dirname, '../../../..');
+    const releaseWorkflow = readFileSync(path.join(repoRoot, '.github/workflows/release.yml'), 'utf8');
+    const tauriConfig = readFileSync(path.join(repoRoot, 'src-tauri/tauri.conf.json'), 'utf8');
+    const packageJson = JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as {
+      scripts?: Record<string, string>;
+    };
+
+    expect(releaseWorkflow).not.toContain('CODE_AGENT_FRESH_USER');
+    expect(tauriConfig).not.toContain('CODE_AGENT_FRESH_USER');
+    for (const [name, command] of Object.entries(packageJson.scripts ?? {})) {
+      expect(command, `package.json script ${name}`).not.toContain('CODE_AGENT_FRESH_USER');
+    }
+  });
+});

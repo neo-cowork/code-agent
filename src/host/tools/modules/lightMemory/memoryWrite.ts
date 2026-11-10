@@ -39,9 +39,14 @@ import {
 import { DIRECTIVE_MEMORY_WRITE_NO_GRANT_ERROR } from '../../../memory/directiveMemoryMessages';
 import {
   writeScopedMemory,
+  readScopedMemory,
   archiveScopedMemory,
   type ScopedMemoryTarget,
 } from '../../../services/roleAssets/roleAssetService';
+
+import { getProjectKey } from '../../../services/roleAssets/roleAssetPaths';
+import { resolveJournalContext } from '../../../memory/memoryJournalActor';
+import { journalScopedMemoryChange } from '../../../memory/scopedMemoryJournal';
 
 const VALID_TYPES = ['directive', 'user', 'feedback', 'project', 'reference', 'skill'] as const;
 type MemoryType = (typeof VALID_TYPES)[number];
@@ -221,8 +226,20 @@ async function executeScopedWrite(
     };
   }
 
+  const before = await readScopedMemory(target, filename);
   // 写入 + 索引维护都在 roleAssetService 内完成（已带 sensitive guard）
   const filePath = await writeScopedMemory(target, { filename, name, description, content });
+  const entryId = target.scope === 'role'
+    ? `role:${target.roleId}:${filename}`
+    : `project:${getProjectKey(target.workspacePath ?? ctx.workingDir)}:${filename}`;
+  try {
+    journalScopedMemoryChange(entryId, before, await fs.readFile(filePath, 'utf-8'), resolveJournalContext(ctx.sessionId, 'unknown'));
+  } catch (error) {
+    ctx.logger.warn('Scoped memory journal append failed (memory write kept)', {
+      entryId,
+      reason: error instanceof Error ? error.message : String(error),
+    });
+  }
 
   const artifact = await createFileArtifact(filePath, schema.name, ctx, {
     kind: 'text',

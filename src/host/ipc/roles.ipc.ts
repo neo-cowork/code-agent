@@ -45,16 +45,19 @@ import {
   loadRoleHistory,
   deleteScopedMemory,
   writeScopedMemory,
+  readScopedMemory,
   resolveRoleProactivityConfig,
   syncCadenceJobs,
   listRoleDrafts,
   confirmRoleDraft,
   rejectRoleDraft,
   getFirstWakeSnapshot,
+  consumeFirstWakeSuggestion,
   retryFirstWake,
   skipFirstWake,
   isSafeRoleId,
   trashUserRole,
+  listTrashedRoles,
   restoreTrashedRole,
 } from '../services/roleAssets';
 import { writeRoleProactivityConfig } from '../services/roleAssets/roleProactivityWrite';
@@ -76,6 +79,13 @@ import { TOOL_ALIASES } from '../services/toolSearch/deferredTools';
 import { getProtocolRegistry } from '../tools/protocolRegistry';
 import { findRecommendedMcpServer } from '../../shared/constants/mcpCatalog';
 import { isManifestBackedAgentEngineKind } from '../../shared/externalEngineManifest';
+import { journalScopedMemoryChange } from '../memory/scopedMemoryJournal';
+
+import { randomUUID } from 'crypto';
+import type { Message } from '../../shared/contract/message';
+import type { SystemEventMessageMetadata } from '../../shared/contract/systemEventRegistry';
+import { getSessionManager } from '../services/infra/sessionManager';
+import { getTaskManager } from '../task/TaskManager';
 
 const logger = createLogger('RolesIPC');
 
@@ -377,6 +387,17 @@ async function handleDetail(roleId: string): Promise<RolePanelDetail> {
         ? normalizeBuiltinDefinition(definition) !== normalizeBuiltinDefinition(builtinFactoryDefinition)
         : undefined)
     : packState?.locallyModified;
+  const lastChanges = new Map<string, { actor: string; timestamp: number }>();
+  try {
+    for (const change of getDatabase().latestMemoryChanges()) {
+      if (change.entryId) lastChanges.set(change.entryId, { actor: change.actor, timestamp: change.timestamp });
+    }
+  } catch (error) {
+    logger.warn('Role detail memory journal lookup failed (detail kept)', {
+      roleId,
+      reason: error instanceof Error ? error.message : String(error),
+    });
+  }
   return {
     roleId,
     definition,
@@ -387,6 +408,7 @@ async function handleDetail(roleId: string): Promise<RolePanelDetail> {
       description: m.description,
       content: m.content,
       updatedAt: m.updatedAt,
+      lastChange: lastChanges.get(`role:${roleId}:${m.filename}`),
     })),
     // 与 lastWork 同一边界收口：详情页「记录」tab 也不吐内部产物标签与文件系统路径
     history: history.map((line) => sanitizeLastWork(line)).filter(Boolean),
@@ -524,10 +546,19 @@ const rolesHandlers: RawDomainRouteHandlers<RolesDomainRequest, void> = {
         error: { code: 'INVALID_ARGS', message: 'roleId, filename, name, description, content are required' },
       };
     }
+    const previousText = await readScopedMemory({ scope: 'role', roleId }, filename);
     const filePath = await writeScopedMemory(
       { scope: 'role', roleId },
       { filename, name, description, content },
     );
+    try {
+      journalScopedMemoryChange(`role:${roleId}:${path.basename(filePath)}`, previousText, await fs.readFile(filePath, 'utf-8'), { actor: 'user_manual' });
+    } catch (error) {
+      logger.warn('Manual role memory journal append failed (memory write kept)', {
+        roleId, filename,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
     return { success: true, data: { path: filePath } };
   },
   exportMemories: async (_ctx, payload) => {
@@ -715,6 +746,7 @@ const rolesHandlers: RawDomainRouteHandlers<RolesDomainRequest, void> = {
     });
     return { success: true, data: { roleId: result.roleId } };
   },
+  listDeletedRoles: async (_ctx, _payload) => ({ success: true, data: await listTrashedRoles() }),
   // --- 对话式建角色：草稿队列（role-creation-flow） ---
   listDrafts: async (_ctx, _payload) => {
     return { success: true, data: await listRoleDrafts() };
@@ -727,6 +759,32 @@ const rolesHandlers: RawDomainRouteHandlers<RolesDomainRequest, void> = {
     const result = await confirmRoleDraft(draftId);
     if (!result.success) {
       return { success: false, error: { code: 'CONFIRM_FAILED', message: result.error ?? 'confirm failed' } };
+    }
+    if (result.sessionId && result.roleId) {
+      try {
+        const change = result.change;
+        const message: Message = {
+          id: randomUUID(),
+          role: 'system',
+          content: 'Expert updated.',
+          timestamp: Date.now(),
+          metadata: {
+            roleEditReceipt: {
+              roleId: result.roleId,
+              addedTools: change?.addedTools ?? [],
+              removedTools: change?.removedTools ?? [],
+              descriptionChanged: change?.descriptionChanged ?? false,
+              promptChanged: Boolean(change && (change.promptLinesAdded || change.promptLinesRemoved)),
+              diffAvailable: change != null,
+            },
+          } satisfies SystemEventMessageMetadata,
+        };
+        await getSessionManager().addMessageToSession(result.sessionId, message);
+        getTaskManager().emitAgentEventForSession(result.sessionId, { type: 'message', data: message });
+        logger.info('Role edit receipt recorded by confirmDraft', { sessionId: result.sessionId, roleId: result.roleId, messageId: message.id });
+      } catch (error) {
+        logger.warn('Role edit receipt failed (confirm unaffected)', { sessionId: result.sessionId, reason: String(error) });
+      }
     }
     return { success: true, data: result };
   },
@@ -806,6 +864,17 @@ const rolesHandlers: RawDomainRouteHandlers<RolesDomainRequest, void> = {
     const result = await skipFirstWake(roleId);
     if (!result.success) {
       return { success: false, error: { code: 'FIRST_WAKE_SKIP_FAILED', message: 'skip failed' } };
+    }
+    return { success: true, data: { success: true } };
+  },
+  firstWakeConsumeSuggestion: async (_ctx, payload) => {
+    const { roleId, title } = (payload ?? {}) as RoleIdPayload & { title?: string };
+    if (!roleId || !isSafeRoleId(roleId) || !title?.trim()) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'a safe roleId and title are required' } };
+    }
+    const result = await consumeFirstWakeSuggestion(roleId, title);
+    if (!result.success) {
+      return { success: false, error: { code: 'FIRST_WAKE_CONSUME_FAILED', message: 'consume failed' } };
     }
     return { success: true, data: { success: true } };
   },

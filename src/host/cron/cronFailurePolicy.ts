@@ -9,6 +9,7 @@
 //      最终停用通知不受冷却约束（用户必须知道任务被停了）。
 // ============================================================================
 
+import { buildScheduledSessionTitle } from '../../shared/i18n/cronNotificationTitle';
 import { CRON_GUARDRAILS } from '../../shared/constants';
 import type { AgentAction, CronJobDefinition, CronJobExecution } from '../../shared/contract/cron';
 import { normalizeErrorMessage } from '../lightMemory/failureJournal';
@@ -140,6 +141,10 @@ export class CronFailureNoticeGate {
 // 通知文案与出口
 // ----------------------------------------------------------------------------
 
+function cronNotificationLocale(): 'zh' | 'en' {
+  return getConfigService().getSettings().ui?.language === 'en' ? 'en' : 'zh';
+}
+
 function truncateForNotice(message: string, maxChars = 200): string {
   return message.length > maxChars ? `${message.slice(0, maxChars)}…` : message;
 }
@@ -214,7 +219,7 @@ export function notifyCronJobDisabled(
     notificationService.notifyTaskComplete(
       {
         sessionId: execution.sessionId ?? '',
-        sessionTitle: `[定时] ${definition.name}`,
+        sessionTitle: buildScheduledSessionTitle(cronNotificationLocale(), definition.name),
         // 停用通知必须带 jobId：无会话执行（如云端 run）的点击落 Cron Center 选中该任务，
         // 那里才有「重新启用」；不带 jobId 时 renderer 的点击是无操作的 dismiss。
         jobId: definition.id,
@@ -297,7 +302,7 @@ export function notifyCronAgentExecution(
     notificationService.notifyTaskComplete(
       {
         sessionId: execution.sessionId ?? '',
-        sessionTitle: `[定时] ${definition.name}`,
+        sessionTitle: buildScheduledSessionTitle(cronNotificationLocale(), definition.name),
         jobId: definition.id,
         summary: succeeded
           ? permissionDenied

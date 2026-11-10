@@ -1,3 +1,4 @@
+import type { RunCancelReason } from '../runtime/runContext';
 import { cancelTimeWakesOnUserReturn } from '../services/wake/userReturn';
 // ============================================================================
 // Agent Orchestrator - Main controller for the AI agent
@@ -15,6 +16,7 @@ import type {
 import type { AgentRunOptions, ResearchUserSettings } from '../research/types';
 import { CHANNEL_REPLY_STYLE_INSTRUCTION } from '../channels/channelReplyBrevity';
 import { shouldDeliverAgentEvent } from '../protocol/events/eventFilter';
+import { isTerminalAgentError } from '../../shared/utils/agentErrorClassification';
 import { AgentLoop } from './agentLoop';
 import { buildGoalContract } from './goalModeController';
 import { SYSTEM_PROMPT } from '../prompts/builder';
@@ -241,7 +243,7 @@ export class AgentOrchestrator {
       sessionId,
       options?.modelSpec,
     );
-    if (sessionId) {
+    if (sessionId && options?.runRegistration !== 'auxiliary') {
       updateContextHealthSnapshot(sessionId, modelConfig.model, this.messageHistory.getMessagesForRun());
     }
 
@@ -256,7 +258,9 @@ export class AgentOrchestrator {
     }
     const telemetryCollector = getTelemetryCollector();
     const sessionAwareOnEvent = (event: AgentEvent) => {
-      if (shouldDeliverAgentEvent(event, options?.eventFilter)) {
+      if (options?.terminalErrorSink && event.type === 'error' && isTerminalAgentError(event.data)) {
+        options.terminalErrorSink(event.data);
+      } else if (shouldDeliverAgentEvent(event, options?.eventFilter)) {
         this.onEvent({ ...event, sessionId } as AgentEvent & { sessionId?: string });
       }
       if (sessionId) {
@@ -314,7 +318,7 @@ export class AgentOrchestrator {
     queuePendingSteerMessagesOrWarn(sessionId, asQueueable, logContext, logger);
   }
 
-  async cancel(reason?: 'user' | 'session-switch' | 'idle-reaped'): Promise<void> {
+  async cancel(reason?: RunCancelReason): Promise<void> {
     logger.info('Cancel requested', { reason });
     const sessionId = this.sessionId ?? getSessionManager().getCurrentSessionId();
 
@@ -340,7 +344,7 @@ export class AgentOrchestrator {
         this.agentLoop = null;
         this.onEvent({
           type: 'agent_cancelled',
-          data: reason === 'idle-reaped' ? { reason: 'idle_reaped' } : null,
+          data: reason === 'client-disconnect' ? { reason: 'client_disconnect' } : reason === 'idle-reaped' ? { reason: 'idle_reaped' } : null,
           sessionId,
         } as AgentEvent & { sessionId?: string });
       }
@@ -357,7 +361,7 @@ export class AgentOrchestrator {
 
     this.onEvent({
       type: 'agent_cancelled',
-      data: reason === 'idle-reaped' ? { reason: 'idle_reaped' } : null,
+      data: reason === 'client-disconnect' ? { reason: 'client_disconnect' } : reason === 'idle-reaped' ? { reason: 'idle_reaped' } : null,
       sessionId,
     } as AgentEvent & { sessionId?: string });
   }
@@ -654,6 +658,9 @@ export class AgentOrchestrator {
       const executionContent = this.applyTurnSystemContext(content, options, sessionId);
 
       if (options?.disableAutoAgent) {
+        if (requirements.needsAutoAgent) {
+          logger.info('[AutoAgentRouting] skipped: disableAutoAgent option set by system-generated turn (e.g. background notification wake)', { sessionId });
+        }
         requirements.needsAutoAgent = false;
         requirements.executionStrategy = 'sequential';
       }
@@ -978,6 +985,7 @@ export class AgentOrchestrator {
       agentId: routingResolution?.agent?.id ?? 'default',
       agentName: routingResolution?.agent?.name ?? 'default',
       requestedAgentId,
+      publishContextHealth: options?.runRegistration !== 'auxiliary',
       memoryMode: sessionMemoryMode,
       suppressedMemoryEntryIds,
       workingDirectory: runWorkingDirectory,

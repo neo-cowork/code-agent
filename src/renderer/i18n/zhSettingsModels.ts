@@ -700,7 +700,7 @@ export const zhSettingsModels = {
       },
       diagnostics: {
         title: '运行状态与本地桥接',
-        description: '这里用于排查连接、桥接和本地 connector 状态，默认收起。',
+        description: '这里用于排查连接、桥接和本机连接器状态，默认收起。',
         overview: '总览',
         connectedServers: '已连接服务器',
         availableTools: '可用工具',

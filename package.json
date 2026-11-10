@@ -22,6 +22,7 @@
     "lint": "eslint src --ext .ts,.tsx --no-config-lookup --config eslint.config.js",
     "lint:knip-dependency-gate": "node scripts/knip-dependency-gate.mjs",
     "lint:eslint-ratchet": "node scripts/eslint-ratchet.mjs",
+    "lint:i18n-plural-ratchet": "node scripts/i18n-plural-ratchet.mjs",
     "lint:host-chinese-error-ratchet": "node scripts/host-chinese-error-ratchet.mjs",
     "lint:host-esm-cjs": "node scripts/ci/host-esm-cjs-lint.mjs",
     "lint:shared-host-boundary": "node scripts/ci/shared-host-boundary.mjs",

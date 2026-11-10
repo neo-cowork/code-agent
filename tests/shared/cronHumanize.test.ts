@@ -10,6 +10,48 @@ import {
 } from '../../src/shared/cronHumanize';
 
 describe('humanize 覆盖面（经 formatCronExpressionLabel 验证）', () => {
+  it('6 段秒位为 0 时沿用 5 段人话模板（zh/en）', () => {
+    const cases = [
+      ['0 0 4 * * 1', '每周一 04:00', 'Weekly on Monday at 04:00'],
+      ['0 30 8 * * *', '每天 08:30', 'Daily at 08:30'],
+      ['0 0 15 * * 1-5', '工作日 15:00', 'Weekdays at 15:00'],
+      ['0 0 9 1 * *', '每月 1 号 09:00', 'Monthly on day 1 at 09:00'],
+    ] as const;
+
+    for (const [expression, zh, en] of cases) {
+      expect(formatCronExpressionLabel(expression, undefined, 'zh')).toBe(zh);
+      expect(formatCronExpressionLabel(expression, undefined, 'en')).toBe(en);
+    }
+  });
+
+  it('6 段秒位非字面量 0 时保留原始回退（zh/en）', () => {
+    const cases = [
+      ['*/10 * * * * *', '自定义时间 · */10 * * * * *', 'Custom schedule · */10 * * * * *'],
+      ['30 0 4 * * 1', '自定义时间 · 30 0 4 * * 1', 'Custom schedule · 30 0 4 * * 1'],
+    ] as const;
+
+    for (const [expression, zh, en] of cases) {
+      expect(formatCronExpressionLabel(expression, undefined, 'zh')).toBe(zh);
+      expect(formatCronExpressionLabel(expression, undefined, 'en')).toBe(en);
+    }
+  });
+
+  it('5 段既有文案保持逐字不变', () => {
+    const cases = [
+      ['30 8 * * *', '每天 08:30', 'Daily at 08:30'],
+      ['0 15 * * 1-5', '工作日 15:00', 'Weekdays at 15:00'],
+      ['30 17 * * 4', '每周四 17:30', 'Weekly on Thursday at 17:30'],
+      ['0 9 1 * *', '每月 1 号 09:00', 'Monthly on day 1 at 09:00'],
+      ['*/15 * * * *', '每 15 分钟', 'Every 15 minutes'],
+      ['0 */2 * * *', '每 2 小时', 'Every 2 hours'],
+    ] as const;
+
+    for (const [expression, zh, en] of cases) {
+      expect(formatCronExpressionLabel(expression, undefined, 'zh')).toBe(zh);
+      expect(formatCronExpressionLabel(expression, undefined, 'en')).toBe(en);
+    }
+  });
+
   it('每天定点：30 8 * * *', () => {
     expect(formatCronExpressionLabel('30 8 * * *', undefined, 'zh')).toBe('每天 08:30');
     expect(formatCronExpressionLabel('30 8 * * *', undefined, 'en')).toBe('Daily at 08:30');

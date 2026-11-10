@@ -29,7 +29,7 @@ function showTaskNotification(notification: TaskNotification, t: Translations): 
     toast.success(message);
     return;
   }
-  if (notification.type === 'task_updated') {
+  if (notification.type === 'task_cancelled' || notification.type === 'task_updated') {
     toast.info(message);
     return;
   }
