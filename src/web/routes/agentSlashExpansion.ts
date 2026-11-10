@@ -1,7 +1,20 @@
+import * as path from 'path';
+import { getDefaultWorkDirectory, isLegacyDefaultWorkDirectory } from '../../host/config/configPaths';
+import { isPlannedSessionWorkDirectory } from '../../host/config/sessionWorkDirectory';
 import { getPromptCommandService } from '../../host/services/commands/promptCommandService';
 import { createLogger } from '../../host/services/infra/logger';
 
 const logger = createLogger('AgentSlashExpansion');
+
+const INIT_MEMORY_NO_FOLDER_PROMPT = 'Call no tools. Reply with exactly one plain sentence in the user\'s language saying that no folder has been chosen yet and directing them to the sidebar project menu item "Select working directory" (Chinese label: "选择工作目录"), then asking them to send /init-memory again.';
+
+function isSystemAssignedWorkingDirectory(workingDirectory?: string): boolean {
+  if (!workingDirectory?.trim()) return false;
+  const resolved = path.resolve(workingDirectory.trim());
+  return resolved === path.resolve(getDefaultWorkDirectory())
+    || isLegacyDefaultWorkDirectory(resolved)
+    || isPlannedSessionWorkDirectory(resolved);
+}
 
 /**
  * 桌面主链 /api/run 的 "/name args" 模型面展开（appService.sendMessage 的对应物）。
@@ -17,6 +30,10 @@ export async function expandSlashPromptForModel(
   try {
     const resolution = await getPromptCommandService().resolveInvocation(visiblePrompt, workingDirectory);
     if (!resolution) return visiblePrompt;
+    if (resolution.name === 'init-memory' && isSystemAssignedWorkingDirectory(workingDirectory)) {
+      logger.info('Skipped /init-memory expansion: working directory not chosen by user');
+      return INIT_MEMORY_NO_FOLDER_PROMPT;
+    }
     logger.info('Expanded prompt command', { name: resolution.name, source: resolution.source });
     return resolution.prompt;
   } catch (err) {

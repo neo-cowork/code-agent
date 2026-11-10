@@ -18,13 +18,19 @@ type ServerConnectionStatus = 'ok' | 'recovering' | 'unavailable';
 
 interface ServerConnectionState {
   status: ServerConnectionStatus;
+  retryState: 'idle' | 'checking' | 'failed';
+  setRetryState: (retryState: ServerConnectionState['retryState']) => void;
   setStatus: (status: ServerConnectionStatus) => void;
 }
 
 export const useServerConnectionStore = create<ServerConnectionState>()((set) => ({
   status: 'ok',
+  retryState: 'idle',
+  setRetryState: (retryState) => set({ retryState }),
   setStatus: (status) =>
-    set((state) => (state.status === status ? state : { status })),
+    set((state) => (status === 'ok'
+      ? { status, retryState: 'idle' }
+      : state.status === status ? state : { status })),
 }));
 
 /** 非组件调用方（httpTransport）读当前状态的入口。 */
