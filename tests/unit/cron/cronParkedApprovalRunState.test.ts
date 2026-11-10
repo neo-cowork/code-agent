@@ -85,7 +85,7 @@ const SCHEMA = `
     id TEXT PRIMARY KEY, job_id TEXT NOT NULL, session_id TEXT, status TEXT NOT NULL,
     scheduled_at INTEGER NOT NULL, started_at INTEGER, completed_at INTEGER, duration INTEGER,
     result TEXT, error TEXT, retry_attempt INTEGER NOT NULL DEFAULT 0, exit_code INTEGER,
-    trigger_json TEXT, cost_usd REAL,
+    trigger_json TEXT, cost_usd REAL, push_note TEXT,
     FOREIGN KEY (job_id) REFERENCES cron_jobs(id) ON DELETE CASCADE
   );
 `;
