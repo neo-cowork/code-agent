@@ -417,11 +417,23 @@ describe('成员对话页', () => {
     useMemberViewStore.setState({ viewingMemberId: 'researcher' });
   }
 
+  async function renderRunningMember(): Promise<void> {
+    // 账本详情决定输入条的 runId；先刷完挂载时的异步加载，避免补话后 scope
+    // 才从 undefined 切到 run-1，按设计清掉刚收到的回执。
+    await act(async () => {
+      render(<MemberConversationView sessionId="session-1" />);
+    });
+    expect(invokeMock).toHaveBeenCalledWith(
+      IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL,
+      { sessionId: 'session-1', runId: 'run-1' },
+    );
+  }
+
   it('运行中的成员：Enter 补话走 sendMemberInput（supplement），回执「已送到」，草稿清空，主对话落一条记录', async () => {
     runningMember();
     invokeDomainMock.mockResolvedValue({ outcome: 'delivered', effect: 'next_step', persisted: true });
 
-    render(<MemberConversationView sessionId="session-1" />);
+    await renderRunningMember();
     const input = await screen.findByTestId('member-input') as HTMLTextAreaElement;
     expect(input.placeholder).toBe(zh.expert.memberBar.inputPlaceholder.replace('{name}', '行业研究员'));
     fireEvent.change(input, { target: { value: '顺便把页码加上' } });
@@ -441,7 +453,7 @@ describe('成员对话页', () => {
     runningMember();
     invokeDomainMock.mockResolvedValue({ outcome: 'delivered', effect: 'next_step', persisted: true });
 
-    render(<MemberConversationView sessionId="session-1" />);
+    await renderRunningMember();
     const input = await screen.findByTestId('member-input');
     fireEvent.change(input, { target: { value: '换成按季度汇总' } });
     fireEvent.keyDown(input, { key: 'Enter', metaKey: true });
@@ -459,7 +471,7 @@ describe('成员对话页', () => {
       engineLabel: 'Codex CLI',
     });
 
-    render(<MemberConversationView sessionId="session-1" />);
+    await renderRunningMember();
     // 账本详情回来后输入条的 runId 才稳定。先打字的话，scope 切换会把回执清掉。
     await waitFor(() => {
       expect(invokeMock).toHaveBeenCalledWith(
@@ -482,7 +494,7 @@ describe('成员对话页', () => {
     runningMember();
     invokeDomainMock.mockResolvedValue({ outcome: 'rejected', reason: 'finished' });
 
-    render(<MemberConversationView sessionId="session-1" />);
+    await renderRunningMember();
     const input = await screen.findByTestId('member-input') as HTMLTextAreaElement;
     fireEvent.change(input, { target: { value: '再补一句' } });
     fireEvent.keyDown(input, { key: 'Enter' });
@@ -497,7 +509,7 @@ describe('成员对话页', () => {
     runningMember();
     invokeDomainMock.mockResolvedValue({ outcome: 'delivered', effect: 'next_step', persisted: false });
 
-    render(<MemberConversationView sessionId="session-1" />);
+    await renderRunningMember();
     const input = await screen.findByTestId('member-input') as HTMLTextAreaElement;
     fireEvent.change(input, { target: { value: '只执行一次' } });
     fireEvent.keyDown(input, { key: 'Enter' });
@@ -523,7 +535,7 @@ describe('成员对话页', () => {
     let resolveOld: ((value: unknown) => void) | undefined;
     invokeDomainMock.mockImplementation(() => new Promise((resolve) => { resolveOld = resolve; }));
 
-    render(<MemberConversationView sessionId="session-1" />);
+    await renderRunningMember();
     const oldInput = await screen.findByTestId('member-input') as HTMLTextAreaElement;
     fireEvent.change(oldInput, { target: { value: 'A draft' } });
     fireEvent.keyDown(oldInput, { key: 'Enter' });
@@ -560,7 +572,7 @@ describe('成员对话页', () => {
   it('顶栏「停掉这位成员」：专家团成员走 swarm:cancel-agent', async () => {
     runningMember();
 
-    render(<MemberConversationView sessionId="session-1" />);
+    await renderRunningMember();
     const stop = await screen.findByTestId('member-view-stop');
     expect(stop.textContent).toContain(zh.expert.memberBar.stopMember);
     fireEvent.click(stop);
@@ -580,11 +592,12 @@ describe('成员对话页', () => {
     useBackgroundTaskStore.setState({ tasks: [task] });
     useSessionStore.setState({ currentSessionId: 'session-1', messages: [] });
     useMemberViewStore.setState({ viewingMemberId: 'task-7' });
-    const domainInvoke = vi.fn().mockResolvedValue(null);
-    (window as unknown as { domainAPI?: unknown }).domainAPI = { invoke: domainInvoke };
     invokeDomainMock.mockImplementation((domain: unknown, action: unknown) => {
       if (domain === IPC_DOMAINS.AGENT && action === 'sendMemberInput') {
         return Promise.resolve({ outcome: 'delivered', effect: 'now', persisted: true });
+      }
+      if (domain === IPC_DOMAINS.TASK && action === 'cancelBackgroundTask') {
+        return Promise.resolve({ cancelled: true });
       }
       return Promise.resolve(null);
     });
@@ -602,8 +615,11 @@ describe('成员对话页', () => {
     expect(useSessionStore.getState().messages).toHaveLength(0);
 
     fireEvent.click(screen.getByTestId('member-view-stop'));
-    await waitFor(() => expect(domainInvoke).toHaveBeenCalledWith(IPC_DOMAINS.TASK, 'cancelBackgroundTask', { taskId: 'task-7' }));
-    (window as unknown as { domainAPI?: unknown }).domainAPI = undefined;
+    await waitFor(() => expect(invokeDomainMock).toHaveBeenCalledWith(
+      IPC_DOMAINS.TASK,
+      'cancelBackgroundTask',
+      { taskId: 'task-7' },
+    ));
   });
 
   it('后台任务排队中送到但记录没写成：清草稿并提示别重发（任务书已经改了，重发会重复追加）', async () => {

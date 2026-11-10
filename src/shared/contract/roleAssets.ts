@@ -67,6 +67,14 @@ export interface RolePanelEntry {
   quickPrompts?: string[];
 }
 
+/** A user-created expert currently held in the 30-day trash window. */
+export interface TrashedRoleEntry {
+  trashId: string;
+  roleId: string;
+  displayName: string;
+  deletedAt: string;
+}
+
 // ----------------------------------------------------------------------------
 // 专家默认资料架（Batch 3 E3，调研文档 §4.1）
 // ----------------------------------------------------------------------------
@@ -94,6 +102,7 @@ export interface RolePanelMemory {
   description: string;
   content: string;
   updatedAt: string;
+  lastChange?: { actor: string; timestamp: number };
 }
 
 /** 详情页反向展示的角色 cron 绑定；编辑仍由自动化面板负责。 */

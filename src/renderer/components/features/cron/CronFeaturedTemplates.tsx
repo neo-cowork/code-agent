@@ -13,6 +13,7 @@ import { useAppStore } from '../../../stores/appStore';
 import { useMcpServerStates } from '../../../hooks/useMcpServerStates';
 import { useI18n } from '../../../hooks/useI18n';
 import { Button } from '../../primitives/Button';
+import { formatCronTimeZoneSuffix } from '../../../utils/formatCronJobTime';
 import {
   FEATURED_CRON_TEMPLATES,
   getMissingTemplateConnectors,
@@ -48,6 +49,7 @@ export const CronFeaturedTemplates: React.FC = () => {
   const { t } = useI18n();
   const cc = t.cronCenter;
   const { jobs, createJob, updateJob } = useCronStore();
+  const language = useAppStore((state) => state.language);
   const openSettingsTab = useAppStore((state) => state.openSettingsTab);
   const mcpServerStates = useMcpServerStates();
   const connectedConnectorIds = useMemo(
@@ -113,6 +115,12 @@ export const CronFeaturedTemplates: React.FC = () => {
           const isPending = pendingId === template.id;
           const connectorStatuses = getTemplateConnectorStatuses(template, connectedConnectorIds);
           const copy = getTemplateDisplayCopy(template, cc.templates);
+          const generated = template.generate({});
+          const scheduleLabel = formatCronTimeZoneSuffix(
+            copy.scheduleLabel,
+            generated.scheduleType === 'cron' ? generated.cronTimezone : undefined,
+            language,
+          );
           const cardStateClassName = isPending || isEnabled
             ? 'border-badge-success/30 bg-emerald-500/5'
             : 'border-zinc-700/80 bg-zinc-900/80 hover:border-badge-warning/50 hover:bg-zinc-900';
@@ -145,7 +153,7 @@ export const CronFeaturedTemplates: React.FC = () => {
                   <span className="block text-sm font-medium text-zinc-100">{copy.name}</span>
                   <span className="mt-1 block text-xs text-zinc-400">{copy.description}</span>
                   <span className="mt-1.5 block text-[11px] text-badge-warning/90">
-                    {copy.scheduleLabel}
+                    {scheduleLabel}
                   </span>
                 </span>
                 <Button

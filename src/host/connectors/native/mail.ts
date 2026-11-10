@@ -4,7 +4,9 @@
 
 import fs from 'fs';
 import type { Connector, ConnectorExecutionResult, ConnectorStatus } from '../base';
+import { createLogger } from '../../services/infra/logger';
 import {
+  appleScriptFailureLogDetail,
   describeAppleScriptFailure,
   escapeAppleScriptString,
   isAppleScriptFailure,
@@ -12,6 +14,8 @@ import {
   runAppleScript,
   sharedAppleScriptHandlers,
 } from './osascript';
+
+const logger = createLogger('NativeMail', { lane: 'mcp' });
 
 interface MailAccountItem {
   name: string;
@@ -158,6 +162,206 @@ function parseAttachmentNames(value: string): string[] {
     .split(/\s*;\s*/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+const MAIL_BODY_PLACEHOLDER_PATTERN = /(?:\uFFFC|\u200B|\u200C|\u200D|\u2060|\uFEFF)/g;
+const MAX_EXTRACTED_MAIL_BODY_LENGTH = 50_000;
+const EMPTY_MAIL_BODY_NOTICE = '邮件正文是图片/附件，未能提取出文本。';
+
+function stripMailBodyPlaceholders(value: string): string {
+  return value.replace(MAIL_BODY_PLACEHOLDER_PATTERN, '');
+}
+
+function hasVisibleMailBodyText(value: string): boolean {
+  return stripMailBodyPlaceholders(value).trim().length > 0;
+}
+
+interface MimePart {
+  headers: Record<string, string>;
+  body: string;
+}
+
+function parseMimePart(raw: string): MimePart {
+  const separator = raw.match(/\r?\n\r?\n/);
+  if (separator?.index === undefined) return { headers: {}, body: raw };
+
+  const headerText = raw.slice(0, separator.index);
+  const headers: Record<string, string> = {};
+  let currentHeader = '';
+  for (const line of headerText.split(/\r?\n/)) {
+    if (/^\s/.test(line) && currentHeader) {
+      headers[currentHeader] = `${headers[currentHeader]} ${line.trim()}`;
+      continue;
+    }
+    const match = line.match(/^([^:\s]+):\s*(.*)$/);
+    if (!match) continue;
+    currentHeader = match[1].toLowerCase();
+    headers[currentHeader] = match[2];
+  }
+
+  return Object.keys(headers).length > 0
+    ? { headers, body: raw.slice(separator.index + separator[0].length) }
+    : { headers: {}, body: raw };
+}
+
+function mimeBoundary(contentType: string): string | undefined {
+  const match = contentType.match(/boundary\s*=\s*(?:"([^"]+)"|([^;\s]+))/i);
+  return match?.[1] || match?.[2];
+}
+
+function collectMimeTextParts(raw: string, parts: MimePart[]): void {
+  const part = parseMimePart(raw);
+  const contentType = part.headers['content-type'] || '';
+  if (/^multipart\//i.test(contentType)) {
+    const boundary = mimeBoundary(contentType);
+    if (!boundary) return;
+    for (const segment of part.body.split(`--${boundary}`)) {
+      const child = segment.replace(/^\r?\n/, '');
+      if (!child || child.startsWith('--')) continue;
+      collectMimeTextParts(child, parts);
+    }
+    return;
+  }
+  if (/^text\/(?:plain|html)\b/i.test(contentType)) parts.push(part);
+}
+
+function mimeCharset(contentType: string): string {
+  const match = contentType.match(/charset\s*=\s*(?:"([^"]+)"|([^;\s]+))/i);
+  const charset = (match?.[1] || match?.[2] || 'utf-8').trim().toLowerCase();
+  return /^(?:gbk|gb2312|gb18030|cp936)$/.test(charset) ? 'gb18030' : charset;
+}
+
+function decodeMimeBytes(bytes: Buffer, charset: string): string {
+  try {
+    return new TextDecoder(charset, { fatal: true, ignoreBOM: true }).decode(bytes);
+  } catch {
+    return '';
+  }
+}
+
+function decodeQuotedPrintable(value: string, charset: string): string {
+  const withoutSoftBreaks = value.replace(/=[\r\n]+/g, '');
+  const bytes: number[] = [];
+  for (let index = 0; index < withoutSoftBreaks.length;) {
+    const encoded = withoutSoftBreaks.slice(index).match(/^=([0-9a-f]{2})/i);
+    if (encoded) {
+      bytes.push(Number.parseInt(encoded[1], 16));
+      index += 3;
+    } else {
+      const character = withoutSoftBreaks[index];
+      bytes.push(...Buffer.from(character));
+      index += 1;
+    }
+  }
+  return decodeMimeBytes(Buffer.from(bytes), charset);
+}
+
+function decodeMimeBody(value: string, transferEncoding: string, charset: string): string {
+  if (/quoted-printable/i.test(transferEncoding)) return decodeQuotedPrintable(value, charset);
+  if (!/base64/i.test(transferEncoding)) return value;
+
+  const compact = value.replace(/\s+/g, '');
+  if (!compact || compact.length % 4 === 1 || !/^[a-z0-9+/]*={0,2}$/i.test(compact)) return '';
+  return decodeMimeBytes(Buffer.from(compact, 'base64'), charset);
+}
+
+function decodeHtmlEntities(value: string): string {
+  const named: Record<string, string> = {
+    amp: '&', apos: "'", gt: '>', lt: '<', nbsp: ' ', quot: '"',
+  };
+  return value.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (entity, name: string) => {
+    const codePoint = name.toLowerCase().startsWith('#x')
+      ? Number.parseInt(name.slice(2), 16)
+      : name.startsWith('#') ? Number.parseInt(name.slice(1), 10) : undefined;
+    if (codePoint !== undefined && Number.isSafeInteger(codePoint) && codePoint >= 0 && codePoint <= 0x10FFFF) {
+      return String.fromCodePoint(codePoint);
+    }
+    return named[name.toLowerCase()] ?? entity;
+  });
+}
+
+function visibleMimeText(value: string, contentType: string): string {
+  const withoutMarkup = /^text\/html\b/i.test(contentType)
+    ? value
+      .replace(/<\s*(?:script|style)[^>]*>[\s\S]*?<\s*\/\s*(?:script|style)\s*>/gi, ' ')
+      .replace(/<[^>]*>/g, ' ')
+    : value;
+  return stripMailBodyPlaceholders(decodeHtmlEntities(withoutMarkup)).replace(/\s+/g, ' ').trim();
+}
+
+function looksLikeMimeNoise(value: string): boolean {
+  if (/^(?:content-(?:type|transfer-encoding|disposition)|mime-version|boundary):/im.test(value)) return true;
+  const compact = value.replace(/\s+/g, '');
+  if (compact.length < 8 || !/^[a-z0-9+/]+={0,2}$/i.test(compact)) return false;
+  return compact.includes('=') || (compact.length >= 32 && /[0-9+/]/.test(compact));
+}
+
+function extractMailSourceText(source: string): string {
+  const textParts: MimePart[] = [];
+  collectMimeTextParts(source, textParts);
+  const orderedParts = [
+    ...textParts.filter((part) => /^text\/plain\b/i.test(part.headers['content-type'] || '')),
+    ...textParts.filter((part) => /^text\/html\b/i.test(part.headers['content-type'] || '')),
+  ];
+
+  for (const part of orderedParts) {
+    const decoded = decodeMimeBody(
+      part.body,
+      part.headers['content-transfer-encoding'] || '',
+      mimeCharset(part.headers['content-type'] || ''),
+    );
+    const visible = visibleMimeText(decoded, part.headers['content-type'] || '');
+    if (visible && !looksLikeMimeNoise(visible)) return visible.slice(0, MAX_EXTRACTED_MAIL_BODY_LENGTH);
+  }
+
+  const root = parseMimePart(source);
+  if (Object.keys(root.headers).length > 0) return '';
+  const visible = visibleMimeText(source, 'text/plain');
+  return visible && !looksLikeMimeNoise(visible)
+    ? visible.slice(0, MAX_EXTRACTED_MAIL_BODY_LENGTH)
+    : '';
+}
+
+function emptyMailBodyNotice(attachmentCount: number, attachments: string[]): string {
+  if (attachmentCount <= 0 && attachments.length === 0) return EMPTY_MAIL_BODY_NOTICE;
+  const count = attachmentCount > 0 ? attachmentCount : attachments.length;
+  const names = attachments.length > 0 ? ` (${attachments.join(', ')})` : '';
+  return `${EMPTY_MAIL_BODY_NOTICE} 附件：${count} 个${names}`;
+}
+
+async function readMessageSource(
+  mailboxName: string,
+  accountName: string,
+  messageId: number,
+): Promise<string> {
+  const lines = [
+    ...sharedAppleScriptHandlers(),
+    'tell application "Mail"',
+  ];
+  if (accountName) {
+    lines.push(`set targetMailbox to mailbox "${escapeAppleScriptString(mailboxName)}" of account "${escapeAppleScriptString(accountName)}"`);
+  } else {
+    lines.push(`set targetMailbox to mailbox "${escapeAppleScriptString(mailboxName)}"`);
+  }
+  lines.push(
+    `set msgRef to first message of targetMailbox whose id is ${Math.floor(messageId)}`,
+    'return source of msgRef',
+    'end tell',
+  );
+  try {
+    return await runAppleScript(lines);
+  } catch (error) {
+    logger.warn('Mail source fallback failed', {
+      mailbox: mailboxName,
+      account: accountName,
+      messageId,
+      reason: isAppleScriptFailure(error)
+        ? describeAppleScriptFailure('Mail', error).code
+        : 'unexpected_error',
+      detail: appleScriptFailureLogDetail(error),
+    });
+    return '';
+  }
 }
 
 async function listAccounts(): Promise<MailAccountItem[]> {
@@ -339,6 +543,12 @@ async function readMessage(payload: Record<string, unknown>): Promise<MailMessag
   const [idRaw, subject, sender, receivedRaw, readRaw, content, attachmentCountRaw, attachmentNamesRaw] = parseLine(output);
   const attachmentCount = Number(attachmentCountRaw);
   const attachments = parseAttachmentNames(attachmentNamesRaw || '');
+  const parsedAttachmentCount = Number.isFinite(attachmentCount) ? attachmentCount : attachments.length;
+  let body = stripMailBodyPlaceholders(content);
+  if (!hasVisibleMailBodyText(body)) {
+    const source = await readMessageSource(mailboxName, accountName, messageId);
+    body = extractMailSourceText(source) || emptyMailBodyNotice(parsedAttachmentCount, attachments);
+  }
   return {
     id: Number(idRaw),
     account: accountName || undefined,
@@ -347,8 +557,8 @@ async function readMessage(payload: Record<string, unknown>): Promise<MailMessag
     sender,
     receivedAtMs: parseAppleScriptDate(receivedRaw),
     read: readRaw === 'true',
-    content,
-    attachmentCount: Number.isFinite(attachmentCount) ? attachmentCount : attachments.length,
+    content: body,
+    attachmentCount: parsedAttachmentCount,
     attachments,
   };
 }

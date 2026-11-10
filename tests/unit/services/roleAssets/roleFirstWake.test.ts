@@ -26,6 +26,7 @@ const mockSessionManager = vi.hoisted(() => ({
   getCurrentSessionId: vi.fn(() => null),
   getSession: vi.fn(),
   createSession: vi.fn(),
+  addMessageToSession: vi.fn(),
   updateMessage: vi.fn(),
 }));
 
@@ -101,6 +102,7 @@ vi.mock('../../../../src/cli/bootstrap', () => ({
 }));
 
 import {
+  consumeFirstWakeSuggestion,
   enqueueFirstWake,
   skipFirstWake,
   retryFirstWake,
@@ -183,6 +185,7 @@ beforeEach(async () => {
   mockSettings.value = {};
   mockSessionManager.getCurrentSessionId.mockReturnValue(null);
   mockSessionManager.getSession.mockReset();
+  mockSessionManager.addMessageToSession.mockReset().mockResolvedValue(undefined);
   mockSessionManager.updateMessage.mockReset().mockResolvedValue(undefined);
   mockSessionManager.createSession.mockReset().mockImplementation(async () => {
     harness.sessionSeq += 1;
@@ -629,6 +632,43 @@ describe('skipFirstWake', () => {
   it('无状态文件：no-op 成功；非法 roleId 拒绝', async () => {
     expect(await skipFirstWake('ghost-role')).toEqual({ success: true });
     expect(await skipFirstWake('../escape')).toEqual({ success: false });
+  });
+});
+
+describe('consumeFirstWakeSuggestion', () => {
+  it('只移除匹配标题，保留 completed 与其它建议；最后一条消费后封成 skipped', async () => {
+    const filePath = statePath('consume-role');
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    const base = { state: 'completed', enqueuedAt: 1, sourcesMode: 'connected', suggestions: [
+      { title: '建议一', prompt: 'p1' },
+      { title: '建议二', prompt: 'p2' },
+      { title: '建议三', prompt: 'p3' },
+    ] };
+    await fs.writeFile(filePath, `${JSON.stringify(base)}\n`, 'utf-8');
+
+    expect(await consumeFirstWakeSuggestion('consume-role', '建议一')).toEqual({ success: true });
+    await expect(readState('consume-role')).resolves.toMatchObject({
+      state: 'completed',
+      suggestions: [
+        { title: '建议二', prompt: 'p2' },
+        { title: '建议三', prompt: 'p3' },
+      ],
+    });
+
+    expect(await consumeFirstWakeSuggestion('consume-role', '建议二')).toEqual({ success: true });
+    expect(await consumeFirstWakeSuggestion('consume-role', '建议三')).toEqual({ success: true });
+    await expect(readState('consume-role')).resolves.toMatchObject({ state: 'skipped', suggestions: [] });
+  });
+
+  it('未知标题或缺失状态文件成功 no-op，不写入新状态', async () => {
+    const filePath = statePath('consume-miss');
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    const state = { state: 'completed', enqueuedAt: 1, sourcesMode: 'connected', suggestions: [{ title: '已存在', prompt: 'p' }] };
+    await fs.writeFile(filePath, `${JSON.stringify(state)}\n`, 'utf-8');
+    expect(await consumeFirstWakeSuggestion('consume-miss', '不存在')).toEqual({ success: true });
+    expect(await readState('consume-miss')).toEqual(state);
+    expect(await consumeFirstWakeSuggestion('missing-consume-role', '不存在')).toEqual({ success: true });
+    await expect(fs.access(statePath('missing-consume-role'))).rejects.toThrow();
   });
 });
 

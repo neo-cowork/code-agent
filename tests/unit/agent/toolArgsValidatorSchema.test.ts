@@ -6,6 +6,8 @@ import {
 import type { JSONSchema, JSONSchemaProperty } from '../../../src/shared/contract';
 import { writeSchema } from '../../../src/host/tools/modules/file/write.schema';
 import { bashSchema } from '../../../src/host/tools/modules/shell/bash.schema';
+import { browserActionSchema } from '../../../src/host/plugins/builtin/browserControl/browserAction.schema';
+import { browserSchema } from '../../../src/host/plugins/builtin/browserControl/browser.schema';
 
 const props: Record<string, JSONSchemaProperty> = {
   path: { type: 'string', description: '文件绝对路径' },
@@ -199,5 +201,43 @@ describe('validateToolArgs — unknown field names (regression for the 2026-09-1
       sheet_name: '说明',
     });
     expect(result.ok).toBe(true);
+  });
+});
+
+describe('validateToolArgs — browser_action / Browser targetRef accepts string or object (N-FIX-BROWSER-TARGETREF-STRING-WASTE-STEPS)', () => {
+  it('browser_action accepts string targetRef and destinationTargetRef against real browserActionSchema', () => {
+    const clickString = validateToolArgs('browser_action', browserActionSchema.inputSchema, {
+      action: 'click',
+      targetRef: 'tref_snap_1',
+    });
+    expect(clickString).toEqual({ ok: true });
+
+    const dragString = validateToolArgs('browser_action', browserActionSchema.inputSchema, {
+      action: 'drag',
+      targetRef: 'tref_snap_1',
+      destinationTargetRef: 'tref_snap_2',
+    });
+    expect(dragString).toEqual({ ok: true });
+
+    const clickObject = validateToolArgs('browser_action', browserActionSchema.inputSchema, {
+      action: 'click',
+      targetRef: { refId: 'tref_snap_1', snapshotId: 'snap' },
+    });
+    expect(clickObject).toEqual({ ok: true });
+  });
+
+  it('Browser accepts string targetRef and destinationTargetRef against real browserSchema', () => {
+    const clickString = validateToolArgs('Browser', browserSchema.inputSchema, {
+      action: 'click',
+      targetRef: 'tref_snap_1',
+    });
+    expect(clickString).toEqual({ ok: true });
+
+    const dragString = validateToolArgs('Browser', browserSchema.inputSchema, {
+      action: 'drag',
+      targetRef: 'tref_snap_1',
+      destinationTargetRef: 'tref_snap_2',
+    });
+    expect(dragString).toEqual({ ok: true });
   });
 });

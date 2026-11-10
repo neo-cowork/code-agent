@@ -1,4 +1,5 @@
 import { zh, type Translations } from '../../../../i18n/zh';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 
 export interface MentionRoutingAgent {
   id: string;
@@ -129,7 +130,7 @@ export function buildDirectRoutingPlaceholder(
         .replace('{name}', target.name)
         .replace('{token}', getPreferredAgentMentionToken(target));
     }
-    return copy.directPlaceholderMulti.replace('{count}', String(selectedAgents.length));
+    return interpolatePlural(copy.directPlaceholderMulti, selectedAgents.length);
   }
 
   const sampleAgent = availableAgents[0];

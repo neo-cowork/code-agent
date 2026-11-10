@@ -61,6 +61,8 @@ export const CRON_EVENT_DECISIONS = {
   MAX_READ_LIMIT: 500,
   /** 一行理由的截断长度（字符）。 */
   MAX_REASON_CHARS: 200,
+  /** 邮件事件在决策列表里的「发件人 · 主题」显示长度。 */
+  MAX_EVENT_LABEL_CHARS: 60,
   /** 「本会发出什么」摘要的截断长度（字符）。 */
   MAX_SUMMARY_CHARS: 200,
   /** 每任务挂起待记的 dropped 事件 id 上限（超出只计数，不逐条记）。 */
