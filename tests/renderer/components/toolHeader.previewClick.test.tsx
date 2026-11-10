@@ -5,7 +5,7 @@
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import type { ToolCall } from '../../../src/shared/contract';
+import { AgentFailureCode, HostReasonCode, type ToolCall } from '../../../src/shared/contract';
 
 const openPreview = vi.hoisted(() => vi.fn());
 
@@ -53,6 +53,40 @@ describe('ToolHeader — Read path opens preview', () => {
     const pathBtn = screen.getByTestId('tool-header-open-preview');
     fireEvent.click(pathBtn);
     expect(openPreview).toHaveBeenCalledWith(path);
+  });
+
+  it.each([
+    ['Write', '未写入'],
+    ['Edit', '未修改'],
+    ['Read', '未读取'],
+    ['Bash', '未执行'],
+  ])('permission-blocked %s title is plain text and never opens preview', (name, verb) => {
+    const toolCall = readCall('/tmp/neo-deny-notes.md');
+    toolCall.name = name;
+    toolCall.result = {
+      toolCallId: toolCall.id,
+      success: false,
+      metadata: {
+        hostReason: { code: HostReasonCode.PermissionDeniedScripted },
+        failureCode: AgentFailureCode.PermissionDenied,
+      },
+    };
+
+    render(<ToolHeader toolCall={toolCall} status="error" />);
+    expect(screen.queryByTestId('tool-header-open-preview')).toBeNull();
+    const title = screen.getByText(new RegExp(`^${verb}`));
+    expect(title.tagName).toBe('SPAN');
+    fireEvent.click(title);
+    expect(openPreview).not.toHaveBeenCalled();
+  });
+
+  it('a completed Write title still opens its file preview', () => {
+    const path = '/tmp/meeting-summary.md';
+    const toolCall = readCall(path);
+    toolCall.name = 'Write';
+    render(<ToolHeader toolCall={toolCall} status="success" />);
+    fireEvent.click(screen.getByTestId('tool-header-open-preview'));
+    expect(openPreview).toHaveBeenCalledExactlyOnceWith(path);
   });
 
   it('TaskManager main line never shows the internal tool name', () => {
