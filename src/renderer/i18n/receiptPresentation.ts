@@ -1,4 +1,7 @@
+import { roleEditReceiptZh, roleEditReceiptEn } from './roleEditReceipt';
+
 export const receiptPresentationZh = {
+  ...roleEditReceiptZh,
   receiptPresentation: {
     succeeded: '成功',
     failed: '失败',
@@ -36,6 +39,7 @@ export const receiptPresentationZh = {
 };
 
 export const receiptPresentationEn: typeof receiptPresentationZh = {
+  ...roleEditReceiptEn,
   receiptPresentation: {
     succeeded: 'Succeeded',
     failed: 'Failed',

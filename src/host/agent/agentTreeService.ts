@@ -117,6 +117,8 @@ function failureReason(code: AgentFailureCode): string {
       return '需要的权限没有通过';
     case AgentFailureCode.ToolUnavailable:
       return '需要的能力当前不可用';
+    case AgentFailureCode.InvalidArguments:
+      return 'The wait time the assistant set exceeds the allowed limit and must be shortened.';
     case AgentFailureCode.BudgetExhausted:
       return '可用预算已经用完';
     case AgentFailureCode.Timeout:
