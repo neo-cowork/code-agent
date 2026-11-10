@@ -120,6 +120,11 @@ export async function executeCronAgentAction(
   // 与 readOnly 会话档双保险。必须在 sendMessage 前标注。
   const optInPersonalSkillIds = normalizePersonalSkillIds(action.allowedPersonalSkillIds);
   const timeZone = definition.schedule.type === 'cron' ? definition.schedule.timezone : undefined;
+  const previousSnapshot = ctx?.[CRON_AGENT_SNAPSHOT.CONTEXT_KEY];
+  const snapshotTrackingEnabled = ctx?.[CRON_AGENT_SNAPSHOT.ENABLED_KEY] === true;
+  // external_event（业务事件监听）任务：无 <cron_alert> = 无新料 = 本次安静。
+  // notifyWhen / urgencyCriteria 的「值得打扰」判据收口在 cronAgentRunHasAlert。
+  const isExternalWatch = Boolean(ctx?.[EXTERNAL_WATCH.CONTEXT_KEY]);
   orchestrator.setExecutionTopology('async_agent');
   if (cronSession.workingDirectory) {
     tm.setWorkingDirectory(cronSession.id, cronSession.workingDirectory);
@@ -133,11 +138,6 @@ export async function executeCronAgentAction(
     toolScope: { optInPersonalSkillIds },
   };
   agentRunOptions.systemInstructions = [UNATTENDED_TRUST_NOTICE];
-  const previousSnapshot = ctx?.[CRON_AGENT_SNAPSHOT.CONTEXT_KEY];
-  const snapshotTrackingEnabled = ctx?.[CRON_AGENT_SNAPSHOT.ENABLED_KEY] === true;
-  // external_event（业务事件监听）任务：无 <cron_alert> = 无新料 = 本次安静。
-  // notifyWhen / urgencyCriteria 的「值得打扰」判据收口在 cronAgentRunHasAlert。
-  const isExternalWatch = Boolean(ctx?.[EXTERNAL_WATCH.CONTEXT_KEY]);
 
   let result: unknown; let finalAssistantText = '';
   let runError: unknown; let runFailed = false;
