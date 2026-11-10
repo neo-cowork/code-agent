@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { chatInputZh } from '../../../src/renderer/i18n/chatInput';
 // ============================================================================
 // /schedule 事件草案（N-CRON-EVENT-CREATE-CHAT）—— renderer 侧验收：
 // - normalizeScheduleDraft：event 草案收下（accountId 允许空、groupName 剥成草稿级
@@ -285,7 +286,7 @@ describe('event schedule draft normalization', () => {
     const pending = makeEventPending();
     const rows = buildScheduleConfirmRows(pending, {
       what: '检查什么', when: '什么时候', notifyWhen: '什么变化值得通知', result: '结果送到哪里',
-      fallbackWhat: '按任务描述执行', fallbackNotifyWhen: '完成时通知', reviewInbox: '自动化审核收件箱',
+      fallbackWhat: '按任务描述执行', fallbackNotifyWhen: '完成时通知', reviewInbox: chatInputZh.scheduleConfirm.reviewInbox,
     }, 'zh', {
       group: cronCenterZh.cronCenter.eventConfirmGroup,
       groupFallback: cronCenterZh.cronCenter.eventConfirmGroupFallback,
@@ -303,7 +304,7 @@ describe('event schedule draft normalization', () => {
   it('builds mail rows: 「监听哪个邮箱」行随绑定走（新邮件 · 账号 · 邮箱），未选账号走兜底文案', () => {
     const labels = {
       what: '检查什么', when: '什么时候', notifyWhen: '什么变化值得通知', result: '结果送到哪里',
-      fallbackWhat: '按任务描述执行', fallbackNotifyWhen: '完成时通知', reviewInbox: '自动化审核收件箱',
+      fallbackWhat: '按任务描述执行', fallbackNotifyWhen: '完成时通知', reviewInbox: chatInputZh.scheduleConfirm.reviewInbox,
     };
     const mailLabels = {
       group: cronCenterZh.cronCenter.eventConfirmGroup,
@@ -523,7 +524,7 @@ function groupRowValue(): string {
 
 const eventRowLabels = {
   what: '检查什么', when: '什么时候', notifyWhen: '什么变化值得通知', result: '结果送到哪里',
-  fallbackWhat: '按任务描述执行', fallbackNotifyWhen: '完成时通知', reviewInbox: '自动化审核收件箱',
+  fallbackWhat: '按任务描述执行', fallbackNotifyWhen: '完成时通知', reviewInbox: chatInputZh.scheduleConfirm.reviewInbox,
 };
 
 describe('event confirm card — rework r1 regressions', () => {

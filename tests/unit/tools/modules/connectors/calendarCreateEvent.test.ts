@@ -19,6 +19,7 @@ vi.mock('../../../../../src/host/connectors', () => ({
 }));
 
 import { calendarCreateEventModule } from '../../../../../src/host/tools/modules/connectors/calendarCreateEvent';
+import { formatConnectorTime } from '../../../../../src/host/tools/modules/connectors/connectorTime';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -245,7 +246,7 @@ describe('calendarCreateEventModule (native)', () => {
         expect(artifact).toMatchObject({
           kind: 'text',
           role: 'receipt',
-          name: `已创建日历事件：Standup（${new Date(1700000000000).toLocaleString('zh-CN')}）`,
+          name: `已创建日历事件：Standup（${formatConnectorTime(1700000000000)}）`,
         });
         expect(artifact.metadata?.action).toBe('create_event');
         expect(artifact.metadata).toMatchObject({
