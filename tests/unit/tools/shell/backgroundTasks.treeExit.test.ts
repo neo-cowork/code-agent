@@ -11,9 +11,14 @@ import {
   getAllBackgroundTasks,
   adoptBackgroundTask,
   getTaskOutput,
+  cleanupTimedOutTasks,
   killBackgroundTask,
+  onBackgroundTaskLifecycleEvent,
   startBackgroundTask,
 } from '../../../../src/host/tools/shell/backgroundTasks';
+import { BackgroundTaskLedger } from '../../../../src/host/task/backgroundTaskLedger';
+import { installBackgroundTaskEventAdapters } from '../../../../src/host/task/backgroundTaskSnapshotAdapters';
+import { shutdownEventBus } from '../../../../src/host/services/eventing/bus';
 
 const posixOnly = process.platform === 'win32' ? describe.skip : describe;
 
@@ -143,5 +148,211 @@ posixOnly('后台任务停机收尸', () => {
 
     expect(killedTasks).toBeGreaterThanOrEqual(1);
     expect(getAllBackgroundTasks().some((t) => t.status === 'running')).toBe(false);
+  }, 30000);
+
+  it('records stopped background task as cancelled with one task_cancelled notice before process exit fires failed', async () => {
+    const cwd = mkdtempSync(`${tmpdir()}/neo-bgtask-`);
+    const ledger = new BackgroundTaskLedger();
+    const detach = installBackgroundTaskEventAdapters(ledger);
+    try {
+      const started = startBackgroundTask(
+        'sandbox-exec-placeholder || sleep 600 && echo done',
+        cwd,
+        30_000,
+        {
+          sessionId: 'session-stop-real',
+          displayCommand: 'sleep 600 && echo done',
+        },
+      );
+      expect(started.success).toBe(true);
+      startedTaskIds.push(started.taskId!);
+
+      await waitFor(() => ledger.getTask(`shell:${started.taskId}`)?.status === 'running');
+
+      const killResult = await killBackgroundTask(started.taskId!);
+      expect(killResult.success).toBe(true);
+
+      const ledgerTask = ledger.getTask(`shell:${started.taskId}`);
+      expect(ledgerTask).toMatchObject({
+        status: 'cancelled',
+        title: 'sleep 600 && echo done',
+        failure: undefined,
+      });
+
+      const notifications = ledger.drainNotifications('session-stop-real');
+      expect(notifications).toHaveLength(1);
+      expect(notifications[0]).toMatchObject({
+        type: 'task_cancelled',
+        title: '任务已停止',
+      });
+      expect(notifications[0]?.message).toContain('sleep 600 && echo done 已停止');
+      expect(notifications[0]?.message).not.toContain('sandbox-exec');
+      expect(notifications[0]?.message).not.toContain('失败');
+      expect(notifications.some((n) => n.type === 'task_failed')).toBe(false);
+    } finally {
+      detach();
+      shutdownEventBus();
+    }
+  }, 30000);
+
+  it('keeps non-zero exit command as failed with task_failed notice', async () => {
+    const cwd = mkdtempSync(`${tmpdir()}/neo-bgtask-`);
+    const ledger = new BackgroundTaskLedger();
+    const detach = installBackgroundTaskEventAdapters(ledger);
+    try {
+      const started = startBackgroundTask(
+        'echo boom && exit 7',
+        cwd,
+        30_000,
+        {
+          sessionId: 'session-fail-real',
+          displayCommand: 'echo boom && exit 7',
+        },
+      );
+      expect(started.success).toBe(true);
+      startedTaskIds.push(started.taskId!);
+
+      await waitFor(() => ledger.getTask(`shell:${started.taskId}`)?.status === 'failed');
+
+      const ledgerTask = ledger.getTask(`shell:${started.taskId}`);
+      expect(ledgerTask).toMatchObject({
+        status: 'failed',
+        title: 'echo boom && exit 7',
+        failure: {
+          message: 'Process exited with code 7',
+          exitCode: 7,
+          category: 'command_failed',
+        },
+      });
+
+      const notifications = ledger.drainNotifications('session-fail-real');
+      expect(notifications).toHaveLength(1);
+      expect(notifications[0]).toMatchObject({
+        type: 'task_failed',
+        title: '后台任务失败',
+      });
+    } finally {
+      detach();
+      shutdownEventBus();
+    }
+  }, 30000);
+
+  it('task over max runtime reaped by the timeout sweep stays failed with task_failed (not cancelled)', async () => {
+    const cwd = mkdtempSync(`${tmpdir()}/neo-bgtask-`);
+    const ledger = new BackgroundTaskLedger();
+    const detach = installBackgroundTaskEventAdapters(ledger);
+    try {
+      const started = startBackgroundTask('sleep 600', cwd, 30_000, {
+        sessionId: 'session-timeout-real',
+        displayCommand: 'sleep 600',
+      });
+      expect(started.success).toBe(true);
+      startedTaskIds.push(started.taskId!);
+      await waitFor(() => ledger.getTask(`shell:${started.taskId}`)?.status === 'running');
+
+      // 把时钟拨过 maxRuntime，让周期清扫（而非 setTimeout 句柄）认定超时。
+      const realNow = Date.now();
+      const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(realNow + 31_000);
+      try {
+        cleanupTimedOutTasks();
+      } finally {
+        nowSpy.mockRestore();
+      }
+      await waitFor(() => ledger.getTask(`shell:${started.taskId}`)?.status === 'failed', 15_000);
+
+      expect(ledger.getTask(`shell:${started.taskId}`)?.status).toBe('failed');
+      const notifications = ledger.drainNotifications('session-timeout-real');
+      expect(notifications.map((n) => n.type)).toEqual(['task_failed']);
+    } finally {
+      detach();
+      shutdownEventBus();
+    }
+  }, 30000);
+
+  it('kill on an already completed task keeps it completed with only the task_completed notice', async () => {
+    const cwd = mkdtempSync(`${tmpdir()}/neo-bgtask-`);
+    const ledger = new BackgroundTaskLedger();
+    const detach = installBackgroundTaskEventAdapters(ledger);
+    try {
+      const started = startBackgroundTask('echo finished-ok', cwd, 30_000, {
+        sessionId: 'session-kill-done',
+        displayCommand: 'echo finished-ok',
+      });
+      expect(started.success).toBe(true);
+      startedTaskIds.push(started.taskId!);
+      await waitFor(() => ledger.getTask(`shell:${started.taskId}`)?.status === 'completed', 20_000);
+
+      const killResult = await killBackgroundTask(started.taskId!);
+      expect(killResult.success).toBe(true);
+      await new Promise((resolve) => { setTimeout(resolve, 200); });
+
+      expect(ledger.getTask(`shell:${started.taskId}`)?.status).toBe('completed');
+      expect(getAllBackgroundTasks().find((t) => t.taskId === started.taskId)?.status).toBe('completed');
+      const notifications = ledger.drainNotifications('session-kill-done');
+      expect(notifications.map((n) => n.type)).toEqual(['task_completed']);
+    } finally {
+      detach();
+      shutdownEventBus();
+    }
+  }, 30000);
+
+  it('killing a running task emits exactly one terminal lifecycle event and one task_cancelled notice', async () => {
+    const cwd = mkdtempSync(`${tmpdir()}/neo-bgtask-`);
+    const ledger = new BackgroundTaskLedger();
+    const detach = installBackgroundTaskEventAdapters(ledger);
+    const terminalEvents: string[] = [];
+    let taskIdUnderTest = '';
+    const stopListening = onBackgroundTaskLifecycleEvent((event) => {
+      if (event.task.taskId === taskIdUnderTest && event.type !== 'started') terminalEvents.push(event.type);
+    });
+    try {
+      const started = startBackgroundTask('sleep 30', cwd, 60_000, {
+        sessionId: 'session-single-terminal',
+        displayCommand: 'sleep 30',
+      });
+      expect(started.success).toBe(true);
+      taskIdUnderTest = started.taskId!;
+      startedTaskIds.push(started.taskId!);
+      await waitFor(() => ledger.getTask(`shell:${started.taskId}`)?.status === 'running');
+
+      expect((await killBackgroundTask(started.taskId!)).success).toBe(true);
+      // 等进程 close 事件也走完，再留一小段沉淀期，确认没有第二条终态事件。
+      await new Promise((resolve) => { setTimeout(resolve, 500); });
+
+      expect(terminalEvents).toHaveLength(1);
+      expect(ledger.getTask(`shell:${started.taskId}`)?.status).toBe('cancelled');
+      const notifications = ledger.drainNotifications('session-single-terminal');
+      expect(notifications.map((n) => n.type)).toEqual(['task_cancelled']);
+    } finally {
+      stopListening();
+      detach();
+      shutdownEventBus();
+    }
+  }, 30000);
+
+  it('output still arriving after kill does not write to the already ended log stream', async () => {
+    const cwd = mkdtempSync(`${tmpdir()}/neo-bgtask-`);
+    const unhandled: unknown[] = [];
+    const onUncaught = (error: unknown) => { unhandled.push(error); };
+    process.on('uncaughtException', onUncaught);
+    try {
+      // 持续刷输出的任务：kill 先 end() 了日志流，进程树退出前还会有输出落在流关闭之后。
+      const started = startBackgroundTask(
+        'trap "" TERM; while :; do echo flood; done',
+        cwd,
+        60_000,
+        { sessionId: 'session-late-output' },
+      );
+      expect(started.success).toBe(true);
+      startedTaskIds.push(started.taskId!);
+      await new Promise((resolve) => { setTimeout(resolve, 200); });
+
+      expect((await killBackgroundTask(started.taskId!)).success).toBe(true);
+      await new Promise((resolve) => { setTimeout(resolve, 300); });
+
+      expect(unhandled.map(String)).toEqual([]);
+    } finally {
+      process.off('uncaughtException', onUncaught);
+    }
   }, 30000);
 });

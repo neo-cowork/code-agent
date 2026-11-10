@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { en } from '../../../src/renderer/i18n/en';
 import type { ToolCall } from '../../../src/shared/contract';
 import { summarizeWrite } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/summarizers/editSummarizer';
 
@@ -18,14 +19,13 @@ describe('summarizeWrite — Bug 1: line count on truncated content', () => {
         file_path: '/x/breakout.html',
         content: '<!DOCTYPE html>...[20000 chars omitted]...</html>',
         content_lines: 540,
-      }),
-    );
+      }), en);
     // 不再显示对片段 split 出的 ~2/12 行，而是真实行数
     expect(summary).toBe('540 lines');
   });
 
   it('falls back to splitting content when untruncated (no content_lines)', () => {
-    const summary = summarizeWrite(writeCall({ file_path: '/x/s.html', content: 'a\nb\nc' }));
+    const summary = summarizeWrite(writeCall({ file_path: '/x/s.html', content: 'a\nb\nc' }), en);
     expect(summary).toBe('3 lines');
   });
 });

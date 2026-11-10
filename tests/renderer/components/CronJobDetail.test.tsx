@@ -17,7 +17,10 @@ vi.mock('../../../src/renderer/services/cronClient', () => ({
 }));
 
 import { CronJobDetail } from '../../../src/renderer/components/features/cron/CronJobDetail';
+import { getBuiltinJobDisplay } from '../../../src/renderer/components/features/cron/builtinJobDisplay';
+import { formatActionSummary } from '../../../src/renderer/components/features/cron/types';
 import { CRON_EVENT_TRIGGER } from '../../../src/shared/constants/cronEventTrigger';
+import { MEMORY_CONSOLIDATION } from '../../../src/shared/constants/memory';
 import { CronGroupListenChecks } from '../../../src/host/cron/cronGroupListenCheck';
 import { CronGroupListenCheck } from '../../../src/renderer/components/features/cron/CronGroupListenCheck';
 import { cronClient } from '../../../src/renderer/services/cronClient';
@@ -47,6 +50,30 @@ afterEach(() => {
 });
 
 describe('CronJobDetail', () => {
+  it('masks credential-like text in action summaries while keeping ordinary text unchanged', () => {
+    const cases = [
+      ['run backup --password=hunter2xyz now', 'run backup --password=***REDACTED*** now'],
+      ['password: hunter2xyz', 'password: ***REDACTED***'],
+      ['token: abcd1234efgh', 'token: ***REDACTED***'],
+      ['echo password policy', 'echo password policy'],
+    ] as const;
+    for (const [prompt, expected] of cases) {
+      expect(formatActionSummary(makeJob({ action: { type: 'agent', agentType: 'default', prompt } }), 'zh'))
+        .toBe(expected);
+    }
+    expect(formatActionSummary(makeJob({ action: { type: 'shell', command: 'echo password policy' } }), 'zh'))
+      .toBe('echo password policy');
+  });
+
+  it('renders the masked agent prompt in the detail action row', () => {
+    render(<CronJobDetail job={makeJob({
+      action: { type: 'agent', agentType: 'default', prompt: 'back up notes --password=hunter2xyz' },
+    })} />);
+    const action = screen.getByTestId('cron-detail-action');
+    expect(action.textContent).toContain('--password=***REDACTED***');
+    expect(action.textContent).not.toContain('hunter2xyz');
+  });
+
   it('业务网格显示下次运行时间', () => {
     const next = Date.now() + 3_600_000;
     render(<CronJobDetail job={makeJob({ nextRunAt: next })} />);
@@ -133,6 +160,49 @@ describe('CronJobDetail', () => {
       expect(advanced.textContent).not.toMatch(/AM|PM/);
     } finally {
       useAppStore.setState({ language: initialLanguage });
+    }
+  });
+
+  it('任务时区不同于本机时，详情计划/下次运行同区显示并补充本机时间', () => {
+    const initialTz = process.env.TZ;
+    const initialLanguage = useAppStore.getState().language;
+    process.env.TZ = 'America/Los_Angeles';
+    useAppStore.setState({ language: 'zh' });
+    try {
+      render(<CronJobDetail job={makeJob({
+        name: '每日前瞻',
+        schedule: { type: 'cron', expression: '0 15 * * 1-5', timezone: 'Asia/Shanghai' },
+        nextRunAt: Date.parse('2026-11-09T07:00:00Z'),
+      })} />);
+      expect(screen.getByTestId('cron-detail-next-run').textContent).toContain('2026/11/09 15:00（中国标准时间）');
+      expect(screen.getByTestId('cron-detail-next-run').textContent).not.toContain('23:00');
+      expect(screen.getByTestId('cron-detail-local-next-run').textContent).toBe('你本机的时间 2026/11/08 23:00');
+      expect(screen.getByText('工作日 15:00（中国标准时间）')).toBeTruthy();
+    } finally {
+      if (initialTz === undefined) delete process.env.TZ;
+      else process.env.TZ = initialTz;
+      useAppStore.setState({ language: initialLanguage });
+    }
+  });
+
+  it('同区或无效时区不显示本机对照行', () => {
+    const initialTz = process.env.TZ;
+    process.env.TZ = 'America/Los_Angeles';
+    try {
+      const nextRunAt = Date.parse('2026-11-09T07:00:00Z');
+      const { rerender } = render(<CronJobDetail job={makeJob({
+        schedule: { type: 'cron', expression: '0 15 * * 1-5', timezone: 'America/Los_Angeles' },
+        nextRunAt,
+      })} />);
+      expect(screen.queryByTestId('cron-detail-local-next-run')).toBeNull();
+      rerender(<CronJobDetail job={makeJob({
+        schedule: { type: 'cron', expression: '0 15 * * 1-5', timezone: 'Not/AZone' },
+        nextRunAt,
+      })} />);
+      expect(screen.queryByTestId('cron-detail-local-next-run')).toBeNull();
+    } finally {
+      if (initialTz === undefined) delete process.env.TZ;
+      else process.env.TZ = initialTz;
     }
   });
 });
@@ -223,6 +293,157 @@ describe('Group listener receipt check', () => {
       const count = vi.mocked(cronClient.getGroupListenCheck).mock.calls.length;
       await act(async () => { await vi.advanceTimersByTimeAsync(CRON_EVENT_TRIGGER.GROUP_LISTEN_CHECK_POLL_MS * 2); });
       expect(cronClient.getGroupListenCheck).toHaveBeenCalledTimes(count);
+    });
+  });
+
+  describe('内置维护任务本地化展示（N-FIX-BUILTIN-CRON-JOB-ENGLISH-COPY）', () => {
+    const initialLanguage = useAppStore.getState().language;
+    afterEach(() => {
+      useAppStore.setState({ language: initialLanguage });
+      vi.restoreAllMocks();
+    });
+
+    const builtinMemoryJob = makeJob({
+      id: 'builtin-mem',
+      name: '[Maintenance] Light Memory consolidation',
+      description: 'Compress ~/.code-agent/memory without losing information (quick model).',
+      action: { type: 'memory-consolidation', dryRun: true },
+      tags: [MEMORY_CONSOLIDATION.JOB_TAG],
+    });
+
+    const builtinDreamJob = makeJob({
+      id: 'builtin-dream',
+      name: '[Maintenance] Dream memory consolidation',
+      description: 'Review recent sessions and write History-verified durable memory.',
+      action: { type: 'agent', agentType: 'dream', prompt: '/dream --auto' },
+      tags: ['dream-memory-consolidation'],
+    });
+
+    const builtinDistillJob = makeJob({
+      id: 'builtin-distill',
+      name: '[Maintenance] Distill workflow packaging',
+      description: 'Review recent sessions and package repeated workflows into command/skill drafts.',
+      action: { type: 'agent', agentType: 'distill', prompt: '/distill --auto' },
+      tags: ['distill-workflow-packaging'],
+    });
+
+    const userJob = makeJob({
+      id: 'user-job',
+      name: '每日英语单词',
+      description: '每天早上背 5 个单词',
+      action: { type: 'agent', agentType: 'default', prompt: '推荐 5 个单词' },
+      tags: ['study'],
+    });
+
+    it('中文界面下内置记忆任务详情显示「记忆整理」、一句无路径中文描述、动作「整理记忆」，删除确认使用中文名', () => {
+      useAppStore.setState({ language: 'zh' });
+      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+      const { container } = render(<CronJobDetail job={builtinMemoryJob} />);
+
+      expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('记忆整理');
+      expect(screen.getByText('定期整理你的记忆文件，合并重复内容，不会丢失信息。')).toBeTruthy();
+      expect(screen.getByTestId('cron-detail-action').textContent).toBe('动作整理记忆');
+      expect(screen.getByTestId('cron-detail-action').textContent).not.toContain('memory-consolidation');
+      expect(container.textContent).not.toContain('[Maintenance]');
+      expect(container.textContent).not.toContain('Light Memory consolidation');
+      expect(container.textContent).not.toContain('~/.code-agent/memory');
+
+      fireEvent.click(screen.getByText('删除'));
+      expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining('记忆整理'));
+    });
+
+    it('英文界面下内置记忆任务详情保持英文原名与原描述，动作显示 "Memory consolidation" 而非 memory-consolidation', () => {
+      useAppStore.setState({ language: 'en' });
+      render(<CronJobDetail job={builtinMemoryJob} />);
+
+      expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('[Maintenance] Light Memory consolidation');
+      expect(screen.getByText('Compress ~/.code-agent/memory without losing information (quick model).')).toBeTruthy();
+      expect(screen.getByTestId('cron-detail-action').textContent).toBe('ActionMemory consolidation');
+      expect(screen.getByTestId('cron-detail-action').textContent).not.toContain('memory-consolidation');
+    });
+
+    it('Dream 与 Distill 内置任务在中英文界面下按同口径映射名称、描述与动作，不暴露 /dream --auto 或 /distill --auto', () => {
+      useAppStore.setState({ language: 'zh' });
+      const { container, rerender } = render(<CronJobDetail job={builtinDreamJob} />);
+      expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('回顾沉淀');
+      expect(screen.getByText('定期回顾最近的对话，把经过核对的长期信息写进记忆。')).toBeTruthy();
+      expect(screen.getByText('回顾对话')).toBeTruthy();
+      expect(container.textContent).not.toContain('/dream --auto');
+
+      rerender(<CronJobDetail job={builtinDistillJob} />);
+      expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('流程提炼');
+      expect(screen.getByText('定期回顾最近的对话，把反复出现的做法整理成可复用的命令或技能草稿。')).toBeTruthy();
+      expect(screen.getByText('提炼流程')).toBeTruthy();
+      expect(container.textContent).not.toContain('/distill --auto');
+
+      useAppStore.setState({ language: 'en' });
+      rerender(<CronJobDetail job={builtinDreamJob} />);
+      expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('[Maintenance] Dream memory consolidation');
+      expect(screen.getByText('Review conversations')).toBeTruthy();
+      expect(container.textContent).not.toContain('/dream --auto');
+
+      rerender(<CronJobDetail job={builtinDistillJob} />);
+      expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('[Maintenance] Distill workflow packaging');
+      expect(screen.getByText('Distill workflows')).toBeTruthy();
+      expect(container.textContent).not.toContain('/distill --auto');
+    });
+
+    it('普通用户任务在中英文下均原样展示存储的名称、描述与动作', () => {
+      useAppStore.setState({ language: 'zh' });
+      const { rerender } = render(<CronJobDetail job={userJob} />);
+      expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('每日英语单词');
+      expect(screen.getByText('每天早上背 5 个单词')).toBeTruthy();
+      expect(screen.getByText('推荐 5 个单词')).toBeTruthy();
+
+      useAppStore.setState({ language: 'en' });
+      rerender(<CronJobDetail job={userJob} />);
+      expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('每日英语单词');
+      expect(screen.getByText('每天早上背 5 个单词')).toBeTruthy();
+      expect(screen.getByText('推荐 5 个单词')).toBeTruthy();
+    });
+
+    it('getBuiltinJobDisplay 与 formatActionSummary 纯函数覆盖三类内置任务及非内置任务', () => {
+      expect(getBuiltinJobDisplay(builtinMemoryJob, 'zh')).toEqual({
+        name: '记忆整理',
+        description: '定期整理你的记忆文件，合并重复内容，不会丢失信息。',
+        actionLabel: '整理记忆',
+      });
+      expect(getBuiltinJobDisplay(builtinMemoryJob, 'en')).toEqual({
+        name: '[Maintenance] Light Memory consolidation',
+        description: 'Compress ~/.code-agent/memory without losing information (quick model).',
+        actionLabel: 'Memory consolidation',
+      });
+      expect(getBuiltinJobDisplay(builtinDreamJob, 'zh')).toEqual({
+        name: '回顾沉淀',
+        description: '定期回顾最近的对话，把经过核对的长期信息写进记忆。',
+        actionLabel: '回顾对话',
+      });
+      expect(getBuiltinJobDisplay(builtinDreamJob, 'en')).toEqual({
+        name: '[Maintenance] Dream memory consolidation',
+        description: 'Review recent sessions and write History-verified durable memory.',
+        actionLabel: 'Review conversations',
+      });
+      expect(getBuiltinJobDisplay(builtinDistillJob, 'zh')).toEqual({
+        name: '流程提炼',
+        description: '定期回顾最近的对话，把反复出现的做法整理成可复用的命令或技能草稿。',
+        actionLabel: '提炼流程',
+      });
+      expect(getBuiltinJobDisplay(builtinDistillJob, 'en')).toEqual({
+        name: '[Maintenance] Distill workflow packaging',
+        description: 'Review recent sessions and package repeated workflows into command/skill drafts.',
+        actionLabel: 'Distill workflows',
+      });
+      expect(getBuiltinJobDisplay(userJob, 'zh')).toBeNull();
+      expect(getBuiltinJobDisplay(userJob, 'en')).toBeNull();
+      expect(getBuiltinJobDisplay(makeJob({ tags: undefined }), 'zh')).toBeNull();
+
+      expect(formatActionSummary(builtinMemoryJob, 'zh')).toBe('整理记忆');
+      expect(formatActionSummary(builtinMemoryJob, 'en')).toBe('Memory consolidation');
+      expect(formatActionSummary(builtinDreamJob, 'zh')).toBe('回顾对话');
+      expect(formatActionSummary(builtinDreamJob, 'en')).toBe('Review conversations');
+      expect(formatActionSummary(builtinDistillJob, 'zh')).toBe('提炼流程');
+      expect(formatActionSummary(builtinDistillJob, 'en')).toBe('Distill workflows');
+      expect(formatActionSummary(userJob, 'zh')).toBe('推荐 5 个单词');
     });
   });
 });

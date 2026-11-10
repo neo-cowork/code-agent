@@ -12,6 +12,7 @@ import path from 'path';
 import { getUserConfigDir } from '../../config/configPaths';
 import { devSlotFromBundleId } from '../../../shared/devSlot';
 import { loadKeytar } from './keytarAdapter';
+import { getFreshUserChannelName } from './freshUserChannel';
 
 // 降级后 Keychain 功能不可用，但本槽的加密 secure store 仍可用。
 const keytar = loadKeytar();
@@ -40,6 +41,10 @@ const KEYCHAIN_ACCOUNT_SETTINGS = 'user-settings';
 
 function getKeychainSessionAccount(bundleId = process.env.CODE_AGENT_BUNDLE_ID): string {
   const normalizedBundleId = bundleId?.trim();
+  const freshUserName = getFreshUserChannelName();
+  if (freshUserName && normalizedBundleId) {
+    return `${KEYCHAIN_ACCOUNT_SESSION}:${normalizedBundleId}:fresh-${freshUserName}`;
+  }
   return devSlotFromBundleId(normalizedBundleId) !== null
     ? `${KEYCHAIN_ACCOUNT_SESSION}:${normalizedBundleId}`
     : KEYCHAIN_ACCOUNT_SESSION;

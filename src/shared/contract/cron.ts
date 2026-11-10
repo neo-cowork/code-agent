@@ -199,6 +199,8 @@ export interface CronEventDecision {
   kind: 'event' | 'action';
   /** Platform message id / mail id / webhook delivery id (event rows). */
   eventId?: string;
+  /** Event rows: user-readable sender/subject label when the source provides one. */
+  eventLabel?: string;
   decision: CronEventDecisionOutcome;
   /** One-line reason (model-stated, drop cause or failure). */
   reason: string;
