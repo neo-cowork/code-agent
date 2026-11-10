@@ -170,6 +170,23 @@ describe('deriveCronPermissionDenied ② 判据矩阵', () => {
     expect(deriveCronPermissionDenied(messages, false)).toBeUndefined();
   });
 
+  it('approved parked command settles without a marker; a denial stays explicit until productive success', () => {
+    const call = bashCall('approved-call', 'python3 summarize-notes.py');
+    const messages = [assistantWithCalls([call]), toolResultMessage([okResult(call.id, 'Saved summary.md')])];
+    const marker = deriveCronPermissionDenied(messages, false);
+    const result = buildCronAgentActionResult(
+      { agentType: 'default', prompt: 'Summarize meeting notes' }, undefined, 'approved-session', 'Saved summary.md', false, false, marker,
+    );
+    expect(result.permissionDenied).toBeUndefined();
+    const denied = [assistantWithCalls([call]), toolResultMessage([deniedResult(call.id, permissionDenialError('bash', 'user'))])];
+    expect(deriveCronPermissionDenied(denied, false)?.steps[0]?.reason).toBe('user');
+    expect(deriveCronPermissionDenied([
+      ...denied,
+      assistantWithCalls([{ id: 'fallback', name: 'Write', arguments: { file_path: 'summary-fallback.md' } }]),
+      toolResultMessage([okResult('fallback', 'Saved fallback summary')]),
+    ], false)).toBeUndefined();
+  });
+
   it('对不回调用名的成功结果按有产出算（证不了只读）→ 无标记', () => {
     const messages = [
       { role: 'assistant', toolCalls: [{ id: 'denied', name: 'Bash', arguments: { command: 'rm x' } }] },

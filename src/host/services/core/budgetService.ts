@@ -22,6 +22,9 @@ import {
 
 const logger = createLogger('BudgetService');
 
+/** 首条用量时间戳早于新周期起点时，允许回拨起点的最大差值（调用完成 → 记账的延迟）。 */
+const PERIOD_BACKDATE_TOLERANCE_MS = 60_000;
+
 // ----------------------------------------------------------------------------
 // Types
 // ----------------------------------------------------------------------------
@@ -146,13 +149,17 @@ export class BudgetService {
   private config: BudgetConfig;
   private usageHistory: TokenUsage[] = [];
   private periodStartTime: number;
+  // 只有 unattended 实例从账本恢复；无 scope（单测/eval 直接 new）与 foreground 保持纯内存行为。
+  private hydrated: boolean;
+  private hydrationFailureLogged: string | null = null;
   private silentLogEmitted: boolean = false;
   // 告警转换去重：每个周期内 warning/blocked 各只向 UI 推一次，避免每次 recordUsage 刷屏
   private warningEmitted: boolean = false;
   private blockedEmitted: boolean = false;
   private alertListener: ((status: BudgetStatus) => void) | null = null;
 
-  constructor(config?: Partial<BudgetConfig>) {
+  constructor(config?: Partial<BudgetConfig>, private readonly scope?: BudgetScope) {
+    this.hydrated = scope !== 'unattended';
     this.config = {
       enabled: config?.enabled ?? true,
       // 默认「没有上限」而不是 $10：生产（webServer 路径）从不调 initBudgetService，
@@ -260,6 +267,14 @@ export class BudgetService {
     // Check if period needs reset
     this.checkPeriodReset();
 
+    // 周期内第一条用量的时间戳可能早于刚起算的周期起点（调用完成 → 记账之间的毫秒～秒级差）。
+    // 起点回拨到它，否则重启后按 recorded_at >= 起点 恢复时这一条会被漏掉。
+    if (this.usageHistory.length === 0 && usage.timestamp < this.periodStartTime
+      && this.periodStartTime - usage.timestamp <= PERIOD_BACKDATE_TOLERANCE_MS) {
+      this.periodStartTime = usage.timestamp;
+      this.persistPeriodStart();
+    }
+
     this.usageHistory.push(usage);
 
     logger.debug(`Token usage recorded: ${usage.inputTokens} in / ${usage.outputTokens} out = $${cost.toFixed(4)}`);
@@ -275,6 +290,8 @@ export class BudgetService {
       cacheReadTokens: usage.cacheReadTokens,
       cacheCreationTokens: usage.cacheCreationTokens,
       recordedAt: usage.timestamp,
+      scope: this.scope ?? 'foreground',
+      serviceTier: usage.serviceTier,
     });
 
     this.maybeEmitAlert();
@@ -539,6 +556,7 @@ export class BudgetService {
    * Check if period needs reset and reset if necessary
    */
   private checkPeriodReset(): void {
+    this.tryHydrate();
     const now = Date.now();
     const periodMs = this.config.resetPeriodHours * 60 * 60 * 1000;
 
@@ -554,9 +572,76 @@ export class BudgetService {
     logger.info('Budget period reset');
     this.usageHistory = [];
     this.periodStartTime = Date.now();
+    this.persistPeriodStart();
     this.silentLogEmitted = false;
     this.warningEmitted = false;
     this.blockedEmitted = false;
+  }
+
+  private persistPeriodStart(): void {
+    // 未恢复成功前不写：否则会用「现在」覆盖尚未读到的真实周期起点。
+    if (this.scope !== 'unattended' || !this.hydrated) return;
+    getDatabase().setBudgetPeriodStart(this.scope, this.periodStartTime, this.periodStartTime);
+  }
+
+  /**
+   * 首次读写前从 usage_ledger 恢复本 scope 的周期内用量（仅 unattended）。
+   * 失败时抛 BudgetStateUnavailableError（reason 区分未就绪/读取失败），调用方决定是否可见。
+   */
+  private hydrateFromLedger(): void {
+    if (this.hydrated || this.scope !== 'unattended') return;
+    const now = Date.now();
+    const periodMs = this.config.resetPeriodHours * 60 * 60 * 1000;
+    const state = getDatabase().readBudgetScopeState(this.scope, now - periodMs);
+    const pending = this.usageHistory;
+    this.hydrated = true;
+    if (state.periodStart !== null && now - state.periodStart < periodMs) {
+      this.periodStartTime = state.periodStart;
+      this.usageHistory = [
+        ...state.entries.map((e): TokenUsage => ({
+          inputTokens: e.inputTokens,
+          outputTokens: e.outputTokens,
+          cacheReadTokens: e.cacheReadTokens,
+          cacheCreationTokens: e.cacheCreationTokens,
+          model: e.model,
+          provider: e.provider,
+          timestamp: e.recordedAt,
+          sessionId: e.sessionId,
+          serviceTier: e.serviceTier,
+        })),
+        ...pending,
+      ];
+      logger.info(`Budget hydrated from ledger: scope=${this.scope} rows=${state.entries.length} periodStart=${new Date(state.periodStart).toISOString()}`);
+      return;
+    }
+    // 没有持久化周期（首次）或周期已过：从现在起算新周期，并落盘供下次重启沿用。
+    this.usageHistory = pending;
+    this.periodStartTime = now;
+    getDatabase().setBudgetPeriodStart(this.scope, now, now);
+    logger.info(state.periodStart === null
+      ? `Budget period started: scope=${this.scope} (no persisted period)`
+      : `Budget period reset on hydrate: scope=${this.scope} (persisted period elapsed)`);
+  }
+
+  private tryHydrate(): void {
+    try {
+      this.hydrateFromLedger();
+      this.hydrationFailureLogged = null;
+    } catch (error) {
+      const reason = (error as { reason?: string }).reason === 'not_ready' ? 'not_ready' : 'read_failed';
+      // 同一原因只记一次，避免每次读写刷屏；纯内存继续（行为同无 db 时），下次读写再重试。
+      if (this.hydrationFailureLogged !== reason) {
+        this.hydrationFailureLogged = reason;
+        logger.warn(`Budget hydration skipped (${reason}): scope=${this.scope}`, error);
+      }
+    }
+  }
+
+  /**
+   * 状态读取路径用：恢复失败要让调用方看见（IPC reject），而不是返回一个假的 $0.00。
+   */
+  assertHydrated(): void {
+    this.hydrateFromLedger();
   }
 
   /**
@@ -645,7 +730,7 @@ export function initBudgetService(config?: ScopedBudgetConfig): BudgetService {
     const scopedConfig = configForScope(config, scope);
     const existing = budgetServiceInstances[scope];
     if (!existing) {
-      budgetServiceInstances[scope] = new BudgetService(scopedConfig);
+      budgetServiceInstances[scope] = new BudgetService(scopedConfig, scope);
     } else if (config) {
       existing.updateConfig(scopedConfig);
     }
@@ -659,7 +744,7 @@ export function initBudgetService(config?: ScopedBudgetConfig): BudgetService {
 export function getBudgetService(scope: BudgetScope = 'foreground'): BudgetService {
   const existing = budgetServiceInstances[scope];
   if (existing) return existing;
-  const created = new BudgetService();
+  const created = new BudgetService(undefined, scope);
   budgetServiceInstances[scope] = created;
   return created;
 }
