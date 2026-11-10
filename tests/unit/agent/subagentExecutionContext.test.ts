@@ -73,6 +73,7 @@ describe('protocol-native SubagentExecutionContext', () => {
         runId: 'run-a',
         parentToolUseId: 'call-a',
         type: 'network',
+        ledgerRecordedByChild: true,
       }),
     );
   });
