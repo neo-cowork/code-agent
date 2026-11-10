@@ -27,6 +27,14 @@ export interface WakeRunTimeoutOptions {
   cancel: () => Promise<void> | void;
 }
 
+/** 正在跑的醒来 run（按会话计数）：醒来会话保留后用户再追问，那一轮不属于醒来，不能被屏蔽。 */
+const activeWakeRuns = new Map<string, number>();
+
+/** 该会话此刻是否正跑着一次角色醒来 run（醒来收尾通知由 notifyRoleWakeOutput 负责，通用完成通知让位）。 */
+export function isRoleWakeRunActive(sessionId: string): boolean {
+  return (activeWakeRuns.get(sessionId) ?? 0) > 0;
+}
+
 /**
  * 给无人值守 run 套墙钟超时。超时时：warn 原因 → 取消底层 run → 抛
  * `Role wake timed out after <N>ms (<phase>)`（cron 执行记录据此标 failed）。
@@ -35,6 +43,7 @@ export interface WakeRunTimeoutOptions {
 export async function withWakeRunTimeout<T>(run: () => Promise<T>, options: WakeRunTimeoutOptions): Promise<T> {
   let timedOut = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  activeWakeRuns.set(options.sessionId, (activeWakeRuns.get(options.sessionId) ?? 0) + 1);
   const runPromise = run();
   const timeoutPromise = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
@@ -59,6 +68,9 @@ export async function withWakeRunTimeout<T>(run: () => Promise<T>, options: Wake
     throw error;
   } finally {
     if (timer) clearTimeout(timer);
+    const left = (activeWakeRuns.get(options.sessionId) ?? 1) - 1;
+    if (left > 0) activeWakeRuns.set(options.sessionId, left);
+    else activeWakeRuns.delete(options.sessionId);
   }
 }
 

@@ -87,6 +87,7 @@ vi.mock('../../../src/host/session/backgroundTaskManager', () => ({
 }));
 
 import { TaskManager } from '../../../src/host/task/TaskManager';
+import { withWakeRunTimeout } from '../../../src/host/services/roleAssets/wakeRunGuard';
 
 const TASK_COMPLETE_EVENT = {
   type: 'task_complete',
@@ -141,17 +142,28 @@ describe('task_complete 的后台收口（完成通知/面板状态）', () => {
     }));
   });
 
+  const wakeSession = (trigger: string) => ({
+    id: 'session-1', title: '研究员 · 主动巡检', type: 'schedule',
+    origin: { kind: 'cron', name: ROLE_PROACTIVITY.CADENCE_JOB_TAG, metadata: { roleId: '研究员', trigger } },
+  });
+  const persistTaskComplete = () => (newManager() as unknown as {
+    persistEventToSession: (sessionId: string, event: unknown, snapshot?: unknown, eventKey?: string) => Promise<void>;
+  }).persistEventToSession('session-1', TASK_COMPLETE_EVENT, undefined, 'session-1');
+
   it.each(['cadence', 'event', 'first_wake'])('role wake %s task_complete leaves the summary notification budget untouched', async (trigger) => {
-    sessionManagerState.getSession.mockResolvedValue({
-      id: 'session-1', title: '研究员 · 主动巡检', type: 'schedule',
-      origin: { kind: 'cron', name: ROLE_PROACTIVITY.CADENCE_JOB_TAG, metadata: { roleId: '研究员', trigger } },
+    sessionManagerState.getSession.mockResolvedValue(wakeSession(trigger));
+    await withWakeRunTimeout(persistTaskComplete, {
+      roleId: '研究员', sessionId: 'session-1', phase: 'wake-run', timeoutMs: 60_000, cancel: () => undefined,
     });
-    const manager = newManager();
-    await (manager as unknown as {
-      persistEventToSession: (sessionId: string, event: unknown, snapshot?: unknown, eventKey?: string) => Promise<void>;
-    }).persistEventToSession('session-1', TASK_COMPLETE_EVENT, undefined, 'session-1');
     expect(notifyState.notifyTaskComplete).not.toHaveBeenCalled();
     expect(backgroundManagerState.markCompleted).not.toHaveBeenCalled();
+  });
+
+  it('a follow-up run on the kept wake session keeps its generic completion notice', async () => {
+    sessionManagerState.getSession.mockResolvedValue(wakeSession('cadence'));
+    await persistTaskComplete();
+    expect(notifyState.notifyTaskComplete).toHaveBeenCalledTimes(1);
+    expect(notifyState.notifyTaskComplete).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-1' }));
   });
 
   it('ordinary scheduled session task_complete keeps its generic completion notice', async () => {

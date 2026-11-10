@@ -6,7 +6,8 @@ import { EventEmitter } from 'events';
 import { AppWindow, broadcastToRenderer } from '../platform';
 import { createLogger } from '../services/infra/logger';
 import { getSessionManager, notificationService } from '../services';
-import { BACKGROUND_TASK_CANCELLED, ROLE_PROACTIVITY, RUN_ERROR_CODE_MAX_ITERATIONS } from '../../shared/constants';
+import { isRoleWakeRunActive } from '../services/roleAssets/wakeRunGuard';
+import { BACKGROUND_TASK_CANCELLED, RUN_ERROR_CODE_MAX_ITERATIONS } from '../../shared/constants';
 import type { BackgroundSessionInfo, BackgroundTaskUpdateEvent } from '../../shared/contract/sessionState';
 
 const logger = createLogger('BackgroundTaskManager');
@@ -137,9 +138,8 @@ class BackgroundTaskManager extends EventEmitter {
       task,
     });
 
-    // Keep background settlement, while role wakes own their output notification.
-    const session = await getSessionManager().getSession(sessionId);
-    if (session?.origin?.kind === 'cron' && session.origin.name === ROLE_PROACTIVITY.CADENCE_JOB_TAG) return;
+    // Keep background settlement, while a running role wake owns its output notification.
+    if (isRoleWakeRunActive(sessionId)) return;
 
     // 发送系统通知。force：后台完成提醒绕过焦点门——用户可能正停在 app 里聊别的会话
     // （与 loop/定时任务同一档「默默长跑、完成才冒头」）。通知摘要不吃裸 code
