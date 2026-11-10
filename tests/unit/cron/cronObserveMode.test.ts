@@ -175,6 +175,7 @@ describe('② 观察档的通道结果回复：零发送 + 一条 would_act', ()
       kind: 'action',
       decision: 'would_act',
       tool: 'channel_reply',
+      reason: 'outbound action channel_reply intercepted in observe mode',
       target: 'feishu:oc_group',
       runId: 'run-obs-1',
       // 逐事件决策标签不进「本会发出」的正文

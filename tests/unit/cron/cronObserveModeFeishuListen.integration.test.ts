@@ -88,6 +88,7 @@ import { applySchema } from '../../../src/host/services/core/database/schema';
 import { loadCronEventDecisions, sqliteCronEventDecisionStore } from '../../../src/host/cron/cronEventDecisionLedger';
 import type { ChannelMessage } from '../../../src/shared/contract/channel';
 import type { CronJobDefinition } from '../../../src/shared/contract/cron';
+import { localizeDecisionText } from '../../../src/shared/cronEventDecisionText';
 
 const RULE = 'if the message contains RR51-PING reply RR51-PONG 收到';
 const MESSAGE_ID = 'om_rr51_1';
@@ -258,9 +259,14 @@ describe('Feishu listen_message through production cron observe gate', () => {
     expect(rows.find((row) => row.eventId === MESSAGE_ID)).toMatchObject({
       kind: 'event', decision: 'would_act', matchedRule: RULE, runId: execution.id,
     });
-    // Raw prose is reported in evidence, including the existing English reason defect.
     const action = rows.find((row) => row.kind === 'action')!;
     expect(`${action.tool} ${action.summary}`).not.toMatch(/Bash|lark-cli|would_act/);
+    const localizedReason = localizeDecisionText(action.reason, 'zh');
+    proof(`[LOCALIZED ACTION] ${JSON.stringify({ stored: action.reason, zh: localizedReason })}`);
+    expect(localizedReason).not.toMatch(/intercepted|observe mode|lark-cli|Bash/i);
+    expect(localizedReason).toContain('飞书 回复消息');
+    expect(localizedReason).toBe('仅观察模式：已拦下「飞书 回复消息」，没有真的发出去');
+    expect(action.reason).toBe('outbound action 飞书 回复消息 intercepted in observe mode');
   });
 
   it('auto: the same listener/message asks ToolExecutor approval, sends zero before grant, no would_act action', async () => {
