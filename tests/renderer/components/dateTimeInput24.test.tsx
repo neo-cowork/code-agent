@@ -65,6 +65,23 @@ describe('DateTimeInput24', () => {
     expect(onChange).toHaveBeenLastCalledWith('2026-11-10T15:30');
   });
 
+  it.each([':37', ':37.1', ':37.12', ':37.123', ':00.000'])('保留 %s：挂载不回写，改日期、小时、分钟保留精度', (suffix) => {
+    const { onChange } = renderHarness(`2026-11-10T23:45${suffix}`);
+    expect((screen.getByTestId('dt-date') as HTMLInputElement).value).toBe('2026-11-10');
+    expect((screen.getByTestId('dt-time-hour') as HTMLSelectElement).value).toBe('23');
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByTestId('dt-date'), { target: { value: '2026-11-12' } });
+    expect(onChange).toHaveBeenLastCalledWith(`2026-11-12T23:45${suffix}`);
+    fireEvent.change(screen.getByTestId('dt-time-hour'), { target: { value: '15' } });
+    fireEvent.change(screen.getByTestId('dt-time-minute'), { target: { value: '30' } });
+    expect(onChange).toHaveBeenLastCalledWith(`2026-11-12T15:30${suffix}`);
+  });
+
+  it.each([':60', ':37.', ':37.1234'])('拒绝非法秒后缀 %s', (suffix) => {
+    renderHarness(`2026-11-10T15:30${suffix}`);
+    expect((screen.getByTestId('dt-date') as HTMLInputElement).value).toBe('');
+  });
+
   it('清空日期 → 输出空串；不完整/非法值显示为空日期', () => {
     const { onChange, unmount } = renderHarness('2026-11-10T15:00');
     expect((screen.getByTestId('dt-date') as HTMLInputElement).value).toBe('2026-11-10');

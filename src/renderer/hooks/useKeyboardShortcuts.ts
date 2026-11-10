@@ -6,6 +6,7 @@
 import { useEffect, useCallback, useMemo } from 'react';
 import { useSessionStore } from '../stores/sessionStore';
 import { useAppStore } from '../stores/appStore';
+import { useAuthStore } from '../stores/authStore';
 import { useMessageActionStore } from '../stores/messageActionStore';
 import { createLogger } from '../utils/logger';
 import { shouldTriggerBareComposerShortcut } from '../utils/composerShortcuts';
@@ -324,11 +325,14 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
           }
           return true;
 
-        case 'settings.open':
+        case 'settings.open': {
           if (!enableSettings) return false;
           logger.info('Shortcut: Open settings');
+          const authState = useAuthStore.getState();
+          if (authState.showAuthModal) authState.setShowAuthModal(false);
           setShowSettings(true);
           return true;
+        }
 
         case 'settings.keybindings':
           openSettingsTab('keybindings');
@@ -634,6 +638,24 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
       }
     })();
 
+    return () => {
+      cancelled = true;
+      cleanup?.();
+    };
+  }, [runAction]);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) return;
+    let cleanup: (() => void) | undefined;
+    let cancelled = false;
+    void listenTauriEvent('menu:open-settings', () => {
+      if (!cancelled) void runAction('settings.open');
+    }).then((unlisten) => {
+      if (cancelled) unlisten();
+      else cleanup = unlisten;
+    }).catch((error) => {
+      logger.warn('Failed to listen for settings menu events', { error });
+    });
     return () => {
       cancelled = true;
       cleanup?.();

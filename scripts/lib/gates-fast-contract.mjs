@@ -137,7 +137,7 @@ export function renderReceipt(receipt) {
   const ci = receipt.ci.status === 'pending' && receipt.prNumber === null
     ? 'CI: pending (PR not created; authoritative CI evidence will be bound after creation).'
     : `CI: ${receipt.ci.status}`;
-  return [local, ci];
+  return [local, ci, ...(receipt.privateCheck ? [`private check: ${receipt.privateCheck.mode} inputHash=${receipt.privateCheck.inputHash.slice(0, 16)}`] : [])];
 }
 
 // ship pr 外层给 gates:fast 180s（~/.local/bin/ship），总上限必须留 10s 给回执落盘与核验。

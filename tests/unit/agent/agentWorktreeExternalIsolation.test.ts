@@ -120,7 +120,7 @@ describe('external subagent worktree isolation', () => {
 
   it('passes the created worktree cwd into the executor context', async () => {
     const source = await fs.readFile(
-      path.join(process.cwd(), 'src/host/agent/multiagentTools/spawnAgent.ts'),
+      path.join(process.cwd(), 'src/host/agent/multiagentTools/spawnSingleAgent.ts'),
       'utf8',
     );
 

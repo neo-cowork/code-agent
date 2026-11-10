@@ -372,6 +372,8 @@ export class SandboxManager {
           // seatbelt 读放开，仅锁写：工作目录交给 writePaths（generateProfile 内做 realpath）
           const wrapped = getSeatbelt().wrapCommand(command, {
             allowNetwork,
+            // Shared Bash profile: only current-user SingleOfficeIPC socket names gain writes/bind.
+            allowOfficeIpc: true,
             readPaths: readOnlyRoots,
             writePaths: [...readWriteRoots, npmEnvironment.npmHome],
             writeFiles: readWriteFiles,

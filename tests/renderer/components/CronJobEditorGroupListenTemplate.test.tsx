@@ -118,6 +118,8 @@ describe('group-listen template fill step', () => {
     expect(chatSelect.value).toBe('oc_release');
 
     fireEvent.click(screen.getByText('创建任务'));
+    // 无角色（模板没选角色）先过保存前确认卡（N-CRON-MORNING-TRIAGE-REST1），确认才落库。
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
     await waitFor(() => expect(cronStore.createJob).toHaveBeenCalledTimes(1));
     const payload = cronStore.createJob.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(payload.schedule).toEqual({
@@ -153,9 +155,12 @@ describe('group-listen template fill step', () => {
     const url = controlForLabel('网页地址');
     fireEvent.change(url, { target: { value: 'https://example.com' } });
     fireEvent.click(screen.getByText('创建任务'));
+    expect(cronStore.createJob).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
     expect(await screen.findByText('保存失败')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('cron-pending-routine-back'));
 
-    fireEvent.change(url, { target: { value: 'https://example.org' } });
+    fireEvent.change(controlForLabel('网页地址'), { target: { value: 'https://example.org' } });
     expect(screen.getByText('保存失败')).toBeTruthy();
   });
 });
