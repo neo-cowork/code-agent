@@ -7,6 +7,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SessionAutomationRecord } from '../../../src/shared/contract/sessionAutomation';
 import type { CronJobExecution } from '../../../src/shared/contract/cron';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useCronStore } from '../../../src/renderer/stores/cronStore';
 
 vi.mock('../../../src/renderer/services/ipcService', () => ({
@@ -85,6 +86,7 @@ function makeRecord(over: Partial<SessionAutomationRecord>): SessionAutomationRe
 
 afterEach(() => {
   cleanup();
+  useAppStore.setState({ language: 'zh' });
   useCronStore.setState({ triggerJob: originalTriggerJob });
   listPendingReview.mockReset();
   listPendingReview.mockResolvedValue([]);
@@ -108,6 +110,40 @@ describe('CronExecutionList 需处理徽章', () => {
     // 旧行（同表）仍显示「成功」
     expect(screen.getByText('完成')).toBeTruthy();
     expect(screen.queryAllByTestId('cron-execution-permission-denied')).toHaveLength(1);
+  });
+
+  it.each([
+    ['zh', '需处理', '有操作没有获批准（你当时拒绝了它），这次运行没有产出。'],
+    ['en', 'Needs attention', 'An action was not approved (you declined it); this run produced nothing.'],
+  ] as const)('denied-no-output row explains the badge without commands or tool names (%s)', (language, badge, sentence) => {
+    useAppStore.setState({ language });
+    const marker = { count: 1, steps: [{ tool: 'Bash', summary: 'python3 summarize-notes.py', reason: 'user' as const }] };
+    const { container } = render(
+      <CronExecutionList
+        executions={[execution({ result: { permissionDenied: marker } })]}
+        selectedExecutionId={null}
+        onSelectExecution={() => undefined}
+      />,
+    );
+    expect(screen.getByTestId('cron-execution-permission-denied').textContent).toBe(badge);
+    expect(screen.getByTestId('cron-execution-permission-denied-reason').textContent).toBe(sentence);
+    expect(container.textContent).not.toContain('Bash');
+    expect(container.textContent).not.toContain('python3');
+    expect(container.textContent).not.toContain('summarize-notes.py');
+  });
+
+  it.each(['zh', 'en'] as const)('approved-completed fixture has no attention badge or denial reason (%s)', (language) => {
+    useAppStore.setState({ language });
+    const approved = execution({ result: { sessionId: 'approved-session', finalAssistantText: 'Saved the meeting summary.' } });
+    render(<>
+      <CronExecutionList executions={[approved]} selectedExecutionId={null} onSelectExecution={() => undefined} />
+      <CronExecutionDetail execution={approved} />
+    </>);
+    expect(screen.queryByTestId('cron-execution-permission-denied')).toBeNull();
+    expect(screen.queryByTestId('cron-execution-permission-denied-reason')).toBeNull();
+    expect(screen.queryByTestId('cron-exec-detail-permission-denied')).toBeNull();
+    expect(screen.queryByTestId('cron-permission-denied-detail')).toBeNull();
+    expect(screen.getAllByText(language === 'zh' ? '完成' : 'Done')).toHaveLength(2);
   });
 
   it('旧执行记录（无字段）不产生需处理徽章', () => {
@@ -143,6 +179,18 @@ describe('CronExecutionDetail 需处理徽章与重跑', () => {
     await waitFor(() => {
       expect(triggerJob).toHaveBeenCalledWith('job-1');
     });
+  });
+
+  it('denied-no-output detail shows the same amber verdict and user-denial reason in English', () => {
+    useAppStore.setState({ language: 'en' });
+    render(<CronExecutionDetail execution={execution({ result: {
+      permissionDenied: { count: 1, steps: [{ tool: 'Bash', summary: 'python3 summarize-notes.py', reason: 'user' }] },
+    } })} />);
+    const badge = screen.getByTestId('cron-exec-detail-permission-denied');
+    expect(badge.textContent).toBe('Needs attention');
+    expect(badge.className).toContain('text-badge-warning');
+    expect(screen.getByTestId('cron-permission-denied-sentence').textContent)
+      .toBe('“python3 summarize-notes.py” was not approved (you declined it); this run produced nothing.');
   });
 
   it('各 reason 的一句话映射（user / cancelled / other）', () => {

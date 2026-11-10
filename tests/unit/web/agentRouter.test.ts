@@ -933,7 +933,7 @@ describe('createAgentRouter', () => {
 
       controller.abort();
       await waitForAssertion(() => {
-        expect(mockCancel).toHaveBeenCalledWith('user');
+        expect(mockCancel).toHaveBeenCalledWith('client-disconnect');
       });
     });
 
@@ -964,7 +964,7 @@ describe('createAgentRouter', () => {
       expect(config.requestedAgentId).toBe('explore');
 
       controller.abort();
-      await waitForAssertion(() => expect(mockCancel).toHaveBeenCalledWith('user'));
+      await waitForAssertion(() => expect(mockCancel).toHaveBeenCalledWith('client-disconnect'));
     });
 
     it('显式选择解析失败 → SSE routing_resolved 降级信号（fallbackToDefault+requestedAgentId），不再静默', async () => {
@@ -1003,7 +1003,7 @@ describe('createAgentRouter', () => {
 
       controller.abort();
       await waitForAssertion(() => {
-        expect(mockCancel).toHaveBeenCalledWith('user');
+        expect(mockCancel).toHaveBeenCalledWith('client-disconnect');
       });
     });
 
@@ -1032,7 +1032,7 @@ describe('createAgentRouter', () => {
 
       controller.abort();
       await waitForAssertion(() => {
-        expect(mockCancel).toHaveBeenCalledWith('user');
+        expect(mockCancel).toHaveBeenCalledWith('client-disconnect');
       });
     });
 
@@ -1058,7 +1058,7 @@ describe('createAgentRouter', () => {
 
       controller.abort();
       await waitForAssertion(() => {
-        expect(mockCancel).toHaveBeenCalledWith('user');
+        expect(mockCancel).toHaveBeenCalledWith('client-disconnect');
       });
     });
 
@@ -1085,7 +1085,7 @@ describe('createAgentRouter', () => {
 
       controller.abort();
       await waitForAssertion(() => {
-        expect(mockCancel).toHaveBeenCalledWith('user');
+        expect(mockCancel).toHaveBeenCalledWith('client-disconnect');
       });
     });
   });
@@ -1110,7 +1110,7 @@ describe('createAgentRouter', () => {
     controller.abort();
 
     await waitForAssertion(() => {
-      expect(mockCancel).toHaveBeenCalledWith('user');
+      expect(mockCancel).toHaveBeenCalledWith('client-disconnect');
     });
   });
 
@@ -1164,7 +1164,7 @@ describe('createAgentRouter', () => {
 
       controller.abort();
       await waitForAssertion(() => {
-        expect(mockCancel).toHaveBeenCalledWith('user');
+        expect(mockCancel).toHaveBeenCalledWith('client-disconnect');
       });
       await response.text().catch(() => undefined);
     } finally {
@@ -1216,7 +1216,7 @@ describe('createAgentRouter', () => {
       expect(await repository.get(liveRunId!)).toMatchObject({ status: 'running', sessionId });
 
       controller.abort();
-      await waitForAssertion(() => expect(mockCancel).toHaveBeenCalledWith('user'));
+      await waitForAssertion(() => expect(mockCancel).toHaveBeenCalledWith('client-disconnect'));
       await response.text().catch(() => undefined);
     } finally {
       beforeCrash.clear();
@@ -1352,7 +1352,7 @@ describe('createAgentRouter', () => {
     });
 
     controller.abort();
-    await waitForAssertion(() => expect(cancelPriorRun).toHaveBeenCalledWith('user'), 3000);
+    await waitForAssertion(() => expect(cancelPriorRun).toHaveBeenCalledWith('client-disconnect'), 3000);
     await vi.waitFor(() => {
       expect(new QueuedInputRepository(queuedInputTestDb!).getById('drained-user')).toMatchObject({
         status: 'consumed',
@@ -1474,7 +1474,7 @@ describe('createAgentRouter', () => {
     await steerPersistenceStarted;
 
     controller.abort();
-    await waitForAssertion(() => expect(cancelActiveRun).toHaveBeenCalledWith('user'), 3000);
+    await waitForAssertion(() => expect(cancelActiveRun).toHaveBeenCalledWith('client-disconnect'), 3000);
     releaseSteerPersistence?.();
 
     const steerResponse = await steerResponsePromise;
@@ -2355,6 +2355,41 @@ describe('createAgentRouter', () => {
     expect(body).toEqual({ error: 'Missing prompt' });
     expect(mockCreateAgentLoop).not.toHaveBeenCalled();
     expect(createCLIAgent).not.toHaveBeenCalled();
+  });
+
+  it('rejects an empty or whitespace prompt without attachments with the stable PROMPT_REQUIRED code', async () => {
+    for (const prompt of ['', '   ', undefined]) {
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt, sessionId: 'session-empty-prompt' }),
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: 'Missing prompt', code: 'PROMPT_REQUIRED' });
+    }
+    expect(mockCreateAgentLoop).not.toHaveBeenCalled();
+  });
+
+  it('accepts an empty prompt when attachments are present', async () => {
+    mockRun.mockResolvedValueOnce(undefined);
+    const attachment = {
+      id: 'att-only-1',
+      type: 'file',
+      category: 'text',
+      name: 'notes.txt',
+      size: 5,
+      mimeType: 'text/plain',
+      data: 'hello',
+    };
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: '', attachments: [attachment], sessionId: 'session-attachment-only' }),
+    });
+    await response.text();
+
+    expect(response.status).toBe(200);
+    expect(mockCreateAgentLoop).toHaveBeenCalled();
   });
 
   it('uses clientMessageId as the persisted user message id for /api/run', async () => {
