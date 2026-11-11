@@ -13,11 +13,11 @@ import { useI18n } from '../../../hooks/useI18n';
 import { CronHookError } from '../../../services/cronClient';
 import { copyPathToClipboard } from '../../../utils/platform';
 
-const CLOUD_NOT_CONFIGURED_CODE = 'CRON_CLOUD_NOT_CONFIGURED';
+import { CRON_CLOUD_NOT_CONFIGURED } from '@shared/constants/cronErrors';
 
 /** hook 注册/轮换失败 → 本地化文案：云端未配置给引导句，其余带主机原文（不含密钥）。 */
 export function webhookHookFailureText(error: unknown, failureTitle: string, unconfigured: string): string {
-  if (error instanceof CronHookError && error.code === CLOUD_NOT_CONFIGURED_CODE) return unconfigured;
+  if (error instanceof CronHookError && error.code === CRON_CLOUD_NOT_CONFIGURED) return unconfigured;
   const detail = error instanceof Error ? error.message : String(error);
   return `${failureTitle}: ${detail}`;
 }
