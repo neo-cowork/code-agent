@@ -344,6 +344,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const composerDraft = useComposerDraftPersistence({
     sessionId: currentSessionId,
     sessionless,
+    scopeProjectId,
     value,
     setValue,
     suspend: editingQueuedInputId !== null,
