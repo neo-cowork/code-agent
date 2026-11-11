@@ -6,6 +6,8 @@
 // 场景：coder 已完成 + 一条后台 shell 任务被用户停掉；重启前后行集合与「已取消」数一致，
 // 不多出幽灵行。真 backgroundTaskStore + 真 appStore + 真 useSessionAgentRows。
 // ============================================================================
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentTreeSnapshot } from '@shared/contract/agentTree';
@@ -49,5 +51,10 @@ describe('useSessionAgentRows with real restart snapshots', () => {
     expect(summarize(before)).toEqual(['agent:done', 'task:cancelled']);
     expect(summarize(after)).toEqual(summarize(before));
     expect(after.filter((row) => row.status === 'cancelled')).toHaveLength(1);
+  });
+
+  it('keeps captured fixtures free of absolute home paths and sandbox temp paths', () => {
+    const raw = readFileSync(resolve(process.cwd(), 'tests/renderer/hooks/fixtures/restartWalkthroughRealShapes.json'), 'utf8');
+    expect(raw).not.toMatch(/\/Users\/|\/var\/folders\/|\/home\/[a-z]+\/work\//);
   });
 });

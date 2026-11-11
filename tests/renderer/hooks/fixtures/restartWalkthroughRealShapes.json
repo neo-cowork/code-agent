@@ -123,7 +123,7 @@
           "subagentContext"
         ],
         "displayName": "Coder",
-        "task": "[工作目录: /Users/leo/work/out/N-FIX-BGPANEL-STOP-TERMINAL-FU1-FU1-FU1/realrun6/neo/home/Neo/任务_1110_请让 coder 助手只做一件事：用 Bash] 所有文件路径基于此目录。\n\n只做一件事：用 Bash 工具以 run_in_background=true 在后台启动命令 `sleep 602 && echo done`。启动后立刻结束本任务，不要等待命令完成，不要派其他代理，不要运行其他命令。完成后只需回复“已在后台启动”。",
+        "task": "[工作目录: /home/user/Neo/task] 所有文件路径基于此目录。\n\n只做一件事：用 Bash 工具以 run_in_background=true 在后台启动命令 `sleep 602 && echo done`。启动后立刻结束本任务，不要等待命令完成，不要派其他代理，不要运行其他命令。完成后只需回复“已在后台启动”。",
         "createdAt": 1794328605248,
         "completedAt": 1794328620426,
         "updatedAt": 1794328620426,
@@ -161,7 +161,7 @@
           "subagentContext"
         ],
         "displayName": "Coder",
-        "task": "[工作目录: /Users/leo/work/out/N-FIX-BGPANEL-STOP-TERMINAL-FU1-FU1-FU1/realrun6/neo/home/Neo/任务_1110_请让 coder 助手只做一件事：用 Bash] 所有文件路径基于此目录。\n\n只做一件事：用 Bash 工具以 run_in_background=true 在后台启动命令 `sleep 602 && echo done`。启动后立刻结束本任务，不要等待命令完成，不要派其他代理，不要运行其他命令。完成后只需回复“已在后台启动”。",
+        "task": "[工作目录: /home/user/Neo/task] 所有文件路径基于此目录。\n\n只做一件事：用 Bash 工具以 run_in_background=true 在后台启动命令 `sleep 602 && echo done`。启动后立刻结束本任务，不要等待命令完成，不要派其他代理，不要运行其他命令。完成后只需回复“已在后台启动”。",
         "createdAt": 1794328605248,
         "completedAt": 1794328620426,
         "updatedAt": 1794328620426,
@@ -198,9 +198,9 @@
     "toolCallId": "call_307552103ccc4b99a0f0c4eb",
     "source": "shell",
     "title": "sleep 602 && echo done",
-    "summary": "/Users/leo/work/out/N-FIX-BGPANEL-STOP-TERMINAL-FU1-FU1-FU1/realrun6/neo/home/.code-agent/tasks/ccf137d8-dc73-4ea5-8d8f-156bfdb2ab8d.log",
-    "command": "sandbox-exec -f /var/folders/13/fzr7_7vd25zfb_608yrj8h240000gn/T/code-agent-sandbox/profile-1794328613533-00586d27.sb /usr/bin/env npm_config_userconfig\\=/var/folders/13/fzr7_7vd25zfb_608yrj8h240000gn/T/neo-npm-NhjNTx/npmrc npm_config_cache\\=/var/folders/13/fzr7_7vd25zfb_608yrj8h240000gn/T/neo-npm-NhjNTx/cache npm_config_logs_dir\\=/var/folders/13/fzr7_7vd25zfb_608yrj8h240000gn/T/neo-npm-NhjNTx/logs npm_config_update_notifier\\=false /bin/sh -c 'sleep 602 && echo done'",
-    "cwd": "/Users/leo/work/out/N-FIX-BGPANEL-STOP-TERMINAL-FU1-FU1-FU1/realrun6/neo/home/Neo/任务_1110_请让 coder 助手只做一件事：用 Bash",
+    "summary": "<HOME>/.code-agent/tasks/ccf137d8-dc73-4ea5-8d8f-156bfdb2ab8d.log",
+    "command": "sandbox-exec -f /tmp/sandbox /usr/bin/env npm_config_userconfig\\=/tmp/sandbox npm_config_cache\\=/tmp/sandbox npm_config_logs_dir\\=/tmp/sandbox npm_config_update_notifier\\=false /bin/sh -c 'sleep 602 && echo done'",
+    "cwd": "/home/user/Neo/task",
     "status": "cancelled",
     "createdAt": 1794328613666,
     "updatedAt": 1794328668362,
@@ -223,7 +223,7 @@
           "open_log",
           "retry"
         ],
-        "logPath": "/Users/leo/work/out/N-FIX-BGPANEL-STOP-TERMINAL-FU1-FU1-FU1/realrun6/neo/home/.code-agent/tasks/ccf137d8-dc73-4ea5-8d8f-156bfdb2ab8d.log"
+        "logPath": "<HOME>/.code-agent/tasks/ccf137d8-dc73-4ea5-8d8f-156bfdb2ab8d.log"
       }
     },
     "events": [],
@@ -233,7 +233,7 @@
         "taskId": "shell:ccf137d8-dc73-4ea5-8d8f-156bfdb2ab8d",
         "type": "log",
         "label": "Shell log",
-        "path": "/Users/leo/work/out/N-FIX-BGPANEL-STOP-TERMINAL-FU1-FU1-FU1/realrun6/neo/home/.code-agent/tasks/ccf137d8-dc73-4ea5-8d8f-156bfdb2ab8d.log",
+        "path": "<HOME>/.code-agent/tasks/ccf137d8-dc73-4ea5-8d8f-156bfdb2ab8d.log",
         "size": 0,
         "createdAt": 1794328613666,
         "metadata": {
