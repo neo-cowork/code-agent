@@ -53,11 +53,17 @@ export interface SessionSearchFtsSource {
       role?: string;
       limitCap?: number;
       shortQueryFallback?: boolean;
+      activeSessionScope?: { userId: string | null };
     }
   ): SessionSearchFtsHit[];
   countSessionMessagesFts(
     query: string,
-    options?: { sessionIds?: string[]; role?: string; shortQueryFallback?: boolean }
+    options?: {
+      sessionIds?: string[];
+      role?: string;
+      shortQueryFallback?: boolean;
+      activeSessionScope?: { userId: string | null };
+    }
   ): { matches: number; sessions: number };
   getMessages(sessionId: string, limit?: number): Message[];
 }
@@ -90,6 +96,8 @@ export interface SearchOptions {
   sortBy?: 'relevance' | 'date' | 'session';
   /** Sort direction */
   sortOrder?: 'asc' | 'desc';
+  /** FTS 路径：在 SQL 层（LIMIT 之前）只召回未删除、未归档、归属匹配的会话 */
+  activeSessionScope?: { userId: string | null };
 }
 
 /**
@@ -479,6 +487,7 @@ function searchSessionsViaFts(
     offset = 0,
     role,
     sessionIds,
+    activeSessionScope,
     minRelevance = 0,
     includeContext = 50,
     sortBy = 'relevance',
@@ -488,6 +497,7 @@ function searchSessionsViaFts(
   const hits = ftsSource.searchSessionMessagesFts(query, {
     sessionIds,
     role,
+    activeSessionScope,
     limit: SESSION_SEARCH.FTS_CANDIDATE_LIMIT,
     limitCap: SESSION_SEARCH.FTS_CANDIDATE_LIMIT,
     shortQueryFallback: true,
@@ -565,7 +575,7 @@ function searchSessionsViaFts(
   let totalSessions = sessionsWithMatches.size;
   let truncated: boolean;
   if (candidatesCapped && !hasMemoryOnlyFilters) {
-    const totals = ftsSource.countSessionMessagesFts(query, { sessionIds, role, shortQueryFallback: true });
+    const totals = ftsSource.countSessionMessagesFts(query, { sessionIds, role, activeSessionScope, shortQueryFallback: true });
     totalMatches = Math.max(totals.matches, allResults.length);
     totalSessions = Math.max(totals.sessions, totalSessions);
     truncated = totalMatches > offset + limit;
