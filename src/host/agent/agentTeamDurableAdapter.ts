@@ -1,3 +1,4 @@
+import { createLogger } from '../services/infra/logger';
 import { createHash } from 'node:crypto';
 import type { PendingOperation, RunOwnerLease } from '../../shared/contract/durableRun';
 import type { RunKernelAdapter } from '../runtime/durableRunKernel';
@@ -18,6 +19,8 @@ import {
   type AgentTeamDurableStartInput,
   type AgentTeamMailboxMessage,
 } from './agentTeamDurableTypes';
+
+const logger = createLogger('AgentTeamDurableRuntime');
 
 function digest(value: string): string {
   return createHash('sha256').update(value).digest('hex');
@@ -88,14 +91,14 @@ class Controller implements AgentTeamDurableController {
   constructor(
     readonly scope: AgentTeamDurableStartInput['scope'],
     private readonly parentRunId: string,
-    private owner: RunOwnerLease,
+    private owner: RunOwnerLease | undefined,
     private readonly attempt: number,
     private readonly kernel: RunKernelAdapter,
     private readonly parentHost: AgentTeamDurableParentHost,
     private state: AgentTeamCheckpointState,
     traceContext?: RunTraceContext,
   ) {
-    this.ownerEpoch = owner.epoch;
+    this.ownerEpoch = owner?.epoch ?? 0;
     this.traceContext = traceContext;
     for (const node of state.taskGraph) {
       this.operations.set(node.operationId, kernel.prepareOperation({
@@ -109,7 +112,7 @@ class Controller implements AgentTeamDurableController {
         now: state.updatedAt,
       }));
     }
-    this.startHeartbeat(state.updatedAt);
+    if (owner) this.startHeartbeat(state.updatedAt);
   }
 
   getState(): AgentTeamCheckpointState {
@@ -125,6 +128,7 @@ class Controller implements AgentTeamDurableController {
   checkpoint(status: 'running' | 'waiting' | 'paused' | 'recovering' = 'running'): Promise<void> {
     return this.enqueue(async () => {
       if (this.terminalized) throw new Error(`Agent Team run is already terminal: ${this.scope.runId}`);
+      if (!this.owner) return;
       await this.kernel.checkpoint({
         runId: this.scope.runId,
         attempt: this.attempt,
@@ -303,26 +307,34 @@ class Controller implements AgentTeamDurableController {
     if (this.terminalPromise) return this.terminalPromise;
     this.terminalPromise = (async () => {
       await this.serial;
-      await this.parentHost.projectAgentTeamChildTerminal({
-        parentRunId: this.parentRunId,
-        teamRunId: this.scope.runId,
-        status,
-        resultRef: status === 'completed' ? `agent-team:${this.scope.runId}:completed` : undefined,
-        now,
-      });
-      await this.kernel.terminal({
-        runId: this.scope.runId,
-        attempt: this.attempt,
-        owner: this.owner,
-        now,
-        status,
-        reason,
-        event: {
-          type: `agent_team_${status}`,
-          payload: { treeId: this.scope.treeId, reason },
-          recordedAt: now,
-        },
-      });
+      if (this.owner) {
+        await this.kernel.terminal({
+          runId: this.scope.runId,
+          attempt: this.attempt,
+          owner: this.owner,
+          now,
+          status,
+          reason,
+          event: {
+            type: `agent_team_${status}`,
+            payload: { treeId: this.scope.treeId, reason },
+            recordedAt: now,
+          },
+        });
+        if (this.parentHost.hasDurableOwner(this.parentRunId)) {
+          await this.parentHost.projectAgentTeamChildTerminal({
+            parentRunId: this.parentRunId,
+            teamRunId: this.scope.runId,
+            status,
+            resultRef: status === 'completed' ? `agent-team:${this.scope.runId}:completed` : undefined,
+            now,
+          });
+        } else {
+          logger.info('Agent team parent terminal projection skipped after parent owner ended', {
+            parentRunId: this.parentRunId, runId: this.scope.runId, reason: 'parent_run_not_durable',
+          });
+        }
+      }
       if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = undefined;
       this.terminalized = true;
@@ -343,8 +355,10 @@ class Controller implements AgentTeamDurableController {
   }
 
   private startHeartbeat(now: number): void {
+    if (!this.owner) return;
     const intervalMs = Math.max(250, Math.floor((this.owner.leaseExpiresAt - now) / 3));
     this.heartbeatTimer = setInterval(() => {
+      if (!this.owner) return;
       void this.kernel.heartbeat(this.scope.runId, this.owner, Date.now()).then((owner) => {
         this.owner = owner;
       }).catch(() => {
@@ -369,7 +383,13 @@ export class AgentTeamDurableRuntime implements AgentTeamDurableRuntimePort {
       throw new Error('Agent Team run identity must be stable for its parent logical operation');
     }
     assertValidTaskGraph(input.tasks);
-    await this.parentHost.prepareAgentTeamChild({
+    const parentDurable = this.parentHost.hasDurableOwner(input.parentRunId);
+    if (!parentDurable) {
+      logger.info('Parent run is not durable, starting agent team without durable child', {
+        parentRunId: input.parentRunId, runId: input.scope.runId, reason: 'parent_run_not_durable',
+      });
+    }
+    if (parentDurable) await this.parentHost.prepareAgentTeamChild({
       parentRunId: input.parentRunId,
       teamRunId: input.scope.runId,
       treeId: input.scope.treeId,
@@ -422,7 +442,7 @@ export class AgentTeamDurableRuntime implements AgentTeamDurableRuntimePort {
       canDeduplicate: false,
       now,
     }));
-    const created = await this.kernel.createRun({
+    const created = parentDurable ? await this.kernel.createRun({
       runId: input.scope.runId,
       sessionId: input.scope.sessionId,
       engine: { kind: 'agent_team', treeId: input.scope.treeId },
@@ -430,9 +450,9 @@ export class AgentTeamDurableRuntime implements AgentTeamDurableRuntimePort {
       now,
       initialEngineCursor: { schemaVersion: AGENT_TEAM_CHECKPOINT_SCHEMA_VERSION, treeId: input.scope.treeId, mailboxCursor: 0 },
       initialPendingOperations: initialOperations,
-    });
+    }) : undefined;
     const activeTrace = getActiveRunTraceContext();
-    const traceContext = activeTrace ? createChildRunTraceContext(activeTrace, {
+    const traceContext = activeTrace && created ? createChildRunTraceContext(activeTrace, {
       runId: input.scope.runId,
       sessionId: input.scope.sessionId,
       attempt: created.attempt.attempt,
@@ -444,8 +464,8 @@ export class AgentTeamDurableRuntime implements AgentTeamDurableRuntimePort {
     const controller = new Controller(
       input.scope,
       input.parentRunId,
-      created.owner,
-      created.attempt.attempt,
+      created?.owner,
+      created?.attempt.attempt ?? 1,
       this.kernel,
       this.parentHost,
       state,

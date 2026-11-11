@@ -109,6 +109,12 @@ describe('SESSION_COMMAND_CENTER_BRAIN_CONTEXT design notice', () => {
     expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('直接读取并修改本地文件');
     expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('解析成绝对路径');
   });
+
+  it('tells the model not to ask a second time when slots are full and to pass queue_when_full: true only after user replies queue', () => {
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('并发槽已满时由 delegate_task 展示选择卡，不要再次询问');
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('queue_when_full: true');
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).not.toContain('目标任务不唯一、并发槽已满或取消代价较高时，调用 AskUserQuestion');
+  });
 });
 
 describe('isSessionCommandCenterTurn', () => {

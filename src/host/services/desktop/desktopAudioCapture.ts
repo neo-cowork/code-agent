@@ -11,6 +11,7 @@ import { createLogger } from '../infra/logger';
 import { getNativeDesktopService } from './nativeDesktopService';
 import { getUserConfigDir } from '../../config/configPaths';
 import { isOrtTensor, loadVadRuntime, type OrtRuntimeModule } from './audioVadRuntime';
+import { getAudioCapturePrerequisites } from './audioCapturePrerequisites';
 import { clearAllAudioRecordings, finalizeSegmentAudio, getAudioRetentionStatus, sweepAudioRetention } from './audioRetention';
 import type { InferenceSession, Tensor as OrtTensor } from 'onnxruntime-node';
 
@@ -1211,17 +1212,20 @@ export function clearAudioRecordings() {
 }
 
 export function getAudioCaptureStatus() {
+  const prerequisites = getAudioCapturePrerequisites(captureMode);
   return {
     capturing,
     captureMode,
     vadReady: vadInstance?.isSpeaking !== undefined,
-    soxAvailable: !!findFfmpegBinary() || !!findRecBinary(),
-    systemAudioAvailable: !!findSystemAudioCaptureBinary(),
+    soxAvailable: prerequisites.recorder.microphone === 'ready',
+    systemAudioAvailable: prerequisites.recorder.systemAudio === 'ready',
     asrEngine: findWhisperBinary() ? 'whisper-cpp' : findQwenAsrModel() ? 'qwen3-asr' : 'none',
     powerMode,
     totalSegments,
     audioDir: getAudioDir(),
     queueLength: asrQueue.length,
     retention: getAudioRetentionStatus(getAudioDir(), getSqlitePath()),
+    prerequisites,
+    missingPrerequisites: prerequisites.missing,
   };
 }

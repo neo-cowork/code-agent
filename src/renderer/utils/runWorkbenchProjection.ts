@@ -15,6 +15,7 @@ import type {
   ToolCapabilityView,
 } from '../types/runWorkbench';
 import { getToolCapabilitySource } from './toolExecutionPresentation';
+import { mentionsRawToolName } from './humanizeToolStep';
 import { hasCancelledRunMarker, isIdleReapedRun } from './streamingStatePresentation';
 import {
   isReadOnlyArtifactOwnershipItem,
@@ -214,7 +215,7 @@ export function buildLoopDecisionViews(projection: TraceProjection): LoopDecisio
       runId,
       step: decisions.length + 1,
       action: result === undefined || node.toolCall._streaming ? '工具执行中' : '工具完成',
-      reason: node.toolCall.shortDescription || node.toolCall.name,
+      reason: usableToolDescription(node.toolCall) || '工具调用',
       expectedNextAction: result === undefined ? '等待工具结果' : '汇总工具输出',
       ...describeBlocked(node.toolCall.success === false ? node.toolCall.result : undefined),
     });
@@ -382,8 +383,15 @@ function memoryIdFromToolCall(toolCall: TraceToolCall): string {
     || toolCall.id;
 }
 
+/** 模型描述里带原始工具名（"Use task_status"）时视为不可用，不外露内部名。 */
+function usableToolDescription(toolCall: TraceToolCall): string {
+  const text = toolCall.shortDescription?.trim() ?? '';
+  return text && !mentionsRawToolName(text, toolCall.name) ? text : '';
+}
+
 function memoryReason(toolCall: TraceToolCall, action: MemoryAction): string {
-  if (toolCall.shortDescription?.trim()) return toolCall.shortDescription.trim();
+  const described = usableToolDescription(toolCall);
+  if (described) return described;
   const filename = stringValue(toolCall.args, ['filename'])
     || stringValue(toolCall.metadata, ['filename'])
     || undefined;

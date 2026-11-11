@@ -15,6 +15,10 @@ import type {
   NativePermissionSnapshot,
   NativePermissionStatus,
 } from '@shared/contract';
+import type {
+  AudioCaptureMissingPrerequisiteCode,
+  AudioCapturePrerequisites,
+} from '@shared/contract/audioCapture';
 import { invalidateComputerUseSnapshotForSystemSettings } from '../stores/computerUseStore';
 
 export interface NativeDesktopCapabilities {
@@ -415,6 +419,8 @@ export interface AudioCaptureStatus {
     fileCount?: number;
     bytes?: number;
   };
+  prerequisites?: AudioCapturePrerequisites;
+  missingPrerequisites?: AudioCaptureMissingPrerequisiteCode[];
 }
 
 export interface AudioSegment {

@@ -32,7 +32,7 @@ export const CronScheduleFields: React.FC<CronScheduleFieldsProps> = ({ draft, s
   return (
     <>
       {draft.scheduleType === 'at' && (
-        <FormField label="执行时间" required error={errors.atDatetime}>
+        <FormField label={cc.editorChrome.executionTimeLabel} required error={errors.atDatetime}>
           <DateTimeInput24
             testId="cron-editor-at"
             value={draft.atDatetime}
@@ -47,7 +47,7 @@ export const CronScheduleFields: React.FC<CronScheduleFieldsProps> = ({ draft, s
       {draft.scheduleType === 'every' && (
         <>
           <div className="grid gap-3 sm:grid-cols-2">
-            <FormField label="间隔值" required error={errors.everyInterval}>
+            <FormField label={cc.editorChrome.intervalValueLabel} required error={errors.everyInterval}>
               <Input
                 type="number"
                 min={draft.runsOn === 'cloud'
@@ -57,14 +57,14 @@ export const CronScheduleFields: React.FC<CronScheduleFieldsProps> = ({ draft, s
                 onChange={(e) => setField('everyInterval', e.target.value)}
               />
             </FormField>
-            <FormField label="单位">
+            <FormField label={cc.editorChrome.intervalUnitLabel}>
               <Select
                 value={draft.everyUnit}
                 onChange={(e) => setField('everyUnit', e.target.value as CronJobDraft['everyUnit'])}
                 options={[
-                  { value: 'minutes', label: '分钟' },
-                  { value: 'hours', label: '小时' },
-                  { value: 'days', label: '天' },
+                  { value: 'minutes', label: cc.editorChrome.intervalUnitMinutes },
+                  { value: 'hours', label: cc.editorChrome.intervalUnitHours },
+                  { value: 'days', label: cc.editorChrome.intervalUnitDays },
                 ]}
               />
             </FormField>
@@ -74,25 +74,25 @@ export const CronScheduleFields: React.FC<CronScheduleFieldsProps> = ({ draft, s
           </p>
           {(draft.everyUnit === 'hours' || draft.everyUnit === 'days') && (
             <p className="text-xs text-zinc-500" data-testid="cron-auto-stagger-hint">
-              {draft.everyUnit === 'hours' ? '小时' : '天'}级任务会按任务 ID 自动错峰到非整点分钟，避免扎堆触发。
+              {draft.everyUnit === 'hours' ? cc.editorChrome.hourlyStaggerHint : cc.editorChrome.dailyStaggerHint}
             </p>
           )}
           <div className="grid gap-3 sm:grid-cols-2">
-            <FormField label="开始时间">
+            <FormField label={cc.editorChrome.startTimeLabel}>
               <Input
                 type="text"
                 value={draft.everyStartAt}
                 onChange={(e) => setField('everyStartAt', e.target.value)}
-                placeholder="可选"
+                placeholder={cc.editorChrome.optionalPlaceholder}
                 className="font-mono"
               />
             </FormField>
-            <FormField label="结束时间">
+            <FormField label={cc.editorChrome.endTimeLabel}>
               <Input
                 type="text"
                 value={draft.everyEndAt}
                 onChange={(e) => setField('everyEndAt', e.target.value)}
-                placeholder="可选"
+                placeholder={cc.editorChrome.optionalPlaceholder}
                 className="font-mono"
               />
             </FormField>
@@ -103,14 +103,14 @@ export const CronScheduleFields: React.FC<CronScheduleFieldsProps> = ({ draft, s
       {draft.scheduleType === 'cron' && (
         <div className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
-            <FormField label="Cron 表达式" required error={errors.cronExpression}>
+            <FormField label={cc.editorChrome.cronExpressionLabel} required error={errors.cronExpression}>
               <Input
                 value={draft.cronExpression}
                 onChange={(e) => setField('cronExpression', e.target.value)}
                 className="font-mono"
               />
             </FormField>
-            <FormField label="时区">
+            <FormField label={cc.editorChrome.timezoneLabel}>
               <Input
                 value={draft.cronTimezone}
                 onChange={(e) => setField('cronTimezone', e.target.value)}
@@ -120,8 +120,7 @@ export const CronScheduleFields: React.FC<CronScheduleFieldsProps> = ({ draft, s
           </div>
           {isHourAlignedCronExpression(draft.cronExpression) && (
             <p className="text-xs text-badge-warning" data-testid="cron-stagger-hint">
-              整点任务容易和其他任务扎堆触发，建议把分钟位错开到{' '}
-              {suggestCronStaggerMinute(draft.cronExpression)} 分。
+              {cc.editorChrome.cronStaggerHint.replace('{minute}', String(suggestCronStaggerMinute(draft.cronExpression)))}
             </p>
           )}
         </div>
