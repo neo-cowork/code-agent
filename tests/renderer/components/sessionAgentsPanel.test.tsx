@@ -195,7 +195,7 @@ describe('SessionAgentsPanel', () => {
       assertReason(screen.getByTestId('delegation-failure').textContent, code);
     });
 
-    it('preserves Chinese missing-code copy and localizes unknown English reasons', async () => {
+    it('preserves uncoded English reasons while localizing Chinese host diagnostics', async () => {
       const node = failedNode();
       mockTree(snapshotOf([node]));
       useBackgroundTaskStore.setState({ tasks: [backgroundTask({
@@ -203,7 +203,7 @@ describe('SessionAgentsPanel', () => {
       })] });
       render(<SessionAgentsPanel />);
       expect((await screen.findByTestId('agents-panel-status-agent-9')).textContent).toContain(uiLanguage === 'zh' ? node.failureReason : en.toolStepHumanize.agentFailureReasons.unknown);
-      expect(screen.getByTestId('agents-panel-status-task-1').textContent).toContain(uiLanguage === 'zh' ? 'Original task reason' : en.toolStepHumanize.agentFailureReasons.unknown);
+      expect(screen.getByTestId('agents-panel-status-task-1').textContent).toContain('Original task reason');
       const view = render(<DelegationReceipt presentation={receipt(node)} />);
       expect(view.getByTestId('delegation-failure').textContent).toBe(uiLanguage === 'zh' ? node.failureReason : en.toolStepHumanize.agentFailureReasons.unknown);
       view.unmount();
@@ -214,7 +214,30 @@ describe('SessionAgentsPanel', () => {
       const presentation = deriveDelegationPresentation(call, useBackgroundTaskStore.getState().tasks, []);
       expect(presentation).not.toBeNull();
       render(<DelegationReceipt presentation={presentation!} />);
-      expect(screen.getByTestId('delegation-failure').textContent).toBe(uiLanguage === 'zh' ? 'Original task reason' : en.toolStepHumanize.agentFailureReasons.unknown);
+      expect(screen.getByTestId('delegation-failure').textContent).toBe('Original task reason');
+    });
+
+    it.each(['Original task reason', 'The supplier portal timed out after accepting the draft', '  The source document is locked  '])('preserves readable English reason %s in agent and task rows', async (reason) => {
+      mockTree(snapshotOf([{ ...failedNode(), failureReason: reason }]));
+      useBackgroundTaskStore.setState({ tasks: [backgroundTask({
+        title: 'Compare supplier pricing', status: 'failed', failure: { message: reason },
+      })] });
+      render(<SessionAgentsPanel />);
+      const prefix = (uiLanguage === 'zh' ? zh : en).expert.memberBar.panel.status.failed + (uiLanguage === 'zh' ? '：' : ': ');
+      expect((await screen.findByTestId('agents-panel-status-agent-9')).textContent).toBe(prefix + reason);
+      expect(screen.getByTestId('agents-panel-status-task-1').textContent).toBe(prefix + reason);
+    });
+
+    it('keeps two English background task titles distinguishable', async () => {
+      mockTree(snapshotOf([]));
+      useBackgroundTaskStore.setState({ tasks: [
+        backgroundTask({ title: 'Compare supplier pricing', status: 'failed', failure: { message: 'Original task reason' } }),
+        backgroundTask({ id: 'task-2', title: 'Summarize meeting notes', status: 'running' }),
+      ] });
+      render(<SessionAgentsPanel />);
+      expect(await screen.findByText('Compare supplier pricing')).toBeTruthy();
+      expect(screen.getByText('Summarize meeting notes')).toBeTruthy();
+      expect(screen.getByTestId('agents-panel-status-task-1').textContent).toContain('Original task reason');
     });
 
     it.each(['父任务已经结束', '未登记的失败', undefined])('localizes missing-code task failure and summary %s', async (reason) => {

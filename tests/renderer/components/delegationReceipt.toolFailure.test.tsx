@@ -176,3 +176,36 @@ describe.each(['en', 'zh'] as const)('task ledger display edge in %s', (locale) 
     }
   });
 });
+
+
+describe('uncoded English background task details', () => {
+  it.each(['node reason', 'node progress', 'task failure', 'task summary'] as const)('preserves meaningful English through %s', (source) => {
+    language = 'en';
+    for (const reason of ['Original task reason', 'The supplier portal timed out after accepting the draft', '  The source document is locked  ']) {
+      const node = { ...backgroundNode(), failureReason: source === 'node reason' ? reason : undefined, progress: reason };
+      const task = { ...musicTask('failed', false), title: 'Compare supplier pricing', summary: reason,
+        ...(source === 'task failure' ? { failure: { message: reason } } : {}),
+      };
+      const presentation = source.startsWith('node')
+        ? deriveDelegationPresentation(backgroundCall, [], [node], en)!
+        : deriveDelegationPresentation(delegateCall, [task], [], en)!;
+      const view = render(<DelegationReceipt presentation={presentation} />);
+      expect(view.getByTestId('delegation-failure').textContent).toBe(reason);
+      view.unmount();
+    }
+  });
+
+  it.each(['running', 'completed', 'failed'] as const)('preserves distinct English task headlines when %s', (status) => {
+    language = 'en';
+    const titles = ['Compare supplier pricing', 'Summarize meeting notes'];
+    const presentations = titles.map((title) => deriveDelegationPresentation(delegateCall, [
+      { ...musicTask(status, false), title },
+    ], [], en)!);
+    const { container } = render(<>{presentations.map((presentation) => (
+      <DelegationHeader key={presentation.title} presentation={presentation} />
+    ))}</>);
+    const suffix = { running: ' is working', completed: ' finished', failed: " didn't finish" }[status];
+    expect(screen.getAllByTestId('delegation-headline').map((header) => header.textContent)).toEqual(titles.map((title) => title + suffix));
+    expect(container.textContent).not.toContain('Background assistant');
+  });
+});

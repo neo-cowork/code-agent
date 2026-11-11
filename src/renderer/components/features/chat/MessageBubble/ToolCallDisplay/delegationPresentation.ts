@@ -7,6 +7,7 @@ import type { ToolCall } from '@shared/contract';
 import { languages, type Translations } from '../../../../../i18n';
 import { useAppStore } from '../../../../../stores/appStore';
 import { agentFailureCopy } from '../../../../../utils/agentFailureCopy';
+import { containsCjk } from '../../../../../utils/containsCjk';
 import { isAgentFailureCode } from '@shared/contract/agentFailure';
 import {
   isAgentNodeTerminalStatus,
@@ -181,7 +182,7 @@ function fromTask(task: Task, t: Translations): DelegationPresentation {
       : 'failed';
   return {
     state,
-    title: t === languages.en && task.source === 'delegate_task'
+    title: t === languages.en && task.source === 'delegate_task' && containsCjk(task.title)
       ? t.agentRoleLabels.roles.background
       : displayPaths(task.title),
     lastToolStep: task.progress?.lastToolStep,
