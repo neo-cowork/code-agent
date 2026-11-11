@@ -1,3 +1,4 @@
+import { agentRoleLabel } from './agentRoleLabel';
 // ============================================================================
 // humanizeToolStep — 把工具调用（工具名 + 参数）合成一句人话步骤文案
 // 消费方：ToolStepGroup 的步骤行主文案 + ToolHeader。原工具名/参数继续留在展开详情
@@ -516,7 +517,10 @@ export function humanizeToolStep(
       return buildDomainActionSentence('mcp', mcp.tool, status, a, t, mcp.server);
     }
     case 'subagentSpawn': {
-      const description = firstString(a, ['description', 'prompt', 'task', 'goal', 'role']);
+      const roleArg = name === 'Task' ? a.subagent_type : a.role;
+      const role = name === 'Explore' ? 'explore' : typeof roleArg === 'string' ? roleArg.trim() : '';
+      const description = (name === 'Task' ? firstString(a, ['description']) : '')
+        || (role ? agentRoleLabel(role, t.agentRoleLabels) : firstString(a, ['description']));
       return description
         ? h.subagentSpawn.replace('{description}', description)
         : h.subagentSpawnFallback;
