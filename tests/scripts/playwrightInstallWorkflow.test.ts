@@ -72,8 +72,8 @@ describe('Playwright install lives in the composite action', () => {
     const swarm = byFile.get('.github/workflows/swarm-ci.yml') ?? [];
     const main = byFile.get('.github/workflows/main-full-gate.yml') ?? [];
     const scroll = byFile.get('.github/workflows/long-session-scroll-gate.yml') ?? [];
-    expect(swarm).toHaveLength(4);
-    expect(swarm.every(wantsDeps)).toBe(true);
+    // swarm-ci jobs run inside the Playwright image (see the container test); no install step.
+    expect(swarm).toHaveLength(0);
     expect(main).toHaveLength(1);
     expect(main.some(wantsDeps)).toBe(false);
     expect(scroll).toHaveLength(1);
@@ -98,6 +98,29 @@ describe('Playwright install lives in the composite action', () => {
   });
 });
 
+
+describe('swarm-ci Playwright jobs use the pinned Playwright image instead of apt', () => {
+  const containerJobs = ['smoke', 'unit', 'full', 'perf-journey-ratchet'];
+  const doc = loadWorkflow(path.join(workflowsDir, 'swarm-ci.yml')) as {
+    jobs: Record<string, { container?: string | { image?: string }; steps?: WorkflowStep[] }>;
+  };
+  const lockVersion = (JSON.parse(readFileSync(path.join(repoRoot, 'package-lock.json'), 'utf8')) as {
+    packages: Record<string, { version: string }>;
+  }).packages['node_modules/playwright'].version;
+
+  it.each(containerJobs)('%s runs in mcr playwright image matching package-lock', (name) => {
+    const container = doc.jobs[name].container;
+    const image = typeof container === 'string' ? container : container?.image;
+    expect(image).toBe(`mcr.microsoft.com/playwright:v${lockVersion}-noble`);
+  });
+
+  it.each(containerJobs)('%s never runs apt or playwright install', (name) => {
+    for (const step of doc.jobs[name].steps ?? []) {
+      expect(step.uses ?? '').not.toContain(COMPOSITE);
+      expect(step.run ?? '').not.toMatch(/apt(-get)?\s|playwright install|sudo /);
+    }
+  });
+});
 
 describe('Playwright install retries the real action script', () => {
   const cases = [
