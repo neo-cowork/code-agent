@@ -52,6 +52,14 @@ export function applyCronEventDecisionsSchema(db: BetterSqlite3.Database, logger
 
     CREATE INDEX IF NOT EXISTS idx_cron_event_decisions_job
       ON cron_event_decisions (job_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS cron_mail_watermarks (
+      job_id TEXT PRIMARY KEY,
+      binding TEXT NOT NULL,
+      seen_keys TEXT NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (job_id) REFERENCES cron_jobs(id) ON DELETE CASCADE
+    );
   `);
 
   // 返修②（叠加迁移）：已建过 cron_event_decisions 的库补 matched_rule 列（可空，老行读回 undefined）。

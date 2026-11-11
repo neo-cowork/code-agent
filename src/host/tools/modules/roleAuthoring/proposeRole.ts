@@ -68,6 +68,51 @@ async function shouldInstallDirectly(ctx: ToolContext, editingRoleId: string | u
   }
 }
 
+/**
+ * 同名待确认草稿冲突：确认卡只在草稿所属会话里显示，所以失败文案要告诉模型草稿在哪。
+ * 三种情形：本会话（沿用原文案）/ 另一会话仍在（点名）/ 所属会话已不存在（孤儿，不指路）。
+ */
+async function describeDraftRejection(
+  ctx: ToolContext,
+  result: { reason?: string; conflict?: { roleId: string; sessionId: string } },
+): Promise<string> {
+  const fallback = result.reason ?? 'Role draft enqueue failed';
+  const conflict = result.conflict;
+  if (!conflict || conflict.sessionId === ctx.sessionId) return fallback;
+
+  let title: string | null = null;
+  let found = false;
+  try {
+    const session = await getSessionManager().getSession(conflict.sessionId, 1);
+    if (session) {
+      found = true;
+      title = session.title?.trim() || null;
+    }
+  } catch (error) {
+    ctx.logger.warn('propose_role conflict-session lookup failed; using generic wording', {
+      reason: 'session_lookup_error',
+      error: String(error),
+    });
+    found = true; // 查询异常不等于会话已删：不下「孤儿」结论，用通用措辞指路
+  }
+
+  const name = conflict.roleId;
+  if (!found) {
+    ctx.logger.warn('propose_role same-name draft is orphaned', { reason: 'owner_session_missing', roleId: name });
+    return (
+      `已有一个待确认的「${name}」草稿，但它所属的对话已不存在，界面上已无法再确认它。` +
+      `请如实告诉用户：之前那份「${name}」草稿已无法在界面中确认，请换一个名字，你会按新名字重新起草。` +
+      `不要提确认卡，不要再用同一个名字重试。`
+    );
+  }
+  const where = title ? `对话「${title}」` : '另一个对话';
+  return (
+    `已有一个待确认的「${name}」草稿，它在${where}里，尚未确认；当前这个对话里没有确认卡。` +
+    `请如实告诉用户：同名专家「${name}」已在${where}起草过、还没确认，请回到那个对话确认或放弃它，或者告诉你一个新名字，你会重新起草。` +
+    `不要说当前对话有确认卡或让用户在这里点确认，不要再用同一个名字重试。`
+  );
+}
+
 class ProposeRoleHandler implements ToolHandler<Record<string, unknown>, string> {
   readonly schema = schema;
 
@@ -144,7 +189,7 @@ class ProposeRoleHandler implements ToolHandler<Record<string, unknown>, string>
     if (direct) {
       const prepared = await prepareRoleDraft(draftInput);
       if (!prepared.draft || prepared.agentMd === undefined) {
-        return { ok: false, error: prepared.reason ?? 'Role draft validation failed', code: 'DRAFT_REJECTED' };
+        return { ok: false, error: await describeDraftRejection(ctx, prepared), code: 'DRAFT_REJECTED' };
       }
       const installed = await installRoleDraft(prepared.draft, prepared.agentMd);
       if (!installed.success) {
@@ -186,11 +231,12 @@ class ProposeRoleHandler implements ToolHandler<Record<string, unknown>, string>
       };
     }
 
-    const { draft, reason } = await enqueueRoleDraft(draftInput);
+    const enqueued = await enqueueRoleDraft(draftInput);
+    const { draft } = enqueued;
 
     if (!draft) {
       // 入队被拒（重名/非法）——把原因回给模型，让它换名或调整后重试
-      return { ok: false, error: reason ?? 'Role draft enqueue failed', code: 'DRAFT_REJECTED' };
+      return { ok: false, error: await describeDraftRejection(ctx, enqueued), code: 'DRAFT_REJECTED' };
     }
 
     // 发射事件 → 聊天渲染确认卡（RoleDraftNotifications 订阅 role_draft_pending）
