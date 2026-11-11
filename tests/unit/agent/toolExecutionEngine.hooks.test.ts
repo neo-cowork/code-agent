@@ -546,6 +546,43 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(second[0]?.output).toBe('tool output');
   });
 
+  it('mid-run reminder for a user_visible completion carries no tool ban and the summary once', async () => {
+    const sessionId = 'session-tool-reminder-inline';
+    const agentId = getBackgroundSubagentRegistry().spawn(async () => ({
+      success: true,
+      output: 'unique-inline-summary-7f3a',
+      toolsUsed: [],
+      iterations: 1,
+    }), {
+      sessionId,
+      runId: 'run-that-spawned-it',
+      role: 'coder',
+      completionKind: 'user_visible',
+    });
+    await getBackgroundSubagentRegistry().await(agentId);
+
+    const toolExecutor = {
+      execute: vi.fn(async (): Promise<ToolResult> => ({ toolCallId: '', success: true, output: 'tool output' })),
+    };
+    const engine = new ToolExecutionEngine(makeRuntimeContext({
+      sessionId, runId: 'run-tool-reminder-inline', toolExecutor: toolExecutor as never,
+    }));
+    engine.setModules({
+      injectSystemMessage: vi.fn(),
+      pushPersistentSystemContext: vi.fn(),
+      getCurrentAttachments: vi.fn().mockReturnValue([]),
+    } as never, { emitTaskProgress: vi.fn() } as never, {
+      setPlanMode: vi.fn(),
+      isPlanMode: vi.fn().mockReturnValue(false),
+    } as never);
+
+    const [result] = await engine.executeToolsWithHooks([makeToolCall('tool-bg-inline', 'a.txt')]);
+    const output = result?.output ?? '';
+    expect(output).not.toContain('不要调用任何工具');
+    expect(output).toContain('先完成你当前正在做的任务');
+    expect(output.split('unique-inline-summary-7f3a').length - 1).toBe(1);
+  });
+
   it('injects an artifact file-write correction after mkdir-only bootstrap', async () => {
     const { MessageProcessor } = await import('../../../src/host/agent/runtime/messageProcessor');
     const userMessage: Message = {
