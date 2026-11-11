@@ -8,7 +8,7 @@ import { ModelSlot } from '../../../src/renderer/components/StatusBar/ModelSlot'
 import { initializeAuthStore, useAuthStore } from '../../../src/renderer/stores/authStore';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
-import { executeLoadSessions } from '../../../src/renderer/stores/sessionListPagination';
+import { executeLoadSessions, resetSessionListLoadState, useSessionListLoadStore } from '../../../src/renderer/stores/sessionListPagination';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
 import { zh, en } from '../../../src/renderer/i18n';
 import ipcService from '../../../src/renderer/services/ipcService';
@@ -34,11 +34,12 @@ const props = {
 } as unknown as SidebarSessionListProps;
 
 beforeEach(() => {
+  resetSessionListLoadState();
   invoke.mockReset().mockRejectedValue(new Error('Network unavailable'));
   Object.defineProperty(window, 'domainAPI', { configurable: true, value: { invoke } });
   useAuthStore.setState({ statusLoadFailed: false, isAuthenticated: false, user: null, isLoading: true });
   useAppStore.setState({ language: 'en', settingsLoaded: false, showSettings: false });
-  useSessionStore.setState({ sessions: [], error: null, sessionListLoadFailed: false, isLoading: false, hasOlderSessions: false });
+  useSessionStore.setState({ sessions: [], error: null, isLoading: false, hasOlderSessions: false });
 });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
@@ -73,22 +74,24 @@ describe('startup unavailable placeholders through public entries', () => {
   it('executeLoadSessions failure renders the real list failure gate and Retry calls loadSessions', async () => {
     await executeLoadSessions({ get: useSessionStore.getState, set: useSessionStore.setState });
     render(<SidebarSessionList {...props} />);
-    expect(screen.getByText(en.sidebar.sessionsUnavailable)).toBeTruthy();
+    expect(screen.getByText(en.sidebar.loadSessionsFailed)).toBeTruthy();
     expect(screen.queryByText(en.sidebar.noSessions)).toBeNull();
     invoke.mockResolvedValue({ success: true, data: [] });
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-    await waitFor(() => expect(useSessionStore.getState().error).toBeNull());
+    await waitFor(() => expect(useSessionListLoadStore.getState().error).toBe(false));
+    expect(screen.getByText(en.sidebar.noSessions)).toBeTruthy();
     expect(invoke).toHaveBeenLastCalledWith(IPC_DOMAINS.SESSION, 'list', expect.objectContaining({ offset: 0 }));
   });
 
-  it('an already loaded list survives executeLoadSessions failure without an error placeholder', async () => {
+  it('an already loaded list survives executeLoadSessions failure alongside a retry notice', async () => {
     const session = { id: 'weekly-report', title: 'Weekly report', createdAt: 1, updatedAt: 1, type: 'chat', messageCount: 2, turnCount: 1 };
     useSessionStore.setState({ sessions: [session] as ReturnType<typeof useSessionStore.getState>['sessions'] });
     await executeLoadSessions({ get: useSessionStore.getState, set: useSessionStore.setState });
     const groups: SidebarSessionListProps['groups'] = [{ key: 'quick', sessions: [], paths: [], isUncategorized: true, name: 'Weekly report', latestActivityAt: 1 }];
     render(<SidebarSessionList {...props} hasAnySessions groups={groups} filteredSessionsEmpty={false} />);
     expect(useSessionStore.getState().sessions[0].title).toBe('Weekly report');
-    expect(screen.queryByTestId('sidebar-sessions-unavailable')).toBeNull();
+    expect(screen.getByTestId('sidebar-list-error')).toBeTruthy();
+    expect(screen.queryByTestId('sidebar-list-loading')).toBeNull();
     expect(screen.queryByText(en.sidebar.noSessions)).toBeNull();
   });
 
@@ -97,26 +100,28 @@ describe('startup unavailable placeholders through public entries', () => {
     await executeLoadSessions({ get: useSessionStore.getState, set: useSessionStore.setState });
     render(<SidebarSessionList {...props} />);
     expect(screen.getByText(en.sidebar.noSessions)).toBeTruthy();
-    expect(screen.queryByTestId('sidebar-sessions-unavailable')).toBeNull();
+    expect(screen.queryByTestId('sidebar-list-error')).toBeNull();
   });
 
   it.each(['create', 'delete'] as const)('a failed session %s does not claim the empty list failed to load', async (action) => {
+    invoke.mockResolvedValueOnce({ success: true, data: [] });
+    await useSessionStore.getState().loadSessions();
     if (action === 'create') await useSessionStore.getState().createSession('Weekly report');
     else await useSessionStore.getState().deleteSession('last-session');
     expect(useSessionStore.getState().error).toBeTruthy();
     render(<SidebarSessionList {...props} />);
     expect(screen.getByText(en.sidebar.noSessions)).toBeTruthy();
-    expect(screen.queryByTestId('sidebar-sessions-unavailable')).toBeNull();
+    expect(screen.queryByTestId('sidebar-list-error')).toBeNull();
   });
 
   it.each([false, true])('silent list success clears list failure even when the list signature is unchanged (%s)', async (changed) => {
     await useSessionStore.getState().loadSessions();
     render(<SidebarSessionList {...props} />);
-    expect(screen.getByText(en.sidebar.sessionsUnavailable)).toBeTruthy();
+    expect(screen.getByText(en.sidebar.loadSessionsFailed)).toBeTruthy();
     const session = { id: 'weekly-report', title: 'Weekly report', createdAt: 1, updatedAt: 1 };
     invoke.mockResolvedValue({ success: true, data: changed ? [session] : [] });
     await act(async () => { await useSessionStore.getState().loadSessions({ silent: true }); });
-    expect(screen.queryByTestId('sidebar-sessions-unavailable')).toBeNull();
+    expect(screen.queryByTestId('sidebar-list-error')).toBeNull();
     expect(screen.getByText(en.sidebar.noSessions)).toBeTruthy();
   });
 

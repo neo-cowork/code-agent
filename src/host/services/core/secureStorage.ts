@@ -72,6 +72,7 @@ interface SecureStorageData {
   'auth.quick_token'?: string;
   // User info cache
   'auth.user'?: string;
+  'auth.dataDirHash'?: string;
   // Saved login credentials (remember password)
   'auth.saved_email'?: string;
   'auth.saved_password'?: string;
@@ -356,6 +357,7 @@ class SecureStorageService {
     this.store.delete('supabase.session');
     this.store.delete('auth.quick_token');
     this.store.delete('auth.user');
+    this.store.delete('auth.dataDirHash');
   }
 
   /**
@@ -522,6 +524,14 @@ class SecureStorageService {
       this.store.set('device.name', deviceName);
     }
     return deviceName;
+  }
+
+  /** Read only: auth-js removes both stores on non-retryable refresh failures. */
+  async hasStoredSupabaseSession(): Promise<boolean> {
+    const local = this.store.keys().some((key) =>
+      key.startsWith('sb-') && key.endsWith('-auth-token') && Boolean(this.store.get(key as keyof SecureStorageData)),
+    );
+    return local || Boolean(await this.getSessionFromKeychain({ forSessionRead: true }));
   }
 
   // For Supabase auth storage adapter

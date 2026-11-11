@@ -10,6 +10,7 @@ import { CronSchemas, type CronDomainRequest } from '../../shared/ipc/schemas/cr
 import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import { getCronService } from '../cron/cronService';
 import { parkedSiblingsCoveredByGrant } from '../cron/cronWriteGrant';
+import { CRON_CLOUD_NOT_CONFIGURED } from '../../shared/constants/cronErrors';
 import { CloudNotConfiguredError } from '../cron/cronCloudErrors';
 import { getConnectorRegistry } from '../connectors/registry';
 import { isAppleEventsDenied } from '../connectors/native/osascript';
@@ -166,7 +167,7 @@ async function runWebhookHookAction(operation: 'register' | 'rotate', payload: u
     logger.warn(`Cron webhook hook ${operation} failed for job ${jobId}: ${message}`);
     return {
       success: false,
-      error: { code: error instanceof CloudNotConfiguredError ? 'CRON_CLOUD_NOT_CONFIGURED' : 'CRON_ERROR', message },
+      error: { code: error instanceof CloudNotConfiguredError ? CRON_CLOUD_NOT_CONFIGURED : 'CRON_ERROR', message },
     };
   }
 }
@@ -404,7 +405,7 @@ const cronRoutes = defineDomainRoutes<CronDomainRequest, void>(CronSchemas.REQUE
   unknownActionMessage: (action) => `Unknown cron action: ${String(action)}`,
   mapError: (error) => {
     logger.error('Cron IPC error:', error);
-    return { code: 'CRON_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
+    return { code: error instanceof CloudNotConfiguredError ? CRON_CLOUD_NOT_CONFIGURED : 'CRON_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
   },
 });
 

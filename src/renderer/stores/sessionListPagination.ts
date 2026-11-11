@@ -12,6 +12,8 @@
 // 从 sessionStore 拆出（god-file 门：sessionStore effective 996/1000，只留最小接线）。
 // ============================================================================
 
+import { create } from 'zustand';
+import { sessionLoadErrorCode } from './sessionLoadRecovery';
 import type { Session } from '@shared/contract';
 import { normalizeAgentEngineSession } from '@shared/contract/agentEngine';
 import { deriveSessionWorkbenchSnapshot } from '@shared/contract/sessionWorkspace';
@@ -29,9 +31,25 @@ const logger = createLogger('SessionListPagination');
 async function invokeSession<T>(action: string, payload?: unknown): Promise<T> {
   const response = await window.domainAPI?.invoke<T>(IPC_DOMAINS.SESSION, action, payload);
   if (!response?.success) {
-    throw new Error(response?.error?.message || `Session action failed: ${action}`);
+    throw Object.assign(new Error(response?.error?.message || `Session action failed: ${action}`), { code: response?.error?.code });
   }
   return response.data as T;
+}
+
+/** List readiness is independent of opening a session (which also uses isLoading). */
+export const useSessionListLoadStore = create<{
+  settled: boolean;
+  loading: boolean;
+  error: boolean;
+  errorCode: string | null;
+}>(() => ({ settled: false, loading: false, error: false, errorCode: null }));
+
+let listRequestVersion = 0;
+
+export function resetSessionListLoadState(): void {
+  listRequestVersion += 1;
+  _openedOutsideWindowIds.clear();
+  useSessionListLoadStore.setState({ settled: false, loading: false, error: false, errorCode: null });
 }
 
 /**
@@ -114,7 +132,6 @@ interface SessionListPaginationSlice {
   sessions: SessionListMeta[];
   isLoading: boolean;
   error: string | null;
-  sessionListLoadFailed: boolean;
   hasOlderSessions: boolean;
   isLoadingOlderSessions: boolean;
 }
@@ -156,6 +173,9 @@ export async function executeLoadSessions(
   // silent：后台刷新（云端同步广播）不动 isLoading，避免侧栏白刷一帧。
   const silent = options?.silent ?? false;
   const { filter } = useSessionUIStore.getState();
+  const requestVersion = ++listRequestVersion;
+  const readiness = useSessionListLoadStore.getState();
+  useSessionListLoadStore.setState({ loading: !silent || !readiness.settled || readiness.loading, error: false, errorCode: null });
   if (!silent) set({ isLoading: true, error: null });
   // 在途期间若发生本地乐观变更（归档/删除等），拿到的是陈旧快照——落地前比对。
   const localVersionAtStart = getSessionsLocalVersion();
@@ -166,6 +186,7 @@ export async function executeLoadSessions(
     const limit = Math.max(SESSION_LIST_PAGE_SIZE, loadedCount);
     const sessions = await invokeSession<Session[]>('list', buildSessionListQuery(filter, 0, limit));
 
+    if (requestVersion !== listRequestVersion) return;
     if (localVersionAtStart !== getSessionsLocalVersion()) {
       // 快照陈旧（典型：归档①的广播触发本次 list，归档②在在途期间已乐观移除，
       // 且 dedupe 把归档②的广播并进本次请求）——丢弃重取，别把旧列表写回。
@@ -181,25 +202,25 @@ export async function executeLoadSessions(
       keepOpenedOutsideWindow(get().sessions, refreshedWindow),
     );
 
+    useSessionListLoadStore.setState({ settled: true, loading: false, error: false, errorCode: null });
     // 闪烁修复：数据签名不变就保留旧引用、跳过 setState，避免云端同步广播触发侧栏整树重渲染。
     if (sessionsSignature(get().sessions) === sessionsSignature(sessionsWithMeta)) {
-      if (!silent || get().sessionListLoadFailed) {
-        set({ sessionListLoadFailed: false, ...(!silent ? { isLoading: false } : {}) });
-      }
+      // The winner also settles loading inherited from a superseded foreground read.
+      if (!silent || readiness.loading) set({ isLoading: false });
       return;
     }
 
     set({
-      sessionListLoadFailed: false,
       sessions: sessionsWithMeta,
       isLoading: false,
       // 原始页（前端过滤前）不满一页 = 后面没有更多了。
       hasOlderSessions: (sessions || []).length >= limit,
     });
   } catch (error) {
+    if (requestVersion !== listRequestVersion) return;
+    useSessionListLoadStore.setState({ settled: true, loading: false, error: true, errorCode: sessionLoadErrorCode(error) });
     logger.error('Failed to load sessions', error);
     set({
-      sessionListLoadFailed: true,
       error: error instanceof Error ? error.message : 'Failed to load sessions',
       isLoading: false,
     });
