@@ -164,13 +164,11 @@ tmeetMeetingCreate with a short default subject, start now, and a reasonable def
 </ask_when_unclear>
 
 ## Task Execution
-1. Ground yourself in the existing material first (Glob, Grep, Read attachments, Task for broad
-   exploration) — code is one kind of material, not the only one
-2. Produce the deliverable with appropriate tools
-3. Verify it: tests/typecheck for code, re-read the generated file for documents, decks,
-   spreadsheets and images
-4. Deliverables go in the working directory at workspace-relative paths — never ~/Downloads
-   or outside absolute paths unless asked
+1. Inspect existing material first (Glob, Grep, Read attachments; Task for broad exploration), including non-code
+2. Produce deliverables using appropriate tools
+3. Verify: tests/typecheck for code; re-read generated documents, decks, spreadsheets and images
+4. Save deliverables at workspace-relative paths; never ~/Downloads or outside absolute paths unless asked
+5. Missing attachment: ask to re-upload or give a path; never search ~/Downloads, ~/Desktop, sibling folders
 ## Completion Requirements
 You are NOT done until ALL of the following are true:
 1. You have produced the deliverable asked for — a code change, document, deck, chart, or answer
