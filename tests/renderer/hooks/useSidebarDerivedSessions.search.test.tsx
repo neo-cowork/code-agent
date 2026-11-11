@@ -3,6 +3,7 @@ import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
+import { zh } from '../../../src/renderer/i18n/zh';
 
 const state = vi.hoisted(() => ({
   session: {
@@ -167,6 +168,7 @@ describe('useSidebarDerivedSessions search results', () => {
           currentSessionId={state.session.currentSessionId}
           messageSearchHitsBySessionId={derived.messageSearchHitsBySessionId}
           messageSearchLoading={derived.messageSearchLoading}
+          messageSearchFailed={derived.messageSearchFailed}
           effectiveSearchScope={derived.effectiveSearchScope}
           setSearchScope={derived.setSearchScope}
           canSearchCurrentProject
@@ -179,7 +181,7 @@ describe('useSidebarDerivedSessions search results', () => {
     await waitFor(() => {
       expect(ipc.invoke).toHaveBeenCalledWith(IPC_CHANNELS.SESSION_SEARCH, {
         query: 'needle',
-        options: { limit: 80, sessionIds: ['message-hit', 'metadata-hit'] },
+        options: { limit: 80 },
       });
     });
     await waitFor(() => {
@@ -239,5 +241,141 @@ describe('useSidebarDerivedSessions search results', () => {
         'same-title-newest,same-title-first,same-title-second',
       );
     });
+  });
+  const searchResponse = (extra: Record<string, unknown>) => ({
+    query: 'needle',
+    totalMatches: 0,
+    sessionsWithMatches: 0,
+    searchTime: 1,
+    truncated: false,
+    results: [],
+    ...extra,
+  });
+
+  const renderDialog = () => {
+    state.ui.searchQuery = 'needle';
+    const Harness = () => {
+      const derived = useSidebarDerivedSessions({ canOpenSessionReplay: false });
+      return (
+        <SidebarSearchDialog
+          isOpen
+          query={state.ui.searchQuery}
+          onQueryChange={vi.fn()}
+          onClose={vi.fn()}
+          sessions={derived.searchResultSessions}
+          currentSessionId={state.session.currentSessionId}
+          messageSearchHitsBySessionId={derived.messageSearchHitsBySessionId}
+          messageSearchLoading={derived.messageSearchLoading}
+          messageSearchFailed={derived.messageSearchFailed}
+          effectiveSearchScope={derived.effectiveSearchScope}
+          setSearchScope={derived.setSearchScope}
+          canSearchCurrentProject
+          onSelectSession={vi.fn()}
+        />
+      );
+    };
+    return render(<Harness />);
+  };
+
+  it('lists hits from sessions outside the loaded page using host metadata, skipping archived ones', async () => {
+    ipc.invoke.mockImplementation(async (channel: string) => {
+      if (channel !== IPC_CHANNELS.SESSION_SEARCH) return {};
+      return searchResponse({
+        results: [
+          {
+            sessionId: 'old-session',
+            sessionTitle: '很久以前的浏览器任务',
+            sessionUpdatedAt: 5,
+            sessionArchived: false,
+            messageId: 'm-old',
+            role: 'user',
+            timestamp: 5,
+            relevance: 0.7,
+            snippet: 'old **needle**',
+            matchCount: 1,
+          },
+          {
+            sessionId: 'old-archived',
+            sessionTitle: 'Archived old needle',
+            sessionUpdatedAt: 4,
+            sessionArchived: true,
+            messageId: 'm-arch',
+            role: 'user',
+            timestamp: 4,
+            relevance: 0.7,
+            snippet: 'x **needle**',
+            matchCount: 1,
+          },
+        ],
+        titleMatches: [{ sessionId: 'old-title-only', title: 'Old needle title only', updatedAt: 3 }],
+      });
+    });
+    renderDialog();
+    await waitFor(() => {
+      expect(screen.queryByText('很久以前的浏览器任务')).not.toBeNull();
+    });
+    expect(screen.queryByText('Old needle title only')).not.toBeNull();
+    expect(screen.queryByText('Archived old needle')).toBeNull();
+    const calls = ipc.invoke.mock.calls.filter(([channel]) => channel === IPC_CHANNELS.SESSION_SEARCH);
+    expect(calls[0][1].options).not.toHaveProperty('sessionIds');
+  });
+
+  it('keeps the id restriction in current-project scope and ignores remote hits', async () => {
+    ipc.invoke.mockImplementation(async (channel: string) => {
+      if (channel !== IPC_CHANNELS.SESSION_SEARCH) return {};
+      return searchResponse({
+        results: [{
+          sessionId: 'old-session', sessionTitle: 'Remote old', sessionUpdatedAt: 5, sessionArchived: false,
+          messageId: 'm', role: 'user', timestamp: 5, relevance: 0.7, snippet: 'a **needle**', matchCount: 1,
+        }],
+      });
+    });
+    state.ui.searchQuery = 'needle';
+    const Harness = () => {
+      const derived = useSidebarDerivedSessions({ canOpenSessionReplay: false });
+      React.useEffect(() => { derived.setSearchScope('current-project'); }, []);
+      return <output data-testid="ids">{derived.searchResultSessions.map((session) => session.id).join(',')}</output>;
+    };
+    render(<Harness />);
+    await waitFor(() => {
+      expect(ipc.invoke).toHaveBeenCalledWith(IPC_CHANNELS.SESSION_SEARCH, {
+        query: 'needle',
+        options: { limit: 80, sessionIds: ['message-hit', 'metadata-hit'] },
+      });
+    });
+    expect(screen.getByTestId('ids').textContent).not.toContain('old-session');
+  });
+
+  it('shows the failed copy instead of the no-signal copy when the search request rejects', async () => {
+    state.session.sessions = [];
+    ipc.invoke.mockImplementation(async (channel: string) => {
+      if (channel === IPC_CHANNELS.SESSION_SEARCH) throw new Error('boom');
+      return {};
+    });
+    renderDialog();
+    await waitFor(() => {
+      expect(screen.queryByText(zh.sidebar.searchFailed)).not.toBeNull();
+    });
+    expect(screen.queryByText(zh.sidebar.noMatchedSessions)).toBeNull();
+  });
+
+  it('treats an empty response (web transport swallows failures into undefined) as a failed search', async () => {
+    state.session.sessions = [];
+    ipc.invoke.mockImplementation(async () => undefined);
+    renderDialog();
+    await waitFor(() => {
+      expect(screen.queryByText(zh.sidebar.searchFailed)).not.toBeNull();
+    });
+    expect(screen.queryByText(zh.sidebar.noMatchedSessions)).toBeNull();
+  });
+
+  it('still shows the no-signal copy when nothing matches anywhere', async () => {
+    state.session.sessions = [];
+    ipc.invoke.mockImplementation(async () => searchResponse({ titleMatches: [] }));
+    renderDialog();
+    await waitFor(() => {
+      expect(screen.queryByText(zh.sidebar.noMatchedSessions)).not.toBeNull();
+    });
+    expect(screen.queryByText(zh.sidebar.searchFailed)).toBeNull();
   });
 });

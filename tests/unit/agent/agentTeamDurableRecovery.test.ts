@@ -313,7 +313,8 @@ describe('Agent Team durable adapter', () => {
   beforeEach(() => {
     configureAgentTeamDurableRuntime(null);
     parentHost = {
-      prepareAgentTeamChild: vi.fn(async () => undefined),
+      hasDurableOwner: vi.fn(() => true),
+    prepareAgentTeamChild: vi.fn(async () => undefined),
       projectAgentTeamChildTerminal: vi.fn(async () => undefined),
     };
   });
