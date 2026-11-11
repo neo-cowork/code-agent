@@ -6,9 +6,7 @@
 import { AppWindow } from '../../platform';
 import { getDatabase, type StoredSession } from '../core';
 import { getToolCache } from './toolCache';
-import {
-  sanitizeModelConfigForSession,
-} from './sessionManagerNormalization';
+import { sanitizeModelConfigForSession, resolveCloudSessionTitle } from './sessionManagerNormalization';
 import { backfillMissingTelemetryUserPrompts } from './sessionManagerTelemetryBackfill';
 import { restoreLocalMessageContent } from './sessionMessagePresentation';
 import { getAuthService } from '../auth/authService';
@@ -566,7 +564,7 @@ export class SessionManager implements Disposable {
           db.createSessionWithId(
             cloudSession.id,
             {
-              title: cloudSession.title,
+              title: resolveCloudSessionTitle(db, cloudSession.id, cloudSession.title),
               userId: user.id,
               modelConfig: {
                 provider: cloudSession.model_provider as ModelConfig['provider'],
@@ -583,11 +581,11 @@ export class SessionManager implements Disposable {
           );
           didMutate = true;
         } else if (cloudSession.updated_at > localSession.updatedAt) {
-          // 云端更新，更新本地元数据（保留云端原始时间戳）
+          // 云端更新，更新本地元数据（保留云端原始时间戳）。title 例外（FB-1089）：已定档标题不被云端首轮自动档顶回。
           db.updateSession(
             cloudSession.id,
             {
-              title: cloudSession.title,
+              title: resolveCloudSessionTitle(db, cloudSession.id, cloudSession.title),
               userId: localSession.userId ?? user.id,
               modelConfig: {
                 provider: cloudSession.model_provider as ModelConfig['provider'],
