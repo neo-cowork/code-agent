@@ -49,7 +49,7 @@ function walk(dir) {
 export function scanSettingsJargon(repoRoot = root) {
   const table = JSON.parse(fs.readFileSync(path.join(repoRoot, tablePath), 'utf8'));
   const files = [
-    ...walk(path.join(repoRoot, 'src/renderer/i18n')).filter((file) => /^zhSettings.*\.ts$|^onboarding\.ts$/.test(path.basename(file))),
+    ...walk(path.join(repoRoot, 'src/renderer/i18n')).filter((file) => /^zhSettings.*\.ts$|^zh\.ts$|^onboarding\.ts$/.test(path.basename(file))),
     ...walk(path.join(repoRoot, 'src/renderer/components/features/settings')).filter((file) => file.endsWith('.tsx')),
     ...walk(path.join(repoRoot, 'src/renderer/components/onboarding')).filter((file) => file.endsWith('.tsx')),
   ];
