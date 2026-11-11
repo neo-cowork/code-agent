@@ -244,6 +244,30 @@ describe('httpTransport → serverConnectionMonitor 接线', () => {
     warn.mockRestore();
   });
 
+  // 域协议自己的业务错误信封（error.message，且不带路由故障位）是 handler 写给用户的答复，
+  // 非 2xx 时与 200 + success:false 同等对待；非信封 JSON / 路由故障位仍只出一句话。
+  it('domain invoke 非 2xx：业务错误信封的 message 原样保留，非信封与路由故障位不保留', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { createHttpDomainAPI } = await import('../../../src/renderer/api/httpTransport');
+    const api = createHttpDomainAPI('http://localhost:8180');
+    const generic = 'Neo 暂时没能完成这次请求，请稍后再试。';
+    const cases: Array<[number, unknown, string]> = [
+      [400, { success: false, error: { code: 'SESSION_TITLE_TOO_LONG', message: '会话名称太长了，请控制在 60 字以内' } }, '会话名称太长了，请控制在 60 字以内'],
+      [500, { error: { message: 'Business failure' } }, 'Business failure'],
+      [403, { success: false, error: { code: 'FORBIDDEN', message: 'Admin: Admin permission required' } }, '本地服务没有接受这次请求，请刷新页面后重试。'],
+      [500, { error: 'Local server request failed', code: 'INTERNAL_SERVER_ERROR' }, generic],
+      [404, { error: 'Unknown channel: project:archive' }, generic],
+      [500, { success: false, error: { code: 'SESSION_WRITE_FAILED', message: '   ' } }, generic],
+    ];
+    for (const [status, body, message] of cases) {
+      fetchMock.mockImplementation(async () => jsonResponse(status, body));
+      await expect(api.invoke('domain:session', 'create')).resolves.toEqual({
+        success: false,
+        error: { code: `HTTP_${status}`, message },
+      });
+    }
+  });
+
   // message 净化后，按 message 认「域路由没有该 handler」的调用方改认 HTTP_404 这个 code：
   // 走真实链路 transport → ipcService.invokeDomain → tagClient。
   it('domain 路由 404（没有 handler）经 invokeDomain 仍被 tagClient 认作「Tag IPC 不可用」', async () => {

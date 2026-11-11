@@ -28,7 +28,7 @@ import {
 import { getServerConnectionStatus } from '../stores/serverConnectionStore';
 import { logPermissionClickExit } from '../services/permissionClickLog';
 import { useAppStore } from '../stores/appStore';
-import { httpFailureMessage } from '../utils/httpFailureMessage';
+import { domainFailureMessage, httpFailureMessage } from '../utils/httpFailureMessage';
 
 type EventCallback = (...args: unknown[]) => void;
 
@@ -1169,10 +1169,10 @@ export function createHttpDomainAPI(baseUrl: string): DomainAPI {
           };
         }
 
-        // 诊断留 raw body；信封 message 只按 status/code 出一句话——invokeDomain 把它包成
-        // DomainInvokeError.message，各处 toast / 气泡会原样显示。
+        // 诊断留 raw body；信封 message 只留域协议的业务错误信封，其余按 status/code 出一句话——
+        // invokeDomain 把它包成 DomainInvokeError.message，各处 toast / 气泡会原样显示。
         logTransportErrorThrottled(`domain:${cleanDomain}:${action}:${res.status}`, `[HttpTransport] domain ${cleanDomain}:${action} failed:`, res.status, errorBody);
-        const message = httpFailureMessage({ status: res.status, code: parseHttpErrorCode(errorBody), language: useAppStore.getState().language });
+        const message = domainFailureMessage({ status: res.status, body: errorBody, language: useAppStore.getState().language });
         return { success: false, error: { code: `HTTP_${res.status}`, message } };
       } catch (err) {
         return {
