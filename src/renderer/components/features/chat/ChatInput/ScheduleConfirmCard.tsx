@@ -16,6 +16,10 @@ import { CronEventScheduleFields } from '../../cron/CronEventScheduleFields';
 import { CronMailEventFields } from '../../cron/CronMailEventFields';
 import type { CreateCronJobInput } from '../../../../services/cronClient';
 import type { PendingScheduleDraft } from './useScheduleDraft';
+import { CRON_CLOUD_NOT_CONFIGURED } from '@shared/constants/cronErrors';
+import { useScheduleSettingsDraftStore } from '../../../../stores/scheduleSettingsDraftStore';
+import { openCloudCronSettings } from '../../../../utils/cronCloudSettingsNavigation';
+import { CronCloudCreateNotice } from '../../cron/CronCloudCreateNotice';
 import { buildScheduleConfirmRows } from './scheduleConfirm';
 
 interface ScheduleConfirmCardProps {
@@ -338,6 +342,21 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
           </div>
         ))}
 
+        {onDraftChange && draft.input.schedule.type !== 'event' && <label className="block space-y-1 text-xs">
+          <span>{cc.executionLocationTitle}</span>
+          <Select
+            value={draft.input.runsOn ?? 'local'}
+            options={[{ value: 'local', label: cc.locationLocal }, { value: 'cloud', label: cc.locationCloud }]}
+            onChange={(event) => onDraftChange({ ...draft, creationErrorCode: undefined, input: { ...draft.input, runsOn: event.target.value === 'cloud' ? 'cloud' : 'local' } })}
+          />
+        </label>}
+        {draft.creationErrorCode === CRON_CLOUD_NOT_CONFIGURED && <CronCloudCreateNotice
+          onSettings={() => {
+            useScheduleSettingsDraftStore.getState().stashDraft({ ...draft, creationErrorCode: undefined });
+            openCloudCronSettings('chat');
+          }}
+          onSwitchLocal={onDraftChange ? () => onDraftChange({ ...draft, creationErrorCode: undefined, input: { ...draft.input, runsOn: 'local' } }) : undefined}
+        />}
         {eventSchedule && (
           <div data-schedule-event-fields className="rounded-md bg-indigo-500/5 px-2.5 py-2">
             <CronEventScheduleFields
