@@ -269,6 +269,9 @@ export interface MemoryEntry {
   confidence: number;
   createdAt: number;
   updatedAt: number;
+  /** MemoryRead 回写的使用度（DB 行带；light 条目继承其镜像行）。recall pack 排序用。 */
+  accessCount?: number;
+  lastAccessedAt?: number | null;
   /** 仅列表接口附带：该条当前不进自动注入（库里仍在，MemoryRead/搜索照常可取）。 */
   injectionPaused?: MemoryEntryInjectionPause;
   /** 仅列表接口附带：最近一次变更日志（有则给「后台写入」标记；无日志/读失败不带）。 */

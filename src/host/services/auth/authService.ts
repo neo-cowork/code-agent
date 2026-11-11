@@ -12,7 +12,9 @@ import {
   type ProfileRow,
   type InviteCodeRow,
 } from '../infra/supabaseService';
-import type { User as SupabaseUser } from '@supabase/supabase-js';
+import { isAuthRetryableFetchError, type User as SupabaseUser } from '@supabase/supabase-js';
+import path from 'path';
+import { getUserConfigDir } from '../../config/configPaths';
 import { getConfigService, getSecureStorage } from '../core';
 import { bindCloudRunAccountSource } from '../cloudRun/cloudRunLedger';
 import type { AuthUser, AuthStatus } from '../../../shared/contract';
@@ -60,6 +62,8 @@ function readStringProperty(value: unknown, key: string): string | undefined {
 // session JSON。
 // ---------------------------------------------------------------------------
 type AuthRestoreDegradeReason =
+  | 'data_dir_mismatch'
+  | 'refresh_network_failed'
   | 'empty_session_event'
   | 'session_not_restorable'
   | 'get_session_error'
@@ -69,6 +73,8 @@ type AuthRestoreDegradeReason =
   | 'auth_backend_unavailable';
 
 interface AuthRestoreDegradeFields {
+  cachedDataDirHash?: string;
+  currentDataDirHash?: string;
   event?: string;
   explicitSignOut?: boolean;
   hadCachedIdentity?: boolean;
@@ -83,6 +89,12 @@ function warnAuthRestoreDegraded(
   fields: AuthRestoreDegradeFields = {},
 ): void {
   logger.warn('Auth restored login degraded to signed-out', { reason, ...fields });
+}
+
+function dataDirHash(): string {
+  return crypto.createHash('sha256')
+    .update(path.resolve(process.env.CODE_AGENT_DATA_DIR || getUserConfigDir()))
+    .digest('hex').slice(0, 12);
 }
 
 function parseCachedAuthUser(serializedUser: string): AuthUser | null {
@@ -112,6 +124,9 @@ class AuthService {
   private onAuthChangeCallbacks: AuthChangeCallback[] = [];
   private initialized: boolean = false;
   private sessionExpired: boolean = false; // 2c(ADR-030): 曾登录但 session 不可恢复
+  private dataDirMismatchWarned = false;
+  private refreshNetworkWarned = false;
+  private authEventVersion = 0;
   private explicitSignOutRequestedAt: number | null = null;
 
   constructor() {}
@@ -210,17 +225,29 @@ class AuthService {
     supabase.auth.onAuthStateChange(async (event, session) => {
       logger.info(' Auth state changed:', event);
 
+      const eventVersion = ++this.authEventVersion;
       if (session?.user) {
-        logger.info(' Fetching user profile in callback...');
-        this.currentUser = await this.fetchUserProfile(session.user);
-        this.sessionTrustState = 'verified';
-        this.cacheUser(this.currentUser); // 缓存用户信息
-        logger.info(' Profile fetched in callback');
-        this.notifyAuthChange(this.currentUser);
+        // Profile REST queries read auth headers via getSession. Awaiting them in
+        // this callback deadlocks auth-js's session lock (including TOKEN_REFRESHED).
+        void this.fetchUserProfile(session.user).then((user) => {
+          if (eventVersion !== this.authEventVersion) return;
+          this.currentUser = user;
+          this.sessionTrustState = 'verified';
+          this.refreshNetworkWarned = false;
+          this.cacheUser(user);
+          this.notifyAuthChange(user);
+        });
       } else {
         // 2c(ADR-030): 真实 supabase 在启动时会以 INITIAL_SESSION + 空 session 触发本分支，
         // 这是"默默清零"的主路径（validateSessionInBackground 往往慢一步、那时 user 已被清）。
         // 曾有登录身份却收到空 session（过期/失效，非本机主动 SIGNED_OUT）→ 标记过期以弹重连。
+        const cachedIdentity = this.currentUser;
+        if (event === 'INITIAL_SESSION' && cachedIdentity
+          && await getSecureStorage().hasStoredSupabaseSession()) {
+          // auth-js keeps storage on retryable refresh failures; its ticker will retry.
+          if (this.currentUser === cachedIdentity) this.deferRefreshNetworkFailure(event);
+          return;
+        }
         const wasAuthenticated = this.currentUser !== null;
         const explicitSignOut = this.isExplicitSignOutEvent(event);
         this.currentUser = null;
@@ -290,6 +317,10 @@ class AuthService {
         this.notifyAuthChange(freshUser);
         return 'verified';
       } else if (this.currentUser) {
+        if (isAuthRetryableFetchError(sessionError)) {
+          this.deferRefreshNetworkFailure();
+          return 'deferred';
+        }
         // Session 无效但有缓存用户：曾登录但 session 不可恢复（过期/失效）。
         // 2c(ADR-030): 仍清除无效会话（避免下游拿 null-JWT 去写 RLS 表失败），但置 sessionExpired，
         // 让前端弹「登录已过期，点一下重连」非阻塞提示——取代过去的"默默清零"。
@@ -329,6 +360,16 @@ class AuthService {
     }
   }
 
+  private deferRefreshNetworkFailure(event?: string): void {
+    this.sessionTrustState = 'cached';
+    this.sessionExpired = false;
+    if (this.refreshNetworkWarned) return;
+    this.refreshNetworkWarned = true;
+    warnAuthRestoreDegraded('refresh_network_failed', {
+      hadCachedIdentity: true, sessionTrustState: 'cached', ...(event ? { event } : {}),
+    });
+  }
+
   /**
    * 按需重校验 session（single-flight）：启动后台校验超时后信任态会一直停在 'cached'，
    * 需要已验证身份的操作（如开启完全访问）调用它补一次，而不必重启应用。
@@ -352,6 +393,7 @@ class AuthService {
     try {
       const storage = getSecureStorage();
       storage.set('auth.user', JSON.stringify(user));
+      storage.set('auth.dataDirHash', dataDirHash());
     } catch (e) {
       logger.error(' Failed to cache user:', e);
     }
@@ -378,6 +420,18 @@ class AuthService {
         warnAuthRestoreDegraded('cached_user_invalid');
         return null;
       }
+      const currentHash = dataDirHash();
+      const cachedHash = storage.get('auth.dataDirHash');
+      if (!cachedHash) {
+        storage.set('auth.dataDirHash', currentHash);
+      } else if (cachedHash !== currentHash && !this.dataDirMismatchWarned) {
+        this.dataDirMismatchWarned = true;
+        warnAuthRestoreDegraded('data_dir_mismatch', {
+          hadCachedIdentity: true,
+          cachedDataDirHash: /^[a-f0-9]{12}$/.test(cachedHash) ? cachedHash : 'invalid',
+          currentDataDirHash: currentHash,
+        });
+      }
       return parsed;
     } catch (e) {
       logger.error(' Failed to load cached user:', e);
@@ -395,6 +449,7 @@ class AuthService {
     try {
       const storage = getSecureStorage();
       storage.delete('auth.user');
+      storage.delete('auth.dataDirHash');
     } catch (e) {
       logger.error(' Failed to clear cached user:', e);
     }
