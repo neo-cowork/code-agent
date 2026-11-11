@@ -77,6 +77,7 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
 
   return (
     <Modal
+      portal
       isOpen={isOpen}
       onClose={onClose}
       title={sb.searchDialogTitle}
