@@ -6,7 +6,7 @@ import type { CronJobDraft } from './types';
 import { createDefaultCronJobDraft } from './types';
 import { localCronTimezone } from './localTimezone';
 import { cronCenterEn } from '../../../i18n/cronCenter';
-import { enAgentPrompt } from './cronTemplatesEn';
+import { enAgentPrompt, enTagsText, enUnregisteredCopy } from './cronTemplatesEn';
 
 /** 模板草稿的语言档：zh 为存量行为；en 的 name/description 取 cronCenter.templates 英文词条，agentPrompt 取 cronTemplatesEn。 */
 type CronTemplateLanguage = 'zh' | 'en';
@@ -364,18 +364,21 @@ function withLanguage(template: CronTemplate): CronTemplate {
       if (language !== 'en') return draft;
       const localized: Readonly<Record<string, { name: string; description: string }>> = cronCenterEn.cronCenter.templates;
       const copy = localized[template.id];
-      // 描述里带用户输入的模板不能被卡片固定文案覆盖，否则任务文本丢失（列表/搜索区分不了）；
-      // 没登记英文词条的模板（web-change-watch / feishu-*）名称与描述维持草稿原文
+      // i18n 没登记词条的模板（web-change-watch / feishu-*）的 en 名称/描述取 cronTemplatesEn；
+      // 描述里带用户输入的模板不能被卡片固定文案覆盖，否则任务文本丢失（列表/搜索区分不了）
+      const unregistered = enUnregisteredCopy(template.id, values);
       const dynamic = template.fields.some((field) => field.required === true);
       const description = template.enDescription?.(values)
-        ?? (dynamic || !copy ? draft.description : copy.description);
-      // en 档的 agent 提示词走手写英文版（cronTemplatesEn）；没有英文版的模板
+        ?? (copy && !dynamic ? copy.description : (unregistered?.description ?? draft.description));
+      // en 档的 agent 提示词与标签走手写英文版（cronTemplatesEn）；提示词没有英文版的模板
       // （group-listen：提示词即用户输入）保持草稿原文
       const enPrompt = enAgentPrompt(template.id, values);
+      const enTags = enTagsText(template.id);
       return {
         ...draft,
-        ...(copy ? { name: copy.name } : {}),
+        name: copy?.name ?? unregistered?.name ?? draft.name,
         description,
+        ...(enTags !== undefined ? { tagsText: enTags } : {}),
         ...(enPrompt !== undefined ? { agentPrompt: enPrompt } : {}),
       };
     },

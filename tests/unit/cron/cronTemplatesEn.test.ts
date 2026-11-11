@@ -139,6 +139,49 @@ describe('cron 模板 en 档 agent 提示词', () => {
     expect(groupListen.generate({ task: '总结发布相关' }).agentPrompt).toBe('总结发布相关');
   });
 
+  // ── rework r2：en 档标签 + 无 i18n 词条模板的 en 名称/描述 ────────────────────
+  it('en 档 tagsText 全部英文（详情页 #tag chip 不再露中文），zh 档原样', () => {
+    const withTags: Array<[string, Record<string, string>]> = [
+      ['daily-lookahead', {}],
+      ['daily-review', {}],
+      ['weekly-review', {}],
+      ['morning-triage', {}],
+      ['web-change-watch', { url: 'https://example.com/feed' }],
+      ['feishu-calendar-conflict', { calendarId: 'cal_9' }],
+      ['feishu-table-change', { baseAppToken: 'basetkn', tableId: 'tbl01' }],
+      ['group-listen', { task: 'summarize releases' }],
+    ];
+    for (const [id, values] of withTags) {
+      const en = template(id).generate(values, 'en');
+      expect(en.tagsText, `template ${id} en tags`).not.toMatch(CJK_CHAR);
+      expect(en.tagsText.split(', ').length, `template ${id} en tag count`).toBeGreaterThan(0);
+      // zh 档标签原样（字节不动）
+      const zh = template(id).generate(values, 'zh');
+      expect(zh.tagsText).toMatch(CJK_CHAR);
+    }
+    expect(template('daily-review').generate({}, 'en').tagsText).toBe('review, progress, todos');
+    expect(template('morning-triage').generate({}, 'en').tagsText).toBe('morning triage, mail, messages, schedule');
+  });
+
+  it('无 i18n 词条的 3 个模板：en 名称/描述英文且描述带用户输入；zh 档名称描述原样', () => {
+    const web = template('web-change-watch').generate({ url: 'https://example.com/feed' }, 'en');
+    expect(web.name).toBe('Web change watch');
+    expect(web.description).toBe(`Watch https://example.com/feed for content changes and summarize what's new`);
+    expect(web.tagsText).toBe('web watch, updates');
+
+    const cal = template('feishu-calendar-conflict').generate({ calendarId: 'cal_9' }, 'en');
+    expect(cal.name).toBe('Feishu calendar conflict watch');
+    expect(cal.description).toBe('Watch Feishu calendar cal_9 and alert on time conflicts');
+
+    const table = template('feishu-table-change').generate({ baseAppToken: 'basetkn', tableId: 'tbl01' }, 'en');
+    expect(table.name).toBe('Feishu table change watch');
+    expect(table.description).toBe('Watch Feishu base table tbl01 for row additions and changes');
+
+    // zh 档：名称/描述保持中文原文（与缺省档逐字节相同由前述用例钉住）
+    expect(template('web-change-watch').generate({ url: 'https://example.com/feed' }, 'zh').name).toBe('网页更新提醒');
+    expect(template('feishu-table-change').generate({ baseAppToken: 'b', tableId: 't' }, 'zh').name).toBe('飞书表格行变更监听');
+  });
+
   it('zh 档与缺省档逐字节相同；en 只改 name/description/agentPrompt，schedule 等字段不动', () => {
     for (const id of [...EN_TEMPLATE_IDS, 'group-listen']) {
       const t = template(id);
@@ -146,8 +189,9 @@ describe('cron 模板 en 档 agent 提示词', () => {
     }
     const zh = template('daily-review').generate({});
     const en = template('daily-review').generate({}, 'en');
-    const { name: _n, description: _d, agentPrompt: _p, ...zhRest } = zh;
-    const { name: _n2, description: _d2, agentPrompt: _p2, ...enRest } = en;
+    // en 只改 name/description/agentPrompt/tagsText，schedule 等其余字段不动
+    const { name: _n, description: _d, agentPrompt: _p, tagsText: _t, ...zhRest } = zh;
+    const { name: _n2, description: _d2, agentPrompt: _p2, tagsText: _t2, ...enRest } = en;
     expect(enRest).toEqual(zhRest);
   });
 });

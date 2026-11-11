@@ -94,3 +94,55 @@ export function enAgentPrompt(templateId: string, values: Record<string, string>
   const prompt = typeof entry === 'function' ? entry(values) : entry;
   return `${prompt}${EN_OUTPUT_LANGUAGE_SUFFIX}`;
 }
+
+// ============================================================================
+// en 档的标签与（无 i18n 词条模板的）名称/描述（FU1 rework r2）
+// ============================================================================
+
+/** en 档标签（详情页 #tag chip、筛选）；zh 的 tagsText 在 cronTemplates.ts 原文不动 */
+const EN_TEMPLATE_TAGS: Record<string, string[]> = {
+  'daily-lookahead': ['lookahead', 'schedule', 'todos'],
+  'daily-review': ['review', 'progress', 'todos'],
+  'weekly-review': ['weekly', 'review', 'plan'],
+  'morning-triage': ['morning triage', 'mail', 'messages', 'schedule'],
+  'web-change-watch': ['web watch', 'updates'],
+  'feishu-calendar-conflict': ['feishu', 'schedule', 'conflicts'],
+  'feishu-table-change': ['feishu', 'base table', 'changes'],
+  'group-listen': ['group listen', 'event triggered'],
+};
+
+/**
+ * i18n（cronCenter.templates）没登记词条的 3 个模板的 en 名称/描述。
+ * 描述带用户输入（url / calendarId / tableId），与 zh 草稿同构插值。
+ * 有词条的模板 name/description 仍走 cronCenterEn（本文件不重复登记）。
+ */
+const EN_UNREGISTERED_COPY: Record<string, { name: string; description: (values: Record<string, string>) => string }> = {
+  'web-change-watch': {
+    name: 'Web change watch',
+    description: (v) => `Watch ${v.url} for content changes and summarize what's new`,
+  },
+  'feishu-calendar-conflict': {
+    name: 'Feishu calendar conflict watch',
+    description: (v) => `Watch Feishu calendar ${v.calendarId} and alert on time conflicts`,
+  },
+  'feishu-table-change': {
+    name: 'Feishu table change watch',
+    description: (v) => `Watch Feishu base table ${v.tableId} for row additions and changes`,
+  },
+};
+
+/** en 档 tagsText（逗号分隔，与 zh 草稿同形状）；没登记的模板返回 undefined。 */
+export function enTagsText(templateId: string): string | undefined {
+  const tags = EN_TEMPLATE_TAGS[templateId];
+  return tags ? tags.join(', ') : undefined;
+}
+
+/** i18n 没登记词条的模板的 en 名称/描述；有词条的（或未登记本表的）返回 undefined。 */
+export function enUnregisteredCopy(
+  templateId: string,
+  values: Record<string, string> = {},
+): { name: string; description: string } | undefined {
+  const entry = EN_UNREGISTERED_COPY[templateId];
+  if (!entry) return undefined;
+  return { name: entry.name, description: entry.description(values) };
+}
