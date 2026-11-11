@@ -10,7 +10,7 @@ const scriptPath = fileURLToPath(import.meta.url);
 const repoRoot = path.resolve(path.dirname(scriptPath), '../..');
 const baselinePath = 'scripts/ci/user-visible-leak-baseline.json';
 // A command has a standalone slash, not a path/URL prefix or suffix.
-const tokens = /-1743|osascript|apple ?events|\bTCC\b|(?<![a-z0-9_./:@?=&%+-])\/(?:login|model)(?![a-z0-9_/?.#=&%-])/giu;
+const tokens = /-1743|osascript|apple ?events|\bTCC\b|(?<![a-z0-9_./:@?=&%+-])\/(?:login|model)(?![a-z0-9_/#=&%-]|\.[a-z0-9]|\?[a-z0-9])/giu;
 const key = (file, value) => JSON.stringify([file, value]);
 
 function collect(directory, files) {

@@ -45,8 +45,8 @@ describe('user-visible-leak', () => {
     expect(report.violations).toEqual([]);
   });
   it('matches commands in punctuation and CJK copy, case-insensitively', () => {
-    const report = scan(makeRepo({ [file]: "const label = '使用/login，或（/MODEL）: OSASCRIPT appleevents tcc';" }));
-    expect(report.violations.map((hit: { token: string }) => hit.token)).toEqual(['/login', '/MODEL', 'OSASCRIPT', 'appleevents', 'tcc']);
+    const report = scan(makeRepo({ [file]: "const label = '使用/login，或（/MODEL）: OSASCRIPT appleevents tcc /model.';" }));
+    expect(report.violations.map((hit: { token: string }) => hit.token)).toEqual(['/login', '/MODEL', 'OSASCRIPT', 'appleevents', 'tcc', '/model']);
   });
   it('requires a real per-line exemption comment with a reason', () => {
     const report = scan(makeRepo({ [file]: [
@@ -104,11 +104,10 @@ describe('user-visible-leak', () => {
     rmSync(join(root, baselineFile));
     expect(() => scan(root)).toThrow();
   });
-  it('passes the repository baseline of exactly seven existing strings', () => {
+  it('passes the repository ratchet while allowing baseline cleanup', () => {
     const report = scan(resolve(__dirname, '../..'));
     expect(report.fileCount).toBeGreaterThan(0);
-    expect(report.baselineHits).toBe(7);
+    expect(report.baselineHits).toBeLessThanOrEqual(7);
     expect(report.violations).toEqual([]);
-    expect(report.warnings).toEqual([]);
   });
 });
