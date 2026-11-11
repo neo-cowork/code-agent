@@ -34,6 +34,8 @@ import { getUserConfigDir } from '../config/configPaths';
 import { createLogger } from '../services/infra/logger';
 import { expandTilde, resolveInputPath } from '../tools/utils/resolveInputPath';
 import { writeTargetPathOf } from '../tools/writeTargetPath';
+import { isConnectorToolName, isMcpToolName } from '../../shared/contract/workbenchTools';
+import { isExternalSideEffectTool } from '../tools/externalSideEffect';
 import { getPermissionModeManager } from '../permissions/modes';
 import { getDatabase } from '../services/core/databaseService';
 import { normalizeCronJobRow } from './cronNormalizers';
@@ -77,6 +79,12 @@ export async function backfillCronWriteScopes(updatedAt = Date.now()): Promise<v
     markDone();
   }
   logger.info('Schedule write grant backfill completed', { backfilled: updates.length });
+}
+
+/** Connector / MCP / external-side-effect tools: a local folder grant never covers them. */
+export function isNonLocalWriteTool(toolName: string | undefined): boolean {
+  return Boolean(toolName) && (isConnectorToolName(toolName!) || isMcpToolName(toolName!)
+    || toolName!.startsWith('mcp:') || toolName === 'MCPUnified' || isExternalSideEffectTool(toolName!));
 }
 
 /** Session authority only; file classification owns the workspace/path decision. */
@@ -232,6 +240,12 @@ export async function approveByScheduleWriteGrant(request: {
   details?: { path?: string; filePath?: string; [key: string]: unknown };
 }): Promise<PermissionAskResult | undefined> {
   if (request.type !== 'file_write' && request.type !== 'file_edit') return undefined;
+  if (isNonLocalWriteTool(request.tool)) {
+    logger.info('Schedule write grant declined (folder grant covers local file writes only)', {
+      sessionId: request.sessionId, tool: request.tool,
+    });
+    return undefined;
+  }
   // forceConfirm 只放行「W3 写边界 ask 为唯一成因」这一种形态（返修 r2）：cron/heartbeat
   // 会话的 runContext 没有 workspace 权威，一切绝对路径写都被判 outside_project
   // （2026-10-24 e2e 实证 boundaryAskForcesConfirmation=true，其余成因 false），而用户点

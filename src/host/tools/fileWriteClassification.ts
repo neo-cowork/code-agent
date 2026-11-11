@@ -9,7 +9,8 @@ import { isProtectedWritePath } from '../sandbox/sensitivePaths';
 import { CANONICAL_HOME_DIR, isPathInside } from './permissionClassifierShell';
 import { GENERATOR_WRITE_TOOLS, writeTargetPathOf } from './writeTargetPath';
 import { resolveToolWriteTargets } from './writeTargets';
-import { requiresScheduleWriteGrant } from '../cron/cronWriteGrant';
+import { connectorWriteAskClassification } from './connectorTokenWrite';
+import { isNonLocalWriteTool, requiresScheduleWriteGrant } from '../cron/cronWriteGrant';
 
 // 写入工具名映射
 const WRITE_TOOLS = new Set([
@@ -140,6 +141,15 @@ async function classifyOtherScheduledWrite(
   const keyed = writeTargetPathOf(toolName, args);
   const targets = [...new Set([...described, ...(keyed ? [keyed] : [])])];
   if (!targets.some((target) => classifyTarget(toolName, target, context, startTime).workspaceWrite)) return null;
+  // Connector / MCP / external-side-effect tools keep their own trust-boundary ask (a folder grant
+  // must not answer it) but still count as grant-required so skill/tool-run/bypass shortcuts stay closed.
+  if (isNonLocalWriteTool(toolName)) {
+    const own = connectorWriteAskClassification(toolName, args, 'write', startTime);
+    const reason = own?.reason ?? 'External or MCP write needs your confirmation';
+    return { ...own, decision: 'ask', reason, confidence: 1, cached: false, bypassCache: true,
+      trustBoundary: true, scheduleWriteTargets: [],
+      traceStep: own?.traceStep ?? createTraceStep('permission_classifier', 'schedule_non_local_write', 'ask', reason, startTime) };
+  }
   const reason = 'Scheduled workspace file writes require an explicit folder grant';
   return { decision: 'ask', reason, confidence: 1, cached: false, bypassCache: true,
     scheduleWriteTargets: targets.map((target) => path.resolve(context.workingDirectory, target)),

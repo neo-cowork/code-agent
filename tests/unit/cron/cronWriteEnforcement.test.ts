@@ -41,7 +41,7 @@ import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestrat
 import { mintToolRunGrant } from '../../../src/host/permissions/toolGrantStore';
 import { resetPermissionModeManager } from '../../../src/host/permissions/modes';
 import { resolveSessionDefaultModelConfig } from '../../../src/host/services/core/sessionDefaults';
-import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
+import { getProtocolRegistry, resetProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import { getAllToolDefinitions } from '../../../src/host/tools/dispatch/toolDefinitions';
 import { getPermissionClassifier } from '../../../src/host/tools/permissionClassifier';
 import { getPermissionModeManager } from '../../../src/host/permissions/modes';
@@ -344,4 +344,35 @@ it.each([
   expect(existsSync(target)).toBe(false);
   island.resolveParkedApproval(row.id, 'deny');
   expect((await promise).success).toBe(false);
+});
+
+// A folder grant covers local file writes only. A connector write (external side effect) whose
+// `path` argument happens to be inside the folder must still park, never ride the grant.
+it('connector write tool with an in-folder path still parks under a folder grant', async () => {
+  const registry = getProtocolRegistry();
+  const original = registry.getSchemas().find((schema) => schema.name === 'calendar_create_event')!;
+  const handled = vi.fn(async () => ({ ok: true as const, output: 'created' }));
+  registry.register(original, async () => ({ schema: original, createHandler: () => ({ schema: original, execute: handled }) }) as never);
+  try {
+    const task = await job();
+    await cron.grantWriteScope(task.id);
+    const definition = cron.getJob(task.id)!;
+    const session = await createCronAgentSession(definition, definition.action);
+    const executor = new ToolExecutor({ workingDirectory: folder, requestPermission: (request) => island.requestPermission(request) });
+    executor.setAuditEnabled(false);
+    const promise = executor.execute('calendar_create_event', { title: 'Standup', start_ms: 1, path: 'notes.md' }, {
+      sessionId: session.id, preApprovedTools: new Set(['calendar_create_event']),
+    });
+    const row = await parked();
+    expect(JSON.parse(row.payloadJson).tool).toBe('calendar_create_event');
+    expect(handled).not.toHaveBeenCalled();
+    expect(state.db!.getPermissionDecisionsBySession(session.id)).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ reason: 'schedule-write-grant' }),
+    ]));
+    island.resolveParkedApproval(row.id, 'deny');
+    expect((await promise).success).toBe(false);
+    expect(handled).not.toHaveBeenCalled();
+  } finally {
+    resetProtocolRegistry();
+  }
 });
