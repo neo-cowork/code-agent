@@ -34,8 +34,35 @@ runs:
     - name: Install Playwright browsers
       shell: bash
       run: |
-        if [ "${{ inputs.with-deps }}" = "true" ]; then
-          npx playwright install --with-deps chromium
-        else
-          npx playwright install chromium
-        fi
+        base_delay="${PLAYWRIGHT_INSTALL_RETRY_BASE_DELAY:-15}"
+        log="$(mktemp)"
+        trap 'rm -f "$log"' EXIT
+        failures=()
+        for attempt in 1 2 3; do
+          echo "Installing Playwright browsers: attempt $attempt/3"
+          if {
+            if [ "${{ inputs.with-deps }}" = "true" ]; then
+              npx playwright install --with-deps chromium
+            else
+              npx playwright install chromium
+            fi
+          } 2>&1 | tee "$log"; then
+            for failure in "${failures[@]}"; do
+              echo "::warning::Playwright install $failure; recovered on attempt $attempt/3"
+            done
+            exit 0
+          else
+            exit_code=$?
+          fi
+          failure="attempt $attempt/3 failed (exit code $exit_code)"
+          echo "$failure"
+          tail -n 5 "$log"
+          failures+=("$failure")
+          if [ "$attempt" -eq 3 ]; then
+            echo "Playwright install: all 3 attempts failed"
+            exit "$exit_code"
+          fi
+          delay=$((base_delay * attempt))
+          echo "retrying in ${delay}s"
+          sleep "$delay"
+        done
