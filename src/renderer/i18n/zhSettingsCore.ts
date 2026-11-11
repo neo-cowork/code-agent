@@ -555,6 +555,10 @@ export const zhSettingsCore = {
           label: '打开命令面板',
           description: '搜索和执行应用命令',
         },
+        'sessionSearch.open': {
+          label: '搜索会话',
+          description: '搜索并打开会话',
+        },
         'session.stop': {
           label: '停止生成',
           description: '停止当前运行中的任务',

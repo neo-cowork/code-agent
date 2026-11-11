@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
 import { fileReadTracker } from '../../../src/host/tools/fileReadTracker';
+const TELEMETRY_RECOVERY_NOTICE = '【历史恢复提示】';
 import { estimateTokens } from '../../../src/host/context/tokenEstimator';
 
 const compactionServiceMocks = vi.hoisted(() => ({
@@ -979,5 +980,27 @@ describe('compactionService', () => {
     expect(result.plan.messages).toBe(messages);
     expect(result.plan.messages).toEqual(originalMessages);
     expect(compactionServiceMocks.summarizeWithMetadata).toHaveBeenCalledTimes(2);
+  });
+
+  it('adds the telemetry-recovery disclaimer exactly once to the summariser input without touching the stored message', async () => {
+    const recovered = {
+      ...message('m1', 'user', '写到 ~/[credit card hidden].txt '.repeat(40)),
+      metadata: { telemetryRecovered: true as const },
+    };
+    const originalContent = recovered.content;
+    const messages = [
+      recovered,
+      message('m2', 'assistant', 'Historical analysis. '.repeat(300)),
+      message('m3', 'user', 'Continue'),
+      message('m4', 'assistant', 'Recent answer'),
+    ];
+    const result = await compactMessagesWithSummary({
+      sessionId: 'recovered-compaction', source: 'manual_current', messages, anchorMessageId: 'm3',
+    });
+    expect(result.success).toBe(true);
+    const prompt = String(compactionServiceMocks.summarizeWithMetadata.mock.calls[0][0]);
+    expect(prompt.split(TELEMETRY_RECOVERY_NOTICE)).toHaveLength(2);
+    expect(recovered.content).toBe(originalContent);
+    expect(result.plan.messages[0].content).toBe(originalContent);
   });
 });

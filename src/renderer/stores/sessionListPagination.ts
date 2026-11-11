@@ -52,6 +52,38 @@ export function bumpSessionsLocalVersion(): void {
   _sessionsLocalVersion += 1;
 }
 
+/**
+ * 从搜索结果打开的、不在已加载分页窗口里的会话（"外来行"）。
+ * 它们要留在 sessions 里（顶栏标题等按 id 在 sessions 里查），但不属于分页窗口：
+ * 计 offset 时扣掉（否则翻页会漏一行），静默刷新重取窗口时要原样补回（否则标题又空了）。
+ */
+const _openedOutsideWindowIds = new Set<string>();
+
+export function withOpenedSessionOutsideWindow<T extends { id: string }>(sessions: T[], opened: T): T[] {
+  if (sessions.some((item) => item.id === opened.id)) {
+    return sessions.map((item) => (item.id === opened.id ? opened : item));
+  }
+  _openedOutsideWindowIds.add(opened.id);
+  return [opened, ...sessions];
+}
+
+function windowSessionCount(sessions: Array<{ id: string }>): number {
+  return sessions.filter((item) => !_openedOutsideWindowIds.has(item.id)).length;
+}
+
+/** 刷新后窗口里已含该会话 = 它不再是外来行；仍缺席的外来行补回列表。 */
+function keepOpenedOutsideWindow(
+  current: SessionListMeta[],
+  refreshed: SessionListMeta[],
+): SessionListMeta[] {
+  const refreshedIds = new Set(refreshed.map((item) => item.id));
+  for (const id of Array.from(_openedOutsideWindowIds)) {
+    if (refreshedIds.has(id)) _openedOutsideWindowIds.delete(id);
+  }
+  const extras = current.filter((item) => _openedOutsideWindowIds.has(item.id) && !refreshedIds.has(item.id));
+  return extras.length > 0 ? [...extras, ...refreshed] : refreshed;
+}
+
 /** 与 sessionStore/sessionCreate 同款的最小 meta 形状（避免与 sessionStore 循环 import 运行时值）。 */
 interface SessionListMeta extends Session {
   messageCount: number;
@@ -129,7 +161,7 @@ export async function executeLoadSessions(
   try {
     // 静默刷新保持已加载窗口：用户已翻到 N 条就按 N 条重取同一窗口，
     // 否则每次云端同步广播都会把列表收回第一页，翻出来的历史会话瞬间消失。
-    const loadedCount = silent ? get().sessions.length : 0;
+    const loadedCount = silent ? windowSessionCount(get().sessions) : 0;
     const limit = Math.max(SESSION_LIST_PAGE_SIZE, loadedCount);
     const sessions = await invokeSession<Session[]>('list', buildSessionListQuery(filter, 0, limit));
 
@@ -139,10 +171,14 @@ export async function executeLoadSessions(
       return executeLoadSessions(deps, options);
     }
 
-    const sessionsWithMeta = preserveParkedContinueOnRefresh(get().sessions, applyClientFilter(
+    const refreshedWindow = applyClientFilter(
       (sessions || []).map((session) => normalizeSession(session as Session & { messageCount?: number; turnCount?: number })),
       filter,
-    ));
+    );
+    const sessionsWithMeta = preserveParkedContinueOnRefresh(
+      get().sessions,
+      keepOpenedOutsideWindow(get().sessions, refreshedWindow),
+    );
 
     // 闪烁修复：数据签名不变就保留旧引用、跳过 setState，避免云端同步广播触发侧栏整树重渲染。
     if (sessionsSignature(get().sessions) === sessionsSignature(sessionsWithMeta)) {
@@ -174,7 +210,7 @@ export async function executeLoadOlderSessions(deps: SessionListPaginationDeps):
   const localVersionAtStart = getSessionsLocalVersion();
   try {
     // sessions.length 恒等于已从 DB 取出的原始条数（见 applyClientFilter），直接当 offset。
-    const offset = state.sessions.length;
+    const offset = windowSessionCount(state.sessions);
     const page = await invokeSession<Session[]>('list', buildSessionListQuery(filter, offset, SESSION_LIST_PAGE_SIZE));
 
     if (localVersionAtStart !== getSessionsLocalVersion()) {
