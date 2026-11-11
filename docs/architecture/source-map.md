@@ -91,3 +91,5 @@
 | `extension/` | 浏览器扩展 host 侧支持 |
 | `utils/` | 通用工具函数 |
 | `index.ts` · `shellCapabilities.ts` | host 顶层入口 / shell 能力探测 |
+
+环境权限提示：`src/host/permissions/envAssist/`（分类、持久化去重与设置页动作），由 Agent 工具执行器及 IPC 适配层复用。
