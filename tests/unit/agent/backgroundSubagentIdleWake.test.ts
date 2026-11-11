@@ -210,10 +210,10 @@ describe('background subagent idle wake', () => {
     scheduleBackgroundSubagentIdleWake(trigger('agent-failed', 'failed-session'));
     await vi.advanceTimersByTimeAsync(50);
 
-    expect(wakeNoteMocks.format).toHaveBeenCalledWith('coder');
+    expect(wakeNoteMocks.format).toHaveBeenCalledWith('后台任务');
     expect(wakeNoteMocks.record).toHaveBeenCalledWith(
       'failed-session',
-      'wake failed: coder',
+      'wake failed: 后台任务',
       { taskId: 'agent-failed', reason: 'owner_missing' },
     );
   });
@@ -276,7 +276,7 @@ describe('background subagent idle wake', () => {
 
     expect(wakeNoteMocks.record).toHaveBeenCalledWith(
       'throwing-session',
-      'wake failed: coder',
+      'wake failed: 后台任务',
       { taskId: 'agent-throws', reason: 'wake_failed' },
     );
   });
