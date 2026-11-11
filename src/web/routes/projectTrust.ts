@@ -27,7 +27,9 @@ interface ProjectTrustRouterDeps {
 export function createProjectTrustRouter(deps: ProjectTrustRouterDeps): Router {
   const router = Router();
   router.post('/confirm-source-trust', async (req: Request, res: Response) => {
-    const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId.trim() : '';
+    const body = req.body as unknown;
+    const rawSessionId = body && typeof body === 'object' ? (body as { sessionId?: unknown }).sessionId : undefined;
+    const sessionId = typeof rawSessionId === 'string' ? rawSessionId.trim() : '';
     if (!sessionId) {
       res.status(400).json({ error: 'sessionId is required', code: 'PROJECT_TRUST_CONFIRM_INVALID_BODY' });
       return;
