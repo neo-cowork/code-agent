@@ -102,7 +102,7 @@ describe('environment auto-continue arms on domain session load (web context)', 
 
   it('a repeated domain load does not arm a second loop or extend the window', async () => {
     const f = await restartedHarness();
-    f.wire(() => 'red');
+    f.wire(async () => 'red');
     smMocks.restoreSession.mockResolvedValue({ id: 'env-session', title: 'Environment fixture', workingDirectory: workspace, createdAt: 1, updatedAt: 1, messages: f.messages() });
     const load = installDomainSessionLoad();
     await load(undefined, { action: 'load', payload: { sessionId: 'env-session' } });
