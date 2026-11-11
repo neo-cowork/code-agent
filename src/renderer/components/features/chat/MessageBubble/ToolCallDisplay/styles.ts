@@ -4,6 +4,7 @@
 // ============================================================================
 
 import type { ToolCall } from '@shared/contract';
+import { resolveToolCallTerminalState } from '../../../../../utils/toolCallTerminalState';
 
 // ============================================================================
 // Status Types
@@ -30,15 +31,9 @@ export function getToolStatus(
   currentSessionId: string | null,
   processingSessionIds: Set<string>
 ): ToolStatus {
-  if (toolCall.result) {
-    return toolCall.result.success ? 'success' : 'error';
-  }
-
-  const isProcessing = currentSessionId
-    ? processingSessionIds.has(currentSessionId)
-    : false;
-
-  return isProcessing ? 'pending' : 'interrupted';
+  return resolveToolCallTerminalState({ toolCall,
+    sessionLive: Boolean(currentSessionId && processingSessionIds.has(currentSessionId)),
+  }).displayStatus;
 }
 
 // ============================================================================

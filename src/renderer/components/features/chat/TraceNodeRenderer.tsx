@@ -7,7 +7,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { TraceNode } from '@shared/contract/trace';
-import type { ToolCall } from '@shared/contract';
+import { traceTerminalToolCall } from '../../../utils/toolCallTerminalState';
 import type { FileChange } from '../../../utils/turnDiffSummary';
 import { stripAppshotBlocks } from '@shared/contract/appshot';
 import { extractUserRequest, stripSystemReminderBlocks } from '@shared/utils/turnScaffold';
@@ -548,37 +548,15 @@ const ToolCallNode: React.FC<{ node: TraceNode; sessionId?: string; unfinishedTo
   // Reconstruct ToolCall object for ToolCallDisplay
   // 必须把语义字段（shortDescription / targetContext / expectedOutcome）一起带回来，
   // 否则 ToolCallDisplay / ToolHeader 拿不到，会 fallback 到机械路径并多渲染重复信息
-  const toolCall: ToolCall = {
-    id: node.toolCall.id,
-    name: node.toolCall.name,
-    arguments: node.toolCall.args,
-    _streaming: node.toolCall._streaming,
-    shortDescription: node.toolCall.shortDescription,
-    stepLabel: node.toolCall.stepLabel,
-    targetContext: node.toolCall.targetContext,
-    expectedOutcome: node.toolCall.expectedOutcome,
-    result: node.toolCall.result !== undefined ? {
-      toolCallId: node.toolCall.id,
-      success: node.toolCall.success ?? true,
-      output: node.toolCall.success !== false ? node.toolCall.result : undefined,
-      error: node.toolCall.success === false ? node.toolCall.result : undefined,
-      duration: node.toolCall.duration,
-      outputPath: node.toolCall.outputPath,
-      // 投影层的 recovered 标记要随 result.metadata 带给 ToolCallDisplay（同 ToolStepGroup
-      // 的构造路径），否则已恢复的失败行仍按普通失败渲染「未成功」+ 失败原因行。
-      metadata: node.toolCall.recovered
-        ? { ...(node.toolCall.metadata || {}), recovered: true }
-        : node.toolCall.metadata,
-    } : undefined,
-    liveOutput: node.toolCall.liveOutput,
-  };
+  const toolCall = traceTerminalToolCall(node.toolCall);
 
   return (
     <ToolCallDisplay
       toolCall={toolCall}
       index={0}
       total={1}
-      statusOverride={node.metadata?.streamRecovery || interruptionReason ? 'interrupted' : unfinishedToolIsLive && node.toolCall.result === undefined ? 'pending' : undefined}
+      sessionLive={unfinishedToolIsLive}
+      agentId={node.metadata?.agentTeam?.agentId}
       interruptionReason={interruptionReason ?? (node.metadata?.streamRecovery ? 'app-restart' : undefined)}
       mediaContext={{ sessionId, messageId: node.messageId || node.id }}
     />

@@ -24,8 +24,8 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
   ),
 }));
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
-  useSessionStore: (selector: (state: { currentSessionId: string | null }) => unknown) => (
-    selector({ currentSessionId: 'session-1' })
+  useSessionStore: (selector: (state: { currentSessionId: string | null; sessions: never[] }) => unknown) => (
+    selector({ currentSessionId: 'session-1', sessions: [] })
   ),
 }));
 vi.mock('../../../src/renderer/stores/backgroundTaskStore', () => ({
