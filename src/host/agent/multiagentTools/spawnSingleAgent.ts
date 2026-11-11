@@ -42,7 +42,7 @@ import { getSubagentExecutor } from '../subagentExecutor';
 import type { SubagentExecutionContext } from '../subagentExecutorTypes';
 import { resolveSubagentParentContext } from '../subagentProtocolContext';
 import { resolveSpawnAgentEngine } from './spawnAgentEngine';
-import { adoptForegroundSubagent, delegateSpawnAgentWorktreeCleanup, finalizeForegroundSpawnAgentWorktree, publishBackgroundSubagentVisibility, raceForegroundBlockingBudget, resolveForegroundBlockingBudgetMs, resolveSingleSpawnRunScope, validateForegroundBlockingBudget } from './spawnAgentForegroundBackground';
+import { adoptForegroundSubagent, delegateSpawnAgentWorktreeCleanup, finalizeForegroundSpawnAgentWorktree, publishBackgroundSubagentVisibility, raceForegroundBlockingBudget, resolveForegroundBlockingBudgetMs, resolveSingleSpawnRunScope, validateForegroundBlockingBudget, withBackgroundWorktreeNote } from './spawnAgentForegroundBackground';
 import { prepareSpawnAgentWorktree } from './spawnAgentWorktree';
 
 export async function executeSingleSpawnAgent(
@@ -361,9 +361,11 @@ export async function executeSingleSpawnAgent(
       const budgetError = validateForegroundBlockingBudget(agentName, foregroundBlockingBudgetMs);
       if (budgetError) return budgetError;
 
+      let settleWorktreeNote: (note: string) => void = () => {};
+      const worktreeNoteSettled = new Promise<string>((resolve) => { settleWorktreeNote = resolve; });
       const delegateWorktreeCleanup = (): void => {
         if (!worktreeInfo || worktreeCleanupDelegated || worktreeFinalized) return;
-        delegateSpawnAgentWorktreeCleanup({ guard, agentId, repoPath: context.cwd, worktreeInfo, isFinalized: () => worktreeFinalized, markFinalized: () => { worktreeFinalized = true; } });
+        delegateSpawnAgentWorktreeCleanup({ guard, agentId, repoPath: context.cwd, worktreeInfo, isFinalized: () => worktreeFinalized, markFinalized: () => { worktreeFinalized = true; }, onSettled: settleWorktreeNote });
         worktreeCleanupDelegated = true;
       };
 
@@ -402,7 +404,7 @@ export async function executeSingleSpawnAgent(
           // 与 run_in_background 的 detached 语义一致，取消走 close_agent。
           parentAbortSignal?.removeEventListener('abort', abortFromParent);
           return adoptForegroundSubagent({
-            promise,
+            promise: worktreeInfo ? withBackgroundWorktreeNote(promise, worktreeNoteSettled, agentId) : promise,
             agentId,
             agentName,
             completionTitle,

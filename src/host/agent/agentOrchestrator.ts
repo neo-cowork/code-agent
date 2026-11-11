@@ -686,7 +686,7 @@ export class AgentOrchestrator {
 
       if (requirements.needsAutoAgent) {
         await runAutoAgentMode(content, executionContent, requirements, onEvent, modelConfig, {
-          workingDirectory: this.workingDirectory,
+          workingDirectory: this.workingDirectory, requestPermission: async (request) => (await this.permissions.requestPermission(request as Parameters<OrchestratorPermissionIsland['requestPermission']>[0])).approved,
           sessionId: this.sessionId,
           taskListManager: this.taskListManager,
           generateId: () => this.generateId(),

@@ -7,10 +7,15 @@ import { zh } from '../../../src/renderer/i18n/zh';
 import { en } from '../../../src/renderer/i18n/en';
 import { humanizeToolStep } from '../../../src/renderer/utils/humanizeToolStep';
 import type { ToolCall } from '../../../src/shared/contract';
-import { toDelegationDisplayToolCall } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/delegationPresentation';
+import { deriveDelegationPresentation, toDelegationDisplayToolCall } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/delegationPresentation';
+import { DelegationReceipt } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/DelegationReceipt';
+import { getToolStatusLabel } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/statusLabels';
 
 vi.mock('../../../src/renderer/stores/appStore', () => ({
-  useAppStore: (selector: (state: unknown) => unknown) => selector({ openPreview: vi.fn(), openSettingsTab: vi.fn() }),
+  useAppStore: Object.assign(
+    (selector: (state: unknown) => unknown) => selector({ openPreview: vi.fn(), openSettingsTab: vi.fn() }),
+    { getState: () => ({ language: 'zh' as const }) },
+  ),
 }));
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { zh } = await import('../../../src/renderer/i18n/zh');
@@ -175,5 +180,73 @@ describe('delegation report keeps actionable stats notes', () => {
     expect(out).toContain('review and merge changes');
     expect(out).not.toContain('/tmp/wt');
     for (const token of ['Stats:', 'Iterations:', 'Tools used:', 'Agent ID']) expect(out).not.toContain(token);
+  });
+});
+
+describe('background hand-off row', () => {
+  it.each(['', '\n', '（', '：', '，', '「', '【', '、'])('shortens paths after %j in every projected surface', (prefix) => {
+    const call = taskCall('', 'spawn_agent');
+    const text = `${prefix}/Users/tester/project/notes.md）`;
+    const expected = `${prefix}notes.md）`;
+    call.arguments = { task: text };
+    call.shortDescription = text;
+    call.result!.output = text;
+    const stored = JSON.stringify(call);
+    const projected = toDelegationDisplayToolCall(call, zh);
+    expect(projected.arguments.task).toBe(expected);
+    expect(projected.shortDescription).toBe(expected);
+    expect(projected.result?.output).toBe(expected);
+    expect(humanizeToolStep(projected.name, projected.arguments, zh)).not.toContain('/Users/');
+    expect(JSON.stringify(call)).toBe(stored);
+  });
+
+  it('keeps CJK punctuation between adjacent paths and preserves public URLs', () => {
+    const call = taskCall('', 'spawn_agent');
+    call.result!.output = '阅读（/tmp/project/a.md、/tmp/project/b.md），参考：https://example.com/Users/team/notes.md';
+    expect(toDelegationDisplayToolCall(call, zh).result?.output)
+      .toBe('阅读（a.md、b.md），参考：https://example.com/Users/team/notes.md');
+  });
+
+  it.each([zh, en])('labels a projected background receipt as dispatched, not completed', (t) => {
+    const call = taskCall('', 'spawn_agent');
+    call.result!.output = 'Agent [Explorer] exceeded foreground budget and continues in background:\n- status=running';
+    call.result!.metadata = { background: true, transferredToBackground: true };
+    const projected = toDelegationDisplayToolCall(call, t);
+    expect(projected.result?.output).toBe(t.chat.delegationReceipt.working);
+    expect(getToolStatusLabel(projected, 'success', t)).toBe(t.chat.delegationReceipt.dispatched);
+    expect(getToolStatusLabel(taskCall('', 'spawn_agent'), 'success', t)).toBe(t.chat.delegationReceipt.completed);
+  });
+
+  it.each([[zh, 'completed'], [en, 'completed'], [zh, 'failed'], [en, 'failed']] as const)(
+    'replaces the stored "working" hand-off text once the child finished (%#)',
+    (t, state) => {
+      const call = taskCall('', 'spawn_agent');
+      call.result!.output = 'Agent [Explorer] exceeded foreground budget and continues in background:\n- status=running';
+      call.result!.metadata = { background: true, transferredToBackground: true };
+      const stored = JSON.stringify(call);
+      expect(toDelegationDisplayToolCall(call, t, { state }).result?.output).toBe(t.chat.delegationReceipt[state]);
+      expect(toDelegationDisplayToolCall(call, t, { state: 'working' }).result?.output).toBe(t.chat.delegationReceipt.working);
+      expect(JSON.stringify(call)).toBe(stored);
+    },
+  );
+
+  it('derives the branch to merge from a preserved worktree on a finished agent node only', () => {
+    const call = taskCall('', 'spawn_agent');
+    call.result!.output = 'x';
+    call.result!.metadata = { agentId: 'agent-1' };
+    const node = (status: string, worktree: string) => ({
+      id: 'agent-1', role: 'coder', status, statusLabel: '', children: [], evidenceRefs: [], sources: [],
+      budgetSummary: {}, worktreeState: { status: worktree, branch: 'agent/agent-1' },
+    }) as never;
+    expect(deriveDelegationPresentation(call, [], [node('completed', 'preserved')])?.branch).toBe('agent/agent-1');
+    expect(deriveDelegationPresentation(call, [], [node('completed', 'cleaned')])?.branch).toBeUndefined();
+    expect(deriveDelegationPresentation(call, [], [node('running', 'preserved')])?.branch).toBeUndefined();
+  });
+
+  it('renders the branch line in the finished receipt', () => {
+    const { getByTestId } = render(
+      <DelegationReceipt presentation={{ state: 'completed', title: 't', outputs: [], activityIds: [], branch: 'agent/agent-1' }} />,
+    );
+    expect(getByTestId('delegation-branch').textContent).toBe(zh.chat.delegationReceipt.mergeBranch.replace('{branch}', 'agent/agent-1'));
   });
 });
