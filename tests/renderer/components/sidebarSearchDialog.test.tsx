@@ -210,4 +210,71 @@ describe('SidebarSearchDialog', () => {
 
     expect(onSelect).toHaveBeenCalledWith('session-recent');
   });
+  describe('same-title same-minute collisions', () => {
+    const year = new Date().getFullYear();
+    const at = (h: number, m: number, sec: number) => new Date(year, 10, 8, h, m, sec).getTime();
+    const mk = (id: string, title: string, updatedAt: number) =>
+      ({ ...sessions[0], id, title, createdAt: updatedAt - 1000, updatedAt }) as SessionWithMeta;
+    const renderRows = (list: SessionWithMeta[], currentSessionId: string | null = null) =>
+      render(
+        <SidebarSearchDialog
+          isOpen
+          query="停车"
+          onQueryChange={vi.fn()}
+          onClose={vi.fn()}
+          sessions={list}
+          currentSessionId={currentSessionId}
+          messageSearchHitsBySessionId={{}}
+          messageSearchLoading={false}
+          effectiveSearchScope="all"
+          setSearchScope={vi.fn()}
+          canSearchCurrentProject
+          onSelectSession={vi.fn()}
+        />,
+      );
+    const timeOf = (row: HTMLElement) =>
+      row.querySelector('[data-testid="sidebar-search-session-time"]')?.textContent;
+
+    it('shows seconds on colliding rows and tags only the newest as latest (zh)', () => {
+      const list = [
+        mk('a', '[Schedule] 停车', at(16, 1, 42)),
+        mk('b', '[Schedule] 停车', at(16, 1, 7)),
+        mk('c', '其他任务', at(16, 1, 30)),
+        mk('d', '[Schedule] 停车', at(9, 5, 1)),
+      ];
+      renderRows(list);
+      const rows = screen.getAllByRole('option');
+      expect(timeOf(rows[0])).toMatch(/16:01:42$/);
+      expect(timeOf(rows[1])).toMatch(/16:01:07$/);
+      expect(rows[0].textContent).toContain('最新');
+      expect(rows[1].textContent).not.toContain('最新');
+      // 非碰撞行保持原样
+      expect(timeOf(rows[2])).toBe(formatLocalDateTime(list[2].updatedAt, 'zh'));
+      expect(timeOf(rows[3])).toBe(formatLocalDateTime(list[3].updatedAt, 'zh'));
+      expect(rows[2].textContent).not.toContain('最新');
+      expect(rows[3].textContent).not.toContain('最新');
+    });
+
+    it('handles a 3-row collision in en and lets a row carry both tags', () => {
+      i18nState.language = 'en';
+      const list = [
+        mk('a', 'Daily', at(16, 1, 50)),
+        mk('b', 'Daily', at(16, 1, 20)),
+        mk('c', 'Daily', at(16, 1, 5)),
+      ];
+      renderRows(list, 'a');
+      const rows = screen.getAllByRole('option');
+      expect(rows.map(timeOf).map((t) => /:(\d{2}) ?(AM|PM)?$/.exec(t ?? '')?.[1])).toEqual(['50', '20', '05']);
+      expect(rows.map((r) => r.textContent?.includes('Latest'))).toEqual([true, false, false]);
+      expect(rows[0].textContent).toContain('Current');
+    });
+
+    it('leaves rows untouched when titles or minutes differ', () => {
+      const list = [mk('a', 'Daily', at(16, 1, 50)), mk('b', 'Daily', at(16, 2, 5))];
+      renderRows(list);
+      const rows = screen.getAllByRole('option');
+      expect(rows.map(timeOf)).toEqual(list.map((s) => formatLocalDateTime(s.updatedAt, 'zh')));
+      expect(rows.some((r) => r.textContent?.includes('最新'))).toBe(false);
+    });
+  });
 });

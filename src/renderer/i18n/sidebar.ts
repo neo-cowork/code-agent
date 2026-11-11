@@ -41,6 +41,7 @@ export const sidebarZh = {
     searchingMessagesShort: '搜消息中…',
     recentSessions: '最近会话',
     currentSession: '当前',
+    latestRun: '最新',
     messageHits: '命中 {count} 条消息',
     // 列表状态
     loading: '加载中…',
@@ -410,6 +411,7 @@ export const sidebarEn: typeof sidebarZh = {
     searchingMessagesShort: 'Searching messages…',
     recentSessions: 'Recent sessions',
     currentSession: 'Current',
+    latestRun: 'Latest',
     messageHits: '{count} message matches',
     loading: 'Loading…',
     noSessions: 'No expeditions yet',
