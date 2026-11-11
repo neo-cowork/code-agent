@@ -185,4 +185,29 @@ describe('httpTransport → serverConnectionMonitor 接线', () => {
     await expect(api.invoke(IPC_CHANNELS.AGENT_SEND_MESSAGE, '你好')).rejects.toThrow('Load failed');
     expect(status()).toBe('ok'); // 探测刚起步，还没到出横幅的阈值
   });
+
+  // N-FIX-SIGNED-OUT-SEND-500-RAW-HTML-REDESIGN：服务端未兜住时 /api/run 会回整页
+  // HTML 500——transport 只按 status/code 出一句话人话，HTML/内部报错文本永远不进 message。
+  it('/api/run 5xx HTML 错误页只抛一句话人话，响应体一个字都不进 message', async () => {
+    const htmlBody = '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Error</title></head><body><pre>Error: Project Source trust identity changed</pre></body></html>';
+    fetchMock.mockImplementation(async (input: unknown) => {
+      if (String(input).includes('/api/health')) {
+        return jsonResponse(200, { status: 'ok' });
+      }
+      return new Response(htmlBody, { status: 500, headers: { 'content-type': 'text/html' } });
+    });
+    const { createHttpCodeAgentAPI } = await loadModules();
+    const api = createHttpCodeAgentAPI('http://localhost:8180');
+
+    let thrown: Error & { status?: number; code?: string } | undefined;
+    try {
+      await api.invoke(IPC_CHANNELS.AGENT_SEND_MESSAGE, '帮我把下载文件夹里的照片按日期改名');
+    } catch (err) {
+      thrown = err as Error & { status?: number; code?: string };
+    }
+    expect(thrown).toBeInstanceOf(Error);
+    expect(thrown?.message).toBe('Neo 暂时没能完成这次请求，请稍后再试。');
+    expect(thrown?.message).not.toMatch(/云端代理|Error|&lt;|DOCTYPE|trust identity|500/);
+    expect(thrown?.status).toBe(500);
+  });
 });

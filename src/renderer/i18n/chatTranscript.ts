@@ -452,6 +452,9 @@ turnRun: {
   cleanupBadge: '清理中',
   outputsSignal: '{count} 个产出',
   toolsSignal: '{count} 次工具调用',
+  // 轮头阶段兜底（TurnCard getTurnPhase）：有助手正文 = 已生成，否则等待输出。
+  replyGenerated: '回复已生成',
+  awaitingOutput: '等待输出',
 },
 
 // 系统错误节点兜底文案（TraceNodeRenderer 的 node.subtype === 'error'）——
@@ -999,6 +1002,9 @@ turnRun: {
   cleanupBadge: 'cleanup',
   outputsSignal: '{count} outputs',
   toolsSignal: '{count} tool calls',
+  // Turn-phase fallbacks (TurnCard getTurnPhase).
+  replyGenerated: 'Reply generated',
+  awaitingOutput: 'Awaiting output',
 },
 
 // System error node fallback copy (TraceNodeRenderer node.subtype === 'error') —
