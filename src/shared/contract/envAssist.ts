@@ -5,11 +5,13 @@ export type EnvBlockerClass =
   | 'runtime_missing' | 'login_expired'
   | 'quota_exhausted' | 'model_capability' | 'offline' | 'first_launch';
 
-export type EnvAssistPhase =
+// knip-ratchet：两个别名只在本文件内被 EnvAssistNotice/EnvAssistActRequest 引用，
+// 外部无人 import，export 会被 dead-export 棘轮打红——保持文件内可见、不再导出。
+type EnvAssistPhase =
   | 'diagnosing' | 'fixing' | 'needs_user' | 'verifying'
   | 'resolved' | 'unconfirmed' | 'declined' | 'unsupported';
 
-export type EnvAssistActionKind =
+type EnvAssistActionKind =
   | 'open_settings_pane' | 'request_grant' | 'reauthorize' | 'open_app_settings'
   | 'restart_and_continue' | 'recheck' | 'skip_step';
 
