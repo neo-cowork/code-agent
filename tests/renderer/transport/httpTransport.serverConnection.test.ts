@@ -210,4 +210,58 @@ describe('httpTransport → serverConnectionMonitor 接线', () => {
     expect(thrown?.message).not.toMatch(/云端代理|Error|&lt;|DOCTYPE|trust identity|500/);
     expect(thrown?.status).toBe(500);
   });
+
+  // 同类位置（rework r1）：domain invoke 的 !ok 信封此前把响应体原样塞进 error.message，
+  // invokeDomain 再包成 DomainInvokeError.message 进 toast/气泡。
+  it('domain invoke 非 2xx：信封保留 HTTP_<status>，message 只有一句话人话，不含响应体', async () => {
+    const htmlBody = '<!DOCTYPE html><html lang="en"><head><title>Error</title></head><body><pre>Error: Project sources overlap: /Users/me/photos<br> &nbsp; at ProjectService.getWorkspaceScope (webServer.cjs:174730:34)</pre></body></html>';
+    const bodies: Array<[string, number, string, string]> = [
+      ['list', 500, htmlBody, 'text/html'],
+      ['create', 500, JSON.stringify({ success: false, error: { code: 'HANDLER_ERROR', message: 'SQLITE_CONSTRAINT: UNIQUE constraint failed: projects.id' } }), 'application/json'],
+      ['archive', 404, JSON.stringify({ success: false, error: { code: 'NOT_FOUND', message: 'No handler for domain:project action:archive' } }), 'application/json'],
+    ];
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { createHttpDomainAPI } = await import('../../../src/renderer/api/httpTransport');
+    const api = createHttpDomainAPI('http://localhost:8180');
+
+    for (const [action, status, body, contentType] of bodies) {
+      fetchMock.mockImplementation(async () => new Response(body, { status, headers: { 'content-type': contentType } }));
+      const response = await api.invoke('domain:project', action);
+      expect(response).toEqual({
+        success: false,
+        error: { code: `HTTP_${status}`, message: 'Neo 暂时没能完成这次请求，请稍后再试。' },
+      });
+      // 原始响应体只进诊断日志，不丢
+      expect(warn.mock.calls.some((call) => call.includes(body))).toBe(true);
+    }
+
+    // 服务端信任门的 code 仍按 code-first 给出信任句，不落回通用句
+    fetchMock.mockImplementation(async () => jsonResponse(422, { error: 'Project folder needs trust confirmation', code: 'PROJECT_SOURCE_TRUST', kind: 'identity_changed' }));
+    await expect(api.invoke('domain:project', 'get')).resolves.toEqual({
+      success: false,
+      error: { code: 'HTTP_422', message: '这个项目文件夹需要你确认后 Neo 才能使用。' },
+    });
+    warn.mockRestore();
+  });
+
+  // message 净化后，按 message 认「域路由没有该 handler」的调用方改认 HTTP_404 这个 code：
+  // 走真实链路 transport → ipcService.invokeDomain → tagClient。
+  it('domain 路由 404（没有 handler）经 invokeDomain 仍被 tagClient 认作「Tag IPC 不可用」', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    fetchMock.mockImplementation(async () => jsonResponse(404, {
+      success: false,
+      error: { code: 'NOT_FOUND', message: 'No handler for domain:tag action:listAll' },
+    }));
+    const { createHttpDomainAPI } = await import('../../../src/renderer/api/httpTransport');
+    (globalThis as { window: Record<string, unknown> }).window.domainAPI = createHttpDomainAPI('http://localhost:8180');
+    const { tagClient, isNeoTagIpcUnavailableError } = await import('../../../src/renderer/services/tagClient');
+
+    const error = await tagClient.listAll().catch((err: unknown) => err);
+    expect(error).toMatchObject({ code: 'HTTP_404', message: 'Neo 暂时没能完成这次请求，请稍后再试。' });
+    expect(isNeoTagIpcUnavailableError(error)).toBe(true);
+    // 真故障（handler 抛错的 500）不能被吞成「不可用」
+    fetchMock.mockImplementation(async () => jsonResponse(500, { success: false, error: { code: 'HANDLER_ERROR', message: 'boom' } }));
+    const failure = await tagClient.listByProject({ projectId: 'p1' }).catch((err: unknown) => err);
+    expect(isNeoTagIpcUnavailableError(failure)).toBe(false);
+  });
 });
