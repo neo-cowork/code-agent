@@ -143,7 +143,11 @@ describe('ProjectTrustConfirmCard 确认并重发', () => {
     const { fireEvent } = await import('@testing-library/react');
     const { useMessageActionStore } = await import('../../../src/renderer/stores/messageActionStore');
     const sendSpy = vi.fn();
+    const { useSessionStore } = await import('../../../src/renderer/stores/sessionStore');
+    const { recordFailedSend, mergeFailedSendOutbox } = await import('../../../src/renderer/stores/failedSendOutbox');
     useMessageActionStore.setState({ _send: sendSpy, _getMessages: () => failedMessages });
+    useSessionStore.setState({ currentSessionId: 'session-trust', messages: failedMessages });
+    recordFailedSend('session-trust', failedMessages[0]!, failedMessages[1]!);
     unsafeInvokeMock.mockResolvedValue({ confirmed: true, sources: 1 });
 
     render(<TraceNodeRenderer node={failedAssistantNode()} sessionId="session-trust" />);
@@ -159,7 +163,11 @@ describe('ProjectTrustConfirmCard 确认并重发', () => {
     });
     // 已发出后按钮消失，不留双入口
     expect(screen.queryByRole('button', { name: '确认并重发' })).toBeNull();
+    // 「需要你确认」这句已过时：不留在时间线上（否则挂在新回复上面），重载合并也不再带回来
+    expect(useSessionStore.getState().messages.map((message) => message.id)).toEqual(['client-msg-keep']);
+    expect(mergeFailedSendOutbox('session-trust', [], []).map((message) => message.id)).toEqual([]);
     useMessageActionStore.setState({ _send: null, _getMessages: null });
+    useSessionStore.setState({ currentSessionId: null, messages: [] });
   });
 
   it('确认失败显示通用失败句，不透传内部码', async () => {

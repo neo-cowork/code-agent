@@ -12,6 +12,8 @@ import React, { useCallback, useState } from 'react';
 import { Button } from '../../primitives/Button';
 import { useI18n } from '../../../hooks/useI18n';
 import { useMessageActionStore } from '../../../stores/messageActionStore';
+import { useSessionStore } from '../../../stores/sessionStore';
+import { clearFailedSend } from '../../../stores/failedSendOutbox';
 import ipcService from '../../../services/ipcService';
 import type { TraceNode } from '@shared/contract/trace';
 
@@ -28,6 +30,9 @@ export function ProjectTrustConfirmCard({ node, sessionId }: {
   const anchorSessionId = typeof node.metadata?.retrySessionId === 'string'
     ? node.metadata.retrySessionId
     : sessionId;
+  const retryClientMessageId = typeof node.metadata?.retryClientMessageId === 'string'
+    ? node.metadata.retryClientMessageId
+    : undefined;
 
   const onConfirm = useCallback(async () => {
     setState('confirming');
@@ -39,11 +44,18 @@ export function ProjectTrustConfirmCard({ node, sessionId }: {
       if (!confirmed?.confirmed) throw new Error('confirm unavailable');
       // 确认成功：复用既有失败重发路径，原 clientMessageId 原样重发
       useMessageActionStore.getState().regenerateMessage(messageId);
+      // 这句「需要你确认」到此已经过时：从时间线和失败发件箱里拿掉，
+      // 否则它会一直挂在新回复上面（真跑实测），读起来像确认没生效。
+      const sessions = useSessionStore.getState();
+      if (anchorSessionId && retryClientMessageId) clearFailedSend(anchorSessionId, retryClientMessageId);
+      if (!anchorSessionId || sessions.currentSessionId === anchorSessionId) {
+        sessions.setMessages(sessions.messages.filter((message) => message.id !== messageId));
+      }
       setState('sent');
     } catch {
       setState('failed');
     }
-  }, [anchorSessionId, messageId]);
+  }, [anchorSessionId, messageId, retryClientMessageId]);
 
   if (state === 'sent') return null;
   return (
