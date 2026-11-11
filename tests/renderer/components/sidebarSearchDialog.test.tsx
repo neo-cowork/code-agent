@@ -210,4 +210,31 @@ describe('SidebarSearchDialog', () => {
 
     expect(onSelect).toHaveBeenCalledWith('session-recent');
   });
+  it.each(['zh', 'en'] as const)('shows the failed copy, not the no-signal copy, when the search failed (%s)', async (language) => {
+    i18nState.language = language;
+    const { zh } = await import('../../../src/renderer/i18n/zh');
+    const { en } = await import('../../../src/renderer/i18n/en');
+    const copy = language === 'zh' ? zh.sidebar : en.sidebar;
+    const base = {
+      isOpen: true,
+      query: 'whatever',
+      onQueryChange: vi.fn(),
+      onClose: vi.fn(),
+      sessions: [] as SessionWithMeta[],
+      currentSessionId: null,
+      messageSearchHitsBySessionId: {},
+      messageSearchLoading: false,
+      effectiveSearchScope: 'all' as const,
+      setSearchScope: vi.fn(),
+      canSearchCurrentProject: false,
+      onSelectSession: vi.fn(),
+    };
+    const { rerender } = render(<SidebarSearchDialog {...base} messageSearchFailed />);
+    expect(screen.queryByText(copy.searchFailed)).not.toBeNull();
+    expect(screen.queryByText(copy.noMatchedSessions)).toBeNull();
+
+    rerender(<SidebarSearchDialog {...base} messageSearchFailed={false} />);
+    expect(screen.queryByText(copy.noMatchedSessions)).not.toBeNull();
+    expect(screen.queryByText(copy.searchFailed)).toBeNull();
+  });
 });

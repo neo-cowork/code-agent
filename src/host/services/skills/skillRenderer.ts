@@ -1,3 +1,5 @@
+import { renderDataDir } from '../../config/renderDataDir';
+
 // ============================================================================
 // Skill Renderer
 // Process $ARGUMENTS in skill content
@@ -31,5 +33,5 @@ export function renderSkillContent(content: string, options: SkillRenderOptions 
     return `[Skill shell command blocked: ${cmd.trim()}]`;
   });
 
-  return rendered;
+  return renderDataDir(rendered);
 }

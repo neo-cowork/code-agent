@@ -316,7 +316,7 @@ export const Sidebar: React.FC = () => {
     effectiveSearchScope,
     setSearchScope,
     messageSearchHitsBySessionId,
-    messageSearchLoading,
+    messageSearchLoading, messageSearchFailed,
     searchResultSessions,
     reviewItemsBySessionId,
     trajectoryQualityBySessionId,
@@ -777,7 +777,7 @@ export const Sidebar: React.FC = () => {
         isLoading={isLoading}
         hasAnySessions={hasAnySessions}
         filteredSessionsEmpty={filteredSessions.length === 0}
-        messageSearchLoading={messageSearchLoading}
+        messageSearchLoading={messageSearchLoading} messageSearchFailed={messageSearchFailed}
         searchQuery={searchQuery}
         sessionStatusFilter={sessionStatusFilter}
         activeStatusFilterLabel={activeStatusFilterLabel}
@@ -914,7 +914,7 @@ export const Sidebar: React.FC = () => {
         sessions={searchResultSessions}
         currentSessionId={currentSessionId}
         messageSearchHitsBySessionId={messageSearchHitsBySessionId}
-        messageSearchLoading={messageSearchLoading}
+        messageSearchLoading={messageSearchLoading} messageSearchFailed={messageSearchFailed}
         effectiveSearchScope={effectiveSearchScope}
         setSearchScope={setSearchScope}
         canSearchCurrentProject={canSearchCurrentProject}

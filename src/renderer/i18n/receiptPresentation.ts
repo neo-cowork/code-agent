@@ -17,6 +17,9 @@ export const receiptPresentationZh = {
         tmeet: '腾讯会议',
       },
       tools: {
+        runCommand: '运行命令',
+        writeFile: '写入文件',
+        editFile: '编辑文件',
         webFetch: '网页抓取',
         webSearch: '联网搜索',
         readFile: '读取文件',
@@ -55,6 +58,9 @@ export const receiptPresentationEn: typeof receiptPresentationZh = {
         tmeet: 'Tencent Meeting',
       },
       tools: {
+        runCommand: 'Run command',
+        writeFile: 'Write file',
+        editFile: 'Edit file',
         webFetch: 'Web fetch',
         webSearch: 'Web search',
         readFile: 'Read file',
