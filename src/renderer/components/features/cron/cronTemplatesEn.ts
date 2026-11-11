@@ -81,9 +81,16 @@ const EN_AGENT_PROMPTS: Record<string, string | ((values: Record<string, string>
 /**
  * en 档的 agent 提示词。没有英文版的模板返回 undefined：
  * group-listen 的 agentPrompt 就是用户填的一句话任务，原样保留。
+ *
+ * 尾部统一加一句显式的输出语言指令：en 提示词跑在中文 host 包装（cronAgentPrompt
+ * 的时间锚/摘要指令）与中文语料中间，真机实测（2026-11-11 MiMo）不加这句时英文
+ * 提示词也会漂成中文回复；加了才稳定出英文。zh 档不加对应句（中文本就是缺省）。
  */
+const EN_OUTPUT_LANGUAGE_SUFFIX = ' Write your reply in English.';
+
 export function enAgentPrompt(templateId: string, values: Record<string, string> = {}): string | undefined {
   const entry = EN_AGENT_PROMPTS[templateId];
   if (!entry) return undefined;
-  return typeof entry === 'function' ? entry(values) : entry;
+  const prompt = typeof entry === 'function' ? entry(values) : entry;
+  return `${prompt}${EN_OUTPUT_LANGUAGE_SUFFIX}`;
 }

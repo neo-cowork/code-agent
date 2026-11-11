@@ -41,6 +41,9 @@ function stripQuotedHostLabels(text: string): string {
   return out;
 }
 
+/** 输出语言指令（真机实测不加会漂成中文回复）：每个 en 提示词统一带这句尾巴 */
+const EN_OUTPUT_LANGUAGE_SUFFIX = ' Write your reply in English.';
+
 describe('cron 模板 en 档 agent 提示词', () => {
   it('7 个模板 generate({}, "en") 的 agentPrompt 除引用的 host 契约标签外无 CJK', () => {
     for (const id of EN_TEMPLATE_IDS) {
@@ -50,6 +53,14 @@ describe('cron 模板 en 档 agent 提示词', () => {
     // 晨间分诊绑角色（追加起草块）同样无 CJK
     const bound = template('morning-triage').generate({ roleId: 'assistant-lin' }, 'en').agentPrompt;
     expect(stripQuotedHostLabels(bound)).not.toMatch(CJK_CHAR);
+  });
+
+  it('每个 en 提示词尾部带显式输出语言指令（缺它真机会漂成中文回复）', () => {
+    for (const id of EN_TEMPLATE_IDS) {
+      expect(template(id).generate({}, 'en').agentPrompt, `template ${id}`).toContain(EN_OUTPUT_LANGUAGE_SUFFIX);
+    }
+    expect(template('morning-triage').generate({ roleId: 'assistant-lin' }, 'en').agentPrompt)
+      .toContain(EN_OUTPUT_LANGUAGE_SUFFIX);
   });
 
   it('带用户输入的模板（url/日历/表格）en 提示词同样无 CJK，且用户输入进文', () => {
@@ -112,7 +123,7 @@ describe('cron 模板 en 档 agent 提示词', () => {
     expect(bound.agentPrompt).toContain('calendar_create_event');
     expect(bound.agentPrompt).toContain('calendar_update_event');
     expect(bound.agentPrompt).toContain('calendar_delete_event');
-    expect(bound.agentPrompt.startsWith(unbound.agentPrompt)).toBe(true);
+    expect(bound.agentPrompt.startsWith(unbound.agentPrompt.replace(EN_OUTPUT_LANGUAGE_SUFFIX, ''))).toBe(true);
     // 除草稿块外其余字段与未绑定草稿一致（与中文版同构）
     const { agentPrompt: _p, agentRoleId: _r, ...boundRest } = bound;
     const { agentPrompt: _p2, agentRoleId: _r2, ...unboundRest } = unbound;
