@@ -104,8 +104,8 @@ describe('SessionManager telemetry user prompt backfill', () => {
       message: expect.objectContaining({
         id: 'telemetry-user-turn-url-different',
         role: 'user',
-        content:
-          '【历史恢复提示】原始 user 消息缺失；以下内容由脱敏后的 telemetry 重建，不是用户原话。路径、标识符、数字和敏感值可能已被缩写或替换，不要将它们当作可直接执行的精确文件或命令目标。\n\n检查 https://example.org/',
+        content: '检查 https://example.org/',
+        metadata: { telemetryRecovered: true },
       }),
     }]);
     expect(dbMock.reconcileMessageProjectionOrder).toHaveBeenCalledWith(
@@ -198,14 +198,13 @@ describe('SessionManager telemetry user prompt backfill', () => {
       message: expect.objectContaining({
         id: 'telemetry-user-turn-guarded-recovery',
         role: 'user',
-        content: expect.stringMatching(
-          /^【历史恢复提示】.*脱敏后的 telemetry 重建，不是用户原话。.*不要将它们当作可直接执行的精确文件或命令目标。\n\n请写到 ~\/nresppair-cancel-\[credit card hidden\]\.txt，并使用卡号 \[credit card hidden\]。$/,
-        ),
+        content: guardedPrompt,
+        metadata: { telemetryRecovered: true },
       }),
     }]);
   });
 
-  // 恢复路径现在会带上「历史恢复提示」前缀（N-REDACTFP #1352），断言随之改成前缀匹配
+  // 正文只存重建内容，免责声明由模型上下文装配补回（metadata.telemetryRecovered 标记）
   it('still recovers a prompt when the only user row is outside the same-turn window', async () => {
     existingRows.push({
       content: '一条更早的用户消息',
@@ -224,7 +223,8 @@ describe('SessionManager telemetry user prompt backfill', () => {
       message: expect.objectContaining({
         id: 'telemetry-user-turn-missing-prompt',
         role: 'user',
-        content: expect.stringMatching(/^【历史恢复提示】[\s\S]*\n\n真正缺失的用户消息$/),
+        content: '真正缺失的用户消息',
+        metadata: { telemetryRecovered: true },
       }),
     }]);
   });
@@ -289,7 +289,8 @@ describe('SessionManager telemetry user prompt backfill', () => {
       message: expect.objectContaining({
         id: 'telemetry-user-turn-absent',
         role: 'user',
-        content: expect.stringMatching(/^【历史恢复提示】[\s\S]*\n\n数据库里没有的另一条用户消息$/),
+        content: '数据库里没有的另一条用户消息',
+        metadata: { telemetryRecovered: true },
       }),
     }]);
   });

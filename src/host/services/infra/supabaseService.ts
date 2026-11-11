@@ -15,6 +15,7 @@ import WebSocket from 'ws';
 import https from 'https';
 import http from 'http';
 import { getSecureStorage } from '../core';
+import { warnSessionStorageTrace } from '../auth/sessionStorageTrace';
 import { createLogger } from './logger';
 import { DEFAULT_SUPABASE_ANON_KEY, DEFAULT_SUPABASE_URL } from '../../../shared/constants';
 
@@ -948,14 +949,19 @@ export function initSupabase(url: string, anonKey: string): SupabaseClient<Datab
           // 'sb-<ref>-auth-token'），而非写死的 'supabase.session'——否则整段 Keychain
           // 存活逻辑是死代码。改用 isSupabaseSessionKey 匹配真实键，session 跨重装存活。
           if (isSupabaseSessionKey(key)) {
-            const keychainSession = await secureStorage.getSessionFromKeychain();
+            const keychainSession = await secureStorage.getSessionFromKeychain({ forSessionRead: true });
             if (keychainSession) {
               // Sync to electron-store for faster subsequent reads（用真实 key）
               secureStorage.setItem(key, keychainSession);
               return keychainSession;
             }
           }
-          return secureStorage.getItem(key);
+          const stored = await secureStorage.getItem(key);
+          // 两级存储都是空 → 登录态无从恢复（每进程只报一次，getSession 调用很频繁）
+          if (stored === null && isSupabaseSessionKey(key)) {
+            warnSessionStorageTrace('session_storage_empty', 'Supabase session storage empty on read');
+          }
+          return stored;
         },
         setItem: async (key, value) => {
           secureStorage.setItem(key, value);
@@ -968,7 +974,12 @@ export function initSupabase(url: string, anonKey: string): SupabaseClient<Datab
           secureStorage.removeItem(key);
           // auth-js _removeSession：不可重试的 refresh 失败会 removeItem，宣告 session 已死。
           // 必须同时清 Keychain，否则下一次 getItem 会把失效 token 写回并再次刷新。
-          if (isSupabaseSessionKey(key)) await secureStorage.clearSessionFromKeychain();
+          if (isSupabaseSessionKey(key)) {
+            await secureStorage.clearSessionFromKeychain();
+            // 主动 signOut 也会走到这里（每进程只报一次；是否本机主动退出由
+            // authService 的 empty_session_event/explicitSignOut 字段区分）
+            warnSessionStorageTrace('refresh_rejected_session_removed', 'Auth restored login degraded to signed-out');
+          }
         },
       },
       autoRefreshToken: true,

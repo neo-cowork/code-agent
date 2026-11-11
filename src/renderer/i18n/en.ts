@@ -1,3 +1,4 @@
+import { agentRoleLabelsEn } from './agentRoleLabels';
 // ============================================================================
 // English Translations
 // ============================================================================
@@ -62,7 +63,7 @@ import { sessionTaskPresentationEn } from './sessionTaskPresentation'; import { 
 // en 缺 key / en 多 key 都在此报红，同时保留 en 自身的推断类型。zh.ts 是形状真源
 //（Translations = typeof zh），与叶子先例 artifactShare.ts 的 satisfies 锁同范式。
 export const en = {
-  ...canvasActorEn, ...activityPanelEn,
+  ...agentRoleLabelsEn, ...canvasActorEn, ...activityPanelEn,
   ...imageNarrationEn, ...mermaidEn,
   ...voiceAuditEn,
   ...capabilityHubEn,
@@ -323,7 +324,7 @@ export const en = {
     importImage: 'Add image',
     importHint: 'Or paste (⌘V) / drag images onto the canvas; select an imported image to repaint',
     addReference: 'Add reference',
-    referenceHint: 'Reference images are sent to the model as visual guidance on generate (Wanx supports 1; the first is used)',
+    referenceHint: 'Reference images are sent to the model as visual guidance on generate (up to 3 images; with several selected they are sent in selection order as image 1/2/3 and generation switches to the multi-image edit model, which costs more per image than a single reference)',
     referenceBadge: 'Ref',
     layerPanelTitle: 'Layers',
     sidePanelExpand: 'Expand canvas panel',
