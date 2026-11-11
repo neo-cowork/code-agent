@@ -2,7 +2,7 @@ import { ENV_ASSIST_CLICK_TTL_MS } from '../../../../shared/constants/envAssist'
 import type { PromptingBridge } from '../probes/types';
 
 const clickBrand: unique symbol = Symbol('EnvAssistClick');
-export interface ClickToken {
+interface ClickToken {
   readonly [clickBrand]: true;
   readonly noticeId: string;
   readonly issuedAt: number;
