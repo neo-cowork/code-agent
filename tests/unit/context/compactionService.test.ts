@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
 import { fileReadTracker } from '../../../src/host/tools/fileReadTracker';
-import { TELEMETRY_RECOVERY_NOTICE } from '../../../src/shared/telemetryRecovery';
+const TELEMETRY_RECOVERY_NOTICE = '【历史恢复提示】';
 import { estimateTokens } from '../../../src/host/context/tokenEstimator';
 
 const compactionServiceMocks = vi.hoisted(() => ({

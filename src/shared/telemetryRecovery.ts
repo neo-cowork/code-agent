@@ -3,13 +3,13 @@
 import type { Message } from './contract';
 
 /** 只给模型看的提示：重建内容可能被脱敏缩写，不能当精确目标。 */
-export const TELEMETRY_RECOVERY_NOTICE =
+const TELEMETRY_RECOVERY_NOTICE =
   '【历史恢复提示】原始 user 消息缺失；以下内容由脱敏后的 telemetry 重建，不是用户原话。路径、标识符、数字和敏感值可能已被缩写或替换，不要将它们当作可直接执行的精确文件或命令目标。';
 
 const NOTICE_PREFIX = `${TELEMETRY_RECOVERY_NOTICE}\n\n`;
 
 /** 旧版本已把免责声明拼进正文落库的历史行。 */
-export function hasLegacyTelemetryRecoveryPrefix(content: string): boolean {
+function hasLegacyTelemetryRecoveryPrefix(content: string): boolean {
   return content.startsWith(NOTICE_PREFIX);
 }
 

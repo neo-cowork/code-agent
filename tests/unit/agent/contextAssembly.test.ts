@@ -4,7 +4,7 @@ import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 // Verifies runtime model input honors context interventions.
 // ============================================================================
 
-import { TELEMETRY_RECOVERY_NOTICE } from '../../../src/shared/telemetryRecovery';
+const TELEMETRY_RECOVERY_NOTICE = '【历史恢复提示】';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';

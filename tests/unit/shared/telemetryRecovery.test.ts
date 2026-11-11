@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
 import {
-  TELEMETRY_RECOVERY_NOTICE,
   isTelemetryRecoveredMessage,
   stripTelemetryRecoveryNotice,
   withTelemetryRecoveryNoticeForModel,
 } from '../../../src/shared/telemetryRecovery';
+
+const TELEMETRY_RECOVERY_NOTICE =
+  '【历史恢复提示】原始 user 消息缺失；以下内容由脱敏后的 telemetry 重建，不是用户原话。路径、标识符、数字和敏感值可能已被缩写或替换，不要将它们当作可直接执行的精确文件或命令目标。';
 
 const msg = (over: Partial<Message>): Message => ({
   id: 'm', role: 'user', content: 'hi', timestamp: 1, ...over,
