@@ -446,11 +446,11 @@ const SESSION_HANDLERS: DomainRouteHandlers<SessionDomainRequest, SessionCommand
   },
 
   search: async (ctx, payload) => {
-    const svc = await ctx.sessions();
+    await ctx.sessions(); // backend 门：服务未就绪时仍先落 SERVICE_UNAVAILABLE
     const p = payload as { query: string; options?: CrossSessionSearchOptions };
     // 动态 import 断开与 session.ipc 的静态环（session.ipc 装配本表）
     const { performCrossSessionSearch } = await import('../session.ipc');
-    return performCrossSessionSearch(p.query, p.options, () => svc as unknown as AgentApplicationService);
+    return performCrossSessionSearch(p.query, p.options);
   },
 
   searchSessionForkExports: async (ctx, payload) =>
