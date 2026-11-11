@@ -91,6 +91,10 @@ export const cronClient = {
     return invokeCron<CronJobDefinition | null>('grantWriteScope', { jobId });
   },
 
+  grantWriteFolderFromParkedApproval(requestId: string) {
+    return invokeCron<{ grant: { status: string }; released: boolean }>('grantWriteFolderFromParkedApproval', { requestId });
+  },
+
   revokeWriteScope(jobId: string) {
     return invokeCron<CronJobDefinition | null>('revokeWriteScope', { jobId });
   },

@@ -9,6 +9,7 @@
 import type { CronJobDefinition } from '../../shared/contract/cron';
 import { CRON_EVENT_DECISIONS } from '../../shared/constants';
 import { resolveCronEventActionMode } from '../../shared/cronEventActionMode';
+import { buildCronEventDecisionText } from '../../shared/cronEventDecisionText';
 import { enterObserveMode, truncateObserveText } from '../tools/observeModeGate';
 import { sqliteCronEventDecisionStore, type CronEventDecisionStore } from './cronEventDecisionLedger';
 
@@ -32,7 +33,7 @@ export function enterObserveModeForCronRun(
       jobId: definition.id,
       kind: 'action',
       decision: 'would_act',
-      reason: `observe mode: ${interception.toolName} intercepted before sending`,
+      reason: buildCronEventDecisionText('observeActionIntercepted', { tool: interception.toolName }),
       ...(executionId ? { runId: executionId } : {}),
       tool: interception.toolName,
       ...(interception.target ? { target: interception.target } : {}),
@@ -53,7 +54,7 @@ export function recordObservedChannelReply(
     jobId: definition.id,
     kind: 'action',
     decision: 'would_act',
-    reason: 'observe mode: channel reply intercepted before sending',
+    reason: buildCronEventDecisionText('observeActionIntercepted', { tool: OBSERVE_CHANNEL_REPLY_TOOL }),
     ...(executionId ? { runId: executionId } : {}),
     tool: OBSERVE_CHANNEL_REPLY_TOOL,
     target,

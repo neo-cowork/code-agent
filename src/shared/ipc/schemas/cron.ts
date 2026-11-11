@@ -15,6 +15,7 @@ const CronDomainRequestSchema = z.object({
     'deleteJob',
     'grantLoginPassThrough',
     'grantWriteScope',
+    'grantWriteFolderFromParkedApproval',
     'generateFromPrompt',
     'getEventActionModeChange',
     'getEventDecisions',

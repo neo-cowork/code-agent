@@ -131,11 +131,11 @@ describe('terminal session lifecycle', () => {
     expect(listTerminalSessions().map((s) => s.sessionId).sort()).toEqual(['s1', 's2']);
   });
 
-  it('does NOT kill a long-lived session on any timer (ptyExecutor 的 10 分钟超时不得复用)', () => {
+  it('does NOT kill a long-lived session on any timer (ptyExecutor 的后台最长运行时间不得复用)', () => {
     vi.useFakeTimers();
     openTerminalSession({ sessionId: 's1', cwd: '/tmp' });
 
-    // 远超 ptyExecutor 的 PTY_DEFAULT_TIMEOUT(10min) 与 PTY_CLEANUP_INTERVAL(1min)
+    // 远超 ptyExecutor 的 BASH.BACKGROUND_MAX_RUNTIME(30min) 与 PTY_CLEANUP_INTERVAL(1min)
     vi.advanceTimersByTime(60 * 60 * 1000);
 
     expect(spawned[0].killed).toBe(false);
