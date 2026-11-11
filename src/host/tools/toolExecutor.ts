@@ -1,3 +1,4 @@
+import { EnvBlockedError } from '../permissions/envAssist/EnvBlockedError';
 import { isEmergencyStopActive } from '../security/emergencyStop';
 import { emergencyStopMessage } from '../../shared/i18n/emergencyStop';
 import { getLocale } from '../platform/appPaths';
@@ -2683,6 +2684,7 @@ export class ToolExecutor {
       await durableCheckpoint.complete(result.success);
       return { ...result, metadata: { ...result.metadata, executionStarted } };
     } catch (error) {
+      if (error instanceof EnvBlockedError) throw error;
       const duration = Date.now() - startTime;
       logger.error('Tool threw error', error, { toolName: executionToolName });
       executionLedger.complete('error', error instanceof Error ? error.message : 'Unknown error');
