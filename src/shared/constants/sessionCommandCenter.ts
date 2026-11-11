@@ -21,6 +21,13 @@ export const SESSION_COMMAND_CENTER_WAKE_MAX_ITERATIONS = 4;
 /** Deferred foreground wakes surface a durable conversation note after this wait. */
 export const BACKGROUND_WAKE_DEFER_NOTICE_MS = 10_000;
 
+/**
+ * A wake whose session cannot be loaded for the current owner (login still being restored)
+ * is retried on a timer in addition to the auth-change signal. Total load attempts include the first.
+ */
+export const BACKGROUND_WAKE_OWNER_RETRY_MAX_ATTEMPTS = 6;
+export const BACKGROUND_WAKE_OWNER_RETRY_INTERVAL_MS = 5_000;
+
 /** Keep the task title readable when it is embedded in the deferred-wake conversation note. */
 export const BACKGROUND_WAKE_DEFER_TASK_TITLE_MAX_CHARS = 80;
 
