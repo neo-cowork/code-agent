@@ -234,7 +234,7 @@ describe('PermissionCard command de-dup, spawn_agent summary, and long script co
     });
   });
 
-  it('(d) renders spawn_agent with generic approval title and visible role+task details, not 执行命令 or bare 执行工具 spawn_agent', () => {
+  it('(d) renders spawn_agent with generic approval title and visible task+permission details, not 执行命令 or bare 执行工具 spawn_agent', () => {
     const gate = new ConfirmationGate();
     const params = {
       name: '每周销售汇总',
@@ -258,8 +258,9 @@ describe('PermissionCard command de-dup, spawn_agent summary, and long script co
     expect(textZh).toContain('需要你确认');
     expect(textZh).not.toContain('执行命令');
     expect(textZh).toContain('派出子代理：每周销售汇总');
-    expect(textZh).toContain('Task: 汇总本周销售日报并输出关键异常指标');
-    expect(textZh).toContain('Role: 数据分析师');
+    expect(textZh).toContain('任务：汇总本周销售日报并输出关键异常指标');
+    expect(textZh).toContain('权限：可修改文件、运行命令');
+    expect(textZh).not.toMatch(/数据分析师|Task:|Role:/);
     expect(textZh).not.toContain('执行工具 spawn_agent');
     expect(textZh).not.toContain('允许执行这条命令');
     expect(textZh).not.toContain('将执行有风险命令');
@@ -277,23 +278,24 @@ describe('PermissionCard command de-dup, spawn_agent summary, and long script co
     expect(textEn).not.toContain('Allow running this command');
     expect(textEn).not.toContain('Runs a risky command');
     expect(textEn).toContain('派出子代理：每周销售汇总');
-    expect(textEn).toContain('Task: 汇总本周销售日报并输出关键异常指标');
-    expect(textEn).toContain('Role: 数据分析师');
+    expect(textEn).toContain('任务：汇总本周销售日报并输出关键异常指标');
+    expect(textEn).toContain('权限：可修改文件、运行命令');
   });
-  it.each(['spawn_agent', 'AgentSpawn'])('%s interactive card shows actual task, full targets and role with a misleading name', (tool) => {
+  it.each(['spawn_agent', 'AgentSpawn'])('%s interactive card shows actual task, full out-of-workspace targets and permission with a misleading name', (tool) => {
     const params = {
       name: '整理文档', role: 'coder',
       task: String.raw`删除 /Users/example/prod/db 和 C:\example\workspace\ 下全部文件`,
     };
     state.request = {
       id: 'req-spawn-disclosure', sessionId: 'session-current', tool, type: 'command',
-      details: { ...params, preview: new ConfirmationGate().buildPreview(tool, params) }, timestamp: 1,
+      details: { ...params, preview: new ConfirmationGate().buildPreview(tool, params, { workspaceRoot: '/Users/example/ws' }) }, timestamp: 1,
     };
     expect(state.request.argsPreview).toBeUndefined();
     const { container } = render(<PermissionCard />);
     expect(container.textContent).toContain('派出子代理：整理文档');
-    expect(container.textContent).toContain(`Task: ${params.task}`);
-    expect(container.textContent).toContain('Role: coder');
+    expect(container.textContent).toContain(`任务：${params.task}`);
+    expect(container.textContent).toContain('权限：可修改文件、运行命令');
+    expect(container.textContent).not.toMatch(/coder|Task:|Role:/);
     expect(container.querySelector('[data-testid="permission-args-preview"]')).toBeNull();
   });
 
