@@ -10,10 +10,12 @@ import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
 
 const mockConfigDir = vi.hoisted(() => ({ dir: '' }));
-vi.mock('../../../src/host/config/configPaths', () => ({
+vi.mock('../../../src/host/config/configPaths', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/host/config/configPaths')>()),
   getUserConfigDir: () => mockConfigDir.dir,
 }));
-vi.mock('../../../src/host/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/host/services/infra/logger')>()),
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
