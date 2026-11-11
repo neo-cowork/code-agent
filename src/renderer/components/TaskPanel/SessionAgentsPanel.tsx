@@ -27,7 +27,6 @@ import { useVoiceLiveRuntime } from '../../hooks/useVoiceLiveRuntime';
 import { deriveAgentMergeState } from '../../utils/agentMergeState';
 import { isAgentRowQuiet } from '../../utils/agentRowStall';
 import { stopSessionAgent } from '../../utils/stopSessionAgent';
-import { agentFailureCopy } from '../../utils/agentFailureCopy';
 import type { AgentRow } from '../../utils/agentRows';
 import { RoleInitialAvatar } from '../features/expert/RoleInitialAvatar';
 import { DiscussionStream } from '../features/swarm/DiscussionStream';
@@ -150,10 +149,9 @@ export const SessionAgentsPanel: React.FC = () => {
     const labels = text.panel.status;
     if (row.hold === 'approval') return labels.needsApproval;
     if (row.status === 'failed') {
-      const reason = (row.node?.failureCode ? agentFailureCopy(row.node.failureCode, t) : null)
-        ?? row.failureReason;
+      const reason = row.failureReason;
       return reason
-        ? `${labels.failed}：${reason}`
+        ? t.chat.delegationReceipt.failureDetail.replace('{status}', labels.failed).replace('{reason}', reason)
         : labels.failed;
     }
     if (row.status === 'cancelled') return labels.stopped;

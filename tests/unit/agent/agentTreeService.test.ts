@@ -135,7 +135,7 @@ describe('agentTreeService', () => {
       }],
       contextRecords: [{
         sessionId: 'session-1', agentId: 'execution-report', messages: [], updatedAt: 15,
-        lifecycle: { backgroundAgentId: 'subagent-bg-report' },
+        lifecycle: { backgroundAgentId: 'subagent-bg-report', status: 'running', displayName: 'Supplier review', task: 'Compare suppliers', background: true, startedAt: 10 },
       }],
     });
     expect(snapshot.nodes).toHaveLength(1);
