@@ -205,7 +205,8 @@ export async function executeLoadSessions(
     useSessionListLoadStore.setState({ settled: true, loading: false, error: false, errorCode: null });
     // 闪烁修复：数据签名不变就保留旧引用、跳过 setState，避免云端同步广播触发侧栏整树重渲染。
     if (sessionsSignature(get().sessions) === sessionsSignature(sessionsWithMeta)) {
-      if (!silent) set({ isLoading: false });
+      // The winner also settles loading inherited from a superseded foreground read.
+      if (!silent || readiness.loading) set({ isLoading: false });
       return;
     }
 

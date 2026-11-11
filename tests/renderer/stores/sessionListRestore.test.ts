@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useSessionStore, reloadSessionsForAuthChange } from '../../../src/renderer/stores/sessionStore';
 import { resetSessionListLoadState, useSessionListLoadStore } from '../../../src/renderer/stores/sessionListPagination';
+import { SESSION_LIST_PAGE_SIZE } from '../../../src/shared/constants';
 import { useSessionLoadRecoveryStore } from '../../../src/renderer/stores/sessionLoadRecovery';
 
 const invoke = vi.fn();
@@ -61,5 +62,61 @@ describe('restored sidebar list readiness', () => {
     await useSessionStore.getState().switchSession(session.id);
     expect(useSessionStore.getState()).toMatchObject({ currentSessionId: session.id, isHydratingSession: false, isLoading: false });
     expect(useSessionLoadRecoveryStore.getState()).toMatchObject({ sessionId: session.id, errorCode: 'LOCAL_AUTH_TOKEN_EXPIRED' });
+  });
+});
+
+
+describe('superseded session-list loading ownership', () => {
+  it.each([
+    ['success', 'stale-first', false], ['error', 'stale-first', false],
+    ['success', 'latest-first', false], ['error', 'latest-first', false],
+    ['success', 'stale-first', true], ['error', 'stale-first', true],
+    ['success', 'latest-first', true], ['error', 'latest-first', true],
+  ] as const)('settles a foreground read superseded by a no-op silent read: stale=%s order=%s fullPage=%s', async (staleOutcome, order, fullPage) => {
+    const rows = fullPage ? Array.from({ length: SESSION_LIST_PAGE_SIZE }, (_, index) => ({ ...session, id: `restore-${index}` })) : [];
+    invoke.mockResolvedValue({ success: true, data: rows });
+    await useSessionStore.getState().loadSessions();
+    let finishStale!: (value: unknown) => void;
+    let finishLatest!: (value: unknown) => void;
+    invoke.mockReturnValueOnce(new Promise((resolve) => { finishStale = resolve; }))
+      .mockReturnValueOnce(new Promise((resolve) => { finishLatest = resolve; }));
+    const foreground = useSessionStore.getState().loadSessions();
+    const silent = useSessionStore.getState().loadSessions({ silent: true });
+    const staleResponse = staleOutcome === 'error'
+      ? { success: false, error: { code: 'NETWORK_ERROR', message: 'stale read failed' } }
+      : { success: true, data: [{ ...session, id: 'stale-row' }] };
+    expect(useSessionStore.getState().isLoading).toBe(true);
+    if (order === 'stale-first') {
+      finishStale(staleResponse);
+      await foreground;
+      // A stale completion must not end loading for the still-pending winner.
+      expect(useSessionStore.getState().isLoading).toBe(true);
+    }
+    finishLatest({ success: true, data: rows });
+    await silent;
+    expect(useSessionStore.getState().isLoading).toBe(false);
+    expect(useSessionListLoadStore.getState()).toMatchObject({ settled: true, loading: false, error: false });
+    if (order === 'latest-first') {
+      finishStale(staleResponse);
+      await foreground;
+    }
+    expect(useSessionStore.getState().isLoading).toBe(false);
+    expect(useSessionStore.getState().error).toBeNull();
+    expect(useSessionStore.getState().sessions.map((row) => row.id)).toEqual(rows.map((row) => row.id));
+    if (fullPage) {
+      const readsBeforeOlder = invoke.mock.calls.length;
+      await useSessionStore.getState().loadOlderSessions();
+      expect(invoke.mock.calls.length).toBe(readsBeforeOlder + 1);
+      expect(invoke.mock.lastCall?.[2]).toMatchObject({ offset: SESSION_LIST_PAGE_SIZE });
+    }
+  });
+
+  it('does not clear unrelated session hydration on a standalone no-op silent read', async () => {
+    invoke.mockResolvedValue({ success: true, data: [] });
+    await useSessionStore.getState().loadSessions();
+    useSessionStore.setState({ isLoading: true, isHydratingSession: true });
+    await useSessionStore.getState().loadSessions({ silent: true });
+    expect(useSessionStore.getState().isLoading).toBe(true);
+    expect(useSessionStore.getState().isHydratingSession).toBe(true);
   });
 });
