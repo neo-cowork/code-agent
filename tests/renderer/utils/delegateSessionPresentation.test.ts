@@ -35,6 +35,19 @@ for (const [locale, t] of [['zh', zh], ['en', en]] as const) {
       expect(step).not.toMatch(forbidden);
     });
 
+    it.each([
+      ['terminal_observed', { target: 'Q3 报告', reused: true, runStatus: 'completed' }, 'delegate_existing', '已送达过，未重复发送 · 「Q3 报告」', 'Already delivered; not sent again · “Q3 报告”'],
+      ['terminal_observed', { target: 'Q3 报告', reused: true, runStatus: 'failed' }, 'delegate_existing', '已送达过，未重复发送 · 「Q3 报告」', 'Already delivered; not sent again · “Q3 报告”'],
+      ['stopped', { target: 'Q3 报告', queuedAhead: 0 }, 'stop', '已停止对「Q3 报告」的委托', 'Stopped the delegation to “Q3 报告”'],
+    ] as const)('parses non-active receipt status %s %j', (status, payload, action, chinese, english) => {
+      const tc = call({ ...payload, status }, action);
+      const step = humanizeToolStep(tc.name, tc.arguments, t, 'delegate_session', 'completed', undefined, { delegationReceipt: parseDelegateSessionReceipt(tc.result) });
+      expect(step).toBe(locale === 'zh' ? chinese : english);
+      expect(step).not.toMatch(forbidden);
+      expect(step).not.toMatch(/terminal_observed|stopped|completed|failed/);
+      expect(deriveDelegationPresentation(tc, [], [], t)).toMatchObject({ state: 'completed', title: step });
+    });
+
     it.each(['pending-approval', 'running', 'failed'] as const)('uses %s forms without args or receipt names', (status) => {
       const tc = call({ target: 'hidden-target', reused: true });
       const step = humanizeToolStep(tc.name, tc.arguments, t, 'delegate_session', status, undefined, { delegationReceipt: parseDelegateSessionReceipt(tc.result) });

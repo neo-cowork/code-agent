@@ -31,7 +31,10 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
     getDb: () => ({
       prepare: (sql: string) => ({
         all: () => (sql.includes('FROM cron_jobs') ? dbState.cronRows : []),
+        get: () => undefined,
         run: (...args: unknown[]) => {
+          // Startup migration statements are separate from job/execution writes.
+          if (sql.includes('cron_write_grant_migration')) return { changes: 1, lastInsertRowid: 0 };
           if (sql.includes('UPDATE cron_executions') && sql.includes("'interrupted'")) {
             const now = args[0] as number;
             let changes = 0;
