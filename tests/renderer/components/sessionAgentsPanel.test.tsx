@@ -22,6 +22,7 @@ let language: 'zh' | 'en' = 'zh';
 const invokeMock = vi.fn();
 const invokeDomainMock = vi.fn();
 const appState = {
+  language: 'zh' as const,
   setWorkbenchCollapsed: vi.fn(),
   pendingPermissionRequest: null as { resolved?: boolean; agentId?: string; runId?: string } | null,
   pendingPermissionSessionId: null as string | null,
@@ -329,6 +330,33 @@ describe('SessionAgentsPanel', () => {
     expect(row.textContent).toContain('核对发布清单');
     expect(row.textContent).toContain('后台');
     expect(screen.getByTestId('agents-panel-status-task-1').textContent).toBe('工作中');
+  });
+
+  it('「清除已结束」按钮：有终态后台任务行才出现，zh/en 文案都渲染；运行中任务不触发', async () => {
+    useBackgroundTaskStore.setState({ tasks: [backgroundTask({})] });
+    const { unmount } = render(<SessionAgentsPanel />);
+    await screen.findByTestId('agents-panel-row-task-1');
+    expect(screen.queryAllByTestId('agents-panel-clear-finished')).toHaveLength(0);
+    unmount();
+
+    useBackgroundTaskStore.setState({ tasks: [backgroundTask({ status: 'cancelled', completedAt: 3 })] });
+    const zhRender = render(<SessionAgentsPanel />);
+    expect((await screen.findByTestId('agents-panel-clear-finished')).textContent).toBe('清除已结束');
+    zhRender.unmount();
+
+    language = 'en';
+    render(<SessionAgentsPanel />);
+    expect((await screen.findByTestId('agents-panel-clear-finished')).textContent).toBe('Clear finished');
+  });
+
+  it('已被清除的后台任务（台账打了面板隐藏标记）不进面板，但仍留在共享 tasks 里', async () => {
+    const dismissed = backgroundTask({ id: 'task-gone', status: 'cancelled', completedAt: 3, metadata: { panelDismissed: true } });
+    useBackgroundTaskStore.setState({ tasks: [dismissed, backgroundTask({ id: 'task-live' })] });
+    render(<SessionAgentsPanel />);
+    await screen.findByTestId('agents-panel-row-task-live');
+    expect(screen.queryByTestId('agents-panel-row-task-gone')).toBeNull();
+    expect(screen.queryAllByTestId('agents-panel-clear-finished')).toHaveLength(0);
+    expect(useBackgroundTaskStore.getState().tasks.map((t) => t.id)).toContain('task-gone');
   });
 
   it('行级停：专家行走 swarm:cancel-agent（带 activeRunId）', async () => {

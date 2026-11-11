@@ -169,15 +169,14 @@ export async function recoverInterruptedSessionCommandTasks(): Promise<number> {
   let recovered = 0;
   for (const { file, marker } of markers) {
     try {
-      await getSessionManager().addMessageToSession(
-        marker.sessionId,
-        buildSessionTaskResultMessage(
-          { id: marker.taskId, shortName: marker.shortName },
-          'failed',
-          text,
-          `session-task-result-interrupted-${marker.taskId}`,
-        ),
+      const message = buildSessionTaskResultMessage(
+        { id: marker.taskId, shortName: marker.shortName },
+        'failed',
+        text,
+        `session-task-result-interrupted-${marker.taskId}`,
       );
+      message.metadata = { ...message.metadata, backgroundTaskInterrupted: { taskId: marker.taskId } };
+      await getSessionManager().addMessageToSession(marker.sessionId, message);
     } catch (error) {
       logger.warn('Restart recovery could not write the interruption message', {
         taskId: marker.taskId,

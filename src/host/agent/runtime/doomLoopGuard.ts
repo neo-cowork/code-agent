@@ -44,6 +44,19 @@ export const EMPTY_OUTPUT_CONTINUATION_LIMIT = 3;
 
 /** 与 L1/L2 对齐：连续 3 次相同轮询观察才算空转。 */
 const POLLING_REPEAT_THRESHOLD = 3;
+/**
+ * 后台任务轮询卡死升级窗口（ms，N-FIX-DOOMLOOP-BG-POLL-FALSE-HANDBACK）：
+ * 同一轮询键（task_status / task_output / process poll|output|log + 归一化输出）
+ * 在窗口内连续不变只发一次性软提醒 polling_repeat；只有不变持续满该窗口且
+ * 轮询次数 ≥ POLLING_REPEAT_THRESHOLD 时，才进入 L1 doom-loop → doom-loop-abort 交还链。
+ *
+ * 轮询步不走 L1/L2 的前提是这条卡死链真的在跑，所以豁免只给同时满足三条的步：
+ * ① 是轮询步（pollStepIdentity：整步只有一个调用，且取得到与结果跟踪同一判据的身份）；
+ * ② 上一步的结果已经回灌（recordResults）；③ 回灌的最后一条观察就是这个身份。
+ * 多调用步里别的结果会清零或切换轮询键、不回灌结果的调用方（子代理守卫）
+ * 根本没有轮询状态——这些形状卡死窗口永远起不来，一律按原 L1/L2 判。
+ */
+const POLL_STALL_WINDOW_MS = 5 * 60 * 1000;
 /** 与 L1/L2 对齐：同一规范化错误族连续 3 次才 nudge。 */
 const SAME_ERROR_FAMILY_THRESHOLD = 3;
 /** A,B,A,B 需要四步才成立；这是环的长度，不是另一套 ×3 计数。 */
@@ -169,7 +182,14 @@ export class DoomLoopGuard {
   private actionCycle: string[] = [];
   /** 连续相同轮询观察（task + 状态 + 规范化正文）。 */
   private pollKey: string | null = null;
+  /** pollKey 对应的轮询身份（pollIdentity）；recordStep 用它确认结果链在跟踪同一个轮询。 */
+  private pollId: string | null = null;
   private pollStreak = 0;
+  private pollFirstSeenAt: number | null = null;
+  private pollElapsedMs = 0;
+  private pollNudged = false;
+  /** 上一次 recordStep 之后是否回灌过结果。没回灌 = 轮询链没有新证据，不豁免。 */
+  private resultsSinceLastStep = false;
   /** 连续相同规范化错误族。 */
   private errorFamily: string | null = null;
   private errorFamilyStreak = 0;
@@ -186,6 +206,8 @@ export class DoomLoopGuard {
    */
   private obsChains = new Map<string, ObsChain>();
 
+  constructor(private readonly now: () => number = Date.now) {}
+
   /** 记录一个 step 的全部工具调用，返回防护判定 */
   recordStep(toolCalls: GuardToolCall[]): DoomLoopCheck {
     if (toolCalls.length === 0) return { level: 'none' };
@@ -193,6 +215,9 @@ export class DoomLoopGuard {
     const stepSig = toolCalls.map(callSignature).sort().join('\n');
     this.actionCycle.push(stepSig);
     if (this.actionCycle.length > ABAB_CYCLE_STEPS) this.actionCycle.shift();
+
+    const resultsFed = this.resultsSinceLastStep;
+    this.resultsSinceLastStep = false;
 
     // L1：逐个调用维护"连续相同"连击
     let lastCall: GuardToolCall | null = null;
@@ -207,6 +232,27 @@ export class DoomLoopGuard {
         for (const chain of this.obsChains.values()) chain.nudged = false;
       }
       lastCall = toolCall;
+    }
+
+    // 轮询步：结果链在跟踪这个轮询时不凭参数计 L1/L2，改由"结果不变满卡死窗口"升级
+    // （条件见 POLL_STALL_WINDOW_MS）。没有结果证据就落到下面的原 L1/L2。
+    const pollId = pollStepIdentity(toolCalls);
+    if (pollId !== null && resultsFed && pollId === this.pollId) {
+      this.identicalCallStreak = 0;
+      this.doomLoopNudged = false;
+      const stalled =
+        this.pollStreak >= POLLING_REPEAT_THRESHOLD
+        && this.pollElapsedMs >= POLL_STALL_WINDOW_MS;
+      if (stalled) {
+        if (this.pollNudged) return { level: 'doom-loop-abort' };
+        this.pollNudged = true;
+        return { level: 'doom-loop', nudge: DOOM_LOOP_NUDGE };
+      }
+      this.recentStepSignatures.push(stepSig);
+      if (this.recentStepSignatures.length > REPEATED_STEP_THRESHOLD) {
+        this.recentStepSignatures.shift();
+      }
+      return { level: 'none' };
     }
 
     if (this.identicalCallStreak >= DOOM_LOOP_THRESHOLD) {
@@ -257,8 +303,8 @@ export class DoomLoopGuard {
     this.doomLoopNudged = false;
     this.recentStepSignatures = [];
     this.actionCycle = [];
-    this.pollKey = null;
-    this.pollStreak = 0;
+    this.resetPoll();
+    this.resultsSinceLastStep = false;
     this.errorFamily = null;
     this.errorFamilyStreak = 0;
     this.cuaClickStreaks.clear();
@@ -274,6 +320,7 @@ export class DoomLoopGuard {
    */
   recordResults(step: GuardCallResult[]): GuardSignalCheck {
     const signals: string[] = [];
+    if (step.length > 0) this.resultsSinceLastStep = true;
     for (const call of step) {
       this.noteBrowserObservation(call);
       this.notePoll(call, signals);
@@ -339,20 +386,35 @@ export class DoomLoopGuard {
     return chain;
   }
 
+  private resetPoll(): void {
+    this.pollKey = null;
+    this.pollId = null;
+    this.pollStreak = 0;
+    this.pollFirstSeenAt = null;
+    this.pollElapsedMs = 0;
+    this.pollNudged = false;
+  }
+
   private notePoll(call: GuardCallResult, signals: string[]): void {
-    const taskId = backgroundPollTaskId(call);
-    if (!taskId) {
-      this.pollKey = null;
-      this.pollStreak = 0;
+    const taskId = pollIdentity(call);
+    if (taskId === null) {
+      this.resetPoll();
       return;
     }
     const observed = observePoll(call.summary);
-    // 身份是后台任务，不是整段参数。timeout/block 变化仍算同一次轮询。
+    // 身份是后台任务（或 task_status 工具名），不是整段参数。timeout/block 变化仍算同一次轮询。
     const key = `${taskId}\n${observed.status}\n${observed.body}`;
-    if (key === this.pollKey) this.pollStreak += 1;
-    else {
+    const nowMs = this.now();
+    if (key === this.pollKey) {
+      this.pollStreak += 1;
+      this.pollElapsedMs = this.pollFirstSeenAt !== null ? Math.max(0, nowMs - this.pollFirstSeenAt) : 0;
+    } else {
       this.pollKey = key;
+      this.pollId = taskId;
       this.pollStreak = 1;
+      this.pollFirstSeenAt = nowMs;
+      this.pollElapsedMs = 0;
+      this.pollNudged = false;
     }
     if (this.pollStreak >= POLLING_REPEAT_THRESHOLD) this.takeSignal(SIGNAL_POLLING_REPEAT, signals);
   }
@@ -563,9 +625,28 @@ function normalizeSignalText(message: string): string {
   );
 }
 
-function backgroundPollTaskId(call: GuardCallResult): string | null {
+/**
+ * 轮询身份：这次调用在观察哪个后台对象。recordStep 的豁免和 notePoll 的结果跟踪
+ * 只认这一个判据；返回 null = 不是轮询，或没指明对象（task_output / Process 缺 id），
+ * 按普通调用走原 L1/L2。
+ */
+function pollIdentity(call: { name: string; arguments?: Record<string, unknown> }): string | null {
   const name = call.name.toLowerCase();
+  if (name === 'task_status') return 'task_status';
   const args = call.arguments ?? {};
+  if (name === 'wait_agent') {
+    if (!Array.isArray(args.agentIds)) return null;
+    const ids = args.agentIds.filter((id): id is string => typeof id === 'string' && id.length > 0).sort();
+    return ids.length > 0 ? ids.join(',') : null;
+  }
+  if (name === 'agent_message') {
+    const action = typeof args.action === 'string' ? args.action.toLowerCase() : '';
+    if (action !== 'status') return null;
+    return typeof args.agentId === 'string' && args.agentId.length > 0 ? args.agentId : null;
+  }
+  if (name === 'terminal_wait' || name === 'terminal_read') {
+    return typeof args.session_id === 'string' && args.session_id.length > 0 ? args.session_id : name;
+  }
   if (name === 'process') {
     const action = typeof args.action === 'string' ? args.action.toLowerCase() : '';
     if (!POLL_ACTIONS.has(action)) return null;
@@ -574,6 +655,16 @@ function backgroundPollTaskId(call: GuardCallResult): string | null {
   }
   const taskId = args.task_id ?? args.session_id;
   return typeof taskId === 'string' && taskId.length > 0 ? taskId : null;
+}
+
+/**
+ * 轮询步的身份：整步只有一个调用且它是轮询，否则 null。只有这种步的"结果不变"
+ * 交给卡死窗口判——DoomLoopGuard.recordStep 和 stagnationDetector 都只认这一个判据。
+ */
+export function pollStepIdentity(
+  toolCalls: readonly { name: string; arguments?: Record<string, unknown> }[],
+): string | null {
+  return toolCalls.length === 1 ? pollIdentity(toolCalls[0]) : null;
 }
 
 function observePoll(summary: string): { status: string; body: string } {
