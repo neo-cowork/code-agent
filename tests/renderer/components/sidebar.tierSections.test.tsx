@@ -13,6 +13,12 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   return { useI18n: () => ({ t: zh, language: 'zh' }) };
 });
 
+
+const listLoadState = { settled: true, loading: false, error: false, errorCode: null };
+vi.mock('../../../src/renderer/stores/sessionListPagination', () => ({
+  useSessionListLoadStore: () => listLoadState,
+}));
+
 const sessionUiState = {
   collapsedTiers: {} as Record<string, boolean>,
   setTierCollapsed: vi.fn(),
@@ -52,6 +58,7 @@ const projectMetaById = {
 };
 
 function renderList(overrides: Record<string, unknown> = {}): string {
+  Object.assign(listLoadState, { settled: true, loading: overrides.isLoading === true, error: false, errorCode: null }, overrides.listLoadState);
   const props = {
     groups,
     isLoading: false,
@@ -178,5 +185,29 @@ describe('SidebarSessionList 空态星球', () => {
     });
     expect(html).toContain('data-planet="mercury"');
     expect(html).toContain('当前没有运行中会话');
+  });
+});
+
+
+describe('SidebarSessionList restore readiness', () => {
+  it('hides partial groups until the first list settles even with initial isLoading false', () => {
+    const html = renderList({ listLoadState: { settled: false } });
+    expect(html).toContain('sidebar-list-loading');
+    expect(html).not.toContain('sidebar-project-group-');
+    expect(html).not.toContain('还没有勘测记录');
+  });
+
+  it('hides existing groups throughout a principal-change reload', () => {
+    const html = renderList({ listLoadState: { loading: true } });
+    expect(html).toContain('sidebar-list-loading');
+    expect(html).not.toContain('sidebar-project-group-');
+  });
+
+  it('renders a human failure and retry instead of empty groups', () => {
+    const html = renderList({ listLoadState: { error: true } });
+    expect(html).toContain('暂时无法载入会话列表，请重试。');
+    expect(html).toContain('重试');
+    expect(html).not.toContain('sidebar-project-group-');
+    expect(html).not.toContain('还没有勘测记录');
   });
 });
