@@ -205,7 +205,7 @@ describe('inferenceViaAiSdk provider options', () => {
       await fetch('https://relay.example/v1/chat/completions', {
         method: 'POST', body: JSON.stringify({ model, messages: [] }),
       });
-      const body = JSON.parse((vi.mocked(axios).mock.calls[0][0] as { data: string }).data);
+      const body = JSON.parse((vi.mocked(axios).mock.calls[0][0] as unknown as { data: string }).data);
       expect(body).toMatchObject(provider === 'xiaomi'
         ? { thinking: { type: 'enabled' } } : { reasoning_effort: 'high' });
     });
