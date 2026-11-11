@@ -13,6 +13,7 @@ import { getUserConfigDir } from '../../config/configPaths';
 import { devSlotFromBundleId } from '../../../shared/devSlot';
 import { loadKeytar } from './keytarAdapter';
 import { getFreshUserChannelName } from './freshUserChannel';
+import { warnSessionStorageTrace } from '../auth/sessionStorageTrace';
 
 // 降级后 Keychain 功能不可用，但本槽的加密 secure store 仍可用。
 const keytar = loadKeytar();
@@ -357,6 +358,24 @@ class SecureStorageService {
     this.store.delete('auth.user');
   }
 
+  /**
+   * 是否留有「曾经登录过」的其他痕迹（auth.user 之外）：历史 session 键、
+   * 记住密码的凭据、快捷登录 token。authService 用它判断 “auth.user 缺失”
+   * 是登录态丢失还是这台机器从未登录过（后者不值得告警，否则每次全新安装
+   * 的冷启动都会误报）。
+   */
+  hasAnyPastLoginTrace(): boolean {
+    return this.store.keys().some((key) =>
+      key === 'supabase.session'
+      || key === 'supabase.access_token'
+      || key === 'supabase.refresh_token'
+      || key === 'auth.quick_token'
+      || key === 'auth.saved_email'
+      || key === 'auth.remember_enabled'
+      || (key.startsWith('sb-') && key.endsWith('-auth-token')),
+    );
+  }
+
   // ========== Saved Login Credentials (Remember Password) ==========
 
   /**
@@ -532,12 +551,22 @@ class SecureStorageService {
   }
 
   // Get session from Keychain
-  async getSessionFromKeychain(): Promise<string | null> {
-    if (!keytar) return null;
+  async getSessionFromKeychain(opts?: { forSessionRead?: boolean }): Promise<string | null> {
+    if (!keytar) {
+      // keytar 不可用是本机已知降级（见 keytarAdapter），但读取路径必须留下可分辨的
+      // 痕迹——否则“模块缺失 / 无条目 / 读取失败”在日志里长得一样（FB 03）。
+      warnSessionStorageTrace('keychain_module_unavailable', 'Supabase session Keychain unavailable');
+      return null;
+    }
     try {
-      return await keytar.getPassword(KEYCHAIN_SERVICE, getKeychainSessionAccount());
+      const value = await keytar.getPassword(KEYCHAIN_SERVICE, getKeychainSessionAccount());
+      if (value === null && opts?.forSessionRead) {
+        // session 读每进程会走很多次：条目缺失只告警一次
+        warnSessionStorageTrace('keychain_entry_missing', 'Supabase session Keychain entry missing on read');
+      }
+      return value;
     } catch (e) {
-      logger.error('Failed to get session from Keychain:', e);
+      logger.error('Failed to get session from Keychain:', { reason: 'keychain_read_error', error: e });
       return null;
     }
   }

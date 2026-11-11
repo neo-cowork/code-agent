@@ -106,7 +106,9 @@ export async function executeSingleSpawnAgent(
       tools = customTools || getAgentTools(agentConfig);
     }
 
-    if (typeof params.name === 'string' && params.name.trim()) agentName = params.name.trim();
+    const explicitName = typeof params.name === 'string' ? params.name.trim() : '';
+    const completionTitle = explicitName || task;
+    if (explicitName) agentName = explicitName;
 
     const engineResolution = resolveSpawnAgentEngine(params.engine, parallel, !!isDynamicMode, role);
     if ('error' in engineResolution) return { success: false, error: engineResolution.error };
@@ -381,7 +383,7 @@ export async function executeSingleSpawnAgent(
         // Register with SpawnGuard
         guard.register(agentId, role || 'dynamic', task, promise, abortController, {
           treeId,
-          completion: { title: agentName, kind: 'user_visible' },
+          completion: { title: completionTitle, kind: 'user_visible' },
           parentId: context.spawnParentAgentId,
           slotAcquired: true,
           scope: context.swarmRunScope,
@@ -402,6 +404,7 @@ export async function executeSingleSpawnAgent(
             promise,
             agentId,
             agentName,
+            completionTitle,
             role,
             context,
             treeId,
@@ -433,7 +436,8 @@ export async function executeSingleSpawnAgent(
             : '';
           return {
             success: true,
-            output: `Agent [${agentName}] completed task:
+            // Background completion notifications carry the task result, without role/tool/id wrappers.
+            output: params.run_in_background === true ? `${result.output}${worktreeNote}` : `Agent [${agentName}] completed task:
 
 Task: ${task}
 
@@ -456,7 +460,9 @@ Stats:
         } else {
           return {
             success: false,
-            error: `Agent [${agentName}] failed: ${result.error}${worktreeNote}`,
+            error: params.run_in_background === true
+              ? `${result.error}${worktreeNote}`
+              : `Agent [${agentName}] failed: ${result.error}${worktreeNote}`,
             output: result.output,
             metadata: {
               agentId,
@@ -487,7 +493,7 @@ Stats:
         // Register with SpawnGuard (auto-tracks completion)
         guard.register(agentId, role || 'dynamic', task, promise, abortController, {
           treeId,
-          completion: { title: agentName, kind: 'user_visible' },
+          completion: { title: completionTitle, kind: 'user_visible' },
           parentId: context.spawnParentAgentId,
           slotAcquired: true,
           scope: context.swarmRunScope,
