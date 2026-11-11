@@ -65,8 +65,12 @@ function trigger(agentId: string, sessionId: string): SubagentCompletionRecord {
 }
 
 describe('background subagent idle wake', () => {
+  let caseClock = Date.UTC(2026, 0, 1);
+
   beforeEach(() => {
-    vi.useFakeTimers();
+    // The singleton retains completion dedupe keys, so cases need distinct completion times.
+    vi.useFakeTimers({ now: caseClock });
+    caseClock += 1_000;
     resetApplicationRunRegistryForTests();
     taskManagerMocks.getSessionState.mockReset();
     taskManagerMocks.startTask.mockReset();
