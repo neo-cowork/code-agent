@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import type { StreamInterruptionReason, ToolCall } from '@shared/contract';
 import { useAppStore } from '../stores/appStore';
+import { useParkedToolCallIds } from '../stores/parkedApprovalStore';
 import { useBackgroundTaskStore } from '../stores/backgroundTaskStore';
 import { isToolCallAwaitingApproval } from '../utils/sessionNeedsInput';
 import { resolveToolCallTerminalState, toolCallNeedsAgentRows } from '../utils/toolCallTerminalState';
@@ -25,10 +26,11 @@ export function useToolCallTerminalResolver(
   const pendingPermissionRequest = useAppStore(state => state.pendingPermissionRequest);
   const pendingPermissionSessionId = useAppStore(state => state.pendingPermissionSessionId);
   const queuedPermissionRequests = useAppStore(state => state.queuedPermissionRequests);
+  const parkedToolCallIdsBySession = useParkedToolCallIds(sessionId, calls.some(call => call.toolCall?.result === undefined));
   return useCallback((toolCall: ToolCall, interruptionReason?: StreamInterruptionReason, agentId?: string, sessionLive?: boolean,
     delegatedWork?: 'working' | 'completed' | 'failed') =>
     resolveToolCallTerminalState({ toolCall, sessionId, tasks, agentRows: rows, agentId, sessionLive: sessionLive ?? live,
       interruptionReason, delegatedWork, awaitingApproval: isToolCallAwaitingApproval(toolCall.id, sessionId, {
-        pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests,
-      }) }), [sessionId, tasks, rows, live, pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests]);
+        pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests, parkedToolCallIdsBySession,
+      }) }), [sessionId, tasks, rows, live, pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests, parkedToolCallIdsBySession]);
 }

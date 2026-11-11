@@ -9,6 +9,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { StreamInterruptionReason, ToolCall } from '@shared/contract';
 import type { SessionMediaContext } from '@shared/utils/sessionMediaAssets';
 import { useAppStore } from '../../../../../stores/appStore';
+import { useParkedToolCallIds } from '../../../../../stores/parkedApprovalStore';
 import { isToolCallAwaitingApproval } from '../../../../../utils/sessionNeedsInput';
 import { useSessionStore } from '../../../../../stores/sessionStore';
 import { ToolHeader } from './ToolHeader';
@@ -147,18 +148,19 @@ export function ToolCallDisplay({
   const toolCall = useMemo(() => getToolPreflightKind(originalToolCall) === 'question' && originalToolCall.result
     ? { ...originalToolCall, result: { ...originalToolCall.result, success: false, error: originalToolCall.result.error ?? originalToolCall.result.output } }
     : originalToolCall, [originalToolCall]);
-  const displayToolCall = useMemo(() => toDelegationDisplayToolCall(toolCall, t), [toolCall, t]);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const pendingPermissionRequest = useAppStore((state) => state.pendingPermissionRequest);
   const pendingPermissionSessionId = useAppStore((state) => state.pendingPermissionSessionId);
   const queuedPermissionRequests = useAppStore((state) => state.queuedPermissionRequests);
   const backgroundTasks = useBackgroundTaskStore((state) => state.tasks);
   const sessionId = mediaContext?.sessionId || currentSessionId;
+  const parkedToolCallIdsBySession = useParkedToolCallIds(sessionId, toolCall.result === undefined);
   const awaitingApproval = toolCall.result === undefined
     && isToolCallAwaitingApproval(toolCall.id, sessionId, {
       pendingPermissionRequest,
       pendingPermissionSessionId,
       queuedPermissionRequests,
+      parkedToolCallIdsBySession,
     });
   const delegationTool = isDelegationTool(toolCall.name);
   const { snapshot: agentTree } = useAgentTreeSnapshot(
@@ -182,6 +184,11 @@ export function ToolCallDisplay({
       ),
     };
   }, [agentTree?.nodes, backgroundTasks, delegationTool, toolCall, t]);
+
+  const displayToolCall = useMemo(
+    () => toDelegationDisplayToolCall(toolCall, t, delegationPresentation),
+    [toolCall, t, delegationPresentation],
+  );
 
   const resolveToolCallTerminalState = useToolCallTerminalResolver(sessionId, [{ toolCall, agentId }]);
   const terminal = resolveToolCallTerminalState(toolCall, interruptionReason, agentId, sessionLive, delegationPresentation?.state);
