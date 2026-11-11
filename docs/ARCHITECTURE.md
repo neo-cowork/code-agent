@@ -757,3 +757,4 @@ Context Health 的 bySource 是当前消息、system prompt 与已挂载技能�
 | 088 | Jev 浏览器步骤（`execute_goal`）默认开启（保留 `CODE_AGENT_BROWSER_JEV_STEP=0` 关闭开关；敏感操作确认不放宽；无可用 Jev 路由时行为不变） | 已接受（方案 A，11-03） | [ADR-088](./architecture/decisions/ADR-088-jev-browser-step-default-on.md) |
 | 088 | 屏幕控制敏感步骤交回用户（密码/验证码/支付 Neo 不代做；forceConfirm 交回卡承载，任何按钮都不执行、永不铸授权） | 已拍板（方案 B，11-03） | `./architecture/sensitive-step-handback.md` |
 | 089 | Web 版通道账号管理保持仅桌面版（Web 只读查看账号与状态；添加/连接断开/编辑/删除在桌面版；开放 Web 管理需另开单做鉴权与远程凭据写入安全评估） | 已接受（方案 A，11-04） | [ADR-089](./architecture/decisions/ADR-089-web-channels-desktop-only.md) |
+| 090 | 环境自愈 Env Assist（统一环境提示卡=一句人话+一个按钮；诊断只用被动探针、永不弹系统授权框；能自修的自己修、修完沿用同一 run 自动续做；确认不了老实说并给替代路径；仅 macOS，Windows 明说不支持） | 已接受（方案 A，11-09） | [ADR-090](./architecture/decisions/ADR-090-env-assist.md) |

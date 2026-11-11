@@ -9,6 +9,7 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { chatInputZh } from '../../../src/renderer/i18n/chatInput';
 import type { CronJobDefinition } from '../../../src/shared/contract';
 
 const mocks = vi.hoisted(() => ({
@@ -124,12 +125,12 @@ describe('CronSimpleCreate · 无角色任务先复述后保存', () => {
     expect(onDone).not.toHaveBeenCalled();
     expect(pendingCard().textContent).toContain('现在还没有创建任何任务，核对无误再保存；想改就返回。');
     expect(pendingCard().textContent).not.toContain('改动还没有保存');
-    // 四行：what 跟 goal（复述语义源），when 是人话时间，notifyWhen 走兜底句，result 落审核收件箱。
+    // 四行：what 跟 goal（复述语义源），when 是人话时间，notifyWhen 走兜底句，result 落自动化运行记录。
     expect(pendingRowValue('what')).toBe('每天盯一下竞品发布');
     expect(pendingRowValue('when')).toBe('每天 09:00');
     expect(pendingRowValue('when')).not.toContain('*');
     expect(pendingRowValue('notifyWhen')).toBe('任务完成或发现异常时通知');
-    expect(pendingRowValue('result')).toBe('自动化审核收件箱');
+    expect(pendingRowValue('result')).toBe(chatInputZh.scheduleConfirm.reviewInbox);
   });
 
   it('「确认保存」后 createJob 恰好一次，随后关闭（onDone）', async () => {
@@ -183,9 +184,9 @@ describe('CronSimpleCreate · 无角色任务先复述后保存', () => {
     fireEvent.change(screen.getByPlaceholderText(/竞品动态/), { target: { value: '盯竞品' } });
     fireEvent.click(screen.getByRole('button', { name: '创建自动化' }));
     await waitFor(() => expect(pendingCard()).toBeTruthy());
-    // 本用例没在表单里选结果通道（目录 mock 在，字段默认空）：result = 审核收件箱。
+    // 本用例没在表单里选结果通道（目录 mock 在，字段默认空）：result = 自动化运行记录。
     // 原始串不透出的断言在 builder 级测试（resolveSavedRoutineChannelLabel）覆盖。
-    expect(pendingRowValue('result')).toBe('自动化审核收件箱');
+    expect(pendingRowValue('result')).toBe(chatInputZh.scheduleConfirm.reviewInbox);
   });
 
   it('确认时 createJob 抛错：错误横幅在卡上，不关闭；返回修改后错误仍可见、可重试', async () => {
