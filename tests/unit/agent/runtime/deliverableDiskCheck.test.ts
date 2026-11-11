@@ -723,6 +723,15 @@ describe('deliverable placeholder content gate (N-ARTIFACT-PLACEHOLDER-GATE)', (
     expect(result.missing).toEqual([]);
   });
 
+  it('real docx with plain-text numbered heading is not markdown_residue', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    await writeDocxFixture('numbered.docx', ['1. 项目背景', '2. 目标', '正文完整。']);
+    const result = await placeholderGate({ finalText: '已生成 `numbered.docx`，请查收。' });
+    expect(result.action).toBe('pass');
+    if (result.action !== 'pass') return;
+    expect(result.missing).toEqual([]);
+  });
+
   it('xlsx deliverable with TBD cell triggers repair with sheet and row location', async () => {
     mkdirSync(workRoot, { recursive: true });
     await writeXlsxFixture('data.xlsx', [['项目', '数值'], ['需求 A', '3'], ['合计', 'TBD']]);

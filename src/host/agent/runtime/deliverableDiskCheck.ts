@@ -22,6 +22,7 @@ import { TURN_OUTCOME } from '../../../shared/constants/agent';
 import { makeEvidenceRef, type EvidenceRef } from '../../../shared/contract/evidence';
 import type { Message } from '../../../shared/contract';
 import type { DeclaredDeliverables } from './artifactState';
+import { findMarkdownResidue } from '../../tools/modules/network/docxMarkdownResidue';
 import { currentMessages } from './documentEvidenceBoundary';
 import { readbackFileEvidence } from './fileEvidenceReadback';
 import {
@@ -550,8 +551,7 @@ async function docxHasMarkdownResidue(filePath: string): Promise<boolean> {
   const document = zip.file('word/document.xml');
   if (!document) throw new Error('word/document.xml is missing');
   const xml = await document.async('string');
-  return /\*\*[^*\r\n]+\*\*/.test(xml)
-    || /<w:t(?:\s[^>]*)?>\s*(?:#{1,3}|[-*]|\d+\.|&gt;)\s+/.test(xml);
+  return findMarkdownResidue(xml).length > 0;
 }
 
 /**

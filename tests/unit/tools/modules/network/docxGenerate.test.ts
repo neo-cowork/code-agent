@@ -199,6 +199,22 @@ describe('docxGenerateModule (native)', () => {
     });
   });
 
+  describe('residue scan is paragraph-level', () => {
+    it('does not reject legitimate text that starts a run after inline bold (" - ", " > ", numbered heading)', async () => {
+      const outputPath = join(workingDir, 'legit.docx');
+      const content = [
+        '- **功能A** - 说明',
+        '**结论** > 阈值',
+        '# 1. 项目背景',
+      ].join('\n');
+      const result = await run(workingDir, { title: 'T', content, output_path: outputPath });
+      expect(result.ok).toBe(true);
+      const xml = await documentXml(outputPath);
+      expect(xml).not.toContain('**');
+      expect(xml).toContain('项目背景');
+    });
+  });
+
   describe('error handling', () => {
     it('returns failure when Packer.toBuffer throws', async () => {
       vi.spyOn(Packer, 'toBuffer').mockRejectedValueOnce(new Error('docx-fail'));

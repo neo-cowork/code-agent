@@ -35,6 +35,7 @@ import type {
 import { formatFileSize } from '../../utils/fileSize';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { docxGenerateSchema as schema } from './docxGenerate.schema';
+import { findMarkdownResidue } from './docxMarkdownResidue';
 
 type DocxTheme = 'professional' | 'academic' | 'minimal' | 'creative';
 
@@ -362,12 +363,7 @@ async function scanDocxForResidualMarkdown(filePath: string): Promise<string[]> 
   const document = zip.file('word/document.xml');
   if (!document) throw new Error('word/document.xml is missing after generation');
   const xml = await document.async('string');
-  const hits: string[] = [];
-  if (/\*\*[^*\r\n]+\*\*/.test(xml)) hits.push('paired **bold** markers');
-  if (/<w:t(?:\s[^>]*)?>\s*(?:#{1,3}|[-*]|\d+\.|&gt;)\s+/.test(xml)) {
-    hits.push('leading list/heading markers');
-  }
-  return hits;
+  return findMarkdownResidue(xml);
 }
 
 export async function executeDocxGenerate(
