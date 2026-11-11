@@ -11,7 +11,7 @@ export {
   getKeybindingSetting,
   mergeKeybindingsWithDefaults,
 } from './defaults';
-export { normalizeAccelerator } from './normalize';
+export { isModifierOnlyAccelerator, normalizeAccelerator } from './normalize';
 export { eventToAccelerator } from './events';
 export { formatActionShortcut, formatShortcutForDisplay } from './format';
 export { detectKeybindingConflicts, detectKeybindingSystemWarnings } from './conflicts';

@@ -81,7 +81,7 @@ import {
 } from './conversationRuntimeContextBootstrap';
 import { isStartupAborted, raceStartupStep, startupStepAbandoned } from './startupAssemblyGuard';
 import { watchFirstModelRequest, noteFirstModelRequestPhase } from './firstModelRequestWatch';
-import { resolveStickyStrictSkillInvocation } from './conversationRuntimeStickySkill';
+import { resolveStickyStrictSkillInvocation, resolveNaturalLanguageCreateRoleInvocation } from './conversationRuntimeStickySkill';
 import { buildStrictToolsetNotice } from '../../tools/skillBoundaryScope';
 import { extractUserRequest } from '../turnScaffold';
 import { TOOL_ARGS_REPAIR_MAX_ATTEMPTS } from '../../../shared/constants/repair';
@@ -895,7 +895,8 @@ export class ConversationRuntime {
           }),
           'skill_discovery',
         )
-        ?? await raceStartupStep(this.ctx, resolveStickyStrictSkillInvocation(this.ctx, userRequest), 'skill_discovery');
+        ?? await raceStartupStep(this.ctx, resolveStickyStrictSkillInvocation(this.ctx, userRequest), 'skill_discovery')
+        ?? await raceStartupStep(this.ctx, resolveNaturalLanguageCreateRoleInvocation(this.ctx, userRequest), 'skill_discovery');
       if (isStartupAborted(this.ctx)) return null;
       // 单轮文件交付轮丢弃裸词别名注入（sticky 来源只可能是 slash 种子，不受影响）
       const skillInvocation = retainSkillInvocationForTurn(
