@@ -16,6 +16,9 @@
 //
 // 本文件把这条契约钉在 island 层：前台 run 结束（时间推进越过一切看门狗）后，
 // 后台 lane 的审批仍 pending；approve → 后台任务继续；deny → 后台任务收到拒绝。
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentEvent, AppSettings, PermissionAskResult } from '../../../src/shared/contract';
 
@@ -25,6 +28,32 @@ const logSpies = vi.hoisted(() => ({
   warn: vi.fn(),
   error: vi.fn(),
 }));
+
+const resolverState = vi.hoisted(() => ({
+  getDefinition: vi.fn(),
+  execute: vi.fn(),
+}));
+
+const classificationState = vi.hoisted(() => ({
+  resolveToolPermissionClassification: vi.fn(),
+}));
+
+vi.mock('../../../src/host/tools/dispatch/toolResolver', () => ({
+  getToolResolver: () => ({
+    getDefinition: resolverState.getDefinition,
+    execute: resolverState.execute,
+  }),
+}));
+
+vi.mock('../../../src/host/tools/toolPermissionClassification', async () => {
+  const actual = await vi.importActual<typeof import('../../../src/host/tools/toolPermissionClassification')>(
+    '../../../src/host/tools/toolPermissionClassification',
+  );
+  return {
+    ...actual,
+    resolveToolPermissionClassification: classificationState.resolveToolPermissionClassification,
+  };
+});
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: vi.fn(() => logSpies),
@@ -38,6 +67,9 @@ vi.mock('../../../src/host/services/infra/notificationService', () => ({
 
 import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
 import { resetPermissionModeManager } from '../../../src/host/permissions/modes';
+import { createSubagentToolRuntime } from '../../../src/host/agent/subagentToolRuntime';
+import type { SubagentExecutionContext } from '../../../src/host/agent/subagentExecutorTypes';
+import { requestBrowserUploadApproval } from '../../../src/host/tools/vision/browserUploadApproval';
 
 const settings = (): AppSettings => ({
   permissions: {
@@ -214,5 +246,149 @@ describe('前台 run 结束后，后台 lane 的审批在宿主仍 pending（N-S
         resolved: true,
       },
     });
+  });
+});
+
+// N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO-FU2-BROWSER：Browser upload_file 形状的同一契约。
+// 请求形状与 requestBrowserUploadApproval 发出的一致（file_read + forceConfirm +
+// tool 'browser_action.upload_file'）；子代理路径走真 createSubagentToolRuntime 的 executor。
+describe('后台子代理 Browser upload_file 审批：前台 run 结束后仍 pending，批准继续、拒绝终止', () => {
+  const tmpDirs: string[] = [];
+  let invoice = '';
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    resetPermissionModeManager();
+    resolverState.getDefinition.mockReset();
+    resolverState.execute.mockReset();
+    classificationState.resolveToolPermissionClassification.mockReset();
+    classificationState.resolveToolPermissionClassification.mockResolvedValue({
+      decision: 'ask',
+      reason: 'test classifier ask',
+      confidence: 0.5,
+      cached: false,
+      traceStep: {
+        layer: 'permission_classifier', rule: 'test-ask', result: 'ask',
+        reason: 'test classifier ask', durationMs: 0, timestamp: Date.now(),
+      },
+    });
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bg-browser-upload-'));
+    tmpDirs.push(dir);
+    invoice = path.join(dir, 'invoice.pdf');
+    fs.writeFileSync(invoice, '%PDF-1.4 invoice');
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    resetPermissionModeManager();
+    for (const dir of tmpDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  function beginBrowserUploadApproval() {
+    const events: AgentEvent[] = [];
+    const island = new OrchestratorPermissionIsland({
+      getSettings: settings,
+      isDevModeAutoApproveEnabled: () => false,
+      getExecutionTopology: () => 'async_agent',
+      hasApprovalUi: () => true,
+      onEvent: (event) => events.push(event),
+    });
+    const context = {
+      sessionId: 'bg-browser-session',
+      cwd: path.dirname(invoice),
+      // 生产接线：子代理 context.permission.request 落进会话 island。
+      permission: { request: (request: Parameters<typeof island.requestPermission>[0]) => island.requestPermission(request) },
+      resolver: { getDefinition: resolverState.getDefinition },
+    } as unknown as SubagentExecutionContext;
+    resolverState.getDefinition.mockImplementation((name: string) => name === 'Browser'
+      ? {
+        name: 'Browser',
+        description: 'Browser',
+        inputSchema: { type: 'object', properties: { action: { type: 'string' }, file: { type: 'string' } }, required: ['action'] },
+        requiresPermission: false,
+        permissionLevel: 'read',
+      }
+      : undefined);
+    // Browser 工具体：与 browserAction upload_file 分支同一入口 requestBrowserUploadApproval，
+    // 收到的 ToolContext.requestPermission 就是 createSubagentToolRuntime 装配的那个。
+    resolverState.execute.mockImplementation(async (_name: string, params: { file: string }, toolContext: Parameters<typeof requestBrowserUploadApproval>[0]['context']) => {
+      const approval = await requestBrowserUploadApproval({
+        filePath: params.file,
+        context: { ...toolContext, runId: 'bg-run-1', agentId: 'bg-agent-1', currentToolCallId: 'call-upload-1' },
+        engine: 'managed',
+      });
+      return approval.approved
+        ? { success: true, output: 'upload approved' }
+        : { success: false, error: approval.reason };
+    });
+    const { executor } = createSubagentToolRuntime({
+      context,
+      sessionId: 'bg-browser-session',
+      effectiveMode: 'default',
+      identity: { agentId: 'bg-agent-1', runId: 'bg-run-1' },
+      allowedToolNames: new Set(['Browser']),
+      checkToolExecution: () => true,
+    });
+    const execution = executor.execute('Browser', { action: 'upload_file', file: invoice }, { sessionId: 'bg-browser-session' });
+    return { island, execution, events };
+  }
+
+  async function raised(island: OrchestratorPermissionIsland) {
+    await vi.advanceTimersByTimeAsync(10);
+    const [request] = island.listPendingRequests();
+    if (!request) throw new Error('browser upload approval was not registered');
+    return request;
+  }
+
+  it('Browser 请求形状到达 island 并挂起：file_read + forceConfirm + lane 身份，前台结束后仍在', async () => {
+    const { island, execution, events } = beginBrowserUploadApproval();
+    const request = await raised(island);
+
+    expect(request.type).toBe('file_read');
+    expect(request.tool).toBe('browser_action.upload_file');
+    expect(request.forceConfirm).toBe(true);
+    expect(request.agentId).toBe('bg-agent-1');
+    expect(request.runId).toBe('bg-run-1');
+    expect(request.details).toMatchObject({ action: 'upload_file', approvalMode: 'host_one_time_exact_file' });
+
+    // 前台 run 收线对 island 无操作；时钟越过一切看门狗后仍 pending。
+    await vi.advanceTimersByTimeAsync(31 * 60_000);
+    expect(island.listPendingRequests().map((entry) => entry.id)).toContain(request.id);
+    expect(events.some((event) => event.type === 'permission_request')).toBe(true);
+    expect(await isStillPending(execution as unknown as Promise<PermissionAskResult>)).toBe(true);
+  });
+
+  it('前台结束后批准：Browser 动作继续并成功', async () => {
+    const { island, execution } = beginBrowserUploadApproval();
+    const request = await raised(island);
+    await vi.advanceTimersByTimeAsync(31 * 60_000);
+
+    expect(island.handlePermissionResponse(request.id, 'allow')).toBe('delivered');
+    const result = await execution;
+    expect(result.success).toBe(true);
+    expect(result.output).toBe('upload approved');
+    expect(island.hasPendingRequests()).toBe(false);
+  });
+
+  it('拒绝：Browser 动作终止，结果带 not explicitly approved', async () => {
+    const { island, execution } = beginBrowserUploadApproval();
+    const request = await raised(island);
+
+    expect(island.handlePermissionResponse(request.id, 'deny')).toBe('delivered');
+    const result = await execution;
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('The selected upload file was not explicitly approved.');
+    expect(island.hasPendingRequests()).toBe(false);
+  });
+
+  it('run 收线清理（skipBackgroundLanes）不收 Browser 后台卡，之后点击仍送达', async () => {
+    const { island, execution } = beginBrowserUploadApproval();
+    const request = await raised(island);
+
+    island.drainPendingPermissions('deny', { skipBackgroundLanes: true });
+    expect(island.listPendingRequests().map((entry) => entry.id)).toContain(request.id);
+
+    expect(island.handlePermissionResponse(request.id, 'allow')).toBe('delivered');
+    expect((await execution).success).toBe(true);
   });
 });

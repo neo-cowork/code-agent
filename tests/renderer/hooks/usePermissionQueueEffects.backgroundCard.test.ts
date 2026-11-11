@@ -156,6 +156,77 @@ describe('后台任务审批卡在前台 run 结束后保留（N-SUBAGENT-APPROV
   });
 });
 
+describe('后台子代理 Browser upload_file 审批卡在前台 run 结束后保留（N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO-FU2-BROWSER）', () => {
+  beforeEach(() => {
+    useAppStore.setState({
+      pendingPermissionRequest: null,
+      pendingPermissionSessionId: null,
+      queuedPermissionRequests: {},
+      resolvedPermissionRequests: {},
+    });
+  });
+
+  /** requestBrowserUploadApproval 的请求形状 + subagentToolRuntime 摊进来的 lane 身份。 */
+  function browserUploadRequest(id: string): PermissionRequest {
+    return {
+      id,
+      type: 'file_read',
+      tool: 'browser_action.upload_file',
+      forceConfirm: true,
+      dangerLevel: 'warning',
+      details: { file: '.../invoice.pdf', action: 'upload_file', engine: 'managed', approvalMode: 'host_one_time_exact_file' },
+      timestamp: 100,
+      sessionId: 'session-main',
+      agentId: `bg-agent-${id}`,
+      runId: `bg-run-${id}`,
+    } as PermissionRequest;
+  }
+
+  it('前台 agent_complete 后卡仍在 pending，批准把卡收走并落已决存证', () => {
+    const { deps } = createProductionDeps('session-main');
+    applyPermissionQueueEvent(
+      { type: 'permission_request', data: browserUploadRequest('bg-upload-ok'), sessionId: 'session-main' },
+      deps,
+    );
+    expect(useAppStore.getState().pendingPermissionRequest?.tool).toBe('browser_action.upload_file');
+
+    applyPermissionQueueEvent({ type: 'agent_complete', data: null, sessionId: 'session-main' }, deps);
+    expect(useAppStore.getState().pendingPermissionRequest?.id).toBe('bg-upload-ok');
+
+    const pending = useAppStore.getState().pendingPermissionRequest;
+    if (!pending) throw new Error('browser upload card was not pending');
+    useAppStore.getState().recordPermissionDecision(pending, 'once', 'session-main');
+    expect(useAppStore.getState().pendingPermissionRequest).toBeNull();
+    expect(useAppStore.getState().resolvedPermissionRequests['session-main']?.[0]?.id).toBe('bg-upload-ok');
+  });
+
+  it('前台 agent_complete 后卡仍在，拒绝同样把卡收走并落已决存证', () => {
+    const { deps } = createProductionDeps('session-main');
+    applyPermissionQueueEvent(
+      { type: 'permission_request', data: browserUploadRequest('bg-upload-no'), sessionId: 'session-main' },
+      deps,
+    );
+    applyPermissionQueueEvent({ type: 'agent_complete', data: null, sessionId: 'session-main' }, deps);
+    expect(useAppStore.getState().pendingPermissionRequest?.id).toBe('bg-upload-no');
+
+    const pending = useAppStore.getState().pendingPermissionRequest;
+    if (!pending) throw new Error('browser upload card was not pending');
+    useAppStore.getState().recordPermissionDecision(pending, 'deny', 'session-main');
+    expect(useAppStore.getState().pendingPermissionRequest).toBeNull();
+    expect(useAppStore.getState().resolvedPermissionRequests['session-main']?.[0]?.id).toBe('bg-upload-no');
+  });
+
+  it('用户在别的会话时：Browser 上传审批进队列，前台 run 结束后保留', () => {
+    const { deps } = createProductionDeps('session-other');
+    applyPermissionQueueEvent(
+      { type: 'permission_request', data: browserUploadRequest('bg-upload-q'), sessionId: 'session-main' },
+      deps,
+    );
+    applyPermissionQueueEvent({ type: 'agent_complete', data: null, sessionId: 'session-main' }, deps);
+    expect(useAppStore.getState().queuedPermissionRequests['session-main']?.map((r) => r.id)).toEqual(['bg-upload-q']);
+  });
+});
+
 describe('后台任务自己的 run 结束 → 卡收走（stale-card guard）', () => {
   beforeEach(() => {
     useAppStore.setState({
