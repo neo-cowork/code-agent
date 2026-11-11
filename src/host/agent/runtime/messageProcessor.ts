@@ -1,3 +1,4 @@
+import { peekEnvBlockedNote, envBlockedCancelledClosures } from './envBlockedTurn';
 import type { TraceEventDataMap } from './turnTrace';
 import { getToolAttemptTrace } from './toolAttemptTrace';
 import { checkDocumentEvidenceClaims } from './documentEvidenceBoundary';
@@ -802,10 +803,16 @@ export class MessageProcessor {
 
     if (this.ctx.control.isCancelled || this.ctx.control.isInterrupted || this.ctx.control.runAbortController?.signal.aborted) {
       logger.info('[AgentLoop] Run stop detected after tool execution; persisting cancelled tool-call closures');
+      if (peekEnvBlockedNote(this.ctx.runId) && toolResults.length) {
+        await this.contextAssembly.addAndPersistMessage({
+          id: `${assistantMessage.id}:env-blocked-results`, role: 'tool', timestamp: Date.now(),
+          content: JSON.stringify(toolResults), toolResults,
+        });
+      }
       await persistCancelledToolCallClosures({
         messages: this.ctx.messages,
         assistantMessage,
-        toolCalls,
+        toolCalls: envBlockedCancelledClosures(this.ctx.runId, toolCalls),
         persistMessage: (message) => this.contextAssembly.addAndPersistMessage(message),
       });
       return 'break';
