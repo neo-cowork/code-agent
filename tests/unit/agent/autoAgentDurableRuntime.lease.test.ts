@@ -30,6 +30,7 @@ function createStack(processInstanceId = 'process-1', leaseDurationMs = 750) {
 
 function createParentHost(): AgentTeamDurableParentHost {
   return {
+    hasDurableOwner: vi.fn(() => true),
     prepareAgentTeamChild: vi.fn().mockResolvedValue(undefined),
     projectAgentTeamChildTerminal: vi.fn().mockResolvedValue(undefined),
   };

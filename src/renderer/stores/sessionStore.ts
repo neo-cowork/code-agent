@@ -26,8 +26,9 @@ import {
   forgetConversationFramesInMemory,
 } from './sessionTerminalFrames';
 import { executeCreateSession } from './sessionCreate';
-import { bumpSessionsLocalVersion, executeLoadOlderSessions, executeLoadSessions } from './sessionListPagination';
+import { bumpSessionsLocalVersion, executeLoadOlderSessions, executeLoadSessions, withOpenedSessionOutsideWindow } from './sessionListPagination';
 import { mergeSnapshotWithLiveTail } from './sessionSnapshotMerge';
+import { clearFailedSend, mergeFailedSendOutbox } from './failedSendOutbox';
 import { groupRunsByTask, type CronRunGroups } from '@shared/cronRunDigest';
 import { recoveryLoadLightsTurn, runtimeStatusCountsAsRunning } from './parkedContinueTurn';
 import { hostStampPredatesTerminal } from './terminalRunGuardStore';
@@ -413,7 +414,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
           const snapshotMerge = options?.force || hasLiveMessagesDuringHydration
             ? mergeSnapshotWithLiveTail(snapshotMessages, liveMessages)
             : null;
-          const loadedMessages = snapshotMerge?.messages ?? snapshotMessages;
+          const loadedMessages = mergeFailedSendOutbox(sessionId, snapshotMerge?.messages ?? snapshotMessages, session.messages || []);
           // agent live 事件会先点亮 app/task 的纯内存运行态。dev 注入事件不落库，
           // 因而慢快照可能仍返回 idle + 空消息；只要 live 消息在请求期间出现、且
           // renderer 此刻仍明确在跑，就不能让这个旧快照撤掉运行态。若 live 终态
@@ -438,9 +439,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             unreadSessionIds: isReload ? get().unreadSessionIds : nextUnreadIds,
             hasOlderMessages: totalCount > loadedMessages.length,
             isLoadingOlder: false,
-            sessions: get().sessions.map((item) =>
-              item.id === sessionId ? deriveCurrentSessionMeta(normalizedSession, loadedMessages) : item
-            ),
+            // 从搜索打开的老会话不在已加载分页里：补进 sessions，顶栏标题才查得到
+            sessions: withOpenedSessionOutsideWindow(get().sessions, deriveCurrentSessionMeta(normalizedSession, loadedMessages)),
           });
           // 宿主说这个会话还有活跃 run（刷新/切回来最常见）：前端运行态纯内存，不接回来
           // 就显示空闲——后台还在跑时停止按钮消失、排队卡邀请「立即发送」，一点就撞车
@@ -511,6 +511,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     deleteSession: async (sessionId: string) => {
       try {
         await invokeSession('delete', { sessionId });
+        clearFailedSend(sessionId);
 
         // 清理该会话的设计态：design-active 标记 + 画布属主，避免悬空。
         useDesignCanvasStore.getState().releaseSessionDesignState(sessionId);
