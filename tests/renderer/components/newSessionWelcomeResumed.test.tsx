@@ -6,7 +6,7 @@
 // ============================================================================
 
 import React from 'react';
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NewSessionWelcome } from '../../../src/renderer/components/features/chat/NewSessionWelcome';
 import type { SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
@@ -23,6 +23,10 @@ function session(overrides: Partial<SessionWithMeta>): SessionWithMeta {
     ...overrides,
   } as SessionWithMeta;
 }
+
+import { useAppStore } from '../../../src/renderer/stores/appStore';
+
+afterEach(() => useAppStore.setState({ language: 'zh' }));
 
 const WELCOME_TITLE = '这次想去哪颗星球？';
 
@@ -80,3 +84,14 @@ describe('通用建议卡：有上下文就不摆', () => {
     expect(screen.queryByText('写一份本周工作周报')).toBeNull();
   });
 });
+
+ it('empty cron heading follows UI language without changing the stored title', () => {
+    const stored = session({ title: '[Schedule] 每晨整理周会纪要' });
+    useAppStore.setState({ language: 'zh' });
+    render(<NewSessionWelcome onSend={vi.fn()} session={stored} />);
+    expect(screen.getByTestId('chat-welcome-title').textContent).toBe('继续上次的会话：[定时] 每晨整理周会纪要');
+    act(() => useAppStore.setState({ language: 'en' }));
+    expect(screen.getByTestId('chat-welcome-title').textContent).toBe('Picking up your last session: [Schedule] 每晨整理周会纪要');
+    expect(screen.getByTestId('chat-welcome-title').textContent).not.toContain('[定时]');
+    expect(stored.title).toBe('[Schedule] 每晨整理周会纪要');
+  });
