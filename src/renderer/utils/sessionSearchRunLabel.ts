@@ -3,7 +3,7 @@
  * 在已格式化的时间标签里，把第一个 H:mm 扩成 H:mm:ss；找不到时间片段则在末尾补 :SS。
  * 去掉秒片段后与原标签完全一致。
  */
-export function withSecondsLabel(label: string, timestamp: number): string {
+function withSecondsLabel(label: string, timestamp: number): string {
   const seconds = String(new Date(timestamp).getSeconds()).padStart(2, '0');
   const matched = /\d{1,2}:\d{2}/.exec(label);
   if (!matched) return `${label}:${seconds}`;

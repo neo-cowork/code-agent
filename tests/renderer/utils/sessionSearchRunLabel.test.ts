@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { withSecondsLabel } from '../../../src/renderer/utils/sessionSearchRunLabel';
+import { resolveSearchRunLabels } from '../../../src/renderer/utils/sessionSearchRunLabel';
 import { formatLocalDateTime } from '../../../src/renderer/utils/i18nTime';
 
-describe('withSecondsLabel', () => {
+describe('resolveSearchRunLabels seconds labels', () => {
   const ts = new Date(new Date().getFullYear(), 10, 8, 16, 1, 7).getTime();
+
+  const withSecondsLabel = (label: string, timestamp: number) => {
+    const row = { title: 'Daily notes', label, updatedAt: timestamp, createdAt: timestamp };
+    return resolveSearchRunLabels([row, { ...row }]).labels[0];
+  };
 
   it.each(['zh', 'en'] as const)('adds seconds and removing them restores the normal label (%s)', (lang) => {
     const label = formatLocalDateTime(ts, lang);
