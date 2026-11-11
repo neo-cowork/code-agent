@@ -219,6 +219,9 @@ export const TERMINAL_TASK_STATUSES: readonly TaskStatus[] = [
   'orphaned',
 ] as const;
 
+/** 台账列表给「已被用户在专家面板清除」的任务打的 metadata 标记；只有面板据此隐藏行。 */
+export const TASK_PANEL_DISMISSED_KEY = 'panelDismissed';
+
 export function isTerminalTaskStatus(status: TaskStatus): boolean {
   return TERMINAL_TASK_STATUSES.includes(status);
 }

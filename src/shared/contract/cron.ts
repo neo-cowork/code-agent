@@ -378,6 +378,8 @@ export interface AgentAction {
    * （N-CRON-MORNING-TRIAGE-URGENCY-RULE）。
    */
   urgencyCriteria?: string;
+  /** Personal skill names explicitly enabled for this task; command approvals are unchanged. */
+  allowedPersonalSkillIds?: string[];
   /**
    * 用户设定的「什么变化才值得通知」判据（一句话，trim 后非空才生效，上限
    * CRON_URGENCY_CRITERIA.MAX_CHARS——与 urgencyCriteria 同一收口）。设置后：
