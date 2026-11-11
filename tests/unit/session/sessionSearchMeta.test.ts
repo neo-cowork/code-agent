@@ -1,5 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const cronState = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en', title: '[Schedule] 每晨整理周会纪要' }));
+vi.mock('../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({ getSettings: () => ({ ui: { language: cronState.language } }) }),
+}));
+vi.mock('../../../src/host/services/serviceRegistry', () => ({
+  getServiceRegistry: () => ({ register: vi.fn() }),
+}));
+vi.mock('../../../src/host/services', async () => ({
+  notificationService: (await import('../../../src/host/services/infra/notificationService')).notificationService,
+  getSessionManager: () => ({ getSession: async () => ({ id: 'cron-session', title: cronState.title }) }),
+}));
+vi.mock('../../../src/host/session/backgroundTaskManager', () => ({
+  getBackgroundTaskManager: () => ({ isInBackground: () => false }),
+}));
+vi.mock('../../../src/host/services/roleAssets/wakeRunGuard', () => ({ isRoleWakeRunActive: () => false }));
+
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import {
@@ -74,4 +90,21 @@ it('finds localized schedule and heartbeat titles before LIMIT without crossing 
   expect(searchSessionTitles(db, '心跳', 'u1', 10).map((r) => r.sessionId)).toEqual(['beat']);
   expect(searchSessionTitles(db, '[Cron]', 'u1', 10).map((r) => r.sessionId)).toEqual(['old']);
   expect(searchSessionTitles(db, '[定时] 周报', 'u1', 10).map((r) => r.sessionId)).toEqual(['old']);
+});
+
+import { notificationService } from '../../../src/host/services/infra/notificationService';
+import { settleBackgroundOnTaskComplete } from '../../../src/host/task/backgroundTaskTerminal';
+
+
+describe('cron completion through the production terminal entry', () => {
+  it.each(['zh', 'en'] as const)('renders the stored cron title using notification locale %s', async (language) => {
+    vi.stubEnv('CODE_AGENT_NOTIFICATION_DRY_RUN', '1');
+    cronState.language = language;
+    await settleBackgroundOnTaskComplete('cron-session', 'cron-session', { summary: '周会纪要摘要已整理', duration: 500 });
+    const title = notificationService.getRecentNotifications().at(-1)?.title;
+    expect(title).toBe(language === 'zh' ? '任务完成 - [定时] 每晨整理周会纪要' : 'Task completed - [Schedule] 每晨整理周会纪要');
+    notificationService.clearRecentNotifications();
+    vi.unstubAllEnvs();
+    console.info(`settleBackgroundOnTaskComplete → notifyTaskComplete locale=${language} title=${title}`);
+  });
 });
