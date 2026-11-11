@@ -39,7 +39,7 @@ import { sealBouncedToolCalls } from './bouncedToolCallSeal';
 import { handleGoalCompletionGate } from './goalCompletionGate';
 import {
   fingerprintToolCall,
-  pushAndDetectStagnation,
+  detectStepStagnation,
   buildStagnationHint,
   buildStagnationStopMessage,
   pushAndDetectToolSpam,
@@ -964,7 +964,7 @@ export class MessageProcessor {
 
     if (fingerprints.length > 0) {
       noteStagnationFingerprint(this.ctx.sessionId, fingerprints[fingerprints.length - 1]);
-      const detection = pushAndDetectStagnation(this.guardState.recentToolFingerprints, fingerprints);
+      const detection = detectStepStagnation(this.guardState.recentToolFingerprints, toolCalls, fingerprints);
       if (detection.detected && !this.guardState.stagnationWarningEmitted) {
         logger.warn(
           `[Stagnation] detected ${detection.matchCount}× repeat of fingerprint ${detection.sameFingerprint} — injecting hint to model`,
