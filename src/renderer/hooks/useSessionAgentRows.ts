@@ -8,6 +8,7 @@
 
 import { useMemo } from 'react';
 import type { AgentTreeNode, AgentTreeOwnershipConflict } from '@shared/contract/agentTree';
+import { TASK_PANEL_DISMISSED_KEY } from '@shared/contract/backgroundTask';
 import type { PermissionRequest } from '@shared/contract/permission';
 import { useAgentTreeSnapshot } from './useAgentTreeSnapshot';
 import { useBackgroundTaskStore } from '../stores/backgroundTaskStore';
@@ -70,7 +71,7 @@ export function useSessionAgentRows(sessionId: string | null): SessionAgentRows 
 
   return useMemo(() => {
     const tasks = sessionId
-      ? allTasks.filter((task) => task.sessionId === sessionId)
+      ? allTasks.filter((task) => task.sessionId === sessionId && task.metadata?.[TASK_PANEL_DISMISSED_KEY] !== true)
       : [];
     const anchors = new Set<string>([
       ...members.map((member) => member.key),

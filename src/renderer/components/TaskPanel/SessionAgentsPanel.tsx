@@ -22,6 +22,7 @@ import { useAppStore } from '../../stores/appStore';
 import { useSwarmStore } from '../../stores/swarmStore';
 import { useComposerStore } from '../../stores/composerStore';
 import { useMemberViewStore } from '../../stores/memberViewStore';
+import { isTerminalTaskStatus } from '@shared/contract/backgroundTask';
 import { useBackgroundTaskStore } from '../../stores/backgroundTaskStore';
 import { useVoiceLiveRuntime } from '../../hooks/useVoiceLiveRuntime';
 import { deriveAgentMergeState } from '../../utils/agentMergeState';
@@ -66,10 +67,15 @@ export const SessionAgentsPanel: React.FC = () => {
   const [stoppingKey, setStoppingKey] = useState<string | null>(null);
   const [stopHintKey, setStopHintKey] = useState<string | null>(null);
   const [stoppingAll, setStoppingAll] = useState(false);
+  const [clearingFinished, setClearingFinished] = useState(false);
   const [eventsOpen, setEventsOpen] = useState(false);
 
   const mergeState = deriveAgentMergeState(rows, conflicts);
   const stoppableRows = rows.filter((row) => row.stoppable);
+  // 「清除已结束」只认后台任务行（kind=task + 终态）；成员/专家行不算
+  const hasEndedTaskRows = rows.some((row) => (
+    row.kind === 'task' && row.task !== undefined && isTerminalTaskStatus(row.task.status)
+  ));
   // 「暂无进展」提示需要一个会走的「现在」（agentRowStall）：节拍只在有 working 行时
   // 开，面板空闲/全部收尾即清，不给空闲会话留定时器（与 WorkflowInlineMonitor 同口径）。
   const anyWorking = rows.some((row) => row.status === 'working');
@@ -145,6 +151,18 @@ export const SessionAgentsPanel: React.FC = () => {
     }
   };
 
+  const clearFinished = async () => {
+    if (!sessionId || clearingFinished) return;
+    setClearingFinished(true);
+    try {
+      await useBackgroundTaskStore.getState().dismissEndedTasks(sessionId);
+    } catch {
+      // 清除失败时行原样留着，用户可再点；下一轮 3s 轮询会重新对齐
+    } finally {
+      setClearingFinished(false);
+    }
+  };
+
   const statusLabel = (row: AgentRow): string => {
     const labels = text.panel.status;
     if (row.hold === 'approval') return labels.needsApproval;
@@ -181,6 +199,17 @@ export const SessionAgentsPanel: React.FC = () => {
             className="rounded-md px-2 py-1 text-[11px] text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-badge-danger disabled:cursor-not-allowed disabled:opacity-50"
           >
             {stoppingAll ? text.stopAllStopping : text.stopAll}
+          </button>
+        )}
+        {hasEndedTaskRows && (
+          <button /* ds-allow:button: 面板顶部清除已结束与停止全部同档的超小文本按钮 */
+            type="button"
+            data-testid="agents-panel-clear-finished"
+            onClick={() => { void clearFinished(); }}
+            disabled={clearingFinished}
+            className="rounded-md px-2 py-1 text-[11px] text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {text.clearFinished}
           </button>
         )}
         <button /* ds-allow:button: 关闭右栏是图标级小按钮，Button primitive 无此紧凑图标变体 */
