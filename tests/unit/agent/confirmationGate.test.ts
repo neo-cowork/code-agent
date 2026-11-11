@@ -196,25 +196,50 @@ describe('ConfirmationGate', () => {
 
     it.each([
       { name: ' 文档主题整理 ', expected: '文档主题整理' },
-      { name: undefined, expected: 'Review all seven documents in：workspace one by one' },
-      { name: '   ', expected: 'Review all seven documents in：workspace one by one' },
-    ])('spawn_agent preview selects the user label and hides role and absolute paths ($name)', ({ name, expected }) => {
+      { name: undefined, expected: 'Review all seven documents in：/Users/example/project/workspace one by one' },
+      { name: '   ', expected: 'Review all seven documents in：/Users/example/project/workspace one by one' },
+    ])('spawn_agent preview keeps a user label and discloses the task and role ($name)', ({ name, expected }) => {
       const preview = getConfirmationGate().buildPreview('spawn_agent', {
         role: 'explore',
         name,
         task: ' Review all seven documents in：/Users/example/project/workspace one by one ',
       });
       expect(preview?.summary).toBe(`派出子代理：${expected}`);
-      expect(preview?.summary).not.toMatch(/explore|role|\/Users\//);
+      expect(preview?.summary).not.toMatch(/explore|role/);
+      expect(preview?.diff).toBe('Task: Review all seven documents in：/Users/example/project/workspace one by one\nRole: explore');
     });
 
-    it('shortens quoted POSIX, Windows and UNC paths before truncating the unnamed task', () => {
+    it('preserves POSIX, Windows and UNC targets in approval task details', () => {
       const task = String.raw`Read "/Users/example/My Documents/notes.md", C:\Users\example\workspace\ and \\server\share\report.md`;
       const preview = getConfirmationGate().buildPreview('spawn_agent', { role: 'explore', task });
-      expect(preview?.summary).toBe('派出子代理：Read "notes.md", workspace and report.md');
-      const longPath = `/Users/example/${'folder/'.repeat(40)}workspace`;
-      expect(getConfirmationGate().buildPreview('spawn_agent', { task: `Review ${longPath}` })?.summary)
-        .toBe('派出子代理：Review workspace');
+      expect(preview?.summary).toBe(`派出子代理：${task}`);
+      expect(preview?.diff).toBe(`Task: ${task}\nRole: explore`);
+    });
+
+    it.each(['spawn_agent', 'AgentSpawn'])('%s approval discloses the real task and authority despite a harmless name', (tool) => {
+      const preview = getConfirmationGate().buildPreview(tool, {
+        name: '整理文档',
+        role: 'coder',
+        task: '删除 /Users/example/prod 下全部文件',
+      });
+      expect(preview?.summary).toBe('派出子代理：整理文档');
+      expect(preview?.diff).toBe('Task: 删除 /Users/example/prod 下全部文件\nRole: coder');
+    });
+
+    it('preserves a filesystem root target in unnamed approval text', () => {
+      const preview = getConfirmationGate().buildPreview('spawn_agent', { task: 'Review /' });
+      expect(preview?.summary).toBe('派出子代理：Review /');
+      expect(preview?.diff).toBe('Task: Review /');
+    });
+
+    it('redacts task and role secrets before limiting the approval task text', () => {
+      const preview = getConfirmationGate().buildPreview('spawn_agent', {
+        name: '整理文档', task: `API_KEY=preview-secret ${'x'.repeat(250)}`, role: 'API_KEY=role-secret',
+      });
+      expect(preview?.diff).toContain('Task: API_KEY=');
+      expect(preview?.diff).toContain('\nRole: API_KEY=');
+      expect(preview?.diff).not.toMatch(/preview-secret|role-secret/);
+      expect(preview?.diff?.split('\n')[0]).toHaveLength('Task: '.length + 200);
     });
 
     it('keeps secret redaction on the selected spawn_agent name', () => {
@@ -225,7 +250,7 @@ describe('ConfirmationGate', () => {
       expect(preview?.summary).not.toContain('preview-secret');
     });
 
-    it('should omit parenthesis for spawn_agent when role is empty', () => {
+    it('limits the unnamed spawn_agent task label and details to 200 characters', () => {
       const preview = gate.buildPreview('spawn_agent', {
         role: '  ',
         task: 'x'.repeat(250),
@@ -233,6 +258,7 @@ describe('ConfirmationGate', () => {
       expect(preview).toBeDefined();
       expect(preview!.type).toBe('generic');
       expect(preview!.summary).toBe(`派出子代理：${'x'.repeat(200)}`);
+      expect(preview!.diff).toBe(`Task: ${'x'.repeat(200)}`);
     });
 
     it('should return generic preview with up to 3 redacted string param diff lines for default tools', () => {

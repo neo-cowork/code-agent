@@ -45,19 +45,6 @@ function normalizeString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function shortenSubagentPreviewPaths(label: string): string {
-  // Quoted paths may contain spaces. Preserve surrounding prose and punctuation.
-  return label.replace(
-    /(^|[\s("'`=：，；（【[<])((?:[A-Za-z]:[\\/]|\/|\\\\)[^\s"'`<>，。；！？,;!?()）】\]]*|["'`](?:[A-Za-z]:[\\/]|\/|\\\\)[^"'`\n]+["'`])/g,
-    (_match, prefix: string, path: string) => {
-      const quote = /^["'`]/.test(path) ? path[0] : '';
-      const unquoted = quote ? path.slice(1, -1) : path;
-      const segments = unquoted.replace(/[\\/]+$/, '').split(/[\\/]/);
-      return `${prefix}${quote}${segments.at(-1) || ''}${quote}`;
-    },
-  );
-}
-
 function normalizeStringList(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value
@@ -265,13 +252,17 @@ export class ConfirmationGate {
         };
       }
 
-      case 'spawn_agent': {
-        const label = shortenSubagentPreviewPaths(
-          redactCommandSecrets(resolveSubagentUserLabel(params)),
-        ).slice(0, 200);
+      case 'spawn_agent':
+      case 'AgentSpawn': {
+        const label = redactCommandSecrets(resolveSubagentUserLabel(params)).slice(0, 200);
+        const details: string[] = [];
+        // Approval must disclose the task and authority independently of the label.
+        pushDetail(details, 'Task', redactCommandSecrets(normalizeString(params.task)).slice(0, 200));
+        pushDetail(details, 'Role', redactCommandSecrets(normalizeString(params.role)));
         return {
           type: 'generic',
           summary: `派出子代理：${label}`,
+          diff: details.join('\n'),
         };
       }
 
