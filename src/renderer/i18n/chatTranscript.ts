@@ -3,6 +3,7 @@ import { turnCheckoutChatEn, turnCheckoutChatZh } from './turnCheckout';
 import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 import { toolStepVerbsEn, toolStepVerbsZh } from './toolStepVerbs';
 import { turnRailEn, turnRailZh } from './turnRail';
+import { projectTrustTurnCardEn, projectTrustTurnCardZh, projectTrustTurnRunEn, projectTrustTurnRunZh } from './projectTrust';
 import { chatErrorCopyEn, chatErrorCopyZh } from './chatErrorCopy';
 export const chatTranscriptZh = {
   ...turnRailZh,
@@ -361,6 +362,7 @@ turnCard: {
   collapseTurn: '折叠本轮',
   expandTurn: '展开本轮',
   sendFailed: '没发出去',
+  ...projectTrustTurnCardZh,
   recoveredFromRecord: '这条消息由运行记录还原，可能和你的原话略有出入',
   editAndResend: '编辑重发',
   fork: '创建分支',
@@ -437,6 +439,7 @@ turnRun: {
   cleanupBadge: '清理中',
   outputsSignal: '{count} 个产出',
   toolsSignal: '{count} 次工具调用',
+  ...projectTrustTurnRunZh,
 },
 ...chatErrorCopyZh,
 // 实时预览诊断条（LivePreviewFrame）——frameError 原文 + CSP snippet 折叠在
@@ -860,6 +863,7 @@ turnCard: {
   collapseTurn: 'Collapse this turn',
   expandTurn: 'Expand this turn',
   sendFailed: 'Not sent',
+  ...projectTrustTurnCardEn,
   recoveredFromRecord: 'Restored from the run history; it may differ slightly from what you wrote',
   editAndResend: 'Edit and resend',
   fork: 'Fork',
@@ -938,6 +942,7 @@ turnRun: {
   cleanupBadge: 'cleanup',
   outputsSignal: '{count} outputs',
   toolsSignal: '{count} tool calls',
+  ...projectTrustTurnRunEn,
 },
 
 ...chatErrorCopyEn,

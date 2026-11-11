@@ -14,6 +14,11 @@ const tmpConfigDir = path.join(os.tmpdir(), `cap-notice-${process.pid}`);
 vi.mock('../../../src/host/config/configPaths', () => ({
   getUserConfigDir: () => tmpConfigDir,
 }));
+// 兜底名语言档（FU1 ⑦）：readUiLanguage 从这里注入
+const uiState = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }));
+vi.mock('../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({ getSettings: () => ({ ui: { language: uiState.language } }) }),
+}));
 
 import { buildCapabilityCandidateNotice } from '../../../src/host/agent/capabilityCandidateNotice';
 import { getCapabilityCandidateStore } from '../../../src/host/services/skills/capabilityCandidateStore';
@@ -48,6 +53,7 @@ function seedAboveFoldCandidate(): void {
 
 beforeEach(() => {
   getCapabilityCandidateStore().resetForTests();
+  uiState.language = 'zh';
 });
 
 describe('候选能力注入', () => {
@@ -92,5 +98,21 @@ describe('候选能力注入', () => {
     seedAboveFoldCandidate();
     expect(buildCapabilityCandidateNotice(undefined)).toBeNull();
     expect(buildCapabilityCandidateNotice(null)).toBeNull();
+  });
+
+  it('兜底名跟随原话语言：英文原话的候选注入英文名（与模型路径同一规则）', () => {
+    // en UI + 英文原话：没起过模型名，notice 里的兜底名是英文
+    uiState.language = 'en';
+    const steps = [
+      step('bash', 'screencapture -x a.png'),
+      step('bash', 'tesseract a.png out'),
+      step('write_file'),
+    ];
+    observeTurn({ userMessage: 'turn the tables in these screenshots into Excel', steps, tokens: 30_000 }, T0);
+    observeTurn({ userMessage: 'convert another batch', steps, tokens: 30_000 }, T0 + 1000);
+    const notice = buildCapabilityCandidateNotice('s-en');
+    expect(notice).toContain('Capture and analyze the screen');
+    expect(notice).not.toContain('截取并分析屏幕');
+    expect(notice).toContain('已拼凑 2 次');
   });
 });
