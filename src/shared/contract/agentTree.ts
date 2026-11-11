@@ -79,6 +79,8 @@ export interface AgentTreeNode {
   role: string;
   displayName?: string;
   background?: boolean;
+  /** Stable registry id retained when this node uses the execution-context id. */
+  backgroundAgentId?: string;
   status: AgentTreeNodeStatus;
   statusLabel: string;
   parentId?: string;
