@@ -13,9 +13,9 @@ function focusCronCloudSection(): void {
 }
 
 /** Open the sole cloud scheduler (webhook delivery) configuration home and bring it into view. */
-export function openCloudCronSettings(): void {
-  // 带返回落点：用户关掉设置（X / Esc）时直接回自动化页，编辑器凭暂存草稿重开。
-  useAppStore.getState().openSettingsWithReturn('general', 'cronCenter');
+export function openCloudCronSettings(returnTo: 'cronCenter' | 'chat' = 'cronCenter'): void {
+  // 关闭设置后回来源页面；调用方负责暂存并恢复创建草稿。
+  useAppStore.getState().openSettingsWithReturn('general', returnTo);
   // GeneralSettings is lazy-loaded; same two-shot focus as openBudgetSettings.
   window.setTimeout(focusCronCloudSection, 0);
   window.setTimeout(focusCronCloudSection, 200);

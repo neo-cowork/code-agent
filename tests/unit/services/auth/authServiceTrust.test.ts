@@ -1,3 +1,6 @@
+import crypto from 'node:crypto';
+import path from 'node:path';
+import { getUserConfigDir } from '../../../../src/host/config/configPaths';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -15,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   },
   storage: {
     get: vi.fn(),
+    hasStoredSupabaseSession: vi.fn(),
     set: vi.fn(),
     delete: vi.fn(),
     clearSessionFromKeychain: vi.fn(),
@@ -54,7 +58,7 @@ vi.mock('../../../../src/host/services/infra/logger', () => ({
 
 describe('authService session trust', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     vi.resetModules();
     mocks.isSupabaseInitialized.mockReturnValue(false);
     mocks.ensureSupabaseInitialized.mockImplementation(() => {
@@ -76,15 +80,44 @@ describe('authService session trust', () => {
     });
     mocks.storage.clearSessionFromKeychain.mockResolvedValue(undefined);
     mocks.storage.hasAnyPastLoginTrace.mockReturnValue(false);
-    mocks.storage.get.mockReturnValue(JSON.stringify({
+    mocks.storage.hasStoredSupabaseSession.mockResolvedValue(false);
+    mocks.storage.get.mockImplementation((key) => key === 'auth.user' ? JSON.stringify({
       id: 'admin-1',
       email: 'admin@example.com',
       isAdmin: true,
-    }));
+    }) : undefined);
   });
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+
+  it.each(['different', 'matching', 'missing'] as const)('data directory marker %s: warn only on mismatch without identity details', async (kind) => {
+    const currentHash = crypto.createHash('sha256').update(path.resolve(process.env.CODE_AGENT_DATA_DIR || getUserConfigDir())).digest('hex').slice(0, 12);
+    const values = new Map<string, string>([['auth.user', JSON.stringify({ id: 'marker-user', email: 'marker-private@example.test', nickname: 'Riley' })]]);
+    if (kind !== 'missing') values.set('auth.dataDirHash', kind === 'matching' ? currentHash : '012345abcdef');
+    mocks.storage.get.mockImplementation((key) => values.get(key));
+    mocks.storage.set.mockImplementation((key, value) => values.set(key, value));
+    const { getAuthService } = await import('../../../../src/host/services/auth/authService');
+    await getAuthService().initialize();
+    const warns = mocks.logger.warn.mock.calls.filter(([, fields]) => fields?.reason === 'data_dir_mismatch');
+    expect(warns).toHaveLength(kind === 'different' ? 1 : 0);
+    if (kind === 'different') {
+      expect(warns[0]).toEqual(['Auth restored login degraded to signed-out', {
+        reason: 'data_dir_mismatch', hadCachedIdentity: true,
+        cachedDataDirHash: '012345abcdef', currentDataDirHash: currentHash,
+      }]);
+      console.log(warns[0][0], JSON.stringify(warns[0][1]));
+    } else {
+      expect(values.get('auth.dataDirHash')).toBe(currentHash);
+      console.log(`data directory marker ${kind}: data_dir_mismatch warns=0`);
+    }
+    const serialized = JSON.stringify(warns);
+    expect(serialized).not.toContain('marker-private@example.test');
+    expect(serialized).not.toContain('marker-user');
+    expect(serialized).not.toContain(path.resolve(process.env.CODE_AGENT_DATA_DIR || getUserConfigDir()));
+    expect(getAuthService().getCurrentUser()?.nickname).toBe('Riley');
   });
 
   it('treats cached users as unverified and clears them on sign out without Supabase', async () => {
