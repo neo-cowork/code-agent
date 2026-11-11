@@ -328,10 +328,8 @@ function getReloadStorage(): Storage | null {
   }
 }
 
-function clearAuthTokenReloadAttempt(): void {
-  getReloadStorage()?.removeItem(AUTH_RELOAD_ATTEMPT_KEY);
-}
-
+// One automatic reload per tab. Unrelated successful requests must not re-arm
+// this guard while a particular read is still failing; the error UI offers Retry.
 function scheduleAuthTokenReloadOnce(): boolean {
   const storage = getReloadStorage();
   if (storage?.getItem(AUTH_RELOAD_ATTEMPT_KEY) === '1') {
@@ -695,7 +693,6 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
             { status: response.status, ...(errorCode ? { code: errorCode } : {}), rawErrorBody: errorMessage || errorBody },
           );
         }
-        clearAuthTokenReloadAttempt();
 
         // 读取 SSE 流并分发事件到 listeners
       if (response.body) {
@@ -903,7 +900,6 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
             httpFailureMessage({ status: response.status, code: parseHttpErrorCode(errorBody), language: useAppStore.getState().language }),
           ) as ReturnType<IpcInvokeHandlers[K]>;
         }
-        clearAuthTokenReloadAttempt();
 
         const contentType = response.headers.get('content-type');
         if (contentType?.includes('application/json')) {
@@ -1040,7 +1036,6 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
           body: JSON.stringify({ filePath: _filePath }),
         });
         if (res.ok) {
-          clearAuthTokenReloadAttempt();
           return normalizePdfResult(await readJsonResponse(res));
         }
         const errorBody = await res.text();
@@ -1057,7 +1052,6 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
           body: JSON.stringify({ filePath: _filePath }),
         });
         if (res.ok) {
-          clearAuthTokenReloadAttempt();
           return normalizeExcelTextResult(await readJsonResponse(res));
         }
         const errorBody = await res.text();
@@ -1074,7 +1068,6 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
           body: JSON.stringify({ filePath: _filePath }),
         });
         if (res.ok) {
-          clearAuthTokenReloadAttempt();
           return normalizeExcelJsonResult(await readJsonResponse(res));
         }
         const errorBody = await res.text();
@@ -1091,7 +1084,6 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
           body: JSON.stringify({ filePath: _filePath }),
         });
         if (res.ok) {
-          clearAuthTokenReloadAttempt();
           return normalizeDocxHtmlResult(await readJsonResponse(res));
         }
         const errorBody = await res.text();
@@ -1108,7 +1100,6 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
           body: JSON.stringify({ audioData: _audioData, mimeType: _mimeType, ...(_options ?? {}) }),
         });
         if (res.ok) {
-          clearAuthTokenReloadAttempt();
           return normalizeTranscribeResult(await readJsonResponse(res));
         }
         const errorBody = await res.text();
@@ -1163,7 +1154,6 @@ export function createHttpDomainAPI(baseUrl: string): DomainAPI {
         });
 
         if (res.ok) {
-          clearAuthTokenReloadAttempt();
           return readJsonResponse(res) as Promise<IPCResponse<T>>;
         }
 

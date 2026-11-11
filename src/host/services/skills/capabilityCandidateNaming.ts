@@ -13,6 +13,8 @@ import { CAPABILITY_CANDIDATES } from '../../../shared/constants';
 import type { CapabilityCandidateRecord } from '../../../shared/contract/capabilityCandidate';
 import { getCapabilityCandidateStore } from './capabilityCandidateStore';
 import { createLogger } from '../infra/logger';
+import { detectMessageLanguage, type SessionTitleLanguage } from '../../../shared/sessionTitlePrompt';
+import { readUiLanguage } from '../../session/sessionTitleHostPrompt';
 
 const logger = createLogger('CapabilityCandidateNaming');
 
@@ -48,7 +50,9 @@ function fallbackSummary(name: string): string {
   return `按用户要求${name}`;
 }
 
-function buildPrompt(records: CapabilityCandidateRecord[]): string {
+const NAMING_LANGUAGE_LABEL: Record<SessionTitleLanguage, string> = { zh: '中文', en: 'English' };
+
+function buildPrompt(records: CapabilityCandidateRecord[], uiLanguage: SessionTitleLanguage): string {
   const items = records.map((record, index) => [
     `[${index + 1}]`,
     `重复次数：${record.occurrences}`,
@@ -57,6 +61,8 @@ function buildPrompt(records: CapabilityCandidateRecord[]): string {
     record.sampleUserMessages.length > 0
       ? `用户当时说的话：${record.sampleUserMessages.join(' / ')}`
       : '用户原话：无',
+    // 与会话标题同一规则：跟随用户原话的语言，判不出才用界面语言
+    `名字和说明的语言：${NAMING_LANGUAGE_LABEL[detectMessageLanguage(record.sampleUserMessages.join(' ')) ?? uiLanguage]}`,
   ].join('\n')).join('\n\n');
 
   return [
@@ -64,8 +70,9 @@ function buildPrompt(records: CapabilityCandidateRecord[]): string {
     '请给每一条起一个「人话名字」，并写一句「它是什么」。',
     '',
     '要求：',
-    '- 名字 ≤ 12 个字，用做事的说法（例：把截图里的表格转成 Excel），不要用工具名、不要用英文命令名。',
-    '- 说明 ≤ 30 个字，说清这件事是干什么的。',
+    '- 名字 ≤ 12 个字（英文 ≤ 6 个词），用做事的说法（例：把截图里的表格转成 Excel），不要用工具名、不要用命令名。',
+    '- 说明 ≤ 30 个字（英文 ≤ 15 个词），说清这件事是干什么的。',
+    '- 名字和说明用每条标注的「名字和说明的语言」写。',
     '- 不要评价值不值得做、不要排优先级、不要建议怎么实现。',
     '- 严格输出 JSON 数组，不要代码块围栏，格式：',
     '  [{"index":1,"name":"...","summary":"..."}]',
@@ -105,7 +112,7 @@ export async function fillMissingNames(records: CapabilityCandidateRecord[]): Pr
   try {
     const { quickTask, isQuickModelAvailable } = await import('../../model/quickModel');
     if (isQuickModelAvailable()) {
-      const result = await quickTask(buildPrompt(modelPending), NAMING_MAX_TOKENS);
+      const result = await quickTask(buildPrompt(modelPending, readUiLanguage()), NAMING_MAX_TOKENS);
       if (result.success && result.content) {
         content = result.content;
       } else {
