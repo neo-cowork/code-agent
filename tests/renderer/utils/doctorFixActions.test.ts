@@ -4,10 +4,13 @@
 // 新增 code 缺映射时 Object.keys 覆盖断言与 Record 类型会一起红。
 // ============================================================================
 
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { DOCTOR_FIX_CODES, type DoctorFixCode } from '../../../src/shared/constants/doctor';
 import { AGENT_NEO_HELP_URL } from '../../../src/shared/constants/network';
-import { DOCTOR_FIX_ACTIONS } from '../../../src/renderer/utils/doctorFixActions';
+import { DOCTOR_FIX_ACTIONS, runDoctorFix } from '../../../src/renderer/utils/doctorFixActions';
+
+import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { SETTINGS_TAB_IDS } from '../../../src/renderer/utils/settingsTabs';
 
 describe('DOCTOR_FIX_ACTIONS 映射表', () => {
   it('8 个 fix code 逐一映射到预期动作（枚举式）', () => {
@@ -31,8 +34,8 @@ describe('DOCTOR_FIX_ACTIONS 映射表', () => {
       tab: 'mcp',
     });
     expect(DOCTOR_FIX_ACTIONS[DOCTOR_FIX_CODES.OPEN_BROWSER_RELAY_SETTINGS]).toEqual({
-      kind: 'settingsTab',
-      tab: 'privacy',
+      kind: 'localOps',
+      tab: 'browser',
     });
     expect(DOCTOR_FIX_ACTIONS[DOCTOR_FIX_CODES.OPEN_HOOKS_SETTINGS]).toEqual({
       kind: 'settingsTab',
@@ -49,5 +52,39 @@ describe('DOCTOR_FIX_ACTIONS 映射表', () => {
     // 后端契约固定 8 个 code；新增 code 时这里先红，提醒补映射
     expect(allCodes).toHaveLength(8);
     expect(Object.keys(DOCTOR_FIX_ACTIONS).sort()).toEqual([...allCodes].sort());
+  });
+});
+
+describe('runDoctorFix 落点', () => {
+  beforeEach(() => {
+    useAppStore.setState({ showSettings: true, showLocalOpsPanel: false, localOpsTab: 'desktop' });
+  });
+
+  it('OPEN_BROWSER_RELAY_SETTINGS 关掉设置并打开本机操作页浏览器 tab（重复点击结果一致）', async () => {
+    for (let i = 0; i < 2; i += 1) {
+      useAppStore.setState({ showSettings: true });
+      const result = await runDoctorFix(DOCTOR_FIX_CODES.OPEN_BROWSER_RELAY_SETTINGS);
+      expect(result.navigatedAway).toBe(true);
+      expect(useAppStore.getState()).toMatchObject({
+        showSettings: false,
+        showLocalOpsPanel: true,
+        localOpsTab: 'browser',
+      });
+    }
+  });
+
+  it('所有 fix code 的落点都是真实页面；relay/MCP/hooks/update/model 都不落在 privacy', () => {
+    const settingsTabs = new Set<string>(SETTINGS_TAB_IDS);
+    for (const code of Object.values(DOCTOR_FIX_CODES) as DoctorFixCode[]) {
+      const action = DOCTOR_FIX_ACTIONS[code];
+      if (action.kind === 'settingsTab') {
+        expect(settingsTabs.has(action.tab), code).toBe(true);
+        expect(action.tab, code).not.toBe('privacy');
+      } else if (action.kind === 'localOps') {
+        expect(['desktop', 'browser'], code).toContain(action.tab);
+      } else if (action.kind === 'externalLink') {
+        expect(action.url, code).toMatch(/^https?:\/\//);
+      }
+    }
   });
 });
