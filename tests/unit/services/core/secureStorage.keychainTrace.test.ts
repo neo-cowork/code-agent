@@ -13,7 +13,7 @@ const keytarState = vi.hoisted(() => ({
 
 const keytarMock = vi.hoisted(() => ({
   setPassword: vi.fn(async () => undefined),
-  getPassword: vi.fn(async () => null),
+  getPassword: vi.fn(async (_service: string, _account: string): Promise<string | null> => null),
   deletePassword: vi.fn(async () => true),
 }));
 
@@ -133,7 +133,7 @@ describe('SecureStorage Keychain degrade trace reasons (FB 03)', () => {
     storage.set('device.id', 'device-1');
     expect(storage.hasAnyPastLoginTrace()).toBe(false);
 
-    storage.set('sb-projectref-auth-token', '{"stub":true}');
+    storage.set('sb-projectref-auth-token' as never,'{"stub":true}');
     expect(storage.hasAnyPastLoginTrace()).toBe(true);
 
     storage.delete('sb-projectref-auth-token' as never);
