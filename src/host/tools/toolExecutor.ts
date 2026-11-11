@@ -30,7 +30,7 @@ import {
   stripSensitiveStepParams,
 } from '../permissions/cuaSensitiveStep';
 import { resolvePreAskGrant } from '../permissions/preAskGrant';
-import { requiresScheduleWriteGrant } from '../cron/cronWriteGrant';
+import { classifyFileWrite } from './fileWriteClassification';
 import { createLogger } from '../services/infra/logger';
 import { getAuditLogger, maskSensitiveData, isKnownSafeCommand, validateCommand, getShellSafetyMode, getExecPolicyStore, getPolicyEnforcer, type PolicyEnforcer, type PolicyCheckResult, type ValidationResult } from '../security';
 import { evaluateToolSlotDataDirAccess, FOREIGN_SLOT_DATA_DIR_CODE, type SlotDataDirAccess } from '../security/slotDataDirGuard';
@@ -1733,7 +1733,11 @@ export class ToolExecutor {
     }
 
     // Check permission if required
-    const scheduleWriteGrantRequired = await requiresScheduleWriteGrant(this.buildPermissionRequest(toolDef, params), effectiveSessionId, this.executionCwd, this.writeWorkspaceRoot);
+    const scheduledWrite = await classifyFileWrite(policyToolName, params, {
+      sessionId: effectiveSessionId, toolDefinition: toolDef, workingDirectory: this.executionCwd,
+      workspaceRoot: this.writeWorkspaceRoot, permissionLevel: toolDef.permissionLevel,
+    }, permStartTime);
+    const scheduleWriteGrantRequired = Boolean(scheduledWrite?.scheduleWriteTargets);
     // Skill 系统：预授权工具跳过普通权限检查（但不能跳过边界违规或 consequence hard deny）
     const isPreApproved = !boundaryViolation
       && !scheduleWriteGrantRequired
@@ -1806,7 +1810,7 @@ export class ToolExecutor {
         }
       }
     }
-    if ((toolDef.requiresPermission || readArgumentForcesClassification || cuaAppGrantForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk) && (commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || protectedWriteForcesConfirmation || policyForcesConfirmation || unresolvedWriteTargetForcesAsk || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk || (!isPreApproved && !isSafeCommand))) {
+    if ((toolDef.requiresPermission || scheduleWriteGrantRequired || readArgumentForcesClassification || cuaAppGrantForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk) && (scheduleWriteGrantRequired || commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || protectedWriteForcesConfirmation || policyForcesConfirmation || unresolvedWriteTargetForcesAsk || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk || (!isPreApproved && !isSafeCommand))) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
       // 信任边界 ask（W3 写边界）→ forceConfirm：终审层便利放行必须让路（同 directory_access）。
@@ -1878,6 +1882,8 @@ export class ToolExecutor {
           const workspaceRoot = this.writeWorkspaceRoot;
           const classification: ClassificationResult = await resolveToolPermissionClassification({
             executionToolName,
+            sessionId: effectiveSessionId,
+            toolDefinition: toolDef,
             policyToolName,
             params,
             policyForcesConfirmation,
@@ -2097,6 +2103,9 @@ export class ToolExecutor {
         commandValidation,
         commandRiskUnknown ? 'unknown' : knownAskCommandRisk,
       );
+      // Never trust an identically named model argument in the default request branch.
+      delete permissionRequest.details.scheduleWriteTargets;
+      if (scheduleWriteGrantRequired) permissionRequest.details.scheduleWriteTargets = scheduledWrite?.scheduleWriteTargets;
       if (pluginOrigin) {
         Object.assign(permissionRequest.details, pluginOrigin);
       } else if (pluginId) {

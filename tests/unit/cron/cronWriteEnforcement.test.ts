@@ -41,6 +41,11 @@ import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestrat
 import { mintToolRunGrant } from '../../../src/host/permissions/toolGrantStore';
 import { resetPermissionModeManager } from '../../../src/host/permissions/modes';
 import { resolveSessionDefaultModelConfig } from '../../../src/host/services/core/sessionDefaults';
+import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
+import { getAllToolDefinitions } from '../../../src/host/tools/dispatch/toolDefinitions';
+import { getPermissionClassifier } from '../../../src/host/tools/permissionClassifier';
+import { getPermissionModeManager } from '../../../src/host/permissions/modes';
+import { resolveToolWriteTargets } from '../../../src/host/tools/writeTargets';
 import { getToolCache } from '../../../src/host/services/infra/toolCache';
 
 afterAll(() => {
@@ -227,3 +232,92 @@ describe('scheduled Office writes (path from file_path | path | output_path) obe
     await revoked.promise;
   });
 });
+
+// Iterate production registrations, not a second list of guarded tool names. The
+// attended classifier identifies W1's file class; every such tool must park, even
+// with skill/tool grants and bypassPermissions trying to shortcut confirmation.
+it('registry-wide: no workspace-file classifier approval can bypass scheduled consent', async () => {
+  getProtocolRegistry();
+  const classifier = getPermissionClassifier({ enableLlm: false });
+  const task = await job();
+  const definition = cron.getJob(task.id)!;
+  const session = await createCronAgentSession(definition, definition.action);
+  const audit: string[] = [];
+  let checked = 0;
+  for (const tool of getAllToolDefinitions()) {
+    getPermissionModeManager().setSessionMode(session.id, 'default');
+    const params: Record<string, unknown> = {
+      file_path: path.join(folder, 'report.md'), path: path.join(folder, 'report.md'),
+      output_path: path.join(folder, 'report.docx'), notebook_path: path.join(folder, 'report.ipynb'),
+      file: path.join(folder, 'report.html'), filename: 'report.md',
+      new_source: 'Meeting notes', line: 1, userIntent: 'Update the meeting heading', action: 'write',
+      code: 'print(1)', script: 'print(1)', slides: [], prompt: 'Daily report', topic: 'Daily sales report',
+      content: 'Daily report', title: 'Daily sales', data: 'item,sales\nnotes,1',
+      edits: [{ old_text: 'Monday', new_text: 'Tuesday' }],
+      operations: [{ action: 'set_cell', cell: 'A1', value: 1 }],
+      command: 'printf meeting > notes.md', input: 'printf meeting > notes.md',
+    };
+    for (const descriptor of tool.pathAuthority ?? []) {
+      if (descriptor.kind !== 'path') continue;
+      params[descriptor.pathParameter] = path.join(folder, 'report.md');
+      if (descriptor.whenParameter) params[descriptor.whenParameter] = descriptor.whenValues?.[0];
+    }
+    const context = { workingDirectory: folder, workspaceRoot: folder, permissionLevel: tool.permissionLevel, toolDefinition: tool };
+    const attended = await classifier.classify(tool.name, params, context);
+    const scheduled = await classifier.classify(tool.name, params, { ...context, sessionId: session.id });
+    const assessment = resolveToolWriteTargets({ definition: tool, params, workingDirectory: folder });
+    const workspaceFile = attended.decision === 'approve' && attended.reason === '写入项目目录内';
+    const candidate = tool.permissionLevel !== 'read' || tool.pathAuthority?.length || workspaceFile;
+    if (!candidate) continue;
+    if (!workspaceFile) {
+      let proof = 'report-only; outside W1 file class; not dispatched';
+      if (tool.requiresPermission && scheduled.decision === 'ask'
+        && ['notebook_edit', 'visual_edit', 'ppt_edit', 'ppt_generate', 'Bash'].includes(tool.name)) {
+        getPermissionModeManager().setSessionMode(session.id, 'default');
+        const executor = new ToolExecutor({ workingDirectory: folder, requestPermission: (request) => island.requestPermission(request) });
+        executor.setAuditEnabled(false);
+        let settled: Awaited<ReturnType<ToolExecutor['execute']>> | undefined;
+        process.stdout.write(`REPORT-ONLY EXECUTOR ${tool.name}\n`);
+        const promise = executor.execute(tool.name, params, { sessionId: session.id }).then((result) => { settled = result; return result; });
+        await vi.waitFor(() => {
+          expect(Boolean(settled) || state.db!.getPendingApprovalRepo().listByKindAndStatus('tool_approval', 'pending').length > 0).toBe(true);
+        }, { timeout: 5000 });
+        const row = state.db!.getPendingApprovalRepo().listByKindAndStatus('tool_approval', 'pending')[0];
+        if (row) {
+          proof = 'report-only; parks: ToolExecutor + SQLite pending row';
+          island.resolveParkedApproval(row.id, 'deny');
+        } else {
+          proof = `report-only; executor settled before park: success=${settled?.success}; ${settled?.error ?? ''}`;
+        }
+        await promise;
+      }
+      audit.push(`${tool.name} | ${tool.permissionLevel} | ${JSON.stringify(tool.pathAuthority ?? [])} | ${scheduled.decision} | ${proof}`);
+      continue;
+    }
+    checked += 1;
+    // The same file class with a new descriptor key must still require consent.
+    const renamed = await classifier.classify(tool.name, { destination: path.join(folder, 'renamed.md') }, {
+      ...context, sessionId: session.id,
+      toolDefinition: { ...tool, pathAuthority: [{ kind: 'path', pathParameter: 'destination', mutation: 'overwrite' }] },
+    });
+    expect(renamed.decision, `${tool.name}: new descriptor key`).toBe('ask');
+    expect(renamed.scheduleWriteTargets, tool.name).toEqual([path.join(folder, 'renamed.md')]);
+    expect(scheduled.decision, tool.name).toBe('ask');
+    expect(scheduled.scheduleWriteTargets, tool.name).toEqual(assessment.targets);
+    // No local handler runs: the real permission island must persist the park first.
+    mintToolRunGrant(session.id, tool.name);
+    getPermissionModeManager().setSessionMode(session.id, 'bypassPermissions', true);
+    const executor = new ToolExecutor({ workingDirectory: folder, requestPermission: (request) => island.requestPermission(request) });
+    executor.setAuditEnabled(false);
+    const promise = executor.execute(tool.name, params, { sessionId: session.id, preApprovedTools: new Set([tool.name]) });
+    const row = await parked();
+    expect(JSON.parse(row.payloadJson).tool, tool.name).toBe(tool.name);
+    expect(existsSync(path.join(folder, 'report.md')), tool.name).toBe(false);
+    island.resolveParkedApproval(row.id, 'deny');
+    expect((await promise).success, tool.name).toBe(false);
+    audit.push(`${tool.name} | ${tool.permissionLevel} | ${JSON.stringify(tool.pathAuthority ?? [])} | ask | parks: ToolExecutor + SQLite pending row; denied before handler`);
+  }
+  expect(checked).toBeGreaterThan(0);
+  process.stdout.write('REGISTRY AUDIT (tool | permission | descriptors | no-grant classification | executor proof)\n' + audit.join('\n') + '\n');
+  process.stdout.write(`REGISTRY GUARDED COUNT ${checked}\n`);
+}, 120000);
