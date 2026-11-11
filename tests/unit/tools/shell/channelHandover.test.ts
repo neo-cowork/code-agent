@@ -259,6 +259,22 @@ posixOnly('channel 会话短档超时 handover（真实建档/真实收编）', 
     });
   }, 15_000);
 
+  it('② 跑过 10 分钟的后台任务不被清扫：仍是 running，没有终态通知（上限是 30 分钟）', async () => {
+    const sessionId = await createChannelSession();
+    const ledger = new BackgroundTaskLedger();
+    detachAdapters = installBackgroundTaskEventAdapters(ledger);
+    const taskId = await adoptSleeper(sessionId);
+
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.now() + 11 * 60 * 1000);
+    cleanupTimedOutTasks();
+    vi.useRealTimers();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    expect(getAllBackgroundTasks().find((task) => task.taskId === taskId)?.status).toBe('running');
+    expect(ledger.drainNotifications(sessionId)).toHaveLength(0);
+  }, 15_000);
+
   it('③ 用户 Stop 同类任务：通知是 task_cancelled，payload 不带 reason: timeout', async () => {
     const sessionId = await createChannelSession();
     const ledger = new BackgroundTaskLedger();
