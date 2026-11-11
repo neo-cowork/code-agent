@@ -46,5 +46,6 @@ export interface EnvAssistActRequest {
 }
 
 export interface EnvAssistActResult {
-  status: 'opened' | 'not_available' | 'rejected';
+  status: 'opened' | 'not_available' | 'rejected' | 'checked';
+  outcome?: { status: 'granted' | 'denied' | 'undecided' | 'not_running' } | { status: 'unavailable'; reason: string };
 }
