@@ -83,8 +83,9 @@ export async function backfillCronWriteScopes(updatedAt = Date.now()): Promise<v
 
 /** Connector / MCP / external-side-effect tools: a local folder grant never covers them. */
 export function isNonLocalWriteTool(toolName: string | undefined): boolean {
-  return Boolean(toolName) && (isConnectorToolName(toolName!) || isMcpToolName(toolName!)
-    || toolName!.startsWith('mcp:') || toolName === 'MCPUnified' || isExternalSideEffectTool(toolName!));
+  if (!toolName) return false;
+  return isConnectorToolName(toolName) || isMcpToolName(toolName)
+    || toolName.startsWith('mcp:') || toolName === 'MCPUnified' || isExternalSideEffectTool(toolName);
 }
 
 /** Session authority only; file classification owns the workspace/path decision. */
