@@ -1,0 +1,61 @@
+{
+  "channel": "agent:event",
+  "args": {
+    "type": "permission_request",
+    "data": {
+      "sessionId": "web-session-a78f5682-aba9-4ded-8635-b8bbd9c8192d",
+      "agentId": "agent_coder_68383d55-02e7-430c-8cd9-bf23f13140b0",
+      "runId": "run-6fde433d-ba92-420e-a9f4-decc6d06be78",
+      "parentToolUseId": "call_04cdb7310f294bc28f4da78c",
+      "forceConfirm": true,
+      "type": "command",
+      "tool": "Bash",
+      "details": {
+        "command": "sleep 600 && echo done",
+        "commandRiskLevel": "safe",
+        "commandSecurityFlags": [],
+        "projectId": "legacy-background-authority",
+        "sourceId": "legacy-background-primary",
+        "sourceRole": "primary",
+        "sourceAccess": "read_write",
+        "relativePathWithinSource": "",
+        "workspaceScopeVersion": "22b95c63ace879598939681fe580624c529ae15f29f99c0ab1c373318af4ec50",
+        "sandbox": {
+          "applied": true,
+          "degraded": false,
+          "code": "OS_SANDBOX_APPLIED"
+        },
+        "preview": {
+          "type": "command",
+          "summary": "sleep 600 && echo done"
+        }
+      },
+      "reason": "Execute shell command",
+      "decisionTrace": {
+        "toolName": "Bash",
+        "finalOutcome": "ask",
+        "steps": [
+          {
+            "layer": "guard_fabric",
+            "rule": "topology: bash/async_agent",
+            "result": "ask",
+            "reason": {
+              "code": "DECISION_GUARD",
+              "modelText": "topology rule: bash not allowed in async_agent context"
+            },
+            "durationMs": 0,
+            "timestamp": 1794326463117
+          }
+        ],
+        "totalDurationMs": 19
+      },
+      "ledgerRecordedByChild": true,
+      "id": "perm-a8d868b1-1045-4686-b76c-dc3a3a54eefa",
+      "timestamp": 1794326463137
+    },
+    "streamEpoch": "http:91cae3bb-c5c8-4289-b534-7043a4d4f0ca",
+    "sessionId": "web-session-a78f5682-aba9-4ded-8635-b8bbd9c8192d",
+    "seq": 84,
+    "snapshot": true
+  }
+}

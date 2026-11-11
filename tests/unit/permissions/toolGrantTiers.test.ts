@@ -382,6 +382,29 @@ describe('⑤ 统一授权台账列两档', () => {
     expect(listGrants(T0 + DAY).some((entry) => entry.id.startsWith('tool-24h:'))).toBe(false);
   });
 
+  it.each(['run', '24h'] as const)('%s tier: real ledger id round-trips and revoke removes only that grant', (tier) => {
+    const sessionId = 'weekly:report/周报';
+    const tool = 'mail_send';
+    const target = 'team+weekly@example.com';
+    mintToolRunGrant(sessionId, tool, target, T0);
+    mintTool24hGrant(tool, target, T0);
+    const entries = listGrants(T0 + 1).filter((entry) => entry.kind === 'tool-timed');
+    const entry = entries.find((row) => row.source === tier)!;
+    const expectedId = tier === 'run'
+      ? `tool-run:${encodeURIComponent(sessionId)}:${encodeURIComponent(tool)}:${encodeURIComponent(target)}`
+      : `tool-24h:${encodeURIComponent(tool)}:${encodeURIComponent(target)}`;
+    expect(entries).toHaveLength(2);
+    expect(entry.id).toBe(expectedId);
+    expect(revokeGrant(entry.id)).toBe(true);
+    expect(listGrants(T0 + 2).filter((row) => row.kind === 'tool-timed')).toEqual(
+      entries.filter((row) => row.id !== entry.id),
+    );
+    expect(listToolGrants(T0 + 2).some((row) => row.tier === tier)).toBe(false);
+    expect(matchToolGrant(tier === 'run' ? sessionId : 'another-task', tool, target, T0 + 2))
+      .toBe(tier === 'run' ? '24h' : null);
+    expect(revokeGrant(entry.id)).toBe(false);
+  });
+
   it('没有任何 agent 可调用工具暴露工具授权的 list/revoke（no-self-revoke）', async () => {
     const { getProtocolRegistry } = await import('../../../src/host/tools/protocolRegistry');
     const schemas = getProtocolRegistry().getSchemas();
