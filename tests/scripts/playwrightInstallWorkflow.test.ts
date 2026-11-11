@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
@@ -109,26 +109,56 @@ describe('Playwright install retries the real action script', () => {
     { failures: 2, withDeps: false, code: 100 },
     { failures: 3, withDeps: false, code: 100 },
     { failures: 1, withDeps: false, code: 42 },
+    { failures: 1, withDeps: true, code: 100, missingSources: true },
+    { failures: 2, withDeps: true, code: 100, aptUpdateCode: 100 },
     { failures: 3, withDeps: true, code: 42, defaultDelay: true },
   ];
 
   it.each(cases)('K=$failures with-deps=$withDeps exit=$code defaultDelay=$defaultDelay', ({
-    failures, withDeps, code, defaultDelay,
+    failures, withDeps, code, defaultDelay, missingSources, aptUpdateCode,
   }) => {
     const action = loadYaml(readFileSync(path.join(repoRoot, COMPOSITE, 'action.yml'), 'utf8')) as {
       runs: { steps: WorkflowStep[] };
     };
     const step = action.runs.steps.find((candidate) => candidate.name === 'Install Playwright browsers');
     expect(typeof step?.run).toBe('string');
-    const script = (step?.run as string).replaceAll('${{ inputs.with-deps }}', String(withDeps));
+    const run = step?.run as string;
     const dir = mkdtempSync(path.join(os.tmpdir(), 'playwright-install-retry-'));
     try {
+      // Redirect only the apt filesystem root; execute the real rewrite code via fake sudo.
+      const aptDir = path.join(dir, 'apt');
+      const script = run.replaceAll('${{ inputs.with-deps }}', String(withDeps))
+        .replaceAll('/etc/apt', aptDir);
+      mkdirSync(path.join(aptDir, 'sources.list.d'), { recursive: true });
+      const fixtures: Record<string, string> = {
+        'apt-mirrors.txt': 'http://azure.archive.ubuntu.com/ubuntu/\n',
+        'sources.list': 'deb http://azure.archive.ubuntu.com/ubuntu noble main\n',
+        'sources.list.d/ubuntu.sources': 'URIs: http://azure.archive.ubuntu.com/ubuntu/\nSuites: noble\n',
+        'sources.list.d/security.sources': 'URIs: https://azure.archive.ubuntu.com/ubuntu/\n',
+        'sources.list.d/other.sources': 'URIs: http://security.ubuntu.com/ubuntu/\n',
+      };
+      for (const [file, content] of Object.entries(fixtures)) {
+        if (!missingSources) writeFileSync(path.join(aptDir, file), content);
+      }
+      writeFileSync(path.join(dir, 'sudo'), `#!/bin/bash
+printf 'sudo %s\\n' "$*" >> "$RETRY_TEST_DIR/events"
+exec "$@"
+`, { mode: 0o755 });
+      writeFileSync(path.join(dir, 'apt-get'), `#!/bin/bash
+printf 'apt-get %s\\n' "$*" >> "$RETRY_TEST_DIR/events"
+echo "fake apt-get $* (exit $RETRY_TEST_APT_UPDATE_CODE)"
+exit "$RETRY_TEST_APT_UPDATE_CODE"
+`, { mode: 0o755 });
       writeFileSync(path.join(dir, 'npx'), `#!/bin/bash
 set -eu
 count=0
 if [ -f "$RETRY_TEST_DIR/count" ]; then count=$(cat "$RETRY_TEST_DIR/count"); fi
 count=$((count + 1))
 echo "$count" > "$RETRY_TEST_DIR/count"
+echo "npx $count" >> "$RETRY_TEST_DIR/events"
+if [ -f "$RETRY_TEST_DIR/apt/apt-mirrors.txt" ]; then
+  cat "$RETRY_TEST_DIR/apt/apt-mirrors.txt" > "$RETRY_TEST_DIR/mirror-$count"
+fi
 printf '%s\n' "$*" >> "$RETRY_TEST_DIR/args"
 echo "fake npx call $count: $*"
 if [ "$count" -le "$RETRY_TEST_FAILURES" ]; then
@@ -147,6 +177,7 @@ printf '%s\n' "$1" >> "$RETRY_TEST_DIR/sleeps"
         RETRY_TEST_DIR: dir,
         RETRY_TEST_FAILURES: String(failures),
         RETRY_TEST_EXIT_CODE: String(code),
+        RETRY_TEST_APT_UPDATE_CODE: String(aptUpdateCode ?? 0),
         PLAYWRIGHT_INSTALL_RETRY_BASE_DELAY: '0',
       };
       if (defaultDelay) delete (env as NodeJS.ProcessEnv).PLAYWRIGHT_INSTALL_RETRY_BASE_DELAY;
@@ -161,7 +192,40 @@ printf '%s\n' "$1" >> "$RETRY_TEST_DIR/sleeps"
       expect(readFileSync(path.join(dir, 'args'), 'utf8').trim().split('\n')).toEqual(
         Array.from({ length: calls }, () => `playwright install ${withDeps ? '--with-deps ' : ''}chromium`),
       );
-      expect(result.stdout).toContain('attempt 1/3');
+      const switchesMirror = withDeps && failures > 0;
+      const events = readFileSync(path.join(dir, 'events'), 'utf8').trim().split('\n');
+      const expectedEvents = ['npx 1'];
+      if (switchesMirror) expectedEvents.push('sudo python3 -', 'sudo apt-get update', 'apt-get update');
+      for (let call = 2; call <= calls; call++) expectedEvents.push(`npx ${call}`);
+      expect(events).toEqual(expectedEvents);
+      expect(run).toContain('sudo python3');
+      expect(run).toContain('sudo apt-get update');
+      expect(run).toContain("apt / 'apt-mirrors.txt'");
+      expect(run).toContain("apt / 'sources.list'");
+      expect(run).toContain("apt.glob('sources.list.d/*.sources')");
+      console.log(`mirror execution order: ${events.join(' -> ')}`);
+      expect(result.stdout).toContain('attempt 1/3 (apt source: runner-configured)');
+      if (switchesMirror) {
+        expect(result.stdout).toContain('Switching apt source to http://archive.ubuntu.com/ubuntu/ before attempt 2/3');
+        expect(result.stdout).toContain(`apt source: ${aptUpdateCode ? 'fallback attempted: ' : ''}http://archive.ubuntu.com/ubuntu/`);
+        if (aptUpdateCode) expect(result.stdout).toContain(`apt mirror refresh failed (exit code ${aptUpdateCode})`);
+      } else {
+        expect(result.stdout).not.toContain('Switching apt source');
+      }
+      for (const [file, original] of Object.entries(fixtures)) {
+        const fixture = path.join(aptDir, file);
+        if (missingSources) expect(existsSync(fixture)).toBe(false);
+        else expect(readFileSync(fixture, 'utf8')).toBe(switchesMirror && !file.endsWith('other.sources')
+          ? original.replace(/https?:\/\/azure\.archive\.ubuntu\.com\/ubuntu\/?/g, 'http://archive.ubuntu.com/ubuntu/')
+          : original);
+      }
+      if (!missingSources) {
+        expect(readFileSync(path.join(dir, 'mirror-1'), 'utf8')).toBe(fixtures['apt-mirrors.txt']);
+        for (let call = 2; call <= calls; call++) {
+          expect(readFileSync(path.join(dir, `mirror-${call}`), 'utf8')).toBe(switchesMirror
+            ? 'http://archive.ubuntu.com/ubuntu/\n' : fixtures['apt-mirrors.txt']);
+        }
+      }
       if (failures > 0) {
         expect(result.stdout).toContain(`attempt 1/3 failed (exit code ${code})`);
         expect(result.stdout).toContain('Temporary failure resolving azure.archive.ubuntu.com');
