@@ -21,6 +21,13 @@ beforeEach(() => {
   useWorkbenchFocusStore.setState({ workbenchFocused: false });
 });
 describe('deliverable and command navigation', () => {
+  it('shortens file-card hover titles while retaining the visible filename', () => {
+    const filePath = '/workspace/project/reports/summary.svg';
+    const view = render(<FileArtifactCard items={[{ label: 'summary.svg', path: filePath, kind: 'file', ownerKind: 'tool', ownerLabel: 'Write', role: 'deliverable' }]} />);
+    expect(view.getByTitle('…/reports/summary.svg').textContent).toContain('summary.svg');
+    expect(view.container.querySelector(`[title="${filePath}"]`)).toBeNull();
+  });
+
   it('opens a historic !open report in the focused app preview', async () => {
     const view = render(<MessageContent content={'[/workspace/report.md](!open)'} isUser={false} />);
     await waitFor(() => expect(view.getByTitle('打开文件')).toBeTruthy());

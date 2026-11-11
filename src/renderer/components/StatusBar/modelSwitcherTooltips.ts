@@ -48,4 +48,3 @@ export function formatExternalModelSwitcherTooltip(args: {
     args.reliabilityLabel ? `${labels.service}: ${args.reliabilityLabel}` : null,
   ].filter(Boolean).join(' · ');
 }
-
