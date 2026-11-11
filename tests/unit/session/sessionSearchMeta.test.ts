@@ -60,3 +60,18 @@ describe('getSessionSearchMeta', () => {
     expect(getSessionSearchMeta(db, [], 'u1')).toEqual([]);
   });
 });
+
+
+it('finds localized schedule and heartbeat titles before LIMIT without crossing owner fences', () => {
+  seed('old', '[Cron] 周报', { user: 'u1', updated: 10 });
+  seed('beat', '[HEARTBEAT] 巡检', { user: 'u1', updated: 20 });
+  seed('renamed', '[定时] 月报', { user: 'u1', updated: 30 });
+  seed('private', '[Schedule] 周报', { user: 'u2', updated: 90 });
+  seed('archived', '[Schedule] 周报', { user: 'u1', status: 'archived', updated: 99 });
+  seed('unrelated', '周报', { user: 'u1', updated: 100 });
+  expect(searchSessionTitles(db, '定时', 'u1', 1).map((r) => r.sessionId)).toEqual(['renamed']);
+  expect(searchSessionTitles(db, 'Schedule', 'u1', 10).map((r) => r.sessionId)).toEqual(['renamed', 'old']);
+  expect(searchSessionTitles(db, '心跳', 'u1', 10).map((r) => r.sessionId)).toEqual(['beat']);
+  expect(searchSessionTitles(db, '[Cron]', 'u1', 10).map((r) => r.sessionId)).toEqual(['old']);
+  expect(searchSessionTitles(db, '[定时] 周报', 'u1', 10).map((r) => r.sessionId)).toEqual(['old']);
+});

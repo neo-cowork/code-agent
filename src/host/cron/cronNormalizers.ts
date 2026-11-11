@@ -1,3 +1,4 @@
+import { formatStoredCronSessionTitle } from '../../shared/cronSessionTitle';
 import { normalizePersonalSkillIds } from '../../shared/cronPersonalSkills';
 // ============================================================================
 // CronService - row/schedule/action normalizers & type guards
@@ -195,10 +196,7 @@ export function getCronAgentSessionType(action: CronJobAction): 'schedule' | 'he
 /** cron/heartbeat 会话标题：剥掉历史前缀再按档位重打，避免 [Cron] [Schedule] 叠罗汉。
  *  （自 cronService 平移，逐字未动——该文件贴 max-lines 线。） */
 export function formatCronAgentSessionTitle(definition: CronJobDefinition, sessionType: 'schedule' | 'heartbeat'): string {
-  const cleanName = definition.name.replace(/^\[(Cron|Schedule|Heartbeat)\]\s*/i, '').trim() || definition.name;
-  return sessionType === 'heartbeat'
-    ? `[Heartbeat] ${cleanName}`
-    : `[Schedule] ${cleanName}`;
+  return formatStoredCronSessionTitle(definition.name, sessionType);
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {

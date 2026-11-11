@@ -116,3 +116,12 @@ describe('placeholder display uses the current UI language', () => {
     expect(getDisplaySessionTitle('<appshot>capture</appshot>', 'zh')).toBe('Appshot 会话');
   });
 });
+
+
+it('search indexes the visible cron prefix and the stored title', () => {
+  const session = { title: '[Cron] 周报' } as Parameters<typeof buildSessionSearchText>[0]['session'];
+  const status = getSessionStatusPresentation({});
+  expect(buildSessionSearchText({ session, status, language: 'zh' })).toContain('[定时] 周报');
+  expect(buildSessionSearchText({ session, status, language: 'zh' })).toContain('[cron] 周报');
+  expect(buildSessionSearchText({ session, status, language: 'en' })).toContain('[schedule] 周报');
+});
