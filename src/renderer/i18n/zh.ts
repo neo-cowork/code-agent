@@ -490,8 +490,8 @@ export const zh = {
   engineCompat: {
     // 引擎计费模式标签 + 详情（hover）
     billing: {
-      subscription: { label: '订阅额度', detail: '经 CLI 登录吃订阅 / 账号额度，不按 API key 用量计费。' },
-      api_key_payg: { label: 'API 按量', detail: '随所选 provider 按 API key 用量计费。' },
+      subscription: { label: '订阅额度', detail: '经 CLI 登录吃订阅 / 账号额度，不按密钥用量计费。' },
+      api_key_payg: { label: 'API 按量', detail: '随所选模型服务按密钥用量计费。' },
       free_tier: { label: '免费额度', detail: '在免费额度内运行，成本压力低。' },
       unknown: { label: '计费未知', detail: '计费方式未确定，自动策略不把省钱作为切换依据。' },
     },
@@ -512,7 +512,7 @@ export const zh = {
         title: '引擎决定谁来执行任务，模型决定用哪颗大脑',
         body: '普通对话和大多数文件任务用 Neo 原生引擎即可；当你想借用 Codex、Claude Code、Kimi Code 这类已登录 CLI 的订阅额度、会话能力或专属工具链时，再切换到对应外部引擎。',
         items: [
-          { title: 'Neo 原生引擎', description: '走本页「通用模型」里的 Provider 和 API Key，适合日常对话、代码修改、图片输入和工具任务。' },
+          { title: 'Neo 原生引擎', description: '走本页「通用模型」里的模型服务和密钥，适合日常对话、代码修改、图片输入和工具任务。' },
           { title: '外部 CLI 引擎', description: '走各自命令行登录状态和订阅额度，适合复用 Codex / Claude / Kimi 已有账号能力。' },
           { title: '先配置再切换', description: '先检测安装状态、完成 CLI 登录，再在下方为外部引擎选择默认模型。' },
         ],
@@ -542,7 +542,7 @@ export const zh = {
       binaryPathLabel: '路径',
       defaultModelLabel: '默认模型',
       defaultModelHint: '在「外部引擎默认模型」中为该引擎选择默认模型。',
-      defaultModelNative: '随会话所选 provider 模型，无需在此配置。',
+      defaultModelNative: '随会话所选模型服务的模型，无需在此配置。',
       defaultModelCliResolved: '模型由 CLI 自身解析，引擎层不预设。',
       // 未安装时的获取指引（仅文案说明，不执行任何命令）
       installHintTitle: '获取指引',
@@ -668,7 +668,7 @@ export const zh = {
       'Agent Neo 是评测驱动的多模型生活 / 工作 AI 助手，面向资料处理、项目推进、编程交付和本地桌面执行；支持 Native / Codex CLI / Claude Code 等 Agent Engine，并把过程、验证和结果留在同一条可追踪上下文里。',
     capabilities: '核心能力',
     highlights: ['本地优先', '多模型路由', 'Agent Engine', '记忆管理', '评测闭环', '桌面执行'],
-    madeWith: '本地优先 · API Key 由你管理',
+    madeWith: '本地优先 · 密钥由你管理',
   },
 
   // Task Panel (Right Sidebar)

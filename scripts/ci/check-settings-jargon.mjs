@@ -10,6 +10,8 @@ const tablePath = 'src/renderer/i18n/settingsTerms.json';
 const baselinePath = path.join(root, 'scripts/ci/settings-jargon-baseline.json');
 
 export function findSettingsJargon(text, table = JSON.parse(fs.readFileSync(path.join(root, tablePath), 'utf8'))) {
+  // Verbatim literals (a header name, a shell command) are blanked in place so indexes stay valid.
+  for (const literal of table.literals ?? []) text = text.split(literal).join(' '.repeat(literal.length));
   return table.terms.flatMap((term) => {
     const body = term.term.split(/\s+/).map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[\\s-]*');
     const re = new RegExp(`(?<![A-Za-z])${body}s?(?![A-Za-z])`, 'gi');

@@ -33,6 +33,7 @@ import { SettingsModal, buildSettingsTabs } from '../../../src/renderer/componen
 import { zh } from '../../../src/renderer/i18n/zh';
 import { useBundledCapabilityStore } from '../../../src/renderer/stores/bundledCapabilityStore';
 import { useExternalImportStore } from '../../../src/renderer/stores/externalImportStore';
+import { useDoctorStore } from '../../../src/renderer/stores/doctorStore';
 
 import { compareSettingsJargon, findSettingsJargon } from '../../../scripts/ci/check-settings-jargon.mjs';
 import baseline from '../../../scripts/ci/settings-jargon-baseline.json';
@@ -79,6 +80,42 @@ describe('zh settings rendered text census (real components)', () => {
     census(`models/${provider}`, container);
     fireEvent.click(screen.getByRole('button', { name: '新增模型服务' }));
     census(`models/${provider}/add-form`, container);
+  });
+  it('models-page unsaved-changes dialog has no enforce jargon', async () => {
+    useAppStore.setState({ settingsInitialTab: 'model' });
+    render(<SettingsModal />);
+    const keyInput = await screen.findByPlaceholderText(zh.settings.model.connection.apiKeyPlaceholder, {}, { timeout: 10000 });
+    fireEvent.change(keyInput, { target: { value: 'weekly-report-key' } });
+    await screen.findByText(zh.settings.unsavedChanges.badge);
+    fireEvent.click(screen.getByRole('button', { name: zh.settings.tabs.appearance }));
+    const message = await screen.findByText(zh.settings.unsavedChanges.message);
+    expect(message.textContent).toContain('模型服务');
+    census('models/unsaved-dialog', screen.getByText(zh.settings.unsavedChanges.title).closest('[role="dialog"], [role="alertdialog"]') ?? document.body);
+  });
+  it.each(['通用模型', 'api key', 'provider'])('settings search results for %s lead to the models page without enforce jargon', async (query) => {
+    const { container } = render(<SettingsModal />);
+    const input = await screen.findByPlaceholderText(zh.settings.searchPlaceholder);
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: query } });
+    const result = (await screen.findAllByRole('button')).find((button) => button.textContent?.startsWith(zh.settings.tabs.model) && button.closest('.relative')?.contains(input));
+    expect(result?.textContent).toMatch(/模型服务|密钥/);
+    census(`models/search-results/${query}`, container.querySelector('aside')!);
+  });
+  it('doctor rows translate host-supplied check text at the display boundary', async () => {
+    useDoctorStore.setState({ isRunning: false, runningCategory: null, lastError: null, startupCheckDone: true, report: { timestamp: 1_720_000_000_000, durationMs: 1200, summary: { pass: 0, warn: 1, fail: 1, skip: 2 }, items: [
+      { category: 'network', name: 'Provider connectivity', status: 'skip', message: '已跳过（skipNetwork=true）' },
+      { category: 'network', name: 'DeepSeek', status: 'skip', message: '未配置 API Key' },
+      { category: 'provider_health', name: 'Provider 健康监控', status: 'warn', message: '当前后端进程尚无运行时数据', suggestion: '错误率偏高，可观察是否需要切换 provider' },
+      { category: 'provider_health', name: '快模型鉴权', status: 'fail', message: 'API Key 可能已失效或过期', suggestion: '请前往模型设置更新对应 Provider 的 API Key', details: 'HTTP 401 Unauthorized' },
+    ] } });
+    useAppStore.setState({ settingsInitialTab: 'doctor' });
+    const { container } = render(<SettingsModal />);
+    await screen.findByText('模型服务连通性', {}, { timeout: 10000 });
+    for (const button of screen.getAllByRole('button')) if (button.textContent?.includes('模型服务健康监控')) fireEvent.click(button);
+    expect(container.textContent).toContain('未配置密钥');
+    expect(container.textContent).toContain('请前往模型设置更新对应模型服务的密钥');
+    expect(container.textContent).toContain('HTTP 401 Unauthorized');
+    census('settings/doctor/host-text', container.querySelector('main')!);
   });
   it('onboarding API route and both custom protocols have no enforce jargon', async () => {
     const { container } = render(<ModelOnboardingModal onComplete={vi.fn()} />);

@@ -1,52 +1,10 @@
 {
   "source": [
     {
-      "surface": "src/renderer/i18n/zhSettingsCore.ts",
-      "term": "Provider",
-      "count": 1,
-      "reason": "N-FIX-UI-ENGLISH-JARGON-SWEEP: existing copy outside the model/wizard conversion; queued sweep owns removal"
-    },
-    {
-      "surface": "src/renderer/i18n/zhSettingsCore.ts",
-      "term": "API Key",
-      "count": 8,
-      "reason": "N-FIX-UI-ENGLISH-JARGON-SWEEP: existing copy outside the model/wizard conversion; queued sweep owns removal"
-    },
-    {
-      "surface": "src/renderer/i18n/zhSettingsModels.ts",
-      "term": "Provider",
-      "count": 4,
-      "reason": "N-FIX-UI-ENGLISH-JARGON-SWEEP: existing copy outside the model/wizard conversion; queued sweep owns removal"
-    },
-    {
-      "surface": "src/renderer/i18n/zhSettingsModels.ts",
-      "term": "API Key",
-      "count": 6,
-      "reason": "N-FIX-UI-ENGLISH-JARGON-SWEEP: existing copy outside the model/wizard conversion; queued sweep owns removal"
-    },
-    {
-      "surface": "src/renderer/i18n/zhSettingsWork.ts",
-      "term": "API Key",
-      "count": 4,
-      "reason": "N-FIX-UI-ENGLISH-JARGON-SWEEP: existing copy outside the model/wizard conversion; queued sweep owns removal"
-    },
-    {
       "surface": "src/renderer/i18n/zhSettingsWork.ts",
       "term": "Provider",
       "count": 4,
-      "reason": "N-FIX-UI-ENGLISH-JARGON-SWEEP: existing copy outside the model/wizard conversion; queued sweep owns removal"
-    },
-    {
-      "surface": "src/renderer/components/features/settings/tabs/ChannelsSettings.tsx",
-      "term": "API Key",
-      "count": 1,
-      "reason": "N-FIX-UI-ENGLISH-JARGON-SWEEP: existing copy outside the model/wizard conversion; queued sweep owns removal"
-    },
-    {
-      "surface": "src/renderer/components/features/settings/tabs/PrivacySettings.tsx",
-      "term": "Provider",
-      "count": 1,
-      "reason": "N-FIX-UI-ENGLISH-JARGON-SWEEP: existing copy outside the model/wizard conversion; queued sweep owns removal"
+      "reason": "N-FIX-SETTINGS-ENGINEERING-JARGON-SCREENMEM-STT: existing voice/screen-memory copy; owned redesign is queued"
     }
   ],
   "components": [
@@ -63,144 +21,24 @@
       "reason": "N-FIX-SETTINGS-ENGINEERING-JARGON-SCREENMEM-STT: existing voice/screen-memory copy; owned redesign is queued"
     },
     {
-      "surface": "settings/search",
-      "term": "API Key",
-      "count": 6,
-      "reason": "N-FIX-UI-ENGLISH-JARGON-SWEEP: existing copy outside the model/wizard conversion; queued sweep owns removal"
-    },
-    {
-      "surface": "settings/general",
-      "term": "API Key",
-      "count": 2,
-      "reason": "N-FIX-UI-ENGLISH-JARGON-SWEEP: existing copy outside the model/wizard conversion; queued sweep owns removal"
-    },
-    {
-      "surface": "settings/conversation",
-      "term": "API Key",
-      "count": 1,
-      "reason": "N-FIX-UI-ENGLISH-JARGON-SWEEP: existing copy outside the model/wizard conversion; queued sweep owns removal"
-    },
-    {
       "surface": "settings/voiceLive",
       "term": "Provider",
       "count": 2,
       "reason": "N-FIX-SETTINGS-ENGINEERING-JARGON-SCREENMEM-STT: existing voice/screen-memory copy; owned redesign is queued"
     },
     {
-      "surface": "settings/channels",
-      "term": "API Key",
-      "count": 1,
-      "reason": "N-FIX-UI-ENGLISH-JARGON-SWEEP: existing copy outside the model/wizard conversion; queued sweep owns removal"
-    },
-    {
       "surface": "settings/openchronicle",
       "term": "Provider",
       "count": 5,
       "reason": "N-FIX-SETTINGS-ENGINEERING-JARGON-SCREENMEM-STT: existing voice/screen-memory copy; owned redesign is queued"
-    },
-    {
-      "surface": "settings/privacy",
-      "term": "Provider",
-      "count": 18,
-      "reason": "N-FIX-UI-ENGLISH-JARGON-SWEEP: existing copy outside the model/wizard conversion; queued sweep owns removal"
-    },
-    {
-      "surface": "settings/privacy",
-      "term": "Base URL",
-      "count": 1,
-      "reason": "N-FIX-UI-ENGLISH-JARGON-SWEEP: existing copy outside the model/wizard conversion; queued sweep owns removal"
-    },
-    {
-      "surface": "settings/privacy",
-      "term": "API Key",
-      "count": 8,
-      "reason": "N-FIX-UI-ENGLISH-JARGON-SWEEP: existing copy outside the model/wizard conversion; queued sweep owns removal"
-    },
-    {
-      "surface": "settings/about",
-      "term": "API Key",
-      "count": 1,
-      "reason": "N-FIX-UI-ENGLISH-JARGON-SWEEP: existing copy outside the model/wizard conversion; queued sweep owns removal"
-    },
-    {
-      "surface": "settings/agentEngine",
-      "term": "Provider",
-      "count": 1,
-      "reason": "N-FIX-UI-ENGLISH-JARGON-SWEEP: existing copy outside the model/wizard conversion; queued sweep owns removal"
-    },
-    {
-      "surface": "settings/agentEngine",
-      "term": "API Key",
-      "count": 1,
-      "reason": "N-FIX-UI-ENGLISH-JARGON-SWEEP: existing copy outside the model/wizard conversion; queued sweep owns removal"
     }
   ],
   "browser": [
-    {
-      "surface": "settings/搜索源",
-      "term": "API Key",
-      "count": 6,
-      "reason": "N-FIX-UI-ENGLISH-JARGON-SWEEP: existing copy outside the model/wizard conversion; queued sweep owns removal"
-    },
-    {
-      "surface": "settings/权限与安全",
-      "term": "API Key",
-      "count": 2,
-      "reason": "N-FIX-UI-ENGLISH-JARGON-SWEEP: existing copy outside the model/wizard conversion; queued sweep owns removal"
-    },
-    {
-      "surface": "settings/诊断",
-      "term": "Provider",
-      "count": 3,
-      "reason": "N-FIX-UI-ENGLISH-JARGON-SWEEP: existing copy outside the model/wizard conversion; queued sweep owns removal"
-    },
-    {
-      "surface": "settings/上下文压缩",
-      "term": "API Key",
-      "count": 1,
-      "reason": "N-FIX-UI-ENGLISH-JARGON-SWEEP: existing copy outside the model/wizard conversion; queued sweep owns removal"
-    },
     {
       "surface": "settings/屏幕记忆",
       "term": "Provider",
       "count": 2,
       "reason": "N-FIX-SETTINGS-ENGINEERING-JARGON-SCREENMEM-STT: existing voice/screen-memory copy; owned redesign is queued"
-    },
-    {
-      "surface": "settings/隐私防线",
-      "term": "Provider",
-      "count": 18,
-      "reason": "N-FIX-UI-ENGLISH-JARGON-SWEEP: existing copy outside the model/wizard conversion; queued sweep owns removal"
-    },
-    {
-      "surface": "settings/隐私防线",
-      "term": "Base URL",
-      "count": 1,
-      "reason": "N-FIX-UI-ENGLISH-JARGON-SWEEP: existing copy outside the model/wizard conversion; queued sweep owns removal"
-    },
-    {
-      "surface": "settings/隐私防线",
-      "term": "API Key",
-      "count": 8,
-      "reason": "N-FIX-UI-ENGLISH-JARGON-SWEEP: existing copy outside the model/wizard conversion; queued sweep owns removal"
-    },
-    {
-      "surface": "settings/关于",
-      "term": "API Key",
-      "count": 1,
-      "reason": "N-FIX-UI-ENGLISH-JARGON-SWEEP: existing copy outside the model/wizard conversion; queued sweep owns removal"
-    },
-    {
-      "surface": "settings/执行引擎",
-      "term": "Provider",
-      "count": 6,
-      "reason": "N-FIX-UI-ENGLISH-JARGON-SWEEP: existing copy outside the model/wizard conversion; queued sweep owns removal"
-    },
-    {
-      "surface": "settings/执行引擎",
-      "term": "API Key",
-      "count": 10,
-      "reason": "N-FIX-UI-ENGLISH-JARGON-SWEEP: existing copy outside the model/wizard conversion; queued sweep owns removal"
     }
   ]
 }

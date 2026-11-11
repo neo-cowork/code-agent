@@ -16,6 +16,14 @@ describe('settings jargon gate', () => {
     expect(findSettingsJargon('apiKeyConfigured')).toEqual([]);
   });
 
+  it('skips only verbatim literals the user must copy; a term next to one still counts', () => {
+    expect(table.literals).toEqual(['/v1', 'X-API-Key', 'mimo providers login']);
+    expect(findSettingsJargon('使用 X-API-Key 头进行认证。')).toEqual([]);
+    expect(findSettingsJargon('首次使用前需运行 mimo providers login 完成账号授权。')).toEqual([]);
+    expect(findSettingsJargon('X-API-Key 里填 API Key').map((hit) => [hit.term, hit.index])).toEqual([['API Key', 13]]);
+    expect(findSettingsJargon('providers login').map((hit) => hit.term)).toEqual(['Provider']);
+  });
+
   it('counts down stock by surface and cannot exempt the models or wizard', () => {
     const row = { surface: 'settings/search', hits: findSettingsJargon('API Key') };
     const stock = [{ surface: row.surface, term: 'API Key', count: 1, reason: 'N-FIX-UI-ENGLISH-JARGON-SWEEP: search stock' }];
@@ -40,6 +48,5 @@ describe('settings jargon gate', () => {
 
   it('real source census stays below its owned stock counts', () => {
     expect(compareSettingsJargon(scanSettingsJargon(), baseline.source)).toEqual([]);
-    expect(table.literals).toEqual(['/v1']);
   });
 });

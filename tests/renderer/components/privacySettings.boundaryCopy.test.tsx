@@ -35,7 +35,7 @@ describe('PrivacySettings boundary copy', () => {
       '语音和转写',
       '外部通道',
       'MCP 和插件',
-      '模型供应商和 API Key',
+      '模型服务和密钥',
       'Memory',
       '遥测和诊断包',
       '聊天语音输入',

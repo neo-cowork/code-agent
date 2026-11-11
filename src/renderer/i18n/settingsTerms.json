@@ -5,5 +5,9 @@
     { "id": "keyLabel", "term": "API Key", "human": "密钥", "mode": "enforce" },
     { "id": "mcp", "term": "MCP", "human": "MCP", "mode": "report" }
   ],
-  "literals": ["/v1"]
+  "literals": ["/v1", "X-API-Key", "mimo providers login"],
+  "phrases": [
+    { "text": "Provider connectivity", "human": "模型服务连通性" },
+    { "text": "Provider health", "human": "模型服务健康" }
+  ]
 }

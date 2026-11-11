@@ -599,7 +599,7 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
               </div>
               <p className="mt-1 text-xs text-zinc-400">{path.trigger}</p>
               <div className="mt-3 space-y-1.5 text-[11px] text-zinc-500">
-                <div><span className="text-zinc-400">Provider: </span>{path.providers.join('、')}</div>
+                <div><span className="text-zinc-400">{t.settings.privacyLabels.transcriptionService}</span>{path.providers.join('、')}</div>
                 <div><span className="text-zinc-400">{privacyText.boundary.cloudLabel}</span>{path.cloud}</div>
                 <div><span className="text-zinc-400">{privacyText.voice.temporaryFileLabel}</span>{path.temporaryStorage}</div>
                 <div><span className="text-zinc-400">{privacyText.voice.logLabel}</span>{path.logPolicy}</div>

@@ -32,6 +32,7 @@ import { SettingsPage } from '../SettingsLayout';
 import type { DoctorFixCode } from '@shared/constants/doctor';
 import { toast } from '../../../../hooks/useToast';
 import { useI18n } from '../../../../hooks/useI18n';
+import { localizeSettingsTerms } from '../../../../i18n/settingsVocabulary';
 import { formatDateTime } from '../../../../utils/formatDateTime';
 import { useBundledCapabilityStore } from '../../../../stores/bundledCapabilityStore';
 import { useDoctorStore } from '../../../../stores/doctorStore';
@@ -72,6 +73,16 @@ const STATUS_LABELS: Record<DoctorStatus, string> = {
   fail: 'FAIL',
   skip: 'SKIP',
 };
+
+/** Host check text is authored once for every client; settings terms are translated here. `details` is raw diagnostic output and stays verbatim. */
+function localizeDoctorItem(item: DoctorItem, language: 'zh' | 'en'): DoctorItem {
+  return {
+    ...item,
+    name: localizeSettingsTerms(item.name, language),
+    message: localizeSettingsTerms(item.message, language),
+    suggestion: item.suggestion ? localizeSettingsTerms(item.suggestion, language) : item.suggestion,
+  };
+}
 
 // ============================================================================
 // Sub-components
@@ -376,7 +387,7 @@ export const DoctorSettings: React.FC = () => {
                   {items.map((item, idx) => (
                     <DoctorItemRow
                       key={`${item.name}-${idx}`}
-                      item={item}
+                      item={localizeDoctorItem(item, language)}
                       suggestionPrefix={doctorText.suggestionPrefix}
                       fixLabel={item.fix ? doctorText.fixLabels[item.fix.code] : undefined}
                       isFixing={fixingCode !== null && fixingCode === item.fix?.code}

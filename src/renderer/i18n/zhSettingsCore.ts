@@ -3,6 +3,9 @@
 // ============================================================================
 
 import { permissionVocabularyZh } from './permissionVocabulary';
+import { getSettingsVocabulary } from './settingsVocabulary';
+
+const v = getSettingsVocabulary('zh');
 
 export const zhSettingsCore = {
     tabs: {
@@ -59,7 +62,7 @@ export const zhSettingsCore = {
     unsavedChanges: {
       badge: '未保存',
       title: '有未保存的修改',
-      message: '「通用模型」里有尚未保存的 Provider 配置修改，离开后会被丢弃。',
+      message: `「通用模型」里有尚未保存的${v.provider}配置修改，离开后会被丢弃。`,
       discard: '丢弃修改',
       stay: '继续编辑',
     },
@@ -85,8 +88,8 @@ export const zhSettingsCore = {
       scheduledTasks: '定时任务',
       newTask: '新建任务',
       executionHistory: '执行历史',
-      modelProviders: '模型供应商',
-      apiKey: 'API Key',
+      modelProviders: v.provider,
+      apiKey: v.keyLabel,
       modelSelection: '模型选择',
       temperature: '温度',
       testConnection: '测试连接',
@@ -358,16 +361,16 @@ export const zhSettingsCore = {
         immediateBlockWarning: '当前无人值守用量已超过新上限，保存后新的后台模型调用会立即熔断。',
       },
       jevKey: {
-        title: 'TypeSafe API Key',
-        description: '这把 Key 用于浏览器步选等快速判断功能；没有它时这些功能保持关闭。',
-        placeholder: '输入 TypeSafe API Key',
+        title: `TypeSafe ${v.keyLabel}`,
+        description: `这把${v.keyLabel}用于浏览器步选等快速判断功能；没有它时这些功能保持关闭。`,
+        placeholder: `输入 TypeSafe ${v.keyLabel}`,
         save: '存入',
         saving: '存入中…',
         change: '更换',
-        saved: 'TypeSafe API Key 已保存',
-        cleared: 'TypeSafe API Key 已清除',
-        saveFailedPrefix: 'TypeSafe API Key 保存失败：',
-        clearTitle: '清除 TypeSafe API Key？',
+        saved: `TypeSafe ${v.keyLabel}已保存`,
+        cleared: `TypeSafe ${v.keyLabel}已清除`,
+        saveFailedPrefix: `TypeSafe ${v.keyLabel}保存失败：`,
+        clearTitle: `清除 TypeSafe ${v.keyLabel}？`,
         clearMessage: '清除后，浏览器步选等快速判断功能保持关闭，直到重新填写。',
         clearConfirm: '清除',
         configured: '已配置',
@@ -375,26 +378,26 @@ export const zhSettingsCore = {
           title: 'Jev 安全判官',
           switchLabel: '启用 Jev 判官',
           status: {
-            official: '使用中 · 官方 TypeSafe key',
-            openrouter: '使用中 · 借用你的 OpenRouter key',
-            neo_hosted: '使用中 · Neo 云判官（你没有自己的 key）',
-            openrouter_pending_consent: '检测到你的 OpenRouter key，尚未允许使用',
+            official: '使用中 · 官方 TypeSafe 密钥',
+            openrouter: '使用中 · 借用你的 OpenRouter 密钥',
+            neo_hosted: '使用中 · Neo 云判官（你没有自己的密钥）',
+            openrouter_pending_consent: '检测到你的 OpenRouter 密钥，尚未允许使用',
             disabled_by_user: '已关闭',
-            none: '未启用（未配置可用 key）',
+            none: '未启用（未配置可用密钥）',
           },
           hostedSwitchLabel: '使用 Neo 云判官',
           hostedBlockUser: '今日云判官额度已用完，明天重置；Neo 回退为普通确认',
           hostedBlockFuse: '云判官今日不可用，稍后自动恢复；Neo 回退为普通确认',
           disclosureHosted: '内容摘要会经 Neo 的服务器转发给判官模型；Neo 不存储请求内容。',
           degradedPrefix: '本次运行已跳过 ',
-          degradedSuffix: ' 次判官调用（无可用 key 或未允许使用）',
+          degradedSuffix: ' 次判官调用（无可用密钥或未允许使用）',
           disclosurePrefix: '开启后，需要确认的命令和工具调用会先脱敏（只保留命令文本、工具名、工作目录），再发送给 ',
           disclosureOfficial: 'TypeSafe（api.typesafe.ai）',
           disclosureOpenrouter: 'OpenRouter',
           disclosureEither: 'TypeSafe（api.typesafe.ai）或 OpenRouter',
           disclosureSuffix: ' 的小模型判断是否安全，减少重复确认；它不会替你放行危险操作。',
-          allowButton: '允许使用我的 OpenRouter key',
-          allowedToast: '已允许使用 OpenRouter key',
+          allowButton: '允许使用我的 OpenRouter 密钥',
+          allowedToast: '已允许使用 OpenRouter 密钥',
           saveFailedPrefix: '保存 Jev 设置失败：',
           offHint: '关闭后 Neo 恢复每次都问，重启后仍保持关闭。',
         },
@@ -423,7 +426,7 @@ export const zhSettingsCore = {
       },
       model: {
         label: '摘要模型',
-        description: '实际可用模型与 API Key 配置在「通用模型」tab，本页只显示当前生效值。',
+        description: `实际可用模型与${v.keyLabel}配置在「通用模型」页，本页只显示当前生效值。`,
         manageButton: '在通用模型设置中管理',
       },
       features: {

@@ -21,6 +21,7 @@ import {
 import { normalizeVoiceInputDevice } from '@shared/voiceInputDevice';
 import { VOICE_SESSION_MAX_DURATION_MS } from '@shared/constants/voice';
 import { PROVIDER_MODELS, PROVIDER_MODELS_MAP } from '@shared/constants/models';
+import { getProviderDisplayName } from '../../../../i18n/settingsVocabulary';
 import ipcService from '../../../../services/ipcService';
 import { createLogger } from '../../../../utils/logger';
 import { interpolatePlural } from '../../../../i18n/interpolate';
@@ -442,7 +443,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
           >
             <option value="">{text.executionModelFollowSession}</option>
             {PROVIDER_MODELS.map((provider) => (
-              <option key={provider.id} value={provider.id}>{provider.name}</option>
+              <option key={provider.id} value={provider.id}>{getProviderDisplayName(provider.id, undefined, provider.name, uiLanguage)}</option>
             ))}
           </select>
           <select

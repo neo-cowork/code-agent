@@ -36,3 +36,29 @@ export function getProviderDisplayName(
   }
   return fallbackName || defaultName || id;
 }
+
+const literalPattern = new RegExp(`(${table.literals.map((literal) => literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`);
+
+/**
+ * Host- and data-supplied text (doctor checks, inventories) reaches the zh UI through this
+ * boundary. English output and fully English sentences are returned untouched; verbatim
+ * literals such as a header name are never rewritten.
+ */
+export function localizeSettingsTerms(text: string, language: SettingsLanguage): string {
+  if (language !== 'zh' || !text) return text;
+  const phrase = table.phrases.find((entry) => entry.text === text);
+  if (phrase) return phrase.human;
+  if (!/[\u3400-\u9fff]/.test(text)) return text;
+  return text.split(literalPattern).map((segment, index) => {
+    if (index % 2 === 1) return segment;
+    return table.terms.filter((term) => term.mode === 'enforce').reduce((result, term) => {
+      const body = term.term.split(/\s+/).join('[\\s-]*');
+      return result.replace(new RegExp(`( ?)(?<![A-Za-z])${body}s?(?![A-Za-z])( ?)`, 'gi'), (match: string, before: string, after: string, offset: number, whole: string) => {
+        // Chinese has no space next to a Chinese word; keep it beside punctuation and Latin text.
+        const keepBefore = before && /[^\u3400-\u9fff]/.test(whole[offset - 1] ?? '');
+        const keepAfter = after && /[^\u3400-\u9fff]/.test(whole[offset + match.length] ?? '');
+        return `${keepBefore ? before : ''}${term.human}${keepAfter ? after : ''}`;
+      });
+    }, segment);
+  }).join('');
+}
