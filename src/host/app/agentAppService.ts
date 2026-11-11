@@ -76,7 +76,7 @@ import type {
 } from '../../shared/contract/conversationEnvelope';
 import { resolveConnectorRequiredForTurn, withWorkbenchTurnSystemContext } from './workbenchTurnContext';
 import { withMissingAttachmentTurnSystemContext } from './missingAttachmentTurnContext';
-import { withSessionCommandCenterBrain } from './sessionCommandCenterBrain';
+import { resolveForegroundImageTurn, withSessionCommandCenterBrain } from './sessionCommandCenterBrain';
 import { isSessionCommandCenterTurn } from '../../shared/constants/sessionCommandCenter';
 import { getPermissionModeManager } from '../permissions/modes';
 import {
@@ -838,7 +838,11 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       prompt: envelope.content,
       hasGoal: Boolean(optionsWithTurnSettings.goal),
     })
-      ? withSessionCommandCenterBrain(optionsWithTurnSettings, envelope.content)
+      ? withSessionCommandCenterBrain(
+        optionsWithTurnSettings,
+        envelope.content,
+        resolveForegroundImageTurn(resolvedSessionId, envelope.attachments, optionsWithTurnSettings.modelSpec),
+      )
       : optionsWithTurnSettings;
 
     // 云货架专家首跑：本轮档位钳到最严，让用户看见它每一步要干什么。
@@ -1035,7 +1039,11 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       prompt: envelope.content,
       hasGoal: Boolean(workbenchOptions?.goal),
     })
-      ? withSessionCommandCenterBrain(workbenchOptions, envelope.content)
+      ? withSessionCommandCenterBrain(
+        workbenchOptions,
+        envelope.content,
+        resolveForegroundImageTurn(resolvedSessionId, envelope.attachments, workbenchOptions?.modelSpec),
+      )
       : workbenchOptions;
     return tm.interruptAndContinue(
       resolvedSessionId,

@@ -16,7 +16,7 @@
 // eval 只用来测行为，不用来测「这句话还在不在」。
 // ============================================================================
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import '../../../src/host/prompts/promptIndex';
 import { IDENTITY_PROMPT, MEMORY_SYSTEM } from '../../../src/host/prompts/identity';
 import { TOOLS_PROMPT } from '../../../src/host/prompts/base';
@@ -83,8 +83,14 @@ describe('常驻层体量', () => {
     // 3190 → 3220（2026-11-07，N-FIX-ATTACHMENT-NOT-IN-WORKDIR-FU1，实测 3213）：常驻层
     // 新增一句缺附件兜底规则（请用户重传/给路径，禁扫 ~/Downloads、~/Desktop、兄弟目录），
     // 已压到 27 token；防的是真实复现的「扫盘 10+ 秒后回合被取消」，属护栏类。
-    const total = estimateTokens(IDENTITY_PROMPT) + estimateTokens(TOOLS_PROMPT);
-    expect(total).toBeLessThanOrEqual(3220);
+    // Measure canonical production text; globalSetup's temporary data-dir path has variable length.
+    vi.stubEnv('CODE_AGENT_DATA_DIR', undefined);
+    try {
+      const total = estimateTokens(IDENTITY_PROMPT) + estimateTokens(TOOLS_PROMPT);
+      expect(total).toBeLessThanOrEqual(3220);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 

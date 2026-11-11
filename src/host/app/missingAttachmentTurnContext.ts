@@ -50,7 +50,7 @@ const EXPLICIT_PATH_RE = /(?:^|[\s"'`（(【[])(?:~\/[^\s"'`）)】\]]+|\/(?:Use
 const FILE_WITH_EXTENSION_RE = /(?<![A-Za-z0-9_/@.-])([^\s"'`<>|*?\\/]+\.(?:xlsx|xls|csv|tsv|pdf|docx|doc|pptx|ppt|txt|md|json|yaml|yml|xml|html|htm|png|jpg|jpeg|gif|webp|svg|zip|tar|gz|numbers|pages|key|py|js|ts|sql|log|rtf|epub))\b/gi;
 
 const MISSING_ATTACHMENT_TURN_SYSTEM_CONTEXT_LINE =
-  '本轮未收到任何上传附件。最多检查一次当前任务文件夹（ListDirectory 或 Glob）；如果里面没有目标文件，立刻用简明中文告诉用户未收到该文件，请对方重新上传或直接提供文件路径；绝对不要调用任何工具去搜索 ~/Downloads、~/Desktop、上级目录或其他任务文件夹。';
+  '本轮未收到任何上传附件。最多检查一次当前任务文件夹（ListDirectory 或 Glob）；如果里面没有目标文件，立刻用与用户消息相同的语言简明告诉用户未收到该文件，请对方重新上传或直接提供文件路径；绝对不要调用任何工具去搜索 ~/Downloads、~/Desktop、上级目录或其他任务文件夹。';
 
 interface MissingAttachmentDetectionResult {
   matched: boolean;

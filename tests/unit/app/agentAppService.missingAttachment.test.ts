@@ -278,6 +278,20 @@ describe('agentAppService missing-attachment turn context', () => {
     expect(baselineTurnContextCount(runOptions)).toBe(1);
   });
 
+  it('tells the model to reply in the user\'s own language for an English "Please summarize the attached report"', async () => {
+    await createService().sendMessage({
+      sessionId: 'session-miss-1',
+      content: 'Please summarize the attached report',
+      attachments: [],
+    });
+
+    const runOptions = taskManager.startTask.mock.calls[0]?.[3] as { turnSystemContext?: string[] } | undefined;
+    const lines = (runOptions?.turnSystemContext ?? []).filter((line) => line.includes('本轮未收到任何上传附件'));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).not.toContain('用简明中文');
+    expect(lines[0]).toContain('与用户消息相同的语言');
+  });
+
   // --- r5: file-name-based detection ---
 
   it('adds exactly one missing-attachment line and logs keyword when user says "分析一下 销售数据.xlsx" with no upload and no such file', async () => {
