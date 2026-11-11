@@ -81,7 +81,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   const resolveToolCallTerminalState = useToolCallTerminalResolver(sessionId);
   const terminalById = useMemo(() => new Map(nodes.flatMap(node => node.toolCall ? [[node.toolCall.id,
     resolveToolCallTerminalState(traceTerminalToolCall(node.toolCall), node.metadata?.streamInterruptionReason ?? (node.metadata?.streamRecovery ? 'app-restart' : undefined),
-      node.metadata?.agentTeam?.agentId)] as const] : [])), [nodes, resolveToolCallTerminalState]);
+      node.metadata?.agentTeam?.agentId, isStreamingTurn ? true : undefined)] as const] : [])), [nodes, resolveToolCallTerminalState, isStreamingTurn]);
   // 主流可见节点：过滤 ToolSearch 等纯内部动作（仍可在混合组的展开明细里看到）
   const streamVisibleNodes = useMemo(
     () => nodes.filter((n) => {
@@ -402,6 +402,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     return (
       <div className="my-0.5">
         <ToolCallDisplay
+          sessionLive={isStreamingTurn || undefined}
           agentId={nodes.find(node => node.toolCall?.id === toolCall.id)?.metadata?.agentTeam?.agentId}
           toolCall={toolCall}
           index={0}
@@ -426,6 +427,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         style={!isStreamingTurn ? getDeferredContentStyle('toolCard') : undefined}
       >
         <ToolCallDisplay
+          sessionLive={isStreamingTurn || undefined}
           agentId={nodes.find(node => node.toolCall?.id === toolCall.id)?.metadata?.agentTeam?.agentId}
           toolCall={toolCall}
           index={0}
@@ -548,6 +550,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         <div className="ml-4 mt-1 space-y-1 pl-3">
           {truncatedRunningToolCall && (
             <ToolCallDisplay
+              sessionLive={isStreamingTurn || undefined}
               toolCall={truncatedRunningToolCall}
               index={0}
               total={1}
@@ -576,6 +579,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
               data-trace-id={typeof tc.result?.metadata?.traceId === 'string' ? tc.result.metadata.traceId : undefined}
             >
               <ToolCallDisplay
+              sessionLive={isStreamingTurn || undefined}
                 agentId={nodes.find(node => node.toolCall?.id === tc.id)?.metadata?.agentTeam?.agentId}
                 toolCall={tc}
                 index={i}
