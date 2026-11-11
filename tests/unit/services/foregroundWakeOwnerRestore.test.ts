@@ -23,7 +23,7 @@ const harness = vi.hoisted(() => ({
   user: null as { id: string } | null,
   callbacks: [] as Array<(user: { id: string } | null, status: string) => void>,
   log: [] as Array<{ level: string; message: string; details?: Record<string, unknown> }>,
-  sendMessage: null as unknown as ReturnType<typeof import('vitest').vi.fn>,
+  sendMessage: (async () => undefined) as (...args: unknown[]) => Promise<void>,
 }));
 
 vi.mock('../../../src/host/services/core', async (importOriginal) => ({
@@ -115,7 +115,7 @@ describe('foreground wake when the session is not accessible for the current own
     harness.log.length = 0;
     harness.callbacks.length = 0;
     harness.user = null;
-    harness.sendMessage = vi.fn(async () => {
+    harness.sendMessage = vi.fn(async (..._args: unknown[]) => {
       await getSessionManager().addMessageToSession(SESSION, {
         id: `wake-reply-${Math.random()}`, role: 'assistant', content: '周报已汇总', timestamp: Date.now(),
       });
