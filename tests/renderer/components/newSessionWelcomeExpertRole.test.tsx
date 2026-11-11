@@ -299,7 +299,6 @@ describe('专家空会话的起手卡：只摆角色既有数据，最多四张'
 
     render(
       <NewSessionWelcome
-        onFillDraft={vi.fn()}
         onSend={onSend}
         isComposerOccupied={occupied}
         onFillDraft={onFillDraft}

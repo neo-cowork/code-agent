@@ -147,7 +147,7 @@ describe('FB-580 示例卡 × composer 草稿保育（真实组件组合）', ()
 
   it('填入后用户改成自己的内容，真实 ChatInput 发送的是改后的文本', () => {
     const onSend = vi.fn();
-    const inputSend = vi.fn(async () => true);
+    const inputSend = vi.fn(async (_payload: unknown) => true);
     const chatInputRef = createRef<ChatInputHandle>();
     render(
       <div>
