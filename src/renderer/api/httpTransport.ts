@@ -16,6 +16,7 @@ import type {
 } from '../../shared/ipc';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { RENDERER_POLLING } from '../../shared/constants';
+import { createPermissionSnapshotRetention } from './permissionSnapshotRetention';
 import { getLocalBridgeClient } from '../services/localBridge';
 import { useLocalBridgeStore } from '../stores/localBridgeStore';
 import { localToolAbortRegistry } from './localToolAbortRegistry';
@@ -508,6 +509,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
   // 让服务端 replay buffer 补发断线窗口内错过的事件。
   let lastSeenEventId = -1;
   let lastSeenStreamEpoch: string | undefined;
+  const permissionSnapshots = createPermissionSnapshotRetention();
 
   /**
    * 初始化 SSE 连接，接收后端推送事件
@@ -565,6 +567,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
           }
           return;
         }
+        if (payload.channel === IPC_CHANNELS.AGENT_EVENT) permissionSnapshots.observe(payload.args);
         dispatchSSEPayload(payload.channel, payload.args, listeners.get(payload.channel));
       }
     };
@@ -620,6 +623,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
       ...args: Parameters<IpcInvokeHandlers[K]>
     ): Promise<ReturnType<IpcInvokeHandlers[K]>> => {
       const { method, path } = channelToEndpoint(channel);
+      if (preservesUndeliveredPermissionEnvelope(channel)) permissionSnapshots.forget(args[0]);
 
       // 替换路径参数（如 :id）
       let finalPath = path;
@@ -957,6 +961,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
         listeners.set(channel, new Set());
       }
       listeners.get(channel)!.add(callback as EventCallback);
+      if (channel === IPC_CHANNELS.AGENT_EVENT) permissionSnapshots.replayTo(callback as EventCallback);
 
       // 有监听器时确保 SSE 连接存在
       ensureSSE();
@@ -1146,6 +1151,9 @@ export function createHttpDomainAPI(baseUrl: string): DomainAPI {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify(body),
+        }).catch((err: unknown) => {
+          reportServerUnreachable();
+          throw new Error(getServerReconnectingMessage(), { cause: err });
         });
 
         if (res.ok) {

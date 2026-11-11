@@ -126,6 +126,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   // backgroundTasks 域：defineHandler schema 化注册（BackgroundTaskSchemas.REQUEST），renderer 的任务面板 / 通知同步在调；
   // 此前整域未登记（缺报 5 项），parity 门的缺报棘轮按 defineHandler 提取对账
   [IPC_DOMAINS.BACKGROUND_TASKS]: [
+    'dismissTerminalTasks',
     'drainNotifications',
     'getTask',
     'listTasks',

@@ -19,6 +19,7 @@ interface SidebarSearchDialogProps {
   currentSessionId: string | null;
   messageSearchHitsBySessionId: Record<string, SidebarMessageSearchHitGroup>;
   messageSearchLoading: boolean;
+  messageSearchFailed?: boolean;
   effectiveSearchScope: SidebarSearchScope;
   setSearchScope: (scope: SidebarSearchScope) => void;
   canSearchCurrentProject: boolean;
@@ -34,6 +35,7 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
   currentSessionId,
   messageSearchHitsBySessionId,
   messageSearchLoading,
+  messageSearchFailed = false,
   effectiveSearchScope,
   setSearchScope,
   canSearchCurrentProject,
@@ -77,6 +79,7 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
 
   return (
     <Modal
+      portal
       isOpen={isOpen}
       onClose={onClose}
       title={sb.searchDialogTitle}
@@ -140,7 +143,7 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
             <div className="flex min-h-48 flex-col items-center justify-center gap-2 text-center">
               <Search className="h-6 w-6 text-zinc-600" />
               <p className="text-sm text-zinc-500">
-                {messageSearchLoading ? sb.searchingMessageContent : sb.noMatchedSessions}
+                {messageSearchLoading ? sb.searchingMessageContent : messageSearchFailed ? sb.searchFailed : sb.noMatchedSessions}
               </p>
             </div>
           ) : (
@@ -165,7 +168,7 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm">
-                        {getDisplaySessionTitle(session.title)}
+                        {getDisplaySessionTitle(session.title, language)}
                         {session.id === currentSessionId && (
                           <span className="ml-2 text-[11px] text-badge-info">{sb.currentSession}</span>
                         )}

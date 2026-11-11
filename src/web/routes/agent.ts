@@ -1,4 +1,4 @@
- 
+import { watchFirstModelRequest } from '../../host/agent/runtime/firstModelRequestWatch';
 import { expandSlashPromptForModel } from './agentSlashExpansion';
 import { Router } from 'express';
 import type { Request, Response } from 'express';
@@ -29,6 +29,7 @@ import {
   resolveConnectorRequiredForTurn,
   buildWorkbenchToolScope,
 } from '../../host/app/workbenchTurnContext';
+import { withMissingAttachmentTurnSystemContext } from '../../host/app/missingAttachmentTurnContext';
 import { getSessionCommandCenterBrainContextForPrompt, getTextForegroundToolNamesForPrompt } from '../../host/app/sessionCommandCenterBrain';
 import { applyMorningBriefSaveDraftRoleTools } from '../../host/app/morningBriefSaveDraftTools';
 import { isSessionCommandCenterTurn, SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS } from '../../shared/constants/sessionCommandCenter';
@@ -44,14 +45,16 @@ import {
   resolveExternalEngineLaunch,
 } from '../../host/services/agentEngine';
 import {
-  type ExternalAgentEngineFailureContext,
-  recordExternalEngineFailure,
+  type ExternalAgentEngineFailureContext, recordExternalEngineFailure,
 } from './agentEngineFailureRecorder';
 import { buildTurnTerminalFailure } from './agentTurnTerminalFailure';
+import { getAgentErrorMessage } from '../../shared/utils/agentErrorClassification';
 import { createMarkSessionExecutionEnvironment } from '../../host/services/cloudRun/sessionExecutionEnvironmentMarker';
 import { checkEnvironmentProtocol } from './environmentProtocolGate';
+import { PROMPT_REQUIRED } from '../../shared/contract/agentRunErrors';
 import {
   AgentRunBodySchema,
+  isPromptRequiredFailure,
   AgentToolResultBodySchema,
   type AgentRunBody,
 } from './agentBodySchemas';
@@ -84,7 +87,6 @@ import {
 } from './agentBridgeToolDispatch';
 import {
   type AgentDurableRouteDeps,
-  cancelDisconnectedAgentRouteRun,
   createAgentDurableRouteRunLifecycle,
   resolveAgentDurableActivation,
   resolveNativeRunWorkspaceScope,
@@ -516,8 +518,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     return outcome.outcome === 'queued' ? 'queued' : 'steered';
   });
 
-  // ── Agent Run (SSE streaming) ──────────────────────────────────────
-  async function runAgentTurn(
+  const runAgentTurn = (...args: Parameters<typeof runObservedAgentTurn>): Promise<void> =>
+    watchFirstModelRequest(args[0].sessionId, () => runObservedAgentTurn(...args));
+  async function runObservedAgentTurn(
     body: AgentRunBody,
     res: Response,
     transport: (
@@ -527,8 +530,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           /** ADR-072 K1C：投递层校验过的委托来源标记（带外，客户端永远给不了）。 */
           delegationOrigin?: import('../../shared/contract/queuedInput').DelegationOriginMarker;
           onDurableActivated?: (activation: { runId: string; activatedAt: number }) => void;
-          /**
-           * 幂等重放命中：不建新 run，调用方按既有 runId 收口回执（不再发 run_started）。
+          /** 幂等重放命中：不建新 run，调用方按既有 runId 收口回执（不再发 run_started）。
            * 离线调用方传了它才允许重放收口；不传（drain / send-now idle 排队投递）时
            * 一律落回真实起跑——没有回执通道的重放会被上层当成功结算（drainOne 标
            * consumed），上一轮失败后的重投就被静默吞掉（rework r1）。
@@ -542,9 +544,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       ? body.clientMessageId.trim()
       : undefined;
 
-    if (!prompt) {
+    if (!prompt.trim() && !body.attachments?.length) {
       if (transport.cloudRunId) cloudRunRuntime.settle(transport.cloudRunId, 'failed');
-      res.status(400).json({ error: 'Missing prompt' });
+      res.status(400).json({ error: 'Missing prompt', code: PROMPT_REQUIRED });
       return;
     }
 
@@ -711,6 +713,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           ? await planSessionWorkDirectory({
             sessionTitle: persistedSession?.title,
             userMessage: prompt,
+            attachments: body.attachments,
             reservedPaths: workDirReservations,
           })
           : await ensureDefaultWebWorkingDirectory();
@@ -742,6 +745,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const replanned = await maybeReplanSessionWorkDirectory({
         workingDirectory: sessionRowWorkingDirectory,
         sessionTitle: persistedSession?.title,
+        loadFirstUserMessage: async () => (await sessionManagerForRun?.getMessages?.(sessionId, 1))?.find((message) => message.role === 'user'),
         reservedPaths: workDirReservations,
       });
       const diverted = replanned
@@ -831,7 +835,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
     let runContext: RunContext | undefined;
     let runHandle: RunHandle | undefined;
-    let cloudRunTerminalState: CloudRunState = 'failed';
+    let cloudRunTerminalState: CloudRunState | undefined;
     let foregroundPermissionIsland: OrchestratorPermissionIsland | undefined;
     const durableRunLifecycle = createAgentDurableRouteRunLifecycle({
       runRegistry,
@@ -883,18 +887,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     if (transport.connectedClient) {
       res.once('close', releaseSseSlot);
     }
-    if (preflightDisconnected || res.destroyed) {
-      if (runHandle) {
-        await cancelDisconnectedAgentRouteRun({ runRegistry, runHandle, sessionId, durableActivation });
-      }
-      if (transport.cloudRunId) cloudRunRuntime.settle(transport.cloudRunId, 'cancelled');
-      res.off('close', markPreflightDisconnected);
-      releaseSseSlot();
-      return;
-    }
+    if (preflightDisconnected || res.destroyed) releaseSseSlot();
 
-    // SSE response
-    if (transport.connectedClient) {
+    // A request accepted before its page closed still runs, without writing headers to a dead socket.
+    if (transport.connectedClient && !preflightDisconnected && !res.destroyed) {
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
@@ -963,10 +959,6 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     let commitFailedTurn: ((fallbackMessage: string) => Promise<void>) | null = null;
 
     try {
-      if (runController.disconnected) {
-        await runController.updateSessionStatus('interrupted');
-        return;
-      }
       // 解析有效的 model/provider:body 显式参数 > session override > 默认。
       // 切换 UI 把模型写进 modelSessionState 后,/api/run 必须从这里读,
       // 否则 UI 切换看似生效但推理仍走 default(实测:UI 选 deepseek,日志仍 xiaomi)。
@@ -1101,6 +1093,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             isDevModeAutoApproveEnabled: () => acpConfigService.isDevModeAutoApproveEnabled(),
             getExecutionTopology: () => 'main',
             hasApprovalUi: (request) => liveHasApprovalUi(sessionId, request, deps.hasCompanionApprovalUi),
+            isDetachedRun: () => runController.detached,
             onEvent: emitIslandEvent,
           });
           registerForegroundPermissionIsland(sessionId, foregroundPermissionIsland);
@@ -1328,7 +1321,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           prompt,
           // 手选/专家连接器收窄必须透传（rework r1）：非空 scope 之外即使意图命中也不进白名单，
           // 否则 run policy 放行范围外连接器写、预载却按收窄不送 schema，判决互相矛盾。
-          getTextForegroundToolNamesForPrompt(prompt, config.toolScope?.allowedConnectorIds),
+          getTextForegroundToolNamesForPrompt(prompt, config.toolScope?.allowedConnectorIds, {
+            attachments: body.attachments,
+            model: config.modelConfig,
+          }),
           config.agentOverride?.tools,
         );
         config.foregroundToolFace = true;
@@ -1385,6 +1381,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const requestAttachments = body.attachments ?? [];
       const persistedAttachments = sanitizeAttachmentsForPersistence(requestAttachments);
       const visiblePrompt = stripInlineAttachmentBlocks(prompt);
+      // 只发文件时没有文字可做标题：退回首个附件名，不能落空串。
+      const titleSource = visiblePrompt.trim() || requestAttachments[0]?.name || visiblePrompt;
       const msgId = clientMessageId || generateMessageId();
       // ADR-040：renderer 只报它诚实知道的坐标，revision 在这里读源文件现算。
       // 升不上去（PPT / 缺 sheetName / 文件读不到）就没有 locator，退回 legacy 行为。
@@ -1455,10 +1453,20 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // agentOrchestrator 的 applyTurnSystemContext 在真机上根本不执行。
       const candidateNotice = buildCapabilityCandidateNotice(sessionId);
       if (candidateNotice) capabilityContextLines.push(candidateNotice);
+      const missingAttachmentContext = withMissingAttachmentTurnSystemContext(
+        { turnSystemContext: capabilityContextLines },
+        {
+          sessionId,
+          userText: visiblePrompt,
+          attachments: requestAttachments,
+          session: { messages: history },
+          workingDirectory: resolvedProject,
+        },
+      )?.turnSystemContext ?? capabilityContextLines;
       // FB-523：桌面主链不经 appService.sendMessage，/init-memory 等内置命令在此展开（仅模型面）
       const slashExpandedPrompt = await expandSlashPromptForModel(visiblePrompt, resolvedProject);
-      const modelFacePrompt = capabilityContextLines.length > 0
-        ? wrapWithTurnSystemContext(capabilityContextLines, slashExpandedPrompt)
+      const modelFacePrompt = missingAttachmentContext.length > 0
+        ? wrapWithTurnSystemContext(missingAttachmentContext, slashExpandedPrompt)
         : slashExpandedPrompt;
       deps.publishCompanionEvent?.(sessionId, 'message', { event: userMsg, runId: runContext.runId });
       const messages = [
@@ -1480,8 +1488,6 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           traceContext: runHandle.traceContext,
         })
         : undefined;
-      // TaskManager constructs its desktop orchestrator from this same main
-      // ConfigService singleton (getSettings + isDevModeAutoApproveEnabled).
       const configService = getHostConfigService();
       foregroundPermissionIsland = new OrchestratorPermissionIsland({
         // Must stay identical to TaskManager → AgentOrchestrator wiring.
@@ -1489,6 +1495,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         isDevModeAutoApproveEnabled: () => configService.isDevModeAutoApproveEnabled(),
         getExecutionTopology: () => 'main',
         hasApprovalUi: (request) => liveHasApprovalUi(sessionId, request, deps.hasCompanionApprovalUi),
+        isDetachedRun: () => runController.detached,
         onEvent: emitIslandEvent,
       });
       registerForegroundPermissionIsland(sessionId, foregroundPermissionIsland);
@@ -1527,16 +1534,13 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         resume: () => agentLoop.resume(),
         steer: (...args) => agentLoop.steer(...args),
       });
-      if (runController.disconnected) {
-        logger.warn(`[AgentRouter] Client disconnected before run ${runContext.runId} attached`);
-      }
 
       // 新会话时立即通知前端刷新列表（不等 agentLoop 完成）。
       // 只覆盖占位标题：手机/用户起过名的会话不能被首条 prompt 改写。
       if (isNewSession && body.historyVisibility !== 'meta') {
         const current = await (await deps.tryGetSessionManager())?.getSession?.(sessionId, 1);
         if (isPlaceholderSessionTitle(current?.title)) {
-          const title = visiblePrompt.length > 30 ? visiblePrompt.substring(0, 30) + '...' : visiblePrompt;
+          const title = buildSessionTitle(titleSource);
           broadcastSSE('session:updated', { sessionId, updates: { title } });
           broadcastSSE('session:list-updated', undefined);
         }
@@ -1550,7 +1554,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
       userMsgPrePersistedDb = await sessionStore.prePersistUserMessage({
         sessionId,
-        title: buildSessionTitle(visiblePrompt),
+        title: buildSessionTitle(titleSource),
         // preflight 时行还不存在的会话（服务端生成 sessionId 等），行在本轮 pre-persist
         // 才建：目录必须随建行落库——回写守卫要求 persistedSession 非空，跳过它的话
         // 第二轮起会话掉回扁平默认目录，同会话产物分裂（rework r1）
@@ -1592,7 +1596,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           await syncSupabaseSessionRow(sb, {
             sessionId,
             isNewSession,
-            title: buildSessionTitle(visiblePrompt),
+            title: buildSessionTitle(titleSource),
             provider: runModelConfig.provider,
             model: runModelConfig.model,
           });
@@ -1626,7 +1630,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         });
         await sessionStore.commitTurn({
           sessionId,
-          title: buildSessionTitle(visiblePrompt),
+          title: buildSessionTitle(titleSource),
           modelConfig: runModelConfig,
           historyLength: history.length,
           userMessagePrePersistedDb: userMsgPrePersistedDb,
@@ -1658,7 +1662,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       });
       const { assistantMsgId } = await sessionStore.commitTurn({
         sessionId,
-        title: buildSessionTitle(visiblePrompt),
+        title: buildSessionTitle(titleSource),
         modelConfig: runModelConfig,
         historyLength: history.length,
         userMessagePrePersistedDb: userMsgPrePersistedDb,
@@ -1674,7 +1678,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // 云同步自带 try/catch，失败不改变这一轮的结果。
       const finalStatus: SessionStatus = runEventCollector.runCancelled
         ? 'interrupted'
-        : runController.hadTerminalError
+        : runController.hadTerminalError && (turnTerminalFailure !== null || !getAgentErrorMessage(runController.lastTerminalErrorData))
           ? 'error'
           : 'completed';
       cloudRunTerminalState = finalStatus === 'completed'
@@ -1712,7 +1716,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           await syncSupabaseSessionRow(sb, {
             sessionId,
             isNewSession,
-            title: buildSessionTitle(visiblePrompt),
+            title: buildSessionTitle(titleSource),
             provider: runModelConfig.provider,
             model: runModelConfig.model,
           });
@@ -1748,7 +1752,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           // 更新会话标题（第一轮消息时）
           if (isNewSession) {
             await sessionsTable.update({
-              title: buildSessionTitle(visiblePrompt),
+              title: buildSessionTitle(titleSource),
               updated_at: Date.now(),
             }).eq('id', sessionId);
           }
@@ -1758,7 +1762,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      cloudRunTerminalState = runController.disconnected ? 'cancelled' : 'failed';
+      cloudRunTerminalState = 'failed';
       if (externalEngineFailureContext) {
         recordExternalEngineFailure({
           sessionId,
@@ -1768,7 +1772,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       }
       await runController.updateSessionStatus('error');
       await durableRunLifecycle.markFailure({
-        disconnected: runController.disconnected,
+        disconnected: false,
         message,
       });
       // try 路径没走到终态收线就抛出（引擎/落库异常）：后台条目同样要收线，否则
@@ -1783,7 +1787,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       deps.publishCompanionEvent?.(sessionId, 'error', { event: { code: 'RUN_FAILED', ...(failure ? { failure } : {}) }, runId: runContext?.runId });
       // 引擎已发过终态 error（runFinalizer 先发再抛）就不补发：同轮第二条 error 只会让
       // renderer 再渲染一张同款红卡。引擎那条自带 failure，落库分类走 lastTerminalErrorData。
-      if (!runController.disconnected && !runController.hadTerminalError) {
+      if (!runController.hadTerminalError) {
         runController.emitAgentEvent({
           type: 'error',
           data: {
@@ -1825,7 +1829,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         sessionId,
         triggerDrain: queuedInputDrain.handleReleasedSession,
       });
-      if (transport.cloudRunId) cloudRunRuntime.settle(transport.cloudRunId, cloudRunTerminalState);
+      if (transport.cloudRunId) cloudRunRuntime.settle(transport.cloudRunId, cloudRunTerminalState ?? 'failed');
       runController.destroy();
       // Telemetry: 结束会话追踪（写入聚合指标到 telemetry_sessions）
       try {
@@ -1870,7 +1874,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     }
     const parsedBody = AgentRunBodySchema.safeParse(req.body);
     if (!parsedBody.success) {
-      res.status(400).json({ error: 'Missing prompt' });
+      res.status(400).json({
+        error: 'Missing prompt',
+        ...(isPromptRequiredFailure(parsedBody.error, req.body) ? { code: PROMPT_REQUIRED } : {}),
+      });
       return;
     }
     // N2：/run 的 context 是 passthrough，客户端可伪造 delegationOrigin——一律剥掉。

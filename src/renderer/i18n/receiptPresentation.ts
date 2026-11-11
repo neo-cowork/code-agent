@@ -1,4 +1,7 @@
+import { roleEditReceiptZh, roleEditReceiptEn } from './roleEditReceipt';
+
 export const receiptPresentationZh = {
+  ...roleEditReceiptZh,
   receiptPresentation: {
     succeeded: '成功',
     failed: '失败',
@@ -14,6 +17,9 @@ export const receiptPresentationZh = {
         tmeet: '腾讯会议',
       },
       tools: {
+        runCommand: '运行命令',
+        writeFile: '写入文件',
+        editFile: '编辑文件',
         webFetch: '网页抓取',
         webSearch: '联网搜索',
         readFile: '读取文件',
@@ -36,6 +42,7 @@ export const receiptPresentationZh = {
 };
 
 export const receiptPresentationEn: typeof receiptPresentationZh = {
+  ...roleEditReceiptEn,
   receiptPresentation: {
     succeeded: 'Succeeded',
     failed: 'Failed',
@@ -51,6 +58,9 @@ export const receiptPresentationEn: typeof receiptPresentationZh = {
         tmeet: 'Tencent Meeting',
       },
       tools: {
+        runCommand: 'Run command',
+        writeFile: 'Write file',
+        editFile: 'Edit file',
         webFetch: 'Web fetch',
         webSearch: 'Web search',
         readFile: 'Read file',

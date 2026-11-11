@@ -965,23 +965,23 @@ function offerOverflowChoice(state: LedgerState, request: VoiceSpawnRequest): vo
   const active = [...state.items.values()].filter((item) => item.status === 'running');
   const options = [
     { label: '排队', description: '等任一槽位释放后自动开始。' },
-    ...active.map((item) => ({
+    ...active.slice(0, 2).map((item) => ({
       label: `替换${item.shortName ?? item.title}`,
       description: `先确认停止「${item.shortName ?? item.title}」，再开始「${request.shortName}」。`,
     })),
-  ].slice(0, 3);
+    { label: '暂不创建', description: '本次不创建后台任务。' },
+  ];
   void promptUserInChat([{
     header: '任务已满',
-    question: `「${request.shortName}」要排队，还是替换一件正在跑的任务？`,
+    question: active.length > 0
+      ? `当前后台任务槽位已满，「${request.shortName}」要排队等待，还是替换一件本会话的任务？`
+      : `当前后台任务槽位已满，「${request.shortName}」要排队等待空闲槽位，还是暂不创建？`,
     options,
   }], { sessionId: state.neoSessionId }).then(async (result) => {
     if (result.status !== 'answered') return;
     const answer = result.response?.answers?.['任务已满'];
-    if (answer === '排队') {
-      await startRun(state, request, { queueWhenFull: true });
-      return;
-    }
-    if (typeof answer !== 'string' || !answer.startsWith('替换')) return;
+    if (answer === '排队') return startRun(state, request, { queueWhenFull: true });
+    if (answer === '暂不创建' || typeof answer !== 'string' || !answer.startsWith('替换')) return;
     const shortName = answer.slice(2);
     const target = active.find((item) => (item.shortName ?? item.title) === shortName);
     if (!target || TERMINAL.includes(target.status)) return;

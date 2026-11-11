@@ -18,10 +18,13 @@ import { bindCloudRunAccountSource } from '../cloudRun/cloudRunLedger';
 import type { AuthUser, AuthStatus } from '../../../shared/contract';
 import { createLogger } from '../infra/logger';
 import { withTimeout } from '../infra/timeoutController';
+import { AUTH_TIMEOUTS } from '../../../shared/constants';
 
 const logger = createLogger('AuthService');
 const AUTH_BACKEND_UNAVAILABLE_ERROR = 'AUTH_BACKEND_UNAVAILABLE';
 const EXPLICIT_SIGN_OUT_EVENT_WINDOW_MS = 10_000;
+
+export type SessionValidationOutcome = 'verified' | 'expired' | 'deferred' | 'no-session';
 
 export interface AuthResult {
   success: boolean;
@@ -49,6 +52,39 @@ function readStringProperty(value: unknown, key: string): string | undefined {
   return optionalString(value[key]);
 }
 
+// ---------------------------------------------------------------------------
+// Restored-login degrade trace（FB 03 / realrun66）：登录态在冷启动后丢失时，
+// 日志必须能直接回答“为什么”。每条“缓存身份存在却被降级为未登录”的分支统一走
+// 这个 warn，用 reason 区分根因。字段只允许非敏感诊断值（event / 布尔标记 /
+// 错误消息 / 数值 status / 信任态）——绝不打 token / email / 用户 id / 原始
+// session JSON。
+// ---------------------------------------------------------------------------
+type AuthRestoreDegradeReason =
+  | 'empty_session_event'
+  | 'session_not_restorable'
+  | 'get_session_error'
+  | 'cached_user_missing'
+  | 'cached_user_invalid'
+  | 'cached_user_read_error'
+  | 'auth_backend_unavailable';
+
+interface AuthRestoreDegradeFields {
+  event?: string;
+  explicitSignOut?: boolean;
+  hadCachedIdentity?: boolean;
+  errorMessage?: string;
+  status?: number;
+  sessionTrustState?: SessionTrustState;
+  sessionExpired?: boolean;
+}
+
+function warnAuthRestoreDegraded(
+  reason: AuthRestoreDegradeReason,
+  fields: AuthRestoreDegradeFields = {},
+): void {
+  logger.warn('Auth restored login degraded to signed-out', { reason, ...fields });
+}
+
 function parseCachedAuthUser(serializedUser: string): AuthUser | null {
   const parsed: unknown = JSON.parse(serializedUser);
   if (!isUnknownRecord(parsed)) {
@@ -72,6 +108,7 @@ function parseCachedAuthUser(serializedUser: string): AuthUser | null {
 class AuthService {
   private currentUser: AuthUser | null = null;
   private sessionTrustState: SessionTrustState = 'none';
+  private revalidateInFlight: Promise<SessionValidationOutcome> | null = null;
   private onAuthChangeCallbacks: AuthChangeCallback[] = [];
   private initialized: boolean = false;
   private sessionExpired: boolean = false; // 2c(ADR-030): 曾登录但 session 不可恢复
@@ -149,7 +186,8 @@ class AuthService {
     // 1. 先从本地缓存读取用户信息，立即展示（无网络延迟）
     const cachedUser = this.loadCachedUser();
     if (cachedUser) {
-      logger.info(' Loaded cached user:', cachedUser.email);
+      // 不打 email：启动日志不是凭据该去的地方（degrade warn 只带非敏感字段）
+      logger.info(' Loaded cached user');
       this.currentUser = cachedUser;
       this.sessionTrustState = 'cached';
       this.notifyAuthChange(cachedUser);
@@ -157,6 +195,10 @@ class AuthService {
 
     if (!this.ensureSupabaseReady('initialize')) {
       logger.info(' Supabase not ready, keeping cached user until auth action retries');
+      // 后端不可用时缓存身份无法被验证/续期，后续受信操作都会 401——留一条可分辨的痕迹
+      warnAuthRestoreDegraded('auth_backend_unavailable', {
+        hadCachedIdentity: this.currentUser !== null,
+      });
       this.initialized = true;
       return;
     }
@@ -193,6 +235,14 @@ class AuthService {
         } else if (wasAuthenticated && explicitSignOut) {
           logger.info(' Explicit sign-out confirmed by auth state change');
         }
+        if (wasAuthenticated) {
+          warnAuthRestoreDegraded('empty_session_event', {
+            event,
+            explicitSignOut,
+            hadCachedIdentity: true,
+            sessionExpired: this.sessionExpired,
+          });
+        }
         logger.info(' Auth session cleared:', {
           event,
           hadCachedIdentity: wasAuthenticated,
@@ -215,16 +265,20 @@ class AuthService {
   /**
    * 后台验证 session，不阻塞启动
    */
-  private async validateSessionInBackground(): Promise<void> {
+  private async validateSessionInBackground(): Promise<SessionValidationOutcome> {
     try {
       const supabase = getSupabase();
       // withTimeout 自动清理 timer，避免胜者侧 leak
       const result = (await withTimeout(
         supabase.auth.getSession(),
-        5000,
+        AUTH_TIMEOUTS.SESSION_FETCH_MS,
         'Session fetch timeout',
-      )) as { data: { session: { user?: SupabaseUser } | null } } | null;
+      )) as {
+        data: { session: { user?: SupabaseUser } | null };
+        error?: { message?: unknown; status?: unknown };
+      } | null;
       const session = result?.data?.session;
+      const sessionError = result?.error;
       logger.info(' Background validation result:', session ? 'valid' : 'invalid');
 
       if (session?.user) {
@@ -234,25 +288,61 @@ class AuthService {
         this.sessionTrustState = 'verified';
         this.cacheUser(freshUser);
         this.notifyAuthChange(freshUser);
+        return 'verified';
       } else if (this.currentUser) {
         // Session 无效但有缓存用户：曾登录但 session 不可恢复（过期/失效）。
         // 2c(ADR-030): 仍清除无效会话（避免下游拿 null-JWT 去写 RLS 表失败），但置 sessionExpired，
         // 让前端弹「登录已过期，点一下重连」非阻塞提示——取代过去的"默默清零"。
+        if (sessionError) {
+          warnAuthRestoreDegraded('get_session_error', {
+            hadCachedIdentity: true,
+            sessionTrustState: this.sessionTrustState,
+            ...(typeof sessionError.message === 'string' ? { errorMessage: sessionError.message } : {}),
+            ...(typeof sessionError.status === 'number' ? { status: sessionError.status } : {}),
+          });
+        } else {
+          warnAuthRestoreDegraded('session_not_restorable', {
+            hadCachedIdentity: true,
+            sessionTrustState: this.sessionTrustState,
+          });
+        }
         logger.info(' Session expired with cached identity → 提示重连（非默默清零）');
         this.currentUser = null;
         this.sessionTrustState = 'none';
         this.clearCachedUser();
         this.sessionExpired = true;
         this.notifyAuthChange(null);
+        return 'expired';
       }
+      return 'no-session';
     } catch (error) {
       // 网络错误时保持缓存用户，不清除
       if (this.currentUser) {
-        logger.debug(' Background session validation deferred; keeping cached user');
+        logger.debug(' Background session validation deferred; keeping cached user', {
+          errorMessage: error instanceof Error ? error.message : String(error),
+          timeout: error instanceof Error && error.message === 'Session fetch timeout',
+        });
       } else {
         logger.warn(' Background session validation failed:', error);
       }
+      return 'deferred';
     }
+  }
+
+  /**
+   * 按需重校验 session（single-flight）：启动后台校验超时后信任态会一直停在 'cached'，
+   * 需要已验证身份的操作（如开启完全访问）调用它补一次，而不必重启应用。
+   */
+  revalidateSession(): Promise<SessionValidationOutcome> {
+    if (!this.revalidateInFlight) {
+      this.revalidateInFlight = this.validateSessionInBackground()
+        .then((outcome) => {
+          logger.info(' Session revalidation finished:', { outcome, trust: this.sessionTrustState });
+          return outcome;
+        })
+        .finally(() => { this.revalidateInFlight = null; });
+    }
+    return this.revalidateInFlight;
   }
 
   /**
@@ -274,13 +364,28 @@ class AuthService {
     try {
       const storage = getSecureStorage();
       const userJson = storage.get('auth.user');
-      if (userJson) {
-        return parseCachedAuthUser(userJson);
+      if (!userJson) {
+        // “没有 auth.user”可能只是这台机器从未登录过；只有存储里还留有其他登录
+        // 痕迹（历史 session 键 / 记住密码 / 快捷 token）时，缓存缺失才值得告警——
+        // 否则每次全新安装的冷启动都会误报。
+        if (storage.hasAnyPastLoginTrace()) {
+          warnAuthRestoreDegraded('cached_user_missing');
+        }
+        return null;
       }
+      const parsed = parseCachedAuthUser(userJson);
+      if (!parsed) {
+        warnAuthRestoreDegraded('cached_user_invalid');
+        return null;
+      }
+      return parsed;
     } catch (e) {
       logger.error(' Failed to load cached user:', e);
+      warnAuthRestoreDegraded('cached_user_read_error', {
+        errorMessage: e instanceof Error ? e.message : String(e),
+      });
+      return null;
     }
-    return null;
   }
 
   /**

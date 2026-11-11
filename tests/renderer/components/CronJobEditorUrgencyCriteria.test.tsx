@@ -59,7 +59,7 @@ afterEach(() => {
 
 function openActionTab(job: CronJobDefinition | null) {
   render(<CronJobEditor isOpen job={job} onClose={() => undefined} />);
-  fireEvent.click(screen.getByText('执行动作'));
+  fireEvent.click(screen.getByText(useAppStore.getState().language === 'en' ? 'Action' : '执行动作'));
 }
 
 function urgencyInput(): HTMLInputElement {
@@ -83,6 +83,8 @@ describe('N-CRON-MORNING-TRIAGE-URGENCY-RULE 编辑器紧急判据字段', () =>
 
     fireEvent.change(urgencyInput(), { target: { value: '只有老板发来的邮件算今天必须处理' } });
     fireEvent.click(screen.getByText('保存修改'));
+    // 无角色任务先过保存前确认卡（N-CRON-MORNING-TRIAGE-REST1），确认才落库。
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
 
     await waitFor(() => expect(updateJob).toHaveBeenCalledTimes(1), { timeout: 3000 });
     expect(updateJob.mock.calls[0]?.[1]).toMatchObject({
@@ -100,6 +102,7 @@ describe('N-CRON-MORNING-TRIAGE-URGENCY-RULE 编辑器紧急判据字段', () =>
 
     fireEvent.change(urgencyInput(), { target: { value: '' } });
     fireEvent.click(screen.getByText('保存修改'));
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
 
     await waitFor(() => expect(updateJob).toHaveBeenCalledTimes(1), { timeout: 3000 });
     const submitted = updateJob.mock.calls[0]?.[1] as { action?: { urgencyCriteria?: string } };
