@@ -541,7 +541,7 @@ export function projectTurns(
         id: msg.id,
         type: 'system',
         subtype: spec.subtype,
-        content: msg.content,
+        content: spec.displayContent ? spec.displayContent(msg.metadata ?? {}) : msg.content,
         timestamp: msg.timestamp,
         metadata: msg.metadata,
       };

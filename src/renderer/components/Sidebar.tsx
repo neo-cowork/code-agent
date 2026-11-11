@@ -49,7 +49,8 @@ import { useSidebarSessionActions } from './features/sidebar/useSidebarSessionAc
 import { useSidebarRowActions, resolveRuntimeLogsDir } from './features/sidebar/useSidebarRowActions';
 import { SidebarStatusFilterDropdown } from './features/sidebar/SidebarStatusFilterDropdown';
 import { SidebarAccountMenu } from './features/sidebar/SidebarAccountMenu';
-import { SidebarAccountStatus } from './features/sidebar/SidebarAccountStatus';
+import { SidebarSignedOutFooter } from './features/sidebar/SidebarSignedOutFooter';
+import { useSidebarSearchShortcut } from './features/sidebar/useSidebarSearchShortcut';
 import { SidebarSearchDialog } from './features/sidebar/SidebarSearchDialog';
 import { SidebarNewTaskRow } from './features/sidebar/SidebarNewTaskRow';
 import { applySessionNotificationAttention } from './features/sidebar/sessionNotificationAttention';
@@ -385,6 +386,11 @@ export const Sidebar: React.FC = () => {
   }): Promise<boolean> => new Promise((resolve) => {
     setSessionForkConfirm({ ...options, resolve });
   }), []);
+  const openSearchDialog = useCallback(() => {
+    setSearchQuery('');
+    setSearchDialogOpen(true);
+  }, [setSearchQuery]);
+  const searchShortcut = useSidebarSearchShortcut(openSearchDialog);
   const collapseTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   useEffect(
@@ -705,12 +711,9 @@ export const Sidebar: React.FC = () => {
               size="md"
               className="h-8 w-8"
               icon={<Search className="h-4 w-4" />}
-              aria-label={sb.openSearch}
+              aria-label={sb.openSearch} title={[sb.searchDialogTitle, searchShortcut].filter(Boolean).join(' ')}
               data-testid="sidebar-search-trigger"
-              onClick={() => {
-                setSearchQuery('');
-                setSearchDialogOpen(true);
-              }}
+              onClick={openSearchDialog}
             />
             {/* 状态筛选：仅管理员可见；搜索入口对所有人可见。 */}
             {canOpenSessionReplay && (

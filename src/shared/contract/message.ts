@@ -313,6 +313,12 @@ export interface MessageMetadata {
   /** Foreground turn ended at its step limit; a new user turn can continue it. */
   stoppedByStepLimit?: true;
   /**
+   * 这条 user 消息是宿主从运行记录（telemetry）重建的，不是用户原话。
+   * 正文只存重建内容；发给模型时由上下文装配补回「可能已脱敏缩写」的免责声明，
+   * 界面在气泡旁显示一句中文说明。
+   */
+  telemetryRecovered?: true;
+  /**
    * Marks a role:user message injected into an active run by runtime steer.
    * The message remains visible and durable, but does not start a new turn
    * when checking whether that run produced a reply.
@@ -465,6 +471,8 @@ export interface MessageMetadata {
   };
   /** 显式改道成功后的动作回执；原话不投成用户气泡。 */
   inputRedirectReceipt?: InputRedirectReceiptMetadata;
+  /** 重启中断的后台任务需要在原会话展示一条提示。 */
+  backgroundTaskInterrupted?: { taskId: string };
   /** 后台任务统一终态投影，供后续 turn 做短名指代与状态追问。 */
   backgroundTaskResult?: {
     source: 'agent-result';

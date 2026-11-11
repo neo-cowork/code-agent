@@ -159,6 +159,18 @@ describe('CronService agent run snapshot wiring', () => {
     expect(agentState.cleanup).toHaveBeenCalledWith('cron-session-1');
   });
 
+  it('passes task personal opt-ins into runtime scope and removes the default personal-source denial', async () => {
+    const service = new CronService();
+    const harness = service as unknown as CronServiceHarness;
+    const definition = makeDefinition();
+    if (definition.action.type !== 'agent') throw new Error('Expected agent');
+    definition.action.allowedPersonalSkillIds = [' wechat-local-query ', 'wechat-local-query'];
+    await harness.executeAction(definition, definition.action);
+    expect(agentState.sendMessage.mock.calls[0][2].toolScope).toEqual({ optInPersonalSkillIds: ['wechat-local-query'] });
+    expect(agentState.sendMessage.mock.calls[0][0]).not.toContain('默认不读个人聊天记录');
+    expect(agentState.sendMessage.mock.calls[0][2].systemInstructions).toContain(UNATTENDED_TRUST_NOTICE);
+  });
+
   it('subscribes unattended cron and heartbeat runs without streaming deltas', async () => {
     await runAgentAction({ heartbeatTask: true }, 'heartbeat done');
 
