@@ -157,7 +157,7 @@ describe('production manual cron editor English inventory', () => {
       if (field === 'unknown-agent') job.action = { type: 'agent', agentType: 'missing', prompt: 'Prepare the report' };
       if (field === 'prompt') job.action = { type: 'agent', agentType: 'default', prompt: '' };
       if (field === 'webhook') job.action = { type: 'webhook', url: '', method: 'POST' };
-      if (field === 'ipc') job.action = { type: 'ipc', channel: '' };
+      if (field === 'ipc') job.action = { type: 'ipc', channel: '', payload: {} };
       const cc = open(kind, 'edit', language, job);
       fireEvent.click(screen.getByText(cc.editorChrome.tabs.action));
       if (field === 'tool-json') fireEvent.change(screen.getAllByRole('textbox').at(-1)!, { target: { value: '{' } });
