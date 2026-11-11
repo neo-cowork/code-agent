@@ -1,5 +1,6 @@
 import http from 'node:http';
 import { AddressInfo } from 'node:net';
+import express from 'express';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createApp, type CreateAppDeps } from '../../../src/web/app';
 import { shouldDaemonExit, type DaemonIdleSnapshot } from '../../../src/host/services/daemon/daemonIdle';
@@ -223,7 +224,11 @@ describe('web app assembly (createApp)', () => {
       'rateLimitMiddleware',
       'authMiddleware',
       'jsonParser',
+      // 5xx 观察者紧随 body parser（N-FIX-SIGNED-OUT-SEND-500-RAW-HTML-REDESIGN）
+      'serverErrorObserver',
       'dispatchHostWebRoute',
+      // 终端错误处理必须最后挂（拒绝的 async handler 统一 JSON 应答）
+      'serverErrorHandler',
     ]);
   });
 
@@ -305,6 +310,60 @@ describe('web app assembly (createApp)', () => {
       expect(response.status).toBe(200);
       const body = await response.json();
       expect(body).toMatchObject({ status: 'ok', mode: 'web-standalone' });
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((err) => (err ? reject(err) : resolve()));
+      });
+    }
+  });
+
+  // N-FIX-SIGNED-OUT-SEND-500-RAW-HTML-REDESIGN：5xx 观察者 + 终端错误处理两件套。
+  // createApp 的挂载已由上面的 middleware 顺序用例钉住；这里过真实 express 验证行为：
+  // ① 显式 res.status(5xx).json 也要留 method/route/status/reason 日志；
+  // ② next(err) 的 5xx 出 JSON {error, code}（无 HTML、无 stack），且不与观察者双记。
+  it('observes explicit 5xx responses and converts forwarded errors to JSON without double logging', async () => {
+    const { observeServerErrors, handleServerError } = await import('../../../src/web/middleware/serverErrors');
+    const errorLog: unknown[][] = [];
+    const logger = { info: () => {}, warn: () => {}, error: (...args: unknown[]) => errorLog.push(args) };
+    const app = createApp(buildDeps('/tmp/seam-assembly-server-errors'));
+    app.use(express.json());
+    app.use(observeServerErrors(logger));
+    app.post('/api/boom-explicit', (_req, res) => {
+      res.status(503).json({ error: 'upstream unavailable' });
+    });
+    app.post('/api/boom-next', (_req, res, next) => {
+      next(new Error('unexpected route failure'));
+    });
+    app.use(handleServerError(logger));
+
+    const server = http.createServer(app);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as AddressInfo;
+    try {
+      const explicit = await fetch(`http://127.0.0.1:${port}/api/boom-explicit`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${SERVER_AUTH_TOKEN}` },
+      });
+      expect(explicit.status).toBe(503);
+      await explicit.text();
+
+      const forwarded = await fetch(`http://127.0.0.1:${port}/api/boom-next`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${SERVER_AUTH_TOKEN}` },
+      });
+      const rawBody = await forwarded.text();
+      expect(forwarded.status).toBe(500);
+      expect(forwarded.headers.get('content-type')).toContain('application/json');
+      expect(rawBody).not.toMatch(/<html|<!DOCTYPE|unexpected route failure/i);
+      expect(JSON.parse(rawBody)).toEqual({
+        error: 'Local server request failed',
+        code: 'INTERNAL_SERVER_ERROR',
+      });
+
+      expect(errorLog).toEqual([
+        ['Local server request failed', { method: 'POST', route: '/api/boom-explicit', status: 503, reason: 'upstream unavailable' }],
+        ['Local server request failed', { method: 'POST', route: '/api/boom-next', status: 500, reason: 'Error: unexpected route failure' }],
+      ]);
     } finally {
       await new Promise<void>((resolve, reject) => {
         server.close((err) => (err ? reject(err) : resolve()));

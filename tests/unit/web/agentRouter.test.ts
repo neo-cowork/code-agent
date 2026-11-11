@@ -11,6 +11,8 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { getPromptCommandService } from '../../../src/host/services/commands/promptCommandService';
 import { createCLIAgent } from '../../../src/cli/adapter';
 import { buildQueuedAgentRunBody, createAgentRouter } from '../../../src/web/routes/agent';
+import { handleServerError } from '../../../src/web/middleware/serverErrors';
+import { ProjectSourceTrustError } from '../../../src/host/services/project/projectSourceTrustError';
 import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
 import { HostReasonCode, type Message } from '../../../src/shared/contract';
 import { getModelAuthFailureMarker } from '../../../src/host/model/errorClassifier';
@@ -352,6 +354,8 @@ async function startAgentApi(deps: {
     publishCompanionEvent: deps.publishCompanionEvent,
     hasCompanionApprovalUi: deps.hasCompanionApprovalUi,
   } as Parameters<typeof createAgentRouter>[0]));
+  // 终端错误处理按 createApp 的真实挂载顺序补上（拒绝的 async handler 统一 JSON 应答）。
+  app.use(handleServerError(logger));
 
   server = await new Promise<http.Server>((resolve) => {
     const nextServer = app.listen(0, '127.0.0.1', () => resolve(nextServer));
@@ -1236,6 +1240,112 @@ describe('createAgentRouter', () => {
       await response.text().catch(() => undefined);
     } finally {
       projectServiceMocks.getWorkspaceScope.mockReset();
+      await rm(workspaceRoot, { recursive: true, force: true });
+    }
+  });
+
+  // N-FIX-SIGNED-OUT-SEND-500-RAW-HTML-REDESIGN：trusted Source 的 identity 快照缺失时
+  // getWorkspaceScope 抛 ProjectSourceTrustError——此前经 Express 默认 handler 出整页
+  // HTML 500。现在写 SSE 之前收口成 422 + 稳定码；且 run 未注册，第二次发送拿到同一
+  // 个 422（不是「另一条 run 正在跑」的 409）。
+  it('answers a ProjectSourceTrustError from workspace-scope resolution with 422 PROJECT_SOURCE_TRUST, on repeat sends too', async () => {
+    await closeServer();
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'agent-trust-reject-'));
+    const getSession = vi.fn(async () => ({
+      id: 'session-trust-reject',
+      title: 'Trust reject',
+      projectId: 'project-trust-reject',
+      workingDirectory: workspaceRoot,
+    }));
+    projectServiceMocks.getWorkspaceScope.mockImplementation(() => {
+      throw new ProjectSourceTrustError('identity_changed', workspaceRoot);
+    });
+
+    try {
+      await startAgentApi({
+        tryGetSessionManager: async () => ({ getSession, updateSession: vi.fn(async () => undefined) }),
+      });
+      const post = () => fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: '帮我把下载文件夹里的照片按日期改名',
+          sessionId: 'session-trust-reject',
+          context: { workingDirectory: workspaceRoot },
+        }),
+      });
+      const first = await post();
+      expect(await first.json()).toEqual({
+        error: 'Project folder needs trust confirmation',
+        code: 'PROJECT_SOURCE_TRUST',
+        kind: 'identity_changed',
+      });
+      expect(first.status).toBe(422);
+      // 第二次发送：run 未注册，拿到同一个 422（不是「另一条 run 正在跑」的 409）
+      const second = await post();
+      expect(second.status).toBe(422);
+      expect(await second.json()).toEqual({
+        error: 'Project folder needs trust confirmation',
+        code: 'PROJECT_SOURCE_TRUST',
+        kind: 'identity_changed',
+      });
+      expect(runRegistry.getBySessionId('session-trust-reject')).toBeUndefined();
+      expect(logger.warn).toHaveBeenCalledWith(
+        '[AgentRouter] run rejected by Project Source trust gate',
+        expect.objectContaining({ sessionId: 'session-trust-reject', kind: 'identity_changed' }),
+      );
+    } finally {
+      projectServiceMocks.getWorkspaceScope.mockReset();
+      await rm(workspaceRoot, { recursive: true, force: true });
+    }
+  });
+
+  // ④ 终端错误处理：scope 预检抛普通 Error（如两个 Source 根重叠）时不许再出 HTML——
+  // 统一 JSON 500 + INTERNAL_SERVER_ERROR，并留一条 method/route/status/reason 日志。
+  it('answers an unexpected pre-SSE failure with JSON INTERNAL_SERVER_ERROR and logs it', async () => {
+    await closeServer();
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'agent-overlap-500-'));
+    const getSession = vi.fn(async () => ({
+      id: 'session-overlap-500',
+      title: 'Overlap',
+      projectId: 'project-overlap-500',
+      workingDirectory: workspaceRoot,
+    }));
+    projectServiceMocks.getWorkspaceScope.mockImplementation(() => {
+      throw new Error(`Project sources overlap: ${workspaceRoot} and ${workspaceRoot}/sub`);
+    });
+    logger.error.mockClear();
+
+    try {
+      await startAgentApi({
+        tryGetSessionManager: async () => ({ getSession, updateSession: vi.fn(async () => undefined) }),
+      });
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: '帮我把下载文件夹里的照片按日期改名',
+          sessionId: 'session-overlap-500',
+          context: { workingDirectory: workspaceRoot },
+        }),
+      });
+      const rawBody = await response.text();
+      expect(response.status).toBe(500);
+      expect(response.headers.get('content-type')).toContain('application/json');
+      expect(rawBody).not.toMatch(/<html|<!DOCTYPE/i);
+      expect(JSON.parse(rawBody)).toEqual({
+        error: 'Local server request failed',
+        code: 'INTERNAL_SERVER_ERROR',
+      });
+      expect(logger.error).toHaveBeenCalledWith('Local server request failed', {
+        method: 'POST',
+        route: '/api/run',
+        status: 500,
+        reason: expect.stringContaining('Project sources overlap'),
+      });
+    } finally {
+      projectServiceMocks.getWorkspaceScope.mockReset();
+      logger.error.mockClear();
       await rm(workspaceRoot, { recursive: true, force: true });
     }
   });

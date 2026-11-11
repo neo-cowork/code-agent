@@ -35,6 +35,7 @@ import {
   isWebServiceMode,
   rateLimitMiddleware,
 } from './middleware/auth';
+import { handleServerError, observeServerErrors } from './middleware/serverErrors';
 
 // Route modules
 import { createHealthRouter } from './routes/health';
@@ -249,6 +250,9 @@ export function createApp(deps: CreateAppDeps): express.Express {
 
   // JSON body parser
   app.use(express.json({ limit: '50mb', strict: false }));
+
+  // 5xx 观察者：显式 status(5xx) 的响应也留一条统一口径的 error 日志
+  app.use(observeServerErrors(logger));
 
   // ── Health & SSE (extracted to routes/health.ts) ────────────────────
   app.use('/api', createHealthRouter({
@@ -778,6 +782,9 @@ export function createApp(deps: CreateAppDeps): express.Express {
     dataDir: resolveCodeAgentDataDir(),
     currentShellVersion: getAppVersion(),
   }));
+
+  // 终端错误处理（必须最后挂）：拒绝的 async handler 统一 JSON 应答，不出 HTML 错误页
+  app.use(handleServerError(logger));
 
   return app;
 }
