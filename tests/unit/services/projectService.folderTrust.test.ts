@@ -14,6 +14,7 @@ import {
 } from '../../../src/host/services/project/projectSourceTrustRecovery';
 import {
   evaluateFolderTrust,
+  revokeFolderTrust,
   resetFolderTrustServiceForTest,
   closeFolderTrustService,
 } from '../../../src/host/security/folderTrustService';
@@ -337,6 +338,98 @@ describe('ProjectService 信任快照补拍（confirmSessionProjectSources）', 
 
     await expect(confirmSessionProjectSources({ projectId: 'proj-drifted', projects: svc }))
       .rejects.toMatchObject({ reason: 'identity_changed' });
+  });
+
+  it('folder_trust 已被显式吊销：拒绝 folder_trust_blocked，吊销决定不被一键确认覆盖', async () => {
+    await fs.mkdir(path.join(confirmRoot, 'revoked-project'), { recursive: true });
+    const revokedDir = await fs.realpath(path.join(confirmRoot, 'revoked-project'));
+    const { repo } = createRepoFixture();
+    repo.upsertProject(makeProject('proj-revoked', revokedDir));
+    repo.upsertSource({
+      id: 'src-revoked',
+      projectId: 'proj-revoked',
+      path: revokedDir,
+      canonicalPath: revokedDir,
+      role: 'primary',
+      access: 'read_write',
+      trustState: 'trusted',
+      identityDev: null,
+      identityIno: null,
+      identityBirthtimeNs: null,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    const svc = new ProjectService(() => repo);
+    await revokeFolderTrust(revokedDir);
+
+    await expect(confirmSessionProjectSources({ projectId: 'proj-revoked', projects: svc }))
+      .rejects.toMatchObject({ reason: 'folder_trust_blocked' });
+    // 显式吊销必须原样留着（buildEvaluation「never relax an explicit denial」）
+    expect((await evaluateFolderTrust(revokedDir)).state).toBe('blocked');
+    expect(svc.listSources('proj-revoked')[0].identityIno).toBeNull();
+    expect(() => svc.getWorkspaceScope('proj-revoked')).toThrow('Project Source trust identity changed');
+  });
+
+  it('目录带 gated 配置（hooks）且未过审：拒绝 folder_trust_review_required，hooks 不被静默启用', async () => {
+    const gatedDir = path.join(confirmRoot, 'gated-project');
+    await fs.mkdir(path.join(gatedDir, '.code-agent', 'hooks'), { recursive: true });
+    await fs.writeFile(path.join(gatedDir, '.code-agent', 'hooks', 'hooks.json'), '{"PreToolUse":[]}', 'utf-8');
+    const gatedReal = await fs.realpath(gatedDir);
+    const { repo } = createRepoFixture();
+    repo.upsertProject(makeProject('proj-gated', gatedReal));
+    repo.upsertSource({
+      id: 'src-gated',
+      projectId: 'proj-gated',
+      path: gatedReal,
+      canonicalPath: gatedReal,
+      role: 'primary',
+      access: 'read_write',
+      trustState: 'trusted',
+      identityDev: null,
+      identityIno: null,
+      identityBirthtimeNs: null,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    const svc = new ProjectService(() => repo);
+
+    await expect(confirmSessionProjectSources({ projectId: 'proj-gated', projects: svc }))
+      .rejects.toMatchObject({ reason: 'folder_trust_review_required' });
+    // 未审的 gated 项不许聊天内一键放行：目录仍未信任、gated 项仍列在 blockedItems
+    const evaluation = await evaluateFolderTrust(gatedReal);
+    expect(evaluation.state).not.toBe('trusted');
+    expect(evaluation.blockedItems.length).toBeGreaterThan(0);
+    expect(svc.listSources('proj-gated')[0].identityIno).toBeNull();
+    expect(() => svc.getWorkspaceScope('proj-gated')).toThrow('Project Source trust identity changed');
+  });
+
+  it('目录只带 CLAUDE.md（非 gated）：仍可聊天内确认补拍——门只拦会自己动的配置', async () => {
+    const plainDir = path.join(confirmRoot, 'readonly-project');
+    await fs.mkdir(plainDir, { recursive: true });
+    await fs.writeFile(path.join(plainDir, 'CLAUDE.md'), '# notes', 'utf-8');
+    const plainReal = await fs.realpath(plainDir);
+    const { repo } = createRepoFixture();
+    repo.upsertProject(makeProject('proj-readonly', plainReal));
+    repo.upsertSource({
+      id: 'src-readonly',
+      projectId: 'proj-readonly',
+      path: plainReal,
+      canonicalPath: plainReal,
+      role: 'primary',
+      access: 'read_write',
+      trustState: 'trusted',
+      identityDev: null,
+      identityIno: null,
+      identityBirthtimeNs: null,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    const svc = new ProjectService(() => repo);
+
+    await expect(confirmSessionProjectSources({ projectId: 'proj-readonly', projects: svc }))
+      .resolves.toEqual({ confirmed: true, sources: 1 });
+    expect((await evaluateFolderTrust(plainReal)).state).toBe('trusted');
+    expect(svc.getWorkspaceScope('proj-readonly')?.primaryRoot).toBe(plainReal);
   });
 
   it('没有失败 Source 时幂等成功（sources: 0）', async () => {

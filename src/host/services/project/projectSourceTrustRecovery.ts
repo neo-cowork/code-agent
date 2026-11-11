@@ -6,8 +6,8 @@
 // PROJECT_SOURCE_TRUST（N-FIX-SIGNED-OUT-SEND-500-RAW-HTML-REDESIGN）。这里实现
 // 用户显式确认后的恢复：只重拍「快照缺失且目录还在、身份没真变」的 Source——
 //   setFolderTrust（folder_trust 表落当前身份）→ 既有 updateProject 路径原样重跑
-//   （buildSource 现读 stat 重拍快照；evaluateFolderTrust 门与 TOCTOU 检查都在
-//   既有路径里）。目录消失 / 身份真的变了 / 信任被吊销一律拒绝，绝不静默补信任。
+//   （buildSource 现读 stat 重拍快照；TOCTOU 检查在既有路径里）。目录消失 / 身份真的
+//   变了 / 信任被吊销 / 带 gated 配置（hooks/MCP）未过审一律拒绝，绝不静默补信任。
 // 客户端只给 sessionId；Source 集合从服务端台账现读，不接受任何路径输入。
 // ============================================================================
 
@@ -16,7 +16,7 @@ import {
   workspaceIdentityMatches,
   workspacePathIdentity,
 } from '../../runtime/workspaceScope';
-import { setFolderTrust } from '../../security/folderTrustService';
+import { evaluateFolderTrust, setFolderTrust } from '../../security/folderTrustService';
 import type { ProjectService } from './projectService';
 
 export type ProjectTrustConfirmFailureReason =
@@ -25,6 +25,8 @@ export type ProjectTrustConfirmFailureReason =
   | 'source_missing'
   | 'identity_changed'
   | 'not_trusted'
+  | 'folder_trust_blocked'
+  | 'folder_trust_review_required'
   | 'folder_trust_record_failed'
   | 'update_rejected'
   | 'verification_failed';
@@ -88,6 +90,21 @@ export async function confirmSessionProjectSources(
     }
     if (!missingSnapshot(source)) {
       throw new ProjectTrustConfirmError('identity_changed');
+    }
+    // Folder Trust 门先于任何写入：显式吊销绝不放松（buildEvaluation「never relax an
+    // explicit denial」）；带 gated 项（hooks/MCP 等会自己动的配置）的未信任目录必须走
+    // Folder Trust 审阅——聊天内一键确认不展示这些配置，不构成知情确认（判据与
+    // ensureFolderTrustForSpaceCreation 一致）。评估读不出来同样拒绝：放行会让下面的
+    // setFolderTrust 无条件覆盖，这道门就白设了。
+    const evaluation = await evaluateFolderTrust(source.canonicalPath).catch(() => null);
+    if (!evaluation) {
+      throw new ProjectTrustConfirmError('verification_failed');
+    }
+    if (evaluation.state === 'blocked') {
+      throw new ProjectTrustConfirmError('folder_trust_blocked');
+    }
+    if (evaluation.state !== 'trusted' && evaluation.blockedItems.length > 0) {
+      throw new ProjectTrustConfirmError('folder_trust_review_required');
     }
   }
 
