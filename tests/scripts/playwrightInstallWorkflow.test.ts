@@ -101,7 +101,7 @@ describe('Playwright install lives in the composite action', () => {
 
 describe('swarm-ci Playwright jobs use the pinned Playwright image instead of apt', () => {
   const containerJobs = ['smoke', 'unit', 'full', 'perf-journey-ratchet'];
-  const doc = loadWorkflow(path.join(workflowsDir, 'swarm-ci.yml')) as {
+  const doc = loadYaml(readFileSync(path.join(workflowsDir, 'swarm-ci.yml'), 'utf8')) as {
     jobs: Record<string, { container?: string | { image?: string }; steps?: WorkflowStep[] }>;
   };
   const lockVersion = (JSON.parse(readFileSync(path.join(repoRoot, 'package-lock.json'), 'utf8')) as {
@@ -116,15 +116,15 @@ describe('swarm-ci Playwright jobs use the pinned Playwright image instead of ap
 
   it.each(containerJobs)('%s trusts the workspace for git right after checkout', (name) => {
     const steps = doc.jobs[name].steps ?? [];
-    const checkout = steps.findIndex((step) => (step.uses ?? '').startsWith('actions/checkout'));
+    const checkout = steps.findIndex((step) => String(step.uses ?? '').startsWith('actions/checkout'));
     expect(checkout).toBeGreaterThanOrEqual(0);
-    expect(steps[checkout + 1].run ?? '').toContain('git config --global --add safe.directory "$GITHUB_WORKSPACE"');
+    expect(String(steps[checkout + 1].run ?? '')).toContain('git config --global --add safe.directory "$GITHUB_WORKSPACE"');
   });
 
   it.each(containerJobs)('%s never runs apt or playwright install', (name) => {
     for (const step of doc.jobs[name].steps ?? []) {
-      expect(step.uses ?? '').not.toContain(COMPOSITE);
-      expect(step.run ?? '').not.toMatch(/apt(-get)?\s|playwright install|sudo /);
+      expect(String(step.uses ?? '')).not.toContain(COMPOSITE);
+      expect(String(step.run ?? '')).not.toMatch(/apt(-get)?\s|playwright install|sudo /);
     }
   });
 });
