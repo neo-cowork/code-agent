@@ -1,3 +1,4 @@
+import { normalizePersonalSkillIds } from '@shared/cronPersonalSkills';
 import type {
   AgentAction,
   CronJobDefinition,
@@ -16,6 +17,7 @@ import { isCronPermissionDeniedMarker } from '@shared/cronPermissionDenied';
 import { CRON_AGENT_TYPES, CRON_EVENT_TRIGGER } from '@shared/constants';
 import { formatCronExpressionLabel, humanizeEverySchedule, type CronHumanLang } from '@shared/cronHumanize';
 import { redactCommandKeywordSecrets, redactCredentialText } from '@shared/security/secretPatterns';
+import { cronEditorChromeZh } from '../../../i18n/cronEditorChrome';
 import { formatDateTime } from '../../../utils/formatDateTime';
 import { getBuiltinJobDisplay } from './builtinJobDisplay';
 
@@ -92,6 +94,7 @@ export interface CronJobDraft {
   agentLibraryProjectId?: string;
   /** agent 动作：用户自定义 must_today 判据（N-CRON-MORNING-TRIAGE-URGENCY-RULE）。 */
   agentUrgencyCriteria?: string;
+  agentAllowedPersonalSkillIds?: string[];
   webhookUrl: string;
   webhookMethod: WebhookAction['method'];
   webhookHeadersText: string;
@@ -137,6 +140,7 @@ export function createDefaultCronJobDraft(): CronJobDraft {
     agentRoleId: '',
     agentLibraryProjectId: '',
     agentUrgencyCriteria: '',
+    agentAllowedPersonalSkillIds: [],
     webhookUrl: '',
     webhookMethod: 'POST',
     webhookHeadersText: '{}',
@@ -236,6 +240,7 @@ export function buildDraftFromJob(job: CronJobDefinition): CronJobDraft {
       draft.agentRoleId = action.roleId ?? '';
       draft.agentLibraryProjectId = action.libraryProjectId ?? '';
       draft.agentUrgencyCriteria = action.urgencyCriteria ?? '';
+      draft.agentAllowedPersonalSkillIds = normalizePersonalSkillIds(action.allowedPersonalSkillIds) ?? [];
       break;
     }
     case 'webhook': {
@@ -277,9 +282,12 @@ function parseJsonValue(value: string, fieldName: string): Record<string, unknow
   }
 }
 
-export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 'id' | 'createdAt' | 'updatedAt'> {
+export function buildCronJobInput(
+  draft: CronJobDraft,
+  validation = cronEditorChromeZh.editorChrome.validation,
+): Omit<CronJobDefinition, 'id' | 'createdAt' | 'updatedAt'> {
   if (!draft.name.trim()) {
-    throw new Error('任务名称不能为空');
+    throw new Error(validation.nameRequired);
   }
 
   const common = {
@@ -296,9 +304,6 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
     // undefined 键，而 host updateJob 是 {...existing, ...updates} 合并——缺键=保留旧值，
     // 「清空上限」会静默不生效，编辑带 maxRuns 的任务上云端也会把旧值继承回去
     // （PR#2208 ai-review R4 Important）。云端不支持次数上限（R2）：一律送 null 丢弃。
-    // 客户端门（N-CRON-BUDGET-EXPOSE-SHOTS）：host 同款判据（cronExecutionPolicy 的
-    // assertExecutionLocationConstraints）抛的是英文原文，不经翻译就进表单错误框；
-    // 提交前就地拦下，错误文案与本文件兄弟校验（「间隔必须大于 0」）同风格。
     maxRunBudget: parseOptionalNumber(draft.maxRunBudget) ?? null,
     maxRuns: draft.runsOn === 'cloud' ? null : parseOptionalNumber(draft.maxRuns) ?? null,
     tags: draft.tagsText
@@ -309,16 +314,16 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
     metadata: draft.metadata ?? {},
   };
   if (common.maxRunBudget != null && (!Number.isFinite(common.maxRunBudget) || common.maxRunBudget < 0)) {
-    throw new Error('单次预算上限必须是大于等于 0 的数字');
+    throw new Error(validation.budgetInvalid);
   }
   if (common.maxRuns != null && (!Number.isInteger(common.maxRuns) || common.maxRuns < 1)) {
-    throw new Error('运行次数上限必须是大于等于 1 的整数');
+    throw new Error(validation.runsInvalid);
   }
 
   let schedule: CronJobDefinition['schedule'];
   if (draft.scheduleType === 'at') {
     if (!draft.atDatetime) {
-      throw new Error('请选择执行时间');
+      throw new Error(validation.timeRequired);
     }
     schedule = {
       type: 'at',
@@ -327,10 +332,10 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
   } else if (draft.scheduleType === 'every') {
     const interval = parseOptionalNumber(draft.everyInterval);
     if (!interval || interval <= 0) {
-      throw new Error('间隔必须大于 0');
+      throw new Error(validation.intervalInvalid);
     }
     if ((draft.everyUnit as string) === 'weeks') {
-      throw new Error('周间隔不受支持，请改用 Cron 表达式描述周历调度');
+      throw new Error(validation.weeksUnsupported);
     }
     schedule = {
       type: 'every',
@@ -341,7 +346,7 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
     };
   } else if (draft.scheduleType === 'cron') {
     if (!draft.cronExpression.trim()) {
-      throw new Error('Cron 表达式不能为空');
+      throw new Error(validation.cronRequired);
     }
     schedule = {
       type: 'cron',
@@ -391,7 +396,7 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
   let action: CronJobDefinition['action'];
   if (draft.actionType === 'shell') {
     if (!draft.shellCommand.trim()) {
-      throw new Error('Shell 命令不能为空');
+      throw new Error(validation.shellRequired);
     }
     action = {
       type: 'shell',
@@ -401,22 +406,24 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
     };
   } else if (draft.actionType === 'tool') {
     if (!draft.toolName.trim()) {
-      throw new Error('Tool 名称不能为空');
+      throw new Error(validation.toolRequired);
     }
     action = {
       type: 'tool',
       toolName: draft.toolName.trim(),
-      parameters: parseJsonValue(draft.toolParametersText, 'Tool 参数') as Record<string, unknown>,
+      parameters: parseJsonValue(draft.toolParametersText, validation.toolParameters) as Record<string, unknown>,
     };
   } else if (draft.actionType === 'agent') {
     if (!draft.agentType.trim()) {
-      throw new Error('Agent 类型不能为空');
+      throw new Error(validation.agentTypeRequired);
     }
     if (!(CRON_AGENT_TYPES as readonly string[]).includes(draft.agentType.trim())) {
-      throw new Error(`Agent 类型“${draft.agentType.trim()}”不存在，可选值：${CRON_AGENT_TYPES.join('、')}。`);
+      throw new Error(validation.agentTypeUnknown
+        .replace('{type}', draft.agentType.trim())
+        .replace('{types}', CRON_AGENT_TYPES.join(validation.agentTypeSeparator)));
     }
     if (!draft.agentPrompt.trim()) {
-      throw new Error('Prompt 不能为空');
+      throw new Error(validation.promptRequired);
     }
     action = {
       type: 'agent',
@@ -426,10 +433,11 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
       roleId: draft.agentRoleId?.trim() || undefined,
       libraryProjectId: draft.agentLibraryProjectId?.trim() || undefined,
       urgencyCriteria: draft.agentUrgencyCriteria?.trim() || undefined,
+      allowedPersonalSkillIds: normalizePersonalSkillIds(draft.agentAllowedPersonalSkillIds),
     };
   } else if (draft.actionType === 'webhook') {
     if (!draft.webhookUrl.trim()) {
-      throw new Error('Webhook URL 不能为空');
+      throw new Error(validation.webhookRequired);
     }
     action = {
       type: 'webhook',
@@ -440,7 +448,7 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
     };
   } else {
     if (!draft.ipcChannel.trim()) {
-      throw new Error('IPC channel 不能为空');
+      throw new Error(validation.ipcRequired);
     }
     action = {
       type: 'ipc',
