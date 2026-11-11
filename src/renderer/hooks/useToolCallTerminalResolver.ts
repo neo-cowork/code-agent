@@ -25,9 +25,10 @@ export function useToolCallTerminalResolver(
   const pendingPermissionRequest = useAppStore(state => state.pendingPermissionRequest);
   const pendingPermissionSessionId = useAppStore(state => state.pendingPermissionSessionId);
   const queuedPermissionRequests = useAppStore(state => state.queuedPermissionRequests);
-  return useCallback((toolCall: ToolCall, interruptionReason?: StreamInterruptionReason, agentId?: string, sessionLive?: boolean) =>
+  return useCallback((toolCall: ToolCall, interruptionReason?: StreamInterruptionReason, agentId?: string, sessionLive?: boolean,
+    delegatedWork?: 'working' | 'completed' | 'failed') =>
     resolveToolCallTerminalState({ toolCall, sessionId, tasks, agentRows: rows, agentId, sessionLive: sessionLive ?? live,
-      interruptionReason, awaitingApproval: isToolCallAwaitingApproval(toolCall.id, sessionId, {
+      interruptionReason, delegatedWork, awaitingApproval: isToolCallAwaitingApproval(toolCall.id, sessionId, {
         pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests,
       }) }), [sessionId, tasks, rows, live, pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests]);
 }

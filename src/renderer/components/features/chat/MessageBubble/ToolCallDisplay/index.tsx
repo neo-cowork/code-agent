@@ -184,10 +184,11 @@ export function ToolCallDisplay({
   }, [agentTree?.nodes, backgroundTasks, delegationTool, toolCall, t]);
 
   const resolveToolCallTerminalState = useToolCallTerminalResolver(sessionId, [{ toolCall, agentId }]);
-  const terminal = resolveToolCallTerminalState(toolCall, interruptionReason, agentId, sessionLive);
-  const derivedStatus: ToolStatus = statusOverride ?? (toolCall.result ? terminal.displayStatus
-    : receipt ? receipt.status === 'failed' ? 'error' : 'success'
-      : terminal.displayStatus);
+  const terminal = resolveToolCallTerminalState(toolCall, interruptionReason, agentId, sessionLive, delegationPresentation?.state);
+  // A receipt row renders its own outcome text, so its icon follows the receipt (even past a recovered result).
+  const derivedStatus: ToolStatus = statusOverride ?? (receipt && !awaitingApproval
+    ? receipt.status === 'failed' ? 'error' : 'success'
+    : terminal.displayStatus);
   // 收口时内存消息会先终态，随后持久化列表回填；回填窗口里同一 call 可能短暂缺 result。
   // 一旦同一 toolCall 到达成功/失败，renderer 不再把它降回 pending/interrupted。
   const terminalStatusRef = useRef<{ toolCallId: string; status: ToolStatus | null }>({
