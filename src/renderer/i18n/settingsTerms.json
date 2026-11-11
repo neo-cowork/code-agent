@@ -1,0 +1,9 @@
+{
+  "terms": [
+    { "id": "provider", "term": "Provider", "human": "模型服务", "mode": "enforce" },
+    { "id": "baseUrl", "term": "Base URL", "human": "接口地址", "mode": "enforce" },
+    { "id": "keyLabel", "term": "API Key", "human": "密钥", "mode": "enforce" },
+    { "id": "mcp", "term": "MCP", "human": "MCP", "mode": "report" }
+  ],
+  "literals": ["/v1"]
+}

@@ -1,3 +1,4 @@
+import { getSettingsVocabulary, getProviderDisplayName } from '../../i18n/settingsVocabulary';
 // ============================================================================
 // ModelOnboardingModal —— 首次启动模型配置向导（连接来源 → 默认模型 两步，
 // 其后紧跟「连上你平时用的工具」连接器步与「随时开口」绑键卡：这两个后置卡
@@ -204,8 +205,11 @@ function sourceModels(
 }
 
 export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onComplete, onSkip }) => {
-  const cards = useMemo(() => getOnboardingProviderCards(), []);
-  const { t } = useI18n();
+  const { t, language } = useI18n();
+  const cards = useMemo(() => getOnboardingProviderCards().map((card) => ({
+    ...card, name: getProviderDisplayName(card.id, undefined, card.name, language),
+  })), [language]);
+  const vocabulary = getSettingsVocabulary(language);
   const text = t.onboarding;
   const [step, setStep] = useState<ModalStep>('source');
   const voiceLiveInstalled = useBundledCapabilityStore(
@@ -262,7 +266,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
   const selectedCard = selectedProvider === 'custom'
     ? {
         ...ONBOARDING_RELAY_CARD,
-        name: selectedCompatibility?.label || ONBOARDING_RELAY_CARD.name,
+        name: getProviderDisplayName('custom', undefined, selectedCompatibility?.label || ONBOARDING_RELAY_CARD.name, language),
         description: selectedCompatibility?.description || ONBOARDING_RELAY_CARD.description,
       }
     : cards.find((card) => card.id === selectedProvider);
@@ -642,7 +646,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
                     : 'border-transparent border-b-zinc-700 text-zinc-500 hover:bg-zinc-900/50 hover:text-zinc-300'
                 }`}
               >
-                API Key
+                {vocabulary.keyLabel}
               </button>
             </div>
 
@@ -757,7 +761,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
                     )}
                   </div>
                   <div>
-                    <label className="mb-2 block text-sm text-zinc-200">API Key</label>
+                    <label className="mb-2 block text-sm text-zinc-200">{vocabulary.keyLabel}</label>
                     <Input
                       type="password"
                       value={apiKey}
