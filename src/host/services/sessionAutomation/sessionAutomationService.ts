@@ -936,10 +936,20 @@ function toVoidedInboxItem(
   } catch {
     // 损坏 payload 用列兜底
   }
+  const sessionId = payload.sessionId ?? row.coordinatorId;
+  let sessionTitle: string | undefined;
+  try {
+    const title = sessionId ? getDatabase().getSession(sessionId)?.title?.trim().replace(/^\[(?:定时|Scheduled)\]\s*/, '').trim() : undefined;
+    if (title && !/^(?:session_|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$)/i.test(title)) sessionTitle = title;
+  } catch {
+    logger.warn('Voided approval session title unavailable', { requestId: row.id });
+  }
   return {
     id: row.id,
     kind: 'tool_approval',
-    sessionId: payload.sessionId ?? row.coordinatorId,
+    sessionId,
+    sessionTitle,
+    argsPreview: payload.argsPreview,
     tool: payload.tool ?? 'unknown',
     displayTool: payload.displayTool,
     requestedAt: payload.requestedAt ?? row.submittedAt,
