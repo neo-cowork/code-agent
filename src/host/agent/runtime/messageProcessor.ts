@@ -804,9 +804,10 @@ export class MessageProcessor {
     if (this.ctx.control.isCancelled || this.ctx.control.isInterrupted || this.ctx.control.runAbortController?.signal.aborted) {
       logger.info('[AgentLoop] Run stop detected after tool execution; persisting cancelled tool-call closures');
       if (peekEnvBlockedNote(this.ctx.runId) && toolResults.length) {
+        const historyResults = sanitizeToolResultsForHistoryWithCalls(toolResults, toolCalls);
         await this.contextAssembly.addAndPersistMessage({
           id: `${assistantMessage.id}:env-blocked-results`, role: 'tool', timestamp: Date.now(),
-          content: JSON.stringify(toolResults), toolResults,
+          content: JSON.stringify(historyResults), toolResults: historyResults,
         });
       }
       await persistCancelledToolCallClosures({
