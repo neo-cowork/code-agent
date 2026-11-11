@@ -125,6 +125,7 @@ export const GOLDEN_MODELS: readonly string[] = [
   'xiaomi/mimo-v2.5',
   'xiaomi/mimo-v2.5-pro',
   'xiaomi/mimo-v2.6-flash',
+  'xiaomi/neohorse-1.5-flash-preview',
   'zhipu/codegeex-4',
   'zhipu/cogvideox-flash',
   'zhipu/cogview-3-flash',

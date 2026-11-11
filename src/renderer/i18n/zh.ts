@@ -21,6 +21,7 @@ import { planApprovalZh } from './planApproval';
 import { taskStatusPanelsZh } from './taskStatusPanels';
 import { noticesZh } from './notices';
 import { serverConnectionZh } from './serverConnection';
+import { envAssistZh } from './envAssist';
 import { agentErrorZh } from './agentError';
 import { labZh } from './lab';
 import { labGpt1Zh } from './labGpt1';
@@ -960,8 +961,7 @@ export const zh = {
   ...planApprovalZh,
   ...taskStatusPanelsZh,
   ...noticesZh,
-  ...serverConnectionZh,
-  ...agentErrorZh,
+  ...serverConnectionZh, ...agentErrorZh, env: envAssistZh,
   ...labZh,
   ...labGpt1Zh,
   ...labNanogptZh,
