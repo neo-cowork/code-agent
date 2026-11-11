@@ -32,6 +32,7 @@ export interface SidebarSessionListProps extends Omit<SidebarProjectGroupProps, 
   hasAnySessions: boolean;
   filteredSessionsEmpty: boolean;
   messageSearchLoading: boolean;
+  messageSearchFailed: boolean;
   searchQuery: string;
   sessionStatusFilter: SessionStatusFilter;
   activeStatusFilterLabel: string;
@@ -53,6 +54,7 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
   hasAnySessions,
   filteredSessionsEmpty,
   messageSearchLoading,
+  messageSearchFailed,
   searchQuery,
   sessionStatusFilter,
   activeStatusFilterLabel,
@@ -217,7 +219,9 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
           <p className="text-sm text-zinc-500">
             {messageSearchLoading
               ? sb.searchingMessageContent
-              : !searchQuery && sessionStatusFilter !== 'all'
+              : messageSearchFailed
+                ? sb.searchFailed
+                : !searchQuery && sessionStatusFilter !== 'all'
                 ? sb.noStatusSessions.replace('{label}', activeStatusFilterLabel)
                 : sb.noMatchedSessions}
           </p>
