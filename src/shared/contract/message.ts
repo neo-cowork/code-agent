@@ -313,6 +313,12 @@ export interface MessageMetadata {
   /** Foreground turn ended at its step limit; a new user turn can continue it. */
   stoppedByStepLimit?: true;
   /**
+   * 这条 user 消息是宿主从运行记录（telemetry）重建的，不是用户原话。
+   * 正文只存重建内容；发给模型时由上下文装配补回「可能已脱敏缩写」的免责声明，
+   * 界面在气泡旁显示一句中文说明。
+   */
+  telemetryRecovered?: true;
+  /**
    * Marks a role:user message injected into an active run by runtime steer.
    * The message remains visible and durable, but does not start a new turn
    * when checking whether that run produced a reply.

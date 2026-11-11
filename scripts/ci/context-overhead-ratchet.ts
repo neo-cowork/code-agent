@@ -13,7 +13,7 @@
 // 新增 deferred 工具不增加每轮固定开销，把它锁进棘轮只会制造无意义的基线维护。
 //
 // 确定性口径（同配置两次运行必须逐字节同数）：
-//   - CODE_AGENT_DATA_DIR 指向脚本自建的空临时目录 → 无 SOUL.md / prompts-overrides /
+//   - CODE_AGENT_HOME 指向空临时目录，CODE_AGENT_DATA_DIR 为其默认配置子目录 → 无 SOUL.md / prompts-overrides /
 //     config.json，全部走内置默认文本（probe 实测 buildPrompt() 两次调用逐字节相同）
 //   - Date 钉死在 FIXED_MEASURE_CLOCK（today anchor / WebSearch dynamicDescription
 //     都是日期函数，不钉会出现跨日漂移）
@@ -28,6 +28,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import ts from 'typescript';
+import { CONFIG_DIR_NEW } from '../../src/shared/constants/configDir';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '../..');
@@ -79,7 +80,11 @@ function readBaseline(): RatchetBaseline {
 const FIXED_MEASURE_CLOCK_MS = new Date('2026-08-14T04:00:00Z').getTime();
 
 const measureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctx-overhead-ratchet-'));
-process.env.CODE_AGENT_DATA_DIR = measureDir;
+// Measure default-directory bytes while keeping all configuration reads/writes isolated.
+// A non-default data dir renders its absolute slot path, whose length is not fixed overhead.
+process.env.CODE_AGENT_HOME = measureDir;
+process.env.CODE_AGENT_DATA_DIR = path.join(measureDir, CONFIG_DIR_NEW);
+fs.mkdirSync(process.env.CODE_AGENT_DATA_DIR);
 
 // 环境里的 Jev key（官方 TYPESAFE_API_KEY / OpenRouter OPENROUTER_API_KEY）会把条件工具
 // decide 翻进 <deferred-tools> 折叠索引；智谱 key（ZHIPU_API_KEY / ZHIPU_OFFICIAL_API_KEY）
