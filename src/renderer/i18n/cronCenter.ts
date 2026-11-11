@@ -1,3 +1,4 @@
+import { cronCloudEn, cronCloudZh } from './cronCloud';
 import { cronRoutineRestateEn, cronRoutineRestateZh } from './cronRoutineRestate';
 import { parkedApprovalVoidedEn, parkedApprovalVoidedZh } from './parkedApprovalVoided';
 // ============================================================================
@@ -14,12 +15,8 @@ import { cronEditorChromeEn, cronEditorChromeZh } from './cronEditorChrome';
 export const cronCenterZh = {
   cronCenter: {
     ...cronEditorChromeZh,
+    ...cronCloudZh,
     parkedVoided: parkedApprovalVoidedZh,
-    cloudCreate: {
-      unconfigured: '云端服务尚未配置，这个任务暂时无法在云端运行。',
-      switchLocal: '改在这台电脑运行',
-      settings: '去配置云端服务',
-    },
     groupListenCheck: {
       title: '检查群消息是否连通',
       start: '发条测试消息',
@@ -300,20 +297,6 @@ export const cronCenterZh = {
     // 已落库的 webhook 任务在编辑器里的调度类型（创建菜单不提供这一项）。
     eventWebhookScheduleOption: '外部系统通知触发（Webhook 投递）',
     // Webhook 触发（N-CRON-WEBHOOK-CLOUD-HOOK-FU1）：云端服务设置卡 + 编辑器门 + 一次性链接卡 + 详情块
-    cloudSettings: {
-      title: '云端计划任务服务',
-      description: 'Webhook 触发需要它：Sentry、Linear 等外部系统把事件发到云端链接，Neo 通过这个服务收到并启动任务。',
-      baseUrlLabel: '服务地址',
-      tokenLabel: '访问令牌',
-      tokenPlaceholder: '粘贴云端服务的访问令牌',
-      changeToken: '更换',
-      save: '保存云端设置',
-      saved: '云端服务已保存，已开始接收 Webhook 事件。',
-      saveFailed: '保存失败',
-      baseUrlRequired: '请先填写服务地址。',
-      tokenRequired: '请先填写访问令牌。',
-      note: '令牌只保存在本机的安全存储里，不会写进设置文件。',
-    },
     webhook: {
       gateUnconfigured: '使用 Webhook 触发前，需要先填写云端计划任务服务的地址和令牌。已填的内容会保留，设置好回来继续。',
       gotoSettings: '去设置',
@@ -549,12 +532,8 @@ export const cronCenterZh = {
 export const cronCenterEn: typeof cronCenterZh = {
   cronCenter: {
     ...cronEditorChromeEn,
+    ...cronCloudEn,
     parkedVoided: parkedApprovalVoidedEn,
-    cloudCreate: {
-      unconfigured: 'The cloud service is not configured yet, so this task cannot run in the cloud.',
-      switchLocal: 'Run on this computer instead',
-      settings: 'Go to cloud settings',
-    },
     groupListenCheck: {
       title: 'Check group message reception',
       start: 'Send a test message',
@@ -823,20 +802,6 @@ export const cronCenterEn: typeof cronCenterZh = {
     eventMailScheduleOption: 'New mail (mail trigger)',
     eventWebhookScheduleOption: 'Triggered by an external system (Webhook delivery)',
     // Webhook trigger (N-CRON-WEBHOOK-CLOUD-HOOK-FU1): cloud settings card + editor gate + one-time link card + detail block
-    cloudSettings: {
-      title: 'Cloud scheduler',
-      description: 'Webhook triggers need it: external systems such as Sentry or Linear post events to a cloud link, and Neo receives them here to start your task.',
-      baseUrlLabel: 'Service address',
-      tokenLabel: 'Access token',
-      tokenPlaceholder: 'Paste the cloud service access token',
-      changeToken: 'Change',
-      save: 'Save cloud settings',
-      saved: 'Cloud scheduler saved. Webhook events are now being received.',
-      saveFailed: 'Save failed',
-      baseUrlRequired: 'Enter the service address first.',
-      tokenRequired: 'Enter the access token first.',
-      note: 'The token is kept in this device\'s secure storage and is never written to the settings file.',
-    },
     webhook: {
       gateUnconfigured: 'Webhook triggers need the cloud scheduler address and token first. What you have filled in is kept; finish setup and come back.',
       gotoSettings: 'Go to settings',

@@ -165,7 +165,7 @@ test('en template unconfigured: localized notice and both recovery options', asy
   await page.getByRole('dialog').getByRole('button').filter({ hasText: '网页更新提醒' }).click();
   await page.getByPlaceholder('粘贴要关注的网页地址', { exact: true }).fill('https://github.com/notifications');
   await page.getByRole('dialog').getByTestId('cron-runs-on-cloud').click();
-  await page.getByRole('dialog').getByRole('button', { name: '创建任务', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: cronCenterEn.cronCenter.editorChrome.createTask, exact: true }).click();
   await expect(page.getByTestId('cron-pending-routine-restate')).toBeVisible();
   await page.getByTestId('cron-pending-routine-confirm').click();
   await noticeShot(page, 'cron-cloud-unconfigured-template-en', 'en');
