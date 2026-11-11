@@ -123,7 +123,9 @@ describe('background polling terminal projection', () => {
     const root = 'src/renderer/';
     for (const file of ['components/features/chat/ToolStepGroup.tsx', 'components/features/chat/TraceNodeRenderer.tsx', 'components/features/chat/MessageBubble/ToolCallDisplay/styles.ts', 'components/features/chat/MessageBubble/ToolCallDisplay/index.tsx', 'utils/bareInterruptionNode.ts']) {
       const text = readFileSync(`${root}${file}`, 'utf8');
-      expect(text, file).toMatch(/resolveToolCallTerminalState|getToolStatus|traceTerminalToolCall/);
+      // styles.ts only maps a resolved status to colours: it must not see a tool call at all.
+      if (file.endsWith('styles.ts')) expect(text, file).not.toMatch(/\btoolCall\b|\.result\b|processingSessionIds/);
+      else expect(text, file).toMatch(/resolveToolCallTerminalState|traceTerminalToolCall/);
       expect(text, file).not.toMatch(/isStaleUnfinishedToolCall|return isProcessing \? 'pending' : 'interrupted'|\.result\s*===\s*undefined[^;\n]*['"]interrupted['"]|toolCall\.result === undefined && !sessionLive/);
     }
   });
