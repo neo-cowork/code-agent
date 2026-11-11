@@ -30,7 +30,7 @@ import {
   buildWorkbenchToolScope,
 } from '../../host/app/workbenchTurnContext';
 import { withMissingAttachmentTurnSystemContext } from '../../host/app/missingAttachmentTurnContext';
-import { getSessionCommandCenterBrainContextForPrompt, getTextForegroundToolNamesForPrompt } from '../../host/app/sessionCommandCenterBrain';
+import { getSessionCommandCenterBrainContextForPrompt, getSessionCommandCenterTurnRulesForPrompt, getTextForegroundToolNamesForPrompt } from '../../host/app/sessionCommandCenterBrain';
 import { applyMorningBriefSaveDraftRoleTools } from '../../host/app/morningBriefSaveDraftTools';
 import { isSessionCommandCenterTurn, SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS } from '../../shared/constants/sessionCommandCenter';
 import { AUTO_DELEGATION_TOOL_NAMES } from '../../host/agent/routingToolPolicy';
@@ -1476,6 +1476,11 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // agentOrchestrator 的 applyTurnSystemContext 在真机上根本不执行。
       const candidateNotice = buildCapabilityCandidateNotice(sessionId);
       if (candidateNotice) capabilityContextLines.push(candidateNotice);
+      // 回合级规则块（存草稿解析规则，FU1 rework r2）：必须并进模型面 turn 脚手架——
+      // 下面那份 config.systemPrompt 会在 contextAssembly 重建系统消息时被丢
+      // （ctx.systemPrompt 不进请求，真机抓包实证），写那里等于丢。与桌面 envelope 路
+      // （withSessionCommandCenterBrain → turnSystemContext）同源同形；基块不在此扩面。
+      capabilityContextLines.push(...getSessionCommandCenterTurnRulesForPrompt(prompt));
       const missingAttachmentContext = withMissingAttachmentTurnSystemContext(
         { turnSystemContext: capabilityContextLines },
         {
