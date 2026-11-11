@@ -101,7 +101,7 @@ describe('专家空会话：标题写专家名，不再说「继续上次的会�
     listRoles.mockResolvedValue([ROLE]);
     listWakeProposals.mockResolvedValue([]);
 
-    render(<NewSessionWelcome onSend={vi.fn()} session={expertThreadSession()} />);
+    render(<NewSessionWelcome onFillDraft={vi.fn()} onSend={vi.fn()} session={expertThreadSession()} />);
 
     await waitFor(() => {
       expect(screen.getByTestId('chat-welcome-title').textContent).toBe('小满');
@@ -117,7 +117,7 @@ describe('专家空会话：标题写专家名，不再说「继续上次的会�
     listRoles.mockResolvedValue([]);
     listWakeProposals.mockResolvedValue([]);
 
-    render(<NewSessionWelcome onSend={vi.fn()} session={expertThreadSession()} />);
+    render(<NewSessionWelcome onFillDraft={vi.fn()} onSend={vi.fn()} session={expertThreadSession()} />);
 
     await waitFor(() => {
       expect(screen.getByTestId('chat-welcome-title').textContent).toBe('role-1');
@@ -129,7 +129,7 @@ describe('专家空会话：标题写专家名，不再说「继续上次的会�
     listRoles.mockRejectedValue(new Error('ipc down'));
     listWakeProposals.mockRejectedValue(new Error('ipc down'));
 
-    render(<NewSessionWelcome onSend={vi.fn()} session={expertThreadSession()} />);
+    render(<NewSessionWelcome onFillDraft={vi.fn()} onSend={vi.fn()} session={expertThreadSession()} />);
 
     await waitFor(() => {
       expect(screen.getByTestId('chat-welcome-title').textContent).toBe('role-1');
@@ -144,6 +144,7 @@ describe('专家空会话：标题写专家名，不再说「继续上次的会�
 
     render(
       <NewSessionWelcome
+        onFillDraft={vi.fn()}
         onSend={vi.fn()}
         session={session({
           origin: { kind: 'cron', metadata: { trigger: 'first_wake', roleId: 'role-1' } },
@@ -170,7 +171,7 @@ describe('专家空会话的起手卡：只摆角色既有数据，最多四张'
     render(
       <>
         <RoleFirstWakeThreadBanner suppressWakeProposals />
-        <NewSessionWelcome onSend={vi.fn()} session={expertThreadSession()} />
+        <NewSessionWelcome onFillDraft={vi.fn()} onSend={vi.fn()} session={expertThreadSession()} />
       </>,
     );
 
@@ -191,6 +192,7 @@ describe('专家空会话的起手卡：只摆角色既有数据，最多四张'
       <>
         <RoleFirstWakeThreadBanner suppressWakeProposals />
         <NewSessionWelcome
+          onFillDraft={vi.fn()}
           onSend={vi.fn()}
           session={currentSession}
           workingDirectory={currentSession.workingDirectory}
@@ -220,7 +222,7 @@ describe('专家空会话的起手卡：只摆角色既有数据，最多四张'
       { title: '提议丙', prompt: '提议丙的委托' },
     ]);
 
-    render(<NewSessionWelcome onSend={vi.fn()} session={expertThreadSession()} />);
+    render(<NewSessionWelcome onFillDraft={vi.fn()} onSend={vi.fn()} session={expertThreadSession()} />);
 
     await waitFor(() => {
       expect(screen.getByText('提议甲')).toBeTruthy();
@@ -239,7 +241,7 @@ describe('专家空会话的起手卡：只摆角色既有数据，最多四张'
     ]);
     listWakeProposals.mockResolvedValue([]);
 
-    render(<NewSessionWelcome onSend={vi.fn()} session={expertThreadSession()} />);
+    render(<NewSessionWelcome onFillDraft={vi.fn()} onSend={vi.fn()} session={expertThreadSession()} />);
 
     await waitFor(() => {
       expect(screen.getByText('帮我分析这份表格，找出关键指标和异常点')).toBeTruthy();
@@ -251,7 +253,7 @@ describe('专家空会话的起手卡：只摆角色既有数据，最多四张'
     listRoles.mockResolvedValue([ROLE]);
     listWakeProposals.mockResolvedValue([]);
 
-    render(<NewSessionWelcome onSend={vi.fn()} session={expertThreadSession()} />);
+    render(<NewSessionWelcome onFillDraft={vi.fn()} onSend={vi.fn()} session={expertThreadSession()} />);
 
     await waitFor(() => {
       expect(screen.getByTestId('chat-welcome-title').textContent).toBe('小满');
@@ -267,7 +269,7 @@ describe('专家空会话的起手卡：只摆角色既有数据，最多四张'
     listWakeProposals.mockResolvedValue([]);
     const onSend = vi.fn();
 
-    render(<NewSessionWelcome onSend={onSend} session={expertThreadSession()} />);
+    render(<NewSessionWelcome onFillDraft={vi.fn()} onSend={onSend} session={expertThreadSession()} />);
     fireEvent.click(await screen.findByText('帮我把这份资料读一遍'));
 
     expect(onSend).toHaveBeenCalledTimes(1);
@@ -280,7 +282,7 @@ describe('专家空会话的起手卡：只摆角色既有数据，最多四张'
     acceptWakeProposal.mockResolvedValue({ prompt: 'host 接受后返回的 prompt' });
     const onSend = vi.fn();
 
-    render(<NewSessionWelcome onSend={onSend} session={expertThreadSession()} />);
+    render(<NewSessionWelcome onFillDraft={vi.fn()} onSend={onSend} session={expertThreadSession()} />);
     fireEvent.click(await screen.findByText('提议甲'));
 
     await waitFor(() => expect(acceptWakeProposal).toHaveBeenCalledWith('role-1', '提议甲'));
@@ -297,6 +299,7 @@ describe('专家空会话的起手卡：只摆角色既有数据，最多四张'
 
     render(
       <NewSessionWelcome
+        onFillDraft={vi.fn()}
         onSend={onSend}
         isComposerOccupied={occupied}
         onFillDraft={onFillDraft}
@@ -316,6 +319,7 @@ describe('非角色空会话：行为原样保留', () => {
     const currentSession = session({ title: '新对话', workingDirectory: '/repo/project' });
     render(
       <NewSessionWelcome
+        onFillDraft={vi.fn()}
         onSend={vi.fn()}
         session={currentSession}
         workingDirectory={currentSession.workingDirectory}
@@ -330,7 +334,7 @@ describe('非角色空会话：行为原样保留', () => {
   });
 
   it('真·新会话仍是欢迎页 + 通用建议卡', () => {
-    render(<NewSessionWelcome onSend={vi.fn()} session={session({ title: '新对话' })} />);
+    render(<NewSessionWelcome onFillDraft={vi.fn()} onSend={vi.fn()} session={session({ title: '新对话' })} />);
 
     expect(screen.getByTestId('chat-welcome-title').textContent).toBe(WELCOME_TITLE);
     expect(screen.getByText(GENERIC_CARD_TITLE)).toBeTruthy();
@@ -340,7 +344,7 @@ describe('非角色空会话：行为原样保留', () => {
   });
 
   it('恢复的空历史会话仍显示「继续上次的会话」（2026-08-01 消歧不回退）', () => {
-    render(<NewSessionWelcome onSend={vi.fn()} session={session({ title: '你好' })} />);
+    render(<NewSessionWelcome onFillDraft={vi.fn()} onSend={vi.fn()} session={session({ title: '你好' })} />);
 
     const title = screen.getByTestId('chat-welcome-title').textContent ?? '';
     expect(title).toContain('你好');

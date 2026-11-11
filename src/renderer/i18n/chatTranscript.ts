@@ -81,7 +81,7 @@ chat: {
   quotaWaitDue: '已到点，点继续',
   quotaWaitRetryNow: '现在重试',
   welcomeTitle: '这次想去哪颗星球？',
-  welcomeSubtitle: '选一个示例，或者直接输入你想完成的事。',
+  welcomeSubtitle: '选一个示例填进输入框，改成你自己的内容再发送；或者直接输入你想完成的事。',
   resumedEmptyTitle: '继续上次的会话：{title}',
   resumedEmptySubtitle: '{time} · 这条会话还没有内容。在这里发消息会接着它继续；想从头开始请点「新任务」。',
   // 专家（角色绑定）会话的空态副标题：专家主 thread 的标题就是角色名，「继续上次的
@@ -574,7 +574,7 @@ chat: {
   quotaWaitDue: 'The wait is over. Continue to resume',
   quotaWaitRetryNow: 'Retry now',
   welcomeTitle: 'Which planet are we heading to?',
-  welcomeSubtitle: 'Pick an example, or just type what you want to do.',
+  welcomeSubtitle: 'Pick an example to fill the box, edit it to your own content, then send — or just type what you want to do.',
   resumedEmptyTitle: 'Picking up your last session: {title}',
   resumedEmptySubtitle: '{time} · This session has no content yet. Sending here continues it — click “New task” to start fresh.',
   // Expert (role-bound) session empty state: the expert main thread is titled with the
