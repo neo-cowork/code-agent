@@ -2,6 +2,7 @@
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PermissionRequest } from '../../../src/shared/contract';
+import { createDefaultKeybindingsSettings, type KeybindingPlatform } from '../../../src/shared/keybindings';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 
 const invoke = vi.hoisted(() => vi.fn());
@@ -16,7 +17,7 @@ const keybindingsRuntime = vi.hoisted(() => ({
     } as Record<string, { enabled: boolean; accelerator: string | null }>,
     globalHotkeysEnabled: false,
   },
-  platform: 'darwin' as const,
+  platform: 'darwin' as KeybindingPlatform,
 }));
 const setPendingPermissionRequest = vi.hoisted(() => vi.fn());
 const appState = vi.hoisted(() => ({
@@ -259,5 +260,62 @@ describe('signed-out settings entry', () => {
     });
     expect(appState.showSettings).toBe(false);
     expect(authState.showAuthModal).toBe(true);
+  });
+});
+
+describe('useKeyboardShortcuts session search', () => {
+  afterEach(() => {
+    cleanup();
+    keybindingsRuntime.platform = 'darwin';
+    keybindingsRuntime.keybindings = {
+      bindings: {
+        'session.stop': { enabled: true, accelerator: 'Escape' },
+        'settings.open': { enabled: true, accelerator: 'Cmd+,' },
+      },
+      globalHotkeysEnabled: false,
+    };
+  });
+
+  it.each(['darwin', 'win32', 'linux'] as const)('dispatches session search and prevents print on %s, leaving find untouched', async (platform) => {
+    keybindingsRuntime.platform = platform;
+    keybindingsRuntime.keybindings = { ...createDefaultKeybindingsSettings(platform), globalHotkeysEnabled: false };
+    const openSearch = vi.fn();
+    window.addEventListener('app:openSessionSearch', openSearch);
+    try {
+      renderHook(() => useKeyboardShortcuts());
+      const modifiers = platform === 'darwin' ? { metaKey: true } : { ctrlKey: true };
+      const find = new KeyboardEvent('keydown', { key: 'f', ...modifiers, bubbles: true, cancelable: true });
+      await act(async () => { document.dispatchEvent(find); });
+      expect(openSearch).not.toHaveBeenCalled();
+      expect(find.defaultPrevented).toBe(false);
+      const search = new KeyboardEvent('keydown', { key: 'p', ...modifiers, bubbles: true, cancelable: true });
+      await act(async () => { document.dispatchEvent(search); });
+      expect(openSearch).toHaveBeenCalledTimes(1);
+      expect(search.defaultPrevented).toBe(true);
+    } finally {
+      window.removeEventListener('app:openSessionSearch', openSearch);
+    }
+  });
+
+  it('honors a rebound session search shortcut', async () => {
+    keybindingsRuntime.keybindings = {
+      ...createDefaultKeybindingsSettings('darwin'), globalHotkeysEnabled: false,
+      bindings: { 'sessionSearch.open': { enabled: true, accelerator: 'Cmd+Shift+S' } },
+    };
+    const openSearch = vi.fn();
+    window.addEventListener('app:openSessionSearch', openSearch);
+    try {
+      renderHook(() => useKeyboardShortcuts());
+      await act(async () => {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', metaKey: true, bubbles: true }));
+      });
+      expect(openSearch).not.toHaveBeenCalled();
+      await act(async () => {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 's', metaKey: true, shiftKey: true, bubbles: true }));
+      });
+      expect(openSearch).toHaveBeenCalledTimes(1);
+    } finally {
+      window.removeEventListener('app:openSessionSearch', openSearch);
+    }
   });
 });

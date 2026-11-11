@@ -127,6 +127,9 @@ function queueTerminalNotification(args: {
   outputFile?: string;
   automationPromptLikely?: boolean;
   locale?: SessionTaskSlotLocale;
+  /** 被最长运行时间上限终止：只给 payload 加结构化字段，不改文案 */
+  timedOut?: boolean;
+  maxRuntimeMs?: number;
 }): void {
   if (!args.sessionId || !shouldQueueTerminalNotification(args.previous, args.status)) {
     return;
@@ -161,6 +164,9 @@ function queueTerminalNotification(args: {
       outputFile: args.outputFile,
       exitCode: args.exitCode,
       durationMs: args.durationMs,
+      ...(args.timedOut && args.status === 'failed'
+        ? { reason: 'timeout', maxRuntimeMs: args.maxRuntimeMs }
+        : {}),
     },
   });
 }
@@ -250,6 +256,8 @@ export function syncShellTaskSnapshotToLedger(
     outputFile: task.outputFile,
     automationPromptLikely,
     locale,
+    timedOut: task.timedOut,
+    maxRuntimeMs: task.maxRuntime,
   });
 
   upsertOutputRef(ledger, {
@@ -334,6 +342,8 @@ export function syncPtySessionSnapshotToLedger(
     durationMs: session.duration,
     exitCode: session.exitCode,
     outputFile: session.outputFile,
+    timedOut: session.timedOut,
+    maxRuntimeMs: session.maxRuntime,
   });
 
   upsertOutputRef(ledger, {

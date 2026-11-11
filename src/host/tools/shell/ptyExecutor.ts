@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { getUserConfigDir } from '../../config/configPaths';
+import { BASH } from '../../../shared/constants';
 import { killProcessTree, resolveWindowsShell, WINDOWS_SHELL_ENCODING_PRELUDE, type KillableChild } from './platformShell';
 
 // ============================================================================
@@ -16,7 +17,6 @@ import { killProcessTree, resolveWindowsShell, WINDOWS_SHELL_ENCODING_PRELUDE, t
 
 const MAX_PTY_SESSIONS = 10;
 const MAX_PTY_OUTPUT = 1024 * 1024; // 1MB per session
-const PTY_DEFAULT_TIMEOUT = 10 * 60 * 1000; // 10 minutes
 const PTY_CLEANUP_INTERVAL = 60 * 1000; // 1 minute
 
 // ============================================================================
@@ -49,6 +49,8 @@ interface PtySessionState {
   displayName?: string;
   onExit?: () => void;
   stoppedByRequest?: boolean;
+  /** 被最长运行时间上限终止 */
+  timedOut?: boolean;
   /**
    * 供 killProcessTree 使用的句柄视图（懒建、随会话长存）。
    * **不能每次现造**：整树退出边界记在 WeakSet 里、按对象身份认，现造的话防 pid 复用就失效。
@@ -70,6 +72,8 @@ export interface PtySessionInfo {
   exitCode?: number;
   outputFile: string;
   stoppedByRequest?: boolean;
+  timedOut?: boolean;
+  maxRuntime?: number;
   cols: number;
   rows: number;
   sandboxed?: boolean;
@@ -130,6 +134,7 @@ function toPtySessionInfo(session: PtySessionState): PtySessionInfo {
     exitCode: session.exitCode,
     outputFile: session.outputFile,
     ...(session.stoppedByRequest ? { stoppedByRequest: true } : {}),
+    ...(session.timedOut ? { timedOut: true, maxRuntime: session.maxRuntime } : {}),
     cols: session.cols,
     rows: session.rows,
     sandboxed: session.sandboxed,
@@ -207,7 +212,7 @@ export function createPtySession(options: {
     rows = 24,
     env = {},
     inheritProcessEnv = true,
-    maxRuntime = PTY_DEFAULT_TIMEOUT,
+    maxRuntime = BASH.BACKGROUND_MAX_RUNTIME,
   } = options;
 
   try {
@@ -245,7 +250,7 @@ export function createPtySession(options: {
       outputStream,
       status: 'running',
       startTime: Date.now(),
-      maxRuntime: Math.min(maxRuntime, PTY_DEFAULT_TIMEOUT),
+      maxRuntime: Math.min(maxRuntime, BASH.BACKGROUND_MAX_RUNTIME),
       outputSize: 0,
       command,
       args,
@@ -265,6 +270,7 @@ export function createPtySession(options: {
     const timeout = setTimeout(() => {
       if (sessionState.status === 'running') {
         console.warn(`[PTY] Session ${sessionId} exceeded max runtime, terminating...`);
+        sessionState.timedOut = true;
         void terminatePtyProcess(sessionState)
           .then(() => runPtySessionExitCallback(sessionState))
           .catch((err: unknown) => {
@@ -413,7 +419,10 @@ export async function killPtySession(
   try {
     const wasRunning = session.status === 'running';
     // 终止前打标，退出回调才不会先报 failed；超时清扫不算停止请求。
-    if (wasRunning && options.reason !== 'timeout') session.stoppedByRequest = true;
+    if (wasRunning) {
+      if (options.reason === 'timeout') session.timedOut = true;
+      else session.stoppedByRequest = true;
+    }
     await terminatePtyProcess(session);
     session.outputStream?.end();
 
