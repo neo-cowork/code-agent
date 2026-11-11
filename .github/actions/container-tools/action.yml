@@ -19,10 +19,13 @@ runs:
         # upload-artifact 不保留可执行位
         chmod +x "$dir"/bin/* "$dir"/real/*
         echo "$dir/bin" >> "$GITHUB_PATH"
-        PATH="$dir/bin:$PATH" lsof -v 2>&1 | head -n 2
-        PATH="$dir/bin:$PATH" ps --version
-        PATH="$dir/bin:$PATH" sqlite3 --version
-        PATH="$dir/bin:$PATH" unzip -v | head -n 1
+        export PATH="$dir/bin:$PATH"
+        # 不用「| head」：run 默认 pipefail，head 提前关管道会让写端 SIGPIPE（exit 141）
+        lsof_out="$(lsof -v 2>&1)" || true
+        printf '%s\n' "$lsof_out" | sed -n '1,2p'
+        ps --version
+        sqlite3 --version
+        unzip -v > /dev/null
 
     - name: Point ~/.cache/ms-playwright at the image browsers
       shell: bash
@@ -31,4 +34,4 @@ runs:
       run: |
         mkdir -p "$HOME/.cache"
         ln -sfn /ms-playwright "$HOME/.cache/ms-playwright"
-        ls "$HOME/.cache/ms-playwright" | head -n 5
+        ls "$HOME/.cache/ms-playwright/"

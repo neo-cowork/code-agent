@@ -486,8 +486,11 @@ jobs:
               "LD_LIBRARY_PATH=\"\$d/lib\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}\" exec \"\$d/real/$tool\" \"\$@\"" > "$out/bin/$tool"
             chmod +x "$out/bin/$tool"
           done
-          "$out/bin/lsof" -v 2>&1 | head -n 2
+          lsof_out="$("$out/bin/lsof" -v 2>&1)" || true
+          printf '%s\n' "$lsof_out" | sed -n '1,2p'
           "$out/bin/ps" --version
+          "$out/bin/sqlite3" --version
+          "$out/bin/unzip" -v > /dev/null
 
       - name: Upload tools bundle
         uses: actions/upload-artifact@v4
