@@ -89,8 +89,8 @@ describe('zh settings rendered text census (real components)', () => {
     await screen.findByText(zh.settings.unsavedChanges.badge);
     fireEvent.click(screen.getByRole('button', { name: zh.settings.tabs.appearance }));
     const message = await screen.findByText(zh.settings.unsavedChanges.message);
-    expect(message.textContent).toContain('模型服务');
     census('models/unsaved-dialog', screen.getByText(zh.settings.unsavedChanges.title).closest('[role="dialog"], [role="alertdialog"]') ?? document.body);
+    expect(message.textContent).toContain('模型服务');
   });
   it.each(['通用模型', 'api key', 'provider'])('settings search results for %s lead to the models page without enforce jargon', async (query) => {
     const { container } = render(<SettingsModal />);
