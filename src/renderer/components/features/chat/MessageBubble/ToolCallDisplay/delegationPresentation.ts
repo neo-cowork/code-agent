@@ -1,10 +1,14 @@
-import { agentRoleLabel } from '../../../../../utils/agentRoleLabel';
+import { agentNodeLabel } from '../../../../../utils/agentRoleLabel';
 import { humanizeToolStep, parseDelegateSessionReceipt } from '../../../../../utils/humanizeToolStep';
 import type { AgentFailureCode } from '@shared/contract/agentFailure';
 import type { AgentTreeNode } from '@shared/contract/agentTree';
 import type { LastToolFailure, LastToolStep, Task, TaskOutputRef } from '@shared/contract/backgroundTask';
 import type { ToolCall } from '@shared/contract';
-import type { Translations } from '../../../../../i18n';
+import { languages, type Translations } from '../../../../../i18n';
+import { useAppStore } from '../../../../../stores/appStore';
+import { agentFailureCopy } from '../../../../../utils/agentFailureCopy';
+import { containsCjk } from '../../../../../utils/containsCjk';
+import { isAgentFailureCode } from '@shared/contract/agentFailure';
 import {
   isAgentNodeTerminalStatus,
   isLastToolFailureVisible,
@@ -178,7 +182,7 @@ function completedStepCount(step: LastToolStep | undefined, current: number | un
   return count > 0 ? count : undefined;
 }
 
-function fromTask(task: Task): DelegationPresentation {
+function fromTask(task: Task, t: Translations): DelegationPresentation {
   const terminal = isTaskTerminalStatus(task.status);
   const state: DelegationReceiptState = !terminal
     ? 'working'
@@ -187,7 +191,9 @@ function fromTask(task: Task): DelegationPresentation {
       : 'failed';
   return {
     state,
-    title: displayPaths(task.title),
+    title: t === languages.en && task.source === 'delegate_task' && containsCjk(task.title)
+      ? t.agentRoleLabels.roles.background
+      : displayPaths(task.title),
     lastToolStep: task.progress?.lastToolStep,
     activityIds: taskActivityIds(task),
     sessionId: task.sessionId,
@@ -198,7 +204,9 @@ function fromTask(task: Task): DelegationPresentation {
       const output = taskOutput(ref);
       return output ? [output] : [];
     }),
-    failure: state === 'failed' ? task.failure?.message || task.summary : undefined,
+    failure: state === 'failed' ? agentFailureCopy(
+      isAgentFailureCode(task.failure?.reason) ? task.failure.reason : undefined, t, task.failure?.message || task.summary,
+    ) ?? undefined : undefined,
     toolFailure: isLastToolFailureVisible(task.status) ? task.progress?.lastToolFailure : undefined,
   };
 }
@@ -210,7 +218,7 @@ function extractSpawnAgentId(toolCall: ToolCall): string | undefined {
   return match?.[1];
 }
 
-function fromAgent(node: AgentTreeNode): DelegationPresentation {
+function fromAgent(node: AgentTreeNode, t: Translations): DelegationPresentation {
   const state: DelegationReceiptState = node.status === 'completed'
     ? 'completed'
     : isAgentNodeTerminalStatus(node.status)
@@ -219,7 +227,7 @@ function fromAgent(node: AgentTreeNode): DelegationPresentation {
   const terminal = state !== 'working';
   return {
     state,
-    title: agentRoleLabel(node.displayName || node.role),
+    title: agentNodeLabel(node, t.agentRoleLabels),
     lastToolStep: node.lastToolStep,
     activityIds: [node.id],
     stepCount: terminal ? completedStepCount(node.lastToolStep, undefined) : undefined,
@@ -232,7 +240,7 @@ function fromAgent(node: AgentTreeNode): DelegationPresentation {
         kind: ref.ref.startsWith('http://') || ref.ref.startsWith('https://') ? 'url' as const : 'file' as const,
       }];
     }),
-    failure: state === 'failed' ? node.failureReason || node.progress : undefined,
+    failure: state === 'failed' ? agentFailureCopy(node.failureCode, t, node.failureReason || node.progress) ?? undefined : undefined,
     branch: terminal && node.worktreeState.status === 'preserved' ? node.worktreeState.branch : undefined,
     failureCode: state === 'failed' ? node.failureCode : undefined,
   };
@@ -242,7 +250,7 @@ export function deriveDelegationPresentation(
   toolCall: ToolCall,
   tasks: Task[],
   agentNodes: AgentTreeNode[],
-  t?: Translations,
+  t: Translations = languages[useAppStore.getState().language],
 ): DelegationPresentation | null {
   if (!toolCall.result) return null;
   if (toolCall.name === 'delegate_session') {
@@ -257,13 +265,13 @@ export function deriveDelegationPresentation(
   }
   if (toolCall.name === 'delegate_task') {
     const task = tasks.find((candidate) => candidate.toolCallId === toolCall.id);
-    return task ? fromTask(task) : null;
+    return task ? fromTask(task, t) : null;
   }
   if (toolCall.name === 'spawn_agent') {
     const agentId = extractSpawnAgentId(toolCall);
     if (!agentId) return null;
-    const node = agentNodes.find((candidate) => candidate.id === agentId);
-    return node ? fromAgent(node) : null;
+    const node = agentNodes.find((candidate) => candidate.id === agentId || candidate.backgroundAgentId === agentId);
+    return node ? fromAgent(node, t) : null;
   }
   return null;
 }
