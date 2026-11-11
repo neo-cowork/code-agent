@@ -4,6 +4,7 @@ import { parkedApprovalVoidedEn, parkedApprovalVoidedZh } from './parkedApproval
 import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 import type { EventScheduleValidationReason } from '@shared/cronEventValidation';
 import { cronPermissionDeniedReasonText } from '@shared/cronPermissionDenied';
+import { cronEditorChromeEn, cronEditorChromeZh } from './cronEditorChrome';
 // 自动化面板词条（features/cron 全家桶）—— zh/en 同文件相邻维护。
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮（同 sidebar.ts / chatInput.ts 先例）。
 // 注：types.ts 里的 formatActionSummary/formatDateTime 等格式化函数文案暂未迁移
@@ -12,6 +13,7 @@ import { cronPermissionDeniedReasonText } from '@shared/cronPermissionDenied';
 // ============================================================================
 export const cronCenterZh = {
   cronCenter: {
+    ...cronEditorChromeZh,
     parkedVoided: parkedApprovalVoidedZh,
     groupListenCheck: {
       title: '检查群消息是否连通',
@@ -357,6 +359,8 @@ export const cronCenterZh = {
     eventConstraintsHint: '事件触发任务只能在本机运行，动作固定为 Agent 任务；必须设置「单次预算上限 (USD)」。',
     eventBudgetLabel: '单次预算上限 (USD)',
     eventBudgetHint: '事件触发任务必填：本次运行花费超过该金额即停车并自动停用。',
+    flatFeeBudgetNoteSettings: '{model} 是包月模型，不按美元计费，美元上限对它不生效。要让上限起作用，请换成按量计费的模型。',
+    flatFeeBudgetNoteCron: '{model} 是包月模型，不按美元计费，美元上限对它不生效。要限制单次运行，请改用任务设置里的「执行超时」，或换成按量计费的模型。',
     // shared 校验器（cronEventValidation）reason → 用户能照着改的中文提示；
     // 判据与文案原文在 shared 层（= createJob 抛的），这里只做呈现映射。
     // Record 键集 = reason 全集：校验器新增 reason 时 zh/en 都必须补齐词条。
@@ -397,6 +401,8 @@ export const cronCenterZh = {
     inboxOpenResult: '查看结果',
     inboxMarkDone: '已过目',
     inboxDigestArtifacts: '{count} 个产物',
+    inboxDigestExpand: '展开',
+    inboxDigestCollapse: '收起',
     inboxDigestShowInFolder: '在文件夹中显示',
     inboxDigestFileMoved: '文件已移走',
     inboxDigestPathCopied: '已复制路径',
@@ -426,6 +432,11 @@ export const cronCenterZh = {
     // 交互审批卡（PermissionCard）external 作用域提示；与上面停车审批词条同组维护
     scopeExternalRecall: '离开本机：发出去收不回',
     parkedAlwaysAllow: '每次都允许发 {target}',
+    parkedAllowFolder: '以后这个任务写「{folder}」文件夹不再询问',
+    parkedAllowFolderTitle: '{path}（只限这个任务、只限写文件，可在任务详情撤销）',
+    parkedWriteGroupTitle: '写入 {count} 个文件到「{folder}」文件夹',
+    parkedGroupFileSep: '、',
+    parkedAllowFolderKept: '本次已允许；这个任务已有别的授权文件夹，没有改动',
     parkedArgsPreviewLabel: '参数：',
     pairingTitle: '{channel} 私聊配对',
     pairingCode: '配对码 {code}',
@@ -532,6 +543,7 @@ export const cronCenterZh = {
 
 export const cronCenterEn: typeof cronCenterZh = {
   cronCenter: {
+    ...cronEditorChromeEn,
     parkedVoided: parkedApprovalVoidedEn,
     groupListenCheck: {
       title: 'Check group message reception',
@@ -865,6 +877,8 @@ export const cronCenterEn: typeof cronCenterZh = {
     eventConstraintsHint: 'Event-triggered jobs run on this machine only, use an Agent action, and require a "Per-run budget cap (USD)".',
     eventBudgetLabel: 'Per-run budget cap (USD)',
     eventBudgetHint: 'Required for event jobs: the run stops and the job is disabled once spending exceeds this cap.',
+    flatFeeBudgetNoteSettings: '{model} is a flat-fee model and is not billed in USD, so the USD cap does not apply to it. Switch to a pay-per-use model for the cap to take effect.',
+    flatFeeBudgetNoteCron: '{model} is a flat-fee model and is not billed in USD, so the USD cap does not apply to it. To limit a single run, use the task\'s run time limit ("Execution timeout"), or switch to a pay-per-use model.',
     // reason → user-facing copy, mapped from the shared validator (cronEventValidation);
     // the check itself and its English messages live in shared (what createJob throws).
     // Record keys = the full reason set: adding a reason forces copy here and in zh.
@@ -904,6 +918,8 @@ export const cronCenterEn: typeof cronCenterZh = {
     inboxOpenResult: 'View result',
     inboxMarkDone: 'Done',
     inboxDigestArtifacts: '{count} artifacts',
+    inboxDigestExpand: 'Expand',
+    inboxDigestCollapse: 'Collapse',
     inboxDigestShowInFolder: 'Show in folder',
     inboxDigestFileMoved: 'File moved',
     inboxDigestPathCopied: 'Path copied',
@@ -931,6 +947,11 @@ export const cronCenterEn: typeof cronCenterZh = {
     parkedScopeExternal: 'Leaves this device → {target}',
     scopeExternalRecall: 'Leaves this device: cannot be recalled once sent',
     parkedAlwaysAllow: 'Always allow sending to {target}',
+    parkedAllowFolder: 'Always allow this task to write the "{folder}" folder',
+    parkedAllowFolderTitle: '{path} (this task only, file writes only; revoke in the task details)',
+    parkedWriteGroupTitle: 'Write {count} files in the "{folder}" folder',
+    parkedGroupFileSep: ', ',
+    parkedAllowFolderKept: 'Allowed this time; this task already has another granted folder, left unchanged',
     parkedArgsPreviewLabel: 'Arguments: ',
     pairingTitle: '{channel} direct-message pairing',
     pairingCode: 'Pairing code {code}',

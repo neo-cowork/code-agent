@@ -1,3 +1,4 @@
+import { PARKED_APPROVAL_ENTRY_PATH } from '@shared/parkedApprovalLocation';
 // ============================================================================
 
 import { outcomeWordsZh } from './outcomeWords';
@@ -119,7 +120,7 @@ export const chatInputZh = {
     result: '结果送到哪里',
     fallbackWhat: '按任务描述执行并整理结果',
     fallbackNotifyWhen: '任务完成或发现异常时通知',
-    reviewInbox: '自动化审核收件箱',
+    reviewInbox: PARKED_APPROVAL_ENTRY_PATH,
     confirm: '确认创建',
     cancel: '取消',
     edit: '编辑',
@@ -592,7 +593,7 @@ export const chatInputEn: typeof chatInputZh = {
     result: 'Where the result goes',
     fallbackWhat: 'Follow the task description and organize the result',
     fallbackNotifyWhen: 'Notify when the task finishes or finds something unusual',
-    reviewInbox: 'automation review inbox',
+    reviewInbox: 'Automations → Run history',
     confirm: 'Confirm',
     cancel: 'Cancel',
     edit: 'Edit',

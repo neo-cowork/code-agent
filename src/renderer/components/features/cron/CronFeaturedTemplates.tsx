@@ -78,7 +78,7 @@ export const CronFeaturedTemplates: React.FC = () => {
       if (existingJob) {
         await updateJob(existingJob.id, { enabled: true });
       } else {
-        await createJob(buildCronJobInput(template.generate({})));
+        await createJob(buildCronJobInput(template.generate({}), cc.editorChrome.validation));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : cc.templateEnableFailed);

@@ -2,9 +2,23 @@
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PermissionRequest } from '../../../src/shared/contract';
+import { createDefaultKeybindingsSettings, type KeybindingPlatform } from '../../../src/shared/keybindings';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 
 const invoke = vi.hoisted(() => vi.fn());
+const invokeNativeCommandAction = vi.hoisted(() => vi.fn());
+const isNativeCommandRuntimeAvailable = vi.hoisted(() => vi.fn(() => false));
+const keybindingsRuntime = vi.hoisted(() => ({
+  keybindings: {
+    bindings: {
+      'session.stop': { enabled: true, accelerator: 'Escape' },
+      // N-CRON-WEBHOOK-CLOUD-HOOK-FU1-FU2：settings.open 的签名态测试依赖这条默认绑定
+      'settings.open': { enabled: true, accelerator: 'Cmd+,' },
+    } as Record<string, { enabled: boolean; accelerator: string | null }>,
+    globalHotkeysEnabled: false,
+  },
+  platform: 'darwin' as KeybindingPlatform,
+}));
 const setPendingPermissionRequest = vi.hoisted(() => vi.fn());
 const appState = vi.hoisted(() => ({
   pendingPermissionRequest: null as PermissionRequest | null,
@@ -55,16 +69,7 @@ vi.mock('../../../src/renderer/stores/messageActionStore', () => ({
   useMessageActionStore: { getState: () => ({ regenerateLast: vi.fn() }) },
 }));
 vi.mock('../../../src/renderer/hooks/useKeybindingsSettings', () => ({
-  useKeybindingsSettings: () => ({
-    keybindings: {
-      bindings: {
-        'session.stop': { enabled: true, accelerator: 'Escape' },
-        'settings.open': { enabled: true, accelerator: 'Cmd+,' },
-      },
-      globalHotkeysEnabled: false,
-    },
-    platform: 'darwin',
-  }),
+  useKeybindingsSettings: () => keybindingsRuntime,
 }));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: {
@@ -74,11 +79,12 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
   },
 }));
 vi.mock('../../../src/renderer/services/nativeCommandFacade', () => ({
-  invokeNativeCommandAction: vi.fn(),
-  isNativeCommandRuntimeAvailable: () => false,
+  invokeNativeCommandAction,
+  isNativeCommandRuntimeAvailable,
 }));
 vi.mock('../../../src/renderer/services/tauriPluginFacade', () => ({
-  listenTauriEvent: vi.fn(),
+  // menu:open-settings 监听在 isTauriRuntime()=true 时挂载，需返回 unlisten Promise
+  listenTauriEvent: vi.fn(() => Promise.resolve(() => {})),
 }));
 
 import { useKeyboardShortcuts } from '../../../src/renderer/hooks/useKeyboardShortcuts';
@@ -178,6 +184,47 @@ describe('useKeyboardShortcuts settings close routing (N-CRON-WEBHOOK-CLOUD-HOOK
   });
 });
 
+describe('useKeyboardShortcuts global hotkey registration', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isNativeCommandRuntimeAvailable.mockReturnValue(true);
+    invokeNativeCommandAction.mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    cleanup();
+    isNativeCommandRuntimeAvailable.mockReturnValue(false);
+    keybindingsRuntime.keybindings = {
+      bindings: {
+        'session.stop': { enabled: true, accelerator: 'Escape' },
+        'settings.open': { enabled: true, accelerator: 'Cmd+,' },
+      },
+      globalHotkeysEnabled: false,
+    };
+  });
+
+  it('excludes modifier-only bindings (Cmd+Cmd and ⌘⌘) from keybindings_set_global_hotkeys while keeping normal bindings', async () => {
+    keybindingsRuntime.keybindings = {
+      bindings: {
+        'appshot.capture': { enabled: true, accelerator: 'Cmd+Cmd' },
+        'app.toggle': { enabled: true, accelerator: '⌘⌘' },
+        'app.quickAsk': { enabled: true, accelerator: 'Cmd+Shift+A' },
+      },
+      globalHotkeysEnabled: true,
+    };
+
+    renderHook(() => useKeyboardShortcuts());
+
+    await waitFor(() => {
+      expect(invokeNativeCommandAction).toHaveBeenCalledWith('setGlobalHotkeys', {
+        bindings: [
+          { actionId: 'app.quickAsk', accelerator: 'Cmd+Shift+A' },
+        ],
+      });
+    });
+  });
+});
+
 describe('signed-out settings entry', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -213,5 +260,62 @@ describe('signed-out settings entry', () => {
     });
     expect(appState.showSettings).toBe(false);
     expect(authState.showAuthModal).toBe(true);
+  });
+});
+
+describe('useKeyboardShortcuts session search', () => {
+  afterEach(() => {
+    cleanup();
+    keybindingsRuntime.platform = 'darwin';
+    keybindingsRuntime.keybindings = {
+      bindings: {
+        'session.stop': { enabled: true, accelerator: 'Escape' },
+        'settings.open': { enabled: true, accelerator: 'Cmd+,' },
+      },
+      globalHotkeysEnabled: false,
+    };
+  });
+
+  it.each(['darwin', 'win32', 'linux'] as const)('dispatches session search and prevents print on %s, leaving find untouched', async (platform) => {
+    keybindingsRuntime.platform = platform;
+    keybindingsRuntime.keybindings = { ...createDefaultKeybindingsSettings(platform), globalHotkeysEnabled: false };
+    const openSearch = vi.fn();
+    window.addEventListener('app:openSessionSearch', openSearch);
+    try {
+      renderHook(() => useKeyboardShortcuts());
+      const modifiers = platform === 'darwin' ? { metaKey: true } : { ctrlKey: true };
+      const find = new KeyboardEvent('keydown', { key: 'f', ...modifiers, bubbles: true, cancelable: true });
+      await act(async () => { document.dispatchEvent(find); });
+      expect(openSearch).not.toHaveBeenCalled();
+      expect(find.defaultPrevented).toBe(false);
+      const search = new KeyboardEvent('keydown', { key: 'p', ...modifiers, bubbles: true, cancelable: true });
+      await act(async () => { document.dispatchEvent(search); });
+      expect(openSearch).toHaveBeenCalledTimes(1);
+      expect(search.defaultPrevented).toBe(true);
+    } finally {
+      window.removeEventListener('app:openSessionSearch', openSearch);
+    }
+  });
+
+  it('honors a rebound session search shortcut', async () => {
+    keybindingsRuntime.keybindings = {
+      ...createDefaultKeybindingsSettings('darwin'), globalHotkeysEnabled: false,
+      bindings: { 'sessionSearch.open': { enabled: true, accelerator: 'Cmd+Shift+S' } },
+    };
+    const openSearch = vi.fn();
+    window.addEventListener('app:openSessionSearch', openSearch);
+    try {
+      renderHook(() => useKeyboardShortcuts());
+      await act(async () => {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', metaKey: true, bubbles: true }));
+      });
+      expect(openSearch).not.toHaveBeenCalled();
+      await act(async () => {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 's', metaKey: true, shiftKey: true, bubbles: true }));
+      });
+      expect(openSearch).toHaveBeenCalledTimes(1);
+    } finally {
+      window.removeEventListener('app:openSessionSearch', openSearch);
+    }
   });
 });

@@ -6,7 +6,7 @@
 // （error 记账 → agent_complete/agent_cancelled 收口），见 backgroundTaskTerminal.ts。
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { BACKGROUND_TASK_CANCELLED, RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../src/shared/constants';
+import { BACKGROUND_TASK_CANCELLED, ROLE_PROACTIVITY, RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../src/shared/constants';
 import { handleImagePayloadExceededError } from '../../../src/host/agent/runtime/contextAssembly/inferenceImagePayloadError';
 
 const sessionManagerState = vi.hoisted(() => ({
@@ -87,6 +87,7 @@ vi.mock('../../../src/host/session/backgroundTaskManager', () => ({
 }));
 
 import { TaskManager } from '../../../src/host/task/TaskManager';
+import { withWakeRunTimeout } from '../../../src/host/services/roleAssets/wakeRunGuard';
 
 const TASK_COMPLETE_EVENT = {
   type: 'task_complete',
@@ -139,6 +140,60 @@ describe('task_complete 的后台收口（完成通知/面板状态）', () => {
       sessionTitle: '长任务',
       summary: '周报已写好',
     }));
+  });
+
+  const wakeSession = (trigger: string) => ({
+    id: 'session-1', title: '研究员 · 主动巡检', type: 'schedule',
+    origin: { kind: 'cron', name: ROLE_PROACTIVITY.CADENCE_JOB_TAG, metadata: { roleId: '研究员', trigger } },
+  });
+  const persistTaskComplete = () => (newManager() as unknown as {
+    persistEventToSession: (sessionId: string, event: unknown, snapshot?: unknown, eventKey?: string) => Promise<void>;
+  }).persistEventToSession('session-1', TASK_COMPLETE_EVENT, undefined, 'session-1');
+
+  it.each(['cadence', 'event', 'first_wake'])('role wake %s task_complete leaves the summary notification budget untouched', async (trigger) => {
+    sessionManagerState.getSession.mockResolvedValue(wakeSession(trigger));
+    await withWakeRunTimeout(persistTaskComplete, {
+      roleId: '研究员', sessionId: 'session-1', phase: 'wake-run', timeoutMs: 60_000, cancel: () => undefined,
+    });
+    expect(notifyState.notifyTaskComplete).not.toHaveBeenCalled();
+    expect(backgroundManagerState.markCompleted).not.toHaveBeenCalled();
+  });
+
+  it('a follow-up run on the kept wake session keeps its generic completion notice', async () => {
+    sessionManagerState.getSession.mockResolvedValue(wakeSession('cadence'));
+    await persistTaskComplete();
+    expect(notifyState.notifyTaskComplete).toHaveBeenCalledTimes(1);
+    expect(notifyState.notifyTaskComplete).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-1' }));
+  });
+
+  it('whenAgentEventsSettled waits for in-flight (un-awaited) event handling of that session only', async () => {
+    const manager = newManager() as unknown as {
+      trackEventHandling: (sessionId: string, handling: Promise<void>) => Promise<void>;
+      whenAgentEventsSettled: (sessionId: string) => Promise<void>;
+    };
+    let finish!: () => void;
+    manager.trackEventHandling('session-1', new Promise<void>((resolve) => { finish = resolve; }));
+    let settled = false;
+    const waiting = manager.whenAgentEventsSettled('session-1').then(() => { settled = true; });
+    await manager.whenAgentEventsSettled('other-session');
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    finish();
+    await waiting;
+    expect(settled).toBe(true);
+  });
+
+  it('ordinary scheduled session task_complete keeps its generic completion notice', async () => {
+    sessionManagerState.getSession.mockResolvedValue({
+      id: 'session-1', title: '每周简报', type: 'schedule',
+      origin: { kind: 'cron', name: 'weekly-brief' },
+    });
+    const manager = newManager();
+    await (manager as unknown as {
+      persistEventToSession: (sessionId: string, event: unknown, snapshot?: unknown, eventKey?: string) => Promise<void>;
+    }).persistEventToSession('session-1', TASK_COMPLETE_EVENT, undefined, 'session-1');
+    expect(notifyState.notifyTaskComplete).toHaveBeenCalledTimes(1);
+    expect(notifyState.notifyTaskComplete).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-1', summary: '周报已写好' }));
   });
 
   it('子代理的 task_complete（eventKey ≠ sessionId）：不触发后台收口，走原通知路径', async () => {

@@ -8,7 +8,8 @@
 //   3. dismissTerminal 只清终态；终态残留条目再次 moveToBackground 重置回 running。
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BACKGROUND_TASK_CANCELLED } from '../../../src/shared/constants';
+import { BACKGROUND_TASK_CANCELLED, ROLE_PROACTIVITY } from '../../../src/shared/constants';
+import { withWakeRunTimeout } from '../../../src/host/services/roleAssets/wakeRunGuard';
 import type { BackgroundTaskUpdateEvent } from '../../../src/shared/contract/sessionState';
 
 const sessionManagerState = vi.hoisted(() => ({
@@ -114,6 +115,37 @@ describe('终态行常驻（不自动删除）', () => {
     const tasks = getBackgroundTaskManager().getAllTasks();
     expect(tasks).toHaveLength(1);
     expect(tasks[0].status).toBe('failed');
+  });
+});
+
+describe('role wake background completion owns no generic notification', () => {
+  const wakeOrigin = { kind: 'cron', name: ROLE_PROACTIVITY.CADENCE_JOB_TAG };
+  const runAsWake = (body: () => Promise<void>) => withWakeRunTimeout(body, {
+    roleId: '研究员', sessionId: 'session-1', phase: 'wake-run', timeoutMs: 60_000, cancel: () => undefined,
+  });
+
+  it.each(['task_complete', 'agent_complete'] as const)('%s inside the wake run settles the role panel without a competing notice', async (event) => {
+    sessionManagerState.getSession.mockResolvedValue({ id: 'session-1', title: '研究员 · 主动巡检', origin: wakeOrigin });
+    await backgroundSession('session-1');
+    await runAsWake(async () => {
+      if (event === 'task_complete') await settleBackgroundOnTaskComplete('session-1', 'session-1', { summary: '观察有新变化' });
+      await closeBackgroundRunAtTerminal('session-1', 'agent_complete', new Map());
+    });
+    expect(getBackgroundTaskManager().getAllTasks()).toEqual([
+      expect.objectContaining({ sessionId: 'session-1', status: 'completed', progress: 100 }),
+    ]);
+    expect(notifyState.notifyTaskComplete).not.toHaveBeenCalled();
+  });
+
+  it('a follow-up on the kept wake session (outside any wake run) still gets its completion notice', async () => {
+    sessionManagerState.getSession.mockResolvedValue({ id: 'session-1', title: '研究员 · 主动巡检', origin: wakeOrigin });
+    await runAsWake(async () => undefined);
+    await backgroundSession('session-1');
+    await closeBackgroundRunAtTerminal('session-1', 'agent_complete', new Map());
+    expect(notifyState.notifyTaskComplete).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: 'session-1' }),
+      expect.objectContaining({ force: true }),
+    );
   });
 });
 
