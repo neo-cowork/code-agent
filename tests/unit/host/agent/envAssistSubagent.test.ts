@@ -7,7 +7,7 @@ const DURABLE_AGENT_ID = 'subagent-bg-scope';
 const mocks = vi.hoisted(() => {
   const responses: Array<Record<string, unknown>> = [];
   const state = { progressError: false, spent: 0 };
-  const inference = vi.fn(async () => {
+  const inference = vi.fn(async (_messages: unknown) => {
     const response = responses.shift();
     if (!response) throw new Error('Missing mocked inference response');
     return response;
@@ -254,6 +254,19 @@ function createRequest() {
 
 describe('SubagentExecutor environment notice', () => {
   beforeEach(() => { persistence.messages.length = 0; mocks.responses.length = 0; vi.clearAllMocks(); process.env.CODE_AGENT_MODEL_ENGINE = 'legacy'; });
+  it('tells the child model that the permission card was shown without quotable error copy', async () => {
+    mocks.toolResult.current = { success: false, error: 'osascript -1743 Apple events TCC', output: 'osascript -1743 Apple events TCC', metadata: { code: 'not_authorized' } };
+    mocks.responses.push(toolResponse('calendar'), textResponse('请使用卡片上的按钮，然后再问我。'));
+    await new SubagentExecutor().execute(createRequest());
+    expect(mocks.inference).toHaveBeenCalledTimes(2);
+    const text = JSON.stringify(mocks.inference.mock.calls[1][0]);
+    expect(text).not.toMatch(/-1743|osascript|Apple events|TCC|Permission is needed to continue/i);
+    expect(text).toMatch(/permission card.*already been shown/i);
+    expect(text).toMatch(/do not.*quote/i);
+    expect(text).toContain("user's language");
+    expect(text).toContain('ask again');
+  });
+
   it('emits exactly one persistent parent card even when the delegated tool retries', async () => {
     mocks.toolResult.current = { success: false, error: 'osascript -1743 Apple events TCC', metadata: { code: 'not_authorized' } };
     mocks.responses.push(toolResponse('calendar'), toolResponse('calendar'), textResponse('Permission is needed.'));

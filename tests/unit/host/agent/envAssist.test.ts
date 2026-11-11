@@ -177,6 +177,21 @@ const events = (ctx: RuntimeContext) => (ctx.onEvent as ReturnType<typeof vi.fn>
 beforeEach(() => { serviceMocks.messages.length = 0; vi.clearAllMocks(); vi.stubEnv('SSH_CONNECTION', ''); vi.stubEnv('SSH_CLIENT', ''); vi.stubEnv('SSH_TTY', ''); });
 
 describe('environment notices through the production tool_call_end path', () => {
+  it('tells the main model that the permission card was shown without quotable error copy', async () => {
+    const { ctx, engine } = makeEngine(vi.fn(async () => ({ ...failure(), output: 'osascript -1743 Apple events TCC' })));
+    const results = await engine.executeToolsWithHooks([{ id: 'guidance', name: 'calendar', arguments: { action: 'list_events' } }]);
+    const end = events(ctx).find((e) => e.type === 'tool_call_end');
+    expect(results).toHaveLength(1);
+    for (const result of [results[0], end.data]) {
+      const text = [result.error, result.output].filter(Boolean).join(' ');
+      expect(text).not.toMatch(/-1743|osascript|Apple events|TCC|Permission is needed to continue/i);
+      expect(text).toMatch(/permission card.*already been shown/i);
+      expect(text).toMatch(/do not.*quote/i);
+      expect(text).toContain("user's language");
+      expect(text).toContain('ask again');
+    }
+  });
+
   it('deduplicates repeat/concurrent failures per run, persists replay, and refreshes the snapshot', async () => {
     const { ctx, engine } = makeEngine(vi.fn(async () => failure()));
     await engine.executeToolsWithHooks([{ id: 'calendar-1', name: 'calendar', arguments: { action: 'list_events', title: 'Reminder', text: 'Reminder' } }]);
