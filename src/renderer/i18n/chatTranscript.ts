@@ -10,6 +10,7 @@ import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 import { toolStepVerbsEn, toolStepVerbsZh } from './toolStepVerbs';
 import { turnRailEn, turnRailZh } from './turnRail';
 import { toolErrorCodesEn, toolErrorCodesZh } from './toolErrorCodes';
+import { projectTrustTurnCardEn, projectTrustTurnCardZh, projectTrustTurnRunEn, projectTrustTurnRunZh } from './projectTrust';
 
 export const chatTranscriptZh = {
   ...turnRailZh,
@@ -373,6 +374,7 @@ turnCard: {
   collapseTurn: '折叠本轮',
   expandTurn: '展开本轮',
   sendFailed: '没发出去',
+  ...projectTrustTurnCardZh,
   recoveredFromRecord: '这条消息由运行记录还原，可能和你的原话略有出入',
   editAndResend: '编辑重发',
   fork: '创建分支',
@@ -452,9 +454,7 @@ turnRun: {
   cleanupBadge: '清理中',
   outputsSignal: '{count} 个产出',
   toolsSignal: '{count} 次工具调用',
-  // 轮头阶段兜底（TurnCard getTurnPhase）：有助手正文 = 已生成，否则等待输出。
-  replyGenerated: '回复已生成',
-  awaitingOutput: '等待输出',
+  ...projectTrustTurnRunZh,
 },
 
 // 系统错误节点兜底文案（TraceNodeRenderer 的 node.subtype === 'error'）——
@@ -924,6 +924,7 @@ turnCard: {
   collapseTurn: 'Collapse this turn',
   expandTurn: 'Expand this turn',
   sendFailed: 'Not sent',
+  ...projectTrustTurnCardEn,
   recoveredFromRecord: 'Restored from the run history; it may differ slightly from what you wrote',
   editAndResend: 'Edit and resend',
   fork: 'Fork',
@@ -1002,9 +1003,7 @@ turnRun: {
   cleanupBadge: 'cleanup',
   outputsSignal: '{count} outputs',
   toolsSignal: '{count} tool calls',
-  // Turn-phase fallbacks (TurnCard getTurnPhase).
-  replyGenerated: 'Reply generated',
-  awaitingOutput: 'Awaiting output',
+  ...projectTrustTurnRunEn,
 },
 
 // System error node fallback copy (TraceNodeRenderer node.subtype === 'error') —

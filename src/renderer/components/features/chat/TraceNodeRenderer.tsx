@@ -27,6 +27,7 @@ import { ContextCompressionSignalBanner } from './MessageBubble/ContextCompressi
 import { RouteTraceChip, shouldRenderModelDecisionChip } from './RouteTraceChip';
 import { TurnQualityStrip } from './TurnQualityStrip';
 import { AgentErrorPresentation } from './AgentErrorCard';
+import { ProjectTrustConfirmCard } from './ProjectTrustConfirmCard';
 import { VoiceCallSummaryCard } from '../voice/VoiceCallSummaryCard';
 import { useSmoothStreamingText } from '../../../hooks/useSmoothStreamingText';
 import { Archive, AudioLines, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, RefreshCw, RotateCcw } from 'lucide-react';
@@ -541,6 +542,11 @@ const AssistantTextNode: React.FC<{
           sessionId={sessionId}
           run={node.agentErrorRun}
         />
+      )}
+
+      {/* 旧项目 Source 快照缺失的发送失败：正文已是人话句子，这里补「确认并重发」 */}
+      {node.metadata?.sendFailureCode === 'PROJECT_SOURCE_TRUST' && (
+        <ProjectTrustConfirmCard node={node} sessionId={sessionId} />
       )}
 
       {wakeFields ? <WakeRationaleNote fields={wakeFields} /> : null}

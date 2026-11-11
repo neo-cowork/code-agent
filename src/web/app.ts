@@ -44,6 +44,7 @@ import { getCronService } from '../host/cron/cronService';
 import { getConfigService } from '../host/services/core/configService';
 import { isDurableRunGateOpen } from './routes/agentDurableRouteLifecycle';
 import { createSettingsRouter } from './routes/settings';
+import { createProjectTrustRouter } from './routes/projectTrust';
 import { createExtractRouter } from './routes/extract';
 import { createDomainRouter } from './routes/domain';
 import { createShellRouter } from './routes/shell';
@@ -762,6 +763,9 @@ export function createApp(deps: CreateAppDeps): express.Express {
 
   // ── Settings (extracted to routes/settings.ts) ─────────────────────
   app.use('/api', createSettingsRouter({ handlers }));
+
+  // ── Project trust confirm (chat 内「确认并重发」，见 routes/projectTrust.ts) ──
+  app.use('/api/project', createProjectTrustRouter({ logger, tryGetSessionManager }));
 
   // ── Extract & Speech (extracted to routes/extract.ts) ───────────────
   app.use('/api', createExtractRouter({ handlers }));

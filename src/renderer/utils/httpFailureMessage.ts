@@ -47,3 +47,9 @@ export function httpFailureMessage(input: HttpFailureMessageInput): string {
   if (status === 429) return pick(tooManyRequests);
   return pick(genericFailure);
 }
+
+/** 发送失败是不是旧项目 Source 身份快照缺失（失败气泡据此挂「确认并重发」入口）。 */
+export function isProjectSourceTrustFailure(error: unknown): boolean {
+  return typeof error === 'object' && error !== null
+    && (error as { code?: unknown }).code === 'PROJECT_SOURCE_TRUST';
+}
