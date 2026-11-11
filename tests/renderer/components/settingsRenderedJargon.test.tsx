@@ -77,7 +77,7 @@ describe('zh settings rendered text census (real components)', () => {
     // Flush the settings.get hydration: the stored Custom Provider must reach the UI.
     await waitFor(() => expect(container.textContent).toContain('密钥已保存'));
     census(`models/${provider}`, container);
-    fireEvent.click(screen.getByRole('button', { name: '新增模型服务', exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: '新增模型服务' }));
     census(`models/${provider}/add-form`, container);
   });
   it('onboarding API route and both custom protocols have no enforce jargon', async () => {
