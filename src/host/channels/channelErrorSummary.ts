@@ -1,3 +1,5 @@
+import { isChineseRateLimitMessage } from '../../shared/utils/agentErrorClassification';
+
 export type ChannelErrorKind =
   | 'timeout'
   | 'permission'
@@ -51,6 +53,7 @@ export function summarizeChannelError(error: unknown): ChannelErrorSummary {
     text.includes('provider') ||
     text.includes('api') ||
     text.includes('rate limit') ||
+    isChineseRateLimitMessage(text) ||
     text.includes('429')
   ) {
     return { kind: 'model', message: '模型服务暂时不可用，请稍后重试。' };

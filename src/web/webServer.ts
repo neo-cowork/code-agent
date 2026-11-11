@@ -670,7 +670,7 @@ async function initializeServices(): Promise<void> {
   // Skills and MCP are useful immediately after launch, but remote connections
   // must not sit in front of /api/health or Tauri's first window navigation.
   const capabilityBootstrap = startWebCapabilityBootstrap(configService);
-  bootMark('capability-bootstrap-kickoff'); // 非阻塞：应≈0ms
+  bootMark('capability-bootstrap-kickoff'); void rendererWindowReady.then(() => notificationService.replayPersistedHeld()); // 非阻塞；首个 renderer 就绪后补发上次遗留的暂存通知
   if (databaseForDurableRun) {
     startDurableRunStartup({
       capabilityBootstrap,
