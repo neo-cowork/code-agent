@@ -13,6 +13,7 @@ import { createCLIAgent } from '../../../src/cli/adapter';
 import { buildQueuedAgentRunBody, createAgentRouter } from '../../../src/web/routes/agent';
 import { handleServerError } from '../../../src/web/middleware/serverErrors';
 import { ProjectSourceTrustError } from '../../../src/host/services/project/projectSourceTrustError';
+import { getAuthService } from '../../../src/host/services/auth/authService';
 import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
 import { HostReasonCode, type Message } from '../../../src/shared/contract';
 import { getModelAuthFailureMarker } from '../../../src/host/model/errorClassifier';
@@ -1294,6 +1295,23 @@ describe('createAgentRouter', () => {
         '[AgentRouter] run rejected by Project Source trust gate',
         expect.objectContaining({ sessionId: 'session-trust-reject', kind: 'identity_changed' }),
       );
+      // ③ 变体：登录态（ownerUserId 非空）同一份坏 Source 表现一致——信任门与会话
+      // 归属人无关，signed-in 不放宽也不收窄。
+      const auth = getAuthService();
+      const currentUser = vi.spyOn(auth, 'getCurrentUser').mockReturnValue({
+        id: 'user-signed-in', email: 'signed-in@example.com',
+      } as ReturnType<typeof auth.getCurrentUser>);
+      try {
+        const signedIn = await post();
+        expect(signedIn.status).toBe(422);
+        expect(await signedIn.json()).toEqual({
+          error: 'Project folder needs trust confirmation',
+          code: 'PROJECT_SOURCE_TRUST',
+          kind: 'identity_changed',
+        });
+      } finally {
+        currentUser.mockRestore();
+      }
     } finally {
       projectServiceMocks.getWorkspaceScope.mockReset();
       await rm(workspaceRoot, { recursive: true, force: true });
