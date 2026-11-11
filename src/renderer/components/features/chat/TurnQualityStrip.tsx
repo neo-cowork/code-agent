@@ -4,6 +4,7 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import { Archive, Bot, Brain, ChevronDown, ChevronRight, Cpu, EyeOff, Gauge, Wrench } from 'lucide-react';
 import ipcService from '../../../services/ipcService';
 import { useAppStore } from '../../../stores/appStore';
+import { useAgentRegistryStore } from '../../../stores/agentRegistryStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { toast } from '../../../hooks/useToast';
 import { useI18n } from '../../../hooks/useI18n';
@@ -90,6 +91,13 @@ function blockLabel(blockType: string): string {
 
 export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) => {
   const developerMode = useAppStore((state) => state.developerMode);
+  const agentEntries = useAgentRegistryStore((state) => state.entries);
+  // 与 composer 的 AgentChip 共用 agents:list 展示名；历史消息仍保留原始 agentId。
+  const labelFor = (agentId?: string, name?: string): string | undefined => {
+    const entry = agentEntries.find((candidate) => candidate.id === agentId);
+    return entry?.displayName || entry?.name || name || agentId;
+  };
+  const agentName = labelFor(summary.capabilities?.agentId, summary.capabilities?.agentName);
   const sessionModels = useSessionModels();
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
@@ -159,7 +167,6 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
       && (rerouted || sessionModels === null || sessionModels.size > 1);
     // 手动 /agent 指定（非 default）时透出"本轮由 X 执行"的安静徽标，
     // 恢复自动路由后 agentName 回到 default 徽标自然消失。
-    const agentName = summary.capabilities?.agentName;
     const showAgent = Boolean(agentName && agentName !== 'default');
     // 显式选择降级：用户点名的 agent 没生效（requestedAgentId ≠ 实际 agentId）。
     // 徽标显示 host 实际路由值，降级不再静默——透出安静警示。
@@ -184,10 +191,10 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
         {degradedAgentId && (
           <span
             className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-badge-warning/80"
-            title={`${t.agentCommand.badgeNotAppliedTitlePrefix}${summary.capabilities?.agentName || 'default'}`}
+            title={`${t.agentCommand.badgeNotAppliedTitlePrefix}${agentName || 'default'}`}
           >
             <Bot className="h-3 w-3" />
-            {degradedAgentId}
+            {labelFor(degradedAgentId)}
             {t.agentCommand.badgeNotAppliedSuffix}
           </span>
         )}
@@ -222,10 +229,10 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
               <Cpu className="h-3 w-3 shrink-0" />
               <span className="truncate">{strategyLabel(summary)} · {formatModel(summary)}</span>
             </span>
-            {summary.capabilities?.agentName && (
+            {agentName && (
               <span className="inline-flex items-center gap-1 rounded border border-badge-accent/15 bg-fuchsia-400/10 px-1.5 py-0.5 text-badge-accent">
                 <Bot className="h-3 w-3" />
-                {summary.capabilities.agentName}
+                {agentName}
               </span>
             )}
             {summary.capabilities?.toolsUsed?.length ? (
@@ -266,7 +273,7 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
           {summary.agentScorecard && (
             <div className="mb-2 rounded-md border border-badge-accent/10 bg-fuchsia-400/[0.04] px-2 py-1.5">
               <div className="flex flex-wrap items-center justify-between gap-2 text-zinc-300">
-                <span>{summary.agentScorecard.agentName || summary.agentScorecard.agentId || 'Main agent'}</span>
+                <span>{labelFor(summary.agentScorecard.agentId, summary.agentScorecard.agentName) || 'Main agent'}</span>
                 <span className="font-mono text-zinc-500">
                   {summary.agentScorecard.score.score}/{summary.agentScorecard.score.max}
                 </span>
