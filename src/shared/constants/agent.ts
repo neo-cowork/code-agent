@@ -90,7 +90,6 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // 整合合并 r4：本单（image 多参考图 schema 面）× main 已合入的 sys-v106 撞号，合并面未在任何一侧
 // 记录过，按惯例升版。
 // sys-v108：整合 main 多参考图 schema 与 delegate_task 满槽选择卡指引。
-// sys-v109：live prompt 求值按当前 slot 数据目录渲染 ~/.code-agent（registry.ts）。
 export const PROMPT_VERSION = 'sys-v109' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
