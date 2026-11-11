@@ -10,6 +10,8 @@ export const SESSION_SEARCH = {
   FTS_CANDIDATE_LIMIT: 500,
   /** searchSessionMessagesFts 的默认 limit 硬上限（agent 记忆侧语义，保持原值） */
   FTS_QUERY_LIMIT_CAP: 50,
+  /** 侧栏会话搜索：标题子串匹配的返回条数上限 */
+  TITLE_MATCH_LIMIT: 20,
   /** 搜索回填缓存 / 轮次推断时每会话加载的消息窗口（原 CROSS_SESSION_SEARCH_MESSAGE_LIMIT） */
   HYDRATE_MESSAGE_LIMIT: 500,
 };
