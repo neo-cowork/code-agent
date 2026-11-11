@@ -92,7 +92,7 @@ const EXTERNAL_ENGINE_MANIFESTS: readonly ExternalEngineManifest[] = [
     id: 'native',
     kind: 'native',
     label: 'Neo',
-    summary: 'Neo 原生执行引擎，使用现有模型服务、工具、权限、Trace 与 Review。',
+    summary: 'Neo 原生执行引擎，使用现有 Provider、工具、权限、Trace 与 Review。',
     iconAsset: '/code-agent/agent-neo-mark.svg',
     adapter: {
       adapterId: 'native',
