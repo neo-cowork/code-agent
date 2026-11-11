@@ -29,6 +29,7 @@ export function getProviderDisplayName(
   language: SettingsLanguage,
 ): string {
   const defaultName = getProviderInfo(id)?.displayName;
+  if (language === 'en') return configuredName || fallbackName || defaultName || id;
   if (configuredName && configuredName !== defaultName) return configuredName;
   if (id === 'custom' && language === 'zh' && (!fallbackName || fallbackName === defaultName)) {
     return `自定义${getSettingsVocabulary(language).provider}`;

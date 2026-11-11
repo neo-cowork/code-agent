@@ -755,6 +755,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
                       <div className="mt-3">
                         <label className="mb-2 block text-sm text-zinc-200">{text.baseUrlLabel}</label>
                         <Input value={customBaseUrl} onChange={(event) => setCustomBaseUrl(event.target.value)} placeholder="https://example.com/v1" />
+                        <p className="mt-2 text-xs text-zinc-500">{text.baseUrlHint}</p>
                       </div>
                     ) : (
                       <div className="mt-3 rounded border border-zinc-800 bg-zinc-900/50 px-3 py-2 font-mono text-[11px] text-zinc-500">{endpoint}</div>

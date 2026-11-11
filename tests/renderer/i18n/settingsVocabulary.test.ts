@@ -30,5 +30,6 @@ describe('settings vocabulary', () => {
     expect(getProviderDisplayName('custom', 'Custom Provider', 'Custom Provider', 'en')).toBe('Custom Provider');
     expect(getProviderDisplayName('custom', '我的服务', 'Custom Provider', 'zh')).toBe('我的服务');
     expect(getProviderDisplayName('zhipu', 'Zhipu GLM', '智谱 AI', 'zh')).toBe('智谱 AI');
+    expect(getProviderDisplayName('zhipu', 'Zhipu GLM', 'Zhipu AI', 'en')).toBe('Zhipu GLM');
   });
 });
