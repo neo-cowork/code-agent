@@ -20,6 +20,12 @@ import { ipcHost } from '../../../../src/host/platform';
 import { IPC_DOMAINS } from '../../../../src/shared/ipc';
 import type { Message } from '../../../../src/shared/contract';
 import type { EnvAssistNotice } from '../../../../src/shared/contract/envAssist';
+import {
+  AUTOMATION_FAILURE_CASES,
+  appleEventsDeniedError,
+  protoFailure,
+  runConnectorToolFailure,
+} from './envAssistConnectorPath';
 
 const serviceMocks = vi.hoisted(() => ({
   messages: [] as Message[],
@@ -47,6 +53,14 @@ vi.mock('../../../../src/host/services', () => ({
 }));
 
 vi.mock('../../../../src/host/permissions/envAssist/settingsPane', () => ({ canOpenEnvSettings: () => true, openEnvSettings: vi.fn() }));
+
+// 真实连接器失败路径：runAppleScript 假掉（真实 -1743 拒绝文本），其余（含
+// describeAppleScriptFailure / isAppleScriptFailure）保持真实现。
+const osascriptRunner = vi.hoisted(() => ({ runAppleScript: vi.fn() }));
+vi.mock('../../../../src/host/connectors/native/osascript', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../src/host/connectors/native/osascript')>();
+  return { ...actual, runAppleScript: osascriptRunner.runAppleScript };
+});
 
 vi.mock('../../../../src/host/services/citation/citationService', () => ({
   getCitationService: () => ({
@@ -212,10 +226,27 @@ describe('environment notices through the production tool_call_end path', () => 
     expect(events(next.ctx).filter((e) => e.type === 'env_assist_notice')).toHaveLength(0);
   });
 
-  it.each(['mail', 'reminders', 'reminders_create'])('covers sibling %s through the same entry', async (name) => {
-    const { ctx, engine } = makeEngine(vi.fn(async () => failure()));
-    await engine.executeToolsWithHooks([{ id: name, name, arguments: { action: 'list_events', title: 'Reminder', text: 'Reminder' } }]);
-    expect(events(ctx).filter((e) => e.type === 'env_assist_notice')).toHaveLength(1);
+  // 不再手搓 metadata.code：真工具模块 + 真原生连接器 + 假 runAppleScript（-1743），
+  // code 必须由被测的 osascript 失败分支真实产出，缺 code 的回归在这里直接红。
+  it.each(['calendar', 'mail', 'reminders', 'reminders_create'] as const)('covers %s through the real connector failure path', async (tool) => {
+    const { args, app, target } = AUTOMATION_FAILURE_CASES[tool];
+    osascriptRunner.runAppleScript.mockReset();
+    osascriptRunner.runAppleScript.mockRejectedValue(appleEventsDeniedError(app));
+    const moduleResult = await runConnectorToolFailure(tool, 'env-assist-session');
+    expect(moduleResult.ok).toBe(false);
+    if (moduleResult.ok) return;
+    const contractFailure = protoFailure(moduleResult);
+    expect(contractFailure.metadata.code).toBe('not_authorized');
+    const { ctx, engine } = makeEngine(vi.fn(async () => ({ toolCallId: '', ...contractFailure })));
+    await engine.executeToolsWithHooks([{ id: `${tool}-1`, name: tool, arguments: args }]);
+    // 同 run 重试（模型再点一次工具）：仍只发一张卡、一个持久化 id。
+    await engine.executeToolsWithHooks([{ id: `${tool}-2`, name: tool, arguments: args }]);
+    const notices = events(ctx).filter((e) => e.type === 'env_assist_notice');
+    expect(notices).toHaveLength(1);
+    expect(new Set(notices.map((e) => e.data.id)).size).toBe(1);
+    expect(notices[0].data).toMatchObject({ class: 'perm_automation', target: { id: target } });
+    expect(notices[0].data.id).toBe(`env-assist-run|perm_automation|${target}`);
+    expect(serviceMocks.messages).toHaveLength(1);
   });
 
   it.each([
@@ -223,9 +254,17 @@ describe('environment notices through the production tool_call_end path', () => 
     ['computer_use', { failureKind: 'permission_denied' }, 'perm_accessibility'],
     ['computer_use', { failureKind: 'ax_unavailable' }, 'perm_accessibility'],
   ] as const)('classifies %s through the production entry', async (name, metadata, blocker) => {
-    const { ctx, engine } = makeEngine(vi.fn(async () => ({ toolCallId: '', success: false, error: 'permission needed', metadata })));
-    await engine.executeToolsWithHooks([{ id: String(name), name: String(name), arguments: { action: 'screenshot' } }]);
-    expect(events(ctx).find((e) => e.type === 'env_assist_notice')?.data.class).toBe(blocker);
+    // 这些权限语义只存在于 macOS（classify 对非 darwin/无显示会话按设计不出卡）；
+    // Linux CI 上必须钉住 darwin 平台语义，否则 classify 正确返回 null 而测试假红。
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
+    try {
+      const { ctx, engine } = makeEngine(vi.fn(async () => ({ toolCallId: '', success: false, error: 'permission needed', metadata })));
+      await engine.executeToolsWithHooks([{ id: String(name), name: String(name), arguments: { action: 'screenshot' } }]);
+      expect(events(ctx).find((e) => e.type === 'env_assist_notice')?.data.class).toBe(blocker);
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+    }
   });
 
   it('does not confuse Neo protected-target or per-action consent denials with system permissions', async () => {

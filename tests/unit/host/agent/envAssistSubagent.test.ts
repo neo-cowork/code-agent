@@ -47,6 +47,13 @@ vi.mock('../../../../src/host/services', () => ({ getSessionManager: () => persi
 vi.mock('../../../../src/host/services/infra/sessionManager', () => ({ getSessionManager: () => persistence.manager }));
 vi.mock('../../../../src/host/permissions/envAssist/settingsPane', () => ({ canOpenEnvSettings: () => true }));
 
+// 真实连接器失败路径：runAppleScript 假掉（真实 -1743 拒绝文本），其余保持真实现。
+const osascriptRunner = vi.hoisted(() => ({ runAppleScript: vi.fn() }));
+vi.mock('../../../../src/host/connectors/native/osascript', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../src/host/connectors/native/osascript')>();
+  return { ...actual, runAppleScript: osascriptRunner.runAppleScript };
+});
+
 vi.mock('../../../../src/host/model/modelRouter', () => ({
   ModelRouter: class {
     inference = mocks.inference;
@@ -199,6 +206,25 @@ vi.mock('../../../../src/host/agent/backgroundSubagentRegistry', () => ({
 }));
 
 import { SubagentExecutor } from '../../../../src/host/agent/subagentExecutor';
+import {
+  AUTOMATION_FAILURE_CASES,
+  appleEventsDeniedError,
+  protoFailure,
+  runConnectorToolFailure,
+  type AutomationConnectorTool,
+} from './envAssistConnectorPath';
+
+/** 真实工具失败路径产出子代理拿到的 ToolResult（不手搓 metadata.code）。 */
+async function realAutomationFailure(tool: AutomationConnectorTool): Promise<{
+  success: false; error: string; metadata: Record<string, unknown>;
+}> {
+  const { app } = AUTOMATION_FAILURE_CASES[tool];
+  osascriptRunner.runAppleScript.mockReset();
+  osascriptRunner.runAppleScript.mockRejectedValue(appleEventsDeniedError(app));
+  const moduleResult = await runConnectorToolFailure(tool, 'scope-card-session');
+  if (moduleResult.ok) throw new Error(`expected ${tool} failure path to fail`);
+  return protoFailure(moduleResult);
+}
 
 function toolResponse(name: string) {
   return {
@@ -217,13 +243,13 @@ function textResponse(content: string) {
   };
 }
 
-function createRequest() {
+function createRequest(tool: AutomationConnectorTool = 'calendar') {
   return {
     prompt: 'Scan the modules',
     config: {
       name: 'Scope Card Agent',
       systemPrompt: 'Report what you scanned.',
-      availableTools: ['calendar'],
+      availableTools: [tool],
       maxIterations: 4,
     },
     context: {
@@ -254,10 +280,12 @@ function createRequest() {
 
 describe('SubagentExecutor environment notice', () => {
   beforeEach(() => { persistence.messages.length = 0; mocks.responses.length = 0; vi.clearAllMocks(); process.env.CODE_AGENT_MODEL_ENGINE = 'legacy'; });
-  it('tells the child model that the permission card was shown without quotable error copy', async () => {
-    mocks.toolResult.current = { success: false, error: 'osascript -1743 Apple events TCC', output: 'osascript -1743 Apple events TCC', metadata: { code: 'not_authorized' } };
-    mocks.responses.push(toolResponse('calendar'), textResponse('请使用卡片上的按钮，然后再问我。'));
-    await new SubagentExecutor().execute(createRequest());
+  // 不再手搓 metadata.code：calendar/mail/reminders 的失败结果都从真实连接器工具
+  // 失败路径（假 runAppleScript，真实 -1743 文本）产出，code 缺失在这里直接红。
+  it.each(['calendar', 'mail', 'reminders'] as const)('tells the child model that the permission card was shown without quotable error copy (%s)', async (tool) => {
+    mocks.toolResult.current = await realAutomationFailure(tool);
+    mocks.responses.push(toolResponse(tool), textResponse('请使用卡片上的按钮，然后再问我。'));
+    await new SubagentExecutor().execute(createRequest(tool));
     expect(mocks.inference).toHaveBeenCalledTimes(2);
     const text = JSON.stringify(mocks.inference.mock.calls[1][0]);
     expect(text).not.toMatch(/-1743|osascript|Apple events|TCC|Permission is needed to continue/i);
@@ -267,14 +295,17 @@ describe('SubagentExecutor environment notice', () => {
     expect(text).toContain('ask again');
   });
 
-  it('emits exactly one persistent parent card even when the delegated tool retries', async () => {
-    mocks.toolResult.current = { success: false, error: 'osascript -1743 Apple events TCC', metadata: { code: 'not_authorized' } };
-    mocks.responses.push(toolResponse('calendar'), toolResponse('calendar'), textResponse('Permission is needed.'));
-    const request = createRequest();
+  it.each(['calendar', 'mail', 'reminders'] as const)('emits exactly one persistent parent card even when the delegated %s tool retries', async (tool) => {
+    mocks.toolResult.current = await realAutomationFailure(tool);
+    mocks.responses.push(toolResponse(tool), toolResponse(tool), textResponse('Permission is needed.'));
+    const request = createRequest(tool);
     await new SubagentExecutor().execute(request);
     const notices = request.context.events.emit.mock.calls.filter(([event]) => event === 'env_assist_notice');
     expect(notices).toHaveLength(1);
-    expect(notices[0][1]).toMatchObject({ sessionId: request.context.sessionId, runId: request.context.runId, class: 'perm_automation' });
+    expect(notices[0][1]).toMatchObject({
+      sessionId: request.context.sessionId, runId: request.context.runId,
+      class: 'perm_automation', target: { id: AUTOMATION_FAILURE_CASES[tool].target },
+    });
     expect(persistence.messages).toHaveLength(1);
     expect(JSON.stringify(persistence.messages)).not.toMatch(/-1743|osascript|Apple events|TCC/i);
   });
