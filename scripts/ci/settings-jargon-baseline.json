@@ -23,7 +23,7 @@
     {
       "surface": "settings/voiceLive",
       "term": "Provider",
-      "count": 2,
+      "count": 1,
       "reason": "N-FIX-SETTINGS-ENGINEERING-JARGON-SCREENMEM-STT: existing voice/screen-memory copy; owned redesign is queued"
     },
     {
