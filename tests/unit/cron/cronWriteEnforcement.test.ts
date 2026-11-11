@@ -321,3 +321,27 @@ it('registry-wide: no workspace-file classifier approval can bypass scheduled co
   process.stdout.write('REGISTRY AUDIT (tool | permission | descriptors | no-grant classification | executor proof)\n' + audit.join('\n') + '\n');
   process.stdout.write(`REGISTRY GUARDED COUNT ${checked}\n`);
 }, 120000);
+
+// Write-level tools outside the nine named file tools (pdf/chart/Excel automation) were
+// once exempt from the grant: skill pre-approval + tool-run grant + bypass mode must still park.
+it.each([
+  { tool: 'pdf_generate', params: (t: string) => ({ output_path: t, title: 'Daily', content: '# Daily\n' }), ext: 'daily.pdf' },
+  { tool: 'chart_generate', params: (t: string) => ({ output_path: t, type: 'bar', labels: ['a'], datasets: [{ label: 'x', data: [1] }] }), ext: 'daily.png' },
+  { tool: 'ExcelAutomate', params: (t: string) => ({ action: 'edit', file_path: t, operations: [{ action: 'set_cell', cell: 'A1', value: 1 }] }), ext: 'daily.xlsx' },
+])('$tool: pre-approval, tool-run grant and bypass mode cannot skip the scheduled write grant', async ({ tool, params, ext }) => {
+  getProtocolRegistry();
+  const task = await job();
+  const definition = cron.getJob(task.id)!;
+  const session = await createCronAgentSession(definition, definition.action);
+  mintToolRunGrant(session.id, tool);
+  getPermissionModeManager().setSessionMode(session.id, 'bypassPermissions', true);
+  const target = path.join(folder, ext);
+  const executor = new ToolExecutor({ workingDirectory: folder, requestPermission: (request) => island.requestPermission(request) });
+  executor.setAuditEnabled(false);
+  const promise = executor.execute(tool, params(target), { sessionId: session.id, preApprovedTools: new Set([tool]) });
+  const row = await parked();
+  expect(JSON.parse(row.payloadJson).tool).toBe(tool);
+  expect(existsSync(target)).toBe(false);
+  island.resolveParkedApproval(row.id, 'deny');
+  expect((await promise).success).toBe(false);
+});

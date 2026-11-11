@@ -82,8 +82,8 @@ export async function classifyFileWrite(
   context: ClassificationContext,
   startTime: number,
 ): Promise<ClassificationResult | null> {
-  if (!WRITE_TOOLS.has(toolName)
-    || (!context.workspaceRoot && GENERATOR_WRITE_TOOLS.has(toolName))) return null;
+  if (!WRITE_TOOLS.has(toolName)) return classifyOtherScheduledWrite(toolName, args, context, startTime);
+  if (!context.workspaceRoot && GENERATOR_WRITE_TOOLS.has(toolName)) return null;
   const scheduled = await requiresScheduleWriteGrant(context.sessionId);
   // Keep the original lexical-path policy authoritative. The descriptor resolver
   // canonicalizes symlinks, which must not turn an in-folder escape into /tmp approval.
@@ -120,6 +120,30 @@ export async function classifyFileWrite(
   }
   const { workspaceWrite: _workspaceWrite, ...result } = results[0];
   return { ...result, bypassCache: scheduled };
+}
+
+/**
+ * Every other write-level tool (pdf_generate, ExcelAutomate, ppt_edit, chart_generate, ...) keeps its
+ * normal classification, except that an in-workspace target in a scheduled session needs the folder
+ * grant. Strictly tightening: outside/protected/unknown targets are left to the existing policy.
+ */
+async function classifyOtherScheduledWrite(
+  toolName: string,
+  args: Record<string, unknown>,
+  context: ClassificationContext,
+  startTime: number,
+): Promise<ClassificationResult | null> {
+  const def = context.toolDefinition;
+  if (!context.workspaceRoot || (context.permissionLevel ?? def?.permissionLevel) !== 'write'
+    || !await requiresScheduleWriteGrant(context.sessionId)) return null;
+  const described = def ? resolveToolWriteTargets({ definition: def, params: args, workingDirectory: context.workingDirectory }).targets : [];
+  const keyed = writeTargetPathOf(toolName, args);
+  const targets = [...new Set([...described, ...(keyed ? [keyed] : [])])];
+  if (!targets.some((target) => classifyTarget(toolName, target, context, startTime).workspaceWrite)) return null;
+  const reason = 'Scheduled workspace file writes require an explicit folder grant';
+  return { decision: 'ask', reason, confidence: 1, cached: false, bypassCache: true,
+    scheduleWriteTargets: targets.map((target) => path.resolve(context.workingDirectory, target)),
+    traceStep: createTraceStep('permission_classifier', 'schedule_write_grant', 'ask', reason, startTime) };
 }
 
 function classifyTarget(
