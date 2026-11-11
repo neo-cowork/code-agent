@@ -158,7 +158,10 @@ describe('指挥台任务：宿主重启后的收口', () => {
     expect(afterFirst).toHaveLength(1);
     expect(afterFirst[0].content).toContain('researcher｜failed｜');
     expect(afterFirst[0].content).toContain('应用重启');
-    expect(afterFirst[0].metadata).toMatchObject({ backgroundTaskResult: { status: 'failed', shortName: 'researcher' } });
+    expect(afterFirst[0].metadata).toMatchObject({
+      backgroundTaskResult: { status: 'failed', shortName: 'researcher' },
+      backgroundTaskInterrupted: { taskId: expect.any(String) },
+    });
     const ledgerTask = getBackgroundTaskLedger().getTask(
       (afterFirst[0].metadata as { backgroundTaskResult: { taskId: string } }).backgroundTaskResult.taskId,
     );
@@ -191,6 +194,7 @@ describe('指挥台任务：宿主重启后的收口', () => {
     manager.emit('task_completed', { type: 'task_completed', sessionId: SESSION_ID, data: { taskId, conclusion: 'ok' } });
     await vi.waitFor(async () => expect(await transcript()).toHaveLength(1));
 
+    expect((await transcript())[0].metadata?.backgroundTaskInterrupted).toBeUndefined();
     await restartHost();
     expect(await transcript()).toHaveLength(1);
   });
