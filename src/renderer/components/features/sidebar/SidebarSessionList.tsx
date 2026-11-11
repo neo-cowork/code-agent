@@ -178,6 +178,12 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
       t,
     ],
   );
+  const listErrorNotice = listLoad.error ? (
+    <div role="alert" data-testid="sidebar-list-error" className="flex flex-col items-center gap-3 px-4 py-8 text-center">
+      <p className="text-sm text-zinc-400">{sb.loadSessionsFailed}</p>
+      <Button variant="secondary" size="sm" onClick={() => retrySessionRead(listLoad.errorCode, loadSessions)}>{sb.retryLoadSessions}</Button>
+    </div>
+  ) : null;
   // 三分区归位（ADR-053）：判据与排序规则全部在 sidebarSessionTiers，
   // 组内/组间排序不动，空分区整节不出现在返回里（含节头）。
   const tierSections = buildSidebarSessionTierSections(groups, projectMetaById);
@@ -199,16 +205,13 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
        把那条窄带"要回来"，`overflow-y-scroll` 恒定占位把滚动条正好摆进去 ⇒ 它的内容盒宽度
        回到与兄弟块相同的内轨。滚动条照常可见，且与列表溢不溢出无关。 */
     <div className="scrollbar-band flex-1 overflow-y-scroll px-1 min-h-0 mr-[calc(var(--scrollbar-size)*-1)]" data-testid="sidebar-session-scroll">
-      {!listLoad.settled || listLoad.loading ? (
+      {!listLoad.settled || (listLoad.loading && !hasAnySessions) ? (
         <div data-testid="sidebar-list-loading" className="flex flex-col items-center justify-center py-12 gap-3">
           <Loader2 className="w-6 h-6 animate-spin text-badge-accent" />
           <span className="text-xs text-zinc-500">{sb.loading}</span>
         </div>
-      ) : listLoad.error ? (
-        <div role="alert" data-testid="sidebar-list-error" className="flex flex-col items-center gap-3 px-4 py-8 text-center">
-          <p className="text-sm text-zinc-400">{sb.loadSessionsFailed}</p>
-          <Button variant="secondary" size="sm" onClick={() => retrySessionRead(listLoad.errorCode, loadSessions)}>{sb.retryLoadSessions}</Button>
-        </div>
+      ) : listLoad.error && !hasAnySessions ? (
+        listErrorNotice
       ) : !hasAnySessions ? (
         /* 空态星球（2026-08-02 星球品牌升级）：列表空 = 地球（母星，"还没有勘测记录"），
            替代原 MessageSquare 灰瓷砖；引导文案 startNewTask 保留。 */
@@ -385,6 +388,7 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
           ) : null}
         </div>
       )}
+      {listLoad.settled && hasAnySessions && listErrorNotice}
     </div>
   );
 };
