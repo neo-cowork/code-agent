@@ -254,6 +254,8 @@ describe('sessionRecapService 模型输出过滤', () => {
 import { getSessionRecap } from '../../../src/host/session/sessionRecapService';
 
 const HOUR_AGO = () => Date.now() - 60 * 60 * 1000;
+/** quickTask 的 mock 未声明参数 → calls 元组是 []，取首参要经 unknown[] */
+const quickPromptAt = (index: number): string => (quickModel.quickTask.mock.calls[index] as unknown[])[0] as string;
 /** getSessionRecap 只看 sinceTimestamp 之后收口的轮次：默认夹具 endedAt=2000 全被滤掉，这里给「新鲜」版 */
 const RECENT = () => Date.now() - 60 * 1000;
 const freshRecord = () => record({ endedAt: RECENT() });
@@ -295,7 +297,7 @@ describe('sessionRecapService 语言档（getSessionRecap）', () => {
     const recap = await getSessionRecap('session-1', HOUR_AGO());
     expect(recap!.degraded).toBe(false);
     // 喂给小模型的提示词是英文档（one English sentence / 25 words or fewer）
-    const prompt = quickModel.quickTask.mock.calls[0][0] as string;
+    const prompt = quickPromptAt(0);
     expect(prompt).toContain('one English sentence (25 words or fewer)');
     expect(prompt).not.toContain('请用一句中文');
     // 160 字符上限：超长时截断在词边界——保留段是原文前缀，且截点在原文里是空格（没把词砍成两半）
@@ -319,7 +321,7 @@ describe('sessionRecapService 语言档（getSessionRecap）', () => {
     quickModel.isQuickModelAvailable.mockReturnValue(true);
     quickModel.quickTask.mockImplementation(async () => ({ success: true, content: '更新了销售图表，并完成扩写第三节' }));
     const modeled = await getSessionRecap('session-1', HOUR_AGO());
-    expect(quickModel.quickTask.mock.calls[0][0]).toContain('请用一句中文');
+    expect(quickPromptAt(0)).toContain('请用一句中文');
     expect(modeled!.text).toContain('销售图表');
   });
 });
