@@ -255,9 +255,10 @@ describe('slotless verification scripts', () => {
 
   it('rejects duplicate login-session opt-in and isolates the home and Keychain', () => {
     expect(() => parseStartArgs(['T', '--copy-login-session', '--copy-login-session'])).toThrow(/only be specified once/);
-    const env = buildWebServerEnv({ baseEnv: { HOME: '/owner', CODE_AGENT_HOME: '/owner' }, dataDir: '/isolated', runtimeTmpDir: '/isolated/tmp', port: 1234 });
+    const env = buildWebServerEnv({ baseEnv: { HOME: '/owner', CODE_AGENT_HOME: '/owner', CODE_AGENT_DATA_DIR: '/owner' }, dataDir: '/isolated', runtimeTmpDir: '/isolated/tmp', port: 1234 });
     expect(env.HOME).toBe('/isolated');
     expect(env.CODE_AGENT_HOME).toBe('/isolated');
+    expect(env.CODE_AGENT_DATA_DIR).toBe('/isolated');
   });
 
   it('copies both secure storage files with mode 600 only with explicit opt-in', () => {

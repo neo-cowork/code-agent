@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
 import { createHash, createCipheriv, randomBytes } from 'node:crypto';
 import path from 'node:path';
 import os from 'node:os';
@@ -20,6 +20,22 @@ describe('verification isolation shared by sibling runners', () => {
     symlinkSync(os.homedir(), path.join(dir, 'home'));
     expect(() => assertIsolatedVerificationDir(path.join(dir, 'home', '.code-agent-dev'))).toThrow(/live data directory/);
     expect(assertIsolatedVerificationDir(dir)).toBeTruthy();
+  });
+
+  it('rejects a live data directory that does not exist yet, reached through a symlink', () => {
+    const neverCreated = '.code-agent-dev987654321';
+    expect(existsSync(path.join(os.homedir(), neverCreated))).toBe(false);
+    expect(() => assertIsolatedVerificationDir(path.join(os.homedir(), neverCreated))).toThrow(/live data directory/);
+    const dir = temp();
+    symlinkSync(os.homedir(), path.join(dir, 'home'));
+    expect(() => assertIsolatedVerificationDir(path.join(dir, 'home', neverCreated))).toThrow(/live data directory/);
+    symlinkSync(path.join(os.homedir(), neverCreated), path.join(dir, 'direct'));
+    expect(() => assertIsolatedVerificationDir(path.join(dir, 'direct'))).toThrow(/live data directory/);
+    symlinkSync(path.join('home', neverCreated), path.join(dir, 'chained'));
+    expect(() => assertIsolatedVerificationDir(path.join(dir, 'chained'))).toThrow(/live data directory/);
+    symlinkSync('loop', path.join(dir, 'loop'));
+    expect(() => assertIsolatedVerificationDir(path.join(dir, 'loop'))).toThrow(/symlink loop/);
+    expect(assertIsolatedVerificationDir(path.join(dir, 'fresh', 'data'))).toBe(path.join(realpathSync(dir), 'fresh', 'data'));
   });
 
   it('fails closed on a dangling secure-store link', () => {
