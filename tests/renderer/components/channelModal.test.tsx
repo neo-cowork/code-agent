@@ -419,3 +419,20 @@ describe('ChannelModal 按钮固定在 Modal footer（N-CHANNEL-MODAL-ADD-BUTTON
     expect(onSave).toHaveBeenCalledTimes(1);
   });
 });
+
+// Keep instructional text outside the horizontally scrolling single-line input.
+describe('Telegram allow-list helper', () => {
+  for (const [language, locale] of [['zh', zh], ['en', en]] as const) {
+    it(`${language}: exposes the full rule as an associated helper and a short example`, () => {
+      useAppStore.setState({ language });
+      render(<ChannelModal channelTypes={channelTypes} onSave={vi.fn()} onClose={vi.fn()} />);
+      fireEvent.change(screen.getAllByRole('combobox')[0]!, { target: { value: 'telegram' } });
+      const text = locale.settings.channels.modal;
+      const input = screen.getByPlaceholderText(text.allowedUserIdsPlaceholder);
+      expect(text.allowedUserIdsPlaceholder.length).toBeLessThan(30);
+      const helper = document.getElementById(input.getAttribute('aria-describedby')!);
+      expect(helper?.textContent).toBe(text.allowedUserIdsHint);
+      expect(helper?.className).not.toMatch(/truncate|line-clamp/);
+    });
+  }
+});

@@ -1151,6 +1151,9 @@ export function createHttpDomainAPI(baseUrl: string): DomainAPI {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify(body),
+        }).catch((err: unknown) => {
+          reportServerUnreachable();
+          throw new Error(getServerReconnectingMessage(), { cause: err });
         });
 
         if (res.ok) {

@@ -243,6 +243,8 @@ export const ROLE_PROACTIVITY = {
   FALLBACK_DECISION: 'report',
   /** 醒来履历条目的产出摘要截断字符数（why 是独立字段，不挤进这个预算） */
   HISTORY_SUMMARY_MAX_CHARS: 200,
+  /** 醒来 run 返回后等待 task_complete 收口链排空的上限（防泄漏兜底，非时序依赖） */
+  WAKE_EVENT_SETTLE_MAX_MS: 5000,
   /** 话题偏好单条最大字符数 */
   TOPIC_MAX_CHARS: 40,
   /** 话题偏好最多条数 */

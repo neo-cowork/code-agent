@@ -1577,14 +1577,19 @@ describe('createAgentRouter', () => {
     });
 
     describe('slash prompt command expansion on the desktop /run route (FB-523)', () => {
-      const postRun = async (prompt: string, sessionId: string) => {
+      const postRun = async (prompt: string, sessionId: string, workingDirectory?: string) => {
         const controller = new AbortController();
         mockRun.mockClear();
         mockCreateAgentLoop.mockClear();
         try {
           const response = await fetch(`${baseUrl}/api/run`, {
             method: 'POST', headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ prompt, sessionId }), signal: controller.signal,
+            body: JSON.stringify({
+              prompt,
+              sessionId,
+              ...(workingDirectory ? { context: { workingDirectory } } : {}),
+            }),
+            signal: controller.signal,
           });
           expect(response.ok).toBe(true);
           await waitForAssertion(() => expect(mockRun).toHaveBeenCalled());
@@ -1593,8 +1598,12 @@ describe('createAgentRouter', () => {
         } finally { await disconnectAndStop(controller); }
       };
 
-      it('/init-memory 展开为内置模板送模型，展示/持久化仍是字面量', async () => {
-        const { runArgs, messages } = await postRun('/init-memory', 'session-init-memory-expand');
+      it('/init-memory 在已选目录展开为内置模板送模型，展示/持久化仍是字面量', async () => {
+        const { runArgs, messages } = await postRun(
+          '/init-memory',
+          'session-init-memory-expand',
+          '/tmp/init-memory-selected-project',
+        );
         expect(String(runArgs[0])).toContain('为当前工作目录起草项目记忆');
         expect(runArgs[1]).toBe('/init-memory');
         const lastUser = messages.filter(m => m.role === 'user').at(-1)!;

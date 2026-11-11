@@ -16,6 +16,7 @@
 
 import { createHash } from 'crypto';
 import type { ToolCall, ToolResult } from '../../../shared/contract';
+import { pollStepIdentity } from './doomLoopGuard';
 
 /** 最近多少次 tool call 内出现连续相同就触发 */
 export const STAGNATION_WINDOW = 5;
@@ -66,7 +67,7 @@ export function fingerprintToolCall(tc: ToolCall, result: ToolResult): string {
  * - sameFingerprint: 重复的 fingerprint 值（用于日志）
  * - matchCount: 连续相同次数
  */
-export function pushAndDetectStagnation(
+function pushAndDetectStagnation(
   recent: string[],
   newFingerprints: string[],
 ): {
@@ -110,6 +111,23 @@ export function pushAndDetectStagnation(
     previousMatchCount: previousTail.fingerprint === last ? previousTail.count : 0,
     shouldStop: false,
   };
+}
+
+/**
+ * 一步工具调用的 stagnation 判定（messageProcessor 每步调一次）。
+ * 后台轮询步（pollStepIdentity 取得到身份）不计数：等后台任务时"同参同结果"是常态，
+ * 卡没卡死由 DoomLoopGuard 的卡死窗口判——两道闸同在 runToolStepGuardRails 这条路上，
+ * 这里再按 4 次相同就停，会抢在卡死窗口前把正常等待停掉。轮询步仍打断前面的连击，
+ * 和任何"换了一个调用"一样。
+ */
+export function detectStepStagnation(
+  recent: string[],
+  toolCalls: readonly { name: string; arguments?: Record<string, unknown> }[],
+  fingerprints: string[],
+): ReturnType<typeof pushAndDetectStagnation> {
+  if (pollStepIdentity(toolCalls) === null) return pushAndDetectStagnation(recent, fingerprints);
+  recent.length = 0;
+  return pushAndDetectStagnation(recent, []);
 }
 
 /**
