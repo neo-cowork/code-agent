@@ -116,6 +116,16 @@ export const KEYBINDING_DEFINITIONS = [
     defaultHotkeys: { darwin: 'Cmd+K', win32: 'Ctrl+K', linux: 'Ctrl+K' },
   },
   {
+    id: 'sessionSearch.open',
+    label: '搜索会话',
+    description: '搜索并打开会话',
+    category: 'sessionEditing',
+    scope: 'session',
+    configurable: true,
+    enabledByDefault: true,
+    defaultHotkeys: { darwin: 'Cmd+P', win32: 'Ctrl+P', linux: 'Ctrl+P' },
+  },
+  {
     id: 'session.stop',
     label: '停止生成',
     description: '停止当前运行中的任务',
