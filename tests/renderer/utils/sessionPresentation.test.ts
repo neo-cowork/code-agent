@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSessionSearchText, getSessionStatusPresentation, getDisplaySessionTitle } from '../../../src/renderer/utils/sessionPresentation';
+import { buildSessionSearchText, getSessionStatusPresentation, getDisplaySessionTitle, getLocalizedSessionTitle, splitCronSessionTitleParts } from '../../../src/renderer/utils/sessionPresentation';
 import type { SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 
 describe('sessionPresentation', () => {
@@ -114,5 +114,19 @@ describe('placeholder display uses the current UI language', () => {
     expect(getDisplaySessionTitle('CLI Session notes', 'en')).toBe('CLI Session notes');
     expect(getDisplaySessionTitle('<appshot>capture</appshot>', 'en')).toBe('Appshot conversation');
     expect(getDisplaySessionTitle('<appshot>capture</appshot>', 'zh')).toBe('Appshot 会话');
+  });
+});
+
+
+describe('display-only automatic-session prefixes', () => {
+  it.each([
+    ['[Schedule]', '[定时]'], ['[Cron]', '[定时]'], ['[Heartbeat]', '[心跳]'],
+  ])('localizes %s without changing editing or raw detection', (stored, localized) => {
+    const title = `${stored} Morning notes`;
+    expect(getLocalizedSessionTitle(title, 'zh')).toBe(`${localized} Morning notes`);
+    expect(getLocalizedSessionTitle(title, 'en')).toBe(title);
+    expect(getDisplaySessionTitle(title, 'zh')).toBe(title);
+    expect(splitCronSessionTitleParts(title)).toEqual({ prefix: stored, name: 'Morning notes' });
+    expect(getLocalizedSessionTitle('Manual task', 'zh')).toBe('Manual task');
   });
 });

@@ -396,7 +396,7 @@ describe('SidebarProjectGroup cron run folding', () => {
     expect(name.className).toContain('truncate');
     expect(name.className).toContain('min-w-0');
     const prefix = screen.getByTestId('sidebar-cron-task-prefix');
-    expect(prefix.textContent).toBe('[Schedule]');
+    expect(prefix.textContent).toBe('[定时]');
     expect(prefix.className).toContain('shrink-0');
     expect(prefix.contains(name)).toBe(false);
 

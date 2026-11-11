@@ -3,7 +3,7 @@ import { Loader2, MessageSquareText, Search } from 'lucide-react';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { formatLocalDateTime } from '../../../utils/i18nTime';
-import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
+import { getLocalizedSessionTitle } from '../../../utils/sessionPresentation';
 import type {
   SidebarMessageSearchHitGroup,
   SidebarSearchScope,
@@ -165,7 +165,7 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm">
-                        {getDisplaySessionTitle(session.title, language)}
+                        {getLocalizedSessionTitle(session.title, language)}
                         {session.id === currentSessionId && (
                           <span className="ml-2 text-[11px] text-badge-info">{sb.currentSession}</span>
                         )}

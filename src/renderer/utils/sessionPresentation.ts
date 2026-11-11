@@ -99,6 +99,17 @@ export function splitCronSessionTitleParts(title: string): { prefix: string; nam
   return name ? { prefix: match[1], name } : null;
 }
 
+/** Display only: editing and stored-prefix detection must keep using the raw title. */
+export function getLocalizedSessionTitle(title?: string | null, language: Language = 'zh'): string {
+  const displayTitle = getDisplaySessionTitle(title, language);
+  const parts = splitCronSessionTitleParts(displayTitle);
+  if (!parts || language === 'en') return displayTitle;
+  const labels = languages[language].sidebar;
+  const prefix = parts.prefix.toLowerCase() === '[heartbeat]'
+    ? labels.heartbeatSessionPrefix : labels.scheduleSessionPrefix;
+  return `${prefix} ${parts.name}`;
+}
+
 /**
  * Classify a session's status for sidebar display.
  *

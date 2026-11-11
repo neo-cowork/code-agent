@@ -93,6 +93,15 @@ describe('buildSessionContextMenuItems', () => {
     vi.mocked(pickNativeFile).mockReset();
   });
 
+  it('prefills rename with the stored automatic-session title', () => {
+    const deps = makeDeps();
+    const title = '[Schedule] Morning notes summary';
+    const item = buildSessionContextMenuItems(makeSession({ title }), deps)
+      .find((entry) => entry.label === zh.sessionMenu.rename);
+    item?.onClick();
+    expect(deps.setRenameValue).toHaveBeenCalledWith(title);
+  });
+
   it('始终包含基础项：置顶/重命名/复制ID/归档/删除/导出', () => {
     const items = buildSessionContextMenuItems(makeSession(), makeDeps());
     const labels = items.map((item) => item.label);

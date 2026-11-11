@@ -18,7 +18,7 @@ import { useI18n } from '../../hooks/useI18n';
 import { useRunWorkbenchModel } from '../../hooks/useRunWorkbenchModel';
 import { useRunControlStore } from '../../stores/runControlStore';
 import { useSessionStore } from '../../stores/sessionStore';
-import { getDisplaySessionTitle } from '../../utils/sessionPresentation';
+import { getLocalizedSessionTitle } from '../../utils/sessionPresentation';
 import {
   buildOverviewRunHeaderModel,
   formatElapsedClock,
@@ -58,12 +58,12 @@ function formatTemplate(template: string, values: Record<string, string | number
 }
 
 export const OverviewRunHeader: React.FC = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const runWorkbench = useRunWorkbenchModel();
   const interrupt = useRunControlStore((state) => state.actions?.interrupt);
   const sessionTitle = useSessionStore((state) => {
     const session = state.sessions.find((item) => item.id === state.currentSessionId);
-    return session ? getDisplaySessionTitle(session.title) : null;
+    return session ? getLocalizedSessionTitle(session.title, language) : null;
   });
 
   // 秒表只在活跃回合里装 interval；无 run 时 hook 照样要调用（hooks 规则），
