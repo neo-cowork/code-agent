@@ -56,6 +56,7 @@ const SAMPLE_PAYLOADS: { [K in UserVisibleSystemEventKey]: NonNullable<MessageMe
   roleFlowStalled: { skillName: 'create-role' },
   roleEditReceipt: { roleId: '研究员', addedTools: ['calendar'], removedTools: [], descriptionChanged: false, promptChanged: false },
   backgroundWakeFailed: { taskId: 'session-work-1', reason: 'wake_failed' },
+  backgroundWakeDeferred: { taskId: 'session-work-1', outcome: 'completed' },
   turnCheckoutNote: {
     operation: 'checkout',
     state: 'success',
