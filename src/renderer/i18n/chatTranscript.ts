@@ -32,6 +32,10 @@ chat: {
     output: '产出',
   },
   taskNotificationWithLog: '{message}。可在任务面板查看日志。',
+  taskTimeoutNotice: '后台任务运行超过 {minutes} 分钟，已被停止。',
+  taskTimeoutRerun: '重新运行',
+  taskTimeoutRerunPrompt: '刚才那个因运行太久被停止的后台任务，请帮我在后台重新运行一次。',
+  taskTimeoutRerunWrongSession: '请回到原来的会话再点重新运行。',
   // 巡航信号（长任务 ≥45s）：{elapsed} 为 mm:ss 秒表，中性陈述「一切正常」
   longToolCruise: '深空巡航中 · 已航行 {elapsed} · 链路正常',
   // 巡航信号旁的强制停止按钮
@@ -575,6 +579,10 @@ chat: {
     output: 'Output',
   },
   taskNotificationWithLog: '{message}. View logs in the task panel.',
+  taskTimeoutNotice: 'Background task ran over {minutes} minutes and was stopped.',
+  taskTimeoutRerun: 'Re-run',
+  taskTimeoutRerunPrompt: 'The background task that was just stopped for running too long: please run it again in the background.',
+  taskTimeoutRerunWrongSession: 'Go back to the original conversation and click Re-run again.',
   // Cruise signal (long-running tool ≥45s): {elapsed} is the mm:ss stopwatch, a neutral "all is well" statement
   longToolCruise: 'Deep-space cruise · {elapsed} elapsed · link nominal',
   // Force-stop button next to the cruise signal
