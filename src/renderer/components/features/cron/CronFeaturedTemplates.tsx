@@ -80,7 +80,7 @@ export const CronFeaturedTemplates: React.FC = () => {
       if (existingJob) {
         await updateJob(existingJob.id, { enabled: true });
       } else {
-        await createJob(buildCronJobInput(template.generate({}, language === 'en' ? 'en' : 'zh')));
+        await createJob(buildCronJobInput(template.generate({}, language === 'en' ? 'en' : 'zh'), cc.editorChrome.validation));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : cc.templateEnableFailed);

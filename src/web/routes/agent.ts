@@ -29,6 +29,7 @@ import {
   resolveConnectorRequiredForTurn,
   buildWorkbenchToolScope,
 } from '../../host/app/workbenchTurnContext';
+import { withMissingAttachmentTurnSystemContext } from '../../host/app/missingAttachmentTurnContext';
 import { getSessionCommandCenterBrainContextForPrompt, getTextForegroundToolNamesForPrompt } from '../../host/app/sessionCommandCenterBrain';
 import { applyMorningBriefSaveDraftRoleTools } from '../../host/app/morningBriefSaveDraftTools';
 import { isSessionCommandCenterTurn, SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS } from '../../shared/constants/sessionCommandCenter';
@@ -712,6 +713,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           ? await planSessionWorkDirectory({
             sessionTitle: persistedSession?.title,
             userMessage: prompt,
+            attachments: body.attachments,
             reservedPaths: workDirReservations,
           })
           : await ensureDefaultWebWorkingDirectory();
@@ -743,6 +745,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const replanned = await maybeReplanSessionWorkDirectory({
         workingDirectory: sessionRowWorkingDirectory,
         sessionTitle: persistedSession?.title,
+        loadFirstUserMessage: async () => (await sessionManagerForRun?.getMessages?.(sessionId, 1))?.find((message) => message.role === 'user'),
         reservedPaths: workDirReservations,
       });
       const diverted = replanned
@@ -1450,10 +1453,20 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // agentOrchestrator 的 applyTurnSystemContext 在真机上根本不执行。
       const candidateNotice = buildCapabilityCandidateNotice(sessionId);
       if (candidateNotice) capabilityContextLines.push(candidateNotice);
+      const missingAttachmentContext = withMissingAttachmentTurnSystemContext(
+        { turnSystemContext: capabilityContextLines },
+        {
+          sessionId,
+          userText: visiblePrompt,
+          attachments: requestAttachments,
+          session: { messages: history },
+          workingDirectory: resolvedProject,
+        },
+      )?.turnSystemContext ?? capabilityContextLines;
       // FB-523：桌面主链不经 appService.sendMessage，/init-memory 等内置命令在此展开（仅模型面）
       const slashExpandedPrompt = await expandSlashPromptForModel(visiblePrompt, resolvedProject);
-      const modelFacePrompt = capabilityContextLines.length > 0
-        ? wrapWithTurnSystemContext(capabilityContextLines, slashExpandedPrompt)
+      const modelFacePrompt = missingAttachmentContext.length > 0
+        ? wrapWithTurnSystemContext(missingAttachmentContext, slashExpandedPrompt)
         : slashExpandedPrompt;
       deps.publishCompanionEvent?.(sessionId, 'message', { event: userMsg, runId: runContext.runId });
       const messages = [
