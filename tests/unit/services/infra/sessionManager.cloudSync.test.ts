@@ -30,6 +30,8 @@ const dbMock = {
   createSessionWithId: vi.fn(),
   updateSession: vi.fn(),
   deleteSession: vi.fn(),
+  // 标题回灌守卫经 db.getMessages 取首条用户消息；空消息 => 判不了自动档 => 云端照旧
+  getMessages: vi.fn(() => [] as any[]),
   getRecentMessages: vi.fn(() => [] as any[]),
   logAuditEvent: vi.fn(),
 };
