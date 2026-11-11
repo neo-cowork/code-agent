@@ -704,6 +704,7 @@ export function useAgentIPC({
           // clientMessageId。纯附件消息 content 为空，锚点不能按文本判。
           ...(retryAnchor ? { metadata: retryAnchor } : {}),
         };
+        offerProjectIdentityRecovery(errorMessage.id, sendFailure, messagePayload, userMessage);
         if (effectiveSessionId) recordFailedSend(effectiveSessionId, userMessage, errorMessage);
         if (useSessionStore.getState().currentSessionId === effectiveSessionId) addMessage(errorMessage);
         // 按会话清除处理状态
