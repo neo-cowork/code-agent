@@ -459,10 +459,12 @@ function mergeBackgroundAgent(
   nodes: Map<string, AgentTreeNode>,
   statusPriorities: Map<string, number>,
   handle: BackgroundSubagentHandle,
+  backgroundAgentId = handle.agentId,
 ): void {
   const node = ensureNode(nodes, handle.agentId, 'background');
   addSource(node, 'backgroundRegistry');
   node.background = true;
+  node.backgroundAgentId = backgroundAgentId;
   node.displayName ||= handle.displayName;
   node.task ??= handle.title;
   if (node.role === 'background' && handle.role) node.role = handle.role;
@@ -594,7 +596,7 @@ export function buildAgentTreeSnapshot(sources: AgentTreeSnapshotSources = {}): 
     if (sessionId && handle.sessionId !== sessionId) continue;
     mergeBackgroundAgent(nodes, statusPriorities, {
       ...handle, agentId: registryAliases.get(handle.agentId) ?? handle.agentId,
-    });
+    }, handle.agentId);
   }
   for (const record of sources.contextRecords ?? []) {
     if (sessionId && record.sessionId !== sessionId) continue;
