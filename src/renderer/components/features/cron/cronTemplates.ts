@@ -8,7 +8,7 @@ import { localCronTimezone } from './localTimezone';
 import { cronCenterEn } from '../../../i18n/cronCenter';
 
 /** 模板草稿的语言档：zh 为存量行为；en 的 name/description 取 cronCenter.templates 英文词条。 */
-export type CronTemplateLanguage = 'zh' | 'en';
+type CronTemplateLanguage = 'zh' | 'en';
 
 // ── Template field definition ───────────────────────────────────────
 
