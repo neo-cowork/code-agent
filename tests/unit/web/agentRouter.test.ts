@@ -15,7 +15,7 @@ import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestrat
 import { HostReasonCode, type Message } from '../../../src/shared/contract';
 import { getModelAuthFailureMarker } from '../../../src/host/model/errorClassifier';
 import type { PendingOperation, RunCheckpoint, RunEngineRef, RunOwnerLease } from '../../../src/shared/contract/durableRun';
-import type { DurableCheckpointInput, PrepareOperationInput, PrepareToolOperationInput } from '../../../src/host/runtime/durableRunKernel';
+import type { DurableCheckpointInput, PrepareOperationInput } from '../../../src/host/runtime/durableRunKernel';
 import {
   markPersistenceDegraded,
   getPersistenceHealth,

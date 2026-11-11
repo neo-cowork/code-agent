@@ -46,6 +46,33 @@ function morningTriagePromptEn(values: Record<string, string>): string {
 const TODAY_MIDNIGHT_LABEL = '今天本地 00:00';
 const TOMORROW_MIDNIGHT_LABEL = '次日本地 00:00';
 
+// 带用户输入的三个构造器先具名再入表：对象字面量里 kebab 键直接挂箭头函数会被
+// @typescript-eslint/naming-convention 按 objectLiteralMethod 判红（CI 实红），
+// 挂具名引用（同 morning-triage）则按普通属性放行。函数体与原内联箭头逐字相同。
+function webChangeWatchPromptEn(v: Record<string, string>): string {
+  return `Please check whether the content at ${v.url} has changed, paying special attention to new content, important changes, and information I should know about. `
+    + 'If something changed, briefly explain what changed and why it is worth attention; if nothing changed, tell me that directly.';
+}
+
+function feishuCalendarConflictPromptEn(v: Record<string, string>): string {
+  return `Use the Feishu calendar tools to check today's events on calendar ${v.calendarId}. `
+    + `For start_time copy the Unix seconds given above for the "${TODAY_MIDNIGHT_LABEL}" anchor, and for end_time those for the "${TOMORROW_MIDNIGHT_LABEL}" anchor — copy them verbatim, do not convert them yourself; `
+    + 'the page size must be at least 50 (50 is the floor of the Feishu calendar API; smaller values error out). '
+    + 'Compare the events pairwise for time overlaps. '
+    + 'Wrap a short signature of all current conflict pairs (the two event titles plus times) in <cron_snapshot>…</cron_snapshot> for the next comparison. '
+    + 'Only when a conflict is new since the last run should you wrap an explanation of that new conflict (who and who, which times collide) in <cron_alert>…</cron_alert>; '
+    + 'if there are no new conflicts, do not output <cron_alert> — just say in one line that there are no new conflicts this run.';
+}
+
+function feishuTableChangePromptEn(v: Record<string, string>): string {
+  return `Use the Feishu base record search tool (appTableRecord.search, app_token=${v.baseAppToken}, table_id=${v.tableId}) to fetch the current records. `
+    + 'Build a short fingerprint for each record from its record_id and field contents (a digest of the field contents for that record_id). '
+    + 'Wrap the fingerprints of all records in <cron_snapshot>…</cron_snapshot> for the next comparison. '
+    + 'Compare with the last snapshot and identify rows that were added and rows whose fields changed. '
+    + 'Only when there really are additions or changes should you wrap a change note (which rows, what changed) in <cron_alert>…</cron_alert>; '
+    + 'if there are none, do not output <cron_alert> — just say in one line that nothing changed this run.';
+}
+
 /** en 档提示词表；带用户输入的模板用构造器。 */
 const EN_AGENT_PROMPTS: Record<string, string | ((values: Record<string, string>) => string)> = {
   'daily-lookahead':
@@ -58,24 +85,9 @@ const EN_AGENT_PROMPTS: Record<string, string | ((values: Record<string, string>
     'Please summarize my main progress, key results, unfinished items, and risks this week, and, building on my existing schedule and to-dos, ' +
     'lay out next week\'s priorities, what needs preparing, and in what order.',
   'morning-triage': morningTriagePromptEn,
-  'web-change-watch': (v) =>
-    `Please check whether the content at ${v.url} has changed, paying special attention to new content, important changes, and information I should know about. ` +
-    'If something changed, briefly explain what changed and why it is worth attention; if nothing changed, tell me that directly.',
-  'feishu-calendar-conflict': (v) =>
-    `Use the Feishu calendar tools to check today's events on calendar ${v.calendarId}. ` +
-    `For start_time copy the Unix seconds given above for the "${TODAY_MIDNIGHT_LABEL}" anchor, and for end_time those for the "${TOMORROW_MIDNIGHT_LABEL}" anchor — copy them verbatim, do not convert them yourself; ` +
-    'the page size must be at least 50 (50 is the floor of the Feishu calendar API; smaller values error out). ' +
-    'Compare the events pairwise for time overlaps. ' +
-    'Wrap a short signature of all current conflict pairs (the two event titles plus times) in <cron_snapshot>…</cron_snapshot> for the next comparison. ' +
-    'Only when a conflict is new since the last run should you wrap an explanation of that new conflict (who and who, which times collide) in <cron_alert>…</cron_alert>; ' +
-    'if there are no new conflicts, do not output <cron_alert> — just say in one line that there are no new conflicts this run.',
-  'feishu-table-change': (v) =>
-    `Use the Feishu base record search tool (appTableRecord.search, app_token=${v.baseAppToken}, table_id=${v.tableId}) to fetch the current records. ` +
-    'Build a short fingerprint for each record from its record_id and field contents (a digest of the field contents for that record_id). ' +
-    'Wrap the fingerprints of all records in <cron_snapshot>…</cron_snapshot> for the next comparison. ' +
-    'Compare with the last snapshot and identify rows that were added and rows whose fields changed. ' +
-    'Only when there really are additions or changes should you wrap a change note (which rows, what changed) in <cron_alert>…</cron_alert>; ' +
-    'if there are none, do not output <cron_alert> — just say in one line that nothing changed this run.',
+  'web-change-watch': webChangeWatchPromptEn,
+  'feishu-calendar-conflict': feishuCalendarConflictPromptEn,
+  'feishu-table-change': feishuTableChangePromptEn,
 };
 
 /**
