@@ -567,6 +567,27 @@ describe('ContextAssembly.buildModelMessages()', () => {
     getContextInterventionState().applyIntervention(sessionId, undefined, 'excluded-message', 'exclude', false);
   });
 
+  it('keeps long tool history under the same 250,000-byte background request bound', async () => {
+    const messages: Message[] = [buildMessage('docs-user', 'user', 'Summarize each documentation page.')];
+    const body = 'Documentation paragraph about configuration and lifecycle.\n'.repeat(700);
+    for (let round = 1; round <= 32; round++) {
+      const toolCallId = `docs-read-${round}`;
+      messages.push({
+        ...buildMessage(`docs-call-${round}`, 'assistant', 'Read next page'),
+        toolCalls: [{ id: toolCallId, name: 'Read', arguments: { file_path: `page-${round}.html` } }],
+      }, {
+        ...buildMessage(`docs-result-${round}`, 'tool', body),
+        toolResults: [{ toolCallId, success: true, output: body }],
+      });
+    }
+    const original = structuredClone(messages);
+    const ctx = buildRuntimeContext({ messages, compressionPipeline: new CompressionPipeline() });
+    const modelMessages = await new ContextAssembly(ctx as never).buildModelMessages();
+    expect(Buffer.byteLength(JSON.stringify(modelMessages))).toBeLessThan(250_000);
+    expect(Buffer.byteLength(JSON.stringify(messages))).toBeGreaterThan(250_000);
+    expect(messages).toEqual(original);
+  });
+
   it('caps historical multimodal payload while preserving the active-turn image', async () => {
     const imageMessage = (index: number): Message => ({
       ...buildMessage(`image-turn-${index}`, 'user', `image turn ${index}`),
