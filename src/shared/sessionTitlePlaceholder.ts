@@ -5,6 +5,17 @@
 
 import { stripAppshotBlocks } from './contract/appshot';
 
+/** 纯 appshot 会话的固定名（按语言）。存量行里的中文名在展示层经 localizeAppshotSessionTitle 转换。 */
+const APPSHOT_SESSION_TITLE = { zh: 'Appshot 会话', en: 'Appshot conversation' } as const;
+type TitleLanguage = keyof typeof APPSHOT_SESSION_TITLE;
+
+/** 英文 UI 下把存量/新写入的 Appshot 固定名显示成英文；其它标题原样返回。 */
+export function localizeAppshotSessionTitle(title: string, language: TitleLanguage): string {
+  return title === APPSHOT_SESSION_TITLE.zh || title === APPSHOT_SESSION_TITLE.en
+    ? APPSHOT_SESSION_TITLE[language]
+    : title;
+}
+
 const EXACT_PLACEHOLDER_TITLES = new Set([
   'New Chat',
   'New Session',
@@ -23,9 +34,9 @@ export function isPlaceholderSessionTitle(title: string | null | undefined): boo
 }
 
 /** 剥掉 appshot 块后留给小模型和降级标题的正文。纯 appshot 用固定名。 */
-export function sessionTitleSource(sourceText: string): string {
+export function sessionTitleSource(sourceText: string, language: TitleLanguage = 'zh'): string {
   const visibleMessage = stripAppshotBlocks(sourceText);
-  return visibleMessage || (sourceText.trim().startsWith('<appshot') ? 'Appshot 会话' : sourceText);
+  return visibleMessage || (sourceText.trim().startsWith('<appshot') ? APPSHOT_SESSION_TITLE[language] : sourceText);
 }
 
 /**
@@ -45,8 +56,8 @@ export function isProvisionalAutoTitle(title: string | null | undefined, sourceT
 }
 
 /** 小模型不可用时的标题：首行，最多 50 字，超出加 `...`。 */
-export function deriveFallbackSessionTitle(sourceText: string): string {
-  const firstLine = sessionTitleSource(sourceText).trim().split('\n')[0] || 'Appshot 会话';
+export function deriveFallbackSessionTitle(sourceText: string, language: TitleLanguage = 'zh'): string {
+  const firstLine = sessionTitleSource(sourceText, language).trim().split('\n')[0] || APPSHOT_SESSION_TITLE[language];
   const title = firstLine.slice(0, 50);
   return firstLine.length > 50 ? `${title}...` : title;
 }

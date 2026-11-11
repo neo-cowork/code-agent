@@ -5,6 +5,10 @@ import { CRON_EVENT_TRIGGER } from '@shared/constants';
 import type { CronJobDraft } from './types';
 import { createDefaultCronJobDraft } from './types';
 import { localCronTimezone } from './localTimezone';
+import { cronCenterEn } from '../../../i18n/cronCenter';
+
+/** 模板草稿的语言档：zh 为存量行为；en 的 name/description 取 cronCenter.templates 英文词条。 */
+type CronTemplateLanguage = 'zh' | 'en';
 
 // ── Template field definition ───────────────────────────────────────
 
@@ -35,7 +39,13 @@ export interface CronTemplate {
    * generate 的 values 里 accountId/chatId/budget 三键由编辑器在提交时注入。
    */
   event?: boolean;
-  generate: (values: Record<string, string>) => CronJobDraft;
+  /**
+   * language 缺省 zh（存量行为）。en 时只换 name/description 为英文词条；
+   * agentPrompt 仍是中文（已知遗留，未翻译）。
+   */
+  /** description 里带用户输入（如群监听的任务）的模板：en 档的描述构造，缺省回退词条/中文草稿描述。 */
+  enDescription?: (values: Record<string, string>) => string;
+  generate: (values: Record<string, string>, language?: CronTemplateLanguage) => CronJobDraft;
 }
 
 // ── Connector dependency status ─────────────────────────────────────
@@ -139,7 +149,7 @@ export function getTemplateDisplayCopy(
 
 // ── Templates ───────────────────────────────────────────────────────
 
-export const CRON_TEMPLATES: CronTemplate[] = [
+const BASE_CRON_TEMPLATES: CronTemplate[] = [
   {
     id: 'daily-lookahead',
     name: '每日前瞻',
@@ -321,6 +331,7 @@ export const CRON_TEMPLATES: CronTemplate[] = [
     description: '盯住一个群，来了新消息就按你的一句话处理',
     scheduleLabel: '群里有新消息时',
     event: true,
+    enDescription: (v) => `Listen to group messages: ${v.task}`,
     fields: [
       { key: 'task', label: '要做什么', placeholder: '例如：有人提到发布就总结给我', required: true, type: 'textarea' },
     ],
@@ -342,6 +353,25 @@ export const CRON_TEMPLATES: CronTemplate[] = [
       }),
   },
 ];
+
+function withLanguage(template: CronTemplate): CronTemplate {
+  const generate = template.generate;
+  return {
+    ...template,
+    generate: (values, language = 'zh') => {
+      const draft = generate(values);
+      const localized: Readonly<Record<string, { name: string; description: string }>> = cronCenterEn.cronCenter.templates;
+      const copy = language === 'en' ? localized[template.id] : undefined;
+      if (!copy) return draft;
+      // 描述里带用户输入的模板不能被卡片固定文案覆盖，否则任务文本丢失（列表/搜索区分不了）
+      const dynamic = template.fields.some((field) => field.required === true);
+      const description = template.enDescription?.(values) ?? (dynamic ? draft.description : copy.description);
+      return { ...draft, name: copy.name, description };
+    },
+  };
+}
+
+export const CRON_TEMPLATES: CronTemplate[] = BASE_CRON_TEMPLATES.map(withLanguage);
 
 export const FEATURED_CRON_TEMPLATES = CRON_TEMPLATES.filter((template) => template.featured);
 
