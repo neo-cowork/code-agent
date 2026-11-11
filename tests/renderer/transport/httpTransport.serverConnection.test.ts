@@ -253,7 +253,7 @@ describe('httpTransport → serverConnectionMonitor 接线', () => {
       error: { code: 'NOT_FOUND', message: 'No handler for domain:tag action:listAll' },
     }));
     const { createHttpDomainAPI } = await import('../../../src/renderer/api/httpTransport');
-    (globalThis as { window: Record<string, unknown> }).window.domainAPI = createHttpDomainAPI('http://localhost:8180');
+    window.domainAPI = createHttpDomainAPI('http://localhost:8180');
     const { tagClient, isNeoTagIpcUnavailableError } = await import('../../../src/renderer/services/tagClient');
 
     const error = await tagClient.listAll().catch((err: unknown) => err);
