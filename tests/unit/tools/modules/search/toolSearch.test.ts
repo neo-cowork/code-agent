@@ -522,6 +522,22 @@ describe('toolSearchModule (native)', () => {
     });
   });
 
+  it('passes the run toolScope into deferred tool discovery', async () => {
+    searchToolsMock.mockResolvedValue({ tools: [], loadedTools: [], totalCount: 0, hasMore: false });
+
+    await run(
+      { query: 'wechat' },
+      makeCtx({ toolScope: { allowedSkillIds: ['wechat-local-query'] } }),
+    );
+
+    expect(searchToolsMock).toHaveBeenCalledWith('wechat', {
+      maxResults: 3,
+      includeMCP: true,
+      sessionId: 'test-session',
+      toolScope: { allowedSkillIds: ['wechat-local-query'] },
+    });
+  });
+
   describe('onProgress', () => {
     it('emits starting and completing stages', async () => {
       searchToolsMock.mockResolvedValue({ tools: [], loadedTools: [], totalCount: 0, hasMore: false });

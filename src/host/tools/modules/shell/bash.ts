@@ -14,9 +14,9 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { bashSchema as schema } from './bash.schema';
-import { BASH, OS_SANDBOX_CODES } from '../../../../shared/constants';
+import { BASH, OS_SANDBOX_CODES, SANDBOX_APPROVED_RM_STILL_DENIED_FAILURE_CODE } from '../../../../shared/constants';
 import { HostReasonCode, createHostReason } from '../../../../shared/contract/permission';
-import { startBackgroundTask } from '../../shell/backgroundTasks';
+import { BACKGROUND_TASK_MAX_RUNTIME, startBackgroundTask } from '../../shell/backgroundTasks';
 import { handoverTimedOutCommand } from '../../shell/timeoutHandover';
 import { checkNoWaitCommand, clampToShortTier, exceededShortTierMessage, resolveForegroundTimeoutTier } from '../../shell/foregroundTier';
 import { runForegroundCommand } from './foregroundCommand';
@@ -509,7 +509,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           cwd: workingDirectory,
           cols,
           rows,
-          maxRuntime: timeout,
+          maxRuntime: !waitForCompletion && !shortTier ? (typeof args.timeout === 'number' && args.timeout > 0 ? args.timeout : BACKGROUND_TASK_MAX_RUNTIME) : timeout,
           sessionId: ctx.sessionId,
           toolCallId: ctx.currentToolCallId,
           env: childEnv.env,
@@ -655,7 +655,7 @@ Use process_kill to terminate the session.`;
       }
       let result: ReturnType<typeof startBackgroundTask>;
       try {
-        result = startBackgroundTask(sandboxed.command, workingDirectory, timeout, {
+        result = startBackgroundTask(sandboxed.command, workingDirectory, shortTier ? timeout : (typeof args.timeout === 'number' && args.timeout > 0 ? args.timeout : BACKGROUND_TASK_MAX_RUNTIME), {
           sessionId: ctx.sessionId,
           toolCallId: ctx.currentToolCallId, ownerAgentId: ctx.agentId, displayCommand: normalizedCommand,
           env: childEnv.env,
@@ -770,7 +770,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
       command: commandForExecution,
       redline: ctx.executionIntent?.redline === true,
     });
-    const sandboxedFg = applySandbox(commandForExecution, allowNetworkFg);
+    const sandboxedFg = applySandbox(commandForExecution, allowNetworkFg, sandboxDecision.sandboxed ? ctx.approvedSandboxWriteFile : undefined);
     if (!sandboxedFg.ok) {
       return {
         ok: false,
@@ -1058,7 +1058,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
         ok: false,
         error: withEscalation(withDiagnostics(withOutput(errMsg || 'Command execution failed'))),
         code: 'FS_ERROR',
-        meta: { ...buildSandboxMeta(sandboxDecision), ...(sandboxEscalationMeta ? { sandboxEscalation: sandboxEscalationMeta } : {}), ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
+        meta: { ...buildSandboxMeta(sandboxDecision), ...(ctx.approvedSandboxWriteFile && sandboxDecision.sandboxed && sandboxDeniedWritePath([errMsg, String(errObj.stdout || ''), String(errObj.stderr || '')].join('\n')) ? { failureCode: SANDBOX_APPROVED_RM_STILL_DENIED_FAILURE_CODE } : {}), ...(sandboxEscalationMeta ? { sandboxEscalation: sandboxEscalationMeta } : {}), ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
       };
     } finally {
       // PTY/后台路径把 cleanup 交给执行器的退出回调；这里只收前台路径。

@@ -85,7 +85,7 @@ const SCHEMA = `
     id TEXT PRIMARY KEY, job_id TEXT NOT NULL, session_id TEXT, status TEXT NOT NULL,
     scheduled_at INTEGER NOT NULL, started_at INTEGER, completed_at INTEGER, duration INTEGER,
     result TEXT, error TEXT, retry_attempt INTEGER NOT NULL DEFAULT 0, exit_code INTEGER,
-    trigger_json TEXT, cost_usd REAL,
+    trigger_json TEXT, cost_usd REAL, push_note TEXT,
     FOREIGN KEY (job_id) REFERENCES cron_jobs(id) ON DELETE CASCADE
   );
 `;
@@ -164,6 +164,7 @@ describe('停车审批 → 批准 → 命令完成：三个 host 视图里的运
 
     const parked = await views('parked');
     expect(parked.db_row[0]).toMatch(/:running$/);
+    expect(service.getStats().jobsByStatus.running).toBe(1);
 
     const requestId = events[0].data!.id!;
     expect(island.resolveParkedApproval(requestId, 'allow')).toBe(true);

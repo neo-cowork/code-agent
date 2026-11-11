@@ -310,6 +310,8 @@ export interface InputRedirectReceiptMetadata {
 }
 
 export interface MessageMetadata {
+  /** Foreground turn ended at its step limit; a new user turn can continue it. */
+  stoppedByStepLimit?: true;
   /**
    * 这条 user 消息是宿主从运行记录（telemetry）重建的，不是用户原话。
    * 正文只存重建内容；发给模型时由上下文装配补回「可能已脱敏缩写」的免责声明，
@@ -438,6 +440,24 @@ export interface MessageMetadata {
   backgroundWakeFailed?: {
     taskId: string;
     reason: 'owner_missing' | 'wake_failed';
+  };
+  /**
+   * 后台任务终态唤醒被前台轮推迟超过上限时的用户可见说明。
+   * 任务结果已在会话里；这条只说明自动汇报会等当前步骤结束。
+   */
+  backgroundWakeDeferred?: {
+    taskId: string;
+    outcome: 'completed' | 'failed';
+  };
+  /** Persisted receipt after the user confirms an existing expert edit. */
+  roleEditReceipt?: {
+    roleId: string;
+    addedTools: string[];
+    removedTools: string[];
+    descriptionChanged: boolean;
+    promptChanged: boolean;
+    /** False when the old definition was unavailable; never claim nothing changed in that case. */
+    diffAvailable?: boolean;
   };
   /** User-visible audit note for atomic turn checkout / Redo, including partial outcomes. */
   turnCheckoutNote?: {
