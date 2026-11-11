@@ -30,6 +30,7 @@ import {
   stripSensitiveStepParams,
 } from '../permissions/cuaSensitiveStep';
 import { resolvePreAskGrant } from '../permissions/preAskGrant';
+import { requiresScheduleWriteGrant } from '../cron/cronWriteGrant';
 import { createLogger } from '../services/infra/logger';
 import { getAuditLogger, maskSensitiveData, isKnownSafeCommand, validateCommand, getShellSafetyMode, getExecPolicyStore, getPolicyEnforcer, type PolicyEnforcer, type PolicyCheckResult, type ValidationResult } from '../security';
 import { evaluateToolSlotDataDirAccess, FOREIGN_SLOT_DATA_DIR_CODE, type SlotDataDirAccess } from '../security/slotDataDirGuard';
@@ -1732,8 +1733,10 @@ export class ToolExecutor {
     }
 
     // Check permission if required
+    const scheduleWriteGrantRequired = await requiresScheduleWriteGrant(this.buildPermissionRequest(toolDef, params), effectiveSessionId, this.executionCwd, this.writeWorkspaceRoot);
     // Skill 系统：预授权工具跳过普通权限检查（但不能跳过边界违规或 consequence hard deny）
     const isPreApproved = !boundaryViolation
+      && !scheduleWriteGrantRequired
       && !guardFabricForcesApproval
       && !protectedWriteForcesConfirmation
       && !peerOriginForcesConfirmation
@@ -1914,6 +1917,7 @@ export class ToolExecutor {
           }
           if (
             classification.decision === 'approve'
+            && !scheduleWriteGrantRequired
             && !this.forcePermissionHandler
             && !protectedWriteForcesConfirmation
             && !guardFabricForcesApproval
@@ -2076,6 +2080,7 @@ export class ToolExecutor {
           || peerOriginForcesConfirmation || launderRetryForcesAsk
           || Boolean(cuaSensitiveStep) || boundaryAskForcesConfirmation
           || Boolean(deterministicAskReason) || this.forcePermissionHandler
+          || scheduleWriteGrantRequired
           || shouldForceConfirm,
       }) : null;
       if (preAsk) {

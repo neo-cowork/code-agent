@@ -190,6 +190,7 @@ export const expertZh = {
       title: '最近删除',
       empty: '没有最近删除的专家',
       loading: '正在读取最近删除的专家…',
+      deletedToday: '今天删除 · 还有 {daysLeft} 天可恢复',
       deletedDays: '删除 {days} 天前 · 还有 {daysLeft} 天可恢复',
       restore: '恢复',
       restoring: '恢复中…',
@@ -232,6 +233,7 @@ export const expertZh = {
     },
     roleSkills: {
       title: '技能与工具',
+      toolNeedsCheck: '需核对',
       description: '从这台机器上真实可用的技能和工具里挑，勾了才允许这位专家用。',
       save: '保存',
       saving: '保存中…',
@@ -518,6 +520,7 @@ export const expertEn: typeof expertZh = {
       title: 'Recently deleted',
       empty: 'No recently deleted experts',
       loading: 'Loading recently deleted experts…',
+      deletedToday: 'Deleted today · {daysLeft} days left to restore',
       deletedDays: 'Deleted {days} days ago · {daysLeft} days left to restore',
       restore: 'Restore',
       restoring: 'Restoring…',
@@ -560,6 +563,7 @@ export const expertEn: typeof expertZh = {
     },
     roleSkills: {
       title: 'Skills and tools',
+      toolNeedsCheck: 'Needs checking',
       description: 'Pick from what is actually available on this machine. Only what you check here is allowed.',
       save: 'Save',
       saving: 'Saving…',

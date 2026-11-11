@@ -98,7 +98,7 @@ export const RecentlyDeletedRoles: React.FC<RecentlyDeletedRolesProps> = ({ onRe
                     <div className="min-w-0">
                       <p className="truncate text-sm text-zinc-100">{entry.displayName}</p>
                       <p className="text-xs text-zinc-500">
-                        {text.deletedDays.replace('{days}', String(relative.daysAgo)).replace('{daysLeft}', String(relative.daysLeft))}
+                        {(relative.daysAgo === 0 ? text.deletedToday : text.deletedDays).replace('{days}', String(relative.daysAgo)).replace('{daysLeft}', String(relative.daysLeft))}
                       </p>
                     </div>
                     <Button
