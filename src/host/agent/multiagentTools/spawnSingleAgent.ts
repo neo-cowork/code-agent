@@ -33,6 +33,7 @@ import { isParentRunAlive } from '../orphanLiveness';
 import { isToolWriteReadonlyRole } from '../routingToolPolicy';
 import { capabilityManifestForTools } from '../scriptRuntime/capabilityManifest';
 import { getSpawnGuard } from '../spawnGuard';
+import { resolveSubagentUserLabel } from '../resolveSubagentUserLabel';
 import {
   SubagentContextBuilder,
   getAgentContextLevel,
@@ -107,7 +108,7 @@ export async function executeSingleSpawnAgent(
     }
 
     const explicitName = typeof params.name === 'string' ? params.name.trim() : '';
-    const completionTitle = explicitName || task;
+    const completionTitle = resolveSubagentUserLabel(params);
     if (explicitName) agentName = explicitName;
 
     const engineResolution = resolveSpawnAgentEngine(params.engine, parallel, !!isDynamicMode, role);

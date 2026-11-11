@@ -184,14 +184,45 @@ describe('ConfirmationGate', () => {
       expect(preview!.summary).toContain('npm install');
     });
 
-    it('should build human summary for spawn_agent with role and task', () => {
+    it('should build human summary for spawn_agent using the task without the internal role', () => {
       const preview = gate.buildPreview('spawn_agent', {
         role: 'researcher',
         task: '调查最近三天的数据趋势并生成简报',
       });
       expect(preview).toBeDefined();
       expect(preview!.type).toBe('generic');
-      expect(preview!.summary).toBe('派出子代理（researcher）：调查最近三天的数据趋势并生成简报');
+      expect(preview!.summary).toBe('派出子代理：调查最近三天的数据趋势并生成简报');
+    });
+
+    it.each([
+      { name: ' 文档主题整理 ', expected: '文档主题整理' },
+      { name: undefined, expected: 'Review all seven documents in workspace one by one' },
+      { name: '   ', expected: 'Review all seven documents in workspace one by one' },
+    ])('spawn_agent preview selects the user label and hides role and absolute paths ($name)', ({ name, expected }) => {
+      const preview = getConfirmationGate().buildPreview('spawn_agent', {
+        role: 'explore',
+        name,
+        task: ' Review all seven documents in /Users/example/project/workspace one by one ',
+      });
+      expect(preview?.summary).toBe(`派出子代理：${expected}`);
+      expect(preview?.summary).not.toMatch(/explore|role|\/Users\//);
+    });
+
+    it('shortens quoted POSIX, Windows and UNC paths before truncating the unnamed task', () => {
+      const task = String.raw`Read "/Users/example/My Documents/notes.md", C:\Users\example\workspace\ and \\server\share\report.md`;
+      const preview = getConfirmationGate().buildPreview('spawn_agent', { role: 'explore', task });
+      expect(preview?.summary).toBe('派出子代理：Read "notes.md", workspace and report.md');
+      const longPath = `/Users/example/${'folder/'.repeat(40)}workspace`;
+      expect(getConfirmationGate().buildPreview('spawn_agent', { task: `Review ${longPath}` })?.summary)
+        .toBe('派出子代理：Review workspace');
+    });
+
+    it('keeps secret redaction on the selected spawn_agent name', () => {
+      const preview = getConfirmationGate().buildPreview('spawn_agent', {
+        role: 'explore', name: 'Review API_KEY=preview-secret', task: 'unused',
+      });
+      expect(preview?.summary).toContain('Review API_KEY=');
+      expect(preview?.summary).not.toContain('preview-secret');
     });
 
     it('should omit parenthesis for spawn_agent when role is empty', () => {

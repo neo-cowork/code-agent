@@ -15,6 +15,7 @@ import { aggregateEditArgsText } from '../../shared/utils/editToolArgs';
 import { canonicalizeCommand } from '../security/canonicalizeCommand';
 import { isSensitiveLogKey, redactCommandSecrets } from '../security/secretRedaction';
 import { isBashToolName } from '../tools/toolNames';
+import { resolveSubagentUserLabel } from './resolveSubagentUserLabel';
 
 // 危险工具列表
 const DANGEROUS_TOOLS = new Set([
@@ -42,6 +43,19 @@ const HIGH_RISK_PATTERNS = [
 
 function normalizeString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function shortenSubagentPreviewPaths(label: string): string {
+  // Quoted paths may contain spaces. Preserve surrounding prose and punctuation.
+  return label.replace(
+    /(^|[\s("'`=])((?:[A-Za-z]:[\\/]|\/|\\\\)[^\s"'`<>，。；！？,;!?()]*|["'`](?:[A-Za-z]:[\\/]|\/|\\\\)[^"'`\n]+["'`])/g,
+    (_match, prefix: string, path: string) => {
+      const quote = /^["'`]/.test(path) ? path[0] : '';
+      const unquoted = quote ? path.slice(1, -1) : path;
+      const segments = unquoted.replace(/[\\/]+$/, '').split(/[\\/]/);
+      return `${prefix}${quote}${segments.at(-1) || ''}${quote}`;
+    },
+  );
 }
 
 function normalizeStringList(value: unknown): string[] {
@@ -252,12 +266,12 @@ export class ConfirmationGate {
       }
 
       case 'spawn_agent': {
-        const role = normalizeString(params.role);
-        const task = redactCommandSecrets(normalizeString(params.task)).slice(0, 200);
-        const prefix = role ? `派出子代理（${role}）` : '派出子代理';
+        const label = shortenSubagentPreviewPaths(
+          redactCommandSecrets(resolveSubagentUserLabel(params)),
+        ).slice(0, 200);
         return {
           type: 'generic',
-          summary: `${prefix}：${task}`,
+          summary: `派出子代理：${label}`,
         };
       }
 
