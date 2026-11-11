@@ -252,7 +252,7 @@ export function deriveDelegationPresentation(
   if (toolCall.name === 'spawn_agent') {
     const agentId = extractSpawnAgentId(toolCall);
     if (!agentId) return null;
-    const node = agentNodes.find((candidate) => candidate.id === agentId);
+    const node = agentNodes.find((candidate) => candidate.id === agentId || candidate.backgroundAgentId === agentId);
     return node ? fromAgent(node) : null;
   }
   return null;
