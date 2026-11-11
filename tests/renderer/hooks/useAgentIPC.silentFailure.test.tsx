@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, renderHook } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, renderHook, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConversationEnvelope } from '../../../src/shared/contract/conversationEnvelope';
 
@@ -16,6 +16,9 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 }));
 
 import { useAgentIPC } from '../../../src/renderer/hooks/agent/useAgentIPC';
+import { getAgentSendFailureMessage } from '../../../src/renderer/hooks/agent/agentRuntimeFollowup';
+import { ProjectIdentityRecovery } from '../../../src/renderer/components/features/chat/ProjectIdentityRecovery';
+import { useProjectIdentityRecoveryStore } from '../../../src/renderer/stores/projectIdentityRecoveryStore';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { useSwarmStore } from '../../../src/renderer/stores/swarmStore';
@@ -301,5 +304,80 @@ describe('useAgentIPC sendMessage silentFailure', () => {
       role: 'assistant',
       content: 'Error: foreground input unavailable',
     });
+  });
+});
+
+describe('useAgentIPC signed-out project identity recovery', () => {
+  const photoEnvelope: ConversationEnvelope = { content: '帮我把下载文件夹里的照片按日期改名', sessionId: 'photos', clientMessageId: 'original-message' };
+  const sentence = '此文件夹需要重新确认，请确认信任后继续发送。';
+  beforeEach(() => {
+    invokeMock.mockReset(); invokeDomainMock.mockReset();
+    useProjectIdentityRecoveryStore.setState({ entries: {} });
+    useSessionStore.setState({ currentSessionId: 'photos', messages: [] });
+    useAppStore.setState({ language: 'zh', isProcessing: false, processingSessionIds: new Set() });
+    useTaskStore.setState({ sessionStates: { photos: { status: 'idle' } } });
+  });
+  afterEach(cleanup);
+  async function failedSend() {
+    invokeMock.mockRejectedValueOnce(Object.assign(new Error(sentence), { status: 422, code: 'PROJECT_SOURCE_IDENTITY_CONFIRM_REQUIRED',
+      recoveryToken: '11111111-1111-4111-8111-111111111111' }));
+    const hook = renderHook(() => useAgentIPC({ addMessage: useSessionStore.getState().addMessage, currentSessionId: 'photos',
+      currentTurnMessageIdRef: { current: null }, isProcessing: false, setIsProcessing: vi.fn(),
+      setSessionProcessing: useAppStore.getState().setSessionProcessing }));
+    await act(async () => { await hook.result.current.sendMessage(photoEnvelope); });
+    const message = useSessionStore.getState().messages.find(m => m.role === 'assistant');
+    if (!message) throw new Error('Missing failure message');
+    expect(message.content).toBe(sentence);
+    render(<ProjectIdentityRecovery messageId={message.id} />);
+    return message;
+  }
+  it('one confirm button records consent and automatically re-sends the exact original photoEnvelope once', async () => {
+    const message = await failedSend();
+    const original = invokeMock.mock.calls[0][1];
+    expect(invokeDomainMock).not.toHaveBeenCalled(); expect(invokeMock).toHaveBeenCalledTimes(1);
+    invokeDomainMock.mockResolvedValue({ confirmed: true }); invokeMock.mockResolvedValue(undefined);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '确认信任并发送' })); });
+    expect(invokeDomainMock).toHaveBeenCalledWith('domain:project', 'confirmMissingSourceIdentity', {
+      sessionId: 'photos', token: '11111111-1111-4111-8111-111111111111', confirmed: true,
+    });
+    expect(invokeMock).toHaveBeenCalledTimes(2); expect(invokeMock.mock.calls[1]).toEqual(['agent:send-message', original]);
+    expect(useSessionStore.getState().messages.find(m => m.id === message.id)?.content).toBe('');
+    expect(useSessionStore.getState().messages.filter(m => m.role === 'user')).toHaveLength(1);
+  });
+  it('decline closes the action while retaining the same sentence and the unsent original', async () => {
+    const message = await failedSend(); fireEvent.click(screen.getByRole('button', { name: '暂不确认' }));
+    expect(invokeDomainMock).not.toHaveBeenCalled(); expect(invokeMock).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: '确认信任并发送' })).toBeNull();
+    expect(useSessionStore.getState().messages.find(m => m.id === message.id)?.content).toBe(sentence);
+    expect(useSessionStore.getState().messages.find(m => m.role === 'user')?.metadata?.sendFailed).toBe(true);
+  });
+  it('leaving the prompt unclicked has no consent or retry side effect', async () => {
+    await failedSend(); cleanup();
+    expect(invokeDomainMock).not.toHaveBeenCalled(); expect(invokeMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('getAgentSendFailureMessage HTTP failure copy', () => {
+  it('maps a send rejection that carries an HTML body and status to a safe sentence', () => {
+    expect(getAgentSendFailureMessage(Object.assign(new Error('<html>PRIVATE</html>'), { status: 500 })))
+      .toBe('Neo 暂时无法完成请求，请稍后重试。');
+  });
+
+  it.each([
+    ['zh', '此文件夹需要重新确认，请确认信任后继续发送。', '项目文件夹需要重新确认，请在项目设置中检查并信任该文件夹后重试。'],
+    ['en', 'This folder needs to be confirmed again; confirm trust to send your message.', 'The project folder needs confirmation; please review and trust it in project settings, then try again.'],
+  ] as const)('keeps typed project trust refusals distinct from missing prompts in %s', (language, confirmation, trust) => {
+    const original = useAppStore.getState().language;
+    useAppStore.setState({ language });
+    try {
+      expect(getAgentSendFailureMessage(Object.assign(new Error('<html>PRIVATE</html>'), {
+        status: 422, code: 'PROJECT_SOURCE_IDENTITY_CONFIRM_REQUIRED',
+      }))).toBe(confirmation);
+      expect(getAgentSendFailureMessage(Object.assign(new Error('identity_changed'), {
+        status: 422, code: 'PROJECT_SOURCE_TRUST',
+      }))).toBe(trust);
+    } finally {
+      useAppStore.setState({ language: original });
+    }
   });
 });
