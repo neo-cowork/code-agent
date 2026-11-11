@@ -1,3 +1,4 @@
+import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 // ============================================================================
 // LibraryPanel - 资料库全屏页（2026-07-26 导航去重方案 9）
 // ============================================================================
@@ -109,9 +110,9 @@ export const LibraryPanel: React.FC = () => {
   const projectId = scope === GLOBAL_SCOPE ? null : scope;
   const sessionTitles = useMemo(() => new Map<string, string>(
     sessions
-      .map((session): [string, string] => [session.id, session.title.trim()])
+      .map((session): [string, string] => [session.id, getDisplaySessionTitle(session.title, language)])
       .filter(([, title]) => Boolean(title)),
-  ), [sessions]);
+  ), [sessions, language]);
   const kindLabels: Record<LibraryItemKind, string> = {
     upload: t.library.kindUpload,
     artifact: t.library.kindArtifact,

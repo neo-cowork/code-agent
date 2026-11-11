@@ -1,3 +1,4 @@
+import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 import React, { useEffect, useState } from 'react';
 import type { CronJobDefinition, CronJobExecution, CronPermissionDeniedReason } from '@shared/contract';
 import { isCronPermissionDeniedMarker } from '@shared/cronPermissionDenied';
@@ -226,7 +227,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
       )}
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <Info label={cc.execSession} value={execution.sessionId ? (sessionTitle ?? cc.linkedSession) : '—'} />
+        <Info label={cc.execSession} value={execution.sessionId ? (sessionTitle ? getDisplaySessionTitle(sessionTitle, language) : cc.linkedSession) : '—'} />
         <div className="rounded-lg border border-zinc-800 bg-zinc-900/70 p-3">
           <div className="text-xs text-zinc-500">{cc.execLocation}</div>
           <div className="mt-1">
