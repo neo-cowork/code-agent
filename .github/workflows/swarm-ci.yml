@@ -138,6 +138,12 @@ jobs:
       # 非 root：测试里的 EACCES / chmod / 只读目录断言在 root 下不成立；
       # --init：PID 1 回收僵尸，否则 killProcessTree 整树退出证明会把僵尸当存活。
       options: --user 1001 --init
+      # 宿主 runner 的真实家目录：HOME=/github/home 会让「/home/<用户>」形态的脱敏断言失配，
+      # 且该目录不可写。挂同路径 + 下面 env.HOME，让 os.homedir() 与宿主一致。
+      volumes:
+        - /home/runner:/home/runner
+    env:
+      HOME: /home/runner
     needs: container-tools
     # 15 而非 10：主链路子集 ~200s + 新增的 playwright 浏览器安装 ~1-2min，
     # 原上限对满载 runner 已经偏紧（实测单轮跑到失败就用了 5m25s）。
@@ -383,6 +389,12 @@ jobs:
       # 非 root：测试里的 EACCES / chmod / 只读目录断言在 root 下不成立；
       # --init：PID 1 回收僵尸，否则 killProcessTree 整树退出证明会把僵尸当存活。
       options: --user 1001 --init
+      # 宿主 runner 的真实家目录：HOME=/github/home 会让「/home/<用户>」形态的脱敏断言失配，
+      # 且该目录不可写。挂同路径 + 下面 env.HOME，让 os.homedir() 与宿主一致。
+      volumes:
+        - /home/runner:/home/runner
+    env:
+      HOME: /home/runner
     needs: container-tools
     timeout-minutes: 20
     strategy:
@@ -457,12 +469,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Bundle lsof / ps / pgrep / pkill with their libraries
+      - name: Bundle lsof / ps / pgrep / pkill / sqlite3 / unzip / zip with their libraries
         run: |
           set -euo pipefail
           out="$RUNNER_TEMP/container-tools"
           mkdir -p "$out/bin" "$out/real" "$out/lib"
-          for tool in lsof ps pgrep pkill; do
+          for tool in lsof ps pgrep pkill sqlite3 unzip zip; do
             src="$(command -v "$tool")"
             cp "$src" "$out/real/$tool"
             # libc 家族容器里自带且必须同一份，其余依赖库随包带走
@@ -534,6 +546,12 @@ jobs:
       # 非 root：测试里的 EACCES / chmod / 只读目录断言在 root 下不成立；
       # --init：PID 1 回收僵尸，否则 killProcessTree 整树退出证明会把僵尸当存活。
       options: --user 1001 --init
+      # 宿主 runner 的真实家目录：HOME=/github/home 会让「/home/<用户>」形态的脱敏断言失配，
+      # 且该目录不可写。挂同路径 + 下面 env.HOME，让 os.homedir() 与宿主一致。
+      volumes:
+        - /home/runner:/home/runner
+    env:
+      HOME: /home/runner
     needs: [container-tools, node-pty-binding]
     timeout-minutes: 25
     outputs:
@@ -661,6 +679,12 @@ jobs:
       # 非 root：测试里的 EACCES / chmod / 只读目录断言在 root 下不成立；
       # --init：PID 1 回收僵尸，否则 killProcessTree 整树退出证明会把僵尸当存活。
       options: --user 1001 --init
+      # 宿主 runner 的真实家目录：HOME=/github/home 会让「/home/<用户>」形态的脱敏断言失配，
+      # 且该目录不可写。挂同路径 + 下面 env.HOME，让 os.homedir() 与宿主一致。
+      volumes:
+        - /home/runner:/home/runner
+    env:
+      HOME: /home/runner
     needs: container-tools
     timeout-minutes: 20
     steps:

@@ -1,6 +1,6 @@
 name: Container host tools
 description: >-
-  Playwright 镜像不带 lsof / ps / pgrep / pkill，而容器 job 又不许 apt（Ubuntu 源故障会拖垮整条 CI）。
+  Playwright 镜像不带 lsof / ps / pgrep / pkill / sqlite3 / unzip / zip，而容器 job 又不许 apt（Ubuntu 源故障会拖垮整条 CI）。
   这些二进制由宿主 runner 的 container-tools job 连同动态库一起打包上传，这里下载并挂进 PATH。
 
 runs:
@@ -21,3 +21,14 @@ runs:
         echo "$dir/bin" >> "$GITHUB_PATH"
         PATH="$dir/bin:$PATH" lsof -v 2>&1 | head -n 2
         PATH="$dir/bin:$PATH" ps --version
+        PATH="$dir/bin:$PATH" sqlite3 --version
+        PATH="$dir/bin:$PATH" unzip -v | head -n 1
+
+    - name: Point ~/.cache/ms-playwright at the image browsers
+      shell: bash
+      # 个别测试（nightlyReport）把 PLAYWRIGHT_BROWSERS_PATH 写死成 ~/.cache/ms-playwright；
+      # 镜像里的浏览器在 /ms-playwright，这里软链过去，避免再 playwright install。
+      run: |
+        mkdir -p "$HOME/.cache"
+        ln -sfn /ms-playwright "$HOME/.cache/ms-playwright"
+        ls "$HOME/.cache/ms-playwright" | head -n 5
