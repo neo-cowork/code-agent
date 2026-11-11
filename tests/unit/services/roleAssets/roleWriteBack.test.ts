@@ -308,6 +308,17 @@ describe('runRoleWriteBack', () => {
     expect(projectMemories[0].content).not.toContain(secret);
   });
 
+  it('no-artifact write-back stores the real summary in the unchanged history format', async () => {
+    await ensureRoleAssetDirs('研究员');
+    mockQuickTask.mockResolvedValue({ success: true, content: JSON.stringify({ memories: [], historySummary: '检查本周日程，未发现冲突' }) });
+    const result = await runRoleWriteBack({ roleId: '研究员', taskPrompt: '检查本周日程', finalOutput: '未发现冲突' });
+    expect(result.historyAppended).toBe(true);
+    const history = await loadRoleHistory('研究员');
+    expect(history).toHaveLength(1);
+    expect(history[0]).toMatch(/^- \d{4}-\d{2}-\d{2} \| 检查本周日程，未发现冲突 \| 检查本周日程，未发现冲突$/);
+    expect(history[0]).not.toContain('（无产物落盘）');
+  });
+
   it('degrades gracefully when quick model fails (只记履历不写记忆)', async () => {
     await ensureRoleAssetDirs('研究员');
     mockQuickTask.mockResolvedValue({ success: false, error: 'model unavailable' });
@@ -324,6 +335,8 @@ describe('runRoleWriteBack', () => {
 
     const history = await loadRoleHistory('研究员');
     expect(history.length).toBe(1);
+    expect(history[0]).toContain('调研任务');
+    expect(history[0]).not.toContain('（无产物落盘）');
   });
 
   it('handles unparsable judgment output', async () => {

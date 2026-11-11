@@ -133,7 +133,7 @@ async function doWriteBack(input: WriteBackInput): Promise<WriteBackResult> {
       date,
       artifactLabel: primaryArtifact?.label || summary,
       artifactRef: primaryArtifact?.ref || '-',
-      summary: primaryArtifact ? summary : '（无产物落盘）',
+      summary,
     });
     historyAppended = true;
   } catch (err) {
