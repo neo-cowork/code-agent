@@ -2053,7 +2053,7 @@ export class ToolExecutor {
       let shouldForceConfirm = false;
       try {
         const gate = getConfirmationGate();
-        confirmationPreview = gate.buildPreview(executionToolName, params);
+        confirmationPreview = gate.buildPreview(executionToolName, params, { workspaceRoot: this.runtimeWorkspace });
         confirmationRiskLevel = gate.assessRiskLevel(executionToolName, params);
         shouldForceConfirm = gate.shouldConfirm(
           {
