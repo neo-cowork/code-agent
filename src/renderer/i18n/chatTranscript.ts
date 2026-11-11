@@ -30,8 +30,13 @@ chat: {
     dispatched: '已派出',
     steps: '做了 {count} 步',
     output: '产出',
+    mergeBranch: '改动在分支 {branch}，合并后才会生效',
   },
   taskNotificationWithLog: '{message}。可在任务面板查看日志。',
+  taskTimeoutNotice: '后台任务运行超过 {minutes} 分钟，已被停止。',
+  taskTimeoutRerun: '重新运行',
+  taskTimeoutRerunPrompt: '刚才那个因运行太久被停止的后台任务，请帮我在后台重新运行一次。',
+  taskTimeoutRerunWrongSession: '请回到原来的会话再点重新运行。',
   // 巡航信号（长任务 ≥45s）：{elapsed} 为 mm:ss 秒表，中性陈述「一切正常」
   longToolCruise: '深空巡航中 · 已航行 {elapsed} · 链路正常',
   // 巡航信号旁的强制停止按钮
@@ -368,6 +373,7 @@ turnCard: {
   collapseTurn: '折叠本轮',
   expandTurn: '展开本轮',
   sendFailed: '没发出去',
+  recoveredFromRecord: '这条消息由运行记录还原，可能和你的原话略有出入',
   editAndResend: '编辑重发',
   fork: '创建分支',
   forking: '创建中…',
@@ -573,8 +579,13 @@ chat: {
     dispatched: 'Dispatched',
     steps: 'Completed {count} steps',
     output: 'Output',
+    mergeBranch: 'Changes are on branch {branch}; merge it to apply them',
   },
   taskNotificationWithLog: '{message}. View logs in the task panel.',
+  taskTimeoutNotice: 'Background task ran over {minutes} minutes and was stopped.',
+  taskTimeoutRerun: 'Re-run',
+  taskTimeoutRerunPrompt: 'The background task that was just stopped for running too long: please run it again in the background.',
+  taskTimeoutRerunWrongSession: 'Go back to the original conversation and click Re-run again.',
   // Cruise signal (long-running tool ≥45s): {elapsed} is the mm:ss stopwatch, a neutral "all is well" statement
   longToolCruise: 'Deep-space cruise · {elapsed} elapsed · link nominal',
   // Force-stop button next to the cruise signal
@@ -910,6 +921,7 @@ turnCard: {
   collapseTurn: 'Collapse this turn',
   expandTurn: 'Expand this turn',
   sendFailed: 'Not sent',
+  recoveredFromRecord: 'Restored from the run history; it may differ slightly from what you wrote',
   editAndResend: 'Edit and resend',
   fork: 'Fork',
   forking: 'Forking…',

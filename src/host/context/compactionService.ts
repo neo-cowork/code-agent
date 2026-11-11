@@ -10,6 +10,7 @@ import type {
 } from '../../shared/contract';
 import type { ToolCall, ToolResult } from '../../shared/contract/tool';
 import { estimateTokens } from './tokenEstimator';
+import { withTelemetryRecoveryNoticeForModel } from '../../shared/telemetryRecovery';
 import { COMPACTION_ECONOMICS } from '../../shared/constants';
 import {
   compactModelSummarizeWithMetadata,
@@ -462,7 +463,8 @@ export function createCompactionPlan(options: CompactionPlanOptions): Compaction
     dataFingerprintText: dataFingerprintStore.toSummary(),
     archivedToolResults: options.archivedToolResults,
   });
-  const contentToSummarize = buildTranscript(split.compactedMessages);
+  // 摘要模型读的是这份转录：由运行记录还原的消息在此补回「可能已脱敏」声明（plan 里的消息本体不改）。
+  const contentToSummarize = buildTranscript(withTelemetryRecoveryNoticeForModel(split.compactedMessages));
 
   return {
     sessionId: options.sessionId,
