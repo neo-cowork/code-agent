@@ -187,13 +187,15 @@ describe('D4 子 agent 链：通话态 preset 抬严', () => {
     sessionId = `live-voice-sub-${Math.random().toString(36).slice(2)}`;
   });
 
-  /** 走真实管线：preset → getPresetConfig → createContext → checkToolExecution。 */
+  /** 走真实管线：preset → getPresetConfig → createContext → checkToolExecution。
+   *  「放行」= 无需人工确认：出界写在非 ci 档不再硬拒，而是 forceConfirm 走审批卡（本单有意改动）。 */
   function writeOutsideAllowedFor(preset: PermissionPreset): boolean {
     const pipeline = getSubagentPipeline();
     const config: DynamicAgentConfig = { name: 'voice-child', systemPrompt: '', tools: [], permissionPreset: preset };
     const context = pipeline.createContext(config, workingDirectory);
     expect(context.permissionConfig).toEqual(getPresetConfig(preset, workingDirectory));
-    return pipeline.checkToolExecution(context, writeOutsideWorkspace).allowed;
+    const result = pipeline.checkToolExecution(context, writeOutsideWorkspace);
+    return result.allowed && result.forceConfirm !== true;
   }
 
   it('声明 ci 的子 agent，在通话态里真的写不出工作目录', async () => {
