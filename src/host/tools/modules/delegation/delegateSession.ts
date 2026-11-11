@@ -1,6 +1,8 @@
 import type { ToolHandler, ToolModule, ToolResult } from '../../../protocol/tools';
 import type { ConversationEnvelope } from '../../../../shared/contract/conversationEnvelope';
 import type { ModelConfig } from '../../../../shared/contract/model';
+import type { RunStatus } from '../../../../shared/contract/durableRun';
+import { DurableRunRepository } from '../../../services/core/repositories/DurableRunRepository';
 import { QueuedInputRepository } from '../../../services/core/repositories/QueuedInputRepository';
 import { SessionDelegationRepository, type SessionDelegationRecord } from '../../../services/core/repositories/SessionDelegationRepository';
 import {
@@ -48,19 +50,53 @@ function rejection(code: string, detail: string, gate?: string): ToolResult<stri
   return { ok: false, code: 'DELEGATION_REJECTED', error: `${code}: ${detail}.${REJECTION_SUFFIX}`, meta: { code, gate: gate ?? 'none' } };
 }
 
-function successfulOutput(input: { delegationId: string; targetName: string; queuedAhead: number; reused?: true }): ToolResult<string> {
+// 回执给模型的用户向状态描述：模型只复述这句，不得引用 status/runStatus 原始枚举。
+function plainStateOf(status: SessionDelegationRecord['status'], runStatus?: RunStatus): string {
+  if (runStatus === 'completed') return 'The target session has finished this request.';
+  if (runStatus === 'failed') return 'The target session tried this request but it failed.';
+  if (runStatus === 'cancelled') return 'The target session stopped before finishing this request.';
+  if (runStatus) return 'The target session is still working on this request.';
+  if (status === 'terminal_observed') return 'The target session has finished this request.';
+  return 'The target session has received this request and will handle it shortly.';
+}
+
+function successfulOutput(input: { delegationId: string; targetName: string; queuedAhead: number; status: SessionDelegationRecord['status']; runStatus?: RunStatus; reused?: true }): ToolResult<string> {
   const payload = {
     delegationId: input.delegationId,
     target: input.targetName,
-    status: 'active',
+    status: input.status,
+    ...(input.runStatus ? { runStatus: input.runStatus } : {}),
     queuedAhead: input.queuedAhead,
-    ...(input.reused ? { reused: true as const } : {}),
+    ...(input.reused ? {
+      reused: true as const,
+      stateDescription: plainStateOf(input.status, input.runStatus),
+      message: 'This request was already delivered; no second request was sent. Tell the user it was already delivered, and describe the current state using the wording in stateDescription. Never quote the raw status or runStatus values to the user. Do not retry or describe this as a rejection or an idempotency conflict.',
+    } : {}),
   };
   return {
     ok: true,
     output: JSON.stringify(payload),
     meta: { ...payload },
   };
+}
+
+async function reusedReceipt(
+  delegationId: string,
+  runtime: ReturnType<typeof getDelegationToolRuntime>,
+): Promise<ToolResult<string>> {
+  const db = runtime.getDb();
+  const row = db ? new SessionDelegationRepository(db).get(delegationId) : null;
+  if (!row || !db) return rejection('target_unavailable', 'delegation row is unavailable');
+  // INV-6: replay only reads the receipt; withdrawn work is never revived.
+  if (row.status === 'stopped' || row.status === 'aborted' || row.status === 'superseded') {
+    return rejection('delegation_not_active', `existing delegation ${row.delegationId} is ${row.status}; it is not revived on retry, re-issue the task as a new delegation`);
+  }
+  const run = row.targetRunId ? await new DurableRunRepository(db).get(row.targetRunId) : null;
+  return successfulOutput({
+    delegationId: row.delegationId,
+    targetName: runtime.getSessionRow(row.targetSessionId)?.title ?? 'session',
+    queuedAhead: 0, status: row.status, runStatus: run?.status, reused: true,
+  });
 }
 
 function modelConfigOf(value: unknown): ModelConfig | undefined {
@@ -279,16 +315,7 @@ async function runDelegateSession(
     const admission = await admissionFor(call, ctx, runtime);
     if (admission.result.kind === 'rejected') return rejection(admission.result.code, admission.result.detail, admission.result.gate);
     if (admission.result.kind === 'reused') {
-      // rework r3：同指纹重放只证明「提交过」，不证明「还能投」。行已
-      // stopped/aborted/superseded 时载荷永久暂停（INV-6 撤回不复活），必须
-      // 照实回非成功回执，否则模型以为任务在队里，正文被静默丢弃。回执时点
-      // 重读行，不吃 admission 快照的旧状态。
-      const db = runtime.getDb();
-      const row = (db ? new SessionDelegationRepository(db).get(admission.result.delegationId) : null) ?? admission.row;
-      if (row && row.status !== 'active') {
-        return rejection('delegation_not_active', `existing delegation ${row.delegationId} is ${row.status}; it is not revived on retry, re-issue the task as a new delegation`);
-      }
-      return successfulOutput({ delegationId: admission.result.delegationId, targetName: runtime.getSessionRow(row?.targetSessionId ?? '')?.title ?? 'session', queuedAhead: 0, reused: true });
+      return reusedReceipt(admission.result.delegationId, runtime);
     }
     if (call.action === 'stop' || call.action === 'resume' || call.action === 'correct') {
       return executeChain(call, admission.row ?? null, ctx, runtime);
@@ -350,8 +377,9 @@ async function executeNewDelegation(
   if (committed.kind === 'idempotency_conflict') {
     return rejection('idempotency_conflict', 'same submission key with a different payload');
   }
+  if (committed.kind === 'reused') return reusedReceipt(committed.delegationId, runtime);
   runtime.notifyEnqueued(targetId);
-  return successfulOutput({ delegationId: committed.delegationId, targetName, queuedAhead: admission.snapshot.userQueuedOrSendingRows });
+  return successfulOutput({ delegationId: committed.delegationId, targetName, status: 'active', queuedAhead: admission.snapshot.userQueuedOrSendingRows });
 }
 
 async function executeChain(
@@ -370,7 +398,7 @@ async function executeChain(
     const handle = runtime.getRun(row.targetSessionId);
     if (handle?.cancel && row.targetRunId && handle.context.runId === row.targetRunId) await handle.cancel('user');
     repository.markStopped(row.delegationId, { reason: 'user' }, now);
-    return successfulOutput({ delegationId: row.delegationId, targetName: runtime.getSessionRow(row.targetSessionId)?.title ?? 'session', queuedAhead: 0 });
+    return successfulOutput({ delegationId: row.delegationId, targetName: runtime.getSessionRow(row.targetSessionId)?.title ?? 'session', status: 'stopped', queuedAhead: 0 });
   }
   if (call.action === 'resume') {
     if (!row.targetQueuedInputId) return rejection('invalid_call', 'delegation has no queued input');
@@ -405,7 +433,7 @@ async function executeChain(
     queued.unpauseQueued(row.targetQueuedInputId, now);
     repository.markResumed(row.delegationId, now);
     runtime.notifyEnqueued(row.targetSessionId);
-    return successfulOutput({ delegationId: row.delegationId, targetName: runtime.getSessionRow(row.targetSessionId)?.title ?? 'session', queuedAhead: 0 });
+    return successfulOutput({ delegationId: row.delegationId, targetName: runtime.getSessionRow(row.targetSessionId)?.title ?? 'session', status: 'active', queuedAhead: 0 });
   }
   if (call.action === 'correct') {
     if (!call.content) return rejection('invalid_call', 'correct requires task text');
@@ -433,8 +461,9 @@ async function executeChain(
     if (committed.kind === 'idempotency_conflict') {
       return rejection('idempotency_conflict', 'same submission key with a different payload');
     }
+    if (committed.kind === 'reused') return reusedReceipt(committed.delegationId, runtime);
     runtime.notifyEnqueued(newTarget);
-    return successfulOutput({ delegationId: committed.delegationId, targetName: target?.title ?? 'session', queuedAhead: 0 });
+    return successfulOutput({ delegationId: committed.delegationId, targetName: target?.title ?? 'session', status: 'active', queuedAhead: 0 });
   }
   return rejection('invalid_call', 'unsupported chain action');
 }

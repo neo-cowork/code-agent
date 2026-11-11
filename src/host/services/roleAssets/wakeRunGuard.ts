@@ -1,4 +1,5 @@
 import { createLogger } from '../infra/logger';
+import { ROLE_PROACTIVITY } from '../../../shared/constants';
 
 // ============================================================================
 // Wake Run Guard — 无人值守醒来的两道保险（D3：goal run 挂死不再无限等待）
@@ -25,6 +26,16 @@ export interface WakeRunTimeoutOptions {
   timeoutMs: number;
   /** 超时后取消底层 run（orchestrator.cancel / agentLoop.cancel，按活动路径给） */
   cancel: () => Promise<void> | void;
+  /** 可选：run 返回后等事件收口链排空再释放醒来标记（orchestrator 不 await onEvent）；有上限，不会泄漏标记。 */
+  settled?: () => Promise<void>;
+}
+
+/** 正在跑的醒来 run（按会话计数）：醒来会话保留后用户再追问，那一轮不属于醒来，不能被屏蔽。 */
+const activeWakeRuns = new Map<string, number>();
+
+/** 该会话此刻是否正跑着一次角色醒来 run（醒来收尾通知由 notifyRoleWakeOutput 负责，通用完成通知让位）。 */
+export function isRoleWakeRunActive(sessionId: string): boolean {
+  return (activeWakeRuns.get(sessionId) ?? 0) > 0;
 }
 
 /**
@@ -35,6 +46,7 @@ export interface WakeRunTimeoutOptions {
 export async function withWakeRunTimeout<T>(run: () => Promise<T>, options: WakeRunTimeoutOptions): Promise<T> {
   let timedOut = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  activeWakeRuns.set(options.sessionId, (activeWakeRuns.get(options.sessionId) ?? 0) + 1);
   const runPromise = run();
   const timeoutPromise = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
@@ -59,6 +71,17 @@ export async function withWakeRunTimeout<T>(run: () => Promise<T>, options: Wake
     throw error;
   } finally {
     if (timer) clearTimeout(timer);
+    if (options.settled) {
+      let settleTimer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        Promise.resolve().then(options.settled).catch(() => undefined),
+        new Promise<void>((resolve) => { settleTimer = setTimeout(resolve, ROLE_PROACTIVITY.WAKE_EVENT_SETTLE_MAX_MS); }),
+      ]);
+      clearTimeout(settleTimer);
+    }
+    const left = (activeWakeRuns.get(options.sessionId) ?? 1) - 1;
+    if (left > 0) activeWakeRuns.set(options.sessionId, left);
+    else activeWakeRuns.delete(options.sessionId);
   }
 }
 

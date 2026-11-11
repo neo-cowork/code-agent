@@ -11,6 +11,7 @@ import {
   formatShortcutForDisplay,
   getCurrentKeybindingPlatform,
   getDefaultKeybinding,
+  isModifierOnlyAccelerator,
   mergeKeybindingsWithDefaults,
   normalizeAccelerator,
   type KeybindingActionId,
@@ -349,8 +350,10 @@ export const KeybindingsSettings: React.FC = () => {
                 const hasConflict = conflictActionIds.has(definition.id);
                 const hasSystemWarning = systemWarningActionIds.has(definition.id);
                 const defaultBinding = getDefaultKeybinding(definition.id, platform);
+                const isModifierOnly = isModifierOnlyAccelerator(binding.accelerator, platform);
                 const registrationResult = registrationResults[definition.id];
-                const registrationFailure = registrationResult
+                const registrationFailure = !isModifierOnly
+                  && registrationResult
                   && !registrationResult.registered
                   && normalizeAccelerator(registrationResult.accelerator, platform)
                     === normalizeAccelerator(binding.accelerator, platform)
@@ -392,6 +395,11 @@ export const KeybindingsSettings: React.FC = () => {
                       <p className="mt-1 text-[11px] text-zinc-600">
                         {keybindingsText.defaultPrefix}{formatShortcutForDisplay(defaultBinding?.accelerator, platform)}
                       </p>
+                      {isModifierOnly && (
+                        <p className="mt-1 text-[11px] text-zinc-500">
+                          {keybindingsText.modifierOnlyNote}
+                        </p>
+                      )}
                       {registrationFailure && (
                         <p
                           role="alert"
