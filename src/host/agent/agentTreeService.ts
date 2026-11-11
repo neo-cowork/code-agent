@@ -422,10 +422,12 @@ function mergeContextRecord(
   const node = ensureNode(nodes, record.agentId, role);
   addSource(node, 'subagentContext');
   const lifecycle = record.lifecycle;
-  // Persisted terminal facts survive restart; only unfinished records use the orphan heuristic.
-  const status: AgentTreeNodeStatus = lifecycle && lifecycle.status !== 'running'
-    ? lifecycle.status
-    : record.updatedAt < HOST_PROCESS_BOOT_MS ? 'cancelled' : 'unknown';
+  // Explicit graph terminal (parent-run settlement) wins; persisted lifecycle terminal facts survive
+  // restart; only unfinished records use the orphan heuristic.
+  const status: AgentTreeNodeStatus = record.terminalStatus
+    ?? (lifecycle && lifecycle.status !== 'running'
+      ? lifecycle.status
+      : record.updatedAt < HOST_PROCESS_BOOT_MS ? 'cancelled' : 'unknown');
   if (lifecycle) {
     node.displayName = lifecycle.displayName;
     node.role = lifecycle.role ?? node.role;
