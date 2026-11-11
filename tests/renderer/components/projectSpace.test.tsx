@@ -91,6 +91,7 @@ import { ProjectConfigRail } from '../../../src/renderer/components/features/pro
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useProjectChatSeedStore } from '../../../src/renderer/stores/projectChatSeedStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
+import { useSkillStore } from '../../../src/renderer/stores/skillStore';
 import * as projectClient from '../../../src/renderer/services/projectClient';
 import { tagClient } from '../../../src/renderer/services/tagClient';
 import * as rolesClient from '../../../src/renderer/services/rolesClient';
@@ -741,10 +742,18 @@ describe('ProjectConfigRail 项目配置（四卡竖排形态，第四波①回�
 });
 
 describe('ProjectComposer 底部输入框', () => {
+  // sessionless 期选中 skill 的可用技能表夹具：deriveSkillLibraryId 取 basePath 里 skills/ 的下一段
+  const availableExplainSkill = {
+    name: 'explain',
+    basePath: '/skills/official/explain',
+    source: 'library',
+  } as never;
+
   beforeEach(() => {
     chatInputStub.extras = {};
     chatInputStub.lastProps = {};
     useSessionStore.setState({ messages: [] } as never);
+    useSkillStore.setState({ availableSkills: [] } as never);
   });
 
   it('渲染完整 ChatInput（sessionless 模式），不是简化 textarea', async () => {
@@ -811,6 +820,50 @@ describe('ProjectComposer 底部输入框', () => {
     await waitFor(() => expect(createSessionMock).toHaveBeenCalled());
     expect(useProjectChatSeedStore.getState().pendingProjectChatSeed).toBeNull();
     expect(useSessionStore.getState().messages).toHaveLength(0);
+  });
+
+  // ---- FB-1077：sessionless 期选中的未挂载 skill 在发送时落进新会话 ----
+  it('发送：sessionless 期选中的 skill 经 SESSION_MOUNT 挂进新会话，且在 switchSession 之前', async () => {
+    chatInputStub.extras = {
+      context: { routing: { mode: 'auto' }, selectedSkillIds: ['explain'] },
+    };
+    useSkillStore.setState({ availableSkills: [availableExplainSkill] } as never);
+    vi.mocked(invokeSkillIPCOrThrow).mockResolvedValueOnce(true as never);
+    await enterSpaceView();
+    const input = await screen.findByTestId('project-space-composer-input');
+    fireEvent.change(input, { target: { value: '帮我解释这段长文本' } });
+    fireEvent.click(screen.getByTestId('project-space-composer-send'));
+
+    await waitFor(() => expect(switchSessionMock).toHaveBeenCalledWith('sess-new'));
+    // 挂载打到 NEW 会话 id，libraryId 从 skillStore.availableSkills 派生
+    expect(invokeSkillIPCOrThrow).toHaveBeenCalledWith(
+      SKILL_CHANNELS.SESSION_MOUNT,
+      'sess-new',
+      'explain',
+      'official',
+    );
+    // 顺序：先挂载，后切页（switchSession 会 closeSecondaryPages 卸载本页）
+    expect(invokeSkillIPCOrThrow.mock.invocationCallOrder[0])
+      .toBeLessThan(switchSessionMock.mock.invocationCallOrder[0]);
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('发送：skill 挂载失败不拦发送——报 mountSkillFailedPrefix toast，seed 照落、仍切新会话', async () => {
+    chatInputStub.extras = {
+      context: { routing: { mode: 'auto' }, selectedSkillIds: ['explain'] },
+    };
+    vi.mocked(invokeSkillIPCOrThrow).mockRejectedValueOnce(new Error('boom') as never);
+    await enterSpaceView();
+    const input = await screen.findByTestId('project-space-composer-input');
+    fireEvent.change(input, { target: { value: '帮我解释这段长文本' } });
+    fireEvent.click(screen.getByTestId('project-space-composer-send'));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('挂载 Skill 失败：explain'));
+    // 已打的字不能丢：发送照常完成（seed + 切会话）
+    await waitFor(() => expect(switchSessionMock).toHaveBeenCalledWith('sess-new'));
+    const seed = useProjectChatSeedStore.getState().pendingProjectChatSeed;
+    expect(seed?.envelope.content).toBe('帮我解释这段长文本');
+    expect(seed?.sessionId).toBe('sess-new');
   });
 });
 

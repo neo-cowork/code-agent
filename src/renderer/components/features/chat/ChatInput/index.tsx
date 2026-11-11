@@ -976,6 +976,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   } = useChatInputSlashCommands({
     value,
     currentSessionId,
+    // 无会话语境（协作空间页）：未挂载 skill 只记选择，挂载推迟到发送时落进新会话
+    deferMountUntilSend: sessionless,
     skillRecommendations,
     mountRecommendedSkill,
     installRecommendedSkill,
