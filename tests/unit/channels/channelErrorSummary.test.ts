@@ -20,6 +20,13 @@ describe('channel error summary', () => {
     });
   });
 
+  it('classifies Chinese provider rate-limit wording as a model error', () => {
+    expect(summarizeChannelError(new Error('您的账户已达到速率限制，请您控制请求频率'))).toEqual({
+      kind: 'model',
+      message: '模型服务暂时不可用，请稍后重试。',
+    });
+  });
+
   it('does not reuse unsafe internal error text for external channels', () => {
     const internal = 'Error: failed with token sk-test at /Users/linchen/app.ts\n    at run (/tmp/app.ts:1:1)';
     const summary = summarizeChannelError(internal);

@@ -28,6 +28,15 @@ describe('agent engine failure diagnostics', () => {
     expect(metadata.rawMessage).not.toContain('litellm.BadRequestError');
   });
 
+  it('classifies Chinese provider rate-limit wording as rate_limited quota', () => {
+    const failure = classifyAgentEngineFailure({
+      engine: 'codex_cli',
+      message: '您的账户已达到速率限制，请您控制请求频率',
+    });
+
+    expect(failure).toMatchObject({ category: 'quota', reason: 'rate_limited', retryable: true });
+  });
+
   it('classifies missing fallback configuration separately', () => {
     const failure = classifyAgentEngineFailure({
       engine: 'codex_cli',
