@@ -25,8 +25,8 @@ function toolCall(i: number, settled: boolean, name = 'Bash'): ToolCall {
   return { id: `row-call-${i}`, name, arguments: { command: `echo ${i}` },
     result: settled ? { toolCallId: `row-call-${i}`, success: true, output: 'ok' } : undefined };
 }
-function treeCalls(spy: ReturnType<typeof vi.spyOn>): number {
-  return spy.mock.calls.filter(([domain, action]) => domain === IPC_DOMAINS.AGENT && action === 'getTree').length;
+function treeCalls(spy: { mock: { calls: readonly (readonly unknown[])[] } }): number {
+  return spy.mock.calls.filter(call => call[0] === IPC_DOMAINS.AGENT && call[1] === 'getTree').length;
 }
 function spyTree(status = 'completed') {
   return vi.spyOn(ipcService, 'invokeDomain').mockImplementation(((domain: string, action: string) => Promise.resolve(
