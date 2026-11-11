@@ -124,6 +124,7 @@ describe('runAutoAgentMode observability wiring', () => {
       vi.fn(),
       { provider: 'mock', model: 'mock-model' } as never,
       {
+        requestPermission: vi.fn(async () => false),
         workingDirectory: '/tmp/project',
         sessionId: 'session-auto-1',
         taskListManager: makeTaskListManager() as never,
@@ -168,6 +169,7 @@ describe('runAutoAgentMode observability wiring', () => {
       onEvent,
       { provider: 'mock', model: 'mock-model' } as never,
       {
+        requestPermission: vi.fn(async () => false),
         workingDirectory: '/tmp/project', sessionId: 'session-auto-1',
         taskListManager: makeTaskListManager() as never, generateId: () => 'message-1', addMessage: vi.fn(),
         sendDAGStatusEvent, runStandardAgentLoop: vi.fn(),

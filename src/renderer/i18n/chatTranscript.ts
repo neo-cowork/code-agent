@@ -4,7 +4,6 @@ import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 import { toolStepVerbsEn, toolStepVerbsZh } from './toolStepVerbs';
 import { turnRailEn, turnRailZh } from './turnRail';
 import { chatErrorCopyEn, chatErrorCopyZh } from './chatErrorCopy';
-
 export const chatTranscriptZh = {
   ...turnRailZh,
 chat: {
@@ -26,6 +25,7 @@ chat: {
     dispatched: '已派出',
     steps: '做了 {count} 步',
     output: '产出',
+    mergeBranch: '改动在分支 {branch}，合并后才会生效',
   },
   taskNotificationWithLog: '{message}。可在任务面板查看日志。',
   taskTimeoutNotice: '后台任务运行超过 {minutes} 分钟，已被停止。',
@@ -201,7 +201,6 @@ forkLineage: {
     importFailed: '便携导入失败',
   },
 },
-
 // 相对时间（utils/i18nTime.ts）
 time: {
   justNow: '刚刚',
@@ -210,7 +209,6 @@ time: {
   daysAgo: '{n}天前',
   monthsAgo: '{n}个月前',
 },
-
 // 转录滚动视图（TurnBasedTraceView）
 traceView: {
   loadingOlder: '加载更早的消息…',
@@ -220,7 +218,6 @@ traceView: {
   renderFailedTitle: '这个会话的消息暂时显示不出来',
   renderFailedHint: '其他会话不受影响，可以先切到别的会话继续；切回来会自动重试。',
 },
-
 // 工具步骤组（ToolStepGroup）
 toolGroup: {
   statusRunning: '运行中',
@@ -239,7 +236,6 @@ toolGroup: {
   // 现在只剩轮级和组级两层，各自都带说明。
   durationTitle: '这几步用时',
 },
-
 // 工具步骤人话化（humanizeToolStep.ts）——把工具名+参数合成一句中文步骤文案，
 // 消费方 ToolStepGroup 的步骤行；原工具名/参数仍在展开详情（ToolHeader/ToolDetails）里，不删信息。
 toolStepHumanize: {
@@ -309,7 +305,6 @@ toolStepHumanize: {
     used: '执行了 {count} 个步骤',
   },
 },
-
 // 单工具状态词表（statusLabels.ts 整表）
 toolStatus: {
   default: { preparing: '准备中…', running: '执行中…' },
@@ -351,7 +346,6 @@ toolStatus: {
     findings_write: { preparing: '记录发现…', running: '写入发现…' },
   },
 },
-
 messageKeepHide: {
   menuLabel: '这条消息的上下文',
   pin: '记住这条，压缩时别丢',
@@ -361,7 +355,6 @@ messageKeepHide: {
   pinnedBadge: '已记住',
   excludedBadge: 'AI 看不到这条',
 },
-
 // 回合级文件变更卡（TurnDiffSummary）
 turnCard: {
   workedFor: '用时 {duration}',
@@ -387,7 +380,6 @@ turnFeedback: {
   problem: '这一轮回答有问题',
 },
 turnDiff: turnDiffZh,
-
 // 会话里那行 Hooks：只说「哪个时机、是哪几个 hook、放行还是拦下」。
 // hook 的输出内容不在这里显示（契约层已无该字段）——它是任意文本，曾把整份记忆索引原文漏给用户。
 turnHooks: {
@@ -407,7 +399,6 @@ turnHooks: {
   sourceGlobal: '你的全局设置',
   sourceProject: '这个项目',
 },
-
 // 路由异常卡（TraceNodeRenderer 的 RoutingEvidenceNode）——只在路由 warning/error 时
 // 铺进主对话流；正常路由每轮内容一样，不渲染。
 turnRouting: {
@@ -424,7 +415,6 @@ turnRouting: {
   statusStarted: '已启动',
   statusFallback: '已回落',
 },
-
 // 回合运行状态（TurnCard 顶部状态条 + 流式状态横幅）——两处消费同一套键，别建两套
 turnRun: {
   status: {
@@ -448,7 +438,6 @@ turnRun: {
   outputsSignal: '{count} 个产出',
   toolsSignal: '{count} 次工具调用',
 },
-
 ...chatErrorCopyZh,
 // 实时预览诊断条（LivePreviewFrame）——frameError 原文 + CSP snippet 折叠在
 // systemError 的查看详情/收起键后面，这里只放固定的人话摘要+建议。
@@ -529,6 +518,7 @@ chat: {
     dispatched: 'Dispatched',
     steps: 'Completed {count} steps',
     output: 'Output',
+    mergeBranch: 'Changes are on branch {branch}; merge it to apply them',
   },
   taskNotificationWithLog: '{message}. View logs in the task panel.',
   taskTimeoutNotice: 'Background task ran over {minutes} minutes and was stopped.',

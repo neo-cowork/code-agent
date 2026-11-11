@@ -32,6 +32,8 @@ export interface DelegationPresentation {
   stepCount?: number;
   outputs: DelegationReceiptOutput[];
   failure?: string;
+  /** 子代理在隔离副本里改了文件时，等待合并的分支名（不含路径）。 */
+  branch?: string;
   failureCode?: AgentFailureCode;
   /** 终态任务的结构化工具失败（N-MEDIA-GEN-MUSIC-FALLBACK-FU1）：回执行人话出路用。 */
   toolFailure?: LastToolFailure;
@@ -65,7 +67,7 @@ function displayPaths(text: string): string {
   return text
     .replace(/(["'`])((?:file:\/\/)?(?:\/(?:Users|home|tmp|var|private|workspace|workspaces|Volumes|mnt|opt|srv)\/|[A-Za-z]:[\\/])[^\n]*?)\1/g,
       (_match, quote: string, path: string) => `${quote}${basename(path)}${quote}`)
-    .replace(/(^|[\s(<])(?:file:\/\/)?((?:\/(?:Users|home|tmp|var|private|workspace|workspaces|Volumes|mnt|opt|srv)\/|[A-Za-z]:[\\/])[^\s"'`<>()[\]]+)/g,
+    .replace(/(^|[\s(<（：，「【、])(?:file:\/\/)?((?:\/(?:Users|home|tmp|var|private|workspace|workspaces|Volumes|mnt|opt|srv)\/|[A-Za-z]:[\\/])[^\s"'`<>()[\]（）：，。「」【】、]+)/g,
       (_match, prefix: string, path: string) => `${prefix}${basename(path)}`);
 }
 
@@ -119,7 +121,12 @@ function withoutRepeatedReport(toolCall: ToolCall): ToolCall {
 }
 
 /** Keep stored/model-facing receipts intact; project the user's report for every card surface. */
-export function toDelegationDisplayToolCall(storedToolCall: ToolCall, t: Translations): ToolCall {
+export function toDelegationDisplayToolCall(
+  storedToolCall: ToolCall,
+  t: Translations,
+  /** 子代理节点/任务的实时状态：交接回执落库后不会改写，终态时用它收口，避免「已完成」旁还写着「工作中」。 */
+  presentation?: Pick<DelegationPresentation, 'state'> | null,
+): ToolCall {
   if (!RESULT_TOOLS.has(storedToolCall.name)
     && storedToolCall.result?.metadata?.artifactRole !== 'multiagent-result') return storedToolCall;
   const toolCall = withoutRepeatedReport(storedToolCall);
@@ -130,7 +137,9 @@ export function toDelegationDisplayToolCall(storedToolCall: ToolCall, t: Transla
     if (result?.success) {
       if (/^Agent \[[^\n]+\] (?:exceeded foreground budget and continues in background|spawned in background):/.test(output)
         || /^已在后台开始处理「/.test(output)) {
-        output = t.chat.delegationReceipt.working;
+        output = presentation && presentation.state !== 'working'
+          ? t.chat.delegationReceipt[presentation.state]
+          : t.chat.delegationReceipt.working;
       } else {
         output = toolCall.name === 'wait_agent' ? waitReport(output, t) : reportBody(output);
       }
@@ -232,6 +241,7 @@ function fromAgent(node: AgentTreeNode, t: Translations): DelegationPresentation
       }];
     }),
     failure: state === 'failed' ? agentFailureCopy(node.failureCode, t, node.failureReason || node.progress) ?? undefined : undefined,
+    branch: terminal && node.worktreeState.status === 'preserved' ? node.worktreeState.branch : undefined,
     failureCode: state === 'failed' ? node.failureCode : undefined,
   };
 }
