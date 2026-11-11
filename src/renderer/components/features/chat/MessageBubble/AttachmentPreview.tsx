@@ -46,9 +46,10 @@ import {
   invokeNativeCommandAction,
   isNativeCommandRuntimeAvailable,
 } from '../../../../services/nativeCommandFacade';
-import { formatFileSize, FOLDER_SUMMARY_THRESHOLD, categoryLabels } from './utils';
+import { formatFileSize, FOLDER_SUMMARY_THRESHOLD } from './utils';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { useI18n } from '../../../../hooks/useI18n';
+import type { Translations } from '../../../../i18n';
 import { SpreadsheetBlock } from './SpreadsheetBlock';
 import { DocumentBlock } from './DocumentBlock';
 import { PresentationPagePicker } from '../../../PresentationPagePicker';
@@ -58,31 +59,37 @@ import {
   MediaAssetLightbox,
 } from './MediaAssetControls';
 
-function getAttachmentIconConfig(category: AttachmentCategory | undefined): AttachmentIconConfig {
+// 附件卡用户可见文案的 i18n 小节（t.attachmentPreview）
+type AttachmentPreviewStrings = Translations['attachmentPreview'];
+
+function getAttachmentIconConfig(
+  category: AttachmentCategory | undefined,
+  t: AttachmentPreviewStrings,
+): AttachmentIconConfig {
   const iconClass = 'w-5 h-5 shrink-0';
   switch (category) {
     case 'pdf':
       return { icon: <FileText className={iconClass} />, color: 'text-badge-danger', label: 'PDF' };
     case 'audio':
-      return { icon: <Music className={iconClass} />, color: 'text-badge-accent', label: '音频' };
+      return { icon: <Music className={iconClass} />, color: 'text-badge-accent', label: t.typeAudio };
     case 'video':
-      return { icon: <Video className={iconClass} />, color: 'text-badge-info', label: '视频' };
+      return { icon: <Video className={iconClass} />, color: 'text-badge-info', label: t.typeVideo };
     case 'excel':
       return { icon: <Sheet className={iconClass} />, color: 'text-badge-success', label: 'Excel' };
     case 'presentation':
       return { icon: <Presentation className={iconClass} />, color: 'text-badge-accent', label: 'PPT' };
     case 'archive':
-      return { icon: <Archive className={iconClass} />, color: 'text-badge-warning', label: '压缩包' };
+      return { icon: <Archive className={iconClass} />, color: 'text-badge-warning', label: t.typeArchive };
     case 'code':
-      return { icon: <FileCode className={iconClass} />, color: 'text-badge-info', label: '代码' };
+      return { icon: <FileCode className={iconClass} />, color: 'text-badge-info', label: t.typeCode };
     case 'data':
-      return { icon: <Database className={iconClass} />, color: 'text-badge-warning', label: '数据' };
+      return { icon: <Database className={iconClass} />, color: 'text-badge-warning', label: t.typeData };
     case 'html':
       return { icon: <Globe className={iconClass} />, color: 'text-badge-warning', label: 'HTML' };
     case 'text':
-      return { icon: <FileText className={iconClass} />, color: 'text-zinc-400', label: '文本' };
+      return { icon: <FileText className={iconClass} />, color: 'text-zinc-400', label: t.typeText };
     default:
-      return { icon: <File className={iconClass} />, color: 'text-zinc-500', label: '文件' };
+      return { icon: <File className={iconClass} />, color: 'text-zinc-500', label: t.typeFile };
   }
 }
 
@@ -97,8 +104,11 @@ function parseJson<T>(value: string | undefined): T | undefined {
 
 type AttachmentStateTone = 'muted' | 'active' | 'success' | 'danger';
 
-export function getAttachmentMediaState(attachment: MessageAttachment): {
-  label: string;
+type AttachmentMediaStateKey = 'pending' | 'downloading' | 'embedded' | 'transcribing' | 'ready' | 'failed';
+
+// 归一化出媒体生命周期状态（label 由调用方经 useI18n 解析，见 MEDIA_STATE_LABEL_KEYS）
+function getAttachmentMediaState(attachment: MessageAttachment): {
+  stateKey: AttachmentMediaStateKey;
   tone: AttachmentStateTone;
   spinning?: boolean;
 } | null {
@@ -109,27 +119,38 @@ export function getAttachmentMediaState(attachment: MessageAttachment): {
 
   switch (state) {
     case 'pending':
-      return { label: '等待中', tone: 'muted' };
+      return { stateKey: 'pending', tone: 'muted' };
     case 'downloading':
-      return { label: '下载中', tone: 'active', spinning: true };
+      return { stateKey: 'downloading', tone: 'active', spinning: true };
     case 'embedded':
-      return { label: '已嵌入', tone: 'success' };
+      return { stateKey: 'embedded', tone: 'success' };
     case 'transcribing':
-      return { label: '转写中', tone: 'active', spinning: true };
+      return { stateKey: 'transcribing', tone: 'active', spinning: true };
     case 'ready':
-      return { label: '已就绪', tone: 'success' };
+      return { stateKey: 'ready', tone: 'success' };
     case 'failed':
-      return { label: '处理失败', tone: 'danger' };
+      return { stateKey: 'failed', tone: 'danger' };
     default:
       return null;
   }
 }
+
+// 生命周期状态 → t.attachmentPreview 文案键
+const MEDIA_STATE_LABEL_KEYS: Record<AttachmentMediaStateKey, keyof AttachmentPreviewStrings> = {
+  pending: 'stateWaiting',
+  downloading: 'stateDownloading',
+  embedded: 'stateEmbedded',
+  transcribing: 'stateTranscribing',
+  ready: 'stateReady',
+  failed: 'stateFailed',
+};
 
 const AttachmentStateBadge: React.FC<{
   attachment: MessageAttachment;
   onRetry?: () => void;
   retrying?: boolean;
 }> = ({ attachment, onRetry, retrying }) => {
+  const { t } = useI18n();
   const state = getAttachmentMediaState(attachment);
   if (!state) return null;
 
@@ -146,7 +167,7 @@ const AttachmentStateBadge: React.FC<{
   return (
     <span className={`inline-flex h-5 items-center gap-1 rounded border px-1.5 text-[10px] ${toneClass}`}>
       <Icon className={`h-3 w-3 ${retrying || state.spinning ? 'animate-spin' : ''}`} />
-      {retrying ? '重试中' : state.label}
+      {retrying ? t.attachmentPreview.stateRetrying : t.attachmentPreview[MEDIA_STATE_LABEL_KEYS[state.stateKey]]}
       {state.tone === 'danger' && onRetry && (
         <button
           type="button"
@@ -158,7 +179,7 @@ const AttachmentStateBadge: React.FC<{
           disabled={retrying}
         >
           <RotateCcw className="h-2.5 w-2.5" />
-          重试
+          {t.attachmentPreview.retry}
         </button>
       )}
     </span>
@@ -428,7 +449,7 @@ const AttachmentItem: React.FC<{
           <audio controls src={mediaSrc} className="w-full" />
         ) : (
           <div className="rounded-md border border-zinc-700/70 bg-zinc-900/50 px-3 py-2 text-xs text-zinc-500">
-            音频过大，已跳过内联预览
+            {t.attachmentPreview.audioTooLarge}
           </div>
         )}
         {mediaAsset && (
@@ -458,7 +479,7 @@ const AttachmentItem: React.FC<{
           />
         ) : (
           <div className="flex min-h-[120px] items-center justify-center bg-black/30 px-3 py-4 text-center text-xs text-zinc-500">
-            视频过大，已跳过内联预览
+            {t.attachmentPreview.videoTooLarge}
           </div>
         )}
         <div className="flex items-center gap-2 px-3 py-2 text-xs text-zinc-300">
@@ -516,16 +537,21 @@ const AttachmentItem: React.FC<{
           </div>
           <div className="text-xs text-zinc-500">
             {archiveManifest
-              ? `${archiveManifest.format} · ${archiveManifest.totalFiles} 文件`
+              ? `${archiveManifest.format} · ${t.attachmentPreview.archiveFilesCount.replace('{count}', String(archiveManifest.totalFiles))}`
               : formatFileSize(displayAttachment.size)}
           </div>
           {stateBadge}
           {archiveManifest && (
             <div className={`mt-1 truncate text-xs ${dangerCount > 0 ? 'text-badge-warning' : 'text-zinc-400'}`}>
               {archiveManifest.supported
-                ? `${archiveManifest.entries.length}${archiveManifest.truncated ? '+' : ''} 项清单`
+                ? t.attachmentPreview.archiveEntriesCount.replace(
+                  '{count}',
+                  `${archiveManifest.entries.length}${archiveManifest.truncated ? '+' : ''}`,
+                )
                 : archiveManifest.note}
-              {dangerCount > 0 ? ` · ${dangerCount} 个可疑路径` : ''}
+              {dangerCount > 0
+                ? ` · ${t.attachmentPreview.dangerousPathsCount.replace('{count}', String(dangerCount))}`
+                : ''}
             </div>
           )}
         </div>
@@ -533,7 +559,7 @@ const AttachmentItem: React.FC<{
     );
   }
 
-  const { icon, color, label } = getAttachmentIconConfig(category);
+  const { icon, color, label } = getAttachmentIconConfig(category, t.attachmentPreview);
   const displayName = displayAttachment.name.includes('/')
     ? displayAttachment.name.split('/').pop() || displayAttachment.name
     : displayAttachment.name;
@@ -549,9 +575,11 @@ const AttachmentItem: React.FC<{
           <span className={`${color} text-2xs`}>{label}</span>
           <span>·</span>
           {category === 'pdf' && displayAttachment.pageCount
-            ? <span>{displayAttachment.pageCount} 页</span>
+            ? <span>{t.attachmentPreview.pageCount.replace('{count}', String(displayAttachment.pageCount))}</span>
             : category === 'excel' && displayAttachment.sheetCount
-              ? <span>{displayAttachment.sheetCount} 表 · {displayAttachment.rowCount} 行</span>
+              ? <span>{t.attachmentPreview.sheetsRowsCount
+                .replace('{sheets}', String(displayAttachment.sheetCount))
+                .replace('{rows}', String(displayAttachment.rowCount))}</span>
               : displayAttachment.language
                 ? <span>{displayAttachment.language}</span>
                 : <span>{formatFileSize(displayAttachment.size)}</span>
@@ -563,7 +591,24 @@ const AttachmentItem: React.FC<{
   );
 };
 
+// 文件夹汇总卡的分类 → t.attachmentPreview 文案键
+const CATEGORY_LABEL_KEYS: Record<string, keyof AttachmentPreviewStrings> = {
+  image: 'categoryImage',
+  audio: 'categoryAudio',
+  video: 'categoryVideo',
+  pdf: 'categoryPdf',
+  excel: 'categoryExcel',
+  presentation: 'categoryPresentation',
+  archive: 'categoryArchive',
+  code: 'categoryCode',
+  data: 'categoryData',
+  text: 'categoryText',
+  html: 'categoryHtml',
+  other: 'categoryOther',
+};
+
 export const AttachmentDisplay: React.FC<AttachmentDisplayProps> = ({ attachments, mediaContext }) => {
+  const { t } = useI18n();
   const [expandedMedia, setExpandedMedia] = useState<SessionMediaAsset | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -588,7 +633,10 @@ export const AttachmentDisplay: React.FC<AttachmentDisplayProps> = ({ attachment
 
   if (showSummary && !isExpanded) {
     const summaryParts = Object.entries(stats.byCategory)
-      .map(([cat, count]) => `${count} ${categoryLabels[cat] || cat}`)
+      .map(([cat, count]) => {
+        const labelKey = CATEGORY_LABEL_KEYS[cat];
+        return `${count} ${labelKey ? t.attachmentPreview[labelKey] : cat}`;
+      })
       .join(', ');
 
     return (
@@ -602,7 +650,9 @@ export const AttachmentDisplay: React.FC<AttachmentDisplayProps> = ({ attachment
           </div>
           <div className="min-w-0 flex-1">
             <div className="text-sm font-medium text-zinc-200">
-              {stats.folderName ? `📁 ${stats.folderName}` : `📎 ${attachments.length} 个文件`}
+              {stats.folderName
+                ? `📁 ${stats.folderName}`
+                : t.attachmentPreview.folderFilesCount.replace('{count}', String(attachments.length))}
             </div>
             <div className="text-xs text-zinc-500">
               {summaryParts} · {formatFileSize(stats.totalSize)}
@@ -623,7 +673,7 @@ export const AttachmentDisplay: React.FC<AttachmentDisplayProps> = ({ attachment
             className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-400"
           >
             <ChevronDown className="h-3 w-3" />
-            收起 {attachments.length} 个文件
+            {t.attachmentPreview.collapseFilesCount.replace('{count}', String(attachments.length))}
           </button>
         </div>
       )}

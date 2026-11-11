@@ -4,6 +4,11 @@ import { getTextForegroundToolNames } from '../tools/protocolRegistry';
 import { detectTaskFeatures } from '../prompts/systemReminders';
 import { getNativeConnectorToolNamesForIntent } from '../connectors/nativeConnectorIntent';
 import { isRoleProactivityChatIntent } from './roleProactivityChatIntent';
+import { resolveModelInfo } from '../model/modelInfo';
+import { getConfigService } from '../services/core/configService';
+import { resolveRunModelConfig } from '../agent/orchestrator/modelConfigResolver';
+import type { MessageAttachment } from '../../shared/contract/message';
+import type { ConversationModelSpec } from '../../shared/contract/conversationEnvelope';
 
 // 不导出：web/桌面两条装配路都经 getSessionCommandCenterBrainContextForPrompt 取块，
 // 导出常量只会引回「第二条装配路直接拼常量」的旧形态（rework r1）。
@@ -100,6 +105,41 @@ export function getSessionCommandCenterBrainContextForPrompt(prompt: string): st
  * 不命中意图的轮次零新增（无 schema 膨胀，前缀缓存不受影响）。
  */
 /**
+ * 带图片附件的前台文字轮：模型看不见图时补 image_analyze（deferred 工具，进白名单即被预载）。
+ * 无图片、或模型自带视觉时返回 []，工具面与前缀缓存一字不动。
+ * 模型未知时按「看不见」处理——多一个工具无害，漏掉则模型无法读图。
+ */
+export interface ForegroundImageTurn {
+  attachments?: readonly MessageAttachment[];
+  model?: ConversationModelSpec;
+}
+
+function hasImageAttachment(attachments?: readonly MessageAttachment[]): boolean {
+  return Boolean(attachments?.some((a) => (a.type === 'image' || a.category === 'image') && Boolean(a.path)));
+}
+
+function getImageAnalyzeToolNamesForTurn(turn?: ForegroundImageTurn): string[] {
+  if (!hasImageAttachment(turn?.attachments)) return [];
+  const info = turn?.model ? resolveModelInfo(turn.model.provider, turn.model.model) : null;
+  return info?.supportsVision ? [] : ['image_analyze'];
+}
+
+/**
+ * 桌面路径：本轮实际会用的模型 = 运行循环同款解析（显式 modelSpec > 会话 override > 全局默认）。
+ * 无图片附件时不碰配置，直接返回只带附件的空壳。
+ */
+export function resolveForegroundImageTurn(
+  sessionId: string,
+  attachments: readonly MessageAttachment[] | undefined,
+  explicitModelSpec?: ConversationModelSpec,
+): ForegroundImageTurn {
+  if (!hasImageAttachment(attachments)) return { attachments };
+  const configService = getConfigService();
+  const { provider, model } = resolveRunModelConfig(configService, configService.getSettings(), sessionId, explicitModelSpec);
+  return { attachments, model: { provider, model } };
+}
+
+/**
  * `allowedConnectorIds`：本轮手选/专家声明的连接器范围（web 工作台 toolScope、桌面
  * envelope options.toolScope 经 withWorkbenchTurnSystemContext 并出来的那份）。非空 =
  * 显式收窄：范围外的连接器即使意图命中也不进面——与 run policy 的 toolScope 补充
@@ -109,6 +149,7 @@ export function getSessionCommandCenterBrainContextForPrompt(prompt: string): st
 export function getTextForegroundToolNamesForPrompt(
   prompt: string,
   allowedConnectorIds?: readonly string[],
+  imageTurn?: ForegroundImageTurn,
 ): string[] {
   const base = getTextForegroundToolNames();
   const extras: string[] = [];
@@ -123,6 +164,7 @@ export function getTextForegroundToolNamesForPrompt(
   if (isRoleProactivityChatIntent(prompt)) extras.push('set_role_proactivity');
   // 无意图命中时零副作用（不触 configService/registry）。
   extras.push(...getNativeConnectorToolNamesForIntent({ userText: prompt, allowedConnectorIds }));
+  extras.push(...getImageAnalyzeToolNamesForTurn(imageTurn));
   if (extras.length === 0) return base;
   // 存草稿轮 mail_draft 已在 extras 里，连接器扩展会再次带回同名——去重保序。
   return Array.from(new Set([...base, ...extras]));
@@ -131,6 +173,7 @@ export function getTextForegroundToolNamesForPrompt(
 export function withSessionCommandCenterBrain(
   options: AppServiceRunOptions | undefined,
   prompt?: string,
+  imageTurn?: ForegroundImageTurn,
 ): AppServiceRunOptions {
   const text = prompt ?? '';
   const turnSystemContext = [
@@ -146,7 +189,7 @@ export function withSessionCommandCenterBrain(
         : SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
       SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
     ),
-    allowedToolNames: getTextForegroundToolNamesForPrompt(text, options?.toolScope?.allowedConnectorIds),
+    allowedToolNames: getTextForegroundToolNamesForPrompt(text, options?.toolScope?.allowedConnectorIds, imageTurn),
     foregroundToolFace: true,
     turnSystemContext,
   };

@@ -75,7 +75,8 @@ describe('cloud copy role restriction', () => {
 
     expect(screen.getByTestId('cron-runs-on-cloud').className).toContain('border-badge-info/50');
     expect(screen.getByRole('alert').textContent).toBe(reason);
-    expect((screen.getByRole('button', { name: '创建任务' }) as HTMLButtonElement).disabled).toBe(true);
+    const createLabel = language === 'en' ? 'Create task' : '创建任务';
+    expect((screen.getByRole('button', { name: createLabel }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('leaves a non-role cloud copy unaffected', () => {
