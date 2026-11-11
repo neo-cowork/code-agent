@@ -83,7 +83,7 @@ export const CronFeaturedTemplates: React.FC = () => {
       if (existingJob) {
         await updateJob(existingJob.id, { enabled: true });
       } else {
-        const input = buildCronJobInput(template.generate({}));
+        const input = buildCronJobInput(template.generate({}), cc.editorChrome.validation);
         await createJob(runsOn ? { ...input, runsOn } : input);
       }
     } catch (err) {

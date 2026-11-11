@@ -1,3 +1,4 @@
+import { normalizePersonalSkillIds } from '../../shared/cronPersonalSkills';
 // ============================================================================
 // Cron IPC Handlers
 // ============================================================================
@@ -56,6 +57,9 @@ function getCreateCronJobPayload(source: unknown): CreateCronJobPayload {
   if (!isRecord(source)) throw new Error('Invalid cron job payload');
   // runCount 是只读结算字段（contract/cron.ts）：外部传入一律丢弃，不许借创建重置计数。
   const { runCount: _droppedRunCount, ...payload } = source;
+  if (isRecord(payload.action) && payload.action.type === 'agent') {
+    payload.action = { ...payload.action, allowedPersonalSkillIds: normalizePersonalSkillIds(payload.action.allowedPersonalSkillIds) };
+  }
   return payload as unknown as CreateCronJobPayload;
 }
 
@@ -66,6 +70,9 @@ function getUpdateCronJobRequest(source: unknown): { jobId: string; updates: Upd
   if (!jobId || !isRecord(updates)) throw new Error('Invalid cron job update payload');
   // 同上：外部不许借更新改写 runCount；内部结算走 CronService 自己的窄写通道。
   const { runCount: _droppedRunCount, ...restUpdates } = updates;
+  if (isRecord(restUpdates.action) && restUpdates.action.type === 'agent') {
+    restUpdates.action = { ...restUpdates.action, allowedPersonalSkillIds: normalizePersonalSkillIds(restUpdates.action.allowedPersonalSkillIds) };
+  }
   return { jobId, updates: restUpdates as unknown as UpdateCronJobPayload };
 }
 
