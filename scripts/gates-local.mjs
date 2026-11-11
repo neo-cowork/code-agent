@@ -179,6 +179,16 @@ const gates = [
     args: ['scripts/check-copy.mjs'],
   },
   {
+    ci: 'swarm-ci / smoke / Static gates / settings-jargon',
+    command: 'node',
+    args: ['scripts/ci/check-settings-jargon.mjs'],
+  },
+  {
+    ci: 'swarm-ci / smoke / Rendered settings jargon',
+    command: 'npx',
+    args: ['vitest', 'run', 'tests/renderer/components/settingsRenderedJargon.test.tsx'],
+  },
+  {
     ci: 'swarm-ci / smoke / Host Chinese error literal ratchet',
     command: 'node',
     args: ['scripts/host-chinese-error-ratchet.mjs'],

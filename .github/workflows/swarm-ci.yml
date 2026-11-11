@@ -246,6 +246,8 @@ jobs:
           node scripts/check-design-system.mjs
           node scripts/check-token-integrity.mjs
           node scripts/check-copy.mjs
+          node scripts/ci/check-settings-jargon.mjs
+          npx vitest run tests/renderer/components/settingsRenderedJargon.test.tsx
 
       - name: Host Chinese error literal ratchet
         # P2 工具错误文案分层保护门：只扫描 host/tools + host/memory 的 error 属性，
