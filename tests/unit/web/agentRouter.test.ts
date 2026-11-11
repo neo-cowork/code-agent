@@ -1774,6 +1774,52 @@ describe('createAgentRouter', () => {
       });
     });
 
+    // FU1 rework r2：config.systemPrompt 那份规则块在 contextAssembly 重建系统消息时被丢
+    // （ctx.systemPrompt 不进请求；2026-11-11 真机抓包 + turn_snapshots 层台账实证）。
+    // 模型面必须经 turn 脚手架（wrapWithTurnSystemContext）送达，与桌面 envelope 路
+    // （withSessionCommandCenterBrain → turnSystemContext）同源同形。
+    it('存草稿轮次：规则块进模型面用户消息（turn 脚手架）；普通轮不进', async () => {
+      const controller = new AbortController();
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: 'save draft 1', sessionId: 'session-save-draft-model-face' }),
+        signal: controller.signal,
+      });
+      expect(response.ok).toBe(true);
+      await waitForAssertion(() => {
+        expect(mockCreateAgentLoop).toHaveBeenCalled();
+      });
+      const messages = mockCreateAgentLoop.mock.calls.at(-1)![2] as Message[];
+      const lastUserContent = String(messages.filter((m) => m.role === 'user').at(-1)!.content);
+      expect(lastUserContent).toContain('<user_request>');
+      expect(lastUserContent).toContain('save draft 1');
+      expect(lastUserContent).toContain('<morning_brief_save_draft>');
+      await disconnectAndStop(controller);
+      await waitForAssertion(() => {
+        expect(mockCancel).toHaveBeenCalled();
+      });
+
+      // 普通轮不携带：回合级规则块只在存草稿判据命中时出现（前缀缓存/上下文零膨胀）
+      mockCreateAgentLoop.mockClear();
+      const controller2 = new AbortController();
+      const response2 = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: '今天有什么安排', sessionId: 'session-plain-turn-model-face' }),
+        signal: controller2.signal,
+      });
+      expect(response2.ok).toBe(true);
+      await waitForAssertion(() => {
+        expect(mockCreateAgentLoop).toHaveBeenCalled();
+      });
+      const messages2 = mockCreateAgentLoop.mock.calls.at(-1)![2] as Message[];
+      const lastUser2 = String(messages2.filter((m) => m.role === 'user').at(-1)!.content);
+      expect(lastUser2).not.toContain('<morning_brief_save_draft>');
+      await disconnectAndStop(controller2);
+      await waitForAssertion(() => {
+        expect(mockCancel).toHaveBeenCalled();
+      });
+    });
+
     describe('morning brief save-draft role mail tool gate over web', () => {
       const ROLE = 'web-save-draft-role';
 

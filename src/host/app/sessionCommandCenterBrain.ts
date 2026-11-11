@@ -90,9 +90,17 @@ export function isMorningBriefSaveDraftReply(prompt: string): boolean {
  * shared/constants/sessionCommandCenter.ts 的警告：装配形状各异，判据与内容必须只有一份。
  */
 export function getSessionCommandCenterBrainContextForPrompt(prompt: string): string[] {
-  const blocks = [SESSION_COMMAND_CENTER_BRAIN_CONTEXT];
-  if (isMorningBriefSaveDraftReply(prompt)) blocks.push(MORNING_BRIEF_SAVE_DRAFT_CONTEXT);
-  return blocks;
+  return [SESSION_COMMAND_CENTER_BRAIN_CONTEXT, ...getSessionCommandCenterTurnRulesForPrompt(prompt)];
+}
+
+/**
+ * 回合级规则块（不含常驻基块）：存草稿判据命中的轮才有内容。
+ * web 主链（routes/agent.ts）把这份并进模型面 turn 脚手架——config.systemPrompt 那份
+ * 会在 contextAssembly 重建系统消息时被丢（ctx.systemPrompt 不进请求，2026-11-11 FU1
+ * 真机抓包实证）；桌面 envelope 路仍走 withSessionCommandCenterBrain 的全量清单。
+ */
+export function getSessionCommandCenterTurnRulesForPrompt(prompt: string): string[] {
+  return isMorningBriefSaveDraftReply(prompt) ? [MORNING_BRIEF_SAVE_DRAFT_CONTEXT] : [];
 }
 
 /**
