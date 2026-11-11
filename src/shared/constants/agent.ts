@@ -89,7 +89,8 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // 字符预算 + offset 分页；browser_action schema 新增 offset，targetRef 描述改为 refId 行。
 // 整合合并 r4：本单（image 多参考图 schema 面）× main 已合入的 sys-v106 撞号，合并面未在任何一侧
 // 记录过，按惯例升版。
-export const PROMPT_VERSION = 'sys-v107' as const;
+// sys-v108：整合 main 多参考图 schema 与 delegate_task 满槽选择卡指引。
+export const PROMPT_VERSION = 'sys-v109' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =

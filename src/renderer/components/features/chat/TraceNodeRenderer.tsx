@@ -13,6 +13,7 @@ import type { FileChange } from '../../../utils/turnDiffSummary';
 import { stripAppshotBlocks } from '@shared/contract/appshot';
 import { extractUserRequest, stripSystemReminderBlocks } from '@shared/utils/turnScaffold';
 import { normalizeSpokenFileName } from '@shared/utils/normalizeSpokenFileName';
+import { isTelemetryRecoveredMessage, stripTelemetryRecoveryNotice } from '@shared/telemetryRecovery';
 import { MessageContent } from './MessageBubble/MessageContent';
 import { restoreNeoTagTokenForDisplay } from './MessageBubble/triggerTokenHighlight';
 import { ToolCallDisplay } from './MessageBubble/ToolCallDisplay/index';
@@ -90,6 +91,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
           attachments={attachments}
           sourceType={node.metadata?.source}
           sendFailed={node.metadata?.sendFailed === true}
+          telemetryRecovered={isTelemetryRecoveredMessage({ role: 'user', content: node.content, metadata: node.metadata })}
           suppressVoiceBadge={Boolean(inVoiceDispatchCard)}
           isNeoTagMessage={Boolean(node.metadata?.neoTag)}
           streaming={isStreaming}
@@ -168,20 +170,22 @@ const UserNode: React.FC<{
   sourceType?: 'voice' | 'dictation' | 'typed';
   /** 发送失败后留在时间线上的乐观用户气泡 */
   sendFailed?: boolean;
+  /** 由运行记录还原的消息（新标记或旧前缀行）：气泡旁加一句说明 */
+  telemetryRecovered?: boolean;
   /** X5.5-D4：语音任务卡内抑制节点级「语音」小标（轮头已显示一次） */
   suppressVoiceBadge?: boolean;
   isNeoTagMessage?: boolean;
   onRewind?: (messageId: string, content: string) => void;
   rewindDisabled?: boolean;
   streaming?: boolean;
-}> = ({ messageId, sessionId, content, attachments, sourceType, sendFailed, suppressVoiceBadge, isNeoTagMessage, onRewind, rewindDisabled, streaming }) => {
+}> = ({ messageId, sessionId, content, attachments, sourceType, sendFailed, telemetryRecovered, suppressVoiceBadge, isNeoTagMessage, onRewind, rewindDisabled, streaming }) => {
   const { t } = useI18n();
   const editAndResendMessage = useMessageActionStore((state) => state.editAndResendMessage);
   // 展示面还原：带 turnSystemContext 脚手架（<user_request> 包裹）的历史/泄漏消息只显示
   // 用户原话——包装是模型面，用户界面显示原话（UX round2 20f，定义在 shared/utils/turnScaffold）。
   // @neo 落库正文被剥了前缀（它兼任模型 prompt），渲染时补回展示，重启后也能看到带色的 @neo
   const rawDisplayContent = restoreNeoTagTokenForDisplay(
-    stripSystemReminderBlocks(stripAppshotBlocks(extractUserRequest(content || ''))),
+    stripSystemReminderBlocks(stripAppshotBlocks(extractUserRequest(stripTelemetryRecoveryNotice(content || '')))),
     Boolean(isNeoTagMessage),
   );
   const displayContent = sourceType === 'voice'
@@ -225,6 +229,11 @@ const UserNode: React.FC<{
                 >
                   {t.turnCard.editAndResend}
                 </button>
+              </div>
+            )}
+            {telemetryRecovered && displayContent && (
+              <div data-testid="user-message-recovered-note" className="mb-1 text-right text-2xs text-zinc-500">
+                {t.turnCard.recoveredFromRecord}
               </div>
             )}
             {displayContent && (
