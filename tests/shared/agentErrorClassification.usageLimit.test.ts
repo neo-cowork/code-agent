@@ -39,9 +39,22 @@ describe('classifyAgentError · usage_limit', () => {
     expect(classifyAgentError({ message: REAL_BODY })?.category).toBe('generic');
   });
 
-  it('⑤ 普通 429 仍是 rate_limited', () => {
+  it('⑤ 普通 429 与中文限流措辞都归入 rate_limited，额度/余额措辞不受影响', () => {
     expect(classifyAgentError({ message: 'Rate limit reached, 429 Too Many Requests' })?.category).toBe('rate_limited');
     expect(classifyAgentError({ message: 'Too many requests', httpStatus: 429 })?.category).toBe('rate_limited');
+
+    const chineseRateLimitTable: Array<{ message: string; expected: string }> = [
+      { message: '您的账户已达到速率限制，请您控制请求频率', expected: 'rate_limited' },
+      { message: '请求过于频繁，请稍后再试', expected: 'rate_limited' },
+      { message: '系统限制请求频率，请放慢调用速度', expected: 'rate_limited' },
+      { message: '请求频率超限', expected: 'rate_limited' },
+      { message: REAL_BODY, expected: 'generic' },
+      { message: '账户余额不足，请充值', expected: 'insufficient_balance' },
+      { message: 'Something unexpected happened', expected: 'generic' },
+    ];
+    for (const { message, expected } of chineseRateLimitTable) {
+      expect(classifyAgentError({ error: message })?.category, message).toBe(expected);
+    }
   });
 
   it('⑥ 裸数字 1308/1310（端口 / token 数 / 毫秒）不出 usage-limit 卡：按文本走 network/generic', () => {

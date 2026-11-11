@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { SETTINGS_INDEX, searchSettings } from '../../../src/renderer/utils/settingsIndex';
-import { SETTINGS_TAB_IDS } from '../../../src/renderer/utils/settingsTabs';
+import {
+  CAPABILITY_HUB_TAB_BY_SETTINGS_TAB,
+  SETTINGS_TAB_IDS,
+  type SettingsTab,
+} from '../../../src/renderer/utils/settingsTabs';
 
 const zhSearchIndex = zh.settings.searchIndex as Record<string, string>;
 const enSearchIndex = en.settings.searchIndex as Record<string, string>;
@@ -126,6 +130,21 @@ describe('settings search index', () => {
     const registered = new Set<string>(SETTINGS_TAB_IDS);
     for (const entry of SETTINGS_INDEX) {
       expect(registered.has(entry.tab)).toBe(true);
+    }
+  });
+
+  it('returns tab appshots for 应用截图, 截图, App snapshots, and appshots', () => {
+    for (const query of ['应用截图', '截图', 'App snapshots', 'appshots']) {
+      expect(searchSettings(query).map((entry) => entry.tab)).toContain('appshots');
+    }
+  });
+
+  it('has at least one search entry for every tab in SETTINGS_TAB_IDS except those exempted via CAPABILITY_HUB_TAB_BY_SETTINGS_TAB', () => {
+    const exemptedTabs = new Set(Object.keys(CAPABILITY_HUB_TAB_BY_SETTINGS_TAB) as SettingsTab[]);
+    const indexedTabs = new Set(SETTINGS_INDEX.map((entry) => entry.tab));
+    for (const tab of SETTINGS_TAB_IDS) {
+      if (exemptedTabs.has(tab)) continue;
+      expect(indexedTabs.has(tab)).toBe(true);
     }
   });
 });

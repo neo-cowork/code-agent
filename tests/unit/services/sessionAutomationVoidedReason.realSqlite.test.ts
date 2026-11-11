@@ -10,10 +10,13 @@ import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
 
 const warn = vi.hoisted(() => vi.fn());
-const dbState = vi.hoisted(() => ({ repo: null as unknown }));
+const dbState = vi.hoisted(() => ({ repo: null as unknown, getSession: vi.fn(), unavailable: false }));
 
 vi.mock('../../../src/host/services/core/databaseService', () => ({
-  getDatabase: () => ({ getPendingApprovalRepo: () => dbState.repo }),
+  getDatabase: () => {
+    if (dbState.unavailable) throw new Error('DB not ready');
+    return { getPendingApprovalRepo: () => dbState.repo, getSession: dbState.getSession };
+  },
 }));
 vi.mock('../../../src/host/services/infra/logger', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../src/host/services/infra/logger')>();
@@ -43,6 +46,8 @@ describe('getVoidedApprovalReason (real SQLite file)', () => {
     sessions = new SessionRepository(db);
     approvals = new PendingApprovalRepository(db);
     dbState.repo = approvals;
+    dbState.unavailable = false;
+    dbState.getSession.mockImplementation((id: string) => sessions.getSession(id));
   });
   afterEach(() => {
     db.close();
@@ -93,4 +98,53 @@ describe('getVoidedApprovalReason (real SQLite file)', () => {
     expect(svc.getVoidedApprovalReason('s4')).toBeNull();
     expect(warn).toHaveBeenCalledTimes(1);
   });
+  it('voided inbox preserves stored redacted preview, session title and requestedAt through real SQLite', () => {
+    const requestedAt = Date.now() - 2 * DAY;
+    const preview = 'invoice-export --token=***REDACTED*** --month=November';
+    sessions.createSessionWithId('invoices', {
+      title: '[定时] Sort this month’s invoices', modelConfig: { provider: 'openai', model: 'm' },
+    });
+    for (const [id, argsPreview] of [['with-preview', preview], ['old-row', undefined]] as const) {
+      approvals.insert({
+        id, kind: 'tool_approval', agentId: null, agentName: null, coordinatorId: 'invoices',
+        payload: { sessionId: 'invoices', tool: 'Bash', requestedAt, argsPreview, argsRef: 'must-not-read-raw-args' } as never,
+        submittedAt: requestedAt - 500,
+      });
+      approvals.resolve({ id, status: 'rejected', feedback: 'Auto-rejected after restart: expired_after_restart_24h', resolvedAt: Date.now() });
+    }
+    const items = new SessionAutomationService().listParkedApprovals();
+    expect(items).toHaveLength(2);
+    expect(items.find((item) => item.id === 'with-preview')).toMatchObject({
+      sessionTitle: 'Sort this month’s invoices', requestedAt, status: 'voided', argsPreview: preview,
+    });
+    expect(JSON.parse(approvals.getById('with-preview')!.payloadJson).argsPreview).toBe(preview);
+    expect(items.find((item) => item.id === 'old-row')?.argsPreview).toBeUndefined();
+    console.log('HOST voided: Sort this month’s invoices; requestedAt preserved; stored preview:', preview);
+  });
+
+  it.each([
+    ['[Scheduled] Write the weekly report', 'Write the weekly report'],
+    ['[定时] 整理本月发票', '整理本月发票'],
+    ['', undefined], ['  ', undefined], ['[Scheduled] ', undefined],
+    ['session_private', undefined], ['[定时] session_private', undefined],
+    ['12345678-abcd-1234-abcd-123456789abc', undefined],
+  ])('voided inbox title %j becomes %j', (title, expected) => {
+    seedVoided('title-row', 'chat', 'Auto-rejected after restart: args_unavailable (session working directory unavailable)', Date.now());
+    db.prepare('UPDATE sessions SET title = ? WHERE id = ?').run(title, 'chat');
+    expect(new SessionAutomationService().listParkedApprovals()[0].sessionTitle).toBe(expected);
+  });
+
+  it('voided inbox tolerates deleted sessions, failed title lookups and DB-not-ready', () => {
+    seedVoided('deleted-row', 'deleted-chat', 'Auto-rejected after restart: expired_after_restart_24h', Date.now());
+    db.prepare('DELETE FROM sessions WHERE id = ?').run('deleted-chat');
+    const svc = new SessionAutomationService();
+    expect(svc.listParkedApprovals()[0]).toMatchObject({ requestedAt: 1_000, status: 'voided' });
+    expect(svc.listParkedApprovals()[0].sessionTitle).toBeUndefined();
+    dbState.getSession.mockImplementation(() => { throw new Error('Session read unavailable'); });
+    expect(svc.listParkedApprovals()[0].sessionTitle).toBeUndefined();
+    expect(warn).toHaveBeenCalledWith('Voided approval session title unavailable', expect.any(Object));
+    dbState.unavailable = true;
+    expect(svc.listParkedApprovals()).toEqual([]);
+  });
+
 });
