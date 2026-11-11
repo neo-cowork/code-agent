@@ -712,6 +712,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           ? await planSessionWorkDirectory({
             sessionTitle: persistedSession?.title,
             userMessage: prompt,
+            attachments: body.attachments,
             reservedPaths: workDirReservations,
           })
           : await ensureDefaultWebWorkingDirectory();
@@ -743,6 +744,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const replanned = await maybeReplanSessionWorkDirectory({
         workingDirectory: sessionRowWorkingDirectory,
         sessionTitle: persistedSession?.title,
+        loadFirstUserMessage: async () => (await sessionManagerForRun?.getMessages?.(sessionId, 1))?.find((message) => message.role === 'user'),
         reservedPaths: workDirReservations,
       });
       const diverted = replanned
@@ -1318,7 +1320,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           prompt,
           // 手选/专家连接器收窄必须透传（rework r1）：非空 scope 之外即使意图命中也不进白名单，
           // 否则 run policy 放行范围外连接器写、预载却按收窄不送 schema，判决互相矛盾。
-          getTextForegroundToolNamesForPrompt(prompt, config.toolScope?.allowedConnectorIds),
+          getTextForegroundToolNamesForPrompt(prompt, config.toolScope?.allowedConnectorIds, {
+            attachments: body.attachments,
+            model: config.modelConfig,
+          }),
           config.agentOverride?.tools,
         );
         config.foregroundToolFace = true;

@@ -29,6 +29,7 @@ export type KeybindingActionId =
   | 'composer.focus'
   | 'composer.slashMenu'
   | 'commandPalette.open'
+  | 'sessionSearch.open'
   | 'session.stop'
   | 'session.continue'
   | 'session.retry'

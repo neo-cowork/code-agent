@@ -19,6 +19,9 @@ interface TemplateCase {
 }
 
 const cases: TemplateCase[] = [
+  { key: 'observeActionIntercepted', params: { tool: '飞书 回复消息' }, stored: 'outbound action 飞书 回复消息 intercepted in observe mode', zh: '仅观察模式：已拦下「飞书 回复消息」，没有真的发出去', en: 'Observe mode stopped “飞书 回复消息”; nothing was sent' },
+  { key: 'observeActionIntercepted', params: { tool: 'channel_reply' }, stored: 'outbound action channel_reply intercepted in observe mode', zh: '仅观察模式：已拦下「通道回复」，没有真的发出去', en: 'Observe mode stopped “Channel reply”; nothing was sent' },
+  { key: 'channelReplyTool', stored: 'channel_reply', zh: '通道回复', en: 'Channel reply' },
   { key: 'channelChatRule', params: { account: 'a1', chat: 'c1' }, stored: 'channel message · account a1 · chat c1', zh: '通道消息 · 账号 a1 · 会话 c1', en: 'Channel message · account a1 · chat c1' },
   { key: 'channelAnyChatRule', params: { account: 'a1' }, stored: 'channel message · account a1 · any chat', zh: '通道消息 · 账号 a1 · 任意会话', en: 'Channel message · account a1 · any chat' },
   { key: 'mailRule', params: { account: '163', mailbox: 'INBOX' }, stored: 'mail message · account 163 · mailbox INBOX', zh: '邮件 · 账号 163 · 收件箱 INBOX', en: 'Mail · account 163 · inbox INBOX' },
@@ -40,6 +43,14 @@ const cases: TemplateCase[] = [
 ];
 
 describe('cron event decision text table', () => {
+  it.each([
+    { stored: 'observe mode: 飞书 回复消息 intercepted before sending', zh: '仅观察模式：已拦下「飞书 回复消息」，没有真的发出去', en: 'Observe mode stopped “飞书 回复消息”; nothing was sent' },
+    { stored: 'observe mode: channel reply intercepted before sending', zh: '仅观察模式：已拦下「通道回复」，没有真的发出去', en: 'Observe mode stopped “Channel reply”; nothing was sent' },
+  ])('localizes previously persisted action reason: $stored', ({ stored, zh, en }) => {
+    expect(localizeDecisionText(stored, 'zh')).toBe(zh);
+    expect(localizeDecisionText(stored, 'en')).toBe(en);
+  });
+
   it.each(cases)('round-trips $key through the shared stored template', ({ key, params, stored, zh, en }) => {
     const built = buildCronEventDecisionText(key, params);
     expect(built).toBe(stored);

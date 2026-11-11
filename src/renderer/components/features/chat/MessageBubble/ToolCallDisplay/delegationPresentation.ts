@@ -1,3 +1,4 @@
+import { agentRoleLabel } from '../../../../../utils/agentRoleLabel';
 import { humanizeToolStep, parseDelegateSessionReceipt } from '../../../../../utils/humanizeToolStep';
 import type { AgentFailureCode } from '@shared/contract/agentFailure';
 import type { AgentTreeNode } from '@shared/contract/agentTree';
@@ -218,7 +219,7 @@ function fromAgent(node: AgentTreeNode): DelegationPresentation {
   const terminal = state !== 'working';
   return {
     state,
-    title: displayPaths(node.task?.trim() || node.role),
+    title: agentRoleLabel(node.displayName || node.role),
     lastToolStep: node.lastToolStep,
     activityIds: [node.id],
     stepCount: terminal ? completedStepCount(node.lastToolStep, undefined) : undefined,

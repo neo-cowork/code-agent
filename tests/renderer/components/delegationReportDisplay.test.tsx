@@ -12,7 +12,10 @@ import { DelegationReceipt } from '../../../src/renderer/components/features/cha
 import { getToolStatusLabel } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/statusLabels';
 
 vi.mock('../../../src/renderer/stores/appStore', () => ({
-  useAppStore: (selector: (state: unknown) => unknown) => selector({ openPreview: vi.fn(), openSettingsTab: vi.fn() }),
+  useAppStore: Object.assign(
+    (selector: (state: unknown) => unknown) => selector({ openPreview: vi.fn(), openSettingsTab: vi.fn() }),
+    { getState: () => ({ language: 'zh' as const }) },
+  ),
 }));
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { zh } = await import('../../../src/renderer/i18n/zh');

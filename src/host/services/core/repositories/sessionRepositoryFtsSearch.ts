@@ -57,6 +57,12 @@ export interface SessionMessagesFtsSearchOptions {
    * 默认 false：agent 记忆侧维持原语义（短查询无召回），不受影响。
    */
   shortQueryFallback?: boolean;
+  /**
+   * 只召回「活跃会话」的消息：未删除、未归档、归属匹配 userId（null = 未登录/无主）。
+   * 必须在 SQL 层、LIMIT 之前生效——否则大量归档/已删除会话的命中会先占满候选再被后置过滤清空。
+   * 不传 = 不过滤（agent 记忆侧语义不变）。
+   */
+  activeSessionScope?: { userId: string | null };
 }
 
 /** session_messages_fts 命中计数选项 */
@@ -67,6 +73,12 @@ export interface SessionMessagesFtsCountOptions {
   includeRewound?: boolean;
   /** 见 SessionMessagesFtsSearchOptions.shortQueryFallback */
   shortQueryFallback?: boolean;
+  /**
+   * 只召回「活跃会话」的消息：未删除、未归档、归属匹配 userId（null = 未登录/无主）。
+   * 必须在 SQL 层、LIMIT 之前生效——否则大量归档/已删除会话的命中会先占满候选再被后置过滤清空。
+   * 不传 = 不过滤（agent 记忆侧语义不变）。
+   */
+  activeSessionScope?: { userId: string | null };
 }
 
 function normalizeFtsQuery(raw: string): string {
@@ -74,6 +86,21 @@ function normalizeFtsQuery(raw: string): string {
     return raw;
   }
   return '"' + raw.replace(/"/g, '""') + '"';
+}
+
+/** activeSessionScope → SQL 条件（sessionColumn 为 FTS/messages 上的会话列）。 */
+function pushActiveSessionScope(
+  conditions: string[],
+  params: unknown[],
+  sessionColumn: string,
+  scope: { userId: string | null } | undefined,
+): void {
+  if (!scope) return;
+  const owner = scope.userId === null ? 'AND s.user_id IS NULL' : 'AND s.user_id = ?';
+  conditions.push(
+    `${sessionColumn} IN (SELECT s.id FROM sessions s WHERE s.is_deleted = 0 AND COALESCE(s.status, '') != 'archived' ${owner})`,
+  );
+  if (scope.userId !== null) params.push(scope.userId);
 }
 
 /**
@@ -99,6 +126,7 @@ function buildSessionMessagesFtsFilter(
     conditions.push('f.role = ?');
     params.push(options.role);
   }
+  pushActiveSessionScope(conditions, params, sessionColumn, options.activeSessionScope);
 
   return { clause: conditions.length > 0 ? `AND ${conditions.join(' AND ')}` : '', params };
 }
@@ -124,6 +152,7 @@ function buildShortQueryFilter(
     conditions.push('m.role = ?');
     params.push(options.role);
   }
+  pushActiveSessionScope(conditions, params, 'm.session_id', options.activeSessionScope);
   return { clause: conditions.length > 0 ? `AND ${conditions.join(' AND ')}` : '', params };
 }
 

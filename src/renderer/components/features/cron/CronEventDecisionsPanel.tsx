@@ -117,7 +117,7 @@ export const CronEventDecisionsPanel: React.FC<{ job: CronJobDefinition }> = ({ 
             <span className="font-medium text-zinc-200">{copy.decision[row.decision]}</span>
             <span className="text-zinc-500">
               {row.kind === 'action'
-                ? copy.actionLabel.replace('{tool}', row.tool ?? '')
+                ? copy.actionLabel.replace('{tool}', localizeDecisionText(row.tool ?? '', language))
                 : eventDisplay(row)}
             </span>
             {row.target && <span className="text-zinc-500">{copy.targetLabel.replace('{target}', row.target)}</span>}
