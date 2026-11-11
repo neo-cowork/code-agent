@@ -7,6 +7,22 @@ import { isDelegationTool, isTaskTerminalStatus } from './agentActivity';
 
 type TerminalState = 'running' | 'completed' | 'failed' | 'interrupted' | 'hidden';
 
+/** The call's own outcome sources, which always outrank any agent row. */
+function ownOutcome(toolCall: ToolCall | undefined, sessionId: string | null | undefined, tasks?: readonly Task[]) {
+  const result = isToolInterruptionPlaceholder(toolCall?.result?.error) ? undefined : toolCall?.result;
+  const task = toolCall && sessionId ? tasks?.find(candidate =>
+    candidate.sessionId === sessionId && candidate.toolCallId === toolCall.id) : undefined;
+  return { result, task };
+}
+
+/** An agent row can only settle a result-less call that has no ledger task and names its owning agent. */
+export function toolCallNeedsAgentRows(input: {
+  toolCall?: ToolCall; sessionId?: string | null; tasks?: readonly Task[]; agentId?: string;
+}): boolean {
+  const { result, task } = ownOutcome(input.toolCall, input.sessionId, input.tasks);
+  return Boolean(input.agentId && !result && !task);
+}
+
 /** Presentation only: exact call/agent ownership, never a turn-wide successful-task heuristic. */
 export function resolveToolCallTerminalState(input: {
   toolCall?: ToolCall;
@@ -19,9 +35,7 @@ export function resolveToolCallTerminalState(input: {
   interruptionReason?: StreamInterruptionReason;
 }) {
   const { toolCall, sessionId, sessionLive, awaitingApproval, interruptionReason } = input;
-  const result = isToolInterruptionPlaceholder(toolCall?.result?.error) ? undefined : toolCall?.result;
-  const task = toolCall && sessionId ? input.tasks?.find(candidate =>
-    candidate.sessionId === sessionId && candidate.toolCallId === toolCall.id) : undefined;
+  const { result, task } = ownOutcome(toolCall, sessionId, input.tasks);
   const agentId = input.agentId
     ?? (typeof result?.metadata?.agentId === 'string' ? result.metadata.agentId : undefined)
     ?? result?.output?.match(/^- Agent ID:\s*(\S+)\s*$/m)?.[1];

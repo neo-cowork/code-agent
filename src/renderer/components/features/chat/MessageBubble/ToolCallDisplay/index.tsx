@@ -183,7 +183,7 @@ export function ToolCallDisplay({
     };
   }, [agentTree?.nodes, backgroundTasks, delegationTool, toolCall, t]);
 
-  const resolveToolCallTerminalState = useToolCallTerminalResolver(sessionId);
+  const resolveToolCallTerminalState = useToolCallTerminalResolver(sessionId, [{ toolCall, agentId }]);
   const terminal = resolveToolCallTerminalState(toolCall, interruptionReason, agentId, sessionLive);
   const derivedStatus: ToolStatus = statusOverride ?? (toolCall.result ? terminal.displayStatus
     : receipt ? receipt.status === 'failed' ? 'error' : 'success'

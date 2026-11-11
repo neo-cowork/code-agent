@@ -78,10 +78,12 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   const resolvedPermissionRequests = useAppStore((state) => (
     sessionId ? state.resolvedPermissionRequests?.[sessionId] : undefined
   )) ?? EMPTY_RESOLVED_PERMISSION_REQUESTS;
-  const resolveToolCallTerminalState = useToolCallTerminalResolver(sessionId);
-  const terminalById = useMemo(() => new Map(nodes.flatMap(node => node.toolCall ? [[node.toolCall.id,
-    resolveToolCallTerminalState(traceTerminalToolCall(node.toolCall), node.metadata?.streamInterruptionReason ?? (node.metadata?.streamRecovery ? 'app-restart' : undefined),
-      node.metadata?.agentTeam?.agentId, isStreamingTurn ? true : undefined)] as const] : [])), [nodes, resolveToolCallTerminalState, isStreamingTurn]);
+  const terminalCalls = useMemo(() => nodes.flatMap(node => node.toolCall
+    ? [{ node, toolCall: traceTerminalToolCall(node.toolCall), agentId: node.metadata?.agentTeam?.agentId }] : []), [nodes]);
+  const resolveToolCallTerminalState = useToolCallTerminalResolver(sessionId, terminalCalls);
+  const terminalById = useMemo(() => new Map(terminalCalls.map(({ node, toolCall, agentId }) => [toolCall.id,
+    resolveToolCallTerminalState(toolCall, node.metadata?.streamInterruptionReason ?? (node.metadata?.streamRecovery ? 'app-restart' : undefined),
+      agentId, isStreamingTurn ? true : undefined)] as const)), [terminalCalls, resolveToolCallTerminalState, isStreamingTurn]);
   // 主流可见节点：过滤 ToolSearch 等纯内部动作（仍可在混合组的展开明细里看到）
   const streamVisibleNodes = useMemo(
     () => nodes.filter((n) => {
