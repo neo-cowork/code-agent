@@ -21,7 +21,7 @@ import type {
 } from '@shared/contract/tag';
 import { NEO_TAG_IPC_DOMAIN } from '@shared/contract/tag';
 import { IPC_CHANNELS } from '@shared/ipc';
-import ipcService from './ipcService';
+import ipcService, { DomainInvokeError } from './ipcService';
 
 export class NeoTagIpcUnavailableError extends Error {
   constructor(message = 'Neo Tag IPC is not available') {
@@ -32,6 +32,8 @@ export class NeoTagIpcUnavailableError extends Error {
 
 export function isNeoTagIpcUnavailableError(error: unknown): boolean {
   return error instanceof NeoTagIpcUnavailableError
+    // 域路由没有该 handler 时 transport 回 HTTP_404 信封（message 已是一句话人话，不再带 "No handler for domain:tag"）
+    || (error instanceof DomainInvokeError && error.code === 'HTTP_404')
     || (error instanceof Error && /domain:tag|Neo Tag IPC|not available/i.test(error.message));
 }
 
