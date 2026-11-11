@@ -22,7 +22,6 @@ vi.mock('../../../../../src/host/sandbox', async (importOriginal) => ({
 }));
 
 import { bashModule } from '../../../../../src/host/tools/modules/shell/bash';
-import { BACKGROUND_TASK_MAX_RUNTIME } from '../../../../../src/host/tools/shell/backgroundTasks';
 import { markShortTierSession } from '../../../../../src/host/tools/shell/foregroundTier';
 import { BASH } from '../../../../../src/shared/constants';
 
@@ -51,7 +50,7 @@ describe('Bash background runtime selection', () => {
   });
 
   it.each([
-    { label: 'omitted timeout', timeout: undefined, expected: BACKGROUND_TASK_MAX_RUNTIME },
+    { label: 'omitted timeout', timeout: undefined, expected: BASH.BACKGROUND_MAX_RUNTIME },
     { label: 'explicit timeout', timeout: 30000, expected: 30000 },
   ])('uses $label for an explicit background launch', async ({ timeout, expected }) => {
     const result = await execute({ command: 'date', run_in_background: true, ...(timeout === undefined ? {} : { timeout }) });
@@ -67,11 +66,11 @@ describe('Bash background runtime selection', () => {
   ]))('uses the background limit for invalid timeout $timeout with PTY=$pty', async ({ timeout, pty }) => {
     expect((await execute({ command: 'date', run_in_background: true, pty, timeout })).ok).toBe(true);
     if (pty) {
-      expect(mocks.pty).toHaveBeenCalledWith(expect.objectContaining({ maxRuntime: BACKGROUND_TASK_MAX_RUNTIME }));
+      expect(mocks.pty).toHaveBeenCalledWith(expect.objectContaining({ maxRuntime: BASH.BACKGROUND_MAX_RUNTIME }));
       expect(mocks.background).not.toHaveBeenCalled();
     } else {
       expect(mocks.background).toHaveBeenCalledExactlyOnceWith(
-        'date', expect.any(String), BACKGROUND_TASK_MAX_RUNTIME, expect.any(Object),
+        'date', expect.any(String), BASH.BACKGROUND_MAX_RUNTIME, expect.any(Object),
       );
       expect(mocks.pty).not.toHaveBeenCalled();
     }
@@ -79,7 +78,7 @@ describe('Bash background runtime selection', () => {
 
   it('uses the background limit after an implicit ampersand rewrite', async () => {
     expect((await execute({ command: 'date &' })).ok).toBe(true);
-    expect(mocks.background.mock.calls[0]?.slice(0, 3)).toEqual(['date', expect.any(String), BACKGROUND_TASK_MAX_RUNTIME]);
+    expect(mocks.background.mock.calls[0]?.slice(0, 3)).toEqual(['date', expect.any(String), BASH.BACKGROUND_MAX_RUNTIME]);
   });
 
   it('keeps the foreground default at 120000', async () => {
@@ -90,7 +89,7 @@ describe('Bash background runtime selection', () => {
   });
 
   it.each([
-    { wait_for_completion: undefined, timeout: undefined, expected: BACKGROUND_TASK_MAX_RUNTIME },
+    { wait_for_completion: undefined, timeout: undefined, expected: BASH.BACKGROUND_MAX_RUNTIME },
     { wait_for_completion: false, timeout: 30000, expected: 30000 },
     { wait_for_completion: true, timeout: undefined, expected: BASH.DEFAULT_TIMEOUT },
   ])('selects PTY runtime for $wait_for_completion / $timeout', async ({ wait_for_completion, timeout, expected }) => {
