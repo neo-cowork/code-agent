@@ -48,3 +48,14 @@ export function normalizeAccelerator(
   if (!key) return modifiers.join('+') || null;
   return [...modifiers, key].join('+');
 }
+
+export function isModifierOnlyAccelerator(
+  accelerator: string | null | undefined,
+  platform: KeybindingPlatform = getCurrentKeybindingPlatform()
+): boolean {
+  const normalized = normalizeAccelerator(accelerator, platform);
+  if (!normalized) return false;
+  return normalized
+    .split('+')
+    .every((token) => MODIFIER_ORDER.includes(token as typeof MODIFIER_ORDER[number]));
+}

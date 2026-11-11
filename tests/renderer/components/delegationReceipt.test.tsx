@@ -34,7 +34,7 @@ vi.mock('../../../src/renderer/stores/sessionStore', () => ({
 }));
 
 vi.mock('../../../src/renderer/stores/appStore', () => ({
-  useAppStore: (selector?: (state: {
+  useAppStore: Object.assign((selector?: (state: {
     processingSessionIds: Set<string>;
     openPreview: typeof mocks.openPreview;
     language: 'zh';
@@ -56,7 +56,7 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
       queuedPermissionRequests: mocks.queuedPermissionRequests,
     };
     return selector ? selector(state) : state;
-  },
+  }, { getState: () => ({ language: 'zh' as const }) }),
 }));
 
 function delegateCall(): ToolCall {

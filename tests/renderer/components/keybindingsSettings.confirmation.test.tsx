@@ -115,4 +115,42 @@ describe('KeybindingsSettings restore-all confirmation', () => {
     const error = await screen.findByTestId('keybinding-registration-error-voice.callToggle');
     expect(error.textContent).toContain('注册失败：hotkey already registered');
   });
+
+  it('shows the modifier-only grey note and no registration error on appshot.capture in zh and en even with a stale failure for Cmd', async () => {
+    invokeDomain.mockImplementation(async (_domain: string, action: string) => {
+      if (action !== 'get') return undefined;
+      return {
+        keybindings: {
+          version: 1,
+          globalHotkeysEnabled: true,
+          bindings: {
+            'appshot.capture': { enabled: true, accelerator: 'Cmd+Cmd' },
+          },
+        },
+      };
+    });
+
+    const { rerender } = render(<KeybindingsSettings />);
+    await waitFor(() => expect(invokeDomain).toHaveBeenCalledWith(IPC_DOMAINS.SETTINGS, 'get'));
+
+    act(() => {
+      publishGlobalHotkeyRegistrationResults([{
+        actionId: 'appshot.capture',
+        accelerator: 'Cmd',
+        registered: false,
+        error: 'Couldn\'t recognize "Cmd" as a valid key for hotkey',
+      }]);
+    });
+
+    expect(screen.getByText('由应用截图单独监听')).toBeTruthy();
+    expect(screen.queryByTestId('keybinding-registration-error-appshot.capture')).toBeNull();
+
+    act(() => {
+      useAppStore.setState({ language: 'en' });
+    });
+    rerender(<KeybindingsSettings />);
+
+    expect(screen.getByText('Handled separately by App snapshots')).toBeTruthy();
+    expect(screen.queryByTestId('keybinding-registration-error-appshot.capture')).toBeNull();
+  });
 });
