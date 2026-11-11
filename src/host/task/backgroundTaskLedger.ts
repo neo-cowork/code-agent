@@ -13,7 +13,7 @@ import type {
   TaskStatus,
   UpsertTaskInput,
 } from '../../shared/contract/backgroundTask';
-import { isTerminalTaskStatus } from '../../shared/contract/backgroundTask';
+import { TASK_PANEL_DISMISSED_KEY, isTerminalTaskStatus } from '../../shared/contract/backgroundTask';
 import type { BackgroundTaskLedgerChangedData } from '../../shared/contract/agent';
 import { getEventBus } from '../services/eventing/bus';
 import type { BackgroundTaskStore } from './backgroundTaskStore';
@@ -243,12 +243,19 @@ export class BackgroundTaskLedger {
 
     const dismissed = this.store?.loadDismissedTaskIds();
     return [...merged.values()]
-      .filter((task) => !dismissed?.has(task.id))
       .filter((task) => !filter.sessionId || task.sessionId === filter.sessionId)
       .filter((task) => !statuses || statuses.has(task.status))
       .filter((task) => !sources || sources.has(task.source))
       .sort(compareTasks)
-      .map(cloneTask);
+      .map((task) => {
+        const copy = cloneTask(task);
+        // 只打标记，不过滤：导出/证据摘要/日志读取/委派卡片仍要看到这些任务，
+        // 只有专家面板据此标记隐藏行。
+        if (dismissed?.has(task.id)) {
+          copy.metadata = { ...(copy.metadata ?? {}), [TASK_PANEL_DISMISSED_KEY]: true };
+        }
+        return copy;
+      });
   }
 
   /**
@@ -258,7 +265,7 @@ export class BackgroundTaskLedger {
   dismissTerminalTasks(sessionId: string, dismissedAt?: number): string[] {
     this.assertNonEmpty(sessionId, 'session id');
     const ids = this.listTasks({ sessionId })
-      .filter((task) => isTerminalTaskStatus(task.status))
+      .filter((task) => isTerminalTaskStatus(task.status) && task.metadata?.[TASK_PANEL_DISMISSED_KEY] !== true)
       .map((task) => task.id);
     this.store?.markTasksDismissed(ids, sessionId, dismissedAt);
     return ids;
@@ -308,9 +315,6 @@ export class BackgroundTaskLedger {
 
   getTask(taskId: string): Task | null {
     this.assertNonEmpty(taskId, 'task id');
-    if (this.store?.loadDismissedTaskIds().has(taskId)) {
-      return null;
-    }
     const task = this.tasks.get(taskId);
     if (task) {
       return cloneTask(task);

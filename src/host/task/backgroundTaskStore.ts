@@ -217,11 +217,10 @@ export class SqliteBackgroundTaskStore implements BackgroundTaskStore {
   }
 
   loadTerminalTasks(filter: ListTasksFilter = {}): Task[] {
-    const dismissed = this.loadDismissedTaskIds();
     const tasks = [
       ...this.loadPersistedTerminalTasks(),
       ...this.loadCronTerminalTasks(),
-    ].filter((task) => !dismissed.has(task.id) && matchesTaskFilter(task, filter));
+    ].filter((task) => matchesTaskFilter(task, filter));
 
     return tasks.sort(compareTasks).map(cloneTask);
   }

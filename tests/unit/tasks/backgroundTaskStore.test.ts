@@ -335,16 +335,22 @@ describe('SqliteBackgroundTaskStore', () => {
 
       const dismissed = ledger.dismissTerminalTasks('session-d', 5_000);
       expect(dismissed.sort()).toEqual(['cron:exec-d', 'shell:done', 'shell:stopped']);
-      expect(ledger.listTasks({ sessionId: 'session-d' }).map((t) => t.id)).toEqual(['shell:live']);
-      expect(ledger.getTask('shell:done')).toBeNull();
+      const visible = (l: BackgroundTaskLedger) => l.listTasks({ sessionId: 'session-d' })
+        .filter((t) => t.metadata?.panelDismissed !== true).map((t) => t.id);
+      expect(visible(ledger)).toEqual(['shell:live']);
+      // 台账公共读口不丢任务（导出/证据摘要/日志读取/委派卡片要用）：只带标记
+      expect(ledger.listTasks({ sessionId: 'session-d' })).toHaveLength(4);
+      expect(ledger.getTask('shell:done')).toMatchObject({ id: 'shell:done', status: 'completed' });
 
       db.close();
       db = new Database(dbPath);
       const restartedStore = new SqliteBackgroundTaskStore(db);
       const restarted = new BackgroundTaskLedger({ store: restartedStore });
-      expect(restartedStore.listBySession('session-d').map((t) => t.id)).toEqual([]);
-      expect(restarted.listTasks({ sessionId: 'session-d' })).toEqual([]);
-      expect(restarted.listTasks({ sessionId: 'session-other' }).map((t) => t.id)).toEqual(['shell:other']);
+      expect(restartedStore.loadDismissedTaskIds().size).toBe(3);
+      expect(restartedStore.listBySession('session-d')).toHaveLength(3);
+      expect(visible(restarted)).toEqual([]);
+      expect(restarted.getTask('shell:done')).not.toBeNull();
+      expect(restarted.listTasks({ sessionId: 'session-other' }).map((t) => [t.id, t.metadata?.panelDismissed])).toEqual([['shell:other', undefined]]);
       // 台账行本身没被删，只是被标记隐藏
       const row = db.prepare('SELECT id FROM background_task_terminal_tasks WHERE id = ?').get('shell:done');
       expect(row).toBeDefined();
