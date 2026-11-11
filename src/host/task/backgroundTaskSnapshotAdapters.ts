@@ -194,7 +194,7 @@ export function syncShellTaskSnapshotToLedger(
 ): void {
   const status = mapShellStatus(task.status, task.stoppedByRequest);
   const taskId = `shell:${task.taskId}`;
-  const label = safeLabel(task.displayCommand?.trim() || task.command, `Shell ${task.taskId.slice(0, 8)}`);
+  const label = safeLabel(task.displayName?.trim() || task.displayCommand?.trim() || task.command, `Shell ${task.taskId.slice(0, 8)}`);
   const previous = ledger.getTask(taskId);
   const recoveryStatus = status === 'running' ? 'running-live' : status;
   const automationPromptLikely = isLikelyUnansweredMacOsAutomationPrompt({

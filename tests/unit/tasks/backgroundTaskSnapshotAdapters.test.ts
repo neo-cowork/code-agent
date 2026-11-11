@@ -194,6 +194,16 @@ describe('backgroundTaskSnapshotAdapters', () => {
     expect(n?.payload).toMatchObject({ outputFile: '/tmp/wrap.log' });
   });
 
+  it('shell task title uses displayName while displayCommand keeps the real command', () => {
+    const ledger = new BackgroundTaskLedger();
+    syncShellTaskSnapshotToLedger({
+      taskId: 'named123456', status: 'running', command: 'sandbox-exec -f /tmp/p.sb /bin/sh -c "osascript -e x"',
+      displayCommand: 'osascript -e x', displayName: 'Ask Finder for selection',
+      cwd: '/repo', sessionId: 's-named', startTime: 1_000, duration: 0, outputFile: '/tmp/named.log',
+    }, ledger);
+    expect(ledger.getTask('shell:named123456')?.title).toBe('Ask Finder for selection');
+  });
+
   it('maps stopped shell snapshots to cancelled with displayCommand and task_cancelled notification', () => {
     mocks.getAllBackgroundTasks.mockReturnValue([
       {
