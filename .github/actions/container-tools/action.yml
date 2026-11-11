@@ -1,0 +1,23 @@
+name: Container host tools
+description: >-
+  Playwright 镜像不带 lsof / ps / pgrep / pkill，而容器 job 又不许 apt（Ubuntu 源故障会拖垮整条 CI）。
+  这些二进制由宿主 runner 的 container-tools job 连同动态库一起打包上传，这里下载并挂进 PATH。
+
+runs:
+  using: composite
+  steps:
+    - name: Download host tools bundle
+      uses: actions/download-artifact@v4
+      with:
+        name: container-tools
+        path: ${{ runner.temp }}/container-tools
+
+    - name: Put host tools on PATH
+      shell: bash
+      run: |
+        dir="$RUNNER_TEMP/container-tools"
+        # upload-artifact 不保留可执行位
+        chmod +x "$dir"/bin/* "$dir"/real/*
+        echo "$dir/bin" >> "$GITHUB_PATH"
+        PATH="$dir/bin:$PATH" lsof -v 2>&1 | head -n 2
+        PATH="$dir/bin:$PATH" ps --version

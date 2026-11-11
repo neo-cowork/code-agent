@@ -102,7 +102,7 @@ describe('Playwright install lives in the composite action', () => {
 describe('swarm-ci Playwright jobs use the pinned Playwright image instead of apt', () => {
   const containerJobs = ['smoke', 'unit', 'full', 'perf-journey-ratchet'];
   const doc = loadYaml(readFileSync(path.join(workflowsDir, 'swarm-ci.yml'), 'utf8')) as {
-    jobs: Record<string, { container?: string | { image?: string }; steps?: WorkflowStep[] }>;
+    jobs: Record<string, { container?: string | { image?: string; options?: string }; steps?: WorkflowStep[] }>;
   };
   const lockVersion = (JSON.parse(readFileSync(path.join(repoRoot, 'package-lock.json'), 'utf8')) as {
     packages: Record<string, { version: string }>;
@@ -112,6 +112,18 @@ describe('swarm-ci Playwright jobs use the pinned Playwright image instead of ap
     const container = doc.jobs[name].container;
     const image = typeof container === 'string' ? container : container?.image;
     expect(image).toBe(`mcr.microsoft.com/playwright:v${lockVersion}-noble`);
+  });
+
+  it.each(containerJobs)('%s runs as non-root with an init process and host tools', (name) => {
+    const container = doc.jobs[name].container;
+    const options = typeof container === 'string' ? '' : String(container?.options ?? '');
+    expect(options).toContain('--user 1001');
+    expect(options).toContain('--init');
+    const steps = doc.jobs[name].steps ?? [];
+    expect(steps.some((step) => String(step.uses ?? '') === './.github/actions/container-tools')).toBe(true);
+    expect(steps.some((step) => String(step.uses ?? '').startsWith('actions/setup-node'))).toBe(true);
+    const needs = ([] as string[]).concat((doc.jobs[name] as { needs?: string | string[] }).needs ?? []);
+    expect(needs).toContain('container-tools');
   });
 
   it.each(containerJobs)('%s trusts the workspace for git right after checkout', (name) => {

@@ -133,7 +133,12 @@ jobs:
     runs-on: ubuntu-24.04
     # 系统库/字体/浏览器烤在微软镜像里（MCR，不依赖 Ubuntu apt 源）；版本须与 package-lock 的 playwright 一致，
     # 由 tests/scripts/playwrightInstallWorkflow.test.ts 钉死。容器内不得再 apt / playwright install。
-    container: mcr.microsoft.com/playwright:v1.60.0-noble
+    container:
+      image: mcr.microsoft.com/playwright:v1.60.0-noble
+      # 非 root：测试里的 EACCES / chmod / 只读目录断言在 root 下不成立；
+      # --init：PID 1 回收僵尸，否则 killProcessTree 整树退出证明会把僵尸当存活。
+      options: --user 1001 --init
+    needs: container-tools
     # 15 而非 10：主链路子集 ~200s + 新增的 playwright 浏览器安装 ~1-2min，
     # 原上限对满载 runner 已经偏紧（实测单轮跑到失败就用了 5m25s）。
     # 35 而非 25：主链路子集已涨到 1813 文件 / 1.5w 例、单测步 ~13min，整job在 main 实测
@@ -151,6 +156,9 @@ jobs:
         # actions/checkout 只在自己的临时全局配置里写 safe.directory；后续步骤的 git
         # （merge-base / fetch / ls-files）会报 dubious ownership，棘轮门静默失明或整门红。
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Host tools (lsof / ps) for container
+        uses: ./.github/actions/container-tools
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
@@ -370,7 +378,12 @@ jobs:
     runs-on: ubuntu-24.04
     # 系统库/字体/浏览器烤在微软镜像里（MCR，不依赖 Ubuntu apt 源）；版本须与 package-lock 的 playwright 一致，
     # 由 tests/scripts/playwrightInstallWorkflow.test.ts 钉死。容器内不得再 apt / playwright install。
-    container: mcr.microsoft.com/playwright:v1.60.0-noble
+    container:
+      image: mcr.microsoft.com/playwright:v1.60.0-noble
+      # 非 root：测试里的 EACCES / chmod / 只读目录断言在 root 下不成立；
+      # --init：PID 1 回收僵尸，否则 killProcessTree 整树退出证明会把僵尸当存活。
+      options: --user 1001 --init
+    needs: container-tools
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -384,6 +397,9 @@ jobs:
         # actions/checkout 只在自己的临时全局配置里写 safe.directory；后续步骤的 git
         # （merge-base / fetch / ls-files）会报 dubious ownership，棘轮门静默失明或整门红。
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Host tools (lsof / ps) for container
+        uses: ./.github/actions/container-tools
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
@@ -435,6 +451,39 @@ jobs:
             --exclude 'tests/unit/runtime/runtimeAssetStatus.test.ts' \
             --exclude 'tests/unit/security/commandSafety.approvalDecisionGaps.test.ts'
 
+  # Playwright 镜像没有 lsof / ps 等且容器内不许 apt：在宿主 runner（自带这些工具）上连库打包，容器 job 下载。
+  container-tools:
+    name: Bundle host tools for container jobs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Bundle lsof / ps / pgrep / pkill with their libraries
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/container-tools"
+          mkdir -p "$out/bin" "$out/real" "$out/lib"
+          for tool in lsof ps pgrep pkill; do
+            src="$(command -v "$tool")"
+            cp "$src" "$out/real/$tool"
+            # libc 家族容器里自带且必须同一份，其余依赖库随包带走
+            ldd "$src" | awk '/=> \//{print $3}' \
+              | grep -vE '/(libc|libm|libdl|libpthread|librt|libresolv)\.so' \
+              | xargs -r cp -n -t "$out/lib"
+            # wrapper 只给这一个进程设 LD_LIBRARY_PATH，不污染容器里的 node / chromium
+            printf '%s\n' '#!/bin/sh' 'd="$(cd "$(dirname "$0")/.." && pwd)"' \
+              "LD_LIBRARY_PATH=\"\$d/lib\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}\" exec \"\$d/real/$tool\" \"\$@\"" > "$out/bin/$tool"
+            chmod +x "$out/bin/$tool"
+          done
+          "$out/bin/lsof" -v 2>&1 | head -n 2
+          "$out/bin/ps" --version
+
+      - name: Upload tools bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-tools
+          path: ${{ runner.temp }}/container-tools
+          if-no-files-found: error
+
   # node-pty 没有 linux prebuild，需 g++/make；Playwright 镜像不带编译器且容器内不许 apt，
   # 所以在宿主 runner 上编出 pty.node（N-API，ABI 稳定），full 下载使用。
   node-pty-binding:
@@ -480,8 +529,12 @@ jobs:
     runs-on: ubuntu-24.04
     # 系统库/字体/浏览器烤在微软镜像里（MCR，不依赖 Ubuntu apt 源）；版本须与 package-lock 的 playwright 一致，
     # 由 tests/scripts/playwrightInstallWorkflow.test.ts 钉死。容器内不得再 apt / playwright install。
-    container: mcr.microsoft.com/playwright:v1.60.0-noble
-    needs: node-pty-binding
+    container:
+      image: mcr.microsoft.com/playwright:v1.60.0-noble
+      # 非 root：测试里的 EACCES / chmod / 只读目录断言在 root 下不成立；
+      # --init：PID 1 回收僵尸，否则 killProcessTree 整树退出证明会把僵尸当存活。
+      options: --user 1001 --init
+    needs: [container-tools, node-pty-binding]
     timeout-minutes: 25
     outputs:
       status: ${{ steps.result.outputs.status }}
@@ -493,6 +546,9 @@ jobs:
         # actions/checkout 只在自己的临时全局配置里写 safe.directory；后续步骤的 git
         # （merge-base / fetch / ls-files）会报 dubious ownership，棘轮门静默失明或整门红。
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Host tools (lsof / ps) for container
+        uses: ./.github/actions/container-tools
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
@@ -600,7 +656,12 @@ jobs:
     runs-on: ubuntu-24.04
     # 系统库/字体/浏览器烤在微软镜像里（MCR，不依赖 Ubuntu apt 源）；版本须与 package-lock 的 playwright 一致，
     # 由 tests/scripts/playwrightInstallWorkflow.test.ts 钉死。容器内不得再 apt / playwright install。
-    container: mcr.microsoft.com/playwright:v1.60.0-noble
+    container:
+      image: mcr.microsoft.com/playwright:v1.60.0-noble
+      # 非 root：测试里的 EACCES / chmod / 只读目录断言在 root 下不成立；
+      # --init：PID 1 回收僵尸，否则 killProcessTree 整树退出证明会把僵尸当存活。
+      options: --user 1001 --init
+    needs: container-tools
     timeout-minutes: 20
     steps:
       - name: Checkout
@@ -610,6 +671,9 @@ jobs:
         # actions/checkout 只在自己的临时全局配置里写 safe.directory；后续步骤的 git
         # （merge-base / fetch / ls-files）会报 dubious ownership，棘轮门静默失明或整门红。
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Host tools (lsof / ps) for container
+        uses: ./.github/actions/container-tools
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
