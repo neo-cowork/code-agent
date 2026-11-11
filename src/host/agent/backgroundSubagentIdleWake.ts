@@ -44,7 +44,7 @@ async function flushWake(sessionId: string): Promise<void> {
 
     const { getBackgroundSubagentRegistry } = await import('./backgroundSubagentRegistry');
     const records = getBackgroundSubagentRegistry().drainCompletionNotifications({ sessionId });
-    const content = formatSystemReminderForCompletions(records);
+    const content = formatSystemReminderForCompletions(records, { delivery: 'wake' });
     if (!content) return;
 
     const messageMetadata: MessageMetadata = {

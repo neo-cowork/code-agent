@@ -61,10 +61,21 @@ function scopeDedupePrefix(input: SubagentCompletionScope): string {
   return `${input.sessionId ?? 'global'}:${input.runId ?? 'session'}:${input.treeId ?? 'default'}`;
 }
 
-function buildCompletionAckInstruction(kind: SubagentCompletionKind, title: string): string {
+/** wake：通知是新一轮父会话的全部输入；inline：通知追加在父 run 正在处理的工具结果里。 */
+export type SubagentCompletionDelivery = 'wake' | 'inline';
+
+function buildCompletionAckInstruction(
+  kind: SubagentCompletionKind,
+  title: string,
+  delivery: SubagentCompletionDelivery = 'inline',
+): string {
   const namingRule = `提到子代理时，只能使用通知中的标题「${title}」，禁止使用 [agent]、[worker]、agent 或 worker 等泛称。回复中不要提及内部角色名、工具名或标识符。`;
   if (kind === 'user_visible') {
-    return `回应要求：结果已经展示给用户，不要复述子代理的原始结果；只用一句话归纳本批通知里的全部完成项。${namingRule}`;
+    const report = '用用户的语言写一份简明汇报，只写一遍，不要照抄通知原文；子代理改了文件且通知里有分支名时，写出分支名并说明需要合并才会生效；不要出现任务编号、工具名、信封标签或绝对路径。';
+    if (delivery === 'wake') {
+      return `回应要求：用户还没看到子代理的完整结果。本轮不要调用任何工具，直接${report}${namingRule}`;
+    }
+    return `回应要求：用户还没看到子代理的完整结果。先完成你当前正在做的任务，再向用户简要说明这个后台结果：${report}${namingRule}`;
   }
   if (kind === 'shell') {
     return `回应要求：用简短、非技术化的话向用户说明「${title}」的执行结果和下一步，不要只罗列退出码、日志或命令细节。${namingRule}`;
@@ -175,14 +186,23 @@ function batchTitle(records: readonly SubagentCompletionRecord[]): string {
   return `${records.length} background task updates`;
 }
 
-export function formatSystemReminderForCompletions(records: readonly SubagentCompletionRecord[]): string {
+const ACK_BLOCK = /<completion_ack_instruction>[\s\S]*?<\/completion_ack_instruction>/;
+
+export function formatSystemReminderForCompletions(
+  records: readonly SubagentCompletionRecord[],
+  options: { delivery?: SubagentCompletionDelivery } = {},
+): string {
   if (records.length === 0) return '';
   const title = batchTitle(records);
   const body = records
     .map((record) => {
       const duration = typeof record.durationMs === 'number' ? `, duration_ms=${record.durationMs}` : '';
       const title = record.title.trim() || '后台任务';
-      return `- ${title}: ${statusLabel(record.status)}${duration}\n${record.content}`;
+      // 记录里的回应要求是按「inline」构建的；唤醒轮整轮只有这条通知，换成唤醒版。
+      const content = options.delivery === 'wake'
+        ? record.content.replace(ACK_BLOCK, () => `<completion_ack_instruction>\n${buildCompletionAckInstruction(record.kind, title, 'wake')}\n</completion_ack_instruction>`)
+        : record.content;
+      return `- ${title}: ${statusLabel(record.status)}${duration}\n${content}`;
     })
     .join('\n');
   return `<system-reminder>\n${title}\n${body}\n</system-reminder>`;

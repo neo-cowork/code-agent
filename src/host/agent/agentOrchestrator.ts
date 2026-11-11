@@ -64,6 +64,7 @@ import {
 import { seedGoalContractForRun } from './orchestratorGoalSeed';
 import { resolveRoleToolBoundary, toRoleBoundaryRunAllowlist } from '../services/roleAssets/rolePersonalization';
 import { applyMorningBriefSaveDraftRoleTools } from '../app/morningBriefSaveDraftTools';
+import { withMissingAttachmentTurnSystemContext } from '../app/missingAttachmentTurnContext';
 import { type AgentOrchestratorConfig, type PendingSteerMessage } from './orchestrator/types';
 import {
   resolveModelConfig,
@@ -213,6 +214,7 @@ export class AgentOrchestrator {
     const settings = this.configService.getSettings();
     const sessionManager = getSessionManager();
     const sessionId = await this.resolveSessionId();
+    const priorMessages = [...this.messageHistory.getMessages()];
     if (sessionId) { (await import('../tools/shell/foregroundTier')).resetShortTierWait(sessionId); await cancelTimeWakesOnUserReturn(sessionId, options); }
 
     if (persistUserMessage) {
@@ -286,10 +288,19 @@ export class AgentOrchestrator {
     // 原话。桌面 run 无 metadata.channel，不注入。
     let runOptions = options;
     if (messageMetadata?.channel) {
-      runOptions = {
-        ...(options ?? { mode: 'normal' as const }),
-        turnSystemContext: [...(options?.turnSystemContext ?? []), CHANNEL_REPLY_STYLE_INSTRUCTION],
-      };
+      runOptions = withMissingAttachmentTurnSystemContext(
+        {
+          ...(options ?? { mode: 'normal' as const }),
+          turnSystemContext: [...(options?.turnSystemContext ?? []), CHANNEL_REPLY_STYLE_INSTRUCTION],
+        },
+        {
+          sessionId: sessionId ?? 'channel',
+          userText: content,
+          attachments: attachments as MessageAttachment[] | undefined,
+          session: { messages: priorMessages },
+          workingDirectory: this.getWorkingDirectory(),
+        },
+      );
     }
 
     // Route to appropriate mode
@@ -675,7 +686,7 @@ export class AgentOrchestrator {
 
       if (requirements.needsAutoAgent) {
         await runAutoAgentMode(content, executionContent, requirements, onEvent, modelConfig, {
-          workingDirectory: this.workingDirectory,
+          workingDirectory: this.workingDirectory, requestPermission: async (request) => (await this.permissions.requestPermission(request as Parameters<OrchestratorPermissionIsland['requestPermission']>[0])).approved,
           sessionId: this.sessionId,
           taskListManager: this.taskListManager,
           generateId: () => this.generateId(),
