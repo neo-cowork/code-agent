@@ -30,7 +30,7 @@ import {
   buildWorkbenchToolScope,
 } from '../../host/app/workbenchTurnContext';
 import { withMissingAttachmentTurnSystemContext } from '../../host/app/missingAttachmentTurnContext';
-import { getSessionCommandCenterBrainContextForPrompt, getTextForegroundToolNamesForPrompt } from '../../host/app/sessionCommandCenterBrain';
+import { getSessionCommandCenterBrainContextForPrompt, getSessionCommandCenterTurnRulesForPrompt, getTextForegroundToolNamesForPrompt } from '../../host/app/sessionCommandCenterBrain';
 import { applyMorningBriefSaveDraftRoleTools } from '../../host/app/morningBriefSaveDraftTools';
 import { isSessionCommandCenterTurn, SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS } from '../../shared/constants/sessionCommandCenter';
 import { AUTO_DELEGATION_TOOL_NAMES } from '../../host/agent/routingToolPolicy';
@@ -71,7 +71,7 @@ import { composeDesignCanvasSystemPrompt } from '../../shared/design/canvasSessi
 import { AgentRunController } from './agentRunController';
 import { getBackgroundTaskManager } from '../../host/session/backgroundTaskManager';
 import { resolveBackgroundRunSettlement, settleBackgroundRun } from '../../host/session/backgroundRunSettlement';
-import { getProjectSourceTrustFailureMarker } from '../../host/services/project/projectSourceTrustError';
+import { getProjectSourceTrustFailureMarker, ProjectSourceTrustError } from '../../host/services/project/projectSourceTrustError';
 import { getModelAuthFailureMarker, getModelUsageLimitFailureMarker } from '../../host/model/errorClassifier';
 import { AgentRunEventCollector } from './agentRunEventCollector';
 import { RunRegistry, RunSessionConflictError } from '../../host/runtime/runRegistry';
@@ -772,12 +772,35 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
     const selectedEngine = normalizeAgentEngineSession(persistedSession?.engine);
     const ownerUserId = getAuthService().getCurrentUser()?.id ?? null;
-    const runWorkspaceScope = resolveSessionWorkspaceScope(
-      persistedSession,
-      ownerUserId,
-      dbAvailable ? getDatabase() : {},
-      getProjectService(),
-    );
+    // 写边界预检（identity 快照缺失/变化、Source 未信任）fail-closed 抛 ProjectSourceTrustError：
+    // 在写 SSE 之前收口成可确认的 422（renderer 出「确认并重发」入口）；其余错误原样
+    // 上抛，由 handleServerError 出 JSON。此时 run 尚未注册、SSE 名额尚未占用，无需回滚。
+    let runWorkspaceScope: ReturnType<typeof resolveSessionWorkspaceScope>;
+    try {
+      runWorkspaceScope = resolveSessionWorkspaceScope(
+        persistedSession,
+        ownerUserId,
+        dbAvailable ? getDatabase() : {},
+        getProjectService(),
+      );
+    } catch (error) {
+      if (!(error instanceof ProjectSourceTrustError)) throw error;
+      logger.warn('[AgentRouter] run rejected by Project Source trust gate', {
+        sessionId,
+        kind: error.kind,
+        sourcePath: error.sourcePath,
+      });
+      if (transport.cloudRunId) cloudRunRuntime.settle(transport.cloudRunId, 'failed');
+      if (transport.connectedClient) {
+        res.status(422).json({
+          error: 'Project folder needs trust confirmation',
+          code: 'PROJECT_SOURCE_TRUST',
+          kind: error.kind,
+        });
+        return;
+      }
+      throw error;
+    }
     if (runWorkspaceScope?.version.startsWith('isolated-v1:')) {
       // An isolated Fork's durable worktree is authoritative for the whole
       // run lifecycle, including Native RunContext/tool execution. Request
@@ -1453,6 +1476,11 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // agentOrchestrator 的 applyTurnSystemContext 在真机上根本不执行。
       const candidateNotice = buildCapabilityCandidateNotice(sessionId);
       if (candidateNotice) capabilityContextLines.push(candidateNotice);
+      // 回合级规则块（存草稿解析规则，FU1 rework r2）：必须并进模型面 turn 脚手架——
+      // 下面那份 config.systemPrompt 会在 contextAssembly 重建系统消息时被丢
+      // （ctx.systemPrompt 不进请求，真机抓包实证），写那里等于丢。与桌面 envelope 路
+      // （withSessionCommandCenterBrain → turnSystemContext）同源同形；基块不在此扩面。
+      capabilityContextLines.push(...getSessionCommandCenterTurnRulesForPrompt(prompt));
       const missingAttachmentContext = withMissingAttachmentTurnSystemContext(
         { turnSystemContext: capabilityContextLines },
         {

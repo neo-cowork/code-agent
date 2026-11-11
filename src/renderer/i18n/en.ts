@@ -21,6 +21,7 @@ import { planApprovalEn } from './planApproval';
 import { taskStatusPanelsEn } from './taskStatusPanels';
 import { noticesEn } from './notices';
 import { serverConnectionEn } from './serverConnection';
+import { envAssistEn } from './envAssist';
 import { agentErrorEn } from './agentError';
 import { labEn } from './lab';
 import { labGpt1En } from './labGpt1';
@@ -127,7 +128,7 @@ export const en = {
     publishNote: 'Version note (optional)',
     publishNotePlaceholder: 'Example: final copy for the client',
     publish: 'Publish',
-    publishSuccess: 'Published v{version} · The library version list has been updated',
+    publishSuccess: 'Published v{version} · See it in the preview panel’s “Versions” menu',
     publishFailed: 'Publish failed',
     draft: 'Draft',
     publishedVersion: 'Published v{version}',
@@ -953,8 +954,7 @@ export const en = {
   ...planApprovalEn,
   ...taskStatusPanelsEn,
   ...noticesEn,
-  ...serverConnectionEn,
-  ...agentErrorEn,
+  ...serverConnectionEn, ...agentErrorEn, env: envAssistEn,
   ...labEn,
   ...labGpt1En,
   ...labNanogptEn,

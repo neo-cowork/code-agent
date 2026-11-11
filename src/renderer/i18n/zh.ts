@@ -21,6 +21,7 @@ import { planApprovalZh } from './planApproval';
 import { taskStatusPanelsZh } from './taskStatusPanels';
 import { noticesZh } from './notices';
 import { serverConnectionZh } from './serverConnection';
+import { envAssistZh } from './envAssist';
 import { agentErrorZh } from './agentError';
 import { labZh } from './lab';
 import { labGpt1Zh } from './labGpt1';
@@ -126,7 +127,7 @@ export const zh = {
     publishNote: '版本备注（可空）',
     publishNotePlaceholder: '例：给客户看的终稿',
     publish: '发布',
-    publishSuccess: '已发布 v{version} · 资料库里的版本列表已更新',
+    publishSuccess: '已发布 v{version} · 可在文件预览右上角「版本」里查看',
     publishFailed: '发布失败',
     draft: '草稿',
     publishedVersion: '已发布 v{version}',
@@ -960,8 +961,7 @@ export const zh = {
   ...planApprovalZh,
   ...taskStatusPanelsZh,
   ...noticesZh,
-  ...serverConnectionZh,
-  ...agentErrorZh,
+  ...serverConnectionZh, ...agentErrorZh, env: envAssistZh,
   ...labZh,
   ...labGpt1Zh,
   ...labNanogptZh,
