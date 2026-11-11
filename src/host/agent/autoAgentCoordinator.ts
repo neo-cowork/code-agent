@@ -1,3 +1,4 @@
+import { getSubagentContextStore } from '../context/subagentContextStore';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { SubagentResult, SubagentExecutionContext } from './subagentExecutorTypes';
@@ -102,6 +103,14 @@ export class AutoAgentCoordinator {
         if (!event.nodeId) return;
         const agent = byId.get(event.nodeId);
         if (!agent) return;
+        const terminalStatus = event.type === 'node_completed' ? 'completed'
+          : event.type === 'node_cancelled' ? 'cancelled'
+            : event.type === 'node_failed' || event.type === 'node_skipped' ? 'failed' : undefined;
+        if (terminalStatus) {
+          const store = getSubagentContextStore();
+          const record = store.get(context.sessionId, agent.id);
+          if (record) store.upsert({ ...record, terminalStatus, updatedAt: event.timestamp });
+        }
         if (event.type === 'node_queued') {
           this.sessionStateManager.addSubagent(context.sessionId, {
             id: agent.id, name: agent.name, status: 'pending', startedAt: event.timestamp,

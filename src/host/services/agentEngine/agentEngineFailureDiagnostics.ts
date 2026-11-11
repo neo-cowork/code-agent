@@ -3,6 +3,7 @@ import type {
   AgentEngineKind,
 } from '../../../shared/contract/agentEngine';
 import type { AgentErrorCategory, AgentErrorMetadata } from '../../../shared/contract/message';
+import { isChineseRateLimitMessage } from '../../../shared/utils/agentErrorClassification';
 import { classifyModelErrorMessage } from '../../../shared/modelErrorDiagnostics';
 
 function firstStatusCode(message: string): number | undefined {
@@ -81,6 +82,7 @@ export function classifyAgentEngineFailure(args: {
     statusCode === 429 ||
     normalized.includes('rate limit') ||
     normalized.includes('too many requests') ||
+    isChineseRateLimitMessage(message) ||
     normalized.includes('quota') ||
     normalized.includes('credit') ||
     normalized.includes('billing')

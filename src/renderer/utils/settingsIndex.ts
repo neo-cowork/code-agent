@@ -137,6 +137,9 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   { tab: 'skills', labelKey: 'searchSkill', keywords: ['search', 'skill', 'skillsmp'] },
   { tab: 'skills', labelKey: 'customRepository', keywords: ['custom', 'repository', 'github'] },
 
+  // Search Sources（搜索源）
+  { tab: 'search', labelKey: 'searchSources', keywords: ['search', 'search source', 'search sources', 'web search', 'brave', 'tavily', 'exa', 'perplexity', 'serper', 'zhipu', 'minimax'] },
+
   // Channels
   { tab: 'channels', labelKey: 'multichannelAccess', keywords: ['channel', 'channels', 'access', 'http', 'api'] },
   { tab: 'channels', labelKey: 'channelPrivacyPolicy', keywords: ['channel privacy', 'privacy policy', 'default redaction', 'local-redact', 'allow-raw', 'channel token', 'app secret', 'bot token'] },
@@ -175,6 +178,9 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
       zh.settings.nativeDesktop.audioReadiness.searchTranscription,
     ],
   },
+
+  // App Snapshots（应用截图）
+  { tab: 'appshots', labelKey: 'appshots', keywords: ['appshot', 'appshots', 'app snapshot', 'app snapshots', 'screenshot', 'screenshots', 'capture'] },
 
   // Privacy
   { tab: 'privacy', labelKey: 'permissionDataBoundary', keywords: ['privacy boundary', 'permission boundary', 'data boundary', 'local first', 'cloud exception', 'diagnostic exception'] },

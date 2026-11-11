@@ -29,6 +29,7 @@ import type {
 } from '../../shared/contract/swarmTrace';
 import type { SwarmLedgerAppendInput } from '../../shared/contract/swarmLedger';
 import type { LibraryItem } from '../../shared/contract/library';
+import { isChineseRateLimitMessage } from '../../shared/utils/agentErrorClassification';
 import { getEventBus } from '../services/eventing/bus';
 import { createLogger } from '../services/infra/logger';
 import { getLibraryService } from '../services/library/libraryService';
@@ -641,7 +642,7 @@ export class SwarmTraceWriter {
     if (m.includes('timeout')) return 'timeout';
     if (m.includes('cancel')) return 'cancelled';
     if (m.includes('permission')) return 'permission';
-    if (m.includes('rate limit') || m.includes('429')) return 'rate_limit';
+    if (m.includes('rate limit') || m.includes('429') || isChineseRateLimitMessage(m)) return 'rate_limit';
     if (m.includes('network') || m.includes('econn')) return 'network';
     if (m.includes('parse')) return 'parse_error';
     return 'unknown';
