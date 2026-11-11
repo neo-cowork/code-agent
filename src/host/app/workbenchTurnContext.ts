@@ -688,6 +688,7 @@ export function withWorkbenchTurnSystemContext(
       : [];
 
   const toolScope = normalizeWorkbenchToolScope({
+    optInPersonalSkillIds: options?.toolScope?.optInPersonalSkillIds,
     allowedSkillIds: [
       ...(options?.toolScope?.allowedSkillIds || []),
       ...(workbenchToolScope?.allowedSkillIds || []),
