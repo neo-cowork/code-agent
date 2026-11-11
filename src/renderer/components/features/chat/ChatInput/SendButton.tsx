@@ -63,7 +63,8 @@ export const SendButton: React.FC<SendButtonProps> = ({
   const baseIconButtonClass = 'relative flex-shrink-0 h-7 w-7 rounded-full grid place-items-center transition-all duration-200 focus-visible:outline-hidden before:absolute before:content-[\'\'] before:top-0 before:-bottom-4 before:-left-0.5 before:-right-3.5';
 
   // 停止已发出但后台任务仍在收线：保持可点（再点一次是幂等的重发），不置灰。
-  if (isStopping) {
+  // 有草稿时主按钮必须仍是发送/排队，不能被「正在停止」劫持成再次 onStop。
+  if (isStopping && !hasContent) {
     return (
       <IconButton
         type="button"

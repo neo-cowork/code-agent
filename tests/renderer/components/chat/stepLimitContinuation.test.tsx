@@ -145,6 +145,25 @@ describe('step-limit Continue in the production message list and composer', () =
     expect((screen.getByRole('button', { name: '发送消息' }) as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it('keeps the primary button as send (not Stop) when a draft exists while stopping', () => {
+    const stop = vi.fn();
+    const submit = vi.fn((event: React.FormEvent) => event.preventDefault());
+    render(
+      <form onSubmit={submit}>
+        <ComposerCoreActions
+          actions={['send']} voice={{} as never} sessionId="session"
+          hasMessages configured isProcessing isStopping hasContent onStop={stop}
+        />
+      </form>,
+    );
+    expect(screen.queryByTestId('composer-stop-stopping')).toBeNull();
+    const send = screen.getByRole('button', { name: '发送消息' }) as HTMLButtonElement;
+    expect(send.disabled).toBe(false);
+    fireEvent.click(send);
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(stop).not.toHaveBeenCalled();
+  });
+
   it('empty-send without a marked summary remains a no-op', async () => {
     useSessionStore.setState({ messages: [history[0]] });
     const { result } = renderHook(() => useChatInputSubmit(params()));
