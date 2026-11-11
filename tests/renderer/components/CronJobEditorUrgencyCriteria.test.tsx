@@ -59,7 +59,7 @@ afterEach(() => {
 
 function openActionTab(job: CronJobDefinition | null) {
   render(<CronJobEditor isOpen job={job} onClose={() => undefined} />);
-  fireEvent.click(screen.getByText('执行动作'));
+  fireEvent.click(screen.getByText(useAppStore.getState().language === 'en' ? 'Action' : '执行动作'));
 }
 
 function urgencyInput(): HTMLInputElement {
