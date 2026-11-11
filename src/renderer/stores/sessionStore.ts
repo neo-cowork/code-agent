@@ -28,6 +28,7 @@ import {
 import { executeCreateSession } from './sessionCreate';
 import { bumpSessionsLocalVersion, executeLoadOlderSessions, executeLoadSessions, withOpenedSessionOutsideWindow } from './sessionListPagination';
 import { mergeSnapshotWithLiveTail } from './sessionSnapshotMerge';
+import { clearFailedSend, mergeFailedSendOutbox } from './failedSendOutbox';
 import { groupRunsByTask, type CronRunGroups } from '@shared/cronRunDigest';
 import { recoveryLoadLightsTurn, runtimeStatusCountsAsRunning } from './parkedContinueTurn';
 import { hostStampPredatesTerminal } from './terminalRunGuardStore';
@@ -413,7 +414,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
           const snapshotMerge = options?.force || hasLiveMessagesDuringHydration
             ? mergeSnapshotWithLiveTail(snapshotMessages, liveMessages)
             : null;
-          const loadedMessages = snapshotMerge?.messages ?? snapshotMessages;
+          const loadedMessages = mergeFailedSendOutbox(sessionId, snapshotMerge?.messages ?? snapshotMessages, session.messages || []);
           // agent live 事件会先点亮 app/task 的纯内存运行态。dev 注入事件不落库，
           // 因而慢快照可能仍返回 idle + 空消息；只要 live 消息在请求期间出现、且
           // renderer 此刻仍明确在跑，就不能让这个旧快照撤掉运行态。若 live 终态
@@ -510,6 +511,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     deleteSession: async (sessionId: string) => {
       try {
         await invokeSession('delete', { sessionId });
+        clearFailedSend(sessionId);
 
         // 清理该会话的设计态：design-active 标记 + 画布属主，避免悬空。
         useDesignCanvasStore.getState().releaseSessionDesignState(sessionId);

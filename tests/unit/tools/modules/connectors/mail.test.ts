@@ -23,6 +23,7 @@ vi.mock('../../../../../src/host/connectors', () => ({
 }));
 
 import { mailModule } from '../../../../../src/host/tools/modules/connectors/mail';
+import { formatConnectorTime } from '../../../../../src/host/tools/modules/connectors/connectorTime';
 
 // -----------------------------------------------------------------------------
 // Helpers
@@ -257,6 +258,7 @@ describe('mailModule (native)', () => {
         expect(result.output).toContain('邮件列表 (2)');
         expect(result.output).toContain('#1 Hello');
         expect(result.output).toContain('Work / INBOX');
+        expect(result.output).toContain(formatConnectorTime(Date.UTC(2026, 3, 13)));
         expect(result.output).toContain('| 已读');
         expect(result.output).toContain('#2 Unread');
         expect(result.output).toContain('收信时间无法解析');

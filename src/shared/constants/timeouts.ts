@@ -86,6 +86,8 @@ export const SERVICE_TIMEOUTS = {
 
 export const NOTIFICATION_BUDGET = {
   WINDOW_MS: 15 * 60_000,
+  /** 窗口内暂存队列的落盘文件名（位于 userData 目录），重启后补发一条汇总。 */
+  HELD_FILE_NAME: 'held-notifications.json',
 } as const;
 
 /** 用户交互超时 */
@@ -231,6 +233,8 @@ export const BROWSER_TIMEOUTS = {
   ACTION_DEFAULT: 30_000,
   /** 等待选择器超时 */
   WAIT_SELECTOR: 5_000,
+  /** 选择器填写（page.fill）快速失败超时 */
+  FILL_SELECTOR: 5_000,
   /** 等待超时 */
   WAIT_DEFAULT: 1_000,
   /** Computer Use 等待超时 */

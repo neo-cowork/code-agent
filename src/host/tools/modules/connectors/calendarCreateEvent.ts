@@ -14,6 +14,7 @@ import { getConnectorRegistry } from '../../../connectors';
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { describeAppleScriptWriteFailure } from './appleScriptWriteFailure';
 import { calendarCreateEventSchema as schema } from './calendarCreateEvent.schema';
+import { formatConnectorTime } from './connectorTime';
 
 async function executeCalendarCreateEvent(
   args: Record<string, unknown>,
@@ -60,8 +61,8 @@ async function executeCalendarCreateEvent(
           undoUnavailableReason: 'Created calendar event did not return a stable uid.',
         };
     ctx.logger.debug('calendar_create_event', { calendar: event.calendar, title: event.title });
-    const startText = event.startAtMs ? new Date(event.startAtMs).toLocaleString('zh-CN') : '未知';
-    const endText = event.endAtMs ? new Date(event.endAtMs).toLocaleString('zh-CN') : '未知';
+    const startText = event.startAtMs ? formatConnectorTime(event.startAtMs) : '未知';
+    const endText = event.endAtMs ? formatConnectorTime(event.endAtMs) : '未知';
     const output = `已创建日历事件：\n- [${event.calendar}] ${event.title}\n- 开始：${startText}\n- 结束：${endText}${event.location ? `\n- 地点：${event.location}` : ''}`;
 
     return {
