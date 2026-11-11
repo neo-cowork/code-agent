@@ -108,7 +108,7 @@ export const zhSettingsModels = {
         modelUnit: '模型',
         defaultBadge: '★ 默认',
         ollamaUnavailableHint: '启动 Ollama 后可用',
-        addKey: `添加${v.keyLabel}`,
+        addKey: '添加',
         searchPlaceholder: `搜索${v.provider}或模型…`,
         addProvider: `新增${v.provider}`,
         doctor: '诊断',

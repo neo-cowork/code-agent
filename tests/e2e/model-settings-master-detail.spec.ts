@@ -82,13 +82,13 @@ test('新增模型服务 是桌面端能力：web 模式下按钮在场但禁用
 test('未配置 Provider 显示渐进式空态', async ({ page }) => {
   const { main } = await openModelSettings(page);
 
-  // 分组标题是「待添加密钥 · N」（不是「未配置 · N」），组内每行是「<首字母> / <名字> / 添加密钥」，
+  // 分组标题是「待添加密钥 · N」（不是「未配置 · N」），组内每行是「<首字母> / <名字> / 添加」，
   // 行上已没有「配置 →」按钮——2026-08-18 实测，直接点行本身即可进详情。
   const unconfiguredToggle = main.getByRole('button', { name: /待添加密钥 · \d+/ });
   await expect(unconfiguredToggle).toBeVisible({ timeout: 10_000 });
   await unconfiguredToggle.click();
 
-  await main.getByRole('button', { name: /添加密钥/ }).first().click();
+  await main.getByRole('button', { name: /添加$/ }).first().click();
 
   // 渐进式空态：连接区块在，模型区块提示填 Key
   await expect(main.getByText('填写密钥并测试连接后，即可发现和启用该模型服务的模型。')).toBeVisible({ timeout: 10_000 });
