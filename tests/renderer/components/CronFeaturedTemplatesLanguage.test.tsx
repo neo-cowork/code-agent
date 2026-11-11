@@ -59,6 +59,18 @@ afterEach(() => {
   useAppStore.setState({ language: 'zh' });
 });
 
+describe('带用户输入的模板描述不被固定文案覆盖', () => {
+  it('群监听：en 描述含任务文本、名称为英文；zh 描述不变', () => {
+    const groupListen = CRON_TEMPLATES.find((template) => template.id === 'group-listen')!;
+    const en = groupListen.generate({ task: 'summarize release mentions' }, 'en');
+    expect(en.name).toBe('Group listen');
+    expect(en.description).toContain('summarize release mentions');
+    expect(groupListen.generate({ task: '总结发布相关' }).description).toBe('监听群消息：总结发布相关');
+    // 两个不同任务的 en 描述必须可区分
+    expect(groupListen.generate({ task: 'a' }, 'en').description).not.toBe(groupListen.generate({ task: 'b' }, 'en').description);
+  });
+});
+
 describe('推荐模板：名称跟随 UI 语言', () => {
   it('generate 缺省仍是中文；en 取英文词条，agentPrompt 不变', () => {
     expect(dailyReview.generate({}).name).toBe('每日回顾');
