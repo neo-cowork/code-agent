@@ -59,10 +59,10 @@ import { armQuotaWaitOnPark, clearQuotaWaitTimer } from './quotaWaitTimer';
 import { resolveAdoptedRecoveryWorkspace } from './adoptedRecoveryWorkspace';
 import { createLogger } from '../services/infra/logger';
 
+import { settleParentRunTerminal } from './parentRunTerminalSettlement';
 const logger = createLogger('RunRegistry');
 
 const HEARTBEAT_TRANSIENT_RETRY_WINDOWS = 2;
-
 export class RunSessionConflictError extends Error {
   readonly code = 'RUN_SESSION_CONFLICT';
 
@@ -87,7 +87,6 @@ export interface ExternalDurableRunStart {
   handle: RunHandle;
   launchOperation: PendingOperation;
 }
-
 export class RunRegistry implements AgentTeamDurableParentHost {
   private readonly handlesByRunId = new Map<string, RunHandle>();
   private readonly runIdBySessionId = new Map<string, string>();
@@ -657,6 +656,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
       this.endAttemptSpan(runId, input.status === 'completed' ? 'ok' : input.status === 'cancelled' ? 'cancelled' : 'error', {
         'terminal.status': input.status,
       });
+      await settleParentRunTerminal(envelope, childRunId => this.get(childRunId));
       this.unregister(runId, expected);
       return envelope;
     });

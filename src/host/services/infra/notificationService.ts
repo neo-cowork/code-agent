@@ -22,6 +22,7 @@ import {
   getNotificationDigestText,
   type NotificationDigestLocale,
 } from '../../../shared/i18n/notificationDigest';
+import { readHeldFile, writeHeldFile } from './notificationHeldStore';
 import { NotificationBudget, type NotificationBudgetDisposition, type NotificationBudgetItem } from './notificationBudget';
 
 const logger = createLogger('NotificationService');
@@ -105,6 +106,8 @@ interface BudgetedNotification extends NotificationBudgetItem {
   type: RecordedNotification['type'];
   body: string;
   delivery: Omit<NotificationDeliveryPayload, 'id' | 'title' | 'body' | 'sessionId'>;
+  /** 首次暂存时间（落盘用，补发日志报最老一条的年龄）。 */
+  enqueuedAt?: number;
 }
 
 class NotificationService implements Disposable {
@@ -116,7 +119,49 @@ class NotificationService implements Disposable {
   private readonly budget = new NotificationBudget<BudgetedNotification>({
     deliver: (item, via) => this.deliverNow(item, via),
     deliverDigest: (items) => this.deliverDigest(items),
+    onHeldChange: (held) => this.persistHeld(held),
   });
+  /** 上次进程遗留、尚未补发的暂存项（懒加载自磁盘）；与本进程的 held 一起落盘，防新暂存覆盖旧文件。 */
+  private carriedOver: BudgetedNotification[] = [];
+  private carriedOverLoaded = false;
+  private lastHeld: BudgetedNotification[] = [];
+
+  private loadCarriedOver(): void {
+    if (this.carriedOverLoaded) return;
+    this.carriedOverLoaded = true;
+    this.carriedOver = readHeldFile() as unknown as BudgetedNotification[];
+  }
+
+  private persistHeld(held: readonly BudgetedNotification[]): void {
+    this.loadCarriedOver();
+    const now = Date.now();
+    for (const item of held) item.enqueuedAt ??= now;
+    this.lastHeld = [...held];
+    const all = [...this.carriedOver, ...held];
+    writeHeldFile(all);
+    if (held.length > 0) logger.info('Held notifications persisted', { reason: 'budget-persisted', count: all.length });
+  }
+
+  /**
+   * 下次启动、首个 renderer 就绪后补发上次遗留的暂存通知：1 条原样投递，2+ 条折成一条汇总。
+   * 先摘队列再投递，保证只补发一次。
+   */
+  replayPersistedHeld(): void {
+    this.loadCarriedOver();
+    const items = this.carriedOver;
+    if (items.length === 0) return;
+    this.carriedOver = [];
+    writeHeldFile(this.lastHeld);
+    const now = Date.now();
+    const oldestAgeMs = Math.max(0, ...items.map((item) => (item.enqueuedAt ? now - item.enqueuedAt : 0)));
+    if (!this.enabled) {
+      logger.info('Held notifications dropped', { reason: 'notifications-disabled', count: items.length });
+      return;
+    }
+    logger.info('Held notifications replayed', { reason: 'budget-replayed', count: items.length, oldestAgeMs });
+    if (items.length === 1) this.deliverNow(items[0], 'window-end');
+    else this.deliverDigest(items);
+  }
 
   /**
    * Fallback B 原生通知发送器（N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1）。默认走
@@ -159,6 +204,8 @@ class NotificationService implements Disposable {
   clearRecentNotifications(): void {
     this.recentNotifications = [];
     this.deliveredNeedsInputKeys.clear();
+    this.carriedOver = [];
+    this.carriedOverLoaded = true;
     this.logDropped(this.budget.clear(), 'budget-cleared');
   }
 
@@ -222,7 +269,7 @@ class NotificationService implements Disposable {
     });
   }
 
-  private logDropped(items: readonly BudgetedNotification[], reason: 'budget-cleared' | 'service-disposed'): void {
+  private logDropped(items: readonly BudgetedNotification[], reason: 'budget-cleared'): void {
     for (const item of items) logger.info('Notification dropped', { notificationId: item.id, reason });
   }
 
@@ -562,7 +609,10 @@ class NotificationService implements Disposable {
     if (this.disposed) return;
     this.disposed = true;
     this.enabled = false;
-    this.logDropped(this.budget.dispose(), 'service-disposed');
+    // 暂存队列每次暂存时已落盘；退出不是丢弃，留给下次启动补发（见 replayPersistedHeld）。
+    for (const item of this.budget.dispose()) {
+      logger.info('Notification persisted for next start', { notificationId: item.id, reason: 'service-disposed' });
+    }
   }
 
   setEnabled(enabled: boolean): void {
