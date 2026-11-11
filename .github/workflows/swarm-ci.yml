@@ -147,6 +147,11 @@ jobs:
           # strict production reachability compares PR additions with the real main merge-base.
           fetch-depth: 0
 
+      - name: Trust workspace for git (container runs as root, workspace owned by runner uid)
+        # actions/checkout 只在自己的临时全局配置里写 safe.directory；后续步骤的 git
+        # （merge-base / fetch / ls-files）会报 dubious ownership，棘轮门静默失明或整门红。
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
@@ -375,6 +380,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Trust workspace for git (container runs as root, workspace owned by runner uid)
+        # actions/checkout 只在自己的临时全局配置里写 safe.directory；后续步骤的 git
+        # （merge-base / fetch / ls-files）会报 dubious ownership，棘轮门静默失明或整门红。
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
@@ -478,6 +488,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Trust workspace for git (container runs as root, workspace owned by runner uid)
+        # actions/checkout 只在自己的临时全局配置里写 safe.directory；后续步骤的 git
+        # （merge-base / fetch / ls-files）会报 dubious ownership，棘轮门静默失明或整门红。
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
@@ -590,6 +605,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Trust workspace for git (container runs as root, workspace owned by runner uid)
+        # actions/checkout 只在自己的临时全局配置里写 safe.directory；后续步骤的 git
+        # （merge-base / fetch / ls-files）会报 dubious ownership，棘轮门静默失明或整门红。
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Setup Node.js
         uses: actions/setup-node@v5

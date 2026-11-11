@@ -114,6 +114,13 @@ describe('swarm-ci Playwright jobs use the pinned Playwright image instead of ap
     expect(image).toBe(`mcr.microsoft.com/playwright:v${lockVersion}-noble`);
   });
 
+  it.each(containerJobs)('%s trusts the workspace for git right after checkout', (name) => {
+    const steps = doc.jobs[name].steps ?? [];
+    const checkout = steps.findIndex((step) => (step.uses ?? '').startsWith('actions/checkout'));
+    expect(checkout).toBeGreaterThanOrEqual(0);
+    expect(steps[checkout + 1].run ?? '').toContain('git config --global --add safe.directory "$GITHUB_WORKSPACE"');
+  });
+
   it.each(containerJobs)('%s never runs apt or playwright install', (name) => {
     for (const step of doc.jobs[name].steps ?? []) {
       expect(step.uses ?? '').not.toContain(COMPOSITE);
