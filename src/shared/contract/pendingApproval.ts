@@ -80,6 +80,7 @@ export interface ParkedApprovalInboxItem {
   id: string;
   kind?: 'tool_approval' | 'directory_access' | 'channel_pairing';
   sessionId: string | null;
+  sessionTitle?: string;
   tool: string;
   displayTool?: string;
   /** epoch ms，UI 算等待时长 */

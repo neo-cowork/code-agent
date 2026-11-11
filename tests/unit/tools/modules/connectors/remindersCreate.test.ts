@@ -19,6 +19,7 @@ vi.mock('../../../../../src/host/connectors', () => ({
 }));
 
 import { remindersCreateModule } from '../../../../../src/host/tools/modules/connectors/remindersCreate';
+import { formatConnectorTime } from '../../../../../src/host/tools/modules/connectors/connectorTime';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -349,6 +350,20 @@ describe('remindersCreateModule (native)', () => {
         });
       }
       expect(execMock).toHaveBeenCalledWith('create_reminder', validArgs);
+    });
+
+    it('formats remind_at with the connector time helper', async () => {
+      const remindAtMs = Date.UTC(2026, 10, 9, 1, 0);
+      execMock.mockResolvedValue({
+        data: { id: 'r-time', list: 'Work', title: 'Ship PR', completed: false },
+      });
+      const result = await run({ ...validArgs, remind_at_ms: remindAtMs });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const preview = result.meta?.previewItem as { content?: { text?: string; summary?: string } };
+        expect(preview.content?.text).toContain(`提醒时间：${formatConnectorTime(remindAtMs)}`);
+        expect(preview.content?.summary).toContain(formatConnectorTime(remindAtMs));
+      }
     });
 
     it('marks the receipt non-undoable when create returns no id', async () => {

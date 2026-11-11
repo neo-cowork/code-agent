@@ -53,7 +53,7 @@ const handoverTimedOutCommandMock = vi.fn();
 const createPtySessionMock = vi.fn();
 const getPtySessionOutputMock = vi.fn();
 
-vi.mock('../../../../../src/host/tools/shell/backgroundTasks', () => ({
+vi.mock('../../../../../src/host/tools/shell/backgroundTasks', async (importOriginal) => ({ ...await importOriginal<typeof import('../../../../../src/host/tools/shell/backgroundTasks')>(),
   startBackgroundTask: (...args: unknown[]) => startBackgroundTaskMock(...args),
 }));
 

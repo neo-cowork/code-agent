@@ -1,6 +1,6 @@
 import type { SwarmAgentContextSnapshot } from '../../shared/contract/swarm';
 import { createLogger } from '../services/infra/logger';
-import { DoomLoopGuard } from './runtime/doomLoopGuard';
+import { DoomLoopGuard, type GuardCallResult } from './runtime/doomLoopGuard';
 import { createRuntimeMessage, type RuntimeMessage } from './subagentExecutorProjection';
 import type { SubagentResult } from './subagentExecutorTypes';
 
@@ -81,8 +81,18 @@ export class SubagentDoomLoopGuard {
         'Subagent stopped by doom-loop guard after repeating the same tool call.',
       );
     }
-    this.pendingNudge = check.nudge;
-    if (check.nudge) logger.warn(`${check.level} detected; queued doom-loop nudge`);
+    if (check.nudge) {
+      this.pendingNudge = check.nudge;
+      logger.warn(`${check.level} detected; queued doom-loop nudge`);
+    }
+  }
+
+  recordResults(step: GuardCallResult[]): void {
+    const signalHit = this.guard.recordResults(step);
+    if (signalHit.nudge) {
+      this.pendingNudge ??= signalHit.nudge;
+      logger.warn(`${signalHit.signals.join(',')} detected; queued doom-loop signal nudge`);
+    }
   }
 
   queueIdleNudge(): void {

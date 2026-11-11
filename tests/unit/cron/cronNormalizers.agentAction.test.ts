@@ -284,3 +284,16 @@ describe('cronAgentRunHasAlert — 值得打扰矩阵', () => {
     expect(cronAgentRunHasAlert({ notifyWhen: '   ' }, { isExternalWatch: false, finalAssistantText: '普通正文' })).toBe(true);
   });
 });
+
+
+describe.each([['first line', ''], ['after the preview cap', `${'正文'.repeat(600)}\n`]])('long digest urgency %s', (_position, prefix) => {
+  it.each(['can_wait', 'fyi', 'must_today', 'maybe'])('preserves %s and notification policy', (value) => {
+    const text = `<cron_summary>${prefix}urgency: ${value}\n${'正文'.repeat(600)}</cron_summary>`;
+    expect(cronAgentRunHasAlert({ urgencyCriteria: 'urgent only' }, {
+      isExternalWatch: false, finalAssistantText: text,
+    })).toBe(value !== 'can_wait' && value !== 'fyi');
+    const result = buildCronAgentActionResult({ agentType: 'default', prompt: 'report' }, {}, 'session', text, false);
+    expect(result.urgency).toBe(value === 'maybe' ? 'fyi' : value);
+    expect(result.urgencyRaw).toBe(value === 'maybe' ? 'urgency: maybe' : undefined);
+  });
+});
