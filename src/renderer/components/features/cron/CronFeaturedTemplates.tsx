@@ -38,14 +38,14 @@ function findExistingJob(
   template: CronTemplate,
   jobs: CronJobDefinition[],
 ): CronJobDefinition | undefined {
-  // 名称可能是 zh 或 en（切换 UI 语言前后创建）：两种都认，避免切语言后重复创建。
+  // 名称/提示词都可能是 zh 或 en（切换 UI 语言前后创建）：两种都认，避免切语言后重复创建。
   const zhDraft = template.generate({}, 'zh');
-  const enName = template.generate({}, 'en').name;
+  const enDraft = template.generate({}, 'en');
   return jobs.find(
     (job) =>
-      (job.name === zhDraft.name || job.name === enName) &&
+      (job.name === zhDraft.name || job.name === enDraft.name) &&
       job.action.type === 'agent' &&
-      job.action.prompt === zhDraft.agentPrompt,
+      (job.action.prompt === zhDraft.agentPrompt || job.action.prompt === enDraft.agentPrompt),
   );
 }
 
