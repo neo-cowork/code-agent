@@ -17,10 +17,15 @@ vi.mock('../../../../src/host/config/configPaths', () => ({
 const quick = vi.hoisted(() => ({
   available: true,
   result: { success: true, content: '' } as { success: boolean; content?: string },
+  prompts: [] as string[],
+  ui: 'zh' as 'zh' | 'en',
+}));
+vi.mock('../../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({ getSettings: () => ({ ui: { language: quick.ui } }) }),
 }));
 vi.mock('../../../../src/host/model/quickModel', () => ({
   isQuickModelAvailable: () => quick.available,
-  quickTask: async () => quick.result,
+  quickTask: async (prompt: string) => { quick.prompts.push(prompt); return quick.result; },
 }));
 
 import { fillMissingNames, fallbackName } from '../../../../src/host/services/skills/capabilityCandidateNaming';
@@ -53,6 +58,8 @@ beforeEach(() => {
   getCapabilityCandidateStore().resetForTests();
   quick.available = true;
   quick.result = { success: true, content: '' };
+  quick.prompts = [];
+  quick.ui = 'zh';
 });
 
 describe('模型分', () => {
@@ -77,6 +84,26 @@ describe('模型分', () => {
       'utf-8',
     )) as { candidates: Array<{ displayName?: string }> };
     expect(ledger.candidates[0]?.displayName).toBe('截图表格转 Excel');
+  });
+
+  it('名字语言跟随用户原话：英文原话 → English，中文原话 → 中文，判不出 → 界面语言', async () => {
+    const record = seedCandidate();
+    const english = { ...record, sampleUserMessages: ['turn the tables in these screenshots into Excel'] };
+    const neutral = { ...record, sampleUserMessages: ['12345 😀'] };
+
+    await fillMissingNames([record]);
+    expect(quick.prompts[0]).toContain('名字和说明的语言：中文');
+
+    getCapabilityCandidateStore().resetForTests();
+    getCapabilityCandidateStore().put({ ...english, displayName: undefined, summary: undefined });
+    await fillMissingNames([{ ...english, displayName: undefined, summary: undefined }]);
+    expect(quick.prompts[1]).toContain('名字和说明的语言：English');
+
+    quick.ui = 'en';
+    getCapabilityCandidateStore().resetForTests();
+    getCapabilityCandidateStore().put({ ...neutral, displayName: undefined, summary: undefined });
+    await fillMissingNames([{ ...neutral, displayName: undefined, summary: undefined }]);
+    expect(quick.prompts[2]).toContain('名字和说明的语言：English');
   });
 
   it('模型不可用时落人话兜底名与说明，不暴露工具组合', async () => {
