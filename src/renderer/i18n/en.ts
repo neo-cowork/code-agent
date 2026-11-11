@@ -21,6 +21,7 @@ import { planApprovalEn } from './planApproval';
 import { taskStatusPanelsEn } from './taskStatusPanels';
 import { noticesEn } from './notices';
 import { serverConnectionEn } from './serverConnection';
+import { envAssistEn } from './envAssist';
 import { agentErrorEn } from './agentError';
 import { labEn } from './lab';
 import { labGpt1En } from './labGpt1';
@@ -953,8 +954,7 @@ export const en = {
   ...planApprovalEn,
   ...taskStatusPanelsEn,
   ...noticesEn,
-  ...serverConnectionEn,
-  ...agentErrorEn,
+  ...serverConnectionEn, ...agentErrorEn, env: envAssistEn,
   ...labEn,
   ...labGpt1En,
   ...labNanogptEn,
