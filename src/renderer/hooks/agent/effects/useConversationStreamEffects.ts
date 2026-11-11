@@ -10,6 +10,7 @@ import { useSessionStore } from '../../../stores/sessionStore';
 import { useStreamResumeStore } from '../../../stores/streamResumeStore';
 import { userMessageReplacement } from '../../../utils/optimisticUserSend';
 import { useStatusStore } from '../../../stores/statusStore';
+import { useEnvAssistStore } from '../../../stores/envAssistStore';
 import { parseConnectorRequiredPayload, useConnectorRequiredStore } from '../../../stores/connectorRequiredStore';
 import { useTurnExecutionStore } from '../../../stores/turnExecutionStore';
 import { applyRoutingDegradationSignal } from '../../../utils/routingDegradation';
@@ -960,6 +961,10 @@ export const useConversationStreamEffects = ({
             if (endedTurnId) segmentRedirectByTurnRef.current.delete(endedTurnId);
           }
           logger.debug('turn_end', { turnId: normalizeTurnIdPayload(event.data).turnId });
+          break;
+
+        case 'env_assist_notice':
+          useEnvAssistStore.getState().report(event.data);
           break;
 
         case 'connector_required':
