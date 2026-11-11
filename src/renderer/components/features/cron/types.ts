@@ -1,3 +1,4 @@
+import { normalizePersonalSkillIds } from '@shared/cronPersonalSkills';
 import type {
   AgentAction,
   CronJobDefinition,
@@ -92,6 +93,7 @@ export interface CronJobDraft {
   agentLibraryProjectId?: string;
   /** agent 动作：用户自定义 must_today 判据（N-CRON-MORNING-TRIAGE-URGENCY-RULE）。 */
   agentUrgencyCriteria?: string;
+  agentAllowedPersonalSkillIds?: string[];
   webhookUrl: string;
   webhookMethod: WebhookAction['method'];
   webhookHeadersText: string;
@@ -137,6 +139,7 @@ export function createDefaultCronJobDraft(): CronJobDraft {
     agentRoleId: '',
     agentLibraryProjectId: '',
     agentUrgencyCriteria: '',
+    agentAllowedPersonalSkillIds: [],
     webhookUrl: '',
     webhookMethod: 'POST',
     webhookHeadersText: '{}',
@@ -236,6 +239,7 @@ export function buildDraftFromJob(job: CronJobDefinition): CronJobDraft {
       draft.agentRoleId = action.roleId ?? '';
       draft.agentLibraryProjectId = action.libraryProjectId ?? '';
       draft.agentUrgencyCriteria = action.urgencyCriteria ?? '';
+      draft.agentAllowedPersonalSkillIds = normalizePersonalSkillIds(action.allowedPersonalSkillIds) ?? [];
       break;
     }
     case 'webhook': {
@@ -426,6 +430,7 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
       roleId: draft.agentRoleId?.trim() || undefined,
       libraryProjectId: draft.agentLibraryProjectId?.trim() || undefined,
       urgencyCriteria: draft.agentUrgencyCriteria?.trim() || undefined,
+      allowedPersonalSkillIds: normalizePersonalSkillIds(draft.agentAllowedPersonalSkillIds),
     };
   } else if (draft.actionType === 'webhook') {
     if (!draft.webhookUrl.trim()) {

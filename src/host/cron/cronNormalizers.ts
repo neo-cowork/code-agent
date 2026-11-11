@@ -1,3 +1,4 @@
+import { normalizePersonalSkillIds } from '../../shared/cronPersonalSkills';
 // ============================================================================
 // CronService - row/schedule/action normalizers & type guards
 // 纯函数：把数据库行、schedule、action 等 unknown 输入规整成强类型契约。
@@ -484,6 +485,7 @@ export function normalizeAction(value: unknown): CronJobAction | null {
         libraryProjectId:
           typeof value.libraryProjectId === 'string' ? value.libraryProjectId : undefined,
         urgencyCriteria: normalizeCriteriaSentence(value.urgencyCriteria),
+        allowedPersonalSkillIds: normalizePersonalSkillIds(value.allowedPersonalSkillIds),
         notifyWhen: normalizeCriteriaSentence(value.notifyWhen),
       };
     }
