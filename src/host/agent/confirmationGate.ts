@@ -48,7 +48,7 @@ function normalizeString(value: unknown): string {
 function shortenSubagentPreviewPaths(label: string): string {
   // Quoted paths may contain spaces. Preserve surrounding prose and punctuation.
   return label.replace(
-    /(^|[\s("'`=])((?:[A-Za-z]:[\\/]|\/|\\\\)[^\s"'`<>，。；！？,;!?()]*|["'`](?:[A-Za-z]:[\\/]|\/|\\\\)[^"'`\n]+["'`])/g,
+    /(^|[\s("'`=：，；（【[<])((?:[A-Za-z]:[\\/]|\/|\\\\)[^\s"'`<>，。；！？,;!?()）】\]]*|["'`](?:[A-Za-z]:[\\/]|\/|\\\\)[^"'`\n]+["'`])/g,
     (_match, prefix: string, path: string) => {
       const quote = /^["'`]/.test(path) ? path[0] : '';
       const unquoted = quote ? path.slice(1, -1) : path;

@@ -196,13 +196,13 @@ describe('ConfirmationGate', () => {
 
     it.each([
       { name: ' 文档主题整理 ', expected: '文档主题整理' },
-      { name: undefined, expected: 'Review all seven documents in workspace one by one' },
-      { name: '   ', expected: 'Review all seven documents in workspace one by one' },
+      { name: undefined, expected: 'Review all seven documents in：workspace one by one' },
+      { name: '   ', expected: 'Review all seven documents in：workspace one by one' },
     ])('spawn_agent preview selects the user label and hides role and absolute paths ($name)', ({ name, expected }) => {
       const preview = getConfirmationGate().buildPreview('spawn_agent', {
         role: 'explore',
         name,
-        task: ' Review all seven documents in /Users/example/project/workspace one by one ',
+        task: ' Review all seven documents in：/Users/example/project/workspace one by one ',
       });
       expect(preview?.summary).toBe(`派出子代理：${expected}`);
       expect(preview?.summary).not.toMatch(/explore|role|\/Users\//);
