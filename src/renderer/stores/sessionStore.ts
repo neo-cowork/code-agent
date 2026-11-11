@@ -35,9 +35,7 @@ import { hostStampPredatesTerminal } from './terminalRunGuardStore';
 import { bindInitializedSessionBroadcasts } from './sessionStoreBroadcasts';
 import { openInitialSession } from './sessionBootDraft';
 import { getSessionTitlePlaceholder } from '../utils/sessionTitlePlaceholder';
-
 const logger = createLogger('SessionStore');
-
 async function invokeSession<T>(action: string, payload?: unknown): Promise<T> {
   const response = await window.domainAPI?.invoke<T>(IPC_DOMAINS.SESSION, action, payload);
   if (!response?.success) {
@@ -45,7 +43,6 @@ async function invokeSession<T>(action: string, payload?: unknown): Promise<T> {
   }
   return response.data as T;
 }
-
 async function invokeAgentEngine<T>(action: string, payload?: unknown): Promise<T> {
   const response = await window.domainAPI?.invoke<T>(IPC_DOMAINS.AGENT_ENGINE, action, payload);
   if (!response?.success) {
@@ -219,6 +216,7 @@ interface SessionState {
    */
   isCreatingSession: boolean;
   error: string | null;
+  sessionListLoadFailed: boolean;
   unreadSessionIds: Set<string>;
   runningSessionIds: Set<string>;
   sessionRuntimes: Map<string, SessionRuntimeSummary>;
@@ -294,6 +292,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     isHydratingSession: false,
     isCreatingSession: false,
     error: null,
+    sessionListLoadFailed: false,
     unreadSessionIds: new Set<string>(),
     runningSessionIds: new Set<string>(),
     sessionRuntimes: new Map<string, SessionRuntimeSummary>(),
@@ -1078,6 +1077,7 @@ function clearSessionStateForAuthChange(): void {
     streamSnapshot: null,
     isLoading: false,
     error: null,
+    sessionListLoadFailed: false,
     unreadSessionIds: new Set<string>(),
     runningSessionIds: new Set<string>(),
     sessionRuntimes: new Map<string, SessionRuntimeSummary>(),

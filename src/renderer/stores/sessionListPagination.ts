@@ -114,6 +114,7 @@ interface SessionListPaginationSlice {
   sessions: SessionListMeta[];
   isLoading: boolean;
   error: string | null;
+  sessionListLoadFailed: boolean;
   hasOlderSessions: boolean;
   isLoadingOlderSessions: boolean;
 }
@@ -182,11 +183,14 @@ export async function executeLoadSessions(
 
     // 闪烁修复：数据签名不变就保留旧引用、跳过 setState，避免云端同步广播触发侧栏整树重渲染。
     if (sessionsSignature(get().sessions) === sessionsSignature(sessionsWithMeta)) {
-      if (!silent) set({ isLoading: false });
+      if (!silent || get().sessionListLoadFailed) {
+        set({ sessionListLoadFailed: false, ...(!silent ? { isLoading: false } : {}) });
+      }
       return;
     }
 
     set({
+      sessionListLoadFailed: false,
       sessions: sessionsWithMeta,
       isLoading: false,
       // 原始页（前端过滤前）不满一页 = 后面没有更多了。
@@ -195,6 +199,7 @@ export async function executeLoadSessions(
   } catch (error) {
     logger.error('Failed to load sessions', error);
     set({
+      sessionListLoadFailed: true,
       error: error instanceof Error ? error.message : 'Failed to load sessions',
       isLoading: false,
     });

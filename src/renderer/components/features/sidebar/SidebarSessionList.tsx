@@ -88,7 +88,7 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
 }) => {
   const { t, language } = useI18n();
   const sb = t.sidebar;
-  const error = useSessionStore((state) => state.error);
+  const sessionListLoadFailed = useSessionStore((state) => state.sessionListLoadFailed);
   const p = t.sidebarProject;
   // 分区节头交互状态（折叠持久化、solo 会话内）都在 sessionUIStore；新建空间入口复用 appStore 的 openProjectSpacePage。
   const collapsedTiers = useSessionUIStore((state) => state.collapsedTiers);
@@ -202,7 +202,7 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
           <Loader2 className="w-6 h-6 animate-spin text-badge-accent" />
           <span className="text-xs text-zinc-500">{sb.loading}</span>
         </div>
-      ) : !hasAnySessions && error ? (
+      ) : !hasAnySessions && sessionListLoadFailed ? (
         <SidebarSessionsUnavailable />
       ) : !hasAnySessions ? (
         /* 空态星球（2026-08-02 星球品牌升级）：列表空 = 地球（母星，"还没有勘测记录"），

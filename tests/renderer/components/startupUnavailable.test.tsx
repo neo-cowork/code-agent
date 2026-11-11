@@ -15,7 +15,7 @@ import ipcService from '../../../src/renderer/services/ipcService';
 
 vi.mock('../../../src/renderer/services/ipcService', async (original) => ({
   ...await original<typeof import('../../../src/renderer/services/ipcService')>(),
-  default: { on: vi.fn(() => vi.fn()), isAvailable: () => false },
+  default: { ...(await original<typeof import('../../../src/renderer/services/ipcService')>()).default, on: vi.fn(() => vi.fn()), isAvailable: () => false },
 }));
 
 const invoke = vi.fn();
@@ -38,7 +38,7 @@ beforeEach(() => {
   Object.defineProperty(window, 'domainAPI', { configurable: true, value: { invoke } });
   useAuthStore.setState({ statusLoadFailed: false, isAuthenticated: false, user: null, isLoading: true });
   useAppStore.setState({ language: 'en', settingsLoaded: false, showSettings: false });
-  useSessionStore.setState({ sessions: [], error: null, isLoading: false, hasOlderSessions: false });
+  useSessionStore.setState({ sessions: [], error: null, sessionListLoadFailed: false, isLoading: false, hasOlderSessions: false });
 });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
@@ -98,6 +98,53 @@ describe('startup unavailable placeholders through public entries', () => {
     render(<SidebarSessionList {...props} />);
     expect(screen.getByText(en.sidebar.noSessions)).toBeTruthy();
     expect(screen.queryByTestId('sidebar-sessions-unavailable')).toBeNull();
+  });
+
+  it.each(['create', 'delete'] as const)('a failed session %s does not claim the empty list failed to load', async (action) => {
+    if (action === 'create') await useSessionStore.getState().createSession('Weekly report');
+    else await useSessionStore.getState().deleteSession('last-session');
+    expect(useSessionStore.getState().error).toBeTruthy();
+    render(<SidebarSessionList {...props} />);
+    expect(screen.getByText(en.sidebar.noSessions)).toBeTruthy();
+    expect(screen.queryByTestId('sidebar-sessions-unavailable')).toBeNull();
+  });
+
+  it.each([false, true])('silent list success clears list failure even when the list signature is unchanged (%s)', async (changed) => {
+    await useSessionStore.getState().loadSessions();
+    render(<SidebarSessionList {...props} />);
+    expect(screen.getByText(en.sidebar.sessionsUnavailable)).toBeTruthy();
+    const session = { id: 'weekly-report', title: 'Weekly report', createdAt: 1, updatedAt: 1 };
+    invoke.mockResolvedValue({ success: true, data: changed ? [session] : [] });
+    await act(async () => { await useSessionStore.getState().loadSessions({ silent: true }); });
+    expect(screen.queryByTestId('sidebar-sessions-unavailable')).toBeNull();
+    expect(screen.getByText(en.sidebar.noSessions)).toBeTruthy();
+  });
+
+  it.each([['zh', zh], ['en', en]] as const)('model Retry recovers configured switcher after settings failure without a page reload (%s)', async (language, t) => {
+    useAppStore.setState({ language });
+    function CurrentModelSlot() {
+      const model = useAppStore((state) => state.modelConfig.model);
+      return <ModelSlot currentModel={model} />;
+    }
+    render(<CurrentModelSlot />);
+    fireEvent.click(screen.getByRole('button', { name: t.sidebar.connectionRetry }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith(IPC_DOMAINS.SETTINGS, 'get', undefined));
+    await waitFor(() => expect((screen.getByRole('button', { name: t.sidebar.connectionRetry }) as HTMLButtonElement).disabled).toBe(false));
+    expect(screen.getByText(t.sidebar.modelLoading)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /切换模型|Switch model/ })).toBeNull();
+    invoke.mockResolvedValue({ success: true, data: { models: { default: 'xiaomi', providers: { xiaomi: { model: 'mimo-v2.6-flash' } } } } });
+    fireEvent.click(screen.getByRole('button', { name: t.sidebar.connectionRetry }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /切换模型|Switch model/ }).textContent).toContain('MiMo'));
+    expect(useAppStore.getState().settingsLoaded).toBe(true);
+    expect(screen.queryByTestId('model-loading')).toBeNull();
+  });
+
+  it('model Retry accepts successful settings without a configured model', async () => {
+    invoke.mockResolvedValue({ success: true, data: {} });
+    render(<ModelSlot currentModel="glm-5.3" />);
+    fireEvent.click(screen.getByRole('button', { name: en.sidebar.connectionRetry }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /切换模型|Switch model/ })).toBeTruthy());
+    expect(useAppStore.getState().settingsLoaded).toBe(true);
   });
 
   it.each([['zh', zh], ['en', en]] as const)('real model slot hides defaults until settingsLoaded, then shows configured model (%s)', (language, t) => {
