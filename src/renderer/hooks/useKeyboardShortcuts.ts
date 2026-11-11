@@ -310,6 +310,10 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
           }
           return true;
 
+        case 'sessionSearch.open':
+          window.dispatchEvent(new CustomEvent('app:openSessionSearch'));
+          return true;
+
         case 'session.new':
           if (!enableNewSession) return false;
           logger.info('Shortcut: New session');

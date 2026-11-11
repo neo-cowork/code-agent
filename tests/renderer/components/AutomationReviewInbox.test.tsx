@@ -91,6 +91,7 @@ vi.mock('../../../src/renderer/services/cronClient', () => {
     getExecutions: vi.fn().mockResolvedValue([]),
     getRecentExecutions: vi.fn().mockResolvedValue([]),
     grantLoginPassThrough: vi.fn().mockResolvedValue(null),
+    grantWriteFolderFromParkedApproval: vi.fn(),
   };
   return { cronClient: mocked, default: mocked };
 });
@@ -698,6 +699,104 @@ describe('AutomationReviewInbox', () => {
     expect(screen.getByTestId('parked-args-preview').textContent).toBe(
       'Arguments: curl https://api.example.com/v1 · Bearer ***REDACTED***',
     );
+  });
+
+  describe('一键授权此任务写文件夹（writeGrantFolder）', () => {
+    const grant = () => cronClient.grantWriteFolderFromParkedApproval as unknown as ReturnType<typeof vi.fn>;
+
+    it('带 writeGrantFolder 才出第三个按钮：只显示文件夹名（zh/en），完整路径在 title', async () => {
+      listParkedApprovals.mockResolvedValue([
+        makeParked({ id: 'perm_fold', writeGrantFolder: '/Users/leo/Documents/morning-notes' }),
+      ]);
+      render(<AutomationReviewInbox />);
+      const button = await screen.findByTestId('parked-allow-folder');
+      expect(button.textContent).toBe('以后这个任务写「morning-notes」文件夹不再询问');
+      expect(button.textContent).not.toContain('/Users/leo');
+      expect(button.getAttribute('title')).toContain('/Users/leo/Documents/morning-notes');
+      cleanup();
+      i18nState.language = 'en';
+      render(<AutomationReviewInbox />);
+      expect((await screen.findByTestId('parked-allow-folder')).textContent)
+        .toBe('Always allow this task to write the "morning-notes" folder');
+    });
+
+    it('同会话同文件夹的 3 个待批写合并成一张卡；批准/拒绝对整组逐条回传；无文件夹的行不合并', async () => {
+      const folder = '/Users/leo/Documents/morning-notes';
+      listParkedApprovals.mockResolvedValue([
+        ...['today-plan.md', 'reading-list.md', 'follow-ups.md'].map((n, i) =>
+          makeParked({ id: `perm_g${i}`, argsPreview: `${folder}/${n}`, writeGrantFolder: folder })),
+        makeParked({ id: 'perm_home', argsPreview: '/Users/leo/shopping-list.md' }),
+      ]);
+      render(<AutomationReviewInbox />);
+      await screen.findAllByTestId('parked-approval-item');
+      expect(screen.getAllByTestId('parked-approval-item')).toHaveLength(2);
+      expect(screen.getAllByTestId('parked-allow-folder')).toHaveLength(1);
+      expect(screen.getAllByTestId('parked-approval-item')[0].textContent).toContain('写入 3 个文件到「morning-notes」文件夹');
+      ipcInvoke.mockClear();
+      fireEvent.click(screen.getAllByTestId('parked-approve')[0]);
+      await waitFor(() => expect(ipcInvoke).toHaveBeenCalledTimes(3));
+      expect(ipcInvoke.mock.calls.map((c) => c[1]).sort()).toEqual(['perm_g0', 'perm_g1', 'perm_g2']);
+    });
+
+    it('无 writeGrantFolder 的同文件夹行不并入可授权组卡，仍单独一卡', async () => {
+      const folder = '/Users/leo/Documents/morning-notes';
+      listParkedApprovals.mockResolvedValue([
+        makeParked({ id: 'perm_b0', argsPreview: `${folder}/a.md`, writeGrantFolder: folder }),
+        makeParked({ id: 'perm_b1', argsPreview: `${folder}/b.md`, writeGrantFolder: folder }),
+        makeParked({ id: 'perm_other', argsPreview: `${folder}/c.md` }),
+      ]);
+      render(<AutomationReviewInbox />);
+      await screen.findAllByTestId('parked-approval-item');
+      expect(screen.getAllByTestId('parked-approval-item')).toHaveLength(2);
+      expect(screen.getAllByTestId('parked-allow-folder')).toHaveLength(1);
+    });
+
+    it('kept_existing：被点的由 host 放行，同卡其余逐条批准', async () => {
+      const folder = '/Users/leo/Documents/morning-notes';
+      listParkedApprovals.mockResolvedValue(['a.md', 'b.md'].map((n, i) =>
+        makeParked({ id: `perm_k${i}`, argsPreview: `${folder}/${n}`, writeGrantFolder: folder })));
+      grant().mockResolvedValue({ grant: { status: 'kept_existing' }, released: true });
+      ipcInvoke.mockClear();
+      render(<AutomationReviewInbox />);
+      fireEvent.click(await screen.findByTestId('parked-allow-folder'));
+      await waitFor(() => expect(grant()).toHaveBeenCalledWith('perm_k0'));
+      await waitFor(() => expect(ipcInvoke).toHaveBeenCalledWith('agent:permission-response', 'perm_k1', 'allow', 'session-1'));
+    });
+
+    it('无 writeGrantFolder（如写进 $HOME）不出第三个按钮，批准/拒绝照旧', async () => {
+      listParkedApprovals.mockResolvedValue([makeParked({ id: 'perm_nofold' })]);
+      render(<AutomationReviewInbox />);
+      await screen.findByTestId('parked-approve');
+      expect(screen.queryByTestId('parked-allow-folder')).toBeNull();
+      expect(screen.getByTestId('parked-reject')).toBeTruthy();
+    });
+
+    it('点击走专用 IPC（只传 requestId，不走通用 permission-response）', async () => {
+      listParkedApprovals.mockResolvedValue([
+        makeParked({ id: 'perm_fold', writeGrantFolder: '/Users/leo/Documents/morning-notes' }),
+      ]);
+      grant().mockResolvedValue({ grant: { status: 'granted' }, released: true });
+      ipcInvoke.mockClear();
+      render(<AutomationReviewInbox />);
+      fireEvent.click(await screen.findByTestId('parked-allow-folder'));
+      await waitFor(() => expect(grant()).toHaveBeenCalledWith('perm_fold'));
+      expect(ipcInvoke).not.toHaveBeenCalledWith('agent:permission-response', expect.anything(), expect.anything(), expect.anything());
+      expect(toastInfo).not.toHaveBeenCalled();
+      expect(toastError).not.toHaveBeenCalled();
+    });
+
+    it('已失效（released=false / 被拒）提示过期；抛错浮错误 toast', async () => {
+      listParkedApprovals.mockResolvedValue([
+        makeParked({ id: 'perm_fold', writeGrantFolder: '/Users/leo/Documents/morning-notes' }),
+      ]);
+      grant().mockResolvedValueOnce({ grant: { status: 'rejected' }, released: false });
+      render(<AutomationReviewInbox />);
+      fireEvent.click(await screen.findByTestId('parked-allow-folder'));
+      await waitFor(() => expect(toastInfo).toHaveBeenCalled());
+      grant().mockRejectedValueOnce(new Error('boom'));
+      fireEvent.click(await screen.findByTestId('parked-allow-folder'));
+      await waitFor(() => expect(toastError).toHaveBeenCalled());
+    });
   });
 
   it('item.argsPreview 缺省（老行）不渲染参数预览行', async () => {

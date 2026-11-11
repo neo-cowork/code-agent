@@ -310,7 +310,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       // event 任务钉本机（填参步骤不渲染运行位置选择）；其余模板沿用用户的选择。
       generatedDraft.runsOn = selectedTemplate.event ? 'local' : draft.runsOn;
       if (!selectedTemplate.event) generatedDraft.maxRunBudget = draft.runsOn === 'local' ? draft.maxRunBudget : '';
-      const input = buildCronJobInput(generatedDraft);
+      const input = buildCronJobInput(generatedDraft, cc.editorChrome.validation);
       // 无角色任务先挂起出复述卡；角色绑定（如晨间分诊选了角色）照旧直存。
       await gateOrPersist(input, 'create');
     } catch (error) {
@@ -345,7 +345,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
           return;
         }
       }
-      const input = buildCronJobInput(draft);
+      const input = buildCronJobInput(draft, cc.editorChrome.validation);
       await gateOrPersist(input, job ? 'update' : 'create');
     } catch (error) {
       setErrors({ form: saveErrorMessage(error, cc.simpleCreateFailed) });

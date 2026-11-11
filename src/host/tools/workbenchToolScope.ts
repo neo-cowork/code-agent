@@ -1,3 +1,4 @@
+import { normalizePersonalSkillIds } from '../../shared/cronPersonalSkills';
 import type { ToolDefinition } from '../../shared/contract';
 import type { ParsedSkill } from '../../shared/contract/agentSkill';
 import type { WorkbenchToolScope } from '../../shared/contract/conversationEnvelope';
@@ -21,14 +22,16 @@ export function normalizeWorkbenchToolScope(
   }
 
   const allowedSkillIds = normalizeIds(scope.allowedSkillIds);
+  const optInPersonalSkillIds = normalizePersonalSkillIds(scope.optInPersonalSkillIds);
   const allowedConnectorIds = normalizeIds(scope.allowedConnectorIds);
   const allowedMcpServerIds = normalizeIds(scope.allowedMcpServerIds);
 
-  if (allowedSkillIds.length === 0 && allowedConnectorIds.length === 0 && allowedMcpServerIds.length === 0) {
+  if (!optInPersonalSkillIds?.length && allowedSkillIds.length === 0 && allowedConnectorIds.length === 0 && allowedMcpServerIds.length === 0) {
     return undefined;
   }
 
   return {
+    ...(optInPersonalSkillIds ? { optInPersonalSkillIds } : {}),
     ...(allowedSkillIds.length > 0 ? { allowedSkillIds } : {}),
     ...(allowedConnectorIds.length > 0 ? { allowedConnectorIds } : {}),
     ...(allowedMcpServerIds.length > 0 ? { allowedMcpServerIds } : {}),
@@ -127,7 +130,7 @@ export function isSkillCommandAllowedByWorkbenchScope(
 
 /**
  * Unattended runs hide personally installed (`source === 'user'`) skills by default
- * unless the skill name is explicitly listed in `toolScope.allowedSkillIds`.
+ * unless explicitly selected for the run. Personal opt-ins do not narrow other skills.
  */
 export function isSkillHiddenForRun(
   skill: Pick<ParsedSkill, 'name' | 'source'>,
@@ -140,6 +143,9 @@ export function isSkillHiddenForRun(
     return false;
   }
   const normalizedScope = normalizeWorkbenchToolScope(options.toolScope);
+  if (normalizedScope?.optInPersonalSkillIds?.includes(skill.name)) {
+    return false;
+  }
   if (normalizedScope?.allowedSkillIds?.includes(skill.name)) {
     return false;
   }

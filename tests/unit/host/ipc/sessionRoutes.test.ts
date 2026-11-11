@@ -94,7 +94,7 @@ describe('defineSessionRoutes 表面差异', () => {
     expect(svc.importSession).toHaveBeenCalledWith({ id: 'x' });
   });
 
-  it('search 在 web 形态走 performCrossSessionSearch 真链路（取 sessions().listSessions 拼标题表）', async () => {
+  it('search 在 web 形态走 performCrossSessionSearch 真链路（标题改由 DB 按命中会话取，不再依赖 listSessions）', async () => {
     const { registered, target } = createTarget();
     const svc = {
       listSessions: vi.fn(async () => [{ id: 's1', title: 'T' }]),
@@ -112,7 +112,7 @@ describe('defineSessionRoutes 表面差异', () => {
     expect(response.success).toBe(true);
     expect(response.data.query).toBe('needle');
     expect(response.data.results).toEqual([]);
-    expect(svc.listSessions).toHaveBeenCalledWith({ includeArchived: true });
+    expect(svc.listSessions).not.toHaveBeenCalled();
   });
 
   it('create 只认合法 memoryMode 枚举：off 透传、垃圾值静默忽略', async () => {

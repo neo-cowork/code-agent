@@ -1,3 +1,5 @@
+import { renderDataDir } from '../config/renderDataDir';
+
 // ============================================================================
 // Light Memory consolidation job 与用户设置的同步（N-MEM-CONSOLSAFE 第二波）
 //
@@ -29,7 +31,7 @@ export async function syncMemoryConsolidationJob(autoConsolidate: boolean): Prom
   if (!existing) {
     await cron.createJob({
       name: '[Maintenance] Light Memory consolidation',
-      description: 'Compress ~/.code-agent/memory without losing information (quick model).',
+      description: renderDataDir('Compress ~/.code-agent/memory without losing information (quick model).'),
       scheduleType: 'cron',
       schedule: { type: 'cron', expression: MEMORY_CONSOLIDATION.CRON_EXPRESSION },
       action: { type: 'memory-consolidation', dryRun },

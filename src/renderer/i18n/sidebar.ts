@@ -50,6 +50,7 @@ export const sidebarZh = {
     searchingMessageContent: '搜索消息内容中…',
     noStatusSessions: '当前没有{label}会话',
     noMatchedSessions: '这片星域没有信号',
+    searchFailed: '搜索没有成功，请稍后再试一次',
     statusMatchFallback: '匹配',
     // 分页（加载更早的历史会话）
     loadOlderSessions: '加载更早的会话',
@@ -419,6 +420,7 @@ export const sidebarEn: typeof sidebarZh = {
     searchingMessageContent: 'Searching message content…',
     noStatusSessions: 'No {label} sessions right now',
     noMatchedSessions: 'No signals in this sector',
+    searchFailed: 'Search didn\'t go through. Please try again.',
     statusMatchFallback: 'Matched',
     // Pagination (loading older history sessions)
     loadOlderSessions: 'Load older sessions',

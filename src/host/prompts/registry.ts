@@ -12,6 +12,7 @@
 // ============================================================================
 
 import * as fs from 'fs';
+import { renderDataDir } from '../config/renderDataDir';
 import * as path from 'path';
 import { getUserConfigDir } from '../config/configPaths';
 
@@ -74,7 +75,7 @@ function ensureInitialized(): void {
 function makeLivePrompt(id: string, defaultText: string): string {
   const live = (): string => {
     ensureInitialized();
-    return overrides.get(id) ?? defaultText;
+    return renderDataDir(overrides.get(id) ?? defaultText);
   };
 
   const handler: ProxyHandler<object> = {
@@ -206,5 +207,5 @@ export function lookupPromptText(id: string): string | null {
   ensureInitialized();
   const d = descriptors.get(id);
   if (!d) return null;
-  return overrides.get(id) ?? d.defaultText;
+  return renderDataDir(overrides.get(id) ?? d.defaultText);
 }
