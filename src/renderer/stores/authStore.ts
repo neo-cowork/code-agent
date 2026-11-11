@@ -124,6 +124,7 @@ async function reloadSessionsForAuthenticatedUser(options?: { principalChanged?:
 interface AuthState {
   // Auth state
   isAuthenticated: boolean;
+  statusLoadFailed: boolean;
   user: AuthUser | null;
   isLoading: boolean;
   error: string | null;
@@ -174,6 +175,7 @@ interface AuthState {
 export const useAuthStore = create<AuthState>()((set, get) => ({
   // Initial state
   isAuthenticated: false,
+  statusLoadFailed: false,
   user: null,
   isLoading: true,
   error: null,
@@ -195,6 +197,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
     set({
       user,
       isAuthenticated: !!user,
+      statusLoadFailed: false,
       error: null,
     }),
   setLoading: (isLoading) => set({ isLoading }),
@@ -429,6 +432,8 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   },
 }));
 
+let authSubscriptions: Array<(() => void) | undefined> = [];
+
 // Initialize auth store: load status and set up event listeners
 export async function initializeAuthStore(): Promise<void> {
   const store = useAuthStore.getState();
@@ -448,6 +453,7 @@ export async function initializeAuthStore(): Promise<void> {
       }
     }
   } catch (error) {
+    useAuthStore.setState({ statusLoadFailed: true });
     logger.error('Failed to load auth status', error);
   } finally {
     store.setLoading(false);
@@ -463,8 +469,11 @@ export async function initializeAuthStore(): Promise<void> {
     logger.error('Failed to load sync status', error);
   }
 
+  authSubscriptions.forEach((unsubscribe) => unsubscribe?.());
+  authSubscriptions = [];
+
   // Listen for auth events
-  ipcService.on(IPC_CHANNELS.AUTH_EVENT, (event) => {
+  authSubscriptions.push(ipcService.on(IPC_CHANNELS.AUTH_EVENT, (event) => {
     if (event.type === 'signed_in' && event.user) {
       // 启动时 host 会对同一用户重复推 signed_in（缓存用户 → profile 验证完成）。
       // 只有登录主体真的变了才允许破坏性的会话清空重载，否则窗口可见后会闪。
@@ -490,19 +499,19 @@ export async function initializeAuthStore(): Promise<void> {
     } else if (event.type === 'user_updated' && event.user) {
       store.setUser(event.user);
     }
-  });
+  }));
 
   // Listen for sync events
-  ipcService.on(IPC_CHANNELS.SYNC_EVENT, (status) => {
+  authSubscriptions.push(ipcService.on(IPC_CHANNELS.SYNC_EVENT, (status) => {
     store.setSyncStatus(status);
-  });
+  }));
 
   // Listen for password reset callback (from deep link)
-  ipcService.on(
+  authSubscriptions.push(ipcService.on(
     IPC_CHANNELS.AUTH_PASSWORD_RESET_CALLBACK,
     (data: { accessToken: string; refreshToken: string }) => {
       logger.info('Received password reset callback');
       store.handlePasswordResetCallback(data.accessToken, data.refreshToken);
     }
-  );
+  ));
 }

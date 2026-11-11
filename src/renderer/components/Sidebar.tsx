@@ -49,7 +49,7 @@ import { useSidebarSessionActions } from './features/sidebar/useSidebarSessionAc
 import { useSidebarRowActions, resolveRuntimeLogsDir } from './features/sidebar/useSidebarRowActions';
 import { SidebarStatusFilterDropdown } from './features/sidebar/SidebarStatusFilterDropdown';
 import { SidebarAccountMenu } from './features/sidebar/SidebarAccountMenu';
-import { SidebarSignedOutFooter } from './features/sidebar/SidebarSignedOutFooter';
+import { SidebarAccountStatus } from './features/sidebar/SidebarAccountStatus';
 import { SidebarSearchDialog } from './features/sidebar/SidebarSearchDialog';
 import { SidebarNewTaskRow } from './features/sidebar/SidebarNewTaskRow';
 import { applySessionNotificationAttention } from './features/sidebar/sessionNotificationAttention';
@@ -899,7 +899,7 @@ export const Sidebar: React.FC = () => {
             )}
           </>
         ) : (
-          <SidebarSignedOutFooter />
+          <SidebarAccountStatus />
         )}
       </div>
 

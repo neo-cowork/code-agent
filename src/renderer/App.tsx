@@ -500,7 +500,6 @@ export const App: React.FC = () => {
         }
 
 
-        // 加载模型配置
         if (settings?.models) {
           const defaultProvider = resolveConfiguredDefaultProvider(settings.models, DEFAULT_PROVIDER);
           const providerConfig = settings.models.providers?.[defaultProvider];
@@ -521,6 +520,7 @@ export const App: React.FC = () => {
             logger.info('Loaded model config for provider', { provider: defaultProvider });
           }
         }
+        useAppStore.setState({ settingsLoaded: true });
       } catch (error) {
         logger.error('Failed to load settings', error);
       }

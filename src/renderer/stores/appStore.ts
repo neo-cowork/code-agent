@@ -217,6 +217,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // Initial Model Config
   modelConfig: defaultModelConfig,
+  settingsLoaded: false,
 
   // Initial Workspace State
   workingDirectory: null,
