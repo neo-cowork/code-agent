@@ -40,6 +40,7 @@ import { SESSION_COMMAND_CENTER_TOOL_NAMES } from '../../shared/constants/sessio
 import { collectToolArtifactsFromMetadata } from '../../shared/contract/artifactBlob';
 import { isDeliverableArtifact } from '../../shared/contract/artifactRoleRegistry';
 import { persistTaskManagerEvent, type TurnState } from './taskManagerEventPersistence';
+import { isTaskDeliveryFailed } from './taskDeliveryVerdict';
 import {
   DEFAULT_CONFIG,
   type BackgroundTaskRun,
@@ -315,6 +316,7 @@ export class TaskManager extends EventEmitter {
     // workspaceScope 仍可缺省：无项目后台 run 可以继续执行读任务，但不会获得写边界。
     if (workspaceScope) orchestrator.setWorkspaceScopeAuthority(workspaceScope);
 
+    const inheritedMessageIds = new Set(session?.messages.map((message) => message.id));
     if (session?.messages.length) orchestrator.setMessages(session.messages);
     if (session?.workingDirectory) {
       orchestrator.setWorkingDirectory(session.workingDirectory, { syncWorkspaceServices: false });
@@ -350,17 +352,26 @@ export class TaskManager extends EventEmitter {
         this.emitEvent('task_cancelled', sessionId, { taskId });
       } else {
         const messages = typeof orchestrator.getMessages === 'function'
-          ? orchestrator.getMessages()
+          ? orchestrator.getMessages().filter((message) => !inheritedMessageIds.has(message.id))
           : [];
         const finalMessage = [...messages]
           .reverse()
           .find((message) => message.role === 'assistant' && message.content?.trim());
+        const seenArtifactLocations = new Set<string>();
         const artifacts = messages.flatMap((message) => (
           (message.toolResults ?? []).flatMap((result) => collectToolArtifactsFromMetadata(result.metadata))
-        )).filter((artifact) => isDeliverableArtifact(artifact) && Boolean(artifact.path || artifact.url));
-        this.emitEvent('task_completed', sessionId, {
+        )).filter((artifact) => {
+          const location = artifact.path ?? artifact.url;
+          if (!isDeliverableArtifact(artifact) || !location || seenArtifactLocations.has(location)) return false;
+          seenArtifactLocations.add(location);
+          return true;
+        });
+        const deliveryFailed = isTaskDeliveryFailed(messages, artifacts.length);
+        this.emitEvent(deliveryFailed ? 'task_error' : 'task_completed', sessionId, {
           taskId,
-          conclusion: finalMessage?.content?.trim(),
+          ...(deliveryFailed
+            ? { error: finalMessage?.content?.trim() || 'Task delivery failed.' }
+            : { conclusion: finalMessage?.content?.trim() }),
           ...(artifacts.length ? { artifacts } : {}),
         });
       }

@@ -409,6 +409,10 @@ export interface CrossSessionSearchResultItem {
   sessionId: string;
   /** Session title (for display) */
   sessionTitle?: string;
+  /** Session last-updated time (ms), from the DB — present even for sessions outside the sidebar's loaded page */
+  sessionUpdatedAt?: number;
+  /** Whether the session is archived */
+  sessionArchived?: boolean;
   /** Message id for in-session jump/highlight */
   messageId?: string;
   /** Message index in the searched session */
@@ -429,6 +433,12 @@ export interface CrossSessionSearchResultItem {
   matchCount: number;
 }
 
+export interface CrossSessionSearchTitleMatch {
+  sessionId: string;
+  title: string;
+  updatedAt: number;
+}
+
 export interface CrossSessionSearchResults {
   /** Search query */
   query: string;
@@ -442,4 +452,6 @@ export interface CrossSessionSearchResults {
   searchTime: number;
   /** Whether results were truncated */
   truncated: boolean;
+  /** Sessions whose title contains the query (non-archived); optional for older hosts */
+  titleMatches?: CrossSessionSearchTitleMatch[];
 }

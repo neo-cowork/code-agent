@@ -13,7 +13,7 @@ import { useTaskStore } from '../../../stores/taskStore';
 import ipcService from '../../../services/ipcService';
 import { createLogger } from '../../../utils/logger';
 import { groupByWorkspace } from '../../../utils/workspaceGrouping';
-import { DESIGN_WORKSPACE } from '@shared/constants';
+import { DEFAULT_MODEL, DEFAULT_PROVIDER, DESIGN_WORKSPACE } from '@shared/constants';
 import { type SidebarProjectMeta } from '../../../utils/sidebarProjectSummary';
 import {
   buildSessionSearchText,
@@ -49,6 +49,19 @@ export function matchesTrajectoryReviewFilter(
   return filter === 'reviewed' ? reviewed : !reviewed;
 }
 
+/** 用主机返回的元数据合成一个最小会话行（会话不在侧栏已加载的那一页里）。 */
+function synthesizeSearchSession(sessionId: string, title: string, updatedAt: number): SessionWithMeta {
+  return {
+    id: sessionId,
+    title,
+    modelConfig: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL },
+    createdAt: updatedAt,
+    updatedAt,
+    messageCount: 0,
+    turnCount: 0,
+  };
+}
+
 export interface UseSidebarDerivedSessionsParams {
   canOpenSessionReplay: boolean;
 }
@@ -66,6 +79,8 @@ export interface SidebarDerivedSessions {
   allowedSearchSessionIds: Set<string>;
   messageSearchHitsBySessionId: Record<string, SidebarMessageSearchHitGroup>;
   messageSearchLoading: boolean;
+  /** 最近一次搜索请求失败（与「没搜到」区分）；下一次查询开始时清除 */
+  messageSearchFailed: boolean;
   searchResultSessions: SessionWithMeta[];
   reviewItemsBySessionId: Record<string, AdminReviewQueueItem[]>;
   trajectoryQualityBySessionId: Record<string, AgentTrajectorySessionQualitySummary>;
@@ -180,6 +195,10 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
   const [trajectoryQualityBySessionId, setTrajectoryQualityBySessionId] = useState<
     Record<string, AgentTrajectorySessionQualitySummary>
   >({});
+  // 注意：Sidebar 测试按 useState 调用序号强制注入 reviewItems（sidebar.reviewActions.test），新增 state 一律放其后。
+  const [messageSearchFailed, setMessageSearchFailed] = useState(false);
+  // 全库搜索命中、但不在侧栏已加载列表里的会话（主机返回的元数据合成，已排除归档）
+  const [remoteSearchSessions, setRemoteSearchSessions] = useState<SessionWithMeta[]>([]);
   const mergeTrajectoryQualitySummary = useCallback(
     (sessionId: string, summary: AgentTrajectorySessionQualitySummary) => {
       setTrajectoryQualityBySessionId((current) => ({
@@ -190,37 +209,68 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
     [],
   );
 
+  // 只有「本项目」范围才把搜索限制在已加载会话 id 内；「全部」交给主机搜整个历史。
+  const restrictedSearchKey =
+    effectiveSearchScope === 'current-project' ? Array.from(allowedSearchSessionIds).sort().join('\n') : null;
+
   useEffect(() => {
     const query = searchQuery.trim();
+    setMessageSearchFailed(false);
     if (!query) {
       setMessageSearchHitsBySessionId({});
+      setRemoteSearchSessions([]);
       setMessageSearchLoading(false);
       return undefined;
     }
 
-    const allowedSessionIds = allowedSearchSessionIds;
-    const sessionIds = Array.from(allowedSessionIds);
+    const restrictedIds = restrictedSearchKey === null ? null : restrictedSearchKey.split('\n').filter(Boolean);
+    const restrictedSet = restrictedIds ? new Set(restrictedIds) : undefined;
     let cancelled = false;
     const timer = setTimeout(() => {
       setMessageSearchLoading(true);
       void ipcService
         .invoke(IPC_CHANNELS.SESSION_SEARCH, {
           query,
-          options: { limit: 80, sessionIds },
+          options: restrictedIds ? { limit: 80, sessionIds: restrictedIds } : { limit: 80 },
         })
         .then((results) => {
           if (cancelled) return;
           const typedResults = results as CrossSessionSearchResults | null | undefined;
-          setMessageSearchHitsBySessionId(
-            buildSidebarMessageSearchHitGroups(typedResults?.results ?? [], allowedSessionIds),
-          );
+          // 传输层（网页版 httpTransport）把失败吞成 undefined 而不是 reject；
+          // 宿主的成功响应一定带 results 数组（没搜到是空数组）——缺了就是失败，不是「没结果」。
+          if (!typedResults || !Array.isArray(typedResults.results)) {
+            throw new Error('SESSION_SEARCH returned no result payload');
+          }
+          const messageHits = typedResults.results.filter((item) => item.sessionArchived !== true);
+          setMessageSearchHitsBySessionId(buildSidebarMessageSearchHitGroups(messageHits, restrictedSet));
+          if (restrictedSet) {
+            setRemoteSearchSessions([]);
+            return;
+          }
+          const remote = new Map<string, SessionWithMeta>();
+          for (const item of messageHits) {
+            if (item.sessionTitle === undefined || remote.has(item.sessionId)) continue;
+            remote.set(
+              item.sessionId,
+              synthesizeSearchSession(item.sessionId, item.sessionTitle, item.sessionUpdatedAt ?? item.timestamp),
+            );
+          }
+          for (const match of typedResults.titleMatches ?? []) {
+            if (!remote.has(match.sessionId)) {
+              remote.set(match.sessionId, synthesizeSearchSession(match.sessionId, match.title, match.updatedAt));
+            }
+          }
+          setRemoteSearchSessions(Array.from(remote.values()));
         })
         .catch((error) => {
           if (cancelled) return;
           logger.warn('Sidebar message search failed', {
+            step: 'SESSION_SEARCH',
             errorMessage: error instanceof Error ? error.message : String(error),
           });
           setMessageSearchHitsBySessionId({});
+          setRemoteSearchSessions([]);
+          setMessageSearchFailed(true);
         })
         .finally(() => {
           if (!cancelled) {
@@ -233,7 +283,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [allowedSearchSessionIds, searchQuery]);
+  }, [restrictedSearchKey, searchQuery]);
 
   const hasActiveTrajectoryFilter =
     trajectoryTierFilter !== 'all' || trajectoryFailureFilter !== 'all' || trajectoryReviewFilter !== 'all';
@@ -328,7 +378,12 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
 
   const searchResultSessions = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    return searchableSessions
+    const loadedIds = new Set(sessions.map((session) => session.id));
+    const remoteRows =
+      query && effectiveSearchScope === 'all'
+        ? remoteSearchSessions.filter((session) => !loadedIds.has(session.id))
+        : [];
+    return [...searchableSessions
       .filter((session) => allowedSearchSessionIds.has(session.id))
       .filter((session) => {
         if (!query || messageSearchHitsBySessionId[session.id]) {
@@ -348,10 +403,13 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
           snapshot: session.workbenchSnapshot,
           status,
         }).includes(query);
-      })
+      }), ...remoteRows]
       .sort((left, right) => (right.updatedAt || 0) - (left.updatedAt || 0));
   }, [
     allowedSearchSessionIds,
+    effectiveSearchScope,
+    remoteSearchSessions,
+    sessions,
     backgroundSessionMap,
     hasNeedsInputForSession,
     messageSearchHitsBySessionId,
@@ -595,6 +653,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
     allowedSearchSessionIds,
     messageSearchHitsBySessionId,
     messageSearchLoading,
+    messageSearchFailed,
     searchResultSessions,
     reviewItemsBySessionId,
     trajectoryQualityBySessionId,
