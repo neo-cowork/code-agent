@@ -38,12 +38,14 @@ function findExistingJob(
   template: CronTemplate,
   jobs: CronJobDefinition[],
 ): CronJobDefinition | undefined {
-  const draft = template.generate({});
+  // 名称可能是 zh 或 en（切换 UI 语言前后创建）：两种都认，避免切语言后重复创建。
+  const zhDraft = template.generate({}, 'zh');
+  const enName = template.generate({}, 'en').name;
   return jobs.find(
     (job) =>
-      job.name === draft.name &&
+      (job.name === zhDraft.name || job.name === enName) &&
       job.action.type === 'agent' &&
-      job.action.prompt === draft.agentPrompt,
+      job.action.prompt === zhDraft.agentPrompt,
   );
 }
 
@@ -83,7 +85,7 @@ export const CronFeaturedTemplates: React.FC = () => {
       if (existingJob) {
         await updateJob(existingJob.id, { enabled: true });
       } else {
-        const input = buildCronJobInput(template.generate({}), cc.editorChrome.validation);
+        const input = buildCronJobInput(template.generate({}, language === 'en' ? 'en' : 'zh'), cc.editorChrome.validation);
         await createJob(runsOn ? { ...input, runsOn } : input);
       }
     } catch (err) {
