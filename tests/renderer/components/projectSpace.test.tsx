@@ -843,7 +843,7 @@ describe('ProjectComposer 底部输入框', () => {
       'official',
     );
     // 顺序：先挂载，后切页（switchSession 会 closeSecondaryPages 卸载本页）
-    expect(invokeSkillIPCOrThrow.mock.invocationCallOrder[0])
+    expect(vi.mocked(invokeSkillIPCOrThrow).mock.invocationCallOrder[0])
       .toBeLessThan(switchSessionMock.mock.invocationCallOrder[0]);
     expect(toast.error).not.toHaveBeenCalled();
   });
