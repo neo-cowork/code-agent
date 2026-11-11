@@ -32,7 +32,7 @@ import {
 import { renderSkillContent } from '../../../services/skills/skillRenderer';
 import { getSubagentExecutor } from '../../../agent/subagentExecutor';
 import type { ToolResolver } from '../../dispatch/toolResolver';
-import { isSkillCommandAllowedByWorkbenchScope } from '../../workbenchToolScope';
+import { isSkillCommandAllowedByWorkbenchScope, isSkillHiddenForRun } from '../../workbenchToolScope';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { skillSchema as schema } from './skill.schema';
 import { getSkillContentCache, hashSkillContent } from '../../../telemetry/skillContentCache';
@@ -431,7 +431,7 @@ export async function executeSkill(
   if (!skill) {
     const enabledSkills = discoveryService
       .getAllSkills()
-      .filter((s) => discoveryService.isSkillEnabled(s.name));
+      .filter((s) => discoveryService.isSkillEnabled(s.name) && !isSkillHiddenForRun(s, { sessionId: ctx.sessionId, toolScope: ctx.toolScope }));
     // 兜底解析：大小写归一 / alias 命中则直接复用，避免一次无谓的模型重试
     const resolved = resolveSkillByNameOrAlias(command, enabledSkills);
     if (resolved) {
@@ -457,6 +457,15 @@ export async function executeSkill(
       ok: false,
       error: `Skill "${resolvedCommand}" 已在设置中被禁用。可在 设置 → Skills 中重新启用。`,
       code: 'SKILL_DISABLED',
+    };
+  }
+
+  if (isSkillHiddenForRun(skill, { sessionId: ctx.sessionId, toolScope: ctx.toolScope })) {
+    return {
+      ok: false,
+      error: 'Personal skills are not available in unattended scheduled runs unless explicitly listed for the task. Skip this skill, do not retry, and report the corresponding source as not read.',
+      code: 'UNATTENDED_PERSONAL_SKILL_BLOCKED',
+      meta: { retryable: false },
     };
   }
 

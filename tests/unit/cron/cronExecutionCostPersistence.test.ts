@@ -93,7 +93,8 @@ describe('cron execution cost persistence (N-CRON-RUN-LEDGER-VISIBLE)', () => {
         retry_attempt INTEGER NOT NULL DEFAULT 0,
         exit_code INTEGER,
         trigger_json TEXT,
-        cost_usd REAL
+        cost_usd REAL,
+        push_note TEXT
       );
     `);
     databaseState.db = db;
@@ -137,5 +138,15 @@ describe('cron execution cost persistence (N-CRON-RUN-LEDGER-VISIBLE)', () => {
     expect(loaded).toHaveLength(1);
     expect(loaded[0].cost).toBeCloseTo(0.02);
     expect(loaded[0].status).toBe('failed');
+  });
+
+  it('push_note 往返：落库后读回同一个码，坏值按 undefined（N-FIX-CRON-RESULT-PUSH-SILENT-SKIP）', async () => {
+    await saveCronJob(localJob());
+    await saveCronExecution(baseExecution({ id: 'exec-pn-1', pushNote: 'duplicate' }));
+    await saveCronExecution(baseExecution({ id: 'exec-pn-2' }));
+    databaseState.db!.prepare("UPDATE cron_executions SET push_note = 'bogus' WHERE id = ?").run('exec-pn-2');
+    const rows = await loadCronExecutionsByJob('job-cost-1', 10);
+    expect(rows.find((row) => row.id === 'exec-pn-1')?.pushNote).toBe('duplicate');
+    expect(rows.find((row) => row.id === 'exec-pn-2')?.pushNote).toBeUndefined();
   });
 });

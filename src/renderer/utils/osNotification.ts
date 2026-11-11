@@ -80,6 +80,12 @@ export function shouldSuppressOsNotification(hasFocus: boolean, visible: boolean
   return hasFocus && visible;
 }
 
+/** 用户此刻是否「不在看 Neo」：失焦或页面不可见（与 OS 通知焦点门同一定义）。 */
+export function isWindowAway(): boolean {
+  if (typeof document === 'undefined') return false;
+  return !shouldSuppressOsNotification(document.hasFocus(), !document.hidden);
+}
+
 /** 发一条原生系统通知。Tauri 下自动带 Agent Neo 图标/身份；web 回落浏览器通知。 */
 export async function postOsNotification(
   opts: { title: string; body: string },

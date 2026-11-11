@@ -4,6 +4,7 @@ import {
   isSessionBusyRunConflict,
   isRuntimeBusyStatus,
 } from '../../../src/renderer/hooks/agent/agentRuntimeFollowup';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { getRuntimeFollowupFailureMessage } from '../../../src/renderer/hooks/agent/useAgentIPC';
 
 describe('runtime follow-up helpers', () => {
@@ -30,6 +31,25 @@ describe('runtime follow-up helpers', () => {
   it('uses actionable copy when send-message rejects without an Error message', () => {
     expect(getAgentSendFailureMessage(undefined)).toBe('Error: 消息发送失败，但前端没有收到具体错误。请查看后台日志。');
     expect(getAgentSendFailureMessage(new Error('network down'))).toBe('Error: network down');
+  });
+
+  it.each([
+    ['zh', '请补一句话说明想让我做什么，然后再发送一次。'],
+    ['en', 'Add a sentence saying what you want done, then send again.'],
+  ] as const)('maps PROMPT_REQUIRED and a plain 400 to a plain %s sentence', (language, sentence) => {
+    const original = useAppStore.getState().language;
+    useAppStore.setState({ language: language });
+    try {
+      const coded = Object.assign(new Error('云端代理请求失败 (400): Missing prompt'), { status: 400, code: 'PROMPT_REQUIRED' });
+      const plain = Object.assign(new Error('云端代理请求失败 (400): Missing prompt'), { status: 400 });
+      for (const error of [coded, plain]) {
+        const message = getAgentSendFailureMessage(error);
+        expect(message).toBe(sentence);
+        expect(message).not.toMatch(/云端代理请求失败|Missing prompt|400/);
+      }
+    } finally {
+      useAppStore.setState({ language: original });
+    }
   });
 
   // 这一档不是失败：模型上一轮已经答完（用户也看到了），只是 run 还没收干净。

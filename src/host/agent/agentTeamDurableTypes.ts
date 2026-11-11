@@ -116,6 +116,7 @@ export interface AgentTeamParentTerminalInput {
 }
 
 export interface AgentTeamDurableParentHost {
+  hasDurableOwner(runId: string): boolean;
   prepareAgentTeamChild(input: AgentTeamParentProjectionInput): Promise<void>;
   projectAgentTeamChildTerminal(input: AgentTeamParentTerminalInput): Promise<void>;
 }
