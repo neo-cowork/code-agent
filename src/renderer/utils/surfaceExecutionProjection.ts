@@ -729,7 +729,26 @@ export function selectBrowserWaitForUserV1(
     if (event.phase !== 'human' || event.status !== 'waiting' || event.operation?.action === 'takeover') continue;
     const action = event.operation?.action;
     if (action !== WAIT_FOR_USER_EVENT_ACTION && action !== WAIT_FOR_USER_TIMEOUT_EVENT_ACTION) return null;
-    return { reason: event.userSummary, timedOut: action === WAIT_FOR_USER_TIMEOUT_EVENT_ACTION };
+    return { reason: stripButtonInstruction(event.userSummary), timedOut: action === WAIT_FOR_USER_TIMEOUT_EVENT_ACTION };
   }
   return null;
+}
+
+// The reason is model-written and the bar/card render their own Done button; a trailing "完成后点确认 /
+// click Done" would name a button that does not exist. Cut from the button instruction to the end.
+const BUTTON_INSTRUCTION_ZH = /(?:点击|点一下|点|按下|按)\s*[「『"“]?\s*(?:确认|完成(?!验证|人机|登录|操作|注册)|Done|done|好了|继续|确定|OK|Continue|Confirm|提交)/;
+const BUTTON_INSTRUCTION_EN = /\b(?:click|press|tap|hit)\s+(?:the\s+)?["'“]?(?:Done|Continue|OK|Confirm|Submit)\b/i;
+const TRAILING_CONNECTORS = /[，,、；;:：\s]*(?:(?:完成|做完|弄好|通过|验证|操作|好)+后|之后|然后|再|并且|并|请|when you(?:'re| are)? (?:done|finished)|then|and|once done|afterwards)[，,、；;\s]*$/i;
+
+export function stripButtonInstruction(reason: string): string {
+  const matches = [BUTTON_INSTRUCTION_ZH.exec(reason), BUTTON_INSTRUCTION_EN.exec(reason)].filter((m): m is RegExpExecArray => m !== null);
+  if (matches.length === 0) return reason;
+  let cut = reason.slice(0, Math.min(...matches.map((m) => m.index)));
+  for (let guard = 0; guard < 4; guard += 1) {
+    const next = cut.replace(TRAILING_CONNECTORS, '');
+    if (next === cut) break;
+    cut = next;
+  }
+  cut = cut.replace(/[，,、；;:：\s]+$/, '');
+  return cut.length >= 4 ? cut : reason;
 }

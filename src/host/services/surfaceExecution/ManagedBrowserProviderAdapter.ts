@@ -469,13 +469,14 @@ export class ManagedBrowserProviderAdapter {
     // without a close event) flip to closed and the user path continues.
     let keptService: BrowserService | null = null;
     let keptServiceKey: string | null = null;
-    if (!shared && isUserRun(identity)) {
+    if (!shared && (isUserRun(identity) || this.keptRegistry.getAlive(identity.conversationId)?.parkedForUser)) {
       const kept = this.keptRegistry.getAlive(identity.conversationId);
       if (kept) {
         const candidate = this.acquireBrowser(kept.serviceKey);
         if (candidate.isRunning() && candidate.getActiveTab()) {
           keptService = candidate;
           keptServiceKey = kept.serviceKey;
+          if (!isUserRun(identity)) this.keptRegistry.unpark(identity.conversationId);
         } else {
           this.keptRegistry.markClosed(identity.conversationId);
         }

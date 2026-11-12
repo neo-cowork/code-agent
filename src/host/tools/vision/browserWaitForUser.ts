@@ -12,6 +12,7 @@ import { beginApprovalWait, endApprovalWait } from '../toolExecutionTelemetry';
 import {
   getManagedBrowserProviderAdapter,
   isUserBrowserSurfaceIdentity,
+  MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY,
   type ManagedBrowserProviderAdapter,
 } from '../../services/surfaceExecution/ManagedBrowserProviderAdapter';
 import {
@@ -19,6 +20,7 @@ import {
   type SurfaceExecutionRuntime,
   type SurfaceRuntimeIdentityV1,
 } from '../../services/surfaceExecution/SurfaceExecutionRuntime';
+import { getKeptBrowserRegistry, type KeptBrowserRegistry } from '../../services/surfaceExecution/keptBrowserRegistry';
 import {
   BROWSER_HUMAN_TOUCHED_NOTE,
   consumeBrowserHumanTouched,
@@ -34,6 +36,7 @@ export interface WaitForUserInput {
   params: Record<string, unknown>;
   adapter?: Pick<ManagedBrowserProviderAdapter, 'getBinding'>;
   runtime?: Pick<SurfaceExecutionRuntime, 'control'>;
+  keptRegistry?: Pick<KeptBrowserRegistry, 'register'>;
 }
 
 function refuse(error: string, code: string): ToolExecutionResult {
@@ -53,6 +56,30 @@ function validateReason(raw: unknown): { reason: string } | { error: string } {
     return { error: 'The "reason" is shown to the user as-is. Write one plain sentence without web addresses, file paths, tool names or code.' };
   }
   return { reason };
+}
+
+/**
+ * Timed-out wait: park the window in the kept-browser registry so the run's cleanup does not close it and
+ * the conversation's next agent run reclaims the same page. False (nothing parked) for the shared personal
+ * profile or when the window is already gone; the result text then stops promising the window.
+ */
+function parkWindowForUser(
+  identity: SurfaceRuntimeIdentityV1,
+  binding: ReturnType<ManagedBrowserProviderAdapter['getBinding']> & object,
+  registry: Pick<KeptBrowserRegistry, 'register'> = getKeptBrowserRegistry(),
+): boolean {
+  if (binding.serviceKey === MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY) return false;
+  const tab = binding.browserService.getActiveTab();
+  if (!tab) return false;
+  registry.register({
+    conversationId: identity.conversationId,
+    serviceKey: binding.serviceKey,
+    url: tab.url,
+    title: tab.title || '',
+    browserService: binding.browserService,
+    parkedForUser: true,
+  });
+  return true;
 }
 
 export async function executeWaitForUser(input: WaitForUserInput): Promise<ToolExecutionResult> {
@@ -113,10 +140,13 @@ export async function executeWaitForUser(input: WaitForUserInput): Promise<ToolE
     };
   }
   if (resolution === 'timed_out') {
+    const parked = parkWindowForUser(input.identity as SurfaceRuntimeIdentityV1, binding, input.keptRegistry);
     return {
       success: false,
-      error: 'The user did not respond in time. The browser window stays open on the same page and nothing was closed. Do not call browser actions again now. End this turn with one plain sentence telling the user what is waiting for them; they can finish it in the window and tell you to continue.',
-      metadata: { code: 'WAIT_FOR_USER_TIMEOUT', userActionRequired: true, recoverable: true },
+      error: parked
+        ? 'The user did not respond in time. The browser window is kept on the same page and nothing was closed; it will be reused when the user comes back. Do not call browser actions again now. End this turn with one plain sentence telling the user what is waiting for them; when they say they are done, continue from the same page without navigating again.'
+        : 'The user did not respond in time. The browser window may be closed when this turn ends, so do not promise that it stays open. Do not call browser actions again now. End this turn with one plain sentence telling the user what is waiting for them and that you will reopen the page if they ask you to continue.',
+      metadata: { code: 'WAIT_FOR_USER_TIMEOUT', userActionRequired: true, recoverable: true, windowParked: parked },
     };
   }
   return refuse('The user stopped the browser session instead of finishing. Stop working on the browser and tell the user in one plain sentence where things stand.', 'WAIT_FOR_USER_CANCELLED');

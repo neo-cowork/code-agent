@@ -26,6 +26,8 @@ export interface KeptBrowserEntry {
   title: string;
   keptAt: number;
   state: KeptBrowserEntryState;
+  /** Parked by a timed-out wait_for_user: the next agent run of the conversation reclaims it (no chat "kept result" UI). */
+  parkedForUser?: boolean;
 }
 
 /** IPC/UI 用的三态快照：none=无 kept 条目；kept=窗还活着；closed=已关、URL 留存。 */
@@ -47,6 +49,7 @@ export interface RegisterKeptBrowserInput {
   /** kept 窗的会话变化事件源（close/crashed → closed）。 */
   browserService: { onSessionChanged?: (listener: (reason: string) => void) => (() => void) | undefined };
   keptAt?: number;
+  parkedForUser?: boolean;
 }
 
 export class KeptBrowserRegistry {
@@ -77,6 +80,7 @@ export class KeptBrowserRegistry {
       title: input.title,
       keptAt: input.keptAt ?? this.now(),
       state: 'kept',
+      ...(input.parkedForUser ? { parkedForUser: true } : {}),
     };
     this.entries.set(input.conversationId, entry);
     this.pool.setKept(entry.serviceKey, true);
@@ -110,6 +114,16 @@ export class KeptBrowserRegistry {
     return false;
   }
 
+  /** A parked window was reclaimed by a run: drop the entry (window stays with that run, closes normally at its end). */
+  unpark(conversationId: string): void {
+    const entry = this.entries.get(conversationId);
+    if (!entry?.parkedForUser) return;
+    this.unsubs.get(conversationId)?.();
+    this.unsubs.delete(conversationId);
+    this.entries.delete(conversationId);
+    this.pool.setKept(entry.serviceKey, false);
+  }
+
   /** 条目翻 closed：URL 留存；池条目释放（死窗不占池容量、不挡新任务）。 */
   markClosed(conversationId: string): void {
     const entry = this.entries.get(conversationId);
@@ -132,7 +146,7 @@ export class KeptBrowserRegistry {
   /** IPC 三态快照。 */
   snapshot(conversationId: string): KeptResultPageSnapshot {
     const entry = this.entries.get(conversationId);
-    if (!entry) return { state: 'none', url: null, title: null };
+    if (!entry || entry.parkedForUser) return { state: 'none', url: null, title: null };
     return { state: entry.state, url: entry.url, title: entry.title };
   }
 
