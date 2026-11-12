@@ -487,7 +487,7 @@ describe('AutomationReviewInbox', () => {
   });
 
   it('普通工具停车行显示 zh / en 两档按钮', async () => {
-    listParkedApprovals.mockResolvedValue([makeParked({ kind: 'tool_approval' })]);
+    listParkedApprovals.mockResolvedValue([makeParked({ kind: 'tool_approval', tool: 'Write', riskClass: null })]);
     render(<AutomationReviewInbox />);
     expect((await screen.findByTestId('parked-allow-run')).textContent).toBe('到这次做完为止');
     expect(screen.getByTestId('parked-allow-24h').textContent).toBe('24 小时内允许');
@@ -503,7 +503,7 @@ describe('AutomationReviewInbox', () => {
     ['parked-allow-run', 'allow_run'],
     ['parked-allow-24h', 'allow_24h'],
   ] as const)('%s 点击回传 %s（同一 requestId 和 sessionId）', async (testId, response) => {
-    listParkedApprovals.mockResolvedValueOnce([makeParked({ kind: 'tool_approval' })]).mockResolvedValue([]);
+    listParkedApprovals.mockResolvedValueOnce([makeParked({ kind: 'tool_approval', tool: 'Write', riskClass: null })]).mockResolvedValue([]);
     render(<AutomationReviewInbox />);
     fireEvent.click(await screen.findByTestId(testId));
     await waitFor(() => {
@@ -525,10 +525,27 @@ describe('AutomationReviewInbox', () => {
     expect(screen.queryByTestId('parked-allow-24h')).toBeNull();
   });
 
+  it('可编辑写回工具 / 无 target 的 external 行不显示两档按钮；有 target 的 external 仍显示（r1）', async () => {
+    listParkedApprovals.mockResolvedValue([
+      makeParked({ id: 'editable', tool: 'reminders_create' }),
+      makeParked({ id: 'ext-no-target', tool: 'mcp__slack__send_message', riskClass: 'external', standingGrantTarget: null }),
+    ]);
+    const { unmount } = render(<AutomationReviewInbox />);
+    await screen.findAllByTestId('parked-approval-item');
+    expect(screen.queryByTestId('parked-allow-run')).toBeNull();
+    expect(screen.queryByTestId('parked-allow-24h')).toBeNull();
+    unmount();
+    listParkedApprovals.mockResolvedValue([
+      makeParked({ id: 'ext-target', tool: 'mcp__slack__send_message', riskClass: 'external', standingGrantTarget: 'a@b.com' }),
+    ]);
+    render(<AutomationReviewInbox />);
+    expect(await screen.findByTestId('parked-allow-24h')).toBeTruthy();
+  });
+
   it('审批投递中 busyId 同时禁用两档按钮', async () => {
     let finish!: () => void;
     ipcInvoke.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }));
-    listParkedApprovals.mockResolvedValue([makeParked({ kind: 'tool_approval' })]);
+    listParkedApprovals.mockResolvedValue([makeParked({ kind: 'tool_approval', tool: 'Write', riskClass: null })]);
     render(<AutomationReviewInbox />);
     fireEvent.click(await screen.findByTestId('parked-allow-run'));
     await waitFor(() => {

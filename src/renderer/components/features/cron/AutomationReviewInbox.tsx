@@ -12,6 +12,7 @@ import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 // ============================================================================
 
 import React, { useCallback, useEffect, useState } from 'react';
+import { isEditableTool } from '@shared/contract';
 import type { CronUrgency, PermissionResponse, SessionAutomationRecord } from '@shared/contract';
 import type { ParkedApprovalInboxItem } from '@shared/contract/pendingApproval';
 import { isCronUrgency } from '@shared/cronUrgency';
@@ -416,7 +417,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                               {cc.parkedAllowFolder.replace('{folder}', folderDisplayName(item.writeGrantFolder))}
                             </button>
                           )}
-                          {(item.kind === 'tool_approval' || item.kind === undefined) && (
+                          {(item.kind === 'tool_approval' || item.kind === undefined) && !isEditableTool(item.tool) && (!isExternal || !!item.standingGrantTarget) && (
                             <>
                               <Button
                                 type="button"
