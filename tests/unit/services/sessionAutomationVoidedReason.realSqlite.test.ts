@@ -142,7 +142,7 @@ describe('getVoidedApprovalReason (real SQLite file)', () => {
     ['C:\\Users\\someone\\a.csv', 'a.csv'],
     ['/usr/bin/tool --flag value', '/usr/bin/tool --flag value'],
     ['invoice-export --month=November', 'invoice-export --month=November'],
-  ])('voided and pending cards show path preview %j as %j', (preview, expected) => {
+  ])('voided card shows path preview %j as %j; pending card keeps the full text', (preview, expected) => {
     sessions.createSessionWithId('p1', { title: 'p1', modelConfig: { provider: 'openai', model: 'm' } });
     for (const [id, status] of [['v', 'voided'], ['o', 'pending']] as const) {
       approvals.insert({
@@ -152,7 +152,8 @@ describe('getVoidedApprovalReason (real SQLite file)', () => {
       if (status === 'voided') approvals.resolve({ id, status: 'rejected', feedback: 'Auto-rejected after restart: expired_after_restart_24h', resolvedAt: Date.now() });
     }
     const items = new SessionAutomationService().listParkedApprovals();
-    expect(items.map((i) => i.argsPreview)).toEqual([expected, expected]);
+    expect(items.find((i) => i.id === 'v')?.argsPreview).toBe(expected);
+    expect(items.find((i) => i.id === 'o')?.argsPreview).toBe(preview);
   });
 
   it('voided inbox tolerates deleted sessions, failed title lookups and DB-not-ready', () => {
