@@ -55,7 +55,8 @@ import { spawnAgentModule } from '../../../src/host/tools/modules/multiagent/spa
 import { getBackgroundSubagentRegistry } from '../../../src/host/agent/backgroundSubagentRegistry';
 import { SUBAGENT_EXECUTION_TIMEOUTS } from '../../../src/shared/constants';
 
-const logger: Logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+const errorSpy = vi.fn();
+const logger: Logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: errorSpy };
 const allowAll: CanUseToolFn = async () => ({ allow: true });
 
 describe('run_in_background 子代理超过前台预算', () => {
@@ -108,6 +109,6 @@ describe('run_in_background 子代理超过前台预算', () => {
     const notices = registry.drainCompletionNotifications({ sessionId });
     expect(notices).toHaveLength(1);
     expect(notices[0].status).toBe('completed');
-    expect(JSON.stringify(logger.error.mock.calls)).not.toMatch(/already running|Failed to spawn/);
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toMatch(/already running|Failed to spawn/);
   });
 });
