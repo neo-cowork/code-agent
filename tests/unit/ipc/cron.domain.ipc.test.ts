@@ -401,7 +401,7 @@ describe('generateFromPrompt local wall clock', () => {
   function setClock(now: string, zone: string): void {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date(now));
-    vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockImplementation(function () {
+    vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockImplementation(function (this: Intl.DateTimeFormat) {
       return { ...nativeResolvedOptions.call(this), timeZone: zone };
     });
   }
