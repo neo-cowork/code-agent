@@ -1,6 +1,8 @@
+import { isolatedVerificationEnv } from '../lib/verificationIsolation.ts';
+import { signInDogfoodVerificationAccount } from '../lib/verificationAccount.ts';
 import { spawn, type ChildProcessByStdio } from 'child_process';
 import type { Readable } from 'node:stream';
-import { copyFileSync, existsSync, mkdtempSync, rmSync } from 'fs';
+import { existsSync, mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import type { Browser, Page } from 'playwright';
@@ -56,7 +58,8 @@ What it validates:
 What it avoids:
   - no external model call
   - no production-only route
-  - no service-role key`);
+  - no service-role key
+  - signs in only the dogfood account from ~/.ship/secrets/neo-dogfood.env`);
 }
 
 function npmCommand(): string {
@@ -98,15 +101,8 @@ async function ensureBuild(skipBuild: boolean): Promise<void> {
 }
 
 function prepareTempDataDir(): string {
-  const dataDir = mkdtempSync(join(tmpdir(), 'agent-neo-telemetry-feedback-'));
-  const sourceDir = `${process.env.HOME}/.code-agent`;
-  for (const fileName of ['.env', '.secure-key', 'secure-storage.json']) {
-    const source = join(sourceDir, fileName);
-    if (existsSync(source)) {
-      copyFileSync(source, join(dataDir, fileName));
-    }
-  }
-  return dataDir;
+  // This smoke makes no model calls and needs no resident config or key material.
+  return mkdtempSync(join(tmpdir(), 'agent-neo-telemetry-feedback-'));
 }
 
 function startAppHost(port: number, dataDir: string): { child: ChildProcessByStdio<null, Readable, Readable>; output: () => string } {
@@ -115,6 +111,7 @@ function startAppHost(port: number, dataDir: string): { child: ChildProcessByStd
     cwd: process.cwd(),
     env: {
       ...process.env,
+      ...isolatedVerificationEnv(dataDir),
       WEB_HOST: '127.0.0.1',
       WEB_PORT: String(port),
       CODE_AGENT_DATA_DIR: dataDir,
@@ -377,6 +374,7 @@ async function runSmoke(options: {
     await sseReady;
 
     const token = await getAuthToken(page);
+    await signInDogfoodVerificationAccount(baseUrl, token);
     const sessionId = await createCleanSession(page);
     const turnId = `telemetry-feedback-smoke-${Date.now()}`;
     const marker = `TELEMETRY_FEEDBACK_CLOUD_${Date.now()}`;

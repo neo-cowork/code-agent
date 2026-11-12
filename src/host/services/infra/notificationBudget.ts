@@ -18,6 +18,8 @@ interface NotificationBudgetOptions<T extends NotificationBudgetItem> {
   now?: () => number;
   setTimer?: (callback: () => void, delayMs: number) => NotificationBudgetTimer;
   clearTimer?: (timer: NotificationBudgetTimer) => void;
+  /** 暂存队列变化（新增暂存 / 窗口收尾 / clear）时回调，用于落盘；dispose 不触发。 */
+  onHeldChange?: (held: readonly T[]) => void;
 }
 
 /** enqueue 的去向：立即投递（豁免/开窗首条）还是暂存等窗口收尾。 */
@@ -29,6 +31,7 @@ export class NotificationBudget<T extends NotificationBudgetItem> {
   private readonly now: () => number;
   private readonly setTimer: (callback: () => void, delayMs: number) => NotificationBudgetTimer;
   private readonly clearTimer: (timer: NotificationBudgetTimer) => void;
+  private readonly onHeldChange: ((held: readonly T[]) => void) | undefined;
   private held: T[] = [];
   private timer: NotificationBudgetTimer | undefined;
   private windowStartedAt: number | null = null;
@@ -38,6 +41,7 @@ export class NotificationBudget<T extends NotificationBudgetItem> {
     this.deliverDigest = options.deliverDigest;
     this.now = options.now ?? Date.now;
     this.setTimer = options.setTimer ?? ((callback, delayMs) => setTimeout(callback, delayMs));
+    this.onHeldChange = options.onHeldChange;
     this.clearTimer = options.clearTimer ?? ((timer) => {
       clearTimeout(timer as ReturnType<typeof setTimeout>);
     });
@@ -54,6 +58,7 @@ export class NotificationBudget<T extends NotificationBudgetItem> {
       return 'delivered';
     }
     this.held.push(item);
+    this.onHeldChange?.(this.held);
     return 'held';
   }
 
@@ -69,15 +74,27 @@ export class NotificationBudget<T extends NotificationBudgetItem> {
 
   clear(): T[] {
     const dropped = this.held;
-    if (this.timer) this.clearTimer(this.timer);
-    this.timer = undefined;
-    this.windowStartedAt = null;
+    this.stop();
     this.held = [];
+    this.onHeldChange?.(this.held);
     return dropped;
   }
 
+  /**
+   * 退出：只停定时器，不触发落盘回调——暂存队列已在每次暂存时落盘，留给下次启动补发。
+   * 返回此刻仍在暂存的条目，供调用方记「已留待下次启动」。
+   */
   dispose(): T[] {
-    return this.clear();
+    const kept = this.held;
+    this.stop();
+    this.held = [];
+    return kept;
+  }
+
+  private stop(): void {
+    if (this.timer) this.clearTimer(this.timer);
+    this.timer = undefined;
+    this.windowStartedAt = null;
   }
 
   private openWindow(): void {
@@ -92,6 +109,7 @@ export class NotificationBudget<T extends NotificationBudgetItem> {
     this.windowStartedAt = null;
     this.held = [];
     if (held.length === 0) return;
+    this.onHeldChange?.(this.held);
     if (held.length === 1) {
       this.deliver(held[0], 'window-end');
       return;

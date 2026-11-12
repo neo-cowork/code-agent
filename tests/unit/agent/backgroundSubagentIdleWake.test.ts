@@ -65,8 +65,12 @@ function trigger(agentId: string, sessionId: string): SubagentCompletionRecord {
 }
 
 describe('background subagent idle wake', () => {
+  let caseClock = Date.UTC(2026, 0, 1);
+
   beforeEach(() => {
-    vi.useFakeTimers();
+    // The singleton retains completion dedupe keys, so cases need distinct completion times.
+    vi.useFakeTimers({ now: caseClock });
+    caseClock += 1_000;
     resetApplicationRunRegistryForTests();
     taskManagerMocks.getSessionState.mockReset();
     taskManagerMocks.startTask.mockReset();
@@ -210,10 +214,10 @@ describe('background subagent idle wake', () => {
     scheduleBackgroundSubagentIdleWake(trigger('agent-failed', 'failed-session'));
     await vi.advanceTimersByTimeAsync(50);
 
-    expect(wakeNoteMocks.format).toHaveBeenCalledWith('coder');
+    expect(wakeNoteMocks.format).toHaveBeenCalledWith('后台任务');
     expect(wakeNoteMocks.record).toHaveBeenCalledWith(
       'failed-session',
-      'wake failed: coder',
+      'wake failed: 后台任务',
       { taskId: 'agent-failed', reason: 'owner_missing' },
     );
   });
@@ -276,7 +280,7 @@ describe('background subagent idle wake', () => {
 
     expect(wakeNoteMocks.record).toHaveBeenCalledWith(
       'throwing-session',
-      'wake failed: coder',
+      'wake failed: 后台任务',
       { taskId: 'agent-throws', reason: 'wake_failed' },
     );
   });

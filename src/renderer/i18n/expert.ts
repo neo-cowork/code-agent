@@ -102,6 +102,7 @@ export const expertZh = {
       stopAll: '停止全部',
       stopAllTitle: { one: '停止全部 {count} 个代理', other: '停止全部 {count} 个代理' },
       stopAllStopping: '正在停止…',
+      clearFinished: '清除已结束',
       tokensTitle: '本次组队已花 Token（实时累计）',
       recentActions: '最近动作',
       runTrail: '运行轨迹',
@@ -232,6 +233,7 @@ export const expertZh = {
     },
     roleSkills: {
       title: '技能与工具',
+      toolNeedsCheck: '需核对',
       description: '从这台机器上真实可用的技能和工具里挑，勾了才允许这位专家用。',
       save: '保存',
       saving: '保存中…',
@@ -430,6 +432,7 @@ export const expertEn: typeof expertZh = {
       stopAll: 'Stop all',
       stopAllTitle: { one: 'Stop all {count} agent', other: 'Stop all {count} agents' },
       stopAllStopping: 'Stopping…',
+      clearFinished: 'Clear finished',
       tokensTitle: 'Team tokens used so far (live total)',
       recentActions: 'Recent actions',
       runTrail: 'Run trail',
@@ -560,6 +563,7 @@ export const expertEn: typeof expertZh = {
     },
     roleSkills: {
       title: 'Skills and tools',
+      toolNeedsCheck: 'Needs checking',
       description: 'Pick from what is actually available on this machine. Only what you check here is allowed.',
       save: 'Save',
       saving: 'Saving…',

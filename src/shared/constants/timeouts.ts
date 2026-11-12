@@ -86,6 +86,8 @@ export const SERVICE_TIMEOUTS = {
 
 export const NOTIFICATION_BUDGET = {
   WINDOW_MS: 15 * 60_000,
+  /** 窗口内暂存队列的落盘文件名（位于 userData 目录），重启后补发一条汇总。 */
+  HELD_FILE_NAME: 'held-notifications.json',
 } as const;
 
 /** 用户交互超时 */
@@ -231,6 +233,8 @@ export const BROWSER_TIMEOUTS = {
   ACTION_DEFAULT: 30_000,
   /** 等待选择器超时 */
   WAIT_SELECTOR: 5_000,
+  /** 选择器填写（page.fill）快速失败超时 */
+  FILL_SELECTOR: 5_000,
   /** 等待超时 */
   WAIT_DEFAULT: 1_000,
   /** Computer Use 等待超时 */
@@ -459,6 +463,8 @@ export const SUBAGENT_EXECUTION_TIMEOUTS = {
   FOREGROUND_TO_BACKGROUND_BUDGET: 600_000,
   /** 子 agent role execution timeout 下限，必须大于前台转后台预算。 */
   ROLE_EXECUTION_MINIMUM: 900_000,
+  /** 后台子代理完成后，等 worktree 清理结果并入完成通知的上限。 */
+  BACKGROUND_WORKTREE_NOTE_WAIT: 15_000,
 } as const;
 
 /** 后台/子 agent 完成提醒预算。 */
@@ -501,6 +507,11 @@ export const RENDERER_POLLING = {
   BACKOFF_FACTOR: 2,
   /** 传输层连接错误日志节流窗口：同一通道在此窗口内最多打一条，防后端不可达时刷屏 */
   TRANSPORT_ERROR_LOG_THROTTLE: 10_000,
+  /**
+   * 页面启动时 host 推来的审批快照（snapshot:true）先于 agent:event 监听器注册到达，
+   * 在此窗口内注册的新监听器补发一次（N-FIX-BGPANEL-STOP-TERMINAL-FU1-FU1-FU1）。
+   */
+  SSE_PERMISSION_SNAPSHOT_REPLAY_WINDOW: 10_000,
 } as const;
 
 /** 工具执行超时警告阈值 (ms)，按工具名或前缀匹配 */

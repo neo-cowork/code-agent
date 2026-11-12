@@ -1,3 +1,4 @@
+import { EnvBlockedError } from '../permissions/envAssist/EnvBlockedError';
 import { isEmergencyStopActive } from '../security/emergencyStop';
 import { emergencyStopMessage } from '../../shared/i18n/emergencyStop';
 import { getLocale } from '../platform/appPaths';
@@ -829,12 +830,14 @@ export class ToolExecutor {
 
     // Subagent 收缩闸：subagent 调用必须先过工具白名单 + 收缩策略。
     // 策略只能收紧不能放宽——'deny' 直接拒，'ask' 继续走下面的常规管道。
+    let subagentForcesConfirmation = false;
     if (options.subagentPolicy) {
       if (!options.subagentPolicy.allowedTools.has(executionToolName)) {
         logger.warn('Tool not in subagent allowlist', { toolName: executionToolName });
         return { success: false, error: `Tool not allowed for subagent: ${executionToolName}` };
       }
-      const subagentDenial = evaluateSubagentPolicyDenial(options.subagentPolicy, executionToolName, params);
+      const { denial: subagentDenial, forceConfirm } = evaluateSubagentPolicyDenial(options.subagentPolicy, executionToolName, params);
+      subagentForcesConfirmation = forceConfirm;
       if (subagentDenial) {
         logger.warn(subagentDenial.error, { toolName: executionToolName, policy: subagentDenial.policyName, reason: subagentDenial.reason });
         recordDecision(executionToolName, params, 'policy-deny', subagentDenial.reason, Date.now(), undefined, effectiveSessionId, this.ledgerOrigin);
@@ -1514,7 +1517,7 @@ export class ToolExecutor {
     }
 
     // Policy tools.always_confirm: 强制走用户审批，无视预授权/安全白名单/classifier 放行
-    const policyForcesConfirmation = policyEnforcer?.requiresConfirmation(executionToolName) ?? false;
+    const policyForcesConfirmation = subagentForcesConfirmation || (policyEnforcer?.requiresConfirmation(executionToolName) ?? false);
 
     // GAP-001: Skill allowed-tools 限权边界 — 边界外的工具调用强制用户审批。
     // 对所有 skill 来源生效（user/project skill 不能扩权，但它声明的边界必须被尊重）。
@@ -2051,7 +2054,7 @@ export class ToolExecutor {
       let shouldForceConfirm = false;
       try {
         const gate = getConfirmationGate();
-        confirmationPreview = gate.buildPreview(executionToolName, params);
+        confirmationPreview = gate.buildPreview(executionToolName, params, { workspaceRoot: this.runtimeWorkspace });
         confirmationRiskLevel = gate.assessRiskLevel(executionToolName, params);
         shouldForceConfirm = gate.shouldConfirm(
           {
@@ -2198,7 +2201,7 @@ export class ToolExecutor {
       // 写入/执行必须逐次真人确认，且不写入/不消费权限记忆。
       // 信任边界 ask（W3 写边界）同样让路：2026-08-13 真机事故里 devModeAutoApprove
       // 把 $HOME 写边界 ask 自动批掉、文件真落盘。
-      if (readOnlyForcesConfirmation || guardFabricForcesApproval || boundaryAskForcesConfirmation || protectedWriteForcesConfirmation || unresolvedWriteTargetForcesAsk) {
+      if (readOnlyForcesConfirmation || guardFabricForcesApproval || boundaryAskForcesConfirmation || protectedWriteForcesConfirmation || unresolvedWriteTargetForcesAsk || subagentForcesConfirmation) {
         permissionRequest.forceConfirm = true;
         // 返修 r2：记录 forceConfirm 的成因形态。W3 写边界 ask 是唯一成因（且无 peer
         // 触发）时标 boundary-only——定时任务写授权只放行这一种 forceConfirm，其余成因
@@ -2681,6 +2684,7 @@ export class ToolExecutor {
       await durableCheckpoint.complete(result.success);
       return { ...result, metadata: { ...result.metadata, executionStarted } };
     } catch (error) {
+      if (error instanceof EnvBlockedError) throw error;
       const duration = Date.now() - startTime;
       logger.error('Tool threw error', error, { toolName: executionToolName });
       executionLedger.complete('error', error instanceof Error ? error.message : 'Unknown error');

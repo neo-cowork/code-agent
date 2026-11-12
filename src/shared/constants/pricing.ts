@@ -156,6 +156,7 @@ export const MODEL_PRICING_PER_1M: Record<string, ModelPricingEntry> = {
   'moonshot-v1-32k': { input: 0.24, output: 0.24 },
   'moonshot-v1-128k': { input: 0.6, output: 0.6 },
   // 小米 MiMo（Token Plan Max 包月，配额内不计费）
+  'neohorse-1.5-flash-preview': { input: 0, output: 0 },
   'mimo-v2.6-flash': { input: 0, output: 0 },
   'mimo-v2.5-pro': { input: 0, output: 0 },
   'mimo-v2.5': { input: 0, output: 0 },
@@ -191,6 +192,15 @@ export function getCuratedModelPricing(provider: string, model: string): ModelPr
   }
 
   return undefined;
+}
+
+/**
+ * 包月/免费额度模型（策展价表里 input 与 output 都是 0）。美元预算上限对它们永不触发。
+ * 未知/自定义模型返回 false（它们按 default 非零价计费）。
+ */
+export function isZeroPricedModel(provider: string, model: string): boolean {
+  const pricing = getCuratedModelPricing(provider, model);
+  return pricing?.input === 0 && pricing.output === 0;
 }
 
 /** 设计模式 flux 路由所用模型 id（schnell 档，成本低；供 generateImage 的 fluxModel 入参 + 价表查表）。 */

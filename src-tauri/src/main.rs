@@ -4569,6 +4569,7 @@ fn main() {
             renderer_ready
         ])
         .setup(|app| {
+            native_notification::install_notification_delegate(app.handle().clone(), request_main_window_focus);
             // 必须在 spawn webServer 之前：决定本进程（含 node 子进程）的数据目录通道。
             apply_channel_env(&app.handle());
             let mut boot_diagnostics = new_boot_diagnostics(&app.handle());

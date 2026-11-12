@@ -52,6 +52,11 @@ vi.mock('../../../../src/host/model/quickModel', () => ({
   quickTask,
 }));
 
+let uiLanguage: 'zh' | 'en' = 'zh';
+vi.mock('../../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({ getSettings: () => ({ ui: { language: uiLanguage } }) }),
+}));
+
 vi.mock('../../../../src/host/platform', () => ({
   AppWindow: {
     getAllWindows: () => [{ webContents: { send: sendMock } }],
@@ -127,7 +132,66 @@ describe('SessionManager 自动标题', () => {
     onAddMessage = null;
     quickTaskResolve = null;
     deferQuickTask = false;
+    uiLanguage = 'zh';
     vi.clearAllMocks();
+  });
+
+  describe('标题语言跟随用户消息', () => {
+    async function titlePromptFor(message: string, ui: 'zh' | 'en' = 'zh', reply = 'x title'): Promise<{ prompt: string; title: string | undefined }> {
+      uiLanguage = ui;
+      quickTask.mockClear();
+      quickTask.mockImplementationOnce(() => Promise.resolve({ success: true, content: reply }) as never);
+      const manager = await makeManager();
+      const session = await manager.createSession({
+        title: '新对话',
+        modelConfig: { provider: 'openai', model: 'gpt-5' },
+      });
+      await manager.addMessageToSession(session.id, userMessage(message) as never);
+      await settle();
+      return { prompt: String((quickTask.mock.calls[0] as unknown[])[0]), title: dbMock.getSession(session.id)?.title as string | undefined };
+    }
+
+    it('英文消息：提示词要求英文标题，且不再写死中文优先', async () => {
+      const { prompt, title } = await titlePromptFor('Summarize the three attached meeting notes into a weekly report', 'zh', 'Weekly report from meeting notes');
+      expect(prompt).toContain('Write the title in English');
+      expect(prompt).toContain('3-8 English words');
+      expect(prompt).not.toContain('中文优先');
+      expect(prompt).toContain('Summarize the three attached meeting notes');
+      expect(title).toBe('Weekly report from meeting notes');
+    });
+
+    it('中文消息：提示词要求中文标题（英文 UI 下也一样）', async () => {
+      const { prompt } = await titlePromptFor('把三份会议纪要整理成一份周报', 'en', '会议纪要周报');
+      expect(prompt).toContain('Write the title in Chinese');
+      expect(prompt).toContain('10-25 Chinese characters');
+    });
+
+    it('中英混写：跟随消息的主语言', async () => {
+      const zhMain = await titlePromptFor('帮我把这个 PR 的 review 意见整理成清单然后回复给同事', 'en');
+      expect(zhMain.prompt).toContain('Write the title in Chinese');
+      const enMain = await titlePromptFor('Please review the 登录 flow and list every bug you can find in the redirect handler', 'zh');
+      expect(enMain.prompt).toContain('Write the title in English');
+    });
+
+    it('消息判不出语言（纯数字/符号）：回落到 UI 语言', async () => {
+      const en = await titlePromptFor('12345 ??? 😀', 'en');
+      expect(en.prompt).toContain('cannot be determined; write the title in English');
+      const zh = await titlePromptFor('12345 ??? 😀', 'zh');
+      expect(zh.prompt).toContain('cannot be determined; write the title in Chinese');
+    });
+
+    it('小模型失败：降级到消息前缀标题，行为不变', async () => {
+      uiLanguage = 'en';
+      quickTask.mockImplementationOnce(() => Promise.resolve({ success: false, content: '' }) as never);
+      const manager = await makeManager();
+      const session = await manager.createSession({
+        title: '新对话',
+        modelConfig: { provider: 'openai', model: 'gpt-5' },
+      });
+      await manager.addMessageToSession(session.id, userMessage('Summarize the notes') as never);
+      await settle();
+      expect(dbMock.getSession(session.id)?.title).toBe('Summarize the notes');
+    });
   });
 
   it('并发切会话时，标题只写给消息真正所属的会话', async () => {

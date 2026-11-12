@@ -123,6 +123,7 @@ export const zhSettingsCore = {
       skillLibraryManagement: 'Skill 库管理',
       searchSkill: '搜索 Skill',
       customRepository: '自定义仓库',
+      searchSources: '搜索源',
       multichannelAccess: '多通道接入',
       channelPrivacyPolicy: '通道隐私策略',
       lowNoiseNotifications: '低打扰通知',
@@ -135,6 +136,7 @@ export const zhSettingsCore = {
       modelUsage: '模型使用',
       automaticScreenMemory: '自动屏幕记忆',
       manualDesktopActivity: '手动桌面活动',
+      appshots: '应用截图',
       permissionDataBoundary: '权限与数据边界',
       voiceTranscription: '语音转写',
       diagnosticBundle: '诊断包',
@@ -470,6 +472,7 @@ export const zhSettingsCore = {
       autosaveHint: '修改会自动保存。系统级热键会在桌面运行时重新注册，失败项会保留在配置中并记录诊断日志。',
       registrationFailedPrefix: '注册失败：',
       registrationFailedUnknown: '未知注册错误',
+      modifierOnlyNote: '由应用截图单独监听',
       categories: {
         global: '全局唤起',
         sessionEditing: '会话编辑',
@@ -551,6 +554,10 @@ export const zhSettingsCore = {
         'commandPalette.open': {
           label: '打开命令面板',
           description: '搜索和执行应用命令',
+        },
+        'sessionSearch.open': {
+          label: '搜索会话',
+          description: '搜索并打开会话',
         },
         'session.stop': {
           label: '停止生成',

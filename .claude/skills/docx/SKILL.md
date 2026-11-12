@@ -54,6 +54,7 @@ execution-context: inline
 
 ### 方式 C：Python python-docx（复杂排版）
 适用于：需要精细控制的复杂文档（合同模板、多级列表、页眉页脚）
+使用 python-docx 时不要把 `**`、`*` 或反引号等 Markdown 行内标记写进文本，请用 `run.bold` / `run.italic` 或等宽字体设置真实样式。
 
 ## 第 4 步：验证输出
 

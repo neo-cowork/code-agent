@@ -28,6 +28,9 @@ import {
   buildAgentErrorReport,
   resolveAgentErrorCopy,
 } from '../../../src/renderer/components/features/chat/AgentErrorCard';
+import { projectTurns } from '../../../src/renderer/hooks/useTurnProjection';
+import { classifyAgentError } from '../../../src/shared/utils/agentErrorClassification';
+import { extractReadableProviderReason } from '../../../src/renderer/utils/genericProviderReason';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useMessageActionStore } from '../../../src/renderer/stores/messageActionStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
@@ -518,8 +521,8 @@ describe('AgentErrorPresentation 连续同因失败折叠', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('rate_limited 不参与折叠：带 latest=false 仍走灰字行 + 重试路径', () => {
-    render(
+  it('rate_limited 参与折叠：非段内最新压成灰字行「没有回复 · 模型服务限流」，最新保留重试灰字行并附带连续次数句', () => {
+    const { unmount } = render(
       <AgentErrorPresentation
         error={makeError({ category: 'rate_limited', httpStatus: 429 })}
         messageId="assistant-1"
@@ -528,10 +531,145 @@ describe('AgentErrorPresentation 连续同因失败折叠', () => {
       />,
     );
 
-    expect(screen.getByTestId('rate-limited-error-line')).toBeTruthy();
-    expect(screen.getByRole('button', { name: '重试' })).toBeTruthy();
-    expect(screen.queryByTestId('agent-error-muted-line')).toBeNull();
+    const mutedLine = screen.getByTestId('agent-error-muted-line');
+    expect(mutedLine.textContent).toBe('没有回复 · 模型服务限流');
+    expect(screen.queryByTestId('rate-limited-error-line')).toBeNull();
+    expect(screen.queryByRole('button', { name: '重试' })).toBeNull();
     expect(screen.queryByRole('alert')).toBeNull();
+    unmount();
+
+    render(
+      <AgentErrorPresentation
+        error={makeError({ category: 'rate_limited', httpStatus: 429 })}
+        messageId="assistant-2"
+        sessionId="session-1"
+        run={{ runLength: 2, latest: true }}
+      />,
+    );
+
+    const latestLine = screen.getByTestId('rate-limited-error-line');
+    expect(latestLine.textContent).toContain('模型服务商限流，稍后重试');
+    expect(latestLine.textContent).toContain('连续 2 次都是这个原因。');
+    expect(screen.getByRole('button', { name: '重试' })).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('真实中文限流串经 classifyAgentError + projectTurns + AgentErrorPresentation：连续 5 次渲染 4 行灰字 + 1 行带「连续 5 次都是这个原因。」的重试灰字行，单次失败字节级不变', () => {
+    const chinesePhrases = [
+      '您的账户已达到速率限制，请您控制请求频率',
+      '请求过于频繁',
+      '限制请求频率',
+      '您的账户已达到速率限制，请您控制请求频率',
+      '您的账户已达到速率限制，请您控制请求频率',
+    ];
+    const classified = chinesePhrases.map((m) => classifyAgentError({ error: m }));
+    for (const meta of classified) {
+      expect(meta?.category).toBe('rate_limited');
+    }
+
+    const singleHtml = render(
+      <AgentErrorPresentation
+        error={classified[0]!}
+        messageId="single-assistant"
+        sessionId="session-1"
+      />,
+    ).container.innerHTML;
+    cleanup();
+    const singleWithRun1Html = render(
+      <AgentErrorPresentation
+        error={classified[0]!}
+        messageId="single-assistant"
+        sessionId="session-1"
+        run={{ runLength: 1, latest: true }}
+      />,
+    ).container.innerHTML;
+    expect(singleWithRun1Html).toBe(singleHtml);
+    expect(singleHtml).not.toContain('连续');
+    cleanup();
+
+    const messages = classified.flatMap((meta, i) => [
+      { id: `u-${i + 1}`, role: 'user' as const, content: `尝试 ${i + 1}`, timestamp: (i + 1) * 100 },
+      {
+        id: `a-${i + 1}`,
+        role: 'assistant' as const,
+        content: '',
+        timestamp: (i + 1) * 100 + 50,
+        metadata: { agentError: meta! },
+      },
+    ]);
+
+    const errorNodes = projectTurns(messages, 'session-1', false)
+      .turns.flatMap((turn) => turn.nodes)
+      .filter((n) => n.metadata?.agentError);
+    expect(errorNodes).toHaveLength(5);
+
+    render(
+      <div>
+        {errorNodes.map((node) => (
+          <AgentErrorPresentation
+            key={node.id}
+            error={node.metadata!.agentError!}
+            messageId={node.messageId ?? node.id}
+            sessionId="session-1"
+            run={node.agentErrorRun}
+          />
+        ))}
+      </div>,
+    );
+
+    const mutedLines = screen.getAllByTestId('agent-error-muted-line');
+    expect(mutedLines).toHaveLength(4);
+    for (const line of mutedLines) {
+      expect(line.textContent).toBe('没有回复 · 模型服务限流');
+    }
+
+    const retryLines = screen.getAllByTestId('rate-limited-error-line');
+    expect(retryLines).toHaveLength(1);
+    expect(retryLines[0].textContent).toContain('模型服务商限流，稍后重试');
+    expect(retryLines[0].textContent).toContain('重试');
+    expect(retryLines[0].textContent).toContain('连续 5 次都是这个原因。');
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('generic 卡仅当 rawMessage 为脱敏后可读同语种短句时显示「服务商返回：「…」」，堆栈/JSON/URL/token/超长/异语种均不显示', () => {
+    renderCard(makeError({
+      category: 'generic',
+      rawMessage: '当前区域算力维护中，请稍后再试',
+    }));
+    const reasonEl = screen.getByTestId('agent-error-provider-reason');
+    expect(reasonEl.textContent).toBe('服务商返回：「当前区域算力维护中，请稍后再试」');
+    cleanup();
+
+    const hiddenCases: Array<{ label: string; rawMessage: string; lang?: 'zh' | 'en' }> = [
+      { label: 'english stack trace', rawMessage: 'Error: boom at Object.<anonymous> (/app/index.js:12:34)' },
+      { label: 'multiline text', rawMessage: '第一行错误\n第二行堆栈' },
+      { label: 'json body', rawMessage: '{"error":{"message":"上游服务异常"}}' },
+      { label: 'url included', rawMessage: '服务异常，详情见 https://status.example.com/incident' },
+      { label: 'over 80 chars', rawMessage: '这是一段非常漫长的服务商报错说明文字，用来验证超过八十个字符上限时不会原样塞进通用失败卡片的正文区域里避免撑爆版面或者泄露大段机器拼接日志内容以及更多额外字数验证' },
+      { label: 'key-like token (sk-...)', rawMessage: '鉴权异常 sk-proj-1234567890abcdefghijklmnop 请核对' },
+      { label: 'request id token', rawMessage: '调用失败 req_1234567890abcdef 请联系客服' },
+      { label: 'wrong language (en in zh UI)', rawMessage: 'Upstream gateway temporarily unavailable' },
+      { label: 'wrong language (zh in en UI)', rawMessage: '当前区域算力维护中，请稍后再试', lang: 'en' },
+    ];
+
+    for (const { label, rawMessage, lang = 'zh' } of hiddenCases) {
+      expect(extractReadableProviderReason(rawMessage, lang), label).toBeNull();
+      if (lang === 'zh') {
+        renderCard(makeError({ category: 'generic', rawMessage }));
+        expect(screen.queryByTestId('agent-error-provider-reason'), label).toBeNull();
+        cleanup();
+      }
+    }
+
+    expect(extractReadableProviderReason('Upstream service is temporarily under maintenance', 'en'))
+      .toBe('Upstream service is temporarily under maintenance');
+
+    // 非 generic 类别即使有可读中文短句也不额外显示「服务商返回」行
+    renderCard(makeError({
+      category: 'network',
+      rawMessage: '当前区域算力维护中，请稍后再试',
+    }));
+    expect(screen.queryByTestId('agent-error-provider-reason')).toBeNull();
   });
 
   it('灰字行与连续次数句的 en 词条齐全', () => {

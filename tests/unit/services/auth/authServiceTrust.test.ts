@@ -1,3 +1,6 @@
+import crypto from 'node:crypto';
+import path from 'node:path';
+import { getUserConfigDir } from '../../../../src/host/config/configPaths';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -15,10 +18,12 @@ const mocks = vi.hoisted(() => ({
   },
   storage: {
     get: vi.fn(),
+    hasStoredSupabaseSession: vi.fn(),
     set: vi.fn(),
     delete: vi.fn(),
     clearSessionFromKeychain: vi.fn(),
     clearAuthData: vi.fn(),
+    hasAnyPastLoginTrace: vi.fn(),
   },
   logger: {
     info: vi.fn(),
@@ -53,7 +58,7 @@ vi.mock('../../../../src/host/services/infra/logger', () => ({
 
 describe('authService session trust', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     vi.resetModules();
     mocks.isSupabaseInitialized.mockReturnValue(false);
     mocks.ensureSupabaseInitialized.mockImplementation(() => {
@@ -74,15 +79,45 @@ describe('authService session trust', () => {
       }),
     });
     mocks.storage.clearSessionFromKeychain.mockResolvedValue(undefined);
-    mocks.storage.get.mockReturnValue(JSON.stringify({
+    mocks.storage.hasAnyPastLoginTrace.mockReturnValue(false);
+    mocks.storage.hasStoredSupabaseSession.mockResolvedValue(false);
+    mocks.storage.get.mockImplementation((key) => key === 'auth.user' ? JSON.stringify({
       id: 'admin-1',
       email: 'admin@example.com',
       isAdmin: true,
-    }));
+    }) : undefined);
   });
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+
+  it.each(['different', 'matching', 'missing'] as const)('data directory marker %s: warn only on mismatch without identity details', async (kind) => {
+    const currentHash = crypto.createHash('sha256').update(path.resolve(process.env.CODE_AGENT_DATA_DIR || getUserConfigDir())).digest('hex').slice(0, 12);
+    const values = new Map<string, string>([['auth.user', JSON.stringify({ id: 'marker-user', email: 'marker-private@example.test', nickname: 'Riley' })]]);
+    if (kind !== 'missing') values.set('auth.dataDirHash', kind === 'matching' ? currentHash : '012345abcdef');
+    mocks.storage.get.mockImplementation((key) => values.get(key));
+    mocks.storage.set.mockImplementation((key, value) => values.set(key, value));
+    const { getAuthService } = await import('../../../../src/host/services/auth/authService');
+    await getAuthService().initialize();
+    const warns = mocks.logger.warn.mock.calls.filter(([, fields]) => fields?.reason === 'data_dir_mismatch');
+    expect(warns).toHaveLength(kind === 'different' ? 1 : 0);
+    if (kind === 'different') {
+      expect(warns[0]).toEqual(['Auth restored login degraded to signed-out', {
+        reason: 'data_dir_mismatch', hadCachedIdentity: true,
+        cachedDataDirHash: '012345abcdef', currentDataDirHash: currentHash,
+      }]);
+      console.log(warns[0][0], JSON.stringify(warns[0][1]));
+    } else {
+      expect(values.get('auth.dataDirHash')).toBe(currentHash);
+      console.log(`data directory marker ${kind}: data_dir_mismatch warns=0`);
+    }
+    const serialized = JSON.stringify(warns);
+    expect(serialized).not.toContain('marker-private@example.test');
+    expect(serialized).not.toContain('marker-user');
+    expect(serialized).not.toContain(path.resolve(process.env.CODE_AGENT_DATA_DIR || getUserConfigDir()));
+    expect(getAuthService().getCurrentUser()?.nickname).toBe('Riley');
   });
 
   it('treats cached users as unverified and clears them on sign out without Supabase', async () => {
@@ -176,9 +211,72 @@ describe('authService session trust', () => {
     expect(authService.getSessionTrustState()).toBe('cached');
     expect(mocks.logger.debug).toHaveBeenCalledWith(
       ' Background session validation deferred; keeping cached user',
+      { errorMessage: 'Session fetch timeout', timeout: true },
     );
     expect(mocks.logger.warn).not.toHaveBeenCalledWith(
       ' Background session validation failed:',
+      expect.anything(),
+    );
+    // deferred 不降级：登录态保留，不触发 restore-degrade warn
+    expect(mocks.logger.warn).not.toHaveBeenCalledWith(
+      'Auth restored login degraded to signed-out',
+      expect.anything(),
+    );
+  });
+
+  it('network error during startup validation defers without downgrade or degrade warn', async () => {
+    mocks.isSupabaseInitialized.mockReturnValue(true);
+    mocks.supabase.auth.getSession.mockRejectedValue(new Error('socket hang up'));
+
+    const { getAuthService } = await import('../../../../src/host/services/auth/authService');
+    const authService = getAuthService();
+
+    await authService.initialize();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(authService.getSessionTrustState()).toBe('cached');
+    await expect(authService.getStatus()).resolves.toMatchObject({
+      isAuthenticated: true,
+      sessionTrustState: 'cached',
+      sessionExpired: false,
+    });
+    expect(mocks.logger.debug).toHaveBeenCalledWith(
+      ' Background session validation deferred; keeping cached user',
+      { errorMessage: 'socket hang up', timeout: false },
+    );
+    expect(mocks.logger.warn).not.toHaveBeenCalledWith(
+      'Auth restored login degraded to signed-out',
+      expect.anything(),
+    );
+  });
+
+  it('verified session restores with no degrade warn (outcome: verified)', async () => {
+    mocks.isSupabaseInitialized.mockReturnValue(true);
+    mocks.supabase.auth.getSession.mockResolvedValue({
+      data: {
+        session: {
+          user: {
+            id: 'admin-1',
+            email: 'admin@example.com',
+          },
+        },
+      },
+    });
+
+    const { getAuthService } = await import('../../../../src/host/services/auth/authService');
+    const authService = getAuthService();
+
+    await authService.initialize();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await expect(authService.revalidateSession()).resolves.toBe('verified');
+    await expect(authService.getStatus()).resolves.toMatchObject({
+      isAuthenticated: true,
+      sessionTrustState: 'verified',
+      sessionExpired: false,
+    });
+    expect(mocks.logger.warn).not.toHaveBeenCalledWith(
+      'Auth restored login degraded to signed-out',
       expect.anything(),
     );
   });
@@ -270,9 +368,156 @@ describe('authService session trust', () => {
       isAuthenticated: false,
       sessionExpired: true,
     });
+    // FB 03：降级 warn 必须说清根因——getSession 无 session 且无 error
+    expect(mocks.logger.warn).toHaveBeenCalledWith('Auth restored login degraded to signed-out', {
+      reason: 'session_not_restorable',
+      hadCachedIdentity: true,
+      sessionTrustState: 'cached',
+    });
     // Keychain 清除不在这条过期标记路径上。失效 refresh 由 storage adapter 的
     // removeItem 清掉 Keychain；AuthService.signOut() 仍是这里唯一的清除点。
     expect(mocks.storage.clearSessionFromKeychain).not.toHaveBeenCalled();
+  });
+
+  it('expired outcome also reachable through revalidateSession after a deferred startup', async () => {
+    mocks.isSupabaseInitialized.mockReturnValue(true);
+    mocks.supabase.auth.getSession.mockReturnValueOnce(new Promise(() => {})); // 启动后台校验挂起 → deferred
+    const { getAuthService } = await import('../../../../src/host/services/auth/authService');
+    const authService = getAuthService();
+
+    await authService.initialize();
+    expect(authService.getSessionTrustState()).toBe('cached');
+
+    mocks.supabase.auth.getSession.mockResolvedValue({ data: { session: null } });
+    await expect(authService.revalidateSession()).resolves.toBe('expired');
+
+    await expect(authService.getStatus()).resolves.toMatchObject({
+      isAuthenticated: false,
+      sessionExpired: true,
+    });
+    expect(mocks.logger.warn).toHaveBeenCalledWith('Auth restored login degraded to signed-out', {
+      reason: 'session_not_restorable',
+      hadCachedIdentity: true,
+      sessionTrustState: 'cached',
+    });
+  });
+
+  it('no cached identity + no session → outcome no-session with no degrade warn', async () => {
+    mocks.isSupabaseInitialized.mockReturnValue(true);
+    mocks.storage.get.mockReturnValue(undefined);
+    mocks.storage.hasAnyPastLoginTrace.mockReturnValue(false); // 从未登录过的机器
+    mocks.supabase.auth.getSession.mockResolvedValue({ data: { session: null } });
+
+    const { getAuthService } = await import('../../../../src/host/services/auth/authService');
+    const authService = getAuthService();
+
+    await authService.initialize();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await expect(authService.revalidateSession()).resolves.toBe('no-session');
+    await expect(authService.getStatus()).resolves.toMatchObject({
+      isAuthenticated: false,
+      sessionExpired: false,
+    });
+    expect(mocks.logger.warn).not.toHaveBeenCalledWith(
+      'Auth restored login degraded to signed-out',
+      expect.anything(),
+    );
+  });
+
+  it('cached user missing while past login traces exist → warn reason cached_user_missing', async () => {
+    mocks.isSupabaseInitialized.mockReturnValue(true);
+    mocks.storage.get.mockReturnValue(undefined);
+    mocks.storage.hasAnyPastLoginTrace.mockReturnValue(true); // 有历史 session 键/记住密码，但 auth.user 没了
+    mocks.supabase.auth.getSession.mockReturnValue(new Promise(() => {})); // 挂起后台校验，隔离缓存路径
+
+    const { getAuthService } = await import('../../../../src/host/services/auth/authService');
+    const authService = getAuthService();
+
+    await authService.initialize();
+
+    expect(authService.getCurrentUser()).toBeNull();
+    expect(mocks.logger.warn).toHaveBeenCalledWith('Auth restored login degraded to signed-out', {
+      reason: 'cached_user_missing',
+    });
+  });
+
+  it('cached user with wrong shape → warn reason cached_user_invalid', async () => {
+    mocks.isSupabaseInitialized.mockReturnValue(true);
+    mocks.storage.get.mockReturnValue(JSON.stringify({ id: 'admin-1' })); // 缺 email，形状不对
+    mocks.supabase.auth.getSession.mockReturnValue(new Promise(() => {}));
+
+    const { getAuthService } = await import('../../../../src/host/services/auth/authService');
+    const authService = getAuthService();
+
+    await authService.initialize();
+
+    expect(authService.getCurrentUser()).toBeNull();
+    expect(mocks.logger.warn).toHaveBeenCalledWith('Auth restored login degraded to signed-out', {
+      reason: 'cached_user_invalid',
+    });
+  });
+
+  it('cached user read throwing → warn reason cached_user_read_error with error message', async () => {
+    mocks.isSupabaseInitialized.mockReturnValue(true);
+    mocks.storage.get.mockImplementation(() => {
+      throw new Error('cache boom');
+    });
+    mocks.supabase.auth.getSession.mockReturnValue(new Promise(() => {}));
+
+    const { getAuthService } = await import('../../../../src/host/services/auth/authService');
+    const authService = getAuthService();
+
+    await authService.initialize();
+
+    expect(authService.getCurrentUser()).toBeNull();
+    expect(mocks.logger.error).toHaveBeenCalledWith(
+      ' Failed to load cached user:',
+      expect.any(Error),
+    );
+    expect(mocks.logger.warn).toHaveBeenCalledWith('Auth restored login degraded to signed-out', {
+      reason: 'cached_user_read_error',
+      errorMessage: 'cache boom',
+    });
+  });
+
+  it('Supabase not ready at initialize with cached identity → warn reason auth_backend_unavailable', async () => {
+    // beforeEach 默认：isSupabaseInitialized false + ensureSupabaseInitialized 抛错；缓存 admin 用户在
+    mocks.supabase.auth.getSession.mockReturnValue(new Promise(() => {}));
+
+    const { getAuthService } = await import('../../../../src/host/services/auth/authService');
+    const authService = getAuthService();
+
+    await authService.initialize();
+
+    expect(authService.getSessionTrustState()).toBe('cached');
+    expect(mocks.logger.warn).toHaveBeenCalledWith('Auth restored login degraded to signed-out', {
+      reason: 'auth_backend_unavailable',
+      hadCachedIdentity: true,
+    });
+  });
+
+  it('getSession error with cached identity → warn reason get_session_error with message and numeric status', async () => {
+    mocks.isSupabaseInitialized.mockReturnValue(true);
+    mocks.supabase.auth.getSession.mockResolvedValue({
+      data: { session: null },
+      error: { message: 'boom', status: 400 },
+    });
+
+    const { getAuthService } = await import('../../../../src/host/services/auth/authService');
+    const authService = getAuthService();
+
+    await authService.initialize();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(authService.getCurrentUser()).toBeNull();
+    expect(mocks.logger.warn).toHaveBeenCalledWith('Auth restored login degraded to signed-out', {
+      reason: 'get_session_error',
+      hadCachedIdentity: true,
+      sessionTrustState: 'cached',
+      errorMessage: 'boom',
+      status: 400,
+    });
   });
 
   it('从未登录（无缓存用户）+ session 失效 → 不标记 sessionExpired（不打扰）', async () => {
@@ -312,6 +557,14 @@ describe('authService session trust', () => {
 
     expect(authService.getCurrentUser()).toBeNull();
     await expect(authService.getStatus()).resolves.toMatchObject({ sessionExpired: true });
+    // FB 03：warn 必须携带 event 与 explicitSignOut，空 session 事件才可归因
+    expect(mocks.logger.warn).toHaveBeenCalledWith('Auth restored login degraded to signed-out', {
+      reason: 'empty_session_event',
+      event: 'INITIAL_SESSION',
+      explicitSignOut: false,
+      hadCachedIdentity: true,
+      sessionExpired: true,
+    });
   });
 
   it('onAuthStateChange: SIGNED_OUT（非本机主动退出）→ sessionExpired', async () => {
@@ -358,5 +611,51 @@ describe('authService session trust', () => {
     await expect(authService.getStatus()).resolves.toMatchObject({ sessionExpired: false });
     expect(mocks.logger.info).toHaveBeenCalledWith(' Explicit sign-out requested');
     expect(mocks.logger.info).toHaveBeenCalledWith(' Explicit sign-out confirmed by auth state change');
+    // 主动退出也走 empty_session_event warn，但 explicitSignOut=true 让日志可分辨
+    expect(mocks.logger.warn).toHaveBeenCalledWith('Auth restored login degraded to signed-out', {
+      reason: 'empty_session_event',
+      event: 'SIGNED_OUT',
+      explicitSignOut: true,
+      hadCachedIdentity: true,
+      sessionExpired: false,
+    });
+  });
+
+  it('degrade warn arguments never contain the cached email or token strings', async () => {
+    const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.super-secret-signature';
+    mocks.isSupabaseInitialized.mockReturnValue(true);
+    mocks.storage.get.mockReturnValue(JSON.stringify({
+      id: 'admin-1',
+      email: 'victim@example.com',
+      nickname: token,
+    }));
+    mocks.supabase.auth.getSession.mockResolvedValue({
+      data: { session: null },
+      error: { message: 'refresh rejected', status: 401 },
+    });
+
+    const { getAuthService } = await import('../../../../src/host/services/auth/authService');
+    const authService = getAuthService();
+
+    await authService.initialize();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await authService.revalidateSession();
+
+    // 触发过 get_session_error 降级（含 error message / status 字段）
+    expect(mocks.logger.warn).toHaveBeenCalledWith(
+      'Auth restored login degraded to signed-out',
+      expect.objectContaining({ reason: 'get_session_error' }),
+    );
+
+    // 序列化全部日志调用：不得出现 email / token
+    const logged = JSON.stringify([
+      mocks.logger.info.mock.calls,
+      mocks.logger.warn.mock.calls,
+      mocks.logger.error.mock.calls,
+      mocks.logger.debug.mock.calls,
+    ]);
+    expect(logged).not.toContain('victim@example.com');
+    expect(logged).not.toContain(token);
+    expect(logged).not.toContain('super-secret-signature');
   });
 });

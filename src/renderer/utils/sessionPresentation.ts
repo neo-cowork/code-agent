@@ -3,6 +3,7 @@ import type { SessionWorkbenchSnapshot } from '@shared/contract/sessionWorkspace
 import type { SessionRuntimeSummary } from '@shared/ipc';
 import type { BackgroundSessionInfo } from '@shared/contract/sessionState';
 import { stripAppshotBlocks } from '@shared/contract/appshot';
+import { localizeAppshotSessionTitle } from '@shared/sessionTitlePlaceholder';
 import type { SessionWithMeta } from '../stores/sessionStore';
 import type { SessionStatusFilter } from '../stores/sessionUIStore';
 import type { SessionState as TaskSessionState } from '../stores/taskStore';
@@ -78,7 +79,7 @@ export function getDisplaySessionTitle(title?: string | null, language: Language
   if (placeholder !== null) return placeholder;
   const stripped = stripAppshotBlocks(rawTitle);
   if (stripped && !stripped.trim().startsWith('<appshot')) {
-    return stripped;
+    return localizeAppshotSessionTitle(stripped, language);
   }
   if (rawTitle.startsWith('<appshot')) {
     return languages[language].sidebar.appshotSessionTitle;
