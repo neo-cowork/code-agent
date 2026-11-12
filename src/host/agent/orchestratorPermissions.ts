@@ -91,6 +91,8 @@ function buildParkedArgsPreview(request: PermissionRequest): string | undefined 
     request.details?.filePath,
     request.details?.url,
     request.details?.changes,
+    // 事件回复（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）：参数摘要显示「会发出的正文」。
+    request.details?.replyText,
   ].filter((part): part is string => typeof part === 'string' && part.length > 0);
   if (parts.length === 0) return undefined;
   const redacted = redactCommandSecrets(parts.join(' · '));
@@ -844,7 +846,11 @@ export class OrchestratorPermissionIsland {
           ? `目录访问：${fullRequest.details?.path ?? '(unknown path)'}（${
               fullRequest.details?.requestedAccess === 'read_write' ? '读写' : '只读'
             }）${fullRequest.reason ? `· ${fullRequest.reason}` : ''}`
-          : undefined,
+          // 事件回复（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）：卡上点名宿主绑定的去向
+          // （群名），不裸奔工具内部名；正文在 argsPreview（参数行）。
+          : typeof fullRequest.details?.replyDestination === 'string' && fullRequest.details.replyDestination
+            ? `回复 ${fullRequest.details.replyDestination}`
+            : undefined,
         riskClass: isExternalSideEffectTool(fullRequest.tool) ? 'external' : null,
         // B4：external+可提取 target 时非空 → 收件箱审批卡出「每次都允许发 <target>」铸权入口。
         standingGrantTarget: fullRequest.details?.standingGrantTarget ?? null,

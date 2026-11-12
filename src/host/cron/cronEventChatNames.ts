@@ -93,3 +93,26 @@ export async function enrichReplyTargetChatNames(
     return name ? { ...target, chatName: name } : target;
   });
 }
+
+/** 账号显示名缓存（决策台账「命中规则」的账号位不裸奔内部 UUID）。 */
+const accountNameCache = new Map<string, { name?: string; fetchedAt: number }>();
+
+/**
+ * 解析通道账号的用户可见名（账户列表里配置的 name）。失败/缺名回落 accountId。
+ * 与群名同一条 fail-open 原则：名字只是展示位。
+ */
+export async function resolveEventAccountName(accountId: string): Promise<string> {
+  const cached = accountNameCache.get(accountId);
+  if (cached && Date.now() - cached.fetchedAt < CHAT_NAME_CACHE_TTL_MS) return cached.name ?? accountId;
+  try {
+    const { getChannelManager } = await import('../channels/channelManager');
+    const account = getChannelManager().getAllAccounts().find((candidate) => candidate.id === accountId);
+    const name = account?.name?.trim() || undefined;
+    accountNameCache.set(accountId, { name, fetchedAt: Date.now() });
+    return name ?? accountId;
+  } catch (error) {
+    console.warn(`[CronEventChatNames] account name lookup failed for ${accountId}:`, error);
+    accountNameCache.set(accountId, { name: undefined, fetchedAt: Date.now() });
+    return accountId;
+  }
+}

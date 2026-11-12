@@ -14,7 +14,7 @@ import { CRON_AGENT_SNAPSHOT, CRON_GUARDRAILS, EXTERNAL_WATCH, isZeroPricedModel
 import { createLogger } from '../services/infra/logger';
 import type { AgentAction, CronJobDefinition, CronExecutionTrigger } from '../../shared/contract/cron';
 import { bindEventReplySession } from '../tools/eventReplySession';
-import { enrichReplyTargetChatNames } from './cronEventChatNames';
+import { enrichReplyTargetChatNames, resolveEventAccountName } from './cronEventChatNames';
 import {
   buildCronAgentActionResult,
   cronAgentRunHasAlert,
@@ -130,6 +130,8 @@ export async function executeCronAgentAction(
   const leaveEventReply = eventReplyAccountId && eventReplyTargets && eventReplyTargets.length > 0
     ? bindEventReplySession(cronSession.id, eventReplyAccountId, eventReplyTargets)
     : undefined;
+  // 命中规则的可读账号位（账号名；失败回落 accountId，见 cronEventChatNames）。
+  const eventReplyAccountName = eventReplyAccountId ? await resolveEventAccountName(eventReplyAccountId) : undefined;
   // cron/heartbeat 无人值守会话标 async_agent（2026-07-13 拍板）：bash 走
   // ask+forceConfirm，无人应答由 requestPermission 60s 超时 deny 兜底，
   // 与 readOnly 会话档双保险。必须在 sendMessage 前标注。
@@ -167,6 +169,7 @@ export async function executeCronAgentAction(
   const leaveObserveMode = enterObserveModeForCronRun(definition, cronSession.id, executionId, undefined, {
     // 命中规则的可读会话位：本批事件带的群名（没有就回落配置里的原始会话 id）。
     chatName: eventReplyTargets?.find((target) => target.chatName?.trim())?.chatName,
+    accountName: eventReplyAccountName,
   });
   try {
     try {

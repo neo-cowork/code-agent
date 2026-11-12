@@ -22,9 +22,12 @@ export function isCronObserveMode(definition: Pick<CronJobDefinition, 'schedule'
 }
 
 /** 命中规则的推导（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）：每条 would_act 行都带上。 */
-function matchedRuleFor(definition: CronJobDefinition, chatName?: string): string | undefined {
+function matchedRuleFor(
+  definition: CronJobDefinition,
+  options?: { chatName?: string; accountName?: string },
+): string | undefined {
   return definition.schedule.type === 'event'
-    ? describeEventScheduleRule(definition.schedule, chatName ? { chatName } : undefined)
+    ? describeEventScheduleRule(definition.schedule, options)
     : undefined;
 }
 
@@ -34,11 +37,11 @@ export function enterObserveModeForCronRun(
   sessionId: string,
   executionId: string | undefined,
   store: CronEventDecisionStore = sqliteCronEventDecisionStore,
-  /** 本批事件带的群名（命中规则「会话」位渲染成群名；缺省回落配置里的原始会话 id）。 */
-  options?: { chatName?: string },
+  /** 本批事件带的群名/账号显示名（命中规则的可读会话/账号位；缺省回落配置里的原始 id）。 */
+  options?: { chatName?: string; accountName?: string },
 ): () => void {
   if (!isCronObserveMode(definition)) return () => {};
-  const matchedRule = matchedRuleFor(definition, options?.chatName);
+  const matchedRule = matchedRuleFor(definition, options);
   return enterObserveMode(sessionId, (interception) => {
     store.record([{
       jobId: definition.id,
