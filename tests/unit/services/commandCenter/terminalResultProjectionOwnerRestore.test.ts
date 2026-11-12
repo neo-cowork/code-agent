@@ -128,7 +128,7 @@ describe('settle 终态投影在登录恢复窗口里的收口', () => {
       prompt: 'do it',
       workspaceScope: createWorkspaceScope('p', [{ sourceId: 's', path: tmpDir, role: 'primary', access: 'read_write' }]),
     });
-    expect(spawned.outcome).toBe('started');
+    if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
     manager.emit('task_completed', { type: 'task_completed', sessionId: SESSION, data: { taskId: spawned.task.id, conclusion: '周报已写好' } });
     return spawned.task.id;
   }
