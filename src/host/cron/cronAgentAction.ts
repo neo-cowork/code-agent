@@ -114,6 +114,12 @@ export async function executeCronAgentAction(
   const tm = getTaskManager();
   const cronSession = await createCronAgentSession(definition, action, executionId);
   if (executionId) await host.recordSessionId(executionId, cronSession.id);
+  // 回复目的地绑定（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）：把本批通道事件的逐事件
+  // 目的地登记进会话——reply_to_event 只认这张表，且 withEventReplyTools 只给绑定的会话注入工具。
+  const eventReplyTargets = eventTrigger?.replyTargets;
+  const leaveEventReply = eventTrigger?.accountId && eventReplyTargets && eventReplyTargets.length > 0
+    ? bindEventReplySession(cronSession.id, eventTrigger.accountId, eventReplyTargets)
+    : undefined;
   const orchestrator = tm.getOrCreateCurrentOrchestrator(cronSession.id) ?? null;
   if (!orchestrator) {
     throw new Error(`AgentOrchestrator not available for cron session ${cronSession.id}`);
@@ -152,12 +158,6 @@ export async function executeCronAgentAction(
   warnIfBudgetCapCannotTrigger(definition, cronSession.modelConfig);
   const artifactRefresh = beginArtifactRefresh(definition);
   // 观察档（N-TRIGGER-OBSERVE-MODE）：本会话的对外副作用调用由 ToolExecutor 拦下记 would_act。
-  // 回复目的地绑定（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）：把本批通道事件的逐事件
-  // 目的地登记进会话——reply_to_event 只认这张表，且 withEventReplyTools 只给绑定的会话注入工具。
-  const eventReplyTargets = eventTrigger?.replyTargets;
-  const leaveEventReply = eventTrigger?.accountId && eventReplyTargets && eventReplyTargets.length > 0
-    ? bindEventReplySession(cronSession.id, eventTrigger.accountId, eventReplyTargets)
-    : undefined;
   const leaveObserveMode = enterObserveModeForCronRun(definition, cronSession.id, executionId, undefined, {
     // 命中规则的可读会话位：本批事件带的群名（没有就回落配置里的原始会话 id）。
     chatName: eventReplyTargets?.find((target) => target.chatName?.trim())?.chatName,

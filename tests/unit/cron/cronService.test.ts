@@ -394,6 +394,8 @@ describe('CronService execution location invariants', () => {
       undefined,
       expect.any(String),
       undefined,
+      // N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN：schedule 触发不带事件 trigger。
+      undefined,
     );
   });
 });

@@ -162,7 +162,8 @@ beforeEach(async () => {
       expect(prompt).toContain('RR51-PING 群监听测试');
       expect(prompt).toContain(MESSAGE_ID);
       const sessionId = service.getJobExecutions(job.id)[0].sessionId!;
-      expect(enterObserve).toHaveBeenCalledWith(expect.objectContaining({ id: job.id }), sessionId, expect.any(String));
+      // N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN：签名扩到 5 参（store 缺省 + 群名提示）。
+      expect(enterObserve).toHaveBeenCalledWith(expect.objectContaining({ id: job.id }), sessionId, expect.any(String), undefined, { chatName: undefined });
       proof(`[PATH] executeCronAgentAction -> enterObserveModeForCronRun session=${sessionId} mode=${job.actionMode}`);
       messages.push({ role: 'user', content: prompt });
       const result = await executor.execute('Bash', { command: COMMAND }, {
