@@ -12,7 +12,8 @@
 
 import { createServer, type Server } from 'http';
 import type { AddressInfo } from 'net';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { execFileSync } from 'child_process';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 process.env.CODE_AGENT_BROWSER_PROVIDER = 'playwright-bundled';
 
@@ -177,6 +178,35 @@ describe('kept result page claim path (real chromium)', () => {
     expect(after.state).toBe('closed');
     expect(after.url).toBe(before.url);
     await expect(adoptKeptResultPageHandler(links, { conversationId, workspace: process.cwd() }))
-      .rejects.toThrow('No kept result page is open for this conversation.');
+      .rejects.toThrow('这一页的浏览器窗口已经关闭');
+  }, TIMEOUT_MS);
+
+  it('killing the kept browser process flips state to closed (url retained) and adopt rejects with a plain sentence', async () => {
+    const conversationId = 'smoke-conv-killed';
+    const links = new UserBrowserLinkService();
+    await submitAndKeep(conversationId);
+    const before = getKeptResultPageHandler(links, { conversationId });
+    expect(before.state).toBe('kept');
+
+    // 杀掉浏览器进程树（不经 service.close()）：模拟窗口被关/进程崩溃。
+    const adopted = await adoptKeptResultPageHandler(links, { conversationId, workspace: process.cwd() });
+    const service = adoptedService(conversationId, adopted.runId);
+    const userDataDir = service.getSessionState().profileDir;
+    const pids = execFileSync('pgrep', ['-f', '--', `--user-data-dir=${userDataDir}`], { encoding: 'utf8' })
+      .split('\n').map(Number).filter(Boolean);
+    expect(pids.length).toBeGreaterThan(0);
+    for (const pid of pids) { try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ } }
+
+    await vi.waitFor(() => {
+      expect(getKeptResultPageHandler(links, { conversationId }).state).toBe('closed');
+    }, { timeout: 15_000 });
+    const after = getKeptResultPageHandler(links, { conversationId });
+    console.log('[smoke] state after kill -9:', JSON.stringify(after));
+    expect(after.url).toBe(before.url);
+    const rejection = await adoptKeptResultPageHandler(links, { conversationId, workspace: process.cwd() })
+      .then(() => null, (error: Error) => error.message);
+    console.log('[smoke] adopt after kill:', rejection);
+    expect(rejection).toBe('这一页的浏览器窗口已经关闭，没法接着操作了。可以点「重新打开」恢复网址。');
+    expect(rejection).not.toMatch(/[A-Za-z]{4,}/);
   }, TIMEOUT_MS);
 });

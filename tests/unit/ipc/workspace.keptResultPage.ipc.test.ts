@@ -65,11 +65,11 @@ describe('workspace kept result page IPC', () => {
     expect(adopt).toHaveBeenCalledWith({ conversationId: 'c1', workspace: '/tmp/ws' });
   });
 
-  it('adoptKeptResultPage surfaces the plain failure sentence when nothing is kept', async () => {
+  it('adoptKeptResultPage surfaces the plain Chinese sentence and hides the raw error', async () => {
     const adopt = vi.fn(async () => { throw new Error('No kept result page is open for this conversation.'); });
     const { call } = setup(adopt as unknown as Links['adopt']);
     const response = await call('adoptKeptResultPage', { conversationId: 'c1', workspace: '/tmp/ws' });
     expect(response.success).toBe(false);
-    expect(JSON.stringify(response.error)).toContain('No kept result page is open for this conversation.');
+    expect(JSON.stringify(response.error)).toContain('这一页的浏览器窗口已经关闭');
   });
 });
