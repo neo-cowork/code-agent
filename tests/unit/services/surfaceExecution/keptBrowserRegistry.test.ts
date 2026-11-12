@@ -208,4 +208,30 @@ describe('KeptBrowserRegistry (N-BROWSER-KEEP-RESULT-PAGE)', () => {
       title: 'Result',
     });
   });
+
+  it('FU2: 进程死掉且没有 close/crashed 事件时，读取侧（snapshot/getAlive）按活性探针当场翻 closed', () => {
+    const { pool, released } = createFakePool();
+    let alive = true;
+    pool.isServiceAlive = vi.fn(() => alive);
+    const registry = new KeptBrowserRegistry(pool);
+    registry.register(baseInput());
+
+    alive = false;
+    expect(registry.snapshot('conversation-a')).toEqual({
+      state: 'closed',
+      url: 'https://example.test/result',
+      title: 'Result',
+    });
+    expect(registry.getAlive('conversation-a')).toBeNull();
+    expect(released).toEqual(['surface-key-1']);
+  });
+
+  it('FU2: 活性探针缺省（旧测试桩/未注入）时读取行为不变，不因缺探针翻 closed', () => {
+    const { pool } = createFakePool();
+    const registry = new KeptBrowserRegistry(pool);
+    registry.register(baseInput());
+
+    expect(registry.snapshot('conversation-a').state).toBe('kept');
+    expect(registry.getAlive('conversation-a')?.serviceKey).toBe('surface-key-1');
+  });
 });

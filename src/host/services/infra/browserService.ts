@@ -336,6 +336,22 @@ export class BrowserService implements Disposable {
     return this.browser !== null || this.context !== null;
   }
 
+  /**
+   * kept 结果窗活性真源（N-FIX-BROWSER-KEEP-RESULT-PAGE-FU2）：isRunning() 只看
+   * browser/context 引用，进程死后引用残留会假阳性（close/crashed 事件也可能不来）；
+   * 这里按进程句柄直接问 OS。
+   */
+  isProcessAlive(): boolean {
+    if (!this.browserProcess) return false;
+    if (this.browserProcess.exitCode !== null || this.browserProcess.signalCode !== null) return false;
+    try {
+      process.kill(this.browserProcess.pid ?? -1, 0);
+      return true;
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code === 'EPERM';
+    }
+  }
+
   // --------------------------------------------------------------------------
   // Tab Management
   // --------------------------------------------------------------------------

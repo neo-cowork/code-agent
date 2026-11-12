@@ -74,12 +74,6 @@ import { openExternalLink } from '../../utils/platform';
 
 type Copy = ReturnType<typeof useI18n>['t']['workbenchTabs']['agentWindow'];
 
-function formatTemplate(template: string, vars: Record<string, string | number>): string {
-  return template.replace(/\{(\w+)\}/g, (match, key: string) => (
-    vars[key] !== undefined ? String(vars[key]) : match
-  ));
-}
-
 /** 摘要卡用时：startedAt → projection updatedAt（裁定用 updatedAt，cleanup completedAt 依赖事件到达） */
 function formatTerminalDuration(
   startedAt: number,
@@ -541,7 +535,7 @@ export const BrowserAgentWindow: React.FC = () => {
 
   const isNavPending = navigationPending?.status === 'pending';
   const navFailedMessage = navigationPending?.status === 'failed'
-    ? formatTemplate(copy.navigationFailed, {
+    ? formatSurfaceExecutionCopy(copy.navigationFailed, {
       error: navigationPending.error || copy.navigationFailedGeneric,
     })
     : null;
@@ -557,7 +551,7 @@ export const BrowserAgentWindow: React.FC = () => {
           className="flex shrink-0 items-center gap-2 border-b border-badge-info/20 bg-sky-500/10 px-2.5 py-1.5"
         >
           <span className="min-w-0 flex-1 truncate text-xs text-badge-info">
-            {formatTemplate(copy.annotateBanner, { host: annotateHostLabel })}
+            {formatSurfaceExecutionCopy(copy.annotateBanner, { host: annotateHostLabel })}
           </span>
           <Button
             variant="primary"
@@ -567,7 +561,7 @@ export const BrowserAgentWindow: React.FC = () => {
             onClick={() => void handleSendAnnotations()}
             data-testid="browser-agent-window-annotate-send"
           >
-            {formatTemplate(copy.annotateSend, { count: pins.length })}
+            {formatSurfaceExecutionCopy(copy.annotateSend, { count: pins.length })}
           </Button>
           <GhostButton
             size="sm"
@@ -878,7 +872,10 @@ export const BrowserAgentWindow: React.FC = () => {
           </div>
         )}
 
-        {terminalSurfaceSession && <BrowserKeptResultBar conversationId={currentSessionId} workspace={workingDirectory} />}
+        {/* FU2：kept 条不依赖终态会话——run 中右栏的视口推送会起 user-browser-link
+            会话，browserSurfaceSessionId 常驻非空，终态条永不来；kept 三态存在就挂
+            （none 时组件自渲染 null），认领后活页在前、条在后两不误。 */}
+        <BrowserKeptResultBar conversationId={currentSessionId} workspace={workingDirectory} />
         {annotateMode && pins.map((pin) => (
           <button
             key={pin.id}
