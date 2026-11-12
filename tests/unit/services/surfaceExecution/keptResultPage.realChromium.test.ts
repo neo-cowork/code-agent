@@ -1,12 +1,12 @@
 /**
- * Smoke — kept result page claim path with REAL chromium (N-BROWSER-KEEP-RESULT-PAGE-FU1).
+ * Real-chromium (in-gate) — kept result page claim path with REAL chromium (N-BROWSER-KEEP-RESULT-PAGE-FU1).
  *
  * 真 BrowserService + 真 ManagedBrowserProviderAdapter / SurfaceExecutionRuntime /
  * UserBrowserLinkService / KeptBrowserRegistry，只走生产入口：
  *   browserActionTool.execute（navigate/type/click/keep_result_page）→ runtime.endRun
  *   → getKeptResultPageHandler / adoptKeptResultPageHandler → UserBrowserLinkService.dispatchUserInput。
  *
- * 跑法：npm run test:smoke -- tests/smoke/keptResultPage.smoke.test.ts
+ * 跑法：npx vitest run tests/unit/services/surfaceExecution/keptResultPage.realChromium.test.ts
  * 依赖：playwright bundled chromium（headless）。
  */
 
@@ -17,28 +17,28 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 
 process.env.CODE_AGENT_BROWSER_PROVIDER = 'playwright-bundled';
 
-import { browserActionTool } from '../../src/host/tools/vision/browserAction';
-import type { ToolContext } from '../../src/host/tools/types';
+import { browserActionTool } from '../../../../src/host/tools/vision/browserAction';
+import type { ToolContext } from '../../../../src/host/tools/types';
 import {
   getApplicationRunRegistry,
   resetApplicationRunRegistryForTests,
-} from '../../src/host/app/applicationRunRegistry';
+} from '../../../../src/host/app/applicationRunRegistry';
 import {
   getSurfaceExecutionRuntime,
   resetSurfaceExecutionRuntimeForTests,
   type SurfaceRuntimeIdentityV1,
-} from '../../src/host/services/surfaceExecution/SurfaceExecutionRuntime';
+} from '../../../../src/host/services/surfaceExecution/SurfaceExecutionRuntime';
 import {
   getManagedBrowserProviderAdapter,
   resetManagedBrowserProviderAdapterForTests,
-} from '../../src/host/services/surfaceExecution/ManagedBrowserProviderAdapter';
-import { UserBrowserLinkService } from '../../src/host/services/surfaceExecution/UserBrowserLinkService';
+} from '../../../../src/host/services/surfaceExecution/ManagedBrowserProviderAdapter';
+import { UserBrowserLinkService } from '../../../../src/host/services/surfaceExecution/UserBrowserLinkService';
 import {
   adoptKeptResultPageHandler,
   getKeptResultPageHandler,
-} from '../../src/host/ipc/workspaceKeptResultPage';
-import { browserPool } from '../../src/host/services/infra/browserPool';
-import { SURFACE_USER_BROWSER_AGENT_ID } from '../../src/shared/contract/surfaceExecution';
+} from '../../../../src/host/ipc/workspaceKeptResultPage';
+import { browserPool } from '../../../../src/host/services/infra/browserPool';
+import { SURFACE_USER_BROWSER_AGENT_ID } from '../../../../src/shared/contract/surfaceExecution';
 
 const TIMEOUT_MS = 120_000;
 
