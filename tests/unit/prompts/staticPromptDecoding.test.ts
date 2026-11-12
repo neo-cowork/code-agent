@@ -16,7 +16,7 @@
 // eval 只用来测行为，不用来测「这句话还在不在」。
 // ============================================================================
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import '../../../src/host/prompts/promptIndex';
 import { IDENTITY_PROMPT, MEMORY_SYSTEM } from '../../../src/host/prompts/identity';
 import { TOOLS_PROMPT } from '../../../src/host/prompts/base';
@@ -80,8 +80,14 @@ describe('常驻层体量', () => {
     // 规则本身已从 485 字符收紧到 430、并对首行做了无损微剪（213→194），仍超旧上限 84。
     // 屏幕控制是慢而不可核的动作面，这条规则是护栏内容，与 GHOSTRULES 同类；
     // 不接受再用它顶纯功能描述类的膨胀。
-    const total = estimateTokens(IDENTITY_PROMPT) + estimateTokens(TOOLS_PROMPT);
-    expect(total).toBeLessThanOrEqual(3190);
+    // Measure canonical production text; globalSetup's temporary data-dir path has variable length.
+    vi.stubEnv('CODE_AGENT_DATA_DIR', undefined);
+    try {
+      const total = estimateTokens(IDENTITY_PROMPT) + estimateTokens(TOOLS_PROMPT);
+      expect(total).toBeLessThanOrEqual(3190);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 

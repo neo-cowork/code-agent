@@ -5,6 +5,13 @@
 import type { SlideData } from './types';
 import { DEFAULT_END_TITLE } from './constants';
 
+function stripInlineMarkdown(text: string): string {
+  return text
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/`([^`]+)`/g, '$1');
+}
+
 /**
  * 解析 Markdown 内容为幻灯片数据
  */
@@ -47,7 +54,7 @@ export function parseContentToSlides(
     // 一级标题 - 新幻灯片
     if (trimmed.startsWith('# ')) {
       if (currentSlide) slides.push(currentSlide);
-      const title = trimmed.replace(/^#\s*/, '');
+      const title = stripInlineMarkdown(trimmed.replace(/^#\s*/, ''));
       currentSlide = {
         title,
         points: [],
@@ -57,7 +64,7 @@ export function parseContentToSlides(
     }
     // 二级标题处理
     else if (trimmed.startsWith('## ')) {
-      const subTitle = trimmed.replace(/^##\s*/, '');
+      const subTitle = stripInlineMarkdown(trimmed.replace(/^##\s*/, ''));
       if (options?.h2AsPages) {
         if (currentSlide) slides.push(currentSlide);
         currentSlide = {
@@ -70,20 +77,19 @@ export function parseContentToSlides(
         // 封面页：设为副标题
         currentSlide.subtitle = subTitle;
       } else if (currentSlide && !currentSlide.isTitle) {
-        // 非封面页：作为加粗要点添加到内容中
-        currentSlide.points.push(`**${subTitle}**`);
+        currentSlide.points.push(subTitle);
       }
     }
     // 列表项
     else if (trimmed.startsWith('- ') || trimmed.startsWith('* ') || trimmed.match(/^\d+\.\s/)) {
       if (currentSlide) {
-        const text = trimmed.replace(/^[-*]\s*/, '').replace(/^\d+\.\s*/, '');
+        const text = stripInlineMarkdown(trimmed.replace(/^[-*]\s*/, '').replace(/^\d+\.\s*/, ''));
         currentSlide.points.push(text);
       }
     }
     // 普通文本行
     else if (trimmed && currentSlide && !currentSlide.isTitle) {
-      currentSlide.points.push(trimmed);
+      currentSlide.points.push(stripInlineMarkdown(trimmed));
     }
   }
 
@@ -93,7 +99,7 @@ export function parseContentToSlides(
   if (slides.length === 0) {
     slides.push({
       title: '内容概述',
-      points: content.split('\n').filter(l => l.trim()).slice(0, 5),
+      points: content.split('\n').filter(l => l.trim()).slice(0, 5).map(stripInlineMarkdown),
     });
   }
 

@@ -146,6 +146,8 @@ export interface EnqueueRoleDraftResult {
   draft: RoleDraftMeta | null;
   /** draft 为 null 时给出原因（透传给模型，便于换名重试） */
   reason?: string;
+  /** 因「已有同名待确认草稿」被拒时给出该草稿归属的会话，供调用方指路 */
+  conflict?: { roleId: string; sessionId: string };
 }
 
 export interface PrepareRoleDraftResult extends EnqueueRoleDraftResult {
@@ -210,8 +212,13 @@ export async function prepareRoleDraft(input: RoleDraftInput): Promise<PrepareRo
 
   // 队列里已有同名待确认草稿 → 拒绝（迭代时让用户先确认/放弃旧草稿）
   const existing = await listRoleDrafts();
-  if (existing.some((d) => d.roleId === roleId)) {
-    return { draft: null, reason: `已有一个待确认的「${roleId}」草稿，请先确认或放弃它` };
+  const clash = existing.find((d) => d.roleId === roleId);
+  if (clash) {
+    return {
+      draft: null,
+      reason: `已有一个待确认的「${roleId}」草稿，请先确认或放弃它`,
+      conflict: { roleId, sessionId: clash.sessionId },
+    };
   }
 
   const id = sanitizeDraftId(roleId, createdAt);

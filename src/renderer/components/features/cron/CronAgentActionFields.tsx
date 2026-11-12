@@ -7,6 +7,7 @@ import { Select } from '../../primitives/Select';
 import { Textarea } from '../../primitives/Textarea';
 import { useI18n } from '../../../hooks/useI18n';
 import type { CronJobDraft } from './types';
+import { CronPersonalSkillFields } from './CronPersonalSkillFields';
 
 interface CronAgentActionFieldsProps {
   draft: CronJobDraft;
@@ -72,6 +73,7 @@ export const CronAgentActionFields: React.FC<CronAgentActionFieldsProps> = ({ dr
           data-testid="cron-agent-urgency-criteria"
         />
       </FormField>
+      <CronPersonalSkillFields draft={draft} setField={setField} />
       <details
         className="group rounded-lg border border-zinc-800 bg-zinc-950/30 px-3 py-2"
         data-testid="cron-agent-context-disclosure"

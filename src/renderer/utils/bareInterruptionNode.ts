@@ -5,9 +5,9 @@ import type { Message, StreamInterruptionReason } from '@shared/contract';
 import type { TraceNode } from '@shared/contract/trace';
 import { isStreamRecoveryMessage } from './streamRecoveryMessage';
 
-const PROTOCOL_MARKERS = /\[cancelled\]|\[未完成\s*[—-]\s*切换会话中断\]/giu;
+const PROTOCOL_MARKERS = /\[cancelled\]|\[未完成\s*[—-]\s*切换会话中断\]|\[连接中断\s*[—-]\s*部分回答已保留\]/giu;
 
-function hasStreamRecoveryInSameTurn(msg: Message, all: Message[]): boolean {
+function hasStreamRecoveryInSameTurn(msg: Message, all: Message[], reason: StreamInterruptionReason): boolean {
   const messageIndex = all.indexOf(msg);
   if (messageIndex < 0) return false;
 
@@ -27,7 +27,8 @@ function hasStreamRecoveryInSameTurn(msg: Message, all: Message[]): boolean {
     }
   }
 
-  return all.slice(turnStart, turnEnd).some((message) => isStreamRecoveryMessage(message));
+  return all.slice(turnStart, turnEnd).some((message) => isStreamRecoveryMessage(message)
+    && (reason !== 'stream-break' || Boolean(message.content?.trim() || message.toolCalls?.length)));
 }
 
 export function bareInterruptionNode(
@@ -35,10 +36,10 @@ export function bareInterruptionNode(
   all: Message[],
   reason: StreamInterruptionReason,
 ): TraceNode | null {
-  if (reason !== 'user' && reason !== 'session-switch') return null;
+  if (reason !== 'user' && reason !== 'session-switch' && reason !== 'stream-break') return null;
   if (isStreamRecoveryMessage(msg) || msg.toolCalls?.length) return null;
   if (msg.content.replace(PROTOCOL_MARKERS, '').trim()) return null;
-  if (hasStreamRecoveryInSameTurn(msg, all)) return null;
+  if (hasStreamRecoveryInSameTurn(msg, all, reason)) return null;
   return {
     id: `${msg.id}-text`,
     messageId: msg.id,

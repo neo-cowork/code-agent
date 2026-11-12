@@ -53,6 +53,7 @@ import { ConfirmDialog } from '../../composites/ConfirmDialog';
 import { UpdateNotification } from '../../UpdateNotification';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { UpdateInfo } from '@shared/contract';
+import { usePageReturnPosition } from '../../../hooks/usePageReturn';
 import { createLogger } from '../../../utils/logger';
 import { isDesktopShellMode, isTauriMode } from '../../../utils/platform';
 import { createAccessSubject, type AccessSubject } from '../../../utils/accessControl';
@@ -331,6 +332,7 @@ export const SettingsModal: React.FC = () => {
   const [activeTab, setActiveTab] = useState<SettingsTab>(
     settingsInitialTab ?? DEFAULT_SETTINGS_TAB
   );
+  usePageReturnPosition({ page: 'settings', tab: activeTab });
   // 「高级」等默认折叠组的展开状态（无权限语义，纯侧栏收纳）
   const [expandedCollapsedGroups, setExpandedCollapsedGroups] = useState<Set<SettingsTabGroupId>>(
     () => new Set()

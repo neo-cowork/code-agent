@@ -32,7 +32,7 @@
 // ESM would hoist and evaluate before the assignment runs.
 
 import fs from 'fs/promises';
-import os from 'os';
+import { assertIsolatedVerificationDir, isolatedVerificationEnv } from '../lib/verificationIsolation.ts';
 import path from 'path';
 import crypto from 'crypto';
 import { execFile } from 'child_process';
@@ -51,8 +51,9 @@ import {
 } from '../acceptance/_helpers.ts';
 import { resolveUnitBudget, type UnitBudget } from './modelBudget.ts';
 
-if (!process.env.CODE_AGENT_DATA_DIR) {
-  process.env.CODE_AGENT_DATA_DIR = path.join(os.homedir(), '.code-agent-dev');
+if (!process.argv.includes('--dry-run') && !process.argv.includes('--revalidate')) {
+  process.env.CODE_AGENT_DATA_DIR = assertIsolatedVerificationDir(process.env.CODE_AGENT_DATA_DIR);
+  Object.assign(process.env, isolatedVerificationEnv(process.env.CODE_AGENT_DATA_DIR));
 }
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));

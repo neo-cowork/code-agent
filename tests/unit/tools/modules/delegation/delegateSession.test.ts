@@ -22,6 +22,7 @@ vi.mock('../../../../../src/host/services/infra/logger', async (importOriginal) 
 import { applySchema } from '../../../../../src/host/services/core/database/schema';
 import { SessionDelegationRepository } from '../../../../../src/host/services/core/repositories/SessionDelegationRepository';
 import { QueuedInputRepository } from '../../../../../src/host/services/core/repositories/QueuedInputRepository';
+import { DurableRunRepository } from '../../../../../src/host/services/core/repositories/DurableRunRepository';
 import { commitDelegation } from '../../../../../src/host/services/delegation/delegationDelivery';
 import { deriveActionFingerprint, deriveSubmissionKey } from '../../../../../src/host/services/delegation/delegationKeys';
 import { getDelegationCandidateSecret } from '../../../../../src/host/services/delegation/delegationToolRuntime';
@@ -665,6 +666,58 @@ describe('delegate_session origin turn identity (FB-772)', () => {
       expect(JSON.parse(second.output)).toMatchObject({ delegationId: first.meta?.delegationId, status: 'active', reused: true });
       expect(db.prepare('SELECT count(*) AS count FROM session_delegations').get()).toMatchObject({ count: 1 });
       expect(db.prepare('SELECT count(*) AS count FROM queued_inputs').get()).toMatchObject({ count: 1 });
+    } finally {
+      db.close();
+    }
+  });
+
+  it.each(['completed', 'failed'] as const)('terminal replay after %s returns the original receipt without enqueueing again', async (runStatus) => {
+    process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
+    const { db, projection, runtime } = fixture();
+    const notify = vi.fn();
+    runtime.notifyEnqueued = notify;
+    try {
+      const args = delegateArgs(projection, 'same body');
+      const first = await executeDelegateSession(args, turnCtx(runtime, { runId: 'run-1', turnId: 'step-1' }), async () => ({ allow: true }));
+      if (!first.ok) throw new Error('first delegation must be admitted');
+      const delegationId = String(first.meta?.delegationId);
+      const runs = new DurableRunRepository(db);
+      runs.migrate();
+      await runs.create({
+        schemaVersion: 1, runId: 'target-run', sessionId: 'target', engine: { kind: 'native' },
+        status: 'running', attempt: 1, cursor: { nextEventSeq: 1, checkpointSeq: 0 },
+        owner: { ownerId: 'owner', processInstanceId: 'process', epoch: 1, leaseExpiresAt: 1000 },
+        createdAt: 100, updatedAt: 101,
+      }, {
+        runId: 'target-run', attempt: 1, processInstanceId: 'process', ownerId: 'owner',
+        ownerEpoch: 1, status: 'active', startedAt: 100,
+      });
+      await runs.commitTerminal({
+        runId: 'target-run', attempt: 1, expectedOwnerEpoch: 1, expectedNextEventSeq: 1,
+        status: runStatus, terminalAt: 101,
+        event: { type: 'run_terminal', payload: { status: runStatus }, recordedAt: 101 },
+      });
+      const repository = new SessionDelegationRepository(db);
+      repository.backfillTargetRunId(delegationId, 'target-run');
+      repository.markTerminalObserved(delegationId, 101);
+      const queuedBefore = db.prepare('SELECT * FROM queued_inputs').all();
+      const delegationBefore = repository.get(delegationId);
+      const second = await executeDelegateSession(args, turnCtx(runtime, { runId: 'run-1', turnId: 'step-2' }), async () => ({ allow: true }));
+      expect(second).toMatchObject({ ok: true, meta: { delegationId, reused: true, status: 'terminal_observed', runStatus } });
+      if (!second.ok) throw new Error(second.error);
+      expect(JSON.parse(second.output)).toMatchObject({ delegationId, reused: true, status: 'terminal_observed', runStatus });
+      const receipt = JSON.parse(second.output);
+      expect(receipt.message).toContain('already delivered');
+      expect(receipt.message).not.toContain('from status/runStatus');
+      expect(receipt.message).toContain('Never quote the raw status');
+      expect(receipt.stateDescription).toBe(runStatus === 'completed'
+        ? 'The target session has finished this request.'
+        : 'The target session tried this request but it failed.');
+      expect(receipt.stateDescription).not.toMatch(/terminal_observed|completed|failed_|runStatus/);
+      expect(db.prepare('SELECT * FROM queued_inputs').all()).toEqual(queuedBefore);
+      expect(repository.get(delegationId)).toEqual(delegationBefore);
+      expect(db.prepare('SELECT count(*) AS count FROM session_delegations').get()).toEqual({ count: 1 });
+      expect(notify).toHaveBeenCalledTimes(1);
     } finally {
       db.close();
     }

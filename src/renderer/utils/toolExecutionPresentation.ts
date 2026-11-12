@@ -173,6 +173,7 @@ export function resolveToolTerminalOutcomeKey(
 
   const cancellationReason = result?.metadata?.cancellationReason;
   if (typeof cancellationReason === 'string') {
+    if (cancellationReason === 'client-disconnect' || cancellationReason === 'client_disconnect') return 'interrupted-stream-break';
     if (cancellationReason === 'user-cancel' || cancellationReason === 'user_cancelled') {
       return 'cancelled-by-user';
     }

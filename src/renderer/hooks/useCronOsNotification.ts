@@ -66,8 +66,7 @@ export function useCronOsNotification(
       }
     };
     // 点击路由：接收端契约是壳发 `notification-clicked {id}`（id = NotificationShowEvent.id）。
-    // 注意：当前壳尚未发该事件（发射端由 N-FIX-NOTIFY-DISPLAY-GAP-FU1-NATIVE 负责），
-    // 在那之前桌面端只走下面的旧 onAction 路径（读最近一条事件，桌面端通常根本不触发）。
+    // macOS app bundle 的 UNC 委托发该事件；旧 onAction 仍供 legacy 路径使用。
     // 按通知类型落点，且每个 id 只处理一次。会话/jobId/登录墙落点全在 openForEvent
     // （含「无会话仅 jobId → Center」）；这里只补本单独有的一步：needs-input 且有待审批
     // 卡时落「自动化」→「运行记录」。
@@ -144,6 +143,7 @@ export function useCronOsNotification(
           copyRef.current,
           useAppStore.getState().language,
         ), {
+          id: event.id,
           urgent: event.urgent === true,
           failure: event.failure === true,
           viewingSession,
