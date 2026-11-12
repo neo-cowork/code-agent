@@ -22,7 +22,7 @@ export function filterReadOnlyCronArtifacts(digest: CronRunDigest, context: Cron
       const name = call.name.toLowerCase();
       // Shell effects have no per-file provenance in these messages. Preserve
       // candidates rather than mislabel a file changed through a command as input-only.
-      if (name === 'bash' || name === 'terminal_write') hasUntrackedShellWrite = true;
+      if (['bash', 'terminal_write', 'process', 'code_execute'].includes(name)) hasUntrackedShellWrite = true;
       const target = call.arguments.file_path ?? call.arguments.path ?? call.arguments.notebook_path;
       if (typeof target !== 'string' || !target.trim()) continue;
       if (name === 'read' || name === 'read_file') reads.add(canonicalPath(target));

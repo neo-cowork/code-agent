@@ -73,6 +73,9 @@ export const CronRunMessageFrame: React.FC<{
   const execution = useCronStore((state) => session?.origin?.id
     ? state.executionsByJobId[session.origin.id]?.find((item) => item.id === session.sourceRunId)
     : undefined);
+  // Executions list loaded for this job: a run missing from it (older than the window, job deleted)
+  // can never be settled later, so fall back to the message artifacts instead of showing none.
+  const executionsLoaded = useCronStore((state) => Boolean(session?.origin?.id && state.executionsByJobId[session.origin.id]));
   const result = execution?.result;
   const storedDigest = result && typeof result === 'object' && 'digest' in result ? result.digest : undefined;
   const storedArtifacts = storedDigest && typeof storedDigest === 'object' && 'artifacts' in storedDigest
@@ -88,7 +91,7 @@ export const CronRunMessageFrame: React.FC<{
               key={`summary-${index}`}
               text={segment.text}
               artifacts={resolveCronArtifactsForReview(
-                storedArtifacts ?? (session?.sourceRunId ? [] : segment.artifacts), cwd,
+                storedArtifacts ?? (session?.sourceRunId && !executionsLoaded ? [] : segment.artifacts), cwd,
               )}
               renderSlice={renderSlice}
             />

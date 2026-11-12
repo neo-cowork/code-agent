@@ -338,6 +338,20 @@ it('preserves artifacts when a successful shell call could have changed a previo
   expect(built.digest?.artifacts).toEqual(['notes.md']);
 });
 
+it.each(['Process', 'code_execute'])('preserves artifacts when a successful %s call could have rewritten a read input', (tool) => {
+  const built = buildCronAgentActionResult({ agentType: 'default', prompt: 'update notes' }, undefined, 's',
+    '<cron_summary>Updated report\nartifact: report.md\n</cron_summary>', false, false, undefined, {
+      workingDirectory: '/workspace', messages: [
+        { role: 'assistant', toolCalls: [
+          { id: 'read', name: 'Read', arguments: { file_path: 'report.md' } },
+          { id: 'exec', name: tool, arguments: { code: 'rewrite report.md' } },
+        ] },
+        { role: 'tool', toolResults: [{ toolCallId: 'read', success: true }, { toolCallId: 'exec', success: true }] },
+      ],
+    });
+  expect(built.digest?.artifacts).toEqual(['report.md']);
+});
+
 describe.each([['first line', ''], ['after the preview cap', `${'正文'.repeat(600)}\n`]])('long digest urgency %s', (_position, prefix) => {
   it.each(['can_wait', 'fyi', 'must_today', 'maybe'])('preserves %s and notification policy', (value) => {
     const text = `<cron_summary>${prefix}urgency: ${value}\n${'正文'.repeat(600)}</cron_summary>`;

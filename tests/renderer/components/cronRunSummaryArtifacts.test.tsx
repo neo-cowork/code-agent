@@ -41,4 +41,14 @@ describe('cron summary artifacts use host settlement', () => {
     expect(screen.getByTestId('cron-run-summary').textContent).toContain('notes.md');
     expect(screen.getByTestId('cron-run-summary').textContent).toContain('summary.md');
   });
+  it.each([
+    ['run outside the loaded execution window', [{ id: 'other', jobId: 'job', status: 'completed', scheduledAt: 1, retryAttempt: 0 }]],
+    ['run without a stored digest', [{ id: 'execution', jobId: 'job', status: 'failed', scheduledAt: 1, retryAttempt: 0 }]],
+  ])('falls back to message artifacts for a %s', (_name, executions) => {
+    showRun('execution');
+    useCronStore.setState({ executionsByJobId: { job: executions as never } });
+    render(<CronRunMessageFrame sessionId="run" source={source} renderSlice={(text) => text} />);
+    expect(screen.getByTestId('cron-run-summary').textContent).toContain('notes.md');
+    expect(screen.getByTestId('cron-run-summary').textContent).toContain('summary.md');
+  });
 });
