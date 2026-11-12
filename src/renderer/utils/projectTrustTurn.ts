@@ -8,7 +8,7 @@
 
 import type { TraceTurn } from '@shared/contract/trace';
 
-export const PROJECT_SOURCE_TRUST_FAILURE_CODE = 'PROJECT_SOURCE_TRUST';
+const PROJECT_SOURCE_TRUST_FAILURE_CODE = 'PROJECT_SOURCE_TRUST';
 
 export function isProjectTrustPendingTurn(turn: Pick<TraceTurn, 'nodes'>): boolean {
   return turn.nodes.some((node) => node.metadata?.sendFailureCode === PROJECT_SOURCE_TRUST_FAILURE_CODE);
