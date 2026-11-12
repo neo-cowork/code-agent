@@ -1,3 +1,4 @@
+import { localizeCronSessionTitle, parseCronSessionTitle } from '@shared/cronSessionTitle';
 import type { SessionStatus } from '@shared/contract/session';
 import type { SessionWorkbenchSnapshot } from '@shared/contract/sessionWorkspace';
 import type { SessionRuntimeSummary } from '@shared/ipc';
@@ -79,49 +80,30 @@ export function getDisplaySessionTitle(title?: string | null, language: Language
   if (placeholder !== null) return placeholder;
   const stripped = stripAppshotBlocks(rawTitle);
   if (stripped && !stripped.trim().startsWith('<appshot')) {
-    const match = /^\[(Schedule|Heartbeat|Cron|Channel)\]\s*(.*)$/i.exec(stripped);
-    if (match) {
+    // [Channel] 档沿用 #3218 的渲染（本地化渠道前缀 + 剥离尾部群聊 UUID）；
+    // Schedule/Heartbeat/Cron 走共享 localizer（本单 option A：zh `[定时] `、en `[Schedule] `）。
+    const channelMatch = /^\[Channel\]\s*(.*)$/i.exec(stripped);
+    if (channelMatch) {
       const t = languages[language];
-      const kind = match[1].toLowerCase();
-      const prefix = kind === 'channel' ? t.automationPresentation.channel
-        : kind === 'heartbeat' ? t.cronCenter.triggerKind.heartbeat : t.cronCenter.triggerKind.cron;
-      const name = kind === 'channel'
-        ? match[2].replace(/\s*·\s*(?:[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}|(?:oc|ou|chat|ch)_[\w-]+|(?=[a-z\d_-]*\d)[a-z\d_-]{24,}|\d{8,})$/i, '').trim()
-        : match[2];
-      return name ? `${prefix} · ${name}` : prefix;
+      const name = channelMatch[1]
+        .replace(/\s*·\s*(?:[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}|(?:oc|ou|chat|ch)_[\w-]+|(?=[a-z\d_-]*\d)[a-z\d_-]{24,}|\d{8,})$/i, '')
+        .trim();
+      return name ? `${t.automationPresentation.channel} · ${name}` : t.automationPresentation.channel;
     }
-    return localizeAppshotSessionTitle(stripped, language);
+    return localizeCronSessionTitle(
+      localizeAppshotSessionTitle(stripped, language), language, languages[language].sidebar.cronTitlePrefixes,
+    );
   }
   if (rawTitle.startsWith('<appshot')) {
     return languages[language].sidebar.appshotSessionTitle;
   }
-  return rawTitle || languages[language].sidebar.unnamedSessionTitle;
+  return localizeCronSessionTitle(rawTitle, language, languages[language].sidebar.cronTitlePrefixes) || languages[language].sidebar.unnamedSessionTitle;
 }
 
-// cron/heartbeat 会话标题的档位前缀，形状与 host 侧 formatCronAgentSessionTitle
-// （src/host/cron/cronNormalizers.ts）一致：[Schedule] / [Heartbeat]，历史 [Cron]。
-// renderer 不能 import host，侧栏行排版时按这个前缀把标题拆成两段。
-const CRON_SESSION_TITLE_PREFIX_PATTERN = /^(\[(?:Cron|Schedule|Heartbeat)\])\s+/i;
-
-/** 把「[Schedule] 周报」拆成 prefix + name；没有档位前缀或前缀后没有名字时返回 null。 */
+/** Split the display prefix from the truncatable task name in either locale. */
 export function splitCronSessionTitleParts(title: string): { prefix: string; name: string } | null {
-  const match = CRON_SESSION_TITLE_PREFIX_PATTERN.exec(title);
-  if (!match) {
-    for (const language of ['zh', 'en'] as const) {
-      for (const prefix of Object.values({
-        cron: languages[language].cronCenter.triggerKind.cron,
-        heartbeat: languages[language].cronCenter.triggerKind.heartbeat,
-      })) {
-        if (title.startsWith(`${prefix} · `)) {
-          const name = title.slice(prefix.length + 3);
-          return name ? { prefix, name } : null;
-        }
-      }
-    }
-    return null;
-  }
-  const name = title.slice(match[0].length);
-  return name ? { prefix: match[1], name } : null;
+  const parts = parseCronSessionTitle(title);
+  return parts?.name ? { prefix: parts.prefix, name: parts.name } : null;
 }
 
 /**
@@ -217,12 +199,14 @@ export function getSessionStatusPresentation(args: {
 
 export function buildSessionSearchText(args: {
   session: SessionWithMeta;
+  language?: Language;
   snapshot?: SessionWorkbenchSnapshot;
   status: SessionStatusPresentation;
 }): string {
   const { session, snapshot, status } = args;
   return [
-    getDisplaySessionTitle(session.title),
+    session.title,
+    getDisplaySessionTitle(session.title, args.language),
     session.type,
     session.origin?.name,
     session.workingDirectory,

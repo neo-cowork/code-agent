@@ -28,6 +28,7 @@ import type { AwaitingApprovalRun } from '../../../shared/contract/sessionAutoma
 import { PARKED_APPROVAL_VOIDED_RETENTION_MS } from '../../../shared/constants/pendingApproval';
 import { describeParkedApprovalClosure } from '../../agent/parkedApprovalSurvival';
 import { getDatabase } from '../core/databaseService';
+import { stripSystemTitlePrefix, toUserFacingArgsPreview } from './parkedCardDisplay';
 import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
 import { broadcastToRenderer } from '../../platform';
@@ -927,7 +928,8 @@ const describeVoided = (voided: VoidedFeedback): string =>
 function resolveApprovalSessionTitle(sessionId: string | null, requestId: string): string | undefined {
   let sessionTitle: string | undefined;
   try {
-    const title = sessionId ? getDatabase().getSession(sessionId)?.title?.trim().replace(/^\[(?:定时|Scheduled)\]\s*/, '').trim() : undefined;
+    // N-FIX-PARKED-APPROVAL-VOIDED-CARD-INDISTINGUISHABLE-FU1：用超集前缀剥离，[Schedule]/[Cron]/[Heartbeat] 一并去掉。
+    const title = sessionId ? stripSystemTitlePrefix(getDatabase().getSession(sessionId)?.title ?? '') : undefined;
     if (title && !/^(?:session_|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$)/i.test(title)) sessionTitle = title;
   } catch {
     logger.warn('Approval session title unavailable', { requestId });
@@ -957,7 +959,7 @@ function toVoidedInboxItem(
     kind: 'tool_approval',
     sessionId,
     sessionTitle: resolveApprovalSessionTitle(sessionId, row.id),
-    argsPreview: payload.argsPreview,
+    argsPreview: toUserFacingArgsPreview(payload.argsPreview),
     tool: payload.tool ?? 'unknown',
     displayTool: payload.displayTool,
     requestedAt: payload.requestedAt ?? row.submittedAt,

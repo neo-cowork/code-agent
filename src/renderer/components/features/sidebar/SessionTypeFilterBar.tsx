@@ -12,17 +12,16 @@ function buildSessionTypeFilters(
   return [
     { value: 'all', label: t.sidebarFilters.all },
     { value: 'chat', label: 'Chat' },
-    { value: 'schedule', label: 'Schedule' },
-    { value: 'heartbeat', label: 'Heartbeat' },
+    { value: 'schedule', label: getSessionTypeLabel('schedule', t) ?? '' },
+    { value: 'heartbeat', label: getSessionTypeLabel('heartbeat', t) ?? '' },
   ];
 }
 
-export function getSessionTypeLabel(type: SessionType | undefined): string | null {
+export function getSessionTypeLabel(type: SessionType | undefined, t: Translations): string | null {
   switch (type) {
     case 'schedule':
-      return 'Schedule';
     case 'heartbeat':
-      return 'Heartbeat';
+      return t.sidebar.cronTitlePrefixes[type].slice(1, -1);
     default:
       return null;
   }
