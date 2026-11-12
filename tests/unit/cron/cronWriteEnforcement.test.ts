@@ -41,6 +41,7 @@ import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestrat
 import { mintToolRunGrant } from '../../../src/host/permissions/toolGrantStore';
 import { resetPermissionModeManager } from '../../../src/host/permissions/modes';
 import { resolveSessionDefaultModelConfig } from '../../../src/host/services/core/sessionDefaults';
+import { calendarCreateEventSchema } from '../../../src/host/tools/modules/connectors/calendarCreateEvent.schema';
 import { getProtocolRegistry, resetProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import { getAllToolDefinitions } from '../../../src/host/tools/dispatch/toolDefinitions';
 import { getPermissionClassifier } from '../../../src/host/tools/permissionClassifier';
@@ -350,7 +351,8 @@ it.each([
 // `path` argument happens to be inside the folder must still park, never ride the grant.
 it('connector write tool with an in-folder path still parks under a folder grant', async () => {
   const registry = getProtocolRegistry();
-  const original = registry.getSchemas().find((schema) => schema.name === 'calendar_create_event')!;
+  // Connectors register on darwin only; the schema is imported directly so the test is platform-independent.
+  const original = calendarCreateEventSchema;
   const handled = vi.fn(async () => ({ ok: true as const, output: 'created' }));
   registry.register(original, async () => ({ schema: original, createHandler: () => ({ schema: original, execute: handled }) }) as never);
   try {
