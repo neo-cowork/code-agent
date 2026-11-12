@@ -528,6 +528,14 @@ describe('CronRunSessionStatusBar（组件）', () => {
 });
 
 describe('CronRunSessionIntro（来源小标）', () => {
+  it('first meeting renders neither a scheduled-run label nor a cron status bar', () => {
+    showSession({ ...cronRunSession, origin: { kind: 'cron', metadata: { roleId: '日程管家', trigger: 'first_wake' } } });
+    render(<><CronRunSessionIntro sessionId="session-1" /><CronRunSessionStatusBar sessionId="session-1" /></>);
+    expect(screen.queryByTestId('cron-run-intro-label')).toBeNull();
+    expect(screen.queryByTestId('cron-run-status')).toBeNull();
+    expect(getExecutionsMock).not.toHaveBeenCalled();
+  });
+
   it('cron/heartbeat 运行记录显示「定时任务自动运行」', () => {
     showSession(cronRunSession);
     render(<CronRunSessionIntro sessionId="session-1" />);

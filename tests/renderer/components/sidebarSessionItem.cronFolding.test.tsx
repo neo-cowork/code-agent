@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
-import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import React, { useRef, useState } from 'react';
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { assembleSidebarCronRows } from '../../../src/renderer/components/features/sidebar/sidebarCronRunFolding';
 import { SidebarProjectGroup } from '../../../src/renderer/components/features/sidebar/SidebarProjectGroup';
 import type { SidebarSessionItemSharedProps } from '../../../src/renderer/components/features/sidebar/SidebarSessionItem';
-import { splitCronSessionTitleParts } from '../../../src/renderer/utils/sessionPresentation';
+import { useSidebarRowActions } from '../../../src/renderer/components/features/sidebar/useSidebarRowActions';
+import { NewSessionWelcome } from '../../../src/renderer/components/features/chat/NewSessionWelcome';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { languages } from '../../../src/renderer/i18n';
+import { getDisplaySessionTitle, splitCronSessionTitleParts } from '../../../src/renderer/utils/sessionPresentation';
 import { MessageContent } from '../../../src/renderer/components/features/chat/MessageBubble/MessageContent';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { formatLocalDateTime } from '../../../src/renderer/utils/i18nTime';
@@ -396,7 +400,7 @@ describe('SidebarProjectGroup cron run folding', () => {
     expect(name.className).toContain('truncate');
     expect(name.className).toContain('min-w-0');
     const prefix = screen.getByTestId('sidebar-cron-task-prefix');
-    expect(prefix.textContent).toBe('定时');
+    expect(prefix.textContent).toBe('[定时]');
     expect(prefix.className).toContain('shrink-0');
     expect(prefix.contains(name)).toBe(false);
 
@@ -499,4 +503,41 @@ describe('cron run session machine headers', () => {
     expect(view.container.textContent).toContain('SECRET_SNAPSHOT');
     expect(view.container.textContent).toContain('urgency: fyi');
   });
+});
+
+it.each(['zh', 'en'] as const)('rename dialog round trip retains a recognized cron title in %s', (language) => {
+  useAppStore.setState({ language });
+  i18nState.language = language;
+  const renameSession = vi.fn();
+  const { result } = renderHook(() => {
+    const [renamingId, setRenamingId] = useState<string | null>(null);
+    const [renameValue, setRenameValue] = useState('');
+    const actions = useSidebarRowActions({
+      showToast: vi.fn(), canOpenSessionReplay: false,
+      setReplayDialog: vi.fn(), setVoiceAuditDialog: vi.fn(), setContextMenu: vi.fn(),
+      renamingId, renameValue, setRenamingId, setRenameValue,
+      renameInputRef: useRef<HTMLInputElement>(null), renameSession, t: languages[language],
+    });
+    return { ...actions, renameValue };
+  });
+  const row = { id: 'cron', title: '[Schedule] 周报' } as any;
+  act(() => result.current.handleDoubleClick({ preventDefault: vi.fn(), stopPropagation: vi.fn() } as unknown as React.MouseEvent, row));
+  expect(result.current.renameValue).toBe(language === 'zh' ? '[定时] 周报' : '[Schedule] 周报');
+  act(() => result.current.handleRenameSubmit());
+  const saved = renameSession.mock.calls[0][1] as string;
+  expect(splitCronSessionTitleParts(saved)?.name).toBe('周报');
+  expect(getDisplaySessionTitle(saved, 'zh')).toBe('[定时] 周报');
+  expect(getDisplaySessionTitle(saved, 'en')).toBe('[Schedule] 周报');
+  useAppStore.setState({ language: 'zh' });
+});
+
+it('empty cron heading follows UI language without changing the stored title', () => {
+  const stored = { id: 'session-1', title: '[Schedule] 每晨整理周会纪要', modelConfig: { provider: 'openai', model: 'gpt-5.4' }, createdAt: 1, updatedAt: Date.now() - 9 * 60 * 60 * 1000, messageCount: 0, turnCount: 0 } as any;
+  const view = render(<NewSessionWelcome onSend={vi.fn()} session={stored} />);
+  expect(screen.getByTestId('chat-welcome-title').textContent).toBe('继续上次的会话：[定时] 每晨整理周会纪要');
+  i18nState.language = 'en';
+  view.rerender(<NewSessionWelcome onSend={vi.fn()} session={stored} />);
+  expect(screen.getByTestId('chat-welcome-title').textContent).toBe('Picking up your last session: [Schedule] 每晨整理周会纪要');
+  expect(screen.getByTestId('chat-welcome-title').textContent).not.toContain('[定时]');
+  expect(stored.title).toBe('[Schedule] 每晨整理周会纪要');
 });
