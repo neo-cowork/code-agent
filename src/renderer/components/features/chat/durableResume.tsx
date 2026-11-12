@@ -98,8 +98,9 @@ export const DurableResumeNotice: React.FC<{ text: string; actions?: React.React
 /**
  * 停靠待「继续」的 run 的「放弃」入口（N-STOP-ABANDON-ENTRY）：模态二次确认后走
  * 真实取消链路（agent:cancel → web /api/cancel 的 terminalRecoveredWaitingRun）终态化。
- * selector 带 durableResume.runId，web 路由据此终止停靠的那个 run；桌面
- * appService.cancel 按 sessionId 落到同一 registry 方法。取消（模态的取消）不动 run。
+ * selector 带 durableResume.runId + abandonParked，web 路由据此终止停靠的那个 run
+ * （重复 Stop 不带 abandonParked，对 user_stop 停靠是 no-op）；桌面 appService.cancel
+ * 按 sessionId 落到同一 registry 方法。取消（模态的取消）不动 run。
  */
 export function useAbandonParkedRun(
   sessionId: string | null | undefined,
@@ -110,7 +111,9 @@ export function useAbandonParkedRun(
   const abandon = useCallback(async () => {
     if (!sessionId || !runId) return;
     try {
-      await ipcService.invoke(IPC_CHANNELS.AGENT_CANCEL, { sessionId, runId });
+      // abandonParked 区分「放弃」与重复 Stop：后者对 waiting/user_stop 停靠是 no-op，
+      // 不得把「可继续」覆写成 cancelled（N-FIX-STOP-BEFORE-FIRST-RESPONSE-STUCK-RUNNING-FU1）。
+      await ipcService.invoke(IPC_CHANNELS.AGENT_CANCEL, { sessionId, runId, abandonParked: true });
       // run 已终态化，但会话行 updatedAt 不动；不乐观清投影的话，
       // loadSessions 的防陈旧快照守卫（preserveParkedContinueOnRefresh）会把
       // 「可继续」投影原样复活，停靠行只能靠整页重载才消失（真跑 Rework r1 撞出）。

@@ -394,6 +394,8 @@ export async function executeTask(
     startedExecution = executionPromise;
     guard.register(agentId, subagentType, prompt, executionPromise, abortController, {
       treeId,
+      parentRunId: ctx.runId,
+      background: false,
       parentId: ctx.spawnParentAgentId,
       slotAcquired: true,
       scope: ctx.swarmRunScope,

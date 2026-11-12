@@ -1,3 +1,4 @@
+import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 // ============================================================================
 // AutomationReviewInbox —— 自动化页首的「待过目」收件箱（三件套 A4，独立卡片区）。
 // 数据源 = sessionAutomation 记录（status=pending_review 或 config.pendingReview）
@@ -11,6 +12,7 @@
 // ============================================================================
 
 import React, { useCallback, useEffect, useState } from 'react';
+import { isEditableTool } from '@shared/contract';
 import type { CronUrgency, PermissionResponse, SessionAutomationRecord } from '@shared/contract';
 import type { ParkedApprovalInboxItem } from '@shared/contract/pendingApproval';
 import { isCronUrgency } from '@shared/cronUrgency';
@@ -415,6 +417,30 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                               {cc.parkedAllowFolder.replace('{folder}', folderDisplayName(item.writeGrantFolder))}
                             </button>
                           )}
+                          {(item.kind === 'tool_approval' || item.kind === undefined) && !isEditableTool(item.tool) && (!isExternal || !!item.standingGrantTarget) && (
+                            <>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="secondary"
+                                disabled={busyId === item.id}
+                                onClick={() => handleResolveParked(item, 'allow_run')}
+                                data-testid="parked-allow-run"
+                              >
+                                {cc.parkedAllowRun}
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="secondary"
+                                disabled={busyId === item.id}
+                                onClick={() => handleResolveParked(item, 'allow_24h')}
+                                data-testid="parked-allow-24h"
+                              >
+                                {cc.parkedAllow24h}
+                              </Button>
+                            </>
+                          )}
                           <button /* ds-allow:button: 同上，收件箱行内超小文本按钮 */
                             onClick={() => handleResolveParked(item, 'deny')}
                             disabled={busyId === item.id}
@@ -440,7 +466,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                 {(!foldVoided || voidedExpanded) && voided.map((item) => (
                   <div key={item.id} className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2 opacity-50" data-testid="parked-approval-voided">
                     <div className="truncate text-sm text-zinc-200">{voidedToolTitle(item.displayTool ?? item.tool, cc.parkedVoided)}</div>
-                    {item.sessionTitle && <div className="text-xs text-zinc-400">{item.sessionTitle}</div>}
+                    {item.sessionTitle && <div className="text-xs text-zinc-400">{getDisplaySessionTitle(item.sessionTitle, language)}</div>}
                     <div className="text-[11px] text-zinc-500">
                       {cc.parkedVoided.startedAt.replace('{time}', new Date(item.requestedAt).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN', {
                         month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
