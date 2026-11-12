@@ -376,7 +376,8 @@ function withLanguage(template: CronTemplate): CronTemplate {
       const enTags = enTagsText(template.id);
       return {
         ...draft,
-        name: copy?.name ?? unregistered?.name ?? draft.name,
+        // 生成的任务名：专用 en 名（无词条模板）优先于卡片展示名，卡片文案可以单独改而不动任务名
+        name: unregistered?.name ?? copy?.name ?? draft.name,
         description,
         ...(enTags !== undefined ? { tagsText: enTags } : {}),
         ...(enPrompt !== undefined ? { agentPrompt: enPrompt } : {}),
