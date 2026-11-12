@@ -91,7 +91,9 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // 记录过，按惯例升版。
 // sys-v108：整合 main 多参考图 schema 与 delegate_task 满槽选择卡指引。
 // sys-v111: integrate main sys-v109 with missing-attachment context and same-language reply.
-export const PROMPT_VERSION = 'sys-v112' as const;
+// sys-v113：N-BROWSER-KEEP-RESULT-PAGE 认领/IPC/renderer 半边回到本分支——browser_action
+// 的 keep_result_page 枚举与结果文案叠上 main 的 sys-v112 面，合并面未在任何一侧记录过。
+export const PROMPT_VERSION = 'sys-v113' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =
