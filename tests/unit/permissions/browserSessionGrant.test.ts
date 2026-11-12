@@ -143,18 +143,63 @@ describe('browser session grant production execution → human answer → pre-as
     ]);
   });
 
-  it('an outer human or session grant covers only the same action inner approval; unrelated inner gates still ask', async () => {
-    state.execute.mockImplementation(async (_name, _params, context) => ({ success: await context.requestPermission({
-      type: 'dangerous_command', tool: 'browser_action.read_clipboard', forceConfirm: true,
-      details: { action: 'read_clipboard' },
+  it('an outer human or session grant covers a same-action inner approval that is not forceConfirm; unrelated inner gates still ask', async () => {
+    const inner = (action: string, forceConfirm?: boolean) => state.execute.mockImplementation(async (_name, _params, context) => ({ success: await context.requestPermission({
+      type: 'dangerous_command', tool: `browser_action.${action}`, ...(forceConfirm ? { forceConfirm } : {}),
+      details: { action },
     }) }));
+    inner('read_clipboard');
     await call('read_clipboard'); await call('read_clipboard');
     expect(requests).toHaveLength(1);
-    state.execute.mockImplementation(async (_name, _params, context) => ({ success: await context.requestPermission({
-      type: 'dangerous_command', tool: 'browser_action.handle_dialog', forceConfirm: true,
-      details: { action: 'handle_dialog' },
-    }) }));
+    inner('handle_dialog');
     await call('read_clipboard'); expect(requests).toHaveLength(2);
+  });
+
+  it.each([
+    ['handle_dialog', { dialogAction: 'accept' }],
+    ['read_clipboard', {}],
+    ['write_clipboard', { text: 'x' }],
+  ])('forceConfirm inner %s request still asks while a session grant exists, and answering it mints nothing', async (action, extra) => {
+    state.url = 'https://shop.example/cart';
+    const target = `${action}@https://shop.example`;
+    await call(action); // outer card -> session grant
+    expect(matchToolGrant(options.sessionId, 'Browser', target)).toBe('session');
+    const grantsBefore = JSON.stringify(listToolGrants());
+    expect(requests).toHaveLength(1);
+    const mint = vi.spyOn(toolGrants, 'mintToolSessionGrant');
+    const runMint = vi.spyOn(toolGrants, 'mintToolRunGrant');
+    state.execute.mockImplementation(async (_name, _params, context) => ({ success: await context.requestPermission({
+      type: 'dangerous_command', tool: `browser_action.${action}`, forceConfirm: true,
+      details: { action },
+    }) }));
+    // Outer is skipped by the grant; the mandatory inner confirm must still produce a request each time.
+    expect((await call(action, extra)).success).toBe(true);
+    expect(requests).toHaveLength(2);
+    expect(requests[1].forceConfirm).toBe(true);
+    expect((await call(action, extra)).success).toBe(true);
+    expect(requests).toHaveLength(3);
+    expect(mint).not.toHaveBeenCalled();
+    expect(runMint).not.toHaveBeenCalled();
+    expect(JSON.stringify(listToolGrants())).toBe(grantsBefore);
+  });
+
+  it('answering a forceConfirm browser card with a remember response never mints a grant', () => {
+    for (const response of ['allow_run', 'allow_session', 'allow_24h'] as const) {
+      const mint = vi.spyOn(toolGrants, 'mintToolSessionGrant');
+      const island = new OrchestratorPermissionIsland({
+        injectedPendingApprovalRepo: new PendingApprovalRepository(db),
+        getSettings: () => settings, isDevModeAutoApproveEnabled: () => false,
+        getExecutionTopology: () => 'main', hasApprovalUi: () => true,
+        onEvent: (event) => { if (event.type === 'permission_request') island.handlePermissionResponse((event.data as PermissionRequest).id, response); },
+      });
+      void island.requestPermission({
+        tool: 'Browser', type: 'command', sessionId: options.sessionId, forceConfirm: true,
+        details: { action: 'handle_dialog', browserSessionGrant: { target: 'handle_dialog@https://shop.example', previousOrigins: [] } },
+      });
+      expect(mint).not.toHaveBeenCalled();
+      expect(listToolGrants()).toEqual([]);
+      mint.mockRestore();
+    }
   });
 
   it.each(['handle_dialog', 'read_clipboard', 'write_clipboard', 'wait_for_download'])('%s session grants list/revoke, distinguish localhost and 127.0.0.1, and die on restart', async (action) => {

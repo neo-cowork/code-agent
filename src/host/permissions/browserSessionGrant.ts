@@ -13,8 +13,10 @@ function origin(value: unknown): string | null {
 
 /** Drop host-only authority before params can be spread into request details. */
 export function stripBrowserGrantFields(params: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(params).filter(([key]) =>
-    !/standingGrant|browser.*(?:grant|crossSite)/i.test(key)));
+  const forged = (key: string) => /standingGrant|browser.*(?:grant|crossSite)/i.test(key);
+  // Untouched params keep their identity (downstream callers pin pass-through by reference).
+  if (!Object.keys(params).some(forged)) return params;
+  return Object.fromEntries(Object.entries(params).filter(([key]) => !forged(key)));
 }
 
 /** undefined = another tool; null target = browser action without remember authority. */
@@ -54,7 +56,9 @@ export async function resolveBrowserSessionGrant(
  * cards its copy is the per-site session label. allow_session stays accepted for
  * companion/legacy answer surfaces. Any other browser answer mints nothing. */
 export function recordBrowserSessionGrant(response: PermissionResponse, request: PermissionRequest): boolean {
-  if (!['Browser', 'browser_action', 'browser_navigate'].includes(request.tool)) return false;
+  if (!/^(Browser|browser_action|browser_navigate)(\.|$)/.test(request.tool)) return false;
+  // forceConfirm gates (dialog accept, clipboard) are one-shot: answering them never remembers anything.
+  if (request.forceConfirm === true) return true;
   const target = request.details.browserSessionGrant?.target;
   if ((response === 'allow_run' || response === 'allow_session') && request.sessionId && target && !request.forceConfirm) {
     mintToolSessionGrant(request.sessionId, request.tool, target);

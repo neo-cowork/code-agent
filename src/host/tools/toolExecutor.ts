@@ -1321,7 +1321,7 @@ export class ToolExecutor {
       // 已记，#1664 只修了外层）；ask 抛错时不落账、原样上抛，行为与改动前一致。
       permissionAskResults: new WeakMap(),
       requestPermission: async (request) => {
-        if (browserApprovedAction && browserApprovedAction === request.tool && request.details?.action === params.action) return true;
+        if (browserApprovedAction && browserApprovedAction === request.tool && request.details?.action === params.action && request.forceConfirm !== true) return true;
         beginApprovalWait(options.currentToolCallId, effectiveSessionId);
         try {
           const askStartedAt = Date.now();
