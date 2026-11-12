@@ -227,16 +227,38 @@ describe('delegate_task overflow choice in host', () => {
     promptMock.mockResolvedValueOnce({
       status: 'answered', response: { requestId: 'delayed-replace', answers: { 任务已满: '替换任务1' } },
     });
+    setTimeout(() => fakeManager.emit('task_cancelled', { type: 'task_cancelled', sessionId: session, data: { taskId: original.id } } satisfies TaskManagerEvent), 10);
     const result = await executeDelegateTask(taskArgs(4), toolContext(session), allow);
     assert(result.ok);
-    expect(result.output).toContain('已请求停止「任务1」');
-    expect(getSessionCommandCenter().list(session).find((task) => task.shortName === '任务4')?.status).toBe('queued');
-    fakeManager.emit('task_cancelled', { type: 'task_cancelled', sessionId: session, data: { taskId: original.id } } satisfies TaskManagerEvent);
+    expect(result.output).toContain('已停止「任务1」');
     await vi.waitFor(() => {
       const tasks = getSessionCommandCenter().list(session);
       expect(tasks.find((task) => task.shortName === '任务3')?.status).toBe('queued');
       expect(tasks.find((task) => task.shortName === '任务4')?.status).toBe('running');
     });
+  });
+
+  it('waits for delayed cancellation before reporting that replacement started', async () => {
+    const session = 'session-confirm-replacement';
+    await executeDelegateTask(taskArgs(1), toolContext(session), allow);
+    await executeDelegateTask(taskArgs(2), toolContext(session), allow);
+    await executeDelegateTask(taskArgs(3, { queue_when_full: true }), toolContext(session), allow);
+    const original = getSessionCommandCenter().list(session).find((task) => task.shortName === '任务1');
+    assert(original);
+    fakeManager.cancelBackgroundTask.mockImplementationOnce(async () => {
+      setTimeout(() => fakeManager.emit('task_cancelled', {
+        type: 'task_cancelled', sessionId: session, data: { taskId: original.id },
+      } satisfies TaskManagerEvent), 10);
+      return true;
+    });
+    promptMock.mockResolvedValueOnce({
+      status: 'answered', response: { requestId: 'confirm-replace', answers: { 任务已满: '替换任务1' } },
+    });
+    const result = await executeDelegateTask(taskArgs(4), toolContext(session), allow);
+    assert(result.ok);
+    expect(result.output.startsWith('已停止「任务1」')).toBe(true);
+    expect(result.output).toContain('accepted：后台任务「任务4」');
+    expect(getSessionCommandCenter().list(session).find((task) => task.shortName === '任务3')?.status).toBe('queued');
   });
 
   it.each(['missing', 'ambiguous', 'rejected'] as const)(
@@ -283,7 +305,7 @@ describe('delegate_task overflow choice in host', () => {
       expect(result.output).toContain('已请求停止「任务1」');
       expect(result.output).not.toContain('已停止「任务1」');
     }
-  });
+  }, 20_000);
 
   it('when user chooses Not now (暂不创建), creates no task and does not queue', async () => {
     const session = 'session-not-now';

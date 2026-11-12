@@ -7,6 +7,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import type { MessageAttachment, UserQuestionOption } from '../../../../shared/contract';
+import { CANCELLATION_TIMEOUTS } from '../../../../shared/constants/timeouts';
 import {
   getSessionCommandCenter,
   type SessionCommandTask,
@@ -263,7 +264,12 @@ async function resolveOverflowChoiceInHost(
     if (cancellation.outcome !== 'resolved' || !replacement || replacement.outcome === 'requires_choice') {
       return { ok: true, output: describeOverflowUnansweredFallback(shortName) };
     }
-    const stopped = center.list(sessionId).find((task) => task.id === cancellation.task.id)?.status === 'cancelled';
+    const deadline = Date.now() + CANCELLATION_TIMEOUTS.ROUTE_SETTLE_WAIT;
+    let stopped = center.list(sessionId).find((task) => task.id === cancellation.task.id)?.status === 'cancelled';
+    while (!stopped && !abortSignal?.aborted && Date.now() < deadline) {
+      await new Promise<void>((resolve) => setTimeout(resolve, CANCELLATION_TIMEOUTS.ROUTE_SETTLE_POLL));
+      stopped = center.list(sessionId).find((task) => task.id === cancellation.task.id)?.status === 'cancelled';
+    }
     const cancellationReceipt = `${stopped ? '已停止' : '已请求停止'}「${cancellation.task.shortName}」。`;
     const current = center.list(sessionId).find((task) => task.id === replacement.task.id);
     return delegateTaskReceipt(current?.status === 'running'
