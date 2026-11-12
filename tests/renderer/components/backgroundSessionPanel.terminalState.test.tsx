@@ -150,18 +150,26 @@ describe('后台行的失败判定（唯一一步失败不能写「已完成」�
     (window as { domainAPI?: unknown }).domainAPI = originalApi;
   });
 
-  function mockSessionMessages(toolCalls: Array<{ success: boolean }>) {
+  // 形状取自 getMessages 的真实返回：落库原始 Message[]，工具结果在 tool 消息的 toolResults 里（不是 toolCalls[].result）
+  function mockSessionMessages(results: Array<{ success: boolean }>) {
     const invoke = vi.fn().mockResolvedValue({
       success: true,
-      data: {
-        messages: [{
+      data: [
+        {
           id: 'm1',
           role: 'assistant',
-          toolCalls: toolCalls.map((result, index) => ({
-            id: `c${index}`, name: 'bash', arguments: {}, result: { toolCallId: `c${index}`, ...result },
-          })),
-        }],
-      },
+          content: '',
+          timestamp: 1,
+          toolCalls: results.map((_, index) => ({ id: `c${index}`, name: 'bash', arguments: {} })),
+        },
+        {
+          id: 'm2',
+          role: 'tool',
+          content: '',
+          timestamp: 2,
+          toolResults: results.map((result, index) => ({ toolCallId: `c${index}`, ...result })),
+        },
+      ],
     });
     (window as { domainAPI?: unknown }).domainAPI = { invoke };
     return invoke;
@@ -171,13 +179,16 @@ describe('后台行的失败判定（唯一一步失败不能写「已完成」�
     const invoke = mockSessionMessages([{ success: false }]);
     renderPanelWith(backgroundTask({ status: 'completed' }));
     await waitFor(() => expect(itemLine()).toBe('执行失败'));
-    expect(invoke).toHaveBeenCalledWith('domain:session', 'load', { sessionId: 's1' });
+    // 只读路由：绝不能调 session.load（会切走宿主 currentSessionId）
+    expect(invoke).toHaveBeenCalledWith('domain:session', 'getMessages', { sessionId: 's1' });
+    expect(invoke.mock.calls.some((call) => call[1] === 'load')).toBe(false);
   });
 
   it('completed 且部分步骤失败 → 「已完成，有提醒」', async () => {
-    mockSessionMessages([{ success: true }, { success: false }]);
+    const invoke = mockSessionMessages([{ success: true }, { success: false }]);
     renderPanelWith(backgroundTask({ status: 'completed' }));
     await waitFor(() => expect(itemLine()).toBe('已完成，有提醒'));
+    expect(invoke.mock.calls.some((call) => call[1] === 'load')).toBe(false);
   });
 
   it('completed 且步骤全成功 → 仍是「已完成」', async () => {

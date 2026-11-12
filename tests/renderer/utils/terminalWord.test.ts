@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveBackgroundTerminalKey, resolveRunTerminalKey } from '../../../src/renderer/utils/terminalWord';
+import { countToolSteps, resolveBackgroundTerminalKey, resolveRunTerminalKey } from '../../../src/renderer/utils/terminalWord';
 import { BACKGROUND_TASK_CANCELLED } from '../../../src/shared/constants';
 
 describe('terminalWord 解析器', () => {
@@ -24,5 +24,16 @@ describe('terminalWord 解析器', () => {
     expect(resolveBackgroundTerminalKey({ status: 'completed' }, { toolStepOutcome: { failed: 1, total: 1 } })).toBe('failed-tool');
     expect(resolveBackgroundTerminalKey({ status: 'completed' }, { toolStepOutcome: { failed: 1, total: 3 } })).toBe('completed-with-warnings');
     expect(resolveBackgroundTerminalKey({ status: 'completed' }, { toolStepOutcome: { failed: 0, total: 2 } })).toBe('completed');
+  });
+
+  it('countToolSteps：原始 toolResults 与已合并 toolCalls[].result 都认，按调用 id 去重', () => {
+    expect(countToolSteps([
+      { toolCalls: [{ id: 'a' }, { id: 'b' }] },
+      { toolResults: [{ toolCallId: 'a', success: false }, { toolCallId: 'b', success: true }] },
+    ])).toEqual({ failed: 1, total: 2 });
+    expect(countToolSteps([
+      { toolCalls: [{ id: 'a', result: { success: false } }], toolResults: [{ toolCallId: 'a', success: false }] },
+    ])).toEqual({ failed: 1, total: 1 });
+    expect(countToolSteps([{ toolCalls: [{ id: 'a' }] }])).toBeUndefined();
   });
 });

@@ -16,19 +16,30 @@ function resolveCompletedKey(steps: ToolStepOutcome | undefined): OutcomeKey {
 
 type ToolStepOutcome = NonNullable<RunUiState['toolStepOutcome']>;
 
-/** 已加载会话消息里收尾工具步骤的失败数/总数（result.success===false 才算失败）；与 buildRunUiState 同口径。 */
+/**
+ * 会话消息里收尾工具步骤的失败数/总数（success===false 才算失败），与 buildRunUiState 同口径。
+ * 兼容两种形状：落库原始消息（工具结果在 tool 消息的 toolResults 里）与已合并结果的 toolCalls[].result；
+ * 按调用 id 去重，两种同时出现不会重复计数。
+ */
 export function countToolSteps(
-  messages: ReadonlyArray<{ toolCalls?: ReadonlyArray<{ result?: { success?: boolean } }> }>,
+  messages: ReadonlyArray<{
+    toolCalls?: ReadonlyArray<{ id?: string; result?: { success?: boolean } }>;
+    toolResults?: ReadonlyArray<{ toolCallId?: string; success?: boolean }>;
+  }>,
 ): ToolStepOutcome | undefined {
-  let failed = 0;
-  let total = 0;
+  const outcomes = new Map<string, boolean>();
+  let anonymous = 0;
+  const record = (id: string | undefined, success: boolean | undefined) => {
+    outcomes.set(id ?? `anonymous-${anonymous++}`, success !== false);
+  };
   for (const message of messages) {
     for (const call of message.toolCalls ?? []) {
-      if (!call.result) continue;
-      total += 1;
-      if (call.result.success === false) failed += 1;
+      if (call.result) record(call.id, call.result.success);
     }
+    for (const result of message.toolResults ?? []) record(result.toolCallId, result.success);
   }
+  const total = outcomes.size;
+  const failed = [...outcomes.values()].filter((ok) => !ok).length;
   return total > 0 ? { failed, total } : undefined;
 }
 
