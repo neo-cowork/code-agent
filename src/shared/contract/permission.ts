@@ -175,6 +175,9 @@ export interface PermissionRequest {
     command?: string;
     url?: string;
     changes?: string;
+    /** 事件回复（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）：宿主绑定的去向（群名）与本会发出的正文。 */
+    replyDestination?: string;
+    replyText?: string;
     oldContent?: string;
     newContent?: string;
     server?: string;
