@@ -99,6 +99,12 @@ export interface RegisterBrowserTabLeaseCleanupInputV1 {
 export interface SurfaceTakeoverControlV1 {
   requestId: string;
   wait: Promise<SurfaceTakeoverResolutionV1>;
+  /**
+   * 同步读当前决议（null=仍在等待用户）。`wait` 要等整个 stop/resume 级联走完才
+   * 落定，级联内部（如 releaseBinding）等不到它——停靠判定用这个同步口。
+   * （N-FIX-FIX-BROWSER-SECRETREF-HARDEN）
+   */
+  resolution(): SurfaceTakeoverResolutionV1 | null;
 }
 
 export interface BrowserStateBinding {
