@@ -1,6 +1,9 @@
 import React from 'react';
 import { useI18n } from '../../../../../hooks/useI18n';
 import { useAppStore } from '../../../../../stores/appStore';
+import { useSessionStore } from '../../../../../stores/sessionStore';
+import { useSessionListLoadStore } from '../../../../../stores/sessionListPagination';
+import { Button } from '../../../../primitives/Button';
 import { describeLastToolFailure, describeLastToolStep, resolveAgentActivityStepStatus } from '../../../../../utils/agentActivity';
 import { agentFailureCopy } from '../../../../../utils/agentFailureCopy';
 import { openExternalLink } from '../../../../../utils/platform';
@@ -20,6 +23,14 @@ export function DelegationHeader({ presentation }: { presentation: DelegationPre
   );
 }
 
+/** 目标会话还在才给入口；列表已读完（无更早分页）却找不到它 = 已删除/归档。 */
+function useTargetSessionAvailable(targetSessionId: string | undefined): boolean {
+  const listed = useSessionStore((state) => Boolean(targetSessionId) && state.sessions.some((session) => session.id === targetSessionId));
+  const hasOlder = useSessionStore((state) => state.hasOlderSessions);
+  const settled = useSessionListLoadStore((state) => state.settled);
+  return Boolean(targetSessionId) && (listed || hasOlder || !settled);
+}
+
 export function DelegationReceipt({ presentation }: { presentation: DelegationPresentation }) {
   const { t } = useI18n();
   const openPreview = useAppStore((state) => state.openPreview);
@@ -28,6 +39,7 @@ export function DelegationReceipt({ presentation }: { presentation: DelegationPr
   const pendingPermissionRequest = useAppStore((state) => state.pendingPermissionRequest);
   const pendingPermissionSessionId = useAppStore((state) => state.pendingPermissionSessionId);
   const queuedPermissionRequests = useAppStore((state) => state.queuedPermissionRequests);
+  const targetAvailable = useTargetSessionAvailable(presentation.targetSessionId);
   const failure = presentation.state === 'failed'
     ? agentFailureCopy(presentation.failureCode, t, presentation.failure)
     : presentation.failure;
@@ -73,6 +85,16 @@ export function DelegationReceipt({ presentation }: { presentation: DelegationPr
             </button>
           ))}
         </div>
+      )}
+      {targetAvailable && presentation.targetSessionId && (
+        <Button
+          variant="ghost"
+          size="sm"
+          data-testid="delegation-view-target"
+          onClick={() => { void useSessionStore.getState().switchSession(presentation.targetSessionId as string); }}
+        >
+          {t.chat.delegationReceipt.viewTargetSession}
+        </Button>
       )}
       {presentation.branch && (
         <div data-testid="delegation-branch">

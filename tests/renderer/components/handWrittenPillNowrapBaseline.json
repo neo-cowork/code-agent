@@ -71,7 +71,7 @@
     "src/renderer/components/features/chat/ChatInput/LoopStatusBar.tsx": 1,
     "src/renderer/components/features/chat/ChatInput/QueuedInputTray.tsx": 4,
     "src/renderer/components/features/chat/ChatInput/RoleCreatedDirectCard.tsx": 1,
-    "src/renderer/components/features/chat/ChatInput/RoleDraftCard.tsx": 4,
+    "src/renderer/components/features/chat/ChatInput/RoleDraftCard.tsx": 3,
     "src/renderer/components/features/chat/ChatInput/ScheduleComposerCard.tsx": 4,
     "src/renderer/components/features/chat/ChatInput/SeedComposerCard.tsx": 2,
     "src/renderer/components/features/chat/ChatInput/SelectedCapabilityChips.tsx": 1,

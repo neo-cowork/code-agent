@@ -71,19 +71,31 @@ describe('channel text at narrow widths', () => {
     );
   }
 
+  // 视口下界取桌面壳主窗口 minWidth=960（src-tauri/tauri.conf.json `main` 窗口与
+  // src-tauri/src/main.rs `min_inner_size(960.0, 640.0)` 一致），360px 低于该最小值
+  // 不再作为受支持宽度（编排裁决 2026-11-12）；900px 按任务书保留。
   for (const [language, locale, reason] of [
-    ['zh', zh, 'Telegram 凭据或权限有误，请检查机器人令牌并确认访问权限后重新连接。'],
-    ['en', en, 'Telegram credentials or permissions are invalid. Check the bot token and access permissions, then reconnect.'],
+    ['zh', zh, '重连中（第 3 次）：连不上Telegram服务器（令牌 AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw4uR7mQzXwYbN2cV9fK 校验失败），正在自动重试'],
+    ['en', en, 'Reconnecting (attempt 3): Telegram rejected token AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw4uR7mQzXwYbN2cV9fK, retrying automatically'],
   ] as const) {
-    for (const width of [360, 900]) {
-      it(`${language}: the full status reason wraps in a 140px cell at viewport ${width}px`, async () => {
+    for (const width of [900, 960]) {
+      it(`${language}: the full status reason wraps and stays inside the visible content region at viewport ${width}px`, async () => {
         state.reason = reason;
         useAppStore.setState({ language });
-        render(<ChannelsSettings />);
+        const { container } = render(<ChannelsSettings />);
         const error = await screen.findByText(reason);
         const cell = error.closest('[data-testid="channel-account-status"]');
         expect(cell).not.toBeNull();
-        await layout(`<main style="width:140px;margin:16px">${cell!.outerHTML}</main>`, width);
+        // 复刻 SettingsModal 的真实祖先链：280px 侧栏 + flex-1 主区 + px-8/max-w-6xl 内容列。
+        // 隔离挂载看不见祖先裁剪（2026-11-10 一轮的教训），必须整棵组件进真实框架。
+        await layout(
+          `<div class="flex h-full min-h-0" style="height:800px">`
+          + `<aside class="flex w-[280px] shrink-0 flex-col border-r border-zinc-800 bg-zinc-900/95"></aside>`
+          + `<main class="min-w-0 flex-1 overflow-y-auto bg-zinc-950">`
+          + `<div class="mr-auto min-h-full px-8 pb-16 pt-8 max-w-6xl">${container.innerHTML}</div>`
+          + `</main></div>`,
+          width,
+        );
         const rendered = page.getByTitle(reason, { exact: true });
         expect(await rendered.isVisible()).toBe(true);
         const geometry = await rendered.evaluate((element) => {
@@ -92,16 +104,22 @@ describe('channel text at narrow widths', () => {
           range.selectNodeContents(element);
           range.setStart(element.firstChild!, element.textContent!.length - 1);
           const last = range.getBoundingClientRect();
+          const scroller = element.closest('.overflow-x-auto');
+          const scrollerBox = scroller ? scroller.getBoundingClientRect() : null;
           return {
             height: box.height,
             lineHeight: parseFloat(getComputedStyle(element).lineHeight),
             overflow: element.scrollWidth - element.clientWidth,
+            textOverflow: getComputedStyle(element).textOverflow,
             lastCharacterInside: last.left >= box.left - 1 && last.right <= box.right + 1 && last.bottom <= box.bottom + 1,
+            insideScroller: !!scrollerBox && box.left >= scrollerBox.left - 1 && box.right <= scrollerBox.right + 1,
           };
         });
         expect(geometry.height).toBeGreaterThan(geometry.lineHeight);
         expect(geometry.overflow).toBeLessThanOrEqual(1);
+        expect(geometry.textOverflow).not.toBe('ellipsis');
         expect(geometry.lastCharacterInside).toBe(true);
+        expect(geometry.insideScroller).toBe(true);
         console.info('channel status narrow layout', language, width, geometry);
       });
     }

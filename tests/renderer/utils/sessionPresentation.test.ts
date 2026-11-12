@@ -118,13 +118,21 @@ describe('placeholder display uses the current UI language', () => {
 });
 
 
+it('search indexes the visible cron prefix and the stored title', () => {
+  const session = { title: '[Cron] 周报' } as Parameters<typeof buildSessionSearchText>[0]['session'];
+  const status = getSessionStatusPresentation({});
+  expect(buildSessionSearchText({ session, status, language: 'zh' })).toContain('[定时] 周报');
+  expect(buildSessionSearchText({ session, status, language: 'zh' })).toContain('[cron] 周报');
+  expect(buildSessionSearchText({ session, status, language: 'en' })).toContain('[schedule] 周报');
+});
+
 describe('automation titles stay localized at display time', () => {
   it.each([
-    ['[Schedule] Weekly report', 'zh', '定时 · Weekly report'],
-    ['[Heartbeat] 巡检', 'zh', '心跳 · 巡检'],
-    ['[Cron] Old report', 'en', 'Scheduled · Old report'],
-    ['[Schedule] Weekly report', 'en', 'Scheduled · Weekly report'],
-    ['[Heartbeat] Check', 'en', 'Heartbeat · Check'],
+    ['[Schedule] Weekly report', 'zh', '[定时] Weekly report'],
+    ['[Heartbeat] 巡检', 'zh', '[心跳] 巡检'],
+    ['[Cron] Old report', 'en', '[Schedule] Old report'],
+    ['[Schedule] Weekly report', 'en', '[Schedule] Weekly report'],
+    ['[Heartbeat] Check', 'en', '[Heartbeat] Check'],
   ] as const)('localizes %s in %s', (stored, language, expected) => {
     expect(getDisplaySessionTitle(stored, language)).toBe(expected);
     expect(splitCronSessionTitleParts(expected)?.name).toBe(stored.replace(/^\[\w+\] /, ''));

@@ -1,3 +1,4 @@
+import { localizeCronSessionTitle } from '../../../shared/cronSessionTitle';
 // ============================================================================
 // Notification Service
 // 桌面通知服务 - 在 App 非焦点时发送任务完成通知
@@ -471,7 +472,7 @@ class NotificationService implements Disposable {
 
     const failed = data.succeeded === false;
     const shell = en ? (failed ? 'Task failed' : 'Task completed') : (failed ? '任务失败' : '任务完成');
-    const title = `${shell} - ${sessionTitle}`;
+    const title = `${shell} - ${localizeCronSessionTitle(sessionTitle, en ? 'en' : 'zh')}`;
     this.enqueueBudgeted({
       intent,
       urgent: options?.urgent,
@@ -496,7 +497,7 @@ class NotificationService implements Disposable {
     if (!this.shouldNotify(true)) return;
     const text = getDurableResumeNotificationText(readNotificationLocale());
     // 兜底会话名必须与通知同语言，所以在这里（知道 locale 的一方）落兜底，调用方传原始标题。
-    const title = text.resumingTitle(data.sessionTitle || text.untitledSession);
+    const title = text.resumingTitle(localizeCronSessionTitle(data.sessionTitle, readNotificationLocale()) || text.untitledSession);
     const body = text.resumingBody(data.autoResumeCount);
     const disposition = this.enqueueBudgeted({
       intent: 'task_resuming',

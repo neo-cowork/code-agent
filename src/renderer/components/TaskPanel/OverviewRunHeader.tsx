@@ -60,7 +60,7 @@ function formatTemplate(template: string, values: Record<string, string | number
 }
 
 export const OverviewRunHeader: React.FC = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const runWorkbench = useRunWorkbenchModel();
   const sessionId = useSessionStore((state) => state.currentSessionId);
   const sessionStatus = useSessionStore((state) => state.sessions.find((session) => session.id === state.currentSessionId)?.status);
@@ -69,7 +69,7 @@ export const OverviewRunHeader: React.FC = () => {
   const interrupt = useRunControlStore((state) => state.actions?.interrupt);
   const sessionTitle = useSessionStore((state) => {
     const session = state.sessions.find((item) => item.id === state.currentSessionId);
-    return session ? getDisplaySessionTitle(session.title) : null;
+    return session ? getDisplaySessionTitle(session.title, language) : null;
   });
 
   // 秒表只在活跃回合里装 interval；无 run 时 hook 照样要调用（hooks 规则），

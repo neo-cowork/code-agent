@@ -306,3 +306,13 @@ describe('SidebarSearchDialog', () => {
     expect(screen.queryByText(copy.searchFailed)).toBeNull();
   });
 });
+
+
+it.each(['zh', 'en'] as const)('shows a stored cron title in %s', (language) => {
+  i18nState.language = language;
+  render(<SidebarSearchDialog isOpen query="" onQueryChange={vi.fn()} onClose={vi.fn()}
+    sessions={[{ ...sessions[0], title: '[Schedule] 每晨整理周会纪要' }]}
+    currentSessionId={null} messageSearchHitsBySessionId={{}} messageSearchLoading={false}
+    effectiveSearchScope="all" setSearchScope={vi.fn()} canSearchCurrentProject={false} onSelectSession={vi.fn()} />);
+  expect(screen.getByText(`${language === 'zh' ? '[定时]' : '[Schedule]'} 每晨整理周会纪要`)).toBeTruthy();
+});

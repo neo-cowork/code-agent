@@ -1,3 +1,4 @@
+import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 // ============================================================================
 // TaskStatusBar - 多任务状态栏组件
 // 显示当前运行中和排队中的任务状态
@@ -59,6 +60,7 @@ export const TaskStatusBar: React.FC<TaskStatusBarProps> = ({ className = '' }) 
   const { sessionStates, stats, refreshStates, refreshStats, initialized } = useTaskStore();
   const { sessions, currentSessionId, switchSession } = useSessionStore();
   const {
+    language,
     openWorkbenchTab,
     setTaskPanelTab,
   } = useAppStore();
@@ -90,7 +92,7 @@ export const TaskStatusBar: React.FC<TaskStatusBarProps> = ({ className = '' }) 
         const session = sessions.find((s) => s.id === sessionId);
         return {
           sessionId,
-          title: session?.title || '未知会话',
+          title: getDisplaySessionTitle(session?.title, language),
           status: state.status,
           startTime: state.startTime,
           queuePosition: state.queuePosition,
@@ -102,7 +104,7 @@ export const TaskStatusBar: React.FC<TaskStatusBarProps> = ({ className = '' }) 
         if (a.status !== 'running' && b.status === 'running') return 1;
         return (a.queuePosition || 0) - (b.queuePosition || 0);
       });
-  }, [sessionStates, sessions]);
+  }, [sessionStates, sessions, language]);
 
   const runningCount = stats.running;
   const queuedCount = stats.queued;
