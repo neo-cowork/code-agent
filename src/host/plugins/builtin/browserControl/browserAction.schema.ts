@@ -11,6 +11,7 @@ Routing: prefer web_fetch/search for plain reads; use browser_action for login/s
 engine (ADR-041): optional auto|managed|relay (default auto). Explicit managed/relay never silent-switches. managed=Neo isolated browser; relay=user-attached Chrome tab.
 Profile login reuse: list_profiles; import_profile_cookies recognizes the legacy userConfirmed signal but also requires a one-time Host approval bound to profile/domain scope; clear_cookies clears managed profile cookies. Never log cookie values.
 keep_result_page: call once the active page is the final result the user should take over — it closes every other tab and keeps this window open for the user after the run ends (not for relay/unattended runs or the shared personal profile).
+wait_for_user {reason}: call when only the user can do the next step in the page (captcha, sign-in, payment confirmation). reason = one plain sentence in the user's language (<=120 chars, no URLs/paths/tool names); it is shown to the user with a Done button. It blocks until they press Done, then call get_dom_snapshot before acting. On WAIT_FOR_USER_TIMEOUT end the turn with one plain sentence; do not retry.
 storageState file path: export_storage_state / import_storage_state for CI/scripts.${browserJevStepDescriptionSuffix()}`; },
   outputSchema: { type: 'string' },
   get inputSchema() { return withBrowserJevStepActionEnum({
@@ -27,7 +28,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
           'get_workbench_state', 'get_account_state', 'export_storage_state', 'import_storage_state',
           'list_profiles', 'import_profile_cookies', 'clear_cookies',
           'wait_for_download', 'upload_file', 'wait', 'fill_form', 'get_logs',
-          'keep_result_page',
+          'keep_result_page', 'wait_for_user',
           'execute_goal',
         ],
         description: 'The browser action to perform',
@@ -164,6 +165,10 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
       userConfirmed: {
         type: 'boolean',
         description: 'Legacy compatibility signal for import_profile_cookies. It cannot authorize import without a one-time Host permission bound to the exact profile/domain scope (ADR-041).',
+      },
+      reason: {
+        type: 'string',
+        description: 'wait_for_user only (required): one plain sentence in the user\'s language, at most 120 characters, saying what the user should do in the browser. Shown to the user as-is; no URLs, file paths or tool names.',
       },
       task: {
         type: 'string',

@@ -7,11 +7,12 @@ import {
   useSurfaceExecutionStore,
 } from '../../stores/surfaceExecutionStore';
 import { browserStageOverlayMarker } from '../../utils/browserStageInteractionGate';
-import { isUserOpenedSurfaceV1 } from '../../utils/surfaceExecutionProjection';
+import { isUserOpenedSurfaceV1, selectBrowserWaitForUserV1 } from '../../utils/surfaceExecutionProjection';
 import { Button } from '../primitives';
 
 /**
  * Live-view bar while the agent browser session is waiting_human.
+ * Neo asked for the user (wait_for_user): shows its reason + Done; the user's own takeover keeps the pause hint.
  * Hidden for a page the user opened themselves.
  * Pure chrome: pointer/click pass-through is blocked by the stage input gate
  * via the overlay marker, not by handlers on this element.
@@ -29,13 +30,17 @@ export const BrowserHumanTakeoverBar: React.FC = () => {
     return null;
   }
   const surfaceSessionId = activeBrowserSurface.session.sessionId;
+  const waitForUser = selectBrowserWaitForUserV1(activeBrowserSurface);
+  const hint = waitForUser
+    ? (waitForUser.timedOut ? copy.takeoverStoppedHint : copy.takeoverWaitingHint).replace('{reason}', waitForUser.reason)
+    : copy.takeoverPausedHint;
   return (
     <div
       data-testid="browser-human-takeover-bar"
       {...browserStageOverlayMarker}
       className="absolute inset-x-3 bottom-3 z-30 flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-zinc-900/95 px-3 py-2"
     >
-      <p className="min-w-0 text-xs text-zinc-200">{copy.takeoverPausedHint}</p>
+      <p className="min-w-0 text-xs text-zinc-200">{hint}</p>
       <Button
         variant="primary"
         size="sm"
@@ -44,7 +49,7 @@ export const BrowserHumanTakeoverBar: React.FC = () => {
           void resumeBrowserHumanTakeover({ conversationId, surfaceSessionId });
         }}
       >
-        {copy.takeoverContinue}
+        {waitForUser ? copy.takeoverDone : copy.takeoverContinue}
       </Button>
     </div>
   );

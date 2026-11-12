@@ -17,6 +17,8 @@ import {
   isSurfaceEvidenceCardV1,
   isSurfaceExecutionEventV1,
   SURFACE_USER_BROWSER_AGENT_ID,
+  WAIT_FOR_USER_EVENT_ACTION,
+  WAIT_FOR_USER_TIMEOUT_EVENT_ACTION,
 } from '@shared/contract/surfaceExecution';
 import { sanitizeSurfaceExecutionEventV1 } from '@shared/utils/surfaceExecutionRedaction';
 
@@ -712,4 +714,22 @@ export function isUserOpenedSurfaceV1(
   projection: Pick<RendererSurfaceSessionProjectionV1, 'scope'>,
 ): boolean {
   return projection.scope.agentId === SURFACE_USER_BROWSER_AGENT_ID;
+}
+
+/**
+ * Browser takeover that Neo asked for itself ("waiting for you" + reason), as opposed to the
+ * user's own takeover button. Reads the takeover request event: the newest human/waiting event
+ * that is not the control echo. `timedOut` = the wait ran out but the window is still parked.
+ */
+export function selectBrowserWaitForUserV1(
+  projection: Pick<RendererSurfaceSessionProjectionV1, 'events'>,
+): { reason: string; timedOut: boolean } | null {
+  for (let index = projection.events.length - 1; index >= 0; index -= 1) {
+    const event = projection.events[index];
+    if (event.phase !== 'human' || event.status !== 'waiting' || event.operation?.action === 'takeover') continue;
+    const action = event.operation?.action;
+    if (action !== WAIT_FOR_USER_EVENT_ACTION && action !== WAIT_FOR_USER_TIMEOUT_EVENT_ACTION) return null;
+    return { reason: event.userSummary, timedOut: action === WAIT_FOR_USER_TIMEOUT_EVENT_ACTION };
+  }
+  return null;
 }
