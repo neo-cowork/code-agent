@@ -165,4 +165,91 @@ describe('workspace openLinkInRail wiring', () => {
     expect(historyArg.workspace.trim().length).toBeGreaterThan(0);
     expect(historyArg.action).toBe('back');
   });
+
+  // ── N-BROWSER-KEEP-RESULT-PAGE：getKeptResultPage / adoptKeptResultPage ──
+
+  function createKeptLinks() {
+    return {
+      open: vi.fn(async () => ({ conversationId: 'c', runId: 'r', surfaceSessionId: 's', snapshot: snapshot('c') })),
+      end: vi.fn(async () => null),
+      history: vi.fn(async () => snapshot('c')),
+      dispatchUserInput: vi.fn(async () => snapshot('c')),
+      setViewport: vi.fn(async () => snapshot('c')),
+      adopt: vi.fn(async () => ({
+        conversationId: 'conversation-a',
+        runId: 'user-run',
+        surfaceSessionId: 'surface-user',
+        snapshot: snapshot('conversation-a'),
+      })),
+      keptState: vi.fn(() => ({ state: 'kept', url: 'https://example.test/result', title: 'Result' })),
+    } as unknown as UserBrowserLinks;
+  }
+
+  function installKeptRoutes(links: UserBrowserLinks) {
+    const handlers = new Map<string, (...args: unknown[]) => unknown>();
+    const ipcMain = {
+      handle: vi.fn((channel: string, handler: (...args: unknown[]) => unknown) => {
+        handlers.set(channel, handler);
+      }),
+    } as unknown as IpcMain;
+    registerWorkspaceHandlers(ipcMain, () => null, () => null, () => null, () => links);
+    const handler = handlers.get(IPC_DOMAINS.WORKSPACE);
+    expect(handler).toBeDefined();
+    return handler!;
+  }
+
+  it('getKeptResultPage returns the service three-state snapshot', async () => {
+    const links = createKeptLinks();
+    const handler = installKeptRoutes(links);
+
+    const response = await handler({}, {
+      action: 'getKeptResultPage',
+      payload: { conversationId: 'conversation-a' },
+    } satisfies IPCRequest) as { success: boolean; data: unknown };
+
+    expect(response.success).toBe(true);
+    expect(response.data).toEqual({
+      state: 'kept',
+      url: 'https://example.test/result',
+      title: 'Result',
+    });
+    expect(links.keptState).toHaveBeenCalledWith('conversation-a');
+  });
+
+  it('adoptKeptResultPage dispatches to the user link service with a resolved workspace', async () => {
+    const links = createKeptLinks();
+    const handler = installKeptRoutes(links);
+
+    const response = await handler({}, {
+      action: 'adoptKeptResultPage',
+      payload: { conversationId: 'conversation-a' },
+    } satisfies IPCRequest) as { success: boolean; data: unknown };
+
+    expect(response.success).toBe(true);
+    expect(response.data).toMatchObject({
+      conversationId: 'conversation-a',
+      surfaceSessionId: 'surface-user',
+    });
+    // 空 workspace 走与 openLinkInRail 同一条 host 兜底，不让认领因缺 cwd 失败。
+    expect(links.adopt).toHaveBeenCalledWith({
+      conversationId: 'conversation-a',
+      workspace: expect.any(String),
+    });
+  });
+
+  it('adoptKeptResultPage surfaces service failures as a non-success response', async () => {
+    const links = createKeptLinks();
+    links.adopt = vi.fn(async () => {
+      throw new Error('No kept result page is open for this conversation.');
+    }) as unknown as UserBrowserLinks['adopt'];
+    const handler = installKeptRoutes(links);
+
+    const response = await handler({}, {
+      action: 'adoptKeptResultPage',
+      payload: { conversationId: 'conversation-a', workspace: '/tmp/w' },
+    } satisfies IPCRequest) as { success: boolean; error?: { message?: string } };
+
+    expect(response.success).toBe(false);
+    expect(response.error?.message).toContain('No kept result page');
+  });
 });
