@@ -80,6 +80,7 @@ import type { CronJobDefinition } from '../../../src/shared/contract/cron';
 import type { CronEventDecisionInput, CronEventDecisionStore } from '../../../src/host/cron/cronEventDecisionLedger';
 import type { PermissionRequestData } from '../../../src/host/tools/types';
 import type { ToolContext } from '../../../src/host/protocol/tools';
+import type { ToolDefinition } from '../../../src/shared/contract/tool';
 
 // ============================================================================
 // N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN：host-owned reply_to_event。
@@ -133,7 +134,7 @@ const REPLY_DEFINITION = {
   description: 'reply to the inbound event',
   inputSchema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
   requiresPermission: true,
-  permissionLevel: 'write',
+  permissionLevel: 'write' as const,
 };
 
 describe('reply_to_event (N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN)', () => {
@@ -281,9 +282,9 @@ describe('reply_to_event (N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN)', () => {
   });
 
   it('withEventReplyTools: injected only for bound sessions; stripped from unbound sessions even in all-tools mode', () => {
-    const allTools = [
-      { ...REPLY_DEFINITION, inputSchema: REPLY_DEFINITION.inputSchema as object, outputSchema: { type: 'string' } },
-      { name: 'Read', description: 'read', inputSchema: {}, outputSchema: { type: 'string' }, requiresPermission: false, permissionLevel: 'read' },
+    const allTools: ToolDefinition[] = [
+      { ...REPLY_DEFINITION, inputSchema: REPLY_DEFINITION.inputSchema as ToolDefinition['inputSchema'], outputSchema: { type: 'string' } },
+      { name: 'Read', description: 'read', inputSchema: { type: 'object' }, outputSchema: { type: 'string' }, requiresPermission: false, permissionLevel: 'read' },
     ];
     // 未绑定会话（'all' 模式全量表里混进了 reply_to_event）：剥掉。
     expect(withEventReplyTools(allTools, 'plain-session').map((tool) => tool.name)).toEqual(['Read']);

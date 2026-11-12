@@ -26,6 +26,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { ToolSchema } from '../../../src/host/protocol/tools';
+import type { ToolDefinition } from '../../../src/shared/contract/tool';
 import { resolveToolCallAccesses } from '../../../src/host/tools/dispatch/resolveToolCallAccess';
 import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import { registerMigratedTools } from '../../../src/host/tools/modules';
@@ -168,9 +169,9 @@ describe('注册即可发现（registry → 模型到达路径）', () => {
   it('SESSION_CONDITIONAL_INJECTED 里的工具确实按会话绑定注入（注入点被删时报红）', async () => {
     const { withEventReplyTools } = await import('../../../src/host/tools/dispatch/toolDefinitions');
     const { bindEventReplySession } = await import('../../../src/host/tools/eventReplySession');
-    const base = [{ name: 'Read', description: 'r', inputSchema: {}, outputSchema: { type: 'string' }, permissionLevel: 'read' }];
+    const base: ToolDefinition[] = [{ name: 'Read', description: 'r', inputSchema: { type: 'object' }, outputSchema: { type: 'string' }, requiresPermission: false, permissionLevel: 'read' }];
     // 未绑定会话（含 'all' 模式全量表已混入的形态）：剥掉。
-    const polluted = [...base, { name: 'reply_to_event', description: 'r2', inputSchema: {}, outputSchema: { type: 'string' }, permissionLevel: 'write' }];
+    const polluted: ToolDefinition[] = [...base, { name: 'reply_to_event', description: 'r2', inputSchema: { type: 'object' }, outputSchema: { type: 'string' }, requiresPermission: true, permissionLevel: 'write' }];
     for (const session of [undefined, 'plain-session'] as const) {
       expect(withEventReplyTools(polluted, session).map((tool) => tool.name)).toEqual(['Read']);
     }
