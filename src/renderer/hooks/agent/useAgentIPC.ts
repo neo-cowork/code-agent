@@ -1,5 +1,6 @@
 // useAgentIPC owns send/cancel IPC calls and direct-routing metadata.
 import { useCallback, type MutableRefObject } from 'react';
+import { clearFailedSend, recordFailedSend } from '../../stores/failedSendOutbox';
 import { generateMessageId } from '@shared/utils/id';
 import type { Message } from '@shared/contract';
 import type {
@@ -53,6 +54,7 @@ import {
   claimSendInflight,
   type ChatSendDelivery,
 } from '../../utils/chatSendState';
+import { isProjectSourceTrustFailure } from '../../utils/httpFailureMessage';
 import {
   buildSendFailureRetryAnchor,
   markOptimisticUserSendFailed,
@@ -538,6 +540,7 @@ export function useAgentIPC({
           ) {
             addMessage(optimisticUser);
           }
+          if (effectiveSessionId) clearFailedSend(effectiveSessionId, messageId);
           logger.info('sendMessage - foreground input delivery accepted', { outcome: outcome.outcome });
           return outcome;
         } catch (error) {
@@ -645,6 +648,7 @@ export function useAgentIPC({
           logger.debug('Attachments being sent', { attachments: attachments?.map(a => ({ name: a.name, category: a.category, hasData: !!a.data, dataLen: a.data?.length, path: a.path, hasPath: !!a.path })) });
         }
         await ipcService.invoke('agent:send-message', messagePayload);
+        if (effectiveSessionId) clearFailedSend(effectiveSessionId, userMessage.id);
         logger.debug('invoke returned');
       } catch (error) {
         logger.error('Agent error', error);
@@ -668,6 +672,7 @@ export function useAgentIPC({
         if (isDurableRunRolloutUnavailable(sendFailure) && await waitForDurableRunReady()) {
           try {
             await ipcService.invoke('agent:send-message', messagePayload);
+            if (effectiveSessionId) clearFailedSend(effectiveSessionId, userMessage.id);
             return { outcome: 'sent' as const };
           } catch (retryError) {
             logger.error('Agent retry after durable run rollout completed failed', retryError);
@@ -687,6 +692,10 @@ export function useAgentIPC({
         }
         markOptimisticUserSendFailed(userMessage.id);
         const retryAnchor = buildSendFailureRetryAnchor(userMessage, effectiveSessionId);
+        // PROJECT_SOURCE_TRUST：旧项目 Source 快照缺失，失败气泡挂「确认并重发」入口
+        const trustFailure = isProjectSourceTrustFailure(sendFailure)
+          ? { sendFailureCode: 'PROJECT_SOURCE_TRUST' as const }
+          : undefined;
         // 错误时创建一条错误消息
         const errorMessage: Message = {
           id: generateMessageId(),
@@ -697,9 +706,10 @@ export function useAgentIPC({
           timestamp: Date.now(),
           // 失败用户气泡留在时间线上；错误卡「重试」仍锚到失败那条并带原
           // clientMessageId。纯附件消息 content 为空，锚点不能按文本判。
-          ...(retryAnchor ? { metadata: retryAnchor } : {}),
+          ...(retryAnchor || trustFailure ? { metadata: { ...retryAnchor, ...trustFailure } } : {}),
         };
-        addMessage(errorMessage);
+        if (effectiveSessionId) recordFailedSend(effectiveSessionId, userMessage, errorMessage);
+        if (useSessionStore.getState().currentSessionId === effectiveSessionId) addMessage(errorMessage);
         // 按会话清除处理状态
         setSessionProcessing(effectiveSessionId!, false);
         // taskStore 也必须重置，否则会话永远卡在 'running'：

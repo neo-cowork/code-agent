@@ -441,6 +441,13 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
         );
         const rowPlan = {
           sessions: group.sessions,
+          runningSessionIds: new Set(group.sessions.filter((session) => (
+            sessionRuntimes.get(session.id)?.status === 'running'
+            || sessionStates[session.id]?.status === 'running'
+            || sessionStates[session.id]?.status === 'queued'
+            || session.status === 'running'
+            || session.status === 'queued'
+          )).map((session) => session.id)),
           aggregatesByTaskId: cronRunAggregatesByTaskId,
           expandedTaskIds: expandedCronTaskIds,
           currentSessionId,

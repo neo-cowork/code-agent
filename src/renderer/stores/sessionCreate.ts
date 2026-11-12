@@ -10,6 +10,8 @@ import { useComposerStore } from './composerStore';
 import { isDraftOrSpaceScopeKey } from './composerScopeModel';
 import { excludeBusySessions, type DraftBusySignals } from './sessionDraftBusyGuard';
 import { toast } from '../hooks/useToast';
+import { languages } from '../i18n';
+import { getSessionTitlePlaceholder } from '../utils/sessionTitlePlaceholder';
 
 const logger = createLogger('SessionCreate');
 
@@ -146,7 +148,7 @@ export async function executeCreateSession(
       ? readOnboardingDefaultEngine(newSessionWorkingDirectory).catch(() => null)
       : Promise.resolve(null);
     const nextTitle = title?.trim() || '新对话';
-    if (nextTitle === '新对话') {
+    if (getSessionTitlePlaceholder(nextTitle, useAppStore.getState().language) !== null) {
       useAppshotsStore.getState().clear();
       const reusableSession = findReusableNewSessionDraft({
         sessions: excludeBusySessions(
@@ -292,7 +294,8 @@ export async function executeCreateSession(
     logger.error('Failed to create session', error);
     const reason = error instanceof Error ? error.message : 'Failed to create session';
     set({ error: reason, isLoading: false });
-    toast.error(`新建会话失败：${reason}`);
+    const prefix = languages[useAppStore.getState().language].sidebar.createSessionFailedPrefix;
+    toast.error(`${prefix}${reason}`);
     return null;
   }
 }

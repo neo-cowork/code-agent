@@ -1,5 +1,5 @@
 import { spawn, execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdirSync, copyFileSync, existsSync, readdirSync, realpathSync, openSync, closeSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, realpathSync, openSync, closeSync, statSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import net from 'node:net';
@@ -7,6 +7,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 import Database from 'better-sqlite3';
 import { parse } from 'dotenv';
 import { chromium, type Browser, type Page } from 'playwright';
+import { isolatedVerificationEnv } from '../lib/verificationIsolation.ts';
+import { seedVerificationModels } from '../lib/verificationModelSeed.ts';
 import { scopedHostLog, digest, type Case, type Row, type Check } from './contracts';
 
 export const repo = path.resolve(import.meta.dirname, '../..');
@@ -18,7 +20,7 @@ const stateFile = (dataDir: string) => path.join(dataDir, 'nightly-resident.json
 function checkBrake() { if (existsSync(expand('~/.ship/disabled'))) throw new Error('FAIL emergency brake ~/.ship/disabled'); }
 function safeEnv(dataDir: string, port?: number) {
   const env: NodeJS.ProcessEnv = Object.fromEntries(['PATH', 'LANG', 'TMPDIR', 'HTTPS_PROXY', 'HTTP_PROXY', 'NO_PROXY'].flatMap(k => process.env[k] ? [[k, process.env[k]]] : []));
-  return { ...env, CODE_AGENT_DATA_DIR: dataDir, CODE_AGENT_HOME: dataDir, CODE_AGENT_WORKING_DIR: dataDir, CODE_AGENT_DISABLE_RENDERER_HOT_UPDATE: '1', AGENT_NEO_BUNDLED_RUNTIME_ROOT: repo, WEB_HOST: '127.0.0.1', WEB_PORT: String(port ?? 0) };
+  return { ...env, ...isolatedVerificationEnv(dataDir), CODE_AGENT_DATA_DIR: dataDir, CODE_AGENT_HOME: dataDir, CODE_AGENT_WORKING_DIR: dataDir, CODE_AGENT_DISABLE_RENDERER_HOT_UPDATE: '1', AGENT_NEO_BUNDLED_RUNTIME_ROOT: repo, WEB_HOST: '127.0.0.1', WEB_PORT: String(port ?? 0) };
 }
 async function freePort(): Promise<number> {
   return new Promise((resolve, reject) => { const server = net.createServer(); server.once('error', reject); server.listen(0, '127.0.0.1', () => { const addr = server.address() as net.AddressInfo; server.close(() => resolve(addr.port)); }); });
@@ -73,11 +75,8 @@ export async function startResident(): Promise<Resident> {
   checkBrake();
   const dataDir = expand(`~/.code-agent-nightly/${new Date().toISOString().replace(/[:.]/g, '-')}`);
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
-  const source = JSON.parse(readFileSync(expand('~/.code-agent-chatprobe/config.json'), 'utf8'));
-  // Only model settings and the probe encryption pair cross the boundary; no production DB, roles or jobs.
-  writeFileSync(path.join(dataDir, 'config.json'), JSON.stringify({ models: source.models, cloud: { enabled: false, warmupOnInit: false }, connectors: { enabledNative: [] } }), { mode: 0o600 });
+  await seedVerificationModels(expand('~/.code-agent-chatprobe'), dataDir);
   writeFileSync(path.join(dataDir, '.env'), '', { mode: 0o600 });
-  for (const file of ['.secure-key', 'secure-storage.json']) copyFileSync(expand(`~/.code-agent-chatprobe/${file}`), path.join(dataDir, file));
   const build: Record<string, string> = {};
   for (const file of ['dist/web/webServer.cjs', 'dist/cli/index.cjs', 'dist/renderer/index.html']) build[file] = digest(readFileSync(path.join(repo, file)));
   const port = await freePort();

@@ -92,6 +92,14 @@ vi.mock('../../../src/host/config/configPaths', () => ({
   getUserConfigDir: () => configDirState.dir,
 }));
 
+const contextStoreState = vi.hoisted(() => ({ store: null as import('../../../src/host/context/subagentContextStore').SubagentContextStore | null }));
+vi.mock('../../../src/host/context/subagentContextStore', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../src/host/context/subagentContextStore')>(),
+  getSubagentContextStore: () => contextStoreState.store!,
+}));
+import { SubagentContextStore } from '../../../src/host/context/subagentContextStore';
+import { buildAgentTreeSnapshot } from '../../../src/host/agent/agentTreeService';
+
 import { AutoAgentCoordinator, getAutoAgentCoordinator } from '../../../src/host/agent/autoAgentCoordinator';
 import type { DynamicAgentDefinition } from '../../../src/host/agent/dynamicAgentFactory';
 import type {
@@ -180,6 +188,7 @@ describe('AutoAgentCoordinator', () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'auto-coord-test-'));
     configDirState.dir = tmpDir;
 
+    contextStoreState.store = new SubagentContextStore(path.join(tmpDir, 'contexts.json'));
     coordinator = new AutoAgentCoordinator();
 
     // Default: success with echoed name
@@ -187,6 +196,18 @@ describe('AutoAgentCoordinator', () => {
       async (_prompt: string, spec: { name: string }) =>
         makeResult({ output: `ok:${spec.name}` })
     );
+  });
+
+  it.each([true, false])('projects graph terminal into context-only member rows (success=%s)', async (success) => {
+    const store = contextStoreState.store!;
+    store.upsert({ sessionId: 'sess-1', agentId: 'a1', messages: [], updatedAt: Date.now() });
+    executorState.executeMock.mockResolvedValue(makeResult({ success, ...(success ? {} : { error: 'model unavailable' }) }));
+    await coordinator.execute([makeAgent('a1')], makeRequirements('sequential'), makeContext());
+    const expected = success ? 'completed' : 'failed';
+    const reloaded = new SubagentContextStore(path.join(tmpDir, 'contexts.json'));
+    const snapshot = buildAgentTreeSnapshot({ sessionId: 'sess-1', contextRecords: reloaded.list('sess-1') });
+    expect(snapshot.nodes).toEqual([expect.objectContaining({ id: 'a1', status: expected })]);
+    expect(snapshot.summary.running).toBe(0);
   });
 
   it('compatibility factory returns run-local facades instead of a process singleton', () => {

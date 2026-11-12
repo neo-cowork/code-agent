@@ -3,7 +3,7 @@
 //
 // 主进程（webServer sidecar）经 SSE 推 NOTIFICATION_SHOW，由这里在渲染端真正发出：
 //   - Tauri 模式：macOS app bundle 先走 UNUserNotificationCenter，非 bundle/非 macOS
-//     才回落 @tauri-apps/plugin-notification；点击经 onAction 跳到对应会话。
+//     才回落 @tauri-apps/plugin-notification；UNC 点击经 notification-clicked 按 id 路由。
 //   - Web 模式：回落浏览器 Notification API（best-effort，无权限/headless 时静默）。
 // ============================================================================
 
@@ -80,6 +80,12 @@ export function shouldSuppressOsNotification(hasFocus: boolean, visible: boolean
   return hasFocus && visible;
 }
 
+/** 用户此刻是否「不在看 Neo」：失焦或页面不可见（与 OS 通知焦点门同一定义）。 */
+export function isWindowAway(): boolean {
+  if (typeof document === 'undefined') return false;
+  return !shouldSuppressOsNotification(document.hasFocus(), !document.hidden);
+}
+
 /** 发一条原生系统通知。Tauri 下自动带 Agent Neo 图标/身份；web 回落浏览器通知。 */
 export async function postOsNotification(
   opts: { title: string; body: string },
@@ -101,7 +107,7 @@ export async function postOsNotification(
   }
 }
 
-type PostFlags = { urgent?: boolean; failure?: boolean; viewingSession?: boolean; onOpen?: () => void; openLabel?: string };
+type PostFlags = { id?: string; urgent?: boolean; failure?: boolean; viewingSession?: boolean; onOpen?: () => void; openLabel?: string };
 
 async function postOsNotificationInner(
   opts: { title: string; body: string },
@@ -122,7 +128,7 @@ async function postOsNotificationInner(
     reportDelivery({ mode: 'suppressed-viewing', dispatched: false });
     return;
   }
-  // macOS 在 app 为 key window 时会藏起原生横幅：urgent 失败在前台补一条应用内 toast。
+  // urgent 失败在前台补一条应用内 toast；UNC 委托同时允许横幅，因此会出现 toast + 横幅双提醒。
   // 仅失败：needs-input 同为 urgent，但不是失败，不能弹红色错误 toast。
   const toastShown = urgent && flags.failure === true && hasFocus && visible;
   if (toastShown) {
@@ -140,6 +146,7 @@ async function postOsNotificationInner(
       result = await invokeNativeCommandAction('postSystemNotification', {
         title: opts.title,
         body: opts.body,
+        ...(flags.id !== undefined ? { id: flags.id } : {}),
       });
     } catch (err) {
       // Older shells do not know the command (or the ACL rejects it). The command

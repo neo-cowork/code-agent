@@ -168,6 +168,8 @@ describe('ProposeProjectMemory', () => {
     expect(again.ok).toBe(true);
     if (!again.ok) return;
     expect(again.output).toContain('exists, not overwritten');
+    expect(again.output).toContain('status: candidate');
+    expect(again.output).toContain('仍待确认，需在设置→记忆页确认才生效');
     expect(again.output).toContain('This folder tracks household expenses in plain notes.');
     expect(again.output).not.toContain('This replacement must not be stored.');
   });
@@ -229,6 +231,7 @@ describe('ProposeProjectMemory', () => {
     if (!second.ok) return;
     expect(second.output).toContain('exists, not overwritten');
     expect(second.output).toContain('status: active');
+    expect(second.output).toContain('已生效');
     expect(second.output).toContain('Write amounts in plain sentences.');
     const after = await fs.readFile(filePath, 'utf8');
     expect(after).toContain('status: active');

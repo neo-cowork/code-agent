@@ -27,7 +27,6 @@ import { createLogger } from '../services/infra/logger';
 
 type ShellLikeStatus = 'running' | 'completed' | 'failed';
 
-const EMPTY_OUTPUT_MESSAGE = 'Process completed with exit code 0 but produced no output.';
 const logger = createLogger('BackgroundTaskSnapshotAdapters');
 
 function getOutputFileSize(outputFile?: string): number | undefined {
@@ -39,27 +38,18 @@ function getOutputFileSize(outputFile?: string): number | undefined {
   }
 }
 
-function isEmptyOutputFile(outputFile?: string): boolean {
-  const size = getOutputFileSize(outputFile);
-  return size === undefined || size === 0;
-}
-
-function mapShellStatus(status: ShellLikeStatus, outputFile?: string, stoppedByRequest?: boolean): TaskStatus {
+function mapShellStatus(status: ShellLikeStatus, stoppedByRequest?: boolean): TaskStatus {
   if (stoppedByRequest) return 'cancelled';
-  if (status === 'completed') return isEmptyOutputFile(outputFile) ? 'failed' : 'completed';
+  if (status === 'completed') return 'completed';
   if (status === 'failed') return 'failed';
   return 'running';
 }
 
 function buildFailure(
-  sourceStatus: ShellLikeStatus,
   mappedStatus: TaskStatus,
   exitCode?: number,
 ): TaskFailure | undefined {
   if (mappedStatus !== 'failed') return undefined;
-  if (sourceStatus === 'completed') {
-    return { message: EMPTY_OUTPUT_MESSAGE, exitCode, category: 'empty_output' };
-  }
   return {
     message: exitCode != null
       ? `Process exited with code ${exitCode}`
@@ -112,7 +102,7 @@ function buildTerminalMessage(args: {
   if (args.status === 'cancelled') {
     return `${args.label} 已停止${duration}`;
   }
-  const exitCode = args.exitCode != null ? `，退出码 ${args.exitCode}` : '';
+  const exitCode = args.exitCode != null && args.exitCode !== 0 ? `，退出码 ${args.exitCode}` : '';
   return withAutomationPromptTimeoutHint(
     `${args.label} 失败${exitCode}${duration}${log}`,
     args.locale ?? 'zh',
@@ -133,6 +123,9 @@ function queueTerminalNotification(args: {
   outputFile?: string;
   automationPromptLikely?: boolean;
   locale?: SessionTaskSlotLocale;
+  /** 被最长运行时间上限终止：只给 payload 加结构化字段，不改文案 */
+  timedOut?: boolean;
+  maxRuntimeMs?: number;
 }): void {
   if (!args.sessionId || !shouldQueueTerminalNotification(args.previous, args.status)) {
     return;
@@ -168,6 +161,9 @@ function queueTerminalNotification(args: {
       outputFile: args.outputFile,
       exitCode: args.exitCode,
       durationMs: args.durationMs,
+      ...(args.timedOut && args.status === 'failed'
+        ? { reason: 'timeout', maxRuntimeMs: args.maxRuntimeMs }
+        : {}),
     },
   });
 }
@@ -199,7 +195,7 @@ export function syncShellTaskSnapshotToLedger(
   task: TaskInfo,
   ledger: BackgroundTaskLedger = getBackgroundTaskLedger(),
 ): void {
-  const status = mapShellStatus(task.status, task.outputFile, task.stoppedByRequest);
+  const status = mapShellStatus(task.status, task.stoppedByRequest);
   const taskId = `shell:${task.taskId}`;
   const label = task.displayCommand?.trim() || task.command || `Shell ${task.taskId.slice(0, 8)}`;
   const previous = ledger.getTask(taskId);
@@ -227,7 +223,7 @@ export function syncShellTaskSnapshotToLedger(
     startedAt: task.startTime,
     completedAt: task.endTime,
     durationMs: task.duration,
-    failure: buildFailure(task.status, status, task.exitCode),
+    failure: buildFailure(status, task.exitCode),
     metadata: {
       createdBy: 'neo',
       originalTaskId: task.taskId,
@@ -257,6 +253,8 @@ export function syncShellTaskSnapshotToLedger(
     outputFile: task.outputFile,
     automationPromptLikely,
     locale,
+    timedOut: task.timedOut,
+    maxRuntimeMs: task.maxRuntime,
   });
 
   upsertOutputRef(ledger, {
@@ -289,7 +287,7 @@ export function syncPtySessionSnapshotToLedger(
   session: PtySessionInfo,
   ledger: BackgroundTaskLedger = getBackgroundTaskLedger(),
 ): void {
-  const status = mapShellStatus(session.status, session.outputFile, session.stoppedByRequest);
+  const status = mapShellStatus(session.status, session.stoppedByRequest);
   const taskId = `pty:${session.sessionId}`;
   const command = [session.command, ...session.args].filter(Boolean).join(' ');
   const previous = ledger.getTask(taskId);
@@ -310,7 +308,7 @@ export function syncPtySessionSnapshotToLedger(
     startedAt: session.startTime,
     completedAt: session.endTime,
     durationMs: session.duration,
-    failure: buildFailure(session.status, status, session.exitCode),
+    failure: buildFailure(status, session.exitCode),
     metadata: {
       createdBy: 'neo',
       originalSessionId: session.sessionId,
@@ -338,6 +336,8 @@ export function syncPtySessionSnapshotToLedger(
     durationMs: session.duration,
     exitCode: session.exitCode,
     outputFile: session.outputFile,
+    timedOut: session.timedOut,
+    maxRuntimeMs: session.maxRuntime,
   });
 
   upsertOutputRef(ledger, {

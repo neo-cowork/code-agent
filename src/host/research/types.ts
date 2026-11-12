@@ -218,6 +218,8 @@ export interface AgentRunOptions {
   parentRunId?: string;
   /** 已由上层分配独立执行槽时，禁止分析器再次进入 AutoAgent 扇出。 */
   disableAutoAgent?: boolean;
+  /** 唤醒等辅助轮截取终态 error 事件：命中时走此回调并抑制向会话前端广播通用失败卡。 */
+  terminalErrorSink?: (data: unknown) => void;
 }
 
 // ============================================================================

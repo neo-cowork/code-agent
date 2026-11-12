@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { spawn, execFileSync } from 'node:child_process';
 import { tsImport } from 'tsx/esm/api';
 import { digest, selectTests, validateFiles, validateReport, summarizeVitestFailures, renderReceipt, extractGateIds, validateGateBudgetCoverage, scaleBudgetPolicy, commandDeadline, budgetFailure, changedInputs } from './lib/gates-fast-contract.mjs';
+import { runPrivateCheckCached } from './lib/casebank-private-cache.mjs';
 import { createOwnedTmp } from './lib/tmp-sandbox.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -169,7 +170,17 @@ try {
     receipt.packageManager = { name: 'npm', version: execFileSync('npm', ['--version'], { encoding: 'utf8', timeout: 5000 }).trim() };
   });
   await gate('provider', true, () => command(['bash', 'scripts/check-provider-symmetry.sh', '--quiet']));
-  await gate('private', true, () => command([process.execPath, 'scripts/ci/check-casebank-answers.mjs', '--require-private']));
+  await gate('private', true, async () => {
+    try {
+      receipt.privateCheck = await runPrivateCheckCached({ root, privateRoot,
+        run: () => command([process.execPath, 'scripts/ci/check-casebank-answers.mjs', '--require-private']) });
+    } catch (error) {
+      receipt.privateCheck = error.privateCheck;
+      throw error;
+    } finally {
+      console.log(`private check: ${receipt.privateCheck.mode} inputHash=${receipt.privateCheck.inputHash.slice(0, 16)}`);
+    }
+  });
   await gate('src-typecheck', true, () => command(['npm', 'run', 'typecheck']));
   await gate('shell', true, () => command([process.execPath, 'scripts/shell-fail-loud-lint.mjs']));
   await gate('shared-host-boundary', true, () => command([process.execPath, 'scripts/ci/shared-host-boundary.mjs']));

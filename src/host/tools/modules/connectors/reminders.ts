@@ -141,7 +141,10 @@ async function executeReminders(
     };
   } catch (error) {
     const osascriptFailure = isAppleScriptFailure(error);
-    const failure = describeAppleScriptFailure('Reminders', error);
+    const failure = describeAppleScriptFailure(
+      'Reminders', error,
+      action === 'list_reminders' ? { timeoutContext: 'list_reminders' } : undefined,
+    );
     ctx.logger.warn('reminders connector failed', {
       connector: 'reminders',
       code: osascriptFailure ? failure.code : 'connector_error',
@@ -152,6 +155,9 @@ async function executeReminders(
       error: osascriptFailure
         ? failure.message
         : `Reminders connector failed: ${error instanceof Error ? error.message : String(error)}`,
+      // 与 calendar.ts 同形：AppleScript 失败码随结果下发（classify 的 perm_automation
+      // 判据读 metadata.code，缺了它 reminders 的授权被拒永远发不出环境卡片）。
+      ...(osascriptFailure ? { code: failure.code } : {}),
     };
   }
 }
