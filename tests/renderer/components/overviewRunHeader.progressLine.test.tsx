@@ -141,6 +141,26 @@ describe('buildOverviewRunHeaderModel 步骤计数与结局', () => {
     expect(cancelled).toMatchObject({ tone: 'error', terminal: 'cancelled-by-user', phase: null });
     expect(blocked).toMatchObject({ tone: 'error', terminal: 'failed-unknown', phase: null });
   });
+
+  it('终态词跟生效状态走：后台子代理仍在跑/主请求失败时，不并出「已完成」终态词（与 #3225 合并缝）', () => {
+    // run 本身 completed，但后台子代理仍在跑 → 生效状态 running，终态词必须为 null
+    const withLiveChild = buildOverviewRunHeaderModel({
+      run: run({ status: 'completed', startedAt: START, endedAt: START + 5_000 }),
+      primaryFailed: true,
+      backgroundChildren: 1,
+      now: START + 6_000,
+    });
+    expect(withLiveChild).toMatchObject({ tone: 'live', status: 'running', terminal: null });
+
+    // 子代理结束后主请求失败 → 生效状态 blocked，终态词是失败词而不是「已完成」
+    const childEnded = buildOverviewRunHeaderModel({
+      run: run({ status: 'completed', startedAt: START, endedAt: START + 5_000 }),
+      primaryFailed: true,
+      backgroundChildren: 0,
+      now: START + 9_000,
+    });
+    expect(childEnded).toMatchObject({ tone: 'error', status: 'blocked', terminal: 'failed-unknown' });
+  });
 });
 
 describe('OverviewRunHeader 细进度线', () => {
