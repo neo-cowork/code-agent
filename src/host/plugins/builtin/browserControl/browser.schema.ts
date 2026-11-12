@@ -37,7 +37,7 @@ Routing contract:
 - fill_form: Fill multiple form fields
 - get_logs: Get recent browser operation logs
 - keep_result_page: Keep the active page open for the user after the run ends (closes other tabs; not for relay/unattended runs or the shared personal profile)
-- wait_for_user: Ask the user to do a step only they can do in the page (captcha, sign-in, payment confirmation) and block until they press Done; needs reason (one plain sentence in the user's language, <=120 chars, no URLs/paths/tool names). After Done call get_dom_snapshot before acting; on WAIT_FOR_USER_TIMEOUT end the turn with one plain sentence
+- wait_for_user: Ask the user to do a step only they can do in the page (captcha, sign-in, payment confirmation) and block until they press Done; needs reason (one plain sentence in the user's language, <=120 chars, no URLs/paths/tool names/button names). After Done call get_dom_snapshot before acting; on WAIT_FOR_USER_TIMEOUT end the turn with one plain sentence
 ${browserJevStepDescriptionSuffix()}
 
 ## Parameters:
@@ -202,7 +202,7 @@ ${browserJevStepDescriptionSuffix()}
       },
       reason: {
         type: 'string',
-        description: 'wait_for_user only (required): one plain sentence in the user\'s language, at most 120 characters, saying what the user should do in the browser. Shown to the user as-is; no URLs, file paths or tool names.',
+        description: 'wait_for_user only (required): one plain sentence in the user\'s language, at most 120 characters, saying what the user should do in the browser. Shown to the user as-is; no URLs, file paths, tool names or button names (the user already has a Done button; do not tell them to press anything).',
       },
       task: {
         type: 'string',
