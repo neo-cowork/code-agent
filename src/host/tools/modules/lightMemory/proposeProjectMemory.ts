@@ -8,7 +8,7 @@
 
 import * as fs from 'fs/promises';
 import path from 'node:path';
-import type { MemoryEntry, MemoryEntryEvidence, ProjectMemoryDraftTopic } from '../../../../shared/contract/memory';
+import type { MemoryEntry, MemoryEntryEvidence, MemoryEntryStatus, ProjectMemoryDraftTopic } from '../../../../shared/contract/memory';
 import type {
   CanUseToolFn,
   ToolContext,
@@ -34,6 +34,22 @@ const TOPIC_TITLES: Record<ProjectMemoryDraftTopic, string> = {
   purpose: '项目用途（init-memory 草稿）',
   'key-files': '关键文件（init-memory 草稿）',
   conventions: '使用约定（init-memory 草稿）',
+};
+
+/** 回执里的中文主题名（模型会转述给用户，不能再出现英文 topic 值）。 */
+const RECEIPT_TOPIC_LABELS: Record<ProjectMemoryDraftTopic, string> = {
+  purpose: '用途',
+  'key-files': '关键文件',
+  conventions: '约定',
+};
+
+/** exists 回执按 status 给一句中文状态说明；每个 status 一句，不混用措辞。 */
+const EXISTS_STATUS_SENTENCES: Record<MemoryEntryStatus, string> = {
+  candidate: '仍待确认，需在设置→记忆页确认才生效',
+  active: '已生效',
+  rejected: '该条记忆已被拒绝，未生效',
+  stale: '该条记忆已过期，未生效',
+  archived: '该条记忆已归档，未生效',
 };
 
 function isTopic(value: unknown): value is ProjectMemoryDraftTopic {
@@ -107,21 +123,16 @@ function candidateEntry(
 
 function formatExists(topic: ProjectMemoryDraftTopic, entry: MemoryEntry): string {
   return [
-    'exists, not overwritten',
-    `topic: ${topic}`,
-    `id: ${entry.id}`,
-    `status: ${entry.status}`,
-    'content:',
+    `「${RECEIPT_TOPIC_LABELS[topic]}」草稿已存在，未覆盖。`,
+    EXISTS_STATUS_SENTENCES[entry.status],
     entry.content,
   ].join('\n');
 }
 
 function formatWritten(topic: ProjectMemoryDraftTopic, entry: MemoryEntry): string {
   return [
-    'Wrote a candidate project memory. status: candidate. It does not take effect until confirmed in Settings -> Memory.',
-    `topic: ${topic}`,
-    `id: ${entry.id}`,
-    'content:',
+    `「${RECEIPT_TOPIC_LABELS[topic]}」草稿已保存，等待确认。`,
+    '仍待确认，需在设置→记忆页确认才生效',
     entry.content,
   ].join('\n');
 }

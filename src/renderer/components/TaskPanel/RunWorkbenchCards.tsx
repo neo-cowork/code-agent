@@ -1,3 +1,4 @@
+import { resolveRunCancellationOutcomeKey } from '../../i18n/outcomeWords';
 import type React from 'react';
 import { useState } from 'react';
 import { BackgroundTaskSchemas } from '@shared/ipc/schemas';
@@ -74,9 +75,7 @@ export function getRunUiStatusLabel(
     case 'blocked':
       return rw.statusBlocked;
     case 'cancelled':
-      return terminalReason === 'idle_reaped'
-        ? t.outcomeWords['failed-idle-reaped'].badge.label
-        : t.outcomeWords['cancelled-by-user'].badge.label;
+      return t.outcomeWords[resolveRunCancellationOutcomeKey(terminalReason)].badge.label;
     case 'waiting_approval':
       return rw.statusWaitingApproval;
     case 'using_tools':
@@ -123,9 +122,7 @@ export const RunOverview = ({ model, onOpenMemory }: RunOverviewProps) => {
   const runBlockedHint = run.blockedReason
     || (run.blockedReasonCategory ? t.taskPanel.taskBlockedReason[run.blockedReasonCategory] : null);
   const terminalReason = run.status === 'cancelled'
-    ? (run.terminalReason === 'idle_reaped'
-      ? t.outcomeWords['failed-idle-reaped'].badge.reason
-      : t.outcomeWords['cancelled-by-user'].badge.reason)
+    ? t.outcomeWords[resolveRunCancellationOutcomeKey(run.terminalReason)].badge.reason
     : null;
 
   return (

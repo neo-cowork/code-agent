@@ -10,6 +10,7 @@ import type { Components } from 'react-markdown';
 import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { useI18n } from '../../../../hooks/useI18n';
+import { interpolate, interpolatePlural } from '../../../../i18n/interpolate';
 import { SETTINGS_TAB_IDS, type SettingsTab } from '../../../../utils/settingsTabs';
 import {
   recordStreamingPerformanceCounter,
@@ -216,7 +217,7 @@ export const CodeBlock = memo(function CodeBlock({
             {config.name}
           </span>
           <span className="text-xs text-zinc-600">
-            {lines.length} line{lines.length > 1 ? 's' : ''}
+            {interpolatePlural(t.codeBlock.lineCount, lines.length)}
           </span>
         </div>
         <div className="flex items-center gap-1">
@@ -228,7 +229,7 @@ export const CodeBlock = memo(function CodeBlock({
                 ? 'bg-zinc-700 text-zinc-200'
                 : 'hover:bg-zinc-700 text-zinc-500 hover:text-zinc-300'
             }`}
-            title={wrapLines ? '取消换行' : '自动换行'}
+            title={wrapLines ? t.codeBlock.wrapOff : t.codeBlock.wrapOn}
           >
             {t.toolDisplay.wrap}
           </button>
@@ -289,7 +290,7 @@ export const CodeBlock = memo(function CodeBlock({
           onClick={() => setCollapsed(!collapsed)}
           className="w-full py-1.5 text-xs text-zinc-500 hover:text-zinc-300 bg-zinc-800/50 border-t border-zinc-700 transition-colors"
         >
-          {collapsed ? `展开全部 (${lines.length} 行)` : '收起'}
+          {collapsed ? interpolate(t.codeBlock.expandAll, { count: lines.length }) : t.codeBlock.collapse}
         </button>
       )}
     </div>

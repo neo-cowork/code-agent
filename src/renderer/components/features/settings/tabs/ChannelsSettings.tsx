@@ -585,8 +585,8 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
                   value={tgAllowedUserIds}
                   onChange={(e) => setTgAllowedUserIds(e.target.value)}
                   className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
-                  placeholder={channelText.modal.allowedUserIdsPlaceholder}
-                />
+                  aria-describedby="telegram-allowed-users-hint" placeholder={channelText.modal.allowedUserIdsPlaceholder}
+                /><p id="telegram-allowed-users-hint" className="mt-1 text-xs text-zinc-500 break-words">{channelText.modal.allowedUserIdsHint}</p>
               </div>
               <div>
                 <label className="block text-sm text-zinc-400 mb-1">
@@ -936,7 +936,7 @@ export const ChannelsSettings: React.FC = () => {
                           {getStatusText(account.status)}
                         </div>
                         {account.errorMessage && (
-                          <div className="mt-1 truncate text-xs text-badge-danger" title={account.errorMessage}>
+                          <div className="mt-1 whitespace-pre-wrap break-words text-xs text-badge-danger" title={account.errorMessage}>
                             {account.errorMessage}
                           </div>
                         )}

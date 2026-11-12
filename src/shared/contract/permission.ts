@@ -195,6 +195,8 @@ export interface PermissionRequest {
      * 透传，供停车审批卡出「每次都允许发 <target>」铸权入口；模型侧无入口（no-self-grant）。
      */
     standingGrantTarget?: string;
+    /** Host-only action + exact origin; null means one-time permission only. */
+    browserSessionGrant?: { target: string | null; previousOrigins: string[] };
     /**
      * computer_use 的目标应用。有此字段时审批卡按应用给「始终 / 本次对话 / 拒绝」，
      * 不走工具级会话记忆。bundleId 缺省时按应用名匹配。
@@ -354,7 +356,7 @@ export type PermissionDenialSource =
   | 'scripted';
 
 /** 「这次审批是谁批准的」；机器批准必须显式自报，不能沿用真人批准的默认值。 */
-type PermissionApprovalSource =
+export type PermissionApprovalSource =
   /** 真人在审批界面上点了允许 */
   | 'user'
   /** dev 槽里的 devModeAutoApprove 机器放行 */
