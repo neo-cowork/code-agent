@@ -9,7 +9,7 @@
 import type { SessionCommandTask } from './sessionCommandCenter';
 import { buildSessionTaskResultMessage } from './sessionCommandTaskRestartRecovery';
 import type { SessionTaskResultStatusWordLocale } from '../../../shared/constants/sessionCommandCenter';
-import { createSessionAccessRetry } from './sessionAccessRetry';
+import { createSessionAccessRetry, type SessionAccessRetryOutcome } from './sessionAccessRetry';
 import { recordBackgroundWakeFailureNoteWithOwnerRetry } from './backgroundWakeNoteRetry';
 import { getSessionManager } from '../infra/sessionManager';
 import { getConfigService } from '../core/configService';
@@ -54,8 +54,8 @@ export function deferTerminalResultProjectionUntilAccessible(input: {
   status: TerminalResultStatus;
   /** settle 侧的写入口；缺省走本模块的产线实现，SessionCommandCenter 传入尊重 DI 的那个。 */
   write?: (task: SessionCommandTask, status: TerminalResultStatus) => Promise<void>;
-  /** 重试落定后的收尾（如清 running 标记）。 */
-  onSettled?: () => void;
+  /** 重试落定后的收尾（如清 running 标记）；exhausted 保留标记给下次启动补投真实结果。 */
+  onSettled?: (outcome: SessionAccessRetryOutcome) => void;
   logger?: { warn(message: string, details?: unknown): void };
 }): void {
   const { task, status } = input;

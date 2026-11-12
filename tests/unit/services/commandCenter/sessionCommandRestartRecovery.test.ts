@@ -280,4 +280,53 @@ describe('指挥台任务：宿主重启后的收口', () => {
     await restartHost();
     expect(await ownedTranscript()).toHaveLength(1);
   });
+
+  it('重试窗口内崩溃：重启恢复按标记里的终态快照补投真实结果，不把 completed 改写成 interrupted failed', async () => {
+    // 会话归属 u1、owner 为空：任务正常完成，但 [任务结果] 投影撞登录恢复窗口进入延迟重试。
+    coreDb.createSessionWithId('session-crash-window', {
+      title: 'crash-window', userId: 'u1', modelConfig: { provider: 'zhipu', model: 'glm-5' },
+    });
+    const manager = new HangingTaskManager();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      wakeForegroundBrain: vi.fn().mockResolvedValue(undefined),
+    });
+    const spawned = await center.spawn({
+      sessionId: 'session-crash-window', title: '后台周报', shortName: '周报',
+      laneKey: 'lane-c', submissionKey: 'sub-c', prompt: 'do it',
+      workspaceScope: createWorkspaceScope('p', [{ sourceId: 's', path: tmpDir, role: 'primary', access: 'read_write' }]),
+    });
+    if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+    const taskId = spawned.task.id;
+    const markerFile = path.join(tmpDir, 'session-command-running', `${encodeURIComponent(taskId)}.json`);
+    manager.emit('task_completed', { type: 'task_completed', sessionId: 'session-crash-window', data: { taskId, conclusion: '周报已写好' } });
+    // settle 已把账本终态投成 completed（投影消息本身写不进、进入重试）
+    await vi.waitFor(() => expect(getBackgroundTaskLedger().getTask(taskId)?.status).toBe('completed'));
+    // 标记还在，且带终态快照（补快照发生在投影失败的 catch 里，异步落）
+    await vi.waitFor(() => {
+      expect(fs.existsSync(markerFile)).toBe(true);
+      expect(JSON.parse(fs.readFileSync(markerFile, 'utf8')).terminal).toMatchObject({ status: 'completed' });
+    });
+
+    // 宿主在重试窗口内「崩溃重启」（同数据目录）：恢复不得把 completed 覆盖成 failed(interrupted)
+    await restartHost();
+    const afterRestart = getBackgroundTaskLedger().getTask(taskId);
+    expect(afterRestart?.status).toBe('completed');
+    expect(afterRestart?.failure?.reason).toBeUndefined();
+
+    // owner 恢复 → 补投的是真实结果行（已完成 + 真实结论），不是中断句；标记清掉
+    const transcript = async () => {
+      const session = await getSessionManager().getSession('session-crash-window', 100);
+      return (session?.messages ?? []).filter((m) => m.content.startsWith('[任务结果]'));
+    };
+    authHarness.user = { id: 'u1' };
+    for (const callback of [...authHarness.callbacks]) callback(authHarness.user, 'authenticated');
+    await vi.waitFor(async () => expect((await transcript()).length).toBeGreaterThanOrEqual(1));
+    const rows = await transcript();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe(`session-task-result-${taskId}`);
+    expect(rows[0].content).toBe('[任务结果] 周报｜已完成｜周报已写好');
+    expect(rows[0].metadata).toMatchObject({ backgroundTaskResult: { taskId, status: 'completed' } });
+    expect((rows[0].metadata as { backgroundTaskInterrupted?: unknown }).backgroundTaskInterrupted).toBeUndefined();
+    await vi.waitFor(() => expect(fs.existsSync(markerFile)).toBe(false));
+  });
 });

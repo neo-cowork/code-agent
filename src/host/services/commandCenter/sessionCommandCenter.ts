@@ -19,6 +19,7 @@ import { BackgroundShellHold } from './backgroundShellHold';
 import {
   clearSessionCommandTaskMarker,
   markSessionCommandTaskRunning,
+  settleSessionCommandTaskMarkerForDeferredProjection,
 } from './sessionCommandTaskRestartRecovery';
 import {
   deferTerminalResultProjectionUntilAccessible,
@@ -795,12 +796,18 @@ export class SessionCommandCenter {
         message: error instanceof Error ? error.message : String(error),
       });
       if (isSessionNotAccessibleError(error)) {
-        // running 标记留到重试落定再清：重试窗口内宿主再崩，下次启动还能补中断行。
+        // running 标记先补终态快照再保留：重试窗口内宿主再崩，下次启动按真实结局补投结果，
+        // 不会把已 settle 的任务当中断改写成 failed（Rework r1）。
+        // 重试写成/致命失败时清标记；耗尽时保留——下次启动还能补投一次真实结果。
+        settleSessionCommandTaskMarkerForDeferredProjection({ ...task, status });
         deferTerminalResultProjectionUntilAccessible({
           task,
           status,
           write: (deferredTask, deferredStatus) => this.projectTerminalResult(deferredTask, deferredStatus),
-          onSettled: () => clearSessionCommandTaskMarker(task.id),
+          onSettled: (outcome) => {
+            if (outcome === 'exhausted') return;
+            clearSessionCommandTaskMarker(task.id);
+          },
         });
       } else {
         clearSessionCommandTaskMarker(task.id);

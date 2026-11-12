@@ -229,7 +229,10 @@ describe('settle 终态投影在登录恢复窗口里的收口', () => {
     expect(exhausted[0].details).toMatchObject({ sessionId: SESSION, taskId, ownerSignedIn: false });
     expect(logsOf('warn').some((entry) => entry.message === 'Background wake failure note not recorded')).toBe(true);
     expect(messageRows()).toHaveLength(0);
-    await vi.waitFor(() => expect(fs.existsSync(path.join(tmpDir, 'session-command-running', `${encodeURIComponent(taskId)}.json`))).toBe(false));
+    // 耗尽不清标记：终态快照留在标记里，下次启动的重启恢复还能按真实结局补投结果
+    const markerFile = path.join(tmpDir, 'session-command-running', `${encodeURIComponent(taskId)}.json`);
+    expect(fs.existsSync(markerFile)).toBe(true);
+    expect(JSON.parse(fs.readFileSync(markerFile, 'utf8')).terminal).toMatchObject({ status: 'completed' });
 
     // owner 恢复：耗尽分支挂的一次性补写落地，恰好一句人话
     fireAuth({ id: 'u1' });

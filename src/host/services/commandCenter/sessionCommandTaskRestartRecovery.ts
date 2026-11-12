@@ -32,6 +32,19 @@ interface RunningMarker {
   shortName: string;
   createdAt: number;
   startedAt: number;
+  /**
+   * settle 已落终态、但「[任务结果]」投影还在会话不可读重试中（登录恢复窗口）：
+   * 这份终态快照让重启恢复按真实结局补投，而不是把已完成任务当中断改写成 failed
+   * （Rework r1：不带它，重试窗口内崩溃 → 下次启动账本 completed 被覆盖成
+   * failed(interrupted)、会话里出现假的中断行）。
+   */
+  terminal?: {
+    status: ResultStatus;
+    resultText?: string;
+    summary?: string;
+    detail?: string;
+    settledAt: number;
+  };
 }
 
 type ResultStatus = 'completed' | 'failed' | 'cancelled';
@@ -77,6 +90,57 @@ export function clearSessionCommandTaskMarker(taskId: string): void {
   } catch (error) {
     logger.warn('Failed to remove running marker', {
       taskId,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/**
+ * settle 落了终态、但投影因会话不可读进入延迟重试时调用：给 running 标记补一份终态快照
+ * 再保留它。重试窗口内宿主退出/崩溃，下次启动的恢复按真实结局补投结果（不写中断行、
+ * 不覆盖账本终态）；写失败只 warn——兜底形状保证标记仍指向该任务。
+ */
+export function settleSessionCommandTaskMarkerForDeferredProjection(task: {
+  id: string;
+  sessionId: string;
+  title: string;
+  shortName: string;
+  createdAt: number;
+  status: ResultStatus;
+  resultText?: string;
+  summary?: string;
+  detail?: string;
+}): void {
+  try {
+    fs.mkdirSync(markerDir(), { recursive: true });
+    let base: RunningMarker = {
+      taskId: task.id,
+      sessionId: task.sessionId,
+      title: task.title,
+      shortName: task.shortName,
+      createdAt: task.createdAt,
+      startedAt: task.createdAt,
+    };
+    try {
+      const existing = JSON.parse(fs.readFileSync(markerPath(task.id), 'utf8')) as RunningMarker;
+      if (existing?.taskId === task.id) base = existing;
+    } catch {
+      // 读不到旧标记（本不该发生）：用兜底形状，宁可带上终态也不能丢
+    }
+    const marker: RunningMarker = {
+      ...base,
+      terminal: {
+        status: task.status,
+        resultText: task.resultText,
+        summary: task.summary,
+        detail: task.detail,
+        settledAt: Date.now(),
+      },
+    };
+    fs.writeFileSync(markerPath(task.id), JSON.stringify(marker));
+  } catch (error) {
+    logger.warn('Failed to stamp the running marker with the terminal outcome; a restart in the retry window would misread the task as interrupted', {
+      taskId: task.id,
       message: error instanceof Error ? error.message : String(error),
     });
   }
@@ -197,6 +261,110 @@ function writeInterruptedLedgerRow(
   }
 }
 
+async function writeDeferredTerminalResultMessage(
+  marker: RunningMarker,
+  terminal: NonNullable<RunningMarker['terminal']>,
+  locale: 'zh' | 'en',
+): Promise<void> {
+  await getSessionManager().addMessageToSession(
+    marker.sessionId,
+    buildSessionTaskResultMessage(
+      { id: marker.taskId, shortName: marker.shortName },
+      terminal.status,
+      terminal.resultText ?? terminal.summary,
+      `session-task-result-${marker.taskId}`,
+      locale,
+    ),
+  );
+}
+
+/**
+ * 带终态快照的标记（settle 已收口、只是投影被会话不可读挡住时宿主又退出了）：
+ * 补投**真实结局**的结果行——不写中断句、不带 backgroundTaskInterrupted、不把账本
+ * 终态覆盖成 failed。账本行 settle 当时已写过，只有账本里没有这行（store 曾缺席的
+ * 窗口）才按快照补一份精简行。
+ */
+async function recoverDeferredTerminalResult(
+  ledger: ReturnType<typeof getBackgroundTaskLedger>,
+  file: string,
+  marker: RunningMarker,
+  locale: 'zh' | 'en',
+): Promise<void> {
+  const terminal = marker.terminal;
+  if (!terminal) return;
+  try {
+    if (!ledger.getTask(marker.taskId)) {
+      ledger.upsertTask({
+        id: marker.taskId,
+        kind: 'session_command_task',
+        source: 'session_command_center',
+        sessionId: marker.sessionId,
+        runId: marker.taskId,
+        title: marker.title,
+        summary: terminal.summary ?? terminal.resultText ?? '',
+        status: terminal.status,
+        createdAt: marker.createdAt,
+        updatedAt: terminal.settledAt,
+        startedAt: marker.startedAt,
+        completedAt: terminal.settledAt,
+        ...(terminal.status === 'failed' && terminal.detail
+          ? { failure: { message: terminal.detail, reason: 'session_command_task_failed' } }
+          : {}),
+        metadata: { shortName: marker.shortName, childRunId: marker.taskId },
+      });
+    }
+  } catch (error) {
+    logger.warn('Restart recovery could not backfill the settled ledger row', {
+      taskId: marker.taskId,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+  try {
+    await writeDeferredTerminalResultMessage(marker, terminal, locale);
+  } catch (error) {
+    if (isSessionNotAccessibleError(error)) {
+      logger.warn('Restart recovery waiting: session not accessible for current owner; settled result message deferred', {
+        reason: 'terminal_result_message_not_accessible_for_current_owner',
+        taskId: marker.taskId,
+        sessionId: marker.sessionId,
+      });
+      createSessionAccessRetry({
+        reasonKey: 'terminal_result_message',
+        attemptsUsed: 1,
+        logContext: { taskId: marker.taskId, sessionId: marker.sessionId },
+        attempt: () => writeDeferredTerminalResultMessage(marker, terminal, locale),
+        onExhausted: () => {
+          logger.warn('Restart recovery gave up retrying the settled result message in this process; marker kept for the next start', {
+            reason: 'terminal_result_message_not_accessible_retries_exhausted',
+            taskId: marker.taskId,
+            sessionId: marker.sessionId,
+          });
+        },
+        onSettled: (outcome) => {
+          if (outcome !== 'written') return;
+          fs.rmSync(file, { force: true });
+        },
+        logger,
+      }).start();
+      return;
+    }
+    logger.warn('Restart recovery could not re-project the settled task result', {
+      reason: 'terminal_result_message_write_failed',
+      taskId: marker.taskId,
+      sessionId: marker.sessionId,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    fs.rmSync(file, { force: true });
+    return;
+  }
+  fs.rmSync(file, { force: true });
+  logger.warn('Session command task result re-projected after restart; terminal outcome preserved', {
+    taskId: marker.taskId,
+    sessionId: marker.sessionId,
+    status: terminal.status,
+  });
+}
+
 /**
  * 中断消息写不进去是因为会话对当前 owner 不可读（登录恢复中）：标记必须留下——
  * 删了就等于把中断报告一起删了。本进程内按同一组界重试（定时器 + 登录态信号），
@@ -255,6 +423,11 @@ export async function recoverInterruptedSessionCommandTasks(): Promise<number> {
 
   let recovered = 0;
   for (const { file, marker } of markers) {
+    if (marker.terminal) {
+      // settle 已收口的任务：重启恢复补投真实结局，绝不走中断分支（会把 completed 改写成 failed）。
+      await recoverDeferredTerminalResult(ledger, file, marker, locale);
+      continue;
+    }
     // 账本终态行不依赖会话可读：无论消息写成写不成都先落，别让侧栏永远「运行中」。
     writeInterruptedLedgerRow(ledger, marker, text);
     try {
