@@ -44,11 +44,15 @@ async function loadConfigServiceForDataDir(dataDir: string) {
 
 describe('devSlotSeed → ConfigService.initialize integration (FB-483)', () => {
   const originalHome = process.env.CODE_AGENT_HOME;
+  // globalSetup 钉过 DATA_DIR（getUserConfigDir 优先读它），改过就要恢复钉值。
+  const originalDataDir = process.env.CODE_AGENT_DATA_DIR;
   let root: string;
 
   afterEach(() => {
     if (originalHome === undefined) delete process.env.CODE_AGENT_HOME;
     else process.env.CODE_AGENT_HOME = originalHome;
+    if (originalDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
+    else process.env.CODE_AGENT_DATA_DIR = originalDataDir;
     if (root) fs.rmSync(root, { recursive: true, force: true });
     vi.doUnmock('../../../../src/host/platform');
     vi.doUnmock('../../../../src/host/services/core/secureStorage');
@@ -70,6 +74,9 @@ describe('devSlotSeed → ConfigService.initialize integration (FB-483)', () => 
     }));
     const { seedDevSlotFromProduction } = await import('../../../../src/host/services/core/devSlotSeed');
     const devDir = path.join(root, '.code-agent-dev9');
+    // DATA_DIR 与 HOME 配对（isolation guard 要求；也是真实 webServer 形状：
+    // 槽数据目录由 CODE_AGENT_DATA_DIR 指定，不只靠 platform mock 注入）。
+    process.env.CODE_AGENT_DATA_DIR = devDir;
     expect(seedDevSlotFromProduction(devDir).seeded).toBe(true);
 
     // seed 写出的原始文件只有 models+ui（无 permissions/execPolicy 跨槽）——
@@ -95,6 +102,7 @@ describe('devSlotSeed → ConfigService.initialize integration (FB-483)', () => 
     const dir = path.join(root, 'legacy-data');
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ models: { default: 'x' } }));
+    process.env.CODE_AGENT_DATA_DIR = dir;
 
     const { ConfigService } = await loadConfigServiceForDataDir(dir);
     const service = new ConfigService();
