@@ -179,6 +179,11 @@ export function finalizeSubagentSuccess(
     ? buildStepCapConclusion({ iterations, maxIterations: state.maxIterations, messages: state.messages ?? [] })
     : undefined;
 
+  const stopHint: SubagentResult['stopHint'] | undefined = finalOutput ? undefined
+    : stepCapConclusion
+      ? { kind: 'step_cap', conclusion: stepCapConclusion }
+      : { kind: 'no_conclusion', conclusion: resolveStoppedTaskOutcome({ status: 'completed', detail: '' }).detail };
+
   // Get final cost
   cleanupTimer();
   stopIdleWatchdog();
@@ -226,28 +231,6 @@ export function finalizeSubagentSuccess(
     recordRoleParticipation(sessionId, config.roleId);
   }
 
-  const noConclusion = !finalOutput && !stepCapConclusion
-    ? resolveStoppedTaskOutcome({ status: 'completed', detail: '' }).detail : undefined;
-  const stopConclusion = stepCapConclusion ?? noConclusion;
-  if (stopConclusion) {
-    terminal.status = 'failed';
-    terminal.error = stopConclusion;
-    return {
-      success: false,
-      output: appendSubagentLeftoverShellReport(stopConclusion, leftoverReport),
-      error: stopConclusion,
-      toolsUsed: [...new Set(toolsUsed)],
-      toolCallCount: turnObservability.getToolCallCount(),
-      iterations,
-      tokensUsed: getTotalTokens(),
-      cost: getTotalCost(),
-      agentId: executionAgentId,
-      contextSnapshot: latestContextSnapshot,
-      failureCode: stepCapConclusion ? AgentFailureCode.BudgetExhausted : AgentFailureCode.Unknown,
-      stopKind: stepCapConclusion ? 'step_cap' : 'no_conclusion',
-    };
-  }
-
   terminal.status = 'completed';
   return {
     success: true,
@@ -265,6 +248,8 @@ export function finalizeSubagentSuccess(
     // N-SUBAGENT-ZEROTOOLS：部分声明的工具没装配上时不失败，但清单必须带回
     // 父模型（由调用方透传），让父模型自行裁量这结果可信到什么程度。
     ...(surface.missingToolNames.length > 0 ? { missingTools: [...surface.missingToolNames] } : {}),
+    // 仅提示、不改判：前台 Task / 工作流子代理照旧按成功返回，只有后台注册表据此改写成白话停止说明。
+    ...(stopHint ? { stopHint } : {}),
   };
 }
 

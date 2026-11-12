@@ -68,34 +68,8 @@ describe('BackgroundSubagentRegistry', () => {
     await reg.await(agentId);
     const status = reg.getStatus(agentId);
     expect(status?.status).toBe('failed');
-    expect(status?.error).toBe('后台任务中途停止了：运行中遇到了意外错误。你可以回复「继续」让它重试，已经看过的内容不会丢。');
+    expect(status?.error).toContain('boom');
     expect(status?.failureCode).toBe(AgentFailureCode.Unknown);
-  });
-
-  it('wraps an English error on a failed (non-thrown) result and keeps a Chinese one as is', async () => {
-    const reg = new BackgroundSubagentRegistry();
-    const english = reg.spawn(async () => ({
-      success: false, output: '', error: 'inference provider unavailable', toolsUsed: [], iterations: 1,
-    }));
-    const chinese = reg.spawn(async () => ({
-      success: false, output: '', error: '后台任务做到第 3 步（上限 3 步）就用完了步数。', toolsUsed: [], iterations: 3,
-    }));
-    await reg.await(english);
-    await reg.await(chinese);
-
-    expect(reg.getStatus(english)?.error).toContain('模型服务暂时出错或请求太频繁');
-    expect(reg.getStatus(english)?.error).not.toContain('inference');
-    expect(reg.getStatus(chinese)?.error).toBe('后台任务做到第 3 步（上限 3 步）就用完了步数。');
-  });
-
-  it('turns an English provider error into a plain Chinese reason for the conversation', async () => {
-    const reg = new BackgroundSubagentRegistry();
-    const agentId = reg.spawn(async () => { throw new Error('429 Too Many Requests from provider'); });
-
-    await reg.await(agentId);
-    const status = reg.getStatus(agentId);
-    expect(status?.error).toContain('模型服务暂时出错或请求太频繁');
-    expect(status?.error).not.toMatch(/429|Too Many/);
   });
 
   it('marks failed result payloads as failed and keeps their unified failure code', async () => {
@@ -266,5 +240,33 @@ describe('BackgroundSubagentRegistry', () => {
     expect(onComplete).toHaveBeenCalledTimes(1);
     expect(reg.drainCompletionNotifications({ sessionId: 'session-adopt', runId: 'run-adopt' })).toHaveLength(1);
     expect(reg.drainCompletionNotifications({ sessionId: 'session-adopt', runId: 'run-adopt' })).toEqual([]);
+  });
+
+  describe('early-stop delivery (background only)', () => {
+    it('turns a stopHint success into a failed entry with the Chinese conclusion and step_cap kind', async () => {
+      const reg = new BackgroundSubagentRegistry();
+      const conclusion = '后台任务做到第 3 步（上限 3 步）就用完了步数，还没有得出最终结果。';
+      const agentId = reg.spawn(async () => ({
+        success: true, output: 'Subagent completed without output', toolsUsed: [], iterations: 3,
+        stopHint: { kind: 'step_cap' as const, conclusion },
+      }));
+      const result = await reg.await(agentId);
+      expect(result).toMatchObject({ success: false, error: conclusion, stopKind: 'step_cap' });
+      expect(reg.getStatus(agentId)?.status).toBe('failed');
+      // 步数用尽不是预算用尽：不能带 BudgetExhausted。
+      expect(reg.getStatus(agentId)?.failureCode).not.toBe(AgentFailureCode.BudgetExhausted);
+    });
+
+    it('keeps the raw error on the entry (diagnosis) for thrown and returned failures', async () => {
+      const reg = new BackgroundSubagentRegistry();
+      const thrown = reg.spawn(async () => { throw new Error('Durable Run persistence is unavailable'); });
+      const returned = reg.spawn(async () => ({
+        success: false, output: '', error: 'budget exhausted', toolsUsed: [], iterations: 1,
+      }));
+      await reg.await(thrown);
+      await reg.await(returned);
+      expect(reg.getStatus(thrown)?.error).toBe('Durable Run persistence is unavailable');
+      expect(reg.getStatus(returned)?.error).toBe('budget exhausted');
+    });
   });
 });

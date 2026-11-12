@@ -1,4 +1,3 @@
-import { recordBackgroundTaskStopNote } from '../services/commandCenter/backgroundTaskStopNote';
 // ============================================================================
 // 后台 subagent 注册表 — 进程内后台执行 + 稳定 agent_id（Kimi 借鉴 #2 / ADR-025）
 // ============================================================================
@@ -12,6 +11,7 @@ import { recordBackgroundTaskStopNote } from '../services/commandCenter/backgrou
 // 时回填状态与结果。getStatus / await 凭 agentId 查状态、取结果。
 // ============================================================================
 
+import { recordBackgroundTaskStopNote } from '../services/commandCenter/backgroundTaskStopNote';
 import { resolveStoppedTaskOutcome } from '../services/commandCenter/sessionTaskStopConclusion';
 import { describeSubagentStopReason } from './subagentFailureReason';
 import { randomUUID } from 'node:crypto';
@@ -277,10 +277,14 @@ export class BackgroundSubagentRegistry {
     return (async (): Promise<SubagentResult | undefined> => {
       try {
         const returned = await promise;
-        const empty = returned.success && !returned.output.trim()
-          ? resolveStoppedTaskOutcome({ status: 'completed', detail: '' }) : undefined;
-        const result: SubagentResult = empty
-          ? { ...returned, success: false, output: empty.detail, error: empty.detail, stopKind: 'no_conclusion' }
+        // 前台共用的执行器只给 stopHint、不改判；后台注册表才把「没有结论就停下」落成失败 + 白话说明。
+        const hint = returned.success
+          ? returned.stopHint ?? (!returned.output.trim()
+            ? { kind: 'no_conclusion' as const, conclusion: resolveStoppedTaskOutcome({ status: 'completed', detail: '' }).detail }
+            : undefined)
+          : undefined;
+        const result: SubagentResult = hint
+          ? { ...returned, success: false, output: hint.conclusion, error: hint.conclusion, stopKind: hint.kind }
           : returned;
         const entry = this.entries.get(agentId);
         if (entry) {
@@ -293,8 +297,7 @@ export class BackgroundSubagentRegistry {
               cancellationReason: result.cancellationReason,
               error: result.error,
             });
-            entry.error = describeSubagentStopReason(rawError, entry.failureCode);
-            if (entry.error !== rawError) logger.warn(`background subagent ${agentId} failed: ${rawError}`);
+            entry.error = rawError;
           }
           entry.finishedAt = this.now();
           await this.recordCompletion(entry, options);
@@ -307,8 +310,7 @@ export class BackgroundSubagentRegistry {
           entry.status = 'failed';
           const rawError = err instanceof Error ? err.message : String(err);
           entry.failureCode = inferAgentFailureCode({ error: err, defaultCode: undefined });
-          entry.error = describeSubagentStopReason(rawError, entry.failureCode);
-          logger.warn(`background subagent ${agentId} stopped on error: ${rawError}`);
+          entry.error = rawError;
           entry.finishedAt = this.now();
           await this.recordCompletion(entry, options);
           await this.finalizeDurable(options.durableSession ?? null, entry);
@@ -344,7 +346,9 @@ export class BackgroundSubagentRegistry {
       || entry.failureCode === AgentFailureCode.CancelledByParent;
     if (entry.status === 'failed' && entry.sessionId && !cancelled) {
       try {
-        await recordBackgroundTaskStopNote(entry.sessionId, record.title, entry.error ?? record.summary, {
+        // 给用户的白话说明只在这条用户可见通道里生成；entry.error / durable terminal.reason 保留原始错误。
+        const plain = describeSubagentStopReason(entry.error ?? record.summary, entry.failureCode ?? AgentFailureCode.Unknown);
+        await recordBackgroundTaskStopNote(entry.sessionId, record.title, plain, {
           taskId: entry.agentId,
           kind: entry.result?.stopKind ?? 'error',
         });

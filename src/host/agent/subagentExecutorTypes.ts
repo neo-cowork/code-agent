@@ -78,6 +78,8 @@ export interface SubagentResult {
   failureCode?: AgentFailureCode;
   /** Deterministic early-stop category, independent of failure-code billing/cancellation semantics. */
   stopKind?: 'step_cap' | 'no_conclusion';
+  /** 成功返回但没有文字结论（撞步数上限 / 最后一轮只有工具调用）；只有后台注册表据此改判，前台调用方不受影响。 */
+  stopHint?: { kind: 'step_cap' | 'no_conclusion'; conclusion: string };
   /**
    * N-SUBAGENT-ZEROTOOLS：声明了但（触发按需连接后仍）未装配上的工具名。
    * 全部未装配时配合 failureCode: ToolUnavailable 结构化失败；

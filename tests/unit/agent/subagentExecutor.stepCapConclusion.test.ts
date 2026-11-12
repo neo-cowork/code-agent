@@ -232,18 +232,21 @@ describe('SubagentExecutor step cap conclusion', () => {
     process.env.CODE_AGENT_MODEL_ENGINE = 'legacy';
   });
 
-  it('turns a cap hit with no text into an incomplete result carrying a Chinese conclusion', async () => {
+  it('keeps a foreground cap hit as a success (unchanged contract) and hands the Chinese conclusion over as stopHint', async () => {
     mocks.responses.push(browserResponse(1), browserResponse(2), browserResponse(3));
 
     const result = await new SubagentExecutor().execute(createRequest(3));
 
-    expect(result.success).toBe(false);
+    // 共享执行器不改判：Task/工作流子代理照旧 success、无 failureCode（不会被当成预算用尽）。
+    expect(result.success).toBe(true);
+    expect(result.failureCode).toBeUndefined();
+    expect(result.error).toBeUndefined();
+    expect(result.output).toBe('Subagent completed without output');
     expect(result.iterations).toBe(3);
-    expect(result.output).toContain('第 3 步（上限 3 步）');
-    expect(result.output).toContain('最后停留在页面「福 - 维基百科」');
-    expect(result.output).toContain('继续');
-    expect(result.error).toBe(result.output);
-    expect(result.output).not.toContain('Subagent completed without output');
+    expect(result.stopHint?.kind).toBe('step_cap');
+    expect(result.stopHint?.conclusion).toContain('第 3 步（上限 3 步）');
+    expect(result.stopHint?.conclusion).toContain('最后停留在页面「福 - 维基百科」');
+    expect(result.stopHint?.conclusion).toContain('继续');
   });
 
   it('falls back to the last requested url when tool results carry no page info', async () => {
@@ -258,8 +261,8 @@ describe('SubagentExecutor step cap conclusion', () => {
     const result = await new SubagentExecutor().execute(createRequest(2));
 
     mocks.pageInfo.value = null;
-    expect(result.success).toBe(false);
-    expect(result.output).toContain('最后停留在页面http://www.sina.com.cn/p2');
+    expect(result.success).toBe(true);
+    expect(result.stopHint?.conclusion).toContain('最后停留在页面http://www.sina.com.cn/p2');
   });
 
   it('still completes normally when the last round produced text', async () => {
@@ -268,5 +271,6 @@ describe('SubagentExecutor step cap conclusion', () => {
     const result = await new SubagentExecutor().execute(createRequest(2));
 
     expect(result).toMatchObject({ success: true, output: 'done' });
+    expect(result.stopHint).toBeUndefined();
   });
 });

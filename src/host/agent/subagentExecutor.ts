@@ -14,7 +14,13 @@ import { createLogger } from '../services/infra/logger';
 import { silence } from '../utils/errorHandling';
 import { getSubagentPipeline, type ToolExecutionRequest } from './subagentPipeline';
 import type { AgentDefinition, DynamicAgentConfig } from './agentDefinition';
-import { getAgentPrompt, getAgentTools, getAgentMaxIterations, getAgentPermissionPreset, getAgentMaxBudget, } from './agentDefinition';
+import {
+  getAgentPrompt,
+  getAgentTools,
+  getAgentMaxIterations,
+  getAgentPermissionPreset,
+  getAgentMaxBudget,
+} from './agentDefinition';
 import { routeExternalSubagentExecution } from './subagentExecutionRouter';
 import { compactSubagentMessages } from './subagentCompaction';
 import { SubagentContextProjection } from './subagentContextProjection';
@@ -30,24 +36,64 @@ import { applyInterventionsToMessages } from '../context/contextInterventionHelp
 import { getContextInterventionState } from '../context/contextInterventionState';
 import { projectReadSubagentMessages } from '../context/readResultProjection';
 import { getTelemetryCollector } from '../telemetry/telemetryCollector';
-import { buildContextSnapshot, buildEffectiveSubagentSystemPrompt, buildInferenceMessages, buildInitialSubagentMessages, buildObservation, buildSnapshotAnnotations, createRuntimeMessage, materializeObservedMessages, type RuntimeMessage, } from './subagentExecutorProjection';
+import {
+  buildContextSnapshot,
+  buildEffectiveSubagentSystemPrompt,
+  buildInferenceMessages,
+  buildInitialSubagentMessages,
+  buildObservation,
+  buildSnapshotAnnotations,
+  createRuntimeMessage,
+  materializeObservedMessages,
+  type RuntimeMessage,
+} from './subagentExecutorProjection';
 import { applySubagentToolExitGate, buildSubagentToolTable, resolveSubagentToolAccess } from './subagentExecutorToolDefs';
-import { buildSubagentModelCall, recordSubagentTelemetryTurn, type SubagentTelemetryToolCall, } from './subagentExecutorTelemetry';
-import { commitMemberTextAnswer, createMemberAnswerLedger, drainQueuedMemberInput, } from './memberInputWindDown';
-import { createSubagentCancellationLifecycle, getChildSubagentExecutionTimeout, } from './subagentExecutorCancellation';
+import {
+  buildSubagentModelCall,
+  recordSubagentTelemetryTurn,
+  type SubagentTelemetryToolCall,
+} from './subagentExecutorTelemetry';
+import {
+  commitMemberTextAnswer,
+  createMemberAnswerLedger,
+  drainQueuedMemberInput,
+} from './memberInputWindDown';
+import {
+  createSubagentCancellationLifecycle,
+  getChildSubagentExecutionTimeout,
+} from './subagentExecutorCancellation';
 import { applyRoleBoundaryToSubagentRequest } from '../services/roleAssets';
-import type { SubagentConfig, SubagentContext, SubagentExecutionContext, SubagentExecutionRequest, SubagentResult, } from './subagentExecutorTypes';
-import { normalizeSubagentExecutionRequest, type LegacySubagentContextInput, } from './subagentExecutorLegacyAdapter';
+import type {
+  SubagentConfig,
+  SubagentContext,
+  SubagentExecutionContext,
+  SubagentExecutionRequest,
+  SubagentResult,
+} from './subagentExecutorTypes';
+import {
+  normalizeSubagentExecutionRequest,
+  type LegacySubagentContextInput,
+} from './subagentExecutorLegacyAdapter';
 import { getIncompleteTasks, adoptOrphanTasks } from '../services/planning/taskStore';
 import { addSubagentUsage, type SubagentUsage } from './subagentUsageAccounting';
 import { runSubagentExecutionWithTrace } from './subagentExecutionTracing';
 import { createSubagentToolRuntime } from './subagentToolRuntime';
-import { normalizeSubagentModelContext, resolveSubagentParentContext, } from './subagentProtocolContext';
+import {
+  normalizeSubagentModelContext,
+  resolveSubagentParentContext,
+} from './subagentProtocolContext';
 import { startSubagentLifecycle } from './subagentLifecycleHooks';
 import { SubagentDoomLoopGuard } from './subagentDoomLoopGuard';
 import { createSubagentTurnObservability } from './subagentTurnTrace';
 import { noteSubagentLiveProgress } from './backgroundSubagentLiveProgress';
-import { handleSubagentAbort, finalizeSubagentSuccess, appendSubagentLeftoverShellReport, reportSubagentLeftoverShells, handleSubagentFailure, type SubagentCompletionDeps, type SubagentCompletionTerminal, } from './subagentExecutorCompletion';
+import {
+  handleSubagentAbort,
+  finalizeSubagentSuccess, appendSubagentLeftoverShellReport, reportSubagentLeftoverShells,
+  handleSubagentFailure,
+  type SubagentCompletionDeps,
+  type SubagentCompletionTerminal,
+} from './subagentExecutorCompletion';
+
 export type {
   SubagentConfig,
   SubagentContext,
@@ -55,18 +101,24 @@ export type {
   SubagentExecutionRequest,
   SubagentResult,
 } from './subagentExecutorTypes';
+
 const logger = createLogger('SubagentExecutor');
+
 // ----------------------------------------------------------------------------
 // Types
 // ----------------------------------------------------------------------------
+
 // ----------------------------------------------------------------------------
 // Subagent Executor
 // ----------------------------------------------------------------------------
+
 export class SubagentExecutor {
   private modelRouter: ModelRouter;
+
   constructor() {
     this.modelRouter = new ModelRouter();
   }
+
   /**
    * Execute a subagent with a specific prompt and limited tools
    * Now integrates with SubagentPipeline for permission/budget/audit
@@ -92,6 +144,7 @@ export class SubagentExecutor {
       () => this.executeInternal(prompt, config, context),
     );
   }
+
   private async executeInternal(
     prompt: string,
     config: SubagentConfig,
@@ -101,6 +154,7 @@ export class SubagentExecutor {
     // 所有 spawn 路径（Task 工具 / spawn_agent / parallel coordinator）都经过
     // 这里，入口归一化一次覆盖全部，下游 context.modelConfig 引用自动安全。
     context = normalizeSubagentModelContext(context, config.name);
+
     if (
       process.env.CODE_AGENT_E2E === '1'
       && process.env.CODE_AGENT_E2E_LOCAL_SUBAGENT_EXECUTOR === '1'
@@ -108,6 +162,7 @@ export class SubagentExecutor {
       const { executeE2ELocalSubagent } = await import('../testing/e2e/subagentE2ELocalExecutor');
       return executeE2ELocalSubagent(prompt, config, context);
     }
+
     // Create AgentTask for lifecycle tracking
     const agentId = `agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const taskMetadata: SidecarMetadata = {
@@ -119,7 +174,9 @@ export class SubagentExecutor {
       toolPool: config.availableTools,
     };
     const agentTask = new AgentTask(agentId, taskMetadata);
+
     const sessionId = startSubagentLifecycle({ agentTask, agentId, prompt, config, context });
+
     const maxIterations = config.maxIterations || 10;
     const maxToolCalls = config.maxToolCalls !== undefined
       ? Math.max(0, Math.floor(config.maxToolCalls))
@@ -137,12 +194,14 @@ export class SubagentExecutor {
     // 跨迭代累加 outputTokens，供 dynamic-workflow 的 BudgetTracker 计费（每次推理后累加）。
     let outputTokensUsed = 0;
     let descendantUsage: SubagentUsage = { cost: 0, tokensUsed: 0 };
+
     // P3: 计算执行超时时间
     const timeout = getChildSubagentExecutionTimeout(config.name, config.maxExecutionTimeMs, {
       parentStartedAt: context.spawnParentStartedAt,
       parentTimeoutMs: context.spawnParentTimeoutMs,
     });
     const startTime = Date.now();
+
     const {
       effectiveController,
       effectiveSignal,
@@ -161,6 +220,7 @@ export class SubagentExecutor {
       onIdleNudge: () => doomLoopGuard.queueIdleNudge(),
       onIdleTimeout: (idle) => logger.warn(`[${config.name}] idle ${idle}ms exceeded the active watchdog grade; cancelling`),
     });
+
     // GAP-011（课程"方向 A"）：skills 全文预注入子代理 system prompt。
     // 持久化角色资产注入（设计 内部文档 §5 步骤 1）。两者只注入知识，不改变
     // availableTools 权限边界；装配细节见 subagentExecutorProjection。
@@ -174,6 +234,7 @@ export class SubagentExecutor {
       },
       logger,
     );
+
     // Create pipeline context
     const pipeline = getSubagentPipeline();
     const effectivePreset = await resolveSubagentPreset(config.permissionPreset, config.roleId, context.sessionId);
@@ -211,7 +272,9 @@ export class SubagentExecutor {
       }
       return Math.max(0, ownRemainingBudget - descendantUsage.cost);
     };
+
     // Filter tools to only those allowed for this subagent
+
     // M2-Task 5 partial: 走 buildChildContext 三档合并算法
     // Compatibility callers may omit the already-projected parent context.
     // Keep the fallback local and policy-free; production protocol callers
@@ -220,6 +283,7 @@ export class SubagentExecutor {
     if (!context.parentContext) {
       logger.debug(`[${config.name}] parentContext defaulted from explicit execution identity`);
     }
+
     // 从 settings 读 inheritance 配置（默认 strict-inherit）
     let inheritance: 'strict-inherit' | 'child-narrow' | 'independent' = 'strict-inherit';
     try {
@@ -228,6 +292,7 @@ export class SubagentExecutor {
     } catch {
       // 配置服务未就绪（单测环境）时按默认 strict-inherit 走
     }
+
     const childCtx = buildChildContext(
       {
         agentType: config.name,
@@ -237,6 +302,7 @@ export class SubagentExecutor {
       effectiveParentContext,
       { inheritance },
     );
+
     // N-SUBAGENT-ZEROTOOLS：工具面装配（helper 见 subagentExecutorToolDefs）——
     // 父子交集（永不扩张）→ mcp__<server>__* 通配展开（run 策略确定会丢掉的
     // server 不连）→ run 级硬边界收窄 → 注册表解析。装配只产生候选与账目。
@@ -249,6 +315,7 @@ export class SubagentExecutor {
       childCtx,
       { signal: effectiveSignal },
     );
+
     // N-SUBAGENT-ZEROTOOLS R5 出口闸：「谁能进模型工具表」唯一裁定点。全部约束
     // （run 策略重放、角色硬边界——含 disallowExternalSending，对通配展开后的
     // 具体名重判、fail-loud 判定）集中在这里应用一次；装配链不管中间经历几次
@@ -262,6 +329,7 @@ export class SubagentExecutor {
       roleId: config.roleId,
       signal: effectiveSignal,
     });
+
     logger.info(`[${config.name}] childContext applied`, {
       inheritance,
       parentTools: effectiveParentContext.availableTools.length,
@@ -272,7 +340,9 @@ export class SubagentExecutor {
       effectiveMode: childCtx.permissions.effectiveMode,
       explicitParent: !!context.parentContext,
     });
+
     const allowedNames = new Set(surface.toolNames);
+
     // P0(G18): 把 buildChildContext 算出的父→子收缩结果真正应用到 pipeline 的
     // permissionConfig。此前 childCtx.permissions 只被 log、从未生效，导致
     // checkToolExecution（subagentPolicy 收缩闸）跑的是未收缩的子 preset。
@@ -288,6 +358,7 @@ export class SubagentExecutor {
     }
     // 收缩后的有效 mode（buildChildContext 已取父子较严者，canEscalate 恒 false）
     const subagentEffectiveMode = childCtx.permissions.effectiveMode;
+
     // P0(G5): subagent 工具调用统一收口到 ToolExecutor —— 与主 agent 同一条
     // 权限/校验/审计/缓存管道，不再走 ProtocolToolResolver.execute 旁路。
     // subagent 的"不同策略"通过 subagentPolicy 表达：工具白名单 + checkToolExecution 收缩闸。
@@ -301,8 +372,10 @@ export class SubagentExecutor {
     });
     const subagentToolExecutor = toolRuntime.executor;
     const subagentPolicy = toolRuntime.policy;
+
     // 模型工具表投影（supportsTool 判定 + inference 入参映射）：helper 见 subagentExecutorToolDefs
     const { toolDefinitions, supportsTool } = buildSubagentToolTable(config.name, context.modelConfig, surface);
+
     const subagentContextStore = getSubagentContextStore();
     // Parallel/Team callers provide a stable composite execution identity.
     // Keep the pipeline's internal random id private to the pipeline registry;
@@ -310,6 +383,7 @@ export class SubagentExecutor {
     // caller's run scope.
     const telemetryCollector = context.telemetryCollector ?? getTelemetryCollector();
     let telemetryTurnNumber = 0;
+
     const messages = buildInitialSubagentMessages({
       agentName: config.name,
       systemPrompt: effectiveSystemPrompt,
@@ -349,7 +423,9 @@ export class SubagentExecutor {
     };
     const pushObservabilityMessage = (_message: unknown): void => {};
     emitContextSnapshot();
+
     logger.info(`[${config.name}] Starting with ${toolDefinitions.length} tools (agentId: ${pipelineContext.agentId}, supportsTool: ${supportsTool})`);
+
     // 发射 subagent 初始化事件
     const parentToolUseId = context.parentToolUseId;
     if (parentToolUseId) {
@@ -359,6 +435,7 @@ export class SubagentExecutor {
         parentToolUseId,
       });
     }
+
     const terminal: SubagentCompletionTerminal = { status: 'failed' };
 
     // 早退失败收口（预算触顶 / 工具装配失败共用）：统一 cleanup + orphan 接管 +
