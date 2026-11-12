@@ -20,6 +20,7 @@ interface RunInput {
   command: string;
   mode: FakeModelMode;
   abortOnTaskStart?: boolean;
+  description?: string;
 }
 
 let root: string;
@@ -136,7 +137,7 @@ function warnsFor(taskId: string, reason: string): unknown[][] {
 
 async function runAgent(input: RunInput) {
   const fake = await startFakeModel(
-    { command: input.command, run_in_background: true },
+    { command: input.command, run_in_background: true, ...(input.description ? { description: input.description } : {}) },
     input.mode,
   );
   const abortController = new AbortController();
@@ -315,6 +316,19 @@ describe.sequential('subagent leftover background shells', () => {
     expect(ownedPid).toEqual(expect.any(Number));
     expect(isProcessAlive(ownedPid!)).toBe(true);
     console.log(`RAW ZH REPORT\n${result.output}`);
+  }, 20_000);
+
+  it('a described osascript task still gets the permission-prompt hint (display name must not hide the real command)', async () => {
+    await setLocale('zh');
+    const result = await runAgent({
+      agentId: 'described-system-prompt-agent',
+      command: 'sleep 7334 # osascript -e \'tell application "Finder" to get selection\'',
+      description: 'Ask Finder for selection',
+      mode: 'complete',
+    });
+    expect(taskForOwner('described-system-prompt-agent')).toBeDefined();
+    expect(result.output).toContain(getSystemPromptHint('zh'));
+    expect(result.output).toContain('sleep 7334 # osascript');
   }, 20_000);
 
   it('failed terminal returns the still-running child report without killing it', async () => {
