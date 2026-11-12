@@ -30,6 +30,7 @@ import {
   sensitiveStepHandbackResolution,
   stripSensitiveStepParams,
 } from '../permissions/cuaSensitiveStep';
+import { resolveBrowserSessionGrant, stripBrowserGrantFields } from '../permissions/browserSessionGrant';
 import { resolvePreAskGrant } from '../permissions/preAskGrant';
 import { requiresScheduleWriteGrant } from '../cron/cronWriteGrant';
 import { createLogger } from '../services/infra/logger';
@@ -646,7 +647,7 @@ export class ToolExecutor {
         metadata: { code: 'RUN_WORKSPACE_BOUNDARY' },
       };
     }
-    let params = boundParams.params;
+    let params = stripBrowserGrantFields(boundParams.params);
     logger.debug('Executing tool', {
       toolName: requestedToolName,
       normalizedToolName: normalizedRequestedToolName,
@@ -1299,6 +1300,7 @@ export class ToolExecutor {
     const contextAgentId = options.agentId?.trim()
       || ((options.spawnDepth ?? 0) === 0 ? 'primary' : undefined);
 
+    let browserApprovedAction: string | undefined;
     // Create tool context
     const context: ToolContext & { sessionId?: string } = {
       runId: effectiveRunId, turnId: options.turnId,
@@ -1319,6 +1321,7 @@ export class ToolExecutor {
       // 已记，#1664 只修了外层）；ask 抛错时不落账、原样上抛，行为与改动前一致。
       permissionAskResults: new WeakMap(),
       requestPermission: async (request) => {
+        if (browserApprovedAction && browserApprovedAction === request.tool && request.details?.action === params.action && request.forceConfirm !== true) return true;
         beginApprovalWait(options.currentToolCallId, effectiveSessionId);
         try {
           const askStartedAt = Date.now();
@@ -1816,6 +1819,7 @@ export class ToolExecutor {
       let boundaryAskForcesConfirmation = false;
       // B4：external 工具的授权 target 精确串（取不到=null，不具铸权资格）。一次算好，
       // 供下面的长期授权消费判定，以及需人工审批时透传给停车审批卡（铸权入口）。
+      const browserSessionGrant = await resolveBrowserSessionGrant(executionToolName, params, context);
       const standingGrantTarget = isExternalSideEffectTool(executionToolName)
         ? extractStandingGrantTarget(executionToolName, params)
         : null;
@@ -2075,6 +2079,7 @@ export class ToolExecutor {
         toolName: executionToolName,
         sessionId: effectiveSessionId,
         standingGrantTarget,
+        browserSessionTarget: browserSessionGrant?.target,
         computerApp,
         blocked: Boolean(commandAnalysisFailedReason)
           || guardFabricForcesApproval || protectedWriteForcesConfirmation
@@ -2087,6 +2092,7 @@ export class ToolExecutor {
           || shouldForceConfirm,
       }) : null;
       if (preAsk) {
+        if (browserSessionGrant?.target && preAsk.ledgerReason === 'tool_grant:session') browserApprovedAction = `browser_action.${params.action}`;
         needsUserApproval = false;
         const grantTrace = createTraceBuilder(executionToolName);
         grantTrace.addStep('permission_classifier', preAsk.traceRule, 'allow', preAsk.traceDetail);
@@ -2190,6 +2196,12 @@ export class ToolExecutor {
       }
       // B4：把授权 target 透传给审批层，供无人值守停车审批卡出「每次都允许发 <target>」铸权入口。
       if (standingGrantTarget) permissionRequest.details.standingGrantTarget = standingGrantTarget;
+      if (browserSessionGrant) {
+        delete permissionRequest.details.targetApp;
+        permissionRequest.details.browserSessionGrant = browserSessionGrant;
+        if (browserSessionGrant.previousOrigins.length) permissionRequest.reason =
+          `Earlier approval covered only ${browserSessionGrant.previousOrigins.join(', ')}. This action is on ${browserSessionGrant.target?.split('@')[1]}; please approve this site separately.`;
+      }
       // B1：external 工具（离开本机、发出去收不回）在交互审批卡上标作用域（N-APPROVAL-EXTERNAL-SCOPENOTE）。
       // 只打标：非 external 不写该属性（缺省≠null），不改任何 allow/deny/ask 裁决。
       if (isExternalSideEffectTool(executionToolName)) permissionRequest.riskClass = 'external';
@@ -2321,6 +2333,7 @@ export class ToolExecutor {
         }
       }
       const approved = ask.approved;
+      if (approved && ask.approvalSource === 'user' && browserSessionGrant?.target) browserApprovedAction = `browser_action.${params.action}`;
 
       // ADR-088 一期：交回步**永不执行**（规格 §4 三层保证之 1——没有任何代码路径从这张
       // 请求的应答通向原始工具调用）。应答只决定回话模板：allow=用户已亲手完成（done），
