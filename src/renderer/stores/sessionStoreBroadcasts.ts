@@ -6,6 +6,7 @@ import { IPC_CHANNELS, type SessionStatusUpdateEvent, type SessionUpdatedEvent }
 import ipcService from '../services/ipcService';
 import { isTerminalRecoverySessionStatus } from '../utils/streamRecoveryMessage';
 import { useAppStore } from './appStore';
+import { rememberLastViewedSession } from './sessionBootDraft';
 import { runningBroadcastLightsTurn } from './parkedContinueTurn';
 import { useSessionStore, type SessionWithMeta } from './sessionStore';
 import { useStatusStore } from './statusStore';
@@ -33,6 +34,11 @@ const handleTerminalStatusReconcile = createTerminalStatusReconciler({
 export async function bindInitializedSessionBroadcasts(
   normalize: (session: NormalizableSession) => SessionWithMeta,
 ): Promise<void> {
+  useSessionStore.subscribe((state, previous) => {
+    if (state.currentSessionId !== previous.currentSessionId) rememberLastViewedSession(state.currentSessionId);
+  });
+  rememberLastViewedSession(useSessionStore.getState().currentSessionId);
+
   ipcService.on(IPC_CHANNELS.SESSION_UPDATED, (event: SessionUpdatedEvent) => {
     const { sessionId, updates } = event;
     const previous = useSessionStore.getState().sessions.find((session) => session.id === sessionId);

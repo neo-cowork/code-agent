@@ -1,4 +1,3 @@
- 
 // ============================================================================
 // ParallelAgentCoordinator - DAG-based explicit parallel agent execution
 // ============================================================================
@@ -16,56 +15,27 @@
 //   核心能力互不覆盖（Auto 无 DAG，Parallel 无 Auto 的动态生成），强合需引 adapter
 // - Agent Team 状态只经 Durable Run 提交
 // ============================================================================
-
 import { EventEmitter } from 'events';
 import type { SwarmRunScope } from '../../shared/contract/swarm';
 import type { SubagentExecutorPort } from './subagentExecutorPort';
 import type { SubagentExecutionContext } from './subagentExecutorTypes';
-import {
-  AgentFailureCode,
-  inferAgentFailureCode,
-} from '../../shared/contract/agentFailure';
+import { AgentFailureCode, inferAgentFailureCode } from '../../shared/contract/agentFailure';
 import { createTextMessage, getSpawnGuard, type AgentMessage } from './spawnGuard';
 import { rememberMemberEngine, resolveMemberEngine } from './memberRuntimeEngine';
 import { getSubagentEngine } from './agentDefinition';
 import { displayFromForOrigin, type AgentMessageOrigin } from './messageOrigin';
 import { createLogger } from '../services/infra/logger';
 import { withTimeout } from '../services/infra/timeoutController';
-import {
-  DEFAULT_COORDINATOR_CONFIG,
-  isLegacyCoordinatorScope,
-  isSameRunScope,
-  type AgentTask,
-  type AgentTaskResult,
-  type CoordinatorConfig,
-  type ParallelAgentTaskSnapshotStatus,
-  type ParallelAgentTaskSnapshot,
-  type ParallelExecutionResult,
-  type SharedContext,
-  type TaskProgressEvent,
-} from './parallelAgentCoordinatorTypes';
-import {
-  aggregateAgentTaskResults,
-  createEmptySharedContext,
-  formatSharedContextForPrompt,
-} from './parallelAgentCoordinatorResults';
+import { DEFAULT_COORDINATOR_CONFIG, isLegacyCoordinatorScope, isSameRunScope, type AgentTask, type AgentTaskResult, type CoordinatorConfig, type ParallelAgentTaskSnapshotStatus, type ParallelAgentTaskSnapshot, type ParallelExecutionResult, type SharedContext, type TaskProgressEvent } from './parallelAgentCoordinatorTypes';
+import { aggregateAgentTaskResults, createEmptySharedContext, formatSharedContextForPrompt } from './parallelAgentCoordinatorResults';
 import { appendDependencyResultsToPrompt } from './parallelAgentDependencyPrompt';
 import type { AgentTeamDurableController, AgentTeamCheckpointState } from './agentTeamDurableTypes';
 import type { AgentTeamRecoveryDecision } from './agentTeamRecovery';
 import { restoreParallelAgentDurableState } from './parallelAgentDurableRecovery';
 import { createEmptyParallelAgentRecoveryRefs, resolveRecoveredTaskExecution } from './parallelAgentRecoveryRefs';
-import {
-  DAGGraphSchedulerAdapter,
-  GraphEventCompatibilityAdapter,
-  GraphExecutorRegistry,
-  GraphRunner,
-  type GraphCheckpoint,
-  type GraphExecutorPort,
-  type GraphJsonValue,
-  type GraphNode,
-  type GraphNodeResult,
-  type GraphRunSpec,
-} from '../orchestration';
+import { DAGGraphSchedulerAdapter, GraphEventCompatibilityAdapter, GraphExecutorRegistry, GraphRunner, type GraphCheckpoint, type GraphExecutorPort, type GraphJsonValue, type GraphNodeResult, type GraphRunSpec } from '../orchestration';
+import { buildParallelGraphSpec, compatibleParallelGraphCheckpoint, createSkippedParallelResult } from './parallelAgentGraphSpec';
+
 
 export type {
   AgentTask,
@@ -115,6 +85,8 @@ export class ParallelAgentCoordinator extends EventEmitter {
   private subagentExecutor?: SubagentExecutorPort;
   private scope?: SwarmRunScope;
   private initialized = false;
+  private background = false;
+  private waiterAgentId?: string;
   private executionActive = false;
   private durableController?: AgentTeamDurableController;
   private durableOwnerEpoch?: number;
@@ -137,6 +109,8 @@ export class ParallelAgentCoordinator extends EventEmitter {
    * Initialize coordinator with execution context
    */
   initialize(context: {
+    background?: boolean;
+    waiterAgentId?: string;
     executionContext: SubagentExecutionContext;
     subagentExecutor?: SubagentExecutorPort;
     scope?: SwarmRunScope;
@@ -163,6 +137,8 @@ export class ParallelAgentCoordinator extends EventEmitter {
       this.scope = { ...context.scope };
     }
     this.executionContext = context.executionContext;
+    this.background = context.background ?? false;
+    this.waiterAgentId = context.waiterAgentId;
     this.subagentExecutor = context.subagentExecutor;
     this.durableController = context.durableController;
     this.durableOwnerEpoch = context.durableController?.ownerEpoch;
@@ -257,7 +233,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
             snapshot: event.data.snapshot as unknown as TaskProgressEvent['snapshot'],
           });
         } else if (event.type === 'node_skipped' && !this.completedTasks.has(task.id)) {
-          const blocked = this.createSkippedResult(
+          const blocked = createSkippedParallelResult(
             task,
             `Blocked by failed dependencies: ${(task.dependsOn ?? []).join(', ')}`,
             'blocked',
@@ -266,7 +242,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
           this.completedTasks.set(task.id, blocked);
           this.emit('task:complete', { taskId: task.id, result: blocked });
         } else if (event.type === 'node_cancelled' && !this.completedTasks.has(task.id)) {
-          const cancelled = this.createSkippedResult(
+          const cancelled = createSkippedParallelResult(
             task,
             `Cancelled before start (${this.cancelReason})`,
             'cancelled',
@@ -283,7 +259,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
       },
       diagnostic: (error) => logger.warn('Agent Team Graph compatibility projection failed', error),
     });
-    const graphSpec = this.buildGraphSpec(tasks);
+    const graphSpec = buildParallelGraphSpec(tasks, this.executionContext!, this.config, this.scope, this.durableController);
     const graphExecutor: GraphExecutorPort = {
       id: 'parallel-subagent',
       canExecute: (node) => node.kind === 'subagent',
@@ -479,6 +455,9 @@ export class ParallelAgentCoordinator extends EventEmitter {
       });
       guard.register(task.id, task.role, resolvedPrompt, executionPromise, taskAbortController, {
         treeId,
+        parentRunId: executionContext.runId,
+        background: this.background,
+        waiterAgentId: this.waiterAgentId,
         parentId: executionContext.spawnParentAgentId,
         slotAcquired: true,
         scope: this.scope,
@@ -893,79 +872,6 @@ export class ParallelAgentCoordinator extends EventEmitter {
     return normalized.includes('cancel') || normalized.includes('abort') || errorMessage.includes('取消');
   }
 
-  private createSkippedResult(
-    task: AgentTask,
-    reason: string,
-    type: 'blocked' | 'cancelled',
-    failureCode: AgentFailureCode,
-  ): AgentTaskResult {
-    const now = Date.now();
-    return {
-      success: false,
-      output: '',
-      error: reason,
-      toolsUsed: [],
-      iterations: 0,
-      taskId: task.id,
-      role: task.role,
-      startTime: now,
-      endTime: now,
-      duration: 0,
-      blocked: type === 'blocked',
-      cancelled: type === 'cancelled',
-      failureCode,
-    };
-  }
-
-  private buildGraphSpec(tasks: AgentTask[]): GraphRunSpec {
-    const executionContext = this.executionContext!;
-    const runId = this.scope?.runId ?? executionContext.runId ?? `parallel:${executionContext.sessionId}`;
-    const sessionId = this.scope?.sessionId ?? executionContext.sessionId;
-    const treeId = this.scope?.treeId ?? executionContext.spawnTreeId ?? sessionId;
-    const attempt = this.durableController?.traceContext?.attempt ?? executionContext.traceContext?.attempt ?? 1;
-    const durableNodes = new Map(this.durableController?.getState().taskGraph.map((node) => [node.id, node]) ?? []);
-    const nodes: GraphNode[] = tasks.map((task) => {
-      const durable = durableNodes.get(task.id);
-      const sideEffect = durable?.sideEffect ?? task.tools.some((tool) => /(write|edit|bash|shell|browser|computer)/i.test(tool));
-      return {
-        nodeId: task.id,
-        kind: 'subagent',
-        executorRef: 'parallel-subagent',
-        input: {
-          role: task.role,
-          task: task.task,
-          tools: [...task.tools],
-          ...(task.systemPrompt ? { systemPrompt: task.systemPrompt } : {}),
-        },
-        dependencies: [...(task.dependsOn ?? [])],
-        permissionProfile: durable?.permissionProfile ?? 'readonly',
-        capabilityProfile: { tools: [...task.tools] },
-        sideEffect: sideEffect ? 'unknown' : 'read_only',
-        idempotencyIdentity: `${runId}:node:${task.id}`,
-        timeoutMs: this.config.taskTimeout,
-        retryPolicy: { maxAttempts: 1 },
-        required: true,
-        priority: task.priority,
-        metadata: { role: task.role, treeId },
-      };
-    });
-    const trace = this.durableController?.traceContext ?? executionContext.traceContext;
-    return {
-      graphId: `agent-team:${treeId}`,
-      runId,
-      sessionId,
-      attempt,
-      nodes,
-      schedulerPolicy: {
-        maxConcurrency: this.config.maxParallelTasks,
-        failureStrategy: 'continue',
-        priority: 'priority',
-      },
-      metadata: { engine: 'agent_team', treeId },
-      ...(trace ? { trace: { traceId: trace.traceId, spanId: trace.spanId } } : {}),
-    };
-  }
-
   private serializeTaskResult(result: AgentTaskResult): GraphJsonValue {
     return structuredClone(result) as unknown as GraphJsonValue;
   }
@@ -976,18 +882,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
       return undefined;
     }
     const checkpoint = this.graphCheckpoint ?? this.durableController?.getState().graphCheckpoint;
-    if (!checkpoint) return undefined;
-    const expected = new Set(spec.nodes.map((node) => node.nodeId));
-    const actual = new Set(checkpoint.nodes.map((node) => node.nodeId));
-    if (
-      checkpoint.graphId !== spec.graphId
-      || checkpoint.runId !== spec.runId
-      || checkpoint.sessionId !== spec.sessionId
-      || checkpoint.attempt !== spec.attempt
-      || expected.size !== actual.size
-      || [...expected].some((nodeId) => !actual.has(nodeId))
-    ) return undefined;
-    return checkpoint;
+    return compatibleParallelGraphCheckpoint(spec, checkpoint);
   }
 
   abortTask(taskId: string, reason = 'user_cancelled'): boolean {

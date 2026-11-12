@@ -12,6 +12,7 @@ import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 // ============================================================================
 
 import React, { useCallback, useEffect, useState } from 'react';
+import { isEditableTool } from '@shared/contract';
 import type { CronUrgency, PermissionResponse, SessionAutomationRecord } from '@shared/contract';
 import type { ParkedApprovalInboxItem } from '@shared/contract/pendingApproval';
 import { isCronUrgency } from '@shared/cronUrgency';
@@ -415,6 +416,30 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                               <ShieldCheck className="h-3.5 w-3.5" />
                               {cc.parkedAllowFolder.replace('{folder}', folderDisplayName(item.writeGrantFolder))}
                             </button>
+                          )}
+                          {(item.kind === 'tool_approval' || item.kind === undefined) && !isEditableTool(item.tool) && (!isExternal || !!item.standingGrantTarget) && (
+                            <>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="secondary"
+                                disabled={busyId === item.id}
+                                onClick={() => handleResolveParked(item, 'allow_run')}
+                                data-testid="parked-allow-run"
+                              >
+                                {cc.parkedAllowRun}
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="secondary"
+                                disabled={busyId === item.id}
+                                onClick={() => handleResolveParked(item, 'allow_24h')}
+                                data-testid="parked-allow-24h"
+                              >
+                                {cc.parkedAllow24h}
+                              </Button>
+                            </>
                           )}
                           <button /* ds-allow:button: 同上，收件箱行内超小文本按钮 */
                             onClick={() => handleResolveParked(item, 'deny')}
