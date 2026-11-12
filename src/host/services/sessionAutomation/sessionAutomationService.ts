@@ -580,6 +580,7 @@ export class SessionAutomationService {
         id: row.id,
         kind: row.kind === 'directory_access' ? 'directory_access' : 'tool_approval',
         sessionId: payload.sessionId ?? row.coordinatorId,
+        sessionTitle: resolveApprovalSessionTitle(payload.sessionId ?? row.coordinatorId, row.id),
         ...((payload.toolCallId ?? payload.argsRef?.toolCallId) ? { toolCallId: payload.toolCallId ?? payload.argsRef?.toolCallId } : {}),
         tool: payload.tool ?? 'unknown',
         displayTool: payload.displayTool,
@@ -924,6 +925,18 @@ function parseVoidedFeedback(feedback: string | null): VoidedFeedback | null {
 const describeVoided = (voided: VoidedFeedback): string =>
   describeParkedApprovalClosure(voided.reason, voided.workingDirectoryUnavailable ? 'working_directory_unavailable' : undefined);
 
+function resolveApprovalSessionTitle(sessionId: string | null, requestId: string): string | undefined {
+  let sessionTitle: string | undefined;
+  try {
+    // N-FIX-PARKED-APPROVAL-VOIDED-CARD-INDISTINGUISHABLE-FU1：用超集前缀剥离，[Schedule]/[Cron]/[Heartbeat] 一并去掉。
+    const title = sessionId ? stripSystemTitlePrefix(getDatabase().getSession(sessionId)?.title ?? '') : undefined;
+    if (title && !/^(?:session_|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$)/i.test(title)) sessionTitle = title;
+  } catch {
+    logger.warn('Approval session title unavailable', { requestId });
+  }
+  return sessionTitle;
+}
+
 /** 重启后被自动作废的 tool_approval 行 → 收件箱只读留痕；超出保留期或原因码认不出的行返回 null。 */
 function toVoidedInboxItem(
   row: { id: string; payloadJson: string; coordinatorId: string | null; submittedAt: number; resolvedAt: number | null; feedback: string | null },
@@ -941,18 +954,11 @@ function toVoidedInboxItem(
     // 损坏 payload 用列兜底
   }
   const sessionId = payload.sessionId ?? row.coordinatorId;
-  let sessionTitle: string | undefined;
-  try {
-    const title = sessionId ? stripSystemTitlePrefix(getDatabase().getSession(sessionId)?.title ?? '') : undefined;
-    if (title && !/^(?:session_|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$)/i.test(title)) sessionTitle = title;
-  } catch {
-    logger.warn('Voided approval session title unavailable', { requestId: row.id });
-  }
   return {
     id: row.id,
     kind: 'tool_approval',
     sessionId,
-    sessionTitle,
+    sessionTitle: resolveApprovalSessionTitle(sessionId, row.id),
     argsPreview: toUserFacingArgsPreview(payload.argsPreview),
     tool: payload.tool ?? 'unknown',
     displayTool: payload.displayTool,
