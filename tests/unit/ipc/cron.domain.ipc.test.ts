@@ -378,3 +378,98 @@ describe('listMailSources', () => {
     expect(h.logWarn.mock.calls.some((args) => String(args[0]).includes('listing failed for account _icloud'))).toBe(true);
   });
 });
+
+describe('generateFromPrompt local wall clock', () => {
+  const nativeResolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
+  const zones = [
+    { zone: 'Asia/Shanghai', now: '2026-11-07T16:17:00Z', midnightNow: '2026-11-08T15:58:00Z', offset: '+08:00' },
+    { zone: 'America/Los_Angeles', now: '2026-11-08T08:17:00Z', midnightNow: '2026-11-09T07:58:00Z', offset: '-08:00' },
+  ];
+  const times = [
+    { label: 'today am on the hour', prompt: '今天早上9点给我行业简报', wall: '2026-11-08T09:00' },
+    { label: 'tomorrow pm on the hour', prompt: '明天下午3点提醒我发送周报', wall: '2026-11-09T15:00' },
+    { label: 'day after half hour', prompt: '后天晚上8点半提醒我整理会议纪要', wall: '2026-11-10T20:30' },
+    { label: 'today 12am', prompt: '今天凌晨12点半提醒我整理会议纪要', wall: '2026-11-08T00:30' },
+    { label: 'today 12pm', prompt: '今天中午12点提醒我发送周报', wall: '2026-11-08T12:00' },
+    { label: 'near midnight tomorrow', prompt: '明天下午3点提醒我发送周报', wall: '2026-11-09T15:00', midnight: true },
+  ];
+  const rows = zones.flatMap(zone => times.flatMap(time => ['', 'Z', '+08:00'].map(suffix => ({
+    ...zone, ...time, suffix, now: time.midnight ? zone.midnightNow : zone.now,
+    anchorClock: time.midnight ? '23:58' : '00:17',
+  }))));
+
+  function setClock(now: string, zone: string): void {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(now));
+    vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockImplementation(function (this: Intl.DateTimeFormat) {
+      return { ...nativeResolvedOptions.call(this), timeZone: zone };
+    });
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it.each(rows)('$zone $label suffix="$suffix" → intended local instant and local anchor', async row => {
+    setClock(row.now, row.zone);
+    h.chat.mockResolvedValueOnce({ content: JSON.stringify({ schedule: { type: 'at', datetime: row.wall + row.suffix } }) });
+    expect(await call('generateFromPrompt', { prompt: row.prompt })).toEqual({
+      success: true, data: { schedule: { type: 'at', datetime: Date.parse(row.wall + row.offset) } },
+    });
+    const req = h.chat.mock.calls[0][0] as { messages: Array<{ content: string }> };
+    const system = req.messages[0].content;
+    expect(system).toContain(`【当前时间】2026-11-08 ${row.anchorClock}（本地时间，IANA 时区 ${row.zone}）`);
+    expect(system).toContain('2026-11-08（星期日）');
+    expect(system).not.toContain(row.now);
+    expect(system).not.toContain('（UTC，默认时区');
+    expect(system).toContain('YYYY-MM-DDTHH:mm，不要加 Z 或时区偏移');
+    expect(system).toContain('禁止错峰或改动分钟');
+    expect(system).toContain('错峰只适用于没有指定具体钟点的请求');
+    expect(system).not.toContain('除非用户明确要求整点');
+  });
+
+  it.each([
+    ['spring transition after gap', '2026-03-08T03:30', '2026-03-08T10:30:00Z'],
+    ['fall transition after fold', '2026-11-01T03:30', '2026-11-01T11:30:00Z'],
+    ['fall overlap earlier occurrence', '2026-11-01T01:30', '2026-11-01T08:30:00Z'],
+    ['future summer uses target offset', '2026-07-08T15:00', '2026-07-08T22:00:00Z'],
+  ].flatMap(([label, wall, expected]) => ['', 'Z', '+08:00'].map(suffix => ({ label, wall, expected, suffix }))))(
+    'DST $label suffix="$suffix"', async ({ wall, expected, suffix }) => {
+      setClock('2026-01-01T08:17:00Z', 'America/Los_Angeles');
+      h.chat.mockResolvedValueOnce({ content: JSON.stringify({ schedule: { type: 'at', datetime: wall + suffix } }) });
+      expect(await call('generateFromPrompt', { prompt: '请按指定日期下午提醒我发送周报' })).toEqual({
+        success: true, data: { schedule: { type: 'at', datetime: Date.parse(expected) } },
+      });
+    },
+  );
+
+  it.each(['2026-03-08T02:30', '2026-02-30T15:00', '2026-11-08T24:00', '2026-11-08T09:60', 'not a date', '', null])(
+    'rejects nonexistent or malformed local time %s', async datetime => {
+      setClock('2026-01-01T08:17:00Z', 'America/Los_Angeles');
+      h.chat.mockResolvedValueOnce({ content: JSON.stringify({ schedule: { type: 'at', datetime } }) });
+      expect(await call('generateFromPrompt', { prompt: '提醒我发送周报' })).toMatchObject({
+        success: false, error: { code: 'PARSE_ERROR' },
+      });
+    },
+  );
+
+  it.each([
+    { prompt: '每天早上9点给我简报', schedule: { type: 'cron', expression: '0 9 * * *', timezone: 'Asia/Shanghai' } },
+    { prompt: 'every day 3pm send me a briefing', schedule: { type: 'cron', expression: '0 15 * * *' } },
+    { prompt: '每天9:30给我简报', schedule: { type: 'cron', expression: '30 9 * * *' } },
+    { prompt: '每天早晨给我简报', schedule: { type: 'cron', expression: '17 8 * * *' } },
+    { prompt: '每3小时给我简报', schedule: { type: 'every', interval: 3, unit: 'hours' } },
+    { prompt: '提醒我发送周报', schedule: { type: 'at', datetime: 1_800_000_000_000 } },
+  ])('preserves interval/cron/numeric draft: $prompt', async ({ prompt, schedule }) => {
+    setClock('2026-11-07T16:17:00Z', 'Asia/Shanghai');
+    h.chat.mockResolvedValueOnce({ content: JSON.stringify({ schedule }) });
+    expect(await call('generateFromPrompt', { prompt })).toEqual({ success: true, data: { schedule } });
+    const req = h.chat.mock.calls[0][0] as { messages: Array<{ content: string }> };
+    expect(req.messages[0].content).toContain('9am → 0 9 * * *');
+    expect(req.messages[0].content).toContain('今晚8点半 → 20:30');
+    expect(req.messages[0].content).toContain('错峰只适用于没有指定具体钟点的请求');
+    expect(req.messages[0].content).toContain('"every" 间隔类型不受影响');
+    expect(req.messages[0].content).not.toContain('除非用户明确要求整点');
+  });
+});

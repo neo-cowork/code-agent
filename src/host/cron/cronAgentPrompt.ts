@@ -1,6 +1,8 @@
 import { normalizePersonalSkillIds } from '../../shared/cronPersonalSkills';
 import { CRON_AGENT_SNAPSHOT } from '../../shared/constants';
 import { formatTodayAnchor } from '../../shared/todayAnchor';
+import { detectMessageLanguage, type SessionTitleLanguage } from '../../shared/sessionTitlePrompt';
+import { readUiLanguage } from '../session/sessionTitleHostPrompt';
 
 function resolveTimeZone(timeZone?: string): string {
   if (timeZone) {
@@ -44,6 +46,15 @@ function formatZonedMinute(date: Date, timeZone: string): string {
   return `${q.year}-${two(q.month)}-${two(q.day)} ${two(q.hour)}:${two(q.minute)}`;
 }
 
+/** 个人聊天来源规则的双语原文。zh 行是存量字节（不得改动）；en 行的逐字保留行与
+ *  en i18n 词条同源（见 buildCronAgentPrompt 内注释）。 */
+const PERSONAL_CHAT_SOURCE_RULE: Record<SessionTitleLanguage, string> = {
+  zh:
+    '若任务涉及微信/IM 等个人聊天来源，不要搜索或调用读取个人聊天记录的工具、技能或命令行，直接在产出中单独写一行「未读取：微信/IM（定时任务默认不读个人聊天记录；想读，请在任务编辑的「执行动作」页勾选「允许本任务使用这些个人技能」）」。请逐字保留引号内的整行文字，不得改写页面或选项名称。',
+  en:
+    'If the task involves personal chat sources such as WeChat/IM, do not search for or call any tool, skill, or command line that reads personal chat history; instead output a single line: "Not read: WeChat/IM (scheduled jobs don\'t read personal chats by default; to allow it, tick "Allow this task to use these personal skills" on the "Action" page of the task editor)". Keep that quoted line verbatim, character for character; do not reword the page or option names.',
+};
+
 /**
  * 只有开了变化追踪的任务才包装 prompt；没开的任务原样发送，行为完全不变。
  *
@@ -77,8 +88,13 @@ export function buildCronAgentPrompt(
     + `今天本地 00:00 = ${todayEpoch}（Unix 秒），次日本地 00:00 = ${tomorrowEpoch}（Unix 秒）。`
     + '其他相对时间以【当前时间】为基准，不要用你训练时的日期。';
   const personalSkillIds = normalizePersonalSkillIds(allowedPersonalSkillIds);
-  const personalChatSourceRule = personalSkillIds?.length ? '' :
-    '若任务涉及微信/IM 等个人聊天来源，不要搜索或调用读取个人聊天记录的工具、技能或命令行，直接在产出中单独写一行「未读取：微信/IM（定时任务默认不读个人聊天记录；想读，请在任务编辑的「执行动作」页勾选「允许本任务使用这些个人技能」）」。请逐字保留引号内的整行文字，不得改写页面或选项名称。';
+  // 个人聊天来源规则（FU1 rework r2）：语言跟任务提示词（en 模板任务出英文整行），
+  // 判不出语言才跟 UI。en 行里的选项/页面名必须与 en i18n 真实词条一致：
+  // 「允许本任务使用这些个人技能」= cronPersonalSkills.en.label、
+  // 「执行动作」= cronEditorChrome en tabs.action —— 改词条时两处同步。
+  const personalChatSourceRule = personalSkillIds?.length ? '' : PERSONAL_CHAT_SOURCE_RULE[
+    detectMessageLanguage(prompt) ?? readUiLanguage()
+  ];
   const personalSourceInstruction = personalSkillIds?.length
     ? `本任务已允许使用这些个人技能：${personalSkillIds.join('、')}。当其描述与任务所需来源相关时，先使用对应技能读取；它要执行的命令仍须请用户批准，未获批准不得声称已读取。`
     : personalChatSourceRule;
@@ -88,7 +104,7 @@ export function buildCronAgentPrompt(
   const trimmedCriteria = urgencyCriteria?.trim();
   const mustTodayDefinition = trimmedCriteria ? `must_today = ${trimmedCriteria}` : 'must_today = 今天需要用户处理';
   const deliveryDigestInstruction =
-    '最后请在回复末尾追加简短的 <cron_summary>...</cron_summary> 块：先写结果摘要；每个生成的文件或可访问产物另起一行，格式为 artifact: <path>。'
+    '最后请在回复末尾追加简短的 <cron_summary>...</cron_summary> 块：先写结果摘要；只列出本次运行创建或修改的文件或产物，绝不列出仅读取的文件；每个产物另起一行，格式为 artifact: <path>。'
     + `摘要的第一行可以标注紧急程度，格式为 urgency: must_today|can_wait|fyi（${mustTodayDefinition}，can_wait = 可以稍后处理，fyi = 仅供参考）。`;
   // notifyWhen 打扰判据（N-CRON-RESTATE-HUMAN-WHEN）：设置后让模型自判本次是否
   // 值得打扰——满足判据才输出 <cron_alert>，host 侧按该标记门通知与推送。

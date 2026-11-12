@@ -1,5 +1,5 @@
 // ============================================================================
-// 工具授权两档（N-PERM-GRANT-TIERS）：run 档 + 24h 档
+// 工具授权（N-PERM-GRANT-TIERS）：session / run / 24h
 // ============================================================================
 // 审批卡「到这次做完为止」/「24 小时内允许」的真源。与 renderer 权限记忆
 // （permissionStore，进程内存 + localStorage，host 与无人值守面看不见）不同，
@@ -12,7 +12,7 @@
 //           tool_permission_grants 表（schemaToolGrants），重启不破坏承诺。
 //
 // 匹配 key 纪律：铸造与消费两侧的 target 都取 toolExecutor 透传的
-// standingGrantTarget（external 工具的精确去向），null 只匹配 null——无 target 的
+// standingGrantTarget（external）或 browserSessionGrant.target（浏览器），null 只匹配 null——无 target 的
 // 工具级授权绝不放大成「对任何去向都允许」。时钟注入：match/list 的 now 参数
 // 缺省才是 Date.now()（调用边），测试注入同一判据。
 // 本模块不注册任何 agent 可调用工具（no-self-revoke），消费方见
@@ -25,10 +25,10 @@ import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('ToolGrantStore');
 
-export type ToolGrantTier = 'run' | '24h';
+export type ToolGrantTier = 'session' | 'run' | '24h';
 
 export type ToolGrantListItem =
-  | { tier: 'run'; tool: string; target: string | null; sessionId: string; grantedAt: number; expiresAt: null }
+  | { tier: 'run' | 'session'; tool: string; target: string | null; sessionId: string; grantedAt: number; expiresAt: null }
   | { tier: '24h'; tool: string; target: string | null; sessionId: null; grantedAt: number; expiresAt: number };
 
 interface GrantRow {
@@ -84,6 +84,8 @@ function isExpired(expiresAt: number | null | undefined, now: number): boolean {
  * 绑定对象里：db 懒绑定失败不落缓存、每次调用重试（rework r2），db 不可用期间
  * 铸的 run 档授权不跟着绑定状态一起被丢掉——run 档本就不依赖 db。 */
 const runs = new Map<string, Map<string, number>>();
+// Session grants survive turn finalization, but never process/database replacement.
+const sessions = new Map<string, Map<string, number>>();
 
 let repo: ToolGrantRepository | null = null;
 let boundDb: BetterSqlite3.Database | null = null;
@@ -94,7 +96,7 @@ export function bindToolGrantDatabase(db: BetterSqlite3.Database | null, fresh =
   if (!fresh && bindAttempted && boundDb === db) return;
   // 重绑（fresh 或换 db）沿用既有语义：run 档随旧 store 一起作废。首次绑定不动——
   // 此前 db 不可用期间铸的 run 档照常活到 run 结束。
-  if (fresh || bindAttempted) runs.clear();
+  if (fresh || bindAttempted) { runs.clear(); sessions.clear(); }
   boundDb = db;
   repo = db ? new ToolGrantRepository(db) : null;
   bindAttempted = true;
@@ -134,6 +136,7 @@ function mintRun(sessionId: string, tool: string, target: string | null, granted
 function match(sessionId: string | null | undefined, tool: string, target: string | null, now: number): ToolGrantTier | null {
   const key = toolKey(tool, target);
   if (sessionId && runs.get(sessionId)?.has(key)) return 'run';
+  if (sessionId && sessions.get(sessionId)?.has(key)) return 'session';
   const hit = repo?.list().some(
     (row) => row.tool_key === key && !isExpired(row.expires_at, now),
   );
@@ -147,6 +150,11 @@ function listGrants(now: number): ToolGrantListItem[] {
     for (const [key, grantedAt] of bucket) {
       const { tool, target } = splitToolKey(key);
       items.push({ tier: 'run', tool, target, sessionId, grantedAt, expiresAt: null });
+    }
+  }
+  for (const [sessionId, bucket] of sessions) {
+    for (const [key, grantedAt] of bucket) {
+      items.push({ tier: 'session', ...splitToolKey(key), sessionId, grantedAt, expiresAt: null });
     }
   }
   for (const row of repo?.list() ?? []) {
@@ -210,4 +218,16 @@ export function revokeTool24hGrant(tool: string, target: string | null = null): 
 /** run 结束清 run 档（runFinalizer 唯一调用点）。 */
 export function clearToolRunGrants(sessionId: string): void {
   runs.delete(sessionId);
+}
+
+export function mintToolSessionGrant(sessionId: string, tool: string, target: string, grantedAt: number = Date.now()): void {
+  if (!sessionId || !target) return;
+  ensureRepoBound();
+  const bucket = sessions.get(sessionId) ?? new Map<string, number>();
+  bucket.set(toolKey(tool, target), grantedAt);
+  sessions.set(sessionId, bucket);
+}
+
+export function revokeToolSessionGrant(sessionId: string, tool: string, target: string): boolean {
+  return sessions.get(sessionId)?.delete(toolKey(tool, target)) ?? false;
 }
