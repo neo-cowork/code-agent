@@ -72,15 +72,18 @@ describe('带用户输入的模板描述不被固定文案覆盖', () => {
 });
 
 describe('推荐模板：名称跟随 UI 语言', () => {
-  it('generate 缺省仍是中文；en 取英文词条，agentPrompt 不变', () => {
+  it('generate 缺省仍是中文；en 取英文词条与英文 agent 提示词', () => {
     expect(dailyReview.generate({}).name).toBe('每日回顾');
     const en = dailyReview.generate({}, 'en');
     expect(en.name).toBe('Daily review');
     expect(en.description).toBe('Review today’s progress and follow-ups');
-    expect(en.agentPrompt).toBe(dailyReview.generate({}).agentPrompt);
+    // FU1：en 档 agent 提示词是手写英文版，不再是中文原文
+    expect(en.agentPrompt).not.toBe(dailyReview.generate({}).agentPrompt);
+    expect(en.agentPrompt).not.toMatch(/[㐀-鿿]/);
+    expect(en.agentPrompt).toContain('review my work today');
   });
 
-  it('英文 UI 开启「Daily review」存英文名；切到中文仍显示已开启、不重复创建', async () => {
+  it('英文 UI 开启「Daily review」存英文名与英文提示词；切到中文仍显示已开启、不重复创建', async () => {
     useAppStore.setState({ language: 'en' });
     createJob.mockImplementation(async (input) => ({ ...(input as object), id: 'job-en', createdAt: 1, updatedAt: 1 }));
     const { rerender } = render(<CronFeaturedTemplates />);
@@ -88,7 +91,14 @@ describe('推荐模板：名称跟随 UI 语言', () => {
     await waitFor(() => expect(createJob).toHaveBeenCalledTimes(1));
     const submitted = createJob.mock.calls[0][0] as CronJobDefinition;
     expect(submitted.name).toBe('Daily review');
+    // 存进任务的是英文提示词（Action 框展示的就是它）
+    expect(submitted.action.type).toBe('agent');
+    if (submitted.action.type === 'agent') {
+      expect(submitted.action.prompt).not.toBe(dailyReview.generate({}).agentPrompt);
+      expect(submitted.action.prompt).not.toMatch(/[㐀-鿿]/);
+    }
 
+    // 切回中文：findExistingJob 认 en 名 + en 提示词，卡片已开启、不重复 createJob
     useCronStore.setState({ jobs: [{ ...submitted, id: 'job-en', createdAt: 1, updatedAt: 1 }] });
     useAppStore.setState({ language: 'zh' });
     rerender(<CronFeaturedTemplates />);
@@ -96,6 +106,20 @@ describe('推荐模板：名称跟随 UI 语言', () => {
     expect(button.disabled).toBe(true);
     fireEvent.click(button);
     expect(createJob).toHaveBeenCalledTimes(1);
+  });
+
+  it('英文提示词的存量任务在英文 UI 下也按英文档匹配（不因提示词已翻成英文而重复创建）', async () => {
+    useCronStore.setState({ jobs: [storedJob('en')] });
+    useAppStore.setState({ language: 'en' });
+    const { rerender } = render(<CronFeaturedTemplates />);
+    const button = screen.getByTestId('cron-featured-daily-review') as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    fireEvent.click(button);
+    expect(createJob).not.toHaveBeenCalled();
+    // 同一份任务在中文 UI 下同样已开启
+    useAppStore.setState({ language: 'zh' });
+    rerender(<CronFeaturedTemplates />);
+    expect((screen.getByTestId('cron-featured-daily-review') as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('中文名的存量任务在英文 UI 下仍被认作已开启，不重复创建', () => {

@@ -128,7 +128,7 @@ export const en = {
     publishNote: 'Version note (optional)',
     publishNotePlaceholder: 'Example: final copy for the client',
     publish: 'Publish',
-    publishSuccess: 'Published v{version} · The library version list has been updated',
+    publishSuccess: 'Published v{version} · See it in the preview panel’s “Versions” menu',
     publishFailed: 'Publish failed',
     draft: 'Draft',
     publishedVersion: 'Published v{version}',

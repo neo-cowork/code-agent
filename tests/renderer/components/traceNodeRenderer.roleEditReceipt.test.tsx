@@ -93,3 +93,95 @@ describe('role edit receipt projection and rendering', () => {
       .toContain(language === 'zh' ? '工作规则已更新。' : 'Working rules updated.');
   });
 });
+
+// ============================================================================
+// N-FIX-SIGNED-OUT-SEND-500-RAW-HTML-REDESIGN：PROJECT_SOURCE_TRUST 失败气泡的
+// 「确认并重发」入口——点按钮先调宿主确认端点（只带 sessionId），成功后走既有
+// 失败重发路径（复用原 clientMessageId 原样重发）；确认失败换通用失败句。
+// ============================================================================
+const unsafeInvokeMock = vi.hoisted(() => vi.fn());
+vi.mock('../../../src/renderer/services/ipcService', () => ({
+  default: {
+    invoke: vi.fn(),
+    invokeDomain: vi.fn(),
+    unsafeInvoke: unsafeInvokeMock,
+  },
+}));
+
+describe('ProjectTrustConfirmCard 确认并重发', () => {
+  const failedMessages: Message[] = [
+    {
+      id: 'client-msg-keep',
+      role: 'user',
+      content: '帮我把下载文件夹里的照片按日期改名',
+      timestamp: 1,
+      metadata: { sendFailed: true },
+    },
+    {
+      id: 'err-1',
+      role: 'assistant',
+      content: '这个项目文件夹需要你确认后 Neo 才能使用。',
+      timestamp: 2,
+      metadata: {
+        retryPrompt: '帮我把下载文件夹里的照片按日期改名',
+        retryClientMessageId: 'client-msg-keep',
+        retrySessionId: 'session-trust',
+        sendFailureCode: 'PROJECT_SOURCE_TRUST',
+      },
+    },
+  ];
+
+  function failedAssistantNode() {
+    const nodes = projectTurns(failedMessages, 'session-trust', false)
+      .turns.flatMap((turn) => turn.nodes);
+    const node = nodes.find((item) => item.messageId === 'err-1' || item.id.startsWith('err-1'));
+    expect(node).toBeDefined();
+    return node!;
+  }
+
+  it('确认成功后按原 clientMessageId 原样重发', async () => {
+    const { fireEvent } = await import('@testing-library/react');
+    const { useMessageActionStore } = await import('../../../src/renderer/stores/messageActionStore');
+    const sendSpy = vi.fn();
+    const { useSessionStore } = await import('../../../src/renderer/stores/sessionStore');
+    const { recordFailedSend, mergeFailedSendOutbox } = await import('../../../src/renderer/stores/failedSendOutbox');
+    useMessageActionStore.setState({ _send: sendSpy, _getMessages: () => failedMessages });
+    useSessionStore.setState({ currentSessionId: 'session-trust', messages: failedMessages });
+    recordFailedSend('session-trust', failedMessages[0]!, failedMessages[1]!);
+    unsafeInvokeMock.mockResolvedValue({ confirmed: true, sources: 1 });
+
+    render(<TraceNodeRenderer node={failedAssistantNode()} sessionId="session-trust" />);
+
+    const button = screen.getByRole('button', { name: '确认并重发' });
+    fireEvent.click(button);
+
+    await vi.waitFor(() => {
+      expect(unsafeInvokeMock).toHaveBeenCalledWith('project:confirm-source-trust', { sessionId: 'session-trust' });
+      expect(sendSpy).toHaveBeenCalledWith('帮我把下载文件夹里的照片按日期改名', {
+        clientMessageId: 'client-msg-keep',
+      });
+    });
+    // 已发出后按钮消失，不留双入口
+    expect(screen.queryByRole('button', { name: '确认并重发' })).toBeNull();
+    // 「需要你确认」这句已过时：不留在时间线上（否则挂在新回复上面），重载合并也不再带回来
+    expect(useSessionStore.getState().messages.map((message) => message.id)).toEqual(['client-msg-keep']);
+    expect(mergeFailedSendOutbox('session-trust', [], []).map((message) => message.id)).toEqual([]);
+    useMessageActionStore.setState({ _send: null, _getMessages: null });
+    useSessionStore.setState({ currentSessionId: null, messages: [] });
+  });
+
+  it('确认失败显示通用失败句，不透传内部码', async () => {
+    const { fireEvent } = await import('@testing-library/react');
+    unsafeInvokeMock.mockResolvedValue(undefined); // 端点拒绝/坍缩 → 未确认
+
+    render(<TraceNodeRenderer node={failedAssistantNode()} sessionId="session-trust" />);
+
+    fireEvent.click(screen.getByRole('button', { name: '确认并重发' }));
+
+    await vi.waitFor(() => {
+      expect(screen.getByText('Neo 暂时没能完成这次请求，请稍后再试。')).toBeTruthy();
+    });
+    expect(document.body.textContent).not.toContain('PROJECT_SOURCE_TRUST');
+    expect(document.body.textContent).not.toContain('confirm unavailable');
+  });
+});

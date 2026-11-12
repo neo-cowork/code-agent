@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { ProviderConfig } from '../../shared/contract';
-import { MODEL_API_ENDPOINTS } from '../../shared/constants';
+import { MODEL_API_ENDPOINTS, MODEL_MAX_OUTPUT_TOKENS } from '../../shared/constants';
 
 export const ADDITIONAL_PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
   minimax: {
@@ -237,6 +237,22 @@ export const ADDITIONAL_PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsVision: true,
         supportsStreaming: true,
         costType: 'monthly',
+        visionCapabilities: {
+          supportsBase64: true,
+          supportsUrl: true,
+          supportedFormats: ['png', 'jpeg', 'gif', 'webp'],
+        },
+      },
+      {
+        id: 'neohorse-1.5-flash-preview',
+        name: 'NeoHorse 1.5 Flash Preview',
+        capabilities: ['general', 'code', 'vision', 'reasoning', 'longContext', 'unlimited'],
+        thinking: { kind: 'none' },
+        maxTokens: MODEL_MAX_OUTPUT_TOKENS['neohorse-1.5-flash-preview'],
+        supportsTool: true,
+        supportsVision: true,
+        supportsStreaming: true,
+        costType: 'free',
         visionCapabilities: {
           supportsBase64: true,
           supportsUrl: true,

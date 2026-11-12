@@ -48,3 +48,13 @@ export interface EnvAssistActRequest {
 export interface EnvAssistActResult {
   status: 'opened' | 'not_available' | 'rejected';
 }
+
+/** Runtime validation for durable environment checkpoints. */
+export function isEnvBlockerClass(value: unknown): value is EnvBlockerClass {
+  return typeof value === 'string' && Object.hasOwn({
+    perm_automation: true, perm_accessibility: true, perm_screen_recording: true,
+    perm_input_monitoring: true, perm_notifications: true, perm_files: true,
+    runtime_missing: true, login_expired: true, quota_exhausted: true,
+    model_capability: true, offline: true, first_launch: true,
+  } satisfies Record<EnvBlockerClass, true>, value);
+}
