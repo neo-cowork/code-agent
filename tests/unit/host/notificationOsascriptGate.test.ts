@@ -39,11 +39,6 @@ const ALLOWLIST = {
       reason:
         'Fallback B sender; osascript banners are attributed to Script Editor, and this is the single approved caller.',
     },
-    {
-      file: 'src/host/services/roleAssets/roleProactivity.ts',
-      reason:
-        'Dead branch in production: electron is aliased to electronMock.ts with isSupported() === false; Settings copy still promises realtime desktop notices, so a follow-up is needed.',
-    },
   ],
 } as const satisfies Record<NotificationRule, readonly AllowlistEntry[]>;
 

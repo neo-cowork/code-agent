@@ -4,6 +4,7 @@
 
 import type BetterSqlite3 from 'better-sqlite3';
 import { MEMORY } from '../../../../shared/constants';
+import { memoryUsageGain } from '../../../../shared/memoryUsageGain';
 import { normalizeFtsMatchQuery, runMemoriesFtsBackfill } from '../../../../shared/memoriesFts.sql';
 import { isFtsDisabled, isFtsSearchDegraded, markFtsTableAvailable, repairFtsTableIfCorrupt } from '../database/ftsRepair';
 import { isSqliteCorruptionError } from '../database/sqliteErrors';
@@ -301,8 +302,10 @@ export class MemoryRepository {
    * 关键词检索。BM25（memories_fts）召回优先——相关性排序、零外部依赖；
    * 以下情形退回 LIKE 全扫（保持旧行为）：查询 <3 字符（trigram 下限）、
    * raw FTS 语法错误、FTS 零命中（历史数据缺口兜底）。
-   * 读时 decay 在两条通道之上统一应用。排序：衰减置信度降序 → accessCount 降序
-   * → (lastAccessedAt || updatedAt) 降序——高频使用的记忆在置信度打平时先被召回。
+   * 读时 decay 在两条通道之上统一应用。排序键 = 衰减置信度 × 使用增益
+   * （1 + ALPHA*log1p(accessCount) + BETA*freshness，freshness 在 WINDOW 天内线性降到 0；
+   * 无使用数据时增益恒为 1，与旧序一致），其后依次 accessCount 降序 →
+   * (lastAccessedAt || updatedAt) 降序。返回的 confidence 仍是衰减值，不是加权分。
    */
   searchMemories(query: string, options: { type?: string; category?: string; limit?: number; applyDecay?: boolean; includeArchived?: boolean; includeCandidates?: boolean; now?: number } = {}): MemoryRecord[] {
     // Fetch more rows than needed so decay filtering still returns enough
@@ -325,14 +328,17 @@ export class MemoryRepository {
           const lastTouch = r.lastAccessedAt || r.updatedAt;
           const ageMs = now - lastTouch;
           const decayFactor = Math.pow(0.5, ageMs / halfLifeMs);
-          return { ...r, confidence: r.confidence * decayFactor };
+          const confidence = r.confidence * decayFactor;
+          const gain = memoryUsageGain(r, now);
+          return { record: { ...r, confidence }, score: confidence * gain };
         })
-        .filter(r => r.confidence >= MEMORY.RECORD_MIN_CONFIDENCE)
+        .filter(x => x.record.confidence >= MEMORY.RECORD_MIN_CONFIDENCE)
         .sort((a, b) =>
-          b.confidence - a.confidence ||
-          b.accessCount - a.accessCount ||
-          (b.lastAccessedAt || b.updatedAt) - (a.lastAccessedAt || a.updatedAt)
-        );
+          b.score - a.score ||
+          b.record.accessCount - a.record.accessCount ||
+          (b.record.lastAccessedAt || b.record.updatedAt) - (a.record.lastAccessedAt || a.record.updatedAt)
+        )
+        .map(x => x.record);
     }
 
     return records.slice(0, requestedLimit);

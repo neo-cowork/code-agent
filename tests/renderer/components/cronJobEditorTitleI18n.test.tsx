@@ -47,8 +47,8 @@ describe('CronJobEditor template title i18n', () => {
     ['zh', cronCenterZh.cronCenter],
   ] as const)('pick heading uses localized copy in %s', (language, cc) => {
     openTemplatePicker(language);
-    const heading = screen.getByRole('heading', { name: cc.pickTitle });
-    expect(heading.textContent).toBe(cc.pickTitle);
+    const heading = screen.getByRole('heading', { name: cc.editorChrome.selectTemplateTitle });
+    expect(heading.textContent).toBe(cc.editorChrome.selectTemplateTitle);
     if (language === 'en') expect(heading.textContent).not.toMatch(HAN_RE);
     else expect(heading.textContent).toBe('选择任务模板');
     console.log(`${language} pick heading textContent=${heading.textContent}`);
@@ -77,11 +77,28 @@ describe('CronJobEditor template title i18n', () => {
     openTemplatePicker(language);
     const copy = original(templates.CRON_TEMPLATES[0], cc.templates);
     fireEvent.click(screen.getByRole('button', { name: new RegExp(copy.description) }));
-    const heading = screen.getByRole('heading', { name: cc.fillTitleFallback });
-    expect(heading.textContent).toBe(cc.fillTitleFallback);
+    const heading = screen.getByRole('heading', { name: cc.editorChrome.fillTemplateTitle });
+    expect(heading.textContent).toBe(cc.editorChrome.fillTemplateTitle);
     if (language === 'en') expect(heading.textContent).not.toMatch(HAN_RE);
     else expect(heading.textContent).toBe('填写参数');
     console.log(`${language} fill fallback heading textContent=${heading.textContent}`);
+  });
+
+  it('en template picker dialog contains no Han characters for any template', () => {
+    openTemplatePicker('en');
+    const dialog = screen.getByRole('dialog');
+    expect(templates.CRON_TEMPLATES.length).toBeGreaterThan(0);
+    expect(dialog.textContent).toContain(cronCenterEn.cronCenter.editorChrome.skipTemplate);
+    expect(dialog.textContent).not.toMatch(HAN_RE);
+    console.log(`en picker dialog textContent length=${dialog.textContent?.length}, templates=${templates.CRON_TEMPLATES.length}`);
+  });
+
+  it('zh template picker keeps the original Chinese card copy', () => {
+    openTemplatePicker('zh');
+    const text = screen.getByRole('dialog').textContent ?? '';
+    for (const expected of ['网页更新提醒', '飞书日程冲突监听', '飞书表格行变更监听', '飞书', '跳过模板，手动配置']) {
+      expect(text).toContain(expected);
+    }
   });
 
   it('source gate covers the whole const title statement without Han literals or escapes', () => {
@@ -101,7 +118,7 @@ describe('CronJobEditor template title i18n', () => {
     expect(statement.length).toBeGreaterThan(0);
     expect(statement).toMatch(/^const title\s*=/);
     expect(statement.endsWith(';')).toBe(true);
-    expect(statement).toContain('cc.pickTitle');
+    expect(statement).toContain('cc.editorChrome.selectTemplateTitle');
     const code = statement.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
     expect(code).not.toMatch(HAN_RE);
     const decoded = code.replace(UNICODE_ESCAPE_RE, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));

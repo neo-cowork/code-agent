@@ -13,6 +13,7 @@ import {
 } from '../../../src/renderer/utils/toolExecutionPresentation';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { en } from '../../../src/renderer/i18n/en';
+import { SANDBOX_APPROVED_RM_STILL_DENIED_FAILURE_CODE } from '../../../src/shared/constants';
 
 function makeToolCall(overrides: Partial<ToolCall> & Pick<ToolCall, 'name'>): ToolCall {
   return {
@@ -472,6 +473,16 @@ describe('humanizeToolFailureReason — failureCode 优先翻成一句人话', (
     const reason = humanizeToolFailureReason(failedCall('gateway-timeout', 'gateway timeout'), zh);
     expect(reason).toBe(zh.toolStepHumanize.failureCodes['gateway-timeout']);
     expect(reason).not.toBe(zh.toolStepHumanize.failureReasonMissing);
+  });
+
+  it('批准后沙盒仍拒绝删除：中文结果卡同时说明原因和下一步', () => {
+    const reason = humanizeToolFailureReason(failedCall(
+      SANDBOX_APPROVED_RM_STILL_DENIED_FAILURE_CODE,
+      'rm: target: Operation not permitted',
+    ), zh);
+    expect(reason).toBe('你已批准删除该文件，但沙盒仍然拒绝了删除；可以在访达里手动删除，或将文件移到当前工作目录后再试');
+    expect(reason).toContain('沙盒仍然拒绝');
+    expect(reason).toContain('在访达里手动删除');
   });
 
   it('failureCode 人话优先于 metadata.reason 与原始 error', () => {

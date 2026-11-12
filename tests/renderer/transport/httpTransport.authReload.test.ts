@@ -10,13 +10,14 @@ vi.mock('../../../src/renderer/services/localBridge', () => ({
   getLocalBridgeClient: () => ({ invokeTool: vi.fn() }),
 }));
 
-import { createHttpCodeAgentAPI } from '../../../src/renderer/api/httpTransport';
+import { createHttpCodeAgentAPI, createHttpDomainAPI } from '../../../src/renderer/api/httpTransport';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 
 describe('httpTransport auth-token reload timer', () => {
   const originalFetch = globalThis.fetch;
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
     vi.useRealTimers();
     globalThis.fetch = originalFetch;
@@ -43,4 +44,23 @@ describe('httpTransport auth-token reload timer', () => {
     vi.stubGlobal('window', undefined);
     expect(() => vi.advanceTimersByTime(300)).not.toThrow();
   });
+  it('does not re-arm automatic reload after an unrelated successful request', async () => {
+    vi.useFakeTimers();
+    const timeout = vi.spyOn(window, 'setTimeout');
+    const reloadTimers = () => timeout.mock.calls.filter(([, delay]) => delay === 250).length;
+    const api = createHttpDomainAPI('http://localhost:8180');
+    const denied = () => new Response(JSON.stringify({ error: { message: 'Missing or invalid Authorization header' } }), { status: 401 });
+    globalThis.fetch = vi.fn()
+      .mockResolvedValueOnce(denied())
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, data: [] }), { status: 200 }))
+      .mockResolvedValueOnce(denied());
+    await expect(api.invoke('session', 'list')).resolves.toMatchObject({ success: false, error: { code: 'LOCAL_AUTH_TOKEN_EXPIRED' } });
+    const timersAfterFailure = reloadTimers();
+    expect(timersAfterFailure).toBe(1);
+    await api.invoke('auth', 'getStatus');
+    await api.invoke('session', 'list');
+    expect(reloadTimers()).toBe(timersAfterFailure);
+    expect(window.sessionStorage.getItem('code-agent:http-auth-token-reload-attempted')).toBe('1');
+  });
+
 });

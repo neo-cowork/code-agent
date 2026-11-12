@@ -1,3 +1,4 @@
+import { normalizePersonalSkillIds } from '../../shared/cronPersonalSkills';
 // ============================================================================
 // Cron IPC Handlers
 // ============================================================================
@@ -8,6 +9,8 @@ import type { RawDomainRouteHandlers } from '../../shared/ipc/domainRoutes';
 import { CronSchemas, type CronDomainRequest } from '../../shared/ipc/schemas/cron';
 import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import { getCronService } from '../cron/cronService';
+import { parkedSiblingsCoveredByGrant } from '../cron/cronWriteGrant';
+import { CRON_CLOUD_NOT_CONFIGURED } from '../../shared/constants/cronErrors';
 import { CloudNotConfiguredError } from '../cron/cronCloudErrors';
 import { getConnectorRegistry } from '../connectors/registry';
 import { isAppleEventsDenied } from '../connectors/native/osascript';
@@ -54,6 +57,9 @@ function getCreateCronJobPayload(source: unknown): CreateCronJobPayload {
   if (!isRecord(source)) throw new Error('Invalid cron job payload');
   // runCount 是只读结算字段（contract/cron.ts）：外部传入一律丢弃，不许借创建重置计数。
   const { runCount: _droppedRunCount, ...payload } = source;
+  if (isRecord(payload.action) && payload.action.type === 'agent') {
+    payload.action = { ...payload.action, allowedPersonalSkillIds: normalizePersonalSkillIds(payload.action.allowedPersonalSkillIds) };
+  }
   return payload as unknown as CreateCronJobPayload;
 }
 
@@ -64,6 +70,9 @@ function getUpdateCronJobRequest(source: unknown): { jobId: string; updates: Upd
   if (!jobId || !isRecord(updates)) throw new Error('Invalid cron job update payload');
   // 同上：外部不许借更新改写 runCount；内部结算走 CronService 自己的窄写通道。
   const { runCount: _droppedRunCount, ...restUpdates } = updates;
+  if (isRecord(restUpdates.action) && restUpdates.action.type === 'agent') {
+    restUpdates.action = { ...restUpdates.action, allowedPersonalSkillIds: normalizePersonalSkillIds(restUpdates.action.allowedPersonalSkillIds) };
+  }
   return { jobId, updates: restUpdates as unknown as UpdateCronJobPayload };
 }
 
@@ -158,7 +167,7 @@ async function runWebhookHookAction(operation: 'register' | 'rotate', payload: u
     logger.warn(`Cron webhook hook ${operation} failed for job ${jobId}: ${message}`);
     return {
       success: false,
-      error: { code: error instanceof CloudNotConfiguredError ? 'CRON_CLOUD_NOT_CONFIGURED' : 'CRON_ERROR', message },
+      error: { code: error instanceof CloudNotConfiguredError ? CRON_CLOUD_NOT_CONFIGURED : 'CRON_ERROR', message },
     };
   }
 }
@@ -266,6 +275,35 @@ const cronHandlers: RawDomainRouteHandlers<CronDomainRequest, void> = {
     const job = await cronService.grantWriteScope(jobId);
     return { success: true, data: job } satisfies IPCResponse;
   },
+  // 审批卡「一键允许此任务写这个文件夹」：授权 + 放行当前停车请求（专用动作，文件夹 host 侧重推导）。
+  grantWriteFolderFromParkedApproval: async (_ctx, payload) => {
+    const requestId = getStringField(payload, 'requestId');
+    if (!requestId) throw new Error('Invalid parked approval request id');
+    const { getDatabase } = await import('../services/core/databaseService');
+    const repo = getDatabase().getPendingApprovalRepo();
+    const grant = await getCronService().grantWriteFolderFromParkedApproval(requestId, (id) => repo.getById(id));
+    if (grant.status === 'rejected') {
+      logger.warn('Parked write folder grant rejected', { requestId, reason: grant.reason });
+      return { success: true, data: { grant, released: false } } satisfies IPCResponse;
+    }
+    const sessionId = getStringField(JSON.parse(repo.getById(requestId)?.payloadJson ?? '{}'), 'sessionId');
+    const { getTaskManager } = await import('../task/TaskManager');
+    const outcome = sessionId
+      ? getTaskManager().handlePermissionResponse(sessionId, requestId, 'allow')
+      : 'no_session';
+    // 同一轮并行发出、已先停车的兄弟写请求：授权范围内的一并放行（范围外的仍等人逐个批）。
+    // 仅 granted：kept_existing 时没有落库新授权，兄弟请求不在授权范围内，只放行被点的这一条。
+    const siblings = sessionId && grant.status === 'granted'
+      ? parkedSiblingsCoveredByGrant(repo.listByKindAndStatus('tool_approval', 'pending'), sessionId, grant.folder, requestId)
+      : [];
+    for (const siblingId of siblings) {
+      if (sessionId) getTaskManager().handlePermissionResponse(sessionId, siblingId, 'allow');
+    }
+    logger.info('Parked write folder grant applied, request released', {
+      requestId, status: grant.status, folder: grant.folder, jobId: grant.jobId, outcome, siblingsReleased: siblings.length,
+    });
+    return { success: true, data: { grant, released: outcome === 'delivered' } } satisfies IPCResponse;
+  },
   revokeWriteScope: async (_ctx, payload) => {
     const cronService = getCronService();
     const jobId = getStringField(payload, 'jobId');
@@ -367,7 +405,7 @@ const cronRoutes = defineDomainRoutes<CronDomainRequest, void>(CronSchemas.REQUE
   unknownActionMessage: (action) => `Unknown cron action: ${String(action)}`,
   mapError: (error) => {
     logger.error('Cron IPC error:', error);
-    return { code: 'CRON_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
+    return { code: error instanceof CloudNotConfiguredError ? CRON_CLOUD_NOT_CONFIGURED : 'CRON_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
   },
 });
 

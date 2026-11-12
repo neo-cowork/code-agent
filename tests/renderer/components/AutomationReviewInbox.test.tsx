@@ -91,6 +91,7 @@ vi.mock('../../../src/renderer/services/cronClient', () => {
     getExecutions: vi.fn().mockResolvedValue([]),
     getRecentExecutions: vi.fn().mockResolvedValue([]),
     grantLoginPassThrough: vi.fn().mockResolvedValue(null),
+    grantWriteFolderFromParkedApproval: vi.fn(),
   };
   return { cronClient: mocked, default: mocked };
 });
@@ -462,6 +463,14 @@ describe('AutomationReviewInbox', () => {
   });
 
   // B2 停车审批分组
+  it('refreshes awaiting runs immediately after an approval answer', async () => {
+    const onParkedResolved = vi.fn();
+    listParkedApprovals.mockResolvedValue([makeParked({})]);
+    render(<AutomationReviewInbox onParkedResolved={onParkedResolved} />);
+    fireEvent.click(await screen.findByTestId('parked-approve'));
+    await waitFor(() => expect(onParkedResolved).toHaveBeenCalledTimes(1));
+  });
+
   it('渲染「等待批准的操作」分组，批准回传 permissionResponse（同一 requestId）', async () => {
     listParkedApprovals.mockResolvedValueOnce([makeParked({ id: 'perm_req_1', sessionId: 'session-1' })]).mockResolvedValue([]);
     render(<AutomationReviewInbox />);
@@ -545,11 +554,57 @@ describe('AutomationReviewInbox', () => {
       expect(screen.getByTestId('parked-approval-voided')).toBeTruthy();
     });
     const voided = screen.getByTestId('parked-approval-voided');
-    expect(voided.textContent).toContain('Bash');
+    expect(voided.textContent).toContain('运行命令');
+    expect(voided.textContent).not.toContain('Bash');
     expect(voided.textContent).toContain('这一步等你确认超过 24 小时，已自动作废，没有执行。');
     expect(voided.querySelector('button')).toBeNull();
     expect(screen.getAllByTestId('parked-approve')).toHaveLength(1);
     expect(screen.getByTestId('parked-approval-group').textContent).toContain('1 个操作等你确认');
+  });
+
+  it.each(['zh', 'en'] as const)('voided duplicate scenario: six distinguishable cards with names, local 24h time and previews (%s)', async (language) => {
+    i18nState.language = language;
+    const names = ['Sort this month’s invoices', 'Write the weekly report', 'Organize client receipts'];
+    const base = new Date(2026, 10, 7, 0, 32).getTime();
+    const items = Array.from({ length: 6 }, (_, index) => makeParked({
+      id: `void-${index}`, status: 'voided', tool: index < 4 ? 'Bash' : 'Write',
+      sessionId: `chat-${index % 3}`, sessionTitle: names[index % 3],
+      requestedAt: base + index * 60_000, argsPreview: index % 3 ? undefined : 'invoice-export --token=***REDACTED***',
+      voidReason: '这一步等你确认超过 24 小时，已自动作废，没有执行。',
+    }));
+    listParkedApprovals.mockResolvedValue(items);
+    render(<AutomationReviewInbox />);
+    fireEvent.click(await screen.findByTestId('parked-approval-voided-toggle'));
+    await waitFor(() => expect(screen.getAllByTestId('parked-approval-voided')).toHaveLength(6));
+    const cards = screen.getAllByTestId('parked-approval-voided');
+    expect(new Set(cards.map((card) => card.textContent)).size).toBe(6);
+    cards.forEach((card, index) => {
+      const time = new Date(items[index].requestedAt).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN', {
+        month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+      });
+      expect(card.textContent).toContain(names[index % 3]);
+      expect(card.textContent).toContain(`${language === 'en' ? 'Started' : '开始于'} ${time}`);
+      expect(card.textContent).not.toMatch(/session_|chat-|AM|PM/);
+      expect(card.querySelector('button')).toBeNull();
+      expect([...card.children].every((line) => line.textContent?.trim())).toBe(true);
+    });
+    expect(screen.getAllByTestId('parked-args-preview')).toHaveLength(2);
+    expect(cards[0].textContent).toContain(`${language === 'en' ? 'Arguments: ' : '参数：'}invoice-export --token=***REDACTED***`);
+    // Same tool, reason and session; only requestedAt differs (indices 0 and 3).
+    expect(cards[0].textContent).not.toBe(cards[3].textContent);
+  });
+
+  it('voided deleted-session and old-row cards omit missing title and preview without empty elements', async () => {
+    listParkedApprovals.mockResolvedValue([makeParked({
+      id: 'deleted-approval', sessionId: 'session_deleted', status: 'voided',
+      voidReason: '这一步等你确认超过 24 小时，已自动作废，没有执行。',
+    })]);
+    render(<AutomationReviewInbox />);
+    const card = await screen.findByTestId('parked-approval-voided');
+    expect(card.textContent).not.toContain('session_deleted');
+    expect(card.children).toHaveLength(3);
+    expect([...card.children].every((line) => line.textContent?.trim())).toBe(true);
+    expect(screen.queryByTestId('parked-args-preview')).toBeNull();
   });
 
   it('REALRUN ②：只有 voided 项时不出「0 个操作等你确认」标题', async () => {
@@ -644,6 +699,104 @@ describe('AutomationReviewInbox', () => {
     expect(screen.getByTestId('parked-args-preview').textContent).toBe(
       'Arguments: curl https://api.example.com/v1 · Bearer ***REDACTED***',
     );
+  });
+
+  describe('一键授权此任务写文件夹（writeGrantFolder）', () => {
+    const grant = () => cronClient.grantWriteFolderFromParkedApproval as unknown as ReturnType<typeof vi.fn>;
+
+    it('带 writeGrantFolder 才出第三个按钮：只显示文件夹名（zh/en），完整路径在 title', async () => {
+      listParkedApprovals.mockResolvedValue([
+        makeParked({ id: 'perm_fold', writeGrantFolder: '/Users/leo/Documents/morning-notes' }),
+      ]);
+      render(<AutomationReviewInbox />);
+      const button = await screen.findByTestId('parked-allow-folder');
+      expect(button.textContent).toBe('以后这个任务写「morning-notes」文件夹不再询问');
+      expect(button.textContent).not.toContain('/Users/leo');
+      expect(button.getAttribute('title')).toContain('/Users/leo/Documents/morning-notes');
+      cleanup();
+      i18nState.language = 'en';
+      render(<AutomationReviewInbox />);
+      expect((await screen.findByTestId('parked-allow-folder')).textContent)
+        .toBe('Always allow this task to write the "morning-notes" folder');
+    });
+
+    it('同会话同文件夹的 3 个待批写合并成一张卡；批准/拒绝对整组逐条回传；无文件夹的行不合并', async () => {
+      const folder = '/Users/leo/Documents/morning-notes';
+      listParkedApprovals.mockResolvedValue([
+        ...['today-plan.md', 'reading-list.md', 'follow-ups.md'].map((n, i) =>
+          makeParked({ id: `perm_g${i}`, argsPreview: `${folder}/${n}`, writeGrantFolder: folder })),
+        makeParked({ id: 'perm_home', argsPreview: '/Users/leo/shopping-list.md' }),
+      ]);
+      render(<AutomationReviewInbox />);
+      await screen.findAllByTestId('parked-approval-item');
+      expect(screen.getAllByTestId('parked-approval-item')).toHaveLength(2);
+      expect(screen.getAllByTestId('parked-allow-folder')).toHaveLength(1);
+      expect(screen.getAllByTestId('parked-approval-item')[0].textContent).toContain('写入 3 个文件到「morning-notes」文件夹');
+      ipcInvoke.mockClear();
+      fireEvent.click(screen.getAllByTestId('parked-approve')[0]);
+      await waitFor(() => expect(ipcInvoke).toHaveBeenCalledTimes(3));
+      expect(ipcInvoke.mock.calls.map((c) => c[1]).sort()).toEqual(['perm_g0', 'perm_g1', 'perm_g2']);
+    });
+
+    it('无 writeGrantFolder 的同文件夹行不并入可授权组卡，仍单独一卡', async () => {
+      const folder = '/Users/leo/Documents/morning-notes';
+      listParkedApprovals.mockResolvedValue([
+        makeParked({ id: 'perm_b0', argsPreview: `${folder}/a.md`, writeGrantFolder: folder }),
+        makeParked({ id: 'perm_b1', argsPreview: `${folder}/b.md`, writeGrantFolder: folder }),
+        makeParked({ id: 'perm_other', argsPreview: `${folder}/c.md` }),
+      ]);
+      render(<AutomationReviewInbox />);
+      await screen.findAllByTestId('parked-approval-item');
+      expect(screen.getAllByTestId('parked-approval-item')).toHaveLength(2);
+      expect(screen.getAllByTestId('parked-allow-folder')).toHaveLength(1);
+    });
+
+    it('kept_existing：被点的由 host 放行，同卡其余逐条批准', async () => {
+      const folder = '/Users/leo/Documents/morning-notes';
+      listParkedApprovals.mockResolvedValue(['a.md', 'b.md'].map((n, i) =>
+        makeParked({ id: `perm_k${i}`, argsPreview: `${folder}/${n}`, writeGrantFolder: folder })));
+      grant().mockResolvedValue({ grant: { status: 'kept_existing' }, released: true });
+      ipcInvoke.mockClear();
+      render(<AutomationReviewInbox />);
+      fireEvent.click(await screen.findByTestId('parked-allow-folder'));
+      await waitFor(() => expect(grant()).toHaveBeenCalledWith('perm_k0'));
+      await waitFor(() => expect(ipcInvoke).toHaveBeenCalledWith('agent:permission-response', 'perm_k1', 'allow', 'session-1'));
+    });
+
+    it('无 writeGrantFolder（如写进 $HOME）不出第三个按钮，批准/拒绝照旧', async () => {
+      listParkedApprovals.mockResolvedValue([makeParked({ id: 'perm_nofold' })]);
+      render(<AutomationReviewInbox />);
+      await screen.findByTestId('parked-approve');
+      expect(screen.queryByTestId('parked-allow-folder')).toBeNull();
+      expect(screen.getByTestId('parked-reject')).toBeTruthy();
+    });
+
+    it('点击走专用 IPC（只传 requestId，不走通用 permission-response）', async () => {
+      listParkedApprovals.mockResolvedValue([
+        makeParked({ id: 'perm_fold', writeGrantFolder: '/Users/leo/Documents/morning-notes' }),
+      ]);
+      grant().mockResolvedValue({ grant: { status: 'granted' }, released: true });
+      ipcInvoke.mockClear();
+      render(<AutomationReviewInbox />);
+      fireEvent.click(await screen.findByTestId('parked-allow-folder'));
+      await waitFor(() => expect(grant()).toHaveBeenCalledWith('perm_fold'));
+      expect(ipcInvoke).not.toHaveBeenCalledWith('agent:permission-response', expect.anything(), expect.anything(), expect.anything());
+      expect(toastInfo).not.toHaveBeenCalled();
+      expect(toastError).not.toHaveBeenCalled();
+    });
+
+    it('已失效（released=false / 被拒）提示过期；抛错浮错误 toast', async () => {
+      listParkedApprovals.mockResolvedValue([
+        makeParked({ id: 'perm_fold', writeGrantFolder: '/Users/leo/Documents/morning-notes' }),
+      ]);
+      grant().mockResolvedValueOnce({ grant: { status: 'rejected' }, released: false });
+      render(<AutomationReviewInbox />);
+      fireEvent.click(await screen.findByTestId('parked-allow-folder'));
+      await waitFor(() => expect(toastInfo).toHaveBeenCalled());
+      grant().mockRejectedValueOnce(new Error('boom'));
+      fireEvent.click(await screen.findByTestId('parked-allow-folder'));
+      await waitFor(() => expect(toastError).toHaveBeenCalled());
+    });
   });
 
   it('item.argsPreview 缺省（老行）不渲染参数预览行', async () => {
@@ -794,6 +947,39 @@ describe('pending review count parity', () => {
 // listParkedApprovals；停车发生在面板开着时，徽章亮了但收件箱还是旧快照，「去处理」
 // 落到不含该审批的收件箱。修复：面板把等批准集合指纹作为 refreshSignal 传入，指纹变化
 // 收件箱即重拉。本用例走真收件箱 + 真面板（本文件 CronJobList/Detail 打桩、收件箱不打桩）。
+describe('scheduled parked run discovery', () => {
+  it('discovers a parked scheduled run through the mounted inbox', async () => {
+    const running = { id: 'scheduled-exec', jobId: 'scheduled-job', status: 'running', scheduledAt: 1, startedAt: 1, retryAttempt: 0 };
+    vi.mocked(cronClient.listJobs).mockResolvedValue([]);
+    vi.mocked(cronClient.getExecutions).mockResolvedValue([]);
+    vi.mocked(cronClient.getRecentExecutions).mockResolvedValue([]);
+    render(<CronCenterPanel onClose={() => undefined} />);
+    fireEvent.click(screen.getByTestId('cron-center-tab-runs'));
+    await waitFor(() => expect(listParkedApprovals).toHaveBeenCalled());
+    vi.mocked(cronClient.getRecentExecutions).mockResolvedValue([running] as never);
+    listParkedApprovals.mockResolvedValue([makeParked({ id: 'scheduled-permission' })]);
+    awaitingRunsMock.value = [{ jobId: 'scheduled-job', executionId: 'scheduled-exec', requestId: 'scheduled-permission', requestedAt: 1 }];
+    await waitFor(() => expect(screen.getByTestId('cron-exec-awaiting-approval')).toBeTruthy(), { timeout: 12000 });
+  }, 15000);
+});
+
+describe('approval badge refresh', () => {
+  it('clears the run badge immediately when the inbox answers', async () => {
+    const running = { id: 'exec-now', jobId: 'job-now', status: 'running', scheduledAt: 1, startedAt: 1, retryAttempt: 0 };
+    vi.mocked(cronClient.getRecentExecutions).mockResolvedValue([running] as never);
+    vi.mocked(cronClient.getExecutions).mockResolvedValue([running] as never);
+    vi.mocked(cronClient.listJobs).mockResolvedValue([{ id: 'job-now', name: '摘要', scheduleType: 'every', schedule: { type: 'every', interval: 1, unit: 'days' }, action: { type: 'agent', agentType: 'default', prompt: '摘要' }, runsOn: 'local', enabled: true }] as never);
+    awaitingRunsMock.value = [{ jobId: 'job-now', executionId: 'exec-now', requestId: 'perm_req_1', requestedAt: 1 }];
+    listParkedApprovals.mockResolvedValue([makeParked({})]);
+    ipcInvoke.mockImplementation(async () => { awaitingRunsMock.value = []; return { outcome: 'delivered' }; });
+    render(<CronCenterPanel onClose={() => undefined} />);
+    fireEvent.click(screen.getByTestId('cron-center-tab-runs'));
+    await screen.findByTestId('cron-exec-awaiting-approval');
+    fireEvent.click(await screen.findByTestId('parked-approve'));
+    await waitFor(() => expect(screen.queryByTestId('cron-exec-awaiting-approval')).toBeNull(), { timeout: 900 });
+  });
+});
+
 describe('awaiting-approval refresh signal (Rework r1)', () => {
   it('面板开着时停车出现：等批准轮询发现后，收件箱不重挂载也拉到该审批卡', async () => {
     awaitingRunsMock.value = [];

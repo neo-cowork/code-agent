@@ -21,6 +21,18 @@ import { createLogger } from '../infra/logger';
 import { isSafeRoleId } from './roleAssetPaths';
 import { ensureRoleAssetDirs, isPersistentRole } from './roleAssetService';
 import { writeRolePersonalization } from './rolePersonalization';
+import { parseAgentMd } from '../../agent/hybrid/agentMdLoader';
+import { diffRoleDefinition } from './roleEditChange';
+
+interface RoleDraftInstallResult {
+  success: boolean;
+  roleId?: string;
+  agentMdPath?: string;
+  error?: string;
+  /** Present only for edits; null change means the previous definition could not be read. */
+  sessionId?: string;
+  change?: ReturnType<typeof diffRoleDefinition> | null;
+}
 
 const logger = createLogger('RoleDraftQueue');
 
@@ -134,6 +146,8 @@ export interface EnqueueRoleDraftResult {
   draft: RoleDraftMeta | null;
   /** draft 为 null 时给出原因（透传给模型，便于换名重试） */
   reason?: string;
+  /** 因「已有同名待确认草稿」被拒时给出该草稿归属的会话，供调用方指路 */
+  conflict?: { roleId: string; sessionId: string };
 }
 
 export interface PrepareRoleDraftResult extends EnqueueRoleDraftResult {
@@ -198,8 +212,13 @@ export async function prepareRoleDraft(input: RoleDraftInput): Promise<PrepareRo
 
   // 队列里已有同名待确认草稿 → 拒绝（迭代时让用户先确认/放弃旧草稿）
   const existing = await listRoleDrafts();
-  if (existing.some((d) => d.roleId === roleId)) {
-    return { draft: null, reason: `已有一个待确认的「${roleId}」草稿，请先确认或放弃它` };
+  const clash = existing.find((d) => d.roleId === roleId);
+  if (clash) {
+    return {
+      draft: null,
+      reason: `已有一个待确认的「${roleId}」草稿，请先确认或放弃它`,
+      conflict: { roleId, sessionId: clash.sessionId },
+    };
   }
 
   const id = sanitizeDraftId(roleId, createdAt);
@@ -255,7 +274,7 @@ export async function enqueueRoleDraft(input: RoleDraftInput): Promise<EnqueueRo
 export async function installRoleDraft(
   meta: RoleDraftMeta,
   agentMd: string,
-): Promise<{ success: boolean; roleId?: string; agentMdPath?: string; error?: string }> {
+): Promise<RoleDraftInstallResult> {
   if (!isSafeRoleId(meta.roleId)) {
     return { success: false, error: `草稿角色名非法：${meta.roleId}` };
   }
@@ -292,6 +311,21 @@ export async function installRoleDraft(
       return { success: false, error: `已存在同名角色定义「${meta.roleId}」，未覆盖` };
     }
 
+    let change: ReturnType<typeof diffRoleDefinition> | null = null;
+    if (isEdit) {
+      try {
+        const previous = parseAgentMd(await fs.readFile(agentMdPath, 'utf-8'), agentMdPath);
+        const next = parseAgentMd(agentMd, agentMdPath);
+        if (!previous || !next) throw new Error('Invalid agent definition frontmatter');
+        change = diffRoleDefinition(
+          { description: previous.description, tools: previous.tools, systemPrompt: previous.prompt },
+          { description: next.description, tools: next.tools, systemPrompt: next.prompt },
+        );
+      } catch (error) {
+        logger.warn('Role edit diff unavailable (confirm unaffected)', { roleId: meta.roleId, reason: String(error) });
+      }
+    }
+
     await fs.mkdir(path.dirname(agentMdPath), { recursive: true });
     await fs.writeFile(agentMdPath, agentMd, 'utf-8');
     // 角色资产骨架（roles/<roleId>/ MEMORY.md + memories/ + history.md），幂等。
@@ -323,7 +357,7 @@ export async function installRoleDraft(
     }
 
     logger.info('Role draft installed', { id: meta.id, roleId: meta.roleId, isEdit, agentMdPath });
-    return { success: true, roleId: meta.roleId, agentMdPath };
+    return { success: true, roleId: meta.roleId, agentMdPath, ...(isEdit ? { sessionId: meta.sessionId, change } : {}) };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     logger.error('Failed to install role draft', { id: meta.id, error: message });
@@ -337,7 +371,7 @@ export async function installRoleDraft(
  */
 export async function confirmRoleDraft(
   id: string,
-): Promise<{ success: boolean; roleId?: string; agentMdPath?: string; error?: string }> {
+): Promise<RoleDraftInstallResult> {
   const draftDir = path.join(getRoleDraftsDir(), path.basename(id));
   const metaPath = path.join(draftDir, DRAFT_META_FILENAME);
 
