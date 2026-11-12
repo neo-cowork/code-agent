@@ -91,7 +91,8 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // sys-v108：整合 main 多参考图 schema 与 delegate_task 满槽选择卡指引。
 // sys-v111: integrate main sys-v109 with missing-attachment context and same-language reply.
 // sys-v113: integrate main sys-v112 with the measured GUI disclosure wording (unchanged).
-export const PROMPT_VERSION = 'sys-v113' as const;
+// sys-v114: trim two filler words from the skills rule to fit the resident-layer budget (no semantic change).
+export const PROMPT_VERSION = 'sys-v114' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =
