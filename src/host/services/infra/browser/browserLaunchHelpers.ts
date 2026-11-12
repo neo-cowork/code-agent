@@ -10,6 +10,7 @@ import {
   resolveSystemChromeKeychainMode,
   type BrowserProviderResolution,
 } from '../browserProvider';
+import { startChromeParentWatchdog } from './browserProcessWatchdog';
 import { loadPlaywright } from '../../../runtime/playwrightRuntime';
 import type {
   ManagedBrowserMode,
@@ -123,6 +124,7 @@ export async function launchSystemChromeCdpBrowser(
     stdio: ['ignore', 'ignore', 'pipe'],
   });
   input.onProcessStart(chromeProcess);
+  startChromeParentWatchdog(chromeProcess, input.logger);
   chromeProcess.stderr?.on('data', (chunk) => {
     const message = String(chunk).trim();
     if (message) {
