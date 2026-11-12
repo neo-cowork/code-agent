@@ -351,7 +351,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   // 两路 scrollToIndex 在该窗口内禁用，避免多驱动交替抢滚动造成上移-回弹抖动。
   const outputFollowStreamingRef = useRef(false);
   outputFollowStreamingRef.current = outputFollowTurn?.status === 'streaming';
-  const noteSessionEntryRange = useSessionEntryScroll({
+  const { noteRange: noteSessionEntryRange, entryHidden } = useSessionEntryScroll({
     sessionId: projection.sessionId,
     turns: projection.turns,
     projectionTurnsRef,
@@ -1057,7 +1057,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
         role="log"
         aria-live="polite"
         aria-label={t.traceView.conversationLog}
-        className={`h-full min-h-0 pt-3 pb-0 overflow-x-hidden chat-scroll-fade${railItems.length >= TURN_RAIL_MIN_TURNS ? ' @min-[640px]:[scrollbar-width:none] @min-[640px]:[&::-webkit-scrollbar]:hidden' : ''}`}
+        className={`h-full min-h-0 pt-3 pb-0 overflow-x-hidden chat-scroll-fade${railItems.length >= TURN_RAIL_MIN_TURNS ? ' @min-[640px]:[scrollbar-width:none] @min-[640px]:[&::-webkit-scrollbar]:hidden' : ''}${entryHidden ? ' invisible' : ''}`}
         scrollerRef={handleScrollerRef}
         data={projection.turns}
         firstItemIndex={firstItemIndex}

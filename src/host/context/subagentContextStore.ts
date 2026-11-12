@@ -42,6 +42,8 @@ export interface SubagentContextRecord {
     finishedAt?: number;
   };
   updatedAt: number;
+  /** Explicit graph lifecycle for members that have no SpawnGuard entry. */
+  terminalStatus?: 'completed' | 'failed' | 'cancelled';
 }
 
 interface StoredSubagentContextRecord extends Omit<SubagentContextRecord, 'compressionState'> {

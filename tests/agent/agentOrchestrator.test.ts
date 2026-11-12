@@ -515,6 +515,7 @@ describe('AgentOrchestrator', () => {
     it('ordinary user ingress forwards session and producer identity to wake cancellation', async () => {
       const ingress = {
         permissions: { drainPendingPermissions: vi.fn() },
+        messageHistory: { getMessages: () => [] },
         configService: { getSettings: () => ({}) },
         resolveSessionId: async () => 'return-session',
         generateId: () => 'user-message',
@@ -533,6 +534,7 @@ describe('AgentOrchestrator', () => {
       const { grantShortTierWait, settleShortTierWait } = await import('../../src/host/tools/shell/foregroundTier');
       const ingress = {
         permissions: { drainPendingPermissions: vi.fn() },
+        messageHistory: { getMessages: () => [] },
         configService: { getSettings: () => ({}) },
         resolveSessionId: async () => 'budget-session',
         generateId: () => 'user-message',
@@ -560,6 +562,8 @@ describe('AgentOrchestrator', () => {
           const captured: { options?: AgentRunOptions } = {};
           const ingress = {
             permissions: { drainPendingPermissions: vi.fn() },
+            messageHistory: { getMessages: () => [] },
+            getWorkingDirectory: () => undefined,
             configService: { getSettings: () => ({}), getApiKey: vi.fn(() => 'test-key') },
             resolveSessionId: async () => null,
             generateId: () => `crb-${stored.length}`,

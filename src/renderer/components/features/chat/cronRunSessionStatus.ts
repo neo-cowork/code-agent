@@ -19,6 +19,7 @@ export interface CronRunAwaitingApproval {
   requestedAt: number;
   /** 工具名 / 脱敏参数预览（有才显示「等你批准：在干什么」）。 */
   label?: string;
+  command?: string;
 }
 
 export type CronRunStatusLine =

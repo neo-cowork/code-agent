@@ -33,7 +33,13 @@ async function checkpointNativeModel(
 ): Promise<void> {
   const runId = ctx.runtime.runId;
   const registry = getConfiguredApplicationRunRegistry();
-  if (!runId || !registry?.hasDurableOwner(runId)) return;
+  if (!runId || !registry) return;
+  if (!registry.hasDurableOwner(runId)) {
+    logger.info('Native model checkpoint skipped after parent owner ended', {
+      runId, phase, status, reason: 'parent_run_not_durable',
+    });
+    return;
+  }
 
   const sourceMessageId = [...ctx.runtime.messages]
     .reverse()

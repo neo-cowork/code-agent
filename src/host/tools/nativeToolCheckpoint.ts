@@ -2,7 +2,10 @@ import type { ToolDefinition } from '../../shared/contract';
 import { getConfiguredApplicationRunRegistry } from '../app/applicationRunRegistry';
 import { getDatabase } from '../services/core/databaseService';
 import { hasNativeToolSideEffect } from './toolReplaySafety';
+import { createLogger } from '../services/infra/logger';
 import type { GoalRecoverySnapshot } from '../agent/goalModeController';
+
+const logger = createLogger('NativeToolCheckpoint');
 
 export interface NativeToolCheckpoint {
   complete(success: boolean): Promise<void>;
@@ -54,13 +57,24 @@ export async function prepareNativeToolCheckpoint(input: {
 
   return {
     complete: async (success) => {
-      await registry.checkpointNativeToolOperation({
-        ...operation,
-        status: success ? 'succeeded' : 'failed',
-        resultRef: `tool-ledger:${input.executionId}`,
-        isGoalRun: input.goalRecoverySnapshot !== undefined,
-        goalState: input.goalRecoverySnapshot,
+      const skip = () => logger.info('Native tool checkpoint skipped after parent owner ended', {
+        runId: operation.runId, toolName: input.toolName, executionId: input.executionId,
+        reason: 'parent_run_not_durable',
       });
+      if (!registry.hasDurableOwner(operation.runId)) { skip(); return; }
+      try {
+        await registry.checkpointNativeToolOperation({
+          ...operation,
+          status: success ? 'succeeded' : 'failed',
+          resultRef: `tool-ledger:${input.executionId}`,
+          isGoalRun: input.goalRecoverySnapshot !== undefined,
+          goalState: input.goalRecoverySnapshot,
+        });
+      } catch (error) {
+        // A terminal mutation may have been queued between the check and the write.
+        if (registry.hasDurableOwner(operation.runId)) throw error;
+        skip();
+      }
     },
   };
 }

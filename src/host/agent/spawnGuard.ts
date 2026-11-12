@@ -550,17 +550,31 @@ class SpawnGuard {
     return cancelled;
   }
 
-  /** Close only foreground children owned by this Native run. Detached children keep their wake path. */
-  settleParentRun(sessionId: string, parentRunId: string, cancelled = false): number {
+  /**
+   * Close the children of a finished Native run. Failed/step-limit parent (cancelled=false): only foreground
+   * children; detached (background) children and their descendants keep running and report when done.
+   * User stop / explicit cancel (cancelled=true): everything. extraAgentIds are single-spawn children
+   * registered by visibility only.
+   */
+  settleParentRun(sessionId: string, parentRunId: string, cancelled = false, extraAgentIds: Iterable<string> = []): number {
+    const extra = new Set(extraAgentIds);
     let count = 0;
     for (const agent of this.list({ sessionId })) {
-      if (agent.parentRunId !== parentRunId || !isLiveRunningStatus(agent.status)) continue;
-      if (!cancelled && (agent.background || hasLiveBackgroundAncestor(agent, this.agents))) continue;
+      const owned = agent.parentRunId === parentRunId || agent.scope?.parentNativeRunId === parentRunId
+        || agent.scope?.runId === parentRunId || extra.has(agent.id);
+      if (!owned || !isLiveRunningStatus(agent.status)) continue;
+      if (!cancelled && this.isDetachedWork(agent)) continue;
       this.cancelAgent(agent, 'parent-cancel');
       count++;
     }
     if (count) logger.info(`settleParentRun: cancelled ${count} subagents`, { sessionId, parentRunId });
     return count;
+  }
+
+  /** True for a background child or any child running under a live background ancestor. */
+  isDetachedWork(agentOrId: ManagedAgent | string): boolean {
+    const agent = typeof agentOrId === 'string' ? this.agents.get(agentOrId) : agentOrId;
+    return Boolean(agent && (agent.background || hasLiveBackgroundAncestor(agent, this.agents)));
   }
 
   private cancelAgent(agent: ManagedAgent, reason: string): void {

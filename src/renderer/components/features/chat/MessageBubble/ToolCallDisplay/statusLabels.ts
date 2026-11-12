@@ -44,7 +44,10 @@ export function getToolStatusLabel(
       return toolCall._streaming ? labels.preparing : labels.running;
     case 'success':
       if (toolCall.name === 'spawn_agent') {
-        const background = toolCall.result?.output?.includes('spawned in background')
+        const background = toolCall.result?.metadata?.transferredToBackground === true
+          || toolCall.result?.metadata?.background === true
+          || toolCall.result?.output?.includes('exceeded foreground budget and continues in background')
+          || toolCall.result?.output?.includes('spawned in background')
           || toolCall.result?.output?.includes('Status: running');
         return background
           ? t.chat.delegationReceipt.dispatched

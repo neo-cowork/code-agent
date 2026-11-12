@@ -34,6 +34,7 @@ import { isParentRunAlive } from '../orphanLiveness';
 import { isToolWriteReadonlyRole } from '../routingToolPolicy';
 import { capabilityManifestForTools } from '../scriptRuntime/capabilityManifest';
 import { getSpawnGuard } from '../spawnGuard';
+import { resolveSubagentUserLabel } from '../resolveSubagentUserLabel';
 import {
   SubagentContextBuilder,
   getAgentContextLevel,
@@ -42,7 +43,7 @@ import { getSubagentExecutor } from '../subagentExecutor';
 import type { SubagentExecutionContext } from '../subagentExecutorTypes';
 import { resolveSubagentParentContext } from '../subagentProtocolContext';
 import { resolveSpawnAgentEngine } from './spawnAgentEngine';
-import { adoptForegroundSubagent, delegateSpawnAgentWorktreeCleanup, finalizeForegroundSpawnAgentWorktree, publishBackgroundSubagentVisibility, raceForegroundBlockingBudget, resolveForegroundBlockingBudgetMs, resolveSingleSpawnRunScope, validateForegroundBlockingBudget } from './spawnAgentForegroundBackground';
+import { adoptForegroundSubagent, delegateSpawnAgentWorktreeCleanup, finalizeForegroundSpawnAgentWorktree, publishBackgroundSubagentVisibility, raceForegroundBlockingBudget, resolveForegroundBlockingBudgetMs, resolveSingleSpawnRunScope, validateForegroundBlockingBudget, withBackgroundWorktreeNote } from './spawnAgentForegroundBackground';
 import { prepareSpawnAgentWorktree } from './spawnAgentWorktree';
 
 export async function executeSingleSpawnAgent(
@@ -108,7 +109,9 @@ export async function executeSingleSpawnAgent(
       tools = customTools || getAgentTools(agentConfig);
     }
 
-    if (typeof params.name === 'string' && params.name.trim()) agentName = params.name.trim();
+    const explicitName = typeof params.name === 'string' ? params.name.trim() : '';
+    const completionTitle = resolveSubagentUserLabel(params);
+    if (explicitName) agentName = explicitName;
 
     const engineResolution = resolveSpawnAgentEngine(params.engine, parallel, !!isDynamicMode, role);
     if ('error' in engineResolution) return { success: false, error: engineResolution.error };
@@ -363,9 +366,11 @@ export async function executeSingleSpawnAgent(
       const budgetError = validateForegroundBlockingBudget(agentName, foregroundBlockingBudgetMs);
       if (budgetError) return budgetError;
 
+      let settleWorktreeNote: (note: string) => void = () => {};
+      const worktreeNoteSettled = new Promise<string>((resolve) => { settleWorktreeNote = resolve; });
       const delegateWorktreeCleanup = (): void => {
         if (!worktreeInfo || worktreeCleanupDelegated || worktreeFinalized) return;
-        delegateSpawnAgentWorktreeCleanup({ guard, agentId, repoPath: context.cwd, worktreeInfo, isFinalized: () => worktreeFinalized, markFinalized: () => { worktreeFinalized = true; } });
+        delegateSpawnAgentWorktreeCleanup({ guard, agentId, repoPath: context.cwd, worktreeInfo, isFinalized: () => worktreeFinalized, markFinalized: () => { worktreeFinalized = true; }, onSettled: settleWorktreeNote });
         worktreeCleanupDelegated = true;
       };
 
@@ -388,7 +393,7 @@ export async function executeSingleSpawnAgent(
           treeId,
           parentRunId: context.runId,
           background: Boolean(managedAgentId),
-          completion: { title: agentName, kind: 'user_visible' },
+          completion: { title: completionTitle, kind: 'user_visible' },
           parentId: context.spawnParentAgentId,
           slotAcquired: true,
           scope: context.swarmRunScope,
@@ -406,9 +411,10 @@ export async function executeSingleSpawnAgent(
           // 与 run_in_background 的 detached 语义一致，取消走 close_agent。
           parentAbortSignal?.removeEventListener('abort', abortFromParent);
           return adoptForegroundSubagent({
-            promise,
+            promise: worktreeInfo ? withBackgroundWorktreeNote(promise, worktreeNoteSettled, agentId) : promise,
             agentId,
             agentName,
+            completionTitle,
             role,
             context,
             treeId,
@@ -440,7 +446,8 @@ export async function executeSingleSpawnAgent(
             : '';
           return {
             success: true,
-            output: `Agent [${agentName}] completed task:
+            // Background completion notifications carry the task result, without role/tool/id wrappers.
+            output: params.run_in_background === true ? `${result.output}${worktreeNote}` : `Agent [${agentName}] completed task:
 
 Task: ${task}
 
@@ -463,7 +470,9 @@ Stats:
         } else {
           return {
             success: false,
-            error: `Agent [${agentName}] failed: ${result.error}${worktreeNote}`,
+            error: params.run_in_background === true
+              ? `${result.error}${worktreeNote}`
+              : `Agent [${agentName}] failed: ${result.error}${worktreeNote}`,
             output: result.output,
             metadata: {
               agentId,
@@ -496,7 +505,7 @@ Stats:
           treeId,
           parentRunId: context.runId,
           background: true,
-          completion: { title: agentName, kind: 'user_visible' },
+          completion: { title: completionTitle, kind: 'user_visible' },
           parentId: context.spawnParentAgentId,
           slotAcquired: true,
           scope: context.swarmRunScope,

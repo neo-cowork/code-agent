@@ -11,6 +11,9 @@ import { cleanupAgentWorktree, discardAgentWorktree } from '../agentWorktree';
 import { AgentFailureCode } from '../../../shared/contract/agentFailure';
 import { SUBAGENT_EXECUTION_TIMEOUTS } from '../../../shared/constants';
 import { getSubagentExecutionTimeout } from '../subagentExecutorCancellation';
+import { createLogger } from '../../services/infra/logger';
+
+const logger = createLogger('SpawnAgentForegroundBackground');
 
 export function resolveForegroundBlockingBudgetMs(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
@@ -128,6 +131,7 @@ export function adoptForegroundSubagent(options: {
   promise: Promise<SubagentResult>;
   agentId: string;
   agentName: string;
+  completionTitle: string;
   role: string | undefined;
   context: SubagentExecutionContext;
   treeId: string;
@@ -143,7 +147,7 @@ export function adoptForegroundSubagent(options: {
   const visibilityScope = resolveSingleSpawnRunScope(context, treeId, agentId);
   getBackgroundSubagentRegistry().adopt(promise, {
     agentId,
-    title: agentName,
+    title: options.completionTitle,
     completionKind: 'user_visible',
     sessionId: context.sessionId,
     ...(context.runId ? { runId: context.runId } : {}),
@@ -190,16 +194,53 @@ export function delegateSpawnAgentWorktreeCleanup(options: {
   worktreeInfo: { worktreePath: string; baseCommit: string };
   isFinalized: () => boolean;
   markFinalized: () => void;
+  /** 清理结果的人话注记（只含分支名，不含绝对路径），供后台完成通知带回父会话。 */
+  onSettled?: (worktreeNote: string) => void;
 }): void {
-  const { guard, agentId, repoPath, worktreeInfo, isFinalized, markFinalized } = options;
+  const { guard, agentId, repoPath, worktreeInfo, isFinalized, markFinalized, onSettled } = options;
   guard.onComplete(async (completedAgent) => {
     if (completedAgent.id !== agentId || isFinalized()) return;
     if (completedAgent.status === 'cancelled' || completedAgent.status === 'killed') {
       await discardAgentWorktree(agentId, worktreeInfo.worktreePath, repoPath);
-    } else {
-      await cleanupAgentWorktree(agentId, worktreeInfo.worktreePath, repoPath, worktreeInfo.baseCommit);
+      markFinalized();
+      onSettled?.('\n- Worktree: discarded after cancellation');
+      return;
     }
+    const cleanup = await cleanupAgentWorktree(agentId, worktreeInfo.worktreePath, repoPath, worktreeInfo.baseCommit);
     markFinalized();
+    onSettled?.(cleanup.hasChanges
+      ? `\n- Worktree: preserved (branch: ${cleanup.branchName}) — review and merge changes`
+      : '\n- Worktree: auto-cleaned (no changes)');
+  });
+}
+
+/**
+ * 后台完成通知要带上 worktree 结果：等委派的清理跑完，把分支注记并进子代理结果。
+ * 清理迟迟不回（或从未触发）时不无限挂住完成通知，超时后原样放行并留痕。
+ */
+export function withBackgroundWorktreeNote(
+  promise: Promise<SubagentResult>,
+  noteSettled: Promise<string>,
+  agentId: string,
+): Promise<SubagentResult> {
+  return promise.then(async (result) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const note = await Promise.race([
+      noteSettled,
+      new Promise<string>((resolve) => {
+        timer = setTimeout(() => resolve(''), SUBAGENT_EXECUTION_TIMEOUTS.BACKGROUND_WORKTREE_NOTE_WAIT);
+      }),
+    ]).finally(() => { if (timer) clearTimeout(timer); });
+    if (!note) {
+      logger.warn('Background worktree note unavailable; completion delivered without branch info', {
+        agentId,
+        reason: 'worktree_cleanup_not_settled',
+      });
+      return result;
+    }
+    return result.success
+      ? { ...result, output: `${result.output}${note}` }
+      : { ...result, error: `${result.error ?? ''}${note}` };
   });
 }
 

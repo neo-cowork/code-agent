@@ -171,7 +171,9 @@ describe('通知未送达/折叠的日志留痕', () => {
     vi.advanceTimersByTime(NOTIFICATION_BUDGET.WINDOW_MS);
     expect(infoCalls('Notification folded into digest')).toHaveLength(0);
     expect(mocks.broadcast.mock.calls).toHaveLength(1);
-    expect(infoCalls('Notification dropped')).toHaveLength(2);
+    // 退出不再是丢弃：两条暂存项已落盘，终态记「留待下次启动」（N-FIX-NOTIFY-DELIVERY-REPORT-MISSING-FU2-FU2）。
+    expect(infoCalls('Notification dropped')).toHaveLength(0);
+    expect(infoCalls('Notification persisted for next start')).toHaveLength(2);
   });
 });
 
@@ -203,10 +205,12 @@ describe('budget terminal trace through notifyTaskComplete', () => {
     const dispatched = infoCalls('Notification dispatched to renderer').map((call) => call[1]);
     const digests = infoCalls('Notification folded into digest').map((call) => call[1]);
     const dropped = infoCalls('Notification dropped').map((call) => call[1]);
+    const persisted = infoCalls('Notification persisted for next start').map((call) => call[1]);
     for (const id of ids) {
       const terminalCount = dispatched.filter((entry) => entry.notificationId === id).length
         + digests.filter((entry) => entry.heldNotificationIds.includes(id)).length
-        + dropped.filter((entry) => entry.notificationId === id).length;
+        + dropped.filter((entry) => entry.notificationId === id).length
+        + persisted.filter((entry) => entry.notificationId === id).length;
       expect(terminalCount, `terminal record for ${id}`).toBe(1);
     }
     expect(dispatched[0]).toEqual({
@@ -224,9 +228,13 @@ describe('budget terminal trace through notifyTaskComplete', () => {
       expect(dropped).toEqual([]);
     } else {
       expect(digests).toEqual([]);
-      expect(dropped).toEqual(ids.slice(1).map((notificationId) => ({
-        notificationId, reason: ending === 'clear' ? 'budget-cleared' : 'service-disposed',
-      })));
+      // 退出（dispose）不再是丢弃：暂存项已落盘，终态记「留待下次启动」；clear 仍是丢弃。
+      expect(dropped).toEqual(ending === 'clear'
+        ? ids.slice(1).map((notificationId) => ({ notificationId, reason: 'budget-cleared' }))
+        : []);
+      expect(persisted).toEqual(ending === 'clear'
+        ? []
+        : ids.slice(1).map((notificationId) => ({ notificationId, reason: 'service-disposed' })));
       expect(mocks.broadcast).toHaveBeenCalledTimes(1);
     }
     for (const [message, fields] of mocks.info.mock.calls) console.info(message, JSON.stringify(fields));

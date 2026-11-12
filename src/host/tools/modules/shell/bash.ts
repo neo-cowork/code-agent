@@ -16,7 +16,7 @@ import type {
 import { bashSchema as schema } from './bash.schema';
 import { BASH, OS_SANDBOX_CODES, SANDBOX_APPROVED_RM_STILL_DENIED_FAILURE_CODE } from '../../../../shared/constants';
 import { HostReasonCode, createHostReason } from '../../../../shared/contract/permission';
-import { BACKGROUND_TASK_MAX_RUNTIME, startBackgroundTask } from '../../shell/backgroundTasks';
+import { resolveBackgroundTaskName, startBackgroundTask } from '../../shell/backgroundTasks';
 import { handoverTimedOutCommand } from '../../shell/timeoutHandover';
 import { checkNoWaitCommand, clampToShortTier, exceededShortTierMessage, resolveForegroundTimeoutTier } from '../../shell/foregroundTier';
 import { runForegroundCommand } from './foregroundCommand';
@@ -509,7 +509,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           cwd: workingDirectory,
           cols,
           rows,
-          maxRuntime: !waitForCompletion && !shortTier ? (typeof args.timeout === 'number' && args.timeout > 0 ? args.timeout : BACKGROUND_TASK_MAX_RUNTIME) : timeout,
+          maxRuntime: !waitForCompletion && !shortTier ? (typeof args.timeout === 'number' && args.timeout > 0 ? args.timeout : BASH.BACKGROUND_MAX_RUNTIME) : timeout,
           sessionId: ctx.sessionId,
           toolCallId: ctx.currentToolCallId,
           env: childEnv.env,
@@ -518,7 +518,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           // secret vars would leak straight back in (ptyExecutor spreads
           // process.env UNDER the passed env) — so never inherit.
           inheritProcessEnv: false,
-          sandboxed: sandboxDecision.sandboxed,
+          sandboxed: sandboxDecision.sandboxed, displayName: resolveBackgroundTaskName(args.description, normalizedCommand),
           ...(sandboxCleanup ? { onExit: cleanupSandbox } : {}),
         });
       } catch (error) {
@@ -655,9 +655,9 @@ Use process_kill to terminate the session.`;
       }
       let result: ReturnType<typeof startBackgroundTask>;
       try {
-        result = startBackgroundTask(sandboxed.command, workingDirectory, shortTier ? timeout : (typeof args.timeout === 'number' && args.timeout > 0 ? args.timeout : BACKGROUND_TASK_MAX_RUNTIME), {
+        result = startBackgroundTask(sandboxed.command, workingDirectory, shortTier ? timeout : (typeof args.timeout === 'number' && args.timeout > 0 ? args.timeout : BASH.BACKGROUND_MAX_RUNTIME), {
           sessionId: ctx.sessionId,
-          toolCallId: ctx.currentToolCallId, ownerAgentId: ctx.agentId, displayCommand: normalizedCommand,
+          toolCallId: ctx.currentToolCallId, ownerAgentId: ctx.agentId, displayCommand: normalizedCommand, displayName: resolveBackgroundTaskName(args.description, normalizedCommand),
           env: childEnv.env,
           sandboxed: sandboxDecision.sandboxed,
           ...(sandboxCleanup ? { onExit: cleanupSandbox } : {}),
@@ -821,7 +821,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
             command: sandboxedCommand,
             cwd: workingDirectory,
             sessionId: ctx.sessionId,
-            toolCallId: ctx.currentToolCallId, ownerAgentId: ctx.agentId, displayCommand: normalizedCommand,
+            toolCallId: ctx.currentToolCallId, ownerAgentId: ctx.agentId, displayCommand: normalizedCommand, displayName: resolveBackgroundTaskName(args.description, normalizedCommand),
             sandboxed: sandboxDecision.sandboxed,
             onExit: cleanupSandbox,
             stdout,

@@ -1,3 +1,5 @@
+import { clearEnvResumeWaiter } from './envResumeWaiter';
+import { parkEnvBlockedRun, readEnvContinuationPlan, type DurableParkInput } from './envRunParking';
 import {
   createRunContext,
   createRunHandle,
@@ -59,10 +61,10 @@ import { armQuotaWaitOnPark, clearQuotaWaitTimer } from './quotaWaitTimer';
 import { resolveAdoptedRecoveryWorkspace } from './adoptedRecoveryWorkspace';
 import { createLogger } from '../services/infra/logger';
 
+import { settleParentRunTerminal } from './parentRunTerminalSettlement';
 const logger = createLogger('RunRegistry');
 
 const HEARTBEAT_TRANSIENT_RETRY_WINDOWS = 2;
-
 export class RunSessionConflictError extends Error {
   readonly code = 'RUN_SESSION_CONFLICT';
 
@@ -87,7 +89,6 @@ export interface ExternalDurableRunStart {
   handle: RunHandle;
   launchOperation: PendingOperation;
 }
-
 export class RunRegistry implements AgentTeamDurableParentHost {
   private readonly handlesByRunId = new Map<string, RunHandle>();
   private readonly runIdBySessionId = new Map<string, string>();
@@ -377,21 +378,25 @@ export class RunRegistry implements AgentTeamDurableParentHost {
           ...(input.autoResumeCount === undefined ? {} : { autoResumeCount: input.autoResumeCount }),
           ...(input.clearInterruptCause ? { clearInterruptCause: true } : {}),
           ...(input.quotaWaitDueAt !== undefined ? { quotaWaitDueAt: input.quotaWaitDueAt } : {}),
+          ...(input.envBlocked ? { envBlocked: input.envBlocked } : {}),
         }));
       }
+      if (input.status !== 'waiting') clearEnvResumeWaiter(runId);
       this.durableCheckpointStates.set(runId, input.state);
       return checkpoint;
     });
   }
 
-  async parkDurable(runId: string, input: { now?: number; reason?: 'user_stop' | 'quota_wait'; dueAt?: number } = {}, expected?: RunHandle): Promise<void> {
+  async parkDurable(runId: string, input: DurableParkInput = {}, expected?: RunHandle): Promise<void> {
     if (expected && this.handlesByRunId.get(runId) !== expected) throw new Error(`Durable Run park fenced by stale handle: ${runId}`);
+    clearEnvResumeWaiter(runId);
+    if (input.reason === 'env_blocked') { clearQuotaWaitTimer(runId); await parkEnvBlockedRun(this, runId, input); return; }
     const envelope = this.durableEnvelopes.get(runId); if (!envelope) throw new Error(`Durable Run ${runId} is not active`); const now = input.now ?? Date.now(); const cause = input.reason ?? 'user_stop'; if (cause !== 'quota_wait') clearQuotaWaitTimer(runId); const dueAt = cause === 'quota_wait' ? input.dueAt : undefined; await this.checkpointDurable(runId, { now, status: 'waiting', state: this.durableCheckpointStates.get(runId), engineCursor: envelope.cursor.engineCursor, pendingOperations: envelope.pendingOperations ?? [], childRuns: envelope.childRuns, interruptCause: cause, ...(dueAt !== undefined ? { quotaWaitDueAt: dueAt } : {}), events: [{ type: 'run_interrupted', payload: { cause, ...(dueAt !== undefined ? { dueAt } : {}) }, recordedAt: now }] }); if (dueAt !== undefined) armQuotaWaitOnPark({ runId, sessionId: envelope.sessionId, dueAt, now });
   }
 
   /** Reset the automatic restart budget when a user explicitly continues a parked run. */
   async resetDurableResumeBudget(runId: string, now = Date.now()): Promise<void> {
-    clearQuotaWaitTimer(runId); const envelope = this.durableEnvelopes.get(runId); if (!envelope) throw new Error(`Durable Run ${runId} is not active`);
+    clearEnvResumeWaiter(runId); clearQuotaWaitTimer(runId); const envelope = this.durableEnvelopes.get(runId); if (!envelope) throw new Error(`Durable Run ${runId} is not active`);
     await this.checkpointDurable(runId, { now, status: 'running', state: this.durableCheckpointStates.get(runId), engineCursor: envelope.cursor.engineCursor, pendingOperations: settleModelOpsForManualContinue(envelope.pendingOperations ?? [], now, envelope), childRuns: envelope.childRuns, clearInterruptCause: true, autoResumeCount: 0, events: [{ type: 'manual_resume_requested', payload: { sessionId: envelope.sessionId }, recordedAt: now }] });
   }
   async checkpointNativeModelOperation(input: {
@@ -650,13 +655,14 @@ export class RunRegistry implements AgentTeamDurableParentHost {
         attempt: live.attempt,
         owner: live.owner,
       });
-      this.durableOwners.delete(runId); clearQuotaWaitTimer(runId);
+      this.durableOwners.delete(runId); clearEnvResumeWaiter(runId); clearQuotaWaitTimer(runId);
       this.durableEnvelopes.delete(runId);
       this.durableCheckpointStates.delete(runId);
       this.stopHeartbeat(runId);
       this.endAttemptSpan(runId, input.status === 'completed' ? 'ok' : input.status === 'cancelled' ? 'cancelled' : 'error', {
         'terminal.status': input.status,
       });
+      await settleParentRunTerminal(envelope, childRunId => this.get(childRunId));
       this.unregister(runId, expected);
       return envelope;
     });
@@ -738,7 +744,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     if (!live) return false;
     const released = await this.requireKernel().release(runId, live.owner, now);
     if (released) {
-      this.durableOwners.delete(runId);
+      this.durableOwners.delete(runId); clearEnvResumeWaiter(runId);
       this.durableEnvelopes.delete(runId);
       this.durableCheckpointStates.delete(runId);
       this.stopHeartbeat(runId);
@@ -937,6 +943,8 @@ export class RunRegistry implements AgentTeamDurableParentHost {
 
   hasDurableOwner(runId: string): boolean { return this.durableOwners.has(runId); }
 
+  getDurableRehydrationPlan(runId: string): Promise<RunRehydrationPlan> { return readEnvContinuationPlan(this.requireKernel(), runId, this.requireDurableOwner(runId)); }
+
   getDurableCheckpointState(runId: string): unknown { return this.durableCheckpointStates.get(runId); }
 
   getDurableEnvelope(runId: string): RunEnvelope | undefined { const envelope = this.durableEnvelopes.get(runId); return envelope ? { ...envelope, cursor: { ...envelope.cursor } } : undefined; }
@@ -964,6 +972,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
   }
 
   clear(): void {
+    for (const runId of this.durableEnvelopes.keys()) clearEnvResumeWaiter(runId);
     for (const timer of this.heartbeatTimers.values()) clearInterval(timer);
     this.heartbeatTimers.clear();
     for (const runId of [...this.durableTraceContexts.keys()]) {
@@ -1041,7 +1050,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
 
   private async standDownDurableRun(runId: string): Promise<void> {
     const handle = this.handlesByRunId.get(runId);
-    this.stopHeartbeat(runId);
+    this.stopHeartbeat(runId); clearEnvResumeWaiter(runId);
     this.durableOwners.delete(runId); this.durableEnvelopes.delete(runId);
     this.durableCheckpointStates.delete(runId);
     this.endAttemptSpan(runId, 'error', { 'terminal.status': 'stale_owner' });
