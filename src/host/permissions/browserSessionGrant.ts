@@ -49,11 +49,14 @@ export async function resolveBrowserSessionGrant(
   return { target, previousOrigins };
 }
 
-/** Consume only the host-carried string; never resolve a site again while answering. */
+/** Consume only the host-carried string; never resolve a site again while answering.
+ * The card's tier button is main's run option ("到这次做完为止" slot); for browser
+ * cards its copy is the per-site session label. allow_session stays accepted for
+ * companion/legacy answer surfaces. Any other browser answer mints nothing. */
 export function recordBrowserSessionGrant(response: PermissionResponse, request: PermissionRequest): boolean {
   if (!['Browser', 'browser_action', 'browser_navigate'].includes(request.tool)) return false;
   const target = request.details.browserSessionGrant?.target;
-  if (response === 'allow_session' && request.sessionId && target && !request.forceConfirm) {
+  if ((response === 'allow_run' || response === 'allow_session') && request.sessionId && target && !request.forceConfirm) {
     mintToolSessionGrant(request.sessionId, request.tool, target);
   }
   return true;

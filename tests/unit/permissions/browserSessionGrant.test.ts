@@ -49,7 +49,7 @@ describe('browser session grant production execution → human answer → pre-as
         if (event.type !== 'permission_request') return;
         const request = event.data as PermissionRequest;
         requests.push(request);
-        island.handlePermissionResponse(request.id, 'allow_session');
+        island.handlePermissionResponse(request.id, 'allow_run');
       },
     });
     executor = new ToolExecutor({ workingDirectory: '/tmp/reports', requestPermission: (r) => island.requestPermission(r) });
@@ -111,6 +111,36 @@ describe('browser session grant production execution → human answer → pre-as
     expect(requests[1].details.browserSessionGrant).toEqual({ target: 'wait_for_download@https://b.example', previousOrigins: ['https://a.example'] });
     await call(); expect(requests).toHaveLength(2);
     await call('handle_dialog'); expect(requests).toHaveLength(3);
+  });
+
+  it('a legacy allow_session answer mints the same per-site grant; allow_24h never widens a browser action', async () => {
+    const mint = vi.spyOn(toolGrants, 'mintToolSessionGrant');
+    const runMint = vi.spyOn(toolGrants, 'mintToolRunGrant');
+    const mintedIds: string[] = [];
+    const island = new OrchestratorPermissionIsland({
+      injectedPendingApprovalRepo: new PendingApprovalRepository(db),
+      getSettings: () => settings, isDevModeAutoApproveEnabled: () => false,
+      getExecutionTopology: () => 'main', hasApprovalUi: () => true,
+      onEvent: (event) => {
+        if (event.type === 'permission_request') mintedIds.push((event.data as PermissionRequest).id);
+      },
+    });
+    const ask = async (response: 'allow_session' | 'allow_24h') => {
+      const pending = island.requestPermission({
+        tool: 'Browser', type: 'command', sessionId: options.sessionId,
+        details: { action: 'wait_for_download', browserSessionGrant: { target: 'wait_for_download@https://a.example', previousOrigins: [] } },
+      });
+      island.handlePermissionResponse(mintedIds.at(-1)!, response);
+      await pending;
+    };
+    await ask('allow_session');
+    await ask('allow_24h');
+    expect(mint).toHaveBeenCalledTimes(1);
+    expect(mint).toHaveBeenCalledWith(options.sessionId, 'Browser', 'wait_for_download@https://a.example');
+    expect(runMint).not.toHaveBeenCalled();
+    expect(listToolGrants()).toEqual([
+      { tier: 'session', tool: 'Browser', target: 'wait_for_download@https://a.example', sessionId: options.sessionId, grantedAt: expect.any(Number), expiresAt: null },
+    ]);
   });
 
   it('an outer human or session grant covers only the same action inner approval; unrelated inner gates still ask', async () => {

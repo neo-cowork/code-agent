@@ -68,9 +68,10 @@ describe('browser session card', () => {
     expect(reason.textContent).toContain('http://127.0.0.1:8123');
     expect(container.textContent).not.toContain('wait_for_download');
     expect(container.textContent).not.toContain('Browser');
-    expect(screen.queryByRole('button', { name: /始终允许|Always allow/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /始终允许|Always allow|24 小时内允许|Allow for 24 hours/ })).toBeNull();
     expect(memory.check).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: /本次对话允许|Allow for this session/ }));
     expect(memory.save).not.toHaveBeenCalled();
+    expect(ipcInvoke).toHaveBeenCalledWith('agent:permission-response', `browser-${language}`, 'allow_run', undefined);
   });
 });
