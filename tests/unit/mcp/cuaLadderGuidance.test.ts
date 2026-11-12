@@ -85,6 +85,12 @@ describe('cua screen ladder tool suffix (N-CUA-SCREEN-GUARDS-LADDER)', () => {
     }
   });
 
+  it('suffix covers GUI scripting and exempts pure Apple Events data access within budget', () => {
+    expect(CUA_SCREEN_LADDER_TOOL_SUFFIX).toContain('Before first GUI control (including osascript)');
+    expect(CUA_SCREEN_LADDER_TOOL_SUFFIX).toContain('pure Apple Events data access is exempt');
+    expect(CUA_SCREEN_LADDER_TOOL_SUFFIX.split(/\s+/u).length).toBeLessThanOrEqual(35);
+  });
+
   it('V2 computer_use description carries the same ladder sentence', () => {
     expect(cuaStatefulComputerUseSchema.description).toContain(CUA_SCREEN_LADDER_TOOL_SUFFIX);
   });

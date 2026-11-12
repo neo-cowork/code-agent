@@ -332,7 +332,7 @@ describe('foreground task-result wake', () => {
     expect(recordWakeFailureNote).toHaveBeenCalledWith(
       'session-a',
       expect.stringContaining('任务结果'),
-      { taskId: 'task-1', reason: 'wake_failed' },
+      { taskId: 'task-1', reason: 'turn_error' },
     );
   });
 
@@ -364,7 +364,7 @@ describe('foreground task-result wake', () => {
     expect(recordWakeFailureNote).toHaveBeenCalledWith(
       'session-a',
       expect.stringContaining('任务结果'),
-      { taskId: 'task-1', reason: 'wake_failed' },
+      { taskId: 'task-1', reason: 'turn_error' },
     );
   });
 
