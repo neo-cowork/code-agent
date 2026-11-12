@@ -249,6 +249,10 @@ export const BROWSER_TIMEOUTS = {
    * 防止进程崩溃后 binding 永不释放而租约永远不过期。
    */
   LEASE_IN_USE_CEILING: 4 * 60 * 60_000,
+  /** Chrome 父进程看门狗：探测 Neo 服务进程是否还活着的间隔（秒，传给 sh sleep） */
+  PARENT_WATCHDOG_POLL_SEC: 2,
+  /** Chrome 父进程看门狗：SIGTERM 之后到 SIGKILL 残留进程的宽限（秒） */
+  PARENT_WATCHDOG_KILL_GRACE_SEC: 2,
 } as const;
 
 /** artifact_runnable 断言家族超时（浏览器类走 GAME_VALIDATION_TIMEOUTS / ARTIFACT_PREVIEW_HEALTH） */
