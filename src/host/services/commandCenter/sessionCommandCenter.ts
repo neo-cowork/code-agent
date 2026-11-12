@@ -17,10 +17,15 @@ import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
 import { createForegroundWake } from './foregroundWake';
 import { BackgroundShellHold } from './backgroundShellHold';
 import {
-  buildSessionTaskResultMessage,
   clearSessionCommandTaskMarker,
   markSessionCommandTaskRunning,
+  settleSessionCommandTaskMarkerForDeferredProjection,
 } from './sessionCommandTaskRestartRecovery';
+import {
+  deferTerminalResultProjectionUntilAccessible,
+  projectTerminalResult,
+} from './terminalResultProjection';
+import { isSessionNotAccessibleError } from './sessionAccessRetry';
 import { getConfigService } from '../core/configService';
 import {
   formatSessionCommandTaskIdleFailure,
@@ -776,21 +781,44 @@ export class SessionCommandCenter {
     // reused，重试静默失效。正是这条改动要消灭的形态，只是窗口更窄。
     const startable = this.ledger(task.sessionId).settle(task.id, status);
 
+    // 投影与唤醒各用各的 try：投影失败（登录恢复窗口里 addMessageToSession 抛
+    // Session not found）绝不能把唤醒一起跳过——旧代码两者同一个 try，一抛就只剩
+    // 一行 warn，结果行/唤醒/失败句全丢。settle 也只等投影的首次尝试，重试全部
+    // 离线进行，不推迟下面 startable 的下一轮 launch。
     try {
       await this.projectTerminalResult(task, status);
-      void this.wakeForegroundBrain(task, status).catch((error) => {
-        logger.warn('Failed to wake text foreground brain after task settlement', {
-          taskId: task.id,
-          message: error instanceof Error ? error.message : String(error),
-        });
-      });
+      clearSessionCommandTaskMarker(task.id);
     } catch (error) {
       logger.warn('Failed to project text command task result', {
+        reason: 'terminal_projection_failed',
+        sessionId: task.sessionId,
         taskId: task.id,
         message: error instanceof Error ? error.message : String(error),
       });
+      if (isSessionNotAccessibleError(error)) {
+        // running 标记先补终态快照再保留：重试窗口内宿主再崩，下次启动按真实结局补投结果，
+        // 不会把已 settle 的任务当中断改写成 failed（Rework r1）。
+        // 重试写成/致命失败时清标记；耗尽时保留——下次启动还能补投一次真实结果。
+        settleSessionCommandTaskMarkerForDeferredProjection({ ...task, status });
+        deferTerminalResultProjectionUntilAccessible({
+          task,
+          status,
+          write: (deferredTask, deferredStatus) => this.projectTerminalResult(deferredTask, deferredStatus),
+          onSettled: (outcome) => {
+            if (outcome === 'exhausted') return;
+            clearSessionCommandTaskMarker(task.id);
+          },
+        });
+      } else {
+        clearSessionCommandTaskMarker(task.id);
+      }
     }
-    clearSessionCommandTaskMarker(task.id);
+    void Promise.resolve(this.wakeForegroundBrain(task, status)).catch((error) => {
+      logger.warn('Failed to wake text foreground brain after task settlement', {
+        taskId: task.id,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    });
 
     for (const slot of startable) {
       const next = this.tasks(task.sessionId).get(slot.workItemId);
@@ -867,19 +895,6 @@ export class SessionCommandCenter {
       .at(-1);
     return previous?.id;
   }
-}
-
-async function projectTerminalResult(
-  task: SessionCommandTask,
-  status: TerminalTaskStatus,
-): Promise<void> {
-  // 模型读的是 resultText（1500 封顶带截断标记），不是 240 字 summary；
-  // backgroundTaskResult.metadata 的 reader 只取 taskId/artifacts，不拿它当 UI 文案。
-  const resultText = task.resultText ?? task.summary;
-  await getSessionManager().addMessageToSession(
-    task.sessionId,
-    buildSessionTaskResultMessage(task, status, resultText),
-  );
 }
 
 let singleton: SessionCommandCenter | null = null;
