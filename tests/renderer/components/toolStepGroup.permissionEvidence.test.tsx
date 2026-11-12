@@ -16,8 +16,8 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { zh } = await import('../../../src/renderer/i18n/zh');
   return { useI18n: () => ({ t: zh, language: 'zh' }) };
 });
-vi.mock('../../../src/renderer/stores/appStore', () => ({
-  useAppStore: (selector: (value: Record<string, unknown>) => unknown) => selector({
+vi.mock('../../../src/renderer/stores/appStore', () => {
+  const useAppStore = (selector: (value: Record<string, unknown>) => unknown) => selector({
     resolvedPermissionRequests: { 'session-1': state.resolved },
     pendingPermissionRequest: state.pending,
     pendingPermissionSessionId: state.pending ? 'session-1' : null,
@@ -26,8 +26,9 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
     processingSessionIds: new Set<string>(),
     openPreview: vi.fn(),
     openSettingsTab: vi.fn(),
-  }),
-}));
+  });
+  return { useAppStore: Object.assign(useAppStore, { getState: () => useAppStore((value) => value) }) };
+});
 vi.mock('../../../src/renderer/stores/messageActionStore', () => ({
   useMessageActionStore: (selector: (value: { sendPrompt: typeof state.sendPrompt }) => unknown) => selector({
     sendPrompt: state.sendPrompt,

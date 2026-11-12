@@ -17,14 +17,15 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
 });
 
 // ToolDetails 依赖 appStore 的两个 selector，mock 掉即可（同 toolStepGroup.failCollapse.test.tsx）。
-vi.mock('../../../src/renderer/stores/appStore', () => ({
-  useAppStore: (selector: (state: unknown) => unknown) =>
+vi.mock('../../../src/renderer/stores/appStore', () => {
+  const useAppStore = (selector: (state: unknown) => unknown) =>
     selector({
       openPreview: vi.fn(),
       openSettingsTab: vi.fn(),
       processingSessionIds: new Set(),
-    }),
-}));
+    });
+  return { useAppStore: Object.assign(useAppStore, { getState: () => useAppStore((state) => state) }) };
+});
 
 afterEach(() => {
   cleanup();

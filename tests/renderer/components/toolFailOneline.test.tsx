@@ -11,8 +11,8 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   return { useI18n: () => ({ t: copy, language: 'zh' }) };
 });
 
-vi.mock('../../../src/renderer/stores/appStore', () => ({
-  useAppStore: (selector: (state: {
+vi.mock('../../../src/renderer/stores/appStore', () => {
+  const useAppStore = (selector: (state: {
     processingSessionIds: Set<string>;
     openPreview: () => void;
     pendingPermissionRequest: null;
@@ -24,8 +24,9 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
     pendingPermissionRequest: null,
     pendingPermissionSessionId: null,
     queuedPermissionRequests: [],
-  }),
-}));
+  });
+  return { useAppStore: Object.assign(useAppStore, { getState: () => useAppStore((state) => state) }) };
+});
 
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
   useSessionStore: (selector: (state: { currentSessionId: string }) => unknown) => (

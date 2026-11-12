@@ -20,7 +20,7 @@ vi.mock('../../../src/renderer/stores/appStore', () => {
   };
   return {
     __mockAppState: state,
-    useAppStore: (selector?: (value: typeof state) => unknown) => selector ? selector(state) : state,
+    useAppStore: Object.assign((selector?: (value: typeof state) => unknown) => selector ? selector(state) : state, { getState: () => state }),
   };
 });
 

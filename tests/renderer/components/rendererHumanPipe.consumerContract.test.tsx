@@ -10,13 +10,14 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   return { useI18n: () => ({ t: zh, language: 'zh' }) };
 });
 
-vi.mock('../../../src/renderer/stores/appStore', () => ({
-  useAppStore: (selector: (state: unknown) => unknown) => selector({
+vi.mock('../../../src/renderer/stores/appStore', () => {
+  const useAppStore = (selector: (state: unknown) => unknown) => selector({
     resolvedPermissionRequests: {},
     openPreview: vi.fn(),
     openSettingsTab: vi.fn(),
-  }),
-}));
+  });
+  return { useAppStore: Object.assign(useAppStore, { getState: () => useAppStore((state) => state) }) };
+});
 
 vi.mock('../../../src/renderer/stores/messageActionStore', () => ({
   useMessageActionStore: (selector: (state: unknown) => unknown) => selector({ sendPrompt: vi.fn() }),

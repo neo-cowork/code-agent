@@ -17,9 +17,9 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   return { useI18n: () => ({ t: zh, language: 'zh' }) };
 });
 vi.mock('../../../src/renderer/stores/appStore', () => ({
-  useAppStore: (selector?: (state: typeof appState) => unknown) => (
+  useAppStore: Object.assign((selector?: (state: typeof appState) => unknown) => (
     selector ? selector(appState) : appState
-  ),
+  ), { getState: () => appState }),
 }));
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
   useSessionStore: (selector: (state: { currentSessionId: string | null }) => unknown) => (

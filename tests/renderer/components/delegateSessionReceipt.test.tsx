@@ -14,7 +14,10 @@ vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: moc
 vi.mock('../../../src/renderer/hooks/useAgentTreeSnapshot', () => ({ useAgentTreeSnapshot: (...args: unknown[]) => { mocks.tree(...args); return { snapshot: null }; } }));
 vi.mock('../../../src/renderer/stores/backgroundTaskStore', () => ({ useBackgroundTaskStore: (select: (s: unknown) => unknown) => select({ tasks: [] }) }));
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({ useSessionStore: (select: (s: unknown) => unknown) => select({ currentSessionId: 'session' }) }));
-vi.mock('../../../src/renderer/stores/appStore', () => ({ useAppStore: (select: (s: unknown) => unknown) => select({ processingSessionIds: new Set(), queuedPermissionRequests: {}, pendingPermissionRequest: null }) }));
+vi.mock('../../../src/renderer/stores/appStore', () => {
+  const useAppStore = (select: (s: unknown) => unknown) => select({ processingSessionIds: new Set(), queuedPermissionRequests: {}, pendingPermissionRequest: null });
+  return { useAppStore: Object.assign(useAppStore, { getState: () => useAppStore((s) => s) }) };
+});
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 const secret = 'delegation_private-fixture';
 function tool(payload: Record<string, unknown>, action = 'delegate_existing'): ToolCall {
