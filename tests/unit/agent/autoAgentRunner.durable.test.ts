@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const coordinatorState = vi.hoisted(() => ({ execute: vi.fn() }));
 const factoryState = vi.hoisted(() => ({ create: vi.fn() }));
@@ -22,10 +22,12 @@ vi.mock('../../../src/host/agent/dynamicAgentFactory', () => ({
 vi.mock('../../../src/host/agent/agentRequirementsAnalyzer', () => ({
   getAgentRequirementsAnalyzer: () => ({ analyze: vi.fn() }),
 }));
-vi.mock('../../../src/host/agent/autoAgentDurableRuntime', () => ({
+vi.mock('../../../src/host/agent/autoAgentDurableRuntime', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../src/host/agent/autoAgentDurableRuntime')>(),
   getAutoAgentDurableRuntime: () => ({ start: durableState.start }),
 }));
-vi.mock('../../../src/host/telemetry/runTraceContext', () => ({
+vi.mock('../../../src/host/telemetry/runTraceContext', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../src/host/telemetry/runTraceContext')>(),
   getActiveRunTraceContext: () => ({ runId: 'run-parent' }),
 }));
 vi.mock('../../../src/host/services', () => ({
@@ -38,6 +40,12 @@ vi.mock('../../../src/host/scheduler/dagEventBridge', () => ({ sendDAGInitEvent:
 vi.mock('../../../src/host/tools/dispatch/toolResolver', () => ({
   getToolResolver: () => ({ name: 'mock-tool-resolver' }),
 }));
+
+vi.unmock('better-sqlite3');
+import Database from 'better-sqlite3';
+import { getApplicationRunRegistry, resetApplicationRunRegistryForTests } from '../../../src/host/app/applicationRunRegistry';
+import { DurableRunKernel } from '../../../src/host/runtime/durableRunKernel';
+import { DurableRunRepository } from '../../../src/host/services/core/repositories/DurableRunRepository';
 
 import { runAutoAgentMode } from '../../../src/host/agent/orchestrator/autoAgentRunner';
 
@@ -59,6 +67,7 @@ function makeTaskListManager() {
 
 function makeDeps() {
   return {
+    requestPermission: vi.fn(async () => false),
     workingDirectory: '/tmp/project',
     sessionId: 'session-auto-1',
     sourceMessageId: 'message-auto-1',
@@ -70,12 +79,12 @@ function makeDeps() {
   };
 }
 
-function run(deps: ReturnType<typeof makeDeps>) {
+function run(deps: ReturnType<typeof makeDeps>, onEvent = vi.fn()) {
   return runAutoAgentMode(
     'do the work',
     'do the work with context',
     { taskType: 'work', executionStrategy: 'sequential', confidence: 0.9 } as never,
-    vi.fn(),
+    onEvent,
     { provider: 'mock', model: 'mock-model' } as never,
     deps,
     'session-auto-1',
@@ -83,8 +92,22 @@ function run(deps: ReturnType<typeof makeDeps>) {
 }
 
 describe('runAutoAgentMode durable terminal containment', () => {
-  beforeEach(() => {
+  let db: Database.Database;
+  afterEach(() => {
+    resetApplicationRunRegistryForTests();
+    db.close();
+  });
+  beforeEach(async () => {
     vi.clearAllMocks();
+    db = new Database(':memory:');
+    db.pragma('foreign_keys = ON');
+    const repository = new DurableRunRepository(db);
+    repository.migrate();
+    const registry = getApplicationRunRegistry();
+    registry.configureDurableKernel(new DurableRunKernel({
+      stores: repository, ownerId: 'host', processInstanceId: 'terminal-test', leaseDurationMs: 60_000,
+    }));
+    await registry.startDurable({ runId: 'run-parent', sessionId: 'session-auto-1', workspace: '/tmp/project' });
     factoryState.create.mockReturnValue([{
       id: 'agent-worker',
       name: 'Worker',
@@ -139,6 +162,66 @@ describe('runAutoAgentMode durable terminal containment', () => {
       'Auto Agent durable terminal projection failed; preserving successful graph result',
       { runId: 'auto-child', reason: 'other', error: 'disk full' },
     );
+  });
+
+
+  it.each([
+    { output: '## 主 Agent (综合处理)\n\nSubagent completed without output', success: true, failedChild: false, reason: 'empty_output' },
+    { output: '   ', success: true, failedChild: false, reason: 'empty_output' },
+    { output: '部分完成的内容', success: false, failedChild: false, reason: 'agent_failed' },
+    { output: '部分完成的内容', success: true, failedChild: true, reason: 'agent_failed' },
+  ])('signals unavailable report without publishing it: $reason / $output', async ({ output, success, failedChild, reason }) => {
+    coordinatorState.execute.mockResolvedValue({
+      success, strategy: 'sequential',
+      results: failedChild ? [{ agentId: 'failed-child', agentName: 'Worker', status: 'failed', result: { success: false, output: 'retry exhausted' } }] : [],
+      aggregatedOutput: output, totalDuration: 1, totalIterations: 1, totalCost: 0, errors: [],
+    });
+    const deps = makeDeps();
+    const onEvent = vi.fn();
+
+    await expect(run(deps, onEvent)).resolves.toBeUndefined();
+
+    expect(deps.addMessage).not.toHaveBeenCalled();
+    expect(sessionManagerState.addMessageToSession).not.toHaveBeenCalled();
+    expect(onEvent.mock.calls.filter(([event]) => event.type === 'message')).toEqual([]);
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'error',
+      data: { message: 'AUTO_AGENT_REPORT_UNAVAILABLE', details: { reason } },
+    });
+    expect(loggerState.warn).toHaveBeenCalledWith('Auto Agent report unavailable', { sessionId: 'session-auto-1', reason });
+  });
+
+  it('publishes the usable sections when one child failed and one has real output', async () => {
+    coordinatorState.execute.mockResolvedValue({
+      success: true, strategy: 'parallel',
+      results: [
+        { agentId: 'a', agentName: 'Worker', status: 'failed', result: { success: false, output: 'retry exhausted' } },
+        { agentId: 'b', agentName: 'Reader', status: 'completed', result: { success: true, output: '已完成的摘要' } },
+        { agentId: 'c', agentName: 'Empty', status: 'completed', result: { success: true, output: 'Subagent completed without output' } },
+      ],
+      aggregatedOutput: '## Worker\n\nretry exhausted\n\n---\n\n## Reader\n\n已完成的摘要\n\n---\n\n## Empty\n\nSubagent completed without output',
+      totalDuration: 1, totalIterations: 1, totalCost: 0, errors: [],
+    });
+    const deps = makeDeps();
+    const onEvent = vi.fn();
+
+    await expect(run(deps, onEvent)).resolves.toBeUndefined();
+
+    expect(deps.addMessage).toHaveBeenCalledWith(expect.objectContaining({ content: '## Reader\n\n已完成的摘要' }));
+    expect(onEvent.mock.calls.filter(([event]) => event.type === 'error')).toEqual([]);
+  });
+
+  it('drops only the placeholder section of an aggregated report without per-agent results', async () => {
+    coordinatorState.execute.mockResolvedValue({
+      success: true, strategy: 'parallel', results: [],
+      aggregatedOutput: '## A\n\n真实内容\n\n---\n\n## B\n\nSubagent completed without output',
+      totalDuration: 1, totalIterations: 1, totalCost: 0, errors: [],
+    });
+    const deps = makeDeps();
+
+    await run(deps);
+
+    expect(deps.addMessage).toHaveBeenCalledWith(expect.objectContaining({ content: '## A\n\n真实内容' }));
   });
 
   it('still propagates a real graph failure', async () => {

@@ -61,4 +61,13 @@ describe('getHumanToolLabel', () => {
 
     expect(missing, `连接器工具缺少人话标签：${missing.join(', ')}`).toEqual([]);
   });
+
+  it('Bash/Write/Edit 不进共享映射：审批记录靠 connectorLabel !== request.tool 去重前缀', () => {
+    for (const toolName of ['Bash', 'Write', 'Edit']) {
+      expect(getHumanToolLabel({
+        toolName,
+        labels: zh.receiptPresentation.humanToolLabels,
+      })).toBe(toolName);
+    }
+  });
 });

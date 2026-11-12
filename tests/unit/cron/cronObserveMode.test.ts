@@ -161,20 +161,26 @@ describe('② 观察档的通道结果回复：零发送 + 一条 would_act', ()
     const body = '好的，周五下午三点开会，我来订会议室。'
       + '<cron_event_decision id="om_1" action="act">有人问会议时间</cron_event_decision>';
 
-    const outcome = await deliverCronResultToChannel(definition, body, new Map(), 'run-obs-1', {
+    const observedRun: import('../../../src/shared/contract/cron').CronJobExecution = {
+      id: 'run-obs-1', jobId: definition.id, runsOn: 'local', status: 'completed', scheduledAt: 1, retryAttempt: 0,
+    };
+    const outcome = await deliverCronResultToChannel(definition, body, new Map([[definition.id, [observedRun]]]), 'run-obs-1', {
       getLatestDefinition: () => definition,
       persistAction: vi.fn(),
     });
 
     expect(channelState.sendMessage).not.toHaveBeenCalled();
     expect(channelState.getAllAccounts).not.toHaveBeenCalled();
-    expect(outcome).toEqual({ delivered: false, observed: true });
+    expect(outcome).toEqual({ delivered: false, observed: true, note: 'observe-mode' });
+    expect(observedRun).toMatchObject({ pushNote: 'observe-mode', status: 'completed' });
+    expect(observedRun.error).toBeUndefined();
     const rows = loadCronEventDecisions(definition.id);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       kind: 'action',
       decision: 'would_act',
       tool: 'channel_reply',
+      reason: 'outbound action channel_reply intercepted in observe mode',
       target: 'feishu:oc_group',
       runId: 'run-obs-1',
       // 逐事件决策标签不进「本会发出」的正文

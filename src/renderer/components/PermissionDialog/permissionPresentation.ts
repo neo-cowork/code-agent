@@ -76,6 +76,14 @@ export function isDangerousRequestShape(request: PermissionRequest): boolean {
     || (request.type === 'command' && isDangerousCommand(request.details.command));
 }
 
+export function isGenericCommandRequest(request: PermissionRequest): boolean {
+  return request.type === 'command'
+    && request.tool.trim().toLowerCase() !== 'bash'
+    // App-specific consent keeps its existing force-confirm command warning.
+    && !request.details.targetApp?.name
+    && !request.details.command;
+}
+
 export function defaultPermissionViewMode(request: PermissionRequest): DecisionCardViewMode {
   if (request.details.browserSessionGrant) return 'expanded';
   if (request.rawArgs || isOutsideWorkspace(request) || isSafeDefaultDeny(request)) return 'expanded';
@@ -92,6 +100,7 @@ export function permissionSummary(request: PermissionRequest, t: Translations, l
     .replace('{site}', browser.target?.slice(browser.target.indexOf('@') + 1) ?? copy.unknownSite);
 
   const p = t.decisionCard.permission;
+  if (isGenericCommandRequest(request)) return p.genericApprovalQuestion;
   const target = fileTarget(request);
   const compactTarget = target ? compactFileTarget(target) : undefined;
   const qualifier = isOutsideWorkspace(request) ? `（${p.workspaceOutside}）` : '';
@@ -151,6 +160,7 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
     return undefined;
   }
   const p = t.decisionCard.permission;
+  if (isGenericCommandRequest(request)) return p.genericApprovalDescription;
   const commandDeleteTarget = request.details.command?.match(/\brm\s+(?:(?:-[^\s]+|--[^\s]+)\s+)*(?:"([^"]+)"|'([^']+)'|([^\s;&|]+))/u);
   const target = request.details.affectedPath
     || fileTarget(request)

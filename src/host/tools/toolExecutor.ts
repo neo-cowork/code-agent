@@ -1,3 +1,4 @@
+import { EnvBlockedError } from '../permissions/envAssist/EnvBlockedError';
 import { isEmergencyStopActive } from '../security/emergencyStop';
 import { emergencyStopMessage } from '../../shared/i18n/emergencyStop';
 import { getLocale } from '../platform/appPaths';
@@ -31,6 +32,7 @@ import {
 } from '../permissions/cuaSensitiveStep';
 import { resolveBrowserSessionGrant, stripBrowserGrantFields } from '../permissions/browserSessionGrant';
 import { resolvePreAskGrant } from '../permissions/preAskGrant';
+import { requiresScheduleWriteGrant } from '../cron/cronWriteGrant';
 import { createLogger } from '../services/infra/logger';
 import { getAuditLogger, maskSensitiveData, isKnownSafeCommand, validateCommand, getShellSafetyMode, getExecPolicyStore, getPolicyEnforcer, type PolicyEnforcer, type PolicyCheckResult, type ValidationResult } from '../security';
 import { evaluateToolSlotDataDirAccess, FOREIGN_SLOT_DATA_DIR_CODE, type SlotDataDirAccess } from '../security/slotDataDirGuard';
@@ -49,6 +51,7 @@ import type { NeoTagRunContext } from '../../shared/contract/tag';
 import type { SwarmRunScope } from '../../shared/contract/swarm';
 import { createTraceBuilder } from '../security/decisionTraceBuilder';
 import { denyConcreteShellWritePath } from './shell/writePathPolicyDeny';
+import { approvedSingleFileRmGrantForToolApproval } from './shell/approvedRmGrant';
 import { getPluginIdForTool, getPluginOriginForTool } from '../plugins/pluginToolOrigin';
 import { getWriteIsolationManager, getWriteIsolationScope, type WriteIsolationMetadata } from '../security/writeIsolation';
 import type { HookManager } from '../hooks/hookManager';
@@ -828,12 +831,14 @@ export class ToolExecutor {
 
     // Subagent 收缩闸：subagent 调用必须先过工具白名单 + 收缩策略。
     // 策略只能收紧不能放宽——'deny' 直接拒，'ask' 继续走下面的常规管道。
+    let subagentForcesConfirmation = false;
     if (options.subagentPolicy) {
       if (!options.subagentPolicy.allowedTools.has(executionToolName)) {
         logger.warn('Tool not in subagent allowlist', { toolName: executionToolName });
         return { success: false, error: `Tool not allowed for subagent: ${executionToolName}` };
       }
-      const subagentDenial = evaluateSubagentPolicyDenial(options.subagentPolicy, executionToolName, params);
+      const { denial: subagentDenial, forceConfirm } = evaluateSubagentPolicyDenial(options.subagentPolicy, executionToolName, params);
+      subagentForcesConfirmation = forceConfirm;
       if (subagentDenial) {
         logger.warn(subagentDenial.error, { toolName: executionToolName, policy: subagentDenial.policyName, reason: subagentDenial.reason });
         recordDecision(executionToolName, params, 'policy-deny', subagentDenial.reason, Date.now(), undefined, effectiveSessionId, this.ledgerOrigin);
@@ -1314,13 +1319,15 @@ export class ToolExecutor {
       // 直接交富对象会让 `if (!approved)` 那类调用点把 `{approved:false}` 恒真成静默 fail-open。
       // N-SANDBOX-ESCALATE-APPROVAL-LEDGER：内层 ask 也要落权限账本（外层 ask 在下方权限闸
       // 已记，#1664 只修了外层）；ask 抛错时不落账、原样上抛，行为与改动前一致。
+      permissionAskResults: new WeakMap(),
       requestPermission: async (request) => {
         if (browserApprovedAction && browserApprovedAction === request.tool && request.details?.action === params.action) return true;
         beginApprovalWait(options.currentToolCallId, effectiveSessionId);
         try {
           const askStartedAt = Date.now();
           const ask = normalizePermissionAskResult(await this.requestPermission(request));
-          recordInToolPermissionAsk(
+          context.permissionAskResults?.set(request, ask);
+          if (!request.ledgerRecordedByChild) recordInToolPermissionAsk(
             request, ask, askStartedAt, effectiveSessionId, this.ledgerOrigin,
             getApprovalWaitMs(options.currentToolCallId, Date.now()),
           );
@@ -1513,7 +1520,7 @@ export class ToolExecutor {
     }
 
     // Policy tools.always_confirm: 强制走用户审批，无视预授权/安全白名单/classifier 放行
-    const policyForcesConfirmation = policyEnforcer?.requiresConfirmation(executionToolName) ?? false;
+    const policyForcesConfirmation = subagentForcesConfirmation || (policyEnforcer?.requiresConfirmation(executionToolName) ?? false);
 
     // GAP-001: Skill allowed-tools 限权边界 — 边界外的工具调用强制用户审批。
     // 对所有 skill 来源生效（user/project skill 不能扩权，但它声明的边界必须被尊重）。
@@ -1732,8 +1739,10 @@ export class ToolExecutor {
     }
 
     // Check permission if required
+    const scheduleWriteGrantRequired = await requiresScheduleWriteGrant(this.buildPermissionRequest(toolDef, params), effectiveSessionId, this.executionCwd, this.writeWorkspaceRoot);
     // Skill 系统：预授权工具跳过普通权限检查（但不能跳过边界违规或 consequence hard deny）
     const isPreApproved = !boundaryViolation
+      && !scheduleWriteGrantRequired
       && !guardFabricForcesApproval
       && !protectedWriteForcesConfirmation
       && !peerOriginForcesConfirmation
@@ -1803,7 +1812,6 @@ export class ToolExecutor {
         }
       }
     }
-
     if ((toolDef.requiresPermission || readArgumentForcesClassification || cuaAppGrantForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk) && (commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || protectedWriteForcesConfirmation || policyForcesConfirmation || unresolvedWriteTargetForcesAsk || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk || (!isPreApproved && !isSafeCommand))) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
@@ -1916,6 +1924,7 @@ export class ToolExecutor {
           }
           if (
             classification.decision === 'approve'
+            && !scheduleWriteGrantRequired
             && !this.forcePermissionHandler
             && !protectedWriteForcesConfirmation
             && !guardFabricForcesApproval
@@ -2049,7 +2058,7 @@ export class ToolExecutor {
       let shouldForceConfirm = false;
       try {
         const gate = getConfirmationGate();
-        confirmationPreview = gate.buildPreview(executionToolName, params);
+        confirmationPreview = gate.buildPreview(executionToolName, params, { workspaceRoot: this.runtimeWorkspace });
         confirmationRiskLevel = gate.assessRiskLevel(executionToolName, params);
         shouldForceConfirm = gate.shouldConfirm(
           {
@@ -2079,6 +2088,7 @@ export class ToolExecutor {
           || peerOriginForcesConfirmation || launderRetryForcesAsk
           || Boolean(cuaSensitiveStep) || boundaryAskForcesConfirmation
           || Boolean(deterministicAskReason) || this.forcePermissionHandler
+          || scheduleWriteGrantRequired
           || shouldForceConfirm,
       }) : null;
       if (preAsk) {
@@ -2203,7 +2213,7 @@ export class ToolExecutor {
       // 写入/执行必须逐次真人确认，且不写入/不消费权限记忆。
       // 信任边界 ask（W3 写边界）同样让路：2026-08-13 真机事故里 devModeAutoApprove
       // 把 $HOME 写边界 ask 自动批掉、文件真落盘。
-      if (readOnlyForcesConfirmation || guardFabricForcesApproval || boundaryAskForcesConfirmation || protectedWriteForcesConfirmation || unresolvedWriteTargetForcesAsk) {
+      if (readOnlyForcesConfirmation || guardFabricForcesApproval || boundaryAskForcesConfirmation || protectedWriteForcesConfirmation || unresolvedWriteTargetForcesAsk || subagentForcesConfirmation) {
         permissionRequest.forceConfirm = true;
         // 返修 r2：记录 forceConfirm 的成因形态。W3 写边界 ask 是唯一成因（且无 peer
         // 触发）时标 boundary-only——定时任务写授权只放行这一种 forceConfirm，其余成因
@@ -2359,9 +2369,9 @@ export class ToolExecutor {
         });
         return { success: true, result: resolution.result, metadata: resolution.metadata };
       }
-
       if (approved) {
         const approvalSource = ask.approvalSource ?? 'unspecified';
+        context.approvedToolCall = { toolName: executionToolName, args: params, sandboxWriteFile: approvedSingleFileRmGrantForToolApproval({ approvalSource: ask.approvalSource, toolName: policyToolName, params, permissionRequest, sessionId: effectiveSessionId, context, abortSignal: options.abortSignal, workingDirectory: bashWorkingDirectory, policyEnforcer }) };
         traceBuilder.addStep('plan_approval', 'ask_approved', 'allow', `审批放行（来源：${approvalSource}）`);
         // ADR-067 D4：按**实际批准生效的参数**重算指纹后复位——审批卡上改过参数时
         // params 已是编辑后的那份（上面的 applyEditedArgs 只在这里替换）：批准 B 只清
@@ -2562,11 +2572,11 @@ export class ToolExecutor {
           workspaceScope: this.runContext?.workspaceScope,
         };
       }, this.executionCwd);
-
       // Execute the tool via protocol resolver
       context.approvedToolCall = {
         toolName: executionToolName,
         args: params,
+        ...(context.approvedToolCall?.sandboxWriteFile ? { sandboxWriteFile: context.approvedToolCall.sandboxWriteFile } : {}),
       };
       logger.debug('Dispatching to protocol resolver', { toolName: executionToolName, requestedToolName });
       executionLedger.begin();
@@ -2687,6 +2697,7 @@ export class ToolExecutor {
       await durableCheckpoint.complete(result.success);
       return { ...result, metadata: { ...result.metadata, executionStarted } };
     } catch (error) {
+      if (error instanceof EnvBlockedError) throw error;
       const duration = Date.now() - startTime;
       logger.error('Tool threw error', error, { toolName: executionToolName });
       executionLedger.complete('error', error instanceof Error ? error.message : 'Unknown error');

@@ -56,7 +56,9 @@ import {
 } from '../../../utils/streamingStatePresentation';
 import { isReadOnlyArtifactOwnershipItem } from '../../../utils/artifactOwnership';
 import { useI18n } from '../../../hooks/useI18n';
+import { humanizeToolStep } from '../../../utils/humanizeToolStep';
 import type { Translations } from '../../../i18n';
+import { turnPhaseFallbackLabel } from '../../../utils/turnPhaseFallback';
 import { useMessageActionStore } from '../../../stores/messageActionStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useWorkDetailPolicy } from '../../../utils/workDetailPolicy';
@@ -1004,7 +1006,7 @@ function getTurnRunStatus(turn: TraceTurn, t: Translations, streamingState?: Str
   return { key: 'completed', label: t.turnRun.status.completed, tone: 'success', icon: <CheckCircle2 className="h-3.5 w-3.5" /> };
 }
 
-function getTurnPhase(turn: TraceTurn): string | null {
+function getTurnPhase(turn: TraceTurn, t: Translations): string | null {
 
   // 这里曾经用路由摘要当轮次阶段（「已指定 岚析 执行」），既是内部审计口径，又跟
   // 旁边的 Auto 徽章自相矛盾。阶段该说这一轮在做什么，落到下面的能力/工具描述。
@@ -1016,12 +1018,12 @@ function getTurnPhase(turn: TraceTurn): string | null {
   }
 
   const lastTool = getLastToolNode(turn)?.toolCall;
-  if (lastTool) return lastTool.shortDescription || `工具 ${lastTool.name}`;
+  if (lastTool) return humanizeToolStep(lastTool.name, lastTool.args, t, lastTool.shortDescription, lastTool.result === undefined || lastTool._streaming ? 'running' : 'completed');
 
   if (turn.status === 'streaming') return null;
 
-  const assistantText = [...turn.nodes].reverse().find((node) => node.type === 'assistant_text' && node.content.trim());
-  return assistantText ? '回复已生成' : '等待输出';
+  // 兜底（含「发送失败的轮不标已生成」的判定）在 turnPhaseFallback 助手模块里。
+  return turnPhaseFallbackLabel(turn, t);
 }
 
 function getTurnCompletionSignal(turn: TraceTurn, t: Translations): string | null {
@@ -1115,7 +1117,7 @@ export function shouldHideTurnRunHeader(statusKey: string, statusTone: string): 
 const TurnRunHeader: React.FC<{ turn: TraceTurn; streamingState?: StreamingUiState }> = ({ turn, streamingState }) => {
   const { t } = useI18n();
   const status = getTurnRunStatus(turn, t, streamingState);
-  const phase = getTurnPhase(turn);
+  const phase = getTurnPhase(turn, t);
   const completionSignal = getTurnCompletionSignal(turn, t);
   const failedTool = turn.nodes.find((node) => node.type === 'tool_call' && node.toolCall?.success === false)?.toolCall;
   const hasPhase = Boolean(phase?.trim());

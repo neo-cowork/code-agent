@@ -1,3 +1,4 @@
+import { agentRoleLabelsEn } from './agentRoleLabels';
 // ============================================================================
 // English Translations
 // ============================================================================
@@ -20,6 +21,7 @@ import { planApprovalEn } from './planApproval';
 import { taskStatusPanelsEn } from './taskStatusPanels';
 import { noticesEn } from './notices';
 import { serverConnectionEn } from './serverConnection';
+import { envAssistEn } from './envAssist';
 import { agentErrorEn } from './agentError';
 import { labEn } from './lab';
 import { labGpt1En } from './labGpt1';
@@ -57,12 +59,12 @@ import { connectorRequiredEn } from './connectorRequired';
 import { roleFirstWakeEn } from './roleFirstWake';
 import { roleWakeProposalsEn } from './roleWakeProposals';
 import { permissionRuleNlEn } from './permissionRuleNl';
-import { sessionTaskPresentationEn } from './sessionTaskPresentation'; import { toolResultSummaryEn } from './toolResultSummary';
+import { sessionTaskPresentationEn } from './sessionTaskPresentation'; import { toolResultSummaryEn } from './toolResultSummary'; import { codeBlockEn } from './codeBlock';
 // satisfies（而非 `: Translations` 注解）：key 集合必须与 zh 完全一致——zh 多 key /
 // en 缺 key / en 多 key 都在此报红，同时保留 en 自身的推断类型。zh.ts 是形状真源
 //（Translations = typeof zh），与叶子先例 artifactShare.ts 的 satisfies 锁同范式。
 export const en = {
-  ...canvasActorEn, ...activityPanelEn,
+  ...agentRoleLabelsEn, ...canvasActorEn, ...activityPanelEn,
   ...imageNarrationEn, ...mermaidEn,
   ...voiceAuditEn,
   ...capabilityHubEn,
@@ -83,7 +85,7 @@ export const en = {
   ...roleFirstWakeEn,
   ...roleWakeProposalsEn,
   ...permissionRuleNlEn,
-  ...sessionTaskPresentationEn, ...toolResultSummaryEn,
+  ...sessionTaskPresentationEn, ...toolResultSummaryEn, ...codeBlockEn,
   // Common
   common: {
     save: 'Save',
@@ -126,7 +128,7 @@ export const en = {
     publishNote: 'Version note (optional)',
     publishNotePlaceholder: 'Example: final copy for the client',
     publish: 'Publish',
-    publishSuccess: 'Published v{version} · The library version list has been updated',
+    publishSuccess: 'Published v{version} · See it in the preview panel’s “Versions” menu',
     publishFailed: 'Publish failed',
     draft: 'Draft',
     publishedVersion: 'Published v{version}',
@@ -323,7 +325,7 @@ export const en = {
     importImage: 'Add image',
     importHint: 'Or paste (⌘V) / drag images onto the canvas; select an imported image to repaint',
     addReference: 'Add reference',
-    referenceHint: 'Reference images are sent to the model as visual guidance on generate (Wanx supports 1; the first is used)',
+    referenceHint: 'Reference images are sent to the model as visual guidance on generate (up to 3 images; with several selected they are sent in selection order as image 1/2/3 and generation switches to the multi-image edit model, which costs more per image than a single reference)',
     referenceBadge: 'Ref',
     layerPanelTitle: 'Layers',
     sidePanelExpand: 'Expand canvas panel',
@@ -952,8 +954,7 @@ export const en = {
   ...planApprovalEn,
   ...taskStatusPanelsEn,
   ...noticesEn,
-  ...serverConnectionEn,
-  ...agentErrorEn,
+  ...serverConnectionEn, ...agentErrorEn, env: envAssistEn,
   ...labEn,
   ...labGpt1En,
   ...labNanogptEn,
@@ -965,7 +966,8 @@ export const en = {
     buttonTitle: 'Current session permission tier',
     menuTitle: 'Session permission tier',
     bypassConfirmText: 'File writes and command executions will be auto-approved. Only for fully trusted workspaces.',
-    enable: 'Enable',
+    enable: 'Enable', retry: 'Retry',
+    enableError: { forbidden: 'Full Access requires an administrator. Your account does not have this permission.', pending: "Couldn't load your account details yet. Please try again shortly.", other: "Couldn't turn on Full Access. Please try again later." },
   },
 
   skillRecommendations: {

@@ -39,7 +39,7 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 const { PermissionCard } = await import('../../../src/renderer/components/PermissionDialog/PermissionCard');
 
 const DANGER_COPY = '危险';
-const STANDING_GRANT = '始终';
+const STANDING_GRANTS = ['到这次做完为止', '24 小时内允许'];
 
 function render(request: ContractPermissionRequest): string {
   storeState.request = request;
@@ -63,7 +63,7 @@ describe('PermissionCard 危险度与强制确认分离', () => {
     // 紧凑态用动作句表达写文件，不再重复卡头标题。
     expect(html).toContain('允许写入 memo.txt？');
     // 但 forceConfirm 的职责不能松：不许「会话 / 始终」这类常驻授权
-    expect(html).not.toContain(STANDING_GRANT);
+    for (const label of STANDING_GRANTS) expect(html).not.toContain(label);
     // 审批原因只留在开发者决策链，不占普通卡面。
     expect(html).not.toContain('只读探索模式：写入操作需要用户确认');
   });
@@ -82,7 +82,7 @@ describe('PermissionCard 危险度与强制确认分离', () => {
     expect(html).toContain(DANGER_COPY);
     expect(html.match(/危险/gu)).toHaveLength(1);
     expect(html).toContain('border-red-500');
-    expect(html).not.toContain(STANDING_GRANT);
+    for (const label of STANDING_GRANTS) expect(html).not.toContain(label);
   });
 
   it('危险命令类型照旧是红卡（旧路径不变）', () => {
@@ -108,6 +108,6 @@ describe('PermissionCard 危险度与强制确认分离', () => {
     });
 
     expect(html).not.toContain(DANGER_COPY);
-    expect(html).toContain(STANDING_GRANT);
+    for (const label of STANDING_GRANTS) expect(html).toContain(label);
   });
 });

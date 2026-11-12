@@ -15,6 +15,12 @@ import {
 } from './sessionTaskSlotLedger';
 import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
 import { createForegroundWake } from './foregroundWake';
+import { BackgroundShellHold } from './backgroundShellHold';
+import {
+  buildSessionTaskResultMessage,
+  clearSessionCommandTaskMarker,
+  markSessionCommandTaskRunning,
+} from './sessionCommandTaskRestartRecovery';
 import { getConfigService } from '../core/configService';
 import {
   formatSessionCommandTaskIdleFailure,
@@ -150,6 +156,8 @@ export class SessionCommandCenter {
   private readonly pendingApprovalIdsByTask = new Map<string, Set<string>>();
   /** 本轮审批等待的起点（首张未答审批时刻）；审批清空即删，下一张重新计时。 */
   private readonly approvalWaitStartedAtByTask = new Map<string, number>();
+  /** 子 run 起了后台 Bash 又没再调工具就结束：挂起收尾，等命令退出（见 backgroundShellHold.ts）。 */
+  private readonly shellHold = new BackgroundShellHold();
   private readonly approvalWaitCapMs: number;
   private readonly manager: TaskManager;
   private readonly projectTerminalResult: NonNullable<SessionCommandCenterDependencies['projectTerminalResult']>;
@@ -366,6 +374,11 @@ export class SessionCommandCenter {
       await this.settle(task, 'cancelled', '任务在开始前被取消。');
       return { outcome: 'resolved', task: { ...task } };
     }
+    if (this.shellHold.isHeld(task.id)) {
+      const live = this.tasksBySession.get(sessionId)?.get(task.id);
+      if (live) await this.settle(live, 'cancelled', '任务已取消。');
+      return { outcome: 'resolved', task: { ...(live ?? task) } };
+    }
     const accepted = await this.manager.cancelBackgroundTask(task.id);
     if (!accepted) return { outcome: 'missing' };
     task.status = 'cancelling';
@@ -379,6 +392,7 @@ export class SessionCommandCenter {
     }
     for (const ledger of this.ledgers.values()) ledger.dispose();
     this.stopAgentEventObservation?.();
+    this.shellHold.dispose();
     this.toolNamesByCallId.clear();
     this.shellCommandsByCallId.clear();
     this.pendingApprovalIdsByTask.clear();
@@ -457,6 +471,7 @@ export class SessionCommandCenter {
     task.status = 'running';
     task.updatedAt = Date.now();
     this.projectTask(task);
+    markSessionCommandTaskRunning(task);
     const failLaunch = (error: unknown): void => {
       void this.settle(task, 'failed', error instanceof Error ? error.message : String(error));
     };
@@ -503,6 +518,16 @@ export class SessionCommandCenter {
       const artifacts = Array.isArray(data?.artifacts)
         ? data.artifacts as NormalizedToolArtifactMeta[]
         : undefined;
+      const held = this.shellHold.hold(task.id, ({ note, exited }) => {
+        // 命令已退出：命令结果就是结果，子 run 启动时的说明（「已启动…仍在运行」）已过时，不带入。
+        // 到上限仍在运行：说明当前状态，并把启动说明明确标成早先的说明。
+        const detail = exited || !conclusion ? note : `${note} 任务启动时的说明：${conclusion}`;
+        void this.settle(task, 'completed', detail, artifacts);
+      });
+      if (held) {
+        logger.info('Deferring task settlement until its background command exits', { taskId: task.id });
+        return;
+      }
       await this.settle(task, 'completed', conclusion, artifacts);
       return;
     }
@@ -591,6 +616,7 @@ export class SessionCommandCenter {
     const tool = this.toolNamesByCallId.get(mapKey) ?? task.progress?.lastToolStep?.tool;
     this.toolNamesByCallId.delete(mapKey);
     this.shellCommandsByCallId.delete(mapKey);
+    this.shellHold.noteToolCallEnd(task.id, result);
 
     if (result.success) {
       const failure = task.progress?.lastToolFailure;
@@ -720,6 +746,7 @@ export class SessionCommandCenter {
     artifacts?: NormalizedToolArtifactMeta[],
   ): Promise<void> {
     if (TERMINAL.has(task.status)) return;
+    this.shellHold.drop(task.id);
     this.approvalWaitStartedAtByTask.delete(task.id);
     task.status = status;
     task.detail = detail;
@@ -763,6 +790,7 @@ export class SessionCommandCenter {
         message: error instanceof Error ? error.message : String(error),
       });
     }
+    clearSessionCommandTaskMarker(task.id);
 
     for (const slot of startable) {
       const next = this.tasks(task.sessionId).get(slot.workItemId);
@@ -848,21 +876,10 @@ async function projectTerminalResult(
   // 模型读的是 resultText（1500 封顶带截断标记），不是 240 字 summary；
   // backgroundTaskResult.metadata 的 reader 只取 taskId/artifacts，不拿它当 UI 文案。
   const resultText = task.resultText ?? task.summary;
-  await getSessionManager().addMessageToSession(task.sessionId, {
-    id: `session-task-result-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    role: 'system',
-    content: `[任务结果] ${task.shortName}｜${status}｜${resultText}`,
-    timestamp: Date.now(),
-    metadata: {
-      backgroundTaskResult: {
-        source: 'agent-result',
-        taskId: task.id,
-        shortName: task.shortName,
-        status,
-        summary: resultText ?? '',
-      },
-    },
-  });
+  await getSessionManager().addMessageToSession(
+    task.sessionId,
+    buildSessionTaskResultMessage(task, status, resultText),
+  );
 }
 
 let singleton: SessionCommandCenter | null = null;

@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import type { EnvAssistNotice } from './envAssist';
+import { EnvAssistNoticeSchema } from './envAssistSchema';
 
 import type {
   ArtifactLocatorTelemetryEventData,
@@ -470,6 +472,7 @@ const stabilityByType = {
   notification: 'experimental',
   routing_resolved: 'experimental',
   connector_required: 'experimental',
+  env_assist_notice: 'experimental',
   artifact_locator: 'stable',
   agent_complete: 'stable',
   agent_cancelled: 'stable',
@@ -611,10 +614,11 @@ const hostReasonPayloadSchema = typed<HostReasonPayload>(z.object({
   modelText: z.string(),
 }));
 const RoutingResolvedEventSchema = event('routing_resolved', typed<RoutingResolvedEventData>(z.object({ mode: z.enum(['auto', 'explicit']), agentId: z.string(), agentName: z.string(), reason: z.union([z.string(), hostReasonPayloadSchema]), score: z.number(), fallbackToDefault: z.boolean().optional(), requestedAgentId: z.string().optional(), timestamp: z.number().optional() })));
+const EnvAssistNoticeEventSchema = event('env_assist_notice', typed<EnvAssistNotice>(EnvAssistNoticeSchema));
 const ConnectorRequiredEventSchema = event('connector_required', typed<ConnectorRequiredEventData>(z.object({ connectors: z.array(z.object({ id: z.string(), source: z.enum(['selected', 'expert']), reason: z.string(), requiredScope: z.string().optional(), helpUrl: z.string().optional() })) })));
 const ArtifactLocatorEventSchema = event('artifact_locator', typed<ArtifactLocatorTelemetryEventData>(z.object({ state: z.enum(['resolved', 'stale', 'blocked']), kind: z.enum(['spreadsheet', 'presentation', 'document']), reason: z.string() })));
 const AgentCompleteEventSchema = event('agent_complete', z.null());
-const AgentCancelledEventSchema = event('agent_cancelled', z.object({ reason: z.literal('idle_reaped') }).nullable());
+const AgentCancelledEventSchema = event('agent_cancelled', z.object({ reason: z.enum(['idle_reaped', 'client_disconnect']) }).nullable());
 const GoalIterationEventSchema = event('goal_iteration', z.object({ turn: z.number(), maxTurns: z.number(), goalStatus: z.enum(['pending', 'paused', 'met', 'aborted']), pauseReason: z.enum(['anti_spin']).optional(), tokensUsed: z.number(), tokenBudget: z.number(), wallClockBudgetMs: z.number().optional(), parentToolUseId: z.string().optional() }));
 const GoalGateEventSchema = event('goal_gate', z.object({
   gate: z.number(), pass: z.boolean(), exitCode: z.number().nullable().optional(), timedOut: z.boolean().optional(), reason: z.string().optional(), parentToolUseId: z.string().optional(),
@@ -757,7 +761,7 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
   ArtifactWriteStartedEventSchema, PermissionRequestEventSchema, ModelDecisionEventSchema, HookTriggerEventSchema,
   HookStartedEventSchema, ErrorEventSchema, MessageDeltaEventSchema, MessageSnapshotEventSchema, StreamChunkEventSchema,
   StreamReasoningEventSchema, StreamToolCallStartEventSchema, StreamToolCallDeltaEventSchema, TodoUpdateEventSchema,
-  TaskUpdateEventSchema, PlanApprovalUpdateEventSchema, TurnDiffEventSchema, NotificationEventSchema, RoutingResolvedEventSchema, ConnectorRequiredEventSchema, ArtifactLocatorEventSchema,
+  TaskUpdateEventSchema, PlanApprovalUpdateEventSchema, TurnDiffEventSchema, NotificationEventSchema, RoutingResolvedEventSchema, ConnectorRequiredEventSchema, EnvAssistNoticeEventSchema, ArtifactLocatorEventSchema,
   AgentCompleteEventSchema, AgentCancelledEventSchema, GoalIterationEventSchema, GoalGateEventSchema,
   GoalCompleteEventSchema, AgentThinkingEventSchema, TurnStartEventSchema, TurnEndEventSchema,
   SubagentActivityEventSchema, SubagentRunEndEventSchema, SkillActivatedEventSchema, MemoryInjectedEventSchema, MemoryWrittenEventSchema,

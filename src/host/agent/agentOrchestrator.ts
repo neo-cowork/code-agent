@@ -1,3 +1,4 @@
+import type { RunCancelReason } from '../runtime/runContext';
 import { cancelTimeWakesOnUserReturn } from '../services/wake/userReturn';
 // ============================================================================
 // Agent Orchestrator - Main controller for the AI agent
@@ -15,6 +16,7 @@ import type {
 import type { AgentRunOptions, ResearchUserSettings } from '../research/types';
 import { CHANNEL_REPLY_STYLE_INSTRUCTION } from '../channels/channelReplyBrevity';
 import { shouldDeliverAgentEvent } from '../protocol/events/eventFilter';
+import { isTerminalAgentError } from '../../shared/utils/agentErrorClassification';
 import { AgentLoop } from './agentLoop';
 import { buildGoalContract } from './goalModeController';
 import { SYSTEM_PROMPT } from '../prompts/builder';
@@ -62,6 +64,7 @@ import {
 import { seedGoalContractForRun } from './orchestratorGoalSeed';
 import { resolveRoleToolBoundary, toRoleBoundaryRunAllowlist } from '../services/roleAssets/rolePersonalization';
 import { applyMorningBriefSaveDraftRoleTools } from '../app/morningBriefSaveDraftTools';
+import { withMissingAttachmentTurnSystemContext } from '../app/missingAttachmentTurnContext';
 import { type AgentOrchestratorConfig, type PendingSteerMessage } from './orchestrator/types';
 import {
   resolveModelConfig,
@@ -211,6 +214,7 @@ export class AgentOrchestrator {
     const settings = this.configService.getSettings();
     const sessionManager = getSessionManager();
     const sessionId = await this.resolveSessionId();
+    const priorMessages = [...this.messageHistory.getMessages()];
     if (sessionId) { (await import('../tools/shell/foregroundTier')).resetShortTierWait(sessionId); await cancelTimeWakesOnUserReturn(sessionId, options); }
 
     if (persistUserMessage) {
@@ -256,7 +260,9 @@ export class AgentOrchestrator {
     }
     const telemetryCollector = getTelemetryCollector();
     const sessionAwareOnEvent = (event: AgentEvent) => {
-      if (shouldDeliverAgentEvent(event, options?.eventFilter)) {
+      if (options?.terminalErrorSink && event.type === 'error' && isTerminalAgentError(event.data)) {
+        options.terminalErrorSink(event.data);
+      } else if (shouldDeliverAgentEvent(event, options?.eventFilter)) {
         this.onEvent({ ...event, sessionId } as AgentEvent & { sessionId?: string });
       }
       if (sessionId) {
@@ -282,10 +288,19 @@ export class AgentOrchestrator {
     // 原话。桌面 run 无 metadata.channel，不注入。
     let runOptions = options;
     if (messageMetadata?.channel) {
-      runOptions = {
-        ...(options ?? { mode: 'normal' as const }),
-        turnSystemContext: [...(options?.turnSystemContext ?? []), CHANNEL_REPLY_STYLE_INSTRUCTION],
-      };
+      runOptions = withMissingAttachmentTurnSystemContext(
+        {
+          ...(options ?? { mode: 'normal' as const }),
+          turnSystemContext: [...(options?.turnSystemContext ?? []), CHANNEL_REPLY_STYLE_INSTRUCTION],
+        },
+        {
+          sessionId: sessionId ?? 'channel',
+          userText: content,
+          attachments: attachments as MessageAttachment[] | undefined,
+          session: { messages: priorMessages },
+          workingDirectory: this.getWorkingDirectory(),
+        },
+      );
     }
 
     // Route to appropriate mode
@@ -314,7 +329,7 @@ export class AgentOrchestrator {
     queuePendingSteerMessagesOrWarn(sessionId, asQueueable, logContext, logger);
   }
 
-  async cancel(reason?: 'user' | 'session-switch' | 'idle-reaped'): Promise<void> {
+  async cancel(reason?: RunCancelReason): Promise<void> {
     logger.info('Cancel requested', { reason });
     const sessionId = this.sessionId ?? getSessionManager().getCurrentSessionId();
 
@@ -340,7 +355,7 @@ export class AgentOrchestrator {
         this.agentLoop = null;
         this.onEvent({
           type: 'agent_cancelled',
-          data: reason === 'idle-reaped' ? { reason: 'idle_reaped' } : null,
+          data: reason === 'client-disconnect' ? { reason: 'client_disconnect' } : reason === 'idle-reaped' ? { reason: 'idle_reaped' } : null,
           sessionId,
         } as AgentEvent & { sessionId?: string });
       }
@@ -357,7 +372,7 @@ export class AgentOrchestrator {
 
     this.onEvent({
       type: 'agent_cancelled',
-      data: reason === 'idle-reaped' ? { reason: 'idle_reaped' } : null,
+      data: reason === 'client-disconnect' ? { reason: 'client_disconnect' } : reason === 'idle-reaped' ? { reason: 'idle_reaped' } : null,
       sessionId,
     } as AgentEvent & { sessionId?: string });
   }
@@ -654,6 +669,9 @@ export class AgentOrchestrator {
       const executionContent = this.applyTurnSystemContext(content, options, sessionId);
 
       if (options?.disableAutoAgent) {
+        if (requirements.needsAutoAgent) {
+          logger.info('[AutoAgentRouting] skipped: disableAutoAgent option set by system-generated turn (e.g. background notification wake)', { sessionId });
+        }
         requirements.needsAutoAgent = false;
         requirements.executionStrategy = 'sequential';
       }
@@ -668,7 +686,7 @@ export class AgentOrchestrator {
 
       if (requirements.needsAutoAgent) {
         await runAutoAgentMode(content, executionContent, requirements, onEvent, modelConfig, {
-          workingDirectory: this.workingDirectory,
+          workingDirectory: this.workingDirectory, requestPermission: async (request) => (await this.permissions.requestPermission(request as Parameters<OrchestratorPermissionIsland['requestPermission']>[0])).approved,
           sessionId: this.sessionId,
           taskListManager: this.taskListManager,
           generateId: () => this.generateId(),

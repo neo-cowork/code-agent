@@ -1,4 +1,5 @@
-/* global console, document, fetch, process, window */
+import { assertDogfoodVerificationAccount, resolveDevVerificationDataDir } from '../lib/verificationAccount.ts';
+/* global document, fetch, window */
 // ============================================================================
 // voice-p1b 真机验证 + 审美截图脚本（Dev 包）
 //
@@ -25,7 +26,7 @@ import path from 'node:path';
 
 const URL_BASE = process.argv.includes('--url')
   ? process.argv[process.argv.indexOf('--url') + 1]
-  : 'http://localhost:8181';
+  : process.env.NEO_VERIFY_URL || process.env.CODE_AGENT_URL || 'http://localhost:8181';
 const OUT_DIR = process.argv.includes('--out')
   ? process.argv[process.argv.indexOf('--out') + 1]
   : '/Users/linchen/Downloads/ai/code-agent-private-archive/docs/plans/voice-p1b-screenshots';
@@ -109,14 +110,7 @@ async function main() {
   fs.mkdirSync(OUT_DIR, { recursive: true });
 
   // 0. Dev 包 webServer 存活 + bundle 指纹（pid 是诊断字段，走鉴权 detail 路由）
-  const dataDir = (() => {
-    const portMatch = /:(\d{2,5})\/?$/.exec(URL_BASE);
-    const slot = portMatch ? Number(portMatch[1]) - 8180 : 1;
-    if (Number.isInteger(slot) && slot >= 1 && slot <= 9) {
-      return path.join(os.homedir(), slot === 1 ? '.code-agent-dev' : `.code-agent-dev${slot}`);
-    }
-    return path.join(os.homedir(), '.code-agent-dev');
-  })();
+  const dataDir = resolveDevVerificationDataDir(URL_BASE, process.env.NEO_VERIFY_DATA_DIR || process.env.CODE_AGENT_DATA_DIR);
   const token = (() => {
     try {
       return fs.readFileSync(path.join(dataDir, '.dev-token'), 'utf8').trim() || null;
@@ -124,6 +118,7 @@ async function main() {
       return null;
     }
   })();
+  await assertDogfoodVerificationAccount(URL_BASE, token);
   const health = await fetch(`${URL_BASE}/api/health/detail`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   }).then((r) => r.json()).catch(() => null);

@@ -71,15 +71,37 @@ vi.mock('../../../../../src/host/agent/subagentExecutor', () => ({
   }),
 }));
 
-vi.mock('../../../../../src/host/tools/workbenchToolScope', () => ({
-  isSkillCommandAllowedByWorkbenchScope: (
-    command: string,
-    scope: { skills?: string[] } | undefined,
-  ) => {
-    if (!scope || !scope.skills) return true;
-    return scope.skills.includes(command);
-  },
-}));
+const isUnattendedSessionMock = vi.fn((_sessionId?: string) => false);
+vi.mock('../../../../../src/host/tools/workbenchToolScope', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../../src/host/tools/workbenchToolScope')>();
+  return {
+    ...actual,
+    isSkillCommandAllowedByWorkbenchScope: (
+      command: string,
+      scope: { skills?: string[] } | undefined,
+    ) => {
+      if (!scope || !scope.skills) return true;
+      return scope.skills.includes(command);
+    },
+    isSkillHiddenForRun: (
+      skill: { name: string; source: string },
+      options?: { sessionId?: string; toolScope?: { allowedSkillIds?: string[] } },
+    ) => {
+      if (!options?.sessionId) return false;
+      if (!isUnattendedSessionMock(options.sessionId)) return false;
+      return actual.isSkillHiddenForRun(
+        skill as never,
+        {
+          ...options,
+          // Delegate to actual logic with a real unattended session registered in permissionModeManager
+          sessionId: '__unattended_skill_test__',
+        },
+      );
+    },
+  };
+});
+
+import { getPermissionModeManager } from '../../../../../src/host/permissions/modes';
 
 import { skillModule } from '../../../../../src/host/tools/modules/skill/skill';
 
@@ -154,6 +176,9 @@ beforeEach(() => {
   renderSkillContentMock.mockReset();
   renderSkillContentMock.mockImplementation((content) => content);
   subagentExecuteMock.mockReset();
+  isUnattendedSessionMock.mockReset();
+  isUnattendedSessionMock.mockReturnValue(false);
+  getPermissionModeManager().markUnattendedSession('__unattended_skill_test__');
 });
 
 // -----------------------------------------------------------------------------
@@ -268,6 +293,57 @@ describe('skillModule (native)', () => {
       if (!result.ok) {
         expect(result.error).toContain('visible');
         expect(result.error).not.toContain('hidden');
+      }
+    });
+
+    it('refuses user-source skills in unattended sessions and allows foreground, allowedSkillIds, and builtin/project/plugin', async () => {
+      isUnattendedSessionMock.mockImplementation((id) => id === 'cron-session');
+      getSkillMock.mockImplementation((name) => {
+        if (name === 'wechat-local-query') return makeSkill({ name: 'wechat-local-query', source: 'user' });
+        if (name === 'builtin-skill') return makeSkill({ name: 'builtin-skill', source: 'builtin' });
+        if (name === 'project-skill') return makeSkill({ name: 'project-skill', source: 'project' });
+        if (name === 'plugin-skill') return makeSkill({ name: 'plugin-skill', source: 'plugin' });
+        return undefined;
+      });
+
+      const unattendedBlocked = await run(
+        { command: 'wechat-local-query' },
+        makeCtx({ sessionId: 'cron-session' }),
+      );
+      expect(unattendedBlocked.ok).toBe(false);
+      if (!unattendedBlocked.ok) {
+        expect(unattendedBlocked.code).toBe('UNATTENDED_PERSONAL_SKILL_BLOCKED');
+        expect(unattendedBlocked.meta).toEqual({ retryable: false });
+        expect(unattendedBlocked.error).toBe(
+          'Personal skills are not available in unattended scheduled runs unless explicitly listed for the task. Skip this skill, do not retry, and report the corresponding source as not read.',
+        );
+      }
+
+      const foregroundAllowed = await run(
+        { command: 'wechat-local-query' },
+        makeCtx({ sessionId: 'fg-session' }),
+      );
+      expect(foregroundAllowed.ok).toBe(true);
+
+      const allowlistedUnattended = await run(
+        { command: 'wechat-local-query' },
+        makeCtx({
+          sessionId: 'cron-session',
+          toolScope: { allowedSkillIds: ['wechat-local-query'] } as never,
+        }),
+      );
+      expect(allowlistedUnattended.ok).toBe(true);
+
+      expect((await run({ command: 'wechat-local-query' }, makeCtx({
+        sessionId: 'cron-session', toolScope: { optInPersonalSkillIds: ['wechat-local-query'] },
+      }))).ok).toBe(true);
+
+      for (const nonUserSkill of ['builtin-skill', 'project-skill', 'plugin-skill']) {
+        const res = await run(
+          { command: nonUserSkill },
+          makeCtx({ sessionId: 'cron-session', toolScope: { optInPersonalSkillIds: ['wechat-local-query'] } }),
+        );
+        expect(res.ok).toBe(true);
       }
     });
   });

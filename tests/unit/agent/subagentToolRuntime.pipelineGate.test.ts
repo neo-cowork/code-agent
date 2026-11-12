@@ -188,33 +188,85 @@ describe('subagent pipeline gate & approval bubble-up (N-SUBAGENT-APPROVAL-BUBBL
     expect(resolverState.execute).not.toHaveBeenCalled();
   });
 
-  it('surfaces out-of-workdir path write hard-deny reason containing path and workdir in ToolExecutor error and log', async () => {
-    const workingDirectory = '/tmp/workbench/project';
-    const outsidePath = '/tmp/workbench/outside/secret.txt';
-    const { executor, policy } = buildPipelineRuntime({
-      preset: 'strict',
-      workingDirectory,
+  it.each(['strict', 'development'] as const)('never lets the classifier auto-approve an out-of-workspace temp-dir Write in %s mode', async (preset) => {
+    const tempPath = '/tmp/subagent-outside-gate.sh';
+    const { executor, policy, permissionRequest } = buildPipelineRuntime({
+      preset,
+      workingDirectory: '/work/project',
+      requestPermission: async () => false,
     });
 
     const result = await executor.execute(
       'Write',
-      { file_path: outsidePath, content: 'blocked' },
+      { file_path: tempPath, content: 'echo hi' },
       { sessionId: 'session-pipeline-gate', subagentPolicy: policy },
     );
 
+    expect(permissionRequest).toHaveBeenCalledTimes(1);
+    expect(permissionRequest).toHaveBeenCalledWith(expect.objectContaining({
+      tool: 'Write', details: expect.objectContaining({ path: tempPath }), forceConfirm: true,
+    }));
     expect(result.success).toBe(false);
-    expect(result.error).toContain('Denied by subagent permission policy (strict):');
-    expect(result.error).toContain(outsidePath);
-    expect(result.error).toContain(workingDirectory);
-    expect(result.error).toContain('(Write)');
-    expect(loggerState.warn).toHaveBeenCalledWith(
-      expect.stringContaining(`Denied by subagent permission policy (strict): Permission denied: ${outsidePath} is outside this agent's working directory ${workingDirectory} (Write)`),
-      expect.objectContaining({
-        toolName: 'Write',
-        policy: 'strict',
-        reason: expect.stringContaining(outsidePath),
-      }),
+    expect(resolverState.execute).not.toHaveBeenCalled();
+  });
+
+  it.each(['strict', 'development'] as const)('parks an out-of-workspace Write until approve once in %s mode', async (preset) => {
+    const workingDirectory = '/work/project';
+    const outsidePath = '/work/outside/approve.txt';
+    let approveOnce!: (allowed: boolean) => void;
+    const { executor, policy, permissionRequest } = buildPipelineRuntime({
+      preset,
+      workingDirectory,
+      requestPermission: () => new Promise<boolean>((resolve) => { approveOnce = resolve; }),
+    });
+
+    const execution = executor.execute(
+      'Write',
+      { file_path: outsidePath, content: 'requested outside content' },
+      { sessionId: 'session-pipeline-gate', subagentPolicy: policy },
     );
+
+    await vi.waitFor(() => expect(permissionRequest).toHaveBeenCalledTimes(1));
+    expect(permissionRequest).toHaveBeenCalledWith(expect.objectContaining({
+      agentId: 'agent-1',
+      runId: 'run-1',
+      parentToolUseId: 'parent-tool-1',
+      tool: 'Write',
+      type: 'file_write',
+      details: expect.objectContaining({ path: outsidePath }),
+      forceConfirm: true,
+    }));
+    expect(resolverState.execute).not.toHaveBeenCalled();
+    approveOnce(true);
+
+    expect((await execution).success).toBe(true);
+    expect(resolverState.execute).toHaveBeenCalledExactlyOnceWith('Write', expect.objectContaining({
+      file_path: outsidePath,
+      content: 'requested outside content',
+    }), expect.anything());
+  });
+
+  it('returns explicit refusal for a denied out-of-workspace Write without executing a substitute', async () => {
+    const outsidePath = '/work/outside/refused.txt';
+    const { executor, policy, permissionRequest } = buildPipelineRuntime({
+      preset: 'development',
+      workingDirectory: '/work/project',
+      requestPermission: async () => false,
+    });
+
+    const result = await executor.execute(
+      'Write',
+      { file_path: outsidePath, content: 'must not be written' },
+      { sessionId: 'session-pipeline-gate', subagentPolicy: policy },
+    );
+
+    expect(permissionRequest).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      tool: 'Write',
+      details: expect.objectContaining({ path: outsidePath }),
+      forceConfirm: true,
+    }));
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/denied by user/i);
     expect(resolverState.execute).not.toHaveBeenCalled();
   });
 });

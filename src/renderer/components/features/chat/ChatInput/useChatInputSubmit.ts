@@ -22,6 +22,7 @@ import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { useAppshotsStore } from '../../../../stores/appshotsStore';
 import { useLoopStore } from '../../../../stores/loopStore';
+import { CRON_CLOUD_NOT_CONFIGURED } from '@shared/constants/cronErrors';
 import { cronClient } from '../../../../services/cronClient';
 import type { PendingScheduleDraft, ScheduleDraftController } from './useScheduleDraft';
 import { normalizeScheduleDraft } from './scheduleConfirm';
@@ -65,6 +66,7 @@ import { parseBtwCommand } from './parseBtwCommand';
 import { shouldClearComposerAfterSend } from './utils';
 import type { ComposerDraftSendOutcome } from './composerDraftStore';
 import { useComposerRejectedUploadsStore } from '../../../../stores/composerRejectedUploadsStore';
+import { useStepLimitContinue } from '../StepLimitContinue';
 
 type VoiceInputContextValue = {
   anchor: string;
@@ -191,6 +193,7 @@ async function settleSendWithinTimeout(
 
 export function useChatInputSubmit(params: UseChatInputSubmitParams) {
   const { t } = useI18n();
+  const stepLimitContinuation = useStepLimitContinue(params.currentSessionId);
   const {
     value,
     attachments,
@@ -360,7 +363,11 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       toast.success(`${cs.scheduleCreatedToastPrefix}${job.name || cs.unnamedSchedule}${cs.scheduleCreatedToastSuffix}`);
       discardPendingScheduleDraft();
       return true;
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === CRON_CLOUD_NOT_CONFIGURED) {
+        storePendingScheduleDraft({ ...pending, creationErrorCode: error.code });
+        return false;
+      }
       // host 拒绝时的内部异常 message（如 "Cannot read properties of ..."）不直接上屏：
       // 走可读文案 + 出路；确认卡保留，用户可重试确认或取消后重新发起。
       toast.error(cs.scheduleConfirmCreateFailed);
@@ -368,7 +375,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     } finally {
       setCreatingSchedule(false);
     }
-  }, [currentSessionId, discardPendingScheduleDraft, pendingScheduleDraft, setCreatingSchedule, t]);
+  }, [currentSessionId, discardPendingScheduleDraft, pendingScheduleDraft, setCreatingSchedule, storePendingScheduleDraft, t]);
 
   const startGoalRun = useCallback(async (
     parsed: ParsedGoalCommand,
@@ -431,6 +438,13 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     e?.preventDefault();
     discardPendingScheduleDraft();
     const trimmedValue = (opts?.content ?? value).trim();
+    if (!trimmedValue && attachments.length === 0 && !pendingAppshot && !pendingPromptCommand
+      && !pendingAgentSelection && sessionReferences.length === 0 && artifactReferences.length === 0
+      && !useComposerStore.getState().pendingCommand && !disabled && !isProcessing && !isUploading
+      && stepLimitContinuation.available) {
+      await stepLimitContinuation.continueTurn();
+      return;
+    }
     let preferredAgentIdOverride: string | null | undefined;
     let selectedAgentOverride: ComposerAgentSelection | null | undefined;
     // 任务 17：命令 chip（/goal /schedule /loop /workflow）发送时拼回 `/${id} ` 前缀，

@@ -16,7 +16,7 @@ import { useI18n } from '../../hooks/useI18n';
 import { useAppStore } from '../../stores/appStore';
 import { resolveHostReasonCopy } from '../../utils/hostReasonPresentation';
 import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
-import { permissionConsequence } from './permissionPresentation';
+import { isDangerousRequestShape, isSafeDefaultDeny, permissionConsequence } from './permissionPresentation';
 import { ConnectorWriteDisclosure } from './ConnectorWriteDisclosure';
 import { estimateMediaPriceCny } from './mediaPriceEstimate';
 import { formatCny } from '@shared/media/imageCost';
@@ -150,7 +150,8 @@ export function RequestDetails({ request }: RequestDetailsProps) {
           label={labels.detailCommand}
           value={details.command}
           isCode
-          isDangerous={type === 'dangerous_command'}
+          isDangerous={isDangerousRequestShape(request)}
+          collapsible={type === 'command' && !(isDangerousRequestShape(request) || isSafeDefaultDeny(request))}
         />
       )}
 
@@ -199,7 +200,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       )}
 
       {/* 确认门控 非 diff 预览（命令/网络/通用） */}
-      {details.preview && details.preview.type !== 'diff' && (
+      {details.preview && details.preview.type !== 'diff' && !(details.preview.type === 'command' && details.command) && (
         <div className="mt-4">
           <div className="text-xs text-zinc-400 mb-2">{details.preview.summary}</div>
           {details.preview.diff && (
@@ -365,7 +366,11 @@ interface DetailItemProps {
   isCode?: boolean;
   isUrl?: boolean;
   isDangerous?: boolean;
+  collapsible?: boolean;
 }
+
+const COMMAND_FOLD_MAX_LINES = 8;
+const COMMAND_FOLD_MAX_CHARS = 400;
 
 // ----------------------------------------------------------------------------
 // ConfirmationDiffPreview - E2 确认门控 Diff 预览
@@ -405,14 +410,33 @@ function ConfirmationDiffPreview({ before, after, summary, filePath }: Confirmat
   );
 }
 
-function DetailItem({ label, value, isPath, isCode, isUrl, isDangerous }: DetailItemProps) {
+function DetailItem({ label, value, isPath, isCode, isUrl, isDangerous, collapsible }: DetailItemProps) {
   const { t } = useI18n();
   const [revealed, setRevealed] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   // 所有 DetailItem 的值只在这一处统一脱敏；title 始终使用脱敏值，打开原文也不泄到 tooltip。
   const redactedValue = redactCredentialText(value);
   const hasRedaction = redactedValue !== value;
   const visibleValue = revealed && isCode ? value : redactedValue;
-  const displayValue = isPath ? formatFilePath(visibleValue) : visibleValue;
+  const rawDisplayValue = isPath ? formatFilePath(visibleValue) : visibleValue;
+
+  const lines = rawDisplayValue.split('\n');
+  const shouldFold = Boolean(
+    collapsible &&
+    !isDangerous &&
+    (lines.length > COMMAND_FOLD_MAX_LINES || rawDisplayValue.length > COMMAND_FOLD_MAX_CHARS)
+  );
+  const foldedByLines = lines.length > COMMAND_FOLD_MAX_LINES
+    ? lines.slice(0, COMMAND_FOLD_MAX_LINES).join('\n')
+    : rawDisplayValue;
+  const foldedValue = foldedByLines.length > COMMAND_FOLD_MAX_CHARS
+    ? foldedByLines.slice(0, COMMAND_FOLD_MAX_CHARS)
+    : foldedByLines;
+  const displayValue = shouldFold && !expanded ? foldedValue : rawDisplayValue;
+  const shownLinesCount = Math.min(lines.length, COMMAND_FOLD_MAX_LINES);
+  const foldHint = t.decisionCard.permission.commandFoldLineHint
+    .replace('{total}', String(lines.length))
+    .replace('{shown}', String(shownLinesCount));
 
   return (
     <div>
@@ -420,7 +444,7 @@ function DetailItem({ label, value, isPath, isCode, isUrl, isDangerous }: Detail
       <div
         className={`
           p-2 rounded font-mono text-xs
-          break-all
+          ${isCode ? 'whitespace-pre-wrap break-all' : 'break-all'}
           ${
             isCode
               ? isDangerous
@@ -436,6 +460,22 @@ function DetailItem({ label, value, isPath, isCode, isUrl, isDangerous }: Detail
       >
         {displayValue}
       </div>
+      {shouldFold && (
+        <div className="mt-1.5 flex items-center gap-2 text-[10px] text-zinc-400" data-testid="permission-command-fold">
+          {!expanded && <span>{foldHint}</span>}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2 text-[10px]"
+            aria-expanded={expanded}
+            onClick={() => setExpanded((current) => !current)}
+          >
+            {expanded
+              ? t.decisionCard.permission.commandCollapse
+              : t.decisionCard.permission.commandShowAll}
+          </Button>
+        </div>
+      )}
       {isCode && hasRedaction && (
         <div className="mt-1.5">
           <div className="flex items-center gap-2">
