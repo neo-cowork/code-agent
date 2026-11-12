@@ -25,6 +25,8 @@
 4. 跨前后端的数据结构放在 `src/shared/contract/`，host 内部类型留在所属子域。
 5. 新增目录或改变职责时，同步更新本页和 [source-map.md](../../docs/architecture/source-map.md)。
 
+环境权限提示的分类、持久化与设置页动作复用 `permissions/envAssist/`，由工具执行器和 IPC 适配层调用。
+
 ## 常用导航
 
 - Agent 与上下文：`agent/`、`context/`、`prompts/`

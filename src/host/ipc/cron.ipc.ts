@@ -1,3 +1,4 @@
+import { normalizePersonalSkillIds } from '../../shared/cronPersonalSkills';
 // ============================================================================
 // Cron IPC Handlers
 // ============================================================================
@@ -9,6 +10,7 @@ import { CronSchemas, type CronDomainRequest } from '../../shared/ipc/schemas/cr
 import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import { getCronService } from '../cron/cronService';
 import { parkedSiblingsCoveredByGrant } from '../cron/cronWriteGrant';
+import { CRON_CLOUD_NOT_CONFIGURED } from '../../shared/constants/cronErrors';
 import { CloudNotConfiguredError } from '../cron/cronCloudErrors';
 import { getConnectorRegistry } from '../connectors/registry';
 import { isAppleEventsDenied } from '../connectors/native/osascript';
@@ -55,6 +57,9 @@ function getCreateCronJobPayload(source: unknown): CreateCronJobPayload {
   if (!isRecord(source)) throw new Error('Invalid cron job payload');
   // runCount 是只读结算字段（contract/cron.ts）：外部传入一律丢弃，不许借创建重置计数。
   const { runCount: _droppedRunCount, ...payload } = source;
+  if (isRecord(payload.action) && payload.action.type === 'agent') {
+    payload.action = { ...payload.action, allowedPersonalSkillIds: normalizePersonalSkillIds(payload.action.allowedPersonalSkillIds) };
+  }
   return payload as unknown as CreateCronJobPayload;
 }
 
@@ -65,6 +70,9 @@ function getUpdateCronJobRequest(source: unknown): { jobId: string; updates: Upd
   if (!jobId || !isRecord(updates)) throw new Error('Invalid cron job update payload');
   // 同上：外部不许借更新改写 runCount；内部结算走 CronService 自己的窄写通道。
   const { runCount: _droppedRunCount, ...restUpdates } = updates;
+  if (isRecord(restUpdates.action) && restUpdates.action.type === 'agent') {
+    restUpdates.action = { ...restUpdates.action, allowedPersonalSkillIds: normalizePersonalSkillIds(restUpdates.action.allowedPersonalSkillIds) };
+  }
   return { jobId, updates: restUpdates as unknown as UpdateCronJobPayload };
 }
 
@@ -159,7 +167,7 @@ async function runWebhookHookAction(operation: 'register' | 'rotate', payload: u
     logger.warn(`Cron webhook hook ${operation} failed for job ${jobId}: ${message}`);
     return {
       success: false,
-      error: { code: error instanceof CloudNotConfiguredError ? 'CRON_CLOUD_NOT_CONFIGURED' : 'CRON_ERROR', message },
+      error: { code: error instanceof CloudNotConfiguredError ? CRON_CLOUD_NOT_CONFIGURED : 'CRON_ERROR', message },
     };
   }
 }
@@ -397,7 +405,7 @@ const cronRoutes = defineDomainRoutes<CronDomainRequest, void>(CronSchemas.REQUE
   unknownActionMessage: (action) => `Unknown cron action: ${String(action)}`,
   mapError: (error) => {
     logger.error('Cron IPC error:', error);
-    return { code: 'CRON_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
+    return { code: error instanceof CloudNotConfiguredError ? CRON_CLOUD_NOT_CONFIGURED : 'CRON_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
   },
 });
 

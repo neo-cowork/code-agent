@@ -127,3 +127,28 @@ describe('backgroundTaskStore readFailure 置位条件', () => {
     expect(state.tasks).toEqual([]);
   });
 });
+
+describe('backgroundTaskStore.dismissEndedTasks', () => {
+  beforeEach(() => {
+    invokeMock.mockReset();
+    resetStore();
+  });
+
+  it('calls the dismiss action for the session then refreshes the list', async () => {
+    invokeMock
+      .mockResolvedValueOnce({ success: true, data: ['shell:done'] })
+      .mockResolvedValueOnce({ success: true, data: [] });
+    await useBackgroundTaskStore.getState().dismissEndedTasks('session-1');
+    expect(invokeMock.mock.calls[0][1]).toEqual({
+      action: 'dismissTerminalTasks',
+      payload: { sessionId: 'session-1' },
+    });
+    expect(invokeMock.mock.calls[1][1]).toEqual({ action: 'listTasks' });
+  });
+
+  it('throws and does not refresh when the host rejects the dismiss', async () => {
+    invokeMock.mockResolvedValueOnce({ success: false, error: { code: 'X', message: 'nope' } });
+    await expect(useBackgroundTaskStore.getState().dismissEndedTasks('session-1')).rejects.toThrow('nope');
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+  });
+});

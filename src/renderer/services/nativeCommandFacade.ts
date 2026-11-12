@@ -154,7 +154,7 @@ export interface NativeCommandActionMap {
     result: GlobalHotkeyRegistrationResult[];
   };
   postSystemNotification: {
-    payload: { title: string; body: string };
+    payload: { title: string; body: string; id?: string };
     result: NativeSystemNotificationResult;
   };
 }

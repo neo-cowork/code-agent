@@ -30,6 +30,8 @@ import { eventViolationFromDraft, isEventScheduleKind } from './cronEditorEventG
 import { CronAgentActionFields } from './CronAgentActionFields';
 import { CronDurationField } from './CronDurationField';
 
+import { CRON_CLOUD_NOT_CONFIGURED } from '@shared/constants/cronErrors';
+import { CronCloudCreateNotice } from './CronCloudCreateNotice';
 import { SavedRoutineRestate } from './SavedRoutineRestate';
 import { PendingRoutineRestate } from './PendingRoutineRestate';
 import { usePendingRoutineGate, type PendingRoutineSave } from './usePendingRoutineGate';
@@ -46,7 +48,8 @@ import { CLOUD_ROLE_BOUND_ERROR, CronCloudRoleRestriction, isCloudRoleBoundAgent
 import { CronWebhookScheduleFields } from './CronWebhookScheduleFields';
 import { CronWebhookCreatedView } from './CronWebhookCreatedView';
 import { useCronWebhookGate } from './useCronWebhookGate';
-import { takeCronEditorDraft } from './cronEditorDraftStash';
+import { stashCronEditorDraft, takeCronEditorDraft } from './cronEditorDraftStash';
+import { openCloudCronSettings as gotoCloudSettingsForCreate } from '../../../utils/cronCloudSettingsNavigation';
 import { useScrollToEventValidation } from './useScrollToEventValidation';
 
 interface CronJobEditorProps {
@@ -56,7 +59,7 @@ interface CronJobEditorProps {
   onClose: () => void;
 }
 
-type FieldErrors = Partial<Record<keyof CronJobDraft, string>> & { form?: string; eventForm?: boolean; templateForm?: boolean };
+type FieldErrors = Partial<Record<keyof CronJobDraft, string>> & { form?: string; eventForm?: boolean; templateForm?: boolean; cloudUnconfigured?: boolean };
 
 type EditorTab = 'basic' | 'action' | 'advanced';
 
@@ -82,6 +85,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
   };
   const { createJob, updateJob } = useCronStore();
   const openSettingsTab = useAppStore((state) => state.openSettingsTab);
+  const templateLanguage = useAppStore((state) => (state.language === 'en' ? 'en' : 'zh'));
   const mcpServerStates = useMcpServerStates();
   const connectedConnectorIds = useMemo(
     () => new Set(
@@ -138,6 +142,11 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       onClose();
       return true;
     } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === CRON_CLOUD_NOT_CONFIGURED) {
+        setErrors({ cloudUnconfigured: true });
+        backToEdit();
+        return false;
+      }
       setErrors({ form: saveErrorMessage(error, cc.simpleCreateFailed) });
       return false;
     } finally {
@@ -305,16 +314,18 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
           accountId: draft.eventAccountId,
           chatId: draft.eventChatId,
           budget: draft.maxRunBudget,
-        })
-        : selectedTemplate.generate(templateValues);
+        }, templateLanguage)
+        : selectedTemplate.generate(templateValues, templateLanguage);
       // event 任务钉本机（填参步骤不渲染运行位置选择）；其余模板沿用用户的选择。
       generatedDraft.runsOn = selectedTemplate.event ? 'local' : draft.runsOn;
       if (!selectedTemplate.event) generatedDraft.maxRunBudget = draft.runsOn === 'local' ? draft.maxRunBudget : '';
-      const input = buildCronJobInput(generatedDraft);
+      const input = buildCronJobInput(generatedDraft, cc.editorChrome.validation);
       // 无角色任务先挂起出复述卡；角色绑定（如晨间分诊选了角色）照旧直存。
       await gateOrPersist(input, 'create');
     } catch (error) {
-      setErrors({ form: saveErrorMessage(error, cc.simpleCreateFailed) });
+      setErrors(error instanceof Error && 'code' in error && error.code === CRON_CLOUD_NOT_CONFIGURED
+        ? { cloudUnconfigured: true }
+        : { form: saveErrorMessage(error, cc.simpleCreateFailed) });
     } finally {
       setSubmitting(false);
     }
@@ -345,14 +356,25 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
           return;
         }
       }
-      const input = buildCronJobInput(draft);
+      const input = buildCronJobInput(draft, cc.editorChrome.validation);
       await gateOrPersist(input, job ? 'update' : 'create');
     } catch (error) {
-      setErrors({ form: saveErrorMessage(error, cc.simpleCreateFailed) });
+      setErrors(error instanceof Error && 'code' in error && error.code === CRON_CLOUD_NOT_CONFIGURED
+        ? { cloudUnconfigured: true }
+        : { form: saveErrorMessage(error, cc.simpleCreateFailed) });
     } finally {
       setSubmitting(false);
     }
   };
+
+  const cloudNotice = errors.cloudUnconfigured && <CronCloudCreateNotice
+    onSwitchLocal={() => { setDraft((current) => ({ ...current, runsOn: 'local' })); setErrors({}); }}
+    onSettings={() => {
+      const filled = step === 'fill' && selectedTemplate ? selectedTemplate.generate(templateValues) : draft;
+      stashCronEditorDraft({ ...filled, runsOn: draft.runsOn });
+      gotoCloudSettingsForCreate();
+    }}
+  />;
 
   // ── Saved restate view（角色绑定任务保存成功后）─────────────────────
   if (savedJob) {
@@ -505,6 +527,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
           </button>
         </div>
 
+        {cloudNotice}
         {errors.form && (
           <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-badge-danger">
             {errors.form}
@@ -660,6 +683,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
         ))}
       </div>
 
+      {cloudNotice}
       {errors.form && (
         <div className="mb-4 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-badge-danger">
           {errors.form}
