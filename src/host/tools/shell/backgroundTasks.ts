@@ -36,6 +36,7 @@ export interface TaskState {
   outputSize: number;
   command: string;
   displayCommand?: string;
+  displayName?: string;
   exitCode?: number;
   lastReadPosition: number;
   /** 主超时定时器 */
@@ -58,6 +59,7 @@ export interface TaskInfo {
   status: 'running' | 'completed' | 'failed';
   command: string;
   displayCommand?: string;
+  displayName?: string;
   cwd: string;
   sessionId?: string;
   toolCallId?: string;
@@ -85,6 +87,7 @@ export interface StartBackgroundTaskOptions {
   toolCallId?: string;
   ownerAgentId?: string;
   displayCommand?: string;
+  displayName?: string;
   env?: NodeJS.ProcessEnv;
   sandboxed?: boolean;
   onExit?: () => void;
@@ -183,6 +186,7 @@ function toTaskInfo(task: TaskState): TaskInfo {
     status: task.status,
     command: task.command,
     displayCommand: task.displayCommand,
+    displayName: task.displayName,
     cwd: task.cwd,
     sessionId: task.sessionId,
     toolCallId: task.toolCallId,
@@ -270,6 +274,7 @@ function registerBackgroundTaskProcess(
     outputSize: 0,
     command,
     displayCommand: options.displayCommand,
+    displayName: options.displayName,
     lastReadPosition: 0,
     cwd,
     sessionId: options.sessionId,
@@ -343,6 +348,18 @@ function registerBackgroundTaskProcess(
     void killBackgroundTask(taskId);
   }
   return { success: true, taskId, outputFile };
+}
+
+/**
+ * One user-readable name for a background shell/PTY task: the model's Bash `description`
+ * when usable (single line, <= 60 chars), else the unwrapped original command.
+ */
+export function resolveBackgroundTaskName(description: unknown, command: string): string {
+  if (typeof description === 'string') {
+    const trimmed = description.trim();
+    if (trimmed && !/[\r\n]/.test(trimmed) && trimmed.length <= 60) return trimmed;
+  }
+  return command;
 }
 
 /**
