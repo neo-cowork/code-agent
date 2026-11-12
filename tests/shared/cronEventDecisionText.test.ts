@@ -114,5 +114,7 @@ describe('model-authored text scrubbing', () => {
     expect(localizeDecisionText(reason, 'en')).toContain('event reply');
     expect(localizeDecisionText(reason, 'en')).not.toContain('only-only');
     expect(localizeDecisionText('observe mode / Auto 模式', 'zh')).toBe('仅观察模式 / 自动模式');
+    // 普通单词不动：只替换模式短语与工具标识符。
+    expect(localizeDecisionText('We will observe the market', 'zh')).toBe('We will observe the market');
   });
 });

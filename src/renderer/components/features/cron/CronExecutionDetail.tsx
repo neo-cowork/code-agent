@@ -5,7 +5,6 @@ import { isCronPermissionDeniedMarker } from '@shared/cronPermissionDenied';
 import { classifyCronFailure, type CronFailurePresentationKind } from '@shared/utils/cronFailureClassification';
 import { ExternalLink, MessageSquareText } from 'lucide-react';
 import { useI18n } from '../../../hooks/useI18n';
-import { scrubInternalIdentifiers } from '@shared/cronEventDecisionText';
 import { useAppStore } from '../../../stores/appStore';
 import { useCronStore } from '../../../stores/cronStore';
 import { useSessionStore } from '../../../stores/sessionStore';
@@ -386,7 +385,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
       <section className="mt-4">
         <h5 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">{cc.execResult}</h5>
         <pre className="max-h-56 overflow-auto rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-xs text-zinc-300 whitespace-pre-wrap">
-          {scrubInternalIdentifiers(prettyJson(execution.result), language)}
+          {prettyJson(execution.result)}
         </pre>
       </section>
     </div>

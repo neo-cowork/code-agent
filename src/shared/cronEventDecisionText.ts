@@ -224,12 +224,11 @@ function localizedStatus(status: string, language: CronEventDecisionTextLanguage
   return statuses[status] ?? status;
 }
 
-const INTERNAL_IDENTIFIER_PATTERN = /`?\breply_to_event\b`?|`?\bmail_send\b`?|\bobserve(?:[- ]only)?\s*(?:mode|模式)|\bauto\s*(?:mode|模式)|\bobserve\b/gi;
+const INTERNAL_IDENTIFIER_PATTERN = /`?\breply_to_event\b`?|`?\bmail_send\b`?|\bobserve(?:[- ]only)?\s*(?:mode|模式)|\bauto\s*(?:mode|模式)/gi;
 
 const INTERNAL_IDENTIFIER_LABELS: Readonly<Record<string, { zh: string; en: string }>> = {
   reply_to_event: { zh: '回复事件消息', en: 'event reply' },
   mail_send: { zh: '发送邮件', en: 'send mail' },
-  observe: { zh: '仅观察', en: 'observe-only' },
   observemode: { zh: '仅观察模式', en: 'observe-only mode' },
   automode: { zh: '自动模式', en: 'auto mode' },
 };
@@ -239,7 +238,7 @@ export function scrubInternalIdentifiers(text: string, language: CronEventDecisi
   return text.replace(INTERNAL_IDENTIFIER_PATTERN, (match) => {
     const lower = match.toLowerCase().replace(/`/g, '');
     const key = lower.startsWith('observe')
-      ? (/mode|模式/.test(lower) ? 'observemode' : 'observe')
+      ? 'observemode'
       : lower.startsWith('auto') ? 'automode' : lower;
     return INTERNAL_IDENTIFIER_LABELS[key][language];
   });
