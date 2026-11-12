@@ -1,14 +1,17 @@
 import type { AppServiceRunOptions } from '../../shared/contract/appService';
-import { SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS } from '../../shared/constants/sessionCommandCenter';
+import { resolveForegroundBrainMaxIterations, SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS } from '../../shared/constants/sessionCommandCenter';
 import { getTextForegroundToolNames } from '../tools/protocolRegistry';
 import { detectTaskFeatures } from '../prompts/systemReminders';
 import { getNativeConnectorToolNamesForIntent } from '../connectors/nativeConnectorIntent';
 import { isRoleProactivityChatIntent } from './roleProactivityChatIntent';
+import { createLogger } from '../services/infra/logger';
 import { resolveModelInfo } from '../model/modelInfo';
 import { getConfigService } from '../services/core/configService';
 import { resolveRunModelConfig } from '../agent/orchestrator/modelConfigResolver';
 import type { MessageAttachment } from '../../shared/contract/message';
 import type { ConversationModelSpec } from '../../shared/contract/conversationEnvelope';
+
+const logger = createLogger('ForegroundBrainBudget');
 
 // 不导出：web/桌面两条装配路都经 getSessionCommandCenterBrainContextForPrompt 取块，
 // 导出常量只会引回「第二条装配路直接拼常量」的旧形态（rework r1）。
@@ -178,10 +181,26 @@ export function getTextForegroundToolNamesForPrompt(
   return Array.from(new Set([...base, ...extras]));
 }
 
+/** Shared logging and explicit-cap clamp for desktop and web assembly. */
+export function resolveForegroundBrainTurnBudget(
+  prompt: string,
+  lastAssistantStoppedByStepLimit: boolean,
+  requestedMaxIterations?: unknown,
+  log: Pick<typeof logger, 'info'> = logger,
+): number {
+  const cap = resolveForegroundBrainMaxIterations({ prompt, lastAssistantStoppedByStepLimit });
+  const rule = lastAssistantStoppedByStepLimit ? 'continuation'
+    : cap > SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS ? 'deliverable' : 'default';
+  const maxIterations = Math.min(typeof requestedMaxIterations === 'number' ? requestedMaxIterations : cap, cap);
+  log.info(`Foreground brain budget rule=${rule} cap=${cap} maxIterations=${maxIterations}`);
+  return maxIterations;
+}
+
 export function withSessionCommandCenterBrain(
   options: AppServiceRunOptions | undefined,
   prompt?: string,
   imageTurn?: ForegroundImageTurn,
+  lastAssistantStoppedByStepLimit = false,
 ): AppServiceRunOptions {
   const text = prompt ?? '';
   const turnSystemContext = [
@@ -191,12 +210,7 @@ export function withSessionCommandCenterBrain(
   return {
     ...(options ?? {}),
     mode: options?.mode ?? 'normal',
-    maxIterations: Math.min(
-      typeof options?.maxIterations === 'number'
-        ? options.maxIterations
-        : SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
-      SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
-    ),
+    maxIterations: resolveForegroundBrainTurnBudget(text, lastAssistantStoppedByStepLimit, options?.maxIterations),
     allowedToolNames: getTextForegroundToolNamesForPrompt(text, options?.toolScope?.allowedConnectorIds, imageTurn),
     foregroundToolFace: true,
     turnSystemContext,

@@ -494,11 +494,13 @@ describe('SessionAutomationService', () => {
           requestedAt: 1000,
           argsRef: { sessionId: 'session-prev', toolCallId: 'toolu_prev' },
           argsPreview: 'npm run gates:fast · ***REDACTED***',
+          argsSummary: 'npm run gates:fast · ***REDACTED***' + ' --long-argument'.repeat(40),
         }),
       });
       const items = new SessionAutomationService().listParkedApprovals();
       expect(items).toHaveLength(1);
       expect(items[0].argsPreview).toBe('npm run gates:fast · ***REDACTED***');
+      expect(items[0].commandPreview).toBe('npm run gates:fast · ***REDACTED***' + ' --long-argument'.repeat(40));
     });
   });
 

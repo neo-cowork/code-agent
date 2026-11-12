@@ -15,6 +15,24 @@ export const SESSION_COMMAND_CENTER_TOOL_NAMES = [
 /** Foreground brain should route or answer without growing into an execution run. */
 export const SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS = 8;
 
+/** File execution and resuming a step-limited turn need room beyond routing. */
+const SESSION_COMMAND_CENTER_DELIVERABLE_MAX_ITERATIONS = 30;
+
+// Deliverable nouns only: PPT(X)/PowerPoint/slides/幻灯片/演示稿, XLS(X)/Excel/
+// spreadsheet/表格, DOC(X)/Word/document/report/文档/报告, PDF, HTML/webpage/网页.
+// Latin boundaries avoid incidental substrings (e.g. “wordpress”, “excellent”).
+const FOREGROUND_DELIVERABLE_RE = /\b(?:pptx?|powerpoint|slides?|xlsx?|excel|spreadsheet|docx?|word|document|report|pdf|html|webpage)\b|幻灯片|演示稿|表格|文档|报告|网页/i;
+
+/** Pure per-turn budget policy; continuation is derived from persisted metadata. */
+export function resolveForegroundBrainMaxIterations(input: {
+  prompt: string;
+  lastAssistantStoppedByStepLimit: boolean;
+}): number {
+  return input.lastAssistantStoppedByStepLimit || FOREGROUND_DELIVERABLE_RE.test(input.prompt)
+    ? SESSION_COMMAND_CENTER_DELIVERABLE_MAX_ITERATIONS
+    : SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS;
+}
+
 /** Hidden task-result wakes get a deliberately small reasoning budget. */
 export const SESSION_COMMAND_CENTER_WAKE_MAX_ITERATIONS = 4;
 
