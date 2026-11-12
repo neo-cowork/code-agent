@@ -372,9 +372,9 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
     // adapter may share one physical window among legal owners in the same
     // conversation so user navigation and the agent can continue one page.
     // Legacy callers without a complete owner identity keep the historical path.
-    let browserService: BrowserService;
+    let acquiredBrowserService: BrowserService;
     try {
-      browserService = useManagedSurface && surfaceIdentity
+      acquiredBrowserService = useManagedSurface && surfaceIdentity
         ? managedAdapter.getBrowserService(surfaceIdentity)
         : getBrowserService(context.agentId);
     } catch (error) {
@@ -385,7 +385,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
     }
 
     if (action === 'execute_goal') {
-      const driver = resolveBrowserJevStep({ browserService });
+      const driver = resolveBrowserJevStep({ acquiredBrowserService });
       if (!driver) return jevBrowserStepUnarmedResult();
       if (typeof params.task !== 'string' || !params.task.trim()) {
         return jevBrowserStepEmptyTaskResult();
@@ -395,24 +395,24 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
         ? params.assertions as JevPageAssertion[]
         : undefined;
       const jevBudgetUsd = typeof params.jevBudgetUsd === 'number' ? params.jevBudgetUsd : undefined;
-      const trace = browserService.beginTrace({
+      const trace = acquiredBrowserService.beginTrace({
         toolName: 'browser_action',
         action,
         params,
       });
       try {
-        const loginWallBeforeRun = await enforceBrowserLoginWallStop({ browserService, context });
+        const loginWallBeforeRun = await enforceBrowserLoginWallStop({ acquiredBrowserService, context });
         if (loginWallBeforeRun) {
-          const completedTrace = browserService.finishTrace(trace, {
+          const completedTrace = acquiredBrowserService.finishTrace(trace, {
             success: false,
             error: loginWallBeforeRun.error || null,
           });
           return appendBrowserWorkbenchNote(withWorkbenchTrace(loginWallBeforeRun, completedTrace, context), workbenchNotes);
         }
-        const result = await driver.run({ task, assertions, jevBudgetUsd, browserService }, context);
-        const loginWallAfterRun = await enforceBrowserLoginWallStop({ browserService, context });
+        const result = await driver.run({ task, assertions, jevBudgetUsd, acquiredBrowserService }, context);
+        const loginWallAfterRun = await enforceBrowserLoginWallStop({ acquiredBrowserService, context });
         const finalResult = loginWallAfterRun ?? result;
-        const completedTrace = browserService.finishTrace(trace, {
+        const completedTrace = acquiredBrowserService.finishTrace(trace, {
           success: finalResult.success,
           error: finalResult.error || null,
           screenshotPath: getScreenshotPathFromResult(finalResult),
@@ -420,8 +420,8 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
         return appendBrowserWorkbenchNote(withWorkbenchTrace(finalResult, completedTrace, context), workbenchNotes);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        browserService.logger.log('ERROR', `Action "${action}" failed: ${errorMessage}`);
-        const completedTrace = browserService.finishTrace(trace, {
+        acquiredBrowserService.logger.log('ERROR', `Action "${action}" failed: ${errorMessage}`);
+        const completedTrace = acquiredBrowserService.finishTrace(trace, {
           success: false,
           error: errorMessage,
         });
@@ -436,14 +436,19 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
       workbenchNotes.push(await ensureManagedBrowserSessionForWorkbench({ agentId: context.agentId }));
     }
 
-    const trace = browserService.beginTrace({
+    const trace = acquiredBrowserService.beginTrace({
       toolName: 'browser_action',
       action,
       params,
     });
 
     try {
-      const executeManagedProviderAction = async (): Promise<ToolExecutionResult> => {
+      // N-FIX-FIX-BROWSER-SECRETREF-HARDEN: the adapter binds a run to the window its
+      // Surface session owns — for a takeover-park claim that window's pool key differs
+      // from this identity's own key, so the action must run on the service the adapter
+      // hands over, not on the own-key service acquired above.
+      const executeManagedProviderAction = async (boundBrowserService?: BrowserService): Promise<ToolExecutionResult> => {
+        const browserService = boundBrowserService ?? acquiredBrowserService;
         const loginWallStop = await enforceBrowserLoginWallStop({ browserService, tabId, context });
         if (loginWallStop) return loginWallStop;
         const captchaGate = await enforceBrowserCaptchaTakeoverGate({ action, browserService, tabId, context });
@@ -867,14 +872,14 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
             action,
             params,
             ...(context.abortSignal ? { abortSignal: context.abortSignal } : {}),
-            executeProvider: async () => executeManagedProviderAction(),
+            executeProvider: async (_signal, boundBrowserService) => executeManagedProviderAction(boundBrowserService),
           })
         : await executeManagedProviderAction();
       if (rawResult.success) {
-        const loginWallStop = await enforceBrowserLoginWallStop({ browserService, tabId, context });
+        const loginWallStop = await enforceBrowserLoginWallStop({ acquiredBrowserService, tabId, context });
         if (loginWallStop) rawResult = loginWallStop;
       }
-      const completedTrace = browserService.finishTrace(trace, {
+      const completedTrace = acquiredBrowserService.finishTrace(trace, {
         success: rawResult.success,
         error: rawResult.error || null,
         screenshotPath: getScreenshotPathFromResult(rawResult),
@@ -882,14 +887,14 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
       return appendBrowserWorkbenchNote(withWorkbenchTrace(rawResult, completedTrace, context), workbenchNotes);
     } catch (error) {
       const errorMessage = scrubSecretFromMessage(error instanceof Error ? error.message : 'Unknown error', secretRef);
-      browserService.logger.log('ERROR', `Action "${action}" failed: ${errorMessage}`);
-      const completedTrace = browserService.finishTrace(trace, {
+      acquiredBrowserService.logger.log('ERROR', `Action "${action}" failed: ${errorMessage}`);
+      const completedTrace = acquiredBrowserService.finishTrace(trace, {
         success: false,
         error: errorMessage,
       });
 
       // Get recent logs for debugging
-      const recentLogs = browserService.logger.getLogsAsString(5);
+      const recentLogs = acquiredBrowserService.logger.getLogsAsString(5);
 
       // Provide helpful error messages
       const targetRefError = getBrowserTargetRefErrorDetails(error);

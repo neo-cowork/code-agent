@@ -263,6 +263,16 @@ export class ManagedBrowserProviderAdapter {
   ) {}
 
   getBrowserService(identity: SurfaceRuntimeIdentityV1): BrowserService {
+    // N-FIX-FIX-BROWSER-SECRETREF-HARDEN: when this run's action will run on a
+    // window whose pool key differs from the identity's own key (a takeover-park
+    // claim, in either direction), hand out THAT service — callers that probe or
+    // gate on "the browser for this run" must see the window the action will use.
+    const binding = this.bindings.get(this.ownerKey(identity));
+    if (binding?.browserService.isRunning()) return binding.browserService;
+    if (!isUserBrowserSurfaceIdentity(identity)) {
+      const kept = this.keptRegistry.getAlive(identity.conversationId);
+      if (kept?.reason === 'takeover') return this.acquireBrowser(kept.serviceKey);
+    }
     const key = managedBrowserServiceKey(identity);
     // Default pool key is acquired via null so BrowserService keeps unsuffixed personal profile.
     return this.acquireBrowser(key === MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY ? null : key);
