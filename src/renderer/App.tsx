@@ -71,6 +71,7 @@ import type { AppSettings, ModelConfig, MCPElicitationRequest, MCPOAuthConsentRe
 import { isOpenTaskStatus } from '@shared/contract/planning';
 import { UI } from '@shared/constants';
 import { applyModelSettings, loadModelSettings } from './services/modelSettings';
+import { applyRendererPrivacyFlags, readReportedTelemetryEnv, resolvePrivacyFlags } from './observability/privacyFlags';
 import { UNSORTED_PROJECT_ID } from '@shared/contract/project';
 import { createLogger } from './utils/logger';
 import ipcService from './services/ipcService';
@@ -452,6 +453,7 @@ export const App: React.FC = () => {
     const loadSettings = async () => {
       try {
         const settings = await invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
+        applyRendererPrivacyFlags(resolvePrivacyFlags(settings, readReportedTelemetryEnv()));
 
         // 加载语言设置
         if (settings?.ui?.language) {
@@ -478,8 +480,6 @@ export const App: React.FC = () => {
           useAppStore.getState().setDeveloperMode(true);
           logger.info('Loaded developer mode', { enabled: true });
         }
-
-
         applyModelSettings(settings);
       } catch (error) {
         logger.error('Failed to load settings', error);
