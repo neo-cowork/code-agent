@@ -255,16 +255,18 @@ describe.skipIf(!canRunRealPty)('PTY 会话整树退出证明（真 node-pty）'
       const notifications = ledger.drainNotifications('session-pty-stop');
       expect(notifications.map((n) => n.type)).toEqual(['task_cancelled']);
       expect(notifications[0]?.title).toBe('任务已停止');
+      expect(notifications[0]?.payload).not.toHaveProperty('reason');
     } finally {
       detach();
       shutdownEventBus();
     }
   }, 30000);
 
-  it('超过 max runtime 被超时路径收掉的 PTY 会话不算用户停止（不是 cancelled / task_cancelled）', async () => {
+  it('超过 max runtime 被超时路径收掉的 PTY 会话记为 failed，恰好一条 task_failed', async () => {
     const { BackgroundTaskLedger, installBackgroundTaskEventAdapters, shutdownEventBus } = ledgerModules!;
     const ledger = new BackgroundTaskLedger();
     const detach = installBackgroundTaskEventAdapters(ledger);
+    const warnSpy = vi.spyOn(console, 'warn');
     try {
       const cwd = mkdtempSync(`${tmpdir()}/neo-pty-`);
       const created = ptyExecutor!.createPtySession({
@@ -274,12 +276,67 @@ describe.skipIf(!canRunRealPty)('PTY 会话整树退出证明（真 node-pty）'
       openedPids.push(ptyExecutor!.getPtySession(created.sessionId!)!.pty.pid);
       await waitFor(() => ptyExecutor!.getPtySession(created.sessionId!)?.status !== 'running', 15_000);
 
-      // 既有行为：node-pty 对信号退出回报 exitCode 0，所以超时收掉的会话账本记 completed；
-      // 本单只守「超时不是用户停止」，不改这条既有语义。
-      expect(ledger.getTask(`pty:${created.sessionId}`)?.status).not.toBe('cancelled');
+      expect(warnSpy).toHaveBeenCalledWith(`[PTY] Session ${created.sessionId} exceeded max runtime, terminating...`);
+      expect(ledger.getTask(`pty:${created.sessionId}`)?.status).toBe('failed');
       const notifications = ledger.drainNotifications('session-pty-timeout');
       expect(notifications).toHaveLength(1);
+      expect(notifications[0]).toMatchObject({
+        type: 'task_failed',
+        title: '后台任务失败',
+        payload: { reason: 'timeout', maxRuntimeMs: 400 },
+      });
+      expect(notifications.map((n) => n.type)).not.toContain('task_completed');
       expect(notifications.map((n) => n.type)).not.toContain('task_cancelled');
+      expect(notifications[0]?.message).not.toContain('退出码 0');
+    } finally {
+      warnSpy.mockRestore();
+      detach();
+      shutdownEventBus();
+    }
+  }, 30000);
+
+  it('④ 周期清扫路径（killPtySession reason: timeout）收掉的 PTY 会话：task_failed 且 payload.reason === timeout', async () => {
+    const { BackgroundTaskLedger, installBackgroundTaskEventAdapters, shutdownEventBus } = ledgerModules!;
+    const ledger = new BackgroundTaskLedger();
+    const detach = installBackgroundTaskEventAdapters(ledger);
+    try {
+      const cwd = mkdtempSync(`${tmpdir()}/neo-pty-`);
+      const created = ptyExecutor!.createPtySession({
+        command: 'echo READY; exec sleep 300', args: [], cwd, sessionId: 'session-pty-sweep',
+      });
+      expect(created.success, created.error).toBe(true);
+      openedPids.push(ptyExecutor!.getPtySession(created.sessionId!)!.pty.pid);
+      await waitFor(() => ledger.getTask(`pty:${created.sessionId}`)?.status === 'running');
+
+      // cleanupTimedOutPtySessions 越过上限后调用的就是这一行（私有清扫器，无公开入口）。
+      expect((await ptyExecutor!.killPtySession(created.sessionId!, { reason: 'timeout' })).success).toBe(true);
+      await waitFor(() => ledger.getTask(`pty:${created.sessionId}`)?.status === 'failed');
+
+      const notifications = ledger.drainNotifications('session-pty-sweep');
+      expect(notifications).toHaveLength(1);
+      expect(notifications[0]).toMatchObject({ type: 'task_failed', payload: { reason: 'timeout' } });
+    } finally {
+      detach();
+      shutdownEventBus();
+    }
+  }, 30000);
+
+  it('自然 exit 0 且有输出的 PTY 会话记为 completed，恰好一条 task_completed', async () => {
+    const { BackgroundTaskLedger, installBackgroundTaskEventAdapters, shutdownEventBus } = ledgerModules!;
+    const ledger = new BackgroundTaskLedger();
+    const detach = installBackgroundTaskEventAdapters(ledger);
+    try {
+      const cwd = mkdtempSync(`${tmpdir()}/neo-pty-`);
+      const created = ptyExecutor!.createPtySession({
+        command: 'echo READY; exit 0', args: [], cwd, sessionId: 'session-pty-natural-exit',
+      });
+      expect(created.success, created.error).toBe(true);
+      openedPids.push(ptyExecutor!.getPtySession(created.sessionId!)!.pty.pid);
+      await waitFor(() => ledger.getTask(`pty:${created.sessionId}`)?.status === 'completed');
+
+      const notifications = ledger.drainNotifications('session-pty-natural-exit');
+      expect(notifications).toHaveLength(1);
+      expect(notifications[0]).toMatchObject({ type: 'task_completed', title: '后台任务完成' });
     } finally {
       detach();
       shutdownEventBus();

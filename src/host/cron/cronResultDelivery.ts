@@ -1,4 +1,4 @@
-import type { CronJobAction, CronJobDefinition, CronJobExecution } from '../../shared/contract/cron';
+import type { CronJobAction, CronJobDefinition, CronJobExecution, CronPushNote } from '../../shared/contract/cron';
 import { CRON_AGENT_SNAPSHOT, CRON_RESULT_PUSH } from '../../shared/constants';
 import { guardOutboundText } from '../security/sensitiveDataGuard';
 import { saveCronExecution, upsertCronExecutionInMemory } from './cronPersistence';
@@ -15,6 +15,23 @@ interface CronResultDeliveryOutcome {
   pushedBody?: string;
   /** 观察档（N-TRIGGER-OBSERVE-MODE）：本会推送，已拦下记 would_act，什么都没发。 */
   observed?: boolean;
+  /** 配置了推送目标时的去向码（含「没推」的原因）；没配目标为 undefined。不是失败，不进 error。 */
+  note?: CronPushNote;
+}
+
+/** 上游门（安静轮）跳过投递时由调用方传入，仅用于留痕。 */
+export interface CronResultDeliverySkip {
+  skip: 'quiet-watch-round' | 'notify-quiet-round';
+}
+
+function resolveTargetChannel(definition: CronJobDefinition): string | undefined {
+  const actionContext = definition.action.type === 'agent'
+    ? definition.action.context as Record<string, unknown> | undefined
+    : undefined;
+  const heartbeatChannel = actionContext?.heartbeatTask && typeof actionContext.channel === 'string'
+    ? actionContext.channel
+    : undefined;
+  return definition.resultChannel?.trim() || heartbeatChannel;
 }
 
 export interface CronResultDeliveryPersistence {
@@ -70,17 +87,12 @@ async function pushCronResult(
   result: unknown,
   executionId: string | undefined,
 ): Promise<CronResultDeliveryOutcome> {
-  const actionContext = definition.action.type === 'agent'
-    ? definition.action.context as Record<string, unknown> | undefined
-    : undefined;
-  const heartbeatChannel = actionContext?.heartbeatTask && typeof actionContext.channel === 'string'
-    ? actionContext.channel
-    : undefined;
-  const targetChannel = definition.resultChannel?.trim() || heartbeatChannel;
-  if (!targetChannel || !result) return { delivered: false };
+  const targetChannel = resolveTargetChannel(definition);
+  if (!targetChannel) return { delivered: false };
+  if (!result) return { delivered: false, note: 'empty-result' };
 
   const body = sanitizePushBody(String(result));
-  if (!body) return { delivered: false };
+  if (!body) return { delivered: false, note: 'empty-body' };
   // 字面去重（免费路径，不受任何开关限制；借鉴 OWB scheduler.js:293「跟上次真推出去的比」）：
   // 正文与上次真推成功的一字不差就不推。判错最坏是少推一条重复内容，不是永远不知道。
   // lastPushed 只在真推成功后由下方 rememberPushedBody 写回，这里只读；
@@ -90,7 +102,7 @@ async function pushCronResult(
     const lastPushed = definition.action.context?.[CRON_RESULT_PUSH.LAST_PUSHED_CONTEXT_KEY];
     if (typeof lastPushed === 'string' && dedupBody === lastPushed) {
       console.warn(`[CronService] Job result identical to the last pushed body, push skipped: ${targetChannel}`);
-      return { delivered: false };
+      return { delivered: false, note: 'duplicate' };
     }
   }
 
@@ -98,7 +110,7 @@ async function pushCronResult(
   // 通道管理器一下都不碰——账号解析/发送都在这之后。
   if (isCronObserveMode(definition)) {
     recordObservedChannelReply(definition, executionId, targetChannel, body);
-    return { delivered: false, observed: true };
+    return { delivered: false, observed: true, note: 'observe-mode' };
   }
 
   const { account: accountRef, chatId } = parseTarget(targetChannel);
@@ -123,7 +135,7 @@ async function pushCronResult(
     if (!sent.success) return fail(`channel rejected the message: ${sent.error ?? 'unknown error'}`);
 
     console.error(`[CronService] Job result pushed to channel: ${targetChannel}`);
-    return { delivered: true, pushedBody: dedupBody };
+    return { delivered: true, pushedBody: dedupBody, note: 'pushed' };
   } catch (error) {
     return fail(error instanceof Error ? error.message : String(error));
   }
@@ -147,18 +159,23 @@ export async function deliverCronResultToChannel(
   executions: Map<string, CronJobExecution[]>,
   executionId: string | undefined,
   persistence: CronResultDeliveryPersistence,
+  gate?: CronResultDeliverySkip,
 ): Promise<CronResultDeliveryOutcome> {
-  const outcome = await pushCronResult(definition, result, executionId);
+  const outcome: CronResultDeliveryOutcome = gate
+    ? { delivered: false, ...(resolveTargetChannel(definition) ? { note: gate.skip } : {}) }
+    : await pushCronResult(definition, result, executionId);
   if (outcome.delivered) {
     await rememberPushedBody(definition, outcome.pushedBody, persistence);
-    return outcome;
   }
-  if (!outcome.reason || !executionId) return outcome;
+  if ((!outcome.reason && !outcome.note) || !executionId) return outcome;
   const executionsForJob = executions.get(definition.id) ?? [];
   const execution = executionsForJob.find((candidate) => candidate.id === executionId);
   if (!execution) return outcome;
-  const note = `结果推送失败：${outcome.reason}`;
-  execution.error = execution.error ? `${execution.error}\n${note}` : note;
+  if (outcome.note) execution.pushNote = outcome.note;
+  if (outcome.reason) {
+    const note = `结果推送失败：${outcome.reason}`;
+    execution.error = execution.error ? `${execution.error}\n${note}` : note;
+  }
   upsertCronExecutionInMemory(executions, execution);
   await saveCronExecution(execution);
   return outcome;

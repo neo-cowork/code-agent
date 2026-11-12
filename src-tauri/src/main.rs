@@ -2779,6 +2779,8 @@ fn setup_app_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         &[
             &PredefinedMenuItem::about(handle, None, Some(about_metadata))?,
             &PredefinedMenuItem::separator(handle)?,
+            &MenuItem::with_id(handle, "open_settings", "设置…", true, Some("Cmd+,"))?,
+            &PredefinedMenuItem::separator(handle)?,
             &PredefinedMenuItem::services(handle, None)?,
             &PredefinedMenuItem::separator(handle)?,
             &PredefinedMenuItem::hide(handle, None)?,
@@ -4567,6 +4569,7 @@ fn main() {
             renderer_ready
         ])
         .setup(|app| {
+            native_notification::install_notification_delegate(app.handle().clone(), request_main_window_focus);
             // 必须在 spawn webServer 之前：决定本进程（含 node 子进程）的数据目录通道。
             apply_channel_env(&app.handle());
             let mut boot_diagnostics = new_boot_diagnostics(&app.handle());
@@ -4816,6 +4819,10 @@ fn main() {
         }
         // quit_app 的唯一消费点：app 菜单（⌘Q/菜单退出）与托盘退出都汇到这里，
         // 统一转 exit(0) → ExitRequested 的受守卫路径。
+        RunEvent::MenuEvent(event) if event.id().as_ref() == "open_settings" => {
+            let _ = request_main_window_focus(app_handle);
+            app_handle.emit("menu:open-settings", ()).ok();
+        }
         RunEvent::MenuEvent(event) if event.id().as_ref() == "quit_app" => {
             app_handle.exit(0);
         }

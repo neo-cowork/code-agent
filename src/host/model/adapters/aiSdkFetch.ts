@@ -1,3 +1,4 @@
+import { noteFirstModelRequestDispatched } from '../../agent/runtime/firstModelRequestWatch';
 import axios, { type AxiosResponse } from 'axios';
 import { Readable, Transform } from 'node:stream';
 import { createLogger } from '../../services/infra/logger';
@@ -136,6 +137,7 @@ export function makeAiSdkFetch(
     });
   }
 
+  noteFirstModelRequestDispatched(provider);
   const response = await axios({
     url,
     method,

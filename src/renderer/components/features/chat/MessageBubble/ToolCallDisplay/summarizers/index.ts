@@ -10,6 +10,7 @@ import { summarizeGlob } from './globSummarizer';
 import { summarizeRead } from './readSummarizer';
 import { summarizeEdit, summarizeWrite } from './editSummarizer';
 import { summarizeDefault } from './defaultSummarizer';
+import { formatSessionTaskOutput } from '../../../../../../utils/sessionTaskPresentation';
 import { summarizeBrowserComputerActionResult } from '../../../../../../utils/browserComputerActionPreview';
 
 /**
@@ -20,6 +21,10 @@ export function summarizeTool(toolCall: ToolCall, t: Translations): string | nul
   if (!toolCall.result) return null;
 
   const { name, result } = toolCall;
+  if (result.success && typeof result.output === 'string') {
+    const sessionTaskOutput = formatSessionTaskOutput(result.metadata, result.output, t);
+    if (sessionTaskOutput !== result.output) return sessionTaskOutput;
+  }
   const browserComputerSummary = name === 'browser_action' || name === 'computer_use'
     ? summarizeBrowserComputerActionResult(toolCall)
     : null;

@@ -184,6 +184,108 @@ describe('ConfirmationGate', () => {
       expect(preview!.summary).toContain('npm install');
     });
 
+    const WS = '/Users/example/ws';
+
+    it('summary uses the model-given name, else the task, and never the role', () => {
+      const named = getConfirmationGate().buildPreview('spawn_agent', { role: 'explore', name: ' 文档主题整理 ', task: '读文档' }, { workspaceRoot: WS });
+      expect(named?.summary).toBe('派出子代理：文档主题整理');
+      const unnamed = getConfirmationGate().buildPreview('spawn_agent', { role: 'explore', name: '  ', task: ' 调查数据趋势 ' }, { workspaceRoot: WS });
+      expect(unnamed?.summary).toBe('派出子代理：调查数据趋势');
+    });
+
+    it.each(['spawn_agent', 'AgentSpawn'])('%s: a harmless name cannot hide the real task, write permission and out-of-workspace target', (tool) => {
+      const preview = getConfirmationGate().buildPreview(tool, {
+        name: '整理文档',
+        role: 'coder',
+        task: '删除 /Users/example/prod 下全部文件',
+      }, { workspaceRoot: WS });
+      expect(preview?.summary).toBe('派出子代理：整理文档');
+      expect(preview?.diff).toBe('任务：删除 /Users/example/prod 下全部文件\n权限：可修改文件、运行命令');
+      const all = `${preview?.summary}\n${preview?.diff}`;
+      expect(all).not.toMatch(/coder|Task:|Role:/);
+    });
+
+    it('read-only role: workspace paths become relative, permission is 只读查看, role id is hidden', () => {
+      const preview = getConfirmationGate().buildPreview('spawn_agent', {
+        role: 'explore',
+        task: `整理 ${WS}/docs 里的文档，并对照 ${WS} 根目录`,
+      }, { workspaceRoot: WS });
+      expect(preview?.diff).toContain('./docs');
+      expect(preview?.diff).toContain('对照 ./ 根目录');
+      expect(preview?.diff).toContain('权限：只读查看');
+      const all = `${preview?.summary}\n${preview?.diff}`;
+      expect(all).not.toContain(WS);
+      expect(all).not.toContain('explore');
+    });
+
+    it('does not treat a sibling directory sharing the workspace prefix as inside it', () => {
+      const preview = getConfirmationGate().buildPreview('spawn_agent', { role: 'explore', task: `读 ${WS}-other/a` }, { workspaceRoot: WS });
+      expect(preview?.diff).toContain(`${WS}-other/a`);
+    });
+
+    it('unknown role is shown with write-capable wording', () => {
+      const preview = getConfirmationGate().buildPreview('spawn_agent', { role: 'totally-unknown-role', task: '做点事' }, { workspaceRoot: WS });
+      expect(preview?.diff).toContain('权限：可修改文件、运行命令');
+      expect(`${preview?.summary}\n${preview?.diff}`).not.toContain('totally-unknown-role');
+    });
+
+    it('missing role is shown with write-capable wording', () => {
+      const preview = getConfirmationGate().buildPreview('spawn_agent', { task: '做点事' }, { workspaceRoot: WS });
+      expect(preview?.diff).toBe('任务：做点事\n权限：可修改文件、运行命令');
+    });
+
+    it('preserves POSIX, Windows and UNC targets outside the workspace', () => {
+      const task = String.raw`Read "/Users/example/My Documents/notes.md", C:\Users\example\other\ and \\server\share\report.md`;
+      const preview = getConfirmationGate().buildPreview('spawn_agent', { role: 'explore', task }, { workspaceRoot: WS });
+      expect(preview?.summary).toBe(`派出子代理：${task}`);
+      expect(preview?.diff).toBe(`任务：${task}\n权限：只读查看`);
+    });
+
+    it('keeps a lone filesystem root as / (outside the workspace)', () => {
+      const preview = getConfirmationGate().buildPreview('spawn_agent', { task: 'Review /' }, { workspaceRoot: WS });
+      expect(preview?.summary).toBe('派出子代理：Review /');
+      expect(preview?.diff).toBe('任务：Review /\n权限：可修改文件、运行命令');
+    });
+
+    it('redacts task and name secrets before limiting the approval text', () => {
+      const preview = getConfirmationGate().buildPreview('spawn_agent', {
+        name: 'Review API_KEY=name-secret', task: `API_KEY=preview-secret ${'x'.repeat(250)}`, role: 'explore',
+      });
+      expect(preview?.summary).toContain('Review API_KEY=');
+      expect(preview?.diff).toContain('任务：API_KEY=');
+      expect(`${preview?.summary}\n${preview?.diff}`).not.toMatch(/preview-secret|name-secret/);
+      expect(preview?.diff?.split('\n')[0]).toHaveLength('任务：'.length + 200);
+    });
+
+    it('limits the unnamed spawn_agent task label and details to 200 characters', () => {
+      const preview = gate.buildPreview('spawn_agent', { role: '  ', task: 'x'.repeat(250) });
+      expect(preview!.type).toBe('generic');
+      expect(preview!.summary).toBe(`派出子代理：${'x'.repeat(200)}`);
+      expect(preview!.diff).toBe(`任务：${'x'.repeat(200)}\n权限：可修改文件、运行命令`);
+    });
+
+
+    it('should return generic preview with up to 3 redacted string param diff lines for default tools', () => {
+      const preview = gate.buildPreview('custom_tool', {
+        query: 'search term',
+        apiKey: 'plain-secret-with-no-recognizable-token-shape',
+        longText: 'a'.repeat(150),
+        fourthParam: 'should not appear',
+        count: 42,
+      });
+      expect(preview).toBeDefined();
+      expect(preview!.type).toBe('generic');
+      expect(preview!.summary).toBe('执行工具 custom_tool');
+      expect(preview!.diff).toBeDefined();
+      const lines = preview!.diff!.split('\n');
+      expect(lines).toHaveLength(3);
+      expect(lines[0]).toBe('query: search term');
+      expect(lines[1]).toBe('apiKey: ***REDACTED***');
+      expect(lines[1]).not.toContain('plain-secret-with-no-recognizable-token-shape');
+      expect(lines[2]).toBe(`longText: ${'a'.repeat(120)}`);
+      expect(preview!.diff).not.toContain('fourthParam');
+    });
+
     it('should return generic preview for non-write tools', () => {
       const preview = gate.buildPreview('read_file', { file_path: '/tmp/a.ts' });
       expect(preview).toBeDefined();

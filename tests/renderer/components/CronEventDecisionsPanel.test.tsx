@@ -77,6 +77,36 @@ afterEach(() => {
 });
 
 describe('CronEventDecisionsPanel (via CronJobDetail)', () => {
+  it.each([
+    { tool: '飞书 回复消息', reason: 'outbound action 飞书 回复消息 intercepted in observe mode', zhTool: '飞书 回复消息', enTool: '飞书 回复消息' },
+    { tool: '飞书 回复消息', reason: 'observe mode: 飞书 回复消息 intercepted before sending', zhTool: '飞书 回复消息', enTool: '飞书 回复消息' },
+    { tool: 'channel_reply', reason: 'outbound action channel_reply intercepted in observe mode', zhTool: '通道回复', enTool: 'Channel reply' },
+    { tool: 'channel_reply', reason: 'observe mode: channel reply intercepted before sending', zhTool: '通道回复', enTool: 'Channel reply' },
+  ].flatMap((row) => (['zh', 'en'] as const).map((language) => ({ ...row, language }))))(
+    'renders readable action label and reason in $language: $reason',
+    async ({ tool, reason, zhTool, enTool, language }) => {
+      useAppStore.setState({ language });
+      clientState.getEventDecisions.mockResolvedValue([{
+        ...decisions[0], tool, reason, target: 'om_rr51_1', summary: 'RR51-PONG 收到',
+      }]);
+      render(<CronJobDetail job={eventJob()} />);
+      const row = await screen.findByTestId('cron-event-would-act-row');
+      const defaultLine = within(row).getByTestId('cron-event-decision-default');
+      const details = within(row).getByTestId('cron-event-decision-details');
+      const label = language === 'zh' ? zhTool : enTool;
+      const expectedReason = language === 'zh'
+        ? `仅观察模式：已拦下「${label}」，没有真的发出去`
+        : `Observe mode stopped “${label}”; nothing was sent`;
+      expect(defaultLine.textContent).toContain(label);
+      expect(within(defaultLine).getByText(expectedReason)).toBeTruthy();
+      expect(within(details).getByText(expectedReason)).toBeTruthy();
+      expect(defaultLine.textContent).toContain('RR51-PONG 收到');
+      expect(row.textContent).not.toMatch(/channel_reply|lark-cli|Bash/);
+      if (language === 'zh') expect(row.textContent).not.toMatch(/intercepted|observe mode/i);
+      process.stdout.write(`[PANEL LOCALIZED ${language}] ${JSON.stringify({ stored: reason, label, rendered: defaultLine.textContent })}\n`);
+    },
+  );
+
   it('shows the observe badge; would_act rows sit in their own highlighted section with matched rule, out of the general list', async () => {
     render(<CronJobDetail job={eventJob()} />);
     const badge = screen.getByTestId('cron-action-mode-badge');

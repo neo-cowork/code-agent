@@ -16,6 +16,7 @@ import {
   resolveSkillInvocation,
   type ResolvedSkillInvocation,
 } from '../../services/skills/skillInvocationResolver';
+import { matchRoleAuthoringSeed } from '../../services/roleAssets/roleCreationIntent';
 import { listRoleDrafts } from '../../services/roleAssets/roleDraftQueue';
 import { EXIT_ROLE_FLOW_TOOL_NAME } from '../../tools/modules/roleAuthoring/exitRoleFlow.schema';
 import { logCollector } from '../../mcp/logCollector.js';
@@ -40,9 +41,9 @@ function findLatestStrictSkillSeed(ctx: RuntimeContext): StrictSkillSeed | null 
     if (msg?.role !== 'user' || msg.visibility === 'rewound') {
       continue;
     }
-    const text = msg.content.trim();
-    if (/^\/(?:create-role|edit-role)(?:\s|$)/.test(text)) {
-      return { text, index: i };
+    const seed = matchRoleAuthoringSeed(msg.content);
+    if (seed) {
+      return { text: msg.content, index: i };
     }
   }
   return null;
@@ -116,7 +117,12 @@ export async function resolveStickyStrictSkillInvocation(
     return null;
   }
 
-  const invocation = await resolveSkillInvocation(seed.text, ctx.workingDirectory);
+  const invocation = matchRoleAuthoringSeed(seed.text)?.kind === 'natural-language'
+    ? await resolveNaturalLanguageCreateRoleInvocation(ctx, seed.text)
+    : await resolveSkillInvocation(seed.text, ctx.workingDirectory, {
+      sessionId: ctx.sessionId,
+      toolScope: ctx.toolScope,
+    });
   if (!invocation || !isStickyStrictSkill(invocation)) {
     return null;
   }
@@ -131,5 +137,38 @@ export async function resolveStickyStrictSkillInvocation(
     matchedText: invocation.matchedText,
   });
 
+  return invocation;
+}
+
+/**
+ * 第三步：用户没打 /create-role，但明确说"创建一个专家/角色/助理"时，
+ * 等价于 `/create-role <原话>` 解析（同 strict 工具集、同提示词）。
+ */
+export async function resolveNaturalLanguageCreateRoleInvocation(
+  ctx: RuntimeContext,
+  userMessage: string,
+): Promise<ResolvedSkillInvocation | null> {
+  const seed = matchRoleAuthoringSeed(userMessage);
+  if (seed?.kind !== 'natural-language') {
+    return null;
+  }
+  const invocation = await resolveSkillInvocation(seed.text, ctx.workingDirectory, {
+    sessionId: ctx.sessionId,
+    toolScope: ctx.toolScope,
+  });
+  if (invocation?.skill.name !== seed.skillName) {
+    logger.warn('[AgentLoop] Natural-language create-role route matched but create-role skill not resolvable', {
+      reason: invocation ? `resolved other skill: ${invocation.skill.name}` : 'skill not found in discovery',
+      matchedText: userMessage.slice(0, 80),
+    });
+    return null;
+  }
+  logger.info('[AgentLoop] Natural-language create-role route fired', {
+    matchedText: userMessage.slice(0, 80),
+    resolvedSkill: invocation.skill.name,
+  });
+  logCollector.agent('INFO', `Natural-language create-role route: ${invocation.skill.name}`, {
+    matchedText: userMessage.slice(0, 80),
+  });
   return invocation;
 }

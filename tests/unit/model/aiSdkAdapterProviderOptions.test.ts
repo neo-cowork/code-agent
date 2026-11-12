@@ -171,6 +171,51 @@ describe('inferenceViaAiSdk provider options', () => {
     }));
   });
 
+  describe.each([false, true])('reasoning forwarding streaming=%s', (streaming) => {
+    async function request(config: ModelConfig, effort?: 'high') {
+      vi.mocked(streamText).mockReturnValue({
+        stream: (async function* () {
+          yield { type: 'text-delta', id: 'text', text: 'ok' };
+          yield { type: 'finish', finishReason: 'stop', totalUsage: { inputTokens: 1, outputTokens: 1 } };
+        })(),
+      } as unknown as ReturnType<typeof streamText>);
+      await inferenceViaAiSdk([{ role: 'user', content: 'hello' }], [], config,
+        streaming ? vi.fn() : undefined, undefined, effort ? { reasoningEffort: effort } : undefined);
+      return (streaming ? vi.mocked(streamText).mock.calls : vi.mocked(generateText).mock.calls).at(-1)?.[0];
+    }
+
+    it.each(['config', 'per-request'])('NeoHorse omits reasoning and reasoning_effort from %s effort', async (source) => {
+      const options = await request({ provider: 'xiaomi', model: 'neohorse-1.5-flash-preview',
+        reasoningEffort: source === 'config' ? 'high' : 'low' } as ModelConfig,
+      source === 'per-request' ? 'high' : undefined);
+      expect(options).toBeDefined();
+      expect(options).not.toHaveProperty('reasoning');
+      expect(options).not.toHaveProperty('reasoning_effort');
+    });
+
+    it.each([
+      ['xiaomi', 'mimo-v2.5-pro'], ['deepseek', 'deepseek-chat'],
+    ])('%s effort-capable model still forwards reasoning and preserves vendor body', async (provider, model) => {
+      const options = await request({ provider, model } as ModelConfig, 'high');
+      expect(options).toHaveProperty('reasoning', 'high');
+      vi.mocked(axios).mockResolvedValueOnce({ status: 200, statusText: 'OK',
+        headers: { 'content-type': 'application/json' }, data: Readable.from(['{}']) });
+      const factory = provider === 'deepseek' ? providerMocks.createDeepSeek : providerMocks.createOpenAICompatible;
+      const fetch = factory.mock.calls[0][0].fetch as typeof globalThis.fetch;
+      await fetch('https://relay.example/v1/chat/completions', {
+        method: 'POST', body: JSON.stringify({ model, messages: [] }),
+      });
+      const body = JSON.parse((vi.mocked(axios).mock.calls[0][0] as unknown as { data: string }).data);
+      expect(body).toMatchObject(provider === 'xiaomi'
+        ? { thinking: { type: 'enabled' } } : { reasoning_effort: 'high' });
+    });
+
+    it('max still omits the AI SDK reasoning option', async () => {
+      const options = await request({ provider: 'xiaomi', model: 'mimo-v2.5-pro', reasoningEffort: 'max' } as ModelConfig);
+      expect(options).not.toHaveProperty('reasoning');
+    });
+  });
+
   it('Claude 仅在开启 thinking 且矩阵声明支持时传公开 anthropicBeta option', async () => {
     await runNonStreaming({
       provider: 'claude',

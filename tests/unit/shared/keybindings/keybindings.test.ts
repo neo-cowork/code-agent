@@ -10,6 +10,19 @@ import {
 } from '@shared/keybindings';
 
 describe('keybindings registry', () => {
+  it.each(['darwin', 'win32', 'linux'] as const)('registers rebindable session search without default conflicts on %s', (platform) => {
+    const definition = KEYBINDING_DEFINITIONS.find(({ id }) => id === 'sessionSearch.open');
+    expect(definition).toMatchObject({
+      label: '搜索会话', scope: 'session', category: 'sessionEditing',
+      configurable: true, enabledByDefault: true,
+    });
+    const settings = createDefaultKeybindingsSettings(platform);
+    expect(settings.bindings['sessionSearch.open']).toEqual({
+      enabled: true, accelerator: platform === 'darwin' ? 'Cmd+P' : 'Ctrl+P',
+    });
+    expect(detectKeybindingConflicts(settings, platform)).toEqual([]);
+  });
+
   it('registers the global Live call toggle action', () => {
     expect(KEYBINDING_DEFINITIONS.some((definition) => definition.id === 'voice.callToggle')).toBe(true);
   });

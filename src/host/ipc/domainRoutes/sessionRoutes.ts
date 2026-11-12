@@ -334,10 +334,19 @@ const SESSION_HANDLERS: DomainRouteHandlers<SessionDomainRequest, SessionCommand
     ),
 
   load: async (ctx, payload) => {
-    const session = await ctx.loadSession(
-      (payload as { sessionId?: string } | undefined)?.sessionId as string,
-    );
-    if (session) await ctx.decorateLoadedSession(session);
+    const sessionId = (payload as { sessionId?: string } | undefined)?.sessionId as string;
+    const session = await ctx.loadSession(sessionId);
+    if (session) {
+      await ctx.decorateLoadedSession(session);
+      // 用户回到会话 = 环境恢复等待的武装时机（ADR-090 §7：重启后不在启动时武装；
+      // 本表是 web context（sessionDomainHandler decorateLoadedSession）与桌面 context
+      // 共同经过的层）。函数自吞错误，这里的失败绝不拖垮会话加载。
+      const [{ armEnvResumeOnSessionReturn }, { getApplicationRunRegistry }] = await Promise.all([
+        import('../../runtime/envResumeWaiter'),
+        import('../../app/applicationRunRegistry'),
+      ]);
+      armEnvResumeOnSessionReturn(sessionId, getApplicationRunRegistry(), 'domain:session:load');
+    }
     return session;
   },
 
@@ -446,11 +455,11 @@ const SESSION_HANDLERS: DomainRouteHandlers<SessionDomainRequest, SessionCommand
   },
 
   search: async (ctx, payload) => {
-    const svc = await ctx.sessions();
+    await ctx.sessions(); // backend 门：服务未就绪时仍先落 SERVICE_UNAVAILABLE
     const p = payload as { query: string; options?: CrossSessionSearchOptions };
     // 动态 import 断开与 session.ipc 的静态环（session.ipc 装配本表）
     const { performCrossSessionSearch } = await import('../session.ipc');
-    return performCrossSessionSearch(p.query, p.options, () => svc as unknown as AgentApplicationService);
+    return performCrossSessionSearch(p.query, p.options);
   },
 
   searchSessionForkExports: async (ctx, payload) =>

@@ -9,6 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { assertNoLoginSession, isolatedVerificationEnv } from './lib/verificationIsolation.ts';
 import { CLI_CONNECTOR_DESCRIPTORS } from '../src/shared/constants/cliConnectorDescriptors.ts';
 
 const PROVIDER_ID = 'custom-tokenrhythm';
@@ -34,11 +35,12 @@ const repoRoot = path.resolve(scriptDir, '..');
 function usage() {
   return [
     'Usage:',
-    '  node scripts/verify-slotless.mjs <ticket> [--reuse-dist] [--native <ids>] [--source-config <path>] [--clean-account]',
+    '  node scripts/verify-slotless.mjs <ticket> [--reuse-dist] [--native <ids>] [--source-config <path>] [--clean-account] [--copy-login-session]',
     '  node scripts/verify-slotless.mjs --stop <NEO_VERIFY_DATA_DIR>',
     '',
     'Starts the worktree webServer on an isolated port and signs in with the dogfood account.',
-    'Copies the selected source data directory secure-storage.json + .secure-key pair by default.',
+    'Copies NO login session by default; model credentials come from the staged config.json.',
+    'Use --copy-login-session to explicitly copy the source secure-storage.json + .secure-key (WARNING: live login session).',
     'By default, native connectors keep the source config and no system apps are probed.',
     'Use --clean-account to skip the cloud session-list pull so the sidebar starts truly empty (sign-in is unchanged).',
     'Use --native calendar,reminders to opt in to native connector verification on macOS.',
@@ -249,7 +251,12 @@ function validateSecureStorageSources(sourceDataDir) {
   });
 }
 
-export function copySecureStoragePair(sourceDataDir, targetDataDir) {
+export function copySecureStoragePair(sourceDataDir, targetDataDir, { copyLoginSession = false } = {}) {
+  if (!copyLoginSession) {
+    assertNoLoginSession(targetDataDir);
+    return;
+  }
+  console.error('WARNING: --copy-login-session copies a live login session; token refresh may affect the source account.');
   const sources = validateSecureStorageSources(sourceDataDir);
   for (const { fileName, source } of sources) {
     const target = path.join(targetDataDir, fileName);
@@ -416,6 +423,7 @@ async function invokeAuth(url, token, action, payload) {
 }
 
 async function signInDogfood(url, token, credentials) {
+  console.log('NEO_VERIFY_AUTH=signInDogfood (fresh dogfood account sign-in)');
   const result = await invokeAuth(url, token, 'signInEmail', {
     email: credentials.email,
     password: credentials.password,
@@ -748,6 +756,7 @@ async function cleanupFailedStart(child, dataDir, marker, nativeConnectorIds, na
 export function buildWebServerEnv({ baseEnv = process.env, dataDir, runtimeTmpDir, port, cleanAccount }) {
   return {
     ...baseEnv,
+    ...isolatedVerificationEnv(dataDir),
     AGENT_NEO_BUNDLED_RUNTIME_ROOT: repoRoot,
     CODE_AGENT_DATA_DIR: dataDir,
     CODE_AGENT_DISABLE_RENDERER_HOT_UPDATE: '1',
@@ -777,7 +786,7 @@ function runPreStartHook(dataDir) {
   if (result.status !== 0) fail(`pre-start hook exited with ${result.status ?? 'unknown'}`);
 }
 
-async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount = false) {
+async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount = false, copyLoginSession = false) {
   const ticket = sanitizeTicket(ticketArg);
   const credentials = readDogfoodCredentials();
   const requestedSourceConfig = resolveSourceConfigPath(sourceConfigArg);
@@ -785,7 +794,6 @@ async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigAr
   if (!statSync(requestedSourceConfig).isFile()) fail(`source config path is not a file: ${requestedSourceConfig}`);
   const sourceConfigPath = realpathSync(requestedSourceConfig);
   const sourceDataDir = path.dirname(sourceConfigPath);
-  validateSecureStorageSources(sourceDataDir);
   const sourceConfig = JSON.parse(readFileSync(sourceConfigPath, 'utf8'));
   const config = buildSlotlessConfig(sourceConfig, credentials.tokenRhythmKey, nativeConnectorIds);
   const template = buildSlotlessTemplateProvenance(config, sourceConfigPath);
@@ -798,12 +806,14 @@ async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigAr
   try {
     chmodSync(dataDir, 0o700);
     writePrivateJson(path.join(dataDir, 'config.json'), config);
-    copySecureStoragePair(sourceDataDir, dataDir);
+    copySecureStoragePair(sourceDataDir, dataDir, { copyLoginSession });
     linkCliConnectorInstallDirectories(DEFAULT_SOURCE_DATA_DIR, dataDir);
     const runtimeTmpDir = path.join(dataDir, 'runtime-tmp');
     mkdirSync(runtimeTmpDir, { mode: 0o700 });
     chmodSync(runtimeTmpDir, 0o700);
     runPreStartHook(dataDir);
+    if (!copyLoginSession) assertNoLoginSession(dataDir);
+    console.log(`NEO_VERIFY_LOGIN_SESSION=${copyLoginSession ? 'explicit-copy' : 'none'}`);
 
     const port = await reservePort();
     const url = `http://127.0.0.1:${port}`;
@@ -845,7 +855,7 @@ async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigAr
       startedAt: new Date().toISOString(),
     });
     child.unref();
-    console.log('NEO_VERIFY_SECURE_STORAGE=configured');
+    console.log('NEO_VERIFY_SECURE_STORAGE=dogfood-sign-in');
     console.log(`NEO_VERIFY_KEY=${maskTokenRhythmKey(credentials.tokenRhythmKey)}`);
     console.log(`NEO_VERIFY_MODEL=${PROVIDER_ID}/${config.models.providers[PROVIDER_ID].model}`);
     console.log(
@@ -871,10 +881,16 @@ export function parseStartArgs(args) {
   let nativeConnectorIds;
   let sourceConfigArg;
   let cleanAccount = false;
+  let copyLoginSession = false;
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === '--reuse-dist') {
       reuseDist = true;
+      continue;
+    }
+    if (arg === '--copy-login-session') {
+      if (copyLoginSession) fail('--copy-login-session may only be specified once');
+      copyLoginSession = true;
       continue;
     }
     if (arg === '--clean-account') {
@@ -906,7 +922,7 @@ export function parseStartArgs(args) {
     ticket = arg;
   }
   if (!ticket) fail(usage());
-  return { ticket, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount };
+  return { ticket, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount, copyLoginSession };
 }
 
 async function main(args = process.argv.slice(2)) {
@@ -918,8 +934,8 @@ async function main(args = process.argv.slice(2)) {
     await stopRun(args[1]);
     return;
   }
-  const { ticket, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount } = parseStartArgs(args);
-  await startRun(ticket, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount);
+  const { ticket, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount, copyLoginSession } = parseStartArgs(args);
+  await startRun(ticket, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount, copyLoginSession);
 }
 
 const isEntrypoint = process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;

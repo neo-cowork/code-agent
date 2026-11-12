@@ -1,10 +1,13 @@
 // 链路级去重验证：停车审批的 needs-input 通知有两个发送口——
-// ① parkApproval 里的 notifyNeedsInput（「去收件箱确认」文案，先发）
+// ① parkApproval 里的 notifyNeedsInput（「到自动化的运行记录处理」文案，先发）
 // ② permission_request 事件经 persistTaskManagerEvent 的 notifyNeedsInput（「需要授权」文案）
 // 两者用真实 notificationService 单例 + 真实 OrchestratorPermissionIsland 串起来，
 // 断言同一条停车请求只投递一条横幅；普通（非停车）请求经 ② 仍各投递一条。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentEvent, AppSettings } from '../../../src/shared/contract';
+import { PARKED_APPROVAL_ENTRY_PATH } from '../../../src/shared/parkedApprovalLocation';
+import { sidebarZh } from '../../../src/renderer/i18n/sidebar';
+import { cronCenterZh } from '../../../src/renderer/i18n/cronCenter';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 import type { PendingApprovalRepository } from '../../../src/host/services/core/repositories/PendingApprovalRepository';
 
@@ -89,7 +92,7 @@ describe('停车审批 needs-input 横幅去重（真服务链路）', () => {
     notificationService.clearRecentNotifications();
   });
 
-  it('同一条停车审批只投递一条 needs-input 横幅（停车口先发，落库口同键被去重）', async () => {
+  it('parked approval body names the real approval screen without inbox and deduplicates the persistence notification', async () => {
     const sessionId = 'parked-dedupe-chain';
     getPermissionModeManager().markUnattendedSession(sessionId);
     const deps = makeDeps();
@@ -115,18 +118,24 @@ describe('停车审批 needs-input 横幅去重（真服务链路）', () => {
     });
     // 无人值守 file_write 先过写授权查询（N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1 的
     // approveByScheduleWriteGrant：动态 import + 会话查询）才落停车——比纯停车链路多几跳
-    // 微任务。排空后再快照 persistence（fake timers 下 setImmediate 被冻，用微任务自旋）。
-    for (let i = 0; i < 20 && onEvents.length === 0; i += 1) await Promise.resolve();
+    // 微任务（停车前另有一次一键授权候选查询，同样动态 import + 会话查询）。排空后再快照 persistence（fake timers 下 setImmediate 被冻，用微任务自旋）。
+    for (let i = 0; i < 200 && onEvents.length === 0; i += 1) await Promise.resolve();
     await Promise.all(persistence);
 
     expect(onEvents).toHaveLength(1);
     expect(onEvents[0]).toMatchObject({ type: 'permission_request' });
-    // 两个发送口只放出一条：先到的停车口文案（更具体的「去收件箱确认」）。
+    // 两个发送口只放出一条：先到的停车口文案（更具体的「到自动化的运行记录处理」）。
     expect(platformMocks.broadcast).toHaveBeenCalledTimes(1);
     expect(platformMocks.broadcast).toHaveBeenCalledWith(
       IPC_CHANNELS.NOTIFICATION_SHOW,
-      expect.objectContaining({ title: '有操作等你确认', sessionId, urgent: true }),
+      expect.objectContaining({
+        title: '有操作等你确认', sessionId, urgent: true,
+        body: `无人值守任务请求执行 write_file，已暂停等你批准，到${PARKED_APPROVAL_ENTRY_PATH}处理。`,
+      }),
     );
+
+    const body = platformMocks.broadcast.mock.calls[0][1].body as string;
+    expect(body).not.toMatch(/收件箱|inbox/i);
 
     // 收尾：解除停车 promise（同时清掉 24h backstop 定时器），不留悬挂句柄。
     const requestId = (onEvents[0] as { data?: { id?: string } }).data?.id;
@@ -167,5 +176,16 @@ describe('停车审批 needs-input 横幅去重（真服务链路）', () => {
       },
     });
     expect(platformMocks.broadcast).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('parked approval location i18n drift', () => {
+  it('pins the entry path to sidebar automation and runs tab, and the approval group heading', () => {
+    expect(PARKED_APPROVAL_ENTRY_PATH).toBe(
+      `「${sidebarZh.sidebar.capabilityZone.automation}」→「${cronCenterZh.cronCenter.tabRuns}」`,
+    );
+    expect(cronCenterZh.cronCenter.parkedTitle).toEqual({
+      one: '{count} 个操作等你确认', other: '{count} 个操作等你确认',
+    });
   });
 });
