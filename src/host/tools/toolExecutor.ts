@@ -92,6 +92,7 @@ import { interceptObserveModeToolCall } from './observeModeGate';
 import { EXTERNAL_SIDE_EFFECT_TRACE_RULE, EXTERNAL_SIDE_EFFECT_TRACE_REASON, isExternalSideEffectTool, extractStandingGrantTarget } from './externalSideEffect';
 import { maskMailSendOutboundParams, OUTBOUND_MASK_REASON_LINE } from './outboundGuard';
 import { isRunPathInsideWorkspace, resolveCanonicalRunPath, type RunContext } from '../runtime/runContext';
+import { isUnattendedRoleOwnMemoryWrite, ROLE_OWN_MEMORY_UNATTENDED_REASON } from './roleOwnMemoryAllow';
 import { writeFenceObligationRoot } from '../sandbox/writeFence';
 import { getSandboxManager } from '../sandbox';
 import {
@@ -1817,7 +1818,47 @@ export class ToolExecutor {
         }
       }
     }
-    if ((toolDef.requiresPermission || scheduleWriteGrantRequired || readArgumentForcesClassification || cuaAppGrantForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk) && (scheduleWriteGrantRequired || commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || protectedWriteForcesConfirmation || policyForcesConfirmation || unresolvedWriteTargetForcesAsk || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk || (!isPreApproved && !isSafeCommand))) {
+    // N-ROLE-WAKE-OWN-MEMORY-NO-APPROVAL：无人值守醒来写「自己的」角色层记忆的窄
+    // 放行（owner 裁定 11-12：发起者就是角色本人，用户可在记忆面板看见并删除）。
+    // 判定集中在 roleOwnMemoryAllow.ts，这里只留一个调用点；放行 = 落一条
+    // 'role-own-memory-unattended' 账本行 + 跳过下方主分类分支（所有 ask 升档不再
+    // 拦它）。更早的硬拒路径（policy / exec-policy / 用户拒绝 sticky / peer-origin
+    // 无人值守拒 / 记忆目录 directive 门）不受影响，照常先出。
+    // 与 isPreApproved 同口径：用户显式配的确认（ask 规则 / always_confirm / readOnly）
+    // 和其余强制升档信号不能被绕过；只有 boundaryViolation / writeWithoutWorkspaceAuthority
+    // 这两个默认 ask 是本单有意放行的。
+    const roleOwnMemoryUnattendedAllow = !scheduleWriteGrantRequired
+      && !guardFabricForcesApproval
+      && !protectedWriteForcesConfirmation
+      && !peerOriginForcesConfirmation
+      && !launderRetryForcesAsk
+      && !commandAnalysisFailedReason
+      && !shellDesktopAutomation
+      && !consequenceForcesClassification
+      && !argumentForcesClassification
+      && !cuaAppGrantForcesClassification
+      && !this.forcePermissionHandler
+      && !unresolvedWriteTargetForcesAsk
+      && !policyForcesConfirmation
+      && !readOnlyForcesConfirmation
+      && isUnattendedRoleOwnMemoryWrite({
+      toolName: executionToolName,
+      params,
+      agentRole: options.agentRole,
+      sessionId: effectiveSessionId,
+    });
+    if (roleOwnMemoryUnattendedAllow) {
+      logger.info('Auto-approved unattended role own-memory write', {
+        tool: executionToolName,
+        agentRole: options.agentRole,
+        sessionId: effectiveSessionId,
+      });
+      recordDecision(
+        executionToolName, params, 'auto-approve', ROLE_OWN_MEMORY_UNATTENDED_REASON,
+        permStartTime, undefined, effectiveSessionId, this.ledgerOrigin,
+      );
+    }
+    if ((toolDef.requiresPermission || scheduleWriteGrantRequired || readArgumentForcesClassification || cuaAppGrantForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk) && (scheduleWriteGrantRequired || commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || protectedWriteForcesConfirmation || policyForcesConfirmation || unresolvedWriteTargetForcesAsk || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk || (!isPreApproved && !isSafeCommand)) && !roleOwnMemoryUnattendedAllow) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
       // 信任边界 ask（W3 写边界）→ forceConfirm：终审层便利放行必须让路（同 directory_access）。
