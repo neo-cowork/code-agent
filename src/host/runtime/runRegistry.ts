@@ -748,24 +748,11 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     return released;
   }
 
-  findRecoveredWaitingRun(
-    selector: { runId?: string; sessionId?: string },
-    options?: { excludeUserStopParked?: boolean },
-  ): { runId: string; sessionId: string } | undefined {
-    return matchRecoveredWaitingRun(
-      this.durableEnvelopes.values(),
-      (runId) => this.handlesByRunId.has(runId),
-      (runId) => this.durableOwners.has(runId),
-      selector,
-      options,
-    );
+  findRecoveredWaitingRun(selector: { runId?: string; sessionId?: string }, options?: { excludeUserStopParked?: boolean }): { runId: string; sessionId: string } | undefined {
+    return matchRecoveredWaitingRun(this.durableEnvelopes.values(), (runId) => this.handlesByRunId.has(runId), (runId) => this.durableOwners.has(runId), selector, options);
   }
 
-  /**
-   * 把 findRecoveredWaitingRun 命中的 run 沿 terminalDurable 规范路径（owner/attempt fence + 事件序号）终态化成 cancelled。
-   * 默认跳过 waiting/user_stop 停靠（Stop 幂等，不覆写「继续」投影）；abandonParked: true
-   * 是显式「放弃」，新消息让位由 supersedeParkedSessionRoots 内部显式传入。
-   */
+  /** 终态化 findRecoveredWaitingRun 命中的 run 为 cancelled；默认跳过 user_stop 停靠（Stop 幂等），abandonParked 显式放弃。 */
   async terminalRecoveredWaitingRun(
     selector: { runId?: string; sessionId?: string },
     now = Date.now(),
