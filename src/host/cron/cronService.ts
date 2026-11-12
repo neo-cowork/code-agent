@@ -902,7 +902,7 @@ export class CronService implements Disposable {
         execution.result = await this.cloudRuntime.runJob(definition);
         execution.status = 'completed';
       } else {
-        const result = await this.executeAction(definition, definition.action, definition.timeout ?? undefined, execution.id, eventPayloadBlock);
+        const result = await this.executeAction(definition, definition.action, definition.timeout ?? undefined, execution.id, eventPayloadBlock, trigger);
         if (isCronAgentActionResult(result)) {
           execution.sessionId = result.sessionId;
         }
@@ -1027,7 +1027,10 @@ export class CronService implements Disposable {
     action: CronJobAction,
     timeout?: number,
     executionId?: string,
-    eventPayloadBlock?: string
+    eventPayloadBlock?: string,
+    // 事件 run 的 trigger（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）：agent 分支据此把
+    // host 绑定的回复目的地登记进会话；其余分支不消费。
+    eventTrigger?: CronExecutionTrigger
   ): Promise<unknown> {
     switch (action.type) {
       case 'shell': {
@@ -1049,7 +1052,7 @@ export class CronService implements Disposable {
           updateJob: (jobId, updates) => this.updateJob(jobId, updates),
           deliverCronResult: (job, result, execId, gate) => this.deliverCronResult(job, result, execId, gate),
           recordSessionId: (execId, sessionId) => this.recordExecutionSessionId(definition.id, execId, sessionId),
-        }, definition, action, executionId, eventPayloadBlock, timeout);
+        }, definition, action, executionId, eventPayloadBlock, timeout, eventTrigger);
       }
 
       case 'webhook': {
@@ -1146,7 +1149,7 @@ export class CronService implements Disposable {
     execution.startedAt = Date.now();
 
     try {
-      const result = await this.executeAction(current, current.action, current.timeout ?? undefined, execution.id, eventPayloadBlock);
+      const result = await this.executeAction(current, current.action, current.timeout ?? undefined, execution.id, eventPayloadBlock, execution.trigger);
       if (isCronAgentActionResult(result)) {
         execution.sessionId = result.sessionId;
       }

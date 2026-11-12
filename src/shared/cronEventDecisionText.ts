@@ -26,6 +26,7 @@ export type CronEventDecisionTextKey =
   | 'observeIntercepted'
   | 'observeActionIntercepted'
   | 'channelReplyTool'
+  | 'replyEventTool'
   | 'noOutboundAction'
   | 'runQuiet'
   | 'runReported';
@@ -58,6 +59,14 @@ const TEMPLATES: readonly DecisionTextTemplate[] = [
     legacyStored: ['channel reply'],
     zh: '通道回复',
     en: 'Channel reply',
+  },
+  {
+    // reply_to_event 的台账工具名（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）：host 存原始
+    // 工具名，renderer 反查本表把它翻成用户可读动作名，不裸奔英文内部工具名。
+    key: 'replyEventTool',
+    stored: 'reply_to_event',
+    zh: '回复事件消息',
+    en: 'Event reply',
   },
   {
     key: 'channelChatRule',

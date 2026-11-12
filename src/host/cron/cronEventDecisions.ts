@@ -41,13 +41,19 @@ export const CRON_EVENT_DECISION_BLOCK_PATTERN = new RegExp(`<${TAG}\\b[^>]*>[\\
 /**
  * 配置推导的「命中的任务规则」（返修②）：让事件进合批窗的那条绑定——来源 + 账号 +
  * 群/邮箱目录。三类事件源之外没有别的筛选字段（无关键词/过滤文本），规则即绑定本身。
+ * options.chatName：本批入站事件携带的群名（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）——
+ * 有就把「会话」位渲染成群名，没有才落配置里的原始会话 id。
  */
-export function describeEventScheduleRule(schedule: EventScheduleConfig): string {
+export function describeEventScheduleRule(
+  schedule: EventScheduleConfig,
+  options?: { chatName?: string },
+): string {
   if (schedule.source === 'channel') {
     return truncateObserveText(
       buildCronEventDecisionText(schedule.chatId ? 'channelChatRule' : 'channelAnyChatRule', {
         account: schedule.accountId,
-        ...(schedule.chatId ? { chat: schedule.chatId } : {}),
+        // 群名只用于展示替换，绑定判定仍逐字用 chatId；名字缺失回落原始 id。
+        ...(schedule.chatId ? { chat: options?.chatName?.trim() || schedule.chatId } : {}),
       }),
       CRON_EVENT_DECISIONS.MAX_REASON_CHARS,
     );

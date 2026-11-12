@@ -12,7 +12,8 @@ import { filterReadOnlyCronArtifacts, type CronRunArtifactContext } from './cron
 import { UNATTENDED_TRUST_NOTICE } from '../../shared/unattendedTrust';
 import { CRON_AGENT_SNAPSHOT, CRON_GUARDRAILS, EXTERNAL_WATCH, isZeroPricedModel } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
-import type { AgentAction, CronJobDefinition } from '../../shared/contract/cron';
+import type { AgentAction, CronJobDefinition, CronExecutionTrigger } from '../../shared/contract/cron';
+import { bindEventReplySession } from '../tools/eventReplySession';
 import {
   buildCronAgentActionResult,
   cronAgentRunHasAlert,
@@ -95,6 +96,7 @@ export async function executeCronAgentAction(
   executionId?: string,
   eventPayloadBlock?: string,
   timeout?: number,
+  eventTrigger?: CronExecutionTrigger,
 ): Promise<unknown> {
   const runStartedAt = Date.now();
   // Heartbeat 任务: 检查 active_hours 窗口
@@ -150,7 +152,16 @@ export async function executeCronAgentAction(
   warnIfBudgetCapCannotTrigger(definition, cronSession.modelConfig);
   const artifactRefresh = beginArtifactRefresh(definition);
   // 观察档（N-TRIGGER-OBSERVE-MODE）：本会话的对外副作用调用由 ToolExecutor 拦下记 would_act。
-  const leaveObserveMode = enterObserveModeForCronRun(definition, cronSession.id, executionId);
+  // 回复目的地绑定（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）：把本批通道事件的逐事件
+  // 目的地登记进会话——reply_to_event 只认这张表，且 withEventReplyTools 只给绑定的会话注入工具。
+  const eventReplyTargets = eventTrigger?.replyTargets;
+  const leaveEventReply = eventTrigger?.accountId && eventReplyTargets && eventReplyTargets.length > 0
+    ? bindEventReplySession(cronSession.id, eventTrigger.accountId, eventReplyTargets)
+    : undefined;
+  const leaveObserveMode = enterObserveModeForCronRun(definition, cronSession.id, executionId, undefined, {
+    // 命中规则的可读会话位：本批事件带的群名（没有就回落配置里的原始会话 id）。
+    chatName: eventReplyTargets?.find((target) => target.chatName?.trim())?.chatName,
+  });
   try {
     try {
       // 事件触发时通道载荷只以 untrusted 定界块追加在 prompt 尾部，并给该条
@@ -238,6 +249,7 @@ export async function executeCronAgentAction(
       console.warn('[CronService] Failed to scan permission-denied tool results after cron run', deniedScanError);
     }
   } finally {
+    leaveEventReply?.();
     leaveObserveMode();
     tm.cleanup(cronSession.id);
   }
