@@ -14,7 +14,6 @@ import { useBackgroundTaskStore } from '../stores/backgroundTaskStore';
 import { useWorkflowStore } from '../stores/workflowStore';
 import {
   User,
-  LogIn,
   ChevronDown,
   Trash2,
   Search,
@@ -50,6 +49,8 @@ import { useSidebarSessionActions } from './features/sidebar/useSidebarSessionAc
 import { useSidebarRowActions, resolveRuntimeLogsDir } from './features/sidebar/useSidebarRowActions';
 import { SidebarStatusFilterDropdown } from './features/sidebar/SidebarStatusFilterDropdown';
 import { SidebarAccountMenu } from './features/sidebar/SidebarAccountMenu';
+import { SidebarSignedOutFooter } from './features/sidebar/SidebarSignedOutFooter';
+import { useSidebarSearchShortcut } from './features/sidebar/useSidebarSearchShortcut';
 import { SidebarSearchDialog } from './features/sidebar/SidebarSearchDialog';
 import { SidebarNewTaskRow } from './features/sidebar/SidebarNewTaskRow';
 import { applySessionNotificationAttention } from './features/sidebar/sessionNotificationAttention';
@@ -197,7 +198,6 @@ export const Sidebar: React.FC = () => {
     user,
     isAuthenticated,
     isLoading: isAuthLoading,
-    setShowAuthModal,
     sessionTrustState,
     authBackendAvailable,
     hasCachedAdminClaim,
@@ -316,7 +316,7 @@ export const Sidebar: React.FC = () => {
     effectiveSearchScope,
     setSearchScope,
     messageSearchHitsBySessionId,
-    messageSearchLoading,
+    messageSearchLoading, messageSearchFailed,
     searchResultSessions,
     reviewItemsBySessionId,
     trajectoryQualityBySessionId,
@@ -386,6 +386,11 @@ export const Sidebar: React.FC = () => {
   }): Promise<boolean> => new Promise((resolve) => {
     setSessionForkConfirm({ ...options, resolve });
   }), []);
+  const openSearchDialog = useCallback(() => {
+    setSearchQuery('');
+    setSearchDialogOpen(true);
+  }, [setSearchQuery]);
+  const searchShortcut = useSidebarSearchShortcut(openSearchDialog);
   const collapseTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   useEffect(
@@ -706,12 +711,9 @@ export const Sidebar: React.FC = () => {
               size="md"
               className="h-8 w-8"
               icon={<Search className="h-4 w-4" />}
-              aria-label={sb.openSearch}
+              aria-label={sb.openSearch} title={[sb.searchDialogTitle, searchShortcut].filter(Boolean).join(' ')}
               data-testid="sidebar-search-trigger"
-              onClick={() => {
-                setSearchQuery('');
-                setSearchDialogOpen(true);
-              }}
+              onClick={openSearchDialog}
             />
             {/* 状态筛选：仅管理员可见；搜索入口对所有人可见。 */}
             {canOpenSessionReplay && (
@@ -775,7 +777,7 @@ export const Sidebar: React.FC = () => {
         isLoading={isLoading}
         hasAnySessions={hasAnySessions}
         filteredSessionsEmpty={filteredSessions.length === 0}
-        messageSearchLoading={messageSearchLoading}
+        messageSearchLoading={messageSearchLoading} messageSearchFailed={messageSearchFailed}
         searchQuery={searchQuery}
         sessionStatusFilter={sessionStatusFilter}
         activeStatusFilterLabel={activeStatusFilterLabel}
@@ -900,13 +902,7 @@ export const Sidebar: React.FC = () => {
             )}
           </>
         ) : (
-          <button
-            onClick={() => setShowAuthModal(true)}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.08] border border-white/[0.06] text-zinc-400 text-sm font-medium transition-colors"
-          >
-            <LogIn className="w-4 h-4" />
-            {sb.signIn}
-          </button>
+          <SidebarSignedOutFooter />
         )}
       </div>
 
@@ -918,7 +914,7 @@ export const Sidebar: React.FC = () => {
         sessions={searchResultSessions}
         currentSessionId={currentSessionId}
         messageSearchHitsBySessionId={messageSearchHitsBySessionId}
-        messageSearchLoading={messageSearchLoading}
+        messageSearchLoading={messageSearchLoading} messageSearchFailed={messageSearchFailed}
         effectiveSearchScope={effectiveSearchScope}
         setSearchScope={setSearchScope}
         canSearchCurrentProject={canSearchCurrentProject}

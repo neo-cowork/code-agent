@@ -9,6 +9,7 @@ import { Virtuoso, type ListRange, type VirtuosoHandle } from 'react-virtuoso';
 import type { TraceProjection, TraceTurn } from '@shared/contract/trace';
 import type { SearchMatch } from './ChatSearchBar';
 import { TurnCard } from './TurnCard';
+import { getActiveConversationTurnIndex, getLastConversationTurnIndex } from '../../../utils/conversationTurns';
 import { TurnRail } from './TurnRail';
 import { startSearchMatchSettlement } from './searchMatchSettlement';
 import { isScrollerNearBottom, scheduleAfterLayout, startBottomSettlement, useSessionEntryScroll } from './useSessionEntryScroll';
@@ -58,13 +59,9 @@ export const USER_SCROLL_FOLLOW_REENGAGE_PAUSE_MS = 800;
 
 export function getFocusedTurnIndex(projection: TraceProjection): number {
   if (projection.turns.length === 0) return -1;
-  if (
-    projection.activeTurnIndex >= 0 &&
-    projection.activeTurnIndex < projection.turns.length
-  ) {
-    return projection.activeTurnIndex;
-  }
-  return projection.turns.length - 1;
+  const activeIndex = getActiveConversationTurnIndex(projection);
+  if (activeIndex >= 0) return activeIndex;
+  return getLastConversationTurnIndex(projection.turns);
 }
 
 export function isProgrammaticScrollSuppressed(suppressionUntil: number, now: number): boolean {
@@ -113,15 +110,11 @@ export function getOutputFollowTurnIndex(
   followedTurnId: string | null,
   keepOutputVisible: boolean,
 ): number {
-  if (
-    projection.activeTurnIndex >= 0 &&
-    projection.activeTurnIndex < projection.turns.length
-  ) {
-    return projection.activeTurnIndex;
-  }
+  const activeIndex = getActiveConversationTurnIndex(projection);
+  if (activeIndex >= 0) return activeIndex;
 
   if (!keepOutputVisible || !followedTurnId) return -1;
-  return projection.turns.findIndex((turn) => turn.turnId === followedTurnId);
+  return projection.turns.findIndex((turn) => !turn.standalone && turn.turnId === followedTurnId);
 }
 
 export interface TurnOutputRevisionOptions {
@@ -344,9 +337,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const focusedTurnIndex = getFocusedTurnIndex(projection);
   const focusedTurnId =
     focusedTurnIndex >= 0 ? projection.turns[focusedTurnIndex]?.turnId : undefined;
-  const activeTurn = projection.activeTurnIndex >= 0
-    ? projection.turns[projection.activeTurnIndex]
-    : undefined;
+  const activeTurn = projection.turns[getActiveConversationTurnIndex(projection)];
   const outputFollowTurnIndex = getOutputFollowTurnIndex(
     projection,
     followedOutputTurnId,
@@ -360,7 +351,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   // 两路 scrollToIndex 在该窗口内禁用，避免多驱动交替抢滚动造成上移-回弹抖动。
   const outputFollowStreamingRef = useRef(false);
   outputFollowStreamingRef.current = outputFollowTurn?.status === 'streaming';
-  const noteSessionEntryRange = useSessionEntryScroll({
+  const { noteRange: noteSessionEntryRange, entryHidden } = useSessionEntryScroll({
     sessionId: projection.sessionId,
     turns: projection.turns,
     projectionTurnsRef,
@@ -409,7 +400,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const visibleRangeRef = useRef<ListRange | null>(null);
   const reportVisibleRange = useCallback((range: ListRange) => {
     visibleRangeRef.current = range;
-    const topTurnId = projectionTurnsRef.current[range.startIndex - firstItemIndex]?.turnId ?? null;
+    const topTurnId = projectionTurnsRef.current.slice(range.startIndex - firstItemIndex).find((turn) => !turn.standalone)?.turnId ?? null;
     if (topTurnId && !railActiveFromDomRef.current && !sessionEntrySettlingRef.current) {
       setRailActiveTurnId((current) => (current === topTurnId ? current : topTurnId));
     }
@@ -571,7 +562,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       // 轮次导航的当前轮 = 最后一个「顶边已越过视口顶边」的轮（文档大纲的定式；同一次扫描，不另起观察器）。
       // 容差盖住列表顶部内边距：顶对齐跳转后目标轮顶边在顶边下方 12px，上一轮不能因为露出这 12px 被算成当前轮。
       // rect 全 0 是 jsdom，跳过；视口顶部之上没有任何轮时取第一轮。
-      const laidOutTurns = measuredTurns.filter(({ rect }) => rect.height > 0);
+      const laidOutTurns = measuredTurns.filter(({ rect, element }) => rect.height > 0 && !projectionTurnsRef.current.find((turn) => turn.turnId === element.dataset.traceTurnId)?.standalone);
       const railTurnId = (
         [...laidOutTurns].reverse().find(({ rect }) => rect.top <= scrollerRect.top + RAIL_ACTIVE_EDGE_PX)
         ?? laidOutTurns[0]
@@ -661,7 +652,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       const turnId = turnElement?.dataset.traceTurnId;
       if (!turnId) return;
 
-      const latestTurn = projection.turns[projection.turns.length - 1];
+      const latestTurn = projection.turns[getLastConversationTurnIndex(projection.turns)];
       if (turnId !== latestTurn?.turnId && turnId !== followedOutputTurnIdRef.current) return;
 
       keepActiveOutputVisibleRef.current = true;
@@ -996,8 +987,8 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       const index = virtuosoIndex - firstItemIndex;
       if (!turn) return null;
 
-      const isLast = index === projection.turns.length - 1;
-      const isStreaming = index === projection.activeTurnIndex;
+      const isLast = index === getLastConversationTurnIndex(projection.turns);
+      const isStreaming = !turn.standalone && index === projection.activeTurnIndex;
       const shouldFollowOutput = index === outputFollowTurnIndex;
       const hasSearchMatch = searchMatches.some(m => m.turnIndex === index);
       const activeMatch = searchMatches.length > 0 ? searchMatches[activeMatchIndex] : undefined;
@@ -1020,7 +1011,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
               sessionStatus={exposesSessionRuntime ? sessionStatus : null}
               isSessionProcessing={exposesSessionRuntime ? isProjectionSessionProcessing : false}
               streamSnapshot={projectionStreamSnapshot}
-              showSeparator={shouldShowTurnTimeSeparator(previousTurn, turn)}
+              showSeparator={!turn.standalone && shouldShowTurnTimeSeparator(previousTurn, turn)}
               onStreamingDisplayUpdate={
                 shouldFollowOutput ? () => scheduleActiveDisplayScroll(index) : undefined
               }
@@ -1029,10 +1020,10 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
               afterUserMessage={index === 0 ? afterFirstUserMessage : undefined}
               suppressBusySignal={isStreaming && suppressActiveBusySignal}
             />
-            <ConversationTurnTailSlot
+            {!turn.standalone && <ConversationTurnTailSlot
               sessionId={projection.sessionId}
               turnId={turn.turnId}
-            />
+            />}
           </div>
         </div>
       );
@@ -1066,7 +1057,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
         role="log"
         aria-live="polite"
         aria-label={t.traceView.conversationLog}
-        className={`h-full min-h-0 pt-3 pb-0 overflow-x-hidden chat-scroll-fade${railItems.length >= TURN_RAIL_MIN_TURNS ? ' @min-[640px]:[scrollbar-width:none] @min-[640px]:[&::-webkit-scrollbar]:hidden' : ''}`}
+        className={`h-full min-h-0 pt-3 pb-0 overflow-x-hidden chat-scroll-fade${railItems.length >= TURN_RAIL_MIN_TURNS ? ' @min-[640px]:[scrollbar-width:none] @min-[640px]:[&::-webkit-scrollbar]:hidden' : ''}${entryHidden ? ' invisible' : ''}`}
         scrollerRef={handleScrollerRef}
         data={projection.turns}
         firstItemIndex={firstItemIndex}
@@ -1081,7 +1072,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
           if (!sessionEntrySettlingRef.current) setIsAtBottom(atBottomOrFits);
           if (atBottom && !historyPrependInProgressRef.current && !isUserScrollSuppressed()) {
             keepActiveOutputVisibleRef.current = true;
-            const turnId = outputFollowTurn?.turnId ?? projection.turns[projection.turns.length - 1]?.turnId;
+            const turnId = outputFollowTurn?.turnId ?? projection.turns[getLastConversationTurnIndex(projection.turns)]?.turnId;
             if (turnId && !sessionEntrySettlingRef.current) updateFollowedOutputTurnId(turnId);
           }
         }}

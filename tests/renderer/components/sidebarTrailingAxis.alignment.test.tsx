@@ -5,6 +5,11 @@ import { createServer, type ViteDevServer } from 'vite';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { loadPlaywrightChromium } from '../../../src/host/agent/runtime/browser/playwrightRuntime';
 
+// These fixtures contain a complete, already-loaded list; boot readiness is tested separately.
+vi.mock('../../../src/renderer/stores/sessionListPagination', () => ({
+  useSessionListLoadStore: () => ({ settled: true, loading: false, error: false, errorCode: null }),
+}));
+
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { zh } = await import('../../../src/renderer/i18n/zh');
   return { useI18n: () => ({ t: zh, language: 'zh' }) };

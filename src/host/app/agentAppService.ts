@@ -75,7 +75,8 @@ import type {
   WorkbenchMessageMetadata,
 } from '../../shared/contract/conversationEnvelope';
 import { resolveConnectorRequiredForTurn, withWorkbenchTurnSystemContext } from './workbenchTurnContext';
-import { withSessionCommandCenterBrain } from './sessionCommandCenterBrain';
+import { withMissingAttachmentTurnSystemContext } from './missingAttachmentTurnContext';
+import { resolveForegroundImageTurn, withSessionCommandCenterBrain } from './sessionCommandCenterBrain';
 import { isSessionCommandCenterTurn } from '../../shared/constants/sessionCommandCenter';
 import { getPermissionModeManager } from '../permissions/modes';
 import {
@@ -812,10 +813,19 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         : envelope.context?.workingDirectory ?? effectiveWorkingDirectory ?? orchestrator?.getWorkingDirectory(),
     );
 
-    const workbenchOptions = withWorkbenchTurnSystemContext(
-      envelope.options as AppServiceRunOptions | undefined,
-      envelope.context,
-      getSessionManager().getSessionMetadata?.(resolvedSessionId),
+    const workbenchOptions = withMissingAttachmentTurnSystemContext(
+      withWorkbenchTurnSystemContext(
+        envelope.options as AppServiceRunOptions | undefined,
+        envelope.context,
+        getSessionManager().getSessionMetadata?.(resolvedSessionId),
+      ),
+      {
+        sessionId: resolvedSessionId,
+        userText: envelope.content,
+        attachments: envelope.attachments,
+        session,
+        workingDirectory: envelope.context?.workingDirectory ?? effectiveWorkingDirectory ?? orchestrator?.getWorkingDirectory(),
+      },
     );
     await this.emitConnectorRequired(tm, resolvedSessionId, envelope.options as AppServiceRunOptions | undefined, envelope.context);
     const optionsWithTurnSettings: AppServiceRunOptions = {
@@ -828,7 +838,11 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       prompt: envelope.content,
       hasGoal: Boolean(optionsWithTurnSettings.goal),
     })
-      ? withSessionCommandCenterBrain(optionsWithTurnSettings, envelope.content)
+      ? withSessionCommandCenterBrain(
+        optionsWithTurnSettings,
+        envelope.content,
+        resolveForegroundImageTurn(resolvedSessionId, envelope.attachments, optionsWithTurnSettings.modelSpec),
+      )
       : optionsWithTurnSettings;
 
     // 云货架专家首跑：本轮档位钳到最严，让用户看见它每一步要干什么。
@@ -1006,17 +1020,30 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       resolvedSessionId,
       envelope.context?.workingDirectory ?? effectiveWorkingDirectory ?? orchestrator?.getWorkingDirectory(),
     );
-    const workbenchOptions = withWorkbenchTurnSystemContext(
-      envelope.options as AppServiceRunOptions | undefined,
-      envelope.context,
-      getSessionManager().getSessionMetadata?.(resolvedSessionId),
+    const workbenchOptions = withMissingAttachmentTurnSystemContext(
+      withWorkbenchTurnSystemContext(
+        envelope.options as AppServiceRunOptions | undefined,
+        envelope.context,
+        getSessionManager().getSessionMetadata?.(resolvedSessionId),
+      ),
+      {
+        sessionId: resolvedSessionId,
+        userText: envelope.content,
+        attachments: envelope.attachments,
+        session,
+        workingDirectory: envelope.context?.workingDirectory ?? effectiveWorkingDirectory ?? orchestrator?.getWorkingDirectory(),
+      },
     );
     await this.emitConnectorRequired(tm, resolvedSessionId, envelope.options as AppServiceRunOptions | undefined, envelope.context);
     const options = isSessionCommandCenterTurn({
       prompt: envelope.content,
       hasGoal: Boolean(workbenchOptions?.goal),
     })
-      ? withSessionCommandCenterBrain(workbenchOptions, envelope.content)
+      ? withSessionCommandCenterBrain(
+        workbenchOptions,
+        envelope.content,
+        resolveForegroundImageTurn(resolvedSessionId, envelope.attachments, workbenchOptions?.modelSpec),
+      )
       : workbenchOptions;
     return tm.interruptAndContinue(
       resolvedSessionId,

@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+
 // ============================================================================
 // B1 ②「新会话默认权限档」+ 会话档切换（单一真源 + 广播）测试
 // ============================================================================
@@ -49,6 +49,7 @@ vi.mock('../../../src/host/platform', () => ({
 vi.mock('../../../src/host/ipc/adminGuard', () => ({
   isCurrentUserAdmin: () => true,
   getAdminAccessIpcError: () => env.adminIpcError,
+  ensureAdminAccessIpcError: async () => env.adminIpcError,
   assertAdminAccess: vi.fn(),
 }));
 vi.mock('../../../src/host/model/providerConnectionTest', () => ({

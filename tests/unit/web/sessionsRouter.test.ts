@@ -4,6 +4,7 @@ import http from 'http';
 import os from 'os';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { RunRegistry } from '../../../src/host/runtime/runRegistry';
 import { createSessionsRouter } from '../../../src/web/routes/sessions';
 import { DurableRunReadService } from '../../../src/host/app/durableRunReadService';
 import { resolveDurableRunRollout } from '../../../src/host/app/durableRunRollout';
@@ -43,6 +44,7 @@ interface SessionApiBody {
     status?: string;
     durableWaitingInput?: true;
     streamSnapshot?: Record<string, unknown>;
+    activeRun?: boolean;
   };
   error?: {
     code?: string;
@@ -139,6 +141,7 @@ async function startSessionsApi(deps: {
   tryGetSessionManager: () => Promise<unknown>;
   getSupabaseForSession?: () => Promise<unknown>;
   getDurableRunReadService?: () => DurableRunReadService | undefined;
+  hasActiveRun?: (sessionId: string) => boolean;
 }) {
   const app = express();
   app.use(express.json());
@@ -150,6 +153,7 @@ async function startSessionsApi(deps: {
     tryGetSessionManager: deps.tryGetSessionManager,
     getSupabaseForSession: deps.getSupabaseForSession ?? (async () => null),
     getDurableRunReadService: deps.getDurableRunReadService,
+    hasActiveRun: deps.hasActiveRun,
   } as Parameters<typeof createSessionsRouter>[0]));
 
   server = await new Promise<http.Server>((resolve) => {
@@ -372,6 +376,8 @@ describe('createSessionsRouter', () => {
     } = await import('../../../src/host/session/streamSnapshot');
     const workingDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ctf-sessions-router-')));
     const sessionId = 'session-snapshot';
+    const registry = new RunRegistry();
+    const handle = registry.start({ sessionId, workspace: workingDir });
     saveStreamSnapshot(
       { content: '已生成的部分', reasoning: '', toolCalls: [], estimatedTokens: 4, timestamp: Date.now(), isFinal: false },
       { workingDir, sessionId, runId: 'run-snapshot-1', turnId: 'turn-snapshot-1' },
@@ -390,11 +396,13 @@ describe('createSessionsRouter', () => {
 
     await startSessionsApi({
       tryGetSessionManager: async () => ({ restoreSession }),
+      hasActiveRun: (id) => registry.hasSession(id),
     });
 
     const result = await fetchJson(`/api/sessions/${sessionId}`);
 
     expect(result.body.success).toBe(true);
+    expect(result.body.data?.activeRun).toBe(true);
     expect(result.body.data?.streamSnapshot).toEqual(expect.objectContaining({
       sessionId,
       turnId: 'turn-snapshot-1',
@@ -402,6 +410,9 @@ describe('createSessionsRouter', () => {
       streamStatus: 'incomplete',
       interruptionReason: 'user',
     }));
+    registry.unregister(handle.context.runId, handle);
+    const completed = await fetchJson(`/api/sessions/${sessionId}`);
+    expect(completed.body.data?.activeRun).toBe(false);
   });
 
   it.each([
@@ -737,6 +748,7 @@ describe('createSessionsRouter', () => {
       success: true,
       data: {
         id: 'session-sb',
+        activeRun: false,
         title: 'Cloud session',
         messages: [{
           id: 'msg-sb',

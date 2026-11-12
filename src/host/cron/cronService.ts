@@ -54,6 +54,7 @@ import {
   scheduleBoundToDate,
 } from './cronExecutionPolicy';
 import { CronCloudRuntime } from './cronCloudRuntime';
+import { CloudNotConfiguredError } from './cronCloudErrors';
 import { CronEventTrigger, assertEventScheduleConstraints, hasExplicitChatListenBinding } from './cronEventTrigger';
 import { CronWebhookRelay, assertWebhookScheduleCloudConfigured } from './cronWebhookRelay';
 import { runWebhookHookOp } from './cronWebhookHookOps';
@@ -71,7 +72,7 @@ import {
   saveCronJob,
   upsertCronExecutionInMemory,
 } from './cronPersistence';
-import { deliverCronResultToChannel } from './cronResultDelivery';
+import { deliverCronResultToChannel, type CronResultDeliverySkip } from './cronResultDelivery';
 import { actionModeForNewJob, carryEventActionMode, changeEventActionMode } from './cronEventActionModeChange';
 import { loadCronEventDecisions } from './cronEventDecisionLedger';
 import { rearmCronRunLimit, settleCronRunLimit } from './cronRunLimit';
@@ -87,7 +88,9 @@ import {
 import { cronLoginWallMetadata } from './cronLoginWall';
 import { rememberCronLoginPassThroughOrigin } from './cronLoginWallPersistence';
 import {
+  backfillCronWriteScopes,
   grantCronWriteScope,
+  grantWriteFolderFromParkedApproval,
   revokeCronWriteScope,
   stripWriteGrantRoot,
 } from './cronWriteGrant';
@@ -184,6 +187,7 @@ export class CronService implements Disposable {
     await markInterruptedCronExecutions();
 
     // Load jobs from database
+    await backfillCronWriteScopes();
     await this.loadJobsFromDatabase();
     await this.cloudRuntime.reconcile();
 
@@ -291,6 +295,10 @@ export class CronService implements Disposable {
     if (definition.schedule?.type === 'event' && definition.schedule.source === 'webhook') {
       // webhook 源（N-CRON-WEBHOOK-CLOUD-HOOK）：hook 活在云端中继后面，没配置就建不成。
       assertWebhookScheduleCloudConfigured(this.cloudRuntime.isConfigured());
+    }
+
+    if (runsOn === 'cloud' && definition.enabled && !this.cloudRuntime.isConfigured()) {
+      throw new CloudNotConfiguredError('Cloud scheduler is not configured');
     }
 
     const job: CronJobDefinition = {
@@ -412,6 +420,14 @@ export class CronService implements Disposable {
     return grantCronWriteScope(jobId, {
       loadActiveJob: (id) => this.jobs.get(id),
       persistJob: (job) => this.persistJob(job),
+    });
+  }
+
+  /** 审批卡一键授权：只认 requestId，文件夹由 cronWriteGrant 从停车载荷重新推导。 */
+  async grantWriteFolderFromParkedApproval(requestId: string, getParkedRow: Parameters<typeof grantWriteFolderFromParkedApproval>[1]['getParkedRow']) {
+    return grantWriteFolderFromParkedApproval(requestId, {
+      getParkedRow,
+      host: { loadActiveJob: (id) => this.jobs.get(id), persistJob: (job) => this.persistJob(job) },
     });
   }
 
@@ -1031,7 +1047,7 @@ export class CronService implements Disposable {
         return executeCronAgentAction({
           loadJob: (jobId) => this.jobs.get(jobId)?.definition,
           updateJob: (jobId, updates) => this.updateJob(jobId, updates),
-          deliverCronResult: (job, result, execId) => this.deliverCronResult(job, result, execId),
+          deliverCronResult: (job, result, execId, gate) => this.deliverCronResult(job, result, execId, gate),
           recordSessionId: (execId, sessionId) => this.recordExecutionSessionId(definition.id, execId, sessionId),
         }, definition, action, executionId, eventPayloadBlock, timeout);
       }
@@ -1157,11 +1173,11 @@ export class CronService implements Disposable {
   // --------------------------------------------------------------------------
 
   /** 投递与失败留痕的实现已拆到 cronResultDelivery.ts（含 FB-239 字面去重写回）。 */
-  private async deliverCronResult(definition: CronJobDefinition, result: unknown, executionId?: string): Promise<void> {
+  private async deliverCronResult(definition: CronJobDefinition, result: unknown, executionId?: string, gate?: CronResultDeliverySkip): Promise<void> {
     await deliverCronResultToChannel(definition, result, this.executions, executionId, {
       getLatestDefinition: (jobId) => this.jobs.get(jobId)?.definition,
       persistAction: (jobId, action) => this.updateJob(jobId, { action }),
-    });
+    }, gate);
   }
 
   private async loadJobsFromDatabase(): Promise<void> {
@@ -1322,6 +1338,11 @@ export class CronService implements Disposable {
 // ============================================================================
 
 let cronServiceInstance: CronService | null = null;
+
+/** 只读窥视：不存在就返回 null，绝不创建（权限路径用，避免读授权时顺带拉起一个 CronService）。 */
+export function peekCronService(): CronService | null {
+  return cronServiceInstance;
+}
 
 export function getCronService(): CronService {
   if (!cronServiceInstance) {

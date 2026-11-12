@@ -1,16 +1,19 @@
+import { normalizePersonalSkillIds } from '../../shared/cronPersonalSkills';
 // ============================================================================
 // CronService - row/schedule/action normalizers & type guards
 // 纯函数：把数据库行、schedule、action 等 unknown 输入规整成强类型契约。
 // 从 cronService.ts 抽出以收敛文件体积，无行为变更。
 // ============================================================================
 
-import type {
-  CronJobDefinition,
-  CronJobStatus,
-  CronScheduleType,
-  CronScheduleConfig,
-  CronJobAction,
-  CronExecutionTrigger,
+import {
+  CRON_PUSH_NOTES,
+  type CronPushNote,
+  type CronJobDefinition,
+  type CronJobStatus,
+  type CronScheduleType,
+  type CronScheduleConfig,
+  type CronJobAction,
+  type CronExecutionTrigger,
 } from '../../shared/contract/cron';
 import { CRON_GUARDRAILS, CRON_EVENT_TRIGGER, CRON_URGENCY_CRITERIA, EXTERNAL_WATCH } from '../../shared/constants';
 import { extractCronAlertText, parseCronRunDigest, type CronRunDigest } from '../../shared/cronRunDigest';
@@ -100,8 +103,9 @@ export function cronAgentRunHasAlert(
     return EXTERNAL_WATCH.ALERT_TAG_PATTERN.test(run.finalAssistantText);
   }
   if (action.urgencyCriteria?.trim()) {
+    const digest = parseCronRunDigest(run.finalAssistantText);
     return !declaresCronUrgencyQuiet(
-      parseCronRunDigest(run.finalAssistantText).summary ?? run.finalAssistantText,
+      digest.fullSummary ?? digest.summary ?? run.finalAssistantText,
     );
   }
   return true;
@@ -124,7 +128,7 @@ export function buildCronAgentActionResult(
   permissionDenied?: CronPermissionDeniedMarker,
 ): CronAgentActionResult & { skipped?: boolean; reason?: string } {
   const digest = parseCronRunDigest(finalAssistantText);
-  const { urgency, raw: urgencyRaw } = parseUrgencyHeader(digest.summary ?? finalAssistantText);
+  const { urgency, raw: urgencyRaw } = parseUrgencyHeader(digest.fullSummary ?? digest.summary ?? finalAssistantText);
   const alertReason = !notifyQuietRound && action.notifyWhen?.trim()
     ? extractCronAlertText(finalAssistantText)
     : '';
@@ -159,6 +163,7 @@ export interface CronExecutionRow {
   exit_code?: number | null;
   cost_usd?: number | null;
   trigger_json?: string | null;
+  push_note?: string | null;
 }
 
 const CRON_JOB_STATUSES: readonly CronJobStatus[] = [
@@ -480,6 +485,7 @@ export function normalizeAction(value: unknown): CronJobAction | null {
         libraryProjectId:
           typeof value.libraryProjectId === 'string' ? value.libraryProjectId : undefined,
         urgencyCriteria: normalizeCriteriaSentence(value.urgencyCriteria),
+        allowedPersonalSkillIds: normalizePersonalSkillIds(value.allowedPersonalSkillIds),
         notifyWhen: normalizeCriteriaSentence(value.notifyWhen),
       };
     }
@@ -636,7 +642,13 @@ export function normalizeCronExecutionRow(row: unknown): CronExecutionRow | null
     exit_code: readNullableNumberField(row, 'exit_code'),
     trigger_json: readNullableStringField(row, 'trigger_json'),
     cost_usd: readNullableNumberField(row, 'cost_usd'),
+    push_note: readNullableStringField(row, 'push_note'),
   };
+}
+
+/** push_note 列的枚举校验：未知值按无记录处理。 */
+export function parseCronPushNote(raw: unknown): CronPushNote | undefined {
+  return CRON_PUSH_NOTES.find((note) => note === raw);
 }
 
 /** trigger_json 列的形状校验：坏行按无 trigger 处理（trigger 是溯源字段，不承重执行语义）。 */

@@ -1,3 +1,4 @@
+import type { AgentFailureCode } from '@shared/contract/agentFailure';
 import type { ToolStepLabelKey, ToolStepStatus } from '@shared/contract';
 import { PARKED_APPROVAL_CLOSURE_SENTENCES } from '@shared/parkedApprovalClosure';
 import { SANDBOX_APPROVED_RM_STILL_DENIED_FAILURE_CODE } from '@shared/constants';
@@ -110,6 +111,7 @@ interface ToolStepVerbBundle {
    * 按 Record<共享键联合, string> 收口：host 新增收口原因而任一语言表漏配时，这里直接编译红。
    */
   parkedClosure: Record<keyof typeof PARKED_APPROVAL_CLOSURE_SENTENCES, string>;
+  agentFailureReasons: Record<AgentFailureCode.Timeout | AgentFailureCode.PermissionDenied | AgentFailureCode.Unknown, string>;
   failureCodes: {
     'worktree-create-failed': string;
     'gateway-timeout': string;
@@ -214,6 +216,11 @@ export const toolStepVerbsZh: ToolStepVerbBundle = {
   },
   rawFailureCodeFallback: '这一步没有成功，展开可查看详情',
   parkedClosure: { ...PARKED_APPROVAL_CLOSURE_SENTENCES },
+  agentFailureReasons: {
+    timeout: '处理时间超过了限制',
+    'permission-denied': '需要的权限没有通过',
+    unknown: '失败原因还不明确',
+  },
   failureCodes: {
     'worktree-create-failed': '无法为这次任务准备运行环境',
     'gateway-timeout': '服务暂时没有响应',
@@ -275,6 +282,11 @@ export const toolStepVerbsEn: ToolStepVerbBundle = {
     workingDirectoryUnavailable: "This conversation has no working directory, so it can't be run safely after a restart. It did not run.",
     runEndedAfterRestart: 'The run this step belonged to has already ended, so it did not run; you will be asked again the next time it triggers.',
     argsUnavailable: 'After the app restarted, the full details of this step could not be found, so it was not run for safety.',
+  },
+  agentFailureReasons: {
+    timeout: 'This task exceeded its time limit',
+    'permission-denied': 'The required permission was not granted',
+    unknown: 'The cause of the failure is not yet known',
   },
   failureCodes: {
     'worktree-create-failed': 'Could not prepare the workspace for this task',

@@ -1,3 +1,4 @@
+import { chatInputZh } from '../../../src/renderer/i18n/chatInput';
 // ============================================================================
 // savedRoutineRows 纯函数测试（N-ROLE-ROUTINE-RESTATE）：
 // 保存成功定义 → what/when/result 三行；角色绑定判据；resultChannel 标签解析。
@@ -22,7 +23,7 @@ const labels = {
   fallbackNotifyWhen: '任务完成或发现异常时通知',
   result: '结果送到哪里',
   fallbackWhat: '按任务描述执行并整理结果',
-  reviewInbox: '自动化审核收件箱',
+  reviewInbox: chatInputZh.scheduleConfirm.reviewInbox,
   savedWhenEvent: '有新消息到达时',
   savedRolePrefix: '由 {role} 执行：',
   savedStatusLabel: '状态',
@@ -136,7 +137,7 @@ describe('buildSavedRoutineRestateRows', () => {
     });
     expect(rows[0].value).toBe('由 小星 执行：小星主动性');
     expect(rows[1].value).toBe('每 1 天');
-    expect(rows[2].value).toBe('自动化审核收件箱');
+    expect(rows[2].value).toBe(chatInputZh.scheduleConfirm.reviewInbox);
   });
 
   it('every / at / 复杂 cron 的人话 when（en 档按语言切换）', () => {

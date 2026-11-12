@@ -15,6 +15,7 @@ import { TaskDAG } from '../../scheduler/TaskDAG';
 import { sendDAGInitEvent } from '../../scheduler/dagEventBridge';
 import { getToolResolver } from '../../tools/dispatch/toolResolver';
 import type { TaskListManager } from '../taskList';
+import type { SubagentExecutionContext } from '../subagentExecutorTypes';
 import { createLogger } from '../../services/infra/logger';
 import { getActiveRunTraceContext } from '../../telemetry/runTraceContext';
 import { stampAssistantMessageCorrelation } from '../../session/assistantCorrelation';
@@ -41,6 +42,7 @@ async function broadcastAgentNotice(event: AgentNoticeEvent): Promise<void> {
 }
 
 export interface AutoAgentRunnerDeps {
+  requestPermission: SubagentExecutionContext['permission']['request'];
   workingDirectory: string;
   sessionId: string | null;
   taskListManager: TaskListManager;
@@ -215,7 +217,7 @@ export async function runAutoAgentMode(
       cwd: deps.workingDirectory,
       modelConfig,
       resolver: toolResolver,
-      permission: { request: async () => true },
+      permission: { request: deps.requestPermission },
       events: { emit: (type, data) => onEvent({ type, data } as AgentEvent) },
       abortSignal: new AbortController().signal,
       traceContext,

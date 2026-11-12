@@ -2,6 +2,8 @@
 // Subagent Executor - Executes subtasks with limited tool access
 // Enhanced with unified pipeline (T4)
 // ============================================================================
+
+import { publishEnvAssistToolNotice } from '../permissions/envAssist/toolNotice';
 import { buildInsufficientScopeConnectorEvent } from './runtime/connectorScopeCard';
 import { resolveSubagentPreset } from './subagentFirstRunPreset';
 import type { AgentMessageOrigin } from './messageOrigin';
@@ -15,6 +17,7 @@ import type { AgentDefinition, DynamicAgentConfig } from './agentDefinition';
 import { getAgentPrompt, getAgentTools, getAgentMaxIterations, getAgentPermissionPreset, getAgentMaxBudget, } from './agentDefinition';
 import { routeExternalSubagentExecution } from './subagentExecutionRouter';
 import { compactSubagentMessages } from './subagentCompaction';
+import { SubagentContextProjection } from './subagentContextProjection';
 import { SUBAGENT_COMPACTION } from '../../shared/constants';
 import { AgentFailureCode } from '../../shared/contract/agentFailure';
 import { getPlanApprovalGate } from './planApproval';
@@ -127,6 +130,7 @@ export class SubagentExecutor {
     let toolCallsAttempted = 0;
     let iterations = 0;
     const doomLoopGuard = new SubagentDoomLoopGuard();
+    const contextProjection = new SubagentContextProjection(context.modelConfig.model, context.modelConfig.provider, sessionId);
     // ADR-067 D3：本轮最新输入的 origin 链。drain 注入时刷新；无注入的迭代保留
     // 上一条（peer 指令的影响跨 iteration 持续，直到下一条新输入到达）。
     let currentTurnOrigin: AgentMessageOrigin[] | undefined;
@@ -479,11 +483,17 @@ export class SubagentExecutor {
         });
 
         const telemetryTurnId = turnObservability.startTurn(iterations);
-        // Auto-compaction: truncate old messages if approaching context limit
+        // Call model
+        const effectiveInterventions = getContextInterventionState().getEffectiveSnapshot(
+          sessionId,
+          executionAgentId,
+        );
+        const projectedMessages = await contextProjection.project(applyInterventionsToMessages(messages, effectiveInterventions), iterations, effectiveInterventions);
+        // Last-resort fallback on the request copy, after shared compression.
         if (iterations > SUBAGENT_COMPACTION.SKIP_FIRST_ITERATIONS) {
-          if (compactSubagentMessages(messages, context.modelConfig.model, context.modelConfig.provider)) {
+          if (compactSubagentMessages(projectedMessages, context.modelConfig.model, context.modelConfig.provider)) {
             turnObservability.recordCompaction(latestContextSnapshot.currentTokens);
-            for (const message of messages) {
+            for (const message of projectedMessages) {
               if (typeof message.content === 'string' && message.content.includes('[truncated]')) {
                 message.observation = buildObservation('compression_survivor', 'subagent_compaction', {
                   sourceKind: 'compression_survivor',
@@ -495,12 +505,7 @@ export class SubagentExecutor {
           }
         }
 
-        // Call model
-        const effectiveInterventions = getContextInterventionState().getEffectiveSnapshot(
-          sessionId,
-          executionAgentId,
-        );
-        const inferenceMessages = projectReadSubagentMessages(applyInterventionsToMessages(messages, effectiveInterventions));
+        const inferenceMessages = projectReadSubagentMessages(projectedMessages);
         const providerMessages = buildInferenceMessages(inferenceMessages);
         const telemetryTurnStartedAt = Date.now();
         const currentTelemetryTurnNumber = ++telemetryTurnNumber;
@@ -818,6 +823,7 @@ export class SubagentExecutor {
                   subagentPolicy,
                 },
               ).finally(markToolEnd);
+              await publishEnvAssistToolNotice({ toolName: toolCall.name, result, sessionId: context.sessionId, runId: executionRunId, onEvent: (event) => context.events.emit(event.type, event.data) });
               descendantUsage = addSubagentUsage(descendantUsage, result.metadata);
               // MCP 权限范围不足：子代理（文字前台委派的常见路径）的失败也要给用户一张「重新授权」卡
               const scopeCard = buildInsufficientScopeConnectorEvent(result);
@@ -928,6 +934,13 @@ export class SubagentExecutor {
               },
             ),
           }));
+          doomLoopGuard.recordResults(telemetryToolCalls.map((call) => ({
+            name: call.name,
+            arguments: call.arguments,
+            success: call.success,
+            summary: call.resultSummary ?? call.error ?? '',
+          })));
+          contextProjection.recordToolResults(messages[messages.length - 1], assistantToolCalls, toolResults);
           doomLoopGuard.injectPendingNudge(messages);
           pushObservabilityMessage({
             id: generateMessageId(),

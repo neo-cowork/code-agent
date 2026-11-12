@@ -55,3 +55,10 @@ export function hasSingleSpawnVisibilityAgent(
 export function resetSingleSpawnVisibilityRegistry(): void {
   entries.clear();
 }
+
+/** Live standalone helpers belonging to one native parent, including unscoped guard IDs. */
+export function getSingleSpawnChildren(parent: SwarmRunRef): string[] {
+  return [...entries.values()]
+    .filter(entry => entry.scope.sessionId === parent.sessionId && entry.scope.parentNativeRunId === parent.runId)
+    .flatMap(entry => [...entry.agentIds]);
+}

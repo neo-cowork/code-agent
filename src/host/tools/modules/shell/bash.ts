@@ -509,7 +509,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           cwd: workingDirectory,
           cols,
           rows,
-          maxRuntime: timeout,
+          maxRuntime: !waitForCompletion && !shortTier ? (typeof args.timeout === 'number' && args.timeout > 0 ? args.timeout : BASH.BACKGROUND_MAX_RUNTIME) : timeout,
           sessionId: ctx.sessionId,
           toolCallId: ctx.currentToolCallId,
           env: childEnv.env,
@@ -655,7 +655,7 @@ Use process_kill to terminate the session.`;
       }
       let result: ReturnType<typeof startBackgroundTask>;
       try {
-        result = startBackgroundTask(sandboxed.command, workingDirectory, timeout, {
+        result = startBackgroundTask(sandboxed.command, workingDirectory, shortTier ? timeout : (typeof args.timeout === 'number' && args.timeout > 0 ? args.timeout : BASH.BACKGROUND_MAX_RUNTIME), {
           sessionId: ctx.sessionId,
           toolCallId: ctx.currentToolCallId, ownerAgentId: ctx.agentId, displayCommand: normalizedCommand,
           env: childEnv.env,
