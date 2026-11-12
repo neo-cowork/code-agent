@@ -1,14 +1,17 @@
 import type { AppServiceRunOptions } from '../../shared/contract/appService';
-import { SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS } from '../../shared/constants/sessionCommandCenter';
+import { resolveForegroundBrainMaxIterations, SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS } from '../../shared/constants/sessionCommandCenter';
 import { getTextForegroundToolNames } from '../tools/protocolRegistry';
 import { detectTaskFeatures } from '../prompts/systemReminders';
 import { getNativeConnectorToolNamesForIntent } from '../connectors/nativeConnectorIntent';
 import { isRoleProactivityChatIntent } from './roleProactivityChatIntent';
+import { createLogger } from '../services/infra/logger';
 import { resolveModelInfo } from '../model/modelInfo';
 import { getConfigService } from '../services/core/configService';
 import { resolveRunModelConfig } from '../agent/orchestrator/modelConfigResolver';
 import type { MessageAttachment } from '../../shared/contract/message';
 import type { ConversationModelSpec } from '../../shared/contract/conversationEnvelope';
+
+const logger = createLogger('ForegroundBrainBudget');
 
 // 不导出：web/桌面两条装配路都经 getSessionCommandCenterBrainContextForPrompt 取块，
 // 导出常量只会引回「第二条装配路直接拼常量」的旧形态（rework r1）。
@@ -69,7 +72,7 @@ const SAVE_DRAFT_REPLY_RE = new RegExp(
 const MORNING_BRIEF_SAVE_DRAFT_CONTEXT = [
   '<morning_brief_save_draft>',
   '用户这句是在要求把晨报里的一封草稿存进邮箱。按下面做，不要发挥。',
-  '1. 只看本对话里最近一条晨间分诊结果（定时任务「晨间分诊」的结论）。草稿块从「草稿 N（未发送）」那一行开始，N 从 1 起：第二行是收件人邮箱，第三行是主题，从第四行起到下一块之前是正文。取出用户点名的那一封。',
+  '1. 只看本对话里最近一条晨间分诊结果（定时任务「晨间分诊」/"Morning triage" 的结论）。草稿块从「草稿 N（未发送）」或 "Draft N (not sent)" 那一行开始（同一条晨报里只有其中一种写法），N 从 1 起：第二行是收件人邮箱，第三行是主题，从第四行起到下一块之前是正文。取出用户点名的那一封。',
   '2. 收件人、主题、正文原样抄进 mail_draft 的 to、subject、content。to 里只放邮箱地址，不要改写，不要新增收件人，不要加显示名或尖括号。',
   '3. 如果本轮工具表里有 mail_draft，且这封在本对话里还没有成功的 mail_draft 结果，你才调用它，不要先去找别的工具，不要调用 delegate_task，也不要调用 mail_send；如果没有工具，直接按第 7 条说明这位角色没有开邮件权限。',
   '4. N 超出范围，或这条晨报里没有草稿块时，直接说明一共有几封草稿，什么工具都不要调用。',
@@ -90,9 +93,17 @@ export function isMorningBriefSaveDraftReply(prompt: string): boolean {
  * shared/constants/sessionCommandCenter.ts 的警告：装配形状各异，判据与内容必须只有一份。
  */
 export function getSessionCommandCenterBrainContextForPrompt(prompt: string): string[] {
-  const blocks = [SESSION_COMMAND_CENTER_BRAIN_CONTEXT];
-  if (isMorningBriefSaveDraftReply(prompt)) blocks.push(MORNING_BRIEF_SAVE_DRAFT_CONTEXT);
-  return blocks;
+  return [SESSION_COMMAND_CENTER_BRAIN_CONTEXT, ...getSessionCommandCenterTurnRulesForPrompt(prompt)];
+}
+
+/**
+ * 回合级规则块（不含常驻基块）：存草稿判据命中的轮才有内容。
+ * web 主链（routes/agent.ts）把这份并进模型面 turn 脚手架——config.systemPrompt 那份
+ * 会在 contextAssembly 重建系统消息时被丢（ctx.systemPrompt 不进请求，2026-11-11 FU1
+ * 真机抓包实证）；桌面 envelope 路仍走 withSessionCommandCenterBrain 的全量清单。
+ */
+export function getSessionCommandCenterTurnRulesForPrompt(prompt: string): string[] {
+  return isMorningBriefSaveDraftReply(prompt) ? [MORNING_BRIEF_SAVE_DRAFT_CONTEXT] : [];
 }
 
 /**
@@ -170,10 +181,26 @@ export function getTextForegroundToolNamesForPrompt(
   return Array.from(new Set([...base, ...extras]));
 }
 
+/** Shared logging and explicit-cap clamp for desktop and web assembly. */
+export function resolveForegroundBrainTurnBudget(
+  prompt: string,
+  lastAssistantStoppedByStepLimit: boolean,
+  requestedMaxIterations?: unknown,
+  log: Pick<typeof logger, 'info'> = logger,
+): number {
+  const cap = resolveForegroundBrainMaxIterations({ prompt, lastAssistantStoppedByStepLimit });
+  const rule = lastAssistantStoppedByStepLimit ? 'continuation'
+    : cap > SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS ? 'deliverable' : 'default';
+  const maxIterations = Math.min(typeof requestedMaxIterations === 'number' ? requestedMaxIterations : cap, cap);
+  log.info(`Foreground brain budget rule=${rule} cap=${cap} maxIterations=${maxIterations}`);
+  return maxIterations;
+}
+
 export function withSessionCommandCenterBrain(
   options: AppServiceRunOptions | undefined,
   prompt?: string,
   imageTurn?: ForegroundImageTurn,
+  lastAssistantStoppedByStepLimit = false,
 ): AppServiceRunOptions {
   const text = prompt ?? '';
   const turnSystemContext = [
@@ -183,12 +210,7 @@ export function withSessionCommandCenterBrain(
   return {
     ...(options ?? {}),
     mode: options?.mode ?? 'normal',
-    maxIterations: Math.min(
-      typeof options?.maxIterations === 'number'
-        ? options.maxIterations
-        : SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
-      SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
-    ),
+    maxIterations: resolveForegroundBrainTurnBudget(text, lastAssistantStoppedByStepLimit, options?.maxIterations),
     allowedToolNames: getTextForegroundToolNamesForPrompt(text, options?.toolScope?.allowedConnectorIds, imageTurn),
     foregroundToolFace: true,
     turnSystemContext,

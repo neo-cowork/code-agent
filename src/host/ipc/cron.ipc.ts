@@ -1,3 +1,4 @@
+import { normalizePersonalSkillIds } from '../../shared/cronPersonalSkills';
 // ============================================================================
 // Cron IPC Handlers
 // ============================================================================
@@ -8,6 +9,9 @@ import type { RawDomainRouteHandlers } from '../../shared/ipc/domainRoutes';
 import { CronSchemas, type CronDomainRequest } from '../../shared/ipc/schemas/cron';
 import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import { getCronService } from '../cron/cronService';
+import { parkedSiblingsCoveredByGrant } from '../cron/cronWriteGrant';
+import { buildScheduleGenerationClock } from '../cron/scheduleGenerationClock';
+import { CRON_CLOUD_NOT_CONFIGURED } from '../../shared/constants/cronErrors';
 import { CloudNotConfiguredError } from '../cron/cronCloudErrors';
 import { getConnectorRegistry } from '../connectors/registry';
 import { isAppleEventsDenied } from '../connectors/native/osascript';
@@ -54,6 +58,9 @@ function getCreateCronJobPayload(source: unknown): CreateCronJobPayload {
   if (!isRecord(source)) throw new Error('Invalid cron job payload');
   // runCount 是只读结算字段（contract/cron.ts）：外部传入一律丢弃，不许借创建重置计数。
   const { runCount: _droppedRunCount, ...payload } = source;
+  if (isRecord(payload.action) && payload.action.type === 'agent') {
+    payload.action = { ...payload.action, allowedPersonalSkillIds: normalizePersonalSkillIds(payload.action.allowedPersonalSkillIds) };
+  }
   return payload as unknown as CreateCronJobPayload;
 }
 
@@ -64,6 +71,9 @@ function getUpdateCronJobRequest(source: unknown): { jobId: string; updates: Upd
   if (!jobId || !isRecord(updates)) throw new Error('Invalid cron job update payload');
   // 同上：外部不许借更新改写 runCount；内部结算走 CronService 自己的窄写通道。
   const { runCount: _droppedRunCount, ...restUpdates } = updates;
+  if (isRecord(restUpdates.action) && restUpdates.action.type === 'agent') {
+    restUpdates.action = { ...restUpdates.action, allowedPersonalSkillIds: normalizePersonalSkillIds(restUpdates.action.allowedPersonalSkillIds) };
+  }
   return { jobId, updates: restUpdates as unknown as UpdateCronJobPayload };
 }
 
@@ -158,7 +168,7 @@ async function runWebhookHookAction(operation: 'register' | 'rotate', payload: u
     logger.warn(`Cron webhook hook ${operation} failed for job ${jobId}: ${message}`);
     return {
       success: false,
-      error: { code: error instanceof CloudNotConfiguredError ? 'CRON_CLOUD_NOT_CONFIGURED' : 'CRON_ERROR', message },
+      error: { code: error instanceof CloudNotConfiguredError ? CRON_CLOUD_NOT_CONFIGURED : 'CRON_ERROR', message },
     };
   }
 }
@@ -175,7 +185,7 @@ const CRON_GENERATION_SYSTEM_PROMPT = `你是一个定时任务配置助手。�
   "schedule": {
     // every 类型: { "type": "every", "interval": 数字, "unit": "seconds"|"minutes"|"hours"|"days" }
     // cron 类型: { "type": "cron", "expression": "cron表达式", "timezone": "Asia/Shanghai" }
-    // at 类型: { "type": "at", "datetime": "ISO时间字符串" }
+    // at 类型: { "type": "at", "datetime": "本地墙上时间 YYYY-MM-DDTHH:mm（不带 Z 或偏移）" }
     // event 类型: { "type": "event", "source": "channel", "eventName": "message" }
     //   或邮件监听: { "type": "event", "source": "connector", "connector": "mail", "eventName": "message" }
   },
@@ -197,7 +207,8 @@ const CRON_GENERATION_SYSTEM_PROMPT = `你是一个定时任务配置助手。�
 - 动作类型判断：用户描述「让 AI 做某事」（调研/分析/写作/总结/巡检/汇报/监控并通知等需智能体执行的任务）→ 用 agent，把要执行的任务原样填进 prompt，agentType 填 "default"；只有明确是 shell 命令或脚本（如「运行 backup.sh」「执行 git pull」）才用 shell。多数自然语言任务应该用 agent。
 - 时区默认 Asia/Shanghai
 - 尽量从描述中推断合理的调度方式和参数
-- 错峰：小时级/天级的循环任务避免落在整点（分钟=0）扎堆触发——除非用户明确要求整点，cron 表达式的分钟位默认用一个非 0 值（如 17），"every" 间隔类型不受影响（会自动错峰）
+- 用户指定具体钟点（如 9am、3pm、9:30、每天早上9点、今晚8点半）时，cron 的小时和分钟必须严格等于用户说的时间：9am → 0 9 * * *，3pm → 小时15分钟0，9:30 → 小时9分钟30，今晚8点半 → 20:30。命名钟点不需要再说「整点」，禁止错峰或改动分钟。
+- 错峰只适用于没有指定具体钟点的请求（如每小时、每天、每天早晨），cron 分钟位可用非 0 值（如 17）；"every" 间隔类型不受影响（会自动错峰）。
 - 事件监听：用户想「盯着/监听某个群或会话，来了新消息就做某事」（如「关注发布群，有人提到发布就总结给我」「群里有消息就提醒我」）→ scheduleType 用 "event"，schedule 固定为 { "type": "event", "source": "channel", "eventName": "message" }，并在返回 JSON 顶层加 "groupName": 用户原话提到的群名（字符串；用户没点名具体群就省略这个字段）。不要编造 accountId 或 chatId——账号和群由用户稍后在确认卡里自己选。event 类型的动作必须是 agent。
 - 邮件监听：用户说「有新邮件时/来新邮件就做某事」（如「新邮件到了把它整理成待办」）→ scheduleType 用 "event"，schedule 固定为 { "type": "event", "source": "connector", "connector": "mail", "eventName": "message" }。不要编造 accountId 或 mailbox——邮件账号和邮箱由用户稍后在确认卡里自己选。event 类型的动作必须是 agent。
 - 可选地返回 restatement；其中 what 和 notifyWhen 都必须是面向用户的平实完整句子。若无法可靠推断，可省略整个 restatement 对象。
@@ -266,6 +277,35 @@ const cronHandlers: RawDomainRouteHandlers<CronDomainRequest, void> = {
     const job = await cronService.grantWriteScope(jobId);
     return { success: true, data: job } satisfies IPCResponse;
   },
+  // 审批卡「一键允许此任务写这个文件夹」：授权 + 放行当前停车请求（专用动作，文件夹 host 侧重推导）。
+  grantWriteFolderFromParkedApproval: async (_ctx, payload) => {
+    const requestId = getStringField(payload, 'requestId');
+    if (!requestId) throw new Error('Invalid parked approval request id');
+    const { getDatabase } = await import('../services/core/databaseService');
+    const repo = getDatabase().getPendingApprovalRepo();
+    const grant = await getCronService().grantWriteFolderFromParkedApproval(requestId, (id) => repo.getById(id));
+    if (grant.status === 'rejected') {
+      logger.warn('Parked write folder grant rejected', { requestId, reason: grant.reason });
+      return { success: true, data: { grant, released: false } } satisfies IPCResponse;
+    }
+    const sessionId = getStringField(JSON.parse(repo.getById(requestId)?.payloadJson ?? '{}'), 'sessionId');
+    const { getTaskManager } = await import('../task/TaskManager');
+    const outcome = sessionId
+      ? getTaskManager().handlePermissionResponse(sessionId, requestId, 'allow')
+      : 'no_session';
+    // 同一轮并行发出、已先停车的兄弟写请求：授权范围内的一并放行（范围外的仍等人逐个批）。
+    // 仅 granted：kept_existing 时没有落库新授权，兄弟请求不在授权范围内，只放行被点的这一条。
+    const siblings = sessionId && grant.status === 'granted'
+      ? parkedSiblingsCoveredByGrant(repo.listByKindAndStatus('tool_approval', 'pending'), sessionId, grant.folder, requestId)
+      : [];
+    for (const siblingId of siblings) {
+      if (sessionId) getTaskManager().handlePermissionResponse(sessionId, siblingId, 'allow');
+    }
+    logger.info('Parked write folder grant applied, request released', {
+      requestId, status: grant.status, folder: grant.folder, jobId: grant.jobId, outcome, siblingsReleased: siblings.length,
+    });
+    return { success: true, data: { grant, released: outcome === 'delivered' } } satisfies IPCResponse;
+  },
   revokeWriteScope: async (_ctx, payload) => {
     const cronService = getCronService();
     const jobId = getStringField(payload, 'jobId');
@@ -331,18 +371,16 @@ const cronHandlers: RawDomainRouteHandlers<CronDomainRequest, void> = {
       return { success: false, error: { code: 'INVALID_INPUT', message: '请输入任务描述' } } satisfies IPCResponse;
     }
     const router = new ModelRouter();
-    // 注入当前时间锚点：LLM 默认拿训练期日期，会把「明天/下周」算成过去时间，
-    // 生成 at 类型任务静默不跑（艾克斯 in-app 验证抓到）。必须给当前时间做基准。
-    const nowAnchor = `\n\n【当前时间】${new Date().toISOString()}（UTC，默认时区 Asia/Shanghai）。`
-      + `用户用「今天/明天/今晚/本周/下周」等相对时间时，必须以此为基准换算成将来的绝对时间，`
-      + `生成的 at 类型 datetime 绝不能早于当前时间。`;
+    const clock = buildScheduleGenerationClock(
+      new Date(), Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+    );
     // 调用当下解析用户配置的默认 provider/model。没配过才落到出厂默认。
     const { provider, model } = resolveSessionDefaultModelConfig();
     const response = await router.chat({
       provider,
       model,
       messages: [
-        { role: 'system', content: CRON_GENERATION_SYSTEM_PROMPT + nowAnchor },
+        { role: 'system', content: CRON_GENERATION_SYSTEM_PROMPT + clock.anchor },
         { role: 'user', content: prompt.trim() },
       ],
       maxTokens: 1024,
@@ -354,6 +392,9 @@ const cronHandlers: RawDomainRouteHandlers<CronDomainRequest, void> = {
     }
     try {
       const draft: unknown = JSON.parse(jsonMatch[0]);
+      if (isRecord(draft) && isRecord(draft.schedule) && draft.schedule.type === 'at') {
+        draft.schedule.datetime = clock.toTimestamp(draft.schedule.datetime);
+      }
       return { success: true, data: draft } satisfies IPCResponse;
     } catch {
       return { success: false, error: { code: 'PARSE_ERROR', message: 'AI 返回的 JSON 解析失败，请重试' } } satisfies IPCResponse;
@@ -367,7 +408,7 @@ const cronRoutes = defineDomainRoutes<CronDomainRequest, void>(CronSchemas.REQUE
   unknownActionMessage: (action) => `Unknown cron action: ${String(action)}`,
   mapError: (error) => {
     logger.error('Cron IPC error:', error);
-    return { code: 'CRON_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
+    return { code: error instanceof CloudNotConfiguredError ? CRON_CLOUD_NOT_CONFIGURED : 'CRON_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
   },
 });
 

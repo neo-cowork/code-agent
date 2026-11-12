@@ -40,6 +40,8 @@ export const BASH = {
   DEFAULT_TIMEOUT: 120000,
   /** 最大超时 (10 分钟) */
   MAX_TIMEOUT: 600000,
+  /** 后台命令（background shell / PTY）单任务最长运行时间 (30 分钟)；前台上限仍是 MAX_TIMEOUT */
+  BACKGROUND_MAX_RUNTIME: 30 * 60 * 1000,
   /** 短档前台超时 (10 秒)：channel / cron / role-wake 会话；env CODE_AGENT_BASH_SHORT_TIMEOUT_MS 可覆盖 */
   SHORT_TIER_TIMEOUT: 10000,
   /** Unknown-window fallback; model-bound Bash results use resolveToolResultBudget. */

@@ -304,6 +304,7 @@ export async function executeReadXlsx(
       meta: {
         artifact: await createFileArtifact(absPath, schema.name, ctx, {
           kind: 'spreadsheet',
+          role: 'material',
           preview: result.slice(0, 500),
           metadata: {
             sheetName: worksheet.name,
@@ -376,6 +377,7 @@ export async function executeReadXlsx(
             meta: {
               artifact: await createFileArtifact(absPath, schema.name, ctx, {
                 kind: 'spreadsheet',
+                role: 'material',
                 preview: csvData.slice(0, 500),
                 metadata: {
                   rowCount: totalRowsFallback,

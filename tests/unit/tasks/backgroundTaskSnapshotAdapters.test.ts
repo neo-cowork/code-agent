@@ -181,6 +181,29 @@ describe('backgroundTaskSnapshotAdapters', () => {
     expect(ledger.drainNotifications('session-1')).toEqual([]);
   });
 
+  it('shell task wrapped in sandbox-exec without displayCommand falls back to Shell <id8>; message has no log path', () => {
+    const ledger = new BackgroundTaskLedger();
+    syncShellTaskSnapshotToLedger({
+      taskId: 'abcdef123456', status: 'completed', command: 'sandbox-exec -f /var/folders/x/profile-1.sb /bin/sh -c "x"',
+      cwd: '/repo', sessionId: 's-wrap', startTime: 1_000, endTime: 2_000, duration: 1_000, exitCode: 0,
+      outputFile: '/tmp/wrap.log',
+    }, ledger);
+    expect(ledger.getTask('shell:abcdef123456')?.title).toBe('Shell abcdef12');
+    const [n] = ledger.drainNotifications('s-wrap');
+    expect(n?.message).not.toMatch(/sandbox-exec|\.log/);
+    expect(n?.payload).toMatchObject({ outputFile: '/tmp/wrap.log' });
+  });
+
+  it('shell task title uses displayName while displayCommand keeps the real command', () => {
+    const ledger = new BackgroundTaskLedger();
+    syncShellTaskSnapshotToLedger({
+      taskId: 'named123456', status: 'running', command: 'sandbox-exec -f /tmp/p.sb /bin/sh -c "osascript -e x"',
+      displayCommand: 'osascript -e x', displayName: 'Ask Finder for selection',
+      cwd: '/repo', sessionId: 's-named', startTime: 1_000, duration: 0, outputFile: '/tmp/named.log',
+    }, ledger);
+    expect(ledger.getTask('shell:named123456')?.title).toBe('Ask Finder for selection');
+  });
+
   it('maps stopped shell snapshots to cancelled with displayCommand and task_cancelled notification', () => {
     mocks.getAllBackgroundTasks.mockReturnValue([
       {

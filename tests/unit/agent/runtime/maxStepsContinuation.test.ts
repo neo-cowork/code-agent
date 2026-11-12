@@ -47,14 +47,14 @@ import { ContextAssembly } from '../../../../src/host/agent/runtime/contextAssem
 import { RunFinalizer } from '../../../../src/host/agent/runtime/runFinalizer';
 import { StreamHandler } from '../../../../src/host/agent/runtime/streamHandler';
 import { MessageProcessor } from '../../../../src/host/agent/runtime/messageProcessor';
-import { ensureMaxStepsWrapUp, activateMaxStepsFinalResponse } from '../../../../src/host/agent/runtime/maxStepsFallback';
+import { ensureMaxStepsWrapUp, activateMaxStepsFinalResponse, createStepWarning } from '../../../../src/host/agent/runtime/maxStepsFallback';
 
 // Real foreground options -> AgentLoop composition root -> real runtime and persistence.
 // Only startup integrations, provider responses and post-run integrations are isolated.
-function foreground(maxIterations = 8, foregroundToolFace = true) {
+function foreground(maxIterations = 8, foregroundToolFace = true, prompt = 'read the handoff notes') {
   const persisted: Message[] = [];
   const loop = new AgentLoop({
-    ...withSessionCommandCenterBrain({ maxIterations }, 'read the handoff notes'),
+    ...withSessionCommandCenterBrain({ maxIterations }, prompt),
     foregroundToolFace,
     modelConfig: { provider: 'openai', model: 'test-model', apiKey: 'test' },
     toolExecutor: {} as never,
@@ -75,6 +75,20 @@ function foreground(maxIterations = 8, foregroundToolFace = true) {
 afterEach(() => vi.restoreAllMocks());
 
 describe('foreground step-limit continuation', () => {
+  it('warns at the larger foreground deliverable cap minus two, not at six', () => {
+    const { ctx } = foreground(50, true, '制作 PPTX');
+    expect(ctx.maxIterations).toBe(30);
+    const inject = vi.fn();
+    const warn = createStepWarning(ctx, inject);
+    for (let iteration = 1; iteration < 28; iteration++) warn(iteration);
+    expect(inject).not.toHaveBeenCalled();
+    warn(28);
+    expect(inject).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('About 2 steps remain'), 'nudge');
+    warn(28);
+    warn(29);
+    expect(inject).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     ['foreground forced final', true, true, false, true],
     ['foreground fallback', true, false, false, true],

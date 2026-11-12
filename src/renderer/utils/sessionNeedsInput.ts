@@ -6,6 +6,8 @@ export interface SessionPermissionNeedsInputState {
   pendingPermissionRequest?: PermissionRequest | null;
   pendingPermissionSessionId?: string | null;
   queuedPermissionRequests?: Record<string, PermissionRequest[] | undefined> | null;
+  /** 落库停车（pending_approvals）的审批：sessionId → 等批准的 toolCallId 集合。重开的会话只有这一个来源。 */
+  parkedToolCallIdsBySession?: Readonly<Record<string, ReadonlySet<string> | undefined>> | null;
 }
 
 export interface SessionNeedsInputSources {
@@ -48,6 +50,7 @@ export function isToolCallAwaitingApproval(
       || state.pendingPermissionSessionId === sessionId;
   }
   if (!sessionId) return false;
+  if (state.parkedToolCallIdsBySession?.[sessionId]?.has(toolCallId)) return true;
   return (state.queuedPermissionRequests?.[sessionId] ?? []).some(matches);
 }
 
