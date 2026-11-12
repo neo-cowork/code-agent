@@ -8,7 +8,7 @@
 // 其余原样展示；running 条目才有 spinner 与计时。
 
 import React from 'react';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { BackgroundSessionPanel } from '../../../src/renderer/components/features/background/BackgroundSessionPanel';
@@ -139,5 +139,51 @@ describe('前台已停止时后台行的词跟终态走', () => {
     useTaskStore.setState({ sessionStates: { s1: { status: 'cancelled' } } });
     renderPanelWith(backgroundTask({ status: 'running' }));
     expect(itemLine()).toBe('已取消');
+  });
+});
+
+describe('后台行的失败判定（唯一一步失败不能写「已完成」）', () => {
+  const originalApi = window.domainAPI;
+  afterEach(() => {
+    cleanup();
+    useSessionStore.setState({ backgroundSessions: [] });
+    (window as { domainAPI?: unknown }).domainAPI = originalApi;
+  });
+
+  function mockSessionMessages(toolCalls: Array<{ success: boolean }>) {
+    const invoke = vi.fn().mockResolvedValue({
+      success: true,
+      data: {
+        messages: [{
+          id: 'm1',
+          role: 'assistant',
+          toolCalls: toolCalls.map((result, index) => ({
+            id: `c${index}`, name: 'bash', arguments: {}, result: { toolCallId: `c${index}`, ...result },
+          })),
+        }],
+      },
+    });
+    (window as { domainAPI?: unknown }).domainAPI = { invoke };
+    return invoke;
+  }
+
+  it('completed 但唯一一步失败 → 「执行失败」，不是「已完成」', async () => {
+    const invoke = mockSessionMessages([{ success: false }]);
+    renderPanelWith(backgroundTask({ status: 'completed' }));
+    await waitFor(() => expect(itemLine()).toBe('执行失败'));
+    expect(invoke).toHaveBeenCalledWith('domain:session', 'load', { sessionId: 's1' });
+  });
+
+  it('completed 且部分步骤失败 → 「已完成，有提醒」', async () => {
+    mockSessionMessages([{ success: true }, { success: false }]);
+    renderPanelWith(backgroundTask({ status: 'completed' }));
+    await waitFor(() => expect(itemLine()).toBe('已完成，有提醒'));
+  });
+
+  it('completed 且步骤全成功 → 仍是「已完成」', async () => {
+    const invoke = mockSessionMessages([{ success: true }]);
+    renderPanelWith(backgroundTask({ status: 'completed' }));
+    await waitFor(() => expect(invoke).toHaveBeenCalled());
+    expect(itemLine()).toBe('已完成');
   });
 });

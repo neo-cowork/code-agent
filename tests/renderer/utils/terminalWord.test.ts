@@ -20,6 +20,9 @@ describe('terminalWord 解析器', () => {
     expect(resolveBackgroundTerminalKey({ status: 'failed' })).toBe('failed-unknown');
     expect(resolveBackgroundTerminalKey({ status: 'completed' })).toBe('completed');
     expect(resolveBackgroundTerminalKey({ status: 'running' })).toBeNull();
-    expect(resolveBackgroundTerminalKey({ status: 'running' }, true)).toBe('cancelled-by-user');
+    expect(resolveBackgroundTerminalKey({ status: 'running' }, { taskCancelled: true })).toBe('cancelled-by-user');
+    expect(resolveBackgroundTerminalKey({ status: 'completed' }, { toolStepOutcome: { failed: 1, total: 1 } })).toBe('failed-tool');
+    expect(resolveBackgroundTerminalKey({ status: 'completed' }, { toolStepOutcome: { failed: 1, total: 3 } })).toBe('completed-with-warnings');
+    expect(resolveBackgroundTerminalKey({ status: 'completed' }, { toolStepOutcome: { failed: 0, total: 2 } })).toBe('completed');
   });
 });
