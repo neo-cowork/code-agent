@@ -11,9 +11,9 @@ import { APICallError, JSONParseError } from 'ai';
 import { INCOMPLETE_RESPONSE_DIAGNOSTIC } from '../../../shared/modelErrorDiagnostics';
 import { redactSecrets } from '../../security/secretRedaction';
 
-export type BadSuccessBodyKind = 'truncated_json' | 'empty_body' | 'html_page' | 'other';
+type BadSuccessBodyKind = 'truncated_json' | 'empty_body' | 'html_page' | 'other';
 
-export interface BadSuccessBodyInfo {
+interface BadSuccessBodyInfo {
   kind: BadSuccessBodyKind;
   /** 原始体前 ~200 字符（已过密钥掩码）；传输层截断时没有原文，为空串。 */
   snippet: string;
@@ -25,7 +25,7 @@ export const BAD_SUCCESS_BODY_MAX_RETRIES = 1;
 const SNIPPET_MAX_CHARS = 200;
 
 /** 非 2xx、非 APICallError、或 cause 不是「坏体」形态时返回 null。 */
-export function classifyBadSuccessBody(err: unknown): BadSuccessBodyInfo | null {
+function classifyBadSuccessBody(err: unknown): BadSuccessBodyInfo | null {
   // 只认错误本身：下面 toBadSuccessBodyUserError 产出的终态包装（cause 指向原错误）不能再被判成可重试。
   const apiErr = APICallError.isInstance(err) ? err : null;
   const status = apiErr?.statusCode;
