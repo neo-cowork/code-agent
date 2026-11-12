@@ -142,9 +142,55 @@ describe('getVoidedApprovalReason (real SQLite file)', () => {
     expect(svc.listParkedApprovals()[0].sessionTitle).toBeUndefined();
     dbState.getSession.mockImplementation(() => { throw new Error('Session read unavailable'); });
     expect(svc.listParkedApprovals()[0].sessionTitle).toBeUndefined();
-    expect(warn).toHaveBeenCalledWith('Voided approval session title unavailable', expect.any(Object));
+    expect(warn).toHaveBeenCalledWith('Approval session title unavailable', expect.any(Object));
     dbState.unavailable = true;
     expect(svc.listParkedApprovals()).toEqual([]);
+  });
+
+  function seedParked(id: string, title: string | undefined, kind: 'tool_approval' | 'directory_access' = 'tool_approval', status: 'pending' | 'orphaned' = 'pending') {
+    if (title !== undefined) sessions.createSessionWithId(id, { title, modelConfig: { provider: 'openai', model: 'm' } });
+    approvals.insert({
+      id, kind, agentId: null, agentName: null, coordinatorId: id,
+      payload: { sessionId: id, tool: 'Write', requestedAt: 1_000 } as never, submittedAt: 1_000,
+    });
+    if (status === 'orphaned') approvals.resolve({ id, status, feedback: null, resolvedAt: Date.now() });
+  }
+
+  it('pending, orphaned and directory approvals resolve distinct session titles through listParkedApprovals', () => {
+    seedParked('weekly', '[Scheduled] Weekly report');
+    seedParked('invoices', '[定时] Sort invoices', 'tool_approval', 'orphaned');
+    seedParked('receipts', '  Client receipts  ', 'directory_access');
+    seedParked('archive', '[Scheduled] Archive receipts', 'directory_access', 'orphaned');
+    const items = new SessionAutomationService().listParkedApprovals();
+    expect(items).toHaveLength(4);
+    for (const [id, title, status, kind] of [
+      ['weekly', 'Weekly report', 'pending', 'tool_approval'],
+      ['invoices', 'Sort invoices', 'orphaned', 'tool_approval'],
+      ['receipts', 'Client receipts', 'pending', 'directory_access'],
+      ['archive', 'Archive receipts', 'orphaned', 'directory_access'],
+    ]) expect(items.find((item) => item.id === id)).toMatchObject({ sessionTitle: title, status, kind });
+  });
+
+  it.each([undefined, '', '  ', '[Scheduled] ', 'session_private', '[定时] session_private', '12345678-abcd-1234-abcd-123456789abc'])('pending and orphaned title %j is omitted without losing rows', (title) => {
+    seedParked('pending', title);
+    seedParked('orphaned', title, 'directory_access', 'orphaned');
+    const items = new SessionAutomationService().listParkedApprovals();
+    expect(items).toHaveLength(2);
+    expect(items.map((item) => item.sessionTitle)).toEqual([undefined, undefined]);
+  });
+
+  it('failed session lookups warn with each request id and keep pending and orphaned rows visible; pairing never looks up a title', () => {
+    seedParked('pending', 'Weekly report');
+    seedParked('orphaned', 'Sort invoices', 'directory_access', 'orphaned');
+    approvals.insert({ id: 'pairing', kind: 'channel_pairing', agentId: null, agentName: null,
+      coordinatorId: null, payload: {} as never, submittedAt: 1_000 });
+    dbState.getSession.mockImplementation(() => { throw new Error('Session read unavailable'); });
+    const items = new SessionAutomationService().listParkedApprovals();
+    expect(items).toHaveLength(3);
+    expect(items.every((item) => item.sessionTitle === undefined)).toBe(true);
+    expect(dbState.getSession).toHaveBeenCalledTimes(2);
+    for (const requestId of ['pending', 'orphaned']) expect(warn).toHaveBeenCalledWith('Approval session title unavailable', { requestId });
+    expect(items.find((item) => item.id === 'pairing')).toMatchObject({ sessionId: null, kind: 'channel_pairing' });
   });
 
 });

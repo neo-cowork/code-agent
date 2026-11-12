@@ -312,6 +312,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                       >
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-sm text-zinc-200">{item.displayTool ?? item.tool}</div>
+                          {item.sessionTitle && <div className="truncate text-xs text-zinc-400" data-testid="parked-session-title">{item.sessionTitle}</div>}
                           <SensitiveStepParkedRow
                             step={item.sensitiveStep}
                             onRespond={(response) => { void handleResolveParked(item, response); }}
@@ -347,6 +348,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                             </span>
                           )}
                         </div>
+                        {!isPairing && item.sessionTitle && <div className="truncate text-xs text-zinc-400" data-testid="parked-session-title">{item.sessionTitle}</div>}
                         {isPairing && item.pairingCode && (
                           <div className="text-xs font-medium text-badge-warning" data-testid="pairing-code">
                             {cc.pairingCode.replace('{code}', item.pairingCode)}
