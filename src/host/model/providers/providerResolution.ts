@@ -89,12 +89,12 @@ function resolveBaseUrlRaw(config: ModelConfig): string {
   // zhipu 三态（镜像 ZhipuProvider.getBaseUrl）
   if (provider === 'zhipu') {
     if (model?.costType === 'free') {
-      return config.baseUrl || MODEL_API_ENDPOINTS.zhipuOfficial;
+      return config.baseUrl || getSettingsProviderBaseUrl(provider) || MODEL_API_ENDPOINTS.zhipuOfficial;
     }
     if (model?.useCodingEndpoint && reg?.codingBaseUrl) {
       return reg.codingBaseUrl; // coding 端点固定，不被 config.baseUrl 覆盖（对齐旧实现）
     }
-    return config.baseUrl || reg?.baseUrl || MODEL_API_ENDPOINTS.zhipu;
+    return config.baseUrl || getSettingsProviderBaseUrl(provider) || reg?.baseUrl || MODEL_API_ENDPOINTS.zhipu;
   }
 
   // moonshot kimi-k2.5 专用端点（镜像 MoonshotProvider.getBaseUrl）

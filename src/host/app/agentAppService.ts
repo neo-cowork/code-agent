@@ -842,6 +842,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         optionsWithTurnSettings,
         envelope.content,
         resolveForegroundImageTurn(resolvedSessionId, envelope.attachments, optionsWithTurnSettings.modelSpec),
+        (await getSessionManager().getMessages(resolvedSessionId)).slice().reverse().find(message => message.role === 'assistant' && !message.isMeta && message.visibility !== 'rewound')?.metadata?.stoppedByStepLimit === true,
       )
       : optionsWithTurnSettings;
 
@@ -1043,6 +1044,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         workbenchOptions,
         envelope.content,
         resolveForegroundImageTurn(resolvedSessionId, envelope.attachments, workbenchOptions?.modelSpec),
+        (await getSessionManager().getMessages(resolvedSessionId)).slice().reverse().find(message => message.role === 'assistant' && !message.isMeta && message.visibility !== 'rewound')?.metadata?.stoppedByStepLimit === true,
       )
       : workbenchOptions;
     return tm.interruptAndContinue(

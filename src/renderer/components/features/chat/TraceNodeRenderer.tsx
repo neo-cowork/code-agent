@@ -26,7 +26,9 @@ import { FallbackBanner } from './MessageBubble/FallbackBanner';
 import { ContextCompressionSignalBanner } from './MessageBubble/ContextCompressionSignalBanner';
 import { RouteTraceChip, shouldRenderModelDecisionChip } from './RouteTraceChip';
 import { TurnQualityStrip } from './TurnQualityStrip';
+import { EnvAssistCard } from './EnvAssistCard';
 import { AgentErrorPresentation } from './AgentErrorCard';
+import { ProjectTrustConfirmCard } from './ProjectTrustConfirmCard';
 import { VoiceCallSummaryCard } from '../voice/VoiceCallSummaryCard';
 import { useSmoothStreamingText } from '../../../hooks/useSmoothStreamingText';
 import { Archive, AudioLines, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, RefreshCw, RotateCcw } from 'lucide-react';
@@ -395,6 +397,7 @@ const AssistantTextNode: React.FC<{
     || (node.modelDecision && shouldRenderModelDecisionChip(node.modelDecision))
     || node.metadata?.turnQuality
     || node.metadata?.agentError
+    || node.metadata?.envAssist
     // ADR-068 刀 4：B2 续答段刚起头时正文还空，一次性续接说明先于首字渲染
     || resumeNote
     || resumeSignal,
@@ -534,6 +537,7 @@ const AssistantTextNode: React.FC<{
 
       {/* 运行失败的结构化错误卡片（替代旧版 merge 进正文的 ⚠ 文本）。
           run 是投影层推导的同因连续段：早先的失败轮降为灰字行，只有最新一轮整卡。 */}
+      {node.metadata?.envAssist && !node.metadata.agentError?.envAssist && <EnvAssistCard notice={node.metadata.envAssist} />}
       {node.metadata?.agentError && (
         <AgentErrorPresentation
           error={node.metadata.agentError}
@@ -541,6 +545,11 @@ const AssistantTextNode: React.FC<{
           sessionId={sessionId}
           run={node.agentErrorRun}
         />
+      )}
+
+      {/* 旧项目 Source 快照缺失的发送失败：正文已是人话句子，这里补「确认并重发」 */}
+      {node.metadata?.sendFailureCode === 'PROJECT_SOURCE_TRUST' && (
+        <ProjectTrustConfirmCard node={node} sessionId={sessionId} />
       )}
 
       {wakeFields ? <WakeRationaleNote fields={wakeFields} /> : null}
@@ -664,7 +673,7 @@ const SystemNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, s
       humanToolLabels: t.receiptPresentation.humanToolLabels,
     }).join(t.receiptPresentation.roleCapabilityLabels.separator);
     return (
-      <div className="mx-3 my-1.5 rounded-md border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-xs text-zinc-400">
+      <div className="shrink-0 mx-3 my-1.5 rounded-md border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-xs text-zinc-400">
         <div className="font-medium text-zinc-300">{title}</div>
         {receipt.diffAvailable !== false && !unchanged && (
           <div className="mt-1">

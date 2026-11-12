@@ -60,6 +60,7 @@ function approvalIdsForSession(
 }
 
 export function useSessionAgentRows(sessionId: string | null): SessionAgentRows {
+  const language = useAppStore((state) => state.language);
   const members = useSessionMembers(sessionId);
   const { snapshot } = useAgentTreeSnapshot(sessionId);
   const allTasks = useBackgroundTaskStore((state) => state.tasks);
@@ -97,6 +98,7 @@ export function useSessionAgentRows(sessionId: string | null): SessionAgentRows 
     return { rows, conflicts: snapshot?.summary.ownershipConflicts ?? [] };
   }, [
     members,
+    language,
     snapshot,
     allTasks,
     sessionId,
