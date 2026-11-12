@@ -28,6 +28,7 @@ import type { AwaitingApprovalRun } from '../../../shared/contract/sessionAutoma
 import { PARKED_APPROVAL_VOIDED_RETENTION_MS } from '../../../shared/constants/pendingApproval';
 import { describeParkedApprovalClosure } from '../../agent/parkedApprovalSurvival';
 import { getDatabase } from '../core/databaseService';
+import { stripSystemTitlePrefix, toUserFacingArgsPreview } from './parkedCardDisplay';
 import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
 import { broadcastToRenderer } from '../../platform';
@@ -582,7 +583,7 @@ export class SessionAutomationService {
         tool: payload.tool ?? 'unknown',
         displayTool: payload.displayTool,
         // N-PARKED-APPROVAL-SURVIVE-RESTART-PERSIST：老行没有该字段，undefined 照常透传（①）。
-        argsPreview: payload.argsPreview,
+        argsPreview: toUserFacingArgsPreview(payload.argsPreview),
         requestedAt: payload.requestedAt ?? row.submittedAt,
         status: row.status === 'orphaned' ? 'orphaned' : 'pending',
         riskClass: payload.riskClass ?? null,
@@ -940,7 +941,7 @@ function toVoidedInboxItem(
   const sessionId = payload.sessionId ?? row.coordinatorId;
   let sessionTitle: string | undefined;
   try {
-    const title = sessionId ? getDatabase().getSession(sessionId)?.title?.trim().replace(/^\[(?:定时|Scheduled)\]\s*/, '').trim() : undefined;
+    const title = sessionId ? stripSystemTitlePrefix(getDatabase().getSession(sessionId)?.title ?? '') : undefined;
     if (title && !/^(?:session_|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$)/i.test(title)) sessionTitle = title;
   } catch {
     logger.warn('Voided approval session title unavailable', { requestId: row.id });
@@ -950,7 +951,7 @@ function toVoidedInboxItem(
     kind: 'tool_approval',
     sessionId,
     sessionTitle,
-    argsPreview: payload.argsPreview,
+    argsPreview: toUserFacingArgsPreview(payload.argsPreview),
     tool: payload.tool ?? 'unknown',
     displayTool: payload.displayTool,
     requestedAt: payload.requestedAt ?? row.submittedAt,

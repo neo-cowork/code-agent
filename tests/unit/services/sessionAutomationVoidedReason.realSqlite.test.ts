@@ -125,6 +125,8 @@ describe('getVoidedApprovalReason (real SQLite file)', () => {
   it.each([
     ['[Scheduled] Write the weekly report', 'Write the weekly report'],
     ['[定时] 整理本月发票', '整理本月发票'],
+    ['[Schedule] Weekly progress report', 'Weekly progress report'],
+    ['[Heartbeat] Check inbox', 'Check inbox'],
     ['', undefined], ['  ', undefined], ['[Scheduled] ', undefined],
     ['session_private', undefined], ['[定时] session_private', undefined],
     ['12345678-abcd-1234-abcd-123456789abc', undefined],
@@ -132,6 +134,25 @@ describe('getVoidedApprovalReason (real SQLite file)', () => {
     seedVoided('title-row', 'chat', 'Auto-rejected after restart: args_unavailable (session working directory unavailable)', Date.now());
     db.prepare('UPDATE sessions SET title = ? WHERE id = ?').run(title, 'chat');
     expect(new SessionAutomationService().listParkedApprovals()[0].sessionTitle).toBe(expected);
+  });
+
+  it.each([
+    ['/Users/someone/work/out/ws/weekly-report.md', 'weekly-report.md'],
+    ['~/notes/My Report.md', 'My Report.md'],
+    ['C:\\Users\\someone\\a.csv', 'a.csv'],
+    ['/usr/bin/tool --flag value', '/usr/bin/tool --flag value'],
+    ['invoice-export --month=November', 'invoice-export --month=November'],
+  ])('voided and pending cards show path preview %j as %j', (preview, expected) => {
+    sessions.createSessionWithId('p1', { title: 'p1', modelConfig: { provider: 'openai', model: 'm' } });
+    for (const [id, status] of [['v', 'voided'], ['o', 'pending']] as const) {
+      approvals.insert({
+        id, kind: 'tool_approval', agentId: null, agentName: null, coordinatorId: 'p1',
+        payload: { sessionId: 'p1', tool: 'Write', requestedAt: 1_000, argsPreview: preview } as never, submittedAt: 1_000,
+      });
+      if (status === 'voided') approvals.resolve({ id, status: 'rejected', feedback: 'Auto-rejected after restart: expired_after_restart_24h', resolvedAt: Date.now() });
+    }
+    const items = new SessionAutomationService().listParkedApprovals();
+    expect(items.map((i) => i.argsPreview)).toEqual([expected, expected]);
   });
 
   it('voided inbox tolerates deleted sessions, failed title lookups and DB-not-ready', () => {
