@@ -46,6 +46,21 @@ function candidate(overrides: Partial<WriteBackCandidate> = {}): WriteBackCandid
   };
 }
 
+// 首次醒来内部指令的真实形状（无源变体，截取到足以命中共用首行即可）。
+// 首行与 shared/constants 的 ROLE_ASSETS.FIRST_WAKE_PROMPT_HEAD 逐字对应：提示词首行一旦
+// 改动，本夹具不再命中检测，测试转红，逼着改的人同步审视「内部指令绝不外显」这条约束。
+const FIRST_WAKE_TASK_PROMPT = [
+  '你刚被用户创建为一位持久化专家，此刻是创建后的第一次巡览。这不是用户发来的消息，用户现在不在场。',
+  '',
+  '用户创建你时留下的期望：「负责看日历和提醒」',
+  '',
+  '当前没有任何已连接的数据源，你没有可查看的真实数据，也不要做任何工具探查。',
+  '',
+  '你的任务：',
+  '1. 绝对不要编造任务、数据、文件或来源——你没有数据，编造会误导用户。',
+  '2. 最终回复只有 1 句话：根据你的职责，说连上哪类数据源最有帮助、连上之后你就能多做什么、在哪里连接（能力中心 → 连接器）。',
+].join('\n');
+
 describe('applyWriteGate (设计 §5.1)', () => {
   it('passes valid candidates', () => {
     const { accepted, rejected } = applyWriteGate([candidate()], new Set());
@@ -317,6 +332,45 @@ describe('runRoleWriteBack', () => {
     expect(history).toHaveLength(1);
     expect(history[0]).toMatch(/^- \d{4}-\d{2}-\d{2} \| 检查本周日程，未发现冲突 \| 检查本周日程，未发现冲突$/);
     expect(history[0]).not.toContain('（无产物落盘）');
+  });
+
+  it('首次醒来的内部指令绝不外显为履历摘要：quick model 失败回落固定短句', async () => {
+    await ensureRoleAssetDirs('研究员');
+    mockQuickTask.mockResolvedValue({ success: false, error: 'model unavailable' });
+
+    const result = await runRoleWriteBack({
+      roleId: '研究员',
+      taskPrompt: FIRST_WAKE_TASK_PROMPT,
+      finalOutput: '连上日历后我能帮你看日程和提醒。',
+    });
+
+    expect(result.historyAppended).toBe(true);
+    const history = await loadRoleHistory('研究员');
+    expect(history).toHaveLength(1);
+    expect(history[0]).toContain('刚创建，还没开始工作');
+    expect(history[0]).not.toContain('你刚被用户创建为');
+    expect(history[0]).not.toContain('第一次巡览');
+    expect(history[0]).not.toContain('（无产物落盘）');
+  });
+
+  it('首次醒来有人工摘要时照常存摘要，不替换成固定短句', async () => {
+    await ensureRoleAssetDirs('研究员');
+    mockQuickTask.mockResolvedValue({
+      success: true,
+      content: JSON.stringify({ memories: [], historySummary: '刚创建，说明了连接日历后的用法' }),
+    });
+
+    await runRoleWriteBack({
+      roleId: '研究员',
+      taskPrompt: FIRST_WAKE_TASK_PROMPT,
+      finalOutput: '连上日历后我能帮你看日程和提醒。',
+    });
+
+    const history = await loadRoleHistory('研究员');
+    expect(history).toHaveLength(1);
+    expect(history[0]).toContain('刚创建，说明了连接日历后的用法');
+    expect(history[0]).not.toContain('你刚被用户创建为');
+    expect(history[0]).not.toContain('还没开始工作');
   });
 
   it('degrades gracefully when quick model fails (只记履历不写记忆)', async () => {

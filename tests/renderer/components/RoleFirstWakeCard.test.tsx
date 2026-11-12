@@ -295,6 +295,16 @@ describe('RoleFirstWakeCard', () => {
     expect(pulseDot.className).toContain('motion-reduce:animate-none');
   });
 
+  it('进行中没有已连接源时不说「熟悉已连接的数据」，改说准备开场', async () => {
+    getFirstWake.mockResolvedValue({ state: 'running', sourcesMode: 'none', suggestions: [] });
+    render(<RoleFirstWakeCard roleId="role-1" />);
+    expect(await screen.findByText('正在准备开场…')).toBeTruthy();
+    expect(screen.queryByText(/正在熟悉你已连接的数据/)).toBeNull();
+    // 无源进行中同样保留「先不用」出路
+    expect(screen.getByRole('button', { name: '先不用' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '去连接' })).toBeNull();
+  });
+
   it('确认创建后在原位挂上卡片；确认修改不挂', async () => {
     getFirstWake.mockResolvedValue({ state: 'pending', sourcesMode: 'none', suggestions: [] });
     invokeDomain.mockImplementation(async (_domain: unknown, action: unknown) => {

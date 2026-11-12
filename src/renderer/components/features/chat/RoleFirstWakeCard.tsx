@@ -248,7 +248,8 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
               aria-hidden="true"
               data-testid="role-first-wake-pulse"
             />
-            <p className="text-base leading-relaxed text-text-tertiary">{copy.running}</p>
+            {/* 无已连接源时模型没在熟悉任何数据，只准备一句开场：不能说「熟悉已连接的数据」 */}
+            <p className="text-base leading-relaxed text-text-tertiary">{sourcesMode === 'none' ? copy.runningNone : copy.running}</p>
             {skipButton}
           </div>
         )}
