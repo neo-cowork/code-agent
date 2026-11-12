@@ -85,6 +85,7 @@ export class SessionTaskSlotLedger {
   private readonly workItemIdBySubmissionKey = new Map<string, string>();
   private readonly attemptsBySubmissionKey = new Map<string, number>();
   private readonly queue: string[] = [];
+  private drainHolds = 0;
   private readonly perSessionLimit: number;
   private readonly laneLimit: number;
   private readonly slotTimeoutMs: number;
@@ -112,7 +113,7 @@ export class SessionTaskSlotLedger {
     this.cleanupInterval.unref?.();
   }
 
-  admit(input: SessionTaskSlotInput, options: { queueWhenFull?: boolean } = {}): SessionTaskAdmission {
+  admit(input: SessionTaskSlotInput, options: { queueWhenFull?: boolean; priority?: boolean } = {}): SessionTaskAdmission {
     const reusedId = this.workItemIdBySubmissionKey.get(input.submissionKey);
     const reused = reusedId ? this.slots.get(reusedId) : undefined;
     if (reused && !this.canRetry(reused)) return { outcome: 'reused', slot: { ...reused } };
@@ -125,14 +126,16 @@ export class SessionTaskSlotLedger {
 
     if (this.runningInLane(slot.laneKey) >= this.laneLimit) {
       this.track(slot);
-      this.queue.push(slot.workItemId);
+      if (options.priority) this.queue.unshift(slot.workItemId);
+      else this.queue.push(slot.workItemId);
       return { outcome: 'queued', slot: { ...slot }, reason: 'lane_busy' };
     }
 
     if (!this.hasSessionCapacity() || !this.pool.hasCapacity()) {
       if (options.queueWhenFull) {
         this.track(slot);
-        this.queue.push(slot.workItemId);
+        if (options.priority) this.queue.unshift(slot.workItemId);
+        else this.queue.push(slot.workItemId);
         return { outcome: 'queued', slot: { ...slot }, reason: 'capacity' };
       }
       return {
@@ -158,6 +161,15 @@ export class SessionTaskSlotLedger {
     slot.terminalStatus = terminalStatus;
     const queuedIndex = this.queue.indexOf(workItemId);
     if (queuedIndex >= 0) this.queue.splice(queuedIndex, 1);
+    return this.drainStartable();
+  }
+
+  holdDrain(): void {
+    this.drainHolds += 1;
+  }
+
+  releaseDrain(): SessionTaskSlot[] {
+    this.drainHolds -= 1;
     return this.drainStartable();
   }
 
@@ -233,6 +245,7 @@ export class SessionTaskSlotLedger {
 
   private drainStartable(): SessionTaskSlot[] {
     const started: SessionTaskSlot[] = [];
+    if (this.drainHolds > 0) return started;
     for (let index = 0; index < this.queue.length;) {
       if (!this.hasSessionCapacity() || !this.pool.hasCapacity()) break;
       const workItemId = this.queue[index];

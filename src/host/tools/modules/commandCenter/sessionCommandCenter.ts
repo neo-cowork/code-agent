@@ -259,21 +259,16 @@ async function resolveOverflowChoiceInHost(
 
   if (matchedReplace) {
     const center = getSessionCommandCenter();
-    const cancellation = await center.cancel(sessionId, matchedReplace.task.id);
-    if (cancellation.outcome !== 'resolved') {
+    const { cancellation, replacement } = await center.replace(spawnInput, matchedReplace.task.id);
+    if (cancellation.outcome !== 'resolved' || !replacement || replacement.outcome === 'requires_choice') {
       return { ok: true, output: describeOverflowUnansweredFallback(shortName) };
     }
     const stopped = center.list(sessionId).find((task) => task.id === cancellation.task.id)?.status === 'cancelled';
     const cancellationReceipt = `${stopped ? '已停止' : '已请求停止'}「${cancellation.task.shortName}」。`;
-    const restarted = await center.spawn(spawnInput);
-    if (restarted.outcome !== 'requires_choice') {
-      return delegateTaskReceipt(restarted, cancellationReceipt);
-    }
-    const queuedAfterCancel = await center.spawn({ ...spawnInput, queueWhenFull: true });
-    if (queuedAfterCancel.outcome !== 'requires_choice') {
-      return delegateTaskReceipt(queuedAfterCancel, cancellationReceipt);
-    }
-    return { ok: true, output: describeOverflowUnansweredFallback(shortName) };
+    const current = center.list(sessionId).find((task) => task.id === replacement.task.id);
+    return delegateTaskReceipt(current?.status === 'running'
+      ? { outcome: 'started', task: current }
+      : replacement, cancellationReceipt);
   }
 
   return { ok: true, output: describeOverflowUnansweredFallback(shortName) };
