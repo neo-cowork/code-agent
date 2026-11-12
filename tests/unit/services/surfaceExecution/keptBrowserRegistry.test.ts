@@ -175,4 +175,37 @@ describe('KeptBrowserRegistry (N-BROWSER-KEEP-RESULT-PAGE)', () => {
     expect(registry.get('conversation-a')?.serviceKey).toBe('surface-key-a');
     expect(registry.get('conversation-b')?.serviceKey).toBe('surface-key-b');
   });
+
+  it('getAlive returns the entry only while kept, null once closed or absent', () => {
+    const registry = new KeptBrowserRegistry(createFakePool().pool);
+    expect(registry.getAlive('conversation-a')).toBeNull();
+
+    const input = baseInput();
+    registry.register(input);
+    expect(registry.getAlive('conversation-a')?.serviceKey).toBe('surface-key-1');
+
+    input.browserService.emit('close');
+    expect(registry.getAlive('conversation-a')).toBeNull();
+    expect(registry.get('conversation-a')?.state).toBe('closed');
+  });
+
+  it('snapshot reports the IPC three states: none / kept / closed with url+title', () => {
+    const registry = new KeptBrowserRegistry(createFakePool().pool);
+    expect(registry.snapshot('conversation-a')).toEqual({ state: 'none', url: null, title: null });
+
+    const input = baseInput();
+    registry.register(input);
+    expect(registry.snapshot('conversation-a')).toEqual({
+      state: 'kept',
+      url: 'https://example.test/result',
+      title: 'Result',
+    });
+
+    input.browserService.emit('close');
+    expect(registry.snapshot('conversation-a')).toEqual({
+      state: 'closed',
+      url: 'https://example.test/result',
+      title: 'Result',
+    });
+  });
 });

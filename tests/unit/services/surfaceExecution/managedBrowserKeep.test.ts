@@ -1,9 +1,13 @@
-// N-BROWSER-KEEP-RESULT-PAGE：keep → release 存活 → 窗口关闭后翻 closed
+// N-BROWSER-KEEP-RESULT-PAGE：keep → release 存活 → adopt 认领 → 用户释放不关窗
 // 的 adapter 级链路（fake BrowserService + 真 SurfaceExecutionRuntime + 真 registry）。
 import { describe, expect, it, vi } from 'vitest';
 import type { BrowserService } from '../../../../src/host/services/infra/browserService';
 import { RunRegistry } from '../../../../src/host/runtime/runRegistry';
-import { ManagedBrowserProviderAdapter } from '../../../../src/host/services/surfaceExecution/ManagedBrowserProviderAdapter';
+import {
+  ManagedBrowserProviderAdapter,
+  MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY,
+} from '../../../../src/host/services/surfaceExecution/ManagedBrowserProviderAdapter';
+import { UserBrowserLinkService } from '../../../../src/host/services/surfaceExecution/UserBrowserLinkService';
 import {
   SurfaceExecutionRuntime,
   type SurfaceRuntimeIdentityV1,
@@ -155,7 +159,8 @@ function createHarness(options?: { initialTabs?: FakeTab[] }) {
     undefined,
     keptRegistry,
   );
-  return { registry, runtime, identity, fake, acquire, release, adapter, keptRegistry };
+  const links = new UserBrowserLinkService(registry, runtime, adapter, keptRegistry);
+  return { registry, runtime, identity, fake, acquire, release, adapter, keptRegistry, links };
 }
 
 async function executeAction(
@@ -237,6 +242,53 @@ describe('managed browser keep result page (N-BROWSER-KEEP-RESULT-PAGE)', () => 
       reason: expect.stringContaining('personal browser profile'),
     });
     await runtime.endRun(userIdentity);
+  });
+
+  it('adopts the kept window for the user without navigating, and user release keeps it alive', async () => {
+    const { runtime, identity, fake, release, adapter, keptRegistry, links } = createHarness();
+    await executeAction(adapter, identity, 'nav-1');
+    adapter.markResultPageKept(identity, { url: 'https://example.test/result', title: 'Result' });
+    await runtime.endRun(identity);
+    release.mockClear();
+
+    const adopted = await links.adopt({ conversationId: 'conversation-a', workspace: process.cwd() });
+
+    expect(adopted.surfaceSessionId).toBeTruthy();
+    expect(adopted.snapshot.conversationId).toBe('conversation-a');
+    // 绑上的是 kept 服务键，不是个人 __default__；没有发生导航。
+    const binding = adapter.getBinding({
+      conversationId: 'conversation-a',
+      runId: adopted.runId,
+      agentId: SURFACE_USER_BROWSER_AGENT_ID,
+    } as SurfaceRuntimeIdentityV1);
+    expect(binding?.serviceKey).toBe(keptRegistry.getAlive('conversation-a')?.serviceKey);
+    expect(binding?.serviceKey).not.toBe(MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY);
+    expect(fake.navigate).not.toHaveBeenCalled();
+    expect(fake.raw.ensureSession).toHaveBeenLastCalledWith('about:blank', expect.objectContaining({
+      leaseOwner: 'user-personal-browser',
+    }));
+
+    // 用户关掉 rail：user run 结束，kept 窗不关。
+    await links.end('conversation-a', 'user');
+    expect(fake.raw.close).not.toHaveBeenCalled();
+    expect(release).not.toHaveBeenCalled();
+    expect(keptRegistry.getAlive('conversation-a')).not.toBeNull();
+
+    // 闲置回收（lease 到期关窗）后：closed + URL 留存。
+    fake.raw.emitSessionChangedForTest('close');
+    expect(keptRegistry.getAlive('conversation-a')).toBeNull();
+    expect(keptRegistry.snapshot('conversation-a')).toMatchObject({
+      state: 'closed',
+      url: 'https://example.test/result',
+    });
+  });
+
+  it('adopt falls back to a plain error when no kept window exists', async () => {
+    const { links } = createHarness();
+    await expect(links.adopt({
+      conversationId: 'conversation-a',
+      workspace: process.cwd(),
+    })).rejects.toThrow('No kept result page is open');
   });
 
   it('a newer keep from another run closes the older kept window', async () => {
