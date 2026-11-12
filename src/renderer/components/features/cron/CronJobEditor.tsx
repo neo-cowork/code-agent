@@ -469,7 +469,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                           aria-hidden="true"
                         />
                         <span className={status.connected ? 'text-badge-success' : 'text-zinc-500'}>
-                          {status.label}
+                          {cc.connectorNames[status.id] ?? status.label}
                         </span>
                       </span>
                     ))}
@@ -560,7 +560,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                 <span>
                   {cc.connectorNeededHint.replace(
                     '{name}',
-                    missingConnectors.map((status) => status.label).join('、'),
+                    missingConnectors.map((status) => cc.connectorNames[status.id] ?? status.label).join('、'),
                   )}
                 </span>
                 <button

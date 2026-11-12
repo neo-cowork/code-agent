@@ -6,6 +6,7 @@ import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 import type { EventScheduleValidationReason } from '@shared/cronEventValidation';
 import { cronPermissionDeniedReasonText } from '@shared/cronPermissionDenied';
 import { cronEditorChromeEn, cronEditorChromeZh } from './cronEditorChrome';
+import { watchTemplateCopyEn, watchTemplateCopyZh } from './cronWatchTemplateCopy';
 // 自动化面板词条（features/cron 全家桶）—— zh/en 同文件相邻维护。
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮（同 sidebar.ts / chatInput.ts 先例）。
 // 注：types.ts 里的 formatActionSummary/formatDateTime 等格式化函数文案暂未迁移
@@ -435,6 +436,7 @@ export const cronCenterZh = {
     // 推荐模板卡
     templatesTitle: '推荐自动化',
     templatesSubtitle: '无需填写，点一下即可按默认时间开始',
+    connectorNames: { lark: '飞书' } as Record<string, string>,
     templateEnable: '开启',
     templateEnabled: '已开启',
     templateReenable: '重新开启',
@@ -462,6 +464,7 @@ export const cronCenterZh = {
         description: '汇总昨晚到现在的未读邮件、消息和日历变动',
         scheduleLabel: '工作日 08:30',
       },
+      ...watchTemplateCopyZh,
       'group-listen': {
         name: '群监听',
         description: '盯住一个群，来了新消息就按你的一句话处理',
@@ -936,6 +939,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     backToSimple: 'Back',
     templatesTitle: 'Recommended automations',
     templatesSubtitle: 'No setup — one click starts them on the default schedule',
+    connectorNames: { lark: 'Feishu' } as Record<string, string>,
     templateEnable: 'Enable',
     templateEnabled: 'On',
     templateReenable: 'Re-enable',
@@ -961,6 +965,7 @@ export const cronCenterEn: typeof cronCenterZh = {
         description: 'Round up unread mail, messages, and calendar changes since last night',
         scheduleLabel: 'Weekdays 08:30',
       },
+      ...watchTemplateCopyEn,
       'group-listen': {
         name: 'Group listen',
         description: 'Watch one group and handle new messages with your one-liner',
