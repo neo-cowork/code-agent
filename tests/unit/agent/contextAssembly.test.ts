@@ -4,6 +4,7 @@ import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 // Verifies runtime model input honors context interventions.
 // ============================================================================
 
+const TELEMETRY_RECOVERY_NOTICE = '【历史恢复提示】';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
@@ -2405,6 +2406,57 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       interventions.applyIntervention(sessionId, undefined, 'excluded-ledger', 'exclude', false);
       interventions.applyIntervention(sessionId, undefined, 'pin-date', 'pin', false);
       interventions.applyIntervention(sessionId, undefined, 'tool-pin', 'pin', false);
+    }
+  });
+
+  it('keeps the telemetry-recovery disclaimer in the summariser input for recovered user messages', async () => {
+    const sessionId = `session-telemetry-recovered-${Date.now()}`;
+    const pad = 'hard compaction transcript '.repeat(220);
+    const recovered = buildMessage('telemetry-user-t1', 'user', `写到 ~/[credit card hidden].txt ${pad}`);
+    recovered.metadata = { telemetryRecovered: true };
+    const prompts: string[] = [];
+    const summarize = vi.mocked(compactModelSummarizeWithMetadata);
+    summarize.mockImplementation(async (prompt: string) => {
+      prompts.push(prompt);
+      return { summary: 'summary of kept work', metadata: { provider: 'mock', model: 'test-model', useMainModel: false } };
+    });
+    try {
+      const ctx = {
+        sessionId,
+        agentId: undefined,
+        messages: [
+          recovered,
+          buildMessage('pad-assistant', 'assistant', pad),
+          buildMessage('later-user', 'user', 'what is the status now'),
+          buildMessage('tail-assistant', 'assistant', 'tail reply'),
+        ],
+        hookMessageBuffer: { add: vi.fn(), flush: vi.fn().mockReturnValue(''), size: 0 },
+        onEvent: vi.fn(),
+        modelConfig: { model: 'test-model', provider: 'test', maxTokens: 1024 },
+        toolRegistry: { getDeferredToolsSummary: vi.fn().mockReturnValue('') },
+        workingDirectory: process.cwd(),
+        isDefaultWorkingDirectory: true,
+        turn: TurnState.forTest({ isSimpleTaskMode: false }),
+        compressionPipeline: new CompressionPipeline(),
+        contextHealth: ContextHealthState.forTest({ persistentSystemContext: [], compressionState: new CompressionState() } as never),
+        autoCompressor: {
+          shouldTriggerByTokens: vi.fn().mockReturnValue(true),
+          getConfig: vi.fn().mockReturnValue({ preserveRecentCount: 2, enabled: true, warningThreshold: 0.75 }),
+          shouldWrapUp: vi.fn().mockReturnValue(false),
+          getCompactionCount: vi.fn().mockReturnValue(0),
+          getStats: vi.fn().mockReturnValue({ compressionCount: 0, totalSavedTokens: 0 }),
+          recordCompaction: vi.fn(),
+        },
+        systemPrompt: '',
+        hookManager: undefined,
+      };
+      await new ContextAssembly(ctx as never).checkAndAutoCompress();
+      expect(prompts.length).toBeGreaterThan(0);
+      expect(prompts[0]).toContain(TELEMETRY_RECOVERY_NOTICE);
+      expect(recovered.content.startsWith('写到')).toBe(true);
+    } finally {
+      summarize.mockReset();
+      summarize.mockResolvedValue({ summary: 'summary', metadata: { provider: 'mock', model: 'test-model', useMainModel: false } });
     }
   });
 

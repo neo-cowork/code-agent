@@ -1,3 +1,4 @@
+import { registerEnvResumeContinuer, type EnvResumeProbeFactory } from '../../host/runtime/envResumeWaiter';
 import type { Router } from 'express';
 import type { Message } from '../../shared/contract';
 import type { TaskManager } from '../../host/task';
@@ -13,6 +14,7 @@ export function registerAgentContinueRoute(
   runRegistry: RunRegistry,
   getTaskManager: () => TaskManager = getDefaultTaskManager,
   getMessages?: (sessionId: string) => Promise<Message[]>,
+  envProbe?: EnvResumeProbeFactory,
 ): void {
   registerQuotaWaitContinuer(({ sessionId }) => continueParkedDurableRun({
     sessionId,
@@ -20,6 +22,10 @@ export function registerAgentContinueRoute(
     taskManager: getTaskManager(),
     ...(getMessages ? { getMessages } : {}),
   }));
+  registerEnvResumeContinuer(({ sessionId, runId }) => continueParkedDurableRun({
+    sessionId, expectedRunId: runId, runRegistry, taskManager: getTaskManager(),
+    ...(getMessages ? { getMessages } : {}),
+  }), envProbe);
   router.post('/continue', async (req, res) => {
     const parsedBody = AgentContinueBodySchema.safeParse(req.body ?? {});
     if (!parsedBody.success) {

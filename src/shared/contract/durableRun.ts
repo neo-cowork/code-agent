@@ -1,3 +1,4 @@
+import { isEnvBlockerClass, type EnvBlockerClass } from './envAssist';
 import type { AgentEngineKind } from './agentEngine';
 
 export const DURABLE_RUN_SCHEMA_VERSION = 1 as const;
@@ -15,7 +16,7 @@ export type RunStatus =
 export const TERMINAL_RUN_STATUSES = ['completed', 'failed', 'cancelled'] as const satisfies readonly RunStatus[];
 
 /** Why a non-terminal run is parked or being recovered. */
-export type RunInterruptCause = 'crash_or_quit' | 'user_stop' | 'budget_exhausted' | 'guard_halt' | 'quota_wait';
+export type RunInterruptCause = 'crash_or_quit' | 'user_stop' | 'budget_exhausted' | 'guard_halt' | 'quota_wait' | 'env_blocked';
 
 /** Automatic restart attempts are deliberately bounded; a user Continue starts a new budget. */
 export const MAX_AUTO_RESUME_COUNT = 2;
@@ -164,6 +165,7 @@ export interface RunEnvelope {
   autoResumeCount?: number;
   /** Wall-clock time a quota_wait park may continue. Cleared with the cause. */
   quotaWaitDueAt?: number;
+  envBlocked?: { class: EnvBlockerClass; target: string; toolCallId: string };
   terminal?: RunTerminal;
   createdAt: number;
   updatedAt: number;
@@ -311,6 +313,17 @@ export function assertRunEnvelope(envelope: RunEnvelope): void {
     && envelope.interruptCause !== envelope.interrupt_cause) {
     throw new Error('interruptCause and interrupt_cause must agree');
   }
+  if (envelope.envBlocked !== undefined) {
+    const block = envelope.envBlocked;
+    if (getRunInterruptCause(envelope) !== 'env_blocked' || !block || !isEnvBlockerClass(block.class)
+      || typeof block.target !== 'string' || !block.target.trim()
+      || typeof block.toolCallId !== 'string' || !block.toolCallId.trim()) {
+      throw new Error('Invalid envBlocked metadata');
+    }
+  }
+  if (getRunInterruptCause(envelope) === 'env_blocked' && !envelope.envBlocked) {
+    throw new Error('env_blocked requires envBlocked metadata');
+  }
   if (envelope.autoResumeCount !== undefined
     && (!Number.isInteger(envelope.autoResumeCount) || envelope.autoResumeCount < 0)) {
     throw new Error('autoResumeCount must be a non-negative integer');
@@ -375,16 +388,17 @@ function isRunInterruptCause(value: unknown): value is RunInterruptCause {
     || value === 'user_stop'
     || value === 'budget_exhausted'
     || value === 'guard_halt'
-    || value === 'quota_wait';
+    || value === 'quota_wait'
+    || value === 'env_blocked';
 }
 
 export function getRunInterruptCause(envelope: Pick<RunEnvelope, 'interruptCause' | 'interrupt_cause'>): RunInterruptCause | undefined {
   return envelope.interruptCause ?? envelope.interrupt_cause;
 }
 
-export function withRunInterruptMetadata<T extends Pick<RunEnvelope, 'interruptCause' | 'interrupt_cause' | 'autoResumeCount' | 'quotaWaitDueAt'>>(
+export function withRunInterruptMetadata<T extends Pick<RunEnvelope, 'interruptCause' | 'interrupt_cause' | 'autoResumeCount' | 'quotaWaitDueAt' | 'envBlocked'>>(
   envelope: T,
-  input: { interruptCause?: RunInterruptCause; autoResumeCount?: number; clearInterruptCause?: boolean; quotaWaitDueAt?: number },
+  input: { interruptCause?: RunInterruptCause; autoResumeCount?: number; clearInterruptCause?: boolean; quotaWaitDueAt?: number; envBlocked?: RunEnvelope['envBlocked'] },
 ): T {
   const nextCause = input.clearInterruptCause ? undefined : (input.interruptCause ?? getRunInterruptCause(envelope));
   const nextCount = input.autoResumeCount ?? envelope.autoResumeCount ?? 0;
@@ -396,6 +410,7 @@ export function withRunInterruptMetadata<T extends Pick<RunEnvelope, 'interruptC
       : { interruptCause: nextCause, interrupt_cause: nextCause }),
     autoResumeCount: nextCount,
     quotaWaitDueAt,
+    envBlocked: nextCause === 'env_blocked' ? (input.envBlocked ?? envelope.envBlocked) : undefined,
   };
 }
 

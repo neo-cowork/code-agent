@@ -16,6 +16,7 @@ import type {
 } from '../../shared/ipc';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { RENDERER_POLLING } from '../../shared/constants';
+import { createPermissionSnapshotRetention } from './permissionSnapshotRetention';
 import { getLocalBridgeClient } from '../services/localBridge';
 import { useLocalBridgeStore } from '../stores/localBridgeStore';
 import { localToolAbortRegistry } from './localToolAbortRegistry';
@@ -26,6 +27,8 @@ import {
 } from '../utils/serverConnectionMonitor';
 import { getServerConnectionStatus } from '../stores/serverConnectionStore';
 import { logPermissionClickExit } from '../services/permissionClickLog';
+import { useAppStore } from '../stores/appStore';
+import { domainFailureMessage, httpFailureMessage } from '../utils/httpFailureMessage';
 
 type EventCallback = (...args: unknown[]) => void;
 
@@ -325,10 +328,8 @@ function getReloadStorage(): Storage | null {
   }
 }
 
-function clearAuthTokenReloadAttempt(): void {
-  getReloadStorage()?.removeItem(AUTH_RELOAD_ATTEMPT_KEY);
-}
-
+// One automatic reload per tab. Unrelated successful requests must not re-arm
+// this guard while a particular read is still failing; the error UI offers Retry.
 function scheduleAuthTokenReloadOnce(): boolean {
   const storage = getReloadStorage();
   if (storage?.getItem(AUTH_RELOAD_ATTEMPT_KEY) === '1') {
@@ -385,7 +386,7 @@ function getRecoverableAuthTokenError(status: number, errorMessage: string): Aut
   return {
     status,
     willReload,
-    message: `本地 Web 会话 token 已失效 (${status}: ${errorMessage || 'Invalid auth token'})。${nextStep}问题在本地页面和后端 token 不一致，和模型或云端代理无关。`,
+    message: `本地 Web 会话 token 已失效 (${status}: ${errorMessage || 'Invalid auth token'})。${nextStep}问题在本地页面和后端 token 不一致，与模型服务无关。`,
   };
 }
 
@@ -508,6 +509,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
   // 让服务端 replay buffer 补发断线窗口内错过的事件。
   let lastSeenEventId = -1;
   let lastSeenStreamEpoch: string | undefined;
+  const permissionSnapshots = createPermissionSnapshotRetention();
 
   /**
    * 初始化 SSE 连接，接收后端推送事件
@@ -565,6 +567,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
           }
           return;
         }
+        if (payload.channel === IPC_CHANNELS.AGENT_EVENT) permissionSnapshots.observe(payload.args);
         dispatchSSEPayload(payload.channel, payload.args, listeners.get(payload.channel));
       }
     };
@@ -620,6 +623,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
       ...args: Parameters<IpcInvokeHandlers[K]>
     ): Promise<ReturnType<IpcInvokeHandlers[K]>> => {
       const { method, path } = channelToEndpoint(channel);
+      if (preservesUndeliveredPermissionEnvelope(channel)) permissionSnapshots.forget(args[0]);
 
       // 替换路径参数（如 :id）
       let finalPath = path;
@@ -683,12 +687,12 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
           }
           // 带上 status：调用方要能区分「这个 session 正忙」（409，可排队重发）
           // 和真正的失败。只留一句人话字符串的话，上层只能去正则匹配错误文案。
+          // message 只按 status/code 出一句话；原始响应体挂 rawErrorBody 留诊断，不进 message。
           throw Object.assign(
-            new Error(`云端代理请求失败 (${response.status}): ${errorMessage}`),
-            { status: response.status, ...(errorCode ? { code: errorCode } : {}) },
+            new Error(httpFailureMessage({ status: response.status, code: errorCode, language: useAppStore.getState().language })),
+            { status: response.status, ...(errorCode ? { code: errorCode } : {}), rawErrorBody: errorMessage || errorBody },
           );
         }
-        clearAuthTokenReloadAttempt();
 
         // 读取 SSE 流并分发事件到 listeners
       if (response.body) {
@@ -882,18 +886,20 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
             response.status,
             errorMessage || errorBody,
           );
+          // 诊断留 raw body；登记簿与上抛/返回给调用方的 message 只按 status/code 出一句话
+          // （takeTransportFailure / describeSkillIpcError 会把 message 递给 UI）。
+          // skill 信任门标记（'该目录未被信任'）在登记簿侧已由 raw 副本保住，见下方 record。
           recordTransportFailure(channel, response.status, errorMessage || errorBody);
           if (preservesUndeliveredPermissionEnvelope(channel)) {
             logPermissionClickExit({ requestId: args[0] as string, stage: 'transport-send-failure', sessionId: args[2] as string, error: `审批应答发送失败 (${response.status}): ${errorMessage || errorBody}` });
-            throw new PermissionSendFailure(`审批应答发送失败 (${response.status}): ${errorMessage || errorBody}`);
+            throw new PermissionSendFailure(`审批应答发送失败：${httpFailureMessage({ status: response.status, code: parseHttpErrorCode(errorBody), language: useAppStore.getState().language })}`);
           }
           return normalizeIpcTransportFailure(
             channel,
             response.status,
-            errorMessage || errorBody,
+            httpFailureMessage({ status: response.status, code: parseHttpErrorCode(errorBody), language: useAppStore.getState().language }),
           ) as ReturnType<IpcInvokeHandlers[K]>;
         }
-        clearAuthTokenReloadAttempt();
 
         const contentType = response.headers.get('content-type');
         if (contentType?.includes('application/json')) {
@@ -957,6 +963,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
         listeners.set(channel, new Set());
       }
       listeners.get(channel)!.add(callback as EventCallback);
+      if (channel === IPC_CHANNELS.AGENT_EVENT) permissionSnapshots.replayTo(callback as EventCallback);
 
       // 有监听器时确保 SSE 连接存在
       ensureSSE();
@@ -1029,7 +1036,6 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
           body: JSON.stringify({ filePath: _filePath }),
         });
         if (res.ok) {
-          clearAuthTokenReloadAttempt();
           return normalizePdfResult(await readJsonResponse(res));
         }
         const errorBody = await res.text();
@@ -1046,7 +1052,6 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
           body: JSON.stringify({ filePath: _filePath }),
         });
         if (res.ok) {
-          clearAuthTokenReloadAttempt();
           return normalizeExcelTextResult(await readJsonResponse(res));
         }
         const errorBody = await res.text();
@@ -1063,7 +1068,6 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
           body: JSON.stringify({ filePath: _filePath }),
         });
         if (res.ok) {
-          clearAuthTokenReloadAttempt();
           return normalizeExcelJsonResult(await readJsonResponse(res));
         }
         const errorBody = await res.text();
@@ -1080,7 +1084,6 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
           body: JSON.stringify({ filePath: _filePath }),
         });
         if (res.ok) {
-          clearAuthTokenReloadAttempt();
           return normalizeDocxHtmlResult(await readJsonResponse(res));
         }
         const errorBody = await res.text();
@@ -1097,7 +1100,6 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
           body: JSON.stringify({ audioData: _audioData, mimeType: _mimeType, ...(_options ?? {}) }),
         });
         if (res.ok) {
-          clearAuthTokenReloadAttempt();
           return normalizeTranscribeResult(await readJsonResponse(res));
         }
         const errorBody = await res.text();
@@ -1152,12 +1154,11 @@ export function createHttpDomainAPI(baseUrl: string): DomainAPI {
         });
 
         if (res.ok) {
-          clearAuthTokenReloadAttempt();
           return readJsonResponse(res) as Promise<IPCResponse<T>>;
         }
 
-        const errorMessage = parseHttpErrorMessage(await res.text());
-        const authError = getRecoverableAuthTokenError(res.status, errorMessage);
+        const errorBody = await res.text();
+        const authError = getRecoverableAuthTokenError(res.status, parseHttpErrorMessage(errorBody));
         if (authError) {
           return {
             success: false,
@@ -1168,13 +1169,11 @@ export function createHttpDomainAPI(baseUrl: string): DomainAPI {
           };
         }
 
-        return {
-          success: false,
-          error: {
-            code: `HTTP_${res.status}`,
-            message: errorMessage,
-          },
-        };
+        // 诊断留 raw body；信封 message 只留域协议的业务错误信封，其余按 status/code 出一句话——
+        // invokeDomain 把它包成 DomainInvokeError.message，各处 toast / 气泡会原样显示。
+        logTransportErrorThrottled(`domain:${cleanDomain}:${action}:${res.status}`, `[HttpTransport] domain ${cleanDomain}:${action} failed:`, res.status, errorBody);
+        const message = domainFailureMessage({ status: res.status, body: errorBody, language: useAppStore.getState().language });
+        return { success: false, error: { code: `HTTP_${res.status}`, message } };
       } catch (err) {
         return {
           success: false,

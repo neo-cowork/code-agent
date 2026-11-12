@@ -91,6 +91,9 @@ vi.mock('../../../../src/host/connectors', async (importOriginal) => ({
   getConnectorRegistry: () => harness.registry,
 }));
 
+// Prepare the real capability graph before polling the asynchronous first wake.
+// Cold module loading must not consume the state assertion's default wait budget.
+import '../../../../src/host/services/capabilities/capabilityCenterService';
 import { listConnectedSourceNames, enqueueFirstWake } from '../../../../src/host/services/roleAssets/roleFirstWake';
 import { resolveWakeExternalDelta } from '../../../../src/host/services/roleAssets/roleWakeFindWork';
 import { ConnectorRegistry } from '../../../../src/host/connectors/registry';

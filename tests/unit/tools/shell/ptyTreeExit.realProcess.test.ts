@@ -255,6 +255,7 @@ describe.skipIf(!canRunRealPty)('PTY 会话整树退出证明（真 node-pty）'
       const notifications = ledger.drainNotifications('session-pty-stop');
       expect(notifications.map((n) => n.type)).toEqual(['task_cancelled']);
       expect(notifications[0]?.title).toBe('任务已停止');
+      expect(notifications[0]?.payload).not.toHaveProperty('reason');
     } finally {
       detach();
       shutdownEventBus();
@@ -279,12 +280,42 @@ describe.skipIf(!canRunRealPty)('PTY 会话整树退出证明（真 node-pty）'
       expect(ledger.getTask(`pty:${created.sessionId}`)?.status).toBe('failed');
       const notifications = ledger.drainNotifications('session-pty-timeout');
       expect(notifications).toHaveLength(1);
-      expect(notifications[0]).toMatchObject({ type: 'task_failed', title: '后台任务失败' });
+      expect(notifications[0]).toMatchObject({
+        type: 'task_failed',
+        title: '后台任务失败',
+        payload: { reason: 'timeout', maxRuntimeMs: 400 },
+      });
       expect(notifications.map((n) => n.type)).not.toContain('task_completed');
       expect(notifications.map((n) => n.type)).not.toContain('task_cancelled');
       expect(notifications[0]?.message).not.toContain('退出码 0');
     } finally {
       warnSpy.mockRestore();
+      detach();
+      shutdownEventBus();
+    }
+  }, 30000);
+
+  it('④ 周期清扫路径（killPtySession reason: timeout）收掉的 PTY 会话：task_failed 且 payload.reason === timeout', async () => {
+    const { BackgroundTaskLedger, installBackgroundTaskEventAdapters, shutdownEventBus } = ledgerModules!;
+    const ledger = new BackgroundTaskLedger();
+    const detach = installBackgroundTaskEventAdapters(ledger);
+    try {
+      const cwd = mkdtempSync(`${tmpdir()}/neo-pty-`);
+      const created = ptyExecutor!.createPtySession({
+        command: 'echo READY; exec sleep 300', args: [], cwd, sessionId: 'session-pty-sweep',
+      });
+      expect(created.success, created.error).toBe(true);
+      openedPids.push(ptyExecutor!.getPtySession(created.sessionId!)!.pty.pid);
+      await waitFor(() => ledger.getTask(`pty:${created.sessionId}`)?.status === 'running');
+
+      // cleanupTimedOutPtySessions 越过上限后调用的就是这一行（私有清扫器，无公开入口）。
+      expect((await ptyExecutor!.killPtySession(created.sessionId!, { reason: 'timeout' })).success).toBe(true);
+      await waitFor(() => ledger.getTask(`pty:${created.sessionId}`)?.status === 'failed');
+
+      const notifications = ledger.drainNotifications('session-pty-sweep');
+      expect(notifications).toHaveLength(1);
+      expect(notifications[0]).toMatchObject({ type: 'task_failed', payload: { reason: 'timeout' } });
+    } finally {
       detach();
       shutdownEventBus();
     }
@@ -306,6 +337,64 @@ describe.skipIf(!canRunRealPty)('PTY 会话整树退出证明（真 node-pty）'
       const notifications = ledger.drainNotifications('session-pty-natural-exit');
       expect(notifications).toHaveLength(1);
       expect(notifications[0]).toMatchObject({ type: 'task_completed', title: '后台任务完成' });
+    } finally {
+      detach();
+      shutdownEventBus();
+    }
+  }, 30000);
+
+  const WRAPPED = ': sandbox-exec -f /var/folders/x/profile-1.sb /usr/bin/env npm_config_userconfig=/tmp/neo-npm-a/npmrc /bin/sh -c';
+  it.each([
+    { name: 'completed', tail: 'exit 0', maxRuntime: undefined, type: 'task_completed' },
+    { name: 'failed(timeout)', tail: 'exec sleep 300', maxRuntime: 400, type: 'task_failed' },
+    { name: 'cancelled', tail: 'exec sleep 300', maxRuntime: undefined, type: 'task_cancelled' },
+  ])('PTY 任务名是人话 displayName，$name 通知正文不含路径/沙箱包装', async ({ tail, maxRuntime, type }) => {
+    const { BackgroundTaskLedger, installBackgroundTaskEventAdapters, shutdownEventBus } = ledgerModules!;
+    const ledger = new BackgroundTaskLedger();
+    const detach = installBackgroundTaskEventAdapters(ledger);
+    try {
+      const cwd = mkdtempSync(`${tmpdir()}/neo-pty-`);
+      const owner = `session-pty-name-${type}`;
+      const created = ptyExecutor!.createPtySession({
+        command: `${WRAPPED}; echo READY; ${tail}`, args: [], cwd, sessionId: owner, maxRuntime,
+        displayName: 'Start local file server',
+      });
+      expect(created.success, created.error).toBe(true);
+      openedPids.push(ptyExecutor!.getPtySession(created.sessionId!)!.pty.pid);
+      const id = `pty:${created.sessionId}`;
+      await waitFor(() => ledger.getTask(id)?.status === 'running');
+      expect(ledger.getTask(id)?.title).toBe('Start local file server');
+      if (type === 'task_cancelled') await ptyExecutor!.killPtySession(created.sessionId!);
+      await waitFor(() => ledger.getTask(id)?.status !== 'running', 15_000);
+
+      const notifications = ledger.drainNotifications(owner);
+      expect(notifications.map((n) => n.type)).toEqual([type]);
+      expect(ledger.getTask(id)?.title).toBe('Start local file server');
+      const message = notifications[0]!.message;
+      expect(message).toContain('Start local file server');
+      expect(message).not.toMatch(/sandbox-exec|\/var\/folders|\/bin\/sh -c|\.log|neo-npm-/);
+      expect(notifications[0]!.payload).toMatchObject({ outputFile: created.outputFile });
+    } finally {
+      detach();
+      shutdownEventBus();
+    }
+  }, 30000);
+
+  it('没有 displayName 且命令是沙箱包装时，标题回落到 PTY <id8>，不外露包装命令', async () => {
+    const { BackgroundTaskLedger, installBackgroundTaskEventAdapters, shutdownEventBus } = ledgerModules!;
+    const ledger = new BackgroundTaskLedger();
+    const detach = installBackgroundTaskEventAdapters(ledger);
+    try {
+      const cwd = mkdtempSync(`${tmpdir()}/neo-pty-`);
+      const created = ptyExecutor!.createPtySession({
+        command: `${WRAPPED}; exit 0`, args: [], cwd, sessionId: 'session-pty-name-guard',
+      });
+      expect(created.success, created.error).toBe(true);
+      openedPids.push(ptyExecutor!.getPtySession(created.sessionId!)!.pty.pid);
+      const id = `pty:${created.sessionId}`;
+      await waitFor(() => ledger.getTask(id)?.status === 'completed');
+      expect(ledger.getTask(id)?.title).toBe(`PTY ${created.sessionId!.slice(0, 8)}`);
+      expect(ledger.drainNotifications('session-pty-name-guard')[0]?.message).not.toContain('sandbox-exec');
     } finally {
       detach();
       shutdownEventBus();

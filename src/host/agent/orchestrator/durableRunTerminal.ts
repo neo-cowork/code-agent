@@ -1,3 +1,4 @@
+import { peekEnvBlockedNote, clearEnvBlockedNote } from '../runtime/envBlockedTurn';
 // ============================================================================
 // durableRunTerminal — orchestrator 一侧的 durable run 终态收口
 //
@@ -76,19 +77,23 @@ export async function finalizeOrParkDurableRun(
   input: DurableRunTerminalInput,
   terminal: (input: DurableRunTerminalInput) => Promise<void> = finalizeDurableRun,
 ): Promise<void> {
+  const envBlocked = peekEnvBlockedNote(input.runId);
   const dueAt = peekQuotaWaitDueAt(input.runId);
-  const parkable = dueAt !== undefined
+  const parkable = envBlocked !== undefined || dueAt !== undefined
     ? canParkResumableUserStop({ ...input, cancelled: true })
     : canParkResumableUserStop(input);
   if (parkable) {
     try {
       await input.registry.parkDurable(
         input.runId,
-        dueAt !== undefined ? { reason: 'quota_wait', dueAt } : { reason: 'user_stop' },
+        envBlocked ? { reason: 'env_blocked', envBlocked }
+          : dueAt !== undefined ? { reason: 'quota_wait', dueAt } : { reason: 'user_stop' },
         input.handle,
       );
+      clearEnvBlockedNote(input.runId);
       clearQuotaWaitNote(input.runId);
     } catch (error) {
+      clearEnvBlockedNote(input.runId);
       clearQuotaWaitNote(input.runId);
       logger.error('Failed to park durable run on user stop; falling back to terminal cancelled', error);
       await terminal(input);
@@ -98,6 +103,7 @@ export async function finalizeOrParkDurableRun(
     input.registry.unregister(input.runId, input.handle);
     return;
   }
+  clearEnvBlockedNote(input.runId);
   if (dueAt !== undefined) clearQuotaWaitNote(input.runId);
   await terminal(input);
 }

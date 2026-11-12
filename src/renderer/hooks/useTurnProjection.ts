@@ -541,7 +541,7 @@ export function projectTurns(
         id: msg.id,
         type: 'system',
         subtype: spec.subtype,
-        content: msg.content,
+        content: spec.displayContent ? spec.displayContent(msg.metadata ?? {}) : msg.content,
         timestamp: msg.timestamp,
         metadata: msg.metadata,
       };
@@ -653,7 +653,7 @@ export function projectTurns(
       const hasToolCalls = msg.toolCalls && msg.toolCalls.length > 0;
       // 运行失败的结构化错误挂在 metadata 上（AgentErrorCard），content 可能为空——
       // 不能按"空消息"跳过，否则错误卡片投不出来。
-      const hasAgentError = Boolean(msg.metadata?.agentError);
+      const hasAgentError = Boolean(msg.metadata?.agentError || msg.metadata?.envAssist);
 
       // Skip empty assistant messages
       if (!hasContent && !hasReasoning && !hasToolCalls && !hasAgentError) continue;
@@ -727,6 +727,7 @@ export function projectTurns(
       };
 
       const pushToolCallNode = (tc: NonNullable<Message['toolCalls']>[number]) => {
+        if (tc.result?.metadata?.envAssist) return;
         if (!recoveryMessage && interruptedToolCallIds.has(tc.id)
           && !executedToolCallIds.has(tc.id)) return;
         // 真身消息已携带同一调用（且已执行）时，recovery 侧让位不重复成行。

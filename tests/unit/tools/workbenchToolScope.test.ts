@@ -124,6 +124,26 @@ describe('workbenchToolScope', () => {
     resetPermissionModeManager();
   });
 
+  it('personal opt-in reveals only the selected user skill and never narrows built-ins, connectors or MCP', () => {
+    resetPermissionModeManager();
+    getPermissionModeManager().markUnattendedSession('cron-opt-in');
+    try {
+      const scope = normalizeWorkbenchToolScope({ optInPersonalSkillIds: [' wechat-local-query ', 'wechat-local-query'] });
+      expect(scope).toEqual({ optInPersonalSkillIds: ['wechat-local-query'] });
+      const options = { sessionId: 'cron-opt-in', toolScope: scope };
+      expect(isSkillHiddenForRun({ name: 'wechat-local-query', source: 'user' }, options)).toBe(false);
+      expect(isSkillHiddenForRun({ name: 'other-personal-skill', source: 'user' }, options)).toBe(true);
+      expect(isSkillHiddenForRun({ name: 'docx', source: 'builtin' }, options)).toBe(false);
+      expect(isSkillCommandAllowedByWorkbenchScope('docx', scope)).toBe(true);
+      expect(isToolCallAllowedByWorkbenchScope('mcp', { server: 'calendar', tool: 'list' }, scope)).toBe(true);
+      expect(isToolCallAllowedByWorkbenchScope('MCPUnified', { action: 'read_resource', server: 'calendar' }, scope)).toBe(true);
+      expect(isToolNameAllowedByWorkbenchScope('calendar_update_event', scope)).toBe(true);
+      const tools = [makeTool('Skill'), makeTool('mail'), makeTool('mcp__calendar__list')];
+      expect(filterToolDefinitionsByWorkbenchScope(tools, scope)).toEqual(tools);
+      expect(isSkillCommandAllowedByWorkbenchScope('docx', { ...scope, allowedSkillIds: ['other'] })).toBe(false);
+    } finally { resetPermissionModeManager(); }
+  });
+
   // 元工具（mcp / MCPUnified）把 server 放在参数里，按工具名判不到——dispatch 门要读 args.server，
   // 否则收窄形同虚设：模型 list_tools 找到被收窄的 server 再 invoke，一路畅通（ai-review 第八轮抓的实病）
   describe('isToolCallAllowedByWorkbenchScope（dispatch 门，读参数里的 server）', () => {
