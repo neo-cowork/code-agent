@@ -14,6 +14,7 @@ import { CRON_AGENT_SNAPSHOT, CRON_GUARDRAILS, EXTERNAL_WATCH, isZeroPricedModel
 import { createLogger } from '../services/infra/logger';
 import type { AgentAction, CronJobDefinition, CronExecutionTrigger } from '../../shared/contract/cron';
 import { bindEventReplySession } from '../tools/eventReplySession';
+import { enrichReplyTargetChatNames } from './cronEventChatNames';
 import {
   buildCronAgentActionResult,
   cronAgentRunHasAlert,
@@ -114,16 +115,21 @@ export async function executeCronAgentAction(
   const tm = getTaskManager();
   const cronSession = await createCronAgentSession(definition, action, executionId);
   if (executionId) await host.recordSessionId(executionId, cronSession.id);
-  // 回复目的地绑定（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）：把本批通道事件的逐事件
-  // 目的地登记进会话——reply_to_event 只认这张表，且 withEventReplyTools 只给绑定的会话注入工具。
-  const eventReplyTargets = eventTrigger?.replyTargets;
-  const leaveEventReply = eventTrigger?.accountId && eventReplyTargets && eventReplyTargets.length > 0
-    ? bindEventReplySession(cronSession.id, eventTrigger.accountId, eventReplyTargets)
-    : undefined;
   const orchestrator = tm.getOrCreateCurrentOrchestrator(cronSession.id) ?? null;
   if (!orchestrator) {
     throw new Error(`AgentOrchestrator not available for cron session ${cronSession.id}`);
   }
+  // 回复目的地绑定（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）：把本批通道事件的逐事件
+  // 目的地登记进会话——reply_to_event 只认这张表，且 withEventReplyTools 只给绑定的会话注入工具。
+  // 群名缺位时按账号从通道会话目录补齐（TTL 缓存；失败回落原始会话 id，见 cronEventChatNames）。
+  const rawReplyTargets = eventTrigger?.replyTargets;
+  const eventReplyAccountId = eventTrigger?.accountId;
+  const eventReplyTargets = eventReplyAccountId && rawReplyTargets && rawReplyTargets.length > 0
+    ? await enrichReplyTargetChatNames(eventReplyAccountId, rawReplyTargets)
+    : undefined;
+  const leaveEventReply = eventReplyAccountId && eventReplyTargets && eventReplyTargets.length > 0
+    ? bindEventReplySession(cronSession.id, eventReplyAccountId, eventReplyTargets)
+    : undefined;
   // cron/heartbeat 无人值守会话标 async_agent（2026-07-13 拍板）：bash 走
   // ask+forceConfirm，无人应答由 requestPermission 60s 超时 deny 兜底，
   // 与 readOnly 会话档双保险。必须在 sendMessage 前标注。
