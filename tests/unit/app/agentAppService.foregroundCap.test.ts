@@ -37,9 +37,9 @@ describe('desktop foreground cap history wiring', () => {
         { id: 'latest', role: 'assistant', content: 'latest', timestamp: 2,
           ...(stopped ? { metadata: { stoppedByStepLimit: true } } : {}) },
         { id: 'meta', role: 'assistant', content: 'wake', timestamp: 3, isMeta: true,
-          metadata: { stoppedByStepLimit: !stopped } },
+          ...(stopped ? {} : { metadata: { stoppedByStepLimit: true as const } }) },
         { id: 'rewound', role: 'assistant', content: 'rewound', timestamp: 4, visibility: 'rewound',
-          metadata: { stoppedByStepLimit: !stopped } },
+          ...(stopped ? {} : { metadata: { stoppedByStepLimit: true as const } }) },
         { id: 'user', role: 'user', content: 'follow-up', timestamp: 5 },
       ];
       await service[method]({ sessionId: 'cap-session', content: '继续' });

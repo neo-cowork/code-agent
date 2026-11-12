@@ -498,7 +498,7 @@ describe('createAgentRouter', () => {
     const base = await createCLIAgent({});
     vi.mocked(createCLIAgent).mockResolvedValueOnce({
       ...base, getConfig: () => ({ ...base.getConfig(), maxIterations: requestedCap }),
-    });
+    } as unknown as typeof base);
     mockRun.mockResolvedValueOnce(undefined);
     const response = await fetch(`${baseUrl}/api/run`, {
       method: 'POST', headers: { 'content-type': 'application/json' },

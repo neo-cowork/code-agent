@@ -29,9 +29,9 @@ export function foregroundBrainCapCases(run: (input: {
         { id: 'last-answer', role: 'assistant', content: 'progress', timestamp: 2,
           ...(marked ? { metadata: { stoppedByStepLimit: true } } : {}) },
         { id: 'meta', role: 'assistant', content: 'wake', timestamp: 2, isMeta: true,
-          metadata: { stoppedByStepLimit: !marked } },
+          ...(marked ? {} : { metadata: { stoppedByStepLimit: true as const } }) },
         { id: 'rewound', role: 'assistant', content: 'rewound', timestamp: 2, visibility: 'rewound',
-          metadata: { stoppedByStepLimit: !marked } },
+          ...(marked ? {} : { metadata: { stoppedByStepLimit: true as const } }) },
         { id: 'last-user', role: 'user', content: 'a follow-up', timestamp: 3 },
       ];
       const result = await run({ prompt: '继续', history });
