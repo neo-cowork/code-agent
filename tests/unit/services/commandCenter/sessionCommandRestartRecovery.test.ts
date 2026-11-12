@@ -27,6 +27,10 @@ import type { Message } from '../../../../src/shared/contract';
 
 const coreDatabase = vi.hoisted(() => ({ current: null as unknown }));
 const uiLanguage = vi.hoisted(() => ({ value: 'zh' as 'zh' | 'en' }));
+const authHarness = vi.hoisted(() => ({
+  user: null as { id: string } | null,
+  callbacks: [] as Array<(user: { id: string } | null, status: string) => void>,
+}));
 
 vi.mock('../../../../src/host/services/core', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -41,7 +45,16 @@ vi.mock('../../../../src/host/services/core/configService', async (importOrigina
   getConfigService: () => ({ getSettings: () => ({ ui: { language: uiLanguage.value } }) }),
 }));
 vi.mock('../../../../src/host/services/auth/authService', () => ({
-  getAuthService: () => ({ getCurrentUser: () => null }),
+  getAuthService: () => ({
+    getCurrentUser: () => authHarness.user,
+    addAuthChangeCallback: (callback: (user: { id: string } | null, status: string) => void) => {
+      authHarness.callbacks.push(callback);
+      return () => {
+        const index = authHarness.callbacks.indexOf(callback);
+        if (index > -1) authHarness.callbacks.splice(index, 1);
+      };
+    },
+  }),
 }));
 vi.mock('../../../../src/host/services/infra/supabaseService', () => ({
   getSupabase: () => null,
@@ -126,6 +139,8 @@ describe('指挥台任务：宿主重启后的收口', () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cmd-center-restart-'));
     process.env.CODE_AGENT_DATA_DIR = tmpDir;
     uiLanguage.value = 'zh';
+    authHarness.user = null;
+    authHarness.callbacks.length = 0;
     resetSessionCommandCenterForTest();
     resetSessionTaskConcurrencyPoolForTest();
     resetBackgroundTaskLedgerForTest();
@@ -156,7 +171,7 @@ describe('指挥台任务：宿主重启后的收口', () => {
     await restartHost();
     const afterFirst = await transcript();
     expect(afterFirst).toHaveLength(1);
-    expect(afterFirst[0].content).toContain('researcher｜failed｜');
+    expect(afterFirst[0].content).toContain('researcher｜已失败｜');
     expect(afterFirst[0].content).toContain('应用重启');
     expect(afterFirst[0].metadata).toMatchObject({
       backgroundTaskResult: { status: 'failed', shortName: 'researcher' },
@@ -212,7 +227,57 @@ describe('指挥台任务：宿主重启后的收口', () => {
     await vi.waitFor(() => expect(wake).toHaveBeenCalled());
     await vi.waitFor(async () => expect(await transcript()).toHaveLength(1));
     const [message] = await transcript();
-    expect(message.content).toContain('wakefail｜completed｜');
+    expect(message.content).toContain('wakefail｜已完成｜');
     expect(message.metadata).toMatchObject({ backgroundTaskResult: { taskId } });
+  });
+
+  it('登录恢复窗口里写不进中断消息：账本行照落、标记保留，owner 恢复后补写且只补一条', async () => {
+    // 会话归属 u1，当前 owner 为空：重启收口正撞登录恢复窗口。
+    coreDb.createSessionWithId('session-owned', {
+      title: 'owned', userId: 'u1', modelConfig: { provider: 'zhipu', model: 'glm-5' },
+    });
+    const ownedTask = {
+      sessionId: 'session-owned', title: '后台调研', shortName: 'researcher',
+      laneKey: 'lane-o', submissionKey: 'sub-o', prompt: 'do it',
+      workspaceScope: createWorkspaceScope('p', [{ sourceId: 's', path: tmpDir, role: 'primary', access: 'read_write' }]),
+    };
+    const center = new SessionCommandCenter(new HangingTaskManager() as unknown as TaskManager, {
+      wakeForegroundBrain: vi.fn().mockResolvedValue(undefined),
+    });
+    await center.spawn(ownedTask);
+    const taskId = center.list('session-owned')[0].id;
+    const markerFile = path.join(tmpDir, 'session-command-running', `${encodeURIComponent(taskId)}.json`);
+    expect(fs.existsSync(markerFile)).toBe(true);
+
+    await restartHost();
+    // 标记没被删：中断报告不能跟着写失败一起消失
+    expect(fs.existsSync(markerFile)).toBe(true);
+    // 账本终态行不依赖会话可读：立刻就有
+    const ledgerTask = getBackgroundTaskLedger().getTask(taskId);
+    expect(ledgerTask?.status).toBe('failed');
+    expect(ledgerTask?.failure?.reason).toBe('session_command_task_interrupted_by_restart');
+    // 消息还写不进去
+    const ownedTranscript = async () => {
+      const session = await getSessionManager().getSession('session-owned', 100);
+      return (session?.messages ?? []).filter((m) => m.content.startsWith('[任务结果]'));
+    };
+    expect(await ownedTranscript()).toHaveLength(0);
+
+    // owner 恢复 → 补写中断行（人话状态词），标记随即清掉
+    authHarness.user = { id: 'u1' };
+    for (const callback of [...authHarness.callbacks]) callback(authHarness.user, 'authenticated');
+    await vi.waitFor(async () => expect((await ownedTranscript()).length).toBe(1));
+    const [row] = await ownedTranscript();
+    expect(row.content).toContain('researcher｜已失败｜');
+    expect(row.content).toContain('应用重启');
+    expect(row.metadata).toMatchObject({
+      backgroundTaskResult: { taskId, status: 'failed' },
+      backgroundTaskInterrupted: { taskId },
+    });
+    await vi.waitFor(() => expect(fs.existsSync(markerFile)).toBe(false));
+
+    // 再重启一次不会重复补写
+    await restartHost();
+    expect(await ownedTranscript()).toHaveLength(1);
   });
 });

@@ -16,6 +16,9 @@ import { getConfigService } from '../core/configService';
 import { getDatabase } from '../core';
 import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
 import { SqliteBackgroundTaskStore } from '../../task/backgroundTaskStore';
+import { formatSessionTaskResultStatusWord } from '../../../shared/constants/sessionCommandCenter';
+import type { SessionTaskResultStatusWordLocale } from '../../../shared/constants/sessionCommandCenter';
+import { createSessionAccessRetry, isSessionNotAccessibleError } from './sessionAccessRetry';
 
 const logger = createLogger('SessionCommandRestartRecovery');
 
@@ -79,17 +82,18 @@ export function clearSessionCommandTaskMarker(taskId: string): void {
   }
 }
 
-/** 正常终态与重启中断共用的「[任务结果]」系统消息形状。 */
+/** 正常终态与重启中断共用的「[任务结果]」系统消息形状（正文用人话状态词，metadata 保持机器可读）。 */
 export function buildSessionTaskResultMessage(
   task: { id: string; shortName: string },
   status: ResultStatus,
   resultText: string | undefined,
   id: string = `session-task-result-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  locale: SessionTaskResultStatusWordLocale = 'zh',
 ): Message {
   return {
     id,
     role: 'system',
-    content: `[任务结果] ${task.shortName}｜${status}｜${resultText}`,
+    content: `[任务结果] ${task.shortName}｜${formatSessionTaskResultStatusWord(status, locale)}｜${resultText}`,
     timestamp: Date.now(),
     metadata: {
       backgroundTaskResult: {
@@ -146,10 +150,93 @@ function readMarkers(): Array<{ file: string; marker: RunningMarker }> {
   return out;
 }
 
+function buildInterruptedMessage(marker: RunningMarker, locale: 'zh' | 'en', text: string): Message {
+  const message = buildSessionTaskResultMessage(
+    { id: marker.taskId, shortName: marker.shortName },
+    'failed',
+    text,
+    `session-task-result-interrupted-${marker.taskId}`,
+    locale,
+  );
+  message.metadata = { ...message.metadata, backgroundTaskInterrupted: { taskId: marker.taskId } };
+  return message;
+}
+
+async function writeInterruptedMessage(marker: RunningMarker, locale: 'zh' | 'en', text: string): Promise<void> {
+  await getSessionManager().addMessageToSession(marker.sessionId, buildInterruptedMessage(marker, locale, text));
+}
+
+function writeInterruptedLedgerRow(
+  ledger: ReturnType<typeof getBackgroundTaskLedger>,
+  marker: RunningMarker,
+  text: string,
+): void {
+  try {
+    const now = Date.now();
+    ledger.upsertTask({
+      id: marker.taskId,
+      kind: 'session_command_task',
+      source: 'session_command_center',
+      sessionId: marker.sessionId,
+      runId: marker.taskId,
+      title: marker.title,
+      summary: text,
+      status: 'failed',
+      createdAt: marker.createdAt,
+      updatedAt: now,
+      startedAt: marker.startedAt,
+      completedAt: now,
+      failure: { message: text, reason: SESSION_COMMAND_TASK_INTERRUPTED_REASON },
+      metadata: { shortName: marker.shortName, childRunId: marker.taskId },
+    });
+  } catch (error) {
+    logger.warn('Restart recovery could not record the ledger row', {
+      taskId: marker.taskId,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/**
+ * 中断消息写不进去是因为会话对当前 owner 不可读（登录恢复中）：标记必须留下——
+ * 删了就等于把中断报告一起删了。本进程内按同一组界重试（定时器 + 登录态信号），
+ * 耗尽后也不删：下次启动 readMarkers 还能看到它，再试一轮。
+ */
+function deferInterruptedMessageUntilAccessible(input: {
+  marker: RunningMarker;
+  file: string;
+  locale: 'zh' | 'en';
+  text: string;
+}): void {
+  createSessionAccessRetry({
+    reasonKey: 'interruption_message',
+    attemptsUsed: 1,
+    logContext: { taskId: input.marker.taskId, sessionId: input.marker.sessionId },
+    attempt: () => writeInterruptedMessage(input.marker, input.locale, input.text),
+    onExhausted: () => {
+      logger.warn('Restart recovery gave up retrying the interruption message in this process; marker kept for the next start', {
+        reason: 'interruption_message_not_accessible_retries_exhausted',
+        taskId: input.marker.taskId,
+        sessionId: input.marker.sessionId,
+      });
+    },
+    onSettled: (outcome) => {
+      if (outcome !== 'written') return;
+      fs.rmSync(input.file, { force: true });
+      logger.warn('Session command task interrupted by app restart; failure message written', {
+        taskId: input.marker.taskId,
+        sessionId: input.marker.sessionId,
+      });
+    },
+    logger,
+  }).start();
+}
+
 /**
  * 启动期（DB 就绪后）调用：每个遗留标记补一条 failed 的 [任务结果] 消息 + 账本终态行，再删标记。
  * 幂等：消息 id 由 taskId 派生（重复写走 addMessage 的幂等分支），标记删了第二次启动什么都不写。
- * 返回补写的任务数。
+ * 会话对当前 owner 不可读（登录恢复窗口）时：账本行照写（它不经过会话可达性检查），
+ * 标记保留并重试，绝不像旧代码那样直接删掉。返回本次补写成功的任务数。
  */
 export async function recoverInterruptedSessionCommandTasks(): Promise<number> {
   const markers = readMarkers();
@@ -168,47 +255,28 @@ export async function recoverInterruptedSessionCommandTasks(): Promise<number> {
 
   let recovered = 0;
   for (const { file, marker } of markers) {
+    // 账本终态行不依赖会话可读：无论消息写成写不成都先落，别让侧栏永远「运行中」。
+    writeInterruptedLedgerRow(ledger, marker, text);
     try {
-      const message = buildSessionTaskResultMessage(
-        { id: marker.taskId, shortName: marker.shortName },
-        'failed',
-        text,
-        `session-task-result-interrupted-${marker.taskId}`,
-      );
-      message.metadata = { ...message.metadata, backgroundTaskInterrupted: { taskId: marker.taskId } };
-      await getSessionManager().addMessageToSession(marker.sessionId, message);
+      await writeInterruptedMessage(marker, locale, text);
     } catch (error) {
+      if (isSessionNotAccessibleError(error)) {
+        logger.warn('Restart recovery waiting: session not accessible for current owner; interruption message deferred', {
+          reason: 'interruption_message_not_accessible_for_current_owner',
+          taskId: marker.taskId,
+          sessionId: marker.sessionId,
+        });
+        deferInterruptedMessageUntilAccessible({ marker, file, locale, text });
+        continue;
+      }
       logger.warn('Restart recovery could not write the interruption message', {
+        reason: 'interruption_message_write_failed',
         taskId: marker.taskId,
         sessionId: marker.sessionId,
         message: error instanceof Error ? error.message : String(error),
       });
       fs.rmSync(file, { force: true });
       continue;
-    }
-    try {
-      const now = Date.now();
-      ledger.upsertTask({
-        id: marker.taskId,
-        kind: 'session_command_task',
-        source: 'session_command_center',
-        sessionId: marker.sessionId,
-        runId: marker.taskId,
-        title: marker.title,
-        summary: text,
-        status: 'failed',
-        createdAt: marker.createdAt,
-        updatedAt: now,
-        startedAt: marker.startedAt,
-        completedAt: now,
-        failure: { message: text, reason: SESSION_COMMAND_TASK_INTERRUPTED_REASON },
-        metadata: { shortName: marker.shortName, childRunId: marker.taskId },
-      });
-    } catch (error) {
-      logger.warn('Restart recovery could not record the ledger row', {
-        taskId: marker.taskId,
-        message: error instanceof Error ? error.message : String(error),
-      });
     }
     fs.rmSync(file, { force: true });
     recovered += 1;
