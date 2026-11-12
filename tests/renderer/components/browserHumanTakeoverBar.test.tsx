@@ -279,6 +279,26 @@ describe('Browser live view human takeover', () => {
     expect(screen.getByTestId('browser-human-takeover-continue').textContent).toBe('继续');
   });
 
+  it('a newer running page the user opened in the rail does not hide the agent bar that is waiting', () => {
+    seedSession('agent-a', 'waiting_human', [humanEvent(1, '请完成页面上的人机验证', 'wait_for_user')]);
+    const snapshot = useSurfaceExecutionStore.getState().nativeByConversation['session-a'];
+    const agent = snapshot.sessions[0];
+    useSurfaceExecutionStore.getState().setNativeSnapshot('session-a', {
+      ...snapshot,
+      sessions: [agent, {
+        ...agent,
+        session: { ...agent.session, sessionId: 'surface-user', runId: 'run-user', agentId: SURFACE_USER_BROWSER_AGENT_ID, state: 'running' },
+        availableControls: ['takeover', 'stop'],
+        events: [],
+        updatedAt: 9_000,
+      }],
+      updatedAt: 9_000,
+    });
+    render(<BrowserAgentWindow />);
+    expect(screen.getByText('Neo 在等你：请完成页面上的人机验证')).toBeTruthy();
+    expect(screen.getByTestId('browser-human-takeover-continue').textContent).toBe('好了');
+  });
+
   it('does not show the bar for a page the user opened', () => {
     seedSession(SURFACE_USER_BROWSER_AGENT_ID, 'waiting_human');
     render(<BrowserAgentWindow />);

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useI18n } from '../../hooks/useI18n';
 import { resumeBrowserHumanTakeover } from '../../hooks/requestBrowserHumanTakeover';
 import { useSessionStore } from '../../stores/sessionStore';
@@ -21,12 +21,14 @@ export const BrowserHumanTakeoverBar: React.FC = () => {
   const { t } = useI18n();
   const copy = t.workbenchTabs.agentWindow;
   const conversationId = useSessionStore((state) => state.currentSessionId);
-  const activeBrowserSurface = useSurfaceExecutionStore((state) => (
-    selectActiveBrowserSurfaceSessionV1(state.sessionsByScope, conversationId)
-  ));
-  if (!activeBrowserSurface
-    || isUserOpenedSurfaceV1(activeBrowserSurface)
-    || activeBrowserSurface.session.state !== 'waiting_human') {
+  const sessionsByScope = useSurfaceExecutionStore((state) => state.sessionsByScope);
+  // The page the user opened in the rail is a second browser session in the same conversation and
+  // is often the newest; it must not hide the bar of the agent session that is waiting for the user.
+  const activeBrowserSurface = useMemo(() => selectActiveBrowserSurfaceSessionV1(
+    Object.fromEntries(Object.entries(sessionsByScope).filter(([, candidate]) => !isUserOpenedSurfaceV1(candidate))),
+    conversationId,
+  ), [sessionsByScope, conversationId]);
+  if (activeBrowserSurface?.session.state !== 'waiting_human') {
     return null;
   }
   const surfaceSessionId = activeBrowserSurface.session.sessionId;
