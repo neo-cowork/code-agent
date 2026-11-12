@@ -111,6 +111,7 @@ import { classifyToolReplaySafety } from './toolReplaySafety';
 import { type ExecutionTopology } from '../permissions';
 import { boundaryIdForRequestType } from './permissionBoundaryMapping';
 import { connectorWritePermissionRequest, findConnectorTokenWrite } from './connectorTokenWrite';
+import { eventReplyPermissionRequest } from './eventReplySession';
 import { evaluateGuardFabricGate } from './guardFabricGate';
 import { getPolicyEngine } from '../permissions/policyEngine';
 import { classifyShellDesktopAutomation } from '../permissions/shellDesktopAutomation';
@@ -2111,6 +2112,7 @@ export class ToolExecutor {
         params,
         commandValidation,
         commandRiskUnknown ? 'unknown' : knownAskCommandRisk,
+        effectiveSessionId,
       );
       // Never trust an identically named model argument in the default request branch.
       delete permissionRequest.details.scheduleWriteTargets;
@@ -2749,6 +2751,7 @@ export class ToolExecutor {
     params: Record<string, unknown>,
     commandValidation?: ValidationResult,
     commandRiskOverride?: ValidationResult['riskLevel'] | 'unknown',
+    sessionId?: string,
   ): PermissionRequestData {
     const sourceAttribution = (rawPath?: unknown): Record<string, unknown> => {
       const workspaceScope = this.runContext?.workspaceScope;
@@ -2899,6 +2902,9 @@ export class ToolExecutor {
         // 连接器写回与 http_request 令牌写共用 connector.external_write 边界（构造见 connectorTokenWrite.ts）。
         const connectorRequest = connectorWritePermissionRequest(tool, params);
         if (connectorRequest) return connectorRequest;
+        // 事件回复（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）：卡上点名宿主绑定的目的地与回复正文（构造见 eventReplySession.ts）。
+        const eventReplyRequest = eventReplyPermissionRequest(tool, params, sessionId);
+        if (eventReplyRequest) return eventReplyRequest;
         // Map permission level to permission request type
         const requestType = permissionRequestTypeForLevel(tool.permissionLevel);
         return {

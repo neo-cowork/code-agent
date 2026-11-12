@@ -21,12 +21,16 @@ export const EXTERNAL_SIDE_EFFECT_TRACE_REASON =
 /**
  * Native 工具白名单：产生对外可见副作用的内置工具。
  * - mail_send：真发邮件。
+ * - reply_to_event：通道事件自动化的 host-owned 回复（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）
+ *   ——真往群里发消息；观察档据此在审批前拦下，自动档据此走出站审批。它不登记 target
+ *   提取器（B4 铸权不适用：目的地是宿主按事件绑定的，逐次审批，不铸长期授权）。
  * v1 刻意不收（宁可漏标）：mail_draft（只存草稿不发送）、calendar_create/update/delete_event
  * （发邀请是对外副作用，但需按 attendees 参数细分，留待后续期）、github_pr（开 PR 对外可见，
  * 后续期评估）。新增出站类 native 工具在这里补一条。
  */
 const EXTERNAL_SIDE_EFFECT_TOOLS = new Set<string>([
   'mail_send',
+  'reply_to_event',
 ]);
 
 /**

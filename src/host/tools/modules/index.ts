@@ -187,11 +187,19 @@ import {
   taskStatusSchema,
 } from './commandCenter/sessionCommandCenter.schema';
 import { wakeNoopSchema } from './commandCenter/wakeNoop.schema';
+import { replyToEventSchema } from './cronEvent/replyToEvent.schema';
 import { isCrossSessionDelegationEnabled } from '../../services/delegation/crossSessionDelegationFlag';
 import { registerCrossSessionDelegationTools } from './delegation/registration';
 
 export function registerMigratedTools(registry: ToolRegistry, platform: NodeJS.Platform = process.platform,
   crossSessionDelegationEnabled: boolean = isCrossSessionDelegationEnabled()): void {
+  // reply_to_event（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）：注册无条件（dispatch 按名解析），
+  // 但不在 CORE_TOOLS / DEFERRED_TOOLS_META——只有绑定事件目的地的事件 run 由
+  // withEventReplyTools 注入工具表，普通会话与 ToolSearch 目录都看不到它。
+  registry.register(
+    replyToEventSchema,
+    async () => (await import('./cronEvent/replyToEvent')).replyToEventModule,
+  );
   registry.register(
     delegateTaskSchema,
     async () => (await import('./commandCenter/sessionCommandCenter')).delegateTaskModule,

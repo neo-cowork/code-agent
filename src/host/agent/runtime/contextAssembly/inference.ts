@@ -13,6 +13,7 @@ import {
   getLoadedDeferredToolDefinitions,
   getAllToolDefinitions,
   withDesignCanvasTools,
+  withEventReplyTools,
   withoutGenericMediaToolsInDesign,
 } from '../../../tools/dispatch/toolDefinitions';
 import { filterToolDefinitionsByWorkbenchScope } from '../../../tools/workbenchToolScope';
@@ -345,6 +346,9 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       logger.debug(`Tools (design canvas active): ${beforeCanvas} -> ${tools.length} total`);
   }
 
+  // 事件回复工具（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）：只有绑定了本批入站事件
+  // 目的地的事件 run 会话注入 reply_to_event；其余会话剥掉（'all' 模式兜底），零污染。
+  tools = withEventReplyTools(tools, ctx.runtime.sessionId);
   tools = filterToolDefinitionsByWorkbenchScope(tools, ctx.runtime.toolScope);
   // opt-in 严格工具集：strict-toolset skill（edit-role/create-role）激活时，把可见工具集
   // 硬收缩到其 allowedTools，防止模型抓 core 的 Edit/Write 绕过 skill 流程。非 strict 不受影响。
