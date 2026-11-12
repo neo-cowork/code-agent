@@ -224,8 +224,34 @@ function localizedStatus(status: string, language: CronEventDecisionTextLanguage
   return statuses[status] ?? status;
 }
 
-/** Localize a host-authored row; unmatched model-authored text is returned verbatim. */
+const INTERNAL_IDENTIFIER_PATTERN = /`?\breply_to_event\b`?|`?\bmail_send\b`?|\bobserve(?:[- ]only)?\s*(?:mode|模式)|\bauto\s*(?:mode|模式)|\bobserve\b/gi;
+
+const INTERNAL_IDENTIFIER_LABELS: Readonly<Record<string, { zh: string; en: string }>> = {
+  reply_to_event: { zh: '回复事件消息', en: 'event reply' },
+  mail_send: { zh: '发送邮件', en: 'send mail' },
+  observe: { zh: '仅观察', en: 'observe-only' },
+  observemode: { zh: '仅观察模式', en: 'observe-only mode' },
+  automode: { zh: '自动模式', en: 'auto mode' },
+};
+
+/** Replace internal tool/mode identifiers in model-authored text with user-facing labels (single pass, idempotent). */
+export function scrubInternalIdentifiers(text: string, language: CronEventDecisionTextLanguage): string {
+  return text.replace(INTERNAL_IDENTIFIER_PATTERN, (match) => {
+    const lower = match.toLowerCase().replace(/`/g, '');
+    const key = lower.startsWith('observe')
+      ? (/mode|模式/.test(lower) ? 'observemode' : 'observe')
+      : lower.startsWith('auto') ? 'automode' : lower;
+    return INTERNAL_IDENTIFIER_LABELS[key][language];
+  });
+}
+
+/** Localize a host-authored row; model-authored text only has internal identifiers scrubbed. */
 export function localizeDecisionText(text: string, language: CronEventDecisionTextLanguage): string {
+  const host = localizeHostDecisionText(text, language);
+  return host === null ? scrubInternalIdentifiers(text, language) : host;
+}
+
+function localizeHostDecisionText(text: string, language: CronEventDecisionTextLanguage): string | null {
   for (const { template, regex, names } of MATCHERS) {
     const match = regex.exec(text);
     if (!match) continue;
@@ -238,5 +264,5 @@ export function localizeDecisionText(text: string, language: CronEventDecisionTe
     });
     return render(template[language], params);
   }
-  return text;
+  return null;
 }

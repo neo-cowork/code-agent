@@ -102,3 +102,17 @@ describe('cron event decision text table', () => {
     expect(settle('observe', { id: 'r', status: 'completed', result: { eventDecisions: [{ eventId: 'other', action: 'ignore', reason: 'x' }] } })).toBe('no outbound action attempted (stated decisions did not match this event id (stated ids: other))');
   });
 });
+
+describe('model-authored text scrubbing', () => {
+  const reason = '已调用 reply_to_event 生成回复（observe 模式下仅记录），但 reply_to_event 审批被拒；observe mode on, mail_send unused';
+  it('removes internal tool and mode identifiers in zh and en', () => {
+    for (const language of ['zh', 'en'] as const) {
+      const out = localizeDecisionText(reason, language);
+      expect(out).not.toMatch(/reply_to_event|mail_send|observe(?![- ]only)/i);
+    }
+    expect(localizeDecisionText(reason, 'zh')).toContain('回复事件消息');
+    expect(localizeDecisionText(reason, 'en')).toContain('event reply');
+    expect(localizeDecisionText(reason, 'en')).not.toContain('only-only');
+    expect(localizeDecisionText('observe mode / Auto 模式', 'zh')).toBe('仅观察模式 / 自动模式');
+  });
+});
