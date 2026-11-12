@@ -673,7 +673,7 @@ const SystemNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, s
       humanToolLabels: t.receiptPresentation.humanToolLabels,
     }).join(t.receiptPresentation.roleCapabilityLabels.separator);
     return (
-      <div className="mx-3 my-1.5 rounded-md border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-xs text-zinc-400">
+      <div className="shrink-0 mx-3 my-1.5 rounded-md border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-xs text-zinc-400">
         <div className="font-medium text-zinc-300">{title}</div>
         {receipt.diffAvailable !== false && !unchanged && (
           <div className="mt-1">
