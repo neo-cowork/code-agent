@@ -166,7 +166,7 @@ describe('BackgroundSubagent durable ledger (N-BGSPAWN-DURABLE)', () => {
     await reg.await(agentId);
     const envelope = (await repository.get(agentId))!;
     expect(envelope.status).toBe('failed');
-    expect(envelope.terminal?.reason).toContain('本次任务的额度用完了');
+    expect(envelope.terminal?.reason).toBe('budget exhausted');
     expect(envelope.pendingOperations![0]).toMatchObject({ status: 'failed' });
     db.close();
   });
@@ -340,7 +340,7 @@ describe('BackgroundSubagent durable ledger (N-BGSPAWN-DURABLE)', () => {
 
     expect(executed).toBe(false);
     expect(reg.getStatus(agentId)).toMatchObject({ status: 'failed' });
-    expect(reg.getStatus(agentId)?.error).toContain('后台任务中途停止了');
+    expect(reg.getStatus(agentId)?.error).toContain('Durable Run persistence is unavailable');
   });
 
   it('waitForBackgroundSubagentDurableLedger：configure 后 resolve，超时 reject', async () => {

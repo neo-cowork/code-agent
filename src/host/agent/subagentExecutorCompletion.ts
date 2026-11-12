@@ -30,7 +30,6 @@ import {
 import { resolveStoppedTaskOutcome } from '../services/commandCenter/sessionTaskStopConclusion';
 import { buildStepCapConclusion } from './subagentStepCapConclusion';
 import {
-  AgentFailureCode,
   agentFailureCodeFromCancellationReason,
   inferAgentFailureCode,
 } from '../../shared/contract/agentFailure';
