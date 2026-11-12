@@ -281,7 +281,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
     <div className="shrink-0 px-5 pt-4" data-testid="automation-review-inbox">
       {!hasContent ? (
         <div
-          className="flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-950/40 px-4 py-2.5 text-xs text-zinc-500"
+          className="shrink-0 flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-950/40 px-4 py-2.5 text-xs text-zinc-500"
           data-testid="automation-review-all-clear"
         >
           <CircleCheck className="h-3.5 w-3.5 text-badge-success" />
@@ -313,6 +313,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                       >
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-sm text-zinc-200">{item.displayTool ?? item.tool}</div>
+                          {item.sessionTitle && <div className="truncate text-xs text-zinc-400" data-testid="parked-session-title">{item.sessionTitle}</div>}
                           <SensitiveStepParkedRow
                             step={item.sensitiveStep}
                             onRespond={(response) => { void handleResolveParked(item, response); }}
@@ -348,6 +349,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                             </span>
                           )}
                         </div>
+                        {!isPairing && item.sessionTitle && <div className="truncate text-xs text-zinc-400" data-testid="parked-session-title">{item.sessionTitle}</div>}
                         {isPairing && item.pairingCode && (
                           <div className="text-xs font-medium text-badge-warning" data-testid="pairing-code">
                             {cc.pairingCode.replace('{code}', item.pairingCode)}

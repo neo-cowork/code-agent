@@ -9,11 +9,11 @@ export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
 
 /**
  * 展示型徽标 pill（收敛自 StatusBar/设置页/知识面板等处的手搓 span）。
- * 结构基类固定为 `inline-flex items-center gap-1 rounded border px-1.5 py-0.5`，
+ * 结构基类固定为 `inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded border px-1.5 py-0.5`，
  * 色调（border/bg/text）与尺寸微调（text-[10px]/font-medium 等）由 className 追加。
  */
 export const Badge: React.FC<BadgeProps> = ({ className = '', dot, children, ...rest }) => (
-  <span className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 ${className}`} {...rest}>
+  <span className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded border px-1.5 py-0.5 ${className}`} {...rest}>
     {dot ? <span className={`h-1.5 w-1.5 rounded-full ${dot}`} /> : null}
     {children}
   </span>

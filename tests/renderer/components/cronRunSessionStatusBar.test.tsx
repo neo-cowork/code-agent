@@ -253,7 +253,15 @@ describe('CronRunSessionStatusBar（组件）', () => {
     const node = await screen.findByTestId('cron-run-status');
     expect(node.dataset.state).toBe('awaiting');
     expect(screen.getByTestId('cron-run-status-text').textContent).toContain('等你批准');
-    expect(screen.getByTestId('cron-run-status-text').textContent).toContain('echo BG-PARKED-888');
+    expect(screen.getByTestId('cron-run-status-text').textContent).toContain('运行一条命令');
+    expect(screen.queryByTestId('cron-run-command')).toBeNull();
+    const toggle = screen.getByTestId('cron-run-command-toggle');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(toggle);
+    expect(screen.getByTestId('cron-run-command').textContent).toBe('echo BG-PARKED-888');
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    fireEvent.click(toggle);
+    expect(screen.queryByTestId('cron-run-command')).toBeNull();
 
     fireEvent.click(screen.getByTestId('cron-run-status-approve'));
     await waitFor(() => {
@@ -534,4 +542,21 @@ describe('CronRunSessionIntro（来源小标）', () => {
     rerender(<CronRunSessionIntro sessionId="session-1" />);
     expect(screen.queryByTestId('cron-run-intro-label')).toBeNull();
   });
+});
+
+
+it('reveals the identical complete multi-line shell preview without trimming or truncation', async () => {
+  showSession(cronRunSession);
+  getExecutionsMock.mockResolvedValue([makeExecution({ status: 'running' })]);
+  const command = '  grep -n "行动项" $(find . -name "*.txt") | sort\n' + '# preserve bytes '.repeat(30) + '\n';
+  listParkedApprovalsMock.mockResolvedValue([{
+    id: 'raw-command', sessionId: 'session-1', tool: 'Bash', requestedAt: 1,
+    status: 'pending', argsPreview: command.slice(0, 40) + '…', commandPreview: command,
+  }]);
+  render(<CronRunSessionStatusBar sessionId="session-1" />);
+  const toggle = await screen.findByTestId('cron-run-command-toggle');
+  expect(screen.getByTestId('cron-run-status-text').textContent).toBe('等你批准：运行一条命令');
+  expect(screen.queryByTestId('cron-run-command')).toBeNull();
+  fireEvent.click(toggle);
+  expect(screen.getByTestId('cron-run-command').textContent).toBe(command);
 });

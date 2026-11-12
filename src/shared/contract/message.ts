@@ -348,6 +348,11 @@ export interface MessageMetadata {
    * 编辑重发 / 失败重试复用同一 clientMessageId（消息 id），不是新开一条。
    */
   sendFailed?: boolean;
+  /**
+   * 发送失败的稳定错误码（transport 从响应体解析，如 PROJECT_SOURCE_TRUST）。
+   * 失败 assistant 气泡据此挂「确认并重发」等就地恢复入口；正文仍是人话句子。
+   */
+  sendFailureCode?: string;
   /** Structured verification evidence carried by message-level projections. */
   evidenceRefs?: EvidenceRef[];
   /** Stable join keys for reconstructing a persisted message's runtime turn. */
@@ -438,11 +443,11 @@ export interface MessageMetadata {
   };
   /**
    * 后台任务终态唤醒前台失败时的用户可见说明（`role:'system'`）：任务结果已在会话里，
-   * 只是自动汇报这一步没成；reason 区分 owner lease 缺失与其它失败。
+   * 只是自动汇报这一步没成；reason 区分 owner lease 缺失、步数耗尽与其它失败。
    */
   backgroundWakeFailed?: {
     taskId: string;
-    reason: 'owner_missing' | 'wake_failed';
+    reason: 'owner_missing' | 'wake_failed' | 'max_iterations' | 'turn_error';
   };
   /**
    * 后台任务终态唤醒被前台轮推迟超过上限时的用户可见说明。

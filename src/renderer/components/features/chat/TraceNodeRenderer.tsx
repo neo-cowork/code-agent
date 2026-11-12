@@ -28,6 +28,7 @@ import { RouteTraceChip, shouldRenderModelDecisionChip } from './RouteTraceChip'
 import { TurnQualityStrip } from './TurnQualityStrip';
 import { EnvAssistCard } from './EnvAssistCard';
 import { AgentErrorPresentation } from './AgentErrorCard';
+import { ProjectTrustConfirmCard } from './ProjectTrustConfirmCard';
 import { VoiceCallSummaryCard } from '../voice/VoiceCallSummaryCard';
 import { useSmoothStreamingText } from '../../../hooks/useSmoothStreamingText';
 import { Archive, AudioLines, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, RefreshCw, RotateCcw } from 'lucide-react';
@@ -546,6 +547,11 @@ const AssistantTextNode: React.FC<{
         />
       )}
 
+      {/* 旧项目 Source 快照缺失的发送失败：正文已是人话句子，这里补「确认并重发」 */}
+      {node.metadata?.sendFailureCode === 'PROJECT_SOURCE_TRUST' && (
+        <ProjectTrustConfirmCard node={node} sessionId={sessionId} />
+      )}
+
       {wakeFields ? <WakeRationaleNote fields={wakeFields} /> : null}
 
     </div>
@@ -667,7 +673,7 @@ const SystemNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, s
       humanToolLabels: t.receiptPresentation.humanToolLabels,
     }).join(t.receiptPresentation.roleCapabilityLabels.separator);
     return (
-      <div className="mx-3 my-1.5 rounded-md border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-xs text-zinc-400">
+      <div className="shrink-0 mx-3 my-1.5 rounded-md border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-xs text-zinc-400">
         <div className="font-medium text-zinc-300">{title}</div>
         {receipt.diffAvailable !== false && !unchanged && (
           <div className="mt-1">

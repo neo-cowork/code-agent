@@ -1,3 +1,4 @@
+import { EnvBlockedError } from '../permissions/envAssist/EnvBlockedError';
 import { isEmergencyStopActive } from '../security/emergencyStop';
 import { emergencyStopMessage } from '../../shared/i18n/emergencyStop';
 import { getLocale } from '../platform/appPaths';
@@ -29,8 +30,9 @@ import {
   sensitiveStepHandbackResolution,
   stripSensitiveStepParams,
 } from '../permissions/cuaSensitiveStep';
+import { resolveBrowserSessionGrant, stripBrowserGrantFields } from '../permissions/browserSessionGrant';
 import { resolvePreAskGrant } from '../permissions/preAskGrant';
-import { requiresScheduleWriteGrant } from '../cron/cronWriteGrant';
+import { classifyFileWrite } from './fileWriteClassification';
 import { createLogger } from '../services/infra/logger';
 import { getAuditLogger, maskSensitiveData, isKnownSafeCommand, validateCommand, getShellSafetyMode, getExecPolicyStore, getPolicyEnforcer, type PolicyEnforcer, type PolicyCheckResult, type ValidationResult } from '../security';
 import { evaluateToolSlotDataDirAccess, FOREIGN_SLOT_DATA_DIR_CODE, type SlotDataDirAccess } from '../security/slotDataDirGuard';
@@ -645,7 +647,7 @@ export class ToolExecutor {
         metadata: { code: 'RUN_WORKSPACE_BOUNDARY' },
       };
     }
-    let params = boundParams.params;
+    let params = stripBrowserGrantFields(boundParams.params);
     logger.debug('Executing tool', {
       toolName: requestedToolName,
       normalizedToolName: normalizedRequestedToolName,
@@ -1298,6 +1300,7 @@ export class ToolExecutor {
     const contextAgentId = options.agentId?.trim()
       || ((options.spawnDepth ?? 0) === 0 ? 'primary' : undefined);
 
+    let browserApprovedAction: string | undefined;
     // Create tool context
     const context: ToolContext & { sessionId?: string } = {
       runId: effectiveRunId, turnId: options.turnId,
@@ -1318,6 +1321,7 @@ export class ToolExecutor {
       // 已记，#1664 只修了外层）；ask 抛错时不落账、原样上抛，行为与改动前一致。
       permissionAskResults: new WeakMap(),
       requestPermission: async (request) => {
+        if (browserApprovedAction && browserApprovedAction === request.tool && request.details?.action === params.action && request.forceConfirm !== true) return true;
         beginApprovalWait(options.currentToolCallId, effectiveSessionId);
         try {
           const askStartedAt = Date.now();
@@ -1735,7 +1739,11 @@ export class ToolExecutor {
     }
 
     // Check permission if required
-    const scheduleWriteGrantRequired = await requiresScheduleWriteGrant(this.buildPermissionRequest(toolDef, params), effectiveSessionId, this.executionCwd, this.writeWorkspaceRoot);
+    const scheduledWrite = await classifyFileWrite(policyToolName, params, {
+      sessionId: effectiveSessionId, toolDefinition: toolDef, workingDirectory: this.executionCwd,
+      workspaceRoot: this.writeWorkspaceRoot, permissionLevel: toolDef.permissionLevel,
+    }, permStartTime);
+    const scheduleWriteGrantRequired = Boolean(scheduledWrite?.scheduleWriteTargets);
     // Skill 系统：预授权工具跳过普通权限检查（但不能跳过边界违规或 consequence hard deny）
     const isPreApproved = !boundaryViolation
       && !scheduleWriteGrantRequired
@@ -1808,13 +1816,14 @@ export class ToolExecutor {
         }
       }
     }
-    if ((toolDef.requiresPermission || readArgumentForcesClassification || cuaAppGrantForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk) && (commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || protectedWriteForcesConfirmation || policyForcesConfirmation || unresolvedWriteTargetForcesAsk || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk || (!isPreApproved && !isSafeCommand))) {
+    if ((toolDef.requiresPermission || scheduleWriteGrantRequired || readArgumentForcesClassification || cuaAppGrantForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk) && (scheduleWriteGrantRequired || commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || protectedWriteForcesConfirmation || policyForcesConfirmation || unresolvedWriteTargetForcesAsk || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk || (!isPreApproved && !isSafeCommand))) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
       // 信任边界 ask（W3 写边界）→ forceConfirm：终审层便利放行必须让路（同 directory_access）。
       let boundaryAskForcesConfirmation = false;
       // B4：external 工具的授权 target 精确串（取不到=null，不具铸权资格）。一次算好，
       // 供下面的长期授权消费判定，以及需人工审批时透传给停车审批卡（铸权入口）。
+      const browserSessionGrant = await resolveBrowserSessionGrant(executionToolName, params, context);
       const standingGrantTarget = isExternalSideEffectTool(executionToolName)
         ? extractStandingGrantTarget(executionToolName, params)
         : null;
@@ -1880,6 +1889,8 @@ export class ToolExecutor {
           const workspaceRoot = this.writeWorkspaceRoot;
           const classification: ClassificationResult = await resolveToolPermissionClassification({
             executionToolName,
+            sessionId: effectiveSessionId,
+            toolDefinition: toolDef,
             policyToolName,
             params,
             policyForcesConfirmation,
@@ -2074,6 +2085,7 @@ export class ToolExecutor {
         toolName: executionToolName,
         sessionId: effectiveSessionId,
         standingGrantTarget,
+        browserSessionTarget: browserSessionGrant?.target,
         computerApp,
         blocked: Boolean(commandAnalysisFailedReason)
           || guardFabricForcesApproval || protectedWriteForcesConfirmation
@@ -2086,6 +2098,7 @@ export class ToolExecutor {
           || shouldForceConfirm,
       }) : null;
       if (preAsk) {
+        if (browserSessionGrant?.target && preAsk.ledgerReason === 'tool_grant:session') browserApprovedAction = `browser_action.${params.action}`;
         needsUserApproval = false;
         const grantTrace = createTraceBuilder(executionToolName);
         grantTrace.addStep('permission_classifier', preAsk.traceRule, 'allow', preAsk.traceDetail);
@@ -2099,6 +2112,9 @@ export class ToolExecutor {
         commandValidation,
         commandRiskUnknown ? 'unknown' : knownAskCommandRisk,
       );
+      // Never trust an identically named model argument in the default request branch.
+      delete permissionRequest.details.scheduleWriteTargets;
+      if (scheduleWriteGrantRequired) permissionRequest.details.scheduleWriteTargets = scheduledWrite?.scheduleWriteTargets;
       if (pluginOrigin) {
         Object.assign(permissionRequest.details, pluginOrigin);
       } else if (pluginId) {
@@ -2189,6 +2205,12 @@ export class ToolExecutor {
       }
       // B4：把授权 target 透传给审批层，供无人值守停车审批卡出「每次都允许发 <target>」铸权入口。
       if (standingGrantTarget) permissionRequest.details.standingGrantTarget = standingGrantTarget;
+      if (browserSessionGrant) {
+        delete permissionRequest.details.targetApp;
+        permissionRequest.details.browserSessionGrant = browserSessionGrant;
+        if (browserSessionGrant.previousOrigins.length) permissionRequest.reason =
+          `Earlier approval covered only ${browserSessionGrant.previousOrigins.join(', ')}. This action is on ${browserSessionGrant.target?.split('@')[1]}; please approve this site separately.`;
+      }
       // B1：external 工具（离开本机、发出去收不回）在交互审批卡上标作用域（N-APPROVAL-EXTERNAL-SCOPENOTE）。
       // 只打标：非 external 不写该属性（缺省≠null），不改任何 allow/deny/ask 裁决。
       if (isExternalSideEffectTool(executionToolName)) permissionRequest.riskClass = 'external';
@@ -2320,6 +2342,7 @@ export class ToolExecutor {
         }
       }
       const approved = ask.approved;
+      if (approved && ask.approvalSource === 'user' && browserSessionGrant?.target) browserApprovedAction = `browser_action.${params.action}`;
 
       // ADR-088 一期：交回步**永不执行**（规格 §4 三层保证之 1——没有任何代码路径从这张
       // 请求的应答通向原始工具调用）。应答只决定回话模板：allow=用户已亲手完成（done），
@@ -2683,6 +2706,7 @@ export class ToolExecutor {
       await durableCheckpoint.complete(result.success);
       return { ...result, metadata: { ...result.metadata, executionStarted } };
     } catch (error) {
+      if (error instanceof EnvBlockedError) throw error;
       const duration = Date.now() - startTime;
       logger.error('Tool threw error', error, { toolName: executionToolName });
       executionLedger.complete('error', error instanceof Error ? error.message : 'Unknown error');

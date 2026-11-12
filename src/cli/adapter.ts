@@ -33,6 +33,8 @@ import { createRunTraceContext, withRunTraceContext } from '../host/telemetry/ru
 import { generateMessageId } from '../shared/utils/id';
 import { formatThrownError } from '../shared/utils/providerError';
 import { readPersistedExpertThread } from '../shared/contract/expertThread';
+import { resolveConfiguredProvider } from '../host/model/configuredProvider';
+import { normalizeProviderId } from '../shared/constants';
 import { resolveExplicitAgentOverride } from '../host/agent/explicitAgentOverride';
 
 export { getAgentDispatchInfo, isAgentDispatchToolName } from './agentDispatch';
@@ -136,24 +138,24 @@ export class CLIAgent {
    * 自动从 env 获取对应 provider 的 API Key
    */
   setModel(provider: string, model: string, apiKey?: string): void {
-    // Auto-resolve API key for the new provider
-    let resolvedKey = apiKey;
-    if (!resolvedKey) {
-      try {
-        // provider 是 user 输入的字符串，cast 成 ModelProvider；
-        // 不在联合类型里时 main getApiKey 通过 envKeyMap 拿不到 key 直接返回 undefined
-        resolvedKey = getConfigService().getApiKey(provider as ModelConfig['provider']);
-      } catch {
-        // Config service not ready, keep existing key
-      }
+    let connection: Pick<ModelConfig, 'provider' | 'apiKey' | 'baseUrl' | 'protocol'> = {
+      provider: (normalizeProviderId(provider) ?? provider) as ModelConfig['provider'],
+      apiKey: undefined,
+      baseUrl: undefined,
+      protocol: undefined,
+    };
+    try {
+      const config = getConfigService();
+      connection = resolveConfiguredProvider(config, config.getSettings(), provider).connection;
+    } catch {
+      // Uninitialized settings must never retain another provider's credentials.
     }
-
     this.config.modelConfig = {
       ...this.config.modelConfig,
-      provider: provider as ModelConfig['provider'],
+      ...connection,
       model,
       maxTokens: getModelMaxOutputTokens(model),
-      ...(resolvedKey ? { apiKey: resolvedKey } : {}),
+      apiKey: apiKey || connection.apiKey,
     };
   }
 

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ParkedApprovalInboxItem } from '../../../src/shared/contract/pendingApproval';
 import { AutomationReviewInbox } from '../../../src/renderer/components/features/cron/AutomationReviewInbox';
@@ -77,5 +77,40 @@ describe('voided approval history through the real inbox', () => {
     expect(screen.getByTestId('parked-approval-voided').firstElementChild?.textContent).toBe(expected);
     expect(screen.queryByTestId('parked-approval-voided-summary')).toBeNull();
     expect(screen.queryByTestId('parked-approval-voided-toggle')).toBeNull();
+  });
+});
+
+
+describe('non-voided task names through the production inbox', () => {
+  it.each(['zh', 'en'] as const)('two pending Write tasks, orphaned and sensitive-step cards show distinct names; old and pairing rows have no blank line (%s)', async (language) => {
+    state.language = language;
+    const pending = (id: string, sessionTitle?: string): ParkedApprovalInboxItem => ({
+      id, sessionId: id, sessionTitle, tool: 'Write', displayTool: 'Write', status: 'pending', requestedAt: Date.now(),
+    });
+    state.rows = [
+      pending('weekly', 'Weekly report'), pending('invoices', 'Sort invoices'),
+      { ...pending('orphaned', 'Client receipts'), status: 'orphaned' },
+      { ...pending('sensitive', 'Pay supplier'), sensitiveStep: { kind: 'payment', appName: 'Billing', elementLabel: 'Confirm' } },
+      pending('old'), { ...pending('pairing', 'Must not display'), sessionId: null, kind: 'channel_pairing' },
+    ];
+    render(<AutomationReviewInbox />);
+    await waitFor(() => expect(screen.getAllByTestId('parked-approval-item')).toHaveLength(6));
+    const cards = screen.getAllByTestId('parked-approval-item');
+    expect(screen.getAllByTestId('parked-session-title').map((el) => el.textContent)).toEqual([
+      'Weekly report', 'Sort invoices', 'Client receipts', 'Pay supplier',
+    ]);
+    for (const [index, name] of ['Weekly report', 'Sort invoices', 'Client receipts', 'Pay supplier'].entries()) {
+      const line = within(cards[index]).getByTestId('parked-session-title');
+      expect(line.textContent).toBe(name);
+      expect(line.className).toBe('truncate text-xs text-zinc-400');
+      expect(line.previousElementSibling?.textContent).toBe('Write');
+    }
+    expect(within(cards[3]).getByTestId('sensitive-step-parked-row')).toBeTruthy();
+    expect(cards[2].className).toContain('opacity-50');
+    for (const card of cards.slice(4)) {
+      expect(within(card).queryByTestId('parked-session-title')).toBeNull();
+      expect(Array.from(card.querySelectorAll('div')).some((el) => el.childElementCount === 0 && !el.textContent?.trim())).toBe(false);
+    }
+    if (language === 'en') expect(screen.getByTestId('parked-approval-group').textContent).not.toMatch(/[\u3400-\u9fff]|\[Scheduled\]/u);
   });
 });

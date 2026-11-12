@@ -256,7 +256,7 @@ export class DurableRunRepository implements DurableRunStores {
       WHERE lease_expires_at <= ? AND (
         (status IN ('running','recovering') AND ${cause} = 'crash_or_quit'
           AND CAST(COALESCE(json_extract(envelope_json, '$.autoResumeCount'), 0) AS INTEGER) >= ?)
-        OR (status = 'waiting' AND ${cause} IN ('user_stop','guard_halt','budget_exhausted','quota_wait'))
+        OR (status = 'waiting' AND ${cause} IN ('user_stop','guard_halt','budget_exhausted','quota_wait','env_blocked'))
       )
       ORDER BY updated_at ASC LIMIT ?`).all(now, MAX_AUTO_RESUME_COUNT, limit) as Row[];
     return rows.map(rowToEnvelope);
@@ -473,7 +473,9 @@ export class DurableRunRepository implements DurableRunStores {
         ...(input.autoResumeCount === undefined ? {} : { autoResumeCount: input.autoResumeCount }),
         ...(input.clearInterruptCause ? { clearInterruptCause: true } : {}),
         ...(input.quotaWaitDueAt !== undefined ? { quotaWaitDueAt: input.quotaWaitDueAt } : {}),
+          ...(input.envBlocked ? { envBlocked: input.envBlocked } : {}),
       });
+      assertRunEnvelope(withMetadata);
       this.db.prepare(`UPDATE durable_runs SET status = ?, next_event_seq = ?, checkpoint_seq = ?,
         envelope_json = ?, updated_at = ? WHERE run_id = ? AND owner_epoch = ?`)
         .run(withMetadata.status, withMetadata.cursor.nextEventSeq, withMetadata.cursor.checkpointSeq, stringify(withMetadata), withMetadata.updatedAt,

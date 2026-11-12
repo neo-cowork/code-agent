@@ -196,7 +196,7 @@ export const SessionAgentsPanel: React.FC = () => {
             data-testid="agents-panel-stop-all"
             onClick={() => { void stopAll(); }}
             disabled={stoppingAll}
-            className="rounded-md px-2 py-1 text-[11px] text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-badge-danger disabled:cursor-not-allowed disabled:opacity-50"
+            className="whitespace-nowrap rounded-md px-2 py-1 text-[11px] text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-badge-danger disabled:cursor-not-allowed disabled:opacity-50"
           >
             {stoppingAll ? text.stopAllStopping : text.stopAll}
           </button>
@@ -207,7 +207,7 @@ export const SessionAgentsPanel: React.FC = () => {
             data-testid="agents-panel-clear-finished"
             onClick={() => { void clearFinished(); }}
             disabled={clearingFinished}
-            className="rounded-md px-2 py-1 text-[11px] text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+            className="whitespace-nowrap rounded-md px-2 py-1 text-[11px] text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {text.clearFinished}
           </button>

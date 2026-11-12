@@ -116,7 +116,7 @@ describe('foreground wake failure note (default dependencies)', () => {
 
     expect(h.added).toHaveLength(1);
     const { message } = h.added[0];
-    expect(message.metadata?.backgroundWakeFailed).toEqual({ taskId: 'task-n', reason: 'wake_failed' });
+    expect(message.metadata?.backgroundWakeFailed).toEqual({ taskId: 'task-n', reason: 'turn_error' });
     expect(h.emitted.filter((e) => e.event.type === 'error')).toEqual([]);
     expect(h.emitted).toEqual([{ sessionId: 'session-n', event: { type: 'message', data: message } }]);
   });
