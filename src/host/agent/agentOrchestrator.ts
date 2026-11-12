@@ -214,7 +214,8 @@ export class AgentOrchestrator {
     const settings = this.configService.getSettings();
     const sessionManager = getSessionManager();
     const sessionId = await this.resolveSessionId();
-    const priorMessages = [...this.messageHistory.getMessages()];
+    // 只有 channel run 的缺附件提示用得到；必须在落库本条用户消息之前拍快照
+    const priorMessages = messageMetadata?.channel ? [...this.messageHistory.getMessages()] : [];
     if (sessionId) { (await import('../tools/shell/foregroundTier')).resetShortTierWait(sessionId); await cancelTimeWakesOnUserReturn(sessionId, options); }
 
     if (persistUserMessage) {
