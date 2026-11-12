@@ -3,6 +3,7 @@ import { Loader2, MessageSquareText, Search } from 'lucide-react';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { formatLocalDateTime } from '../../../utils/i18nTime';
+import { resolveSearchRunLabels } from '../../../utils/sessionSearchRunLabel';
 import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 import type {
   SidebarMessageSearchHitGroup,
@@ -47,6 +48,19 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const sessionIdsKey = useMemo(() => sessions.map((session) => session.id).join('\n'), [sessions]);
 
+  const runLabels = useMemo(
+    () =>
+      resolveSearchRunLabels(
+        sessions.map((session) => ({
+          title: getDisplaySessionTitle(session.title, language),
+          label: formatLocalDateTime(session.updatedAt, language),
+          updatedAt: session.updatedAt,
+          createdAt: session.createdAt,
+        })),
+      ),
+    [sessions, language],
+  );
+
   useEffect(() => {
     if (!isOpen) return undefined;
     const timer = window.setTimeout(() => inputRef.current?.focus(), 0);
@@ -79,6 +93,7 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
 
   return (
     <Modal
+      portal
       isOpen={isOpen}
       onClose={onClose}
       title={sb.searchDialogTitle}
@@ -171,9 +186,12 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
                         {session.id === currentSessionId && (
                           <span className="ml-2 text-[11px] text-badge-info">{sb.currentSession}</span>
                         )}
+                        {runLabels.latest.has(index) && (
+                          <span className="ml-2 text-[11px] text-badge-info">{sb.latestRun}</span>
+                        )}
                       </span>
                       <span data-testid="sidebar-search-session-time" className="block truncate text-[11px] text-zinc-500">
-                        {formatLocalDateTime(session.updatedAt, language)}
+                        {runLabels.labels[index]}
                         {hitGroup && (
                           <>
                             <span aria-hidden="true"> · </span>

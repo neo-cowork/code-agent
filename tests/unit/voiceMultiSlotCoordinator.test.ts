@@ -2,10 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentEvent } from '../../src/shared/contract/agent';
 import type { VoiceWorkItem, VoiceWorkNarration } from '../../src/shared/contract/voice';
 import { SESSION_TASK_SLOT_TIMEOUT_MS } from '../../src/shared/constants/voice';
+import {
+  getVoiceTaskConcurrencyPool,
+  resetVoiceTaskConcurrencyPoolForTest,
+  VoiceTaskSlotLedger,
+} from '../../src/host/services/voice/voiceTaskSlotLedger';
 
 type TaskEvent = { type: string; sessionId: string; data?: unknown };
 
 const runtime = vi.hoisted(() => ({
+  perSessionLimit: 2,
   listeners: new Set<(event: TaskEvent) => void>(),
   observers: new Set<(sessionId: string, event: AgentEvent, taskId?: string) => void>(),
   startBackgroundTask: vi.fn<(
@@ -23,7 +29,7 @@ const runtime = vi.hoisted(() => ({
     attachments?: unknown[],
     options?: unknown,
   ) => Promise<{ outcome: 'steered' }>>(async () => ({ outcome: 'steered' as const })),
-  promptUserInChat: vi.fn<(request: unknown) => Promise<{ status: 'timeout' }>>(
+  promptUserInChat: vi.fn<typeof import('../../src/host/tools/utils/userQuestionPrompt').promptUserInChat>(
     async () => ({ status: 'timeout' as const }),
   ),
   emit(type: string, taskId: string, data: Record<string, unknown> = {}) {
@@ -32,6 +38,17 @@ const runtime = vi.hoisted(() => ({
     }
   },
 }));
+
+vi.mock('../../src/shared/constants/voice', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/shared/constants/voice')>();
+  return {
+    ...actual,
+    SESSION_TASK_CONCURRENCY: {
+      ...actual.SESSION_TASK_CONCURRENCY,
+      get perSession() { return runtime.perSessionLimit; },
+    },
+  };
+});
 
 vi.mock('../../src/host/task', () => ({
   getTaskManager: () => ({
@@ -103,12 +120,15 @@ function latest(id: string): VoiceWorkItem | undefined {
 
 beforeEach(() => {
   endVoiceDispatch();
+  resetVoiceTaskConcurrencyPoolForTest();
+  runtime.perSessionLimit = 2;
   runtime.listeners.clear();
   runtime.observers.clear();
   runtime.startBackgroundTask.mockClear();
   runtime.cancelBackgroundTask.mockClear();
   runtime.interruptBackgroundTask.mockClear();
-  runtime.promptUserInChat.mockClear();
+  runtime.promptUserInChat.mockReset();
+  runtime.promptUserInChat.mockResolvedValue({ status: 'timeout' });
   vi.mocked(projectVoiceTaskTerminalResult).mockClear();
   workItems = [];
   narrations = [];
@@ -123,6 +143,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.useRealTimers();
 });
 
@@ -138,6 +159,121 @@ describe('voice multi-slot coordinator', () => {
     expect(latest(ids[1])).toMatchObject({ shortName: '短名2', status: 'running' });
     expect(JSON.stringify(runtime.startBackgroundTask.mock.calls[0][4]))
       .toContain('需要澄清时调用 AskUserQuestion');
+  });
+
+  function fillOtherSessions() {
+    const pool = getVoiceTaskConcurrencyPool();
+    for (let index = 0; pool.hasCapacity(); index++) {
+      expect(pool.acquire(`other-session-task-${index}`)).toBe(true);
+    }
+  }
+
+  it('offers Queue and Don\'t create in that order when other sessions hold all slots', async () => {
+    fillOtherSessions();
+
+    const reply = await spawn(9);
+
+    expect(runtime.promptUserInChat).toHaveBeenCalledOnce();
+    const [questions, options] = runtime.promptUserInChat.mock.calls[0];
+    expect(questions[0].options.map((option) => option.label)).toEqual(['排队', '暂不创建']);
+    expect(questions[0].question).toBe('当前后台任务槽位已满，「短名9」要排队等待空闲槽位，还是暂不创建？');
+    expect(options).toEqual({ sessionId: 'session-1' });
+    expect(reply).toContain('等待回答');
+    expect(reply).not.toContain('已经开始');
+    expect(workItems).toEqual([]);
+    expect(runtime.startBackgroundTask).not.toHaveBeenCalled();
+  });
+
+  it.each([1, 3])('keeps Don\'t create last with %i running tasks and at most two replacements', async (count) => {
+    if (count === 3) {
+      // Exercise truncation beyond the normal two-slot session limit, using the real ledger.
+      endVoiceDispatch();
+      runtime.perSessionLimit = 3;
+      beginVoiceDispatch({
+        neoSessionId: 'session-1', voiceSessionId: 'voice-1',
+        onWorkItem: (item) => workItems.push(item), onWorkFailed: () => undefined,
+        onWorkNarration: (narration) => narrations.push(narration), onEndCall: () => undefined,
+      });
+    }
+    for (let index = 1; index <= count; index++) await spawn(index);
+    expect(runtime.startBackgroundTask).toHaveBeenCalledTimes(count);
+    fillOtherSessions();
+
+    await spawn(9);
+
+    expect(runtime.promptUserInChat).toHaveBeenCalledOnce();
+    const question = runtime.promptUserInChat.mock.calls[0][0][0];
+    expect(question.options.map((option) => option.label)).toEqual(count === 1
+      ? ['排队', '替换短名1', '暂不创建']
+      : ['排队', '替换短名1', '替换短名2', '暂不创建']);
+    expect(question.question).toBe('当前后台任务槽位已满，「短名9」要排队等待，还是替换一件本会话的任务？');
+  });
+
+  it.each([['暂不创建', 0], ['暂不创建', 1], ['timeout', 0]] as const)(
+    'creates and stops nothing after overflow answer %s with %i running tasks', async (answer, count) => {
+      if (count) await spawn(1);
+      runtime.startBackgroundTask.mockClear();
+      const itemsBefore = [...workItems];
+      fillOtherSessions();
+      if (answer !== 'timeout') runtime.promptUserInChat.mockResolvedValueOnce({
+        status: 'answered', response: { requestId: 'overflow', answers: { '任务已满': answer } },
+      });
+      const admit = vi.spyOn(VoiceTaskSlotLedger.prototype, 'admit');
+
+      await spawn(9);
+
+      expect(runtime.promptUserInChat).toHaveBeenCalledOnce();
+      expect(admit).toHaveBeenCalledTimes(1);
+      expect(admit).toHaveReturnedWith(expect.objectContaining({ outcome: 'requires_choice' }));
+      expect(workItems).toEqual(itemsBefore);
+      expect(runtime.startBackgroundTask).not.toHaveBeenCalled();
+      expect(runtime.cancelBackgroundTask).not.toHaveBeenCalled();
+      expect(runtime.interruptBackgroundTask).not.toHaveBeenCalled();
+    },
+  );
+
+  it('queues only after the Queue answer and starts when a slot frees', async () => {
+    await spawn(1);
+    const firstId = runtime.startBackgroundTask.mock.calls[0][0];
+    fillOtherSessions();
+    runtime.promptUserInChat.mockResolvedValueOnce({
+      status: 'answered', response: { requestId: 'overflow', answers: { '任务已满': '排队' } },
+    });
+    const admit = vi.spyOn(VoiceTaskSlotLedger.prototype, 'admit');
+
+    await spawn(9);
+
+    await vi.waitFor(() => expect(workItems).toContainEqual(expect.objectContaining({ shortName: '短名9', status: 'queued' })));
+    expect(admit).toHaveBeenLastCalledWith(expect.objectContaining({
+      sessionId: 'session-1', laneKey: 'lane-9', submissionKey: 'turn-9',
+    }), { queueWhenFull: true });
+    expect(runtime.startBackgroundTask).toHaveBeenCalledTimes(1);
+    expect(runtime.cancelBackgroundTask).not.toHaveBeenCalled();
+    const queued = workItems.find((item) => item.shortName === '短名9');
+    runtime.emit('task_completed', firstId);
+    await vi.waitFor(() => expect(runtime.startBackgroundTask).toHaveBeenCalledTimes(2));
+    expect(runtime.startBackgroundTask.mock.calls[1].slice(0, 3)).toEqual([queued?.id, 'session-1', '执行任务9']);
+    expect(latest(runtime.startBackgroundTask.mock.calls[1][0])).toMatchObject({ status: 'running' });
+  });
+
+  it('waits for the selected replacement to stop before starting the new task', async () => {
+    await spawn(1);
+    await spawn(2);
+    const firstId = runtime.startBackgroundTask.mock.calls[0][0];
+    const secondId = runtime.startBackgroundTask.mock.calls[1][0];
+    runtime.promptUserInChat.mockResolvedValueOnce({
+      status: 'answered', response: { requestId: 'overflow', answers: { '任务已满': '替换短名1' } },
+    });
+
+    await spawn(9);
+
+    await vi.waitFor(() => expect(runtime.cancelBackgroundTask).toHaveBeenCalledExactlyOnceWith(firstId));
+    expect(runtime.startBackgroundTask).toHaveBeenCalledTimes(2);
+    expect(latest(secondId)).toMatchObject({ status: 'running' });
+    runtime.emit('task_cancelled', firstId);
+    await vi.waitFor(() => expect(runtime.startBackgroundTask).toHaveBeenCalledTimes(3));
+    expect(runtime.startBackgroundTask.mock.calls[2].slice(1, 3)).toEqual(['session-1', '执行任务9']);
+    expect(latest(secondId)).toMatchObject({ status: 'running' });
   });
 
   it('serializes the same lane until the first task settles', async () => {

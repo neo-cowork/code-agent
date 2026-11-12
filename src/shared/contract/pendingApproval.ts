@@ -49,6 +49,7 @@ export interface ToolApprovalPayload {
    * 有它 = 该行可铸造 target 粒度长期授权（收件箱审批卡出「每次都允许发 <target>」按钮）。
    */
   standingGrantTarget?: string | null;
+  browserSessionGrant?: import('./permission').PermissionRequest['details']['browserSessionGrant'];
   /**
    * 「一键授权此任务写这个文件夹」候选（realpath 后的绝对路径）。仅无人值守 cron/heartbeat 的
    * file_write/file_edit 在守卫通过时由 host 写入；缺省 = 不出按钮、逐文件审批。
@@ -86,6 +87,8 @@ export interface ParkedApprovalInboxItem {
   id: string;
   kind?: 'tool_approval' | 'directory_access' | 'channel_pairing';
   sessionId: string | null;
+  /** 原始 assistant tool_call id；渲染端据此把「等批准」精确对到会话里那一步。老行没有。 */
+  toolCallId?: string;
   sessionTitle?: string;
   tool: string;
   displayTool?: string;

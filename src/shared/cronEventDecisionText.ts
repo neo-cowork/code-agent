@@ -24,6 +24,8 @@ export type CronEventDecisionTextKey =
   | 'runFailedWithCause'
   | 'runFailedWithoutCause'
   | 'observeIntercepted'
+  | 'observeActionIntercepted'
+  | 'channelReplyTool'
   | 'noOutboundAction'
   | 'runQuiet'
   | 'runReported';
@@ -35,11 +37,28 @@ interface DecisionTextTemplate {
   stored: string;
   zh: string;
   en: string;
+  /** Previously persisted forms, recognized on read without rewriting stored rows. */
+  legacyStored?: readonly string[];
   /** Parameters that are themselves another host-authored decision string. */
   nested?: readonly string[];
 }
 
 const TEMPLATES: readonly DecisionTextTemplate[] = [
+  {
+    key: 'observeActionIntercepted',
+    stored: 'outbound action {tool} intercepted in observe mode',
+    legacyStored: ['observe mode: {tool} intercepted before sending'],
+    zh: '仅观察模式：已拦下「{tool}」，没有真的发出去',
+    en: 'Observe mode stopped “{tool}”; nothing was sent',
+    nested: ['tool'],
+  },
+  {
+    key: 'channelReplyTool',
+    stored: 'channel_reply',
+    legacyStored: ['channel reply'],
+    zh: '通道回复',
+    en: 'Channel reply',
+  },
   {
     key: 'channelChatRule',
     stored: 'channel message · account {account} · chat {chat}',
@@ -171,7 +190,9 @@ function matcherFor(template: string): { regex: RegExp; names: string[] } {
   return { regex: new RegExp(pattern), names };
 }
 
-const MATCHERS = TEMPLATES.map((template) => ({ template, ...matcherFor(template.stored) }));
+const MATCHERS = TEMPLATES.flatMap((template) => (
+  [template.stored, ...template.legacyStored ?? []].map((stored) => ({ template, ...matcherFor(stored) }))
+));
 
 /** Build the stable English text persisted by the host. */
 export function buildCronEventDecisionText(key: CronEventDecisionTextKey, params: TextParams = {}): string {

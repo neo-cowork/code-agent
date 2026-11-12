@@ -45,7 +45,9 @@ const appState = vi.hoisted(() => ({
 // setPendingPermissionRequest 做成有状态实现：catch 里的「留卡」恢复调用会真切回
 // appState.request，卡是否还在 DOM 里可以被直接断言。
 vi.mock('../../../src/renderer/stores/appStore', () => ({
-  useAppStore: () => ({
+  // httpTransport 的失败文案按当前语言出一句（N-FIX-SIGNED-OUT-SEND-500-RAW-HTML-REDESIGN），
+  // 夹具按真实模块形状补 getState（真 zustand store 恒有）。
+  useAppStore: Object.assign(() => ({
     pendingPermissionRequest: appState.request,
     pendingPermissionSessionId: appState.sessionId,
     setPendingPermissionRequest: (req: PermissionRequest | null, sessionId: string | null) => {
@@ -57,7 +59,7 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
     language: 'zh',
     setLanguage: () => {},
     cloudUIStrings: undefined,
-  }),
+  }), { getState: () => ({ language: 'zh' }) }),
 }));
 
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
@@ -116,6 +118,8 @@ function confirmAllowOnce() {
 async function expectFailureKeepsCardThenRetryDelivers(
   failingFetch: typeof fetch,
   expectedDetail: unknown,
+  /** 第二条 card-catch 留痕的 detail（HTTP 状态位失败时是 transport 的净化句，不是 raw body）。 */
+  expectedCatchDetail: unknown = expectedDetail,
 ): Promise<void> {
   const fetchMock = vi.fn(failingFetch);
   globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -135,7 +139,7 @@ async function expectFailureKeepsCardThenRetryDelivers(
   expect(domainInvoke).toHaveBeenNthCalledWith(2, 'domain:diagnostics', 'logClientError', {
     context: 'PermissionCard',
     message: 'PermissionCard click exit: stage=card-catch requestId=permission-transport-failure sessionId=session-current',
-    detail: expectedDetail,
+    detail: expectedCatchDetail,
   });
   expect(recordPermissionDecision).not.toHaveBeenCalled();
   expect(dismissPermissionRequest).not.toHaveBeenCalled();
@@ -212,7 +216,10 @@ describe('PermissionCard transport failure over the real HTTP chain', () => {
         text: async () => JSON.stringify({ error: 'boom' }),
         json: async () => ({}),
       })) as unknown as typeof fetch,
+      // transport-send-failure 留痕仍是 raw body；PermissionSendFailure 的 message
+      // 已改为按 status 出一句话（N-FIX-SIGNED-OUT-SEND-500-RAW-HTML-REDESIGN）。
       '审批应答发送失败 (500): boom',
+      '审批应答发送失败：Neo 暂时没能完成这次请求，请稍后再试。',
     );
   });
 

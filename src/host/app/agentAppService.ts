@@ -75,6 +75,7 @@ import type {
   WorkbenchMessageMetadata,
 } from '../../shared/contract/conversationEnvelope';
 import { resolveConnectorRequiredForTurn, withWorkbenchTurnSystemContext } from './workbenchTurnContext';
+import { withMissingAttachmentTurnSystemContext } from './missingAttachmentTurnContext';
 import { resolveForegroundImageTurn, withSessionCommandCenterBrain } from './sessionCommandCenterBrain';
 import { isSessionCommandCenterTurn } from '../../shared/constants/sessionCommandCenter';
 import { getPermissionModeManager } from '../permissions/modes';
@@ -812,10 +813,19 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         : envelope.context?.workingDirectory ?? effectiveWorkingDirectory ?? orchestrator?.getWorkingDirectory(),
     );
 
-    const workbenchOptions = withWorkbenchTurnSystemContext(
-      envelope.options as AppServiceRunOptions | undefined,
-      envelope.context,
-      getSessionManager().getSessionMetadata?.(resolvedSessionId),
+    const workbenchOptions = withMissingAttachmentTurnSystemContext(
+      withWorkbenchTurnSystemContext(
+        envelope.options as AppServiceRunOptions | undefined,
+        envelope.context,
+        getSessionManager().getSessionMetadata?.(resolvedSessionId),
+      ),
+      {
+        sessionId: resolvedSessionId,
+        userText: envelope.content,
+        attachments: envelope.attachments,
+        session,
+        workingDirectory: envelope.context?.workingDirectory ?? effectiveWorkingDirectory ?? orchestrator?.getWorkingDirectory(),
+      },
     );
     await this.emitConnectorRequired(tm, resolvedSessionId, envelope.options as AppServiceRunOptions | undefined, envelope.context);
     const optionsWithTurnSettings: AppServiceRunOptions = {
@@ -1010,10 +1020,19 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       resolvedSessionId,
       envelope.context?.workingDirectory ?? effectiveWorkingDirectory ?? orchestrator?.getWorkingDirectory(),
     );
-    const workbenchOptions = withWorkbenchTurnSystemContext(
-      envelope.options as AppServiceRunOptions | undefined,
-      envelope.context,
-      getSessionManager().getSessionMetadata?.(resolvedSessionId),
+    const workbenchOptions = withMissingAttachmentTurnSystemContext(
+      withWorkbenchTurnSystemContext(
+        envelope.options as AppServiceRunOptions | undefined,
+        envelope.context,
+        getSessionManager().getSessionMetadata?.(resolvedSessionId),
+      ),
+      {
+        sessionId: resolvedSessionId,
+        userText: envelope.content,
+        attachments: envelope.attachments,
+        session,
+        workingDirectory: envelope.context?.workingDirectory ?? effectiveWorkingDirectory ?? orchestrator?.getWorkingDirectory(),
+      },
     );
     await this.emitConnectorRequired(tm, resolvedSessionId, envelope.options as AppServiceRunOptions | undefined, envelope.context);
     const options = isSessionCommandCenterTurn({

@@ -15,6 +15,7 @@ import { Eye, EyeOff } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { useAppStore } from '../../stores/appStore';
 import { resolveHostReasonCopy } from '../../utils/hostReasonPresentation';
+import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
 import { isDangerousRequestShape, isSafeDefaultDeny, permissionConsequence } from './permissionPresentation';
 import { ConnectorWriteDisclosure } from './ConnectorWriteDisclosure';
 import { estimateMediaPriceCny } from './mediaPriceEstimate';
@@ -58,6 +59,16 @@ export function RequestDetails({ request }: RequestDetailsProps) {
   const labels = t.decisionCard.permission;
   const cc = t.cronCenter;
 
+  const browser = details.browserSessionGrant;
+  if (browser) {
+    const copy = language === 'en' ? browserSessionGrantEn : browserSessionGrantZh;
+    const site = browser.target?.slice(browser.target.indexOf('@') + 1);
+    return <p className="break-all text-xs leading-5 text-zinc-300" data-testid="browser-session-reason">
+      {!site ? copy.unresolved : browser.previousOrigins.length > 0
+        ? copy.crossSite.replace('{previous}', browser.previousOrigins.join(', ')).replace('{site}', site)
+        : null}
+    </p>;
+  }
   // 兼容旧版 API：path -> filePath
   const filePath = details.filePath || details.path;
 
