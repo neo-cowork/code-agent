@@ -701,6 +701,26 @@ describe('ConversationRuntime', () => {
       expect(controller.signal.aborted).toBe(true);
     });
 
+    it('persists one streamed model response exactly once across cancellation and settled resume', async () => {
+      const persisted: Array<{ role: string; content: string }> = [];
+      const persistMessage = vi.fn(async (message) => { persisted.push(message); });
+      ctx.persistMessage = persistMessage;
+      ctx.turn.appendStreamedContent('The project still needs a recovery rehearsal.');
+
+      await runtime.cancel('user');
+      ctx.control.markSettled();
+      runtime.resume();
+      await runtime.cancel('user');
+      await runtime.cancel('session-switch');
+
+      const assistantWrites = persisted.filter((message) => message.role === 'assistant');
+      expect(assistantWrites).toHaveLength(1);
+      expect(assistantWrites[0].content).toBe('The project still needs a recovery rehearsal.\n\n[cancelled]');
+      expect(persistMessage).toHaveBeenCalledTimes(1);
+      expect(ctx.messages.filter((message) => message.role === 'assistant')).toHaveLength(1);
+      expect(ctx.turn.lastStreamedContent).toBe('');
+    });
+
     it('persists partial streamed assistant content as cancelled marker', async () => {
       const persistMessage = vi.fn();
       ctx.turn.appendStreamedContent('partial response');
@@ -716,6 +736,22 @@ describe('ConversationRuntime', () => {
       expect(ctx.turn.lastStreamedContent).toBe('');
     });
 
+    it('persists the session-switch marker after cancelling an unsettled text stream', async () => {
+      const persistMessage = vi.fn();
+      ctx.turn.appendStreamedContent('partial response before switching');
+      ctx.persistMessage = persistMessage;
+
+      await runtime.cancel('session-switch');
+
+      expect(ctx.messages.at(-1)).toMatchObject({
+        role: 'assistant',
+        content: 'partial response before switching\n\n[未完成 — 切换会话中断]',
+      });
+      expect(ctx.messages.at(-1)?.content).toMatch(/\[未完成 — 切换会话中断\]$/u);
+      expect(persistMessage).toHaveBeenCalledWith(ctx.messages.at(-1));
+      expect(ctx.turn.lastStreamedContent).toBe('');
+    });
+
     it('persists a cancellation reason marker when a tool-only stream has no text partial', async () => {
       const persistMessage = vi.fn();
       ctx.persistMessage = persistMessage;
@@ -726,6 +762,20 @@ describe('ConversationRuntime', () => {
         role: 'assistant',
         content: '[cancelled]',
       });
+      expect(persistMessage).toHaveBeenCalledWith(ctx.messages.at(-1));
+    });
+
+    it('persists the session-switch marker for an unsettled tool-only stream', async () => {
+      const persistMessage = vi.fn();
+      ctx.persistMessage = persistMessage;
+
+      await runtime.cancel('session-switch');
+
+      expect(ctx.messages.at(-1)).toMatchObject({
+        role: 'assistant',
+        content: '[未完成 — 切换会话中断]',
+      });
+      expect(ctx.messages.at(-1)?.content).toBe('[未完成 — 切换会话中断]');
       expect(persistMessage).toHaveBeenCalledWith(ctx.messages.at(-1));
     });
 
@@ -1502,8 +1552,14 @@ describe('ConversationRuntime', () => {
       const result = await runtime.initializeRun('描述改成专盯 AI 赛道竞品的高级研究员，加 WebFetch。');
 
       expect(result?.isSimpleTask).toBe(false);
-      expect(resolveSkillInvocation).toHaveBeenNthCalledWith(1, '描述改成专盯 AI 赛道竞品的高级研究员，加 WebFetch。', '/tmp/test');
-      expect(resolveSkillInvocation).toHaveBeenNthCalledWith(2, '/edit-role 研究员', '/tmp/test');
+      expect(resolveSkillInvocation).toHaveBeenNthCalledWith(1, '描述改成专盯 AI 赛道竞品的高级研究员，加 WebFetch。', '/tmp/test', {
+        sessionId: 'test-session-1',
+        toolScope: undefined,
+      });
+      expect(resolveSkillInvocation).toHaveBeenNthCalledWith(2, '/edit-role 研究员', '/tmp/test', {
+        sessionId: 'test-session-1',
+        toolScope: undefined,
+      });
       expect(ctx.turn.activeSkillInvocation).toMatchObject({
         skillName: 'edit-role',
         matchKind: 'slash',
@@ -1627,6 +1683,21 @@ describe('ConversationRuntime', () => {
       expect((runtime as any).messageProcessor.handleToolResponse).not.toHaveBeenCalled();
     });
 
+    it('injects the step handoff from the production loop before final inference', async () => {
+      ctx.maxIterations = 5;
+      const seen: number[] = [];
+      modules.contextAssembly.inference.mockImplementation(async () => {
+        const warnings = modules.contextAssembly.injectSystemMessage.mock.calls.filter(
+          (call: unknown[]) => call[1] === 'nudge' && String(call[0]).includes('About 2 steps remain'),
+        );
+        seen.push(warnings.length);
+        ctx.turn.requestReinference();
+        return { type: 'text', content: 'partial' };
+      });
+      await runtime.run('prepare style samples and a presentation');
+      expect(seen).toEqual([0, 0, 1, 1, 1]);
+    });
+
     it('injects the 80 percent resource warning once across repeated iterations', async () => {
       ctx.goalMode = new GoalModeController({ goal: 'finish', verifyCommand: 'true', tokenBudget: 100000, maxTurns: 3 });
       vi.spyOn(ctx.stats, 'totalInputTokens', 'get').mockReturnValue(80000);
@@ -1640,7 +1711,7 @@ describe('ConversationRuntime', () => {
     it('spends only one tool-free inference on budget exhaustion and preserves partial delivery', async () => {
       modules.runFinalizer.checkAndEmitBudgetStatus.mockReturnValue(true);
       modules.contextAssembly.inference.mockImplementation(async () => {
-        expect(ctx.control.forceFinalResponsePrompt).toContain('RESOURCE LIMIT REACHED');
+        expect(ctx.control.forceFinalResponsePrompt).toContain('Resource handoff: Budget exhausted');
         expect(ctx.control.forceFinalResponsePrompt).toContain('remaining tasks');
         return { type: 'text', content: 'Completed: partial work. Remaining: verification. Next: resume later.' };
       });
@@ -1730,7 +1801,7 @@ describe('ConversationRuntime', () => {
       const persistCalls = modules.contextAssembly.addAndPersistMessage.mock.calls as unknown[][];
       const synthesized = persistCalls
         .map((call) => call[0] as { content?: string })
-        .find((message) => message.content?.includes('已达最大执行轮次'));
+        .find((message) => message.content?.includes('这次先做到这里。'));
       expect(synthesized).toBeUndefined();
       expect(modules.runFinalizer.finalizeRun).toHaveBeenCalledWith(
         expect.any(Number),
@@ -1752,7 +1823,7 @@ describe('ConversationRuntime', () => {
         .mockImplementationOnce(async () => {
           // 最后一轮：max-steps 兜底应已激活（禁用工具走 forceFinalResponseReason 通道）
           expect(ctx.control.forceFinalResponseReason).toBeTruthy();
-          expect(ctx.control.forceFinalResponsePrompt).toContain('MAXIMUM STEPS REACHED');
+          expect(ctx.control.forceFinalResponsePrompt).toContain('CURRENT WORK HANDOFF');
           return { type: 'text', content: 'Maximum steps reached. Summary of work done.' };
         });
 
@@ -1843,6 +1914,9 @@ describe('ConversationRuntime', () => {
 
     it('synthesizes a partial-result wrap-up when max iterations ends without any final text (issue #1999)', async () => {
       ctx.maxIterations = 2;
+      ctx.goalTracker.getGoalSummary = vi.fn().mockReturnValue({
+        goal: '汇报演示稿', pending: ['合成八页演示稿', '检查版式'],
+      });
       const mp = (runtime as unknown as {
         messageProcessor: { detectAndForceExecuteTextToolCall: ReturnType<typeof vi.fn> };
       }).messageProcessor;
@@ -1864,17 +1938,19 @@ describe('ConversationRuntime', () => {
       const persistCalls = modules.contextAssembly.addAndPersistMessage.mock.calls as unknown[][];
       const synthesized = persistCalls
         .map((call) => call[0] as { role?: string; content?: string })
-        .find((m) => m.role === 'assistant' && m.content?.includes('已达最大执行轮次'));
+        .find((m) => m.role === 'assistant' && m.content?.includes('这次先做到这里。'));
       expect(synthesized).toBeTruthy();
-      expect(synthesized!.content).toContain('已完成的部分');
-      expect(synthesized!.content).toContain('未完成的部分');
-      expect(synthesized!.content).toContain('为什么停');
-      expect(synthesized!.content).toContain('2 轮');
+      expect(synthesized!.content).toContain('**已完成**');
+      expect(synthesized!.content).toContain('**未完成**');
+      expect(synthesized!.content).toContain('回复「继续」我接着做。');
+      expect(synthesized!.content).not.toMatch(/轮次|步数|迭代|工具|Tools are disabled|maximum steps|max-steps/i);
+      expect(synthesized!.content).toContain('合成八页演示稿');
+      expect(synthesized!.content).toContain('检查版式');
       // 同步上屏：message 事件把保底收尾推给 CLI/renderer
       const messageEvents = (ctx.onEvent as ReturnType<typeof vi.fn>).mock.calls
         .filter((call: unknown[]) => (call[0] as { type?: string }).type === 'message')
         .map((call: unknown[]) => (call[0] as { data?: { content?: string } }).data);
-      expect(messageEvents.some((m) => m?.content?.includes('已达最大执行轮次'))).toBe(true);
+      expect(messageEvents.some((m) => m?.content?.includes('这次先做到这里。'))).toBe(true);
       expect(modules.runFinalizer.finalizeRun).toHaveBeenCalledWith(
         expect.any(Number),
         'long task',
@@ -1906,7 +1982,7 @@ describe('ConversationRuntime', () => {
       const deliveredPersistCalls = modules.contextAssembly.addAndPersistMessage.mock.calls as unknown[][];
       const synthesized = deliveredPersistCalls
         .map((call) => call[0] as { role?: string; content?: string })
-        .find((m) => m.role === 'assistant' && m.content?.includes('已达最大执行轮次'));
+        .find((m) => m.role === 'assistant' && m.content?.includes('这次先做到这里。'));
       expect(synthesized).toBeUndefined();
     });
 
@@ -1937,7 +2013,7 @@ describe('ConversationRuntime', () => {
       const whitespacePersistCalls = modules.contextAssembly.addAndPersistMessage.mock.calls as unknown[][];
       const synthesized = whitespacePersistCalls
         .map((call) => call[0] as { role?: string; content?: string })
-        .find((m) => m.role === 'assistant' && m.content?.includes('已达最大执行轮次'));
+        .find((m) => m.role === 'assistant' && m.content?.includes('这次先做到这里。'));
       expect(synthesized).toBeTruthy();
     });
 
@@ -1966,7 +2042,7 @@ describe('ConversationRuntime', () => {
       const historyPersistCalls = modules.contextAssembly.addAndPersistMessage.mock.calls as unknown[][];
       const synthesized = historyPersistCalls
         .map((call) => call[0] as { role?: string; content?: string })
-        .find((m) => m.role === 'assistant' && m.content?.includes('已达最大执行轮次'));
+        .find((m) => m.role === 'assistant' && m.content?.includes('这次先做到这里。'));
       expect(synthesized).toBeTruthy();
       expect(synthesized!.content).not.toContain('上一轮任务的旧答案');
       expect(synthesized!.content).toContain('没有留下可见产出');
@@ -1999,7 +2075,7 @@ describe('ConversationRuntime', () => {
       const crossRunPersistCalls = modules.contextAssembly.addAndPersistMessage.mock.calls as unknown[][];
       const synthesized = crossRunPersistCalls
         .map((call) => call[0] as { role?: string; content?: string })
-        .find((m) => m.role === 'assistant' && m.content?.includes('已达最大执行轮次'));
+        .find((m) => m.role === 'assistant' && m.content?.includes('这次先做到这里。'));
       expect(synthesized).toBeTruthy();
       expect(synthesized!.content).not.toContain('old-run-a.ts');
       expect(getModifiedFilesSince).toHaveBeenCalledWith(ctx.stats.runStartTime);
@@ -2031,7 +2107,7 @@ describe('ConversationRuntime', () => {
       const abortedPersistCalls = modules.contextAssembly.addAndPersistMessage.mock.calls as unknown[][];
       const synthesized = abortedPersistCalls
         .map((call) => call[0] as { role?: string; content?: string })
-        .find((m) => m.role === 'assistant' && m.content?.includes('已达最大执行轮次'));
+        .find((m) => m.role === 'assistant' && m.content?.includes('这次先做到这里。'));
       expect(synthesized).toBeTruthy();
       expect(modules.runFinalizer.finalizeRun).toHaveBeenCalledWith(
         expect.any(Number),
@@ -2068,7 +2144,7 @@ describe('ConversationRuntime', () => {
       const goalMetPersistCalls = modules.contextAssembly.addAndPersistMessage.mock.calls as unknown[][];
       const synthesized = goalMetPersistCalls
         .map((call) => call[0] as { role?: string; content?: string })
-        .find((m) => m.role === 'assistant' && m.content?.includes('已达最大执行轮次'));
+        .find((m) => m.role === 'assistant' && m.content?.includes('这次先做到这里。'));
       expect(synthesized).toBeTruthy();
     });
 
@@ -2121,6 +2197,10 @@ describe('ConversationRuntime', () => {
         expect.anything(),
         expect.any(Number),
         expect.objectContaining({ status: 'aborted' }),
+      );
+      // 卡死 stop 后聊天里要有一句人话（无界面 / 无人值守原本静默）
+      expect(modules.contextAssembly.addAndPersistMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ role: 'assistant', content: expect.stringContaining('重复同一个步骤') }),
       );
     });
 

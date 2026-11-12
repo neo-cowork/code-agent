@@ -40,13 +40,14 @@ export const CronReviewDigest: React.FC<{
   const { t } = useI18n();
   const cc = t.cronCenter;
   const artifacts = storedArtifacts(digest);
-  const summary = visibleSummary(digest.summaryLine);
+  const summary = visibleSummary(digest.summaryText ?? digest.summaryLine);
+  const [summaryOpen, setSummaryOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const label = cc.inboxDigestArtifacts.replace('{count}', String(digest.artifactCount));
 
   return (
     <div data-testid="automation-review-digest">
-      <div className="flex min-w-0 items-center gap-1.5 text-[11px] text-zinc-500">
+      <div className="flex min-w-0 items-start gap-1.5 text-[11px] text-zinc-500">
         {artifacts.length > 0 ? (
           <GhostButton
             type="button"
@@ -63,7 +64,19 @@ export const CronReviewDigest: React.FC<{
           <span className="shrink-0">{label}</span>
         )}
         {summary && (
-          <span className="min-w-0 truncate">· {summary}</span>
+          <div className="min-w-0 flex-1">
+            <p data-testid="automation-review-summary" className={`whitespace-pre-wrap break-words ${summaryOpen ? '' : 'line-clamp-2'}`}>· {summary}</p>
+            <GhostButton
+              type="button"
+              size="sm"
+              data-testid="automation-review-summary-toggle"
+              aria-expanded={summaryOpen}
+              onClick={() => setSummaryOpen((value) => !value)}
+              className="h-auto px-1 py-0 text-[11px]"
+            >
+              {summaryOpen ? cc.inboxDigestCollapse : cc.inboxDigestExpand}
+            </GhostButton>
+          </div>
         )}
         {trailing}
       </div>

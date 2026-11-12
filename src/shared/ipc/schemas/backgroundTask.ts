@@ -29,6 +29,7 @@ const TaskNotificationTypeSchema = z.enum([
   'task_updated',
   'task_completed',
   'task_failed',
+  'task_cancelled',
   'output_added',
   'custom',
 ]);
@@ -177,7 +178,14 @@ const MarkNotificationDeliveredRequestSchema = z.object({
   requestId: z.string().optional(),
 });
 
+const DismissTerminalTasksRequestSchema = z.object({
+  action: z.literal('dismissTerminalTasks'),
+  payload: z.object({ sessionId: z.string().min(1) }).strict(),
+  requestId: z.string().optional(),
+});
+
 const BackgroundTaskRequestSchema = z.discriminatedUnion('action', [
+  DismissTerminalTasksRequestSchema,
   ListTasksRequestSchema,
   GetTaskRequestSchema,
   ReadTaskLogRequestSchema,
@@ -196,7 +204,10 @@ const ReadTaskLogResponseSchema = IPCResponseSchema(TaskLogReadResultSchema);
 const DrainNotificationsResponseSchema = IPCResponseSchema(z.array(TaskNotificationSchema));
 const MarkNotificationDeliveredResponseSchema = IPCResponseSchema(TaskNotificationSchema.nullable());
 
+const DismissTerminalTasksResponseSchema = IPCResponseSchema(z.array(z.string()));
+
 const BackgroundTaskResponseSchema = z.union([
+  DismissTerminalTasksResponseSchema,
   ListTasksResponseSchema,
   GetTaskResponseSchema,
   ReadTaskLogResponseSchema,
@@ -224,6 +235,11 @@ export const BackgroundTaskSchemas = {
     channel: IPC_DOMAINS.BACKGROUND_TASKS,
     payload: ReadTaskLogRequestSchema,
     response: ReadTaskLogResponseSchema,
+  }),
+  DISMISS_TERMINAL_TASKS: channelSchema({
+    channel: IPC_DOMAINS.BACKGROUND_TASKS,
+    payload: DismissTerminalTasksRequestSchema,
+    response: DismissTerminalTasksResponseSchema,
   }),
   DRAIN_NOTIFICATIONS: channelSchema({
     channel: IPC_DOMAINS.BACKGROUND_TASKS,

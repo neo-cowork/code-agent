@@ -27,6 +27,7 @@ import type {
   ConversationExecutionIntent,
   WorkbenchToolScope,
 } from '@shared/contract/conversationEnvelope';
+import type { PermissionApprovalSource } from '@shared/contract/permission';
 import type { SwarmRunScope } from '@shared/contract/swarm';
 import type { WorkspaceScope } from '@shared/contract/project';
 import type { AgentEvent } from './events';
@@ -232,6 +233,8 @@ export interface ToolContext {
   readonly skillDiscoveryService?: unknown;
   /** Opaque run-scoped telemetry owner for spawned agents. */
   readonly telemetryCollector?: unknown;
+  /** Approved Neo Tag / external-trigger context; authoring tools must fail closed when present. */
+  readonly neoTag?: import('../../shared/contract/tag').NeoTagRunContext;
 
   /** 轻量 logger 接口，不耦合 services/infra/logger 实现 */
   readonly logger: Logger;
@@ -337,6 +340,8 @@ export interface ToolContext {
   readonly executionIntent?: ConversationExecutionIntent;
   /** Run-scoped trace context, injected by the dispatch boundary. */
   readonly traceContext?: unknown;
+  /** One literal file grant minted by ToolExecutor for an approved single-file rm. */
+  readonly approvedSandboxWriteFile?: string;
   /** ToolExecutor 针对本次记忆目录写入签发的一次性授权。 */
   readonly directiveMemoryWriteGrant?: DirectiveMemoryWriteGrant;
 }
@@ -402,6 +407,8 @@ export interface CanUseToolRequestHint {
   readonly reason?: string;
   readonly dangerLevel?: 'normal' | 'warning' | 'danger';
   readonly decisionTrace?: unknown;
+  /** True when a child ToolExecutor records its own ledger row for this forwarded ask. */
+  readonly ledgerRecordedByChild?: boolean;
 }
 
 export type CanUseToolFn = (
@@ -412,7 +419,7 @@ export type CanUseToolFn = (
 ) => Promise<CanUseToolResult>;
 
 export type CanUseToolResult =
-  | { allow: true }
+  | { allow: true; approvalSource?: PermissionApprovalSource }
   | { allow: false; reason: string };
 
 // ----------------------------------------------------------------------------

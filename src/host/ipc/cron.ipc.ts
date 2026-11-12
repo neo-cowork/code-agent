@@ -1,3 +1,4 @@
+import { normalizePersonalSkillIds } from '../../shared/cronPersonalSkills';
 // ============================================================================
 // Cron IPC Handlers
 // ============================================================================
@@ -8,8 +9,11 @@ import type { RawDomainRouteHandlers } from '../../shared/ipc/domainRoutes';
 import { CronSchemas, type CronDomainRequest } from '../../shared/ipc/schemas/cron';
 import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import { getCronService } from '../cron/cronService';
+import { parkedSiblingsCoveredByGrant } from '../cron/cronWriteGrant';
+import { CRON_CLOUD_NOT_CONFIGURED } from '../../shared/constants/cronErrors';
 import { CloudNotConfiguredError } from '../cron/cronCloudErrors';
 import { getConnectorRegistry } from '../connectors/registry';
+import { isAppleEventsDenied } from '../connectors/native/osascript';
 import { ModelRouter } from '../model/modelRouter';
 import { createLogger } from '../services/infra/logger';
 import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
@@ -53,6 +57,9 @@ function getCreateCronJobPayload(source: unknown): CreateCronJobPayload {
   if (!isRecord(source)) throw new Error('Invalid cron job payload');
   // runCount 是只读结算字段（contract/cron.ts）：外部传入一律丢弃，不许借创建重置计数。
   const { runCount: _droppedRunCount, ...payload } = source;
+  if (isRecord(payload.action) && payload.action.type === 'agent') {
+    payload.action = { ...payload.action, allowedPersonalSkillIds: normalizePersonalSkillIds(payload.action.allowedPersonalSkillIds) };
+  }
   return payload as unknown as CreateCronJobPayload;
 }
 
@@ -63,6 +70,9 @@ function getUpdateCronJobRequest(source: unknown): { jobId: string; updates: Upd
   if (!jobId || !isRecord(updates)) throw new Error('Invalid cron job update payload');
   // 同上：外部不许借更新改写 runCount；内部结算走 CronService 自己的窄写通道。
   const { runCount: _droppedRunCount, ...restUpdates } = updates;
+  if (isRecord(restUpdates.action) && restUpdates.action.type === 'agent') {
+    restUpdates.action = { ...restUpdates.action, allowedPersonalSkillIds: normalizePersonalSkillIds(restUpdates.action.allowedPersonalSkillIds) };
+  }
   return { jobId, updates: restUpdates as unknown as UpdateCronJobPayload };
 }
 
@@ -70,7 +80,10 @@ function getUpdateCronJobRequest(source: unknown): { jobId: string; updates: Upd
  * 列出 mail 触发源可绑定的账号与邮箱（N-TRIGGER-MAIL-CREATE-ENTRY-K1）。失败分类
  * 与 cronMailPoller 的 createDefaultMailReader 同构：未注册（设置里没启用）=
  * connector-not-enabled；探测不过（未授权/授权被拒）= not-authorized；readiness
- * unavailable（非 macOS）= unsupported-platform；list_accounts 抛错 = read-error。
+ * unavailable（非 macOS）= unsupported-platform；list_accounts 抛错 = read-error，
+ * 但错误内容是 Apple Events 授权被拒（-1743）时归 not-authorized——缓存 readiness
+ * 已 ready（早前探测通过、授权后被撤销且不失效）或其它路径先到 list_accounts 时，
+ * -1743 只会在这里出现，按错误内容分类才能覆盖（FB-541）。
  * readiness 非 ready 时先补一次 probe_access（重启后 readiness 回 unchecked，已授权
  * 用户不该被逼去设置再点一次）。每个非 ok 分支都带 reason 记日志（降级留痕）。
  */
@@ -112,8 +125,11 @@ async function listMailSources(): Promise<CronMailSourcesResult> {
           .map((item) => item.name);
         mailboxesByAccount[account.name] = mailboxes;
       } catch (error) {
-        // 单账户邮箱列举失败不拖死整个目录：该账户降级为空列表（UI 回落默认 INBOX），
-        // 其余账户照常；失败原因记日志可区分。
+        // 授权被拒（-1743）是整体授权状态变化（用户撤销了自动化授权），不是单
+        // 账户的目录问题：rethrow 让整个调用落进下面的 not-authorized 分支，而
+        // 不是把该账户降级成空列表让用户以为没有邮箱。其余错误照旧单账户降级：
+        // 该账户回落空列表（UI 回落默认 INBOX），其余账户照常，失败记日志可区分。
+        if (isAppleEventsDenied(error)) throw error;
         const detail = error instanceof Error ? error.message : String(error);
         logger.warn(`listMailSources mailbox listing failed for account ${account.name}: ${detail}`);
         mailboxesByAccount[account.name] = [];
@@ -122,6 +138,12 @@ async function listMailSources(): Promise<CronMailSourcesResult> {
     return { ok: true, accounts, mailboxesByAccount };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
+    // -1743（Apple Events 授权被拒）从 read-error 里细分出来：渲染层对
+    // not-authorized 给「去设置」，对 read-error 只给永远无效的重试。
+    if (isAppleEventsDenied(error)) {
+      logger.warn(`listMailSources unavailable (reason: not-authorized): ${detail}`);
+      return { ok: false, reason: 'not-authorized', detail };
+    }
     logger.warn(`listMailSources unavailable (reason: read-error): ${detail}`);
     return { ok: false, reason: 'read-error', detail };
   }
@@ -145,7 +167,7 @@ async function runWebhookHookAction(operation: 'register' | 'rotate', payload: u
     logger.warn(`Cron webhook hook ${operation} failed for job ${jobId}: ${message}`);
     return {
       success: false,
-      error: { code: error instanceof CloudNotConfiguredError ? 'CRON_CLOUD_NOT_CONFIGURED' : 'CRON_ERROR', message },
+      error: { code: error instanceof CloudNotConfiguredError ? CRON_CLOUD_NOT_CONFIGURED : 'CRON_ERROR', message },
     };
   }
 }
@@ -244,6 +266,51 @@ const cronHandlers: RawDomainRouteHandlers<CronDomainRequest, void> = {
     const job = await cronService.grantLoginPassThrough(jobId, siteOrigin);
     return { success: true, data: job } satisfies IPCResponse;
   },
+  // N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1：写授权是用户在任务详情面板的显式同意
+  // 动作（同 grantLoginPassThrough 的先例），文件夹解析在 cronWriteGrant.ts。
+  grantWriteScope: async (_ctx, payload) => {
+    const cronService = getCronService();
+    const jobId = getStringField(payload, 'jobId');
+    if (!jobId) throw new Error('Invalid cron job id');
+    const job = await cronService.grantWriteScope(jobId);
+    return { success: true, data: job } satisfies IPCResponse;
+  },
+  // 审批卡「一键允许此任务写这个文件夹」：授权 + 放行当前停车请求（专用动作，文件夹 host 侧重推导）。
+  grantWriteFolderFromParkedApproval: async (_ctx, payload) => {
+    const requestId = getStringField(payload, 'requestId');
+    if (!requestId) throw new Error('Invalid parked approval request id');
+    const { getDatabase } = await import('../services/core/databaseService');
+    const repo = getDatabase().getPendingApprovalRepo();
+    const grant = await getCronService().grantWriteFolderFromParkedApproval(requestId, (id) => repo.getById(id));
+    if (grant.status === 'rejected') {
+      logger.warn('Parked write folder grant rejected', { requestId, reason: grant.reason });
+      return { success: true, data: { grant, released: false } } satisfies IPCResponse;
+    }
+    const sessionId = getStringField(JSON.parse(repo.getById(requestId)?.payloadJson ?? '{}'), 'sessionId');
+    const { getTaskManager } = await import('../task/TaskManager');
+    const outcome = sessionId
+      ? getTaskManager().handlePermissionResponse(sessionId, requestId, 'allow')
+      : 'no_session';
+    // 同一轮并行发出、已先停车的兄弟写请求：授权范围内的一并放行（范围外的仍等人逐个批）。
+    // 仅 granted：kept_existing 时没有落库新授权，兄弟请求不在授权范围内，只放行被点的这一条。
+    const siblings = sessionId && grant.status === 'granted'
+      ? parkedSiblingsCoveredByGrant(repo.listByKindAndStatus('tool_approval', 'pending'), sessionId, grant.folder, requestId)
+      : [];
+    for (const siblingId of siblings) {
+      if (sessionId) getTaskManager().handlePermissionResponse(sessionId, siblingId, 'allow');
+    }
+    logger.info('Parked write folder grant applied, request released', {
+      requestId, status: grant.status, folder: grant.folder, jobId: grant.jobId, outcome, siblingsReleased: siblings.length,
+    });
+    return { success: true, data: { grant, released: outcome === 'delivered' } } satisfies IPCResponse;
+  },
+  revokeWriteScope: async (_ctx, payload) => {
+    const cronService = getCronService();
+    const jobId = getStringField(payload, 'jobId');
+    if (!jobId) throw new Error('Invalid cron job id');
+    const job = await cronService.revokeWriteScope(jobId);
+    return { success: true, data: job } satisfies IPCResponse;
+  },
   deleteJob: async (_ctx, payload) => {
     const cronService = getCronService();
     const jobId = getStringField(payload, 'jobId');
@@ -338,7 +405,7 @@ const cronRoutes = defineDomainRoutes<CronDomainRequest, void>(CronSchemas.REQUE
   unknownActionMessage: (action) => `Unknown cron action: ${String(action)}`,
   mapError: (error) => {
     logger.error('Cron IPC error:', error);
-    return { code: 'CRON_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
+    return { code: error instanceof CloudNotConfiguredError ? CRON_CLOUD_NOT_CONFIGURED : 'CRON_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
   },
 });
 

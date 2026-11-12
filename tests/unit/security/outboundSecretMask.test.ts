@@ -17,6 +17,10 @@ import { applyOutboundSecretMask } from '../../../src/host/security/outboundSecr
 import type { ModelMessage, ModelResponse, StreamChunk } from '../../../src/host/model/types';
 
 const PLACEHOLDER_RE = /\{\{SECRET_[A-Z0-9_]+_[0-9a-f]{8}\}\}/;
+const fakeGoogleApiKey = ['AIza', 'SyA1234567890BCDEFGh'].join('');
+const fakeSlackBotToken = ['xoxb', '1234567890abcdefXYZ'].join('-');
+const fakeSlackAppToken = ['xapp', '1-A123-456-789'].join('-');
+const fakeAwsAccessKey = ['AKIA', 'ABCDEFGHIJKLMNOP'].join('');
 
 function maskOn(): void {
   maskSettingsState.settings = { privacy: { outboundSecretMask: true } };
@@ -67,7 +71,7 @@ describe('outboundSecretMask ① 各密钥种类正例', () => {
 
   const cases: Array<{ kind: string; text: string; secret: string }> = [
     { kind: 'openai-key', text: 'key is sk-Abc123defGHI789xyz ok', secret: 'Abc123defGHI789xyz' },
-    { kind: 'google-api-key', text: 'gcp AIzaSyA1234567890BCDEFGh end', secret: 'AIzaSyA1234567890BCDEFGh' },
+    { kind: 'google-api-key', text: `gcp ${fakeGoogleApiKey} end`, secret: fakeGoogleApiKey },
     { kind: 'ak-prefixed-key', text: 'longcat ak_Abcdefghij1234567890 here', secret: 'ak_Abcdefghij1234567890' },
     { kind: 'github-ghp-token', text: 'git ghp_Abcdefghij1234567890 done', secret: 'ghp_Abcdefghij1234567890' },
     { kind: 'github-gho-token', text: 'oauth gho_Abcdefghij1234567890 done', secret: 'gho_Abcdefghij1234567890' },
@@ -76,9 +80,9 @@ describe('outboundSecretMask ① 各密钥种类正例', () => {
       text: `pat github_pat_${'A1b2C3d4E5'.repeat(9)} done`,
       secret: `github_pat_${'A1b2C3d4E5'.repeat(9)}`,
     },
-    { kind: 'slack-xox-token', text: 'slack xoxb-1234567890abcdefXYZ here', secret: 'xoxb-1234567890abcdefXYZ' },
-    { kind: 'slack-xapp-token', text: 'slack xapp-1-A123-456-789 here', secret: 'xapp-1-A123-456-789' },
-    { kind: 'aws-access-key-id', text: 'aws AKIAABCDEFGHIJKLMNOP here', secret: 'AKIAABCDEFGHIJKLMNOP' },
+    { kind: 'slack-xox-token', text: `slack ${fakeSlackBotToken} here`, secret: fakeSlackBotToken },
+    { kind: 'slack-xapp-token', text: `slack ${fakeSlackAppToken} here`, secret: fakeSlackAppToken },
+    { kind: 'aws-access-key-id', text: `aws ${fakeAwsAccessKey} here`, secret: fakeAwsAccessKey },
     { kind: 'url-basic-auth', text: 'fetch https://user:passw0rd123@example.com/x now', secret: 'user:passw0rd123' },
     { kind: 'cookie-header', text: 'Cookie: sessionid=abcdef123456 tail', secret: 'sessionid=abcdef123456' },
     { kind: 'session-cookie-assignment', text: 'session_cookie=abc123def456 end', secret: 'abc123def456' },
@@ -129,7 +133,17 @@ describe('outboundSecretMask ① 负例（不该掩的别动）', () => {
   beforeEach(maskOn);
 
   it.each([
-    ['bearer（medium confidence 不在本 cut）', 'Authorization: Bearer abcdefgh12345678'],
+    ['bearer 短令牌（<20 字符）', 'Authorization: Bearer abcdefgh12345678'],
+    ['bearer 散文', 'Bearer authentication scheme is described in RFC 6750'],
+    ['bearer 长但无数字', 'Authorization: Bearer abcdefghijklmnopqrstuvwxyz'],
+    ['bearer 小写（区分大小写）', 'authorization: bearer abcdefghij0123456789klmn'],
+    ['13 位时间戳', 'created at 1700000000000 ms'],
+    ['Luhn 不合规的 16 位', 'card 4111 1111 1111 1112'],
+    ['更长数字串里嵌着 Luhn 合规号', 'id 94111111111111111 end'],
+    ['数字紧贴字母', 'order A4111111111111111'],
+    ['UUID 尾段', 'surface_11111111-2222-3333-4444-555555555555'],
+    ['小数点相邻', 'ratio 0.4111111111111111'],
+    ['Luhn 合规但无已知发卡段', 'ref 9999999999999995'],
     ['MAX_TOKENS 数字赋值', 'MAX_TOKENS = 128000'],
     ['普通 token 变量名', 'const token = userToken;'],
     ['占位符值', 'MY_API_KEY=your-api-key-here'],
@@ -178,14 +192,14 @@ describe('outboundSecretMask ① 同值同占位符 / 跨请求稳定', () => {
       '# my env',
       'ZHIPU_API_KEY=abcd1234efgh5678',
       'GITHUB_TOKEN=ghp_Abcdefghij1234567890',
-      'AWS_KEY=AKIAABCDEFGHIJKLMNOP',
+      `AWS_KEY=${fakeAwsAccessKey}`,
       '',
     ].join('\n');
     const masked = applyOutboundSecretMask([{ role: 'user', content: envFile }])!.messages[0].content as string;
     expect(masked).toContain('# my env');
     expect(masked).not.toContain('abcd1234efgh5678');
     expect(masked).not.toContain('ghp_Abcdefghij1234567890');
-    expect(masked).not.toContain('AKIAABCDEFGHIJKLMNOP');
+    expect(masked).not.toContain(fakeAwsAccessKey);
   });
 });
 
@@ -203,14 +217,15 @@ describe('outboundSecretMask ② 还原', () => {
   });
 
   it.each([
-    ['sk-', 'https://api.example.com/v1?api_key=sk-Abc123defGHI789xyz&x=1'],
-    ['AIza', 'https://maps.example.com/v1?key=1&token=AIzaSyA1234567890abcdefghijklmnopqrstuv'],
-  ])('嵌套命中（%s 前缀规则 + url-query-token）：回包不留内层占位符', async (_label, url) => {
+    ['sk-', 'https://api.example.com/v1?api_key=sk-Abc123defGHI789xyz&x=1', 'Abc123defGHI789xyz'],
+    ['AIza', `https://maps.example.com/v1?key=1&token=${fakeGoogleApiKey}abcdefghijklmnopqrstuv`, fakeGoogleApiKey],
+  ])('嵌套命中（%s 前缀规则 + url-query-token）：回包不留内层占位符', async (_label, url, secret) => {
     maskOn();
     const s = applyOutboundSecretMask([{ role: 'user', content: `curl "${url}"` }]);
     const masked = s!.messages[0].content as string;
-    expect(masked).not.toContain('Abc123defGHI789xyz');
-    expect(masked).not.toContain('1234567890abcdefghijklmnopqrstuv');
+    expect(masked).toMatch(PLACEHOLDER_RE);
+    expect(masked).not.toContain(secret);
+    expect(masked).not.toContain(url.split('token=')[1] ?? secret);
     const text = s!.restore({ type: 'text', content: masked });
     expect(text.content).toBe(`curl "${url}"`);
     const obj = s!.restore({
@@ -445,5 +460,181 @@ describe('outboundSecretMask 开关与 fail-closed', () => {
       },
     });
     expect(() => s.restore(evilResponse)).toThrow(/OUTBOUND_SECRET_MASK_RESTORE_FAILED/);
+  });
+});
+
+
+describe('outboundSecretMask FU1 BEARER / CARD', () => {
+  beforeEach(maskOn);
+
+  const TOKEN = 'eyJhbGciOiJIUzI1NiJ9abcd1234efgh5678';
+  const CARD = '4111 1111 1111 1111';
+
+  it('bearer：只掩令牌，Bearer 前缀留明文', () => {
+    const { masked } = maskOne(`Authorization: Bearer ${TOKEN.replace('eyJ', 'zzz')}`);
+    expect(masked).toMatch(/^Authorization: Bearer \{\{SECRET_BEARER_TOKEN_[0-9a-f]{8}\}\}$/);
+  });
+
+  it.each([
+    ['visa 空格分组', '4111 1111 1111 1111'],
+    ['visa 连续', '4111111111111111'],
+    ['visa 短横', '4111-1111-1111-1111'],
+    ['mastercard 5xxx', '5555 5555 5555 4444'],
+    ['mastercard 2-series', '2223003122003222'],
+    ['amex', '378282246310005'],
+    ['discover', '6011111111111117'],
+  ])('card %s 被掩且可原样还原', (_n, card) => {
+    const { masked, placeholder } = maskOne(`pay ${card}, thanks`);
+    expect(placeholder).toMatch(/^\{\{SECRET_CARD_NUMBER_[0-9a-f]{8}\}\}$/);
+    expect(masked).toBe(`pay ${placeholder}, thanks`);
+    const restored = session().restore({ content: masked } as ModelResponse);
+    expect(restored.content).toBe(`pay ${card}, thanks`);
+  });
+
+  it('句末句号不阻止卡号命中', () => {
+    const { masked } = maskOne('my card is 4111111111111111.');
+    expect(masked).toMatch(/^my card is \{\{SECRET_CARD_NUMBER_[0-9a-f]{8}\}\}\.$/);
+  });
+
+  it('同值跨请求同占位符（bearer 与 card）', () => {
+    const t1 = maskOne(`Bearer ${TOKEN}`);
+    const t2 = maskOne(`x Bearer ${TOKEN} y`);
+    expect(t2.placeholder).toBe(t1.placeholder);
+    const c1 = maskOne(`card ${CARD}`);
+    const c2 = maskOne(`${CARD} again`);
+    expect(c2.placeholder).toBe(c1.placeholder);
+  });
+
+  it('混合日志：两种都掩，周边订单号/时间戳不动，入参不被改', () => {
+    const text = `ts=1700000000000 order=20261102123456\nAuthorization: Bearer ${TOKEN}\ncard ${CARD}`;
+    const input: ModelMessage[] = [{ role: 'user', content: text }];
+    const snapshot = JSON.stringify(input);
+    const s = applyOutboundSecretMask(input)!;
+    const out = s.messages[0].content as string;
+    expect(JSON.stringify(input)).toBe(snapshot);
+    expect(out).not.toContain(TOKEN);
+    expect(out).not.toContain(CARD);
+    expect(out).toContain('ts=1700000000000 order=20261102123456');
+    expect(s.restore({ content: out } as ModelResponse).content).toBe(text);
+  });
+
+  it.each([2, 3])('卡号占位符被流式切成 %i 片仍还原', async (pieces) => {
+    const { masked } = maskOne(`card ${CARD} ok`);
+    const sink = collector();
+    const s = applyOutboundSecretMask([{ role: 'user', content: 'x' }], sink.onStream)!;
+    const size = Math.ceil(masked.length / pieces);
+    for (let i = 0; i < masked.length; i += size) {
+      await s.onStream!({ type: 'text', content: masked.slice(i, i + size) });
+    }
+    await s.onStream!({ type: 'complete' } as StreamChunk);
+    expect(joinedText(sink.chunks)).toBe(`card ${CARD} ok`);
+  });
+});
+
+describe('outboundSecretMask FU2 EMAIL', () => {
+  beforeEach(maskOn);
+
+  const EMAIL_PH = /\{\{SECRET_EMAIL_[0-9a-f]{8}\}\}/;
+  const masks = (text: string): string => {
+    const s = applyOutboundSecretMask([{ role: 'user', content: text }])!;
+    return s.messages[0].content as string;
+  };
+
+  it.each([
+    ['fastmail', 'rina.k@fastmail.com'],
+    ['multi-label tld', 'ops@corp.example.co.uk'],
+    ['.local', 'admin@build.local'],
+    ['two-label internal', 'ops@mail.corp'],
+    ['mixed case', 'j@Gmail.COM'],
+    ['plus tag', 'rina+tag@fastmail.com'],
+    ['gitte 不是 git@', 'gitte@fastmail.com'],
+    ['github 不是 git@', 'github@acme-corp.com'],
+  ])('mask: %s', (_n, email) => {
+    const out = masks(`mail ${email} now`);
+    expect(out).toMatch(new RegExp(`^mail ${EMAIL_PH.source} now$`));
+    expect(out).not.toContain(email);
+    expect(session().restore({ content: out } as ModelResponse).content).toBe(`mail ${email} now`);
+  });
+
+  it('Magpie：句末句号不阻止命中', () => {
+    expect(masks('email address is jo@quill.dev.')).toMatch(new RegExp(`^email address is ${EMAIL_PH.source}\\.$`));
+  });
+
+  it.each([
+    ['example.com 文档示例', 'user@example.com'],
+    ['example.org 子域', 'a@mail.example.org'],
+    ['.example', 'a@host.example'],
+    ['.test', 'a@foo.test'],
+    ['.invalid', 'a@foo.invalid'],
+    ['.localhost', 'a@app.localhost'],
+    ['user@example 无 TLD', 'user@example'],
+    ['Magpie：pytest.fixture', 'x@pytest.fixture'],
+    ['Magpie：follow docs@AGENTS.md', 'follow docs@AGENTS.md'],
+    ['Magpie：functools.cache', 'obj@functools.cache'],
+    ['Magpie：git@github.com SSH 远程', 'git@github.com:o/r.git'],
+    ['Magpie：logo@2x.png', 'logo@2x.png'],
+    ['Magpie：261020_14-16-11@2x.jpg', '261020_14-16-11@2x.jpg'],
+    ['@decorator', '@dataclass\nclass A: pass'],
+    ['@scope 包名', 'npm i @types/node @scope/pkg'],
+    ['pkg@1.2.3', 'npm i react@18.3.1 pkg@1.2.3'],
+  ])('不掩：%s', (_n, text) => {
+    expect(masks(text)).toBe(text);
+  });
+
+  it('URL userinfo 不留半掩残渣：凭据规则先走，邮箱规则不再插手', () => {
+    const out = masks('clone https://deploy:Xk9Qm2Zp7Rw4Tn8Vb3@repo.acme-corp.com/x.git now');
+    expect(out).not.toContain('Xk9Qm2Zp7Rw4Tn8Vb3');
+    expect(out).toMatch(/^clone https:\/\/\{\{SECRET_BASIC_AUTH_[0-9a-f]{8}\}\}@repo\.acme-corp\.com\/x\.git now$/);
+    expect(out).not.toMatch(/\{\{SECRET_EMAIL_/);
+    const plain = masks('open https://user:pw@host.com/path');
+    expect(plain).toMatch(/^open https:\/\/\{\{SECRET_BASIC_AUTH_[0-9a-f]{8}\}\}@host\.com\/path$/);
+  });
+
+  it('占位符稳定：同地址同占位符，不同地址不同占位符', () => {
+    const a1 = maskOne('x rina.k@fastmail.com');
+    const a2 = maskOne('rina.k@fastmail.com again');
+    const b = maskOne('x rina.j@fastmail.com');
+    expect(a2.placeholder).toBe(a1.placeholder);
+    expect(b.placeholder).not.toBe(a1.placeholder);
+    expect(a1.placeholder).toMatch(/^\{\{SECRET_EMAIL_[0-9a-f]{8}\}\}$/);
+  });
+
+  it('JSON 工具参数还原：含 + 与引号的文本往返仍是合法 JSON', () => {
+    const email = 'rina+k@fastmail.com';
+    const args = JSON.stringify({ to: email, note: `say "hi" to ${email}` });
+    const input: ModelMessage[] = [{ role: 'assistant', content: '', toolCalls: [{ id: 't1', name: 'send', arguments: args }] }];
+    const s = applyOutboundSecretMask(input)!;
+    const maskedArgs = s.messages[0].toolCalls![0].arguments;
+    expect(maskedArgs).not.toContain(email);
+    const restored = s.restore({
+      type: 'tool_use',
+      toolCalls: [{ id: 't1', name: 'send', arguments: JSON.parse(maskedArgs) as Record<string, unknown> }],
+    });
+    expect(restored.toolCalls![0].arguments).toEqual({ to: email, note: `say "hi" to ${email}` });
+  });
+
+  it.each([2, 3])('邮箱占位符被流式切成 %i 片仍还原', async (pieces) => {
+    const { masked } = maskOne('mail rina.k@fastmail.com ok');
+    const sink = collector();
+    const s = applyOutboundSecretMask([{ role: 'user', content: 'x' }], sink.onStream)!;
+    const size = Math.ceil(masked.length / pieces);
+    for (let i = 0; i < masked.length; i += size) {
+      await s.onStream!({ type: 'text', content: masked.slice(i, i + size) });
+    }
+    await s.onStream!({ type: 'complete' } as StreamChunk);
+    expect(joinedText(sink.chunks)).toBe('mail rina.k@fastmail.com ok');
+  });
+
+  it('JSON 文本 arguments 里 \\n/\\t 转义后的邮箱：转义保持合法，JSON 仍可解析且往返一致', () => {
+    const email = 'rina@fastmail.com';
+    const args = JSON.stringify({ text: `line1\n${email}\t${email}` });
+    const s = applyOutboundSecretMask([{ role: 'assistant', content: '', toolCalls: [{ id: 't1', name: 'send', arguments: args }] }])!;
+    const maskedArgs = s.messages[0].toolCalls![0].arguments;
+    expect(maskedArgs).not.toContain(email);
+    expect(maskedArgs).not.toContain('\\{');
+    const parsed = JSON.parse(maskedArgs) as { text: string };
+    expect(parsed.text).toMatch(/^line1\n\{\{SECRET_EMAIL_[0-9a-f]{8}\}\}\t\{\{SECRET_EMAIL_[0-9a-f]{8}\}\}$/);
+    const restored = s.restore({ type: 'tool_use', toolCalls: [{ id: 't1', name: 'send', arguments: parsed }] });
+    expect(restored.toolCalls![0].arguments).toEqual({ text: `line1\n${email}\t${email}` });
   });
 });

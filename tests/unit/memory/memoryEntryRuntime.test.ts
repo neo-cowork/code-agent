@@ -10,7 +10,8 @@ const execFileAsync = promisify(execFile);
 
 const mockConfigDir = vi.hoisted(() => ({ dir: '' }));
 
-vi.mock('../../../src/host/config/configPaths', () => ({
+vi.mock('../../../src/host/config/configPaths', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../src/host/config/configPaths')>(),
   getUserConfigDir: () => mockConfigDir.dir,
 }));
 

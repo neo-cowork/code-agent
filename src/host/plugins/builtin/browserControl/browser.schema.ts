@@ -45,6 +45,7 @@ ${browserJevStepDescriptionSuffix()}
 - tabIndex: Tab index for switchTab (OS-level)
 - selector: CSS selector for element interactions (Playwright)
 - text: Text to type or element text to click (Playwright)
+- secretRef: Reference to a secret for type actions (env:CODE_AGENT_BROWSER_SECRET_<NAME>), use instead of text when typing passwords; never put the secret or the reference into text (Playwright)
 - key: Key to press (Playwright)
 - direction: Scroll direction up/down (Playwright)
 - amount: Scroll amount in pixels (Playwright)
@@ -94,18 +95,22 @@ ${browserJevStepDescriptionSuffix()}
         description: '[Playwright] CSS selector for element interactions',
       },
       targetRef: {
-        type: 'object',
-        description: '[Playwright] Fresh target reference returned by get_dom_snapshot',
+        type: ['object', 'string'],
+        description: '[Playwright] Fresh target reference returned by get_dom_snapshot: pass the refId shown at the start of each get_dom_snapshot element line (the targetRef object form is also accepted), e.g. {"action":"click","targetRef":"<refId>"}.',
         additionalProperties: true,
       },
       destinationTargetRef: {
-        type: 'object',
-        description: '[Playwright] Fresh destination target reference for drag',
+        type: ['object', 'string'],
+        description: '[Playwright] Fresh destination target reference for drag (pass the refId from a get_dom_snapshot element line).',
         additionalProperties: true,
       },
       text: {
         type: 'string',
         description: '[Playwright] Text to type or element text to click',
+      },
+      secretRef: {
+        type: 'string',
+        description: 'Reference to a secret value for type actions, e.g. env:CODE_AGENT_BROWSER_SECRET_PASSWORD. Only env variables prefixed CODE_AGENT_BROWSER_SECRET_ are accepted, and each needs a companion <NAME>_ORIGINS variable (comma-separated exact origins such as https://github.com); typing is refused on any other origin. The secret value is never returned in output.',
       },
       clipboardText: {
         type: 'string',
@@ -159,6 +164,10 @@ ${browserJevStepDescriptionSuffix()}
       tabId: {
         type: 'string',
         description: '[Playwright] Target tab ID (optional, uses active tab)',
+      },
+      offset: {
+        type: 'number',
+        description: '[Playwright] get_dom_snapshot only: index of the first interactive element to list (default 0). Use the offset from the "+K more elements" line to page.',
       },
       timeout: {
         type: 'number',

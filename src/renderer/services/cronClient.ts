@@ -18,7 +18,7 @@ export type UpdateCronJobInput = Partial<Omit<CronJobDefinition, 'id' | 'created
 async function invokeCron<T>(action: string, payload?: unknown): Promise<T> {
   const response = await window.domainAPI?.invoke<T>(IPC_DOMAINS.CRON, action, payload);
   if (!response?.success) {
-    throw new Error(response?.error?.message || `cron:${action} failed`);
+    throw new CronHookError(response?.error?.message || `cron:${action} failed`, response?.error?.code);
   }
   return response.data as T;
 }
@@ -29,7 +29,7 @@ export interface CronWebhookHookSecret {
   token: string;
 }
 
-/** hook 注册/轮换失败：code 可区分「云端未配置」，message 为主机原文（不含密钥）。 */
+/** Cron 操作失败：保留主机错误码，供调用方本地化。 */
 export class CronHookError extends Error {
   constructor(message: string, readonly code?: string) {
     super(message);
@@ -84,6 +84,19 @@ export const cronClient = {
 
   grantLoginPassThrough(jobId: string, siteOrigin: string) {
     return invokeCron<CronJobDefinition | null>('grantLoginPassThrough', { jobId, siteOrigin });
+  },
+
+  /** 写授权（任务详情面板一键同意）：host 解析工作文件夹并写入 metadata.writeGrantRoot。 */
+  grantWriteScope(jobId: string) {
+    return invokeCron<CronJobDefinition | null>('grantWriteScope', { jobId });
+  },
+
+  grantWriteFolderFromParkedApproval(requestId: string) {
+    return invokeCron<{ grant: { status: string }; released: boolean }>('grantWriteFolderFromParkedApproval', { requestId });
+  },
+
+  revokeWriteScope(jobId: string) {
+    return invokeCron<CronJobDefinition | null>('revokeWriteScope', { jobId });
   },
 
   triggerJob(jobId: string) {

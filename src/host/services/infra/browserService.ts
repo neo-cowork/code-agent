@@ -21,6 +21,7 @@ import type {
   WorkbenchActionTrace,
 } from '../../../shared/contract/desktop';
 import { IPC_CHANNELS } from '../../../shared/ipc';
+import { BROWSER_TIMEOUTS } from '../../../shared/constants/timeouts';
 import {
   resolveBrowserProvider,
   type BrowserProviderResolution,
@@ -69,6 +70,10 @@ import {
   getBrowserPageHtml,
 } from './browser/pageInspectionHelpers';
 import { BrowserTargetRefRegistry } from './browser/targetRefRegistry';
+import {
+  probeBrowserSubmitClick,
+  type BrowserSubmitClickProbeOutcome,
+} from './browser/browserSubmitClickProbe';
 import {
   dragBrowserTargetRefs,
   captureBrowserDomSnapshot,
@@ -353,14 +358,12 @@ export class BrowserService implements Disposable {
       this.logger.log('DEBUG', `Navigating to: ${summarizeBrowserUrlForLog(url)}`);
       await page.goto(url, { waitUntil: 'domcontentloaded' });
     }
-
     const tab: BrowserTab = {
       id: tabId,
       page,
       url: page.url(),
       title: await page.title(),
     };
-
     this.tabs.set(tabId, tab);
     this.activeTabId = tabId;
 
@@ -575,7 +578,35 @@ export class BrowserService implements Disposable {
   // Page Interaction
   // --------------------------------------------------------------------------
 
-  async click(selector: string, tabId?: string): Promise<void> { await this.getTab(tabId).page.click(selector); }
+  async click(selector: string, tabId?: string, timeout?: number): Promise<void> { await this.getTab(tabId).page.click(selector, { timeout }); }
+
+  async probeSubmitClick(args: Record<string, unknown>): Promise<BrowserSubmitClickProbeOutcome> {
+    try {
+      const tabId = typeof args.tabId === 'string' ? args.tabId : undefined;
+      if (args.targetRef) {
+        const resolved = await this.targetRefs.resolveBounds(
+          args.targetRef,
+          (id) => this.getTab(id),
+          tabId,
+        );
+        const point = {
+          x: resolved.bounds.x + (resolved.bounds.width / 2),
+          y: resolved.bounds.y + (resolved.bounds.height / 2),
+        };
+        return await probeBrowserSubmitClick(this.getTab(resolved.targetRef.tabId).page, { point });
+      }
+      const page = this.getTab(tabId).page;
+      if (typeof args.selector === 'string' && args.selector) {
+        return await probeBrowserSubmitClick(page, { selector: args.selector });
+      }
+      if (typeof args.text === 'string' && args.text) {
+        return await probeBrowserSubmitClick(page, { text: args.text });
+      }
+      return { status: 'unknown', cause: 'click args have no selector, targetRef, or text' };
+    } catch (error) {
+      return { status: 'unknown', cause: error instanceof Error ? error.message : String(error) };
+    }
+  }
 
   async getElementBoundingBox(selector: string, tabId?: string): Promise<ElementInfo['rect'] | null> {
     return getBrowserElementBoundingBox(this.getTab(tabId), selector);
@@ -594,7 +625,7 @@ export class BrowserService implements Disposable {
   }
 
   async type(selector: string, text: string, tabId?: string): Promise<void> {
-    await this.getTab(tabId).page.fill(selector, text);
+    await this.getTab(tabId).page.fill(selector, text, { timeout: BROWSER_TIMEOUTS.FILL_SELECTOR });
   }
 
   async typeTargetRef(targetRefInput: unknown, text: string, tabId?: string): Promise<BrowserTargetRef> {
@@ -884,7 +915,7 @@ export class BrowserService implements Disposable {
   async fillForm(formData: Record<string, string>, tabId?: string): Promise<void> {
     const tab = this.getTab(tabId);
     for (const [selector, value] of Object.entries(formData)) {
-      await tab.page.fill(selector, value);
+      await tab.page.fill(selector, value, { timeout: BROWSER_TIMEOUTS.FILL_SELECTOR });
     }
   }
 
@@ -957,6 +988,7 @@ export class BrowserService implements Disposable {
     const launched = await launchSystemChromeCdpBrowser({
       resolution,
       profileDir: this.profileDir,
+      temporaryProfile: this.isolatedProfileDir !== null,
       mode: this.mode,
       viewport: this.viewport,
       proxy: this.proxyConfig,

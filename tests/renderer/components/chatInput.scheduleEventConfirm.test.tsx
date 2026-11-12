@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { chatInputZh } from '../../../src/renderer/i18n/chatInput';
 // ============================================================================
 // /schedule 事件草案（N-CRON-EVENT-CREATE-CHAT）—— renderer 侧验收：
 // - normalizeScheduleDraft：event 草案收下（accountId 允许空、groupName 剥成草稿级
@@ -285,7 +286,7 @@ describe('event schedule draft normalization', () => {
     const pending = makeEventPending();
     const rows = buildScheduleConfirmRows(pending, {
       what: '检查什么', when: '什么时候', notifyWhen: '什么变化值得通知', result: '结果送到哪里',
-      fallbackWhat: '按任务描述执行', fallbackNotifyWhen: '完成时通知', reviewInbox: '自动化审核收件箱',
+      fallbackWhat: '按任务描述执行', fallbackNotifyWhen: '完成时通知', reviewInbox: chatInputZh.scheduleConfirm.reviewInbox,
     }, 'zh', {
       group: cronCenterZh.cronCenter.eventConfirmGroup,
       groupFallback: cronCenterZh.cronCenter.eventConfirmGroupFallback,
@@ -303,7 +304,7 @@ describe('event schedule draft normalization', () => {
   it('builds mail rows: 「监听哪个邮箱」行随绑定走（新邮件 · 账号 · 邮箱），未选账号走兜底文案', () => {
     const labels = {
       what: '检查什么', when: '什么时候', notifyWhen: '什么变化值得通知', result: '结果送到哪里',
-      fallbackWhat: '按任务描述执行', fallbackNotifyWhen: '完成时通知', reviewInbox: '自动化审核收件箱',
+      fallbackWhat: '按任务描述执行', fallbackNotifyWhen: '完成时通知', reviewInbox: chatInputZh.scheduleConfirm.reviewInbox,
     };
     const mailLabels = {
       group: cronCenterZh.cronCenter.eventConfirmGroup,
@@ -374,11 +375,13 @@ describe('event schedule confirm card', () => {
   it('budget is editable: changing it updates the row and a non-positive value disables confirm', async () => {
     render(<DraftHost initial={makeEventPending()} />);
 
+    // 单账号会被确认卡自动预选（N-CRON-EVENT-CONFIRM-PRESELECT）；等它落定再改预算，
+    // 否则预选写回与预算编辑会在同一帧交错，不是本用例要测的东西。
+    await waitFor(() => expect((screen.getByLabelText(/^触发账号/) as HTMLSelectElement).value).toBe(feishuAccount.id));
     const budgetInput = await screen.findByLabelText(/^单次预算上限/);
     fireEvent.change(budgetInput, { target: { value: '2' } });
     expect(await screen.findByText('2')).toBeTruthy();
 
-    fireEvent.change(await screen.findByLabelText(/^触发账号/), { target: { value: feishuAccount.id } });
     await waitFor(() => expect(confirmButton().disabled).toBe(false));
 
     fireEvent.change(budgetInput, { target: { value: '0' } });
@@ -521,7 +524,7 @@ function groupRowValue(): string {
 
 const eventRowLabels = {
   what: '检查什么', when: '什么时候', notifyWhen: '什么变化值得通知', result: '结果送到哪里',
-  fallbackWhat: '按任务描述执行', fallbackNotifyWhen: '完成时通知', reviewInbox: '自动化审核收件箱',
+  fallbackWhat: '按任务描述执行', fallbackNotifyWhen: '完成时通知', reviewInbox: chatInputZh.scheduleConfirm.reviewInbox,
 };
 
 describe('event confirm card — rework r1 regressions', () => {
@@ -539,7 +542,7 @@ describe('event confirm card — rework r1 regressions', () => {
     });
 
     // 第一份草案：选账号 → 按名预选发布群，预算改 2（制造有编辑态的现场），确认可用。
-    fireEvent.change(await screen.findByLabelText(/^触发账号/), { target: { value: feishuAccount.id } });
+    await waitFor(() => expect((screen.getByLabelText(/^触发账号/) as HTMLSelectElement).value).toBe(feishuAccount.id));
     const chatSelect = await screen.findByLabelText('限定会话 / 群（可选）') as HTMLSelectElement;
     await waitFor(() => expect(chatSelect.value).toBe('oc_release'));
     fireEvent.change(screen.getByLabelText(/^单次预算上限/), { target: { value: '2' } });
@@ -550,19 +553,17 @@ describe('event confirm card — rework r1 regressions', () => {
       panelStore?.(makeEventPending({ description: '再盯一次发布群' }));
     });
 
-    // 字段区回到新草案初始态：账号未选、预算回预填 0.5、确认重新禁用。
-    const accountSelect = screen.getByLabelText(/^触发账号/) as HTMLSelectElement;
-    expect(accountSelect.value).toBe('');
+    // 字段区回到新草案初始态：预算回预填 0.5（旧草案改的 2 没残留）。账号不再断言为空：
+    // 单账号会在新卡里立刻自动预选（N-CRON-EVENT-CONFIRM-PRESELECT），不是旧草案的残留。
     expect((screen.getByLabelText(/^单次预算上限/) as HTMLInputElement).value).toBe('0.5');
-    expect(confirmButton().disabled).toBe(true);
     // 摘要行回到新草案的原话提示（无绑定可陈述）。
     expect(groupRowValue()).toBe('发布群');
 
-    // 新草案重新选账号：预选已为本群名尝试过不再弹回 → 任意会话；旧草案的
-    // chatId/accountId 没有残进新草案，确认在合法绑定（任意会话）下可用。
-    fireEvent.change(accountSelect, { target: { value: feishuAccount.id } });
+    // 新草案按自己的群名重新自动预选（换草案即重置，不沿用旧草案的「已尝试」记录）；
+    // 旧草案的 chatId/accountId 没有残进新草案，预选完成后确认可用。
+    await waitFor(() => expect((screen.getByLabelText(/^触发账号/) as HTMLSelectElement).value).toBe(feishuAccount.id));
     const chatSelectAfterReplace = await screen.findByLabelText('限定会话 / 群（可选）') as HTMLSelectElement;
-    expect(chatSelectAfterReplace.value).toBe('');
+    await waitFor(() => expect(chatSelectAfterReplace.value).toBe('oc_release'));
     await waitFor(() => expect(confirmButton().disabled).toBe(false));
   });
 

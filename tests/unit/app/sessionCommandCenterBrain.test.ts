@@ -11,7 +11,25 @@
 // 改这一处即两路生效。
 // ============================================================================
 
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+// 连接器 per-turn 进面（N-FG-CONNECTOR-TOOLS）的判据依赖 configService / connector
+// registry，与 nativeConnectorPreload.test.ts 同款替身：enabledNative 用可控变量、
+// registry 用真实单例（darwin 上 configure 注册，读就绪态）。
+// importActual 透传 configService 其余导出，避免图内其他消费方（toolAvailability 等）被半截 mock 弄红。
+const connectorMocks = vi.hoisted(() => ({
+  enabledNative: [] as string[],
+}));
+
+vi.mock('../../../src/host/services/core/configService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/host/services/core/configService')>();
+  // 原型委托：getSettings 换成受控版本（enabledNative 可变），其余方法（本文件图内
+  // getCoreToolDefinitions 会用 getServiceApiKey）落到真实单例——真实构造函数零 IO。
+  const testDouble = Object.create(actual.getConfigService());
+  testDouble.getSettings = () => ({ connectors: { enabledNative: connectorMocks.enabledNative } });
+  return { ...actual, getConfigService: () => testDouble };
+});
+
 import {
   getSessionCommandCenterBrainContextForPrompt,
   getTextForegroundToolNamesForPrompt,
@@ -28,6 +46,7 @@ import {
   getProtocolRegistry,
   getTextForegroundToolNames,
 } from '../../../src/host/tools/protocolRegistry';
+import { getConnectorRegistry } from '../../../src/host/connectors/registry';
 import { chatTranscriptEn, chatTranscriptZh } from '../../../src/renderer/i18n/chatTranscript';
 import { getSystemReminders } from '../../../src/host/prompts/systemReminders';
 
@@ -43,10 +62,11 @@ describe('SESSION_COMMAND_CENTER_BRAIN_CONTEXT design notice', () => {
   // 「不要说 X」和 X 写在同一句是经典失效形态——这道门钉住「只讲能做什么」，
   // 防止有人再把负向枚举加回来。
   it('does not hand the model the refusal vocabulary it echoed back', () => {
-    for (const name of ['Bash', 'WebSearch', 'ToolSearch']) {
+    for (const name of ['WebSearch', 'ToolSearch']) {
       expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).not.toContain(name);
     }
-    for (const word of ['禁用', '受限', '不能动']) {
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT.match(/\bBash\b/g)).toHaveLength(1);
+    for (const word of ['禁用', '受限', '不能动', '不可用', '无法使用', '不能使用', '没有权限', '无权限', '权限不足']) {
       expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).not.toContain(word);
     }
   });
@@ -76,9 +96,24 @@ describe('SESSION_COMMAND_CENTER_BRAIN_CONTEXT design notice', () => {
     }
   });
 
+  it('routes an explicitly named command method to a background task with positive wording', () => {
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('用户明确点名 Bash、终端、命令行或脚本执行形式时');
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('这条点名路由优先于 3a');
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('把用户的命令意图完整写入 prompt');
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('调用后用一句话说明它正在作为后台任务运行');
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('再一句话说明它已经开始');
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('3a. 本轮工具表里已有邮件、日历、提醒事项工具时');
+  });
+
   it('covers direct foreground writes and contextual file references', () => {
     expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('直接读取并修改本地文件');
     expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('解析成绝对路径');
+  });
+
+  it('tells the model not to ask a second time when slots are full and to pass queue_when_full: true only after user replies queue', () => {
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('并发槽已满时由 delegate_task 展示选择卡，不要再次询问');
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('queue_when_full: true');
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).not.toContain('目标任务不唯一、并发槽已满或取消代价较高时，调用 AskUserQuestion');
   });
 });
 
@@ -241,6 +276,19 @@ describe('晨报回复「存草稿 N」才打开 mail_draft', () => {
     const options = withSessionCommandCenterBrain(undefined, '存草稿 2');
     expect(options.turnSystemContext?.slice(-2)).toEqual(blocks);
   });
+
+  // FU1：英文晨报的标记链。en 档晨间分诊的草稿块头是 "Draft N (not sent)"，
+  // 规则块必须把中英两种块头与两种任务名都写明，英文回复才能在英文晨报里找到那封草稿。
+  it('规则块同时点名中英两种草稿块头与两种任务名；英文回复 save draft N 也命中', () => {
+    const blocks = getSessionCommandCenterBrainContextForPrompt('save draft 1');
+    expect(blocks).toHaveLength(2);
+    const block = blocks[1] ?? '';
+    expect(block).toContain('<morning_brief_save_draft>');
+    expect(block).toContain('「草稿 N（未发送）」');
+    expect(block).toContain('"Draft N (not sent)"');
+    expect(block).toContain('「晨间分诊」');
+    expect(block).toContain('"Morning triage"');
+  });
 });
 
 // ============================================================================
@@ -362,3 +410,182 @@ function weeklyPromptForSurface(): string {
 function sheetPromptForSurface(): string {
   return chatTranscriptZh.chat.suggestions.sheetAnalysis.prompt;
 }
+
+// ============================================================================
+// 连接器工具 per-turn 进面（N-FG-CONNECTOR-TOOLS，ADR-059 修订）
+// 「发邮件/建日程/设提醒」命中意图 × 设置启用 × registry 就绪时，连接器读写工具
+// 进文字前台 allowlist；无意图轮零新增（前缀缓存守卫）；权限与审批链路不动。
+// registry 是真实单例：darwin 上 configure 才注册（Linux CI 整组跳过，
+// 见 memory darwin-only 连接器注册表测试桥）。
+// ============================================================================
+const darwinForConnectors = process.platform === 'darwin';
+const CONNECTOR_ALL = ['reminders', 'mail', 'calendar'];
+
+describe.skipIf(!darwinForConnectors)('getTextForegroundToolNamesForPrompt — 连接器 per-turn 进面', () => {
+  beforeEach(() => {
+    connectorMocks.enabledNative = [];
+    getConnectorRegistry().configure([]);
+  });
+
+  it('意图 × 启用 × 就绪（unchecked）：该连接器读写工具进前台 allowlist', () => {
+    connectorMocks.enabledNative = CONNECTOR_ALL;
+    getConnectorRegistry().configure(CONNECTOR_ALL);
+
+    const mail = getTextForegroundToolNamesForPrompt('给 noreply@example.com 发封邮件，说明明天的会议改到下午3点');
+    expect(mail).toEqual(expect.arrayContaining(['mail', 'mail_send', 'mail_draft']));
+    const calendar = getTextForegroundToolNamesForPrompt('帮我在日历里建个日程，明天下午3点到4点团队周会');
+    expect(calendar).toEqual(expect.arrayContaining(['calendar', 'calendar_create_event']));
+    const reminders = getTextForegroundToolNamesForPrompt('提醒我明天早上9点核对发版清单');
+    expect(reminders).toEqual(expect.arrayContaining(['reminders', 'reminders_create']));
+    // 基础面前成员原样保留
+    for (const name of ['Read', 'Write', 'Edit', 'AskUserQuestion']) {
+      expect(mail).toContain(name);
+    }
+  });
+
+  it('withSessionCommandCenterBrain 带 prompt 时把连接器工具写进 allowlist（桌面路）', () => {
+    connectorMocks.enabledNative = ['mail'];
+    getConnectorRegistry().configure(['mail']);
+    const options = withSessionCommandCenterBrain(undefined, '给 a@b.c 发封邮件说会议改期');
+    expect(options.allowedToolNames).toContain('mail_send');
+    // 单轮只带命中的连接器：未命中的 calendar/reminders 不进面
+    expect(options.allowedToolNames).not.toContain('calendar_create_event');
+    expect(options.allowedToolNames).not.toContain('reminders_create');
+  });
+
+  it('未启用：不进面（行为与改动前一致，不扩面）', () => {
+    getConnectorRegistry().configure(CONNECTOR_ALL);
+    expect(getTextForegroundToolNamesForPrompt('给 a@b.c 发封邮件说会议改期'))
+      .toEqual(getTextForegroundToolNames());
+  });
+
+  // rework r1（PR #2808 ai-review）：手选/专家连接器收窄必须透传——范围外即使意图
+  // 命中也不进 allowlist。否则 run policy 白名单放行范围外连接器写、deferred 预载却
+  // 按收窄不送 schema，同一轮两个判决互相矛盾。
+  it('手选/专家收窄连接器范围：范围外即使意图命中也不进面', () => {
+    connectorMocks.enabledNative = CONNECTOR_ALL;
+    getConnectorRegistry().configure(CONNECTOR_ALL);
+
+    // 直接调用形态（web 路传 config.toolScope?.allowedConnectorIds）
+    expect(getTextForegroundToolNamesForPrompt('给 a@b.c 发封邮件说会议改期', ['calendar']))
+      .toEqual(getTextForegroundToolNames());
+
+    // 桌面路形态：withSessionCommandCenterBrain 从 options.toolScope 透传
+    // （withWorkbenchTurnSystemContext 已把手选/专家并进 options.toolScope）
+    const options = withSessionCommandCenterBrain(
+      { toolScope: { allowedConnectorIds: ['calendar'] } },
+      '给 a@b.c 发封邮件说会议改期',
+    );
+    for (const absent of ['mail', 'mail_send', 'mail_draft']) {
+      expect(options.allowedToolNames).not.toContain(absent);
+    }
+
+    // 双意图轮：范围内的 calendar 保留，范围外的 mail 剔除
+    const dual = withSessionCommandCenterBrain(
+      { toolScope: { allowedConnectorIds: ['calendar'] } },
+      '给 a@b.c 发封邮件，再帮我建个日程',
+    );
+    expect(dual.allowedToolNames).toContain('calendar_create_event');
+    expect(dual.allowedToolNames).not.toContain('mail_send');
+    expect(dual.allowedToolNames).not.toContain('mail_draft');
+  });
+
+  it('就绪不可用（非 darwin）：不进面', () => {
+    const original = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    try {
+      connectorMocks.enabledNative = CONNECTOR_ALL;
+      getConnectorRegistry().configure(CONNECTOR_ALL);
+      expect(getTextForegroundToolNamesForPrompt('给 a@b.c 发封邮件说会议改期'))
+        .toEqual(getTextForegroundToolNames());
+    } finally {
+      Object.defineProperty(process, 'platform', original);
+      getConnectorRegistry().configure([]);
+    }
+  });
+
+  it('无连接器意图的轮次零新增（前缀缓存守卫）', () => {
+    connectorMocks.enabledNative = CONNECTOR_ALL;
+    getConnectorRegistry().configure(CONNECTOR_ALL);
+    expect(getTextForegroundToolNamesForPrompt('explain this repo'))
+      .toEqual(getTextForegroundToolNames());
+    expect(getTextForegroundToolNamesForPrompt('你好，帮我看看今天有什么安排'))
+      .toEqual(getTextForegroundToolNames());
+  });
+
+  it('存草稿轮与连接器扩展同轮命中时 mail_draft 不重复', () => {
+    connectorMocks.enabledNative = ['mail'];
+    getConnectorRegistry().configure(['mail']);
+    const names = getTextForegroundToolNamesForPrompt('存草稿 1');
+    expect(names.filter((name) => name === 'mail_draft')).toHaveLength(1);
+  });
+
+  it('前台进面不降低连接器写工具的审批链路：C1 确定性 ask 仍生效', async () => {
+    const { connectorWriteAskClassification } = await import('../../../src/host/tools/connectorTokenWrite');
+    const { mailSendSchema } = await import('../../../src/host/tools/modules/connectors/mailSend.schema');
+    // schema 不做常驻前台声明：进面只靠 per-turn 判据（allowInTextForeground 仍是 false/缺省）
+    expect(mailSendSchema.allowInTextForeground).not.toBe(true);
+    expect(mailSendSchema.permissionLevel).toBe('write');
+    const classification = connectorWriteAskClassification(
+      mailSendSchema.name,
+      { subject: '会议改期', to: ['noreply@example.com'] },
+      mailSendSchema.permissionLevel!,
+      Date.now(),
+    );
+    expect(classification?.decision).toBe('ask');
+    expect(classification?.trustBoundary).toBe(true);
+    expect(classification?.reason).toContain('需要你确认');
+  });
+
+  it('语音窄工具面不受影响：不含任何连接器写工具（ADR-059 语音通道不变）', async () => {
+    const { VOICE_TOOL_DEFINITIONS } = await import('../../../src/host/services/voice/voiceTools');
+    const names = VOICE_TOOL_DEFINITIONS.map((definition) => definition.name);
+    for (const absent of ['mail', 'mail_send', 'mail_draft', 'calendar', 'calendar_create_event', 'reminders', 'reminders_create']) {
+      expect(names).not.toContain(absent);
+    }
+  });
+
+  it('brain 提示词讲明连接器工具直调 + 审批卡在聊天内确认', () => {
+    const block = getSessionCommandCenterBrainContextForPrompt('给 a@b.c 发封邮件')[0];
+    expect(block).toContain('不派 delegate_task');
+    expect(block).toContain('确认卡片');
+    expect(block).toContain('只在工具返回成功后才说已发送或已创建');
+  });
+});
+
+// N-FIX-ATTACH-IMAGE-ANALYZE-GLOB-WASTE-FU1：看不见图的模型带图片附件时，前台白名单补 image_analyze。
+describe('带图片附件的前台文字轮', () => {
+  const image = {
+    id: 'a1', type: 'image' as const, category: 'image' as const, name: 'receipt.png',
+    size: 10, mimeType: 'image/png', path: '/tmp/receipt.png',
+  };
+  const textOnly = { provider: 'zhipu', model: 'glm-5' };
+  const vision = { provider: 'claude', model: 'claude-sonnet-4-6' };
+  const prompt = '这张报销单总额是多少？';
+
+  it('文本模型 + 图片：末尾追加 image_analyze，其余与无图轮逐字相同', () => {
+    const base = getTextForegroundToolNamesForPrompt(prompt);
+    const names = getTextForegroundToolNamesForPrompt(prompt, undefined, { attachments: [image], model: textOnly });
+    expect(names).toEqual([...base, 'image_analyze']);
+  });
+
+  it('无图片 / 视觉模型 / 无路径图片 / 非图片附件：与今天逐字相同', () => {
+    const base = getTextForegroundToolNamesForPrompt(prompt);
+    expect(getTextForegroundToolNamesForPrompt(prompt, undefined, { attachments: [], model: textOnly })).toEqual(base);
+    expect(getTextForegroundToolNamesForPrompt(prompt, undefined, { attachments: [image], model: vision })).toEqual(base);
+    expect(getTextForegroundToolNamesForPrompt(prompt, undefined, { attachments: [{ ...image, path: undefined }], model: textOnly })).toEqual(base);
+    expect(getTextForegroundToolNamesForPrompt(prompt, undefined, {
+      attachments: [{ ...image, type: 'file', category: 'pdf' as never }], model: textOnly,
+    })).toEqual(base);
+  });
+
+  it('桌面入口 withSessionCommandCenterBrain 与 web 同判；无图轮不变', () => {
+    const withImage = withSessionCommandCenterBrain(undefined, prompt, { attachments: [image], model: textOnly });
+    expect(withImage.allowedToolNames).toContain('image_analyze');
+    const noImage = withSessionCommandCenterBrain(undefined, prompt);
+    expect(noImage.allowedToolNames).toEqual(getTextForegroundToolNamesForPrompt(prompt));
+    expect(noImage.allowedToolNames).not.toContain('image_analyze');
+    expect(withSessionCommandCenterBrain(undefined, prompt, { attachments: [image], model: vision }).allowedToolNames)
+      .toEqual(noImage.allowedToolNames);
+  });
+});

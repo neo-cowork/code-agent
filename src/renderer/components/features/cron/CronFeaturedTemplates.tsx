@@ -13,6 +13,7 @@ import { useAppStore } from '../../../stores/appStore';
 import { useMcpServerStates } from '../../../hooks/useMcpServerStates';
 import { useI18n } from '../../../hooks/useI18n';
 import { Button } from '../../primitives/Button';
+import { formatCronTimeZoneSuffix } from '../../../utils/formatCronJobTime';
 import {
   FEATURED_CRON_TEMPLATES,
   getMissingTemplateConnectors,
@@ -21,6 +22,8 @@ import {
   type CronTemplate,
   type TemplateConnectorStatus,
 } from './cronTemplates';
+import { CRON_CLOUD_NOT_CONFIGURED } from '@shared/constants/cronErrors';
+import { CronCloudCreateNotice } from './CronCloudCreateNotice';
 import { buildCronJobInput } from './types';
 
 /** 模板 id → lucide 图标；未登记的模板（测试桩、未来新增）回退 Sparkles */
@@ -35,12 +38,14 @@ function findExistingJob(
   template: CronTemplate,
   jobs: CronJobDefinition[],
 ): CronJobDefinition | undefined {
-  const draft = template.generate({});
+  // 名称/提示词都可能是 zh 或 en（切换 UI 语言前后创建）：两种都认，避免切语言后重复创建。
+  const zhDraft = template.generate({}, 'zh');
+  const enDraft = template.generate({}, 'en');
   return jobs.find(
     (job) =>
-      job.name === draft.name &&
+      (job.name === zhDraft.name || job.name === enDraft.name) &&
       job.action.type === 'agent' &&
-      job.action.prompt === draft.agentPrompt,
+      (job.action.prompt === zhDraft.agentPrompt || job.action.prompt === enDraft.agentPrompt),
   );
 }
 
@@ -48,6 +53,7 @@ export const CronFeaturedTemplates: React.FC = () => {
   const { t } = useI18n();
   const cc = t.cronCenter;
   const { jobs, createJob, updateJob } = useCronStore();
+  const language = useAppStore((state) => state.language);
   const openSettingsTab = useAppStore((state) => state.openSettingsTab);
   const mcpServerStates = useMcpServerStates();
   const connectedConnectorIds = useMemo(
@@ -59,12 +65,14 @@ export const CronFeaturedTemplates: React.FC = () => {
     [mcpServerStates],
   );
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [cloudTemplate, setCloudTemplate] = useState<CronTemplate | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [gateHint, setGateHint] = useState<{ templateId: string; missing: TemplateConnectorStatus[] } | null>(null);
 
   const handleEnable = async (
     template: CronTemplate,
     existingJob: CronJobDefinition | undefined,
+    runsOn?: 'local',
   ) => {
     const missing = getMissingTemplateConnectors(
       getTemplateConnectorStatuses(template, connectedConnectorIds),
@@ -72,14 +80,17 @@ export const CronFeaturedTemplates: React.FC = () => {
     setGateHint(missing.length > 0 ? { templateId: template.id, missing } : null);
     setPendingId(template.id);
     setError(null);
+    setCloudTemplate(null);
     try {
       if (existingJob) {
         await updateJob(existingJob.id, { enabled: true });
       } else {
-        await createJob(buildCronJobInput(template.generate({})));
+        const input = buildCronJobInput(template.generate({}, language === 'en' ? 'en' : 'zh'), cc.editorChrome.validation);
+        await createJob(runsOn ? { ...input, runsOn } : input);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : cc.templateEnableFailed);
+      if (err instanceof Error && 'code' in err && err.code === CRON_CLOUD_NOT_CONFIGURED) setCloudTemplate(template);
+      else setError(err instanceof Error && err.message ? err.message : cc.templateEnableFailed);
     } finally {
       setPendingId(null);
     }
@@ -100,6 +111,7 @@ export const CronFeaturedTemplates: React.FC = () => {
         </div>
       </div>
 
+      {cloudTemplate && <CronCloudCreateNotice onSwitchLocal={() => void handleEnable(cloudTemplate, undefined, 'local')} />}
       {error && (
         <div className="mb-3 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-badge-danger">
           {error}
@@ -113,6 +125,12 @@ export const CronFeaturedTemplates: React.FC = () => {
           const isPending = pendingId === template.id;
           const connectorStatuses = getTemplateConnectorStatuses(template, connectedConnectorIds);
           const copy = getTemplateDisplayCopy(template, cc.templates);
+          const generated = template.generate({});
+          const scheduleLabel = formatCronTimeZoneSuffix(
+            copy.scheduleLabel,
+            generated.scheduleType === 'cron' ? generated.cronTimezone : undefined,
+            language,
+          );
           const cardStateClassName = isPending || isEnabled
             ? 'border-badge-success/30 bg-emerald-500/5'
             : 'border-zinc-700/80 bg-zinc-900/80 hover:border-badge-warning/50 hover:bg-zinc-900';
@@ -145,7 +163,7 @@ export const CronFeaturedTemplates: React.FC = () => {
                   <span className="block text-sm font-medium text-zinc-100">{copy.name}</span>
                   <span className="mt-1 block text-xs text-zinc-400">{copy.description}</span>
                   <span className="mt-1.5 block text-[11px] text-badge-warning/90">
-                    {copy.scheduleLabel}
+                    {scheduleLabel}
                   </span>
                 </span>
                 <Button

@@ -32,6 +32,8 @@ export interface SessionCreateOptions {
   title?: string;
   modelConfig: ModelConfig;
   workingDirectory?: string;
+  /** 建行时写入的归属用户；缺省 NULL（纯 CLI 无登录）。 */
+  userId?: string | null;
 }
 
 export interface SessionScopedMessageOptions extends SessionCreateOptions {
@@ -114,6 +116,7 @@ export class CLISessionManager {
     const now = Date.now();
     db.createSession({
       id: sessionId,
+      ...(options.userId ? { userId: options.userId } : {}),
       title: options.title || this.generateSessionTitle(),
       modelConfig: options.modelConfig,
       workingDirectory: options.workingDirectory,
@@ -507,17 +510,27 @@ export class CLISessionManager {
   private async maybeUpdateTitle(sessionId: string, firstMessage: string): Promise<void> {
     const session = await this.getSession(sessionId);
     if (!session) return;
-    const titleSource = sessionTitleSource(firstMessage);
+    const uiLanguage = await this.readUiLanguage();
+    const titleSource = sessionTitleSource(firstMessage, uiLanguage);
     // web 预写层的「prompt 头 + ...」临时档也是自动产物，智能标题照常替换。
     if (session.messageCount > 1 || !isProvisionalAutoTitle(session.title, titleSource)) return;
 
     let title = await this.generateSmartTitle(titleSource);
-    if (!title) title = deriveFallbackSessionTitle(firstMessage);
+    if (!title) title = deriveFallbackSessionTitle(firstMessage, uiLanguage);
 
     const latest = await this.getSession(sessionId);
     if (!latest || !isProvisionalAutoTitle(latest.title, titleSource)) return;
 
     await this.updateSession(sessionId, { title });
+  }
+
+  private async readUiLanguage(): Promise<'zh' | 'en'> {
+    try {
+      const { getConfigService } = await import('./bootstrap');
+      return getConfigService().getSettings().ui.language === 'en' ? 'en' : 'zh';
+    } catch {
+      return 'zh';
+    }
   }
 
   /**
@@ -528,13 +541,15 @@ export class CLISessionManager {
     try {
       const { quickTask, isQuickModelAvailable } = await import('../host/model/quickModel');
       if (!isQuickModelAvailable()) return null;
+      const { buildSessionTitlePrompt } = await import('../shared/sessionTitlePrompt');
+      const { getConfigService } = await import('./bootstrap');
 
       // 截取前 500 字符避免 prompt 太长
       const truncated = message.length > 500 ? message.slice(0, 500) + '...' : message;
 
-      const result = await quickTask(
-        `为以下用户消息生成一个简短的会话标题（10-25字，中文优先，不加引号不加标点）：\n\n${truncated}`
-      );
+      let uiLanguage: 'zh' | 'en' = 'zh';
+      try { uiLanguage = getConfigService().getSettings().ui.language === 'en' ? 'en' : 'zh'; } catch { /* 读不到按中文 */ }
+      const result = await quickTask(buildSessionTitlePrompt(truncated, uiLanguage));
 
       if (result.success && result.content) {
         // 清理：去引号、去标点、限长

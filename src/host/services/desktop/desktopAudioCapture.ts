@@ -11,6 +11,7 @@ import { createLogger } from '../infra/logger';
 import { getNativeDesktopService } from './nativeDesktopService';
 import { getUserConfigDir } from '../../config/configPaths';
 import { isOrtTensor, loadVadRuntime, type OrtRuntimeModule } from './audioVadRuntime';
+import { getAudioCapturePrerequisites } from './audioCapturePrerequisites';
 import { clearAllAudioRecordings, finalizeSegmentAudio, getAudioRetentionStatus, sweepAudioRetention } from './audioRetention';
 import type { InferenceSession, Tensor as OrtTensor } from 'onnxruntime-node';
 
@@ -1113,7 +1114,9 @@ function startFifoCapture(fifoPath: string): boolean {
   }
 }
 
-function sweepCapturedAudio(): void {
+// 过期录音清扫的统一入口：采集启动/定时器走它，webStartupRetention 的启动期
+// 兜底也走它（采集关着的机器否则永远不清理，录音无限堆积）。
+export function sweepCapturedAudio(): void {
   const sqlitePath = getSqlitePath();
   if (sqlitePath) ensureAudioTable(sqlitePath);
   sweepAudioRetention({ sqlitePath, audioDir: getAudioDir(), now: Date.now() });
@@ -1209,17 +1212,20 @@ export function clearAudioRecordings() {
 }
 
 export function getAudioCaptureStatus() {
+  const prerequisites = getAudioCapturePrerequisites(captureMode);
   return {
     capturing,
     captureMode,
     vadReady: vadInstance?.isSpeaking !== undefined,
-    soxAvailable: !!findFfmpegBinary() || !!findRecBinary(),
-    systemAudioAvailable: !!findSystemAudioCaptureBinary(),
+    soxAvailable: prerequisites.recorder.microphone === 'ready',
+    systemAudioAvailable: prerequisites.recorder.systemAudio === 'ready',
     asrEngine: findWhisperBinary() ? 'whisper-cpp' : findQwenAsrModel() ? 'qwen3-asr' : 'none',
     powerMode,
     totalSegments,
     audioDir: getAudioDir(),
     queueLength: asrQueue.length,
     retention: getAudioRetentionStatus(getAudioDir(), getSqlitePath()),
+    prerequisites,
+    missingPrerequisites: prerequisites.missing,
   };
 }

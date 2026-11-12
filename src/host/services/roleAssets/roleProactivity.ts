@@ -1,24 +1,6 @@
 import { UNATTENDED_TRUST_NOTICE } from '../../../shared/unattendedTrust';
-// ============================================================================
-// Role Proactivity — 角色主动性（cadence 触发器 + 醒来循环）
-// ============================================================================
-//
-// 设计：内部文档
-//
-// 核心循环（§3 八步）：
-//   预算检查 → 实例化（带记忆）→ 创建会话 → 跑实例 → 解析四选一决策
-//   → 沉默归档/非沉默推送 → 写回履历 → 实例销毁
-//
-// 两个触发入口共用本循环：
-//   - cadence：cron 到点（role-wake action → wakeRole(roleId, 'cadence')）
-//   - event：长任务跑完（Stop hook 链路 → wakeRole(roleId, 'event')）
-// ============================================================================
-
+// Role proactivity: cadence/event → budget → wake → decision → history.
 import { createLogger } from '../infra/logger';
-import {
-  evaluateNotificationPolicy,
-  sanitizeNotificationText,
-} from '../infra/notificationPolicy';
 import { ROLE_PROACTIVITY, SWARM_GOAL } from '../../../shared/constants';
 import type {
   RoleProactivityConfig,
@@ -41,20 +23,17 @@ import { isExternalSideEffectTool } from '../../tools/externalSideEffect';
 import { getKnownToolNames } from '../../tools/knownToolNames';
 import { resolveRoleToolBoundary, toRoleBoundaryRunAllowlist } from './rolePersonalization';
 import { correctDecisionForUnreadableSources, lastWakeDateFromHistory, resolveWakeExternalDelta, storeWakeProposalsFromWake } from './roleWakeFindWork';
+import {
+  observeGoalPauseFromEvents,
+  withGoalPauseAbort,
+  withWakeRunTimeout,
+  type GoalPauseObservation,
+} from './wakeRunGuard';
 
 const logger = createLogger('RoleProactivity');
 
-// ----------------------------------------------------------------------------
 // 配置解析（设计 §4：settings per-role 覆盖 > 角色 frontmatter > 全局默认）
-// ----------------------------------------------------------------------------
-
-/**
- * 解析一个角色的主动性配置。
- * 优先级：settings.roleAssets.proactivity.roles[roleId]（用户改的）
- *       > 角色 frontmatter proactivity-level / proactivity-cadence（角色定义自带）
- *       > settings.roleAssets.proactivity.defaultLevel（用户全局默认）
- *       > ROLE_PROACTIVITY.DEFAULT_LEVEL（常量兜底）
- */
+/** 配置优先级：settings per-role > frontmatter > settings default > ROLE_PROACTIVITY.DEFAULT_LEVEL。 */
 export async function resolveRoleProactivityConfig(roleId: string): Promise<RoleProactivityConfig> {
   // 1) settings per-role 覆盖
   let settingsDefault: RoleProactivityLevel | undefined;
@@ -95,10 +74,7 @@ function minutesSinceMidnight(value: string): number | null {
   return Number(match[1]) * 60 + Number(match[2]);
 }
 
-/**
- * 判断本地时间是否落在免打扰时段内。
- * start 为闭区间，end 为开区间；start === end 视为空时段。
- */
+/** 判断本地时间是否落在免打扰时段内。 start 为闭区间，end 为开区间；start === end 视为空时段。 */
 export function isWithinQuietHours(
   now: Date,
   quietHours: RoleProactivityConfig['quietHours'],
@@ -114,10 +90,7 @@ export function isWithinQuietHours(
     : current >= start || current < end;
 }
 
-// ----------------------------------------------------------------------------
 // 预算护栏（设计 §6：每角色每天最多醒 N 次，cadence + event 合计）
-// ----------------------------------------------------------------------------
-
 /** 履历中醒来条目的产物标签（按它统计当天醒来次数） */
 function wakeHistoryLabel(trigger: RoleWakeTrigger): string {
   return `${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}(${trigger})`;
@@ -133,10 +106,7 @@ export async function countWakesToday(roleId: string): Promise<number> {
   ).length;
 }
 
-// ----------------------------------------------------------------------------
 // 醒来 prompt（设计 §3.1）
-// ----------------------------------------------------------------------------
-
 export function buildWakePrompt(
   trigger: RoleWakeTrigger,
   extraContext?: string,
@@ -190,10 +160,7 @@ export interface AdvanceGoalProposal {
   verify?: string;
 }
 
-/**
- * 从 advance 醒来产出解析 goal 提案。
- * 有 <goal> 标记 → 返回提案（含可选 <verify>）；无 → 返回 null（按普通 advance 处理，不发起 goal run）。
- */
+/** 从 advance 醒来产出解析 goal 提案。 有 <goal> 标记 → 返回提案（含可选 <verify>）；无 → 返回 null（按普通 advance 处理，不发起 goal run）。 */
 export function parseAdvanceGoalProposal(finalOutput: string): AdvanceGoalProposal | null {
   const goalMatch = finalOutput.match(SWARM_GOAL.GOAL_TAG_PATTERN);
   const goal = goalMatch?.[1]?.trim();
@@ -236,10 +203,7 @@ function inferGoalText(text: string, verify?: string): string {
   return '推进履历中的未完成待办';
 }
 
-/**
- * 模型偶尔会把明确的可验证下一步误标为 report。这里只在产出/角色资产里出现
- * 强推进信号时做确定性兜底，避免把普通巡检简报伪装成 advance。
- */
+/** 模型偶尔会把明确的可验证下一步误标为 report。这里只在产出/角色资产里出现 强推进信号时做确定性兜底，避免把普通巡检简报伪装成 advance。 */
 export function inferAdvanceGoalProposalFromWake(finalOutput: string, contextBlock?: string | null): AdvanceGoalProposal | null {
   const explicitProposal = parseAdvanceGoalProposal(finalOutput);
   if (explicitProposal) return explicitProposal;
@@ -250,10 +214,7 @@ export function inferAdvanceGoalProposalFromWake(finalOutput: string, contextBlo
   return verify ? { goal, verify } : { goal };
 }
 
-// ----------------------------------------------------------------------------
 // 醒来循环（设计 §3）
-// ----------------------------------------------------------------------------
-
 export interface WakeRoleOptions {
   /** event 触发时的来源会话（长任务所在会话） */
   sourceSessionId?: string;
@@ -263,13 +224,12 @@ export interface WakeRoleOptions {
   handoffPrompt?: string;
   /** 工作目录（项目记忆 key）；不传用当前会话的 */
   workspacePath?: string;
+  /** 醒来 run 墙钟超时（ms，主醒来与 advance goal run 各生效一次）；
+   *  缺省 ROLE_PROACTIVITY.WAKE_TIMEOUT_MS（测试注入短超时用，不写魔法数字）。 */
+  wakeTimeoutMs?: number;
 }
 
-/**
- * 角色醒来完整循环。
- * 返回 RoleWakeResult（cron 执行记录 / E2E 验收用），不向上抛业务异常
- * （基础设施异常如 orchestrator 不可用仍会抛，让 cron 执行记录标 failed）。
- */
+/** 角色醒来完整循环。 返回 RoleWakeResult（cron 执行记录 / E2E 验收用），不向上抛业务异常 （基础设施异常如 orchestrator 不可用仍会抛，让 cron 执行记录标 failed）。 */
 export async function wakeRole(
   roleId: string,
   trigger: RoleWakeTrigger,
@@ -406,10 +366,12 @@ export async function wakeRole(
   // ---- 步骤 5：跑实例（角色 agent 定义 + 记忆注入 + 迭代数硬约束）----
   // 双路径：Electron main 走 TaskManager orchestrator（UI 事件路由 / 权限弹窗）；
   // webServer/headless（发行版后端）走 cli/bootstrap createAgentLoop（与 /api/run 同源）。
+  // 无人值守必须套墙钟超时（D3）：run 挂死时取消底层 run 并抛错，cron 执行行标 failed。
   const wakePrompt = buildWakePrompt(trigger, options?.runSummary, config, externalDelta?.section);
   const { getTaskManager } = await import('../../task');
   const tm = getTaskManager();
   const orchestrator = tm.getOrCreateCurrentOrchestrator(session.id);
+  const wakeTimeoutMs = options?.wakeTimeoutMs ?? ROLE_PROACTIVITY.WAKE_TIMEOUT_MS;
 
   if (orchestrator) {
     if (workspacePath) {
@@ -417,7 +379,7 @@ export async function wakeRole(
     }
     const wakeTools = await resolveWakeRunToolScope(roleId);
     try {
-      await orchestrator.sendMessage(wakePrompt, undefined, {
+      await withWakeRunTimeout(() => orchestrator.sendMessage(wakePrompt, undefined, {
         mode: 'normal',
         inputSource: 'automation',
         systemInstructions: [UNATTENDED_TRUST_NOTICE],
@@ -427,6 +389,12 @@ export async function wakeRole(
         maxIterations: ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS,
         ...(wakeTools.allowedToolNames ? { allowedToolNames: wakeTools.allowedToolNames } : {}),
         ...(wakeTools.deniedToolNames?.length ? { deniedToolNames: wakeTools.deniedToolNames } : {}),
+      }), {
+        roleId,
+        sessionId: session.id,
+        phase: 'wake-run', timeoutMs: wakeTimeoutMs,
+        cancel: () => orchestrator.cancel(),
+        settled: () => tm.whenAgentEventsSettled(session.id),
       });
     } finally {
       tm.cleanup(session.id);
@@ -438,6 +406,7 @@ export async function wakeRole(
       wakePrompt,
       contextBlock: instantiation.contextBlock,
       workspacePath,
+      timeoutMs: wakeTimeoutMs,
     });
   }
 
@@ -462,8 +431,8 @@ export async function wakeRole(
   }
   if (externalDelta?.section && !excluded) decision = correctDecisionForUnreadableSources({ decision, finalOutput, sourceNames: externalDelta.sourceNames, roleId });
   await storeWakeProposalsFromWake({ roleId, finalOutput, config });
-  let summary = stripWakeMarkup(finalOutput)
-    .slice(0, ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
+  const wakeText = stripWakeMarkup(finalOutput);
+  let summary = wakeText.slice(0, ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
   if (inferredAdvanceProposal && !excluded) {
     logger.info('Wake decision inferred as advance from verifiable next-step signals', {
       roleId,
@@ -489,6 +458,7 @@ export async function wakeRole(
         workspacePath,
         orchestrator: tm.getOrCreateCurrentOrchestrator(session.id),
         taskManager: tm,
+        timeoutMs: wakeTimeoutMs,
       });
       summary = `[goal:${advanceGoalStatus}] ${proposal.goal}`.slice(0, ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
     }
@@ -501,10 +471,12 @@ export async function wakeRole(
   } else {
     // ---- 步骤 8：非沉默推送（会话留在列表；realtime 档加桌面通知）----
     if (config.level === 'realtime') {
-      await sendDesktopNotification(
-        `${roleId} · ${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}`,
-        summary || `角色 ${roleId} 醒来产出了新内容`,
-      );
+      const { notificationService } = await import('../infra/notificationService');
+      notificationService.notifyRoleWakeOutput({
+        sessionId: session.id,
+        title: `${roleId} · ${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}`,
+        body: (advanceGoalStatus ? summary : wakeText) || `角色 ${roleId} 醒来产出了新内容`,
+      });
     }
     logger.info('Wake completed with output', { roleId, trigger, decision, sessionId: session.id });
   }
@@ -619,10 +591,7 @@ export async function wakeRole(
   };
 }
 
-// ----------------------------------------------------------------------------
 // event 入口：长任务跑完触发（设计 §2.2）
-// ----------------------------------------------------------------------------
-
 /** 本次 run 中 spawn 过的持久化角色（sessionId → roleIds），run 结束后据此触发 event 醒来 */
 const roleParticipationBySession = new Map<string, Set<string>>();
 
@@ -643,10 +612,7 @@ function takeRoleParticipation(sessionId: string): string[] {
   return roles;
 }
 
-/**
- * 长任务跑完触发参与角色醒来（runFinalizer 在 run 成功收尾后 fire-and-forget 调用）。
- * 条件（设计 §2.2）：run 达到长任务门槛 + 本次 run spawn 过持久化角色 + 非醒来会话（防递归）。
- */
+/** 长任务跑完触发参与角色醒来（runFinalizer 在 run 成功收尾后 fire-and-forget 调用）。 条件（设计 §2.2）：run 达到长任务门槛 + 本次 run spawn 过持久化角色 + 非醒来会话（防递归）。 */
 export async function triggerEventWakes(sessionId: string, iterations: number, runSummary?: string): Promise<void> {
   // 长任务门槛不满足 → 清记录直接返回
   if (iterations < ROLE_PROACTIVITY.LONG_TASK_MIN_TURNS) {
@@ -693,14 +659,8 @@ export async function triggerEventWakes(sessionId: string, iterations: number, r
   }
 }
 
-// ----------------------------------------------------------------------------
 // cadence cron job 同步注册（设计 §2.1，参考 memory-consolidation 幂等模式）
-// ----------------------------------------------------------------------------
-
-/**
- * 应用启动时调用：扫描所有持久化角色的主动性配置，按需注册/更新/清理 cadence cron job。
- * 幂等：以 ROLE_PROACTIVITY.CADENCE_JOB_TAG 为标识，每个角色一个 job。
- */
+/** 应用启动时调用：扫描所有持久化角色的主动性配置，按需注册/更新/清理 cadence cron job。 幂等：以 ROLE_PROACTIVITY.CADENCE_JOB_TAG 为标识，每个角色一个 job。 */
 export async function syncCadenceJobs(): Promise<{ registered: string[]; removed: string[] }> {
   const { getCronService } = await import('../../cron/cronService');
   const cron = getCronService();
@@ -769,10 +729,7 @@ export async function syncCadenceJobs(): Promise<{ registered: string[]; removed
   return { registered, removed };
 }
 
-// ----------------------------------------------------------------------------
 // 内部 helpers
-// ----------------------------------------------------------------------------
-
 /**
  * 醒来 run 的工具面。
  * 角色声明了工具：从声明出发，先丢掉对外副作用工具（醒来时没有人在场），
@@ -808,17 +765,14 @@ export async function resolveWakeRunToolScope(roleId: string): Promise<{
   return { allowedToolNames: toRoleBoundaryRunAllowlist(allowed) };
 }
 
-/**
- * headless 醒来路径：cli/bootstrap createAgentLoop（与 /api/run 同源的执行链路）。
- * webServer（发行版后端）没有 Electron main 的 TaskManager orchestrator，走这条。
- * 角色 system prompt 和记忆注入块通过 config.systemPrompt 附加；工具面走 resolveWakeRunToolScope。
- */
+/** headless 醒来路径：cli/bootstrap createAgentLoop（与 /api/run 同源的执行链路）。 webServer（发行版后端）没有 Electron main 的 TaskManager orchestrator，走这条。 角色 system prompt 和记忆注入块通过 config.systemPrompt 附加；工具面走 resolveWakeRunToolScope。 */
 async function runWakeViaCliLoop(params: {
   sessionId: string;
   roleId: string;
   wakePrompt: string;
   contextBlock: string | null;
   workspacePath?: string;
+  timeoutMs: number;
 }): Promise<void> {
   const { createCLIAgent } = await import('../../../cli/adapter');
   const { createAgentLoop } = await import('../../../cli/bootstrap');
@@ -850,13 +804,16 @@ async function runWakeViaCliLoop(params: {
   }
 
   const agentLoop = createAgentLoop(config, () => { /* 醒来是后台运行，无 UI 事件消费方 */ }, [], params.sessionId);
-  await agentLoop.run(params.wakePrompt);
+  await withWakeRunTimeout(() => agentLoop.run(params.wakePrompt), {
+    roleId: params.roleId,
+    sessionId: params.sessionId,
+    phase: 'wake-run',
+    timeoutMs: params.timeoutMs,
+    cancel: () => agentLoop.cancel(),
+  });
 }
 
-// ----------------------------------------------------------------------------
 // advance → goal run（P4 合流，内部文档 §3.2）
-// ----------------------------------------------------------------------------
-
 /** advance goal run 的初始 prompt（goal 本体经 goalContract 注入，这里只下达任务指令） */
 function buildAdvanceGoalPrompt(proposal: AdvanceGoalProposal): string {
   return [
@@ -867,10 +824,7 @@ function buildAdvanceGoalPrompt(proposal: AdvanceGoalProposal): string {
   ].join('\n');
 }
 
-/**
- * 从已持久化的会话事件里读 goal 终态（Electron orchestrator 路径用——事件经
- * sessionEventService 落库，run 结束后查最后一条 goal_complete）。读不到保守按 aborted。
- */
+/** 从已持久化的会话事件里读 goal 终态（Electron orchestrator 路径用——事件经 sessionEventService 落库，run 结束后查最后一条 goal_complete）。读不到保守按 aborted。 */
 async function readGoalTerminalFromEvents(sessionId: string): Promise<'met' | 'aborted'> {
   try {
     const { getSessionEventService } = await import('../../session/sessionEventService');
@@ -890,6 +844,8 @@ async function readGoalTerminalFromEvents(sessionId: string): Promise<'met' | 'a
  * 双路径（与醒来实例同构）：
  *   - Electron orchestrator：sendMessage 带 goal 选项 → 终态从落库事件读
  *   - headless CLI loop：config.goalContract + onEvent 捕获 goal_complete.status
+ * 无人值守挂死双闸（D3）：墙钟超时（timeoutMs）+ goal_iteration 落 paused（如 anti_spin）
+ * 即取消并收场——醒来会话没有用户，paused 的 goal 永远不会被恢复，等下去就是挂死。
  * 防递归：goal run 跑在醒来会话内（origin=role-cadence），其 runFinalizer 的 event 醒来被会话 origin 守卫跳过。
  */
 async function launchAdvanceGoalRun(params: {
@@ -900,6 +856,7 @@ async function launchAdvanceGoalRun(params: {
   workspacePath?: string;
   orchestrator?: import('../../agent/agentOrchestrator').AgentOrchestrator;
   taskManager: import('../../task').TaskManager;
+  timeoutMs: number;
 }): Promise<'met' | 'aborted'> {
   const goalPrompt = buildAdvanceGoalPrompt(params.proposal);
   // 无 verify → 把 goal 文本作为闸2 软评审条件，保证契约有完成判据（buildGoalContract 要求二选一）
@@ -913,27 +870,45 @@ async function launchAdvanceGoalRun(params: {
   };
 
   const wakeTools = await resolveWakeRunToolScope(params.roleId);
-  if (params.orchestrator) {
+  const orchestrator = params.orchestrator;
+  if (orchestrator) {
     if (params.workspacePath) params.taskManager.setWorkingDirectory(params.sessionId, params.workspacePath);
     try {
-      await params.orchestrator.sendMessage(goalPrompt, undefined, {
-        mode: 'normal',
-        inputSource: 'automation',
-        systemInstructions: [UNATTENDED_TRUST_NOTICE],
-        disableAutoAgent: true,
-        agentOverrideId: params.roleId,
-        turnSystemContext: params.contextBlock ? [params.contextBlock] : undefined,
-        goal: goalInput,
-        ...(wakeTools.allowedToolNames ? { allowedToolNames: wakeTools.allowedToolNames } : {}),
-        ...(wakeTools.deniedToolNames?.length ? { deniedToolNames: wakeTools.deniedToolNames } : {}),
-      });
+      const outcome = await withGoalPauseAbort(
+        () => withWakeRunTimeout(() => orchestrator.sendMessage(goalPrompt, undefined, {
+          mode: 'normal',
+          inputSource: 'automation',
+          systemInstructions: [UNATTENDED_TRUST_NOTICE],
+          disableAutoAgent: true,
+          agentOverrideId: params.roleId,
+          turnSystemContext: params.contextBlock ? [params.contextBlock] : undefined,
+          goal: goalInput,
+          ...(wakeTools.allowedToolNames ? { allowedToolNames: wakeTools.allowedToolNames } : {}),
+          ...(wakeTools.deniedToolNames?.length ? { deniedToolNames: wakeTools.deniedToolNames } : {}),
+        }), {
+          roleId: params.roleId,
+          sessionId: params.sessionId,
+          phase: 'advance-goal-run',
+          timeoutMs: params.timeoutMs,
+          cancel: () => orchestrator.cancel(),
+          settled: () => params.taskManager.whenAgentEventsSettled(params.sessionId),
+        }),
+        {
+          roleId: params.roleId,
+          sessionId: params.sessionId,
+          pollIntervalMs: ROLE_PROACTIVITY.WAKE_PAUSE_POLL_MS,
+          observePause: () => observeGoalPauseFromEvents(params.sessionId),
+          cancel: () => orchestrator.cancel(),
+        },
+      );
+      if (outcome === 'goal-paused') return 'aborted';
     } finally {
       params.taskManager.cleanup(params.sessionId);
     }
     return await readGoalTerminalFromEvents(params.sessionId);
   }
 
-  // headless：CLI loop + goalContract，onEvent 捕获终态
+  // headless：CLI loop + goalContract，onEvent 捕获终态与暂停
   const { createCLIAgent } = await import('../../../cli/adapter');
   const { createAgentLoop } = await import('../../../cli/bootstrap');
   const { buildGoalContract } = await import('../../agent/goalModeController');
@@ -968,6 +943,7 @@ async function launchAdvanceGoalRun(params: {
   });
 
   let terminal: 'met' | 'aborted' = 'aborted';
+  let pauseObserved: GoalPauseObservation = { paused: false };
   const agentLoop = createAgentLoop(
     config,
     (event) => {
@@ -975,29 +951,32 @@ async function launchAdvanceGoalRun(params: {
         const status = (event.data as { status?: string } | undefined)?.status;
         terminal = status === 'met' ? 'met' : 'aborted';
       }
+      if (event.type === 'goal_iteration') {
+        const data = event.data as { goalStatus?: string; pauseReason?: string } | undefined;
+        if (data?.goalStatus === 'paused') pauseObserved = { paused: true, pauseReason: data.pauseReason };
+      }
     },
     [],
     params.sessionId,
   );
-  await agentLoop.run(goalPrompt);
+  const outcome = await withGoalPauseAbort(
+    () => withWakeRunTimeout(() => agentLoop.run(goalPrompt), {
+      roleId: params.roleId,
+      sessionId: params.sessionId,
+      phase: 'advance-goal-run',
+      timeoutMs: params.timeoutMs,
+      cancel: () => agentLoop.cancel(),
+    }),
+    {
+      roleId: params.roleId,
+      sessionId: params.sessionId,
+      pollIntervalMs: ROLE_PROACTIVITY.WAKE_PAUSE_POLL_MS,
+      observePause: () => pauseObserved,
+      cancel: () => agentLoop.cancel(),
+    },
+  );
+  if (outcome === 'goal-paused') return 'aborted';
   return terminal;
-}
-
-/** realtime 档桌面通知（headless / webServer 环境无 electron 时静默跳过） */
-async function sendDesktopNotification(title: string, body: string): Promise<void> {
-  try {
-    const policy = evaluateNotificationPolicy('task_complete');
-    if (!policy.allowed) return;
-    const { Notification } = await import('electron');
-    if (Notification.isSupported()) {
-      new Notification({
-        title: sanitizeNotificationText(title, 120),
-        body: sanitizeNotificationText(body, 320),
-      }).show();
-    }
-  } catch {
-    // 非 Electron 环境（webServer headless）→ 跳过
-  }
 }
 
 /** fire RoleWake hook 事件（observer-only，不影响醒来结果）。

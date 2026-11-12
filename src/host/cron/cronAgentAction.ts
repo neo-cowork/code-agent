@@ -1,3 +1,4 @@
+import { normalizePersonalSkillIds } from '../../shared/cronPersonalSkills';
 // ============================================================================
 // CronAgentAction - executeAction 的 agent 分支执行体
 // ============================================================================
@@ -8,7 +9,8 @@
 // ============================================================================
 
 import { UNATTENDED_TRUST_NOTICE } from '../../shared/unattendedTrust';
-import { CRON_AGENT_SNAPSHOT, EXTERNAL_WATCH } from '../../shared/constants';
+import { CRON_AGENT_SNAPSHOT, CRON_GUARDRAILS, EXTERNAL_WATCH, isZeroPricedModel } from '../../shared/constants';
+import { createLogger } from '../services/infra/logger';
 import type { AgentAction, CronJobDefinition } from '../../shared/contract/cron';
 import {
   buildCronAgentActionResult,
@@ -22,11 +24,33 @@ import { appendCronAgentExpertThreadReceipt } from './cronAgentExpertThreadRecei
 import { buildCronAgentPrompt, truncateUtf8Snapshot } from './cronAgentPrompt';
 import { beginArtifactRefresh, finishArtifactRefresh } from './artifactStandingRefresh';
 import { runWithCronJobBudget } from './cronExecutionPolicy';
-import { attachCronRunCost, createCronRunCostMeter } from './cronRunCostMeter';
+import { attachCronRunCost, createCronRunCostMeterForExecution } from './cronRunCostMeter';
 import { cronNotifyQuietRound } from './cronFailurePolicy';
+import type { CronResultDeliverySkip } from './cronResultDelivery';
 import { getCronAutomationType } from './cronAutomationBridge';
+import { takeUnattendedApprovalDenials } from '../agent/unattendedApprovalTerminal';
 import { parseStatedEventDecisions } from './cronEventDecisions';
 import { enterObserveModeForCronRun } from './cronObserveMode';
+import { deriveCronPermissionDenied } from './cronPermissionDenied';
+import { parseCronRunDigest } from '../../shared/cronRunDigest';
+import type { CronPermissionDeniedMarker } from '../../shared/contract/sessionAutomation';
+
+const logger = createLogger('CronAgentAction');
+
+/** 包月（价表 0 元）模型上设了美元单次上限：上限永不触发，留痕但不改闸门行为。 */
+function warnIfBudgetCapCannotTrigger(
+  definition: CronJobDefinition,
+  modelConfig: { provider: string; model: string } | undefined,
+): void {
+  if ((definition.maxRunBudget ?? 0) <= 0 || !modelConfig) return;
+  if (!isZeroPricedModel(modelConfig.provider, modelConfig.model)) return;
+  logger.warn('Run budget cap cannot trigger on a zero-priced model', {
+    jobId: definition.id,
+    model: modelConfig.model,
+    maxRunBudget: definition.maxRunBudget,
+    reason: 'cap cannot trigger on a zero-priced model',
+  });
+}
 
 export interface CronAgentActionHost {
   /** 从内存 job 表取该任务当前定义（快照写回与常设刷新结算都要最新底稿）。 */
@@ -34,7 +58,33 @@ export interface CronAgentActionHost {
   /** 即 CronService.updateJob：快照写回、常设刷新结算落库。 */
   updateJob: (jobId: string, updates: Partial<Omit<CronJobDefinition, 'id' | 'createdAt'>>) => Promise<unknown>;
   /** 即 CronService.deliverCronResult：安静轮判定通过后的通道推送。 */
-  deliverCronResult: (definition: CronJobDefinition, result: unknown, executionId?: string) => Promise<void>;
+  deliverCronResult: (definition: CronJobDefinition, result: unknown, executionId?: string, gate?: CronResultDeliverySkip) => Promise<void>;
+  /** 会话一建好就把 id 记进执行记录并落库：进程在模型跑到一半被杀，运行详情仍能顺着它找到会话与作废审批。 */
+  recordSessionId: (executionId: string, sessionId: string) => Promise<void>;
+}
+
+/** 有效时限：有限、>0 且不是旧默认 60000 才生效；其余视为不限时（与改动前一致）。 */
+function effectiveAgentTimeoutMs(timeout: number | undefined): number | undefined {
+  if (timeout === undefined || !Number.isFinite(timeout) || timeout <= 0) return undefined;
+  return timeout === CRON_GUARDRAILS.LEGACY_DEFAULT_TIMEOUT_MS ? undefined : timeout;
+}
+
+/** 到点先取消底层 run 再抛错；cancel 后 sendMessage 即使正常 resolve 也不再算成功。 */
+function runWithAgentTimeout<T>(
+  limitMs: number | undefined,
+  cancel: () => Promise<void>,
+  operation: () => Promise<T>,
+): Promise<T> {
+  if (limitMs === undefined) return operation();
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const failure = new Error(`Cron job run exceeded its ${Number((limitMs / 1000).toFixed(1))}s time limit.`);
+      cancel().catch((cancelError) => {
+        console.warn('[CronService] Failed to cancel agent run after time limit', cancelError);
+      }).finally(() => reject(failure));
+    }, limitMs);
+    operation().then(resolve, reject).finally(() => clearTimeout(timer));
+  });
 }
 
 export async function executeCronAgentAction(
@@ -43,6 +93,7 @@ export async function executeCronAgentAction(
   action: AgentAction,
   executionId?: string,
   eventPayloadBlock?: string,
+  timeout?: number,
 ): Promise<unknown> {
   const runStartedAt = Date.now();
   // Heartbeat 任务: 检查 active_hours 窗口
@@ -59,6 +110,7 @@ export async function executeCronAgentAction(
   const { getTaskManager } = await import('../task');
   const tm = getTaskManager();
   const cronSession = await createCronAgentSession(definition, action, executionId);
+  if (executionId) await host.recordSessionId(executionId, cronSession.id);
   const orchestrator = tm.getOrCreateCurrentOrchestrator(cronSession.id) ?? null;
   if (!orchestrator) {
     throw new Error(`AgentOrchestrator not available for cron session ${cronSession.id}`);
@@ -66,6 +118,13 @@ export async function executeCronAgentAction(
   // cron/heartbeat 无人值守会话标 async_agent（2026-07-13 拍板）：bash 走
   // ask+forceConfirm，无人应答由 requestPermission 60s 超时 deny 兜底，
   // 与 readOnly 会话档双保险。必须在 sendMessage 前标注。
+  const optInPersonalSkillIds = normalizePersonalSkillIds(action.allowedPersonalSkillIds);
+  const timeZone = definition.schedule.type === 'cron' ? definition.schedule.timezone : undefined;
+  const previousSnapshot = ctx?.[CRON_AGENT_SNAPSHOT.CONTEXT_KEY];
+  const snapshotTrackingEnabled = ctx?.[CRON_AGENT_SNAPSHOT.ENABLED_KEY] === true;
+  // external_event（业务事件监听）任务：无 <cron_alert> = 无新料 = 本次安静。
+  // notifyWhen / urgencyCriteria 的「值得打扰」判据收口在 cronAgentRunHasAlert。
+  const isExternalWatch = Boolean(ctx?.[EXTERNAL_WATCH.CONTEXT_KEY]);
   orchestrator.setExecutionTopology('async_agent');
   if (cronSession.workingDirectory) {
     tm.setWorkingDirectory(cronSession.id, cronSession.workingDirectory);
@@ -76,19 +135,17 @@ export async function executeCronAgentAction(
     mode: 'normal',
     ...await buildCronAgentRunOptions(action.roleId, cronSession.workingDirectory),
     eventFilter: BACKGROUND_AGENT_EVENT_FILTER,
+    toolScope: { optInPersonalSkillIds },
   };
   agentRunOptions.systemInstructions = [UNATTENDED_TRUST_NOTICE];
-  const previousSnapshot = ctx?.[CRON_AGENT_SNAPSHOT.CONTEXT_KEY];
-  const snapshotTrackingEnabled = ctx?.[CRON_AGENT_SNAPSHOT.ENABLED_KEY] === true;
-  // external_event（业务事件监听）任务：无 <cron_alert> = 无新料 = 本次安静。
-  // notifyWhen / urgencyCriteria 的「值得打扰」判据收口在 cronAgentRunHasAlert。
-  const isExternalWatch = Boolean(ctx?.[EXTERNAL_WATCH.CONTEXT_KEY]);
 
   let result: unknown; let finalAssistantText = '';
   let runError: unknown; let runFailed = false;
+  let permissionDenied: CronPermissionDeniedMarker | undefined;
   // 常设刷新（metadata.artifactRefresh）：跑前建快照记基线；非刷新任务返回 undefined 零扰动
   // N-CRON-RUN-LEDGER-VISIBLE：单次运行成本计量（maxRunBudget 有值时计量器兼任预算闸，见 cronRunCostMeter 头注）。
-  const costMeter = createCronRunCostMeter(definition.maxRunBudget);
+  const costMeter = createCronRunCostMeterForExecution(definition.maxRunBudget, executionId);
+  warnIfBudgetCapCannotTrigger(definition, cronSession.modelConfig);
   const artifactRefresh = beginArtifactRefresh(definition);
   // 观察档（N-TRIGGER-OBSERVE-MODE）：本会话的对外副作用调用由 ToolExecutor 拦下记 would_act。
   const leaveObserveMode = enterObserveModeForCronRun(definition, cronSession.id, executionId);
@@ -97,13 +154,16 @@ export async function executeCronAgentAction(
       // 事件触发时通道载荷只以 untrusted 定界块追加在 prompt 尾部，并给该条
       // 用户消息标 memoryTainted（跳过自动记忆写）。调度触发的 run 字节不变。
       const sendMessage = () => orchestrator.sendMessage(
-        buildCronAgentPrompt(action.prompt, previousSnapshot, snapshotTrackingEnabled, undefined, action.urgencyCriteria, action.notifyWhen)
+        buildCronAgentPrompt(action.prompt, previousSnapshot, snapshotTrackingEnabled, undefined, action.urgencyCriteria, action.notifyWhen,
+          timeZone, action.allowedPersonalSkillIds)
           + (eventPayloadBlock === undefined ? '' : `\n\n${eventPayloadBlock}`),
         undefined,
         agentRunOptions,
         eventPayloadBlock === undefined ? undefined : { memoryTainted: true },
       );
-      result = await runWithCronJobBudget(definition.maxRunBudget, () => costMeter.run(sendMessage));
+      result = await runWithCronJobBudget(definition.maxRunBudget, () => runWithAgentTimeout(
+        effectiveAgentTimeoutMs(timeout), () => orchestrator.cancel(), () => costMeter.run(sendMessage),
+      ));
       const unattendedTimeout = (await import('../agent/unattendedApprovalTerminal')).takeUnattendedApprovalTimeout(cronSession.id);
       if (unattendedTimeout) throw new Error(unattendedTimeout);
 
@@ -154,6 +214,7 @@ export async function executeCronAgentAction(
       }
     } catch (error) {
       runFailed = true;
+      takeUnattendedApprovalDenials(cronSession.id);
       runError = ((code: string | undefined) => code ? new Error(code) : error)((await import('../agent/unattendedApprovalTerminal')).takeUnattendedApprovalTimeout(cronSession.id));
       try {
         const lastAssistant = [...orchestrator.getMessages()].reverse().find((message) => message.role === 'assistant');
@@ -161,6 +222,17 @@ export async function executeCronAgentAction(
       } catch (messageReadError) {
         console.warn('[CronService] Failed to read partial agent conclusion after cron run failure', messageReadError);
       }
+    }
+    // N-CRON-RUN-COMPLETED-BUT-DENIED：被拒且无产出的运行不能顶着绿色「成功」。
+    // 必须在 tm.cleanup 前扫——getMessages() 随会话清理一起没；失败路径也照扫
+    // （下面 runFailed 会 throw，标记随之丢弃，扫描零副作用）。
+    try {
+      permissionDenied = deriveCronPermissionDenied(
+        orchestrator.getMessages(),
+        parseCronRunDigest(finalAssistantText).artifacts.length > 0,
+      );
+    } catch (deniedScanError) {
+      console.warn('[CronService] Failed to scan permission-denied tool results after cron run', deniedScanError);
     }
   } finally {
     leaveObserveMode();
@@ -218,6 +290,9 @@ export async function executeCronAgentAction(
     // 推送正文必须是最后一条 assistant 正文：orchestrator.sendMessage 是 Promise<void>，
     // result 恒 undefined，推它等于永远不推（PR#2060 ai-review Important）。
     await host.deliverCronResult(definition, finalAssistantText || result, executionId);
+  } else {
+    // 不投递，但配了推送目标时在运行记录里留一条「为什么没推」（N-FIX-CRON-RESULT-PUSH-SILENT-SKIP）。
+    await host.deliverCronResult(definition, undefined, executionId, { skip: quietWatchRound ? 'quiet-watch-round' : 'notify-quiet-round' });
   }
 
   // 无新料的监听运行整成 skipped 形状：复用 isSkippedResult 门，
@@ -225,13 +300,15 @@ export async function executeCronAgentAction(
   // 结果组装（digest + 紧急档位 N-CRON-INBOX-URGENCY-TIER）在 cronNormalizers：
   // cronService 贴 max-lines 线，档位优先读摘要头部行、无摘要块读正文头部。
   // notifyQuietRound 只打 notifySuppressed 标记（通知门），不进 skipped 形状。
-  const actionResult = buildCronAgentActionResult(action, result, cronSession.id, finalAssistantText, quietWatchRound, notifyQuietRound);
+  const actionResult = buildCronAgentActionResult(action, result, cronSession.id, finalAssistantText, quietWatchRound, notifyQuietRound, permissionDenied);
   // 事件 run：模型逐事件陈述的 act/ignore + 理由带出去，供决策台账结算（cronEventDecisions）。
   const eventDecisions = eventPayloadBlock === undefined ? [] : parseStatedEventDecisions(finalAssistantText);
   // N-CRON-RUN-LEDGER-VISIBLE：本地运行实测成本（scoped 计量器读数）；失败路径已挂在 error 上。
   const costUsd = costMeter.getCostUsd();
+  const unattendedApprovalDenials = takeUnattendedApprovalDenials(cronSession.id);
   return {
     ...actionResult,
+    ...(unattendedApprovalDenials.length > 0 ? { unattendedApprovalDenials } : {}),
     ...(eventDecisions.length > 0 ? { eventDecisions } : {}),
     ...(costUsd > 0 ? { costUsd } : {}),
   };

@@ -125,6 +125,7 @@ export interface CheckpointCommit {
   autoResumeCount?: number;
   clearInterruptCause?: boolean;
   quotaWaitDueAt?: number;
+  envBlocked?: RunEnvelope['envBlocked'];
 }
 
 export interface CheckpointStore {

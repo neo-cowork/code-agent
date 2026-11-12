@@ -1,9 +1,10 @@
 import { useEffect } from 'react';
 import type { AgentEventEnvelope } from '@shared/contract';
 import type { TaskNotification } from '@shared/contract/backgroundTask';
-import { RENDERER_POLLING } from '@shared/constants';
+import { BASH, RENDERER_POLLING } from '@shared/constants';
 import { useBackgroundTaskStore } from '../stores/backgroundTaskStore';
 import { useSessionStore } from '../stores/sessionStore';
+import { useMessageActionStore } from '../stores/messageActionStore';
 import ipcService from '../services/ipcService';
 import { hasNativeBridge } from '../api/transport';
 import { createBackoffPoller } from '../utils/backoffPoller';
@@ -19,7 +20,39 @@ interface UseBackgroundTaskSyncOptions {
   pollInterval?: number;
 }
 
+function readTimeoutMinutes(payload: unknown): number | null {
+  if (typeof payload !== 'object' || payload === null) return null;
+  const record = payload as Record<string, unknown>;
+  if (record.reason !== 'timeout') return null;
+  const ms = typeof record.maxRuntimeMs === 'number' && record.maxRuntimeMs > 0
+    ? record.maxRuntimeMs
+    : BASH.BACKGROUND_MAX_RUNTIME;
+  return Math.round(ms / 60_000);
+}
+
+function showTimeoutNotification(notification: TaskNotification, minutes: number, t: Translations): void {
+  toast.error(t.chat.taskTimeoutNotice.replace('{minutes}', String(minutes)), {
+    label: t.chat.taskTimeoutRerun,
+    onClick: () => {
+      // 发送通道绑定当前会话；用户已切走时不能把重跑请求发进别的会话。
+      if (useSessionStore.getState().currentSessionId !== notification.sessionId) {
+        logger.warn('Re-run skipped: current session differs from notification session', {
+          notificationSessionId: notification.sessionId,
+        });
+        toast.info(t.chat.taskTimeoutRerunWrongSession);
+        return;
+      }
+      void useMessageActionStore.getState().sendPrompt(t.chat.taskTimeoutRerunPrompt);
+    },
+  });
+}
+
 function showTaskNotification(notification: TaskNotification, t: Translations): void {
+  const timeoutMinutes = notification.type === 'task_failed' ? readTimeoutMinutes(notification.payload) : null;
+  if (timeoutMinutes !== null) {
+    showTimeoutNotification(notification, timeoutMinutes, t);
+    return;
+  }
   const message = t.chat.taskNotificationWithLog.replace('{message}', notification.message);
   if (notification.type === 'task_failed') {
     toast.error(message);
@@ -29,7 +62,7 @@ function showTaskNotification(notification: TaskNotification, t: Translations): 
     toast.success(message);
     return;
   }
-  if (notification.type === 'task_updated') {
+  if (notification.type === 'task_cancelled' || notification.type === 'task_updated') {
     toast.info(message);
     return;
   }

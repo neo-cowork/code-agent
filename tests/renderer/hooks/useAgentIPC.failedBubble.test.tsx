@@ -71,6 +71,31 @@ describe('useAgentIPC 失败气泡保留 + clientMessageId 幂等', () => {
     });
   });
 
+  // N-FIX-SIGNED-OUT-SEND-500-RAW-HTML-REDESIGN：旧项目 Source 快照缺失的 422 带
+  // 稳定码——错误气泡正文是信任确认句，metadata.sendFailureCode 供「确认并重发」入口。
+  it('PROJECT_SOURCE_TRUST 失败：错误消息带 sendFailureCode 与信任确认句', async () => {
+    invokeMock.mockRejectedValueOnce(
+      Object.assign(new Error('Neo 暂时没能完成这次请求，请稍后再试。'), {
+        status: 422,
+        code: 'PROJECT_SOURCE_TRUST',
+      }),
+    );
+    const hook = renderSendHook();
+
+    await act(async () => {
+      await hook.result.current.sendMessage(envelope);
+    });
+
+    const assistant = useSessionStore.getState().messages.find((message) => message.role === 'assistant');
+    expect(assistant?.content).toBe('这个项目文件夹需要你确认后 Neo 才能使用。');
+    expect(assistant?.metadata).toMatchObject({
+      sendFailureCode: 'PROJECT_SOURCE_TRUST',
+      retryClientMessageId: 'client-msg-keep',
+    });
+    expect(assistant?.content).not.toContain('Error:');
+    expect(assistant?.content).not.toContain('422');
+  });
+
   it('发送失败后原用户消息留在时间线并标记 sendFailed', async () => {
     invokeMock.mockRejectedValueOnce(new Error('network down'));
     const hook = renderSendHook();

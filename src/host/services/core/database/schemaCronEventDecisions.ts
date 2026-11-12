@@ -42,6 +42,7 @@ export function applyCronEventDecisionsSchema(db: BetterSqlite3.Database, logger
       reason TEXT NOT NULL,
       run_id TEXT,
       matched_rule TEXT,
+      event_label TEXT,
       tool TEXT,
       target TEXT,
       summary TEXT,
@@ -51,6 +52,14 @@ export function applyCronEventDecisionsSchema(db: BetterSqlite3.Database, logger
 
     CREATE INDEX IF NOT EXISTS idx_cron_event_decisions_job
       ON cron_event_decisions (job_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS cron_mail_watermarks (
+      job_id TEXT PRIMARY KEY,
+      binding TEXT NOT NULL,
+      seen_keys TEXT NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (job_id) REFERENCES cron_jobs(id) ON DELETE CASCADE
+    );
   `);
 
   // 返修②（叠加迁移）：已建过 cron_event_decisions 的库补 matched_rule 列（可空，老行读回 undefined）。
@@ -59,6 +68,15 @@ export function applyCronEventDecisionsSchema(db: BetterSqlite3.Database, logger
       db.exec('ALTER TABLE cron_event_decisions ADD COLUMN matched_rule TEXT');
     } catch (err: unknown) {
       logger.warn('[DB] cron_event_decisions.matched_rule migration failed:', err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  // 可空显示标签：老库增量补列，老行继续通过 event id 的安全兜底显示。
+  if (!hasColumn(db, 'cron_event_decisions', 'event_label')) {
+    try {
+      db.exec('ALTER TABLE cron_event_decisions ADD COLUMN event_label TEXT');
+    } catch (err: unknown) {
+      logger.warn('[DB] cron_event_decisions.event_label migration failed:', err instanceof Error ? err.message : String(err));
     }
   }
 }

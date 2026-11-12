@@ -8,6 +8,10 @@ import { useAppStore } from './appStore';
 import { useAppshotsStore } from './appshotsStore';
 import { useComposerStore } from './composerStore';
 import { isDraftOrSpaceScopeKey } from './composerScopeModel';
+import { excludeBusySessions, type DraftBusySignals } from './sessionDraftBusyGuard';
+import { toast } from '../hooks/useToast';
+import { languages } from '../i18n';
+import { getSessionTitlePlaceholder } from '../utils/sessionTitlePlaceholder';
 
 const logger = createLogger('SessionCreate');
 
@@ -89,7 +93,7 @@ function normalizeSession(session: Session & {
   };
 }
 
-interface SessionCreateStoreSlice {
+interface SessionCreateStoreSlice extends DraftBusySignals {
   sessions: SessionCreateMeta[];
   currentSessionId: string | null;
   messages: Message[];
@@ -136,22 +140,24 @@ export async function executeCreateSession(
     useAppStore.getState().closeSecondaryPages();
   }
   try {
-    const inheritedWorkingDirectory =
-      options?.workingDirectory !== undefined
-        ? options.workingDirectory
-        : useAppStore.getState().workingDirectory;
+    // appStore.workingDirectory mirrors the active session. Reusing it implicitly would bind a
+    // plain new chat to the previous chat's planned 任务_MMDD_ folder. Workspace/group entry
+    // points opt in by passing workingDirectory explicitly; every other new chat starts folderless.
+    const newSessionWorkingDirectory = options?.workingDirectory ?? null;
     const onboardingDefaultEnginePromise = !options?.engine
-      ? readOnboardingDefaultEngine(inheritedWorkingDirectory).catch(() => null)
+      ? readOnboardingDefaultEngine(newSessionWorkingDirectory).catch(() => null)
       : Promise.resolve(null);
     const nextTitle = title?.trim() || '新对话';
-    if (nextTitle === '新对话') {
+    if (getSessionTitlePlaceholder(nextTitle, useAppStore.getState().language) !== null) {
       useAppshotsStore.getState().clear();
       const reusableSession = findReusableNewSessionDraft({
-        sessions: get().sessions,
+        sessions: excludeBusySessions(
+          get().sessions, get().currentSessionId, get().messages, get(),
+        ),
         currentSessionId: get().currentSessionId,
         messages: get().messages,
         todos: get().todos,
-        workingDirectory: inheritedWorkingDirectory,
+        workingDirectory: newSessionWorkingDirectory,
       });
       if (reusableSession) {
         const onboardingDefaultEngine = await onboardingDefaultEnginePromise;
@@ -217,7 +223,7 @@ export async function executeCreateSession(
     set({ isLoading: true, error: null });
     const session = await invokeSession<Session | null>('create', {
       title: nextTitle,
-      workingDirectory: inheritedWorkingDirectory,
+      workingDirectory: newSessionWorkingDirectory,
       engine: options?.engine ?? null,
       ...(options?.expertRoleId ? { expertRoleId: options.expertRoleId } : {}),
       // 首句话建会话即带 'off'（无竞态）：host 侧 create 白名单校验后落库
@@ -286,10 +292,10 @@ export async function executeCreateSession(
     return null;
   } catch (error) {
     logger.error('Failed to create session', error);
-    set({
-      error: error instanceof Error ? error.message : 'Failed to create session',
-      isLoading: false,
-    });
+    const reason = error instanceof Error ? error.message : 'Failed to create session';
+    set({ error: reason, isLoading: false });
+    const prefix = languages[useAppStore.getState().language].sidebar.createSessionFailedPrefix;
+    toast.error(`${prefix}${reason}`);
     return null;
   }
 }

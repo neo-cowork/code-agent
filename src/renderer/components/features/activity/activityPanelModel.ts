@@ -16,6 +16,7 @@ import type {
 import type { ActivityContextPreview } from '../../../services/activityContext';
 import { redactActivityEvidence } from '../../../services/activityContext';
 import type { activityPanelZh } from '../../../i18n/activity';
+import { interpolatePlural } from '../../../i18n/interpolate';
 
 export type ActivityPanelMode = 'tauri' | 'web' | 'desktop';
 export type ActivityTone = 'ready' | 'idle' | 'blocked';
@@ -277,8 +278,7 @@ function buildCapabilityRows(args: {
         ? copy.capability.available
         : copy.capability.noMeetingContext,
       detail: args.native.audioStatus?.capturing
-        ? copy.capability.recording
-          .replace('{count}', String(args.native.audioStatus.totalSegments))
+        ? interpolatePlural(copy.capability.recording, args.native.audioStatus.totalSegments)
           .replace('{mode}', args.native.audioStatus.captureMode === 'system-audio' ? copy.capability.modeSystemAudio : copy.capability.modeMicrophone)
         : args.native.audioSegments.length > 0
           ? copy.capability.transcriptSegments.replace('{count}', String(args.native.audioSegments.length))

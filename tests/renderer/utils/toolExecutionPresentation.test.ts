@@ -13,6 +13,7 @@ import {
 } from '../../../src/renderer/utils/toolExecutionPresentation';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { en } from '../../../src/renderer/i18n/en';
+import { SANDBOX_APPROVED_RM_STILL_DENIED_FAILURE_CODE } from '../../../src/shared/constants';
 
 function makeToolCall(overrides: Partial<ToolCall> & Pick<ToolCall, 'name'>): ToolCall {
   return {
@@ -474,6 +475,16 @@ describe('humanizeToolFailureReason — failureCode 优先翻成一句人话', (
     expect(reason).not.toBe(zh.toolStepHumanize.failureReasonMissing);
   });
 
+  it('批准后沙盒仍拒绝删除：中文结果卡同时说明原因和下一步', () => {
+    const reason = humanizeToolFailureReason(failedCall(
+      SANDBOX_APPROVED_RM_STILL_DENIED_FAILURE_CODE,
+      'rm: target: Operation not permitted',
+    ), zh);
+    expect(reason).toBe('你已批准删除该文件，但沙盒仍然拒绝了删除；可以在访达里手动删除，或将文件移到当前工作目录后再试');
+    expect(reason).toContain('沙盒仍然拒绝');
+    expect(reason).toContain('在访达里手动删除');
+  });
+
   it('failureCode 人话优先于 metadata.reason 与原始 error', () => {
     const call = makeToolCall({
       name: 'spawn_agent',
@@ -495,5 +506,103 @@ describe('humanizeToolFailureReason — failureCode 优先翻成一句人话', (
   it('折叠摘要有 failureCode 人话时不再叠 fallbackSummary', () => {
     const call = failedCall('worktree-create-failed');
     expect(resolveCollapsedFailureSummary(call, zh)).toBeNull();
+  });
+});
+
+describe('humanizeToolFailureReason — 裸工程错误码翻成人话 + 下一步（FB-746）', () => {
+  function codeFailedCall(code: string): ToolCall {
+    return makeToolCall({
+      name: 'Read',
+      result: {
+        toolCallId: 'tool-code-1',
+        success: false,
+        error: `ENOENT: no such file or directory, open '/x'`,
+        metadata: { code },
+      },
+    });
+  }
+
+  it('ENOENT / INVALID_ARGS / FS_ERROR 显示原因 + 下一步，不再「错误码 X」', () => {
+    for (const code of ['ENOENT', 'INVALID_ARGS', 'FS_ERROR'] as const) {
+      const reason = humanizeToolFailureReason(codeFailedCall(code), zh);
+      expect(reason, code).toBe(zh.toolStepHumanize.rawFailureCodes[code]);
+      expect(reason, code).not.toContain('错误码');
+      expect(reason, code).not.toContain(code);
+      const reasonEn = humanizeToolFailureReason(codeFailedCall(code), en);
+      expect(reasonEn, code).toBe(en.toolStepHumanize.rawFailureCodes[code]);
+    }
+  });
+
+  it('未登记的全大写码走 generic 兜底句，不漏原始码', () => {
+    const reason = humanizeToolFailureReason(codeFailedCall('E_WHATEVER'), zh);
+    expect(reason).toBe(zh.toolStepHumanize.rawFailureCodeFallback);
+    expect(reason).not.toContain('E_WHATEVER');
+    expect(humanizeToolFailureReason(codeFailedCall('E_WHATEVER'), en))
+      .toBe(en.toolStepHumanize.rawFailureCodeFallback);
+  });
+
+  it('数字退出码与 HTTP nnn 保持「错误码 …」原样', () => {
+    expect(humanizeToolFailureReason(codeFailedCall('HTTP 404'), zh))
+      .toBe(zh.toolStepHumanize.failureCode.replace('{code}', 'HTTP 404'));
+    const exitCall = makeToolCall({
+      name: 'Bash',
+      result: {
+        toolCallId: 'tool-exit-1',
+        success: false,
+        error: 'process exited with code 137',
+        metadata: { exitCode: 137 },
+      },
+    });
+    expect(humanizeToolFailureReason(exitCall, zh)).toBe(zh.toolStepHumanize.failureCode.replace('{code}', '137'));
+  });
+
+  it('persisted spawn_agent invalid-agent-id failure infers tool-unavailable copy instead of failureReasonMissing', () => {
+    const persistedSpawnFailedCall: ToolCall = {
+      id: 'call_5fa74e436eb64c64be688ce9',
+      name: 'spawn_agent',
+      arguments: {
+        role: 'general-purpose',
+        task: '严格按以下两阶段执行，不得偏离：【阶段一 · 唯一一次工具调用】首先且仅调用一次 Bash 工具，命令为：printf "ok" > /tmp/neo-approve-test.txt',
+      },
+      result: {
+        toolCallId: 'call_5fa74e436eb64c64be688ce9',
+        success: false,
+        error: 'Invalid agent ID: "general-purpose". Valid IDs: coder, reviewer, explore, plan, awaiter, dream, distill, 万卷, 持衡, 数据分析师, 明镜, 溯真, 牧之, 记言, 青禾',
+        duration: 308,
+        metadata: {
+          executionStarted: true,
+          fromCache: false,
+          memoryTainted: true,
+        },
+      },
+    };
+    expect(humanizeToolFailureReason(persistedSpawnFailedCall, zh))
+      .toBe(zh.toolStepHumanize.failureCodes['tool-unavailable']);
+    expect(humanizeToolFailureReason(persistedSpawnFailedCall, zh))
+      .not.toBe(zh.toolStepHumanize.failureReasonMissing);
+  });
+
+});
+
+
+describe('foreground wait validation copy', () => {
+  const error = 'foregroundBlockingBudgetMs must be less than role execution timeout (1200000 >= 900000)';
+  it.each([
+    [zh, '助手设置的等待时间超过了允许的上限，需要缩短', '这次任务的额度已经用完'],
+    [en, 'The wait time the assistant set exceeds the allowed limit and must be shortened.', 'This task used up its budget'],
+  ] as const)('shows the wait correction and preserves genuine budget copy (%#)', (t, expected, budgetCopy) => {
+    const call = makeToolCall({ name: 'spawn_agent', result: {
+      toolCallId: 'wait-argument', success: false, error,
+      metadata: { failureCode: 'invalid-arguments' },
+    } });
+    expect(humanizeToolFailureReason(call, t)).toBe(expected);
+    expect(humanizeToolError(error, call.name, t, call.result?.metadata)).toEqual({ summary: expected });
+    expect(humanizeToolFailureReason(call, t)).not.toMatch(/budget|quota|额度|预算|充值/iu);
+    expect(resolveToolTerminalOutcomeKey(call)).toBe('failed-tool');
+    // Historical rows may retain only the original English validation error.
+    expect(humanizeToolFailureReason({ ...call, result: { ...call.result!, metadata: {} } }, t)).toBe(expected);
+    const exhausted = { ...call, result: { ...call.result!, error: 'budget exhausted', metadata: { failureCode: 'budget-exhausted' } } };
+    expect(humanizeToolFailureReason(exhausted, t)).toBe(budgetCopy);
+    expect(resolveToolTerminalOutcomeKey(exhausted)).toBe('failed-budget');
   });
 });

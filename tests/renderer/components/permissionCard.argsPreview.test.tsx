@@ -53,9 +53,9 @@ const { PermissionCard } = await import('../../../src/renderer/components/Permis
 function baseRequest(overrides: Partial<ContractPermissionRequest>): ContractPermissionRequest {
   return {
     id: 'req-preview-1',
-    tool: 'Bash',
-    type: 'command',
-    details: { command: 'npm run gates:fast' },
+    tool: 'custom_parked_tool',
+    type: 'mcp',
+    details: { server: 'local', toolName: 'sync' },
     timestamp: 1,
     ...overrides,
   };
@@ -66,7 +66,7 @@ function render(): string {
 }
 
 describe('PermissionCard argsPreview 呈现', () => {
-  it('request.argsPreview 在时渲染预览块与脱敏文本（zh）', () => {
+  it('无 command/path/filePath/url/changes 字段时，request.argsPreview 存在则渲染预览块与脱敏文本（zh）', () => {
     storeState.language = 'zh';
     storeState.request = baseRequest({
       argsPreview: 'curl https://api.example.com/v1 · Bearer ***REDACTED***',
@@ -77,7 +77,7 @@ describe('PermissionCard argsPreview 呈现', () => {
     expect(html).toContain('Bearer ***REDACTED***');
   });
 
-  it('request.argsPreview 在时渲染预览块（en 词条）', () => {
+  it('无 command/path/filePath/url/changes 字段时，request.argsPreview 存在则渲染预览块（en 词条）', () => {
     storeState.language = 'en';
     storeState.request = baseRequest({
       argsPreview: 'curl https://api.example.com/v1 · Bearer ***REDACTED***',
@@ -88,11 +88,48 @@ describe('PermissionCard argsPreview 呈现', () => {
     expect(html).toContain('Bearer ***REDACTED***');
   });
 
+  it('RequestDetails 已展示 command/path/url/changes 时，抑制 argsPreview 避免同一命令出现两遍或三遍', () => {
+    storeState.language = 'zh';
+    const cmd = 'curl -s https://example.com/feed.xml';
+    storeState.request = baseRequest({
+      tool: 'Bash',
+      type: 'command',
+      details: {
+        command: cmd,
+        preview: { type: 'command', summary: cmd },
+      },
+      argsPreview: cmd,
+    });
+    const html = render();
+    expect(html).not.toContain('data-testid="permission-args-preview"');
+    // strip title attribute before counting visible text occurrences, or count visible occurrences
+    const withoutTitle = html.replace(/title="[^"]*"/g, '');
+    expect(withoutTitle.split(cmd).length - 1).toBe(1);
+  });
+
   it('request.argsPreview 缺省（交互路径 / 旧事件）不渲染预览块', () => {
     storeState.language = 'zh';
     storeState.request = baseRequest({});
     const html = render();
     expect(html).not.toContain('permission-args-preview');
     expect(html).not.toContain('参数预览');
+  });
+
+  it('set_role_proactivity 默认展开旧->新复述，不允许藏进文件写入紧凑卡', () => {
+    storeState.language = 'zh';
+    storeState.request = baseRequest({
+      tool: 'set_role_proactivity',
+      type: 'command',
+      forceConfirm: true,
+      details: {
+        preview: {
+          type: 'generic',
+          summary: '角色「研究员」主动性调整：\n打扰频率：实时介入 -> 每日简报（每天 09:00）\n永远别提：+ 天气',
+        },
+      },
+    });
+    const html = render();
+    expect(html).toContain('实时介入 -&gt; 每日简报（每天 09:00）');
+    expect(html).toContain('永远别提：+ 天气');
   });
 });

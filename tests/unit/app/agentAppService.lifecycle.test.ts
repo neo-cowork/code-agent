@@ -1,5 +1,6 @@
  
 import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentAppServiceImpl } from '../../../src/host/app/agentAppService';
 import { DurableRunReadService } from '../../../src/host/app/durableRunReadService';
@@ -9,6 +10,7 @@ import { getSessionManager } from '../../../src/host/services';
 import { getDatabase } from '../../../src/host/services/core/databaseService';
 import { getFileCheckpointService } from '../../../src/host/services/checkpoint';
 import { loadStreamSnapshot } from '../../../src/host/session/streamSnapshot';
+import { getDefaultWorkDirectory } from '../../../src/host/config/configPaths';
 
 vi.mock('../../../src/host/services', () => ({
   getSessionManager: vi.fn(),
@@ -104,6 +106,7 @@ describe('AgentAppService lifecycle routing', () => {
     applyPromptRewind: ReturnType<typeof vi.fn>;
     restorePromptRewind: ReturnType<typeof vi.fn>;
     repairConversationLineage: ReturnType<typeof vi.fn>;
+    listRecordedWorkingDirectories: ReturnType<typeof vi.fn>;
   };
   let checkpointService: {
     getFirstCheckpointAtOrAfter: ReturnType<typeof vi.fn>;
@@ -156,6 +159,7 @@ describe('AgentAppService lifecycle routing', () => {
       applyPromptRewind: vi.fn(),
       restorePromptRewind: vi.fn(),
       repairConversationLineage: vi.fn(),
+      listRecordedWorkingDirectories: vi.fn(() => []),
     };
     checkpointService = {
       getFirstCheckpointAtOrAfter: vi.fn(),
@@ -344,6 +348,28 @@ describe('AgentAppService lifecycle routing', () => {
       workingDirectory: '/current/project',
     }));
     expect(orchestrator.setWorkingDirectory).toHaveBeenCalledWith('/current/project');
+  });
+
+  it('preserves an explicitly selected planned task directory even when another session recorded it', async () => {
+    const selectedDirectory = path.join(
+      getDefaultWorkDirectory(),
+      '任务_1107_写一篇文章',
+    );
+    database.listRecordedWorkingDirectories.mockReturnValue([selectedDirectory]);
+    const service = createServiceWithConfig(taskManager, {
+      getSettings: () => ({ model: { provider: 'openai', model: 'gpt-5.4' } }),
+    });
+
+    const session = await service.createSession({
+      title: '继续写文章',
+      workingDirectory: selectedDirectory,
+    });
+
+    expect(session.workingDirectory).toBe(selectedDirectory);
+    expect(sessionManager.createSession).toHaveBeenCalledWith(expect.objectContaining({
+      title: '继续写文章',
+      workingDirectory: selectedDirectory,
+    }));
   });
 
   it('persists only expertThread after creating an expert session and preserves existing metadata', async () => {
@@ -693,6 +719,30 @@ describe('AgentAppService lifecycle routing', () => {
 
     expect(orchestrator.setWorkingDirectory).toHaveBeenCalledWith('/old/project');
     expect(sessionManager.updateSession).not.toHaveBeenCalled();
+  });
+
+  // N-FIX-ATTACH-IMAGE-ANALYZE-GLOB-WASTE-FU1 返修：桌面 envelope 不带 modelSpec，
+  // 模型必须从运行循环同款解析（会话 override）拿到，否则视觉模型也会被加 image_analyze。
+  describe.each([
+    ['text-only', { provider: 'zhipu', model: 'glm-5' }, true],
+    ['vision-capable', { provider: 'claude', model: 'claude-sonnet-4-6' }, false],
+  ])('desktop image turn on %s session model', (_label, override, expectTool) => {
+    const image = { id: 'a1', type: 'image', category: 'image', name: 'r.png', size: 1, mimeType: 'image/png', path: '/tmp/r.png' };
+
+    it('image_analyze 取决于会话实际模型（envelope 无 modelSpec）', async () => {
+      const { getModelSessionState } = await import('../../../src/host/session/modelSessionState');
+      getModelSessionState().setOverride('session-1', override as never);
+      try {
+        const service = createService(taskManager);
+        await service.sendMessage({ sessionId: 'session-1', content: '这张报销单总额是多少？', attachments: [image] } as any);
+        const names = taskManager.startTask.mock.calls.at(-1)?.[3]?.allowedToolNames as string[];
+        expect(names.includes('image_analyze')).toBe(expectTool);
+        await service.sendMessage({ sessionId: 'session-1', content: '谢谢' } as any);
+        expect(taskManager.startTask.mock.calls.at(-1)?.[3]?.allowedToolNames).not.toContain('image_analyze');
+      } finally {
+        getModelSessionState().clearOverride?.('session-1');
+      }
+    });
   });
 
   it('keeps an isolated Fork on its verified child root when the renderer sends a stale source cwd', async () => {

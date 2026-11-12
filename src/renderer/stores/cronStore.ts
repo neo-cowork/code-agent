@@ -20,6 +20,9 @@ export type CronJobFilterMode = 'all' | 'enabled' | 'disabled';
 
 interface CronState {
   jobs: CronJobDefinition[];
+  /** Complete job catalog used for cross-job run labels; `jobs` may be filter-scoped. */
+  allJobs: CronJobDefinition[];
+  jobNamesLoaded: boolean;
   stats: CronServiceStats | null;
   latestExecutions: Record<string, CronJobExecution | null>;
   executionsByJobId: Record<string, CronJobExecution[]>;
@@ -45,6 +48,8 @@ interface CronState {
   loadStats: () => Promise<void>;
   loadExecutions: (jobId: string, limit?: number) => Promise<void>;
   loadRecentExecutions: (limit?: number) => Promise<void>;
+  /** 有 running 执行时由面板轮询调用：一次请求同时校正「运行记录」流与各任务最近一次执行。 */
+  syncRunningExecutions: () => Promise<void>;
   refresh: () => Promise<void>;
   createJob: (input: CreateCronJobInput) => Promise<CronJobDefinition>;
   updateJob: (jobId: string, updates: UpdateCronJobInput) => Promise<CronJobDefinition | null>;
@@ -66,6 +71,8 @@ async function loadLatestExecution(jobId: string): Promise<CronJobExecution | nu
 
 export const useCronStore = create<CronState>()((set, get) => ({
   jobs: [],
+  allJobs: [],
+  jobNamesLoaded: false,
   stats: null,
   latestExecutions: {},
   executionsByJobId: {},
@@ -92,11 +99,15 @@ export const useCronStore = create<CronState>()((set, get) => ({
     const { filterMode, selectedJobId } = get();
     set({ isLoading: true, error: null });
 
-    try {
-      const jobs = await cronClient.listJobs(
-        filterMode === 'all' ? undefined : { enabled: filterMode === 'enabled' }
-      );
+    const filter = filterMode === 'all' ? undefined : { enabled: filterMode === 'enabled' };
+    const filteredJobsPromise = cronClient.listJobs(filter);
+    // The visible task list may be filtered; run records still need the complete catalog
+    // so a disabled task is not mistaken for a deleted one.
+    const allJobsPromise = filterMode === 'all' ? filteredJobsPromise : cronClient.listJobs();
+    const [filteredResult, allResult] = await Promise.allSettled([filteredJobsPromise, allJobsPromise]);
 
+    if (filteredResult.status === 'fulfilled') {
+      const jobs = filteredResult.value;
       const latestPairs = await Promise.all(
         jobs.map(async (job) => [job.id, await loadLatestExecution(job.id)] as const)
       );
@@ -112,14 +123,22 @@ export const useCronStore = create<CronState>()((set, get) => ({
         latestExecutions,
         selectedJobId: nextSelectedJobId,
       });
-    } catch (error) {
-      logger.error('Failed to load cron jobs', error);
+    } else {
+      logger.error('Failed to load cron jobs', filteredResult.reason);
       set({
-        error: error instanceof Error ? error.message : 'Failed to load cron jobs',
+        error: filteredResult.reason instanceof Error ? filteredResult.reason.message : 'Failed to load cron jobs',
       });
-    } finally {
-      set({ isLoading: false });
     }
+
+    if (allResult.status === 'fulfilled') {
+      set({ allJobs: allResult.value, jobNamesLoaded: true });
+    } else {
+      logger.warn('Failed to load complete cron job catalog', {
+        errorMessage: allResult.reason instanceof Error ? allResult.reason.message : String(allResult.reason),
+      });
+    }
+
+    set({ isLoading: false });
   },
 
   loadStats: async () => {
@@ -137,14 +156,18 @@ export const useCronStore = create<CronState>()((set, get) => ({
   loadExecutions: async (jobId, limit = 20) => {
     try {
       const executions = await cronClient.getExecutions(jobId, limit);
+      // host 契约返回旧→新（cronPersistence LIMIT+reverse），store 统一归一成新→旧（FB-591）。
+      const sorted = [...executions].sort(
+        (a, b) => b.scheduledAt - a.scheduledAt || (b.startedAt ?? 0) - (a.startedAt ?? 0)
+      );
       set((state) => ({
         executionsByJobId: {
           ...state.executionsByJobId,
-          [jobId]: executions,
+          [jobId]: sorted,
         },
         latestExecutions: {
           ...state.latestExecutions,
-          [jobId]: executions[0] || executions[executions.length - 1] || null,
+          [jobId]: sorted[0] ?? null,
         },
       }));
     } catch (error) {
@@ -164,6 +187,41 @@ export const useCronStore = create<CronState>()((set, get) => ({
       set({
         error: error instanceof Error ? error.message : 'Failed to load recent cron executions',
       });
+    }
+  },
+
+  syncRunningExecutions: async () => {
+    try {
+      const recent = await cronClient.getRecentExecutions(50);
+      const byId = new Map(recent.map((execution) => [execution.id, execution]));
+      let changed = false;
+      set((state) => {
+        const latestExecutions = { ...state.latestExecutions };
+        let latestChanged = false;
+        for (const [jobId, known] of Object.entries(latestExecutions)) {
+          const fresh = known ? byId.get(known.id) : undefined;
+          if (fresh && fresh.status !== known?.status) {
+            latestExecutions[jobId] = fresh;
+            latestChanged = true;
+          }
+        }
+        const recentChanged = JSON.stringify(recent) !== JSON.stringify(state.recentExecutions);
+        changed = recentChanged || latestChanged;
+        if (!changed) return state;
+        return {
+          ...(recentChanged ? { recentExecutions: recent } : {}),
+          ...(latestChanged ? { latestExecutions } : {}),
+        };
+      });
+      if (changed) {
+        const { selectedJobId } = get();
+        await Promise.all([
+          get().loadStats(),
+          ...(selectedJobId ? [get().loadExecutions(selectedJobId)] : []),
+        ]);
+      }
+    } catch (error) {
+      logger.warn('Failed to sync running cron executions', { error });
     }
   },
 
@@ -221,9 +279,18 @@ export const useCronStore = create<CronState>()((set, get) => ({
   },
 
   triggerJob: async (jobId) => {
-    const execution = await cronClient.triggerJob(jobId);
-    await Promise.all([get().loadExecutions(jobId), get().loadStats()]);
-    return execution;
+    const pending = cronClient.triggerJob(jobId);
+    const refresh = () => Promise.all([get().loadExecutions(jobId), get().loadStats()]);
+    // The host persists a running execution before the long-running IPC settles.
+    // Retry discovery while it is pending in case the first read races persistence.
+    const timer = setInterval(() => { void refresh(); }, 2000);
+    void refresh();
+    try {
+      return await pending;
+    } finally {
+      clearInterval(timer);
+      await refresh();
+    }
   },
 
   setEventActionMode: async (jobId, mode) => {

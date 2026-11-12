@@ -41,6 +41,7 @@ import { Button } from '../../../primitives/Button';
 import { Input } from '../../../primitives/Input';
 import { DeliverablePublishBadge } from '../../../DeliverablePublishBadge';
 import { applyPublishInfoToDeliverableCard, applyShareInfoToDeliverableCard } from '../../../../utils/deliverables';
+import { resolveDeliverablePath } from '../../../../utils/deliverablePath';
 import { ShareLinkPanel } from './ShareLinkPanel';
 
 interface Props {
@@ -65,11 +66,6 @@ function publishActionForCard(
   return card.secondaryActions?.find(
     (action): action is Extract<DeliverableSecondaryAction, { kind: 'publish-version' }> => action.kind === 'publish-version',
   );
-}
-
-function resolveDeliverablePath(filePath: string, workingDirectory: string | null): string {
-  if (filePath.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(filePath) || !workingDirectory) return filePath;
-  return `${workingDirectory.replace(/[\\/]$/, '')}/${filePath}`;
 }
 
 export function iconForKind(kind: string): React.ReactNode {
@@ -471,7 +467,14 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
         };
       });
       setPublishTarget(null);
-      toast.success(deliverableLabels.publishSuccess.replace('{version}', String(response.publishedVersion.version)));
+      toast.success(
+        deliverableLabels.publishSuccess.replace('{version}', String(response.publishedVersion.version)),
+        undefined,
+        {
+          label: t.library.viewVersions,
+          onClick: () => openPreview(filePath, { deliverableStatus: publishTarget.card.status }),
+        },
+      );
     } catch (error) {
       toast.error(`${deliverableLabels.publishFailed}: ${error instanceof Error ? error.message : String(error)}`);
     } finally {

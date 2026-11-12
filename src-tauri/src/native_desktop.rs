@@ -771,15 +771,32 @@ fn probe_microphone_permission() -> NativePermissionStatus {
     )
 }
 
+#[cfg(target_os = "macos")]
 fn probe_notifications_permission() -> NativePermissionStatus {
     permission_status(
         "notifications",
         "Notifications",
         "unknown",
         false,
-        Some("Notification permission is managed by the Tauri notification plugin and is not probed by the native desktop bridge yet.".to_string()),
-        Some("check_notification_plugin".to_string()),
+        Some(
+            "macOS notification permission status is not readable while delivery uses the legacy NSUserNotificationCenter backend."
+                .to_string(),
+        ),
+        Some("open_notifications_settings".to_string()),
         current_bundle_id(),
+    )
+}
+
+#[cfg(not(target_os = "macos"))]
+fn probe_notifications_permission() -> NativePermissionStatus {
+    permission_status(
+        "notifications",
+        "Notifications",
+        "unsupported",
+        false,
+        Some("Notification permission probing is only implemented on macOS.".to_string()),
+        None,
+        None,
     )
 }
 
@@ -2211,6 +2228,12 @@ pub fn desktop_open_system_settings(request: OpenSystemSettingsRequest) -> Resul
             "microphone" => {
                 "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
             }
+            "inputMonitoring" => {
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"
+            }
+            "notifications" => {
+                "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
+            }
             other => return Err(format!("Unsupported settings pane: {other}")),
         };
 
@@ -3056,6 +3079,20 @@ mod privacy_tests {
         assert_eq!(tcc_auth_value_to_permission_state(Some("0")), "denied");
         assert_eq!(tcc_auth_value_to_permission_state(Some("1")), "unknown");
         assert_eq!(tcc_auth_value_to_permission_state(None), "unknown");
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn notification_permission_probe_returns_unknown_with_settings_action() {
+        let status = probe_notifications_permission();
+        assert_eq!(status.kind, "notifications");
+        assert_eq!(status.status, "unknown");
+        assert_eq!(status.action.as_deref(), Some("open_notifications_settings"));
+        assert!(status
+            .detail
+            .as_deref()
+            .unwrap_or_default()
+            .contains("not readable"));
     }
 
     #[test]

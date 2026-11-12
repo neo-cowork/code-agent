@@ -44,7 +44,9 @@ import {
   type MailEventFields,
 } from './cronMailPoller';
 import { resolveCronEventActionMode } from '../../shared/cronEventActionMode';
+import { truncateObserveText } from '../tools/observeModeGate';
 import { sqliteCronEventDecisionStore, type CronEventDecisionStore } from './cronEventDecisionLedger';
+import { sqliteCronMailWatermarkStore, type CronMailWatermarkStore } from './cronMailWatermarkStore';
 import {
   buildEventDecisionInstruction,
   describeEventScheduleRule,
@@ -114,6 +116,8 @@ export interface CronEventTriggerOptions {
   setTimer?: (callback: () => void, delayMs: number) => { clear(): void };
   /** 逐事件决策台账（N-TRIGGER-OBSERVE-MODE）；缺省写 cron_event_decisions 表。 */
   decisionStore?: CronEventDecisionStore;
+  /** mail 已见水位（N-FIX-MAIL-TRIGGER-RESTART-RESEED）；缺省写 cron_mail_watermarks 表。 */
+  watermarkStore?: CronMailWatermarkStore;
 }
 
 interface JobEventState {
@@ -309,6 +313,7 @@ export class CronEventTrigger {
       mailReader: this.mailReader,
       now: this.now,
       setTimer: this.setTimer,
+      watermarkStore: options.watermarkStore ?? sqliteCronMailWatermarkStore,
     });
   }
 
@@ -523,10 +528,20 @@ export class CronEventTrigger {
       console.error(`[CronEventTrigger] Event run failed for job ${jobId}:`, error);
     }
     try {
+      const carriedEventLabels = carried.reduce<Record<string, string>>((labels, event) => {
+        if (!event.mail) return labels;
+        const label = truncateObserveText(
+          [event.senderName, event.mail.subject].map((part) => part.trim()).filter(Boolean).join(' · '),
+          CRON_EVENT_DECISIONS.MAX_EVENT_LABEL_CHARS,
+        );
+        if (label) labels[event.messageId] = label;
+        return labels;
+      }, {});
       this.decisionStore.record(settleEventRunDecisions({
         jobId,
         mode: resolveCronEventActionMode(definition) ?? 'observe',
         carriedEventIds: carried.map((event) => event.messageId),
+        ...(Object.keys(carriedEventLabels).length > 0 ? { carriedEventLabels } : {}),
         dropped: droppedEvents,
         execution,
         runError,

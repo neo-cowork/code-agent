@@ -1,3 +1,9 @@
+import { agentNodeLabel } from './agentRoleLabel';
+import { agentFailureCopy } from './agentFailureCopy';
+import { containsCjk } from './containsCjk';
+import { languages } from '../i18n';
+import { useAppStore } from '../stores/appStore';
+import { isAgentFailureCode } from '@shared/contract/agentFailure';
 // ============================================================================
 // agentRows - 「本会话的代理」统一行模型（N-L6-AGENTVIEW）
 // ----------------------------------------------------------------------------
@@ -29,6 +35,8 @@ export interface MemberRowSource {
   standbyKey?: string;
   /** Swarm 账本记录的改动文件；只读 explore 为 []。 */
   filesChanged?: readonly string[];
+  /** 最近可见进展的活锚点（contextSnapshot.lastUpdated，只从活源取，不回落 startTime）；无进展提示（agentRowStall）用它算空转。 */
+  lastActivityAt?: number;
 }
 
 export interface AgentRow {
@@ -107,6 +115,7 @@ export function buildAgentRows(input: {
   tasks: Task[];
 }): AgentRow[] {
   const { members, nodes, tasks } = input;
+  const t = languages[useAppStore.getState().language];
   const rows: AgentRow[] = [];
   const memberKeys = new Set(members.map((member) => member.key));
 
@@ -135,7 +144,7 @@ export function buildAgentRows(input: {
       if (row) {
         row.node = node;
         if (typeof node.budgetSummary.tokensUsed === 'number') row.tokens = node.budgetSummary.tokensUsed;
-        if (node.failureReason) row.failureReason = node.failureReason;
+        row.failureReason = agentFailureCopy(node.failureCode, t, node.failureReason) ?? undefined;
       }
       continue;
     }
@@ -145,10 +154,10 @@ export function buildAgentRows(input: {
       key: node.id,
       kind: 'agent',
       roleId: node.role,
-      name: node.role,
+      name: agentNodeLabel(node, t.agentRoleLabels),
       isLead: false,
       status,
-      failureReason: node.failureReason,
+      failureReason: agentFailureCopy(node.failureCode, t, node.failureReason) ?? undefined,
       stoppable: status === 'working',
       tokens: node.budgetSummary.tokensUsed,
       node,
@@ -167,10 +176,14 @@ export function buildAgentRows(input: {
     rows.push({
       key: task.id,
       kind: 'task',
-      name: task.title,
+      name: t === languages.en && task.source === 'delegate_task' && containsCjk(task.title)
+        ? t.agentRoleLabels.roles.background
+        : task.title,
       isLead: false,
       status,
-      failureReason: task.failure?.message,
+      failureReason: agentFailureCopy(
+        isAgentFailureCode(task.failure?.reason) ? task.failure.reason : undefined, t, task.failure?.message,
+      ) ?? undefined,
       stoppable: status === 'working',
       task,
     });

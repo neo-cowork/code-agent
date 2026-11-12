@@ -38,6 +38,8 @@ export interface AgentTreeSpawnAgentSource {
   id: string;
   role: string;
   treeId?: string;
+  sessionId?: string;
+  completion?: { title?: string };
   parentId?: string;
   status: ManagedAgentStatus;
   task: string;
@@ -72,6 +74,13 @@ const STATUS_PRIORITY: Record<AgentTreeNodeSource, number> = {
   parallelCoordinator: 60,
   spawnGuard: 100,
 };
+
+/**
+ * 本进程启动时刻。subagent 都活在宿主进程内、没有跨重启存活的形态——
+ * 一条 context 记录的最后更新早于这个时刻，说明写它的执行方已随上一次
+ * 退出死亡（N-STALE-AGENT-CHIP-AFTER-QUIT：重启后成员条谎报「N 个代理工作中」）。
+ */
+const HOST_PROCESS_BOOT_MS = Date.now() - process.uptime() * 1000;
 
 function defaultWorktreeState(): AgentTreeWorktreeState {
   return { status: 'none' };
@@ -110,6 +119,8 @@ function failureReason(code: AgentFailureCode): string {
       return '需要的权限没有通过';
     case AgentFailureCode.ToolUnavailable:
       return '需要的能力当前不可用';
+    case AgentFailureCode.InvalidArguments:
+      return '助手设置的等待时间超过了允许的上限，需要缩短';
     case AgentFailureCode.BudgetExhausted:
       return '可用预算已经用完';
     case AgentFailureCode.Timeout:
@@ -331,6 +342,7 @@ function mergeSpawnAgent(
   const node = ensureNode(nodes, agent.id, agent.role);
   addSource(node, 'spawnGuard');
   node.role = agent.role;
+  node.displayName = agent.completion?.title ?? node.displayName;
   node.task = agent.task;
   if (agent.parentId) node.parentId = agent.parentId;
   if (agent.createdAt) node.createdAt = agent.createdAt;
@@ -409,7 +421,22 @@ function mergeContextRecord(
   const role = record.snapshot?.previews[0]?.role ?? 'agent';
   const node = ensureNode(nodes, record.agentId, role);
   addSource(node, 'subagentContext');
-  applyStatus(node, 'unknown', 'subagentContext', statusPriorities);
+  const lifecycle = record.lifecycle;
+  // Explicit graph terminal (parent-run settlement) wins; persisted lifecycle terminal facts survive
+  // restart; only unfinished records use the orphan heuristic.
+  const status: AgentTreeNodeStatus = record.terminalStatus
+    ?? (lifecycle && lifecycle.status !== 'running'
+      ? lifecycle.status
+      : record.updatedAt < HOST_PROCESS_BOOT_MS ? 'cancelled' : 'unknown');
+  if (lifecycle) {
+    node.displayName = lifecycle.displayName;
+    node.role = lifecycle.role ?? node.role;
+    node.background = lifecycle.background || node.background;
+    node.task ??= lifecycle.task;
+    node.createdAt ??= lifecycle.startedAt;
+    node.completedAt ??= lifecycle.finishedAt;
+  }
+  applyStatus(node, status, 'subagentContext', statusPriorities);
   node.updatedAt = Math.max(node.updatedAt ?? 0, record.updatedAt);
   const activeTool = activeToolFromContext(record);
   if (activeTool) node.activeTool = activeTool;
@@ -432,9 +459,15 @@ function mergeBackgroundAgent(
   nodes: Map<string, AgentTreeNode>,
   statusPriorities: Map<string, number>,
   handle: BackgroundSubagentHandle,
+  backgroundAgentId = handle.agentId,
 ): void {
   const node = ensureNode(nodes, handle.agentId, 'background');
   addSource(node, 'backgroundRegistry');
+  node.background = true;
+  node.backgroundAgentId = backgroundAgentId;
+  node.displayName ||= handle.displayName;
+  node.task ??= handle.title;
+  if (node.role === 'background' && handle.role) node.role = handle.role;
   if (handle.startedAt && !node.createdAt) node.createdAt = handle.startedAt;
   if (handle.finishedAt) node.completedAt = handle.finishedAt;
   node.updatedAt = handle.finishedAt ?? handle.startedAt ?? node.updatedAt;
@@ -542,10 +575,16 @@ export function buildAgentTreeSnapshot(sources: AgentTreeSnapshotSources = {}): 
   const nodes = new Map<string, AgentTreeNode>();
   const statusPriorities = new Map<string, number>();
   const sessionId = sources.sessionId?.trim() || undefined;
+  const registryAliases = new Map<string, string>();
+  for (const record of sources.contextRecords ?? []) {
+    if ((!sessionId || record.sessionId === sessionId) && record.lifecycle?.backgroundAgentId) {
+      registryAliases.set(record.lifecycle.backgroundAgentId, record.agentId);
+    }
+  }
   const contextAgentIds = new Set((sources.contextRecords ?? []).map((record) => record.agentId));
 
   for (const agent of sources.spawnAgents ?? []) {
-    if (sessionId && agent.treeId && agent.treeId !== sessionId && !contextAgentIds.has(agent.id)) {
+    if (sessionId && (agent.sessionId ? agent.sessionId !== sessionId : agent.treeId !== sessionId && !contextAgentIds.has(agent.id))) {
       continue;
     }
     mergeSpawnAgent(nodes, statusPriorities, agent);
@@ -554,9 +593,13 @@ export function buildAgentTreeSnapshot(sources: AgentTreeSnapshotSources = {}): 
     mergeParallelTask(nodes, statusPriorities, task);
   }
   for (const handle of sources.backgroundAgents ?? []) {
-    mergeBackgroundAgent(nodes, statusPriorities, handle);
+    if (sessionId && handle.sessionId !== sessionId) continue;
+    mergeBackgroundAgent(nodes, statusPriorities, {
+      ...handle, agentId: registryAliases.get(handle.agentId) ?? handle.agentId,
+    }, handle.agentId);
   }
   for (const record of sources.contextRecords ?? []) {
+    if (sessionId && record.sessionId !== sessionId) continue;
     mergeContextRecord(nodes, statusPriorities, record);
   }
   for (const worktree of sources.worktrees ?? []) {

@@ -151,8 +151,8 @@ describe('workflow_orchestrate behavior', () => {
         bridge: { protocolContext: true, legacyContext: true },
         artifactRole: 'multiagent-result',
         artifact: expect.objectContaining({ kind: 'text', sourceTool: 'workflow_orchestrate' }),
-        artifacts: [expect.objectContaining({ kind: 'text', sourceTool: 'workflow_orchestrate' })],
       });
+      expect(result.meta?.artifacts).toBeUndefined();
     }
     expect(executeWorkflowMock).toHaveBeenCalledWith(
       { workflow: 'doc', task: 'process pdf', stages: [{ name: 'extract' }, { name: 'draft' }] },

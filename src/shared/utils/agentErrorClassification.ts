@@ -11,6 +11,7 @@
 // ============================================================================
 
 import type { AgentErrorMetadata } from '../contract';
+import { RUN_ERROR_CODE_MAX_ITERATIONS } from '../constants';
 import { hasInsufficientBalanceSignal } from './providerError';
 
 type AgentErrorPayload = Record<string, unknown>;
@@ -58,6 +59,16 @@ function getStringPayloadField(data: unknown, field: string): string | undefined
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
+/** 供应商中文限流措辞（额度/余额措辞不在此列，由 usage_limit/billing 分支处理）。 */
+export function isChineseRateLimitMessage(message: string): boolean {
+  return (
+    message.includes('速率限制') ||
+    message.includes('请求过于频繁') ||
+    message.includes('限制请求频率') ||
+    message.includes('请求频率')
+  );
+}
+
 /**
  * 把 agent error 事件分类成结构化错误（写进 message.metadata.agentError，由
  * AgentErrorCard 渲染）。title/suggestion 文案不在这里生成——文案随 i18n 走，
@@ -68,6 +79,8 @@ export function classifyAgentError(
   context?: { modelId?: string },
 ): AgentErrorMetadata | null {
   const payload = normalizeAgentErrorPayload(data);
+  if (payload.code === RUN_ERROR_CODE_MAX_ITERATIONS
+    && isRecord(payload.details) && payload.details.stoppedByStepLimit === true) return null;
   const message = getAgentErrorMessage(payload);
   if (!message) return null;
 
@@ -127,6 +140,18 @@ export function classifyAgentError(
     if (structuredFailureCode === 'MODEL_QUOTA') {
       return { ...base, category: 'insufficient_balance', httpStatus: explicitStatus ?? 402 };
     }
+    if (structuredFailureCode === 'MODEL_USAGE_LIMIT') {
+      const marker = payload.failure as AgentErrorPayload;
+      return {
+        ...base,
+        category: 'usage_limit',
+        httpStatus: explicitStatus ?? 429,
+        usageWindowText: getStringPayloadField(marker, 'windowText'),
+        resetAt: getStringPayloadField(marker, 'resetAt'),
+        provider: base.provider ?? getStringPayloadField(marker, 'provider'),
+        modelId: base.modelId ?? getStringPayloadField(marker, 'model'),
+      };
+    }
     if (structuredFailureCode === 'MODEL_UNAVAILABLE') {
       return { ...base, category: 'model_not_found', httpStatus: explicitStatus ?? 404 };
     }
@@ -160,7 +185,12 @@ export function classifyAgentError(
       return { ...base, category: 'model_not_found', httpStatus: explicitStatus ?? 404 };
     }
 
-    if (normalized.includes('rate limit') || normalized.includes('too many requests') || hasStatus(429)) {
+    if (
+      normalized.includes('rate limit') ||
+      normalized.includes('too many requests') ||
+      hasStatus(429) ||
+      isChineseRateLimitMessage(message)
+    ) {
       return { ...base, category: 'rate_limited', httpStatus: explicitStatus ?? 429 };
     }
 

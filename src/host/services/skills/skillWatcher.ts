@@ -70,8 +70,10 @@ class SkillWatcher extends EventEmitter implements Disposable {
     const librarySkillsDir = path.join(getUserConfigDir(), 'libraries');
     this.watchDirectory(librarySkillsDir, 'library');
 
-    // 项目级 Skills 目录（监听新旧两个路径）
-    if (skillsDirs.project) {
+    // 项目级 Skills 目录（监听新旧两个路径）。无文件夹会话的工作目录可能只是规划值，
+    // 尚未落盘；这里不能用递归 mkdir 把它提前物化。等真实写入创建工作目录后，下一次
+    // workspace service 更新再挂项目级监听即可。
+    if (skillsDirs.project && this.projectDirectoryExists()) {
       this.watchDirectory(skillsDirs.project.new, 'project');
       this.watchDirectory(skillsDirs.project.legacy, 'project');
     }
@@ -81,6 +83,14 @@ class SkillWatcher extends EventEmitter implements Disposable {
       workingDirectory,
       watchCount: this.watchers.length,
     });
+  }
+
+  private projectDirectoryExists(): boolean {
+    try {
+      return fs.statSync(this.workingDirectory).isDirectory();
+    } catch {
+      return false;
+    }
   }
 
   /**

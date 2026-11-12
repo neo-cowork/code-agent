@@ -1,3 +1,4 @@
+import { getLastConversationTurnIndex } from '../utils/conversationTurns';
 import { useMemo } from 'react';
 import type { TraceProjection, TraceTurn } from '@shared/contract/trace';
 import type {
@@ -10,6 +11,7 @@ import {
   isReadOnlyArtifactOwnershipItem,
 } from '../utils/artifactOwnership';
 import { useCurrentTurnExecutionProjection } from './useCurrentTurnExecutionProjection';
+import { useSessionStore } from '../stores/sessionStore';
 
 export interface CurrentTurnArtifactOwnershipView {
   turnId: string;
@@ -34,14 +36,15 @@ function findTurnRoutingEvidence(turn: TraceTurn): TurnRoutingEvidence | undefin
 
 export function extractCurrentTurnArtifactOwnership(
   projection: TraceProjection,
+  workingDirectory?: string | null,
 ): CurrentTurnArtifactOwnershipView | null {
-  const currentTurn = projection.turns[projection.turns.length - 1];
+  const currentTurn = projection.turns[getLastConversationTurnIndex(projection.turns)];
   if (!currentTurn) {
     return null;
   }
 
   const routingEvidence = findTurnRoutingEvidence(currentTurn);
-  const projectedArtifacts = buildArtifactOwnershipItems(currentTurn, routingEvidence);
+  const projectedArtifacts = buildArtifactOwnershipItems(currentTurn, routingEvidence, workingDirectory);
   const timeline = currentTurn.nodes.find((node) =>
     node.type === 'turn_timeline'
     && node.turnTimeline?.kind === 'artifact_ownership'
@@ -74,9 +77,12 @@ export function extractCurrentTurnArtifactOwnership(
 
 export function useCurrentTurnArtifactOwnership(): CurrentTurnArtifactOwnershipView | null {
   const projection = useCurrentTurnExecutionProjection();
+  const workingDirectory = useSessionStore(
+    (state) => state.sessions.find((session) => session.id === state.currentSessionId)?.workingDirectory ?? null,
+  );
 
   return useMemo(
-    () => extractCurrentTurnArtifactOwnership(projection),
-    [projection],
+    () => extractCurrentTurnArtifactOwnership(projection, workingDirectory),
+    [projection, workingDirectory],
   );
 }

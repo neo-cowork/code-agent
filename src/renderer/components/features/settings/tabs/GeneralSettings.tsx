@@ -11,6 +11,7 @@
 // 用户 ack 后写 inheritanceMigrationAcked=true。
 // ============================================================================
 
+import { FlatFeeBudgetNote } from '../../cron/FlatFeeBudgetNote';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
@@ -40,6 +41,7 @@ import { useDoctorStore } from '../../../../stores/doctorStore';
 import { OS_SANDBOX_DOCTOR_ITEM_NAME } from '@shared/constants/sandbox';
 import { validateUserPermissionRule } from '@shared/permissionRuleSyntax';
 import { JevKeyConfig } from './JevKeyConfig';
+import { NotificationPermissionRow } from './NotificationPermissionRow';
 import { CronCloudSettingsCard } from './CronCloudSettingsCard';
 import { NlRuleTranslator } from '../permissions/NlRuleTranslator';
 
@@ -504,6 +506,7 @@ export const GeneralSettings: React.FC = () => {
       description={generalText.pageDescription}
     >
       <WebModeBanner />
+      <NotificationPermissionRow />
       <JevKeyConfig />
 
       <SettingsSection
@@ -577,6 +580,8 @@ export const GeneralSettings: React.FC = () => {
             </div>
           </div>
 
+          <FlatFeeBudgetNote variant="settings" />
+
           {budgetInputInvalid ? (
             <p className="text-xs text-badge-danger" role="alert">{budgetText.invalidValue}</p>
           ) : unattendedWouldBlock ? (
@@ -628,7 +633,7 @@ export const GeneralSettings: React.FC = () => {
                   {generalText.migration.acknowledge}
                 </button>
                 <a
-                  href="https://github.com/baochipham942-eng/code-agent/releases/latest"
+                  href="https://github.com/neo-cowork/code-agent/releases/latest"
                   target="_blank"
                   rel="noreferrer"
                   className="text-xs text-badge-info underline hover:text-badge-info"

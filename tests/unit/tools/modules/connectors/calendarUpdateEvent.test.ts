@@ -19,6 +19,7 @@ vi.mock('../../../../../src/host/connectors', () => ({
 }));
 
 import { calendarUpdateEventModule } from '../../../../../src/host/tools/modules/connectors/calendarUpdateEvent';
+import { formatConnectorTime } from '../../../../../src/host/tools/modules/connectors/connectorTime';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -113,6 +114,31 @@ describe('calendarUpdateEventModule (native)', () => {
       if (!result.ok) expect(result.code).toBe('NOT_INITIALIZED');
     });
 
+    it('sanitizes osascript failures and preserves the raw detail only in the warning', async () => {
+      const ctx = makeCtx();
+      const rawError = Object.assign(
+        new Error("Command failed: osascript -e 'tell application \"Calendar\" to get every item'\n1: execution error: denied"),
+        { stderr: 'Not authorized to send Apple events to Calendar.', code: 1 },
+      );
+      execMock.mockRejectedValue(rawError);
+      const result = await run(validArgs, ctx);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).not.toContain('osascript -e');
+        expect(result.error).not.toContain('tell application');
+        expect(result.error).toContain('Do not work around this by running osascript or AppleScript through Bash or any script; tell the user what failed.');
+        const failed = result as typeof result & { meta?: { failureReason?: string; artifact?: { preview?: string; metadata?: { failureReason?: string } } } };
+        expect(failed.meta?.failureReason).toBe(result.error);
+        expect(failed.meta?.artifact?.preview).not.toContain('osascript -e');
+        expect(failed.meta?.artifact?.preview).not.toContain('tell application');
+        expect(failed.meta?.artifact?.metadata?.failureReason).toBe(result.error);
+      }
+      expect(ctx.logger.warn).toHaveBeenCalledWith(
+        'calendar_update_event osascript failed',
+        { connector: 'calendar', code: 'not_authorized', detail: 'Not authorized to send Apple events to Calendar.' },
+      );
+    });
+
     it('wraps connector errors', async () => {
       execMock.mockRejectedValue(new Error('boom'));
       const result = await run(validArgs);
@@ -172,7 +198,7 @@ describe('calendarUpdateEventModule (native)', () => {
         expect(artifact).toMatchObject({
           kind: 'text',
           role: 'receipt',
-          name: `已更新日历事件：Standup v2（${new Date(1700000000000).toLocaleString('zh-CN')}）`,
+          name: `已更新日历事件：Standup v2（${formatConnectorTime(1700000000000)}）`,
         });
         expect(artifact.metadata?.action).toBe('update_event');
         expect(artifact.metadata).toMatchObject({ undoable: true, before });

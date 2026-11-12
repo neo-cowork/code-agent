@@ -1,17 +1,3 @@
-/** 网络配置 */
-export const NETWORK = {
-  /** API 请求超时 (ms) */
-  API_TIMEOUT: 30000,
-  /** 重试延迟 (ms) */
-  RETRY_DELAY: 1000,
-  /** 最大并发请求数 */
-  MAX_CONCURRENT: 5,
-  /** WebSocket 重连延迟 (ms) */
-  WS_RECONNECT_DELAY: 3000,
-  /** 健康检查间隔 (ms) */
-  HEALTH_CHECK_INTERVAL: 30000,
-} as const;
-
 /** MCP 配置 */
 export const MCP = {
   /** 连接超时 (ms) */
@@ -36,22 +22,6 @@ export const CACHE = {
   PROMPT_TTL: 3600000,
 } as const;
 
-/** 工具缓存配置 */
-export const TOOL_CACHE = {
-  /** 默认 TTL (5 分钟) */
-  DEFAULT_TTL: 300000,
-  /** 读取文件 TTL (5 分钟) */
-  READ_FILE_TTL: 300000,
-  /** 目录列表 TTL (2 分钟) */
-  LIST_DIRECTORY_TTL: 120000,
-  /** Glob TTL (2 分钟) */
-  GLOB_TTL: 120000,
-  /** Grep TTL (2 分钟) */
-  GREP_TTL: 120000,
-  /** Web Fetch TTL (15 分钟) */
-  WEB_FETCH_TTL: 900000,
-} as const;
-
 /** Web Fetch 配置 */
 export const WEB_FETCH = {
   /** 请求超时 (30s) */
@@ -64,6 +34,8 @@ export const WEB_FETCH = {
   CACHE_TTL: 900_000,
   /** 缓存最大条目数 */
   CACHE_MAX_ENTRIES: 50,
+  /** 手动跟随重定向的最大跳数（每跳都过 SSRF 守卫） */
+  MAX_REDIRECTS: 5,
   /** 受信文档内容直通上限 */
   TRUSTED_DOCS_MAX_CHARS: 100_000,
   /** 可重试 HTTP 状态码 */
@@ -97,7 +69,7 @@ export const CLOUD = {
 // ============================================================================
 
 /** Agent Neo 帮助与产品文档入口 */
-export const AGENT_NEO_HELP_URL = 'https://github.com/baochipham942-eng/code-agent';
+export const AGENT_NEO_HELP_URL = 'https://github.com/neo-cowork/code-agent';
 
 /** 当前生产环境云端 API 基础 URL */
 export const PRODUCTION_CLOUD_API_URL = 'https://agentneo.vercel.app';
@@ -151,6 +123,10 @@ export const CLOUD_ENDPOINTS = {
   /** 官方 Role Pack Registry（签名控制面） */
   get roleRegistry() {
     return `${getCloudApiUrl()}/api/v1/role-registry`;
+  },
+  /** Neo 托管 Jev 判官（计量代理：key 只在服务端，N-JEV-NEO-KEY） */
+  get jevJudge() {
+    return `${getCloudApiUrl()}/api/v1/jev-judge`;
   },
   /** WebSocket 端点 */
   get websocket() {
@@ -287,7 +263,7 @@ function assertHttpRolloutPolicyUrl(value: string): void {
   );
 }
 
-export function getRendererBundleChannel(env: RendererBundleEndpointEnv = getRendererBundleEndpointEnv()): string {
+function getRendererBundleChannel(env: RendererBundleEndpointEnv = getRendererBundleEndpointEnv()): string {
   const channel = env[RENDERER_BUNDLE_CHANNEL_ENV]?.trim() || RENDERER_BUNDLE_DEFAULT_CHANNEL;
   if (channel === RENDERER_BUNDLE_DEFAULT_CHANNEL) return RENDERER_BUNDLE_DEFAULT_CHANNEL;
   if (!RENDERER_BUNDLE_CHANNEL_PATTERN.test(channel)) {
@@ -332,7 +308,7 @@ export function resolveRendererBundleEndpoint(
   };
 }
 
-export function getRendererBundleManifestUrl(
+function getRendererBundleManifestUrl(
   env: RendererBundleEndpointEnv = getRendererBundleEndpointEnv(),
 ): string {
   return resolveRendererBundleEndpoint(env).manifestUrl;

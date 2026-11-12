@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { ProviderConfig } from '../../shared/contract';
-import { MODEL_API_ENDPOINTS } from '../../shared/constants';
+import { MODEL_API_ENDPOINTS, MODEL_MAX_OUTPUT_TOKENS } from '../../shared/constants';
 
 export const ADDITIONAL_PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
   minimax: {
@@ -182,6 +182,23 @@ export const ADDITIONAL_PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
     baseUrl: MODEL_API_ENDPOINTS.xiaomi,
     models: [
       {
+        // 11-06 Token Plan 真调用：工具调用、base64 图片、video_url 视频均 200。
+        // 官方公告 V2.5 系列 10-21 下线；下面的 v2.5 / v2 条目暂留，下线另开单处理。
+        id: 'mimo-v2.6-flash',
+        name: 'MiMo v2.6 Flash (全模态)',
+        capabilities: ['general', 'code', 'vision', 'reasoning', 'longContext', 'unlimited'],
+        maxTokens: 131072,
+        supportsTool: true,
+        supportsVision: true,
+        supportsStreaming: true,
+        costType: 'monthly',
+        visionCapabilities: {
+          supportsBase64: true,
+          supportsUrl: true,
+          supportedFormats: ['png', 'jpeg', 'gif', 'webp'],
+        },
+      },
+      {
         id: 'mimo-v2.5-pro',
         name: 'MiMo v2.5 Pro (旗舰)',
         capabilities: ['general', 'code', 'reasoning', 'longContext', 'unlimited'],
@@ -220,6 +237,22 @@ export const ADDITIONAL_PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsVision: true,
         supportsStreaming: true,
         costType: 'monthly',
+        visionCapabilities: {
+          supportsBase64: true,
+          supportsUrl: true,
+          supportedFormats: ['png', 'jpeg', 'gif', 'webp'],
+        },
+      },
+      {
+        id: 'neohorse-1.5-flash-preview',
+        name: 'NeoHorse 1.5 Flash Preview',
+        capabilities: ['general', 'code', 'vision', 'reasoning', 'longContext', 'unlimited'],
+        thinking: { kind: 'none' },
+        maxTokens: MODEL_MAX_OUTPUT_TOKENS['neohorse-1.5-flash-preview'],
+        supportsTool: true,
+        supportsVision: true,
+        supportsStreaming: true,
+        costType: 'free',
         visionCapabilities: {
           supportsBase64: true,
           supportsUrl: true,

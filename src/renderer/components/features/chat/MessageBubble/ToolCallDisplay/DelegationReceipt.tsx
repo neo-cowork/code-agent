@@ -1,19 +1,21 @@
 import React from 'react';
 import { useI18n } from '../../../../../hooks/useI18n';
 import { useAppStore } from '../../../../../stores/appStore';
-import { describeLastToolFailure, describeLastToolStep } from '../../../../../utils/agentActivity';
+import { describeLastToolFailure, describeLastToolStep, resolveAgentActivityStepStatus } from '../../../../../utils/agentActivity';
+import { agentFailureCopy } from '../../../../../utils/agentFailureCopy';
 import { openExternalLink } from '../../../../../utils/platform';
 import type { DelegationPresentation } from './delegationPresentation';
 
 export function DelegationHeader({ presentation }: { presentation: DelegationPresentation }) {
   const { t } = useI18n();
-  const status = t.chat.delegationReceipt[presentation.state];
+  const template = t.chat.delegationReceipt.headlines[presentation.state];
+  const [prefix, suffix] = template.split('{name}');
+  const headline = template.replace('{name}', presentation.title);
   return (
-    <div className="flex min-w-0 flex-1 items-baseline gap-2">
-      <span className="flex-shrink-0 text-xs text-zinc-500">{status}</span>
-      <span className="min-w-0 truncate font-semibold text-zinc-200" title={presentation.title}>
-        {presentation.title}
-      </span>
+    <div className="min-w-0 flex-1 truncate text-xs text-zinc-200" title={headline} data-testid="delegation-headline">
+      {prefix && <span className="text-zinc-500">{prefix}</span>}
+      <span className="font-semibold" title={presentation.title}>{presentation.title}</span>
+      {suffix && <span className="text-zinc-500">{suffix}</span>}
     </div>
   );
 }
@@ -21,14 +23,29 @@ export function DelegationHeader({ presentation }: { presentation: DelegationPre
 export function DelegationReceipt({ presentation }: { presentation: DelegationPresentation }) {
   const { t } = useI18n();
   const openPreview = useAppStore((state) => state.openPreview);
+  // 审批未决时活动行不得谎报完成态（N-APPROVAL-PENDING-STATUS-COPY）：连接器写
+  // 步在审批卡挂着时亮「请求…」词形，卡一答完、工具在跑就落「正在…」词形。
+  const pendingPermissionRequest = useAppStore((state) => state.pendingPermissionRequest);
+  const pendingPermissionSessionId = useAppStore((state) => state.pendingPermissionSessionId);
+  const queuedPermissionRequests = useAppStore((state) => state.queuedPermissionRequests);
+  const failure = presentation.state === 'failed'
+    ? agentFailureCopy(presentation.failureCode, t, presentation.failure)
+    : presentation.failure;
   const toolFailure = presentation.state === 'working'
     ? undefined
     : describeLastToolFailure(presentation.toolFailure, t);
 
   if (presentation.state === 'working') {
+    const status = resolveAgentActivityStepStatus({
+      step: presentation.lastToolStep,
+      working: true,
+      activityIds: presentation.activityIds,
+      sessionId: presentation.sessionId ?? null,
+      permission: { pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests },
+    });
     return (
       <div className="ml-6 mt-0.5 truncate text-xs text-zinc-500" data-testid="delegation-activity">
-        {describeLastToolStep(presentation.lastToolStep, t)}
+        {describeLastToolStep(presentation.lastToolStep, t, status)}
       </div>
     );
   }
@@ -57,9 +74,14 @@ export function DelegationReceipt({ presentation }: { presentation: DelegationPr
           ))}
         </div>
       )}
-      {presentation.failure && (
+      {presentation.branch && (
+        <div data-testid="delegation-branch">
+          {t.chat.delegationReceipt.mergeBranch.replace('{branch}', presentation.branch)}
+        </div>
+      )}
+      {failure && (
         <div className="line-clamp-2 break-words text-badge-danger" data-testid="delegation-failure">
-          {presentation.failure}
+          {failure}
         </div>
       )}
       {toolFailure && (

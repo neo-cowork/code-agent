@@ -7,7 +7,7 @@
 import type { ToolStatus } from './styles';
 import type { ToolCall } from '@shared/contract';
 import type { Translations } from '../../../../../i18n';
-import { humanizeToolFailureReason, resolveToolTerminalOutcomeKey } from '../../../../../utils/toolExecutionPresentation';
+import { humanizeToolFailureReason, resolveParkedApprovalClosureCopy, resolveToolTerminalOutcomeKey } from '../../../../../utils/toolExecutionPresentation';
 import { resolveStreamInterruptionOutcomeKey } from '../../../../../i18n/outcomeWords';
 import type { StreamInterruptionReason } from '@shared/contract';
 
@@ -44,7 +44,10 @@ export function getToolStatusLabel(
       return toolCall._streaming ? labels.preparing : labels.running;
     case 'success':
       if (toolCall.name === 'spawn_agent') {
-        const background = toolCall.result?.output?.includes('spawned in background')
+        const background = toolCall.result?.metadata?.transferredToBackground === true
+          || toolCall.result?.metadata?.background === true
+          || toolCall.result?.output?.includes('exceeded foreground budget and continues in background')
+          || toolCall.result?.output?.includes('spawned in background')
           || toolCall.result?.output?.includes('Status: running');
         return background
           ? t.chat.delegationReceipt.dispatched
@@ -52,6 +55,8 @@ export function getToolStatusLabel(
       }
       return enrichCompletedLabel(toolCall, t);
     case 'error': {
+      const notRun = resolveParkedApprovalClosureCopy(toolCall, t);
+      if (notRun) return notRun;
       const outcome = t.outcomeWords[resolveToolTerminalOutcomeKey(toolCall)].timeline;
       const reason = humanizeToolFailureReason(toolCall, t);
       if (reason === outcome.label || reason === `${outcome.label} · ${outcome.reason}`) return reason;

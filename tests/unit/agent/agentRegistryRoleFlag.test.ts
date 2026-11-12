@@ -15,7 +15,7 @@ vi.mock('../../../src/host/config/configPaths', async (importOriginal) => ({
 }));
 
 vi.mock('../../../src/host/services/roleAssets/roleAssetService', () => ({
-  listPersistentRoles: async () => ['研究员'],
+  listPersistentRoles: async () => ['研究员', 'fixture-role', '数据分析师', 'plain-role'],
 }));
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
@@ -74,6 +74,9 @@ describe('listAllAgentsWithRoleFlag', () => {
     await fs.writeFile(path.join(mockDirs.agents, '研究员.md'), ROLE_MD);
     await fs.writeFile(path.join(mockDirs.agents, 'my-agent.md'), CUSTOM_MD);
     await fs.writeFile(path.join(mockDirs.agents, '周报专家.md'), WEEKLY_MD);
+    await fs.writeFile(path.join(mockDirs.agents, 'fixture-role.md'), CUSTOM_MD.replace('name: my-agent', 'name: fixture-role\ndisplay-name: "  日历专家  "'));
+    await fs.writeFile(path.join(mockDirs.agents, '数据分析师.md'), CUSTOM_MD.replace('name: my-agent', 'name: 数据分析师'));
+    await fs.writeFile(path.join(mockDirs.agents, 'plain-role.md'), CUSTOM_MD.replace('name: my-agent', 'name: plain-role'));
     await initAgentRegistry(undefined);
   });
 
@@ -87,6 +90,14 @@ describe('listAllAgentsWithRoleFlag', () => {
     expect(entries.find((e) => e.id === '研究员')?.isRole).toBe(true);
     expect(entries.find((e) => e.id === 'my-agent')?.isRole).toBeUndefined();
     expect(entries.find((e) => e.id === 'coder')?.isRole).toBeUndefined();
+  });
+
+  it('projects trimmed custom and preset displayName and omits absent names', async () => {
+    const entries = await listAllAgentsWithRoleFlag();
+    expect(entries.find((entry) => entry.id === 'fixture-role')).toMatchObject({ name: 'fixture-role', displayName: '日历专家', isRole: true });
+    expect(entries.find((entry) => entry.id === '数据分析师')).toMatchObject({ displayName: '知微' });
+    expect(entries.find((entry) => entry.id === 'plain-role')).not.toHaveProperty('displayName');
+    expect(entries.find((entry) => entry.id === 'my-agent')).not.toHaveProperty('displayName');
   });
 
   it('listAllAgents 投影透出声明式 inputs/outputs', async () => {

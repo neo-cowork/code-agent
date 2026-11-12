@@ -53,11 +53,13 @@ import { CaptureSchemas } from '../shared/ipc/schemas/capture';
 import { AgentRegistrySchemas } from '../shared/ipc/schemas/agentRegistry';
 import { LivePreviewSchemas } from '../shared/ipc/schemas/livePreview';
 import { UpdateSchemas } from '../shared/ipc/schemas/update';
+import { EnvAssistSchemas } from '../shared/ipc/schemas/envAssist';
 import { PermissionTranslateSchemas } from '../shared/ipc/schemas/permissionTranslate';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
 const NATIVE_TAURI_COMMANDS = [
+  'appshots_hotkey_status',
   'appshots_read_image_data_url',
   'appshots_read_image_data_url_by_id',
   'appshots_report_composer_slot',
@@ -66,6 +68,7 @@ const NATIVE_TAURI_COMMANDS = [
   'appshots_set_target_session',
   'appshots_skip_motion',
   'appshots_trigger',
+  'appshots_request_hotkey_access',
   'check_for_update',
   'desktop_capture_screenshot',
   'desktop_get_app_icon',
@@ -123,6 +126,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   // backgroundTasks 域：defineHandler schema 化注册（BackgroundTaskSchemas.REQUEST），renderer 的任务面板 / 通知同步在调；
   // 此前整域未登记（缺报 5 项），parity 门的缺报棘轮按 defineHandler 提取对账
   [IPC_DOMAINS.BACKGROUND_TASKS]: [
+    'dismissTerminalTasks',
     'drainNotifications',
     'getTask',
     'listTasks',
@@ -183,6 +187,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   [IPC_DOMAINS.PII]: PiiSchemas.ACTIONS,
   // permissionTranslate 域：派生自 schema action 集合（== permissionTranslate 表 keys，parity 门三面对账）
   [IPC_DOMAINS.PERMISSION_TRANSLATE]: PermissionTranslateSchemas.ACTIONS,
+  [IPC_DOMAINS.ENV_ASSIST]: EnvAssistSchemas.ACTIONS,
   // planning 域：派生自 schema action 集合（== planning 表 keys，parity 门三面对账），手工清单已删
   [IPC_DOMAINS.PLANNING]: PlanningSchemas.ACTIONS,
   // project 域：派生自 schema action 集合（== project 表 keys，parity 门三面对账），手工清单已删

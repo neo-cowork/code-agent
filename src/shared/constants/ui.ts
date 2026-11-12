@@ -16,6 +16,8 @@ export const UI = {
   STARTUP_UPDATE_CHECK_DELAY: 2000,
   /** 启动延迟-API Key 检查 (ms) */
   STARTUP_API_KEY_CHECK_DELAY: 1500,
+  /** 冷启动会话切换期间重新摊开返回页的窗口 (ms) */
+  STARTUP_PAGE_REAPPLY_WINDOW: 8_000,
   /** 面板刷新间隔 (ms) */
   PANEL_REFRESH_INTERVAL: 30000,
   /** 云任务刷新间隔 (ms) */
@@ -46,18 +48,6 @@ export const UI = {
  * 侧栏无虚拟化，几千个会话 DOM 节点会拖垮渲染（2026-08-07 工单结论）。
  */
 export const SESSION_LIST_PAGE_SIZE = 50;
-
-/** 窗口配置 */
-export const WINDOW = {
-  /** 默认宽度 */
-  DEFAULT_WIDTH: 1200,
-  /** 默认高度 */
-  DEFAULT_HEIGHT: 800,
-  /** 最小宽度 */
-  MIN_WIDTH: 800,
-  /** 最小高度 */
-  MIN_HEIGHT: 600,
-} as const;
 
 export const TELEMETRY_TRUNCATION = {
   USER_PROMPT: 50000,

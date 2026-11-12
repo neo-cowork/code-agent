@@ -18,6 +18,34 @@ export const SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS = 8;
 /** Hidden task-result wakes get a deliberately small reasoning budget. */
 export const SESSION_COMMAND_CENTER_WAKE_MAX_ITERATIONS = 4;
 
+/** Deferred foreground wakes surface a durable conversation note after this wait. */
+export const BACKGROUND_WAKE_DEFER_NOTICE_MS = 10_000;
+
+/**
+ * A wake whose session cannot be loaded for the current owner (login still being restored)
+ * is retried on a timer in addition to the auth-change signal. Total load attempts include the first.
+ */
+export const BACKGROUND_WAKE_OWNER_RETRY_MAX_ATTEMPTS = 6;
+export const BACKGROUND_WAKE_OWNER_RETRY_INTERVAL_MS = 5_000;
+
+/** Keep the task title readable when it is embedded in the deferred-wake conversation note. */
+export const BACKGROUND_WAKE_DEFER_TASK_TITLE_MAX_CHARS = 80;
+
+/** Human progress shown while a completed background task is waiting for the foreground turn. */
+export const BACKGROUND_WAKE_DEFER_PROGRESS = {
+  completed: '后台任务已完成，等待汇报',
+  failed: '后台任务已失败，等待汇报',
+} as const;
+
+/** Conversation copy used when a deferred wake reaches the visible-notice cap. */
+export function formatBackgroundWakeDeferredNote(
+  shortName: string,
+  status: keyof typeof BACKGROUND_WAKE_DEFER_PROGRESS,
+): string {
+  const outcome = status === 'completed' ? '完成' : '失败';
+  return `后台任务「${shortName}」已${outcome}，结果见上方的任务结果；当前步骤结束后，我会继续汇报。`;
+}
+
 /**
  * Prevent an autonomous task chain from waking the same conversation forever.
  * A new visible user message resets this counter.
@@ -62,6 +90,26 @@ export function resolveSessionCommandTaskApprovalWaitCapMs(
   const parsed = Number(raw);
   if (!Number.isSafeInteger(parsed) || parsed <= 0) return fallbackMs;
   return parsed;
+}
+
+/**
+ * 模型侧任务结果文本（resultText）的封顶字符数。UI/账本仍用 240 字 summary；
+ * 前台模型读到的是这份宽松上限——SSRF 拒绝提示里的「改走 Bash curl 审批」整句
+ * 必须完整到达前台，否则前台不知道下一步能做什么（FB-577）。
+ */
+const SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS = 1500;
+
+/**
+ * resultText 的单一真源：detail 规范化空白后封顶；超限保留前缀并显式标注总长，
+ * 让模型知道文本被裁过。空 detail 返回 undefined——消费点回落 240 字 summary。
+ * 按 code point 计数，与 compactSummary 的口径一致。
+ */
+export function composeSessionCommandTaskResultText(value: string | undefined): string | undefined {
+  const normalized = value?.replace(/\s+/g, ' ').trim();
+  if (!normalized) return undefined;
+  const chars = Array.from(normalized);
+  if (chars.length <= SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS) return chars.join('');
+  return `${chars.slice(0, SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS).join('')}…(truncated, ${chars.length} chars total)`;
 }
 
 /**

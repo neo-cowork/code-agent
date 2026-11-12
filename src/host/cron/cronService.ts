@@ -41,18 +41,20 @@ import {
   type SupportedEveryTimeUnit,
 } from './cronNormalizers';
 import { executeCronAgentAction } from './cronAgentAction';
-import { attachCronRunCost, createCronRunCostMeter, readCronRunCostUsd } from './cronRunCostMeter';
+import { attachCronRunCost, createCronRunCostMeterForExecution, readCronRunCostUsd } from './cronRunCostMeter';
 import { addCronRunCostUsd } from '../../shared/cronRunLedger';
 import { getEventBus } from '../services/eventing/bus';
 import { persistCronMissedTrace } from './cronMissedTrace';
 import {
-  assertExecutionLocationConstraints,
+  assertCloudRunnableAction, assertExecutionLocationConstraints,
+  assertAgentTypeOnSave,
   computeCronFireJitterMs,
   decideOneTimeJobStartup,
   intervalToCron,
   scheduleBoundToDate,
 } from './cronExecutionPolicy';
 import { CronCloudRuntime } from './cronCloudRuntime';
+import { CloudNotConfiguredError } from './cronCloudErrors';
 import { CronEventTrigger, assertEventScheduleConstraints, hasExplicitChatListenBinding } from './cronEventTrigger';
 import { CronWebhookRelay, assertWebhookScheduleCloudConfigured } from './cronWebhookRelay';
 import { runWebhookHookOp } from './cronWebhookHookOps';
@@ -70,7 +72,7 @@ import {
   saveCronJob,
   upsertCronExecutionInMemory,
 } from './cronPersistence';
-import { deliverCronResultToChannel } from './cronResultDelivery';
+import { deliverCronResultToChannel, type CronResultDeliverySkip } from './cronResultDelivery';
 import { actionModeForNewJob, carryEventActionMode, changeEventActionMode } from './cronEventActionModeChange';
 import { loadCronEventDecisions } from './cronEventDecisionLedger';
 import { rearmCronRunLimit, settleCronRunLimit } from './cronRunLimit';
@@ -79,12 +81,19 @@ import {
   classifyCronFailure,
   countTrailingCronFailures,
   cronRetryBackoffMs,
-  CronFailureNoticeGate,
+  CronFailureNoticeGate, cronDisableReasonForFailure,
   notifyCronAgentExecution,
   notifyCronJobDisabled,
 } from './cronFailurePolicy';
 import { cronLoginWallMetadata } from './cronLoginWall';
 import { rememberCronLoginPassThroughOrigin } from './cronLoginWallPersistence';
+import {
+  backfillCronWriteScopes,
+  grantCronWriteScope,
+  grantWriteFolderFromParkedApproval,
+  revokeCronWriteScope,
+  stripWriteGrantRoot,
+} from './cronWriteGrant';
 import { cronFailureSourceText } from '../../shared/utils/cronFailureClassification';
 export { computeCronFireJitterMs } from './cronExecutionPolicy'; const execAsync = promisify(exec);
 
@@ -178,6 +187,7 @@ export class CronService implements Disposable {
     await markInterruptedCronExecutions();
 
     // Load jobs from database
+    await backfillCronWriteScopes();
     await this.loadJobsFromDatabase();
     await this.cloudRuntime.reconcile();
 
@@ -277,20 +287,25 @@ export class CronService implements Disposable {
         );
       }
     }
-    assertSupportedEveryScheduleUnit(definition.schedule);
+    assertSupportedEveryScheduleUnit(definition.schedule); assertAgentTypeOnSave(definition.action);
 
     const runsOn = definition.runsOn ?? 'local';
-    assertExecutionLocationConstraints({ ...definition, runsOn });
+    assertExecutionLocationConstraints({ ...definition, runsOn }); assertCloudRunnableAction({ ...definition, runsOn });
     assertEventScheduleConstraints({ ...definition, runsOn });
     if (definition.schedule?.type === 'event' && definition.schedule.source === 'webhook') {
       // webhook 源（N-CRON-WEBHOOK-CLOUD-HOOK）：hook 活在云端中继后面，没配置就建不成。
       assertWebhookScheduleCloudConfigured(this.cloudRuntime.isConfigured());
     }
 
+    if (runsOn === 'cloud' && definition.enabled && !this.cloudRuntime.isConfigured()) {
+      throw new CloudNotConfiguredError('Cloud scheduler is not configured');
+    }
+
     const job: CronJobDefinition = {
       ...definition,
       runsOn,
-      metadata: cronLoginWallMetadata({ action: definition.action }, definition.metadata),
+      // 写授权字段只能由专用授权 IPC 写入；创建载荷夹带的一律剥掉（no-self-grant）。
+      metadata: stripWriteGrantRoot(cronLoginWallMetadata({ action: definition.action }, definition.metadata)),
       // 新建 event 自动化一律仅观察（入参 actionMode 忽略）；切到自动执行只走 setEventActionMode。
       actionMode: actionModeForNewJob(definition.schedule),
       id: uuidv4(), createdAt: now, updatedAt: now,
@@ -337,7 +352,7 @@ export class CronService implements Disposable {
       existingJob.cronInstance.stop();
     }
 
-    const metadata = this.sanitizeLoginPassThroughMetadata(existingJob.definition.metadata, updates.metadata);
+    const metadata = this.sanitizeConsentMetadata(existingJob.definition.metadata, updates.metadata);
     const updatedJob: CronJobDefinition = {
       ...existingJob.definition,
       ...updates,
@@ -347,8 +362,8 @@ export class CronService implements Disposable {
     };
     // 重新启用已停用任务：运行计数清零、摘掉停用原因（N-CRON-BUDGET-EXPOSE）；只改 maxRuns 不动计数。
     if (updates.enabled === true && !existingJob.definition.enabled) rearmCronRunLimit(updatedJob);
-    assertSupportedEveryScheduleUnit(updatedJob.schedule);
-    assertExecutionLocationConstraints(updatedJob);
+    assertSupportedEveryScheduleUnit(updatedJob.schedule); assertAgentTypeOnSave(updates.action, existingJob.definition.action);
+    assertExecutionLocationConstraints(updatedJob); if (updates.enabled === true || updates.action !== undefined) assertCloudRunnableAction(updatedJob);
     assertEventScheduleConstraints(updatedJob);
 
     // Save to database
@@ -397,7 +412,36 @@ export class CronService implements Disposable {
     return active.definition;
   }
 
-  private sanitizeLoginPassThroughMetadata(
+  /**
+   * 写授权（N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1）：任务详情面板一键授权/撤销。
+   * 解析与落库逻辑在 cronWriteGrant.ts（本文件已贴 max-lines 线，只留窄入口）。
+   */
+  async grantWriteScope(jobId: string): Promise<CronJobDefinition | null> {
+    return grantCronWriteScope(jobId, {
+      loadActiveJob: (id) => this.jobs.get(id),
+      persistJob: (job) => this.persistJob(job),
+    });
+  }
+
+  /** 审批卡一键授权：只认 requestId，文件夹由 cronWriteGrant 从停车载荷重新推导。 */
+  async grantWriteFolderFromParkedApproval(requestId: string, getParkedRow: Parameters<typeof grantWriteFolderFromParkedApproval>[1]['getParkedRow']) {
+    return grantWriteFolderFromParkedApproval(requestId, {
+      getParkedRow,
+      host: { loadActiveJob: (id) => this.jobs.get(id), persistJob: (job) => this.persistJob(job) },
+    });
+  }
+
+  async revokeWriteScope(jobId: string): Promise<CronJobDefinition | null> {
+    return revokeCronWriteScope(jobId, {
+      loadActiveJob: (id) => this.jobs.get(id),
+      persistJob: (job) => this.persistJob(job),
+    });
+  }
+
+  /** 只能由专用授权 IPC 写入的同意类 metadata 字段；updateJob 对它们只保留存量、绝不新建/改值。 */
+  private static readonly CONSENT_METADATA_FIELDS = ['loginPassThroughOrigin', 'writeGrantRoot'] as const;
+
+  private sanitizeConsentMetadata(
     existingMetadata: Record<string, unknown> | undefined,
     incomingMetadata: Record<string, unknown> | undefined,
   ): Record<string, unknown> | undefined {
@@ -408,19 +452,22 @@ export class CronService implements Disposable {
       return existingMetadata;
     }
 
-    const existingOrigin = existingMetadata?.loginPassThroughOrigin;
-    const hasIncomingOrigin = Object.prototype.hasOwnProperty.call(incomingMetadata, 'loginPassThroughOrigin');
-    if (!hasIncomingOrigin) return incomingMetadata;
-
     const nextMetadata = { ...incomingMetadata };
-    if (typeof existingOrigin === 'string') {
-      // Consent can be kept by an editor round-trip, but never changed through
-      // updateJob. A different value is ignored while all other fields apply.
-      nextMetadata.loginPassThroughOrigin = existingOrigin;
-    } else {
-      // No stored consent means this update cannot create one.
-      delete nextMetadata.loginPassThroughOrigin;
+    let droppedAny = false;
+    for (const field of CronService.CONSENT_METADATA_FIELDS) {
+      if (!Object.prototype.hasOwnProperty.call(nextMetadata, field)) continue;
+      const existingValue = existingMetadata?.[field];
+      if (typeof existingValue === 'string') {
+        // Consent can be kept by an editor round-trip, but never changed through
+        // updateJob. A different value is ignored while all other fields apply.
+        nextMetadata[field] = existingValue;
+      } else {
+        // No stored consent means this update cannot create one.
+        delete nextMetadata[field];
+        droppedAny = true;
+      }
     }
+    if (!droppedAny) return nextMetadata;
     return Object.keys(nextMetadata).length > 0 ? nextMetadata : undefined;
   }
 
@@ -855,7 +902,7 @@ export class CronService implements Disposable {
         execution.result = await this.cloudRuntime.runJob(definition);
         execution.status = 'completed';
       } else {
-        const result = await this.executeAction(definition, definition.action, definition.timeout, execution.id, eventPayloadBlock);
+        const result = await this.executeAction(definition, definition.action, definition.timeout ?? undefined, execution.id, eventPayloadBlock);
         if (isCronAgentActionResult(result)) {
           execution.sessionId = result.sessionId;
         }
@@ -918,7 +965,7 @@ export class CronService implements Disposable {
             `[CronService] Job ${definition.id} auto-disabled after permanent failure: ${execution.error}`,
           );
           await this.updateJob(definition.id, { enabled: false });
-          notifyCronJobDisabled(definition, execution, 'permanent');
+          notifyCronJobDisabled(definition, execution, cronDisableReasonForFailure(execution.error));
           disableNotified = true;
         } else if (finalKind !== 'login-wall' && countTrailingCronFailures(this.executions.get(definition.id) ?? []) >= CRON_GUARDRAILS.MAX_CONSECUTIVE_FAILURES) {
           console.error(
@@ -1000,8 +1047,9 @@ export class CronService implements Disposable {
         return executeCronAgentAction({
           loadJob: (jobId) => this.jobs.get(jobId)?.definition,
           updateJob: (jobId, updates) => this.updateJob(jobId, updates),
-          deliverCronResult: (job, result, execId) => this.deliverCronResult(job, result, execId),
-        }, definition, action, executionId, eventPayloadBlock);
+          deliverCronResult: (job, result, execId, gate) => this.deliverCronResult(job, result, execId, gate),
+          recordSessionId: (execId, sessionId) => this.recordExecutionSessionId(definition.id, execId, sessionId),
+        }, definition, action, executionId, eventPayloadBlock, timeout);
       }
 
       case 'webhook': {
@@ -1036,7 +1084,7 @@ export class CronService implements Disposable {
         // 角色主动性：cadence 到点 → 完整醒来循环（内部文档）
         const { wakeRole } = await import('../services/roleAssets/roleProactivity');
         // 只计量不设闸：role-wake 历史上不吃 maxRunBudget（本单不扩权），外层闸仍是全局预算池。
-        const costMeter = createCronRunCostMeter(undefined);
+        const costMeter = createCronRunCostMeterForExecution(undefined, executionId);
         const wakeResult = await costMeter.run(() => wakeRole(action.roleId, 'cadence')).catch((error: unknown) => {
           attachCronRunCost(error, costMeter);
           throw error;
@@ -1063,6 +1111,13 @@ export class CronService implements Disposable {
     const job = this.jobs.get(definition.id);
     return job ? this.withRuntimeScheduleState(job) : definition;
   };
+
+  private async recordExecutionSessionId(jobId: string, executionId: string, sessionId: string): Promise<void> {
+    const execution = this.executions.get(jobId)?.find((e) => e.id === executionId);
+    if (!execution) return;
+    execution.sessionId = sessionId;
+    await saveCronExecution(execution);
+  }
 
   private async retryExecution(
     definition: CronJobDefinition,
@@ -1091,7 +1146,7 @@ export class CronService implements Disposable {
     execution.startedAt = Date.now();
 
     try {
-      const result = await this.executeAction(current, current.action, current.timeout, execution.id, eventPayloadBlock);
+      const result = await this.executeAction(current, current.action, current.timeout ?? undefined, execution.id, eventPayloadBlock);
       if (isCronAgentActionResult(result)) {
         execution.sessionId = result.sessionId;
       }
@@ -1118,11 +1173,11 @@ export class CronService implements Disposable {
   // --------------------------------------------------------------------------
 
   /** 投递与失败留痕的实现已拆到 cronResultDelivery.ts（含 FB-239 字面去重写回）。 */
-  private async deliverCronResult(definition: CronJobDefinition, result: unknown, executionId?: string): Promise<void> {
+  private async deliverCronResult(definition: CronJobDefinition, result: unknown, executionId?: string, gate?: CronResultDeliverySkip): Promise<void> {
     await deliverCronResultToChannel(definition, result, this.executions, executionId, {
       getLatestDefinition: (jobId) => this.jobs.get(jobId)?.definition,
       persistAction: (jobId, action) => this.updateJob(jobId, { action }),
-    });
+    }, gate);
   }
 
   private async loadJobsFromDatabase(): Promise<void> {
@@ -1263,6 +1318,8 @@ export class CronService implements Disposable {
   }
 
   private persistJob(job: CronJobDefinition, cloudJobId?: string): Promise<void> {
+    // Normalize explicit clears and invalid limits before storing or returning the definition.
+    job.timeout = typeof job.timeout === 'number' && Number.isFinite(job.timeout) && job.timeout > 0 ? job.timeout : undefined;
     return saveCronJob(job, cloudJobId ?? this.jobs.get(job.id)?.cloudJobId);
   }
 
@@ -1281,6 +1338,11 @@ export class CronService implements Disposable {
 // ============================================================================
 
 let cronServiceInstance: CronService | null = null;
+
+/** 只读窥视：不存在就返回 null，绝不创建（权限路径用，避免读授权时顺带拉起一个 CronService）。 */
+export function peekCronService(): CronService | null {
+  return cronServiceInstance;
+}
 
 export function getCronService(): CronService {
   if (!cronServiceInstance) {

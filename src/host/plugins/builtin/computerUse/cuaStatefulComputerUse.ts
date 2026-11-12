@@ -35,6 +35,7 @@ import {
 } from '../../../services/surfaceExecution/SurfaceExecutionRuntime';
 import { SurfaceExecutionRuntimeError } from '../../../services/surfaceExecution/SurfaceExecutionRuntimeError';
 import { surfaceProofService } from '../../../services/surfaceExecution/SurfaceProofService';
+import { compactSurfaceExecutionMetadata } from '../../../../shared/utils/surfaceExecutionProjection';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -362,12 +363,12 @@ implements ToolHandler<Record<string, unknown>, string> {
           unsubscribeLockLifecycle();
         }
         execution = wrapped.providerResult;
-        surfaceMeta = {
+        surfaceMeta = compactSurfaceExecutionMetadata({
           surfaceSessionId: wrapped.session.sessionId,
           surfaceExecutionSessionV1: wrapped.session,
           surfaceExecutionActionResultV1: wrapped.surfaceResult,
           surfaceExecutionEventsV1: wrapped.events,
-        };
+        });
       } else {
         const prepared = identity && request.operation === 'observe'
           ? this.surfaceRuntime.prepareComputerSession({ identity })
@@ -421,12 +422,12 @@ implements ToolHandler<Record<string, unknown>, string> {
               providerSnapshotId: ownership.providerSnapshotId,
             },
           });
-          surfaceMeta = {
+          surfaceMeta = compactSurfaceExecutionMetadata({
             surfaceSessionId: recorded.session.sessionId,
             surfaceExecutionSessionV1: recorded.session,
             surfaceObservationV1: recorded.observation,
             surfaceExecutionEventsV1: recorded.events,
-          };
+          });
         }
       }
       onProgress?.({ stage: 'completing', percent: 100 });

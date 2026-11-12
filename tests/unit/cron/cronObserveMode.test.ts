@@ -31,6 +31,7 @@ vi.mock('../../../src/shared/constants', async (importOriginal) => {
 });
 
 import { applySchema } from '../../../src/host/services/core/database/schema';
+import { applyCronEventDecisionsSchema } from '../../../src/host/services/core/database/schemaCronEventDecisions';
 import type { ChannelMessage } from '../../../src/shared/contract/channel';
 import type { CronExecutionTrigger, CronJobDefinition } from '../../../src/shared/contract/cron';
 import { saveCronJob } from '../../../src/host/cron/cronPersistence';
@@ -160,20 +161,26 @@ describe('② 观察档的通道结果回复：零发送 + 一条 would_act', ()
     const body = '好的，周五下午三点开会，我来订会议室。'
       + '<cron_event_decision id="om_1" action="act">有人问会议时间</cron_event_decision>';
 
-    const outcome = await deliverCronResultToChannel(definition, body, new Map(), 'run-obs-1', {
+    const observedRun: import('../../../src/shared/contract/cron').CronJobExecution = {
+      id: 'run-obs-1', jobId: definition.id, runsOn: 'local', status: 'completed', scheduledAt: 1, retryAttempt: 0,
+    };
+    const outcome = await deliverCronResultToChannel(definition, body, new Map([[definition.id, [observedRun]]]), 'run-obs-1', {
       getLatestDefinition: () => definition,
       persistAction: vi.fn(),
     });
 
     expect(channelState.sendMessage).not.toHaveBeenCalled();
     expect(channelState.getAllAccounts).not.toHaveBeenCalled();
-    expect(outcome).toEqual({ delivered: false, observed: true });
+    expect(outcome).toEqual({ delivered: false, observed: true, note: 'observe-mode' });
+    expect(observedRun).toMatchObject({ pushNote: 'observe-mode', status: 'completed' });
+    expect(observedRun.error).toBeUndefined();
     const rows = loadCronEventDecisions(definition.id);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       kind: 'action',
       decision: 'would_act',
       tool: 'channel_reply',
+      reason: 'outbound action channel_reply intercepted in observe mode',
       target: 'feishu:oc_group',
       runId: 'run-obs-1',
       // 逐事件决策标签不进「本会发出」的正文
@@ -341,6 +348,31 @@ describe('③ 逐事件决策台账', () => {
     }
     const kept = loadCronEventDecisions('job-observe');
     expect(kept.map((row) => row.eventId)).toEqual(['e6', 'e5', 'e4', 'e3', 'e2']);
+  });
+
+  it('老库增量添加 event_label，并在台账读写中原样 round-trip', () => {
+    const db = new Database(':memory:');
+    db.exec(`
+      CREATE TABLE cron_jobs (id TEXT PRIMARY KEY, schedule_type TEXT NOT NULL);
+      INSERT INTO cron_jobs (id, schedule_type) VALUES ('job-observe', 'event');
+      CREATE TABLE cron_event_decisions (
+        id TEXT PRIMARY KEY, job_id TEXT NOT NULL, kind TEXT NOT NULL, event_id TEXT,
+        decision TEXT NOT NULL, reason TEXT NOT NULL, run_id TEXT, matched_rule TEXT,
+        tool TEXT, target TEXT, summary TEXT, created_at INTEGER NOT NULL
+      );
+    `);
+    expect((db.pragma('table_info(cron_event_decisions)') as Array<{ name: string }>).some((column) => column.name === 'event_label')).toBe(false);
+    applyCronEventDecisionsSchema(db, noopLogger);
+    expect((db.pragma('table_info(cron_event_decisions)') as Array<{ name: string }>).some((column) => column.name === 'event_label')).toBe(true);
+    databaseState.db = db;
+
+    sqliteCronEventDecisionStore.record([{
+      jobId: 'job-observe', kind: 'event', eventId: '163|INBOX|430', eventLabel: '王阿姨 · 退款什么时候到账',
+      decision: 'ignored', reason: 'no per-event reason stated',
+    }], { now: NOW });
+    expect(loadCronEventDecisions('job-observe')[0]).toMatchObject({
+      eventId: '163|INBOX|430', eventLabel: '王阿姨 · 退款什么时候到账',
+    });
   });
 
   it('解析模型陈述：只认合法 act/ignore 标签，理由截成一行；可选 rule= 属性带出模型说的命中规则', () => {

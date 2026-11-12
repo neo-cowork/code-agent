@@ -21,8 +21,14 @@ import { isAgentPointerEvent, useAgentPointerStore } from '../../../stores/agent
 import { getAgentEventSessionId, isAgentEventForCurrentSession } from '../agentEventSession';
 import { buildAgentPointerEvent } from '../../../utils/agentPointer';
 import { mergeTurnDiffNotice } from '../../../utils/turnDiffSummary';
+import { createStreamSnapshotRequiredHandler } from '../streamSnapshotRehydrate';
 
 const logger = createLogger('useAgent');
+
+const reloadCurrentSessionOnUnmatchedToolEnd = createStreamSnapshotRequiredHandler({
+  getCurrentSessionId: () => useSessionStore.getState().currentSessionId,
+  reloadSession: (sessionId) => useSessionStore.getState().switchSession(sessionId, { force: true }),
+});
 
 export type ToolExecutionEvent = (AgentEventBody & { sessionId?: string }) | {
   type: 'stream_end';
@@ -41,6 +47,7 @@ export interface ToolExecutionEventDeps {
   now: () => number;
   queueUpdate: AgentEffectsProps['queueUpdate'];
   recordAgentPointer: (event: AgentPointerEvent) => void;
+  reloadCurrentSession?: (sessionId: string) => void;
   setActiveToolProgress: AgentEffectsProps['setActiveToolProgress'];
   setCapabilityGapNotice: (sessionId: string, notice: CapabilityGapNotice) => void;
   setLastEventAt: (timestamp: number) => void;
@@ -311,6 +318,9 @@ export function applyToolExecutionEvent(
           deps.recordAgentPointer,
         );
 
+        if (!matched && currentSessionId) {
+          deps.reloadCurrentSession?.(currentSessionId);
+        }
         if (deps.isDev && !matched) {
           deps.warn('No matching toolCall found', { toolCallId: toolResult.toolCallId });
           deps.debug('Available toolCalls', {
@@ -411,6 +421,9 @@ export const useToolExecutionEffects = ({
         now: Date.now,
         queueUpdate,
         recordAgentPointer: (event) => useAgentPointerStore.getState().recordEvent(event),
+        reloadCurrentSession: (sessionId) => {
+          void reloadCurrentSessionOnUnmatchedToolEnd({ sessionId });
+        },
         setActiveToolProgress,
         setCapabilityGapNotice: (sessionId, notice) => {
           useCapabilityGapStore.getState().setNotice(sessionId, notice);

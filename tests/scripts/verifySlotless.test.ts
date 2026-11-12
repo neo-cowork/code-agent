@@ -15,7 +15,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 // @ts-expect-error —— 纯 JS 本机验证入口，无类型声明
-import { buildSlotlessConfig, buildSlotlessTemplateProvenance, copySecureStoragePair, isAlive, linkCliConnectorInstallDirectories, maskTokenRhythmKey, parseDogfoodEnv, readDogfoodCredentials, resolveSlotlessModelId, resolveSourceConfigPath, stopRun } from '../../scripts/verify-slotless.mjs';
+import { buildSlotlessConfig, buildWebServerEnv, parseStartArgs, buildSlotlessTemplateProvenance, copySecureStoragePair, isAlive, linkCliConnectorInstallDirectories, maskTokenRhythmKey, parseDogfoodEnv, readDogfoodCredentials, resolveSlotlessModelId, resolveSourceConfigPath, stopRun } from '../../scripts/verify-slotless.mjs';
 // @ts-expect-error —— 纯 JS 本机验证入口，无类型声明
 import { parseViewport } from '../../scripts/verify-shot.mjs';
 
@@ -232,14 +232,44 @@ describe('slotless verification scripts', () => {
     expect(logs.filter((line) => line.startsWith('CLI_CONNECTOR_SKIPPED='))).toHaveLength(2);
   });
 
-  it('copies both secure storage files with mode 600', () => {
+  it('default staging does not copy a session or require a source secure store', () => {
+    const source = mkdtempSync(path.join(os.tmpdir(), 'neo-verify-source-'));
+    const target = mkdtempSync(path.join(os.tmpdir(), 'neo-verify-target-'));
+    tempDirs.push(source, target);
+    writeFileSync(path.join(source, 'secure-storage.json'), '{"auth.user":"owner","supabase.session":"session"}', { mode: 0o600 });
+    writeFileSync(path.join(source, '.secure-key'), 'source-key', { mode: 0o600 });
+    const options = parseStartArgs(['T']);
+    expect(options.copyLoginSession).toBe(false);
+    copySecureStoragePair(source, target, options);
+    expect(existsSync(path.join(target, 'secure-storage.json'))).toBe(false);
+    expect(existsSync(path.join(target, '.secure-key'))).toBe(false);
+    expect(() => copySecureStoragePair(path.join(source, 'missing'), target)).not.toThrow();
+  });
+
+  it.each(['secure-storage.json', '.secure-key'])('rejects a planted %s before server start', (file) => {
+    const target = mkdtempSync(path.join(os.tmpdir(), 'neo-verify-planted-'));
+    tempDirs.push(target);
+    writeFileSync(path.join(target, file), '{"auth.user":"planted","supabase.session":"planted"}');
+    expect(() => copySecureStoragePair('/unused-source', target)).toThrow(/staged secure storage may carry a login session; refused before server start/);
+  });
+
+  it('rejects duplicate login-session opt-in and isolates the home and Keychain', () => {
+    expect(() => parseStartArgs(['T', '--copy-login-session', '--copy-login-session'])).toThrow(/only be specified once/);
+    const env = buildWebServerEnv({ baseEnv: { HOME: '/owner', CODE_AGENT_HOME: '/owner', CODE_AGENT_DATA_DIR: '/owner' }, dataDir: '/isolated', runtimeTmpDir: '/isolated/tmp', port: 1234 });
+    expect(env.HOME).toBe('/isolated');
+    expect(env.CODE_AGENT_HOME).toBe('/isolated');
+    expect(env.CODE_AGENT_DATA_DIR).toBe('/isolated');
+  });
+
+  it('copies both secure storage files with mode 600 only with explicit opt-in', () => {
     const sourceDataDir = mkdtempSync(path.join(os.tmpdir(), 'neo-verify-secure-source-test-'));
     const targetDataDir = mkdtempSync(path.join(os.tmpdir(), 'neo-verify-secure-target-test-'));
     tempDirs.push(sourceDataDir, targetDataDir);
     writeFileSync(path.join(sourceDataDir, 'secure-storage.json'), 'fixture-storage', { mode: 0o600 });
     writeFileSync(path.join(sourceDataDir, '.secure-key'), 'fixture-key', { mode: 0o600 });
 
-    copySecureStoragePair(sourceDataDir, targetDataDir);
+    expect(parseStartArgs(['T', '--copy-login-session']).copyLoginSession).toBe(true);
+    copySecureStoragePair(sourceDataDir, targetDataDir, { copyLoginSession: true });
 
     for (const fileName of ['secure-storage.json', '.secure-key']) {
       const copied = path.join(targetDataDir, fileName);
@@ -254,7 +284,7 @@ describe('slotless verification scripts', () => {
     tempDirs.push(sourceDataDir, targetDataDir);
     writeFileSync(path.join(sourceDataDir, 'secure-storage.json'), 'fixture-storage', { mode: 0o600 });
 
-    expect(() => copySecureStoragePair(sourceDataDir, targetDataDir)).toThrow(/secure storage source file is required: .*\.secure-key/);
+    expect(() => copySecureStoragePair(sourceDataDir, targetDataDir, { copyLoginSession: true })).toThrow(/secure storage source file is required: .*\.secure-key/);
     expect(existsSync(path.join(targetDataDir, 'secure-storage.json'))).toBe(false);
     expect(existsSync(path.join(targetDataDir, '.secure-key'))).toBe(false);
   });
@@ -448,6 +478,16 @@ describe('slotless verification scripts', () => {
 
     expect(signals).toEqual(['SIGTERM', 'SIGKILL']);
     expect(existsSync(dir)).toBe(true);
+  });
+
+  it('--clean-account is parsed once and only then adds the skip-cloud-list env', () => {
+    expect(parseStartArgs(['T']).cleanAccount).toBe(false);
+    const parsed = parseStartArgs(['T', '--clean-account', '--reuse-dist']);
+    expect(parsed).toMatchObject({ ticket: 'T', cleanAccount: true, reuseDist: true });
+    expect(() => parseStartArgs(['T', '--clean-account', '--clean-account'])).toThrow(/only be specified once/);
+    const base = { baseEnv: {}, dataDir: '/d', runtimeTmpDir: '/d/t', port: 1234 };
+    expect(buildWebServerEnv({ ...base, cleanAccount: true }).CODE_AGENT_SKIP_CLOUD_SESSION_LIST).toBe('1');
+    expect(buildWebServerEnv({ ...base, cleanAccount: false })).not.toHaveProperty('CODE_AGENT_SKIP_CLOUD_SESSION_LIST');
   });
 
   it('validates screenshot viewport bounds', () => {

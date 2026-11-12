@@ -14,6 +14,7 @@ interface SidebarCronRunFoldingInput {
   currentSessionId: string | null;
   hasSearchFilters: boolean;
   expanded: boolean;
+  isRunning: boolean;
 }
 
 interface SidebarCronRunFoldingDecision {
@@ -34,10 +35,11 @@ function getSidebarCronRunFoldingDecision({
   currentSessionId,
   hasSearchFilters,
   expanded,
+  isRunning,
 }: SidebarCronRunFoldingInput): SidebarCronRunFoldingDecision {
   const taskId = getSidebarCronTaskId(session);
   const isLatest = aggregate?.latestSessionId === session.id;
-  const canFold = Boolean(taskId && aggregate && aggregate.runCount > 1 && !hasSearchFilters && !isLatest);
+  const canFold = Boolean(taskId && aggregate && aggregate.runCount > 1 && !hasSearchFilters && !isLatest && !isRunning);
   return {
     ...(taskId ? { taskId } : {}),
     isLatest,
@@ -65,7 +67,9 @@ export function assembleSidebarCronRows<T extends SidebarCronRunSession & { id: 
   hasSearchFilters: boolean;
   rowCap: number;
   showAllRows: boolean;
+  runningSessionIds?: ReadonlySet<string>;
 }): Array<SidebarCronVisibleRow<T>> {
+  const isRunningCron = (session: T) => Boolean(getSidebarCronTaskId(session) && args.runningSessionIds?.has(session.id));
   const flat: T[] = [];
   for (const session of args.sessions) {
     const taskId = getSidebarCronTaskId(session);
@@ -76,6 +80,7 @@ export function assembleSidebarCronRows<T extends SidebarCronRunSession & { id: 
       currentSessionId: args.currentSessionId,
       hasSearchFilters: args.hasSearchFilters,
       expanded: Boolean(taskId && args.expandedTaskIds.has(taskId)),
+      isRunning: isRunningCron(session),
     });
     if (!decision.shouldHide) flat.push(session);
   }
@@ -94,7 +99,7 @@ export function assembleSidebarCronRows<T extends SidebarCronRunSession & { id: 
   }
   const cap = args.hasSearchFilters || args.showAllRows
     ? flat.length
-    : Math.max(args.rowCap, anchorIndex + 1);
+    : Math.max(args.rowCap, anchorIndex + 1, flat.findLastIndex(isRunningCron) + 1);
   const rows: Array<SidebarCronVisibleRow<T>> = [];
   for (const session of flat.slice(0, cap)) {
     rows.push({ session, indented: false });
@@ -103,7 +108,7 @@ export function assembleSidebarCronRows<T extends SidebarCronRunSession & { id: 
     const aggregate = args.aggregatesByTaskId?.[taskId];
     if (aggregate?.latestSessionId !== session.id) continue;
     const older = args.sessions
-      .filter((candidate) => candidate.id !== session.id && getSidebarCronTaskId(candidate) === taskId)
+      .filter((candidate) => candidate.id !== session.id && getSidebarCronTaskId(candidate) === taskId && !isRunningCron(candidate))
       .slice()
       .sort((a, b) => b.updatedAt - a.updatedAt || 0);
     for (const run of older) rows.push({ session: run, indented: true });

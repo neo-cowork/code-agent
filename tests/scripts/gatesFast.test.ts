@@ -6,12 +6,36 @@ import { execFileSync } from 'node:child_process';
 import policy from '../../scripts/lib/gates-fast-policy.json';
 import {
   assertExactFiles, selectTests, validateFiles, validateReport, renderReceipt, digest,
-  validateBudgetPolicy, validateGateBudgetCoverage, extractGateIds, commandDeadline, budgetFailure,
+  validateBudgetPolicy, validateGateBudgetCoverage, scaleBudgetPolicy, extractGateIds, commandDeadline, budgetFailure,
   changedInputs, summarizeVitestFailures,
 } from '../../scripts/lib/gates-fast-contract.mjs';
 
 const root = path.resolve(__dirname, '../..');
 describe('fast gate fail-closed contracts', () => {
+  it('pins the fast-gate cap at 16 files and rejects overflow without truncation', () => {
+    expect(policy.maxFiles).toBe(16);
+    const list16 = [
+      ...policy.baseline,
+      'tests/wrappers/openaiWrapper.test.ts',
+      'tests/wrappers/responsesWrapper.test.ts',
+      'tests/wrappers/toolCallMeta.test.ts',
+      'tests/wrappers/parserUsagePassthrough.test.ts',
+      'tests/wrappers/usageNormalization.test.ts',
+      'tests/wrappers/geminiWrapper.test.ts',
+      'tests/wrappers/anthropicWrapper.test.ts',
+      'tests/channels/channelMessageReply.test.ts',
+      'tests/channels/messageFiltering.test.ts',
+      'tests/channels/outboundSenderAttribution.test.ts',
+      'tests/teammate.test.ts',
+      'tests/services/rendererBundleRolloutPolicy.test.ts',
+      'tests/services/rendererBundlePolicy.test.ts',
+    ];
+    expect(list16).toHaveLength(16);
+    validateFiles(root, list16, policy.maxFiles);
+    const list17 = [...list16, 'tests/services/cloudConfigService.test.ts'];
+    expect(list17).toHaveLength(17);
+    expect(() => validateFiles(root, list17, policy.maxFiles)).toThrow('never truncate');
+  });
   it('rejects missing, extra, duplicate and empty actual selections before execution', () => {
     for (const actual of [[], ['a'], ['a', 'b', 'c'], ['a', 'a', 'b']]) {
       expect(() => assertExactFiles(['a', 'b'], actual, 'before execution')).toThrow('file set != policy list');
@@ -20,10 +44,10 @@ describe('fast gate fail-closed contracts', () => {
     expect(() => assertExactFiles([], [], 'before execution')).toThrow();
   });
   it('rejects wildcard, missing, out-of-root and oversized exact lists', () => {
-    for (const files of [[], ['tests/unit/*.test.ts'], ['tests/../escape.test.ts'], ['tests/absent.test.ts'], Array(13).fill(policy.baseline[0])]) {
-      expect(() => validateFiles(root, files, 12)).toThrow();
+    for (const files of [[], ['tests/unit/*.test.ts'], ['tests/../escape.test.ts'], ['tests/absent.test.ts'], Array(policy.maxFiles + 1).fill(policy.baseline[0])]) {
+      expect(() => validateFiles(root, files, policy.maxFiles)).toThrow();
     }
-    validateFiles(root, policy.baseline, 12);
+    validateFiles(root, policy.baseline, policy.maxFiles);
   });
   it('requires semantic manual registration for unmapped business paths', () => {
     const changed = ['src/host/agent/newBehavior.ts'];
@@ -42,7 +66,7 @@ describe('fast gate fail-closed contracts', () => {
       'tests/node_modules/example/example.test.ts',
     ]) {
       const selected = selectTests(policy, [file]);
-      expect(() => validateFiles(root, selected.files, 12)).toThrow(`FAIL: test path is excluded from fast execution: ${file}`);
+      expect(() => validateFiles(root, selected.files, policy.maxFiles)).toThrow(`FAIL: test path is excluded from fast execution: ${file}`);
     }
   });
   it('unions explicit rules, both rename paths and changed tests', () => {
@@ -65,24 +89,25 @@ describe('fast gate fail-closed contracts', () => {
     expect(selectTests(policy, [oldPromptTest], [], [oldPromptTest]).files).toContain('tests/scripts/promptGateEvidence.test.ts');
     // Missing files without a Git deletion must never silently fall out of selection.
     const missing = selectTests(policy, [oldFile]);
-    expect(() => validateFiles(root, missing.files, 12)).toThrow('FAIL: selected test missing or unreadable');
+    expect(() => validateFiles(root, missing.files, policy.maxFiles)).toThrow('FAIL: selected test missing or unreadable');
   });
   it('distinguishes fast-policy changes from full-lock changes', () => {
     expect(selectTests(policy, ['scripts/gates-fast.mjs']).files).not.toContain('tests/scripts/gatesLocalLock.test.ts');
     expect(selectTests(policy, ['scripts/lib/gates-local-lock.mjs']).files).toContain('tests/scripts/gatesLocalLock.test.ts');
   });
-  it('a new e2e spec selects the axe wiring ratchet within the 12-file cap', () => {
+  it('a new e2e spec selects the axe wiring ratchet within the 16-file cap', () => {
     const selected = selectTests(policy, ['tests/e2e/x.spec.ts']);
     expect(selected.matchedRules).toContain('axe-e2e-wiring');
     expect(selected.files).toContain('tests/scripts/a11yAxeRatchet.test.ts');
     expect(selected.files).toHaveLength(policy.baseline.length + 1);
-    validateFiles(root, selected.files, 12);
+    validateFiles(root, selected.files, policy.maxFiles);
   });
   it('journey probes occupy one file slot each and stay off unrelated host paths', () => {
     const journeyIds = [
       'perf-journey-cold-start',
       'perf-journey-first-token',
       'perf-journey-long-session',
+      'perf-journey-long-session-scroll',
       'perf-journey-session-switch',
     ];
     for (const id of journeyIds) {
@@ -93,7 +118,7 @@ describe('fast gate fail-closed contracts', () => {
     const unrelated = selectTests(policy, ['src/host/prompts/old.ts']);
     expect(unrelated.matchedRules).not.toEqual(expect.arrayContaining(journeyIds));
   });
-  it('a MessageBubble or TurnBasedTraceView edit selects exactly one journey probe', () => {
+  it('keeps MessageBubble in one probe and selects both trace entry/scroll probes', () => {
     const bubble = selectTests(policy, ['src/renderer/components/features/chat/MessageBubble/MessageContent.tsx']);
     expect(bubble.matchedRules.filter((id) => id.startsWith('perf-journey-'))).toEqual(['perf-journey-first-token']);
     expect(bubble.files).toContain('tests/scripts/perfJourneyFirstToken.test.ts');
@@ -101,8 +126,12 @@ describe('fast gate fail-closed contracts', () => {
     expect(bubble.files).not.toContain('tests/scripts/perfJourneySessionSwitch.test.ts');
 
     const trace = selectTests(policy, ['src/renderer/components/features/chat/TurnBasedTraceView.tsx']);
-    expect(trace.matchedRules.filter((id) => id.startsWith('perf-journey-'))).toEqual(['perf-journey-long-session']);
+    expect(trace.matchedRules.filter((id) => id.startsWith('perf-journey-'))).toEqual([
+      'perf-journey-long-session',
+      'perf-journey-long-session-scroll',
+    ]);
     expect(trace.files).toContain('tests/scripts/perfJourneyLongSession.test.ts');
+    expect(trace.files).toContain('tests/scripts/perfJourneyLongSessionScroll.test.ts');
     expect(trace.files).not.toContain('tests/scripts/perfJourneySessionSwitch.test.ts');
     expect(trace.files).not.toContain('tests/scripts/perfJourneyFirstToken.test.ts');
   });
@@ -145,6 +174,18 @@ describe('fast gate fail-closed contracts', () => {
     expect(budgetFailure(commandDeadline(p, 'a', 10, 40), ['node', 'x'])).toBe('FAIL: gate budget 30ms exceeded (gate a) in node x');
     expect(budgetFailure(commandDeadline(p, 'a', 120, 0), ['node', 'x'])).toBe('FAIL: total budget 100ms exhausted (gate a) in node x');
   });
+  it('budget scale: default leaves policy untouched; mini scale 2 needs the matching ship outer timeout', () => {
+    expect(scaleBudgetPolicy(policy, {})).toEqual({ policy, scale: 1, outerMs: 180000 });
+    const scaled = scaleBudgetPolicy(policy, { GATES_FAST_BUDGET_SCALE: '2', SHIP_FASTGATE_TIMEOUT_S: '360' });
+    expect(scaled.policy.budgetMs).toBe(policy.budgetMs * 2);
+    expect(scaled.policy.budgetsMs['tests-typecheck']).toBe(policy.budgetsMs['tests-typecheck'] * 2);
+    expect(() => validateBudgetPolicy(scaled.policy, scaled.outerMs)).not.toThrow();
+    const noOuter = scaleBudgetPolicy(policy, { GATES_FAST_BUDGET_SCALE: '2' });
+    expect(() => validateBudgetPolicy(noOuter.policy, noOuter.outerMs)).toThrow('ship outer timeout');
+    expect(() => scaleBudgetPolicy(policy, { GATES_FAST_BUDGET_SCALE: '5' })).toThrow('1..3');
+    expect(() => scaleBudgetPolicy(policy, { GATES_FAST_BUDGET_SCALE: '0.5' })).toThrow('1..3');
+    expect(() => scaleBudgetPolicy(policy, { SHIP_FASTGATE_TIMEOUT_S: '60' })).toThrow('>= 180');
+  });
   it('对账 gates-fast.mjs 的 gate() 注册与 budgetsMs，缺项和多余项都 fail-closed', () => {
     const source = `await gate('inputs', true, run);\nawait gate("vitest", true, run);`;
     expect(extractGateIds(source)).toEqual(['inputs', 'vitest']);
@@ -178,6 +219,36 @@ describe('fast gate fail-closed contracts', () => {
     ]);
     expect(renderReceipt({ ...receipt, status: 'failed', error: 'budget exceeded' })[0]).toContain('FAILED: budget exceeded');
     expect(digest('private-v1')).not.toBe(digest('private-v2'));
+    for (const mode of ['ran', 'reused']) {
+      const privateCheck = { mode, inputHash: digest('private-inputs') };
+      const persisted = JSON.parse(JSON.stringify({ ...receipt, privateCheck }));
+      expect(persisted.privateCheck).toEqual(privateCheck);
+      expect(renderReceipt(persisted)).toContain(`private check: ${mode} inputHash=${privateCheck.inputHash.slice(0, 16)}`);
+      expect(renderReceipt({ ...persisted, status: 'failed', error: 'check failed' })).toContain(`private check: ${mode} inputHash=${privateCheck.inputHash.slice(0, 16)}`);
+    }
+  });
+  it('records private check metadata and logs it on success and failure in the actual gate body', async () => {
+    const source = fs.readFileSync(path.join(root, 'scripts/gates-fast.mjs'), 'utf8');
+    const body = source.slice(source.indexOf("  await gate('private',"), source.indexOf("  await gate('src-typecheck',"));
+    const execute = new Function('gate', 'runPrivateCheckCached', 'command', 'receipt', 'root', 'privateRoot', 'process', 'console', `return (async () => { ${body} })();`);
+    for (const failing of [false, true]) {
+      const receipt: { privateCheck?: { mode: string; inputHash: string } } = {};
+      const privateCheck = { mode: 'ran', inputHash: digest('real-inputs') };
+      const logs: string[] = [];
+      const commands: string[][] = [];
+      const invocation = execute(async (_id: string, _required: boolean, callback: () => Promise<void>) => callback(),
+        async ({ run }: { run: () => Promise<void> }) => {
+          await run();
+          if (failing) throw Object.assign(new Error('check failed'), { privateCheck });
+          return privateCheck;
+        }, async (argv: string[]) => { commands.push(argv); }, receipt, root, 'private-fixture', process,
+        { log: (line: string) => logs.push(line) });
+      if (failing) await expect(invocation).rejects.toThrow('check failed');
+      else await invocation;
+      expect(receipt.privateCheck).toEqual(privateCheck);
+      expect(commands).toEqual([[process.execPath, 'scripts/ci/check-casebank-answers.mjs', '--require-private']]);
+      expect(logs).toEqual([`private check: ran inputHash=${privateCheck.inputHash.slice(0, 16)}`]);
+    }
   });
   it('checks committed prompt changes with an empty index using base/head', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fast-prompt-contract-'));
