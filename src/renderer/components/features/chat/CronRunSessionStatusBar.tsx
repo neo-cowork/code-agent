@@ -215,7 +215,7 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
             type="button"
             onClick={() => { void handleApproval('allow'); }}
             disabled={approvalBusy}
-            className="inline-flex h-6 items-center gap-1 rounded-md border border-badge-success/40 bg-emerald-500/10 px-2 text-xs text-badge-success transition-colors hover:bg-emerald-500/20 disabled:opacity-50"
+            className="shrink-0 whitespace-nowrap inline-flex h-6 items-center gap-1 rounded-md border border-badge-success/40 bg-emerald-500/10 px-2 text-xs text-badge-success transition-colors hover:bg-emerald-500/20 disabled:opacity-50"
             data-testid="cron-run-status-approve"
           >
             <Check className="h-3 w-3" />
@@ -225,7 +225,7 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
             type="button"
             onClick={() => { void handleApproval('deny'); }}
             disabled={approvalBusy}
-            className="inline-flex h-6 items-center gap-1 rounded-md border border-border-muted px-2 text-xs text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-50"
+            className="shrink-0 whitespace-nowrap inline-flex h-6 items-center gap-1 rounded-md border border-border-muted px-2 text-xs text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-50"
             data-testid="cron-run-status-reject"
           >
             <X className="h-3 w-3" />
@@ -289,7 +289,7 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
           type="button"
           onClick={() => { void handleRerun(); }}
           disabled={isRerunning}
-          className="inline-flex h-6 items-center rounded-md border border-border-muted px-2 text-xs text-zinc-300 transition-colors hover:bg-zinc-800 disabled:opacity-50"
+          className="shrink-0 whitespace-nowrap inline-flex h-6 items-center rounded-md border border-border-muted px-2 text-xs text-zinc-300 transition-colors hover:bg-zinc-800 disabled:opacity-50"
           data-testid="cron-run-status-rerun"
         >
           {copy.rerun}
