@@ -276,6 +276,19 @@ describe('晨报回复「存草稿 N」才打开 mail_draft', () => {
     const options = withSessionCommandCenterBrain(undefined, '存草稿 2');
     expect(options.turnSystemContext?.slice(-2)).toEqual(blocks);
   });
+
+  // FU1：英文晨报的标记链。en 档晨间分诊的草稿块头是 "Draft N (not sent)"，
+  // 规则块必须把中英两种块头与两种任务名都写明，英文回复才能在英文晨报里找到那封草稿。
+  it('规则块同时点名中英两种草稿块头与两种任务名；英文回复 save draft N 也命中', () => {
+    const blocks = getSessionCommandCenterBrainContextForPrompt('save draft 1');
+    expect(blocks).toHaveLength(2);
+    const block = blocks[1] ?? '';
+    expect(block).toContain('<morning_brief_save_draft>');
+    expect(block).toContain('「草稿 N（未发送）」');
+    expect(block).toContain('"Draft N (not sent)"');
+    expect(block).toContain('「晨间分诊」');
+    expect(block).toContain('"Morning triage"');
+  });
 });
 
 // ============================================================================
