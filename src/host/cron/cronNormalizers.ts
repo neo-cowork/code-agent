@@ -1,3 +1,4 @@
+import { normalizePersonalSkillIds } from '../../shared/cronPersonalSkills';
 // ============================================================================
 // CronService - row/schedule/action normalizers & type guards
 // 纯函数：把数据库行、schedule、action 等 unknown 输入规整成强类型契约。
@@ -103,8 +104,9 @@ export function cronAgentRunHasAlert(
     return EXTERNAL_WATCH.ALERT_TAG_PATTERN.test(run.finalAssistantText);
   }
   if (action.urgencyCriteria?.trim()) {
+    const digest = parseCronRunDigest(run.finalAssistantText);
     return !declaresCronUrgencyQuiet(
-      parseCronRunDigest(run.finalAssistantText).summary ?? run.finalAssistantText,
+      digest.fullSummary ?? digest.summary ?? run.finalAssistantText,
     );
   }
   return true;
@@ -129,7 +131,7 @@ export function buildCronAgentActionResult(
 ): CronAgentActionResult & { skipped?: boolean; reason?: string } {
   const parsedDigest = parseCronRunDigest(finalAssistantText);
   const digest = artifactContext ? filterReadOnlyCronArtifacts(parsedDigest, artifactContext) : parsedDigest;
-  const { urgency, raw: urgencyRaw } = parseUrgencyHeader(digest.summary ?? finalAssistantText);
+  const { urgency, raw: urgencyRaw } = parseUrgencyHeader(digest.fullSummary ?? digest.summary ?? finalAssistantText);
   const alertReason = !notifyQuietRound && action.notifyWhen?.trim()
     ? extractCronAlertText(finalAssistantText)
     : '';
@@ -486,6 +488,7 @@ export function normalizeAction(value: unknown): CronJobAction | null {
         libraryProjectId:
           typeof value.libraryProjectId === 'string' ? value.libraryProjectId : undefined,
         urgencyCriteria: normalizeCriteriaSentence(value.urgencyCriteria),
+        allowedPersonalSkillIds: normalizePersonalSkillIds(value.allowedPersonalSkillIds),
         notifyWhen: normalizeCriteriaSentence(value.notifyWhen),
       };
     }

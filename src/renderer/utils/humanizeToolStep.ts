@@ -1,3 +1,4 @@
+import { agentRoleLabel } from './agentRoleLabel';
 // ============================================================================
 // humanizeToolStep — 把工具调用（工具名 + 参数）合成一句人话步骤文案
 // 消费方：ToolStepGroup 的步骤行主文案 + ToolHeader。原工具名/参数继续留在展开详情
@@ -403,7 +404,9 @@ export function parseDelegateSessionReceipt(result?: { success?: boolean; output
     const value: unknown = JSON.parse(result.output);
     if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
     const receipt = value as Record<string, unknown>;
-    if (receipt.status !== 'active') return undefined;
+    // 宿主回执的 status 随生命周期变化（active / terminal_observed / stopped…），
+    // 这里只认"成功形状"：有 delegationId 与 status 即可，不按具体状态值挡。
+    if (typeof receipt.delegationId !== 'string' || !receipt.delegationId || typeof receipt.status !== 'string') return undefined;
     return {
       target: typeof receipt.target === 'string' ? takePreview(receipt.target) || undefined : undefined,
       reused: receipt.reused === true,
@@ -527,7 +530,10 @@ export function humanizeToolStep(
       return buildDomainActionSentence('mcp', mcp.tool, status, a, t, mcp.server);
     }
     case 'subagentSpawn': {
-      const description = firstString(a, ['description', 'prompt', 'task', 'goal', 'role']);
+      const roleArg = name === 'Task' ? a.subagent_type : a.role;
+      const role = name === 'Explore' ? 'explore' : typeof roleArg === 'string' ? roleArg.trim() : '';
+      const description = (name === 'Task' ? firstString(a, ['description']) : '')
+        || (role ? agentRoleLabel(role, t.agentRoleLabels) : firstString(a, ['description']));
       return description
         ? h.subagentSpawn.replace('{description}', description)
         : h.subagentSpawnFallback;

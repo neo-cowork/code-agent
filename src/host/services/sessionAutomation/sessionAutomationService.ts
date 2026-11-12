@@ -579,6 +579,7 @@ export class SessionAutomationService {
         id: row.id,
         kind: row.kind === 'directory_access' ? 'directory_access' : 'tool_approval',
         sessionId: payload.sessionId ?? row.coordinatorId,
+        ...((payload.toolCallId ?? payload.argsRef?.toolCallId) ? { toolCallId: payload.toolCallId ?? payload.argsRef?.toolCallId } : {}),
         tool: payload.tool ?? 'unknown',
         displayTool: payload.displayTool,
         // N-PARKED-APPROVAL-SURVIVE-RESTART-PERSIST：老行没有该字段，undefined 照常透传（①）。
@@ -588,6 +589,7 @@ export class SessionAutomationService {
         status: row.status === 'orphaned' ? 'orphaned' : 'pending',
         riskClass: payload.riskClass ?? null,
         standingGrantTarget: payload.standingGrantTarget ?? null,
+        ...(row.status !== 'orphaned' && payload.writeGrantFolder ? { writeGrantFolder: payload.writeGrantFolder } : {}),
         sensitiveStep: payload.sensitiveStep,
       };
     }), ...voided];
@@ -937,10 +939,20 @@ function toVoidedInboxItem(
   } catch {
     // 损坏 payload 用列兜底
   }
+  const sessionId = payload.sessionId ?? row.coordinatorId;
+  let sessionTitle: string | undefined;
+  try {
+    const title = sessionId ? getDatabase().getSession(sessionId)?.title?.trim().replace(/^\[(?:定时|Scheduled)\]\s*/, '').trim() : undefined;
+    if (title && !/^(?:session_|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$)/i.test(title)) sessionTitle = title;
+  } catch {
+    logger.warn('Voided approval session title unavailable', { requestId: row.id });
+  }
   return {
     id: row.id,
     kind: 'tool_approval',
-    sessionId: payload.sessionId ?? row.coordinatorId,
+    sessionId,
+    sessionTitle,
+    argsPreview: payload.argsPreview,
     tool: payload.tool ?? 'unknown',
     displayTool: payload.displayTool,
     requestedAt: payload.requestedAt ?? row.submittedAt,

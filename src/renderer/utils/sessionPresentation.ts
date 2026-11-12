@@ -3,6 +3,7 @@ import type { SessionWorkbenchSnapshot } from '@shared/contract/sessionWorkspace
 import type { SessionRuntimeSummary } from '@shared/ipc';
 import type { BackgroundSessionInfo } from '@shared/contract/sessionState';
 import { stripAppshotBlocks } from '@shared/contract/appshot';
+import { localizeAppshotSessionTitle } from '@shared/sessionTitlePlaceholder';
 import type { SessionWithMeta } from '../stores/sessionStore';
 import type { SessionStatusFilter } from '../stores/sessionUIStore';
 import type { SessionState as TaskSessionState } from '../stores/taskStore';
@@ -79,15 +80,17 @@ export function getDisplaySessionTitle(title?: string | null, language: Language
   const stripped = stripAppshotBlocks(rawTitle);
   if (stripped && !stripped.trim().startsWith('<appshot')) {
     const match = /^\[(Schedule|Heartbeat|Cron|Channel)\]\s*(.*)$/i.exec(stripped);
-    if (!match) return stripped;
-    const t = languages[language];
-    const kind = match[1].toLowerCase();
-    const prefix = kind === 'channel' ? t.automationPresentation.channel
-      : kind === 'heartbeat' ? t.cronCenter.triggerKind.heartbeat : t.cronCenter.triggerKind.cron;
-    const name = kind === 'channel'
-      ? match[2].replace(/\s*·\s*(?:[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}|(?:oc|ou|chat|ch)_[\w-]+|(?=[a-z\d_-]*\d)[a-z\d_-]{24,}|\d{8,})$/i, '').trim()
-      : match[2];
-    return name ? `${prefix} · ${name}` : prefix;
+    if (match) {
+      const t = languages[language];
+      const kind = match[1].toLowerCase();
+      const prefix = kind === 'channel' ? t.automationPresentation.channel
+        : kind === 'heartbeat' ? t.cronCenter.triggerKind.heartbeat : t.cronCenter.triggerKind.cron;
+      const name = kind === 'channel'
+        ? match[2].replace(/\s*·\s*(?:[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}|(?:oc|ou|chat|ch)_[\w-]+|(?=[a-z\d_-]*\d)[a-z\d_-]{24,}|\d{8,})$/i, '').trim()
+        : match[2];
+      return name ? `${prefix} · ${name}` : prefix;
+    }
+    return localizeAppshotSessionTitle(stripped, language);
   }
   if (rawTitle.startsWith('<appshot')) {
     return languages[language].sidebar.appshotSessionTitle;

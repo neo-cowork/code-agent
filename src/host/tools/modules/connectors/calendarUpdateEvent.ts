@@ -15,6 +15,7 @@ import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifa
 import { describeAppleScriptWriteFailure } from './appleScriptWriteFailure';
 import { calendarUpdateEventSchema as schema } from './calendarUpdateEvent.schema';
 import { captureCalendarBefore } from './undoMetadata';
+import { formatConnectorTime } from './connectorTime';
 
 async function executeCalendarUpdateEvent(
   args: Record<string, unknown>,
@@ -56,8 +57,9 @@ async function executeCalendarUpdateEvent(
       location?: string;
     };
     ctx.logger.debug('calendar_update_event', { uid: event.uid, calendar: event.calendar });
-    const startText = event.startAtMs ? new Date(event.startAtMs).toLocaleString('zh-CN') : '未知';
-    const output = `已更新日历事件：\n- [${event.calendar}] ${event.title}\n- uid: ${event.uid}\n- 开始：${startText}\n- 结束：${event.endAtMs ? new Date(event.endAtMs).toLocaleString('zh-CN') : '未知'}${event.location ? `\n- 地点：${event.location}` : ''}`;
+    const startText = event.startAtMs ? formatConnectorTime(event.startAtMs) : '未知';
+    const endText = event.endAtMs ? formatConnectorTime(event.endAtMs) : '未知';
+    const output = `已更新日历事件：\n- [${event.calendar}] ${event.title}\n- uid: ${event.uid}\n- 开始：${startText}\n- 结束：${endText}${event.location ? `\n- 地点：${event.location}` : ''}`;
 
     return {
       ok: true,

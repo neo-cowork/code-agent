@@ -8,13 +8,14 @@ import type { DelegationPresentation } from './delegationPresentation';
 
 export function DelegationHeader({ presentation }: { presentation: DelegationPresentation }) {
   const { t } = useI18n();
-  const status = t.chat.delegationReceipt[presentation.state];
+  const template = t.chat.delegationReceipt.headlines[presentation.state];
+  const [prefix, suffix] = template.split('{name}');
+  const headline = template.replace('{name}', presentation.title);
   return (
-    <div className="flex min-w-0 flex-1 items-baseline gap-2">
-      <span className="flex-shrink-0 text-xs text-zinc-500">{status}</span>
-      <span className="min-w-0 truncate font-semibold text-zinc-200" title={presentation.title}>
-        {presentation.title}
-      </span>
+    <div className="min-w-0 flex-1 truncate text-xs text-zinc-200" title={headline} data-testid="delegation-headline">
+      {prefix && <span className="text-zinc-500">{prefix}</span>}
+      <span className="font-semibold" title={presentation.title}>{presentation.title}</span>
+      {suffix && <span className="text-zinc-500">{suffix}</span>}
     </div>
   );
 }
@@ -27,8 +28,9 @@ export function DelegationReceipt({ presentation }: { presentation: DelegationPr
   const pendingPermissionRequest = useAppStore((state) => state.pendingPermissionRequest);
   const pendingPermissionSessionId = useAppStore((state) => state.pendingPermissionSessionId);
   const queuedPermissionRequests = useAppStore((state) => state.queuedPermissionRequests);
-  const failure = (presentation.failureCode ? agentFailureCopy(presentation.failureCode, t) : null)
-    ?? presentation.failure;
+  const failure = presentation.state === 'failed'
+    ? agentFailureCopy(presentation.failureCode, t, presentation.failure)
+    : presentation.failure;
   const toolFailure = presentation.state === 'working'
     ? undefined
     : describeLastToolFailure(presentation.toolFailure, t);
@@ -70,6 +72,11 @@ export function DelegationReceipt({ presentation }: { presentation: DelegationPr
               {output.label}
             </button>
           ))}
+        </div>
+      )}
+      {presentation.branch && (
+        <div data-testid="delegation-branch">
+          {t.chat.delegationReceipt.mergeBranch.replace('{branch}', presentation.branch)}
         </div>
       )}
       {failure && (

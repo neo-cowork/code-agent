@@ -58,6 +58,7 @@ import { isReadOnlyArtifactOwnershipItem } from '../../../utils/artifactOwnershi
 import { useI18n } from '../../../hooks/useI18n';
 import { humanizeToolStep } from '../../../utils/humanizeToolStep';
 import type { Translations } from '../../../i18n';
+import { turnPhaseFallbackLabel } from '../../../utils/turnPhaseFallback';
 import { useMessageActionStore } from '../../../stores/messageActionStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useWorkDetailPolicy } from '../../../utils/workDetailPolicy';
@@ -1021,8 +1022,8 @@ function getTurnPhase(turn: TraceTurn, t: Translations): string | null {
 
   if (turn.status === 'streaming') return null;
 
-  const assistantText = [...turn.nodes].reverse().find((node) => node.type === 'assistant_text' && node.content.trim());
-  return assistantText ? '回复已生成' : '等待输出';
+  // 兜底（含「发送失败的轮不标已生成」的判定）在 turnPhaseFallback 助手模块里。
+  return turnPhaseFallbackLabel(turn, t);
 }
 
 function getTurnCompletionSignal(turn: TraceTurn, t: Translations): string | null {

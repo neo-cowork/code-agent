@@ -19,6 +19,7 @@ import { Button } from '../../primitives/Button';
 import { cronClient } from '../../../services/cronClient';
 import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
 import ipcService from '../../../services/ipcService';
+import { refreshParkedApprovals } from '../../../stores/parkedApprovalStore';
 import { useCronStore } from '../../../stores/cronStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
@@ -166,6 +167,7 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
       setApprovalBusy(false);
       // stale/失败也要立即刷新：等批准多半已不在，别等下一拍轮询才变。
       void refresh();
+      void refreshParkedApprovals();
     }
   }, [approvalBusy, copy.approvalFailed, copy.approvalStale, pendingApproval, refresh, sessionId]);
 

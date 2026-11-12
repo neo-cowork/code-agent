@@ -1,3 +1,6 @@
+import { clearEnvResumeWaiter } from '../runtime/envResumeWaiter';
+import { continueEnvBlockedRun } from './envBlockedContinuation';
+import type { NativeRecoveryHostPorts } from '../runtime/nativeRecoveryHost';
 import type { Message } from '../../shared/contract';
 import { getRunInterruptCause } from '../../shared/contract/durableRun';
 import { getSessionManager } from '../services';
@@ -17,6 +20,7 @@ type DurableContinuationRegistry = Pick<RunRegistry,
   | 'parkDurable'
 > & {
   getDurableEnvelope?: RunRegistry['getDurableEnvelope'];
+  getDurableRehydrationPlan?: RunRegistry['getDurableRehydrationPlan'];
 };
 
 type DurableContinuationTaskManager = Pick<TaskManager,
@@ -38,6 +42,8 @@ export async function continueParkedDurableRun(input: {
   runRegistry: DurableContinuationRegistry;
   taskManager: DurableContinuationTaskManager;
   getMessages?: (sessionId: string) => Promise<Message[]>;
+  expectedRunId?: string;
+  envRecoveryPorts?: NativeRecoveryHostPorts;
 }): Promise<{ runId: string; alreadyContinuing?: boolean }> {
   const { sessionId, runRegistry, taskManager } = input;
   if (continuingSessions.has(sessionId)) {
@@ -47,6 +53,7 @@ export async function continueParkedDurableRun(input: {
   try {
     const recovered = runRegistry.findRecoveredWaitingRun({ sessionId });
     if (!recovered) throw new Error(`No parked durable run is available for session ${sessionId}`);
+    if (input.expectedRunId && recovered.runId !== input.expectedRunId) throw new Error('Environment continuation run changed');
     continuingRunIds.set(sessionId, recovered.runId);
     const currentStatus = taskManager.getSessionState(sessionId)?.status;
     if (['running', 'paused', 'queued', 'cancelling'].includes(currentStatus ?? '')) {
@@ -62,11 +69,22 @@ export async function continueParkedDurableRun(input: {
     if (!source) throw new Error(`Parked durable run ${recovered.runId} source message is unavailable`);
     const parked = runRegistry.getDurableEnvelope?.(recovered.runId);
     const parkedCause = parked ? getRunInterruptCause(parked) : undefined;
+    if (parkedCause === 'env_blocked' && messages.slice(messages.indexOf(source) + 1)
+      .some((message) => message.role === 'user' && !message.isMeta && message.visibility !== 'rewound')) {
+      throw new Error('Environment continuation source message is not the latest user turn');
+    }
     const quotaDueAt = parkedCause === 'quota_wait' ? parked?.quotaWaitDueAt : undefined;
+    clearEnvResumeWaiter(recovered.runId);
     clearQuotaWaitTimer(recovered.runId);
     await runRegistry.resetDurableResumeBudget(recovered.runId);
     try {
-      await taskManager.resumeExistingDurableRun(
+      if (parkedCause === 'env_blocked') {
+        await continueEnvBlockedRun({
+          runId: recovered.runId, registry: runRegistry as RunRegistry, tasks: taskManager,
+          getMessages: input.getMessages ?? ((id) => getSessionManager().getMessages(id)),
+          ports: input.envRecoveryPorts,
+        });
+      } else await taskManager.resumeExistingDurableRun(
         sessionId,
         recovered.runId,
         messages,
@@ -79,7 +97,9 @@ export async function continueParkedDurableRun(input: {
       // running 却无人续跑时没有任何线索（降级路径留痕错题本）。
       await runRegistry.parkDurable(
         recovered.runId,
-        parkedCause === 'quota_wait'
+        parkedCause === 'env_blocked'
+          ? { reason: 'env_blocked', envBlocked: parked?.envBlocked, armEnvWaiter: false }
+          : parkedCause === 'quota_wait'
           ? { reason: 'quota_wait', ...(quotaDueAt !== undefined ? { dueAt: quotaDueAt } : {}) }
           : { reason: 'user_stop' },
       ).catch((parkError: unknown) => {

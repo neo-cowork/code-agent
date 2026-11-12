@@ -11,11 +11,14 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { getPromptCommandService } from '../../../src/host/services/commands/promptCommandService';
 import { createCLIAgent } from '../../../src/cli/adapter';
 import { buildQueuedAgentRunBody, createAgentRouter } from '../../../src/web/routes/agent';
+import { handleServerError } from '../../../src/web/middleware/serverErrors';
+import { ProjectSourceTrustError } from '../../../src/host/services/project/projectSourceTrustError';
+import { getAuthService } from '../../../src/host/services/auth/authService';
 import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
 import { HostReasonCode, type Message } from '../../../src/shared/contract';
 import { getModelAuthFailureMarker } from '../../../src/host/model/errorClassifier';
 import type { PendingOperation, RunCheckpoint, RunEngineRef, RunOwnerLease } from '../../../src/shared/contract/durableRun';
-import type { DurableCheckpointInput, PrepareOperationInput, PrepareToolOperationInput } from '../../../src/host/runtime/durableRunKernel';
+import type { DurableCheckpointInput, PrepareOperationInput } from '../../../src/host/runtime/durableRunKernel';
 import {
   markPersistenceDegraded,
   getPersistenceHealth,
@@ -352,6 +355,8 @@ async function startAgentApi(deps: {
     publishCompanionEvent: deps.publishCompanionEvent,
     hasCompanionApprovalUi: deps.hasCompanionApprovalUi,
   } as Parameters<typeof createAgentRouter>[0]));
+  // 终端错误处理按 createApp 的真实挂载顺序补上（拒绝的 async handler 统一 JSON 应答）。
+  app.use(handleServerError(logger));
 
   server = await new Promise<http.Server>((resolve) => {
     const nextServer = app.listen(0, '127.0.0.1', () => resolve(nextServer));
@@ -1240,6 +1245,129 @@ describe('createAgentRouter', () => {
     }
   });
 
+  // N-FIX-SIGNED-OUT-SEND-500-RAW-HTML-REDESIGN：trusted Source 的 identity 快照缺失时
+  // getWorkspaceScope 抛 ProjectSourceTrustError——此前经 Express 默认 handler 出整页
+  // HTML 500。现在写 SSE 之前收口成 422 + 稳定码；且 run 未注册，第二次发送拿到同一
+  // 个 422（不是「另一条 run 正在跑」的 409）。
+  it('answers a ProjectSourceTrustError from workspace-scope resolution with 422 PROJECT_SOURCE_TRUST, on repeat sends too', async () => {
+    await closeServer();
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'agent-trust-reject-'));
+    const getSession = vi.fn(async () => ({
+      id: 'session-trust-reject',
+      title: 'Trust reject',
+      projectId: 'project-trust-reject',
+      workingDirectory: workspaceRoot,
+    }));
+    projectServiceMocks.getWorkspaceScope.mockImplementation(() => {
+      throw new ProjectSourceTrustError('identity_changed', workspaceRoot);
+    });
+
+    try {
+      await startAgentApi({
+        tryGetSessionManager: async () => ({ getSession, updateSession: vi.fn(async () => undefined) }),
+      });
+      const post = () => fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: '帮我把下载文件夹里的照片按日期改名',
+          sessionId: 'session-trust-reject',
+          context: { workingDirectory: workspaceRoot },
+        }),
+      });
+      const first = await post();
+      expect(await first.json()).toEqual({
+        error: 'Project folder needs trust confirmation',
+        code: 'PROJECT_SOURCE_TRUST',
+        kind: 'identity_changed',
+      });
+      expect(first.status).toBe(422);
+      // 第二次发送：run 未注册，拿到同一个 422（不是「另一条 run 正在跑」的 409）
+      const second = await post();
+      expect(second.status).toBe(422);
+      expect(await second.json()).toEqual({
+        error: 'Project folder needs trust confirmation',
+        code: 'PROJECT_SOURCE_TRUST',
+        kind: 'identity_changed',
+      });
+      expect(runRegistry.getBySessionId('session-trust-reject')).toBeUndefined();
+      expect(logger.warn).toHaveBeenCalledWith(
+        '[AgentRouter] run rejected by Project Source trust gate',
+        expect.objectContaining({ sessionId: 'session-trust-reject', kind: 'identity_changed' }),
+      );
+      // ③ 变体：登录态（ownerUserId 非空）同一份坏 Source 表现一致——信任门与会话
+      // 归属人无关，signed-in 不放宽也不收窄。
+      const auth = getAuthService();
+      const currentUser = vi.spyOn(auth, 'getCurrentUser').mockReturnValue({
+        id: 'user-signed-in', email: 'signed-in@example.com',
+      } as ReturnType<typeof auth.getCurrentUser>);
+      try {
+        const signedIn = await post();
+        expect(signedIn.status).toBe(422);
+        expect(await signedIn.json()).toEqual({
+          error: 'Project folder needs trust confirmation',
+          code: 'PROJECT_SOURCE_TRUST',
+          kind: 'identity_changed',
+        });
+      } finally {
+        currentUser.mockRestore();
+      }
+    } finally {
+      projectServiceMocks.getWorkspaceScope.mockReset();
+      await rm(workspaceRoot, { recursive: true, force: true });
+    }
+  });
+
+  // ④ 终端错误处理：scope 预检抛普通 Error（如两个 Source 根重叠）时不许再出 HTML——
+  // 统一 JSON 500 + INTERNAL_SERVER_ERROR，并留一条 method/route/status/reason 日志。
+  it('answers an unexpected pre-SSE failure with JSON INTERNAL_SERVER_ERROR and logs it', async () => {
+    await closeServer();
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'agent-overlap-500-'));
+    const getSession = vi.fn(async () => ({
+      id: 'session-overlap-500',
+      title: 'Overlap',
+      projectId: 'project-overlap-500',
+      workingDirectory: workspaceRoot,
+    }));
+    projectServiceMocks.getWorkspaceScope.mockImplementation(() => {
+      throw new Error(`Project sources overlap: ${workspaceRoot} and ${workspaceRoot}/sub`);
+    });
+    logger.error.mockClear();
+
+    try {
+      await startAgentApi({
+        tryGetSessionManager: async () => ({ getSession, updateSession: vi.fn(async () => undefined) }),
+      });
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: '帮我把下载文件夹里的照片按日期改名',
+          sessionId: 'session-overlap-500',
+          context: { workingDirectory: workspaceRoot },
+        }),
+      });
+      const rawBody = await response.text();
+      expect(response.status).toBe(500);
+      expect(response.headers.get('content-type')).toContain('application/json');
+      expect(rawBody).not.toMatch(/<html|<!DOCTYPE/i);
+      expect(JSON.parse(rawBody)).toEqual({
+        error: 'Local server request failed',
+        code: 'INTERNAL_SERVER_ERROR',
+      });
+      expect(logger.error).toHaveBeenCalledWith('Local server request failed', {
+        method: 'POST',
+        route: '/api/run',
+        status: 500,
+        reason: expect.stringContaining('Project sources overlap'),
+      });
+    } finally {
+      projectServiceMocks.getWorkspaceScope.mockReset();
+      logger.error.mockClear();
+      await rm(workspaceRoot, { recursive: true, force: true });
+    }
+  });
+
   // N-RESUME-PARKED-RECLAIM ③：重启后被本进程认领的停靠 run（user_stop / guard_halt）不能挡住
   // 协作者的新消息——经 web /api/run 真路由发新消息，旧 run 终态化，新一轮正常开跑（不再 409）。
   it.each(['user_stop', 'guard_halt'] as const)('a new /api/run message supersedes a reclaimed %s parked run after restart', async (cause) => {
@@ -1632,6 +1760,34 @@ describe('createAgentRouter', () => {
       });
     });
 
+    describe('missing-attachment turn context on the desktop /run route (N-FIX-ATTACHMENT-NOT-IN-WORKDIR-FU1)', () => {
+      const postRun = async (prompt: string, sessionId: string) => {
+        const controller = new AbortController();
+        mockRun.mockClear();
+        try {
+          const response = await fetch(`${baseUrl}/api/run`, {
+            method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ prompt, sessionId, attachments: [] }), signal: controller.signal,
+          });
+          expect(response.ok).toBe(true);
+          await waitForAssertion(() => expect(mockRun).toHaveBeenCalled());
+          return String(mockRun.mock.calls.at(-1)![0]);
+        } finally { controller.abort(); }
+      };
+      const LINE = '本轮未收到任何上传附件';
+
+      it('空附件 + "分析这张销售表" → 模型面提示词恰含一次缺附件行', async () => {
+        const modelPrompt = await postRun('分析这张销售表', 'session-missing-att-route-pos');
+        expect(modelPrompt.split(LINE)).toHaveLength(2);
+        expect(modelPrompt).toContain('分析这张销售表');
+      });
+
+      it('"帮我写一首关于春天的短诗" 不含缺附件行', async () => {
+        const modelPrompt = await postRun('帮我写一首关于春天的短诗', 'session-missing-att-route-neg');
+        expect(modelPrompt).not.toContain(LINE);
+      });
+    });
+
     it('连接器 chip 进入 AgentLoop toolScope，不只停在提示词和消息 metadata', async () => {
       const controller = new AbortController();
       const response = await fetch(`${baseUrl}/api/run`, {
@@ -1741,6 +1897,52 @@ describe('createAgentRouter', () => {
       expect(config.systemPrompt).toContain('已经存过');
       expect(config.systemPrompt).toContain('没有开邮件权限');
       await disconnectAndStop(controller);
+      await waitForAssertion(() => {
+        expect(mockCancel).toHaveBeenCalled();
+      });
+    });
+
+    // FU1 rework r2：config.systemPrompt 那份规则块在 contextAssembly 重建系统消息时被丢
+    // （ctx.systemPrompt 不进请求；2026-11-11 真机抓包 + turn_snapshots 层台账实证）。
+    // 模型面必须经 turn 脚手架（wrapWithTurnSystemContext）送达，与桌面 envelope 路
+    // （withSessionCommandCenterBrain → turnSystemContext）同源同形。
+    it('存草稿轮次：规则块进模型面用户消息（turn 脚手架）；普通轮不进', async () => {
+      const controller = new AbortController();
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: 'save draft 1', sessionId: 'session-save-draft-model-face' }),
+        signal: controller.signal,
+      });
+      expect(response.ok).toBe(true);
+      await waitForAssertion(() => {
+        expect(mockCreateAgentLoop).toHaveBeenCalled();
+      });
+      const messages = mockCreateAgentLoop.mock.calls.at(-1)![2] as Message[];
+      const lastUserContent = String(messages.filter((m) => m.role === 'user').at(-1)!.content);
+      expect(lastUserContent).toContain('<user_request>');
+      expect(lastUserContent).toContain('save draft 1');
+      expect(lastUserContent).toContain('<morning_brief_save_draft>');
+      await disconnectAndStop(controller);
+      await waitForAssertion(() => {
+        expect(mockCancel).toHaveBeenCalled();
+      });
+
+      // 普通轮不携带：回合级规则块只在存草稿判据命中时出现（前缀缓存/上下文零膨胀）
+      mockCreateAgentLoop.mockClear();
+      const controller2 = new AbortController();
+      const response2 = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: '今天有什么安排', sessionId: 'session-plain-turn-model-face' }),
+        signal: controller2.signal,
+      });
+      expect(response2.ok).toBe(true);
+      await waitForAssertion(() => {
+        expect(mockCreateAgentLoop).toHaveBeenCalled();
+      });
+      const messages2 = mockCreateAgentLoop.mock.calls.at(-1)![2] as Message[];
+      const lastUser2 = String(messages2.filter((m) => m.role === 'user').at(-1)!.content);
+      expect(lastUser2).not.toContain('<morning_brief_save_draft>');
+      await disconnectAndStop(controller2);
       await waitForAssertion(() => {
         expect(mockCancel).toHaveBeenCalled();
       });

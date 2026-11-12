@@ -422,10 +422,12 @@ function mergeContextRecord(
   const node = ensureNode(nodes, record.agentId, role);
   addSource(node, 'subagentContext');
   const lifecycle = record.lifecycle;
-  // Persisted terminal facts survive restart; only unfinished records use the orphan heuristic.
-  const status: AgentTreeNodeStatus = lifecycle && lifecycle.status !== 'running'
-    ? lifecycle.status
-    : record.updatedAt < HOST_PROCESS_BOOT_MS ? 'cancelled' : 'unknown';
+  // Explicit graph terminal (parent-run settlement) wins; persisted lifecycle terminal facts survive
+  // restart; only unfinished records use the orphan heuristic.
+  const status: AgentTreeNodeStatus = record.terminalStatus
+    ?? (lifecycle && lifecycle.status !== 'running'
+      ? lifecycle.status
+      : record.updatedAt < HOST_PROCESS_BOOT_MS ? 'cancelled' : 'unknown');
   if (lifecycle) {
     node.displayName = lifecycle.displayName;
     node.role = lifecycle.role ?? node.role;
@@ -457,10 +459,12 @@ function mergeBackgroundAgent(
   nodes: Map<string, AgentTreeNode>,
   statusPriorities: Map<string, number>,
   handle: BackgroundSubagentHandle,
+  backgroundAgentId = handle.agentId,
 ): void {
   const node = ensureNode(nodes, handle.agentId, 'background');
   addSource(node, 'backgroundRegistry');
   node.background = true;
+  node.backgroundAgentId = backgroundAgentId;
   node.displayName ||= handle.displayName;
   node.task ??= handle.title;
   if (node.role === 'background' && handle.role) node.role = handle.role;
@@ -592,7 +596,7 @@ export function buildAgentTreeSnapshot(sources: AgentTreeSnapshotSources = {}): 
     if (sessionId && handle.sessionId !== sessionId) continue;
     mergeBackgroundAgent(nodes, statusPriorities, {
       ...handle, agentId: registryAliases.get(handle.agentId) ?? handle.agentId,
-    });
+    }, handle.agentId);
   }
   for (const record of sources.contextRecords ?? []) {
     if (sessionId && record.sessionId !== sessionId) continue;

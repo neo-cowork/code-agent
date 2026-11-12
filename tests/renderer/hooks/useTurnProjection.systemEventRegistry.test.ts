@@ -56,6 +56,8 @@ const SAMPLE_PAYLOADS: { [K in UserVisibleSystemEventKey]: NonNullable<MessageMe
   roleFlowStalled: { skillName: 'create-role' },
   roleEditReceipt: { roleId: '研究员', addedTools: ['calendar'], removedTools: [], descriptionChanged: false, promptChanged: false },
   backgroundWakeFailed: { taskId: 'session-work-1', reason: 'wake_failed' },
+  backgroundWakeDeferred: { taskId: 'session-work-1', outcome: 'completed' },
+  backgroundTaskInterrupted: { taskId: 'session-work-1' },
   turnCheckoutNote: {
     operation: 'checkout',
     state: 'success',
@@ -73,7 +75,16 @@ function systemEventMessage<K extends UserVisibleSystemEventKey>(key: K): Messag
     role: 'system',
     content: `事件 ${key} 的用户可见正文`,
     timestamp: 9_000,
-    metadata: { source: 'voice', [key]: SAMPLE_PAYLOADS[key] },
+    metadata: {
+      source: 'voice',
+      [key]: SAMPLE_PAYLOADS[key],
+      ...(key === 'backgroundTaskInterrupted' ? {
+        backgroundTaskResult: {
+          source: 'agent-result', taskId: 'session-work-1', shortName: '任务', status: 'failed',
+          summary: `事件 ${key} 的用户可见正文`,
+        },
+      } : {}),
+    },
   } as Message;
 }
 
@@ -295,6 +306,26 @@ describe('用户可见 system 事件登记制（P0-2）', () => {
       expect(note?.subtype).not.toBe('error');
       expect(allNodes.some((n) => Boolean(n.metadata?.agentError))).toBe(false);
     }
+  });
+
+  it.each([
+    '应用重启时这个后台任务还没做完，已被中断，结果没能送回这里。需要的话请重新发起。',
+    'The app restarted while this background task was still running, so it was interrupted and its result could not be delivered. Please start it again if you still need it.',
+  ])('projects only the readable interruption sentence: %s', (summary) => {
+    const content = `[任务结果] 网页标题｜failed｜${summary}`;
+    const message = {
+      id: 'session-task-result-interrupted-task-1', role: 'system', content, timestamp: 9_000,
+      metadata: {
+        backgroundTaskInterrupted: { taskId: 'task-1' },
+        backgroundTaskResult: { source: 'agent-result', taskId: 'task-1', shortName: '网页标题', status: 'failed', summary },
+      },
+    } satisfies Message;
+    const turns = project([...plainTurn(), message, message]);
+    expect(turns).toHaveLength(2);
+    const note = turns[1].nodes[0];
+    expect(note.content).not.toMatch(/failed|\[任务结果\]|｜/);
+    expect(turns[1]).toMatchObject({ standalone: true, nodes: [{ id: message.id, type: 'system', content: summary }] });
+    expect(message.content).toBe(content);
   });
 
   it('底线：裸 role:system（无 metadata）仍被总闸跳过——内部指令不外泄', () => {
