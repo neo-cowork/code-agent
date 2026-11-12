@@ -1,3 +1,4 @@
+import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 // ============================================================================
 // Background Session Panel - 后台任务面板（composer 正上方的列内面板）
 // ============================================================================
@@ -77,6 +78,7 @@ const BackgroundSessionItem: React.FC<BackgroundSessionItemProps> = ({
   stopAria,
   clearAria,
 }) => {
+  const { language } = useI18n();
   const statusIcon = {
     running: <Loader2 className="w-4 h-4 animate-spin text-badge-info" />,
     completed: <CheckCircle className="w-4 h-4 text-badge-success" />,
@@ -99,7 +101,7 @@ const BackgroundSessionItem: React.FC<BackgroundSessionItemProps> = ({
         {statusIcon}
         <div className="flex-1 min-w-0">
           <div className="text-sm font-medium text-zinc-200 truncate">
-            {session.title}
+            {getDisplaySessionTitle(session.title, language)}
           </div>
           <div className="text-xs text-zinc-400" data-testid="background-session-item-line">
             {line}
@@ -140,7 +142,7 @@ const BackgroundSessionItem: React.FC<BackgroundSessionItemProps> = ({
 
 export const BackgroundSessionPanel: React.FC = () => {
   const { backgroundSessions, moveToForeground, stopBackgroundSession, dismissBackgroundSession } = useSessionStore();
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [isMinimized, setIsMinimized] = React.useState(false);
   const [now, setNow] = React.useState(() => Date.now());
 
@@ -223,9 +225,9 @@ export const BackgroundSessionPanel: React.FC = () => {
                   onStop={() => void stopBackgroundSession(session.sessionId)}
                   onClear={() => void dismissBackgroundSession(session.sessionId)}
                   line={isRunning ? formatBackgroundDuration(session.startedAt, now, durationLabels) : line}
-                  foregroundAria={t.backgroundPanel.foregroundAria.replace('{title}', session.title)}
-                  stopAria={t.backgroundPanel.stopAria.replace('{title}', session.title)}
-                  clearAria={t.backgroundPanel.clearAria.replace('{title}', session.title)}
+                  foregroundAria={t.backgroundPanel.foregroundAria.replace('{title}', getDisplaySessionTitle(session.title, language))}
+                  stopAria={t.backgroundPanel.stopAria.replace('{title}', getDisplaySessionTitle(session.title, language))}
+                  clearAria={t.backgroundPanel.clearAria.replace('{title}', getDisplaySessionTitle(session.title, language))}
                 />
               );
             })}

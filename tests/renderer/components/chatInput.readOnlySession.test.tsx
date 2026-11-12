@@ -15,6 +15,9 @@ import ipcService from '../../../src/renderer/services/ipcService';
 import { useBundledCapabilityStore } from '../../../src/renderer/stores/bundledCapabilityStore';
 import { useSessionStore, type SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 
+import { languages } from '../../../src/renderer/i18n';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
+
 const realCreateSession = useSessionStore.getState().createSession;
 
 function makeSession(id: string, readOnly?: boolean): SessionWithMeta {
@@ -107,16 +110,30 @@ describe('只读会话输入框', () => {
 });
 
 describe('会话类型筛选条去掉 subagent', () => {
-  afterEach(() => cleanup());
+  afterEach(() => { cleanup(); useAppStore.setState({ language: 'zh' }); });
 
   it('getSessionTypeLabel(subagent) 为 null，筛选条没有 subagent', () => {
-    expect(getSessionTypeLabel('subagent')).toBeNull();
-    expect(getSessionTypeLabel('schedule')).toBe('Schedule');
-    expect(getSessionTypeLabel('heartbeat')).toBe('Heartbeat');
+    expect(getSessionTypeLabel('subagent', languages.zh)).toBeNull();
+    expect(getSessionTypeLabel('schedule', languages.zh)).toBe('定时');
+    expect(getSessionTypeLabel('heartbeat', languages.zh)).toBe('心跳');
 
     render(<SessionTypeFilterBar value="all" onChange={() => {}} />);
     const labels = screen.getAllByRole('button').map((button) => button.textContent ?? '');
     expect(labels.some((label) => label.toLowerCase().includes('subagent'))).toBe(false);
-    expect(labels).toEqual(['全部', 'Chat', 'Schedule', 'Heartbeat']);
+    expect(labels).toEqual(['全部', 'Chat', '定时', '心跳']);
   });
+});
+
+
+it.each(['zh', 'en'] as const)('cron type filter uses sidebar vocabulary in %s', (language) => {
+  useAppStore.setState({ language });
+  try {
+    render(<SessionTypeFilterBar value="all" onChange={() => {}} />);
+    const labels = screen.getAllByRole('button').map((button) => button.textContent ?? '');
+    expect(labels).toEqual(language === 'zh' ? ['全部', 'Chat', '定时', '心跳'] : ['All', 'Chat', 'Schedule', 'Heartbeat']);
+    if (language === 'zh') expect(labels.join(' ')).not.toMatch(/Schedule|Heartbeat/);
+  } finally {
+    cleanup();
+    useAppStore.setState({ language: 'zh' });
+  }
 });

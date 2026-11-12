@@ -240,7 +240,7 @@ function expectationLine(userExpectation: string): string[] {
  * 擅长什么/第一次醒来」，只讲这次实际看到了什么（含读取失败的部分）。
  */
 const FIRST_WAKE_PROMPT_CONNECTED = (sourceNames: readonly string[], userExpectation: string): string => [
-  '你刚被用户创建为一位持久化专家，此刻是创建后的第一次巡览。这不是用户发来的消息，用户现在不在场。',
+  ROLE_ASSETS.FIRST_WAKE_PROMPT_HEAD,
   '',
   ...expectationLine(userExpectation),
   '当前已连接的数据源：',
@@ -268,7 +268,7 @@ const FIRST_WAKE_PROMPT_CONNECTED = (sourceNames: readonly string[], userExpecta
  * 同 2026-11-05 返修：不复述名字/职责，不提第一次醒来。
  */
 const FIRST_WAKE_PROMPT_NONE = (userExpectation: string): string => [
-  '你刚被用户创建为一位持久化专家，此刻是创建后的第一次巡览。这不是用户发来的消息，用户现在不在场。',
+  ROLE_ASSETS.FIRST_WAKE_PROMPT_HEAD,
   '',
   ...expectationLine(userExpectation),
   '当前没有任何已连接的数据源，你没有可查看的真实数据，也不要做任何工具探查。',
