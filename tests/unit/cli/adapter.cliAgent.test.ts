@@ -194,6 +194,7 @@ describe('CLIAgent', () => {
     });
     mocks.getConfigService.mockReturnValue({
       getApiKey: vi.fn().mockReturnValue('resolved-key'),
+      getSettings: () => ({}),
     });
     mocks.addSwarmEventListener.mockReturnValue(() => {});
     mocks.resolveExplicitAgentOverride.mockReturnValue(null);
@@ -757,14 +758,33 @@ describe('CLIAgent', () => {
     expect(agent.getConfig().modelConfig.apiKey).toBe('resolved-key');
   });
 
-  it('setModel keeps existing key when config service throws', () => {
+  it('setModel resolves transport settings and clears them on an unconfigured switch', () => {
+    mocks.getConfigService.mockReturnValue({
+      getApiKey: (provider: string) => provider === 'zhipu' ? 'zhipu-test-key' : undefined,
+      getSettings: () => ({ models: { providers: {
+        zhipu: { baseUrl: 'http://127.0.0.1:9988/v4', protocol: 'openai' },
+      } } }),
+    });
+    const agent = new CLIAgent();
+    agent.setModel('zhipu', 'glm-5.3');
+    expect(agent.getConfig().modelConfig).toMatchObject({
+      apiKey: 'zhipu-test-key', baseUrl: 'http://127.0.0.1:9988/v4', protocol: 'openai',
+    });
+    agent.setModel('deepseek', 'deepseek-chat');
+    expect(agent.getConfig().modelConfig.apiKey).toBeUndefined();
+    expect(agent.getConfig().modelConfig.baseUrl).toBeUndefined();
+    expect(agent.getConfig().modelConfig.protocol).toBeUndefined();
+  });
+
+  it('setModel clears previous credentials when config service throws', () => {
     mocks.getConfigService.mockImplementation(() => {
       throw new Error('not ready');
     });
     const agent = new CLIAgent();
-    const before = agent.getConfig().modelConfig.apiKey;
     agent.setModel('openai', 'gpt-x');
-    expect(agent.getConfig().modelConfig.apiKey).toBe(before);
+    expect(agent.getConfig().modelConfig.apiKey).toBeUndefined();
+    expect(agent.getConfig().modelConfig.baseUrl).toBeUndefined();
+    expect(agent.getConfig().modelConfig.protocol).toBeUndefined();
     expect(agent.getConfig().modelConfig.model).toBe('gpt-x');
   });
 

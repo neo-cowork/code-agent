@@ -114,3 +114,20 @@ describe('AgentChip display name', () => {
     expect(screen.getByTestId('chat-input-agent-chip').textContent).toContain('岚析');
   });
 });
+
+describe('AgentChip expert id fallback', () => {
+  it.each(['小满', undefined])('renders display-name %s or keeps the role name', (displayName) => {
+    const entry = chipMocks.agentRegistryState.entries[0];
+    const original = { ...entry };
+    try {
+      Object.assign(entry, { id: 'weekly-helper', name: 'weekly-helper', displayName });
+      chipMocks.appState.activeAgentId = 'weekly-helper';
+      render(<AgentChip onOpenAgentCommand={vi.fn()} />);
+      expect(screen.getByTestId('chat-input-agent-chip').textContent).toContain(displayName || 'weekly-helper');
+      if (displayName) expect(screen.getByTestId('chat-input-agent-chip').textContent).not.toContain('weekly-helper');
+    } finally {
+      Object.assign(entry, original);
+      chipMocks.appState.activeAgentId = 'lanxi';
+    }
+  });
+});

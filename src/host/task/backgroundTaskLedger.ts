@@ -13,7 +13,7 @@ import type {
   TaskStatus,
   UpsertTaskInput,
 } from '../../shared/contract/backgroundTask';
-import { isTerminalTaskStatus } from '../../shared/contract/backgroundTask';
+import { TASK_PANEL_DISMISSED_KEY, isTerminalTaskStatus } from '../../shared/contract/backgroundTask';
 import type { BackgroundTaskLedgerChangedData } from '../../shared/contract/agent';
 import { getEventBus } from '../services/eventing/bus';
 import type { BackgroundTaskStore } from './backgroundTaskStore';
@@ -241,12 +241,34 @@ export class BackgroundTaskLedger {
       merged.set(task.id, task);
     }
 
+    const dismissed = this.store?.loadDismissedTaskIds();
     return [...merged.values()]
       .filter((task) => !filter.sessionId || task.sessionId === filter.sessionId)
       .filter((task) => !statuses || statuses.has(task.status))
       .filter((task) => !sources || sources.has(task.source))
       .sort(compareTasks)
-      .map(cloneTask);
+      .map((task) => {
+        const copy = cloneTask(task);
+        // 只打标记，不过滤：导出/证据摘要/日志读取/委派卡片仍要看到这些任务，
+        // 只有专家面板据此标记隐藏行。
+        if (dismissed?.has(task.id)) {
+          copy.metadata = { ...(copy.metadata ?? {}), [TASK_PANEL_DISMISSED_KEY]: true };
+        }
+        return copy;
+      });
+  }
+
+  /**
+   * 「清除已结束」：把该会话当前所有终态任务（含 cron 派生行）记成持久 dismissed，
+   * 只写标记，不删台账行、不碰日志/输出文件、不动运行中任务。返回被清除的任务 id。
+   */
+  dismissTerminalTasks(sessionId: string, dismissedAt?: number): string[] {
+    this.assertNonEmpty(sessionId, 'session id');
+    const ids = this.listTasks({ sessionId })
+      .filter((task) => isTerminalTaskStatus(task.status) && task.metadata?.[TASK_PANEL_DISMISSED_KEY] !== true)
+      .map((task) => task.id);
+    this.store?.markTasksDismissed(ids, sessionId, dismissedAt);
+    return ids;
   }
 
   hasActiveTasks(): boolean {

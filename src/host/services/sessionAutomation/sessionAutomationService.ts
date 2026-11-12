@@ -579,10 +579,12 @@ export class SessionAutomationService {
         id: row.id,
         kind: row.kind === 'directory_access' ? 'directory_access' : 'tool_approval',
         sessionId: payload.sessionId ?? row.coordinatorId,
+        ...((payload.toolCallId ?? payload.argsRef?.toolCallId) ? { toolCallId: payload.toolCallId ?? payload.argsRef?.toolCallId } : {}),
         tool: payload.tool ?? 'unknown',
         displayTool: payload.displayTool,
         // N-PARKED-APPROVAL-SURVIVE-RESTART-PERSIST：老行没有该字段，undefined 照常透传（①）。
         argsPreview: payload.argsPreview,
+        commandPreview: payload.tool?.toLowerCase() === 'bash' ? payload.argsSummary : undefined,
         requestedAt: payload.requestedAt ?? row.submittedAt,
         status: row.status === 'orphaned' ? 'orphaned' : 'pending',
         riskClass: payload.riskClass ?? null,

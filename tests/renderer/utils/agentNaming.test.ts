@@ -22,6 +22,7 @@ afterEach(() => useAppStore.setState({ language: 'zh' }));
 
 describe('spawned agent naming through public entries', () => {
   it.each([
+    ['background', '助手', 'Background assistant'],
     ['coder', '编程员', 'Coder'],
     ['reviewer', '审阅员', 'Reviewer'],
     ['资料整理专家', '资料整理专家', '资料整理专家'],
@@ -42,6 +43,16 @@ describe('spawned agent naming through public entries', () => {
       expect(step).toBe(t.toolStepHumanize.subagentSpawn.replace('{description}', expected));
       expect(step).not.toContain(longTask);
     }
+  });
+
+  it('names a background node in English even when its host display name is Chinese', () => {
+    useAppStore.setState({ language: 'en' });
+    const source = { ...node('explore'), background: true, displayName: '供应商对比研究' };
+    expect(buildAgentRows({ members: [], tasks: [], nodes: [source] })[0].name).toBe('Background assistant');
+    expect(deriveDelegationPresentation(call, [], [source])?.title).toBe('Background assistant');
+    useAppStore.setState({ language: 'zh' });
+    expect(buildAgentRows({ members: [], tasks: [], nodes: [source] })[0].name).toBe('供应商对比研究');
+    expect(deriveDelegationPresentation(call, [], [source])?.title).toBe('供应商对比研究');
   });
 
   it('uses the existing fallback when spawn_agent has only a long task', () => {

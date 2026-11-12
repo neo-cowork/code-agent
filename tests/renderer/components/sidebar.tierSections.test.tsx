@@ -13,6 +13,12 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   return { useI18n: () => ({ t: zh, language: 'zh' }) };
 });
 
+
+const listLoadState = { settled: true, loading: false, error: false, errorCode: null };
+vi.mock('../../../src/renderer/stores/sessionListPagination', () => ({
+  useSessionListLoadStore: () => listLoadState,
+}));
+
 const sessionUiState = {
   collapsedTiers: {} as Record<string, boolean>,
   setTierCollapsed: vi.fn(),
@@ -52,6 +58,7 @@ const projectMetaById = {
 };
 
 function renderList(overrides: Record<string, unknown> = {}): string {
+  Object.assign(listLoadState, { settled: true, loading: overrides.isLoading === true, error: false, errorCode: null }, overrides.listLoadState);
   const props = {
     groups,
     isLoading: false,
@@ -178,5 +185,55 @@ describe('SidebarSessionList 空态星球', () => {
     });
     expect(html).toContain('data-planet="mercury"');
     expect(html).toContain('当前没有运行中会话');
+  });
+});
+
+
+describe('SidebarSessionList restore readiness', () => {
+  it('hides partial groups until the first list settles even with initial isLoading false', () => {
+    const html = renderList({ listLoadState: { settled: false } });
+    expect(html).toContain('sidebar-list-loading');
+    expect(html).not.toContain('sidebar-project-group-');
+    expect(html).not.toContain('还没有勘测记录');
+  });
+
+  it('hides existing groups throughout a principal-change reload', () => {
+    const html = renderList({ listLoadState: { settled: false, loading: true } });
+    expect(html).toContain('sidebar-list-loading');
+    expect(html).not.toContain('sidebar-project-group-');
+  });
+
+  it('renders a human failure and retry instead of empty groups', () => {
+    const html = renderList({ hasAnySessions: false, groups: [], listLoadState: { error: true } });
+    expect(html).toContain('暂时无法载入会话列表，请重试。');
+    expect(html).toContain('重试');
+    expect(html).not.toContain('sidebar-project-group-');
+    expect(html).not.toContain('还没有勘测记录');
+  });
+});
+
+
+describe('SidebarSessionList refresh continuity', () => {
+  it('keeps loaded group markup mounted during a foreground refresh', () => {
+    const before = renderList();
+    const refreshing = renderList({ listLoadState: { loading: true } });
+    expect(refreshing).toBe(before);
+    expect(refreshing).not.toContain('sidebar-list-loading');
+  });
+
+  it('keeps loaded groups after a silent failure and offers a non-blocking retry', () => {
+    const html = renderList({ listLoadState: { error: true } });
+    for (const key of ['g-space', 'g-project', 'g-quick']) {
+      expect(html).toContain(`data-testid="sidebar-project-group-${key}"`);
+    }
+    expect(html).toContain('暂时无法载入会话列表，请重试。');
+    expect(html).toContain('重试');
+    expect(html).not.toContain('sidebar-list-loading');
+  });
+
+  it('still shows the loader for a refresh when there are no cached rows', () => {
+    const html = renderList({ hasAnySessions: false, groups: [], listLoadState: { loading: true } });
+    expect(html).toContain('sidebar-list-loading');
+    expect(html).not.toContain('还没有勘测记录');
   });
 });

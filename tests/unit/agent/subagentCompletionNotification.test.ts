@@ -18,12 +18,15 @@ function completion(kind?: 'user_visible' | 'internal' | 'shell') {
 }
 
 describe('subagent completion response contract', () => {
-  it('asks for one summary sentence without repeating a result already visible to the user', () => {
+  it('asks for one plain report with the merge branch because the user has not seen the result', () => {
     const record = completion('user_visible');
 
     expect(record.content).toContain('"completion_kind": "user_visible"');
-    expect(record.content).toContain('结果已经展示给用户，不要复述子代理的原始结果');
-    expect(record.content).toContain('只用一句话归纳本批通知里的全部完成项');
+    expect(record.content).toContain('用户还没看到子代理的完整结果');
+    // 默认（inline，追加在父 run 的工具结果里）不得禁用工具
+    expect(record.content).not.toContain('不要调用任何工具');
+    expect(record.content).toContain('先完成你当前正在做的任务');
+    expect(record.content).toContain('写出分支名并说明需要合并才会生效');
     expect(record.content).toMatch(
       /<completion_ack_instruction>[\s\S]+<\/completion_ack_instruction>\n<\/subagent_notification>$/,
     );
@@ -84,5 +87,17 @@ describe('subagent completion response contract', () => {
     const record = { ...completion(), title: '   ' };
     expect(formatSystemReminderForCompletions([record])).toContain('- 后台任务: completed');
     expect(formatSystemReminderForCompletions([record])).not.toContain('reviewer');
+  });
+
+  it('wake variant tells the fresh parent turn not to call tools; inline does not', () => {
+    const record = completion('user_visible');
+    const wake = formatSystemReminderForCompletions([record], { delivery: 'wake' });
+    const inline = formatSystemReminderForCompletions([record], { delivery: 'inline' });
+    expect(wake).toContain('本轮不要调用任何工具');
+    expect(wake).not.toContain('先完成你当前正在做的任务');
+    expect(inline).not.toContain('不要调用任何工具');
+    expect(inline).toContain('先完成你当前正在做的任务');
+    expect(formatSystemReminderForCompletions([record])).toBe(inline);
+    expect(wake.split('<completion_ack_instruction>').length - 1).toBe(1);
   });
 });

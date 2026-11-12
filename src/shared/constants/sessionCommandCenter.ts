@@ -113,6 +113,24 @@ export function composeSessionCommandTaskResultText(value: string | undefined): 
 }
 
 /**
+ * [任务结果] 行的状态词（给人读的）：正文里不再露英文机读 token（failed/completed）。
+ * metadata.backgroundTaskResult.status 仍保持机器可读原值，渲染端/账本不受影响。
+ */
+const SESSION_TASK_RESULT_STATUS_WORDS = {
+  zh: { completed: '已完成', failed: '已失败', cancelled: '已取消' },
+  en: { completed: 'finished', failed: 'failed', cancelled: 'cancelled' },
+} as const;
+
+export type SessionTaskResultStatusWordLocale = keyof typeof SESSION_TASK_RESULT_STATUS_WORDS;
+
+export function formatSessionTaskResultStatusWord(
+  status: 'completed' | 'failed' | 'cancelled',
+  locale: SessionTaskResultStatusWordLocale,
+): string {
+  return SESSION_TASK_RESULT_STATUS_WORDS[locale][status];
+}
+
+/**
  * 判据单一真源：本轮是否套用指挥台 brain。
  *
  * 桌面（agentAppService）和 web（routes/agent.ts）两条路各自把工具面/迭代上限/系统上下文

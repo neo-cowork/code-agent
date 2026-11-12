@@ -1,3 +1,5 @@
+import { automationPresentationEn, automationPresentationZh } from './automationPresentation';
+import { cronCloudEn, cronCloudZh } from './cronCloud';
 import { cronRoutineRestateEn, cronRoutineRestateZh } from './cronRoutineRestate';
 import { parkedApprovalVoidedEn, parkedApprovalVoidedZh } from './parkedApprovalVoided';
 // ============================================================================
@@ -5,6 +7,7 @@ import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 import type { EventScheduleValidationReason } from '@shared/cronEventValidation';
 import { cronPermissionDeniedReasonText } from '@shared/cronPermissionDenied';
 import { cronEditorChromeEn, cronEditorChromeZh } from './cronEditorChrome';
+import { watchTemplateCopyEn, watchTemplateCopyZh } from './cronWatchTemplateCopy';
 // 自动化面板词条（features/cron 全家桶）—— zh/en 同文件相邻维护。
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮（同 sidebar.ts / chatInput.ts 先例）。
 // 注：types.ts 里的 formatActionSummary/formatDateTime 等格式化函数文案暂未迁移
@@ -12,8 +15,10 @@ import { cronEditorChromeEn, cronEditorChromeZh } from './cronEditorChrome';
 // 不再往本文件塞词条。其余遗留随收尾清扫批一并处理。
 // ============================================================================
 export const cronCenterZh = {
+  ...automationPresentationZh,
   cronCenter: {
     ...cronEditorChromeZh,
+    ...cronCloudZh,
     parkedVoided: parkedApprovalVoidedZh,
     groupListenCheck: {
       title: '检查群消息是否连通',
@@ -295,20 +300,6 @@ export const cronCenterZh = {
     // 已落库的 webhook 任务在编辑器里的调度类型（创建菜单不提供这一项）。
     eventWebhookScheduleOption: '外部系统通知触发（Webhook 投递）',
     // Webhook 触发（N-CRON-WEBHOOK-CLOUD-HOOK-FU1）：云端服务设置卡 + 编辑器门 + 一次性链接卡 + 详情块
-    cloudSettings: {
-      title: '云端计划任务服务',
-      description: 'Webhook 触发需要它：Sentry、Linear 等外部系统把事件发到云端链接，Neo 通过这个服务收到并启动任务。',
-      baseUrlLabel: '服务地址',
-      tokenLabel: '访问令牌',
-      tokenPlaceholder: '粘贴云端服务的访问令牌',
-      changeToken: '更换',
-      save: '保存云端设置',
-      saved: '云端服务已保存，已开始接收 Webhook 事件。',
-      saveFailed: '保存失败',
-      baseUrlRequired: '请先填写服务地址。',
-      tokenRequired: '请先填写访问令牌。',
-      note: '令牌只保存在本机的安全存储里，不会写进设置文件。',
-    },
     webhook: {
       gateUnconfigured: '使用 Webhook 触发前，需要先填写云端计划任务服务的地址和令牌。已填的内容会保留，设置好回来继续。',
       gotoSettings: '去设置',
@@ -447,6 +438,7 @@ export const cronCenterZh = {
     // 推荐模板卡
     templatesTitle: '推荐自动化',
     templatesSubtitle: '无需填写，点一下即可按默认时间开始',
+    connectorNames: { lark: '飞书' } as Record<string, string>,
     templateEnable: '开启',
     templateEnabled: '已开启',
     templateReenable: '重新开启',
@@ -474,6 +466,7 @@ export const cronCenterZh = {
         description: '汇总昨晚到现在的未读邮件、消息和日历变动',
         scheduleLabel: '工作日 08:30',
       },
+      ...watchTemplateCopyZh,
       'group-listen': {
         name: '群监听',
         description: '盯住一个群，来了新消息就按你的一句话处理',
@@ -542,8 +535,10 @@ export const cronCenterZh = {
 };
 
 export const cronCenterEn: typeof cronCenterZh = {
+  ...automationPresentationEn,
   cronCenter: {
     ...cronEditorChromeEn,
+    ...cronCloudEn,
     parkedVoided: parkedApprovalVoidedEn,
     groupListenCheck: {
       title: 'Check group message reception',
@@ -813,20 +808,6 @@ export const cronCenterEn: typeof cronCenterZh = {
     eventMailScheduleOption: 'New mail (mail trigger)',
     eventWebhookScheduleOption: 'Triggered by an external system (Webhook delivery)',
     // Webhook trigger (N-CRON-WEBHOOK-CLOUD-HOOK-FU1): cloud settings card + editor gate + one-time link card + detail block
-    cloudSettings: {
-      title: 'Cloud scheduler',
-      description: 'Webhook triggers need it: external systems such as Sentry or Linear post events to a cloud link, and Neo receives them here to start your task.',
-      baseUrlLabel: 'Service address',
-      tokenLabel: 'Access token',
-      tokenPlaceholder: 'Paste the cloud service access token',
-      changeToken: 'Change',
-      save: 'Save cloud settings',
-      saved: 'Cloud scheduler saved. Webhook events are now being received.',
-      saveFailed: 'Save failed',
-      baseUrlRequired: 'Enter the service address first.',
-      tokenRequired: 'Enter the access token first.',
-      note: 'The token is kept in this device\'s secure storage and is never written to the settings file.',
-    },
     webhook: {
       gateUnconfigured: 'Webhook triggers need the cloud scheduler address and token first. What you have filled in is kept; finish setup and come back.',
       gotoSettings: 'Go to settings',
@@ -961,6 +942,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     backToSimple: 'Back',
     templatesTitle: 'Recommended automations',
     templatesSubtitle: 'No setup — one click starts them on the default schedule',
+    connectorNames: { lark: 'Feishu' } as Record<string, string>,
     templateEnable: 'Enable',
     templateEnabled: 'On',
     templateReenable: 'Re-enable',
@@ -986,6 +968,7 @@ export const cronCenterEn: typeof cronCenterZh = {
         description: 'Round up unread mail, messages, and calendar changes since last night',
         scheduleLabel: 'Weekdays 08:30',
       },
+      ...watchTemplateCopyEn,
       'group-listen': {
         name: 'Group listen',
         description: 'Watch one group and handle new messages with your one-liner',

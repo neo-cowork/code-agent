@@ -26,11 +26,11 @@ ring = "0.17.14"
 tokio = { version = "1", features = ["rt-multi-thread"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2 = "0.6"
+objc2 = { version = "0.6", features = ["exception"] }
 objc2-app-kit = { version = "0.3", features = ["NSBitmapImageRep", "NSImage", "NSWorkspace", "NSWindow", "NSResponder", "NSView", "NSControl", "NSButton", "block2"] }
 block2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSData", "NSDictionary", "NSGeometry", "NSString", "NSURL"] }
-objc2-user-notifications = { version = "0.3", default-features = false, features = ["std", "UNNotificationContent", "UNNotificationRequest", "UNNotificationTrigger", "UNUserNotificationCenter", "block2"] }
+objc2-foundation = { version = "0.3", features = ["NSData", "NSDictionary", "NSObject", "NSGeometry", "NSString", "NSURL"] }
+objc2-user-notifications = { version = "0.3", default-features = false, features = ["std", "UNNotification", "UNNotificationResponse", "UNNotificationContent", "UNNotificationRequest", "UNNotificationTrigger", "UNUserNotificationCenter", "block2"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
