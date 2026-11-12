@@ -1,3 +1,4 @@
+import { automationPresentationEn, automationPresentationZh } from './automationPresentation';
 import { cronCloudEn, cronCloudZh } from './cronCloud';
 import { cronRoutineRestateEn, cronRoutineRestateZh } from './cronRoutineRestate';
 import { parkedApprovalVoidedEn, parkedApprovalVoidedZh } from './parkedApprovalVoided';
@@ -14,6 +15,7 @@ import { watchTemplateCopyEn, watchTemplateCopyZh } from './cronWatchTemplateCop
 // 不再往本文件塞词条。其余遗留随收尾清扫批一并处理。
 // ============================================================================
 export const cronCenterZh = {
+  ...automationPresentationZh,
   cronCenter: {
     ...cronEditorChromeZh,
     ...cronCloudZh,
@@ -533,6 +535,7 @@ export const cronCenterZh = {
 };
 
 export const cronCenterEn: typeof cronCenterZh = {
+  ...automationPresentationEn,
   cronCenter: {
     ...cronEditorChromeEn,
     ...cronCloudEn,
