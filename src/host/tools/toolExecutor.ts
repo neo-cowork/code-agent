@@ -1823,7 +1823,24 @@ export class ToolExecutor {
     // 'role-own-memory-unattended' 账本行 + 跳过下方主分类分支（所有 ask 升档不再
     // 拦它）。更早的硬拒路径（policy / exec-policy / 用户拒绝 sticky / peer-origin
     // 无人值守拒 / 记忆目录 directive 门）不受影响，照常先出。
-    const roleOwnMemoryUnattendedAllow = isUnattendedRoleOwnMemoryWrite({
+    // 与 isPreApproved 同口径：用户显式配的确认（ask 规则 / always_confirm / readOnly）
+    // 和其余强制升档信号不能被绕过；只有 boundaryViolation / writeWithoutWorkspaceAuthority
+    // 这两个默认 ask 是本单有意放行的。
+    const roleOwnMemoryUnattendedAllow = !scheduleWriteGrantRequired
+      && !guardFabricForcesApproval
+      && !protectedWriteForcesConfirmation
+      && !peerOriginForcesConfirmation
+      && !launderRetryForcesAsk
+      && !commandAnalysisFailedReason
+      && !shellDesktopAutomation
+      && !consequenceForcesClassification
+      && !argumentForcesClassification
+      && !cuaAppGrantForcesClassification
+      && !this.forcePermissionHandler
+      && !unresolvedWriteTargetForcesAsk
+      && !policyForcesConfirmation
+      && !readOnlyForcesConfirmation
+      && isUnattendedRoleOwnMemoryWrite({
       toolName: executionToolName,
       params,
       agentRole: options.agentRole,

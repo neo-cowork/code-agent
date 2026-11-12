@@ -10,7 +10,29 @@ const mocks = vi.hoisted(() => ({
   getSchemas: vi.fn(),
   has: vi.fn(),
   resolve: vi.fn(),
+  alwaysConfirm: { on: false },
 }));
+
+vi.mock('../../../src/host/permissions/runPolicySnapshot', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/host/permissions/runPolicySnapshot')>();
+  return {
+    ...actual,
+    resolveEffectivePolicyEnforcer: (...args: Parameters<typeof actual.resolveEffectivePolicyEnforcer>) => {
+      const real = actual.resolveEffectivePolicyEnforcer(...args);
+      if (!mocks.alwaysConfirm.on) return real;
+      return {
+        ...(real ?? {}),
+        isActive: true,
+        checkTool: () => ({ allowed: true }),
+        checkCommand: () => ({ allowed: true }),
+        checkFilePath: () => ({ allowed: true }),
+        checkNetwork: () => ({ allowed: true }),
+        logToolCall: () => undefined,
+        requiresConfirmation: () => true,
+      } as unknown as typeof real;
+    },
+  };
+});
 
 vi.mock('../../../src/host/tools/protocolRegistry', () => ({
   getProtocolRegistry: () => ({
@@ -102,6 +124,7 @@ describe('ToolExecutor unattended role own-memory write（N-ROLE-WAKE-OWN-MEMORY
   beforeEach(() => {
     process.env.CODE_AGENT_DATA_DIR = '/tmp/code-agent-role-own-memory';
     resetToolResolver();
+    mocks.alwaysConfirm.on = false;
     mocks.getSchemas.mockReturnValue(schemas);
     mocks.has.mockReturnValue(true);
     mocks.execute.mockReset().mockResolvedValue({ ok: true, output: 'saved' });
@@ -113,8 +136,11 @@ describe('ToolExecutor unattended role own-memory write（N-ROLE-WAKE-OWN-MEMORY
     else process.env.CODE_AGENT_DATA_DIR = originalDataDir;
   });
 
-  function newExecutor(requestPermission = vi.fn(async () => true)) {
-    const executor = new ToolExecutor({ workingDirectory: '/tmp', requestPermission });
+  function newExecutor(
+    requestPermission = vi.fn(async () => true),
+    extra: Record<string, unknown> = {},
+  ) {
+    const executor = new ToolExecutor({ workingDirectory: '/tmp', requestPermission, ...extra });
     executor.setAuditEnabled(false);
     return { executor, requestPermission };
   }
@@ -233,5 +259,24 @@ describe('ToolExecutor unattended role own-memory write（N-ROLE-WAKE-OWN-MEMORY
     await executor.execute('MemoryWrite', { ...OWN_ROLE_WRITE }, { sessionId });
 
     expect(requestPermission).toHaveBeenCalledTimes(1);
+  });
+
+  // 用户/策略显式配的确认不能被本放行绕过（只有默认 ask / boundaryViolation 是有意放行的）。
+  it.each([
+    ['readOnly 会话档', () => newExecutor(vi.fn(async () => true), { permissionModeOverride: 'readOnly' })],
+    ['policy tools.always_confirm', () => { mocks.alwaysConfirm.on = true; return newExecutor(); }],
+    ['forcePermissionHandler', () => newExecutor(vi.fn(async () => true), { forcePermissionHandler: true })],
+  ])('%s → 仍走审批，不出 role-own-memory 放行行', async (_label, make) => {
+    const sessionId = unattendedSessionId();
+    const { executor, requestPermission } = make();
+
+    await executor.execute('MemoryWrite', { ...OWN_ROLE_WRITE }, {
+      sessionId,
+      agentRole: 'morning-notes',
+    });
+
+    expect(requestPermission.mock.calls.length).toBeGreaterThan(0);
+    const rows = getDecisionHistory().getAll().filter((entry) => entry.sessionId === sessionId);
+    expect(rows.some((entry) => entry.reason === ROLE_OWN_MEMORY_UNATTENDED_REASON)).toBe(false);
   });
 });
