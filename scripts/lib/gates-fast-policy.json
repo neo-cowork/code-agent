@@ -1,7 +1,7 @@
 {
   "version": 1,
   "budgetMs": 170000,
-  "maxFiles": 12,
+  "maxFiles": 16,
   "baseline": [
     "tests/unit/agentEventSchemas.test.ts",
     "tests/unit/security/commandSafety.relativeDelete.test.ts",
@@ -381,6 +381,7 @@
     "vitest": 90000,
     "package-typechecks": 45000,
     "tests-typecheck": 45000,
-    "shared-host-boundary": 20000
+    "shared-host-boundary": 20000,
+    "user-visible-leak": 20000
   }
 }

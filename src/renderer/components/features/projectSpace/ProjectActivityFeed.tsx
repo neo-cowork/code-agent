@@ -1,3 +1,4 @@
+import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 // ============================================================================
 // ProjectActivityFeed —— 项目协作空间「动态」tab。
 // 三源取数（会话 / @neo topic / 产物）→ buildProjectActivityFeed 纯函数合并倒序，一次 50 条。
@@ -34,7 +35,7 @@ export const ProjectActivityFeed: React.FC<ProjectActivityFeedProps> = ({
   onOpenTopic,
   onOpenArtifact,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const ps = t.projectSpace;
   const sessions = useSessionStore((state) => state.sessions);
   const [cards, setCards] = useState<FeedCard[]>([]);
@@ -61,9 +62,9 @@ export const ProjectActivityFeed: React.FC<ProjectActivityFeedProps> = ({
   const entries = useMemo(() => {
     const projectSessions = sessions
       .filter((session) => session.projectId === projectId)
-      .map((session) => ({ id: session.id, title: session.title, updatedAt: session.updatedAt }));
+      .map((session) => ({ id: session.id, title: getDisplaySessionTitle(session.title, language), updatedAt: session.updatedAt }));
     return buildProjectActivityFeed({ sessions: projectSessions, cards, artifacts });
-  }, [sessions, cards, artifacts, projectId]);
+  }, [sessions, cards, artifacts, projectId, language]);
 
   if (loaded && entries.length === 0) {
     return <EmptyState variant="panel" icon={ListChecks} text={ps.activityEmpty} />;

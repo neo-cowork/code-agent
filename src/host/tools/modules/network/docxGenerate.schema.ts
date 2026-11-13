@@ -45,7 +45,7 @@ docx_generate { "title": "会议纪要", "content": "## 参会人员\\n- 张三\
       },
       output_path: {
         type: 'string',
-        description: '输出文件路径（默认: 工作目录下的 document-{timestamp}.docx）',
+        description: '输出文件路径。用户要求保存到“任务文件夹/任务目录”时，这就是当前工作目录：省略此参数或只传文件名；不要从输入文件所在目录推导输出路径。相对路径始终按当前工作目录解析（默认: document-{timestamp}.docx）',
       },
       overwrite: { type: 'boolean', description: 'output_path 已存在且确认替换时必须设为 true' },
       author: {

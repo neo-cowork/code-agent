@@ -46,8 +46,8 @@ export function useDurableSwarmRunDetail(sessionId: string | null): SwarmRunDeta
       if (!current) return;
       setDetail(next);
       // stream 只负责提醒“可能有新事实”。持久化写入与 IPC 通知可能有极短竞态，
-      // 因此活跃且仍 running 时继续从 API 轮询，直到账本给出终态。
-      if (isActiveScope && next?.run.status === 'running') {
+      // 无活跃 stream 的失败父会话也要继续轮询，直到每个成员都有终态。
+      if (next?.run.status === 'running' || next?.agents.some((agent) => !['completed', 'failed', 'cancelled'].includes(agent.status))) {
         refreshTimer = setTimeout(() => {
           void load().catch(() => {
             if (current) setDetail(null);

@@ -1,3 +1,4 @@
+import { peekEnvBlockedNote, envBlockedCancelledClosures } from './envBlockedTurn';
 import type { TraceEventDataMap } from './turnTrace';
 import { getToolAttemptTrace } from './toolAttemptTrace';
 import { checkDocumentEvidenceClaims } from './documentEvidenceBoundary';
@@ -34,11 +35,12 @@ import { generateMessageId } from '../../../shared/utils/id';
 import { getAttachmentId } from '../../../shared/utils/messageAttachments';
 import { getSessionManager } from '../../services';
 import { extractArtifacts } from '../artifactExtractor';
-import { handleDeclareDeliverablesGate } from './declareDeliverablesGate';
+import { applyDeclareDeliverablesOutcome, recordDeclareDeliverables } from './declareDeliverablesGate';
+import { sealBouncedToolCalls } from './bouncedToolCallSeal';
 import { handleGoalCompletionGate } from './goalCompletionGate';
 import {
   fingerprintToolCall,
-  pushAndDetectStagnation,
+  detectStepStagnation,
   buildStagnationHint,
   buildStagnationStopMessage,
   pushAndDetectToolSpam,
@@ -69,6 +71,7 @@ import { recordMessageProcessorModelCallTelemetry } from './messageProcessorTele
 import { handleTruncatedToolCalls } from './messageProcessorToolTruncation';
 import { noteStagnationFingerprint } from '../../model/cacheHitObservation';
 import { deniedToolRetryGuidance, isToolDeniedForRun } from './toolRunPolicy';
+import { describeDeniedShellCalls } from './foregroundShellDenial';
 import { attachTurnQualityMetadata } from './turnQuality';
 import { wasMessagePersistedByContextAssembly } from './contextAssembly/systemContextStack';
 import { shouldEndRunForPlanApproval } from './planApprovalRunBoundary';
@@ -667,20 +670,23 @@ export class MessageProcessor {
       }
       this.guardState.toolCallRetryCount++;
       const deniedNames = Array.from(new Set(deniedToolCalls.map((toolCall) => toolCall.name))).join(', ');
+      const shellDenial = describeDeniedShellCalls(this.ctx, deniedToolCalls);
       this.contextAssembly.injectSystemMessage(
         [
           '<tool-run-policy>',
           `The previous tool call requested disabled tools for this run: ${deniedNames}.`,
           deniedToolRetryGuidance(this.ctx),
+          ...(shellDenial ? [shellDenial.guidance] : []),
           '</tool-run-policy>',
         ].join('\n'),
         'tool-policy-guard',
       );
+      await sealBouncedToolCalls({ ctx: this.ctx, contextAssembly: this.contextAssembly }, response, toolCalls, 'denied', new Set(deniedToolCalls.map((denied) => denied.id)));
       if (this.guardState.toolCallRetryCount > this.ctx.maxToolCallRetries) {
         const finalMessage: Message = {
           id: this.contextAssembly.generateId(),
           role: 'assistant',
-          content: `本轮请求了后台运行禁用的交互工具（${deniedNames}），已停止继续调用工具。`,
+          content: shellDenial?.finalMessage ?? `本轮请求了后台运行禁用的交互工具（${deniedNames}），已停止继续调用工具。`,
           timestamp: Date.now(),
           effortLevel: this.ctx.turn.effortLevel,
           metadata: attachTurnQualityMetadata(this.ctx, undefined, response),
@@ -689,23 +695,16 @@ export class MessageProcessor {
         await this.contextAssembly.addAndPersistMessage(finalMessage);
         this.ctx.onEvent({ type: 'message', data: finalMessage });
         this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.turn.currentTurnId, '', response.thinking, this.ctx.contextHealth.currentSystemPromptHash);
-        this.ctx.onEvent({
-          type: 'turn_end',
-          data: { turnId: this.ctx.turn.currentTurnId },
-        });
+        this.ctx.onEvent({ type: 'turn_end', data: { turnId: this.ctx.turn.currentTurnId } });
         return 'break';
       }
       return 'continue';
     }
 
-    // Artifact contract：拦截 declare_deliverables → 写入本轮最终产物路径声明。
-    const declareDeliverablesResult = handleDeclareDeliverablesGate(this.ctx, this.contextAssembly, toolCalls);
-    if (declareDeliverablesResult) return declareDeliverablesResult;
-
     // Goal mode：拦截 attempt_completion → 双闸验证（闸1 确定性 verifyCommand + 闸2 软评审 reviewCondition）。
     // 完成判定权在代码层，模型无法靠"自称完成"绕过（拒绝 Ralph）。详见 goalCompletionGate。
     const goalGateResult = await handleGoalCompletionGate(this.ctx, this.contextAssembly, toolCalls, iterations);
-    if (goalGateResult) return goalGateResult;
+    if (goalGateResult) return goalGateResult === 'continue' ? sealBouncedToolCalls({ ctx: this.ctx, contextAssembly: this.contextAssembly }, response, toolCalls, 'goal') : goalGateResult;
 
     const activeRepairGuard = this.ctx.artifact.repairGuard;
     if (activeRepairGuard && await maybeClearCompletedArtifactRepairGuardBeforeAdmission(
@@ -713,9 +712,7 @@ export class MessageProcessor {
       this.contextAssembly,
       activeRepairGuard,
       requestedToolNames,
-    )) {
-      return 'continue';
-    }
+    )) return sealBouncedToolCalls({ ctx: this.ctx, contextAssembly: this.contextAssembly }, response, toolCalls, 'repair');
 
     const visibleToolNames = new Set(response.runtimeDiagnostics?.visibleToolNames || []);
     const unavailableToolCalls = visibleToolNames.size > 0
@@ -738,6 +735,9 @@ export class MessageProcessor {
       // 让代执行与普通调用共用同一个 executeToolsWithHooks 入口（审批链零旁路）。
       if (admission !== 'proceed') return admission;
     }
+
+    // Artifact contract：declare_deliverables 只记账，调用随整批走普通落库 + 执行链路，结果在执行后盖章。
+    const declareOutcomes = recordDeclareDeliverables(this.ctx, toolCalls);
 
     logger.debug(` Tool calls received: ${toolCalls.length} calls`);
 
@@ -799,13 +799,21 @@ export class MessageProcessor {
     logger.debug('[AgentLoop] Starting executeToolsWithHooks...');
     const toolResults = await this.toolEngine.executeToolsWithHooks(toolCalls);
     logger.debug(` executeToolsWithHooks completed, ${toolResults.length} results`);
+    applyDeclareDeliverablesOutcome(toolResults, declareOutcomes);
 
     if (this.ctx.control.isCancelled || this.ctx.control.isInterrupted || this.ctx.control.runAbortController?.signal.aborted) {
       logger.info('[AgentLoop] Run stop detected after tool execution; persisting cancelled tool-call closures');
+      if (peekEnvBlockedNote(this.ctx.runId) && toolResults.length) {
+        const historyResults = sanitizeToolResultsForHistoryWithCalls(toolResults, toolCalls);
+        await this.contextAssembly.addAndPersistMessage({
+          id: `${assistantMessage.id}:env-blocked-results`, role: 'tool', timestamp: Date.now(),
+          content: JSON.stringify(historyResults), toolResults: historyResults,
+        });
+      }
       await persistCancelledToolCallClosures({
         messages: this.ctx.messages,
         assistantMessage,
-        toolCalls,
+        toolCalls: envBlockedCancelledClosures(this.ctx.runId, toolCalls),
         persistMessage: (message) => this.contextAssembly.addAndPersistMessage(message),
       });
       return 'break';
@@ -964,7 +972,7 @@ export class MessageProcessor {
 
     if (fingerprints.length > 0) {
       noteStagnationFingerprint(this.ctx.sessionId, fingerprints[fingerprints.length - 1]);
-      const detection = pushAndDetectStagnation(this.guardState.recentToolFingerprints, fingerprints);
+      const detection = detectStepStagnation(this.guardState.recentToolFingerprints, toolCalls, fingerprints);
       if (detection.detected && !this.guardState.stagnationWarningEmitted) {
         logger.warn(
           `[Stagnation] detected ${detection.matchCount}× repeat of fingerprint ${detection.sameFingerprint} — injecting hint to model`,
@@ -1014,7 +1022,7 @@ export class MessageProcessor {
           toolName: spam.toolName,
           count: spam.count,
         });
-        this.contextAssembly.injectSystemMessage(buildToolSpamHint(spam.toolName!, spam.count), 'tool-spam-hint');
+        this.contextAssembly.injectSystemMessage(buildToolSpamHint(spam.toolName ?? '', spam.count), 'tool-spam-hint');
         this.guardState.searchSpamWarningEmitted = true;
       }
     }

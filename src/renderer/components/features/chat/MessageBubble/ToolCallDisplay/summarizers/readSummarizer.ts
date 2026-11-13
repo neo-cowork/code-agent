@@ -3,8 +3,9 @@
 // ============================================================================
 
 import type { ToolCall } from '@shared/contract';
+import type { Translations } from '../../../../../../i18n';
 
-export function summarizeRead(toolCall: ToolCall): string | null {
+export function summarizeRead(toolCall: ToolCall, t: Translations): string | null {
   const output = toolCall.result?.output;
   if (!output) return null;
 
@@ -14,8 +15,10 @@ export function summarizeRead(toolCall: ToolCall): string | null {
   // Add file size estimate for context
   const charCount = content.length;
   if (charCount > 10000) {
-    return `Read ${lines} lines (~${Math.round(charCount / 1024)}KB)`;
+    return t.toolResultSummary.readLinesWithSize
+      .replace('{count}', String(lines))
+      .replace('{size}', String(Math.round(charCount / 1024)));
   }
 
-  return `Read ${lines} lines`;
+  return t.toolResultSummary.readLines.replace('{count}', String(lines));
 }

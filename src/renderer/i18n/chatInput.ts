@@ -1,9 +1,11 @@
+import { PARKED_APPROVAL_ENTRY_PATH } from '@shared/parkedApprovalLocation';
 // ============================================================================
 
 import { outcomeWordsZh } from './outcomeWords';
 import { turnFeedbackWhyEn, turnFeedbackWhyZh } from './turnFeedbackWhy';
 import { evalBridgeEn, evalBridgeZh } from './evalBridge';
 import { wakeRationaleEn, wakeRationaleZh } from './wakeRationale';
+import { durableStoppedEn, durableStoppedZh } from './durableStopped';
 // Chat 输入区词条（ChatInput index / InputArea / AttachmentBar / SendButton /
 // useFileUpload / ScheduleComposerCard / 长尾组件与 hook）—— zh/en 同文件相邻维护。
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮（同 chatTranscript.ts 先例）。
@@ -13,7 +15,9 @@ export const chatInputZh = {
   ...evalBridgeZh,
   ...turnFeedbackWhyZh,
   ...wakeRationaleZh,
+  ...durableStoppedZh,
   chatInput: {
+    stepLimitContinue: '继续',
     viewPlan: '查看实现计划',
     processingFiles: '文件处理中…',
     pendingSendUploadWaiting: '正在上传，完成后自动发送',
@@ -33,6 +37,7 @@ export const chatInputZh = {
     attachFolderFiles: '{count} 个文件',
     attachPages: '{count} 页',
     attachRemoveAria: '移除附件 {name}',
+    attachmentAlreadyAdded: '{name} 已添加，无需重复添加',
     connectorIconRemoveAria: '取消挂载 {name}',
     // 底栏图标 / 框内胶囊的「来源三态」小卡：回答「这是啥、谁放的、为什么在」。
     // 状态词（已连接 / 未连接 / 去能力中心连接）逐字复用 expert.roleSkills，不给用户第二套说法。
@@ -71,6 +76,7 @@ export const chatInputZh = {
     uploadTextFailed: '文件 "{name}" 读取失败：无法读取文本文件内容。请检查文件是否损坏或重新选择',
     uploadEmptyFolder: '文件夹 "{name}" 中没有可处理的文件。请选择包含可读文件的文件夹',
     folderSummaryCount: '{count} 个文件',
+    folderPathUnresolved: '无法确定文件夹的可读路径；请以各文件单独提供的路径为准。',
     folderSummaryTruncated: ' (仅处理前 {max} 个)',
     pdfExtractIpcFailed: '[PDF 解析失败: IPC 调用失败]',
     pdfExtractFailedPrefix: '[PDF 解析失败: {err}]',
@@ -117,7 +123,7 @@ export const chatInputZh = {
     result: '结果送到哪里',
     fallbackWhat: '按任务描述执行并整理结果',
     fallbackNotifyWhen: '任务完成或发现异常时通知',
-    reviewInbox: '自动化审核收件箱',
+    reviewInbox: PARKED_APPROVAL_ENTRY_PATH,
     confirm: '确认创建',
     cancel: '取消',
     edit: '编辑',
@@ -135,6 +141,7 @@ export const chatInputZh = {
     weekdayLabel: '星期几',
     intervalHoursLabel: '间隔（小时）',
     onceAtLabel: '执行时间',
+    dateLabel: '日期',
     weekdays: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'],
     notifyEditPlaceholder: '留空 = 每次运行都通知',
   },
@@ -147,8 +154,8 @@ export const chatInputZh = {
     editCreated: '改一改',
     canDoLabel: '能做',
     willNotDoLabel: '不会',
-    pendingEditBanner: '角色改动待确认：确认后才会更新角色定义（不动已有记忆与履历）',
-    pendingCreateBanner: '新角色待确认：确认后才会创建（写入角色定义 + 角色记忆目录）',
+    pendingEditBanner: '专家改动待确认：确认后才会更新这位专家（已有记忆和工作记录会保留）',
+    pendingCreateBanner: '新专家待确认：确认后会加入你的专家列表',
     laterTitle: '稍后处理',
     editBadge: '修改',
     verbEdit: '修改',
@@ -173,7 +180,7 @@ export const chatInputZh = {
     originTelemetry: '经验蒸馏',
     laterTitle: '稍后处理',
     bannerPrefix: '经验沉淀：检测到 ',
-    bannerSuffix: ' 个可复用的工作流草稿，确认后才会保存为 Skill',
+    bannerSuffix: { one: '{count} 个可复用的工作流草稿，确认后才会保存为 Skill', other: '{count} 个可复用的工作流草稿，确认后才会保存为 Skill' },
     savedToast: 'Skill 已保存',
     acceptFailedToast: 'Skill 草稿采纳失败',
     discardedToast: '已跳过 Skill 草稿',
@@ -285,7 +292,7 @@ export const chatInputZh = {
     directHintSample: 'Direct 模式：点上面的 agent，或直接输入 @{token} 开始。',
     directHintEmpty: 'Direct 模式：先点上面的 agent，或直接输入 @agent 开始。',
     directPlaceholderSingle: '发给 {name}，或直接写 @{token} …',
-    directPlaceholderMulti: '发给 {count} 个 agent，或继续写 @agent …',
+    directPlaceholderMulti: { one: '发给 {count} 个 agent，或继续写 @agent …', other: '发给 {count} 个 agent，或继续写 @agent …' },
     directPlaceholderSample: 'Direct 模式：输入 @{token} 开始',
     directPlaceholderEmpty: 'Direct 模式：输入 @agent 开始',
     listJoiner: '、',
@@ -486,7 +493,9 @@ export const chatInputEn: typeof chatInputZh = {
   ...evalBridgeEn,
   ...turnFeedbackWhyEn,
   ...wakeRationaleEn,
+  ...durableStoppedEn,
   chatInput: {
+    stepLimitContinue: 'Continue',
     viewPlan: 'View implementation plan',
     processingFiles: 'Processing files…',
     pendingSendUploadWaiting: 'Uploading — your message will send when it finishes',
@@ -506,6 +515,7 @@ export const chatInputEn: typeof chatInputZh = {
     attachFolderFiles: '{count} files',
     attachPages: '{count} pages',
     attachRemoveAria: 'Remove attachment {name}',
+    attachmentAlreadyAdded: '{name} is already attached',
     connectorIconRemoveAria: 'Unmount {name}',
     connectorSource: {
       expertNeeds: 'Needed by {expert}',
@@ -541,6 +551,7 @@ export const chatInputEn: typeof chatInputZh = {
     uploadTextFailed: 'Failed to read "{name}": could not read the text content. Check the file or pick another',
     uploadEmptyFolder: 'Folder "{name}" has no processable files. Pick a folder with readable files',
     folderSummaryCount: '{count} files',
+    folderPathUnresolved: 'Folder path unresolved; use the readable path supplied for each file.',
     folderSummaryTruncated: ' (only the first {max} processed)',
     pdfExtractIpcFailed: '[PDF parsing failed: IPC call failed]',
     pdfExtractFailedPrefix: '[PDF parsing failed: {err}]',
@@ -587,7 +598,7 @@ export const chatInputEn: typeof chatInputZh = {
     result: 'Where the result goes',
     fallbackWhat: 'Follow the task description and organize the result',
     fallbackNotifyWhen: 'Notify when the task finishes or finds something unusual',
-    reviewInbox: 'automation review inbox',
+    reviewInbox: 'Automations → Run history',
     confirm: 'Confirm',
     cancel: 'Cancel',
     edit: 'Edit',
@@ -605,6 +616,7 @@ export const chatInputEn: typeof chatInputZh = {
     weekdayLabel: 'Weekday',
     intervalHoursLabel: 'Interval (hours)',
     onceAtLabel: 'Run at',
+    dateLabel: 'Date',
     weekdays: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
     notifyEditPlaceholder: 'Leave empty to notify on every run',
   },
@@ -617,8 +629,8 @@ export const chatInputEn: typeof chatInputZh = {
     editCreated: 'Edit',
     canDoLabel: 'Can do',
     willNotDoLabel: 'Will not',
-    pendingEditBanner: 'Role changes pending confirmation: confirming only updates the role definition (memory and history untouched)',
-    pendingCreateBanner: 'New role pending confirmation: confirming creates it (writes the role definition + role memory folder)',
+    pendingEditBanner: 'Expert changes pending: confirm to update this expert. Existing memories and work history will be kept.',
+    pendingCreateBanner: 'New expert pending: confirm to add this expert to your experts.',
     laterTitle: 'Handle later',
     editBadge: 'Edit',
     verbEdit: 'updated',
@@ -643,7 +655,7 @@ export const chatInputEn: typeof chatInputZh = {
     originTelemetry: 'Distilled from usage',
     laterTitle: 'Handle later',
     bannerPrefix: 'Distilled from usage: found ',
-    bannerSuffix: ' reusable workflow draft(s) — confirm to save as a Skill',
+    bannerSuffix: { one: '{count} reusable workflow draft — confirm to save as a Skill', other: '{count} reusable workflow drafts — confirm to save as a Skill' },
     savedToast: 'Skill saved',
     acceptFailedToast: 'Failed to accept the Skill draft',
     discardedToast: 'Skill draft skipped',
@@ -755,7 +767,7 @@ export const chatInputEn: typeof chatInputZh = {
     directHintSample: 'Direct mode: click an agent above, or type @{token} to start.',
     directHintEmpty: 'Direct mode: click an agent above, or type @agent to start.',
     directPlaceholderSingle: 'To {name} — or type @{token} directly…',
-    directPlaceholderMulti: 'To {count} agents — or keep typing @agent…',
+    directPlaceholderMulti: { one: 'To {count} agent — or keep typing @agent…', other: 'To {count} agents — or keep typing @agent…' },
     directPlaceholderSample: 'Direct mode: type @{token} to start',
     directPlaceholderEmpty: 'Direct mode: type @agent to start',
     listJoiner: ', ',

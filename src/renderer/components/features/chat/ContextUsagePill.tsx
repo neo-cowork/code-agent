@@ -6,19 +6,15 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../../../stores/appStore';
 import { useContextCompactionStore } from '../../../stores/contextCompactionStore';
 import { useI18n } from '../../../hooks/useI18n';
-import { ContextHealthDetailPopover } from './ContextHealthDetailPopover';
+import { useSessionStore } from '../../../stores/sessionStore';
+import { ContextHealthDetailPopover, sessionHasSentMessage } from './ContextHealthDetailPopover';
 import {
   clampUsagePercent,
+  formatContextTokenNumber,
   formatContextUsagePercent,
   isContextWindowKnown,
 } from '../../../utils/contextUsageFormat';
 import { OPEN_CONTEXT_HEALTH_EVENT } from '../../../utils/workbenchViews';
-
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1000) return `${(n / 1000).toFixed(0)}k`;
-  return String(n);
-}
 
 type Tone = 'normal' | 'warning' | 'critical';
 
@@ -40,6 +36,8 @@ export const ContextUsagePill: React.FC = () => {
   const { t } = useI18n();
   const ch = t.taskStatusPanels.contextHealth;
   const contextHealth = useAppStore((s) => s.contextHealth);
+  // Hydration has not established whether this is an empty session yet.
+  const historyPending = useSessionStore((state) => !state.currentSessionId || state.isHydratingSession || sessionHasSentMessage(state.messages));
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -116,16 +114,6 @@ export const ContextUsagePill: React.FC = () => {
         aria-expanded={detailOpen}
         className={`inline-flex h-8 items-center justify-center gap-1 rounded-lg px-1.5 text-xs tabular-nums transition-colors ${styles.text} ${styles.hoverBg}`}
         aria-label={ch.usageAriaLabel}
-        title={hasData
-          ? (windowKnown
-            ? ch.usageTitle
-              .replace('{percent}', displayPct)
-              .replace('{used}', formatTokens(currentTokens))
-              .replace('{max}', formatTokens(maxTokens))
-            : `${ch.windowUnknownBadge} · ${ch.tokensFraction
-              .replace('{used}', formatTokens(currentTokens))
-              .replace('{max}', formatTokens(maxTokens))}`)
-          : ch.waitingFirstTurn}
       >
         <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="transform -rotate-90">
           <circle
@@ -149,28 +137,32 @@ export const ContextUsagePill: React.FC = () => {
           />
         </svg>
         {/* 折叠态只留圆环（2026-07-26 底栏收敛拍板，推翻此前"可读锚点"决定）：
-            圆环讲进度，精确百分比在 hover title 和展开面板，底栏不再常驻数字。 */}
+            圆环讲进度，精确百分比在 hover 气泡和展开面板，底栏不再常驻数字。 */}
       </button>
 
-      {open && (
+      {open && (hasData || !historyPending) && (
         <div className="absolute bottom-full right-0 z-30 mb-2 min-w-[200px] rounded-xl border border-border-hover bg-zinc-900/95 px-4 py-3 text-center shadow-md dark:shadow-2xl backdrop-blur">
           <div className="text-sm font-semibold leading-tight tracking-normal text-zinc-50 tabular-nums">
             {hasData
               ? (windowKnown
                 ? ch.usageSummary.replace('{percent}', displayPct).replace('{remaining}', displayRemainingPct)
-                : ch.windowUnknownSummary)
+                : ch.windowUnknownSummary.replace('{used}', formatContextTokenNumber(currentTokens)))
               : ch.waitingFirstTurn}
           </div>
           <div className="mt-1 text-[11px] leading-tight text-zinc-400 tabular-nums">
             {hasData
-              ? ch.tokensFraction.replace('{used}', formatTokens(currentTokens)).replace('{max}', formatTokens(maxTokens))
+              ? (windowKnown
+                ? ch.tokensFraction
+                  .replace('{used}', formatContextTokenNumber(currentTokens))
+                  .replace('{max}', formatContextTokenNumber(maxTokens))
+                : ch.windowUnknownSubline.replace('{max}', formatContextTokenNumber(maxTokens)))
               : ch.waitingCapacity}
           </div>
 
           {compactResult && (
             <div className="mt-2 text-[11px] text-badge-success">
               {compactResult.totalSavedTokens > 0
-                ? ch.freedTokens.replace('{tokens}', formatTokens(compactResult.totalSavedTokens))
+                ? ch.freedTokens.replace('{tokens}', formatContextTokenNumber(compactResult.totalSavedTokens))
                 : ch.compactedCount.replace('{count}', String(compactResult.compressionCount))}
             </div>
           )}

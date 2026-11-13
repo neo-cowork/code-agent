@@ -1,6 +1,7 @@
 import * as lark from '@larksuiteoapi/node-sdk';
 import type { ChannelAccountStatus } from '../../../shared/contract/channel';
 import { createLogger } from '../../services/infra/logger';
+import { claimFeishuWsHolderLock, releaseFeishuWsHolderLock } from './feishuWsHolderLock';
 
 const logger = createLogger('FeishuChannel');
 
@@ -30,6 +31,8 @@ export interface FeishuWsSession {
    * so a failed connect never leaves an ownerless socket auto-reconnecting.
    */
   done: Promise<void>;
+  /** True when the most recent onReady / onReconnected saw another live local holder for the same appId. */
+  readonly sharedAppDetected: boolean;
   /** Null the account's client first, then close the socket. Does not reject the handshake. */
   detachAndClose(): void;
   /** Reject an in-flight handshake. No-op once onReady, onError, or the timeout settled it. */
@@ -95,16 +98,20 @@ export function openFeishuWebSocket(input: OpenFeishuWebSocketInput): FeishuWsSe
   let markFailed: ((error: Error) => void) | null = null;
   let client: lark.WSClient | null = null;
   let cancelHandshake: ((error: Error) => void) | null = null;
+  let sharedAppDetected = false;
   const current = () => client !== null && input.isCurrent(client);
 
   const onReady = () => {
     if (!current()) return;
     logger.info(`${input.channelName} WebSocket connected`);
+    sharedAppDetected = claimFeishuWsHolderLock(input.config.appId).otherHolderDetected;
     input.onStatus('connected');
     markReady?.();
   };
   const onError = (err: Error) => {
     if (!current()) return;
+    sharedAppDetected = false;
+    releaseFeishuWsHolderLock(input.config.appId);
     const error = err instanceof Error ? err : new Error(String(err));
     input.onStatus('error', error.message);
     markFailed?.(error);
@@ -115,6 +122,7 @@ export function openFeishuWebSocket(input: OpenFeishuWebSocketInput): FeishuWsSe
   };
   const onReconnected = () => {
     if (!current()) return;
+    sharedAppDetected = claimFeishuWsHolderLock(input.config.appId).otherHolderDetected;
     input.onStatus('connected');
   };
 
@@ -207,7 +215,12 @@ export function openFeishuWebSocket(input: OpenFeishuWebSocketInput): FeishuWsSe
 
   return {
     done,
+    get sharedAppDetected() {
+      return sharedAppDetected;
+    },
     detachAndClose() {
+      sharedAppDetected = false;
+      releaseFeishuWsHolderLock(input.config.appId);
       input.detach();
       closeStarted();
     },

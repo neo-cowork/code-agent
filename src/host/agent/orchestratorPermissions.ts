@@ -9,13 +9,14 @@ import { isApprovePermissionResponse } from '../../shared/contract/permission';
 import type { ToolApprovalPayload, PendingApprovalKind } from '../../shared/contract/pendingApproval';
 import { INTERACTION_TIMEOUTS } from '../../shared/constants/timeouts';
 import { PARKED_APPROVAL_PREVIEW_MAX_CHARS } from '../../shared/constants/pendingApproval';
+import { PARKED_APPROVAL_ENTRY_PATH } from '../../shared/parkedApprovalLocation';
 import { PARKED_APPROVAL_CLOSURE_SENTENCES } from '../../shared/parkedApprovalClosure';
 import { redactCommandSecrets } from '../security/secretRedaction';
 import { generatePermissionRequestId } from '../../shared/utils/id';
 import type { ExecutionTopology } from '../permissions';
 import { getPermissionModeManager } from '../permissions/modes';
 import { isUnattendedAllowedReadOnlyTool } from '../permissions/unattendedReadOnlyTools';
-import { approveByScheduleWriteGrant } from '../cron/cronWriteGrant';
+import { approveByScheduleWriteGrant, writeGrantFolderForParking } from '../cron/cronWriteGrant';
 import { getSessionAutomationService } from '../services/sessionAutomation/sessionAutomationService';
 import { notificationService } from '../services/infra/notificationService';
 import type { PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
@@ -28,6 +29,7 @@ import {
   noteUnattendedApprovalTimeout,
   UNATTENDED_APPROVAL_TIMEOUT,
 } from './unattendedApprovalTerminal';
+import { recordBrowserSessionGrant } from '../permissions/browserSessionGrant';
 import { getConfirmationGate } from './confirmationGate';
 import { mintAppGrantSession, mintAppGrantStanding } from '../permissions/appGrantStore';
 import { mintTool24hGrant, mintToolRunGrant } from '../permissions/toolGrantStore';
@@ -40,6 +42,16 @@ const logger = createLogger('AgentOrchestrator');
 
 /** 交互审批只提醒、不裁决；运行取消/会话切换负责最终清理。 */
 const INTERACTIVE_PERMISSION_REMINDER_MS = 30 * 60_000;
+
+/**
+ * 后台任务/子代理 lane 的审批带着自己的 run 身份（subagentToolRuntime 把
+ * { agentId, runId } 摊进请求；前台请求两者皆无）。run 收线清理据此放过它们
+ * （N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO）。
+ */
+function hasBackgroundRunIdentity(request: PermissionRequest): boolean {
+  return (typeof request.runId === 'string' && request.runId.length > 0)
+    || (typeof request.agentId === 'string' && request.agentId.length > 0);
+}
 
 /**
  * 重新确认「还有没有面能裁决这条审批」的节拍。
@@ -111,6 +123,24 @@ function recordHumanGrant(
     return;
   }
   if (updatedArgs && response !== 'allow') return;
+  // 与聊天卡 hideStandingGrants 等价的收口：可编辑写回工具 / forceConfirm / 无 target 的 external
+  // 只能一次性放行，两档工具授权（run/24h）一律不铸，避免收件箱点击放大成全局免审。
+  if (
+    (response === 'allow_run' || response === 'allow_24h')
+    && (
+      isEditableTool(request.tool)
+      || request.forceConfirm === true
+      || (isExternalSideEffectTool(request.tool) && !request.details?.standingGrantTarget)
+    )
+  ) {
+    logger.warn('Tier grant refused for editable/forceConfirm/untargeted-external request: treated as allow once', {
+      tool: request.tool,
+      requestId: request.id,
+      response,
+    });
+    return;
+  }
+  if (recordBrowserSessionGrant(response, request)) return;
   const app = request.details?.targetApp;
   if (response === 'allow_session' && request.sessionId) {
     if (app?.name) mintAppGrantSession(request.sessionId, app);
@@ -180,6 +210,7 @@ export class OrchestratorPermissionIsland {
     isDevModeAutoApproveEnabled,
     getExecutionTopology,
     hasApprovalUi,
+    isDetachedRun = () => false,
     onEvent,
     injectedPendingApprovalRepo,
   }: {
@@ -187,6 +218,7 @@ export class OrchestratorPermissionIsland {
     isDevModeAutoApproveEnabled: () => boolean;
     getExecutionTopology: () => ExecutionTopology;
     hasApprovalUi: (request: PermissionRequest) => boolean;
+    isDetachedRun?: () => boolean;
     onEvent: (event: AgentEvent) => void;
     injectedPendingApprovalRepo?: PendingApprovalRepository;
   }) {
@@ -194,6 +226,7 @@ export class OrchestratorPermissionIsland {
     this.isDevModeAutoApproveEnabled = isDevModeAutoApproveEnabled;
     this.getExecutionTopology = getExecutionTopology;
     this.hasApprovalUi = hasApprovalUi;
+    this.isDetachedRun = isDetachedRun;
     this.onEvent = onEvent;
     this.injectedPendingApprovalRepo = injectedPendingApprovalRepo;
   }
@@ -201,6 +234,7 @@ export class OrchestratorPermissionIsland {
   private readonly getSettings: () => AppSettings;
   private readonly isDevModeAutoApproveEnabled: () => boolean;
   private readonly getExecutionTopology: () => ExecutionTopology;
+  private readonly isDetachedRun: () => boolean;
   private readonly hasApprovalUi: (request: PermissionRequest) => boolean;
   private readonly onEvent: (event: AgentEvent) => void;
 
@@ -376,15 +410,28 @@ export class OrchestratorPermissionIsland {
    *
    * B2 取消收尾：停车挂起的审批必须同步 repo resolve('rejected')，否则取消后 DB 留下
    * 孤儿 pending 行、收件箱永远挂着一条无对应 run 的待批准。
+   *
+   * N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO：`skipBackgroundLanes` 让 run 收线清理只解除
+   * 本 run 自己的（无 runId/agentId 身份）请求；后台任务/子代理 lane 的审批带着自己的
+   * run 身份，消费它的那条 run 还活着，不能因为前台 run 结束就被机器拒绝。
    */
-  drainPendingPermissions(response: PermissionResponse = 'deny'): void {
+  drainPendingPermissions(response: PermissionResponse = 'deny', options?: { skipBackgroundLanes?: boolean }): void {
     if (this.pendingPermissions.size === 0) return;
-    const count = this.pendingPermissions.size;
+    const skipBackgroundLanes = options?.skipBackgroundLanes === true;
+    const entries = [...this.pendingPermissions.entries()];
+    const drainable = skipBackgroundLanes
+      ? entries.filter(([, entry]) => !hasBackgroundRunIdentity(entry.request))
+      : entries;
+    if (drainable.length === 0) {
+      logger.info(`Skipped draining ${entries.length} pending background-lane permission(s) (owning run still alive)`, { response });
+      return;
+    }
+    const count = drainable.length;
     const repo = this.getPendingApprovalRepo();
-    for (const [id] of this.pendingPermissions.entries()) {
+    for (const [id] of drainable) {
       noteCompanionApprovalSettlement({ requestId: id, outcome: 'cancelled' });
     }
-    for (const [id, entry] of this.pendingPermissions.entries()) {
+    for (const [id, entry] of drainable) {
       if (entry.parked && repo) {
         try {
           const changes = repo.resolve({ id, status: 'rejected', feedback: 'run cancelled', resolvedAt: Date.now() });
@@ -395,11 +442,27 @@ export class OrchestratorPermissionIsland {
           logger.warn(`Parked approval cancel-resolve failed for ${id}`, err);
         }
       }
+      this.pendingPermissions.delete(id);
+      // 宿主整岛 drain 会解除后台 lane 挂起的审批，而渲染层在 run 终态已保留带
+      // runId/agentId 的卡：对每条被解除的请求发一条 resolved 的 permission_request，
+      // 让渲染层用 dismissPermissionRequest 收卡，避免留下点击即 unknown_request 的死卡。
+      try {
+        this.onEvent({
+          type: 'permission_request',
+          data: { ...entry.request, resolved: true },
+        });
+      } catch (err) {
+        logger.warn('Drained permission event could not be emitted; resolving cancelled anyway', err);
+      }
       // 取消/新消息统一解除 ≠ 用户拒绝（N-PERMTRACE）。
       entry.resolve(response, 'cancelled');
     }
-    this.pendingPermissions.clear();
     logger.info(`Drained ${count} pending permission(s)`, { response });
+  }
+
+  /** 还有未裁决的请求吗（含后台 lane 的）。run 收线后据此决定岛要不要继续注册。 */
+  hasPendingRequests(): boolean {
+    return this.pendingPermissions.size > 0;
   }
 
   /**
@@ -498,6 +561,7 @@ export class OrchestratorPermissionIsland {
     // 而迟到的点击又落进静默丢弃分支，用户只看到「失败」且毫无线索。
     // 判据与抬严同源（isLiveVoiceSession = 通话中 或 语音派的 run 还在飞）。
     const approvalTerminal = getPermissionModeManager().isUnattendedApprovalTerminal(fullRequest.sessionId);
+    const detached = this.isDetachedRun();
     const unattended = getPermissionModeManager().isUnattendedSession(fullRequest.sessionId);
     const voice = getPermissionModeManager().isLiveVoiceSession(fullRequest.sessionId);
 
@@ -534,9 +598,14 @@ export class OrchestratorPermissionIsland {
         return scheduleGrant;
       }
     }
+    // 一键授权候选文件夹：停车前算好随载荷落库，收件箱卡据此出第三个按钮（守卫在 cronWriteGrant）。
+    // 类型门放调用侧：非文件写请求不多让出一拍微任务（停车事件的同步时序不变）。
+    const writeGrantFolder = unattended && (request.type === 'file_write' || request.type === 'file_edit')
+      ? await writeGrantFolderForParking(request)
+      : undefined;
     // cron/heartbeat/channel/语音派都走停车审批，24h backstop 只负责泄漏兜底；
     // 60s 终态仅保留给显式登记的旧兼容会话。
-    if (unattended || voice) {
+    if (detached || unattended || voice) {
       const parkRepo = this.getPendingApprovalRepo();
       if (parkRepo) {
         return this.parkApproval(
@@ -544,9 +613,12 @@ export class OrchestratorPermissionIsland {
           permissionLevel,
           parkRepo,
           'tool_approval',
-          approvalTerminal
-            ? 'unattended'
-            : getPermissionModeManager().isUnattendedApprovalDegrade(fullRequest.sessionId) ? 'degrade' : 'backstop',
+          detached
+            ? 'degrade'
+            : approvalTerminal
+              ? 'unattended'
+              : getPermissionModeManager().isUnattendedApprovalDegrade(fullRequest.sessionId) ? 'degrade' : 'backstop',
+          writeGrantFolder,
         );
       }
     } else {
@@ -634,6 +706,21 @@ export class OrchestratorPermissionIsland {
 
       const watchdog = setInterval(() => {
         try {
+          // A refresh may detach a run after this approval was already shown.
+          // Move the same request into the durable inbox; do not auto-grant it.
+          if (this.isDetachedRun()) {
+            const repo = this.getPendingApprovalRepo();
+            if (repo) {
+              clearInterval(watchdog);
+              this.pendingPermissions.delete(fullRequest.id);
+              void this.parkApproval(fullRequest, permissionLevel, repo, 'tool_approval', 'degrade').then(resolve, (error) => {
+                safeWarn('Detached approval could not be parked; denying', error);
+                this.resolveParkedApproval(fullRequest.id, 'deny', undefined, 'fail-closed');
+                resolve({ approved: false, denialSource: 'fail-closed' });
+              });
+              return;
+            }
+          }
           if (!this.hasApprovalUi(fullRequest)) { advanceWithoutUi(); return; }
           withoutUiMs = 0;
           withUiMs += APPROVAL_UI_RECHECK_MS;
@@ -672,6 +759,7 @@ export class OrchestratorPermissionIsland {
     repo: PendingApprovalRepository,
     kind: PendingApprovalKind = 'tool_approval',
     deadline: 'unattended' | 'backstop' | 'degrade' = 'backstop',
+    writeGrantFolder?: string,
   ): Promise<PermissionAskResult> {
     const releaseHold = holdStallClock(fullRequest.sessionId);
     return new Promise<PermissionAskResult>((resolve) => {
@@ -763,6 +851,7 @@ export class OrchestratorPermissionIsland {
           }
           : {}),
         ...(argsPreview ? { argsPreview } : {}),
+        ...(writeGrantFolder ? { writeGrantFolder } : {}),
         // ADR-088 敏感步骤交回：收件箱/会话卡据此渲染单状态交回卡（展示元数据，无秘密本体）。
         ...(fullRequest.details?.sensitiveStep
           ? { sensitiveStep: fullRequest.details.sensitiveStep }
@@ -776,6 +865,7 @@ export class OrchestratorPermissionIsland {
         riskClass: isExternalSideEffectTool(fullRequest.tool) ? 'external' : null,
         // B4：external+可提取 target 时非空 → 收件箱审批卡出「每次都允许发 <target>」铸权入口。
         standingGrantTarget: fullRequest.details?.standingGrantTarget ?? null,
+        ...(fullRequest.details.browserSessionGrant ? { browserSessionGrant: fullRequest.details.browserSessionGrant, displayAction: fullRequest.reason } : {}),
       };
       try {
         repo.insert({
@@ -796,9 +886,9 @@ export class OrchestratorPermissionIsland {
           notificationService.notifyNeedsInput({
             sessionId: fullRequest.sessionId,
             title: '有操作等你确认',
-            body: `无人值守任务请求执行 ${fullRequest.tool}，已挂起等待你在收件箱确认。`,
+            body: `无人值守任务请求执行 ${fullRequest.tool}，已暂停等你批准，到${PARKED_APPROVAL_ENTRY_PATH}处理。`,
             // 停车口先发；同一条请求随后经 permission_request 事件再进落库通知口，
-            // 同键去重，用户只看到这一条更具体的「去收件箱确认」横幅。
+            // 同键去重，用户只看到这一条更具体的「到自动化的运行记录处理」横幅。
             dedupeKey: fullRequest.id,
           });
         } catch (err) {

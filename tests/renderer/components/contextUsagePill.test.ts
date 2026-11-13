@@ -22,6 +22,8 @@ const pillMocks = vi.hoisted(() => ({
   },
   invoke: vi.fn(),
   refreshContextHealth: vi.fn(),
+  messages: [] as Array<{ role: string }>,
+  isHydratingSession: false,
 }));
 
 vi.mock('../../../src/renderer/stores/appStore', () => ({
@@ -38,14 +40,18 @@ vi.mock('../../../src/renderer/hooks/useBudgetStatus', () => ({
   useBudgetStatus: () => null,
 }));
 
-vi.mock('../../../src/renderer/stores/sessionStore', () => ({
-  useSessionStore: {
-    getState: () => ({
-      currentSessionId: 'session-1',
-      refreshContextHealth: pillMocks.refreshContextHealth,
-    }),
-  },
-}));
+vi.mock('../../../src/renderer/stores/sessionStore', () => {
+  const state = () => ({
+    currentSessionId: 'session-1',
+    refreshContextHealth: pillMocks.refreshContextHealth,
+    messages: pillMocks.messages,
+    isHydratingSession: pillMocks.isHydratingSession,
+  });
+  return { useSessionStore: Object.assign(
+    (selector: (s: ReturnType<typeof state>) => unknown) => selector(state()),
+    { getState: state },
+  ) };
+});
 
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: {
@@ -68,13 +74,13 @@ describe('ContextUsagePill', () => {
   });
 
   // 2026-07-26 底栏收敛拍板，推翻此前「折叠态必须有可读锚点」的决定：
-  // 圆环讲进度，精确百分比只在 hover title 和展开面板——底栏不再常驻任何数字。
-  it('折叠态只有一个圆环，百分比在 title 而不是常驻文本', () => {
+  // 圆环讲进度，精确百分比只在 hover 气泡 和展开面板——底栏不再常驻任何数字。
+  it('折叠态只有一个圆环，没有会过期的原生 title 或常驻百分比', () => {
     const html = renderToStaticMarkup(React.createElement(ContextUsagePill));
 
     expect(html).toContain('aria-label="上下文使用"');
     // 「标记」是 token 的机翻，中文里没这个说法也不帮任何人做决策（2026-08-01 改）
-    expect(html).toContain('82% 已用 · 82k/100k Token');
+    expect(html).not.toContain('title=');
     expect(html).not.toContain('标记');
     expect(html).toContain('<svg');
     expect(html).not.toContain('data-testid="context-usage-percent"');

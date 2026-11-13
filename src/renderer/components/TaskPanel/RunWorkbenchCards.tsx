@@ -1,3 +1,4 @@
+import { resolveRunCancellationOutcomeKey } from '../../i18n/outcomeWords';
 import type React from 'react';
 import { useState } from 'react';
 import { BackgroundTaskSchemas } from '@shared/ipc/schemas';
@@ -74,9 +75,7 @@ export function getRunUiStatusLabel(
     case 'blocked':
       return rw.statusBlocked;
     case 'cancelled':
-      return terminalReason === 'idle_reaped'
-        ? t.outcomeWords['failed-idle-reaped'].badge.label
-        : t.outcomeWords['cancelled-by-user'].badge.label;
+      return t.outcomeWords[resolveRunCancellationOutcomeKey(terminalReason)].badge.label;
     case 'waiting_approval':
       return rw.statusWaitingApproval;
     case 'using_tools':
@@ -123,9 +122,7 @@ export const RunOverview = ({ model, onOpenMemory }: RunOverviewProps) => {
   const runBlockedHint = run.blockedReason
     || (run.blockedReasonCategory ? t.taskPanel.taskBlockedReason[run.blockedReasonCategory] : null);
   const terminalReason = run.status === 'cancelled'
-    ? (run.terminalReason === 'idle_reaped'
-      ? t.outcomeWords['failed-idle-reaped'].badge.reason
-      : t.outcomeWords['cancelled-by-user'].badge.reason)
+    ? t.outcomeWords[resolveRunCancellationOutcomeKey(run.terminalReason)].badge.reason
     : null;
 
   return (
@@ -141,7 +138,7 @@ export const RunOverview = ({ model, onOpenMemory }: RunOverviewProps) => {
             {isCompleted ? (
               <span className="truncate text-xs text-zinc-300">{run.phase}</span>
             ) : (
-              <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${runStatusClass(run.status)}`}>
+              <span className={`shrink-0 whitespace-nowrap rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${runStatusClass(run.status)}`}>
                 {getRunUiStatusLabel(run.status, t, run.terminalReason)}
               </span>
             )}
@@ -277,7 +274,7 @@ export const TaskDashboardSummary = ({
           className="flex items-center gap-2 px-1 py-1"
         >
           <Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin text-badge-info" />
-          <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${runStatusClass(run.status)}`}>
+          <span className={`shrink-0 whitespace-nowrap rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${runStatusClass(run.status)}`}>
             {getRunUiStatusLabel(run.status, t, run.terminalReason)}
           </span>
           <span className="min-w-0 flex-1 truncate text-xs text-zinc-200">{run.phase}</span>
@@ -415,6 +412,7 @@ const TaskRecordRow = ({
   // 退回 taskBlockedReason[category] 类别文案，行上永不出现报错原文。
   const currentActionCopy = rail.currentAction
     ?? (rail.currentActionCategory ? t.taskPanel.taskBlockedReason[rail.currentActionCategory] : null);
+  const detailCopy = currentActionCopy ? `${detailLabel}：${currentActionCopy}` : null;
 
   return (
     <div
@@ -458,8 +456,8 @@ const TaskRecordRow = ({
 
       {/* 结果/原因/当前动作行只挂在非 checklist 行（后台任务等）——checklist 会话任务的
           当前动作与「任务」模块进度线的 phase 是同一份内容，不重复（四模块禁止内容重复） */}
-      {rail.mode !== 'checklist' && currentActionCopy && (
-        <div className="mt-1 truncate text-[11px] text-zinc-500">{detailLabel}：{currentActionCopy}</div>
+      {rail.mode !== 'checklist' && detailCopy && (
+        <div className="mt-1 line-clamp-3 text-[11px] text-zinc-500" title={detailCopy}>{detailCopy}</div>
       )}
 
       {showOutputRefs && task.outputRefs && task.outputRefs.length > 0 && (
@@ -760,7 +758,7 @@ export const MemoryActivitySummary = ({ activities, onOpenActivity }: MemoryActi
             <Brain className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-badge-accent" />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
-                <span className={`rounded border px-1.5 py-0.5 text-[10px] ${memoryActionClass(activity.action)}`}>
+                <span className={`shrink-0 whitespace-nowrap rounded border px-1.5 py-0.5 text-[10px] ${memoryActionClass(activity.action)}`}>
                   {memoryActionLabel(activity.action)}
                 </span>
                 {activity.confidence !== undefined && (

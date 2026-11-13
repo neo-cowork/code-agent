@@ -59,17 +59,17 @@ function failedFixture(overrides: Partial<TaskInfo>): TaskInfo {
 describe.each([
   {
     locale: 'zh' as const,
-    cause: '可能一直在等待无人处理的 macOS「自动化」授权框，随后超时',
+    start: '这条命令在等一个没人点的 macOS「自动化」授权框，已超时。',
     action: '「系统设置」>「隐私与安全性」>「自动化」中允许 Agent Neo',
     dismiss: '系统授权框可能还在屏幕上，请手动点掉或点「不允许」。',
   },
   {
     locale: 'en' as const,
-    cause: 'probably waited for an unanswered macOS Automation prompt and timed out',
+    start: 'This command was waiting for an unanswered macOS Automation prompt and timed out.',
     action: 'System Settings > Privacy & Security > Automation, allow Agent Neo',
     dismiss: 'A system permission prompt may still be on screen; dismiss it or choose Don\'t Allow.',
   },
-])('background shell Automation prompt hint in $locale', ({ locale, cause, action, dismiss }) => {
+])('background shell Automation prompt hint in $locale', ({ locale, start, action, dismiss }) => {
   let tempDir: string;
 
   beforeEach(async () => {
@@ -94,7 +94,7 @@ describe.each([
     const result = projectFailure(failedFixture({ outputFile }));
 
     for (const text of [result.summary, result.notification]) {
-      expect(text).toContain(cause);
+      expect(text.startsWith(start)).toBe(true);
       expect(text).toContain(action);
       expect(text).toContain(dismiss);
     }
@@ -112,7 +112,7 @@ describe.each([
       outputFile,
     }));
 
-    expect(result.summary).toContain(cause);
+    expect(result.summary.startsWith(start)).toBe(true);
     expect(result.notification).toContain(action);
   });
 
@@ -121,7 +121,8 @@ describe.each([
     const unrelatedLog = path.join(tempDir, 'unrelated-error.log');
     await writeFile(syntaxLog, 'execution error: Expected expression. (-2741)\n', 'utf8');
     await writeFile(unrelatedLog, 'npm ERR! test failed\n', 'utf8');
-    const originalSummary = '任务失败，退出码 1，可打开日志后重跑。';
+    const originalLogSummary = '任务失败，退出码 1，可打开日志后重跑。';
+    const originalNoLogSummary = '任务失败，退出码 1，可按原命令重跑。';
 
     const syntax = projectFailure(failedFixture({
       taskId: 'osascript-syntax',
@@ -133,14 +134,20 @@ describe.each([
       command: 'npm test',
       outputFile: unrelatedLog,
     }));
+    const unrelatedWithoutLog = projectFailure(failedFixture({
+      taskId: 'plain-failure-without-log',
+      command: 'npm test',
+      outputFile: '',
+    }));
 
-    expect(syntax.summary).toBe(originalSummary);
-    expect(unrelated.summary).toBe(originalSummary);
+    expect(syntax.summary).toBe(originalLogSummary);
+    expect(unrelated.summary).toBe(originalLogSummary);
+    expect(unrelatedWithoutLog.summary).toBe(originalNoLogSummary);
     expect(syntax.notification).toBe(
-      `osascript -e 'foo' 失败，退出码 1，耗时 2 分钟，日志 ${syntaxLog}`,
+      `osascript -e 'foo' 失败，退出码 1，耗时 2 分钟`,
     );
     expect(unrelated.notification).toBe(
-      `npm test 失败，退出码 1，耗时 2 分钟，日志 ${unrelatedLog}`,
+      `npm test 失败，退出码 1，耗时 2 分钟`,
     );
   });
 });
@@ -183,7 +190,7 @@ describe('background shell Automation prompt hint fallbacks', () => {
 
     const result = projectFailure(failedFixture({ taskId: 'locale-fallback', outputFile }));
 
-    expect(result.summary).toContain('这条命令可能一直在等待无人处理的 macOS「自动化」授权框');
+    expect(result.summary).toContain('这条命令在等一个没人点的 macOS「自动化」授权框');
     expect(stderr).toHaveBeenCalledWith(
       expect.stringContaining('Failed to read UI locale for macOS Automation failure hint'),
       expect.objectContaining({ reason: 'automation_prompt_locale_read_failed' }),

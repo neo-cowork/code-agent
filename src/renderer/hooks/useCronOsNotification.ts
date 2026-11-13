@@ -20,6 +20,7 @@ import { postOsNotification, registerNotificationClick, reportNotificationHandle
 import { sessionAutomationClient } from '../services/sessionAutomationClient';
 import { listenTauriEvent } from '../services/tauriPluginFacade';
 import { isTauriMode } from '../utils/platform';
+import { deferRendererReadyUntil } from '../utils/rendererReady';
 
 const MISSED_ALERT_TOAST_MS = 10_000;
 const RECENT_EVENT_LIMIT = 50;
@@ -66,15 +67,14 @@ export function useCronOsNotification(
       }
     };
     // 点击路由：接收端契约是壳发 `notification-clicked {id}`（id = NotificationShowEvent.id）。
-    // 注意：当前壳尚未发该事件（发射端由 N-FIX-NOTIFY-DISPLAY-GAP-FU1-NATIVE 负责），
-    // 在那之前桌面端只走下面的旧 onAction 路径（读最近一条事件，桌面端通常根本不触发）。
+    // macOS app bundle 的 UNC 委托发该事件；旧 onAction 仍供 legacy 路径使用。
     // 按通知类型落点，且每个 id 只处理一次。会话/jobId/登录墙落点全在 openForEvent
     // （含「无会话仅 jobId → Center」）；这里只补本单独有的一步：needs-input 且有待审批
-    // 卡时落自动化中心「运行」收件箱，而不是会话。
+    // 卡时落「自动化」→「运行记录」。
     const routeClick = async (event: NotificationShowEvent) => {
       const needsInput = event.urgent === true && event.failure !== true;
       if (needsInput && event.sessionId) {
-        // 待审批卡只在自动化中心「运行」收件箱里，会话内没有；有 pending 项就落收件箱。
+        // 待审批卡在「自动化」→「运行记录」；有 pending 项就打开该页。
         let parked = false;
         try {
           const items = await sessionAutomationClient.listParkedApprovals();
@@ -95,8 +95,9 @@ export function useCronOsNotification(
       if (handled.size > RECENT_EVENT_LIMIT * 2) handled.delete(handled.values().next().value as string);
       return true;
     };
-    const clickById = (id: string) => {
-      const event = recentEventsRef.current.get(id);
+    const clickById = (id: string, sessionId?: string) => {
+      const event = recentEventsRef.current.get(id)
+        ?? (sessionId ? { id, sessionId, title: '', body: '', urgent: true } : undefined);
       if (!event) {
         console.warn('[useCronOsNotification] notification-clicked: unknown notification id', id);
         return;
@@ -144,10 +145,11 @@ export function useCronOsNotification(
           copyRef.current,
           useAppStore.getState().language,
         ), {
+          id: event.id,
           urgent: event.urgent === true,
           failure: event.failure === true,
           viewingSession,
-          onOpen: () => openForEvent(event),
+          onOpen: () => { void routeClick(event); },
           openLabel: copyRef.current.failureToastView,
         });
       },
@@ -162,7 +164,7 @@ export function useCronOsNotification(
       const message = spec.count > 1
         ? c.missedAlertsMerged.replace('{count}', String(spec.count))
         : `${notice.title}: ${notice.body}`;
-      const action = { label: c.failureToastView, onClick: () => openForEvent(spec.latest) };
+      const action = { label: c.failureToastView, onClick: () => { void routeClick(spec.latest); } };
       if (spec.type === 'error') toast.error(message, action, MISSED_ALERT_TOAST_MS);
       else toast.warning(message, action, MISSED_ALERT_TOAST_MS);
     };
@@ -179,15 +181,16 @@ export function useCronOsNotification(
     });
     let unlistenClick: (() => void) | undefined;
     if (isTauriMode()) {
-      void listenTauriEvent<{ id: string }>('notification-clicked', (e) => {
+      const listenerReady = listenTauriEvent<{ id: string; sessionId?: string }>('notification-clicked', (e) => {
         const id = e?.payload?.id;
-        if (typeof id === 'string') clickById(id);
+        if (typeof id === 'string') clickById(id, typeof e.payload.sessionId === 'string' ? e.payload.sessionId : undefined);
       }).then((fn) => {
         if (disposed) fn();
         else unlistenClick = fn;
       }).catch((err) => {
         console.warn('[useCronOsNotification] notification-clicked listen failed', err);
       });
+      deferRendererReadyUntil(listenerReady);
     }
     return () => {
       disposed = true;

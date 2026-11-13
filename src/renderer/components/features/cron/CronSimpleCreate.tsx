@@ -14,7 +14,7 @@ import { CRON_URGENCY_CRITERIA } from '@shared/constants';
 import { Button } from '../../primitives/Button';
 import { FormField } from '../../composites/FormField';
 import { Input } from '../../primitives/Input';
-import { TimeInput24 } from '../../primitives';
+import { DateTimeInput24, TimeInput24 } from '../../primitives';
 import { Select } from '../../primitives/Select';
 import { Textarea } from '../../primitives/Textarea';
 import { useCronStore } from '../../../stores/cronStore';
@@ -24,8 +24,16 @@ import { listRoles } from '../../../services/rolesClient';
 import { buildCronJobInput, createDefaultCronJobDraft, type CronJobDraft } from './types';
 import { CronRunsOnSelector } from './CronRunsOnSelector';
 import { CronResultChannelField } from './CronResultChannel';
+import { CronRunBudgetField } from './CronRunBudgetField';
 import { showCronLoginWallWarning } from './cronLoginWallNotice';
+import { CLOUD_ROLE_BOUND_ERROR } from './CronCloudRoleRestriction';
+import { CRON_CLOUD_NOT_CONFIGURED } from '@shared/constants/cronErrors';
+import { CronCloudCreateNotice } from './CronCloudCreateNotice';
+import { stashCronEditorDraft } from './cronEditorDraftStash';
+import { openCloudCronSettings } from '../../../utils/cronCloudSettingsNavigation';
 import { SavedRoutineRestate } from './SavedRoutineRestate';
+import { PendingRoutineRestate } from './PendingRoutineRestate';
+import { usePendingRoutineGate, type PendingRoutineSave } from './usePendingRoutineGate';
 
 export type SimpleFrequency = 'daily' | 'weekdays' | 'weekly' | 'hourly' | 'once';
 
@@ -70,6 +78,7 @@ export function buildSimpleDraft(
   runsOn: CronJobDraft['runsOn'] = 'local',
   resultChannel = '',
   urgencyCriteria = '',
+  maxRunBudget = '',
 ): CronJobDraft {
   return {
     ...createDefaultCronJobDraft(),
@@ -82,15 +91,17 @@ export function buildSimpleDraft(
     agentLibraryProjectId: libraryProjectId || '',
     resultChannel,
     agentUrgencyCriteria: urgencyCriteria,
+    maxRunBudget,
     ...schedule,
   };
 }
 
 interface CronSimpleCreateProps {
   onDone: () => void;
+  onDraftChange?: (draft: CronJobDraft) => void;
 }
 
-export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) => {
+export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone, onDraftChange }) => {
   const { t } = useI18n();
   const cc = t.cronCenter;
   const createJob = useCronStore((state) => state.createJob);
@@ -106,23 +117,74 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
   const [runsOn, setRunsOn] = useState<CronJobDraft['runsOn']>('local');
   const [resultChannel, setResultChannel] = useState('');
   const [urgencyCriteria, setUrgencyCriteria] = useState('');
+  const [maxRunBudget, setMaxRunBudget] = useState('');
   const [roles, setRoles] = useState<RolePanelEntry[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [cloudUnconfigured, setCloudUnconfigured] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // 保存成功且角色绑定的任务：不直接关闭，切换到只读复述视图（Done 才关闭）。
   const [savedJob, setSavedJob] = useState<CronJobDefinition | null>(null);
+  // 无角色任务（缺省档，新手最常见的路）保存前先出复述卡，确认后才真正 createJob
+  // （N-CRON-MORNING-TRIAGE-REST1）；选了角色照旧直存 → 保存后复述视图。
+  const persistPending = async (pending: PendingRoutineSave): Promise<boolean> => {
+    setSubmitting(true);
+    setError(null);
+    try {
+      const created = await createJob(pending.input);
+      showCronLoginWallWarning(created, { warning: cc.loginWallWarning, openSite: cc.loginWallOpenSite });
+      if (isRoleBoundCronJob(created)) {
+        setSavedJob(created);
+        return true;
+      }
+      onDone();
+      return true;
+    } catch (err) {
+      if (err instanceof Error && 'code' in err && err.code === CRON_CLOUD_NOT_CONFIGURED) {
+        setCloudUnconfigured(true);
+        backToEdit();
+        return false;
+      }
+      const message = err instanceof Error ? err.message : '';
+      setError(message.includes(CLOUD_ROLE_BOUND_ERROR)
+        ? cc.cloudRoleBoundHint
+        : message.includes('Cloud jobs must have an interval')
+        ? cc.cloudIntervalHint
+        : message.includes('Local jobs must have an interval')
+          ? cc.localIntervalHint
+          : message || cc.simpleCreateFailed);
+      return false;
+    } finally {
+      setSubmitting(false);
+    }
+  };
+  const { pending: pendingSave, gateOrPersist, confirm: confirmPending, back: backToEdit } =
+    usePendingRoutineGate(persistPending);
 
   useEffect(() => {
     listRoles().then(setRoles).catch(() => setRoles([]));
     listProjects().then(setProjects).catch(() => setProjects([]));
   }, []);
 
+  useEffect(() => {
+    onDraftChange?.({
+      ...buildSimpleDraft(
+        goal, name, compileSimpleSchedule({ freq, time, weekday, intervalHours, onceAt }),
+        roleId, libraryProjectId, runsOn, resultChannel, urgencyCriteria, maxRunBudget,
+      ),
+      // Switching forms preserves unfinished input, without creation-time defaults or validation.
+      name,
+      agentPrompt: goal,
+    });
+  }, [onDraftChange, goal, name, freq, time, weekday, intervalHours, onceAt,
+    roleId, libraryProjectId, runsOn, resultChannel, urgencyCriteria, maxRunBudget]);
+
   const handleSubmit = async () => {
     if (!goal.trim()) {
       setError(cc.simpleGoalRequired);
       return;
     }
+    setCloudUnconfigured(false);
     setSubmitting(true);
     setError(null);
     try {
@@ -135,17 +197,18 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
         runsOn,
         resultChannel,
         runsOn === 'local' ? urgencyCriteria : '',
+        runsOn === 'local' ? maxRunBudget : '',
       );
-      const created = await createJob(buildCronJobInput(draft));
-      showCronLoginWallWarning(created, { warning: cc.loginWallWarning, openSite: cc.loginWallOpenSite });
-      if (isRoleBoundCronJob(created)) {
-        setSavedJob(created);
+      await gateOrPersist(buildCronJobInput(draft), 'create');
+    } catch (err) {
+      if (err instanceof Error && 'code' in err && err.code === CRON_CLOUD_NOT_CONFIGURED) {
+        setCloudUnconfigured(true);
         return;
       }
-      onDone();
-    } catch (err) {
       const message = err instanceof Error ? err.message : '';
-      setError(message.includes('Cloud jobs must have an interval')
+      setError(message.includes(CLOUD_ROLE_BOUND_ERROR)
+        ? cc.cloudRoleBoundHint
+        : message.includes('Cloud jobs must have an interval')
         ? cc.cloudIntervalHint
         : message.includes('Local jobs must have an interval')
           ? cc.localIntervalHint
@@ -161,8 +224,28 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
     return <SavedRoutineRestate job={savedJob} onDone={onDone} />;
   }
 
+  if (pendingSave) {
+    return (
+      <PendingRoutineRestate
+        input={pendingSave.input}
+        mode={pendingSave.mode}
+        confirming={submitting}
+        error={error}
+        onConfirm={() => void confirmPending()}
+        onBack={backToEdit}
+      />
+    );
+  }
+
   return (
     <div className="space-y-4" data-testid="cron-simple-create">
+      {cloudUnconfigured && <CronCloudCreateNotice
+        onSwitchLocal={() => { setRunsOn('local'); setCloudUnconfigured(false); }}
+        onSettings={() => {
+          stashCronEditorDraft(buildSimpleDraft(goal, name, compileSimpleSchedule({ freq, time, weekday, intervalHours, onceAt }), roleId, libraryProjectId, runsOn, resultChannel, urgencyCriteria, maxRunBudget));
+          openCloudCronSettings();
+        }}
+      />}
       {error && (
         <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-badge-danger">
           {error}
@@ -269,7 +352,14 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
         )}
         {freq === 'once' && (
           <FormField label={cc.simpleOnceAtLabel}>
-            <Input type="datetime-local" value={onceAt} onChange={(e) => setOnceAt(e.target.value)} />
+            <DateTimeInput24
+              testId="cron-simple-once"
+              value={onceAt}
+              onChange={setOnceAt}
+              dateLabel={cc.simpleDateLabel}
+              hourLabel={cc.simpleHourLabel}
+              minuteLabel={cc.simpleMinuteLabel}
+            />
           </FormField>
         )}
       </div>
@@ -284,7 +374,11 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
         </FormField>
       )}
 
-      <div className="flex items-center justify-end gap-2 pt-2">
+      {runsOn === 'local' && (
+        <CronRunBudgetField value={maxRunBudget} onChange={setMaxRunBudget} />
+      )}
+
+      <div className="sticky -bottom-4 z-10 -mx-6 flex items-center justify-end gap-2 border-t border-zinc-700 bg-zinc-900 px-6 py-4">
         <Button onClick={handleSubmit} loading={submitting}>
           {cc.simpleCreateCta}
         </Button>

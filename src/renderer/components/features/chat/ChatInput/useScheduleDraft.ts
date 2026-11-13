@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import { useScheduleSettingsDraftStore } from '../../../../stores/scheduleSettingsDraftStore';
 import type { CreateCronJobInput } from '../../../../services/cronClient';
 import type { EventScheduleDisplayNames } from '../../cron/types';
 
@@ -9,6 +10,7 @@ export interface ScheduleRestatement {
 
 export interface PendingScheduleDraft {
   input: CreateCronJobInput;
+  creationErrorCode?: string;
   restatement?: ScheduleRestatement;
   description: string;
   handoffPrompt?: string;
@@ -47,7 +49,10 @@ export function useScheduleDraft(currentSessionId: string | null) {
   currentSessionIdRef.current = currentSessionId;
 
   useEffect(() => {
-    setPendingScheduleDraft(null);
+    const restored = useScheduleSettingsDraftStore.getState().draft;
+    setPendingScheduleDraft(restored?.sourceSessionId === currentSessionId ? restored : null);
+    if (restored && restored.sourceSessionId !== currentSessionId) useScheduleSettingsDraftStore.getState().clearDraft();
+    draftSeqRef.current = Math.max(draftSeqRef.current, restored?.draftId ?? 0);
     setScheduleComposerOpen(false);
     setCreatingSchedule(false);
   }, [currentSessionId]);
@@ -57,11 +62,13 @@ export function useScheduleDraft(currentSessionId: string | null) {
   const draftSeqRef = useRef(0);
   const storePendingScheduleDraft = useCallback((draft: PendingScheduleDraft): boolean => {
     if (draft.sourceSessionId !== currentSessionIdRef.current) return false;
+    useScheduleSettingsDraftStore.getState().clearDraft();
     setPendingScheduleDraft(draft.draftId !== undefined ? draft : { ...draft, draftId: ++draftSeqRef.current });
     return true;
   }, []);
 
   const discardPendingScheduleDraft = useCallback(() => {
+    useScheduleSettingsDraftStore.getState().clearDraft();
     setPendingScheduleDraft(null);
     setCreatingSchedule(false);
   }, []);

@@ -15,6 +15,10 @@ import type {
   NativePermissionSnapshot,
   NativePermissionStatus,
 } from '@shared/contract';
+import type {
+  AudioCaptureMissingPrerequisiteCode,
+  AudioCapturePrerequisites,
+} from '@shared/contract/audioCapture';
 import { invalidateComputerUseSnapshotForSystemSettings } from '../stores/computerUseStore';
 
 export interface NativeDesktopCapabilities {
@@ -193,7 +197,10 @@ export interface NativeVoiceAecStartResult {
   outputEvent: string;
 }
 
-type SettingsPaneKind = Extract<NativePermissionKind, 'screenCapture' | 'accessibility' | 'microphone' | 'notifications'>;
+type SettingsPaneKind = Extract<
+  NativePermissionKind,
+  'screenCapture' | 'accessibility' | 'microphone' | 'inputMonitoring' | 'notifications'
+>;
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   const internals = window.__TAURI_INTERNALS__;
@@ -412,6 +419,8 @@ export interface AudioCaptureStatus {
     fileCount?: number;
     bytes?: number;
   };
+  prerequisites?: AudioCapturePrerequisites;
+  missingPrerequisites?: AudioCaptureMissingPrerequisiteCode[];
 }
 
 export interface AudioSegment {

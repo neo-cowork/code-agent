@@ -20,6 +20,7 @@ import {
   writeTurnDiffExpansion,
 } from '../../../../utils/turnDiffExpansionState';
 import { useI18n } from '../../../../hooks/useI18n';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 import { useAppStore } from '../../../../stores/appStore';
 import { formatDisplayPath } from '../../../../utils/displayPath';
 
@@ -186,7 +187,7 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn, excluded
       <div className="flex items-start gap-2 px-3 py-2 border-b border-zinc-800 bg-zinc-800/40">
         <div className="min-w-0 flex-1">
           <div className="text-xs text-zinc-200">
-            {t.turnDiff.filesEdited.replace('{count}', String(fileChanges.length))}
+            {interpolatePlural(t.turnDiff.filesEdited, fileChanges.length)}
           </div>
           {(totalAdded > 0 || totalRemoved > 0) && (
             <div className="mt-0.5 flex items-center gap-1.5 text-xs">

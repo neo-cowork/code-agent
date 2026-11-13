@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { getUserConfigDir } from '../../config/configPaths';
+import { BASH } from '../../../shared/constants';
 import { killProcessTree, resolveWindowsShell, WINDOWS_SHELL_ENCODING_PRELUDE, type KillableChild } from './platformShell';
 
 // ============================================================================
@@ -16,7 +17,6 @@ import { killProcessTree, resolveWindowsShell, WINDOWS_SHELL_ENCODING_PRELUDE, t
 
 const MAX_PTY_SESSIONS = 10;
 const MAX_PTY_OUTPUT = 1024 * 1024; // 1MB per session
-const PTY_DEFAULT_TIMEOUT = 10 * 60 * 1000; // 10 minutes
 const PTY_CLEANUP_INTERVAL = 60 * 1000; // 1 minute
 
 // ============================================================================
@@ -46,7 +46,11 @@ interface PtySessionState {
   rows: number;
   inputBuffer: string[];
   sandboxed?: boolean;
+  displayName?: string;
   onExit?: () => void;
+  stoppedByRequest?: boolean;
+  /** 被最长运行时间上限终止 */
+  timedOut?: boolean;
   /**
    * 供 killProcessTree 使用的句柄视图（懒建、随会话长存）。
    * **不能每次现造**：整树退出边界记在 WeakSet 里、按对象身份认，现造的话防 pid 复用就失效。
@@ -67,9 +71,13 @@ export interface PtySessionInfo {
   duration: number;
   exitCode?: number;
   outputFile: string;
+  stoppedByRequest?: boolean;
+  timedOut?: boolean;
+  maxRuntime?: number;
   cols: number;
   rows: number;
   sandboxed?: boolean;
+  displayName?: string;
 }
 
 export interface PtySessionOutput {
@@ -125,9 +133,12 @@ function toPtySessionInfo(session: PtySessionState): PtySessionInfo {
     duration: (session.endTime || Date.now()) - session.startTime,
     exitCode: session.exitCode,
     outputFile: session.outputFile,
+    ...(session.stoppedByRequest ? { stoppedByRequest: true } : {}),
+    ...(session.timedOut ? { timedOut: true, maxRuntime: session.maxRuntime } : {}),
     cols: session.cols,
     rows: session.rows,
     sandboxed: session.sandboxed,
+    ...(session.displayName ? { displayName: session.displayName } : {}),
   };
 }
 
@@ -175,6 +186,8 @@ export function createPtySession(options: {
   sessionId?: string;
   toolCallId?: string;
   sandboxed?: boolean;
+  /** Human-readable task name shown in panels/notifications (never the sandbox-wrapped command). */
+  displayName?: string;
   onExit?: () => void;
 }): { success: boolean; sessionId?: string; error?: string; outputFile?: string } {
   // Check session limit
@@ -199,7 +212,7 @@ export function createPtySession(options: {
     rows = 24,
     env = {},
     inheritProcessEnv = true,
-    maxRuntime = PTY_DEFAULT_TIMEOUT,
+    maxRuntime = BASH.BACKGROUND_MAX_RUNTIME,
   } = options;
 
   try {
@@ -237,7 +250,7 @@ export function createPtySession(options: {
       outputStream,
       status: 'running',
       startTime: Date.now(),
-      maxRuntime: Math.min(maxRuntime, PTY_DEFAULT_TIMEOUT),
+      maxRuntime: Math.min(maxRuntime, BASH.BACKGROUND_MAX_RUNTIME),
       outputSize: 0,
       command,
       args,
@@ -249,6 +262,7 @@ export function createPtySession(options: {
       rows,
       inputBuffer: [],
       sandboxed: options.sandboxed,
+      displayName: options.displayName,
       onExit: options.onExit,
     };
 
@@ -256,6 +270,7 @@ export function createPtySession(options: {
     const timeout = setTimeout(() => {
       if (sessionState.status === 'running') {
         console.warn(`[PTY] Session ${sessionId} exceeded max runtime, terminating...`);
+        sessionState.timedOut = true;
         void terminatePtyProcess(sessionState)
           .then(() => runPtySessionExitCallback(sessionState))
           .catch((err: unknown) => {
@@ -271,7 +286,7 @@ export function createPtySession(options: {
       sessionState.outputSize += data.length;
 
       // Write to file
-      sessionState.outputStream?.write(data);
+      if (sessionState.outputStream && !sessionState.outputStream.writableEnded) sessionState.outputStream.write(data);
 
       // Store in memory (with limit)
       if (sessionState.outputSize < MAX_PTY_OUTPUT) {
@@ -282,8 +297,8 @@ export function createPtySession(options: {
     });
 
     // Handle PTY exit
-    ptyProcess.onExit(({ exitCode }) => {
-      sessionState.status = exitCode === 0 ? 'completed' : 'failed';
+    ptyProcess.onExit(({ exitCode, signal }) => {
+      sessionState.status = exitCode === 0 && (signal === undefined || signal === 0) ? 'completed' : 'failed';
       sessionState.exitCode = exitCode;
       sessionState.endTime = Date.now();
 
@@ -392,19 +407,30 @@ async function terminatePtyProcess(session: PtySessionState): Promise<void> {
 /**
  * Kill a PTY session（等到整组确认退出才返回——「已终止」是对调用方的承诺）
  */
-export async function killPtySession(sessionId: string): Promise<{ success: boolean; error?: string; message?: string }> {
+export async function killPtySession(
+  sessionId: string,
+  options: { reason?: 'stop' | 'timeout' } = {},
+): Promise<{ success: boolean; error?: string; message?: string }> {
   const session = ptySessions.get(sessionId);
   if (!session) {
     return { success: false, error: `No PTY session found with ID: ${sessionId}` };
   }
 
   try {
+    const wasRunning = session.status === 'running';
+    // 终止前打标，退出回调才不会先报 failed；超时清扫不算停止请求。
+    if (wasRunning) {
+      if (options.reason === 'timeout') session.timedOut = true;
+      else session.stoppedByRequest = true;
+    }
     await terminatePtyProcess(session);
     session.outputStream?.end();
 
-    // Update status
-    session.status = 'failed';
-    session.endTime = Date.now();
+    // 入口时已结束的会话不重新标注
+    if (wasRunning) {
+      session.status = 'failed';
+      session.endTime = Date.now();
+    }
     runPtySessionExitCallback(session);
 
     if (session.timeout) {
@@ -578,7 +604,7 @@ async function cleanupTimedOutPtySessions(): Promise<void> {
   for (const [sessionId, session] of ptySessions) {
     if (session.status === 'running' && now - session.startTime > session.maxRuntime) {
       console.warn(`[PTY] Session ${sessionId} timed out, killing...`);
-      await killPtySession(sessionId);
+      await killPtySession(sessionId, { reason: 'timeout' });
     }
   }
 }

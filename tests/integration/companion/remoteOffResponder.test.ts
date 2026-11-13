@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.unmock('better-sqlite3');
+
+// Use OS-assigned ports so a running host cannot answer these protocol fixtures.
+vi.mock('../../../src/shared/constants/companion', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/shared/constants/companion')>();
+  return { ...actual, COMPANION_LIMITS: { ...actual.COMPANION_LIMITS, lanPort: 0 } };
+});
 import Database from 'better-sqlite3';
 import { connect } from 'node:net';
 import { readFileSync } from 'node:fs';

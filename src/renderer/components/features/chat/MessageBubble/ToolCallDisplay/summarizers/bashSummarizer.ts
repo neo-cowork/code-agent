@@ -3,8 +3,9 @@
 // ============================================================================
 
 import type { ToolCall } from '@shared/contract';
+import type { Translations } from '../../../../../../i18n';
 
-export function summarizeBash(toolCall: ToolCall): string | null {
+export function summarizeBash(toolCall: ToolCall, t: Translations): string | null {
   const output = toolCall.result?.output;
   if (!output) return 'Done';
 
@@ -108,7 +109,7 @@ export function summarizeBash(toolCall: ToolCall): string | null {
   }
 
   // Multi-line output - show line count
-  return `${lines.length} lines`;
+  return t.toolResultSummary.lineCount.replace('{count}', String(lines.length));
 }
 
 function shortenPath(path: string): string {

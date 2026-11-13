@@ -4,13 +4,27 @@ import http from 'http';
 import os from 'os';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { RunRegistry } from '../../../src/host/runtime/runRegistry';
 import { createSessionsRouter } from '../../../src/web/routes/sessions';
 import { DurableRunReadService } from '../../../src/host/app/durableRunReadService';
 import { resolveDurableRunRollout } from '../../../src/host/app/durableRunRollout';
+import { getDefaultWorkDirectory } from '../../../src/host/config/configPaths';
 import {
   inMemorySessionsProjection as inMemorySessions,
   sessionMessagesProjection as sessionMessages,
 } from '../../../src/web/helpers/webSessionStore';
+
+const reservationFixture = vi.hoisted(() => ({ paths: [] as string[] }));
+
+vi.mock('../../../src/host/services/core/databaseService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/host/services/core/databaseService')>();
+  return {
+    ...actual,
+    getDatabase: () => ({
+      listRecordedWorkingDirectories: () => reservationFixture.paths,
+    }),
+  };
+});
 
 interface SessionApiBody {
   success: boolean;
@@ -30,6 +44,7 @@ interface SessionApiBody {
     status?: string;
     durableWaitingInput?: true;
     streamSnapshot?: Record<string, unknown>;
+    activeRun?: boolean;
   };
   error?: {
     code?: string;
@@ -126,6 +141,7 @@ async function startSessionsApi(deps: {
   tryGetSessionManager: () => Promise<unknown>;
   getSupabaseForSession?: () => Promise<unknown>;
   getDurableRunReadService?: () => DurableRunReadService | undefined;
+  hasActiveRun?: (sessionId: string) => boolean;
 }) {
   const app = express();
   app.use(express.json());
@@ -137,6 +153,7 @@ async function startSessionsApi(deps: {
     tryGetSessionManager: deps.tryGetSessionManager,
     getSupabaseForSession: deps.getSupabaseForSession ?? (async () => null),
     getDurableRunReadService: deps.getDurableRunReadService,
+    hasActiveRun: deps.hasActiveRun,
   } as Parameters<typeof createSessionsRouter>[0]));
 
   server = await new Promise<http.Server>((resolve) => {
@@ -215,6 +232,7 @@ function durableReadServiceFor(statusBySessionId: Record<string, ReturnType<type
 
 beforeEach(() => {
   vi.clearAllMocks();
+  reservationFixture.paths = [];
   inMemorySessions.clear();
   sessionMessages.clear();
 });
@@ -358,6 +376,8 @@ describe('createSessionsRouter', () => {
     } = await import('../../../src/host/session/streamSnapshot');
     const workingDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ctf-sessions-router-')));
     const sessionId = 'session-snapshot';
+    const registry = new RunRegistry();
+    const handle = registry.start({ sessionId, workspace: workingDir });
     saveStreamSnapshot(
       { content: '已生成的部分', reasoning: '', toolCalls: [], estimatedTokens: 4, timestamp: Date.now(), isFinal: false },
       { workingDir, sessionId, runId: 'run-snapshot-1', turnId: 'turn-snapshot-1' },
@@ -376,11 +396,13 @@ describe('createSessionsRouter', () => {
 
     await startSessionsApi({
       tryGetSessionManager: async () => ({ restoreSession }),
+      hasActiveRun: (id) => registry.hasSession(id),
     });
 
     const result = await fetchJson(`/api/sessions/${sessionId}`);
 
     expect(result.body.success).toBe(true);
+    expect(result.body.data?.activeRun).toBe(true);
     expect(result.body.data?.streamSnapshot).toEqual(expect.objectContaining({
       sessionId,
       turnId: 'turn-snapshot-1',
@@ -388,6 +410,9 @@ describe('createSessionsRouter', () => {
       streamStatus: 'incomplete',
       interruptionReason: 'user',
     }));
+    registry.unregister(handle.context.runId, handle);
+    const completed = await fetchJson(`/api/sessions/${sessionId}`);
+    expect(completed.body.data?.activeRun).toBe(false);
   });
 
   it.each([
@@ -463,7 +488,12 @@ describe('createSessionsRouter', () => {
     expect((includeArchived.body.data as unknown as Array<{ id: string }>).map((session) => session.id)).toEqual(['archived', 'new', 'old']);
   });
 
-  it('passes workingDirectory through to SessionManager when creating a session', async () => {
+  it('passes an explicitly selected planned task directory through to SessionManager', async () => {
+    const selectedDirectory = path.join(
+      getDefaultWorkDirectory(),
+      '任务_1107_写一篇文章',
+    );
+    reservationFixture.paths = [selectedDirectory];
     const createSession = vi.fn(async (options: { title: string; workingDirectory?: string }) => ({
       id: 'session-sm',
       title: options.title,
@@ -484,14 +514,14 @@ describe('createSessionsRouter', () => {
 
     const body = await postSession({
       title: 'Workbench',
-      workingDirectory: '  /Users/linchen/Downloads/ai/code-agent  ',
+      workingDirectory: `  ${selectedDirectory}  `,
     });
 
     expect(body.success).toBe(true);
-    expect(body.data?.workingDirectory).toBe('/Users/linchen/Downloads/ai/code-agent');
+    expect(body.data?.workingDirectory).toBe(selectedDirectory);
     expect(createSession).toHaveBeenCalledWith(expect.objectContaining({
       title: 'Workbench',
-      workingDirectory: '/Users/linchen/Downloads/ai/code-agent',
+      workingDirectory: selectedDirectory,
     }));
     expect(setCurrentSession).toHaveBeenCalledWith('session-sm');
   });
@@ -718,6 +748,7 @@ describe('createSessionsRouter', () => {
       success: true,
       data: {
         id: 'session-sb',
+        activeRun: false,
         title: 'Cloud session',
         messages: [{
           id: 'msg-sb',

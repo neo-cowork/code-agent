@@ -1,3 +1,4 @@
+import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 import React, { useEffect, useState } from 'react';
 import { ArrowRight, CalendarCheck, ClipboardList, FileSpreadsheet, Radar } from 'lucide-react';
 import type { SessionWorkbenchSnapshot } from '@shared/contract/sessionWorkspace';
@@ -139,7 +140,7 @@ export const NewSessionWelcome: React.FC<{
   workbenchSnapshot,
   session,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const suggestions = buildDefaultSuggestions(t);
   const { pinnedItems } = usePinnedLibraryItems(session?.id ?? null);
   const resumedSession = session && !isBlankNewSession(session) ? session : null;
@@ -242,7 +243,7 @@ export const NewSessionWelcome: React.FC<{
               {expertRoleId
                 ? (expert?.name ?? expertRoleId)
                 : resumedSession
-                  ? t.chat.resumedEmptyTitle.replace('{title}', resumedSession.title)
+                  ? t.chat.resumedEmptyTitle.replace('{title}', getDisplaySessionTitle(resumedSession.title, language))
                   : t.chat.welcomeTitle}
             </h1>
             <p className="mt-1 text-sm text-zinc-500">
@@ -269,9 +270,9 @@ export const NewSessionWelcome: React.FC<{
           </div>
         )}
 
-        {showSuggestions && (expertRoleId ? (
+        {expertRoleId ? (
           // 专家空态：只摆角色自己的建议（醒来提议 + 快捷开场 prompt，≤4 张，同一
-          // 一键直发 / 填草稿行为）；角色没有任何既有建议时一张不摆，绝不回退到
+          // 一键直发 / 填草稿行为），不受工作区或 pin 材料影响；角色没有建议时不摆，绝不回退到
           // 与专家无关的通用职场模板卡。
           expert !== null && expert.cards.length > 0 && (
             <div className="grid grid-cols-2 gap-3">
@@ -285,7 +286,7 @@ export const NewSessionWelcome: React.FC<{
               ))}
             </div>
           )
-        ) : (
+        ) : showSuggestions && (
           <div className="grid grid-cols-2 gap-3">
             {suggestions.map((suggestion, index) => (
               <SuggestionCard
@@ -296,7 +297,7 @@ export const NewSessionWelcome: React.FC<{
               />
             ))}
           </div>
-        ))}
+        )}
       </div>
     </div>
   );

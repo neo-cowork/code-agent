@@ -19,6 +19,7 @@ export interface CronRunAwaitingApproval {
   requestedAt: number;
   /** 工具名 / 脱敏参数预览（有才显示「等你批准：在干什么」）。 */
   label?: string;
+  command?: string;
 }
 
 export type CronRunStatusLine =
@@ -100,6 +101,11 @@ export function isTerminalCronRunStatusKind(kind: CronRunStatusLine['kind'] | nu
     || kind === 'failed-generic'
     || kind === 'cancelled'
   );
+}
+
+/** 仍会新增步骤的运行态；状态行与步骤必须同时可见。 */
+export function isLiveCronRunStatusKind(kind: CronRunStatusLine['kind'] | null | undefined): boolean {
+  return kind === 'running' || kind === 'awaiting';
 }
 
 /** 按 executionId（优先）或 sessionId 匹配会话对应的执行记录。 */

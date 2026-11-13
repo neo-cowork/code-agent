@@ -1,11 +1,11 @@
 import React from 'react';
-import type { CronJobDefinition, CronJobExecution } from '@shared/contract';
+import type { CronJobDefinition, CronJobExecution, CronPermissionDeniedMarker } from '@shared/contract';
 import { useI18n } from '../../../hooks/useI18n';
 import {
   formatDuration,
   formatRunCostUsd,
   formatRunListTime,
-  getExecutionStatusMeta,
+  getLatestExecutionStatus,
   isPermissionDeniedExecution,
 } from './types';
 import { wakeSkipSentence } from './wakeSkipSentence';
@@ -18,6 +18,8 @@ interface CronExecutionListProps {
   onSelectExecution: (executionId: string) => void;
   /** 跨任务执行流（运行记录 tab）时传入：加一列任务名 */
   jobNameById?: Record<string, string>;
+  /** Complete catalog has loaded; otherwise a missing entry is not evidence of deletion. */
+  jobNamesLoaded?: boolean;
   /** Immutable execution location keyed by job id. */
   runsOnByJobId?: Record<string, CronJobDefinition['runsOn']>;
   /** jobId → 等批准运行（N-CRON-UNATTENDED-BASH-PARK-STUCK）：running 行状态格换 amber 徽章。 */
@@ -37,10 +39,11 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
   selectedExecutionId,
   onSelectExecution,
   jobNameById,
+  jobNamesLoaded = true,
   runsOnByJobId,
   awaitingByJobId,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const cc = t.cronCenter;
   if (executions.length === 0) {
     return (
@@ -73,7 +76,7 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
         </thead>
         <tbody>
           {executions.map((execution) => {
-            const statusMeta = getExecutionStatusMeta(execution.status);
+            const statusMeta = getLatestExecutionStatus(execution, cc);
             // 需处理（N-CRON-RUN-COMPLETED-BUT-DENIED）：被拒且无产出的完成运行换琥珀徽章。
             const permissionDenied = isPermissionDeniedExecution(execution);
             const wakeSkipText = wakeSkipSentence(execution, {
@@ -81,6 +84,21 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
               dailyBudget: cc.wakeSkipDailyBudget,
               quietHours: cc.wakeSkipQuietHours,
             });
+            const deniedMarker = permissionDenied
+              ? (execution.result as { permissionDenied: CronPermissionDeniedMarker }).permissionDenied
+              : undefined;
+            const deniedReasons = {
+              user: cc.permissionDeniedReasonUser,
+              timeout: cc.permissionDeniedReasonTimeout,
+              cancelled: cc.permissionDeniedReasonCancelled,
+              other: cc.permissionDeniedReasonOther,
+            };
+            const deniedSentence = deniedMarker
+              ? [...new Set(deniedMarker.steps.map((step) => step.reason))]
+                .map((reason) => cc.permissionDeniedListSentence.replace('{reason}', deniedReasons[reason]))
+                .join(' ')
+              : undefined;
+            const rowReason = deniedSentence ?? wakeSkipText;
             const costRunsOn = execution.runsOn ?? runsOnByJobId?.[execution.jobId];
             const awaitingPreview = awaitingByJobId?.get(execution.jobId)?.commandPreview;
             const isSelected = execution.id === selectedExecutionId;
@@ -93,7 +111,7 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
                 >
                   {jobNameById && (
                     <td className={`max-w-[200px] truncate text-zinc-200 ${tdClass}`}>
-                      {jobNameById[execution.jobId] || execution.jobId}
+                      {jobNameById[execution.jobId] ?? (jobNamesLoaded ? cc.deletedTask : cc.jobNameUnavailable)}
                     </td>
                   )}
                   <td className={`whitespace-nowrap ${tdClass}`}>
@@ -107,14 +125,14 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
                       </span>
                     ) : permissionDenied ? (
                       <span
-                        className="rounded-full px-2 py-1 text-xs text-badge-warning bg-amber-500/10"
+                        className="shrink-0 whitespace-nowrap rounded-full px-2 py-1 text-xs text-badge-warning bg-amber-500/10"
                         data-testid="cron-execution-permission-denied"
                       >
-                        {cc.permissionDeniedBadge}
+                        {statusMeta.label}
                       </span>
                     ) : (
-                      <span className={`rounded-full px-2 py-1 text-xs ${statusMeta.className}`}>
-                        {cc.status[execution.status]}
+                      <span className={`shrink-0 whitespace-nowrap rounded-full px-2 py-1 text-xs ${statusMeta.className}`}>
+                        {statusMeta.label}
                       </span>
                     )}
                   </td>
@@ -129,14 +147,14 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
                   )}
                   <td className={`whitespace-nowrap text-zinc-300 tabular-nums ${tdClass}`}>{formatRunListTime(execution.scheduledAt)}</td>
                   <td className={`whitespace-nowrap text-zinc-400 tabular-nums ${tdClass}`}>{formatRunListTime(execution.startedAt)}</td>
-                  <td className={`whitespace-nowrap text-zinc-300 ${tdClass}`}>{formatDuration(execution.duration)}</td>
+                  <td className={`whitespace-nowrap text-zinc-300 ${tdClass}`}>{formatDuration(execution.duration, language)}</td>
                   <td className={`whitespace-nowrap text-zinc-300 tabular-nums ${tdClass}`} data-testid="cron-execution-cost-cell">{formatRunCostUsd(execution.cost, costRunsOn)}</td>
                   <td className={`whitespace-nowrap text-zinc-300 ${tdClass}`}>{execution.retryAttempt}</td>
                   <td className={`whitespace-nowrap text-zinc-300 ${tdClass}`}>
                     {execution.exitCode != null ? execution.exitCode : '—'}
                   </td>
                 </tr>
-                {wakeSkipText && (
+                {rowReason && (
                   <tr
                     className={`cursor-pointer transition-colors ${rowTone}`}
                     onClick={() => onSelectExecution(execution.id)}
@@ -145,9 +163,9 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
                     <td
                       colSpan={columnCount}
                       className="px-2 pb-2 text-xs text-zinc-500"
-                      data-testid="cron-wake-skip-reason"
+                      data-testid={deniedSentence ? 'cron-execution-permission-denied-reason' : 'cron-wake-skip-reason'}
                     >
-                      {wakeSkipText}
+                      {rowReason}
                     </td>
                   </tr>
                 )}

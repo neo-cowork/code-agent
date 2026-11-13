@@ -2,11 +2,16 @@
 // 工具权限分类解析（从 toolExecutor.execute 收拢，god-file debt 门：>1000 有效行）
 // ============================================================================
 
-import { classifyPermission, type ClassificationResult } from './permissionClassifier';
+import { classifyPermission, type ClassificationContext, type ClassificationResult } from './permissionClassifier';
 import { enforceWriteFenceObligation } from '../sandbox/writeFence';
 import { isExternalSideEffectTool, mustAskUnderAcceptEdits } from './externalSideEffect';
 import { createTraceStep } from '../security/decisionTraceBuilder';
-import { getPermissionModeManager, permissionModeAutoApproves, type PermissionMode } from '../permissions/modes';
+import {
+  getPermissionModeManager,
+  permissionModeAutoApproves,
+  type PermissionMode,
+} from '../permissions/modes';
+import { moreRestrictivePermissionMode } from '../permissions/permissionModeOrdering';
 import { resolveEffectiveSessionMode } from '../permissions/runPolicySnapshot';
 import {
   createHostReason,
@@ -20,6 +25,8 @@ import {
 } from '../../shared/utils/browserComputerActionCatalog';
 import { classifyShellDesktopAutomation } from '../permissions/shellDesktopAutomation';
 import { isBashToolName } from './toolNames';
+import type { BrowserService } from '../services/infra/browserService';
+import { createLogger } from '../services/infra/logger';
 
 type ToolPermissionLevel = Parameters<typeof permissionModeAutoApproves>[1];
 
@@ -32,15 +39,20 @@ interface PermissionedToolShape {
 /**
  * 会话有效权限档：subagent 走父子收缩后的 override（禁止回读父会话档扩权），
  * 主 agent 走会话档单一真源。
- * override 仍过限流钳制：只收紧不放宽，限流发生在 spawn 之后也生效。
+ * 继承自父级的 override 是权限上限，与 run 有效视图取严：子级不能扩权，父 run
+ * 结束后仍能观察会话收紧。独立 override 保持原语义，只叠加动态限流钳制。
  * N-PERM-POLICYVERSION E1：主 agent 分支改读 run 有效视图——外部来源的档位放宽
  * 对已开始的 run 冻结在起点，收紧与用户 UI 放宽仍立即生效。
  */
 export function resolveSessionPermissionMode(
   override: PermissionMode | undefined,
   sessionId?: string,
+  overrideIsInheritedCeiling = false,
 ): PermissionMode {
   if (override !== undefined) {
+    if (overrideIsInheritedCeiling) {
+      return moreRestrictivePermissionMode(override, resolveEffectiveSessionMode(sessionId));
+    }
     return getPermissionModeManager().clampForRateLimit(override, sessionId);
   }
   return resolveEffectiveSessionMode(sessionId);
@@ -92,12 +104,58 @@ export const CLASSIFIER_ERROR_TRACE_RULE = 'classifier_error';
 export const INJECTED_PERMISSION_HANDLER_TRACE_RULE = 'injected_permission_handler';
 const BROWSER_COMPUTER_CONSEQUENCE_TRACE_RULE = 'browser_computer_consequence';
 const BROWSER_COMPUTER_HIGH_RISK_BLOCKED_CODE = 'BROWSER_COMPUTER_HIGH_RISK_BLOCKED';
+const logger = createLogger('ToolPermissionClassification');
+const SUBMIT_CLICK_TEXT_PATTERN = /\b(?:submit|send|pay|order|checkout|confirm)\b|提交|发送|支付|付款|下单|结账|确认/iu;
+const SUBMIT_SELECTOR_PATTERN = /\[\s*type\s*=\s*["']?(?:submit|image)(?:["']|\s*\])/iu;
+type BrowserSubmitProbe = Pick<BrowserService, 'probeSubmitClick'>;
+type BrowserSubmitProbeResolver = () => BrowserSubmitProbe | Promise<BrowserSubmitProbe>;
 
-function classifyBrowserComputerConsequence(
+function browserConsequenceDecision(
+  entry: { tool: string; action: string },
+  decision: 'approve' | 'ask',
+  reason: string,
+  startedAt: number,
+): ClassificationResult {
+  return {
+    decision,
+    reason,
+    hostReason: createHostReason(
+      decision === 'approve'
+        ? HostReasonCode.PermissionClassifierAllowed
+        : HostReasonCode.PermissionClassifierConfirmationRequired,
+      reason,
+      { toolName: entry.tool },
+    ),
+    confidence: 1,
+    cached: false,
+    traceStep: createTraceStep(
+      'permission_classifier',
+      BROWSER_COMPUTER_CONSEQUENCE_TRACE_RULE,
+      decision === 'approve' ? 'allow' : 'ask',
+      reason,
+      startedAt,
+    ),
+  };
+}
+
+function clickArgsLookLikeSubmit(params: Record<string, unknown>): boolean {
+  const candidates = [params.text, params.selector];
+  if (params.targetRef && typeof params.targetRef === 'object' && !Array.isArray(params.targetRef)) {
+    const targetRef = params.targetRef as Record<string, unknown>;
+    candidates.push(targetRef.name, targetRef.textHint, targetRef.selector);
+  }
+  return candidates.some((value) => typeof value === 'string' && (
+    SUBMIT_CLICK_TEXT_PATTERN.test(value)
+      || (value === params.selector && SUBMIT_SELECTOR_PATTERN.test(value))
+  ));
+}
+
+async function classifyBrowserComputerConsequence(
   toolName: string,
   params: Record<string, unknown>,
   startedAt: number,
-): ClassificationResult | null {
+  browserSubmitProbe?: BrowserSubmitProbeResolver,
+): Promise<ClassificationResult | null> {
   const catalogTool = normalizeBrowserComputerCatalogToolName(toolName);
   if (!catalogTool) return null;
   const entry = getStrictBrowserComputerActionCatalogForArgs({
@@ -147,30 +205,51 @@ function classifyBrowserComputerConsequence(
       ),
     };
   }
+  if (
+    entry.tool === 'browser_action'
+    && (entry.action === 'click' || entry.action === 'click_text')
+  ) {
+    let probe: Awaited<ReturnType<BrowserService['probeSubmitClick']>>;
+    try {
+      const probeService = browserSubmitProbe
+        ? await browserSubmitProbe()
+        : (await import('../services/infra/browserService')).browserService;
+      probe = await probeService.probeSubmitClick(params);
+    } catch (error) {
+      probe = {
+        status: 'unknown',
+        cause: error instanceof Error ? error.message : String(error),
+      };
+    }
+    if (probe.status === 'known' && probe.isSubmit) {
+      const method = probe.method || 'GET';
+      const targetHost = probe.targetHost || 'unknown';
+      if (method !== 'GET' || probe.actionCrossOrigin) {
+        const crossOrigin = probe.actionCrossOrigin ? ', cross-origin' : '';
+        const reason = `Browser click submits a form (${method} to ${targetHost}${crossOrigin}) and requires confirmation: ${entry.tool}.${entry.action}`;
+        return browserConsequenceDecision(entry, 'ask', reason, startedAt);
+      }
+      const reason = `Browser click submits a same-origin GET form to ${targetHost}; no confirmation required: ${entry.tool}.${entry.action}`;
+      return browserConsequenceDecision(entry, 'approve', reason, startedAt);
+    }
+    if (probe.status === 'unknown') {
+      const heuristicMatched = clickArgsLookLikeSubmit(params);
+      logger.warn('Browser click submit probe unavailable; applying argument heuristic', {
+        action: entry.action,
+        cause: probe.cause,
+        heuristicMatched,
+      });
+      if (heuristicMatched) {
+        const reason = `Browser click may submit a form (target host unknown; live-target probe unavailable) and requires confirmation: ${entry.tool}.${entry.action}`;
+        return browserConsequenceDecision(entry, 'ask', reason, startedAt);
+      }
+    }
+  }
   const decision = entry.consequence === 'external_side_effect' ? 'ask' : 'approve';
   const reason = decision === 'ask'
     ? `Browser/computer action changes external state and requires confirmation: ${entry.tool}.${entry.action}`
     : `Browser/computer action has no external side effect: ${entry.tool}.${entry.action}`;
-  return {
-    decision,
-    reason,
-    hostReason: createHostReason(
-      decision === 'approve'
-        ? HostReasonCode.PermissionClassifierAllowed
-        : HostReasonCode.PermissionClassifierConfirmationRequired,
-      reason,
-      { toolName: entry.tool },
-    ),
-    confidence: 1,
-    cached: false,
-    traceStep: createTraceStep(
-      'permission_classifier',
-      BROWSER_COMPUTER_CONSEQUENCE_TRACE_RULE,
-      decision === 'approve' ? 'allow' : 'ask',
-      reason,
-      startedAt,
-    ),
-  };
+  return browserConsequenceDecision(entry, decision, reason, startedAt);
 }
 
 /**
@@ -347,6 +426,8 @@ export function userDeniedStickyError(toolName: string, deniedSummary?: string):
  */
 export async function resolveToolPermissionClassification(input: {
   executionToolName: string;
+  sessionId?: string;
+  toolDefinition?: ClassificationContext['toolDefinition'];
   policyToolName: string;
   params: Parameters<typeof classifyPermission>[1];
   policyForcesConfirmation: boolean;
@@ -370,6 +451,8 @@ export async function resolveToolPermissionClassification(input: {
    * （既有审批记忆 once/session/always 语义保留，不另造豁免）。
    */
   launderRetryForcesAsk?: boolean;
+  /** Resolve the run-owned managed browser lazily only for click target probing. */
+  browserSubmitProbe?: BrowserSubmitProbeResolver;
 }): Promise<ClassificationResult> {
   // B1: EXTERNAL 风险类打标，与三分支决策正交、不改变审批结果。所有出口都带上，供 B2/B4/审计消费。
   const external = isExternalSideEffectTool(input.executionToolName);
@@ -440,11 +523,14 @@ export async function resolveToolPermissionClassification(input: {
       ),
     };
   } else {
-    classification = classifyBrowserComputerConsequence(
+    classification = await classifyBrowserComputerConsequence(
       input.executionToolName,
       input.params,
       input.permStartTime,
+      input.browserSubmitProbe,
     ) ?? await classifyPermission(input.policyToolName, input.params, {
+      sessionId: input.sessionId,
+      toolDefinition: input.toolDefinition,
       workingDirectory: input.workingDirectory,
       workspaceRoot: input.workspaceRoot,
       permissionLevel: input.permissionLevel,
@@ -470,6 +556,7 @@ export async function resolveToolPermissionClassification(input: {
     };
   }
   if (classification.decision === 'ask'
+    && !classification.scheduleWriteTargets
     && permissionModeAutoApproves(input.sessionPermissionMode, input.permissionLevel)
     // acceptEdits 只承诺文件编辑免确认：出站 / 不可逆 / 拉起进程的写档工具不升 approve，
     // 兑现设置文案「命令和外部访问仍保留确认」（N-ACCEPTEDITS-EXTERNAL-ASK）。

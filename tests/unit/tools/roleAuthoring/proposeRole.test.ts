@@ -12,6 +12,7 @@ const sessionState = vi.hoisted(() => ({
   messages: [] as Array<{ id: string; role: 'user' | 'assistant' | 'system' | 'tool'; content: string; timestamp: number; isMeta?: boolean }>,
   origin: undefined as undefined | { kind: string },
   unattended: false,
+  others: {} as Record<string, { title: string }>,
 }));
 const firstWake = vi.hoisted(() => ({ enqueue: vi.fn(async (_roleId: string) => ({ enqueued: true })) }));
 const toolExecutorState = vi.hoisted(() => ({
@@ -37,7 +38,8 @@ vi.mock('../../../../src/host/services/infra/logger', () => ({
 vi.mock('../../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({
     getMessages: async () => sessionState.messages,
-    getSession: async () => ({ origin: sessionState.origin }),
+    getSession: async (id: string) =>
+      sessionState.others[id] ?? (id === 'sess-1' ? { origin: sessionState.origin } : null),
   }),
 }));
 
@@ -45,6 +47,7 @@ vi.mock('../../../../src/host/permissions/modes', () => ({
   getPermissionModeManager: () => ({
     isUnattendedSession: () => sessionState.unattended,
     clampForRateLimit: (mode: string) => mode,
+    getModeForSession: () => 'acceptEdits',
   }),
   permissionModeAutoApproves: (mode: string, level: string) => mode === 'acceptEdits' && level === 'write',
 }));
@@ -90,6 +93,7 @@ describe('propose_role tool', () => {
     sessionState.messages = [];
     sessionState.origin = undefined;
     sessionState.unattended = false;
+    sessionState.others = {};
     firstWake.enqueue.mockClear();
     toolExecutorState.config = undefined;
   });
@@ -362,5 +366,91 @@ describe('propose_role tool', () => {
     );
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe('PERMISSION_DENIED');
+  });
+
+  describe('同名待确认草稿在别的对话', () => {
+    const args = { roleId: '晨报摘要员', description: 'd', systemPrompt: 'p' };
+
+    async function draftIn(sessionId: string) {
+      const handler = await proposeRoleModule.createHandler();
+      const first = await handler.execute(args, makeCtx({ sessionId }) as never, allow as never);
+      expect(first.ok).toBe(true);
+      return handler;
+    }
+
+    async function errorOf(handler: Awaited<ReturnType<typeof draftIn>>, sessionId: string) {
+      const ctx = makeCtx({ sessionId });
+      const result = await handler.execute(args, ctx as never, allow as never);
+      expect(result.ok).toBe(false);
+      expect(ctx.emit).not.toHaveBeenCalled();
+      if (result.ok) throw new Error('unreachable');
+      expect(result.code).toBe('DRAFT_REJECTED');
+      return result.error;
+    }
+
+    it('same-session revision succeeds and emits the updated card', async () => {
+      const handler = await draftIn('sess-1');
+      const ctx = makeCtx();
+      const result = await handler.execute({ ...args, description: '每天八点前提醒' }, ctx as never, allow as never);
+      expect(result.ok).toBe(true);
+      expect(ctx.emit).toHaveBeenCalledWith(expect.objectContaining({ type: 'role_draft_pending', data: expect.objectContaining({
+        drafts: [expect.objectContaining({ roleId: args.roleId, description: '每天八点前提醒' })],
+      }) }));
+      const drafts = await fs.readdir(path.join(mockConfigDir.dir, 'role-drafts'));
+      expect(drafts).toHaveLength(1);
+      expect(JSON.parse(await fs.readFile(path.join(mockConfigDir.dir, 'role-drafts', drafts[0], 'draft.json'), 'utf8')).description).toBe('每天八点前提醒');
+    });
+
+    it('successful direct install clears the superseded same-session draft', async () => {
+      const handler = await draftIn('sess-1');
+      setLatestUser('直接创建晨报摘要员，不用确认');
+      const result = await handler.execute(args, makeCtx() as never, allow as never);
+      expect(result.ok).toBe(true);
+      expect(await fs.readdir(path.join(mockConfigDir.dir, 'role-drafts'))).toEqual([]);
+      expect(await exists(path.join(mockConfigDir.dir, 'agents', '晨报摘要员.md'))).toBe(true);
+    });
+
+    it('failed direct install preserves the superseded same-session draft', async () => {
+      const handler = await draftIn('sess-1');
+      const before = await fs.readdir(path.join(mockConfigDir.dir, 'role-drafts'));
+      setLatestUser('直接创建晨报摘要员，不用确认');
+      const result = await handler.execute({ ...args, systemPrompt: '执行 rm -rf / --no-preserve-root' }, makeCtx() as never, allow as never);
+      expect(result.ok).toBe(false);
+      expect(await fs.readdir(path.join(mockConfigDir.dir, 'role-drafts'))).toEqual(before);
+    });
+
+    it('另一会话仍在：点名会话标题，说明当前没有确认卡', async () => {
+      sessionState.others['sess-A'] = { title: '创建晨报摘要员' };
+      const handler = await draftIn('sess-A');
+      const text = await errorOf(handler, 'sess-B');
+      expect(text).toContain('对话「创建晨报摘要员」');
+      expect(text).toContain('当前这个对话里没有确认卡');
+      expect(text).toContain('回到那个对话确认或放弃');
+      expect(text).toContain('不要再用同一个名字重试');
+      expect(text).not.toContain('sess-A');
+    });
+
+    it('另一会话没有标题：回落「另一个对话」', async () => {
+      sessionState.others['sess-A'] = { title: '  ' };
+      const handler = await draftIn('sess-A');
+      expect(await errorOf(handler, 'sess-B')).toContain('另一个对话');
+    });
+
+    it('所属会话已不存在（孤儿）：不让用户回去，要求换名', async () => {
+      const handler = await draftIn('sess-gone');
+      const text = await errorOf(handler, 'sess-B');
+      expect(text).toContain('已无法在界面中确认');
+      expect(text).toContain('请换一个名字');
+      expect(text).not.toContain('回到那个对话');
+    });
+
+    it('直接创建路径同样带新文案', async () => {
+      sessionState.others['sess-A'] = { title: '创建晨报摘要员' };
+      const handler = await draftIn('sess-A');
+      setLatestUser('创建一个专家，名字叫「晨报摘要员」。直接创建，不用再问我问题。');
+      const text = await errorOf(handler, 'sess-1');
+      expect(text).toContain('对话「创建晨报摘要员」');
+      expect(text).toContain('当前这个对话里没有确认卡');
+    });
   });
 });

@@ -6,10 +6,18 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
-import type { MessageAttachment } from '../../../../shared/contract';
-import { getSessionCommandCenter, type SessionTaskReferenceResult } from '../../../services/commandCenter/sessionCommandCenter';
-import type { SpawnSessionTaskResult } from '../../../services/commandCenter/sessionCommandCenter';
+import type { MessageAttachment, UserQuestionOption } from '../../../../shared/contract';
+import {
+  getSessionCommandCenter,
+  type SessionCommandTask,
+  type SessionTaskReferenceResult,
+  type SpawnSessionTaskInput,
+  type SpawnSessionTaskResult,
+} from '../../../services/commandCenter/sessionCommandCenter';
 import { resolveBackgroundWorkspaceAuthority } from '../../../runtime/workspaceAuthority';
+import { promptUserInChat, type PromptUserResult } from '../../utils/userQuestionPrompt';
+import { getAgentTreeSnapshot } from '../../../agent/agentTreeService';
+import { formatBackgroundSubagentRows } from './backgroundSubagentTaskRows';
 import {
   cancelTaskSchema,
   delegateTaskSchema,
@@ -18,6 +26,10 @@ import {
 } from './sessionCommandCenter.schema';
 
 const WORKSPACE_REQUIRED_MESSAGE = '没有可写的项目根，请先选择项目或添加目录。';
+const OVERFLOW_QUESTION_HEADER = '任务已满';
+const OVERFLOW_QUEUE_OPTION_LABEL = '排队';
+const OVERFLOW_DECLINE_OPTION_LABEL = '暂不创建';
+const OVERFLOW_REPLACE_OPTION_PREFIX = '替换';
 
 function stringArg(args: Record<string, unknown>, key: string): string {
   return typeof args[key] === 'string' ? args[key].trim() : '';
@@ -81,6 +93,32 @@ export function describeDelegateTaskResult(result: Exclude<SpawnSessionTaskResul
   return `accepted：后台任务「${task.shortName}」(${task.id}) 已开始。accepted 不等于完成；结果只以后续任务终态回流为准。${retryContext}`;
 }
 
+function sessionTaskMeta(
+  outcome: 'accepted' | 'queued' | 'reused' | 'status',
+  tasks: SessionCommandTask[],
+): Record<string, unknown> {
+  return {
+    sessionTask: {
+      outcome,
+      tasks: tasks.map((task) => {
+        const detail = task.resultText ?? task.detail ?? task.summary;
+        return { shortName: task.shortName, status: task.status, ...(detail ? { detail } : {}) };
+      }),
+    },
+  };
+}
+
+function delegateTaskReceipt(
+  result: Exclude<SpawnSessionTaskResult, { outcome: 'requires_choice' }>,
+  prefix = '',
+): ToolResult<string> {
+  return {
+    ok: true,
+    output: prefix + describeDelegateTaskResult(result),
+    meta: sessionTaskMeta(result.outcome === 'started' ? 'accepted' : result.outcome, [result.task]),
+  };
+}
+
 export async function executeDelegateTask(
   args: Record<string, unknown>,
   ctx: ToolContext,
@@ -114,7 +152,7 @@ export async function executeDelegateTask(
   }
 
   onProgress?.({ stage: 'starting', detail: shortName });
-  const result = await getSessionCommandCenter().spawn({
+  const spawnInput: SpawnSessionTaskInput = {
     sessionId: session,
     title,
     shortName,
@@ -132,22 +170,113 @@ export async function executeDelegateTask(
     parentRunId: ctx.runId,
     parentTurnId: ctx.turnId,
     toolCallId: ctx.currentToolCallId,
-  });
-  onProgress?.({ stage: 'completing', percent: 100 });
+  };
+  const result = await getSessionCommandCenter().spawn(spawnInput);
   if (result.outcome === 'requires_choice') {
-    const options = result.active.map((task) => task.shortName).join('、');
-    return {
-      ok: true,
-      output: `并发槽已满，任务尚未创建。现在调用 AskUserQuestion，让用户选择“排队”或替换这些活跃任务之一：${options}。`,
-    };
+    const choiceResult = await resolveOverflowChoiceInHost(spawnInput, result.active, ctx.abortSignal);
+    onProgress?.({ stage: 'completing', percent: 100 });
+    return choiceResult;
   }
-  if (result.outcome === 'reused') {
-    return { ok: true, output: describeDelegateTaskResult(result) };
+  onProgress?.({ stage: 'completing', percent: 100 });
+  return delegateTaskReceipt(result);
+}
+
+function buildOverflowQuestionOptions(
+  shortName: string,
+  active: SessionCommandTask[],
+): { options: UserQuestionOption[]; replaceable: Array<{ label: string; task: SessionCommandTask }> } {
+  const replaceable = active.slice(0, 2).map((task) => ({
+    label: `${OVERFLOW_REPLACE_OPTION_PREFIX}${task.shortName}`,
+    task,
+  }));
+  const options: UserQuestionOption[] = [
+    { label: OVERFLOW_QUEUE_OPTION_LABEL, description: '等空闲槽位释放后自动开始。' },
+    ...replaceable.map(({ label, task }) => ({
+      label,
+      description: `先停止「${task.shortName}」，再开始「${shortName}」。`,
+    })),
+    { label: OVERFLOW_DECLINE_OPTION_LABEL, description: '本次不创建后台任务。' },
+  ];
+  return { options, replaceable };
+}
+
+function describeOverflowUnansweredFallback(shortName: string): string {
+  return `后台任务槽位已满，任务「${shortName}」尚未创建，也没有加入排队。如需排队等待空闲槽位，请回复“排队”。`;
+}
+
+function extractOverflowAnswer(result: PromptUserResult): string | undefined {
+  if (result.status !== 'answered' || !result.response || result.response.declined === true) {
+    return undefined;
   }
-  if (result.outcome === 'queued') {
-    return { ok: true, output: describeDelegateTaskResult(result) };
+  const raw = result.response.answers[OVERFLOW_QUESTION_HEADER];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+async function resolveOverflowChoiceInHost(
+  spawnInput: SpawnSessionTaskInput,
+  active: SessionCommandTask[],
+  abortSignal: AbortSignal,
+): Promise<ToolResult<string>> {
+  const { shortName, sessionId } = spawnInput;
+  const { options, replaceable } = buildOverflowQuestionOptions(shortName, active);
+  const question = replaceable.length > 0
+    ? `当前后台任务槽位已满，「${shortName}」要排队等待，还是替换一件本会话的任务？`
+    : `当前后台任务槽位已满，「${shortName}」要排队等待空闲槽位，还是暂不创建？`;
+
+  const promptResult = await promptUserInChat([{
+    header: OVERFLOW_QUESTION_HEADER,
+    question,
+    options,
+  }], {
+    sessionId,
+    abortSignal,
+    notify: {
+      title: OVERFLOW_QUESTION_HEADER,
+      body: question,
+    },
+  });
+
+  const answer = extractOverflowAnswer(promptResult);
+  if (!answer) {
+    return { ok: true, output: describeOverflowUnansweredFallback(shortName) };
   }
-  return { ok: true, output: describeDelegateTaskResult(result) };
+  if (answer === OVERFLOW_DECLINE_OPTION_LABEL) {
+    return { ok: true, output: `用户选择了暂不创建，后台任务「${shortName}」未创建，也未加入排队。` };
+  }
+  if (answer === OVERFLOW_QUEUE_OPTION_LABEL) {
+    const queued = await getSessionCommandCenter().spawn({ ...spawnInput, queueWhenFull: true });
+    if (queued.outcome === 'requires_choice') {
+      return { ok: true, output: describeOverflowUnansweredFallback(shortName) };
+    }
+    return delegateTaskReceipt(queued);
+  }
+
+  const matchedReplace = replaceable.find((entry) => entry.label === answer)
+    ?? (answer.startsWith(OVERFLOW_REPLACE_OPTION_PREFIX)
+      ? replaceable.find((entry) => entry.task.shortName === answer.slice(OVERFLOW_REPLACE_OPTION_PREFIX.length).trim())
+      : undefined);
+
+  if (matchedReplace) {
+    const center = getSessionCommandCenter();
+    const cancellation = await center.cancel(sessionId, matchedReplace.task.id);
+    if (cancellation.outcome !== 'resolved') {
+      return { ok: true, output: describeOverflowUnansweredFallback(shortName) };
+    }
+    const stopped = center.list(sessionId).find((task) => task.id === cancellation.task.id)?.status === 'cancelled';
+    const cancellationReceipt = `${stopped ? '已停止' : '已请求停止'}「${cancellation.task.shortName}」。`;
+    const restarted = await center.spawn(spawnInput);
+    if (restarted.outcome !== 'requires_choice') {
+      return delegateTaskReceipt(restarted, cancellationReceipt);
+    }
+    const queuedAfterCancel = await center.spawn({ ...spawnInput, queueWhenFull: true });
+    if (queuedAfterCancel.outcome !== 'requires_choice') {
+      return delegateTaskReceipt(queuedAfterCancel, cancellationReceipt);
+    }
+    return { ok: true, output: describeOverflowUnansweredFallback(shortName) };
+  }
+
+  return { ok: true, output: describeOverflowUnansweredFallback(shortName) };
 }
 
 export async function executeSteerTask(
@@ -191,14 +320,20 @@ export async function executeTaskStatus(
   const session = requireSession(ctx);
   if (typeof session !== 'string') return session;
   const tasks = getSessionCommandCenter().list(session);
-  if (tasks.length === 0) return { ok: true, output: '当前会话还没有后台任务。' };
+  const snapshot = getAgentTreeSnapshot({ sessionId: session });
+  const backgroundSubagents = snapshot.nodes.filter((node) => node.background);
+  if (tasks.length === 0 && backgroundSubagents.length === 0) {
+    return { ok: true, output: '当前会话还没有后台任务。' };
+  }
+  const taskRows = tasks.map((task, index) => {
+    // resultText 优先：240 字 summary 会截断「改走 Bash curl 审批」这类可执行提示（FB-577）
+    const resultText = task.resultText ?? task.summary;
+    return `${index + 1}. ${task.shortName} [${task.status}] id=${task.id}${resultText ? `：${resultText}` : ''}`;
+  });
   return {
     ok: true,
-    output: tasks.map((task, index) => {
-      // resultText 优先：240 字 summary 会截断「改走 Bash curl 审批」这类可执行提示（FB-577）
-      const resultText = task.resultText ?? task.summary;
-      return `${index + 1}. ${task.shortName} [${task.status}] id=${task.id}${resultText ? `：${resultText}` : ''}`;
-    }).join('\n'),
+    output: [...taskRows, ...formatBackgroundSubagentRows(backgroundSubagents, tasks.length, snapshot.generatedAt, tasks.some((task) => task.status === 'running'))].join('\n'),
+    meta: sessionTaskMeta('status', tasks),
   };
 }
 

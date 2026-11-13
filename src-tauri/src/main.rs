@@ -26,11 +26,16 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 mod agent_halo;
 mod appshots;
+mod appshots_hotkey_gate;
+mod menu_i18n;
+use menu_i18n::set_shell_language;
 mod native_app_icon;
 mod native_desktop;
 mod native_manifest;
+mod native_notification;
 mod pip;
 mod quit_guard;
+mod quit_dialog_i18n;
 mod resident_host;
 mod resident_host_windows;
 mod traffic_lights;
@@ -38,10 +43,10 @@ mod webserver_exit;
 mod webserver_supervise;
 
 use appshots::{
-    appshots_last_front_app, appshots_read_image_data_url, appshots_read_image_data_url_by_id,
-    appshots_report_composer_slot, appshots_set_enabled,
-    appshots_set_motion_enabled, appshots_set_target_session, appshots_skip_motion,
-    appshots_trigger, appshots_trigger_for_pid, AppshotsState,
+    appshots_hotkey_status, appshots_last_front_app, appshots_read_image_data_url,
+    appshots_read_image_data_url_by_id, appshots_report_composer_slot, appshots_request_hotkey_access,
+    appshots_set_enabled, appshots_set_motion_enabled, appshots_set_target_session,
+    appshots_skip_motion, appshots_trigger, appshots_trigger_for_pid, AppshotsState,
 };
 use native_app_icon::desktop_get_app_icon;
 use native_desktop::{
@@ -52,6 +57,7 @@ use native_desktop::{
     desktop_stop_audio_rec, desktop_stop_collector, desktop_stop_voice_aec,
     desktop_update_analyze_text, desktop_write_voice_aec_playback, NativeDesktopState,
 };
+use native_notification::post_system_notification;
 use agent_halo::{agent_halo_hide, agent_halo_mode, agent_halo_show, AgentHaloState};
 use pip::{pip_control, pip_controls, pip_frame, pip_hide, pip_show};
 
@@ -2083,6 +2089,7 @@ fn spawn_web_server_recording(
         .current_dir(&working_dir)
         .envs(env::vars())
         .env("CODE_AGENT_TAURI_BOOT_TOKEN", &boot_token)
+        .env("CODE_AGENT_SHELL_EXE", native_notification::shell_executable_path())
         .env("NODE_ENV", web_server_node_env())
         // 测试包用 8181、生产 8180，保证两包同时运行不抢端口（webServer 读 WEB_PORT）
         .env("WEB_PORT", web_port().to_string())
@@ -2477,15 +2484,16 @@ fn spawn_quit_guard_flow(
                     }
                 }
             }
-            quit_guard::QuitDecision::Confirm(prompt) => {
+            quit_guard::QuitDecision::Confirm { prompt, language } => {
                 let offers_background_continue = matches!(
-                    resident_host::quit_dialog_button_set_current(),
+                    resident_host::quit_dialog_button_set_current(language),
                     resident_host::QuitDialogButtonSet::Three { .. }
                 );
                 show_quit_confirm_dialog(
                     &app,
                     &coordinator,
-                    quit_guard::quit_prompt_text(prompt, offers_background_continue),
+                    quit_guard::quit_prompt_text(prompt, offers_background_continue, language),
+                    language,
                     origin,
                 );
             }
@@ -2508,17 +2516,19 @@ fn show_quit_confirm_dialog(
     app: &AppHandle,
     coordinator: &Arc<quit_guard::QuitCoordinator>,
     message: &str,
+    language: quit_guard::QuitDialogLanguage,
     origin: QuitFlowOrigin,
 ) {
     use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult};
 
-    let button_set = resident_host::quit_dialog_button_set_current();
+    let button_set = resident_host::quit_dialog_button_set_current(language);
+    let dialog_copy = quit_dialog_i18n::dialog_copy(language);
 
     let app = app.clone();
     let coordinator = coordinator.clone();
     app.dialog()
         .message(message)
-        .title(quit_guard::QUIT_DIALOG_TITLE)
+        .title(dialog_copy.title)
         .kind(MessageDialogKind::Warning)
         .buttons(match button_set {
             resident_host::QuitDialogButtonSet::Three { .. } => {
@@ -2547,7 +2557,7 @@ fn show_quit_confirm_dialog(
             };
             let plan = quit_guard::quit_exit_plan(
                 // 按钮组没提供「后台继续」时，该标签即使到达也按取消处理（防御）
-                resident_host::dialog_answer_action_gated(custom_label.as_deref(), button_set),
+                button_set.dialog_answer_action(custom_label.as_deref()),
                 // Windows：stdin EOF 是停机指令，退壳会关掉写端。unix 不是。
                 cfg!(not(unix)),
             );
@@ -2752,6 +2762,7 @@ fn install_mac_application_terminate_guard(app: &tauri::App) {
 fn setup_app_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     install_mac_application_terminate_guard(app);
     let handle = app.handle();
+    let labels = menu_i18n::read_language(real_data_dir().as_deref()).labels();
     let pkg_info = handle.package_info();
     let about_metadata = AboutMetadata {
         name: Some(pkg_info.name.clone()),
@@ -2768,12 +2779,14 @@ fn setup_app_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         &[
             &PredefinedMenuItem::about(handle, None, Some(about_metadata))?,
             &PredefinedMenuItem::separator(handle)?,
+            &MenuItem::with_id(handle, "open_settings", labels.settings, true, Some("Cmd+,"))?,
+            &PredefinedMenuItem::separator(handle)?,
             &PredefinedMenuItem::services(handle, None)?,
             &PredefinedMenuItem::separator(handle)?,
             &PredefinedMenuItem::hide(handle, None)?,
             &PredefinedMenuItem::hide_others(handle, None)?,
             &PredefinedMenuItem::separator(handle)?,
-            &MenuItem::with_id(handle, "quit_app", "退出 Agent Neo", true, Some("Cmd+Q"))?,
+            &MenuItem::with_id(handle, "quit_app", labels.quit, true, Some("Cmd+Q"))?,
         ],
     )?;
 
@@ -4008,18 +4021,20 @@ mod update_url_tests {
 }
 
 fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    let labels = menu_i18n::read_language(real_data_dir().as_deref()).labels();
     let menu = MenuBuilder::new(app)
-        .text("quick_ask", "快速提问")
-        .text("new_chat", "新建对话")
-        .text("paste_context", "粘贴为上下文")
+        .text("quick_ask", labels.quick_ask)
+        .text("new_chat", labels.new_chat)
+        .text("paste_context", labels.paste_context)
         .separator()
         // 不用预定义 .quit()：它走 muda 的 terminate:/PostQuitMessage，绕过
         // ExitRequested，守卫拦不到。自定义项与 ⌘Q 走同一受守卫入口。
-        .text("quit_app", "退出 Agent Neo")
+        .text("quit_app", labels.quit)
         .build()?;
     const TRAY_ICON: tauri::image::Image<'_> = include_image!("./icons/tray-template.png");
 
-    let _tray = TrayIconBuilder::new()
+    app.manage(menu_i18n::TrayMenu(menu.clone()));
+    let _tray = TrayIconBuilder::with_id(menu_i18n::TRAY_ID)
         .icon(TRAY_ICON)
         .icon_as_template(true)
         .tooltip("Agent Neo")
@@ -4475,6 +4490,7 @@ fn setup_global_shortcut(app: &tauri::App) -> Result<(), Box<dyn std::error::Err
 }
 
 fn main() {
+    native_notification::dispatch_notify_only();
     // T2 工单：必须在 Tauri 创建任何窗口（含 WebView2）/webServer 子进程之前
     // 完成，否则后创建的子孙进程赶不上加入 Job（见函数注释）。非 Windows 平台
     // 是空操作。
@@ -4531,6 +4547,8 @@ fn main() {
             desktop_control_voice_aec,
             desktop_stop_voice_aec,
             desktop_get_app_icon,
+            post_system_notification,
+            set_shell_language,
             appshots_trigger,
             appshots_last_front_app,
             appshots_trigger_for_pid,
@@ -4541,6 +4559,8 @@ fn main() {
             appshots_skip_motion,
             appshots_set_target_session,
             appshots_set_motion_enabled,
+            appshots_hotkey_status,
+            appshots_request_hotkey_access,
             pip_show,
             pip_frame,
             pip_controls,
@@ -4553,6 +4573,7 @@ fn main() {
             renderer_ready
         ])
         .setup(|app| {
+            native_notification::install_notification_delegate(app.handle().clone(), request_main_window_focus);
             // 必须在 spawn webServer 之前：决定本进程（含 node 子进程）的数据目录通道。
             apply_channel_env(&app.handle());
             let mut boot_diagnostics = new_boot_diagnostics(&app.handle());
@@ -4802,6 +4823,10 @@ fn main() {
         }
         // quit_app 的唯一消费点：app 菜单（⌘Q/菜单退出）与托盘退出都汇到这里，
         // 统一转 exit(0) → ExitRequested 的受守卫路径。
+        RunEvent::MenuEvent(event) if event.id().as_ref() == "open_settings" => {
+            let _ = request_main_window_focus(app_handle);
+            app_handle.emit("menu:open-settings", ()).ok();
+        }
         RunEvent::MenuEvent(event) if event.id().as_ref() == "quit_app" => {
             app_handle.exit(0);
         }

@@ -26,6 +26,7 @@ import type {
   RoleFirstWakeStateName,
 } from '../../../shared/contract/roleAssets';
 import type { CapabilityCenterItem } from '../../../shared/contract/capability';
+import type { Message } from '../../../shared/contract/message';
 import { getAgentsMdDir } from '../../config/configPaths';
 import { parseAgentMdVisual } from '../../agent/hybrid/agentMdLoader';
 import { getRoleFirstWakePath, isSafeRoleId } from './roleAssetPaths';
@@ -239,7 +240,7 @@ function expectationLine(userExpectation: string): string[] {
  * 擅长什么/第一次醒来」，只讲这次实际看到了什么（含读取失败的部分）。
  */
 const FIRST_WAKE_PROMPT_CONNECTED = (sourceNames: readonly string[], userExpectation: string): string => [
-  '你刚被用户创建为一位持久化专家，此刻是创建后的第一次巡览。这不是用户发来的消息，用户现在不在场。',
+  ROLE_ASSETS.FIRST_WAKE_PROMPT_HEAD,
   '',
   ...expectationLine(userExpectation),
   '当前已连接的数据源：',
@@ -267,7 +268,7 @@ const FIRST_WAKE_PROMPT_CONNECTED = (sourceNames: readonly string[], userExpecta
  * 同 2026-11-05 返修：不复述名字/职责，不提第一次醒来。
  */
 const FIRST_WAKE_PROMPT_NONE = (userExpectation: string): string => [
-  '你刚被用户创建为一位持久化专家，此刻是创建后的第一次巡览。这不是用户发来的消息，用户现在不在场。',
+  ROLE_ASSETS.FIRST_WAKE_PROMPT_HEAD,
   '',
   ...expectationLine(userExpectation),
   '当前没有任何已连接的数据源，你没有可查看的真实数据，也不要做任何工具探查。',
@@ -423,6 +424,7 @@ async function defaultFirstWakeRunner(input: {
       await orchestrator.sendMessage(input.prompt, undefined, {
         mode: 'normal',
         inputSource: 'automation',
+        inputHistoryVisibility: 'meta',
         systemInstructions: [UNATTENDED_TRUST_NOTICE],
         disableAutoAgent: true,
         agentOverrideId: input.roleId,
@@ -465,6 +467,16 @@ async function defaultFirstWakeRunner(input: {
     config.originKind = 'headless';
     config.allowedToolNames = input.allowedToolNames;
 
+    const firstWakeUserMessage: Message = {
+      id: `first-wake-user-${Date.now()}`,
+      role: 'user',
+      content: input.prompt,
+      timestamp: Date.now(),
+      isMeta: true,
+      source: 'system',
+    };
+    await sessionManager.addMessageToSession(input.sessionId, firstWakeUserMessage);
+
     let lastEventAssistantContent = '';
     const agentLoop = createAgentLoop(
       config,
@@ -476,14 +488,7 @@ async function defaultFirstWakeRunner(input: {
           }
         }
       },
-      [
-        {
-          id: `first-wake-user-${Date.now()}`,
-          role: 'user',
-          content: input.prompt,
-          timestamp: Date.now(),
-        },
-      ],
+      [firstWakeUserMessage],
       input.sessionId,
     );
     await agentLoop.run(input.prompt);
@@ -575,6 +580,47 @@ export async function skipFirstWake(roleId: string): Promise<{ success: boolean 
     return { success: true };
   } catch (error) {
     logger.warn('First wake skip failed', { roleId, error: String(error) });
+    return { success: false };
+  }
+}
+
+/** 点一条建议：只消费匹配标题，保留其余建议；最后一条消费后封成 skipped。 */
+export async function consumeFirstWakeSuggestion(
+  roleId: string,
+  title: string,
+): Promise<{ success: boolean }> {
+  try {
+    const trimmed = title.trim();
+    if (!isSafeRoleId(roleId) || !trimmed) return { success: false };
+    const current = await readFirstWakeState(roleId);
+    if (!current) {
+      logger.info('First wake suggestion consume missed (state missing)', { roleId, title: trimmed });
+      return { success: true };
+    }
+    if (current.state === 'skipped') {
+      logger.info('First wake suggestion consume missed (already skipped)', { roleId, title: trimmed });
+      return { success: true };
+    }
+    const index = current.suggestions.findIndex((suggestion) => suggestion.title === trimmed);
+    if (index < 0) {
+      logger.info('First wake suggestion consume missed (title not found)', { roleId, title: trimmed });
+      return { success: true };
+    }
+    const suggestions = current.suggestions.filter((_suggestion, suggestionIndex) => suggestionIndex !== index);
+    await writeFirstWakeState(roleId, {
+      ...current,
+      state: suggestions.length === 0 ? 'skipped' : current.state,
+      suggestions,
+    });
+    logger.info('First wake suggestion consumed by user', {
+      roleId,
+      title: trimmed,
+      previousState: current.state,
+      remaining: suggestions.length,
+    });
+    return { success: true };
+  } catch (error) {
+    logger.warn('First wake suggestion consume failed', { roleId, title, error: String(error) });
     return { success: false };
   }
 }

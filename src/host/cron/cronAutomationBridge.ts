@@ -18,6 +18,7 @@ import type {
   SessionAutomationStatus,
   SessionAutomationType,
 } from '../../shared/contract/sessionAutomation';
+import { truncateSummaryAtBoundary } from '../../shared/truncateSummary';
 import { isCronUrgency } from '../../shared/cronUrgency';
 import { readCronPermissionDenied } from './cronNormalizers';
 import { cronSourceSessionIdFromDefinition } from '../../shared/cronWriteScope';
@@ -60,7 +61,7 @@ function readCronReviewSummaryLine(summary: string | undefined): string | undefi
     .split(/\r?\n/)
     .map((item) => item.trim())
     .find((item) => item.length > 0 && !/^urgency\s*:/i.test(item));
-  return line ? line.slice(0, 120) : undefined;
+  return line ? truncateSummaryAtBoundary(line, 120) : undefined;
 }
 
 function readCronReviewDigest(
@@ -69,12 +70,15 @@ function readCronReviewDigest(
 ): NonNullable<SessionAutomationConfig['pendingReview']>['digest'] | undefined {
   if (!isRecord(value) || !Array.isArray(value.artifacts)) return undefined;
   const summary = typeof value.summary === 'string' ? value.summary : undefined;
-  const summaryLine = readCronReviewSummaryLine(summary);
+  const fullSummary = typeof value.fullSummary === 'string' ? value.fullSummary : summary;
+  const summaryLine = readCronReviewSummaryLine(fullSummary);
+  const summaryText = fullSummary?.split(/\r?\n/).filter((line) => !/^\s*urgency\s*:/i.test(line)).join('\n').trim();
   const artifacts = resolveCronArtifactsForReview(value.artifacts, cwd);
   if (artifacts.length === 0 && !summaryLine) return undefined;
   return {
     artifactCount: artifacts.length > 0 ? artifacts.length : value.artifacts.length,
     ...(summaryLine ? { summaryLine } : {}),
+    ...(summaryText && summaryText !== summaryLine ? { summaryText } : {}),
     ...(artifacts.length > 0 ? { artifacts } : {}),
   };
 }

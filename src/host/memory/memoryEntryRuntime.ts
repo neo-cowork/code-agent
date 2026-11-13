@@ -31,6 +31,7 @@ import {
 import { hashInboxContent } from './knowledgeInboxDecision';
 import { resolveProjectMemoryKey } from './projectMemoryKey';
 import {
+  mergeLightWithMirrorUsage,
   scopeMatches,
   scoreMemoryEntry,
   tokenizeQuery,
@@ -348,6 +349,8 @@ export function storedMemoryToEntry(memory: MemoryRecord): MemoryEntry {
     confidence: memory.confidence,
     createdAt: memory.createdAt,
     updatedAt: memory.updatedAt,
+    accessCount: memory.accessCount,
+    lastAccessedAt: memory.lastAccessedAt ?? null,
   };
 }
 
@@ -451,7 +454,7 @@ export function createMemoryMirrorRecord(
 }
 
 /** 列表附带「最近一次变更」标记（后台写入可见）。读失败只 warn，不连累列表本身。 */
-function annotateLastChange(entries: MemoryEntry[], db: MemoryEntryDatabase | undefined): void {
+export function annotateLastChange(entries: MemoryEntry[], db: MemoryEntryDatabase | undefined): void {
   if (!db || typeof db.latestMemoryChanges !== 'function') return;
   try {
     const changes = db.latestMemoryChanges();
@@ -477,11 +480,7 @@ export async function listUnifiedMemoryEntries(db?: MemoryEntryDatabase): Promis
   const dbEntries = db
     ? db.listMemories({ includeArchived: true, includeCandidates: true, limit: 500, orderBy: 'updated_at', orderDir: 'DESC' }).map(storedMemoryToEntry)
     : [];
-  const lightEntryIds = new Set(lightEntries.map((entry) => entry.id));
-  const entries = [
-    ...lightEntries,
-    ...dbEntries.filter((entry) => !(entry.source.sourceOfTruth === 'light_file' && lightEntryIds.has(entry.id))),
-  ].sort((a, b) => b.updatedAt - a.updatedAt);
+  const entries = mergeLightWithMirrorUsage(lightEntries, dbEntries).sort((a, b) => b.updatedAt - a.updatedAt);
 
   annotateLastChange(entries, db);
   return {

@@ -14,6 +14,8 @@ import { useAppStore } from '../../../stores/appStore';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { FileInfo } from '@shared/contract';
 import { isPreviewable } from '../../../utils/previewable';
+import { useI18n } from '../../../hooks/useI18n';
+import { pickWorkingDirectory } from '../../../services/workingDirectoryPicker';
 
 // ── Helpers ──
 
@@ -383,17 +385,15 @@ const FileTreeNode: React.FC<{
 // ── TabBar ──
 
 const TabBar: React.FC<{ actions: React.ReactNode }> = ({ actions }) => {
+  const { t } = useI18n();
   const { tabs, activeTabId, setActiveTab, closeTab, openOrFocusTab } = useExplorerStore();
   const workingDirectory = useAppStore((s) => s.workingDirectory);
 
   const handleAddTab = useCallback(async () => {
     // Use workspace select directory
     try {
-      const response = await window.domainAPI?.invoke<string>(
-        IPC_DOMAINS.WORKSPACE, 'selectDirectory', {}
-      );
-      if (response?.success && response.data) {
-        const dirPath = response.data;
+      const dirPath = await pickWorkingDirectory(t.sidebar.selectDirectoryTitle);
+      if (dirPath) {
         const label = dirPath.split('/').pop() || dirPath;
         openOrFocusTab(dirPath, label);
       }
@@ -404,7 +404,7 @@ const TabBar: React.FC<{ actions: React.ReactNode }> = ({ actions }) => {
         openOrFocusTab(workingDirectory, label);
       }
     }
-  }, [openOrFocusTab, workingDirectory]);
+  }, [openOrFocusTab, t.sidebar.selectDirectoryTitle, workingDirectory]);
 
   return (
     <div className="flex min-w-0 items-center justify-between gap-1 px-1">

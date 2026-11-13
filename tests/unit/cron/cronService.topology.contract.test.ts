@@ -41,7 +41,7 @@ describe('cron agent 会话拓扑标注接线', () => {
 
   it('cronService 把 action.urgencyCriteria 与 action.notifyWhen 接进 buildCronAgentPrompt（N-CRON-MORNING-TRIAGE-URGENCY-RULE / N-CRON-RESTATE-HUMAN-WHEN）', () => {
     expect(cronAgentActionSource).toMatch(
-      /buildCronAgentPrompt\(\s*action\.prompt\s*,\s*previousSnapshot\s*,\s*snapshotTrackingEnabled\s*,\s*undefined\s*,\s*action\.urgencyCriteria\s*,\s*action\.notifyWhen\s*\)/,
+      /buildCronAgentPrompt\(\s*action\.prompt\s*,\s*previousSnapshot\s*,\s*snapshotTrackingEnabled\s*,\s*undefined\s*,\s*action\.urgencyCriteria\s*,\s*action\.notifyWhen\s*(?:,[\s\S]{0,120}?)?\)/,
     );
   });
 
@@ -60,7 +60,7 @@ describe('cron agent 会话拓扑标注接线', () => {
       /if \(!quietWatchRound && !notifyQuietRound\) \{[\s\S]{0,400}deliverCronResult\(/,
     );
     expect(cronAgentActionSource).toMatch(
-      /buildCronAgentActionResult\(action, result, cronSession\.id, finalAssistantText, quietWatchRound, notifyQuietRound, permissionDenied\)/,
+      /buildCronAgentActionResult\(action, result, cronSession\.id, finalAssistantText, quietWatchRound, notifyQuietRound, permissionDenied, artifactContext\)/,
     );
   });
 

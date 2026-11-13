@@ -2,50 +2,26 @@
 // Workspace IPC Handlers - workspace:* 通道
 // ============================================================================
 
-import type { IpcMain, AppWindow } from '../platform';
-import { dialog } from '../platform';
+import { dialog, type IpcMain, type AppWindow } from '../platform';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('WorkspaceIPC');
 import { WorkspaceSchemas, type WorkspaceDomainRequest } from '../../shared/ipc/schemas/workspace';
 import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import { IPC_CHANNELS } from '../../shared/ipc/legacy-channels';
 import { handleSaveTextToDownloads, handleSaveBinaryToDownloads } from './workspaceSaveExport';
 import { htmlToPdf, imageToPdf } from '../services/design/pdfExport';
-import {
-  handleExportCanvasPptx,
-  handleGenerateSlidesDeck,
-  handleGenerateSlidesOutline,
-  handleGenerateSlidesPreview,
-  type GenerateSlidesDeckPayload,
-  type GenerateSlidesOutlinePayload,
-  type GenerateSlidesPreviewPayload,
-} from './workspaceSlidesExport';
+import { handleExportCanvasPptx, handleGenerateSlidesDeck, handleGenerateSlidesOutline, handleGenerateSlidesPreview, type GenerateSlidesDeckPayload, type GenerateSlidesOutlinePayload, type GenerateSlidesPreviewPayload } from './workspaceSlidesExport';
 import { assertWithinDesignDir } from './workspaceDesignPaths';
-import {
-  listBrands as registryListBrands,
-  saveBrand as registrySaveBrand,
-  deleteBrand as registryDeleteBrand,
-  setActiveBrand as registrySetActiveBrand,
-} from '../services/design/brandRegistry';
+import { listBrands as registryListBrands, saveBrand as registrySaveBrand, deleteBrand as registryDeleteBrand, setActiveBrand as registrySetActiveBrand } from '../services/design/brandRegistry';
 import type { BrandContract } from '../../shared/contract/brandContract';
 import { extractBrandFromImage as registryExtractBrand } from '../services/design/brandExtract';
 import { handleGetConfigScope } from './workspaceConfigScope';
-import {
-  handleExportBundle,
-  handleInspectArchive,
-  handleInspectPresentation,
-  handlePreviewPresentation,
-  type WorkspaceExportBundlePayload,
-} from './workspaceArchive.ipc';
+import { handleExportBundle, handleInspectArchive, handleInspectPresentation, handlePreviewPresentation, type WorkspaceExportBundlePayload } from './workspaceArchive.ipc';
 import { classifyPreviewFile, previewHeic, previewLegacyOffice, readTextPreview } from './workspacePreviewFormats';
-import {
-  getPublishState,
-  listPublishedVersions,
-  publishVersion,
-} from '../tools/modules/document/publishedVersions';
+import { getPublishState, listPublishedVersions, publishVersion } from '../tools/modules/document/publishedVersions';
 import { resolveArtifactStandingRefresh } from '../cron/artifactStandingRefresh';
-import {
-  getShareLink,
-  pushLatestToShareLink,
-} from '../tools/modules/document/shareLink';
+import { getShareLink, pushLatestToShareLink } from '../tools/modules/document/shareLink';
 import { handleWorkspaceShareLinkAction } from './workspaceShareLink.ipc';
 export { handleExportBundle, handleInspectArchive, handleInspectPresentation };
 // buildConfigScopeSummary 历史上是 workspace.ipc 的公开导出，保持向后兼容（测试依赖）。
@@ -58,7 +34,6 @@ import type { ConfigService } from '../services';
 import { readDesignMdSummary } from '../../design/design-md-loader';
 import { IMAGE_MODELS, VIDEO_MODELS } from '../../shared/constants/visualModels';
 import { getConfigService } from '../services/core/configService';
-import { getDefaultWorkDirectory } from '../config/configPaths';
 import {
   getDashscopeApiKey,
   getZhipuOfficialApiKey,
@@ -90,6 +65,11 @@ import {
   getUserBrowserLinkService,
   type UserBrowserLinkService,
 } from '../services/surfaceExecution/UserBrowserLinkService';
+import {
+  adoptKeptResultPageHandler,
+  getKeptResultPageHandler,
+  resolveUserBrowserWorkspace,
+} from './workspaceKeptResultPage';
 
 
 // 设计媒介生成 handlers（出图/参考图/标注重绘/导入/局部重绘/扩图/去水印/视频）
@@ -203,14 +183,17 @@ async function handleSelectDirectory(
   getConfigService: () => ConfigService | null,
 ): Promise<string | null> {
   const mainWindow = getMainWindow();
-  if (!mainWindow) return null;
+  if (!mainWindow) { logger.warn('selectDirectory aborted: no main window'); return null; }
 
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ['openDirectory'],
     title: 'Select Working Directory',
   });
 
-  if (result.canceled || result.filePaths.length === 0) return null;
+  if (result.canceled || result.filePaths.length === 0) {
+    logger.warn('selectDirectory aborted: dialog stub returned canceled or empty filePaths');
+    return null;
+  }
 
   const selectedPath = result.filePaths[0];
   const appService = getAppService();
@@ -788,34 +771,6 @@ async function handleExtractBrandFromImage(payload: { dataUrl?: string; imagePat
   return registryExtractBrand(input);
 }
 
-/**
- * 用户浏览器链路（open / history / 画面透传）的 workspace 解析。
- * 快速对话常无 workingDirectory：按会话目录 → getDefaultWorkDirectory() 兜底，
- * 三条 IPC 必须同口径，否则「能开页看得见画面，却点不动/退不了」
- * （2026-08-05 R2 真机：open 有兜底、dispatch/history 没有）。
- */
-async function resolveUserBrowserWorkspace(
-  conversationId: string | undefined,
-  workspace?: string | null,
-): Promise<string> {
-  let resolved = workspace?.trim() || undefined;
-  if (!resolved && conversationId?.trim()) {
-    try {
-      const { getSessionManager } = await import('../services/infra/sessionManager');
-      resolved = (await getSessionManager().getSession(conversationId.trim(), 1))?.workingDirectory ?? undefined;
-    } catch {
-      // DB 未初始化/会话缺失时不阻断：落到默认 work 目录（单测与冷启动同路径）
-      resolved = undefined;
-    }
-  }
-  if (!resolved) {
-    const fsMod = await import('fs');
-    resolved = getDefaultWorkDirectory();
-    await fsMod.promises.mkdir(resolved, { recursive: true });
-  }
-  return resolved;
-}
-
 // ----------------------------------------------------------------------------
 // Public Registration
 // ----------------------------------------------------------------------------
@@ -826,7 +781,7 @@ interface WorkspaceRouteCtx {
   getConfigService: () => ConfigService | null;
   getUserBrowserLinks: () => Pick<
     UserBrowserLinkService,
-    'open' | 'end' | 'history' | 'dispatchUserInput' | 'setViewport'
+    'open' | 'end' | 'history' | 'dispatchUserInput' | 'setViewport' | 'adopt' | 'keptState'
   >;
 }
 
@@ -995,6 +950,9 @@ const workspaceRoutes = defineDomainRoutes<WorkspaceDomainRequest, WorkspaceRout
       ),
     });
   },
+  // N-BROWSER-KEEP-RESULT-PAGE：kept 结果页三态查询 + 用户认领（不导航，接上活窗）。
+  getKeptResultPage: ({ getUserBrowserLinks }, payload) => getKeptResultPageHandler(getUserBrowserLinks(), payload),
+  adoptKeptResultPage: ({ getUserBrowserLinks }, payload) => adoptKeptResultPageHandler(getUserBrowserLinks(), payload),
   controlUserBrowserHistory: async ({ getUserBrowserLinks }, payload) => {
     // 与 openLinkInRail 同兜底：快速对话 workingDirectory 为空时不能卡死后退/刷新
     // （R2 真机：导航成功但 history 因 workspace 必填静默失败）。
@@ -1175,7 +1133,7 @@ export function registerWorkspaceHandlers(
   getConfigService: () => ConfigService | null,
   getUserBrowserLinks: () => Pick<
     UserBrowserLinkService,
-    'open' | 'end' | 'history' | 'dispatchUserInput' | 'setViewport'
+    'open' | 'end' | 'history' | 'dispatchUserInput' | 'setViewport' | 'adopt' | 'keptState'
   > = getUserBrowserLinkService,
 ): void {
   installDomainRoutes(ipcMain, workspaceRoutes, { getMainWindow, getAppService, getConfigService, getUserBrowserLinks });

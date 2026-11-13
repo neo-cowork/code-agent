@@ -1,3 +1,4 @@
+import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 import React from 'react';
 import { X } from 'lucide-react';
 import { IconButton, Modal } from '../../primitives';
@@ -14,6 +15,7 @@ import type {
 import type { Task } from '@shared/contract/backgroundTask';
 import type { ScriptRunSnapshot } from '@shared/contract/scriptRun';
 import { useI18n } from '../../../hooks/useI18n';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import { formatDateTime } from '../../../utils/formatDateTime';
 import type { SessionReplayEvidence } from '../../../utils/sessionReplayEvidence';
 import {
@@ -167,7 +169,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
     <Modal
       isOpen={true}
       onClose={onClose}
-      title={sessionTitle}
+      title={getDisplaySessionTitle(sessionTitle, language)}
       size="md"
       className="!w-[80vw] !max-w-[1100px]"
       zIndex={Z_LAYERS.criticalOverlay}
@@ -175,7 +177,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
         <>
           <div className="min-w-0 flex-1">
             <div className="text-xs font-medium uppercase tracking-wide text-badge-accent">Replay</div>
-            <h2 className="mt-1 truncate text-sm font-semibold text-zinc-100">{sessionTitle}</h2>
+            <h2 className="mt-1 truncate text-sm font-semibold text-zinc-100">{getDisplaySessionTitle(sessionTitle, language)}</h2>
             <p className="mt-1 truncate text-[11px] text-zinc-500">{replay.traceIdentity.replayKey}</p>
           </div>
           <IconButton
@@ -393,7 +395,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                     })}
                     {focusedWorkflowRun.agents.length > 6 && (
                       <div className="px-1 text-[10px] text-zinc-600">
-                        {labels.dialog.moreWorkflowAgents.replace('{count}', String(focusedWorkflowRun.agents.length - 6))}
+                        {interpolatePlural(labels.dialog.moreWorkflowAgents, focusedWorkflowRun.agents.length - 6)}
                       </div>
                     )}
                   </div>
@@ -533,7 +535,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                       })}
                       {snapshot.agents.length > 4 && (
                         <div className="px-1 text-[10px] text-zinc-600">
-                          {labels.dialog.moreWorkflowAgents.replace('{count}', String(snapshot.agents.length - 4))}
+                          {interpolatePlural(labels.dialog.moreWorkflowAgents, snapshot.agents.length - 4)}
                         </div>
                       )}
                     </div>

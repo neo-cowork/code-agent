@@ -1,3 +1,5 @@
+import { renderDataDir } from '../config/renderDataDir';
+
 import { serveStdio, type StdioServerHandle } from '@modelcontextprotocol/server/stdio';
 import { Server } from '@modelcontextprotocol/server';
 import type { Tool } from '@modelcontextprotocol/server';
@@ -325,7 +327,7 @@ export class CodeAgentMCPServer {
           },
           {
             name: 'appshots-query',
-            description: 'List and read Agent Neo\'s persisted window captures (appshots) — read-only history of user-triggered hotkey window snapshots stored under <CODE_AGENT_DATA_DIR or ~/.code-agent>/appshots/. This does NOT trigger a live capture (that needs the running app); it reads past captures from disk. Set includeDataUrl=true (or pass an explicit path inside the appshots dir) to embed a capture\'s PNG as image content.',
+            description: renderDataDir('List and read Agent Neo\'s persisted window captures (appshots) — read-only history of user-triggered hotkey window snapshots stored under <CODE_AGENT_DATA_DIR or ~/.code-agent>/appshots/. This does NOT trigger a live capture (that needs the running app); it reads past captures from disk. Set includeDataUrl=true (or pass an explicit path inside the appshots dir) to embed a capture\'s PNG as image content.'),
             inputSchema: {
               type: 'object',
               properties: {

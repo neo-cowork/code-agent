@@ -16,6 +16,8 @@ import {
 import { SessionCreateBodySchema } from './sessionBodySchemas';
 import type { WebRouteLogger } from './routeTypes';
 import { extractArtifacts } from '../../host/agent/artifactExtractor';
+import { armEnvResumeOnSessionReturn } from '../../host/runtime/envResumeWaiter';
+import { getApplicationRunRegistry } from '../../host/app/applicationRunRegistry';
 import type { DurableRunReadService } from '../../host/app/durableRunReadService';
 import {
   withDurableSessionReplayPayload,
@@ -80,6 +82,7 @@ interface SessionsRouterDeps {
   getSupabaseForSession: () => Promise<SupabaseSessionBinding | null>;
   getDurableRunReadService?: () => DurableRunReadService | undefined;
   getTraceReadService?: () => TraceReadService | undefined;
+  hasActiveRun?: (sessionId: string) => boolean;
 }
 
 type DurableRestoredSessionPayload = DurableSessionPayload & { messages: Message[] };
@@ -222,6 +225,9 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
       if (sm) {
         const session = await sm.restoreSession(sessionId);
         if (session) {
+          // 用户回到会话 = 环境恢复等待的武装时机（ADR-090 §7：重启后不在启动时武装）。
+          // 函数自吞错误，这里的失败绝不拖垮会话加载。
+          armEnvResumeOnSessionReturn(sessionId, getApplicationRunRegistry(), 'GET /sessions/:id');
           const sessionPayload: DurableRestoredSessionPayload = await withDurableSessionReplayPayload(
             session,
             deps.getDurableRunReadService?.(),
@@ -248,7 +254,7 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
               sessionPayload.messages = memMessages as import('../../shared/contract').Message[];
             }
           }
-          res.json({ success: true, data: sessionPayload });
+          res.json({ success: true, data: { ...sessionPayload, activeRun: deps.hasActiveRun?.(sessionId) ?? false } });
           return;
         }
         // SM 找不到会话 — 不要直接返回 NOT_FOUND，继续尝试内存/Supabase 降级
@@ -275,7 +281,7 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
           .eq('is_deleted', false)
           .order('timestamp', { ascending: true });
         const messages = (msgData || []).map(mapSupabaseMessage);
-        res.json({ success: true, data: { ...sessionData, messages, todos: [] } });
+        res.json({ success: true, data: { ...sessionData, messages, todos: [], activeRun: deps.hasActiveRun?.(sessionId) ?? false } });
         return;
       }
       // 内存降级（最后兜底）：返回内存会话 + 缓存的消息
@@ -289,7 +295,7 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
         // 保留已缓存的 toolCalls，不覆盖为空数组（否则 tool-only 助手消息会被前端过滤掉）
         toolCalls: m.toolCalls || [],
       }));
-      res.json({ success: true, data: { ...session, messages, todos: [] } });
+      res.json({ success: true, data: { ...session, messages, todos: [], activeRun: deps.hasActiveRun?.(sessionId) ?? false } });
     } catch (error) {
       logger.error('GET /api/sessions/:id failed:', error);
       res.json({ success: false, error: { code: 'DB_ERROR', message: formatError(error) } });

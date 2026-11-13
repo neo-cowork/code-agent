@@ -119,6 +119,11 @@ const gates = [
     args: ['scripts/attention-budget-ratchet.mjs'],
   },
   {
+    ci: 'swarm-ci / smoke / Renderer i18n plural ratchet',
+    command: 'node',
+    args: ['scripts/i18n-plural-ratchet.mjs'],
+  },
+  {
     ci: 'swarm-ci / smoke / Tool output schema ratchet',
     command: 'npm',
     args: ['run', 'check:tool-output-schemas'],

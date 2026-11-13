@@ -294,6 +294,7 @@ export const NativeConnectorItems: React.FC<NativeConnectorItemsProps> = ({
       const rowBusy = Boolean(busyKey?.startsWith(`${row.id}:`));
       const checkedAt = formatCheckedAt(row.status?.checkedAt, locale);
       const detail = row.status?.error || row.status?.detail;
+      const label = text.grid.labels[row.id as keyof typeof text.grid.labels] ?? row.label;
 
       return (
         <div
@@ -303,7 +304,7 @@ export const NativeConnectorItems: React.FC<NativeConnectorItemsProps> = ({
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm text-zinc-200">{row.label}</span>
+                <span className="text-sm text-zinc-200">{label}</span>
                 <span className={`text-[11px] px-1.5 py-0.5 rounded ${readiness.className}`}>
                   {readiness.label}
                 </span>
@@ -313,7 +314,6 @@ export const NativeConnectorItems: React.FC<NativeConnectorItemsProps> = ({
                   </span>
                 )}
               </div>
-              <div className="mt-1 text-[11px] text-zinc-500">id: {row.id}</div>
               <div className="mt-1 text-[11px] text-zinc-500">
                 {text.availableActionsPrefix}{formatActionLabels(lifecycleActions, text)}
                 {checkedAt ? `${text.lastCheckedPrefix}${checkedAt}` : ''}
@@ -355,7 +355,7 @@ export const NativeConnectorItems: React.FC<NativeConnectorItemsProps> = ({
                         ? 'border-red-500/25 text-badge-danger hover:bg-red-500/10'
                         : 'border-zinc-600 text-zinc-300 hover:bg-zinc-800'
                     }`}
-                    title={`${row.label} ${actionText.label}`}
+                    title={`${label} ${actionText.label}`}
                   >
                     {actionBusy ? (
                       <Loader2 className="w-3 h-3 animate-spin" />
@@ -396,6 +396,7 @@ export const RuntimeConnectorItems: React.FC<RuntimeConnectorItemsProps> = ({
       const rowBusy = Boolean(busyKey?.startsWith(`${row.id}:`));
       const checkedAt = formatCheckedAt(row.checkedAt, locale);
       const detail = row.error || row.detail;
+      const label = text.grid.labels[row.id as keyof typeof text.grid.labels] ?? row.label;
 
       return (
         <div
@@ -404,7 +405,7 @@ export const RuntimeConnectorItems: React.FC<RuntimeConnectorItemsProps> = ({
         >
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm text-zinc-200">{row.label}</span>
+              <span className="text-sm text-zinc-200">{label}</span>
               <span className={`text-[11px] px-1.5 py-0.5 rounded ${readiness.className}`}>
                 {readiness.label}
               </span>
@@ -414,7 +415,6 @@ export const RuntimeConnectorItems: React.FC<RuntimeConnectorItemsProps> = ({
                 </span>
               )}
             </div>
-            <div className="mt-1 text-[11px] text-zinc-500">id: {row.id}</div>
             <div className="mt-1 text-[11px] text-zinc-500">
               {text.capabilitiesPrefix}{formatCapabilities(row.capabilities, text)}
               {checkedAt ? `${text.lastCheckedPrefix}${checkedAt}` : ''}
@@ -443,7 +443,7 @@ export const RuntimeConnectorItems: React.FC<RuntimeConnectorItemsProps> = ({
                     disabled={rowBusy}
                     onClick={() => onLifecycleAction(row.id, action)}
                     className="inline-flex items-center gap-1.5 rounded border border-zinc-600 px-2 py-1 text-[11px] text-zinc-300 transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
-                    title={`${row.label} ${actionText.label}`}
+                    title={`${label} ${actionText.label}`}
                   >
                     {actionBusy ? (
                       <Loader2 className="w-3 h-3 animate-spin" />
@@ -590,6 +590,9 @@ export const NativeConnectorsSection: React.FC<NativeConnectorsSectionProps> = (
           const description = connectorText.grid.descriptions[
             row.id as keyof typeof connectorText.grid.descriptions
           ] ?? `${connectorText.capabilitiesPrefix}${formatCapabilities(row.status?.capabilities ?? [], connectorText)}`;
+          const statusDetail = row.enabled && row.status?.readiness
+            ? connectorText.grid.statusDetail[row.status.readiness]
+            : description;
 
           return (
             <div
@@ -622,7 +625,7 @@ export const NativeConnectorsSection: React.FC<NativeConnectorsSectionProps> = (
                 </div>
               </div>
               <p className="mt-3 text-xs leading-relaxed text-zinc-400">
-                {row.status?.detail || description}
+                {statusDetail}
               </p>
               {lifecycleActions.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-2">

@@ -7,11 +7,14 @@
 //! 纯逻辑（解析/决策/文案/协调器）不依赖 Tauri 类型，可单测；只有
 //! `install_shutdown_observer` 一处碰 objc2（macOS 关机通知）。
 
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+
+use crate::quit_dialog_i18n::prompt_text as localized_prompt_text;
+pub(crate) use crate::quit_dialog_i18n::QuitDialogLanguage;
 
 /// 查询 /api/quit-guard 的总超时（连接+读，reqwest client 的 timeout）。
 /// 超时/连接失败/非 200/解析失败一律按「有任务」处理（Unknown → 弹框）。
@@ -35,29 +38,80 @@ pub enum GuardOutcome {
     Counts {
         active_runs: u64,
         armed_schedules: u64,
+        language: QuitDialogLanguage,
     },
-    Unknown,
+    Unknown {
+        language: QuitDialogLanguage,
+    },
 }
 
-/// 只接受恰好两个非负整数键的 `{"activeRuns":n,"armedSchedules":m}`：
+/// 只接受两个非负整数键和可选语言的响应：
 /// 非 200、缺键、多键、字符串数字、负数、浮点数一律 Unknown。
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct GuardCountsBody {
     active_runs: u64,
     armed_schedules: u64,
+    #[serde(default, deserialize_with = "deserialize_guard_language")]
+    language: GuardLanguageField,
+}
+
+#[derive(Debug, Default)]
+enum GuardLanguageField {
+    #[default]
+    Missing,
+    Null,
+    Value(serde_json::Value),
+}
+
+fn deserialize_guard_language<'de, D>(deserializer: D) -> Result<GuardLanguageField, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    if value.is_null() {
+        Ok(GuardLanguageField::Null)
+    } else {
+        Ok(GuardLanguageField::Value(value))
+    }
 }
 
 pub fn parse_guard_response(status: u16, body: &str) -> GuardOutcome {
     if status != 200 {
-        return GuardOutcome::Unknown;
+        return unknown_outcome(&format!("non-200 status {status}"));
     }
     match serde_json::from_str::<GuardCountsBody>(body) {
-        Ok(counts) => GuardOutcome::Counts {
-            active_runs: counts.active_runs,
-            armed_schedules: counts.armed_schedules,
-        },
-        Err(_) => GuardOutcome::Unknown,
+        Ok(counts) => {
+            let language = match counts.language {
+                GuardLanguageField::Value(serde_json::Value::String(value)) => match QuitDialogLanguage::from_wire(&value) {
+                    Some(language) => language,
+                    None => {
+                        eprintln!("quit-guard: invalid language {value:?}; falling back to zh");
+                        QuitDialogLanguage::Zh
+                    }
+                },
+                GuardLanguageField::Missing => {
+                    eprintln!("quit-guard: missing language; falling back to zh");
+                    QuitDialogLanguage::Zh
+                }
+                GuardLanguageField::Null | GuardLanguageField::Value(_) => {
+                    return unknown_outcome("invalid language type");
+                }
+            };
+            GuardOutcome::Counts {
+                active_runs: counts.active_runs,
+                armed_schedules: counts.armed_schedules,
+                language,
+            }
+        }
+        Err(error) => unknown_outcome(&format!("invalid response: {error}")),
+    }
+}
+
+fn unknown_outcome(reason: &str) -> GuardOutcome {
+    eprintln!("quit-guard: unknown outcome ({reason}); falling back to zh");
+    GuardOutcome::Unknown {
+        language: QuitDialogLanguage::Zh,
     }
 }
 
@@ -79,7 +133,10 @@ pub enum QuitDecision {
     /// 直接退出，不弹框。
     ExitNow,
     /// 弹原生确认框，携带对应文案。
-    Confirm(QuitPrompt),
+    Confirm {
+        prompt: QuitPrompt,
+        language: QuitDialogLanguage,
+    },
 }
 
 /// 豁免类：系统关机 / 已确认的更新重启 / 信号退出。任一命中 → ExitNow。
@@ -96,49 +153,42 @@ pub fn decide_quit(outcome: GuardOutcome, skip: Option<QuitSkip>) -> QuitDecisio
     }
     match outcome {
         // Unknown 宁可多问一次，绝不直接退出
-        GuardOutcome::Unknown => QuitDecision::Confirm(QuitPrompt::Unverified),
+        GuardOutcome::Unknown { language } => QuitDecision::Confirm {
+            prompt: QuitPrompt::Unverified,
+            language,
+        },
         GuardOutcome::Counts {
             active_runs,
             armed_schedules,
+            language,
         } => match (active_runs > 0, armed_schedules > 0) {
             (false, false) => QuitDecision::ExitNow,
-            (true, false) => QuitDecision::Confirm(QuitPrompt::RunningTasks),
-            (false, true) => QuitDecision::Confirm(QuitPrompt::ScheduledTasks),
-            (true, true) => QuitDecision::Confirm(QuitPrompt::Both),
+            (true, false) => QuitDecision::Confirm {
+                prompt: QuitPrompt::RunningTasks,
+                language,
+            },
+            (false, true) => QuitDecision::Confirm {
+                prompt: QuitPrompt::ScheduledTasks,
+                language,
+            },
+            (true, true) => QuitDecision::Confirm {
+                prompt: QuitPrompt::Both,
+                language,
+            },
         },
     }
 }
-
-pub const QUIT_DIALOG_TITLE: &str = "确定要退出 Agent Neo 吗？";
-pub const QUIT_DIALOG_CANCEL_BUTTON: &str = "取消";
-/// N-RESIDENT-HOST-SHELL-RUST：第三个出口「后台继续」——壳退出，常驻宿主继续跑。
-pub const QUIT_DIALOG_BACKGROUND_BUTTON: &str = "后台继续";
-pub const QUIT_DIALOG_QUIT_BUTTON: &str = "停止并退出";
 
 /// 四种弹框文案。`offers_background_continue` 来自按钮组是否含「后台继续」
 /// （调用方用 `resident_host::quit_dialog_button_set_current()`，本模块不反依赖它）。
 /// 三键：先一行现状，再各一行写明两个退出按钮的后果。两键：只说退出会停掉任务，
 /// 不出现「后台继续」。三键默认键是留下任务继续跑，正文因此不写「将被中断」。
-pub fn quit_prompt_text(prompt: QuitPrompt, offers_background_continue: bool) -> &'static str {
-    if offers_background_continue {
-        match prompt {
-            QuitPrompt::RunningTasks => "有任务正在运行。\n后台继续：关闭窗口，任务和定时任务照常运行\n停止并退出：停止全部任务（含定时任务）并退出",
-            QuitPrompt::ScheduledTasks => "当前只有定时任务。停止后这些任务将不再运行。\n后台继续：关闭窗口，任务和定时任务照常运行\n停止并退出：停止全部任务（含定时任务）并退出",
-            QuitPrompt::Both => "有任务正在运行，也有定时任务。\n后台继续：关闭窗口，任务和定时任务照常运行\n停止并退出：停止全部任务（含定时任务）并退出",
-            QuitPrompt::Unverified => "无法确认是否有任务在运行。\n后台继续：关闭窗口，任务和定时任务照常运行\n停止并退出：停止全部任务（含定时任务）并退出",
-        }
-    } else {
-        match prompt {
-            QuitPrompt::RunningTasks => "有任务正在运行。退出将停止这些任务。",
-            QuitPrompt::ScheduledTasks => {
-                "当前只有定时任务。退出将停止这些定时任务，停止后不再运行。"
-            }
-            QuitPrompt::Both => "有任务正在运行，也有定时任务。退出将停止运行中的任务和定时任务。",
-            QuitPrompt::Unverified => {
-                "无法确认是否有任务在运行。退出将停止运行中的任务和定时任务。"
-            }
-        }
-    }
+pub fn quit_prompt_text(
+    prompt: QuitPrompt,
+    offers_background_continue: bool,
+    language: QuitDialogLanguage,
+) -> &'static str {
+    localized_prompt_text(prompt, offers_background_continue, language)
 }
 
 /// 对话框应答 → 动作。`custom_label` 是 tauri-plugin-dialog `show_with_result`
@@ -152,15 +202,6 @@ pub enum QuitAnswerAction {
     /// 后台继续（N-RESIDENT-HOST-SHELL-RUST）：壳退出，常驻宿主继续跑。
     BackgroundContinue,
     Quit,
-}
-
-pub fn dialog_answer_action(custom_label: Option<&str>) -> QuitAnswerAction {
-    match custom_label {
-        Some(QUIT_DIALOG_BACKGROUND_BUTTON) => QuitAnswerAction::BackgroundContinue,
-        Some(QUIT_DIALOG_QUIT_BUTTON) => QuitAnswerAction::Quit,
-        // 「取消」、关闭对话框（None）与一切未知标签 → 不退出
-        Some(QUIT_DIALOG_CANCEL_BUTTON) | None | Some(_) => QuitAnswerAction::StayRunning,
-    }
 }
 
 /// 三种应答各自的收尾计划：要不要清理 webServer、要不要退壳、
@@ -357,7 +398,7 @@ fn is_packaged_resources_path(path: &Path) -> bool {
 pub fn query_quit_guard(base_url: &str, token: Option<&str>, timeout: Duration) -> GuardOutcome {
     // token 缺失/不可读 = 无法鉴权 = Unknown，且绝不发无鉴权请求
     let Some(token) = token else {
-        return GuardOutcome::Unknown;
+        return unknown_outcome("missing auth token");
     };
     let Ok(client) = reqwest::blocking::Client::builder()
         .timeout(timeout)
@@ -365,11 +406,11 @@ pub fn query_quit_guard(base_url: &str, token: Option<&str>, timeout: Duration) 
         .no_proxy()
         .build()
     else {
-        return GuardOutcome::Unknown;
+        return unknown_outcome("client construction failed");
     };
     let url = format!("{base_url}{QUIT_GUARD_PATH}");
     let Ok(response) = client.get(&url).bearer_auth(token).send() else {
-        return GuardOutcome::Unknown;
+        return unknown_outcome("host unreachable");
     };
     let status = response.status().as_u16();
     let body = response.text().unwrap_or_default();
@@ -490,9 +531,24 @@ mod tests {
     const TEST_UUID: &str = "0f1e2d3c-4b5a-6978-897a-6b5c4d3e2f10";
 
     fn counts(active_runs: u64, armed_schedules: u64) -> GuardOutcome {
+        counts_with_language(active_runs, armed_schedules, QuitDialogLanguage::Zh)
+    }
+
+    fn counts_with_language(
+        active_runs: u64,
+        armed_schedules: u64,
+        language: QuitDialogLanguage,
+    ) -> GuardOutcome {
         GuardOutcome::Counts {
             active_runs,
             armed_schedules,
+            language,
+        }
+    }
+
+    fn unknown() -> GuardOutcome {
+        GuardOutcome::Unknown {
+            language: QuitDialogLanguage::Zh,
         }
     }
 
@@ -504,24 +560,24 @@ mod tests {
             (counts(0, 0), QuitDecision::ExitNow),
             (
                 counts(1, 0),
-                QuitDecision::Confirm(QuitPrompt::RunningTasks),
+                QuitDecision::Confirm { prompt: QuitPrompt::RunningTasks, language: QuitDialogLanguage::Zh },
             ),
             (
                 counts(7, 0),
-                QuitDecision::Confirm(QuitPrompt::RunningTasks),
+                QuitDecision::Confirm { prompt: QuitPrompt::RunningTasks, language: QuitDialogLanguage::Zh },
             ),
             (
                 counts(0, 1),
-                QuitDecision::Confirm(QuitPrompt::ScheduledTasks),
+                QuitDecision::Confirm { prompt: QuitPrompt::ScheduledTasks, language: QuitDialogLanguage::Zh },
             ),
             (
                 counts(0, 9),
-                QuitDecision::Confirm(QuitPrompt::ScheduledTasks),
+                QuitDecision::Confirm { prompt: QuitPrompt::ScheduledTasks, language: QuitDialogLanguage::Zh },
             ),
-            (counts(2, 3), QuitDecision::Confirm(QuitPrompt::Both)),
+            (counts(2, 3), QuitDecision::Confirm { prompt: QuitPrompt::Both, language: QuitDialogLanguage::Zh }),
             (
-                GuardOutcome::Unknown,
-                QuitDecision::Confirm(QuitPrompt::Unverified),
+                unknown(),
+                QuitDecision::Confirm { prompt: QuitPrompt::Unverified, language: QuitDialogLanguage::Zh },
             ),
         ];
         for (outcome, expected) in cases {
@@ -540,7 +596,7 @@ mod tests {
             QuitSkip::UpdateRestart,
             QuitSkip::SignalExit,
         ];
-        let outcomes = [counts(0, 0), counts(1, 1), GuardOutcome::Unknown];
+        let outcomes = [counts(0, 0), counts(1, 1), unknown()];
         for skip in skips {
             for outcome in outcomes {
                 assert_eq!(
@@ -566,16 +622,16 @@ mod tests {
             for i in 0..prompts.len() {
                 for j in (i + 1)..prompts.len() {
                     assert_ne!(
-                        quit_prompt_text(prompts[i], offers_background),
-                        quit_prompt_text(prompts[j], offers_background),
+                        quit_prompt_text(prompts[i], offers_background, QuitDialogLanguage::Zh),
+                        quit_prompt_text(prompts[j], offers_background, QuitDialogLanguage::Zh),
                         "offers_background={offers_background} 的文案必须互不相同"
                     );
                 }
             }
         }
         for prompt in prompts {
-            let three = quit_prompt_text(prompt, true);
-            let two = quit_prompt_text(prompt, false);
+            let three = quit_prompt_text(prompt, true, QuitDialogLanguage::Zh);
+            let two = quit_prompt_text(prompt, false, QuitDialogLanguage::Zh);
             println!("three {prompt:?} {three}");
             println!("two {prompt:?} {two}");
             assert_ne!(three, two, "{prompt:?} 两套按钮的文案必须不同");
@@ -587,11 +643,11 @@ mod tests {
             );
             assert!(two.contains("停止"), "{two}");
         }
-        assert!(quit_prompt_text(QuitPrompt::ScheduledTasks, true).contains("不再运行"));
-        assert!(quit_prompt_text(QuitPrompt::ScheduledTasks, false).contains("不再运行"));
-        assert!(quit_prompt_text(QuitPrompt::Unverified, true).contains("无法确认是否有任务在运行"));
+        assert!(quit_prompt_text(QuitPrompt::ScheduledTasks, true, QuitDialogLanguage::Zh).contains("不再运行"));
+        assert!(quit_prompt_text(QuitPrompt::ScheduledTasks, false, QuitDialogLanguage::Zh).contains("不再运行"));
+        assert!(quit_prompt_text(QuitPrompt::Unverified, true, QuitDialogLanguage::Zh).contains("无法确认是否有任务在运行"));
         assert!(
-            quit_prompt_text(QuitPrompt::Unverified, false).contains("无法确认是否有任务在运行")
+            quit_prompt_text(QuitPrompt::Unverified, false, QuitDialogLanguage::Zh).contains("无法确认是否有任务在运行")
         );
     }
 
@@ -627,11 +683,13 @@ mod tests {
             r#"{"activeRuns":-1,"armedSchedules":0}"#,          // 负数
             r#"{"activeRuns":1.5,"armedSchedules":0}"#,         // 浮点
             r#"{"activeRuns":1.0,"armedSchedules":0}"#,         // 整值浮点也算非整数
+            r#"{"activeRuns":1,"armedSchedules":0,"language":42}"#, // language 类型错误
+            r#"{"activeRuns":1,"armedSchedules":0,"language":null}"#, // language null 也算类型错误
         ];
         for body in bad_bodies {
             assert_eq!(
                 parse_guard_response(200, body),
-                GuardOutcome::Unknown,
+                unknown(),
                 "200 + {body} 必须判 Unknown"
             );
         }
@@ -639,7 +697,7 @@ mod tests {
         for status in [401u16, 403, 500, 404, 502] {
             assert_eq!(
                 parse_guard_response(status, r#"{"activeRuns":0,"armedSchedules":0}"#),
-                GuardOutcome::Unknown,
+                unknown(),
                 "status {status} 必须判 Unknown"
             );
         }
@@ -725,10 +783,10 @@ mod tests {
     fn query_quit_guard_returns_counts_and_sends_bearer() {
         let (base_url, requests) = spawn_stub(StubMode::Respond {
             status: 200,
-            body: r#"{"activeRuns":1,"armedSchedules":2}"#,
+            body: r#"{"activeRuns":1,"armedSchedules":2,"language":"en"}"#,
         });
         let outcome = query_quit_guard(&base_url, Some(TEST_UUID), TEST_TIMEOUT);
-        assert_eq!(outcome, counts(1, 2));
+        assert_eq!(outcome, counts_with_language(1, 2, QuitDialogLanguage::En));
         let recorded = requests.lock().expect("stub mutex");
         let raw = recorded.first().expect("stub 应该看到恰好一个请求");
         assert!(
@@ -750,7 +808,7 @@ mod tests {
         });
         assert_eq!(
             query_quit_guard(&base_url, Some(TEST_UUID), TEST_TIMEOUT),
-            GuardOutcome::Unknown
+            unknown()
         );
     }
 
@@ -760,7 +818,7 @@ mod tests {
         let started = std::time::Instant::now();
         let outcome = query_quit_guard(&base_url, Some(TEST_UUID), TEST_TIMEOUT);
         let elapsed = started.elapsed();
-        assert_eq!(outcome, GuardOutcome::Unknown);
+        assert_eq!(outcome, unknown());
         assert!(
             elapsed >= TEST_TIMEOUT,
             "挂死连接应在超时后才返回，实际 {elapsed:?}"
@@ -780,7 +838,7 @@ mod tests {
         let base_url = format!("http://127.0.0.1:{port}");
         assert_eq!(
             query_quit_guard(&base_url, Some(TEST_UUID), TEST_TIMEOUT),
-            GuardOutcome::Unknown
+            unknown()
         );
     }
 
@@ -792,7 +850,7 @@ mod tests {
         });
         assert_eq!(
             query_quit_guard(&base_url, None, TEST_TIMEOUT),
-            GuardOutcome::Unknown
+            unknown()
         );
         thread::sleep(Duration::from_millis(200));
         assert!(
@@ -1036,43 +1094,13 @@ mod tests {
         assert!(coordinator.exit_allowed());
     }
 
-    // ── 对话框应答映射表（N-RESIDENT-HOST-SHELL-RUST 三键版） ────────────────
-
     #[test]
-    fn dialog_answer_action_maps_all_three_labels() {
-        let cases: &[(Option<&str>, QuitAnswerAction)] = &[
-            // 第一个按钮（= 默认回车键 =「取消」）→ 不退出
-            (
-                Some(QUIT_DIALOG_CANCEL_BUTTON),
-                QuitAnswerAction::StayRunning,
-            ),
-            (
-                Some(QUIT_DIALOG_BACKGROUND_BUTTON),
-                QuitAnswerAction::BackgroundContinue,
-            ),
-            (Some(QUIT_DIALOG_QUIT_BUTTON), QuitAnswerAction::Quit),
-            // 关闭对话框（Esc/系统取消 → 非 Custom 变体，main.rs 转 None）→ 不退出
-            (None, QuitAnswerAction::StayRunning),
-            // 未知标签一律按「取消」fail-safe
-            (Some(""), QuitAnswerAction::StayRunning),
-            (Some("退出"), QuitAnswerAction::StayRunning),
-            (Some("whatever"), QuitAnswerAction::StayRunning),
-        ];
-        for (label, expected) in cases {
-            assert_eq!(
-                dialog_answer_action(*label),
-                *expected,
-                "标签 {label:?} 应映射到 {expected:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn quit_dialog_labels_are_pinned() {
-        // 台账验收的三键原文（10-14 负责人拍板），互相必须不同
-        assert_eq!(QUIT_DIALOG_CANCEL_BUTTON, "取消");
-        assert_eq!(QUIT_DIALOG_BACKGROUND_BUTTON, "后台继续");
-        assert_eq!(QUIT_DIALOG_QUIT_BUTTON, "停止并退出");
+    fn invalid_or_missing_language_and_unknown_outcome_fall_back_to_chinese() {
+        let missing = parse_guard_response(200, r#"{"activeRuns":1,"armedSchedules":0}"#);
+        assert_eq!(missing, counts(1, 0));
+        let invalid = parse_guard_response(200, r#"{"activeRuns":1,"armedSchedules":0,"language":"fr"}"#);
+        assert_eq!(invalid, counts(1, 0));
+        assert_eq!(parse_guard_response(500, "{}"), unknown());
     }
 
     // ── 退出收尾计划（quit_exit_plan） ────────────────────────────────────────
@@ -1150,7 +1178,7 @@ mod tests {
             QuitSkip::UpdateRestart,
             QuitSkip::SignalExit,
         ] {
-            for outcome in [counts(1, 1), GuardOutcome::Unknown] {
+            for outcome in [counts(1, 1), unknown()] {
                 assert_eq!(
                     decide_quit(outcome, Some(skip)),
                     QuitDecision::ExitNow,

@@ -20,9 +20,10 @@ import { judgeConversation } from '../../lightMemory/conversationJudge';
 import { skipRunAutomaticMemory } from '../../memory/automaticMemoryPolicy';
 import { writeDurableFacts } from '../../lightMemory/durableFactWriter';
 import { getLangfuseService, getBudgetService, BudgetAlertLevel } from '../../services';
-import { RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../shared/constants';
+import { buildMaxStepsErrorData } from './maxStepsFallback';
 import { logCollector } from '../../mcp/logCollector.js';
 import { createLogger } from '../../services/infra/logger';
+import { buildEmptyFinalError, hasVisibleAssistantTextAfterLastUser } from './emptyFinalError';
 import { trackNode } from '../../observability/posthogNode';
 import { silence } from '../../utils/errorHandling';
 import type { BudgetEventData } from '../../../shared/contract';
@@ -151,33 +152,6 @@ function formatTerminalError(error: unknown): string {
   // 先过模型错误分类：鉴权失败/欠费等换成人话 + 建议（内部错误如 runId 原样透出）
   const raw = error === undefined ? 'Unknown runtime error' : formatThrownError(error);
   return summarizeModelErrorForUser(raw, getModelErrorStatus(error));
-}
-
-/**
- * 「这轮有没有看得见的最终回复」判定：最后一条 user 之后存在正文非空的 assistant。
- * （N-CHAT-EMPTY-FINAL-NO-EXIT：完成必须有非空最终回复，不许用排除法兜底）。
- * 运行中转向（injectSteerMessage）会把 role:'user' 推进同一轮 history，最终回复在转向之后。
- */
-function hasVisibleAssistantTextAfterLastUser(messages: Message[]): boolean {
-  let seenLastUser = false;
-
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message.role === 'user') {
-      seenLastUser = true;
-      break;
-    }
-
-    if (message.role !== 'assistant') {
-      continue;
-    }
-
-    if (typeof message.content === 'string' && message.content.trim().length > 0) {
-      return true;
-    }
-  }
-
-  return !seenLastUser;
 }
 
 function hasTerminalWakeNoopAfterLastUser(messages: Message[]): boolean {
@@ -404,7 +378,7 @@ export class RunFinalizer {
       && this.ctx.unattendedTurn !== true
     ) {
       terminalStatus = 'failed';
-      terminalError = new Error('任务已结束，执行记录和产物已保留。这一轮没有生成最终说明，请直接查看上面的工具结果。');
+      terminalError = buildEmptyFinalError(this.ctx.messages);
     }
 
     const runEvent = getRunTerminalPostHogEvent(terminalStatus);
@@ -507,10 +481,7 @@ export class RunFinalizer {
       // 「部分完成」语义不成立，不带 code 按普通失败退出（ai-review R5 Nit #2005）。
       this.ctx.onEvent({
         type: 'error',
-        data: {
-          message: 'Max iterations reached',
-          ...(this.ctx.maxIterations > 1 ? { code: RUN_ERROR_CODE_MAX_ITERATIONS } : {}),
-        },
+        data: buildMaxStepsErrorData(this.ctx),
       });
 
       // Fire-and-forget: emit StopFailure hook
@@ -551,7 +522,7 @@ export class RunFinalizer {
       this.ctx,
       terminalStatus,
       completionSummary,
-      terminalStatus === 'cancelled' && this.ctx.control.cancelReason === 'idle-reaped' ? 'idle_reaped' : undefined,
+      terminalStatus === 'cancelled' ? (this.ctx.control.cancelReason === 'client-disconnect' ? 'client_disconnect' : this.ctx.control.cancelReason === 'idle-reaped' ? 'idle_reaped' : undefined) : undefined,
     );
 
     await this.emitTurnDiff();
@@ -564,7 +535,7 @@ export class RunFinalizer {
     if (terminalEventType === 'agent_cancelled') {
       this.ctx.onEvent({
         type: 'agent_cancelled',
-        data: this.ctx.control.cancelReason === 'idle-reaped' ? { reason: 'idle_reaped' } : null,
+        data: this.ctx.control.cancelReason === 'client-disconnect' ? { reason: 'client_disconnect' } : this.ctx.control.cancelReason === 'idle-reaped' ? { reason: 'idle_reaped' } : null,
       });
     } else {
       this.ctx.onEvent({ type: terminalEventType, data: null });

@@ -10,10 +10,11 @@
 // 面板不画输入框：对代理续话是后置单 N-SUBAGENT-INPUT。
 // ============================================================================
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Bot, ChevronDown, ChevronRight, Clock, Square, X, Zap } from 'lucide-react';
 import { cancelSwarmRunOrFallback } from '../features/swarm/SwarmInlineMonitor';
 import { useI18n } from '../../hooks/useI18n';
+import { interpolatePlural } from '../../i18n/interpolate';
 import { useSessionAgentRows } from '../../hooks/useSessionAgentRows';
 import { useDurableSwarmRunDetail } from '../../hooks/useDurableSwarmRunDetail';
 import { useSessionStore } from '../../stores/sessionStore';
@@ -21,6 +22,8 @@ import { useAppStore } from '../../stores/appStore';
 import { useSwarmStore } from '../../stores/swarmStore';
 import { useComposerStore } from '../../stores/composerStore';
 import { useMemberViewStore } from '../../stores/memberViewStore';
+import { isTerminalTaskStatus } from '@shared/contract/backgroundTask';
+import { useBackgroundTaskStore } from '../../stores/backgroundTaskStore';
 import { useVoiceLiveRuntime } from '../../hooks/useVoiceLiveRuntime';
 import { deriveAgentMergeState } from '../../utils/agentMergeState';
 import { isAgentRowQuiet } from '../../utils/agentRowStall';
@@ -62,11 +65,17 @@ export const SessionAgentsPanel: React.FC = () => {
   const voiceCallLive = voiceRuntime.phase === 'live' || voiceRuntime.phase === 'connecting';
   const voiceActiveAgentId = voiceRuntime.activeAgentId;
   const [stoppingKey, setStoppingKey] = useState<string | null>(null);
+  const [stopHintKey, setStopHintKey] = useState<string | null>(null);
   const [stoppingAll, setStoppingAll] = useState(false);
+  const [clearingFinished, setClearingFinished] = useState(false);
   const [eventsOpen, setEventsOpen] = useState(false);
 
   const mergeState = deriveAgentMergeState(rows, conflicts);
   const stoppableRows = rows.filter((row) => row.stoppable);
+  // 「清除已结束」只认后台任务行（kind=task + 终态）；成员/专家行不算
+  const hasEndedTaskRows = rows.some((row) => (
+    row.kind === 'task' && row.task !== undefined && isTerminalTaskStatus(row.task.status)
+  ));
   // 「暂无进展」提示需要一个会走的「现在」（agentRowStall）：节拍只在有 working 行时
   // 开，面板空闲/全部收尾即清，不给空闲会话留定时器（与 WorkflowInlineMonitor 同口径）。
   const anyWorking = rows.some((row) => row.status === 'working');
@@ -76,6 +85,16 @@ export const SessionAgentsPanel: React.FC = () => {
     const timer = window.setInterval(() => setHintNow(Date.now()), AGENT_STALL_HINT_TICK_MS);
     return () => window.clearInterval(timer);
   }, [anyWorking]);
+  // 审批放行时刻（按行 key）：hold 从 approval 掉下来的那一刻记下，isAgentRowQuiet 据此重开窗口。
+  // 在渲染期维护（幂等：只由「上一渲染 held → 本渲染不 held」触发），避免 effect 晚一拍导致放行 tick 闪提示。
+  const heldKeysRef = useRef<Set<string>>(new Set());
+  const releasedAtRef = useRef<Map<string, number>>(new Map());
+  const heldNow = new Set(rows.filter((row) => row.hold === 'approval').map((row) => row.key));
+  for (const key of heldKeysRef.current) {
+    if (!heldNow.has(key)) releasedAtRef.current.set(key, Date.now());
+  }
+  for (const key of heldNow) releasedAtRef.current.delete(key);
+  heldKeysRef.current = heldNow;
   const totalTokens = durableDetail
     ? durableDetail.run.totalTokensIn + durableDetail.run.totalTokensOut
     : 0;
@@ -104,8 +123,13 @@ export const SessionAgentsPanel: React.FC = () => {
   const stopRow = async (row: AgentRow) => {
     if (stoppingKey) return;
     setStoppingKey(row.key);
+    setStopHintKey(null);
     try {
-      await stopSessionAgent(row, sessionId, activeRunId ?? undefined);
+      const result = await stopSessionAgent(row, sessionId, activeRunId ?? undefined);
+      if (result !== 'stopped') setStopHintKey(row.key);
+      if (row.kind === 'task') {
+        await useBackgroundTaskStore.getState().refreshTasks().catch(() => undefined);
+      }
     } finally {
       setStoppingKey(null);
     }
@@ -127,12 +151,25 @@ export const SessionAgentsPanel: React.FC = () => {
     }
   };
 
+  const clearFinished = async () => {
+    if (!sessionId || clearingFinished) return;
+    setClearingFinished(true);
+    try {
+      await useBackgroundTaskStore.getState().dismissEndedTasks(sessionId);
+    } catch {
+      // 清除失败时行原样留着，用户可再点；下一轮 3s 轮询会重新对齐
+    } finally {
+      setClearingFinished(false);
+    }
+  };
+
   const statusLabel = (row: AgentRow): string => {
     const labels = text.panel.status;
     if (row.hold === 'approval') return labels.needsApproval;
     if (row.status === 'failed') {
-      return row.failureReason
-        ? `${labels.failed}：${row.failureReason}`
+      const reason = row.failureReason;
+      return reason
+        ? t.chat.delegationReceipt.failureDetail.replace('{status}', labels.failed).replace('{reason}', reason)
         : labels.failed;
     }
     if (row.status === 'cancelled') return labels.stopped;
@@ -140,11 +177,11 @@ export const SessionAgentsPanel: React.FC = () => {
   };
 
   const mergeLabel = mergeState === 'merged'
-    ? text.mergeState.merged.replace('{count}', String(rows.filter((row) => row.status !== 'standby').length))
+    ? interpolatePlural(text.mergeState.merged, rows.filter((row) => row.status !== 'standby').length)
     : mergeState === 'reported'
-      ? text.mergeState.reported.replace('{count}', String(rows.filter((row) => row.status !== 'standby').length))
+      ? interpolatePlural(text.mergeState.reported, rows.filter((row) => row.status !== 'standby').length)
       : mergeState === 'conflict'
-        ? text.mergeState.conflict.replace('{count}', String(conflicts.length))
+      ? interpolatePlural(text.mergeState.conflict, conflicts.length)
         : mergeState === 'waiting'
           ? text.mergeState.waiting
           : null;
@@ -159,9 +196,20 @@ export const SessionAgentsPanel: React.FC = () => {
             data-testid="agents-panel-stop-all"
             onClick={() => { void stopAll(); }}
             disabled={stoppingAll}
-            className="rounded-md px-2 py-1 text-[11px] text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-badge-danger disabled:cursor-not-allowed disabled:opacity-50"
+            className="whitespace-nowrap rounded-md px-2 py-1 text-[11px] text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-badge-danger disabled:cursor-not-allowed disabled:opacity-50"
           >
             {stoppingAll ? text.stopAllStopping : text.stopAll}
+          </button>
+        )}
+        {hasEndedTaskRows && (
+          <button /* ds-allow:button: 面板顶部清除已结束与停止全部同档的超小文本按钮 */
+            type="button"
+            data-testid="agents-panel-clear-finished"
+            onClick={() => { void clearFinished(); }}
+            disabled={clearingFinished}
+            className="whitespace-nowrap rounded-md px-2 py-1 text-[11px] text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {text.clearFinished}
           </button>
         )}
         <button /* ds-allow:button: 关闭右栏是图标级小按钮，Button primitive 无此紧凑图标变体 */
@@ -262,9 +310,17 @@ export const SessionAgentsPanel: React.FC = () => {
                     >
                       {statusLabel(row)}
                     </span>
+                    {stopHintKey === row.key && (
+                      <span
+                        data-testid={`agents-panel-stop-hint-${row.key}`}
+                        className="text-[10px] text-badge-warning"
+                      >
+                        · {text.panel.stopFailedHint}
+                      </span>
+                    )}
                     {/* N-FIX-WF-STALL-SPAWN-AGENT：spawn_agent 静默子代理的行级软提示， */}
                     {/* 文案复用 workflowStall.quiet（与 composer 工具条 90s 提示同一词条）。 */}
-                    {isAgentRowQuiet(row, hintNow) && (
+                    {isAgentRowQuiet(row, hintNow, releasedAtRef.current.get(row.key)) && (
                       <span
                         data-testid={`agents-panel-quiet-${row.key}`}
                         className="truncate text-[10px] text-badge-warning"

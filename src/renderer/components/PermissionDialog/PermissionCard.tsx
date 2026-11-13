@@ -32,8 +32,9 @@ import {
   validateWritebackDraft,
   type WritebackDraft,
 } from './WritebackFields';
-import { defaultPermissionViewMode, isDangerousRequestShape, isSafeDefaultDeny, permissionSummary } from './permissionPresentation';
+import { defaultPermissionViewMode, isGenericCommandRequest, isDangerousRequestShape, isSafeDefaultDeny, permissionSummary } from './permissionPresentation';
 import { isSandboxEscalation, sandboxEscalationDeniedPath, sandboxEscalationQuestion } from './sandboxEscalationPresentation';
+import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
 import { SensitiveStepHandbackCard } from './SensitiveStepHandbackCard';
 import { classifyPermissionDelivery } from './permissionDelivery';
 import { logPermissionClickExit } from '../../services/permissionClickLog';
@@ -70,6 +71,7 @@ function normalizeRequest(
       affectedFileCount: request.details.affectedFileCount,
       targetKind: request.details.targetKind,
       standingGrantTarget: request.details.standingGrantTarget,
+      browserSessionGrant: request.details.browserSessionGrant,
       targetApp: request.details.targetApp,
       triggeredByAgentMessage: request.details.triggeredByAgentMessage,
       method: request.details.method,
@@ -185,11 +187,13 @@ export function PermissionCard({
     isDangerousRequestShape(request);
 
   // forceConfirm 该有的职责一点没松：不许走「会话/始终」这类常驻授权，必须逐次点。
-  const hideStandingGrants = isDangerous || editable || request?.forceConfirm === true || sandboxEscalation;
+  const browserOnceOnly = Boolean(request?.details.browserSessionGrant
+    && (!request.details.browserSessionGrant.target || !['open', 'wait_for_download'].includes(String(request.details.action))));
+  const hideStandingGrants = isDangerous || editable || request?.forceConfirm === true || sandboxEscalation || browserOnceOnly;
 
   const memoryRequest = request ? toMemoryRequest(request) : null;
   const isNewRequest = request !== null && !settled && processedRequestRef.current !== request.id;
-  const memoryResult = memoryRequest && isNewRequest && request?.forceConfirm !== true && !appGrantCard
+  const memoryResult = memoryRequest && isNewRequest && request?.forceConfirm !== true && !appGrantCard && !request?.details.browserSessionGrant
     ? checkMemory(memoryRequest)
     : null;
 
@@ -200,6 +204,10 @@ export function PermissionCard({
       return 'deny';
     }
     switch (level) {
+      case 'run':
+        return 'allow_run';
+      case '24h':
+        return 'allow_24h';
       case 'once':
       case 'always':
         return 'allow';
@@ -232,7 +240,7 @@ export function PermissionCard({
       processedRequestRef.current = request.id;
 
       try {
-        if (!appGrantCard && (level === 'session' || level === 'always' || level === 'never') && request.forceConfirm !== true) {
+        if (!appGrantCard && !request.details.browserSessionGrant && (level === 'session' || level === 'always' || level === 'never') && request.forceConfirm !== true) {
           const memoryReq: PermissionRequestForMemory = {
             id: request.id,
             tool: request.tool,
@@ -365,14 +373,14 @@ export function PermissionCard({
           if (!hideStandingGrants) {
             e.preventDefault();
             e.stopPropagation();
-            handleApproval('session');
+            handleApproval(appGrantCard ? 'session' : 'run');
           }
           break;
         case 'a':
           if (!hideStandingGrants) {
             e.preventDefault();
             e.stopPropagation();
-            handleApproval('always');
+            handleApproval(appGrantCard ? 'always' : '24h');
           }
           break;
       }
@@ -393,6 +401,7 @@ export function PermissionCard({
   const pendingHeaderEnd = remainingCount > 0
     ? <span className="text-xs text-zinc-500">{p.remainingCount.replace('{count}', String(remainingCount))}</span>
     : undefined;
+  const browserCopy = language === 'en' ? browserSessionGrantEn : browserSessionGrantZh;
   const options: DecisionOption[] = editable ? [
     {
       id: 'once',
@@ -416,8 +425,8 @@ export function PermissionCard({
     { id: 'once', label: p.optionOnce, description: p.optionOnceDesc, shortcut: 'y' },
     ...(!hideStandingGrants
       ? [
-          { id: 'session', label: p.optionSession, description: p.optionSessionDesc, shortcut: 's' },
-          { id: 'always', label: p.optionAlways, description: p.optionAlwaysDesc, shortcut: 'a' },
+          { id: 'run', label: request.details.browserSessionGrant ? browserCopy.session : p.optionRun, description: request.details.browserSessionGrant ? browserCopy.sessionDesc : p.optionRunDesc, shortcut: 's' },
+          ...(!request.details.browserSessionGrant ? [{ id: '24h', label: p.option24h, description: p.option24hDesc, shortcut: 'a' }] : []),
         ]
       : []),
     { id: 'deny', label: p.optionDeny, description: p.optionDenyDesc, shortcut: 'n' },
@@ -437,8 +446,18 @@ export function PermissionCard({
   const contentTitle = editable && typeof request.rawArgs?.title === 'string'
     ? request.rawArgs.title.trim()
     : '';
+  const isGenericCommandCard = isGenericCommandRequest(request);
+  const hasDetailFields = Boolean(
+    request.details.command ||
+    request.details.path ||
+    request.details.filePath ||
+    request.details.url ||
+    request.details.changes
+  );
   const title = sandboxEscalation
     ? p.sandboxEscalationTitle
+    : request.details.browserSessionGrant
+    ? browserCopy.title
     : appGrantCard
     ? p.computerApp.title.replace('{app}', request.details.targetApp?.name ?? '')
     : isMeetingCreate
@@ -451,7 +470,13 @@ export function PermissionCard({
           ? w.remindersCreateTitle
           : request.tool === 'reminders_update'
             ? w.remindersUpdateTitle
-            : editable ? w.mailSendTitle : (isDangerous ? getPermissionConfig('command').title : config.title);
+            : editable
+              ? w.mailSendTitle
+              : isDangerous
+                ? getPermissionConfig('command').title
+                : isGenericCommandCard
+                  ? p.genericApprovalTitle
+                  : config.title;
   const icon = isMeetingCreate || isCalendarWrite
     ? <CalendarPlus size={20} />
     : isRemindersWrite
@@ -582,8 +607,8 @@ export function PermissionCard({
               {sandboxPath}
             </p>
           ) : null}
-          {/* 停车审批参数预览（host 已脱敏 + 截断）：一眼看清这步要干什么，缺省不渲染 */}
-          {request.argsPreview && (
+          {/* 停车审批参数预览（host 已脱敏 + 截断）：一眼看清这步要干什么，缺省或 RequestDetails 已展示同源字段时不重复渲染 */}
+          {request.argsPreview && !hasDetailFields && (
             <div className="rounded-lg bg-zinc-900/60 px-2.5 py-1.5" data-testid="permission-args-preview">
               <span className="text-[11px] text-zinc-500">{p.argsPreviewLabel}</span>
               <p className="mt-0.5 break-all text-xs leading-5 text-zinc-300">{request.argsPreview}</p>

@@ -144,7 +144,7 @@ async function fillEventJob(options: { chat?: 'group' | 'manual' | 'none'; budge
 
   fireEvent.click(screen.getByText('执行动作'));
   fireEvent.change(controlForLabel('Agent 类型'), { target: { value: 'default' } });
-  fireEvent.change(controlForLabel('Prompt'), { target: { value: '处理新消息' } });
+  fireEvent.change(controlForLabel('任务指令'), { target: { value: '处理新消息' } });
 
   // 回到基本设置页：事件字段与内联护栏提示挂在这里（tab 卸载式渲染）。
   fireEvent.click(screen.getByText('基本设置'));
@@ -186,6 +186,8 @@ describe('① 手动配置创建事件任务', () => {
     await fillEventJob({ chat: 'group' });
 
     fireEvent.click(screen.getByText('创建任务'));
+    // 无角色任务先过保存前确认卡（N-CRON-MORNING-TRIAGE-REST1），确认才落库。
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
 
     const createJob = useCronStore.getState().createJob as Mock;
     await waitFor(() => expect(createJob).toHaveBeenCalledTimes(1));
@@ -208,6 +210,8 @@ describe('① 手动配置创建事件任务', () => {
     await fillEventJob({ chat: 'none' });
 
     fireEvent.click(screen.getByText('创建任务'));
+    // 无角色任务先过保存前确认卡（N-CRON-MORNING-TRIAGE-REST1），确认才落库。
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
 
     const createJob = useCronStore.getState().createJob as Mock;
     await waitFor(() => expect(createJob).toHaveBeenCalledTimes(1));
@@ -225,6 +229,8 @@ describe('① 手动配置创建事件任务', () => {
     await fillEventJob({ chat: 'manual' });
 
     fireEvent.click(screen.getByText('创建任务'));
+    // 无角色任务先过保存前确认卡（N-CRON-MORNING-TRIAGE-REST1），确认才落库。
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
 
     const createJob = useCronStore.getState().createJob as Mock;
     await waitFor(() => expect(createJob).toHaveBeenCalledTimes(1));
@@ -517,6 +523,8 @@ describe('connector:mail 任务可编辑可改绑（N-TRIGGER-MAIL-CREATE-ENTRY-
     expect((controlForLabel('调度类型') as HTMLSelectElement).value).toBe('event-webhook');
 
     fireEvent.click(screen.getByText('保存修改'));
+    // 无角色任务先过保存前确认卡（N-CRON-MORNING-TRIAGE-REST1），确认才落库。
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
     const updateJob = useCronStore.getState().updateJob as Mock;
     await waitFor(() => expect(updateJob).toHaveBeenCalledTimes(1));
     expect(updateJob).toHaveBeenCalledWith('job-hook', expect.objectContaining({
@@ -541,6 +549,8 @@ describe('connector:mail 任务可编辑可改绑（N-TRIGGER-MAIL-CREATE-ENTRY-
     fireEvent.change(controlForLabel('调度类型'), { target: { value: 'event' } });
     fireEvent.change(await screen.findByLabelText(/^触发账号/), { target: { value: feishuAccount.id } });
     fireEvent.click(screen.getByText('保存修改'));
+    // 无角色任务先过保存前确认卡（N-CRON-MORNING-TRIAGE-REST1），确认才落库。
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
 
     const updateJob = useCronStore.getState().updateJob as Mock;
     await waitFor(() => expect(updateJob).toHaveBeenCalledTimes(1));
@@ -579,6 +589,8 @@ describe('connector:mail 任务可编辑可改绑（N-TRIGGER-MAIL-CREATE-ENTRY-
 
     fireEvent.change(accountSelect, { target: { value: 'gmail' } });
     fireEvent.click(screen.getByText('保存修改'));
+    // 无角色任务先过保存前确认卡（N-CRON-MORNING-TRIAGE-REST1），确认才落库。
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
 
     const updateJob = useCronStore.getState().updateJob as Mock;
     await waitFor(() => expect(updateJob).toHaveBeenCalledTimes(1));
@@ -617,9 +629,11 @@ describe('connector:mail 任务可编辑可改绑（N-TRIGGER-MAIL-CREATE-ENTRY-
     // Agent 动作参数与通道 event 流同一道（动作类型已被护栏钉成 Agent）。
     fireEvent.click(screen.getByText('执行动作'));
     fireEvent.change(controlForLabel('Agent 类型'), { target: { value: 'default' } });
-    fireEvent.change(controlForLabel('Prompt'), { target: { value: '处理新邮件' } });
+    fireEvent.change(controlForLabel('任务指令'), { target: { value: '处理新邮件' } });
     fireEvent.click(screen.getByText('基本设置'));
     fireEvent.click(screen.getByText('创建任务'));
+    // 无角色任务先过保存前确认卡（N-CRON-MORNING-TRIAGE-REST1），确认才落库。
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
 
     const createJob = useCronStore.getState().createJob as Mock;
     await waitFor(() => expect(createJob).toHaveBeenCalledTimes(1));

@@ -32,6 +32,7 @@ import type { WorkspaceScope } from '../../shared/contract/project';
 import { getModelSessionState } from '../session/modelSessionState';
 import type { RunRegistry } from '../runtime/runRegistry';
 import { getProjectSourceTrustFailureMarker } from '../services/project/projectSourceTrustError';
+import { getBackgroundTaskManager } from '../session/backgroundTaskManager';
 import { settleBackgroundRunOnRejection, type BackgroundRunErrorRecord } from './backgroundTaskTerminal';
 import { getModelAuthFailureMarker } from '../model/errorClassifier';
 import { MULTIAGENT_TOOL_NAMES } from '../../shared/constants/tools';
@@ -39,6 +40,7 @@ import { SESSION_COMMAND_CENTER_TOOL_NAMES } from '../../shared/constants/sessio
 import { collectToolArtifactsFromMetadata } from '../../shared/contract/artifactBlob';
 import { isDeliverableArtifact } from '../../shared/contract/artifactRoleRegistry';
 import { persistTaskManagerEvent, type TurnState } from './taskManagerEventPersistence';
+import { isTaskDeliveryFailed } from './taskDeliveryVerdict';
 import {
   DEFAULT_CONFIG,
   type BackgroundTaskRun,
@@ -214,6 +216,9 @@ export class TaskManager extends EventEmitter {
       throw new Error(`Session ${sessionId} is already ${currentState.status}`);
     }
 
+    // 新一轮在前台起跑：该会话遗留的后台终态行已过期，清掉，否则本轮的完成通知会被后台分支吞掉
+    getBackgroundTaskManager().dismissTerminal(sessionId);
+
     // 尝试获取信号量
     if (this.semaphore.tryAcquire()) {
       // 立即执行
@@ -311,6 +316,7 @@ export class TaskManager extends EventEmitter {
     // workspaceScope 仍可缺省：无项目后台 run 可以继续执行读任务，但不会获得写边界。
     if (workspaceScope) orchestrator.setWorkspaceScopeAuthority(workspaceScope);
 
+    const inheritedMessageIds = new Set(session?.messages.map((message) => message.id));
     if (session?.messages.length) orchestrator.setMessages(session.messages);
     if (session?.workingDirectory) {
       orchestrator.setWorkingDirectory(session.workingDirectory, { syncWorkspaceServices: false });
@@ -346,17 +352,26 @@ export class TaskManager extends EventEmitter {
         this.emitEvent('task_cancelled', sessionId, { taskId });
       } else {
         const messages = typeof orchestrator.getMessages === 'function'
-          ? orchestrator.getMessages()
+          ? orchestrator.getMessages().filter((message) => !inheritedMessageIds.has(message.id))
           : [];
         const finalMessage = [...messages]
           .reverse()
           .find((message) => message.role === 'assistant' && message.content?.trim());
+        const seenArtifactLocations = new Set<string>();
         const artifacts = messages.flatMap((message) => (
           (message.toolResults ?? []).flatMap((result) => collectToolArtifactsFromMetadata(result.metadata))
-        )).filter((artifact) => isDeliverableArtifact(artifact) && Boolean(artifact.path || artifact.url));
-        this.emitEvent('task_completed', sessionId, {
+        )).filter((artifact) => {
+          const location = artifact.path ?? artifact.url;
+          if (!isDeliverableArtifact(artifact) || !location || seenArtifactLocations.has(location)) return false;
+          seenArtifactLocations.add(location);
+          return true;
+        });
+        const deliveryFailed = isTaskDeliveryFailed(messages, artifacts.length);
+        this.emitEvent(deliveryFailed ? 'task_error' : 'task_completed', sessionId, {
           taskId,
-          conclusion: finalMessage?.content?.trim(),
+          ...(deliveryFailed
+            ? { error: finalMessage?.content?.trim() || 'Task delivery failed.' }
+            : { conclusion: finalMessage?.content?.trim() }),
           ...(artifacts.length ? { artifacts } : {}),
         });
       }
@@ -733,6 +748,26 @@ export class TaskManager extends EventEmitter {
     const id = sessionId || this.currentSessionId;
     if (!id) return undefined;
     return this.activeOrchestrators.get(id)?.orchestrator;
+  }
+
+  private readonly inflightEventHandlers = new Map<string, Set<Promise<void>>>();
+
+  private trackEventHandling(sessionId: string, handling: Promise<void>): Promise<void> {
+    const set = this.inflightEventHandlers.get(sessionId) ?? new Set<Promise<void>>();
+    this.inflightEventHandlers.set(sessionId, set);
+    set.add(handling);
+    void handling.finally(() => {
+      set.delete(handling);
+      if (set.size === 0 && this.inflightEventHandlers.get(sessionId) === set) this.inflightEventHandlers.delete(sessionId);
+    }).catch(() => undefined);
+    return handling;
+  }
+
+  /** orchestrator 不 await onEvent：run 返回时 task_complete 的落库/收口链可能还在跑，等它们排空。 */
+  async whenAgentEventsSettled(sessionId: string): Promise<void> {
+    for (let pending = this.inflightEventHandlers.get(sessionId); pending?.size; pending = this.inflightEventHandlers.get(sessionId)) {
+      await Promise.allSettled([...pending]);
+    }
   }
 
   /**
@@ -1124,7 +1159,7 @@ export class TaskManager extends EventEmitter {
       planningService: this.planningService,
       runRegistry: this.runRegistry,
       hasApprovalUi: () => hasInteractiveUi(),
-      onEvent: async (event: AgentEvent) => this.handleAgentEvent(sessionId, event, eventKey),
+      onEvent: async (event: AgentEvent) => this.trackEventHandling(sessionId, this.handleAgentEvent(sessionId, event, eventKey)),
       getHomeDir: () => app.getPath('home'),
       broadcastDAGEvent: (event) => {
         for (const win of AppWindow.getAllWindows()) {

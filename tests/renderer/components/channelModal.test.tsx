@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ChannelModal } from '../../../src/renderer/components/features/settings/tabs/ChannelsSettings';
 import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 
 const channelsText = zh.settings.channels;
 const enChannelsText = en.settings.channels;
@@ -19,7 +20,190 @@ const EN_ALLOWLIST = 'Reply only when @-mentioned in groups (default)';
 const EN_ALL_MEMBERS = 'Reply to every group message (as guest)';
 const EN_HINT = 'Guests only get read-only tools. Who counts as trusted is set separately in the allowlisted user IDs field above.';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  useAppStore.setState({ language: 'zh' });
+});
+
+const channelTypes = [
+  { type: 'http-api' as const, name: 'HTTP API' },
+  { type: 'feishu' as const, name: '飞书' },
+  { type: 'lark' as const, name: 'Lark' },
+  { type: 'telegram' as const, name: 'Telegram' },
+];
+
+describe('ChannelModal required-field validation', () => {
+  for (const [language, locale] of [['zh', zh], ['en', en]] as const) {
+    for (const [type, errorKeys] of [
+      ['http-api', ['nameRequiredError']],
+      ['feishu', ['nameRequiredError', 'appIdRequiredError', 'appCredentialRequiredError']],
+      ['lark', ['nameRequiredError', 'appIdRequiredError', 'appCredentialRequiredError']],
+      ['telegram', ['nameRequiredError', 'botTokenRequiredError']],
+    ] as const) {
+      it(`${language} ${type}: empty submit stays inline and localized`, () => {
+        useAppStore.setState({ language });
+        const onSave = vi.fn();
+        render(<ChannelModal channelTypes={channelTypes} onSave={onSave} onClose={() => {}} />);
+        const form = screen.getByRole('dialog').querySelector('form') as HTMLFormElement;
+
+        expect(form.noValidate).toBe(true);
+        expect(form.querySelector('[required]')).toBeNull();
+        fireEvent.change(screen.getAllByRole('combobox')[0]!, { target: { value: type } });
+        fireEvent.submit(form);
+
+        expect(onSave).not.toHaveBeenCalled();
+        for (const errorKey of errorKeys) {
+          expect(screen.getByText(locale.settings.channels.modal[errorKey])).toBeTruthy();
+        }
+      });
+    }
+  }
+
+  it('trims whitespace, focuses the first missing field, and clears its error while typing', () => {
+    const onSave = vi.fn();
+    render(<ChannelModal channelTypes={channelTypes} onSave={onSave} onClose={() => {}} />);
+    const form = screen.getByRole('dialog').querySelector('form') as HTMLFormElement;
+    const name = screen.getByPlaceholderText(channelsText.modal.namePlaceholder);
+
+    fireEvent.change(name, { target: { value: '   ' } });
+    fireEvent.submit(form);
+    expect(document.activeElement).toBe(name);
+    expect(screen.getByText(channelsText.modal.nameRequiredError)).toBeTruthy();
+
+    fireEvent.change(name, { target: { value: 'HTTP API' } });
+    expect(screen.queryByText(channelsText.modal.nameRequiredError)).toBeNull();
+  });
+
+  it.each([
+    ['feishu', 'cli_xxxxxxxxxx', 'appIdRequiredError'],
+    ['lark', 'cli_xxxxxxxxxx', 'appIdRequiredError'],
+    ['telegram', channelsText.modal.botTokenPlaceholder, 'botTokenRequiredError'],
+  ] as const)('focuses the first missing field for %s', (type, placeholder, errorKey) => {
+    const onSave = vi.fn();
+    render(<ChannelModal channelTypes={channelTypes} onSave={onSave} onClose={() => {}} />);
+    const form = screen.getByRole('dialog').querySelector('form') as HTMLFormElement;
+    fireEvent.change(screen.getAllByRole('combobox')[0]!, { target: { value: type } });
+    fireEvent.change(screen.getByPlaceholderText(channelsText.modal.namePlaceholder), { target: { value: 'acct' } });
+    const firstMissing = screen.getByPlaceholderText(placeholder);
+    fireEvent.change(firstMissing, { target: { value: '   ' } });
+    fireEvent.submit(form);
+
+    expect(document.activeElement).toBe(firstMissing);
+    expect(screen.getByText(channelsText.modal[errorKey])).toBeTruthy();
+    fireEvent.change(firstMissing, { target: { value: 'credential' } });
+    expect(screen.queryByText(channelsText.modal[errorKey])).toBeNull();
+  });
+
+  it.each([
+    {
+      type: 'http-api',
+      config: { type: 'http-api', port: 8080, apiKey: 'test-key', enableCors: true, privacyMode: 'local-redact' },
+    },
+    ...(['feishu', 'lark'] as const).map((type) => ({
+      type,
+      config: {
+        type,
+        appId: 'cli_x',
+        appSecret: 'secret',
+        encryptKey: undefined,
+        verificationToken: undefined,
+        useWebSocket: true,
+        webhookPort: 3200,
+        outboundAllowlist: [],
+        inboundAllowlist: undefined,
+        ownerOpenId: undefined,
+        privacyMode: 'local-redact',
+      },
+    })),
+    {
+      type: 'telegram',
+      config: {
+        type: 'telegram',
+        botToken: '123:abc',
+        proxyUrl: undefined,
+        fallbackProxyUrl: undefined,
+        allowedUserIds: undefined,
+        groupAccessMode: 'allowlist',
+        privacyMode: 'local-redact',
+      },
+    },
+  ] as const)('submits the complete validated config for $type', ({ type, config }) => {
+    const onSave = vi.fn();
+    render(<ChannelModal channelTypes={channelTypes} onSave={onSave} onClose={() => {}} />);
+    fireEvent.change(screen.getAllByRole('combobox')[0]!, { target: { value: type } });
+    fireEvent.change(screen.getByPlaceholderText(channelsText.modal.namePlaceholder), { target: { value: 'acct' } });
+    if (type === 'http-api') {
+      fireEvent.change(screen.getByPlaceholderText(channelsText.modal.apiKeyPlaceholder), { target: { value: 'test-key' } });
+    } else if (type === 'feishu' || type === 'lark') {
+      fireEvent.change(screen.getByPlaceholderText('cli_xxxxxxxxxx'), { target: { value: 'cli_x' } });
+      fireEvent.change(screen.getByRole('dialog').querySelector('input[type="password"]')!, { target: { value: 'secret' } });
+    } else {
+      fireEvent.change(screen.getByPlaceholderText(channelsText.modal.botTokenPlaceholder), { target: { value: '123:abc' } });
+    }
+    fireEvent.submit(screen.getByRole('dialog').querySelector('form')!);
+
+    expect(onSave).toHaveBeenCalledWith({ name: 'acct', type, config });
+  });
+});
+
+describe('ChannelModal port constraints with noValidate', () => {
+  for (const [language, locale, errorText] of [
+    ['zh', zh, '请输入 1 到 65535 之间的整数端口'],
+    ['en', en, 'Enter a whole-number port from 1 to 65535'],
+  ] as const) {
+    for (const type of ['http-api', 'feishu', 'lark'] as const) {
+      const setup = () => {
+        useAppStore.setState({ language });
+        const onSave = vi.fn();
+        render(<ChannelModal channelTypes={channelTypes} onSave={onSave} onClose={() => {}} />);
+        fireEvent.change(screen.getAllByRole('combobox')[0]!, { target: { value: type } });
+        fireEvent.change(screen.getByPlaceholderText(locale.settings.channels.modal.namePlaceholder), { target: { value: 'acct' } });
+        if (type !== 'http-api') {
+          fireEvent.change(screen.getByPlaceholderText('cli_xxxxxxxxxx'), { target: { value: 'cli_x' } });
+          fireEvent.change(screen.getByRole('dialog').querySelector('input[type="password"]')!, { target: { value: 'secret' } });
+          fireEvent.click(screen.getByRole('checkbox', { name: locale.settings.channels.modal.webSocketLabel }));
+        }
+        return { onSave, port: screen.getByRole('spinbutton'), submit: screen.getByRole('button', { name: locale.settings.channels.actions.add }) };
+      };
+      it.each(['70000', '-5', '0', '65536', '1.5'])(`${language} ${type} rejects invalid port %s and recovers`, (value) => {
+        const { onSave, port, submit } = setup();
+        fireEvent.change(port, { target: { value } });
+        fireEvent.click(submit);
+        expect(onSave).not.toHaveBeenCalled();
+        expect(screen.getByText(errorText)).toBeTruthy();
+        expect(document.activeElement).toBe(port);
+        fireEvent.change(port, { target: { value: '8081' } });
+        expect(screen.queryByText(errorText)).toBeNull();
+        fireEvent.click(submit);
+        expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+          config: expect.objectContaining({ [type === 'http-api' ? 'port' : 'webhookPort']: 8081 }),
+        }));
+      });
+      it.each(['1', '65535', '', '1e3'])(`${language} ${type} accepts port %s preserving numeric value or empty default`, (value) => {
+        const { onSave, port, submit } = setup();
+        fireEvent.change(port, { target: { value } });
+        fireEvent.click(submit);
+        expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+          config: expect.objectContaining({
+            [type === 'http-api' ? 'port' : 'webhookPort']: value ? Number(value) : type === 'http-api' ? 8080 : 3200,
+          }),
+        }));
+      });
+      if (type !== 'http-api') {
+        it(`${language} ${type} ignores an unmounted webhook port in WebSocket mode`, () => {
+          const { onSave, port, submit } = setup();
+          fireEvent.change(port, { target: { value: '70000' } });
+          fireEvent.click(submit);
+          expect(onSave).not.toHaveBeenCalled();
+          fireEvent.click(screen.getByRole('checkbox', { name: locale.settings.channels.modal.webSocketLabel }));
+          expect(screen.queryByRole('spinbutton')).toBeNull();
+          fireEvent.click(submit);
+          expect(onSave).toHaveBeenCalledTimes(1);
+        });
+      }
+    }
+  }
+});
 
 // 验证 ChannelModal 从手搓 fixed-inset-0 表单弹窗迁移到 Modal primitive 后行为不回归
 describe('ChannelModal (Modal primitive 迁移验证)', () => {
@@ -51,6 +235,11 @@ describe('ChannelModal (Modal primitive 迁移验证)', () => {
     );
 
     fireEvent.change(screen.getAllByRole('combobox')[0]!, { target: { value: 'feishu' } });
+    fireEvent.change(screen.getByPlaceholderText(channelsText.modal.namePlaceholder), {
+      target: { value: 'Feishu' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('cli_xxxxxxxxxx'), { target: { value: 'cli_x' } });
+    fireEvent.change(screen.getByRole('dialog').querySelector('input[type="password"]')!, { target: { value: 'secret' } });
     const longConnection = screen.getByRole('checkbox', { name: channelsText.modal.webSocketLabel });
     expect((longConnection as HTMLInputElement).checked).toBe(true);
     expect(screen.getByText(channelsText.modal.outboundTargetsHint)).toBeTruthy();
@@ -88,6 +277,9 @@ describe('ChannelModal (Modal primitive 迁移验证)', () => {
 
     fireEvent.change(modeSelect, { target: { value: 'all_members' } });
     expect(screen.getByText(ZH_PREREQUISITE)).toBeTruthy();
+    fireEvent.change(screen.getByPlaceholderText(channelsText.modal.namePlaceholder), {
+      target: { value: 'Telegram' },
+    });
     fireEvent.change(screen.getByPlaceholderText(channelsText.modal.botTokenPlaceholder), {
       target: { value: '123:abc' },
     });
@@ -226,4 +418,21 @@ describe('ChannelModal 按钮固定在 Modal footer（N-CHANNEL-MODAL-ADD-BUTTON
     fireEvent.submit(screen.getByPlaceholderText(channelsText.modal.namePlaceholder).closest('form')!);
     expect(onSave).toHaveBeenCalledTimes(1);
   });
+});
+
+// Keep instructional text outside the horizontally scrolling single-line input.
+describe('Telegram allow-list helper', () => {
+  for (const [language, locale] of [['zh', zh], ['en', en]] as const) {
+    it(`${language}: exposes the full rule as an associated helper and a short example`, () => {
+      useAppStore.setState({ language });
+      render(<ChannelModal channelTypes={channelTypes} onSave={vi.fn()} onClose={vi.fn()} />);
+      fireEvent.change(screen.getAllByRole('combobox')[0]!, { target: { value: 'telegram' } });
+      const text = locale.settings.channels.modal;
+      const input = screen.getByPlaceholderText(text.allowedUserIdsPlaceholder);
+      expect(text.allowedUserIdsPlaceholder.length).toBeLessThan(30);
+      const helper = document.getElementById(input.getAttribute('aria-describedby')!);
+      expect(helper?.textContent).toBe(text.allowedUserIdsHint);
+      expect(helper?.className).not.toMatch(/truncate|line-clamp/);
+    });
+  }
 });

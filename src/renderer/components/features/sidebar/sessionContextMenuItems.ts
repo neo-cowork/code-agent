@@ -1,3 +1,4 @@
+import { useAppStore } from '../../../stores/appStore';
 import { createElement } from 'react';
 import {
   Pin, Pencil, IdCard, Undo2, Archive, Trash2, Wrench, Save, Puzzle, FlaskConical, FileText, ScrollText, Mic2, GitFork,
@@ -15,6 +16,7 @@ import type { SessionWithMeta } from '../../../stores/sessionStore';
 import type { ToastType } from '../../../hooks/useToast';
 import type { ToastAction } from '../../../hooks/useToast';
 import type { Translations } from '../../../i18n';
+import { interpolate, interpolatePlural } from '../../../i18n/interpolate';
 import { createLogger } from '../../../utils/logger';
 import { copyPathToClipboard } from '../../../utils/platform';
 import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
@@ -296,11 +298,15 @@ export function buildSessionContextMenuItems(
 
       const planned = await confirmImportSessionFork({
         title: menu.importSessionForkPlanTitle,
-        message: menu.importSessionForkPlanMessage
-          .replace('{sourceProject}', parsedEnvelope.projectId)
-          .replace('{targetProject}', projectId)
-          .replace('{sessionCount}', String(parsedEnvelope.sessions.length))
-          .replace('{messageCount}', String(parsedEnvelope.messages.length)),
+        message: interpolate(
+          interpolatePlural(menu.importSessionForkPlanMessage, parsedEnvelope.sessions.length),
+          {
+            sourceProject: parsedEnvelope.projectId,
+            targetProject: projectId,
+            sessionCount: parsedEnvelope.sessions.length,
+            messageCount: interpolatePlural(menu.importSessionForkMessageUnit, parsedEnvelope.messages.length),
+          },
+        ),
         confirmText: menu.importSessionForkPlanConfirm,
         cancelText: menu.importSessionForkPlanCancel,
       });
@@ -360,7 +366,7 @@ export function buildSessionContextMenuItems(
         });
         return;
       }
-      showSuccessToast(menu.importSessionForkSucceeded.replace('{count}', String(Object.keys(imported.sessionIdMap).length)));
+      showSuccessToast(interpolatePlural(menu.importSessionForkSucceeded, Object.keys(imported.sessionIdMap).length));
     } catch (error) {
       const code = importErrorCode(error);
       logger.error('Failed to import session fork', { code, error });
@@ -463,7 +469,7 @@ export function buildSessionContextMenuItems(
       icon: createElement(Pencil, { className: 'h-4 w-4' }),
       onClick: () => {
         setRenamingId(session.id);
-        setRenameValue(getDisplaySessionTitle(session.title));
+        setRenameValue(getDisplaySessionTitle(session.title, useAppStore.getState().language));
       },
     },
     {

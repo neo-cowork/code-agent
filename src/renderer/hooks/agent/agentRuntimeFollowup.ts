@@ -5,6 +5,8 @@ import { useAppStore } from '../../stores/appStore';
 import type { SessionStatus as TaskSessionStatus } from '../../stores/taskStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { environmentProtocolUnsupportedMessage } from '../../i18n/executionEnvironment';
+import { rejectedRequestMessage } from '../../i18n/agentRunErrors';
+import { httpFailureMessage } from '../../utils/httpFailureMessage';
 import { getApiBaseUrl } from '../../api/transport';
 
 export function isRuntimeBusyStatus(status: TaskSessionStatus | undefined): boolean {
@@ -47,10 +49,32 @@ export function getAgentSendFailureMessage(error: unknown): string {
       : '';
   const message = raw.trim();
   // ADR-081 协议版本闸：宿主只回稳定码，用户可见句子由 i18n 给，不透传原始报错。
-  return environmentProtocolUnsupportedMessage(error, useAppStore.getState().language)
-    ?? (message
-      ? `Error: ${message}`
-      : 'Error: 消息发送失败，但前端没有收到具体错误。请查看后台日志。');
+  const language = useAppStore.getState().language;
+  const protocolMessage = environmentProtocolUnsupportedMessage(error, language);
+  if (protocolMessage) return protocolMessage;
+  // 400/422（含 PROMPT_REQUIRED / PROJECT_SOURCE_TRUST）：气泡只给下一步提示，原始响应体 warn 留痕。
+  const rejected = rejectedRequestMessage(error, language);
+  if (rejected) {
+    console.warn('[AgentSend] request rejected by host:', raw);
+    return rejected;
+  }
+  // HTTP 状态级失败（transport 带 status 的 Error）：一句话人话，不加 Error: 前缀、
+  // 不透传 message（可能是 HTML 错误页或内部报错文本）。
+  if (typeof error === 'object' && error !== null) {
+    const { status, code } = error as { status?: unknown; code?: unknown };
+    if (typeof status === 'number') {
+      // transport 挂的 rawErrorBody（原始响应体/HTML）只进 warn 诊断，不进气泡。
+      console.warn('[AgentSend] http failure:', raw, (error as { rawErrorBody?: unknown }).rawErrorBody ?? '');
+      return httpFailureMessage({
+        status,
+        code: typeof code === 'string' ? code : undefined,
+        language,
+      });
+    }
+  }
+  return message
+    ? `Error: ${message}`
+    : 'Error: 消息发送失败，但前端没有收到具体错误。请查看后台日志。';
 }
 
 export function getRuntimeInputMode(context?: ConversationEnvelopeContext): RuntimeInputMode {
@@ -62,7 +86,7 @@ export function getRuntimeInputMode(context?: ConversationEnvelopeContext): Runt
  *
  * 它不是失败：模型上一轮已经答完了（用户也看到了），只是 agent_complete 到流关闭之间
  * 还有几秒收尾，run 仍占着 session。撞上这几秒的消息应该排队等下一轮，而不是给用户
- * 弹一条「云端代理请求失败」——真机 2026-08-01：回复答完 3 秒后发下一条就撞上。
+ * 弹一条发送失败——真机 2026-08-01：回复答完 3 秒后发下一条就撞上。
  */
 export function isSessionBusyRunConflict(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false;

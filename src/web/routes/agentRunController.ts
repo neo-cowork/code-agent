@@ -9,7 +9,6 @@ import { envelopeWebAgentEvent } from '../helpers/agentStreamCursor';
 import type { AgentSessionManagerLike } from './agentRouteTypes';
 import type { WebRouteLogger } from './routeTypes';
 import type { RunHandle } from '../../host/runtime/runContext';
-import { isBackgroundContinueActive } from '../../host/services/daemon/quitIntent';
 import {
   shouldDeliverAgentEvent,
   type AgentEventFilter,
@@ -48,8 +47,7 @@ function isTerminalErrorEvent(event: AgentEvent): boolean {
 
 export class AgentRunController {
   private runSettled = false;
-  private clientDisconnected = false;
-  /** 壳以「后台继续」退出：SSE 断了但 run 继续，事件改走全局广播。 */
+  /** SSE 断开后 run 继续，事件改走全局广播，供重连客户端接收。 */
   private detachedForBackground = false;
   private runHadTerminalError = false;
   private terminalFailure: unknown = null;
@@ -59,22 +57,12 @@ export class AgentRunController {
   private readonly agentSSEBatcher;
 
   readonly cancelForDisconnect = (): void => {
-    if (this.runSettled || this.clientDisconnected || this.detachedForBackground) return;
-    // ADR-083：壳选了「后台继续」后断开的 SSE 不是用户取消，run 要跑完并落库。
-    // 显式 Stop 走 POST /api/cancel，不依赖 SSE close，不受影响。
-    if (isBackgroundContinueActive()) {
-      this.detachedForBackground = true;
-      return;
-    }
-    this.clientDisconnected = true;
-    const runHandle = this.deps.runHandle;
-    if (!runHandle) return;
-    this.deps.logger.warn(
-      `[AgentRouter] SSE client disconnected, cancelling run ${this.deps.runId} for ${this.deps.sessionId}`,
+    if (this.runSettled || this.detachedForBackground) return;
+    // 传输断线不代表用户停止；显式 Stop 仍只走 POST /api/cancel。
+    this.detachedForBackground = true;
+    this.deps.logger.info(
+      `[AgentRouter] SSE client disconnected, run ${this.deps.runId} continues detached`,
     );
-    void runHandle.cancel('user').catch((error) => {
-      this.deps.logger.warn(`[AgentRouter] Failed to cancel disconnected run ${this.deps.runId}:`, error);
-    });
   };
 
   constructor(private readonly deps: AgentRunControllerDeps) {
@@ -84,8 +72,13 @@ export class AgentRunController {
     );
   }
 
-  get disconnected(): boolean {
-    return this.clientDisconnected;
+  get detached(): boolean {
+    return this.detachedForBackground;
+  }
+
+  /** run 是否已收线（markSettled 之后）。岛在收线后抛审批时据此挂回注册表。 */
+  get settled(): boolean {
+    return this.runSettled;
   }
 
   get hadTerminalError(): boolean {
@@ -114,10 +107,16 @@ export class AgentRunController {
    * surface_execution 是唯一一类「宿主还在往下跑、renderer 必须知道」的事件：surface 投影的
    * 唯一进货渠道是「收到事件 → 拉全量快照」，终态/cleanup 事件丢了，行内紧凑条、composer
    * 「执行中」、chrome 条绿点就一起冻在 running（2026-08-02 排查报告 §2.2 腿 A）。
+   * permission_request 同理（N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO）：后台任务/子代理
+   * lane 的审批可以在 run 收线**之后**才抛（前台已回「已启动」，后台 Bash 才走到 ask），
+   * 流已关、mirrorToBroadcast 又因页面在线而为 false ⇒ 卡在两头都看不见。收线后补播
+   * permission_request 是安全的：流开着时它已经走流送达，关流后补播的只有本来就会丢的
+   * 那些条；renderer 按 requestId 去重（applyPermissionQueueEvent hasPermissionRequest）。
    * 直连轮已经关流 ⇒ 广播不会重复投递（canWriteSSE() 为真时不走这条）。
    */
   private shouldBroadcastAfterStreamClosed(event: string): boolean {
-    return event === 'surface_execution' && !this.deps.mirrorToBroadcast && !this.canWriteSSE();
+    if (this.canWriteSSE() || this.deps.mirrorToBroadcast) return false;
+    return event === 'surface_execution' || event === 'permission_request';
   }
 
   emitSSE(event: string, data: unknown): void {
@@ -223,7 +222,15 @@ export class AgentRunController {
       this.agentSSEBatcher.emit({ type: 'message_snapshot', data: finalSnapshot });
     }
     if (shouldDeliverAgentEvent(event, this.deps.eventFilter)) {
-      this.agentSSEBatcher.emit(event);
+      // N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO：run 收线清理会 destroy 批处理器，
+      // 而后台 lane 的审批（含沙箱升级确认）可以在那之后才抛——批处理器 destroy 后
+      // emit 是静默丢弃。收线后的 permission_request 绕过批处理器直发：流已关时走
+      // shouldBroadcastAfterStreamClosed 的补播通道进全局广播，卡必须到得了 renderer。
+      if (event.type === 'permission_request' && this.runSettled) {
+        this.emitSSE(event.type, event.data);
+      } else {
+        this.agentSSEBatcher.emit(event);
+      }
     }
     if (finalSnapshot) {
       this.messageAccumulator.clear(this.deps.sessionId);

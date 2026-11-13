@@ -1,3 +1,4 @@
+import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 import React, { useEffect, useState } from 'react';
 import type { CronJobDefinition, CronJobExecution, CronPermissionDeniedReason } from '@shared/contract';
 import { isCronPermissionDeniedMarker } from '@shared/cronPermissionDenied';
@@ -12,7 +13,7 @@ import { Button } from '../../primitives/Button';
 import {
   formatDuration,
   formatRunCostUsd,
-  getExecutionStatusMeta,
+  getLatestExecutionStatus,
   isPermissionDeniedExecution,
   prettyJson,
 } from './types';
@@ -22,6 +23,7 @@ import { cronLoginWallCopy, openCronLoginWallSite } from './cronLoginWallNotice'
 import { cronFailureSentence } from './cronFailureNotice';
 import { wakeSkipSentence } from './wakeSkipSentence';
 import { awaitingApprovalLabel } from './awaitingApprovalLabel';
+import { localizeParkedApprovalClosureText } from '../../../utils/toolExecutionPresentation';
 
 const CLOUD_NOT_WIRED = 'Cloud execution is not wired yet (N-L3-MINLOOP-SRV).';
 const TIME_LIMIT = /Cron job run exceeded its (\d+(?:\.\d+)?)s time limit\./;
@@ -54,6 +56,9 @@ function failureAction(kind: CronFailurePresentationKind): 'model' | 'account' |
 
 interface CronExecutionDetailProps {
   execution: CronJobExecution | null;
+  jobName?: string;
+  /** Complete catalog has loaded; otherwise an absent name is not evidence of deletion. */
+  jobNamesLoaded?: boolean;
   runsOn?: CronJobDefinition['runsOn'];
   /** 等批准运行（N-CRON-UNATTENDED-BASH-PARK-STUCK）：状态 chip 换 amber 徽章 + 一句提示 + 去处理。 */
   awaitingRun?: { executionId: string | null; commandPreview?: string } | null;
@@ -62,6 +67,8 @@ interface CronExecutionDetailProps {
 
 export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
   execution,
+  jobName,
+  jobNamesLoaded = true,
   runsOn = 'local',
   awaitingRun = null,
   onReviewAwaiting,
@@ -69,6 +76,11 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
   const { t, language } = useI18n();
   const cc = t.cronCenter;
   const switchSession = useSessionStore((state) => state.switchSession);
+  const sessionTitle = useSessionStore((state) => (
+    execution?.sessionId
+      ? state.sessions.find((session) => session.id === execution.sessionId)?.title
+      : undefined
+  ));
   const setShowCronCenter = useAppStore((state) => state.setShowCronCenter);
   const [isOpeningSession, setIsOpeningSession] = useState(false);
   const [isRerunning, setIsRerunning] = useState(false);
@@ -98,7 +110,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
     );
   }
 
-  const statusMeta = getExecutionStatusMeta(execution.status);
+  const statusMeta = getLatestExecutionStatus(execution, cc);
   // 需处理（N-CRON-RUN-COMPLETED-BUT-DENIED）：被拒且无产出的完成运行换琥珀徽章 + 一句话 + 重跑。
   const deniedCandidate = isPermissionDeniedExecution(execution)
     ? (execution.result as { permissionDenied?: unknown }).permissionDenied
@@ -109,6 +121,15 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
     dailyBudget: cc.wakeSkipDailyBudget,
     quietHours: cc.wakeSkipQuietHours,
   });
+  const pushNoteText = execution.pushNote && {
+    pushed: cc.pushNotePushed,
+    duplicate: cc.pushNoteDuplicate,
+    'empty-body': cc.pushNoteEmptyBody,
+    'empty-result': cc.pushNoteEmptyResult,
+    'observe-mode': cc.pushNoteObserveMode,
+    'quiet-watch-round': cc.pushNoteQuietWatchRound,
+    'notify-quiet-round': cc.pushNoteNotifyQuietRound,
+  }[execution.pushNote];
   const loginWall = cronLoginWallCopy(execution.error, { error: cc.loginWallError });
   const timeLimitSeconds = execution.error?.match(TIME_LIMIT)?.[1];
   const budgetMatch = execution.error?.match(BUDGET_LIMIT);
@@ -149,15 +170,18 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h4 className="text-sm font-medium text-zinc-100">{cc.execDetailTitle}</h4>
-          <p className="mt-1 text-xs text-zinc-500">{execution.id}</p>
+          <p className="mt-1 text-xs text-zinc-500">
+            {jobName ?? (jobNamesLoaded ? cc.deletedTask : cc.jobNameUnavailable)} · {formatDateTime(execution.startedAt ?? execution.scheduledAt, language)}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           {execution.sessionId && (
             <button
               type="button"
+              data-testid="cron-exec-detail-open-session"
               onClick={handleOpenSession}
               disabled={isOpeningSession}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-xs text-zinc-300 transition-colors hover:border-zinc-700 hover:bg-zinc-800 disabled:opacity-50"
+              className="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-xs text-zinc-300 transition-colors hover:border-zinc-700 hover:bg-zinc-800 disabled:opacity-50"
             >
               <MessageSquareText className="h-3.5 w-3.5" />
               {isOpeningSession ? cc.execOpeningSession : cc.execOpenSession}
@@ -165,21 +189,21 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
           )}
           {execution.status === 'running' && awaitingRun != null ? (
             <span
-              className="rounded-full border border-badge-warning/40 bg-amber-500/15 px-2.5 py-1 text-xs text-badge-warning"
+              className="shrink-0 whitespace-nowrap rounded-full border border-badge-warning/40 bg-amber-500/15 px-2.5 py-1 text-xs text-badge-warning"
               data-testid="cron-exec-detail-awaiting-approval"
             >
               {cc.awaitingApprovalBadge}
             </span>
           ) : permissionDenied ? (
             <span
-              className="rounded-full px-2.5 py-1 text-xs text-badge-warning bg-amber-500/10"
+              className="shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-xs text-badge-warning bg-amber-500/10"
               data-testid="cron-exec-detail-permission-denied"
             >
-              {cc.permissionDeniedBadge}
+              {statusMeta.label}
             </span>
           ) : (
-            <span className={`rounded-full px-2.5 py-1 text-xs ${statusMeta.className}`}>
-              {cc.status[execution.status]}
+            <span className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-xs ${statusMeta.className}`}>
+              {statusMeta.label}
             </span>
           )}
         </div>
@@ -204,7 +228,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
       )}
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <Info label={cc.execSession} value={execution.sessionId || '—'} />
+        <Info label={cc.execSession} value={execution.sessionId ? (sessionTitle ? getDisplaySessionTitle(sessionTitle, language) : cc.linkedSession) : '—'} />
         <div className="rounded-lg border border-zinc-800 bg-zinc-900/70 p-3">
           <div className="text-xs text-zinc-500">{cc.execLocation}</div>
           <div className="mt-1">
@@ -222,7 +246,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
         <Info label={cc.colScheduledAt} value={formatDateTime(execution.scheduledAt, language)} />
         <Info label={cc.colStartedAt} value={formatDateTime(execution.startedAt, language)} />
         <Info label={cc.execCompletedAt} value={formatDateTime(execution.completedAt, language)} />
-        <Info label={cc.colDuration} value={formatDuration(execution.duration)} />
+        <Info label={cc.colDuration} value={formatDuration(execution.duration, language)} />
         <Info label={cc.colCost} value={formatRunCostUsd(execution.cost, execution.runsOn ?? runsOn)} testId="cron-execution-cost" />
         <Info label={cc.execRetryCount} value={String(execution.retryAttempt)} />
         <Info label={cc.colExitCode} value={execution.exitCode != null ? String(execution.exitCode) : '—'} />
@@ -231,7 +255,9 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
       {stopReason && stopReason.sessionId === reasonSessionId && (
         <section className="mt-4" data-testid="cron-exec-stop-reason">
           <h5 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">{cc.execStopReason}</h5>
-          <p className="text-sm text-zinc-100" data-testid="cron-exec-stop-reason-text">{stopReason.text}</p>
+          <p className="text-sm text-zinc-100" data-testid="cron-exec-stop-reason-text">
+            {localizeParkedApprovalClosureText(stopReason.text, t) ?? stopReason.text}
+          </p>
         </section>
       )}
 
@@ -239,6 +265,12 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
         <section className="mt-4" data-testid="cron-wake-skip-detail">
           <h5 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">{cc.wakeSkipTitle}</h5>
           <p className="text-sm text-zinc-100" data-testid="cron-wake-skip-sentence">{wakeSkip}</p>
+        </section>
+      )}
+      {pushNoteText && (
+        <section className="mt-4" data-testid="cron-push-note-detail">
+          <h5 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">{cc.pushNoteTitle}</h5>
+          <p className="text-sm text-zinc-100" data-testid="cron-push-note-sentence">{pushNoteText}</p>
         </section>
       )}
       {permissionDenied && (
@@ -275,7 +307,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
                 <button /* ds-allow:button: 错误区标题旁紧凑警示色链接按钮（px-2 py-1 text-xs），primitive 无警示色 variant 且最小 sm 内边距更大 */
                   type="button"
                   onClick={() => openCronLoginWallSite(loginWall.siteOrigin, execution.jobId)}
-                  className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-badge-warning transition-colors hover:bg-amber-500/10"
+                  className="shrink-0 whitespace-nowrap inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-badge-warning transition-colors hover:bg-amber-500/10"
                   data-testid="cron-execution-open-login-site"
                 >
                   <ExternalLink className="h-3.5 w-3.5" />

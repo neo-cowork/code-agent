@@ -9,6 +9,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { getUserConfigDir } from '../../config/configPaths';
+import { BASH } from '../../../shared/constants';
 
 // ============================================================================
 // Constants
@@ -16,7 +17,6 @@ import { getUserConfigDir } from '../../config/configPaths';
 
 const MAX_BACKGROUND_TASKS = 10;
 const MAX_BACKGROUND_OUTPUT = 1024 * 1024; // 1MB per task
-const BACKGROUND_TASK_MAX_RUNTIME = 10 * 60 * 1000; // 10 minutes
 const TASK_CLEANUP_INTERVAL = 60 * 1000; // 1 minute
 
 // ============================================================================
@@ -36,6 +36,7 @@ export interface TaskState {
   outputSize: number;
   command: string;
   displayCommand?: string;
+  displayName?: string;
   exitCode?: number;
   lastReadPosition: number;
   /** 主超时定时器 */
@@ -46,6 +47,10 @@ export interface TaskState {
   toolCallId?: string;
   ownerAgentId?: string;
   sandboxed?: boolean;
+  stoppedByRequest?: boolean;
+  /** 被最长运行时间上限终止（区别于用户 Stop 与普通失败） */
+  timedOut?: boolean;
+  terminalEventEmitted?: boolean;
   onExit?: () => void;
 }
 
@@ -54,6 +59,7 @@ export interface TaskInfo {
   status: 'running' | 'completed' | 'failed';
   command: string;
   displayCommand?: string;
+  displayName?: string;
   cwd: string;
   sessionId?: string;
   toolCallId?: string;
@@ -63,6 +69,9 @@ export interface TaskInfo {
   duration: number;
   exitCode?: number;
   outputFile: string;
+  stoppedByRequest?: boolean;
+  timedOut?: boolean;
+  maxRuntime?: number;
 }
 
 export interface TaskOutput {
@@ -78,6 +87,7 @@ export interface StartBackgroundTaskOptions {
   toolCallId?: string;
   ownerAgentId?: string;
   displayCommand?: string;
+  displayName?: string;
   env?: NodeJS.ProcessEnv;
   sandboxed?: boolean;
   onExit?: () => void;
@@ -176,6 +186,7 @@ function toTaskInfo(task: TaskState): TaskInfo {
     status: task.status,
     command: task.command,
     displayCommand: task.displayCommand,
+    displayName: task.displayName,
     cwd: task.cwd,
     sessionId: task.sessionId,
     toolCallId: task.toolCallId,
@@ -185,10 +196,18 @@ function toTaskInfo(task: TaskState): TaskInfo {
     duration: (task.endTime || Date.now()) - task.startTime,
     exitCode: task.exitCode,
     outputFile: task.outputFile,
+    ...(task.stoppedByRequest ? { stoppedByRequest: true } : {}),
+    ...(task.timedOut ? { timedOut: true, maxRuntime: task.maxRuntime } : {}),
   };
 }
 
 function emitTaskLifecycleEvent(type: BackgroundTaskLifecycleEventType, task: TaskState): void {
+  // 每个任务最多一条终态事件（进程 close / error / kill 谁先到谁发），否则 CLI TUI 之类
+  // 不去重的订阅方会对同一次停止弹两条消息、发两次系统通知。
+  if (type === 'completed' || type === 'failed') {
+    if (task.terminalEventEmitted) return;
+    task.terminalEventEmitted = true;
+  }
   backgroundTaskEvents.emit('lifecycle', {
     type,
     task: toTaskInfo(task),
@@ -251,10 +270,11 @@ function registerBackgroundTaskProcess(
     outputStream,
     status: 'running',
     startTime: options.startedAt ?? Date.now(),
-    maxRuntime: Math.min(maxRuntime, BACKGROUND_TASK_MAX_RUNTIME),
+    maxRuntime: Math.min(maxRuntime, BASH.BACKGROUND_MAX_RUNTIME),
     outputSize: 0,
     command,
     displayCommand: options.displayCommand,
+    displayName: options.displayName,
     lastReadPosition: 0,
     cwd,
     sessionId: options.sessionId,
@@ -268,7 +288,8 @@ function registerBackgroundTaskProcess(
     const data = chunk.toString();
     const text = stream === 'stderr' ? `[stderr] ${data}` : data;
     taskState.outputSize += text.length;
-    taskState.outputStream?.write(text);
+    // kill 会先 end() 日志流；进程树退出前仍可能有输出到达，写已结束的流会抛 write-after-end。
+    if (taskState.outputStream && !taskState.outputStream.writableEnded) taskState.outputStream.write(text);
     if (taskState.outputSize < MAX_BACKGROUND_OUTPUT) {
       taskState.output.push(text);
     } else if (!taskState.output[taskState.output.length - 1]?.includes('[Output limit reached]')) {
@@ -282,6 +303,7 @@ function registerBackgroundTaskProcess(
   const timeout = setTimeout(() => {
     if (taskState.status === 'running') {
       console.warn(`[BackgroundTasks] Task ${taskId} exceeded max runtime, terminating...`);
+      taskState.timedOut = true;
       void killProcessTree(proc, { posixGroupKill: true })
         .then(() => runTaskExitCallback(taskState));
     }
@@ -329,12 +351,24 @@ function registerBackgroundTaskProcess(
 }
 
 /**
+ * One user-readable name for a background shell/PTY task: the model's Bash `description`
+ * when usable (single line, <= 60 chars), else the unwrapped original command.
+ */
+export function resolveBackgroundTaskName(description: unknown, command: string): string {
+  if (typeof description === 'string') {
+    const trimmed = description.trim();
+    if (trimmed && !/[\r\n]/.test(trimmed) && trimmed.length <= 60) return trimmed;
+  }
+  return command;
+}
+
+/**
  * Start a background task
  */
 export function startBackgroundTask(
   command: string,
   cwd: string,
-  maxRuntime: number = BACKGROUND_TASK_MAX_RUNTIME,
+  maxRuntime: number = BASH.BACKGROUND_MAX_RUNTIME,
   options: StartBackgroundTaskOptions = {},
 ): { success: boolean; taskId?: string; error?: string; outputFile?: string } {
   const capacity = ensureTaskCapacity();
@@ -365,7 +399,7 @@ export function adoptBackgroundTask(
   if (proc.exitCode !== null || proc.signalCode !== null) {
     return { success: false, error: 'The timed-out process has already exited.' };
   }
-  return registerBackgroundTaskProcess(proc, command, cwd, BACKGROUND_TASK_MAX_RUNTIME, options);
+  return registerBackgroundTaskProcess(proc, command, cwd, BASH.BACKGROUND_MAX_RUNTIME, options);
 }
 
 /**
@@ -376,6 +410,7 @@ export function adoptBackgroundTask(
  */
 export async function killBackgroundTask(
   taskId: string,
+  options: { reason?: 'stop' | 'timeout' } = {},
 ): Promise<{ success: boolean; error?: string; message?: string }> {
   const task = backgroundTasks.get(taskId);
   if (!task) {
@@ -383,19 +418,28 @@ export async function killBackgroundTask(
   }
 
   try {
+    // 入口时已结束的任务（completed / failed）不能被 kill 重新标注，也不发生命周期事件。
+    const wasRunning = task.status === 'running';
     // 清理现有定时器
     if (task.timeout) {
       clearTimeout(task.timeout);
     }
 
+    // 超时清扫不是用户/模型的停止请求：不打 stopped 标记，账本仍记 failed。
+    if (wasRunning) {
+      if (options.reason === 'timeout') task.timedOut = true;
+      else task.stoppedByRequest = true;
+    }
     task.outputStream?.end();
     // SIGTERM → 宽限 → SIGKILL → 探到整组消失，全在 killProcessTree 内部。
     await killProcessTree(task.process, { posixGroupKill: true });
 
-    // Update status
-    task.status = 'failed';
-    task.endTime = Date.now();
+    if (wasRunning) {
+      task.status = 'failed';
+      task.endTime = task.endTime ?? Date.now();
+    }
     runTaskExitCallback(task);
+    if (wasRunning) emitTaskLifecycleEvent('failed', task);
 
     return {
       success: true,
@@ -507,7 +551,7 @@ export function cleanupTimedOutTasks(): void {
     if (task.status === 'running' && now - task.startTime > task.maxRuntime) {
       console.warn(`[BackgroundTasks] Task ${taskId} timed out, killing...`);
       // 周期清理定时器回调，没有 await 的位置；killBackgroundTask 内部不 reject。
-      void killBackgroundTask(taskId);
+      void killBackgroundTask(taskId, { reason: 'timeout' });
     }
   }
 }

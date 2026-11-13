@@ -1,3 +1,4 @@
+import { getDisplaySessionTitle } from '../../../../utils/sessionPresentation';
 // ============================================================================
 // ChatInput - 消息输入组件主入口
 // 支持多模态输入：文本、图片、代码、PDF、文件夹
@@ -78,10 +79,8 @@ import { ComposerChipsRow } from './ComposerChipsRow';
 import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
 import { ModelSwitcher } from '../../../StatusBar/ModelSwitcher';
 import ipcService from '../../../../services/ipcService';
-import {
-  invokeNativeCommandAction,
-  isNativeCommandRuntimeAvailable,
-} from '../../../../services/nativeCommandFacade';
+import { invokeNativeCommandAction, isNativeCommandRuntimeAvailable } from '../../../../services/nativeCommandFacade';
+import { toast } from '../../../../hooks/useToast';
 import { goalComposerDraftToParsed } from './parseGoalCommand';
 import { LoopStatusBar } from './LoopStatusBar';
 import { ScheduleComposerCard } from './ScheduleComposerCard';
@@ -90,11 +89,7 @@ import { GoalConfirmCard } from './GoalConfirmCard';
 import { SeedComposerCard, type SeedComposerKind } from './SeedComposerCard';
 import { buildVerifyCandidates } from './goalConfirm';
 import { readWorkspaceFile } from '../../../design/designFiles';
-import {
-  buildDirectRoutingPlaceholder,
-  getPreferredAgentMentionToken,
-  isLeadingAgentMentionInput,
-} from './agentMentionRouting';
+import { buildDirectRoutingPlaceholder, getPreferredAgentMentionToken, isLeadingAgentMentionInput } from './agentMentionRouting';
 import { useDragAndDrop } from './useDragAndDrop';
 import { useChatInputEnvelope } from './useChatInputEnvelope';
 import { useChatInputAgentCommand } from './useChatInputAgentCommand';
@@ -107,10 +102,8 @@ import { UnsentDraftNotice } from './UnsentDraftNotice';
 import { AgentCommandAutocomplete } from './AgentCommandAutocomplete';
 import { useScheduleDraft } from './useScheduleDraft';
 import { useChatInputComposerActions } from './useChatInputComposerActions';
-import {
-  clearDebugDraftParamsFromCurrentUrl,
-  readDebugDraftFromLocation,
-} from './debugDraftUrl';
+import { clearDebugDraftParamsFromCurrentUrl, readDebugDraftFromLocation } from './debugDraftUrl';
+import { mergeAttachments } from './attachmentDedupe';
 import { getTrailingSlashToken } from './slashPickerModel';
 import type { InlineChipRef } from './composerRichTextModel';
 import type { InlineChipView } from './InlineComposerChip';
@@ -315,7 +308,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   sessionless = false,
   scopeProjectId = null,
 }, ref) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [value, setValue] = useState('');
   const inputMemoryTainted = useRef(false);
   useEffect(() => { if (!value) inputMemoryTainted.current = false; }, [value]);
@@ -334,6 +327,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [editingQueuedInputId, setEditingQueuedInputId] = useState<string | null>(null);
 
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
+  const attachmentsRef = useRef(attachments); attachmentsRef.current = attachments;
   const [sessionReferences, setSessionReferences] = useState<ConversationSessionReference[]>([]);
   const [artifactReferences, setArtifactReferences] = useState<ConversationArtifactReference[]>([]);
   const pendingResendClientMessageIdRef = useRef<string | null>(null);
@@ -351,6 +345,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const composerDraft = useComposerDraftPersistence({
     sessionId: currentSessionId,
     sessionless,
+    scopeProjectId,
     value,
     setValue,
     suspend: editingQueuedInputId !== null,
@@ -588,19 +583,20 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         id: attachment.id,
         label: attachment.name,
         category: attachment.category,
+        thumbnail: attachment.category === 'image' ? attachment.thumbnail : undefined,
       });
     }
     for (const item of pinnedLibraryItems) {
       chips.push({ key: `library:${item.id}`, kind: 'library', id: item.id, label: item.title });
     }
     for (const reference of sessionReferences) {
-      chips.push({ key: `session:${reference.id}`, kind: 'session', id: reference.id, label: reference.title });
+      chips.push({ key: `session:${reference.id}`, kind: 'session', id: reference.id, label: getDisplaySessionTitle(reference.title, language) });
     }
     for (const reference of artifactReferences) {
       chips.push({ key: `artifact:${reference.id}`, kind: 'artifact', id: reference.id, label: reference.name });
     }
     return chips;
-  }, [pendingCommand, selectedSkillIds, attachments, pinnedLibraryItems, sessionReferences, artifactReferences, capabilityRegistry.items]);
+  }, [pendingCommand, selectedSkillIds, attachments, pinnedLibraryItems, sessionReferences, artifactReferences, capabilityRegistry.items, language]);
 
   // slash 面板选中后：光标前的触发词（/goal、/sk…）原位替换成 chip 挂载点。
   // 无触发词（+ 菜单等无光标来源）时 no-op——store 更新后编辑器对账会把 chip 补到末尾。
@@ -712,9 +708,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   // Expose addAttachments to parent via ref (for global drop zone)
   useImperativeHandle(ref, () => ({
     addAttachments: (items: MessageAttachment[]) => {
-      if (items.length > 0) {
-        setAttachments((prev) => [...prev, ...items].slice(0, UI.MAX_ATTACHMENTS_DROP));
-      }
+      if (items.length === 0) return;
+      const result = mergeAttachments(attachmentsRef.current, items, UI.MAX_ATTACHMENTS_DROP);
+      setAttachments(result.attachments);
+      if (result.skippedCount > 0) toast.show('warning', t.chatInput.attachmentAlreadyAdded.replace('{name}', result.duplicates[0]?.incoming.name ?? ''));
     },
     setDraft: (draft) => {
       const mode = composerEditModeState(
@@ -748,7 +745,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       setValue((prev) => appendComposerPrompt(prev, prompt));
       inputAreaRef.current?.focus();
     },
-  }), [inlineChips, pendingAppshot]);
+  }), [inlineChips, pendingAppshot, t.chatInput.attachmentAlreadyAdded]);
 
   useEffect(() => {
     setVoiceInputContext(null);
@@ -852,20 +849,24 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     void (async () => {
       const attachment = await buildMentionAttachment({ path: row.path, name: row.name, workingDirectory });
       // 读盘期间用户可能继续输入：以最新文本重定位触发词，找不到就交给对账把 chip 补到末尾
+      const result = mergeAttachments(attachmentsRef.current, [attachment], UI.MAX_ATTACHMENTS_DROP);
       const freshCaret = editor.getCaretOffset();
       const freshBefore = latestValueRef.current.slice(0, freshCaret);
       const freshMatch = freshBefore.match(/@([^\s@]*)$/);
       if (freshMatch) {
-        editor.replaceRangeWithChip(freshCaret - freshMatch[0].length, freshCaret, {
+        const triggerStart = freshCaret - freshMatch[0].length;
+        if (result.skippedCount > 0) editor.replaceRangeWithText(triggerStart, freshCaret, '');
+        else editor.replaceRangeWithChip(triggerStart, freshCaret, {
           key: `file:${attachment.id}`,
           kind: 'file',
           id: attachment.id,
         });
       }
-      setAttachments((prev) => [...prev, attachment].slice(0, UI.MAX_ATTACHMENTS_DROP));
+      setAttachments(result.attachments);
+      if (result.skippedCount > 0) toast.show('warning', t.chatInput.attachmentAlreadyAdded.replace('{name}', attachment.name));
     })();
     editor.focus();
-  }, [currentSessionId]);
+  }, [currentSessionId, t.chatInput.attachmentAlreadyAdded]);
   const replaceAtTriggerWithChip = useCallback((chip: InlineChipRef) => {
     const editor = inputAreaRef.current;
     if (!editor) return;
@@ -977,6 +978,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   } = useChatInputSlashCommands({
     value,
     currentSessionId,
+    // 无会话语境（协作空间页）：未挂载 skill 只记选择，挂载推迟到发送时落进新会话
+    deferMountUntilSend: sessionless,
     skillRecommendations,
     mountRecommendedSkill,
     installRecommendedSkill,

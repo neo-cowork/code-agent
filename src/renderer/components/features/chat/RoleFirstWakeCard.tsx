@@ -1,6 +1,6 @@
 // ============================================================================
 // RoleFirstWakeCard — 新专家第一次醒来的开场与建议
-// 确认创建后出现在原确认卡位置，也出现在该专家主会话顶部，直到点建议或先不用。
+// 确认创建后出现在原确认卡位置，也出现在该专家主会话顶部，直到建议都消费完或先不用。
 // 视觉范本 role-wake-prototype-v2.html 屏一/屏二（2026-11-05 owner 返修）：
 // 用户刚在确认卡看过名字与职责——卡片不再有名册行，头像只留首字（名字进
 // aria-label/title）；failed 先说「建好了能用」，再用次要色说哪里没成功，
@@ -14,7 +14,7 @@ import { classifyAgentError } from '@shared/utils/agentErrorClassification';
 import { Button } from '../../primitives/Button';
 import { useI18n } from '../../../hooks/useI18n';
 import { interpolate } from '../../../i18n/interpolate';
-import { getFirstWake, listRoles, retryFirstWake, skipFirstWake } from '../../../services/rolesClient';
+import { consumeFirstWakeSuggestion, getFirstWake, listRoles, retryFirstWake, skipFirstWake } from '../../../services/rolesClient';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { goToExpertThread } from '../../../utils/inviteExpert';
@@ -128,14 +128,16 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
     }
   };
 
-  const handleSuggestion = async (prompt: string) => {
+  const handleSuggestion = async (title: string, prompt: string) => {
     if (busy) return;
     setBusy(true);
     try {
-      await skipFirstWake(roleId);
-      hide();
+      await consumeFirstWakeSuggestion(roleId, title);
+      setSnapshot(await getFirstWake(roleId));
       await goToExpertThread(roleId, { seed: prompt });
     } catch {
+      // 保留卡片时允许用户继续消费其它建议；错误也不锁死卡片。
+    } finally {
       setBusy(false);
     }
   };
@@ -182,7 +184,7 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
   const intro = snapshot?.intro?.trim() ?? '';
   const showRunning = isActiveState(state) || live === 'optimistic';
   const showFailed = state === 'failed';
-  const showNone = state === 'completed' && sourcesMode === 'none';
+  const showNone = (state === 'completed' || showFailed) && sourcesMode === 'none';
   const showSuggestions = state === 'completed' && sourcesMode === 'connected';
 
   // failed 文案：普通用户只见短原因映射（roleFirstWake.reasons），generic 直接省略冒号和原因；原始错误仅开发者模式露出
@@ -246,17 +248,18 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
               aria-hidden="true"
               data-testid="role-first-wake-pulse"
             />
-            <p className="text-base leading-relaxed text-text-tertiary">{copy.running}</p>
+            {/* 无已连接源时模型没在熟悉任何数据，只准备一句开场：不能说「熟悉已连接的数据」 */}
+            <p className="text-base leading-relaxed text-text-tertiary">{sourcesMode === 'none' ? copy.runningNone : copy.running}</p>
             {skipButton}
           </div>
         )}
         {showFailed && (
           <div className="space-y-0.5">
             <p className="text-base leading-relaxed text-text-primary">{copy.failedReady}</p>
-            <p className="text-sm leading-relaxed text-text-secondary" data-testid="role-first-wake-reason">{failedLookLine}</p>
+            {sourcesMode !== 'none' && <p className="text-sm leading-relaxed text-text-secondary" data-testid="role-first-wake-reason">{failedLookLine}</p>}
           </div>
         )}
-        {(showSuggestions || showNone) && (
+        {(showSuggestions || (showNone && !showFailed)) && (
           <p className="whitespace-pre-wrap text-base leading-relaxed text-text-primary" data-testid="role-first-wake-intro">
             {intro || copy.introFallback}
           </p>
@@ -270,7 +273,7 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
                 type="button"
                 disabled={busy}
                 className={outlineButtonClass}
-                onClick={() => { void handleSuggestion(suggestion.prompt); }}
+                onClick={() => { void handleSuggestion(suggestion.title, suggestion.prompt); }}
               >
                 {suggestion.title}
               </button>
@@ -305,7 +308,7 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
                 </button>
               </>
             )}
-            {showFailed && !showAccountActions && (
+            {showFailed && sourcesMode !== 'none' && !showAccountActions && (
               <button
                 type="button"
                 disabled={busy}

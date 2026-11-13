@@ -1,3 +1,4 @@
+import { resolveRunCancellationOutcomeKey } from '../../../i18n/outcomeWords';
 // ============================================================================
 // SessionInspector 层1 轮行（N-LEDGER-UX1：A 汇总句可展开 / B 异常黄条 / C 活行）
 // ----------------------------------------------------------------------------
@@ -20,6 +21,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useI18n } from '../../../hooks/useI18n';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import { fill } from './format';
 import type { TurnSegment } from './model';
 import { TurnDevtools } from './turnDevtools';
@@ -59,23 +61,23 @@ function resolveTerminalOutcome(segment: TurnSegment, t: Translations) {
     ? t.outcomeWords['failed-approval-denied'].badge
     : failedCode === AgentFailureCode.Timeout
       ? t.outcomeWords['failed-timeout'].badge
-      : failedCode === AgentFailureCode.BudgetExhausted
-        ? t.outcomeWords['failed-budget'].badge
-        : failedCode === AgentFailureCode.DependencyFailed || failedCode === AgentFailureCode.DependencyMissing
-          ? t.outcomeWords['failed-dependency'].badge
-          : failedCode === AgentFailureCode.ModelError
-            ? t.outcomeWords['failed-model'].badge
-            : failedCode === AgentFailureCode.ToolUnavailable
-              ? t.outcomeWords['failed-unavailable'].badge
-              : segment.failedToolCount > 0
-                ? t.outcomeWords['failed-tool'].badge
-                : t.outcomeWords['failed-unknown'].badge;
+      : failedCode === AgentFailureCode.InvalidArguments
+        ? t.outcomeWords['failed-tool'].badge
+        : failedCode === AgentFailureCode.BudgetExhausted
+          ? t.outcomeWords['failed-budget'].badge
+          : failedCode === AgentFailureCode.DependencyFailed || failedCode === AgentFailureCode.DependencyMissing
+            ? t.outcomeWords['failed-dependency'].badge
+            : failedCode === AgentFailureCode.ModelError
+              ? t.outcomeWords['failed-model'].badge
+              : failedCode === AgentFailureCode.ToolUnavailable
+                ? t.outcomeWords['failed-unavailable'].badge
+                : segment.failedToolCount > 0
+                  ? t.outcomeWords['failed-tool'].badge
+                  : t.outcomeWords['failed-unknown'].badge;
   return terminal === 'completed'
     ? t.outcomeWords.completed.badge
     : terminal === 'cancelled'
-      ? (segment.stamp?.cancelReason === 'idle_reaped'
-        ? t.outcomeWords['failed-idle-reaped'].badge
-        : t.outcomeWords['cancelled-by-user'].badge)
+      ? t.outcomeWords[resolveRunCancellationOutcomeKey(segment.stamp?.cancelReason)].badge
       : terminal === 'interrupted'
         ? t.outcomeWords['interrupted-restart'].badge
         : terminal === 'failed'
@@ -95,7 +97,7 @@ function StampChip({ segment }: { segment: TurnSegment }) {
       <span
         data-testid="inspector-stamp"
         data-verdict="in_progress"
-        className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-surface-faint px-1.5 py-0.5 text-[10px] text-zinc-400"
+        className="shrink-0 whitespace-nowrap inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-surface-faint px-1.5 py-0.5 text-[10px] text-zinc-400"
       >
         <CircleDot className="h-3 w-3" />
         {t.sessionInspector.turnInProgress}
@@ -111,7 +113,7 @@ function StampChip({ segment }: { segment: TurnSegment }) {
       <span
         data-testid="inspector-stamp"
         data-verdict="verified"
-        className="inline-flex items-center gap-1 rounded-md border border-badge-success/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-badge-success"
+        className="shrink-0 whitespace-nowrap inline-flex items-center gap-1 rounded-md border border-badge-success/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-badge-success"
       >
         <CheckCircle2 className="h-3 w-3" />
         {terminalOutcome && (
@@ -121,7 +123,7 @@ function StampChip({ segment }: { segment: TurnSegment }) {
         <span data-testid="inspector-stamp-qualifier">{stamp.evidencedQualifier}</span>
         {segment.stamp.evidenceCount > 0 && (
           <span className="opacity-70">
-            · {fill(t.sessionInspector.evidenceCount, { count: String(segment.stamp.evidenceCount) })}
+            · {interpolatePlural(t.sessionInspector.evidenceCount, segment.stamp.evidenceCount)}
           </span>
         )}
       </span>
@@ -132,7 +134,7 @@ function StampChip({ segment }: { segment: TurnSegment }) {
       <span
         data-testid="inspector-stamp"
         data-verdict="undelivered"
-        className="inline-flex items-center gap-1 rounded-md border border-badge-warning/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-badge-warning"
+        className="shrink-0 whitespace-nowrap inline-flex items-center gap-1 rounded-md border border-badge-warning/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-badge-warning"
       >
         <AlertTriangle className="h-3 w-3" />
         <span data-testid="inspector-stamp-qualifier">{stamp.undelivered}</span>
@@ -144,7 +146,7 @@ function StampChip({ segment }: { segment: TurnSegment }) {
       <span
         data-testid="inspector-stamp"
         data-verdict="self_claimed"
-        className="inline-flex items-center gap-1 rounded-md border border-badge-warning/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-badge-warning"
+        className="shrink-0 whitespace-nowrap inline-flex items-center gap-1 rounded-md border border-badge-warning/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-badge-warning"
       >
         <AlertTriangle className="h-3 w-3" />
         {terminalOutcome && (
@@ -185,11 +187,11 @@ function TurnActivitySummary({ segment }: { segment: TurnSegment }) {
   const detail = t.sessionInspector.activityDetail;
   const [showDetail, setShowDetail] = useState(false);
   const parts: string[] = [];
-  if (segment.toolCounts.read > 0) parts.push(fill(activity.read, { count: String(segment.toolCounts.read) }));
-  if (segment.toolCounts.write > 0) parts.push(fill(activity.write, { count: String(segment.toolCounts.write) }));
-  if (segment.toolCounts.command > 0) parts.push(fill(activity.command, { count: String(segment.toolCounts.command) }));
-  if (segment.toolCounts.browser > 0) parts.push(fill(activity.browser, { count: String(segment.toolCounts.browser) }));
-  if (segment.toolCounts.other > 0) parts.push(fill(activity.otherTool, { count: String(segment.toolCounts.other) }));
+  if (segment.toolCounts.read > 0) parts.push(interpolatePlural(activity.read, segment.toolCounts.read));
+  if (segment.toolCounts.write > 0) parts.push(interpolatePlural(activity.write, segment.toolCounts.write));
+  if (segment.toolCounts.command > 0) parts.push(interpolatePlural(activity.command, segment.toolCounts.command));
+  if (segment.toolCounts.browser > 0) parts.push(interpolatePlural(activity.browser, segment.toolCounts.browser));
+  if (segment.toolCounts.other > 0) parts.push(interpolatePlural(activity.otherTool, segment.toolCounts.other));
   // A：≥2 次工具调用才给明细入口；单工具轮不聚合、保持原样
   const hasDetail = segment.toolDispatches.length >= 2;
   return (

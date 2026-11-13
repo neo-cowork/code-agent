@@ -155,7 +155,7 @@ describe('ToolExecutor EXTERNAL 审批卡作用域打标', () => {
     expect(request).not.toHaveProperty('riskClass');
   });
 
-  it('standing grant 命中时不发起审批（已授权即不打扰，也就不可能弹 needs-input 通知）', async () => {
+  it('standing grant 命中时仍受 forcePermissionHandler 硬门保护', async () => {
     standingGrantState.hit = true;
     const requestPermission = vi.fn(async (_request: unknown) => false);
     const executor = new ToolExecutor({
@@ -167,10 +167,14 @@ describe('ToolExecutor EXTERNAL 审批卡作用域打标', () => {
     // 参数与前面「会走到询问」的 mail_send 用例不同：同参第二次会被 prior-denial
     // 的 launderRetryForcesAsk 拦住不走授权消费，测的就不再是 standing grant 了。
     await executor.execute('mail_send', { subject: 'granted', to: ['c@x.com'] }, { sessionId: 's1' });
-    // needs-input 通知的两个发送口（parkApproval / permission_request 落库）都在
-    // requestPermission 之后；这里连问都不问，自然一条 needs-input 都不会有。
-    expect(requestPermission).not.toHaveBeenCalled();
-    expect(resolverState.execute).toHaveBeenCalledTimes(1);
+    // forcePermissionHandler is a hard gate: a standing grant cannot suppress the card.
+    expect(requestPermission).toHaveBeenCalledTimes(1);
+    expect(requestPermission).toHaveBeenCalledWith(expect.objectContaining({
+      tool: 'mail_send',
+      forceConfirm: true,
+      details: expect.objectContaining({ standingGrantTarget: 'c@x.com' }),
+    }));
+    expect(resolverState.execute).not.toHaveBeenCalled();
   });
 });
 

@@ -18,6 +18,7 @@ import { useTeamRecipeStore } from '../../../stores/teamRecipeStore';
 import { useAgentRegistryStore } from '../../../stores/agentRegistryStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import type { SwarmAgentState } from '@shared/contract/swarm';
 import type { SwarmRunAgentRecord } from '@shared/contract/swarmTrace';
 import { readPersistedTeamLead, teamRecipeMemberKey } from '@shared/contract/teamRecipe';
@@ -214,16 +215,19 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
   // 「N 个代理工作中 · 名字」。名字说明谁在干活；工具步人话不进折叠条。
   const firstWorking = working[0];
   const summary = standby
-    ? text.collapsedStandby.replace('{count}', String(rows.length))
+    ? interpolatePlural(text.collapsedStandby, rows.length)
     : firstWorking
-      ? `${text.collapsedWorking.replace('{count}', String(working.length))} · ${firstWorking.name}`
+      ? `${interpolatePlural(text.collapsedWorking, working.length)} · ${firstWorking.name}`
       : waiting.length > 0
-        ? text.collapsedWaiting.replace('{count}', String(waiting.length))
+        ? interpolatePlural(text.collapsedWaiting, waiting.length)
         : failed.length > 0
-          ? text.collapsedFailed.replace('{count}', String(failed.length))
+          ? `${interpolatePlural(text.collapsedFailed, failed.length)} · ${failed[0].name}`
           : cancelled.length > 0
-            ? text.collapsedCancelled.replace('{count}', String(cancelled.length))
-            : text.collapsedDone.replace('{count}', String(rows.length));
+            ? `${interpolatePlural(text.collapsedCancelled, cancelled.length)} · ${cancelled[0].name}`
+            : interpolatePlural(text.collapsedDone, rows.length);
+  const failureTitle = [...failed, ...cancelled].map((row) => row.failureReason
+    ? t.chat.delegationReceipt.failureDetail.replace('{status}', row.name).replace('{reason}', row.failureReason)
+    : row.name).join('\n') || undefined;
   const mergeLabel = mergeState === 'merged'
     ? text.mergeState.chipMerged
     : mergeState === 'reported'
@@ -239,6 +243,7 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
       type="button"
       data-testid="session-member-bar-collapsed"
       onClick={openSessionAgentsPanel}
+      title={failureTitle}
       className="mb-1.5 flex w-full items-center gap-1.5 px-2 text-left text-[11px] text-zinc-500 hover:text-zinc-300"
     >
       <span className="flex -space-x-1.5">

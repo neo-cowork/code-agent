@@ -1,3 +1,4 @@
+import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 // ============================================================================
 // AutomationReviewInbox —— 自动化页首的「待过目」收件箱（三件套 A4，独立卡片区）。
 // 数据源 = sessionAutomation 记录（status=pending_review 或 config.pendingReview）
@@ -11,11 +12,13 @@
 // ============================================================================
 
 import React, { useCallback, useEffect, useState } from 'react';
+import { isEditableTool } from '@shared/contract';
 import type { CronUrgency, PermissionResponse, SessionAutomationRecord } from '@shared/contract';
 import type { ParkedApprovalInboxItem } from '@shared/contract/pendingApproval';
 import { isCronUrgency } from '@shared/cronUrgency';
 import { isCronPermissionDeniedMarker } from '@shared/cronPermissionDenied';
 import { Check, CircleCheck, Cloud, ExternalLink, Inbox, MessageSquareText, ShieldAlert, ShieldCheck, X } from 'lucide-react';
+import { cronClient } from '../../../services/cronClient';
 import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
 import ipcService from '../../../services/ipcService';
 import { IPC_CHANNELS } from '@shared/ipc';
@@ -26,6 +29,7 @@ import { useSessionStore } from '../../../stores/sessionStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useCronStore } from '../../../stores/cronStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import { toast } from '../../../hooks/useToast';
 import { Button } from '../../primitives/Button';
 import { SensitiveStepParkedRow } from '../../PermissionDialog/SensitiveStepHandbackCard';
@@ -33,6 +37,17 @@ import { openCronLoginWallSite } from './cronLoginWallNotice';
 import { CronReviewDigest } from './CronReviewDigest';
 
 const logger = createLogger('AutomationReviewInbox');
+
+// Decode only the persisted restart marker; never change host/storage titles.
+function voidedToolTitle(title: string, copy: ReturnType<typeof useI18n>['t']['cronCenter']['parkedVoided']): string {
+  const storedPrefix = '重启前发起 · ';
+  const restarted = title.startsWith(storedPrefix);
+  const name = restarted ? title.slice(storedPrefix.length) : title;
+  const key = name.toLowerCase();
+  const known = Object.hasOwn(copy.tools, key) ? copy.tools[key as keyof typeof copy.tools] : undefined;
+  const humanName = known ?? (/\s|[\u3400-\u9fff:：]/u.test(name) && !name.startsWith('mcp__') ? name : copy.action);
+  return `${restarted ? copy.restartPrefix : ''}${humanName}`;
+}
 
 function reviewResultSessionId(record: SessionAutomationRecord): string | undefined {
   return record.config?.pendingReview?.resultSessionId ?? record.resultSessionId;
@@ -46,16 +61,31 @@ function recordUrgency(record: SessionAutomationRecord): CronUrgency {
   return isCronUrgency(urgency) ? urgency : 'fyi';
 }
 
-function formatWaiting(requestedAt: number): string {
+type InboxCopy = ReturnType<typeof useI18n>['t']['cronCenter'];
+
+function parkedToolTitle(item: ParkedApprovalInboxItem, copy: InboxCopy): string {
+  const title = item.displayTool ?? item.tool ?? '';
+  const storedPrefix = '重启前发起 · ';
+  const restarted = title.startsWith(storedPrefix);
+  const name = (restarted ? title.slice(storedPrefix.length) : title).trim();
+  return `${restarted ? copy.parkedVoided.restartPrefix : ''}${!name || name === 'unknown' ? copy.parkedPendingAction : name}`;
+}
+
+function formatWaiting(requestedAt: number, copy: InboxCopy): string {
   const mins = Math.max(0, Math.floor((Date.now() - requestedAt) / 60_000));
-  if (mins < 60) return `${mins}m`;
+  if (mins < 1) return copy.parkedWaitingLessThanMinute;
+  if (mins < 60) return copy.parkedWaitingMinutes.replace('{n}', String(mins));
   const hrs = Math.floor(mins / 60);
-  return hrs < 24 ? `${hrs}h` : `${Math.floor(hrs / 24)}d`;
+  return hrs < 24
+    ? copy.parkedWaitingHours.replace('{n}', String(hrs))
+    : copy.parkedWaitingDays.replace('{n}', String(Math.floor(hrs / 24)));
 }
 
 interface AutomationReviewInboxProps {
   /** 待过目条数变化时回传（加载/刷新后都会调一次），供页首状态条显示 */
   onPendingCountChange?: (count: number) => void;
+  onParkedResolved?: () => void;
+  onParkedChange?: () => void;
   /**
    * 外部新鲜度信号（Rework r1）：收件箱常驻挂载、只在 mount 时拉一次，停车审批
    * 发生在面板开着时不会自动出现。父级在等批准集合变化（出现/消失）时变更本值，
@@ -64,13 +94,44 @@ interface AutomationReviewInboxProps {
   refreshSignal?: string | number;
 }
 
-export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ onPendingCountChange, refreshSignal }) => {
+/** 同一会话 + 同一可授权文件夹的待批写文件合并成一张卡（用户一次被问一次）。无 writeGrantFolder 的行仍一文件一卡。 */
+type ParkedDisplayItem = ParkedApprovalInboxItem & { groupIds?: string[]; groupPaths?: string[] };
+
+function groupParkedWrites(rows: ParkedApprovalInboxItem[]): ParkedDisplayItem[] {
+  const out: ParkedDisplayItem[] = [];
+  const groups = new Map<string, ParkedDisplayItem>();
+  for (const row of rows) {
+    if (row.status !== 'pending' || !row.writeGrantFolder || !row.sessionId) {
+      out.push(row);
+      continue;
+    }
+    const key = `${row.sessionId}\u0000${row.writeGrantFolder}`;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.groupIds!.push(row.id);
+      existing.groupPaths!.push(row.argsPreview ?? '');
+    } else {
+      const group: ParkedDisplayItem = { ...row, groupIds: [row.id], groupPaths: [row.argsPreview ?? ''] };
+      groups.set(key, group);
+      out.push(group);
+    }
+  }
+  return out;
+}
+
+function folderDisplayName(folder: string): string {
+  const parts = folder.split(/[\\/]+/).filter(Boolean);
+  return parts[parts.length - 1] ?? folder;
+}
+
+export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ onPendingCountChange, refreshSignal, onParkedResolved, onParkedChange }) => {
   const { t, language } = useI18n();
   const cc = t.cronCenter;
   const switchSession = useSessionStore((state) => state.switchSession);
   const setShowCronCenter = useAppStore((state) => state.setShowCronCenter);
   const [items, setItems] = useState<SessionAutomationRecord[]>([]);
   const [parked, setParked] = useState<ParkedApprovalInboxItem[]>([]);
+  const [voidedExpanded, setVoidedExpanded] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   // 标题与页首 tile 同一口径：服务侧 countPendingReview（按任务折算）。失败时保留上次值（从未成功过则标题回落到记录数）。
   const [reviewCount, setReviewCount] = useState<number | null>(null);
@@ -111,9 +172,13 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
       })
       .catch(warnFailed('pending review count'));
     sessionAutomationClient.listParkedApprovals()
-      .then((rows) => setParked(rows ?? []))
+      .then((rows) => {
+        const list = rows ?? [];
+        if (list.some((row) => row.status === 'pending')) onParkedChange?.();
+        setParked(list);
+      })
       .catch(warnFailed('parked approvals'));
-  }, [onPendingCountChange]);
+  }, [onPendingCountChange, onParkedChange]);
 
   useEffect(() => {
     load();
@@ -137,10 +202,13 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
     };
   }, [load]);
 
-  const handleResolveParked = async (item: ParkedApprovalInboxItem, response: PermissionResponse) => {
+  const handleResolveParked = async (item: ParkedDisplayItem, response: PermissionResponse) => {
     if (item.status !== 'pending') return; // orphaned 不可操作
     setBusyId(item.id);
     try {
+      for (const id of (item.groupIds ?? [item.id]).slice(1)) {
+        await ipcService.invoke(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, id, response, item.sessionId ?? undefined);
+      }
       // 复用会话审批 IPC：同一 requestId 命中内存 pending，走 first-responder-wins 裁决口。
       // 宿主已死（进程重启）时 host 会把行标 orphaned 并回报 outcome——必须告知用户，
       // 不能让点击看起来「没反应」（2026-07-26 真机 D0）。
@@ -155,6 +223,31 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
     } finally {
       setBusyId(null);
       load(); // 无论成败都刷新：orphaned 转灰态 / 失败恢复可点
+      onParkedResolved?.();
+    }
+  };
+
+  // 一键授权此任务写这个文件夹：host 重新推导文件夹 + 落库授权 + 放行本次请求（专用 IPC，不传路径）。
+  const handleGrantFolder = async (item: ParkedDisplayItem) => {
+    if (item.status !== 'pending') return;
+    setBusyId(item.id);
+    try {
+      const result = await cronClient.grantWriteFolderFromParkedApproval(item.id);
+      if (!result || result.grant.status === 'rejected' || !result.released) {
+        toast.info(cc.parkedResolveStale);
+      } else if (result.grant.status === 'kept_existing') {
+        // 没有新授权落库：只有被点的这条已放行，同卡其余文件逐个照常批准。
+        for (const id of (item.groupIds ?? [item.id]).slice(1)) {
+          await ipcService.invoke(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, id, 'allow', item.sessionId ?? undefined);
+        }
+        toast.info(cc.parkedAllowFolderKept);
+      }
+    } catch {
+      toast.error(cc.parkedResolveFailed);
+    } finally {
+      setBusyId(null);
+      load();
+      onParkedResolved?.();
     }
   };
 
@@ -188,6 +281,8 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
     if (siteOrigin) openCronLoginWallSite(siteOrigin, record.sourceRefId);
   };
 
+  const voided = parked.filter((item) => item.status === 'voided');
+  const foldVoided = voided.length >= 2;
   const hasContent = items.length > 0 || parked.length > 0;
   const urgencyGroups: Record<CronUrgency, SessionAutomationRecord[]> = {
     must_today: [],
@@ -200,7 +295,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
     <div className="shrink-0 px-5 pt-4" data-testid="automation-review-inbox">
       {!hasContent ? (
         <div
-          className="flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-950/40 px-4 py-2.5 text-xs text-zinc-500"
+          className="shrink-0 flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-950/40 px-4 py-2.5 text-xs text-zinc-500"
           data-testid="automation-review-all-clear"
         >
           <CircleCheck className="h-3.5 w-3.5 text-badge-success" />
@@ -213,26 +308,11 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
               {parked.some((item) => item.status !== 'voided') && (
                 <div className="mb-2 flex items-center gap-2 text-xs font-medium text-badge-warning">
                   <ShieldAlert className="h-3.5 w-3.5" />
-                  {cc.parkedTitle.replace('{count}', String(parked.filter((item) => item.status === 'pending').length))}
+                  {interpolatePlural(cc.parkedTitle, groupParkedWrites(parked).filter((item) => item.status === 'pending').length)}
                 </div>
               )}
               <div className="space-y-1.5">
-                {parked.map((item) => {
-                  if (item.status === 'voided') {
-                    return (
-                      <div
-                        key={item.id}
-                        className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2 opacity-50"
-                        data-testid="parked-approval-voided"
-                      >
-                        <div className="truncate text-sm text-zinc-200">{item.displayTool ?? item.tool}</div>
-                        <div className="text-[11px] text-zinc-500">
-                          {/* 收口句按当前语言展示（老行持久化的是中文原句）；非收口文本原样保留 */}
-                          {cc.parkedVoidedLabel}：{localizeParkedApprovalClosureText(item.voidReason, t) ?? item.voidReason}
-                        </div>
-                      </div>
-                    );
-                  }
+                {groupParkedWrites(parked).filter((item) => item.status !== 'voided').map((item) => {
                   const isOrphaned = item.status === 'orphaned';
                   const isPairing = item.kind === 'channel_pairing';
                   const isExternal = item.riskClass === 'external';
@@ -246,7 +326,8 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                         data-testid="parked-approval-item"
                       >
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm text-zinc-200">{item.displayTool ?? item.tool}</div>
+                          <div className="truncate text-sm text-zinc-200">{parkedToolTitle(item, cc)}</div>
+                          {item.sessionTitle && <div className="truncate text-xs text-zinc-400" data-testid="parked-session-title">{item.sessionTitle}</div>}
                           <SensitiveStepParkedRow
                             step={item.sensitiveStep}
                             onRespond={(response) => { void handleResolveParked(item, response); }}
@@ -259,7 +340,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                   // A4 作用域提示：external 动作离开本机（暖色边框强调）；有 target 时点名去向。
                   // 非 external 审批卡不变（不加 scopeNote、不换边框）。
                   const scopeNote = isExternal
-                    ? cc.parkedScopeExternal.replace('{target}', item.standingGrantTarget ?? (item.displayTool ?? item.tool))
+                    ? cc.parkedScopeExternal.replace('{target}', item.standingGrantTarget ?? (parkedToolTitle(item, cc)))
                     : null;
                   // B4 铸权入口：仅 external + 能确定性提取 target 时出现（模型侧无入口）。
                   const canMintStanding = isExternal && !!item.standingGrantTarget;
@@ -273,40 +354,45 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                         <div className="flex items-center gap-1.5 truncate text-sm text-zinc-200">
                           {isPairing
                             ? cc.pairingTitle.replace('{channel}', item.pairingChannel === 'lark' ? 'Lark' : 'Feishu')
-                            : (item.displayTool ?? item.tool)}
+                            : item.groupIds && item.groupIds.length > 1 && item.writeGrantFolder
+                              ? cc.parkedWriteGroupTitle.replace('{count}', String(item.groupIds.length)).replace('{folder}', folderDisplayName(item.writeGrantFolder))
+                              : (parkedToolTitle(item, cc))}
                           {isExternal && (
                             <span className="shrink-0 rounded bg-orange-500/15 px-1.5 py-0.5 text-[10px] text-badge-warning">
                               {cc.parkedExternalBadge}
                             </span>
                           )}
                         </div>
+                        {!isPairing && item.sessionTitle && <div className="truncate text-xs text-zinc-400" data-testid="parked-session-title">{item.sessionTitle}</div>}
                         {isPairing && item.pairingCode && (
                           <div className="text-xs font-medium text-badge-warning" data-testid="pairing-code">
                             {cc.pairingCode.replace('{code}', item.pairingCode)}
                           </div>
                         )}
                         {isPairing && item.pairingSender && (
-                          <div className="truncate text-[11px] text-zinc-400">
+                          <div className="whitespace-pre-wrap break-words text-[11px] text-zinc-400">
                             {cc.pairingSender.replace('{sender}', item.pairingSender)}
                           </div>
                         )}
                         {scopeNote && (
-                          <div className="truncate text-[11px] text-badge-warning/80" data-testid="parked-scope-note">
+                          <div className="whitespace-pre-wrap break-words text-[11px] text-badge-warning/80" data-testid="parked-scope-note">
                             {scopeNote}
                           </div>
                         )}
                         {/* 参数预览（host 已脱敏 + 截断）：一眼看清这步要干什么；老行没有该字段不渲染 */}
                         {!isPairing && item.argsPreview && (
                           <div
-                            className="truncate text-[11px] text-zinc-400"
+                            className="whitespace-pre-wrap break-words text-[11px] text-zinc-400"
                             data-testid="parked-args-preview"
-                            title={item.argsPreview}
+                            title={item.groupPaths ? item.groupPaths.join('\n') : item.argsPreview}
                           >
-                            {cc.parkedArgsPreviewLabel}{item.argsPreview}
+                            {cc.parkedArgsPreviewLabel}{item.groupPaths && item.groupPaths.length > 1
+                              ? item.groupPaths.map((p) => folderDisplayName(p)).join(cc.parkedGroupFileSep)
+                              : item.argsPreview}
                           </div>
                         )}
                         <div className="text-[11px] text-zinc-500">
-                          {isOrphaned ? cc.parkedOrphaned : cc.parkedWaiting.replace('{duration}', formatWaiting(item.requestedAt))}
+                          {isOrphaned ? cc.parkedOrphaned : cc.parkedWaiting.replace('{duration}', formatWaiting(item.requestedAt, cc))}
                         </div>
                       </div>
                       {!isOrphaned && (
@@ -332,6 +418,42 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                               {cc.parkedAlwaysAllow.replace('{target}', item.standingGrantTarget ?? '')}
                             </button>
                           )}
+                          {item.writeGrantFolder && (
+                            <button /* ds-allow:button: 同上，收件箱行内超小文本按钮 */
+                              onClick={() => handleGrantFolder(item)}
+                              disabled={busyId === item.id}
+                              className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-badge-warning transition-colors hover:bg-amber-500/10 hover:text-badge-warning disabled:opacity-50"
+                              data-testid="parked-allow-folder"
+                              title={cc.parkedAllowFolderTitle.replace('{path}', item.writeGrantFolder)}
+                            >
+                              <ShieldCheck className="h-3.5 w-3.5" />
+                              {cc.parkedAllowFolder.replace('{folder}', folderDisplayName(item.writeGrantFolder))}
+                            </button>
+                          )}
+                          {(item.kind === 'tool_approval' || item.kind === undefined) && !isEditableTool(item.tool) && (!isExternal || !!item.standingGrantTarget) && (
+                            <>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="secondary"
+                                disabled={busyId === item.id}
+                                onClick={() => handleResolveParked(item, 'allow_run')}
+                                data-testid="parked-allow-run"
+                              >
+                                {cc.parkedAllowRun}
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="secondary"
+                                disabled={busyId === item.id}
+                                onClick={() => handleResolveParked(item, 'allow_24h')}
+                                data-testid="parked-allow-24h"
+                              >
+                                {cc.parkedAllow24h}
+                              </Button>
+                            </>
+                          )}
                           <button /* ds-allow:button: 同上，收件箱行内超小文本按钮 */
                             onClick={() => handleResolveParked(item, 'deny')}
                             disabled={busyId === item.id}
@@ -346,6 +468,33 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                     </div>
                   );
                 })}
+                {foldVoided && (
+                  <div className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-1 text-xs text-zinc-500" data-testid="parked-approval-voided-summary">
+                    <span>{cc.parkedVoided.summary.replace('{count}', String(voided.length))}</span>
+                    <Button variant="ghost" size="sm" aria-expanded={voidedExpanded} data-testid="parked-approval-voided-toggle" onClick={() => setVoidedExpanded((expanded) => !expanded)}>
+                      {voidedExpanded ? cc.parkedVoided.collapse : cc.parkedVoided.expand}
+                    </Button>
+                  </div>
+                )}
+                {(!foldVoided || voidedExpanded) && voided.map((item) => (
+                  <div key={item.id} className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2 opacity-50" data-testid="parked-approval-voided">
+                    <div className="truncate text-sm text-zinc-200">{voidedToolTitle(item.displayTool ?? item.tool, cc.parkedVoided)}</div>
+                    {item.sessionTitle && <div className="text-xs text-zinc-400">{getDisplaySessionTitle(item.sessionTitle, language)}</div>}
+                    <div className="text-[11px] text-zinc-500">
+                      {cc.parkedVoided.startedAt.replace('{time}', new Date(item.requestedAt).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN', {
+                        month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+                      }))}
+                    </div>
+                    {item.argsPreview && (
+                      <div className="truncate text-[11px] text-zinc-400" data-testid="parked-args-preview">
+                        {cc.parkedArgsPreviewLabel}{item.argsPreview}
+                      </div>
+                    )}
+                    <div className="text-[11px] text-zinc-500">
+                      {cc.parkedVoidedLabel}：{localizeParkedApprovalClosureText(item.voidReason, t) ?? item.voidReason}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -429,12 +578,12 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                               />
                             )}
                             {maxRunsReached && (
-                              <div className="truncate text-[11px] text-badge-warning" data-testid="automation-review-max-runs">
+                              <div className="whitespace-pre-wrap break-words text-[11px] text-badge-warning" data-testid="automation-review-max-runs">
                                 {maxRunsReached.summary ?? cc.inboxMaxRunsReached.replace('{count}', String(maxRunsReached.maxRuns))}
                               </div>
                             )}
                             {urgencyRaw && (
-                              <div className="truncate text-[11px] text-zinc-500" data-testid="automation-urgency-raw">
+                              <div className="whitespace-pre-wrap break-words text-[11px] text-zinc-500" data-testid="automation-urgency-raw">
                                 {cc.inboxUrgencyRawPrefix}{urgencyRaw}
                               </div>
                             )}

@@ -1,3 +1,4 @@
+import { getDisplaySessionTitle } from '../../../../utils/sessionPresentation';
 // ============================================================================
 // AtMentionPopover - @ 触发面板（WorkBuddy 形态，2026-07-29 UX round2 任务 14/15）
 // ============================================================================
@@ -47,7 +48,7 @@ export const AtMentionPopover: React.FC<AtMentionPopoverProps> = ({
   onSelect,
   onHover,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const listRef = useRef<HTMLDivElement>(null);
   const totalCount = libraryRows.length + fileRows.length + sessionRows.length + artifactRows.length;
 
@@ -170,7 +171,7 @@ export const AtMentionPopover: React.FC<AtMentionPopoverProps> = ({
               >
                 <History className="mt-0.5 h-3.5 w-3.5 shrink-0 text-zinc-500" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-xs">{row.title}</span>
+                  <span className="block truncate text-xs">{getDisplaySessionTitle(row.title, language)}</span>
                   <span className="block truncate text-[10px] text-zinc-500">
                     {t.mentionPanel.sessionMeta
                       .replace('{time}', formatRelativeTime(t, row.updatedAt))
@@ -210,7 +211,7 @@ export const AtMentionPopover: React.FC<AtMentionPopoverProps> = ({
                   </span>
                   <span className="block truncate text-[10px] text-zinc-500">
                     {t.mentionPanel.artifactMeta
-                      .replace('{session}', row.sessionTitle || t.mentionPanel.unknownSession)
+                      .replace('{session}', row.sessionTitle ? getDisplaySessionTitle(row.sessionTitle, language) : t.mentionPanel.unknownSession)
                       .replace('{time}', formatRelativeTime(t, row.createdAt))}
                   </span>
                 </span>

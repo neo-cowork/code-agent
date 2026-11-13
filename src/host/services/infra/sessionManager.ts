@@ -1052,11 +1052,11 @@ export class SessionManager implements Disposable {
     return db.getMessages(sessionId, limit, undefined, options);
   }
 
-  async replaceMessages(sessionId: string, messages: Message[]): Promise<void> {
+  async replaceMessages(sessionId: string, messages: Message[], updatedAt?: number): Promise<void> {
     const db = getDatabase();
     this.assertAccessibleSession(sessionId);
-    db.replaceMessages(sessionId, messages);
-    getContextHealthService().cleanup(sessionId);
+    db.replaceMessages(sessionId, messages, updatedAt);
+    getContextHealthService().cleanup(sessionId, updatedAt);
 
     if (this.sessionCache.has(sessionId)) {
       const cached = this.sessionCache.get(sessionId)!;
@@ -1071,6 +1071,7 @@ export class SessionManager implements Disposable {
   getSessionRuntimeState(sessionId: string): {
     compressionStateJson: string | null;
     persistentSystemContext: string[];
+    lastProviderUsageJson: string | null;
   } | null {
     const db = getDatabase();
     if (!this.getAccessibleStoredSession(sessionId)) {
@@ -1276,11 +1277,11 @@ export class SessionManager implements Disposable {
     const session = await this.getSession(sessionId);
     if (!session) return;
 
-    const titleSource = sessionTitleSource(firstMessage);
+    const titleSource = sessionTitleSource(firstMessage, (await import('../../session/sessionTitleHostPrompt')).readUiLanguage());
     if (session.messageCount > 1 || !isProvisionalAutoTitle(session.title, titleSource)) return;
 
     let title = await this.generateSmartTitle(titleSource);
-    if (!title) title = deriveFallbackSessionTitle(firstMessage);
+    if (!title) title = deriveFallbackSessionTitle(titleSource);
 
     // generateSmartTitle 要调小模型，实测能拖几十秒。这段窗口里目标会话可能已被
     // 改名（用户手动重命名，或它先被别的路径命名过），此时再写就是覆盖用户的标题。
@@ -1303,7 +1304,7 @@ export class SessionManager implements Disposable {
       // 截取前 500 字符避免 prompt 太长
       const truncated = message.length > 500 ? message.slice(0, 500) + '...' : message;
 
-      const result = await quickTask(`为以下用户消息生成一个简短的会话标题（10-25字，中文优先，不加引号不加标点）：\n\n${truncated}`);
+      const result = await quickTask((await import('../../session/sessionTitleHostPrompt')).buildHostSessionTitlePrompt(truncated));
 
       if (result.success && result.content) {
         // 清理：去引号、去标点、限长

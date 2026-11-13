@@ -278,6 +278,7 @@ export const zhSettingsModels = {
         '开启后，局部重绘若无法逐像素保证未选区域不变，会直接取消并提示（而不是给你一张可能被偷改其它区域的图）。默认关闭：尽力锁定，无法锁定时仍采用模型结果不打断你。',
     },
     providerDoctor: {
+      probeAuthMismatch: '测试地址返回 {status}，但你最近的实际调用已成功，测试路径可能与实际调用不同。',
       title: '系统诊断',
       pageDescription: '检查运行环境、网络、配置、数据库等 9 类系统状态；失败项可直接跳转修复。',
       exportLogs: '导出日志',
@@ -588,7 +589,17 @@ export const zhSettingsModels = {
       grid: {
         title: '所有连接器',
         description: '按服务来源和使用位置分区查看，已连接服务与待发现服务不再混在一起。',
-        connectedSummarySuffix: ' 台 MCP 已连接',
+        connectedSummaryPrefix: '已连接 ',
+        connectedSummaryMiddle: ' / 共 ',
+        connectedSummarySuffix: ' 个',
+        cardStatus: {
+          connected: '已连接',
+          connectsWhenNeeded: '需要时自动连接',
+          disabled: '已停用',
+          connectionFailed: '连接失败',
+          connecting: '连接中',
+          notConnected: '未连接',
+        },
         sections: {
           saas: {
             title: '工作账号与在线服务',
@@ -634,11 +645,11 @@ export const zhSettingsModels = {
         addServerFailed: '添加服务器失败',
       },
       trustSummary: {
-        authReauthorizeHint: 'OAuth/token 需要重新授权',
-        authMaskedHint: '凭证默认 masked，不在列表明文展示',
+        authReauthorizeHint: '需要重新连接账号',
+        authMaskedHint: '密码和密钥不会以明文显示',
         toolUnit: '工具',
         resourceUnit: '资源',
-        approvalNotice: 'destructive/openWorld 调用前仍需审批',
+        approvalNotice: '可能更改数据或访问外部网络的操作仍会先征求你的同意',
       },
       management: {
         title: 'MCP 管理台',
@@ -690,7 +701,7 @@ export const zhSettingsModels = {
       },
       diagnostics: {
         title: '运行状态与本地桥接',
-        description: '这里用于排查连接、桥接和本地 connector 状态，默认收起。',
+        description: '这里用于排查连接、桥接和本机连接器状态，默认收起。',
         overview: '总览',
         connectedServers: '已连接服务器',
         availableTools: '可用工具',

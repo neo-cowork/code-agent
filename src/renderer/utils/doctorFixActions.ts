@@ -10,9 +10,11 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import { useAppStore } from '../stores/appStore';
 import { openExternalLink } from './platform';
 import type { SettingsTab } from './settingsTabs';
+import type { LocalOpsTab } from '../stores/appStoreTypes';
 
 export type DoctorFixAction =
   | { kind: 'settingsTab'; tab: SettingsTab }
+  | { kind: 'localOps'; tab: LocalOpsTab }
   | { kind: 'externalLink'; url: string }
   | { kind: 'openDataDirectory' };
 
@@ -28,7 +30,7 @@ export const DOCTOR_FIX_ACTIONS: Record<DoctorFixCode, DoctorFixAction> = {
   [DOCTOR_FIX_CODES.OPEN_PROVIDER_SETTINGS]: { kind: 'settingsTab', tab: 'model' },
   [DOCTOR_FIX_CODES.OPEN_PROXY_HELP]: { kind: 'externalLink', url: AGENT_NEO_HELP_URL },
   [DOCTOR_FIX_CODES.OPEN_MCP_SETTINGS]: { kind: 'settingsTab', tab: 'mcp' },
-  [DOCTOR_FIX_CODES.OPEN_BROWSER_RELAY_SETTINGS]: { kind: 'settingsTab', tab: 'privacy' },
+  [DOCTOR_FIX_CODES.OPEN_BROWSER_RELAY_SETTINGS]: { kind: 'localOps', tab: 'browser' },
   [DOCTOR_FIX_CODES.OPEN_HOOKS_SETTINGS]: { kind: 'settingsTab', tab: 'hooks' },
   [DOCTOR_FIX_CODES.OPEN_UPDATE_SETTINGS]: { kind: 'settingsTab', tab: 'update' },
 };
@@ -62,6 +64,13 @@ export async function runDoctorFix(code: DoctorFixCode): Promise<DoctorFixResult
   switch (action.kind) {
     case 'settingsTab': {
       useAppStore.getState().openSettingsTab(action.tab);
+      return { navigatedAway: true };
+    }
+    case 'localOps': {
+      // 设置弹层在 App 里先于 Local Ops 页渲染：只开页会被设置盖住，必须先关设置。
+      const store = useAppStore.getState();
+      store.setShowSettings(false);
+      store.openLocalOpsPanel(action.tab);
       return { navigatedAway: true };
     }
     case 'externalLink': {

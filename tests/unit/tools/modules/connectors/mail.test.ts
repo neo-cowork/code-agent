@@ -23,6 +23,7 @@ vi.mock('../../../../../src/host/connectors', () => ({
 }));
 
 import { mailModule } from '../../../../../src/host/tools/modules/connectors/mail';
+import { formatConnectorTime } from '../../../../../src/host/tools/modules/connectors/connectorTime';
 
 // -----------------------------------------------------------------------------
 // Helpers
@@ -257,6 +258,7 @@ describe('mailModule (native)', () => {
         expect(result.output).toContain('邮件列表 (2)');
         expect(result.output).toContain('#1 Hello');
         expect(result.output).toContain('Work / INBOX');
+        expect(result.output).toContain(formatConnectorTime(Date.UTC(2026, 3, 13)));
         expect(result.output).toContain('| 已读');
         expect(result.output).toContain('#2 Unread');
         expect(result.output).toContain('收信时间无法解析');
@@ -380,6 +382,27 @@ describe('mailModule (native)', () => {
         expect(result.output).toContain('附件：5 个');
         expect(result.output).not.toContain('(');
       }
+    });
+
+    it('read_message carries the image/attachment notice into tool output', async () => {
+      const notice = '邮件正文是图片/附件，未能提取出文本。 附件：1 个 (photo.png)';
+      execMock.mockResolvedValue({
+        data: {
+          id: 10,
+          subject: 'Image-only',
+          sender: 'a@x.com',
+          receivedAtMs: null,
+          read: true,
+          content: notice,
+          attachmentCount: 1,
+          attachments: ['photo.png'],
+        },
+      });
+
+      const result = await run({ action: 'read_message', message_id: 10 });
+
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.output).toContain(notice);
     });
   });
 

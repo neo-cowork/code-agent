@@ -4,8 +4,13 @@
 // 侧栏自动化行与协作空间自动化卡弹窗复用同一套，不重写。
 // ============================================================================
 
-/** 下次运行时间：今天只显 HH:mm，其他日期带月日 */
-export function formatNextRun(ts: number, locale: string): string {
+import { formatCronJobShortTime } from './formatCronJobTime';
+
+/** 下次运行时间：今天只显 HH:mm，其他日期带月日；定时任务可指定其时区。 */
+export function formatNextRun(ts: number, locale: string, timeZone?: string): string {
+  if (timeZone) {
+    return formatCronJobShortTime(ts, timeZone, locale.startsWith('zh') ? 'zh' : 'en');
+  }
   const date = new Date(ts);
   const now = new Date();
   const sameDay = date.getFullYear() === now.getFullYear()

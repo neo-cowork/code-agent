@@ -1,3 +1,4 @@
+import { getSpawnGuard } from '../../host/agent/spawnGuard';
 import type { Response } from 'express';
 import type { AgentEngineRunResult } from '../../shared/contract/agentEngine';
 import type { ExternalAgentEngineKind } from '../../shared/contract/agentEngine';
@@ -63,6 +64,7 @@ class AgentDurableRouteRunLifecycle {
   async markSuccess(input: AgentDurableRouteRunSuccess): Promise<ExternalEngineTerminalStatus> {
     if (this.terminalStatus) return this.terminalStatus;
     if ('result' in input) {
+      if (this.runHandle) getSpawnGuard().settleParentRun(this.deps.sessionId, this.runHandle.context.runId, input.result.status === 'cancelled');
       this.terminalStatus = this.externalLifecycle
         ? await this.externalLifecycle.finish(
           input.result,
@@ -73,6 +75,7 @@ class AgentDurableRouteRunLifecycle {
       return this.terminalStatus;
     }
     const finalStatus = input.finalStatus;
+    if (this.runHandle && finalStatus !== 'interrupted') getSpawnGuard().settleParentRun(this.deps.sessionId, this.runHandle.context.runId);
     const durableStatus: ExternalEngineTerminalStatus = finalStatus === 'completed'
       ? 'completed'
       : finalStatus === 'interrupted' ? 'cancelled' : 'failed';
@@ -88,6 +91,7 @@ class AgentDurableRouteRunLifecycle {
         cancelled: true,
       }, () => this.commitRouteTerminal(finalStatus, durableStatus));
     } else {
+      if (finalStatus === 'interrupted' && this.runHandle) getSpawnGuard().settleParentRun(this.deps.sessionId, this.runHandle.context.runId, true);
       await this.commitRouteTerminal(finalStatus, durableStatus);
     }
     this.terminalStatus = durableStatus;
@@ -113,6 +117,9 @@ class AgentDurableRouteRunLifecycle {
   }
 
   async markFailure(input: { disconnected: boolean; message: string }): Promise<void> {
+    if (this.runHandle && !this.terminal) {
+      getSpawnGuard().settleParentRun(this.deps.sessionId, this.runHandle.context.runId, input.disconnected);
+    }
     if (this.externalLifecycle && !this.terminal) {
       try {
         await this.externalLifecycle.finish({
@@ -260,25 +267,6 @@ export function resolveAgentDurableActivation(
     return null;
   }
   return rollout?.policy.durableActivation ?? true;
-}
-
-export async function cancelDisconnectedAgentRouteRun(input: {
-  runRegistry: RunRegistry;
-  runHandle: RunHandle;
-  sessionId: string;
-  durableActivation: boolean;
-}): Promise<void> {
-  await input.runHandle.cancel('user');
-  if (!input.durableActivation) {
-    input.runRegistry.unregister(input.runHandle.context.runId, input.runHandle);
-    return;
-  }
-  await input.runRegistry.terminalDurable(input.runHandle.context.runId, {
-    now: Date.now(),
-    status: 'cancelled',
-    reason: 'client_disconnected_before_stream',
-    event: { type: 'run_cancelled', payload: { sessionId: input.sessionId }, recordedAt: Date.now() },
-  }, input.runHandle);
 }
 
 export async function isDurableTerminalNativeControl(input: {

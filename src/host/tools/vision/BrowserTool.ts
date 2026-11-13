@@ -25,6 +25,7 @@ const BROWSER_ACTION_ACTIONS = [
   'get_dialog_state', 'handle_dialog', 'read_clipboard', 'write_clipboard',
   'screenshot', 'get_content', 'get_elements', 'get_dom_snapshot', 'get_a11y_snapshot',
   'get_workbench_state', 'wait_for_download', 'upload_file', 'wait', 'fill_form', 'get_logs',
+  'keep_result_page',
   'execute_goal',
 ] as const;
 
@@ -104,6 +105,7 @@ Routing contract:
 - wait: Wait for elements or timeout
 - fill_form: Fill multiple form fields
 - get_logs: Get recent browser operation logs
+- keep_result_page: Keep the active page open for the user after the run ends (closes other tabs; not for relay/unattended runs or the shared personal profile)
 ${browserJevStepDescriptionSuffix()}
 
 ## Parameters:
@@ -141,6 +143,7 @@ ${browserJevStepDescriptionSuffix()}
           'get_dialog_state', 'handle_dialog', 'read_clipboard', 'write_clipboard',
           'screenshot', 'get_content', 'get_elements', 'get_dom_snapshot', 'get_a11y_snapshot',
           'get_workbench_state', 'wait_for_download', 'upload_file', 'wait', 'fill_form', 'get_logs',
+          'keep_result_page',
           'execute_goal',
         ],
         description: 'The browser action to perform',
@@ -165,13 +168,13 @@ ${browserJevStepDescriptionSuffix()}
         description: '[Playwright] CSS selector for element interactions',
       },
       targetRef: {
-        type: 'object',
-        description: '[Playwright] Fresh target reference returned by get_dom_snapshot',
+        type: ['object', 'string'],
+        description: '[Playwright] Fresh target reference returned by get_dom_snapshot: pass the refId shown at the start of each get_dom_snapshot element line (the targetRef object form is also accepted), e.g. {"action":"click","targetRef":"<refId>"}.',
         additionalProperties: true,
       },
       destinationTargetRef: {
-        type: 'object',
-        description: '[Playwright] Fresh destination target reference for drag',
+        type: ['object', 'string'],
+        description: '[Playwright] Fresh destination target reference for drag (pass the refId from a get_dom_snapshot element line).',
         additionalProperties: true,
       },
       text: {
@@ -234,6 +237,10 @@ ${browserJevStepDescriptionSuffix()}
       tabId: {
         type: 'string',
         description: '[Playwright] Target tab ID (optional, uses active tab)',
+      },
+      offset: {
+        type: 'number',
+        description: '[Playwright] get_dom_snapshot only: index of the first interactive element to list (default 0). Use the offset from the "+K more elements" line to page.',
       },
       timeout: {
         type: 'number',
