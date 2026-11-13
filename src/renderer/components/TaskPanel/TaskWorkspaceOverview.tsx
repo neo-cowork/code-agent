@@ -36,7 +36,7 @@ import { SubagentRunRows, TaskDashboardSummary } from './RunWorkbenchCards';
 import { useMemberViewStore } from '../../stores/memberViewStore';
 import { useSessionMembers } from '../features/expert/SessionMemberBar';
 import { ReceiptRows } from '../ReceiptRows';
-import { getHumanToolLabel } from '../../utils/toolHumanLabel';
+import { getBackgroundTaskToolLabel, getHumanToolLabel } from '../../utils/toolHumanLabel';
 import type { Translations } from '../../i18n';
 
 // 真读取失败（读取异常且确有任务在跑）在 Todo 模块位置内联一行错误 + 重试/取消
@@ -219,7 +219,7 @@ export function buildOverviewContextRows(args: {
     if (isInternalContextPath(item.path)) continue;
     const identity = item.path || item.label;
     const key = `file:${identity}`;
-    const detail = item.detail ? getHumanToolLabel({ toolName: item.detail, labels: fallbacks.humanToolLabels }) : undefined;
+    const detail = item.detail ? getBackgroundTaskToolLabel({ toolName: item.detail, labels: fallbacks.humanToolLabels }) : undefined;
     const existing = rows.get(key);
     if (existing) {
       if (detail && existing.detail !== detail) {

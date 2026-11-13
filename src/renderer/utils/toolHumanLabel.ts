@@ -15,10 +15,6 @@ const TOOL_LABEL_KEYS: Record<string, keyof HumanToolLabels['tools']> = {
   webfetch: 'webFetch',
   websearch: 'webSearch',
   read: 'readFile',
-  write: 'writeFile',
-  writefile: 'writeFile',
-  edit: 'editFile',
-  editfile: 'editFile',
   glob: 'findFiles',
   grep: 'findFiles',
   readfile: 'readFile',
@@ -47,4 +43,12 @@ export function getHumanToolLabel(args: {
   if (toolKey) return args.labels.tools[toolKey];
 
   return getToolDisplayName(toolName || args.labels.unknownTool);
+}
+
+// Background task details are not approval labels and may localize file actions.
+export function getBackgroundTaskToolLabel(args: { toolName: string; labels: HumanToolLabels }): string {
+  const key = normalizedLabelKey(args.toolName);
+  if (key === 'write' || key === 'writefile') return args.labels.tools.writeFile;
+  if (key === 'edit' || key === 'editfile') return args.labels.tools.editFile;
+  return getHumanToolLabel(args);
 }

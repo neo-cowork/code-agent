@@ -65,6 +65,14 @@ describe('sessionTaskPresentation', () => {
     expect(metadata.sessionTask.tasks[0].detail).toContain('/work/My Project/报告.md');
   });
 
+  it('localizes background file actions without changing shared approval labels', () => {
+    const metadata = { sessionTask: { outcome: 'status', tasks: [
+      { shortName: '报告', status: 'completed', detail: 'Write 后用 Edit 修改。' },
+    ] } };
+    expect(formatSessionTaskOutput(metadata, '', zh)).toBe('报告　已完成：写入文件 后用 编辑文件 修改。');
+    expect(formatSessionTaskOutput(metadata, '', en)).toBe('报告　Completed: Write file 后用 Edit file 修改。');
+  });
+
   it('preserves the old raw output when sessionTask metadata is absent or invalid', () => {
     expect(formatSessionTaskOutput(undefined, rawStatus, zh)).toBe(rawStatus);
     expect(formatSessionTaskOutput({ sessionTask: { outcome: 'status', tasks: [] } }, rawStatus, en))

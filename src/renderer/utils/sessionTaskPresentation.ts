@@ -1,5 +1,5 @@
 import type { Translations } from '../i18n';
-import { getHumanToolLabel } from './toolHumanLabel';
+import { getBackgroundTaskToolLabel } from './toolHumanLabel';
 
 type SessionTaskOutcome = 'accepted' | 'queued' | 'reused' | 'status';
 type SessionTaskStatus = 'queued' | 'running' | 'cancelling' | 'completed' | 'failed' | 'cancelled';
@@ -74,7 +74,7 @@ export function formatSessionTaskOutput(
         for (const prefix of [`${base}/`, `${base}\\`]) text = text.split(prefix).join('');
       }
     }
-    return text.replace(/\b(Read|Write|Edit|Glob|Grep)\b/g, (toolName) => getHumanToolLabel({
+    return text.replace(/\b(Read|Write|Edit|Glob|Grep)\b/g, (toolName) => getBackgroundTaskToolLabel({
       toolName, labels: t.receiptPresentation.humanToolLabels,
     }));
   };
