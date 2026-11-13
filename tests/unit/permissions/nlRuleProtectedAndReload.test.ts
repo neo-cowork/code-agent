@@ -113,6 +113,17 @@ describe('Important 3：热重载改短语立即生效', () => {
     expect(getPolicyEngine().getRules().filter((r) => r.id.startsWith('user-nl:'))).toHaveLength(1);
   });
 
+  it('角色规则删短语后重载 → 该角色不再沿用旧授权，其他角色不受影响', () => {
+    const scoped = { behavior: 'preapprove' as const, rule, roleId: 'publisher' };
+    getPolicyEngine().loadUserRules({ nlRules: [{ ...scoped, phrases: ['确认发布', '照常发'] }] });
+    getPolicyEngine().loadUserRules({ nlRules: [{ ...scoped, phrases: ['照常发'] }] });
+    beginRunPolicy(RUN, SESSION, { roleId: 'publisher', initiatingText: '确认发布' });
+    expect(resolveUserRuleOutcomeForTool(SESSION, 'Bash', { command: cmd })).toEqual({ kind: 'ask', rule });
+    endRunPolicy(RUN);
+    beginRunPolicy(RUN, SESSION, { roleId: 'another-role', initiatingText: '照常发' });
+    expect(resolveUserRuleOutcomeForTool(SESSION, 'Bash', { command: cmd }).kind).toBe('none');
+  });
+
   it('换掉全部短语后重载 → 只认新短语', () => {
     getPolicyEngine().loadUserRules({ nlRules: [{ behavior: 'preapprove', rule, phrases: ['旧口令'] }] });
     getPolicyEngine().loadUserRules({ nlRules: [{ behavior: 'preapprove', rule, phrases: ['新口令'] }] });

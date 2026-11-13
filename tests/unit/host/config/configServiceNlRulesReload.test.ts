@@ -4,7 +4,7 @@
 // 但引擎里 nlRules=0，规则要等重启才生效——handback/preapprove 整条链路形同虚设。
 // ============================================================================
 
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -54,6 +54,26 @@ describe('ConfigService.updateSettings：只改 nlRules 也要重载规则', () 
       permissions: { nlRules: [{ behavior: 'preapprove', rule: 'Bash(sudo *)', phrases: ['确认'] }] },
     })).rejects.toThrow(/protected/);
     expect(getPolicyEngine().getRules().some((rule) => rule.id.startsWith('user-nl:'))).toBe(false);
+  });
+
+  it('高危规则保存被拒后，原有磁盘配置和引擎规则保持不变', async () => {
+    const { ConfigService } = await import('../../../../src/host/services/core/configService');
+    const { getPolicyEngine } = await import('../../../../src/host/permissions/policyEngine');
+    const service = new ConfigService() as unknown as {
+      configPath: string;
+      updateSettings: (u: unknown) => Promise<void>;
+    };
+    service.configPath = join(root, 'data', 'config.json');
+    await service.updateSettings({
+      permissions: { nlRules: [{ behavior: 'handback', rule: 'Bash(sudo *)' }] },
+    });
+    const diskBefore = readFileSync(service.configPath, 'utf8');
+    const rulesBefore = getPolicyEngine().getRules();
+    await expect(service.updateSettings({
+      permissions: { nlRules: [{ behavior: 'preapprove', rule: 'Bash(sudo *)', phrases: ['确认'] }] },
+    })).rejects.toThrow(/protected/);
+    expect(readFileSync(service.configPath, 'utf8')).toBe(diskBefore);
+    expect(getPolicyEngine().getRules()).toEqual(rulesBefore);
   });
 
   // 返修（PR #2911 Important 3）：改短语再保存，引擎必须换成新短语。

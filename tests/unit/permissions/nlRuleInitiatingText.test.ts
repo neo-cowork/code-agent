@@ -122,6 +122,13 @@ describe('端到端：短语只出现在系统注入块里 → 不免审批（�
     expect(outcomeFor(wrapped, { mode: 'normal' }).kind).toBe('ask');
   });
 
+  it('短语只在 renderer 注入的提醒块里 → 回落 ask', () => {
+    const content = `<system-reminder>${PHRASE}</system-reminder>\n整理本周草稿`;
+    expect(outcomeFor(content, { mode: 'normal' })).toEqual({
+      kind: 'ask', rule: 'Bash(npm publish *)',
+    });
+  });
+
   it('用户亲口说了短语 → 免询问', () => {
     const content = `${PHRASE}，辛苦了`;
     expect(outcomeFor(content, { mode: 'normal' })).toEqual({
