@@ -303,6 +303,9 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                   const isOrphaned = item.status === 'orphaned';
                   const isPairing = item.kind === 'channel_pairing';
                   const isExternal = item.riskClass === 'external';
+                  const isShell = item.tool.toLowerCase() === 'bash';
+                  const isFileWrite = item.tool.toLowerCase() === 'write';
+                  const toolTitle = (isShell || isFileWrite) ? voidedToolTitle(item.tool, cc.parkedVoided) : (item.displayTool ?? item.tool);
                   // ADR-088 敏感步骤交回：单状态交回卡（[完成后继续]/[这步不做了]），
                   // 不出「每次都允许」铸权入口——host 侧对交回应答永不铸造授权。
                   if (item.sensitiveStep) {
@@ -343,7 +346,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                             ? cc.pairingTitle.replace('{channel}', item.pairingChannel === 'lark' ? 'Lark' : 'Feishu')
                             : item.groupIds && item.groupIds.length > 1 && item.writeGrantFolder
                               ? cc.parkedWriteGroupTitle.replace('{count}', String(item.groupIds.length)).replace('{folder}', folderDisplayName(item.writeGrantFolder))
-                              : (item.displayTool ?? item.tool)}
+                              : toolTitle}
                           {isExternal && (
                             <span className="shrink-0 rounded bg-orange-500/15 px-1.5 py-0.5 text-[10px] text-badge-warning">
                               {cc.parkedExternalBadge}
@@ -367,7 +370,13 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                           </div>
                         )}
                         {/* 参数预览（host 已脱敏 + 截断）：一眼看清这步要干什么；老行没有该字段不渲染 */}
-                        {!isPairing && item.argsPreview && (
+                        {!isPairing && item.argsPreview && isShell && (
+                          <details className="text-[11px] text-zinc-400">
+                            <summary className="cursor-pointer">{t.automationPresentation.showCommand}</summary>
+                            <div className="whitespace-pre-wrap break-words" data-testid="parked-shell-preview">{item.argsPreview}</div>
+                          </details>
+                        )}
+                        {!isPairing && item.argsPreview && !isShell && (
                           <div
                             className="whitespace-pre-wrap break-words text-[11px] text-zinc-400"
                             data-testid="parked-args-preview"
@@ -375,8 +384,14 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                           >
                             {cc.parkedArgsPreviewLabel}{item.groupPaths && item.groupPaths.length > 1
                               ? item.groupPaths.map((p) => folderDisplayName(p)).join(cc.parkedGroupFileSep)
-                              : item.argsPreview}
+                              : isFileWrite ? folderDisplayName(item.argsPreview) : item.argsPreview}
                           </div>
+                        )}
+                        {!isPairing && isFileWrite && item.argsPreview && (!item.groupPaths || item.groupPaths.length === 1) && (
+                          <details className="text-[11px] text-zinc-400">
+                            <summary className="cursor-pointer">{cc.parkedShowLocation}</summary>
+                            <div className="whitespace-pre-wrap break-words" data-testid="parked-file-location">{item.argsPreview}</div>
+                          </details>
                         )}
                         <div className="text-[11px] text-zinc-500">
                           {isOrphaned ? cc.parkedOrphaned : cc.parkedWaiting.replace('{duration}', formatWaiting(item.requestedAt))}
