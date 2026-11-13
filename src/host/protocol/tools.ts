@@ -196,6 +196,8 @@ export interface ToolModule<Args = Record<string, unknown>, Output = unknown> {
 export interface ToolContext {
   /** Native Run identity only; Agent Team identity lives in swarmRunScope. */
   readonly runId?: string;
+  /** Native parent used for child-agent settlement, distinct from a surface owner. */
+  readonly spawnParentRunId?: string;
   /** Conversation turn that owns this tool call and its durable projections. */
   readonly turnId?: string;
   /** Stable user message that originated this native turn. */

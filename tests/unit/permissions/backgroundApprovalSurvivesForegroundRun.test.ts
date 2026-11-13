@@ -75,6 +75,13 @@ import { WORKTREE_BASE_DIR } from '../../../src/host/agent/agentWorktreePath';
 import { withSubagentRunOwner } from '../../../src/host/agent/subagentRunOwner';
 import { getApplicationRunRegistry, resetApplicationRunRegistryForTests } from '../../../src/host/app/applicationRunRegistry';
 import { assertSurfaceRunOwner } from '../../../src/host/services/surfaceExecution/surfaceRunOwnership';
+import { buildProtocolContext } from '../../../src/host/tools/dispatch/shadowAdapter';
+import { createProtocolSubagentExecutionContext } from '../../../src/host/agent/subagentExecutionContext';
+import { resolveSingleSpawnRunScope } from '../../../src/host/agent/multiagentTools/spawnAgentForegroundBackground';
+import { getSpawnGuard, resetSpawnGuard } from '../../../src/host/agent/spawnGuard';
+import { createScopedSwarmAgentId } from '../../../src/shared/contract/swarm';
+import { registerSingleSpawnVisibility, getSingleSpawnChildren } from '../../../src/host/agent/singleSpawnVisibilityRegistry';
+
 
 const settings = (): AppSettings => ({
   permissions: {
@@ -443,6 +450,79 @@ describe('后台子代理 Browser upload_file 审批：前台 run 结束后仍 p
       surface: 'browser', provider: 'managed', access: 'active',
     })).toThrow('Surface execution owner is not the active RunRegistry handle.');
     resetApplicationRunRegistryForTests();
+  });
+
+  it.each([false, true])('Stop cancels background grandchildren even after Browser lane release=%s', async (releaseBeforeStop) => {
+    const registry = getApplicationRunRegistry();
+    const sessionId = 'bg-browser-session';
+    const foreground = registry.start({ sessionId, workspace: path.dirname(invoice) });
+    resetSpawnGuard();
+    const guard = getSpawnGuard();
+    const childAbort = new AbortController();
+    const unrelatedAbort = new AbortController();
+    const cleanups: Array<() => void> = [];
+    const pending = new Promise<never>(() => {});
+    let laneRunId = '';
+    let childId = '';
+    const stop = () => {
+      // Real Stop paths use both guard parentage and the standalone visibility registry.
+      const visible = getSingleSpawnChildren({ sessionId, runId: foreground.context.runId });
+      expect(guard.settleParentRun(sessionId, foreground.context.runId, true)).toBe(1);
+      expect(visible).toContain(childId);
+      expect(childAbort.signal.aborted).toBe(true);
+      expect(unrelatedAbort.signal.aborted).toBe(false);
+    };
+    try {
+      await withSubagentRunOwner({
+        prompt: 'Browser helper with a background child',
+        config: { name: 'Browser helper', systemPrompt: '', availableTools: ['Browser', 'spawn_agent'] },
+        context: { sessionId, runId: foreground.context.runId,
+          workspace: path.dirname(invoice), cwd: path.dirname(invoice),
+          abortSignal: new AbortController().signal,
+          permission: { request: async () => true },
+          resolver: { getDefinition: resolverState.getDefinition },
+        } as SubagentExecutionContext,
+      }, async ({ context }) => {
+        laneRunId = context.runId!;
+        resolverState.getDefinition.mockReturnValue({ name: 'spawn_agent', description: 'spawn',
+          inputSchema: { type: 'object', properties: {} }, requiresPermission: false, permissionLevel: 'read' });
+        resolverState.execute.mockImplementation(async (_name, _params, toolContext) => {
+          expect(toolContext.runId).toBe(laneRunId);
+          const protocol = buildProtocolContext({ runId: toolContext.runId, sessionId,
+            workingDirectory: context.cwd, legacyCtx: { ...toolContext,
+              modelConfig: { provider: 'mock', model: 'mock-model' },
+              resolver: { getDefinition: resolverState.getDefinition },
+            } });
+          const childContext = createProtocolSubagentExecutionContext(protocol, async () => ({ allow: true }));
+          const scope = resolveSingleSpawnRunScope(childContext, sessionId, 'grandchild')!;
+          childId = createScopedSwarmAgentId(scope, 'grandchild');
+          guard.register(childId, 'helper', 'background child', pending, childAbort, {
+            parentRunId: childContext.runId, background: true, scope,
+          });
+          cleanups.push(registerSingleSpawnVisibility(scope, childId));
+          const unrelatedScope = { ...scope, runId: 'unrelated-run', parentNativeRunId: 'other-foreground' };
+          guard.register(createScopedSwarmAgentId(unrelatedScope, 'other'), 'helper', 'unrelated', pending,
+            unrelatedAbort, { parentRunId: 'other-foreground', background: true, scope: unrelatedScope });
+          // Normal foreground completion must not cancel detached work.
+          expect(guard.settleParentRun(sessionId, foreground.context.runId, false)).toBe(0);
+          return { success: true, output: 'started' };
+        });
+        const { executor } = createSubagentToolRuntime({ context, sessionId, effectiveMode: 'default',
+          identity: { agentId: 'browser-lane', runId: laneRunId },
+          allowedToolNames: new Set(['spawn_agent']), checkToolExecution: () => true });
+        const result = await executor.execute('spawn_agent', {}, { sessionId, runId: laneRunId });
+        expect(result.success).toBe(true);
+        if (!releaseBeforeStop) stop();
+        return { success: true, output: '', toolsUsed: ['spawn_agent'], iterations: 1 };
+      });
+      expect(registry.resolve({ runId: laneRunId })).toBeUndefined();
+      if (releaseBeforeStop) stop();
+    } finally {
+      for (const cleanup of cleanups) cleanup();
+      guard.cancelSession(sessionId);
+      resetSpawnGuard();
+      resetApplicationRunRegistryForTests();
+    }
   });
 
   it('lane cancellation revokes surface actions, and failure releases its owner', async () => {
