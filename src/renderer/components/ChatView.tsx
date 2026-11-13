@@ -640,7 +640,7 @@ export const ChatView: React.FC = () => {
       },
     });
     // 跳过提问后的 placeholder 出口（R5 帧 8）：下一条普通消息真的发出去了才恢复常规文案。
-    if (sent && currentSessionId === skippedQuestionSessionId) {
+    if (sent && currentSessionId !== null && currentSessionId === skippedQuestionSessionId) {
       setSkippedQuestionSessionId(null);
     }
     return sent;
@@ -1054,7 +1054,7 @@ export const ChatView: React.FC = () => {
           <ChatInput ref={chatInputRef} onSend={handleSendEnvelopeWithCronFollowUp} onSteer={handleSteerEnvelope}
             disabled={effectiveIsProcessing || isCreatingSession} isProcessing={effectiveIsProcessing}
             hasStoppableBackgroundWork={hasStoppableSwarmWork} isInterrupting={isInterrupting} onStop={cancel} hasContinuation={showDurableContinue}
-            onContinue={durableContinue.onContinue} hasPlan={false} placeholder={currentSessionId === skippedQuestionSessionId ? t.userQuestion.skippedPlaceholder : undefined} />
+            onContinue={durableContinue.onContinue} hasPlan={false} placeholder={currentSessionId !== null && currentSessionId === skippedQuestionSessionId ? t.userQuestion.skippedPlaceholder : undefined} />
         </div>
       </div>
 
