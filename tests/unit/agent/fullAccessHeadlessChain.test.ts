@@ -1,6 +1,6 @@
 // 「完全访问 + 走开」链路集成测试（N-FIX-SOL-COWORK-DOGFOOD-HEADLESS-FU4-FU1）：
 // (a) 生产 handler setSessionPermissionMode 把会话档位落到 session-permission-modes.json；
-// (b) 该会话里真实 SubagentExecutor 起子代理，`childContext applied` 的 effectiveMode 继承 bypassPermissions；
+// (b) 该会话里真实 ToolExecutor → spawn_agent → SubagentExecutor 起子代理，`childContext applied` 的 effectiveMode 继承 bypassPermissions；
 // (c) 子代理的 Bash / 工作区外 Write 经真实 ToolExecutor → 真实 OrchestratorPermissionIsland，
 //     不产生 forceConfirm=false 的 `Approval request raised`（普通审批卡）。
 // 只替身外部边界：模型推理、auth 账号、日志采集；档位管理器 / 子代理执行器 / childContext / ToolExecutor / 审批岛全真实。
@@ -69,9 +69,10 @@ vi.mock('../../../src/host/model/adapters/aiSdkAdapter', () => ({
 
 import { registerAgentHandlers } from '../../../src/host/ipc/agent.ipc';
 import { resetPermissionModeManager } from '../../../src/host/permissions/modes';
-import { SubagentExecutor } from '../../../src/host/agent/subagentExecutor';
+import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
+import { withTaskOutputDirectory } from '../../../src/host/permissions/taskOutputDirectory';
+import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
-import { getToolResolver } from '../../../src/host/tools/dispatch/toolResolver';
 
 type DomainHandler = (event: unknown, request: IPCRequest) => Promise<IPCResponse>;
 const SESSION_ID = 'session-full-access-walk-away';
@@ -91,6 +92,7 @@ describe('full access, walk away: session mode → sub-agent inheritance → zer
     resetPermissionModeManager();
     env.infos.length = 0;
     env.responses.length = 0;
+    getProtocolRegistry();
     const handlers = new Map<string, unknown>();
     registerAgentHandlers({ handle: (c: string, fn: unknown) => handlers.set(c, fn), on: vi.fn(), removeHandler: vi.fn() } as never, () => null);
     handler = handlers.get(IPC_DOMAINS.AGENT) as DomainHandler;
@@ -113,7 +115,6 @@ describe('full access, walk away: session mode → sub-agent inheritance → zer
       payload: { sessionId: SESSION_ID, mode: 'bypassPermissions', approved: true },
     } as IPCRequest);
 
-    // 强制确认（工作区外写边界）会真的出审批卡：这里像无人应答的无头会话一样把卡拒掉，并收集卡的形态
     const cards: Array<Record<string, unknown>> = [];
     const island: OrchestratorPermissionIsland = new OrchestratorPermissionIsland({
       getSettings: () => ({ permissions: {} }) as never,
@@ -127,38 +128,72 @@ describe('full access, walk away: session mode → sub-agent inheritance → zer
         island.handlePermissionResponse(card.id, 'deny');
       },
     });
-    const outsideFile = nodePath.join(outsideDir, 'minutes.md');
+    const outsideFile = nodePath.join(fs.realpathSync(outsideDir), 'minutes.md');
+    const ungrantedFile = nodePath.join(fs.realpathSync(tmpDataDir), 'not-authorized.md');
+    const events: Array<{ type: string; data: unknown }> = [];
+    const executor = new ToolExecutor({
+      workingDirectory: workspace,
+      requestPermission: (request) => island.requestPermission(request),
+    });
+    executor.setAuditEnabled(false);
+    const options = {
+      sessionId: SESSION_ID, modelConfig: { provider: 'test', model: 'test-model' },
+      abortSignal: new AbortController().signal,
+      emitEvent: (type: string, data: unknown) => { events.push({ type, data }); },
+    };
+    await withTaskOutputDirectory({
+      sessionId: SESSION_ID, internal: false, userText: `输出目录：${fs.realpathSync(outsideDir)}`,
+    }, async () => {
+      env.responses.push(
+        toolUse({ name: 'Bash', arguments: { command: 'echo minutes-ready' } }, { name: 'Write', arguments: { file_path: outsideFile, content: '# minutes' } }),
+        { type: 'text', content: 'done', usage: { inputTokens: 4, outputTokens: 5 } },
+      );
+      const result = await executor.execute('spawn_agent', {
+        name: 'minutes-agent', task: 'write minutes', customPrompt: 'You write minutes.',
+        customTools: ['Bash', 'Write'],
+      }, options);
+      expect(result.error).toBeUndefined();
+      const applied = env.infos.find((entry) => entry.message.includes('childContext applied'));
+      expect(applied?.meta).toMatchObject({ effectiveMode: 'bypassPermissions' });
+      expect(result).toMatchObject({ success: true });
+      expect(fs.readFileSync(outsideFile, 'utf8')).toBe('# minutes');
+      expect(events.some((event) => event.type === 'tool_call_end'
+        && (event.data as { success: boolean; output?: string }).success
+        && (event.data as { output?: string }).output?.includes('minutes-ready'))).toBe(true);
+      const copied = nodePath.join(fs.realpathSync(outsideDir), 'minutes-copy.md');
+      const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
+      const copy = await executor.execute('Bash', { command: `cp ${quote(outsideFile)} ${quote(copied)}` }, options);
+      expect(copy).toMatchObject({ success: true });
+      expect(fs.readFileSync(copied, 'utf8')).toBe('# minutes');
+      expect(events.filter((event) => event.type === 'tool_call_start').map((event) => (event.data as { name: string }).name)).toEqual(expect.arrayContaining(['Bash', 'Write']));
+      expect(env.infos.filter((entry) => entry.message === 'Approval request raised')).toEqual([]);
+      expect(cards).toHaveLength(0);
+      // A different directory is not covered, even during the authorized task.
+      env.responses.push(
+        toolUse({ name: 'Write', arguments: { file_path: ungrantedFile, content: '# outside grant' } }),
+        { type: 'text', content: 'done', usage: { inputTokens: 4, outputTokens: 5 } },
+      );
+      await executor.execute('spawn_agent', {
+        name: 'outside-grant', task: 'write minutes', customPrompt: 'You write minutes.', customTools: ['Write'],
+      }, options);
+      expect(cards).toHaveLength(1);
+      expect(cards[0]).toMatchObject({ tool: 'Write', forceConfirm: true });
+      expect(fs.existsSync(ungrantedFile)).toBe(false);
+      cards.length = 0;
+
+    });
+    // The very same tool / session / target after task termination needs confirmation.
+    // Spawn again to exercise the pipeline as well as the real executor, not just a helper.
     env.responses.push(
-      toolUse({ name: 'Bash', arguments: { command: 'echo minutes-ready' } }, { name: 'Write', arguments: { file_path: outsideFile, content: '# minutes' } }),
+      toolUse({ name: 'Write', arguments: { file_path: outsideFile, content: '# expired' } }),
       { type: 'text', content: 'done', usage: { inputTokens: 4, outputTokens: 5 } },
     );
-
-    const result = await new SubagentExecutor().execute({
-      prompt: 'write minutes',
-      config: { name: 'minutes-agent', systemPrompt: 'You write minutes.', availableTools: ['Bash', 'Write'] },
-      context: {
-        sessionId: SESSION_ID,
-        cwd: workspace,
-        modelConfig: { provider: 'test', model: 'test-model' },
-        resolver: getToolResolver(),
-        permission: { request: (request: never) => island.requestPermission(request) },
-        events: { emit: vi.fn() },
-        abortSignal: new AbortController().signal,
-      } as never,
-    });
-
-    const applied = env.infos.find((entry) => entry.message.includes('childContext applied'));
-    expect(applied?.meta).toMatchObject({ effectiveMode: 'bypassPermissions' });
-    expect(result.success).toBe(true);
-    const raised = env.infos.filter((entry) => entry.message === 'Approval request raised');
-    const ordinary = raised.filter((entry) => (entry.meta as { forceConfirm?: boolean }).forceConfirm === false);
-    expect(ordinary).toEqual([]);
-    // Bash 在 bypass 档免审批；工作区外 Write 是有名字的信任边界卡（强制确认），不是普通卡
-    expect(raised.filter((entry) => (entry.meta as { tool?: string }).tool === 'Bash')).toEqual([]);
-    expect(raised.map((entry) => entry.meta)).toEqual([
-      expect.objectContaining({ tool: 'Write', forceConfirm: true, reasonCode: 'file_write_outside_workspace' }),
-    ]);
+    await executor.execute('spawn_agent', {
+      name: 'expired-task', task: 'write minutes', customPrompt: 'You write minutes.',
+      customTools: ['Write'],
+    }, options);
     expect(cards).toHaveLength(1);
-    expect(fs.existsSync(outsideFile)).toBe(false);
+    expect(cards[0]).toMatchObject({ tool: 'Write', forceConfirm: true });
+    expect(fs.readFileSync(outsideFile, 'utf8')).toBe('# minutes');
   });
 });

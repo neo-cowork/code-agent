@@ -55,6 +55,7 @@ import { containWriteFenceWorkspaceRoot, isOsWriteFenceAvailable } from '../../.
 import { resolveCanonicalRunPath } from '../../../runtime/runContext';
 import type { PolicyEnforcer } from '../../../security/policyEnforcer';
 import { isPathWithinRoot } from '../../../runtime/workspaceScope';
+import { taskOutputDirectoryForShell } from '../../../permissions/taskOutputDirectory';
 import { resolveContextWindow } from '../../../model/modelLimits';
 import { resolveToolResultBudget } from '../../../context/layers/toolResultBudget';
 
@@ -416,6 +417,10 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
         const baseWriteRoots = writeFence && fenceRoot
           ? [fenceRoot]
           : scopeWriteRoots ?? workspaceConfinedRoots;
+        const taskOutputRoot = !writeFence && !ctx.restrictWritesToWorkspace && !process.env.CODE_AGENT_EVAL_REAL_ROOT
+          ? taskOutputDirectoryForShell(ctx.sessionId, permissionMode, cmd) : undefined;
+        const extraRoots = [...new Set([extraWriteRoot, taskOutputRoot].filter((root): root is string => Boolean(root)))];
+        if (taskOutputRoot) ctx.logger.info('Task output directory applied to shell sandbox', { sessionId: ctx.sessionId, directory: taskOutputRoot });
         const wrapped = wrapCommandForSandbox(cmd, {
           workingDirectory,
           readOnlyRoots: ctx.workspaceScope?.roots
@@ -423,12 +428,12 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
             .map((root) => resolveCanonicalRunPath(root.path)),
           // 目录子树扩权：基座写根（缺省回退 cwd，与 wrapCommand 的默认一致）之上追加该目录，
           // 绝不整体替换——替换会丢掉工作区写根
-          readWriteRoots: extraWriteRoot
-            ? [...(baseWriteRoots ?? [workingDirectory]), extraWriteRoot]
+          readWriteRoots: extraRoots.length
+            ? [...(baseWriteRoots ?? [workingDirectory]), ...extraRoots]
             : baseWriteRoots,
           // 一次性文件扩权只放开这一个文件；目录子树扩权（DIR-FORBIDDEN）追加该树但凭据/笼子/钩子/rc 名仍只读
           readWriteFiles: extraWriteFile ? [extraWriteFile] : undefined,
-          forbiddenWriteUnder: extraWriteRoot ? [extraWriteRoot] : undefined,
+          forbiddenWriteUnder: extraRoots.length ? extraRoots : undefined,
           deniedReadRoots: [
             ...(ctx.deniedReadRoots ?? []),
             ...(process.env.CODE_AGENT_EVAL_REAL_ROOT ? [process.env.CODE_AGENT_EVAL_REAL_ROOT] : []),

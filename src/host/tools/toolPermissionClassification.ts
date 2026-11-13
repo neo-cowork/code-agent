@@ -530,6 +530,7 @@ export async function resolveToolPermissionClassification(input: {
       input.browserSubmitProbe,
     ) ?? await classifyPermission(input.policyToolName, input.params, {
       sessionId: input.sessionId,
+      permissionMode: input.sessionPermissionMode,
       toolDefinition: input.toolDefinition,
       workingDirectory: input.workingDirectory,
       workspaceRoot: input.workspaceRoot,
@@ -556,6 +557,7 @@ export async function resolveToolPermissionClassification(input: {
     };
   }
   if (classification.decision === 'ask'
+    && !classification.trustBoundary
     && !classification.scheduleWriteTargets
     && permissionModeAutoApproves(input.sessionPermissionMode, input.permissionLevel)
     // acceptEdits 只承诺文件编辑免确认：出站 / 不可逆 / 拉起进程的写档工具不升 approve，

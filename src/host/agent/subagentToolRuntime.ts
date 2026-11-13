@@ -11,6 +11,7 @@ import { permissionModeAutoApproves, type PermissionMode } from '../permissions/
 import { resolveSessionPermissionMode } from '../tools/toolPermissionClassification';
 import { mustAskUnderAcceptEdits } from '../tools/externalSideEffect';
 import { isAgentWorktreePath } from './agentWorktreePath';
+import { isTaskOutputFileWriteAuthorized } from '../tools/fileWriteClassification';
 import type { ToolExecutionRequest } from './subagentPipeline';
 import type { SubagentExecutionContext } from './subagentExecutorTypes';
 import type { SubagentEventIdentity } from './subagentLifecycleEvents';
@@ -148,6 +149,11 @@ export function createSubagentToolRuntime(input: {
     ): SubagentPolicyDecision => {
       const definition = context.resolver.getDefinition(toolName);
       const request: ToolExecutionRequest = {
+        taskOutputAuthorized: isTaskOutputFileWriteAuthorized(toolName, params, {
+          sessionId: input.sessionId,
+          permissionMode: resolveSessionPermissionMode(input.effectiveMode as PermissionMode, input.sessionId, true),
+          workingDirectory: context.cwd,
+        }),
         toolName,
         permissionLevel: definition?.permissionLevel ?? 'read',
         path: (params.path as string | undefined) ?? (params.file_path as string | undefined),
