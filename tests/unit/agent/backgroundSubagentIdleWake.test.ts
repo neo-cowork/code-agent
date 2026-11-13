@@ -279,17 +279,20 @@ describe('background subagent idle wake', () => {
     ['  百度页面摘要  \n使用 browser_action / Playwright；失败后改用 WebFetch。', '百度页面摘要'],
     ['打开百度首页并浏览其中两个页面然后整理成可直接阅读的简短中文摘要\n用 WebFetch 抓取。', '打开百度首页并浏览其中两个页面然后整理成可直接阅…'],
   ])('uses a short first-line name in a failed wake note: %s', async (title, shortName) => {
+    // The process-wide completion registry retains consumed dedupe keys between cases.
+    const agentId = `agent-long-title-${title.length}`;
+    const sessionId = `short-name-session-${title.length}`;
     taskManagerMocks.getSessionState.mockReturnValue({ status: 'idle' });
     taskManagerMocks.startTask.mockRejectedValue(new Error('model unavailable'));
-    await seedCompletion('agent-long-title', 'short-name-session', title);
-    scheduleBackgroundSubagentIdleWake(trigger('agent-long-title', 'short-name-session'));
+    await seedCompletion(agentId, sessionId, title);
+    scheduleBackgroundSubagentIdleWake(trigger(agentId, sessionId));
     await vi.advanceTimersByTimeAsync(50);
 
     expect(wakeNoteMocks.format).toHaveBeenCalledWith(shortName);
     expect(wakeNoteMocks.record).toHaveBeenCalledWith(
-      'short-name-session',
+      sessionId,
       `wake failed: ${shortName}`,
-      { taskId: 'agent-long-title', reason: 'wake_failed' },
+      { taskId: agentId, reason: 'wake_failed' },
     );
     expect(wakeNoteMocks.format.mock.calls[0]?.[0]).not.toMatch(/browser_action|Playwright|WebFetch|\n/);
   });
