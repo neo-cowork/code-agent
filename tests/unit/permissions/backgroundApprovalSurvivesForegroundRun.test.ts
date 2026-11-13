@@ -481,7 +481,9 @@ describe('后台子代理 Browser upload_file 审批：前台 run 结束后仍 p
           abortSignal: new AbortController().signal,
           permission: { request: async () => true },
           resolver: { getDefinition: resolverState.getDefinition },
-        } as SubagentExecutionContext,
+          modelConfig: { provider: 'mock', model: 'mock-model' },
+          events: { emit: vi.fn() },
+        },
       }, async ({ context }) => {
         laneRunId = context.runId!;
         resolverState.getDefinition.mockReturnValue({ name: 'spawn_agent', description: 'spawn',
