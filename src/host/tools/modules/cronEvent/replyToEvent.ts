@@ -20,7 +20,7 @@ import { CRON_EVENT_TRIGGER } from '../../../../shared/constants';
 import { resolveEventReplyDestination } from '../../eventReplySession';
 import { replyToEventSchema as schema } from './replyToEvent.schema';
 
-export async function executeReplyToEvent(
+async function executeReplyToEvent(
   args: Record<string, unknown>,
   ctx: ToolContext,
   _canUseTool: CanUseToolFn,

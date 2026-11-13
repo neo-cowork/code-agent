@@ -46,7 +46,7 @@ export function isEventReplySession(sessionId: string | undefined): boolean {
 }
 
 /** 目的地解析结果：ok 携带宿主绑定的账号/会话；否则带稳定错误码（模型可见）。 */
-export type EventReplyDestination =
+type EventReplyDestination =
   | { ok: true; accountId: string; chatId: string; chatName?: string; replyToMessageId?: string }
   | { ok: false; code: 'EVENT_REPLY_UNBOUND' | 'EVENT_REPLY_UNKNOWN_EVENT' | 'EVENT_REPLY_AMBIGUOUS_CHAT'; message: string };
 

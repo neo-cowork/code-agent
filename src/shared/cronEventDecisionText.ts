@@ -6,9 +6,9 @@
 // Text that does not match a host template is model-authored and passes through.
 // ============================================================================
 
-export type CronEventDecisionTextLanguage = 'zh' | 'en';
+type CronEventDecisionTextLanguage = 'zh' | 'en';
 
-export type CronEventDecisionTextKey =
+type CronEventDecisionTextKey =
   | 'channelChatRule'
   | 'channelAnyChatRule'
   | 'mailRule'

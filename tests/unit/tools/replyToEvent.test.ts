@@ -73,7 +73,7 @@ const {
   resolveEventReplyDestination,
   EVENT_REPLY_TOOL_NAME,
 } = await import('../../../src/host/tools/eventReplySession');
-const { executeReplyToEvent } = await import('../../../src/host/tools/modules/cronEvent/replyToEvent');
+const { replyToEventModule } = await import('../../../src/host/tools/modules/cronEvent/replyToEvent');
 const { withEventReplyTools } = await import('../../../src/host/tools/dispatch/toolDefinitions');
 const { isExternalSideEffectTool } = await import('../../../src/host/tools/externalSideEffect');
 import type { CronJobDefinition } from '../../../src/shared/contract/cron';
@@ -234,7 +234,7 @@ describe('reply_to_event (N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN)', () => {
     const canUseTool = vi.fn(async () => ({ allow: true })) as never;
     try {
       // 模型偷塞了一个别的会话 id（还有账号字段）：解析仍然只出自绑定表。
-      const result = await executeReplyToEvent(
+      const result = await replyToEventModule.createHandler().execute(
         { text: 'RR51-PONG 收到', chat_id: 'oc_evil', account: 'acc-evil' } as Record<string, unknown>,
         toolContext('reply-bound'),
         canUseTool,
@@ -250,7 +250,7 @@ describe('reply_to_event (N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN)', () => {
 
       // 不在批内的 event_id：拒绝，不发送。
       channelManagerState.sendMessage.mockClear();
-      const unknownEvent = await executeReplyToEvent(
+      const unknownEvent = await replyToEventModule.createHandler().execute(
         { text: 'hi', event_id: 'om_not_in_batch' } as Record<string, unknown>,
         toolContext('reply-bound'),
         canUseTool,
@@ -276,7 +276,7 @@ describe('reply_to_event (N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN)', () => {
     } finally {
       leaveBind();
     }
-    const unbound = await executeReplyToEvent({ text: 'hi' } as Record<string, unknown>, toolContext('plain-session'), canUseTool);
+    const unbound = await replyToEventModule.createHandler().execute({ text: 'hi' } as Record<string, unknown>, toolContext('plain-session'), canUseTool);
     expect(unbound.ok).toBe(false);
     expect(channelManagerState.sendMessage).not.toHaveBeenCalled();
   });

@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   buildCronEventDecisionText,
   localizeDecisionText,
-  type CronEventDecisionTextKey,
 } from '../../src/shared/cronEventDecisionText';
 import {
   describeEventScheduleRule,
@@ -11,7 +10,7 @@ import {
 } from '../../src/host/cron/cronEventDecisions';
 
 interface TemplateCase {
-  key: CronEventDecisionTextKey;
+  key: Parameters<typeof buildCronEventDecisionText>[0];
   params?: Record<string, string | number>;
   stored: string;
   zh: string;

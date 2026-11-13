@@ -35,7 +35,7 @@ async function fetchChatNames(accountId: string): Promise<ReadonlyMap<string, st
  * 解析一批 replyTargets 涉及的会话名：命中缓存直接用，未命中（且缓存过期）拉一次
  * 会话目录。任何失败都吞成空表（fail-open）——名字只是展示位，不值得拖垮 run。
  */
-export async function resolveEventChatNames(
+async function resolveEventChatNames(
   accountId: string,
   chatIds: readonly string[],
 ): Promise<Map<string, string>> {
