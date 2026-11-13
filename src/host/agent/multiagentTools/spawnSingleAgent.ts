@@ -527,6 +527,7 @@ Stats:
           task,
           startedAt: Date.now(),
           ownsRunLifecycle: !context.swarmRunScope,
+          publisher: 'executeSingleSpawnAgent',
         });
 
         // Background worktree cleanup: register onComplete callback
