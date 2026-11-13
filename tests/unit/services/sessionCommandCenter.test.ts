@@ -198,6 +198,7 @@ describe('SessionCommandCenter', () => {
         ok: true,
         output: `1. 首项：进行中\n2. 排队：等待开始\n没有剩余时间数据，请勿估算完成时间。请以本次查询为准，已结束的任务不能说成仍在进行。`,
         meta: {
+          sessionTaskWorkspaceRoots: [PROJECT_SCOPE.primaryRoot],
           sessionTask: {
             outcome: 'status',
             tasks: [

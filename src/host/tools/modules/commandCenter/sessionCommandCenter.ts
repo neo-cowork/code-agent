@@ -347,7 +347,10 @@ export async function executeTaskStatus(
   return {
     ok: true,
     output: [...taskRows, ...formatBackgroundSubagentRows(backgroundSubagents, tasks.length, snapshot.generatedAt, tasks.some((task) => task.status === 'running'))].join('\n'),
-    meta: sessionTaskMeta('status', tasks),
+    meta: {
+      ...sessionTaskMeta('status', tasks),
+      ...(tasks.length ? { sessionTaskWorkspaceRoots: [...new Set(tasks.map((task) => task.workspaceScope.primaryRoot))] } : {}),
+    },
   };
 }
 

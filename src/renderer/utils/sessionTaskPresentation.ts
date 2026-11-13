@@ -1,4 +1,5 @@
 import type { Translations } from '../i18n';
+import { getHumanToolLabel } from './toolHumanLabel';
 
 type SessionTaskOutcome = 'accepted' | 'queued' | 'reused' | 'status';
 type SessionTaskStatus = 'queued' | 'running' | 'cancelling' | 'completed' | 'failed' | 'cancelled';
@@ -63,6 +64,20 @@ export function formatSessionTaskOutput(
     : '';
   const first = sessionTask.tasks[0];
   const status = (task: SessionTaskItem): string => copy.status[task.status];
+  const detailText = (detail: string): string => {
+    let text = detail;
+    const roots = metadata?.sessionTaskWorkspaceRoots;
+    if (Array.isArray(roots)) {
+      for (const root of roots) {
+        if (typeof root !== 'string' || !root.trim()) continue;
+        const base = root.replace(/[\\/]+$/, '');
+        for (const prefix of [`${base}/`, `${base}\\`]) text = text.split(prefix).join('');
+      }
+    }
+    return text.replace(/\b(Read|Write|Edit|Glob|Grep)\b/g, (toolName) => getHumanToolLabel({
+      toolName, labels: t.receiptPresentation.humanToolLabels,
+    }));
+  };
 
   if (sessionTask.outcome === 'accepted' || sessionTask.outcome === 'queued') {
     return prefix + fill(copy[sessionTask.outcome], { name: first.shortName });
@@ -73,6 +88,6 @@ export function formatSessionTaskOutput(
   return sessionTask.tasks.map((task) => fill(copy.statusLine, {
     name: task.shortName,
     status: status(task),
-    detail: task.detail ? fill(copy.detail, { detail: task.detail }) : '',
+    detail: task.detail ? fill(copy.detail, { detail: detailText(task.detail) }) : '',
   })).join('\n');
 }

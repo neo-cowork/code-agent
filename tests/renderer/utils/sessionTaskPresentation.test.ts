@@ -56,6 +56,15 @@ describe('sessionTaskPresentation', () => {
     expect(formatSessionTaskOutput(metadata, 'accepted id=session-work-x', en)).toContain('Stopped “周报”. ');
   });
 
+  it('keeps result details and filenames without exposing the workspace prefix or raw file tools', () => {
+    const metadata = { sessionTaskWorkspaceRoots: ['/work/My Project'], sessionTask: {
+      outcome: 'status', tasks: [{ shortName: '报告', status: 'completed', detail: '已用 Read 核对，写入 /work/My Project/报告.md。' }],
+    } };
+    expect(formatSessionTaskOutput(metadata, '', zh)).toBe('报告　已完成：已用 读取文件 核对，写入 报告.md。');
+    expect(formatSessionTaskOutput(metadata, '', en)).toBe('报告　Completed: 已用 Read file 核对，写入 报告.md。');
+    expect(metadata.sessionTask.tasks[0].detail).toContain('/work/My Project/报告.md');
+  });
+
   it('preserves the old raw output when sessionTask metadata is absent or invalid', () => {
     expect(formatSessionTaskOutput(undefined, rawStatus, zh)).toBe(rawStatus);
     expect(formatSessionTaskOutput({ sessionTask: { outcome: 'status', tasks: [] } }, rawStatus, en))
