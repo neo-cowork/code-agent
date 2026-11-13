@@ -108,15 +108,16 @@ export const SendButton: React.FC<SendButtonProps> = ({
   }
 
   // 处理中 + 无内容：显示停止按钮
+  // Preserve the original 12px icon, round shape and color over IconButton defaults.
   if (isProcessing) {
     return (
       <IconButton
         type="button"
         onClick={onStop}
         size="sm"
-        icon={<Square className="h-3.5 w-3.5 fill-current stroke-[2.2]" />}
+        icon={<Square className="h-3 w-3 fill-current stroke-[2.2]" />}
         data-testid="composer-stop-button"
-        className={`${baseIconButtonClass} bg-zinc-700/90 text-zinc-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] hover:bg-zinc-600 active:scale-95`}
+        className={`${baseIconButtonClass} [&]:grid [&]:rounded-full [&]:p-0 [&]:text-zinc-200 [&:hover]:bg-zinc-600 [&:active]:scale-95 [&>span]:h-3 [&>span]:w-3 bg-zinc-700/90 text-zinc-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] hover:bg-zinc-600 active:scale-95`}
         aria-label={t.chatInput.stopAria}
       />
     );
