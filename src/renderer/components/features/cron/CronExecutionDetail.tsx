@@ -392,7 +392,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
       <section className="mt-4" data-testid="cron-result">
         <h5 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">{cc.execResult}</h5>
         {urgencyLabel && (
-          <span className="mb-2 inline-flex rounded-full bg-zinc-800 px-2.5 py-1 text-xs text-zinc-200" data-testid="cron-result-urgency">
+          <span className="mb-2 inline-flex shrink-0 whitespace-nowrap rounded-full bg-zinc-800 px-2.5 py-1 text-xs text-zinc-200" data-testid="cron-result-urgency">
             {urgencyLabel}
           </span>
         )}
