@@ -2,7 +2,7 @@ import type { ToolSchema } from '../../../protocol/tools';
 
 export const listSessionCandidatesSchema: ToolSchema = {
   name: 'list_session_candidates',
-  description: 'List opaque candidate references for delegating work to another chat session. The returned list is context, not a user choice or permission to bind. Never guess among similar candidates; if the user message does not single out exactly one candidate, call AskUserQuestion. The model never supplies session ids or workspace paths.',
+  description: 'List opaque candidate references for delegating work to another chat session. The model never supplies session ids or workspace paths.',
   outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
