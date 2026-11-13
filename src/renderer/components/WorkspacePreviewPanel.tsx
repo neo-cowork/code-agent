@@ -1,3 +1,4 @@
+import { getDisplaySessionTitle } from '../utils/sessionPresentation';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Archive,
@@ -130,7 +131,7 @@ export interface WorkspacePreviewPanelProps {
 export const WorkspacePreviewPanel: React.FC<WorkspacePreviewPanelProps> = ({
   overviewMode = false,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const wp = t.previewWorkspace.workspacePreview;
   const items = useWorkspacePreviewModel();
   // Legacy standalone panel keeps selection local. Overview no longer routes through this panel.
@@ -604,7 +605,7 @@ export const WorkspacePreviewPanel: React.FC<WorkspacePreviewPanelProps> = ({
                         </span>
                         <span className="max-w-[120px] shrink-0 truncate text-[10px] text-zinc-600">
                           {projectArtifactKindLabel(artifact.kind, t.sidebarProject.artifactKind)}
-                          {artifact.sessionTitle ? ` · ${artifact.sessionTitle}` : ''}
+                          {artifact.sessionTitle ? ` · ${getDisplaySessionTitle(artifact.sessionTitle, language)}` : ''}
                         </span>
                       </>
                     );

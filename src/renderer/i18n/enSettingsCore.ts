@@ -555,6 +555,10 @@ export const enSettingsCore = {
           label: 'Open command palette',
           description: 'Search and run app commands',
         },
+        'sessionSearch.open': {
+          label: 'Search sessions',
+          description: 'Search and open sessions',
+        },
         'session.stop': {
           label: 'Stop generation',
           description: 'Stop the currently running task',

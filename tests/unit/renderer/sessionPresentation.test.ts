@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  getDisplaySessionTitle,
+  splitCronSessionTitleParts,
   getSessionStatusPresentation,
   matchesSessionStatusFilter,
 } from '../../../src/renderer/utils/sessionPresentation';
@@ -238,5 +240,25 @@ describe('matchesSessionStatusFilter', () => {
     expect(matchesSessionStatusFilter('artifact', 'approval', { hasDeliverySignals: true })).toBe(true);
     expect(matchesSessionStatusFilter('artifact', 'approval', { hasDeliverySignals: false })).toBe(false);
     expect(matchesSessionStatusFilter('artifact', 'done')).toBe(false);
+  });
+});
+
+
+describe('cron title display language', () => {
+  it.each(['[Schedule]', '[Cron]', '[sChEdUlE]', '[定时]'])('localizes %s without changing the name', (prefix) => {
+    const raw = `${prefix} 每晨整理周会纪要`;
+    expect(getDisplaySessionTitle(raw, 'zh')).toBe('[定时] 每晨整理周会纪要');
+    expect(getDisplaySessionTitle(raw, 'en')).toBe('[Schedule] 每晨整理周会纪要');
+  });
+  it.each(['[Heartbeat]', '[HEARTBEAT]', '[心跳]'])('localizes %s', (prefix) => {
+    expect(getDisplaySessionTitle(`${prefix} 巡检`, 'zh')).toBe('[心跳] 巡检');
+    expect(getDisplaySessionTitle(`${prefix} 巡检`, 'en')).toBe('[Heartbeat] 巡检');
+  });
+  it('rename dialog display-title round trip remains recognized in both languages', () => {
+    const saved = getDisplaySessionTitle('[Schedule] 周报', 'zh');
+    expect(splitCronSessionTitleParts(saved)).toEqual({ prefix: '[定时]', name: '周报' });
+    expect(getDisplaySessionTitle(saved, 'en')).toBe('[Schedule] 周报');
+    expect(getDisplaySessionTitle(getDisplaySessionTitle(saved, 'en'), 'zh')).toBe(saved);
+    expect(getDisplaySessionTitle('[Other] 周报', 'zh')).toBe('[Other] 周报');
   });
 });

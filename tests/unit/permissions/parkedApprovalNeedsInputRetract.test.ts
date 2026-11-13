@@ -85,7 +85,7 @@ async function parkOne(island: OrchestratorPermissionIsland, sessionId: string, 
   });
   // 无人值守 file_write 先过写授权查询（动态 import + 会话查询）才落停车——fake timers
   // 下 setImmediate 被冻，用微任务自旋排空（同 parkedApprovalNeedsInputDedupe 的做法）。
-  for (let i = 0; i < 40 && onEvents.length === 0; i += 1) await Promise.resolve();
+  for (let i = 0; i < 200 && onEvents.length === 0; i += 1) await Promise.resolve();
   expect(onEvents).toHaveLength(1);
   const requestId = (onEvents[0] as { data?: { id?: string } }).data?.id;
   expect(requestId).toBeTruthy();

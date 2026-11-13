@@ -1,3 +1,4 @@
+import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 // ============================================================================
 // LibraryPanel - 资料库全屏页（2026-07-26 导航去重方案 9）
 // ============================================================================
@@ -109,9 +110,9 @@ export const LibraryPanel: React.FC = () => {
   const projectId = scope === GLOBAL_SCOPE ? null : scope;
   const sessionTitles = useMemo(() => new Map<string, string>(
     sessions
-      .map((session): [string, string] => [session.id, session.title.trim()])
+      .map((session): [string, string] => [session.id, getDisplaySessionTitle(session.title, language)])
       .filter(([, title]) => Boolean(title)),
-  ), [sessions]);
+  ), [sessions, language]);
   const kindLabels: Record<LibraryItemKind, string> = {
     upload: t.library.kindUpload,
     artifact: t.library.kindArtifact,
@@ -489,9 +490,15 @@ export const LibraryPanel: React.FC = () => {
               <Loader2 className="h-5 w-5 animate-spin" />
             </div>
           ) : items.length === 0 ? (
-            <div className="py-16 text-center text-sm text-zinc-500 leading-relaxed">{t.library.empty}</div>
+            <div className="py-16 text-center text-sm text-zinc-500 leading-relaxed">
+              <p>{t.library.empty}</p>
+              <p className="mt-2" data-testid="library-empty-published-hint">{t.library.emptyPublishedHint}</p>
+            </div>
           ) : groups.length === 0 ? (
-            <div className="py-16 text-center text-sm text-zinc-500 leading-relaxed">{t.library.empty}</div>
+            <div className="py-16 text-center text-sm text-zinc-500 leading-relaxed">
+              <p>{t.library.empty}</p>
+              <p className="mt-2" data-testid="library-empty-published-hint">{t.library.emptyPublishedHint}</p>
+            </div>
           ) : (
             <div className="overflow-hidden rounded-lg border border-zinc-800" data-testid="library-item-list">
               <table className="w-full table-fixed text-left text-xs">

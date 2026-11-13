@@ -1,3 +1,4 @@
+import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   Archive,
@@ -97,13 +98,13 @@ function getGoalCounts(goals: SidebarProjectGoalMeta[] | undefined): Record<Side
   return counts;
 }
 
-function formatRecentArtifactLine(artifact: SidebarProjectArtifactMeta, t: Translations): string {
+function formatRecentArtifactLine(artifact: SidebarProjectArtifactMeta, t: Translations, language: 'zh' | 'en'): string {
   const parts = [getArtifactKindLabel(artifact.kind, t)];
   if (artifact.toolName?.trim()) {
     parts.push(artifact.toolName.trim());
   }
   if (artifact.sessionTitle?.trim()) {
-    parts.push(artifact.sessionTitle.trim());
+    parts.push(getDisplaySessionTitle(artifact.sessionTitle, language));
   }
   return parts.join(' · ');
 }
@@ -116,7 +117,7 @@ export const SidebarProjectDetail: React.FC<SidebarProjectDetailProps> = ({
   onStartGoal,
   onMetaChange,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const p = t.sidebarProject;
   const sessionCount = meta?.sessionCount ?? fallbackSessionCount;
   const goalFallback = meta ? p.goalCountFallback.replace('{count}', String(meta.goalCount ?? 0)) : p.detailLoading;
@@ -437,7 +438,7 @@ export const SidebarProjectDetail: React.FC<SidebarProjectDetailProps> = ({
                     <Layers3 className="h-3 w-3 shrink-0 text-zinc-600" />
                     <span className="min-w-0 flex-1 truncate text-zinc-400">{artifact.title}</span>
                     <span className="shrink-0 truncate text-[10px] text-zinc-600">
-                      {formatRecentArtifactLine(artifact, t)}
+                      {formatRecentArtifactLine(artifact, t, language)}
                     </span>
                   </>
                 );

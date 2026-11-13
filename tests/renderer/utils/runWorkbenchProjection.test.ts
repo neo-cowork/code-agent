@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { buildOverviewRunHeaderModel } from '../../../src/renderer/utils/overviewRunHeader';
 import type { TraceProjection } from '../../../src/shared/contract/trace';
 import {
   buildLoopDecisionViews,
@@ -107,6 +108,34 @@ const projection: TraceProjection = {
 };
 
 describe('runWorkbenchProjection', () => {
+  it.each([undefined, null, 'idle', 'queued', 'running'])(
+    'never completes a just-sent null turn with session status %s', (sessionStatus) => {
+      const run = buildRunUiState({
+        projection: { sessionId: 'session-new', turns: [], activeTurnIndex: -1 },
+        sessionId: 'session-new',
+        sessionStatus,
+      });
+      expect(run.identity.turnId).toBeNull();
+      expect(run.status).toBe(sessionStatus === 'running' ? 'running' : 'planning');
+      expect(run.completionSignal).toBeUndefined();
+      expect(buildOverviewRunHeaderModel({ run, now: 100 })).toBeNull();
+    },
+  );
+
+  it('requires positive completion evidence and preserves running precedence', () => {
+    const emptyProjection: TraceProjection = { sessionId: 'session-new', turns: [], activeTurnIndex: -1 };
+    expect(buildRunUiState({
+      projection: emptyProjection, sessionId: 'session-new',
+      taskProgress: { turnId: 'turn-new', phase: 'completed' },
+    }).status).toBe('completed');
+    const completedProjection: TraceProjection = {
+      ...emptyProjection,
+      turns: [{ turnId: 'turn-new', turnNumber: 1, startTime: 100, status: 'completed', nodes: [] }],
+    };
+    expect(buildRunUiState({ projection: completedProjection, sessionId: 'session-new' }).status).toBe('completed');
+    expect(buildRunUiState({ projection: completedProjection, sessionId: 'session-new', sessionStatus: 'running' }).status).toBe('running');
+  });
+
   it('derives blocked run state from current turn capability warnings', () => {
     const run = buildRunUiState({
       projection,

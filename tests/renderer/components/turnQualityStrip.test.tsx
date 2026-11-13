@@ -6,11 +6,12 @@
 // ---------------------------------------------------------------------------
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render } from '@testing-library/react';
+import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import type { TurnQualitySummary } from '../../../src/shared/contract/turnQuality';
 import { TurnQualityStrip } from '../../../src/renderer/components/features/chat/TurnQualityStrip';
 import { SessionModelsContext } from '../../../src/renderer/components/features/chat/sessionModelsContext';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { useAgentRegistryStore } from '../../../src/renderer/stores/agentRegistryStore';
 
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: { invokeDomain: vi.fn().mockResolvedValue(undefined) },
@@ -59,6 +60,7 @@ const summary: TurnQualitySummary = {
 describe('TurnQualityStrip', () => {
   beforeEach(() => {
     useAppStore.setState({ developerMode: false });
+    useAgentRegistryStore.setState({ entries: [], isLoaded: true });
   });
 
   afterEach(() => {
@@ -194,5 +196,85 @@ describe('TurnQualityStrip', () => {
       </SessionModelsContext.Provider>,
     );
     expect(container.textContent || '').toContain('glm-5');
+  });
+});
+
+const expertSummary: TurnQualitySummary = {
+  ...summary,
+  capabilities: {
+    agentId: 'weekly-helper', agentName: 'weekly-helper',
+    requestedAgentId: 'weekly-helper', toolsUsed: [],
+  },
+};
+
+function registerExpert(displayName?: string) {
+  useAgentRegistryStore.getState().setEntries([{
+    id: 'weekly-helper', name: 'weekly-helper', displayName,
+    description: '', source: 'user', modelTier: 'balanced', readonly: false, tools: [],
+  }]);
+}
+
+describe('TurnQualityStrip expert display name', () => {
+  beforeEach(() => {
+    useAppStore.setState({ developerMode: false });
+    useAgentRegistryStore.setState({ entries: [], isLoaded: true });
+  });
+  afterEach(cleanup);
+
+  it('shows the registry display name on replies without changing the persisted agent id', () => {
+    registerExpert('小满');
+    const { container } = render(<TurnQualityStrip summary={expertSummary} />);
+    expect(container.textContent).toContain('小满');
+    expect(container.textContent).not.toContain('weekly-helper');
+    expect(expertSummary.capabilities?.agentId).toBe('weekly-helper');
+  });
+
+  it('keeps the registry name when no display name exists', () => {
+    registerExpert();
+    const { container } = render(<TurnQualityStrip summary={expertSummary} />);
+    expect(container.textContent).toContain('weekly-helper');
+  });
+
+  it('uses the registry name before a stale event name', () => {
+    registerExpert();
+    const { container } = render(<TurnQualityStrip summary={{
+      ...expertSummary, capabilities: { ...expertSummary.capabilities!, agentName: 'old-name' },
+    }} />);
+    expect(container.textContent).toContain('weekly-helper');
+    expect(container.textContent).not.toContain('old-name');
+  });
+
+  it('updates an already rendered reply when the registry refresh arrives', () => {
+    const { container } = render(<TurnQualityStrip summary={expertSummary} />);
+    expect(container.textContent).toContain('weekly-helper');
+    act(() => registerExpert('小满'));
+    expect(container.textContent).toContain('小满');
+    expect(container.textContent).not.toContain('weekly-helper');
+  });
+
+  it('resolves the requested expert label and keeps the not-applied warning', () => {
+    registerExpert('小满');
+    const { container } = render(<TurnQualityStrip summary={{
+      ...expertSummary,
+      capabilities: { agentId: 'default', agentName: 'default', requestedAgentId: 'weekly-helper', toolsUsed: [] },
+    }} />);
+    expect(container.textContent).toContain('小满');
+    expect(container.textContent).toContain('未生效');
+    expect(container.textContent).not.toContain('weekly-helper');
+  });
+
+  it('uses the same display name for the developer attribution and scorecard', () => {
+    registerExpert('小满');
+    useAppStore.setState({ developerMode: true });
+    const { container } = render(<TurnQualityStrip summary={{
+      ...expertSummary,
+      agentScorecard: {
+        agentId: 'weekly-helper', agentName: 'weekly-helper', model: summary.strategy.model,
+        memoryUsed: 0, toolsUsed: 0, warnings: 0, score: summary.score,
+      },
+    } as TurnQualitySummary} />);
+    fireEvent.click(container.querySelector('[aria-expanded]')!);
+    expect(container.textContent?.match(/小满/g)?.length).toBe(2);
+    expect(container.textContent).not.toContain('weekly-helper');
   });
 });

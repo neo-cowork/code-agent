@@ -75,7 +75,8 @@ import type {
   WorkbenchMessageMetadata,
 } from '../../shared/contract/conversationEnvelope';
 import { resolveConnectorRequiredForTurn, withWorkbenchTurnSystemContext } from './workbenchTurnContext';
-import { withSessionCommandCenterBrain } from './sessionCommandCenterBrain';
+import { withMissingAttachmentTurnSystemContext } from './missingAttachmentTurnContext';
+import { resolveForegroundImageTurn, withSessionCommandCenterBrain } from './sessionCommandCenterBrain';
 import { isSessionCommandCenterTurn } from '../../shared/constants/sessionCommandCenter';
 import { getPermissionModeManager } from '../permissions/modes';
 import {
@@ -812,10 +813,19 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         : envelope.context?.workingDirectory ?? effectiveWorkingDirectory ?? orchestrator?.getWorkingDirectory(),
     );
 
-    const workbenchOptions = withWorkbenchTurnSystemContext(
-      envelope.options as AppServiceRunOptions | undefined,
-      envelope.context,
-      getSessionManager().getSessionMetadata?.(resolvedSessionId),
+    const workbenchOptions = withMissingAttachmentTurnSystemContext(
+      withWorkbenchTurnSystemContext(
+        envelope.options as AppServiceRunOptions | undefined,
+        envelope.context,
+        getSessionManager().getSessionMetadata?.(resolvedSessionId),
+      ),
+      {
+        sessionId: resolvedSessionId,
+        userText: envelope.content,
+        attachments: envelope.attachments,
+        session,
+        workingDirectory: envelope.context?.workingDirectory ?? effectiveWorkingDirectory ?? orchestrator?.getWorkingDirectory(),
+      },
     );
     await this.emitConnectorRequired(tm, resolvedSessionId, envelope.options as AppServiceRunOptions | undefined, envelope.context);
     const optionsWithTurnSettings: AppServiceRunOptions = {
@@ -828,7 +838,12 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       prompt: envelope.content,
       hasGoal: Boolean(optionsWithTurnSettings.goal),
     })
-      ? withSessionCommandCenterBrain(optionsWithTurnSettings, envelope.content)
+      ? withSessionCommandCenterBrain(
+        optionsWithTurnSettings,
+        envelope.content,
+        resolveForegroundImageTurn(resolvedSessionId, envelope.attachments, optionsWithTurnSettings.modelSpec),
+        (await getSessionManager().getMessages(resolvedSessionId)).slice().reverse().find(message => message.role === 'assistant' && !message.isMeta && message.visibility !== 'rewound')?.metadata?.stoppedByStepLimit === true,
+      )
       : optionsWithTurnSettings;
 
     // 云货架专家首跑：本轮档位钳到最严，让用户看见它每一步要干什么。
@@ -865,6 +880,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
   cancel(
     sessionId?: string,
     reason?: 'user' | 'session-switch' | CancellationReason,
+    options?: { abandonParked?: boolean },
   ): Promise<void> {
     const tm = this.getTaskManager();
     const resolvedSessionId = this.resolveSessionId(sessionId);
@@ -943,7 +959,13 @@ export class AgentAppServiceImpl implements AgentApplicationService {
           // TaskManager 是 idle，orchestrator.cancel 对已结束的 loop 只发事件，parked run 会一直
           // waiting、quotaWaitTimer 到点仍自动续跑——与用户显式取消相反。走 web /api/cancel 同款
           // terminalRecoveredWaitingRun 终态化（同时清 due timer），命中即收工。
-          const parked = await this.externalRunRegistry?.terminalRecoveredWaitingRun({ sessionId: resolvedSessionId });
+          // user_stop 停靠只被显式「放弃」（abandonParked）终态化：重复 Stop/ESC 对它是 no-op，
+          // 不覆写「继续」投影（N-FIX-STOP-BEFORE-FIRST-RESPONSE-STUCK-RUNNING-FU1）。
+          const parked = await this.externalRunRegistry?.terminalRecoveredWaitingRun(
+            { sessionId: resolvedSessionId },
+            undefined,
+            { abandonParked: options?.abandonParked === true },
+          );
           if (parked) return;
           const orchestrator = this.getOrchestratorOrThrow(resolvedSessionId);
           // Legacy orchestrator.cancel signature accepts 'user' | 'session-switch'
@@ -1006,17 +1028,31 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       resolvedSessionId,
       envelope.context?.workingDirectory ?? effectiveWorkingDirectory ?? orchestrator?.getWorkingDirectory(),
     );
-    const workbenchOptions = withWorkbenchTurnSystemContext(
-      envelope.options as AppServiceRunOptions | undefined,
-      envelope.context,
-      getSessionManager().getSessionMetadata?.(resolvedSessionId),
+    const workbenchOptions = withMissingAttachmentTurnSystemContext(
+      withWorkbenchTurnSystemContext(
+        envelope.options as AppServiceRunOptions | undefined,
+        envelope.context,
+        getSessionManager().getSessionMetadata?.(resolvedSessionId),
+      ),
+      {
+        sessionId: resolvedSessionId,
+        userText: envelope.content,
+        attachments: envelope.attachments,
+        session,
+        workingDirectory: envelope.context?.workingDirectory ?? effectiveWorkingDirectory ?? orchestrator?.getWorkingDirectory(),
+      },
     );
     await this.emitConnectorRequired(tm, resolvedSessionId, envelope.options as AppServiceRunOptions | undefined, envelope.context);
     const options = isSessionCommandCenterTurn({
       prompt: envelope.content,
       hasGoal: Boolean(workbenchOptions?.goal),
     })
-      ? withSessionCommandCenterBrain(workbenchOptions, envelope.content)
+      ? withSessionCommandCenterBrain(
+        workbenchOptions,
+        envelope.content,
+        resolveForegroundImageTurn(resolvedSessionId, envelope.attachments, workbenchOptions?.modelSpec),
+        (await getSessionManager().getMessages(resolvedSessionId)).slice().reverse().find(message => message.role === 'assistant' && !message.isMeta && message.visibility !== 'rewound')?.metadata?.stoppedByStepLimit === true,
+      )
       : workbenchOptions;
     return tm.interruptAndContinue(
       resolvedSessionId,

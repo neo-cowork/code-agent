@@ -60,7 +60,7 @@ function plainStateOf(status: SessionDelegationRecord['status'], runStatus?: Run
   return 'The target session has received this request and will handle it shortly.';
 }
 
-function successfulOutput(input: { delegationId: string; targetName: string; queuedAhead: number; status: SessionDelegationRecord['status']; runStatus?: RunStatus; reused?: true }): ToolResult<string> {
+function successfulOutput(input: { targetSessionId: string; delegationId: string; targetName: string; queuedAhead: number; status: SessionDelegationRecord['status']; runStatus?: RunStatus; reused?: true }): ToolResult<string> {
   const payload = {
     delegationId: input.delegationId,
     target: input.targetName,
@@ -76,7 +76,8 @@ function successfulOutput(input: { delegationId: string; targetName: string; que
   return {
     ok: true,
     output: JSON.stringify(payload),
-    meta: { ...payload },
+    // 目标会话 id 只进 meta（渲染端「查看目标会话」按钮用），绝不进模型可见的 output。
+    meta: { ...payload, targetSessionId: input.targetSessionId },
   };
 }
 
@@ -93,6 +94,7 @@ async function reusedReceipt(
   }
   const run = row.targetRunId ? await new DurableRunRepository(db).get(row.targetRunId) : null;
   return successfulOutput({
+    targetSessionId: row.targetSessionId,
     delegationId: row.delegationId,
     targetName: runtime.getSessionRow(row.targetSessionId)?.title ?? 'session',
     queuedAhead: 0, status: row.status, runStatus: run?.status, reused: true,
@@ -379,7 +381,7 @@ async function executeNewDelegation(
   }
   if (committed.kind === 'reused') return reusedReceipt(committed.delegationId, runtime);
   runtime.notifyEnqueued(targetId);
-  return successfulOutput({ delegationId: committed.delegationId, targetName, status: 'active', queuedAhead: admission.snapshot.userQueuedOrSendingRows });
+  return successfulOutput({ targetSessionId: targetId, delegationId: committed.delegationId, targetName, status: 'active', queuedAhead: admission.snapshot.userQueuedOrSendingRows });
 }
 
 async function executeChain(
@@ -398,7 +400,7 @@ async function executeChain(
     const handle = runtime.getRun(row.targetSessionId);
     if (handle?.cancel && row.targetRunId && handle.context.runId === row.targetRunId) await handle.cancel('user');
     repository.markStopped(row.delegationId, { reason: 'user' }, now);
-    return successfulOutput({ delegationId: row.delegationId, targetName: runtime.getSessionRow(row.targetSessionId)?.title ?? 'session', status: 'stopped', queuedAhead: 0 });
+    return successfulOutput({ targetSessionId: row.targetSessionId, delegationId: row.delegationId, targetName: runtime.getSessionRow(row.targetSessionId)?.title ?? 'session', status: 'stopped', queuedAhead: 0 });
   }
   if (call.action === 'resume') {
     if (!row.targetQueuedInputId) return rejection('invalid_call', 'delegation has no queued input');
@@ -433,7 +435,7 @@ async function executeChain(
     queued.unpauseQueued(row.targetQueuedInputId, now);
     repository.markResumed(row.delegationId, now);
     runtime.notifyEnqueued(row.targetSessionId);
-    return successfulOutput({ delegationId: row.delegationId, targetName: runtime.getSessionRow(row.targetSessionId)?.title ?? 'session', status: 'active', queuedAhead: 0 });
+    return successfulOutput({ targetSessionId: row.targetSessionId, delegationId: row.delegationId, targetName: runtime.getSessionRow(row.targetSessionId)?.title ?? 'session', status: 'active', queuedAhead: 0 });
   }
   if (call.action === 'correct') {
     if (!call.content) return rejection('invalid_call', 'correct requires task text');
@@ -463,7 +465,7 @@ async function executeChain(
     }
     if (committed.kind === 'reused') return reusedReceipt(committed.delegationId, runtime);
     runtime.notifyEnqueued(newTarget);
-    return successfulOutput({ delegationId: committed.delegationId, targetName: target?.title ?? 'session', status: 'active', queuedAhead: 0 });
+    return successfulOutput({ targetSessionId: newTarget, delegationId: committed.delegationId, targetName: target?.title ?? 'session', status: 'active', queuedAhead: 0 });
   }
   return rejection('invalid_call', 'unsupported chain action');
 }

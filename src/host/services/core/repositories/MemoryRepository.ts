@@ -4,6 +4,7 @@
 
 import type BetterSqlite3 from 'better-sqlite3';
 import { MEMORY } from '../../../../shared/constants';
+import { memoryUsageGain } from '../../../../shared/memoryUsageGain';
 import { normalizeFtsMatchQuery, runMemoriesFtsBackfill } from '../../../../shared/memoriesFts.sql';
 import { isFtsDisabled, isFtsSearchDegraded, markFtsTableAvailable, repairFtsTableIfCorrupt } from '../database/ftsRepair';
 import { isSqliteCorruptionError } from '../database/sqliteErrors';
@@ -322,20 +323,13 @@ export class MemoryRepository {
       const now = options.now ?? Date.now();
       const halfLifeMs = MEMORY.RECORD_DECAY_DAYS * 24 * 60 * 60 * 1000;
 
-      const rankWindowMs = MEMORY.RECORD_RANK_RECENCY_WINDOW_DAYS * 24 * 60 * 60 * 1000;
-
       records = records
         .map(r => {
           const lastTouch = r.lastAccessedAt || r.updatedAt;
           const ageMs = now - lastTouch;
           const decayFactor = Math.pow(0.5, ageMs / halfLifeMs);
           const confidence = r.confidence * decayFactor;
-          const freshness = r.lastAccessedAt
-            ? Math.max(0, 1 - (now - r.lastAccessedAt) / rankWindowMs)
-            : 0;
-          const gain = 1
-            + MEMORY.RECORD_RANK_USAGE_ALPHA * Math.log1p(r.accessCount)
-            + MEMORY.RECORD_RANK_RECENCY_BETA * freshness;
+          const gain = memoryUsageGain(r, now);
           return { record: { ...r, confidence }, score: confidence * gain };
         })
         .filter(x => x.record.confidence >= MEMORY.RECORD_MIN_CONFIDENCE)

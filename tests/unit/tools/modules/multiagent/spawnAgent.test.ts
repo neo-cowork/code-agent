@@ -26,6 +26,7 @@ import {
   agentSpawnModule,
 } from '../../../../../src/host/tools/modules/multiagent/spawnAgent';
 import { executeTaskStatus } from '../../../../../src/host/tools/modules/commandCenter/sessionCommandCenter';
+import { formatSystemReminderForCompletions } from '../../../../../src/host/agent/subagentCompletionNotification';
 import { getBackgroundSubagentRegistry } from '../../../../../src/host/agent/backgroundSubagentRegistry';
 
 function makeLogger(): Logger {
@@ -327,6 +328,31 @@ describe('spawn_agent dispatch to protocol-native service', () => {
     );
     expect(result.ok).toBe(true);
     expect(executeSpawnAgentMock).toHaveBeenCalled();
+  });
+
+  it.each([
+    { name: ' 文档主题整理 ', label: '文档主题整理' },
+    { name: undefined, label: 'Read seven documents and count them by topic' },
+    { name: '   ', label: 'Read seven documents and count them by topic' },
+  ])('run_in_background completion notice row uses $label (name=$name)', async ({ name, label }) => {
+    const sessionId = `completion-label-${String(name)}`;
+    const registry = getBackgroundSubagentRegistry();
+    executeSpawnAgentMock.mockResolvedValue({ success: true, output: 'Counted seven documents' });
+    const handler = await spawnAgentModule.createHandler();
+    const result = await handler.execute(
+      { role: 'explore', name, task: ' Read seven documents and count them by topic ', run_in_background: true },
+      makeCtx({ sessionId, suppressBackgroundSubagentIdleWake: true }),
+      allowAll,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const agentId = result.meta?.agentId as string;
+    await vi.waitFor(() => expect(registry.getStatus(agentId)?.status).toBe('completed'));
+    const records = registry.drainCompletionNotifications({ sessionId });
+    expect(records).toHaveLength(1);
+    expect(records[0].title).toBe(label);
+    expect(records[0].kind).toBe('internal');
+    expect(formatSystemReminderForCompletions(records)).toContain(`- ${label}: completed`);
   });
 
   it('run_in_background uses a child-owned abort signal', async () => {

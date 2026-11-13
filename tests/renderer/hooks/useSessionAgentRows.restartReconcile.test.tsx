@@ -32,19 +32,20 @@ vi.mock('../../../src/renderer/stores/backgroundTaskStore', () => ({
     selector({ tasks: [] }),
 }));
 
-vi.mock('../../../src/renderer/stores/appStore', () => ({
-  useAppStore: (selector: (state: {
-    pendingPermissionRequest: null;
-    pendingPermissionSessionId: string | null;
-    queuedPermissionRequests: Record<string, never[]>;
-    activeAgentId: string | null;
-  }) => unknown) => selector({
+vi.mock('../../../src/renderer/stores/appStore', () => {
+  const state = {
     pendingPermissionRequest: null,
-    pendingPermissionSessionId: null,
-    queuedPermissionRequests: {},
-    activeAgentId: null,
-  }),
-}));
+    pendingPermissionSessionId: null as string | null,
+    queuedPermissionRequests: {} as Record<string, never[]>,
+    activeAgentId: null as string | null,
+    language: 'zh' as const,
+  };
+  const useAppStore = Object.assign(
+    (selector: (s: typeof state) => unknown) => selector(state),
+    { getState: () => state },
+  );
+  return { useAppStore };
+});
 
 import { useSessionAgentRows } from '../../../src/renderer/hooks/useSessionAgentRows';
 
@@ -119,4 +120,24 @@ describe('useSessionAgentRows restart reconciliation', () => {
     expect(rows.find((row) => row.key === 'live-agent')?.status).toBe('working');
     expect(rows.find((row) => row.key === 'fresh-unknown')?.status).toBe('working');
   });
+  it('failed-parent member count stays while child is live, then drops to zero on its real terminal snapshot without remount', () => {
+    runtime.members = [{ key: 'child', roleId: 'coder', name: 'Sales presentation', status: 'running', isLead: false }];
+    const child = { ...treeNode('child', 'running'), background: true, sources: ['spawnGuard' as const] };
+    runtime.snapshot = {
+      generatedAt: 1, sessionId: 'session-1', roots: [child], nodes: [child],
+      summary: { total: 1, running: 1, completed: 0, failed: 0, cancelled: 0, blocked: 0, withWorktree: 0, ownershipConflicts: [] },
+    };
+    const hook = renderHook(() => useSessionAgentRows('session-1'));
+    expect(hook.result.current.rows.filter((row) => row.status === 'working')).toHaveLength(1);
+    runtime.snapshot = { ...runtime.snapshot, generatedAt: 2, nodes: [{ ...child, status: 'completed' }] };
+    hook.rerender();
+    expect(hook.result.current.rows.filter((row) => row.status === 'working')).toHaveLength(0);
+    expect(hook.result.current.rows[0]?.status).toBe('done');
+    // A live execution also beats a prematurely terminal persisted snapshot.
+    runtime.members = [{ ...runtime.members[0], status: 'failed' }];
+    runtime.snapshot = { ...runtime.snapshot, generatedAt: 3, nodes: [child] };
+    hook.rerender();
+    expect(hook.result.current.rows.filter((row) => row.status === 'working')).toHaveLength(1);
+  });
+
 });

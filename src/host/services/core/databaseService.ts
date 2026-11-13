@@ -52,6 +52,11 @@ import { SessionForkError } from '../../../shared/contract/sessionFork';
 // Re-export types from repositories（保持外部调用方零修改）
 export type { StoredSession, StoredMessage, MemoryRecord, UserPreference, ProjectKnowledge, ToolExecution, AnnotationRow } from './repositories';
 
+import {
+  getSessionSearchMeta as getSessionSearchMetaRows,
+  searchSessionTitles as searchSessionTitleRows,
+  type SessionSearchMetaRow,
+} from './repositories/sessionSearchMeta';
 import { SessionRepository, SessionForkRepository, SessionForkWorkspaceRepository, ConversationBranchRepository, SessionForkPortabilityRepository, digestSessionForkAnchorMessage, isCompletedSessionForkAnchor, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, AnnotationRepository, ProjectRepository, PendingApprovalRepository, GenerativeUIRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, VoiceCallAuditRepository, type VoiceAuditMessage, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution, SwarmLedgerRepository, UsageLedgerRepository, BudgetStateUnavailableError, type UsageLedgerEntryInput, type UsageLedgerEntry, type AnnotationRow, AgentWakeRepository, TurnCostRepository, findLatestExpertThreadSession } from './repositories';
 import type {
   CreateForkRepositoryInput,
@@ -3326,6 +3331,16 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   unarchiveSession(sessionId: string): import('./repositories').StoredSession | null {
     this.ensureDb();
     return this.sessionRepo.unarchiveSession(sessionId);
+  }
+  getSessionSearchMeta(sessionIds: string[], userId: string | null): SessionSearchMetaRow[] {
+    this.ensureDb();
+    if (!this.db) throw new Error('Database not opened');
+    return getSessionSearchMetaRows(this.db, sessionIds, userId);
+  }
+  searchSessionTitles(query: string, userId: string | null, limit: number): SessionSearchMetaRow[] {
+    this.ensureDb();
+    if (!this.db) throw new Error('Database not opened');
+    return searchSessionTitleRows(this.db, query, userId, limit);
   }
   searchSessionMessagesFts(
     query: string,

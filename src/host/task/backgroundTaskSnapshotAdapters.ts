@@ -1,4 +1,5 @@
 import { statSync } from 'fs';
+import { looksSandboxWrapped } from '../sandbox/wrapperMarkers';
 import type {
   Task,
   TaskFailure,
@@ -85,26 +86,29 @@ function shouldQueueTerminalNotification(previous: Task | null, status: TaskStat
   return previous?.status !== status;
 }
 
+// Never surface a sandbox-wrapped command line as a task name.
+function safeLabel(label: string | undefined, fallback: string): string {
+  return label && !looksSandboxWrapped(label) ? label : fallback;
+}
+
 function buildTerminalMessage(args: {
   label: string;
   status: TaskStatus;
   durationMs?: number;
   exitCode?: number;
-  outputFile?: string;
   automationPromptLikely?: boolean;
   locale?: SessionTaskSlotLocale;
 }): string {
   const duration = args.durationMs != null ? `，耗时 ${formatDuration(args.durationMs)}` : '';
-  const log = args.outputFile ? `，日志 ${args.outputFile}` : '';
   if (args.status === 'completed') {
-    return `${args.label} 已完成${duration}${log}`;
+    return `${args.label} 已完成${duration}`;
   }
   if (args.status === 'cancelled') {
     return `${args.label} 已停止${duration}`;
   }
   const exitCode = args.exitCode != null && args.exitCode !== 0 ? `，退出码 ${args.exitCode}` : '';
   return withAutomationPromptTimeoutHint(
-    `${args.label} 失败${exitCode}${duration}${log}`,
+    `${args.label} 失败${exitCode}${duration}`,
     args.locale ?? 'zh',
     args.automationPromptLikely,
   );
@@ -123,6 +127,9 @@ function queueTerminalNotification(args: {
   outputFile?: string;
   automationPromptLikely?: boolean;
   locale?: SessionTaskSlotLocale;
+  /** 被最长运行时间上限终止：只给 payload 加结构化字段，不改文案 */
+  timedOut?: boolean;
+  maxRuntimeMs?: number;
 }): void {
   if (!args.sessionId || !shouldQueueTerminalNotification(args.previous, args.status)) {
     return;
@@ -147,7 +154,6 @@ function queueTerminalNotification(args: {
       status: args.status,
       durationMs: args.durationMs,
       exitCode: args.exitCode,
-      outputFile: args.outputFile,
       automationPromptLikely: args.automationPromptLikely,
       locale: args.locale,
     }),
@@ -158,6 +164,9 @@ function queueTerminalNotification(args: {
       outputFile: args.outputFile,
       exitCode: args.exitCode,
       durationMs: args.durationMs,
+      ...(args.timedOut && args.status === 'failed'
+        ? { reason: 'timeout', maxRuntimeMs: args.maxRuntimeMs }
+        : {}),
     },
   });
 }
@@ -191,7 +200,7 @@ export function syncShellTaskSnapshotToLedger(
 ): void {
   const status = mapShellStatus(task.status, task.stoppedByRequest);
   const taskId = `shell:${task.taskId}`;
-  const label = task.displayCommand?.trim() || task.command || `Shell ${task.taskId.slice(0, 8)}`;
+  const label = safeLabel(task.displayName?.trim() || task.displayCommand?.trim() || task.command, `Shell ${task.taskId.slice(0, 8)}`);
   const previous = ledger.getTask(taskId);
   const recoveryStatus = status === 'running' ? 'running-live' : status;
   const automationPromptLikely = isLikelyUnansweredMacOsAutomationPrompt({
@@ -247,6 +256,8 @@ export function syncShellTaskSnapshotToLedger(
     outputFile: task.outputFile,
     automationPromptLikely,
     locale,
+    timedOut: task.timedOut,
+    maxRuntimeMs: task.maxRuntime,
   });
 
   upsertOutputRef(ledger, {
@@ -281,7 +292,10 @@ export function syncPtySessionSnapshotToLedger(
 ): void {
   const status = mapShellStatus(session.status, session.stoppedByRequest);
   const taskId = `pty:${session.sessionId}`;
-  const command = [session.command, ...session.args].filter(Boolean).join(' ');
+  const command = safeLabel(
+    session.displayName?.trim() || [session.command, ...session.args].filter(Boolean).join(' '),
+    `PTY ${session.sessionId.slice(0, 8)}`,
+  );
   const previous = ledger.getTask(taskId);
   const recoveryStatus = status === 'running' ? 'running-live' : status;
   ledger.upsertTask({
@@ -290,7 +304,7 @@ export function syncPtySessionSnapshotToLedger(
     sessionId: session.ownerSessionId,
     toolCallId: session.toolCallId,
     source: 'pty',
-    title: command || `PTY ${session.sessionId.slice(0, 8)}`,
+    title: command,
     summary: session.outputFile,
     command,
     cwd: session.cwd,
@@ -328,6 +342,8 @@ export function syncPtySessionSnapshotToLedger(
     durationMs: session.duration,
     exitCode: session.exitCode,
     outputFile: session.outputFile,
+    timedOut: session.timedOut,
+    maxRuntimeMs: session.maxRuntime,
   });
 
   upsertOutputRef(ledger, {

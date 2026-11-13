@@ -16,7 +16,7 @@ import { generatePermissionRequestId } from '../../shared/utils/id';
 import type { ExecutionTopology } from '../permissions';
 import { getPermissionModeManager } from '../permissions/modes';
 import { isUnattendedAllowedReadOnlyTool } from '../permissions/unattendedReadOnlyTools';
-import { approveByScheduleWriteGrant } from '../cron/cronWriteGrant';
+import { approveByScheduleWriteGrant, writeGrantFolderForParking } from '../cron/cronWriteGrant';
 import { getSessionAutomationService } from '../services/sessionAutomation/sessionAutomationService';
 import { notificationService } from '../services/infra/notificationService';
 import type { PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
@@ -29,6 +29,7 @@ import {
   noteUnattendedApprovalTimeout,
   UNATTENDED_APPROVAL_TIMEOUT,
 } from './unattendedApprovalTerminal';
+import { recordBrowserSessionGrant } from '../permissions/browserSessionGrant';
 import { getConfirmationGate } from './confirmationGate';
 import { mintAppGrantSession, mintAppGrantStanding } from '../permissions/appGrantStore';
 import { mintTool24hGrant, mintToolRunGrant } from '../permissions/toolGrantStore';
@@ -122,6 +123,24 @@ function recordHumanGrant(
     return;
   }
   if (updatedArgs && response !== 'allow') return;
+  // 与聊天卡 hideStandingGrants 等价的收口：可编辑写回工具 / forceConfirm / 无 target 的 external
+  // 只能一次性放行，两档工具授权（run/24h）一律不铸，避免收件箱点击放大成全局免审。
+  if (
+    (response === 'allow_run' || response === 'allow_24h')
+    && (
+      isEditableTool(request.tool)
+      || request.forceConfirm === true
+      || (isExternalSideEffectTool(request.tool) && !request.details?.standingGrantTarget)
+    )
+  ) {
+    logger.warn('Tier grant refused for editable/forceConfirm/untargeted-external request: treated as allow once', {
+      tool: request.tool,
+      requestId: request.id,
+      response,
+    });
+    return;
+  }
+  if (recordBrowserSessionGrant(response, request)) return;
   const app = request.details?.targetApp;
   if (response === 'allow_session' && request.sessionId) {
     if (app?.name) mintAppGrantSession(request.sessionId, app);
@@ -579,6 +598,11 @@ export class OrchestratorPermissionIsland {
         return scheduleGrant;
       }
     }
+    // 一键授权候选文件夹：停车前算好随载荷落库，收件箱卡据此出第三个按钮（守卫在 cronWriteGrant）。
+    // 类型门放调用侧：非文件写请求不多让出一拍微任务（停车事件的同步时序不变）。
+    const writeGrantFolder = unattended && (request.type === 'file_write' || request.type === 'file_edit')
+      ? await writeGrantFolderForParking(request)
+      : undefined;
     // cron/heartbeat/channel/语音派都走停车审批，24h backstop 只负责泄漏兜底；
     // 60s 终态仅保留给显式登记的旧兼容会话。
     if (detached || unattended || voice) {
@@ -594,6 +618,7 @@ export class OrchestratorPermissionIsland {
             : approvalTerminal
               ? 'unattended'
               : getPermissionModeManager().isUnattendedApprovalDegrade(fullRequest.sessionId) ? 'degrade' : 'backstop',
+          writeGrantFolder,
         );
       }
     } else {
@@ -734,6 +759,7 @@ export class OrchestratorPermissionIsland {
     repo: PendingApprovalRepository,
     kind: PendingApprovalKind = 'tool_approval',
     deadline: 'unattended' | 'backstop' | 'degrade' = 'backstop',
+    writeGrantFolder?: string,
   ): Promise<PermissionAskResult> {
     const releaseHold = holdStallClock(fullRequest.sessionId);
     return new Promise<PermissionAskResult>((resolve) => {
@@ -825,6 +851,7 @@ export class OrchestratorPermissionIsland {
           }
           : {}),
         ...(argsPreview ? { argsPreview } : {}),
+        ...(writeGrantFolder ? { writeGrantFolder } : {}),
         // ADR-088 敏感步骤交回：收件箱/会话卡据此渲染单状态交回卡（展示元数据，无秘密本体）。
         ...(fullRequest.details?.sensitiveStep
           ? { sensitiveStep: fullRequest.details.sensitiveStep }
@@ -838,6 +865,7 @@ export class OrchestratorPermissionIsland {
         riskClass: isExternalSideEffectTool(fullRequest.tool) ? 'external' : null,
         // B4：external+可提取 target 时非空 → 收件箱审批卡出「每次都允许发 <target>」铸权入口。
         standingGrantTarget: fullRequest.details?.standingGrantTarget ?? null,
+        ...(fullRequest.details.browserSessionGrant ? { browserSessionGrant: fullRequest.details.browserSessionGrant, displayAction: fullRequest.reason } : {}),
       };
       try {
         repo.insert({

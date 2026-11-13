@@ -12,6 +12,8 @@
 // 从 sessionStore 拆出（god-file 门：sessionStore effective 996/1000，只留最小接线）。
 // ============================================================================
 
+import { create } from 'zustand';
+import { sessionLoadErrorCode } from './sessionLoadRecovery';
 import type { Session } from '@shared/contract';
 import { normalizeAgentEngineSession } from '@shared/contract/agentEngine';
 import { deriveSessionWorkbenchSnapshot } from '@shared/contract/sessionWorkspace';
@@ -29,9 +31,25 @@ const logger = createLogger('SessionListPagination');
 async function invokeSession<T>(action: string, payload?: unknown): Promise<T> {
   const response = await window.domainAPI?.invoke<T>(IPC_DOMAINS.SESSION, action, payload);
   if (!response?.success) {
-    throw new Error(response?.error?.message || `Session action failed: ${action}`);
+    throw Object.assign(new Error(response?.error?.message || `Session action failed: ${action}`), { code: response?.error?.code });
   }
   return response.data as T;
+}
+
+/** List readiness is independent of opening a session (which also uses isLoading). */
+export const useSessionListLoadStore = create<{
+  settled: boolean;
+  loading: boolean;
+  error: boolean;
+  errorCode: string | null;
+}>(() => ({ settled: false, loading: false, error: false, errorCode: null }));
+
+let listRequestVersion = 0;
+
+export function resetSessionListLoadState(): void {
+  listRequestVersion += 1;
+  _openedOutsideWindowIds.clear();
+  useSessionListLoadStore.setState({ settled: false, loading: false, error: false, errorCode: null });
 }
 
 /**
@@ -50,6 +68,38 @@ function getSessionsLocalVersion(): number {
 
 export function bumpSessionsLocalVersion(): void {
   _sessionsLocalVersion += 1;
+}
+
+/**
+ * 从搜索结果打开的、不在已加载分页窗口里的会话（"外来行"）。
+ * 它们要留在 sessions 里（顶栏标题等按 id 在 sessions 里查），但不属于分页窗口：
+ * 计 offset 时扣掉（否则翻页会漏一行），静默刷新重取窗口时要原样补回（否则标题又空了）。
+ */
+const _openedOutsideWindowIds = new Set<string>();
+
+export function withOpenedSessionOutsideWindow<T extends { id: string }>(sessions: T[], opened: T): T[] {
+  if (sessions.some((item) => item.id === opened.id)) {
+    return sessions.map((item) => (item.id === opened.id ? opened : item));
+  }
+  _openedOutsideWindowIds.add(opened.id);
+  return [opened, ...sessions];
+}
+
+function windowSessionCount(sessions: Array<{ id: string }>): number {
+  return sessions.filter((item) => !_openedOutsideWindowIds.has(item.id)).length;
+}
+
+/** 刷新后窗口里已含该会话 = 它不再是外来行；仍缺席的外来行补回列表。 */
+function keepOpenedOutsideWindow(
+  current: SessionListMeta[],
+  refreshed: SessionListMeta[],
+): SessionListMeta[] {
+  const refreshedIds = new Set(refreshed.map((item) => item.id));
+  for (const id of Array.from(_openedOutsideWindowIds)) {
+    if (refreshedIds.has(id)) _openedOutsideWindowIds.delete(id);
+  }
+  const extras = current.filter((item) => _openedOutsideWindowIds.has(item.id) && !refreshedIds.has(item.id));
+  return extras.length > 0 ? [...extras, ...refreshed] : refreshed;
 }
 
 /** 与 sessionStore/sessionCreate 同款的最小 meta 形状（避免与 sessionStore 循环 import 运行时值）。 */
@@ -123,30 +173,40 @@ export async function executeLoadSessions(
   // silent：后台刷新（云端同步广播）不动 isLoading，避免侧栏白刷一帧。
   const silent = options?.silent ?? false;
   const { filter } = useSessionUIStore.getState();
+  const requestVersion = ++listRequestVersion;
+  const readiness = useSessionListLoadStore.getState();
+  useSessionListLoadStore.setState({ loading: !silent || !readiness.settled || readiness.loading, error: false, errorCode: null });
   if (!silent) set({ isLoading: true, error: null });
   // 在途期间若发生本地乐观变更（归档/删除等），拿到的是陈旧快照——落地前比对。
   const localVersionAtStart = getSessionsLocalVersion();
   try {
     // 静默刷新保持已加载窗口：用户已翻到 N 条就按 N 条重取同一窗口，
     // 否则每次云端同步广播都会把列表收回第一页，翻出来的历史会话瞬间消失。
-    const loadedCount = silent ? get().sessions.length : 0;
+    const loadedCount = silent ? windowSessionCount(get().sessions) : 0;
     const limit = Math.max(SESSION_LIST_PAGE_SIZE, loadedCount);
     const sessions = await invokeSession<Session[]>('list', buildSessionListQuery(filter, 0, limit));
 
+    if (requestVersion !== listRequestVersion) return;
     if (localVersionAtStart !== getSessionsLocalVersion()) {
       // 快照陈旧（典型：归档①的广播触发本次 list，归档②在在途期间已乐观移除，
       // 且 dedupe 把归档②的广播并进本次请求）——丢弃重取，别把旧列表写回。
       return executeLoadSessions(deps, options);
     }
 
-    const sessionsWithMeta = preserveParkedContinueOnRefresh(get().sessions, applyClientFilter(
+    const refreshedWindow = applyClientFilter(
       (sessions || []).map((session) => normalizeSession(session as Session & { messageCount?: number; turnCount?: number })),
       filter,
-    ));
+    );
+    const sessionsWithMeta = preserveParkedContinueOnRefresh(
+      get().sessions,
+      keepOpenedOutsideWindow(get().sessions, refreshedWindow),
+    );
 
+    useSessionListLoadStore.setState({ settled: true, loading: false, error: false, errorCode: null });
     // 闪烁修复：数据签名不变就保留旧引用、跳过 setState，避免云端同步广播触发侧栏整树重渲染。
     if (sessionsSignature(get().sessions) === sessionsSignature(sessionsWithMeta)) {
-      if (!silent) set({ isLoading: false });
+      // The winner also settles loading inherited from a superseded foreground read.
+      if (!silent || readiness.loading) set({ isLoading: false });
       return;
     }
 
@@ -157,6 +217,8 @@ export async function executeLoadSessions(
       hasOlderSessions: (sessions || []).length >= limit,
     });
   } catch (error) {
+    if (requestVersion !== listRequestVersion) return;
+    useSessionListLoadStore.setState({ settled: true, loading: false, error: true, errorCode: sessionLoadErrorCode(error) });
     logger.error('Failed to load sessions', error);
     set({
       error: error instanceof Error ? error.message : 'Failed to load sessions',
@@ -174,7 +236,7 @@ export async function executeLoadOlderSessions(deps: SessionListPaginationDeps):
   const localVersionAtStart = getSessionsLocalVersion();
   try {
     // sessions.length 恒等于已从 DB 取出的原始条数（见 applyClientFilter），直接当 offset。
-    const offset = state.sessions.length;
+    const offset = windowSessionCount(state.sessions);
     const page = await invokeSession<Session[]>('list', buildSessionListQuery(filter, offset, SESSION_LIST_PAGE_SIZE));
 
     if (localVersionAtStart !== getSessionsLocalVersion()) {

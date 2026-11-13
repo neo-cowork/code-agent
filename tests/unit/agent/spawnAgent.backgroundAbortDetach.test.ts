@@ -14,6 +14,7 @@ const harness = vi.hoisted(() => ({
   guardAcquireSlot: vi.fn(),
   raceForegroundBlockingBudget: vi.fn(),
   adoptForegroundSubagent: vi.fn(),
+  finalizeForegroundSpawnAgentWorktree: vi.fn(),
 }));
 
 vi.mock('../../../src/host/agent/subagentExecutor', () => ({
@@ -43,7 +44,7 @@ vi.mock('../../../src/host/agent/agentWorktree', () => ({
 vi.mock('../../../src/host/agent/multiagentTools/spawnAgentForegroundBackground', () => ({
   adoptForegroundSubagent: harness.adoptForegroundSubagent,
   delegateSpawnAgentWorktreeCleanup: vi.fn(),
-  finalizeForegroundSpawnAgentWorktree: vi.fn(),
+  finalizeForegroundSpawnAgentWorktree: harness.finalizeForegroundSpawnAgentWorktree,
   publishBackgroundSubagentVisibility: vi.fn(),
   raceForegroundBlockingBudget: harness.raceForegroundBlockingBudget,
   resolveForegroundBlockingBudgetMs: () => 600_000,
@@ -65,6 +66,7 @@ vi.mock('../../../src/host/task/TaskManager', () => ({
 
 import { executeSpawnAgent } from '../../../src/host/agent/multiagentTools/spawnAgent';
 import type { SubagentExecutionContext } from '../../../src/host/agent/subagentExecutorTypes';
+import { buildSubagentCompletionRecord, formatSystemReminderForCompletions } from '../../../src/host/agent/subagentCompletionNotification';
 
 function makeContext(parentSignal: AbortSignal): SubagentExecutionContext {
   return {
@@ -88,6 +90,7 @@ describe('spawn_agent waitForCompletion:false 后台分离', () => {
     harness.guardAcquireSlot.mockReset();
     harness.raceForegroundBlockingBudget.mockReset();
     harness.adoptForegroundSubagent.mockReset();
+    harness.finalizeForegroundSpawnAgentWorktree.mockReset();
   });
 
   it('工具调用收口（父信号 abort）不连带取消已报告后台运行的子代理', async () => {
@@ -134,5 +137,43 @@ describe('spawn_agent waitForCompletion:false 后台分离', () => {
     // 收养后工具调用收口（父信号 abort）不得连带取消已转后台的子代理。
     parentController.abort(new Error('tool execution settled'));
     expect(subagentController?.signal.aborted).toBe(false);
+  });
+
+  it.each([true, false])('does not wrap background completion results with an internal name (success=%s)', async (success) => {
+    const output = '产品 8 份、客户 8 份、运营 8 份，共 24 份。';
+    const result = { success, output, error: success ? undefined : 'Document unavailable', iterations: 2, toolsUsed: ['Read'], cost: 0.01, tokensUsed: 100 };
+    harness.executorExecute.mockResolvedValue(result);
+    harness.guardAcquireSlot.mockResolvedValue({ release: vi.fn() });
+    harness.raceForegroundBlockingBudget.mockResolvedValue({ kind: 'result', result });
+    harness.finalizeForegroundSpawnAgentWorktree.mockResolvedValue({ finalized: true, worktreeNote: '' });
+
+    const completed = await executeSpawnAgent(
+      { task: '文档主题统计', customPrompt: '核对文档主题', name: 'Explorer', run_in_background: true },
+      makeContext(new AbortController().signal),
+    );
+    expect(completed.success).toBe(success);
+    expect(completed.output).toBe(output);
+    expect(completed.error).toBe(result.error);
+    expect(completed.metadata).toMatchObject({ cost: 0.01, tokensUsed: 100 });
+    const notification = buildSubagentCompletionRecord({
+      agentId: 'background-count', title: '文档主题统计', role: 'explore',
+      status: success ? 'completed' : 'failed', output: success ? completed.output as string : '', error: completed.error,
+    });
+    expect(formatSystemReminderForCompletions([notification])).not.toMatch(/Explorer|explore|Tools used:|Pipeline ID:/);
+  });
+
+  it('preserves the foreground tool result wrapper', async () => {
+    const result = { success: true, output: '统计完成。', iterations: 1, toolsUsed: ['Read'] };
+    harness.executorExecute.mockResolvedValue(result);
+    harness.guardAcquireSlot.mockResolvedValue({ release: vi.fn() });
+    harness.raceForegroundBlockingBudget.mockResolvedValue({ kind: 'result', result });
+    harness.finalizeForegroundSpawnAgentWorktree.mockResolvedValue({ finalized: true, worktreeNote: '' });
+
+    const completed = await executeSpawnAgent(
+      { task: '文档主题统计', customPrompt: '核对文档主题', name: 'Explorer' },
+      makeContext(new AbortController().signal),
+    );
+    expect(completed.output).toContain('Agent [Explorer] completed task:');
+    expect(completed.output).toContain('Tools used: Read');
   });
 });

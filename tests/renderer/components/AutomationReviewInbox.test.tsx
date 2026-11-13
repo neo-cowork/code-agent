@@ -91,6 +91,7 @@ vi.mock('../../../src/renderer/services/cronClient', () => {
     getExecutions: vi.fn().mockResolvedValue([]),
     getRecentExecutions: vi.fn().mockResolvedValue([]),
     grantLoginPassThrough: vi.fn().mockResolvedValue(null),
+    grantWriteFolderFromParkedApproval: vi.fn(),
   };
   return { cronClient: mocked, default: mocked };
 });
@@ -485,6 +486,75 @@ describe('AutomationReviewInbox', () => {
     });
   });
 
+  it('普通工具停车行显示 zh / en 两档按钮', async () => {
+    listParkedApprovals.mockResolvedValue([makeParked({ kind: 'tool_approval', tool: 'Write', riskClass: null })]);
+    render(<AutomationReviewInbox />);
+    expect((await screen.findByTestId('parked-allow-run')).textContent).toBe('到这次做完为止');
+    expect(screen.getByTestId('parked-allow-24h').textContent).toBe('24 小时内允许');
+    cleanup();
+
+    i18nState.language = 'en';
+    render(<AutomationReviewInbox />);
+    expect((await screen.findByTestId('parked-allow-run')).textContent).toBe('Until this run is done');
+    expect(screen.getByTestId('parked-allow-24h').textContent).toBe('Allow for 24 hours');
+  });
+
+  it.each([
+    ['parked-allow-run', 'allow_run'],
+    ['parked-allow-24h', 'allow_24h'],
+  ] as const)('%s 点击回传 %s（同一 requestId 和 sessionId）', async (testId, response) => {
+    listParkedApprovals.mockResolvedValueOnce([makeParked({ kind: 'tool_approval', tool: 'Write', riskClass: null })]).mockResolvedValue([]);
+    render(<AutomationReviewInbox />);
+    fireEvent.click(await screen.findByTestId(testId));
+    await waitFor(() => {
+      expect(ipcInvoke).toHaveBeenCalledWith('agent:permission-response', 'perm_req_1', response, 'session-1');
+    });
+  });
+
+  it('orphaned / voided / pairing / directory_access / sensitiveStep 行不显示两档按钮', async () => {
+    listParkedApprovals.mockResolvedValue([
+      makeParked({ id: 'orphaned', status: 'orphaned' }),
+      makeParked({ id: 'voided', status: 'voided', voidReason: '已取消' }),
+      makeParked({ id: 'pairing', kind: 'channel_pairing' }),
+      makeParked({ id: 'directory', kind: 'directory_access' }),
+      makeParked({ id: 'sensitive', sensitiveStep: { kind: 'password' } }),
+    ]);
+    render(<AutomationReviewInbox />);
+    await screen.findByTestId('sensitive-step-parked-row');
+    expect(screen.queryByTestId('parked-allow-run')).toBeNull();
+    expect(screen.queryByTestId('parked-allow-24h')).toBeNull();
+  });
+
+  it('可编辑写回工具 / 无 target 的 external 行不显示两档按钮；有 target 的 external 仍显示（r1）', async () => {
+    listParkedApprovals.mockResolvedValue([
+      makeParked({ id: 'editable', tool: 'reminders_create' }),
+      makeParked({ id: 'ext-no-target', tool: 'mcp__slack__send_message', riskClass: 'external', standingGrantTarget: null }),
+    ]);
+    const { unmount } = render(<AutomationReviewInbox />);
+    await screen.findAllByTestId('parked-approval-item');
+    expect(screen.queryByTestId('parked-allow-run')).toBeNull();
+    expect(screen.queryByTestId('parked-allow-24h')).toBeNull();
+    unmount();
+    listParkedApprovals.mockResolvedValue([
+      makeParked({ id: 'ext-target', tool: 'mcp__slack__send_message', riskClass: 'external', standingGrantTarget: 'a@b.com' }),
+    ]);
+    render(<AutomationReviewInbox />);
+    expect(await screen.findByTestId('parked-allow-24h')).toBeTruthy();
+  });
+
+  it('审批投递中 busyId 同时禁用两档按钮', async () => {
+    let finish!: () => void;
+    ipcInvoke.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }));
+    listParkedApprovals.mockResolvedValue([makeParked({ kind: 'tool_approval', tool: 'Write', riskClass: null })]);
+    render(<AutomationReviewInbox />);
+    fireEvent.click(await screen.findByTestId('parked-allow-run'));
+    await waitFor(() => {
+      expect((screen.getByTestId('parked-allow-run') as HTMLButtonElement).disabled).toBe(true);
+      expect((screen.getByTestId('parked-allow-24h') as HTMLButtonElement).disabled).toBe(true);
+    });
+    await act(async () => { finish(); });
+  });
+
   it('宿主已死（outcome=no_orchestrator）：提示已失效并刷新列表，不静默（D0）', async () => {
     listParkedApprovals.mockResolvedValueOnce([makeParked({ id: 'perm_dead', sessionId: 'session-1' })]).mockResolvedValue([]);
     ipcInvoke.mockResolvedValueOnce({ outcome: 'no_orchestrator' });
@@ -698,6 +768,104 @@ describe('AutomationReviewInbox', () => {
     expect(screen.getByTestId('parked-args-preview').textContent).toBe(
       'Arguments: curl https://api.example.com/v1 · Bearer ***REDACTED***',
     );
+  });
+
+  describe('一键授权此任务写文件夹（writeGrantFolder）', () => {
+    const grant = () => cronClient.grantWriteFolderFromParkedApproval as unknown as ReturnType<typeof vi.fn>;
+
+    it('带 writeGrantFolder 才出第三个按钮：只显示文件夹名（zh/en），完整路径在 title', async () => {
+      listParkedApprovals.mockResolvedValue([
+        makeParked({ id: 'perm_fold', writeGrantFolder: '/Users/leo/Documents/morning-notes' }),
+      ]);
+      render(<AutomationReviewInbox />);
+      const button = await screen.findByTestId('parked-allow-folder');
+      expect(button.textContent).toBe('以后这个任务写「morning-notes」文件夹不再询问');
+      expect(button.textContent).not.toContain('/Users/leo');
+      expect(button.getAttribute('title')).toContain('/Users/leo/Documents/morning-notes');
+      cleanup();
+      i18nState.language = 'en';
+      render(<AutomationReviewInbox />);
+      expect((await screen.findByTestId('parked-allow-folder')).textContent)
+        .toBe('Always allow this task to write the "morning-notes" folder');
+    });
+
+    it('同会话同文件夹的 3 个待批写合并成一张卡；批准/拒绝对整组逐条回传；无文件夹的行不合并', async () => {
+      const folder = '/Users/leo/Documents/morning-notes';
+      listParkedApprovals.mockResolvedValue([
+        ...['today-plan.md', 'reading-list.md', 'follow-ups.md'].map((n, i) =>
+          makeParked({ id: `perm_g${i}`, argsPreview: `${folder}/${n}`, writeGrantFolder: folder })),
+        makeParked({ id: 'perm_home', argsPreview: '/Users/leo/shopping-list.md' }),
+      ]);
+      render(<AutomationReviewInbox />);
+      await screen.findAllByTestId('parked-approval-item');
+      expect(screen.getAllByTestId('parked-approval-item')).toHaveLength(2);
+      expect(screen.getAllByTestId('parked-allow-folder')).toHaveLength(1);
+      expect(screen.getAllByTestId('parked-approval-item')[0].textContent).toContain('写入 3 个文件到「morning-notes」文件夹');
+      ipcInvoke.mockClear();
+      fireEvent.click(screen.getAllByTestId('parked-approve')[0]);
+      await waitFor(() => expect(ipcInvoke).toHaveBeenCalledTimes(3));
+      expect(ipcInvoke.mock.calls.map((c) => c[1]).sort()).toEqual(['perm_g0', 'perm_g1', 'perm_g2']);
+    });
+
+    it('无 writeGrantFolder 的同文件夹行不并入可授权组卡，仍单独一卡', async () => {
+      const folder = '/Users/leo/Documents/morning-notes';
+      listParkedApprovals.mockResolvedValue([
+        makeParked({ id: 'perm_b0', argsPreview: `${folder}/a.md`, writeGrantFolder: folder }),
+        makeParked({ id: 'perm_b1', argsPreview: `${folder}/b.md`, writeGrantFolder: folder }),
+        makeParked({ id: 'perm_other', argsPreview: `${folder}/c.md` }),
+      ]);
+      render(<AutomationReviewInbox />);
+      await screen.findAllByTestId('parked-approval-item');
+      expect(screen.getAllByTestId('parked-approval-item')).toHaveLength(2);
+      expect(screen.getAllByTestId('parked-allow-folder')).toHaveLength(1);
+    });
+
+    it('kept_existing：被点的由 host 放行，同卡其余逐条批准', async () => {
+      const folder = '/Users/leo/Documents/morning-notes';
+      listParkedApprovals.mockResolvedValue(['a.md', 'b.md'].map((n, i) =>
+        makeParked({ id: `perm_k${i}`, argsPreview: `${folder}/${n}`, writeGrantFolder: folder })));
+      grant().mockResolvedValue({ grant: { status: 'kept_existing' }, released: true });
+      ipcInvoke.mockClear();
+      render(<AutomationReviewInbox />);
+      fireEvent.click(await screen.findByTestId('parked-allow-folder'));
+      await waitFor(() => expect(grant()).toHaveBeenCalledWith('perm_k0'));
+      await waitFor(() => expect(ipcInvoke).toHaveBeenCalledWith('agent:permission-response', 'perm_k1', 'allow', 'session-1'));
+    });
+
+    it('无 writeGrantFolder（如写进 $HOME）不出第三个按钮，批准/拒绝照旧', async () => {
+      listParkedApprovals.mockResolvedValue([makeParked({ id: 'perm_nofold' })]);
+      render(<AutomationReviewInbox />);
+      await screen.findByTestId('parked-approve');
+      expect(screen.queryByTestId('parked-allow-folder')).toBeNull();
+      expect(screen.getByTestId('parked-reject')).toBeTruthy();
+    });
+
+    it('点击走专用 IPC（只传 requestId，不走通用 permission-response）', async () => {
+      listParkedApprovals.mockResolvedValue([
+        makeParked({ id: 'perm_fold', writeGrantFolder: '/Users/leo/Documents/morning-notes' }),
+      ]);
+      grant().mockResolvedValue({ grant: { status: 'granted' }, released: true });
+      ipcInvoke.mockClear();
+      render(<AutomationReviewInbox />);
+      fireEvent.click(await screen.findByTestId('parked-allow-folder'));
+      await waitFor(() => expect(grant()).toHaveBeenCalledWith('perm_fold'));
+      expect(ipcInvoke).not.toHaveBeenCalledWith('agent:permission-response', expect.anything(), expect.anything(), expect.anything());
+      expect(toastInfo).not.toHaveBeenCalled();
+      expect(toastError).not.toHaveBeenCalled();
+    });
+
+    it('已失效（released=false / 被拒）提示过期；抛错浮错误 toast', async () => {
+      listParkedApprovals.mockResolvedValue([
+        makeParked({ id: 'perm_fold', writeGrantFolder: '/Users/leo/Documents/morning-notes' }),
+      ]);
+      grant().mockResolvedValueOnce({ grant: { status: 'rejected' }, released: false });
+      render(<AutomationReviewInbox />);
+      fireEvent.click(await screen.findByTestId('parked-allow-folder'));
+      await waitFor(() => expect(toastInfo).toHaveBeenCalled());
+      grant().mockRejectedValueOnce(new Error('boom'));
+      fireEvent.click(await screen.findByTestId('parked-allow-folder'));
+      await waitFor(() => expect(toastError).toHaveBeenCalled());
+    });
   });
 
   it('item.argsPreview 缺省（老行）不渲染参数预览行', async () => {
@@ -996,5 +1164,47 @@ describe('live refresh (N-CRON-REVIEW-COUNT-LIVE)', () => {
     await act(async () => { window.dispatchEvent(new Event('focus')); });
     await tick(30_000);
     expect(listPendingReview.mock.calls.length).toBe(afterUnmount);
+  });
+});
+
+
+describe('localized parked approval copy', () => {
+  it.each([
+    ['zh', '', '一项待确认的操作'],
+    ['en', '', 'A pending action'],
+    ['zh', '重启前发起 · ', '重启前发起 · 一项待确认的操作'],
+    ['en', '重启前发起 · ', 'Started before restart · A pending action'],
+    ['zh', '重启前发起 · unknown', '重启前发起 · 一项待确认的操作'],
+    ['en', 'unknown', 'A pending action'],
+  ] as const)('no tool name (%s, %s) renders %s', async (language, displayTool, title) => {
+    i18nState.language = language;
+    // Missing payload.tool arrives as an empty string from the host; also protect stale sentinels.
+    listParkedApprovals.mockResolvedValue([makeParked({ tool: '', displayTool })]);
+    render(<AutomationReviewInbox />);
+    expect(await screen.findByText(title)).toBeTruthy();
+    expect(screen.getByTestId('parked-approval-item').textContent).not.toContain('unknown');
+  });
+
+  it.each([
+    ['zh', 0, '等待 不到 1 分钟'],
+    ['zh', 5 * 60_000, '等待 5 分钟'],
+    ['zh', 3 * 3_600_000, '等待 3 小时'],
+    ['zh', 2 * 86_400_000, '等待 2 天'],
+    ['en', 0, 'Waiting <1 min'],
+    ['en', 5 * 60_000, 'Waiting 5 min'],
+    ['en', 3 * 3_600_000, 'Waiting 3 h'],
+    ['en', 2 * 86_400_000, 'Waiting 2 d'],
+  ] as const)('waiting duration (%s, %d ms) renders %s', async (language, elapsed, text) => {
+    i18nState.language = language;
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      listParkedApprovals.mockResolvedValue([makeParked({ requestedAt: now - elapsed })]);
+      render(<AutomationReviewInbox />);
+      expect(await screen.findByText(text)).toBeTruthy();
+      expect(screen.getByTestId('parked-approval-item').textContent).not.toMatch(/0m\b/);
+    } finally {
+      clock.mockRestore();
+    }
   });
 });

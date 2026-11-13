@@ -1,3 +1,5 @@
+import { renderDataDir } from '../../config/renderDataDir';
+
 // ============================================================================
 // browser_action `type` + secretRef guard (N-BROWSER-SECRETREF-HARDEN)
 // 1. 只解析 CODE_AGENT_BROWSER_SECRET_* 环境变量；`<NAME>_ORIGINS` 是站点白名单，缺失即拒绝。
@@ -28,7 +30,7 @@ type SecretResolution =
   | { ok: false; result: ToolExecutionResult };
 
 function fail(error: string, metadata?: Record<string, unknown>): ToolExecutionResult {
-  return { success: false, error, ...(metadata ? { metadata } : {}) };
+  return { success: false, error: renderDataDir(error), ...(metadata ? { metadata } : {}) };
 }
 
 function resolveSecret(secretRef: string): SecretResolution {

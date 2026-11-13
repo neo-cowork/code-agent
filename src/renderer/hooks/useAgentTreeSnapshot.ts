@@ -13,6 +13,7 @@ export interface AgentTreeSnapshotState {
 export function useAgentTreeSnapshot(
   sessionId: string | null,
   enabled = true,
+  onlyWhileLive = false,
 ): AgentTreeSnapshotState {
   const [snapshot, setSnapshot] = useState<AgentTreeSnapshot | null>(null);
 
@@ -25,6 +26,7 @@ export function useAgentTreeSnapshot(
         sessionId ? { sessionId } : undefined,
       );
       setSnapshot(next);
+      return next;
     } catch {
       setSnapshot(null);
     }
@@ -39,17 +41,20 @@ export function useAgentTreeSnapshot(
     let disposed = false;
     const load = async () => {
       if (disposed) return;
-      await loadSnapshot();
+      const next = await loadSnapshot();
+      if (onlyWhileLive && next && !next.nodes.some((node) => ['running', 'running-recovered', 'queued', 'blocked'].includes(node.status))) {
+        clearInterval(interval);
+      }
     };
-    void load();
-    const interval = window.setInterval(() => {
+    const interval = setInterval(() => {
       void load();
     }, AGENT_TREE_REFRESH_INTERVAL_MS);
+    void load();
     return () => {
       disposed = true;
-      window.clearInterval(interval);
+      clearInterval(interval);
     };
-  }, [enabled, loadSnapshot]);
+  }, [enabled, loadSnapshot, onlyWhileLive]);
 
-  return { snapshot, refresh: loadSnapshot };
+  return { snapshot, refresh: async () => { await loadSnapshot(); } };
 }

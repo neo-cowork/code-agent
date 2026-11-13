@@ -1,10 +1,7 @@
 import type { Message } from '../../../shared/contract';
 import { getDatabase } from '../core';
 import { createLogger } from './logger';
-import {
-  findMissingTelemetryPromptRows,
-  formatTelemetryRecoveredPrompt,
-} from './sessionManagerNormalization';
+import { findMissingTelemetryPromptRows } from './sessionManagerNormalization';
 
 interface TelemetryUserPromptRow {
   id: string;
@@ -57,7 +54,8 @@ export function backfillMissingTelemetryUserPrompts(
         {
           id: `telemetry-user-${row.id}`,
           role: 'user',
-          content: formatTelemetryRecoveredPrompt(row.user_prompt),
+          content: row.user_prompt,
+          metadata: { telemetryRecovered: true },
           timestamp: Number.isFinite(timestamp) ? timestamp : Date.now(),
         },
         { skipTimestampUpdate: true },
