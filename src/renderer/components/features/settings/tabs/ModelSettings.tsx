@@ -871,6 +871,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
         settings={appSettings}
         providerConfigs={providerConfigs}
         config={config}
+        defaultModel={defaultSelection}
         strategy={taskStrategy}
         disabled={isWebMode()}
         onChange={persistTaskStrategy}

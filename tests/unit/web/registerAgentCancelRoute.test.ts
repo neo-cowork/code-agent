@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DurableRunReadService } from '../../../src/host/app/durableRunReadService';
 import { RunRegistry } from '../../../src/host/runtime/runRegistry';
 import { DurableRunKernel } from '../../../src/host/runtime/durableRunKernel';
+import { getTaskManager } from '../../../src/host/task/TaskManager';
 import { DurableRunRepository } from '../../../src/host/services/core/repositories/DurableRunRepository';
 
 vi.unmock('better-sqlite3');
@@ -332,6 +333,108 @@ describe('registerAgentCancelRoute honest cancel settlement (A3)', () => {
       registry.clear();
       db.close();
       rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * N-FIX-STOP-BEFORE-FIRST-RESPONSE-STUCK-RUNNING-FU1：首包前 Stop 后 run 停靠成
+   * waiting/user_stop；连点 Stop（含带 runId 的重复 POST）不得把它覆写成 cancelled，
+   * 只有「放弃」入口显式带 abandonParked 才终态化。
+   */
+  it('repeated cancels keep a user_stop park waiting; abandonParked terminalizes it', async () => {
+    const fixture = await recoveredWaitingRegistry({
+      runId: 'run-route-userstop',
+      sessionId: 'session-route-userstop',
+    });
+    const { registry, db, repository, workspace } = fixture;
+    await registry.checkpointDurable('run-route-userstop', {
+      now: 2_050,
+      status: 'waiting',
+      state: null,
+      pendingOperations: [],
+      childRuns: [],
+      interruptCause: 'user_stop',
+      events: [{ type: 'run_checkpointed', payload: { reason: 'fixture' }, recordedAt: 2_050 }],
+    });
+    const cancelledEvents: { runId: string; sessionId: string }[] = [];
+    try {
+      await start(registry, undefined, (input) => cancelledEvents.push(input));
+      expect(await repository.get('run-route-userstop')).toMatchObject({ status: 'waiting', interruptCause: 'user_stop' });
+
+      const cancel = (body: Record<string, unknown>) => fetch(`${baseUrl}/api/cancel`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      // 连点 Stop：sessionId-only 与带 runId 的重复取消都是 no-op。
+      for (const body of [
+        { sessionId: 'session-route-userstop' },
+        { runId: 'run-route-userstop', sessionId: 'session-route-userstop' },
+        { runId: 'run-route-userstop', sessionId: 'session-route-userstop' },
+      ]) {
+        const response = await cancel(body);
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toMatchObject({ message: 'No active agent to cancel' });
+      }
+      expect(await repository.get('run-route-userstop')).toMatchObject({ status: 'waiting', interruptCause: 'user_stop' });
+      expect((await repository.get('run-route-userstop'))?.terminal).toBeUndefined();
+      expect(registry.hasDurableOwner('run-route-userstop')).toBe(true);
+      expect(cancelledEvents).toEqual([]);
+
+      // 放弃（abandonParked）：终态化 + 补发一次 agent_cancelled。
+      const abandon = await cancel({ runId: 'run-route-userstop', sessionId: 'session-route-userstop', abandonParked: true });
+      expect(abandon.status).toBe(200);
+      await expect(abandon.json()).resolves.toMatchObject({ message: 'Cancelled', runId: 'run-route-userstop' });
+      expect(await repository.get('run-route-userstop')).toMatchObject({
+        status: 'cancelled',
+        terminal: { status: 'cancelled', reason: 'recovered_waiting_run_cancelled' },
+      });
+      expect(cancelledEvents).toEqual([{ runId: 'run-route-userstop', sessionId: 'session-route-userstop' }]);
+    } finally {
+      registry.clear();
+      db.close();
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+  // N-FIX-COMPOSER-STOP-BG-BROWSER-SUBAGENT-REDESIGN：web 主链前台 run 只在 RunRegistry，
+  // 前台 idle（委派之后的常态）时 resolve() 为空——后台级联仍须发出，否则 Stop 静默无效。
+  it('fires the session background cascade even when no foreground run is registered', async () => {
+    const cascade = vi.spyOn(getTaskManager(), 'cancelSessionBackgroundWork').mockResolvedValue(undefined);
+    try {
+      await start(new RunRegistry());
+      const response = await fetch(`${baseUrl}/api/cancel`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sessionId: 'session-idle-foreground' }),
+      });
+
+      expect(response.status).toBe(200);
+      expect(cascade).toHaveBeenCalledTimes(1);
+      expect(cascade).toHaveBeenCalledWith('session-idle-foreground');
+    } finally {
+      cascade.mockRestore();
+    }
+  });
+
+  it('fires the cascade for the resolved run session when the caller only sent a runId', async () => {
+    const cascade = vi.spyOn(getTaskManager(), 'cancelSessionBackgroundWork').mockResolvedValue(undefined);
+    try {
+      const registry = new RunRegistry();
+      const handle = registry.start({ runId: 'run-cascade', sessionId: 'session-cascade', workspace: '/tmp/native-run-workspace' });
+      await handle.attach({ cancel: async () => { registry.unregister(handle.context.runId, handle); } });
+      await start(registry);
+
+      const response = await fetch(`${baseUrl}/api/cancel`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ runId: 'run-cascade' }),
+      });
+
+      expect(response.status).toBe(200);
+      expect(cascade).toHaveBeenCalledWith('session-cascade');
+    } finally {
+      cascade.mockRestore();
     }
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSessionSearchText, getSessionStatusPresentation, getDisplaySessionTitle } from '../../../src/renderer/utils/sessionPresentation';
+import { buildSessionSearchText, getSessionStatusPresentation, getDisplaySessionTitle, splitCronSessionTitleParts } from '../../../src/renderer/utils/sessionPresentation';
 import type { SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 
 describe('sessionPresentation', () => {
@@ -114,5 +114,38 @@ describe('placeholder display uses the current UI language', () => {
     expect(getDisplaySessionTitle('CLI Session notes', 'en')).toBe('CLI Session notes');
     expect(getDisplaySessionTitle('<appshot>capture</appshot>', 'en')).toBe('Appshot conversation');
     expect(getDisplaySessionTitle('<appshot>capture</appshot>', 'zh')).toBe('Appshot 会话');
+  });
+});
+
+
+it('search indexes the visible cron prefix and the stored title', () => {
+  const session = { title: '[Cron] 周报' } as Parameters<typeof buildSessionSearchText>[0]['session'];
+  const status = getSessionStatusPresentation({});
+  expect(buildSessionSearchText({ session, status, language: 'zh' })).toContain('[定时] 周报');
+  expect(buildSessionSearchText({ session, status, language: 'zh' })).toContain('[cron] 周报');
+  expect(buildSessionSearchText({ session, status, language: 'en' })).toContain('[schedule] 周报');
+});
+
+describe('automation titles stay localized at display time', () => {
+  it.each([
+    ['[Schedule] Weekly report', 'zh', '[定时] Weekly report'],
+    ['[Heartbeat] 巡检', 'zh', '[心跳] 巡检'],
+    ['[Cron] Old report', 'en', '[Schedule] Old report'],
+    ['[Schedule] Weekly report', 'en', '[Schedule] Weekly report'],
+    ['[Heartbeat] Check', 'en', '[Heartbeat] Check'],
+  ] as const)('localizes %s in %s', (stored, language, expected) => {
+    expect(getDisplaySessionTitle(stored, language)).toBe(expected);
+    expect(splitCronSessionTitleParts(expected)?.name).toBe(stored.replace(/^\[\w+\] /, ''));
+  });
+  it('removes a legacy channel UUID but preserves the account and real chat names', () => {
+    const legacy = '[Channel] Meeting notes channel · f3927c39-8924-43f1-86e4-8e5c9cc5086e';
+    expect(getDisplaySessionTitle(legacy, 'zh')).toBe('渠道 · Meeting notes channel');
+    expect(getDisplaySessionTitle(legacy, 'en')).toBe('Channel · Meeting notes channel');
+    for (const id of ['oc_1234abcd', 'ou_9876abcd', '1234567890', 'chat_abcdef123456']) {
+      expect(getDisplaySessionTitle(`[Channel] Work · ${id}`, 'zh')).toBe('渠道 · Work');
+    }
+    expect(getDisplaySessionTitle('[Channel] Work · Design team', 'en')).toBe('Channel · Work · Design team');
+    expect(getDisplaySessionTitle('[Channel] Work · EngineeringCommunicationChannel', 'en')).toBe('Channel · Work · EngineeringCommunicationChannel');
+    expect(getDisplaySessionTitle('Ordinary · title', 'zh')).toBe('Ordinary · title');
   });
 });

@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::quit_dialog_i18n::{dialog_copy, prompt_text as localized_prompt_text};
+use crate::quit_dialog_i18n::prompt_text as localized_prompt_text;
 pub(crate) use crate::quit_dialog_i18n::QuitDialogLanguage;
 
 /// 查询 /api/quit-guard 的总超时（连接+读，reqwest client 的 timeout）。
@@ -202,19 +202,6 @@ pub enum QuitAnswerAction {
     /// 后台继续（N-RESIDENT-HOST-SHELL-RUST）：壳退出，常驻宿主继续跑。
     BackgroundContinue,
     Quit,
-}
-
-pub fn dialog_answer_action(
-    custom_label: Option<&str>,
-    language: QuitDialogLanguage,
-) -> QuitAnswerAction {
-    let copy = dialog_copy(language);
-    match custom_label {
-        Some(label) if label == copy.background_button => QuitAnswerAction::BackgroundContinue,
-        Some(label) if label == copy.quit_button => QuitAnswerAction::Quit,
-        // 「取消」、关闭对话框（None）与一切未知标签 → 不退出
-        Some(_) | None => QuitAnswerAction::StayRunning,
-    }
 }
 
 /// 三种应答各自的收尾计划：要不要清理 webServer、要不要退壳、

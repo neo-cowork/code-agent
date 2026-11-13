@@ -1,3 +1,4 @@
+import { cronSessionTitlePrefixes } from '@shared/cronSessionTitle';
 // ============================================================================
 // 侧边栏导航域词条（Sidebar / features/sidebar 各组件与 hook）—— zh/en 同文件相邻维护。
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮（同 chatInput.ts / chatTranscript.ts 先例）。
@@ -6,6 +7,7 @@
 
 export const sidebarZh = {
   sidebar: {
+    cronTitlePrefixes: cronSessionTitlePrefixes.zh,
     // 顶部 / 搜索
     newTask: '新任务',
     collapseSidebar: '收起侧栏',
@@ -387,6 +389,7 @@ export const sidebarZh = {
 
 export const sidebarEn: typeof sidebarZh = {
   sidebar: {
+    cronTitlePrefixes: cronSessionTitlePrefixes.en,
     newTask: 'New task',
     collapseSidebar: 'Collapse sidebar',
     expandSidebar: 'Expand sidebar',
