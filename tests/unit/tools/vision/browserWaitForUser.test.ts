@@ -112,7 +112,7 @@ async function openPage(h: Harness): Promise<{ sessionId: string; subject: { ses
 function startWatchedWait(toolCallId: string, reason = '请完成页面上的验证') {
   const events: AgentEvent[] = [];
   const watchdog = createToolExecutionWatchdog({
-    toolCallId, toolName: 'browser_action', startedAt: Date.now(),
+    toolCallId, toolName: 'Browser', startedAt: Date.now(),
     onEvent: (event) => events.push(event), onTimeoutWarn: vi.fn(),
   });
   watchdog.startProgressReporter();
