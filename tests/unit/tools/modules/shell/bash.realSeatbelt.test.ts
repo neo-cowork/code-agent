@@ -37,7 +37,7 @@ function shellQuote(value: string): string {
 }
 
 function rawLs(target: string): string {
-  const listed = spawnSync('/bin/ls', ['-l', target], { encoding: 'utf8' });
+  const listed = spawnSync('/bin/ls', ['-ln', target], { encoding: 'utf8' });
   return `${listed.stdout}${listed.stderr}`.trim();
 }
 
@@ -210,8 +210,7 @@ suite('approved rm uses a real seatbelt literal grant', () => {
       traceApprovalGrants('public-bash-compound');
       const requests: PermissionRequestData[] = [];
       const handler = await bashModule.createHandler();
-      const execute = vi.spyOn(handler, 'execute');
-      const createHandler = vi.spyOn(bashModule, 'createHandler').mockReturnValue(handler);
+      const execute = vi.spyOn(Object.getPrototypeOf(handler) as typeof handler, 'execute');
       console.log(`COMPOUND_LS_BEFORE: ${rawLs(target)}`);
       try {
         const result = await executorFor('main-agent', requests, true).execute(
@@ -228,7 +227,7 @@ suite('approved rm uses a real seatbelt literal grant', () => {
         expect(existsSync(target)).toBe(false);
         expect(existsSync(neighbor)).toBe(true);
       } finally {
-        createHandler.mockRestore();
+        execute.mockRestore();
       }
     },
   );

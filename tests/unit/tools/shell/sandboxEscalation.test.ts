@@ -166,6 +166,8 @@ describe('approvedSingleFileRmGrant stays literal and non-recursive', () => {
     'rm a; echo "$(touch b)"',
     'rm a; echo "`touch b`"',
     'rm a; printf -v state x',
+    'printf %n PATH; rm a',
+    'echo ${PATH:=b}; rm a',
     'echo before || rm a',
     'rm a; ./echo done',
   ])('refuses unsafe compound %s and leaves files intact', (command) => {
