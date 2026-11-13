@@ -1,7 +1,8 @@
+import { DEFAULT_SETTINGS } from '../../../src/host/services/core/configDefaults';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
-import type { AppSettings, PermissionRequest, PermissionResponse } from '../../../src/shared/contract';
+import type { PermissionRequest, PermissionResponse } from '../../../src/shared/contract';
 const state = vi.hoisted(() => ({
   db: null as Database.Database | null,
   session: null as { title?: string; origin?: { id: string } } | null,
@@ -39,7 +40,7 @@ function preAsk(toolName: string, sessionId = 'weekly', target: string | null = 
 async function approve(tool: string, response: PermissionResponse, extra: Partial<PermissionRequest> = {}) {
   const events: PermissionRequest[] = [];
   const island = new OrchestratorPermissionIsland({
-    getSettings: () => ({ permissions: { autoApprove: { read: false, write: false, execute: false, network: false }, blockedCommands: [] } }) as AppSettings,
+    getSettings: () => ({ ...DEFAULT_SETTINGS, permissions: { ...DEFAULT_SETTINGS.permissions, autoApprove: { read: false, write: false, execute: false, network: false }, blockedCommands: [] } }),
     isDevModeAutoApproveEnabled: () => false, getExecutionTopology: () => 'main', hasApprovalUi: () => true,
     onEvent: (event) => { if (event.type === 'permission_request') events.push(event.data as PermissionRequest); },
   });

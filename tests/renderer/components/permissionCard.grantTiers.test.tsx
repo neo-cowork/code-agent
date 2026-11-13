@@ -133,7 +133,7 @@ describe('PermissionCard grant tiers', () => {
       server: 'lark', toolName: 'calendar_v4_calendar_primary',
       connectorAccess: { connectorId: 'lark', connectorName: '飞书', access: 'read' },
     } };
-    usePermissionStore.setState({ memory: { session: new Map([['mcp:lark/calendar_v4_calendar_primary', 'session']]), persistent: {} } });
+    usePermissionStore.setState({ memory: { session: new Map([['mcp:lark/calendar_v4_calendar_primary', 'allow']]), persistent: {} } });
     render(<PermissionCard />);
     expect(screen.queryByTestId('connector-purpose')).toBeNull();
     expect(invoke).not.toHaveBeenCalled();
