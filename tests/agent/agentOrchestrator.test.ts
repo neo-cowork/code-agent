@@ -2241,16 +2241,16 @@ describe('AgentOrchestrator', () => {
     });
 
     it.each([['mail_draft'], ['mail']])('keeps exactly one mail_draft for a role declaring %s', async (mailTool) => {
-      registerRole(['Read', mailTool]);
+      registerRole(['Read', mailTool, 'mail_draft']);
 
       expect((await runSaveDraft(ROLE))?.filter((tool) => tool === 'mail_draft')).toHaveLength(1);
     });
 
-    // 记录在案的取舍：真有邮件面的角色（声明 mail/mail_draft）不撤 mail_send——
-    // 存草稿轮的收窄只针对没开邮件的角色。mail 工具进面依赖 darwin 上的连接器注册表
+    // 声明精确工具集合：mail 不隐式授权 mail_send/mail_draft。
+    // 存草稿守卫保留显式声明的邮件工具；连接器进面依赖 darwin 注册表
     // （sessionCommandCenterBrain.test.ts 同款桥），非 darwin 整组不出工具名。
     it.skipIf(process.platform !== 'darwin')('keeps mail_send for a role that really declares mail with the connector enabled', async () => {
-      registerRole(['Read', 'mail']);
+      registerRole(['Read', 'mail', 'mail_send', 'mail_draft']);
       setMailConnectorEnabled(true);
 
       const tools = await runSaveDraft(ROLE);
@@ -2262,12 +2262,20 @@ describe('AgentOrchestrator', () => {
       expect((await runSaveDraft())?.filter((tool) => tool === 'mail_draft')).toHaveLength(1);
     });
 
-    it.skipIf(process.platform !== 'darwin')('leaves a non-save-draft mail prompt for a no-mail role untouched', async () => {
+    it('a declared no-mail role cannot acquire mail or delegation on a non-save-draft prompt', async () => {
       registerRole(['Read']);
+      setMailConnectorEnabled(true);
+      const tools = await runSaveDraft(ROLE, '帮我发邮件给 a@b.c，说明会议改期');
+      expect(tools).toEqual(['Read']);
+      for (const absent of NO_MAIL_ROLE_ABSENT) expect(tools).not.toContain(absent);
+    });
+
+    it.skipIf(process.platform !== 'darwin')('leaves a non-save-draft mail prompt for a role without declared tools untouched', async () => {
+      registerRole([]);
       setMailConnectorEnabled(true);
 
       const tools = await runSaveDraft(ROLE, '帮我发邮件给 a@b.c，说明会议改期');
-      // 非存草稿轮不归本门管：连接器意图命中带进来的 mail 三件套与 delegate_task 原样在列。
+      // 未声明工具的角色保持原行为，连接器意图扩展与 delegate_task 仍在列。
       for (const present of ['mail', 'mail_send', 'mail_draft', 'delegate_task']) {
         expect(tools).toContain(present);
       }

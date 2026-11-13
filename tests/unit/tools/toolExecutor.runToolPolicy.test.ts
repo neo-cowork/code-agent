@@ -63,7 +63,7 @@ describe('ToolExecutor run tool policy gate (--tools/--disallowed-tools)', () =>
     });
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain('Tool not allowed: Bash');
+    expect(result.error).toContain("Bash is not in this turn's tool list.");
     expect(resolverState.execute).not.toHaveBeenCalled();
   });
 

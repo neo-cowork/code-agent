@@ -10,7 +10,8 @@ import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealt
 import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
 import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 import { resetToolSearchService } from '../../../src/host/services/toolSearch/toolSearchService';
-import { resetProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
+import { browserSchema } from '../../../src/host/plugins/builtin/browserControl/browser.schema';
+import { getProtocolRegistry, resetProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -238,6 +239,7 @@ describe('ordered tool faces through production inference', () => {
     roles.values.clear();
     roles.dir = await fs.mkdtemp(path.join(os.tmpdir(), 'turn-face-'));
     resetProtocolRegistry();
+    getProtocolRegistry().register(browserSchema, async () => (await import('../../../src/host/plugins/builtin/browserControl/browser')).browserModule);
     resetToolSearchService();
     process.env.CODE_AGENT_MODEL_ENGINE = 'legacy';
   });
@@ -259,6 +261,17 @@ describe('ordered tool faces through production inference', () => {
     expect(names.sort()).toEqual([...declared].sort());
   });
 
+  it('a role-declared deferred browser survives even when foreground inheritance remains enabled', async () => {
+    const declared = ['Browser', 'Read'];
+    roles.values.set('browser-expert', { id: 'browser-expert', tools: declared });
+    const prompt = '查看 example.com 的标题';
+    const ctx = turn(prompt, {
+      allowedToolNames: resolveRoleChatToolFace(prompt, getTextForegroundToolNamesForPrompt(prompt), declared, 'browser-expert'),
+    }, 'browser-expert');
+    Object.assign(ctx.runtime, { foregroundToolFace: true });
+    expect((await finalNames(ctx)).sort()).toEqual([...declared].sort());
+  });
+
   it('role wake retains declared read and memory tools through deferred loading', async () => {
     const declared = ['Read', 'calendar', 'MemoryRead', 'MemoryWrite'];
     roles.values.set('wake-expert', { id: 'wake-expert', tools: declared });
@@ -275,6 +288,13 @@ describe('ordered tool faces through production inference', () => {
     expect(names).toContain('delegate_task');
     expect(names).not.toContain('Bash');
     expect(names).not.toContain('Browser');
+  });
+
+  it('an explicitly named lowercase registered connector tool survives the foreground face', async () => {
+    const prompt = '调用 calendar 检查连接';
+    const ctx = turn(prompt, { allowedToolNames: getTextForegroundToolNamesForPrompt(prompt) });
+    Object.assign(ctx.runtime, { foregroundToolFace: true });
+    expect(await finalNames(ctx)).toContain('calendar');
   });
 
   it('MiMo foreground actually sends deferred allowed tools to provider xiaomi', async () => {

@@ -5,7 +5,7 @@
  * result is always a subset of its declaration. ADR-059 routes foreground
  * execution tools through delegate_task; it does not put Bash/browser on that face.
  */
-import { getKnownToolNames } from '../../tools/knownToolNames';
+import { getToolSearchService } from '../../services/toolSearch/toolSearchService';
 import { resolveToolAlias } from '../../services/toolSearch/deferredTools';
 import { resolveRoleToolBoundary, toRoleBoundaryRunAllowlist } from '../../services/roleAssets/rolePersonalization';
 import { isExternalSideEffectTool } from '../../tools/externalSideEffect';
@@ -33,7 +33,9 @@ export function resolveTurnToolFace(input: TurnToolFaceInput): string[] | undefi
   // unrestricted too. Preserve that distinction with the existing deny-all sentinel.
   if (!input.baseToolNames && !declared) return undefined;
   const canonical = (name: string) => resolveToolAlias(name).toLowerCase();
-  const known = new Map([...getKnownToolNames()].map((name) => [canonical(name), resolveToolAlias(name)]));
+  const registered = [...getProtocolToolSchemas().map((schema) => schema.name),
+    ...getToolSearchService().getMCPToolsMeta().map((meta) => meta.name)];
+  const known = new Map(registered.map((name) => [canonical(name), name]));
   const declaredSet = declared ? new Set(declared.map(canonical)) : undefined;
   const foreground = input.foreground && !declared;
   const names = new Map<string, string>();
@@ -41,10 +43,11 @@ export function resolveTurnToolFace(input: TurnToolFaceInput): string[] | undefi
   for (const name of input.baseToolNames ?? []) add(name);
   for (const name of input.requiredToolNames ?? []) add(name);
   for (const name of declared ?? []) add(name);
-  // Registry names, not intent keyword families. Only this turn's text counts.
-  const tokens = new Set((input.prompt ?? '').toLowerCase().split(/[^a-z0-9_]+/u));
+  // Exact registry-name tokens, not ordinary verbs ('append') or intent keywords.
+  // Only this turn's text counts; alias normalization still applies to declarations.
+  const tokens = new Set((input.prompt ?? '').split(/[^a-zA-Z0-9_]+/u));
   for (const [key, name] of known) {
-    if (!tokens.has(key)) continue;
+    if (!tokens.has(name)) continue;
     add(foreground && FOREGROUND_EXECUTION_TOOLS.has(key) ? 'delegate_task' : name);
   }
   if (input.wake) {

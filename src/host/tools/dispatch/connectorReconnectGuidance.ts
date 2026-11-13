@@ -3,7 +3,7 @@ import { findConnectorIdForToolName } from '../../../shared/contract/workbenchTo
 import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('ConnectorAvailability');
-const RECONNECT_EXIT = 'Ask the user in one sentence to reconnect in Settings > Connectors, then try again. Do not substitute shell commands or background execution for connector authorization.';
+const RECONNECT_EXIT = 'Reply in exactly one sentence combining the inability to read the requested data with the reconnect path Settings > Connectors. Wait for the user to reconnect before trying again; connector authorization cannot be replaced with shell commands or background execution.';
 
 /** Both protocol dispatch paths preserve the failure and add its missing exit. */
 export function withConnectorReconnectGuidance<T>(toolName: string, result: ToolResult<T>): ToolResult<T> {
