@@ -337,11 +337,7 @@ export function startWebCapabilityBootstrap(
 // ============================================================================
 
 import { broadcastSSE, sseClients } from './helpers/sse';
-import {
-  applyDbIntegrityOutcome,
-  dbAvailable,
-  setDbAvailable,
-} from './helpers/sessionCache';
+import { applyDbIntegrityOutcome, dbAvailable, setDbAvailable } from './helpers/sessionCache';
 import { cleanupUploadDirs, ensureUploadRootDir } from './helpers/upload';
 
 // Middleware
@@ -376,6 +372,7 @@ import { backgroundContinueDetachArmed, createDaemonExitRechecker, shouldStayRes
 import { drainPendingOpsForShutdown, isDrainWatchdogActive } from '../host/services/daemon/daemonDrain';
 import { installExitCauseProbes, markShellPipeDetached, recordShutdownCause } from './shutdownCause';
 import { getBackgroundTaskLedger } from '../host/task/backgroundTaskLedger';
+import { closeIdleManagedBrowsers } from '../host/services/infra/browser/closeIdleManagedBrowsers';
 import { listForegroundPermissionRequests, onForegroundPermissionStateChange } from './foregroundPermissionRegistry';
 import { createWebSessionContext } from './sessionDomainHandler';
 import { startDurableRunStartup } from './durableRunStartup';
@@ -1220,6 +1217,7 @@ async function main(): Promise<void> {
   // 'stdin-error'；无参调用 = daemon rechecker 触发。落盘在 shutdownCause.ts。
   const shutdown = async (source?: string) => {
     recordShutdownCause(source ?? 'daemon-rechecker');
+    closeIdleManagedBrowsers('shutdown');
     configService.stopWatchingConfigFile();
     console.log('\nShutting down...');
     // 宽限期是有限的（Rust 侧 GRACEFUL_SHUTDOWN_TIMEOUT 到点就 SIGKILL），关库是这段
@@ -1346,9 +1344,10 @@ async function main(): Promise<void> {
       return;
     }
     logger.info('[daemon] shell exited while busy — staying resident (runs/companion/approval/armed schedules)');
+    closeIdleManagedBrowsers('shell-exit-resident');
   };
   if (daemonExitRechecker) {
-    const onResidencySignal = () => { daemonExitRechecker.recheck(); daemonResidency?.report(); };
+    const onResidencySignal = () => { if (!shellPipeAttached) closeIdleManagedBrowsers('residency-idle'); daemonExitRechecker.recheck(); daemonResidency?.report(); };
     runRegistry.onIdleTransition(onResidencySignal);
     onForegroundPermissionStateChange(onResidencySignal);
     getTaskManager().on('event', onResidencySignal);

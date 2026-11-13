@@ -102,6 +102,10 @@ export class BrowserPool {
     return [...this.entries.keys()].filter((key) => key !== DEFAULT_AGENT_KEY);
   }
 
+  managedServices(): Array<{ key: string; service: BrowserService; inUse: boolean }> {
+    return [...this.entries].map(([key, { service, inUse }]) => ({ key, service, inUse }));
+  }
+
   hasAgent(agentId: string): boolean {
     return this.entries.has(agentId);
   }
