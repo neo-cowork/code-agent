@@ -62,7 +62,7 @@ export async function executeSingleSpawnAgent(
     const customTools = params.customTools as string[] | undefined;
     const maxBudget = params.maxBudget as number | undefined;
     const ownedPaths = params.ownedPaths as string[] | undefined;
-    const waitForCompletion = params.waitForCompletion !== false;
+    const waitForCompletion = Boolean(managedAgentId) || params.waitForCompletion !== false;
     const maxIterations = (params.maxIterations as number) || 20;
     const foregroundBlockingBudgetMs = resolveForegroundBlockingBudgetMs(params.foregroundBlockingBudgetMs);
 
