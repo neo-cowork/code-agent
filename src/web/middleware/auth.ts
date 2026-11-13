@@ -8,6 +8,7 @@ import * as os from 'os';
 import * as path from 'path';
 import type { Request, Response, NextFunction } from 'express';
 import { createLogger } from '../../host/services/infra/logger';
+import { FOLDER_BATCH_RATE_LIMIT } from '../../shared/constants/chatUploads';
 import { WEB_SERVER_SERVICE } from '../../shared/constants/webServer';
 import { shouldRefusePackagedDevMode } from '../../shared/security/packagedDevModeGuard';
 
@@ -139,6 +140,7 @@ export function corsMiddleware(req: Request, res: Response, next: NextFunction):
 const RATE_LIMITS: Array<{ pattern: string | RegExp; max: number; windowMs: number }> = [
   { pattern: '/api/run', max: 10, windowMs: 60_000 },
   { pattern: '/api/upload/temp', max: 20, windowMs: 60_000 },
+  { pattern: '/api/upload/temp/batch', ...FOLDER_BATCH_RATE_LIMIT },
   { pattern: /^\/api\//, max: 100, windowMs: 60_000 },
 ];
 
@@ -176,7 +178,8 @@ function checkRateLimit(ip: string, routePath: string): { allowed: boolean; retr
 
 export function rateLimitMiddleware(req: Request, res: Response, next: NextFunction): void {
   const ip = req.ip || req.socket.remoteAddress || 'unknown';
-  const result = checkRateLimit(ip, req.path);
+  // Express strips /api from req.path when mounted there; match the public route.
+  const result = checkRateLimit(ip, req.baseUrl + req.path);
   if (!result.allowed) {
     res.setHeader('Retry-After', String(Math.ceil((result.retryAfterMs || 60_000) / 1000)));
     res.status(429).json({ error: 'Too many requests. Please try again later.' });
