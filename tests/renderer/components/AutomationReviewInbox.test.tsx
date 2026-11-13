@@ -374,8 +374,9 @@ describe('AutomationReviewInbox', () => {
     expect(screen.queryByTestId('cron-artifact-row')).toBeNull();
     fireEvent.click(screen.getByTestId('automation-review-digest-toggle'));
     expect(screen.getByTestId('cron-artifact-open').textContent).toContain('report.md');
-    expect(screen.getByTestId('cron-artifact-open').getAttribute('title')).toBe('/work/run/report.md');
+    expect(screen.getByTestId('cron-artifact-open').getAttribute('title')).toBe('…/run/report.md');
     expect(screen.getByTestId('cron-artifact-text').textContent).toContain('notes.md');
+    expect(screen.getByTestId('cron-artifact-text').getAttribute('title')).toBe('notes.md');
     expect(screen.queryAllByTestId('cron-artifact-open')).toHaveLength(1);
 
     fireEvent.click(screen.getByTestId('cron-artifact-open'));
@@ -396,6 +397,8 @@ describe('AutomationReviewInbox', () => {
     });
     expect(toastError).not.toHaveBeenCalled();
     expect(toastSuccess).not.toHaveBeenCalled();
+    expect(screen.getAllByTestId('cron-artifact-text').map((node) => node.getAttribute('title')))
+      .toEqual(['…/run/report.md', 'notes.md']);
   });
 
   it('web 模式点击产物复制路径并提示，不调用打开 IPC', async () => {

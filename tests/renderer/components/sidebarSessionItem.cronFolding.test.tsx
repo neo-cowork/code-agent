@@ -482,7 +482,7 @@ describe('cron run session machine headers', () => {
       expect(screen.getByText('可见正文')).toBeTruthy();
       const open = screen.getByTestId('cron-artifact-open');
       expect(open.textContent).toContain('report.md');
-      expect(open.getAttribute('title')).toBe('/work/run/report.md');
+      expect(open.getAttribute('title')).toBe('…/run/report.md');
       expect(view.container.textContent).not.toContain('SECRET_SNAPSHOT');
       expect(view.container.textContent).not.toContain('urgency:');
       expect(view.container.textContent).not.toContain('<cron_');
