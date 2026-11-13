@@ -591,6 +591,7 @@ export class SessionAutomationService {
         status: row.status === 'orphaned' ? 'orphaned' : 'pending',
         riskClass: payload.riskClass ?? null,
         standingGrantTarget: payload.standingGrantTarget ?? null,
+        ...(payload.forceConfirm === true ? { forceConfirm: true } : {}),
         ...(row.status !== 'orphaned' && payload.writeGrantFolder ? { writeGrantFolder: payload.writeGrantFolder } : {}),
         sensitiveStep: payload.sensitiveStep,
       };

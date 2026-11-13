@@ -417,7 +417,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                               {cc.parkedAllowFolder.replace('{folder}', folderDisplayName(item.writeGrantFolder))}
                             </button>
                           )}
-                          {(item.kind === 'tool_approval' || item.kind === undefined) && !isEditableTool(item.tool) && (!isExternal || !!item.standingGrantTarget) && (
+                          {(item.kind === 'tool_approval' || item.kind === undefined) && !item.forceConfirm && !isEditableTool(item.tool) && (!isExternal || !!item.standingGrantTarget) && (
                             <>
                               <Button
                                 type="button"

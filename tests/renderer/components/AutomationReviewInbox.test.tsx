@@ -486,7 +486,16 @@ describe('AutomationReviewInbox', () => {
     });
   });
 
-  it('普通工具停车行显示 zh / en 两档按钮', async () => {
+  it('forceConfirm row hides tier buttons and keeps approve / deny', async () => {
+    listParkedApprovals.mockResolvedValue([makeParked({ tool: 'Bash', forceConfirm: true })]);
+    render(<AutomationReviewInbox />);
+    expect(await screen.findByTestId('parked-approve')).toBeTruthy();
+    expect(screen.getByTestId('parked-reject')).toBeTruthy();
+    expect(screen.queryByTestId('parked-allow-run')).toBeNull();
+    expect(screen.queryByTestId('parked-allow-24h')).toBeNull();
+  });
+
+  it('Write row without forceConfirm shows zh / en tier buttons', async () => {
     listParkedApprovals.mockResolvedValue([makeParked({ kind: 'tool_approval', tool: 'Write', riskClass: null })]);
     render(<AutomationReviewInbox />);
     expect((await screen.findByTestId('parked-allow-run')).textContent).toBe('到这次做完为止');
