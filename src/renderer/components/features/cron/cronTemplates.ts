@@ -414,7 +414,7 @@ function parseFriendlySchedule(input?: string): Partial<CronJobDraft> {
   }
   const englishDaily = s.match(/^(?:every day|daily)\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?$/);
   if (englishDaily && Number(englishDaily[1]) < 24 && Number(englishDaily[2] ?? 0) < 60) {
-    return { scheduleType: 'cron', cronExpression: `${Number(englishDaily[2] ?? 0)} ${Number(englishDaily[1])} * * *`, cronTimezone: 'Asia/Shanghai' };
+    return { scheduleType: 'cron', cronExpression: `${Number(englishDaily[2] ?? 0)} ${Number(englishDaily[1])} * * *`, cronTimezone: localCronTimezone() };
   }
 
   // "每小时" / "每 N 小时"
