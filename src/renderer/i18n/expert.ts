@@ -88,6 +88,7 @@ export const expertZh = {
         stopFailedHint: '这个任务已经结束或无法停止',
         conflictLine: '{left} 和 {right} 都改了 {file}',
         eventsToggle: '讨论流 · {count} 条',
+        duration: { seconds: '{seconds} 秒', minutes: '{minutes} 分 {seconds} 秒' },
         status: {
           working: '工作中',
           done: outcomeWordsZh.outcomeWords.completed.badge.label,
@@ -418,6 +419,7 @@ export const expertEn: typeof expertZh = {
         stopFailedHint: 'This task already ended or cannot be stopped',
         conflictLine: '{left} and {right} both changed {file}',
         eventsToggle: 'Discussion · {count}',
+        duration: { seconds: '{seconds}s', minutes: '{minutes}m {seconds}s' },
         status: {
           working: 'Working',
           done: outcomeWordsEn.outcomeWords.completed.badge.label,

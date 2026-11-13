@@ -1,4 +1,4 @@
-import { agentNodeLabel } from './agentRoleLabel';
+import { agentNodeLabel, agentRoleLabel } from './agentRoleLabel';
 import { agentFailureCopy } from './agentFailureCopy';
 import { containsCjk } from './containsCjk';
 import { languages } from '../i18n';
@@ -124,7 +124,8 @@ export function buildAgentRows(input: {
       key: member.key,
       kind: 'expert',
       roleId: member.roleId,
-      name: member.name,
+      name: t === languages.en && member.name === member.roleId
+        ? agentRoleLabel(member.roleId, t.agentRoleLabels) : member.name,
       profession: member.profession,
       icon: member.icon,
       isLead: member.isLead,
@@ -143,6 +144,7 @@ export function buildAgentRows(input: {
       const row = rows.find((candidate) => candidate.key === node.id);
       if (row) {
         row.node = node;
+        if (node.background && t === languages.en) row.name = agentNodeLabel(node, t.agentRoleLabels);
         // Execution lifecycle beats an older persisted member snapshot, in either direction.
         if (node.sources.some((source) => source === 'spawnGuard' || source === 'backgroundRegistry')) {
           row.status = agentRowStatus(node.status);

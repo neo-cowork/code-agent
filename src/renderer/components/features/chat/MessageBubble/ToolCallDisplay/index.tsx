@@ -593,7 +593,7 @@ const WorkflowStagePreview: React.FC<{ preview: WorkflowStagePreviewData }> = ({
           const policy = formatWorkflowPolicy(stage.toolPolicyMode, copy);
           const duration = formatWorkflowDuration(stage.duration);
           const tools = stage.toolsUsed.length > 0
-            ? [...new Set(stage.toolsUsed.map((toolName) => humanizeWorkflowTool(toolName, t, copy)))].join('、')
+            ? [...new Set(stage.toolsUsed.map((toolName) => humanizeWorkflowTool(toolName, t, copy)))].join(t.toolStepHumanize.listSeparator)
             : null;
           return (
             <div

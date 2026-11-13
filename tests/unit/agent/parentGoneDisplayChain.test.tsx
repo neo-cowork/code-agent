@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // Real host producers -> registry completion -> agent tree -> both display surfaces.
 import React from 'react';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SubagentResult } from '../../../src/host/agent/subagentExecutorTypes';
 
@@ -207,10 +207,17 @@ import { useAgentRegistryStore } from '../../../src/renderer/stores/agentRegistr
 import { useMemberViewStore } from '../../../src/renderer/stores/memberViewStore';
 import { useVoiceCallStore } from '../../../src/renderer/stores/voiceCallStore';
 import { useBackgroundTaskStore } from '../../../src/renderer/stores/backgroundTaskStore';
-import { IPC_DOMAINS } from '../../../src/shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS } from '../../../src/shared/ipc';
+
+import type { TraceNode } from '../../../src/shared/contract/trace';
+import { ToolStepGroup } from '../../../src/renderer/components/features/chat/ToolStepGroup';
+import { ToolCallDisplay } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay';
+import { buildAgentRows } from '../../../src/renderer/utils/agentRows';
+import { humanizeToolGroupLabel } from '../../../src/renderer/utils/humanizeToolStep';
 
 let language: 'zh' | 'en' = 'en';
 const invokeDomain = vi.fn();
+const invoke = vi.fn<(_channel: string) => Promise<unknown>>(async () => []);
 const appState = {
   get language() { return language; },
   setWorkbenchCollapsed: vi.fn(),
@@ -218,13 +225,15 @@ const appState = {
   pendingPermissionSessionId: null,
   queuedPermissionRequests: {},
   activeAgentId: null,
+  processingSessionIds: new Set<string>(),
+  resolvedPermissionRequests: {},
 };
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: language === 'zh' ? zh : en }) }));
 vi.mock('../../../src/renderer/stores/appStore', () => ({
   useAppStore: Object.assign((selector: (state: typeof appState) => unknown) => selector(appState), { getState: () => appState }),
 }));
 vi.mock('../../../src/renderer/services/ipcService', () => ({ default: {
-  invoke: async () => [],
+  invoke: (...args: [string]) => invoke(...args),
   invokeDomain: (...args: unknown[]) => invokeDomain(...args),
 } }));
 vi.mock('../../../src/host/agent/backgroundSubagentIdleWake', () => ({ scheduleBackgroundSubagentIdleWake: vi.fn() }));
@@ -299,6 +308,8 @@ beforeEach(() => {
   useMemberViewStore.setState({ viewingMemberId: null });
   useVoiceCallStore.getState().reset();
   useBackgroundTaskStore.setState({ tasks: [] });
+  invoke.mockReset();
+  invoke.mockResolvedValue([]);
   invokeDomain.mockReset();
   (window as unknown as { domainAPI?: unknown }).domainAPI = undefined;
 });
@@ -363,7 +374,9 @@ describe('parent-gone production-to-display chain', () => {
       expect(record.failureCode).toBe(AgentFailureCode.ParentGone);
       expect(record.content).toContain('interrupted_by_restart');
       printEvidence(`Producer B asserted failureCode=${record.failureCode} reason=${closed!.terminal!.reason} completion=${JSON.stringify(record)}`);
-      await assertSurfaces(buildAgentTreeSnapshot({ sessionId, backgroundAgents: recovered.listBySession(sessionId) }), 'Producer B');
+      const snapshot = buildAgentTreeSnapshot({ sessionId, backgroundAgents: recovered.listBySession(sessionId) });
+      await assertSurfaces(snapshot, 'Producer B');
+      await assertRestartDisplay(snapshot);
     } finally {
       // Release the simulated pre-crash execution and its heartbeat before closing SQLite.
       finish({ success: true, output: 'cleanup', toolsUsed: [], iterations: 0 });
@@ -371,4 +384,98 @@ describe('parent-gone production-to-display chain', () => {
       db.close();
     }
   });
+});
+
+
+async function assertRestartDisplay(snapshot: AgentTreeSnapshot) {
+  const node = snapshot.nodes[0];
+  // Persisted spawn placeholder from the real crash run: no fabricated result agentId.
+  const interrupted: ToolCall = {
+    id: 'spawn-crashed', name: 'spawn_agent', arguments: { task: node.task, role: 'coder', run_in_background: true },
+    result: { toolCallId: 'spawn-crashed', success: false,
+      error: 'interrupted: process crashed before a result was recorded; do not assume it ran or succeeded', duration: 0 },
+  };
+  for (const locale of ['en', 'zh'] as const) {
+    language = locale;
+    invokeDomain.mockImplementation(async (domain, action) => domain === IPC_DOMAINS.AGENT && action === 'getTree' ? snapshot : null);
+    const presentation = deriveDelegationPresentation(interrupted, [], snapshot.nodes, locale === 'en' ? en : zh);
+    expect.soft(presentation, `${locale} interrupted spawn must correlate its real recovered node`).not.toBeNull();
+    expect.soft(presentation).toEqual(deriveDelegationPresentation({ ...interrupted,
+      result: { ...interrupted.result!, metadata: { agentId: node.backgroundAgentId } },
+    }, [], snapshot.nodes, locale === 'en' ? en : zh));
+    const card = render(<ToolCallDisplay toolCall={interrupted} index={0} total={1} />);
+    await waitFor(() => expect(card.container.textContent).toContain(locale === 'en'
+      ? "Background assistant didn't finish" : '执行失败助手')).catch(() => undefined);
+    expect.soft(card.container.textContent).toContain(locale === 'en' ? "Background assistant didn't finish" : '执行失败助手');
+    printEvidence(`r2 ${locale} restarted card textContent=${JSON.stringify(card.container.textContent)}`);
+    expect.soft(card.container.textContent).toContain(locale === 'en' ? 'The parent task has already ended' : '上级任务已经结束');
+    if (locale === 'en') expect(card.container.textContent).not.toMatch(cjk);
+    card.unmount();
+    // A real restart has a durable trace member AND a node. Exercise the merged row,
+    // preserving the raw trace name in ZH while resolving EN through agentRoleLabels.
+    for (const duration of [38_000, 65_000]) {
+      const run = { id: 'trace-r2', sessionId, status: 'failed', coordinator: 'parallel', startedAt: 1000,
+        endedAt: 1000 + duration, durationMs: duration, totalAgents: 1, completedCount: 0, failedCount: 1,
+        totalCostUsd: 0, totalTokensIn: 0, totalTokensOut: 0, trigger: 'llm-spawn' };
+      invoke.mockImplementation(async (channel) => channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS ? [run]
+        : channel === IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL ? { run: { ...run, totalToolCalls: 0 }, events: [], agents: [{
+          runId: run.id, agentId: node.id, name: 'coder', role: 'coder', status: 'failed', startTime: 1000,
+          endTime: 1000 + duration, durationMs: duration, tokensIn: 0, tokensOut: 0, toolCalls: 0, costUsd: 0,
+          error: null, failureCategory: null, filesChanged: [],
+        }] } : []);
+      const panel = render(<SessionAgentsPanel />);
+      const footer = await screen.findByTestId('agents-panel-usage');
+      const text = screen.getByTestId('session-agents-panel').textContent;
+      printEvidence(`r2 ${locale} duration=${duration} panel textContent=${JSON.stringify(text)}`);
+      expect.soft(footer.textContent).toBe(locale === 'en'
+        ? duration === 38_000 ? '38s' : '1m 5s'
+        : duration === 38_000 ? '38 秒' : '1 分 5 秒');
+      if (locale === 'en') {
+        expect.soft(text).toContain('Background assistant');
+        expect.soft(text).not.toContain('coder');
+        expect.soft(text).not.toMatch(cjk);
+      } else {
+        expect.soft(screen.getByTestId(`agents-panel-row-${node.id}`).textContent).toBe('Ccoder失败：上级任务已经结束');
+      }
+      panel.unmount();
+    }
+    invoke.mockResolvedValue([]);
+  }
+  language = 'en';
+  // No association is invented when the spawn failed for another reason or task.
+  expect(deriveDelegationPresentation({ ...interrupted, arguments: { ...interrupted.arguments, task: 'Other task' } }, [], snapshot.nodes, en)).toBeNull();
+  expect(deriveDelegationPresentation({ ...interrupted, result: { ...interrupted.result!, error: 'Permission denied' } }, [], snapshot.nodes, en)).toBeNull();
+  expect(deriveDelegationPresentation(interrupted, [], [...snapshot.nodes, ...snapshot.nodes], en)).toBeNull();
+  expect(deriveDelegationPresentation({ ...interrupted, result: { ...interrupted.result!,
+    error: 'interrupted: tool call was cancelled before a result was recorded',
+  } }, [], snapshot.nodes, en)).toBeNull();
+}
+
+describe('r2 complete group summary', () => {
+  it.each(['en', 'zh'] as const)('uses %s punctuation and number forms across the whole group line', (locale) => {
+    language = locale;
+    const nodes: TraceNode[] = ['unrecognized-step', 'spawn_agent'].map((name, index) => ({
+      id: `group-${index}`, type: 'tool_call', content: '', timestamp: index,
+      toolCall: { id: `call-group-${index}`, name, args: {}, result: 'interrupted: process crashed before a result was recorded', success: false },
+    }));
+    const group = render(<ToolStepGroup nodes={nodes} sessionId={sessionId} />);
+    const line = screen.getByTestId('tool-group-head-label').textContent;
+    printEvidence(`r2 ${locale} group textContent=${JSON.stringify(line)}`);
+    expect(line).toBe(locale === 'en' ? 'Could not run 1 step, Could not dispatch 1 agent task' : '执行 1 个步骤未成功、派发 1 次代理任务未成功');
+    if (locale === 'en') expect(line).not.toMatch(cjk);
+    group.unmount();
+    const t = locale === 'en' ? en : zh;
+    const plural = humanizeToolGroupLabel(['unrecognized-step', 'another-step', 'spawn_agent', 'spawn_agent'], t, 'failed');
+    expect(plural).toBe(locale === 'en' ? 'Could not run 2 steps, Could not dispatch 2 agent tasks' : '执行 2 个步骤未成功、派发 2 次代理任务未成功');
+  });
+});
+
+
+it.each(['en', 'zh'] as const)('resolves raw known and unknown member role names through the %s display dictionary', (locale) => {
+  language = locale;
+  const rows = buildAgentRows({
+    members: ['coder', 'unregistered-role'].map((roleId) => ({ key: roleId, roleId, name: roleId, status: 'failed', isLead: false })),
+    nodes: [], tasks: [],
+  });
+  expect(rows.map((row) => row.name)).toEqual(locale === 'en' ? ['Coder', 'Assistant'] : ['coder', 'unregistered-role']);
 });

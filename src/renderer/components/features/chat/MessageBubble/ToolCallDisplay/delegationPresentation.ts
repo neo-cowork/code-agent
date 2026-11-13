@@ -1,12 +1,13 @@
 import { agentNodeLabel } from '../../../../../utils/agentRoleLabel';
 import { humanizeToolStep, parseDelegateSessionReceipt } from '../../../../../utils/humanizeToolStep';
-import type { AgentFailureCode } from '@shared/contract/agentFailure';
+import { AgentFailureCode } from '@shared/contract/agentFailure';
 import type { AgentTreeNode } from '@shared/contract/agentTree';
 import type { LastToolFailure, LastToolStep, Task, TaskOutputRef } from '@shared/contract/backgroundTask';
 import type { ToolCall } from '@shared/contract';
 import { languages, type Translations } from '../../../../../i18n';
 import { useAppStore } from '../../../../../stores/appStore';
 import { agentFailureCopy } from '../../../../../utils/agentFailureCopy';
+import { isToolInterruptionPlaceholder } from '../../../../../utils/toolExecutionPresentation';
 import { containsCjk } from '../../../../../utils/containsCjk';
 import { isAgentFailureCode } from '@shared/contract/agentFailure';
 import {
@@ -273,9 +274,20 @@ export function deriveDelegationPresentation(
   }
   if (toolCall.name === 'spawn_agent') {
     const agentId = extractSpawnAgentId(toolCall);
-    if (!agentId) return null;
-    const node = agentNodes.find((candidate) => candidate.id === agentId || candidate.backgroundAgentId === agentId);
-    return node ? fromAgent(node, t) : null;
+    if (agentId) {
+      const node = agentNodes.find((candidate) => candidate.id === agentId || candidate.backgroundAgentId === agentId);
+      return node ? fromAgent(node, t) : null;
+    }
+    // A crash can persist the dispatched call before its result records the child id.
+    // The session-scoped tree may already have the recovered child's stronger fact.
+    // Only an exact, unique task match for an interrupted background spawn is safe.
+    const task = toolCall.arguments?.task;
+    if (toolCall.arguments?.run_in_background !== true || typeof task !== 'string' || !task.trim()
+      || !isToolInterruptionPlaceholder(toolCall.result.error)
+      || !toolCall.result.error?.toLowerCase().includes('process crashed')) return null;
+    const matches = agentNodes.filter((node) => node.background
+      && node.failureCode === AgentFailureCode.ParentGone && node.task === task);
+    return matches.length === 1 ? fromAgent(matches[0], t) : null;
   }
   return null;
 }
