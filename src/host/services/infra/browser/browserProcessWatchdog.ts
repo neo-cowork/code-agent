@@ -68,9 +68,9 @@ function childPids(pid: number): number[] {
 }
 
 /** 停机时同步、快速地 SIGTERM 每个活着的托管 Chrome 及其直接子进程；返回处理的主进程数。 */
-export function killManagedChromeProcesses(): number {
+export function killManagedChromeProcesses(processes: Iterable<ChildProcess> = liveChromeProcesses): number {
   let count = 0;
-  for (const chromeProcess of liveChromeProcesses) {
+  for (const chromeProcess of processes) {
     const pid = chromeProcess.pid;
     if (!pid || chromeProcess.exitCode !== null || chromeProcess.signalCode !== null) continue;
     for (const target of [...childPids(pid), pid]) {
