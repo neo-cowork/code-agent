@@ -35,8 +35,7 @@ describe('create_scheduled_task', () => {
     expect(mocks.createJob).toHaveBeenCalledWith({ name: args.name, enabled: true, runsOn: 'local', scheduleType: 'cron', schedule: { type: 'cron', expression: args.cron, timezone: args.timezone }, action: { type: 'agent', agentType: 'default', prompt: args.prompt } });
   });
 
-  it('creates a one-off run only after confirmation', async () => {
-    const at = '2099-01-02T15:00:00+08:00';
+  it.each(['2099-01-02T15:00:00+08:00', '2099-01-02T15:00:00'])('creates a one-off run only after confirmation: %s', async (at) => {
     expect(await execute({ name: args.name, prompt: args.prompt, at }, vi.fn().mockResolvedValue({ allow: true }))).toMatchObject({ ok: true });
     expect(mocks.createJob.mock.calls[0][0].schedule).toEqual({ type: 'at', datetime: Date.parse(at) });
   });
@@ -45,7 +44,7 @@ describe('create_scheduled_task', () => {
     { ...args, cron: '* * *' }, { ...args, timezone: 'Not/AZone' },
     { ...args, at: '2099-01-02T15:00:00Z' }, { name: 'missing prompt', cron: args.cron },
     { name: args.name, prompt: args.prompt, at: '2020-01-01T00:00:00Z' },
-    { name: args.name, prompt: args.prompt, at: '2099-01-02T15:00:00' },
+    { name: args.name, prompt: args.prompt, at: 'January 2, 2099' },
   ])('rejects invalid input before approval: %j', async (input) => {
     const approval = vi.fn();
     expect(await execute(input, approval)).toMatchObject({ ok: false, code: 'INVALID_ARGS' });

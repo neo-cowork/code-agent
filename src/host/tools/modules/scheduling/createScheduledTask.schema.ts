@@ -20,7 +20,7 @@ export const createScheduledTaskSchema: ToolSchema = {
       prompt: { type: 'string', description: 'Complete instructions for each future run, not instructions to create another schedule.' },
       cron: { type: 'string', description: 'For recurring tasks: five-field cron (minute hour day month weekday), e.g. 0 9 * * * for daily 09:00. Preserve exact requested time. Provide exactly one of cron or at.' },
       timezone: { type: 'string', description: 'IANA timezone for cron. Omit to use this machine’s timezone; never guess a different timezone.' },
-      at: { type: 'string', description: 'For a one-off run: future ISO 8601 timestamp WITH UTC offset or Z, resolved against the current date. Provide exactly one of cron or at.' },
+      at: { type: 'string', description: 'For a one-off run: future ISO 8601 datetime resolved against the current date. Omit the UTC offset for local wall time (e.g. 2026-12-01T15:00:00); the host uses this machine’s timezone. Include an offset or Z ONLY if the user specified that timezone. Never guess an offset. Provide exactly one of cron or at.' },
     },
     required: ['name', 'prompt'],
     additionalProperties: false,

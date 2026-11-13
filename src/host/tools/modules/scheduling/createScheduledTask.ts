@@ -35,11 +35,11 @@ class CreateScheduledTaskHandler implements ToolHandler<Record<string, unknown>,
         when = `${formatCronExpressionLabel(cron, timezone, 'en')} (${timezone})`;
       } else {
         const timestamp = Date.parse(at);
-        if (!/(?:Z|[+-]\d{2}:\d{2})$/i.test(at) || !Number.isFinite(timestamp) || timestamp <= Date.now()) {
-          throw new Error('at must be a future ISO timestamp with an explicit UTC offset.');
+        if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?$/i.test(at) || !Number.isFinite(timestamp) || timestamp <= Date.now()) {
+          throw new Error('at must be a future ISO datetime; omit the offset to use local time.');
         }
         definition = { name, enabled: true, runsOn: 'local', scheduleType: 'at', schedule: { type: 'at', datetime: timestamp }, action: { type: 'agent', agentType: 'default', prompt } };
-        when = at;
+        when = `${new Date(timestamp).toLocaleString('en-US', { timeZone: timezone })} (${timezone})`;
       }
     } catch (error) {
       return { ok: false, code: 'INVALID_ARGS', error: String(error) };
