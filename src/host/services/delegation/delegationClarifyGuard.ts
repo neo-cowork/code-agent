@@ -68,6 +68,9 @@ const FILLER = /派给|发给|交给|转给|投给|安排|委托|派|发|交|给
 const QUOTED_TARGET = /[「“"]([^」”"]{1,40})[」”"]\s*(?:那个|这个|这条)?\s*(?:会话|对话|session|chat)/gi;
 // 「投进/交给/发给/派给 X 会话」: unquoted explicit target. Pronoun-like or generic X is not a name.
 const UNQUOTED_TARGET = /(?:投进|投给|投到|交给|发给|派给|转给)\s*([^，。,.;；\s「」的]{2,12}?)\s*(?:那个|这个)?会话/g;
+// 「找个会话 / find a session」: the user asks Neo to pick a chat — no target was named, so a bound
+// delegate_existing is a guess.
+const INDEFINITE_TARGET = /(?:找个|找一个|挑个|选个)\s*(?:合适的?\s*)?(?:会话|对话)|\bfind\s+(?:me\s+)?(?:a|an|any)\s+(?:\w+\s+)?(?:session|chat)\b/i;
 const GENERIC_TARGET = /^(?:这个|那个|另一个|另外一个|其他|其它|别的|新的?|新开的?|现有|既有|已有|旧的?|对应的?|相关的?|合适的?)$/;
 // Descriptions of the target ("跑分析的那家") carry no task content.
 const TARGET_DESCRIPTOR = /[^，。,.;；\s]{1,12}的(?:那家|那个|那边|那位|那拨人|那组|那帮人)/g;
@@ -124,12 +127,13 @@ function matchesAnyCandidateName(name: string, candidates: ReadonlyArray<Clarify
 }
 
 function hasNamedTargetAbsent(message: string, candidates: ReadonlyArray<ClarifyGuardCandidate>): boolean {
+  if (INDEFINITE_TARGET.test(message)) return true;
   for (const match of message.matchAll(QUOTED_TARGET)) {
     if (!matchesAnyCandidateName(match[1], candidates)) return true;
   }
   for (const match of message.matchAll(UNQUOTED_TARGET)) {
     const name = match[1].replace(/(?:的)$/, '');
-    if (GENERIC_TARGET.test(name) || name.length < 2 || /开|新|起|一个/.test(name)) continue;
+    if (GENERIC_TARGET.test(name) || name.length < 2 || /新开|新建|新的|一个|另起|单开|开个/.test(name)) continue;
     if (!candidates.some((candidate) => mentions(name, candidate))) return true;
   }
   return false;
