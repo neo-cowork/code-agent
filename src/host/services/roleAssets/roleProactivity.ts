@@ -730,10 +730,7 @@ export async function syncCadenceJobs(): Promise<{ registered: string[]; removed
   return { registered, removed };
 }
 
-// 内部 helpers
-/**
- * 醒来 run 的工具面：声明工具是 floor；连接源只补只读工具。无声明且无连接源时保留旧的 denied-only 形态。
- */
+/** 醒来 run 的工具面：声明工具是 floor；连接源只补只读工具。无声明且无连接源时保留旧的 denied-only 形态。 */
 export async function resolveWakeRunToolScope(roleId: string, connectedSourceNames?: readonly string[], definitions?: readonly { name: string; permissionLevel: 'read' | 'write' | 'execute' | 'network' }[]): Promise<{
   allowedToolNames?: string[];
   deniedToolNames?: string[];
@@ -745,7 +742,6 @@ export async function resolveWakeRunToolScope(roleId: string, connectedSourceNam
   } catch {
     declared = undefined;
   }
-
   if (!declared || declared.length === 0) {
     const connectedReadTools = await resolveWakeRequiredToolNames(declared, connectedSourceNames, definitions);
     if (connectedReadTools?.length) return { allowedToolNames: connectedReadTools };

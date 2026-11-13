@@ -11,9 +11,10 @@ import { resolveRunModelConfig } from '../agent/orchestrator/modelConfigResolver
 import type { MessageAttachment } from '../../shared/contract/message';
 import type { ConversationModelSpec } from '../../shared/contract/conversationEnvelope';
 
-const logger = createLogger('ForegroundBrainBudget');
 import { resolveAgent } from '../agent/agentRegistry';
 import { buildRoleChatToolNames } from '../agent/runtime/turnToolFace';
+
+const logger = createLogger('ForegroundBrainBudget');
 
 // 不导出：web/桌面两条装配路都经 getSessionCommandCenterBrainContextForPrompt 取块，
 // 导出常量只会引回「第二条装配路直接拼常量」的旧形态（rework r1）。
