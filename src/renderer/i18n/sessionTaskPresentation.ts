@@ -7,6 +7,7 @@ export const sessionTaskPresentationZh = {
     reused: '继续跟踪后台任务：{name}　{status}',
     statusLine: '{name}　{status}{detail}',
     detail: '：{detail}',
+    checkedTimes: '已查看 {count} 次',
     status: {
       queued: '等待开始',
       running: '进行中',
@@ -25,6 +26,7 @@ export const sessionTaskPresentationEn: typeof sessionTaskPresentationZh = {
     reused: 'Continuing to track: {name} — {status}',
     statusLine: '{name}　{status}{detail}',
     detail: ': {detail}',
+    checkedTimes: 'checked {count} times',
     status: {
       queued: 'Waiting to start',
       running: 'Running',

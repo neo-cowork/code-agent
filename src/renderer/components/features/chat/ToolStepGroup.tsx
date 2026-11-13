@@ -43,6 +43,7 @@ import { useMessageActionStore } from '../../../stores/messageActionStore';
 import { Button } from '../../primitives/Button';
 import { redactCredentialText } from '@shared/security/secretPatterns';
 import { isToolCallAwaitingApproval } from '../../../utils/sessionNeedsInput';
+import { foldSessionTaskStatus } from '../../../utils/foldSessionTaskStatus';
 
 interface ToolStepGroupProps {
   nodes: TraceNode[];
@@ -290,6 +291,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       })
       .filter((x): x is ToolCall => !!x);
   }, [nodes]);
+  const toolCallGroups = useMemo(() => foldSessionTaskStatus(toolCalls), [toolCalls]);
   const receiptCacheRef = useRef(new Map<string, ToolReceiptPresentation>());
   const receiptByToolCallId = (() => {
     const liveToolCallIds = new Set(toolCalls.map((toolCall) => toolCall.id));
@@ -488,7 +490,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     );
   }
 
-  if (toolCalls.length === 1 && isDelegationTool(toolCalls[0].name)) {
+  if (toolCallGroups.length === 1 && (isDelegationTool(toolCalls[0].name) || toolCallGroups[0].count > 1)) {
     const toolCall = toolCalls[0];
     return (
       <div
@@ -498,6 +500,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       >
         <ToolCallDisplay
           toolCall={toolCall}
+          statusCheckCount={toolCallGroups[0].count}
           index={0}
           total={1}
           compact
@@ -640,15 +643,16 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
 
       {tier === 'expanded' && (
         <div className="ml-4 mt-1 space-y-1 border-l border-zinc-800 pl-3">
-          {toolCalls.map((tc, i) => (
+          {toolCallGroups.map(({ toolCall: tc, count }, i) => (
             <div
               key={tc.id}
               data-trace-id={typeof tc.result?.metadata?.traceId === 'string' ? tc.result.metadata.traceId : undefined}
             >
               <ToolCallDisplay
                 toolCall={tc}
+                statusCheckCount={count}
                 index={i}
-                total={toolCalls.length}
+                total={toolCallGroups.length}
                 compact
                 mediaContext={{
                   sessionId,

@@ -119,6 +119,7 @@ interface ToolCallDisplayProps {
   statusOverride?: ToolStatus;
   interruptionReason?: StreamInterruptionReason;
   receipt?: ToolReceiptPresentation;
+  statusCheckCount?: number;
 }
 
 export interface ToolReceiptPresentation {
@@ -138,6 +139,7 @@ export function ToolCallDisplay({
   statusOverride,
   interruptionReason,
   receipt,
+  statusCheckCount = 1,
 }: ToolCallDisplayProps) {
   const { t } = useI18n();
   const toolCall = useMemo(() => getToolPreflightKind(originalToolCall) === 'question' && originalToolCall.result
@@ -309,6 +311,11 @@ export function ToolCallDisplay({
         {!receipt && status !== 'error' && toolCall.result && toolCall.result.metadata?.recovered !== true && !delegationPresentation && toolCall.name !== 'list_session_candidates' && !expanded && !isBashTool(toolCall) && status !== 'interrupted' && (
           <span className="min-w-0 max-w-[220px] shrink truncate text-xs text-zinc-500">
             <ResultSummary toolCall={displayToolCall} inline />
+          </span>
+        )}
+        {statusCheckCount > 1 && (
+          <span className="shrink-0 text-xs text-zinc-500" data-testid="task-status-check-count">
+            {t.sessionTaskPresentation.checkedTimes.replace('{count}', String(statusCheckCount))}
           </span>
         )}
       </div>
