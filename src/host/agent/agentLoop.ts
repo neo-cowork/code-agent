@@ -151,6 +151,7 @@ export class AgentLoop {
         ?? config.goalRecoverySnapshot?.contract.maxTurns
         ?? config.goalContract?.maxTurns
         ?? getMaxIterations(),
+      completionReportOnly: config.completionReportOnly,
       workingDirectory: config.workingDirectory,
       projectConfigDirectory: config.projectConfigDirectory ?? config.workingDirectory,
       workspaceScope: config.workspaceScope,
@@ -297,6 +298,11 @@ export class AgentLoop {
         persistentSystemContext: persistedRuntimeState?.persistentSystemContext ?? [],
       }),
     };
+
+    if (config.completionReportOnly) {
+      this.ctx.control.forceFinalResponse('background-completion-report',
+        'Report the supplied background result once, briefly, in the user\'s language. Respect a denied action; do not retry it or claim it succeeded. Do not call tools or expose internal names or paths.');
+    }
 
     // Create modules
     this.conversationRuntime = new ConversationRuntime(this.ctx, config.structuredOutput);
