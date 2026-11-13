@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -48,11 +48,12 @@ beforeAll(async () => {
     const messages = body.messages as Array<{ role: string; content?: unknown; tool_calls?: unknown[] }>;
     const text = JSON.stringify(messages);
     const users = messages.filter((message) => message.role === 'user');
-    const wake = text.includes('<subagent_notification>');
-    const child = !wake && text.includes('FIXTURE_CHILD_ONLY');
+    // Quick-model summaries can contain the same history; only the real loop streams.
+    const wake = body.stream === true && text.includes('<subagent_notification>');
+    const child = !wake && users.some((message) => JSON.stringify(message.content).includes('FIXTURE_CHILD_ONLY'));
     let content = 'started';
     let call: { name: string; arguments: string } | undefined;
-    if (!body.stream) content = '后台任务';
+    if (!body.stream && !child && !wake) content = '后台任务';
     else if (wake) {
       wakeRequests++;
       wakeToolCounts.push(body.tools?.length ?? 0);
@@ -67,7 +68,7 @@ beforeAll(async () => {
       const key = text.match(/fixture-case-[\w-]+/)?.[0] ?? 'fixture-case';
       if (!children.has(key)) {
         children.add(key);
-        call = { name: 'Bash', arguments: JSON.stringify({ command: 'pwd' }) };
+        call = { name: 'Write', arguments: JSON.stringify({ file_path: path.join(output, `${key}.txt`), content: '本周事项已整理。\n' }) };
       } else content = '后台工作已结束。';
     } else if (!messages.some((message) => message.tool_calls?.length)) {
       const key = JSON.stringify(users).match(/fixture-case-[\w-]+/)?.[0] ?? 'fixture-case';
@@ -144,9 +145,13 @@ afterAll(async () => {
 });
 
 function events(raw: string): Array<{ type: string; sessionId?: string; data: Record<string, unknown> }> {
-  return raw.split('\n').filter((line) => line.startsWith('data: ')).flatMap((line) => {
+  return raw.split('\n\n').flatMap((frame) => {
+    const line = frame.split('\n').find((entry) => entry.startsWith('data: '));
+    if (!line) return [];
     const parsed = JSON.parse(line.slice(6));
-    return parsed.channel === 'agent:event' ? [parsed.args] : [];
+    if (parsed.channel === 'agent:event') return [parsed.args];
+    const type = frame.split('\n').find((entry) => entry.startsWith('event: '))?.slice(7);
+    return type ? [{ type, sessionId: parsed.sessionId, data: parsed }] : [];
   });
 }
 
@@ -156,14 +161,18 @@ describe('idle background report through the production host', () => {
     const from = capture.length;
     const beforeRequests = wakeRequests;
     const stream = await api('run', { project: path.join(output, 'workspace'), prompt: `fixture-case-${variant}: 派出后台助手检查工作目录，只回复已启动。` });
-    const runTextPromise = stream.text();
+    let foreground = '';
+    let decisions = 0;
+    const runTextPromise = stream.text().then((text) => { foreground = text; return text; });
     await expect.poll(async () => {
-      const pending = events(capture.slice(from)).filter((event) => event.type === 'permission_request');
+      const pending = events(capture.slice(from) + '\n\n' + foreground).filter((event) => event.type === 'permission_request');
       for (const event of pending) {
         const requestId = String(event.data.id);
         if (pendingApprovals.has(requestId)) continue;
         pendingApprovals.add(requestId);
-        await api('agent/permission-response', [requestId, variant === 'deny' ? 'deny' : 'allow', event.sessionId ?? event.data.sessionId]);
+        const delivered = await (await api('agent/permission-response', [requestId, variant === 'allow' ? 'allow' : 'deny', event.sessionId ?? event.data.sessionId])).json();
+        expect(delivered.success).toBe(true);
+        decisions++;
       }
       return wakeRequests > beforeRequests;
     }, { timeout: 30000, interval: 50 }).toBe(true);
@@ -172,6 +181,8 @@ describe('idle background report through the production host', () => {
     await new Promise((resolve) => setTimeout(resolve, 300));
     const received = events(capture.slice(from));
     expect(log).toContain('Executing task for session');
+    expect(decisions).toBeGreaterThan(0);
+    expect(existsSync(path.join(output, `fixture-case-${variant}.txt`))).toBe(variant === 'allow');
     expect(received.filter((event) => event.type === 'error')).toEqual([]);
     expect(wakeRequests - beforeRequests).toBe(1);
     if (variant === 'failure') {
