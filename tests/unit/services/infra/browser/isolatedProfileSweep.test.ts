@@ -254,6 +254,7 @@ describe('isolated profile sweep', () => {
       await sweepWith(async () => `/x/chrome --headless ${flag}${dir}${flag.endsWith('=') ? '' : flag.slice(-1)} --foo\n`);
       expect(await fs.readdir(root)).toEqual(['l8-live']);
       expect(summary()).toContain('skippedLive=1');
+      expect(logger.log).toHaveBeenCalledWith('DEBUG', 'Isolated profile sweep kept l8-live: live');
     });
     it('probe failure keeps the directory and logs legacy-probe-unavailable', async () => {
       await legacy('l8-noprobe', 8);

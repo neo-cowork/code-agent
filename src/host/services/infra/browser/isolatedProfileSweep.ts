@@ -138,7 +138,10 @@ export async function sweepStaleIsolatedBrowserProfiles(options: {
     return lockBlocks(lock, dir);
   };
   const accountSkip = (name: string, reason: string) => {
-    if (reason === 'live') counts.skippedLive++;
+    if (reason === 'live') {
+      counts.skippedLive++;
+      logger.log('DEBUG', `Isolated profile sweep kept ${name}: live`);
+    }
     else if (reason === 'young' || reason === 'young-legacy') counts.skippedYoung++;
     else skip(name, reason);
   };
