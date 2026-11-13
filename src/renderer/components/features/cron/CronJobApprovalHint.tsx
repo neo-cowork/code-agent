@@ -48,7 +48,7 @@ export const CronJobApprovalHint: React.FC<CronJobApprovalHintProps> = ({ run, o
       data-testid="cron-detail-awaiting-approval-hint"
     >
       <span className="text-xs text-zinc-400">
-        {awaitingApprovalLabel(cc.awaitingApprovalWithPreview, run.commandPreview) ?? cc.awaitingApprovalHint}
+        {awaitingApprovalLabel(cc, run) ?? cc.awaitingApprovalHint}
       </span>
       <Button type="button" variant="primary" size="sm" disabled={busy}
         onClick={() => { void resolve('allow'); }} data-testid="cron-detail-parked-approve">

@@ -242,6 +242,8 @@ export interface AwaitingApprovalRun {
   requestId: string;
   sessionId?: string;
   requestedAt: number;
+  /** Approval tool identity, used to present a path or command without exposing raw arguments. */
+  tool?: string;
   /** 已脱敏的命令/路径预览（argsPreview ?? argsSummary），没有则不带。 */
   commandPreview?: string;
 }
