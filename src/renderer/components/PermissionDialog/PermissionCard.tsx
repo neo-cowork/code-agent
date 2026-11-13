@@ -187,7 +187,9 @@ export function PermissionCard({
     isDangerousRequestShape(request);
 
   // forceConfirm 该有的职责一点没松：不许走「会话/始终」这类常驻授权，必须逐次点。
-  const hideStandingGrants = isDangerous || editable || request?.forceConfirm === true || sandboxEscalation;
+  const browserOnceOnly = Boolean(request?.details.browserSessionGrant
+    && (!request.details.browserSessionGrant.target || !['open', 'wait_for_download'].includes(String(request.details.action))));
+  const hideStandingGrants = isDangerous || editable || request?.forceConfirm === true || sandboxEscalation || browserOnceOnly;
 
   const memoryRequest = request ? toMemoryRequest(request) : null;
   const isNewRequest = request !== null && !settled && processedRequestRef.current !== request.id;
