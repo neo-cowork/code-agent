@@ -19,7 +19,9 @@ import type { SubagentExecutionContext as PipelineExecutionContext } from './sub
 import type { createMemberAnswerLedger } from './memberInputWindDown';
 import { createSubagentTurnObservability, type SubagentRunEndStatus } from './subagentTurnTrace';
 import type { SubagentToolSurface } from './subagentExecutorToolDefs';
-import type { buildContextSnapshot } from './subagentExecutorProjection';
+import { createRuntimeMessage, type RuntimeMessage, type buildContextSnapshot } from './subagentExecutorProjection';
+import { AntiPatternDetector } from './antiPattern/detector';
+import { AgentFailureCode } from '../../shared/contract/agentFailure';
 import { adoptOrphanTasks } from '../services/planning/taskStore';
 import { runRoleWriteBack, recordRoleParticipation } from '../services/roleAssets';
 import { SubagentDoomLoopStopError } from './subagentDoomLoopGuard';
@@ -41,6 +43,36 @@ import {
 export { appendSubagentLeftoverShellReport, reportSubagentLeftoverShells } from './subagentLeftoverShells';
 
 const logger = createLogger('SubagentExecutor');
+
+const TEXT_TOOL_CALL_MAX_RETRIES = 2;
+
+class SubagentTextToolCallError extends Error {
+  constructor() {
+    super('The sub-agent could not produce a result: it kept describing actions instead of carrying them out.');
+  }
+}
+
+/** Repair plain-text action imitations before they reach the answer ledger. */
+export class SubagentTextToolCallGuard {
+  private readonly detector = new AntiPatternDetector();
+  private retries = 0;
+
+  retry(content: string, messages: RuntimeMessage[], canContinue: boolean): boolean {
+    const match = this.detector.detectFailedToolCallPattern(content);
+    if (!match) return false;
+    if (!canContinue || this.retries >= TEXT_TOOL_CALL_MAX_RETRIES) {
+      logger.warn('Subagent text tool-call repair exhausted; failing without a result');
+      throw new SubagentTextToolCallError();
+    }
+    this.retries++;
+    logger.warn(`Subagent text tool-call nudge/retry ${this.retries}/${TEXT_TOOL_CALL_MAX_RETRIES}`);
+    messages.push(
+      createRuntimeMessage({ role: 'assistant', content }),
+      createRuntimeMessage({ role: 'system', content: this.detector.generateToolCallFormatError(match.toolName, content) }),
+    );
+    return true;
+  }
+}
 
 type MemberAnswerLedger = ReturnType<typeof createMemberAnswerLedger>;
 type SubagentTurnObservability = ReturnType<typeof createSubagentTurnObservability>;
@@ -169,6 +201,9 @@ export function finalizeSubagentSuccess(
   } = deps;
   const { iterations, latestContextSnapshot } = state;
   const finalOutput = answerLedger.settled();
+  if (new AntiPatternDetector().detectFailedToolCallPattern(finalOutput)) {
+    return handleSubagentFailure(deps, { ...state, error: new SubagentTextToolCallError() });
+  }
 
   // Get final cost
   cleanupTimer();
@@ -275,10 +310,27 @@ export function handleSubagentFailure(
   if (context.hooks) {
     context.hooks.triggerSubagentStop(
       config.name,
-      answerLedger.settled() || undefined,
+      error instanceof SubagentTextToolCallError ? undefined : answerLedger.settled() || undefined,
       sessionId,
       agentTask.id,
     ).catch(() => {});
+  }
+
+  if (error instanceof SubagentTextToolCallError) {
+    terminal.status = 'failed';
+    return {
+      success: false,
+      output: appendSubagentLeftoverShellReport('', leftoverReport),
+      error: error.message,
+      failureCode: AgentFailureCode.ModelError,
+      toolsUsed: [...new Set(toolsUsed)],
+      toolCallCount: turnObservability.getToolCallCount(),
+      iterations,
+      tokensUsed: getTotalTokens(),
+      cost: getTotalCost(),
+      agentId: executionAgentId,
+      contextSnapshot: latestContextSnapshot,
+    };
   }
 
   if (error instanceof SubagentDoomLoopStopError) {

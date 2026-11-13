@@ -762,8 +762,8 @@ export class AntiPatternDetector {
 
     // ========== Generic call patterns ==========
 
-    // "Called toolname({...})" - most common error pattern
-    const calledPattern = /Called\s+(\w+)\s*\(\s*(\{[\s\S]*?\})\s*\)/i;
+    // "Called/Calling toolname({...})" — includes subagent history serialization.
+    const calledPattern = /Call(?:ed|ing)\s+(\w+)\s*\(\s*(\{[\s\S]*?\})\s*\)/i;
     const calledMatch = trimmed.match(calledPattern);
     if (calledMatch) {
       return { toolName: calledMatch[1], args: calledMatch[2] };
