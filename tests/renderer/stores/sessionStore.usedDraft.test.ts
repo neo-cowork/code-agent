@@ -9,7 +9,7 @@ const invoke = vi.fn();
 const directory = '/tmp/project-draft-regression';
 const hostMessages = new Map<string, Message[]>();
 const blank = (id: string, workingDirectory: string | null = directory): SessionWithMeta => ({
-  id, title: '新对话', workingDirectory,
+  id, title: '新对话', workingDirectory: workingDirectory ?? undefined,
   modelConfig: { provider: 'openai', model: 'gpt-5' },
   createdAt: 1, updatedAt: 1, messageCount: 0, turnCount: 0,
 });
@@ -55,8 +55,8 @@ async function expectFresh(workingDirectory: string | null = directory) {
 describe('project new-session uses actual messages, through createSession', () => {
   it.each(['text', 'attachment', 'silent-list-then-switch', 'switch-immediately'])(
     'first send sequence: %s never reuses a used placeholder', async (sequence) => {
-      const message = sequence === 'attachment' ? { ...user, content: '', attachments: [
-        { id: 'notes', type: 'file' as const, name: 'notes.txt', path: '/tmp/notes.txt' },
+      const message: Message = sequence === 'attachment' ? { ...user, content: '', attachments: [
+        { id: 'notes', type: 'file', category: 'text', name: 'notes.txt', size: 13, mimeType: 'text/plain', path: '/tmp/notes.txt' },
       ] } : user;
       useSessionStore.getState().addMessage(message);
       hostMessages.set('used', [message]);
@@ -79,7 +79,7 @@ describe('project new-session uses actual messages, through createSession', () =
 
   it('remembers a locally sent attachment after switching and a stale zero host/list read', async () => {
     useSessionStore.getState().addMessage({ ...user, content: '', attachments: [
-      { id: 'notes', type: 'file', name: 'notes.txt' },
+      { id: 'notes', type: 'file', category: 'text', name: 'notes.txt', size: 13, mimeType: 'text/plain' },
     ] });
     await useSessionStore.getState().loadSessions({ silent: true });
     await useSessionStore.getState().switchSession('away');
