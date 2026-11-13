@@ -31,6 +31,7 @@ import { MemberConversationView } from './features/expert/MemberConversationView
 import { useMemberViewStore } from '../stores/memberViewStore';
 export { buildDefaultSuggestions } from './features/chat/NewSessionWelcome';
 import { SurfaceExecutionChatPanel } from './features/surfaceExecution/SurfaceExecutionChatPanel';
+import { detectMessageLanguage } from '@shared/sessionTitlePrompt';
 import { BrowserTakeoverParkCard } from './features/surfaceExecution/BrowserTakeoverParkCard';
 import { PinnedTodoBar } from './features/chat/PinnedTodoBar';
 import { BackgroundSessionPanel } from './features/background';
@@ -895,7 +896,9 @@ export const ChatView: React.FC = () => {
             不 resume 已完结的会话。 */}
         <BrowserTakeoverParkCard
           conversationId={currentSessionId}
-          onContinue={(message) => { void handleSendMessage(message); }}
+          workspace={currentSessionWorkingDirectory}
+          messageLanguage={detectMessageLanguage(messages.findLast((message) => message.role === 'user' && !message.isMeta)?.content ?? '')}
+          onContinue={handleSendMessage}
         />
 
         <RoleFirstWakeThreadBanner suppressWakeProposals={isEmptySessionWelcomeVisible} />

@@ -483,6 +483,8 @@ export const SUBAGENT_COMPLETION_NOTIFICATIONS = {
  * 后端不可达时间隔从 BASE 翻倍到 MAX，避免空闲猛打 + 日志刷屏。
  */
 export const RENDERER_POLLING = {
+  /** Kept browser windows: reflect close/reclaim in chat and the workbench. */
+  KEPT_BROWSER_STATE: 30_000,
   /** loop:list 状态轮询基础间隔 */
   LOOP_BASE: 2_000,
   /** 后台任务（listTasks + drainNotifications）轮询基础间隔 */

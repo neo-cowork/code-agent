@@ -6,17 +6,20 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BrowserTakeoverParkCard } from '../../../../src/renderer/components/features/surfaceExecution/BrowserTakeoverParkCard';
 
-const { getKeptResultPage } = vi.hoisted(() => ({
+const { getKeptResultPage, adoptKeptResultPage } = vi.hoisted(() => ({
   getKeptResultPage: vi.fn(),
+  adoptKeptResultPage: vi.fn(),
 }));
 
 vi.mock('../../../../src/renderer/services/userBrowserLink', () => ({
+  adoptKeptResultPage: (input: unknown) => adoptKeptResultPage(input),
   getKeptResultPage: (conversationId: string) => getKeptResultPage(conversationId),
 }));
 
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   getKeptResultPage.mockReset();
+  adoptKeptResultPage.mockReset().mockResolvedValue({});
 });
 
 afterEach(() => {
@@ -98,4 +101,42 @@ describe('BrowserTakeoverParkCard', () => {
     expect(await screen.findByText('浏览器已关闭')).toBeDefined();
     expect(screen.queryByTestId('browser-takeover-park-continue')).toBeNull();
   });
+  it('rechecks the window on Continue and does not send after it closes between polls', async () => {
+    getKeptResultPage.mockResolvedValue({ state: 'kept', url: 'https://example.test', title: 'Sign in', reason: 'takeover' });
+    const onContinue = vi.fn();
+    render(<BrowserTakeoverParkCard conversationId="conversation-a" onContinue={onContinue} />);
+    const button = await screen.findByTestId('browser-takeover-park-continue');
+    getKeptResultPage.mockResolvedValue({ state: 'closed', url: 'https://example.test', title: 'Sign in', reason: 'takeover' });
+    fireEvent.click(button);
+    expect(await screen.findByText('浏览器已关闭')).toBeDefined();
+    expect(onContinue).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('browser-takeover-park-continue')).toBeNull();
+  });
+
+  it('awaits sending and shows plain copy if sending fails, without exposing the error', async () => {
+    getKeptResultPage.mockResolvedValue({ state: 'kept', url: 'https://example.test', title: 'Sign in', reason: 'takeover' });
+    const onContinue = vi.fn().mockRejectedValue(new Error('INTERNAL_ROUTE /private/api'));
+    render(<BrowserTakeoverParkCard conversationId="conversation-a" onContinue={onContinue} />);
+    fireEvent.click(await screen.findByTestId('browser-takeover-park-continue'));
+    expect(await screen.findByText('消息未能发送，请再试一次。')).toBeDefined();
+    expect(screen.queryByText(/INTERNAL_ROUTE/)).toBeNull();
+  });
+
+  it('opens the retained window through the existing adoption route without sending Continue', async () => {
+    getKeptResultPage.mockResolvedValue({ state: 'kept', url: 'https://example.test', title: 'Sign in', reason: 'takeover' });
+    const onContinue = vi.fn();
+    render(<BrowserTakeoverParkCard conversationId="conversation-a" workspace="/workspace" onContinue={onContinue} />);
+    fireEvent.click(await screen.findByTestId('browser-takeover-park-open'));
+    await waitFor(() => expect(adoptKeptResultPage).toHaveBeenCalledWith({ conversationId: 'conversation-a', workspace: '/workspace' }));
+    expect(onContinue).not.toHaveBeenCalled();
+  });
+
+  it('sends the continuation in the conversation language even when the UI language differs', async () => {
+    getKeptResultPage.mockResolvedValue({ state: 'kept', url: 'https://example.test', title: 'Sign in', reason: 'takeover' });
+    const onContinue = vi.fn();
+    render(<BrowserTakeoverParkCard conversationId="conversation-a" messageLanguage="en" onContinue={onContinue} />);
+    fireEvent.click(await screen.findByTestId('browser-takeover-park-continue'));
+    await waitFor(() => expect(onContinue).toHaveBeenCalledWith('I have finished signing in in the browser window. Please continue the earlier task.'));
+  });
+
 });
