@@ -50,7 +50,8 @@ beforeAll(async () => {
     const users = messages.filter((message) => message.role === 'user');
     // Quick-model summaries can contain the same history; only the real loop streams.
     const wake = body.stream === true && text.includes('<subagent_notification>');
-    const child = !wake && users.some((message) => JSON.stringify(message.content).includes('FIXTURE_CHILD_ONLY'));
+    // Parent reminders contain the child's title too; child inference is non-streaming.
+    const child = !body.stream && !wake && users.some((message) => JSON.stringify(message.content).includes('FIXTURE_CHILD_ONLY'));
     let content = 'started';
     let call: { name: string; arguments: string } | undefined;
     if (!body.stream && !child && !wake) content = '后台任务';
