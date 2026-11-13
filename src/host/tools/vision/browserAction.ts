@@ -535,10 +535,13 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
           resetBrowserSelectorFillStreak(browserService, tabId);
           return { success: true, output: 'Navigated forward' };
 
-        case 'reload':
+        case 'reload': {
+          const reloadError = browserService.getPostResultReloadError(tabId);
+          if (reloadError) return { success: false, error: reloadError };
           await browserService.reload(tabId);
           resetBrowserSelectorFillStreak(browserService, tabId);
           return { success: true, output: 'Page reloaded' };
+        }
 
         case 'set_viewport':
           if (!width || !height) {
