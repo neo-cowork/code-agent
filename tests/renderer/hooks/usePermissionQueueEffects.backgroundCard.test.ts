@@ -29,6 +29,7 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
 import { PermissionCard } from '../../../src/renderer/components/PermissionDialog/PermissionCard';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 import { releaseApprovalResponse } from '../../../src/renderer/utils/approvalResponseGuard';
+import { getSessionWaitingDetail } from '../../../src/renderer/utils/sessionNeedsInput';
 import { zh } from '../../../src/renderer/i18n/zh';
 
 type PermissionCardProps = NonNullable<ComponentProps<typeof PermissionCard>>;
@@ -348,7 +349,7 @@ describe('three sibling approvals share their parent runId', () => {
     expect(toastError).not.toHaveBeenCalled();
   });
 
-  it('stale click dismisses only that card and shows the existing human message', async () => {
+  it('stale click retires only that card, shows the human message and leaves a failed (timeout) record for the lane', async () => {
     const { requests } = enqueueSiblings();
     invoke.mockResolvedValueOnce({ outcome: 'unknown_request' });
     render(createElement<PermissionCardProps>(PermissionCard, { requestOverride: requests[0], sessionIdOverride: 'session-main' }));
@@ -358,7 +359,23 @@ describe('three sibling approvals share their parent runId', () => {
       expect(toastError).toHaveBeenCalledWith(zh.decisionCard.permission.settledElsewhere);
     });
     expect(zh.decisionCard.permission.settledElsewhere).toBeTruthy();
-    expect(useAppStore.getState().resolvedPermissionRequests).toEqual({});
+    expect(useAppStore.getState().resolvedPermissionRequests['session-main']?.map(r => [r.id, r.agentId, r.decision]))
+      .toEqual([[requests[0].id, requests[0].agentId, 'timeout']]);
+  });
+
+  it('sidebar waiting status follows the same store as the cards: shown while any sibling card is live, gone after the last', () => {
+    const { deps, requests } = enqueueSiblings();
+    const waiting = () => {
+      const { pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests } = useAppStore.getState();
+      return getSessionWaitingDetail('session-main', { permissionState: { pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests } });
+    };
+    for (const request of requests) {
+      expect(waiting()).toEqual({ kind: 'permission' });
+      expect(liveIds().length).toBeGreaterThan(0);
+      applyPermissionQueueEvent({ type: 'subagent_run_end', data: { agentId: request.agentId, runId: request.runId, status: 'completed' }, sessionId: 'session-main' }, deps);
+    }
+    expect(liveIds()).toEqual([]);
+    expect(waiting()).toBeUndefined();
   });
 
   it.each([
