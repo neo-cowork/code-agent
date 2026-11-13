@@ -86,11 +86,27 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
     [effectiveMemoryRoute, strategy],
   );
 
-  const modelOptions = useMemo(() => buildRuntimeModelOptions(
-    effectiveSettings,
-    PROVIDER_MODELS.map((provider) => provider.id),
-    { includeDisabledProviders: Array.from(new Set([...profileProviders, config.provider])), dedupeProviderGroups: false },
-  ), [config.provider, effectiveSettings, profileProviders]);
+  const modelOptions = useMemo(() => {
+    const options = buildRuntimeModelOptions(
+      effectiveSettings,
+      PROVIDER_MODELS.map((provider) => provider.id),
+      { includeDisabledProviders: Array.from(new Set([...profileProviders, config.provider])), dedupeProviderGroups: false },
+    );
+    // The selected default can be a working relay model absent from the catalog.
+    // Include it once so slots, memory and the existing self-heal share one list.
+    if (config.model && !options.some((option) => option.provider === config.provider && option.model === config.model)) {
+      options.push({
+        provider: config.provider,
+        model: config.model,
+        label: modelLabel(config.provider, config.model),
+        providerLabel: providerConfigs[config.provider]?.displayName
+          || options.find((option) => option.provider === config.provider)?.providerLabel
+          || config.provider,
+        features: [],
+      });
+    }
+    return options;
+  }, [config.provider, config.model, effectiveSettings, profileProviders, providerConfigs]);
 
   // 按 Provider 分组（optgroup）：避免所有已配模型平铺成一长串，effort 噪音靠分组收敛。
   const groupedOptions = useMemo(() => {

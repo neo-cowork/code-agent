@@ -73,3 +73,42 @@ describe('TaskStrategySettingsPanel', () => {
     expect(html).not.toContain('研究 / 规划 / 重构');
   });
 });
+
+
+describe('working default missing from the catalog', () => {
+  const current = { provider: 'xiaomi' as const, model: 'neohorse-1.5-flash-preview' };
+  const currentStrategy: TaskModelStrategySettings = {
+    ...strategy,
+    profiles: Object.fromEntries(Object.entries(strategy.profiles).map(([id, slot]) => [id, { ...slot, ...current }])) as TaskModelStrategySettings['profiles'],
+  };
+
+  function markup(route = current, selectedStrategy = currentStrategy) {
+    const selectedSettings = { ...settings, models: { ...settings.models, routing: { ...settings.models.routing, memory: route } } };
+    return renderToStaticMarkup(
+      <TaskStrategySettingsPanel
+        settings={selectedSettings}
+        providerConfigs={selectedSettings.models.providers}
+        config={current}
+        strategy={selectedStrategy}
+        onChange={vi.fn()}
+        onMemoryRouteChange={vi.fn()}
+      />,
+    );
+  }
+
+  it('lists all four slots and memory with the current default and no unavailable indication', () => {
+    const html = markup();
+    expect(html.match(/value="xiaomi:::neohorse-1.5-flash-preview" selected=""/g)).toHaveLength(5);
+    expect(html).not.toContain('不可用');
+    expect(html).not.toContain('(unavailable)');
+    expect(html).not.toContain('memory-route-unavailable');
+  });
+
+  it('keeps a different unknown model unavailable in both the slot and memory route', () => {
+    const missing = { provider: 'xiaomi' as const, model: 'another-unknown-model' };
+    const html = markup(missing, { ...currentStrategy, profiles: { ...currentStrategy.profiles, main: { ...currentStrategy.profiles.main, ...missing } } });
+    expect(html).toContain('xiaomi/another-unknown-model（不可用）');
+    expect(html).toContain('memory-route-unavailable');
+    expect(html).not.toContain('xiaomi/neohorse-1.5-flash-preview（不可用）');
+  });
+});
