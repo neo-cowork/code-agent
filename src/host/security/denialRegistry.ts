@@ -17,6 +17,9 @@
 // ============================================================================
 
 import nodePath from 'path';
+import type { PermissionAskResult, PermissionDenialSource } from '../../shared/contract/permission';
+import { permissionDenialError, userDeniedGoalStickyError } from '../tools/toolPermissionClassification';
+import { createLogger } from '../services/infra/logger';
 import { canonicalizeCommand } from './canonicalizeCommand';
 import { isBashToolName } from '../tools/toolNames';
 import { extractStandingGrantTarget } from '../tools/externalSideEffect';
@@ -70,6 +73,52 @@ const MAX_SESSIONS = 20;
 const MAX_PER_SESSION = 50;
 
 class DenialRegistry {
+  // Separate from exact fingerprints: record even for tools whose arguments cannot be canonicalized.
+  private goals = new Map<string, Set<string>>();
+
+  /** Called only at the ask boundary, after every auto-approval path. No session-wide lock. */
+  async guardApproval(input: {
+    sessionId?: string; sourceMessageId?: string; runId?: string;
+    toolName: string; enabled: boolean; app?: { name: string } | null;
+    ask: () => Promise<PermissionAskResult & { denialSource: PermissionDenialSource | undefined }>;
+  }): Promise<PermissionAskResult & { denialSource: PermissionDenialSource | undefined }> {
+    const scope = input.sourceMessageId ? `message:${input.sourceMessageId}`
+      : input.runId ? `run:${input.runId}` : undefined;
+    const session = input.enabled && scope ? (input.sessionId ?? `scope:${scope}`) : undefined;
+    const family = isBashToolName(input.toolName) ? 'Bash' : input.toolName;
+    const key = JSON.stringify([scope, family]);
+    if (session && this.goals.get(session)?.has(key)) {
+      createLogger('DenialRegistry').warn('user-denied-goal-sticky: refusing approval before ask/park', {
+        sessionId: session, scope, toolFamily: family,
+      });
+      return { approved: false, denialSource: 'user', message: userDeniedGoalStickyError(input.toolName).modelText };
+    }
+    const result = await input.ask();
+    if (input.enabled && !result.approved && result.denialSource === 'user') {
+      if (session) {
+        let bucket = this.goals.get(session);
+        if (!bucket) {
+          bucket = new Set();
+          this.goals.set(session, bucket);
+          if (this.goals.size > MAX_SESSIONS) {
+            const oldest = this.goals.keys().next().value;
+            if (oldest !== undefined) this.goals.delete(oldest);
+          }
+        }
+        bucket.add(key);
+        if (bucket.size > MAX_PER_SESSION) {
+          const oldest = bucket.values().next().value;
+          if (oldest !== undefined) bucket.delete(oldest);
+        }
+      }
+      // A responder-supplied reason must not hide the instruction to stop and ask.
+      result.message = result.message
+        ? `${result.message} ${userDeniedGoalStickyError(input.toolName).modelText}`
+        : permissionDenialError(input.toolName, 'user', input.app).modelText;
+    }
+    return result;
+  }
+
   private sessions = new Map<string, Map<string, DenialRecord>>();
 
   record(entry: DenialRecord): void {
@@ -105,6 +154,7 @@ class DenialRegistry {
 
   clearAll(): void {
     this.sessions.clear();
+    this.goals.clear();
   }
 }
 

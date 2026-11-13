@@ -129,3 +129,30 @@ describe('DenialRegistry（(sessionId, 指纹) 键与容量有界）', () => {
     expect(registry.find('s24', 'fp')).toBeTruthy();
   });
 });
+
+describe('goal registry is independent of fingerprint availability', () => {
+  beforeEach(() => getDenialRegistry().clearAll());
+  it('null fingerprint still records a real user denial, isolated by family/session/message', async () => {
+    const registry = getDenialRegistry();
+    const input = { sessionId: 'goal', sourceMessageId: 'user-1', toolName: 'custom_action', enabled: true,
+      ask: async () => ({ approved: false, denialSource: 'user' as const }) };
+    expect(computeActionFingerprint(input.toolName, { foo: 'bar' }, CWD)).toBeNull();
+    await registry.guardApproval(input);
+    let asks = 0;
+    const ask = async () => { asks++; return { approved: true, denialSource: undefined }; };
+    expect(await registry.guardApproval({ ...input, ask })).toMatchObject({ approved: false });
+    expect(asks).toBe(0);
+    for (const delta of [{ toolName: 'another_action' }, { sessionId: 'elsewhere' }, { sourceMessageId: 'user-2' }]) {
+      expect(await registry.guardApproval({ ...input, ...delta, ask })).toMatchObject({ approved: true });
+    }
+    expect(asks).toBe(3);
+  });
+  it('cannot infer consent or a global lock if both source message and run identity are absent', async () => {
+    const input = { sessionId: 'legacy', toolName: 'Bash', enabled: true,
+      ask: async () => ({ approved: false, denialSource: 'user' as const }) };
+    await getDenialRegistry().guardApproval(input);
+    let asked = false;
+    await getDenialRegistry().guardApproval({ ...input, ask: async () => { asked = true; return { approved: true, denialSource: undefined }; } });
+    expect(asked).toBe(true);
+  });
+});
