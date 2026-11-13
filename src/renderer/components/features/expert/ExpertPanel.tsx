@@ -13,7 +13,7 @@
 // 分类 chips 口径：RolePanelEntry.category 是现成分类字段（SkillCategory 子集，
 // 与技能包同套体系），直接按 SKILL_CATEGORIES 顺序推导；无 category 的自建角色归「其他」。
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Quote, RefreshCw, Search, UserRound, Users } from 'lucide-react';
 import type { RolePanelEntry } from '@shared/contract/roleAssets';
 import type { TeamRecipe } from '@shared/contract/teamRecipe';
@@ -169,6 +169,7 @@ export const ExpertPanel: React.FC = () => {
   const [rolePacksTimedOut, setRolePacksTimedOut] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const preserveHintSearch = useRef(false);
   const [busyRolePackId, setBusyRolePackId] = useState<string | null>(null);
   const [userRecipes, setUserRecipes] = useState<TeamRecipe[]>([]);
   const [selectedRecipe, setSelectedRecipe] = useState<{ recipe: TeamRecipe; editable: boolean } | null>(null);
@@ -228,10 +229,11 @@ export const ExpertPanel: React.FC = () => {
     return () => clearTimeout(timer);
   }, [rolePacksLoading]);
 
-  // 切 tab 时分类过滤与搜索词回到初始态，避免「我的」里选的分类或搜索词把「发现」过滤空
+  // 提示行保留搜索词直达匹配专家；手动切 tab 仍重置分类与搜索。
   useEffect(() => {
     setSelectedCategory('all');
-    setSearchQuery('');
+    if (!preserveHintSearch.current) setSearchQuery('');
+    preserveHintSearch.current = false;
   }, [tab]);
 
   const invite = (entry: RolePanelEntry, seed?: string) => {
@@ -299,6 +301,8 @@ export const ExpertPanel: React.FC = () => {
     uncategorized: t.settings.roles.uncategorizedCategory,
   };
   const categoryGroups = groupRolesByCategory(shown, categoryLabels);
+  const mineMatchCount = entries.filter((entry) => entry.source !== 'builtin'
+    && matchesRoleSearch(entry, searchQuery, categoryLabels)).length;
   const searchedShown = shown.filter((entry) => matchesRoleSearch(entry, searchQuery, categoryLabels));
   const activeCategory = categoryGroups.some((group) => group.key === selectedCategory) ? selectedCategory : 'all';
   const categoryFiltered = activeCategory === 'all'
@@ -482,6 +486,19 @@ export const ExpertPanel: React.FC = () => {
           />
         ) : (
           <>
+        {tab === 'discover' && searchActive && mineMatchCount > 0 ? (
+          <div
+            className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-700 bg-zinc-900/60 p-3 text-sm text-zinc-300"
+            data-testid="expert-discover-mine-hint"
+          >
+            <span>{text.searchMineMatches[mineMatchCount === 1 ? 'one' : 'other']
+              .replace('{count}', String(mineMatchCount))
+              .replace('{query}', searchQuery.trim())}</span>
+            <Button variant="secondary" size="sm" data-testid="expert-discover-mine-hint-go" onClick={() => { preserveHintSearch.current = true; setTab('mine'); }}>
+              {text.searchViewMine}
+            </Button>
+          </div>
+        ) : null}
         {!loading && tab === 'mine' && shown.length === 0 ? (
           <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-zinc-700/70 p-8 text-center text-sm text-zinc-500">
             <span>{text.emptyMine}</span>
