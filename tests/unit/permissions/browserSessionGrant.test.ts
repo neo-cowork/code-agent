@@ -8,12 +8,16 @@ vi.mock('../../../src/host/services/infra/logger', () => {
   return { logger: log, createLogger: () => log };
 });
 vi.mock('../../../src/host/services/infra/notificationService', () => ({ notificationService: { notifyNeedsInput: vi.fn(), retractNeedsInput: vi.fn() } }));
-vi.mock('../../../src/host/services/surfaceExecution/ManagedBrowserProviderAdapter', () => ({
-  surfaceIdentityFromToolContext: (c: { runId?: string; sessionId?: string; agentId?: string }) => c.runId && c.sessionId && c.agentId ? c : null,
-  getManagedBrowserProviderAdapter: () => ({ getBinding: () => state.binding ? { browserService: {
-    isRunning: () => true, getActiveTab: () => ({ id: 'tab-1' }), getLiveTabUrl: () => state.url,
-  } } : null }),
-}));
+vi.mock('../../../src/host/services/surfaceExecution/ManagedBrowserProviderAdapter', () => {
+  const browser = { isRunning: () => true, getActiveTab: () => ({ id: 'tab-1' }), getLiveTabUrl: () => state.url };
+  return {
+    surfaceIdentityFromToolContext: (c: { runId?: string; sessionId?: string; agentId?: string }) => c.runId && c.sessionId && c.agentId ? c : null,
+    getManagedBrowserProviderAdapter: () => ({
+      getBinding: () => state.binding ? { browserService: browser } : null,
+      getBrowserService: () => browser,
+    }),
+  };
+});
 import { PendingApprovalRepository } from '../../../src/host/services/core/repositories/PendingApprovalRepository';
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
@@ -143,27 +147,28 @@ describe('browser session grant production execution → human answer → pre-as
     ]);
   });
 
-  it('an outer human or session grant covers a same-action inner approval that is not forceConfirm; unrelated inner gates still ask', async () => {
+  it('each one-shot outer human approval covers only its same-action non-forceConfirm inner gate', async () => {
     const inner = (action: string, forceConfirm?: boolean) => state.execute.mockImplementation(async (_name, _params, context) => ({ success: await context.requestPermission({
       type: 'dangerous_command', tool: `browser_action.${action}`, ...(forceConfirm ? { forceConfirm } : {}),
       details: { action },
     }) }));
     inner('read_clipboard');
     await call('read_clipboard'); await call('read_clipboard');
-    expect(requests).toHaveLength(1);
+    expect(requests).toHaveLength(2);
+    expect(listToolGrants()).toEqual([]);
     inner('handle_dialog');
-    await call('read_clipboard'); expect(requests).toHaveLength(2);
+    await call('read_clipboard'); expect(requests).toHaveLength(4);
   });
 
   it.each([
     ['handle_dialog', { dialogAction: 'accept' }],
     ['read_clipboard', {}],
     ['write_clipboard', { text: 'x' }],
-  ])('forceConfirm inner %s request still asks while a session grant exists, and answering it mints nothing', async (action, extra) => {
+  ])('one-shot outer and forceConfirm inner %s requests both ask on every call and mint nothing', async (action, extra) => {
     state.url = 'https://shop.example/cart';
     const target = `${action}@https://shop.example`;
-    await call(action); // outer card -> session grant
-    expect(matchToolGrant(options.sessionId, 'Browser', target)).toBe('session');
+    await call(action);
+    expect(matchToolGrant(options.sessionId, 'Browser', target)).toBeNull();
     const grantsBefore = JSON.stringify(listToolGrants());
     expect(requests).toHaveLength(1);
     const mint = vi.spyOn(toolGrants, 'mintToolSessionGrant');
@@ -172,15 +177,34 @@ describe('browser session grant production execution → human answer → pre-as
       type: 'dangerous_command', tool: `browser_action.${action}`, forceConfirm: true,
       details: { action },
     }) }));
-    // Outer is skipped by the grant; the mandatory inner confirm must still produce a request each time.
-    expect((await call(action, extra)).success).toBe(true);
-    expect(requests).toHaveLength(2);
-    expect(requests[1].forceConfirm).toBe(true);
+    // Neither outer nor mandatory inner confirmation may be remembered.
     expect((await call(action, extra)).success).toBe(true);
     expect(requests).toHaveLength(3);
+    expect(requests[2].forceConfirm).toBe(true);
+    expect((await call(action, extra)).success).toBe(true);
+    expect(requests).toHaveLength(5);
     expect(mint).not.toHaveBeenCalled();
     expect(runMint).not.toHaveBeenCalled();
     expect(JSON.stringify(listToolGrants())).toBe(grantsBefore);
+  });
+
+  it.each(['handle_dialog', 'read_clipboard', 'write_clipboard'])('%s refuses both remember answers on the outer card', async (action) => {
+    for (const response of ['allow_run', 'allow_session'] as const) {
+      const island = new OrchestratorPermissionIsland({
+        injectedPendingApprovalRepo: new PendingApprovalRepository(db),
+        getSettings: () => settings, isDevModeAutoApproveEnabled: () => false,
+        getExecutionTopology: () => 'main', hasApprovalUi: () => true,
+        onEvent: (event) => { if (event.type === 'permission_request') island.handlePermissionResponse((event.data as PermissionRequest).id, response); },
+      });
+      await island.requestPermission({
+        tool: 'Browser', type: 'command', sessionId: options.sessionId,
+        details: { action, browserSessionGrant: { target: `${action}@https://a.example`, previousOrigins: [] } },
+      });
+      expect(listToolGrants()).toEqual([]);
+    }
+    await call(action); await call(action);
+    expect(requests).toHaveLength(2);
+    expect(listToolGrants()).toEqual([]);
   });
 
   it('answering a forceConfirm browser card with a remember response never mints a grant', () => {
@@ -202,7 +226,7 @@ describe('browser session grant production execution → human answer → pre-as
     }
   });
 
-  it.each(['handle_dialog', 'read_clipboard', 'write_clipboard', 'wait_for_download'])('%s session grants list/revoke, distinguish localhost and 127.0.0.1, and die on restart', async (action) => {
+  it.each(['wait_for_download'])('%s session grants list/revoke, distinguish localhost and 127.0.0.1, and die on restart', async (action) => {
     state.url = 'http://localhost:8123/report'; await call(action); await call(action);
     expect(requests).toHaveLength(1);
     const row = listGrants().find((r) => r.detail === `${action}@http://localhost:8123`)!;

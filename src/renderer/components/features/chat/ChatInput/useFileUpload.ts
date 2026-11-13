@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { useCallback } from 'react';
+import { MAX_FOLDER_PATH_UPLOADS } from '../../../../../shared/constants/chatUploads';
 import type { MessageAttachment } from '../../../../../shared/contract';
 import {
   MAX_FILE_SIZE,
@@ -234,28 +235,8 @@ export function useFileUpload() {
       return null;
     }
 
-    let folderPath: string | undefined;
-    try {
-      const firstFile = files[0];
-      const firstFilePath = await ipcService.getPathForFile(firstFile);
-      if (firstFilePath) {
-        const relativePath = (firstFile as File & { relativePath?: string }).relativePath;
-        if (relativePath) {
-          const relativeDir = relativePath.split('/').slice(0, 1).join('/');
-          const idx = firstFilePath.lastIndexOf('/' + relativeDir + '/');
-          if (idx !== -1) {
-            folderPath = firstFilePath.substring(0, idx + 1 + relativeDir.length);
-          }
-        } else {
-          folderPath = firstFilePath.substring(0, firstFilePath.lastIndexOf('/'));
-        }
-      }
-    } catch (e) {
-      logger.warn('processFolderEntry - failed to get folder path', { error: e });
-    }
-
     const filesToProcess = files.slice(0, MAX_FOLDER_FILES);
-    const fileContents: Array<{ path: string; content: string; size: number }> = [];
+    const fileContents: NonNullable<MessageAttachment['files']> = [];
     const byType: Record<string, number> = {};
     let totalSize = 0;
 
@@ -265,18 +246,52 @@ export function useFileUpload() {
       byType[ext] = (byType[ext] || 0) + 1;
       totalSize += file.size;
 
+      const { category } = getFileCategory(file);
+      // Only known text formats may be decoded. This also catches images with no MIME.
+      const binary = !['text', 'code', 'data', 'html'].includes(category);
+      const entry: NonNullable<MessageAttachment['files']>[number] = {
+        path: relativePath, size: file.size,
+        ...(binary ? { type: category, binary: true } : {}),
+      };
+      if (!binary) {
+        try {
+          entry.content = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target?.result as string);
+            reader.onerror = () => reject(new Error('read failed'));
+            reader.readAsText(file);
+          });
+        } catch {
+          logger.warn('failed to read file', { path: relativePath });
+        }
+      }
+      fileContents.push(entry);
+    }
+
+    // Binary files need tools; prioritize their uploads within the transport budget.
+    const pathOrder = filesToProcess.map((_, index) => index)
+      .sort((a, b) => Number(!!fileContents[b].binary) - Number(!!fileContents[a].binary))
+      .slice(0, MAX_FOLDER_PATH_UPLOADS);
+    for (const index of pathOrder) {
       try {
-        const content = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = (e) => resolve(e.target?.result as string);
-          reader.onerror = () => reject(new Error('read failed'));
-          reader.readAsText(file);
-        });
-        fileContents.push({ path: relativePath, content, size: file.size });
-      } catch {
-        logger.warn('failed to read file', { path: relativePath });
+        const absolutePath = await ipcService.getPathForFile(filesToProcess[index]);
+        if (absolutePath && /^(?:\/|[A-Za-z]:[\\/]|\\\\)/.test(absolutePath)) {
+          fileContents[index].absolutePath = absolutePath;
+        }
+      } catch (error) {
+        logger.warn('processFolderEntry - failed to get file path', { error });
       }
     }
+
+    // Separate temp uploads have different roots. Never invent a shared folder path.
+    const folderRoots = fileContents.map((entry) => {
+      const absolutePath = entry.absolutePath?.replace(/\\/g, '/');
+      return absolutePath?.endsWith('/' + entry.path)
+        ? absolutePath.slice(0, -entry.path.length) + folderName
+        : undefined;
+    });
+    const folderPath = folderRoots[0] && folderRoots.every((root) => root === folderRoots[0])
+      ? folderRoots[0] : undefined;
 
     const id = generateAttachmentId();
     const typeStats = Object.entries(byType)
@@ -284,7 +299,7 @@ export function useFileUpload() {
       .slice(0, 5)
       .map(([ext, count]) => `${ext}(${count})`)
       .join(', ');
-    const summary = `${t.chatInput.folderSummaryCount.replace('{count}', String(files.length))}${files.length > MAX_FOLDER_FILES ? t.chatInput.folderSummaryTruncated.replace('{max}', String(MAX_FOLDER_FILES)) : ''}: ${typeStats}`;
+    const summary = `${t.chatInput.folderSummaryCount.replace('{count}', String(files.length))}${files.length > MAX_FOLDER_FILES ? t.chatInput.folderSummaryTruncated.replace('{max}', String(MAX_FOLDER_FILES)) : ''}: ${typeStats}${folderPath ? '' : `\n${t.chatInput.folderPathUnresolved}`}`;
 
     return {
       id, type: 'file', category: 'folder', name: folderName, size: totalSize,

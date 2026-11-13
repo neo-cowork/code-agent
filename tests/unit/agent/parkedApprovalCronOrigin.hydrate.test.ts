@@ -189,6 +189,21 @@ describe('cron / heartbeat origin parked approvals are voided at restart', () =>
     expect(new SessionAutomationService().listParkedApprovals()[0]).toMatchObject({ displayTool: '重启前发起 · Bash' });
   });
 
+  it('missing tool survives through public hydration and inbox query without an English sentinel', async () => {
+    const now = Date.now();
+    seed('missing-name', undefined, now);
+    const row = repo.getById('row-missing-name')!;
+    const payload = JSON.parse(row.payloadJson);
+    delete payload.tool;
+    repo.insert({ ...row, payload });
+    expect(hydrate(now).survived).toBe(1);
+    const { SessionAutomationService } = await import('../../../src/host/services/sessionAutomation/sessionAutomationService');
+    const [item] = new SessionAutomationService().listParkedApprovals();
+    expect(item.tool).toBe('');
+    expect(item.displayTool).toBe('重启前发起 · ');
+    expect(`${item.tool}${item.displayTool}`).not.toContain('unknown');
+  });
+
   it('isParkedApprovalClosureSentence 认得运行已结束句（渲染端读作「未执行」而非执行失败）', () => {
     expect(isParkedApprovalClosureSentence(SENTENCE)).toBe(true);
   });

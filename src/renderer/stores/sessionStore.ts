@@ -26,7 +26,7 @@ import {
   clearConversationTerminalFrames,
   forgetConversationFramesInMemory,
 } from './sessionTerminalFrames';
-import { executeCreateSession } from './sessionCreate';
+import { executeCreateSession, observeSessionDraftUsage } from './sessionCreate';
 import { bumpSessionsLocalVersion, executeLoadOlderSessions, executeLoadSessions, resetSessionListLoadState, useSessionListLoadStore, withOpenedSessionOutsideWindow } from './sessionListPagination';
 import { mergeSnapshotWithLiveTail } from './sessionSnapshotMerge';
 import { clearFailedSend, mergeFailedSendOutbox } from './failedSendOutbox';
@@ -284,7 +284,7 @@ interface SessionActions {
 
 type SessionStore = SessionState & SessionActions;
 
-export const useSessionStore = create<SessionStore>()((set, get) => ({
+export const useSessionStore = observeSessionDraftUsage(create<SessionStore>()((set, get) => ({
     sessions: [],
     currentSessionId: null,
     messages: [],
@@ -1052,7 +1052,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     getSessionDesignBrief: (sessionId) => {
       return get().sessionDesignBriefs.get(sessionId);
     },
-  }));
+  })));
 
 let _initialized = false;
 let _settleInitialSessionState: (() => void) | null = null;

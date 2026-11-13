@@ -2089,6 +2089,7 @@ fn spawn_web_server_recording(
         .current_dir(&working_dir)
         .envs(env::vars())
         .env("CODE_AGENT_TAURI_BOOT_TOKEN", &boot_token)
+        .env("CODE_AGENT_SHELL_EXE", native_notification::shell_executable_path())
         .env("NODE_ENV", web_server_node_env())
         // 测试包用 8181、生产 8180，保证两包同时运行不抢端口（webServer 读 WEB_PORT）
         .env("WEB_PORT", web_port().to_string())
@@ -4489,6 +4490,7 @@ fn setup_global_shortcut(app: &tauri::App) -> Result<(), Box<dyn std::error::Err
 }
 
 fn main() {
+    native_notification::dispatch_notify_only();
     // T2 工单：必须在 Tauri 创建任何窗口（含 WebView2）/webServer 子进程之前
     // 完成，否则后创建的子孙进程赶不上加入 Job（见函数注释）。非 Windows 平台
     // 是空操作。

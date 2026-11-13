@@ -2,7 +2,7 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AgentErrorMetadata } from '../../../src/shared/contract';
+import type { AgentErrorMetadata, Message } from '../../../src/shared/contract';
 
 const mocks = vi.hoisted(() => ({
   toastSuccess: vi.fn(),
@@ -629,6 +629,49 @@ describe('AgentErrorPresentation 连续同因失败折叠', () => {
     expect(retryLines[0].textContent).toContain('重试');
     expect(retryLines[0].textContent).toContain('连续 5 次都是这个原因。');
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('后台状态轮重投影不会累积错误节点：3 次失败后只保留 1 条可重试限流提示', () => {
+    const error = classifyAgentError({ error: '您的账户已达到速率限制，请您控制请求频率' })!;
+    const messages: Message[] = [1, 2, 3].flatMap((i) => [
+      { id: `retry-${i}`, role: 'user', content: `第 ${i} 次尝试：请重试后台浏览器任务并告诉我页面标题`, timestamp: i * 100 },
+      {
+        id: `status-${i}`, role: 'assistant', content: '', timestamp: i * 100 + 1,
+        thinking: '查看后台任务状态',
+        toolCalls: [{ id: `call-${i}`, name: 'task_status', arguments: {} }],
+        contentParts: [{ type: 'tool_call', toolCallId: `call-${i}` }],
+        metadata: { agentError: error },
+      },
+    ]);
+    const renderProjection = () => (
+      <div>
+        {projectTurns(messages, 'session-1', false).turns.flatMap((turn) => turn.nodes)
+          .filter((node) => node.type === 'assistant_text').map((node) => (
+            <div key={node.id}>
+              {node.thinking}
+              {node.metadata?.agentError && (
+                <AgentErrorPresentation
+                  error={node.metadata.agentError}
+                  messageId={node.messageId!}
+                  sessionId="session-1"
+                  run={node.agentErrorRun}
+                />
+              )}
+            </div>
+          ))}
+      </div>
+    );
+    const send = vi.fn().mockResolvedValue(undefined);
+    useMessageActionStore.getState().register(send, () => messages);
+    const view = render(renderProjection());
+    for (let poll = 0; poll < 23; poll += 1) view.rerender(renderProjection());
+    expect(screen.getAllByTestId('agent-error-muted-line')).toHaveLength(2);
+    expect(screen.getAllByTestId('rate-limited-error-line')).toHaveLength(1);
+    expect(screen.getByTestId('rate-limited-error-line').textContent).toContain('连续 3 次都是这个原因。');
+    expect(screen.getByTestId('rate-limited-error-line').textContent).toContain('模型服务商限流，稍后重试');
+    expect(screen.queryByRole('alert')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    expect(send).toHaveBeenCalledWith('第 3 次尝试：请重试后台浏览器任务并告诉我页面标题');
   });
 
   it('generic 卡仅当 rawMessage 为脱敏后可读同语种短句时显示「服务商返回：「…」」，堆栈/JSON/URL/token/超长/异语种均不显示', () => {

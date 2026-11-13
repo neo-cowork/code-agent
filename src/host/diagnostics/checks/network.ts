@@ -4,10 +4,13 @@
 // 未配置的标 `skip`，不计入 fail。
 // ============================================================================
 
-import { DOCTOR_FIX_CODES, PROVIDER_REGISTRY } from '../../../shared/constants';
+import { DOCTOR_FIX_CODES, PROVIDER_REGISTRY, getDefaultModelForProvider } from '../../../shared/constants';
 import type { DoctorFixCode } from '../../../shared/constants';
 import type { BuiltInModelProvider } from '../../../shared/contract';
 import { handleTestConnection } from '../../model/providerConnectionTest';
+import { getProviderHealthMonitor } from '../../model/providerHealthMonitor';
+import { resolveProviderApiKey, resolveProviderBaseUrl } from '../../model/providers/providerResolution';
+import { DOCTOR_PROBE_REAL_SUCCESS_MAX_AGE_MS } from '../../../shared/constants/doctor';
 import { getConfigService } from '../../services/core/configService';
 import type { DoctorItem } from '../types';
 
@@ -30,18 +33,26 @@ function getConnectivityFixCode(errorCode: string | undefined): DoctorFixCode {
  * 单项失败映射：
  *   - HTTP 200 → pass
  *   - TIMEOUT → warn（不视为 fail，可能只是网络慢）
- *   - 401/403 → fail（key 错误明确）
+ *   - 401/403 → fail；近期真实调用成功时为 warn（测试路径可能不同）
  *   - 其他 → warn
  */
 export async function checkProviderConnectivity(): Promise<DoctorItem[]> {
   const config = getConfigService();
+  const settings = config.getSettings();
   const providerEntries = Object.entries(PROVIDER_REGISTRY) as Array<
     [BuiltInModelProvider, (typeof PROVIDER_REGISTRY)[BuiltInModelProvider]]
   >;
 
   const results = await Promise.allSettled(
     providerEntries.map(async ([providerId, info]): Promise<DoctorItem> => {
-      const apiKey = config.getApiKey(providerId);
+      const providerSettings = settings.models.providers[providerId];
+      const modelConfig = {
+        provider: providerId,
+        model: providerSettings?.model || getDefaultModelForProvider(providerId),
+        baseUrl: providerSettings?.baseUrl,
+        protocol: providerSettings?.protocol,
+      };
+      const apiKey = resolveProviderApiKey(modelConfig, { trustConfigKey: false });
       if (!apiKey) {
         return {
           category: 'network',
@@ -56,6 +67,9 @@ export async function checkProviderConnectivity(): Promise<DoctorItem[]> {
         const result = await handleTestConnection({
           provider: providerId,
           apiKey,
+          baseUrl: resolveProviderBaseUrl(modelConfig),
+          protocol: modelConfig.protocol,
+          model: modelConfig.model,
         });
         const durationMs = Date.now() - started;
 
@@ -71,6 +85,21 @@ export async function checkProviderConnectivity(): Promise<DoctorItem[]> {
 
         const code = result.error?.code;
         const isFail = code === 'AUTH_FAILED' || code === 'FORBIDDEN';
+        const health = getProviderHealthMonitor().getHealth(providerId);
+        if (isFail && health && health.lastSuccessAt > 0
+          && Date.now() - health.lastSuccessAt <= DOCTOR_PROBE_REAL_SUCCESS_MAX_AGE_MS) {
+          const probeHttpStatus = code === 'AUTH_FAILED' ? 401 : 403;
+          const message = `The test address returned ${probeHttpStatus}, but your recent real calls succeeded — the test path may differ from the real one.`;
+          return {
+            category: 'network',
+            name: info.displayName,
+            status: 'warn',
+            message,
+            probeHttpStatus,
+            details: message,
+            durationMs,
+          };
+        }
         return {
           category: 'network',
           name: info.displayName,

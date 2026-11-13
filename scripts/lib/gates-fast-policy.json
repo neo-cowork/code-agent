@@ -381,6 +381,7 @@
     "vitest": 90000,
     "package-typechecks": 45000,
     "tests-typecheck": 45000,
-    "shared-host-boundary": 20000
+    "shared-host-boundary": 20000,
+    "user-visible-leak": 20000
   }
 }

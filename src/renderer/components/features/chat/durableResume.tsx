@@ -95,6 +95,24 @@ export const DurableResumeNotice: React.FC<{ text: string; actions?: React.React
   </div>
 );
 
+/** 用户主动停止（user_stop）的停靠行：一句灰字说明为什么没有回答，其余原因沿用通用停靠行。 */
+const DurableStoppedNotice: React.FC<{ actions?: React.ReactNode }> = ({ actions }) => {
+  const { t } = useI18n();
+  return (
+    <div className="mx-auto mb-2 flex max-w-3xl items-center gap-2 px-4 text-xs text-zinc-400" data-testid="durable-stopped-notice">
+      <span>{t.durableStopped.userStop}</span>
+      {actions}
+    </div>
+  );
+};
+
+export const DurableParkedNotice: React.FC<{ interruptCause?: string; actions?: React.ReactNode }> = ({ interruptCause, actions }) => {
+  const { t } = useI18n();
+  return interruptCause === 'user_stop'
+    ? <DurableStoppedNotice actions={actions} />
+    : <DurableResumeNotice text={t.chat.durableStoppedNotice} actions={actions} />;
+};
+
 /**
  * 停靠待「继续」的 run 的「放弃」入口（N-STOP-ABANDON-ENTRY）：模态二次确认后走
  * 真实取消链路（agent:cancel → web /api/cancel 的 terminalRecoveredWaitingRun）终态化。

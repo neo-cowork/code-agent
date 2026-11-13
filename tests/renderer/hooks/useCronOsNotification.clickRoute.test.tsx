@@ -5,7 +5,7 @@ import { IPC_CHANNELS } from '../../../src/shared/ipc';
 
 const h = vi.hoisted(() => ({
   show: null as null | ((e: unknown) => void),
-  click: null as null | ((e: { payload: { id: string } }) => void),
+  click: null as null | ((e: { payload: { id: string; sessionId?: string } }) => void),
   unlisten: vi.fn(),
   action: null as null | (() => void),
   parked: [] as Array<{ sessionId: string; status: string }>,
@@ -21,7 +21,7 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
   },
 }));
 vi.mock('../../../src/renderer/services/tauriPluginFacade', () => ({
-  listenTauriEvent: vi.fn(async (_n: string, cb: (e: { payload: { id: string } }) => void) => {
+  listenTauriEvent: vi.fn(async (_n: string, cb: (e: { payload: { id: string; sessionId?: string } }) => void) => {
     h.click = cb;
     return h.unlisten;
   }),
@@ -143,6 +143,27 @@ describe('notification-clicked 路由', () => {
     expect(h.unlisten).not.toHaveBeenCalled();
     view.unmount();
     expect(h.unlisten).toHaveBeenCalledTimes(1);
+  });
+
+  it('cold notification-clicked unknown id with sessionId and pending approval → Automation Run records', async () => {
+    h.parked = [{ sessionId: 'cold-session', status: 'pending' }];
+    await mount();
+    h.click!({ payload: { id: 'cold-id', sessionId: 'cold-session' } });
+    await flush();
+    expect(open).not.toHaveBeenCalled();
+    expect(useAppStore.getState().showCronCenter).toBe(true);
+    expect(useAppStore.getState().cronCenterRunsRequested).toBe(true);
+    h.click!({ payload: { id: 'cold-id', sessionId: 'cold-session' } });
+    await flush();
+  });
+
+  it.each(['none', 'orphaned', 'other-session'])('cold notification-clicked unknown id without matching pending approval (%s) → session', async (kind) => {
+    h.parked = kind === 'none' ? [] : [{ sessionId: kind === 'other-session' ? 'another' : 'cold-session', status: kind === 'orphaned' ? 'orphaned' : 'pending' }];
+    await mount();
+    h.click!({ payload: { id: 'cold-id', sessionId: 'cold-session' } });
+    await flush();
+    expect(open).toHaveBeenCalledExactlyOnceWith('cold-session');
+    expect(useAppStore.getState().cronCenterRunsRequested).toBe(false);
   });
 
   it('未知 id → 不导航并 warn', async () => {

@@ -15,11 +15,18 @@ import React, { useCallback, useEffect, useState } from 'react';
 import type { Message } from '@shared/contract';
 import type { ConversationEnvelope } from '@shared/contract/conversationEnvelope';
 import type { Project } from '@shared/contract/project';
+import { SKILL_CHANNELS } from '@shared/ipc/channels';
 import { generateMessageId } from '@shared/utils/id';
+import { useI18n } from '../../../hooks/useI18n';
+import { toast } from '../../../hooks/useToast';
 import { useComposerStore, spaceScopeKey } from '../../../stores/composerStore';
 import { useProjectChatSeedStore } from '../../../stores/projectChatSeedStore';
 import { useSessionStore } from '../../../stores/sessionStore';
+import { useSkillStore } from '../../../stores/skillStore';
+import { invokeSkillIPCOrThrow } from '../../../services/invokeSkillIPC';
+import { createLogger } from '../../../utils/logger';
 import { ChatInput } from '../chat/ChatInput';
+import { deriveSkillLibraryId } from '../chat/ChatInput/slashPickerModel';
 
 export interface ProjectComposerProps {
   project: Project | null;
@@ -27,8 +34,42 @@ export interface ProjectComposerProps {
 
 const TITLE_MAX_LENGTH = 30;
 
+const logger = createLogger('ProjectComposer');
+
+/**
+ * 发送时补挂载：sessionless 期选中的未挂载 skill（deferMountUntilSend）只记了当轮选择，
+ * createSession 拿到新会话 id 后在这里落进会话。host 侧 mount 幂等（已挂载直接 true），
+ * 所以选中已挂载 skill 或复用空白草稿会话都安全。失败不拦发送——已打的字不能丢，
+ * 报 toast + warn 留痕。
+ */
+async function mountSelectedSkillsForSession(
+  sessionId: string,
+  skillIds: string[],
+  mountFailedPrefix: string,
+): Promise<void> {
+  const availableSkills = useSkillStore.getState().availableSkills;
+  const byName = new Map(availableSkills.map((skill) => [skill.name, skill]));
+  for (const skillId of skillIds) {
+    const skill = byName.get(skillId);
+    const libraryId = skill ? deriveSkillLibraryId(skill) : 'unknown';
+    try {
+      const mounted = await invokeSkillIPCOrThrow(
+        SKILL_CHANNELS.SESSION_MOUNT,
+        sessionId,
+        skillId,
+        libraryId,
+      );
+      if (mounted !== true) throw new Error('skill:session:mount returned no confirmation');
+    } catch (error) {
+      logger.warn('Failed to mount deferred skill for new session', { sessionId, skillId, error });
+      toast.error(mountFailedPrefix + skillId);
+    }
+  }
+}
+
 export const ProjectComposer: React.FC<ProjectComposerProps> = ({ project }) => {
   const [sending, setSending] = useState(false);
+  const { t } = useI18n();
 
   // 进入空间页 = 激活 space 槽：会话里配置的 skill/pin/专家不得漏进来；
   // 离开时 activateScope 会把空间配置快照回去，回会话可还原。
@@ -51,6 +92,16 @@ export const ProjectComposer: React.FC<ProjectComposerProps> = ({ project }) => 
         workingDirectory: project?.workspacePath ?? undefined,
       });
       if (!session) return false;
+      // sessionless 期选中的 skill 在这里补挂载（新会话 id 已知、切页之前）；
+      // 失败不拦发送，已打的字不能丢（toast + warn 留痕）
+      const selectedSkillIds = envelope.context?.selectedSkillIds ?? [];
+      if (selectedSkillIds.length > 0) {
+        await mountSelectedSkillsForSession(
+          session.id,
+          selectedSkillIds,
+          t.slashSelect.mountSkillFailedPrefix,
+        );
+      }
       // 乐观上屏：createSession 已把 currentSessionId 切到新会话，消息直接进它的时间线。
       const userMessage: Message = {
         id: envelope.clientMessageId ?? generateMessageId(),
@@ -70,7 +121,7 @@ export const ProjectComposer: React.FC<ProjectComposerProps> = ({ project }) => 
     } finally {
       setSending(false);
     }
-  }, [project?.workspacePath, sending]);
+  }, [project?.workspacePath, sending, t.slashSelect.mountSkillFailedPrefix]);
 
   return (
     <div className="shrink-0 border-t border-zinc-800/70" data-testid="project-space-composer">

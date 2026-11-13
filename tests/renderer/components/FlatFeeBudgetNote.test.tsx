@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import React from 'react';
-import { cleanup, render, screen } from '@testing-library/react';
+import React, { useState } from 'react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../src/renderer/services/ipcService', () => ({
@@ -14,6 +14,8 @@ import { CronMailEventFields } from '../../../src/renderer/components/features/c
 import { CronEventScheduleFields } from '../../../src/renderer/components/features/cron/CronEventScheduleFields';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import type { ModelConfig } from '../../../src/shared/contract/model';
+import { ScheduleConfirmCard } from '../../../src/renderer/components/features/chat/ChatInput/ScheduleConfirmCard';
+import type { PendingScheduleDraft } from '../../../src/renderer/components/features/chat/ChatInput/useScheduleDraft';
 
 function setModel(provider: string, model: string, language: 'zh' | 'en') {
   const base = useAppStore.getState().modelConfig;
@@ -21,6 +23,67 @@ function setModel(provider: string, model: string, language: 'zh' | 'en') {
 }
 
 afterEach(cleanup);
+
+function ScheduleCardHarness({ initial }: { initial: PendingScheduleDraft }) {
+  const [draft, setDraft] = useState(initial);
+  return <ScheduleConfirmCard draft={draft} confirming={false} onConfirm={() => undefined}
+    onDismiss={() => undefined} onDraftChange={setDraft} />;
+}
+
+describe('ScheduleConfirmCard flat-fee budget note', () => {
+  it.each([
+    ['channel', 'zh'], ['channel', 'en'], ['mail', 'zh'], ['mail', 'en'],
+  ] as const)('%s draft (%s): live model changes preserve the edited budget', async (source, language) => {
+    setModel('xiaomi', 'mimo-v2.6-flash', language);
+    const draft: PendingScheduleDraft = {
+      draftId: 1,
+      sourceSessionId: null,
+      description: 'Summarize incoming messages',
+      input: {
+        name: 'Message summary', enabled: true, runsOn: 'local', scheduleType: 'event',
+        schedule: source === 'mail'
+          ? { type: 'event', source: 'connector', connector: 'mail', eventName: 'message', accountId: 'test-account' }
+          : { type: 'event', source: 'channel', eventName: 'message', accountId: 'test-account' },
+        action: { type: 'agent', agentType: 'default', prompt: 'Summarize the incoming message' },
+        maxRunBudget: 0.5,
+      },
+    };
+    const { container } = render(<ScheduleCardHarness initial={draft} />);
+    // Flush source-catalog effects without mocking either of the actual field components.
+    await act(async () => undefined);
+    const budget = screen.getByRole('spinbutton') as HTMLInputElement;
+    const note = screen.getByRole('note');
+    expect(container.querySelector('[data-schedule-confirm]')?.contains(note)).toBe(true);
+    expect(container.querySelector('[data-schedule-event-fields]')?.contains(note)).toBe(true);
+    expect(budget.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(note.textContent).toContain('mimo-v2.6-flash');
+    expect(note.textContent).toContain(language === 'zh' ? '美元上限对它不生效' : 'flat-fee model');
+
+    fireEvent.change(budget, { target: { value: '0.75' } });
+    act(() => setModel('deepseek', 'deepseek-chat', language));
+    expect(screen.queryAllByTestId('flat-fee-budget-note')).toHaveLength(0);
+    expect(screen.getByRole('spinbutton')).toBe(budget);
+    expect(budget.value).toBe('0.75');
+
+    act(() => setModel('xiaomi', 'mimo-v2.6-flash', language));
+    expect(screen.getAllByTestId('flat-fee-budget-note')).toHaveLength(1);
+    expect(budget.value).toBe('0.75');
+  });
+
+  it('time-only draft has neither the event budget input nor its note', () => {
+    setModel('xiaomi', 'mimo-v2.6-flash', 'zh');
+    render(<ScheduleCardHarness initial={{
+      sourceSessionId: null, description: 'Summarize messages every hour',
+      input: {
+        name: 'Hourly summary', enabled: true, runsOn: 'local', scheduleType: 'every',
+        schedule: { type: 'every', interval: 1, unit: 'hours' },
+        action: { type: 'agent', agentType: 'default', prompt: 'Summarize messages' },
+      },
+    }} />);
+    expect(screen.queryByRole('spinbutton')).toBeNull();
+    expect(screen.queryByTestId('flat-fee-budget-note')).toBeNull();
+  });
+});
 
 describe('FlatFeeBudgetNote', () => {
   it('包月默认模型：zh 提示点名模型并给出路', () => {

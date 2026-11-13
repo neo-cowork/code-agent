@@ -43,7 +43,7 @@ export function DelegationReceipt({ presentation }: { presentation: DelegationPr
   const failure = presentation.state === 'failed'
     ? agentFailureCopy(presentation.failureCode, t, presentation.failure)
     : presentation.failure;
-  const toolFailure = presentation.state === 'working'
+  const toolFailure = presentation.state === 'working' || presentation.state === 'cancelled'
     ? undefined
     : describeLastToolFailure(presentation.toolFailure, t);
 

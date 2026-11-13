@@ -7,3 +7,6 @@
  * 两侧都必须从这里取值，不许各写字面量。
  */
 export const CHAT_UPLOAD_DIR_NAME = 'code-agent-uploads';
+
+/** Per-folder request budget: half of the shared 20/min /api/upload/temp bucket, so single-file attachments right after a folder keep headroom. */
+export const MAX_FOLDER_PATH_UPLOADS = 10;

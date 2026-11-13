@@ -69,6 +69,21 @@ describe('getVoidedApprovalReason (real SQLite file)', () => {
     approvals.resolve({ id, status: 'rejected', feedback, resolvedAt });
   }
 
+  it.each(['pending', 'orphaned', 'voided'] as const)('stored payload lacking tool has no unknown shown fields (%s)', (status) => {
+    approvals.insert({
+      id: 'missing-name', kind: 'tool_approval', agentId: null, agentName: null, coordinatorId: null,
+      payload: { requestedAt: Date.now() } as never, submittedAt: Date.now(),
+    });
+    if (status === 'orphaned') db.prepare("UPDATE pending_approvals SET status = 'orphaned' WHERE id = ?").run('missing-name');
+    if (status === 'voided') approvals.resolve({
+      id: 'missing-name', status: 'rejected',
+      feedback: 'Auto-rejected after restart: expired_after_restart_24h', resolvedAt: Date.now(),
+    });
+    const [item] = new SessionAutomationService().listParkedApprovals();
+    expect(item.tool).toBe('');
+    expect(`${item.tool}${item.displayTool ?? ''}`).not.toContain('unknown');
+  });
+
   it('③a 重启后作废的行 → 与收件箱同一句话；无关会话 → null', () => {
     seedVoided('r1', 's1', 'Auto-rejected after restart: expired_after_restart_24h', Date.now());
     sessions.createSessionWithId('other', { title: 'o', modelConfig: { provider: 'openai', model: 'm' } });

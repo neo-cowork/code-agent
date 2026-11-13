@@ -2,6 +2,7 @@ import type { Router } from 'express';
 import type { DurableRunReadService } from '../../host/app/durableRunReadService';
 import type { RunRegistry } from '../../host/runtime/runRegistry';
 import { CANCELLATION_TIMEOUTS } from '../../shared/constants';
+import { getTaskManager } from '../../host/task/TaskManager';
 import { AgentCancelBodySchema } from './agentBodySchemas';
 import { isDurableTerminalNativeControl } from './agentDurableRouteLifecycle';
 
@@ -48,7 +49,14 @@ export function registerAgentCancelRoute(
     }
     const { runId, sessionId, abandonParked } = parsedBody.data;
     const target = runRegistry.resolve({ runId, sessionId });
+    // Web 主链的前台 run 只在 RunRegistry，TaskManager 看不到它——会话的后台委派任务/子代理
+    // 必须在这里同步发出 abort（idle 前台时 target 为空，也不能因此漏停后台）。
+    const stopSessionId = target?.context.sessionId ?? sessionId;
+    const backgroundSettled = stopSessionId
+      ? getTaskManager().cancelSessionBackgroundWork(stopSessionId)
+      : Promise.resolve();
     if (!target) {
+      await backgroundSettled;
       // 恢复成 waiting 的 durable run 没有 handle，resolve() 查不到；不兜底的话
       // 路由只会回 "No active agent"，run 永远到不了终态，同一会话也起不了新 run。
       // user_stop 停靠除外：那是用户自己停出来的（保留「继续」），重复 Stop 对它是
@@ -83,6 +91,7 @@ export function registerAgentCancelRoute(
     }
 
     await target.cancel('user');
+    await backgroundSettled;
 
     // Honest response: only claim "Cancelled" after the run left the active set
     // (registry unregister) or durable facts report terminal. Primary consumer

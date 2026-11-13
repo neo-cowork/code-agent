@@ -184,6 +184,7 @@ try {
   await gate('src-typecheck', true, () => command(['npm', 'run', 'typecheck']));
   await gate('shell', true, () => command([process.execPath, 'scripts/shell-fail-loud-lint.mjs']));
   await gate('shared-host-boundary', true, () => command([process.execPath, 'scripts/ci/shared-host-boundary.mjs']));
+  await gate('user-visible-leak', true, () => command([process.execPath, 'scripts/ci/user-visible-leak.mjs']));
   await gate('commit-checks', true, async () => {
     await command(['bash', 'scripts/check-prompt-version-bump.sh', '--base', receipt.baseSha, '--head', receipt.headSha]);
     const tsFiles = receipt.changedFiles.filter((file) => /\.tsx?$/.test(file) && fs.existsSync(file));

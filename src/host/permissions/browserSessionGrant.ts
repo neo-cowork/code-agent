@@ -36,10 +36,13 @@ export async function resolveBrowserSessionGrant(
       try {
         const { getManagedBrowserProviderAdapter, surfaceIdentityFromToolContext } = await import('../services/surfaceExecution/ManagedBrowserProviderAdapter');
         const identity = surfaceIdentityFromToolContext(context);
-        const binding = identity ? getManagedBrowserProviderAdapter().getBinding(identity) : null;
-        const browser = binding?.browserService;
-        const tab = browser?.isRunning() ? browser.getActiveTab() : null;
-        if (browser && tab && (!params.tabId || params.tabId === tab.id)) site = origin(browser.getLiveTabUrl(tab.id));
+        const adapter = getManagedBrowserProviderAdapter();
+        const binding = identity ? adapter.getBinding(identity) : null;
+        // browserAction selects the run-keyed service before adapter.execute; a
+        // binding can instead describe a shared user window. Read the action's
+        // service, without acquiring anything for an owner with no binding.
+        const browser = binding && identity ? adapter.getBrowserService(identity) : null;
+        if (browser?.isRunning()) site = origin(browser.getLiveTabUrl(params.tabId as string | undefined));
       } catch { /* A failed read never creates a browser or grants authority. */ }
     }
   }
@@ -57,10 +60,11 @@ export async function resolveBrowserSessionGrant(
  * companion/legacy answer surfaces. Any other browser answer mints nothing. */
 export function recordBrowserSessionGrant(response: PermissionResponse, request: PermissionRequest): boolean {
   if (!/^(Browser|browser_action|browser_navigate)(\.|$)/.test(request.tool)) return false;
-  // forceConfirm gates (dialog accept, clipboard) are one-shot: answering them never remembers anything.
-  if (request.forceConfirm === true) return true;
+  // Dialog and clipboard approvals are one-shot, including outer cards without forceConfirm.
+  if (request.forceConfirm === true
+    || !['open', 'wait_for_download'].includes(String(request.details.action))) return true;
   const target = request.details.browserSessionGrant?.target;
-  if ((response === 'allow_run' || response === 'allow_session') && request.sessionId && target && !request.forceConfirm) {
+  if ((response === 'allow_run' || response === 'allow_session') && request.sessionId && target && /^(open|wait_for_download)@https?:\/\//.test(target)) {
     mintToolSessionGrant(request.sessionId, request.tool, target);
   }
   return true;

@@ -48,8 +48,13 @@ export interface ComposerDraftWriter {
   dispose(): void;
 }
 
-export function composerDraftStorageKey(sessionId: string | null, sessionless: boolean): string | null {
-  if (sessionless) return null;
+export function composerDraftStorageKey(
+  sessionId: string | null,
+  sessionless: boolean,
+  scopeProjectId: string | null = null,
+): string | null {
+  // 项目页 composer（sessionless + 项目 id）按项目存草稿；其他 sessionless 场景仍不落盘
+  if (sessionless) return scopeProjectId ? `${COMPOSER_DRAFT_KEY_PREFIX}space:${scopeProjectId}` : null;
   if (sessionId === null) return COMPOSER_DRAFT_HOME_KEY;
   return `${COMPOSER_DRAFT_KEY_PREFIX}${sessionId}`;
 }

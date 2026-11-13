@@ -16,7 +16,7 @@ import {
   taskActivityIds,
 } from '../../../../../utils/agentActivity';
 
-type DelegationReceiptState = 'working' | 'completed' | 'failed';
+type DelegationReceiptState = 'working' | 'completed' | 'failed' | 'cancelled';
 
 interface DelegationReceiptOutput {
   id: string;
@@ -190,7 +190,9 @@ function fromTask(task: Task, t: Translations): DelegationPresentation {
     ? 'working'
     : task.status === 'completed'
       ? 'completed'
-      : 'failed';
+      : task.status === 'cancelled'
+        ? 'cancelled'
+        : 'failed';
   return {
     state,
     title: t === languages.en && task.source === 'delegate_task' && containsCjk(task.title)

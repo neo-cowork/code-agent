@@ -5,6 +5,7 @@ import { outcomeWordsZh } from './outcomeWords';
 import { turnFeedbackWhyEn, turnFeedbackWhyZh } from './turnFeedbackWhy';
 import { evalBridgeEn, evalBridgeZh } from './evalBridge';
 import { wakeRationaleEn, wakeRationaleZh } from './wakeRationale';
+import { durableStoppedEn, durableStoppedZh } from './durableStopped';
 // Chat 输入区词条（ChatInput index / InputArea / AttachmentBar / SendButton /
 // useFileUpload / ScheduleComposerCard / 长尾组件与 hook）—— zh/en 同文件相邻维护。
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮（同 chatTranscript.ts 先例）。
@@ -14,6 +15,7 @@ export const chatInputZh = {
   ...evalBridgeZh,
   ...turnFeedbackWhyZh,
   ...wakeRationaleZh,
+  ...durableStoppedZh,
   chatInput: {
     stepLimitContinue: '继续',
     viewPlan: '查看实现计划',
@@ -26,6 +28,7 @@ export const chatInputZh = {
     sendAria: '发送消息',
     processingRuntimeInputAria: '正在处理运行中输入',
     stopAria: '停止',
+    stoppingAria: '正在停止',
     continueAria: '继续上次中断的任务',
     continueLabel: '继续',
     backgroundHandoffLabel: '转后台继续聊',
@@ -74,6 +77,7 @@ export const chatInputZh = {
     uploadTextFailed: '文件 "{name}" 读取失败：无法读取文本文件内容。请检查文件是否损坏或重新选择',
     uploadEmptyFolder: '文件夹 "{name}" 中没有可处理的文件。请选择包含可读文件的文件夹',
     folderSummaryCount: '{count} 个文件',
+    folderPathUnresolved: '无法确定文件夹的可读路径；请以各文件单独提供的路径为准。',
     folderSummaryTruncated: ' (仅处理前 {max} 个)',
     pdfExtractIpcFailed: '[PDF 解析失败: IPC 调用失败]',
     pdfExtractFailedPrefix: '[PDF 解析失败: {err}]',
@@ -490,6 +494,7 @@ export const chatInputEn: typeof chatInputZh = {
   ...evalBridgeEn,
   ...turnFeedbackWhyEn,
   ...wakeRationaleEn,
+  ...durableStoppedEn,
   chatInput: {
     stepLimitContinue: 'Continue',
     viewPlan: 'View implementation plan',
@@ -502,6 +507,7 @@ export const chatInputEn: typeof chatInputZh = {
     sendAria: 'Send message',
     processingRuntimeInputAria: 'Processing runtime input',
     stopAria: 'Stop',
+    stoppingAria: 'Stopping',
     continueAria: 'Continue the interrupted task',
     continueLabel: 'Continue',
     backgroundHandoffLabel: 'Background & chat',
@@ -547,6 +553,7 @@ export const chatInputEn: typeof chatInputZh = {
     uploadTextFailed: 'Failed to read "{name}": could not read the text content. Check the file or pick another',
     uploadEmptyFolder: 'Folder "{name}" has no processable files. Pick a folder with readable files',
     folderSummaryCount: '{count} files',
+    folderPathUnresolved: 'Folder path unresolved; use the readable path supplied for each file.',
     folderSummaryTruncated: ' (only the first {max} processed)',
     pdfExtractIpcFailed: '[PDF parsing failed: IPC call failed]',
     pdfExtractFailedPrefix: '[PDF parsing failed: {err}]',

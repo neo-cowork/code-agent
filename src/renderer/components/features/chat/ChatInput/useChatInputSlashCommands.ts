@@ -45,6 +45,12 @@ export interface UseChatInputSlashCommandsParams {
   openSeedComposer: (kind: SeedComposerKind) => void;
   /** 清空输入框、结束当前草稿时丢掉失败重发 pending id。 */
   onComposerDraftDiscarded?: () => void;
+  /**
+   * 无会话语境（协作空间页 composer）：选中未挂载 skill 不抢先建会话——只记当轮选择
+   * （chip + selectedSkillIds），挂载推迟到发送时由宿主把 skill 落进新会话
+   * （ProjectComposer.handleSend）。false 时行为与历史逐字节一致。
+   */
+  deferMountUntilSend?: boolean;
 }
 
 /**
@@ -73,6 +79,7 @@ export function useChatInputSlashCommands(params: UseChatInputSlashCommandsParam
     setActiveAgentId,
     openSeedComposer,
     onComposerDraftDiscarded,
+    deferMountUntilSend = false,
   } = params;
 
   const setSelectedSkillIds = useComposerStore((state) => state.setSelectedSkillIds);
@@ -106,7 +113,7 @@ export function useChatInputSlashCommands(params: UseChatInputSlashCommandsParam
     recommendation?: SkillRecommendationView;
     recommendationAction?: 'mount' | 'install';
   }): Promise<boolean> => {
-    if (!input.mounted) {
+    if (!input.mounted && !deferMountUntilSend) {
       const targetSessionId = await ensureSessionForSkill();
       if (!targetSessionId) {
         toast.error(t.slashSelect.mountSkillNoSession);
@@ -134,6 +141,7 @@ export function useChatInputSlashCommands(params: UseChatInputSlashCommandsParam
     markSkillSelected(input.skillName);
     return true;
   }, [
+    deferMountUntilSend,
     ensureSessionForSkill,
     focusComposer,
     installRecommendedSkill,

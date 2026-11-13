@@ -953,27 +953,34 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
         const state = tm.getSessionState(resolvedSessionId);
         if (isTaskManagerOwnedRunState(state.status)) {
-          await tm.cancelTask(resolvedSessionId);
+          await tm.cancelTask(resolvedSessionId, { keepBackground: normalizedReason === 'session-switch' });
         } else {
-          // 停靠待「继续」的 durable run（quota_wait / user_stop / guard_halt）没有活 loop：
-          // TaskManager 是 idle，orchestrator.cancel 对已结束的 loop 只发事件，parked run 会一直
-          // waiting、quotaWaitTimer 到点仍自动续跑——与用户显式取消相反。走 web /api/cancel 同款
-          // terminalRecoveredWaitingRun 终态化（同时清 due timer），命中即收工。
-          // user_stop 停靠只被显式「放弃」（abandonParked）终态化：重复 Stop/ESC 对它是 no-op，
-          // 不覆写「继续」投影（N-FIX-STOP-BEFORE-FIRST-RESPONSE-STUCK-RUNNING-FU1）。
-          const parked = await this.externalRunRegistry?.terminalRecoveredWaitingRun(
-            { sessionId: resolvedSessionId },
-            undefined,
-            { abandonParked: options?.abandonParked === true },
-          );
-          if (parked) return;
-          const orchestrator = this.getOrchestratorOrThrow(resolvedSessionId);
-          // Legacy orchestrator.cancel signature accepts 'user' | 'session-switch'
-          // — map our cascade reasons back for backward compatibility.
-          const legacyReason = normalizedReason === 'session-switch'
-            ? 'session-switch'
-            : 'user';
-          await orchestrator.cancel(legacyReason);
+          const backgroundSettled = normalizedReason === 'session-switch'
+            ? Promise.resolve()
+            : tm.cancelSessionBackgroundWork(resolvedSessionId);
+          try {
+            // 停靠待「继续」的 durable run（quota_wait / user_stop / guard_halt）没有活 loop：
+            // TaskManager 是 idle，orchestrator.cancel 对已结束的 loop 只发事件，parked run 会一直
+            // waiting、quotaWaitTimer 到点仍自动续跑——与用户显式取消相反。走 web /api/cancel 同款
+            // terminalRecoveredWaitingRun 终态化（同时清 due timer），命中即收工。
+            // user_stop 停靠只被显式「放弃」（abandonParked）终态化：重复 Stop/ESC 对它是 no-op，
+            // 不覆写「继续」投影（N-FIX-STOP-BEFORE-FIRST-RESPONSE-STUCK-RUNNING-FU1）。
+            const parked = await this.externalRunRegistry?.terminalRecoveredWaitingRun(
+              { sessionId: resolvedSessionId },
+              undefined,
+              { abandonParked: options?.abandonParked === true },
+            );
+            if (parked) return;
+            const orchestrator = this.getOrchestratorOrThrow(resolvedSessionId);
+            // Legacy orchestrator.cancel signature accepts 'user' | 'session-switch'
+            // — map our cascade reasons back for backward compatibility.
+            const legacyReason = normalizedReason === 'session-switch'
+              ? 'session-switch'
+              : 'user';
+            await orchestrator.cancel(legacyReason);
+          } finally {
+            await backgroundSettled;
+          }
         }
       } finally {
         this.cancelInFlight.delete(resolvedSessionId);

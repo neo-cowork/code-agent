@@ -43,9 +43,9 @@ const SESSION_B = 'session-b';
 const KEY_A = composerDraftStorageKey(SESSION_A, false)!;
 const KEY_B = composerDraftStorageKey(SESSION_B, false)!;
 
-function DraftHarness({ sessionId = SESSION_A, sessionless = false }: { sessionId?: string | null; sessionless?: boolean }) {
+function DraftHarness({ sessionId = SESSION_A, sessionless = false, scopeProjectId = null }: { sessionId?: string | null; sessionless?: boolean; scopeProjectId?: string | null }) {
   const [value, setValue] = useState('');
-  const draft = useComposerDraftPersistence({ sessionId, sessionless, value, setValue });
+  const draft = useComposerDraftPersistence({ sessionId, sessionless, scopeProjectId, value, setValue });
   return (
     <div>
       {draft.notice && (
@@ -383,5 +383,60 @@ describe('UnsentDraftNotice restart', () => {
     await act(async () => { await tracked; });
     expect(readComposerDraft(HOME)).toBeNull();
     expect(second.result.current.notice).toBeNull();
+  });
+});
+
+describe('project-page (sessionless) composer draft', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+    localStorage.clear();
+  });
+
+  const type = async (text: string) => {
+    fireEvent.change(screen.getByTestId('composer-draft-box'), { target: { value: text } });
+    await act(async () => { await vi.advanceTimersByTimeAsync(COMPOSER_DRAFT_DEBOUNCE_MS); });
+  };
+
+  it('离开项目页再回来：同项目草稿可放回，其他项目看不到', async () => {
+    const first = render(<DraftHarness sessionId={null} sessionless scopeProjectId="proj-1" />);
+    await type('很长的周报草稿');
+    first.unmount();
+
+    render(<DraftHarness sessionId={null} sessionless scopeProjectId="proj-1" />);
+    fireEvent.click(screen.getByTestId('unsent-draft-put-back'));
+    expect((screen.getByTestId('composer-draft-box') as HTMLTextAreaElement).value).toBe('很长的周报草稿');
+    cleanup();
+
+    render(<DraftHarness sessionId={null} sessionless scopeProjectId="proj-2" />);
+    expect(screen.queryByTestId('unsent-draft-notice')).toBeNull();
+    // 首页草稿键不受影响
+    expect(readComposerDraft(composerDraftStorageKey(null, false))).toBeNull();
+  });
+
+  it('发送成功后清掉项目草稿；无项目 id 的 sessionless 仍不落盘', async () => {
+    const { result, rerender } = renderHook(
+      ({ value }: { value: string }) => useComposerDraftPersistence({
+        sessionId: null,
+        sessionless: true,
+        scopeProjectId: 'proj-1',
+        value,
+        setValue: () => undefined,
+      }),
+      { initialProps: { value: '发出去的内容' } },
+    );
+    await act(async () => { await vi.advanceTimersByTimeAsync(COMPOSER_DRAFT_DEBOUNCE_MS); });
+    const key = composerDraftStorageKey(null, true, 'proj-1')!;
+    expect(readComposerDraft(key)).toBe('发出去的内容');
+    await act(async () => { await result.current.trackSend(() => true); });
+    rerender({ value: '' });
+    await act(async () => { await vi.advanceTimersByTimeAsync(COMPOSER_DRAFT_DEBOUNCE_MS); });
+    expect(readComposerDraft(key)).toBeNull();
+    expect(composerDraftStorageKey(null, true)).toBeNull();
   });
 });
