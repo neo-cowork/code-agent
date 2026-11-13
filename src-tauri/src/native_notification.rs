@@ -173,6 +173,18 @@ impl ClickDelivery {
         self.ready = true;
         std::mem::take(&mut self.pending)
     }
+
+    /// The event transport may be unavailable. The timer and event compete under
+    /// the same mutex, so only the first release drains the queue (and may warn).
+    fn renderer_ready_timeout(
+        &mut self,
+        elapsed: Duration,
+    ) -> Option<(&'static str, Vec<serde_json::Value>)> {
+        if self.ready || elapsed < crate::RENDERER_READY_TIMEOUT {
+            return None;
+        }
+        Some(("notification-click-ready-timeout", self.renderer_ready()))
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -264,6 +276,7 @@ mod delegate {
         app: AppHandle,
         focus: fn(&AppHandle) -> bool,
     ) -> Result<(), &'static str> {
+        let installed_at = std::time::Instant::now();
         let center = UNUserNotificationCenter::currentNotificationCenter();
         let clicks = Arc::new(Mutex::new(ClickDelivery::default()));
         let ready_clicks = clicks.clone();
@@ -283,6 +296,8 @@ mod delegate {
                 }
             }
         });
+        let timeout_app = app.clone();
+        let timeout_clicks = clicks.clone();
         let this = NotificationDelegate::alloc().set_ivars(DelegateIvars { app, focus, clicks });
         // SAFETY: NSObject's init has this signature and initializes our superclass.
         let delegate: Retained<NotificationDelegate> = unsafe { msg_send![super(this), init] };
@@ -293,6 +308,30 @@ mod delegate {
         // setDelegate is weak. Keep this one delegate, including its AppHandle,
         // alive until process exit, independent of the setup stack frame.
         std::mem::forget(delegate);
+        // Reuse the shell's window-ready budget. A timer drains even a lone click;
+        // waiting for the next click would leave the original one stuck forever.
+        std::thread::spawn(move || {
+            std::thread::sleep(
+                crate::RENDERER_READY_TIMEOUT.saturating_sub(installed_at.elapsed()),
+            );
+            let release = timeout_clicks
+                .lock()
+                .expect("notification click mutex poisoned")
+                .renderer_ready_timeout(installed_at.elapsed());
+            if let Some((reason, pending)) = release {
+                eprintln!(
+                    "[native_notification] WARN {reason}: released {} queued click(s)",
+                    pending.len()
+                );
+                for payload in pending {
+                    if let Err(error) = timeout_app.emit("notification-clicked", payload) {
+                        eprintln!(
+                            "[native_notification] WARN timed-out notification-click emit failed: {error}"
+                        );
+                    }
+                }
+            }
+        });
         Ok(())
     }
 }
@@ -595,6 +634,50 @@ mod tests {
         );
         assert_eq!(delivery.receive(payload.clone()), None);
         assert_eq!(delivery.renderer_ready(), vec![payload.clone()]);
+        assert!(delivery.renderer_ready().is_empty());
+        assert_eq!(delivery.receive(payload.clone()), Some(payload));
+    }
+
+    #[test]
+    fn cold_click_ready_timeout_drains_once_and_delivers_later_clicks_immediately() {
+        let mut delivery = super::ClickDelivery::default();
+        let first = super::clicked_payload("first", Some("session-first"));
+        let second = super::clicked_payload("second", None);
+        assert_eq!(delivery.receive(first.clone()), None);
+        assert_eq!(delivery.receive(second.clone()), None);
+        assert_eq!(
+            delivery.renderer_ready_timeout(
+                crate::RENDERER_READY_TIMEOUT - std::time::Duration::from_nanos(1)
+            ),
+            None
+        );
+        assert_eq!(
+            delivery.renderer_ready_timeout(crate::RENDERER_READY_TIMEOUT),
+            Some((
+                "notification-click-ready-timeout",
+                vec![first.clone(), second]
+            ))
+        );
+        // Neither a later timer check nor a late ready event replays the clicks.
+        assert_eq!(
+            delivery.renderer_ready_timeout(crate::RENDERER_READY_TIMEOUT),
+            None
+        );
+        assert!(delivery.renderer_ready().is_empty());
+        assert_eq!(delivery.receive(first.clone()), Some(first));
+    }
+
+    #[test]
+    fn cold_click_ready_event_preempts_timeout_without_warning() {
+        let mut delivery = super::ClickDelivery::default();
+        let payload = super::clicked_payload("event-first", Some("session-event"));
+        assert_eq!(delivery.receive(payload.clone()), None);
+        assert_eq!(delivery.renderer_ready(), vec![payload.clone()]);
+        // None means no timeout reason, so the production timer emits no warning.
+        assert_eq!(
+            delivery.renderer_ready_timeout(crate::RENDERER_READY_TIMEOUT),
+            None
+        );
         assert!(delivery.renderer_ready().is_empty());
         assert_eq!(delivery.receive(payload.clone()), Some(payload));
     }
