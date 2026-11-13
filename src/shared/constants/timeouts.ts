@@ -229,6 +229,13 @@ export const LIBRARY_TIMEOUTS = {
 
 /** 浏览器操作超时 */
 export const BROWSER_TIMEOUTS = {
+  /** Minimum age before crash-leftover isolated profiles may be reclaimed. */
+  ISOLATED_PROFILE_SWEEP_GRACE: 10 * 60_000,
+  /** Bound size accounting across one sweep; incomplete profiles are kept. */
+  ISOLATED_PROFILE_SWEEP_MAX_ENTRIES: 10_000,
+  /** Reject oversized or malformed owner metadata without an unbounded read. */
+  ISOLATED_PROFILE_SWEEP_OWNER_MAX_BYTES: 1_024,
+  ISOLATED_PROFILE_SWEEP_WALK_BUDGET: 2_000,
   /** 浏览器操作默认超时 */
   ACTION_DEFAULT: 30_000,
   /** 等待选择器超时 */
@@ -459,6 +466,11 @@ export const CANCELLATION_TIMEOUTS = {
   ROUTE_SETTLE_WAIT: 15_000,
   /** `/api/cancel` 终态轮询间隔 */
   ROUTE_SETTLE_POLL: 50,
+  /**
+   * 用户 Stop 时等待会话后台任务收线的上限（须小于验收口径的 3 s）。
+   * 超时只 warn 未收线的任务 id，不阻塞前台取消返回。
+   */
+  SESSION_BACKGROUND_SETTLE_WAIT: 2_500,
 } as const;
 
 /** Subagent 执行生命周期预算。 */

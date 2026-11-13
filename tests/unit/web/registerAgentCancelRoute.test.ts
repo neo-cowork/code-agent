@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DurableRunReadService } from '../../../src/host/app/durableRunReadService';
 import { RunRegistry } from '../../../src/host/runtime/runRegistry';
 import { DurableRunKernel } from '../../../src/host/runtime/durableRunKernel';
+import { getTaskManager } from '../../../src/host/task/TaskManager';
 import { DurableRunRepository } from '../../../src/host/services/core/repositories/DurableRunRepository';
 
 vi.unmock('better-sqlite3');
@@ -394,6 +395,46 @@ describe('registerAgentCancelRoute honest cancel settlement (A3)', () => {
       registry.clear();
       db.close();
       rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+  // N-FIX-COMPOSER-STOP-BG-BROWSER-SUBAGENT-REDESIGN：web 主链前台 run 只在 RunRegistry，
+  // 前台 idle（委派之后的常态）时 resolve() 为空——后台级联仍须发出，否则 Stop 静默无效。
+  it('fires the session background cascade even when no foreground run is registered', async () => {
+    const cascade = vi.spyOn(getTaskManager(), 'cancelSessionBackgroundWork').mockResolvedValue(undefined);
+    try {
+      await start(new RunRegistry());
+      const response = await fetch(`${baseUrl}/api/cancel`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sessionId: 'session-idle-foreground' }),
+      });
+
+      expect(response.status).toBe(200);
+      expect(cascade).toHaveBeenCalledTimes(1);
+      expect(cascade).toHaveBeenCalledWith('session-idle-foreground');
+    } finally {
+      cascade.mockRestore();
+    }
+  });
+
+  it('fires the cascade for the resolved run session when the caller only sent a runId', async () => {
+    const cascade = vi.spyOn(getTaskManager(), 'cancelSessionBackgroundWork').mockResolvedValue(undefined);
+    try {
+      const registry = new RunRegistry();
+      const handle = registry.start({ runId: 'run-cascade', sessionId: 'session-cascade', workspace: '/tmp/native-run-workspace' });
+      await handle.attach({ cancel: async () => { registry.unregister(handle.context.runId, handle); } });
+      await start(registry);
+
+      const response = await fetch(`${baseUrl}/api/cancel`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ runId: 'run-cascade' }),
+      });
+
+      expect(response.status).toBe(200);
+      expect(cascade).toHaveBeenCalledWith('session-cascade');
+    } finally {
+      cascade.mockRestore();
     }
   });
 });

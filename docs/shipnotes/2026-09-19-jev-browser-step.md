@@ -4,14 +4,14 @@
 
 ## 开关与装配
 
-- `CODE_AGENT_BROWSER_JEV_STEP=1` 显式开；缺 `TYPESAFE_API_KEY` 时 warn 一行且不装配。
+- 2026-11-03 起默认开：`CODE_AGENT_BROWSER_JEV_STEP=0` 关；未设或 `=1` 开。仅在解析得到可用 Jev 路由（官方 key / 已同意的 OpenRouter / 已登录托管）时 `execute_goal` 才进工具表；无路由时工具表与关闭时逐字节一致，并 warn 一行、不装配。
 - `CODE_AGENT_BROWSER_JEV_SOFT_STEP_LIMIT` 覆盖软步顶（正整数，封顶硬顶 60；缺省 20）。
 - `CODE_AGENT_BROWSER_JEV_USD_BUDGET` 覆盖每任务 Jev 美元预算（正数；缺省 0.03，超限 fallback 回落主模型）。
 - 不拦截现有 `click` / `type` / `get_dom_snapshot`。工具面 interactive cap 仍为 80。
 
 ## 数据出境（FolderTrust / 权限披露）
 
-开启后，以下字段会经 `guardSensitiveText` 后再发到 `api.typesafe.ai`（TypeSafe System One，`jev-1.13.0`）。注入扫描命中 critical 则不调用 Jev。未开启则零出境。
+有可用 Jev 路由时（默认开），以下字段会经 `guardSensitiveText` 后再发到 `api.typesafe.ai`（TypeSafe System One，`jev-1.13.0`）。注入扫描命中 critical 则不调用 Jev。设 `CODE_AGENT_BROWSER_JEV_STEP=0` 或关闭设置里的 Jev 总开关，或没有可用路由，则零出境。
 
 - 已脱敏的浏览器 DOM 文本：页面标题、heading、窗口内候选控件短标签；密码/文件字段在窗口选择前丢弃
 - `page.url`（截 1500）
