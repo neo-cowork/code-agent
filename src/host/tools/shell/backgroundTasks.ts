@@ -350,16 +350,39 @@ function registerBackgroundTaskProcess(
   return { success: true, taskId, outputFile };
 }
 
+const NAME_MAX = 40;
+const WRAPPERS = new Set(['sudo', 'env', 'command', 'exec', 'nohup', 'time', 'nice', 'timeout', 'stdbuf', 'xargs', 'sandbox-exec', 'caffeinate']);
+
+function shortTarget(command: string): string {
+  const url = command.match(/\bhttps?:\/\/([^\s/'"?#\\;|&]+)/i);
+  if (url) return url[1].replace(/^[^@]*@/, '').slice(0, NAME_MAX);
+  // Only the first line / first pipeline segment; skip `cd x &&` prefixes.
+  const first = command.split(/\r?\n/).map((l) => l.trim()).find((l) => l && !l.startsWith('#')) ?? '';
+  const segments = first.split(/&&|\|\||;|\|/).map((s) => s.trim()).filter(Boolean);
+  const seg = segments.find((s) => !/^(cd|export|set|source|\.)\s/.test(s)) ?? segments[0] ?? '';
+  const tokens = seg.split(/\s+/).filter(Boolean);
+  for (let i = 0; i < tokens.length; i++) {
+    const tok = tokens[i].replace(/^['"]|['"]$/g, '');
+    if (!tok || tok.startsWith('-') || /^[A-Za-z_][A-Za-z0-9_]*=/.test(tok) || /^[<>&\d]/.test(tok)) continue;
+    if (WRAPPERS.has(tok)) continue;
+    const base = tok.split('/').filter(Boolean).pop() ?? '';
+    if (base) return base.slice(0, NAME_MAX);
+  }
+  return '';
+}
+
 /**
  * One user-readable name for a background shell/PTY task: the model's Bash `description`
- * when usable (single line, <= 60 chars), else the unwrapped original command.
+ * when usable (single line, <= 60 chars), else a short human target derived from the command
+ * (URL => host[:port], otherwise the executable basename). Never the raw command line;
+ * the full command lives in `displayCommand`.
  */
 export function resolveBackgroundTaskName(description: unknown, command: string): string {
   if (typeof description === 'string') {
     const trimmed = description.trim();
     if (trimmed && !/[\r\n]/.test(trimmed) && trimmed.length <= 60) return trimmed;
   }
-  return command;
+  return shortTarget(command) || 'Background task';
 }
 
 /**
