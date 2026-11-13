@@ -19,7 +19,11 @@ function setup(adopt: Links['adopt']) {
       handlers.set(channel, handler);
     }),
   } as unknown as IpcMain;
-  const pool = { setKept: vi.fn(), releaseAgent: vi.fn(async () => undefined) };
+  const pool = {
+    setKept: vi.fn(),
+    releaseAgent: vi.fn(async () => undefined),
+    isServiceAlive: vi.fn(() => true),
+  };
   const registry = new KeptBrowserRegistry(pool);
   const links = {
     open: vi.fn(), end: vi.fn(), history: vi.fn(), dispatchUserInput: vi.fn(), setViewport: vi.fn(),
