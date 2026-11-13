@@ -41,6 +41,8 @@ export type ClarifyGuardVerdict =
   | { kind: 'clarify'; rule: ClarifyGuardRule; candidateNames: string[] };
 
 const MAX_QUESTION_CANDIDATES = 8;
+// A spoken full title outranks every partial signal, so it can never be tied by partial matches.
+const FULL_TITLE_SCORE = 1000;
 
 // Rule 1 evidence: the user explicitly asks for a brand-new session/task. "那个新开的会话"
 // (a definite, already-existing session) deliberately does not match.
@@ -161,8 +163,8 @@ function hasNoTaskContent(message: string, candidates: ReadonlyArray<ClarifyGuar
 }
 
 /**
- * Evidence strength of "the user's words point at this candidate": a full title counts 3, an ASCII token that
- * belongs to this candidate only counts 2, a shared Chinese bigram (or an English alias for one) counts 1.
+ * Evidence strength of "the user's words point at this candidate": a full title dominates, an ASCII token that
+ * belongs to this candidate only counts 2, each shared Chinese bigram (or an English alias for one) counts 1.
  * Ambiguous = the best score is shared by two or more candidates and no full title was spoken.
  */
 function isAmbiguousReference(rawMessage: string, candidates: ReadonlyArray<ClarifyGuardCandidate>): boolean {
@@ -174,13 +176,13 @@ function isAmbiguousReference(rawMessage: string, candidates: ReadonlyArray<Clar
   for (const tokens of tokensOf) for (const token of tokens) tokenOwners.set(token, (tokenOwners.get(token) ?? 0) + 1);
   const scores = candidates.map((candidate, index) => {
     const title = normalize(candidate.shortName);
-    let score = title.length >= 2 && flat.includes(title) ? 3 : 0;
+    let score = title.length >= 2 && flat.includes(title) ? FULL_TITLE_SCORE : 0;
     for (const token of tokensOf[index]) if (tokenOwners.get(token) === 1 && lower.includes(token)) score += 2;
     score += new Set(bigrams(candidate.shortName).filter((gram) => message.includes(gram))).size;
     return score;
   });
   const top = Math.max(0, ...scores);
-  return top > 0 && top < 3 && scores.filter((score) => score === top).length >= 2;
+  return top > 0 && top < FULL_TITLE_SCORE && scores.filter((score) => score === top).length >= 2;
 }
 
 function clarify(rule: ClarifyGuardRule, candidates: ReadonlyArray<ClarifyGuardCandidate>): ClarifyGuardVerdict {

@@ -27,6 +27,8 @@ const sessions = [
   { id: 'sid-cli', title: 'CLI重构', workingDirectory: '/workspace/origin', updatedAt: NOW, sessionType: 'chat' as const, engineKind: 'native' },
   { id: 'sid-ui', title: '组件库重构', workingDirectory: '/workspace/origin', updatedAt: NOW - 1, sessionType: 'chat' as const, engineKind: 'native' },
   { id: 'sid-docs', title: '文档站', workingDirectory: '/workspace/origin', updatedAt: NOW - 2, sessionType: 'chat' as const, engineKind: 'native' },
+  { id: 'sid-site-design', title: '官网改版首页设计稿会话确认', workingDirectory: '/workspace/origin', updatedAt: NOW - 3, sessionType: 'chat' as const, engineKind: 'native' },
+  { id: 'sid-site-copy', title: '官网改版落地页文案专属会话', workingDirectory: '/workspace/origin', updatedAt: NOW - 4, sessionType: 'chat' as const, engineKind: 'native' },
 ];
 
 function setup(userMessage: string | null) {
@@ -84,6 +86,25 @@ describe('delegate_session clarify guard (needs_clarification)', () => {
     expect(error).not.toContain(refOf('CLI重构'));
     expect(rows()).toEqual({ delegations: 0, queued: 0 });
     expect(loggerInfo).toHaveBeenCalledWith('[DelegateSession] outcome', expect.objectContaining({ outcome: 'rejected', code: 'needs_clarification' }));
+    db.close();
+  });
+
+  it('fires when two long titles share the same prefix and the user only said the shared part', async () => {
+    process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
+    const { db, projection, refOf, rows } = setup('把这条备注发给官网改版那边的会话：周五前配色再对一遍');
+    const result = await executeDelegateSession({ action: 'delegate_existing', candidateSetId: projection.candidateSetId, candidateRef: refOf('官网改版首页设计稿会话确认'), text: '周五前配色再对一遍' }, ctx, allow);
+    expect(result).toMatchObject({ ok: false, meta: { code: 'needs_clarification', rule: 'ambiguous_reference' } });
+    expect((result as { error: string }).error).toContain('「官网改版落地页文案专属会话」');
+    expect(rows()).toEqual({ delegations: 0, queued: 0 });
+    db.close();
+  });
+
+  it('does not fire when the user names enough of one long title', async () => {
+    process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
+    const { db, projection, refOf, rows } = setup('把这条备注发给官网改版首页设计稿那个会话：周五前配色再对一遍');
+    const result = await executeDelegateSession({ action: 'delegate_existing', candidateSetId: projection.candidateSetId, candidateRef: refOf('官网改版首页设计稿会话确认'), text: '周五前配色再对一遍' }, ctx, allow);
+    expect(result.ok).toBe(true);
+    expect(rows().delegations).toBe(1);
     db.close();
   });
 
