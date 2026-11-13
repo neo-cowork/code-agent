@@ -116,6 +116,16 @@ describe('POST /api/upload/temp/batch through the Express app', () => {
     expect(await response.json()).toEqual({ error: 'File exceeds 50MB limit' });
   });
 
+  it('preserves non-upload mounted API traffic while applying the dedicated upload quotas', async () => {
+    // Normal renderer boot/polling exceeds 100 requests; this ticket must not activate
+    // the previously unmatched generic rule for those already-mounted paths.
+    for (let n = 0; n < 110; n++) {
+      const response = await fetch(baseUrl + '/api/health');
+      expect(response.status).toBe(200);
+      await response.text();
+    }
+  });
+
   it('one batch leaves all 20 single uploads available; independent batch bucket allows 6, then 429', async () => {
     const statuses: number[] = [];
     const first = await post('/api/upload/temp/batch', batch(['contract.pdf']));

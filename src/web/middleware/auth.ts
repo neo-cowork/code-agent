@@ -178,8 +178,10 @@ function checkRateLimit(ip: string, routePath: string): { allowed: boolean; retr
 
 export function rateLimitMiddleware(req: Request, res: Response, next: NextFunction): void {
   const ip = req.ip || req.socket.remoteAddress || 'unknown';
-  // Match public routes, including Express default case/trailing-slash aliases.
-  const routePath = (req.baseUrl + req.path).toLowerCase().replace(/\/+$/, '');
+  // Restore the mount prefix only for uploads; preserve other routes' existing matching.
+  const publicPath = (req.baseUrl + req.path).toLowerCase().replace(/\/+$/, '');
+  const routePath = publicPath === '/api/upload/temp' || publicPath === '/api/upload/temp/batch'
+    ? publicPath : req.path;
   const result = checkRateLimit(ip, routePath);
   if (!result.allowed) {
     res.setHeader('Retry-After', String(Math.ceil((result.retryAfterMs || 60_000) / 1000)));
