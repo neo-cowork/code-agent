@@ -69,4 +69,10 @@ describe('auth_failed / quota_exhausted（2026-08-30 欠费卡死批）', () => 
   it('裸 429 限流不算欠费（quota 语义只认文案/402）', () => {
     expect(classifyModelErrorMessage('rate limit exceeded', 429)).toBeNull();
   });
+
+  it('2xx 坏响应体终态文案归 incomplete_response，且不含内部词', () => {
+    const text = '模型服务返回的内容不完整，已自动重试一次仍然失败。\n建议：请稍后再试一次；持续失败就在输入框右下角换一个模型。';
+    expect(classifyModelErrorMessage(text)?.code).toBe('incomplete_response');
+    expect(summarizeModelErrorForUser(text)).toBe(text);
+  });
 });
