@@ -178,8 +178,9 @@ function checkRateLimit(ip: string, routePath: string): { allowed: boolean; retr
 
 export function rateLimitMiddleware(req: Request, res: Response, next: NextFunction): void {
   const ip = req.ip || req.socket.remoteAddress || 'unknown';
-  // Express strips /api from req.path when mounted there; match the public route.
-  const result = checkRateLimit(ip, req.baseUrl + req.path);
+  // Match public routes, including Express default case/trailing-slash aliases.
+  const routePath = (req.baseUrl + req.path).toLowerCase().replace(/\/+$/, '');
+  const result = checkRateLimit(ip, routePath);
   if (!result.allowed) {
     res.setHeader('Retry-After', String(Math.ceil((result.retryAfterMs || 60_000) / 1000)));
     res.status(429).json({ error: 'Too many requests. Please try again later.' });

@@ -136,6 +136,10 @@ describe('POST /api/upload/temp/batch through the Express app', () => {
       await remember(response);
     }
     expect(batchStatuses).toEqual([...Array(6).fill(200), 429]);
-    process.stdout.write(`after batch 200, singles=${JSON.stringify(statuses)}; batch=${JSON.stringify(batchStatuses)}\n`);
+    for (const alias of ['/api/upload/temp/batch/', '/API/UPLOAD/TEMP/BATCH']) {
+      const response = await post(alias, batch(['contract.pdf']));
+      expect(response.status).toBe(429);
+    }
+    process.stdout.write(`after batch 200, singles=${JSON.stringify(statuses)}; batch=${JSON.stringify(batchStatuses)}; case/trailing-slash aliases=429\n`);
   });
 });
