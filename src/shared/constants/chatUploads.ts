@@ -7,3 +7,6 @@
  * 两侧都必须从这里取值，不许各写字面量。
  */
 export const CHAT_UPLOAD_DIR_NAME = 'code-agent-uploads';
+
+/** Per-folder request budget; the server still enforces its shared 20/min limit. */
+export const MAX_FOLDER_PATH_UPLOADS = 20;
