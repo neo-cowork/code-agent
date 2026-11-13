@@ -1166,3 +1166,45 @@ describe('live refresh (N-CRON-REVIEW-COUNT-LIVE)', () => {
     expect(listPendingReview.mock.calls.length).toBe(afterUnmount);
   });
 });
+
+
+describe('localized parked approval copy', () => {
+  it.each([
+    ['zh', '', '一项待确认的操作'],
+    ['en', '', 'A pending action'],
+    ['zh', '重启前发起 · ', '重启前发起 · 一项待确认的操作'],
+    ['en', '重启前发起 · ', 'Requested before restart · A pending action'],
+    ['zh', '重启前发起 · unknown', '重启前发起 · 一项待确认的操作'],
+    ['en', 'unknown', 'A pending action'],
+  ] as const)('no tool name (%s, %s) renders %s', async (language, displayTool, title) => {
+    i18nState.language = language;
+    // Missing payload.tool arrives as an empty string from the host; also protect stale sentinels.
+    listParkedApprovals.mockResolvedValue([makeParked({ tool: '', displayTool })]);
+    render(<AutomationReviewInbox />);
+    expect(await screen.findByText(title)).toBeTruthy();
+    expect(screen.getByTestId('parked-approval-item').textContent).not.toContain('unknown');
+  });
+
+  it.each([
+    ['zh', 0, '等待 不到 1 分钟'],
+    ['zh', 5 * 60_000, '等待 5 分钟'],
+    ['zh', 3 * 3_600_000, '等待 3 小时'],
+    ['zh', 2 * 86_400_000, '等待 2 天'],
+    ['en', 0, 'Waiting <1 min'],
+    ['en', 5 * 60_000, 'Waiting 5 min'],
+    ['en', 3 * 3_600_000, 'Waiting 3 h'],
+    ['en', 2 * 86_400_000, 'Waiting 2 d'],
+  ] as const)('waiting duration (%s, %d ms) renders %s', async (language, elapsed, text) => {
+    i18nState.language = language;
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      listParkedApprovals.mockResolvedValue([makeParked({ requestedAt: now - elapsed })]);
+      render(<AutomationReviewInbox />);
+      expect(await screen.findByText(text)).toBeTruthy();
+      expect(screen.getByTestId('parked-approval-item').textContent).not.toMatch(/0m\b/);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+});
