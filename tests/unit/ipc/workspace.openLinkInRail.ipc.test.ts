@@ -251,6 +251,7 @@ describe('workspace openLinkInRail wiring', () => {
     } satisfies IPCRequest) as { success: boolean; error?: { message?: string } };
 
     expect(response.success).toBe(false);
-    expect(response.error?.message).toContain('No kept result page');
+    expect(response.error?.message).toContain('这一页的浏览器窗口已经关闭');
+    expect(response.error?.message).not.toContain('No kept result page');
   });
 });

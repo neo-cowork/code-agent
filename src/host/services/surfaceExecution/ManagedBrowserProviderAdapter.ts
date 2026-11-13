@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { takeHostDomSnapshot } from '../infra/browser/domSnapshotHandoff';
+import { withManagedBrowserActivity } from '../infra/browser/managedBrowserActivity';
 import type { ToolContext, ToolExecutionResult } from '../../tools/types';
 import {
   browserPool,
@@ -508,146 +509,144 @@ export class ManagedBrowserProviderAdapter {
     const leaseOwner = isUserRun(identity)
       ? 'user-personal-browser'
       : `surface:${identity.runId}`;
-    // Do not force profileMode when reusing a live shared window — switching while
-    // running throws in BrowserService.launch.
-    await browserService.ensureSession('about:blank', {
-      ...((shared || keptService) ? {} : { profileMode }),
-      leaseOwner,
-      leaseTtlMs: SURFACE_PROFILE_TTL_MS,
-    });
-    const loginGatedSiteOrigin = await cronLoginGatedSiteOrigin(identity, this.resumeLogger);
-    if (loginGatedSiteOrigin && !isUserRun(identity)) {
-      const personalBrowser = this.acquireBrowser(null);
-      const personalBrowserWasRunning = personalBrowser.isRunning();
-      try {
-        // Export an already-running personal profile in place so we do not
-        // renew the user's lease under a different owner. If it is stopped,
-        // use a hidden/headless lease for the one export and release it below.
-        if (!personalBrowserWasRunning) {
-          await personalBrowser.ensureSession('about:blank', {
-            mode: 'headless',
-            profileMode: 'persistent',
-            leaseOwner: CRON_LOGIN_STATE_EXPORT_LEASE_OWNER,
-            leaseTtlMs: MANAGED_BROWSER_DEFAULT_LEASE_TTL_MS,
-          });
-        }
-        await importBrowserStorageStateForOrigin(
-          personalBrowser,
-          browserService,
-          loginGatedSiteOrigin,
-        );
-      } catch (error) {
-        this.resumeLogger.error('Failed to pass through cron site login state', {
-          conversationIdHash: hashIdentity([identity.conversationId]),
-          siteOrigin: loginGatedSiteOrigin,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      } finally {
-        if (!personalBrowserWasRunning) {
-          // A user can open the personal browser while the export is in flight.
-          // Only close the session while our temporary lease is still active;
-          // a different owner means the browser was taken over and must remain open.
-          const lease = personalBrowser.getSessionState().lease;
-          if (lease?.status === 'active' && lease.owner === CRON_LOGIN_STATE_EXPORT_LEASE_OWNER) {
-            await personalBrowser.close().catch((error) => {
-              this.resumeLogger.error('Failed to close personal browser after cron login state export', {
-                error: error instanceof Error ? error.message : String(error),
+    return withManagedBrowserActivity(browserService, async () => {
+      // Do not force profileMode when reusing a live shared window — switching while
+      // running throws in BrowserService.launch.
+      await browserService.ensureSession('about:blank', {
+        ...((shared || keptService) ? {} : { profileMode }),
+        leaseOwner,
+        leaseTtlMs: SURFACE_PROFILE_TTL_MS,
+      });
+      const loginGatedSiteOrigin = await cronLoginGatedSiteOrigin(identity, this.resumeLogger);
+      if (loginGatedSiteOrigin && !isUserRun(identity)) {
+        const personalBrowser = this.acquireBrowser(null);
+        await withManagedBrowserActivity(personalBrowser, async () => {
+          const personalBrowserWasRunning = personalBrowser.isRunning();
+          try {
+            // Export an already-running personal profile in place so we do not
+            // renew the user's lease under a different owner. If it is stopped,
+            // use a hidden/headless lease for the one export and release it below.
+            if (!personalBrowserWasRunning) {
+              await personalBrowser.ensureSession('about:blank', {
+                mode: 'headless',
+                profileMode: 'persistent',
+                leaseOwner: CRON_LOGIN_STATE_EXPORT_LEASE_OWNER,
+                leaseTtlMs: MANAGED_BROWSER_DEFAULT_LEASE_TTL_MS,
               });
-            });
-          }
-          await this.releaseBrowser(MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY).catch((error) => {
-            this.resumeLogger.error('Failed to release personal browser after cron login state export', {
+            }
+            await importBrowserStorageStateForOrigin(
+              personalBrowser,
+              browserService,
+              loginGatedSiteOrigin,
+            );
+          } catch (error) {
+            this.resumeLogger.error('Failed to pass through cron site login state', {
+              conversationIdHash: hashIdentity([identity.conversationId]),
+              siteOrigin: loginGatedSiteOrigin,
               error: error instanceof Error ? error.message : String(error),
             });
+          } finally {
+            if (!personalBrowserWasRunning) {
+              // A user can open the personal browser while the export is in flight.
+              // Only close the session while our temporary lease is still active;
+              // a different owner means the browser was taken over and must remain open.
+              const lease = personalBrowser.getSessionState().lease;
+              if (lease?.status === 'active' && lease.owner === CRON_LOGIN_STATE_EXPORT_LEASE_OWNER) {
+                await personalBrowser.close().catch((error) => {
+                  this.resumeLogger.error('Failed to close personal browser after cron login state export', {
+                    error: error instanceof Error ? error.message : String(error),
+                  });
+                });
+              }
+              await this.releaseBrowser(MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY).catch((error) => {
+                this.resumeLogger.error('Failed to release personal browser after cron login state export', {
+                  error: error instanceof Error ? error.message : String(error),
+                });
+              });
+            }
+          }
+        });
+      }
+      try {
+        // Kept-window adoption skips the resume import: the adopted window already
+        // carries this conversation's freshest login state from the agent run.
+        if (!keptService) {
+          await this.resumeStateStore.importForConversation(identity.conversationId, browserService);
+        }
+      } catch (error) {
+        this.resumeLogger.error('Failed to restore managed browser login state', {
+          conversationIdHash: hashIdentity([identity.conversationId]),
+          error: error instanceof Error ? error.message : String(error),
+        });
+        if (!shared) {
+          await browserService.close().catch((closeError) => {
+            this.resumeLogger.error('Failed to close managed browser after resume import failure', {
+              error: closeError instanceof Error ? closeError.message : String(closeError),
+            });
+          });
+          await this.releaseBrowser(serviceKey).catch((releaseError) => {
+            this.resumeLogger.error('Failed to release managed browser after resume import failure', {
+              error: releaseError instanceof Error ? releaseError.message : String(releaseError),
+            });
           });
         }
+        throw new BrowserResumeStateError(
+          'BROWSER_RESUME_STATE_IMPORT_FAILED',
+          'Browser login state could not be restored. The browser started without the previous login state.',
+          { cause: error },
+        );
       }
-    }
-    try {
-      // Kept-window adoption skips the resume import: the adopted window already
-      // carries this conversation's freshest login state from the agent run.
-      if (!keptService) {
-        await this.resumeStateStore.importForConversation(identity.conversationId, browserService);
-      }
-    } catch (error) {
-      this.resumeLogger.error('Failed to restore managed browser login state', {
-        conversationIdHash: hashIdentity([identity.conversationId]),
-        error: error instanceof Error ? error.message : String(error),
-      });
-      if (!shared) {
-        await browserService.close().catch((closeError) => {
-          this.resumeLogger.error('Failed to close managed browser after resume import failure', {
-            error: closeError instanceof Error ? closeError.message : String(closeError),
-          });
-        });
-        await this.releaseBrowser(serviceKey).catch((releaseError) => {
-          this.resumeLogger.error('Failed to release managed browser after resume import failure', {
-            error: releaseError instanceof Error ? releaseError.message : String(releaseError),
-          });
-        });
-      }
-      throw new BrowserResumeStateError(
-        'BROWSER_RESUME_STATE_IMPORT_FAILED',
-        'Browser login state could not be restored. The browser started without the previous login state.',
-        { cause: error },
-      );
-    }
-    const state = browserService.getSessionState();
-    const provider = state.provider || DEFAULT_PROVIDER;
-    const prepared = this.runtime.prepareBrowserSession({ identity, provider });
-    const binding: ManagedBrowserBinding = {
-      identity: { ...identity },
-      serviceKey,
-      profileMode: (state.profileMode as ManagedBrowserProfileMode | undefined) || profileMode,
-      browserService,
-      provider,
-      providerGeneration: `managed-generation:${hashIdentity([
-        state.sessionId,
-        state.profileId,
+      const state = browserService.getSessionState();
+      const provider = state.provider || DEFAULT_PROVIDER;
+      const prepared = this.runtime.prepareBrowserSession({ identity, provider });
+      const binding: ManagedBrowserBinding = {
+        identity: { ...identity },
+        serviceKey,
+        profileMode: (state.profileMode as ManagedBrowserProfileMode | undefined) || profileMode,
+        browserService,
         provider,
-      ])}`,
-      surfaceSessionId: prepared.session.sessionId,
-      predecessorStateId: '',
-      target: {
-        kind: 'browser',
-        browserInstanceId: `managed-browser:${hashIdentity([serviceKey, state.sessionId])}`,
-        windowRef: `managed-window:${hashIdentity([serviceKey])}`,
-        tabRef: browserService.getActiveTab()?.id || 'unbound',
-        documentRevision: 'unobserved',
-      },
-      ...(claimedTakeoverPark ? { claimedTakeoverPark: true } : {}),
-    };
-    const sharedPark = shared && this.keptRegistry.getAlive(identity.conversationId);
-    binding.claimedTakeoverPark = claimedTakeoverPark || Boolean(
-      !isUserRun(identity) && sharedPark?.reason === 'takeover' && sharedPark.serviceKey === serviceKey,
-    );
-    this.bindings.set(key, binding);
-    if (binding.claimedTakeoverPark) {
-      // The park is consumed by the claim: the window is this run's browser now
-      // and releases normally at run end unless it parks again or is kept.
-      this.keptRegistry.consumeTakeoverPark(identity.conversationId, serviceKey);
-    }
-    if (binding.serviceKey !== MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY) {
-      browserPool.setInUse(binding.serviceKey, true);
-    }
-    // Lease expiry is independent of the pool: pin it for every key, personal included.
-    browserService.setLeaseInUse(true);
-    this.ensureOrganicNavHook(browserService);
-    try {
-      const observed = await this.captureObservation(binding, {
-        userSummary: binding.profileMode === 'persistent'
-          ? 'Prepared a personal managed Browser Surface session'
-          : 'Prepared an isolated managed Browser Surface session',
-      });
-      this.runtime.registerCleanup(prepared.subject, async () => {
-        await this.releaseBinding(key, binding);
-      });
-      binding.predecessorStateId = observed.observation.stateId;
-      return binding;
-    } catch (error) {
-      await this.releaseBinding(key, binding).catch(() => undefined);
-      throw error;
-    }
+        providerGeneration: `managed-generation:${hashIdentity([
+          state.sessionId,
+          state.profileId,
+          provider,
+        ])}`,
+        surfaceSessionId: prepared.session.sessionId,
+        predecessorStateId: '',
+        target: {
+          kind: 'browser',
+          browserInstanceId: `managed-browser:${hashIdentity([serviceKey, state.sessionId])}`,
+          windowRef: `managed-window:${hashIdentity([serviceKey])}`,
+          tabRef: browserService.getActiveTab()?.id || 'unbound',
+          documentRevision: 'unobserved',
+        },
+      };
+      const sharedPark = shared && this.keptRegistry.getAlive(identity.conversationId);
+      binding.claimedTakeoverPark = claimedTakeoverPark || Boolean(
+        !isUserRun(identity) && sharedPark?.reason === 'takeover' && sharedPark.serviceKey === serviceKey);
+      this.bindings.set(key, binding);
+      if (binding.claimedTakeoverPark) this.keptRegistry.consumeTakeoverPark(identity.conversationId, serviceKey);
+      if (binding.serviceKey !== MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY) {
+        browserPool.setInUse(binding.serviceKey, true);
+      }
+      // Lease expiry is independent of the pool: pin it for every key, personal included.
+      browserService.setLeaseInUse(true);
+      this.ensureOrganicNavHook(browserService);
+      try {
+        const observed = await this.captureObservation(binding, {
+          userSummary: binding.profileMode === 'persistent'
+            ? 'Prepared a personal managed Browser Surface session'
+            : 'Prepared an isolated managed Browser Surface session',
+        });
+        this.runtime.registerCleanup(prepared.subject, async () => {
+          await this.releaseBinding(key, binding);
+        });
+        binding.predecessorStateId = observed.observation.stateId;
+        return binding;
+      } catch (error) {
+        await this.releaseBinding(key, binding).catch(() => undefined);
+        throw error;
+      }
+    });
   }
 
   /**

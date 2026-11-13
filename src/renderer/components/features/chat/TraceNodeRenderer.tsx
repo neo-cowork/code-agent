@@ -65,6 +65,8 @@ interface TraceNodeRendererProps {
   onStreamingDisplayUpdate?: (nodeId: string, displayLength: number, isAnimating: boolean) => void;
   onRewindUserPrompt?: (messageId: string, content: string) => void;
   rewindDisabled?: boolean;
+  /** 旧项目待确认轮：用户气泡不挂「没发出去 · 编辑重发」（见 utils/projectTrustTurn）。 */
+  suppressSendFailedBadge?: boolean;
   fileChangesByPath?: ReadonlyMap<string, FileChange>;
 }
 
@@ -78,6 +80,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
   onStreamingDisplayUpdate,
   onRewindUserPrompt,
   rewindDisabled,
+  suppressSendFailedBadge,
   fileChangesByPath,
 }) => {
   let content: React.ReactNode;
@@ -91,7 +94,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
           content={node.content}
           attachments={attachments}
           sourceType={node.metadata?.source}
-          sendFailed={node.metadata?.sendFailed === true}
+          sendFailed={node.metadata?.sendFailed === true && !suppressSendFailedBadge}
           telemetryRecovered={isTelemetryRecoveredMessage({ role: 'user', content: node.content, metadata: node.metadata })}
           suppressVoiceBadge={Boolean(inVoiceDispatchCard)}
           isNeoTagMessage={Boolean(node.metadata?.neoTag)}

@@ -34,7 +34,7 @@ export const workbenchTabsZh = {
     pinLogs: '钉住日志',
     unpinLogs: '取消钉住日志',
     overviewProgressLabel: '任务进程',
-    overviewTodosLabel: 'Todo',
+    overviewTodosLabel: '待办',
     overviewContextLabel: '上下文',
     overviewArtifactsLabel: '产物',
     overviewReceiptsLabel: '已执行',

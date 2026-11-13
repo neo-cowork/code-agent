@@ -184,7 +184,7 @@ const CRON_GENERATION_SYSTEM_PROMPT = `你是一个定时任务配置助手。�
   "scheduleType": "every" | "cron" | "at" | "event",
   "schedule": {
     // every 类型: { "type": "every", "interval": 数字, "unit": "seconds"|"minutes"|"hours"|"days" }
-    // cron 类型: { "type": "cron", "expression": "cron表达式", "timezone": "Asia/Shanghai" }
+    // cron 类型: { "type": "cron", "expression": "cron表达式", "timezone": "当前时间锚点中的主机 IANA 时区" }
     // at 类型: { "type": "at", "datetime": "本地墙上时间 YYYY-MM-DDTHH:mm（不带 Z 或偏移）" }
     // event 类型: { "type": "event", "source": "channel", "eventName": "message" }
     //   或邮件监听: { "type": "event", "source": "connector", "connector": "mail", "eventName": "message" }
@@ -205,7 +205,7 @@ const CRON_GENERATION_SYSTEM_PROMPT = `你是一个定时任务配置助手。�
 
 注意：
 - 动作类型判断：用户描述「让 AI 做某事」（调研/分析/写作/总结/巡检/汇报/监控并通知等需智能体执行的任务）→ 用 agent，把要执行的任务原样填进 prompt，agentType 填 "default"；只有明确是 shell 命令或脚本（如「运行 backup.sh」「执行 git pull」）才用 shell。多数自然语言任务应该用 agent。
-- 时区默认 Asia/Shanghai
+- cron 的 timezone 默认使用当前时间锚点中的 IANA 时区；只有用户明确指定其他时区（如北京时间、纽约时间）时，才使用该时区对应的 IANA 名称。
 - 尽量从描述中推断合理的调度方式和参数
 - 用户指定具体钟点（如 9am、3pm、9:30、每天早上9点、今晚8点半）时，cron 的小时和分钟必须严格等于用户说的时间：9am → 0 9 * * *，3pm → 小时15分钟0，9:30 → 小时9分钟30，今晚8点半 → 20:30。命名钟点不需要再说「整点」，禁止错峰或改动分钟。
 - 错峰只适用于没有指定具体钟点的请求（如每小时、每天、每天早晨），cron 分钟位可用非 0 值（如 17）；"every" 间隔类型不受影响（会自动错峰）。
@@ -371,9 +371,8 @@ const cronHandlers: RawDomainRouteHandlers<CronDomainRequest, void> = {
       return { success: false, error: { code: 'INVALID_INPUT', message: '请输入任务描述' } } satisfies IPCResponse;
     }
     const router = new ModelRouter();
-    const clock = buildScheduleGenerationClock(
-      new Date(), Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
-    );
+    const hostTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    const clock = buildScheduleGenerationClock(new Date(), hostTimeZone);
     // 调用当下解析用户配置的默认 provider/model。没配过才落到出厂默认。
     const { provider, model } = resolveSessionDefaultModelConfig();
     const response = await router.chat({
@@ -394,6 +393,15 @@ const cronHandlers: RawDomainRouteHandlers<CronDomainRequest, void> = {
       const draft: unknown = JSON.parse(jsonMatch[0]);
       if (isRecord(draft) && isRecord(draft.schedule) && draft.schedule.type === 'at') {
         draft.schedule.datetime = clock.toTimestamp(draft.schedule.datetime);
+      }
+      if (isRecord(draft) && isRecord(draft.schedule) && draft.schedule.type === 'cron') {
+        try {
+          const timeZone = draft.schedule.timezone;
+          if (typeof timeZone !== 'string' || !timeZone.trim()) throw new RangeError('Invalid cron timezone');
+          new Intl.DateTimeFormat('en-US', { timeZone }).format();
+        } catch {
+          draft.schedule.timezone = hostTimeZone;
+        }
       }
       return { success: true, data: draft } satisfies IPCResponse;
     } catch {
