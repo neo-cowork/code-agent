@@ -162,7 +162,7 @@ export function ExternalImportMcpResults({
           .replace('{imported}', String(result.imported))
           .replace('{skipped}', String(result.skipped))}
       </div>
-      {error && <div className="mt-2 rounded bg-red-500/10 px-2 py-1 text-[11px] text-badge-danger">{error}</div>}
+      {error && <div className="mt-2 shrink-0 rounded bg-red-500/10 px-2 py-1 text-[11px] text-badge-danger">{error}</div>}
       <div className="mt-2 overflow-hidden rounded-lg border border-zinc-800">
         {importedItems.map((item) => (
           <ItemLine

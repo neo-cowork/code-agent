@@ -360,7 +360,7 @@ export const ExternalImportSettings: React.FC = () => {
         {anyMcpCategory && (
           <div
             data-testid="external-import-mcp-note"
-            className="rounded-lg border border-badge-warning/20 bg-badge-warning/10 px-3 py-2 text-xs text-badge-warning"
+            className="shrink-0 rounded-lg border border-badge-warning/20 bg-badge-warning/10 px-3 py-2 text-xs text-badge-warning"
           >
             {mcpCopy.categoryNote}
           </div>
