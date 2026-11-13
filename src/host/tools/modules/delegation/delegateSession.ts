@@ -19,7 +19,8 @@ import {
 } from '../../../services/delegation/delegationAdmission';
 import { deriveActionFingerprint, deriveSubmissionKey, delegationTargetIdentity } from '../../../services/delegation/delegationKeys';
 import { projectSessionCandidates, resolveCandidateRef } from '../../../services/delegation/delegationCandidates';
-import { getDelegationCandidateSecret, getDelegationToolRuntime, workspaceWithinRoots } from '../../../services/delegation/delegationToolRuntime';
+import { evaluateClarifyGuard } from '../../../services/delegation/delegationClarifyGuard';
+import { getDelegationCandidateSecret, getDelegationToolRuntime, readOriginUserMessage, workspaceWithinRoots } from '../../../services/delegation/delegationToolRuntime';
 import { isCrossSessionDelegationEnabled } from '../../../services/delegation/crossSessionDelegationFlag';
 import { createLogger } from '../../../services/infra/logger';
 import { trackNode } from '../../../observability/posthogNode';
@@ -191,6 +192,49 @@ async function buildSnapshot(
   };
 }
 
+// ADR-072 D2/D3 确定性守卫：模型只给建议，目标不清时不绑定，改回一个可点选的问题。
+// 返回 null = 放行进准入门；否则是 needs_clarification 拒绝（候选只给显示名，不含 id）。
+function clarifyGuardRejection(
+  call: DelegateSessionCall,
+  ctx: Parameters<ToolHandler['execute']>[1],
+  runtime: ReturnType<typeof getDelegationToolRuntime>,
+): ToolResult<string> | null {
+  if (call.action !== 'delegate_existing' && call.action !== 'create_new') return null;
+  const userMessage = readOriginUserMessage(runtime.getDb(), ctx.sessionId, ctx.sourceMessageId);
+  if (userMessage === null) {
+    logger.warn('[DelegateSession] clarify guard message-based rules skipped: the session has no readable origin user message');
+    return null;
+  }
+  const secret = getDelegationCandidateSecret();
+  const projection = projectSessionCandidates(runtime.listSessions(), {
+    originSessionId: ctx.sessionId,
+    now: runtime.now(),
+    secret,
+    isRunning: (sessionId) => runtime.getRun(sessionId) !== undefined,
+  });
+  let chosenIndex: number | null = null;
+  if (call.action === 'delegate_existing') {
+    // 引用解不开 / 集合过期交给 G3 原样拒绝（码与 gate 不变）。
+    const resolved = resolveCandidateRef({ candidateSetId: call.candidateSetId, candidateRef: call.candidateRef }, projection, secret);
+    if (!resolved.ok) return null;
+    chosenIndex = projection.sessionIds.indexOf(resolved.sessionId);
+  }
+  const verdict = evaluateClarifyGuard({
+    action: call.action,
+    candidates: projection.candidates.map((candidate) => ({ shortName: candidate.shortName, workspaceName: candidate.workspaceName })),
+    chosenIndex,
+    userMessage,
+  });
+  if (verdict.kind === 'proceed') return null;
+  const names = verdict.candidateNames.length > 0 ? ` Candidate chats (display names): ${verdict.candidateNames.map((name) => `「${name}」`).join('、')}.` : '';
+  return {
+    ok: false,
+    code: 'DELEGATION_REJECTED',
+    error: `needs_clarification: the target chat is not clear enough to send this safely.${names} Nothing was delegated. Ask the user which chat they mean with AskUserQuestion, using those display names as the options (plain words, no ids); do not retry delegate_session until the user answers.`,
+    meta: { code: 'needs_clarification', gate: 'none', rule: verdict.rule },
+  };
+}
+
 function parseArgs(args: Record<string, unknown>) {
   const normalized: Record<string, unknown> = { ...args };
   if (typeof args.text === 'string' && args.content === undefined) normalized.content = args.text;
@@ -314,6 +358,8 @@ async function runDelegateSession(
   const runtime = getDelegationToolRuntime(ctx);
   const call = parsed.call;
   try {
+    const guarded = clarifyGuardRejection(call, ctx, runtime);
+    if (guarded) return guarded;
     const admission = await admissionFor(call, ctx, runtime);
     if (admission.result.kind === 'rejected') return rejection(admission.result.code, admission.result.detail, admission.result.gate);
     if (admission.result.kind === 'reused') {
