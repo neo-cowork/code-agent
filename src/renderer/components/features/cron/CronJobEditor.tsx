@@ -110,6 +110,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
   const [simpleDraft, setSimpleDraft] = useState<CronJobDraft>(createDefaultCronJobDraft);
   const [step, setStep] = useState<CreationStep>('simple');
   const [selectedTemplate, setSelectedTemplate] = useState<CronTemplate | null>(null);
+  const templateFields = selectedTemplate ? getTemplateDisplayCopy(selectedTemplate, cc.templates).fields : undefined;
   const [templateValues, setTemplateValues] = useState<Record<string, string>>({});
   // 保存成功且角色绑定的任务：不直接关闭，切换到只读复述视图（Done 才关闭）。
   const [savedJob, setSavedJob] = useState<CronJobDefinition | null>(null);
@@ -251,9 +252,9 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
     if (!errors.templateForm || !selectedTemplate) return;
     const missing = selectedTemplate.fields.filter((f) => f.required && !templateValues[f.key]?.trim());
     setErrors((prev) => !prev.templateForm ? prev : missing.length > 0
-      ? { ...prev, form: cc.editorChrome.requiredFieldsError.replace('{fields}', missing.map((f) => f.label).join(cc.editorChrome.fieldListSeparator)) }
+      ? { ...prev, form: cc.editorChrome.requiredFieldsError.replace('{fields}', missing.map((f) => templateFields?.[f.key]?.label ?? f.label).join(cc.editorChrome.fieldListSeparator)) }
       : { ...prev, form: undefined, templateForm: false });
-  }, [errors.templateForm, selectedTemplate, templateValues, cc.editorChrome]);
+  }, [errors.templateForm, selectedTemplate, templateValues, cc.editorChrome, templateFields]);
   const cloudRoleBound = isCloudRoleBoundAgentDraft(draft);
   const setField = <K extends keyof CronJobDraft>(key: K, value: CronJobDraft[K]) => {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -291,7 +292,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
     // Validate required fields
     const missing = selectedTemplate.fields.filter((f) => f.required && !templateValues[f.key]?.trim());
     if (missing.length > 0) {
-      setErrors({ form: cc.editorChrome.requiredFieldsError.replace('{fields}', missing.map((f) => f.label).join(cc.editorChrome.fieldListSeparator)), templateForm: true });
+      setErrors({ form: cc.editorChrome.requiredFieldsError.replace('{fields}', missing.map((f) => templateFields?.[f.key]?.label ?? f.label).join(cc.editorChrome.fieldListSeparator)), templateForm: true });
       return;
     }
 
@@ -582,14 +583,14 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                 onChange={(roleId) => setTemplateValues((prev) => ({ ...prev, [field.key]: roleId }))}
               />
             ) : (
-              <FormField key={field.key} label={field.label} required={field.required}>
+              <FormField key={field.key} label={templateFields?.[field.key]?.label ?? field.label} required={field.required}>
                 {field.type === 'textarea' ? (
                   <Textarea
                     value={templateValues[field.key] || ''}
                     onChange={(e) =>
                       setTemplateValues((prev) => ({ ...prev, [field.key]: e.target.value }))
                     }
-                    placeholder={field.placeholder}
+                    placeholder={templateFields?.[field.key]?.placeholder ?? field.placeholder}
                     minRows={3}
                     className="font-mono"
                   />
@@ -599,7 +600,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                     onChange={(e) =>
                       setTemplateValues((prev) => ({ ...prev, [field.key]: e.target.value }))
                     }
-                    placeholder={field.placeholder}
+                    placeholder={templateFields?.[field.key]?.placeholder ?? field.placeholder}
                   />
                 )}
               </FormField>
