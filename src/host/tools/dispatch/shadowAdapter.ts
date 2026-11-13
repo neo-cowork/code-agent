@@ -242,6 +242,7 @@ export function buildCanUseToolFromLegacy(
         tool: requestedToolName,
         details,
         reason: requestHint?.reason ?? cleanReason ?? `protocol tool ${requestedToolName}`,
+        ...(requestHint?.reasonCode ? { reasonCode: requestHint.reasonCode } : {}),
         dangerLevel: requestHint?.dangerLevel,
         decisionTrace: requestHint?.decisionTrace as never,
         ...(requestHint?.ledgerRecordedByChild ? { ledgerRecordedByChild: true } : {}),
