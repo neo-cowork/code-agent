@@ -97,8 +97,8 @@ describe('SessionMemberBar（折叠 chip）', () => {
   it.each(['zh', 'en'] as const)('failed chip names each failed agent and human reason, and opens experts (%s)', async (language) => {
     appState.language = language;
     useBackgroundTaskStore.setState({ tasks: [
-      { id: 'budget-review', sessionId: 'session-1', source: 'delegate_task', title: 'Budget review', status: 'failed', createdAt: 1, updatedAt: 2, events: [], failure: { reason: 'tool-unavailable', message: 'missing file' } },
-      { id: 'notes-review', sessionId: 'session-1', source: 'delegate_task', title: 'Notes review', status: 'failed', createdAt: 1, updatedAt: 2, events: [] },
+      { id: 'budget-review', sessionId: 'session-1', source: 'delegate_task', title: 'Budget review', status: 'failed', createdAt: 1, updatedAt: 2, events: [], outputRefs: [], failure: { reason: 'tool-unavailable', message: 'missing file' } },
+      { id: 'notes-review', sessionId: 'session-1', source: 'delegate_task', title: 'Notes review', status: 'failed', createdAt: 1, updatedAt: 2, events: [], outputRefs: [] },
     ] });
     render(<SessionMemberBar sessionId="session-1" />);
     const chip = await screen.findByTestId('session-member-bar-collapsed');
@@ -115,7 +115,7 @@ describe('SessionMemberBar（折叠 chip）', () => {
 
   it('cancelled chip names the stopped agent, with name only when no reason exists', async () => {
     useBackgroundTaskStore.setState({ tasks: [
-      { id: 'budget-review', sessionId: 'session-1', source: 'delegate_task', title: 'Budget review', status: 'cancelled', createdAt: 1, updatedAt: 2, events: [] },
+      { id: 'budget-review', sessionId: 'session-1', source: 'delegate_task', title: 'Budget review', status: 'cancelled', createdAt: 1, updatedAt: 2, events: [], outputRefs: [] },
     ] });
     render(<SessionMemberBar sessionId="session-1" />);
     const chip = await screen.findByTestId('session-member-bar-collapsed');
