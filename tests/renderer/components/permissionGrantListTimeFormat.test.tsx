@@ -107,7 +107,9 @@ describe('PermissionGrantList time-boxed tool grants', () => {
 
   it('run tier shows 本次任务 and target, with no expiry suffix when null', async () => {
     const { row } = await renderTimedGrant(null, 'zh', 'team@example.com');
-    expect(row.textContent).toContain('限时放行 · 本次任务');
+    expect(row.textContent).toContain('本次任务 · 授权于');
+    expect(row.textContent).not.toContain('限时放行');
+    expect(row.querySelector('.text-zinc-500')?.textContent).not.toMatch(/^\s*·/);
     expect(row.textContent).toContain('对象：team@example.com');
     expect(row.textContent).not.toMatch(/剩余|有效期至/);
   });
@@ -119,7 +121,7 @@ describe('PermissionGrantList time-boxed tool grants', () => {
 
   it.each([[121, '3 h left'], [42.1, '43 min left']])('en remaining time at %s minutes: %s', async (minutes, expected) => {
     const { row } = await renderTimedGrant(minutes, 'en', 'team@example.com');
-    expect(row.textContent).toContain('Time-boxed allow · 24 hours');
+    expect(row.textContent).toContain('Temporary allow · 24 hours');
     expect(row.textContent).toContain(`Granted ${EN}`);
     expect(row.textContent).toContain(expected);
     expect(row.textContent).toContain('Target: team@example.com');
@@ -128,7 +130,9 @@ describe('PermissionGrantList time-boxed tool grants', () => {
 
   it('en run tier shows This task without a target or expiry suffix', async () => {
     const { row } = await renderTimedGrant(null, 'en');
-    expect(row.textContent).toContain('Time-boxed allow · This task');
+    expect(row.textContent).toContain('This task · Granted');
+    expect(row.textContent).not.toContain('Temporary allow');
+    expect(row.querySelector('.text-zinc-500')?.textContent).not.toMatch(/^\s*·/);
     expect(row.textContent).not.toMatch(/left|Valid until|Target:/);
   });
 

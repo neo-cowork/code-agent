@@ -7,6 +7,7 @@ import { IPC_CHANNELS } from '../../../src/shared/ipc';
 
 const state = vi.hoisted(() => ({ request: null as PermissionRequest | null, language: 'zh' as 'zh' | 'en' }));
 const invoke = vi.hoisted(() => vi.fn());
+const invokeDomain = vi.hoisted(() => vi.fn());
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { zh } = await import('../../../src/renderer/i18n/zh');
   const { en } = await import('../../../src/renderer/i18n/en');
@@ -22,9 +23,10 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
   useSessionStore: (selector: (value: { currentSessionId: string }) => unknown) => selector({ currentSessionId: 'session-current' }),
 }));
-vi.mock('../../../src/renderer/services/ipcService', () => ({ default: { isAvailable: () => true, invoke } }));
+vi.mock('../../../src/renderer/services/ipcService', () => ({ default: { isAvailable: () => true, invoke, invokeDomain } }));
 vi.mock('../../../src/renderer/hooks/useToast', () => ({ toast: { error: vi.fn() } }));
 
+import PermissionGrantList from '../../../src/renderer/components/features/settings/tabs/PermissionGrantList';
 import { PermissionCard } from '../../../src/renderer/components/PermissionDialog/PermissionCard';
 import { usePermissionStore } from '../../../src/renderer/stores/permissionStore';
 import { releaseApprovalResponse } from '../../../src/renderer/utils/approvalResponseGuard';
@@ -52,8 +54,8 @@ describe('PermissionCard grant tiers', () => {
   });
 
   it.each([
-    ['zh', '到这次做完为止', '24 小时内允许', '本会话允许', '始终允许'],
-    ['en', 'Until this task is done', 'Allow for 24 hours', 'Allow for session', 'Always allow'],
+    ['zh', '本次任务内允许', '24 小时内允许', '本会话允许', '始终允许'],
+    ['en', 'Allow for this task', 'Allow for 24 hours', 'Allow for session', 'Always allow'],
   ] as const)('shows both expiring tiers and removes generic legacy labels (%s)', (language, run, day, session, always) => {
     state.language = language;
     render(<PermissionCard />);
@@ -61,6 +63,34 @@ describe('PermissionCard grant tiers', () => {
     expect(screen.getByRole('button', { name: new RegExp(day) })).toBeTruthy();
     expect(screen.queryByRole('button', { name: new RegExp(session) })).toBeNull();
     expect(screen.queryByRole('button', { name: new RegExp(always) })).toBeNull();
+  });
+
+  it.each([
+    ['zh', 'run', '本次任务内允许', '本次任务', '限时放行'],
+    ['zh', '24h', '24 小时内允许', '24 小时内', '限时放行'],
+    ['en', 'run', 'Allow for this task', 'This task', 'Temporary allow'],
+    ['en', '24h', 'Allow for 24 hours', '24 hours', 'Temporary allow'],
+  ] as const)('card/list scope and row prefix agree (%s, %s)', async (language, source, button, scope, prefix) => {
+    state.language = language;
+    invokeDomain.mockResolvedValue([{
+      id: `grant-${source}`, kind: 'tool-timed', label: 'Write', source,
+      grantedAt: Date.now(), expiresAt: source === 'run' ? null : Date.now() + 86_400_000,
+    }]);
+    render(<><PermissionCard /><PermissionGrantList /></>);
+    const cardButton = screen.getByRole('button', { name: new RegExp(button) });
+    const row = await screen.findByTestId('permission-grant-row');
+    const metadata = row.querySelector('.text-zinc-500')?.textContent;
+    expect(metadata).toBeTruthy();
+    expect(metadata).toContain(scope);
+    // The button adds an action verb; the list keeps the shared scope noun phrase.
+    expect(cardButton.textContent?.toLocaleLowerCase(language)).toContain(scope.toLocaleLowerCase(language));
+    expect(metadata).toMatch(new RegExp(`^${source === 'run' ? scope : `${prefix} · ${scope}`} · `));
+    if (source === 'run') {
+      expect(row.textContent).not.toMatch(/限时放行|Temporary allow|Time-boxed allow/);
+    } else {
+      expect(row.textContent).toContain(prefix);
+    }
+    expect(invokeDomain).toHaveBeenCalledWith('domain:settings', 'listPermissionGrants');
   });
 
   it.each([
@@ -76,7 +106,7 @@ describe('PermissionCard grant tiers', () => {
   });
 
   it.each([
-    ['allow_run', '到这次做完为止'], ['allow_24h', '24 小时内允许'],
+    ['allow_run', '本次任务内允许'], ['allow_24h', '24 小时内允许'],
   ] as const)('click sends %s directly without renderer memory', async (response, label) => {
     render(<PermissionCard />);
     fireEvent.click(screen.getByRole('button', { name: new RegExp(label) }));
@@ -92,7 +122,7 @@ describe('PermissionCard grant tiers', () => {
   ] as const)('hides both tiers and ignores their shortcuts for %s', (_name, overrides) => {
     state.request = { ...request, ...overrides } as PermissionRequest;
     render(<PermissionCard />);
-    expect(screen.queryByRole('button', { name: /到这次做完为止|24 小时内允许/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /本次任务内允许|24 小时内允许/ })).toBeNull();
     fireEvent.keyDown(window, { key: 's' });
     fireEvent.keyDown(window, { key: 'a' });
     expect(invoke).not.toHaveBeenCalled();
