@@ -248,14 +248,16 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
         onClick={() => onDirectAction?.(option.id)}
       >
         <span className={showActionDescriptions ? 'flex max-w-56 flex-col items-start gap-0.5' : 'inline-flex items-center gap-1.5'}>
-          {option.label}
+          <span className="inline-flex items-center gap-1.5">
+            {option.label}
+            {option.shortcut && (
+              <kbd className="rounded bg-zinc-700 px-1 py-px font-mono text-[9px] text-zinc-400">
+                {option.shortcut}
+              </kbd>
+            )}
+          </span>
           {showActionDescriptions && option.description && (
-            <span className="text-[11px] font-normal text-zinc-400">{option.description}</span>
-          )}
-          {option.shortcut && (
-            <kbd className="rounded bg-zinc-700 px-1 py-px font-mono text-[9px] text-zinc-400">
-              {option.shortcut}
-            </kbd>
+            <span className={`whitespace-normal break-words text-[11px] font-normal ${primary ? 'text-white/90' : 'text-zinc-400'}`}>{option.description}</span>
           )}
         </span>
       </Button>

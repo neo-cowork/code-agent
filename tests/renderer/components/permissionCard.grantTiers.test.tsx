@@ -119,11 +119,13 @@ describe('PermissionCard grant tiers', () => {
     state.language = language;
     state.request = { ...request, type: 'mcp', tool: 'mcp__lark__calendar_v4_calendar_primary', details: {
       connectorAccess: { connectorId: 'lark', connectorName: '飞书', access }, purpose: '每周日程汇总',
+      preview: { type: 'generic', summary: '执行工具 mcp__lark__calendar_v4_calendar_primary' },
     } };
     render(<PermissionCard />);
     expect(screen.getAllByText(title)).toHaveLength(2);
     expect(screen.getAllByText(new RegExp(scope))).toHaveLength(2);
     expect(screen.getByTestId('connector-purpose').textContent).toBe(purpose);
+    expect(screen.queryByText('执行工具 mcp__lark__calendar_v4_calendar_primary')).toBeNull();
   });
 
   it('omits unknown purpose and ignores legacy renderer allow memory for classified connector cards', () => {

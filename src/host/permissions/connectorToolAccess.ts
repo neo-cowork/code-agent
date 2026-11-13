@@ -16,12 +16,15 @@ export function isDeclaredReadOnlyConnectorTool(runtimeName: string): boolean {
 
 export function classifyConnectorTool(runtimeName: string): NonNullable<PermissionRequest['details']['connectorAccess']> | null {
   const parsed = /^mcp__(.+?)__(.+)$/.exec(runtimeName);
-  const entry = parsed ? declaredConnectors.get(parsed[1]) : undefined;
+  if (!parsed) return null;
+  const entry = declaredConnectors.get(parsed[1]);
   if (!entry) return null;
+  // Registry names retain dots; provider tool names replace them with underscores.
+  const canonicalName = `mcp__${entry.id}__${parsed[2].replace(/\./g, '_')}`;
   return {
     connectorId: entry.id,
     connectorName: entry.name,
-    access: isDeclaredReadOnlyConnectorTool(runtimeName) ? 'read' : 'write',
+    access: isDeclaredReadOnlyConnectorTool(canonicalName) ? 'read' : 'write',
   };
 }
 

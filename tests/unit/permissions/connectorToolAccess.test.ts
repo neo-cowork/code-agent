@@ -61,6 +61,7 @@ describe('Neo connector read/write approval boundary', () => {
   it('classifies declared reads, undeclared writes, unknown and unlisted servers', () => {
     expect(reads).toHaveLength(6);
     expect(classifyConnectorTool(reads[0])).toEqual({ connectorId: 'lark', connectorName: '飞书', access: 'read' });
+    expect(classifyConnectorTool('mcp__lark__calendar.v4.calendar.primary')?.access).toBe('read');
     expect(classifyConnectorTool(write)?.access).toBe('write');
     expect(classifyConnectorTool('mcp__unknown__read')).toBeNull();
     expect(classifyConnectorTool('mcp__notion__read')).toBeNull();
