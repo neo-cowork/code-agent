@@ -62,6 +62,7 @@ import {
   launchSystemChromeCdpBrowser,
 } from './browser/browserLaunchHelpers';
 import { ManagedBrowserLeaseController } from './browser/managedBrowserLeaseController';
+import { killManagedChromeProcesses } from './browser/browserProcessWatchdog';
 import {
   findBrowserElementByText,
   findBrowserElements,
@@ -330,6 +331,11 @@ export class BrowserService implements Disposable {
 
   setLeaseInUse(inUse: boolean): void {
     this.leaseController.setInUse(inUse);
+  }
+
+  terminateIdleManagedProcess(): 'in-use' | 'no-managed-process' | 'terminated' {
+    if (this.leaseController.isInUse()) return 'in-use';
+    return killManagedChromeProcesses(this.browserProcess ? [this.browserProcess] : []) ? 'terminated' : 'no-managed-process';
   }
 
   isRunning(): boolean {
