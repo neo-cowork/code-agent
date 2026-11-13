@@ -464,12 +464,54 @@ describe('generateFromPrompt local wall clock', () => {
   ])('preserves interval/cron/numeric draft: $prompt', async ({ prompt, schedule }) => {
     setClock('2026-11-07T16:17:00Z', 'Asia/Shanghai');
     h.chat.mockResolvedValueOnce({ content: JSON.stringify({ schedule }) });
-    expect(await call('generateFromPrompt', { prompt })).toEqual({ success: true, data: { schedule } });
+    const expectedSchedule = schedule.type === 'cron' ? { timezone: 'Asia/Shanghai', ...schedule } : schedule;
+    expect(await call('generateFromPrompt', { prompt })).toEqual({ success: true, data: { schedule: expectedSchedule } });
     const req = h.chat.mock.calls[0][0] as { messages: Array<{ content: string }> };
     expect(req.messages[0].content).toContain('9am → 0 9 * * *');
     expect(req.messages[0].content).toContain('今晚8点半 → 20:30');
     expect(req.messages[0].content).toContain('错峰只适用于没有指定具体钟点的请求');
     expect(req.messages[0].content).toContain('"every" 间隔类型不受影响');
     expect(req.messages[0].content).not.toContain('除非用户明确要求整点');
+  });
+});
+
+
+describe('generateFromPrompt recurring machine timezone', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  describe.each(['America/Los_Angeles', 'Asia/Shanghai'])('host %s', (hostZone) => {
+    beforeEach(() => vi.stubEnv('TZ', hostZone));
+
+    it.each([undefined, '', '   ', 'Mars/Olympus', 123, null])('repairs invalid or omitted cron timezone %s', async (timezone) => {
+      expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe(hostZone);
+      h.chat.mockResolvedValueOnce({ content: JSON.stringify({ schedule: { type: 'cron', expression: '0 9 * * *', timezone } }) });
+      expect(await call('generateFromPrompt', { prompt: 'every day at 9am summarize my unread mail into a short note' })).toEqual({
+        success: true, data: { schedule: { type: 'cron', expression: '0 9 * * *', timezone: hostZone } },
+      });
+    });
+
+    it.each(['Asia/Shanghai', 'America/New_York'])('preserves an explicitly named valid zone %s', async (timezone) => {
+      const schedule = { type: 'cron', expression: '0 21 * * *', timezone };
+      h.chat.mockResolvedValueOnce({ content: JSON.stringify({ schedule }) });
+      expect(await call('generateFromPrompt', { prompt: '每天北京时间晚上9点提醒我备份照片' })).toEqual({ success: true, data: { schedule } });
+    });
+
+    it('the model prompt defaults to the same host anchor, with no Shanghai pin', async () => {
+      await call('generateFromPrompt', { prompt: '每周一早上9点把上周的销售表整理成周报' });
+      const req = h.chat.mock.calls[0][0] as { messages: Array<{ content: string }> };
+      const system = req.messages[0].content;
+      expect(system).toContain(hostZone);
+      expect(system.split('【当前时间】')[0]).not.toContain('Asia/Shanghai');
+      expect(system).toContain('timezone 默认使用当前时间锚点中的 IANA 时区');
+      expect(system).toContain('只有用户明确指定其他时区');
+    });
+
+    it.each([
+      { type: 'every', interval: 1, unit: 'days' },
+      { type: 'event', source: 'channel', eventName: 'message' },
+    ])('leaves $type schedules unchanged', async (schedule) => {
+      h.chat.mockResolvedValueOnce({ content: JSON.stringify({ schedule }) });
+      expect(await call('generateFromPrompt', { prompt: '整理邮件' })).toEqual({ success: true, data: { schedule } });
+    });
   });
 });
