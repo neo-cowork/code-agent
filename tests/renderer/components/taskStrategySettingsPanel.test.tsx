@@ -50,6 +50,7 @@ describe('TaskStrategySettingsPanel', () => {
       <TaskStrategySettingsPanel
         settings={settings}
         providerConfigs={settings.models.providers}
+        defaultModel={{ provider: 'xiaomi', model: DEFAULT_MODELS.chat }}
         config={{ provider: 'xiaomi', model: DEFAULT_MODELS.chat }}
         strategy={strategy}
         onChange={vi.fn()}
@@ -88,6 +89,7 @@ describe('working default missing from the catalog', () => {
       <TaskStrategySettingsPanel
         settings={selectedSettings}
         providerConfigs={selectedSettings.models.providers}
+        defaultModel={current}
         config={current}
         strategy={selectedStrategy}
         onChange={vi.fn()}
