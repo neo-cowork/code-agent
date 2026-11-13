@@ -122,6 +122,43 @@ describe('timed-out wait_for_user parks the window', () => {
     expect(h.release).toHaveBeenCalled();
   });
 
+  it('preserves a prior result window while a different window times out and resumes', async () => {
+    process.env[BROWSER_WAIT_FOR_USER.LIMIT_ENV] = '100';
+    const h = harness();
+    await h.act(h.idA, 'open');
+    h.keptRegistry.register({
+      conversationId: 'conversation-p', serviceKey: 'prior-result',
+      url: 'https://portal.example.test/invoice', title: 'Prior invoice',
+      browserService: { onSessionChanged: () => () => undefined },
+    });
+    poolMocks.releaseAgent.mockClear();
+    const result = await browserActionTool.execute({ action: 'wait_for_user', reason: 'Please finish verification' }, {
+      ...h.idA, sessionId: 'conversation-p', currentToolCallId: 'tc-two-windows',
+      workingDirectory: process.cwd(), requestPermission: vi.fn(async () => true),
+    } as unknown as ToolContext);
+    expect(result.metadata).toMatchObject({ code: 'WAIT_FOR_USER_TIMEOUT', windowParked: true });
+    expect(poolMocks.releaseAgent).not.toHaveBeenCalledWith('prior-result');
+    const snapshot = { state: 'kept', url: 'https://portal.example.test/invoice', title: 'Prior invoice' };
+    expect(h.keptRegistry.snapshot('conversation-p')).toEqual(snapshot);
+    const parkedKey = h.adapter.getBinding(h.idA)!.serviceKey;
+    await h.runtime.endRun(h.idA);
+    expect(h.release).not.toHaveBeenCalled();
+    expect(h.keptRegistry.snapshot('conversation-p')).toEqual(snapshot);
+    h.startB();
+    const resumed = await browserActionTool.execute({ action: 'list_tabs' }, {
+      ...h.idB, sessionId: 'conversation-p', currentToolCallId: 'tc-two-resumed',
+      workingDirectory: process.cwd(), requestPermission: vi.fn(async () => true),
+    } as unknown as ToolContext);
+    expect(resumed.success).toBe(true);
+    expect(resumed.output).toContain('https://portal.example.test/gate');
+    expect(h.adapter.getBinding(h.idB)!.serviceKey).toBe(parkedKey);
+    expect(h.navigate).not.toHaveBeenCalled();
+    expect(h.keptRegistry.snapshot('conversation-p')).toEqual(snapshot);
+    await h.runtime.endRun(h.idB);
+    expect(h.release).toHaveBeenCalledWith(parkedKey);
+    expect(poolMocks.releaseAgent).not.toHaveBeenCalledWith('prior-result');
+  });
+
   it('does not promise the window when it could not be parked (no active tab)', async () => {
     process.env[BROWSER_WAIT_FOR_USER.LIMIT_ENV] = '100';
     const h = harness();
