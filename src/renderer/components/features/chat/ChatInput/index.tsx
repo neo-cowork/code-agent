@@ -100,6 +100,7 @@ import { useChatInputSubmit } from './useChatInputSubmit';
 import { useComposerDraftPersistence } from './useComposerDraftPersistence';
 import { UnsentDraftNotice } from './UnsentDraftNotice';
 import { AgentCommandAutocomplete } from './AgentCommandAutocomplete';
+import { useScheduleDraftRequest } from './useScheduleDraftRequest';
 import { useScheduleDraft } from './useScheduleDraft';
 import { useChatInputComposerActions } from './useChatInputComposerActions';
 import { clearDebugDraftParamsFromCurrentUrl, readDebugDraftFromLocation } from './debugDraftUrl';
@@ -1062,6 +1063,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setActiveAgentId,
     pendingResendClientMessageIdRef,
   });
+  useScheduleDraftRequest(currentSessionId, creatingSchedule, runScheduleCreation);
   // 「转后台继续聊」：当前会话转后台 + 新前台会话发草稿（排队/改道默认路径不动）
   const submitBackgroundHandoff = useBackgroundHandoffSubmit({ currentSessionId, handleSubmit });
 

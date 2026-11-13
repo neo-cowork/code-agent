@@ -22,6 +22,7 @@ describe('AgentEventSchema', () => {
     },
     { type: 'tool_call_start', data: { id: 'call-1', name: 'Read', arguments: { path: 'README.md' } } },
     { type: 'tool_call_end', data: { toolCallId: 'call-1', success: true, output: 'ok' } },
+    { type: 'schedule_draft_requested', data: { sessionId: 'session-1', description: 'Every day at 9am summarize sales' } },
     {
       type: 'permission_request',
       data: {
@@ -132,6 +133,7 @@ describe('AgentEventSchema', () => {
   it.each([
     ['unknown discriminator', { type: 'fake_event', data: null }],
     ['missing required payload field', { type: 'turn_start', data: {} }],
+    ['missing schedule description', { type: 'schedule_draft_requested', data: { sessionId: 'session-1' } }],
     ['wrong payload primitive', { type: 'tool_call_end', data: { toolCallId: 1, success: true } }],
     ['wrong null terminal payload', { type: 'agent_complete', data: {} }],
     ['wrong envelope field', { type: 'turn_end', data: { turnId: 'turn-1' }, seq: '1' }],
@@ -154,9 +156,11 @@ describe('AgentEventSchema', () => {
 
   it('exports stability metadata and the stable type set from the same source', () => {
     const stabilityMetadata = AgentEventSchema.options.map((schema) => schema.meta()?.stability);
-    expect(stabilityMetadata).toHaveLength(80);
+    expect(stabilityMetadata).toHaveLength(81);
     expect(stabilityMetadata.filter((stability) => stability === 'stable')).toHaveLength(12);
-    expect(stabilityMetadata.filter((stability) => stability === 'experimental')).toHaveLength(68);
+    expect(stabilityMetadata.filter((stability) => stability === 'experimental')).toHaveLength(69);
+    const scheduleSchema = AgentEventSchema.options.find((schema) => schema.shape.type.value === 'schedule_draft_requested');
+    expect(scheduleSchema?.meta()?.stability).toBe('experimental');
     expect(STABLE_EVENT_TYPES).toEqual(new Set([
       'message',
       'tool_call_start',

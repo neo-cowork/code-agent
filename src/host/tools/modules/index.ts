@@ -8,6 +8,7 @@
 // ============================================================================
 
 import type { ToolRegistry } from '../registry';
+import { scheduleTaskSchema } from './cron/scheduleTask.schema';
 
 // ── Eager schema imports (P0-7 方案 A — single source of truth) ───────────
 // .schema.ts 文件只 type-import ToolSchema，无运行时副作用；可安全 eager 导入。
@@ -797,6 +798,8 @@ export function registerMigratedTools(registry: ToolRegistry, platform: NodeJS.P
     historySchema,
     async () => (await import('./lightMemory/history')).historyModule,
   );
+
+  registry.register(scheduleTaskSchema, async () => (await import('./cron/scheduleTask')).scheduleTaskModule);
 
   // roleAuthoring (3): propose_role —— 对话式建角色起草 / exit_role_flow —— 退出严格流程
   //   / set_role_proactivity —— 对话里改角色主动性（forceConfirm 确认卡复述旧->新）

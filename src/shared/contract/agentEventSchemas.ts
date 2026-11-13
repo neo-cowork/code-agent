@@ -496,6 +496,7 @@ const stabilityByType = {
   background_task_ledger_changed: 'experimental',
   memory_learned: 'experimental',
   skill_draft_pending: 'experimental',
+  schedule_draft_requested: 'experimental',
   role_draft_pending: 'experimental',
   role_created_direct: 'experimental',
   team_recipe_draft_pending: 'experimental',
@@ -679,6 +680,7 @@ const TaskCompleteEventSchema = event('task_complete', typed<TaskCompleteData & 
 const BackgroundTaskLedgerChangedEventSchema = event('background_task_ledger_changed', typed<BackgroundTaskLedgerChangedData>(z.object({ taskId: z.string(), sessionId: z.string().optional() })));
 const MemoryLearnedEventSchema = event('memory_learned', typed<MemoryLearnedData>(z.object({ sessionId: z.string(), knowledgeExtracted: z.number(), codeStylesLearned: z.number(), toolPreferencesUpdated: z.number() })));
 const SkillDraftPendingEventSchema = event('skill_draft_pending', typed<SkillDraftPendingData>(z.object({ sessionId: z.string(), drafts: z.array(z.object({ id: z.string(), name: z.string(), description: z.string(), toolSequence: stringArraySchema, occurrences: z.number(), origin: z.enum(['telemetry-distilled', 'llm-review']) })) })));
+const ScheduleDraftRequestedEventSchema = event('schedule_draft_requested', z.object({ sessionId: z.string(), description: z.string() }));
 const RoleDraftPendingEventSchema = event('role_draft_pending', typed<RoleDraftPendingData>(z.object({ sessionId: z.string(), drafts: z.array(z.object({ id: z.string(), roleId: z.string(), description: z.string(), category: z.string().optional(), tools: stringArraySchema, editingRoleId: z.string().optional() })) })));
 const RoleCreatedDirectEventSchema = event('role_created_direct', typed<RoleCreatedDirectData>(z.object({ sessionId: z.string(), roleId: z.string(), displayName: z.string(), canDo: z.string(), willNotDo: z.string() })));
 const TeamRecipeDraftPendingEventSchema = event('team_recipe_draft_pending', typed<TeamRecipeDraftPendingData>(z.object({ sessionId: z.string(), drafts: z.array(z.object({ id: z.string(), name: z.string(), description: z.string(), lead: z.object({ roleId: z.string(), briefTemplate: z.string() }).optional(), members: z.array(z.object({ id: z.string().optional(), roleId: z.string(), taskTemplate: z.string() })), unknownRoleNames: stringArraySchema.optional() })) })));
@@ -767,7 +769,7 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
   SubagentActivityEventSchema, SubagentRunEndEventSchema, SkillActivatedEventSchema, MemoryInjectedEventSchema, MemoryWrittenEventSchema,
   ToolSchemaSnapshotEventSchema, ModelResponseEventSchema, ModelFallbackEventSchema, ApiKeyRequiredEventSchema,
   TaskProgressEventSchema, TaskCompleteEventSchema, BackgroundTaskLedgerChangedEventSchema, MemoryLearnedEventSchema,
-  SkillDraftPendingEventSchema, RoleDraftPendingEventSchema, RoleCreatedDirectEventSchema, TeamRecipeDraftPendingEventSchema,
+  SkillDraftPendingEventSchema, ScheduleDraftRequestedEventSchema, RoleDraftPendingEventSchema, RoleCreatedDirectEventSchema, TeamRecipeDraftPendingEventSchema,
   ResearchModeStartedEventSchema, ResearchProgressEventSchema, ResearchCompleteEventSchema, ResearchErrorEventSchema,
   ResearchDetectedEventSchema, BudgetWarningEventSchema, BudgetExceededEventSchema, ContextCompressedEventSchema, ContextCompressionSignalEventSchema,
   InterruptStartEventSchema, InterruptAcknowledgedEventSchema, InterruptCompleteEventSchema, InputRedirectedEventSchema, CitationsUpdatedEventSchema,
