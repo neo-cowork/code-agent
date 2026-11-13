@@ -1,3 +1,4 @@
+import { isProjectTrustPendingTurn } from './projectTrustTurn';
 import type { TraceTurn } from '@shared/contract/trace';
 import type { StreamRecoverySnapshot } from '@shared/contract/session';
 import type { Translations } from '../i18n';
@@ -125,6 +126,9 @@ export function buildStreamingUiState({
   if (sessionStatus === 'cancelled' || hasCancelledRunMarker(turn)) {
     return idleState;
   }
+
+  // 旧项目待确认：不是故障，只留一句话 + 确认按钮，不出「遇到问题」徽章/横幅。
+  if (isProjectTrustPendingTurn(turn)) return idleState;
 
   if (turn.status === 'error' || sessionStatus === 'error') {
     return {

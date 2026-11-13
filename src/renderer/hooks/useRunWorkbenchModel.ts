@@ -76,6 +76,7 @@ function sessionStatusKindToTaskStatus(kind: SessionStatusKind): TaskRecord['sta
 }
 
 export function buildGlobalTaskRecords(args: {
+  language?: 'zh' | 'en';
   currentSessionId: string | null;
   sessionStates: ReturnType<typeof useTaskStore.getState>['sessionStates'];
   /** sessionStore.sessions（DB 标题 + 持久化状态），按 sourceThreadId 反查 */
@@ -98,7 +99,7 @@ export function buildGlobalTaskRecords(args: {
         id: `global:${sessionId}`,
         scope: 'global' as const,
         title: session
-          ? getDisplaySessionTitle(session.title)
+          ? getDisplaySessionTitle(session.title, args.language)
           : `会话 ${sessionId.slice(0, 8)}`,
         status,
         steps: [{

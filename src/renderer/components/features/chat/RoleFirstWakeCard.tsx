@@ -184,7 +184,7 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
   const intro = snapshot?.intro?.trim() ?? '';
   const showRunning = isActiveState(state) || live === 'optimistic';
   const showFailed = state === 'failed';
-  const showNone = state === 'completed' && sourcesMode === 'none';
+  const showNone = (state === 'completed' || showFailed) && sourcesMode === 'none';
   const showSuggestions = state === 'completed' && sourcesMode === 'connected';
 
   // failed 文案：普通用户只见短原因映射（roleFirstWake.reasons），generic 直接省略冒号和原因；原始错误仅开发者模式露出
@@ -248,17 +248,18 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
               aria-hidden="true"
               data-testid="role-first-wake-pulse"
             />
-            <p className="text-base leading-relaxed text-text-tertiary">{copy.running}</p>
+            {/* 无已连接源时模型没在熟悉任何数据，只准备一句开场：不能说「熟悉已连接的数据」 */}
+            <p className="text-base leading-relaxed text-text-tertiary">{sourcesMode === 'none' ? copy.runningNone : copy.running}</p>
             {skipButton}
           </div>
         )}
         {showFailed && (
           <div className="space-y-0.5">
             <p className="text-base leading-relaxed text-text-primary">{copy.failedReady}</p>
-            <p className="text-sm leading-relaxed text-text-secondary" data-testid="role-first-wake-reason">{failedLookLine}</p>
+            {sourcesMode !== 'none' && <p className="text-sm leading-relaxed text-text-secondary" data-testid="role-first-wake-reason">{failedLookLine}</p>}
           </div>
         )}
-        {(showSuggestions || showNone) && (
+        {(showSuggestions || (showNone && !showFailed)) && (
           <p className="whitespace-pre-wrap text-base leading-relaxed text-text-primary" data-testid="role-first-wake-intro">
             {intro || copy.introFallback}
           </p>
@@ -307,7 +308,7 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
                 </button>
               </>
             )}
-            {showFailed && !showAccountActions && (
+            {showFailed && sourcesMode !== 'none' && !showAccountActions && (
               <button
                 type="button"
                 disabled={busy}

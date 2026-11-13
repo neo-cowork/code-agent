@@ -35,10 +35,12 @@ async function clickNewTask() {
 describe('新任务：旧会话忙碌时绝不被当作可复用草稿', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useSessionStore.setState({ sessions: [], currentSessionId: null, messages: [] });
     (globalThis as Record<string, unknown>).window = {
       domainAPI: { invoke: mockDomainInvoke },
     };
     mockDomainInvoke.mockImplementation(async (_d: string, action: string) => {
+      if (action === 'getMessages') return { success: true, data: [] };
       if (action === 'create') return { success: true, data: blank(NEW) };
       return { success: true, data: null };
     });
@@ -52,7 +54,7 @@ describe('新任务：旧会话忙碌时绝不被当作可复用草稿', () => {
     useSessionStore.setState({
       sessions: [blank(OLD)],
       currentSessionId: OLD,
-      messages: [optimisticFirst as never],
+      messages: [],
       todos: [],
       runningSessionIds: new Set<string>(),
       sessionRuntimes: new Map(),
@@ -72,12 +74,14 @@ describe('新任务：旧会话忙碌时绝不被当作可复用草稿', () => {
   }
 
   it('(a) 当前会话在跑、首条乐观消息待落库 → 新建而非复用', async () => {
+    useSessionStore.setState({ messages: [optimisticFirst] });
     useSessionStore.setState({ runningSessionIds: new Set([OLD]) } as never);
     useAppStore.setState({ processingSessionIds: new Set([OLD]) } as never);
     await expectFreshSession();
   });
 
   it('(a2) 仅有首条乐观用户消息、尚无 running 信号 → 新建', async () => {
+    useSessionStore.setState({ messages: [optimisticFirst] });
     await expectFreshSession();
   });
 

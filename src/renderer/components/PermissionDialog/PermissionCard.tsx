@@ -34,6 +34,7 @@ import {
 } from './WritebackFields';
 import { defaultPermissionViewMode, isGenericCommandRequest, isDangerousRequestShape, isSafeDefaultDeny, permissionSummary } from './permissionPresentation';
 import { isSandboxEscalation, sandboxEscalationDeniedPath, sandboxEscalationQuestion } from './sandboxEscalationPresentation';
+import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
 import { SensitiveStepHandbackCard } from './SensitiveStepHandbackCard';
 import { classifyPermissionDelivery } from './permissionDelivery';
 import { logPermissionClickExit } from '../../services/permissionClickLog';
@@ -70,6 +71,7 @@ function normalizeRequest(
       affectedFileCount: request.details.affectedFileCount,
       targetKind: request.details.targetKind,
       standingGrantTarget: request.details.standingGrantTarget,
+      browserSessionGrant: request.details.browserSessionGrant,
       targetApp: request.details.targetApp,
       triggeredByAgentMessage: request.details.triggeredByAgentMessage,
       method: request.details.method,
@@ -185,11 +187,13 @@ export function PermissionCard({
     isDangerousRequestShape(request);
 
   // forceConfirm 该有的职责一点没松：不许走「会话/始终」这类常驻授权，必须逐次点。
-  const hideStandingGrants = isDangerous || editable || request?.forceConfirm === true || sandboxEscalation;
+  const browserOnceOnly = Boolean(request?.details.browserSessionGrant
+    && (!request.details.browserSessionGrant.target || !['open', 'wait_for_download'].includes(String(request.details.action))));
+  const hideStandingGrants = isDangerous || editable || request?.forceConfirm === true || sandboxEscalation || browserOnceOnly;
 
   const memoryRequest = request ? toMemoryRequest(request) : null;
   const isNewRequest = request !== null && !settled && processedRequestRef.current !== request.id;
-  const memoryResult = memoryRequest && isNewRequest && request?.forceConfirm !== true && !appGrantCard
+  const memoryResult = memoryRequest && isNewRequest && request?.forceConfirm !== true && !appGrantCard && !request?.details.browserSessionGrant
     ? checkMemory(memoryRequest)
     : null;
 
@@ -236,7 +240,7 @@ export function PermissionCard({
       processedRequestRef.current = request.id;
 
       try {
-        if (!appGrantCard && (level === 'session' || level === 'always' || level === 'never') && request.forceConfirm !== true) {
+        if (!appGrantCard && !request.details.browserSessionGrant && (level === 'session' || level === 'always' || level === 'never') && request.forceConfirm !== true) {
           const memoryReq: PermissionRequestForMemory = {
             id: request.id,
             tool: request.tool,
@@ -397,6 +401,7 @@ export function PermissionCard({
   const pendingHeaderEnd = remainingCount > 0
     ? <span className="text-xs text-zinc-500">{p.remainingCount.replace('{count}', String(remainingCount))}</span>
     : undefined;
+  const browserCopy = language === 'en' ? browserSessionGrantEn : browserSessionGrantZh;
   const options: DecisionOption[] = editable ? [
     {
       id: 'once',
@@ -420,8 +425,8 @@ export function PermissionCard({
     { id: 'once', label: p.optionOnce, description: p.optionOnceDesc, shortcut: 'y' },
     ...(!hideStandingGrants
       ? [
-          { id: 'run', label: p.optionRun, description: p.optionRunDesc, shortcut: 's' },
-          { id: '24h', label: p.option24h, description: p.option24hDesc, shortcut: 'a' },
+          { id: 'run', label: request.details.browserSessionGrant ? browserCopy.session : p.optionRun, description: request.details.browserSessionGrant ? browserCopy.sessionDesc : p.optionRunDesc, shortcut: 's' },
+          ...(!request.details.browserSessionGrant ? [{ id: '24h', label: p.option24h, description: p.option24hDesc, shortcut: 'a' }] : []),
         ]
       : []),
     { id: 'deny', label: p.optionDeny, description: p.optionDenyDesc, shortcut: 'n' },
@@ -451,6 +456,8 @@ export function PermissionCard({
   );
   const title = sandboxEscalation
     ? p.sandboxEscalationTitle
+    : request.details.browserSessionGrant
+    ? browserCopy.title
     : appGrantCard
     ? p.computerApp.title.replace('{app}', request.details.targetApp?.name ?? '')
     : isMeetingCreate
