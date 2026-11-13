@@ -2,6 +2,7 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { createSwarmTraceStorageId, type SwarmAgentState } from '../../../src/shared/contract/swarm';
 import type { SwarmRunAgentRecord, SwarmRunDetail, SwarmRunListItem } from '../../../src/shared/contract/swarmTrace';
@@ -10,6 +11,7 @@ import { IPC_CHANNELS } from '../../../src/shared/ipc';
 const invokeMock = vi.fn();
 const invokeDomainMock = vi.fn();
 const appState = {
+  language: 'zh' as 'zh' | 'en',
   openWorkspacePreview: vi.fn(),
   openWorkbenchTab: vi.fn(),
   workbenchTabs: [] as string[],
@@ -22,7 +24,7 @@ const swarmState: {
   lastEventAt?: number;
 } = { agents: [], activeSessionId: undefined };
 
-vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: zh }) }));
+vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: appState.language === 'en' ? en : zh }) }));
 vi.mock('../../../src/renderer/stores/appStore', () => {
   // 工厂在组件 import 时求值，早于 const 初始化：必须延迟解引用
   const useAppStore = (selector: (state: typeof appState) => unknown) => selector(appState);
@@ -71,6 +73,7 @@ const completedDetail: SwarmRunDetail = {
 
 describe('SessionMemberBar（折叠 chip）', () => {
   beforeEach(() => {
+    appState.language = 'zh';
     swarmState.agents = [];
     swarmState.activeSessionId = undefined;
     swarmState.activeRunId = undefined;
@@ -90,6 +93,35 @@ describe('SessionMemberBar（折叠 chip）', () => {
     useSessionStore.setState({ sessions: [], currentSessionId: null });
   });
   afterEach(() => cleanup());
+
+  it.each(['zh', 'en'] as const)('failed chip names each failed agent and human reason, and opens experts (%s)', async (language) => {
+    appState.language = language;
+    useBackgroundTaskStore.setState({ tasks: [
+      { id: 'budget-review', sessionId: 'session-1', source: 'delegate_task', title: 'Budget review', status: 'failed', createdAt: 1, updatedAt: 2, events: [], failure: { reason: 'tool-unavailable', message: 'missing file' } },
+      { id: 'notes-review', sessionId: 'session-1', source: 'delegate_task', title: 'Notes review', status: 'failed', createdAt: 1, updatedAt: 2, events: [] },
+    ] });
+    render(<SessionMemberBar sessionId="session-1" />);
+    const chip = await screen.findByTestId('session-member-bar-collapsed');
+    const t = language === 'zh' ? zh : en;
+    const reason = t.toolStepHumanize.failureCodes['tool-unavailable'];
+    expect(chip.textContent).toContain(language === 'zh' ? '2 个代理 · 失败 · Budget review' : '2 agents · Failed · Budget review');
+    expect(chip.getAttribute('title')).toBe(
+      t.chat.delegationReceipt.failureDetail.replace('{status}', 'Budget review').replace('{reason}', reason) + '\n' + (language === 'zh' ? 'Notes review' : t.chat.delegationReceipt.failureDetail.replace('{status}', 'Notes review').replace('{reason}', t.toolStepHumanize.agentFailureReasons.unknown)),
+    );
+    expect(chip.getAttribute('title')).not.toContain('tool-unavailable');
+    fireEvent.click(chip);
+    expect(appState.openWorkbenchTab).toHaveBeenCalledWith('experts', { source: 'user' });
+  });
+
+  it('cancelled chip names the stopped agent, with name only when no reason exists', async () => {
+    useBackgroundTaskStore.setState({ tasks: [
+      { id: 'budget-review', sessionId: 'session-1', source: 'delegate_task', title: 'Budget review', status: 'cancelled', createdAt: 1, updatedAt: 2, events: [] },
+    ] });
+    render(<SessionMemberBar sessionId="session-1" />);
+    const chip = await screen.findByTestId('session-member-bar-collapsed');
+    expect(chip.textContent).toContain(' · Budget review');
+    expect(chip.getAttribute('title')).toBe('Budget review');
+  });
 
   it('没有团队也没有预选时不渲染', async () => {
     render(<SessionMemberBar sessionId="session-1" />);
