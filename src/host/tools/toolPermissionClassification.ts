@@ -2,7 +2,7 @@
 // 工具权限分类解析（从 toolExecutor.execute 收拢，god-file debt 门：>1000 有效行）
 // ============================================================================
 
-import { classifyPermission, type ClassificationResult } from './permissionClassifier';
+import { classifyPermission, type ClassificationContext, type ClassificationResult } from './permissionClassifier';
 import { enforceWriteFenceObligation } from '../sandbox/writeFence';
 import { isExternalSideEffectTool, mustAskUnderAcceptEdits } from './externalSideEffect';
 import { createTraceStep } from '../security/decisionTraceBuilder';
@@ -426,6 +426,8 @@ export function userDeniedStickyError(toolName: string, deniedSummary?: string):
  */
 export async function resolveToolPermissionClassification(input: {
   executionToolName: string;
+  sessionId?: string;
+  toolDefinition?: ClassificationContext['toolDefinition'];
   policyToolName: string;
   params: Parameters<typeof classifyPermission>[1];
   policyForcesConfirmation: boolean;
@@ -527,6 +529,8 @@ export async function resolveToolPermissionClassification(input: {
       input.permStartTime,
       input.browserSubmitProbe,
     ) ?? await classifyPermission(input.policyToolName, input.params, {
+      sessionId: input.sessionId,
+      toolDefinition: input.toolDefinition,
       workingDirectory: input.workingDirectory,
       workspaceRoot: input.workspaceRoot,
       permissionLevel: input.permissionLevel,
@@ -552,6 +556,7 @@ export async function resolveToolPermissionClassification(input: {
     };
   }
   if (classification.decision === 'ask'
+    && !classification.scheduleWriteTargets
     && permissionModeAutoApproves(input.sessionPermissionMode, input.permissionLevel)
     // acceptEdits 只承诺文件编辑免确认：出站 / 不可逆 / 拉起进程的写档工具不升 approve，
     // 兑现设置文案「命令和外部访问仍保留确认」（N-ACCEPTEDITS-EXTERNAL-ASK）。

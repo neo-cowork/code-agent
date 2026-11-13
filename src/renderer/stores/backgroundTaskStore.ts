@@ -27,6 +27,7 @@ interface BackgroundTaskStoreActions {
   refreshTasks: () => Promise<void>;
   requestStatusReadRetry: () => void;
   drainNotifications: (sessionId: string) => Promise<TaskNotification[]>;
+  dismissEndedTasks: (sessionId: string) => Promise<void>;
   setTasks: (tasks: Task[]) => void;
 }
 
@@ -109,6 +110,18 @@ export const useBackgroundTaskStore = create<BackgroundTaskStore>()((set) => ({
       set({ error: message });
       return [];
     }
+  },
+
+  dismissEndedTasks: async (sessionId) => {
+    if (!ipcService.isAvailable()) return;
+    const response = await typedInvokeDomain(BackgroundTaskSchemas.DISMISS_TERMINAL_TASKS, {
+      action: 'dismissTerminalTasks',
+      payload: { sessionId },
+    });
+    if (!response.success) {
+      throw new Error(response.error.message);
+    }
+    await useBackgroundTaskStore.getState().refreshTasks();
   },
 
   setTasks: (tasks) => set({

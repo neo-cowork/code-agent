@@ -1,3 +1,4 @@
+import { foregroundBrainCapCases } from './foregroundBrainCap.cases';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import express from 'express';
 import http from 'http';
@@ -11,11 +12,14 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { getPromptCommandService } from '../../../src/host/services/commands/promptCommandService';
 import { createCLIAgent } from '../../../src/cli/adapter';
 import { buildQueuedAgentRunBody, createAgentRouter } from '../../../src/web/routes/agent';
+import { handleServerError } from '../../../src/web/middleware/serverErrors';
+import { ProjectSourceTrustError } from '../../../src/host/services/project/projectSourceTrustError';
+import { getAuthService } from '../../../src/host/services/auth/authService';
 import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
 import { HostReasonCode, type Message } from '../../../src/shared/contract';
 import { getModelAuthFailureMarker } from '../../../src/host/model/errorClassifier';
 import type { PendingOperation, RunCheckpoint, RunEngineRef, RunOwnerLease } from '../../../src/shared/contract/durableRun';
-import type { DurableCheckpointInput, PrepareOperationInput, PrepareToolOperationInput } from '../../../src/host/runtime/durableRunKernel';
+import type { DurableCheckpointInput, PrepareOperationInput } from '../../../src/host/runtime/durableRunKernel';
 import {
   markPersistenceDegraded,
   getPersistenceHealth,
@@ -38,6 +42,7 @@ import { setBrowserWindowInteractionProbe } from '../../../src/host/platform';
 import { DurableRunKernel } from '../../../src/host/runtime/durableRunKernel';
 import { DurableRunRepository } from '../../../src/host/services/core/repositories/DurableRunRepository';
 
+let finishRun: (() => void) | undefined;
 const mockRun = vi.fn();
 const mockCancel = vi.fn();
 const mockSteer = vi.fn();
@@ -354,6 +359,8 @@ async function startAgentApi(deps: {
     publishCompanionEvent: deps.publishCompanionEvent,
     hasCompanionApprovalUi: deps.hasCompanionApprovalUi,
   } as Parameters<typeof createAgentRouter>[0]));
+  // 终端错误处理按 createApp 的真实挂载顺序补上（拒绝的 async handler 统一 JSON 应答）。
+  app.use(handleServerError(logger));
 
   server = await new Promise<http.Server>((resolve) => {
     const nextServer = app.listen(0, '127.0.0.1', () => resolve(nextServer));
@@ -363,6 +370,25 @@ async function startAgentApi(deps: {
     throw new Error('Expected TCP test server address');
   }
   baseUrl = `http://127.0.0.1:${address.port}`;
+}
+
+async function disconnectAndStop(controller: AbortController): Promise<void> {
+  if (controller.signal.aborted) return;
+  const previousLogs = logger.info.mock.calls.length;
+  controller.abort();
+  let runId = '';
+  await waitForAssertion(() => {
+    const line = logger.info.mock.calls.slice(previousLogs)
+      .map((call) => String(call[0]))
+      .find((line) => line.includes('continues detached'));
+    expect(line).toBeDefined();
+    runId = line!.match(/run (\S+) continues detached/)![1];
+  });
+  const response = await fetch(`${baseUrl}/api/cancel`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ runId }),
+  });
+  expect(response.ok).toBe(true);
 }
 
 async function closeServer() {
@@ -463,6 +489,34 @@ function externalForkContextSource(
 }
 
 describe('createAgentRouter', () => {
+  foregroundBrainCapCases(async ({ prompt, history = [], requestedCap, goal }) => {
+    await closeServer();
+    sessionMessages.delete('cap-session');
+    const logStart = logger.info.mock.calls.length;
+    await startAgentApi({ tryGetSessionManager: async () => ({
+      getSession: async () => ({ id: 'cap-session', workingDirectory: '/tmp/cap-test' }),
+      getMessages: async () => history,
+      addMessageToSession: async () => undefined,
+    }) });
+    const base = await createCLIAgent({});
+    vi.mocked(createCLIAgent).mockResolvedValueOnce({
+      ...base, getConfig: () => ({ ...base.getConfig(), maxIterations: requestedCap }),
+    } as unknown as typeof base);
+    mockRun.mockResolvedValueOnce(undefined);
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt, sessionId: 'cap-session',
+        ...(goal ? { goal: { review: 'check result' } } : {}) }),
+    });
+    expect(response.ok).toBe(true);
+    await response.text();
+    return {
+      cap: mockCreateAgentLoop.mock.calls.at(-1)?.[0].maxIterations,
+      logs: logger.info.mock.calls.slice(logStart).map(([message]) => String(message))
+        .filter(message => message.startsWith('Foreground brain budget')),
+    };
+  });
+
   it('restores queued modelSpec into the explicit web run body', () => {
     expect(buildQueuedAgentRunBody({
       content: 'queued follow-up',
@@ -523,6 +577,7 @@ describe('createAgentRouter', () => {
     let releaseRun: (() => void) | null = null;
     mockRun.mockImplementation(() => new Promise<void>((resolve) => {
       releaseRun = resolve;
+      finishRun = resolve;
     }));
     mockCancel.mockImplementation(() => {
       releaseRun?.();
@@ -717,7 +772,7 @@ describe('createAgentRouter', () => {
       // 前提自证：桌面这轮确实拼了 turnSystemContext（不是因为没包装才「没有」）
       expect(lastUserContent()).toContain('<user_request>\n桌面上的问题');
       expect(lastUserContent()).not.toContain(SOURCE_LINE);
-    } finally { controller.abort(); }
+    } finally { await disconnectAndStop(controller); }
   });
 
   // 爸 2026-09-16 真机：回复早已显示，手机执行条还挂 3 秒——agent_complete 排在执行后的云端同步之后，
@@ -1012,9 +1067,9 @@ describe('createAgentRouter', () => {
       expect(config.agentOverride?.id).toBe('explore');
       expect(config.requestedAgentId).toBe('explore');
 
-      controller.abort();
+      await disconnectAndStop(controller);
       await waitForAssertion(() => {
-        expect(mockCancel).toHaveBeenCalledWith('client-disconnect');
+        expect(mockCancel).toHaveBeenCalledWith('user');
       });
     });
 
@@ -1044,8 +1099,8 @@ describe('createAgentRouter', () => {
       expect(config.agentOverride?.id).toBe('explore');
       expect(config.requestedAgentId).toBe('explore');
 
-      controller.abort();
-      await waitForAssertion(() => expect(mockCancel).toHaveBeenCalledWith('client-disconnect'));
+      await disconnectAndStop(controller);
+      await waitForAssertion(() => expect(mockCancel).toHaveBeenCalledWith('user'));
     });
 
     it('显式选择解析失败 → SSE routing_resolved 降级信号（fallbackToDefault+requestedAgentId），不再静默', async () => {
@@ -1082,9 +1137,9 @@ describe('createAgentRouter', () => {
       expect(config.agentOverride).toBeUndefined();
       expect(config.requestedAgentId).toBe('__ghost_agent__');
 
-      controller.abort();
+      await disconnectAndStop(controller);
       await waitForAssertion(() => {
-        expect(mockCancel).toHaveBeenCalledWith('client-disconnect');
+        expect(mockCancel).toHaveBeenCalledWith('user');
       });
     });
 
@@ -1111,9 +1166,9 @@ describe('createAgentRouter', () => {
         fallbackToDefault: false,
       });
 
-      controller.abort();
+      await disconnectAndStop(controller);
       await waitForAssertion(() => {
-        expect(mockCancel).toHaveBeenCalledWith('client-disconnect');
+        expect(mockCancel).toHaveBeenCalledWith('user');
       });
     });
 
@@ -1137,9 +1192,9 @@ describe('createAgentRouter', () => {
       const raw = await readSSEUntil(response, 'task_start', 500);
       expect(raw).not.toContain('event: routing_resolved');
 
-      controller.abort();
+      await disconnectAndStop(controller);
       await waitForAssertion(() => {
-        expect(mockCancel).toHaveBeenCalledWith('client-disconnect');
+        expect(mockCancel).toHaveBeenCalledWith('user');
       });
     });
 
@@ -1164,14 +1219,14 @@ describe('createAgentRouter', () => {
       const config = mockCreateAgentLoop.mock.calls.at(-1)![0] as { originKind?: string };
       expect(config.originKind).toBeUndefined();
 
-      controller.abort();
+      await disconnectAndStop(controller);
       await waitForAssertion(() => {
-        expect(mockCancel).toHaveBeenCalledWith('client-disconnect');
+        expect(mockCancel).toHaveBeenCalledWith('user');
       });
     });
   });
 
-  it('cancels the active agent loop when the /api/run SSE client disconnects', async () => {
+  it('detaches the active agent loop on /api/run SSE close and completes through broadcast', async () => {
     const controller = new AbortController();
     const response = await fetch(`${baseUrl}/api/run`, {
       method: 'POST',
@@ -1188,11 +1243,57 @@ describe('createAgentRouter', () => {
       expect(runRegistry.hasSession('session-disconnect')).toBe(true);
     });
 
+    const runId = runRegistry.getBySessionId('session-disconnect')!.context.runId;
     controller.abort();
+    await waitForAssertion(() => expect(logger.info).toHaveBeenCalledWith(
+      `[AgentRouter] SSE client disconnected, run ${runId} continues detached`,
+    ));
+    expect(mockCancel).not.toHaveBeenCalled();
+    expect(runRegistry.hasSession('session-disconnect')).toBe(true);
+    // Complete the actual route's pending loop, without a cancellation event.
+    finishRun?.();
 
     await waitForAssertion(() => {
-      expect(mockCancel).toHaveBeenCalledWith('client-disconnect');
+      expect(runRegistry.hasSession('session-disconnect')).toBe(false);
+      expect(mockBroadcastSSE).toHaveBeenCalledWith('agent:event', expect.objectContaining({
+        type: 'agent_complete', sessionId: 'session-disconnect',
+      }));
     });
+  });
+
+  it('continues an accepted request when its page closes during preflight before SSE headers', async () => {
+    await closeServer();
+    let releasePreflight!: () => void;
+    let enteredPreflight!: () => void;
+    const entered = new Promise<void>((resolve) => { enteredPreflight = resolve; });
+    const released = new Promise<void>((resolve) => { releasePreflight = resolve; });
+    await startAgentApi({ tryGetSessionManager: async () => ({
+      getSession: async () => {
+        enteredPreflight();
+        await released;
+        return { id: 'preflight-detach', title: 'Weekly report', workingDirectory: '/tmp/preflight-detach' };
+      },
+      updateSession: vi.fn(async () => undefined),
+    }) });
+    const controller = new AbortController();
+    const response = fetch(`${baseUrl}/api/run`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: 'Summarize the weekly notes', sessionId: 'preflight-detach' }),
+      signal: controller.signal,
+    }).catch(() => undefined);
+    await entered;
+    controller.abort();
+    await response;
+    releasePreflight();
+    await waitForAssertion(() => expect(mockRun).toHaveBeenCalled());
+    expect(mockCancel).not.toHaveBeenCalled();
+    expect(runRegistry.hasSession('preflight-detach')).toBe(true);
+    expect(logger.info.mock.calls.flat().join(' ')).toContain('continues detached');
+    finishRun?.();
+    await waitForAssertion(() => expect(runRegistry.hasSession('preflight-detach')).toBe(false));
+    expect(mockBroadcastSSE).toHaveBeenCalledWith('agent:event', expect.objectContaining({
+      type: 'agent_complete', sessionId: 'preflight-detach',
+    }));
   });
 
   it('binds the session Project WorkspaceScope onto the durable native run', async () => {
@@ -1243,13 +1344,136 @@ describe('createAgentRouter', () => {
       expect(runRegistry.getBySessionId('session-project-scope')?.context.workspaceScope?.projectId)
         .toBe('project-native-run');
 
-      controller.abort();
+      await disconnectAndStop(controller);
       await waitForAssertion(() => {
-        expect(mockCancel).toHaveBeenCalledWith('client-disconnect');
+        expect(mockCancel).toHaveBeenCalledWith('user');
       });
       await response.text().catch(() => undefined);
     } finally {
       projectServiceMocks.getWorkspaceScope.mockReset();
+      await rm(workspaceRoot, { recursive: true, force: true });
+    }
+  });
+
+  // N-FIX-SIGNED-OUT-SEND-500-RAW-HTML-REDESIGN：trusted Source 的 identity 快照缺失时
+  // getWorkspaceScope 抛 ProjectSourceTrustError——此前经 Express 默认 handler 出整页
+  // HTML 500。现在写 SSE 之前收口成 422 + 稳定码；且 run 未注册，第二次发送拿到同一
+  // 个 422（不是「另一条 run 正在跑」的 409）。
+  it('answers a ProjectSourceTrustError from workspace-scope resolution with 422 PROJECT_SOURCE_TRUST, on repeat sends too', async () => {
+    await closeServer();
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'agent-trust-reject-'));
+    const getSession = vi.fn(async () => ({
+      id: 'session-trust-reject',
+      title: 'Trust reject',
+      projectId: 'project-trust-reject',
+      workingDirectory: workspaceRoot,
+    }));
+    projectServiceMocks.getWorkspaceScope.mockImplementation(() => {
+      throw new ProjectSourceTrustError('identity_changed', workspaceRoot);
+    });
+
+    try {
+      await startAgentApi({
+        tryGetSessionManager: async () => ({ getSession, updateSession: vi.fn(async () => undefined) }),
+      });
+      const post = () => fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: '帮我把下载文件夹里的照片按日期改名',
+          sessionId: 'session-trust-reject',
+          context: { workingDirectory: workspaceRoot },
+        }),
+      });
+      const first = await post();
+      expect(await first.json()).toEqual({
+        error: 'Project folder needs trust confirmation',
+        code: 'PROJECT_SOURCE_TRUST',
+        kind: 'identity_changed',
+      });
+      expect(first.status).toBe(422);
+      // 第二次发送：run 未注册，拿到同一个 422（不是「另一条 run 正在跑」的 409）
+      const second = await post();
+      expect(second.status).toBe(422);
+      expect(await second.json()).toEqual({
+        error: 'Project folder needs trust confirmation',
+        code: 'PROJECT_SOURCE_TRUST',
+        kind: 'identity_changed',
+      });
+      expect(runRegistry.getBySessionId('session-trust-reject')).toBeUndefined();
+      expect(logger.warn).toHaveBeenCalledWith(
+        '[AgentRouter] run rejected by Project Source trust gate',
+        expect.objectContaining({ sessionId: 'session-trust-reject', kind: 'identity_changed' }),
+      );
+      // ③ 变体：登录态（ownerUserId 非空）同一份坏 Source 表现一致——信任门与会话
+      // 归属人无关，signed-in 不放宽也不收窄。
+      const auth = getAuthService();
+      const currentUser = vi.spyOn(auth, 'getCurrentUser').mockReturnValue({
+        id: 'user-signed-in', email: 'signed-in@example.com',
+      } as ReturnType<typeof auth.getCurrentUser>);
+      try {
+        const signedIn = await post();
+        expect(signedIn.status).toBe(422);
+        expect(await signedIn.json()).toEqual({
+          error: 'Project folder needs trust confirmation',
+          code: 'PROJECT_SOURCE_TRUST',
+          kind: 'identity_changed',
+        });
+      } finally {
+        currentUser.mockRestore();
+      }
+    } finally {
+      projectServiceMocks.getWorkspaceScope.mockReset();
+      await rm(workspaceRoot, { recursive: true, force: true });
+    }
+  });
+
+  // ④ 终端错误处理：scope 预检抛普通 Error（如两个 Source 根重叠）时不许再出 HTML——
+  // 统一 JSON 500 + INTERNAL_SERVER_ERROR，并留一条 method/route/status/reason 日志。
+  it('answers an unexpected pre-SSE failure with JSON INTERNAL_SERVER_ERROR and logs it', async () => {
+    await closeServer();
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'agent-overlap-500-'));
+    const getSession = vi.fn(async () => ({
+      id: 'session-overlap-500',
+      title: 'Overlap',
+      projectId: 'project-overlap-500',
+      workingDirectory: workspaceRoot,
+    }));
+    projectServiceMocks.getWorkspaceScope.mockImplementation(() => {
+      throw new Error(`Project sources overlap: ${workspaceRoot} and ${workspaceRoot}/sub`);
+    });
+    logger.error.mockClear();
+
+    try {
+      await startAgentApi({
+        tryGetSessionManager: async () => ({ getSession, updateSession: vi.fn(async () => undefined) }),
+      });
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: '帮我把下载文件夹里的照片按日期改名',
+          sessionId: 'session-overlap-500',
+          context: { workingDirectory: workspaceRoot },
+        }),
+      });
+      const rawBody = await response.text();
+      expect(response.status).toBe(500);
+      expect(response.headers.get('content-type')).toContain('application/json');
+      expect(rawBody).not.toMatch(/<html|<!DOCTYPE/i);
+      expect(JSON.parse(rawBody)).toEqual({
+        error: 'Local server request failed',
+        code: 'INTERNAL_SERVER_ERROR',
+      });
+      expect(logger.error).toHaveBeenCalledWith('Local server request failed', {
+        method: 'POST',
+        route: '/api/run',
+        status: 500,
+        reason: expect.stringContaining('Project sources overlap'),
+      });
+    } finally {
+      projectServiceMocks.getWorkspaceScope.mockReset();
+      logger.error.mockClear();
       await rm(workspaceRoot, { recursive: true, force: true });
     }
   });
@@ -1296,8 +1520,8 @@ describe('createAgentRouter', () => {
       expect(liveRunId).not.toBe(`run-parked-${cause}`);
       expect(await repository.get(liveRunId!)).toMatchObject({ status: 'running', sessionId });
 
-      controller.abort();
-      await waitForAssertion(() => expect(mockCancel).toHaveBeenCalledWith('client-disconnect'));
+      await disconnectAndStop(controller);
+      await waitForAssertion(() => expect(mockCancel).toHaveBeenCalledWith('user'));
       await response.text().catch(() => undefined);
     } finally {
       beforeCrash.clear();
@@ -1432,8 +1656,8 @@ describe('createAgentRouter', () => {
       },
     });
 
-    controller.abort();
-    await waitForAssertion(() => expect(cancelPriorRun).toHaveBeenCalledWith('client-disconnect'), 3000);
+    await disconnectAndStop(controller);
+    await waitForAssertion(() => expect(cancelPriorRun).toHaveBeenCalledWith('user'), 3000);
     await vi.waitFor(() => {
       expect(new QueuedInputRepository(queuedInputTestDb!).getById('drained-user')).toMatchObject({
         status: 'consumed',
@@ -1554,8 +1778,8 @@ describe('createAgentRouter', () => {
     });
     await steerPersistenceStarted;
 
-    controller.abort();
-    await waitForAssertion(() => expect(cancelActiveRun).toHaveBeenCalledWith('client-disconnect'), 3000);
+    await disconnectAndStop(controller);
+    await waitForAssertion(() => expect(cancelActiveRun).toHaveBeenCalledWith('user'), 3000);
     releaseSteerPersistence?.();
 
     const steerResponse = await steerResponsePromise;
@@ -1586,29 +1810,38 @@ describe('createAgentRouter', () => {
         expect(messages).toContainEqual(expect.objectContaining({
           role: 'user', metadata: expect.objectContaining({ workbench: { memoryTainted: true } }),
         }));
-      } finally { controller.abort(); }
+      } finally { await disconnectAndStop(controller); }
       await waitForAssertion(() => expect(mockCancel).toHaveBeenCalled());
     });
 
     describe('slash prompt command expansion on the desktop /run route (FB-523)', () => {
-      const postRun = async (prompt: string, sessionId: string) => {
+      const postRun = async (prompt: string, sessionId: string, workingDirectory?: string) => {
         const controller = new AbortController();
         mockRun.mockClear();
         mockCreateAgentLoop.mockClear();
         try {
           const response = await fetch(`${baseUrl}/api/run`, {
             method: 'POST', headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ prompt, sessionId }), signal: controller.signal,
+            body: JSON.stringify({
+              prompt,
+              sessionId,
+              ...(workingDirectory ? { context: { workingDirectory } } : {}),
+            }),
+            signal: controller.signal,
           });
           expect(response.ok).toBe(true);
           await waitForAssertion(() => expect(mockRun).toHaveBeenCalled());
           const messages = mockCreateAgentLoop.mock.calls.at(-1)![2] as Message[];
           return { runArgs: mockRun.mock.calls.at(-1)!, messages };
-        } finally { controller.abort(); }
+        } finally { await disconnectAndStop(controller); }
       };
 
-      it('/init-memory 展开为内置模板送模型，展示/持久化仍是字面量', async () => {
-        const { runArgs, messages } = await postRun('/init-memory', 'session-init-memory-expand');
+      it('/init-memory 在已选目录展开为内置模板送模型，展示/持久化仍是字面量', async () => {
+        const { runArgs, messages } = await postRun(
+          '/init-memory',
+          'session-init-memory-expand',
+          '/tmp/init-memory-selected-project',
+        );
         expect(String(runArgs[0])).toContain('为当前工作目录起草项目记忆');
         expect(runArgs[1]).toBe('/init-memory');
         const lastUser = messages.filter(m => m.role === 'user').at(-1)!;
@@ -1637,6 +1870,34 @@ describe('createAgentRouter', () => {
       });
     });
 
+    describe('missing-attachment turn context on the desktop /run route (N-FIX-ATTACHMENT-NOT-IN-WORKDIR-FU1)', () => {
+      const postRun = async (prompt: string, sessionId: string) => {
+        const controller = new AbortController();
+        mockRun.mockClear();
+        try {
+          const response = await fetch(`${baseUrl}/api/run`, {
+            method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ prompt, sessionId, attachments: [] }), signal: controller.signal,
+          });
+          expect(response.ok).toBe(true);
+          await waitForAssertion(() => expect(mockRun).toHaveBeenCalled());
+          return String(mockRun.mock.calls.at(-1)![0]);
+        } finally { controller.abort(); }
+      };
+      const LINE = '本轮未收到任何上传附件';
+
+      it('空附件 + "分析这张销售表" → 模型面提示词恰含一次缺附件行', async () => {
+        const modelPrompt = await postRun('分析这张销售表', 'session-missing-att-route-pos');
+        expect(modelPrompt.split(LINE)).toHaveLength(2);
+        expect(modelPrompt).toContain('分析这张销售表');
+      });
+
+      it('"帮我写一首关于春天的短诗" 不含缺附件行', async () => {
+        const modelPrompt = await postRun('帮我写一首关于春天的短诗', 'session-missing-att-route-neg');
+        expect(modelPrompt).not.toContain(LINE);
+      });
+    });
+
     it('连接器 chip 进入 AgentLoop toolScope，不只停在提示词和消息 metadata', async () => {
       const controller = new AbortController();
       const response = await fetch(`${baseUrl}/api/run`, {
@@ -1660,7 +1921,7 @@ describe('createAgentRouter', () => {
         toolScope?: { allowedConnectorIds?: string[] };
       };
       expect(config.toolScope).toEqual({ allowedConnectorIds: ['tmeet'] });
-      controller.abort();
+      await disconnectAndStop(controller);
       await waitForAssertion(() => {
         expect(mockCancel).toHaveBeenCalled();
       });
@@ -1683,7 +1944,7 @@ describe('createAgentRouter', () => {
       };
       expect(config.taskManagerToolsEnabled).not.toBe(true);
       expect(config.goalContract?.allowSwarm).toBe(false);
-      controller.abort();
+      await disconnectAndStop(controller);
       await waitForAssertion(() => expect(mockCancel).toHaveBeenCalled());
     });
 
@@ -1713,7 +1974,7 @@ describe('createAgentRouter', () => {
       expect(config.allowedToolNames).toEqual(expect.arrayContaining(['Read', 'Edit', 'Write']));
       expect(config.allowedToolNames).not.toEqual(expect.arrayContaining(['Append', 'Bash']));
       expect(config.maxIterations).toBe(8);
-      controller.abort();
+      await disconnectAndStop(controller);
       await waitForAssertion(() => {
         expect(mockCancel).toHaveBeenCalled();
       });
@@ -1745,7 +2006,53 @@ describe('createAgentRouter', () => {
       expect(config.systemPrompt).toContain('<morning_brief_save_draft>');
       expect(config.systemPrompt).toContain('已经存过');
       expect(config.systemPrompt).toContain('没有开邮件权限');
-      controller.abort();
+      await disconnectAndStop(controller);
+      await waitForAssertion(() => {
+        expect(mockCancel).toHaveBeenCalled();
+      });
+    });
+
+    // FU1 rework r2：config.systemPrompt 那份规则块在 contextAssembly 重建系统消息时被丢
+    // （ctx.systemPrompt 不进请求；2026-11-11 真机抓包 + turn_snapshots 层台账实证）。
+    // 模型面必须经 turn 脚手架（wrapWithTurnSystemContext）送达，与桌面 envelope 路
+    // （withSessionCommandCenterBrain → turnSystemContext）同源同形。
+    it('存草稿轮次：规则块进模型面用户消息（turn 脚手架）；普通轮不进', async () => {
+      const controller = new AbortController();
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: 'save draft 1', sessionId: 'session-save-draft-model-face' }),
+        signal: controller.signal,
+      });
+      expect(response.ok).toBe(true);
+      await waitForAssertion(() => {
+        expect(mockCreateAgentLoop).toHaveBeenCalled();
+      });
+      const messages = mockCreateAgentLoop.mock.calls.at(-1)![2] as Message[];
+      const lastUserContent = String(messages.filter((m) => m.role === 'user').at(-1)!.content);
+      expect(lastUserContent).toContain('<user_request>');
+      expect(lastUserContent).toContain('save draft 1');
+      expect(lastUserContent).toContain('<morning_brief_save_draft>');
+      await disconnectAndStop(controller);
+      await waitForAssertion(() => {
+        expect(mockCancel).toHaveBeenCalled();
+      });
+
+      // 普通轮不携带：回合级规则块只在存草稿判据命中时出现（前缀缓存/上下文零膨胀）
+      mockCreateAgentLoop.mockClear();
+      const controller2 = new AbortController();
+      const response2 = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: '今天有什么安排', sessionId: 'session-plain-turn-model-face' }),
+        signal: controller2.signal,
+      });
+      expect(response2.ok).toBe(true);
+      await waitForAssertion(() => {
+        expect(mockCreateAgentLoop).toHaveBeenCalled();
+      });
+      const messages2 = mockCreateAgentLoop.mock.calls.at(-1)![2] as Message[];
+      const lastUser2 = String(messages2.filter((m) => m.role === 'user').at(-1)!.content);
+      expect(lastUser2).not.toContain('<morning_brief_save_draft>');
+      await disconnectAndStop(controller2);
       await waitForAssertion(() => {
         expect(mockCancel).toHaveBeenCalled();
       });
@@ -1786,7 +2093,7 @@ describe('createAgentRouter', () => {
         expect(response.ok).toBe(true);
         await waitForAssertion(() => expect(mockCreateAgentLoop).toHaveBeenCalled());
         const config = mockCreateAgentLoop.mock.calls.at(-1)![0] as { allowedToolNames?: string[] };
-        controller.abort();
+        await disconnectAndStop(controller);
         await waitForAssertion(() => expect(mockCancel).toHaveBeenCalled());
         return config.allowedToolNames;
       }
@@ -1834,7 +2141,7 @@ describe('createAgentRouter', () => {
       expect(config.allowedToolNames).not.toContain('mail_draft');
       expect(config.systemPrompt).toContain('<session_command_center>');
       expect(config.systemPrompt).not.toContain('<morning_brief_save_draft>');
-      controller.abort();
+      await disconnectAndStop(controller);
       await waitForAssertion(() => {
         expect(mockCancel).toHaveBeenCalled();
       });
@@ -1863,7 +2170,7 @@ describe('createAgentRouter', () => {
       };
       expect(config.thinkingEnabled).toBe(false);
       expect(config.effortLevel).toBe('low');
-      controller.abort();
+      await disconnectAndStop(controller);
       await waitForAssertion(() => {
         expect(mockCancel).toHaveBeenCalled();
       });
@@ -1891,7 +2198,7 @@ describe('createAgentRouter', () => {
       expect(config.deniedToolNames).toEqual(expect.arrayContaining([
         'Task', 'spawn_agent', 'AgentSpawn', 'teammate', 'workflow', 'workflow_orchestrate',
       ]));
-      controller.abort();
+      await disconnectAndStop(controller);
       await waitForAssertion(() => {
         expect(mockCancel).toHaveBeenCalled();
       });
@@ -1916,7 +2223,7 @@ describe('createAgentRouter', () => {
         deniedToolNames?: string[];
       };
       expect(config.deniedToolNames ?? []).not.toEqual(expect.arrayContaining(['spawn_agent', 'Task']));
-      controller.abort();
+      await disconnectAndStop(controller);
       await waitForAssertion(() => {
         expect(mockCancel).toHaveBeenCalled();
       });
@@ -1943,7 +2250,7 @@ describe('createAgentRouter', () => {
         'session-meta-prepersist',
         expect.objectContaining({ role: 'user', isMeta: true }),
       );
-      controller.abort();
+      await disconnectAndStop(controller);
       await waitForAssertion(() => {
         expect(mockCancel).toHaveBeenCalled();
       });
@@ -1970,7 +2277,7 @@ describe('createAgentRouter', () => {
       };
       expect(config.thinkingEnabled).toBe(true);
       expect(config.effortLevel).toBeUndefined();
-      controller.abort();
+      await disconnectAndStop(controller);
       await waitForAssertion(() => {
         expect(mockCancel).toHaveBeenCalled();
       });
@@ -2044,7 +2351,7 @@ describe('createAgentRouter', () => {
         attempt: 1,
       });
 
-      controller.abort();
+      await disconnectAndStop(controller);
       await waitForAssertion(() => expect(runRegistry.hasSession('session-s2-conflict')).toBe(false), 3000);
     });
 
@@ -2081,8 +2388,8 @@ describe('createAgentRouter', () => {
       expect(new Set(handles.map((handle) => handle.context.sessionId)).size).toBe(2);
       expect(handles.every((handle) => handle.context.sessionId.startsWith('web-session-'))).toBe(true);
 
-      controllerA.abort();
-      controllerB.abort();
+      await disconnectAndStop(controllerA);
+      await disconnectAndStop(controllerB);
       loopA.release();
       loopB.release();
       await waitForAssertion(() => expect(runRegistry.size).toBe(0), 3000);
@@ -2168,7 +2475,7 @@ describe('createAgentRouter', () => {
       await waitForAssertion(() => expect(runRegistry.size).toBe(0), 3000);
     });
 
-    it('disconnecting one concurrent response cancels only its captured RunHandle', async () => {
+    it('disconnecting one concurrent response leaves both captured RunHandles running', async () => {
       const loopA = createPendingLoop();
       const loopB = createPendingLoop();
       mockCreateAgentLoop.mockImplementation((...args: unknown[]) => (
@@ -2196,8 +2503,13 @@ describe('createAgentRouter', () => {
         waitForAttached('session-s2-disconnect-b'),
       ]);
 
+      const runId = runRegistry.getBySessionId('session-s2-disconnect-a')!.context.runId;
       controllerA.abort();
-      await waitForAssertion(() => expect(loopA.cancel).toHaveBeenCalledOnce(), 3000);
+      await waitForAssertion(() => expect(logger.info).toHaveBeenCalledWith(
+        `[AgentRouter] SSE client disconnected, run ${runId} continues detached`,
+      ));
+      expect(loopA.cancel).not.toHaveBeenCalled();
+      expect(runRegistry.hasSession('session-s2-disconnect-a')).toBe(true);
       expect(loopB.cancel).not.toHaveBeenCalled();
       expect(runRegistry.hasSession('session-s2-disconnect-b')).toBe(true);
 
@@ -2290,7 +2602,7 @@ describe('createAgentRouter', () => {
     });
 
     const drainRuns = async (opened: Array<{ controller: AbortController }>) => {
-      for (const o of opened) o.controller.abort();
+      for (const o of opened) await disconnectAndStop(o.controller);
       // 反复排空：run promise 可能在 abort 之后才被 handler 创建（异步 setup 竞态），
       // 单次 splice 会漏掉迟到的 release。
       const deadline = Date.now() + 3000;
@@ -2349,10 +2661,9 @@ describe('createAgentRouter', () => {
         }
         await Promise.all(opened.map((o) => o.responsePromise));
 
-        opened[0].controller.abort(); // 断线其中一条
-        await waitForAssertion(() => {
-          expect(mockCancel).toHaveBeenCalled();
-        });
+        opened[0].controller.abort(); // 只断线，不停止 run
+        await waitForAssertion(() => expect(logger.info.mock.calls.flat().join(' ')).toContain('continues detached'));
+        expect(mockCancel).not.toHaveBeenCalled();
 
         // 槽位释放后，新连接应被接受（重试等待释放传播）
         let accepted = false;
@@ -2360,10 +2671,11 @@ describe('createAgentRouter', () => {
         while (!accepted && Date.now() < deadline) {
           const retry = openRun(`session-rel-new-${Date.now()}`, 'tok-rel');
           const res = await retry.responsePromise;
-          retry.controller.abort();
           if (res.status === 200) {
+            await disconnectAndStop(retry.controller);
             accepted = true;
           } else {
+            retry.controller.abort();
             await new Promise((resolve) => setTimeout(resolve, 50));
           }
         }
@@ -5839,7 +6151,7 @@ describe('createAgentRouter', () => {
       expect(parseSSEData(taskStartRaw, 'task_start')?.sessionId).toBe('session-env-protocol-ok');
       await waitForAssertion(() => expect(mockCreateAgentLoop).toHaveBeenCalledTimes(1));
 
-      controller.abort();
+      await disconnectAndStop(controller);
       await waitForAssertion(() => expect(runRegistry.hasSession('session-env-protocol-ok')).toBe(false), 3000);
     });
   });

@@ -224,6 +224,8 @@ export interface AgentRunOptions {
    * 缺省 = 按来源推断，定值见 permissions/runInitiatingText.ts。
    */
   initiatingUserText?: string | null;
+  /** 唤醒等辅助轮截取终态 error 事件：命中时走此回调并抑制向会话前端广播通用失败卡。 */
+  terminalErrorSink?: (data: unknown) => void;
 }
 
 // ============================================================================

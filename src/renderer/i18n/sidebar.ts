@@ -1,3 +1,4 @@
+import { cronSessionTitlePrefixes } from '@shared/cronSessionTitle';
 // ============================================================================
 // 侧边栏导航域词条（Sidebar / features/sidebar 各组件与 hook）—— zh/en 同文件相邻维护。
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮（同 chatInput.ts / chatTranscript.ts 先例）。
@@ -6,6 +7,7 @@
 
 export const sidebarZh = {
   sidebar: {
+    cronTitlePrefixes: cronSessionTitlePrefixes.zh,
     // 顶部 / 搜索
     newTask: '新任务',
     collapseSidebar: '收起侧栏',
@@ -29,6 +31,7 @@ export const sidebarZh = {
     createProjectPickFolder: '选择目录',
     createProjectSubmit: '创建',
     createProjectFailed: '创建项目失败，请重试',
+    createSessionFailedPrefix: '新建会话失败：',
     confirm: '确定',
     openSearch: '搜索会话',
     searchPlaceholder: '搜索会话…',
@@ -40,14 +43,19 @@ export const sidebarZh = {
     searchingMessagesShort: '搜消息中…',
     recentSessions: '最近会话',
     currentSession: '当前',
+    latestRun: '最新',
     messageHits: '命中 {count} 条消息',
     // 列表状态
     loading: '加载中…',
+    loadSessionsFailed: '暂时无法载入会话列表，请重试。',
+    loadSessionFailed: '暂时无法打开这条会话，请重试。',
+    retryLoadSessions: '重试',
     noSessions: '还没有勘测记录',
     startNewTask: '开始一个新任务',
     searchingMessageContent: '搜索消息内容中…',
     noStatusSessions: '当前没有{label}会话',
     noMatchedSessions: '这片星域没有信号',
+    searchFailed: '搜索没有成功，请稍后再试一次',
     statusMatchFallback: '匹配',
     // 分页（加载更早的历史会话）
     loadOlderSessions: '加载更早的会话',
@@ -80,6 +88,8 @@ export const sidebarZh = {
     menuSettings: '设置',
     menuSignOut: '退出登录',
     signIn: '登录',
+    signedOutSettings: '设置',
+    skipSignInSetup: '先不登录，去配置模型/通道',
     // 数据集标记 toast
     markedAsDataset: '已标记为 {role}',
     updateDatasetFailed: '更新数据集标记失败：{message}',
@@ -379,6 +389,7 @@ export const sidebarZh = {
 
 export const sidebarEn: typeof sidebarZh = {
   sidebar: {
+    cronTitlePrefixes: cronSessionTitlePrefixes.en,
     newTask: 'New task',
     collapseSidebar: 'Collapse sidebar',
     expandSidebar: 'Expand sidebar',
@@ -395,6 +406,7 @@ export const sidebarEn: typeof sidebarZh = {
     createProjectPickFolder: 'Choose directory',
     createProjectSubmit: 'Create',
     createProjectFailed: 'Failed to create project. Try again.',
+    createSessionFailedPrefix: 'Failed to create session: ',
     confirm: 'Confirm',
     openSearch: 'Search sessions',
     searchPlaceholder: 'Search sessions…',
@@ -406,13 +418,18 @@ export const sidebarEn: typeof sidebarZh = {
     searchingMessagesShort: 'Searching messages…',
     recentSessions: 'Recent sessions',
     currentSession: 'Current',
+    latestRun: 'Latest',
     messageHits: '{count} message matches',
     loading: 'Loading…',
+    loadSessionsFailed: 'We couldn’t load your conversations. Please try again.',
+    loadSessionFailed: 'We couldn’t open this conversation. Please try again.',
+    retryLoadSessions: 'Retry',
     noSessions: 'No expeditions yet',
     startNewTask: 'Start a new task',
     searchingMessageContent: 'Searching message content…',
     noStatusSessions: 'No {label} sessions right now',
     noMatchedSessions: 'No signals in this sector',
+    searchFailed: 'Search didn\'t go through. Please try again.',
     statusMatchFallback: 'Matched',
     // Pagination (loading older history sessions)
     loadOlderSessions: 'Load older sessions',
@@ -442,6 +459,8 @@ export const sidebarEn: typeof sidebarZh = {
     menuSettings: 'Settings',
     menuSignOut: 'Sign out',
     signIn: 'Sign in',
+    signedOutSettings: 'Settings',
+    skipSignInSetup: 'Skip sign-in and set up a model or channel',
     markedAsDataset: 'Marked as {role}',
     updateDatasetFailed: 'Failed to update dataset label: {message}',
     newSessionTitle: 'New conversation',

@@ -52,6 +52,9 @@ import type { PendingApprovalRepository } from '../../../src/host/services/core/
 import type { PendingApprovalKind, PendingApprovalStatus, ToolApprovalPayload } from '../../../src/shared/contract/pendingApproval';
 import type { AppSettings } from '../../../src/shared/contract';
 import { NL_RULE_K2_TEXT } from '../../../src/shared/nlRuleRestate';
+import { memoryWriteSchema } from '../../../src/host/tools/modules/lightMemory/memoryWrite.schema';
+import { getDecisionHistory } from '../../../src/host/security/decisionHistory';
+import { ROLE_OWN_MEMORY_UNATTENDED_REASON } from '../../../src/host/tools/roleOwnMemoryAllow';
 
 /** 外部副作用工具（转账/改密码一类）：requiresPermission，走完整审批链。 */
 const TRANSFER_TOOL = 'mcp__bank__transfer';
@@ -348,5 +351,72 @@ describe('④ preapprove：短语命中免卡，未命中出卡；deny 仍硬拒
     expect(toolResult.success).toBe(false);
     expect(toolResult.error).toContain('Blocked by your permission deny rule');
     expect(resolverState.execute).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('r9：角色自己的记忆写入仍服从 nlRules', () => {
+  const roleId = 'morning-notes';
+  const args = {
+    action: 'write', scope: 'role', filename: 'preference-bullets.md',
+    name: '汇报偏好', description: '只要三条要点', type: 'user', content: '汇报正文只要三条要点。',
+  };
+
+  function prepare() {
+    resolverState.getDefinition.mockReturnValue({ ...memoryWriteSchema, requiresPermission: true });
+    startUnattendedRun('整理自己的记忆', roleId);
+    const repo = makeMemoryRepo();
+    const island = makeAttendedIsland(repo);
+    const executor = makeExecutor(island);
+    getDecisionHistory().clear();
+    return { repo, island, executor };
+  }
+
+  it('无用户规则时确实命中 role-own-memory 自动放行（回归用例正对照）', async () => {
+    const { repo, executor } = prepare();
+    const result = await executor.execute('MemoryWrite', args, { sessionId: SESSION, agentRole: roleId });
+    expect(result.success).toBe(true);
+    expect(resolverState.execute).toHaveBeenCalledTimes(1);
+    expect(repo.rows.size).toBe(0);
+    expect(getDecisionHistory().getAll().some((row) => row.reason === ROLE_OWN_MEMORY_UNATTENDED_REASON)).toBe(true);
+  });
+
+  it('deny 在 own-memory 放行块之前硬拒', async () => {
+    getPolicyEngine().loadUserRules({ nlRules: [{ behavior: 'deny', rule: 'MemoryWrite', roleId }] });
+    const { repo, executor } = prepare();
+    const result = await executor.execute('MemoryWrite', args, { sessionId: SESSION, agentRole: roleId });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Blocked by your permission rule');
+    expect(resolverState.execute).not.toHaveBeenCalled();
+    expect(repo.rows.size).toBe(0);
+    expect(getDecisionHistory().getAll().some((row) => row.reason === ROLE_OWN_MEMORY_UNATTENDED_REASON)).toBe(false);
+  });
+
+  it.each(['handback', 'ask'] as const)('%s：角色记忆写入停车且不执行，不被 own-memory 自动批准', async (behavior) => {
+    getPolicyEngine().loadUserRules({ nlRules: [{ behavior, rule: 'MemoryWrite', roleId }] });
+    const { repo, island, executor } = prepare();
+    const resultPromise = executor.execute('MemoryWrite', args, { sessionId: SESSION, agentRole: roleId });
+    // 等到执行完成或停车之一，故意回退自动放行时直接断言执行副作用，而非等超时。
+    await vi.waitFor(() => expect(repo.rows.size + resolverState.execute.mock.calls.length).toBeGreaterThan(0));
+    try {
+      expect(resolverState.execute).not.toHaveBeenCalled();
+      expect(repo.rows.size).toBe(1);
+      const row = [...repo.rows.values()][0];
+      expect(row.status).toBe('pending');
+      expect(island.listPendingRequests()[0].forceConfirmBoundaryOnly).not.toBe(true);
+      expect(row.payload.handback).toBe(behavior === 'handback' ? true : undefined);
+      expect(await isStillPending(resultPromise)).toBe(true);
+      expect(getDecisionHistory().getAll().some((entry) => entry.reason === ROLE_OWN_MEMORY_UNATTENDED_REASON)).toBe(false);
+      expect(island.handlePermissionResponse(row.id, behavior === 'handback' ? 'user_did_it' : 'deny')).toBe('delivered');
+      const result = await resultPromise;
+      if (behavior === 'handback') {
+        expect(result.success).toBe(true);
+        expect(result.output).toBe(NL_RULE_K2_TEXT.handbackDoneModelText('MemoryWrite'));
+      }
+      expect(resolverState.execute).not.toHaveBeenCalled();
+    } finally {
+      island.drainPendingPermissions();
+      await resultPromise;
+    }
   });
 });

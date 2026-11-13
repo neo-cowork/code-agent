@@ -279,30 +279,51 @@ describe('审批岛 ②④ 交互与停车路径铸权', () => {
     const repo = { insert: vi.fn(), resolve: vi.fn(() => 1) } as unknown as PendingApprovalRepository;
     const { island, ask } = makeIsland({ sessionId: 'cron-run-9', unattended: true, repo });
     const { promise, id } = ask({
-      tool: 'mail_send',
+      tool: 'mcp__slack__send_message',
       type: 'mcp',
       details: { command: undefined, standingGrantTarget: 'team@example.com' },
     });
     expect(island.handlePermissionResponse(id, 'allow_run')).toBe('delivered');
     expect(await promise).toMatchObject({ approved: true, approvalSource: 'user' });
     // 只在这个运行会话里、对同一 target 免询问；别的 target / 下一次 cron 运行（新会话）都问。
-    expect(matchToolGrant('cron-run-9', 'mail_send', 'team@example.com', Date.now())).toBe('run');
-    expect(matchToolGrant('cron-run-10', 'mail_send', 'team@example.com', Date.now())).toBe(null);
-    expect(matchToolGrant('cron-run-9', 'mail_send', 'someone@example.com', Date.now())).toBe(null);
+    expect(matchToolGrant('cron-run-9', 'mcp__slack__send_message', 'team@example.com', Date.now())).toBe('run');
+    expect(matchToolGrant('cron-run-10', 'mcp__slack__send_message', 'team@example.com', Date.now())).toBe(null);
+    expect(matchToolGrant('cron-run-9', 'mcp__slack__send_message', 'someone@example.com', Date.now())).toBe(null);
   });
 
   it('④ 停车审批 allow_24h 同样铸权（target 从透传字段取）', async () => {
     const repo = { insert: vi.fn(), resolve: vi.fn(() => 1) } as unknown as PendingApprovalRepository;
     const { island, ask } = makeIsland({ sessionId: 'cron-run-11', unattended: true, repo });
     const { promise, id } = ask({
-      tool: 'mail_send',
+      tool: 'mcp__slack__send_message',
       type: 'mcp',
       details: { standingGrantTarget: 'ops@example.com' },
     });
     expect(island.handlePermissionResponse(id, 'allow_24h')).toBe('delivered');
     expect(await promise).toMatchObject({ approved: true });
-    expect(matchToolGrant('anywhere', 'mail_send', 'ops@example.com', Date.now())).toBe('24h');
+    expect(matchToolGrant('anywhere', 'mcp__slack__send_message', 'ops@example.com', Date.now())).toBe('24h');
   });
+
+  it.each(['allow_run', 'allow_24h'] as const)(
+    '收口：可编辑写回工具 / forceConfirm / 无 target 的 external 点 %s 只放行本次，不铸任何授权（r1）',
+    async (tier) => {
+      const cases: Array<{ tool: string; req: Partial<PermissionRequest> }> = [
+        { tool: 'reminders_create', req: { tool: 'reminders_create', type: 'mcp' } },
+        { tool: 'Bash', req: { tool: 'Bash', details: { command: 'echo hi' }, forceConfirm: true } },
+        { tool: 'mcp__slack__send_message', req: { tool: 'mcp__slack__send_message', type: 'mcp', details: {} } },
+      ];
+      for (const [i, c] of cases.entries()) {
+        const sid = `cron-gate-${tier}-${i}`;
+        const repo = { insert: vi.fn(), resolve: vi.fn(() => 1) } as unknown as PendingApprovalRepository;
+        const { island, ask } = makeIsland({ sessionId: sid, unattended: true, repo });
+        const { promise, id } = ask(c.req as never);
+        expect(island.handlePermissionResponse(id, tier)).toBe('delivered');
+        expect(await promise).toMatchObject({ approved: true });
+        expect(matchToolGrant(sid, c.tool, null, Date.now())).toBe(null);
+        expect(matchToolGrant('other-session', c.tool, null, Date.now())).toBe(null);
+      }
+    },
+  );
 
   it('改过的参数配两档新值仍 fail-closed（只配一次性 allow）', async () => {
     const { island, ask } = makeIsland({ sessionId: 'chat-edit-1' });
@@ -380,6 +401,29 @@ describe('⑤ 统一授权台账列两档', () => {
 
     mintTool24hGrant('Write', null, T0);
     expect(listGrants(T0 + DAY).some((entry) => entry.id.startsWith('tool-24h:'))).toBe(false);
+  });
+
+  it.each(['run', '24h'] as const)('%s tier: real ledger id round-trips and revoke removes only that grant', (tier) => {
+    const sessionId = 'weekly:report/周报';
+    const tool = 'mail_send';
+    const target = 'team+weekly@example.com';
+    mintToolRunGrant(sessionId, tool, target, T0);
+    mintTool24hGrant(tool, target, T0);
+    const entries = listGrants(T0 + 1).filter((entry) => entry.kind === 'tool-timed');
+    const entry = entries.find((row) => row.source === tier)!;
+    const expectedId = tier === 'run'
+      ? `tool-run:${encodeURIComponent(sessionId)}:${encodeURIComponent(tool)}:${encodeURIComponent(target)}`
+      : `tool-24h:${encodeURIComponent(tool)}:${encodeURIComponent(target)}`;
+    expect(entries).toHaveLength(2);
+    expect(entry.id).toBe(expectedId);
+    expect(revokeGrant(entry.id)).toBe(true);
+    expect(listGrants(T0 + 2).filter((row) => row.kind === 'tool-timed')).toEqual(
+      entries.filter((row) => row.id !== entry.id),
+    );
+    expect(listToolGrants(T0 + 2).some((row) => row.tier === tier)).toBe(false);
+    expect(matchToolGrant(tier === 'run' ? sessionId : 'another-task', tool, target, T0 + 2))
+      .toBe(tier === 'run' ? '24h' : null);
+    expect(revokeGrant(entry.id)).toBe(false);
   });
 
   it('没有任何 agent 可调用工具暴露工具授权的 list/revoke（no-self-revoke）', async () => {

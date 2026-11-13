@@ -29,6 +29,7 @@ function renderCard(): void {
     <RoleDraftCard
       drafts={[{
         id: 'draft-1',
+        category: 'automation',
         roleId: 'notes-helper',
         description: 'Checks the calendar and reads or writes notes',
         tools: RAW_TOOL_NAMES,
@@ -52,6 +53,8 @@ describe('RoleDraftCard capability copy', () => {
     i18nState.language = language;
     renderCard();
 
+    expect(screen.getByTestId('role-draft-card').textContent).not.toContain('automation');
+    expect(screen.getByText(language === 'zh' ? '新专家待确认：确认后会加入你的专家列表' : 'New expert pending: confirm to add this expert to your experts.')).toBeTruthy();
     const line = screen.getByText(visibleText);
     expect(line.getAttribute('title')).toBe(tooltip);
     const visiblePhrases = line.textContent?.replace(/^(能力：|Capabilities: )/, '').split(/、|, /) ?? [];

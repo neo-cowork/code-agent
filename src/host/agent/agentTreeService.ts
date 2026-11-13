@@ -35,6 +35,7 @@ import { extractToolStepTarget } from './toolStepTarget';
 import { getFileOwnershipRegistry } from '../services/infra/fileOwnershipRegistry';
 
 export interface AgentTreeSpawnAgentSource {
+  background?: boolean;
   id: string;
   role: string;
   treeId?: string;
@@ -120,7 +121,7 @@ function failureReason(code: AgentFailureCode): string {
     case AgentFailureCode.ToolUnavailable:
       return '需要的能力当前不可用';
     case AgentFailureCode.InvalidArguments:
-      return 'The wait time the assistant set exceeds the allowed limit and must be shortened.';
+      return '助手设置的等待时间超过了允许的上限，需要缩短';
     case AgentFailureCode.BudgetExhausted:
       return '可用预算已经用完';
     case AgentFailureCode.Timeout:
@@ -341,6 +342,7 @@ function mergeSpawnAgent(
 ): void {
   const node = ensureNode(nodes, agent.id, agent.role);
   addSource(node, 'spawnGuard');
+  node.background = agent.background ?? false;
   node.role = agent.role;
   node.displayName = agent.completion?.title ?? node.displayName;
   node.task = agent.task;
@@ -422,10 +424,13 @@ function mergeContextRecord(
   const node = ensureNode(nodes, record.agentId, role);
   addSource(node, 'subagentContext');
   const lifecycle = record.lifecycle;
-  // Persisted terminal facts survive restart; only unfinished records use the orphan heuristic.
-  const status: AgentTreeNodeStatus = lifecycle && lifecycle.status !== 'running'
-    ? lifecycle.status
-    : record.updatedAt < HOST_PROCESS_BOOT_MS ? 'cancelled' : 'unknown';
+  // Explicit graph terminal (parent-run settlement) wins; then persisted lifecycle (executor exit, tells cancelled
+  // from failed) survives restart; then SpawnGuard's completion fact survives late context flushes; only
+  // unfinished records use the orphan heuristic.
+  const status: AgentTreeNodeStatus = record.terminalStatus
+    ?? (lifecycle && lifecycle.status !== 'running'
+      ? lifecycle.status
+      : record.lifecycleStatus ?? (record.updatedAt < HOST_PROCESS_BOOT_MS ? 'cancelled' : 'unknown'));
   if (lifecycle) {
     node.displayName = lifecycle.displayName;
     node.role = lifecycle.role ?? node.role;
@@ -457,10 +462,12 @@ function mergeBackgroundAgent(
   nodes: Map<string, AgentTreeNode>,
   statusPriorities: Map<string, number>,
   handle: BackgroundSubagentHandle,
+  backgroundAgentId = handle.agentId,
 ): void {
   const node = ensureNode(nodes, handle.agentId, 'background');
   addSource(node, 'backgroundRegistry');
   node.background = true;
+  node.backgroundAgentId = backgroundAgentId;
   node.displayName ||= handle.displayName;
   node.task ??= handle.title;
   if (node.role === 'background' && handle.role) node.role = handle.role;
@@ -592,7 +599,7 @@ export function buildAgentTreeSnapshot(sources: AgentTreeSnapshotSources = {}): 
     if (sessionId && handle.sessionId !== sessionId) continue;
     mergeBackgroundAgent(nodes, statusPriorities, {
       ...handle, agentId: registryAliases.get(handle.agentId) ?? handle.agentId,
-    });
+    }, handle.agentId);
   }
   for (const record of sources.contextRecords ?? []) {
     if (sessionId && record.sessionId !== sessionId) continue;

@@ -241,16 +241,34 @@ describe('RoleFirstWakeCard', () => {
     expect(openCapabilityHub).toHaveBeenCalledWith('connectors');
   });
 
-  it('失败态先说能用再说哪里没成功，出路可走，不是空卡', async () => {
+  it.each(['model exploded', 'Invalid API key unauthorized'])('failed+none invites connecting without a failed look or retry: %s', async (failureReason) => {
+    getFirstWake.mockResolvedValue({ state: 'failed', sourcesMode: 'none', suggestions: [], failureReason });
+    const openCapabilityHub = vi.fn();
+    useAppStore.setState({ openCapabilityHub });
+    render(<RoleFirstWakeCard roleId="role-1" />);
+    expect(await screen.findByText('建好了，现在就可以让我做事。')).toBeTruthy();
+    expect(screen.getByText('连上数据源后我能帮你更多')).toBeTruthy();
+    expect(screen.queryByTestId('role-first-wake-reason')).toBeNull();
+    expect(screen.queryByText(/刚才没能看/)).toBeNull();
+    expect(screen.queryByRole('button', { name: '重新查看' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '去连接' }));
+    expect(openCapabilityHub).toHaveBeenCalledWith('connectors');
+    if (failureReason.includes('API key')) {
+      expect(screen.getByRole('button', { name: '换个模型再看' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: '检查账号' })).toBeTruthy();
+    }
+  });
+
+  it('connected failure explains the look failure and offers a way forward', async () => {
     getFirstWake.mockResolvedValue({
       state: 'failed',
-      sourcesMode: 'none',
+      sourcesMode: 'connected',
       suggestions: [],
       failureReason: 'model exploded',
     });
     render(<RoleFirstWakeCard roleId="role-1" />);
     expect(await screen.findByText('建好了，现在就可以让我做事。')).toBeTruthy();
-    // 普通用户不见原始错误：generic 类省略原因和冒号，无 sources → 「你的数据」
+    // 普通用户不见原始错误：generic 类省略原因和冒号，非日历源 → 「你的数据」
     expect(screen.getByTestId('role-first-wake-reason').textContent).toBe('刚才没能看你的数据。');
     fireEvent.click(screen.getByRole('button', { name: '进入会话' }));
     expect(goToExpertThread).toHaveBeenCalledWith('role-1');
@@ -275,6 +293,16 @@ describe('RoleFirstWakeCard', () => {
     const pulseDot = screen.getByTestId('role-first-wake-pulse');
     expect(pulseDot.className).toContain('animate-pulse');
     expect(pulseDot.className).toContain('motion-reduce:animate-none');
+  });
+
+  it('进行中没有已连接源时不说「熟悉已连接的数据」，改说准备开场', async () => {
+    getFirstWake.mockResolvedValue({ state: 'running', sourcesMode: 'none', suggestions: [] });
+    render(<RoleFirstWakeCard roleId="role-1" />);
+    expect(await screen.findByText('正在准备开场…')).toBeTruthy();
+    expect(screen.queryByText(/正在熟悉你已连接的数据/)).toBeNull();
+    // 无源进行中同样保留「先不用」出路
+    expect(screen.getByRole('button', { name: '先不用' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '去连接' })).toBeNull();
   });
 
   it('确认创建后在原位挂上卡片；确认修改不挂', async () => {
@@ -647,7 +675,7 @@ describe('RoleFirstWakeCard 返修 r2', () => {
   it('C：其它类别 failed 给「重新查看」，点击走 firstWakeRetry 并回到进行中', async () => {
     const failedSnapshot: RoleFirstWakeSnapshot = {
       state: 'failed',
-      sourcesMode: 'none',
+      sourcesMode: 'connected',
       suggestions: [],
       failureReason: 'model exploded',
     };

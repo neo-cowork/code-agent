@@ -81,7 +81,7 @@ import {
 } from './conversationRuntimeContextBootstrap';
 import { isStartupAborted, raceStartupStep, startupStepAbandoned } from './startupAssemblyGuard';
 import { watchFirstModelRequest, noteFirstModelRequestPhase } from './firstModelRequestWatch';
-import { resolveStickyStrictSkillInvocation } from './conversationRuntimeStickySkill';
+import { resolveStickyStrictSkillInvocation, resolveNaturalLanguageCreateRoleInvocation } from './conversationRuntimeStickySkill';
 import { buildStrictToolsetNotice } from '../../tools/skillBoundaryScope';
 import { extractUserRequest } from '../turnScaffold';
 import { TOOL_ARGS_REPAIR_MAX_ATTEMPTS } from '../../../shared/constants/repair';
@@ -895,7 +895,8 @@ export class ConversationRuntime {
           }),
           'skill_discovery',
         )
-        ?? await raceStartupStep(this.ctx, resolveStickyStrictSkillInvocation(this.ctx, userRequest), 'skill_discovery');
+        ?? await raceStartupStep(this.ctx, resolveStickyStrictSkillInvocation(this.ctx, userRequest), 'skill_discovery')
+        ?? await raceStartupStep(this.ctx, resolveNaturalLanguageCreateRoleInvocation(this.ctx, userRequest), 'skill_discovery');
       if (isStartupAborted(this.ctx)) return null;
       // 单轮文件交付轮丢弃裸词别名注入（sticky 来源只可能是 slash 种子，不受影响）
       const skillInvocation = retainSkillInvocationForTurn(
@@ -1166,8 +1167,13 @@ export class ConversationRuntime {
    * 路径不会再走，partial 不在这里落库就永远没了。停止(cancel)和转向(steer)都要走
    * 这一条：2026-08-01 真机实测，转向那条路只 abortInference 不留 partial，被打断
    * 那一轮写了一半的长回答在库里一个字都没有。
+   *
+   * broadcast：把落库的 marker 消息同时广播给 renderer（message 事件）。首字前 Stop
+   * 时没有任何 delta 进过前端，不广播的话当场页面上一行停止提示都没有，要等整页
+   * 重载才出现（N-FIX-STOP-BEFORE-FIRST-RESPONSE-STUCK-RUNNING-FU1）。renderer 按
+   * message id/合并路径幂等，重复广播不会多出行。
    */
-  private async preserveStreamedPartial(suffix: string, options: { persistMarkerWithoutText?: boolean; metadata?: Message['metadata'] } = {}): Promise<InputRedirectReceiptMetadata['partial']> {
+  private async preserveStreamedPartial(suffix: string, options: { persistMarkerWithoutText?: boolean; metadata?: Message['metadata']; broadcast?: boolean } = {}): Promise<InputRedirectReceiptMetadata['partial']> {
     const streamedContent = this.ctx.turn.lastStreamedContent;
     if (!streamedContent && !options.persistMarkerWithoutText) return { charCount: 0 };
     const partialMessage: Message = {
@@ -1183,6 +1189,9 @@ export class ConversationRuntime {
     } catch (err) {
       logger.warn('[ConversationRuntime] persist partial before abort failed:', err);
     }
+    // 只在 turn_start 已发出（currentTurnId 非空）时广播：renderer 侧按 currentTurnMessageId
+    // 合并，装配期（turn 未开）广播会错并到上一轮的助手消息上；那一窗口保持只落库。
+    if (options.broadcast && this.ctx.turn.currentTurnId) this.ctx.onEvent({ type: 'message', data: partialMessage });
     this.ctx.turn.resetStreamedContent();
     const trailingText = streamedContent.slice(-80).trim();
     return {
@@ -1194,15 +1203,16 @@ export class ConversationRuntime {
   async cancel(reason?: RunCancelReason): Promise<void> {
     // 回复已经完成落库、但 run 还没从 registry 注销的尾窗里，cancel 必须是安全 no-op。
     // 这时再标 cancelled / preserve partial 会把同一条完整回复追加标记后写成第二行。
-    if (this.ctx.control.isSettled) return;
+    if (this.ctx.control.isSettled || this.ctx.control.isCancelled) return;
 
     markStreamSnapshotInterruptionReason({ workingDir: this.ctx.workingDirectory, sessionId: this.ctx.sessionId }, reason === 'client-disconnect' ? 'stream-break' : reason === 'session-switch' || reason === 'idle-reaped' ? reason : 'user');
     this.ctx.control.markCancelled(reason);
 
     await this.preserveStreamedPartial(
       reason === 'client-disconnect' ? '\n\n[连接中断 — 部分回答已保留]' : reason === 'session-switch' ? '\n\n[未完成 — 切换会话中断]' : '\n\n[cancelled]',
-      // tool-only 流也落 marker；中断投影会过滤它，不形成第三行。
-      { persistMarkerWithoutText: true, ...(reason === 'client-disconnect' ? { metadata: { streamInterruptionReason: 'stream-break' as const, workbench: { runCancellation: { status: 'cancelled' as const, cancelledAt: Date.now(), reason: 'client_disconnect' } } } } : {}) },
+      // tool-only 流也落 marker；中断投影会过滤它，不形成第三行。用户 Stop 的
+      // [cancelled] marker 同步广播给 renderer（断流/切换会话各有自己的投影链路，不广播）。
+      { persistMarkerWithoutText: true, ...(reason !== 'client-disconnect' && reason !== 'session-switch' ? { broadcast: true } : {}), ...(reason === 'client-disconnect' ? { metadata: { streamInterruptionReason: 'stream-break' as const, workbench: { runCancellation: { status: 'cancelled' as const, cancelledAt: Date.now(), reason: 'client_disconnect' } } } } : {}) },
     );
     this.ctx.control.abortInference();
     this.ctx.control.abortRun();

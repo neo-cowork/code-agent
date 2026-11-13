@@ -6,6 +6,11 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { AgentFailureCode } from '../../../src/shared/contract/agentFailure';
+import type { ToolCall } from '../../../src/shared/contract';
+import { en } from '../../../src/renderer/i18n/en';
+import { DelegationReceipt } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/DelegationReceipt';
+import { deriveDelegationPresentation } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/delegationPresentation';
 import { zh } from '../../../src/renderer/i18n/zh';
 import type { AgentTreeNode, AgentTreeSnapshot } from '../../../src/shared/contract/agentTree';
 import type { Task } from '../../../src/shared/contract/backgroundTask';
@@ -13,16 +18,18 @@ import type { SwarmAgentContextSnapshot, SwarmAgentState } from '../../../src/sh
 import type { SwarmRunAgentRecord, SwarmRunDetail, SwarmRunListItem } from '../../../src/shared/contract/swarmTrace';
 import { IPC_CHANNELS, IPC_DOMAINS } from '../../../src/shared/ipc';
 
+let language: 'zh' | 'en' = 'zh';
 const invokeMock = vi.fn();
 const invokeDomainMock = vi.fn();
 const appState = {
+  get language() { return language; },
   setWorkbenchCollapsed: vi.fn(),
   pendingPermissionRequest: null as { resolved?: boolean; agentId?: string; runId?: string } | null,
   pendingPermissionSessionId: null as string | null,
   queuedPermissionRequests: {} as Record<string, Array<{ resolved?: boolean; agentId?: string; runId?: string }>>,
 };
 
-vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: zh }) }));
+vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: language === 'zh' ? zh : en }) }));
 vi.mock('../../../src/renderer/stores/appStore', () => {
   // 工厂在组件 import 时求值，早于 const 初始化：必须延迟解引用
   const useAppStore = (selector: (state: typeof appState) => unknown) => selector(appState);
@@ -118,6 +125,7 @@ function backgroundTask(overrides: Partial<Task>): Task {
 
 describe('SessionAgentsPanel', () => {
   beforeEach(() => {
+    language = 'zh';
     invokeMock.mockReset();
     invokeMock.mockResolvedValue([]);
     invokeDomainMock.mockReset();
@@ -137,6 +145,128 @@ describe('SessionAgentsPanel', () => {
     (window as unknown as { domainAPI?: unknown }).domainAPI = undefined;
   });
   afterEach(() => cleanup());
+
+  describe.each(['zh', 'en'] as const)('failure reasons in %s', (uiLanguage) => {
+    beforeEach(() => { language = uiLanguage; });
+
+    function assertReason(actual: string | null | undefined, code: AgentFailureCode) {
+      const text = (uiLanguage === 'zh' ? zh : en).toolStepHumanize;
+      const copy = { ...text.failureCodes, ...text.agentFailureReasons }[code];
+      expect(actual).toBe(copy);
+      expect(actual).not.toMatch(uiLanguage === 'en' ? /[\u3400-\u9fff]/ : /[A-Za-z]{2,}/);
+    }
+
+    // Intentionally use the other UI language as the host fallback to catch old raw reads.
+    function failedNode(code?: AgentFailureCode): AgentTreeNode {
+      return treeNode({
+        role: 'background', background: true, status: 'failed', task: 'Review notes', failureCode: code,
+        failureReason: uiLanguage === 'en' ? '主机返回的失败原因' : 'Host failure reason.',
+      });
+    }
+
+    function receipt(node: AgentTreeNode) {
+      const call: ToolCall = {
+        id: 'spawn-notes', name: 'spawn_agent', arguments: { task: 'Review notes' },
+        result: { toolCallId: 'spawn-notes', success: false, metadata: { agentId: node.id } },
+      };
+      const presentation = deriveDelegationPresentation(call, [], [node]);
+      expect(presentation).not.toBeNull();
+      return presentation!;
+    }
+
+    it.each(Object.values(AgentFailureCode))('panel localizes %s through real row assembly', async (code) => {
+      mockTree(snapshotOf([failedNode(code)]));
+      render(<SessionAgentsPanel />);
+      const status = await screen.findByTestId('agents-panel-status-agent-9');
+      const prefix = (uiLanguage === 'zh' ? zh : en).expert.memberBar.panel.status.failed + (uiLanguage === 'zh' ? '：' : ': ');
+      expect(status.textContent?.startsWith(prefix)).toBe(true);
+      assertReason(status.textContent?.slice(prefix.length), code);
+      const panel = screen.getByTestId('session-agents-panel');
+      if (uiLanguage === 'en') {
+        expect(panel.textContent).not.toMatch(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\u3000-\u303f\uff00-\uffef]/u);
+        expect(panel.textContent).toContain('Background assistant');
+      } else {
+        expect(panel.textContent).toContain('助手');
+      }
+    });
+
+    it.each(Object.values(AgentFailureCode))('derived delegation receipt localizes %s', (code) => {
+      render(<DelegationReceipt presentation={receipt(failedNode(code))} />);
+      assertReason(screen.getByTestId('delegation-failure').textContent, code);
+    });
+
+    it('preserves uncoded English reasons while localizing Chinese host diagnostics', async () => {
+      const node = failedNode();
+      mockTree(snapshotOf([node]));
+      useBackgroundTaskStore.setState({ tasks: [backgroundTask({
+        status: 'failed', failure: { message: 'Original task reason' }, toolCallId: 'delegate-notes',
+      })] });
+      render(<SessionAgentsPanel />);
+      expect((await screen.findByTestId('agents-panel-status-agent-9')).textContent).toContain(uiLanguage === 'zh' ? node.failureReason : en.toolStepHumanize.agentFailureReasons.unknown);
+      expect(screen.getByTestId('agents-panel-status-task-1').textContent).toContain('Original task reason');
+      const view = render(<DelegationReceipt presentation={receipt(node)} />);
+      expect(view.getByTestId('delegation-failure').textContent).toBe(uiLanguage === 'zh' ? node.failureReason : en.toolStepHumanize.agentFailureReasons.unknown);
+      view.unmount();
+      const call: ToolCall = {
+        id: 'delegate-notes', name: 'delegate_task', arguments: {},
+        result: { toolCallId: 'delegate-notes', success: true },
+      };
+      const presentation = deriveDelegationPresentation(call, useBackgroundTaskStore.getState().tasks, []);
+      expect(presentation).not.toBeNull();
+      render(<DelegationReceipt presentation={presentation!} />);
+      expect(screen.getByTestId('delegation-failure').textContent).toBe('Original task reason');
+    });
+
+    it.each(['Original task reason', 'The supplier portal timed out after accepting the draft', '  The source document is locked  '])('preserves readable English reason %s in agent and task rows', async (reason) => {
+      mockTree(snapshotOf([{ ...failedNode(), failureReason: reason }]));
+      useBackgroundTaskStore.setState({ tasks: [backgroundTask({
+        title: 'Compare supplier pricing', status: 'failed', failure: { message: reason },
+      })] });
+      render(<SessionAgentsPanel />);
+      const prefix = (uiLanguage === 'zh' ? zh : en).expert.memberBar.panel.status.failed + (uiLanguage === 'zh' ? '：' : ': ');
+      expect((await screen.findByTestId('agents-panel-status-agent-9')).textContent).toBe(prefix + reason);
+      expect(screen.getByTestId('agents-panel-status-task-1').textContent).toBe(prefix + reason);
+    });
+
+    it('keeps two English background task titles distinguishable', async () => {
+      mockTree(snapshotOf([]));
+      useBackgroundTaskStore.setState({ tasks: [
+        backgroundTask({ title: 'Compare supplier pricing', status: 'failed', failure: { message: 'Original task reason' } }),
+        backgroundTask({ id: 'task-2', title: 'Summarize meeting notes', status: 'running' }),
+      ] });
+      render(<SessionAgentsPanel />);
+      expect(await screen.findByText('Compare supplier pricing')).toBeTruthy();
+      expect(screen.getByText('Summarize meeting notes')).toBeTruthy();
+      expect(screen.getByTestId('agents-panel-status-task-1').textContent).toContain('Original task reason');
+    });
+
+    it.each(['父任务已经结束', '未登记的失败', undefined])('localizes missing-code task failure and summary %s', async (reason) => {
+      mockTree(snapshotOf([]));
+      useBackgroundTaskStore.setState({ tasks: [backgroundTask({
+        title: '供应商对比', status: 'failed', summary: '任务失败，耗时两分钟',
+        ...(reason ? { failure: { message: reason } } : {}),
+      })] });
+      render(<SessionAgentsPanel />);
+      const status = await screen.findByTestId('agents-panel-status-task-1');
+      expect(status.textContent).toContain(uiLanguage === 'zh'
+        ? reason || zh.expert.memberBar.panel.status.failed
+        : reason === '父任务已经结束' ? 'The parent task has already ended' : en.toolStepHumanize.agentFailureReasons.unknown);
+      if (uiLanguage === 'en') expect(screen.getByTestId('session-agents-panel').textContent).not.toMatch(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\u3000-\u303f\uff00-\uffef]/u);
+    });
+
+    it('shows a coded reason even without a host fallback', () => {
+      render(<DelegationReceipt presentation={receipt({ ...failedNode(AgentFailureCode.Timeout), failureReason: undefined })} />);
+      assertReason(screen.getByTestId('delegation-failure').textContent, AgentFailureCode.Timeout);
+    });
+
+    it('does not create a delegation receipt for the invalid wait before node registration', () => {
+      const call: ToolCall = {
+        id: 'invalid-wait', name: 'spawn_agent', arguments: { foregroundBlockingBudgetMs: 1_200_000 },
+        result: { toolCallId: 'invalid-wait', success: false, metadata: { failureCode: AgentFailureCode.InvalidArguments } },
+      };
+      expect(deriveDelegationPresentation(call, [], [])).toBeNull();
+    });
+  });
 
   it('没有代理时给空态', async () => {
     render(<SessionAgentsPanel />);
@@ -244,6 +374,33 @@ describe('SessionAgentsPanel', () => {
     expect(row.textContent).toContain('核对发布清单');
     expect(row.textContent).toContain('后台');
     expect(screen.getByTestId('agents-panel-status-task-1').textContent).toBe('工作中');
+  });
+
+  it('「清除已结束」按钮：有终态后台任务行才出现，zh/en 文案都渲染；运行中任务不触发', async () => {
+    useBackgroundTaskStore.setState({ tasks: [backgroundTask({})] });
+    const { unmount } = render(<SessionAgentsPanel />);
+    await screen.findByTestId('agents-panel-row-task-1');
+    expect(screen.queryAllByTestId('agents-panel-clear-finished')).toHaveLength(0);
+    unmount();
+
+    useBackgroundTaskStore.setState({ tasks: [backgroundTask({ status: 'cancelled', completedAt: 3 })] });
+    const zhRender = render(<SessionAgentsPanel />);
+    expect((await screen.findByTestId('agents-panel-clear-finished')).textContent).toBe('清除已结束');
+    zhRender.unmount();
+
+    language = 'en';
+    render(<SessionAgentsPanel />);
+    expect((await screen.findByTestId('agents-panel-clear-finished')).textContent).toBe('Clear finished');
+  });
+
+  it('已被清除的后台任务（台账打了面板隐藏标记）不进面板，但仍留在共享 tasks 里', async () => {
+    const dismissed = backgroundTask({ id: 'task-gone', status: 'cancelled', completedAt: 3, metadata: { panelDismissed: true } });
+    useBackgroundTaskStore.setState({ tasks: [dismissed, backgroundTask({ id: 'task-live' })] });
+    render(<SessionAgentsPanel />);
+    await screen.findByTestId('agents-panel-row-task-live');
+    expect(screen.queryByTestId('agents-panel-row-task-gone')).toBeNull();
+    expect(screen.queryAllByTestId('agents-panel-clear-finished')).toHaveLength(0);
+    expect(useBackgroundTaskStore.getState().tasks.map((t) => t.id)).toContain('task-gone');
   });
 
   it('行级停：专家行走 swarm:cancel-agent（带 activeRunId）', async () => {

@@ -15,8 +15,54 @@ export const SESSION_COMMAND_CENTER_TOOL_NAMES = [
 /** Foreground brain should route or answer without growing into an execution run. */
 export const SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS = 8;
 
+/** File execution and resuming a step-limited turn need room beyond routing. */
+const SESSION_COMMAND_CENTER_DELIVERABLE_MAX_ITERATIONS = 30;
+
+// Deliverable nouns only: PPT(X)/PowerPoint/slides/幻灯片/演示稿, XLS(X)/Excel/
+// spreadsheet/表格, DOC(X)/Word/document/report/文档/报告, PDF, HTML/webpage/网页.
+// Latin boundaries avoid incidental substrings (e.g. “wordpress”, “excellent”).
+const FOREGROUND_DELIVERABLE_RE = /\b(?:pptx?|powerpoint|slides?|xlsx?|excel|spreadsheet|docx?|word|document|report|pdf|html|webpage)\b|幻灯片|演示稿|表格|文档|报告|网页/i;
+
+/** Pure per-turn budget policy; continuation is derived from persisted metadata. */
+export function resolveForegroundBrainMaxIterations(input: {
+  prompt: string;
+  lastAssistantStoppedByStepLimit: boolean;
+}): number {
+  return input.lastAssistantStoppedByStepLimit || FOREGROUND_DELIVERABLE_RE.test(input.prompt)
+    ? SESSION_COMMAND_CENTER_DELIVERABLE_MAX_ITERATIONS
+    : SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS;
+}
+
 /** Hidden task-result wakes get a deliberately small reasoning budget. */
 export const SESSION_COMMAND_CENTER_WAKE_MAX_ITERATIONS = 4;
+
+/** Deferred foreground wakes surface a durable conversation note after this wait. */
+export const BACKGROUND_WAKE_DEFER_NOTICE_MS = 10_000;
+
+/**
+ * A wake whose session cannot be loaded for the current owner (login still being restored)
+ * is retried on a timer in addition to the auth-change signal. Total load attempts include the first.
+ */
+export const BACKGROUND_WAKE_OWNER_RETRY_MAX_ATTEMPTS = 6;
+export const BACKGROUND_WAKE_OWNER_RETRY_INTERVAL_MS = 5_000;
+
+/** Keep the task title readable when it is embedded in the deferred-wake conversation note. */
+export const BACKGROUND_WAKE_DEFER_TASK_TITLE_MAX_CHARS = 80;
+
+/** Human progress shown while a completed background task is waiting for the foreground turn. */
+export const BACKGROUND_WAKE_DEFER_PROGRESS = {
+  completed: '后台任务已完成，等待汇报',
+  failed: '后台任务已失败，等待汇报',
+} as const;
+
+/** Conversation copy used when a deferred wake reaches the visible-notice cap. */
+export function formatBackgroundWakeDeferredNote(
+  shortName: string,
+  status: keyof typeof BACKGROUND_WAKE_DEFER_PROGRESS,
+): string {
+  const outcome = status === 'completed' ? '完成' : '失败';
+  return `后台任务「${shortName}」已${outcome}，结果见上方的任务结果；当前步骤结束后，我会继续汇报。`;
+}
 
 /**
  * Prevent an autonomous task chain from waking the same conversation forever.
@@ -82,6 +128,24 @@ export function composeSessionCommandTaskResultText(value: string | undefined): 
   const chars = Array.from(normalized);
   if (chars.length <= SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS) return chars.join('');
   return `${chars.slice(0, SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS).join('')}…(truncated, ${chars.length} chars total)`;
+}
+
+/**
+ * [任务结果] 行的状态词（给人读的）：正文里不再露英文机读 token（failed/completed）。
+ * metadata.backgroundTaskResult.status 仍保持机器可读原值，渲染端/账本不受影响。
+ */
+const SESSION_TASK_RESULT_STATUS_WORDS = {
+  zh: { completed: '已完成', failed: '已失败', cancelled: '已取消' },
+  en: { completed: 'finished', failed: 'failed', cancelled: 'cancelled' },
+} as const;
+
+export type SessionTaskResultStatusWordLocale = keyof typeof SESSION_TASK_RESULT_STATUS_WORDS;
+
+export function formatSessionTaskResultStatusWord(
+  status: 'completed' | 'failed' | 'cancelled',
+  locale: SessionTaskResultStatusWordLocale,
+): string {
+  return SESSION_TASK_RESULT_STATUS_WORDS[locale][status];
 }
 
 /**

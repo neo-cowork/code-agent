@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../../../src/shared/contract';
 import type { RuntimeContext } from '../../../../src/host/agent/runtime/runtimeContext';
+import { RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../../src/shared/constants';
 
 vi.mock('../../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => ({ isReady: false, getTodos: () => [] }),
@@ -33,6 +34,11 @@ vi.mock('../../../../src/host/agent/capabilityGapTurnRecorder', () => ({ recordC
 vi.mock('../../../../src/host/agent/runtime/workDirectoryMaterializer', () => ({
   beginWorkDirectoryRun: vi.fn(), endWorkDirectoryRun: vi.fn(),
 }));
+vi.mock('../../../../src/host/observability/posthogNode', () => ({ trackNode: vi.fn() }));
+vi.mock('../../../../src/host/agent/runtime/turnOutcomeStamp', () => ({ recordTurnOutcomeStamp: vi.fn() }));
+vi.mock('../../../../src/host/services/roleAssets/roleProactivity', () => ({ triggerEventWakes: vi.fn() }));
+vi.mock('../../../../src/host/services/planning/taskStore', () => ({ getIncompleteTasks: () => [] }));
+vi.mock('../../../../src/host/services/core/promptSuggestions', () => ({ generateContextSuggestions: async () => [] }));
 
 import { AgentLoop } from '../../../../src/host/agent/agentLoop';
 import { withSessionCommandCenterBrain } from '../../../../src/host/app/sessionCommandCenterBrain';
@@ -41,19 +47,19 @@ import { ContextAssembly } from '../../../../src/host/agent/runtime/contextAssem
 import { RunFinalizer } from '../../../../src/host/agent/runtime/runFinalizer';
 import { StreamHandler } from '../../../../src/host/agent/runtime/streamHandler';
 import { MessageProcessor } from '../../../../src/host/agent/runtime/messageProcessor';
-import { ensureMaxStepsWrapUp, activateMaxStepsFinalResponse } from '../../../../src/host/agent/runtime/maxStepsFallback';
+import { ensureMaxStepsWrapUp, activateMaxStepsFinalResponse, createStepWarning } from '../../../../src/host/agent/runtime/maxStepsFallback';
 
 // Real foreground options -> AgentLoop composition root -> real runtime and persistence.
 // Only startup integrations, provider responses and post-run integrations are isolated.
-function foreground(maxIterations = 8, foregroundToolFace = true) {
+function foreground(maxIterations = 8, foregroundToolFace = true, prompt = 'read the handoff notes') {
   const persisted: Message[] = [];
   const loop = new AgentLoop({
-    ...withSessionCommandCenterBrain({ maxIterations }, 'read the handoff notes'),
+    ...withSessionCommandCenterBrain({ maxIterations }, prompt),
     foregroundToolFace,
     modelConfig: { provider: 'openai', model: 'test-model', apiKey: 'test' },
     toolExecutor: {} as never,
     messages: [], onEvent: vi.fn(), sessionId: 'step-limit-session',
-    workingDirectory: '/tmp', memoryMode: 'off', enableHooks: false,
+    workingDirectory: '/tmp', memoryMode: 'off', enableHooks: false, persistLongTermMemory: false,
     persistMessage: async (message) => { persisted.push(structuredClone(message)); },
   });
   const ctx = (loop as unknown as { ctx: RuntimeContext }).ctx;
@@ -69,6 +75,57 @@ function foreground(maxIterations = 8, foregroundToolFace = true) {
 afterEach(() => vi.restoreAllMocks());
 
 describe('foreground step-limit continuation', () => {
+  it('warns at the larger foreground deliverable cap minus two, not at six', () => {
+    const { ctx } = foreground(50, true, '制作 PPTX');
+    expect(ctx.maxIterations).toBe(30);
+    const inject = vi.fn();
+    const warn = createStepWarning(ctx, inject);
+    for (let iteration = 1; iteration < 28; iteration++) warn(iteration);
+    expect(inject).not.toHaveBeenCalled();
+    warn(28);
+    expect(inject).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('About 2 steps remain'), 'nudge');
+    warn(28);
+    warn(29);
+    expect(inject).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['foreground forced final', true, true, false, true],
+    ['foreground fallback', true, false, false, true],
+    ['background/no-marker stop keeps its failure state', false, true, false, false],
+    ['foreground without a marked final', true, false, true, false],
+    ['historical marker is not the current run summary', true, true, true, false],
+  ] as const)('real runFinalizer emits the pause flag only for %s', async (_name, foregroundToolFace, forced, noNewSummary, marked) => {
+    const { ctx, assembly, persisted, finalizer: processorFinalizer } = foreground(8, foregroundToolFace);
+    ctx.stats.beginRun();
+    if (noNewSummary) {
+      await assembly.addAndPersistMessage({ id: 'old-summary', role: 'assistant', content: 'Old progress.',
+        timestamp: ctx.stats.runStartTime - 1, ...(forced ? { metadata: { stoppedByStepLimit: true } } : {}),
+      });
+    } else if (forced) {
+      activateMaxStepsFinalResponse(ctx);
+      await new MessageProcessor(ctx, assembly, processorFinalizer, {} as never).handleTextResponse(
+        { type: 'text', content: 'Saved progress; more notes remain.', finishReason: 'stop' },
+        true, 8, false, { endSpan: vi.fn() },
+      );
+    } else {
+      activateMaxStepsFinalResponse(ctx);
+      await ensureMaxStepsWrapUp(ctx, assembly, 8);
+    }
+    const finalizer = new RunFinalizer(ctx);
+    finalizer.setModules(assembly, { runSessionEndLearning: vi.fn() } as never);
+    await finalizer.finalizeRun(8, 'Read the notes and write a weekly report', {
+      endTrace: vi.fn(), flush: vi.fn(async () => undefined),
+    } as never, 8);
+    const events = vi.mocked(ctx.onEvent).mock.calls.map(([event]) => event);
+    const error = events.find((event) => event.type === 'error');
+    expect(error).toMatchObject({ type: 'error', data: { message: 'Max iterations reached', code: RUN_ERROR_CODE_MAX_ITERATIONS } });
+    expect(error?.data).toEqual({ message: 'Max iterations reached', code: RUN_ERROR_CODE_MAX_ITERATIONS,
+      ...(marked ? { details: { stoppedByStepLimit: true } } : {}),
+    });
+    expect(persisted.at(-1)?.metadata?.stoppedByStepLimit).toBe((marked || (noNewSummary && forced)) ? true : undefined);
+  });
+
   it.each([
     ['forced final', 8, true, true],
     ['normal final', 8, false, false],

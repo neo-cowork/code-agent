@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
+import { chatInputZh } from '../../../src/renderer/i18n/chatInput';
 
 import React from 'react';
 import { act, fireEvent, render, renderHook, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message } from '@shared/contract';
 import type { CreateCronJobInput } from '../../../src/renderer/services/cronClient';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
@@ -59,7 +60,7 @@ const rowLabels = {
   result: '结果送到哪里',
   fallbackWhat: '按任务描述执行并整理结果',
   fallbackNotifyWhen: '任务完成或发现异常时通知',
-  reviewInbox: '自动化审核收件箱',
+  reviewInbox: chatInputZh.scheduleConfirm.reviewInbox,
 };
 
 const rowInput = {
@@ -414,7 +415,7 @@ describe('buildScheduleConfirmRows', () => {
       { key: 'what', label: '检查什么', value: '检查新邮件和需要跟进的事项' },
       { key: 'when', label: '什么时候', value: '每 1 天' },
       { key: 'notifyWhen', label: '什么变化值得通知', value: '发现高优先级或需要回复的邮件' },
-      { key: 'result', label: '结果送到哪里', value: '自动化审核收件箱' },
+      { key: 'result', label: '结果送到哪里', value: chatInputZh.scheduleConfirm.reviewInbox },
     ]);
   });
 
@@ -422,7 +423,7 @@ describe('buildScheduleConfirmRows', () => {
     const rows = buildScheduleConfirmRows({ input: rowInput }, rowLabels);
     expect(rows[0]?.value).toBe('邮件巡检');
     expect(rows[2]?.value).toBe('任务完成或发现异常时通知');
-    expect(rows[3]?.value).toBe('自动化审核收件箱');
+    expect(rows[3]?.value).toBe(chatInputZh.scheduleConfirm.reviewInbox);
   });
 
   it('uses an explicit result channel when the draft provides one', () => {
@@ -435,7 +436,7 @@ describe('untrusted cron draft fields never crash the confirm card', () => {
   const W = '检查新邮件和需要跟进的事项';
   const N = '发现高优先级或需要回复的邮件';
   const WHEN = '每 1 天';
-  const INBOX = '自动化审核收件箱';
+  const INBOX = chatInputZh.scheduleConfirm.reviewInbox;
   const FN = '任务完成或发现异常时通知';
 
   // 走真实链路：generateFromPrompt → runScheduleCreation 存草稿 → 确认卡渲染时调 buildScheduleConfirmRows。
@@ -492,7 +493,7 @@ describe('untrusted cron draft fields never crash the confirm card', () => {
     // when 行不再有「按配置」兜底：真实链路里无效 schedule 在规范化阶段就被拒，
     // 这里只保证纯函数对垃圾输入不抛错（when 留空，生产不可达）。
     // notifyWhen 行只对 agent 动作出（判据无法生效就不给假口子），garbage action=null → 不出。
-    expect(rows.map((row) => row.value)).toEqual(['按任务描述执行并整理结果', '', '自动化审核收件箱']);
+    expect(rows.map((row) => row.value)).toEqual(['按任务描述执行并整理结果', '', chatInputZh.scheduleConfirm.reviewInbox]);
   });
 });
 
@@ -549,7 +550,7 @@ describe('ScheduleConfirmCard', () => {
     expect(screen.getByText('什么变化值得通知')).toBeTruthy();
     expect(screen.getByText('结果送到哪里')).toBeTruthy();
     expect(screen.getByText('检查新邮件和需要跟进的事项')).toBeTruthy();
-    expect(screen.getByText('自动化审核收件箱')).toBeTruthy();
+    expect(screen.getByText(chatInputZh.scheduleConfirm.reviewInbox)).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: '确认创建' }));
     fireEvent.click(screen.getAllByRole('button', { name: '取消' })[1]!);
@@ -573,7 +574,7 @@ describe('ScheduleConfirmCard', () => {
     // shell 动作没有可生效的通知判据（prompt 注入与通知门都在 agent 执行链上）：
     // notifyWhen 整行不出，不给「看起来可配置」的假口子。
     expect(screen.queryByText('任务完成或发现异常时通知')).toBeNull();
-    expect(screen.getByText('自动化审核收件箱')).toBeTruthy();
+    expect(screen.getByText(chatInputZh.scheduleConfirm.reviewInbox)).toBeTruthy();
   });
 });
 
@@ -811,5 +812,35 @@ describe('ScheduleConfirmCard — 卡内编辑', () => {
     render(<ScheduleConfirmCard draft={agentDraft()} confirming={false} onConfirm={vi.fn()} onDismiss={vi.fn()} />);
     expect(screen.queryByRole('button', { name: '编辑 什么时候' })).toBeNull();
     expect(screen.queryByRole('button', { name: '编辑 什么变化值得通知' })).toBeNull();
+  });
+});
+
+
+describe('schedule confirmation recurring timezone labels', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it.each([
+    ['America/Los_Angeles', 'zh', '每天 09:00'],
+    ['America/Los_Angeles', 'en', 'Daily at 09:00'],
+    ['Asia/Shanghai', 'zh', '每天 09:00'],
+    ['Asia/Shanghai', 'en', 'Daily at 09:00'],
+  ] as const)('host %s local zone in %s has no suffix', (zone, lang, expected) => {
+    vi.stubEnv('TZ', zone);
+    expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe(zone);
+    const input = { ...rowInput, scheduleType: 'cron' as const, schedule: { type: 'cron' as const, expression: '0 9 * * *', timezone: zone } };
+    expect(buildScheduleConfirmRows({ input }, rowLabels, lang).find(row => row.key === 'when')?.value).toBe(expected);
+  });
+
+  it.each([
+    ['zh', '每天 21:00（中国标准时间）'],
+    ['en', 'Daily at 21:00 (China Standard Time)'],
+  ] as const)('foreign zone in %s names the zone', (lang, expected) => {
+    vi.stubEnv('TZ', 'America/Los_Angeles');
+    const input = { ...rowInput, scheduleType: 'cron' as const, schedule: { type: 'cron' as const, expression: '0 21 * * *', timezone: 'Asia/Shanghai' } };
+    expect(buildScheduleConfirmRows({ input }, rowLabels, lang).find(row => row.key === 'when')?.value).toBe(expected);
+    if (lang === 'zh') {
+      render(<ScheduleConfirmCard draft={{ input, description: '备份照片', sourceSessionId: null }} confirming={false} onConfirm={vi.fn()} onDismiss={vi.fn()} />);
+      expect(screen.getByText(expected)).toBeTruthy();
+    }
   });
 });

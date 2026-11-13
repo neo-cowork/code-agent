@@ -6,7 +6,7 @@ import { TimeInput24 } from './TimeInput24';
 const DEFAULT_TIME = '09:00';
 
 export interface DateTimeInput24Props {
-  /** 本地时间串 yyyy-MM-ddTHH:mm；空串表示还没选 */
+  /** 本地时间串 yyyy-MM-ddTHH:mm，可带 :ss(.SSS)；空串表示还没选 */
   value: string;
   onChange: (value: string) => void;
   dateLabel: string;
@@ -17,11 +17,11 @@ export interface DateTimeInput24Props {
   size?: 'sm' | 'md' | 'lg';
 }
 
-/** 解析 yyyy-MM-ddTHH:mm；不完整或越界返回 null。 */
-function parseValue(value: string): { date: string; time: string } | null {
-  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})$/.exec(value);
-  if (!match || Number(match[2]) > 23 || Number(match[3]) > 59) return null;
-  return { date: match[1], time: `${match[2]}:${match[3]}` };
+/** 秒和毫秒不显示，编辑日期或分钟时原样保留。 */
+function parseValue(value: string): { date: string; time: string; suffix: string } | null {
+  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})(:(\d{2})(?:\.\d{1,3})?)?$/.exec(value);
+  if (!match || Number(match[2]) > 23 || Number(match[3]) > 59 || Number(match[5] ?? 0) > 59) return null;
+  return { date: match[1], time: `${match[2]}:${match[3]}`, suffix: match[4] ?? '' };
 }
 
 /**
@@ -41,6 +41,7 @@ export const DateTimeInput24: React.FC<DateTimeInput24Props> = ({
   const parsed = parseValue(value);
   const date = parsed?.date ?? '';
   const time = parsed?.time ?? DEFAULT_TIME;
+  const suffix = parsed?.suffix ?? '';
 
   return (
     <div data-testid={testId} className="flex flex-wrap items-center gap-1.5">
@@ -52,10 +53,12 @@ export const DateTimeInput24: React.FC<DateTimeInput24Props> = ({
         disabled={disabled}
         inputSize={size}
         fullWidth={false}
-        className="!w-auto"
+        // WebKit paints today's date as an empty field's hint. Keep it blank
+        // until focused so a hint cannot be mistaken for a selected date.
+        className={`!w-auto ${date ? '' : '[&:not(:focus)::-webkit-datetime-edit]:opacity-0'}`}
         onChange={(event) => {
           const next = event.target.value;
-          onChange(/^\d{4}-\d{2}-\d{2}$/.test(next) ? `${next}T${time}` : '');
+          onChange(/^\d{4}-\d{2}-\d{2}$/.test(next) ? `${next}T${time}${suffix}` : '');
         }}
       />
       <TimeInput24
@@ -65,7 +68,7 @@ export const DateTimeInput24: React.FC<DateTimeInput24Props> = ({
         size={size}
         hourLabel={hourLabel}
         minuteLabel={minuteLabel}
-        onChange={(nextTime) => onChange(date ? `${date}T${nextTime}` : '')}
+        onChange={(nextTime) => onChange(date ? `${date}T${nextTime}${suffix}` : '')}
       />
     </div>
   );

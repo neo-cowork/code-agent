@@ -1,3 +1,4 @@
+import { EnvBlockedError } from '../../permissions/envAssist/EnvBlockedError';
 // ============================================================================
 // Tool Resolver — subagent 使用的工具解析 + dispatch 接口
 //
@@ -190,6 +191,7 @@ class ProtocolToolResolver implements ToolResolver {
         metadata: { code: protoResult.code, ...(protoResult.meta ?? {}) },
       };
     } catch (err) {
+      if (err instanceof EnvBlockedError) throw err;
       return {
         success: false,
         error: err instanceof Error ? err.message : String(err),

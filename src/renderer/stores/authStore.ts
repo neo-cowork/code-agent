@@ -126,6 +126,8 @@ interface AuthState {
   isAuthenticated: boolean;
   user: AuthUser | null;
   isLoading: boolean;
+  /** false until the first host getStatus settles (ok or failed): identity is unknown, not signed out */
+  hasResolvedStatus: boolean;
   error: string | null;
   sessionTrustState: AuthSessionTrustState;
   authBackendAvailable: boolean | null;
@@ -176,6 +178,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   isAuthenticated: false,
   user: null,
   isLoading: true,
+  hasResolvedStatus: false,
   error: null,
   sessionTrustState: 'none',
   authBackendAvailable: null,
@@ -451,6 +454,7 @@ export async function initializeAuthStore(): Promise<void> {
     logger.error('Failed to load auth status', error);
   } finally {
     store.setLoading(false);
+    useAuthStore.setState({ hasResolvedStatus: true });
   }
 
   // Load sync status
@@ -471,6 +475,7 @@ export async function initializeAuthStore(): Promise<void> {
       const prevUserId = useAuthStore.getState().user?.id ?? null;
       store.setUser(event.user);
       store.setLoading(false);
+      useAuthStore.setState({ hasResolvedStatus: true });
       store.setShowAuthModal(false);
       store.setAuthStatusMeta({
         sessionTrustState: event.sessionTrustState ?? 'verified',
@@ -481,6 +486,7 @@ export async function initializeAuthStore(): Promise<void> {
     } else if (event.type === 'signed_out') {
       const prevUserId = useAuthStore.getState().user?.id ?? null;
       store.setUser(null);
+      useAuthStore.setState({ hasResolvedStatus: true });
       store.setAuthStatusMeta({
         sessionTrustState: 'none',
         authBackendAvailable: event.authBackendAvailable,

@@ -1,5 +1,6 @@
 import type { Message } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
+import { withTelemetryRecoveryNoticeForModel } from '../../shared/telemetryRecovery';
 import {
   runCheckpointWriterAgent,
   type CheckpointWriterJob,
@@ -57,7 +58,7 @@ export class CheckpointWriterService {
     const job: CheckpointWriterJob = {
       sessionId: input.sessionId,
       workingDirectory: input.workingDirectory,
-      messages: [...input.messages],
+      messages: [...withTelemetryRecoveryNoticeForModel(input.messages)],
       reason: input.reason,
       rootDir: input.rootDir,
       now: input.now,

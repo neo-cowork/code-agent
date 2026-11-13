@@ -1,3 +1,5 @@
+import { spawn } from 'node:child_process';
+import { localizeCronSessionTitle } from '../../../shared/cronSessionTitle';
 // ============================================================================
 // Notification Service
 // 桌面通知服务 - 在 App 非焦点时发送任务完成通知
@@ -22,9 +24,39 @@ import {
   getNotificationDigestText,
   type NotificationDigestLocale,
 } from '../../../shared/i18n/notificationDigest';
+import { readHeldFile, writeHeldFile } from './notificationHeldStore';
 import { NotificationBudget, type NotificationBudgetDisposition, type NotificationBudgetItem } from './notificationBudget';
 
 const logger = createLogger('NotificationService');
+
+type NativeNotificationPayload = { title: string; body: string; id: string; sessionId: string };
+
+function sendNativeNotification(payload: NativeNotificationPayload): void {
+  if (process.platform !== 'darwin') {
+    logger.warn('Native needs-input notification unavailable', { reason: 'notify-only-platform-unsupported' });
+    return;
+  }
+  const executable = process.env.CODE_AGENT_SHELL_EXE;
+  if (!executable) {
+    logger.warn('Native needs-input notification unavailable', { reason: 'notify-only-executable-missing' });
+    return;
+  }
+  try {
+    const child = spawn(executable, [
+      '--notify-only', '--title', payload.title, '--body', payload.body,
+      '--id', payload.id, '--session', payload.sessionId,
+    ], { detached: true, stdio: 'ignore', shell: false });
+    child.once('error', () => {
+      logger.warn('Native needs-input notification failed', { reason: 'notify-only-spawn-error' });
+    });
+    child.once('exit', (code, signal) => {
+      if (code !== 0) logger.warn('Native needs-input notification failed', { reason: 'notify-only-exit-failed', code, signal });
+    });
+    child.unref();
+  } catch {
+    logger.warn('Native needs-input notification failed', { reason: 'notify-only-spawn-threw' });
+  }
+}
 
 /**
  * needs-input 去重键容量：同一 dedupeKey 只投递一次，超限丢最旧（Set 保持插入序，
@@ -105,6 +137,8 @@ interface BudgetedNotification extends NotificationBudgetItem {
   type: RecordedNotification['type'];
   body: string;
   delivery: Omit<NotificationDeliveryPayload, 'id' | 'title' | 'body' | 'sessionId'>;
+  /** 首次暂存时间（落盘用，补发日志报最老一条的年龄）。 */
+  enqueuedAt?: number;
 }
 
 class NotificationService implements Disposable {
@@ -116,21 +150,55 @@ class NotificationService implements Disposable {
   private readonly budget = new NotificationBudget<BudgetedNotification>({
     deliver: (item, via) => this.deliverNow(item, via),
     deliverDigest: (items) => this.deliverDigest(items),
+    onHeldChange: (held) => this.persistHeld(held),
   });
+  /** 上次进程遗留、尚未补发的暂存项（懒加载自磁盘）；与本进程的 held 一起落盘，防新暂存覆盖旧文件。 */
+  private carriedOver: BudgetedNotification[] = [];
+  private carriedOverLoaded = false;
+  private lastHeld: BudgetedNotification[] = [];
+
+  private loadCarriedOver(): void {
+    if (this.carriedOverLoaded) return;
+    this.carriedOverLoaded = true;
+    this.carriedOver = readHeldFile() as unknown as BudgetedNotification[];
+  }
+
+  private persistHeld(held: readonly BudgetedNotification[]): void {
+    this.loadCarriedOver();
+    const now = Date.now();
+    for (const item of held) item.enqueuedAt ??= now;
+    this.lastHeld = [...held];
+    const all = [...this.carriedOver, ...held];
+    writeHeldFile(all);
+    if (held.length > 0) logger.info('Held notifications persisted', { reason: 'budget-persisted', count: all.length });
+  }
 
   /**
-   * Fallback B 原生通知发送器（N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1）。默认走
-   * osascript（host 侧，壳死了也能弹）；单测注入替身，不真弹系统通知。
+   * 下次启动、首个 renderer 就绪后补发上次遗留的暂存通知：1 条原样投递，2+ 条折成一条汇总。
+   * 先摘队列再投递，保证只补发一次。
    */
-  private nativeNotificationSender: (payload: { title: string; body: string }) => void = (payload) => {
-    new Notification({ title: payload.title, body: payload.body }).show();
-  };
+  replayPersistedHeld(): void {
+    this.loadCarriedOver();
+    const items = this.carriedOver;
+    if (items.length === 0) return;
+    this.carriedOver = [];
+    writeHeldFile(this.lastHeld);
+    const now = Date.now();
+    const oldestAgeMs = Math.max(0, ...items.map((item) => (item.enqueuedAt ? now - item.enqueuedAt : 0)));
+    if (!this.enabled) {
+      logger.info('Held notifications dropped', { reason: 'notifications-disabled', count: items.length });
+      return;
+    }
+    logger.info('Held notifications replayed', { reason: 'budget-replayed', count: items.length, oldestAgeMs });
+    if (items.length === 1) this.deliverNow(items[0], 'window-end');
+    else this.deliverDigest(items);
+  }
 
-  /** 测试注入原生通知替身；不传恢复默认 osascript 路径。 */
-  setNativeNotificationSender(sender: ((payload: { title: string; body: string }) => void) | null): void {
-    this.nativeNotificationSender = sender ?? ((payload) => {
-      new Notification({ title: payload.title, body: payload.body }).show();
-    });
+  private nativeNotificationSender = sendNativeNotification;
+
+  /** Inject a native sender; null restores the bundled shell launch path. */
+  setNativeNotificationSender(sender: ((payload: NativeNotificationPayload) => void) | null): void {
+    this.nativeNotificationSender = sender ?? sendNativeNotification;
   }
 
   private isDryRun(): boolean {
@@ -159,6 +227,8 @@ class NotificationService implements Disposable {
   clearRecentNotifications(): void {
     this.recentNotifications = [];
     this.deliveredNeedsInputKeys.clear();
+    this.carriedOver = [];
+    this.carriedOverLoaded = true;
     this.logDropped(this.budget.clear(), 'budget-cleared');
   }
 
@@ -222,7 +292,7 @@ class NotificationService implements Disposable {
     });
   }
 
-  private logDropped(items: readonly BudgetedNotification[], reason: 'budget-cleared' | 'service-disposed'): void {
+  private logDropped(items: readonly BudgetedNotification[], reason: 'budget-cleared'): void {
     for (const item of items) logger.info('Notification dropped', { notificationId: item.id, reason });
   }
 
@@ -269,10 +339,10 @@ class NotificationService implements Disposable {
     });
   }
 
-  private enqueueBudgeted(notification: Omit<BudgetedNotification, 'id'>): NotificationBudgetDisposition {
+  private enqueueBudgeted(notification: Omit<BudgetedNotification, 'id'>, id = `notification_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`): NotificationBudgetDisposition {
     const item: BudgetedNotification = {
       ...notification,
-      id: `notification_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      id,
     };
     const disposition = this.budget.enqueue(item);
     if (disposition !== 'held') return disposition;
@@ -338,6 +408,7 @@ class NotificationService implements Disposable {
       }
     }
 
+    const id = `notification_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     this.enqueueBudgeted({
       intent: 'needs_input',
       type: 'needs_input',
@@ -349,7 +420,7 @@ class NotificationService implements Disposable {
         markSessionUnread: true,
         ...(data.dedupeKey ? { dedupeKey: data.dedupeKey } : {}),
       },
-    });
+    }, id);
     // Fallback B（N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1）：deliver 只广播给 renderer，
     // 渲染端没了（壳声明「后台继续」退出，ADR-083）时 toast 没有落点——再弹一条 host 侧
     // 原生通知兜底。文案不复制调用方的 title/body（那可能带工具名），用固定人话。
@@ -358,6 +429,8 @@ class NotificationService implements Disposable {
     if (getDaemonQuitIntent() === 'background') {
       try {
         this.nativeNotificationSender({
+          id,
+          sessionId: data.sessionId,
           title: '有事项需要你确认',
           body: '后台任务在等你确认，打开 Agent Neo 处理。',
         });
@@ -424,7 +497,7 @@ class NotificationService implements Disposable {
 
     const failed = data.succeeded === false;
     const shell = en ? (failed ? 'Task failed' : 'Task completed') : (failed ? '任务失败' : '任务完成');
-    const title = `${shell} - ${sessionTitle}`;
+    const title = `${shell} - ${localizeCronSessionTitle(sessionTitle, en ? 'en' : 'zh')}`;
     this.enqueueBudgeted({
       intent,
       urgent: options?.urgent,
@@ -449,7 +522,7 @@ class NotificationService implements Disposable {
     if (!this.shouldNotify(true)) return;
     const text = getDurableResumeNotificationText(readNotificationLocale());
     // 兜底会话名必须与通知同语言，所以在这里（知道 locale 的一方）落兜底，调用方传原始标题。
-    const title = text.resumingTitle(data.sessionTitle || text.untitledSession);
+    const title = text.resumingTitle(localizeCronSessionTitle(data.sessionTitle, readNotificationLocale()) || text.untitledSession);
     const body = text.resumingBody(data.autoResumeCount);
     const disposition = this.enqueueBudgeted({
       intent: 'task_resuming',
@@ -460,6 +533,32 @@ class NotificationService implements Disposable {
       delivery: { markSessionUnread: true },
     });
     if (disposition === 'delivered') logger.info('Task resume notification sent', { sessionId: data.sessionId, autoResumeCount: data.autoResumeCount });
+  }
+
+  /** Realtime role output keeps its wake session as the notification click target. */
+  notifyRoleWakeOutput(data: { sessionId: string; title: string; body: string }): void {
+    if (!this.isIntentAllowed('task_complete')) return;
+    if (!this.shouldNotify()) return;
+
+    // Advance summaries contain an internal goal state/proposal, not a user-facing result.
+    const goalStatus = /^\[goal:(met|aborted)\]/.exec(data.body)?.[1];
+    const en = readNotificationLocale() === 'en';
+    const body = goalStatus === 'aborted'
+      ? (en ? 'The check did not finish. Open the conversation to review progress.' : '本次巡检未完成，打开会话查看已有进展。')
+      : goalStatus === 'met'
+        ? (en ? 'The check is complete. Open the conversation to see the results.' : '巡检已完成，打开会话查看结果。')
+        : data.body;
+    const disposition = this.enqueueBudgeted({
+      intent: 'task_complete',
+      type: 'task_complete',
+      sessionId: data.sessionId,
+      title: sanitizeNotificationText(data.title, 120),
+      body: sanitizeNotificationText(body, 320),
+      delivery: {},
+    });
+    if (disposition === 'delivered') {
+      logger.info('Notification dispatched', { intent: 'task_complete', sessionId: data.sessionId });
+    }
   }
 
   /**
@@ -536,7 +635,10 @@ class NotificationService implements Disposable {
     if (this.disposed) return;
     this.disposed = true;
     this.enabled = false;
-    this.logDropped(this.budget.dispose(), 'service-disposed');
+    // 暂存队列每次暂存时已落盘；退出不是丢弃，留给下次启动补发（见 replayPersistedHeld）。
+    for (const item of this.budget.dispose()) {
+      logger.info('Notification persisted for next start', { notificationId: item.id, reason: 'service-disposed' });
+    }
   }
 
   setEnabled(enabled: boolean): void {
