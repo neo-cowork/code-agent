@@ -752,3 +752,11 @@ export function stripButtonInstruction(reason: string): string {
   cut = cut.replace(/[，,、；;:：\s]+$/, '');
   return cut.length >= 4 ? cut : reason;
 }
+
+/** User-facing summary of a surface event: a model-written wait_for_user reason never names a button. */
+export function surfaceEventUserSummary(event: Pick<SurfaceExecutionEventV1, 'userSummary' | 'operation'>): string {
+  const action = event.operation?.action;
+  return action === WAIT_FOR_USER_EVENT_ACTION || action === WAIT_FOR_USER_TIMEOUT_EVENT_ACTION
+    ? stripButtonInstruction(event.userSummary)
+    : event.userSummary;
+}

@@ -43,6 +43,8 @@ describe('chat run card while Neo waits for the user', () => {
     expect(card.textContent).toContain('Neo 在等你');
     expect(card.textContent).toContain('请在浏览器里完成人机验证');
     expect(card.textContent).not.toContain('点确认');
+    // the card header stage line and the timeline read the same shared layer
+    expect(screen.getByTestId('surface-execution-session').textContent).not.toContain('点确认');
     fireEvent.click(screen.getByTestId('surface-human-takeover-done'));
     await waitFor(() => expect(onControl).toHaveBeenCalledWith({
       version: 1,

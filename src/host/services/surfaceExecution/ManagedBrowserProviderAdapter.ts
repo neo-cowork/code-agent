@@ -464,8 +464,7 @@ export class ManagedBrowserProviderAdapter {
       && Boolean(binding.browserService.getActiveTab())
     ));
     // N-BROWSER-KEEP-RESULT-PAGE: a user run claims (adopts) the conversation's
-    // kept result window WITHOUT navigating — the live page with its submitted
-    // state stays exactly as the agent left it. Stale entries (window died
+    // kept result window WITHOUT navigating. Stale entries (window died
     // without a close event) flip to closed and the user path continues.
     let keptService: BrowserService | null = null;
     let keptServiceKey: string | null = null;

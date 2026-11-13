@@ -7,8 +7,23 @@ import { ManagedBrowserProviderAdapter } from '../../../../src/host/services/sur
 import { SurfaceExecutionRuntime, type SurfaceRuntimeIdentityV1 } from '../../../../src/host/services/surfaceExecution/SurfaceExecutionRuntime';
 import { KeptBrowserRegistry } from '../../../../src/host/services/surfaceExecution/keptBrowserRegistry';
 import type { BrowserResumeStateStore } from '../../../../src/host/services/surfaceExecution/BrowserResumeStateStore';
-import { executeWaitForUser } from '../../../../src/host/tools/vision/browserWaitForUser';
+import { browserActionTool } from '../../../../src/host/tools/vision/browserAction';
+import type { ToolContext } from '../../../../src/host/tools/types';
 import { BROWSER_WAIT_FOR_USER } from '../../../../src/shared/constants/timeouts';
+
+const holder = vi.hoisted(() => ({ adapter: null as unknown, runtime: null as unknown, keptRegistry: null as unknown }));
+vi.mock('../../../../src/host/services/surfaceExecution/ManagedBrowserProviderAdapter', async (original) => ({
+  ...(await original<typeof import('../../../../src/host/services/surfaceExecution/ManagedBrowserProviderAdapter')>()),
+  getManagedBrowserProviderAdapter: () => holder.adapter,
+}));
+vi.mock('../../../../src/host/services/surfaceExecution/SurfaceExecutionRuntime', async (original) => ({
+  ...(await original<typeof import('../../../../src/host/services/surfaceExecution/SurfaceExecutionRuntime')>()),
+  getSurfaceExecutionRuntime: () => holder.runtime,
+}));
+vi.mock('../../../../src/host/services/surfaceExecution/keptBrowserRegistry', async (original) => ({
+  ...(await original<typeof import('../../../../src/host/services/surfaceExecution/keptBrowserRegistry')>()),
+  getKeptBrowserRegistry: () => holder.keptRegistry,
+}));
 
 vi.mock('../../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({ getSession: async () => undefined }),
@@ -46,6 +61,7 @@ function harness() {
     clearConversation: vi.fn(async () => undefined), activateConversation: vi.fn(),
   };
   const adapter = new ManagedBrowserProviderAdapter(runtime, acquire, release, resume, undefined, keptRegistry);
+  Object.assign(holder, { adapter, runtime, keptRegistry });
   const idA: SurfaceRuntimeIdentityV1 = { conversationId: 'conversation-p', runId: 'run-a', agentId: 'agent-a' };
   const idB: SurfaceRuntimeIdentityV1 = { conversationId: 'conversation-p', runId: 'run-b', agentId: 'agent-a' };
   const act = (identity: SurfaceRuntimeIdentityV1, id: string, action = 'navigate') => adapter.execute({
@@ -62,14 +78,10 @@ describe('timed-out wait_for_user parks the window', () => {
     process.env[BROWSER_WAIT_FOR_USER.LIMIT_ENV] = '150';
     const h = harness();
     await h.act(h.idA, 'open');
-    const result = await executeWaitForUser({
-      identity: h.idA,
-      context: { sessionId: 'conversation-p', currentToolCallId: 'tc-park' },
-      params: { reason: '请完成页面上的验证' },
-      adapter: h.adapter,
-      runtime: h.runtime,
-      keptRegistry: h.keptRegistry,
-    });
+    const result = await browserActionTool.execute({ action: 'wait_for_user', reason: '请完成页面上的验证' }, {
+      ...h.idA, sessionId: 'conversation-p', currentToolCallId: 'tc-park', workingDirectory: process.cwd(),
+      requestPermission: vi.fn(async () => true),
+    } as unknown as ToolContext);
     expect(result.metadata).toMatchObject({ code: 'WAIT_FOR_USER_TIMEOUT', windowParked: true });
     expect(result.error).toContain('kept on the same page');
     expect(h.keptRegistry.getAlive('conversation-p')).toMatchObject({ parkedForUser: true, url: 'https://portal.example.test/gate' });
@@ -100,10 +112,10 @@ describe('timed-out wait_for_user parks the window', () => {
     const h = harness();
     await h.act(h.idA, 'open');
     h.raw.getActiveTab = () => null;
-    const result = await executeWaitForUser({
-      identity: h.idA, context: { sessionId: 'conversation-p', currentToolCallId: 'tc-np' }, params: { reason: '请完成验证' },
-      adapter: h.adapter, runtime: h.runtime, keptRegistry: h.keptRegistry,
-    });
+    const result = await browserActionTool.execute({ action: 'wait_for_user', reason: '请完成验证' }, {
+      ...h.idA, sessionId: 'conversation-p', currentToolCallId: 'tc-np', workingDirectory: process.cwd(),
+      requestPermission: vi.fn(async () => true),
+    } as unknown as ToolContext);
     expect(result.metadata).toMatchObject({ code: 'WAIT_FOR_USER_TIMEOUT', windowParked: false });
     expect(result.error).toContain('may be closed');
     expect(result.error).not.toContain('kept on the same page');
