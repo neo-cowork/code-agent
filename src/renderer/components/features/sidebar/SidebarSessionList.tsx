@@ -202,7 +202,7 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
     <Button
       variant="ghost"
       size="sm"
-      leftIcon={<Plus />}
+      leftIcon={<Plus className="h-full w-full" />}
       data-testid="sidebar-choose-folder-entry"
       disabled={chooseFolderDisabled}
       onClick={() => void handleNewIndependentSpace()}
