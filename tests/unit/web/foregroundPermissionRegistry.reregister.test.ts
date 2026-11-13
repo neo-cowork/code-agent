@@ -156,6 +156,10 @@ describe('reregisterForegroundPermissionIsland（迟到的后台审批把岛挂�
       onEvent: () => {},
     });
     try {
+      // Preserve Browser-specific metadata across the structurally typed island boundary.
+      const uploadDetails = {
+        file: '.../invoice.pdf', action: 'upload_file', engine: 'managed', approvalMode: 'host_one_time_exact_file',
+      };
       const approval = island.requestPermission({
         type: 'file_read',
         tool: 'browser_action.upload_file',
@@ -164,7 +168,7 @@ describe('reregisterForegroundPermissionIsland（迟到的后台审批把岛挂�
         sessionId,
         agentId: 'bg-agent-1',
         runId: 'bg-run-1',
-        details: { file: '.../invoice.pdf', action: 'upload_file', engine: 'managed', approvalMode: 'host_one_time_exact_file' },
+        details: uploadDetails,
       });
       await Promise.resolve();
       unregisterForegroundPermissionIsland(sessionId, island);
@@ -173,6 +177,7 @@ describe('reregisterForegroundPermissionIsland（迟到的后台审批把岛挂�
       reregisterForegroundPermissionIsland(sessionId, island);
       const listed = listForegroundPermissionRequests().find((request) => request.sessionId === sessionId);
       expect(listed?.tool).toBe('browser_action.upload_file');
+      expect(listed?.details).toEqual(uploadDetails);
 
       expect(deliverForegroundPermissionResponse(sessionId, listed!.id, decision)).toBe('delivered');
       await expect(approval).resolves.toEqual(expected);
