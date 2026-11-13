@@ -5,7 +5,7 @@
 // 这组测试走**生产同款接线**：applyPermissionQueueEvent + 真实 useAppStore
 // （usePermissionQueueEffects.ts 里 ipcService.on('agent:event') 的 deps 组装），
 // 不用 harness mock——mock 会把被测语义抄一遍，抄一遍就证明不了仓库里的真行为。
-import { createElement } from 'react';
+import { createElement, type ComponentProps } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PermissionRequest } from '../../../src/shared/contract';
@@ -30,6 +30,8 @@ import { PermissionCard } from '../../../src/renderer/components/PermissionDialo
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 import { releaseApprovalResponse } from '../../../src/renderer/utils/approvalResponseGuard';
 import { zh } from '../../../src/renderer/i18n/zh';
+
+type PermissionCardProps = NonNullable<ComponentProps<typeof PermissionCard>>;
 
 function permissionRequest(id: string): PermissionRequest {
   return {
@@ -330,7 +332,7 @@ describe('three sibling approvals share their parent runId', () => {
       const decision = decisions[index];
       expect(liveIds()).toContain(id);
       // DecisionSlot renders queued cards via requestOverride as well as the pending card.
-      const view = render(createElement(PermissionCard, { requestOverride: request, sessionIdOverride: 'session-main' }));
+      const view = render(createElement<PermissionCardProps>(PermissionCard, { requestOverride: request, sessionIdOverride: 'session-main' }));
       fireEvent.click(screen.getByRole('button', { name: decision === 'deny' ? /^拒绝/ : /允许一次/ }));
       await waitFor(() => {
         expect(useAppStore.getState().resolvedPermissionRequests['session-main']?.map(r => [r.id, r.decision]))
@@ -349,7 +351,7 @@ describe('three sibling approvals share their parent runId', () => {
   it('stale click dismisses only that card and shows the existing human message', async () => {
     const { requests } = enqueueSiblings();
     invoke.mockResolvedValueOnce({ outcome: 'unknown_request' });
-    render(createElement(PermissionCard, { requestOverride: requests[0], sessionIdOverride: 'session-main' }));
+    render(createElement<PermissionCardProps>(PermissionCard, { requestOverride: requests[0], sessionIdOverride: 'session-main' }));
     fireEvent.click(screen.getByRole('button', { name: /允许一次/ }));
     await waitFor(() => {
       expect(liveIds()).toEqual(['B', 'C']);
