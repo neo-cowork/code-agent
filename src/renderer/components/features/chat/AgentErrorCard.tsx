@@ -1,3 +1,4 @@
+import { BackgroundChildrenNotice } from './BackgroundChildrenNotice';
 // ============================================================================
 // AgentErrorCard - 会话区运行失败卡片
 // ============================================================================
@@ -13,6 +14,7 @@
 // 文案不持久化（metadata 只存 category + 排障字段），这里按 category 查 i18n 表。
 // ============================================================================
 
+import { EnvAssistCard } from './EnvAssistCard';
 import React, { useCallback } from 'react';
 import { AlertTriangle, Copy, KeyRound, MessageSquarePlus, RotateCcw, SwitchCamera } from 'lucide-react';
 import type { AgentErrorCategory, AgentErrorMetadata } from '@shared/contract';
@@ -161,6 +163,7 @@ export function buildAgentErrorReport(args: {
   t: Translations;
 }): string {
   const { error, title, suggestion, sessionId, t } = args;
+  if (error.envAssist) return '';
   const labels = t.agentError.report;
   const lines: string[] = [
     `## ${labels.title}`,
@@ -192,7 +195,8 @@ const AgentErrorCard: React.FC<{
   sessionId?: string;
   /** 同因连续段（投影层推导）；缺失按单次失败处理 */
   run?: AgentErrorRunInfo;
-}> = ({ error, messageId, sessionId, run }) => {
+  lastFailure?: boolean;
+}> = ({ error, messageId, sessionId, run, lastFailure }) => {
   const { t, language } = useI18n();
   const { title, suggestion } = resolveAgentErrorCopy(error, t, language === 'zh' ? 'zh-CN' : 'en-US');
   const developerMode = useAppStore((state) => state.developerMode);
@@ -268,6 +272,7 @@ const AgentErrorCard: React.FC<{
           {providerReasonLine}
         </div>
       )}
+      {lastFailure && <BackgroundChildrenNotice sessionId={sessionId} />}
 
       {ranOnModel && (
         <div className="mt-1.5 pl-[22px] font-mono text-[10px] text-text-tertiary">{ranOnModel}</div>
@@ -371,7 +376,8 @@ const RateLimitedErrorLine: React.FC<{
   messageId: string;
   sessionId?: string;
   run?: AgentErrorRunInfo;
-}> = ({ error, messageId, sessionId, run }) => {
+  lastFailure?: boolean;
+}> = ({ error, messageId, sessionId, run, lastFailure }) => {
   const { t, language } = useI18n();
   const developerMode = useAppStore((state) => state.developerMode);
   const isRunning = useSessionStore((state) => (sessionId ? state.runningSessionIds.has(sessionId) : false));
@@ -402,6 +408,7 @@ const RateLimitedErrorLine: React.FC<{
     >
       <AlertTriangle className="h-3.5 w-3.5 shrink-0 self-center text-badge-warning" aria-hidden="true" />
       <span>{t.agentError.rateLimitedInline}</span>
+      {lastFailure && <BackgroundChildrenNotice sessionId={sessionId} />}
       <span aria-hidden="true">·</span>
       <button /* ds-allow:button: 时间线灰字行的行内文字链接，不使用按钮外壳 */
         type="button"
@@ -450,7 +457,10 @@ export const AgentErrorPresentation: React.FC<{
   sessionId?: string;
   /** 同因连续段（投影层推导）。latest=false 的失败轮压成灰字行；缺失按单次失败。 */
   run?: AgentErrorRunInfo;
+  /** 会话里最后一张失败卡：后台代理续跑提示只挂这里 */
+  lastFailure?: boolean;
 }> = (props) => {
+  if (props.error.envAssist) return <EnvAssistCard notice={props.error.envAssist} />;
   // 同一轮内的重复失败上报（两条用户消息之间同因再次落错）：同一失败，不渲染。
   if (props.run?.duplicate) return null;
   if (props.run && !props.run.latest) {

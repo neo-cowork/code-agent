@@ -10,7 +10,6 @@
 // 3. Result caching — 避免重复分类相同工具调用模式
 
 import { createLogger } from '../services/infra/logger';
-import * as os from 'os';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import type { DecisionStep } from '../../shared/contract/decisionTrace';
@@ -34,19 +33,19 @@ import {
 } from '../sandbox/writeFence';
 import { isBashToolName, normalizeToolName } from './toolNames';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
-import { isPathWithinRoot } from '../runtime/workspaceScope';
 import { connectorWriteAskClassification } from './connectorTokenWrite';
-import { isProtectedWritePath, isSensitiveCredentialPath } from '../sandbox/sensitivePaths';
+import { isSensitiveCredentialPath } from '../sandbox/sensitivePaths';
 import { resolvedRmCriticalTarget } from '../security/recursiveRmPathSafety';
 import type { JevSystemOneCall } from '../../shared/constants/jevQuestions';
 import { classifyByJev, isPermissionLlmClassifierEnabled } from './permissionClassifierJev';
 import { createProductionJevCall } from '../model/jevFeatures';
 import {
   CANONICAL_HOME_DIR, bashCommandRequiresPermission, contextAfterCdSegment, credentialReadTarget,
-  ddCopiesWorkspaceFile, gitMutationReason, hasPositiveAllowCandidate, isNpmPublishDryRun, isPathInside, isSensitiveMemoryPath, readPathCandidates,
+  ddCopiesWorkspaceFile, gitMutationReason, hasPositiveAllowCandidate, isNpmPublishDryRun, isSensitiveMemoryPath, readPathCandidates,
   recursivelyRemovesPath, resolveCandidatePath,
 } from './permissionClassifierShell';
-import { GENERATOR_WRITE_TOOLS, writeTargetPathOf } from './writeTargetPath';
+import { classifyFileWrite } from './fileWriteClassification';
+import type { ToolDefinition } from '../../shared/contract';
 
 export { bashCommandRequiresPermission };
 
@@ -75,6 +74,8 @@ export interface ClassificationResult {
    * 供 B2 无人值守停车 / B4 target 授权与审计消费。判据见 tools/externalSideEffect.ts。
    */
   external?: boolean;
+  /** Host-resolved workspace targets requiring the scheduled folder grant. */
+  scheduleWriteTargets?: string[];
   /**
    * 信任边界 ask（W3 写边界）：终审层的便利放行（devModeAutoApprove / autoApprove[level] /
    * renderer 权限记忆）必须让路，由 toolExecutor 映射为 forceConfirm。与 directory_access
@@ -116,6 +117,8 @@ export interface ClassifierConfig {
 }
 
 export interface ClassificationContext {
+  sessionId?: string;
+  toolDefinition?: ToolDefinition;
   /** Base directory for resolving relative tool paths. */
   workingDirectory: string;
   /** Authoritative write boundary. Absent means no write target is inside a workspace. */
@@ -189,28 +192,6 @@ const DANGEROUS_BASH_PATTERNS: Array<{ pattern: RegExp; reason: string; decision
   { pattern: /wget\s.*\|\s*(sudo\s+)?sh/, reason: 'pipe wget to shell', decision: 'deny' },
 ];
 
-// 写入工具名映射
-const WRITE_TOOLS = new Set([
-  'write_file',
-  'Write',
-  'append_file',
-  'Append',
-  'edit_file',
-  'Edit',
-  // 表格卡第二张工作表走 DocEdit（file_path）。它不在 Jev 扩桶里，规则落空就
-  // 一律 ask；无工作区的新会话没有人点批准。与 Edit 同一条路径判据：工作区内放行，
-  // 区外和受保护路径仍 ask。
-  'DocEdit',
-  // Office 一轮文件交付的原生生成器（output_path）。不进写入桶就落到 LLM 分类器
-  // 兜底 → ask，无头新会话没人点批准（r4 实测 docx_generate 卡审批 34s 后整轮取消）。
-  // 产物路径判据与 Edit 一致：工作区内放行，区外/受保护路径仍 ask。
-  'docx_generate',
-  'excel_generate',
-]);
-
-// 生成器类写入工具的路径是可选参数：缺省时产物落在会话工作目录（resolveInputPath
-// 对 fileName 的行为），按 workingDirectory 本身参与边界判断即可。
-
 export function readArgumentsRequirePermission(
   toolName: string,
   args: Record<string, unknown>,
@@ -233,48 +214,6 @@ export function readArgumentsRequirePermission(
   } catch {
     return true;
   }
-}
-
-function outsideProjectWriteAsk(
-  toolName: string,
-  resolved: string,
-  startTime: number,
-): ClassificationResult {
-  const reason = `写入项目目录外: ${resolved}`;
-  return {
-    decision: 'ask',
-    reason,
-    hostReason: createHostReason(
-      HostReasonCode.PermissionFileOutsideWorkspaceConfirmationRequired,
-      reason,
-      { toolName, path: resolved },
-    ),
-    confidence: 0.9,
-    cached: false,
-    traceStep: createTraceStep('permission_classifier', 'W3: outside_project', 'ask', reason, startTime),
-    trustBoundary: true,
-  };
-}
-
-function protectedWriteAsk(
-  toolName: string,
-  resolved: string,
-  startTime: number,
-): ClassificationResult {
-  const reason = `protected write path requires confirmation: ${resolved}`;
-  return {
-    decision: 'ask',
-    reason,
-    hostReason: createHostReason(
-      HostReasonCode.PermissionPolicyConfirmationRequired,
-      reason,
-      { toolName, path: resolved },
-    ),
-    confidence: 1,
-    cached: false,
-    traceStep: createTraceStep('permission_classifier', 'W0: protected_write_path', 'ask', reason, startTime),
-    trustBoundary: true,
-  };
 }
 
 // ----------------------------------------------------------------------------
@@ -313,7 +252,7 @@ export class PermissionClassifier {
     // 1. 检查缓存
     const cacheKey = this.buildCacheKey(toolName, args, context);
     const cached = this.getFromCache(cacheKey);
-    if (cached) {
+    if (cached && !context.sessionId) {
       return { ...classificationHostReason(cached, toolName), cached: true };
     }
 
@@ -324,7 +263,9 @@ export class PermissionClassifier {
     };
     let ruleResult: ClassificationResult | null;
     try {
-      ruleResult = this.classifyByRules(toolName, args, classificationContext, startTime);
+      const fileWrite = await classifyFileWrite(toolName, args, classificationContext, startTime);
+      if (cached && !fileWrite?.bypassCache) return { ...classificationHostReason(cached, toolName), cached: true };
+      ruleResult = fileWrite ?? this.classifyByRules(toolName, args, classificationContext, startTime);
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       const reason = `路径安全分析失败，已拒绝执行: ${detail}`;
@@ -438,14 +379,6 @@ export class PermissionClassifier {
     // R5: Bash 命令分类
     if (isBashToolName(toolName) && typeof args.command === 'string') {
       return this.classifyBashCommand(args.command, context, startTime);
-    }
-
-    // R6: 文件写入工具 — 按路径判断。
-    // 生成器只在有权威工作区（新会话首轮起就有 project root）时走确定性写围栏；
-    // 无工作区场景维持既有 Jev 语境判定，不改变后台 run 的审批语义（jev R4 契约）。
-    if (WRITE_TOOLS.has(toolName)
-      && (context.workspaceRoot || !GENERATOR_WRITE_TOOLS.has(toolName))) {
-      return this.classifyFileWrite(toolName, args, context, startTime);
     }
 
     // R7: MCP 工具 → ask（未知副作用）
@@ -819,55 +752,6 @@ export class PermissionClassifier {
   }
 
   /**
-   * 文件写入分类 — 按目标路径判断
-   */
-  private classifyFileWrite(
-    toolName: string,
-    args: Record<string, unknown>,
-    context: ClassificationContext,
-    startTime: number
-  ): ClassificationResult | null {
-    const filePath = writeTargetPathOf(toolName, args);
-    if (!filePath) {
-      const reason = '文件路径缺失';
-      return {
-        decision: 'ask',
-        reason,
-        confidence: 0.5,
-        cached: false,
-        traceStep: createTraceStep('permission_classifier', 'W0: no_path', 'ask', reason, startTime),
-      };
-    }
-
-    const candidate = path.resolve(context.workingDirectory, filePath);
-    const resolved = resolveCanonicalRunPath(candidate);
-    const workspaceBoundary = context.workspaceRoot
-      ? path.resolve(context.workspaceRoot)
-      : undefined;
-    const workspace = workspaceBoundary
-      ? resolveCanonicalRunPath(workspaceBoundary)
-      : undefined;
-    if (isProtectedWritePath(resolved, { homeDir: CANONICAL_HOME_DIR, projectRoot: workspace })) {
-      return protectedWriteAsk(toolName, resolved, startTime);
-    }
-    if (!workspaceBoundary || !workspace) return outsideProjectWriteAsk(toolName, resolved, startTime);
-    if (isPathInside(resolved, workspace)) {
-      return { decision: 'approve', reason: '写入项目目录内', confidence: 0.95, cached: false };
-    }
-    // Symlink that looks in-workspace but resolves outside is a boundary escape;
-    // check before the /tmp allowlist so a link into /tmp cannot become implicit approval.
-    if (isPathInside(candidate, workspaceBoundary)) return outsideProjectWriteAsk(toolName, resolved, startTime);
-    const tmpRoot = resolveCanonicalRunPath(os.tmpdir());
-    if (
-      isPathWithinRoot(resolved, tmpRoot)
-      || (process.platform !== 'win32' && isPathWithinRoot(resolved, '/tmp'))
-    ) {
-      return { decision: 'approve', reason: '写入临时目录', confidence: 0.95, cached: false };
-    }
-    return outsideProjectWriteAsk(toolName, resolved, startTime);
-  }
-
-  /**
    * 判断是否为 MCP 工具
    */
   private isMcpTool(toolName: string): boolean {
@@ -889,6 +773,7 @@ export class PermissionClassifier {
       ? resolveCanonicalRunPath(path.resolve(context.workspaceRoot))
       : '<no-authoritative-workspace>';
     const namespace = [
+      context.sessionId ?? '<no-session>',
       workspaceNamespace,
       resolveCanonicalRunPath(path.resolve(context.workingDirectory)),
     ].join('\u0000');

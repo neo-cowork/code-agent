@@ -11,6 +11,7 @@ export interface TimedOutCommandHandoverInput {
   toolCallId?: string;
   ownerAgentId?: string;
   displayCommand?: string;
+  displayName?: string;
   sandboxed?: boolean;
   abortSignal?: AbortSignal;
   onExit?: () => void;
@@ -39,6 +40,7 @@ export function handoverTimedOutCommand(
     toolCallId: input.toolCallId,
     ownerAgentId: input.ownerAgentId,
     displayCommand: input.displayCommand,
+    displayName: input.displayName,
     sandboxed: input.sandboxed,
     abortSignal: input.abortSignal,
     onExit: input.onExit,

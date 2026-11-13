@@ -1,3 +1,4 @@
+import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 // ============================================================================
 // ProjectArtifactsList —— 项目协作空间「资产」tab。
 // projectClient.getProjectArtifacts(projectId) 列表：名称/kind/时间/来源会话跳转。
@@ -35,7 +36,7 @@ export const ProjectArtifactsList: React.FC<ProjectArtifactsListProps> = ({
   highlightId = null,
   onOpenSession,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const ps = t.projectSpace;
   const [artifacts, setArtifacts] = useState<ProjectArtifact[] | null>(null);
 
@@ -75,7 +76,7 @@ export const ProjectArtifactsList: React.FC<ProjectArtifactsListProps> = ({
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm text-zinc-300">{artifactDisplayName(artifact)}</span>
             {artifact.sessionTitle ? (
-              <span className="mt-0.5 block truncate text-xs text-zinc-600">{artifact.sessionTitle}</span>
+              <span className="mt-0.5 block truncate text-xs text-zinc-600">{getDisplaySessionTitle(artifact.sessionTitle, language)}</span>
             ) : null}
           </span>
           <Badge className="flex-shrink-0 border-zinc-700 bg-zinc-800/60 text-[10px] text-zinc-400">{artifact.kind}</Badge>

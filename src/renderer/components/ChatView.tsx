@@ -112,7 +112,7 @@ import { isChatSendAccepted } from '../utils/chatSendState';
 import { useImportedSessionResumeSend } from '../hooks/useImportedSessionResume';
 import { useCronRunFollowUpSend } from '../hooks/useCronRunFollowUpSend';
 import { useAssistantFeedbackEvents } from './features/chat/useAssistantFeedbackEvents';
-import { DurableResumeNotice, shouldShowParkedNotice, suppressLegacyInterruptionDecision, useAbandonParkedRun, useDurableContinueVisible, useDurableResumeContinuation, useGuardedDurableContinue } from './features/chat/durableResume';
+import { DurableParkedNotice, DurableResumeNotice, shouldShowParkedNotice, suppressLegacyInterruptionDecision, useAbandonParkedRun, useDurableContinueVisible, useDurableResumeContinuation, useGuardedDurableContinue } from './features/chat/durableResume';
 import { QuotaWaitNotice } from './features/chat/quotaWaitNotice';
 import { ConnectorRequiredCards } from './features/chat/connectorRequiredCard';
 // Zustand selectors must return a referentially stable fallback. A fresh [] here makes
@@ -1025,7 +1025,7 @@ export const ChatView: React.FC = () => {
 
           {isDurableAutoResuming && <DurableResumeNotice text={t.chat.durableResumeNotice} />}
           {isDurableResumeQueued && <DurableResumeNotice text={t.chat.durableResumeQueuedNotice} />}
-          {shouldShowParkedNotice(showDurableContinue, durableResume) && <DurableResumeNotice text={t.chat.durableStoppedNotice} actions={
+          {shouldShowParkedNotice(showDurableContinue, durableResume) && <DurableParkedNotice interruptCause={durableResume?.interruptCause} actions={
             <button /* ds-allow:button: 停靠行的放弃按钮沿用 DoomLoopHandbackBar 紧凑文本按钮样式 */ type="button" className="rounded-md border border-zinc-700 px-2 py-1 text-[11px] text-zinc-200" onClick={durableAbandon.onAbandon}>{t.chat.durableAbandon}</button>
           } />}
           <ConnectorRequiredCards />

@@ -16,6 +16,9 @@ export const DOCTOR_FIX_CODES = {
 
 export type DoctorFixCode = (typeof DOCTOR_FIX_CODES)[keyof typeof DOCTOR_FIX_CODES];
 
+/** Match the real-call health monitor's five-minute observation window. */
+export const DOCTOR_PROBE_REAL_SUCCESS_MAX_AGE_MS = 5 * 60_000;
+
 export const DOCTOR_TIMEOUTS = {
   MIN_MS: 100,
   DEFAULT_PER_CHECK_MS: 10_000,

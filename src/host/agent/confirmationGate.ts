@@ -15,6 +15,35 @@ import { aggregateEditArgsText } from '../../shared/utils/editToolArgs';
 import { canonicalizeCommand } from '../security/canonicalizeCommand';
 import { isSensitiveLogKey, redactCommandSecrets } from '../security/secretRedaction';
 import { isBashToolName } from '../tools/toolNames';
+import { resolveSubagentUserLabel } from './resolveSubagentUserLabel';
+import { resolveAgent } from './agentRegistry';
+
+// 子代理审批：角色是否带写/执行能力，按角色真实工具表判断；未知角色按“有写权限”展示（宁多勿少）。
+const SPAWN_WRITE_TOOL_PATTERN = /^(bash|write|edit|multiedit|append|notebookedit|write_file|edit_file|append_file)$/i;
+
+function describeSpawnPermission(role: unknown): string {
+  const roleId = typeof role === 'string' ? role.trim() : '';
+  const agent = roleId ? resolveAgent(roleId) : undefined;
+  const readOnly = agent?.readonly === true
+    && !(agent.tools ?? []).some(tool => SPAWN_WRITE_TOOL_PATTERN.test(tool));
+  return readOnly ? '只读查看' : '可修改文件、运行命令';
+}
+
+// 工作区内的绝对路径显示为相对路径；工作区外的路径原样保留（不得隐藏真实目标）。
+const ABSOLUTE_PATH_PATTERN = /(?<![\w:./\\~-])(?:[A-Za-z]:\\|\/)[^\s"'`<>，。；：、）)\]]*/g;
+
+function relativizeWorkspacePaths(text: string, workspaceRoot: string | undefined): string {
+  const root = workspaceRoot?.replace(/[\\/]+$/, '');
+  if (!root) return text;
+  const normalizedRoot = root.replace(/\\/g, '/');
+  return text.replace(ABSOLUTE_PATH_PATTERN, (match) => {
+    const normalized = match.replace(/\\/g, '/');
+    if (normalized === normalizedRoot) return './';
+    if (!normalized.startsWith(`${normalizedRoot}/`)) return match;
+    const rest = normalized.slice(normalizedRoot.length + 1);
+    return rest ? `./${rest}` : './';
+  });
+}
 
 // 危险工具列表
 const DANGEROUS_TOOLS = new Set([
@@ -118,7 +147,11 @@ export class ConfirmationGate {
   /**
    * 为工具调用构建预览信息
    */
-  buildPreview(toolName: string, params: Record<string, unknown>): ConfirmationPreview | undefined {
+  buildPreview(
+    toolName: string,
+    params: Record<string, unknown>,
+    options: { workspaceRoot?: string } = {},
+  ): ConfirmationPreview | undefined {
     switch (toolName) {
       case 'edit_file':
       case 'Edit': {
@@ -251,13 +284,20 @@ export class ConfirmationGate {
         };
       }
 
-      case 'spawn_agent': {
-        const role = normalizeString(params.role);
-        const task = redactCommandSecrets(normalizeString(params.task)).slice(0, 200);
-        const prefix = role ? `派出子代理（${role}）` : '派出子代理';
+      case 'spawn_agent':
+      case 'AgentSpawn': {
+        const toUserText = (text: string) =>
+          redactCommandSecrets(relativizeWorkspacePaths(text, options.workspaceRoot)).slice(0, 200);
+        const label = toUserText(resolveSubagentUserLabel(params));
+        // 审批必须独立于名字披露真实任务与权限，且不打印内部角色 id。
+        const details = [
+          `任务：${toUserText(normalizeString(params.task))}`,
+          `权限：${describeSpawnPermission(params.role)}`,
+        ];
         return {
           type: 'generic',
-          summary: `${prefix}：${task}`,
+          summary: `派出子代理：${label}`,
+          diff: details.join('\n'),
         };
       }
 

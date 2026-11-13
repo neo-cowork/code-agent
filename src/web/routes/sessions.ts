@@ -16,6 +16,8 @@ import {
 import { SessionCreateBodySchema } from './sessionBodySchemas';
 import type { WebRouteLogger } from './routeTypes';
 import { extractArtifacts } from '../../host/agent/artifactExtractor';
+import { armEnvResumeOnSessionReturn } from '../../host/runtime/envResumeWaiter';
+import { getApplicationRunRegistry } from '../../host/app/applicationRunRegistry';
 import type { DurableRunReadService } from '../../host/app/durableRunReadService';
 import {
   withDurableSessionReplayPayload,
@@ -223,6 +225,9 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
       if (sm) {
         const session = await sm.restoreSession(sessionId);
         if (session) {
+          // 用户回到会话 = 环境恢复等待的武装时机（ADR-090 §7：重启后不在启动时武装）。
+          // 函数自吞错误，这里的失败绝不拖垮会话加载。
+          armEnvResumeOnSessionReturn(sessionId, getApplicationRunRegistry(), 'GET /sessions/:id');
           const sessionPayload: DurableRestoredSessionPayload = await withDurableSessionReplayPayload(
             session,
             deps.getDurableRunReadService?.(),

@@ -33,6 +33,7 @@ vi.mock('../../../src/renderer/hooks/useI18n', () => ({
 }));
 
 const appState = {
+  language: 'zh' as const,
   setWorkbenchCollapsed: vi.fn(),
   activeAgentId: null as string | null,
   pendingPermissionRequest: null as { resolved?: boolean; agentId?: string; runId?: string } | null,

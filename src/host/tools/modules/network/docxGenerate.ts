@@ -9,6 +9,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import JSZip from 'jszip';
 import { resolveInputPath } from '../../utils/resolveInputPath';
 import {
   Document,
@@ -34,6 +35,7 @@ import type {
 import { formatFileSize } from '../../utils/fileSize';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { docxGenerateSchema as schema } from './docxGenerate.schema';
+import { findMarkdownResidue } from './docxMarkdownResidue';
 
 type DocxTheme = 'professional' | 'academic' | 'minimal' | 'creative';
 
@@ -162,15 +164,11 @@ function parseMarkdownToDocElements(content: string, theme: ThemeConfig): Paragr
     if (trimmed.startsWith('# ')) {
       paragraphs.push(
         new Paragraph({
-          children: [
-            new TextRun({
-              text: trimmed.replace(/^#\s*/, ''),
-              bold: true,
-              size: theme.headingSize * 2,
-              color: theme.headingColor,
-              font: theme.fontFamily,
-            }),
-          ],
+          children: createFormattedRuns(trimmed.replace(/^#\s*/, ''), theme, {
+            bold: true,
+            size: theme.headingSize * 2,
+            color: theme.headingColor,
+          }),
           heading: HeadingLevel.HEADING_1,
           spacing: { before: 400, after: 200 },
         }),
@@ -181,15 +179,11 @@ function parseMarkdownToDocElements(content: string, theme: ThemeConfig): Paragr
     if (trimmed.startsWith('## ')) {
       paragraphs.push(
         new Paragraph({
-          children: [
-            new TextRun({
-              text: trimmed.replace(/^##\s*/, ''),
-              bold: true,
-              size: theme.headingSize * 2 - 4,
-              color: theme.headingColor,
-              font: theme.fontFamily,
-            }),
-          ],
+          children: createFormattedRuns(trimmed.replace(/^##\s*/, ''), theme, {
+            bold: true,
+            size: theme.headingSize * 2 - 4,
+            color: theme.headingColor,
+          }),
           heading: HeadingLevel.HEADING_2,
           spacing: { before: 300, after: 150 },
         }),
@@ -200,15 +194,11 @@ function parseMarkdownToDocElements(content: string, theme: ThemeConfig): Paragr
     if (trimmed.startsWith('### ')) {
       paragraphs.push(
         new Paragraph({
-          children: [
-            new TextRun({
-              text: trimmed.replace(/^###\s*/, ''),
-              bold: true,
-              size: theme.headingSize * 2 - 8,
-              color: theme.headingColor,
-              font: theme.fontFamily,
-            }),
-          ],
+          children: createFormattedRuns(trimmed.replace(/^###\s*/, ''), theme, {
+            bold: true,
+            size: theme.headingSize * 2 - 8,
+            color: theme.headingColor,
+          }),
           heading: HeadingLevel.HEADING_3,
           spacing: { before: 200, after: 100 },
         }),
@@ -219,14 +209,7 @@ function parseMarkdownToDocElements(content: string, theme: ThemeConfig): Paragr
     if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
       paragraphs.push(
         new Paragraph({
-          children: [
-            new TextRun({
-              text: trimmed.replace(/^[-*]\s*/, ''),
-              size: theme.textSize * 2,
-              color: theme.textColor,
-              font: theme.fontFamily,
-            }),
-          ],
+          children: createFormattedRuns(trimmed.replace(/^[-*]\s*/, ''), theme),
           bullet: { level: 0 },
           spacing: { before: 50, after: 50 },
         }),
@@ -237,14 +220,7 @@ function parseMarkdownToDocElements(content: string, theme: ThemeConfig): Paragr
     if (trimmed.match(/^\d+\.\s/)) {
       paragraphs.push(
         new Paragraph({
-          children: [
-            new TextRun({
-              text: trimmed.replace(/^\d+\.\s*/, ''),
-              size: theme.textSize * 2,
-              color: theme.textColor,
-              font: theme.fontFamily,
-            }),
-          ],
+          children: createFormattedRuns(trimmed.replace(/^\d+\.\s*/, ''), theme),
           numbering: { reference: 'default-numbering', level: 0 },
           spacing: { before: 50, after: 50 },
         }),
@@ -255,15 +231,10 @@ function parseMarkdownToDocElements(content: string, theme: ThemeConfig): Paragr
     if (trimmed.startsWith('> ')) {
       paragraphs.push(
         new Paragraph({
-          children: [
-            new TextRun({
-              text: trimmed.replace(/^>\s*/, ''),
-              italics: true,
-              size: theme.textSize * 2,
-              color: '6b7280',
-              font: theme.fontFamily,
-            }),
-          ],
+          children: createFormattedRuns(trimmed.replace(/^>\s*/, ''), theme, {
+            italics: true,
+            color: '6b7280',
+          }),
           indent: { left: 720 },
           shading: { fill: 'f9fafb' },
           spacing: { before: 100, after: 100 },
@@ -282,57 +253,71 @@ function parseMarkdownToDocElements(content: string, theme: ThemeConfig): Paragr
   return paragraphs;
 }
 
-function createFormattedParagraph(text: string, theme: ThemeConfig): Paragraph {
+interface InlineRunDefaults {
+  bold?: boolean;
+  italics?: boolean;
+  size?: number;
+  color?: string;
+}
+
+function createFormattedRuns(
+  text: string,
+  theme: ThemeConfig,
+  defaults: InlineRunDefaults = {},
+): TextRun[] {
   const runs: TextRun[] = [];
   const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g);
 
   for (const part of parts) {
     if (!part) continue;
+    const size = defaults.size ?? theme.textSize * 2;
+    const color = defaults.color ?? theme.textColor;
 
     if (part.startsWith('**') && part.endsWith('**')) {
-      runs.push(
-        new TextRun({
-          text: part.slice(2, -2),
-          bold: true,
-          size: theme.textSize * 2,
-          color: theme.textColor,
-          font: theme.fontFamily,
-        }),
-      );
+      runs.push(new TextRun({
+        text: part.slice(2, -2),
+        bold: true,
+        italics: defaults.italics,
+        size,
+        color,
+        font: theme.fontFamily,
+      }));
     } else if (part.startsWith('*') && part.endsWith('*')) {
-      runs.push(
-        new TextRun({
-          text: part.slice(1, -1),
-          italics: true,
-          size: theme.textSize * 2,
-          color: theme.textColor,
-          font: theme.fontFamily,
-        }),
-      );
+      runs.push(new TextRun({
+        text: part.slice(1, -1),
+        bold: defaults.bold,
+        italics: true,
+        size,
+        color,
+        font: theme.fontFamily,
+      }));
     } else if (part.startsWith('`') && part.endsWith('`')) {
-      runs.push(
-        new TextRun({
-          text: part.slice(1, -1),
-          font: 'Consolas',
-          size: theme.textSize * 2 - 2,
-          color: 'dc2626',
-          shading: { fill: 'f3f4f6' },
-        }),
-      );
+      runs.push(new TextRun({
+        text: part.slice(1, -1),
+        bold: defaults.bold,
+        italics: defaults.italics,
+        font: 'Consolas',
+        size: defaults.size ?? size - 2,
+        color: defaults.color ?? 'dc2626',
+        shading: { fill: 'f3f4f6' },
+      }));
     } else {
-      runs.push(
-        new TextRun({
-          text: part,
-          size: theme.textSize * 2,
-          color: theme.textColor,
-          font: theme.fontFamily,
-        }),
-      );
+      runs.push(new TextRun({
+        text: part,
+        bold: defaults.bold,
+        italics: defaults.italics,
+        size,
+        color,
+        font: theme.fontFamily,
+      }));
     }
   }
+  return runs;
+}
 
+function createFormattedParagraph(text: string, theme: ThemeConfig): Paragraph {
   return new Paragraph({
-    children: runs,
+    children: createFormattedRuns(text, theme),
     spacing: { before: 100, after: 100 },
   });
 }
@@ -349,15 +334,7 @@ function createTable(rows: string[][], theme: ThemeConfig): Paragraph[] {
             new TableCell({
               children: [
                 new Paragraph({
-                  children: [
-                    new TextRun({
-                      text: cell,
-                      bold: rowIndex === 0,
-                      size: theme.textSize * 2,
-                      color: theme.textColor,
-                      font: theme.fontFamily,
-                    }),
-                  ],
+                  children: createFormattedRuns(cell, theme, { bold: rowIndex === 0 }),
                 }),
               ],
               shading: rowIndex === 0 ? { fill: 'f3f4f6' } : undefined,
@@ -379,6 +356,14 @@ function createTable(rows: string[][], theme: ThemeConfig): Paragraph[] {
     table,
     new Paragraph({ text: '' }),
   ];
+}
+
+async function scanDocxForResidualMarkdown(filePath: string): Promise<string[]> {
+  const zip = await JSZip.loadAsync(fs.readFileSync(filePath));
+  const document = zip.file('word/document.xml');
+  if (!document) throw new Error('word/document.xml is missing after generation');
+  const xml = await document.async('string');
+  return findMarkdownResidue(xml);
 }
 
 export async function executeDocxGenerate(
@@ -458,15 +443,11 @@ export async function executeDocxGenerate(
         {
           children: [
             new Paragraph({
-              children: [
-                new TextRun({
-                  text: title,
-                  bold: true,
-                  size: themeConfig.titleSize * 2,
-                  color: themeConfig.titleColor,
-                  font: themeConfig.fontFamily,
-                }),
-              ],
+              children: createFormattedRuns(title, themeConfig, {
+                bold: true,
+                size: themeConfig.titleSize * 2,
+                color: themeConfig.titleColor,
+              }),
               alignment: AlignmentType.CENTER,
               spacing: { before: 400, after: 400 },
             }),
@@ -478,6 +459,16 @@ export async function executeDocxGenerate(
 
     const buffer = await Packer.toBuffer(doc);
     fs.writeFileSync(finalPath, buffer);
+
+    const residualMarkers = await scanDocxForResidualMarkdown(finalPath);
+    if (residualMarkers.length > 0) {
+      return {
+        ok: false,
+        error: `DOCX_MARKDOWN_RESIDUE: generated word/document.xml contains ${residualMarkers.join(', ')}. Regenerate with plain text or supported inline Markdown; do not deliver this file.`,
+        code: 'DOCX_MARKDOWN_RESIDUE',
+      };
+    }
+    ctx.logger.debug('docx_generate Markdown residue scan passed', { path: finalPath });
 
     const stats = fs.statSync(finalPath);
 

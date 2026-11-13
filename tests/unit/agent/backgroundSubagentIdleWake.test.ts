@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+// 预热失败句补写模块：recordFailure 里是动态 import，冷加载多一跳宏任务，
+// 会让首条触发它的用例在 advanceTimersByTimeAsync 之后立刻断言时扑空。
+import '../../../src/host/services/commandCenter/backgroundWakeNoteRetry';
 import { scheduleBackgroundSubagentIdleWake } from '../../../src/host/agent/backgroundSubagentIdleWake';
 import { getBackgroundSubagentRegistry } from '../../../src/host/agent/backgroundSubagentRegistry';
 import { getApplicationRunRegistry, resetApplicationRunRegistryForTests } from '../../../src/host/app/applicationRunRegistry';
@@ -26,6 +29,10 @@ const loggerMocks = vi.hoisted(() => ({
   error: vi.fn(),
   debug: vi.fn(),
 }));
+const authHarness = vi.hoisted(() => ({
+  user: null as { id: string } | null,
+  callbacks: [] as Array<(user: { id: string } | null, status: string) => void>,
+}));
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => loggerMocks,
@@ -33,6 +40,19 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 
 vi.mock('../../../src/host/task/TaskManager', () => ({
   getTaskManager: () => taskManagerMocks,
+}));
+
+vi.mock('../../../src/host/services/auth/authService', () => ({
+  getAuthService: () => ({
+    getCurrentUser: () => authHarness.user,
+    addAuthChangeCallback: (callback: (user: { id: string } | null, status: string) => void) => {
+      authHarness.callbacks.push(callback);
+      return () => {
+        const index = authHarness.callbacks.indexOf(callback);
+        if (index > -1) authHarness.callbacks.splice(index, 1);
+      };
+    },
+  }),
 }));
 
 function subagentResult(output: string): SubagentResult {
@@ -65,14 +85,21 @@ function trigger(agentId: string, sessionId: string): SubagentCompletionRecord {
 }
 
 describe('background subagent idle wake', () => {
+  let caseClock = Date.UTC(2026, 0, 1);
+
   beforeEach(() => {
-    vi.useFakeTimers();
+    // The singleton retains completion dedupe keys, so cases need distinct completion times.
+    vi.useFakeTimers({ now: caseClock });
+    caseClock += 1_000;
     resetApplicationRunRegistryForTests();
     taskManagerMocks.getSessionState.mockReset();
     taskManagerMocks.startTask.mockReset();
     loggerMocks.info.mockReset();
     taskManagerMocks.observeAgentEvents.mockReset();
     taskManagerMocks.observeAgentEvents.mockReturnValue(vi.fn());
+    authHarness.user = null;
+    authHarness.callbacks.length = 0;
+    loggerMocks.warn.mockReset();
     wakeNoteMocks.format.mockClear();
     wakeNoteMocks.record.mockReset();
     wakeNoteMocks.record.mockResolvedValue(undefined);
@@ -278,6 +305,60 @@ describe('background subagent idle wake', () => {
       'throwing-session',
       'wake failed: 后台任务',
       { taskId: 'agent-throws', reason: 'wake_failed' },
+    );
+  });
+
+  it('classifies a run-session conflict with its own warn reason', async () => {
+    taskManagerMocks.getSessionState.mockReturnValue({ status: 'idle' });
+    wakeNoteMocks.record.mockResolvedValue(undefined);
+    const conflict = Object.assign(
+      new Error('Session busy-session already has an active durable run'),
+      { code: 'RUN_SESSION_CONFLICT', name: 'RunSessionConflictError' },
+    );
+    taskManagerMocks.startTask.mockRejectedValue(conflict);
+    await seedCompletion('agent-conflict', 'busy-session');
+    scheduleBackgroundSubagentIdleWake(trigger('agent-conflict', 'busy-session'));
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(loggerMocks.warn).toHaveBeenCalledWith(
+      'Failed to wake idle parent session for background subagent completion',
+      expect.objectContaining({ sessionId: 'busy-session', reason: 'run_session_conflict' }),
+    );
+    // 冲突在预检（hasSession → watchForIdleTransition）之外漏进来时：失败句照写，唤醒结果不静默消失
+    expect(wakeNoteMocks.record).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries the failure note after the owner is restored when the first write hits an inaccessible session', async () => {
+    taskManagerMocks.getSessionState.mockReturnValue({ status: 'idle' });
+    authHarness.user = null;
+    wakeNoteMocks.record
+      .mockRejectedValueOnce(new Error('Session restore-session not found'))
+      .mockResolvedValue(undefined);
+    taskManagerMocks.startTask.mockRejectedValue(new Error('model unavailable'));
+    await seedCompletion('agent-restore', 'restore-session');
+    scheduleBackgroundSubagentIdleWake(trigger('agent-restore', 'restore-session'));
+    await vi.advanceTimersByTimeAsync(50);
+
+    // 登录恢复窗口里失败句写不进：留有区别度的 warn，不静默
+    expect(wakeNoteMocks.record).toHaveBeenCalledTimes(1);
+    expect(loggerMocks.warn).toHaveBeenCalledWith(
+      'Background wake failure note not recorded',
+      expect.objectContaining({
+        reason: 'wake_failure_note_not_recorded',
+        sessionId: 'restore-session',
+        taskId: 'agent-restore',
+      }),
+    );
+
+    // owner 恢复 → 补写一次，恰好一次
+    authHarness.user = { id: 'u1' };
+    for (const callback of [...authHarness.callbacks]) callback(authHarness.user, 'authenticated');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(wakeNoteMocks.record).toHaveBeenCalledTimes(2);
+    expect(wakeNoteMocks.record).toHaveBeenLastCalledWith(
+      'restore-session',
+      'wake failed: 后台任务',
+      { taskId: 'agent-restore', reason: 'wake_failed' },
     );
   });
 });

@@ -249,7 +249,7 @@ export interface SessionListQueryOptions {
 export interface AgentApplicationService {
   // === Agent Operations ===
   sendMessage(envelope: ConversationEnvelope): Promise<void>;
-  cancel(sessionId?: string): Promise<void>;
+  cancel(sessionId?: string, reason?: 'user' | 'session-switch', options?: { abandonParked?: boolean }): Promise<void>;
   /** 回报投递结果：'no_orchestrator'/'unknown_request' = 停车审批宿主已死，行已被标 orphaned */
   handlePermissionResponse(requestId: string, response: PermissionResponse, sessionId?: string, updatedArgs?: Record<string, unknown>): PermissionDeliveryOutcome;
   interruptAndContinue(envelope: ConversationEnvelope): Promise<SteerOrQueueOutcome>;

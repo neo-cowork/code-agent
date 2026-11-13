@@ -1,3 +1,4 @@
+import { cronSessionTitlePrefixes } from '@shared/cronSessionTitle';
 // ============================================================================
 // 侧边栏导航域词条（Sidebar / features/sidebar 各组件与 hook）—— zh/en 同文件相邻维护。
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮（同 chatInput.ts / chatTranscript.ts 先例）。
@@ -6,6 +7,7 @@
 
 export const sidebarZh = {
   sidebar: {
+    cronTitlePrefixes: cronSessionTitlePrefixes.zh,
     // 顶部 / 搜索
     newTask: '新任务',
     collapseSidebar: '收起侧栏',
@@ -41,9 +43,13 @@ export const sidebarZh = {
     searchingMessagesShort: '搜消息中…',
     recentSessions: '最近会话',
     currentSession: '当前',
+    latestRun: '最新',
     messageHits: '命中 {count} 条消息',
     // 列表状态
     loading: '加载中…',
+    loadSessionsFailed: '暂时无法载入会话列表，请重试。',
+    loadSessionFailed: '暂时无法打开这条会话，请重试。',
+    retryLoadSessions: '重试',
     noSessions: '还没有勘测记录',
     startNewTask: '开始一个新任务',
     searchingMessageContent: '搜索消息内容中…',
@@ -383,6 +389,7 @@ export const sidebarZh = {
 
 export const sidebarEn: typeof sidebarZh = {
   sidebar: {
+    cronTitlePrefixes: cronSessionTitlePrefixes.en,
     newTask: 'New task',
     collapseSidebar: 'Collapse sidebar',
     expandSidebar: 'Expand sidebar',
@@ -411,8 +418,12 @@ export const sidebarEn: typeof sidebarZh = {
     searchingMessagesShort: 'Searching messages…',
     recentSessions: 'Recent sessions',
     currentSession: 'Current',
+    latestRun: 'Latest',
     messageHits: '{count} message matches',
     loading: 'Loading…',
+    loadSessionsFailed: 'We couldn’t load your conversations. Please try again.',
+    loadSessionFailed: 'We couldn’t open this conversation. Please try again.',
+    retryLoadSessions: 'Retry',
     noSessions: 'No expeditions yet',
     startNewTask: 'Start a new task',
     searchingMessageContent: 'Searching message content…',

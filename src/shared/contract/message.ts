@@ -2,6 +2,7 @@
 // Message Types
 // ============================================================================
 
+import type { EnvAssistNotice } from './envAssist';
 import type { ToolCall, ToolResult } from './tool';
 import type { WorkbenchMessageMetadata } from './conversationEnvelope';
 import type { MemberInputMessageMetadata } from './memberInput';
@@ -112,7 +113,16 @@ export interface MessageAttachment {
   // 代码特有：语言
   language?: string;
   // 文件夹特有：文件列表和统计
-  files?: Array<{ path: string; content: string; size: number }>;
+  files?: Array<{
+    /** Display path relative to the dropped folder's parent; never a tool path. */
+    path: string;
+    content?: string;
+    size: number;
+    type?: AttachmentCategory;
+    binary?: boolean;
+    /** Actual path returned for this individual file by getPathForFile. */
+    absolutePath?: string;
+  }>;
   folderStats?: { totalFiles: number; totalSize: number; byType: Record<string, number> };
   // 媒体处理状态，用于展示下载、嵌入、转写、失败等生命周期
   mediaState?: AttachmentMediaState;
@@ -274,6 +284,7 @@ export type AgentErrorCategory =
  * 刻意不存 title/suggestion 文案——文案随 i18n 走，存下来会把语言钉死在持久化数据里。
  */
 export interface AgentErrorMetadata {
+  envAssist?: EnvAssistNotice;
   category: AgentErrorCategory;
   /** host 侧错误码（RUN_FAILED / CONTEXT_LENGTH_EXCEEDED / …） */
   code?: string;
@@ -346,6 +357,11 @@ export interface MessageMetadata {
    * 编辑重发 / 失败重试复用同一 clientMessageId（消息 id），不是新开一条。
    */
   sendFailed?: boolean;
+  /**
+   * 发送失败的稳定错误码（transport 从响应体解析，如 PROJECT_SOURCE_TRUST）。
+   * 失败 assistant 气泡据此挂「确认并重发」等就地恢复入口；正文仍是人话句子。
+   */
+  sendFailureCode?: string;
   /** Structured verification evidence carried by message-level projections. */
   evidenceRefs?: EvidenceRef[];
   /** Stable join keys for reconstructing a persisted message's runtime turn. */
@@ -383,6 +399,7 @@ export interface MessageMetadata {
   agentTeam?: AgentTeamMessageMetadata;
   /** agent 运行失败的结构化错误（会话区渲染 AgentErrorCard），见 AgentErrorMetadata */
   agentError?: AgentErrorMetadata;
+  envAssist?: EnvAssistNotice;
   automation?: SessionAutomationMessageMetadata;
   /**
    * 角色醒来主动消息的打扰理由。解析自 <rationale>/<evidence>；
@@ -435,11 +452,11 @@ export interface MessageMetadata {
   };
   /**
    * 后台任务终态唤醒前台失败时的用户可见说明（`role:'system'`）：任务结果已在会话里，
-   * 只是自动汇报这一步没成；reason 区分 owner lease 缺失与其它失败。
+   * 只是自动汇报这一步没成；reason 区分 owner lease 缺失、步数耗尽与其它失败。
    */
   backgroundWakeFailed?: {
     taskId: string;
-    reason: 'owner_missing' | 'wake_failed';
+    reason: 'owner_missing' | 'wake_failed' | 'max_iterations' | 'turn_error';
   };
   /**
    * 后台任务终态唤醒被前台轮推迟超过上限时的用户可见说明。

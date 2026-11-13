@@ -412,3 +412,55 @@ describe('N-CRON-WEBHOOK-CLOUD-HOOK-FU1（真 CronService + 打桩云端网关�
     expect(gateway.counts.events).toBe(0);
   });
 });
+
+
+describe('enabled cloud creation requires configuration before any side effects', () => {
+  const input = () => ({
+    name: 'Weekday GitHub notification summary', enabled: true,
+    runsOn: 'cloud' as const, scheduleType: 'cron' as const,
+    schedule: { type: 'cron' as const, expression: '0 9 * * 1-5' },
+    action: { type: 'agent' as const, agentType: 'default' as const, prompt: 'Summarize unread GitHub notifications and message me.' },
+  });
+
+  it('public createJob throws the typed reason, with zero persisted jobs or executions', async () => {
+    configState.baseUrl = undefined;
+    configState.keys = {};
+    dbState.savedRows = [];
+    const service = new CronService();
+    try {
+      await expect(service.createJob(input())).rejects.toMatchObject({
+        name: 'CloudNotConfiguredError', code: 'CRON_CLOUD_NOT_CONFIGURED',
+      });
+      expect(service.listJobs()).toEqual([]);
+      expect(service.getRecentExecutions()).toEqual([]);
+      expect(dbState.savedRows).toEqual([]);
+    } finally { await service.shutdown(); }
+  });
+
+  it('IPC preserves the typed code and leaves persistence untouched', async () => {
+    configState.baseUrl = undefined;
+    configState.keys = {};
+    dbState.savedRows = [];
+    registerCronHandlers();
+    const response = await callIpc('createJob', input());
+    expect(response).toMatchObject({ success: false, error: { code: 'CRON_CLOUD_NOT_CONFIGURED' } });
+    expect(dbState.savedRows).toEqual([]);
+  });
+
+  it('configured cloud creates a remote schedule and persists its pointer without an execution', async () => {
+    configureCloud();
+    dbState.savedRows = [];
+    gatewayFetch = vi.fn(async (url: unknown) => {
+      expect(new URL(String(url)).pathname).toBe('/api/cron/add');
+      return { ok: true, status: 200, json: async () => ({ ok: true, result: { id: 'registered-cloud-job' } }) };
+    });
+    const service = new CronService();
+    try {
+      const job = await service.createJob(input());
+      expect(service.listJobs()).toHaveLength(1);
+      expect(dbState.savedRows.some(row => row[0] === job.id && row[12] === 'registered-cloud-job')).toBe(true);
+      expect(service.getJobExecutions(job.id)).toEqual([]);
+      expect(gatewayFetch).toHaveBeenCalledTimes(1);
+    } finally { await service.shutdown(); }
+  });
+});

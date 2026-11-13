@@ -9,6 +9,7 @@ import type { FullAgentConfig } from '../../../shared/contract/agentTypes';
 import { routeFailureCode } from '../../../shared/contract/cancellation';
 import {
   createScopedSwarmAgentId,
+  parseScopedSwarmAgentId,
 } from '../../../shared/contract/swarm';
 import {
   getAgentMaxBudget,
@@ -33,6 +34,7 @@ import { isParentRunAlive } from '../orphanLiveness';
 import { isToolWriteReadonlyRole } from '../routingToolPolicy';
 import { capabilityManifestForTools } from '../scriptRuntime/capabilityManifest';
 import { getSpawnGuard } from '../spawnGuard';
+import { resolveSubagentUserLabel } from '../resolveSubagentUserLabel';
 import {
   SubagentContextBuilder,
   getAgentContextLevel,
@@ -41,7 +43,7 @@ import { getSubagentExecutor } from '../subagentExecutor';
 import type { SubagentExecutionContext } from '../subagentExecutorTypes';
 import { resolveSubagentParentContext } from '../subagentProtocolContext';
 import { resolveSpawnAgentEngine } from './spawnAgentEngine';
-import { adoptForegroundSubagent, delegateSpawnAgentWorktreeCleanup, finalizeForegroundSpawnAgentWorktree, publishBackgroundSubagentVisibility, raceForegroundBlockingBudget, resolveForegroundBlockingBudgetMs, resolveSingleSpawnRunScope, validateForegroundBlockingBudget } from './spawnAgentForegroundBackground';
+import { adoptForegroundSubagent, delegateSpawnAgentWorktreeCleanup, finalizeForegroundSpawnAgentWorktree, publishBackgroundSubagentVisibility, raceForegroundBlockingBudget, resolveForegroundBlockingBudgetMs, resolveSingleSpawnRunScope, validateForegroundBlockingBudget, withBackgroundWorktreeNote } from './spawnAgentForegroundBackground';
 import { prepareSpawnAgentWorktree } from './spawnAgentWorktree';
 
 export async function executeSingleSpawnAgent(
@@ -49,6 +51,7 @@ export async function executeSingleSpawnAgent(
   context: SubagentExecutionContext,
   childDepth: number,
   treeId: string,
+  managedAgentId?: string,
 ): Promise<MultiagentExecutionResult> {
     const guard = getSpawnGuard();
     const parallel = params.parallel as boolean | undefined;
@@ -107,7 +110,7 @@ export async function executeSingleSpawnAgent(
     }
 
     const explicitName = typeof params.name === 'string' ? params.name.trim() : '';
-    const completionTitle = explicitName || task;
+    const completionTitle = resolveSubagentUserLabel(params);
     if (explicitName) agentName = explicitName;
 
     const engineResolution = resolveSpawnAgentEngine(params.engine, parallel, !!isDynamicMode, role);
@@ -174,7 +177,10 @@ export async function executeSingleSpawnAgent(
     }
 
     // Generate agent ID
-    const localAgentId = `agent_${role || 'dynamic'}_${randomUUID()}`;
+    let localAgentId = `agent_${role || 'dynamic'}_${randomUUID()}`;
+    if (managedAgentId) {
+      localAgentId = parseScopedSwarmAgentId(managedAgentId)?.localAgentId ?? managedAgentId;
+    }
     const agentId = context.swarmRunScope
       ? createScopedSwarmAgentId(context.swarmRunScope, localAgentId)
       : localAgentId;
@@ -360,9 +366,11 @@ export async function executeSingleSpawnAgent(
       const budgetError = validateForegroundBlockingBudget(agentName, foregroundBlockingBudgetMs);
       if (budgetError) return budgetError;
 
+      let settleWorktreeNote: (note: string) => void = () => {};
+      const worktreeNoteSettled = new Promise<string>((resolve) => { settleWorktreeNote = resolve; });
       const delegateWorktreeCleanup = (): void => {
         if (!worktreeInfo || worktreeCleanupDelegated || worktreeFinalized) return;
-        delegateSpawnAgentWorktreeCleanup({ guard, agentId, repoPath: context.cwd, worktreeInfo, isFinalized: () => worktreeFinalized, markFinalized: () => { worktreeFinalized = true; } });
+        delegateSpawnAgentWorktreeCleanup({ guard, agentId, repoPath: context.cwd, worktreeInfo, isFinalized: () => worktreeFinalized, markFinalized: () => { worktreeFinalized = true; }, onSettled: settleWorktreeNote });
         worktreeCleanupDelegated = true;
       };
 
@@ -383,6 +391,8 @@ export async function executeSingleSpawnAgent(
         // Register with SpawnGuard
         guard.register(agentId, role || 'dynamic', task, promise, abortController, {
           treeId,
+          parentRunId: context.runId,
+          background: Boolean(managedAgentId),
           completion: { title: completionTitle, kind: 'user_visible' },
           parentId: context.spawnParentAgentId,
           slotAcquired: true,
@@ -391,7 +401,11 @@ export async function executeSingleSpawnAgent(
         registeredWithGuard = true;
         slotLease = undefined;
 
-        const raced = await raceForegroundBlockingBudget(promise, foregroundBlockingBudgetMs);
+        // 后台 lane（managedAgentId 已在 registry 登记）不能再走前台预算→收养：
+        // adopt 同一 id 会抛 'Background subagent already running'，结果也落不进原记录。
+        const raced = managedAgentId
+          ? { kind: 'result' as const, result: await promise }
+          : await raceForegroundBlockingBudget(promise, foregroundBlockingBudgetMs);
 
         if (raced.kind === 'timeout') {
           delegateWorktreeCleanup();
@@ -401,7 +415,7 @@ export async function executeSingleSpawnAgent(
           // 与 run_in_background 的 detached 语义一致，取消走 close_agent。
           parentAbortSignal?.removeEventListener('abort', abortFromParent);
           return adoptForegroundSubagent({
-            promise,
+            promise: worktreeInfo ? withBackgroundWorktreeNote(promise, worktreeNoteSettled, agentId) : promise,
             agentId,
             agentName,
             completionTitle,
@@ -493,6 +507,8 @@ Stats:
         // Register with SpawnGuard (auto-tracks completion)
         guard.register(agentId, role || 'dynamic', task, promise, abortController, {
           treeId,
+          parentRunId: context.runId,
+          background: true,
           completion: { title: completionTitle, kind: 'user_visible' },
           parentId: context.spawnParentAgentId,
           slotAcquired: true,

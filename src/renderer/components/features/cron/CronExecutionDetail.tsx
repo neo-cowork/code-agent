@@ -1,3 +1,4 @@
+import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 import React, { useEffect, useState } from 'react';
 import type { CronJobDefinition, CronJobExecution, CronPermissionDeniedReason } from '@shared/contract';
 import { isCronPermissionDeniedMarker } from '@shared/cronPermissionDenied';
@@ -177,9 +178,10 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
           {execution.sessionId && (
             <button
               type="button"
+              data-testid="cron-exec-detail-open-session"
               onClick={handleOpenSession}
               disabled={isOpeningSession}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-xs text-zinc-300 transition-colors hover:border-zinc-700 hover:bg-zinc-800 disabled:opacity-50"
+              className="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-xs text-zinc-300 transition-colors hover:border-zinc-700 hover:bg-zinc-800 disabled:opacity-50"
             >
               <MessageSquareText className="h-3.5 w-3.5" />
               {isOpeningSession ? cc.execOpeningSession : cc.execOpenSession}
@@ -187,20 +189,20 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
           )}
           {execution.status === 'running' && awaitingRun != null ? (
             <span
-              className="rounded-full border border-badge-warning/40 bg-amber-500/15 px-2.5 py-1 text-xs text-badge-warning"
+              className="shrink-0 whitespace-nowrap rounded-full border border-badge-warning/40 bg-amber-500/15 px-2.5 py-1 text-xs text-badge-warning"
               data-testid="cron-exec-detail-awaiting-approval"
             >
               {cc.awaitingApprovalBadge}
             </span>
           ) : permissionDenied ? (
             <span
-              className="rounded-full px-2.5 py-1 text-xs text-badge-warning bg-amber-500/10"
+              className="shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-xs text-badge-warning bg-amber-500/10"
               data-testid="cron-exec-detail-permission-denied"
             >
               {statusMeta.label}
             </span>
           ) : (
-            <span className={`rounded-full px-2.5 py-1 text-xs ${statusMeta.className}`}>
+            <span className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-xs ${statusMeta.className}`}>
               {statusMeta.label}
             </span>
           )}
@@ -226,7 +228,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
       )}
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <Info label={cc.execSession} value={execution.sessionId ? (sessionTitle ?? cc.linkedSession) : '—'} />
+        <Info label={cc.execSession} value={execution.sessionId ? (sessionTitle ? getDisplaySessionTitle(sessionTitle, language) : cc.linkedSession) : '—'} />
         <div className="rounded-lg border border-zinc-800 bg-zinc-900/70 p-3">
           <div className="text-xs text-zinc-500">{cc.execLocation}</div>
           <div className="mt-1">
@@ -305,7 +307,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
                 <button /* ds-allow:button: 错误区标题旁紧凑警示色链接按钮（px-2 py-1 text-xs），primitive 无警示色 variant 且最小 sm 内边距更大 */
                   type="button"
                   onClick={() => openCronLoginWallSite(loginWall.siteOrigin, execution.jobId)}
-                  className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-badge-warning transition-colors hover:bg-amber-500/10"
+                  className="shrink-0 whitespace-nowrap inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-badge-warning transition-colors hover:bg-amber-500/10"
                   data-testid="cron-execution-open-login-site"
                 >
                   <ExternalLink className="h-3.5 w-3.5" />
