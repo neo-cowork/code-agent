@@ -39,13 +39,15 @@ interface ComposerDraftPersistence {
 export function useComposerDraftPersistence(args: {
   sessionId: string | null;
   sessionless: boolean;
+  /** 项目页 composer 的项目 id：sessionless 时据此按项目落草稿。 */
+  scopeProjectId?: string | null;
   value: string;
   setValue: (value: string) => void;
   /** Queued-edit mode borrows the box. Don't persist that text or clear the idle draft when it leaves. */
   suspend?: boolean;
 }): ComposerDraftPersistence {
-  const { sessionId, sessionless, value, setValue, suspend = false } = args;
-  const key = composerDraftStorageKey(sessionId, sessionless);
+  const { sessionId, sessionless, scopeProjectId = null, value, setValue, suspend = false } = args;
+  const key = composerDraftStorageKey(sessionId, sessionless, scopeProjectId);
   const keyRef = useRef(key);
   const prevKeyRef = useRef(key);
   const valueRef = useRef(value);

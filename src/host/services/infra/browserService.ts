@@ -259,6 +259,7 @@ export class BrowserService implements Disposable {
 
     this.mode = options.mode || this.getDefaultMode();
     this.configureManagedBrowserSession(options.profileMode || 'persistent');
+    if (this.profileMode === 'isolated') void import('./browser/isolatedProfileSweep').then(({ sweepStaleIsolatedBrowserProfiles }) => sweepStaleIsolatedBrowserProfiles({ currentProfileDir: this.isolatedProfileDir, logger: this.logger, oncePerProcess: true })).catch((error) => this.logger.log('WARN', `Isolated profile sweep failed: ${error}`));
     this.proxyConfig = resolveManagedBrowserProxyConfig({ input: options.proxy, env: process.env });
     const resolution = resolveBrowserProvider({ requestedProvider: options.provider });
     this.updateProviderDiagnostics(resolution, {

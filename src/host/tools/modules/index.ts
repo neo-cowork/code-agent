@@ -8,6 +8,7 @@
 // ============================================================================
 
 import type { ToolRegistry } from '../registry';
+import { installBrowserJevRouteProbe } from './network/browserJevAvailability';
 
 // ── Eager schema imports (P0-7 方案 A — single source of truth) ───────────
 // .schema.ts 文件只 type-import ToolSchema，无运行时副作用；可安全 eager 导入。
@@ -192,6 +193,7 @@ import { registerCrossSessionDelegationTools } from './delegation/registration';
 
 export function registerMigratedTools(registry: ToolRegistry, platform: NodeJS.Platform = process.platform,
   crossSessionDelegationEnabled: boolean = isCrossSessionDelegationEnabled()): void {
+  installBrowserJevRouteProbe(); // Browser execute_goal 暴露面依赖 Jev 路由（shared 层不能直接 import host）
   registry.register(
     delegateTaskSchema,
     async () => (await import('./commandCenter/sessionCommandCenter')).delegateTaskModule,
