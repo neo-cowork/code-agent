@@ -87,7 +87,7 @@ export function deniedToolRetryGuidance(ctx: RuntimeContext): string {
     || ASK_USER_QUESTION_TOOL_NAMES.some((name) => isToolDeniedForRun(ctx, name));
   if (ctx.foregroundToolFace && !ctx.unattendedTurn && !isToolDeniedForRun(ctx, 'delegate_task')) {
     return 'Hand this task to a background task via delegate_task and say in one sentence that it has started. '
-      + 'The requested call was not executed here. Report the handoff without speculating about permissions.';
+      + 'The requested call was not executed here. Report only that the background task has started.';
   }
   return askDenied
     ? 'Continue without those tools. If you need user input, state the blocker in your final text instead of calling an interactive tool.'
