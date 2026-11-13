@@ -316,7 +316,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                         data-testid="parked-approval-item"
                       >
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm text-zinc-200">{item.displayTool ?? item.tool}</div>
+                          <div className="truncate text-sm text-zinc-200">{toolTitle}</div>
                           {item.sessionTitle && <div className="truncate text-xs text-zinc-400" data-testid="parked-session-title">{item.sessionTitle}</div>}
                           <SensitiveStepParkedRow
                             step={item.sensitiveStep}
