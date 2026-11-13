@@ -244,6 +244,7 @@ describe('run-dev-slot.sh --fresh-user', () => {
         '/Applications/Agent Neo Dev 9.app',
       ]);
       rmSync(freshDir, { recursive: true });
+      const openStub = readFileSync(path.join(bin, 'open'), 'utf8');
       writeFileSync(path.join(bin, 'open'), '#!/bin/bash\nexit 1\n');
       let failure: unknown;
       try {
@@ -255,6 +256,7 @@ describe('run-dev-slot.sh --fresh-user', () => {
       expect(outputText((failure as { stderr?: unknown }).stderr)).toMatch(
         /open --env CODE_AGENT_DATA_DIR="[^"]+" --env CODE_AGENT_FRESH_USER=fresh-[a-f0-9]{24} "/,
       );
+      writeFileSync(path.join(bin, 'open'), openStub);
       writeFileSync(path.join(freshDir, 'populated'), 'keep');
       expect(run).toThrow();
       expect(readFileSync(path.join(freshDir, 'populated'), 'utf8')).toBe('keep');
