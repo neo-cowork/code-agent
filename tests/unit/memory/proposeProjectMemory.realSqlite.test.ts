@@ -142,7 +142,7 @@ describe('ProposeProjectMemory real light-file and SQLite shapes', () => {
       expect(cliFirst.meta).toMatchObject({ outcome: 'written', status: 'candidate' });
       expect(cliSecond.meta).toMatchObject({ outcome: 'exists', status: 'candidate' });
       if (cliSecond.ok) {
-        expect(cliSecond.output).toContain('status: candidate');
+        expect(cliSecond.output).toContain('「用途」草稿已存在，未覆盖。');
         expect(cliSecond.output).toContain('仍待确认，需在设置→记忆页确认才生效');
       }
 
@@ -153,7 +153,8 @@ describe('ProposeProjectMemory real light-file and SQLite shapes', () => {
       expect(second.meta).toMatchObject({ outcome: 'exists', status: 'candidate' });
       if (!second.ok) throw new Error(second.error);
       console.log('REAL_REPRO_DB_SECOND_OUTPUT\n' + second.output);
-      expect(second.output).toContain('status: candidate');
+      expect(second.output).toContain('「关键文件」草稿已存在，未覆盖。');
+      expect(second.output).toContain('仍待确认，需在设置→记忆页确认才生效');
 
       const listedBeforeRebuild = await listUnifiedMemoryEntries(repo);
       const draftBeforeRebuild = listedBeforeRebuild.entries.find((entry) => entry.id === second.meta?.id);
@@ -198,7 +199,7 @@ describe('ProposeProjectMemory real light-file and SQLite shapes', () => {
     expect(afterConfirm.meta).toMatchObject({ outcome: 'exists', status: 'active' });
     if (!afterConfirm.ok) throw new Error(afterConfirm.error);
     console.log('REAL_CONFIRM_ACTIVE_OUTPUT\n' + afterConfirm.output);
-    expect(afterConfirm.output).toContain('status: active');
+    expect(afterConfirm.output).toContain('「约定」草稿已存在，未覆盖。');
     expect(afterConfirm.output).toContain('已生效');
     expect(afterConfirm.output).not.toContain('待确认');
   });

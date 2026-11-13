@@ -334,4 +334,66 @@ describe('registerAgentCancelRoute honest cancel settlement (A3)', () => {
       rmSync(workspace, { recursive: true, force: true });
     }
   });
+
+  /**
+   * N-FIX-STOP-BEFORE-FIRST-RESPONSE-STUCK-RUNNING-FU1：首包前 Stop 后 run 停靠成
+   * waiting/user_stop；连点 Stop（含带 runId 的重复 POST）不得把它覆写成 cancelled，
+   * 只有「放弃」入口显式带 abandonParked 才终态化。
+   */
+  it('repeated cancels keep a user_stop park waiting; abandonParked terminalizes it', async () => {
+    const fixture = await recoveredWaitingRegistry({
+      runId: 'run-route-userstop',
+      sessionId: 'session-route-userstop',
+    });
+    const { registry, db, repository, workspace } = fixture;
+    await registry.checkpointDurable('run-route-userstop', {
+      now: 2_050,
+      status: 'waiting',
+      state: null,
+      pendingOperations: [],
+      childRuns: [],
+      interruptCause: 'user_stop',
+      events: [{ type: 'run_checkpointed', payload: { reason: 'fixture' }, recordedAt: 2_050 }],
+    });
+    const cancelledEvents: { runId: string; sessionId: string }[] = [];
+    try {
+      await start(registry, undefined, (input) => cancelledEvents.push(input));
+      expect(await repository.get('run-route-userstop')).toMatchObject({ status: 'waiting', interruptCause: 'user_stop' });
+
+      const cancel = (body: Record<string, unknown>) => fetch(`${baseUrl}/api/cancel`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      // 连点 Stop：sessionId-only 与带 runId 的重复取消都是 no-op。
+      for (const body of [
+        { sessionId: 'session-route-userstop' },
+        { runId: 'run-route-userstop', sessionId: 'session-route-userstop' },
+        { runId: 'run-route-userstop', sessionId: 'session-route-userstop' },
+      ]) {
+        const response = await cancel(body);
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toMatchObject({ message: 'No active agent to cancel' });
+      }
+      expect(await repository.get('run-route-userstop')).toMatchObject({ status: 'waiting', interruptCause: 'user_stop' });
+      expect((await repository.get('run-route-userstop'))?.terminal).toBeUndefined();
+      expect(registry.hasDurableOwner('run-route-userstop')).toBe(true);
+      expect(cancelledEvents).toEqual([]);
+
+      // 放弃（abandonParked）：终态化 + 补发一次 agent_cancelled。
+      const abandon = await cancel({ runId: 'run-route-userstop', sessionId: 'session-route-userstop', abandonParked: true });
+      expect(abandon.status).toBe(200);
+      await expect(abandon.json()).resolves.toMatchObject({ message: 'Cancelled', runId: 'run-route-userstop' });
+      expect(await repository.get('run-route-userstop')).toMatchObject({
+        status: 'cancelled',
+        terminal: { status: 'cancelled', reason: 'recovered_waiting_run_cancelled' },
+      });
+      expect(cancelledEvents).toEqual([{ runId: 'run-route-userstop', sessionId: 'session-route-userstop' }]);
+    } finally {
+      registry.clear();
+      db.close();
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
 });

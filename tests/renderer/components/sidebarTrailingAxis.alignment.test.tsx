@@ -2,13 +2,20 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { Browser, Page } from 'playwright';
 import { createServer, type ViteDevServer } from 'vite';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { loadPlaywrightChromium } from '../../../src/host/agent/runtime/browser/playwrightRuntime';
 
+// These fixtures contain a complete, already-loaded list; boot readiness is tested separately.
+vi.mock('../../../src/renderer/stores/sessionListPagination', () => ({
+  useSessionListLoadStore: () => ({ settled: true, loading: false, error: false, errorCode: null }),
+}));
+
+const locale = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }));
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
-  const { zh } = await import('../../../src/renderer/i18n/zh');
-  return { useI18n: () => ({ t: zh, language: 'zh' }) };
+  const { languages } = await import('../../../src/renderer/i18n');
+  return { useI18n: () => ({ t: languages[locale.language], language: locale.language }) };
 });
+afterEach(() => { locale.language = 'zh'; });
 
 vi.mock('../../../src/renderer/stores/sessionUIStore', () => ({
   useSessionUIStore: (selector?: (state: Record<string, unknown>) => unknown) => {
@@ -60,7 +67,7 @@ function session(id: string, projectId?: string) {
   } as any;
 }
 
-function renderSidebar(): string {
+function renderSidebar(cronTitles = false): string {
   const groups = [
     {
       key: 'project:space',
@@ -92,6 +99,13 @@ function renderSidebar(): string {
     },
   ];
 
+  if (cronTitles) {
+    groups[1].sessions = [
+      { ...session('schedule-session', 'project'), title: '[Schedule] 周报', type: 'schedule' },
+      { ...session('heartbeat-session', 'project'), title: '[Heartbeat] 巡检', type: 'heartbeat' },
+    ];
+  }
+
   const props = {
     groups,
     isLoading: false,
@@ -110,7 +124,7 @@ function renderSidebar(): string {
     expandedWorkspaces: {},
     collapsingWorkspaces: {},
     expandedProjectDetails: {},
-    projectDrawerKey: null,
+    projectDrawerKey: cronTitles ? 'project:project' : null,
     isCreatingSession: false,
     creatingWorkspaceKey: null,
     setProjectDrawerKey: vi.fn(),
@@ -269,3 +283,23 @@ async function readGeometry(page: Page): Promise<TrailingGeometry> {
     };
   })()`);
 }
+
+
+describe('cron type badges through SidebarSessionList project drawer', () => {
+  it.each(['zh', 'en'] as const)('renders cron type badges in %s without leaking the other language', (language) => {
+    locale.language = language;
+    const html = renderSidebar(true);
+    if (language === 'zh') {
+      expect(html).toContain('[定时] 周报');
+      expect(html).toContain('>定时</span>');
+      expect(html).toContain('>心跳</span>');
+      expect(html).not.toMatch(/Schedule|Heartbeat/);
+    } else {
+      expect(html).toContain('[Schedule] 周报');
+      expect(html).toContain('>Schedule</span>');
+      expect(html).toContain('>Heartbeat</span>');
+      expect(html).not.toContain('>定时</span>');
+      expect(html).not.toContain('>心跳</span>');
+    }
+  });
+});

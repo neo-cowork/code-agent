@@ -1,3 +1,5 @@
+import { formatStoredCronSessionTitle } from '../../shared/cronSessionTitle';
+import { normalizePersonalSkillIds } from '../../shared/cronPersonalSkills';
 // ============================================================================
 // CronService - row/schedule/action normalizers & type guards
 // 纯函数：把数据库行、schedule、action 等 unknown 输入规整成强类型契约。
@@ -20,6 +22,7 @@ import { declaresCronUrgencyQuiet, parseUrgencyHeader } from '../../shared/cronU
 import { isCronPermissionDeniedMarker } from '../../shared/cronPermissionDenied';
 import type { CronPermissionDeniedMarker, CronUrgency } from '../../shared/contract/sessionAutomation';
 
+import { filterReadOnlyCronArtifacts, type CronRunArtifactContext } from './cronRunArtifacts';
 import type { UnattendedApprovalDenial } from '../agent/unattendedApprovalTerminal';
 
 export interface CronAgentActionResult {
@@ -125,8 +128,10 @@ export function buildCronAgentActionResult(
   quietWatchRound: boolean,
   notifyQuietRound = false,
   permissionDenied?: CronPermissionDeniedMarker,
+  artifactContext?: CronRunArtifactContext,
 ): CronAgentActionResult & { skipped?: boolean; reason?: string } {
-  const digest = parseCronRunDigest(finalAssistantText);
+  const parsedDigest = parseCronRunDigest(finalAssistantText);
+  const digest = artifactContext ? filterReadOnlyCronArtifacts(parsedDigest, artifactContext) : parsedDigest;
   const { urgency, raw: urgencyRaw } = parseUrgencyHeader(digest.fullSummary ?? digest.summary ?? finalAssistantText);
   const alertReason = !notifyQuietRound && action.notifyWhen?.trim()
     ? extractCronAlertText(finalAssistantText)
@@ -194,10 +199,7 @@ export function getCronAgentSessionType(action: CronJobAction): 'schedule' | 'he
 /** cron/heartbeat 会话标题：剥掉历史前缀再按档位重打，避免 [Cron] [Schedule] 叠罗汉。
  *  （自 cronService 平移，逐字未动——该文件贴 max-lines 线。） */
 export function formatCronAgentSessionTitle(definition: CronJobDefinition, sessionType: 'schedule' | 'heartbeat'): string {
-  const cleanName = definition.name.replace(/^\[(Cron|Schedule|Heartbeat)\]\s*/i, '').trim() || definition.name;
-  return sessionType === 'heartbeat'
-    ? `[Heartbeat] ${cleanName}`
-    : `[Schedule] ${cleanName}`;
+  return formatStoredCronSessionTitle(definition.name, sessionType);
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -484,6 +486,7 @@ export function normalizeAction(value: unknown): CronJobAction | null {
         libraryProjectId:
           typeof value.libraryProjectId === 'string' ? value.libraryProjectId : undefined,
         urgencyCriteria: normalizeCriteriaSentence(value.urgencyCriteria),
+        allowedPersonalSkillIds: normalizePersonalSkillIds(value.allowedPersonalSkillIds),
         notifyWhen: normalizeCriteriaSentence(value.notifyWhen),
       };
     }

@@ -1,4 +1,5 @@
-/* global Buffer, console, fetch, process, setTimeout, window */
+import { assertDogfoodVerificationAccount, resolveDevVerificationDataDir } from '../lib/verificationAccount.ts';
+/* global Buffer, fetch, setTimeout, window */
 // ADR-054 batch 1 real-runtime acceptance against an installed Agent Neo Dev host.
 //
 // This intentionally uses the real DashScope realtime connection and the real task
@@ -11,8 +12,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright';
 
-const BASE_URL = process.env.CODE_AGENT_URL?.trim() || 'http://127.0.0.1:8181';
-const DATA_DIR = process.env.CODE_AGENT_DATA_DIR?.trim() || path.join(os.homedir(), '.code-agent-dev');
+const BASE_URL = process.env.NEO_VERIFY_URL || process.env.CODE_AGENT_URL?.trim() || 'http://127.0.0.1:8181';
+const DATA_DIR = resolveDevVerificationDataDir(BASE_URL, process.env.NEO_VERIFY_DATA_DIR || process.env.CODE_AGENT_DATA_DIR);
 const EXPECTED_ROOT = process.env.ADR054_EXPECTED_ROOT?.trim() || process.cwd();
 const LOG_PATH = path.join(DATA_DIR, 'logs', `code-agent-${new Date().toISOString().slice(0, 10)}.log`);
 const OUT_DIR = process.env.ADR054_EVIDENCE_DIR?.trim()
@@ -296,6 +297,7 @@ function readDevToken() {
 
 async function main() {
   const token = readDevToken();
+  await assertDogfoodVerificationAccount(BASE_URL, token);
   const health = await fetch(`${BASE_URL}/api/health/detail`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   }).then((response) => response.json());

@@ -23,6 +23,8 @@ type SystemEventPresentation = 'error' | 'info' | 'summary' | 'settle';
 
 export interface UserVisibleSystemEventSpec {
   presentation: SystemEventPresentation;
+  /** User-facing text when the persisted content is an internal record. */
+  displayContent?: (metadata: MessageMetadata) => string;
   /** 投出的 TraceNode.subtype；settle 不成节点，无此字段。 */
   subtype?: NonNullable<TraceNode['subtype']>;
   /**
@@ -56,6 +58,11 @@ export const USER_VISIBLE_SYSTEM_EVENT_REGISTRY = {
   backgroundWakeFailed: { presentation: 'info', attach: 'current-turn' },
   // 后台任务结束后前台轮仍忙：超过等待上限只留一句说明，不抢占、不改变唤醒时机。
   backgroundWakeDeferred: { presentation: 'info', attach: 'current-turn' },
+  backgroundTaskInterrupted: {
+    presentation: 'info',
+    attach: 'standalone',
+    displayContent: (metadata: MessageMetadata) => metadata.backgroundTaskResult?.summary ?? '',
+  },
 } as const satisfies Record<string, UserVisibleSystemEventSpec>;
 
 export type UserVisibleSystemEventKey = keyof typeof USER_VISIBLE_SYSTEM_EVENT_REGISTRY;

@@ -1,3 +1,4 @@
+import { useAppStore } from '../../../stores/appStore';
 import { createElement } from 'react';
 import {
   Pin, Pencil, IdCard, Undo2, Archive, Trash2, Wrench, Save, Puzzle, FlaskConical, FileText, ScrollText, Mic2, GitFork,
@@ -468,7 +469,7 @@ export function buildSessionContextMenuItems(
       icon: createElement(Pencil, { className: 'h-4 w-4' }),
       onClick: () => {
         setRenamingId(session.id);
-        setRenameValue(getDisplaySessionTitle(session.title));
+        setRenameValue(getDisplaySessionTitle(session.title, useAppStore.getState().language));
       },
     },
     {

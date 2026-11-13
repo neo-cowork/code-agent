@@ -17,6 +17,10 @@ import type { CronJobDefinition, EventConnectorMailScheduleConfig } from '../../
 import { CRON_EVENT_TRIGGER } from '../../shared/constants';
 import { BoundedDedupeSet } from '../channels/inboundDedupe';
 import { getConnectorRegistry } from '../connectors/registry';
+import {
+  sqliteCronMailWatermarkStore,
+  type CronMailWatermarkStore,
+} from './cronMailWatermarkStore';
 
 /** mail 源单次轮询拿到的邮件摘要（mail connector list_messages 的 data 项形状）。 */
 interface CronMailPollMessage {
@@ -163,6 +167,8 @@ interface MailPollState {
    * 不触发），否则新邮箱的存量未读会被当新邮件触发一次 run 耗预算。
    */
   seededFor?: string;
+  /** 已成功观察过的 unread mail keys，按观察顺序保留最近上限条。 */
+  seenKeys: string[];
 }
 
 export interface CronMailPollerOptions {
@@ -174,6 +180,7 @@ export interface CronMailPollerOptions {
   mailReader: CronMailReader;
   now: () => number;
   setTimer: (callback: () => void, delayMs: number) => { clear(): void };
+  watermarkStore?: CronMailWatermarkStore;
 }
 
 /**
@@ -187,6 +194,7 @@ export class CronMailPoller {
   private readonly mailReader: CronMailReader;
   private readonly now: () => number;
   private readonly setTimer: CronMailPollerOptions['setTimer'];
+  private readonly watermarkStore: CronMailWatermarkStore;
   private readonly states = new Map<string, MailPollState>();
   private pollTimer?: { clear(): void };
   /** 终态：dispose 后在飞轮询的 finally 不得再排新 tick（实例不重启，cronService 弃后重建）。 */
@@ -199,6 +207,7 @@ export class CronMailPoller {
     this.mailReader = options.mailReader;
     this.now = options.now;
     this.setTimer = options.setTimer;
+    this.watermarkStore = options.watermarkStore ?? sqliteCronMailWatermarkStore;
   }
 
   start(): void {
@@ -273,11 +282,43 @@ export class CronMailPoller {
     // 对新绑定重新播种（只记水位、不触发）。失败轮询不推进种子——基线以最终成功
     // 的那一趟为准。
     const binding = `${schedule.accountId}|${mailbox}`;
-    if (state.seededFor !== binding) {
+    if (state.seededFor === undefined) {
+      let loaded: ReturnType<CronMailWatermarkStore['load']>;
+      try {
+        loaded = this.watermarkStore.load(definition.id);
+      } catch (error) {
+        console.error(`[CronMailPoller] Mail watermark load failed for job ${definition.id}:`, mailErrorMessage(error));
+        loaded = { status: 'unavailable' };
+      }
+      if (loaded.status === 'found' && loaded.watermark.binding === binding) {
+        state.seededFor = binding;
+        state.seenKeys = loaded.watermark.seenKeys.slice(-CRON_EVENT_TRIGGER.MAIL_WATERMARK_MAX_KEYS);
+        for (const key of state.seenKeys) this.dedupe.markSeen(`${subscriptionId}:${key}`);
+      } else {
+        const cause = loaded.status === 'unavailable'
+          ? 'store-unavailable'
+          : loaded.status === 'found'
+            ? 'binding-changed'
+            : 'no-watermark';
+        console.warn(`[CronMailPoller] Mail watermark fallback for job ${definition.id} (cause: ${cause})`);
+        state.seededFor = binding;
+        state.seenKeys = [];
+        for (const message of unread) {
+          this.dedupe.markSeen(`${subscriptionId}:${mailEventKey(schedule.accountId, mailbox, message.id)}`);
+        }
+        this.rememberUnread(state, schedule.accountId, mailbox, unread);
+        this.saveWatermark(definition.id, binding, state);
+        return;
+      }
+    } else if (state.seededFor !== binding) {
+      console.warn(`[CronMailPoller] Mail watermark fallback for job ${definition.id} (cause: binding-changed)`);
       state.seededFor = binding;
+      state.seenKeys = [];
       for (const message of unread) {
         this.dedupe.markSeen(`${subscriptionId}:${mailEventKey(schedule.accountId, mailbox, message.id)}`);
       }
+      this.rememberUnread(state, schedule.accountId, mailbox, unread);
+      this.saveWatermark(definition.id, binding, state);
       return;
     }
     for (const message of unread) {
@@ -291,12 +332,40 @@ export class CronMailPoller {
         mail: { account: schedule.accountId, mailbox, messageId: message.id, subject: message.subject },
       });
     }
+    this.rememberUnread(state, schedule.accountId, mailbox, unread);
+    this.saveWatermark(definition.id, binding, state);
+  }
+
+  private rememberUnread(
+    state: MailPollState,
+    account: string,
+    mailbox: string,
+    unread: readonly CronMailPollMessage[],
+  ): void {
+    const known = new Set(state.seenKeys);
+    for (const message of unread) {
+      const key = mailEventKey(account, mailbox, message.id);
+      if (known.has(key)) continue;
+      known.add(key);
+      state.seenKeys.push(key);
+    }
+    if (state.seenKeys.length > CRON_EVENT_TRIGGER.MAIL_WATERMARK_MAX_KEYS) {
+      state.seenKeys = state.seenKeys.slice(-CRON_EVENT_TRIGGER.MAIL_WATERMARK_MAX_KEYS);
+    }
+  }
+
+  private saveWatermark(jobId: string, binding: string, state: MailPollState): void {
+    try {
+      this.watermarkStore.save(jobId, binding, state.seenKeys, this.now());
+    } catch (error) {
+      console.error(`[CronMailPoller] Mail watermark save failed for job ${jobId}:`, mailErrorMessage(error));
+    }
   }
 
   private stateFor(jobId: string): MailPollState {
     let state = this.states.get(jobId);
     if (!state) {
-      state = { nextPollAt: 0 };
+      state = { nextPollAt: 0, seenKeys: [] };
       this.states.set(jobId, state);
     }
     return state;

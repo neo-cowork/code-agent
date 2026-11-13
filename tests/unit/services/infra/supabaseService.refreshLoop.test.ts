@@ -18,8 +18,16 @@ const state = vi.hoisted(() => ({
   keychain: null as string | null,
   keychainReads: 0,
   keychainHits: 0,
+  keychainReadArgs: [] as unknown[],
   sessionKeys: [] as string[],
   storage: null as null | { getItem(key: string): Promise<string | null> },
+}));
+
+const loggerMock = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
 }));
 
 vi.mock('../../../../src/host/services/core', () => ({
@@ -32,8 +40,9 @@ vi.mock('../../../../src/host/services/core', () => ({
     removeItem: async (key: string) => {
       state.local.delete(key);
     },
-    getSessionFromKeychain: async () => {
+    getSessionFromKeychain: async (...args: unknown[]) => {
       state.keychainReads += 1;
+      state.keychainReadArgs.push(args);
       if (state.keychain) state.keychainHits += 1;
       return state.keychain;
     },
@@ -44,6 +53,11 @@ vi.mock('../../../../src/host/services/core', () => ({
       state.keychain = null;
     },
   }),
+}));
+
+vi.mock('../../../../src/host/services/infra/logger', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  createLogger: () => loggerMock,
 }));
 
 vi.mock('@supabase/supabase-js', async () => {
@@ -78,6 +92,10 @@ describe('dead refresh token does not loop', () => {
     if (previousDisableProxy === undefined) delete process.env.DISABLE_PROXY;
     else process.env.DISABLE_PROXY = previousDisableProxy;
     vi.restoreAllMocks();
+    loggerMock.info.mockClear();
+    loggerMock.warn.mockClear();
+    loggerMock.error.mockClear();
+    loggerMock.debug.mockClear();
     useToastStore.setState({ toasts: [] });
     useAuthStore.setState({ showAuthModal: false });
   });
@@ -220,5 +238,25 @@ describe('dead refresh token does not loop', () => {
     expect(signedOutEvents).toBe(signedOutBeforeSignIn);
     const restored = await client.auth.getSession();
     expect(restored.data.session?.access_token).toBe('fresh-access');
+
+    // FB 03：adapter 的两级降级哨——removeItem 宣告 refresh 被拒、getItem 两级皆空。
+    // 都是每进程至多一次，重重复的 getSession/removeItem 不得刷屏。
+    expect(state.keychainReadArgs.length).toBeGreaterThan(0);
+    for (const args of state.keychainReadArgs) {
+      expect(args).toEqual([{ forSessionRead: true }]);
+    }
+    const warnsByReason = (reason: string) => loggerMock.warn.mock.calls.filter(
+      ([, fields]) => (fields as { reason?: string } | undefined)?.reason === reason,
+    );
+    expect(warnsByReason('refresh_rejected_session_removed')).toHaveLength(1);
+    expect(warnsByReason('session_storage_empty')).toHaveLength(1);
+    expect(warnsByReason('keychain_module_unavailable')).toHaveLength(0);
+
+    // 降级 warn 参数不落 token / email（真实 refresh 失败流里它们都在场）
+    const loggedWarns = JSON.stringify(loggerMock.warn.mock.calls);
+    expect(loggedWarns).not.toContain('dead-refresh');
+    expect(loggedWarns).not.toContain('dead-access');
+    expect(loggedWarns).not.toContain('fresh-refresh');
+    expect(loggedWarns).not.toContain('user@example.com');
   });
 });

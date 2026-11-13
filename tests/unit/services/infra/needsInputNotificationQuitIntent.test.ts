@@ -6,7 +6,6 @@
 // ============================================================================
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PARKED_APPROVAL_ENTRY_PATH } from '../../../../src/shared/parkedApprovalLocation';
-import { IPC_CHANNELS } from '../../../../src/shared/ipc';
 
 const platformMocks = vi.hoisted(() => ({
   focusedWindow: null as object | null,
@@ -67,6 +66,8 @@ describe('needs-input 原生通知兜底（fallback B）', () => {
     expect(platformMocks.broadcast).toHaveBeenCalledTimes(1);
     expect(nativeSender).toHaveBeenCalledTimes(1);
     expect(nativeSender).toHaveBeenCalledWith({
+      id: platformMocks.broadcast.mock.calls[0][1].id,
+      sessionId: 's1',
       title: '有事项需要你确认',
       body: '后台任务在等你确认，打开 Agent Neo 处理。',
     });
@@ -94,8 +95,7 @@ describe('needs-input 原生通知兜底（fallback B）', () => {
   it('恢复默认发送器（注入 null）后不再走替身', () => {
     setDaemonQuitIntent('background');
     notificationService.setNativeNotificationSender(null);
-    // 默认发送器会 new Notification().show()——platform mock 里它不是构造器，
-    // 走到即抛；主路径有 try/catch 兜底，断言「不再调用替身」即可。
+    // Restoring the default must stop using the injected sender.
     expect(() => notificationService.notifyNeedsInput({ sessionId: 's1', title: 't', body: 'b' })).not.toThrow();
     expect(nativeSender).not.toHaveBeenCalled();
     notificationService.setNativeNotificationSender(nativeSender);
