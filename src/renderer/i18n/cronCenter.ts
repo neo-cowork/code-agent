@@ -1,3 +1,4 @@
+import { parkedApprovalInboxEn, parkedApprovalInboxZh } from './parkedApprovalInbox';
 import { automationPresentationEn, automationPresentationZh } from './automationPresentation';
 import { cronCloudEn, cronCloudZh } from './cronCloud';
 import { cronRoutineRestateEn, cronRoutineRestateZh } from './cronRoutineRestate';
@@ -20,6 +21,7 @@ export const cronCenterZh = {
     ...cronEditorChromeZh,
     ...cronCloudZh,
     parkedVoided: parkedApprovalVoidedZh,
+    ...parkedApprovalInboxZh,
     groupListenCheck: {
       title: '检查群消息是否连通',
       start: '发条测试消息',
@@ -542,6 +544,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     ...cronEditorChromeEn,
     ...cronCloudEn,
     parkedVoided: parkedApprovalVoidedEn,
+    ...parkedApprovalInboxEn,
     groupListenCheck: {
       title: 'Check group message reception',
       start: 'Send a test message',
