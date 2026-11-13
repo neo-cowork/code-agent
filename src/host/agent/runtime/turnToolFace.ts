@@ -33,9 +33,13 @@ export function resolveTurnToolFace(input: TurnToolFaceInput): string[] | undefi
   // unrestricted too. Preserve that distinction with the existing deny-all sentinel.
   if (!input.baseToolNames && !declared) return undefined;
   const canonical = (name: string) => resolveToolAlias(name).toLowerCase();
-  const registered = [...getProtocolToolSchemas().map((schema) => schema.name),
+  const schemas = getProtocolToolSchemas();
+  const executionTools = new Set(FOREGROUND_EXECUTION_TOOLS);
+  for (const schema of schemas) {
+    if (schema.category === 'vision' && schema.permissionLevel === 'execute') executionTools.add(canonical(schema.name));
+  }
+  const registered = [...schemas.map((schema) => schema.name),
     ...getToolSearchService().getMCPToolsMeta().map((meta) => meta.name)];
-  const known = new Map(registered.map((name) => [canonical(name), name]));
   const declaredSet = declared ? new Set(declared.map(canonical)) : undefined;
   const foreground = input.foreground && !declared;
   const names = new Map<string, string>();
@@ -46,9 +50,9 @@ export function resolveTurnToolFace(input: TurnToolFaceInput): string[] | undefi
   // Exact registry-name tokens, not ordinary verbs ('append') or intent keywords.
   // Only this turn's text counts; alias normalization still applies to declarations.
   const tokens = new Set((input.prompt ?? '').split(/[^a-zA-Z0-9_]+/u));
-  for (const [key, name] of known) {
+  for (const name of registered) {
     if (!tokens.has(name)) continue;
-    add(foreground && FOREGROUND_EXECUTION_TOOLS.has(key) ? 'delegate_task' : name);
+    add(foreground && executionTools.has(canonical(name)) ? 'delegate_task' : name);
   }
   if (input.wake) {
     for (const schema of getProtocolToolSchemas()) {
@@ -63,7 +67,7 @@ export function resolveTurnToolFace(input: TurnToolFaceInput): string[] | undefi
   const result = [...names.values()].filter((name) => {
     const key = canonical(name);
     return (!declaredSet || declaredSet.has(key))
-      && (!foreground || !FOREGROUND_EXECUTION_TOOLS.has(key))
+      && (!foreground || !executionTools.has(key))
       && (!boundarySet || boundarySet.has(key))
       && (!input.wake || !isExternalSideEffectTool(name))
       && (!input.hardBoundary || input.hardBoundary(name));

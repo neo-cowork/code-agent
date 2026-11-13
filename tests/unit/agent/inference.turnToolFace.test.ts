@@ -10,6 +10,8 @@ import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealt
 import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
 import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 import { resetToolSearchService } from '../../../src/host/services/toolSearch/toolSearchService';
+import { browserActionSchema } from '../../../src/host/plugins/builtin/browserControl/browserAction.schema';
+import { browserNavigateSchema } from '../../../src/host/plugins/builtin/browserControl/browserNavigate.schema';
 import { browserSchema } from '../../../src/host/plugins/builtin/browserControl/browser.schema';
 import { getProtocolRegistry, resetProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import fs from 'node:fs/promises';
@@ -240,6 +242,8 @@ describe('ordered tool faces through production inference', () => {
     roles.dir = await fs.mkdtemp(path.join(os.tmpdir(), 'turn-face-'));
     resetProtocolRegistry();
     getProtocolRegistry().register(browserSchema, async () => (await import('../../../src/host/plugins/builtin/browserControl/browser')).browserModule);
+    getProtocolRegistry().register(browserActionSchema, async () => (await import('../../../src/host/plugins/builtin/browserControl/browserAction')).browserActionModule);
+    getProtocolRegistry().register(browserNavigateSchema, async () => (await import('../../../src/host/plugins/builtin/browserControl/browserNavigate')).browserNavigateModule);
     resetToolSearchService();
     process.env.CODE_AGENT_MODEL_ENGINE = 'legacy';
   });
@@ -280,7 +284,7 @@ describe('ordered tool faces through production inference', () => {
     expect((await finalNames(ctx)).sort()).toEqual([...declared].sort());
   });
 
-  it.each(['Bash', 'Browser'])('foreground named %s keeps its delegation exit even on an Office deliverable turn', async (name) => {
+  it.each(['Bash', 'Browser', 'browser_action', 'browser_navigate'])('foreground named %s keeps its delegation exit even on an Office deliverable turn', async (name) => {
     const prompt = `用 ${name} 核对资料，整理成 report.docx`;
     const ctx = turn(prompt, { allowedToolNames: getTextForegroundToolNamesForPrompt(prompt) });
     Object.assign(ctx.runtime, { foregroundToolFace: true });
@@ -288,6 +292,7 @@ describe('ordered tool faces through production inference', () => {
     expect(names).toContain('delegate_task');
     expect(names).not.toContain('Bash');
     expect(names).not.toContain('Browser');
+    expect(names).not.toContain('browser_navigate');
   });
 
   it('an explicitly named lowercase registered connector tool survives the foreground face', async () => {
@@ -307,6 +312,7 @@ describe('ordered tool faces through production inference', () => {
     expect(names).toContain('spawn_agent');
     expect(names).not.toContain('Bash');
     expect(names).not.toContain('Browser');
+    expect(names).not.toContain('browser_navigate');
   });
 
   it.each(['chat', 'wake'])('no-external-sending role remains inside its declared hard boundary on %s', async (kind) => {
