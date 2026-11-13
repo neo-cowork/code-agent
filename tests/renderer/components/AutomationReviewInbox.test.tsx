@@ -1173,7 +1173,7 @@ describe('localized parked approval copy', () => {
     ['zh', '', '一项待确认的操作'],
     ['en', '', 'A pending action'],
     ['zh', '重启前发起 · ', '重启前发起 · 一项待确认的操作'],
-    ['en', '重启前发起 · ', 'Requested before restart · A pending action'],
+    ['en', '重启前发起 · ', 'Started before restart · A pending action'],
     ['zh', '重启前发起 · unknown', '重启前发起 · 一项待确认的操作'],
     ['en', 'unknown', 'A pending action'],
   ] as const)('no tool name (%s, %s) renders %s', async (language, displayTool, title) => {

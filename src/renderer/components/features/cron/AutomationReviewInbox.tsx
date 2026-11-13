@@ -68,7 +68,7 @@ function parkedToolTitle(item: ParkedApprovalInboxItem, copy: InboxCopy): string
   const storedPrefix = '重启前发起 · ';
   const restarted = title.startsWith(storedPrefix);
   const name = (restarted ? title.slice(storedPrefix.length) : title).trim();
-  return `${restarted ? copy.parkedRestartPrefix : ''}${!name || name === 'unknown' ? copy.parkedPendingAction : name}`;
+  return `${restarted ? copy.parkedVoided.restartPrefix : ''}${!name || name === 'unknown' ? copy.parkedPendingAction : name}`;
 }
 
 function formatWaiting(requestedAt: number, copy: InboxCopy): string {
