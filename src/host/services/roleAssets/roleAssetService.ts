@@ -197,7 +197,7 @@ export async function writeScopedMemory(target: ScopedMemoryTarget, entry: RoleM
 
   const safeName = guardText(entry.name, 1_000);
   const safeDescription = guardText(entry.description, 2_000);
-  const safeContent = guardText(entry.content, 50_000);
+  const safeContent = guardText(stripLeadingMemoryHeaders(entry.content), 50_000);
 
   const fileContent = `---
 name: ${safeName}
@@ -587,13 +587,30 @@ interface ParsedFrontmatter {
   body: string;
 }
 
+/** A separator is metadata only when every enclosed line is a key/value pair. */
+function leadingMemoryHeader(content: string): RegExpMatchArray | null {
+  const match = content.match(/^\s*---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/);
+  if (!match?.[1].split(/\r?\n/).every((line) => /^[a-zA-Z_][a-zA-Z0-9_-]*:[ \t]*.*$/.test(line))) return null;
+  return match;
+}
+
+function stripLeadingMemoryHeaders(content: string): string {
+  let body = content;
+  let header = leadingMemoryHeader(body);
+  while (header) {
+    body = body.slice(header[0].length).trim();
+    header = leadingMemoryHeader(body);
+  }
+  return body;
+}
+
 function parseFrontmatter(content: string): ParsedFrontmatter {
-  const match = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+  const match = leadingMemoryHeader(content);
   if (!match) return { body: content };
   const fm: Record<string, string> = {};
-  for (const line of match[1].split('\n')) {
-    const kv = line.match(/^([a-zA-Z_-]+):\s*(.*)$/);
-    if (kv) fm[kv[1]] = kv[2].trim();
+  for (const line of match[1].split(/\r?\n/)) {
+    const separator = line.indexOf(':');
+    fm[line.slice(0, separator)] = line.slice(separator + 1).trim();
   }
-  return { name: fm.name, description: fm.description, body: match[2].trim() };
+  return { name: fm.name, description: fm.description, body: stripLeadingMemoryHeaders(content.slice(match[0].length)).trim() };
 }
