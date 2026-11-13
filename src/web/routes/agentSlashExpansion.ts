@@ -3,10 +3,11 @@ import { getDefaultWorkDirectory, isLegacyDefaultWorkDirectory } from '../../hos
 import { isPlannedSessionWorkDirectory } from '../../host/config/sessionWorkDirectory';
 import { getPromptCommandService } from '../../host/services/commands/promptCommandService';
 import { createLogger } from '../../host/services/infra/logger';
+import { CHOOSE_FOLDER_ENTRY_LABEL } from '../../shared/i18n/chooseFolderEntry';
 
 const logger = createLogger('AgentSlashExpansion');
 
-const INIT_MEMORY_NO_FOLDER_PROMPT = 'Call no tools. Reply with exactly one plain sentence in the user\'s language saying that no folder has been chosen yet and directing them to the sidebar project menu item "Select working directory" (Chinese label: "选择工作目录"), then asking them to send /init-memory again.';
+const INIT_MEMORY_NO_FOLDER_PROMPT = `Call no tools. Reply with exactly one plain sentence in the user's language saying that no folder has been chosen yet and directing them to click "${CHOOSE_FOLDER_ENTRY_LABEL.en}" (Chinese label: "${CHOOSE_FOLDER_ENTRY_LABEL.zh}") in the sidebar project area, then asking them to send /init-memory again.`;
 
 function isSystemAssignedWorkingDirectory(workingDirectory?: string): boolean {
   if (!workingDirectory?.trim()) return false;
