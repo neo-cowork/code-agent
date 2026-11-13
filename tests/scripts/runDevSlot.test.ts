@@ -125,7 +125,7 @@ describe('run-dev-slot.sh --fresh-user', () => {
       const appName = slot === '1' ? 'Agent Neo Dev' : `Agent Neo Dev ${slot}`;
       const lines = output.trim().split('\n');
       expect(lines[0]).toMatch(new RegExp(
-        `^\\[run-dev-slot\\] would run: open --env CODE_AGENT_DATA_DIR=".*neo-fresh-slot${slot}-\\d{8}-\\d{6}" "/Applications/${appName}\\.app"$`,
+        `^\\[run-dev-slot\\] would run: open --env CODE_AGENT_DATA_DIR=".*neo-fresh-slot${slot}-\\d{8}-\\d{6}" --env CODE_AGENT_FRESH_USER=fresh-[a-f0-9]{24} "/Applications/${appName}\\.app"$`,
       ));
       const dir = lines[0].match(/CODE_AGENT_DATA_DIR="([^"]+)"/)?.[1];
       expect(dir).toBeDefined();
@@ -139,12 +139,29 @@ describe('run-dev-slot.sh --fresh-user', () => {
     });
   });
 
-  it.each(['flag', 'environment'])('preserves background launch through the %s form', (form) => {
+  it.each(['1', '2', '3', '4', '5', '6', '7', '8', '9'])('preserves fresh background launch for slot %s in both forms', (slot) => {
     withStub((env) => {
-      const output = runDryRun(['3', '--fresh-user', ...(form === 'flag' ? ['--background'] : [])], {
-        ...env, NEO_SLOT_BACKGROUND: form === 'environment' ? '1' : '0',
+      const appName = slot === '1' ? 'Agent Neo Dev' : `Agent Neo Dev ${slot}`;
+      for (const form of ['flag', 'environment']) {
+        const output = runDryRun([slot, '--fresh-user', ...(form === 'flag' ? ['--background'] : [])], {
+          ...env, NEO_SLOT_BACKGROUND: form === 'environment' ? '1' : '0',
+        });
+        expect(output).toContain(`--env NEO_VERIFY_NO_FOREGROUND=1 -g -j "/Applications/${appName}.app"`);
+        expect(output).toMatch(/--env CODE_AGENT_FRESH_USER=fresh-[a-f0-9]{24} --env NEO_VERIFY/);
+      }
+    });
+  });
+
+  it('generates a different fresh identity on consecutive runs', () => {
+    withStub((env) => {
+      const names = [0, 1].map(() => {
+        const output = runDryRun(['2', '--open-only', '--fresh-user'], env);
+        const name = output.match(/CODE_AGENT_FRESH_USER=(fresh-[a-f0-9]{24})/)?.[1];
+        expect(name).toBeDefined();
+        expect(name).toMatch(/^[a-z0-9][a-z0-9-]{0,30}$/);
+        return name;
       });
-      expect(output).toMatch(/open --env CODE_AGENT_DATA_DIR=".*neo-fresh-slot3-\d{8}-\d{6}" --env NEO_VERIFY_NO_FOREGROUND=1 -g -j "\/Applications\/Agent Neo Dev 3.app"/);
+      expect(names[0]).not.toBe(names[1]);
     });
   });
 
@@ -220,8 +237,23 @@ describe('run-dev-slot.sh --fresh-user', () => {
       const freshDir = path.join(env.NEO_FRESH_ROOT!, 'neo-fresh-slot9-20261109-120000');
       expect(existsSync(freshDir)).toBe(true);
       expect(output).toContain(`cleanup: rm -rf "${freshDir}"`);
-      expect(readFileSync(launchEnv.OPEN_ARGS, 'utf8')).toBe(
-        `--env\nCODE_AGENT_DATA_DIR=${freshDir}\n/Applications/Agent Neo Dev 9.app\n`,
+      const args = readFileSync(launchEnv.OPEN_ARGS, 'utf8').trim().split('\n');
+      expect(args).toEqual([
+        '--env', `CODE_AGENT_DATA_DIR=${freshDir}`,
+        '--env', expect.stringMatching(/^CODE_AGENT_FRESH_USER=fresh-[a-f0-9]{24}$/),
+        '/Applications/Agent Neo Dev 9.app',
+      ]);
+      rmSync(freshDir, { recursive: true });
+      writeFileSync(path.join(bin, 'open'), '#!/bin/bash\nexit 1\n');
+      let failure: unknown;
+      try {
+        run();
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toBeDefined();
+      expect(outputText((failure as { stderr?: unknown }).stderr)).toMatch(
+        /open --env CODE_AGENT_DATA_DIR="[^"]+" --env CODE_AGENT_FRESH_USER=fresh-[a-f0-9]{24} "/,
       );
       writeFileSync(path.join(freshDir, 'populated'), 'keep');
       expect(run).toThrow();
@@ -231,7 +263,13 @@ describe('run-dev-slot.sh --fresh-user', () => {
 
   it('never checks running apps without the fresh flag', () => {
     withStub((env) => {
-      expect(runDryRun(['2', '--open-only'], { ...env, PGREP_STATUS: '0' })).toContain('would run');
+      for (const slot of ['1', '2', '3', '4', '5', '6', '7', '8', '9']) {
+        for (const background of [[], ['--background']]) {
+          const output = runDryRun([slot, '--open-only', ...background], { ...env, PGREP_STATUS: '0' });
+          expect(output).toContain('would run');
+          expect(output).not.toContain('CODE_AGENT_FRESH_USER');
+        }
+      }
       expect(existsSync(env.PGREP_ARGS!)).toBe(false);
     });
   });
