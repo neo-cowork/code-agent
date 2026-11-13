@@ -6,9 +6,10 @@ import { resolveToolCallTerminalState } from '../../../../src/renderer/utils/too
 import { getToolStatusLabel } from '../../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/statusLabels';
 import { buildToolStatusLineCopy } from '../../../../src/renderer/utils/toolStatusLinePresentation';
 import { languages } from '../../../../src/renderer/i18n';
+import { useAgentTreeSnapshot } from '../../../../src/renderer/hooks/useAgentTreeSnapshot';
 import React from 'react';
 import { readFileSync } from 'node:fs';
-import { act,cleanup,fireEvent,render,screen,waitFor } from '@testing-library/react';
+import { act,renderHook,cleanup,fireEvent,render,screen,waitFor } from '@testing-library/react';
 import { afterEach,beforeEach,describe,expect,it,vi } from 'vitest';
 import type { ToolCall,Message } from '../../../../src/shared/contract';
 import type { Task } from '../../../../src/shared/contract/backgroundTask';
@@ -533,4 +534,22 @@ describe('stale running header fixtures',() => {
     });
   });
 
+});
+
+
+describe('shared agent tree preserves live-only polling semantics from main', () => {
+  afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); });
+
+  it.each([false, true])('reads terminal nodes only for live-only subscribers: %s', async (onlyWhileLive) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const readNodes = vi.fn(() => []);
+    const snapshot = { sessionId: 'poll-mode-session', get nodes() { return readNodes(); } };
+    const invoke = vi.spyOn(ipcService, 'invokeDomain').mockResolvedValue(snapshot);
+    const view = renderHook(() => useAgentTreeSnapshot('poll-mode-session', true, onlyWhileLive));
+    await act(async () => {});
+    await waitFor(() => expect(view.result.current.snapshot).toBe(snapshot));
+    expect(readNodes).toHaveBeenCalledTimes(onlyWhileLive ? 1 : 0);
+    await act(async () => { vi.advanceTimersByTime(3000); });
+    expect(invoke).toHaveBeenCalledTimes(onlyWhileLive ? 1 : 2);
+  });
 });

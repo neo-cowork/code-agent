@@ -37,8 +37,8 @@ async function loadSharedTree(entry: SharedAgentTree): Promise<void> {
   if (entry.listeners.size === 0) return;
   entry.snapshot = next;
   entry.listeners.forEach((_onlyWhileLive, listener) => listener());
-  if (next && !next.nodes.some(node => ['running', 'running-recovered', 'queued', 'blocked'].includes(node.status))
-    && [...entry.listeners.values()].every(Boolean)) {
+  if ([...entry.listeners.values()].every(Boolean) && next
+    && !next.nodes.some(node => ['running', 'running-recovered', 'queued', 'blocked'].includes(node.status))) {
     window.clearInterval(entry.interval);
     entry.interval = 0;
   }
