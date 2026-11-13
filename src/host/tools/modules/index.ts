@@ -8,6 +8,7 @@
 // ============================================================================
 
 import type { ToolRegistry } from '../registry';
+import { createScheduledTaskSchema } from './scheduling/createScheduledTask.schema';
 
 // ── Eager schema imports (P0-7 方案 A — single source of truth) ───────────
 // .schema.ts 文件只 type-import ToolSchema，无运行时副作用；可安全 eager 导入。
@@ -778,6 +779,11 @@ export function registerMigratedTools(registry: ToolRegistry, platform: NodeJS.P
   registry.register(
     proposeProjectMemorySchema,
     async () => (await import('./lightMemory/proposeProjectMemory')).proposeProjectMemoryModule,
+  );
+
+  registry.register(
+    createScheduledTaskSchema,
+    async () => (await import('./scheduling/createScheduledTask')).createScheduledTaskModule,
   );
 
   // selfwake (3): agent 自发挂起-续跑
