@@ -676,7 +676,7 @@ export function projectTurns(
       // 避免同一段 thinking 在多个折叠行里重复出现（P0 去噪：思考块过多问题的根因之一）。
       let reasoningAttachedForMessage = false;
 
-      const pushAssistantTextNode = (content: string, index?: number) => {
+      const pushAssistantTextNode = (content: string, index?: number, includeError = !hasOrderedParts) => {
         // 中断轮的唯一时间线信号由 recovery 工具节点承载。落库 marker 前的 partial
         // 与 snapshot.content 是同一段流式正文，二者都继续投影会在重载后重复两遍，
         // 也会破坏“灰字一行 + 决策槽一行”的单信号形态。
@@ -725,7 +725,7 @@ export function projectTurns(
           thinking: attachReasoning ? msg.thinking : undefined,
           artifacts: msg.artifacts,
           modelDecision,
-          metadata: projectedMetadata,
+          metadata: hasAgentError && !includeError ? { ...projectedMetadata, agentError: undefined, envAssist: undefined } : projectedMetadata,
           ...(agentErrorRun ? { agentErrorRun } : {}),
         });
       };
@@ -815,7 +815,7 @@ export function projectTurns(
         // 错误卡片尾随在工具行之后：带 agentError 的消息即使 content_parts 全是工具
         // 调用，也要补一个空正文节点承载 AgentErrorCard，否则失败无任何可见落点。
         if (hasAgentError) {
-          pushAssistantTextNode('');
+          pushAssistantTextNode('', textIndex + 1, true);
         }
 
         // content_parts 是权威交错顺序。走到这里若仍 textIndex===0，说明 parts 里没有
