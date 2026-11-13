@@ -1,7 +1,8 @@
 import type { CreateCronJobInput } from '../../../../services/cronClient';
 import { CRON_EVENT_TRIGGER } from '@shared/constants';
-import { formatCronExpressionLabel, humanizeEverySchedule, type CronHumanLang } from '@shared/cronHumanize';
+import { humanizeEverySchedule, type CronHumanLang } from '@shared/cronHumanize';
 import type { PendingScheduleDraft, ScheduleRestatement } from './useScheduleDraft';
+import { formatCronScheduleLabelWithZone } from '../../../../utils/formatCronJobTime';
 import { redactCronDisplayText } from '../../cron/types';
 
 interface ScheduleConfirmLabels {
@@ -192,12 +193,7 @@ function getActionDescription(action: unknown): string {
   }
 }
 
-/**
- * 「什么时候」行的语言感知文案：直走 shared/cronHumanize（每天/每天 08:17/每 3 小时，
- * 复杂表达式带「自定义时间 ·」前缀），at 按 UI 语言本地化日期。
- * 直走 shared 实现后，原 automationNotice.formatCronScheduleLabel（硬编码 zh）无生产
- * 消费方，已随本单删除；host 侧记录文案仍由 cronAutomationBridge 走同一 shared 函数。
- */
+/** 「什么时候」行按 UI 语言展示；cron 与任务列表共用时区后缀规则。 */
 function formatScheduleWhenLabel(
   schedule: CreateCronJobInput['schedule'],
   lang: CronHumanLang,
@@ -216,7 +212,7 @@ function formatScheduleWhenLabel(
         : (lang === 'zh' ? '一次性' : 'Once');
     }
     case 'cron':
-      return formatCronExpressionLabel(schedule.expression, schedule.timezone, lang);
+      return formatCronScheduleLabelWithZone(schedule.expression, schedule.timezone, lang);
     default:
       return '';
   }

@@ -9,11 +9,12 @@
 import type { SessionCommandTask } from './sessionCommandCenter';
 import { buildSessionTaskResultMessage } from './sessionCommandTaskRestartRecovery';
 import type { SessionTaskResultStatusWordLocale } from '../../../shared/constants/sessionCommandCenter';
-import { createSessionAccessRetry, type SessionAccessRetryOutcome } from './sessionAccessRetry';
+import { createSessionAccessRetry, isSessionNotAccessibleError, type SessionAccessRetryOutcome } from './sessionAccessRetry';
 import { recordBackgroundWakeFailureNoteWithOwnerRetry } from './backgroundWakeNoteRetry';
 import { getSessionManager } from '../infra/sessionManager';
 import { getConfigService } from '../core/configService';
 import { createLogger } from '../infra/logger';
+import { getAuthService } from '../auth/authService';
 
 const logger = createLogger('TerminalResultProjection');
 
@@ -54,7 +55,7 @@ export function deferTerminalResultProjectionUntilAccessible(input: {
   status: TerminalResultStatus;
   /** settle 侧的写入口；缺省走本模块的产线实现，SessionCommandCenter 传入尊重 DI 的那个。 */
   write?: (task: SessionCommandTask, status: TerminalResultStatus) => Promise<void>;
-  /** 重试落定后的收尾（如清 running 标记）；exhausted 保留标记给下次启动补投真实结果。 */
+  /** 重试落定后的收尾；exhausted 保留标记，迟到登录写成后再以 written 清掉标记。 */
   onSettled?: (outcome: SessionAccessRetryOutcome) => void;
   logger?: { warn(message: string, details?: unknown): void };
 }): void {
@@ -65,13 +66,59 @@ export function deferTerminalResultProjectionUntilAccessible(input: {
     attemptsUsed: 1,
     logContext: { sessionId: task.sessionId, taskId: task.id },
     attempt: () => write(task, status),
-    onExhausted: () => recordBackgroundWakeFailureNoteWithOwnerRetry({
-      sessionId: task.sessionId,
-      taskId: task.id,
-      shortName: task.shortName,
-      reason: 'wake_failed',
-    }),
+    onExhausted: () => {
+      retryProjectionOnSignIn(input, write);
+      return recordBackgroundWakeFailureNoteWithOwnerRetry({
+        sessionId: task.sessionId,
+        taskId: task.id,
+        shortName: task.shortName,
+        reason: 'wake_failed',
+      });
+    },
     onSettled: input.onSettled,
     logger: input.logger ?? logger,
   }).start();
+}
+
+/** Keep one pending projection until an owner can actually write it; no late timer. */
+function retryProjectionOnSignIn(
+  input: Parameters<typeof deferTerminalResultProjectionUntilAccessible>[0],
+  write: (task: SessionCommandTask, status: TerminalResultStatus) => Promise<void>,
+): void {
+  const log = input.logger ?? logger;
+  let inFlight = false;
+  let settled = false;
+  const retry = async (): Promise<void> => {
+    if (settled || inFlight) return;
+    inFlight = true;
+    try {
+      await write(input.task, input.status);
+      settled = true;
+      unsubscribe();
+      log.warn('Terminal result projected after late owner sign-in', {
+        reason: 'terminal_projection_late_owner_written',
+        sessionId: input.task.sessionId, taskId: input.task.id,
+      });
+      input.onSettled?.('written');
+    } catch (error) {
+      log.warn('Late terminal result projection waiting for accessible owner', {
+        reason: 'terminal_projection_late_owner_wait',
+        sessionId: input.task.sessionId, taskId: input.task.id,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      if (!isSessionNotAccessibleError(error)) {
+        settled = true;
+        unsubscribe();
+        input.onSettled?.('fatal');
+      }
+    } finally {
+      inFlight = false;
+    }
+  };
+  const auth = getAuthService();
+  const unsubscribe = auth.addAuthChangeCallback((user) => {
+    if (user) void retry();
+  });
+  // Close the gap between the exhausted write and listener registration.
+  if (auth.getCurrentUser()) void retry();
 }

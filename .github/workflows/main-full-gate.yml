@@ -43,7 +43,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          # coverage 基线方向和 merge diff 报表都需要当前提交的直接父节点。
+          # coverage 基线方向和 merge diff 报表都需要「上一条 main 提交」。深度 2 只保证
+          # HEAD^；一次 push 带多个提交时 github.event.before 更早，由
+          # scripts/ci/resolve-push-base.mjs 按需补取该提交（run 43212993532 事故）。
           fetch-depth: 2
 
       - name: Setup Node.js
@@ -82,10 +84,7 @@ jobs:
 
       - name: Coverage ratchet
         run: |
-          BASELINE_REF="${{ github.event.before }}"
-          if [ -z "${BASELINE_REF}" ] || [ "${BASELINE_REF}" = "0000000000000000000000000000000000000000" ]; then
-            BASELINE_REF="HEAD^"
-          fi
+          BASELINE_REF="$(node scripts/ci/resolve-push-base.mjs "${{ github.event.before }}")"
           node scripts/coverage-ratchet.mjs --compare-baseline "${BASELINE_REF}"
 
       - name: Changed-line execution report (non-blocking)
@@ -94,10 +93,7 @@ jobs:
         if: always()
         continue-on-error: true
         run: |
-          DIFF_BASE="${{ github.event.before }}"
-          if [ -z "${DIFF_BASE}" ] || [ "${DIFF_BASE}" = "0000000000000000000000000000000000000000" ]; then
-            DIFF_BASE="HEAD^"
-          fi
+          DIFF_BASE="$(node scripts/ci/resolve-push-base.mjs "${{ github.event.before }}")"
           node scripts/coverage-ratchet.mjs --changed-lines --diff-base "${DIFF_BASE}" --diff-head "${GITHUB_SHA}"
 
       - name: Announce failure (open or update the tracking issue)

@@ -47,7 +47,7 @@ function buildHarness(reusable: SessionWithMeta | null): { getState: () => Harne
       holder.state = { ...holder.state, ...patch };
     },
     invalidatePendingSessionSwitches: () => {},
-    findReusableNewSessionDraft: () => reusable,
+    findReusableNewSessionDraft: ({ sessions }) => sessions.find((session) => session.id === reusable?.id) ?? null,
   };
   return { getState: () => holder.state, deps };
 }
@@ -60,6 +60,7 @@ function createCallPayload(): Record<string, unknown> {
 describe('executeCreateSession 的「不用记忆」档接线', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockDomainInvoke.mockImplementation(async (_domain: string, action: string) => ({ success: true, data: action === 'getMessages' ? [] : null }));
     (globalThis as Record<string, unknown>).window = {
       domainAPI: { invoke: mockDomainInvoke },
     };
@@ -96,6 +97,7 @@ describe('executeCreateSession 的「不用记忆」档接线', () => {
   it('复用空白草稿 → 绕过 create 后补 update 落档，本地列表同步为 off', async () => {
     mockDomainInvoke.mockImplementation(async (_domain: string, action: string) => {
       // 复用路径不触 create；update 是这条路径的唯一落档通道
+      if (action === 'getMessages') return { success: true, data: [] };
       if (action === 'create') throw new Error('create must not be called on the reuse path');
       return { success: true, data: null };
     });
