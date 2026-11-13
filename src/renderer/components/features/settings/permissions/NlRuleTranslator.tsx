@@ -345,7 +345,7 @@ export const NlRuleTranslator: React.FC<{ onSaved?: () => void }> = ({ onSaved }
                 >
                   {NL_RULE_TEXT.behavior[entry.behavior]}
                 </Badge>
-                <code className="rounded bg-zinc-800 px-1 py-0.5 font-mono text-[11px] text-zinc-300">{entry.rule}</code>
+                <code className="whitespace-nowrap rounded bg-zinc-800 px-1 py-0.5 font-mono text-[11px] text-zinc-300">{entry.rule}</code>
                 <span className="text-zinc-500">
                   {describeNlRule({ behavior: entry.behavior, rule: entry.rule, roleId: entry.roleId, phrases: entry.phrases }, roleNameFor)}
                 </span>
