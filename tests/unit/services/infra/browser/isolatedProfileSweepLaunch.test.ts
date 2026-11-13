@@ -3,6 +3,7 @@ import { promises as fs } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
+import { MANAGED_BROWSER_ISOLATED_OWNER_FILE } from '../../../../../src/host/services/infra/browser/managedBrowserHelpers';
 import { BROWSER_TIMEOUTS } from '../../../../../src/shared/constants/timeouts';
 
 const state = vi.hoisted(() => ({ userData: '' }));
@@ -26,7 +27,11 @@ const old = new Date(Date.now() - BROWSER_TIMEOUTS.ISOLATED_PROFILE_SWEEP_GRACE 
 async function seed(name = 'stale') {
   const dir = path.join(root, name);
   await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(path.join(dir, 'payload'), Buffer.alloc(4096));
+  const deadPid = Number(execFileSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' }));
+  const owner = JSON.stringify({ host: os.hostname(), pid: deadPid, processStartedAt: old.getTime() });
+  await fs.writeFile(path.join(dir, 'payload'), Buffer.alloc(4096 - Buffer.byteLength(owner)));
+  await fs.writeFile(path.join(dir, MANAGED_BROWSER_ISOLATED_OWNER_FILE), owner);
+  await fs.utimes(path.join(dir, MANAGED_BROWSER_ISOLATED_OWNER_FILE), old, old);
   await fs.utimes(dir, old, old);
   return dir;
 }
@@ -57,6 +62,12 @@ describe('public BrowserService.launch isolated profile sweep wiring', () => {
     await service.launch({ profileMode: 'isolated', provider: 'playwright-bundled', mode: 'headless' });
     await vi.waitFor(() => expect(service.logger.getLogsAsString()).toContain('removed=1 freedBytes=4096'));
     expect((await fs.readdir(root)).filter((name) => name === 'stale')).toEqual([]);
+    const [current] = await fs.readdir(root);
+    const owner = JSON.parse(await fs.readFile(path.join(root, current, MANAGED_BROWSER_ISOLATED_OWNER_FILE), 'utf8'));
+    expect(owner).toMatchObject({ host: os.hostname(), pid: process.pid });
+    expect(owner.processStartedAt).toBeGreaterThan(0);
+    expect(owner.processStartedAt).toBeLessThanOrEqual(Date.now());
+    expect(await fs.readdir(path.join(root, current))).not.toContain('SingletonLock');
     const after = execFileSync('du', ['-sk', root], { encoding: 'utf8' }).trim().split(/\s/)[0];
     console.log(`public launch fixture | direct dirs | du -sk (KiB)\nbefore | 1 | ${before}\nafter | ${(await fs.readdir(root)).length} (current session) | ${after}`);
     printLogs();

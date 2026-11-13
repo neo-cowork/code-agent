@@ -233,6 +233,8 @@ export const BROWSER_TIMEOUTS = {
   ISOLATED_PROFILE_SWEEP_GRACE: 10 * 60_000,
   /** Bound size accounting across one sweep; incomplete profiles are kept. */
   ISOLATED_PROFILE_SWEEP_MAX_ENTRIES: 10_000,
+  /** Reject oversized or malformed owner metadata without an unbounded read. */
+  ISOLATED_PROFILE_SWEEP_OWNER_MAX_BYTES: 1_024,
   ISOLATED_PROFILE_SWEEP_WALK_BUDGET: 2_000,
   /** 浏览器操作默认超时 */
   ACTION_DEFAULT: 30_000,

@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { BROWSER_TIMEOUTS } from '../../../../shared/constants/timeouts';
 import type { BrowserLogger } from './logger';
-import { isPathInsideRoot, MANAGED_BROWSER_ISOLATED_PROFILE_PREFIX } from './managedBrowserHelpers';
+import { isPathInsideRoot, MANAGED_BROWSER_ISOLATED_PROFILE_PREFIX, MANAGED_BROWSER_ISOLATED_OWNER_FILE } from './managedBrowserHelpers';
 
 let started = false;
 
@@ -50,7 +50,31 @@ export async function sweepStaleIsolatedBrowserProfiles(options: {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
-    if (now - Math.max(stat.mtimeMs, lock?.mtimeMs ?? stat.mtimeMs) < grace) return 'young';
+    const ownerPath = path.join(dir, MANAGED_BROWSER_ISOLATED_OWNER_FILE);
+    let ownerStat;
+    try {
+      ownerStat = await fs.lstat(ownerPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    if (now - Math.max(stat.mtimeMs, lock?.mtimeMs ?? stat.mtimeMs, ownerStat?.mtimeMs ?? stat.mtimeMs) < grace) return 'young';
+    // Absence of Chrome's SingletonLock never proves inactivity: headless shell and
+    // Windows do not create it. Only profiles with a provably dead local owner qualify.
+    if (!ownerStat) return 'missing-owner';
+    if (!ownerStat.isFile() || ownerStat.size > BROWSER_TIMEOUTS.ISOLATED_PROFILE_SWEEP_OWNER_MAX_BYTES) return 'unparseable-owner';
+    let owner: unknown;
+    try {
+      owner = JSON.parse(await fs.readFile(ownerPath, 'utf8'));
+    } catch {
+      return 'unparseable-owner';
+    }
+    if (!owner || typeof owner !== 'object' || !('host' in owner) || !('pid' in owner) || !('processStartedAt' in owner)
+      || typeof owner.host !== 'string' || typeof owner.pid !== 'number' || !Number.isSafeInteger(owner.pid) || owner.pid <= 0
+      || typeof owner.processStartedAt !== 'number' || !Number.isFinite(owner.processStartedAt)
+      || owner.processStartedAt <= 0 || owner.processStartedAt > now) return 'unparseable-owner';
+    if (owner.host !== os.hostname()) return 'foreign-owner';
+    // PID reuse is deliberately conservative: a live PID is kept regardless of start time.
+    if ((options.isPidAlive ?? isPidAlive)(owner.pid)) return 'live';
     if (lock) {
       if (!lock.isSymbolicLink()) return 'unparseable-lock';
       const target = await fs.readlink(path.join(dir, 'SingletonLock'));

@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { spawn, execFileSync, type ChildProcess } from 'child_process';
 import { sweepStaleIsolatedBrowserProfiles } from '../../../../../src/host/services/infra/browser/isolatedProfileSweep';
-import { MANAGED_BROWSER_ISOLATED_PROFILE_PREFIX } from '../../../../../src/host/services/infra/browser/managedBrowserHelpers';
+import { MANAGED_BROWSER_ISOLATED_PROFILE_PREFIX, MANAGED_BROWSER_ISOLATED_OWNER_FILE } from '../../../../../src/host/services/infra/browser/managedBrowserHelpers';
 import { BROWSER_TIMEOUTS } from '../../../../../src/shared/constants/timeouts';
 
 let tmpDir: string;
@@ -17,7 +17,10 @@ const logger = { log: vi.fn() };
 async function profile(name: string, lock?: string, young = false) {
   const dir = path.join(root, name);
   await fs.mkdir(dir);
-  await fs.writeFile(path.join(dir, 'data'), Buffer.alloc(4096));
+  const owner = JSON.stringify({ host: os.hostname(), pid: deadPid, processStartedAt: old.getTime() });
+  await fs.writeFile(path.join(dir, 'data'), Buffer.alloc(4096 - Buffer.byteLength(owner)));
+  await fs.writeFile(path.join(dir, MANAGED_BROWSER_ISOLATED_OWNER_FILE), owner);
+  await fs.utimes(path.join(dir, MANAGED_BROWSER_ISOLATED_OWNER_FILE), old, old);
   if (lock) {
     await fs.symlink(lock, path.join(dir, 'SingletonLock'));
     await fs.lutimes(path.join(dir, 'SingletonLock'), old, old);
@@ -67,6 +70,54 @@ describe('isolated profile sweep', () => {
     expect(await fs.readdir(root)).toEqual(['occupied']);
     expect(summary()).toBe('Isolated profile sweep removed=120 freedBytes=491520 skippedLive=1 skippedYoung=0 skippedOther=0 failed=0');
     expect(Number(after)).toBeLessThan(Number(before));
+  });
+  it.each(['headless-shell', 'windows-lockfile'])('old live %s profile without SingletonLock is kept when ownership is unknown', async (shape) => {
+    const dir = await profile('unmarked-live');
+    await fs.unlink(path.join(dir, MANAGED_BROWSER_ISOLATED_OWNER_FILE));
+    if (shape === 'windows-lockfile') await fs.writeFile(path.join(dir, 'lockfile'), '');
+    await fs.utimes(dir, old, old);
+    await sweep();
+    expect(await fs.readdir(root)).toEqual(['unmarked-live']);
+    expect(logger.log).toHaveBeenCalledWith('DEBUG', expect.stringContaining('missing-owner'));
+    expect(summary()).toContain('skippedOther=1');
+  });
+  it('old live owner without SingletonLock is kept across processes', async () => {
+    const dir = await profile('owned-live');
+    await fs.writeFile(path.join(dir, MANAGED_BROWSER_ISOLATED_OWNER_FILE), JSON.stringify({
+      host: os.hostname(), pid: live.pid, processStartedAt: old.getTime(),
+    }));
+    await fs.utimes(dir, old, old);
+    await fs.utimes(path.join(dir, MANAGED_BROWSER_ISOLATED_OWNER_FILE), old, old);
+    await sweep();
+    expect(await fs.readdir(root)).toEqual(['owned-live']);
+    expect(summary()).toContain('skippedLive=1');
+  });
+  it.each(['foreign', 'malformed', 'symlink'])('invalid %s owner metadata is kept with reason', async (shape) => {
+    const dir = await profile('unknown-owner', deadLock());
+    const ownerPath = path.join(dir, MANAGED_BROWSER_ISOLATED_OWNER_FILE);
+    if (shape === 'foreign') {
+      await fs.writeFile(ownerPath, JSON.stringify({ host: `foreign-${os.hostname()}`, pid: deadPid, processStartedAt: old.getTime() }));
+    } else if (shape === 'malformed') {
+      await fs.writeFile(ownerPath, '{');
+    } else {
+      await fs.unlink(ownerPath);
+      const outside = path.join(tmpDir, 'outside-owner');
+      await fs.writeFile(outside, JSON.stringify({ host: os.hostname(), pid: deadPid, processStartedAt: old.getTime() }));
+      await fs.symlink(outside, ownerPath);
+    }
+    await fs.lutimes(ownerPath, old, old);
+    await fs.utimes(dir, old, old);
+    await sweep();
+    expect(await fs.readdir(root)).toEqual(['unknown-owner']);
+    expect(logger.log).toHaveBeenCalledWith('DEBUG', expect.stringContaining(shape === 'foreign' ? 'foreign-owner' : 'unparseable-owner'));
+    expect(summary()).toContain('skippedOther=1');
+  });
+  it('young owner marker keeps an old profile', async () => {
+    const dir = await profile('new-owner');
+    await fs.utimes(path.join(dir, MANAGED_BROWSER_ISOLATED_OWNER_FILE), new Date(), new Date());
+    await sweep();
+    expect(await fs.readdir(root)).toEqual(['new-owner']);
+    expect(summary()).toContain('skippedYoung=1');
   });
   it('live pid lock kept (real spawned process)', async () => {
     await profile('live', `${os.hostname()}-${live.pid}`);
