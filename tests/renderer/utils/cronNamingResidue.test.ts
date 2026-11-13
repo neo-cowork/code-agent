@@ -13,7 +13,7 @@ describe('cron naming residue regressions', () => {
     }
   });
   it('does not expose a blocked command in the preflight row', () => {
-    const result = toolPreflightCopy({ name: 'Bash', arguments: { command: 'ls -la /tmp/example' }, result: { success: false, metadata: { failureCode: AgentFailureCode.PermissionDenied } } }, zh);
+    const result = toolPreflightCopy({ name: 'Bash', arguments: { command: 'ls -la /tmp/example' }, result: { toolCallId: 'blocked-bash', success: false, metadata: { failureCode: AgentFailureCode.PermissionDenied } } }, zh);
     expect(result?.action).not.toContain('ls -la');
   });
   it('uses a human-facing English partial status', () => {
