@@ -876,6 +876,13 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     source: 'builtin',
   },
   {
+    name: 'schedule_task',
+    shortDescription: 'Open a scheduled-task draft card; creates nothing until the user confirms',
+    tags: ['planning'],
+    aliases: ['scheduled task', 'recurring task', '定时任务', '自动化任务'],
+    source: 'builtin',
+  },
+  {
     name: 'set_role_proactivity',
     shortDescription: '对话里改角色主动性：打扰频率/每天一次/免打扰时段/话题增删，确认卡复述旧->新后写入',
     tags: ['planning'],

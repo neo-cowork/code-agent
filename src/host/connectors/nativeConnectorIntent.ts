@@ -8,6 +8,7 @@
 //      （ADR-059 修订：连接器工具按轮进面，不做 schema 常驻声明，防前缀缓存打掉）。
 // ============================================================================
 
+import { isScheduleTaskChatIntent } from '../app/scheduleTaskChatIntent';
 import { CONNECTOR_TOOL_NAMES } from '../../shared/contract/workbenchTools';
 import { isCoreToolName } from '../services/toolSearch/deferredTools';
 import { createLogger } from '../services/infra/logger';
@@ -44,7 +45,8 @@ export interface NativeConnectorIntentInput {
  */
 export function getNativeConnectorToolNamesForIntent(input: NativeConnectorIntentInput): string[] {
   const matched = NATIVE_CONNECTOR_INTENT_RES
-    .filter(([, re]) => re.test(input.userText))
+    .filter(([id, re]) => re.test(input.userText)
+      && !(id === 'reminders' && isScheduleTaskChatIntent(input.userText)))
     .map(([id]) => id);
   if (matched.length === 0) return [];
 

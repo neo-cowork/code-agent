@@ -3,6 +3,7 @@ import { resolveForegroundBrainMaxIterations, SESSION_COMMAND_CENTER_BRAIN_MAX_I
 import { getTextForegroundToolNames } from '../tools/protocolRegistry';
 import { detectTaskFeatures } from '../prompts/systemReminders';
 import { getNativeConnectorToolNamesForIntent } from '../connectors/nativeConnectorIntent';
+import { isScheduleTaskChatIntent } from './scheduleTaskChatIntent';
 import { isRoleProactivityChatIntent } from './roleProactivityChatIntent';
 import { createLogger } from '../services/infra/logger';
 import { resolveModelInfo } from '../model/modelInfo';
@@ -103,7 +104,15 @@ export function getSessionCommandCenterBrainContextForPrompt(prompt: string): st
  * 真机抓包实证）；桌面 envelope 路仍走 withSessionCommandCenterBrain 的全量清单。
  */
 export function getSessionCommandCenterTurnRulesForPrompt(prompt: string): string[] {
-  return isMorningBriefSaveDraftReply(prompt) ? [MORNING_BRIEF_SAVE_DRAFT_CONTEXT] : [];
+  const rules = isMorningBriefSaveDraftReply(prompt) ? [MORNING_BRIEF_SAVE_DRAFT_CONTEXT] : [];
+  if (isScheduleTaskChatIntent(prompt)) rules.push([
+    '<schedule_task_draft>',
+    '用户要求新建定时、周期、自动执行或一次性预约任务时，调用 schedule_task 一次，description 原样传入用户请求（包括时间和要做的事），不要翻译。它打开与 /schedule 相同的草案确认卡，用户确认前不创建任务。',
+    '不要用 reminders_* 代替自动执行任务，不要搜索文件或 cron_summary，不要委派后台去创建。调用后以用户原话的语言回复：英文请求只用英文，中文请求用中文；简短说明草案卡已准备好、确认后才会创建，不能声称任务已存在。',
+    '若只是询问如何创建、解释功能、讨论故障或开发工作，直接回答或处理原请求，不调用 schedule_task；启用、删除、列出已有任务也不调用。单次提醒联系某人等提醒事项仍走提醒事项路径。',
+    '</schedule_task_draft>',
+  ].join('\n'));
+  return rules;
 }
 
 /**
@@ -173,6 +182,7 @@ export function getTextForegroundToolNamesForPrompt(
   // 角色主动性写入必须留在用户亲自参与的前台轮次，并继续走工具内 force-confirm。
   // 只在相关请求命中时进 allowlist，避免每轮挂载写工具 schema。
   if (isRoleProactivityChatIntent(prompt)) extras.push('set_role_proactivity');
+  if (isScheduleTaskChatIntent(prompt)) extras.push('schedule_task');
   // 无意图命中时零副作用（不触 configService/registry）。
   extras.push(...getNativeConnectorToolNamesForIntent({ userText: prompt, allowedConnectorIds }));
   extras.push(...getImageAnalyzeToolNamesForTurn(imageTurn));

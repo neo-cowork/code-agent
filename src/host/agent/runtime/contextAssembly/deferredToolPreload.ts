@@ -5,6 +5,7 @@ import { createLogger } from '../../../services/infra/logger';
 import { CONNECTOR_TOOL_NAMES } from '../../../../shared/contract/workbenchTools';
 import { needsArtifactTaskBrief } from '../../../prompts/builder';
 import { getNativeConnectorToolNamesForIntent } from '../../../connectors/nativeConnectorIntent';
+import { isScheduleTaskChatIntent } from '../../../app/scheduleTaskChatIntent';
 import { isRoleProactivityChatIntent } from '../../../app/roleProactivityChatIntent';
 
 const logger = createLogger('ContextAssembly');
@@ -113,6 +114,8 @@ export function getDeferredToolsToPreloadForTurn(
   if (isRoleProactivityChatIntent(userText)) {
     tools.add('set_role_proactivity');
   }
+
+  if (isScheduleTaskChatIntent(userText)) tools.add('schedule_task');
 
   for (const connectorId of runtime.toolScope?.allowedConnectorIds ?? []) {
     for (const toolName of CONNECTOR_TOOL_NAMES[connectorId] ?? []) {
