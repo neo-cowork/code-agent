@@ -1,5 +1,6 @@
 import { browserPool } from '../browserPool';
 import { createLogger } from '../logger';
+import { hasManagedBrowserActivity } from './managedBrowserActivity';
 
 const logger = createLogger('IdleManagedBrowsers');
 
@@ -13,7 +14,7 @@ export function closeIdleManagedBrowsers(reason: 'shell-exit-resident' | 'reside
   for (const { key, service, inUse } of browserPool.managedServices()) {
     // Pool occupancy is an additional guard; the service checks its lease too,
     // including __default__, which has no pool occupancy flag.
-    const outcome = inUse ? 'in-use' : service.terminateIdleManagedProcess();
+    const outcome = inUse || hasManagedBrowserActivity(service) ? 'in-use' : service.terminateIdleManagedProcess();
     if (outcome === 'terminated') closed += 1;
     else skipped.push({ key, reason: outcome });
   }

@@ -63,6 +63,7 @@ import {
 } from './browser/browserLaunchHelpers';
 import { ManagedBrowserLeaseController } from './browser/managedBrowserLeaseController';
 import { killManagedChromeProcesses } from './browser/browserProcessWatchdog';
+import { withManagedBrowserActivity } from './browser/managedBrowserActivity';
 import {
   findBrowserElementByText,
   findBrowserElements,
@@ -231,6 +232,10 @@ export class BrowserService implements Disposable {
   // --------------------------------------------------------------------------
 
   async launch(options: ManagedBrowserLaunchOptions = {}): Promise<void> {
+    return withManagedBrowserActivity(this, () => this.launchBrowser(options));
+  }
+
+  private async launchBrowser(options: ManagedBrowserLaunchOptions): Promise<void> {
     if (this.isRunning()) {
       if (options.profileMode && options.profileMode !== this.profileMode) {
         throw new Error(`Managed browser is already running with profileMode=${this.profileMode}; close it before switching to ${options.profileMode}.`);
@@ -514,6 +519,10 @@ export class BrowserService implements Disposable {
   }
 
   async ensureSession(url: string = 'about:blank', options: ManagedBrowserLaunchOptions = {}): Promise<ManagedBrowserSessionState> {
+    return withManagedBrowserActivity(this, () => this.prepareSession(url, options));
+  }
+
+  private async prepareSession(url: string, options: ManagedBrowserLaunchOptions): Promise<ManagedBrowserSessionState> {
     await this.ensureBrowser(options);
     this.leaseController.renew({
       owner: options.leaseOwner || 'managed-browser',
