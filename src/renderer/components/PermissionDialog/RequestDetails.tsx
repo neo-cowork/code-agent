@@ -16,7 +16,7 @@ import { useI18n } from '../../hooks/useI18n';
 import { useAppStore } from '../../stores/appStore';
 import { resolveHostReasonCopy } from '../../utils/hostReasonPresentation';
 import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
-import { isDangerousRequestShape, isSafeDefaultDeny, isHostDefaultToolPreview, permissionConsequence } from './permissionPresentation';
+import { isDangerousRequestShape, isSafeDefaultDeny, isHostDefaultToolPreview, shellActionPresentation, permissionConsequence } from './permissionPresentation';
 import { ConnectorWriteDisclosure } from './ConnectorWriteDisclosure';
 import { estimateMediaPriceCny } from './mediaPriceEstimate';
 import { formatCny } from '@shared/media/imageCost';
@@ -144,7 +144,12 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       {filePath && <DetailItem label={labels.detailFile} value={filePath} isPath />}
 
       {/* 命令 */}
-      {details.command && (
+      {details.command && (shellActionPresentation(request, t) ? (
+        <details>
+          <summary className="cursor-pointer text-xs text-zinc-400">{labels.commandShowAll}</summary>
+          <DetailItem label={labels.detailCommand} value={details.command} isCode />
+        </details>
+      ) : (
         <DetailItem
           key={`command-${request.id}`}
           label={labels.detailCommand}
@@ -153,7 +158,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
           isDangerous={isDangerousRequestShape(request)}
           collapsible={type === 'command' && !(isDangerousRequestShape(request) || isSafeDefaultDeny(request))}
         />
-      )}
+      ))}
 
       {details.sandbox && (
         <p
@@ -205,7 +210,9 @@ export function RequestDetails({ request }: RequestDetailsProps) {
           <div className="text-xs text-zinc-400 mb-2">{details.preview.summary}</div>
           {details.preview.diff && (
             <pre className="text-xs p-2 rounded bg-zinc-700 border border-zinc-700 text-zinc-400 overflow-x-auto max-h-32 whitespace-pre-wrap break-all">
-              {details.preview.diff}
+              {request.tool === 'spawn_agent' || request.tool === 'AgentSpawn'
+                ? details.preview.diff.replace(/^权限：可修改文件、运行命令$/mu, labels.spawnPermissionPrograms)
+                : details.preview.diff}
             </pre>
           )}
         </div>

@@ -9,8 +9,9 @@ describe('决策动作基底词', () => {
     expect(zh.decisionCard.workflow.optionApprove).toBe('Workflow 启动 · 允许');
     expect(zh.planApproval.approve).toBe('计划 · 允许');
     expect(zh.planApproval.cancel).toBe('计划 · 拒绝');
-    expect(zh.userQuestion.submit).toBe('回答 · 允许');
-    expect(zh.userQuestion.skip).toBe('回答 · 拒绝');
+    expect(zh.userQuestion.submit).toBe('提交回答');
+    expect(zh.userQuestion.skip).toBe('跳过');
+    expect(zh.userQuestion.declinedRecord).toBe('未回答');
     expect(zh.design.proposalApply).toBe('画布修改 · 允许');
     expect(zh.design.proposalReject).toBe('画布修改 · 拒绝');
   });
@@ -20,8 +21,9 @@ describe('决策动作基底词', () => {
     expect(en.decisionCard.swarm.optionReject).toBe('Team launch · Deny');
     expect(en.planApproval.approve).toBe('Plan · Allow');
     expect(en.planApproval.cancel).toBe('Plan · Deny');
-    expect(en.userQuestion.submit).toBe('Answer · Allow');
-    expect(en.userQuestion.skip).toBe('Answer · Deny');
+    expect(en.userQuestion.submit).toBe('Submit answer');
+    expect(en.userQuestion.skip).toBe('Skip');
+    expect(en.userQuestion.declinedRecord).toBe('Not answered');
     expect(en.design.proposalApply).toBe('Canvas edit · Allow');
     expect(en.design.proposalReject).toBe('Canvas edit · Deny');
   });

@@ -67,6 +67,39 @@ function isShellAction(request: PermissionRequest): boolean {
     || tool.startsWith('acp:terminal/');
 }
 
+/** Conservative display labels only; never changes approval policy or risk classification. */
+export function shellActionPresentation(request: PermissionRequest, t: Translations): { title: string; consequence: string } | undefined {
+  if (!isShellAction(request) || isDangerousRequestShape(request) || isSafeDefaultDeny(request)) return undefined;
+  const command = request.details.command?.trim() ?? '';
+  // Compound syntax and substitutions keep their full command review.
+  if (/[;&|`$<>\n\r]/u.test(command)) return undefined;
+  const tokens = command.match(/"[^"\n]*"|'[^'\n]*'|[^\s"']+/gu)?.map((token) => token.replace(/^['"]|['"]$/gu, '')) ?? [];
+  const p = t.decisionCard.permission;
+  if (tokens[0] === 'lsof' && tokens.slice(1).every((token) =>
+    /^(?:-[nP]+|-i(?:TCP|UDP)?(?::[\w.-]+)?|-sTCP:(?:LISTEN|ESTABLISHED)|-p\d+|:\d+|\/[^-].*)$/u.test(token))) {
+    return { title: p.titleInspectProcesses, consequence: p.consequenceInspectProcesses };
+  }
+  if (tokens[0] !== 'curl') return undefined;
+  let url: string | undefined;
+  let output: string | undefined;
+  for (let i = 1; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token === '-o' || token === '--output') {
+      output = tokens[++i];
+      if (!output || output.startsWith('-')) return undefined;
+    } else if (/^https?:\/\//u.test(token) && !url) {
+      url = token;
+    } else if (!/^(?:-[LsSf]+|--location|--silent|--show-error|--fail)$/u.test(token)) {
+      return undefined;
+    }
+  }
+  if (!url || !output) return undefined;
+  return {
+    title: p.titleDownloadPage,
+    consequence: p.consequenceDownloadPage.replace('{url}', redactCredentialText(url)).replace('{file}', formatFilePath(redactCredentialText(output))),
+  };
+}
+
 type NonShellPresentationKey = 'browser' | 'browserAction' | 'roleProactivity' | 'spawnAgent' | 'browserClipboardWrite';
 
 function nonShellPresentationKey(request: PermissionRequest): NonShellPresentationKey | undefined {
@@ -129,6 +162,9 @@ export function permissionIcon(request: PermissionRequest): React.ReactElement |
 
 /** Title override for command-shaped requests that are not shell actions. */
 export function permissionTitle(request: PermissionRequest, t: Translations): string | undefined {
+  const shell = shellActionPresentation(request, t);
+  if (shell) return shell.title;
+  if (request.type === 'file_read' && hasFileTarget(request)) return t.decisionCard.permission.titleReadFile;
   if (!isNonShellRequest(request)) return undefined;
   const p = t.decisionCard.permission;
   switch (nonShellPresentationKey(request)) {
@@ -225,7 +261,7 @@ export function permissionSummary(request: PermissionRequest, t: Translations, l
     .replace('{site}', browser.target?.slice(browser.target.indexOf('@') + 1) ?? copy.unknownSite);
 
   const p = t.decisionCard.permission;
-  if (isGenericCommandRequest(request)) return p.genericApprovalQuestion;
+  if (shellActionPresentation(request, t)) return p.questionAction;
   const target = fileTarget(request);
   const compactTarget = target ? compactFileTarget(target) : undefined;
   const qualifier = isOutsideWorkspace(request) ? `（${p.workspaceOutside}）` : '';
@@ -287,7 +323,8 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
   }
   if (isNonShellRequest(request)) return nonShellConsequence(request, t);
   const p = t.decisionCard.permission;
-  if (isGenericCommandRequest(request)) return p.genericApprovalDescription;
+  const shell = shellActionPresentation(request, t);
+  if (shell) return shell.consequence;
   const commandDeleteTarget = request.details.command?.match(/\brm\s+(?:(?:-[^\s]+|--[^\s]+)\s+)*(?:"([^"]+)"|'([^']+)'|([^\s;&|]+))/u);
   const target = request.details.affectedPath
     || fileTarget(request)
