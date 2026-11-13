@@ -35,7 +35,7 @@ async function origin(handler: RequestListener): Promise<string> {
   return `http://127.0.0.1:${address.port}`;
 }
 
-function context(conversationId = randomUUID(), agentId = 'park-agent'): ToolContext {
+function context(conversationId: string = randomUUID(), agentId = 'park-agent'): ToolContext {
   const ctx: ToolContext = {
     sessionId: conversationId, runId: randomUUID(), agentId,
     workingDirectory: process.cwd(), workspace: process.cwd(),
