@@ -22,7 +22,7 @@ const openHttpLinkInRailAsync = vi.fn(async (_input: unknown) => ({
 const closeUserBrowserLinkRun = vi.fn(async (..._args: unknown[]) => undefined);
 const controlUserBrowserHistory = vi.fn(async (..._args: unknown[]) => null);
 const dispatchUserBrowserInput = vi.fn(async (_input: unknown) => null);
-const requestBrowserHumanTakeover = vi.fn(async (_input: unknown) => undefined);
+const requestBrowserHumanTakeover = vi.fn(async (_input: unknown): Promise<void> => undefined);
 
 vi.mock('../../../src/renderer/hooks/requestBrowserHumanTakeover', () => ({
   requestBrowserHumanTakeover: (input: unknown) => requestBrowserHumanTakeover(input),
