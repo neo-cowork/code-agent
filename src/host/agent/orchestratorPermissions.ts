@@ -29,6 +29,7 @@ import {
   noteUnattendedApprovalTimeout,
   UNATTENDED_APPROVAL_TIMEOUT,
 } from './unattendedApprovalTerminal';
+import { recordBrowserSessionGrant } from '../permissions/browserSessionGrant';
 import { getConfirmationGate } from './confirmationGate';
 import { mintAppGrantSession, mintAppGrantStanding } from '../permissions/appGrantStore';
 import { mintTool24hGrant, mintToolRunGrant } from '../permissions/toolGrantStore';
@@ -122,6 +123,24 @@ function recordHumanGrant(
     return;
   }
   if (updatedArgs && response !== 'allow') return;
+  // 与聊天卡 hideStandingGrants 等价的收口：可编辑写回工具 / forceConfirm / 无 target 的 external
+  // 只能一次性放行，两档工具授权（run/24h）一律不铸，避免收件箱点击放大成全局免审。
+  if (
+    (response === 'allow_run' || response === 'allow_24h')
+    && (
+      isEditableTool(request.tool)
+      || request.forceConfirm === true
+      || (isExternalSideEffectTool(request.tool) && !request.details?.standingGrantTarget)
+    )
+  ) {
+    logger.warn('Tier grant refused for editable/forceConfirm/untargeted-external request: treated as allow once', {
+      tool: request.tool,
+      requestId: request.id,
+      response,
+    });
+    return;
+  }
+  if (recordBrowserSessionGrant(response, request)) return;
   const app = request.details?.targetApp;
   if (response === 'allow_session' && request.sessionId) {
     if (app?.name) mintAppGrantSession(request.sessionId, app);
@@ -846,6 +865,7 @@ export class OrchestratorPermissionIsland {
         riskClass: isExternalSideEffectTool(fullRequest.tool) ? 'external' : null,
         // B4：external+可提取 target 时非空 → 收件箱审批卡出「每次都允许发 <target>」铸权入口。
         standingGrantTarget: fullRequest.details?.standingGrantTarget ?? null,
+        ...(fullRequest.details.browserSessionGrant ? { browserSessionGrant: fullRequest.details.browserSessionGrant, displayAction: fullRequest.reason } : {}),
       };
       try {
         repo.insert({

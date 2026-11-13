@@ -1,3 +1,4 @@
+import { getSpawnGuard } from '../spawnGuard';
 import { peekEnvBlockedNote, clearEnvBlockedNote } from '../runtime/envBlockedTurn';
 // ============================================================================
 // durableRunTerminal — orchestrator 一侧的 durable run 终态收口
@@ -79,6 +80,9 @@ export async function finalizeOrParkDurableRun(
 ): Promise<void> {
   const envBlocked = peekEnvBlockedNote(input.runId);
   const dueAt = peekQuotaWaitDueAt(input.runId);
+  if (input.sessionId) {
+    getSpawnGuard().settleParentRun(input.sessionId, input.runId, Boolean(input.cancelled) && dueAt === undefined && envBlocked === undefined);
+  }
   const parkable = envBlocked !== undefined || dueAt !== undefined
     ? canParkResumableUserStop({ ...input, cancelled: true })
     : canParkResumableUserStop(input);

@@ -20,6 +20,8 @@ vi.mock('../../../src/renderer/components/features/chat/ToolStepGroup', () => ({
   ToolStepGroup: () => React.createElement('div', { 'data-testid': 'tool-running' }, 'tool running'),
 }));
 
+import { turnPhaseFallbackLabel } from '../../../src/renderer/utils/turnPhaseFallback';
+import { languages } from '../../../src/renderer/i18n';
 import { TurnCard } from '../../../src/renderer/components/features/chat/TurnCard';
 
 afterEach(() => {
@@ -187,13 +189,15 @@ describe('TurnCard 轮头阶段兜底（发送失败轮）', () => {
     const normalTurn: TraceTurn = {
       ...failedTurn,
       turnId: 'turn-normal',
+      status: 'completed',
       nodes: [
         { id: 'user-ok', type: 'user', content: '处理一下', timestamp: baseTime - 1_000 },
         { id: 'answer-ok', type: 'assistant_text', content: '已经完成。', timestamp: baseTime },
       ],
     };
     render(<TurnCard turn={normalTurn} />);
-    expect(screen.getByTestId('turn-run-header').textContent).toContain('回复已生成');
+    expect(screen.queryByTestId('turn-run-header')).toBeNull();
+    expect(turnPhaseFallbackLabel(normalTurn, languages.zh)).toBe('回复已生成');
   });
 
   it('en 语言下兜底显示 Reply generated，而不是硬编码中文', async () => {
@@ -204,7 +208,7 @@ describe('TurnCard 轮头阶段兜底（发送失败轮）', () => {
       const normalTurn: TraceTurn = {
         turnNumber: 1,
         turnId: 'turn-normal-en',
-        status: 'error',
+        status: 'completed',
         startTime: baseTime - 1_000,
         nodes: [
           { id: 'user-ok', type: 'user', content: 'do it', timestamp: baseTime - 1_000 },
@@ -212,9 +216,42 @@ describe('TurnCard 轮头阶段兜底（发送失败轮）', () => {
         ],
       };
       render(<TurnCard turn={normalTurn} />);
-      expect(screen.getByTestId('turn-run-header').textContent).toContain('Reply generated');
+      expect(screen.queryByTestId('turn-run-header')).toBeNull();
+      expect(turnPhaseFallbackLabel(normalTurn, languages.en)).toBe('Reply generated');
     } finally {
       useAppStore.setState({ language: original });
     }
+  });
+});
+
+describe('TurnCard failed phase fallback', () => {
+  it('suppresses the fallback for sendFailed even when the projected turn is completed', () => {
+    const turn: TraceTurn = { ...makeTurn([]), status: 'completed' };
+    turn.nodes[0].metadata = { sendFailed: true };
+    expect(turnPhaseFallbackLabel(turn, languages.zh)).toBeNull();
+    turn.nodes.push({ id: 'error-copy', type: 'assistant_text', content: 'The message could not be sent.', timestamp: baseTime });
+    expect(turnPhaseFallbackLabel(turn, languages.en)).toBeNull();
+  });
+  it.each(['status', 'timeline'] as const)('omits success wording for %s errors with assistant text', (failure) => {
+    const turn: TraceTurn = {
+      ...makeTurn([{ id: 'partial', type: 'assistant_text', content: 'I started summarizing the meeting.', timestamp: baseTime }]),
+      status: failure === 'status' ? 'error' : 'completed',
+    };
+    if (failure === 'timeline') turn.nodes.push({
+      id: 'failure', type: 'turn_timeline', content: '', timestamp: baseTime,
+      turnTimeline: { id: 'failure', kind: 'capability_scope', timestamp: baseTime, tone: 'error' },
+    });
+    expect(turnPhaseFallbackLabel(turn, languages.zh)).toBeNull();
+    expect(turnPhaseFallbackLabel(turn, languages.en)).toBeNull();
+    render(<TurnCard turn={turn} />);
+    const header = screen.getByTestId('turn-run-header');
+    expect(header.textContent).toContain('遇到问题');
+    expect(header.textContent).not.toMatch(/回复已生成|Reply generated|completed|等待输出/);
+  });
+
+  it('does not display a completed header while waiting for the first token', () => {
+    render(<TurnCard turn={makeTurn([])} />);
+    expect(screen.queryByTestId('turn-run-header')).toBeNull();
+    expect(screen.getByText('信号传输中，正在等待模型回响…')).toBeTruthy();
   });
 });

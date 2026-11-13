@@ -229,6 +229,13 @@ export const LIBRARY_TIMEOUTS = {
 
 /** 浏览器操作超时 */
 export const BROWSER_TIMEOUTS = {
+  /** Minimum age before crash-leftover isolated profiles may be reclaimed. */
+  ISOLATED_PROFILE_SWEEP_GRACE: 10 * 60_000,
+  /** Bound size accounting across one sweep; incomplete profiles are kept. */
+  ISOLATED_PROFILE_SWEEP_MAX_ENTRIES: 10_000,
+  /** Reject oversized or malformed owner metadata without an unbounded read. */
+  ISOLATED_PROFILE_SWEEP_OWNER_MAX_BYTES: 1_024,
+  ISOLATED_PROFILE_SWEEP_WALK_BUDGET: 2_000,
   /** 浏览器操作默认超时 */
   ACTION_DEFAULT: 30_000,
   /** 等待选择器超时 */
@@ -249,6 +256,10 @@ export const BROWSER_TIMEOUTS = {
    * 防止进程崩溃后 binding 永不释放而租约永远不过期。
    */
   LEASE_IN_USE_CEILING: 4 * 60 * 60_000,
+  /** Chrome 父进程看门狗：探测 Neo 服务进程是否还活着的间隔（秒，传给 sh sleep） */
+  PARENT_WATCHDOG_POLL_SEC: 2,
+  /** Chrome 父进程看门狗：SIGTERM 之后到 SIGKILL 残留进程的宽限（秒） */
+  PARENT_WATCHDOG_KILL_GRACE_SEC: 2,
 } as const;
 
 /** artifact_runnable 断言家族超时（浏览器类走 GAME_VALIDATION_TIMEOUTS / ARTIFACT_PREVIEW_HEALTH） */

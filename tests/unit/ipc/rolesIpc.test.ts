@@ -232,6 +232,14 @@ describe('roles.ipc (domain:roles)', () => {
       expect(entry.lastWork).toBe('2026-06-03 产出报告');
     });
 
+    it('list displays the label for a legacy no-artifact history summary', async () => {
+      await ensureRoleAssetDirs('研究员');
+      await appendRoleHistory('研究员', { date: '2026-11-10', artifactLabel: '检查本周日程', artifactRef: '-', summary: '（无产物落盘）' });
+      const res = await invoke<RolePanelEntry[]>('list');
+      expect(res.success).toBe(true);
+      expect(res.data?.[0].lastWork).toBe('2026-11-10 检查本周日程');
+    });
+
     it('returns null last work when a role has no history', async () => {
       await ensureRoleAssetDirs('研究员');
       const res = await invoke<RolePanelEntry[]>('list');

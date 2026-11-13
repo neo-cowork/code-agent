@@ -1,3 +1,4 @@
+import { useLiveBackgroundAgentCount } from '../../hooks/useLiveBackgroundAgentCount';
 import { resolveRunCancellationOutcomeKey } from '../../i18n/outcomeWords';
 // ============================================================================
 // OverviewRunHeader —— 概览四模块 · 模块一「任务」：细进度线（2026-08-04 拍板二/三）
@@ -21,6 +22,7 @@ import { useSessionStore } from '../../stores/sessionStore';
 import { getDisplaySessionTitle } from '../../utils/sessionPresentation';
 import {
   buildOverviewRunHeaderModel,
+  hasFailedCurrentRequest,
   formatElapsedClock,
   isLiveRunStatus,
   type RunOverviewTone,
@@ -58,19 +60,25 @@ function formatTemplate(template: string, values: Record<string, string | number
 }
 
 export const OverviewRunHeader: React.FC = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const runWorkbench = useRunWorkbenchModel();
+  const sessionId = useSessionStore((state) => state.currentSessionId);
+  const sessionStatus = useSessionStore((state) => state.sessions.find((session) => session.id === state.currentSessionId)?.status);
+  const primaryFailed = useSessionStore((state) => hasFailedCurrentRequest(state.messages));
+  const backgroundChildren = useLiveBackgroundAgentCount(sessionId, true, sessionStatus === 'running' && !primaryFailed);
   const interrupt = useRunControlStore((state) => state.actions?.interrupt);
   const sessionTitle = useSessionStore((state) => {
     const session = state.sessions.find((item) => item.id === state.currentSessionId);
-    return session ? getDisplaySessionTitle(session.title) : null;
+    return session ? getDisplaySessionTitle(session.title, language) : null;
   });
 
   // 秒表只在活跃回合里装 interval；无 run 时 hook 照样要调用（hooks 规则），
   // 但 active=false 不会起定时器。
-  const now = useNow(isLiveRunStatus(runWorkbench.run.status));
+  const now = useNow(isLiveRunStatus(runWorkbench.run.status) || backgroundChildren > 0);
   const model = buildOverviewRunHeaderModel({
     run: runWorkbench.run,
+    primaryFailed: primaryFailed || sessionStatus === 'error',
+    backgroundChildren,
     sessionTitle,
     now,
     todoProgress: summarizeTodoProgress(runWorkbench.tasks),
@@ -108,7 +116,7 @@ export const OverviewRunHeader: React.FC = () => {
           data-tone={model.tone}
           role="img"
           aria-label={formatTemplate(wt.overviewRunDotLabel, { status: toneLabel })}
-          className={`h-2 w-2 shrink-0 rounded-full ${DOT_CLASS[model.tone]}`}
+          className={`h-2 w-2 shrink-0 rounded-full ${backgroundChildren > 0 ? 'bg-mark-success motion-safe:animate-pulse' : DOT_CLASS[model.tone]}`}
         />
         <span
           className="min-w-0 truncate text-sm font-medium text-zinc-100"
