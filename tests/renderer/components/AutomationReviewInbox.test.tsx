@@ -487,7 +487,7 @@ describe('AutomationReviewInbox', () => {
   });
 
   it('forceConfirm row hides tier buttons and keeps approve / deny', async () => {
-    listParkedApprovals.mockResolvedValue([makeParked({ tool: 'Bash', forceConfirm: true })]);
+    listParkedApprovals.mockResolvedValue([makeParked({ tool: 'Bash', riskClass: null, forceConfirm: true })]);
     render(<AutomationReviewInbox />);
     expect(await screen.findByTestId('parked-approve')).toBeTruthy();
     expect(screen.getByTestId('parked-reject')).toBeTruthy();
