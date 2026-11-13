@@ -146,6 +146,7 @@ export const expertZh = {
     },
     roleDetail: {
       roleWakeLabel: '角色唤醒',
+      historyDecision: { advance: '已推进', report: '已汇报', suggest: '有建议' },
       roleWakeTooltip: '角色醒来时自己记下的（{time}）',
       maxIterations: '最大迭代次数',
       skills: '技能',
@@ -476,6 +477,7 @@ export const expertEn: typeof expertZh = {
     },
     roleDetail: {
       roleWakeLabel: 'Role wake',
+      historyDecision: { advance: 'Advanced', report: 'Reported', suggest: 'Suggestion' },
       roleWakeTooltip: 'Written by the role itself when it woke up ({time})',
       maxIterations: 'Maximum iterations',
       skills: 'Skills',

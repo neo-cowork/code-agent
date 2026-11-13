@@ -153,6 +153,18 @@ beforeEach(() => {
   });
 });
 describe('ExpertPanel', () => {
+  it.each([['zh', '有建议'], ['en', 'Suggestion']] as const)('%s humanizes the latest work on the expert card and its tooltip', async (language, label) => {
+    useAppStore.setState({ language });
+    listRoles.mockResolvedValue([makeEntry({ lastWork: '2026-11-12 [suggest] Weekly definitions aligned' })]);
+    render(<ExpertPanel />);
+    fireEvent.click(screen.getByTestId('expert-tab-mine'));
+    const card = await screen.findByTestId('expert-card-牧之');
+    const text = within(card).getByText(new RegExp(label + ' Weekly definitions aligned'));
+    expect(text.title).toBe(`2026-11-12 ${label} Weekly definitions aligned`);
+    expect(card.textContent).not.toContain('[suggest]');
+    useAppStore.setState({ language: 'zh' });
+  });
+
   it('「我的」渲染角色卡（花名/职业/记忆态），空记录显示未合作文案', async () => {
     listRoles.mockResolvedValue([
       makeEntry(),
