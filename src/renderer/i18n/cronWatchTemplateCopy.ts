@@ -7,7 +7,7 @@ export interface TemplateCopy {
   fields?: Record<string, { label: string; placeholder?: string }>;
 }
 
-export const watchTemplateCopyZh: Record<string, TemplateCopy> = {
+export const watchTemplateCopyZh = {
   'web-change-watch': {
     name: '网页更新提醒',
     description: '关注竞品页面、政策页或公告页的变化',
@@ -44,9 +44,9 @@ export const watchTemplateCopyZh: Record<string, TemplateCopy> = {
       task: { label: '要做什么', placeholder: '例如：有人提到发布就总结给我' },
     },
   },
-};
+} satisfies Record<string, TemplateCopy>;
 
-export const watchTemplateCopyEn: Record<string, TemplateCopy> = {
+export const watchTemplateCopyEn = {
   'web-change-watch': {
     name: 'Web page change alerts',
     description: 'Watch a competitor, policy, or announcement page for changes',
@@ -83,4 +83,4 @@ export const watchTemplateCopyEn: Record<string, TemplateCopy> = {
       task: { label: 'What should it do?', placeholder: 'For example: summarize messages that mention a release' },
     },
   },
-};
+} satisfies Record<string, TemplateCopy>;
