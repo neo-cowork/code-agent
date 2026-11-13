@@ -482,9 +482,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                     <div className="truncate text-sm text-zinc-200">{voidedToolTitle(item.displayTool ?? item.tool, cc.parkedVoided)}</div>
                     {item.sessionTitle && <div className="text-xs text-zinc-400">{getDisplaySessionTitle(item.sessionTitle, language)}</div>}
                     <div className="text-[11px] text-zinc-500">
-                      {cc.parkedVoided.startedAt.replace('{time}', new Date(item.requestedAt).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN', {
-                        month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-                      }))}
+                      {cc.parkedVoided.startedAt.replace('{time}', formatDateTime(item.requestedAt, language))}
                     </div>
                     {item.argsPreview && (
                       <div className="truncate text-[11px] text-zinc-400" data-testid="parked-args-preview">

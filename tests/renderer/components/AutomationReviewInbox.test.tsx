@@ -648,9 +648,7 @@ describe('AutomationReviewInbox', () => {
     const cards = screen.getAllByTestId('parked-approval-voided');
     expect(new Set(cards.map((card) => card.textContent)).size).toBe(6);
     cards.forEach((card, index) => {
-      const time = new Date(items[index].requestedAt).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN', {
-        month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-      });
+      const time = `2026/11/07 00:${String(32 + index).padStart(2, '0')}`;
       expect(card.textContent).toContain(names[index % 3]);
       expect(card.textContent).toContain(`${language === 'en' ? 'Started' : '开始于'} ${time}`);
       expect(card.textContent).not.toMatch(/session_|chat-|AM|PM/);
