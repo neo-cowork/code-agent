@@ -137,7 +137,7 @@ export const toolStepVerbsZh: ToolStepVerbBundle = {
       listSessionCandidates: '请求查找可委托的对话',
       declared: { tmeetMeetingListUpcoming: '请求查询待开始/进行中的会议', tmeetMeetingListEnded: '请求查询近 30 天已结束的会议', tmeetMeetingCreate: '请求创建会议', tmeetMeetingSearch: '请求搜索会议' },
       read: '请求读取 {target}', readFallback: '请求读取一个文件', write: '请求写入 {target}', writeFallback: '请求写入一个文件',
-      edit: '请求编辑 {target}', editFallback: '请求编辑一个文件', bash: '请求运行命令 {command}', bashFallback: '请求运行一条命令',
+      edit: '请求编辑 {target}', editFallback: '请求编辑一个文件', bash: '请求运行命令 {command}', bashFallback: '请求运行命令',
       search: '请求搜索 {query}', searchFallback: '请求搜索内容', listDir: '请求查看 {target} 目录', listDirFallback: '请求查看目录',
       webSearch: '请求联网搜索 {query}', webSearchFallback: '请求联网搜索', webFetch: '请求打开 {target}', webFetchFallback: '请求打开网页',
       mcpTool: '请求调用 {server}', channelMessage: '请求在{channel}发消息', subagentSpawn: '请求启动代理 — {description}', subagentSpawnFallback: '请求启动代理',
