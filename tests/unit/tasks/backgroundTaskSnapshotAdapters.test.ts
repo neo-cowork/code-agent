@@ -12,7 +12,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.unmock('better-sqlite3');
 
-vi.mock('../../../src/host/tools/modules/shell/backgroundTaskSources', () => ({
+vi.mock('../../../src/host/tools/modules/shell/backgroundTaskSources', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../src/host/tools/modules/shell/backgroundTaskSources')>(),
   getAllBackgroundTasks: mocks.getAllBackgroundTasks,
   getAllPtySessions: mocks.getAllPtySessions,
   onBackgroundTaskLifecycleEvent: mocks.onBackgroundTaskLifecycleEvent,
@@ -116,7 +117,7 @@ describe('backgroundTaskSnapshotAdapters', () => {
     expect(shellTask).toMatchObject({
       kind: 'shell',
       source: 'shell',
-      title: 'npm test',
+      title: 'npm',
       status: 'failed',
       command: 'npm test',
       cwd: '/repo',
@@ -142,7 +143,7 @@ describe('backgroundTaskSnapshotAdapters', () => {
     expect(ptyTask).toMatchObject({
       kind: 'pty',
       source: 'pty',
-      title: 'bash -lc npm run dev',
+      title: 'npm',
       status: 'running',
       command: 'bash -lc npm run dev',
       cwd: '/repo',
@@ -175,20 +176,20 @@ describe('backgroundTaskSnapshotAdapters', () => {
         id: 'shell:shell-1:terminal:failed',
         taskId: 'shell:shell-1',
         type: 'task_failed',
-        message: expect.stringContaining('npm test 失败'),
+        message: expect.stringContaining('npm 失败'),
       }),
     ]);
     expect(ledger.drainNotifications('session-1')).toEqual([]);
   });
 
-  it('shell task wrapped in sandbox-exec without displayCommand falls back to Shell <id8>; message has no log path', () => {
+  it('shell task wrapped in sandbox-exec without displayCommand uses the inner executable; message has no log path', () => {
     const ledger = new BackgroundTaskLedger();
     syncShellTaskSnapshotToLedger({
       taskId: 'abcdef123456', status: 'completed', command: 'sandbox-exec -f /var/folders/x/profile-1.sb /bin/sh -c "x"',
       cwd: '/repo', sessionId: 's-wrap', startTime: 1_000, endTime: 2_000, duration: 1_000, exitCode: 0,
       outputFile: '/tmp/wrap.log',
     }, ledger);
-    expect(ledger.getTask('shell:abcdef123456')?.title).toBe('Shell abcdef12');
+    expect(ledger.getTask('shell:abcdef123456')?.title).toBe('x');
     const [n] = ledger.drainNotifications('s-wrap');
     expect(n?.message).not.toMatch(/sandbox-exec|\.log/);
     expect(n?.payload).toMatchObject({ outputFile: '/tmp/wrap.log' });
@@ -202,6 +203,23 @@ describe('backgroundTaskSnapshotAdapters', () => {
       cwd: '/repo', sessionId: 's-named', startTime: 1_000, duration: 0, outputFile: '/tmp/named.log',
     }, ledger);
     expect(ledger.getTask('shell:named123456')?.title).toBe('Ask Finder for selection');
+  });
+
+  it('unnamed shell and PTY titles use the same target fallback; details retain commands', () => {
+    const ledger = new BackgroundTaskLedger();
+    const command = 'curl -s -m 5 http://127.0.0.1:8899/; echo done';
+    syncShellTaskSnapshotToLedger({
+      taskId: 'unnamed', status: 'running', command, displayCommand: command,
+      cwd: '/repo', startTime: 1_000, duration: 0, outputFile: '/tmp/unnamed.log',
+    }, ledger);
+    syncPtySessionSnapshotToLedger({
+      sessionId: 'unnamed', status: 'running', command: 'curl', args: ['-s', 'http://127.0.0.1:8899/'],
+      cwd: '/repo', startTime: 1_000, duration: 0, outputFile: '/tmp/unnamed.log', cols: 80, rows: 24,
+    }, ledger);
+    expect(ledger.getTask('shell:unnamed')).toMatchObject({ title: '127.0.0.1:8899', command });
+    expect(ledger.getTask('pty:unnamed')).toMatchObject({
+      title: '127.0.0.1:8899', command: 'curl -s http://127.0.0.1:8899/',
+    });
   });
 
   it('maps stopped shell snapshots to cancelled with displayCommand and task_cancelled notification', () => {
@@ -231,7 +249,7 @@ describe('backgroundTaskSnapshotAdapters', () => {
     expect(shellTask).toMatchObject({
       kind: 'shell',
       source: 'shell',
-      title: 'sleep 600 && echo done',
+      title: 'sleep',
       status: 'cancelled',
       command: 'sandbox-exec -f /tmp/profile.sb /bin/sh -c "sleep 600 && echo done"',
       sessionId: 'session-stop',
@@ -248,7 +266,7 @@ describe('backgroundTaskSnapshotAdapters', () => {
         taskId: 'shell:shell-stopped',
         type: 'task_cancelled',
         title: '任务已停止',
-        message: 'sleep 600 && echo done 已停止，耗时 不到 1 秒',
+        message: 'sleep 已停止，耗时 不到 1 秒',
       }),
     ]);
     expect(notifications[0]?.message).not.toContain('sandbox-exec');

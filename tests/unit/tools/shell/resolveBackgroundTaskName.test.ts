@@ -28,4 +28,19 @@ describe('resolveBackgroundTaskName', () => {
     const name = resolveBackgroundTaskName('x'.repeat(61), 'npm run dev -- --port 3000');
     expect(name).toBe('npm');
   });
+  it.each([
+    ['sudo -u nobody env -u SECRET /usr/bin/python3 -m http.server 8899', 'python3'],
+    ['sandbox-exec -f /tmp/profile.sb /bin/sh -c "python3 -m http.server 8899"', 'python3'],
+    ['sandbox-exec -f /tmp/profile.sb /usr/local/bin/python3 -m http.server 8899', 'python3'],
+    ['# service check\ncd /tmp\npython3 -m http.server 8899\necho done', 'python3'],
+    ['cd "/tmp/a;b" && ./scripts/check.sh 2>/tmp/result | cat; echo done', 'check.sh'],
+    ['echo done', 'Background task'],
+    ['curl https://user:password@example.test:8899/private?token=hidden', 'example.test:8899'],
+  ])('derives a target without wrapper arguments or command tails: %s', (command, name) => {
+    expect(resolveBackgroundTaskName(undefined, command)).toBe(name);
+  });
+  it('limits fallback names to 40 characters', () => {
+    expect(resolveBackgroundTaskName(undefined, './' + 'x'.repeat(80))).toBe('x'.repeat(40));
+  });
+
 });

@@ -13,6 +13,7 @@ import {
 } from '../../shared/i18n/sessionTaskSlot';
 import type { BackgroundTaskStore } from './backgroundTaskStore';
 import {
+  resolveBackgroundTaskName,
   getAllBackgroundTasks,
   getAllPtySessions,
   onBackgroundTaskLifecycleEvent,
@@ -200,7 +201,9 @@ export function syncShellTaskSnapshotToLedger(
 ): void {
   const status = mapShellStatus(task.status, task.stoppedByRequest);
   const taskId = `shell:${task.taskId}`;
-  const label = safeLabel(task.displayName?.trim() || task.displayCommand?.trim() || task.command, `Shell ${task.taskId.slice(0, 8)}`);
+  const label = resolveBackgroundTaskName(
+    safeLabel(task.displayName, ''), task.displayCommand || task.command,
+  );
   const previous = ledger.getTask(taskId);
   const recoveryStatus = status === 'running' ? 'running-live' : status;
   const automationPromptLikely = isLikelyUnansweredMacOsAutomationPrompt({
@@ -292,10 +295,9 @@ export function syncPtySessionSnapshotToLedger(
 ): void {
   const status = mapShellStatus(session.status, session.stoppedByRequest);
   const taskId = `pty:${session.sessionId}`;
-  const command = safeLabel(
-    session.displayName?.trim() || [session.command, ...session.args].filter(Boolean).join(' '),
-    `PTY ${session.sessionId.slice(0, 8)}`,
-  );
+  const rawCommand = [session.command, ...session.args].filter(Boolean).join(' ');
+  const command = safeLabel(session.displayName?.trim() || rawCommand, `PTY ${session.sessionId.slice(0, 8)}`);
+  const label = resolveBackgroundTaskName(safeLabel(session.displayName, ''), rawCommand);
   const previous = ledger.getTask(taskId);
   const recoveryStatus = status === 'running' ? 'running-live' : status;
   ledger.upsertTask({
@@ -304,7 +306,7 @@ export function syncPtySessionSnapshotToLedger(
     sessionId: session.ownerSessionId,
     toolCallId: session.toolCallId,
     source: 'pty',
-    title: command,
+    title: label,
     summary: session.outputFile,
     command,
     cwd: session.cwd,
@@ -337,7 +339,7 @@ export function syncPtySessionSnapshotToLedger(
     taskId,
     sessionId: session.ownerSessionId,
     source: 'pty',
-    title: command || `PTY ${session.sessionId.slice(0, 8)}`,
+    title: label,
     status,
     durationMs: session.duration,
     exitCode: session.exitCode,

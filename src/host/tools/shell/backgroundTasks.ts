@@ -10,6 +10,8 @@ import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { getUserConfigDir } from '../../config/configPaths';
 import { BASH } from '../../../shared/constants';
+import { quote } from 'shell-quote';
+import { parseShellCommand } from '../../security/commandParse';
 
 // ============================================================================
 // Constants
@@ -351,22 +353,31 @@ function registerBackgroundTaskProcess(
 }
 
 const NAME_MAX = 40;
-const WRAPPERS = new Set(['sudo', 'env', 'command', 'exec', 'nohup', 'time', 'nice', 'timeout', 'stdbuf', 'xargs', 'sandbox-exec', 'caffeinate']);
+const SETUP_COMMANDS = new Set(['cd', 'export', 'set', 'source', '.', 'echo', 'printf']);
 
-function shortTarget(command: string): string {
-  const url = command.match(/\bhttps?:\/\/([^\s/'"?#\\;|&]+)/i);
-  if (url) return url[1].replace(/^[^@]*@/, '').slice(0, NAME_MAX);
-  // Only the first line / first pipeline segment; skip `cd x &&` prefixes.
-  const first = command.split(/\r?\n/).map((l) => l.trim()).find((l) => l && !l.startsWith('#')) ?? '';
-  const segments = first.split(/&&|\|\||;|\|/).map((s) => s.trim()).filter(Boolean);
-  const seg = segments.find((s) => !/^(cd|export|set|source|\.)\s/.test(s)) ?? segments[0] ?? '';
-  const tokens = seg.split(/\s+/).filter(Boolean);
-  for (let i = 0; i < tokens.length; i++) {
-    const tok = tokens[i].replace(/^['"]|['"]$/g, '');
-    if (!tok || tok.startsWith('-') || /^[A-Za-z_][A-Za-z0-9_]*=/.test(tok) || /^[<>&\d]/.test(tok)) continue;
-    if (WRAPPERS.has(tok)) continue;
-    const base = tok.split('/').filter(Boolean).pop() ?? '';
-    if (base) return base.slice(0, NAME_MAX);
+function shortTarget(command: string, depth = 0): string {
+  if (depth > 4) return '';
+  const url = command.match(/\bhttps?:\/\/[^\s'"<>]+/i);
+  if (url) {
+    try {
+      return new URL(url[0]).host.slice(0, NAME_MAX);
+    } catch { /* Incomplete URLs fall back to the executable. */ }
+  }
+  // Reuse the quote-aware shell parser to unwrap sudo/env/shells and ignore redirects.
+  for (const { program, args } of parseShellCommand(command).executions) {
+    const base = path.posix.basename(program.replaceAll('\\', '/'));
+    if (SETUP_COMMANDS.has(base)) continue;
+    if (base === 'sandbox-exec') {
+      let index = 0;
+      while (index < args.length && args[index].startsWith('-')) {
+        const flag = args[index++];
+        if (flag === '--') break;
+        if (['-f', '-p', '-D'].includes(flag)) index++;
+      }
+      return shortTarget(quote(args.slice(index)), depth + 1);
+    }
+    // A title must never contain command syntax, even for an unparseable script.
+    if (/^[\p{L}\p{N}_.+-]+$/u.test(base)) return base.slice(0, NAME_MAX);
   }
   return '';
 }
