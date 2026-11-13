@@ -5,6 +5,7 @@ import { outcomeWordsZh } from './outcomeWords';
 import { turnFeedbackWhyEn, turnFeedbackWhyZh } from './turnFeedbackWhy';
 import { evalBridgeEn, evalBridgeZh } from './evalBridge';
 import { wakeRationaleEn, wakeRationaleZh } from './wakeRationale';
+import { durableStoppedEn, durableStoppedZh } from './durableStopped';
 // Chat 输入区词条（ChatInput index / InputArea / AttachmentBar / SendButton /
 // useFileUpload / ScheduleComposerCard / 长尾组件与 hook）—— zh/en 同文件相邻维护。
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮（同 chatTranscript.ts 先例）。
@@ -14,6 +15,7 @@ export const chatInputZh = {
   ...evalBridgeZh,
   ...turnFeedbackWhyZh,
   ...wakeRationaleZh,
+  ...durableStoppedZh,
   chatInput: {
     stepLimitContinue: '继续',
     viewPlan: '查看实现计划',
@@ -492,6 +494,7 @@ export const chatInputEn: typeof chatInputZh = {
   ...evalBridgeEn,
   ...turnFeedbackWhyEn,
   ...wakeRationaleEn,
+  ...durableStoppedEn,
   chatInput: {
     stepLimitContinue: 'Continue',
     viewPlan: 'View implementation plan',
