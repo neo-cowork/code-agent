@@ -166,7 +166,7 @@ const BASE_CRON_TEMPLATES: CronTemplate[] = [
         tagsText: '前瞻, 日程, 待办',
         scheduleType: 'cron',
         cronExpression: '0 15 * * 1-5',
-        cronTimezone: 'Asia/Shanghai',
+        cronTimezone: localCronTimezone(),
         actionType: 'agent',
         agentType: 'default',
         agentPrompt:
@@ -188,7 +188,7 @@ const BASE_CRON_TEMPLATES: CronTemplate[] = [
         tagsText: '回顾, 进展, 待办',
         scheduleType: 'cron',
         cronExpression: '30 17 * * 1-5',
-        cronTimezone: 'Asia/Shanghai',
+        cronTimezone: localCronTimezone(),
         actionType: 'agent',
         agentType: 'default',
         agentPrompt:
@@ -210,7 +210,7 @@ const BASE_CRON_TEMPLATES: CronTemplate[] = [
         tagsText: '周报, 回顾, 计划',
         scheduleType: 'cron',
         cronExpression: '30 17 * * 4',
-        cronTimezone: 'Asia/Shanghai',
+        cronTimezone: localCronTimezone(),
         actionType: 'agent',
         agentType: 'default',
         agentPrompt:
@@ -394,13 +394,13 @@ export const FEATURED_CRON_TEMPLATES = CRON_TEMPLATES.filter((template) => templ
 
 function parseFriendlySchedule(input?: string): Partial<CronJobDraft> {
   if (!input?.trim()) {
-    return { scheduleType: 'cron', cronExpression: '0 9 * * *', cronTimezone: 'Asia/Shanghai' };
+    return { scheduleType: 'cron', cronExpression: '0 9 * * *', cronTimezone: localCronTimezone() };
   }
   const s = input.trim().toLowerCase();
 
   // Direct cron expression (5-6 fields starting with number or *)
   if (/^[\d*]/.test(s) && s.split(/\s+/).length >= 5) {
-    return { scheduleType: 'cron', cronExpression: input.trim(), cronTimezone: 'Asia/Shanghai' };
+    return { scheduleType: 'cron', cronExpression: input.trim(), cronTimezone: localCronTimezone() };
   }
 
   // "每小时" / "每 N 小时"
@@ -420,12 +420,12 @@ function parseFriendlySchedule(input?: string): Partial<CronJobDraft> {
   if (dailyAt) {
     const h = dailyAt[1] || '9';
     const m = dailyAt[2] || '0';
-    return { scheduleType: 'cron', cronExpression: `${m} ${h} * * *`, cronTimezone: 'Asia/Shanghai' };
+    return { scheduleType: 'cron', cronExpression: `${m} ${h} * * *`, cronTimezone: localCronTimezone() };
   }
   if (s.includes('每天')) {
-    return { scheduleType: 'cron', cronExpression: '0 9 * * *', cronTimezone: 'Asia/Shanghai' };
+    return { scheduleType: 'cron', cronExpression: '0 9 * * *', cronTimezone: localCronTimezone() };
   }
 
   // Fallback: treat as cron or daily 9am
-  return { scheduleType: 'cron', cronExpression: '0 9 * * *', cronTimezone: 'Asia/Shanghai' };
+  return { scheduleType: 'cron', cronExpression: '0 9 * * *', cronTimezone: localCronTimezone() };
 }
