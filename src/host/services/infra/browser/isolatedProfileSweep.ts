@@ -1,6 +1,7 @@
 import { promises as fs } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { execFile } from 'child_process';
 import { BROWSER_TIMEOUTS } from '../../../../shared/constants/timeouts';
 import type { BrowserLogger } from './logger';
 import { isPathInsideRoot, MANAGED_BROWSER_ISOLATED_PROFILE_PREFIX, MANAGED_BROWSER_ISOLATED_OWNER_FILE } from './managedBrowserHelpers';
@@ -17,11 +18,42 @@ function isPidAlive(pid: number): boolean {
   }
 }
 
+/** One `ps` call listing every command line; rejects where unsupported or oversized. */
+function listProcessCommands(): Promise<string> {
+  if (process.platform === 'win32') return Promise.reject(new Error('unsupported-platform'));
+  return new Promise((resolve, reject) => {
+    execFile('ps', ['-axo', 'command'], { maxBuffer: BROWSER_TIMEOUTS.ISOLATED_PROFILE_SWEEP_PROBE_MAX_BYTES, timeout: BROWSER_TIMEOUTS.ISOLATED_PROFILE_SWEEP_PROBE_TIMEOUT }, (error, stdout) => {
+      if (error) reject(error);
+      else resolve(stdout);
+    });
+  });
+}
+
+function commandUsesDir(commands: string, dir: string): boolean {
+  const marker = '--user-data-dir=';
+  for (const line of commands.split('\n')) {
+    let from = line.indexOf(marker);
+    while (from !== -1) {
+      let rest = line.slice(from + marker.length);
+      if (rest.startsWith('"') || rest.startsWith("'")) rest = rest.slice(1);
+      if (rest.startsWith(dir)) {
+        const next = rest.charAt(dir.length);
+        // A sibling that merely extends the name (`-abc` vs `-abc-2`) must not match.
+        if (next === '' || /[\s"'/]/.test(next)) return true;
+      }
+      from = line.indexOf(marker, from + marker.length);
+    }
+  }
+  return false;
+}
+
 /** Best-effort crash cleanup, restricted to direct isolated-root children. */
 export async function sweepStaleIsolatedBrowserProfiles(options: {
   tmpDir?: string;
   now?: number;
   isPidAlive?: (pid: number) => boolean;
+  /** Returns all process command lines (default: `ps -axo command`). */
+  listProcessCommands?: () => Promise<string>;
   graceMs?: number;
   currentProfileDir?: string | null;
   oncePerProcess?: boolean;
@@ -40,7 +72,24 @@ export async function sweepStaleIsolatedBrowserProfiles(options: {
     counts.skippedOther++;
     logger.log('DEBUG', `Isolated profile sweep kept ${name}: ${reason}`);
   };
-  const eligible = async (dir: string): Promise<string | null> => {
+  const lockBlocks = async (lock: import('fs').Stats | undefined, dir: string): Promise<string | null> => {
+    if (lock) {
+      if (!lock.isSymbolicLink()) return 'unparseable-lock';
+      const target = await fs.readlink(path.join(dir, 'SingletonLock'));
+      const match = /^(.+)-(\d+)$/.exec(target);
+      if (!match) return 'unparseable-lock';
+      const [, host, rawPid] = match;
+      const pid = Number(rawPid);
+      if (!Number.isSafeInteger(pid) || pid <= 0) return 'unparseable-lock';
+      if (host !== os.hostname()) return 'foreign-host';
+      if ((options.isPidAlive ?? isPidAlive)(pid)) return 'live';
+    }
+    return null;
+  };
+  let snapshot: Promise<string> | null = null;
+  // One ps per sweep; the post-measure recheck passes fresh=true so a browser started meanwhile is seen.
+  const probe = (fresh: boolean) => (fresh || !snapshot ? (snapshot = (options.listProcessCommands ?? listProcessCommands)()) : snapshot);
+  const eligible = async (dir: string, fresh = false): Promise<string | null> => {
     const stat = await fs.lstat(dir);
     if (!stat.isDirectory() || stat.isSymbolicLink()) return 'not-directory';
     if (options.currentProfileDir && dir === await fs.realpath(options.currentProfileDir)) return 'current-session';
@@ -57,10 +106,21 @@ export async function sweepStaleIsolatedBrowserProfiles(options: {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
-    if (now - Math.max(stat.mtimeMs, lock?.mtimeMs ?? stat.mtimeMs, ownerStat?.mtimeMs ?? stat.mtimeMs) < grace) return 'young';
+    const age = now - Math.max(stat.mtimeMs, lock?.mtimeMs ?? stat.mtimeMs, ownerStat?.mtimeMs ?? stat.mtimeMs);
     // Absence of Chrome's SingletonLock never proves inactivity: headless shell and
-    // Windows do not create it. Only profiles with a provably dead local owner qualify.
-    if (!ownerStat) return 'missing-owner';
+    // Windows do not create it. Pre-marker profiles need a long grace plus a process probe.
+    if (!ownerStat) {
+      if (age < BROWSER_TIMEOUTS.ISOLATED_PROFILE_SWEEP_LEGACY_GRACE) return 'young-legacy';
+      let commands: string;
+      try {
+        commands = await probe(fresh);
+      } catch {
+        return 'legacy-probe-unavailable';
+      }
+      if (commandUsesDir(commands, dir)) return 'live';
+      return lockBlocks(lock, dir);
+    }
+    if (age < grace) return 'young';
     if (!ownerStat.isFile() || ownerStat.size > BROWSER_TIMEOUTS.ISOLATED_PROFILE_SWEEP_OWNER_MAX_BYTES) return 'unparseable-owner';
     let owner: unknown;
     try {
@@ -75,22 +135,11 @@ export async function sweepStaleIsolatedBrowserProfiles(options: {
     if (owner.host !== os.hostname()) return 'foreign-owner';
     // PID reuse is deliberately conservative: a live PID is kept regardless of start time.
     if ((options.isPidAlive ?? isPidAlive)(owner.pid)) return 'live';
-    if (lock) {
-      if (!lock.isSymbolicLink()) return 'unparseable-lock';
-      const target = await fs.readlink(path.join(dir, 'SingletonLock'));
-      const match = /^(.+)-(\d+)$/.exec(target);
-      if (!match) return 'unparseable-lock';
-      const [, host, rawPid] = match;
-      const pid = Number(rawPid);
-      if (!Number.isSafeInteger(pid) || pid <= 0) return 'unparseable-lock';
-      if (host !== os.hostname()) return 'foreign-host';
-      if ((options.isPidAlive ?? isPidAlive)(pid)) return 'live';
-    }
-    return null;
+    return lockBlocks(lock, dir);
   };
   const accountSkip = (name: string, reason: string) => {
     if (reason === 'live') counts.skippedLive++;
-    else if (reason === 'young') counts.skippedYoung++;
+    else if (reason === 'young' || reason === 'young-legacy') counts.skippedYoung++;
     else skip(name, reason);
   };
   // lstat never follows file symlinks; opendir is used only on real directories.
@@ -145,7 +194,7 @@ export async function sweepStaleIsolatedBrowserProfiles(options: {
           continue;
         }
         // Recheck locks/age after accounting: another browser may have acquired it.
-        const changed = await eligible(dir);
+        const changed = await eligible(dir, true);
         if (changed) {
           accountSkip(child.name, changed);
           continue;
