@@ -385,7 +385,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
     }
 
     if (action === 'execute_goal') {
-      const driver = resolveBrowserJevStep({ acquiredBrowserService });
+      const driver = resolveBrowserJevStep({ browserService: acquiredBrowserService });
       if (!driver) return jevBrowserStepUnarmedResult();
       if (typeof params.task !== 'string' || !params.task.trim()) {
         return jevBrowserStepEmptyTaskResult();
@@ -401,7 +401,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
         params,
       });
       try {
-        const loginWallBeforeRun = await enforceBrowserLoginWallStop({ acquiredBrowserService, context });
+        const loginWallBeforeRun = await enforceBrowserLoginWallStop({ browserService: acquiredBrowserService, context });
         if (loginWallBeforeRun) {
           const completedTrace = acquiredBrowserService.finishTrace(trace, {
             success: false,
@@ -409,8 +409,8 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
           });
           return appendBrowserWorkbenchNote(withWorkbenchTrace(loginWallBeforeRun, completedTrace, context), workbenchNotes);
         }
-        const result = await driver.run({ task, assertions, jevBudgetUsd, acquiredBrowserService }, context);
-        const loginWallAfterRun = await enforceBrowserLoginWallStop({ acquiredBrowserService, context });
+        const result = await driver.run({ task, assertions, jevBudgetUsd, browserService: acquiredBrowserService }, context);
+        const loginWallAfterRun = await enforceBrowserLoginWallStop({ browserService: acquiredBrowserService, context });
         const finalResult = loginWallAfterRun ?? result;
         const completedTrace = acquiredBrowserService.finishTrace(trace, {
           success: finalResult.success,
@@ -876,7 +876,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
           })
         : await executeManagedProviderAction();
       if (rawResult.success) {
-        const loginWallStop = await enforceBrowserLoginWallStop({ acquiredBrowserService, tabId, context });
+        const loginWallStop = await enforceBrowserLoginWallStop({ browserService: acquiredBrowserService, tabId, context });
         if (loginWallStop) rawResult = loginWallStop;
       }
       const completedTrace = acquiredBrowserService.finishTrace(trace, {

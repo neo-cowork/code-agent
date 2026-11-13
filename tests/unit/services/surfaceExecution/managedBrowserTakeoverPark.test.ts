@@ -143,6 +143,10 @@ describe('managed browser takeover park', () => {
     const getsBeforeContinue = loginGets;
     registry.unregister(h.ctx.runId!);
     const next = context(h.ctx.sessionId);
+    const staleNavigation = await execute(next, { action: 'navigate', url: `${appOrigin}/login` });
+    expect(staleNavigation.success).toBe(false);
+    expect(staleNavigation.error).toContain('get_dom_snapshot before acting');
+    expect(loginGets).toBe(getsBeforeContinue);
     const snapshot = await execute(next, { action: 'get_dom_snapshot' });
     const claimed = binding(next);
     const page = await claimed.browserService.getPageContent();

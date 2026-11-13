@@ -322,10 +322,10 @@ export class ManagedBrowserProviderAdapter {
   async execute(input: ManagedBrowserActionInput): Promise<ToolExecutionResult> {
     try {
       const binding = await this.ensureBinding(input.identity);
-      // One-shot: only the first action after claiming a takeover-parked window
-      // carries the re-observe instruction.
       const takeoverHandoffNote = binding.claimedTakeoverPark === true;
-      binding.claimedTakeoverPark = false;
+      if (takeoverHandoffNote && input.action !== 'get_dom_snapshot') {
+        return withTakeoverHandoffNote({ success: false }, true);
+      }
       const descriptor = this.runtime.capabilities.resolve(
         'browser_action',
         input.action,
@@ -357,6 +357,7 @@ export class ManagedBrowserProviderAdapter {
           userSummary: `Observed managed browser after ${input.action}`,
           ...(providerSnapshot ? { snapshot: providerSnapshot } : {}),
         });
+        if (result.success && providerSnapshot) binding.claimedTakeoverPark = false;
         return withTakeoverHandoffNote(this.attachSurfaceMetadata(result, binding, {
           observation: observation.observation,
           events: observation.events,
@@ -480,8 +481,7 @@ export class ManagedBrowserProviderAdapter {
       && binding.browserService.isRunning()
       && Boolean(binding.browserService.getActiveTab())
     ));
-    // Users may adopt any kept window; agents may claim only a same-conversation takeover.
-    // A dead candidate becomes closed rather than silently representing a retained login.
+    // Only same-conversation takeover parks are claimable by agents.
     let keptService: BrowserService | null = null;
     let keptServiceKey: string | null = null;
     let claimedTakeoverPark = false;
