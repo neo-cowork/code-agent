@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { emitCommandCenterToolStart, applyCommandCenterPreannounce } from '../../../src/host/agent/runtime/contextAssembly/sessionCommandCenterPreannounce';
 // Real host producers -> registry completion -> agent tree -> both display surfaces.
 import React from 'react';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
@@ -215,6 +216,7 @@ import { TraceNodeRenderer } from '../../../src/renderer/components/features/cha
 import { ToolStepGroup } from '../../../src/renderer/components/features/chat/ToolStepGroup';
 import { ToolCallDisplay } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay';
 import { buildAgentRows } from '../../../src/renderer/utils/agentRows';
+import { projectTurns } from '../../../src/renderer/hooks/useTurnProjection';
 import { humanizeToolGroupLabel } from '../../../src/renderer/utils/humanizeToolStep';
 
 let language: 'zh' | 'en' = 'en';
@@ -535,4 +537,69 @@ it.each(['en', 'zh'] as const)('uses the session-work restart reason in card and
   const presentation = deriveDelegationPresentation({ id: 'delegate-test', name: 'delegate_task', arguments: {}, result: { toolCallId: 'delegate-test', success: true, output: 'accepted' } }, [task], [], t);
   expect(presentation?.failure).toBe(t.backgroundPanel.interrupted);
   if (locale === 'en') expect(rows[0].failureReason).not.toMatch(cjk);
+});
+
+it.each(['en', 'zh'] as const)('associates recovered session-work by stable receipt id in %s', (locale) => {
+  language = locale;
+  const task: Task = { id: 'session-work-recovered', kind: 'session_command_task', source: 'session_command_center',
+    sessionId, title: 'Compare notes', status: 'failed', createdAt: 1, updatedAt: 2, events: [], outputRefs: [],
+    failure: { reason: 'session_command_task_interrupted_by_restart', message: '应用重启时这个后台任务还没做完，已被中断，结果没能送回这里。需要的话请重新发起。' },
+  };
+  const call: ToolCall = { id: 'delegate-without-persisted-link', name: 'delegate_task', arguments: {}, result: {
+    toolCallId: 'delegate-without-persisted-link', success: true, output: 'accepted',
+    metadata: { sessionTask: { outcome: 'accepted', tasks: [{ taskId: task.id, shortName: 'Note', status: 'running' }] } },
+  } };
+  const t = locale === 'en' ? en : zh;
+  const presentation = deriveDelegationPresentation(call, [task], [], t);
+  expect(presentation?.state).toBe('failed');
+  expect(presentation?.failure).toBe(t.backgroundPanel.interrupted);
+  const view = render(<><DelegationHeader presentation={presentation!} /><DelegationReceipt presentation={presentation!} /></>);
+  expect(view.container.textContent).not.toContain(task.id);
+  if (locale === 'en') expect(view.container.textContent).not.toMatch(cjk);
+  printEvidence(`r4 ${locale} stable task card=${JSON.stringify(view.container.textContent)}`);
+  expect(deriveDelegationPresentation({ ...call, result: { ...call.result!, metadata: undefined } }, [task], [], t)).toBeNull();
+  expect(deriveDelegationPresentation(call, [{ ...task, id: 'different-task' }], [], t)).toBeNull();
+});
+
+it.each(['en', 'zh'] as const)('keeps generated preannounce metadata and localizes only its text in %s', async (locale) => {
+  language = locale;
+  const userMessage = 'Compare notes';
+  const preview = emitCommandCenterToolStart({ toolName: 'delegate_task', locale, commandCenterEnabled: true,
+    streamedContent: '', existingPreannounce: '', userMessage, emitPreview: () => {}, emitToolStart: () => {},
+  });
+  const response = applyCommandCenterPreannounce({ type: 'tool_use', content: 'Authored response', toolCalls: [] }, preview, userMessage);
+  expect(response.backgroundTaskPreannounce).toEqual({ text: preview, title: userMessage });
+  if (locale === 'en') expect(preview).not.toMatch(cjk);
+  const view = render(<TraceNodeRenderer node={{ id: 'preannounce', type: 'assistant_text', timestamp: 1,
+    content: preview, metadata: { backgroundTaskPreannounce: response.backgroundTaskPreannounce },
+  }} />);
+  await waitFor(() => expect(view.container.textContent).toContain(locale === 'en' ? 'in the background' : '交给后台执行'));
+  printEvidence(`r4 ${locale} preannounce=${JSON.stringify(view.container.textContent)}`);
+  if (locale === 'en') expect(view.container.textContent).not.toMatch(cjk);
+  view.unmount();
+  language = locale === 'en' ? 'zh' : 'en';
+  const switched = render(<TraceNodeRenderer node={{ id: 'preannounce-switched', type: 'assistant_text', timestamp: 1,
+    content: preview, metadata: { backgroundTaskPreannounce: response.backgroundTaskPreannounce },
+  }} />);
+  await waitFor(() => expect(switched.container.textContent).toContain(language === 'en' ? 'in the background' : '交给后台执行'));
+  if (language === 'en') expect(switched.container.textContent).not.toMatch(cjk);
+  switched.unmount();
+  const authored = render(<TraceNodeRenderer node={{ id: 'authored', type: 'assistant_text', timestamp: 1,
+    content: 'Authored response', metadata: { backgroundTaskPreannounce: response.backgroundTaskPreannounce },
+  }} />);
+  expect(authored.container.textContent).toContain('Authored response');
+});
+
+it('keeps the preannouncement marker off subsequent authored text, even identical text', () => {
+  const text = 'host-generated preannouncement';
+  const projection = projectTurns([{ id: 'user', role: 'user', content: 'Compare notes', timestamp: 1 }, {
+    id: 'assistant', role: 'assistant', content: text + text, timestamp: 2,
+    metadata: { backgroundTaskPreannounce: { text } },
+    contentParts: [{ type: 'text', text }, { type: 'text', text }, { type: 'tool_call', toolCallId: 'delegate' }],
+    toolCalls: [{ id: 'delegate', name: 'delegate_task', arguments: {} }],
+  }], sessionId, false);
+  const nodes = projection.turns.flatMap((turn) => turn.nodes).filter((node) => node.type === 'assistant_text');
+  expect(nodes[0].metadata?.backgroundTaskPreannounce).toEqual({ text });
+  expect(nodes[1].metadata?.backgroundTaskPreannounce).toBeUndefined();
+  expect(nodes[1].content).toBe(text);
 });

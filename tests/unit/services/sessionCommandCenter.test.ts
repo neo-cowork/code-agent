@@ -183,17 +183,17 @@ describe('SessionCommandCenter', () => {
       expect(accepted).toEqual({
         ok: true,
         output: `accepted：后台任务「首项」(${tasks[0].id}) 已开始。accepted 不等于完成；结果只以后续任务终态回流为准。`,
-        meta: { sessionTask: { outcome: 'accepted', tasks: [{ shortName: '首项', status: 'running' }] } },
+        meta: { sessionTask: { outcome: 'accepted', tasks: [{ taskId: tasks[0].id, shortName: '首项', status: 'running' }] } },
       });
       expect(queued).toEqual({
         ok: true,
         output: `queued：已把「排队」(${tasks[1].id}) 放进同一任务线，前序任务结束后自动开始。`,
-        meta: { sessionTask: { outcome: 'queued', tasks: [{ shortName: '排队', status: 'queued' }] } },
+        meta: { sessionTask: { outcome: 'queued', tasks: [{ taskId: tasks[1].id, shortName: '排队', status: 'queued' }] } },
       });
       expect(reused).toEqual({
         ok: true,
         output: `reused：复用「首项」(${tasks[0].id})，当前状态 [running]。`,
-        meta: { sessionTask: { outcome: 'reused', tasks: [{ shortName: '首项', status: 'running' }] } },
+        meta: { sessionTask: { outcome: 'reused', tasks: [{ taskId: tasks[0].id, shortName: '首项', status: 'running' }] } },
       });
       expect(status).toEqual({
         ok: true,
@@ -202,14 +202,14 @@ describe('SessionCommandCenter', () => {
           sessionTask: {
             outcome: 'status',
             tasks: [
-              { shortName: '首项', status: 'running' },
-              { shortName: '排队', status: 'queued' },
+              { taskId: tasks[0].id, shortName: '首项', status: 'running' },
+              { taskId: tasks[1].id, shortName: '排队', status: 'queued' },
             ],
           },
         },
       });
-      expect(JSON.stringify([accepted.meta, queued.meta, reused.meta, status.meta]))
-        .not.toContain('session-work-');
+      // Stable ids are protocol association keys, never display labels.
+      expect(tasks[0].id).not.toBe(tasks[1].id);
     } finally {
       resetSessionCommandCenterForTest();
       singletonTaskManagerHolder.manager = undefined;

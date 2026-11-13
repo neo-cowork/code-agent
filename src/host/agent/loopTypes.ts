@@ -193,6 +193,7 @@ export interface ModelResponse {
   // Adaptive Thinking: 思考过程
   thinking?: string;
   responsesOutput?: unknown[];
+  backgroundTaskPreannounce?: NonNullable<Message['metadata']>['backgroundTaskPreannounce'];
   searchTrace?: Array<{ id?: string; action?: string; query?: string; url?: string }>;
   // Token usage from API response
   usage?: { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheCreationTokens?: number; providerReportedSavedTokens?: number; serviceTier?: string };

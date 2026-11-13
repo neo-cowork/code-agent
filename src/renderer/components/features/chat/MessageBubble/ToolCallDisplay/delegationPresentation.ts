@@ -266,7 +266,11 @@ export function deriveDelegationPresentation(
     };
   }
   if (toolCall.name === 'delegate_task') {
-    const task = tasks.find((candidate) => candidate.toolCallId === toolCall.id);
+    const receipt = toolCall.result.metadata?.sessionTask as { tasks?: Array<{ taskId?: unknown }> } | undefined;
+    const taskId = Array.isArray(receipt?.tasks) && receipt.tasks.length === 1 && typeof receipt.tasks[0]?.taskId === 'string'
+      ? receipt.tasks[0].taskId : undefined;
+    const task = tasks.find((candidate) => candidate.toolCallId === toolCall.id
+      || (taskId !== undefined && candidate.id === taskId));
     return task ? fromTask(task, t) : null;
   }
   if (toolCall.name === 'spawn_agent') {

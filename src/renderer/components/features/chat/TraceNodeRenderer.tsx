@@ -350,8 +350,14 @@ const AssistantTextNode: React.FC<{
   const keptBreakSegment = node.metadata?.streamInterruptionReason === 'stream-break';
   const wakeFields = wakeRationaleFromMetadata(node.metadata);
 
+  const preannounce = node.metadata?.backgroundTaskPreannounce;
+  const preannounceCopy = preannounce?.title
+    ? interpolate(t.backgroundPanel.preannounce.named, { title: preannounce.title })
+    : t.backgroundPanel.preannounce.generic;
+  const localizedContent = preannounce?.text && node.content.startsWith(preannounce.text)
+    ? preannounceCopy + node.content.slice(preannounce.text.length) : node.content;
   const { displayContent, isAnimating, tailStartIndex } = useSmoothStreamingText({
-    content: node.content || '',
+    content: localizedContent || '',
     isStreaming: Boolean(turnStreaming),
   });
 

@@ -102,7 +102,7 @@ function sessionTaskMeta(
       outcome,
       tasks: tasks.map((task) => {
         const detail = task.resultText ?? task.detail ?? task.summary;
-        return { shortName: task.shortName, status: task.status, ...(detail ? { detail } : {}) };
+        return { taskId: task.id, shortName: task.shortName, status: task.status, ...(detail ? { detail } : {}) };
       }),
     },
   };

@@ -238,7 +238,7 @@ describe('delegate_task overflow choice in host', () => {
     });
     const result = await executeDelegateTask(taskArgs(3), toolContext(session), allow);
     assert(result.ok);
-    expect(result.meta).toEqual({ sessionTask: { outcome, tasks: [{ shortName: '任务3', status }] } });
+    expect(result.meta).toEqual({ sessionTask: { outcome, tasks: [{ taskId: getSessionCommandCenter().list(session).find((task) => task.shortName === '任务3')!.id, shortName: '任务3', status }] } });
     if (delayed) {
       expect(result.output).toContain('已请求停止「任务1」');
       expect(result.output).not.toContain('已停止「任务1」');
