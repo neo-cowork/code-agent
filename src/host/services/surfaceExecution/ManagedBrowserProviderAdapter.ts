@@ -29,7 +29,6 @@ import {
 } from './SurfaceExecutionRuntime';
 import { SurfaceExecutionRuntimeError } from './SurfaceExecutionRuntimeError';
 import { waitForBrowserHumanTakeoverRelease } from './browserHumanTakeoverWait';
-import type { SurfaceTakeoverControlV1 } from './surfaceBrowserRuntimeTypes';
 import {
   SecureBrowserResumeStateStore,
   type BrowserResumeStateStore,
@@ -40,20 +39,12 @@ import {
   getKeptBrowserRegistry,
   type KeptBrowserRegistry,
 } from './keptBrowserRegistry';
+import { releaseManagedBrowserWindow, withTakeoverHandoffNote } from './managedBrowserWindowLifecycle';
 import { compactSurfaceExecutionMetadata } from '../../../shared/utils/surfaceExecutionProjection';
 
 const DEFAULT_PROVIDER = 'system-chrome-cdp';
 const SURFACE_PROFILE_TTL_MS = 30 * 60_000;
 const CRON_LOGIN_STATE_EXPORT_LEASE_OWNER = 'cron-login-state-export';
-/**
- * N-FIX-FIX-BROWSER-SECRETREF-HARDEN：agent run 认领 takeover 停靠窗后，首个浏览器
- * 动作结果附的一句话（沿用接管话术，不新增模型可见策略）。一次性，只在认领后的
- * 第一个动作出现。
- */
-const TAKEOVER_PARK_HANDOFF_NOTE =
-  'The user has handed the browser back after signing in: call get_dom_snapshot before acting '
-  + '(takeover invalidates earlier observations).';
-
 interface BrowserResumeLogger {
   warn?(message: string, metadata?: unknown): void;
   error(message: string, metadata?: unknown): void;
@@ -80,12 +71,6 @@ interface ManagedBrowserBinding {
   predecessorStateId: string;
   target: Extract<SurfaceTargetRefV1, { kind: 'browser' }>;
   abortShutdown?: Promise<void>;
-  /**
-   * secretRef 接管停靠监视器（N-FIX-FIX-BROWSER-SECRETREF-HARDEN）：本 binding 的
-   * run 发起的 takeover 控制（同步读决议）。releaseBinding 据此判定「run 结束时
-   * 用户还握着浏览器」（决议 'cancel'）并停靠窗口；'continue'/'timed_out' 不停。
-   */
-  takeoverParkControl?: SurfaceTakeoverControlV1;
   /** 本 binding 认领了 takeover 停靠窗：首个动作结果附 get_dom_snapshot 提示（一次性）。 */
   claimedTakeoverPark?: boolean;
 }
@@ -372,7 +357,7 @@ export class ManagedBrowserProviderAdapter {
           userSummary: `Observed managed browser after ${input.action}`,
           ...(providerSnapshot ? { snapshot: providerSnapshot } : {}),
         });
-        return this.withTakeoverHandoffNote(this.attachSurfaceMetadata(result, binding, {
+        return withTakeoverHandoffNote(this.attachSurfaceMetadata(result, binding, {
           observation: observation.observation,
           events: observation.events,
           session: observation.session,
@@ -441,13 +426,9 @@ export class ManagedBrowserProviderAdapter {
         && !isUserBrowserSurfaceIdentity(input.identity)
       ) {
         try {
-          const pending = await this.runtime.control(this.subject(binding), 'takeover', {
+          await this.runtime.control(this.subject(binding), 'takeover', {
             reason: 'Sign-in needs you: this site is not allowed for the secret',
           });
-          // Park control (N-FIX-FIX-BROWSER-SECRETREF-HARDEN): releaseBinding reads
-          // the synchronous resolution to tell "run ended while the user still held
-          // the browser" ('cancel') apart from resume ('continue') / timeout.
-          if (pending && typeof pending === 'object') binding.takeoverParkControl = pending;
           session = this.runtime.sessions.requireOwned(binding.surfaceSessionId, this.subject(binding));
           // The guard's mismatch text is neutral on purpose (paths without a takeover
           // return it as-is); only here, with waiting_human real, promise the handover.
@@ -468,7 +449,7 @@ export class ManagedBrowserProviderAdapter {
           };
         }
       }
-      return this.withTakeoverHandoffNote(this.attachSurfaceMetadata(providerResult, binding, {
+      return withTakeoverHandoffNote(this.attachSurfaceMetadata(providerResult, binding, {
         actionResult: wrapped.surfaceResult,
         events: wrapped.events,
         session,
@@ -479,17 +460,6 @@ export class ManagedBrowserProviderAdapter {
   }
 
   /** 认领停靠后的首个动作结果附 get_dom_snapshot 提示（成功挂 output、失败挂 error 尾部）。 */
-  private withTakeoverHandoffNote(
-    result: ToolExecutionResult,
-    attach: boolean,
-  ): ToolExecutionResult {
-    if (!attach) return result;
-    if (!result.success) {
-      return { ...result, error: `${result.error ?? ''} ${TAKEOVER_PARK_HANDOFF_NOTE}`.trim() };
-    }
-    return { ...result, output: `${result.output ?? ''} ${TAKEOVER_PARK_HANDOFF_NOTE}`.trim() };
-  }
-
   private async ensureBinding(identity: SurfaceRuntimeIdentityV1): Promise<ManagedBrowserBinding> {
     const key = this.ownerKey(identity);
     const existing = this.bindings.get(key);
@@ -510,15 +480,8 @@ export class ManagedBrowserProviderAdapter {
       && binding.browserService.isRunning()
       && Boolean(binding.browserService.getActiveTab())
     ));
-    // N-BROWSER-KEEP-RESULT-PAGE: a user run claims (adopts) the conversation's
-    // kept result window WITHOUT navigating — the live page with its submitted
-    // state stays exactly as the agent left it. Stale entries (window died
-    // without a close event) flip to closed and the user path continues.
-    // N-FIX-FIX-BROWSER-SECRETREF-HARDEN: a takeover-parked window (user logged
-    // in by hand after a secretRef handover) is ALSO claimable by the next agent
-    // run in the same conversation — same service key, same profile, cookies
-    // intact — so "Continue" picks up the signed-in page instead of a fresh
-    // login window. keep_result_page entries stay user-claim-only as before.
+    // Users may adopt any kept window; agents may claim only a same-conversation takeover.
+    // A dead candidate becomes closed rather than silently representing a retained login.
     let keptService: BrowserService | null = null;
     let keptServiceKey: string | null = null;
     let claimedTakeoverPark = false;
@@ -654,8 +617,12 @@ export class ManagedBrowserProviderAdapter {
       },
       ...(claimedTakeoverPark ? { claimedTakeoverPark: true } : {}),
     };
+    const sharedPark = shared && this.keptRegistry.getAlive(identity.conversationId);
+    binding.claimedTakeoverPark = claimedTakeoverPark || Boolean(
+      !isUserRun(identity) && sharedPark?.reason === 'takeover' && sharedPark.serviceKey === serviceKey,
+    );
     this.bindings.set(key, binding);
-    if (claimedTakeoverPark) {
+    if (binding.claimedTakeoverPark) {
       // The park is consumed by the claim: the window is this run's browser now
       // and releases normally at run end unless it parks again or is kept.
       this.keptRegistry.consumeTakeoverPark(identity.conversationId, serviceKey);
@@ -742,54 +709,14 @@ export class ManagedBrowserProviderAdapter {
       && candidate.browserService === binding.browserService
     ));
     if (!stillShared) binding.browserService.setLeaseInUse(false);
-    // N-FIX-FIX-BROWSER-SECRETREF-HARDEN (FB-578): the run ended while the user
-    // still held the browser (secretRef takeover issued by this run, settled
-    // 'cancel' = ended without Continue consuming it). Park the window as kept
-    // (reason 'takeover') instead of closing it and deleting the isolated
-    // profile: the Surface session itself still ends; the window stays for the
-    // user to finish signing in, and the next agent run in this conversation
-    // claims it with cookies intact. 'continue' (user resumed, run went on) and
-    // 'timed_out' (takeover timeout already stopped the session) do NOT park —
-    // the window releases exactly as before. A run sharing the user's personal
-    // window never parks it (that window survives run end anyway).
-    if (
-      !stillShared
-      && binding.takeoverParkControl?.resolution() === 'cancel'
-      && binding.serviceKey !== MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY
-      && binding.browserService.isRunning()
-      && binding.browserService.getActiveTab()?.url
-    ) {
-      const activeTab = binding.browserService.getActiveTab();
-      this.keptRegistry.register({
-        conversationId: binding.identity.conversationId,
-        serviceKey: binding.serviceKey,
-        url: activeTab?.url ?? '',
-        title: activeTab?.title ?? '',
-        browserService: binding.browserService,
-        reason: 'takeover',
-      });
-    }
-    // N-BROWSER-KEEP-RESULT-PAGE: a kept result window survives its run's cleanup
-    // (agent keep or user claim release alike). It stays pooled-but-idle: lease
-    // un-pinned and pool entry not in use, so idle expiry / pool pressure can
-    // still reclaim it. Final URL/title refresh so reopen restores where the
-    // run actually ended, not where keep was called.
-    const keptAlive = this.keptRegistry.isKeptServiceAlive(binding.serviceKey);
-    if (!stillShared && keptAlive) {
-      const activeTab = binding.browserService.getActiveTab();
-      if (activeTab?.url) {
-        this.keptRegistry.refreshTarget(
-          binding.identity.conversationId,
-          activeTab.url,
-          activeTab.title || '',
-        );
-      }
-      browserPool.setInUse(binding.serviceKey, false);
-    } else if (!stillShared && binding.serviceKey !== MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY) {
-      // Personal/default pool entry is never released here — login state must survive
-      // surface cleanup and app-visible session ends (BrowserPool no-ops default key).
-      await this.releaseBrowser(binding.serviceKey);
-    }
+    await releaseManagedBrowserWindow({
+      binding,
+      stillShared,
+      parkForTakeover: this.runtime.interrupts.shouldParkAfterRunEnd(this.subject(binding)),
+      personalServiceKey: MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY,
+      keptRegistry: this.keptRegistry,
+      releaseBrowser: this.releaseBrowser,
+    });
     if (abortShutdownError) throw abortShutdownError;
   }
 

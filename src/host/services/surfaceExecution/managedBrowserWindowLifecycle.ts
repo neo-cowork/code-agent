@@ -1,0 +1,55 @@
+import type { BrowserService } from '../infra/browserService';
+import { browserPool } from '../infra/browserPool';
+import type { ToolExecutionResult } from '../../tools/types';
+import type { KeptBrowserRegistry } from './keptBrowserRegistry';
+
+/** The Surface session ends; only its physical window survives the handover. */
+export async function releaseManagedBrowserWindow(input: {
+  binding: {
+    identity: { conversationId: string };
+    serviceKey: string;
+    browserService: BrowserService;
+  };
+  stillShared: boolean;
+  parkForTakeover: boolean;
+  personalServiceKey: string;
+  keptRegistry: KeptBrowserRegistry;
+  releaseBrowser(serviceKey: string): Promise<void>;
+}): Promise<void> {
+  const { binding, stillShared, keptRegistry } = input;
+  const { browserService, serviceKey, identity } = binding;
+  const activeTab = browserService.getActiveTab();
+  // Record the park even if the panel currently has a user binding to this window.
+  // Explicit Stop and timeout do not set parkForTakeover; only endRun does.
+  if (input.parkForTakeover && serviceKey !== input.personalServiceKey
+    && browserService.isRunning() && activeTab?.url) {
+    keptRegistry.register({
+      conversationId: identity.conversationId,
+      serviceKey,
+      url: activeTab.url,
+      title: activeTab.title || '',
+      browserService,
+      reason: 'takeover',
+    });
+  }
+  if (stillShared) return;
+  if (keptRegistry.isKeptServiceAlive(serviceKey)) {
+    if (activeTab?.url) {
+      keptRegistry.refreshTarget(identity.conversationId, activeTab.url, activeTab.title || '');
+    }
+    // Pool idle reclaim and the BrowserService lease remain in force.
+    browserPool.setInUse(serviceKey, false);
+  } else if (serviceKey !== input.personalServiceKey) {
+    await input.releaseBrowser(serviceKey);
+  }
+}
+
+/** Reuse takeover wording on the first result after the parked window is claimed. */
+export function withTakeoverHandoffNote(result: ToolExecutionResult, attach: boolean): ToolExecutionResult {
+  if (!attach) return result;
+  const note = 'The user has handed the browser back after signing in: call get_dom_snapshot before acting '
+    + '(takeover invalidates earlier observations).';
+  return result.success
+    ? { ...result, output: `${result.output ?? ''} ${note}`.trim() }
+    : { ...result, error: `${result.error ?? ''} ${note}`.trim() };
+}

@@ -15,6 +15,7 @@ interface ActiveOperation {
 interface SessionInterruptState {
   operations: Map<string, ActiveOperation>;
   cleanup: Set<() => void | Promise<void>>;
+  runEndedDuringTakeover?: boolean;
 }
 
 export interface SurfaceOperationInterruptHandle {
@@ -102,6 +103,18 @@ export class SurfaceInterruptService {
     const state = this.stateFor(subject.sessionId);
     state.cleanup.add(cleanup);
     return () => state.cleanup.delete(cleanup);
+  }
+
+  /** Capture run-end ownership before cancelling takeover changes the session state. */
+  prepareRunEnd(subject: SurfaceGrantSubjectV1): void {
+    const session = this.sessions.requireOwned(subject.sessionId, subject);
+    this.stateFor(subject.sessionId).runEndedDuringTakeover =
+      session.surface === 'browser' && session.state === 'waiting_human';
+  }
+
+  shouldParkAfterRunEnd(subject: SurfaceGrantSubjectV1): boolean {
+    this.sessions.requireOwned(subject.sessionId, subject);
+    return this.stateFor(subject.sessionId).runEndedDuringTakeover === true;
   }
 
   async pause(subject: SurfaceGrantSubjectV1): Promise<void> {

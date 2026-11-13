@@ -31,7 +31,6 @@ export class SurfaceHumanTakeoverService {
   }): Promise<{
     requestId: string;
     wait: Promise<SurfaceTakeoverResolutionV1>;
-    resolution(): SurfaceTakeoverResolutionV1 | null;
   }> {
     if (!Number.isFinite(input.timeoutMs) || input.timeoutMs <= 0) {
       throw new Error('Human takeover timeout must be a positive finite duration.');
@@ -56,22 +55,12 @@ export class SurfaceHumanTakeoverService {
       artifactRefs: [],
       availableControls: ['resume', 'stop', 'end_session'],
     });
-    // Synchronous resolution mirror: the `wait` chain below only settles after the
-    // stop/resume cascade completes, so anything inside that cascade (e.g. managed
-    // browser releaseBinding deciding whether to park a takeover window) must read
-    // the resolution from here instead of awaiting `wait`.
-    const resolutionRef: { current: SurfaceTakeoverResolutionV1 | null } = { current: null };
-    const controlResolution = (): SurfaceTakeoverResolutionV1 | null => resolutionRef.current;
     const resolutionPromise = new Promise<SurfaceTakeoverResolutionV1>((resolve) => {
-      const settle = (resolution: SurfaceTakeoverResolutionV1) => {
-        resolutionRef.current = resolution;
-        resolve(resolution);
-      };
       const timer = setTimeout(() => {
         this.pending.delete(requestId);
-        settle('timed_out');
+        resolve('timed_out');
       }, input.timeoutMs);
-      this.pending.set(requestId, { requestId, subject: input.subject, resolve: settle, timer });
+      this.pending.set(requestId, { requestId, subject: input.subject, resolve, timer });
     });
     const wait = resolutionPromise.then(async (resolution) => {
       if (resolution === 'continue' || resolution === 'navigated') this.interrupts.resume(input.subject);
@@ -90,7 +79,7 @@ export class SurfaceHumanTakeoverService {
       });
       return resolution;
     });
-    return { requestId, wait, resolution: controlResolution };
+    return { requestId, wait };
   }
 
   respond(
