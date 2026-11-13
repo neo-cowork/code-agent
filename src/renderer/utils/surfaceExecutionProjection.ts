@@ -740,7 +740,7 @@ const BUTTON_INSTRUCTION_ZH = /(?:点击|点一下|点|按下|按)\s*[「『"“
 const BUTTON_INSTRUCTION_EN = /\b(?:click|press|tap|hit)\s+(?:the\s+)?["'“]?(?:Done|Continue|OK|Confirm|Submit)\b/i;
 const TRAILING_CONNECTORS = /[，,、；;:：\s]*(?:(?:完成|做完|弄好|通过|验证|操作|好)+后|之后|然后|再|并且|并|请|when you(?:'re| are)? (?:done|finished)|then|and|once done|afterwards)[，,、；;\s]*$/i;
 
-export function stripButtonInstruction(reason: string): string {
+function stripButtonInstruction(reason: string): string {
   const matches = [BUTTON_INSTRUCTION_ZH.exec(reason), BUTTON_INSTRUCTION_EN.exec(reason)].filter((m): m is RegExpExecArray => m !== null);
   if (matches.length === 0) return reason;
   let cut = reason.slice(0, Math.min(...matches.map((m) => m.index)));

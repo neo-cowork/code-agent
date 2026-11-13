@@ -30,7 +30,7 @@ const REASON_MAX_CHARS = 120;
 // 面向用户的一句话：不许是网址、路径、工具名（snake_case 标识符）或反引号代码。
 const REASON_FORBIDDEN = /https?:\/\/|www\.|`|\\|(?:^|\s)~?\/[\w.-]|\b[a-z0-9]+_[a-z0-9_]+\b/i;
 
-export interface WaitForUserInput {
+interface WaitForUserInput {
   identity: SurfaceRuntimeIdentityV1 | null;
   context: Pick<ToolContext, 'sessionId' | 'currentToolCallId'>;
   params: Record<string, unknown>;

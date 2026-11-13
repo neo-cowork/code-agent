@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SurfaceExecutionConversationPanel } from '../../../../src/renderer/components/features/surfaceExecution/SurfaceExecutionConversationPanel';
 import { getSurfaceExecutionTranslations, surfaceExecutionZh } from '../../../../src/renderer/i18n/surfaceExecution';
-import { selectBrowserWaitForUserV1, stripButtonInstruction } from '../../../../src/renderer/utils/surfaceExecutionProjection';
+import { selectBrowserWaitForUserV1 } from '../../../../src/renderer/utils/surfaceExecutionProjection';
 import { surfaceEvent, surfaceScope, surfaceSession } from './fixtures';
 
 afterEach(() => cleanup());
@@ -92,12 +92,12 @@ describe('reason never names another button', () => {
     ['请在打开的浏览器页面里勾选「I\'m not a robot」完成人机验证，通过后点 Done。', '请在打开的浏览器页面里勾选「I\'m not a robot」完成人机验证'],
     ['Please solve the verification in the browser, then click Done.', 'Please solve the verification in the browser'],
   ])('%s', (input, expected) => {
-    expect(stripButtonInstruction(input)).toBe(expected);
+    expect(selectBrowserWaitForUserV1(waitingSession(input))?.reason).toBe(expected);
   });
 
   it('leaves reasons without a button instruction alone (including 点击 + a page element)', () => {
     for (const ok of ['请完成页面上的人机验证', '请点击页面里的验证码方块完成验证', '请登录你的账号']) {
-      expect(stripButtonInstruction(ok)).toBe(ok);
+      expect(selectBrowserWaitForUserV1(waitingSession(ok))?.reason).toBe(ok);
     }
   });
 

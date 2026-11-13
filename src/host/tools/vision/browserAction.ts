@@ -878,7 +878,11 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
             action,
             params,
             ...(context.abortSignal ? { abortSignal: context.abortSignal } : {}),
-            executeProvider: async () => executeManagedProviderAction(),
+            executeProvider: async (_signal, ownedBrowserService) => {
+              // The adapter may reclaim a parked/shared window instead of the preflight pool entry.
+              browserService = ownedBrowserService;
+              return executeManagedProviderAction();
+            },
           })
         : await executeManagedProviderAction();
       if (rawResult.success) {

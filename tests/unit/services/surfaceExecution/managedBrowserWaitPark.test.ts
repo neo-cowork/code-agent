@@ -42,6 +42,10 @@ function harness() {
   const tab = { id: 'tab-1', url: 'https://portal.example.test/gate', title: 'Gate' };
   const navigate = vi.fn(async (url: string) => { tab.url = url; });
   const raw = {
+    logger: { log: vi.fn(), getLogsAsString: () => '' },
+    beginTrace: vi.fn(() => ({ id: 'trace', targetKind: 'browser', toolName: 'browser_action', action: 'list_tabs', mode: 'headless', startedAtMs: Date.now(), before: null, params: {} })),
+    finishTrace: vi.fn((trace: Record<string, unknown>, args: { success: boolean }) => ({ ...trace, success: args.success, completedAtMs: Date.now(), after: null, consoleErrors: [], networkFailures: [] })),
+    getPageContent: vi.fn(async () => ({ url: tab.url, title: tab.title, text: 'Invoice portal', links: [] })),
     ensureSession: vi.fn(async () => { running = true; return {}; }),
     isRunning: () => running,
     getActiveTab: () => (running ? { ...tab } : null),
@@ -54,7 +58,12 @@ function harness() {
     setLeaseInUse: vi.fn(),
   };
   const release = vi.fn(async () => raw.close());
-  const acquire = vi.fn((_key: string | null) => raw as unknown as BrowserService);
+  let firstKey: string | null | undefined;
+  const unused = { ...raw, listTabs: () => [], getActiveTab: () => null };
+  const acquire = vi.fn((key: string | null) => {
+    firstKey ??= key;
+    return (key === firstKey ? raw : unused) as unknown as BrowserService;
+  });
   const keptRegistry = new KeptBrowserRegistry({ setKept: poolMocks.setKept, releaseAgent: poolMocks.releaseAgent });
   const resume: BrowserResumeStateStore = {
     exportForConversation: vi.fn(async () => '/x'), importForConversation: vi.fn(async () => false),
@@ -96,7 +105,13 @@ describe('timed-out wait_for_user parks the window', () => {
     // "好了，继续": the next run of the same conversation
     h.acquire.mockClear();
     h.startB();
-    const second = await h.act(h.idB, 'resume-1'); expect(second.error ?? '').toBe(''); expect(second.success).toBe(true);
+    const second = await browserActionTool.execute({ action: 'list_tabs' }, {
+      ...h.idB, sessionId: 'conversation-p', currentToolCallId: 'tc-resumed', workingDirectory: process.cwd(),
+      requestPermission: vi.fn(async () => true),
+    } as unknown as ToolContext);
+    expect(second.error ?? '').toBe('');
+    expect(second.success).toBe(true);
+    expect(second.output).toContain('https://portal.example.test/gate');
     expect(h.acquire).toHaveBeenCalledWith(parkedKey);
     expect(h.adapter.getBinding(h.idB)!.serviceKey).toBe(parkedKey);
     expect(h.navigate).not.toHaveBeenCalled();
