@@ -21,7 +21,7 @@ const task: TaskNodeData = {
   status: 'completed',
   priority: 'normal',
   retryCount: 0,
-  output: { data: { record: uuid, nested: { execution: { call: callId, count: 2 } } } },
+  output: { text: '', data: { record: uuid, nested: { execution: { call: callId, count: 2 } } } },
 };
 
 // jsdom has no rendered innerText. Follow native closed-details semantics,
