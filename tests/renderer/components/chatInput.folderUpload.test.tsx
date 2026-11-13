@@ -91,15 +91,15 @@ describe('folder upload', () => {
     read.mockRestore();
   });
 
-  it('caps requests at 20, prioritizes binaries, and keeps the 50-file limit', async () => {
+  it('caps requests at 10 (half the shared 20/min server bucket), prioritizes binaries, and keeps the 50-file limit', async () => {
     const attachment = await processFolder([
       ...Array.from({ length: 25 }, (_, n) => new File(['text'], `note${n}.txt`)),
       ...Array.from({ length: 30 }, (_, n) => new File(['%PDF'], `contract${n}.pdf`)),
     ]);
     expect(attachment.files).toHaveLength(50);
-    expect(ipc.getPathForFile).toHaveBeenCalledTimes(20);
+    expect(ipc.getPathForFile).toHaveBeenCalledTimes(10);
     expect(ipc.getPathForFile.mock.calls.every(([file]) => (file as File).name.endsWith('.pdf'))).toBe(true);
-    expect(attachment.files!.filter((file) => file.absolutePath)).toHaveLength(20);
+    expect(attachment.files!.filter((file) => file.absolutePath)).toHaveLength(10);
     expect(attachment.files!.slice(0, 25).every((file) => file.content === 'text')).toBe(true);
     expect(attachment.data).toContain('50');
   });
