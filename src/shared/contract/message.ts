@@ -113,7 +113,16 @@ export interface MessageAttachment {
   // 代码特有：语言
   language?: string;
   // 文件夹特有：文件列表和统计
-  files?: Array<{ path: string; content: string; size: number }>;
+  files?: Array<{
+    /** Display path relative to the dropped folder's parent; never a tool path. */
+    path: string;
+    content?: string;
+    size: number;
+    type?: AttachmentCategory;
+    binary?: boolean;
+    /** Actual path returned for this individual file by getPathForFile. */
+    absolutePath?: string;
+  }>;
   folderStats?: { totalFiles: number; totalSize: number; byType: Record<string, number> };
   // 媒体处理状态，用于展示下载、嵌入、转写、失败等生命周期
   mediaState?: AttachmentMediaState;
