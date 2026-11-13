@@ -357,7 +357,7 @@ const SETUP_COMMANDS = new Set(['cd', 'export', 'set', 'source', '.', 'echo', 'p
 
 function shortTarget(command: string, depth = 0): string {
   if (depth > 4) return '';
-  const url = command.match(/\bhttps?:\/\/[^\s'"<>]+/i);
+  const url = command.match(/\bhttps?:\/\/[^\s'"<>;|&\\]+/i);
   if (url) {
     try {
       return new URL(url[0]).host.slice(0, NAME_MAX);
