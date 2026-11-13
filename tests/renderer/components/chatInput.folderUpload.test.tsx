@@ -98,7 +98,7 @@ describe('folder upload', () => {
     ]);
     expect(attachment.files).toHaveLength(50);
     expect(ipc.getPathForFile).toHaveBeenCalledTimes(20);
-    expect(ipc.getPathForFile.mock.calls.every(([file]: [File]) => file.name.endsWith('.pdf'))).toBe(true);
+    expect(ipc.getPathForFile.mock.calls.every(([file]) => (file as File).name.endsWith('.pdf'))).toBe(true);
     expect(attachment.files!.filter((file) => file.absolutePath)).toHaveLength(20);
     expect(attachment.files!.slice(0, 25).every((file) => file.content === 'text')).toBe(true);
     expect(attachment.data).toContain('50');
