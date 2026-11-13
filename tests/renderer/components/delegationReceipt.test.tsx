@@ -290,7 +290,12 @@ describe('delegation receipt', () => {
     const view = renderCall(spawnCall);
     expect(view.getByTestId('delegation-activity').textContent).toBe('正在跟 研究代理 说话');
 
-    const completedNode = { ...runningNode, status: 'completed' as const, statusLabel: '已完成' };
+    const completedNode = {
+      ...runningNode,
+      status: 'completed' as const,
+      statusLabel: '已完成',
+      worktreeState: { status: 'preserved' as const, branch: 'agent/launch-polish', path: '/tmp/worktree/launch' },
+    };
     mocks.snapshot = {
       ...mocks.snapshot,
       roots: [completedNode, peerNode],
@@ -298,8 +303,11 @@ describe('delegation receipt', () => {
       summary: { ...mocks.snapshot.summary, running: 1, completed: 1 },
     };
     view.rerender(<ToolCallDisplay toolCall={spawnCall} index={0} total={1} />);
-    expect(view.getByTestId('delegation-receipt')).toBeTruthy();
+    const receipt = view.getByTestId('delegation-receipt');
     expect(view.getByText('已完成')).toBeTruthy();
+    expect(receipt.querySelectorAll('[data-testid="delegation-branch"]')).toHaveLength(1);
+    expect(view.getByTestId('delegation-branch').textContent).toBe('改动在分支 agent/launch-polish，合并后才会生效');
+    expect(receipt.textContent).not.toContain('/tmp/worktree/launch');
   });
 
   it('keeps spawn_agent bookkeeping model-facing but hides it in expanded details with or without the tree node', () => {
