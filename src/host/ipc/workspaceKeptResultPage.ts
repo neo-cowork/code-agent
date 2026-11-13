@@ -4,7 +4,12 @@
 
 import type { UserBrowserLinkService, UserBrowserLinkResult } from '../services/surfaceExecution/UserBrowserLinkService';
 import type { KeptResultPageSnapshot } from '../services/surfaceExecution/keptBrowserRegistry';
+import { createLogger } from '../services/infra/logger';
 import { getDefaultWorkDirectory } from '../config/configPaths';
+
+const logger = createLogger('WorkspaceKeptResultPage');
+
+const KEPT_ADOPT_FAILED_MESSAGE = '这一页的浏览器窗口已经关闭，没法接着操作了。可以点「重新打开」恢复网址。';
 
 type KeptResultPageLinks = Pick<UserBrowserLinkService, 'adopt' | 'keptState'>;
 
@@ -26,10 +31,19 @@ export async function adoptKeptResultPageHandler(
   payload: unknown,
 ): Promise<UserBrowserLinkResult> {
   const adoptPayload = payload as { conversationId: string; workspace?: string };
-  return await links.adopt({
-    conversationId: adoptPayload.conversationId,
-    workspace: await resolveUserBrowserWorkspace(adoptPayload.conversationId, adoptPayload.workspace),
-  });
+  try {
+    return await links.adopt({
+      conversationId: adoptPayload.conversationId,
+      workspace: await resolveUserBrowserWorkspace(adoptPayload.conversationId, adoptPayload.workspace),
+    });
+  } catch (error) {
+    // 窗口已死 / 没有 kept 页：Playwright/host 原始英文错误不进用户界面，只留日志。
+    logger.warn('Kept result page adoption failed', {
+      conversationId: adoptPayload.conversationId,
+      reason: error instanceof Error ? error.message : String(error),
+    });
+    throw new Error(KEPT_ADOPT_FAILED_MESSAGE, { cause: error });
+  }
 }
 
 /**
