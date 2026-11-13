@@ -229,6 +229,11 @@ export const LIBRARY_TIMEOUTS = {
 
 /** 浏览器操作超时 */
 export const BROWSER_TIMEOUTS = {
+  /** Minimum age before crash-leftover isolated profiles may be reclaimed. */
+  ISOLATED_PROFILE_SWEEP_GRACE: 10 * 60_000,
+  /** Bound size accounting across one sweep; incomplete profiles are kept. */
+  ISOLATED_PROFILE_SWEEP_MAX_ENTRIES: 10_000,
+  ISOLATED_PROFILE_SWEEP_WALK_BUDGET: 2_000,
   /** 浏览器操作默认超时 */
   ACTION_DEFAULT: 30_000,
   /** 等待选择器超时 */

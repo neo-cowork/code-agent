@@ -519,7 +519,7 @@ export function sanitizeManagedBrowserId(value: string): string {
   return safe || 'workspace';
 }
 
-function isPathInsideRoot(targetPath: string, rootPath: string): boolean {
+export function isPathInsideRoot(targetPath: string, rootPath: string): boolean {
   const target = path.resolve(targetPath);
   const root = path.resolve(rootPath);
   return target !== root && isPathWithinRoot(target, root);
