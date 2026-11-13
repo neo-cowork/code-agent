@@ -1,16 +1,35 @@
+// @vitest-environment jsdom
 // N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO
 // 后台任务（spawn_agent 子代理 / 后台 Browser 步）的审批卡与前台 run 同 sessionId：
 // 前台 run 结束（agent_complete / error / stream_end）不得把后台任务的审批卡一起清掉。
 // 这组测试走**生产同款接线**：applyPermissionQueueEvent + 真实 useAppStore
 // （usePermissionQueueEffects.ts 里 ipcService.on('agent:event') 的 deps 组装），
 // 不用 harness mock——mock 会把被测语义抄一遍，抄一遍就证明不了仓库里的真行为。
-import { beforeEach, describe, expect, it } from 'vitest';
+import { createElement } from 'react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PermissionRequest } from '../../../src/shared/contract';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import {
   applyPermissionQueueEvent,
+  reconcilePermissionQueue,
   type PermissionQueueEventDeps,
 } from '../../../src/renderer/hooks/agent/effects/usePermissionQueueEffects';
+
+const invoke = vi.hoisted(() => vi.fn());
+const toastError = vi.hoisted(() => vi.fn());
+vi.mock('../../../src/renderer/services/ipcService', () => ({
+  default: { isAvailable: () => true, invoke },
+}));
+vi.mock('../../../src/renderer/hooks/useToast', () => ({ toast: { error: toastError } }));
+vi.mock('../../../src/renderer/hooks/useI18n', async () => {
+  const { zh } = await import('../../../src/renderer/i18n/zh');
+  return { useI18n: () => ({ t: zh, language: 'zh' }) };
+});
+import { PermissionCard } from '../../../src/renderer/components/PermissionDialog/PermissionCard';
+import { IPC_CHANNELS } from '../../../src/shared/ipc';
+import { releaseApprovalResponse } from '../../../src/renderer/utils/approvalResponseGuard';
+import { zh } from '../../../src/renderer/i18n/zh';
 
 function permissionRequest(id: string): PermissionRequest {
   return {
@@ -22,13 +41,13 @@ function permissionRequest(id: string): PermissionRequest {
   };
 }
 
-/** 后台 lane 的审批请求：同 sessionId、独立 runId/agentId（subagentToolRuntime 把 identity 摊进请求）。 */
+/** 后台 lane 的审批请求：同 sessionId/runId、独立 agentId（subagentToolRuntime 把 identity 摊进请求）。 */
 function backgroundPermissionRequest(id: string): PermissionRequest {
   return {
     ...permissionRequest(id),
     sessionId: 'session-main',
     agentId: `bg-agent-${id}`,
-    runId: `bg-run-${id}`,
+    runId: 'shared-parent-run',
     parentToolUseId: `tool-${id}`,
   };
 }
@@ -193,7 +212,7 @@ describe('后台任务自己的 run 结束 → 卡收走（stale-card guard）',
       sessionId: 'session-main',
     }, deps);
 
-    // 同一 lane（runId/agentId 匹配）的卡全收；别的 lane 不受牵连。
+    // 同一 lane（agentId 匹配）的卡全收；别的 lane 不受牵连。
     expect(useAppStore.getState().pendingPermissionRequest).toBeNull();
     expect(useAppStore.getState().queuedPermissionRequests['session-main']?.map((r) => r.id))
       .toEqual(['bg-other-lane']);
@@ -249,5 +268,117 @@ describe('后台任务自己的 run 结束 → 卡收走（stale-card guard）',
     expect(useAppStore.getState().pendingPermissionRequest).toBeNull();
     expect(useAppStore.getState().queuedPermissionRequests['session-main']).toBeUndefined();
     expect(useAppStore.getState().resolvedPermissionRequests['session-main']).toBeUndefined();
+  });
+});
+
+
+describe('three sibling approvals share their parent runId', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    invoke.mockResolvedValue({ outcome: 'delivered' });
+    useAppStore.setState({
+      pendingPermissionRequest: null,
+      pendingPermissionSessionId: null,
+      queuedPermissionRequests: {},
+      resolvedPermissionRequests: {},
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+    for (const id of ['A', 'B', 'C']) releaseApprovalResponse(id);
+  });
+
+  function enqueueSiblings() {
+    const { deps } = createProductionDeps('session-main');
+    const requests = ['A', 'B', 'C'].map(backgroundPermissionRequest);
+    for (const request of requests) {
+      applyPermissionQueueEvent({ type: 'permission_request', data: request, sessionId: 'session-main' }, deps);
+    }
+    expect(useAppStore.getState().pendingPermissionRequest?.id).toBe('A');
+    expect(useAppStore.getState().queuedPermissionRequests['session-main']?.map(r => r.id)).toEqual(['B', 'C']);
+    return { deps, requests };
+  }
+
+  function reconcile() {
+    reconcilePermissionQueue({ ...useAppStore.getState(), currentSessionId: 'session-main' });
+  }
+
+  function liveIds() {
+    const state = useAppStore.getState();
+    return [state.pendingPermissionRequest, ...(state.queuedPermissionRequests['session-main'] || [])]
+      .filter((request): request is PermissionRequest => request !== null).map(r => r.id);
+  }
+
+  it('B ends: its queued card is removed and pending A / queued C stay in order', () => {
+    const { deps, requests } = enqueueSiblings();
+    applyPermissionQueueEvent({ type: 'subagent_run_end', data: { ...requests[1], status: 'completed' }, sessionId: 'session-main' }, deps);
+    expect(liveIds()).toEqual(['A', 'C']);
+    expect(useAppStore.getState().resolvedPermissionRequests).toEqual({});
+    reconcile();
+    expect(useAppStore.getState().pendingPermissionRequest?.id).toBe('A');
+  });
+
+  it.each([
+    { name: 'all approved', order: ['B', 'A', 'C'], decisions: ['once', 'once', 'once'] },
+    { name: 'approve / deny / approve', order: ['B', 'A', 'C'], decisions: ['once', 'deny', 'once'] },
+    { name: 'out-of-order C / A / B', order: ['C', 'A', 'B'], decisions: ['once', 'once', 'once'] },
+  ] as const)('$name: every click records its own requestId', async ({ order, decisions }) => {
+    const { deps, requests } = enqueueSiblings();
+    for (const [index, id] of order.entries()) {
+      const request = requests.find(r => r.id === id)!;
+      const decision = decisions[index];
+      expect(liveIds()).toContain(id);
+      // DecisionSlot renders queued cards via requestOverride as well as the pending card.
+      const view = render(createElement(PermissionCard, { requestOverride: request, sessionIdOverride: 'session-main' }));
+      fireEvent.click(screen.getByRole('button', { name: decision === 'deny' ? /^拒绝/ : /允许一次/ }));
+      await waitFor(() => {
+        expect(useAppStore.getState().resolvedPermissionRequests['session-main']?.map(r => [r.id, r.decision]))
+          .toEqual(order.slice(0, index + 1).map((requestId, n) => [requestId, decisions[n]]));
+      });
+      expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, id, decision === 'deny' ? 'deny' : 'allow', 'session-main');
+      view.unmount();
+      applyPermissionQueueEvent({ type: 'subagent_run_end', data: { agentId: request.agentId, runId: request.runId, status: 'completed' }, sessionId: 'session-main' }, deps);
+      reconcile();
+      expect(liveIds()).toEqual((['A', 'B', 'C'] as const).filter(other => !order.slice(0, index + 1).includes(other)));
+    }
+    expect(invoke).toHaveBeenCalledTimes(3);
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it('stale click dismisses only that card and shows the existing human message', async () => {
+    const { requests } = enqueueSiblings();
+    invoke.mockResolvedValueOnce({ outcome: 'unknown_request' });
+    render(createElement(PermissionCard, { requestOverride: requests[0], sessionIdOverride: 'session-main' }));
+    fireEvent.click(screen.getByRole('button', { name: /允许一次/ }));
+    await waitFor(() => {
+      expect(liveIds()).toEqual(['B', 'C']);
+      expect(toastError).toHaveBeenCalledWith(zh.decisionCard.permission.settledElsewhere);
+    });
+    expect(zh.decisionCard.permission.settledElsewhere).toBeTruthy();
+    expect(useAppStore.getState().resolvedPermissionRequests).toEqual({});
+  });
+
+  it.each([
+    { requestAgent: undefined, eventAgent: 'delegate-agent' },
+    { requestAgent: 'delegate-agent', eventAgent: undefined },
+    { requestAgent: undefined, eventAgent: undefined },
+  ])('falls back to runId when either side lacks agentId: %o', ({ requestAgent, eventAgent }) => {
+    const { deps } = createProductionDeps('session-main');
+    const ended = { ...backgroundPermissionRequest('delegate'), agentId: requestAgent };
+    const other = { ...backgroundPermissionRequest('other-run'), runId: 'independent-run' };
+    for (const request of [ended, other]) {
+      applyPermissionQueueEvent({ type: 'permission_request', data: request, sessionId: 'session-main' }, deps);
+    }
+    applyPermissionQueueEvent({ type: 'subagent_run_end', data: { agentId: eventAgent, runId: ended.runId, status: 'completed' }, sessionId: 'session-main' }, deps);
+    expect(liveIds()).toEqual(['other-run']);
+  });
+
+  it('agentId identifies the lane even when runId differs; empty identity removes nothing', () => {
+    const { deps, requests } = enqueueSiblings();
+    applyPermissionQueueEvent({ type: 'subagent_run_end', data: { status: 'completed' }, sessionId: 'session-main' }, deps);
+    expect(liveIds()).toEqual(['A', 'B', 'C']);
+    applyPermissionQueueEvent({ type: 'subagent_run_end', data: { agentId: requests[0].agentId, runId: 'another-run', status: 'completed' }, sessionId: 'session-main' }, deps);
+    expect(liveIds()).toEqual(['B', 'C']);
   });
 });
