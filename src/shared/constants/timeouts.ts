@@ -427,7 +427,7 @@ export const BROWSER_HUMAN_TAKEOVER_WAIT = {
  * 120s tool inactivity budget. `CODE_AGENT_BROWSER_WAIT_FOR_USER_MS` is a harness
  * override for tests and real-run drills only, not a user setting.
  */
-export const BROWSER_WAIT_FOR_USER = {
+const BROWSER_WAIT_FOR_USER = {
   LIMIT_MS: BROWSER_HUMAN_TAKEOVER_WAIT.TIMER_MS,
   LIMIT_ENV: 'CODE_AGENT_BROWSER_WAIT_FOR_USER_MS',
 } as const;

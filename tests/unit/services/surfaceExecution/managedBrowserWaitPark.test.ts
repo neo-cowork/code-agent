@@ -9,7 +9,6 @@ import { KeptBrowserRegistry } from '../../../../src/host/services/surfaceExecut
 import type { BrowserResumeStateStore } from '../../../../src/host/services/surfaceExecution/BrowserResumeStateStore';
 import { browserActionTool } from '../../../../src/host/tools/vision/browserAction';
 import type { ToolContext } from '../../../../src/host/tools/types';
-import { BROWSER_WAIT_FOR_USER } from '../../../../src/shared/constants/timeouts';
 
 const holder = vi.hoisted(() => ({ adapter: null as unknown, runtime: null as unknown, keptRegistry: null as unknown }));
 vi.mock('../../../../src/host/services/surfaceExecution/ManagedBrowserProviderAdapter', async (original) => ({
@@ -80,11 +79,11 @@ function harness() {
   return { startB, runtime, raw, release, acquire, keptRegistry, adapter, idA, idB, act, navigate };
 }
 
-afterEach(() => { delete process.env[BROWSER_WAIT_FOR_USER.LIMIT_ENV]; });
+afterEach(() => { delete process.env.CODE_AGENT_BROWSER_WAIT_FOR_USER_MS; });
 
 describe('timed-out wait_for_user parks the window', () => {
   it('survives the run end and the next run reclaims it without navigating', async () => {
-    process.env[BROWSER_WAIT_FOR_USER.LIMIT_ENV] = '150';
+    process.env.CODE_AGENT_BROWSER_WAIT_FOR_USER_MS = '150';
     const h = harness();
     await h.act(h.idA, 'open');
     const result = await browserActionTool.execute({ action: 'wait_for_user', reason: '请完成页面上的验证' }, {
@@ -123,7 +122,7 @@ describe('timed-out wait_for_user parks the window', () => {
   });
 
   it('preserves a prior result window while a different window times out and resumes', async () => {
-    process.env[BROWSER_WAIT_FOR_USER.LIMIT_ENV] = '100';
+    process.env.CODE_AGENT_BROWSER_WAIT_FOR_USER_MS = '100';
     const h = harness();
     await h.act(h.idA, 'open');
     h.keptRegistry.register({
@@ -160,7 +159,7 @@ describe('timed-out wait_for_user parks the window', () => {
   });
 
   it('does not promise the window when it could not be parked (no active tab)', async () => {
-    process.env[BROWSER_WAIT_FOR_USER.LIMIT_ENV] = '100';
+    process.env.CODE_AGENT_BROWSER_WAIT_FOR_USER_MS = '100';
     const h = harness();
     await h.act(h.idA, 'open');
     h.raw.getActiveTab = () => null;

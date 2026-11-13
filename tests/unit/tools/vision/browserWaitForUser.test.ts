@@ -9,7 +9,6 @@ import { ManagedBrowserProviderAdapter } from '../../../../src/host/services/sur
 import { SurfaceExecutionRuntime } from '../../../../src/host/services/surfaceExecution/SurfaceExecutionRuntime';
 import { createToolExecutionWatchdog } from '../../../../src/host/agent/runtime/toolExecutionTimeout';
 import { browserActionTool } from '../../../../src/host/tools/vision/browserAction';
-import { BROWSER_WAIT_FOR_USER } from '../../../../src/shared/constants/timeouts';
 import { WAIT_FOR_USER_EVENT_ACTION, WAIT_FOR_USER_TIMEOUT_EVENT_ACTION } from '../../../../src/shared/contract/surfaceExecution';
 import type { AgentEvent } from '../../../../src/shared/contract';
 import type { ToolContext } from '../../../../src/host/tools/types';
@@ -126,7 +125,7 @@ function startWatchedWait(toolCallId: string, reason = '请完成页面上的验
 
 describe('browser_action wait_for_user', () => {
   beforeEach(() => { vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] }); });
-  afterEach(() => { vi.useRealTimers(); delete process.env[BROWSER_WAIT_FOR_USER.LIMIT_ENV]; });
+  afterEach(() => { vi.useRealTimers(); delete process.env.CODE_AGENT_BROWSER_WAIT_FOR_USER_MS; });
 
   it('① hands the page to the user with the reason, blocks until Done, then tells the model to re-read', async () => {
     const h = setup();
@@ -166,7 +165,7 @@ describe('browser_action wait_for_user', () => {
   });
 
   it('②b Done after 130s: the human wait is not counted, no tool_timeout event', async () => {
-    process.env[BROWSER_WAIT_FOR_USER.LIMIT_ENV] = '400000';
+    process.env.CODE_AGENT_BROWSER_WAIT_FOR_USER_MS = '400000';
     const h = setup();
     const { subject } = await openPage(h);
     const wait = startWatchedWait('tc-2b');
@@ -194,7 +193,7 @@ describe('browser_action wait_for_user', () => {
   });
 
   it('④ timeout: WAIT_FOR_USER_TIMEOUT, session not stopped, window alive, bar event flips to timed-out, Done still resumes', async () => {
-    process.env[BROWSER_WAIT_FOR_USER.LIMIT_ENV] = '5000';
+    process.env.CODE_AGENT_BROWSER_WAIT_FOR_USER_MS = '5000';
     const h = setup();
     const { subject, sessionId } = await openPage(h);
     const wait = startWatchedWait('tc-4', '请登录你的账号');
