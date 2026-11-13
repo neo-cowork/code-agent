@@ -5,6 +5,7 @@ import { outcomeWordsZh } from './outcomeWords';
 import { turnFeedbackWhyEn, turnFeedbackWhyZh } from './turnFeedbackWhy';
 import { evalBridgeEn, evalBridgeZh } from './evalBridge';
 import { wakeRationaleEn, wakeRationaleZh } from './wakeRationale';
+import { durableStoppedEn, durableStoppedZh } from './durableStopped';
 // Chat 输入区词条（ChatInput index / InputArea / AttachmentBar / SendButton /
 // useFileUpload / ScheduleComposerCard / 长尾组件与 hook）—— zh/en 同文件相邻维护。
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮（同 chatTranscript.ts 先例）。
@@ -14,6 +15,7 @@ export const chatInputZh = {
   ...evalBridgeZh,
   ...turnFeedbackWhyZh,
   ...wakeRationaleZh,
+  ...durableStoppedZh,
   chatInput: {
     stepLimitContinue: '继续',
     viewPlan: '查看实现计划',
@@ -26,6 +28,7 @@ export const chatInputZh = {
     sendAria: '发送消息',
     processingRuntimeInputAria: '正在处理运行中输入',
     stopAria: '停止',
+    stoppingAria: '正在停止',
     continueAria: '继续上次中断的任务',
     continueLabel: '继续',
     backgroundHandoffLabel: '转后台继续聊',
@@ -491,6 +494,7 @@ export const chatInputEn: typeof chatInputZh = {
   ...evalBridgeEn,
   ...turnFeedbackWhyEn,
   ...wakeRationaleEn,
+  ...durableStoppedEn,
   chatInput: {
     stepLimitContinue: 'Continue',
     viewPlan: 'View implementation plan',
@@ -503,6 +507,7 @@ export const chatInputEn: typeof chatInputZh = {
     sendAria: 'Send message',
     processingRuntimeInputAria: 'Processing runtime input',
     stopAria: 'Stop',
+    stoppingAria: 'Stopping',
     continueAria: 'Continue the interrupted task',
     continueLabel: 'Continue',
     backgroundHandoffLabel: 'Background & chat',
