@@ -6,6 +6,9 @@ import { resolveCanonicalRunPath } from '../../runtime/runContext';
 import { parseShellCommand } from '../../security/commandParse';
 import type { PolicyEnforcer } from '../../security/policyEnforcer';
 import { denyConcreteShellWritePath } from './writePathPolicyDeny';
+import { createLogger } from '../../services/infra/logger';
+
+const approvedRmLogger = createLogger('ApprovedRmGrant');
 
 function expandLeadingHome(rawPath: string): string {
   const home = homedir();
@@ -239,9 +242,24 @@ export function approvedSingleFileRmGrant(
   input: Omit<SandboxEscalationEligibilityInput, 'deniedPath' | 'deniedPathCreatesDirectory'>,
 ): string | undefined {
   const deniedPath = extractApprovedSingleFileRmTarget(command, input.workingDirectory);
-  return deniedPath && escalationTarget(deniedPath) === 'file'
+  const grant = deniedPath && escalationTarget(deniedPath) === 'file'
     ? shouldOfferEscalation({ ...input, deniedPath, deniedPathCreatesDirectory: false })
     : undefined;
+  const rm = parseShellCommand(command).segments.find((segment) => path.posix.basename(segment.words[0] ?? '') === 'rm');
+  const operandCount = rm?.words.slice(1).filter((word) => !['--', '-f', '--force'].includes(word)).length ?? 0;
+  const conditions = [
+    !input.sandboxDecision.sandboxed && 'sandboxed',
+    !input.foreground && 'foreground', input.pty && 'pty', input.background && 'background',
+    input.unattended && 'unattended', input.writeFence && 'write_fence', input.evalRealRoot && 'eval_real_root',
+    !['default', 'acceptEdits'].includes(input.permissionMode) && 'mode',
+    input.abortSignal.aborted && 'aborted', operandCount !== 1 && 'operand_count',
+  ].filter(Boolean);
+  const diagnostic = { sandboxed: input.sandboxDecision.sandboxed, foreground: input.foreground,
+    pty: input.pty, background: input.background, unattended: input.unattended, writeFence: input.writeFence,
+    mode: input.permissionMode, operandCount, conditions: conditions.length ? conditions : ['path_class_or_policy_or_command_shape'] };
+  if (!grant) approvedRmLogger.warn(`APPROVED_RM_GRANT_REFUSED ${JSON.stringify(diagnostic)}`);
+  else approvedRmLogger.info(`APPROVED_RM_GRANT_MINTED ${JSON.stringify({ ...diagnostic, conditions: [] })}`);
+  return grant;
 }
 
 /** Return the one directory subtree that may be offered for a single foreground retry. */
