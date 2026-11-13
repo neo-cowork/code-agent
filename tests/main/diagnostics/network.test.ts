@@ -17,7 +17,7 @@ vi.mock('../../../src/shared/constants', async (importOriginal) => {
   return {
     ...actual,
     getProviderEndpointForProtocol: (provider: string, protocol: Parameters<typeof actual.getProviderEndpointForProtocol>[1]) =>
-      provider === 'xiaomi' ? `${origin}/default` : actual.getProviderEndpointForProtocol(provider, protocol),
+      provider === 'xiaomi' || provider === 'claude' ? `${origin}/default` : actual.getProviderEndpointForProtocol(provider, protocol),
   };
 });
 
@@ -69,6 +69,15 @@ describe('checkProviderConnectivity (production connection test + local HTTP)', 
   it('passes the configured protocol as well as the endpoint', async () => {
     providerSettings.protocol = 'claude';
     expect(await xiaomiItem()).toMatchObject({ status: 'pass' });
+    expect(requests).toEqual([{ path: '/configured/messages', apiKey: 'test-configured-key', method: 'POST', authorization: undefined }]);
+  });
+
+  it('uses the configured endpoint for native Claude as well', async () => {
+    providerSettings.protocol = 'claude';
+    config.getSettings.mockReturnValue({ models: { providers: { claude: providerSettings } } });
+    config.getApiKey.mockImplementation((provider: string) => provider === 'claude' ? 'test-configured-key' : undefined);
+    const item = (await checkProviderConnectivity()).find((entry) => entry.name === PROVIDER_REGISTRY.claude.displayName);
+    expect(item).toMatchObject({ status: 'pass' });
     expect(requests).toEqual([{ path: '/configured/messages', apiKey: 'test-configured-key', method: 'POST', authorization: undefined }]);
   });
 

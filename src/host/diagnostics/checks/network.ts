@@ -49,6 +49,7 @@ export async function checkProviderConnectivity(): Promise<DoctorItem[]> {
       const modelConfig = {
         provider: providerId,
         model: providerSettings?.model || getDefaultModelForProvider(providerId),
+        baseUrl: providerSettings?.baseUrl,
         protocol: providerSettings?.protocol,
       };
       const apiKey = resolveProviderApiKey(modelConfig, { trustConfigKey: false });
