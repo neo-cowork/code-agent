@@ -27,6 +27,10 @@ const NATIVE_CONNECTOR_INTENT_RES: ReadonlyArray<readonly [string, RegExp]> = [
   ['calendar', /日程|日历|\bcalendar\b|\bschedule\s+(?:a|an|the)\s+(?:meeting|event)\b/i],
 ];
 
+// Recurrence is only a loose scheduling exposure signal. Existing reminder reads
+// and edits must keep their connector tools; foreground cannot discover them later.
+const REMINDER_MANAGEMENT_INTENT_RE = /查看|查询|查找|列出|显示|修改|更改|调整|改到|改成|删除|取消|完成|推迟|提前|\b(?:show|list|view|read|find|search|get|update|edit|change|move|reschedule|delete|remove|cancel|complete|check)\b/i;
+
 export interface NativeConnectorIntentInput {
   /** 本轮用户输入（最新一条 user 消息或前台 prompt 原文）。 */
   userText: string;
@@ -46,7 +50,8 @@ export interface NativeConnectorIntentInput {
 export function getNativeConnectorToolNamesForIntent(input: NativeConnectorIntentInput): string[] {
   const matched = NATIVE_CONNECTOR_INTENT_RES
     .filter(([id, re]) => re.test(input.userText)
-      && !(id === 'reminders' && isScheduleTaskChatIntent(input.userText)))
+      && !(id === 'reminders' && isScheduleTaskChatIntent(input.userText)
+        && !REMINDER_MANAGEMENT_INTENT_RE.test(input.userText)))
     .map(([id]) => id);
   if (matched.length === 0) return [];
 

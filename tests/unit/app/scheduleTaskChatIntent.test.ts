@@ -51,6 +51,29 @@ describe('scheduled-task exposure (never intercepts submission)', () => {
     expect(getTextForegroundToolNamesForPrompt('remind me tomorrow 3pm to call Mr Wang')).toContain('reminders_create');
   });
 
+  it.each([
+    'show my weekly reminders',
+    'list my daily reminders',
+    'change my recurring reminder to Thursday',
+    'delete my monthly reminder',
+    '把每周例会的提醒改到周四',
+    '查看每天的提醒事项',
+    '删除每月缴费的提醒',
+    '完成每周的待办',
+  ])('preserves reminder management in foreground and preload: %s', (text) => {
+    const native = new ConnectorRegistry('darwin');
+    native.configure(['reminders']);
+    vi.spyOn(getConnectorRegistry(), 'get').mockImplementation((id) => native.get(id));
+    const foreground = getTextForegroundToolNamesForPrompt(text);
+    const preloaded = getDeferredToolsToPreloadForTurn({
+      enableToolDeferredLoading: true, messages: [{ id: 'u', role: 'user', content: text, timestamp: 1 }],
+      turn: TurnState.forTest(),
+    });
+    for (const tools of [foreground, preloaded]) {
+      expect(tools).toEqual(expect.arrayContaining(['reminders', 'reminders_update', 'reminders_delete']));
+    }
+  });
+
   it('loose exposure for how-to and failures only adds a per-turn model rule', () => {
     for (const text of ['how do I create a scheduled task in Neo?', 'the daily auto backup failed, check the log', 'delete my scheduled task']) {
       expect(getTextForegroundToolNamesForPrompt(text)).toContain('schedule_task');
