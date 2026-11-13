@@ -129,7 +129,7 @@ function hasQueuedUserInput(sessionId: string): boolean {
 }
 
 export function formatBackgroundWakeFailureNote(shortName: string): string {
-  return `后台任务「${shortName}」已结束，结果见上方的任务结果；自动汇报这一步没能完成，需要的话可以直接问我。`;
+  return `后台任务「${shortName}」已结束；自动汇报这一步没能完成，恢复原账号登录后可查看任务结果，也可以直接问我。`;
 }
 
 export async function recordBackgroundWakeFailureNote(
