@@ -79,7 +79,9 @@ function statusFromInput(args: BuildRunWorkbenchModelInput, turn: TraceTurn | nu
   if (isToolUnfinished(toolCall)) return 'using_tools';
   if (turn?.status === 'streaming' || args.sessionStatus === 'running') return 'running';
   if (args.taskProgress?.phase === 'completed' || turn?.status === 'completed') return 'completed';
-  return 'completed';
+  // A missing turn also occurs between Send and the first stream event.
+  // Empty sessions stay empty because the overview requires a turnId.
+  return 'planning';
 }
 
 function phaseFromStatus(status: RunUiStatus, taskProgress?: TaskProgressData | null): string {

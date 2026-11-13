@@ -50,6 +50,7 @@ import { useSidebarRowActions, resolveRuntimeLogsDir } from './features/sidebar/
 import { SidebarStatusFilterDropdown } from './features/sidebar/SidebarStatusFilterDropdown';
 import { SidebarAccountMenu } from './features/sidebar/SidebarAccountMenu';
 import { SidebarSignedOutFooter } from './features/sidebar/SidebarSignedOutFooter';
+import { useSidebarSearchShortcut } from './features/sidebar/useSidebarSearchShortcut';
 import { SidebarSearchDialog } from './features/sidebar/SidebarSearchDialog';
 import { SidebarNewTaskRow } from './features/sidebar/SidebarNewTaskRow';
 import { applySessionNotificationAttention } from './features/sidebar/sessionNotificationAttention';
@@ -197,6 +198,7 @@ export const Sidebar: React.FC = () => {
     user,
     isAuthenticated,
     isLoading: isAuthLoading,
+    hasResolvedStatus: hasResolvedAuthStatus,
     sessionTrustState,
     authBackendAvailable,
     hasCachedAdminClaim,
@@ -315,7 +317,7 @@ export const Sidebar: React.FC = () => {
     effectiveSearchScope,
     setSearchScope,
     messageSearchHitsBySessionId,
-    messageSearchLoading,
+    messageSearchLoading, messageSearchFailed,
     searchResultSessions,
     reviewItemsBySessionId,
     trajectoryQualityBySessionId,
@@ -385,6 +387,11 @@ export const Sidebar: React.FC = () => {
   }): Promise<boolean> => new Promise((resolve) => {
     setSessionForkConfirm({ ...options, resolve });
   }), []);
+  const openSearchDialog = useCallback(() => {
+    setSearchQuery('');
+    setSearchDialogOpen(true);
+  }, [setSearchQuery]);
+  const searchShortcut = useSidebarSearchShortcut(openSearchDialog);
   const collapseTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   useEffect(
@@ -705,12 +712,9 @@ export const Sidebar: React.FC = () => {
               size="md"
               className="h-8 w-8"
               icon={<Search className="h-4 w-4" />}
-              aria-label={sb.openSearch}
+              aria-label={sb.openSearch} title={[sb.searchDialogTitle, searchShortcut].filter(Boolean).join(' ')}
               data-testid="sidebar-search-trigger"
-              onClick={() => {
-                setSearchQuery('');
-                setSearchDialogOpen(true);
-              }}
+              onClick={openSearchDialog}
             />
             {/* 状态筛选：仅管理员可见；搜索入口对所有人可见。 */}
             {canOpenSessionReplay && (
@@ -774,7 +778,7 @@ export const Sidebar: React.FC = () => {
         isLoading={isLoading}
         hasAnySessions={hasAnySessions}
         filteredSessionsEmpty={filteredSessions.length === 0}
-        messageSearchLoading={messageSearchLoading}
+        messageSearchLoading={messageSearchLoading} messageSearchFailed={messageSearchFailed}
         searchQuery={searchQuery}
         sessionStatusFilter={sessionStatusFilter}
         activeStatusFilterLabel={activeStatusFilterLabel}
@@ -851,7 +855,9 @@ export const Sidebar: React.FC = () => {
           注意行内容高由**最高的那个**决定（昵称 text-sm 的 20，不是头像的 16）——
           按 16 算会差 2px，实测才发现（2026-07-28）。横向仍是 4，与其他区块 px-1 同规范。 */}
       <div className="px-1 py-1.5 relative flex-shrink-0" ref={accountMenuRef}>
-        {isAuthenticated && user ? (
+        {!hasResolvedAuthStatus && !(isAuthenticated && user) ? (
+          <div className="h-8" data-testid="sidebar-account-loading" aria-busy="true" />
+        ) : isAuthenticated && user ? (
           <>
             <button
               onClick={() => setShowUserMenu(!showUserMenu)}
@@ -911,7 +917,7 @@ export const Sidebar: React.FC = () => {
         sessions={searchResultSessions}
         currentSessionId={currentSessionId}
         messageSearchHitsBySessionId={messageSearchHitsBySessionId}
-        messageSearchLoading={messageSearchLoading}
+        messageSearchLoading={messageSearchLoading} messageSearchFailed={messageSearchFailed}
         effectiveSearchScope={effectiveSearchScope}
         setSearchScope={setSearchScope}
         canSearchCurrentProject={canSearchCurrentProject}

@@ -102,6 +102,7 @@ export const expertZh = {
       stopAll: '停止全部',
       stopAllTitle: { one: '停止全部 {count} 个代理', other: '停止全部 {count} 个代理' },
       stopAllStopping: '正在停止…',
+      clearFinished: '清除已结束',
       tokensTitle: '本次组队已花 Token（实时累计）',
       recentActions: '最近动作',
       runTrail: '运行轨迹',
@@ -145,7 +146,7 @@ export const expertZh = {
     },
     roleDetail: {
       roleWakeLabel: '角色唤醒',
-      roleWakeTooltip: '角色醒来时自己记下的',
+      roleWakeTooltip: '角色醒来时自己记下的（{time}）',
       maxIterations: '最大迭代次数',
       skills: '技能',
       tools: '工具',
@@ -431,6 +432,7 @@ export const expertEn: typeof expertZh = {
       stopAll: 'Stop all',
       stopAllTitle: { one: 'Stop all {count} agent', other: 'Stop all {count} agents' },
       stopAllStopping: 'Stopping…',
+      clearFinished: 'Clear finished',
       tokensTitle: 'Team tokens used so far (live total)',
       recentActions: 'Recent actions',
       runTrail: 'Run trail',
@@ -474,7 +476,7 @@ export const expertEn: typeof expertZh = {
     },
     roleDetail: {
       roleWakeLabel: 'Role wake',
-      roleWakeTooltip: 'Written by the role itself when it woke up',
+      roleWakeTooltip: 'Written by the role itself when it woke up ({time})',
       maxIterations: 'Maximum iterations',
       skills: 'Skills',
       tools: 'Tools',

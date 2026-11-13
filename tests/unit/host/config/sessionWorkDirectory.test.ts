@@ -96,6 +96,16 @@ describe('planSessionWorkDirectory (lazy planning)', () => {
     expect(dir).toBe(path.join(root, 'Task_1011_annual report'));
   });
 
+  it('names the folder Task_MMDD_<English auto title> in the en UI (title language follows the message)', async () => {
+    mockUiLanguage = 'en';
+    const dir = await planSessionWorkDirectory({
+      sessionTitle: 'Weekly report from meeting notes',
+      now: fixedNow,
+      env,
+    });
+    expect(path.basename(dir)).toBe('Task_1011_Weekly report from meeting notes');
+  });
+
   it('derives the language from ui.language when not passed explicitly', async () => {
     mockUiLanguage = 'en';
     const dir = await planSessionWorkDirectory({

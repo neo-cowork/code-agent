@@ -3,6 +3,7 @@ export const agentRoleLabelsZh = {
   agentRoleLabels: {
     assistant: '助手',
     roles: {
+      background: '助手',
       coder: '编程员',
       reviewer: '审阅员',
       tester: '测试员',
@@ -22,6 +23,7 @@ export const agentRoleLabelsEn: typeof agentRoleLabelsZh = {
   agentRoleLabels: {
     assistant: 'Assistant',
     roles: {
+      background: 'Background assistant',
       coder: 'Coder',
       reviewer: 'Reviewer',
       tester: 'Tester',

@@ -1,3 +1,4 @@
+import { useI18n } from '../../../hooks/useI18n';
 import React, { useCallback, useEffect, type Dispatch, type SetStateAction } from 'react';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import type { ConfigScopeSummary } from '@shared/contract/configScope';
@@ -99,6 +100,7 @@ export function useSidebarRowActions(params: UseSidebarRowActionsParams): Sideba
     renameSession,
     t,
   } = params;
+  const { language } = useI18n();
   const menu = t.sessionMenu;
 
   // 重命名 input 聚焦
@@ -183,21 +185,21 @@ export function useSidebarRowActions(params: UseSidebarRowActionsParams): Sideba
       }
       setReplayDialog({
         sessionId: session.id,
-        sessionTitle: getDisplaySessionTitle(session.title),
+        sessionTitle: getDisplaySessionTitle(session.title, language),
         replay,
       });
     } catch (error) {
       logger.error('Failed to open session replay', error);
       showToast('error', menu.openReplayFailed.replace('{message}', error instanceof Error ? error.message : String(error)));
     }
-  }, [canOpenSessionReplay, setReplayDialog, showToast, menu]);
+  }, [language, canOpenSessionReplay, setReplayDialog, showToast, menu]);
 
   const handleOpenVoiceAudit = useCallback((session: SessionWithMeta) => {
     setVoiceAuditDialog({
       sessionId: session.id,
-      sessionTitle: getDisplaySessionTitle(session.title),
+      sessionTitle: getDisplaySessionTitle(session.title, language),
     });
-  }, [setVoiceAuditDialog]);
+  }, [language, setVoiceAuditDialog]);
 
   // 会话行 hover 眼睛图标已撤（2026-07-29 侧栏项目区 redesign：hover 只留归档），
   // 评测中心回放 tab 的入口只剩评测中心自身；回放弹窗路径仍保留给证据跳转 / 右键菜单
@@ -229,8 +231,8 @@ export function useSidebarRowActions(params: UseSidebarRowActionsParams): Sideba
     e.preventDefault();
     e.stopPropagation();
     setRenamingId(session.id);
-    setRenameValue(getDisplaySessionTitle(session.title));
-  }, [setRenamingId, setRenameValue]);
+    setRenameValue(getDisplaySessionTitle(session.title, language));
+  }, [setRenamingId, setRenameValue, language]);
 
   // 提交重命名
   const handleRenameSubmit = useCallback(() => {

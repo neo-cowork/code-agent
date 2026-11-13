@@ -126,6 +126,25 @@ describe('agentTreeService', () => {
     ]);
   });
 
+  it('keeps the stable background id when merging its execution context after restart', () => {
+    const snapshot = buildAgentTreeSnapshot({
+      sessionId: 'session-1',
+      backgroundAgents: [{
+        agentId: 'subagent-bg-report', sessionId: 'session-1', status: 'failed',
+        startedAt: 10, finishedAt: 20, failureCode: AgentFailureCode.ParentGone,
+      }],
+      contextRecords: [{
+        sessionId: 'session-1', agentId: 'execution-report', messages: [], updatedAt: 15,
+        lifecycle: { backgroundAgentId: 'subagent-bg-report', status: 'running', displayName: 'Supplier review', task: 'Compare suppliers', background: true, startedAt: 10 },
+      }],
+    });
+    expect(snapshot.nodes).toHaveLength(1);
+    expect(snapshot.nodes[0]).toMatchObject({
+      id: 'execution-report', backgroundAgentId: 'subagent-bg-report',
+      status: 'failed', failureCode: AgentFailureCode.ParentGone,
+    });
+  });
+
   it('attaches worktree review metadata and ADR-029 evidence refs without inventing a new evidence shape', () => {
     const evidence: EvidenceRef = {
       id: 'evidence-diff-1',

@@ -65,6 +65,15 @@ type Finalizer = { label: string; run: () => Promise<void> };
 
 const FINALIZERS: Finalizer[] = [
   {
+    // 托管 Chrome 不会随服务进程自己退：先同步 SIGTERM（不等 Playwright close，1s 封顶放不下）。
+    // SIGKILL 场景走 browserProcessWatchdog 的 sh 看门狗。
+    label: 'browser.kill',
+    run: async () => {
+      const { killManagedChromeProcesses } = await import('../host/services/infra/browser/browserProcessWatchdog');
+      killManagedChromeProcesses();
+    },
+  },
+  {
     label: 'mcp.disconnect',
     run: async () => {
       const { getMCPClient } = await import('../host/mcp/mcpClient');

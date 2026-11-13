@@ -49,6 +49,7 @@ import {
 } from '../utils/workbenchViews';
 import { createWorkbenchActions } from './workbenchActions';
 import { SECONDARY_PAGES_CLOSED } from './secondaryPages';
+import { useScheduleSettingsDraftStore } from './scheduleSettingsDraftStore';
 import { discardCronEditorDraft } from '../components/features/cron/cronEditorDraftStash';
 import { buildContentPreviewState } from './contentPreviewState';
 import { buildPermissionDecisionState, buildPermissionDismissState, buildForegroundRunEndState, buildBackgroundRunEndState } from './permissionDecisionState';
@@ -229,7 +230,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
   // 不带返回落点的关闭（引导完成 / 邀专家 / 建角色会话等，落点是聊天）：
   // 清掉返回落点，并作废「去设置」暂存的编辑器草稿——之后的「新建任务」给全新空白草稿。
   setShowSettings: (show) => {
-    if (!show) discardCronEditorDraft();
+    if (!show) {
+      discardCronEditorDraft();
+      useScheduleSettingsDraftStore.getState().clearDraft();
+    }
     set(show
       ? { showSettings: true }
       : { ...SECONDARY_PAGES_CLOSED, showSettings: false, settingsReturnTo: null });
@@ -248,6 +252,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
   closeSettings: () => {
     if (get().settingsReturnTo === 'cronCenter') {
       set({ ...SECONDARY_PAGES_CLOSED, showSettings: false, showCronCenter: true, settingsReturnTo: null });
+      return;
+    }
+    if (get().settingsReturnTo === 'chat') {
+      set({ ...SECONDARY_PAGES_CLOSED, showSettings: false, settingsReturnTo: null });
       return;
     }
     get().setShowSettings(false);
@@ -365,6 +373,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const state = get();
     // 关掉设置且不回自动化：返回落点与暂存草稿一并作废（同 setShowSettings(false) 的放弃语义）。
     discardCronEditorDraft();
+    useScheduleSettingsDraftStore.getState().clearDraft();
     set({
       ...SECONDARY_PAGES_CLOSED,
       showCapabilityHub: true,

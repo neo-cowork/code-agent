@@ -46,6 +46,7 @@ import {
 import { resolveCronEventActionMode } from '../../shared/cronEventActionMode';
 import { truncateObserveText } from '../tools/observeModeGate';
 import { sqliteCronEventDecisionStore, type CronEventDecisionStore } from './cronEventDecisionLedger';
+import { sqliteCronMailWatermarkStore, type CronMailWatermarkStore } from './cronMailWatermarkStore';
 import {
   buildEventDecisionInstruction,
   describeEventScheduleRule,
@@ -115,6 +116,8 @@ export interface CronEventTriggerOptions {
   setTimer?: (callback: () => void, delayMs: number) => { clear(): void };
   /** 逐事件决策台账（N-TRIGGER-OBSERVE-MODE）；缺省写 cron_event_decisions 表。 */
   decisionStore?: CronEventDecisionStore;
+  /** mail 已见水位（N-FIX-MAIL-TRIGGER-RESTART-RESEED）；缺省写 cron_mail_watermarks 表。 */
+  watermarkStore?: CronMailWatermarkStore;
 }
 
 interface JobEventState {
@@ -310,6 +313,7 @@ export class CronEventTrigger {
       mailReader: this.mailReader,
       now: this.now,
       setTimer: this.setTimer,
+      watermarkStore: options.watermarkStore ?? sqliteCronMailWatermarkStore,
     });
   }
 

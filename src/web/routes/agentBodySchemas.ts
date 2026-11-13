@@ -81,6 +81,9 @@ export type AgentRunBody = z.infer<typeof AgentRunBodySchema>;
 export const AgentCancelBodySchema = z.object({
   runId: z.string().optional(),
   sessionId: z.string().optional(),
+  /** 显式「放弃」停靠 run（N-FIX-STOP-BEFORE-FIRST-RESPONSE-STUCK-RUNNING-FU1）：重复 Stop
+   *  不带此标记，对 waiting/user_stop 停靠是 no-op，不覆写成 cancelled。 */
+  abandonParked: z.boolean().optional(),
 }).passthrough();
 
 export const AgentContinueBodySchema = z.object({

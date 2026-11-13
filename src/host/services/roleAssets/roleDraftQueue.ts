@@ -146,11 +146,15 @@ export interface EnqueueRoleDraftResult {
   draft: RoleDraftMeta | null;
   /** draft 为 null 时给出原因（透传给模型，便于换名重试） */
   reason?: string;
+  /** 因「已有同名待确认草稿」被拒时给出该草稿归属的会话，供调用方指路 */
+  conflict?: { roleId: string; sessionId: string };
 }
 
 export interface PrepareRoleDraftResult extends EnqueueRoleDraftResult {
   /** 仅 draft 非空时存在；直接创建路径用它在任何队列写入前过安装安全闸。 */
   agentMd?: string;
+  /** Same-session drafts to remove only after the replacement has been written or installed. */
+  supersededDraftIds?: string[];
 }
 
 export interface RoleDraftInput {
@@ -176,7 +180,7 @@ export interface RoleDraftInput {
  *
  * 拒绝入队（draft=null）的情况：roleId 非法 / 缺 systemPrompt /
  * （新建）已存在同名持久化角色 /（改已有）目标角色不存在 / 改名 /
- * 队列里已有同名待确认草稿。
+ * 队列里另一会话已有同名待确认草稿。
  */
 export async function prepareRoleDraft(input: RoleDraftInput): Promise<PrepareRoleDraftResult> {
   const createdAt = input.timestamp ?? Date.now();
@@ -208,10 +212,16 @@ export async function prepareRoleDraft(input: RoleDraftInput): Promise<PrepareRo
     return { draft: null, reason: `已存在同名角色「${roleId}」，请换一个名字` };
   }
 
-  // 队列里已有同名待确认草稿 → 拒绝（迭代时让用户先确认/放弃旧草稿）
+  // 仅拦跨会话冲突；本会话允许继续对话修改，写入成功后替换旧草稿。
   const existing = await listRoleDrafts();
-  if (existing.some((d) => d.roleId === roleId)) {
-    return { draft: null, reason: `已有一个待确认的「${roleId}」草稿，请先确认或放弃它` };
+  const sameRole = existing.filter((d) => d.roleId === roleId);
+  const clash = sameRole.find((d) => d.sessionId !== input.sessionId);
+  if (clash) {
+    return {
+      draft: null,
+      reason: `已有一个待确认的「${roleId}」草稿，请先确认或放弃它`,
+      conflict: { roleId, sessionId: clash.sessionId },
+    };
   }
 
   const id = sanitizeDraftId(roleId, createdAt);
@@ -238,7 +248,7 @@ export async function prepareRoleDraft(input: RoleDraftInput): Promise<PrepareRo
     systemPrompt: input.systemPrompt,
   });
 
-  return { draft: meta, agentMd };
+  return { draft: meta, agentMd, supersededDraftIds: sameRole.map((d) => d.id) };
 }
 
 export async function enqueueRoleDraft(input: RoleDraftInput): Promise<EnqueueRoleDraftResult> {
@@ -253,6 +263,12 @@ export async function enqueueRoleDraft(input: RoleDraftInput): Promise<EnqueueRo
     JSON.stringify(prepared.draft, null, 2),
     'utf-8',
   );
+
+  for (const id of prepared.supersededDraftIds ?? []) {
+    if (id !== prepared.draft.id) {
+      await fs.rm(path.join(getRoleDraftsDir(), path.basename(id)), { recursive: true, force: true });
+    }
+  }
 
   logger.info('Role draft enqueued (pending user confirmation)', {
     id: prepared.draft.id,

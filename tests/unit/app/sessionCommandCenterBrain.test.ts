@@ -34,6 +34,7 @@ import {
   getSessionCommandCenterBrainContextForPrompt,
   getTextForegroundToolNamesForPrompt,
   withSessionCommandCenterBrain,
+  resolveForegroundBrainTurnBudget,
 } from '../../../src/host/app/sessionCommandCenterBrain';
 // 常量已不导出（防止装配路绕过单一真源直接拼常量），这里从共用函数取基块：
 // 空白轮次不命中任何回合级规则，返回值唯一成员就是 brain 基块。
@@ -173,6 +174,38 @@ describe('ADR-059 声明式文字前台边界', () => {
 });
 
 describe('withSessionCommandCenterBrain', () => {
+  it.each([false, true])('no-file-noun budget uses only the previous stop marker: %s', stopped => {
+    const info = vi.fn();
+    const cap = stopped ? 30 : 8;
+    expect(resolveForegroundBrainTurnBudget('按这个大纲出三张样张', stopped, undefined, { info })).toBe(cap);
+    expect(info).toHaveBeenCalledExactlyOnceWith(
+      `Foreground brain budget rule=${stopped ? 'continuation' : 'default'} cap=${cap} maxIterations=${cap}`,
+    );
+  });
+
+  it.each([
+    ['做 PPTX', false, 30], ['做 PPT', false, 30], ['做 Excel 表格', false, 30],
+    ['写 Word 文档', false, 30], ['导出 PDF', false, 30], ['制作 HTML 网页', false, 30],
+    ['今天天气', false, 8], ['帮我查一下', false, 8], ['继续', false, 8],
+    ['继续', true, 30], ['use the second one', true, 30],
+  ])('foreground cap for %s (previous stop=%s) is %i', (prompt, stopped, cap) => {
+    expect(withSessionCommandCenterBrain(undefined, prompt, undefined, stopped).maxIterations).toBe(cap);
+  });
+
+  it.each([false, true])('preserves a smaller explicit cap (previous stop=%s)', stopped => {
+    expect(withSessionCommandCenterBrain({ maxIterations: 3 }, '生成 PPTX', undefined, stopped).maxIterations).toBe(3);
+  });
+
+  it('keeps the existing number guard for untyped run options', () => {
+    expect(withSessionCommandCenterBrain({ maxIterations: 'invalid' }, '制作 PPTX').maxIterations).toBe(30);
+  });
+
+  it('keeps the deliverable cap within the ordinary execution budget', async () => {
+    const { getBuiltinConfig } = await import('../../../src/host/services/cloud/builtinConfig');
+    expect(withSessionCommandCenterBrain(undefined, '制作 PPTX').maxIterations)
+      .toBeLessThanOrEqual(getBuiltinConfig().featureFlags.maxIterations);
+  });
+
   it('sets the brain allowlist and appends the brain context (which carries the design notice)', () => {
     const options = withSessionCommandCenterBrain(undefined);
 
@@ -275,6 +308,19 @@ describe('晨报回复「存草稿 N」才打开 mail_draft', () => {
     // 与桌面装配路的产物同形：withSessionCommandCenterBrain 的尾部即这份清单
     const options = withSessionCommandCenterBrain(undefined, '存草稿 2');
     expect(options.turnSystemContext?.slice(-2)).toEqual(blocks);
+  });
+
+  // FU1：英文晨报的标记链。en 档晨间分诊的草稿块头是 "Draft N (not sent)"，
+  // 规则块必须把中英两种块头与两种任务名都写明，英文回复才能在英文晨报里找到那封草稿。
+  it('规则块同时点名中英两种草稿块头与两种任务名；英文回复 save draft N 也命中', () => {
+    const blocks = getSessionCommandCenterBrainContextForPrompt('save draft 1');
+    expect(blocks).toHaveLength(2);
+    const block = blocks[1] ?? '';
+    expect(block).toContain('<morning_brief_save_draft>');
+    expect(block).toContain('「草稿 N（未发送）」');
+    expect(block).toContain('"Draft N (not sent)"');
+    expect(block).toContain('「晨间分诊」');
+    expect(block).toContain('"Morning triage"');
   });
 });
 
@@ -537,5 +583,42 @@ describe.skipIf(!darwinForConnectors)('getTextForegroundToolNamesForPrompt — �
     expect(block).toContain('不派 delegate_task');
     expect(block).toContain('确认卡片');
     expect(block).toContain('只在工具返回成功后才说已发送或已创建');
+  });
+});
+
+// N-FIX-ATTACH-IMAGE-ANALYZE-GLOB-WASTE-FU1：看不见图的模型带图片附件时，前台白名单补 image_analyze。
+describe('带图片附件的前台文字轮', () => {
+  const image = {
+    id: 'a1', type: 'image' as const, category: 'image' as const, name: 'receipt.png',
+    size: 10, mimeType: 'image/png', path: '/tmp/receipt.png',
+  };
+  const textOnly = { provider: 'zhipu', model: 'glm-5' };
+  const vision = { provider: 'claude', model: 'claude-sonnet-4-6' };
+  const prompt = '这张报销单总额是多少？';
+
+  it('文本模型 + 图片：末尾追加 image_analyze，其余与无图轮逐字相同', () => {
+    const base = getTextForegroundToolNamesForPrompt(prompt);
+    const names = getTextForegroundToolNamesForPrompt(prompt, undefined, { attachments: [image], model: textOnly });
+    expect(names).toEqual([...base, 'image_analyze']);
+  });
+
+  it('无图片 / 视觉模型 / 无路径图片 / 非图片附件：与今天逐字相同', () => {
+    const base = getTextForegroundToolNamesForPrompt(prompt);
+    expect(getTextForegroundToolNamesForPrompt(prompt, undefined, { attachments: [], model: textOnly })).toEqual(base);
+    expect(getTextForegroundToolNamesForPrompt(prompt, undefined, { attachments: [image], model: vision })).toEqual(base);
+    expect(getTextForegroundToolNamesForPrompt(prompt, undefined, { attachments: [{ ...image, path: undefined }], model: textOnly })).toEqual(base);
+    expect(getTextForegroundToolNamesForPrompt(prompt, undefined, {
+      attachments: [{ ...image, type: 'file', category: 'pdf' as never }], model: textOnly,
+    })).toEqual(base);
+  });
+
+  it('桌面入口 withSessionCommandCenterBrain 与 web 同判；无图轮不变', () => {
+    const withImage = withSessionCommandCenterBrain(undefined, prompt, { attachments: [image], model: textOnly });
+    expect(withImage.allowedToolNames).toContain('image_analyze');
+    const noImage = withSessionCommandCenterBrain(undefined, prompt);
+    expect(noImage.allowedToolNames).toEqual(getTextForegroundToolNamesForPrompt(prompt));
+    expect(noImage.allowedToolNames).not.toContain('image_analyze');
+    expect(withSessionCommandCenterBrain(undefined, prompt, { attachments: [image], model: vision }).allowedToolNames)
+      .toEqual(noImage.allowedToolNames);
   });
 });

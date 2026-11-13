@@ -1,3 +1,4 @@
+import type { Message } from '@shared/contract';
 // ============================================================================
 // Overview Run header 视图模型（T1 主路径收口）
 // ----------------------------------------------------------------------------
@@ -57,6 +58,8 @@ export interface OverviewRunHeaderModel {
 
 export function buildOverviewRunHeaderModel(args: {
   run: RunUiState;
+  primaryFailed?: boolean;
+  backgroundChildren?: number;
   sessionTitle?: string | null;
   now: number;
   /** TODO 进度（summarizeTodoProgress）；total=0 视为无 TODO，不出步骤段 */
@@ -66,8 +69,11 @@ export function buildOverviewRunHeaderModel(args: {
   // 拿状态判存在会给从没跑过的会话摆一条「已完成」表头。
   if (!args.run.identity.turnId) return null;
 
-  const live = isLiveRunStatus(args.run.status);
-  const tone = deriveRunOverviewTone(args.run.status);
+  const status = (args.backgroundChildren ?? 0) > 0 ? 'running'
+    : args.primaryFailed && args.run.status !== 'cancelled' ? 'blocked'
+      : args.run.status;
+  const live = isLiveRunStatus(status);
+  const tone = deriveRunOverviewTone(status);
   const title = args.run.title?.trim() || args.sessionTitle?.trim() || args.run.phase;
   const total = args.todoProgress?.total ?? 0;
   const completed = args.todoProgress?.completed ?? 0;
@@ -75,10 +81,10 @@ export function buildOverviewRunHeaderModel(args: {
   return {
     title,
     // 完成/异常态不摆当前动作句（异常态由 outcome 人话结局顶替）
-    phase: tone === 'live' || tone === 'waiting'
+    phase: !args.primaryFailed && (tone === 'live' || tone === 'waiting')
       ? (args.run.phase && args.run.phase !== title ? args.run.phase : null)
       : null,
-    status: args.run.status,
+    status,
     tone,
     steps: total > 0
       ? { current: tone === 'done' ? total : Math.min(completed + 1, total), total }
@@ -109,4 +115,15 @@ export function formatElapsedClock(ms: number): string {
   return hours > 0
     ? `${hours}:${mm}:${String(seconds).padStart(2, '0')}`
     : `${mm}:${String(seconds).padStart(2, '0')}`;
+}
+
+/** Hidden completion wakes do not replace the outcome of the user's failed request. */
+export function hasFailedCurrentRequest(messages: readonly Message[] = []): boolean {
+  let failed = false;
+  for (const message of messages) {
+    if (message.isMeta || message.metadata?.automation || (message.visibility && message.visibility !== 'active')) continue;
+    if (message.role === 'user') failed = false;
+    else if (message.role === 'assistant' && message.metadata?.agentError) failed = true;
+  }
+  return failed;
 }

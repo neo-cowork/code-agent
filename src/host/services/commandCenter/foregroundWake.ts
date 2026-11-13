@@ -4,6 +4,8 @@ import {
   BACKGROUND_WAKE_DEFER_NOTICE_MS,
   BACKGROUND_WAKE_DEFER_PROGRESS,
   BACKGROUND_WAKE_DEFER_TASK_TITLE_MAX_CHARS,
+  BACKGROUND_WAKE_OWNER_RETRY_INTERVAL_MS,
+  BACKGROUND_WAKE_OWNER_RETRY_MAX_ATTEMPTS,
   formatBackgroundWakeDeferredNote,
   MAX_CONSECUTIVE_WAKES,
   SESSION_COMMAND_CENTER_WAKE_MAX_ITERATIONS,
@@ -16,6 +18,7 @@ import { truncateObserveText } from '../../tools/observeModeGate';
 import { withSessionCommandCenterBrain } from '../../app/sessionCommandCenterBrain';
 import { getDatabase } from '../core/databaseService';
 import { QueuedInputRepository } from '../core/repositories/QueuedInputRepository';
+import { getAuthService } from '../auth/authService';
 import { getSessionManager, type SessionWithMessages } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
 import type { SessionCommandTask } from './sessionCommandCenter';
@@ -68,7 +71,7 @@ export interface ForegroundWakeDependencies {
   recordWakeFailureNote(
     sessionId: string,
     content: string,
-    detail: { taskId: string; reason: 'owner_missing' | 'wake_failed' },
+    detail: NonNullable<NonNullable<Message['metadata']>['backgroundWakeFailed']>,
   ): Promise<void>;
   /** 唤醒推迟超过上限时给用户的一句不打断说明。 */
   recordWakeDeferredNote(
@@ -79,6 +82,10 @@ export interface ForegroundWakeDependencies {
   /** 可注入的计时器，避免单测真等待。 */
   setTimeout(callback: () => void, delayMs: number): unknown;
   clearTimeout(handle: unknown): void;
+  /** 登录态恢复期间会话按 owner 过滤读不到：当前是否已有登录用户（仅用于日志区分原因）。 */
+  isOwnerSignedIn?(): boolean;
+  /** 订阅登录态变化；返回取消订阅函数。 */
+  subscribeAuthChange?(callback: (signedIn: boolean) => void): () => void;
   logger: WakeLogger;
 }
 
@@ -95,6 +102,9 @@ interface PendingWake {
   noticeTimer: unknown | null;
   noticeEmitted: boolean;
   flushing: boolean;
+  /** 会话对当前 owner 不可读（登录恢复中）已尝试加载的次数；0 = 不在等 owner */
+  ownerLoadAttempts: number;
+  ownerRetryTimer: unknown | null;
 }
 
 const logger = createLogger('ForegroundWake');
@@ -119,13 +129,13 @@ function hasQueuedUserInput(sessionId: string): boolean {
 }
 
 export function formatBackgroundWakeFailureNote(shortName: string): string {
-  return `后台任务「${shortName}」已结束，结果见上方的任务结果；自动汇报这一步没能完成，需要的话可以直接问我。`;
+  return `后台任务「${shortName}」已结束；自动汇报这一步没能完成，恢复原账号登录后可查看任务结果，也可以直接问我。`;
 }
 
 export async function recordBackgroundWakeFailureNote(
   sessionId: string,
   content: string,
-  detail: { taskId: string; reason: 'owner_missing' | 'wake_failed' },
+  detail: NonNullable<NonNullable<Message['metadata']>['backgroundWakeFailed']>,
 ): Promise<void> {
   // 必须带登记键：渲染端按 systemEventRegistry 放行，无 metadata 的 system 消息一律被投影层跳过
   const message: Message = {
@@ -159,6 +169,8 @@ const defaultDependencies: ForegroundWakeDependencies = {
   },
   setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
   clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+  isOwnerSignedIn: () => getAuthService().getCurrentUser() !== null,
+  subscribeAuthChange: (callback) => getAuthService().addAuthChangeCallback((user) => callback(user !== null)),
   logger,
 };
 
@@ -187,10 +199,29 @@ export function createForegroundWake(
   const pendingBySession = new Map<string, PendingWake>();
   let listenersInstalled = false;
 
+  let unsubscribeAuth: (() => void) | null = null;
+
+  const clearOwnerRetryTimer = (pending: PendingWake): void => {
+    if (pending.ownerRetryTimer === null) return;
+    dependencies.clearTimeout(pending.ownerRetryTimer);
+    pending.ownerRetryTimer = null;
+  };
+
   const clearPendingTimer = (pending: PendingWake): void => {
+    clearOwnerRetryTimer(pending);
     if (pending.noticeTimer === null) return;
     dependencies.clearTimeout(pending.noticeTimer);
     pending.noticeTimer = null;
+  };
+
+  // 没有任何唤醒还在等 owner 时取消登录态订阅，避免泄漏
+  const syncAuthSubscription = (): void => {
+    if (!unsubscribeAuth) return;
+    for (const candidate of pendingBySession.values()) {
+      if (candidate.ownerLoadAttempts > 0) return;
+    }
+    unsubscribeAuth();
+    unsubscribeAuth = null;
   };
 
   const dropPending = (pending: PendingWake): void => {
@@ -198,7 +229,9 @@ export function createForegroundWake(
       pendingBySession.delete(pending.task.sessionId);
     }
     pending.flushing = false;
+    pending.ownerLoadAttempts = 0;
     clearPendingTimer(pending);
+    syncAuthSubscription();
   };
 
   const emitDeferredProgress = (
@@ -269,6 +302,8 @@ export function createForegroundWake(
         noticeTimer: null,
         noticeEmitted: false,
         flushing: false,
+        ownerLoadAttempts: 0,
+        ownerRetryTimer: null,
       };
       pending.task = task;
       pending.status = status;
@@ -311,12 +346,73 @@ export function createForegroundWake(
     });
   };
 
+  // 会话对当前 owner 读不到（登录恢复中 owner 为空）：留在 pending 里，等登录态变化或定时重试。
+  // 重投仍走按 owner 过滤的 loadSession，换了别的账号登录读不到就不会投进去。
+  const deferUntilSessionAccessible = async (
+    manager: WakeTaskManager,
+    task: SessionCommandTask,
+    status: DeferredWakeStatus,
+    pending: PendingWake | undefined,
+  ): Promise<boolean> => {
+    const sessionId = task.sessionId;
+    const attempts = (pending?.task.id === task.id ? pending.ownerLoadAttempts : 0) + 1;
+    const ownerSignedIn = dependencies.isOwnerSignedIn?.() ?? false;
+    if (attempts >= BACKGROUND_WAKE_OWNER_RETRY_MAX_ATTEMPTS) {
+      dependencies.logger.warn('Foreground wake dropped: session not accessible for current owner after retries', {
+        reason: 'session_not_accessible_retries_exhausted',
+        sessionId,
+        taskId: task.id,
+        ownerSignedIn,
+        attempts,
+      });
+      await dependencies.recordWakeFailureNote(
+        sessionId,
+        formatBackgroundWakeFailureNote(task.shortName),
+        { taskId: task.id, reason: 'wake_failed' },
+      ).catch((noteError) => {
+        dependencies.logger.warn('Foreground wake failure note not recorded', {
+          reason: 'session_not_accessible_retries_exhausted',
+          sessionId,
+          taskId: task.id,
+          message: noteError instanceof Error ? noteError.message : String(noteError),
+        });
+      });
+      return false;
+    }
+    dependencies.logger.warn('Foreground wake waiting: session not accessible for current owner', {
+      reason: 'session_not_accessible_for_current_owner',
+      sessionId,
+      taskId: task.id,
+      ownerSignedIn,
+      attempts,
+    });
+    defer(manager, task, status, 'session not accessible for current owner', { attempts }, pending);
+    const stored = pendingBySession.get(sessionId);
+    if (stored?.task.id !== task.id) return false;
+    stored.ownerLoadAttempts = attempts;
+    clearOwnerRetryTimer(stored);
+    stored.ownerRetryTimer = dependencies.setTimeout(() => {
+      stored.ownerRetryTimer = null;
+      if (pendingBySession.get(sessionId) === stored) flushPending(sessionId);
+    }, BACKGROUND_WAKE_OWNER_RETRY_INTERVAL_MS);
+    if (!unsubscribeAuth && dependencies.subscribeAuthChange) {
+      unsubscribeAuth = dependencies.subscribeAuthChange((signedIn) => {
+        if (!signedIn) return;
+        for (const [waitingSessionId, waiting] of [...pendingBySession]) {
+          if (waiting.ownerLoadAttempts > 0) flushPending(waitingSessionId);
+        }
+      });
+    }
+    return true;
+  };
+
   const flushPending = (sessionId: string): void => {
     const pending = pendingBySession.get(sessionId);
     if (!pending || pending.flushing || inFlightSessions.has(sessionId)) return;
     pending.flushing = true;
     void wake(pending.task, pending.status, pending).catch((error) => {
       dependencies.logger.warn('Foreground wake failed', {
+        reason: 'turn_error',
         sessionId,
         taskId: pending.task.id,
         message: error instanceof Error ? error.message : String(error),
@@ -348,13 +444,23 @@ export function createForegroundWake(
     let turnRan = false;
     try {
       const session = await dependencies.loadSession(sessionId);
-      if (!session || (session.type ?? 'chat') !== 'chat') {
+      if (!session) {
+        // 已重新入队则 pending 的所有权交给 defer；耗尽则留给 finally 清掉
+        if (await deferUntilSessionAccessible(manager, task, status, pending)) pending = undefined;
+        return;
+      }
+      if ((session.type ?? 'chat') !== 'chat') {
         dependencies.logger.info('Foreground wake skipped: not a text chat session', {
           sessionId,
           taskId: task.id,
-          sessionType: session?.type,
+          sessionType: session.type,
         });
         return;
+      }
+      if (pending) {
+        pending.ownerLoadAttempts = 0;
+        clearOwnerRetryTimer(pending);
+        syncAuthSubscription();
       }
       if (dependencies.isVoiceSession(sessionId)) {
         dependencies.logger.info('Foreground wake skipped: voice session', { sessionId, taskId: task.id });
@@ -434,7 +540,7 @@ export function createForegroundWake(
           WAKE_NOOP_TOOL_NAME,
         ])),
         terminalErrorSink: (data: unknown) => {
-          if (capturedError === null) {
+          if (capturedError === null || capturedError === 'Max iterations reached') {
             capturedError = getAgentErrorMessage(data) ?? 'wake turn failed';
           }
         },
@@ -452,23 +558,42 @@ export function createForegroundWake(
       });
       turnRan = true;
       let thrownError: string | null = null;
+      let reportedToUser = false;
+      const stopObserving = manager.observeAgentEvents((eventSessionId, event, taskId) => {
+        if (eventSessionId !== sessionId || taskId || event.type !== 'message') return;
+        const message = event.data as Message;
+        if (message.role === 'assistant' && !message.isMeta
+          && typeof message.content === 'string' && message.content.trim()
+          && !message.toolCalls?.length) reportedToUser = true;
+      });
       try {
         await orchestrator.sendMessage(wakePrompt(task, status), undefined, options);
       } catch (error) {
         thrownError = error instanceof Error ? error.message : String(error);
+      } finally {
+        stopObserving();
       }
-      const failureMessage = capturedError ?? thrownError;
+      const failureMessage = capturedError === 'Max iterations reached' && thrownError
+        ? thrownError : capturedError ?? thrownError;
+      if (reportedToUser && failureMessage === 'Max iterations reached') {
+        dependencies.logger.info('Foreground wake reported to user; ignoring max-iterations marker', {
+          sessionId, taskId: task.id,
+        });
+        return;
+      }
       if (failureMessage !== null) {
         // 失败原因分开记：owner lease 缺失是 run 注册问题，其余是唤醒轮自身失败
         const ownerMissing = failureMessage.includes('no live owner lease');
+        const reason = ownerMissing ? 'owner_missing'
+          : failureMessage === 'Max iterations reached' ? 'max_iterations' : 'turn_error';
         dependencies.logger.warn(
           `Foreground wake failed: ${ownerMissing ? 'owner missing' : 'wake turn failed'}`,
-          { sessionId, taskId: task.id, message: failureMessage },
+          { sessionId, taskId: task.id, reason, message: failureMessage },
         );
         await dependencies.recordWakeFailureNote(
           sessionId,
           formatBackgroundWakeFailureNote(task.shortName),
-          { taskId: task.id, reason: ownerMissing ? 'owner_missing' : 'wake_failed' },
+          { taskId: task.id, reason },
         ).catch((noteError) => {
           dependencies.logger.warn('Foreground wake failure note not recorded', {
             sessionId,

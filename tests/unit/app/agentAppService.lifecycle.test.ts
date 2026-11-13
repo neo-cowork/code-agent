@@ -85,6 +85,7 @@ describe('AgentAppService lifecycle routing', () => {
     setWorkingDirectory: ReturnType<typeof vi.fn>;
   };
 	  let sessionManager: {
+      getMessages: ReturnType<typeof vi.fn>;
 	    getSession: ReturnType<typeof vi.fn>;
 	    listSessions: ReturnType<typeof vi.fn>;
 	    createSession: ReturnType<typeof vi.fn>;
@@ -130,6 +131,7 @@ describe('AgentAppService lifecycle routing', () => {
       setWorkingDirectory: vi.fn(),
     };
 	    sessionManager = {
+      getMessages: vi.fn().mockResolvedValue([]),
 	      getSession: vi.fn().mockResolvedValue({ id: 'session-1', workingDirectory: '/old/project' }),
 	      listSessions: vi.fn().mockResolvedValue([]),
 	      createSession: vi.fn(async (options) => ({
@@ -719,6 +721,30 @@ describe('AgentAppService lifecycle routing', () => {
 
     expect(orchestrator.setWorkingDirectory).toHaveBeenCalledWith('/old/project');
     expect(sessionManager.updateSession).not.toHaveBeenCalled();
+  });
+
+  // N-FIX-ATTACH-IMAGE-ANALYZE-GLOB-WASTE-FU1 返修：桌面 envelope 不带 modelSpec，
+  // 模型必须从运行循环同款解析（会话 override）拿到，否则视觉模型也会被加 image_analyze。
+  describe.each([
+    ['text-only', { provider: 'zhipu', model: 'glm-5' }, true],
+    ['vision-capable', { provider: 'claude', model: 'claude-sonnet-4-6' }, false],
+  ])('desktop image turn on %s session model', (_label, override, expectTool) => {
+    const image = { id: 'a1', type: 'image', category: 'image', name: 'r.png', size: 1, mimeType: 'image/png', path: '/tmp/r.png' };
+
+    it('image_analyze 取决于会话实际模型（envelope 无 modelSpec）', async () => {
+      const { getModelSessionState } = await import('../../../src/host/session/modelSessionState');
+      getModelSessionState().setOverride('session-1', override as never);
+      try {
+        const service = createService(taskManager);
+        await service.sendMessage({ sessionId: 'session-1', content: '这张报销单总额是多少？', attachments: [image] } as any);
+        const names = taskManager.startTask.mock.calls.at(-1)?.[3]?.allowedToolNames as string[];
+        expect(names.includes('image_analyze')).toBe(expectTool);
+        await service.sendMessage({ sessionId: 'session-1', content: '谢谢' } as any);
+        expect(taskManager.startTask.mock.calls.at(-1)?.[3]?.allowedToolNames).not.toContain('image_analyze');
+      } finally {
+        getModelSessionState().clearOverride?.('session-1');
+      }
+    });
   });
 
   it('keeps an isolated Fork on its verified child root when the renderer sends a stale source cwd', async () => {

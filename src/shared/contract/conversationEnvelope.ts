@@ -43,6 +43,8 @@ export interface BrowserSessionIntentSnapshot {
 
 export interface WorkbenchToolScope {
   allowedSkillIds?: string[];
+  /** Adds visibility for selected personal skills in unattended runs without narrowing tools. */
+  optInPersonalSkillIds?: string[];
   allowedConnectorIds?: string[];
   allowedMcpServerIds?: string[];
 }
