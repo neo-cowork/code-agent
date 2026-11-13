@@ -52,14 +52,14 @@ import { getBackgroundSubagentRegistry } from '../../../../src/host/agent/backgr
 
 // Real foreground options -> AgentLoop composition root -> real runtime and persistence.
 // Only startup integrations, provider responses and post-run integrations are isolated.
-function foreground(maxIterations = 8, foregroundToolFace = true, prompt = 'read the handoff notes') {
+function foreground(maxIterations = 8, foregroundToolFace = true, prompt = 'read the handoff notes', runId?: string) {
   const persisted: Message[] = [];
   const loop = new AgentLoop({
     ...withSessionCommandCenterBrain({ maxIterations }, prompt),
     foregroundToolFace,
     modelConfig: { provider: 'openai', model: 'test-model', apiKey: 'test' },
     toolExecutor: {} as never,
-    messages: [], onEvent: vi.fn(), sessionId: 'step-limit-session',
+    messages: [], onEvent: vi.fn(), sessionId: 'step-limit-session', runId,
     workingDirectory: '/tmp', memoryMode: 'off', enableHooks: false, persistLongTermMemory: false,
     persistMessage: async (message) => { persisted.push(structuredClone(message)); },
   });
@@ -77,8 +77,7 @@ afterEach(() => vi.restoreAllMocks());
 
 describe('foreground step-limit continuation', () => {
   it('emits a failure instead of a pause when this run still owns a background child', async () => {
-    const { ctx, assembly } = foreground();
-    ctx.runId = 'parent-run';
+    const { ctx, assembly } = foreground(8, true, 'read the handoff notes', 'parent-run');
     ctx.stats.beginRun();
     await assembly.addAndPersistMessage({ id: 'handoff', role: 'assistant', content: 'Work remains.', timestamp: Date.now(), metadata: { stoppedByStepLimit: true } });
     vi.spyOn(getBackgroundSubagentRegistry(), 'list').mockReturnValue([
@@ -91,8 +90,7 @@ describe('foreground step-limit continuation', () => {
 
     const error = vi.mocked(ctx.onEvent).mock.calls.map(([event]) => event).find((event) => event.type === 'error');
     expect(error?.data).toEqual({ message: 'Max iterations reached', code: RUN_ERROR_CODE_MAX_ITERATIONS });
-    ctx.runId = 'other-run';
-    expect(buildMaxStepsErrorData(ctx)).toEqual({ message: 'Max iterations reached', code: RUN_ERROR_CODE_MAX_ITERATIONS, details: { stoppedByStepLimit: true } });
+    expect(buildMaxStepsErrorData({ ...ctx, runId: 'other-run' })).toEqual({ message: 'Max iterations reached', code: RUN_ERROR_CODE_MAX_ITERATIONS, details: { stoppedByStepLimit: true } });
   });
   it('warns at the larger foreground deliverable cap minus two, not at six', () => {
     const { ctx } = foreground(50, true, '制作 PPTX');
