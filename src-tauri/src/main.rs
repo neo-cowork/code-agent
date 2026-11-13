@@ -2556,11 +2556,7 @@ fn show_quit_confirm_dialog(
             };
             let plan = quit_guard::quit_exit_plan(
                 // 按钮组没提供「后台继续」时，该标签即使到达也按取消处理（防御）
-                resident_host::dialog_answer_action_gated(
-                    custom_label.as_deref(),
-                    button_set,
-                    language,
-                ),
+                button_set.dialog_answer_action(custom_label.as_deref()),
                 // Windows：stdin EOF 是停机指令，退壳会关掉写端。unix 不是。
                 cfg!(not(unix)),
             );
