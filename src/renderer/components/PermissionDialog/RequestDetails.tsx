@@ -63,11 +63,16 @@ export function RequestDetails({ request }: RequestDetailsProps) {
   if (browser) {
     const copy = language === 'en' ? browserSessionGrantEn : browserSessionGrantZh;
     const site = browser.target?.slice(browser.target.indexOf('@') + 1);
-    return <p className="break-all text-xs leading-5 text-zinc-300" data-testid="browser-session-reason">
+    return <>
+      {!copy.actions[details.action ?? ''] && <p className="text-xs leading-5 text-zinc-400" data-testid="permission-consequence">
+        {permissionConsequence(request, t)}
+      </p>}
+      <p className="break-all text-xs leading-5 text-zinc-300" data-testid="browser-session-reason">
       {!site ? copy.unresolved : browser.previousOrigins.length > 0
         ? copy.crossSite.replace('{previous}', browser.previousOrigins.join(', ')).replace('{site}', site)
         : null}
-    </p>;
+      </p>
+    </>;
   }
   // 兼容旧版 API：path -> filePath
   const filePath = details.filePath || details.path;

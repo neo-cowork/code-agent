@@ -93,7 +93,7 @@ function requestForTool(tool: string, schema?: GateSchema): PermissionRequest {
     // Real run (2026-11-10): Browser click_text on a form submit button; confirmationGate's default
     // branch adds the generic `执行工具 Browser` preview.
     const params = { action: 'click_text', text: 'Finish' };
-    details = { ...params, preview: new ConfirmationGate().buildPreview('Browser', params) };
+    details = { ...params, preview: new ConfirmationGate().buildPreview('Browser', params), browserSessionGrant: { target: null, previousOrigins: [] } };
   } else if (tool === 'set_role_proactivity') {
     // setRoleProactivity.ts builds details.preview/changes and reason from the same summary text.
     details = { roleId: 'weekly-helper', before: { level: 'daily' }, after: { level: 'realtime' }, preview: { type: 'generic', summary: '提醒频率：每天一次 -> 实时' }, changes: '提醒频率：每天一次 -> 实时' };
