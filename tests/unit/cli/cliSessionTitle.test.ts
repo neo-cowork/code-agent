@@ -17,12 +17,19 @@ process.env.CODE_AGENT_DATA_DIR = tempDir;
 const quick = vi.hoisted(() => ({
   available: false,
   hold: false,
+  reply: '',
+  prompts: [] as string[],
   pending: null as null | ((value: { success: boolean; content: string }) => void),
 }));
 
 vi.mock('../../../src/host/model/quickModel', () => ({
   isQuickModelAvailable: () => quick.available,
-  quickTask: () => new Promise((resolve) => {
+  quickTask: (prompt: string) => new Promise((resolve) => {
+    quick.prompts.push(prompt);
+    if (quick.reply) {
+      resolve({ success: true, content: quick.reply });
+      return;
+    }
     if (quick.hold) {
       quick.pending = resolve as (value: { success: boolean; content: string }) => void;
       return;
@@ -105,6 +112,8 @@ describe('CLI session titles', () => {
   beforeEach(() => {
     quick.available = false;
     quick.hold = false;
+    quick.reply = '';
+    quick.prompts = [];
     quick.pending = null;
     manager = new CLISessionManager();
   });
@@ -119,6 +128,32 @@ describe('CLI session titles', () => {
     await settle();
 
     expect(readTitle(sessionId)).toBe('fix the login redirect');
+  });
+
+  it('title prompt follows the language of the first message, not a hardcoded Chinese-first rule', async () => {
+    quick.available = true;
+    quick.reply = 'Weekly report from meeting notes';
+    const en = 'cli_session_lang_en';
+    await persistAgentLoopMessageToSession(manager, userMessage('msg-lang-en', 'Summarize the three attached meeting notes into a weekly report'), {
+      sessionId: en,
+      modelConfig,
+      workingDirectory: tempDir,
+    });
+    await settle();
+    expect(quick.prompts[0]).toContain('Write the title in English');
+    expect(quick.prompts[0]).not.toContain('中文优先');
+    expect(readTitle(en)).toBe('Weekly report from meeting notes');
+
+    quick.reply = '会议纪要周报';
+    const zh = 'cli_session_lang_zh';
+    await persistAgentLoopMessageToSession(manager, userMessage('msg-lang-zh', '把三份会议纪要整理成一份周报'), {
+      sessionId: zh,
+      modelConfig,
+      workingDirectory: tempDir,
+    });
+    await settle();
+    expect(quick.prompts[1]).toContain('Write the title in Chinese');
+    expect(readTitle(zh)).toBe('会议纪要周报');
   });
 
   it('strips appshot blocks before the fallback title', async () => {

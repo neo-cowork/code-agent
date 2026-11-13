@@ -71,6 +71,7 @@ interface ApplicationNativeRecoveryDependencies {
     workingDirectory: string;
   }): Promise<ToolExecutionResult>;
   persistToolMessage(sessionId: string, message: Message): Promise<void>;
+  toolExecutions(sessionId: string): ReturnType<ReturnType<typeof getDatabase>['getToolExecutionsBySession']>;
   storedToolReplaySafety(sessionId: string, executionId?: string): ToolReplaySafety | null;
   acknowledgeToolRecovery(sessionId: string, executionId: string | undefined, toolName: string): void;
   recordModelRecoveryUsage(input: TurnCostEstimateInput): void;
@@ -257,6 +258,7 @@ export function createApplicationNativeRecoveryPorts(
     persistToolMessage: overrides.persistToolMessage ?? (async (sessionId, message) => {
       getDatabase().addMessage(sessionId, message, { provenanceKind: 'crash-recovery' });
     }),
+    toolExecutions: overrides.toolExecutions ?? ((sessionId) => getDatabase().getToolExecutionsBySession(sessionId, 500)),
     storedToolReplaySafety: overrides.storedToolReplaySafety ?? ((sessionId, executionId) => {
       if (!executionId) return null;
       return getDatabase().getToolExecutionsBySession(sessionId, 500)
@@ -434,7 +436,7 @@ export function createApplicationNativeRecoveryPorts(
     },
     tool: {
       async queryResult({ plan, providerOperationId }) {
-        const completed = getDatabase().getToolExecutionsBySession(plan.envelope.sessionId, 500)
+        const completed = dependencies().toolExecutions(plan.envelope.sessionId)
           .find((event) => event.executionId === providerOperationId
             && event.phase === 'complete'
             && event.status === 'success');

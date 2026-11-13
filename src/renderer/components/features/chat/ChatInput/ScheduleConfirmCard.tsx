@@ -3,6 +3,8 @@ import { Check, Clock3, Pencil, X } from 'lucide-react';
 import { Button } from '../../../primitives/Button';
 import { Input } from '../../../primitives/Input';
 import { Select } from '../../../primitives/Select';
+import { TimeInput24 } from '../../../primitives/TimeInput24';
+import { DateTimeInput24 } from '../../../primitives/DateTimeInput24';
 import { useI18n } from '../../../../hooks/useI18n';
 import { CRON_URGENCY_CRITERIA } from '@shared/constants';
 import { validateEventScheduleConstraints } from '@shared/cronEventValidation';
@@ -14,6 +16,10 @@ import { CronEventScheduleFields } from '../../cron/CronEventScheduleFields';
 import { CronMailEventFields } from '../../cron/CronMailEventFields';
 import type { CreateCronJobInput } from '../../../../services/cronClient';
 import type { PendingScheduleDraft } from './useScheduleDraft';
+import { CRON_CLOUD_NOT_CONFIGURED } from '@shared/constants/cronErrors';
+import { useScheduleSettingsDraftStore } from '../../../../stores/scheduleSettingsDraftStore';
+import { openCloudCronSettings } from '../../../../utils/cronCloudSettingsNavigation';
+import { CronCloudCreateNotice } from '../../cron/CronCloudCreateNotice';
 import { buildScheduleConfirmRows } from './scheduleConfirm';
 
 interface ScheduleConfirmCardProps {
@@ -336,6 +342,21 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
           </div>
         ))}
 
+        {onDraftChange && draft.input.schedule.type !== 'event' && <label className="block space-y-1 text-xs">
+          <span>{cc.executionLocationTitle}</span>
+          <Select
+            value={draft.input.runsOn ?? 'local'}
+            options={[{ value: 'local', label: cc.locationLocal }, { value: 'cloud', label: cc.locationCloud }]}
+            onChange={(event) => onDraftChange({ ...draft, creationErrorCode: undefined, input: { ...draft.input, runsOn: event.target.value === 'cloud' ? 'cloud' : 'local' } })}
+          />
+        </label>}
+        {draft.creationErrorCode === CRON_CLOUD_NOT_CONFIGURED && <CronCloudCreateNotice
+          onSettings={() => {
+            useScheduleSettingsDraftStore.getState().stashDraft({ ...draft, creationErrorCode: undefined });
+            openCloudCronSettings('chat');
+          }}
+          onSwitchLocal={onDraftChange ? () => onDraftChange({ ...draft, creationErrorCode: undefined, input: { ...draft.input, runsOn: 'local' } }) : undefined}
+        />}
         {eventSchedule && (
           <div data-schedule-event-fields className="rounded-md bg-indigo-500/5 px-2.5 py-2">
             <CronEventScheduleFields
@@ -383,14 +404,13 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
               onChange={(event) => setWhenEdit({ ...whenEdit, freq: event.target.value as EditableFrequency })}
             />
             {(whenEdit.freq === 'daily' || whenEdit.freq === 'weekdays' || whenEdit.freq === 'weekly') && (
-              <Input
-                type="time"
-                inputSize="sm"
-                fullWidth={false}
-                className="!w-auto"
-                aria-label={labels.timeLabel}
+              <TimeInput24
+                testId="schedule-confirm-time"
                 value={whenEdit.time}
-                onChange={(event) => setWhenEdit({ ...whenEdit, time: event.target.value })}
+                onChange={(time) => setWhenEdit({ ...whenEdit, time })}
+                hourLabel={labels.hourLabel}
+                minuteLabel={labels.minuteLabel}
+                size="sm"
               />
             )}
             {whenEdit.freq === 'weekly' && (
@@ -417,14 +437,14 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
               />
             )}
             {whenEdit.freq === 'once' && (
-              <Input
-                type="datetime-local"
-                inputSize="sm"
-                fullWidth={false}
-                className="!w-auto"
-                aria-label={labels.onceAtLabel}
+              <DateTimeInput24
+                testId="schedule-confirm-once-at"
+                size="sm"
+                dateLabel={labels.dateLabel}
+                hourLabel={labels.hourLabel}
+                minuteLabel={labels.minuteLabel}
                 value={whenEdit.onceAt}
-                onChange={(event) => setWhenEdit({ ...whenEdit, onceAt: event.target.value })}
+                onChange={(onceAt) => setWhenEdit({ ...whenEdit, onceAt })}
               />
             )}
             <Button type="button" size="sm" data-schedule-when-apply disabled={!compiledWhen} onClick={applyWhenEdit}>

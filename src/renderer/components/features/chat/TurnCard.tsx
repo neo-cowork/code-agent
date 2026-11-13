@@ -1,7 +1,8 @@
 // ============================================================================
 // TurnCard - A single conversation turn (user prompt + assistant responses)
 // ============================================================================
-import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { isProjectTrustPendingTurn } from '../../../utils/projectTrustTurn';
+import React, { useCallback, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { TraceTurn, TraceNode } from '@shared/contract/trace';
 import type { StreamRecoverySnapshot } from '@shared/contract/session';
 import type { TurnHookActivity, TurnSkillActivity } from '@shared/contract/turnTimeline';
@@ -31,6 +32,7 @@ import { ExpandableContent } from './ExpandableContent';
 import { StreamingIndicator, getRunningSubagentCount, getRunningToolStartTime, getStreamingWaitingReason } from './StreamingIndicator';
 import { TurnDiffSummary } from './MessageBubble/TurnDiffSummary';
 import { buildTurnFileChanges } from '../../../utils/turnDiffSummary';
+import { isBareInterruptionNode } from '../../../utils/bareInterruptionNode';
 import { getTurnFinalTextNode, getTurnUserNode } from '../../../utils/turnRailItems';
 import { TurnFeedback } from './TurnFeedback';
 import { MessageContextMenu } from './MessageContextMenu';
@@ -55,7 +57,9 @@ import {
 } from '../../../utils/streamingStatePresentation';
 import { isReadOnlyArtifactOwnershipItem } from '../../../utils/artifactOwnership';
 import { useI18n } from '../../../hooks/useI18n';
+import { humanizeToolStep } from '../../../utils/humanizeToolStep';
 import type { Translations } from '../../../i18n';
+import { turnPhaseFallbackLabel } from '../../../utils/turnPhaseFallback';
 import { useMessageActionStore } from '../../../stores/messageActionStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useWorkDetailPolicy } from '../../../utils/workDetailPolicy';
@@ -64,6 +68,7 @@ import { hasPendingPermissionForSession, hasQueuedPermissionForSession } from '.
 import { useSessionTurnActive } from '../../../hooks/useSessionTurnActive';
 import { resolveBusySignal } from '../../../utils/turnBusySignal';
 import { hasFoldHiddenMiddle, isNodeSkippedInMiddle } from './turnFoldVisibility';
+import { getObservedCronRunStatusForSession, hasParkedApprovalClosure, isLiveCronRunStatusKind, subscribeObservedCronRunStatus } from './cronRunSessionStatus';
 
 interface TurnCardProps {
   turn: TraceTurn;
@@ -84,7 +89,9 @@ interface TurnCardProps {
   onStreamingDisplayUpdate?: (nodeId: string, displayLength: number, isAnimating: boolean) => void;
   onRewindUserPrompt?: (messageId: string, content: string) => void;
   /** 渲染在该 turn 用户消息上方（目前用于分叉子会话首段的来源提示） */
-  beforeUserMessage?: React.ReactNode; suppressBusySignal?: boolean;
+  beforeUserMessage?: React.ReactNode;
+  /** 渲染在该 turn 用户消息下方（目前用于定时任务运行记录的状态行） */
+  afterUserMessage?: React.ReactNode; suppressBusySignal?: boolean;
 }
 
 export const TurnCard: React.FC<TurnCardProps> = ({
@@ -101,7 +108,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   showSeparator = true,
   onStreamingDisplayUpdate,
   onRewindUserPrompt,
-  beforeUserMessage, suppressBusySignal,
+  beforeUserMessage, afterUserMessage, suppressBusySignal,
 }) => {
   const { t } = useI18n(); const policy = useWorkDetailPolicy();
   const createForkFromReply = useMessageActionStore((state) => state.createForkFromReply);
@@ -149,13 +156,9 @@ export const TurnCard: React.FC<TurnCardProps> = ({
       .filter((change) => deliverableDiffPaths.has(change.filePath))
       .map((change) => [change.filePath, change]),
   ), [deliverableDiffPaths, turn]);
-  const hasStreamInterruption = useMemo(
-    () => turn.nodes.some((node) => (
-      Boolean(node.metadata?.streamInterruptionReason)
-      || Boolean(node.metadata?.streamRecovery)
-    )),
-    [turn.nodes],
-  );
+  const hasStreamInterruption = useMemo(() => turn.nodes.some((node) => (
+    !isBareInterruptionNode(node) && Boolean(node.metadata?.streamInterruptionReason || node.metadata?.streamRecovery)
+  )), [turn.nodes]);
 
   // 语音派活任务卡（W6-5）：一通电话里派出去的活，整轮折叠成一张任务卡——
   // 卡头说清「这件活是什么 + 谁做的 + 什么结果」，过程（工具调用、中间文本）默认折叠，
@@ -175,21 +178,23 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     finalTextNode: getTurnFinalTextNode(turn, isVoiceTurn),
   }), [turn, isVoiceTurn]);
 
-  // 折叠策略：已完成 + 非 streaming + 节点数达阈值 + 确实有最终 assistant 文本
-  // + 折叠真藏得住中间内容（纯问答轮藏了个寂寞，不出「用时」空开关）。
-  // 语音任务卡不套这条阈值——电话里派出去的活不管几步都折成卡（用户在打电话，不看屏幕），
-  // 流式期间也折：live 信号由卡身底部的呼吸态指示承担，过程默认不铺开。
-  const canFold = isVoiceTurn
-    ? turn.nodes.length > 0
-    : turn.status === 'completed' &&
-      !isStreaming &&
-      turn.nodes.length >= policy.foldThreshold &&
-      Boolean(foldedView.finalTextNode) &&
-      hasFoldHiddenMiddle(displayNodes, foldedView.userNode, foldedView.finalTextNode);
+  // 语音任务卡始终可折；定时运行终态由状态行接管折叠，live 态同时铺开已保存步骤。
+  const observedCronRunStatus = useSyncExternalStore(subscribeObservedCronRunStatus, () => getObservedCronRunStatusForSession(sessionId), () => null);
+  const hasExternalStatusLine = Boolean(afterUserMessage) && !hasParkedApprovalClosure(turn); const hasLiveExternalStatusLine = hasExternalStatusLine && isLiveCronRunStatusKind(observedCronRunStatus?.kind);
+  const canFold = isVoiceTurn ? turn.nodes.length > 0
+    : hasExternalStatusLine
+      ? !hasLiveExternalStatusLine
+      : turn.status === 'completed' &&
+        !isStreaming &&
+        turn.nodes.length >= policy.foldThreshold &&
+        Boolean(foldedView.finalTextNode) &&
+        hasFoldHiddenMiddle(displayNodes, foldedView.userNode, foldedView.finalTextNode);
   // 会话还在跑（goal 多轮任务的轮间空档：轮已 completed、下一轮未开）时挂载的末轮
   // 不折——过程还在跑，折了就丢现场；等会话闲下来再由下面的自动折叠收口。
   const [userExpanded, setUserExpanded] = useState(
-    Boolean(defaultExpanded) || !canFold || Boolean(isSessionProcessing)
+    hasExternalStatusLine
+      ? false
+      : Boolean(defaultExpanded) || !canFold || Boolean(isSessionProcessing)
   );
   const expanded = userExpanded || Boolean(forceExpanded);
   const folded = canFold && !expanded;
@@ -399,8 +404,10 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             inVoiceDispatchCard={isVoiceTurn}
             onRewindUserPrompt={onRewindUserPrompt}
             rewindDisabled={Boolean(isSessionProcessing)}
+            suppressSendFailedBadge={isProjectTrustPendingTurn(turn)}
           />
         )}
+        {afterUserMessage}
 
         {/* Neo 以参与者身份回复（像 Claude Tag）：轻量身份标识挂在回复头部，会话里不出现工作卡 */}
         {isNeoTagTurn && (
@@ -436,8 +443,9 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         {skillActivity && <SkillActivityBanner activity={skillActivity} />}
 
         {/* "Worked for Xm Ys" toggle — always visible when foldable。
-            语音任务卡的展开/收起由上面的卡头承担，不再重复一个折叠钮。 */}
-        {canFold && !isVoiceTurn && (
+            语音任务卡的展开/收起由上面的卡头承担，不再重复一个折叠钮；
+            定时任务运行记录首轮同理（CronRunSessionStatusBar 已显示用时与状态）。 */}
+        {canFold && !isVoiceTurn && !hasExternalStatusLine && (
           <button
             onClick={handleToggleExpanded}
             className="flex items-center gap-1.5 text-xs leading-4 text-zinc-500 hover:text-zinc-300 transition-colors py-0.5"
@@ -507,7 +515,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                   node={node}
                   sessionId={sessionId}
                   attachments={node.attachments}
-                  isStreaming={isNodeStreaming}
+                  isStreaming={isNodeStreaming} unfinishedToolIsLive={hasLiveExternalStatusLine}
                   inVoiceDispatchCard={isVoiceTurn}
                   onStreamingDisplayUpdate={shouldReportDisplayUpdate ? handleAnchorStreamingDisplayUpdate : undefined}
                   onRewindUserPrompt={onRewindUserPrompt}
@@ -534,8 +542,15 @@ export const TurnCard: React.FC<TurnCardProps> = ({
           />
         )}
 
-        {/* Final AI answer (always shown when foldable; non-foldable turns already rendered in map above) */}
-        {canFold && foldedView?.finalTextNode && (
+        {/* Final AI answer (always shown when foldable; non-foldable turns already rendered in map above).
+            定时任务运行记录若在工具调用前有过渡句且后续工具尚未完成（等批准/运行中/已中断），
+            不把那句过渡话当最终结果展示。 */}
+        {canFold && foldedView?.finalTextNode && !(
+          hasExternalStatusLine
+          && turn.nodes
+            .slice(turn.nodes.indexOf(foldedView.finalTextNode) + 1)
+            .some((node) => node.type === 'tool_call' && node.toolCall?.result === undefined)
+        ) && (
           <TraceNodeRenderer
             node={foldedView.finalTextNode}
             sessionId={sessionId}
@@ -993,7 +1008,7 @@ function getTurnRunStatus(turn: TraceTurn, t: Translations, streamingState?: Str
   return { key: 'completed', label: t.turnRun.status.completed, tone: 'success', icon: <CheckCircle2 className="h-3.5 w-3.5" /> };
 }
 
-function getTurnPhase(turn: TraceTurn): string | null {
+function getTurnPhase(turn: TraceTurn, t: Translations): string | null {
 
   // 这里曾经用路由摘要当轮次阶段（「已指定 岚析 执行」），既是内部审计口径，又跟
   // 旁边的 Auto 徽章自相矛盾。阶段该说这一轮在做什么，落到下面的能力/工具描述。
@@ -1005,12 +1020,12 @@ function getTurnPhase(turn: TraceTurn): string | null {
   }
 
   const lastTool = getLastToolNode(turn)?.toolCall;
-  if (lastTool) return lastTool.shortDescription || `工具 ${lastTool.name}`;
+  if (lastTool) return humanizeToolStep(lastTool.name, lastTool.args, t, lastTool.shortDescription, lastTool.result === undefined || lastTool._streaming ? 'running' : 'completed');
 
   if (turn.status === 'streaming') return null;
 
-  const assistantText = [...turn.nodes].reverse().find((node) => node.type === 'assistant_text' && node.content.trim());
-  return assistantText ? '回复已生成' : '等待输出';
+  // 兜底（含「发送失败的轮不标已生成」的判定）在 turnPhaseFallback 助手模块里。
+  return turnPhaseFallbackLabel(turn, t);
 }
 
 function getTurnCompletionSignal(turn: TraceTurn, t: Translations): string | null {
@@ -1104,12 +1119,12 @@ export function shouldHideTurnRunHeader(statusKey: string, statusTone: string): 
 const TurnRunHeader: React.FC<{ turn: TraceTurn; streamingState?: StreamingUiState }> = ({ turn, streamingState }) => {
   const { t } = useI18n();
   const status = getTurnRunStatus(turn, t, streamingState);
-  const phase = getTurnPhase(turn);
+  const phase = getTurnPhase(turn, t);
   const completionSignal = getTurnCompletionSignal(turn, t);
   const failedTool = turn.nodes.find((node) => node.type === 'tool_call' && node.toolCall?.success === false)?.toolCall;
   const hasPhase = Boolean(phase?.trim());
 
-  if (shouldHideTurnRunHeader(status.key, status.tone)) {
+  if (shouldHideTurnRunHeader(status.key, status.tone) || isProjectTrustPendingTurn(turn)) {
     return null;
   }
 

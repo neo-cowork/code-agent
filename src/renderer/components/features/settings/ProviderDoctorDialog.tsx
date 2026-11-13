@@ -26,6 +26,7 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../../../services/ipcService';
 import { toast } from '../../../hooks/useToast';
 import { useI18n } from '../../../hooks/useI18n';
+import { formatDateTime } from '../../../utils/formatDateTime';
 
 // ============================================================================
 // Types — 与 src/host/diagnostics/types.ts 对齐
@@ -49,6 +50,7 @@ interface DoctorItem {
   name: string;
   status: DoctorStatus;
   message: string;
+  probeHttpStatus?: 401 | 403;
   details?: string;
   suggestion?: string;
   durationMs?: number;
@@ -129,6 +131,10 @@ const DoctorItemRow: React.FC<{
   defaultExpanded: boolean;
   suggestionPrefix: string;
 }> = ({ item, defaultExpanded, suggestionPrefix }) => {
+  const { t } = useI18n();
+  const message = item.probeHttpStatus
+    ? t.settings.providerDoctor.probeAuthMismatch.replace('{status}', String(item.probeHttpStatus))
+    : item.message;
   const [expanded, setExpanded] = useState(defaultExpanded);
   const hasDetails = !!(item.details || item.suggestion);
   const style = STATUS_STYLES[item.status];
@@ -150,7 +156,7 @@ const DoctorItemRow: React.FC<{
         {/* Name + message */}
         <span className="flex-1 min-w-0">
           <span className="text-sm text-zinc-200">{item.name}</span>
-          <span className="text-sm text-zinc-500 ml-2">{item.message}</span>
+          <span className="text-sm text-zinc-500 ml-2">{message}</span>
         </span>
 
         {/* Expand indicator */}
@@ -175,7 +181,7 @@ const DoctorItemRow: React.FC<{
           )}
           {item.details && (
             <pre className="text-xs text-zinc-400 bg-zinc-800/60 rounded p-2 whitespace-pre-wrap break-all">
-              {item.details}
+              {item.probeHttpStatus ? message : item.details}
             </pre>
           )}
         </div>
@@ -192,7 +198,7 @@ export const ProviderDoctorDialog: React.FC<ProviderDoctorDialogProps> = ({
   isOpen,
   onClose,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const doctorText = t.settings.providerDoctor;
   const [report, setReport] = useState<DoctorReport | null>(null);
   const [isRunning, setIsRunning] = useState(false);
@@ -298,7 +304,7 @@ export const ProviderDoctorDialog: React.FC<ProviderDoctorDialogProps> = ({
             {report.summary.skip}{doctorText.summary.skipSuffix}
           </span>
           <span className="ml-auto text-xs text-zinc-500">
-            {(report.durationMs / 1000).toFixed(1)}s · {new Date(report.timestamp).toLocaleTimeString()}
+            {(report.durationMs / 1000).toFixed(1)}s · {formatDateTime(report.timestamp, language)}
           </span>
         </div>
       )}

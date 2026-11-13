@@ -49,6 +49,13 @@ export interface ToolApprovalPayload {
    * 有它 = 该行可铸造 target 粒度长期授权（收件箱审批卡出「每次都允许发 <target>」按钮）。
    */
   standingGrantTarget?: string | null;
+  browserSessionGrant?: import('./permission').PermissionRequest['details']['browserSessionGrant'];
+  /**
+   * 「一键授权此任务写这个文件夹」候选（realpath 后的绝对路径）。仅无人值守 cron/heartbeat 的
+   * file_write/file_edit 在守卫通过时由 host 写入；缺省 = 不出按钮、逐文件审批。
+   * 授权动作不信任它：host 从 argsSummary 重新推导并对账。
+   */
+  writeGrantFolder?: string;
   /**
    * 跨重启找回这条调用的引用（N-PARKED-APPROVAL-SURVIVE-RESTART-PERSIST）。仅当 sessionId 与
    * toolCallId（parentToolUseId）都真实存在时写入；messageId 在权限请求路径上没有真源，
@@ -64,6 +71,15 @@ export interface ToolApprovalPayload {
   ledgerFaithful?: boolean;
   /** 脱敏（密钥/Bearer/.env 值）+ 截断的参数预览：收件箱/审批卡一眼看清这步要干什么。 */
   argsPreview?: string;
+  /**
+   * ADR-088 敏感步骤交回（透传自 permission request details.sensitiveStep）：该行渲染为
+   * 单状态交回卡（[完成后继续]/[这步不做了]），不出任何「每次都允许」铸权入口。
+   */
+  sensitiveStep?: {
+    kind: 'password' | 'verification_code' | 'payment';
+    elementLabel?: string;
+    appName?: string;
+  };
 }
 
 /** 收件箱「等待批准的操作」分组的行数据（B2）。id=requestId，回传 permissionResponse 用。 */
@@ -71,17 +87,28 @@ export interface ParkedApprovalInboxItem {
   id: string;
   kind?: 'tool_approval' | 'directory_access' | 'channel_pairing';
   sessionId: string | null;
+  /** 原始 assistant tool_call id；渲染端据此把「等批准」精确对到会话里那一步。老行没有。 */
+  toolCallId?: string;
+  sessionTitle?: string;
   tool: string;
   displayTool?: string;
   /** epoch ms，UI 算等待时长 */
   requestedAt: number;
-  /** pending=可批准/拒绝；orphaned=应用重启后过期，灰态不可操作 */
-  status: 'pending' | 'orphaned';
+  /** pending=可批准/拒绝；orphaned=应用重启后过期，灰态不可操作；voided=重启后被自动作废（留痕只读） */
+  status: 'pending' | 'orphaned' | 'voided';
+  /** voided 专用：一句大白话作废原因（describeParkedApprovalClosure） */
+  voidReason?: string;
   riskClass?: string | null;
   /** B4 授权目标精确串；非空 = 可铸造 target 粒度长期授权（出「每次都允许发 <target>」按钮） */
   standingGrantTarget?: string | null;
   /** 脱敏 + 截断的参数预览；老行没有该字段，收件箱按缺省不渲染。 */
   argsPreview?: string;
+  /** Complete redacted shell command for one-click inspection; never truncated. */
+  commandPreview?: string;
+  /** 可一键授权的文件夹（绝对路径，仅用于 title 与取文件夹名）；缺省不出第三个按钮。 */
+  writeGrantFolder?: string;
+  /** ADR-088 敏感步骤交回；非交回行缺省，收件箱按普通停车行渲染。 */
+  sensitiveStep?: ToolApprovalPayload['sensitiveStep'];
   pairingCode?: string;
   pairingSender?: string;
   pairingChannel?: 'feishu' | 'lark';

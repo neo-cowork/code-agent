@@ -4,8 +4,9 @@
 
 import type { ToolCall } from '@shared/contract';
 import { aggregateEditArgsText } from '@shared/utils/editToolArgs';
+import type { Translations } from '../../../../../../i18n';
 
-export function summarizeEdit(toolCall: ToolCall): string | null {
+export function summarizeEdit(toolCall: ToolCall, t: Translations): string | null {
   // For successful edit_file, show Done or line change info
   if (toolCall.result?.success) {
     // 注册的 Edit 形状是 edits[]（multiEdit.schema.ts），legacy 平铺形状归一后聚合
@@ -27,9 +28,9 @@ export function summarizeEdit(toolCall: ToolCall): string | null {
       const diff = newLines - oldLines;
 
       if (diff > 0) {
-        return `+${diff} lines`;
+        return t.toolResultSummary.addedLines.replace('{count}', String(diff));
       } else if (diff < 0) {
-        return `${diff} lines`;
+        return t.toolResultSummary.removedLines.replace('{count}', String(Math.abs(diff)));
       }
       return 'Modified';
     }
@@ -40,19 +41,19 @@ export function summarizeEdit(toolCall: ToolCall): string | null {
   return null;
 }
 
-export function summarizeWrite(toolCall: ToolCall): string | null {
+export function summarizeWrite(toolCall: ToolCall, t: Translations): string | null {
   // For successful write_file, show Done or content info
   if (toolCall.result?.success) {
     // content 在事件流里会被 sanitizeLargeTextToolArguments 压成片段，直接 split
     // 会把几百行的文件算成 ~12 行。截断时后端保留了权威总行数 content_lines。
     const contentLines = toolCall.arguments?.content_lines;
     if (typeof contentLines === 'number') {
-      return `${contentLines} lines`;
+      return t.toolResultSummary.lineCount.replace('{count}', String(contentLines));
     }
     const content = toolCall.arguments?.content as string | undefined;
     if (content) {
       const lines = content.split('\n').length;
-      return `${lines} lines`;
+      return t.toolResultSummary.lineCount.replace('{count}', String(lines));
     }
     return 'Done';
   }

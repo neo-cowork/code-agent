@@ -8,6 +8,9 @@ import React, { useCallback } from 'react';
 import { ChevronRight, Cloud, Loader2, Plus } from 'lucide-react';
 import { PLAIN_CHAT_SUMMARY_LABEL } from '@shared/contract/sessionWorkspace';
 import { SESSION_LIST_PAGE_SIZE } from '@shared/constants';
+import { useSessionListLoadStore } from '../../../stores/sessionListPagination';
+import { retrySessionRead } from '../../../stores/sessionLoadRecovery';
+import { Button } from '../../primitives/Button';
 import { useI18n } from '../../../hooks/useI18n';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
@@ -32,6 +35,7 @@ export interface SidebarSessionListProps extends Omit<SidebarProjectGroupProps, 
   hasAnySessions: boolean;
   filteredSessionsEmpty: boolean;
   messageSearchLoading: boolean;
+  messageSearchFailed: boolean;
   searchQuery: string;
   sessionStatusFilter: SessionStatusFilter;
   activeStatusFilterLabel: string;
@@ -49,10 +53,10 @@ export interface SidebarSessionListProps extends Omit<SidebarProjectGroupProps, 
 
 export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
   groups,
-  isLoading,
   hasAnySessions,
   filteredSessionsEmpty,
   messageSearchLoading,
+  messageSearchFailed,
   searchQuery,
   sessionStatusFilter,
   activeStatusFilterLabel,
@@ -85,6 +89,8 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
 }) => {
   const { t, language } = useI18n();
   const sb = t.sidebar;
+  const listLoad = useSessionListLoadStore();
+  const loadSessions = useSessionStore((state) => state.loadSessions);
   const p = t.sidebarProject;
   // 分区节头交互状态（折叠持久化、solo 会话内）都在 sessionUIStore；新建空间入口复用 appStore 的 openProjectSpacePage。
   const collapsedTiers = useSessionUIStore((state) => state.collapsedTiers);
@@ -135,7 +141,7 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
 
         return {
           id: session.id,
-          title: getDisplaySessionTitle(session.title),
+          title: getDisplaySessionTitle(session.title, language),
           statusLabel:
             status.kind === 'error'
               ? t.common.error
@@ -144,7 +150,7 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
                 : status.label,
           statusToneClassName: status.toneClassName,
           showStatusBadge: status.showBadge,
-          typeLabel: getSessionTypeLabel(session.type),
+          typeLabel: getSessionTypeLabel(session.type, t),
           summary: hasMeaningfulSummary ? snapshotSummary : undefined,
           lastActiveTitle: new Date(latestActivityAt).toLocaleString(localeForLanguage(language)),
           workingDirectory: session.workingDirectory,
@@ -168,9 +174,16 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
       reviewItemsBySessionId,
       sessionRuntimes,
       sessionStates,
+      language,
       t,
     ],
   );
+  const listErrorNotice = listLoad.error ? (
+    <div role="alert" data-testid="sidebar-list-error" className="flex flex-col items-center gap-3 px-4 py-8 text-center">
+      <p className="text-sm text-zinc-400">{sb.loadSessionsFailed}</p>
+      <Button variant="secondary" size="sm" onClick={() => retrySessionRead(listLoad.errorCode, loadSessions)}>{sb.retryLoadSessions}</Button>
+    </div>
+  ) : null;
   // 三分区归位（ADR-053）：判据与排序规则全部在 sidebarSessionTiers，
   // 组内/组间排序不动，空分区整节不出现在返回里（含节头）。
   const tierSections = buildSidebarSessionTierSections(groups, projectMetaById);
@@ -192,11 +205,13 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
        把那条窄带"要回来"，`overflow-y-scroll` 恒定占位把滚动条正好摆进去 ⇒ 它的内容盒宽度
        回到与兄弟块相同的内轨。滚动条照常可见，且与列表溢不溢出无关。 */
     <div className="scrollbar-band flex-1 overflow-y-scroll px-1 min-h-0 mr-[calc(var(--scrollbar-size)*-1)]" data-testid="sidebar-session-scroll">
-      {isLoading && !hasAnySessions ? (
-        <div className="flex flex-col items-center justify-center py-12 gap-3">
+      {!listLoad.settled || (listLoad.loading && !hasAnySessions) ? (
+        <div data-testid="sidebar-list-loading" className="flex flex-col items-center justify-center py-12 gap-3">
           <Loader2 className="w-6 h-6 animate-spin text-badge-accent" />
           <span className="text-xs text-zinc-500">{sb.loading}</span>
         </div>
+      ) : listLoad.error && !hasAnySessions ? (
+        listErrorNotice
       ) : !hasAnySessions ? (
         /* 空态星球（2026-08-02 星球品牌升级）：列表空 = 地球（母星，"还没有勘测记录"），
            替代原 MessageSquare 灰瓷砖；引导文案 startNewTask 保留。 */
@@ -216,7 +231,9 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
           <p className="text-sm text-zinc-500">
             {messageSearchLoading
               ? sb.searchingMessageContent
-              : !searchQuery && sessionStatusFilter !== 'all'
+              : messageSearchFailed
+                ? sb.searchFailed
+                : !searchQuery && sessionStatusFilter !== 'all'
                 ? sb.noStatusSessions.replace('{label}', activeStatusFilterLabel)
                 : sb.noMatchedSessions}
           </p>
@@ -371,6 +388,7 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
           ) : null}
         </div>
       )}
+      {listLoad.settled && hasAnySessions && listErrorNotice}
     </div>
   );
 };

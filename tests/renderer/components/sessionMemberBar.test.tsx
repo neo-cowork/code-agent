@@ -2,6 +2,7 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { createSwarmTraceStorageId, type SwarmAgentState } from '../../../src/shared/contract/swarm';
 import type { SwarmRunAgentRecord, SwarmRunDetail, SwarmRunListItem } from '../../../src/shared/contract/swarmTrace';
@@ -10,6 +11,7 @@ import { IPC_CHANNELS } from '../../../src/shared/ipc';
 const invokeMock = vi.fn();
 const invokeDomainMock = vi.fn();
 const appState = {
+  language: 'zh' as 'zh' | 'en',
   openWorkspacePreview: vi.fn(),
   openWorkbenchTab: vi.fn(),
   workbenchTabs: [] as string[],
@@ -22,7 +24,7 @@ const swarmState: {
   lastEventAt?: number;
 } = { agents: [], activeSessionId: undefined };
 
-vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: zh }) }));
+vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: appState.language === 'en' ? en : zh }) }));
 vi.mock('../../../src/renderer/stores/appStore', () => {
   // 工厂在组件 import 时求值，早于 const 初始化：必须延迟解引用
   const useAppStore = (selector: (state: typeof appState) => unknown) => selector(appState);
@@ -43,7 +45,7 @@ import { useTeamRecipeStore } from '../../../src/renderer/stores/teamRecipeStore
 import { useAgentRegistryStore } from '../../../src/renderer/stores/agentRegistryStore';
 import { useMemberViewStore } from '../../../src/renderer/stores/memberViewStore';
 import { useBackgroundTaskStore } from '../../../src/renderer/stores/backgroundTaskStore';
-import { useRightPanelTabsStore } from '../../../src/renderer/stores/rightPanelTabsStore';
+import { useSessionStore, type SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 
 const agents: SwarmRunAgentRecord[] = [
   { runId: 'run-1', agentId: 'researcher', name: '调研员', role: 'researcher', status: 'completed', startTime: 1, endTime: 4_001, durationMs: 4_000, tokensIn: 12, tokensOut: 34, toolCalls: 5, costUsd: 0.002, error: null, failureCategory: null, filesChanged: [], dispatchedTask: '核对数据', finalOutput: `${'完整持久化产出'.repeat(40)} 收尾证据` },
@@ -71,6 +73,7 @@ const completedDetail: SwarmRunDetail = {
 
 describe('SessionMemberBar（折叠 chip）', () => {
   beforeEach(() => {
+    appState.language = 'zh';
     swarmState.agents = [];
     swarmState.activeSessionId = undefined;
     swarmState.activeRunId = undefined;
@@ -87,9 +90,38 @@ describe('SessionMemberBar（折叠 chip）', () => {
     useAgentRegistryStore.setState({ entries: [], isLoaded: true });
     useMemberViewStore.setState({ viewingMemberId: null });
     useBackgroundTaskStore.setState({ tasks: [] });
-    useRightPanelTabsStore.setState({ expertsDismissedBySession: {} });
+    useSessionStore.setState({ sessions: [], currentSessionId: null });
   });
   afterEach(() => cleanup());
+
+  it.each(['zh', 'en'] as const)('failed chip names each failed agent and human reason, and opens experts (%s)', async (language) => {
+    appState.language = language;
+    useBackgroundTaskStore.setState({ tasks: [
+      { id: 'budget-review', sessionId: 'session-1', source: 'delegate_task', title: 'Budget review', status: 'failed', createdAt: 1, updatedAt: 2, events: [], outputRefs: [], failure: { reason: 'tool-unavailable', message: 'missing file' } },
+      { id: 'notes-review', sessionId: 'session-1', source: 'delegate_task', title: 'Notes review', status: 'failed', createdAt: 1, updatedAt: 2, events: [], outputRefs: [] },
+    ] });
+    render(<SessionMemberBar sessionId="session-1" />);
+    const chip = await screen.findByTestId('session-member-bar-collapsed');
+    const t = language === 'zh' ? zh : en;
+    const reason = t.toolStepHumanize.failureCodes['tool-unavailable'];
+    expect(chip.textContent).toContain(language === 'zh' ? '2 个代理 · 失败 · Budget review' : '2 agents · Failed · Budget review');
+    expect(chip.getAttribute('title')).toBe(
+      t.chat.delegationReceipt.failureDetail.replace('{status}', 'Budget review').replace('{reason}', reason) + '\n' + (language === 'zh' ? 'Notes review' : t.chat.delegationReceipt.failureDetail.replace('{status}', 'Notes review').replace('{reason}', t.toolStepHumanize.agentFailureReasons.unknown)),
+    );
+    expect(chip.getAttribute('title')).not.toContain('tool-unavailable');
+    fireEvent.click(chip);
+    expect(appState.openWorkbenchTab).toHaveBeenCalledWith('experts', { source: 'user' });
+  });
+
+  it('cancelled chip names the stopped agent, with name only when no reason exists', async () => {
+    useBackgroundTaskStore.setState({ tasks: [
+      { id: 'budget-review', sessionId: 'session-1', source: 'delegate_task', title: 'Budget review', status: 'cancelled', createdAt: 1, updatedAt: 2, events: [], outputRefs: [] },
+    ] });
+    render(<SessionMemberBar sessionId="session-1" />);
+    const chip = await screen.findByTestId('session-member-bar-collapsed');
+    expect(chip.textContent).toContain(' · Budget review');
+    expect(chip.getAttribute('title')).toBe('Budget review');
+  });
 
   it('没有团队也没有预选时不渲染', async () => {
     render(<SessionMemberBar sessionId="session-1" />);
@@ -303,5 +335,47 @@ describe('SessionMemberBar（折叠 chip）', () => {
       id: 'researcher', name: '调研员', role: 'researcher', status: 'completed',
       tokenUsage: { input: 12, output: 34 }, toolCalls: 5, cost: 0.002, finalOutput: expect.stringContaining('收尾证据'),
     });
+  });
+
+  // N-UI-CRON-RUN-RECORD-CLEAR（B）：定时任务运行会话本身已有首条气泡下的状态行，
+  // 终态下的「1 个代理 · 完成 / 失败」既是内部话又重复，隐藏 chip；若有后台代理仍在跑则保留；普通会话不变。
+  it('定时任务运行记录会话（已挂状态行）：终态「1 个代理 · 完成 / 失败」隐藏，不重复报状态', async () => {
+    const cronSession = {
+      id: 'session-1',
+      title: '[Schedule] 每日日程检查',
+      origin: { kind: 'cron' as const, id: 'job-1' },
+      createdAt: 1,
+      updatedAt: 2,
+    } as Partial<SessionWithMeta> as SessionWithMeta;
+    useSessionStore.setState({ sessions: [cronSession], currentSessionId: 'session-1' });
+    const singleCompleted = { ...agents[0], status: 'completed' as const };
+    mockLedger(
+      { ...completedDetail, agents: [singleCompleted] },
+      { ...run, totalAgents: 1, completedCount: 1 },
+    );
+
+    render(<SessionMemberBar sessionId="session-1" />);
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith(IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL, expect.anything()));
+    expect(screen.queryByTestId('session-member-bar-collapsed')).toBeNull();
+  });
+
+  it('定时任务运行记录会话：若确实还有超出主运行的后台代理仍在工作中，保留 chip', async () => {
+    const cronSession = {
+      id: 'session-1',
+      title: '[Schedule] 每日日程检查',
+      origin: { kind: 'cron' as const, id: 'job-1' },
+      createdAt: 1,
+      updatedAt: 2,
+    } as Partial<SessionWithMeta> as SessionWithMeta;
+    useSessionStore.setState({ sessions: [cronSession], currentSessionId: 'session-1' });
+    const singleRunning = { ...agents[0], status: 'running' as const, endTime: null, durationMs: null };
+    mockLedger(
+      { ...completedDetail, run: { ...completedDetail.run, status: 'running', endedAt: null }, agents: [singleRunning] },
+      { ...run, status: 'running', totalAgents: 1, completedCount: 0 },
+    );
+
+    render(<SessionMemberBar sessionId="session-1" />);
+    const chip = await screen.findByTestId('session-member-bar-collapsed');
+    await waitFor(() => expect(chip.textContent).toContain('1 个代理工作中'));
   });
 });

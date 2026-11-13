@@ -6,6 +6,7 @@ import {
   CRON_FAILURE_CODE,
   type CronFailurePresentationKind,
 } from '@shared/utils/cronFailureClassification';
+import { parseScheduledJobName } from '@shared/i18n/cronNotificationTitle';
 import type { NotificationShowEvent } from '@shared/ipc';
 
 interface CronFailureCopy {
@@ -13,6 +14,7 @@ interface CronFailureCopy {
   loginWallNotificationBody: string;
   failureNotificationTitle: string;
   failureToastView: string;
+  missedAlertsMerged: string;
   failureQuotaWithReset: string;
   failureQuotaWithResetAndLimit: string;
   failureQuotaUnknown: string;
@@ -76,9 +78,7 @@ export function cronFailureSentence(
 }
 
 function jobNameFromHostTitle(title: string): string | undefined {
-  const matched = title.match(/\[定时\]\s*(.+)$/);
-  const name = matched?.[1]?.trim();
-  return name || undefined;
+  return parseScheduledJobName(title);
 }
 
 /**

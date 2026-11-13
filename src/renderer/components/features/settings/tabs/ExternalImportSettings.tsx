@@ -43,6 +43,8 @@ import { Button, Toggle } from '../../../primitives';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { SettingsSection } from '../SettingsLayout';
 import { ExternalChatsImportSection } from './ExternalChatsImportSection';
+import { ExternalSkillsSyncSection } from './ExternalSkillsSyncSection';
+import { ExternalInstructionsSyncSection } from './ExternalInstructionsSyncSection';
 import { ExternalImportHistory } from './ExternalImportHistory';
 import { countImportableRules, ExternalImportInstructionRules, type DirectiveState } from './ExternalImportInstructionRules';
 import { ExternalImportMcpPreview, ExternalImportMcpResults, type ExternalImportMcpCopy } from './ExternalImportMcpSection';
@@ -321,6 +323,7 @@ export const ExternalImportSettings: React.FC = () => {
       <SettingsSection title={copy.title} description={copy.description}>
         <div data-testid="external-import-empty" className="text-sm text-zinc-500">{copy.noSources}</div>
         <ExternalChatsImportSection />
+        <ExternalSkillsSyncSection />
         <ExternalImportHistory />
       </SettingsSection>
     );
@@ -351,6 +354,8 @@ export const ExternalImportSettings: React.FC = () => {
         )}
 
         <ExternalChatsImportSection />
+        <ExternalSkillsSyncSection />
+        <ExternalInstructionsSyncSection />
 
         {anyMcpCategory && (
           <div

@@ -12,6 +12,8 @@ const backgroundTaskStore = vi.hoisted(() => ({
   readFailure: null as { message: string; failedAt: number } | null,
 }));
 const sessionStore = vi.hoisted(() => ({ currentSessionId: 'session-current' as string | null }));
+const appState = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }));
+const messageActions = vi.hoisted(() => ({ sendPrompt: vi.fn(async (_content: string) => {}) }));
 const ipc = vi.hoisted(() => ({
   handler: null as null | ((event: { type: string; data: unknown }) => void),
   unsubscribe: vi.fn(),
@@ -45,16 +47,21 @@ vi.mock('../../../src/renderer/stores/backgroundTaskStore', () => ({
   ),
 }));
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
-  useSessionStore: (selector: (state: typeof sessionStore) => unknown) => selector(sessionStore),
+  useSessionStore: Object.assign(
+    (selector: (state: typeof sessionStore) => unknown) => selector(sessionStore),
+    { getState: () => sessionStore },
+  ),
+}));
+vi.mock('../../../src/renderer/stores/messageActionStore', () => ({
+  useMessageActionStore: { getState: () => messageActions },
 }));
 vi.mock('../../../src/renderer/stores/appStore', () => {
-  const state = {
-    language: 'zh' as const,
-    setLanguage: vi.fn(),
-    cloudUIStrings: undefined,
-  };
   return {
-    useAppStore: () => state,
+    useAppStore: () => ({
+      language: appState.language,
+      setLanguage: vi.fn(),
+      cloudUIStrings: undefined,
+    }),
   };
 });
 vi.mock('../../../src/renderer/services/ipcService', () => ({
@@ -87,6 +94,7 @@ describe('useBackgroundTaskSync', () => {
     ipc.handler = null;
     transport.native = true;
     sessionStore.currentSessionId = 'session-current';
+    appState.language = 'zh';
     backgroundTaskStore.readRetryNonce = 0;
     backgroundTaskStore.readFailure = null;
     backgroundTaskStore.refreshTasks.mockResolvedValue(undefined);
@@ -158,6 +166,98 @@ describe('useBackgroundTaskSync', () => {
     });
 
     expect(toast.success).toHaveBeenCalledWith('报告生成完成。可在任务面板查看日志。');
+  });
+
+  it('renders task_cancelled as info toast and task_failed as error toast', async () => {
+    backgroundTaskStore.drainNotifications.mockResolvedValueOnce([
+      {
+        id: 'notice-cancelled',
+        taskId: 'task-1',
+        sessionId: 'session-current',
+        type: 'task_cancelled',
+        title: '任务已停止',
+        message: 'sleep 600 && echo done 已停止，耗时 不到 1 秒',
+        createdAt: 1,
+      },
+      {
+        id: 'notice-failed',
+        taskId: 'task-2',
+        sessionId: 'session-current',
+        type: 'task_failed',
+        title: '后台任务失败',
+        message: 'npm test 失败，退出码 1',
+        createdAt: 2,
+      },
+    ]);
+    renderHook(() => useBackgroundTaskSync({ pollInterval: 0 }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(toast.info).toHaveBeenCalledWith('sleep 600 && echo done 已停止，耗时 不到 1 秒。可在任务面板查看日志。');
+    expect(toast.error).toHaveBeenCalledWith('npm test 失败，退出码 1。可在任务面板查看日志。');
+  });
+
+  const timeoutNotice = (): TaskNotification => ({
+    id: 'notice-timeout',
+    taskId: 'shell:task-9',
+    sessionId: 'session-current',
+    type: 'task_failed',
+    title: '后台任务失败',
+    message: 'sh /Users/me/bin/backup.sh --all 失败，耗时 30 分钟，日志 /Users/me/.code-agent/tasks/abc.log',
+    createdAt: 3,
+    payload: {
+      taskId: 'shell:task-9',
+      status: 'failed',
+      outputFile: '/Users/me/.code-agent/tasks/abc.log',
+      reason: 'timeout',
+      maxRuntimeMs: 30 * 60 * 1000,
+    },
+  });
+
+  async function renderWithNotification(notification: TaskNotification) {
+    backgroundTaskStore.drainNotifications.mockResolvedValueOnce([notification]);
+    renderHook(() => useBackgroundTaskSync({ pollInterval: 0 }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  }
+
+  it.each([
+    { lang: 'zh' as const, notice: '后台任务运行超过 30 分钟，已被停止。', label: '重新运行' },
+    { lang: 'en' as const, notice: 'Background task ran over 30 minutes and was stopped.', label: 'Re-run' },
+  ])('timeout task_failed ($lang): error toast with a re-run action that sends one plain message', async ({ lang, notice, label }) => {
+    appState.language = lang;
+    await renderWithNotification(timeoutNotice());
+
+    expect(toast.error).toHaveBeenCalledTimes(1);
+    const [text, action] = toast.error.mock.calls[0] as unknown as [string, { label: string; onClick: () => void }];
+    expect(text).toBe(notice);
+    expect(action.label).toBe(label);
+    expect(text).not.toMatch(/backup\.sh|\/Users|\.log/);
+
+    action.onClick();
+    expect(messageActions.sendPrompt).toHaveBeenCalledTimes(1);
+    const sent = messageActions.sendPrompt.mock.calls[0][0];
+    expect(sent.length).toBeGreaterThan(0);
+    expect(sent).not.toMatch(/backup\.sh|\/Users|\.log|sh /);
+  });
+
+  it('re-run does not send into another session after the user switched away', async () => {
+    await renderWithNotification(timeoutNotice());
+    const [, action] = toast.error.mock.calls[0] as unknown as [string, { onClick: () => void }];
+    sessionStore.currentSessionId = 'session-other';
+    action.onClick();
+    expect(messageActions.sendPrompt).not.toHaveBeenCalled();
+    expect(toast.info).toHaveBeenCalledTimes(1);
+  });
+
+  it('a plain task_failed without reason renders as before (no action)', async () => {
+    await renderWithNotification({ ...timeoutNotice(), payload: { status: 'failed' }, message: 'npm test 失败，退出码 1' });
+    expect(toast.error).toHaveBeenCalledWith('npm test 失败，退出码 1。可在任务面板查看日志。');
+    expect(messageActions.sendPrompt).not.toHaveBeenCalled();
   });
 
   it('uses a 30 second fallback only when the native push bridge is available', () => {

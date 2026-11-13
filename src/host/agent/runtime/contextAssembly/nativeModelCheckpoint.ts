@@ -6,6 +6,24 @@ import { runWithQuotaWaitSuspendEligibility } from '../../../model/providers/quo
 import { isQuotaWaitParkableRun } from '../../../runtime/quotaWaitParkability';
 import { logger, type ContextAssemblyCtx } from './shared';
 
+/** Provider cancellation is cooperative; run settlement must not depend on it. */
+async function abortableModelRequest<T>(signal: AbortSignal, run: () => Promise<T>): Promise<T> {
+  signal.throwIfAborted();
+  let onAbort: () => void = () => {};
+  const aborted = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(signal.reason);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+  try {
+    return await Promise.race([
+      Promise.resolve().then(() => { signal.throwIfAborted(); return run(); }),
+      aborted,
+    ]);
+  } finally {
+    signal.removeEventListener('abort', onAbort);
+  }
+}
+
 // 只给同文件的 withNativeModelOperation 用——生命周期四个点收在一处，不再单独对外开口。
 async function checkpointNativeModel(
   ctx: ContextAssemblyCtx,
@@ -15,7 +33,13 @@ async function checkpointNativeModel(
 ): Promise<void> {
   const runId = ctx.runtime.runId;
   const registry = getConfiguredApplicationRunRegistry();
-  if (!runId || !registry?.hasDurableOwner(runId)) return;
+  if (!runId || !registry) return;
+  if (!registry.hasDurableOwner(runId)) {
+    logger.info('Native model checkpoint skipped after parent owner ended', {
+      runId, phase, status, reason: 'parent_run_not_durable',
+    });
+    return;
+  }
 
   const sourceMessageId = [...ctx.runtime.messages]
     .reverse()
@@ -83,7 +107,7 @@ export async function withNativeModelOperation<T>(
     // 转换点保持原封顶重试 + 降级链（rework r1 Important：非可停靠 run 不得静默取消）。
     result = await runWithQuotaWaitSuspendEligibility(
       isQuotaWaitParkableRun(getConfiguredApplicationRunRegistry(), ctx.runtime.runId),
-      run,
+      () => abortableModelRequest(signal, run),
     );
   } catch (error) {
     const abandonedByUser = ctx.runtime.control.isCancelled

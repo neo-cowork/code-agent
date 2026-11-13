@@ -126,6 +126,25 @@ describe('agentTreeService', () => {
     ]);
   });
 
+  it('keeps the stable background id when merging its execution context after restart', () => {
+    const snapshot = buildAgentTreeSnapshot({
+      sessionId: 'session-1',
+      backgroundAgents: [{
+        agentId: 'subagent-bg-report', sessionId: 'session-1', status: 'failed',
+        startedAt: 10, finishedAt: 20, failureCode: AgentFailureCode.ParentGone,
+      }],
+      contextRecords: [{
+        sessionId: 'session-1', agentId: 'execution-report', messages: [], updatedAt: 15,
+        lifecycle: { backgroundAgentId: 'subagent-bg-report', status: 'running', displayName: 'Supplier review', task: 'Compare suppliers', background: true, startedAt: 10 },
+      }],
+    });
+    expect(snapshot.nodes).toHaveLength(1);
+    expect(snapshot.nodes[0]).toMatchObject({
+      id: 'execution-report', backgroundAgentId: 'subagent-bg-report',
+      status: 'failed', failureCode: AgentFailureCode.ParentGone,
+    });
+  });
+
   it('attaches worktree review metadata and ADR-029 evidence refs without inventing a new evidence shape', () => {
     const evidence: EvidenceRef = {
       id: 'evidence-diff-1',
@@ -170,6 +189,64 @@ describe('agentTreeService', () => {
     expect(node?.evidenceRefs).toEqual([evidence]);
     expect(node?.sources).toContain('agentWorktree');
     expect(snapshot.summary.withWorktree).toBe(1);
+  });
+
+  // --------------------------------------------------------------------------
+  // 重启孤儿收口（N-STALE-AGENT-CHIP-AFTER-QUIT A）
+  // subagent 都活在宿主进程内：context 记录的最后更新早于本进程启动 = 写它的
+  // 执行方已死，节点不能再以 unknown（renderer 口径 = 工作中）谎报在跑。
+  // 用 Date.now() 相对量构造「上一进程写的」与「本进程刚写的」两类记录。
+  // --------------------------------------------------------------------------
+  describe('restart orphan reconciliation', () => {
+    function contextRecord(agentId: string, updatedAt: number) {
+      return {
+        sessionId: 'session-1',
+        agentId,
+        messages: [],
+        updatedAt,
+      };
+    }
+
+    it('marks a context record last updated before this process booted as cancelled, not unknown', () => {
+      const snapshot = buildAgentTreeSnapshot({
+        sessionId: 'session-1',
+        contextRecords: [contextRecord('ghost', Date.now() - 60_000)],
+      });
+
+      const node = snapshot.nodes.find((item) => item.id === 'ghost');
+      expect(node?.status).toBe('cancelled');
+      expect(node?.statusLabel).toBe('已取消');
+    });
+
+    it('keeps a fresh in-process context record as unknown (better say working than dead)', () => {
+      const snapshot = buildAgentTreeSnapshot({
+        sessionId: 'session-1',
+        contextRecords: [contextRecord('live', Date.now())],
+      });
+
+      const node = snapshot.nodes.find((item) => item.id === 'live');
+      expect(node?.status).toBe('unknown');
+    });
+
+    it('a genuinely live spawnGuard agent stays running even when its context record is from a previous process', () => {
+      const snapshot = buildAgentTreeSnapshot({
+        sessionId: 'session-1',
+        spawnAgents: [
+          {
+            id: 'alive',
+            role: 'explore',
+            treeId: 'session-1',
+            status: 'running',
+            task: 'scan the tree',
+            createdAt: 10,
+          },
+        ],
+        contextRecords: [contextRecord('alive', Date.now() - 60_000)],
+      });
+
+      const node = snapshot.nodes.find((item) => item.id === 'alive');
+      expect(node?.status).toBe('running');
+    });
   });
 
   it('sources.ownershipConflicts 原样带进 snapshot.summary（path/ownerAgentId/requesterAgentId）', () => {

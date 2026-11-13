@@ -1027,7 +1027,7 @@ export class SessionRepository {
 
   saveSessionRuntimeState(
     sessionId: string,
-    state: { compressionStateJson?: string | null; persistentSystemContext?: string[] },
+    state: { compressionStateJson?: string | null; persistentSystemContext?: string[]; lastProviderUsageJson?: string | null },
     updatedAt?: number,
   ): void {
     sidecarState.saveSessionRuntimeState(this.db, sessionId, state, updatedAt);
@@ -1035,7 +1035,7 @@ export class SessionRepository {
 
   getSessionRuntimeState(
     sessionId: string,
-  ): { compressionStateJson: string | null; persistentSystemContext: string[] } | null {
+  ): { compressionStateJson: string | null; persistentSystemContext: string[]; lastProviderUsageJson: string | null } | null {
     return sidecarState.getSessionRuntimeState(this.db, sessionId);
   }
 

@@ -459,7 +459,9 @@ function isConnectorReadyForTurnScope(connectorId: string): boolean {
   }
 
   if (cachedStatus.readiness) {
-    return cachedStatus.connected && cachedStatus.readiness === 'ready';
+    // unchecked = 重启后尚未探测，按需探测口径下视为可用（cron.ipc / cronMailPoller 同规则）；failed / unavailable 排除
+    return cachedStatus.readiness === 'unchecked'
+      || (cachedStatus.connected && cachedStatus.readiness === 'ready');
   }
 
   return cachedStatus.connected;
@@ -686,6 +688,7 @@ export function withWorkbenchTurnSystemContext(
       : [];
 
   const toolScope = normalizeWorkbenchToolScope({
+    optInPersonalSkillIds: options?.toolScope?.optInPersonalSkillIds,
     allowedSkillIds: [
       ...(options?.toolScope?.allowedSkillIds || []),
       ...(workbenchToolScope?.allowedSkillIds || []),

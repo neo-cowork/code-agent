@@ -11,6 +11,7 @@ import React, { useState, useEffect } from 'react';
 import { Brain, StopCircle } from 'lucide-react';
 import type { TraceNode } from '@shared/contract/trace';
 import { useI18n } from '../../../hooks/useI18n';
+import { interpolatePlural } from '../../../i18n/interpolate';
 
 interface StreamingIndicatorProps {
   /** 回合开始时间。保留给调用方语义，不再用于「按耗时升级」。 */
@@ -203,7 +204,7 @@ export const StreamingIndicator: React.FC<StreamingIndicatorProps> = ({
         ? t.chat.waitingApproval
         : waitingReason === 'subagent'
         ? subagentCount !== undefined && subagentCount >= 2
-          ? t.chat.waitingSubagentFleet.replace('{count}', String(subagentCount))
+          ? interpolatePlural(t.chat.waitingSubagentFleet, subagentCount)
           : t.chat.waitingSubagent
         : t.chat.waitingModel;
     return (

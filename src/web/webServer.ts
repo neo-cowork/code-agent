@@ -55,6 +55,7 @@ import { killPortHolder } from './portCleanup';
 import { setDelegationEnqueueSignal } from '../host/services/delegation/delegationEnqueueSignal';
 
 const logger = createLogger('WebServer');
+let configService: import('../host/services/core/configService').ConfigService;
 
 // ── Boot timing instrumentation ─────────────────────────────────────
 // 结构化启动分段耗时。每段边界打点，listen 时输出一张 delta 表，用于对账
@@ -336,11 +337,7 @@ export function startWebCapabilityBootstrap(
 // ============================================================================
 
 import { broadcastSSE, sseClients } from './helpers/sse';
-import {
-  applyDbIntegrityOutcome,
-  dbAvailable,
-  setDbAvailable,
-} from './helpers/sessionCache';
+import { applyDbIntegrityOutcome, dbAvailable, setDbAvailable } from './helpers/sessionCache';
 import { cleanupUploadDirs, ensureUploadRootDir } from './helpers/upload';
 
 // Middleware
@@ -363,10 +360,7 @@ import { getApplicationRunRegistry } from '../host/app/applicationRunRegistry';
 import { createApplicationAutoAgentRecoveryHost } from '../host/app/autoAgentRecoveryHost';
 import { createApplicationNativeRecoveryPorts } from '../host/app/nativeRecoveryHost';
 import { shouldStartQueuedAutoResume } from '../host/app/durableRunContinuation';
-import {
-  assembleDurableRun,
-  type DurableRunApplicationRuntime,
-} from '../host/app/initializeDurableRun';
+import { assembleDurableRun, type DurableRunApplicationRuntime } from '../host/app/initializeDurableRun';
 import { resolveDurableRunRollout } from '../host/app/durableRunRollout';
 import type { PendingDevPermissionRequest } from './routes/dev';
 import { createApp, type CreateAppDeps } from './app';
@@ -376,13 +370,13 @@ import { createDaemonResidencyReporter } from '../host/services/daemon/daemonSta
 import { getDaemonQuitIntent } from '../host/services/daemon/quitIntent';
 import { backgroundContinueDetachArmed, createDaemonExitRechecker, shouldStayResidentAfterShellExit, stdinEofIsQuitCommand } from '../host/services/daemon/shellExit';
 import { drainPendingOpsForShutdown, isDrainWatchdogActive } from '../host/services/daemon/daemonDrain';
+import { installExitCauseProbes, markShellPipeDetached, recordShutdownCause } from './shutdownCause';
 import { getBackgroundTaskLedger } from '../host/task/backgroundTaskLedger';
+import { closeIdleManagedBrowsers } from '../host/services/infra/browser/closeIdleManagedBrowsers';
 import { listForegroundPermissionRequests, onForegroundPermissionStateChange } from './foregroundPermissionRegistry';
 import { createWebSessionContext } from './sessionDomainHandler';
 import { startDurableRunStartup } from './durableRunStartup';
-import {
-  notifyDurableRecoveryWaiting as notifyDurableRecoveryWaitingWith,
-} from './durableRecoveryWaitingNotifier';
+import { notifyDurableRecoveryWaiting as notifyDurableRecoveryWaitingWith } from './durableRecoveryWaitingNotifier';
 import type { DurableRecoveryDispatchResult } from '../host/runtime/durableRecoveryDispatcher';
 
 // Re-export broadcastSSE for backward compatibility
@@ -511,8 +505,10 @@ async function initializeServices(): Promise<void> {
 
   // 1. 初始化 ConfigService（main 模块的单例，IPC handler 通过 getConfigService() 获取）
   const { initConfigService } = await import('../host/services/core/configService');
-  const configService = initConfigService();
+  configService = initConfigService();
   await configService.initialize().then(() => logger.info('ConfigService initialized'));
+  configService.startWatchingConfigFile();
+  process.once('exit', () => configService.stopWatchingConfigFile());
   (await import('../host/observability/privacyGate')).installPrivacyGate(configService);
   bootMark('configService');
 
@@ -608,18 +604,12 @@ async function initializeServices(): Promise<void> {
   }
   bootMark('model-marks');
 
-  // 4.5 Loop 启动收口（N-LOOP-DURABLE 刀1 + 修复棒）：归属进程已确认消失的 loop 残留
-  // 在 session_automations 里永远停在 running，侧栏徽标继续谎报「运行中」。
-  // 在 renderer 连上来之前把残留收成终态并发一条人话通知（判据 = loopOwnership
-  // 进程归属戳，别的进程还在跑的不动）；只收口，不恢复续跑。
-  try {
-    const { markInterruptedLoops } = await import('../host/loop/loopStartupRecovery');
-    const lost = await markInterruptedLoops();
-    if (lost > 0) logger.info(`Loop startup recovery: ${lost} interrupted loop(s) marked as lost`);
-  } catch (error) {
-    logger.warn('Loop startup recovery failed (non-blocking):', (error as Error).message);
-  }
+  // 4.5 Loop 残留收口 + 孤儿任务夹清扫（实现见 startupSweeps.ts）
+  const { runStartupSweeps } = await import('./startupSweeps');
+  await runStartupSweeps(logger);
   bootMark('loop-recovery');
+  // 4.5b Swarm trace 启动收口（N-STALE-AGENT-CHIP-AFTER-QUIT A）：上一进程遗留的 running run 收 cancelled，细节见 swarmTraceStartupRecovery。
+  await import('../host/agent/swarmTraceStartupRecovery').then(({ runSwarmTraceStartupRecovery }) => runSwarmTraceStartupRecovery());
 
   // Capability migration needs initialized settings and message history. Activation still
   // finishes before IPC registration and before the agent runtime can settle a turn.
@@ -677,7 +667,7 @@ async function initializeServices(): Promise<void> {
   // Skills and MCP are useful immediately after launch, but remote connections
   // must not sit in front of /api/health or Tauri's first window navigation.
   const capabilityBootstrap = startWebCapabilityBootstrap(configService);
-  bootMark('capability-bootstrap-kickoff'); // 非阻塞：应≈0ms
+  bootMark('capability-bootstrap-kickoff'); void rendererWindowReady.then(() => notificationService.replayPersistedHeld()); // 非阻塞；首个 renderer 就绪后补发上次遗留的暂存通知
   if (databaseForDurableRun) {
     startDurableRunStartup({
       capabilityBootstrap,
@@ -816,6 +806,8 @@ async function initializeServices(): Promise<void> {
   // 「保持聊天同步」：auth 已恢复缓存用户（owner scope 才对），不 await；E2E 不跑。
   if (process.env.CODE_AGENT_E2E !== '1') {
     void import('../host/externalImport/chatsAutoSync').then((m) => m.startChatsAutoSync(() => broadcastSSE(IPC_CHANNELS.SESSION_LIST_UPDATED, undefined)));
+    void import('../host/externalImport/skillsAutoSync').then((m) => m.startSkillsAutoSync());
+    void import('../host/externalImport/instructionsAutoSync').then((m) => m.startInstructionsAutoSync());
   }
 
   // 8. Log Bridge + P3-A 只读任务状态 provider。
@@ -978,7 +970,7 @@ function registerHandlers(): void {
       }
     },
     getPlanningService: () => null,
-    getTaskManager: () => null,
+    getTaskManager: () => getTaskManager(),
     getCurrentSessionId: () => currentSessionId,
     setCurrentSessionId: (id: string) => {
       currentSessionId = id;
@@ -1100,9 +1092,11 @@ async function runCompileWarmup(): Promise<never> {
 
 async function main(): Promise<void> {
   exitIfPackagedDevModeRefused(process.env);
+  // 最后遗言探针（uncaughtExceptionMonitor / exit）：越早装覆盖面越全，包括
+  // 启动早期崩溃。uncaughtExceptionMonitor 只旁观，不改变崩溃行为。
+  installExitCauseProbes();
   if (process.env.CODE_AGENT_COMPILE_WARMUP === '1') {
-    await runCompileWarmup();
-    return;
+    return runCompileWarmup();
   }
   bootMark('main:start');
   const port = parseInt(process.env.WEB_PORT || String(WEB_SERVER_DEFAULTS.PORT), 10);
@@ -1218,7 +1212,13 @@ async function main(): Promise<void> {
   });
 
   // 优雅退出
-  const shutdown = async () => {
+  // source 口径（N-WEBSERVER-DEATH-SUPERVISE-DIAG）：信号监听器触发时 Node 把
+  // 信号名传进来（'SIGTERM'/'SIGINT'）；stdin 断开路径显式传 'stdin-eof'/
+  // 'stdin-error'；无参调用 = daemon rechecker 触发。落盘在 shutdownCause.ts。
+  const shutdown = async (source?: string) => {
+    recordShutdownCause(source ?? 'daemon-rechecker');
+    closeIdleManagedBrowsers('shutdown');
+    configService.stopWatchingConfigFile();
     console.log('\nShutting down...');
     // 宽限期是有限的（Rust 侧 GRACEFUL_SHUTDOWN_TIMEOUT 到点就 SIGKILL），关库是这段
     // 时间里唯一不能省的一步——前面的清理任何一个卡住，都会把预算吃光，最后仍然被
@@ -1331,28 +1331,31 @@ async function main(): Promise<void> {
     })
     : undefined;
   let shellPipeClosedHandled = false;
-  const onShellPipeClosed = () => {
+  const onShellPipeClosed = (cause: 'stdin-eof' | 'stdin-error' = 'stdin-eof') => {
     if (shellPipeClosedHandled) return;
     shellPipeClosedHandled = true;
     shellPipeAttached = false;
+    // 取证同步：此后任何退出原因都带「管道已断」这条事实
+    markShellPipeDetached();
     const shouldStay = shouldStayResidentAfterShellExit(process.platform, daemonIdleSnapshot?.(), eofIsQuitCommand(), getDaemonQuitIntent());
     if (daemonExitRechecker?.onShellPipeClosed()) return;
     if (!shouldStay) {
-      void shutdown();
+      void shutdown(cause);
       return;
     }
     logger.info('[daemon] shell exited while busy — staying resident (runs/companion/approval/armed schedules)');
+    closeIdleManagedBrowsers('shell-exit-resident');
   };
   if (daemonExitRechecker) {
-    const onResidencySignal = () => { daemonExitRechecker.recheck(); daemonResidency?.report(); };
+    const onResidencySignal = () => { if (!shellPipeAttached) closeIdleManagedBrowsers('residency-idle'); daemonExitRechecker.recheck(); daemonResidency?.report(); };
     runRegistry.onIdleTransition(onResidencySignal);
     onForegroundPermissionStateChange(onResidencySignal);
     getTaskManager().on('event', onResidencySignal);
   }
   if (process.env.CODE_AGENT_TAURI_BOOT_TOKEN) {
     process.stdin.resume();
-    process.stdin.on('end', onShellPipeClosed);
-    process.stdin.on('error', onShellPipeClosed);
+    process.stdin.on('end', () => onShellPipeClosed('stdin-eof'));
+    process.stdin.on('error', () => onShellPipeClosed('stdin-error'));
   }
 
   // ── 前端热更：启动后异步拉取（不阻塞 health，失败不影响启动）─────────

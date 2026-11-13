@@ -8,6 +8,12 @@ import { useAppStore } from './appStore';
 import { useAppshotsStore } from './appshotsStore';
 import { useComposerStore } from './composerStore';
 import { isDraftOrSpaceScopeKey } from './composerScopeModel';
+import { excludeBusySessions, type DraftBusySignals } from './sessionDraftBusyGuard';
+import { toast } from '../hooks/useToast';
+import { languages } from '../i18n';
+import { getSessionTitlePlaceholder } from '../utils/sessionTitlePlaceholder';
+
+export { observeSessionDraftUsage } from './sessionDraftBusyGuard';
 
 const logger = createLogger('SessionCreate');
 
@@ -89,7 +95,7 @@ function normalizeSession(session: Session & {
   };
 }
 
-interface SessionCreateStoreSlice {
+interface SessionCreateStoreSlice extends DraftBusySignals {
   sessions: SessionCreateMeta[];
   currentSessionId: string | null;
   messages: Message[];
@@ -115,6 +121,45 @@ export interface SessionCreateDeps {
   }) => SessionCreateMeta | null;
 }
 
+/** List metadata is only a shortlist; an unknown host response must never authorize reuse. */
+async function findVerifiedDraft(
+  deps: SessionCreateDeps,
+  workingDirectory: string | null,
+): Promise<SessionCreateMeta | null> {
+  const rejected = new Set<string>();
+  for (;;) {
+    const state = deps.get();
+    const candidate = deps.findReusableNewSessionDraft({
+      ...state,
+      sessions: excludeBusySessions(state.sessions, state.currentSessionId, state.messages, state)
+        .filter((session) => !rejected.has(session.id)),
+      workingDirectory,
+    });
+    if (!candidate) return null;
+    rejected.add(candidate.id);
+    try {
+      const messages = await invokeSession<Message[]>('getMessages', { sessionId: candidate.id });
+      logger.debug('Draft reuse host check', {
+        sessionId: candidate.id, workingDirectory,
+        messageCount: candidate.messageCount, turnCount: candidate.turnCount,
+        hostMessageCount: Array.isArray(messages) ? messages.length : null,
+      });
+      if (!Array.isArray(messages) || messages.length !== 0) continue;
+      // Sending, loading and list updates can race the host read. Re-evaluate live state.
+      const live = deps.get();
+      const stillEmpty = deps.findReusableNewSessionDraft({
+        ...live,
+        sessions: excludeBusySessions(live.sessions, live.currentSessionId, live.messages, live)
+          .filter((session) => session.id === candidate.id),
+        workingDirectory,
+      });
+      if (stillEmpty) return stillEmpty;
+    } catch (error) {
+      logger.warn('Cannot verify empty draft; creating a fresh session', { sessionId: candidate.id, error });
+    }
+  }
+}
+
 /**
  * Core createSession implementation (extracted from sessionStore for max-lines debt gate).
  * Caller owns the pending-create tracking / isCreatingSession flag.
@@ -124,7 +169,7 @@ export async function executeCreateSession(
   title?: string,
   options?: CreateSessionOptionsInput,
 ): Promise<Session | null> {
-  const { get, set, invalidatePendingSessionSwitches, findReusableNewSessionDraft } = deps;
+  const { get, set, invalidatePendingSessionSwitches } = deps;
   // 新任务级「不用记忆」意图：只在草稿/空间发起时生效（会话内新建是另一台戏，
   // 档位真源在 host 侧 session.memoryMode）。发起后 handoff 会清掉槽内标记。
   const composerState = useComposerStore.getState();
@@ -136,33 +181,33 @@ export async function executeCreateSession(
     useAppStore.getState().closeSecondaryPages();
   }
   try {
-    const inheritedWorkingDirectory =
-      options?.workingDirectory !== undefined
-        ? options.workingDirectory
-        : useAppStore.getState().workingDirectory;
+    // appStore.workingDirectory mirrors the active session. Reusing it implicitly would bind a
+    // plain new chat to the previous chat's planned 任务_MMDD_ folder. Workspace/group entry
+    // points opt in by passing workingDirectory explicitly; every other new chat starts folderless.
+    const newSessionWorkingDirectory = options?.workingDirectory ?? null;
     const onboardingDefaultEnginePromise = !options?.engine
-      ? readOnboardingDefaultEngine(inheritedWorkingDirectory).catch(() => null)
+      ? readOnboardingDefaultEngine(newSessionWorkingDirectory).catch(() => null)
       : Promise.resolve(null);
     const nextTitle = title?.trim() || '新对话';
-    if (nextTitle === '新对话') {
+    if (getSessionTitlePlaceholder(nextTitle, useAppStore.getState().language) !== null) {
       useAppshotsStore.getState().clear();
-      const reusableSession = findReusableNewSessionDraft({
-        sessions: get().sessions,
-        currentSessionId: get().currentSessionId,
-        messages: get().messages,
-        todos: get().todos,
-        workingDirectory: inheritedWorkingDirectory,
-      });
-      if (reusableSession) {
-        const onboardingDefaultEngine = await onboardingDefaultEnginePromise;
-        if (get().currentSessionId !== reusableSession.id) {
-          await get().switchSession(reusableSession.id);
-        } else {
-          // 复用的草稿就是当前会话：不切换、不新建，屏幕上一点变化都没有，
-          // 「新建会话」看起来像点了没反应（侧栏「新任务」与快速对话分区的 + 都走这条）。
-          // 用户已经身在他想要的那个空白会话里，唯一还缺的就是把光标交还给他。
-          useAppStore.getState().requestComposerFocus();
+      const onboardingDefaultEngine = await onboardingDefaultEnginePromise;
+      let verifiedDraft = await findVerifiedDraft(deps, newSessionWorkingDirectory);
+      if (verifiedDraft && get().currentSessionId !== verifiedDraft.id) {
+        await get().switchSession(verifiedDraft.id);
+        // load can observe a message that arrived after getMessages; never land there as "new".
+        const live = get();
+        if (excludeBusySessions([verifiedDraft], live.currentSessionId, live.messages, live).length === 0) {
+          verifiedDraft = null;
         }
+      } else if (verifiedDraft) {
+        useAppStore.getState().requestComposerFocus();
+      }
+      const reusableSession = verifiedDraft;
+      if (reusableSession) {
+        logger.debug('Reusing verified empty draft', {
+          sessionId: reusableSession.id, title: nextTitle, workingDirectory: newSessionWorkingDirectory,
+        });
         if (
           !options?.engine &&
           onboardingDefaultEngine &&
@@ -217,7 +262,7 @@ export async function executeCreateSession(
     set({ isLoading: true, error: null });
     const session = await invokeSession<Session | null>('create', {
       title: nextTitle,
-      workingDirectory: inheritedWorkingDirectory,
+      workingDirectory: newSessionWorkingDirectory,
       engine: options?.engine ?? null,
       ...(options?.expertRoleId ? { expertRoleId: options.expertRoleId } : {}),
       // 首句话建会话即带 'off'（无竞态）：host 侧 create 白名单校验后落库
@@ -286,10 +331,10 @@ export async function executeCreateSession(
     return null;
   } catch (error) {
     logger.error('Failed to create session', error);
-    set({
-      error: error instanceof Error ? error.message : 'Failed to create session',
-      isLoading: false,
-    });
+    const reason = error instanceof Error ? error.message : 'Failed to create session';
+    set({ error: reason, isLoading: false });
+    const prefix = languages[useAppStore.getState().language].sidebar.createSessionFailedPrefix;
+    toast.error(`${prefix}${reason}`);
     return null;
   }
 }

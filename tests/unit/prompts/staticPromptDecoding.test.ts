@@ -16,7 +16,7 @@
 // eval 只用来测行为，不用来测「这句话还在不在」。
 // ============================================================================
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import '../../../src/host/prompts/promptIndex';
 import { IDENTITY_PROMPT, MEMORY_SYSTEM } from '../../../src/host/prompts/identity';
 import { TOOLS_PROMPT } from '../../../src/host/prompts/base';
@@ -75,8 +75,19 @@ describe('常驻层体量', () => {
     // 从来没下发过，删除时把其中两条真缺的搬进常驻层——硬拒清单（武器/CSAM/欺诈/冒充）
     // 与「确认由权限层负责，别用文字空等代替工具调用」。净增 ~120，换的是安全红线
     // 和一类真实存在的「光说不做」行为缺陷，不接受再用它顶别的膨胀。
-    const total = estimateTokens(IDENTITY_PROMPT) + estimateTokens(TOOLS_PROMPT);
-    expect(total).toBeLessThanOrEqual(3100);
+    // 3100 → 3190（2026-11-03，N-CUA-SCREEN-GUARDS-LADDER，实测 3184）：常驻层新增
+    // 能力阶梯规则（connectors/native → browser → 屏幕控制最后 + 动手前一句话披露），
+    // 规则本身已从 485 字符收紧到 430、并对首行做了无损微剪（213→194），仍超旧上限 84。
+    // 屏幕控制是慢而不可核的动作面，这条规则是护栏内容，与 GHOSTRULES 同类；
+    // 不接受再用它顶纯功能描述类的膨胀。
+    // Measure canonical production text; globalSetup's temporary data-dir path has variable length.
+    vi.stubEnv('CODE_AGENT_DATA_DIR', undefined);
+    try {
+      const total = estimateTokens(IDENTITY_PROMPT) + estimateTokens(TOOLS_PROMPT);
+      expect(total).toBeLessThanOrEqual(3190);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 

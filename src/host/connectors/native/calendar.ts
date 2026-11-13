@@ -5,7 +5,9 @@
 import type { Connector, ConnectorExecutionResult, ConnectorStatus } from '../base';
 import {
   buildAppleScriptDateVar,
+  describeAppleScriptFailure,
   escapeAppleScriptString,
+  isAppleScriptFailure,
   parseAppleScriptDate,
   runAppleScript,
   sharedAppleScriptHandlers,
@@ -47,7 +49,9 @@ function parseLine(line: string): string[] {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return isAppleScriptFailure(error)
+    ? describeAppleScriptFailure('Calendar', error).message
+    : error instanceof Error ? error.message : String(error);
 }
 
 function buildCalendarStatus(capabilities: string[]): ConnectorStatus {
@@ -112,6 +116,39 @@ async function listCalendars(): Promise<string[]> {
     .filter(Boolean);
 }
 
+async function listWritableCalendars(): Promise<string[]> {
+  const output = await runAppleScript([
+    ...sharedAppleScriptHandlers(),
+    'tell application "Calendar"',
+    'set outputLines to {}',
+    'repeat with cal in every calendar',
+    'if writable of cal then set end of outputLines to my sanitizeText(name of cal)',
+    'end repeat',
+    'return my joinLines(outputLines)',
+    'end tell',
+  ]);
+
+  return output
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function resolveCalendarName(requestedName: string, availableCalendars: string[]): string {
+  const exactMatch = availableCalendars.find((name) => name === requestedName);
+  if (exactMatch) return exactMatch;
+
+  const caseInsensitiveMatches = availableCalendars.filter(
+    (name) => name.toLowerCase() === requestedName.toLowerCase(),
+  );
+  if (caseInsensitiveMatches.length === 1) return caseInsensitiveMatches[0];
+
+  const availableText = availableCalendars.length > 0 ? availableCalendars.join(', ') : '(none)';
+  throw new Error(
+    `No calendar named "${requestedName}". Available calendars: ${availableText}. Omit calendar to use the first writable calendar.`,
+  );
+}
+
 async function probeCalendarAccess(): Promise<string[]> {
   if (process.platform !== 'darwin') {
     calendarReadiness = 'unavailable';
@@ -135,29 +172,31 @@ async function probeCalendarAccess(): Promise<string[]> {
   }
 }
 
-async function listEvents(payload: Record<string, unknown>): Promise<CalendarEventItem[]> {
-  const calendarName = typeof payload.calendar === 'string' ? payload.calendar.trim() : '';
-  const fromMs = typeof payload.from_ms === 'number' ? payload.from_ms : new Date().setHours(0, 0, 0, 0);
-  const toMs = typeof payload.to_ms === 'number' ? payload.to_ms : Date.now() + 14 * 24 * 60 * 60 * 1000;
-  const limit = typeof payload.limit === 'number' ? payload.limit : 20;
+const SEGMENTED_LIST_EVENTS_DEADLINE_MS = 45_000;
 
-  const lines = [
+interface ListEventsOutcome {
+  events: CalendarEventItem[];
+  unreadCalendars?: string[];
+}
+
+function buildSingleCalendarEventsScript(
+  calendarReference: string | number,
+  fromMs: number,
+  toMs: number,
+  eventLimit: number,
+): string[] {
+  const calendarSelector = typeof calendarReference === 'number'
+    ? String(calendarReference)
+    : `"${escapeAppleScriptString(calendarReference)}"`;
+  return [
     ...sharedAppleScriptHandlers(),
     ...buildAppleScriptDateVar('fromDate', fromMs),
     ...buildAppleScriptDateVar('toDate', toMs),
     'tell application "Calendar"',
     'set outputLines to {}',
-    `set eventLimit to ${Math.max(1, Math.min(limit, 200))}`,
+    `set eventLimit to ${eventLimit}`,
     'set emittedCount to 0',
-  ];
-
-  if (calendarName) {
-    lines.push(`set targetCalendars to {calendar "${escapeAppleScriptString(calendarName)}"}`);
-  } else {
-    lines.push('set targetCalendars to every calendar');
-  }
-
-  lines.push(
+    `set targetCalendars to {calendar ${calendarSelector}}`,
     'repeat with cal in targetCalendars',
     'set matchingEvents to every event of cal whose end date >= fromDate and start date <= toDate',
     'repeat with ev in matchingEvents',
@@ -176,7 +215,7 @@ async function listEvents(payload: Record<string, unknown>): Promise<CalendarEve
     'set rawUrl to url of ev',
     'end try',
     'set eventUrl to my sanitizeText(rawUrl)',
-    'set eventLine to (uid of ev as text) & "|" & (my sanitizeText(name of cal)) & "|" & (my sanitizeText(summary of ev)) & "|" & (my sanitizeText((start date of ev) as text)) & "|" & (my sanitizeText((end date of ev) as text)) & "|" & eventLocation & "|" & eventNotes & "|" & eventUrl',
+    'set eventLine to (uid of ev as text) & "|" & (my sanitizeText(name of cal)) & "|" & (my sanitizeText(summary of ev)) & "|" & (my isoDateText(start date of ev)) & "|" & (my isoDateText(end date of ev)) & "|" & eventLocation & "|" & eventNotes & "|" & eventUrl',
     'set end of outputLines to eventLine',
     'set emittedCount to emittedCount + 1',
     'if emittedCount >= eventLimit then exit repeat',
@@ -184,11 +223,16 @@ async function listEvents(payload: Record<string, unknown>): Promise<CalendarEve
     'if emittedCount >= eventLimit then exit repeat',
     'end repeat',
     'return my joinLines(outputLines)',
-    'end tell'
-  );
+    'end tell',
+  ];
+}
 
-  const output = await runAppleScript(lines);
-  const events = output
+function parseEventsFromAppleScriptOutput(
+  output: string,
+  fromMs: number,
+  toMs: number,
+): CalendarEventItem[] {
+  return output
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
@@ -210,15 +254,74 @@ async function listEvents(payload: Record<string, unknown>): Promise<CalendarEve
       const start = event.startAtMs ?? event.endAtMs ?? 0;
       const end = event.endAtMs ?? event.startAtMs ?? start;
       return end >= fromMs && start <= toMs;
-    })
+    });
+}
+
+function sortAndTruncateEvents(events: CalendarEventItem[], limit: number): CalendarEventItem[] {
+  return [...events]
     .sort((a, b) => {
       const aTime = a.startAtMs ?? Number.MAX_SAFE_INTEGER;
       const bTime = b.startAtMs ?? Number.MAX_SAFE_INTEGER;
       return aTime - bTime;
     })
     .slice(0, limit);
+}
 
-  return events;
+async function listEvents(payload: Record<string, unknown>): Promise<ListEventsOutcome> {
+  const calendarName = typeof payload.calendar === 'string' ? payload.calendar.trim() : '';
+  const fromMs = typeof payload.from_ms === 'number' ? payload.from_ms : new Date().setHours(0, 0, 0, 0);
+  const toMs = typeof payload.to_ms === 'number' ? payload.to_ms : Date.now() + 14 * 24 * 60 * 60 * 1000;
+  const limit = typeof payload.limit === 'number' ? payload.limit : 20;
+  const eventLimit = Math.max(1, Math.min(limit, 200));
+
+  if (calendarName) {
+    const output = await runAppleScript(buildSingleCalendarEventsScript(calendarName, fromMs, toMs, eventLimit));
+    return {
+      events: sortAndTruncateEvents(parseEventsFromAppleScriptOutput(output, fromMs, toMs), limit),
+    };
+  }
+
+  const calendars = await listCalendars();
+  if (calendars.length === 0) {
+    return { events: [] };
+  }
+
+  const deadlineAt = Date.now() + SEGMENTED_LIST_EVENTS_DEADLINE_MS;
+  const collected: CalendarEventItem[] = [];
+  const unreadCalendars: string[] = [];
+  let lastTimeoutError: unknown;
+
+  for (let i = 0; i < calendars.length; i++) {
+    const cal = calendars[i];
+    if (i > 0 && Date.now() >= deadlineAt) {
+      unreadCalendars.push(...calendars.slice(i));
+      break;
+    }
+    try {
+      const output = await runAppleScript(buildSingleCalendarEventsScript(i + 1, fromMs, toMs, eventLimit));
+      const parsed = parseEventsFromAppleScriptOutput(output, fromMs, toMs);
+      collected.push(...parsed);
+      if (collected.length >= eventLimit) {
+        break;
+      }
+    } catch (error) {
+      if (isAppleScriptFailure(error) && describeAppleScriptFailure('Calendar', error).code === 'timeout') {
+        unreadCalendars.push(cal);
+        lastTimeoutError = error;
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  if (unreadCalendars.length === calendars.length && lastTimeoutError !== undefined) {
+    throw lastTimeoutError;
+  }
+
+  return {
+    events: sortAndTruncateEvents(collected, limit),
+    unreadCalendars: unreadCalendars.length > 0 ? unreadCalendars : undefined,
+  };
 }
 
 async function getEvent(payload: Record<string, unknown>): Promise<CalendarEventItem> {
@@ -249,7 +352,7 @@ async function getEvent(payload: Record<string, unknown>): Promise<CalendarEvent
     'try',
     'set rawUrl to url of targetEvent',
     'end try',
-    `return (uid of targetEvent as text) & "|" & (my sanitizeText("${escapeAppleScriptString(calendarName)}")) & "|" & (my sanitizeText(summary of targetEvent)) & "|" & (my sanitizeText((start date of targetEvent) as text)) & "|" & (my sanitizeText((end date of targetEvent) as text)) & "|" & (my sanitizeText(rawLocation)) & "|" & (my sanitizeText(rawNotes)) & "|" & (my sanitizeText(rawUrl))`,
+    `return (uid of targetEvent as text) & "|" & (my sanitizeText("${escapeAppleScriptString(calendarName)}")) & "|" & (my sanitizeText(summary of targetEvent)) & "|" & (my isoDateText(start date of targetEvent)) & "|" & (my isoDateText(end date of targetEvent)) & "|" & (my sanitizeText(rawLocation)) & "|" & (my sanitizeText(rawNotes)) & "|" & (my sanitizeText(rawUrl))`,
     'end tell',
     'end tell',
   ]);
@@ -268,15 +371,12 @@ async function getEvent(payload: Record<string, unknown>): Promise<CalendarEvent
 }
 
 async function createEvent(payload: Record<string, unknown>): Promise<CalendarEventItem> {
-  const calendarName = typeof payload.calendar === 'string' ? payload.calendar.trim() : '';
+  const requestedCalendarName = typeof payload.calendar === 'string' ? payload.calendar.trim() : '';
   const title = typeof payload.title === 'string' ? payload.title.trim() : '';
   const startMs = typeof payload.start_ms === 'number' ? payload.start_ms : NaN;
   const endMs = typeof payload.end_ms === 'number' ? payload.end_ms : startMs + 30 * 60 * 1000;
   const location = typeof payload.location === 'string' ? payload.location.trim() : '';
 
-  if (!calendarName) {
-    throw new Error('calendar is required for create_event');
-  }
   if (!title) {
     throw new Error('title is required for create_event');
   }
@@ -285,6 +385,13 @@ async function createEvent(payload: Record<string, unknown>): Promise<CalendarEv
   }
   if (!Number.isFinite(endMs) || endMs < startMs) {
     throw new Error('end_ms must be greater than or equal to start_ms');
+  }
+  const calendarName = requestedCalendarName
+    ? resolveCalendarName(requestedCalendarName, await listCalendars())
+    : (await listWritableCalendars())[0] ?? '';
+
+  if (!calendarName) {
+    throw new Error('No writable calendar is available. Omit calendar to use the first writable calendar.');
   }
 
   const propertyParts = [
@@ -304,7 +411,7 @@ async function createEvent(payload: Record<string, unknown>): Promise<CalendarEv
     'tell application "Calendar"',
     `tell calendar "${escapeAppleScriptString(calendarName)}"`,
     `set newEvent to make new event at end with properties {${propertyParts.join(', ')}}`,
-    `return (uid of newEvent as text) & "|" & (my sanitizeText("${escapeAppleScriptString(calendarName)}")) & "|" & (my sanitizeText(summary of newEvent)) & "|" & (my sanitizeText((start date of newEvent) as text)) & "|" & (my sanitizeText((end date of newEvent) as text)) & "|" & (my sanitizeText(location of newEvent))`,
+    `return (uid of newEvent as text) & "|" & (my sanitizeText("${escapeAppleScriptString(calendarName)}")) & "|" & (my sanitizeText(summary of newEvent)) & "|" & (my isoDateText(start date of newEvent)) & "|" & (my isoDateText(end date of newEvent)) & "|" & (my sanitizeText(location of newEvent))`,
     'end tell',
     'end tell',
   ]);
@@ -379,7 +486,7 @@ async function updateEvent(payload: Record<string, unknown>): Promise<CalendarEv
   }
 
   lines.push(
-    `return (uid of targetEvent as text) & "|" & (my sanitizeText("${escapeAppleScriptString(calendarName)}")) & "|" & (my sanitizeText(summary of targetEvent)) & "|" & (my sanitizeText((start date of targetEvent) as text)) & "|" & (my sanitizeText((end date of targetEvent) as text)) & "|" & (my sanitizeText(location of targetEvent))`,
+    `return (uid of targetEvent as text) & "|" & (my sanitizeText("${escapeAppleScriptString(calendarName)}")) & "|" & (my sanitizeText(summary of targetEvent)) & "|" & (my isoDateText(start date of targetEvent)) & "|" & (my isoDateText(end date of targetEvent)) & "|" & (my sanitizeText(location of targetEvent))`,
     'end tell',
     'end tell',
   );
@@ -480,10 +587,14 @@ export const calendarConnector: Connector = {
         };
       }
       case 'list_events': {
-        const events = await listEvents(payload);
+        const { events, unreadCalendars } = await listEvents(payload);
+        const baseSummary = events.length > 0 ? `找到 ${events.length} 条日历事件` : '没有找到匹配的日历事件';
+        const unreadNote = unreadCalendars && unreadCalendars.length > 0
+          ? `（以下日历读取超时未包含：${unreadCalendars.join('、')}）`
+          : '';
         return {
           data: events,
-          summary: events.length > 0 ? `找到 ${events.length} 条日历事件` : '没有找到匹配的日历事件',
+          summary: `${baseSummary}${unreadNote}`,
         };
       }
       case 'get_event': {

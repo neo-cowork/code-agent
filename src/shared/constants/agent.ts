@@ -53,7 +53,48 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // 本回合已声明 targetApp 后，省略 targetApp 的 type/key（含 computer_batch 子动作）会被拒绝。
 // 整合合并：本单 sys-v90 × main 已合入的 sys-v90 撞号，合并后的 prompt 输入哈希面
 // 未在任何一侧记录过，按惯例升版。
-export const PROMPT_VERSION = 'sys-v92' as const;
+// sys-v93：N-IMAGE-MULTI-REF-IMPL——image_generate reference_images 由最多 1 张放宽到 1-3 张
+//（图1/图2/图3 = 数组顺序、比例跟随最后一张），schema 描述与示例同步改写。
+// sys-v95：N-FIX-BROWSER-SECRETREF-HARDEN-FU1-FU2-FU2——Browser 工具（BrowserTool.ts 与
+// browser.schema.ts 两份逐字孪生）inputSchema 与 ## Parameters: 列表补列 secretRef，
+// 描述与 browser_action 的 secretRef 逐字一致；模型才能把密码引用作为 secretRef
+// 参数传入而非把引用文本打进 text（FB-552/FB-544）。
+// sys-v97：N-ROLE-CREATE-DIRECT-CORE——propose_role 工具说明明确 host 会从
+// 用户原话判定直接创建或确认卡，模型不得提供直接创建参数。
+// sys-v99：N-CONNECTOR-READ-UNTRUSTED——mail/calendar/reminders/tmeetMeetingList/
+// tmeetMeetingSearch 五个连接器读 schema 加 readsUntrustedContent 元数据（同 sys-v89
+// 的 touchesWorkDirectory 口径：不进请求体，wire 序列化不含它，模型文本门要求 bump）。
+// 整合合并：本单与 main 已合入的 sys-v98 撞号，合并后的 prompt 输入哈希面未被记录过，按惯例升版。
+// 整合合并：本单 sys-v93（image_generate 多参考图 schema 面）× main 已合入的 sys-v95
+//（Browser secretRef schema 面），合并后的 prompt 输入哈希面未在任何一侧记录过，按惯例升版。
+// sys-v96：N-FG-CONNECTOR-TOOLS——指挥台 brain 提示词加 3a 条（连接器工具在场时
+// 发邮件/建日程/设提醒直调，审批卡在聊天内确认），且命中意图的轮次工具面新增
+// mail/calendar/reminders 连接器读写工具（ADR-059 修订，per-turn 进面）。
+// 整合合并 r2：本单 sys-v96（image 多参考图 × secretRef 合并面）× main 已合入的
+// sys-v96（连接器工具面）撞号，两个 sys-v96 的哈希面互不包含，合并面未在任何一侧
+// 记录过，按惯例升版。
+// 整合合并 r3：本单（image 多参考图 schema 面）× main 已合入的 sys-v99 撞号，合并面未在任何一侧
+// 记录过，按惯例升版。
+// sys-v100：整合 set_role_proactivity 的 schema 全额下发及 ToolSearch 索引行，
+// 合并后的 prompt 输入哈希面未在任何一侧记录过，按惯例升版。
+// sys-v101：N-FIX-BROWSER-TARGETREF-STRING-WASTE-STEPS 整合合并——browser_action / Browser schema
+// targetRef 与 destinationTargetRef 扩为 ['object', 'string'] 并附单串 refId 示例（模型可见面变化），
+// 与 main 已合入的 sys-v100 撞号，按惯例升版。
+// sys-v102：整合 list_experts 可选 name 参数，支持 edit-role 从当前槽读取
+// 持久化专家定义；合并后模型可见面未在任一侧单独记录。
+// sys-v103：native Reminders/Calendar create 的目标名称改为可选，并说明本地化名称校验。
+// sys-v104：task_status 描述纳入 spawn_agent 后台子代理的真实状态。
+// sys-v105：压缩 task_status 描述，保持模型可见的后台子代理提示在上下文预算内。
+// sys-v106：N-FIX-BROWSER-TASK-CONTEXT-BLOAT-SNAPSHOT——get_dom_snapshot 改紧凑逐行输出（refId | tag | label）+
+// 字符预算 + offset 分页；browser_action schema 新增 offset，targetRef 描述改为 refId 行。
+// sys-v107/v108 (GUI disclosure branch): first GUI action includes Bash/osascript; notices belong in visible content.
+// sys-v108：整合 main 多参考图 schema 与 delegate_task 满槽选择卡指引。
+// sys-v111: integrate main sys-v109 with missing-attachment context and same-language reply.
+// sys-v113: integrate main sys-v112 with the measured GUI disclosure wording (unchanged).
+// sys-v114: trim two filler words from the skills rule to fit the resident-layer budget (no semantic change).
+// sys-v115：整合合并——keep_result_page 枚举/描述/结果文案（本单）叠上 main 的 sys-v114 面，
+// 合并面未在任何一侧单独记录过，按惯例升版。
+export const PROMPT_VERSION = 'sys-v115' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =

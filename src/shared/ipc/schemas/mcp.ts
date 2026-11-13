@@ -20,6 +20,7 @@ const McpDomainRequestSchema = z.object({
     'getStatus',
     'listResources',
     'listTools',
+    'reauthorizeServer',
     'reconnectServer',
     'refreshFromCloud',
     'removeServer',

@@ -29,6 +29,8 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
 }));
 
 import { proposeProjectMemoryModule } from '../../../src/host/tools/modules/lightMemory/proposeProjectMemory';
+import { draftEntryId } from '../../../src/host/memory/projectMemoryDraft';
+import { BUILTIN_PROMPT_COMMANDS } from '../../../src/shared/commands/builtinPromptCommands';
 import { listUnifiedMemoryEntries } from '../../../src/host/memory/memoryEntryRuntime';
 
 class MemoryDb {
@@ -114,8 +116,9 @@ describe('ProposeProjectMemory', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.output).toContain('status: candidate');
-    expect(result.output).not.toContain('status: active');
+    expect(result.output).toContain('「用途」草稿已保存，等待确认。');
+    expect(result.output).toContain('仍待确认，需在设置→记忆页确认才生效');
+    expect(result.output).not.toContain('已生效');
     expect(result.meta).toMatchObject({ outcome: 'written', status: 'candidate', topic: 'purpose' });
 
     const files = await draftFiles();
@@ -151,7 +154,7 @@ describe('ProposeProjectMemory', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.output).toContain('status: candidate');
+    expect(result.output).toContain('「用途」草稿已保存，等待确认。');
     const files = await draftFiles();
     expect(files).toHaveLength(1);
     const raw = await fs.readFile(path.join(configDir, 'memory', files[0]), 'utf8');
@@ -167,7 +170,8 @@ describe('ProposeProjectMemory', () => {
     }, toolContext(projectDir), allow);
     expect(again.ok).toBe(true);
     if (!again.ok) return;
-    expect(again.output).toContain('exists, not overwritten');
+    expect(again.output).toContain('「用途」草稿已存在，未覆盖。');
+    expect(again.output).toContain('仍待确认，需在设置→记忆页确认才生效');
     expect(again.output).toContain('This folder tracks household expenses in plain notes.');
     expect(again.output).not.toContain('This replacement must not be stored.');
   });
@@ -197,7 +201,7 @@ describe('ProposeProjectMemory', () => {
 
     expect(second.ok).toBe(true);
     if (!second.ok) return;
-    expect(second.output).toContain('exists, not overwritten');
+    expect(second.output).toContain('「关键文件」草稿已存在，未覆盖。');
     expect(second.output).toContain('notes.md — household expense notes.');
     expect(second.output).not.toContain('This replacement must not be stored.');
     expect(await fs.readFile(filePath)).toEqual(before);
@@ -227,13 +231,70 @@ describe('ProposeProjectMemory', () => {
 
     expect(second.ok).toBe(true);
     if (!second.ok) return;
-    expect(second.output).toContain('exists, not overwritten');
-    expect(second.output).toContain('status: active');
+    expect(second.output).toContain('「约定」草稿已存在，未覆盖。');
+    expect(second.output).toContain('已生效');
+    expect(second.output).not.toContain('仍待确认');
     expect(second.output).toContain('Write amounts in plain sentences.');
     const after = await fs.readFile(filePath, 'utf8');
     expect(after).toContain('status: active');
     expect(after).toContain('Write amounts in plain sentences.');
     expect(after).not.toContain('Must not replace the confirmed note.');
+  });
+
+  it('emits no English receipt words in any branch and the template keeps them out of the reply', async () => {
+    const englishWords = ['candidate', 'active', 'exists', 'purpose', 'key-files', 'conventions'] as const;
+    const handler = await proposeProjectMemoryModule.createHandler();
+
+    const written = await handler.execute({
+      topic: 'purpose',
+      summary: 'Household notes',
+      content: 'Plain household notes.',
+      sources: ['notes.md'],
+    }, toolContext(projectDir), allow);
+    expect(written.ok).toBe(true);
+    if (written.ok) {
+      for (const word of englishWords) expect(written.output).not.toContain(word);
+    }
+
+    const keyFilesDraft = `initmem-${draftEntryId(projectDir, 'key-files').slice('initmem_'.length)}.md`;
+    const first = await handler.execute({
+      topic: 'key-files',
+      summary: 'Notes file',
+      content: 'notes.md — household expense notes.',
+      sources: ['notes.md'],
+    }, toolContext(projectDir), allow);
+    expect(first.ok).toBe(true);
+    const draftPath = path.join(configDir, 'memory', keyFilesDraft);
+    const statusSentences = {
+      candidate: '仍待确认，需在设置→记忆页确认才生效',
+      active: '已生效',
+      rejected: '该条记忆已被拒绝，未生效',
+      stale: '该条记忆已过期，未生效',
+      archived: '该条记忆已归档，未生效',
+    } as const;
+    for (const status of Object.keys(statusSentences) as Array<keyof typeof statusSentences>) {
+      const raw = await fs.readFile(draftPath, 'utf8');
+      await fs.writeFile(draftPath, raw.replace(/^status: .+$/m, `status: ${status}`), 'utf8');
+      const again = await handler.execute({
+        topic: 'key-files',
+        summary: 'Notes file',
+        content: 'Must not replace the stored note.',
+        sources: ['notes.md'],
+      }, toolContext(projectDir), allow);
+      expect(again.ok).toBe(true);
+      if (!again.ok) return;
+      expect(again.meta).toMatchObject({ outcome: 'exists', status });
+      expect(again.output).toContain('「关键文件」草稿已存在，未覆盖。');
+      expect(again.output).toContain(statusSentences[status]);
+      for (const word of englishWords) expect(again.output).not.toContain(word);
+    }
+
+    // 模板同口径：参数行之外不得再出现任何英文回执词（参数行本身按精确子串豁免一次）。
+    const template = BUILTIN_PROMPT_COMMANDS.find((item) => item.name === 'init-memory')?.template ?? '';
+    const parameterList = 'purpose、key-files、conventions';
+    expect(template.split(parameterList)).toHaveLength(2);
+    const outsideParameterList = template.replace(parameterList, '');
+    for (const word of englishWords) expect(outsideParameterList).not.toContain(word);
   });
 
   it('rejects a source outside the working folder and writes nothing', async () => {

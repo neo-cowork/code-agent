@@ -12,6 +12,7 @@ import type {
   Logger,
 } from '../../../../../src/host/protocol/tools';
 import { fileReadTracker } from '../../../../../src/host/tools/fileReadTracker';
+import { HostReasonCode } from '../../../../../src/shared/contract/permission';
 
 vi.mock('../../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
@@ -259,6 +260,7 @@ describe('readModule (native)', () => {
       if (!result.ok) {
         expect(result.code).toBe('ENOENT');
         expect(result.error).toContain('not found');
+        expect(result.meta?.hostReason).toBeUndefined();
       }
     });
 
@@ -271,9 +273,61 @@ describe('readModule (native)', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.code).toBe('ENOENT');
-        expect(result.error).toContain('not found');
-        expect(result.error).toContain('上传已过期');
-        expect(result.error).toContain('重新上传');
+        expect(result.error).toBe(
+          `File not found: ${uploadPath}（该文件是聊天上传的临时副本，应用重启后会被清理——请直接告诉用户：上传已过期，请重新上传该文件）`,
+        );
+        expect(result.meta?.hostReason).toEqual({
+          code: HostReasonCode.UploadExpired,
+          modelText: result.error,
+        });
+      }
+    });
+
+    it('ENOENT on a chat upload path in the realpath form still explains the upload expired', async () => {
+      // macOS os.tmpdir() 返回 /var/...（软链别名），document-evidence/上传回执里的
+      // 路径是 realpath 形态 /private/var/...（realrun20 实录）。词法前缀比对漏配时
+      // 模型只拿到一句 not found，转而告诉用户「临时文件已被系统清理」。
+      const rawBase = await fs.mkdtemp(path.join(os.tmpdir(), 'read-upload-alias-'));
+      // base 自身可能落在 /var 软链层下（macOS）：规范成 realpath 真身，
+      // 「词法根 ≠ 规范根」的形态才与 macOS 生产一致（Linux 无别名时由
+      // lex-tmp 软链兜出同样的形态差异）。
+      const base = await fs.realpath(rawBase);
+      const canonicalTmp = path.join(base, 'real-tmp');
+      const lexicalTmp = path.join(base, 'lex-tmp');
+      await fs.mkdir(path.join(canonicalTmp, 'code-agent-uploads'), { recursive: true });
+      await fs.symlink(canonicalTmp, lexicalTmp);
+      const originalTmpdir = process.env.TMPDIR;
+      process.env.TMPDIR = lexicalTmp;
+      try {
+        expect(os.tmpdir()).toBe(lexicalTmp);
+        expect(await fs.realpath(lexicalTmp)).toBe(canonicalTmp);
+        // 文件与其 uuid 目录都没了（重启清空），路径本身是规范（/private 形）形态。
+        const realpathForm = path.join(canonicalTmp, 'code-agent-uploads', 'uuid-9', 'sales.csv');
+        const handler = await readModule.createHandler();
+        const result = await handler.execute({ file_path: realpathForm }, makeCtx(), allowAll);
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.code).toBe('ENOENT');
+          expect(result.error).toContain('上传已过期，请重新上传该文件');
+        }
+      } finally {
+        if (originalTmpdir === undefined) delete process.env.TMPDIR;
+        else process.env.TMPDIR = originalTmpdir;
+        await fs.rm(base, { recursive: true, force: true });
+      }
+    });
+
+    it('ENOENT on a non-upload path keeps the bare not-found text', async () => {
+      const handler = await readModule.createHandler();
+      const result = await handler.execute(
+        { file_path: path.join(tmpDir, 'plain-missing.txt') },
+        makeCtx(),
+        allowAll,
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('ENOENT');
+        expect(result.error).toBe(`File not found: ${path.join(tmpDir, 'plain-missing.txt')}`);
       }
     });
 

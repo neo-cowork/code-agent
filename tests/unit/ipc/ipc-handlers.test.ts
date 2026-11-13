@@ -9,6 +9,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { IpcMain } from 'electron';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/shared/ipc';
 import { WorkspaceFileRestoreError } from '../../../src/shared/contract/fileRestore';
+import { createScopedSwarmAgentId, type SwarmRunScope } from '../../../src/shared/contract/swarm';
+import { getSpawnGuard, resetSpawnGuard } from '../../../src/host/agent/spawnGuard';
 
 // ---------------------------------------------------------------------------
 // Mock ipcHost: 捕获 handler 注册，支持按 channel 调用
@@ -247,6 +249,45 @@ describe('IPC Handlers', () => {
         payload: { agentId: 'no-such-agent', sessionId: 'session-1' },
       } satisfies IPCRequest);
       expect(unknown).toEqual({ success: true, data: { cancelled: false } });
+    });
+
+    it('closeAgent stops the addressed real spawn_agent member row', async () => {
+      const scope: SwarmRunScope = {
+        sessionId: 'session-row-stop',
+        runId: 'run-row-stop',
+        treeId: 'tree-row-stop',
+      };
+      const agentId = createScopedSwarmAgentId(scope, 'member-row-stop');
+      const controller = new AbortController();
+      getSpawnGuard().register(
+        agentId,
+        'researcher',
+        'keep running until row stop',
+        new Promise(() => undefined),
+        controller,
+        { scope },
+      );
+      registerAgentHandlers(ipc.mock, () => null as any);
+
+      try {
+        const response = await ipc.invoke<IPCResponse>(IPC_DOMAINS.AGENT, {
+          action: 'closeAgent',
+          payload: { agentId, sessionId: scope.sessionId },
+        } satisfies IPCRequest);
+        const status = getSpawnGuard().get(agentId)?.status;
+        process.stdout.write(`${JSON.stringify({
+          rowId: agentId,
+          cancelled: (response.data as { cancelled?: boolean } | undefined)?.cancelled,
+          abortSignal: controller.signal.aborted,
+          status,
+        })}\n`);
+
+        expect(response).toEqual({ success: true, data: { cancelled: true } });
+        expect(controller.signal.aborted).toBe(true);
+        expect(status).toBe('cancelled');
+      } finally {
+        resetSpawnGuard();
+      }
     });
 
     it('normalizes rich envelope payload for send', async () => {

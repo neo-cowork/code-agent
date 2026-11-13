@@ -41,6 +41,8 @@ function isDelegationTool(toolName: string): boolean {
 export interface PipelineCheckResult {
   allowed: boolean;
   reason?: string;
+  /** Outside-workdir operation: the approval pipeline must ask; classifier/convenience grants may not approve it. */
+  forceConfirm?: boolean;
   warnings: string[];
 }
 
@@ -378,7 +380,8 @@ export class SubagentPipeline {
       }
     }
 
-    // 5. For strict mode, deny if not auto-approved
+    // 5. Non-auto-approved operations pass through to ToolExecutor for
+    // classification and approval; this gate never grants the operation itself.
     if (!autoApproved) {
       // In subagent context, we allow read operations but log them
       if (request.permissionLevel === 'read') {
@@ -386,36 +389,47 @@ export class SubagentPipeline {
       }
 
       // For write/execute/network, check if path is in working directory
-      let pathOutsideWorkingDirectory = false;
       if (request.path) {
         const inWorkingDir = isPathWithinRoot(request.path, context.workingDirectory);
         if (inWorkingDir) {
           return { allowed: true, warnings };
         }
-        pathOutsideWorkingDirectory = true;
+
+        // Let the existing approval pipeline decide this outside-path operation.
+        warnings.push(`${request.permissionLevel} operation outside working directory forwarded to approval pipeline`);
+        this.addAuditEntry({
+          timestamp: Date.now(),
+          agentId: context.agentId,
+          agentName: context.agentName,
+          action: 'tool_execute',
+          details: {
+            tool: request.toolName,
+            permissionLevel: request.permissionLevel,
+            path: request.path,
+            command: request.command,
+            note: 'requires_approval_pipeline',
+          },
+        });
+
+        return { allowed: true, forceConfirm: true, warnings };
       }
 
-      // Deny for operations outside working directory in non-autoApprove mode
+      warnings.push(`${request.permissionLevel} operation without explicit path forwarded to approval pipeline`);
       this.addAuditEntry({
         timestamp: Date.now(),
         agentId: context.agentId,
         agentName: context.agentName,
-        action: 'permission_denied',
+        action: 'tool_execute',
         details: {
           tool: request.toolName,
           permissionLevel: request.permissionLevel,
-          path: request.path,
           command: request.command,
+          url: request.url,
+          note: 'requires_approval_pipeline',
         },
       });
 
-      return {
-        allowed: false,
-        reason: pathOutsideWorkingDirectory
-          ? `Permission denied: ${request.path} is outside this agent's working directory ${context.workingDirectory}`
-          : `Permission denied: ${request.permissionLevel} operation requires approval`,
-        warnings,
-      };
+      return { allowed: true, warnings };
     }
 
     return { allowed: true, warnings };

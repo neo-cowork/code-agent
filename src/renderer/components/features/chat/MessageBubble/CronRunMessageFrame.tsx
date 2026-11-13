@@ -6,6 +6,7 @@
 import React, { useMemo } from 'react';
 import { resolveCronArtifactsForReview } from '@shared/cronArtifactPath';
 import { splitCronRunMessage } from '@shared/cronRunMessage';
+import { useCronStore } from '../../../../stores/cronStore';
 import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { useI18n } from '../../../../hooks/useI18n';
@@ -15,8 +16,22 @@ export function useIsCronRunSession(sessionId: string | undefined): boolean {
   return useSessionStore((state) => {
     const id = sessionId || state.currentSessionId;
     if (!id) return false;
-    const kind = state.sessions?.find((session) => session.id === id)?.origin?.kind;
-    return kind === 'cron' || kind === 'heartbeat';
+    const sessions = state.sessions ?? [];
+    // Follow fork lineage up to the root session (bounded) so branched follow-up
+    // sessions ("接着问这次运行") share the same cron message framing as the
+    // original run record.
+    let current = sessions.find((session) => session.id === id);
+    let hops = 0;
+    while (current && hops < 8) {
+      const kind = current.origin?.kind;
+      if (kind === 'cron' || kind === 'heartbeat') return true;
+      const lineage = current.metadata?.forkLineage as { rootSessionId?: string; parentSessionId?: string } | undefined;
+      const nextId = lineage?.rootSessionId || current.parentSessionId || lineage?.parentSessionId;
+      if (!nextId || nextId === current.id) break;
+      current = sessions.find((session) => session.id === nextId);
+      hops += 1;
+    }
+    return false;
   });
 }
 
@@ -54,6 +69,18 @@ export const CronRunMessageFrame: React.FC<{
   renderSlice: (text: string) => React.ReactNode;
 }> = ({ source, sessionId, renderSlice }) => {
   const cwd = useRunWorkingDirectory(sessionId);
+  const session = useSessionStore((state) => state.sessions.find((item) => item.id === (sessionId || state.currentSessionId)));
+  const execution = useCronStore((state) => session?.origin?.id
+    ? state.executionsByJobId[session.origin.id]?.find((item) => item.id === session.sourceRunId)
+    : undefined);
+  // Executions list loaded for this job: a run missing from it (older than the window, job deleted)
+  // can never be settled later, so fall back to the message artifacts instead of showing none.
+  const executionsLoaded = useCronStore((state) => Boolean(session?.origin?.id && state.executionsByJobId[session.origin.id]));
+  const result = execution?.result;
+  const storedDigest = result && typeof result === 'object' && 'digest' in result ? result.digest : undefined;
+  const storedArtifacts = storedDigest && typeof storedDigest === 'object' && 'artifacts' in storedDigest
+    && Array.isArray(storedDigest.artifacts) && storedDigest.artifacts.every((item: unknown) => typeof item === 'string')
+    ? storedDigest.artifacts as string[] : undefined;
   const segments = useMemo(() => splitCronRunMessage(source), [source]);
   return (
     <>
@@ -63,7 +90,9 @@ export const CronRunMessageFrame: React.FC<{
             <CronRunSummaryCard
               key={`summary-${index}`}
               text={segment.text}
-              artifacts={resolveCronArtifactsForReview(segment.artifacts, cwd)}
+              artifacts={resolveCronArtifactsForReview(
+                storedArtifacts ?? (session?.sourceRunId && !executionsLoaded ? [] : segment.artifacts), cwd,
+              )}
               renderSlice={renderSlice}
             />
           );

@@ -353,19 +353,14 @@ describe('browser workbench gating', () => {
     );
 
     expect(result.success).toBe(true);
+    expect(result.output).toContain('tref_snapshot-1_1 | button |');
     expect(result.metadata?.domSnapshot).toMatchObject({
       snapshotId: 'snapshot-1',
       url: 'https://example.com',
-      headings: [{ level: 1, text: 'Example' }],
-      interactiveElements: [{
-        selectorHint: '#phase2-button',
-        targetRef: {
-          refId: 'tref_snapshot-1_1',
-          source: 'dom',
-          snapshotId: 'snapshot-1',
-        },
-      }],
+      headingCount: 1,
+      interactiveCount: 1,
     });
+    expect(result.metadata?.domSnapshot).not.toHaveProperty('interactiveElements');
     expect(result.metadata?.traceId).toBe('trace-1');
     expect(result.metadata?.evidenceRefs).toEqual(expect.arrayContaining([
       expect.objectContaining({

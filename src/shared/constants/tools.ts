@@ -40,6 +40,8 @@ export const BASH = {
   DEFAULT_TIMEOUT: 120000,
   /** 最大超时 (10 分钟) */
   MAX_TIMEOUT: 600000,
+  /** 后台命令（background shell / PTY）单任务最长运行时间 (30 分钟)；前台上限仍是 MAX_TIMEOUT */
+  BACKGROUND_MAX_RUNTIME: 30 * 60 * 1000,
   /** 短档前台超时 (10 秒)：channel / cron / role-wake 会话；env CODE_AGENT_BASH_SHORT_TIMEOUT_MS 可覆盖 */
   SHORT_TIER_TIMEOUT: 10000,
   /** Unknown-window fallback; model-bound Bash results use resolveToolResultBudget. */
@@ -82,12 +84,6 @@ export const GREP = {
   EAGAIN_RETRY_THREADS: 1,
   /** -A / -B / -C 上限（防止 LLM 写出爆炸性的 context=10000） */
   MAX_CONTEXT_LINES: 10,
-} as const;
-
-/** 沙箱配置 */
-export const SANDBOX = {
-  /** 默认执行超时 (5 秒) */
-  DEFAULT_TIMEOUT: 5000,
 } as const;
 
 /** AskUserQuestion 在 provider / 兼容层的两个等价名字。 */

@@ -34,6 +34,8 @@ export interface AgentMessageRequest {
 export interface AgentCancelRequest {
   runId?: string;
   sessionId?: string;
+  /** 显式「放弃」停靠 run；不带时对 waiting/user_stop 停靠是 no-op（Stop 幂等）。 */
+  abandonParked?: boolean;
 }
 
 export interface AgentPermissionResponseRequest {
@@ -409,6 +411,10 @@ export interface CrossSessionSearchResultItem {
   sessionId: string;
   /** Session title (for display) */
   sessionTitle?: string;
+  /** Session last-updated time (ms), from the DB — present even for sessions outside the sidebar's loaded page */
+  sessionUpdatedAt?: number;
+  /** Whether the session is archived */
+  sessionArchived?: boolean;
   /** Message id for in-session jump/highlight */
   messageId?: string;
   /** Message index in the searched session */
@@ -429,6 +435,12 @@ export interface CrossSessionSearchResultItem {
   matchCount: number;
 }
 
+export interface CrossSessionSearchTitleMatch {
+  sessionId: string;
+  title: string;
+  updatedAt: number;
+}
+
 export interface CrossSessionSearchResults {
   /** Search query */
   query: string;
@@ -442,4 +454,6 @@ export interface CrossSessionSearchResults {
   searchTime: number;
   /** Whether results were truncated */
   truncated: boolean;
+  /** Sessions whose title contains the query (non-archived); optional for older hosts */
+  titleMatches?: CrossSessionSearchTitleMatch[];
 }

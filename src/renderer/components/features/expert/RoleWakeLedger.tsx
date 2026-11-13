@@ -11,7 +11,8 @@ import { cronClient } from '../../../services/cronClient';
 import { SettingsSection } from '../settings/SettingsLayout';
 import { CronDailyCostSummary } from '../cron/CronDailyCostSummary';
 import { wakeSkipSentence } from '../cron/wakeSkipSentence';
-import { formatDateTime, formatRunCostUsd } from '../cron/types';
+import { formatRunCostUsd } from '../cron/types';
+import { formatDateTime } from '../../../utils/formatDateTime';
 
 const WAKE_HISTORY_PER_JOB = 20;
 
@@ -25,7 +26,7 @@ async function loadRoleWakeExecutions(roleId: string): Promise<CronJobExecution[
 }
 
 export const RoleWakeLedger: React.FC<{ roleId: string; refreshToken?: number }> = ({ roleId, refreshToken = 0 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const cc = t.cronCenter;
   const [executions, setExecutions] = useState<CronJobExecution[] | null>(null);
   const loadedRoleIdRef = React.useRef<string | null>(null);
@@ -69,7 +70,7 @@ export const RoleWakeLedger: React.FC<{ roleId: string; refreshToken?: number }>
                 data-testid="role-wake-ledger-row"
                 className="flex items-center justify-between gap-3 text-xs text-zinc-400"
               >
-                <span>{formatDateTime(execution.startedAt ?? execution.scheduledAt)}</span>
+                <span>{formatDateTime(execution.startedAt ?? execution.scheduledAt, language)}</span>
                 <span className="min-w-0 truncate text-right" data-testid="role-wake-ledger-value">
                   {skipText ?? (execution.cost != null ? formatRunCostUsd(execution.cost) : cc.roleWakeNoModel)}
                 </span>

@@ -1,6 +1,7 @@
 import { Cron } from 'croner';
-import { CRON_GUARDRAILS } from '../../shared/constants';
-import type { CronJobDefinition, CronMissedReason } from '../../shared/contract/cron';
+import { CRON_AGENT_TYPES, CRON_GUARDRAILS } from '../../shared/constants';
+import type { CronJobAction, CronJobDefinition, CronMissedReason } from '../../shared/contract/cron';
+import { isRoleBoundCronJob } from '../../shared/cronRoleBinding';
 import { suggestCronStaggerMinute } from '../../shared/cronStagger';
 import {
   createScopedCostLimit,
@@ -136,6 +137,14 @@ export function decideOneTimeJobStartup(
   return { kind: 'disable', dueAt: Number.isFinite(ts) ? ts : undefined, missedReason: 'app-offline', alreadyStarted: false };
 }
 
+export function assertCloudRunnableAction(
+  definition: Pick<CronJobDefinition, 'runsOn' | 'action'>,
+): void {
+  if (definition.runsOn === 'cloud' && definition.action.type === 'agent' && isRoleBoundCronJob(definition)) {
+    throw new Error('Role-bound agent jobs cannot run on the cloud scheduler because role memory is only available on this computer.');
+  }
+}
+
 export function assertExecutionLocationConstraints(
   definition: Pick<CronJobDefinition, 'runsOn' | 'schedule' | 'maxRunBudget' | 'maxRuns'>,
 ): void {
@@ -176,8 +185,24 @@ export async function runWithCronJobBudget<T>(
     return await jobCostLimit.run(operation);
   } catch (error) {
     if (isScopedCostLimitExceeded(error)) {
-      throw new Error(`Cron job run exceeded its $${maxRunBudget.toFixed(2)} budget limit.`, { cause: error });
+      const spent = error instanceof Error && 'costUsd' in error
+        && typeof error.costUsd === 'number' ? error.costUsd.toFixed(4) : undefined;
+      throw new Error(
+        `Cron job run exceeded its $${maxRunBudget.toFixed(2)} budget limit${spent ? ` (spent $${spent})` : ''}.`,
+        { cause: error },
+      );
     }
     throw error;
   }
+}
+
+/**
+ * 保存时校验 agent 动作的 agentType。create 传 previous=undefined；update 只在 agentType
+ * 相对已存值有变化时才校验（内部写回会原样重发旧动作，存量行不能因此被拒）。
+ */
+export function assertAgentTypeOnSave(action: CronJobAction | undefined, previous?: CronJobAction): void {
+  if (action?.type !== 'agent') return;
+  if (previous?.type === 'agent' && previous.agentType === action.agentType) return;
+  if ((CRON_AGENT_TYPES as readonly string[]).includes(action.agentType)) return;
+  throw new Error(`Agent 类型“${action.agentType}”不存在，可选值：${CRON_AGENT_TYPES.join('、')}。`);
 }

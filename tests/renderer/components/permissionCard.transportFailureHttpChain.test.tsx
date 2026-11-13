@@ -36,6 +36,7 @@ const saveMemory = vi.hoisted(() => vi.fn());
 const dismissPermissionRequest = vi.hoisted(() => vi.fn());
 const recordPermissionDecision = vi.hoisted(() => vi.fn());
 const toastError = vi.hoisted(() => vi.fn());
+const domainInvoke = vi.hoisted(() => vi.fn());
 const appState = vi.hoisted(() => ({
   request: null as PermissionRequest | null,
   sessionId: null as string | null,
@@ -44,7 +45,9 @@ const appState = vi.hoisted(() => ({
 // setPendingPermissionRequest 做成有状态实现：catch 里的「留卡」恢复调用会真切回
 // appState.request，卡是否还在 DOM 里可以被直接断言。
 vi.mock('../../../src/renderer/stores/appStore', () => ({
-  useAppStore: () => ({
+  // httpTransport 的失败文案按当前语言出一句（N-FIX-SIGNED-OUT-SEND-500-RAW-HTML-REDESIGN），
+  // 夹具按真实模块形状补 getState（真 zustand store 恒有）。
+  useAppStore: Object.assign(() => ({
     pendingPermissionRequest: appState.request,
     pendingPermissionSessionId: appState.sessionId,
     setPendingPermissionRequest: (req: PermissionRequest | null, sessionId: string | null) => {
@@ -56,7 +59,7 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
     language: 'zh',
     setLanguage: () => {},
     cloudUIStrings: undefined,
-  }),
+  }), { getState: () => ({ language: 'zh' }) }),
 }));
 
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
@@ -114,6 +117,9 @@ function confirmAllowOnce() {
  */
 async function expectFailureKeepsCardThenRetryDelivers(
   failingFetch: typeof fetch,
+  expectedDetail: unknown,
+  /** 第二条 card-catch 留痕的 detail（HTTP 状态位失败时是 transport 的净化句，不是 raw body）。 */
+  expectedCatchDetail: unknown = expectedDetail,
 ): Promise<void> {
   const fetchMock = vi.fn(failingFetch);
   globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -123,6 +129,17 @@ async function expectFailureKeepsCardThenRetryDelivers(
 
   await waitFor(() => {
     expect(toastError).toHaveBeenCalledWith('审批响应发送失败，请重试');
+    expect(domainInvoke).toHaveBeenCalledTimes(2);
+  });
+  expect(domainInvoke).toHaveBeenNthCalledWith(1, 'domain:diagnostics', 'logClientError', {
+    context: 'PermissionCard',
+    message: 'PermissionCard click exit: stage=transport-send-failure requestId=permission-transport-failure sessionId=session-current',
+    detail: expectedDetail,
+  });
+  expect(domainInvoke).toHaveBeenNthCalledWith(2, 'domain:diagnostics', 'logClientError', {
+    context: 'PermissionCard',
+    message: 'PermissionCard click exit: stage=card-catch requestId=permission-transport-failure sessionId=session-current',
+    detail: expectedCatchDetail,
   });
   expect(recordPermissionDecision).not.toHaveBeenCalled();
   expect(dismissPermissionRequest).not.toHaveBeenCalled();
@@ -151,7 +168,9 @@ async function expectFailureKeepsCardThenRetryDelivers(
       'session-current',
     );
   });
-  expect(fetchMock).toHaveBeenCalledTimes(2);
+  // 网络层失败会触发 serverConnectionMonitor 的 /health 探测（同一个 fetch），不属于审批应答。
+  const permissionPosts = fetchMock.mock.calls.filter(([url]) => !String(url).includes('/health'));
+  expect(permissionPosts).toHaveLength(2);
 }
 
 describe('PermissionCard transport failure over the real HTTP chain', () => {
@@ -159,12 +178,14 @@ describe('PermissionCard transport failure over the real HTTP chain', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    domainInvoke.mockResolvedValue({ success: true, data: undefined });
     appState.request = request;
     appState.sessionId = 'session-current';
     foregroundOutcome.value = undefined;
     window.sessionStorage.clear();
     // 真桥：组件里的 ipcService.invoke 会读 window.codeAgentAPI。
     window.codeAgentAPI = createHttpCodeAgentAPI('http://localhost:8180');
+    window.codeAgentDomainAPI = { invoke: domainInvoke };
   });
 
   afterEach(() => {
@@ -174,6 +195,7 @@ describe('PermissionCard transport failure over the real HTTP chain', () => {
     globalThis.fetch = originalFetch;
     foregroundOutcome.value = undefined;
     delete window.codeAgentAPI;
+    delete window.codeAgentDomainAPI;
   });
 
   it('fetch rejects (network down): card restored with retry toast, second click delivers', async () => {
@@ -181,6 +203,7 @@ describe('PermissionCard transport failure over the real HTTP chain', () => {
       (async () => {
         throw new TypeError('Failed to fetch');
       }) as unknown as typeof fetch,
+      'Failed to fetch',
     );
   });
 
@@ -193,6 +216,10 @@ describe('PermissionCard transport failure over the real HTTP chain', () => {
         text: async () => JSON.stringify({ error: 'boom' }),
         json: async () => ({}),
       })) as unknown as typeof fetch,
+      // transport-send-failure 留痕仍是 raw body；PermissionSendFailure 的 message
+      // 已改为按 status 出一句话（N-FIX-SIGNED-OUT-SEND-500-RAW-HTML-REDESIGN）。
+      '审批应答发送失败 (500): boom',
+      '审批应答发送失败：Neo 暂时没能完成这次请求，请稍后再试。',
     );
   });
 
@@ -205,6 +232,7 @@ describe('PermissionCard transport failure over the real HTTP chain', () => {
         text: async () => JSON.stringify({ error: { message: 'Invalid auth token' } }),
         json: async () => ({}),
       })) as unknown as typeof fetch,
+      expect.stringContaining('401'),
     );
   });
 
@@ -219,6 +247,7 @@ describe('PermissionCard transport failure over the real HTTP chain', () => {
           throw new Error('not json');
         },
       })) as unknown as typeof fetch,
+      '审批应答发送失败 (200): 非 JSON 响应',
     );
   });
 });

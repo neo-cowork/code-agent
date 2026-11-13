@@ -15,6 +15,17 @@ import {
 } from './sessionTaskSlotLedger';
 import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
 import { createForegroundWake } from './foregroundWake';
+import { BackgroundShellHold } from './backgroundShellHold';
+import {
+  clearSessionCommandTaskMarker,
+  markSessionCommandTaskRunning,
+  settleSessionCommandTaskMarkerForDeferredProjection,
+} from './sessionCommandTaskRestartRecovery';
+import {
+  deferTerminalResultProjectionUntilAccessible,
+  projectTerminalResult,
+} from './terminalResultProjection';
+import { isSessionNotAccessibleError } from './sessionAccessRetry';
 import { getConfigService } from '../core/configService';
 import {
   formatSessionCommandTaskIdleFailure,
@@ -23,11 +34,13 @@ import {
 import {
   SESSION_COMMAND_TASK_IDLE_TIMEOUT_MS,
   SESSION_COMMAND_TASK_APPROVAL_WAIT_CAP_MS,
+  composeSessionCommandTaskResultText,
   resolveSessionCommandTaskIdleTimeoutMs,
   resolveSessionCommandTaskApprovalWaitCapMs,
 } from '../../../shared/constants/sessionCommandCenter';
 import type { RuntimeInputMode } from '../../../shared/contract/conversationEnvelope';
 import { RUNTIME_INPUT_REDIRECT_LINE, RUNTIME_INPUT_SUPPLEMENT_LINE } from '../../../shared/constants/runtimeInput';
+import { commandMayAwaitSystemPrompt } from '../../task/macosAutomationPrompt';
 
 const logger = createLogger('SessionCommandCenter');
 
@@ -53,6 +66,8 @@ export interface SessionCommandTask {
   updatedAt: number;
   detail?: string;
   summary?: string;
+  /** 模型侧结果文本：detail 规范化后按 SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS 封顶（超限带截断标记）；UI/账本仍读 240 字 summary。 */
+  resultText?: string;
   attachments?: MessageAttachment[];
   options?: AgentRunOptions;
   parentRunId?: string;
@@ -140,10 +155,14 @@ export class SessionCommandCenter {
   private readonly ledgers = new Map<string, SessionTaskSlotLedger>();
   /** 在途工具调用的名字（`${taskId}:${toolCallId}` → 工具名）；tool_call_end 即删，只活在途调用。 */
   private readonly toolNamesByCallId = new Map<string, string>();
+  /** 在途 shell 调用的命令文本（key 同 toolNamesByCallId），只供回收时判断是否可能卡在系统授权框。 */
+  private readonly shellCommandsByCallId = new Map<string, string>();
   /** permission_request ids still unresolved on the agent event stream, per task. */
   private readonly pendingApprovalIdsByTask = new Map<string, Set<string>>();
   /** 本轮审批等待的起点（首张未答审批时刻）；审批清空即删，下一张重新计时。 */
   private readonly approvalWaitStartedAtByTask = new Map<string, number>();
+  /** 子 run 起了后台 Bash 又没再调工具就结束：挂起收尾，等命令退出（见 backgroundShellHold.ts）。 */
+  private readonly shellHold = new BackgroundShellHold();
   private readonly approvalWaitCapMs: number;
   private readonly manager: TaskManager;
   private readonly projectTerminalResult: NonNullable<SessionCommandCenterDependencies['projectTerminalResult']>;
@@ -360,6 +379,11 @@ export class SessionCommandCenter {
       await this.settle(task, 'cancelled', '任务在开始前被取消。');
       return { outcome: 'resolved', task: { ...task } };
     }
+    if (this.shellHold.isHeld(task.id)) {
+      const live = this.tasksBySession.get(sessionId)?.get(task.id);
+      if (live) await this.settle(live, 'cancelled', '任务已取消。');
+      return { outcome: 'resolved', task: { ...(live ?? task) } };
+    }
     const accepted = await this.manager.cancelBackgroundTask(task.id);
     if (!accepted) return { outcome: 'missing' };
     task.status = 'cancelling';
@@ -373,7 +397,9 @@ export class SessionCommandCenter {
     }
     for (const ledger of this.ledgers.values()) ledger.dispose();
     this.stopAgentEventObservation?.();
+    this.shellHold.dispose();
     this.toolNamesByCallId.clear();
+    this.shellCommandsByCallId.clear();
     this.pendingApprovalIdsByTask.clear();
     this.approvalWaitStartedAtByTask.clear();
   }
@@ -420,9 +446,13 @@ export class SessionCommandCenter {
         // 回收此刻审批还挂着 = 这轮到期是「等审批等到上限」造成的（豁免期内审批在，
         // 就不会被静默空闲回收），说审批句；否则按静默空闲句。
         const waitMs = this.approvalWaitMs(task.id, Date.now());
+        // 结论：macOS 没有公开 API 能关掉系统自己弹出的 TCC 自动化授权框（Apple 论坛
+        // thread/666528 里授权调用本身还能无限阻塞）；靠辅助功能替用户点系统框既要多一项
+        // 权限、又可能误点「允许」，已否决。所以回收后只能如实告诉用户框可能还在，不假装关掉。
+        const mayAwaitSystemPrompt = this.mayAwaitSystemPrompt(task.id);
         const detail = waitMs !== undefined
-          ? formatSessionTaskApprovalWaitFailure({ waitMs, locale })
-          : formatSessionCommandTaskIdleFailure({ idleMs: occupiedMs, locale });
+          ? formatSessionTaskApprovalWaitFailure({ waitMs, locale, mayAwaitSystemPrompt })
+          : formatSessionCommandTaskIdleFailure({ idleMs: occupiedMs, locale, mayAwaitSystemPrompt });
         void this.settle(task, 'failed', detail);
         this.cancelIdleRun(task.id);
       }
@@ -434,10 +464,19 @@ export class SessionCommandCenter {
     }
   }
 
+  private mayAwaitSystemPrompt(taskId: string): boolean {
+    const prefix = `${taskId}:`;
+    for (const [key, command] of this.shellCommandsByCallId) {
+      if (key.startsWith(prefix) && commandMayAwaitSystemPrompt(command)) return true;
+    }
+    return false;
+  }
+
   private launch(task: SessionCommandTask): void {
     task.status = 'running';
     task.updatedAt = Date.now();
     this.projectTask(task);
+    markSessionCommandTaskRunning(task);
     const failLaunch = (error: unknown): void => {
       void this.settle(task, 'failed', error instanceof Error ? error.message : String(error));
     };
@@ -484,6 +523,16 @@ export class SessionCommandCenter {
       const artifacts = Array.isArray(data?.artifacts)
         ? data.artifacts as NormalizedToolArtifactMeta[]
         : undefined;
+      const held = this.shellHold.hold(task.id, ({ note, exited }) => {
+        // 命令已退出：命令结果就是结果，子 run 启动时的说明（「已启动…仍在运行」）已过时，不带入。
+        // 到上限仍在运行：说明当前状态，并把启动说明明确标成早先的说明。
+        const detail = exited || !conclusion ? note : `${note} 任务启动时的说明：${conclusion}`;
+        void this.settle(task, 'completed', detail, artifacts);
+      });
+      if (held) {
+        logger.info('Deferring task settlement until its background command exits', { taskId: task.id });
+        return;
+      }
       await this.settle(task, 'completed', conclusion, artifacts);
       return;
     }
@@ -522,9 +571,13 @@ export class SessionCommandCenter {
     // tool_call_start 只记「这个 call id 是哪个工具」，供 tool_call_end 落
     // lastToolFailure.tool / 对比同名工具的后续成功；end 时即删，map 只活在途调用。
     if (event.type === 'tool_call_start') {
-      const call = event.data as { id?: unknown; name?: unknown } | undefined;
+      const call = event.data as { id?: unknown; name?: unknown; arguments?: unknown } | undefined;
       if (typeof call?.id === 'string' && typeof call.name === 'string') {
         this.toolNamesByCallId.set(`${taskId}:${call.id}`, call.name);
+        const command = (call.arguments as { command?: unknown } | undefined)?.command;
+        if (/bash|shell/i.test(call.name) && typeof command === 'string') {
+          this.shellCommandsByCallId.set(`${taskId}:${call.id}`, command);
+        }
       }
       return;
     }
@@ -567,6 +620,8 @@ export class SessionCommandCenter {
     const mapKey = `${task.id}:${result.toolCallId}`;
     const tool = this.toolNamesByCallId.get(mapKey) ?? task.progress?.lastToolStep?.tool;
     this.toolNamesByCallId.delete(mapKey);
+    this.shellCommandsByCallId.delete(mapKey);
+    this.shellHold.noteToolCallEnd(task.id, result);
 
     if (result.success) {
       const failure = task.progress?.lastToolFailure;
@@ -672,7 +727,7 @@ export class SessionCommandCenter {
 
   private cancelIdleRun(taskId: string): void {
     try {
-      const cancel = this.manager.cancelBackgroundTask(taskId);
+      const cancel = this.manager.cancelBackgroundTask(taskId, 'idle-reaped');
       void Promise.resolve(cancel).catch((error: unknown) => {
         logger.warn('Failed to cancel a background task after it stopped responding', {
           taskId,
@@ -696,6 +751,7 @@ export class SessionCommandCenter {
     artifacts?: NormalizedToolArtifactMeta[],
   ): Promise<void> {
     if (TERMINAL.has(task.status)) return;
+    this.shellHold.drop(task.id);
     this.approvalWaitStartedAtByTask.delete(task.id);
     task.status = status;
     task.detail = detail;
@@ -703,6 +759,9 @@ export class SessionCommandCenter {
       detail,
       status === 'completed' ? '任务已完成。' : status === 'cancelled' ? '任务已取消。' : '任务执行失败。',
     );
+    // 模型侧文本与 UI/账本 summary 分家：240 字硬切会截断 SSRF 拒绝提示里的
+    // 「改走 Bash curl 审批」整句，前台拿不到可执行的下一步（FB-577）。
+    task.resultText = composeSessionCommandTaskResultText(detail);
     task.updatedAt = Date.now();
     this.projectTask(task);
     if (status === 'completed' && artifacts?.length) {
@@ -722,20 +781,44 @@ export class SessionCommandCenter {
     // reused，重试静默失效。正是这条改动要消灭的形态，只是窗口更窄。
     const startable = this.ledger(task.sessionId).settle(task.id, status);
 
+    // 投影与唤醒各用各的 try：投影失败（登录恢复窗口里 addMessageToSession 抛
+    // Session not found）绝不能把唤醒一起跳过——旧代码两者同一个 try，一抛就只剩
+    // 一行 warn，结果行/唤醒/失败句全丢。settle 也只等投影的首次尝试，重试全部
+    // 离线进行，不推迟下面 startable 的下一轮 launch。
     try {
       await this.projectTerminalResult(task, status);
-      void this.wakeForegroundBrain(task, status).catch((error) => {
-        logger.warn('Failed to wake text foreground brain after task settlement', {
-          taskId: task.id,
-          message: error instanceof Error ? error.message : String(error),
-        });
-      });
+      clearSessionCommandTaskMarker(task.id);
     } catch (error) {
       logger.warn('Failed to project text command task result', {
+        reason: 'terminal_projection_failed',
+        sessionId: task.sessionId,
         taskId: task.id,
         message: error instanceof Error ? error.message : String(error),
       });
+      if (isSessionNotAccessibleError(error)) {
+        // running 标记先补终态快照再保留：重试窗口内宿主再崩，下次启动按真实结局补投结果，
+        // 不会把已 settle 的任务当中断改写成 failed（Rework r1）。
+        // 重试写成/致命失败时清标记；耗尽时保留——下次启动还能补投一次真实结果。
+        settleSessionCommandTaskMarkerForDeferredProjection({ ...task, status });
+        deferTerminalResultProjectionUntilAccessible({
+          task,
+          status,
+          write: (deferredTask, deferredStatus) => this.projectTerminalResult(deferredTask, deferredStatus),
+          onSettled: (outcome) => {
+            if (outcome === 'exhausted') return;
+            clearSessionCommandTaskMarker(task.id);
+          },
+        });
+      } else {
+        clearSessionCommandTaskMarker(task.id);
+      }
     }
+    void Promise.resolve(this.wakeForegroundBrain(task, status)).catch((error) => {
+      logger.warn('Failed to wake text foreground brain after task settlement', {
+        taskId: task.id,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    });
 
     for (const slot of startable) {
       const next = this.tasks(task.sessionId).get(slot.workItemId);
@@ -812,27 +895,6 @@ export class SessionCommandCenter {
       .at(-1);
     return previous?.id;
   }
-}
-
-async function projectTerminalResult(
-  task: SessionCommandTask,
-  status: TerminalTaskStatus,
-): Promise<void> {
-  await getSessionManager().addMessageToSession(task.sessionId, {
-    id: `session-task-result-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    role: 'system',
-    content: `[任务结果] ${task.shortName}｜${status}｜${task.summary}`,
-    timestamp: Date.now(),
-    metadata: {
-      backgroundTaskResult: {
-        source: 'agent-result',
-        taskId: task.id,
-        shortName: task.shortName,
-        status,
-        summary: task.summary ?? '',
-      },
-    },
-  });
 }
 
 let singleton: SessionCommandCenter | null = null;

@@ -1,7 +1,17 @@
 import type { AppServiceRunOptions } from '../../shared/contract/appService';
-import { SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS } from '../../shared/constants/sessionCommandCenter';
+import { resolveForegroundBrainMaxIterations, SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS } from '../../shared/constants/sessionCommandCenter';
 import { getTextForegroundToolNames } from '../tools/protocolRegistry';
 import { detectTaskFeatures } from '../prompts/systemReminders';
+import { getNativeConnectorToolNamesForIntent } from '../connectors/nativeConnectorIntent';
+import { isRoleProactivityChatIntent } from './roleProactivityChatIntent';
+import { createLogger } from '../services/infra/logger';
+import { resolveModelInfo } from '../model/modelInfo';
+import { getConfigService } from '../services/core/configService';
+import { resolveRunModelConfig } from '../agent/orchestrator/modelConfigResolver';
+import type { MessageAttachment } from '../../shared/contract/message';
+import type { ConversationModelSpec } from '../../shared/contract/conversationEnvelope';
+
+const logger = createLogger('ForegroundBrainBudget');
 
 // 不导出：web/桌面两条装配路都经 getSessionCommandCenterBrainContextForPrompt 取块，
 // 导出常量只会引回「第二条装配路直接拼常量」的旧形态（rework r1）。
@@ -12,9 +22,11 @@ const SESSION_COMMAND_CENTER_BRAIN_CONTEXT = [
   '1. 闲聊、解释、基于现有上下文即可回答的问题，直接回答，不调用工具。',
   '2. 只要读几个文件、搜一下代码、看看目录就能回答的问题，自己用 Read/Grep/Glob/ListDirectory 读完直接答，不要派活——为一次文件读取开一个后台任务是浪费。',
   '3. 短小的本地文件修改，先 Read 再用 Edit 或 Write 直接完成；写报告/文档/表格时若本轮工具表已有对应生成工具（docx_generate、excel_generate），直接调用它把文件交付掉；运行命令、联网查证、多步骤执行、等待审批，以及做网页等其他生成级长任务，调用 delegate_task。读的量大到要翻遍整个仓库时也派活。',
+  '3a. 本轮工具表里已有邮件、日历、提醒事项工具时，发邮件、建日程、设提醒这类请求直接调用对应工具完成，不派 delegate_task；发送或创建前聊天里会出现确认卡片，按用户在卡片上的选择如实回复，只在工具返回成功后才说已发送或已创建。',
+  '3b. 用户明确点名 Bash、终端、命令行或脚本执行形式时，调用 delegate_task，把用户的命令意图完整写入 prompt；这条点名路由优先于 3a。调用后用一句话说明它正在作为后台任务运行。',
   '4. 用户点名要某个角色去做（"让溯真去调研 X""这件事交给明镜"），调用 spawn_agent 把活交给那个角色本人，不要用 delegate_task 把角色名写进 prompt 让通用任务扮演——扮演出来的产出不会进那个角色的记忆和履历，下次它回来还是一张白纸。没点名角色时照常用 delegate_task。',
   '5. 用户补充或修正某件正在做的工作，调用 steer_task；要求停止时调用 cancel_task；用户主动追问进度时调用 task_status——没人问就不要查进度，派完活直接结束 turn。',
-  '6. 目标任务不唯一、并发槽已满或取消代价较高时，调用 AskUserQuestion 让用户按短名选择，不替用户猜。',
+  '6. 目标任务不唯一或取消代价较高时，调用 AskUserQuestion 让用户按短名选择，不替用户猜；并发槽已满时由 delegate_task 展示选择卡，不要再次询问，只有用户明确回复“排队”时才带 queue_when_full: true 重调。',
   '派活纪律：short_name 用 2-4 个字符，中文或英文均可；同一目标沿用 lane_key；同一 turn 的重试沿用 submission_key。',
   'delegate_task 返回 accepted 只表示后台已接单。你可以告诉用户已经开始或排队，但不得声称完成；完成、失败和取消只以后续任务终态回流为准。',
   '绝不描述你没有真做过的事。只有对应工具返回成功后，才可以说已经读取、修改或执行。',
@@ -60,7 +72,7 @@ const SAVE_DRAFT_REPLY_RE = new RegExp(
 const MORNING_BRIEF_SAVE_DRAFT_CONTEXT = [
   '<morning_brief_save_draft>',
   '用户这句是在要求把晨报里的一封草稿存进邮箱。按下面做，不要发挥。',
-  '1. 只看本对话里最近一条晨间分诊结果（定时任务「晨间分诊」的结论）。草稿块从「草稿 N（未发送）」那一行开始，N 从 1 起：第二行是收件人邮箱，第三行是主题，从第四行起到下一块之前是正文。取出用户点名的那一封。',
+  '1. 只看本对话里最近一条晨间分诊结果（定时任务「晨间分诊」/"Morning triage" 的结论）。草稿块从「草稿 N（未发送）」或 "Draft N (not sent)" 那一行开始（同一条晨报里只有其中一种写法），N 从 1 起：第二行是收件人邮箱，第三行是主题，从第四行起到下一块之前是正文。取出用户点名的那一封。',
   '2. 收件人、主题、正文原样抄进 mail_draft 的 to、subject、content。to 里只放邮箱地址，不要改写，不要新增收件人，不要加显示名或尖括号。',
   '3. 如果本轮工具表里有 mail_draft，且这封在本对话里还没有成功的 mail_draft 结果，你才调用它，不要先去找别的工具，不要调用 delegate_task，也不要调用 mail_send；如果没有工具，直接按第 7 条说明这位角色没有开邮件权限。',
   '4. N 超出范围，或这条晨报里没有草稿块时，直接说明一共有几封草稿，什么工具都不要调用。',
@@ -81,12 +93,75 @@ export function isMorningBriefSaveDraftReply(prompt: string): boolean {
  * shared/constants/sessionCommandCenter.ts 的警告：装配形状各异，判据与内容必须只有一份。
  */
 export function getSessionCommandCenterBrainContextForPrompt(prompt: string): string[] {
-  const blocks = [SESSION_COMMAND_CENTER_BRAIN_CONTEXT];
-  if (isMorningBriefSaveDraftReply(prompt)) blocks.push(MORNING_BRIEF_SAVE_DRAFT_CONTEXT);
-  return blocks;
+  return [SESSION_COMMAND_CENTER_BRAIN_CONTEXT, ...getSessionCommandCenterTurnRulesForPrompt(prompt)];
 }
 
-export function getTextForegroundToolNamesForPrompt(prompt: string): string[] {
+/**
+ * 回合级规则块（不含常驻基块）：存草稿判据命中的轮才有内容。
+ * web 主链（routes/agent.ts）把这份并进模型面 turn 脚手架——config.systemPrompt 那份
+ * 会在 contextAssembly 重建系统消息时被丢（ctx.systemPrompt 不进请求，2026-11-11 FU1
+ * 真机抓包实证）；桌面 envelope 路仍走 withSessionCommandCenterBrain 的全量清单。
+ */
+export function getSessionCommandCenterTurnRulesForPrompt(prompt: string): string[] {
+  return isMorningBriefSaveDraftReply(prompt) ? [MORNING_BRIEF_SAVE_DRAFT_CONTEXT] : [];
+}
+
+/**
+ * 连接器工具的 per-turn 进面（ADR-059 修订，N-FG-CONNECTOR-TOOLS）：
+ * 「发邮件 / 建日程 / 设提醒」这类一句话外部写入不再绕 delegate_task 派后台——
+ * 命中意图 × 设置启用 × registry 就绪（unchecked 仍可用）时，该连接器的读写工具
+ * 名直接进本轮 allowlist，deferred 预载层照白名单把 schema 送上轮；模型调写工具
+ * 后照旧走 C1 连接器外部写确认（聊天内审批卡），权限与审批链路一字不动。
+ * 判据与 deferredToolPreload 共用 connectors/nativeConnectorIntent.ts 的单一真源；
+ * 不命中意图的轮次零新增（无 schema 膨胀，前缀缓存不受影响）。
+ */
+/**
+ * 带图片附件的前台文字轮：模型看不见图时补 image_analyze（deferred 工具，进白名单即被预载）。
+ * 无图片、或模型自带视觉时返回 []，工具面与前缀缓存一字不动。
+ * 模型未知时按「看不见」处理——多一个工具无害，漏掉则模型无法读图。
+ */
+export interface ForegroundImageTurn {
+  attachments?: readonly MessageAttachment[];
+  model?: ConversationModelSpec;
+}
+
+function hasImageAttachment(attachments?: readonly MessageAttachment[]): boolean {
+  return Boolean(attachments?.some((a) => (a.type === 'image' || a.category === 'image') && Boolean(a.path)));
+}
+
+function getImageAnalyzeToolNamesForTurn(turn?: ForegroundImageTurn): string[] {
+  if (!hasImageAttachment(turn?.attachments)) return [];
+  const info = turn?.model ? resolveModelInfo(turn.model.provider, turn.model.model) : null;
+  return info?.supportsVision ? [] : ['image_analyze'];
+}
+
+/**
+ * 桌面路径：本轮实际会用的模型 = 运行循环同款解析（显式 modelSpec > 会话 override > 全局默认）。
+ * 无图片附件时不碰配置，直接返回只带附件的空壳。
+ */
+export function resolveForegroundImageTurn(
+  sessionId: string,
+  attachments: readonly MessageAttachment[] | undefined,
+  explicitModelSpec?: ConversationModelSpec,
+): ForegroundImageTurn {
+  if (!hasImageAttachment(attachments)) return { attachments };
+  const configService = getConfigService();
+  const { provider, model } = resolveRunModelConfig(configService, configService.getSettings(), sessionId, explicitModelSpec);
+  return { attachments, model: { provider, model } };
+}
+
+/**
+ * `allowedConnectorIds`：本轮手选/专家声明的连接器范围（web 工作台 toolScope、桌面
+ * envelope options.toolScope 经 withWorkbenchTurnSystemContext 并出来的那份）。非空 =
+ * 显式收窄：范围外的连接器即使意图命中也不进面——与 run policy 的 toolScope 补充
+ * 豁免、deferred 预载的收窄判据三方同判（rework r1：漏传会让白名单放行范围外
+ * 连接器写，预载却按收窄不送 schema，两个判决互相矛盾）。无手选时传 undefined。
+ */
+export function getTextForegroundToolNamesForPrompt(
+  prompt: string,
+  allowedConnectorIds?: readonly string[],
+  imageTurn?: ForegroundImageTurn,
+): string[] {
   const base = getTextForegroundToolNames();
   const extras: string[] = [];
   const features = detectTaskFeatures(prompt);
@@ -95,12 +170,37 @@ export function getTextForegroundToolNamesForPrompt(prompt: string): string[] {
     if (OFFICE_SHEET_DELIVERABLE_RE.test(prompt)) extras.push('excel_generate', 'DocEdit');
   }
   if (isMorningBriefSaveDraftReply(prompt)) extras.push('mail_draft');
-  return extras.length > 0 ? [...base, ...extras] : base;
+  // 角色主动性写入必须留在用户亲自参与的前台轮次，并继续走工具内 force-confirm。
+  // 只在相关请求命中时进 allowlist，避免每轮挂载写工具 schema。
+  if (isRoleProactivityChatIntent(prompt)) extras.push('set_role_proactivity');
+  // 无意图命中时零副作用（不触 configService/registry）。
+  extras.push(...getNativeConnectorToolNamesForIntent({ userText: prompt, allowedConnectorIds }));
+  extras.push(...getImageAnalyzeToolNamesForTurn(imageTurn));
+  if (extras.length === 0) return base;
+  // 存草稿轮 mail_draft 已在 extras 里，连接器扩展会再次带回同名——去重保序。
+  return Array.from(new Set([...base, ...extras]));
+}
+
+/** Shared logging and explicit-cap clamp for desktop and web assembly. */
+export function resolveForegroundBrainTurnBudget(
+  prompt: string,
+  lastAssistantStoppedByStepLimit: boolean,
+  requestedMaxIterations?: unknown,
+  log: Pick<typeof logger, 'info'> = logger,
+): number {
+  const cap = resolveForegroundBrainMaxIterations({ prompt, lastAssistantStoppedByStepLimit });
+  const rule = lastAssistantStoppedByStepLimit ? 'continuation'
+    : cap > SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS ? 'deliverable' : 'default';
+  const maxIterations = Math.min(typeof requestedMaxIterations === 'number' ? requestedMaxIterations : cap, cap);
+  log.info(`Foreground brain budget rule=${rule} cap=${cap} maxIterations=${maxIterations}`);
+  return maxIterations;
 }
 
 export function withSessionCommandCenterBrain(
   options: AppServiceRunOptions | undefined,
   prompt?: string,
+  imageTurn?: ForegroundImageTurn,
+  lastAssistantStoppedByStepLimit = false,
 ): AppServiceRunOptions {
   const text = prompt ?? '';
   const turnSystemContext = [
@@ -110,13 +210,8 @@ export function withSessionCommandCenterBrain(
   return {
     ...(options ?? {}),
     mode: options?.mode ?? 'normal',
-    maxIterations: Math.min(
-      typeof options?.maxIterations === 'number'
-        ? options.maxIterations
-        : SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
-      SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
-    ),
-    allowedToolNames: getTextForegroundToolNamesForPrompt(text),
+    maxIterations: resolveForegroundBrainTurnBudget(text, lastAssistantStoppedByStepLimit, options?.maxIterations),
+    allowedToolNames: getTextForegroundToolNamesForPrompt(text, options?.toolScope?.allowedConnectorIds, imageTurn),
     foregroundToolFace: true,
     turnSystemContext,
   };

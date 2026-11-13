@@ -30,6 +30,8 @@ export const CRON_EVENT_TRIGGER = {
   DEFAULT_MAILBOX: 'INBOX',
   /** mail 源单次轮询拉取的邮件条数上限（list_messages 的 limit）。 */
   MAIL_POLL_LIST_LIMIT: 25,
+  /** 每个 mail 任务持久化的已见邮件键上限。 */
+  MAIL_WATERMARK_MAX_KEYS: 200,
   /** mail 轮询扫描 tick（毫秒）：到期任务的轮询由这个粒度驱动（任务增删改即时生效）。 */
   MAIL_POLL_TICK_MS: 5_000,
   /** 单次 run 最多携带的事件条数；超出部分计入 droppedCount，不静默丢。 */
@@ -61,6 +63,8 @@ export const CRON_EVENT_DECISIONS = {
   MAX_READ_LIMIT: 500,
   /** 一行理由的截断长度（字符）。 */
   MAX_REASON_CHARS: 200,
+  /** 邮件事件在决策列表里的「发件人 · 主题」显示长度。 */
+  MAX_EVENT_LABEL_CHARS: 60,
   /** 「本会发出什么」摘要的截断长度（字符）。 */
   MAX_SUMMARY_CHARS: 200,
   /** 每任务挂起待记的 dropped 事件 id 上限（超出只计数，不逐条记）。 */

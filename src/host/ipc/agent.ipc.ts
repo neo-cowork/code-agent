@@ -33,7 +33,7 @@ import {
   type PermissionMode,
 } from '../permissions/modes';
 import { broadcastToRenderer } from '../platform';
-import { getAdminAccessIpcError } from './adminGuard';
+import { ensureAdminAccessIpcError } from './adminGuard';
 import type { SteerOrQueueOutcome } from '../runtime/steerQueueFence';
 
 // ----------------------------------------------------------------------------
@@ -91,7 +91,7 @@ async function handleCancel(
 ): Promise<void> {
   const appService = getAppService();
   if (!appService) throw new Error('Agent not initialized');
-  await appService.cancel(payload?.sessionId);
+  await appService.cancel(payload?.sessionId, undefined, { abandonParked: payload?.abandonParked === true });
 }
 
 async function handlePermissionResponse(
@@ -181,7 +181,7 @@ const agentHandlers: RawDomainRouteHandlers<AgentDomainRequest, AgentRouteCtx> =
     // 与 settings PERMISSION_SET_MODE 的 assertAdminAccess 同一口径——
     // approved 由客户端自报，不能作为提权凭据。
     if (MODE_CONFIGS[mode].requiresApproval) {
-      const adminError = getAdminAccessIpcError('Permission mode');
+      const adminError = await ensureAdminAccessIpcError('Permission mode');
       if (adminError) return adminError;
     }
     const changed = setPermissionMode(mode, Boolean((payload as { approved?: boolean } | undefined)?.approved), 'user-ui');
@@ -207,7 +207,7 @@ const agentHandlers: RawDomainRouteHandlers<AgentDomainRequest, AgentRouteCtx> =
     // 否则 hosted/多用户部署下非 admin 客户端可借 approved 自报把任意会话提到 bypass，
     // 绕开全局 PERMISSION_SET_MODE 的 assertAdminAccess。普通档位切换不受影响。
     if (MODE_CONFIGS[mode].requiresApproval) {
-      const adminError = getAdminAccessIpcError('Session permission mode');
+      const adminError = await ensureAdminAccessIpcError('Session permission mode');
       if (adminError) return adminError;
     }
     const manager = getPermissionModeManager();

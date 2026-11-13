@@ -4,6 +4,8 @@ import { isCoreToolName, resolveToolAlias } from '../../../services/toolSearch/d
 import { createLogger } from '../../../services/infra/logger';
 import { CONNECTOR_TOOL_NAMES } from '../../../../shared/contract/workbenchTools';
 import { needsArtifactTaskBrief } from '../../../prompts/builder';
+import { getNativeConnectorToolNamesForIntent } from '../../../connectors/nativeConnectorIntent';
+import { isRoleProactivityChatIntent } from '../../../app/roleProactivityChatIntent';
 
 const logger = createLogger('ContextAssembly');
 
@@ -38,6 +40,13 @@ const MCP_MANAGEMENT_INTENT_RE =
 
 // 简报/用户直接点名 spawn_agent（组队主理人首轮的固定脚手架就是这样）——不预载会白花一个 ToolSearch 来回。
 const SPAWN_AGENT_INTENT_RE = /\bspawn_agent\b/i;
+
+// 原生连接器（提醒/邮件/日历）写工具的意图判据已抽到 connectors/nativeConnectorIntent.ts
+// （单一真源，N-FG-CONNECTOR-TOOLS）：deferred 预载与文字前台 per-turn allowlist 扩展
+// 共用同一份「意图 × 启用 × 就绪」判据。用户在设置里启用了连接器但这一轮没在输入框里
+// 手选时，toolScope.allowedConnectorIds 是空的，这些 deferred 工具只能靠 tool_search
+// 才拿得到，模型常直接绕 Bash osascript（FB-498）。命中意图才预载，避免每轮多挂
+// 3 个连接器的 schema 打掉前缀缓存。
 
 function getLatestUserText(runtime: RuntimeForDeferredToolPreload): string {
   for (let index = runtime.messages.length - 1; index >= 0; index -= 1) {
@@ -99,10 +108,23 @@ export function getDeferredToolsToPreloadForTurn(
     tools.add('spawn_agent');
   }
 
+  // 用户通常只会说“每天一次”或“少烦我”，不会点名 deferred 工具。执行层仍负责
+  // attended-only 与 force-confirm；这里与前台 allowlist 共用同一判据，只送 schema。
+  if (isRoleProactivityChatIntent(userText)) {
+    tools.add('set_role_proactivity');
+  }
+
   for (const connectorId of runtime.toolScope?.allowedConnectorIds ?? []) {
     for (const toolName of CONNECTOR_TOOL_NAMES[connectorId] ?? []) {
       if (!isCoreToolName(toolName)) tools.add(toolName);
     }
+  }
+
+  for (const toolName of getNativeConnectorToolNamesForIntent({
+    userText,
+    allowedConnectorIds: runtime.toolScope?.allowedConnectorIds,
+  })) {
+    tools.add(toolName);
   }
 
   const allowedMcpServerIds = new Set(runtime.toolScope?.allowedMcpServerIds ?? []);

@@ -25,10 +25,13 @@ export interface SettingsEntry {
   keywords: string[];
   requiresAnyCapability?: readonly BundledHostCapabilityId[];
   requiresFeature?: AccessControlledFeature;
+  /** 仅当检测到外部 AI 应用来源时可见（与导航 tab 同条件）。 */
+  requiresExternalImport?: boolean;
 }
 
 export interface SearchSettingsOptions extends AccessSubject {
   installedCapabilities?: ReadonlySet<BundledHostCapabilityId>;
+  externalImportAvailable?: boolean;
 }
 
 /**
@@ -134,6 +137,9 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   { tab: 'skills', labelKey: 'searchSkill', keywords: ['search', 'skill', 'skillsmp'] },
   { tab: 'skills', labelKey: 'customRepository', keywords: ['custom', 'repository', 'github'] },
 
+  // Search Sources（搜索源）
+  { tab: 'search', labelKey: 'searchSources', keywords: ['search', 'search source', 'search sources', 'web search', 'brave', 'tavily', 'exa', 'perplexity', 'serper', 'zhipu', 'minimax'] },
+
   // Channels
   { tab: 'channels', labelKey: 'multichannelAccess', keywords: ['channel', 'channels', 'access', 'http', 'api'] },
   { tab: 'channels', labelKey: 'channelPrivacyPolicy', keywords: ['channel privacy', 'privacy policy', 'default redaction', 'local-redact', 'allow-raw', 'channel token', 'app secret', 'bot token'] },
@@ -142,6 +148,9 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   { tab: 'channels', labelKey: 'telegram', keywords: ['telegram', 'bot', 'tg'] },
   { tab: 'channels', labelKey: 'httpApi', keywords: ['http', 'api', 'rest', 'port', 'cors'] },
 
+  // External import（从其他 AI 应用导入：检测到来源才可见）
+  { tab: 'external-import', labelKey: 'externalImport', keywords: ['Claude Code', 'Codex', 'import', 'import from other AI apps', 'keep chats in sync', 'chat sync', zh.settings.externalImport.chatsImport.sync.title, en.settings.externalImport.chatsImport.sync.title], requiresExternalImport: true },
+
   // Memory
   { tab: 'memory', labelKey: 'lightMemory', keywords: ['memory', 'file', 'memory file'] },
   { tab: 'memory', labelKey: 'sessionStats', keywords: ['session', 'stats', 'statistics', 'depth', 'active'] },
@@ -149,7 +158,29 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
 
   // Screen Memory
   { tab: 'openchronicle', labelKey: 'automaticScreenMemory', keywords: ['screen memory', 'openchronicle', 'daemon', 'desktop activity'] },
-  { tab: 'openchronicle', labelKey: 'manualDesktopActivity', keywords: ['native desktop', 'tauri', 'desktop', 'desktop activity', 'screenshot', 'recording'] },
+  {
+    tab: 'openchronicle',
+    labelKey: 'manualDesktopActivity',
+    keywords: [
+      'native desktop',
+      'tauri',
+      'desktop',
+      'desktop activity',
+      'screenshot',
+      'recording',
+      'record',
+      'audio',
+      'transcription',
+      'microphone',
+      zh.settings.nativeDesktop.recording.record,
+      zh.settings.nativeDesktop.audioMode.microphone,
+      zh.settings.nativeDesktop.audioReadiness.searchAudio,
+      zh.settings.nativeDesktop.audioReadiness.searchTranscription,
+    ],
+  },
+
+  // App Snapshots（应用截图）
+  { tab: 'appshots', labelKey: 'appshots', keywords: ['appshot', 'appshots', 'app snapshot', 'app snapshots', 'screenshot', 'screenshots', 'capture'] },
 
   // Privacy
   { tab: 'privacy', labelKey: 'permissionDataBoundary', keywords: ['privacy boundary', 'permission boundary', 'data boundary', 'local first', 'cloud exception', 'diagnostic exception'] },
@@ -198,6 +229,7 @@ export function searchSettings(query: string, options?: SearchSettingsOptions): 
   return SETTINGS_INDEX.filter((entry, index) => {
     const opensCapabilityHub = CAPABILITY_HUB_TAB_BY_SETTINGS_TAB[entry.tab] !== undefined;
     if (!opensCapabilityHub && !canAccessSettingsTab(entry.tab, options)) return false;
+    if (entry.requiresExternalImport && options?.externalImportAvailable !== true) return false;
     if (entry.requiresFeature && !canAccessFeature(entry.requiresFeature, options)) return false;
     if (!isSettingsTabCapabilityAvailable(entry.tab, options?.installedCapabilities)) return false;
     if (

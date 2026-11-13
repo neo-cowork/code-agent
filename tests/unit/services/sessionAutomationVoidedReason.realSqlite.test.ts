@@ -1,0 +1,233 @@
+// N-FIX-PARKED-APPROVAL-SURVIVE-RESTART-REALRUN-FU2：运行详情「为什么停了」的 host 查询。
+// real file-backed SQLite（sessions + pending_approvals 全真）；getDatabase 指向本文件的文件库。
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.unmock('better-sqlite3');
+import Database from 'better-sqlite3';
+import type BetterSqlite3 from 'better-sqlite3';
+
+const warn = vi.hoisted(() => vi.fn());
+const dbState = vi.hoisted(() => ({ repo: null as unknown, getSession: vi.fn(), unavailable: false }));
+
+vi.mock('../../../src/host/services/core/databaseService', () => ({
+  getDatabase: () => {
+    if (dbState.unavailable) throw new Error('DB not ready');
+    return { getPendingApprovalRepo: () => dbState.repo, getSession: dbState.getSession };
+  },
+}));
+vi.mock('../../../src/host/services/infra/logger', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/host/services/infra/logger')>();
+  const stub = () => ({ info: vi.fn(), warn, error: vi.fn(), debug: vi.fn(), child: () => stub() });
+  return { ...actual, createLogger: () => stub() };
+});
+
+import { applySchema } from '../../../src/host/services/core/database/schema';
+import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
+import { PendingApprovalRepository } from '../../../src/host/services/core/repositories/PendingApprovalRepository';
+import { describeParkedApprovalClosure } from '../../../src/host/agent/parkedApprovalSurvival';
+import { SessionAutomationService } from '../../../src/host/services/sessionAutomation/sessionAutomationService';
+
+const DAY = 86_400_000;
+
+describe('getVoidedApprovalReason (real SQLite file)', () => {
+  let dir: string;
+  let db: BetterSqlite3.Database;
+  let sessions: SessionRepository;
+  let approvals: PendingApprovalRepository;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dir = realpathSync(mkdtempSync(path.join(tmpdir(), 'voided-reason-')));
+    db = new Database(path.join(dir, 'test.db'));
+    applySchema(db, { info() {}, warn() {}, error() {}, debug() {} } as never);
+    sessions = new SessionRepository(db);
+    approvals = new PendingApprovalRepository(db);
+    dbState.repo = approvals;
+    dbState.unavailable = false;
+    dbState.getSession.mockImplementation((id: string) => sessions.getSession(id));
+  });
+  afterEach(() => {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function seedVoided(id: string, sessionId: string, feedback: string, resolvedAt: number) {
+    sessions.createSessionWithId(sessionId, {
+      title: sessionId,
+      modelConfig: { provider: 'openai', model: 'm' },
+      origin: { kind: 'cron', id: 'job-1' } as never,
+      sourceRunId: `exec-${sessionId}`,
+    });
+    approvals.insert({
+      id, kind: 'tool_approval', agentId: null, agentName: null, coordinatorId: sessionId,
+      payload: { sessionId, tool: 'Bash', requestedAt: 1_000 } as never,
+      submittedAt: 1_000,
+    });
+    approvals.resolve({ id, status: 'rejected', feedback, resolvedAt });
+  }
+
+  it.each(['pending', 'orphaned', 'voided'] as const)('stored payload lacking tool has no unknown shown fields (%s)', (status) => {
+    approvals.insert({
+      id: 'missing-name', kind: 'tool_approval', agentId: null, agentName: null, coordinatorId: null,
+      payload: { requestedAt: Date.now() } as never, submittedAt: Date.now(),
+    });
+    if (status === 'orphaned') db.prepare("UPDATE pending_approvals SET status = 'orphaned' WHERE id = ?").run('missing-name');
+    if (status === 'voided') approvals.resolve({
+      id: 'missing-name', status: 'rejected',
+      feedback: 'Auto-rejected after restart: expired_after_restart_24h', resolvedAt: Date.now(),
+    });
+    const [item] = new SessionAutomationService().listParkedApprovals();
+    expect(item.tool).toBe('');
+    expect(`${item.tool}${item.displayTool ?? ''}`).not.toContain('unknown');
+  });
+
+  it('③a 重启后作废的行 → 与收件箱同一句话；无关会话 → null', () => {
+    seedVoided('r1', 's1', 'Auto-rejected after restart: expired_after_restart_24h', Date.now());
+    sessions.createSessionWithId('other', { title: 'o', modelConfig: { provider: 'openai', model: 'm' } });
+    const svc = new SessionAutomationService();
+    const sentence = svc.getVoidedApprovalReason('s1');
+    expect(sentence).toBe(describeParkedApprovalClosure('expired_after_restart_24h'));
+    expect(sentence).toContain('24 小时');
+    expect(svc.getVoidedApprovalReason('other')).toBeNull();
+    expect(svc.getVoidedApprovalReason('missing')).toBeNull();
+  });
+
+  it('③b 超过 3 天保留期的行仍能解析（运行页不受收件箱保留期限制），收件箱却已隐藏', () => {
+    seedVoided('r2', 's2', 'Auto-rejected after restart: args_unavailable (session working directory unavailable)', Date.now() - 10 * DAY);
+    const svc = new SessionAutomationService();
+    expect(svc.getVoidedApprovalReason('s2')).toBe(
+      describeParkedApprovalClosure('args_unavailable', 'working_directory_unavailable'),
+    );
+    expect(svc.listParkedApprovals().filter((i) => i.status === 'voided')).toHaveLength(0);
+  });
+
+  it('④ 原因码认不出的作废行 → null + warn 留痕；非重启作废的 rejected 行 → null 且不 warn', () => {
+    seedVoided('r3', 's3', 'Auto-rejected after restart: something_new', Date.now());
+    seedVoided('r4', 's4', 'User denied', Date.now());
+    const svc = new SessionAutomationService();
+    expect(svc.getVoidedApprovalReason('s3')).toBeNull();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(svc.getVoidedApprovalReason('s4')).toBeNull();
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+  it('voided inbox preserves stored redacted preview, session title and requestedAt through real SQLite', () => {
+    const requestedAt = Date.now() - 2 * DAY;
+    const preview = 'invoice-export --token=***REDACTED*** --month=November';
+    sessions.createSessionWithId('invoices', {
+      title: '[定时] Sort this month’s invoices', modelConfig: { provider: 'openai', model: 'm' },
+    });
+    for (const [id, argsPreview] of [['with-preview', preview], ['old-row', undefined]] as const) {
+      approvals.insert({
+        id, kind: 'tool_approval', agentId: null, agentName: null, coordinatorId: 'invoices',
+        payload: { sessionId: 'invoices', tool: 'Bash', requestedAt, argsPreview, argsRef: 'must-not-read-raw-args' } as never,
+        submittedAt: requestedAt - 500,
+      });
+      approvals.resolve({ id, status: 'rejected', feedback: 'Auto-rejected after restart: expired_after_restart_24h', resolvedAt: Date.now() });
+    }
+    const items = new SessionAutomationService().listParkedApprovals();
+    expect(items).toHaveLength(2);
+    expect(items.find((item) => item.id === 'with-preview')).toMatchObject({
+      sessionTitle: 'Sort this month’s invoices', requestedAt, status: 'voided', argsPreview: preview,
+    });
+    expect(JSON.parse(approvals.getById('with-preview')!.payloadJson).argsPreview).toBe(preview);
+    expect(items.find((item) => item.id === 'old-row')?.argsPreview).toBeUndefined();
+    console.log('HOST voided: Sort this month’s invoices; requestedAt preserved; stored preview:', preview);
+  });
+
+  it.each([
+    ['[Scheduled] Write the weekly report', 'Write the weekly report'],
+    ['[定时] 整理本月发票', '整理本月发票'],
+    ['[Schedule] Weekly progress report', 'Weekly progress report'],
+    ['[Heartbeat] Check inbox', 'Check inbox'],
+    ['', undefined], ['  ', undefined], ['[Scheduled] ', undefined],
+    ['session_private', undefined], ['[定时] session_private', undefined],
+    ['12345678-abcd-1234-abcd-123456789abc', undefined],
+  ])('voided inbox title %j becomes %j', (title, expected) => {
+    seedVoided('title-row', 'chat', 'Auto-rejected after restart: args_unavailable (session working directory unavailable)', Date.now());
+    db.prepare('UPDATE sessions SET title = ? WHERE id = ?').run(title, 'chat');
+    expect(new SessionAutomationService().listParkedApprovals()[0].sessionTitle).toBe(expected);
+  });
+
+  it.each([
+    ['/Users/someone/work/out/ws/weekly-report.md', 'weekly-report.md'],
+    ['~/notes/My Report.md', 'My Report.md'],
+    ['C:\\Users\\someone\\a.csv', 'a.csv'],
+    ['/usr/bin/tool --flag value', '/usr/bin/tool --flag value'],
+    ['invoice-export --month=November', 'invoice-export --month=November'],
+  ])('voided card shows path preview %j as %j; pending card keeps the full text', (preview, expected) => {
+    sessions.createSessionWithId('p1', { title: 'p1', modelConfig: { provider: 'openai', model: 'm' } });
+    for (const [id, status] of [['v', 'voided'], ['o', 'pending']] as const) {
+      approvals.insert({
+        id, kind: 'tool_approval', agentId: null, agentName: null, coordinatorId: 'p1',
+        payload: { sessionId: 'p1', tool: 'Write', requestedAt: 1_000, argsPreview: preview } as never, submittedAt: 1_000,
+      });
+      if (status === 'voided') approvals.resolve({ id, status: 'rejected', feedback: 'Auto-rejected after restart: expired_after_restart_24h', resolvedAt: Date.now() });
+    }
+    const items = new SessionAutomationService().listParkedApprovals();
+    expect(items.find((i) => i.id === 'v')?.argsPreview).toBe(expected);
+    expect(items.find((i) => i.id === 'o')?.argsPreview).toBe(preview);
+  });
+
+  it('voided inbox tolerates deleted sessions, failed title lookups and DB-not-ready', () => {
+    seedVoided('deleted-row', 'deleted-chat', 'Auto-rejected after restart: expired_after_restart_24h', Date.now());
+    db.prepare('DELETE FROM sessions WHERE id = ?').run('deleted-chat');
+    const svc = new SessionAutomationService();
+    expect(svc.listParkedApprovals()[0]).toMatchObject({ requestedAt: 1_000, status: 'voided' });
+    expect(svc.listParkedApprovals()[0].sessionTitle).toBeUndefined();
+    dbState.getSession.mockImplementation(() => { throw new Error('Session read unavailable'); });
+    expect(svc.listParkedApprovals()[0].sessionTitle).toBeUndefined();
+    expect(warn).toHaveBeenCalledWith('Approval session title unavailable', expect.any(Object));
+    dbState.unavailable = true;
+    expect(svc.listParkedApprovals()).toEqual([]);
+  });
+
+  function seedParked(id: string, title: string | undefined, kind: 'tool_approval' | 'directory_access' = 'tool_approval', status: 'pending' | 'orphaned' = 'pending') {
+    if (title !== undefined) sessions.createSessionWithId(id, { title, modelConfig: { provider: 'openai', model: 'm' } });
+    approvals.insert({
+      id, kind, agentId: null, agentName: null, coordinatorId: id,
+      payload: { sessionId: id, tool: 'Write', requestedAt: 1_000 } as never, submittedAt: 1_000,
+    });
+    if (status === 'orphaned') approvals.resolve({ id, status, feedback: null, resolvedAt: Date.now() });
+  }
+
+  it('pending, orphaned and directory approvals resolve distinct session titles through listParkedApprovals', () => {
+    seedParked('weekly', '[Scheduled] Weekly report');
+    seedParked('invoices', '[定时] Sort invoices', 'tool_approval', 'orphaned');
+    seedParked('receipts', '  Client receipts  ', 'directory_access');
+    seedParked('archive', '[Scheduled] Archive receipts', 'directory_access', 'orphaned');
+    const items = new SessionAutomationService().listParkedApprovals();
+    expect(items).toHaveLength(4);
+    for (const [id, title, status, kind] of [
+      ['weekly', 'Weekly report', 'pending', 'tool_approval'],
+      ['invoices', 'Sort invoices', 'orphaned', 'tool_approval'],
+      ['receipts', 'Client receipts', 'pending', 'directory_access'],
+      ['archive', 'Archive receipts', 'orphaned', 'directory_access'],
+    ]) expect(items.find((item) => item.id === id)).toMatchObject({ sessionTitle: title, status, kind });
+  });
+
+  it.each([undefined, '', '  ', '[Scheduled] ', 'session_private', '[定时] session_private', '12345678-abcd-1234-abcd-123456789abc'])('pending and orphaned title %j is omitted without losing rows', (title) => {
+    seedParked('pending', title);
+    seedParked('orphaned', title, 'directory_access', 'orphaned');
+    const items = new SessionAutomationService().listParkedApprovals();
+    expect(items).toHaveLength(2);
+    expect(items.map((item) => item.sessionTitle)).toEqual([undefined, undefined]);
+  });
+
+  it('failed session lookups warn with each request id and keep pending and orphaned rows visible; pairing never looks up a title', () => {
+    seedParked('pending', 'Weekly report');
+    seedParked('orphaned', 'Sort invoices', 'directory_access', 'orphaned');
+    approvals.insert({ id: 'pairing', kind: 'channel_pairing', agentId: null, agentName: null,
+      coordinatorId: null, payload: {} as never, submittedAt: 1_000 });
+    dbState.getSession.mockImplementation(() => { throw new Error('Session read unavailable'); });
+    const items = new SessionAutomationService().listParkedApprovals();
+    expect(items).toHaveLength(3);
+    expect(items.every((item) => item.sessionTitle === undefined)).toBe(true);
+    expect(dbState.getSession).toHaveBeenCalledTimes(2);
+    for (const requestId of ['pending', 'orphaned']) expect(warn).toHaveBeenCalledWith('Approval session title unavailable', { requestId });
+    expect(items.find((item) => item.id === 'pairing')).toMatchObject({ sessionId: null, kind: 'channel_pairing' });
+  });
+
+});

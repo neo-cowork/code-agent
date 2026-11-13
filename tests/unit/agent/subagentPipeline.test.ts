@@ -460,7 +460,7 @@ describe('SubagentPipeline', () => {
       expect(result.allowed).toBe(true);
     });
 
-    it('allows nested delegation tools while keeping ordinary no-path execute denied', () => {
+    it('allows nested delegation tools and forwards ordinary no-path execute to the approval pipeline', () => {
       const agentDef = {
         id: 'strict-agent',
         name: 'Strict',
@@ -480,15 +480,19 @@ describe('SubagentPipeline', () => {
         expect(result.allowed).toBe(true);
       }
 
+      // Reversal (N-SUBAGENT-APPROVAL-BUBBLE-UP-PIPELINE-GATE): a non-read request
+      // that is merely not auto-approved and has no explicit path (such as Bash)
+      // returns allowed:true so ToolExecutor's normal ask/classifier pipeline decides,
+      // rather than hard-denying before any classifier or approval handler can run.
       const ordinaryExecute = pipeline.checkToolExecution(context, {
         toolName: 'bash',
         permissionLevel: 'execute',
       });
-      expect(ordinaryExecute.allowed).toBe(false);
-      expect(ordinaryExecute.reason).toBe('Permission denied: execute operation requires approval');
+      expect(ordinaryExecute.allowed).toBe(true);
+      expect(ordinaryExecute.warnings).toContain('execute operation without explicit path forwarded to approval pipeline');
     });
 
-    it('explains when a requested path is outside the agent working directory', () => {
+    it.each(['write', 'execute', 'network'] as const)('forwards outside-path %s operations to approval with an audit note', (permissionLevel) => {
       const agentDef = {
         id: 'strict-path-agent',
         name: 'Strict Path Agent',
@@ -504,13 +508,49 @@ describe('SubagentPipeline', () => {
 
       const result = pipeline.checkToolExecution(context, {
         toolName: 'write_file',
-        permissionLevel: 'write',
+        permissionLevel,
         path: outsidePath,
       });
 
-      expect(result.allowed).toBe(false);
-      expect(result.reason).toContain(outsidePath);
-      expect(result.reason).toContain(workingDirectory);
+      expect(result.allowed).toBe(true);
+      expect(result.warnings).toContain(`${permissionLevel} operation outside working directory forwarded to approval pipeline`);
+      expect(result.forceConfirm).toBe(true);
+      expect(pipeline.getAuditLog()).toContainEqual(expect.objectContaining({
+        action: 'tool_execute',
+        details: expect.objectContaining({ path: outsidePath, note: 'requires_approval_pipeline' }),
+      }));
+    });
+
+    it('allows development preset Bash `ls` (no path) when execute is not auto-approved', () => {
+      const agentDef = {
+        id: 'dev-ls-agent',
+        name: 'Dev LS Agent',
+        description: 'Dev LS',
+        prompt: 'Dev LS',
+        tools: ['bash'],
+        permissionPreset: 'development',
+      } as AgentDefinition;
+
+      // Mirror real PERMISSION_PRESETS.development where autoApprove.execute is false
+      // (gated by trustProjectDirectory when a path is present).
+      const context = pipeline.createContext(agentDef, '/test', undefined, {
+        parentPermissionConfig: {
+          autoApprove: { read: true, write: false, execute: false, network: true },
+          confirmDangerousCommands: true,
+          trustProjectDirectory: true,
+          blockedCommands: ['rm -rf /'],
+          trustedDirectories: ['/test'],
+        },
+      });
+
+      const result = pipeline.checkToolExecution(context, {
+        toolName: 'bash',
+        permissionLevel: 'execute',
+        command: 'ls',
+      });
+
+      expect(result.allowed).toBe(true);
+      expect(result.warnings).toContain('execute operation without explicit path forwarded to approval pipeline');
     });
 
     it('should warn on dangerous commands', () => {

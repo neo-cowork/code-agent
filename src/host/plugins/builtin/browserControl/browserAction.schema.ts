@@ -10,6 +10,7 @@ export const browserActionSchema: UntrustedContentToolSchema = {
 Routing: prefer web_fetch/search for plain reads; use browser_action for login/session, multi-page, or visual work. After mutations, refresh DOM/a11y evidence before claiming final state.
 engine (ADR-041): optional auto|managed|relay (default auto). Explicit managed/relay never silent-switches. managed=Neo isolated browser; relay=user-attached Chrome tab.
 Profile login reuse: list_profiles; import_profile_cookies recognizes the legacy userConfirmed signal but also requires a one-time Host approval bound to profile/domain scope; clear_cookies clears managed profile cookies. Never log cookie values.
+keep_result_page: call once the active page is the final result the user should take over — it closes every other tab and keeps this window open for the user after the run ends (not for relay/unattended runs or the shared personal profile).
 storageState file path: export_storage_state / import_storage_state for CI/scripts.${browserJevStepDescriptionSuffix()}`; },
   outputSchema: { type: 'string' },
   get inputSchema() { return withBrowserJevStepActionEnum({
@@ -26,6 +27,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
           'get_workbench_state', 'get_account_state', 'export_storage_state', 'import_storage_state',
           'list_profiles', 'import_profile_cookies', 'clear_cookies',
           'wait_for_download', 'upload_file', 'wait', 'fill_form', 'get_logs',
+          'keep_result_page',
           'execute_goal',
         ],
         description: 'The browser action to perform',
@@ -39,13 +41,13 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
         description: 'CSS selector for element interactions. Prefer targetRef from get_dom_snapshot when available.',
       },
       targetRef: {
-        type: 'object',
-        description: 'Short-lived target reference returned by get_dom_snapshot interactiveElements[].targetRef',
+        type: ['object', 'string'],
+        description: 'Short-lived target reference returned by get_dom_snapshot: pass the refId shown at the start of each get_dom_snapshot element line (the targetRef object form is also accepted), e.g. {"action":"click","targetRef":"<refId>"}.',
         additionalProperties: true,
       },
       destinationTargetRef: {
-        type: 'object',
-        description: 'Fresh destination targetRef for drag. Both drag endpoints must come from the same current DOM snapshot.',
+        type: ['object', 'string'],
+        description: 'Fresh destination targetRef for drag (pass the refId from a get_dom_snapshot element line). Both drag endpoints must come from the same current DOM snapshot.',
         additionalProperties: true,
       },
       text: {
@@ -81,6 +83,10 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
       tabId: {
         type: 'string',
         description: 'Managed Browser tab reference. Relay never accepts native tab IDs.',
+      },
+      offset: {
+        type: 'number',
+        description: 'get_dom_snapshot only: index of the first interactive element to list (default 0). Use the offset from the "+K more elements" line to page.',
       },
       timeout: {
         type: 'number',

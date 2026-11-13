@@ -18,7 +18,10 @@ import type {
   SessionAutomationStatus,
   SessionAutomationType,
 } from '../../shared/contract/sessionAutomation';
+import { truncateSummaryAtBoundary } from '../../shared/truncateSummary';
 import { isCronUrgency } from '../../shared/cronUrgency';
+import { readCronPermissionDenied } from './cronNormalizers';
+import { cronSourceSessionIdFromDefinition } from '../../shared/cronWriteScope';
 import { resolveCronArtifactsForReview } from '../../shared/cronArtifactPath';
 import { formatCronExpressionLabel } from '../../shared/cronHumanize';
 import { parseCronLoginWallStop } from '../../shared/utils/browserLoginWall';
@@ -58,7 +61,7 @@ function readCronReviewSummaryLine(summary: string | undefined): string | undefi
     .split(/\r?\n/)
     .map((item) => item.trim())
     .find((item) => item.length > 0 && !/^urgency\s*:/i.test(item));
-  return line ? line.slice(0, 120) : undefined;
+  return line ? truncateSummaryAtBoundary(line, 120) : undefined;
 }
 
 function readCronReviewDigest(
@@ -67,12 +70,15 @@ function readCronReviewDigest(
 ): NonNullable<SessionAutomationConfig['pendingReview']>['digest'] | undefined {
   if (!isRecord(value) || !Array.isArray(value.artifacts)) return undefined;
   const summary = typeof value.summary === 'string' ? value.summary : undefined;
-  const summaryLine = readCronReviewSummaryLine(summary);
+  const fullSummary = typeof value.fullSummary === 'string' ? value.fullSummary : summary;
+  const summaryLine = readCronReviewSummaryLine(fullSummary);
+  const summaryText = fullSummary?.split(/\r?\n/).filter((line) => !/^\s*urgency\s*:/i.test(line)).join('\n').trim();
   const artifacts = resolveCronArtifactsForReview(value.artifacts, cwd);
   if (artifacts.length === 0 && !summaryLine) return undefined;
   return {
     artifactCount: artifacts.length > 0 ? artifacts.length : value.artifacts.length,
     ...(summaryLine ? { summaryLine } : {}),
+    ...(summaryText && summaryText !== summaryLine ? { summaryText } : {}),
     ...(artifacts.length > 0 ? { artifacts } : {}),
   };
 }
@@ -86,13 +92,8 @@ export function readCronSourceSessionId(
   definition: CronJobDefinition,
   action: CronJobAction = definition.action,
 ): string | undefined {
-  const metadataSource = definition.metadata?.sourceSessionId;
-  if (typeof metadataSource === 'string' && metadataSource.trim()) return metadataSource;
-  if (action.type === 'agent') {
-    const contextSource = action.context?.sourceSessionId;
-    if (typeof contextSource === 'string' && contextSource.trim()) return contextSource;
-  }
-  return undefined;
+  // 判定唯一真源在 shared/cronWriteScope（renderer 写授权面板要按同一规则找来源会话）。
+  return cronSourceSessionIdFromDefinition(definition, action);
 }
 
 export function getCronAutomationType(
@@ -277,6 +278,9 @@ export async function recordCronAutomationExecution(
       resultRecord?.digest,
       readRunSessionWorkingDirectory(execution.sessionId),
     );
+    // 需处理标记透传（N-CRON-RUN-COMPLETED-BUT-DENIED）：agent 结果由 cronAgentAction
+    // 扫工具结果打上；收件箱据此把「成功」卡片换成琥珀色「需处理」。
+    const permissionDenied = readCronPermissionDenied(execution.result);
     const recordStatus: SessionAutomationStatus = keepActive
       ? 'active'
       : reviewable
@@ -295,6 +299,7 @@ export async function recordCronAutomationExecution(
           ...(urgency ? { urgency } : {}),
           ...(urgencyRaw ? { urgencyRaw } : {}),
           ...(digest ? { digest } : {}),
+          ...(permissionDenied ? { permissionDenied } : {}),
         } } }
         : loginWall
           ? { configPatch: { loginWall: { siteOrigin: loginWall.siteOrigin, at: execution.completedAt ?? Date.now() } } }

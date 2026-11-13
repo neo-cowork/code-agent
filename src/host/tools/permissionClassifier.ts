@@ -10,19 +10,18 @@
 // 3. Result caching — 避免重复分类相同工具调用模式
 
 import { createLogger } from '../services/infra/logger';
-import * as os from 'os';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import type { DecisionStep } from '../../shared/contract/decisionTrace';
 import { createHostReason, HostReasonCode, type HostReasonPayload } from '../../shared/contract/permission';
 import { createTraceStep } from '../security/decisionTraceBuilder';
 import {
-  commandWords as tokenizeCommandWords, isKnownSafeCommand,
+  isKnownSafeCommand,
   lenientCompoundSegments, splitCompoundCommand,
 } from '../security/commandSafety';
 import { canonicalizeCommand } from '../security/canonicalizeCommand';
 import {
-  lenientCommandWords, listTerminatorAfter, parseShellCommand, type SegmentTerminator,
+  parseShellCommand, type SegmentTerminator,
 } from '../security/commandParse';
 import { RM_FLAGS_REQUIRED, RM_HEAD } from '../security/rmFlagPattern';
 import { checkCommandPolicy } from './modules/shell/commandPolicy';
@@ -34,14 +33,21 @@ import {
 } from '../sandbox/writeFence';
 import { isBashToolName, normalizeToolName } from './toolNames';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
-import { isPathWithinRoot } from '../runtime/workspaceScope';
 import { connectorWriteAskClassification } from './connectorTokenWrite';
-import { isProtectedWritePath, isSensitiveCredentialPath } from '../sandbox/sensitivePaths';
+import { isSensitiveCredentialPath } from '../sandbox/sensitivePaths';
 import { resolvedRmCriticalTarget } from '../security/recursiveRmPathSafety';
-import { anchoredAllowCommandWords } from '../security/commandAllowProof';
 import type { JevSystemOneCall } from '../../shared/constants/jevQuestions';
 import { classifyByJev, isPermissionLlmClassifierEnabled } from './permissionClassifierJev';
 import { createProductionJevCall } from '../model/jevFeatures';
+import {
+  CANONICAL_HOME_DIR, bashCommandRequiresPermission, contextAfterCdSegment, credentialReadTarget,
+  ddCopiesWorkspaceFile, gitMutationReason, hasPositiveAllowCandidate, isNpmPublishDryRun, isSensitiveMemoryPath, readPathCandidates,
+  recursivelyRemovesPath, resolveCandidatePath,
+} from './permissionClassifierShell';
+import { classifyFileWrite } from './fileWriteClassification';
+import type { ToolDefinition } from '../../shared/contract';
+
+export { bashCommandRequiresPermission };
 
 const logger = createLogger('PermissionClassifier');
 
@@ -68,6 +74,8 @@ export interface ClassificationResult {
    * 供 B2 无人值守停车 / B4 target 授权与审计消费。判据见 tools/externalSideEffect.ts。
    */
   external?: boolean;
+  /** Host-resolved workspace targets requiring the scheduled folder grant. */
+  scheduleWriteTargets?: string[];
   /**
    * 信任边界 ask（W3 写边界）：终审层的便利放行（devModeAutoApprove / autoApprove[level] /
    * renderer 权限记忆）必须让路，由 toolExecutor 映射为 forceConfirm。与 directory_access
@@ -109,6 +117,8 @@ export interface ClassifierConfig {
 }
 
 export interface ClassificationContext {
+  sessionId?: string;
+  toolDefinition?: ToolDefinition;
   /** Base directory for resolving relative tool paths. */
   workingDirectory: string;
   /** Authoritative write boundary. Absent means no write target is inside a workspace. */
@@ -182,354 +192,6 @@ const DANGEROUS_BASH_PATTERNS: Array<{ pattern: RegExp; reason: string; decision
   { pattern: /wget\s.*\|\s*(sudo\s+)?sh/, reason: 'pipe wget to shell', decision: 'deny' },
 ];
 
-// 写入工具名映射
-const WRITE_TOOLS = new Set([
-  'write_file',
-  'Write',
-  'append_file',
-  'Append',
-  'edit_file',
-  'Edit',
-  // 表格卡第二张工作表走 DocEdit（file_path）。它不在 Jev 扩桶里，规则落空就
-  // 一律 ask；无工作区的新会话没有人点批准。与 Edit 同一条路径判据：工作区内放行，
-  // 区外和受保护路径仍 ask。
-  'DocEdit',
-  // Office 一轮文件交付的原生生成器（output_path）。不进写入桶就落到 LLM 分类器
-  // 兜底 → ask，无头新会话没人点批准（r4 实测 docx_generate 卡审批 34s 后整轮取消）。
-  // 产物路径判据与 Edit 一致：工作区内放行，区外/受保护路径仍 ask。
-  'docx_generate',
-  'excel_generate',
-]);
-
-// 生成器类写入工具的路径是可选参数：缺省时产物落在会话工作目录（resolveInputPath
-// 对 fileName 的行为），按 workingDirectory 本身参与边界判断即可。
-const GENERATOR_WRITE_TOOLS = new Set(['docx_generate', 'excel_generate']);
-
-const HOME_DIR = os.homedir();
-const CANONICAL_HOME_DIR = resolveCanonicalRunPath(HOME_DIR);
-const CLAUDE_MEMORY_DIR = path.join(CANONICAL_HOME_DIR, '.claude', 'context', 'memory');
-const CLAUDE_PROJECTS_DIR = path.join(CANONICAL_HOME_DIR, '.claude', 'projects');
-const CODEX_MEMORIES_DIR = path.join(CANONICAL_HOME_DIR, '.codex', 'memories');
-
-function expandLeadingTilde(rawPath: string): string {
-  if (rawPath === '~') return HOME_DIR;
-  if (rawPath.startsWith('~/')) return path.join(HOME_DIR, rawPath.slice(2));
-  if (rawPath === '$HOME' || rawPath === '${HOME}') return HOME_DIR;
-  if (rawPath.startsWith('$HOME/')) return path.join(HOME_DIR, rawPath.slice(6));
-  if (rawPath.startsWith('${HOME}/')) return path.join(HOME_DIR, rawPath.slice(8));
-  return rawPath;
-}
-
-function stripInlineReadParams(rawPath: string): string {
-  const trimmed = rawPath.trim();
-
-  const linesMatch = trimmed.match(/^(.+?)\s+lines?\s+\d+(?:-\d+)?$/i);
-  if (linesMatch) {
-    return linesMatch[1].trim();
-  }
-
-  const offsetLimitMatch = trimmed.match(/^(.+?)\s+(?:offset|limit)\b.*$/i);
-  if (offsetLimitMatch) {
-    return offsetLimitMatch[1].trim();
-  }
-
-  return trimmed;
-}
-
-function resolveCandidatePath(rawPath: string, workingDirectory: string, cache?: Map<string, string>): string {
-  if (rawPath.includes('\0')) throw new Error('NUL byte cannot be resolved as a filesystem path');
-  const cacheKey = `${workingDirectory}\u0000${rawPath}`;
-  const cached = cache?.get(cacheKey);
-  if (cached) return cached;
-  const sanitized = stripInlineReadParams(rawPath);
-  const expanded = expandLeadingTilde(sanitized);
-  const resolved = path.isAbsolute(expanded)
-    ? path.resolve(expanded)
-    : path.resolve(workingDirectory, expanded);
-  const canonical = resolveCanonicalRunPath(resolved);
-  cache?.set(cacheKey, canonical);
-  return canonical;
-}
-
-function isPathInside(candidate: string, boundary: string): boolean {
-  const relative = path.relative(boundary, candidate);
-  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
-}
-
-function isSensitiveMemoryPath(resolvedPath: string): boolean {
-  if (resolvedPath === CLAUDE_MEMORY_DIR || resolvedPath.startsWith(`${CLAUDE_MEMORY_DIR}${path.sep}`)) {
-    return true;
-  }
-
-  if (resolvedPath === CODEX_MEMORIES_DIR || resolvedPath.startsWith(`${CODEX_MEMORIES_DIR}${path.sep}`)) {
-    return true;
-  }
-
-  if (
-    (resolvedPath === CLAUDE_PROJECTS_DIR || resolvedPath.startsWith(`${CLAUDE_PROJECTS_DIR}${path.sep}`)) &&
-    resolvedPath.includes(`${path.sep}memory${path.sep}`)
-  ) {
-    return true;
-  }
-
-  return false;
-}
-
-// Keep quoted text as one shell word: quoted paths and quoted subcommands stay intact, and text
-// arguments such as `echo "git push …"` are not re-split into executable-looking words. These words
-// feed deny/ask scans only, so a failed strict parse widens the view instead of emptying it (rounds
-// 16/17: `>|`, `<>`, `case … ;;` erased the credential path and a deny decayed into an ask). Approval
-// proofs keep the strict view in commandAllowProof.
-const commandWords = (command: string): string[] => tokenizeCommandWords(command) ?? lenientCommandWords(command);
-
-function commandProgram(word: string | undefined): string {
-  return word ? path.posix.basename(word) : '';
-}
-
-function gitCommand(command: string): { subcommand: string; args: string[] } | null {
-  const words = commandWords(command);
-  if (!words) return null;
-  const gitIndex = words.findIndex((word) => commandProgram(word) === 'git');
-  if (gitIndex < 0) return null;
-  let index = gitIndex + 1;
-  while (index < words.length && words[index].startsWith('-')) {
-    const option = words[index];
-    if (['-C', '-c', '--git-dir', '--work-tree', '--namespace'].includes(option)) index += 2;
-    else index += 1;
-  }
-  if (index >= words.length) return null;
-  return { subcommand: words[index], args: words.slice(index + 1) };
-}
-
-function gitMutationReason(command: string): string | null {
-  const git = gitCommand(command);
-  if (!git) return null;
-  if (git.subcommand === 'push') return 'git push 会写入远端';
-  if (git.subcommand === 'remote') {
-    const action = git.args.find((arg) => !arg.startsWith('-'));
-    return action && ['set-url', 'add', 'rename'].includes(action)
-      ? '修改 git 远端配置'
-      : null;
-  }
-  if (git.subcommand !== 'config') return null;
-
-  const readFlags = new Set(['--get', '--get-all', '--get-regexp', '--list', '-l', '--show-origin', '--show-scope']);
-  const mutationFlags = new Set(['--add', '--replace-all', '--unset', '--unset-all', '--remove-section', '--rename-section']);
-  const optionsWithValue = new Set(['--file', '-f', '--blob', '--type', '--default']);
-  let hasReadFlag = false;
-  let hasMutationFlag = false;
-  const operands: string[] = [];
-  for (let index = 0; index < git.args.length; index += 1) {
-    const arg = git.args[index];
-    if (readFlags.has(arg)) {
-      hasReadFlag = true;
-      continue;
-    }
-    if (mutationFlags.has(arg)) {
-      hasMutationFlag = true;
-      continue;
-    }
-    if (optionsWithValue.has(arg)) {
-      index += 1;
-      continue;
-    }
-    if (arg.startsWith('-')) continue;
-    operands.push(arg);
-  }
-  const key = operands[0]?.toLowerCase();
-  if (!key) return null;
-  const protectedKey = /^url\..+\.(?:push)?insteadof$/i.test(key)
-    || /^credential(?:\.|$)/i.test(key)
-    || key === 'core.sshcommand'
-    || key === 'http.proxy'
-    || key === 'https.proxy';
-  return protectedKey && !hasReadFlag && (hasMutationFlag || operands.length >= 2)
-    ? '修改 git 远端或凭据配置'
-    : null;
-}
-
-function credentialReadTarget(command: string, context: ClassificationContext): string | null {
-  const words = commandWords(command);
-  if (!words) return null;
-  const projectRoot = resolveCanonicalRunPath(context.workspaceRoot ?? context.workingDirectory);
-  const ignoredIndexes = new Set<number>();
-  const grepIndex = words.findIndex((word) => ['grep', 'egrep', 'fgrep', 'rg'].includes(commandProgram(word)));
-  if (grepIndex >= 0) {
-    let patternProvidedByOption = false;
-    for (let index = grepIndex + 1; index < words.length; index += 1) {
-      const word = words[index];
-      if (word === '-e' || word === '--regexp') {
-        if (index + 1 < words.length) ignoredIndexes.add(index + 1);
-        patternProvidedByOption = true;
-        index += 1;
-        continue;
-      }
-      if (word.startsWith('--regexp=')) {
-        patternProvidedByOption = true;
-        continue;
-      }
-      if (!word.startsWith('-') && !patternProvidedByOption) {
-        ignoredIndexes.add(index);
-        break;
-      }
-    }
-  }
-  // Redirection operands (`> f`, `< f`) are path candidates too: `> $'\0'` must stay a refusal and
-  // `cat < "$HOME/.ssh/id_rsa"` a credential read. resolveCandidatePath expands $HOME itself, so an
-  // uncertain operand is scanned like any other word — dropping it let that read go unasked (round 18).
-  const parsed = parseShellCommand(command);
-  const targets = [...parsed.writeTargets, ...parsed.segments.flatMap((segment) => segment.reads)].map((o) => o.path);
-  for (const rawCandidate of [...words.filter((word, index) => word && !ignoredIndexes.has(index)), ...targets]) {
-    // dd 的操作数带 `if=`/`of=` 前缀，整词当路径解析永远不命中——`dd if=.env …` 读的是凭据（N-APPROVAL-DRYRUN-DD）
-    const candidate = /^(?:if|of)=/.test(rawCandidate) ? rawCandidate.slice(3) : rawCandidate;
-    const resolved = resolveCandidatePath(candidate, context.workingDirectory, context.pathResolutionCache);
-    if (isSensitiveCredentialPath(resolved, { homeDir: CANONICAL_HOME_DIR, projectRoot })) return resolved;
-  }
-  return null;
-}
-
-function recursivelyRemovesPath(command: string): boolean {
-  const words = commandWords(command);
-  const rmIndex = words.findIndex((word) => commandProgram(word) === 'rm');
-  return rmIndex >= 0 && words.slice(rmIndex + 1).some((arg) => arg === '--recursive' || /^-[A-Za-z]*[rR]/.test(arg));
-}
-
-// npm config 语义：同名参数后者覆盖前者，`--no-dry-run` / `--dry-run=false` 会把前面的 `--dry-run` 关掉——
-// `npm publish --dry-run --no-dry-run` 是真发布。只查 includes('--dry-run') 会把它当预览放行（N-APPROVAL-DRYRUN-DD，review-eval 在 #1611 案例上报出）。
-function npmPublishDryRunFlag(words: string[], start: number): boolean {
-  // ponytail: 只认写全的 --dry-run / --no-dry-run（含 =值、紧跟 true/false 取值）。
-  // npm 实测：`--dry-run false` 把 false 吃成取值 ⇒ 真发布；且任意唯一前缀缩写都被展开（--dry、--no-dr、--dry=false），
-  // 缩写形一律当拿不准 ⇒ 不放行（落到 ask），比逐个列举更稳。
-  let dryRun = false;
-  const rest = words.slice(start);
-  for (let i = 0; i < rest.length; i++) {
-    const word = rest[i];
-    const eq = word.indexOf('=');
-    // nopt 把任意数量的前导短横都当 --（实测 `---no-dry-run` 关掉预览 ⇒ 真发布），先归一再比
-    const flag = (eq === -1 ? word : word.slice(0, eq)).replace(/^-{2,}/, '--');
-    let value = eq === -1 ? undefined : word.slice(eq + 1);
-    if (flag !== '--dry-run' && flag !== '--no-dry-run') {
-      if (/^-+(no-)?d/.test(flag)) return false;
-      continue;
-    }
-    if (value === undefined && (rest[i + 1] === 'true' || rest[i + 1] === 'false')) value = rest[++i];
-    dryRun = flag === '--dry-run' && (value === undefined || value === 'true');
-  }
-  return dryRun;
-}
-
-function isNpmPublishDryRun(command: string): boolean {
-  const words = anchoredAllowCommandWords(command, 'npm');
-  return words !== null && words[1] === 'publish' && npmPublishDryRunFlag(words, 2);
-}
-
-function ddCopiesWorkspaceFile(command: string, context: ClassificationContext): boolean {
-  const words = anchoredAllowCommandWords(command, 'dd');
-  if (!words) return false;
-
-  const input = words.slice(1).find((word) => word.startsWith('if='))?.slice(3);
-  const output = words.slice(1).find((word) => word.startsWith('of='))?.slice(3);
-  if (!input || !output) return false;
-
-  const workspace = resolveCanonicalRunPath(context.workspaceRoot ?? context.workingDirectory);
-  const resolvedInput = resolveCandidatePath(input, context.workingDirectory, context.pathResolutionCache);
-  const resolvedOutput = resolveCandidatePath(output, context.workingDirectory, context.pathResolutionCache);
-  // 工作区内的 .env* 也是凭据：`dd if=.env of=copy.bin` 是把凭据复制进工作区文件，不是普通文件搬运（N-APPROVAL-DRYRUN-DD）
-  if (isSensitiveCredentialPath(resolvedInput, { homeDir: CANONICAL_HOME_DIR, projectRoot: workspace })) return false;
-  return isPathInside(resolvedInput, workspace) && isPathInside(resolvedOutput, workspace);
-}
-
-function hasPositiveAllowCandidate(command: string): boolean {
-  const words = commandWords(command);
-  if (!words) return false;
-  const npmIndex = words.findIndex((word) => commandProgram(word) === 'npm');
-  if (npmIndex >= 0 && words[npmIndex + 1] === 'publish' && npmPublishDryRunFlag(words, npmIndex + 2)) return true;
-
-  const ddIndex = words.findIndex((word) => commandProgram(word) === 'dd');
-  return ddIndex >= 0
-    && words.slice(ddIndex + 1).some((word) => word.startsWith('if='))
-    && words.slice(ddIndex + 1).some((word) => word.startsWith('of='));
-}
-
-function readPathCandidates(toolName: string, args: Record<string, unknown>): string[] {
-  return Object.entries(args)
-    .filter(([key, value]) => {
-      if (typeof value !== 'string' || (!value.trim() && !value.includes('\0'))) return false;
-      return key.includes('path') || (normalizeToolName(toolName).toLowerCase() === 'glob' && key === 'pattern');
-    })
-    .map(([, value]) => value as string);
-}
-
-function contextAfterCdSegment(
-  segment: string, context: ClassificationContext,
-  terminators: SegmentTerminator[], segmentIndex: number,
-): ClassificationContext | null {
-  const words = commandWords(segment);
-  if (!words) return null;
-  if (commandProgram(words[0]) !== 'cd') return null;
-  // `&`/pipeline members run in subshells: the parent shell's cwd never moved, so later segments
-  // keep the original cwd. `||` does carry: its right side only runs after a failed cd, but once
-  // the chain ends the cd-succeeded outcome has already moved the shell — of the two possible
-  // cwds only the moved one is reconstructable here, and it is the one the baseline resolves
-  // against. Checking both cwds would be stricter still; deliberately not done (round 33).
-  if (![null, ';', '&&', '||', '\n'].includes(terminators[segmentIndex] ?? null)) return null;
-  // A cd that is itself a pipeline member (`true | cd /tmp`) runs in the pipeline's subshell;
-  // the parent cwd never moved. Only the terminator after it was checked above — also look back.
-  if (['|', '|&'].includes(terminators[segmentIndex - 1] ?? '')) return null;
-  // Round 35/36: `&` backgrounds the whole AND/OR list, cd included (`cd /tmp && env & …`).
-  // `|&` is only a pipe (`2>&1 |`), not a background operator: `cd ~ && true |& cat` still runs
-  // the cd in the parent shell, so it must not block propagation.
-  const listEnd = listTerminatorAfter(terminators, segmentIndex);
-  if (listEnd === '&') return null;
-
-  const args = words.slice(1);
-  const separator = args.indexOf('--');
-  const candidates = (separator >= 0 ? args.slice(separator + 1) : args).filter((arg) => !arg.startsWith('-'));
-  const target = candidates[0] ?? '~';
-  // `cd -` depends on shell history, so its successor cwd cannot be reconstructed here.
-  if (target === '-') return context;
-  return {
-    ...context,
-    workingDirectory: resolveCandidatePath(target, context.workingDirectory, context.pathResolutionCache),
-  };
-}
-
-/**
- * P0 safe-command bypass must not skip actions whose arguments change the
- * permission decision. Keep this predicate beside the classifier rules so the
- * fast path and full classification cannot drift.
- */
-export function bashCommandRequiresPermission(
-  command: string,
-  context: Pick<ClassificationContext, 'workingDirectory' | 'workspaceRoot'>,
-): boolean {
-  try {
-    // Segmentation needs the original quotes: code arguments may contain shell operators.
-    const segments = splitCompoundCommand(command);
-    if (!segments) return true;
-    // splitCompoundCommand rebuilds these one-for-one from the same parse's segments.
-    const terminators = parseShellCommand(command).segments.map((segment) => segment.terminator);
-    let segmentContext: ClassificationContext = {
-      ...context,
-      permissionLevel: 'execute',
-      pathResolutionCache: new Map(),
-    };
-    return segments.some((segment, index) => {
-      const advancedContext = contextAfterCdSegment(segment, segmentContext, terminators, index);
-      if (advancedContext) {
-        segmentContext = advancedContext;
-        return false;
-      }
-      return credentialReadTarget(segment, segmentContext) !== null
-        || gitMutationReason(segment) !== null
-        || resolvedRmCriticalTarget(segment, segmentContext) !== null
-        || hasPositiveAllowCandidate(segment);
-    });
-  } catch {
-    return true;
-  }
-}
-
 export function readArgumentsRequirePermission(
   toolName: string,
   args: Record<string, unknown>,
@@ -552,48 +214,6 @@ export function readArgumentsRequirePermission(
   } catch {
     return true;
   }
-}
-
-function outsideProjectWriteAsk(
-  toolName: string,
-  resolved: string,
-  startTime: number,
-): ClassificationResult {
-  const reason = `写入项目目录外: ${resolved}`;
-  return {
-    decision: 'ask',
-    reason,
-    hostReason: createHostReason(
-      HostReasonCode.PermissionFileOutsideWorkspaceConfirmationRequired,
-      reason,
-      { toolName, path: resolved },
-    ),
-    confidence: 0.9,
-    cached: false,
-    traceStep: createTraceStep('permission_classifier', 'W3: outside_project', 'ask', reason, startTime),
-    trustBoundary: true,
-  };
-}
-
-function protectedWriteAsk(
-  toolName: string,
-  resolved: string,
-  startTime: number,
-): ClassificationResult {
-  const reason = `protected write path requires confirmation: ${resolved}`;
-  return {
-    decision: 'ask',
-    reason,
-    hostReason: createHostReason(
-      HostReasonCode.PermissionPolicyConfirmationRequired,
-      reason,
-      { toolName, path: resolved },
-    ),
-    confidence: 1,
-    cached: false,
-    traceStep: createTraceStep('permission_classifier', 'W0: protected_write_path', 'ask', reason, startTime),
-    trustBoundary: true,
-  };
 }
 
 // ----------------------------------------------------------------------------
@@ -632,7 +252,7 @@ export class PermissionClassifier {
     // 1. 检查缓存
     const cacheKey = this.buildCacheKey(toolName, args, context);
     const cached = this.getFromCache(cacheKey);
-    if (cached) {
+    if (cached && !context.sessionId) {
       return { ...classificationHostReason(cached, toolName), cached: true };
     }
 
@@ -643,7 +263,9 @@ export class PermissionClassifier {
     };
     let ruleResult: ClassificationResult | null;
     try {
-      ruleResult = this.classifyByRules(toolName, args, classificationContext, startTime);
+      const fileWrite = await classifyFileWrite(toolName, args, classificationContext, startTime);
+      if (cached && !fileWrite?.bypassCache) return { ...classificationHostReason(cached, toolName), cached: true };
+      ruleResult = fileWrite ?? this.classifyByRules(toolName, args, classificationContext, startTime);
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       const reason = `路径安全分析失败，已拒绝执行: ${detail}`;
@@ -757,14 +379,6 @@ export class PermissionClassifier {
     // R5: Bash 命令分类
     if (isBashToolName(toolName) && typeof args.command === 'string') {
       return this.classifyBashCommand(args.command, context, startTime);
-    }
-
-    // R6: 文件写入工具 — 按路径判断。
-    // 生成器只在有权威工作区（新会话首轮起就有 project root）时走确定性写围栏；
-    // 无工作区场景维持既有 Jev 语境判定，不改变后台 run 的审批语义（jev R4 契约）。
-    if (WRITE_TOOLS.has(toolName)
-      && (context.workspaceRoot || !GENERATOR_WRITE_TOOLS.has(toolName))) {
-      return this.classifyFileWrite(toolName, args, context, startTime);
     }
 
     // R7: MCP 工具 → ask（未知副作用）
@@ -1138,56 +752,6 @@ export class PermissionClassifier {
   }
 
   /**
-   * 文件写入分类 — 按目标路径判断
-   */
-  private classifyFileWrite(
-    toolName: string,
-    args: Record<string, unknown>,
-    context: ClassificationContext,
-    startTime: number
-  ): ClassificationResult | null {
-    const filePath = (args.file_path as string) || (args.path as string) || (args.output_path as string)
-      || (GENERATOR_WRITE_TOOLS.has(toolName) ? '.' : undefined);
-    if (!filePath) {
-      const reason = '文件路径缺失';
-      return {
-        decision: 'ask',
-        reason,
-        confidence: 0.5,
-        cached: false,
-        traceStep: createTraceStep('permission_classifier', 'W0: no_path', 'ask', reason, startTime),
-      };
-    }
-
-    const candidate = path.resolve(context.workingDirectory, filePath);
-    const resolved = resolveCanonicalRunPath(candidate);
-    const workspaceBoundary = context.workspaceRoot
-      ? path.resolve(context.workspaceRoot)
-      : undefined;
-    const workspace = workspaceBoundary
-      ? resolveCanonicalRunPath(workspaceBoundary)
-      : undefined;
-    if (isProtectedWritePath(resolved, { homeDir: CANONICAL_HOME_DIR, projectRoot: workspace })) {
-      return protectedWriteAsk(toolName, resolved, startTime);
-    }
-    if (!workspaceBoundary || !workspace) return outsideProjectWriteAsk(toolName, resolved, startTime);
-    if (isPathInside(resolved, workspace)) {
-      return { decision: 'approve', reason: '写入项目目录内', confidence: 0.95, cached: false };
-    }
-    // Symlink that looks in-workspace but resolves outside is a boundary escape;
-    // check before the /tmp allowlist so a link into /tmp cannot become implicit approval.
-    if (isPathInside(candidate, workspaceBoundary)) return outsideProjectWriteAsk(toolName, resolved, startTime);
-    const tmpRoot = resolveCanonicalRunPath(os.tmpdir());
-    if (
-      isPathWithinRoot(resolved, tmpRoot)
-      || (process.platform !== 'win32' && isPathWithinRoot(resolved, '/tmp'))
-    ) {
-      return { decision: 'approve', reason: '写入临时目录', confidence: 0.95, cached: false };
-    }
-    return outsideProjectWriteAsk(toolName, resolved, startTime);
-  }
-
-  /**
    * 判断是否为 MCP 工具
    */
   private isMcpTool(toolName: string): boolean {
@@ -1209,6 +773,7 @@ export class PermissionClassifier {
       ? resolveCanonicalRunPath(path.resolve(context.workspaceRoot))
       : '<no-authoritative-workspace>';
     const namespace = [
+      context.sessionId ?? '<no-session>',
       workspaceNamespace,
       resolveCanonicalRunPath(path.resolve(context.workingDirectory)),
     ].join('\u0000');

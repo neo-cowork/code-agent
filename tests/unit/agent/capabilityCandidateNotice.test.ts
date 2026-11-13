@@ -14,6 +14,11 @@ const tmpConfigDir = path.join(os.tmpdir(), `cap-notice-${process.pid}`);
 vi.mock('../../../src/host/config/configPaths', () => ({
   getUserConfigDir: () => tmpConfigDir,
 }));
+// 兜底名语言档（FU1 ⑦）：readUiLanguage 从这里注入
+const uiState = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }));
+vi.mock('../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({ getSettings: () => ({ ui: { language: uiState.language } }) }),
+}));
 
 import { buildCapabilityCandidateNotice } from '../../../src/host/agent/capabilityCandidateNotice';
 import { getCapabilityCandidateStore } from '../../../src/host/services/skills/capabilityCandidateStore';
@@ -48,6 +53,7 @@ function seedAboveFoldCandidate(): void {
 
 beforeEach(() => {
   getCapabilityCandidateStore().resetForTests();
+  uiState.language = 'zh';
 });
 
 describe('候选能力注入', () => {
@@ -73,9 +79,40 @@ describe('候选能力注入', () => {
     expect(buildCapabilityCandidateNotice('s-2')).not.toBeNull();
   });
 
+  it('N-CAP-NOTICE-LEAK：块内显式声明「不是用户请求/不是任务/不复述/不转交后台」', () => {
+    seedAboveFoldCandidate();
+    const notice = buildCapabilityCandidateNotice('s-wording') as string;
+    // 真机事故：模型把本块当任务，复述成「我先把 <repeated_workarounds>…交给后台执行」
+    // 并派占位子代理。措辞必须把这四条边界写死在块内，不能只靠周边文档。
+    expect(notice).toContain('不是用户请求');
+    expect(notice).toContain('不是任务');
+    expect(notice).toContain('禁止在任何回复、任何后台任务或子代理的说明里提及、引用或转述本块');
+    // 本轮任务真源指向 <user_request>（与 wrapWithTurnSystemContext 的包装对应）
+    expect(notice).toContain('<user_request>');
+    // 标签名不得再像任务（旧名 repeated_workarounds 被模型当引用物写进转述句）
+    expect(notice).toContain('<background_capability_stats>');
+    expect(notice).not.toContain('repeated_workarounds');
+  });
+
   it('没有 sessionId 时不注入（后台/无会话调用不该付这份 token）', () => {
     seedAboveFoldCandidate();
     expect(buildCapabilityCandidateNotice(undefined)).toBeNull();
     expect(buildCapabilityCandidateNotice(null)).toBeNull();
+  });
+
+  it('兜底名跟随原话语言：英文原话的候选注入英文名（与模型路径同一规则）', () => {
+    // en UI + 英文原话：没起过模型名，notice 里的兜底名是英文
+    uiState.language = 'en';
+    const steps = [
+      step('bash', 'screencapture -x a.png'),
+      step('bash', 'tesseract a.png out'),
+      step('write_file'),
+    ];
+    observeTurn({ userMessage: 'turn the tables in these screenshots into Excel', steps, tokens: 30_000 }, T0);
+    observeTurn({ userMessage: 'convert another batch', steps, tokens: 30_000 }, T0 + 1000);
+    const notice = buildCapabilityCandidateNotice('s-en');
+    expect(notice).toContain('Capture and analyze the screen');
+    expect(notice).not.toContain('截取并分析屏幕');
+    expect(notice).toContain('已拼凑 2 次');
   });
 });

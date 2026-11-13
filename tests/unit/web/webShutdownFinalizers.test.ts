@@ -209,7 +209,9 @@ describe('接线守护：收尾步骤必须排在干净关库之前', () => {
   });
 
   it('预算在 shutdown 内创建（不是模块加载时），否则预算从进程启动就开始烧', () => {
-    const shutdownStart = source.indexOf('const shutdown = async ()');
+    // shutdown 现在带 source 参数（N-WEBSERVER-DEATH-SUPERVISE-DIAG 退出归因），
+    // 锚点跟随签名：仍钉「cap 在 shutdown 函数体内创建」这一语义。
+    const shutdownStart = source.indexOf('const shutdown = async (source');
     const capCreated = source.indexOf('createShutdownStepCap()');
 
     expect(shutdownStart).toBeGreaterThan(-1);
@@ -256,5 +258,25 @@ describe('接线守护：收尾步骤必须排在干净关库之前', () => {
     expect(() =>
       readFileSync(join(process.cwd(), 'src/host/services/infra/gracefulShutdown.ts'), 'utf-8'),
     ).toThrow();
+  });
+
+  it('browser.kill：停机步骤 SIGTERM 已登记的托管 Chrome，不碰无关进程', async () => {
+    const { startChromeParentWatchdog } = await import('../../../src/host/services/infra/browser/browserProcessWatchdog');
+    const chrome = spawn('sleep', ['300'], { stdio: 'ignore' });
+    const bystander = spawn('sleep', ['300'], { stdio: 'ignore' });
+    try {
+      startChromeParentWatchdog(chrome, { log: () => {} });
+      const exited = new Promise<void>((resolve) => chrome.once('exit', () => resolve()));
+      const lines: string[] = [];
+      await runShutdownFinalizers(1000, (m) => lines.push(m));
+      await Promise.race([exited, new Promise((r) => setTimeout(r, 3000))]);
+      expect(chrome.signalCode).toBe('SIGTERM');
+      expect(bystander.exitCode).toBeNull();
+      expect(bystander.signalCode).toBeNull();
+      expect(lines.join('\n')).toMatch(/browser\.kill=ok\(\d+ms\)/);
+    } finally {
+      chrome.kill('SIGKILL');
+      bystander.kill('SIGKILL');
+    }
   });
 });

@@ -1,10 +1,42 @@
 import http from 'node:http';
 import { AddressInfo } from 'node:net';
+import express from 'express';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createApp, type CreateAppDeps } from '../../../src/web/app';
+
+// N-FIX-SIGNED-OUT-SEND-500-RAW-HTML-REDESIGN：project-trust confirm 路由走真 createApp
+// 的装配测试。会话管理器与项目服务打桩（服务端逻辑由
+// tests/unit/services/projectService.folderTrust.test.ts 用真 DB 覆盖），这里钉 HTTP 形状。
+const projectTrustMocks = vi.hoisted(() => ({
+  session: { id: 'sess-trust', projectId: 'proj-trust' } as { id: string; projectId?: string } | null,
+  detail: {
+    project: {
+      id: 'proj-trust', name: 'Legacy', description: null, workspacePath: '/tmp/legacy',
+      workspaceKey: 'key', status: 'active', createdAt: 1, updatedAt: 1, archivedAt: null, sourceRevision: 3,
+    },
+    sources: [], goals: [], roles: [], sessionIds: [],
+  },
+  sources: [] as Array<Record<string, unknown>>,
+  updateProject: vi.fn(),
+}));
+vi.mock('../../../src/host/services/infra/sessionManager', () => ({
+  getSessionManager: () => ({
+    getSession: async (sessionId: string) =>
+      projectTrustMocks.session && projectTrustMocks.session.id === sessionId ? projectTrustMocks.session : null,
+  }),
+}));
+vi.mock('../../../src/host/services/project/projectService', () => ({
+  getProjectService: () => ({
+    getProjectDetail: (projectId: string) => projectId === 'proj-trust' ? projectTrustMocks.detail : undefined,
+    listSources: () => projectTrustMocks.sources,
+    updateProject: projectTrustMocks.updateProject,
+    getWorkspaceScope: () => undefined,
+  }),
+}));
 import { shouldDaemonExit, type DaemonIdleSnapshot } from '../../../src/host/services/daemon/daemonIdle';
 import type { PermissionRequest } from '../../../src/shared/contract';
 import { SERVER_AUTH_TOKEN } from '../../../src/web/middleware/auth';
+import { setDbAvailable } from '../../../src/web/helpers/sessionCache';
 import {
   getApplicationRunRegistry,
   resetApplicationRunRegistryForTests,
@@ -134,6 +166,7 @@ const EXPECTED_ROUTES: Array<[string, string]> = [
   ['get', '/background/tasks'],
   ['post', '/background/move-to-background'],
   ['post', '/background/move-to-foreground'],
+  ['post', '/background/dismiss-terminal'],
   // voice-live routes are capability contributions and intentionally absent from the default table
   // admin review queue router
   ['get', '/admin/review-queue'],
@@ -153,6 +186,8 @@ const EXPECTED_ROUTES: Array<[string, string]> = [
   // settings router
   ['get', '/settings'],
   ['put', '/settings'],
+  // project trust confirm router
+  ['post', '/confirm-source-trust'],
   // extract router
   ['post', '/extract/pdf'],
   ['post', '/extract/excel'],
@@ -222,7 +257,11 @@ describe('web app assembly (createApp)', () => {
       'rateLimitMiddleware',
       'authMiddleware',
       'jsonParser',
+      // 5xx 观察者紧随 body parser（N-FIX-SIGNED-OUT-SEND-500-RAW-HTML-REDESIGN）
+      'serverErrorObserver',
       'dispatchHostWebRoute',
+      // 终端错误处理必须最后挂（拒绝的 async handler 统一 JSON 应答）
+      'serverErrorHandler',
     ]);
   });
 
@@ -304,6 +343,116 @@ describe('web app assembly (createApp)', () => {
       expect(response.status).toBe(200);
       const body = await response.json();
       expect(body).toMatchObject({ status: 'ok', mode: 'web-standalone' });
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((err) => (err ? reject(err) : resolve()));
+      });
+    }
+  });
+
+  // N-FIX-SIGNED-OUT-SEND-500-RAW-HTML-REDESIGN：5xx 观察者 + 终端错误处理两件套。
+  // createApp 的挂载已由上面的 middleware 顺序用例钉住；这里过真实 express 验证行为：
+  // ① 显式 res.status(5xx).json 也要留 method/route/status/reason 日志；
+  // ② next(err) 的 5xx 出 JSON {error, code}（无 HTML、无 stack），且不与观察者双记。
+  // N-FIX-SIGNED-OUT-SEND-500-RAW-HTML-REDESIGN：POST /api/project/confirm-source-trust
+  // 只吃 sessionId；会话缺失 404、服务拒绝 422 带稳定 reason、幂等成功 200。
+  it('serves the project trust confirm endpoint with 200/404/422 shapes', async () => {
+    const app = createApp(buildDeps('/tmp/seam-assembly-project-trust'));
+    const server = http.createServer(app);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as AddressInfo;
+    const post = (body: unknown): Promise<Response> => fetch(`http://127.0.0.1:${port}/api/project/confirm-source-trust`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SERVER_AUTH_TOKEN}` },
+      body: JSON.stringify(body),
+    });
+    try {
+      // tryGetSessionManager 只在 dbAvailable 时返回管理器（真实 webServer 启动即置真）
+      setDbAvailable(true);
+      // 无 body / 空 sessionId
+      expect((await post({})).status).toBe(400);
+      // 会话存在但没有 projectId
+      projectTrustMocks.session = { id: 'sess-trust' };
+      const orphan = await post({ sessionId: 'sess-trust' });
+      expect(orphan.status).toBe(404);
+      expect(await orphan.json()).toMatchObject({ code: 'PROJECT_TRUST_CONFIRM_SESSION_NOT_FOUND' });
+      // 会话不存在
+      projectTrustMocks.session = null;
+      expect((await post({ sessionId: 'sess-gone' })).status).toBe(404);
+
+      // Source 缺快照且目录不在盘上 → 服务拒绝 422 + reason
+      projectTrustMocks.session = { id: 'sess-trust', projectId: 'proj-trust' };
+      projectTrustMocks.sources = [{
+        id: 'src-legacy', projectId: 'proj-trust', path: '/tmp/definitely-not-there',
+        canonicalPath: '/tmp/definitely-not-there', role: 'primary', access: 'read_write',
+        trustState: 'trusted', identityDev: null, identityIno: null, identityBirthtimeNs: null,
+        createdAt: 1, updatedAt: 1,
+      }];
+      const rejected = await post({ sessionId: 'sess-trust' });
+      expect(rejected.status).toBe(422);
+      expect(await rejected.json()).toEqual({
+        error: 'Project folder trust could not be re-confirmed',
+        code: 'PROJECT_TRUST_CONFIRM_REJECTED',
+        reason: 'source_missing',
+      });
+      expect(projectTrustMocks.updateProject).not.toHaveBeenCalled();
+
+      // 无失败 Source → 幂等成功
+      projectTrustMocks.sources = [];
+      const ok = await post({ sessionId: 'sess-trust' });
+      expect(ok.status).toBe(200);
+      expect(await ok.json()).toEqual({ confirmed: true, sources: 0 });
+    } finally {
+      setDbAvailable(false);
+      await new Promise<void>((resolve, reject) => {
+        server.close((err) => (err ? reject(err) : resolve()));
+      });
+    }
+  });
+
+  it('observes explicit 5xx responses and converts forwarded errors to JSON without double logging', async () => {
+    const { observeServerErrors, handleServerError } = await import('../../../src/web/middleware/serverErrors');
+    const errorLog: unknown[][] = [];
+    const logger = { info: () => {}, warn: () => {}, error: (...args: unknown[]) => errorLog.push(args) };
+    const app = createApp(buildDeps('/tmp/seam-assembly-server-errors'));
+    app.use(express.json());
+    app.use(observeServerErrors(logger));
+    app.post('/api/boom-explicit', (_req, res) => {
+      res.status(503).json({ error: 'upstream unavailable' });
+    });
+    app.post('/api/boom-next', (_req, res, next) => {
+      next(new Error('unexpected route failure'));
+    });
+    app.use(handleServerError(logger));
+
+    const server = http.createServer(app);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as AddressInfo;
+    try {
+      const explicit = await fetch(`http://127.0.0.1:${port}/api/boom-explicit`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${SERVER_AUTH_TOKEN}` },
+      });
+      expect(explicit.status).toBe(503);
+      await explicit.text();
+
+      const forwarded = await fetch(`http://127.0.0.1:${port}/api/boom-next`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${SERVER_AUTH_TOKEN}` },
+      });
+      const rawBody = await forwarded.text();
+      expect(forwarded.status).toBe(500);
+      expect(forwarded.headers.get('content-type')).toContain('application/json');
+      expect(rawBody).not.toMatch(/<html|<!DOCTYPE|unexpected route failure/i);
+      expect(JSON.parse(rawBody)).toEqual({
+        error: 'Local server request failed',
+        code: 'INTERNAL_SERVER_ERROR',
+      });
+
+      expect(errorLog).toEqual([
+        ['Local server request failed', { method: 'POST', route: '/api/boom-explicit', status: 503, reason: 'upstream unavailable' }],
+        ['Local server request failed', { method: 'POST', route: '/api/boom-next', status: 500, reason: 'Error: unexpected route failure' }],
+      ]);
     } finally {
       await new Promise<void>((resolve, reject) => {
         server.close((err) => (err ? reject(err) : resolve()));

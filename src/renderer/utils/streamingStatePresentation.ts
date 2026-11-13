@@ -1,3 +1,4 @@
+import { isProjectTrustPendingTurn } from './projectTrustTurn';
 import type { TraceTurn } from '@shared/contract/trace';
 import type { StreamRecoverySnapshot } from '@shared/contract/session';
 import type { Translations } from '../i18n';
@@ -11,7 +12,7 @@ export type RuntimeSessionStatus =
   | 'cancelled'
   | 'error';
 
-export type StreamingUiStatus =
+type StreamingUiStatus =
   | 'idle'
   | 'drafting'
   | 'using_tools'
@@ -22,7 +23,7 @@ export type StreamingUiStatus =
   | 'completed'
   | 'blocked';
 
-export type StreamingUiTone = 'neutral' | 'info' | 'success' | 'warning' | 'error';
+type StreamingUiTone = 'neutral' | 'info' | 'success' | 'warning' | 'error';
 
 export interface StreamingUiState {
   status: StreamingUiStatus;
@@ -84,6 +85,12 @@ export function hasCancelledRunMarker(turn: TraceTurn): boolean {
   );
 }
 
+export function isIdleReapedRun(turn: TraceTurn): boolean {
+  return turn.nodes.some(
+    (node) => node.metadata?.workbench?.runCancellation?.reason === 'idle_reaped',
+  );
+}
+
 function hasRunningTool(turn: TraceTurn): boolean {
   return turn.nodes.some((node) => {
     const toolCall = node.toolCall;
@@ -119,6 +126,9 @@ export function buildStreamingUiState({
   if (sessionStatus === 'cancelled' || hasCancelledRunMarker(turn)) {
     return idleState;
   }
+
+  // 旧项目待确认：不是故障，只留一句话 + 确认按钮，不出「遇到问题」徽章/横幅。
+  if (isProjectTrustPendingTurn(turn)) return idleState;
 
   if (turn.status === 'error' || sessionStatus === 'error') {
     return {

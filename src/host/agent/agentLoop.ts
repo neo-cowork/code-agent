@@ -1,3 +1,4 @@
+import type { RunCancelReason } from '../runtime/runContext';
 // ============================================================================
 // Agent Loop - Core event loop for AI agent execution
 // Enhanced with Manus-style persistent planning hooks
@@ -223,6 +224,7 @@ export class AgentLoop {
       planningService: config.planningService,
       inferenceOptions: config.inferenceOptions,
       historyVisibility: config.historyVisibility,
+      publishContextHealth: config.publishContextHealth,
       unattendedTurn: config.unattendedTurn,
       deniedToolNames: config.deniedToolNames,
       allowedToolNames: config.allowedToolNames,
@@ -491,7 +493,7 @@ export class AgentLoop {
     return this.runFinalizer.whenSessionEndMemoryWorkSettled();
   }
 
-  async cancel(reason?: 'user' | 'session-switch'): Promise<void> {
+  async cancel(reason?: RunCancelReason): Promise<void> {
     await this.conversationRuntime.cancel(reason);
   }
 

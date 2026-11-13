@@ -1,5 +1,5 @@
 export const turnDiffZh = {
-  filesEdited: '已编辑 {count} 个文件',
+  filesEdited: { one: '已编辑 {count} 个文件', other: '已编辑 {count} 个文件' },
   undo: '撤销',
   undone: '已撤销',
   undoFailed: '撤销失败',
@@ -39,7 +39,7 @@ export const turnDiffZh = {
 };
 
 export const turnDiffEn: typeof turnDiffZh = {
-  filesEdited: 'Edited {count} file(s)',
+  filesEdited: { one: 'Edited {count} file', other: 'Edited {count} files' },
   undo: 'Undo',
   undone: 'Undone',
   undoFailed: 'Undo failed',

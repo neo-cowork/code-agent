@@ -50,6 +50,7 @@ import {
 import { createProtocolSubagentExecutionContext } from '../../../agent/subagentExecutionContext';
 import { taskSchema as schema } from './task.schema';
 import { withMultiagentMeta } from './resultMeta';
+import { checkReadonlyParentRule } from '../../../agent/childContext';
 import { getSpawnGuard } from '../../../agent/spawnGuard';
 import { routeFailureCode } from '../../../../shared/contract/cancellation';
 import {
@@ -174,6 +175,24 @@ export async function executeTask(
       error: 'aborted',
       code: 'ABORTED',
       meta: { failureCode: AgentFailureCode.CancelledByUser },
+    };
+  }
+
+  const readonlyCheck = checkReadonlyParentRule(
+    ctx.subagent?.agentRole,
+    validation.params.subagent_type,
+    [],
+  );
+  if (!readonlyCheck.allowed) {
+    return {
+      ok: false,
+      error: `PERMISSION_DENIED: ${readonlyCheck.reason}. Switch to default mode or spawn a non-writer agent.`,
+      code: 'PERMISSION_DENIED',
+      meta: {
+        cancellationReason: 'child-refusal',
+        failureRouting: routeFailureCode('child-refusal'),
+        failureCode: AgentFailureCode.BlockedByParentRole,
+      },
     };
   }
 
@@ -375,6 +394,8 @@ export async function executeTask(
     startedExecution = executionPromise;
     guard.register(agentId, subagentType, prompt, executionPromise, abortController, {
       treeId,
+      parentRunId: ctx.runId,
+      background: false,
       parentId: ctx.spawnParentAgentId,
       slotAcquired: true,
       scope: ctx.swarmRunScope,

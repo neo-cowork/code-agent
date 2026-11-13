@@ -198,6 +198,20 @@ export const ROLE_ASSETS = {
    *  6 = 探查 + 多步读取余量，掐掉长探查拖慢首次醒来。不许挪用 ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS，
    *  那是按「逐个检查产物」多步工作流设计的 15 轮预算，砍它会把巡检醒来掐断在半途）。 */
   FIRST_WAKE_MAX_ITERATIONS: 6,
+  /** 首次醒来内部指令的固定首行（两个提示词模板共用）。写回层拿它识别「这份
+   *  taskPrompt 不是用户原话」：合成指令绝不外显为履历摘要/专家列表的最近工作行。 */
+  FIRST_WAKE_PROMPT_HEAD: '你刚被用户创建为一位持久化专家，此刻是创建后的第一次巡览。这不是用户发来的消息，用户现在不在场。',
+  /** 首次醒来写回无人工摘要时的履历回落短句：不外显内部指令，也不装作干过活
+   *  （2026-11-12 owner 裁决：首次见面的最近工作行绝不回落到任务提示词）。 */
+  FIRST_WAKE_HISTORY_FALLBACK_SUMMARY: '刚创建，还没开始工作',
+  /** 已删角色回收站根目录名（相对 getUserConfigDir()）：~/.code-agent/roles-trash/（N-ROLE-CREATE-DIRECT-DELETE） */
+  TRASH_DIR_NAME: 'roles-trash',
+  /** 回收站保留天数：过期条目在下次 trash/restore 时惰性清理（不新增定时器） */
+  TRASH_RETENTION_DAYS: 30,
+  /** 回收站条目元数据文件名：roles-trash/<trashId>/meta.json（roleId + deletedAt） */
+  TRASH_META_FILENAME: 'meta.json',
+  /** 回收站条目里的角色定义文件名：agents/<roleId>.md 移入后改名存放 */
+  TRASH_AGENT_FILENAME: 'agent.md',
 } as const;
 
 /** 角色主动性（cadence 触发器 + 醒来循环，内部文档） */
@@ -217,6 +231,9 @@ export const ROLE_PROACTIVITY = {
   WAKE_SESSION_TITLE_PREFIX: '主动巡检',
   /** 醒来实例的运行超时（ms），超时按失败处理 */
   WAKE_TIMEOUT_MS: 600000,
+  /** 无人值守 goal run 的暂停巡检间隔（ms）：anti_spin 暂停后没有用户会恢复，
+   *  按此间隔查 goal_iteration 状态以及时中止（首查立即执行，不等第一个间隔）。 */
+  WAKE_PAUSE_POLL_MS: 1000,
   /** 默认主动等级（角色 frontmatter / settings 都没配置时）。
    *  出厂 silent = 功能默认关闭（opt-in）：用户通过 settings.roleAssets.proactivity 或角色 frontmatter 显式开启。 */
   DEFAULT_LEVEL: 'silent',
@@ -232,6 +249,8 @@ export const ROLE_PROACTIVITY = {
   FALLBACK_DECISION: 'report',
   /** 醒来履历条目的产出摘要截断字符数（why 是独立字段，不挤进这个预算） */
   HISTORY_SUMMARY_MAX_CHARS: 200,
+  /** 醒来 run 返回后等待 task_complete 收口链排空的上限（防泄漏兜底，非时序依赖） */
+  WAKE_EVENT_SETTLE_MAX_MS: 5000,
   /** 话题偏好单条最大字符数 */
   TOPIC_MAX_CHARS: 40,
   /** 话题偏好最多条数 */

@@ -21,6 +21,10 @@ import {
   type UserVisibleSystemEventKey,
   type UserVisibleSystemEventSpec,
 } from '../../../src/shared/contract/systemEventRegistry';
+import { buildTurnRailItems } from '../../../src/renderer/utils/turnRailItems';
+import { buildRunUiState } from '../../../src/renderer/utils/runWorkbenchProjection';
+import { applyStreamingMessageDeltasToProjection } from '../../../src/renderer/utils/streamingProjectionOverlay';
+import { applyVoicePartialsToProjection } from '../../../src/renderer/utils/voicePartialOverlay';
 import { projectTurns } from '../../../src/renderer/hooks/useTurnProjection';
 
 const SESSION_ID = 'session-1';
@@ -50,6 +54,10 @@ const SAMPLE_PAYLOADS: { [K in UserVisibleSystemEventKey]: NonNullable<MessageMe
   voiceWorkSettled: { workItemId: WORK_ITEM_ID, title: '买菜', outcome: 'done' },
   agentRecoveryNotice: { kind: 'vision_tool_unsupported' },
   roleFlowStalled: { skillName: 'create-role' },
+  roleEditReceipt: { roleId: '研究员', addedTools: ['calendar'], removedTools: [], descriptionChanged: false, promptChanged: false },
+  backgroundWakeFailed: { taskId: 'session-work-1', reason: 'wake_failed' },
+  backgroundWakeDeferred: { taskId: 'session-work-1', outcome: 'completed' },
+  backgroundTaskInterrupted: { taskId: 'session-work-1' },
   turnCheckoutNote: {
     operation: 'checkout',
     state: 'success',
@@ -67,7 +75,16 @@ function systemEventMessage<K extends UserVisibleSystemEventKey>(key: K): Messag
     role: 'system',
     content: `事件 ${key} 的用户可见正文`,
     timestamp: 9_000,
-    metadata: { source: 'voice', [key]: SAMPLE_PAYLOADS[key] },
+    metadata: {
+      source: 'voice',
+      [key]: SAMPLE_PAYLOADS[key],
+      ...(key === 'backgroundTaskInterrupted' ? {
+        backgroundTaskResult: {
+          source: 'agent-result', taskId: 'session-work-1', shortName: '任务', status: 'failed',
+          summary: `事件 ${key} 的用户可见正文`,
+        },
+      } : {}),
+    },
   } as Message;
 }
 
@@ -165,6 +182,11 @@ describe('用户可见 system 事件登记制（P0-2）', () => {
       expect(node?.content).toBe(`事件 ${key} 的用户可见正文`);
       expect(node?.metadata?.[key]).toEqual(SAMPLE_PAYLOADS[key]);
 
+      if (spec.attach === 'standalone') {
+        expect(turns).toHaveLength(2);
+        expect(turns[0]).toEqual(project(plainTurn())[0]);
+        expect(turns[1]).toMatchObject({ standalone: true, status: 'completed', nodes: [node] });
+      }
       if (spec.attach === 'matched-turn') {
         // 派活轮之后另开过一轮，事件仍要挂回派活轮，不挂到最新轮上。
         const hostTurn = turns.find((turn) => turn.nodes.some((n) => n.id === `sys-${key}`));
@@ -174,6 +196,60 @@ describe('用户可见 system 事件登记制（P0-2）', () => {
       }
     });
   }
+
+  it('appends an edit receipt after the completed answer without changing that turn', () => {
+    const before = project(plainTurn());
+    const turns = project([...plainTurn(), systemEventMessage('roleEditReceipt')]);
+    expect(turns).toHaveLength(2);
+    expect(turns[0]).toEqual(before[0]);
+    expect(turns[1]).toMatchObject({ standalone: true, nodes: [{ id: 'sys-roleEditReceipt' }] });
+    expect(buildTurnRailItems(turns)).toEqual(buildTurnRailItems(before));
+  });
+
+  it('starts the next user turn after the receipt and keeps it active', () => {
+    const messages: Message[] = [...plainTurn(), systemEventMessage('roleEditReceipt'),
+      { id: 'u2', role: 'user', content: 'Summarize the industry headlines', timestamp: 10_000 }];
+    const projection = projectTurns(messages, SESSION_ID, true);
+    expect(projection.turns.map((turn) => turn.nodes[0].id)).toEqual(['u1', 'sys-roleEditReceipt', 'u2']);
+    expect(projection.activeTurnIndex).toBe(2);
+    expect(buildTurnRailItems(projection.turns).map((turn) => turn.turnId)).toEqual(['turn-1', 'turn-3']);
+  });
+
+  it('projects a receipt with no earlier turn as an inactive standalone entry', () => {
+    const projection = projectTurns([systemEventMessage('roleEditReceipt')], SESSION_ID, true);
+    expect(projection.turns).toHaveLength(1);
+    expect(projection.turns[0]).toMatchObject({ standalone: true, status: 'completed' });
+    expect(projection.activeTurnIndex).toBe(-1);
+    expect(buildTurnRailItems(projection.turns)).toEqual([]);
+  });
+
+  it('keeps later assistant messages and current-turn events on the conversational turn', () => {
+    const turns = project([...plainTurn(), systemEventMessage('roleEditReceipt'),
+      systemEventMessage('roleFlowStalled'),
+      { id: 'a2', role: 'assistant', content: 'Your draft is ready.', timestamp: 10_000 }]);
+    expect(turns).toHaveLength(2);
+    expect(turns[0].nodes.map((node) => node.id)).toEqual(['u1', 'a1-text', 'sys-roleFlowStalled', 'a2-text']);
+    expect(turns[1].nodes.map((node) => node.id)).toEqual(['sys-roleEditReceipt']);
+  });
+
+  it('keeps workbench, streaming fallback and voice overlays off the receipt', () => {
+    const messages = [...plainTurn(), systemEventMessage('roleEditReceipt')];
+    const idle = projectTurns(messages, SESSION_ID, false);
+    const active = projectTurns(messages, SESSION_ID, true);
+    expect(active.activeTurnIndex).toBe(0);
+    expect(active.turns[1].status).toBe('completed');
+    expect(buildRunUiState({ projection: idle, sessionId: SESSION_ID })).toEqual(
+      buildRunUiState({ projection: projectTurns(plainTurn(), SESSION_ID, false), sessionId: SESSION_ID }),
+    );
+    const overlaid = applyStreamingMessageDeltasToProjection(idle, [
+      ...messages, { id: 'pending', role: 'assistant', content: '', timestamp: 10_000 },
+    ], { pending: { contentDelta: 'More details', reasoningDelta: '', updatedAt: 10_000 } });
+    expect(overlaid.turns[0].nodes.at(-1)?.content).toBe('More details');
+    expect(overlaid.turns[1]).toEqual(idle.turns[1]);
+    const voice = applyVoicePartialsToProjection(idle, { live: true, user: 'Next topic', assistant: '', startedAt: 10_000 });
+    expect(voice.activeTurnIndex).toBe(2);
+    expect(voice.turns[1]).toEqual(idle.turns[1]);
+  });
 
   it.each(['done', 'unverified', 'failed', 'cancelled'] as const)(
     '生产落库形状的 settlement %s 按 workItemId 对回同一张卡',
@@ -200,6 +276,57 @@ describe('用户可见 system 事件登记制（P0-2）', () => {
       expect(turns.flatMap((turn) => turn.nodes).some((node) => node.id === `settlement-${outcome}`)).toBe(false);
     },
   );
+
+  it('同一条登记事件消息（同 id）被送达两次 → 只投一个节点', () => {
+    const sys = systemEventMessage('roleFlowStalled');
+    const nodes = project([...plainTurn(), sys, { ...sys }]).flatMap((turn) => turn.nodes);
+    expect(nodes.filter((node) => node.id === 'sys-roleFlowStalled')).toHaveLength(1);
+  });
+
+  it('backgroundWakeFailed 两种原因（wake_failed / owner_missing）都投出平实 system 节点，不生成 agentError 失败卡', () => {
+    const spec: UserVisibleSystemEventSpec = USER_VISIBLE_SYSTEM_EVENT_REGISTRY.backgroundWakeFailed;
+    for (const reason of ['wake_failed', 'owner_missing'] as const) {
+      const turns = project([
+        ...plainTurn(),
+        {
+          id: `wake-note-${reason}`,
+          role: 'system',
+          content: '后台任务「报告」已结束，结果见上方的任务结果；自动汇报这一步没能完成，需要的话可以直接问我。',
+          timestamp: 9_000,
+          metadata: { backgroundWakeFailed: { taskId: 'task-1', reason } },
+        } satisfies Message,
+      ]);
+      const allNodes = turns.flatMap((turn) => turn.nodes);
+      const note = allNodes.find((n) => n.id === `wake-note-${reason}`);
+      expect(note).toMatchObject({
+        type: 'system',
+        subtype: spec.subtype,
+        metadata: { backgroundWakeFailed: { taskId: 'task-1', reason } },
+      });
+      expect(note?.subtype).not.toBe('error');
+      expect(allNodes.some((n) => Boolean(n.metadata?.agentError))).toBe(false);
+    }
+  });
+
+  it.each([
+    '应用重启时这个后台任务还没做完，已被中断，结果没能送回这里。需要的话请重新发起。',
+    'The app restarted while this background task was still running, so it was interrupted and its result could not be delivered. Please start it again if you still need it.',
+  ])('projects only the readable interruption sentence: %s', (summary) => {
+    const content = `[任务结果] 网页标题｜failed｜${summary}`;
+    const message = {
+      id: 'session-task-result-interrupted-task-1', role: 'system', content, timestamp: 9_000,
+      metadata: {
+        backgroundTaskInterrupted: { taskId: 'task-1' },
+        backgroundTaskResult: { source: 'agent-result', taskId: 'task-1', shortName: '网页标题', status: 'failed', summary },
+      },
+    } satisfies Message;
+    const turns = project([...plainTurn(), message, message]);
+    expect(turns).toHaveLength(2);
+    const note = turns[1].nodes[0];
+    expect(note.content).not.toMatch(/failed|\[任务结果\]|｜/);
+    expect(turns[1]).toMatchObject({ standalone: true, nodes: [{ id: message.id, type: 'system', content: summary }] });
+    expect(message.content).toBe(content);
+  });
 
   it('底线：裸 role:system（无 metadata）仍被总闸跳过——内部指令不外泄', () => {
     const turns = project([

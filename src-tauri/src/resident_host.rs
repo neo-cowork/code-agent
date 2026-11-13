@@ -609,6 +609,37 @@ pub enum QuitDialogButtonSet {
 }
 
 impl QuitDialogButtonSet {
+    /// Resolve the returned label against the slots captured when this dialog was shown.
+    /// Dismissal, unknown labels and unavailable actions always keep the app running.
+    pub fn dialog_answer_action(
+        &self,
+        custom_label: Option<&str>,
+    ) -> crate::quit_guard::QuitAnswerAction {
+        use crate::quit_guard::QuitAnswerAction;
+        let Some(label) = custom_label else {
+            return QuitAnswerAction::StayRunning;
+        };
+        if let Some((yes, no, cancel)) = self.yes_no_cancel_slots() {
+            if label == cancel {
+                return QuitAnswerAction::StayRunning;
+            }
+            if label == yes {
+                return QuitAnswerAction::BackgroundContinue;
+            }
+            if label == no {
+                return QuitAnswerAction::Quit;
+            }
+        } else if let Some((ok, cancel)) = self.ok_cancel_slots() {
+            if label == cancel {
+                return QuitAnswerAction::StayRunning;
+            }
+            if label == ok {
+                return QuitAnswerAction::Quit;
+            }
+        }
+        QuitAnswerAction::StayRunning
+    }
+
     /// 两键组喂给 `MessageDialogButtons::OkCancelCustom(ok, cancel)` 的槽位序。
     /// cancel 槽位必须放安全动作「取消」：Esc / 标题栏 X（rfd `Cancel`，Windows
     /// TaskDialog 的 TDF_ALLOW_DIALOG_CANCELLATION 无条件开）会被
@@ -655,43 +686,30 @@ pub fn quit_dialog_offers_background_continue(attach_supported: bool) -> bool {
 /// 纯构造：附着成立 → 三键；不成立 → 两键（槽位序见
 /// [`QuitDialogButtonSet::ok_cancel_slots`] 与
 /// [`QuitDialogButtonSet::yes_no_cancel_slots`]）。
-pub fn quit_dialog_button_set(attach_supported: bool) -> QuitDialogButtonSet {
+pub fn quit_dialog_button_set(
+    attach_supported: bool,
+    language: crate::quit_guard::QuitDialogLanguage,
+) -> QuitDialogButtonSet {
+    let copy = crate::quit_dialog_i18n::dialog_copy(language);
     if quit_dialog_offers_background_continue(attach_supported) {
         QuitDialogButtonSet::Three {
-            cancel: crate::quit_guard::QUIT_DIALOG_CANCEL_BUTTON,
-            background_continue: crate::quit_guard::QUIT_DIALOG_BACKGROUND_BUTTON,
-            quit: crate::quit_guard::QUIT_DIALOG_QUIT_BUTTON,
+            cancel: copy.cancel_button,
+            background_continue: copy.background_button,
+            quit: copy.quit_button,
         }
     } else {
         QuitDialogButtonSet::Two {
-            cancel: crate::quit_guard::QUIT_DIALOG_CANCEL_BUTTON,
-            quit: crate::quit_guard::QUIT_DIALOG_QUIT_BUTTON,
+            cancel: copy.cancel_button,
+            quit: copy.quit_button,
         }
     }
 }
 
 /// 现场用哪套按钮：唯一判据 [`is_attach_supported`]，无平台分支。
-pub fn quit_dialog_button_set_current() -> QuitDialogButtonSet {
-    quit_dialog_button_set(is_attach_supported())
-}
-
-/// 防御（fail-safe）：这套按钮没提供「后台继续」时，即使该标签不知何故到达
-/// （插件回归/未来改动），也绝不能行动成 BackgroundContinue——按取消处理，
-/// 不退壳、不清理。
-pub fn dialog_answer_action_gated(
-    custom_label: Option<&str>,
-    button_set: QuitDialogButtonSet,
-) -> crate::quit_guard::QuitAnswerAction {
-    match (
-        crate::quit_guard::dialog_answer_action(custom_label),
-        button_set,
-    ) {
-        (
-            crate::quit_guard::QuitAnswerAction::BackgroundContinue,
-            QuitDialogButtonSet::Two { .. },
-        ) => crate::quit_guard::QuitAnswerAction::StayRunning,
-        (action, _) => action,
-    }
+pub fn quit_dialog_button_set_current(
+    language: crate::quit_guard::QuitDialogLanguage,
+) -> QuitDialogButtonSet {
+    quit_dialog_button_set(is_attach_supported(), language)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -937,7 +955,7 @@ mod tests {
     fn quit_dialog_button_set_two_buttons_when_attach_unsupported() {
         // Windows：附着不成立 → 只给 取消 / 停止并退出 两键
         assert_eq!(
-            quit_dialog_button_set(false),
+            quit_dialog_button_set(false, crate::quit_guard::QuitDialogLanguage::Zh),
             QuitDialogButtonSet::Two {
                 cancel: "取消",
                 quit: "停止并退出",
@@ -951,7 +969,7 @@ mod tests {
         // mac/linux：三键枚举照旧（字段为语义清单，对话框槽位序另见
         // yes_no_cancel_slots 的测试）
         assert_eq!(
-            quit_dialog_button_set(true),
+            quit_dialog_button_set(true, crate::quit_guard::QuitDialogLanguage::Zh),
             QuitDialogButtonSet::Three {
                 cancel: "取消",
                 background_continue: "后台继续",
@@ -962,30 +980,149 @@ mod tests {
     }
 
     #[test]
-    fn two_button_answer_mapping_never_yields_background_continue() {
-        // 两键版：取消 → StayRunning，停止并退出 → Quit；
-        // 「后台继续」标签即使不知何故到达（插件回归/未来改动）也绝不行动。
-        let set = quit_dialog_button_set(false);
+    fn quit_dialog_button_sets_use_each_language_labels() {
+        for language in [
+            crate::quit_guard::QuitDialogLanguage::Zh,
+            crate::quit_guard::QuitDialogLanguage::En,
+        ] {
+            let copy = crate::quit_dialog_i18n::dialog_copy(language);
+            assert_eq!(
+                quit_dialog_button_set(false, language),
+                QuitDialogButtonSet::Two {
+                    cancel: copy.cancel_button,
+                    quit: copy.quit_button,
+                }
+            );
+            assert_eq!(
+                quit_dialog_button_set(true, language),
+                QuitDialogButtonSet::Three {
+                    cancel: copy.cancel_button,
+                    background_continue: copy.background_button,
+                    quit: copy.quit_button,
+                }
+            );
+            let set = quit_dialog_button_set(true, language);
+            assert_eq!(
+                set.dialog_answer_action(Some(copy.cancel_button)),
+                QuitAnswerAction::StayRunning
+            );
+            assert_eq!(
+                set.dialog_answer_action(Some(copy.background_button)),
+                QuitAnswerAction::BackgroundContinue
+            );
+            assert_eq!(
+                set.dialog_answer_action(Some(copy.quit_button)),
+                QuitAnswerAction::Quit
+            );
+            let two_set = quit_dialog_button_set(false, language);
+            assert_eq!(
+                two_set.dialog_answer_action(Some(copy.background_button)),
+                QuitAnswerAction::StayRunning
+            );
+            assert_eq!(
+                set.dialog_answer_action(Some("unknown label")),
+                QuitAnswerAction::StayRunning
+            );
+        }
+    }
+
+    #[test]
+    fn dialog_answer_action_maps_shown_slots_for_both_languages() {
+        for language in [
+            crate::quit_guard::QuitDialogLanguage::Zh,
+            crate::quit_guard::QuitDialogLanguage::En,
+        ] {
+            let three = quit_dialog_button_set(true, language);
+            let (yes, no, cancel) = three.yes_no_cancel_slots().unwrap();
+            for (label, expected) in [
+                (Some(yes), QuitAnswerAction::BackgroundContinue),
+                (Some(no), QuitAnswerAction::Quit),
+                (Some(cancel), QuitAnswerAction::StayRunning),
+                (None, QuitAnswerAction::StayRunning),
+                (Some("unknown label"), QuitAnswerAction::StayRunning),
+            ] {
+                assert_eq!(
+                    three.dialog_answer_action(label),
+                    expected,
+                    "{language:?}: {label:?}"
+                );
+            }
+            let two = quit_dialog_button_set(false, language);
+            let (ok, cancel) = two.ok_cancel_slots().unwrap();
+            for (label, expected) in [
+                (Some(ok), QuitAnswerAction::Quit),
+                (Some(cancel), QuitAnswerAction::StayRunning),
+                (None, QuitAnswerAction::StayRunning),
+                (Some("unknown label"), QuitAnswerAction::StayRunning),
+                (Some(yes), QuitAnswerAction::StayRunning),
+            ] {
+                assert_eq!(
+                    two.dialog_answer_action(label),
+                    expected,
+                    "{language:?}: {label:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn dialog_answer_action_uses_captured_custom_copy() {
+        let shown = QuitDialogButtonSet::Three {
+            background_continue: "custom yes",
+            quit: "custom no",
+            cancel: "custom cancel",
+        };
         assert_eq!(
-            dialog_answer_action_gated(Some("取消"), set),
-            QuitAnswerAction::StayRunning
+            shown.dialog_answer_action(Some("custom yes")),
+            QuitAnswerAction::BackgroundContinue
         );
         assert_eq!(
-            dialog_answer_action_gated(Some("停止并退出"), set),
+            shown.dialog_answer_action(Some("custom no")),
             QuitAnswerAction::Quit
         );
         assert_eq!(
-            dialog_answer_action_gated(Some("后台继续"), set),
+            shown.dialog_answer_action(Some("custom cancel")),
+            QuitAnswerAction::StayRunning
+        );
+        let two = QuitDialogButtonSet::Two {
+            quit: "custom ok",
+            cancel: "custom cancel",
+        };
+        assert_eq!(
+            two.dialog_answer_action(Some("custom ok")),
+            QuitAnswerAction::Quit
+        );
+        assert_eq!(
+            two.dialog_answer_action(Some("custom yes")),
+            QuitAnswerAction::StayRunning
+        );
+    }
+
+    #[test]
+    fn two_button_answer_mapping_never_yields_background_continue() {
+        // 两键版：取消 → StayRunning，停止并退出 → Quit；
+        // 「后台继续」标签即使不知何故到达（插件回归/未来改动）也绝不行动。
+        let set = quit_dialog_button_set(false, crate::quit_guard::QuitDialogLanguage::Zh);
+        assert_eq!(
+            set.dialog_answer_action(Some("取消")),
+            QuitAnswerAction::StayRunning
+        );
+        assert_eq!(
+            set.dialog_answer_action(Some("停止并退出")),
+            QuitAnswerAction::Quit
+        );
+        assert_eq!(
+            set.dialog_answer_action(Some("后台继续")),
             QuitAnswerAction::StayRunning,
             "没提供「后台继续」按钮时，该标签绝不能行动成 BackgroundContinue"
         );
         // 关闭对话框（None）与未知标签照旧不退出
         assert_eq!(
-            dialog_answer_action_gated(None, set),
+            set.dialog_answer_action(None),
             QuitAnswerAction::StayRunning
         );
         assert_eq!(
-            dialog_answer_action_gated(Some("whatever"), set),
+            set.dialog_answer_action(Some("whatever")),
             QuitAnswerAction::StayRunning
         );
     }
@@ -997,7 +1134,7 @@ mod tests {
         // tauri-plugin-dialog 2.7.1 无条件映射成 cancel 槽位文案的 `Custom`。
         // 两键组的 cancel 槽位（OkCancelCustom 第二参）必须放安全动作「取消」，
         // 非按钮手势才不会落到退出路径。
-        let set = quit_dialog_button_set(false);
+        let set = quit_dialog_button_set(false, crate::quit_guard::QuitDialogLanguage::Zh);
         let slots = set.ok_cancel_slots().expect("两键组必有 ok/cancel 槽位");
         // 槽位序钉死：退出动作占 ok 槽，「取消」占 cancel 槽
         assert_eq!(
@@ -1007,7 +1144,7 @@ mod tests {
         );
         // dismiss 到达应用侧的 payload = cancel 槽位文案，走闭包同一条 gated 映射
         assert_eq!(
-            dialog_answer_action_gated(Some(slots.1), set),
+            set.dialog_answer_action(Some(slots.1)),
             QuitAnswerAction::StayRunning,
             "非按钮手势（Esc/标题栏 X）绝不能退出"
         );
@@ -1016,21 +1153,21 @@ mod tests {
     #[test]
     fn three_button_answer_mapping_unchanged() {
         // 三键版（mac/linux）：逐标签与既有 dialog_answer_action 一致，行为不变
-        let set = quit_dialog_button_set(true);
+        let set = quit_dialog_button_set(true, crate::quit_guard::QuitDialogLanguage::Zh);
         assert_eq!(
-            dialog_answer_action_gated(Some("取消"), set),
+            set.dialog_answer_action(Some("取消")),
             QuitAnswerAction::StayRunning
         );
         assert_eq!(
-            dialog_answer_action_gated(Some("后台继续"), set),
+            set.dialog_answer_action(Some("后台继续")),
             QuitAnswerAction::BackgroundContinue
         );
         assert_eq!(
-            dialog_answer_action_gated(Some("停止并退出"), set),
+            set.dialog_answer_action(Some("停止并退出")),
             QuitAnswerAction::Quit
         );
         assert_eq!(
-            dialog_answer_action_gated(None, set),
+            set.dialog_answer_action(None),
             QuitAnswerAction::StayRunning
         );
     }
@@ -1041,13 +1178,13 @@ mod tests {
     fn three_button_cancel_slot_is_the_safe_label() {
         // (a) cancel 槽位（YesNoCancelCustom 第三参）必须是「取消」：
         // Esc / 标题栏 X 经 rfd 裸 Cancel + 插件改写，到达的就是这个槽的文案。
-        let set = quit_dialog_button_set(true);
+        let set = quit_dialog_button_set(true, crate::quit_guard::QuitDialogLanguage::Zh);
         let slots = set
             .yes_no_cancel_slots()
             .expect("三键组必有 yes/no/cancel 槽位");
         assert_eq!(
             slots.2,
-            crate::quit_guard::QUIT_DIALOG_CANCEL_BUTTON,
+            "取消",
             "cancel 槽位必须是「取消」：旧序放的是「停止并退出」，Esc/X 会停掉运行中的任务"
         );
     }
@@ -1055,16 +1192,16 @@ mod tests {
     #[test]
     fn three_button_slots_are_a_permutation_of_the_labels() {
         // (b) 重排槽位不得丢掉或新增任何按钮
-        let set = quit_dialog_button_set(true);
+        let set = quit_dialog_button_set(true, crate::quit_guard::QuitDialogLanguage::Zh);
         let slots = set
             .yes_no_cancel_slots()
             .expect("三键组必有 yes/no/cancel 槽位");
         let mut got = [slots.0, slots.1, slots.2];
         got.sort_unstable();
         let mut want = [
-            crate::quit_guard::QUIT_DIALOG_CANCEL_BUTTON,
-            crate::quit_guard::QUIT_DIALOG_BACKGROUND_BUTTON,
-            crate::quit_guard::QUIT_DIALOG_QUIT_BUTTON,
+            "取消",
+            "后台继续",
+            "停止并退出",
         ];
         want.sort_unstable();
         assert_eq!(got, want, "三个槽位必须是三个标签的排列，不许多不许少");
@@ -1077,12 +1214,12 @@ mod tests {
         // macOS dialog_result 的 `_ => Cancel` 尾）被改写成
         // Custom(cancel 槽位文案)。dismiss 到达应用侧的 payload = cancel 槽位
         // 文案，走闭包同一条 gated 映射，绝不能停掉运行中的任务。
-        let set = quit_dialog_button_set(true);
+        let set = quit_dialog_button_set(true, crate::quit_guard::QuitDialogLanguage::Zh);
         let slots = set
             .yes_no_cancel_slots()
             .expect("三键组必有 yes/no/cancel 槽位");
         assert_eq!(
-            dialog_answer_action_gated(Some(slots.2), set),
+            set.dialog_answer_action(Some(slots.2)),
             QuitAnswerAction::StayRunning,
             "非按钮手势（Esc/标题栏 X）绝不能落到「停止并退出」"
         );
@@ -1092,7 +1229,7 @@ mod tests {
     fn two_button_has_no_yes_no_cancel_slots() {
         // (d) 两键组不走 YesNoCancelCustom，必须返回 None
         assert_eq!(
-            quit_dialog_button_set(false).yes_no_cancel_slots(),
+            quit_dialog_button_set(false, crate::quit_guard::QuitDialogLanguage::Zh).yes_no_cancel_slots(),
             None,
             "两键组的槽位序唯一来源是 ok_cancel_slots"
         );

@@ -137,6 +137,290 @@ function makeProjection(activeTurnIndex: number, turnCount = 3): TraceProjection
   };
 }
 
+describe('TurnBasedTraceView session entry scrolling', () => {
+  it('resets isAtBottom together with the Virtuoso remount when the session changes', () => {
+    const view = render(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1) }));
+    act(() => mocks.virtuosoProps.atBottomStateChange(false));
+    expect(view.queryByRole('button', { name: /回到底部|Jump to bottom/ })).toBeNull();
+
+    view.rerender(React.createElement(TurnBasedTraceView, {
+      projection: { ...makeProjection(-1), sessionId: 'session-2' },
+    }));
+
+    expect(view.queryByRole('button', { name: /回到底部|Jump to bottom/ })).toBeNull();
+    expect(mocks.virtuosoProps.initialTopMostItemIndex).toEqual({ index: 'LAST', align: 'end', behavior: 'auto' });
+  });
+
+  it('lands on the last turn and hides the button when an empty-mounted session receives turns', () => {
+    const view = render(React.createElement(TurnBasedTraceView, {
+      projection: { sessionId: 'session-1', turns: [], activeTurnIndex: -1 },
+    }));
+    view.rerender(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1) }));
+    act(() => mocks.virtuosoProps.atBottomStateChange(false));
+    expect(view.queryByRole('button', { name: /回到底部|Jump to bottom/ })).toBeNull();
+
+    act(() => {
+      mocks.virtuosoProps.rangeChanged({ startIndex: 1_000_000, endIndex: 1_000_002 });
+      flushAnimationFrames();
+      vi.runOnlyPendingTimers();
+    });
+
+    expect(mocks.scrollToIndex).toHaveBeenCalledWith({ index: 2, align: 'end', behavior: 'auto' });
+    expect(mocks.autoscrollToBottom).not.toHaveBeenCalled();
+    expect(view.queryByRole('button', { name: /回到底部|Jump to bottom/ })).toBeNull();
+
+    mocks.scrollToIndex.mockClear();
+    act(() => {
+      mocks.virtuosoProps.atBottomStateChange(true);
+      mocks.virtuosoProps.rangeChanged({ startIndex: 1_000_000, endIndex: 1_000_002 });
+      flushAnimationFrames();
+      vi.runOnlyPendingTimers();
+    });
+    expect(mocks.scrollToIndex).not.toHaveBeenCalled();
+  });
+
+  it('recomputes isAtBottom when an overflowing session is already within the bottom threshold', () => {
+    const view = render(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1) }));
+    const scroller = view.getByTestId('virtuoso-scroller');
+    act(() => mocks.virtuosoProps.atBottomStateChange(false));
+    expect(view.queryByRole('button', { name: /回到底部|Jump to bottom/ })).toBeNull();
+    Object.defineProperties(scroller, {
+      scrollHeight: { value: 1000, configurable: true },
+      clientHeight: { value: 100, configurable: true },
+      scrollTop: { value: 900, configurable: true, writable: true },
+    });
+
+    act(() => {
+      mocks.virtuosoProps.atBottomStateChange(false);
+      mocks.virtuosoProps.rangeChanged({ startIndex: 1_000_000, endIndex: 1_000_002 });
+    });
+
+    expect(view.queryByRole('button', { name: /回到底部|Jump to bottom/ })).toBeNull();
+  });
+
+  it('settles late code-block and tool-card heights after an estimated near-bottom start', () => {
+    const view = render(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1, 45) }));
+    const scroller = view.getByTestId('virtuoso-scroller');
+    let height = 3_600;
+    let top = 3_500;
+    Object.defineProperties(scroller, {
+      scrollHeight: { get: () => height, configurable: true },
+      clientHeight: { value: 100, configurable: true },
+      scrollTop: {
+        get: () => top,
+        set: (value: number) => { top = Math.min(value, height - 100); },
+        configurable: true,
+      },
+    });
+
+    act(() => {
+      mocks.virtuosoProps.atBottomStateChange(false);
+      mocks.virtuosoProps.rangeChanged({ startIndex: 1_000_000, endIndex: 1_000_002 });
+      flushAnimationFrames();
+      vi.runOnlyPendingTimers();
+    });
+    expect(mocks.scrollToIndex).toHaveBeenCalledWith({ index: 44, align: 'end', behavior: 'auto' });
+
+    for (let frame = 0; frame < 8; frame += 1) {
+      act(() => flushAnimationFrames());
+    }
+    height = 7_200;
+    for (let frame = 0; frame < 18; frame += 1) {
+      act(() => flushAnimationFrames());
+    }
+
+    expect(top).toBe(7_100);
+    expect(view.queryByRole('button', { name: /回到底部|Jump to bottom/ })).toBeNull();
+  });
+
+  const BTN = /回到底部|Jump to bottom/;
+  function mountLongScroller(view: ReturnType<typeof render>) {
+    const scroller = view.getByTestId('virtuoso-scroller');
+    const state = { height: 3_600, top: 3_000 };
+    Object.defineProperties(scroller, {
+      scrollHeight: { get: () => state.height, configurable: true },
+      clientHeight: { value: 100, configurable: true },
+      scrollTop: {
+        get: () => state.top,
+        set: (value: number) => { state.top = Math.min(value, state.height - 100); },
+        configurable: true,
+      },
+    });
+    return { scroller, state };
+  }
+
+  it('keeps the jump button hidden from the first settlement frames until late heights settle', () => {
+    const view = render(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1, 45) }));
+    const { state } = mountLongScroller(view);
+    // Virtuoso reports "not at bottom" while rows still carry estimated heights.
+    act(() => mocks.virtuosoProps.atBottomStateChange(false));
+    expect(view.queryByRole('button', { name: BTN })).toBeNull();
+
+    act(() => {
+      mocks.virtuosoProps.rangeChanged({ startIndex: 1_000_000, endIndex: 1_000_002 });
+      flushAnimationFrames();
+      vi.runOnlyPendingTimers();
+    });
+    expect(view.queryByRole('button', { name: BTN })).toBeNull();
+
+    for (let frame = 0; frame < 4; frame += 1) {
+      act(() => flushAnimationFrames());
+      act(() => mocks.virtuosoProps.atBottomStateChange(false));
+      expect(view.queryByRole('button', { name: BTN })).toBeNull();
+    }
+    state.height = 7_200;
+    for (let frame = 0; frame < 3; frame += 1) {
+      act(() => flushAnimationFrames());
+      act(() => mocks.virtuosoProps.atBottomStateChange(false));
+      expect(view.queryByRole('button', { name: BTN })).toBeNull();
+    }
+    for (let frame = 0; frame < 20; frame += 1) {
+      act(() => flushAnimationFrames());
+    }
+
+    expect(state.top).toBe(7_100);
+    expect(view.queryByRole('button', { name: BTN })).toBeNull();
+  });
+
+  it('shows the jump button when the user wheels up before the first entry range', () => {
+    const view = render(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1, 45) }));
+    const { scroller, state } = mountLongScroller(view);
+    act(() => mocks.virtuosoProps.atBottomStateChange(false));
+    expect(view.queryByRole('button', { name: BTN })).toBeNull();
+
+    state.top = 2_000;
+    // 真实 Virtuoso 的 atBottomStateChange 只在状态变化时发出：pending 期间吞掉的 false
+    // 不会重发，滚轮必须在没有再次回调的情况下让按钮出现（cancelPending 从 scroller 重算）。
+    act(() => {
+      fireEvent.wheel(scroller, { deltaY: -400 });
+    });
+    expect(view.queryByRole('button', { name: BTN })).toBeTruthy();
+
+    act(() => {
+      mocks.virtuosoProps.rangeChanged({ startIndex: 1_000_000, endIndex: 1_000_002 });
+      flushAnimationFrames();
+      vi.runOnlyPendingTimers();
+    });
+    expect(view.queryByRole('button', { name: BTN })).toBeTruthy();
+  });
+
+  it('preserves a wheel-up made while entry turns are still loading', () => {
+    const view = render(React.createElement(TurnBasedTraceView, {
+      projection: { sessionId: 'session-1', turns: [], activeTurnIndex: -1 },
+    }));
+    const scroller = view.getByTestId('virtuoso-scroller');
+    Object.defineProperties(scroller, {
+      scrollHeight: { value: 3_600, configurable: true },
+      clientHeight: { value: 100, configurable: true },
+      scrollTop: { value: 2_000, configurable: true, writable: true },
+    });
+    act(() => { fireEvent.wheel(scroller, { deltaY: -400 }); });
+
+    view.rerender(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1, 45) }));
+    // rangeChanged 之后不再补发 atBottomStateChange(false)：resetBottom 不得强置 true，
+    // interactionAt 不一致的早退路径要从 scroller 重算，按钮才能如实出现。
+    act(() => {
+      mocks.virtuosoProps.rangeChanged({ startIndex: 1_000_000, endIndex: 1_000_002 });
+      flushAnimationFrames();
+      vi.runOnlyPendingTimers();
+    });
+
+    expect(mocks.scrollToIndex).not.toHaveBeenCalled();
+    expect(view.queryByRole('button', { name: BTN })).toBeTruthy();
+  });
+
+  it('shows the jump button when the user scrolls between the first range and the settle frame', () => {
+    const view = render(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1, 45) }));
+    const { scroller, state } = mountLongScroller(view);
+    act(() => {
+      mocks.virtuosoProps.rangeChanged({ startIndex: 1_000_000, endIndex: 1_000_002 });
+    });
+    // 回调已把 isAtBottom 强置 true、结算帧还没跑：窗口内的滚轮会被结算屏蔽吞掉 false，
+    // 结算帧取消时必须从 scroller 重算，按钮才不会凭空消失。
+    state.top = 2_000;
+    act(() => { fireEvent.wheel(scroller, { deltaY: -400 }); });
+
+    act(() => {
+      flushAnimationFrames();
+      vi.runOnlyPendingTimers();
+    });
+    expect(mocks.scrollToIndex).not.toHaveBeenCalled();
+    expect(view.queryByRole('button', { name: BTN })).toBeTruthy();
+  });
+
+  it('shows the jump button again when the user scrolls up during session-entry settlement', () => {
+    const view = render(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1, 45) }));
+    const { scroller, state } = mountLongScroller(view);
+    act(() => {
+      mocks.virtuosoProps.rangeChanged({ startIndex: 1_000_000, endIndex: 1_000_002 });
+      flushAnimationFrames();
+      vi.runOnlyPendingTimers();
+    });
+    act(() => flushAnimationFrames());
+    expect(view.queryByRole('button', { name: BTN })).toBeNull();
+
+    state.height = 7_200;
+    state.top = 2_000;
+    act(() => { fireEvent.wheel(scroller, { deltaY: -400 }); });
+    for (let frame = 0; frame < 20; frame += 1) {
+      act(() => flushAnimationFrames());
+    }
+
+    expect(state.top).toBe(2_000);
+    expect(view.queryByRole('button', { name: BTN })).toBeTruthy();
+  });
+
+  it('recomputes isAtBottom after session-entry settle when content fits the viewport', () => {
+    const view = render(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1) }));
+    const scroller = view.getByTestId('virtuoso-scroller');
+    act(() => mocks.virtuosoProps.atBottomStateChange(false));
+    expect(view.queryByRole('button', { name: /回到底部|Jump to bottom/ })).toBeNull();
+    Object.defineProperties(scroller, {
+      scrollHeight: { value: 100, configurable: true },
+      clientHeight: { value: 100, configurable: true },
+      scrollTop: { value: 0, configurable: true, writable: true },
+    });
+
+    act(() => {
+      mocks.virtuosoProps.rangeChanged({ startIndex: 1_000_000, endIndex: 1_000_002 });
+      flushAnimationFrames();
+      vi.runOnlyPendingTimers();
+    });
+    for (let frame = 0; frame < 60; frame += 1) {
+      act(() => flushAnimationFrames());
+    }
+
+    expect(view.queryByRole('button', { name: /回到底部|Jump to bottom/ })).toBeNull();
+  });
+});
+
+describe('TurnBasedTraceView session-entry settle cancel', () => {
+  it('recomputes isAtBottom from real geometry when settling is cancelled by a turns reference change', () => {
+    const view = render(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1) }));
+    const scroller = view.getByTestId('virtuoso-scroller');
+    act(() => mocks.virtuosoProps.atBottomStateChange(false));
+    expect(view.queryByRole('button', { name: /回到底部|Jump to bottom/ })).toBeNull();
+    Object.defineProperties(scroller, {
+      scrollHeight: { value: 5000, configurable: true },
+      clientHeight: { value: 700, configurable: true },
+      scrollTop: { value: 0, configurable: true, writable: true },
+    });
+
+    act(() => {
+      mocks.virtuosoProps.rangeChanged({ startIndex: 1_000_000, endIndex: 1_000_002 });
+      flushAnimationFrames();
+      vi.runOnlyPendingTimers();
+    });
+    scroller.scrollTop = 4300;
+    view.rerender(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1) }));
+    for (let frame = 0; frame < 5; frame += 1) {
+      act(() => flushAnimationFrames());
+    }
+
+    expect(view.queryByRole('button', { name: /回到底部|Jump to bottom/ })).toBeNull();
+  });
+});
+
 describe('TurnBasedTraceView focus helpers', () => {
   it('counts only leading history turns inserted before the previous first turn', () => {
     expect(getPrependedTurnCount('turn-1', [makeTurn(-2), makeTurn(-1), makeTurn(0)]))
@@ -888,9 +1172,17 @@ describe('TurnBasedTraceView turn rail (N-TURNRAIL)', () => {
     expect(mocks.scrollToIndex).toHaveBeenCalledWith({ index: 2, align: 'start', behavior: 'auto' });
   });
 
-  it('可见范围变化时当前轮高亮跟着视口顶部那一轮走（减掉 firstItemIndex 偏移）', () => {
+  it('会话入口结算后，可见范围仍设置当前轮高亮（减掉 firstItemIndex 偏移）', () => {
     const view = render(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1, 10) }));
     const firstItemIndex = Number(view.container.querySelector('[data-virtuoso-first-item-index]')!.getAttribute('data-virtuoso-first-item-index'));
+    act(() => {
+      mocks.virtuosoProps.rangeChanged({ startIndex: firstItemIndex + 4, endIndex: firstItemIndex + 6 });
+      flushAnimationFrames();
+      vi.runOnlyPendingTimers();
+    });
+    for (let frame = 0; frame < 20; frame += 1) {
+      act(() => flushAnimationFrames());
+    }
     act(() => {
       mocks.virtuosoProps.rangeChanged({ startIndex: firstItemIndex + 4, endIndex: firstItemIndex + 6 });
     });

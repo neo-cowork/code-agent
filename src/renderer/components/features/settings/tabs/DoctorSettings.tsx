@@ -32,6 +32,7 @@ import { SettingsPage } from '../SettingsLayout';
 import type { DoctorFixCode } from '@shared/constants/doctor';
 import { toast } from '../../../../hooks/useToast';
 import { useI18n } from '../../../../hooks/useI18n';
+import { formatDateTime } from '../../../../utils/formatDateTime';
 import { useBundledCapabilityStore } from '../../../../stores/bundledCapabilityStore';
 import { useDoctorStore } from '../../../../stores/doctorStore';
 import {
@@ -83,6 +84,10 @@ const DoctorItemRow: React.FC<{
   isFixing: boolean;
   onFix: (code: DoctorFixCode) => void;
 }> = ({ item, suggestionPrefix, fixLabel, isFixing, onFix }) => {
+  const { t } = useI18n();
+  const message = item.probeHttpStatus
+    ? t.settings.providerDoctor.probeAuthMismatch.replace('{status}', String(item.probeHttpStatus))
+    : item.message;
   const [expanded, setExpanded] = useState(item.status === 'fail');
   const hasDetails = !!(item.details || item.suggestion);
   const fix = item.fix;
@@ -103,7 +108,7 @@ const DoctorItemRow: React.FC<{
           </span>
           <span className="flex-1 min-w-0">
             <span className="text-sm text-zinc-200">{item.name}</span>
-            <span className="text-sm text-zinc-500 ml-2">{item.message}</span>
+            <span className="text-sm text-zinc-500 ml-2">{message}</span>
           </span>
           {hasDetails && (
             <span className="shrink-0 text-zinc-500">
@@ -136,7 +141,7 @@ const DoctorItemRow: React.FC<{
           )}
           {item.details && (
             <pre className="text-xs text-zinc-400 bg-zinc-800/60 rounded p-2 whitespace-pre-wrap break-all">
-              {item.details}
+              {item.probeHttpStatus ? message : item.details}
             </pre>
           )}
         </div>
@@ -150,7 +155,7 @@ const DoctorItemRow: React.FC<{
 // ============================================================================
 
 export const DoctorSettings: React.FC = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const doctorText = t.settings.providerDoctor;
   const {
     report,
@@ -317,7 +322,7 @@ export const DoctorSettings: React.FC = () => {
             {report.summary.skip}{doctorText.summary.skipSuffix}
           </span>
           <span className="ml-auto text-xs text-zinc-500">
-            {(report.durationMs / 1000).toFixed(1)}s · {new Date(report.timestamp).toLocaleTimeString()}
+            {(report.durationMs / 1000).toFixed(1)}s · {formatDateTime(report.timestamp, language)}
           </span>
         </div>
       )}

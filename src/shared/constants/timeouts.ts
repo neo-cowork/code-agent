@@ -66,20 +66,10 @@ export const DAG_SCHEDULER = {
   DEFAULT_MAX_RETRIES: 0,
 } as const;
 
-/** 编排器超时配置 */
-export const ORCHESTRATOR_TIMEOUTS = {
-  /** 本地执行超时 */
-  LOCAL_EXECUTOR: 120_000,
-  /** 云端执行超时 */
-  CLOUD_EXECUTOR: 180_000,
-  /** Agent 委托超时 */
-  AGENT_DELEGATION: 60_000,
-  /** Agent 执行器超时 */
-  AGENT_EXECUTOR: 180_000,
-  /** 统一编排器默认超时 */
-  UNIFIED_DEFAULT: 120_000,
-  /** 统一编排器扩展超时 */
-  UNIFIED_EXTENDED: 180_000,
+/** 账号会话校验超时 */
+export const AUTH_TIMEOUTS = {
+  /** 拉取 supabase session 的超时（启动后台校验与按需重校验共用） */
+  SESSION_FETCH_MS: 5_000,
 } as const;
 
 /** 服务初始化超时 */
@@ -92,6 +82,12 @@ export const SERVICE_TIMEOUTS = {
   LIFECYCLE: 30_000,
   /** 引导程序 */
   BOOTSTRAP: 30_000,
+} as const;
+
+export const NOTIFICATION_BUDGET = {
+  WINDOW_MS: 15 * 60_000,
+  /** 窗口内暂存队列的落盘文件名（位于 userData 目录），重启后补发一条汇总。 */
+  HELD_FILE_NAME: 'held-notifications.json',
 } as const;
 
 /** 用户交互超时 */
@@ -109,6 +105,8 @@ export const INTERACTION_TIMEOUTS = {
    * 等待用户，等待期间由 beginHumanWait/endHumanWait 暂停该会话的工具计时。
    */
   PARKED_APPROVAL: 86_400_000,
+  /** cron/heartbeat 及断线续跑的停车审批无人应答降级期限（30 分钟）；channel/voice 仍走 24h 兜底。 */
+  UNATTENDED_PARKED_APPROVAL_DEGRADE: 1_800_000,
   /** MCP Elicitation 用户输入超时 */
   MCP_ELICITATION: 60_000,
   /**
@@ -116,6 +114,15 @@ export const INTERACTION_TIMEOUTS = {
    * 总超时 = USER_QUESTION（用户思考）+ 本值 × 生成张数（串行出图），避免慢付费撞死工具。
    */
   CANVAS_PROPOSAL_GEN_BUDGET: 90_000,
+} as const;
+
+/**
+ * 工具授权两档时长（N-PERM-GRANT-TIERS）。run 档随 run 结束即失效（无固定时长，
+ * 不在此表）；24h 档 expiresAt = grantedAt + TIER_24H_MS，重启不破坏承诺。
+ */
+export const TOOL_GRANT_TIERS = {
+  /** 24 小时档的有效期 */
+  TIER_24H_MS: 86_400_000,
 } as const;
 
 /**
@@ -130,34 +137,6 @@ export const AUTO_MODE_RATE_LIMIT = {
   WINDOW_COUNT: 20,
   /** 滑动窗口长度（10 分钟） */
   WINDOW_MS: 10 * 60_000,
-} as const;
-
-/** 锁和资源管理超时 */
-export const LOCK_TIMEOUTS = {
-  /** 锁默认超时 */
-  DEFAULT: 300_000,
-  /** 锁清理间隔 */
-  CLEANUP_INTERVAL: 30_000,
-  /** Agent Bus 超时 */
-  AGENT_BUS: 300_000,
-  /** Agent Bus 清理间隔 */
-  AGENT_BUS_CLEANUP: 30_000,
-} as const;
-
-/** 性能阈值（毫秒） */
-export const PERFORMANCE_THRESHOLDS = {
-  /** 快速响应阈值 */
-  FAST_RESPONSE: 60_000,
-  /** 慢响应阈值 */
-  SLOW_RESPONSE: 120_000,
-  /** 策略优化阈值 */
-  STRATEGY_OPTIMIZATION: 300_000,
-  /** 模型请求超时 */
-  MODEL_REQUEST: 300_000,
-  /** 任务队列超时 */
-  TASK_QUEUE: 300_000,
-  /** 网络重试最大延迟 */
-  NETWORK_RETRY_MAX_DELAY: 30_000,
 } as const;
 
 /** 数据源路由超时配置 */
@@ -250,10 +229,19 @@ export const LIBRARY_TIMEOUTS = {
 
 /** 浏览器操作超时 */
 export const BROWSER_TIMEOUTS = {
+  /** Minimum age before crash-leftover isolated profiles may be reclaimed. */
+  ISOLATED_PROFILE_SWEEP_GRACE: 10 * 60_000,
+  /** Bound size accounting across one sweep; incomplete profiles are kept. */
+  ISOLATED_PROFILE_SWEEP_MAX_ENTRIES: 10_000,
+  /** Reject oversized or malformed owner metadata without an unbounded read. */
+  ISOLATED_PROFILE_SWEEP_OWNER_MAX_BYTES: 1_024,
+  ISOLATED_PROFILE_SWEEP_WALK_BUDGET: 2_000,
   /** 浏览器操作默认超时 */
   ACTION_DEFAULT: 30_000,
   /** 等待选择器超时 */
   WAIT_SELECTOR: 5_000,
+  /** 选择器填写（page.fill）快速失败超时 */
+  FILL_SELECTOR: 5_000,
   /** 等待超时 */
   WAIT_DEFAULT: 1_000,
   /** Computer Use 等待超时 */
@@ -268,6 +256,10 @@ export const BROWSER_TIMEOUTS = {
    * 防止进程崩溃后 binding 永不释放而租约永远不过期。
    */
   LEASE_IN_USE_CEILING: 4 * 60 * 60_000,
+  /** Chrome 父进程看门狗：探测 Neo 服务进程是否还活着的间隔（秒，传给 sh sleep） */
+  PARENT_WATCHDOG_POLL_SEC: 2,
+  /** Chrome 父进程看门狗：SIGTERM 之后到 SIGKILL 残留进程的宽限（秒） */
+  PARENT_WATCHDOG_KILL_GRACE_SEC: 2,
 } as const;
 
 /** artifact_runnable 断言家族超时（浏览器类走 GAME_VALIDATION_TIMEOUTS / ARTIFACT_PREVIEW_HEALTH） */
@@ -300,37 +292,11 @@ export const TEST_TIMEOUTS = {
   TIMEOUT_TRACE_GRACE: 5_000,
 } as const;
 
-/** 资源锁超时 */
-export const RESOURCE_LOCK_TIMEOUTS = {
-  /** 锁获取超时 */
-  ACQUIRE: 300_000,
-  /** 等待超时 */
-  WAIT: 30_000,
-} as const;
-
-/** 认证服务超时 */
-export const AUTH_TIMEOUTS = {
-  /** 会话获取超时 */
-  SESSION_FETCH: 5_000,
-  /** 配置文件获取超时 */
-  PROFILE_FETCH: 5_000,
-} as const;
-
-/** 状态检查超时 */
-export const STATUS_TIMEOUTS = {
-  /** API 健康检查超时 */
-  API_HEALTH_CHECK: 5_000,
-} as const;
-
 /** Startup gates must not remain blocked forever when the renderer signal is lost. */
 export const STARTUP_TIMEOUTS = {
+  /** Warn once when an accepted send has not dispatched its first main-model request. */
+  FIRST_MODEL_REQUEST_WARN_MS: 30_000,
   RENDERER_WINDOW_READY: 5_000,
-} as const;
-
-/** 任务输出超时 */
-export const TASK_OUTPUT_TIMEOUTS = {
-  /** 默认超时 */
-  DEFAULT: 30_000,
 } as const;
 
 /**
@@ -348,18 +314,6 @@ export const TASK_QUEUE_TIMEOUTS = {
   QUEUE_DRAIN_GRACE_MS: 2_000,
   /** 排队/执行落定状态轮询间隔 */
   POLL_INTERVAL_MS: 250,
-} as const;
-
-/** 后台任务超时 */
-export const BACKGROUND_TASK_TIMEOUTS = {
-  /** 默认超时 */
-  DEFAULT: 30_000,
-} as const;
-
-/** Skill 服务超时 */
-export const SKILL_TIMEOUTS = {
-  /** 安装超时 */
-  INSTALL: 30_000,
 } as const;
 
 /** LSP 服务超时 */
@@ -520,6 +474,8 @@ export const SUBAGENT_EXECUTION_TIMEOUTS = {
   FOREGROUND_TO_BACKGROUND_BUDGET: 600_000,
   /** 子 agent role execution timeout 下限，必须大于前台转后台预算。 */
   ROLE_EXECUTION_MINIMUM: 900_000,
+  /** 后台子代理完成后，等 worktree 清理结果并入完成通知的上限。 */
+  BACKGROUND_WORKTREE_NOTE_WAIT: 15_000,
 } as const;
 
 /** 后台/子 agent 完成提醒预算。 */
@@ -562,6 +518,11 @@ export const RENDERER_POLLING = {
   BACKOFF_FACTOR: 2,
   /** 传输层连接错误日志节流窗口：同一通道在此窗口内最多打一条，防后端不可达时刷屏 */
   TRANSPORT_ERROR_LOG_THROTTLE: 10_000,
+  /**
+   * 页面启动时 host 推来的审批快照（snapshot:true）先于 agent:event 监听器注册到达，
+   * 在此窗口内注册的新监听器补发一次（N-FIX-BGPANEL-STOP-TERMINAL-FU1-FU1-FU1）。
+   */
+  SSE_PERMISSION_SNAPSHOT_REPLAY_WINDOW: 10_000,
 } as const;
 
 /** 工具执行超时警告阈值 (ms)，按工具名或前缀匹配 */
@@ -622,6 +583,11 @@ export const CRON_GUARDRAILS = {
    * 存量值视为未设置，走指数退避；新代码显式写下的其它值不受影响。
    */
   LEGACY_DEFAULT_RETRY_DELAY_MS: 5_000,
+  /**
+   * timeout 的旧版默认值：旧保存路径把未设置写成 `|| 60000`，存量 agent 任务读回都是 60000。
+   * agent 分支把它与未设置同等对待（不限时），否则存量任务会在 60s 被误杀；shell 分支不受影响。
+   */
+  LEGACY_DEFAULT_TIMEOUT_MS: 60_000,
 } as const;
 
 /**
@@ -680,4 +646,22 @@ export const CLI_DURABLE_TERMINAL = {
   RETRY_ATTEMPTS: 5,
   /** 退避基数（毫秒）：第 n 次重试前等待 BASE << (n-1) */
   RETRY_BACKOFF_BASE_MS: 200,
+} as const;
+
+/** Neo 托管判官（N-JEV-NEO-KEY）客户端退避时长 */
+export const JEV_HOSTED_TIMEOUTS = {
+  /** 持续性服务故障（401/404/5xx/网络/超时）后短退避：避免每次判官调用都先付一次云端往返再降级 */
+  SERVICE_FAILURE_BACKOFF: 5 * 60_000,
+} as const;
+
+/** 自动化页「待过目」收件箱的后台刷新（N-CRON-REVIEW-COUNT-LIVE） */
+export const CRON_REVIEW_INBOX_TIMEOUTS = {
+  /** 页面可见时的轮询间隔：定时任务在页面停着时跑完，数字无需切页就更新 */
+  POLL_INTERVAL: 10_000,
+} as const;
+
+/** 渲染端系统通知投递超时 */
+export const OS_NOTIFICATION_TIMEOUTS = {
+  /** 读取系统通知权限（聚合 native 探测）的上限，超时按 unknown 继续发送 */
+  PERMISSION_READ_MS: 3_000,
 } as const;

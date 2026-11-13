@@ -136,6 +136,7 @@ afterEach(() => {
 });
 
 beforeEach(() => {
+  useAppStore.setState({ expertPanelTab: 'discover' });
   listRolePacks.mockResolvedValue([]);
   listTeamRecipes.mockResolvedValue([]);
   createTeamRecipe.mockImplementation(async (recipe: Omit<TeamRecipe, 'id'>) => ({ ...recipe, id: 'user-copied' }));
@@ -178,6 +179,21 @@ describe('ExpertPanel', () => {
     const create = screen.getByTestId('expert-create-role');
     expect(create.textContent).toContain('新建专家');
     expect(create.className).toContain('bg-btn-secondary');
+  });
+
+  it('选择「我的」后卸载并重新挂载仍保留选中态与专家列表', async () => {
+    listRoles.mockResolvedValue([
+      makeEntry({ roleId: '自定义客服', source: 'user', displayName: '阿问' }),
+    ]);
+    const first = render(<ExpertPanel />);
+    fireEvent.click(screen.getByTestId('expert-tab-mine'));
+    await waitFor(() => expect(screen.getByTestId('expert-card-自定义客服')).toBeTruthy());
+
+    first.unmount();
+    render(<ExpertPanel />);
+
+    await waitFor(() => expect(screen.getByTestId('expert-tab-mine').getAttribute('aria-selected')).toBe('true'));
+    expect(screen.getByTestId('expert-card-自定义客服')).toBeTruthy();
   });
 
   it('专家团词条不回潮为配方或 recipe', () => {
@@ -374,6 +390,23 @@ describe('ExpertPanel', () => {
     expect(goToExpertThread).toHaveBeenCalledWith('牧之', { title: '牧之' });
   });
 
+  it('内置专家只在 locallyModified 为 true 时显示一次修改提示', async () => {
+    render(<RoleDetailPage roleId="牧之" />);
+    await waitFor(() => expect(screen.getByTestId('role-detail-basic-tab')).toBeTruthy());
+    expect(screen.queryByTestId('role-locally-modified')).toBeNull();
+    expect(screen.queryByText('你已改过这个专家，后续更新不会覆盖你的改动。')).toBeNull();
+
+    cleanup();
+    invokeDomain.mockImplementation((_domain: string, action: string) => {
+      if (action === 'detail') return Promise.resolve(makeRoleDetail({ locallyModified: true }));
+      if (action === 'listBoundCronJobs' || action === 'listBindings') return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    });
+    render(<RoleDetailPage roleId="牧之" />);
+    await waitFor(() => expect(screen.getByTestId('role-locally-modified')).toBeTruthy());
+    expect(screen.getAllByText('你已改过这个专家，后续更新不会覆盖你的改动。')).toHaveLength(1);
+  });
+
   it('点「详情」请求打开独立全屏详情页', async () => {
     listRoles.mockResolvedValue([makeEntry()]);
     render(<ExpertPanel />);
@@ -419,10 +452,10 @@ describe('ExpertPanel', () => {
     render(<RoleDetailPage roleId="牧之" />);
     fireEvent.click(screen.getByTestId('role-detail-tab-records'));
 
-    const start = await screen.findByTestId('role-quiet-hours-start');
-    const end = screen.getByTestId('role-quiet-hours-end');
-    fireEvent.change(start, { target: { value: '23:00' } });
-    fireEvent.change(end, { target: { value: '07:30' } });
+    await screen.findByTestId('role-quiet-hours-start');
+    fireEvent.change(screen.getByTestId('role-quiet-hours-start-hour'), { target: { value: '23' } });
+    fireEvent.change(screen.getByTestId('role-quiet-hours-end-hour'), { target: { value: '07' } });
+    fireEvent.change(screen.getByTestId('role-quiet-hours-end-minute'), { target: { value: '30' } });
     fireEvent.click(screen.getByTestId('role-quiet-hours-save'));
 
     await waitFor(() => {
@@ -452,7 +485,12 @@ describe('ExpertPanel', () => {
     render(<RoleDetailPage roleId="牧之" />);
     fireEvent.click(screen.getByTestId('role-detail-tab-records'));
 
-    fireEvent.click(await screen.findByTestId('role-quiet-hours-clear'));
+    await screen.findByTestId('role-quiet-hours-clear');
+    expect(screen.getByTestId('role-quiet-hours-start-hour')).toHaveProperty('value', '22');
+    expect(screen.getByTestId('role-quiet-hours-start-minute')).toHaveProperty('value', '00');
+    expect(screen.getByTestId('role-quiet-hours-end-hour')).toHaveProperty('value', '08');
+    expect(screen.getByTestId('role-quiet-hours-end-minute')).toHaveProperty('value', '00');
+    fireEvent.click(screen.getByTestId('role-quiet-hours-clear'));
 
     await waitFor(() => {
       expect(invokeDomain).toHaveBeenCalledWith(
@@ -848,4 +886,114 @@ describe('ExpertPanel', () => {
       vi.useRealTimers();
     }
   });
+
+  function make22Experts(): RolePanelEntry[] {
+    const categories = ['product', 'research', 'design-creative', 'development', 'content-marketing', 'data-analysis'] as const;
+    return Array.from({ length: 22 }, (_, index) => {
+      const n = index + 1;
+      const isUncategorized = n > 20;
+      const category = isUncategorized ? undefined : categories[index % categories.length];
+      return makeEntry({
+        roleId: `expert-${String(n).padStart(2, '0')}`,
+        displayName: n === 7 ? '沈知微' : n === 15 ? '陆青野' : `专家${String(n).padStart(2, '0')}`,
+        profession: n === 7 ? '法务合规顾问' : n === 15 ? '增长分析师' : `专职顾问${n}`,
+        description: n === 7 ? '审阅合同条款与隐私风险' : n === 15 ? '负责漏斗转化与留存拆解' : `负责领域工作事项 ${n}`,
+        tags: n === 7 ? ['合同审阅', '合规'] : n === 15 ? ['漏斗分析', 'AB测试'] : [`标签${n}`],
+        category,
+        source: n <= 18 ? 'builtin' : 'user',
+      });
+    });
+  }
+
+  it('22 位专家时输入名字、职业、描述、标签或分类显示名可实时过滤卡片（我的与发现均生效）', async () => {
+    listRoles.mockResolvedValue(make22Experts());
+    render(<ExpertPanel />);
+    fireEvent.click(screen.getByTestId('expert-tab-mine'));
+    await waitFor(() => expect(screen.getByTestId('expert-search-input')).toBeTruthy());
+    expect(screen.getAllByTestId(/^expert-card-/)).toHaveLength(22);
+
+    const searchInput = screen.getByTestId('expert-search-input') as HTMLInputElement;
+    expect(searchInput.getAttribute('placeholder')).toBe('搜索专家');
+    expect(searchInput.getAttribute('aria-label')).toBe('搜索专家');
+
+    for (const [query, expectedIds] of [
+      ['  知微  ', ['expert-07']],
+      ['漏斗转化', ['expert-15']],
+      ['ab测试', ['expert-15']],
+      ['其他', ['expert-21', 'expert-22']],
+    ] as const) {
+      fireEvent.change(searchInput, { target: { value: query } });
+      expect(screen.getAllByTestId(/^expert-card-/)).toHaveLength(expectedIds.length);
+      for (const id of expectedIds) expect(screen.getByTestId(`expert-card-${id}`)).toBeTruthy();
+    }
+
+    fireEvent.click(screen.getByTestId('expert-tab-discover'));
+    const discoverSearch = screen.getByTestId('expert-search-input') as HTMLInputElement;
+    expect(discoverSearch.value).toBe('');
+    expect(screen.getAllByTestId(/^expert-card-/)).toHaveLength(18);
+    fireEvent.change(discoverSearch, { target: { value: '隐私风险' } });
+    expect(screen.getAllByTestId(/^expert-card-/)).toHaveLength(1);
+    expect(screen.getByTestId('expert-card-expert-07')).toBeTruthy();
+  });
+
+  it('搜索与分类 chip 交集过滤，且分类 chips 保持稳定并实时显示搜索命中数', async () => {
+    listRoles.mockResolvedValue(make22Experts());
+    render(<ExpertPanel />);
+    fireEvent.click(screen.getByTestId('expert-tab-mine'));
+    await waitFor(() => expect(screen.getByTestId('expert-search-input')).toBeTruthy());
+
+    const chipAll = screen.getByTestId('expert-category-chip-all');
+    const chipProduct = screen.getByTestId('expert-category-chip-product');
+    const chipDesign = screen.getByTestId('expert-category-chip-design-creative');
+    expect(chipAll.textContent).toContain('22');
+    expect(chipProduct.textContent).toContain('4');
+    expect(chipDesign.textContent).toContain('3');
+
+    fireEvent.change(screen.getByTestId('expert-search-input'), { target: { value: '专职顾问' } });
+    expect(chipAll.textContent).toContain('20');
+    expect(chipProduct.textContent).toContain('3');
+    expect(chipDesign.textContent).toContain('2');
+    expect(screen.getByTestId('expert-category-chip-__uncategorized__')).toBeTruthy();
+
+    fireEvent.click(chipProduct);
+    expect(chipProduct.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getAllByTestId(/^expert-card-/)).toHaveLength(3);
+    expect(screen.getByTestId('expert-card-expert-01')).toBeTruthy();
+    expect(screen.queryByTestId('expert-card-expert-07')).toBeNull();
+  });
+
+  it('搜索无匹配时展示含关键词的人话空态与「清除搜索」按钮，点击恢复全部列表', async () => {
+    listRoles.mockResolvedValue(make22Experts());
+    render(<ExpertPanel />);
+    fireEvent.click(screen.getByTestId('expert-tab-mine'));
+    await waitFor(() => expect(screen.getByTestId('expert-search-input')).toBeTruthy());
+    fireEvent.change(screen.getByTestId('expert-search-input'), { target: { value: '量子炼金术士' } });
+    expect(screen.queryAllByTestId(/^expert-card-/)).toHaveLength(0);
+    const emptyBox = screen.getByTestId('expert-search-empty');
+    expect(emptyBox.textContent).toContain('没有找到匹配「量子炼金术士」的专家。');
+    expect(emptyBox.textContent).not.toContain('你的专家货架还是空的');
+    expect(emptyBox.textContent).not.toContain('还没有专家');
+    fireEvent.click(screen.getByTestId('expert-search-clear'));
+    expect((screen.getByTestId('expert-search-input') as HTMLInputElement).value).toBe('');
+    expect(screen.queryByTestId('expert-search-empty')).toBeNull();
+    expect(screen.getAllByTestId(/^expert-card-/)).toHaveLength(22);
+  });
+
+  it('在「我的」与「发现」之间切换时自动清空搜索词', async () => {
+    listRoles.mockResolvedValue(make22Experts());
+    render(<ExpertPanel />);
+    fireEvent.click(screen.getByTestId('expert-tab-mine'));
+    await waitFor(() => expect(screen.getByTestId('expert-search-input')).toBeTruthy());
+    fireEvent.change(screen.getByTestId('expert-search-input'), { target: { value: '沈知微' } });
+    expect(screen.getAllByTestId(/^expert-card-/)).toHaveLength(1);
+    fireEvent.click(screen.getByTestId('expert-tab-discover'));
+    expect((screen.getByTestId('expert-search-input') as HTMLInputElement).value).toBe('');
+    expect(screen.getAllByTestId(/^expert-card-/)).toHaveLength(18);
+    fireEvent.change(screen.getByTestId('expert-search-input'), { target: { value: '陆青野' } });
+    expect(screen.getAllByTestId(/^expert-card-/)).toHaveLength(1);
+    fireEvent.click(screen.getByTestId('expert-tab-mine'));
+    expect((screen.getByTestId('expert-search-input') as HTMLInputElement).value).toBe('');
+    expect(screen.getAllByTestId(/^expert-card-/)).toHaveLength(22);
+  });
+
 });

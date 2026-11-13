@@ -2,6 +2,7 @@
 // Message Types
 // ============================================================================
 
+import type { EnvAssistNotice } from './envAssist';
 import type { ToolCall, ToolResult } from './tool';
 import type { WorkbenchMessageMetadata } from './conversationEnvelope';
 import type { MemberInputMessageMetadata } from './memberInput';
@@ -112,7 +113,16 @@ export interface MessageAttachment {
   // 代码特有：语言
   language?: string;
   // 文件夹特有：文件列表和统计
-  files?: Array<{ path: string; content: string; size: number }>;
+  files?: Array<{
+    /** Display path relative to the dropped folder's parent; never a tool path. */
+    path: string;
+    content?: string;
+    size: number;
+    type?: AttachmentCategory;
+    binary?: boolean;
+    /** Actual path returned for this individual file by getPathForFile. */
+    absolutePath?: string;
+  }>;
   folderStats?: { totalFiles: number; totalSize: number; byType: Record<string, number> };
   // 媒体处理状态，用于展示下载、嵌入、转写、失败等生命周期
   mediaState?: AttachmentMediaState;
@@ -258,6 +268,8 @@ export type AgentErrorCategory =
   | 'model_not_found'
   | 'forbidden'
   | 'rate_limited'
+  /** 套餐用量窗口用尽（429 + 用量上限措辞）：窗口会自己恢复，不给重试。 */
+  | 'usage_limit'
   | 'concurrency'
   | 'network'
   | 'context_length'
@@ -272,6 +284,7 @@ export type AgentErrorCategory =
  * 刻意不存 title/suggestion 文案——文案随 i18n 走，存下来会把语言钉死在持久化数据里。
  */
 export interface AgentErrorMetadata {
+  envAssist?: EnvAssistNotice;
   category: AgentErrorCategory;
   /** host 侧错误码（RUN_FAILED / CONTEXT_LENGTH_EXCEEDED / …） */
   code?: string;
@@ -289,6 +302,9 @@ export interface AgentErrorMetadata {
   /** context_length 专用：实际/上限 tokens，供卡片模板填空 */
   requestedTokens?: number;
   maxTokens?: number;
+  /** usage_limit 专用：供应商写的窗口词（如「5 小时」）与重置时间（ISO UTC）。 */
+  usageWindowText?: string;
+  resetAt?: string;
 }
 
 export interface InputRedirectReceiptMetadata {
@@ -305,6 +321,14 @@ export interface InputRedirectReceiptMetadata {
 }
 
 export interface MessageMetadata {
+  /** Foreground turn ended at its step limit; a new user turn can continue it. */
+  stoppedByStepLimit?: true;
+  /**
+   * 这条 user 消息是宿主从运行记录（telemetry）重建的，不是用户原话。
+   * 正文只存重建内容；发给模型时由上下文装配补回「可能已脱敏缩写」的免责声明，
+   * 界面在气泡旁显示一句中文说明。
+   */
+  telemetryRecovered?: true;
   /**
    * Marks a role:user message injected into an active run by runtime steer.
    * The message remains visible and durable, but does not start a new turn
@@ -333,6 +357,11 @@ export interface MessageMetadata {
    * 编辑重发 / 失败重试复用同一 clientMessageId（消息 id），不是新开一条。
    */
   sendFailed?: boolean;
+  /**
+   * 发送失败的稳定错误码（transport 从响应体解析，如 PROJECT_SOURCE_TRUST）。
+   * 失败 assistant 气泡据此挂「确认并重发」等就地恢复入口；正文仍是人话句子。
+   */
+  sendFailureCode?: string;
   /** Structured verification evidence carried by message-level projections. */
   evidenceRefs?: EvidenceRef[];
   /** Stable join keys for reconstructing a persisted message's runtime turn. */
@@ -370,6 +399,7 @@ export interface MessageMetadata {
   agentTeam?: AgentTeamMessageMetadata;
   /** agent 运行失败的结构化错误（会话区渲染 AgentErrorCard），见 AgentErrorMetadata */
   agentError?: AgentErrorMetadata;
+  envAssist?: EnvAssistNotice;
   automation?: SessionAutomationMessageMetadata;
   /**
    * 角色醒来主动消息的打扰理由。解析自 <rationale>/<evidence>；
@@ -420,6 +450,32 @@ export interface MessageMetadata {
   roleFlowStalled?: {
     skillName: 'create-role' | 'edit-role';
   };
+  /**
+   * 后台任务终态唤醒前台失败时的用户可见说明（`role:'system'`）：任务结果已在会话里，
+   * 只是自动汇报这一步没成；reason 区分 owner lease 缺失、步数耗尽与其它失败。
+   */
+  backgroundWakeFailed?: {
+    taskId: string;
+    reason: 'owner_missing' | 'wake_failed' | 'max_iterations' | 'turn_error';
+  };
+  /**
+   * 后台任务终态唤醒被前台轮推迟超过上限时的用户可见说明。
+   * 任务结果已在会话里；这条只说明自动汇报会等当前步骤结束。
+   */
+  backgroundWakeDeferred?: {
+    taskId: string;
+    outcome: 'completed' | 'failed';
+  };
+  /** Persisted receipt after the user confirms an existing expert edit. */
+  roleEditReceipt?: {
+    roleId: string;
+    addedTools: string[];
+    removedTools: string[];
+    descriptionChanged: boolean;
+    promptChanged: boolean;
+    /** False when the old definition was unavailable; never claim nothing changed in that case. */
+    diffAvailable?: boolean;
+  };
   /** User-visible audit note for atomic turn checkout / Redo, including partial outcomes. */
   turnCheckoutNote?: {
     operation: 'checkout' | 'redo';
@@ -432,6 +488,8 @@ export interface MessageMetadata {
   };
   /** 显式改道成功后的动作回执；原话不投成用户气泡。 */
   inputRedirectReceipt?: InputRedirectReceiptMetadata;
+  /** 重启中断的后台任务需要在原会话展示一条提示。 */
+  backgroundTaskInterrupted?: { taskId: string };
   /** 后台任务统一终态投影，供后续 turn 做短名指代与状态追问。 */
   backgroundTaskResult?: {
     source: 'agent-result';
@@ -482,7 +540,7 @@ export interface MessageMetadata {
   streamResumeNote?: { attempt: number; maxReconnects: number };
 }
 
-export type StreamInterruptionReason = 'user' | 'session-switch' | 'app-restart' | 'stream-break';
+export type StreamInterruptionReason = 'user' | 'session-switch' | 'app-restart' | 'stream-break' | 'idle-reaped';
 
 export interface Message {
   id: string;

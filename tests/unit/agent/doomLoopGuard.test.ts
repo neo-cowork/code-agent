@@ -85,6 +85,173 @@ describe('DoomLoopGuard L1 — 同名同参连续重复', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// N-FIX-BROWSER-DOOMLOOP-REAPPROVE r1 — 观察类 Browser 调用的 L1 结果确认
+// ---------------------------------------------------------------------------
+const browserResult = (action: string, summary: string, success = true) => ({
+  name: 'Browser',
+  arguments: { action },
+  success,
+  summary,
+});
+
+describe('DoomLoopGuard L1 — 观察类 Browser 重复要由结果确认 (N-FIX-BROWSER-DOOMLOOP-REAPPROVE r1)', () => {
+  it('(a) 轮询演进页面不再误报：get_content ×4，结果 loading,loading,loading,ready → 全程无 doom-loop', () => {
+    const guard = new DoomLoopGuard();
+    const read = call('Browser', { action: 'get_content' });
+    const levels: string[] = [];
+    for (const summary of ['loading', 'loading', 'loading', 'ready']) {
+      levels.push(guard.recordStep([read]).level);
+      guard.recordResults([browserResult('get_content', summary)]);
+    }
+    expect(levels).toEqual(['none', 'none', 'none', 'none']);
+  });
+
+  it('(b) 真重复仍升级：同参同结果连续读，先 nudge 再 abort（比非观察类多一拍结果确认）', () => {
+    const guard = new DoomLoopGuard();
+    const read = call('Browser', { action: 'get_content' });
+    const page = 'URL: http://127.0.0.1:1/ Title: Fixture --- Page Text --- static page, nothing changes';
+    const levels: string[] = [];
+    const checks: ReturnType<DoomLoopGuard['recordStep']>[] = [];
+    for (let i = 0; i < 6; i++) {
+      checks.push(guard.recordStep([read]));
+      levels.push(checks[checks.length - 1].level);
+      guard.recordResults([browserResult('get_content', page)]);
+    }
+    expect(levels).toEqual(['none', 'none', 'none', 'none', 'doom-loop', 'doom-loop-abort']);
+    expect(checks[4].nudge).toContain('<doom-loop-guard>');
+  });
+
+  it('(c) 同坐标 Browser click 重复不受结果折扣：第 3 次 nudge、第 4 次 abort（与改动前一致）', () => {
+    const guard = new DoomLoopGuard();
+    const clickAt = call('Browser', { action: 'click', selector: '#go' });
+    const levels: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      levels.push(guard.recordStep([clickAt]).level);
+      guard.recordResults([browserResult('click', 'Clicked element: #go')]);
+    }
+    expect(levels).toEqual(['none', 'none', 'doom-loop', 'doom-loop-abort']);
+  });
+
+  it('(d) 结果每次都在变（页面持续推进）的同参重复读永不升级', () => {
+    const guard = new DoomLoopGuard();
+    const read = call('Browser', { action: 'get_content' });
+    const levels: string[] = [];
+    for (let i = 0; i < 8; i++) {
+      levels.push(guard.recordStep([read]).level);
+      guard.recordResults([browserResult('get_content', `progress ${i}%`)]);
+    }
+    expect(levels.every((level) => level === 'none')).toBe(true);
+  });
+
+  it('(e) nudge 之后页面演进（结果变化）→ 不 abort，从新观察重数', () => {
+    const guard = new DoomLoopGuard();
+    const read = call('Browser', { action: 'get_content' });
+    const summaries = ['page A', 'page A', 'page A', 'page A', 'page B', 'page B', 'page B', 'page B', 'page B'];
+    const levels: string[] = [];
+    for (const summary of summaries) {
+      levels.push(guard.recordStep([read]).level);
+      guard.recordResults([browserResult('get_content', summary)]);
+    }
+    expect(levels).toEqual(['none', 'none', 'none', 'none', 'doom-loop', 'none', 'none', 'none', 'doom-loop']);
+  });
+
+  it('(f) resetAfterHandback 清掉观察确认链：换方法后要重新数满才再 nudge', () => {
+    const guard = new DoomLoopGuard();
+    const read = call('Browser', { action: 'get_content' });
+    const page = 'same page text';
+    for (let i = 0; i < 5; i++) {
+      guard.recordStep([read]);
+      guard.recordResults([browserResult('get_content', page)]);
+    }
+    guard.resetAfterHandback();
+    const levels: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      levels.push(guard.recordStep([read]).level);
+      guard.recordResults([browserResult('get_content', page)]);
+    }
+    expect(levels).toEqual(['none', 'none', 'none', 'none', 'doom-loop']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// N-FIX-BROWSER-DOOMLOOP-REAPPROVE r2 — 观察确认链的三种真实写入点形状
+// ---------------------------------------------------------------------------
+describe('DoomLoopGuard L1 — 观察确认链真实写入点形状 (N-FIX-BROWSER-DOOMLOOP-REAPPROVE r2)', () => {
+  it('(g) 真实 screenshot 输出（内嵌 screenshot_<Date.now()>.png 文件名）：反复截屏等一个不会来的变化仍升级', () => {
+    const guard = new DoomLoopGuard();
+    const shot = call('Browser', { action: 'screenshot' });
+    const levels: string[] = [];
+    let clock = 1762300000000;
+    for (let i = 0; i < 6; i++) {
+      clock += 137;
+      levels.push(guard.recordStep([shot]).level);
+      guard.recordResults([browserResult(
+        'screenshot',
+        `Screenshot saved: /Users/x/.code-agent-dev/appshots/screenshot_${clock}.png`,
+      )]);
+    }
+    expect(levels).toEqual(['none', 'none', 'none', 'none', 'doom-loop', 'doom-loop-abort']);
+  });
+
+  it('(h) 真实 get_dom_snapshot 输出（snapshotId uuid + capturedAtMs 每调用全新，页面内容不变）：仍升级', () => {
+    const guard = new DoomLoopGuard();
+    const snap = call('Browser', { action: 'get_dom_snapshot' });
+    const uuids = [
+      '3a84ea57-d086-4157-bf8c-cab73a38bc0b',
+      'e9341420-6804-4bb4-c0ee-1c897ed92b2a',
+      'f71c0d92-12ab-4c3e-9f56-02d9a8c3b1e7',
+      'a55b3f18-77c2-4d1a-8e90-6b2f4c9d3a21',
+      'c09d4e77-31f8-4b5c-a7d2-90e3f1b6c8d4',
+      'b28e6a35-94d7-4e6f-b0a1-7c8d2e5f9a3b',
+    ];
+    const levels: string[] = [];
+    uuids.forEach((uuid, i) => {
+      levels.push(guard.recordStep([snap]).level);
+      guard.recordResults([browserResult('get_dom_snapshot', [
+        '{',
+        `  "snapshotId": "snapshot_${uuid}",`,
+        '  "tabId": "tab_739bdeb5-cb76-4508-bfa7-e4ef0468a9c1",',
+        `  "capturedAtMs": ${1762300000000 + i * 977},`,
+        '  "url": "http://127.0.0.1:57216/delayed",',
+        '  "title": "Fixture Delayed",',
+        `  "documentRevision": "document_snapshot_${uuid}_5.1",`,
+        '  "headings": ["Delayed"]',
+        '}',
+      ].join('\n'))]);
+    });
+    expect(levels).toEqual(['none', 'none', 'none', 'none', 'doom-loop', 'doom-loop-abort']);
+  });
+
+  it('(i) 交错观察互不清零：B,B,A,B,B,B,B 的 B 确认链跨 A 存活（单槽会被清零拖到第 8 步之后）', () => {
+    const guard = new DoomLoopGuard();
+    const readMain = call('Browser', { action: 'get_content', tabId: 'tab-1' });
+    const readSide = call('Browser', { action: 'get_content', tabId: 'tab-9' });
+    const main = 'URL: http://127.0.0.1:1/ Title: T --- Page Text --- static';
+    const levels: string[] = [];
+    const run = (toolCall: typeof readMain, summary: string) => {
+      levels.push(guard.recordStep([toolCall]).level);
+      guard.recordResults([{ name: 'Browser', arguments: toolCall.arguments, success: true, summary }]);
+    };
+    run(readMain, main);
+    run(readMain, main);
+    run(readSide, 'URL: http://127.0.0.1:9/ Title: O --- other tab');
+    for (let i = 0; i < 4; i++) run(readMain, main);
+    expect(levels).toEqual(['none', 'none', 'none', 'none', 'none', 'doom-loop', 'doom-loop-abort']);
+  });
+
+  it('(j) tab 崩溃后反复失败的观察调用也是空转：同参同错误仍 nudge→abort（r1 里失败不算证据）', () => {
+    const guard = new DoomLoopGuard();
+    const read = call('Browser', { action: 'get_content' });
+    const levels: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      levels.push(guard.recordStep([read]).level);
+      guard.recordResults([browserResult('get_content', 'Target page, context or browser has been closed', false)]);
+    }
+    expect(levels).toEqual(['none', 'none', 'none', 'none', 'doom-loop', 'doom-loop-abort']);
+  });
+});
+
 describe('DoomLoopGuard L2 — 行动签名重复', () => {
   it('nudges when the same multi-call step repeats 3 times', () => {
     const guard = new DoomLoopGuard();
@@ -284,5 +451,507 @@ describe('DoomLoopGuard result signals', () => {
       success: false,
       summary: 'status=running\nstill running',
     }]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// N-FIX-DOOMLOOP-BG-POLL-FALSE-HANDBACK — 后台轮询不应凭无参/同参在 L1 误触发交还栏
+// ---------------------------------------------------------------------------
+describe('DoomLoopGuard background poll stall window — N-FIX-DOOMLOOP-BG-POLL-FALSE-HANDBACK', () => {
+  it('(i) progressing task_output polls (body grows / status changes) ×10 → no doom-loop, no doom-loop-abort, no signals', () => {
+    let nowMs = 1_762_300_000_000;
+    const guard = new DoomLoopGuard(() => nowMs);
+    const pollCall = call('task_output', { task_id: 'bg-1' });
+    const levels: string[] = [];
+    const signalsList: string[][] = [];
+    for (let i = 1; i <= 10; i++) {
+      nowMs += 40_000;
+      const status = i === 10 ? 'completed' : 'running';
+      levels.push(guard.recordStep([pollCall]).level);
+      signalsList.push(
+        guard.recordResults([{
+          name: 'task_output',
+          arguments: { task_id: 'bg-1' },
+          success: true,
+          summary: `=== Task bg-1 ===\nStatus: ${status}\n--- Output ---\nstep ${i} finished: artifact_${ 'abcdef'[i % 6].repeat(i) }`,
+        }]).signals,
+      );
+    }
+    expect(levels.every((l) => l === 'none')).toBe(true);
+    expect(signalsList.every((s) => s.length === 0)).toBe(true);
+  });
+
+  it('replay (ii): task_status {} unchanged ×4 within stall window (25s apart) does not reach doom-loop or doom-loop-abort', () => {
+    let nowMs = 1_762_300_000_000;
+    const guard = new DoomLoopGuard(() => nowMs);
+    const callTaskStatus = call('task_status', {});
+    const runningText = '1. 抓站 [running] id=task_bg_42';
+    const levels: string[] = [];
+    const signalsList: string[][] = [];
+    for (let i = 0; i < 4; i++) {
+      nowMs += 25_000;
+      levels.push(guard.recordStep([callTaskStatus]).level);
+      signalsList.push(
+        guard.recordResults([{
+          name: 'task_status',
+          arguments: {},
+          success: true,
+          summary: runningText,
+        }]).signals,
+      );
+    }
+    expect(levels).toEqual(['none', 'none', 'none', 'none']);
+    expect(signalsList).toEqual([[], [], ['polling_repeat'], []]);
+  });
+
+  it('(iii) same poll output unchanged for > stall window (5 min) with ≥ 3 polls → doom-loop, then doom-loop-abort on next poll', () => {
+    let nowMs = 1_762_300_000_000;
+    const guard = new DoomLoopGuard(() => nowMs);
+    const callTaskStatus = call('task_status', {});
+    const runningText = '1. 抓站 [running] id=task_bg_42';
+    const stepPoll = (advanceMs: number, summary = runningText) => {
+      nowMs += advanceMs;
+      const check = guard.recordStep([callTaskStatus]);
+      const sig = guard.recordResults([{
+        name: 'task_status',
+        arguments: {},
+        success: true,
+        summary,
+      }]);
+      return { check, sig };
+    };
+
+    expect(stepPoll(0).check.level).toBe('none'); // t=0, poll 1
+    expect(stepPoll(120_000).check.level).toBe('none'); // t=120s, poll 2
+    const third = stepPoll(190_000); // t=310s (> 300s window), poll 3 confirms stall
+    expect(third.check.level).toBe('none');
+    expect(third.sig.signals).toEqual(['polling_repeat']);
+
+    const fourth = stepPoll(20_000); // poll 4 sees ≥3 polls & ≥5 min elapsed → doom-loop nudge
+    expect(fourth.check.level).toBe('doom-loop');
+    expect(fourth.check.nudge).toContain('<doom-loop-guard>');
+
+    const fifth = stepPoll(20_000); // poll 5 after nudge → doom-loop-abort
+    expect(fifth.check.level).toBe('doom-loop-abort');
+  });
+
+  it('(iv) non-poll tool repeated 3× with identical args still gives doom-loop and 4th gives doom-loop-abort (regression guard)', () => {
+    const nowMs = 1_762_300_000_000;
+    const guard = new DoomLoopGuard(() => nowMs);
+    const bashCall = call('Bash', { command: 'echo probe' });
+    expect(guard.recordStep([bashCall]).level).toBe('none');
+    expect(guard.recordStep([bashCall]).level).toBe('none');
+    expect(guard.recordStep([bashCall]).level).toBe('doom-loop');
+    expect(guard.recordStep([bashCall]).level).toBe('doom-loop-abort');
+  });
+
+  it('(v) resetAfterHandback clears poll stall state and changed result resets poll state', () => {
+    let nowMs = 1_762_300_000_000;
+    const guard = new DoomLoopGuard(() => nowMs);
+    const callTaskStatus = call('task_status', {});
+    const runningText = '1. 抓站 [running] id=task_bg_42';
+    const pollWith = (advanceMs: number, summary: string) => {
+      nowMs += advanceMs;
+      const level = guard.recordStep([callTaskStatus]).level;
+      guard.recordResults([{ name: 'task_status', arguments: {}, success: true, summary }]);
+      return level;
+    };
+
+    expect(pollWith(0, runningText)).toBe('none');
+    expect(pollWith(160_000, runningText)).toBe('none');
+    expect(pollWith(160_000, runningText)).toBe('none'); // streak=3, elapsed=320s
+    expect(guard.recordStep([callTaskStatus]).level).toBe('doom-loop'); // nudged on 4th step
+    // That 4th poll returns a changed result → resets poll state so next poll does not abort
+    guard.recordResults([{
+      name: 'task_status',
+      arguments: {},
+      success: true,
+      summary: '1. 抓站 [completed] id=task_bg_42：已完成抓取',
+    }]);
+    expect(pollWith(160_000, '1. 抓站 [completed] id=task_bg_42：已完成抓取')).toBe('none'); // streak=2, elapsed=160s
+    expect(pollWith(160_000, '1. 抓站 [completed] id=task_bg_42：已完成抓取')).toBe('none'); // streak=3, elapsed=320s
+    expect(pollWith(10_000, '1. 抓站 [completed] id=task_bg_42：已完成抓取')).toBe('doom-loop'); // nudged
+    expect(guard.recordStep([callTaskStatus]).level).toBe('doom-loop-abort');
+    guard.resetAfterHandback();
+    expect(pollWith(10_000, '1. 抓站 [completed] id=task_bg_42：已完成抓取')).toBe('none');
+  });
+
+  it('(vi) alternating Bash echo probe / task_status {} ×3 rounds (25s apart, same running output) breaks the non-poll streak and never reaches doom-loop or doom-loop-abort', () => {
+    let nowMs = 1_762_300_000_000;
+    const guard = new DoomLoopGuard(() => nowMs);
+    const bashCall = call('Bash', { command: 'echo probe' });
+    const callTaskStatus = call('task_status', {});
+    const runningText = '1. 抓站 [running] id=task_bg_42';
+    const levels: string[] = [];
+
+    for (let round = 0; round < 3; round++) {
+      nowMs += 25_000;
+      levels.push(guard.recordStep([bashCall]).level);
+      guard.recordResults([{
+        name: 'Bash',
+        arguments: { command: 'echo probe' },
+        success: true,
+        summary: 'probe',
+      }]);
+
+      nowMs += 25_000;
+      levels.push(guard.recordStep([callTaskStatus]).level);
+      guard.recordResults([{
+        name: 'task_status',
+        arguments: {},
+        success: true,
+        summary: runningText,
+      }]);
+    }
+    // Even a 4th Bash echo probe after 3 interleaved rounds must not doom-loop or abort
+    nowMs += 25_000;
+    levels.push(guard.recordStep([bashCall]).level);
+
+    expect(levels).toEqual(['none', 'none', 'none', 'none', 'none', 'none', 'none']);
+  });
+
+  it('(vii-a) wait_agent {agentIds:["a1"]} ×4 (25s apart) returning timeout output does not reach doom-loop or doom-loop-abort', () => {
+    let nowMs = 1_762_300_000_000;
+    const guard = new DoomLoopGuard(() => nowMs);
+    const waitCall = call('wait_agent', { agentIds: ['a1'] });
+    const timeoutText = 'Wait results (timeout — some still running):\n\n⏳ [a1] researcher — running (still running)\n   Still in progress after 30000ms timeout';
+    const levels: string[] = [];
+    const signalsList: string[][] = [];
+    for (let i = 0; i < 4; i++) {
+      nowMs += 25_000;
+      levels.push(guard.recordStep([waitCall]).level);
+      signalsList.push(
+        guard.recordResults([{
+          name: 'wait_agent',
+          arguments: { agentIds: ['a1'] },
+          success: true,
+          summary: timeoutText,
+        }]).signals,
+      );
+    }
+    expect(levels).toEqual(['none', 'none', 'none', 'none']);
+    expect(signalsList).toEqual([[], [], ['polling_repeat'], []]);
+  });
+
+  it('(vii-b) wait_agent {agentIds:["a1"]} unchanged for > 5 minutes → doom-loop, then doom-loop-abort', () => {
+    let nowMs = 1_762_300_000_000;
+    const guard = new DoomLoopGuard(() => nowMs);
+    const waitCall = call('wait_agent', { agentIds: ['a1'] });
+    const timeoutText = 'Wait results (timeout — some still running):\n\n⏳ [a1] researcher — running (still running)\n   Still in progress after 30000ms timeout';
+    const stepWait = (advanceMs: number) => {
+      nowMs += advanceMs;
+      const check = guard.recordStep([waitCall]);
+      guard.recordResults([{
+        name: 'wait_agent',
+        arguments: { agentIds: ['a1'] },
+        success: true,
+        summary: timeoutText,
+      }]);
+      return check.level;
+    };
+    expect(stepWait(0)).toBe('none');
+    expect(stepWait(160_000)).toBe('none');
+    expect(stepWait(160_000)).toBe('none'); // streak=3, elapsed=320s > 300s
+    expect(stepWait(20_000)).toBe('doom-loop');
+    expect(stepWait(20_000)).toBe('doom-loop-abort');
+  });
+
+  it('(vii-c) agent_message {action:"status", agentId:"a1"} ×4 (25s apart) within window → no doom-loop/abort; > 5 min → doom-loop-abort', () => {
+    let nowMs = 1_762_300_000_000;
+    const guard = new DoomLoopGuard(() => nowMs);
+    const statusCall = call('agent_message', { action: 'status', agentId: 'a1' });
+    const runningStatusText = 'Agent Status:\n- ID: a1\n- Role: researcher\n- Status: running\n- Task: collect pages';
+    const levels: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      nowMs += 25_000;
+      levels.push(guard.recordStep([statusCall]).level);
+      guard.recordResults([{
+        name: 'agent_message',
+        arguments: { action: 'status', agentId: 'a1' },
+        success: true,
+        summary: runningStatusText,
+      }]);
+    }
+    expect(levels).toEqual(['none', 'none', 'none', 'none']);
+
+    // Now advance past the 5-minute stall window from first poll (already 75s elapsed; add 250s → 325s)
+    nowMs += 250_000;
+    expect(guard.recordStep([statusCall]).level).toBe('none'); // this step's recordResults updates elapsedMs to 325s
+    guard.recordResults([{
+      name: 'agent_message',
+      arguments: { action: 'status', agentId: 'a1' },
+      success: true,
+      summary: runningStatusText,
+    }]);
+    nowMs += 20_000;
+    expect(guard.recordStep([statusCall]).level).toBe('doom-loop');
+    guard.recordResults([{
+      name: 'agent_message',
+      arguments: { action: 'status', agentId: 'a1' },
+      success: true,
+      summary: runningStatusText,
+    }]);
+    nowMs += 20_000;
+    expect(guard.recordStep([statusCall]).level).toBe('doom-loop-abort');
+  });
+
+  it('(vii-d) terminal_wait / terminal_read while a long command is running follow the stall-window rule', () => {
+    let nowMs = 1_762_300_000_000;
+    const guard = new DoomLoopGuard(() => nowMs);
+    const termCall = call('terminal_wait', { session_id: 'pty-1' });
+    const termOutput = '[timeout]\nbuilding project...';
+    const levels: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      nowMs += 25_000;
+      levels.push(guard.recordStep([termCall]).level);
+      guard.recordResults([{
+        name: 'terminal_wait',
+        arguments: { session_id: 'pty-1' },
+        success: true,
+        summary: termOutput,
+      }]);
+    }
+    expect(levels).toEqual(['none', 'none', 'none', 'none']);
+  });
+
+  it('(R1) task_output {} (no task_id) ×4 with the same output (25s apart) → doom-loop on call 3, doom-loop-abort on call 4', () => {
+    let nowMs = 1_762_300_000_000;
+    const guard = new DoomLoopGuard(() => nowMs);
+    const listCall = call('task_output', {});
+    const listText = 'Found 1 background task(s):\n\n🔄 Task: bg-1\n   Command: npm run build\n   Status: running\n   Duration: 12.0s\n   Output file: /tmp/neo/bg-1.log\n';
+    const levels: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      nowMs += 25_000;
+      levels.push(guard.recordStep([listCall]).level);
+      guard.recordResults([{ name: 'task_output', arguments: {}, success: true, summary: listText }]);
+    }
+    expect(levels).toEqual(['none', 'none', 'doom-loop', 'doom-loop-abort']);
+  });
+
+  it('(R2) process {action:"poll"} (no session_id) ×4 (25s apart) → doom-loop on call 3, doom-loop-abort on call 4', () => {
+    let nowMs = 1_762_300_000_000;
+    const guard = new DoomLoopGuard(() => nowMs);
+    const pollCall = call('process', { action: 'poll' });
+    const levels: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      nowMs += 25_000;
+      levels.push(guard.recordStep([pollCall]).level);
+      guard.recordResults([{
+        name: 'process',
+        arguments: { action: 'poll' },
+        success: false,
+        summary: 'session_id is required for poll action',
+      }]);
+    }
+    expect(levels).toEqual(['none', 'none', 'doom-loop', 'doom-loop-abort']);
+  });
+
+  it('(R3) the step [Bash {command:"npm test"}, task_status {}] ×3 with the same results (25s apart) → repeated-step nudge on step 3', () => {
+    let nowMs = 1_762_300_000_000;
+    const guard = new DoomLoopGuard(() => nowMs);
+    const stepCalls = [call('Bash', { command: 'npm test' }), call('task_status', {})];
+    const checks = [];
+    for (let i = 0; i < 3; i++) {
+      nowMs += 25_000;
+      checks.push(guard.recordStep(stepCalls));
+      guard.recordResults([
+        { name: 'Bash', arguments: { command: 'npm test' }, success: true, summary: 'Tests  3 failed | 12 passed' },
+        { name: 'task_status', arguments: {}, success: true, summary: '1. 抓站 [running] id=task_bg_42' },
+      ]);
+    }
+    expect(checks.map((c) => c.level)).toEqual(['none', 'none', 'repeated-step']);
+    expect(checks[2].nudge).toContain('steps have been identical');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// N-CUA-SCREEN-GUARDS-LOOP — cua 近似点击 + 屏幕未变连击
+// ---------------------------------------------------------------------------
+const CUA = 'mcp__cua-driver__';
+
+/** 计算器样例 AX 树：display 是屏上数字，指纹必须保留数字（7 ≠ 12）。 */
+function calcTree(display: string): string {
+  return [
+    '- [1] AXWindow "Calculator"',
+    `- [3] AXStaticText (${display}) [id=display]`,
+    '- [5] AXButton (+1) [actions=[press]]',
+  ].join('\n');
+}
+
+function cuaClick(bare: string, x: number, y: number, windowId: number = 7) {
+  return {
+    name: `${CUA}${bare}`,
+    arguments: { pid: 4321, window_id: windowId, x, y },
+    success: true,
+    summary: `clicked (${x},${y})`,
+  };
+}
+
+const click = (x: number, y: number, windowId = 7) => cuaClick('click', x, y, windowId);
+
+/** 快照输出带采集时间戳：指纹剥掉时间戳后内容相同才算"屏幕没变"。 */
+function cuaSnapshot(tree: string, windowId = 7, at = '2026-11-03T10:00:00') {
+  return {
+    name: `${CUA}get_window_state`,
+    arguments: { pid: 4321, window_id: windowId },
+    success: true,
+    summary: `captured ${at}\n${tree}`,
+  };
+}
+
+describe('DoomLoopGuard cua screen-click signals — N-CUA-SCREEN-GUARDS-LOOP', () => {
+  it('(a) fires on the 3rd near-identical click with unchanged snapshots (±24 px boundary included)', () => {
+    const guard = new DoomLoopGuard();
+    const tree = calcTree('7');
+    guard.recordResults([cuaSnapshot(tree)]);
+    guard.recordResults([click(400, 300)]);
+    guard.recordResults([cuaSnapshot(tree, 7, '2026-11-03T10:00:05')]); // 时间戳变了，内容没变
+    expect(guard.recordResults([click(402, 298)]).signals).toEqual([]); // streak 2
+    guard.recordResults([cuaSnapshot(tree, 7, '2026-11-03T10:00:11')]);
+    const hit = guard.recordResults([click(399, 303)]);
+    expect(hit.signals).toEqual(['screen_click_no_effect']);
+    expect(hit.nudge).toContain('screen did not change after repeated near-identical clicks');
+    expect(hit.nudge).toContain('another element');
+    expect(hit.nudge).toContain('keyboard route');
+
+    // 点击类三兄弟（click/double_click/right_click）同一桶；|dx|=|dy|=24 恰好在界内
+    const bare = new DoomLoopGuard();
+    bare.recordResults([cuaSnapshot(tree)]);
+    bare.recordResults([cuaClick('double_click', 400, 300)]);
+    bare.recordResults([cuaSnapshot(tree)]);
+    expect(bare.recordResults([cuaClick('right_click', 424, 324)]).signals).toEqual([]); // streak 2
+    bare.recordResults([cuaSnapshot(tree)]);
+    expect(bare.recordResults([click(400, 300)]).signals).toEqual(['screen_click_no_effect']);
+  });
+
+  it('(b) stays quiet when consecutive clicks are 25 px apart, even with unchanged snapshots', () => {
+    const guard = new DoomLoopGuard();
+    const tree = calcTree('7');
+    const xs = [400, 425, 450, 475]; // 每对相邻点击 |dx|=25（y 相同）
+    for (const x of xs) {
+      guard.recordResults([cuaSnapshot(tree)]);
+      expect(guard.recordResults([click(x, 300)]).signals).toEqual([]);
+    }
+    const ys = [300, 325, 350, 375]; // 每对相邻点击 |dy|=25（x 相同）
+    for (const y of ys) {
+      guard.recordResults([cuaSnapshot(tree)]);
+      expect(guard.recordResults([click(400, y)]).signals).toEqual([]);
+    }
+  });
+
+  it('(c) stays quiet when the snapshot changes between clicks, including digit-only changes', () => {
+    const guard = new DoomLoopGuard();
+    guard.recordResults([cuaSnapshot(calcTree('7'))]);
+    guard.recordResults([click(400, 300)]);
+    guard.recordResults([cuaSnapshot(calcTree('8'))]); // 屏上数字 7→8：点击生效了
+    expect(guard.recordResults([click(402, 298)]).signals).toEqual([]);
+    guard.recordResults([cuaSnapshot(calcTree('12'))]); // 8→12 同样是数字级变化
+    expect(guard.recordResults([click(399, 303)]).signals).toEqual([]);
+  });
+
+  it('(d) stays quiet when near-identical clicks target different windows', () => {
+    const guard = new DoomLoopGuard();
+    const tree = calcTree('7');
+    guard.recordResults([cuaSnapshot(tree, 7)]);
+    guard.recordResults([cuaSnapshot(tree, 8)]);
+    guard.recordResults([click(400, 300, 7)]);
+    guard.recordResults([cuaSnapshot(tree, 7)]);
+    expect(guard.recordResults([click(402, 298, 8)]).signals).toEqual([]);
+    guard.recordResults([cuaSnapshot(tree, 8)]);
+    expect(guard.recordResults([click(399, 303, 7)]).signals).toEqual([]);
+    guard.recordResults([cuaSnapshot(tree, 7)]);
+    // 两个窗口各点两次；若 key 不分窗口，第 3 次点击就会命中
+    expect(guard.recordResults([click(401, 301, 8)]).signals).toEqual([]);
+  });
+
+  it('(e) stays quiet without snapshot evidence between clicks', () => {
+    const none = new DoomLoopGuard();
+    none.recordResults([click(400, 300)]);
+    none.recordResults([click(402, 298)]);
+    expect(none.recordResults([click(399, 303)]).signals).toEqual([]);
+
+    const stale = new DoomLoopGuard();
+    const tree = calcTree('7');
+    stale.recordResults([cuaSnapshot(tree)]);
+    stale.recordResults([click(400, 300)]);
+    stale.recordResults([cuaSnapshot(tree)]);
+    expect(stale.recordResults([click(402, 298)]).signals).toEqual([]); // streak 2
+    // 点击 2 与点击 3 之间没有新快照：无证据不得判"屏幕没变"
+    expect(stale.recordResults([click(399, 303)]).signals).toEqual([]);
+  });
+
+  it('(f) fires at most once per run', () => {
+    const guard = new DoomLoopGuard();
+    const tree = calcTree('7');
+    guard.recordResults([cuaSnapshot(tree)]);
+    guard.recordResults([click(400, 300)]);
+    guard.recordResults([cuaSnapshot(tree)]);
+    guard.recordResults([click(402, 298)]);
+    guard.recordResults([cuaSnapshot(tree)]);
+    expect(guard.recordResults([click(399, 303)]).signals).toEqual(['screen_click_no_effect']);
+    guard.recordResults([cuaSnapshot(tree)]);
+    const again = guard.recordResults([click(401, 301)]);
+    expect(again.signals).toEqual([]);
+    expect(again.nudge).toBeUndefined();
+  });
+
+  it('(g) resetAfterHandback clears the cua click tracker and the fingerprints', () => {
+    const guard = new DoomLoopGuard();
+    const tree = calcTree('7');
+    guard.recordResults([cuaSnapshot(tree)]);
+    guard.recordResults([click(400, 300)]);
+    guard.recordResults([cuaSnapshot(tree)]);
+    expect(guard.recordResults([click(402, 298)]).signals).toEqual([]); // streak 2
+    guard.resetAfterHandback();
+    // 未清空的话，下一次计数点击就是第 3 连击；清空后要重新数满 3 次
+    guard.recordResults([cuaSnapshot(tree)]);
+    expect(guard.recordResults([click(399, 303)]).signals).toEqual([]); // streak 1
+    guard.recordResults([cuaSnapshot(tree)]);
+    expect(guard.recordResults([click(401, 301)]).signals).toEqual([]); // streak 2
+    guard.recordResults([cuaSnapshot(tree)]);
+    expect(guard.recordResults([click(400, 300)]).signals).toEqual(['screen_click_no_effect']);
+  });
+
+  it('counts only successful finite x/y cua-driver clicks (element_index / failures / foreign tools excluded)', () => {
+    const tree = calcTree('7');
+    const byIndex = {
+      name: `${CUA}click`,
+      arguments: { pid: 4321, window_id: 7, element_index: 5 },
+      success: true,
+      summary: 'clicked element 5',
+    };
+    const byIndexGuard = new DoomLoopGuard();
+    for (let i = 0; i < 4; i++) {
+      byIndexGuard.recordResults([cuaSnapshot(tree)]);
+      expect(byIndexGuard.recordResults([byIndex]).signals).toEqual([]);
+    }
+
+    const failedGuard = new DoomLoopGuard();
+    for (let i = 0; i < 4; i++) {
+      failedGuard.recordResults([cuaSnapshot(tree)]);
+      expect(failedGuard.recordResults([{ ...click(400, 300), success: false }]).signals).toEqual([]);
+    }
+
+    const foreignGuard = new DoomLoopGuard();
+    for (let i = 0; i < 4; i++) {
+      foreignGuard.recordResults([{ ...cuaSnapshot(tree), name: 'get_window_state' }]);
+      expect(foreignGuard.recordResults([{
+        name: 'click',
+        arguments: { pid: 4321, window_id: 7, x: 400, y: 300 },
+        success: true,
+        summary: 'clicked',
+      }]).signals).toEqual([]);
+    }
+
+    const nonFiniteGuard = new DoomLoopGuard();
+    for (const args of [{ x: '400', y: 300 }, { x: 400, y: Number.NaN }, { x: Number.POSITIVE_INFINITY, y: 300 }]) {
+      nonFiniteGuard.recordResults([cuaSnapshot(tree)]);
+      expect(nonFiniteGuard.recordResults([{
+        name: `${CUA}click`,
+        arguments: { pid: 4321, window_id: 7, ...args },
+        success: true,
+        summary: 'clicked',
+      }]).signals).toEqual([]);
+    }
   });
 });

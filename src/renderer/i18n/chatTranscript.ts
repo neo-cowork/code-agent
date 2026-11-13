@@ -1,16 +1,10 @@
-// ============================================================================
-// Chat 转录域词条（ChatSearchBar / TurnBasedTraceView / ToolStepGroup /
-// statusLabels / TurnDiffSummary / 相对时间）—— zh/en 同文件相邻维护。
-// 拆出独立文件是为了让 zh.ts/en.ts 不撞 max-lines 棘轮（同 sessionReplay.ts 先例）。
-// ============================================================================
-
 import { turnDiffEn, turnDiffZh } from './turnDiff';
 import { turnCheckoutChatEn, turnCheckoutChatZh } from './turnCheckout';
 import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 import { toolStepVerbsEn, toolStepVerbsZh } from './toolStepVerbs';
 import { turnRailEn, turnRailZh } from './turnRail';
-import { toolErrorCodesEn, toolErrorCodesZh } from './toolErrorCodes';
-
+import { projectTrustTurnCardEn, projectTrustTurnCardZh, projectTrustTurnRunEn, projectTrustTurnRunZh } from './projectTrust';
+import { chatErrorCopyEn, chatErrorCopyZh } from './chatErrorCopy';
 export const chatTranscriptZh = {
   ...turnRailZh,
 chat: {
@@ -21,17 +15,25 @@ chat: {
   // 编队信号（等子任务）：无数字版——单个子任务或计数不可用时用
   waitingSubagent: '代理工作中',
   // 编队信号带真实并发数版，{count} 来自当前回合仍在运行的子任务工具调用数
-  waitingSubagentFleet: '{count} 个代理并行中',
+  waitingSubagentFleet: { one: '{count} 个代理并行中', other: '{count} 个代理并行中' },
   activityIdle: '正在整理任务…',
   delegationReceipt: {
+    failureDetail: '{status}：{reason}',
+    headlines: { working: '代理工作中{name}', completed: `${outcomeWordsZh.outcomeWords.completed.timeline.label}{name}`, failed: `${outcomeWordsZh.outcomeWords['failed-unknown'].timeline.label}{name}` },
     working: '代理工作中',
     completed: outcomeWordsZh.outcomeWords.completed.timeline.label,
     failed: outcomeWordsZh.outcomeWords['failed-unknown'].timeline.label,
     dispatched: '已派出',
     steps: '做了 {count} 步',
     output: '产出',
+    mergeBranch: '改动在分支 {branch}，合并后才会生效',
+    viewTargetSession: '查看目标会话',
   },
   taskNotificationWithLog: '{message}。可在任务面板查看日志。',
+  taskTimeoutNotice: '后台任务运行超过 {minutes} 分钟，已被停止。',
+  taskTimeoutRerun: '重新运行',
+  taskTimeoutRerunPrompt: '刚才那个因运行太久被停止的后台任务，请帮我在后台重新运行一次。',
+  taskTimeoutRerunWrongSession: '请回到原来的会话再点重新运行。',
   // 巡航信号（长任务 ≥45s）：{elapsed} 为 mm:ss 秒表，中性陈述「一切正常」
   longToolCruise: '深空巡航中 · 已航行 {elapsed} · 链路正常',
   // 巡航信号旁的强制停止按钮
@@ -39,8 +41,8 @@ chat: {
   sendingMessage: '正在发送消息…', queuedStarting: '已排队，正在启动…', preparingReply: '正在准备…', organizingStreamingReply: '正在整理回复…',
   organizingReply: '正在组织回答…',
   thinkingDigest: '思考',
-  thinkingSegments: ' · {count} 段',
-  thinkingDurationSeconds: '{seconds}s', thinkingActiveWithDuration: '正在思考… · {duration}', thinkingDigestWithDuration: '思考 {duration} · {count} 段',
+  thinkingSegments: { one: ' · {count} 段', other: ' · {count} 段' },
+  thinkingDurationSeconds: '{seconds}s', thinkingActiveWithDuration: '正在思考… · {duration}', thinkingDigestWithDuration: { one: '思考 {duration} · {count} 段', other: '思考 {duration} · {count} 段' },
   expandThinking: '展开思考',
   collapseThinking: '收起思考',
   unknownTool: '未知工具',
@@ -74,6 +76,8 @@ chat: {
   continueInterrupted: '继续',
   durableGuardContinueTitle: '继续这个被拦下的任务？',
   durableGuardContinueMessage: '上次对外部系统的操作可能已经执行，继续可能重复执行。确认外部系统的状态后再继续。',
+  durableStoppedNotice: '任务已停止 · 可以继续，或就此放弃', durableAbandon: '放弃',
+  durableAbandonTitle: '放弃这个已停止的任务？', durableAbandonMessage: '放弃后这次任务会就此终止，之后无法再继续。',
   abandonInterrupted: '放弃', abandonInterruptedFailed: '放弃失败：那次中断的任务还没停下来，请重试。',
   quotaWaitUntil: '额度限流，预计 {when} 继续',
   quotaWaitDue: '已到点，点继续',
@@ -82,6 +86,10 @@ chat: {
   welcomeSubtitle: '选一个示例，或者直接输入你想完成的事。',
   resumedEmptyTitle: '继续上次的会话：{title}',
   resumedEmptySubtitle: '{time} · 这条会话还没有内容。在这里发消息会接着它继续；想从头开始请点「新任务」。',
+  // 专家（角色绑定）会话的空态副标题：专家主 thread 的标题就是角色名，「继续上次的
+  // 会话」+「这条会话还没有内容」对刚建好的专家 thread 自相矛盾——专家空态只说现在
+  // 该做什么，标题即专家名（N-ROLE-EMPTY-SESSION-WELCOME-COPY）。
+  expertEmptySubtitle: '还没有对话。直接告诉它你想让它做什么。',
   blankSession: '空白会话',
   projectSession: '项目会话 · {name}',
   inheritedWorkspace: '继承工作区：{path}',
@@ -195,7 +203,6 @@ forkLineage: {
     importFailed: '便携导入失败',
   },
 },
-
 // 相对时间（utils/i18nTime.ts）
 time: {
   justNow: '刚刚',
@@ -204,7 +211,6 @@ time: {
   daysAgo: '{n}天前',
   monthsAgo: '{n}个月前',
 },
-
 // 转录滚动视图（TurnBasedTraceView）
 traceView: {
   loadingOlder: '加载更早的消息…',
@@ -214,7 +220,6 @@ traceView: {
   renderFailedTitle: '这个会话的消息暂时显示不出来',
   renderFailedHint: '其他会话不受影响，可以先切到别的会话继续；切回来会自动重试。',
 },
-
 // 工具步骤组（ToolStepGroup）
 toolGroup: {
   statusRunning: '运行中',
@@ -233,7 +238,6 @@ toolGroup: {
   // 现在只剩轮级和组级两层，各自都带说明。
   durationTitle: '这几步用时',
 },
-
 // 工具步骤人话化（humanizeToolStep.ts）——把工具名+参数合成一句中文步骤文案，
 // 消费方 ToolStepGroup 的步骤行；原工具名/参数仍在展开详情（ToolHeader/ToolDetails）里，不删信息。
 toolStepHumanize: {
@@ -265,6 +269,8 @@ toolStepHumanize: {
   subagentMessage: '给代理发了条消息',
   agentConversation: '正在跟 {name} 说话',
   agentConversationFallback: '正在跟代理说话',
+  delegateSession: { target: '「{target}」', targetFallback: '另一个对话', delegate_existing: '已把任务交给{target}', create_new: '已新建对话{target}并交给它', correct: '已调整对{target}的委托', stop: '已停止对{target}的委托', resume: '已恢复对{target}的委托', unknown: '处理了一项跨对话委托', reused: '已送达过，未重复发送' },
+  listSessionCandidates: '已查找可委托的对话',
   delegateTask: '派出后台任务：{description}',
   delegateTaskFallback: '派出后台任务',
   taskStatus: '查看后台任务进度',
@@ -301,7 +307,6 @@ toolStepHumanize: {
     used: '执行了 {count} 个步骤',
   },
 },
-
 // 单工具状态词表（statusLabels.ts 整表）
 toolStatus: {
   default: { preparing: '准备中…', running: '执行中…' },
@@ -343,7 +348,6 @@ toolStatus: {
     findings_write: { preparing: '记录发现…', running: '写入发现…' },
   },
 },
-
 messageKeepHide: {
   menuLabel: '这条消息的上下文',
   pin: '记住这条，压缩时别丢',
@@ -353,13 +357,14 @@ messageKeepHide: {
   pinnedBadge: '已记住',
   excludedBadge: 'AI 看不到这条',
 },
-
 // 回合级文件变更卡（TurnDiffSummary）
 turnCard: {
   workedFor: '用时 {duration}',
   collapseTurn: '折叠本轮',
   expandTurn: '展开本轮',
   sendFailed: '没发出去',
+  ...projectTrustTurnCardZh,
+  recoveredFromRecord: '这条消息由运行记录还原，可能和你的原话略有出入',
   editAndResend: '编辑重发',
   fork: '创建分支',
   forking: '创建中…',
@@ -378,7 +383,6 @@ turnFeedback: {
   problem: '这一轮回答有问题',
 },
 turnDiff: turnDiffZh,
-
 // 会话里那行 Hooks：只说「哪个时机、是哪几个 hook、放行还是拦下」。
 // hook 的输出内容不在这里显示（契约层已无该字段）——它是任意文本，曾把整份记忆索引原文漏给用户。
 turnHooks: {
@@ -398,7 +402,6 @@ turnHooks: {
   sourceGlobal: '你的全局设置',
   sourceProject: '这个项目',
 },
-
 // 路由异常卡（TraceNodeRenderer 的 RoutingEvidenceNode）——只在路由 warning/error 时
 // 铺进主对话流；正常路由每轮内容一样，不渲染。
 turnRouting: {
@@ -415,7 +418,6 @@ turnRouting: {
   statusStarted: '已启动',
   statusFallback: '已回落',
 },
-
 // 回合运行状态（TurnCard 顶部状态条 + 流式状态横幅）——两处消费同一套键，别建两套
 turnRun: {
   status: {
@@ -438,56 +440,9 @@ turnRun: {
   cleanupBadge: '清理中',
   outputsSignal: '{count} 个产出',
   toolsSignal: '{count} 次工具调用',
+  ...projectTrustTurnRunZh,
 },
-
-// 系统错误节点兜底文案（TraceNodeRenderer 的 node.subtype === 'error'）——
-// 分类错误走 humanizeToolError 已有文案，这里只兜分不出类别的情况 + 折叠按钮。
-systemError: {
-  fallbackSummary: '执行时出了问题',
-  fallbackDetail: '可以重试一次，或换个说法再试试。',
-  viewDetails: '查看详情',
-  hideDetails: '收起',
-},
-
-// 工具报错人话化（toolExecutionPresentation.ts 的 humanizeToolError，7 类）——
-// 判别顺序有意为之，额度/余额排最前，避免上游把额度错误裹成 401 被误判成鉴权。
-toolErrors: {
-  quota: {
-    summary: '额度/余额不足：当前服务的用量或余额已耗尽',
-    detail: '请充值，或在设置里换一个还有额度的 key。',
-    sourcesSummary: '联网搜索额度不足：{sources} 的 API 套餐用量已耗尽',
-    sourcesDetail: '要恢复这些源请充值，或换一个还有额度的 key。',
-  },
-  rateLimit: {
-    summary: '请求过于频繁，被限流',
-    detail: '稍等片刻会自动重试；如持续可降低并发或稍后再试。',
-  },
-  auth: {
-    summary: '鉴权失败：API Key 无效或无权限',
-    detail: '去「设置 > Service API Keys」检查对应服务的 Key。',
-  },
-  overloaded: {
-    summary: '服务过载或暂时不可用',
-    detail: '稍后会自动重试。',
-  },
-  timeout: {
-    summary: '请求超时',
-    detail: '稍后重试，或检查网络 / 代理。',
-  },
-  network: {
-    summary: '网络异常，连接失败',
-    detail: '检查网络或代理后重试。',
-  },
-  autoLoaded: {
-    summary: '工具已自动加载，正在用正确参数重试',
-  },
-  artifactValidation: {
-    detail: '文件变更已落盘，但验收没有通过。',
-  },
-  // 未登记 code / 没有 metadata 的错误仍走正则兜底；分不出类别的由调用方展示原始报错。
-  codes: toolErrorCodesZh,
-},
-
+...chatErrorCopyZh,
 // 实时预览诊断条（LivePreviewFrame）——frameError 原文 + CSP snippet 折叠在
 // systemError 的查看详情/收起键后面，这里只放固定的人话摘要+建议。
 livePreview: {
@@ -505,6 +460,30 @@ livePreview: {
 turnSections: { outputs: '产物', sources: '来源', executed: '操作记录', skills: '技能' },
 // 分叉子会话首段用户输入上方的轻量来源提示（取代原顶部分支导航栏）。
 forkSourceHint: { source: '由此分支 · {parentTitle}', imported: '续接自 {source} 导入的对话 · {parentTitle}', originalChat: '原对话' },
+
+// 定时任务运行记录会话（origin cron/heartbeat）：首气泡上方的来源小标 + 气泡下方的
+// 状态行（N-UI-CRON-RUN-RECORD-CLEAR）。四种状态一眼可分：运行中（呼吸点+流逝时间）、
+// 等批准（带批准/拒绝）、已中断（带再跑一次）、已完成（带用时）。
+cronRunRecord: {
+  kindLabel: '定时任务自动运行',
+  running: '正在运行 · 已 {elapsed}',
+  elapsedHm: '{h} 时 {m} 分',
+  elapsedMs: '{m} 分 {s} 秒',
+  elapsedS: '{s} 秒',
+  awaiting: '等你批准',
+  awaitingBashPrefix: '运行 ',
+  approve: '批准',
+  reject: '拒绝',
+  approvalStale: '这条批准已经失效（发起它的运行已结束），已标记过期',
+  approvalFailed: '操作没有生效，请重试',
+  interrupted: `${outcomeWordsZh.outcomeWords['interrupted-restart'].timeline.label}，没有结果`,
+  failedDenied: '没跑成：命令被拒绝',
+  failedGeneric: '没跑成',
+  cancelled: outcomeWordsZh.outcomeWords['cancelled-by-user'].timeline.label,
+  rerun: '再跑一次',
+  rerunFailed: '没能重新运行，请稍后再试',
+  finished: '已完成 · 用时 {duration}',
+},
 
 // 工具调用展示（LiveToolOutput / ToolDetails / ToolResultMediaDisplays / CodeBlock / AbilityMenu）的零碎 UI 文案。
 toolDisplay: {
@@ -532,17 +511,25 @@ chat: {
   // Fleet signal (waiting on subtasks): no-count version — single subtask or count unavailable
   waitingSubagent: 'Agent working',
   // Fleet signal with the real concurrency count; {count} comes from the turn's still-running subtask tool calls
-  waitingSubagentFleet: '{count} agents working in parallel',
+  waitingSubagentFleet: { one: '{count} agent working in parallel', other: '{count} agents working in parallel' },
   activityIdle: 'Organizing the task…',
   delegationReceipt: {
+    failureDetail: '{status}: {reason}',
+    headlines: { working: '{name} is working', completed: '{name} finished', failed: "{name} didn't finish" },
     working: 'Agent working',
     completed: 'Completed',
     failed: 'Not completed',
     dispatched: 'Dispatched',
     steps: 'Completed {count} steps',
     output: 'Output',
+    mergeBranch: 'Changes are on branch {branch}; merge it to apply them',
+    viewTargetSession: 'View target chat',
   },
   taskNotificationWithLog: '{message}. View logs in the task panel.',
+  taskTimeoutNotice: 'Background task ran over {minutes} minutes and was stopped.',
+  taskTimeoutRerun: 'Re-run',
+  taskTimeoutRerunPrompt: 'The background task that was just stopped for running too long: please run it again in the background.',
+  taskTimeoutRerunWrongSession: 'Go back to the original conversation and click Re-run again.',
   // Cruise signal (long-running tool ≥45s): {elapsed} is the mm:ss stopwatch, a neutral "all is well" statement
   longToolCruise: 'Deep-space cruise · {elapsed} elapsed · link nominal',
   // Force-stop button next to the cruise signal
@@ -550,8 +537,8 @@ chat: {
   sendingMessage: 'Sending message…', queuedStarting: 'Queued, starting…', preparingReply: 'Preparing…', organizingStreamingReply: 'Organizing the reply…',
   organizingReply: 'Organizing the reply…',
   thinkingDigest: 'Thinking',
-  thinkingSegments: ' · {count} segments',
-  thinkingDurationSeconds: '{seconds}s', thinkingActiveWithDuration: 'Thinking… · {duration}', thinkingDigestWithDuration: 'Thought for {duration} · {count} segments',
+  thinkingSegments: { one: ' · {count} segment', other: ' · {count} segments' },
+  thinkingDurationSeconds: '{seconds}s', thinkingActiveWithDuration: 'Thinking… · {duration}', thinkingDigestWithDuration: { one: 'Thought for {duration} · {count} segment', other: 'Thought for {duration} · {count} segments' },
   expandThinking: 'Expand thinking',
   collapseThinking: 'Collapse thinking',
   unknownTool: 'Unknown tool',
@@ -585,6 +572,8 @@ chat: {
   continueInterrupted: 'Continue',
   durableGuardContinueTitle: 'Continue this halted task?',
   durableGuardContinueMessage: 'The last operation on an external system may have already run; continuing may run it again. Check the external system before you continue.',
+  durableStoppedNotice: 'This task is stopped · continue it, or abandon it for good', durableAbandon: 'Abandon',
+  durableAbandonTitle: 'Abandon this stopped task?', durableAbandonMessage: 'Abandoning ends this task for good; it cannot be continued afterwards.',
   abandonInterrupted: 'Abandon', abandonInterruptedFailed: 'Failed to abandon: that interrupted task is still running. Please try again.',
   quotaWaitUntil: 'Quota limit reached. Continuing at {when}',
   quotaWaitDue: 'The wait is over. Continue to resume',
@@ -593,6 +582,10 @@ chat: {
   welcomeSubtitle: 'Pick an example, or just type what you want to do.',
   resumedEmptyTitle: 'Picking up your last session: {title}',
   resumedEmptySubtitle: '{time} · This session has no content yet. Sending here continues it — click “New task” to start fresh.',
+  // Expert (role-bound) session empty state: the expert main thread is titled with the
+  // role name, so "Picking up your last session" + "no content yet" contradicts itself
+  // on a just-created expert thread — say what to do now instead (title = expert name).
+  expertEmptySubtitle: 'No messages yet. Tell it what you want it to do.',
   blankSession: 'Blank session',
   projectSession: 'Project session · {name}',
   inheritedWorkspace: 'Inherited workspace: {path}',
@@ -776,6 +769,8 @@ toolStepHumanize: {
   subagentMessage: 'Sent a message to an agent',
   agentConversation: 'Talking to {name}',
   agentConversationFallback: 'Talking to an agent',
+  delegateSession: { target: '“{target}”', targetFallback: 'another conversation', delegate_existing: 'Sent the task to {target}', create_new: 'Created conversation {target} and sent it the task', correct: 'Adjusted the delegation to {target}', stop: 'Stopped the delegation to {target}', resume: 'Resumed the delegation to {target}', unknown: 'Handled a cross-conversation delegation', reused: 'Already delivered; not sent again' },
+  listSessionCandidates: 'Found conversations for delegation',
   delegateTask: 'Started background task: {description}',
   delegateTaskFallback: 'Started a background task',
   taskStatus: 'Checked background task progress',
@@ -870,6 +865,8 @@ turnCard: {
   collapseTurn: 'Collapse this turn',
   expandTurn: 'Expand this turn',
   sendFailed: 'Not sent',
+  ...projectTrustTurnCardEn,
+  recoveredFromRecord: 'Restored from the run history; it may differ slightly from what you wrote',
   editAndResend: 'Edit and resend',
   fork: 'Fork',
   forking: 'Forking…',
@@ -947,58 +944,10 @@ turnRun: {
   cleanupBadge: 'cleanup',
   outputsSignal: '{count} outputs',
   toolsSignal: '{count} tool calls',
+  ...projectTrustTurnRunEn,
 },
 
-// System error node fallback copy (TraceNodeRenderer node.subtype === 'error') —
-// classified errors use humanizeToolError's existing copy; this only covers
-// the unclassified fallback + the collapse toggle.
-systemError: {
-  fallbackSummary: 'Something went wrong while running this',
-  fallbackDetail: 'Try again, or rephrase your request.',
-  viewDetails: 'View details',
-  hideDetails: 'Hide',
-},
-
-// Tool error humanization (toolExecutionPresentation.ts's humanizeToolError, 7 kinds) —
-// order is intentional: quota/balance is checked first since upstream often wraps quota
-// errors as HTTP 401, which would otherwise be misread as an auth failure.
-toolErrors: {
-  quota: {
-    summary: 'Quota or balance exhausted for this service',
-    detail: 'Top up, or switch to a key with remaining quota in settings.',
-    sourcesSummary: 'Search quota exhausted: usage for {sources} is used up',
-    sourcesDetail: 'Top up these sources, or switch to a key with remaining quota.',
-  },
-  rateLimit: {
-    summary: 'Rate limited: too many requests',
-    detail: 'This will retry automatically shortly; lower concurrency or try again later if it persists.',
-  },
-  auth: {
-    summary: 'Authentication failed: invalid API key or no permission',
-    detail: 'Check the key for this service under Settings > Service API Keys.',
-  },
-  overloaded: {
-    summary: 'Service overloaded or temporarily unavailable',
-    detail: 'This will retry automatically shortly.',
-  },
-  timeout: {
-    summary: 'Request timed out',
-    detail: 'Retry later, or check your network / proxy.',
-  },
-  network: {
-    summary: 'Network error: connection failed',
-    detail: 'Check your network or proxy, then retry.',
-  },
-  autoLoaded: {
-    summary: 'Tool was auto-loaded and is retrying with the correct arguments',
-  },
-  artifactValidation: {
-    detail: 'The file change was written, but validation did not pass.',
-  },
-  // Unregistered codes and missing metadata still fall through to the regex path.
-  codes: toolErrorCodesEn,
-},
-
+...chatErrorCopyEn,
 // Live preview diagnostic strip (LivePreviewFrame) — frameError text + CSP
 // snippet collapse behind systemError's view/hide keys; this only holds the
 // fixed human summary + suggestion.
@@ -1015,6 +964,31 @@ livePreview: {
 // Turn timeline section titles (TraceNodeRenderer's ArtifactOwnershipNode / SkillActivityNode).
 turnSections: { outputs: 'Outputs', sources: 'Sources', executed: 'Activity', skills: 'Skills' },
 forkSourceHint: { source: 'Branched from · {parentTitle}', imported: 'Continued from a chat imported from {source} · {parentTitle}', originalChat: 'the original chat' },
+
+// Scheduled-run record session (origin cron/heartbeat): the small muted origin
+// label above the first bubble + the status line under it. Four visually
+// distinct states: running (pulsing dot + elapsed), awaiting approval (with
+// approve/reject), interrupted (with run-again), finished (with duration).
+cronRunRecord: {
+  kindLabel: 'Ran automatically by a scheduled task',
+  running: 'Running · {elapsed} elapsed',
+  elapsedHm: '{h}h {m}m',
+  elapsedMs: '{m}m {s}s',
+  elapsedS: '{s}s',
+  awaiting: 'Needs your approval',
+  awaitingBashPrefix: 'Run ',
+  approve: 'Approve',
+  reject: 'Reject',
+  approvalStale: 'This approval is stale (its run has ended) and was marked expired',
+  approvalFailed: 'That did not go through — please retry',
+  interrupted: `${outcomeWordsEn.outcomeWords['interrupted-restart'].timeline.label} — no result`,
+  failedDenied: "Didn't run: command was denied",
+  failedGeneric: "Didn't finish",
+  cancelled: outcomeWordsEn.outcomeWords['cancelled-by-user'].timeline.label,
+  rerun: 'Run again',
+  rerunFailed: 'Could not start another run — try again later',
+  finished: 'Finished · took {duration}',
+},
 
 toolDisplay: {
   liveOutput: 'Live output',

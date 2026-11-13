@@ -14,7 +14,7 @@
 //     profile.json = { "knobs": { <HARNESS_KNOB_DEFAULTS 的键>: number } }，由 harness-profile.ts emit 生成；
 //     不带 --profile = 生产默认，run 记录里 harness.knobs 仍写全表（取证用）。
 //                                        [--reps 3] [--provider longcat] [--model LongCat-2.0-Preview]
-//                                        [--limit N] [--cases <path>]
+//                                        [--limit N] [--cases <path>] [--timeout-ms N] [--max-tokens N]
 //   npx tsx scripts/rsi-pilot/runner.ts --revalidate <resultsDir> [--cases <path>]
 //     Re-runs OFFLINE full-contract validation + classification against the
 //     artifacts a prior run already produced (zero LLM cost — no agent is
@@ -32,7 +32,7 @@
 // ESM would hoist and evaluate before the assignment runs.
 
 import fs from 'fs/promises';
-import os from 'os';
+import { assertIsolatedVerificationDir, isolatedVerificationEnv } from '../lib/verificationIsolation.ts';
 import path from 'path';
 import crypto from 'crypto';
 import { execFile } from 'child_process';
@@ -49,9 +49,11 @@ import {
   parseArgs,
   requireStringOption,
 } from '../acceptance/_helpers.ts';
+import { resolveUnitBudget, type UnitBudget } from './modelBudget.ts';
 
-if (!process.env.CODE_AGENT_DATA_DIR) {
-  process.env.CODE_AGENT_DATA_DIR = path.join(os.homedir(), '.code-agent-dev');
+if (!process.argv.includes('--dry-run') && !process.argv.includes('--revalidate')) {
+  process.env.CODE_AGENT_DATA_DIR = assertIsolatedVerificationDir(process.env.CODE_AGENT_DATA_DIR);
+  Object.assign(process.env, isolatedVerificationEnv(process.env.CODE_AGENT_DATA_DIR));
 }
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -78,10 +80,6 @@ const DEFAULT_PROVIDER = 'longcat';
 // 见 N-EVAL-HELDOUT-STRUCTURAL-R3 证据档）。07-04 试点跑的是哪个 id 无运行记录可证——
 // 这正是本文件后来补 provenance 字段的起因（N-EVALRUN-PROVENANCE）。
 const DEFAULT_MODEL = 'LongCat-2.0';
-// Per-run hard timeout — matches BASH.MAX_TIMEOUT (src/shared/constants/tools.ts),
-// the repo's existing "10 minutes" constant; this harness lives outside src/ so
-// it is not required to import it, but the value is intentionally the same one.
-const PER_RUN_HARD_TIMEOUT_MS = 600_000;
 
 type GameSubtype = 'platformer' | 'runner' | 'breakout';
 type Split = 'held_in' | 'held_out';
@@ -135,6 +133,7 @@ interface RunHarnessStamp {
   profile: string | null;
   /** 本 run 生效的旋钮全表（无 profile 时 = HARNESS_KNOB_DEFAULTS 原样） */
   knobs: Record<string, number>;
+  budget: UnitBudget;
 }
 
 interface RunRecord {
@@ -155,7 +154,7 @@ interface RunRecord {
   artifactPath: string | null;
   error: string | null;
   repairRoundsUsed: number | null;
-  /** True iff this unit hit PER_RUN_HARD_TIMEOUT_MS. 超时后 runner 会调 adapter.cancelActiveRun() 真的掐掉 loop（N-EVAL-L3-HARNESS 加的取消通道）。 */
+  /** True iff this unit hit its budget timeout（modelBudget.ts；FU2 起按模型可不同）。超时后 runner 会调 adapter.cancelActiveRun() 真的掐掉 loop（N-EVAL-L3-HARNESS 加的取消通道）。 */
   timedOut?: true;
   /**
    * 仅当超时且 cancelActiveRun 不可用或抛错时为 true：底层模型/工具调用可能仍在后台跑，
@@ -182,7 +181,7 @@ type RevalidatedRunRecord = RunRecord & {
 export interface RunnerContext {
   StandaloneAgentAdapter: new (config: {
     workingDirectory: string;
-    modelConfig: { provider: string; model: string; apiKey?: string; baseUrl?: string };
+    modelConfig: { provider: string; model: string; apiKey?: string; baseUrl?: string; maxTokens?: number };
     toolMode: 'all' | 'deferred';
     harness?: { name: string; knobs: Record<string, number> };
   }) => {
@@ -287,6 +286,22 @@ function classifyFailures(
     }
   }
   return [...codes];
+}
+
+async function validateLocatedArtifact(
+  ctx: RunnerContext,
+  artifactPath: string,
+): Promise<Pick<RunRecord, 'passedFull' | 'failuresRaw' | 'codes'>> {
+  const validation = await ctx.validateGameArtifact(
+    artifactPath,
+    buildFullContractValidationOptions(ctx.gameValidationTimeouts),
+  );
+  const failuresRaw = collectFailureStrings(validation);
+  return {
+    passedFull: validation.passed,
+    failuresRaw,
+    codes: classifyFailures(failuresRaw, ctx.inferArtifactRepairIssueCodesFromText),
+  };
 }
 
 async function fileExists(candidate: string): Promise<boolean> {
@@ -409,11 +424,21 @@ async function resolveProvenance(provider: string, model: string): Promise<EvalR
   return { provider, model, endpoint, gitSha, gitDirty: dirty, runnerSha };
 }
 
+// Never throws: null when there is no session / no data. Shared by the success and catch paths so timed-out and errored units keep their spend.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function readTokenUsage(ctx: RunnerContext, agent: any): TokenUsage | null {
+  try {
+    const sessionId = agent?.getSessionId?.();
+    const d = sessionId ? ctx.getTelemetryCollector().getSessionData(sessionId) : null;
+    return d ? { inputTokens: d.totalInputTokens, outputTokens: d.totalOutputTokens, totalTokens: d.totalTokens, estimatedCost: d.estimatedCost } : null;
+  } catch { return null; }
+}
+
 async function runOneUnit(
   ctx: RunnerContext,
   evalCase: EvalCase,
   rep: number,
-  opts: Pick<CliOpts, 'label' | 'provider' | 'model' | 'outDir' | 'knobs' | 'profilePath'>,
+  opts: Pick<CliOpts, 'label' | 'provider' | 'model' | 'outDir' | 'knobs' | 'profilePath' | 'timeoutMs' | 'maxTokens'>,
 ): Promise<RunRecord> {
   const startedAtMs = Date.now();
   const startedAt = new Date(startedAtMs).toISOString();
@@ -422,9 +447,11 @@ async function runOneUnit(
   await fs.mkdir(workspaceDir, { recursive: true });
 
   const provenance = await resolveProvenance(opts.provider, opts.model);
+  const budget = resolveUnitBudget(opts.provider, opts.model, { timeoutMs: opts.timeoutMs, maxTokens: opts.maxTokens });
   const harness: RunHarnessStamp = {
     profile: opts.profilePath ?? null,
     knobs: { ...ctx.HARNESS_KNOB_DEFAULTS, ...(opts.knobs ?? {}) },
+    budget,
   };
   const base = {
     provenance,
@@ -443,13 +470,13 @@ async function runOneUnit(
   // Hoisted above try/catch (not declared inline in the try block) so the
   // catch clause can identify a timeout by reference equality against the
   // exact Error instance the race rejected with — see the isTimeout check below.
-  const timeoutError = new Error(`per-run hard timeout after ${PER_RUN_HARD_TIMEOUT_MS}ms`);
+  const timeoutError = new Error(`per-run hard timeout after ${budget.timeoutMs}ms`);
   try {
     await ctx.ensureEvalDatabase();
     const apiKey = await resolveApiKey(opts.provider);
     agent = new ctx.StandaloneAgentAdapter({
       workingDirectory: workspaceDir,
-      modelConfig: { provider: opts.provider, model: opts.model, apiKey, baseUrl: await resolveConfiguredBaseUrl(opts.provider) },
+      modelConfig: { provider: opts.provider, model: opts.model, apiKey, baseUrl: await resolveConfiguredBaseUrl(opts.provider), ...(budget.maxTokens !== null ? { maxTokens: budget.maxTokens } : {}) },
       toolMode: 'deferred',
       ...(opts.knobs ? { harness: { name: opts.label, knobs: opts.knobs } } : {}),
     });
@@ -457,49 +484,23 @@ async function runOneUnit(
     const result = await Promise.race([
       agent.sendMessage(evalCase.prompt),
       new Promise<never>((_, reject) => {
-        timeoutHandle = setTimeout(() => reject(timeoutError), PER_RUN_HARD_TIMEOUT_MS);
+        timeoutHandle = setTimeout(() => reject(timeoutError), budget.timeoutMs);
       }),
     ]);
 
     // Must read telemetry BEFORE finalizeSession() (called in `finally`) —
     // endSession() nulls out the collector's activeSession.
-    let tokenUsage: TokenUsage | null = null;
-    const sessionId = agent.getSessionId();
-    if (sessionId) {
-      const sessionData = ctx.getTelemetryCollector().getSessionData(sessionId);
-      if (sessionData) {
-        tokenUsage = {
-          inputTokens: sessionData.totalInputTokens,
-          outputTokens: sessionData.totalOutputTokens,
-          totalTokens: sessionData.totalTokens,
-          estimatedCost: sessionData.estimatedCost,
-        };
-      }
-    }
+    const tokenUsage = readTokenUsage(ctx, agent);
 
     const artifactPath = await locateArtifact(workspaceDir, evalCase.prompt);
-    let passedFull: boolean;
-    let failuresRaw: string[];
-    let codes: string[];
-
-    if (!artifactPath) {
-      passedFull = false;
-      failuresRaw = ['No HTML artifact found in workspace after generation.'];
-      codes = ['artifact_missing'];
-    } else {
-      const validation = await ctx.validateGameArtifact(
-        artifactPath,
-        buildFullContractValidationOptions(ctx.gameValidationTimeouts),
-      );
-      passedFull = validation.passed;
-      failuresRaw = collectFailureStrings(validation);
-      codes = classifyFailures(failuresRaw, ctx.inferArtifactRepairIssueCodesFromText);
-    }
+    const artifactValidation = artifactPath
+      ? await validateLocatedArtifact(ctx, artifactPath)
+      : { passedFull: false, failuresRaw: ['No HTML artifact found in workspace after generation.'], codes: ['artifact_missing'] };
 
     return {
       ...base,
       durationMs: Date.now() - startedAtMs,
-      passedFull,
+      passedFull: artifactValidation.passedFull,
       // Not observable through StandaloneAgentAdapter's public sendMessage()
       // surface: light-contract validation runs inside AgentLoop via
       // handleModifiedArtifactValidation (toolArtifactValidationLifecycle.ts),
@@ -508,8 +509,8 @@ async function runOneUnit(
       // (agentAdapter.ts) does not forward into its return value; it only
       // handles 'message' | 'tool_call_start' | 'tool_call_end' | 'error'.
       passedLight: null,
-      failuresRaw,
-      codes,
+      failuresRaw: artifactValidation.failuresRaw,
+      codes: artifactValidation.codes,
       // Same reason as passedLight: the in-loop repair-attempt counter
       // (ARTIFACT_REPAIR_MAX_ATTEMPTS accounting) is only surfaced as
       // progress text, not through a typed event this adapter exposes.
@@ -533,21 +534,35 @@ async function runOneUnit(
         abandonedInflight = true;
       }
     }
+    const timeoutArtifact: Pick<RunRecord, 'artifactPath' | 'passedFull' | 'failuresRaw' | 'codes'> = {
+      artifactPath: null,
+      passedFull: null,
+      failuresRaw: [],
+      codes: [],
+    };
+    if (isTimeout && !abandonedInflight) {
+      try {
+        timeoutArtifact.artifactPath = await locateArtifact(workspaceDir, evalCase.prompt);
+        if (timeoutArtifact.artifactPath) {
+          Object.assign(timeoutArtifact, await validateLocatedArtifact(ctx, timeoutArtifact.artifactPath));
+        }
+      } catch { /* preserve the timeout record when locate/validation fails */ }
+    }
     return {
       ...base,
       durationMs: Date.now() - startedAtMs,
-      passedFull: null,
+      passedFull: timeoutArtifact.passedFull,
       passedLight: null,
-      failuresRaw: [],
-      codes: [],
-      tokenUsage: null,
-      artifactPath: null,
+      failuresRaw: timeoutArtifact.failuresRaw,
+      codes: timeoutArtifact.codes,
+      tokenUsage: readTokenUsage(ctx, agent),
+      artifactPath: timeoutArtifact.artifactPath,
       error: error instanceof Error ? error.message : String(error),
       repairRoundsUsed: null,
       ...(isTimeout ? { timedOut: true as const, ...(abandonedInflight ? { abandonedInflight: true as const } : {}) } : {}),
     };
   } finally {
-    // 不清的话 10 分钟定时器会把事件循环钉住，秒级跑完的 unit 也要等它到期才退出（ai-review #1765 第 3 轮）
+    // 不清的话预算超时定时器会把事件循环钉住，秒级跑完的 unit 也要等它到期才退出（ai-review #1765 第 3 轮）
     if (timeoutHandle) clearTimeout(timeoutHandle);
     if (agent) {
       try {
@@ -643,8 +658,8 @@ function buildSummary(label: string, records: RunRecord[]) {
     failureCodeHistogram,
     repairRoundsUsed: records.some((r) => r.repairRoundsUsed !== null) ? records.reduce((n, r) => n + (r.repairRoundsUsed ?? 0), 0) : 'unobservable',
     errorCount,
-    // Excludes timedOut runs — a run abandoned at PER_RUN_HARD_TIMEOUT_MS
-    // would otherwise pin every duration stat to ~600000ms and hide the
+    // Excludes timedOut runs — a run abandoned at its budget timeout
+    // would otherwise pin every duration stat to that ceiling and hide the
     // real distribution of the runs that actually finished.
     durationStats: computeDurationStats(nonTimeoutDurationsMs),
     timeoutCount,
@@ -665,6 +680,9 @@ export interface CliOpts {
   /** --profile 解析后的旋钮覆盖；无 = 生产默认 */
   knobs?: Record<string, number>;
   profilePath?: string;
+  /** --timeout-ms / --max-tokens：逐字段赢过 modelBudget.ts 的表；无 = 表值/默认 */
+  timeoutMs?: number;
+  maxTokens?: number;
 }
 
 export async function realRun(opts: CliOpts, injectedCtx?: RunnerContext): Promise<void> {
@@ -718,6 +736,8 @@ export async function realRun(opts: CliOpts, injectedCtx?: RunnerContext): Promi
       outDir: opts.outDir,
       knobs: opts.knobs,
       profilePath: opts.profilePath,
+      timeoutMs: opts.timeoutMs,
+      maxTokens: opts.maxTokens,
     });
     records.push(record);
     await fs.appendFile(runsJsonlPath, `${JSON.stringify(record)}\n`, 'utf-8');
@@ -1007,7 +1027,7 @@ async function main(): Promise<void> {
 
   const profilePath = getStringOption(args, 'profile');
   const knobs = profilePath ? await loadHarnessProfile(profilePath) : undefined;
-  const opts: CliOpts = { casesPath, split: splitRaw, reps, provider, model, limit, label, outDir, ids, rep, knobs, profilePath };
+  const opts: CliOpts = { casesPath, split: splitRaw, reps, provider, model, limit, label, outDir, ids, rep, knobs, profilePath, timeoutMs: getNumberOption(args, 'timeout-ms'), maxTokens: getNumberOption(args, 'max-tokens') };
 
   if (hasFlag(args, 'dry-run')) {
     await dryRun(opts);

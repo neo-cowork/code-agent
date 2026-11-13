@@ -1,4 +1,5 @@
 import type { Message, ModelConfig, PermissionPreset, ToolDefinition } from '../../shared/contract';
+import type { RequestPermissionResult } from '../../shared/contract/permission';
 import type { SwarmAgentContextSnapshot, SwarmRunScope } from '../../shared/contract/swarm';
 import type { CancellationReason } from '../../shared/contract/cancellation';
 import type { AgentFailureCode } from '../../shared/contract/agentFailure';
@@ -104,7 +105,7 @@ export interface SubagentPermissionRequest {
 }
 
 export interface SubagentPermissionPort {
-  request(request: SubagentPermissionRequest): Promise<boolean>;
+  request(request: SubagentPermissionRequest): Promise<RequestPermissionResult>;
 }
 
 export interface SubagentHookPort {
@@ -133,6 +134,12 @@ export interface SubagentEventPort {
    * 进度要记到这上面。前台收养路径不设，执行器改用 executionAgentId。
    */
   backgroundDurableAgentId?: string;
+  /**
+   * The child no longer keeps the parent's foreground call alive: run_in_background,
+   * waitForCompletion:false, or foreground-timeout adoption (set at adoption time).
+   * Detached children must not bump the parent's composer stall clock.
+   */
+  detached?: boolean;
 }
 
 export interface SubagentAttachment {
@@ -145,6 +152,8 @@ export interface SubagentAttachment {
 }
 
 export interface SubagentExecutionContext {
+  /** Identity assigned by a detached wrapper for this spawn invocation only; never inherited by its children. */
+  managedAgentId?: string;
   /** Native run identity; never inferred from a process singleton. */
   runId?: string;
   /** Stable user message that originated the parent native turn. */

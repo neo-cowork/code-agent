@@ -26,6 +26,7 @@ interface ToolExecutionState {
   messages: Message[];
   pointerEvents: AgentPointerEvent[];
   queuedUpdates: QueuedUpdate[];
+  reloadedSessionIds: string[];
   toolTimeoutWarning: ToolTimeoutData | null;
   warnings: string[];
 }
@@ -67,6 +68,7 @@ function createHarness(overrides: Partial<ToolExecutionState> = {}) {
     messages: [],
     pointerEvents: [],
     queuedUpdates: [],
+    reloadedSessionIds: [],
     toolTimeoutWarning: null,
     warnings: [],
     ...overrides,
@@ -93,6 +95,9 @@ function createHarness(overrides: Partial<ToolExecutionState> = {}) {
     },
     recordAgentPointer: (event) => {
       state.pointerEvents.push(event);
+    },
+    reloadCurrentSession: (sessionId) => {
+      state.reloadedSessionIds.push(sessionId);
     },
     setActiveToolProgress: (next) => {
       state.activeToolProgress = typeof next === 'function'
@@ -778,5 +783,88 @@ describe('applyToolExecutionEvent', () => {
     expect(state.pointerEvents).toEqual([]);
     expect(state.clearAgentPointersCount).toBe(2);
     expect(state.lastEventAt).toBe(0);
+  });
+});
+
+describe('automation session（cron 轮，事件流被 BACKGROUND_AGENT_EVENT_FILTER 收窄）', () => {
+  // N-SIDEBAR-CRON-RUN-STATUS-STALE：自动化轮的事件 allowlist 不含 tool_call_start /
+  // message，页面上的 pending 工具步骤只能来自 DB 载入（换会话/重灌）。tool_call_end 在
+  // allowlist 里且按 toolCallId 匹配 DB 载入的 toolCalls——运行中步骤文本不冻结、终态
+  // 对账重灌前的中间态就应先行收口。这里钉死该匹配在「从未见过 start」的形状下仍成立。
+  it('DB-loaded pending Write 步骤：tool_call_end 直接按 id 回填结果（写入中 → 已写入）', () => {
+    const { deps, state } = createHarness({
+      messages: [
+        assistantMessage('turn-cron', [{
+          id: 'call_write_1',
+          name: 'Write',
+          arguments: { file_path: '/tmp/rr19-report.md', content: 'ok' },
+        }]),
+      ],
+    });
+
+    applyToolExecutionEvent(
+      {
+        type: 'tool_call_end',
+        data: {
+          toolCallId: 'call_write_1',
+          success: true,
+          duration: 37,
+          output: 'Created file: /tmp/rr19-report.md (2 chars)',
+        },
+        sessionId: 'session-current',
+      },
+      deps,
+    );
+
+    expect(state.messages[0].toolCalls?.[0].result).toMatchObject({
+      toolCallId: 'call_write_1',
+      success: true,
+    });
+  });
+
+  it('多个工具先后收尾：每次 tool_call_end 都按各自 id 回填，不冻结在第一个写入上', () => {
+    const { deps, state } = createHarness({
+      messages: [
+        assistantMessage('turn-cron', [
+          { id: 'call_read_1', name: 'Read', arguments: { file_path: '/tmp/a.md' } },
+          { id: 'call_write_1', name: 'Write', arguments: { file_path: '/tmp/b.md', content: 'x' } },
+        ]),
+      ],
+    });
+
+    applyToolExecutionEvent(
+      { type: 'tool_call_end', data: { toolCallId: 'call_read_1', success: true, duration: 10 }, sessionId: 'session-current' },
+      deps,
+    );
+    applyToolExecutionEvent(
+      { type: 'tool_call_end', data: { toolCallId: 'call_write_1', success: true, duration: 30 }, sessionId: 'session-current' },
+      deps,
+    );
+
+    expect(state.messages[0].toolCalls?.[0].result).toMatchObject({ toolCallId: 'call_read_1' });
+    expect(state.messages[0].toolCalls?.[1].result).toMatchObject({ toolCallId: 'call_write_1' });
+    expect(state.reloadedSessionIds).toEqual([]);
+  });
+
+  it('channel/cron 过滤轮（无 tool_call_start / message）到达未匹配的 tool_call_end 时触发当前会话重灌', () => {
+    const { deps, state } = createHarness({
+      messages: [assistantMessage('turn-channel', [])],
+    });
+
+    applyToolExecutionEvent(
+      {
+        type: 'tool_call_end',
+        data: {
+          toolCallId: 'channel_write_1',
+          success: true,
+          duration: 25,
+          output: 'Created file: /tmp/channel-step.md',
+        },
+        sessionId: 'session-current',
+      },
+      deps,
+    );
+
+    expect(state.reloadedSessionIds).toEqual(['session-current']);
   });
 });

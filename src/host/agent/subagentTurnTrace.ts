@@ -16,6 +16,7 @@ import {
   type SubagentEventIdentity,
   type SubagentRunEndStatus,
 } from './subagentLifecycleEvents';
+import { noteStreamProgress } from './stallObserver';
 import type { SubagentEventPort } from './subagentExecutorTypes';
 import { extractWorkbenchReferenceFromToolCall } from '../../shared/contract/workbenchTools';
 
@@ -114,6 +115,13 @@ export function createSubagentTurnObservability(input: {
     identity: eventScope.identity,
     traceDir: input.traceDir,
   });
+  // startSubagentLifecycle keeps a foreground child on the parent session id. Its visible
+  // turn/tool events therefore advance the same composer stall clock. Detached background
+  // agents (run_in_background, waitForCompletion:false, foreground-timeout adoption) are
+  // marked detached and must not keep a foreground composer alive.
+  const noteForegroundProgress = (): void => {
+    if (!input.events.detached && !input.events.backgroundDurableAgentId) noteStreamProgress(input.sessionId);
+  };
   let mutationPaths = createSubagentMutationPathSlot();
   return {
     identity: eventScope.identity,
@@ -121,9 +129,13 @@ export function createSubagentTurnObservability(input: {
     startTurn(iteration: number): string {
       mutationPaths = createSubagentMutationPathSlot();
       recorder.setTurn(iteration);
+      noteForegroundProgress();
       return eventScope.startTurn(iteration);
     },
-    recordInference(data: TraceEventDataMap['inference']): void { recorder.record('inference', data); },
+    recordInference(data: TraceEventDataMap['inference']): void {
+      recorder.record('inference', data);
+      noteForegroundProgress();
+    },
     recordCompaction(totalTokens: number): void {
       recorder.record('compaction', {
         layersTriggered: ['subagent_compaction'], totalTokens, commitCount: 1, autocompactNeeded: true,
@@ -134,7 +146,10 @@ export function createSubagentTurnObservability(input: {
         ? captureWorkspaceMutationSnapshot(input.workingDirectory)
         : undefined;
     },
-    emitToolCallStart: eventScope.emitToolCallStart,
+    emitToolCallStart(toolCall: { id: string; name: string; arguments: Record<string, unknown> }): void {
+      noteForegroundProgress();
+      eventScope.emitToolCallStart(toolCall);
+    },
     async recordToolResult(
       toolCall: { id: string; name: string; arguments: Record<string, unknown> },
       result: { success: boolean; error?: string; output?: string; fromCache?: boolean },
@@ -157,6 +172,7 @@ export function createSubagentTurnObservability(input: {
         modifiedPaths: mutationPaths,
         workspaceMutationSnapshot,
       });
+      noteForegroundProgress();
       eventScope.emitToolCallEnd(toolCall.id, result, durationMs);
     },
     recordToolError(
@@ -173,6 +189,7 @@ export function createSubagentTurnObservability(input: {
         error,
         fromCache: false,
       });
+      noteForegroundProgress();
       eventScope.emitToolCallError(toolCall.id, error, durationMs);
     },
     async endTurn(turnId: string): Promise<void> {

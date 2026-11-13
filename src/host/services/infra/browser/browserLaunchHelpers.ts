@@ -1,12 +1,16 @@
 import type { Browser, BrowserContext } from 'playwright';
 import { spawn, type ChildProcess } from 'child_process';
 import * as fs from 'fs';
+import { homedir } from 'os';
+import * as path from 'path';
 import {
   buildSystemChromeCdpArgs,
   findAvailablePort,
   resolveCdpEndpointUrl,
+  resolveSystemChromeKeychainMode,
   type BrowserProviderResolution,
 } from '../browserProvider';
+import { startChromeParentWatchdog } from './browserProcessWatchdog';
 import { loadPlaywright } from '../../../runtime/playwrightRuntime';
 import type {
   ManagedBrowserMode,
@@ -33,6 +37,7 @@ interface BrowserLaunchBaseInput {
 export interface SystemChromeCdpLaunchInput extends BrowserLaunchBaseInput {
   resolution: BrowserProviderResolution;
   profileDir: string;
+  temporaryProfile: boolean;
   onProcessStart(process: ChildProcess): void;
   onProcessExit(process: ChildProcess, code: number | null, signal: NodeJS.Signals | null): void;
 }
@@ -97,10 +102,20 @@ export async function launchSystemChromeCdpBrowser(
     throw new Error(input.resolution.recommendedAction || 'System Chrome executable is missing');
   }
 
+  const keychainMode = resolveSystemChromeKeychainMode({
+    temporaryProfile: input.temporaryProfile,
+    platform: process.platform,
+    loginKeychainExists: process.platform === 'darwin' && (
+      fs.existsSync(path.join(homedir(), 'Library', 'Keychains', 'login.keychain-db'))
+      || fs.existsSync(path.join(homedir(), 'Library', 'Keychains', 'login.keychain'))
+    ),
+  });
+  input.logger.log('INFO', `System Chrome keychain: profile=${input.temporaryProfile ? 'isolated' : 'persistent'} temporary=${input.temporaryProfile ? 'yes' : 'no'} --use-mock-keychain=${keychainMode.mockKeychain ? 'yes' : 'no'} reason=${keychainMode.reason}`);
   const cdpPort = await findAvailablePort();
   const chromeProcess = spawn(executable, buildSystemChromeCdpArgs({
     cdpPort,
     profileDir: input.profileDir,
+    mockKeychain: keychainMode.mockKeychain,
     headless: input.mode === 'headless',
     viewport: input.viewport,
     proxy: input.proxy,
@@ -109,6 +124,7 @@ export async function launchSystemChromeCdpBrowser(
     stdio: ['ignore', 'ignore', 'pipe'],
   });
   input.onProcessStart(chromeProcess);
+  startChromeParentWatchdog(chromeProcess, input.logger);
   chromeProcess.stderr?.on('data', (chunk) => {
     const message = String(chunk).trim();
     if (message) {

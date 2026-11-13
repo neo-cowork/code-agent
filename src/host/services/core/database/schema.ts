@@ -3,6 +3,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { applyTelemetrySchema } from './schemaTelemetry';
 import { applyAnnotationsSchema } from './schemaAnnotations';
 import { applyAppGrantsSchema } from './schemaAppGrants';
+import { applyToolGrantsSchema } from './schemaToolGrants';
 import { applySessionDelegationsSchema } from './schemaSessionDelegations';
 import { applyCloudRunLedgerSchema } from './schemaCloudRunLedger';
 import { applyCloudCronSchedulesSchema } from './schemaCloudCronSchedules';
@@ -488,6 +489,19 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   `);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_usage_ledger_session ON usage_ledger (session_id, recorded_at)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_usage_ledger_recorded ON usage_ledger (recorded_at)`);
+  // 预算归属 scope（foreground/unattended）与响应实报的 service_tier：重启后按 scope 恢复
+  // 「无人值守已用额度」，且恢复出的成本必须与实时 calculateCost 同口径（档位倍率）。存量行默认 foreground。
+  safeAlter(db, `ALTER TABLE usage_ledger ADD COLUMN scope TEXT NOT NULL DEFAULT 'foreground'`, logger);
+  safeAlter(db, `ALTER TABLE usage_ledger ADD COLUMN service_tier TEXT`, logger);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_usage_ledger_scope_recorded ON usage_ledger (scope, recorded_at)`);
+  // 预算周期起点：周期按「从那一刻起算 resetPeriodHours」而非日历边界，重启必须沿用而不是从现在重新起算。
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS budget_period_state (
+      scope TEXT PRIMARY KEY,
+      period_start INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  `);
 
   // Turn Cost Estimates（刊例估算，非账单）——一轮模型调用一行。
   // usd=NULL 明确表示没有可信价格，查询时计入 unknownTurns，绝不以 0 冒充。
@@ -579,6 +593,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       session_id TEXT PRIMARY KEY,
       compression_state_json TEXT,
       persistent_system_context_json TEXT NOT NULL DEFAULT '[]',
+      last_provider_usage_json TEXT,
       updated_at INTEGER NOT NULL,
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
     )
@@ -730,6 +745,8 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   // N-CRON-RUN-LEDGER-VISIBLE：本地运行实测成本（USD，scoped 计量器读数）。
   // 无模型调用与云端运行为 NULL（UI 显示 dash）。
   safeAlter(db, 'ALTER TABLE cron_executions ADD COLUMN cost_usd REAL CHECK (cost_usd IS NULL OR cost_usd >= 0)', logger);
+  // N-FIX-CRON-RESULT-PUSH-SILENT-SKIP：结果推送去向（枚举码；NULL = 未配置推送目标）。
+  safeAlter(db, 'ALTER TABLE cron_executions ADD COLUMN push_note TEXT', logger);
   // N-TRIGGER-OBSERVE-MODE：事件自动化执行档（带一次性迁移戳）+ 逐事件决策台账。
   applyCronEventDecisionsSchema(db, logger);
 
@@ -816,6 +833,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   applyTelemetrySchema(db, logger);
   applyAnnotationsSchema(db, logger);
   applyAppGrantsSchema(db, logger);
+  applyToolGrantsSchema(db, logger);
 
   // Captures 表 (知识库采集内容持久化)
   db.exec(`

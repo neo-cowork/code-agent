@@ -212,6 +212,62 @@ describe('ipcService.on', () => {
     expect(second).toHaveBeenCalledTimes(1);
   });
 
+  it('delivers a host broadcast whose seq collides with the synthesized stream_end (N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO)', () => {
+    // httpTransport 在 per-run 流结束时会合成 stream_end（宿主从不发它）。合成号若
+    // 记进宿主 per-session 序列账，收线后补播的 permission_request（宿主分配的正是
+    // 下一个号）会被当重复丢掉——后台任务的审批卡在活页上永远不升级。
+    const listeners = new Map<string, (...args: any[]) => void>();
+    mockOn.mockImplementation((channel: string, callback: (...args: any[]) => void) => {
+      listeners.set(channel, callback);
+      return () => {};
+    });
+
+    const callback = vi.fn();
+    ipcService.on(IPC_CHANNELS.AGENT_EVENT, callback);
+
+    const fire = (event: Record<string, unknown>) =>
+      listeners.get(IPC_CHANNELS.AGENT_EVENT)?.(event);
+
+    // per-run 流：最后一条宿主事件 seq=1（agent_complete）
+    fire({ type: 'agent_complete', streamEpoch: 'http:epoch-1', sessionId: 'session-1', seq: 1, data: null });
+    // 流结束，httpTransport 合成 stream_end，seq 取「最后见到 +1」
+    fire({ type: 'stream_end', streamEpoch: 'http:epoch-1', sessionId: 'session-1', seq: 2, data: { sessionId: 'session-1' } });
+    // run 收线后补播的 permission_request：宿主计数器分配的正是 seq=2
+    const lateRequest = {
+      type: 'permission_request',
+      streamEpoch: 'http:epoch-1',
+      sessionId: 'session-1',
+      seq: 2,
+      data: { id: 'perm-late-1', sessionId: 'session-1', tool: 'Bash', type: 'command' },
+    };
+    fire(lateRequest);
+
+    expect(callback).toHaveBeenCalledTimes(3);
+    expect(callback).toHaveBeenLastCalledWith(lateRequest);
+  });
+
+  it('still delivers the synthesized stream_end itself to consumers', () => {
+    const listeners = new Map<string, (...args: any[]) => void>();
+    mockOn.mockImplementation((channel: string, callback: (...args: any[]) => void) => {
+      listeners.set(channel, callback);
+      return () => {};
+    });
+
+    const callback = vi.fn();
+    ipcService.on(IPC_CHANNELS.AGENT_EVENT, callback);
+
+    listeners.get(IPC_CHANNELS.AGENT_EVENT)?.({
+      type: 'stream_end',
+      streamEpoch: 'http:epoch-1',
+      sessionId: 'session-1',
+      seq: 2,
+      data: { sessionId: 'session-1' },
+    });
+
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(callback).toHaveBeenCalledWith(expect.objectContaining({ type: 'stream_end' }));
+  });
+
   it('should return unsubscribe function', () => {
     const unsubscribe = vi.fn();
     mockOn.mockReturnValue(unsubscribe);

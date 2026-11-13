@@ -56,6 +56,7 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 
 const { ToolExecutor } = await import('../../../src/host/tools/toolExecutor');
 const { enterObserveModeForCronRun } = await import('../../../src/host/cron/cronObserveMode');
+import { CRON_EVENT_DECISIONS } from '../../../src/shared/constants';
 import type { CronJobDefinition } from '../../../src/shared/contract/cron';
 import type { CronEventDecisionInput, CronEventDecisionStore } from '../../../src/host/cron/cronEventDecisionLedger';
 
@@ -91,6 +92,13 @@ function memoryStore() {
 
 describe('ToolExecutor observe-mode interception (N-TRIGGER-OBSERVE-MODE ②)', () => {
   const definitions = new Map([
+    ['bash', {
+      name: 'Bash',
+      description: 'shell command test tool',
+      inputSchema: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] },
+      requiresPermission: true,
+      permissionLevel: 'execute',
+    }],
     ['mail_send', {
       name: 'mail_send',
       description: 'send email test tool',
@@ -104,6 +112,13 @@ describe('ToolExecutor observe-mode interception (N-TRIGGER-OBSERVE-MODE ②)', 
       inputSchema: { type: 'object', properties: {}, required: [] },
       requiresPermission: true,
       permissionLevel: 'network',
+    }],
+    ['Browser', {
+      name: 'Browser',
+      description: 'browser test tool',
+      inputSchema: { type: 'object', properties: {}, required: [] },
+      requiresPermission: true,
+      permissionLevel: 'execute',
     }],
     ['Read', {
       name: 'Read',
@@ -119,6 +134,110 @@ describe('ToolExecutor observe-mode interception (N-TRIGGER-OBSERVE-MODE ②)', 
     resolverState.getDefinition.mockImplementation((name: string) => definitions.get(name));
     resolverState.execute.mockReset();
     resolverState.execute.mockResolvedValue({ success: true, output: 'sent' });
+  });
+
+  it.each([
+    ['Bash', 'lark-cli im +messages-reply --message-id om_test --text "RR51-PONG 收到"', '飞书 回复消息', 'om_test'],
+    ['bash', 'lark-cli im +messages-send --chat-id oc_test --text "RR51-PONG 收到"', '飞书 发送消息', 'oc_test'],
+    ['Bash', 'sh -c \'lark-cli im +messages-send --chat-id oc_test --text "RR51-PONG 收到"\'', '飞书 发送消息', 'oc_test'],
+    ['Bash', 'bash -lc \'lark-cli im +messages-reply --message-id om_test --text "RR51-PONG 收到"\'', '飞书 回复消息', 'om_test'],
+    ['Bash', 'zsh -c \'lark-cli im +messages-reply --message-id om_test --text "RR51-PONG 收到"\'', '飞书 回复消息', 'om_test'],
+    ['Bash', 'lark-cli im +messages-send --chat-id oc_test --text "RR51-PONG 收到" && echo done', '飞书 发送消息', 'oc_test'],
+    ['Bash', 'tmeet meeting create --user-id user_test --message "RR51-PONG 收到"', '腾讯会议 创建', 'user_test'],
+    ['Bash', 'lark-cli im +messages-send --chat-id oc_test --text "RR51-PONG 收到', '飞书 发送消息', 'oc_test'],
+    ['Bash', 'echo $(lark-cli im +messages-send --to oc_test --text "RR51-PONG 收到")', '飞书 发送消息', 'oc_test'],
+    ['Bash', 'echo `lark-cli im +messages-send --to oc_test --text "RR51-PONG 收到"`', '飞书 发送消息', 'oc_test'],
+    ['Bash', '/tmp/connector-bin/lark-cli im +messages-send --chat-id=oc_test --markdown="RR51-PONG 收到"', '飞书 发送消息', 'oc_test'],
+    ['Bash', 'lark-cli im +messages-send --chat-id oc_test --text list', '飞书 发送消息', 'oc_test'],
+    ['Bash', 'lark-cli im +messages-forget --chat-id oc_test --content "RR51-PONG 收到"', '飞书 操作', 'oc_test'],
+  ])('observe intercepts connector command before execution or approval: %s %s', async (tool, command, label, target) => {
+    const { rows, store } = memoryStore();
+    const leave = enterObserveModeForCronRun(eventJob('observe'), 'connector-observe', 'connector-run', store);
+    const requestPermission = vi.fn(async () => true);
+    const executor = new ToolExecutor({ requestPermission, workingDirectory: '/tmp/workbench' });
+    executor.setAuditEnabled(false);
+    try {
+      const result = await executor.execute(tool, { command }, { sessionId: 'connector-observe' });
+      expect(result.metadata).toMatchObject({ code: 'OBSERVE_MODE_RECORDED', executionStarted: false });
+      expect(resolverState.execute).not.toHaveBeenCalled();
+      expect(requestPermission).not.toHaveBeenCalled();
+      expect(rows).toEqual([expect.objectContaining({
+        kind: 'action', decision: 'would_act', tool: label, target, runId: 'connector-run',
+      })]);
+      expect(rows[0].summary).toBe(command.endsWith('--text list') ? 'list' : 'RR51-PONG 收到');
+      expect(JSON.stringify(rows)).not.toMatch(/Bash|lark-cli|tmeet|connector-bin/);
+    } finally { leave(); }
+  });
+
+  it.each([
+    'lark-cli auth status', 'lark-cli config show --json', 'lark-cli im +messages-list --chat-id oc_test',
+    'tmeet meeting search --keyword planning', 'ls',
+    'echo "lark-cli im +messages-send"',
+  ])('observe keeps read-only/context Bash on its original path: %s', async (command) => {
+    const { rows, store } = memoryStore();
+    const leave = enterObserveModeForCronRun(eventJob('observe'), 'read-observe', 'read-run', store);
+    const executor = new ToolExecutor({ requestPermission: vi.fn(async () => true), workingDirectory: '/tmp/workbench' });
+    executor.setAuditEnabled(false);
+    try {
+      const result = await executor.execute('Bash', { command }, { sessionId: 'read-observe' });
+      expect(result.metadata?.code).not.toBe('OBSERVE_MODE_RECORDED');
+      expect(resolverState.execute).toHaveBeenCalledTimes(1);
+      expect(resolverState.execute.mock.calls[0][1]).toEqual({ command });
+      expect(rows).toEqual([]);
+    } finally { leave(); }
+  });
+
+  it.each([
+    'lark-cli auth status && echo done', 'sh -c "lark-cli auth status"', 'lark-cli auth status; ls',
+    'lark-cli auth login status', 'lark-cli auth status --method POST', 'lark-cli im +messages-list --json send',
+  ])(
+    'observe cannot prove a compound/wrapped connector lookup read-only: %s', async (command) => {
+      const { rows, store } = memoryStore();
+      const leave = enterObserveModeForCronRun(eventJob('observe'), 'uncertain-observe', 'uncertain-run', store);
+      const requestPermission = vi.fn(async () => true);
+      const executor = new ToolExecutor({ requestPermission, workingDirectory: '/tmp/workbench' });
+      executor.setAuditEnabled(false);
+      try {
+        const result = await executor.execute('Bash', { command }, { sessionId: 'uncertain-observe' });
+        expect(result.metadata?.code).toBe('OBSERVE_MODE_RECORDED');
+        expect(resolverState.execute).not.toHaveBeenCalled();
+        expect(requestPermission).not.toHaveBeenCalled();
+        expect(rows[0]).toMatchObject({ tool: '飞书 操作', summary: '连接器操作已记录，未执行' });
+      } finally { leave(); }
+    },
+  );
+
+  it('truncates outbound text without leaking command arguments into the decision', async () => {
+    const { rows, store } = memoryStore();
+    const leave = enterObserveModeForCronRun(eventJob('observe'), 'long-observe', 'long-run', store);
+    const executor = new ToolExecutor({ requestPermission: vi.fn(async () => true), workingDirectory: '/tmp/workbench' });
+    executor.setAuditEnabled(false);
+    try {
+      await executor.execute('Bash', {
+        command: `lark-cli im +messages-reply --message-id om_test --profile secret-profile --text "${'答'.repeat(CRON_EVENT_DECISIONS.MAX_SUMMARY_CHARS + 10)}"`,
+      }, { sessionId: 'long-observe' });
+      expect(rows[0].summary).toHaveLength(CRON_EVENT_DECISIONS.MAX_SUMMARY_CHARS);
+      expect(rows[0].summary).toBe(`${'答'.repeat(CRON_EVENT_DECISIONS.MAX_SUMMARY_CHARS - 1)}…`);
+      expect(JSON.stringify(rows)).not.toContain('secret-profile');
+    } finally { leave(); }
+  });
+
+  it.each(['auto', 'unregistered'] as const)('same connector reply still reaches approval in %s session', async (mode) => {
+    const { rows, store } = memoryStore();
+    const leave = enterObserveModeForCronRun(eventJob('auto'), 'connector-auto', 'auto-run', store);
+    const requestPermission = vi.fn(async () => false);
+    const executor = new ToolExecutor({ requestPermission, workingDirectory: '/tmp/workbench' });
+    executor.setAuditEnabled(false);
+    try {
+      const result = await executor.execute('Bash', {
+        command: 'lark-cli im +messages-reply --message-id om_test --text "RR51-PONG 收到"',
+      }, { sessionId: mode === 'auto' ? 'connector-auto' : 'not-registered' });
+      expect(requestPermission).toHaveBeenCalledTimes(1);
+      expect(result.success).toBe(false);
+      expect(result.metadata?.code).not.toBe('OBSERVE_MODE_RECORDED');
+      expect(resolverState.execute).not.toHaveBeenCalled();
+      expect(rows).toEqual([]);
+    } finally { leave(); }
   });
 
   it('observe: mail_send is never executed and never asks approval; one would_act with tool/target/summary', async () => {
@@ -173,6 +292,31 @@ describe('ToolExecutor observe-mode interception (N-TRIGGER-OBSERVE-MODE ②)', 
       await executor.execute('Read', { file_path: '/tmp/workbench/a.txt' }, { sessionId: 'cron-session-obs-2' });
       expect(resolverState.execute).toHaveBeenCalledTimes(1);
       expect(resolverState.execute.mock.calls[0][0]).toBe('Read');
+      expect(rows).toHaveLength(1);
+    } finally {
+      leave();
+    }
+  });
+
+  it('observe: Browser upload_file is intercepted, Browser click still runs', async () => {
+    const { rows, store } = memoryStore();
+    const leave = enterObserveModeForCronRun(eventJob('observe'), 'cron-session-obs-3', 'run-5', store);
+    try {
+      const requestPermission = vi.fn(async (_req: unknown) => true);
+      const executor = new ToolExecutor({ requestPermission, workingDirectory: '/tmp/workbench' });
+      executor.setAuditEnabled(false);
+
+      const upload = await executor.execute(
+        'Browser',
+        { action: 'upload_file', selector: '#f', uploadFilePath: '/tmp/a.pdf' },
+        { sessionId: 'cron-session-obs-3' },
+      );
+      expect(upload.output).toContain('recorded, not executed (observe mode)');
+      expect(resolverState.execute).not.toHaveBeenCalled();
+      expect(rows).toHaveLength(1);
+
+      await executor.execute('Browser', { action: 'click', selector: '#d' }, { sessionId: 'cron-session-obs-3' });
+      expect(resolverState.execute).toHaveBeenCalledTimes(1);
       expect(rows).toHaveLength(1);
     } finally {
       leave();

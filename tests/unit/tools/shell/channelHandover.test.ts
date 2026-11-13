@@ -68,10 +68,12 @@ import { bashModule } from '../../../../src/host/tools/modules/shell/bash';
 import { getSessionManager } from '../../../../src/host/services/infra/sessionManager';
 import { getPermissionModeManager } from '../../../../src/host/permissions/modes';
 import { resolveForegroundTimeoutTier } from '../../../../src/host/tools/shell/foregroundTier';
+import { BASH } from '../../../../src/shared/constants';
 import { BackgroundTaskLedger } from '../../../../src/host/task/backgroundTaskLedger';
 import { installBackgroundTaskEventAdapters } from '../../../../src/host/task/backgroundTaskSnapshotAdapters';
 import {
   adoptBackgroundTask,
+  cleanupTimedOutTasks,
   getAllBackgroundTasks,
   killBackgroundTask,
 } from '../../../../src/host/tools/shell/backgroundTasks';
@@ -203,8 +205,8 @@ posixOnly('channel 会话短档超时 handover（真实建档/真实收编）', 
     expect(adopted.success).toBe(true);
     adoptedTaskIds.push(adopted.taskId!);
 
-    // 推进假时钟越过 BACKGROUND_TASK_MAX_RUNTIME（10min）：挂死任务被终止 → 终态 → 通知。
-    await vi.advanceTimersByTimeAsync(10 * 60 * 1000 + 1_000);
+    // 推进假时钟越过 BASH.BACKGROUND_MAX_RUNTIME（30min）：挂死任务被终止 → 终态 → 通知。
+    await vi.advanceTimersByTimeAsync(BASH.BACKGROUND_MAX_RUNTIME + 1_000);
     // kill 是真异步（SIGTERM + 轮询探活），close 事件要等真事件循环落地：切回真钟等终态。
     vi.useRealTimers();
     await vi.waitFor(() => {
@@ -219,6 +221,74 @@ posixOnly('channel 会话短档超时 handover（真实建档/真实收编）', 
     expect(drained[0]).toMatchObject({
       taskId: `shell:${adopted.taskId}`,
       sessionId,
+      type: 'task_failed',
+      payload: { reason: 'timeout', maxRuntimeMs: BASH.BACKGROUND_MAX_RUNTIME },
     });
+  }, 15_000);
+
+  async function adoptSleeper(sessionId: string): Promise<string> {
+    const child = spawn('sleep', ['60'], { cwd, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+    child.unref();
+    const adopted = adoptBackgroundTask(child, 'sleep 60', cwd, { sessionId, startedAt: Date.now() });
+    expect(adopted.success).toBe(true);
+    adoptedTaskIds.push(adopted.taskId!);
+    return adopted.taskId!;
+  }
+
+  it('③ 生产 cleanupTimedOutTasks 清扫（假 Date）越过上限：通知 task_failed 且 payload.reason === timeout', async () => {
+    const sessionId = await createChannelSession();
+    const ledger = new BackgroundTaskLedger();
+    detachAdapters = installBackgroundTaskEventAdapters(ledger);
+    const taskId = await adoptSleeper(sessionId);
+
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.now() + BASH.BACKGROUND_MAX_RUNTIME + 1_000);
+    cleanupTimedOutTasks();
+    vi.useRealTimers();
+
+    let drained: ReturnType<BackgroundTaskLedger['drainNotifications']> = [];
+    await vi.waitFor(() => {
+      drained = ledger.drainNotifications(sessionId);
+      expect(drained.length).toBeGreaterThan(0);
+    }, { timeout: 6000, interval: 50 });
+    expect(drained).toHaveLength(1);
+    expect(drained[0]).toMatchObject({
+      taskId: `shell:${taskId}`,
+      type: 'task_failed',
+      payload: { reason: 'timeout', maxRuntimeMs: BASH.BACKGROUND_MAX_RUNTIME },
+    });
+  }, 15_000);
+
+  it('② 跑过 10 分钟的后台任务不被清扫：仍是 running，没有终态通知（上限是 30 分钟）', async () => {
+    const sessionId = await createChannelSession();
+    const ledger = new BackgroundTaskLedger();
+    detachAdapters = installBackgroundTaskEventAdapters(ledger);
+    const taskId = await adoptSleeper(sessionId);
+
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.now() + 11 * 60 * 1000);
+    cleanupTimedOutTasks();
+    vi.useRealTimers();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    expect(getAllBackgroundTasks().find((task) => task.taskId === taskId)?.status).toBe('running');
+    expect(ledger.drainNotifications(sessionId)).toHaveLength(0);
+  }, 15_000);
+
+  it('③ 用户 Stop 同类任务：通知是 task_cancelled，payload 不带 reason: timeout', async () => {
+    const sessionId = await createChannelSession();
+    const ledger = new BackgroundTaskLedger();
+    detachAdapters = installBackgroundTaskEventAdapters(ledger);
+    const taskId = await adoptSleeper(sessionId);
+
+    await killBackgroundTask(taskId);
+
+    let drained: ReturnType<BackgroundTaskLedger['drainNotifications']> = [];
+    await vi.waitFor(() => {
+      drained = ledger.drainNotifications(sessionId);
+      expect(drained.length).toBeGreaterThan(0);
+    }, { timeout: 6000, interval: 50 });
+    expect(drained[0]).toMatchObject({ type: 'task_cancelled' });
+    expect(drained[0].payload).not.toHaveProperty('reason');
   }, 15_000);
 });

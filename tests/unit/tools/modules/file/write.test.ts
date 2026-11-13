@@ -4,6 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs/promises';
+import { existsSync } from 'fs';
 import * as path from 'path';
 import os from 'os';
 import type {
@@ -209,6 +210,30 @@ describe('writeModule (native)', () => {
       if (result.ok) expect(result.output).toContain('Updated');
       expect(await fs.readFile(file, 'utf-8')).toBe('new');
     });
+
+    it.skipIf(
+      process.platform === 'win32'
+      || (typeof process.getuid === 'function' && process.getuid() === 0)
+      || !existsSync('/dev/null')
+    )(
+      'writes /dev/null in place after a recorded read',
+      async () => {
+        const devicePath = '/dev/null';
+        await fileReadTracker.recordReadWithStats(devicePath, { actorId: 'test-session:test-agent' });
+        const handler = await writeModule.createHandler();
+
+        const result = await handler.execute(
+          { file_path: devicePath, content: 'discarded output' },
+          makeCtx(),
+          allowAll,
+        );
+
+        expect(result.ok).toBe(true);
+        if (result.ok) expect(result.output).toContain('Updated');
+        expect((await fs.stat(devicePath)).isCharacterDevice()).toBe(true);
+        expect((await fs.readdir('/dev')).filter((entry) => /^\.null\..*\.tmp$/.test(entry))).toEqual([]);
+      },
+    );
 
     it('rejects overwriting an existing file that has not been read', async () => {
       const file = path.join(tmpDir, 'unread.txt');
@@ -596,8 +621,13 @@ describe('writeModule (native)', () => {
       // success=true but output has warning
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.output).toContain('代码完整性警告');
-        expect(result.output).toContain('未闭合的括号');
+        expect(result.output).toBe(
+          `Created file: ${file} (32 chars)\n\n` +
+          `⚠️ **代码完整性警告**: 检测到文件可能不完整！\n` +
+          `问题:\n- 未闭合的括号: 缺少 1 个闭合符号 (})\n\n` +
+          `**建议**: 请使用 edit_file 工具追加剩余代码，或重新生成完整文件。`,
+        );
+        expect(result.meta?.completenessIssues).toEqual(['未闭合的括号: 缺少 1 个闭合符号 (})']);
         expect(result.meta?.artifact).toMatchObject({
           sourceTool: 'Write',
           path: file,

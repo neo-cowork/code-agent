@@ -1,3 +1,4 @@
+import { getLastConversationTurnIndex } from './conversationTurns';
 import type { TraceProjection, TraceTurn } from '@shared/contract/trace';
 import type { SessionTask, TaskProgressData, TodoItem } from '@shared/contract';
 import { isClosedTaskStatus, statusRequiresWaitReason, type TaskBlockedCategory } from '@shared/contract/planning';
@@ -14,7 +15,8 @@ import type {
   ToolCapabilityView,
 } from '../types/runWorkbench';
 import { getToolCapabilitySource } from './toolExecutionPresentation';
-import { hasCancelledRunMarker } from './streamingStatePresentation';
+import { mentionsRawToolName } from './humanizeToolStep';
+import { hasCancelledRunMarker, isIdleReapedRun } from './streamingStatePresentation';
 import {
   isReadOnlyArtifactOwnershipItem,
   isReadOnlyArtifactTool,
@@ -30,7 +32,7 @@ export interface BuildRunWorkbenchModelInput {
 }
 
 function latestTurn(projection: TraceProjection): TraceTurn | null {
-  return projection.turns[projection.turns.length - 1] || null;
+  return projection.turns[getLastConversationTurnIndex(projection.turns)] || null;
 }
 
 function userInstructionTitle(turn: TraceTurn | null): string | undefined {
@@ -77,7 +79,9 @@ function statusFromInput(args: BuildRunWorkbenchModelInput, turn: TraceTurn | nu
   if (isToolUnfinished(toolCall)) return 'using_tools';
   if (turn?.status === 'streaming' || args.sessionStatus === 'running') return 'running';
   if (args.taskProgress?.phase === 'completed' || turn?.status === 'completed') return 'completed';
-  return 'completed';
+  // A missing turn also occurs between Send and the first stream event.
+  // Empty sessions stay empty because the overview requires a turnId.
+  return 'planning';
 }
 
 function phaseFromStatus(status: RunUiStatus, taskProgress?: TaskProgressData | null): string {
@@ -156,6 +160,7 @@ export function buildRunUiState(args: BuildRunWorkbenchModelInput): RunUiState {
     waitingApprovalId: args.pendingApprovalId || undefined,
     ...describeBlocked(firstBlockedReason(turn)),
     completionSignal: completionSignal(turn),
+    ...(status === 'cancelled' && turn ? { terminalReason: turn.nodes.some((node) => node.metadata?.workbench?.runCancellation?.reason === 'client_disconnect') ? 'client_disconnect' as const : isIdleReapedRun(turn) ? 'idle_reaped' as const : undefined } : {}),
     startedAt: turn?.startTime,
     endedAt: turn?.endTime,
   };
@@ -212,7 +217,7 @@ export function buildLoopDecisionViews(projection: TraceProjection): LoopDecisio
       runId,
       step: decisions.length + 1,
       action: result === undefined || node.toolCall._streaming ? '工具执行中' : '工具完成',
-      reason: node.toolCall.shortDescription || node.toolCall.name,
+      reason: usableToolDescription(node.toolCall) || '工具调用',
       expectedNextAction: result === undefined ? '等待工具结果' : '汇总工具输出',
       ...describeBlocked(node.toolCall.success === false ? node.toolCall.result : undefined),
     });
@@ -380,8 +385,15 @@ function memoryIdFromToolCall(toolCall: TraceToolCall): string {
     || toolCall.id;
 }
 
+/** 模型描述里带原始工具名（"Use task_status"）时视为不可用，不外露内部名。 */
+function usableToolDescription(toolCall: TraceToolCall): string {
+  const text = toolCall.shortDescription?.trim() ?? '';
+  return text && !mentionsRawToolName(text, toolCall.name) ? text : '';
+}
+
 function memoryReason(toolCall: TraceToolCall, action: MemoryAction): string {
-  if (toolCall.shortDescription?.trim()) return toolCall.shortDescription.trim();
+  const described = usableToolDescription(toolCall);
+  if (described) return described;
   const filename = stringValue(toolCall.args, ['filename'])
     || stringValue(toolCall.metadata, ['filename'])
     || undefined;

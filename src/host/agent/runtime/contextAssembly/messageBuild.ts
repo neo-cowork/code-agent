@@ -4,6 +4,7 @@ import { ACTIVE_TOOL_RESULT_PRUNE, CONTEXT_LEDGER } from '../../../../shared/con
 import { resolveContextWindow, resolveModelMaxOutputTokens } from '../../../model/modelLimits';
 import { resolveToolResultBudget } from '../../../context/layers/toolResultBudget';
 import { resolveTriggerTokens } from '../../../context/triggerTokens';
+import { withTelemetryRecoveryNoticeForModel } from '../../../../shared/telemetryRecovery';
 import type { ModelMessage } from '../../../agent/loopTypes';
 import { formatToolCallForHistory, buildMultimodalContent } from '../../../agent/messageHandling/converter';
 import {
@@ -824,12 +825,13 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
   // 当前 run 的模型面 user 内容只投影进最终请求，历史/落库仍保留展示面原话。
   // 不能直接改 ctx.messages：telemetry backfill、renderer、checkpoint 都依赖原话语义。
   const modelFacingUserMessage = ctx.runtime.turn.modelFacingUserMessage;
-  const transcriptMessages = modelFacingUserMessage
+  // 由运行记录还原的 user 消息正文不带免责声明（界面干净），模型侧在此补回。
+  const transcriptMessages = withTelemetryRecoveryNoticeForModel(modelFacingUserMessage
     ? ctx.runtime.messages.map((message) =>
         message.id === modelFacingUserMessage.sourceMessageId && message.role === 'user'
           ? { ...message, content: modelFacingUserMessage.content }
           : message)
-    : ctx.runtime.messages;
+    : ctx.runtime.messages);
   const transcriptEntries = ctx.buildContextTranscriptEntries(transcriptMessages);
   const transcriptInterventions = ctx.mapInterventionsToTranscriptEntries(
     effectiveInterventions,

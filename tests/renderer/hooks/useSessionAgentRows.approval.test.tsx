@@ -45,8 +45,8 @@ vi.mock('../../../src/renderer/stores/backgroundTaskStore', () => ({
     selector({ tasks: [] }),
 }));
 
-vi.mock('../../../src/renderer/stores/appStore', () => ({
-  useAppStore: (selector: (state: {
+vi.mock('../../../src/renderer/stores/appStore', () => {
+  const useAppStore = (selector: (state: {
     pendingPermissionRequest: typeof runtime.pending;
     pendingPermissionSessionId: string | null;
     queuedPermissionRequests: typeof runtime.queued;
@@ -56,8 +56,10 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
     pendingPermissionSessionId: runtime.pendingSessionId,
     queuedPermissionRequests: runtime.queued,
     activeAgentId: runtime.activeAgentId,
-  }),
-}));
+  });
+  useAppStore.getState = () => ({ language: 'zh' });
+  return { useAppStore };
+});
 
 import { useSessionAgentRows } from '../../../src/renderer/hooks/useSessionAgentRows';
 

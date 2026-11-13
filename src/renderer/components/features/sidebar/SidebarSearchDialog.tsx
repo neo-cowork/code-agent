@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, MessageSquareText, Search } from 'lucide-react';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { formatLocalDateTime } from '../../../utils/i18nTime';
+import { resolveSearchRunLabels } from '../../../utils/sessionSearchRunLabel';
 import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 import type {
   SidebarMessageSearchHitGroup,
@@ -18,6 +20,7 @@ interface SidebarSearchDialogProps {
   currentSessionId: string | null;
   messageSearchHitsBySessionId: Record<string, SidebarMessageSearchHitGroup>;
   messageSearchLoading: boolean;
+  messageSearchFailed?: boolean;
   effectiveSearchScope: SidebarSearchScope;
   setSearchScope: (scope: SidebarSearchScope) => void;
   canSearchCurrentProject: boolean;
@@ -33,16 +36,30 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
   currentSessionId,
   messageSearchHitsBySessionId,
   messageSearchLoading,
+  messageSearchFailed = false,
   effectiveSearchScope,
   setSearchScope,
   canSearchCurrentProject,
   onSelectSession,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const sb = t.sidebar;
   const inputRef = useRef<HTMLInputElement>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const sessionIdsKey = useMemo(() => sessions.map((session) => session.id).join('\n'), [sessions]);
+
+  const runLabels = useMemo(
+    () =>
+      resolveSearchRunLabels(
+        sessions.map((session) => ({
+          title: getDisplaySessionTitle(session.title, language),
+          label: formatLocalDateTime(session.updatedAt, language),
+          updatedAt: session.updatedAt,
+          createdAt: session.createdAt,
+        })),
+      ),
+    [sessions, language],
+  );
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -76,6 +93,7 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
 
   return (
     <Modal
+      portal
       isOpen={isOpen}
       onClose={onClose}
       title={sb.searchDialogTitle}
@@ -139,7 +157,7 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
             <div className="flex min-h-48 flex-col items-center justify-center gap-2 text-center">
               <Search className="h-6 w-6 text-zinc-600" />
               <p className="text-sm text-zinc-500">
-                {messageSearchLoading ? sb.searchingMessageContent : sb.noMatchedSessions}
+                {messageSearchLoading ? sb.searchingMessageContent : messageSearchFailed ? sb.searchFailed : sb.noMatchedSessions}
               </p>
             </div>
           ) : (
@@ -164,16 +182,23 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm">
-                        {getDisplaySessionTitle(session.title)}
+                        {getDisplaySessionTitle(session.title, language)}
                         {session.id === currentSessionId && (
                           <span className="ml-2 text-[11px] text-badge-info">{sb.currentSession}</span>
                         )}
+                        {runLabels.latest.has(index) && (
+                          <span className="ml-2 text-[11px] text-badge-info">{sb.latestRun}</span>
+                        )}
                       </span>
-                      {hitGroup && (
-                        <span className="block truncate text-[11px] text-zinc-500">
-                          {sb.messageHits.replace('{count}', String(hitGroup.totalHitCount))}
-                        </span>
-                      )}
+                      <span data-testid="sidebar-search-session-time" className="block truncate text-[11px] text-zinc-500">
+                        {runLabels.labels[index]}
+                        {hitGroup && (
+                          <>
+                            <span aria-hidden="true"> · </span>
+                            <span>{sb.messageHits.replace('{count}', String(hitGroup.totalHitCount))}</span>
+                          </>
+                        )}
+                      </span>
                     </span>
                   </button>
                 );

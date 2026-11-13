@@ -12,6 +12,7 @@ import type { FileChange } from '../../../utils/turnDiffSummary';
 import { stripAppshotBlocks } from '@shared/contract/appshot';
 import { extractUserRequest, stripSystemReminderBlocks } from '@shared/utils/turnScaffold';
 import { normalizeSpokenFileName } from '@shared/utils/normalizeSpokenFileName';
+import { isTelemetryRecoveredMessage, stripTelemetryRecoveryNotice } from '@shared/telemetryRecovery';
 import { MessageContent } from './MessageBubble/MessageContent';
 import { restoreNeoTagTokenForDisplay } from './MessageBubble/triggerTokenHighlight';
 import { ToolCallDisplay } from './MessageBubble/ToolCallDisplay/index';
@@ -25,14 +26,18 @@ import { FallbackBanner } from './MessageBubble/FallbackBanner';
 import { ContextCompressionSignalBanner } from './MessageBubble/ContextCompressionSignalBanner';
 import { RouteTraceChip, shouldRenderModelDecisionChip } from './RouteTraceChip';
 import { TurnQualityStrip } from './TurnQualityStrip';
+import { EnvAssistCard } from './EnvAssistCard';
 import { AgentErrorPresentation } from './AgentErrorCard';
+import { ProjectTrustConfirmCard } from './ProjectTrustConfirmCard';
 import { VoiceCallSummaryCard } from '../voice/VoiceCallSummaryCard';
 import { useSmoothStreamingText } from '../../../hooks/useSmoothStreamingText';
 import { Archive, AudioLines, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, RefreshCw, RotateCcw } from 'lucide-react';
 import { UI } from '@shared/constants';
 import { humanizeToolError } from '../../../utils/toolExecutionPresentation';
 import { useI18n } from '../../../hooks/useI18n';
+import { getRoleToolCapabilities } from '../../../utils/roleToolCapabilities';
 import { interpolate } from '../../../i18n/interpolate';
+import { getStreamInterruptionReasonLabel } from '../../../utils/streamInterruptionPresentation';
 import { useMessageActionStore } from '../../../stores/messageActionStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useStreamResumeStore } from '../../../stores/streamResumeStore';
@@ -41,6 +46,7 @@ import { WakeRationaleNote, wakeRationaleFromMetadata } from './WakeRationaleNot
 import { TurnTimelineNodeRenderer } from './TraceTimelineNodes';
 import { MessageContextFrame, MessageContextMenu } from './MessageContextMenu';
 import { messageContextMenuId } from './useMessageContextInterventions';
+import { StepLimitContinue } from './StepLimitContinue';
 
 interface TraceNodeRendererProps {
   node: TraceNode;
@@ -49,6 +55,8 @@ interface TraceNodeRendererProps {
   attachments?: import('@shared/contract').MessageAttachment[];
   /** Whether this node is in a currently streaming turn */
   isStreaming?: boolean;
+  /** The external run ledger confirms an unfinished persisted tool is still live. */
+  unfinishedToolIsLive?: boolean;
   /**
    * X5.5-D4/D6：节点处于语音派活任务卡内。徽标已上提到轮层（卡头 AudioLines
    * 图标是这通派活唯一的语音标记），轮内节点级的「语音」小标全部抑制。
@@ -57,6 +65,8 @@ interface TraceNodeRendererProps {
   onStreamingDisplayUpdate?: (nodeId: string, displayLength: number, isAnimating: boolean) => void;
   onRewindUserPrompt?: (messageId: string, content: string) => void;
   rewindDisabled?: boolean;
+  /** 旧项目待确认轮：用户气泡不挂「没发出去 · 编辑重发」（见 utils/projectTrustTurn）。 */
+  suppressSendFailedBadge?: boolean;
   fileChangesByPath?: ReadonlyMap<string, FileChange>;
 }
 
@@ -65,10 +75,12 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
   sessionId,
   attachments,
   isStreaming,
+  unfinishedToolIsLive,
   inVoiceDispatchCard,
   onStreamingDisplayUpdate,
   onRewindUserPrompt,
   rewindDisabled,
+  suppressSendFailedBadge,
   fileChangesByPath,
 }) => {
   let content: React.ReactNode;
@@ -82,7 +94,8 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
           content={node.content}
           attachments={attachments}
           sourceType={node.metadata?.source}
-          sendFailed={node.metadata?.sendFailed === true}
+          sendFailed={node.metadata?.sendFailed === true && !suppressSendFailedBadge}
+          telemetryRecovered={isTelemetryRecoveredMessage({ role: 'user', content: node.content, metadata: node.metadata })}
           suppressVoiceBadge={Boolean(inVoiceDispatchCard)}
           isNeoTagMessage={Boolean(node.metadata?.neoTag)}
           streaming={isStreaming}
@@ -108,7 +121,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
       );
       break;
     case 'tool_call':
-      content = <ToolCallNode node={node} sessionId={sessionId} />;
+      content = <ToolCallNode node={node} sessionId={sessionId} unfinishedToolIsLive={unfinishedToolIsLive} />;
       break;
     case 'system':
       content = <SystemNode node={node} sessionId={sessionId} />;
@@ -144,6 +157,9 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
   return (
     <div data-trace-node-id={node.id} data-trace-node-type={node.type}>
       {content}
+      {node.type === 'assistant_text' && node.feedbackEligible && node.metadata?.stoppedByStepLimit && (
+        <StepLimitContinue sessionId={sessionId} messageId={node.messageId ?? node.id} />
+      )}
     </div>
   );
 };
@@ -158,20 +174,22 @@ const UserNode: React.FC<{
   sourceType?: 'voice' | 'dictation' | 'typed';
   /** 发送失败后留在时间线上的乐观用户气泡 */
   sendFailed?: boolean;
+  /** 由运行记录还原的消息（新标记或旧前缀行）：气泡旁加一句说明 */
+  telemetryRecovered?: boolean;
   /** X5.5-D4：语音任务卡内抑制节点级「语音」小标（轮头已显示一次） */
   suppressVoiceBadge?: boolean;
   isNeoTagMessage?: boolean;
   onRewind?: (messageId: string, content: string) => void;
   rewindDisabled?: boolean;
   streaming?: boolean;
-}> = ({ messageId, sessionId, content, attachments, sourceType, sendFailed, suppressVoiceBadge, isNeoTagMessage, onRewind, rewindDisabled, streaming }) => {
+}> = ({ messageId, sessionId, content, attachments, sourceType, sendFailed, telemetryRecovered, suppressVoiceBadge, isNeoTagMessage, onRewind, rewindDisabled, streaming }) => {
   const { t } = useI18n();
   const editAndResendMessage = useMessageActionStore((state) => state.editAndResendMessage);
   // 展示面还原：带 turnSystemContext 脚手架（<user_request> 包裹）的历史/泄漏消息只显示
   // 用户原话——包装是模型面，用户界面显示原话（UX round2 20f，定义在 shared/utils/turnScaffold）。
   // @neo 落库正文被剥了前缀（它兼任模型 prompt），渲染时补回展示，重启后也能看到带色的 @neo
   const rawDisplayContent = restoreNeoTagTokenForDisplay(
-    stripSystemReminderBlocks(stripAppshotBlocks(extractUserRequest(content || ''))),
+    stripSystemReminderBlocks(stripAppshotBlocks(extractUserRequest(stripTelemetryRecoveryNotice(content || '')))),
     Boolean(isNeoTagMessage),
   );
   const displayContent = sourceType === 'voice'
@@ -215,6 +233,11 @@ const UserNode: React.FC<{
                 >
                   {t.turnCard.editAndResend}
                 </button>
+              </div>
+            )}
+            {telemetryRecovered && displayContent && (
+              <div data-testid="user-message-recovered-note" className="mb-1 text-right text-2xs text-zinc-500">
+                {t.turnCard.recoveredFromRecord}
               </div>
             )}
             {displayContent && (
@@ -377,6 +400,7 @@ const AssistantTextNode: React.FC<{
     || (node.modelDecision && shouldRenderModelDecisionChip(node.modelDecision))
     || node.metadata?.turnQuality
     || node.metadata?.agentError
+    || node.metadata?.envAssist
     // ADR-068 刀 4：B2 续答段刚起头时正文还空，一次性续接说明先于首字渲染
     || resumeNote
     || resumeSignal,
@@ -387,6 +411,10 @@ const AssistantTextNode: React.FC<{
   // （历史消息、仍在思考中的节点）保持原样不渲染，不动既有折叠/思考展示逻辑。
   const isActiveEmptyGap =
     turnStreaming && !hasRenderableContent && !(node.thinking || node.reasoning)?.trim();
+  const bareStopReason = !node.content && !node.metadata?.agentError ? node.metadata?.streamInterruptionReason : undefined;
+  if (bareStopReason) {
+    return <div data-testid="bare-interruption-note" className="py-1 text-xs text-zinc-500">{getStreamInterruptionReasonLabel(bareStopReason, t)}</div>;
+  }
   if (!hasRenderableContent) {
     if (!isActiveEmptyGap) return null;
     return (
@@ -510,13 +538,22 @@ const AssistantTextNode: React.FC<{
         </div>
       )}
 
-      {/* 运行失败的结构化错误卡片（替代旧版 merge 进正文的 ⚠ 文本） */}
+      {/* 运行失败的结构化错误卡片（替代旧版 merge 进正文的 ⚠ 文本）。
+          run 是投影层推导的同因连续段：早先的失败轮降为灰字行，只有最新一轮整卡。 */}
+      {node.metadata?.envAssist && !node.metadata.agentError?.envAssist && <EnvAssistCard notice={node.metadata.envAssist} />}
       {node.metadata?.agentError && (
         <AgentErrorPresentation
           error={node.metadata.agentError}
           messageId={messageId}
           sessionId={sessionId}
+          run={node.agentErrorRun}
+          lastFailure={node.agentErrorLast}
         />
+      )}
+
+      {/* 旧项目 Source 快照缺失的发送失败：正文已是人话句子，这里补「确认并重发」 */}
+      {node.metadata?.sendFailureCode === 'PROJECT_SOURCE_TRUST' && (
+        <ProjectTrustConfirmCard node={node} sessionId={sessionId} />
       )}
 
       {wakeFields ? <WakeRationaleNote fields={wakeFields} /> : null}
@@ -526,7 +563,7 @@ const AssistantTextNode: React.FC<{
 };
 
 // ---- Tool Call Node ----
-const ToolCallNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, sessionId }) => {
+const ToolCallNode: React.FC<{ node: TraceNode; sessionId?: string; unfinishedToolIsLive?: boolean }> = ({ node, sessionId, unfinishedToolIsLive }) => {
   if (!node.toolCall) return null;
   const interruptionReason = node.metadata?.streamInterruptionReason;
 
@@ -563,7 +600,7 @@ const ToolCallNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node,
       toolCall={toolCall}
       index={0}
       total={1}
-      statusOverride={node.metadata?.streamRecovery || interruptionReason ? 'interrupted' : undefined}
+      statusOverride={node.metadata?.streamRecovery || interruptionReason ? 'interrupted' : unfinishedToolIsLive && node.toolCall.result === undefined ? 'pending' : undefined}
       interruptionReason={interruptionReason ?? (node.metadata?.streamRecovery ? 'app-restart' : undefined)}
       mediaContext={{ sessionId, messageId: node.messageId || node.id }}
     />
@@ -626,6 +663,33 @@ const SystemErrorNode: React.FC<{ node: TraceNode }> = ({ node }) => {
 const SystemNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, sessionId }) => {
   const [expanded, setExpanded] = useState(false);
   const { t } = useI18n();
+
+  const receipt = node.metadata?.roleEditReceipt;
+  if (receipt) {
+    const copy = t.roleEditReceipt;
+    const unchanged = !receipt.addedTools.length && !receipt.removedTools.length
+      && !receipt.descriptionChanged && !receipt.promptChanged;
+    const title = (receipt.diffAvailable === false ? copy.unavailable : unchanged ? copy.unchanged : copy.updated)
+      .replace('{role}', receipt.roleId);
+    const capabilities = (toolNames: string[]) => getRoleToolCapabilities({
+      toolNames,
+      capabilityLabels: t.receiptPresentation.roleCapabilityLabels,
+      humanToolLabels: t.receiptPresentation.humanToolLabels,
+    }).join(t.receiptPresentation.roleCapabilityLabels.separator);
+    return (
+      <div className="shrink-0 mx-3 my-1.5 rounded-md border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-xs text-zinc-400">
+        <div className="font-medium text-zinc-300">{title}</div>
+        {receipt.diffAvailable !== false && !unchanged && (
+          <div className="mt-1">
+            {receipt.addedTools.length > 0 && <div>{copy.added.replace('{tools}', capabilities(receipt.addedTools))}</div>}
+            {receipt.removedTools.length > 0 && <div>{copy.removed.replace('{tools}', capabilities(receipt.removedTools))}</div>}
+            <div>{receipt.descriptionChanged ? copy.descriptionChanged : copy.descriptionUnchanged}</div>
+            <div>{receipt.promptChanged ? copy.promptChanged : copy.promptUnchanged}</div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   const checkoutNote = node.metadata?.turnCheckoutNote;
   if (checkoutNote) {

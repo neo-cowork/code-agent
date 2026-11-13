@@ -19,6 +19,7 @@ type OutcomeKey =
   | 'failed-unknown'
   | 'failed-approval-denied'
   | 'failed-timeout'
+  | 'failed-idle-reaped'
   | 'failed-budget'
   | 'failed-dependency'
   | 'failed-unavailable'
@@ -46,6 +47,7 @@ const STREAM_INTERRUPTION_OUTCOME_KEYS = {
   'session-switch': 'interrupted-session-switch',
   'app-restart': 'interrupted-restart',
   'stream-break': 'interrupted-stream-break',
+  'idle-reaped': 'failed-idle-reaped',
 } as const satisfies Record<StreamInterruptionReason, OutcomeKey>;
 
 /** One active/passive verdict shared by every stream-interruption surface. */
@@ -53,6 +55,13 @@ export function resolveStreamInterruptionOutcomeKey(
   reason: StreamInterruptionReason | null | undefined,
 ): (typeof STREAM_INTERRUPTION_OUTCOME_KEYS)[StreamInterruptionReason] {
   return STREAM_INTERRUPTION_OUTCOME_KEYS[reason ?? 'app-restart'];
+}
+
+/** Resolve persisted/event cancellation causes without attributing a disconnect to the user. */
+export function resolveRunCancellationOutcomeKey(reason?: string | null): OutcomeKey {
+  if (reason === 'client_disconnect' || reason === 'client-disconnect') return 'interrupted-stream-break';
+  if (reason === 'idle_reaped') return 'failed-idle-reaped';
+  return 'cancelled-by-user';
 }
 
 export const outcomeWordsZh: OutcomeWordsBundle = {
@@ -122,6 +131,12 @@ export const outcomeWordsZh: OutcomeWordsBundle = {
       badge: { label: '已中断', reason: '等待回答或权限确认超时' },
       detail: { label: '任务已中断', reason: '等待回答或权限确认超时' },
       notification: { label: '任务已中断', reason: '等待回答或权限确认超时' },
+    },
+    'failed-idle-reaped': {
+      timeline: { label: '已中断', reason: '长时间没有进展，已自动回收' },
+      badge: { label: '已中断', reason: '长时间没有进展，已自动回收' },
+      detail: { label: '任务已中断', reason: '长时间没有进展，已自动回收' },
+      notification: { label: '任务已中断', reason: '长时间没有进展，已自动回收' },
     },
     'failed-budget': {
       timeline: { label: '预算用尽', reason: '执行达到预算上限' },
@@ -241,6 +256,12 @@ export const outcomeWordsEn: OutcomeWordsBundle = {
       badge: { label: 'Interrupted', reason: 'Waiting for an answer or permission timed out' },
       detail: { label: 'Task interrupted', reason: 'Waiting for an answer or permission timed out' },
       notification: { label: 'Task interrupted', reason: 'Waiting for an answer or permission timed out' },
+    },
+    'failed-idle-reaped': {
+      timeline: { label: 'Interrupted', reason: 'No progress for a long time, reclaimed automatically' },
+      badge: { label: 'Interrupted', reason: 'No progress for a long time, reclaimed automatically' },
+      detail: { label: 'Task interrupted', reason: 'No progress for a long time, reclaimed automatically' },
+      notification: { label: 'Task interrupted', reason: 'No progress for a long time, reclaimed automatically' },
     },
     'failed-budget': {
       timeline: { label: 'Budget exhausted', reason: 'The run reached its budget limit' },

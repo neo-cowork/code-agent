@@ -101,6 +101,7 @@ export interface DurableCheckpointInput {
   autoResumeCount?: number;
   clearInterruptCause?: boolean;
   quotaWaitDueAt?: number;
+  envBlocked?: RunEnvelope['envBlocked'];
 }
 
 export interface DurableTerminalInput {
@@ -121,6 +122,7 @@ export interface RunKernelAdapter {
   checkpoint(input: DurableCheckpointInput): Promise<RunCheckpoint>;
   terminal(input: DurableTerminalInput): Promise<RunEnvelope>;
   release(runId: string, owner: RunOwnerLease, now: number): Promise<boolean>;
+  getRehydrationPlan?(runId: string): Promise<RunRehydrationPlan>;
   recoverOnStartup(now: number, limit?: number): Promise<RunRehydrationPlan[]>;
   prepareOperation(input: PrepareOperationInput): PendingOperation;
   prepareToolOperation(input: PrepareToolOperationInput): PendingOperation;
@@ -357,6 +359,7 @@ export class DurableRunKernel implements RunKernelAdapter {
         ?? ((envelope.autoResumeCount ?? 0) > 0 && recordsLiveProgress(input.events) ? 0 : undefined),
       clearInterruptCause: input.clearInterruptCause,
       quotaWaitDueAt: input.quotaWaitDueAt,
+      envBlocked: input.envBlocked,
     });
   }
 
@@ -378,6 +381,19 @@ export class DurableRunKernel implements RunKernelAdapter {
 
   async release(runId: string, owner: RunOwnerLease, now: number): Promise<boolean> {
     return this.requireStores().releaseLease(runId, owner, now);
+  }
+
+  async getRehydrationPlan(runId: string): Promise<RunRehydrationPlan> {
+    const stores = this.requireStores();
+    const envelope = await stores.get(runId);
+    if (!envelope) throw new Error('Continuation run is unavailable');
+    const previousAttempt = await stores.getAttempt(runId, envelope.attempt);
+    if (!previousAttempt) throw new Error('Continuation attempt is unavailable');
+    return {
+      envelope, previousAttempt, checkpoint: await stores.getLatest(runId),
+      pendingOperations: await stores.listPendingOperations(runId),
+      childRuns: await stores.listChildRuns(runId), requiresHumanConfirmation: [],
+    };
   }
 
   async recoverOnStartup(now: number, limit = 100): Promise<RunRehydrationPlan[]> {

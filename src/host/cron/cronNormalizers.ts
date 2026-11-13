@@ -1,21 +1,29 @@
+import { formatStoredCronSessionTitle } from '../../shared/cronSessionTitle';
+import { normalizePersonalSkillIds } from '../../shared/cronPersonalSkills';
 // ============================================================================
 // CronService - row/schedule/action normalizers & type guards
 // 纯函数：把数据库行、schedule、action 等 unknown 输入规整成强类型契约。
 // 从 cronService.ts 抽出以收敛文件体积，无行为变更。
 // ============================================================================
 
-import type {
-  CronJobDefinition,
-  CronJobStatus,
-  CronScheduleType,
-  CronScheduleConfig,
-  CronJobAction,
-  CronExecutionTrigger,
+import {
+  CRON_PUSH_NOTES,
+  type CronPushNote,
+  type CronJobDefinition,
+  type CronJobStatus,
+  type CronScheduleType,
+  type CronScheduleConfig,
+  type CronJobAction,
+  type CronExecutionTrigger,
 } from '../../shared/contract/cron';
 import { CRON_GUARDRAILS, CRON_EVENT_TRIGGER, CRON_URGENCY_CRITERIA, EXTERNAL_WATCH } from '../../shared/constants';
 import { extractCronAlertText, parseCronRunDigest, type CronRunDigest } from '../../shared/cronRunDigest';
 import { declaresCronUrgencyQuiet, parseUrgencyHeader } from '../../shared/cronUrgency';
-import type { CronUrgency } from '../../shared/contract/sessionAutomation';
+import { isCronPermissionDeniedMarker } from '../../shared/cronPermissionDenied';
+import type { CronPermissionDeniedMarker, CronUrgency } from '../../shared/contract/sessionAutomation';
+
+import { filterReadOnlyCronArtifacts, type CronRunArtifactContext } from './cronRunArtifacts';
+import type { UnattendedApprovalDenial } from '../agent/unattendedApprovalTerminal';
 
 export interface CronAgentActionResult {
   agentType: string;
@@ -27,6 +35,8 @@ export interface CronAgentActionResult {
   urgency?: CronUrgency;
   /** 头部行存在但值不合法时的整行原文（归 fyi 时保留给用户看）。 */
   urgencyRaw?: string;
+  /** 无人值守审批 30 分钟无人批准而降级拒绝的步骤（run 仍 completed），保留原因码供执行记录追溯。 */
+  unattendedApprovalDenials?: UnattendedApprovalDenial[];
   /**
    * notifyWhen 判据未满足的安静成功轮（N-CRON-RESTATE-HUMAN-WHEN）：跳过完成
    * 系统通知与通道推送。与 skipped 不同——执行仍 completed、仍进历史与待过目
@@ -42,6 +52,12 @@ export interface CronAgentActionResult {
   alertReason?: string;
   /** 本次运行实测成本（USD，N-CRON-RUN-LEDGER-VISIBLE）：scoped 计量器读数；无模型调用时缺省。 */
   costUsd?: number;
+  /**
+   * 有命令没获批准且无产出（N-CRON-RUN-COMPLETED-BUT-DENIED）：状态仍是 completed
+   * （拒绝不是任务失败，不触发重试/停用），通知与 UI 用它换琥珀色「需处理」。
+   * 只在「被拒 ≥1 且无非只读成功结果且 digest 无产物」的最小判据下打上。
+   */
+  permissionDenied?: CronPermissionDeniedMarker;
 }
 
 /** 执行结果是否带「notifyWhen 未满足」的安静标记（通知门用，见 cronFailurePolicy）。 */
@@ -54,6 +70,22 @@ export function readCronAlertReason(value: unknown): string | undefined {
   if (!isCronAgentActionResult(value)) return undefined;
   const reason = typeof value.alertReason === 'string' ? value.alertReason.trim() : undefined;
   return reason || undefined;
+}
+
+/**
+ * 读「有命令没获批准且无产出」标记（N-CRON-RUN-COMPLETED-BUT-DENIED）：通知门与
+ * 待过目桥接的唯一读取口。非 agent 形状或标记坏形状（DB 回读的旧/脏数据）一律
+ * undefined——消费端回落既有的绿色成功态，旧执行记录行为零变化。
+ */
+export function readCronPermissionDenied(value: unknown): CronPermissionDeniedMarker | undefined {
+  return isCronAgentActionResult(value) && isCronPermissionDeniedMarker(value.permissionDenied)
+    ? value.permissionDenied
+    : undefined;
+}
+
+export function isCronAgentResultUrgent(value: unknown): boolean {
+  return readCronAlertReason(value) !== undefined
+    || (isCronAgentActionResult(value) && value.urgency === 'must_today');
 }
 
 /**
@@ -73,8 +105,9 @@ export function cronAgentRunHasAlert(
     return EXTERNAL_WATCH.ALERT_TAG_PATTERN.test(run.finalAssistantText);
   }
   if (action.urgencyCriteria?.trim()) {
+    const digest = parseCronRunDigest(run.finalAssistantText);
     return !declaresCronUrgencyQuiet(
-      parseCronRunDigest(run.finalAssistantText).summary ?? run.finalAssistantText,
+      digest.fullSummary ?? digest.summary ?? run.finalAssistantText,
     );
   }
   return true;
@@ -84,6 +117,8 @@ export function cronAgentRunHasAlert(
  * 组装 agent 动作的执行结果：digest + 紧急档位 + 安静监听轮的 skipped 标记。
  * 档位优先读 `<cron_summary>` 摘要的头部行，没有摘要块时读最后一条 assistant
  * 正文的头部（N-CRON-INBOX-URGENCY-TIER；解析逻辑在 shared/cronUrgency）。
+ * permissionDenied（N-CRON-RUN-COMPLETED-BUT-DENIED）由 cronAgentAction 扫消息
+ * 推导后传入：有就落键，没有不落（旧形状零扰动）。
  */
 export function buildCronAgentActionResult(
   action: { agentType: string; prompt: string; notifyWhen?: string },
@@ -92,9 +127,12 @@ export function buildCronAgentActionResult(
   finalAssistantText: string,
   quietWatchRound: boolean,
   notifyQuietRound = false,
+  permissionDenied?: CronPermissionDeniedMarker,
+  artifactContext?: CronRunArtifactContext,
 ): CronAgentActionResult & { skipped?: boolean; reason?: string } {
-  const digest = parseCronRunDigest(finalAssistantText);
-  const { urgency, raw: urgencyRaw } = parseUrgencyHeader(digest.summary ?? finalAssistantText);
+  const parsedDigest = parseCronRunDigest(finalAssistantText);
+  const digest = artifactContext ? filterReadOnlyCronArtifacts(parsedDigest, artifactContext) : parsedDigest;
+  const { urgency, raw: urgencyRaw } = parseUrgencyHeader(digest.fullSummary ?? digest.summary ?? finalAssistantText);
   const alertReason = !notifyQuietRound && action.notifyWhen?.trim()
     ? extractCronAlertText(finalAssistantText)
     : '';
@@ -109,6 +147,7 @@ export function buildCronAgentActionResult(
     ...(quietWatchRound ? { skipped: true, reason: 'no_new_event' } : {}),
     ...(notifyQuietRound ? { notifySuppressed: true } : {}),
     ...(alertReason ? { alertReason } : {}),
+    ...(permissionDenied ? { permissionDenied } : {}),
   };
 }
 
@@ -128,6 +167,7 @@ export interface CronExecutionRow {
   exit_code?: number | null;
   cost_usd?: number | null;
   trigger_json?: string | null;
+  push_note?: string | null;
 }
 
 const CRON_JOB_STATUSES: readonly CronJobStatus[] = [
@@ -159,10 +199,7 @@ export function getCronAgentSessionType(action: CronJobAction): 'schedule' | 'he
 /** cron/heartbeat 会话标题：剥掉历史前缀再按档位重打，避免 [Cron] [Schedule] 叠罗汉。
  *  （自 cronService 平移，逐字未动——该文件贴 max-lines 线。） */
 export function formatCronAgentSessionTitle(definition: CronJobDefinition, sessionType: 'schedule' | 'heartbeat'): string {
-  const cleanName = definition.name.replace(/^\[(Cron|Schedule|Heartbeat)\]\s*/i, '').trim() || definition.name;
-  return sessionType === 'heartbeat'
-    ? `[Heartbeat] ${cleanName}`
-    : `[Schedule] ${cleanName}`;
+  return formatStoredCronSessionTitle(definition.name, sessionType);
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -449,6 +486,7 @@ export function normalizeAction(value: unknown): CronJobAction | null {
         libraryProjectId:
           typeof value.libraryProjectId === 'string' ? value.libraryProjectId : undefined,
         urgencyCriteria: normalizeCriteriaSentence(value.urgencyCriteria),
+        allowedPersonalSkillIds: normalizePersonalSkillIds(value.allowedPersonalSkillIds),
         notifyWhen: normalizeCriteriaSentence(value.notifyWhen),
       };
     }
@@ -557,7 +595,10 @@ export function normalizeCronJobRow(row: unknown): CronJobDefinition | null {
     retryDelay: readOptionalNumberField(row, 'retry_delay') === CRON_GUARDRAILS.LEGACY_DEFAULT_RETRY_DELAY_MS
       ? undefined
       : readOptionalNumberField(row, 'retry_delay'),
-    timeout: readOptionalNumberField(row, 'timeout'),
+    // Local legacy saves wrote the default even for unlimited; cloud keeps its real limit.
+    timeout: runsOn !== 'cloud' && readOptionalNumberField(row, 'timeout') === CRON_GUARDRAILS.LEGACY_DEFAULT_TIMEOUT_MS
+      ? undefined
+      : readOptionalNumberField(row, 'timeout'),
     tags: normalizeTags(parseJsonValue(row.tags)),
     metadata: normalizeUnknownRecord(parseJsonValue(row.metadata)),
     createdAt,
@@ -602,7 +643,13 @@ export function normalizeCronExecutionRow(row: unknown): CronExecutionRow | null
     exit_code: readNullableNumberField(row, 'exit_code'),
     trigger_json: readNullableStringField(row, 'trigger_json'),
     cost_usd: readNullableNumberField(row, 'cost_usd'),
+    push_note: readNullableStringField(row, 'push_note'),
   };
+}
+
+/** push_note 列的枚举校验：未知值按无记录处理。 */
+export function parseCronPushNote(raw: unknown): CronPushNote | undefined {
+  return CRON_PUSH_NOTES.find((note) => note === raw);
 }
 
 /** trigger_json 列的形状校验：坏行按无 trigger 处理（trigger 是溯源字段，不承重执行语义）。 */

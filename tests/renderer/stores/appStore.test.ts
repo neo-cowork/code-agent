@@ -25,6 +25,8 @@ describe('appStore', () => {
       showSettings: false,
       showCapabilityHub: false,
       capabilityHubTab: 'experts',
+      expertPanelTab: 'discover',
+      expertDetailRoleId: null,
       showCronCenter: false,
       settingsInitialTab: null,
       settingsMemoryFocus: null,
@@ -35,6 +37,7 @@ describe('appStore', () => {
       pendingPermissionRequest: null,
       pendingPermissionSessionId: null,
       queuedPermissionRequests: {},
+      resolvedPermissionRequests: {},
     });
   });
 
@@ -168,6 +171,26 @@ describe('appStore', () => {
     expect(useAppStore.getState()).toMatchObject({ showSettings: false, showCapabilityHub: true, capabilityHubTab: 'experts' });
   });
 
+  it('resets the expert inner tab when opening the capability hub from another primary page', () => {
+    useAppStore.setState({ showCapabilityHub: false, expertDetailRoleId: null, expertPanelTab: 'mine' });
+
+    useAppStore.getState().openCapabilityHub('experts');
+
+    expect(useAppStore.getState()).toMatchObject({ showCapabilityHub: true, expertPanelTab: 'discover' });
+  });
+
+  it('keeps the expert inner tab when returning from expert detail', () => {
+    useAppStore.setState({ showCapabilityHub: false, expertDetailRoleId: '自定义客服', expertPanelTab: 'mine' });
+
+    useAppStore.getState().setShowCapabilityHub(true);
+
+    expect(useAppStore.getState()).toMatchObject({
+      showCapabilityHub: true,
+      expertDetailRoleId: null,
+      expertPanelTab: 'mine',
+    });
+  });
+
   it('opens capability settings with a typed focus target', () => {
     useAppStore.getState().openCapabilitySettingsTarget({ kind: 'mcp', id: 'github' });
 
@@ -225,7 +248,8 @@ describe('appStore', () => {
     expect(useAppStore.getState().showOptionalUpdateModal).toBe(true);
   });
 
-  it('clears pending and queued permissions only for the requested session', () => {
+  // N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO：run 终态清理只收前台（无 run 身份）请求。
+  it('run-end cleanup clears pending and queued permissions only for the requested session', () => {
     const pending = permissionRequest('current-pending');
     const currentQueued = permissionRequest('current-queued');
     const foreign = permissionRequest('foreign');
@@ -240,7 +264,7 @@ describe('appStore', () => {
       },
     });
 
-    useAppStore.getState().clearPermissionRequestsForSession('session-current');
+    useAppStore.getState().clearForegroundPermissionRequestsForSession('session-current');
 
     expect(useAppStore.getState()).toMatchObject({
       pendingPermissionRequest: null,
@@ -252,7 +276,7 @@ describe('appStore', () => {
     });
   });
 
-  it('clears global permission state only for the global pseudo session', () => {
+  it('run-end cleanup clears global permission state only for the global pseudo session', () => {
     const globalPending = permissionRequest('global-pending');
     const globalQueued = permissionRequest('global-queued');
     const foreign = permissionRequest('foreign');
@@ -265,12 +289,86 @@ describe('appStore', () => {
       },
     });
 
-    useAppStore.getState().clearPermissionRequestsForSession('global');
+    useAppStore.getState().clearForegroundPermissionRequestsForSession('global');
 
     expect(useAppStore.getState()).toMatchObject({
       pendingPermissionRequest: null,
       pendingPermissionSessionId: null,
       queuedPermissionRequests: { 'session-foreign': [foreign] },
+    });
+  });
+
+  it('run-end cleanup keeps background-task requests (runId/agentId) of the session', () => {
+    const bgPending: PermissionRequest = {
+      ...permissionRequest('bg-pending'),
+      sessionId: 'session-current',
+      agentId: 'bg-agent-1',
+      runId: 'bg-run-1',
+    };
+    const bgQueued: PermissionRequest = {
+      ...permissionRequest('bg-queued'),
+      sessionId: 'session-current',
+      agentId: 'bg-agent-2',
+      runId: 'bg-run-2',
+    };
+    const foregroundQueued = permissionRequest('current-queued');
+    useAppStore.setState({
+      pendingPermissionRequest: bgPending,
+      pendingPermissionSessionId: 'session-current',
+      queuedPermissionRequests: {
+        'session-current': [bgQueued, foregroundQueued],
+      },
+    });
+
+    useAppStore.getState().clearForegroundPermissionRequestsForSession('session-current');
+
+    // 后台任务的 pending 卡与队列卡原样保留；无身份的前台队列卡被清掉。
+    expect(useAppStore.getState()).toMatchObject({
+      pendingPermissionRequest: bgPending,
+      pendingPermissionSessionId: 'session-current',
+      queuedPermissionRequests: {
+        'session-current': [bgQueued],
+      },
+    });
+  });
+
+  it('removes a background lane dead cards by runId/agentId when its own run ends', () => {
+    const lanePending: PermissionRequest = {
+      ...permissionRequest('lane-pending'),
+      sessionId: 'session-current',
+      agentId: 'bg-agent-1',
+      runId: 'bg-run-1',
+    };
+    const laneQueued: PermissionRequest = {
+      ...permissionRequest('lane-queued'),
+      sessionId: 'session-current',
+      agentId: 'bg-agent-1',
+      runId: 'bg-run-1',
+    };
+    const otherLane: PermissionRequest = {
+      ...permissionRequest('other-lane'),
+      sessionId: 'session-current',
+      agentId: 'bg-agent-2',
+      runId: 'bg-run-2',
+    };
+    useAppStore.setState({
+      pendingPermissionRequest: lanePending,
+      pendingPermissionSessionId: 'session-current',
+      queuedPermissionRequests: {
+        'session-current': [laneQueued, otherLane],
+      },
+    });
+
+    useAppStore.getState().removePermissionRequestsForBackgroundRun({ runId: 'bg-run-1', agentId: 'bg-agent-1' });
+
+    // 该 lane 的 pending 与队列卡全收（不进已决存证）；别的 lane 不受牵连。
+    expect(useAppStore.getState()).toMatchObject({
+      pendingPermissionRequest: null,
+      pendingPermissionSessionId: null,
+      queuedPermissionRequests: {
+        'session-current': [otherLane],
+      },
+      resolvedPermissionRequests: {},
     });
   });
 });
