@@ -278,6 +278,7 @@ export const zhSettingsModels = {
         '开启后，局部重绘若无法逐像素保证未选区域不变，会直接取消并提示（而不是给你一张可能被偷改其它区域的图）。默认关闭：尽力锁定，无法锁定时仍采用模型结果不打断你。',
     },
     providerDoctor: {
+      probeAuthMismatch: '测试地址返回 {status}，但你最近的实际调用已成功，测试路径可能与实际调用不同。',
       title: '系统诊断',
       pageDescription: '检查运行环境、网络、配置、数据库等 9 类系统状态；失败项可直接跳转修复。',
       exportLogs: '导出日志',

@@ -74,4 +74,20 @@ describe('browser session card', () => {
     expect(memory.save).not.toHaveBeenCalled();
     expect(ipcInvoke).toHaveBeenCalledWith('agent:permission-response', `browser-${language}`, 'allow_run', undefined);
   });
+  it.each(['zh', 'en'] as const)('%s offers only allow once and deny for dialog, clipboard and unresolved sites', (language) => {
+    storeState.language = language;
+    for (const action of ['handle_dialog', 'read_clipboard', 'write_clipboard', 'wait_for_download', 'open']) {
+      for (const target of [`${action}@https://reports.example`, null]) {
+        storeState.request = { id: `${action}-${target}`, tool: 'Browser', type: 'command', timestamp: 1,
+          details: { action, browserSessionGrant: { target, previousOrigins: [] } } };
+        render(<PermissionCard />);
+        expect(screen.getByRole('button', { name: /允许一次|Allow once/ })).toBeTruthy();
+        expect(screen.getByRole('button', { name: /拒绝|Deny/ })).toBeTruthy();
+        const remember = screen.queryByRole('button', { name: /本次对话允许|Allow for this session/ });
+        expect(Boolean(remember)).toBe(Boolean(target && ['wait_for_download', 'open'].includes(action)));
+        cleanup();
+      }
+    }
+  });
+
 });

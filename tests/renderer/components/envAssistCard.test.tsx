@@ -2,6 +2,8 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { zh } from '../../../src/renderer/i18n/zh';
+import { en } from '../../../src/renderer/i18n/en';
 import type { EnvAssistNotice } from '../../../src/shared/contract/envAssist';
 
 const mocks = vi.hoisted(() => ({ language: 'zh', invoke: vi.fn() }));
@@ -10,7 +12,7 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   return { useI18n: () => ({ t: languages[mocks.language as 'zh' | 'en'], language: mocks.language }) };
 });
 vi.mock('../../../src/renderer/services/ipcService', () => ({ invokeDomain: mocks.invoke, default: {} }));
-import { AgentErrorPresentation } from '../../../src/renderer/components/features/chat/AgentErrorCard';
+import { AgentErrorPresentation, buildAgentErrorReport } from '../../../src/renderer/components/features/chat/AgentErrorCard';
 import { EnvAssistCard } from '../../../src/renderer/components/features/chat/EnvAssistCard';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useEnvAssistStore } from '../../../src/renderer/stores/envAssistStore';
@@ -38,6 +40,22 @@ describe('EnvAssistCard', () => {
     expect(screen.getByRole('button').textContent).toBe(language === 'en' ? 'Allow Calendar' : '允许访问日历');
     fireEvent.click(screen.getByRole('button'));
     await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('domain:envAssist', 'act', { noticeId: notice.id, actionKind: 'open_settings_pane', payload: { pane: 'automation' } }));
+  });
+  it.each(['zh', 'en'] as const)('envAssist excludes rawMessage from DOM and public report/copy text (%s)', async (language) => {
+    mocks.language = language;
+    useAppStore.setState({ developerMode: true });
+    const rawMessage = 'raw-env-secret: -1743 osascript Apple events TCC /login /model';
+    const error = { category: 'generic' as const, rawMessage, timestamp: 1, envAssist: notice };
+    const { container } = render(<AgentErrorPresentation error={error} messageId="m" />);
+    await waitFor(() => expect(screen.getAllByRole('button')).toHaveLength(1));
+    const t = language === 'zh' ? zh : en;
+    expect(screen.queryByRole('button', { name: t.agentError.actions.copyReport })).toBeNull();
+    expect(container.innerHTML).not.toContain(rawMessage);
+    expect(container.textContent).not.toMatch(/raw-env-secret|-1743|osascript|Apple events|TCC|\/login|\/model/i);
+    // This existing public builder is the text source used by both copy handlers.
+    const report = buildAgentErrorReport({ error, title: 'Safe title', suggestion: 'Safe suggestion', t });
+    expect(report).not.toContain(rawMessage);
+    expect(report).toBe('');
   });
   it('hides the button without a desktop and after an unavailable action', async () => {
     mocks.invoke.mockResolvedValue({ available: false });

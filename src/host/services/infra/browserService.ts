@@ -62,6 +62,8 @@ import {
   launchSystemChromeCdpBrowser,
 } from './browser/browserLaunchHelpers';
 import { ManagedBrowserLeaseController } from './browser/managedBrowserLeaseController';
+import { killManagedChromeProcesses } from './browser/browserProcessWatchdog';
+import { withManagedBrowserActivity } from './browser/managedBrowserActivity';
 import {
   findBrowserElementByText,
   findBrowserElements,
@@ -230,6 +232,10 @@ export class BrowserService implements Disposable {
   // --------------------------------------------------------------------------
 
   async launch(options: ManagedBrowserLaunchOptions = {}): Promise<void> {
+    return withManagedBrowserActivity(this, () => this.launchBrowser(options));
+  }
+
+  private async launchBrowser(options: ManagedBrowserLaunchOptions): Promise<void> {
     if (this.isRunning()) {
       if (options.profileMode && options.profileMode !== this.profileMode) {
         throw new Error(`Managed browser is already running with profileMode=${this.profileMode}; close it before switching to ${options.profileMode}.`);
@@ -251,6 +257,7 @@ export class BrowserService implements Disposable {
 
     this.mode = options.mode || this.getDefaultMode();
     this.configureManagedBrowserSession(options.profileMode || 'persistent');
+    if (this.profileMode === 'isolated') void import('./browser/isolatedProfileSweep').then(({ sweepStaleIsolatedBrowserProfiles }) => sweepStaleIsolatedBrowserProfiles({ currentProfileDir: this.isolatedProfileDir, logger: this.logger, oncePerProcess: true })).catch((error) => this.logger.log('WARN', `Isolated profile sweep failed: ${error}`));
     this.proxyConfig = resolveManagedBrowserProxyConfig({ input: options.proxy, env: process.env });
     const resolution = resolveBrowserProvider({ requestedProvider: options.provider });
     this.updateProviderDiagnostics(resolution, {
@@ -333,6 +340,11 @@ export class BrowserService implements Disposable {
 
   setLeaseInUse(inUse: boolean): void {
     this.leaseController.setInUse(inUse);
+  }
+
+  terminateIdleManagedProcess(): 'in-use' | 'no-managed-process' | 'terminated' {
+    if (this.leaseController.isInUse()) return 'in-use';
+    return killManagedChromeProcesses(this.browserProcess ? [this.browserProcess] : []) ? 'terminated' : 'no-managed-process';
   }
 
   isRunning(): boolean {
@@ -508,6 +520,10 @@ export class BrowserService implements Disposable {
   }
 
   async ensureSession(url: string = 'about:blank', options: ManagedBrowserLaunchOptions = {}): Promise<ManagedBrowserSessionState> {
+    return withManagedBrowserActivity(this, () => this.prepareSession(url, options));
+  }
+
+  private async prepareSession(url: string, options: ManagedBrowserLaunchOptions): Promise<ManagedBrowserSessionState> {
     await this.ensureBrowser(options);
     this.leaseController.renew({
       owner: options.leaseOwner || 'managed-browser',
