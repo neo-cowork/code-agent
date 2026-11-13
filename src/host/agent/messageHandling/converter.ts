@@ -21,6 +21,7 @@ import { buildAgentPointerTimeline } from '../../../shared/utils/agentPointerEvi
 import { getAttachmentId } from '../../../shared/utils/messageAttachments';
 import { redactToolResultSecrets } from '../../security/secretRedaction';
 import * as fs from 'fs';
+import * as path from 'path';
 
 const logger = createLogger('MessageConverter');
 
@@ -660,7 +661,7 @@ function processArchiveAttachment(attachment: MessageAttachment): string {
 }
 
 function processFolderAttachment(attachment: MessageAttachment): string {
-  const pathInfo = attachment.path ? `\n📍 绝对路径: ${attachment.path}` : '';
+  const pathInfo = attachment.path ? `\n📍 绝对路径: ${attachment.path}` : '\nFolder path unresolved; use individual file paths.';
   const stats = attachment.folderStats;
   const statsInfo = stats
     ? `\n📊 统计: ${stats.totalFiles} 个文件, ${(stats.totalSize / 1024).toFixed(1)} KB`
@@ -670,11 +671,15 @@ function processFolderAttachment(attachment: MessageAttachment): string {
   if (attachment.files && attachment.files.length > 0) {
     fileList = '\n\n**文件列表：**\n';
     for (const file of attachment.files) {
-      const sizeKB = file.content ? (file.content.length / 1024).toFixed(1) : '?';
-      const fullPath = attachment.path ? `${attachment.path}/${file.path}` : file.path;
-      fileList += `- ${file.path} (${sizeKB} KB) → \`${fullPath}\`\n`;
+      const sizeKB = (file.size / 1024).toFixed(1);
+      const readablePath = file.absolutePath
+        && (path.posix.isAbsolute(file.absolutePath) || path.win32.isAbsolute(file.absolutePath))
+        ? file.absolutePath : undefined;
+      const kind = file.binary ? `; ${file.type || 'other'}; binary, open with a tool` : '';
+      const access = readablePath ? `\`${readablePath}\`` : 'no readable path, cannot read; ask the user to re-attach';
+      fileList += `- ${file.path} (${sizeKB} KB${kind}) → ${access}\n`;
     }
-    fileList += '\n⚠️ **注意**: 以上只是文件列表，不包含文件内容。要分析代码，必须先用 `Read` 工具读取文件。';
+    fileList += '\nThis is a file list, not file contents. Read files with appropriate tools using only the supplied absolute paths. If a file cannot be read or has no readable path, say it cannot be read and ask the user to re-attach; never guess its nature (for example, that it is scanned).';
   }
 
   return `📁 **文件夹: ${attachment.name}**${pathInfo}${statsInfo}\n\n${attachment.data || ''}${fileList}`;

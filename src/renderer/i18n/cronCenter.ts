@@ -1,3 +1,4 @@
+import { parkedApprovalInboxEn, parkedApprovalInboxZh } from './parkedApprovalInbox';
 import { automationPresentationEn, automationPresentationZh } from './automationPresentation';
 import { cronCloudEn, cronCloudZh } from './cronCloud';
 import { cronRoutineRestateEn, cronRoutineRestateZh } from './cronRoutineRestate';
@@ -20,6 +21,7 @@ export const cronCenterZh = {
     ...cronEditorChromeZh,
     ...cronCloudZh,
     parkedVoided: parkedApprovalVoidedZh,
+    ...parkedApprovalInboxZh,
     groupListenCheck: {
       title: '检查群消息是否连通',
       start: '发条测试消息',
@@ -428,6 +430,8 @@ export const cronCenterZh = {
     parkedWriteGroupTitle: '写入 {count} 个文件到「{folder}」文件夹',
     parkedGroupFileSep: '、',
     parkedAllowFolderKept: '本次已允许；这个任务已有别的授权文件夹，没有改动',
+    parkedAllowRun: '到这次做完为止',
+    parkedAllow24h: '24 小时内允许',
     parkedArgsPreviewLabel: '参数：',
     pairingTitle: '{channel} 私聊配对',
     pairingCode: '配对码 {code}',
@@ -467,11 +471,6 @@ export const cronCenterZh = {
         scheduleLabel: '工作日 08:30',
       },
       ...watchTemplateCopyZh,
-      'group-listen': {
-        name: '群监听',
-        description: '盯住一个群，来了新消息就按你的一句话处理',
-        scheduleLabel: '群里有新消息时',
-      },
     },
     // 模板连接器依赖状态
     connectorConnected: '已连接',
@@ -540,6 +539,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     ...cronEditorChromeEn,
     ...cronCloudEn,
     parkedVoided: parkedApprovalVoidedEn,
+    ...parkedApprovalInboxEn,
     groupListenCheck: {
       title: 'Check group message reception',
       start: 'Send a test message',
@@ -933,6 +933,8 @@ export const cronCenterEn: typeof cronCenterZh = {
     parkedWriteGroupTitle: 'Write {count} files in the "{folder}" folder',
     parkedGroupFileSep: ', ',
     parkedAllowFolderKept: 'Allowed this time; this task already has another granted folder, left unchanged',
+    parkedAllowRun: 'Until this run is done',
+    parkedAllow24h: 'Allow for 24 hours',
     parkedArgsPreviewLabel: 'Arguments: ',
     pairingTitle: '{channel} direct-message pairing',
     pairingCode: 'Pairing code {code}',
@@ -969,11 +971,6 @@ export const cronCenterEn: typeof cronCenterZh = {
         scheduleLabel: 'Weekdays 08:30',
       },
       ...watchTemplateCopyEn,
-      'group-listen': {
-        name: 'Group listen',
-        description: 'Watch one group and handle new messages with your one-liner',
-        scheduleLabel: 'When a new message arrives',
-      },
     },
     connectorConnected: 'Connected',
     connectorNotConnected: 'Not connected',
