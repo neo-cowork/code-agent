@@ -22,6 +22,18 @@ const positives = [
   'make this recurring', '创建自动化任务', '安排一次性任务：明天早上8点导出上个月的发票',
 ];
 
+function enableReadyReminders(): void {
+  const native = new ConnectorRegistry('darwin');
+  native.configure(['reminders']);
+  // Registry platform and connector readiness are separate inputs. Simulate an
+  // enabled, ready connector without depending on the CI host's native OS.
+  const connector = native.get('reminders')!;
+  vi.spyOn(connector, 'getCachedStatus').mockReturnValue({
+    connected: true, readiness: 'ready', capabilities: connector.capabilities,
+  });
+  vi.spyOn(getConnectorRegistry(), 'get').mockImplementation((id) => native.get(id));
+}
+
 afterEach(() => vi.restoreAllMocks());
 
 describe('scheduled-task exposure (never intercepts submission)', () => {
@@ -41,9 +53,7 @@ describe('scheduled-task exposure (never intercepts submission)', () => {
 
   it('reminders suppression uses production foreground path and preserves one-shot reminders', () => {
     // Real native registry, platform-independent; no AppleScript is executed.
-    const native = new ConnectorRegistry('darwin');
-    native.configure(['reminders']);
-    vi.spyOn(getConnectorRegistry(), 'get').mockImplementation((id) => native.get(id));
+    enableReadyReminders();
     const recurring = getTextForegroundToolNamesForPrompt('every day at 9am remind me to summarize sales');
     expect(recurring).toContain('schedule_task');
     expect(recurring.filter((name) => name.startsWith('reminders'))).toEqual([]);
@@ -61,9 +71,7 @@ describe('scheduled-task exposure (never intercepts submission)', () => {
     '删除每月缴费的提醒',
     '完成每周的待办',
   ])('preserves reminder management in foreground and preload: %s', (text) => {
-    const native = new ConnectorRegistry('darwin');
-    native.configure(['reminders']);
-    vi.spyOn(getConnectorRegistry(), 'get').mockImplementation((id) => native.get(id));
+    enableReadyReminders();
     const foreground = getTextForegroundToolNamesForPrompt(text);
     const preloaded = getDeferredToolsToPreloadForTurn({
       enableToolDeferredLoading: true, messages: [{ id: 'u', role: 'user', content: text, timestamp: 1 }],
@@ -71,6 +79,37 @@ describe('scheduled-task exposure (never intercepts submission)', () => {
     });
     for (const tools of [foreground, preloaded]) {
       expect(tools).toEqual(expect.arrayContaining(['reminders', 'reminders_update', 'reminders_delete']));
+    }
+  });
+
+  it.each(['failed', 'unavailable'] as const)('still excludes a %s reminders connector', (readiness) => {
+    enableReadyReminders();
+    const connector = getConnectorRegistry().get('reminders')!;
+    vi.mocked(connector.getCachedStatus!).mockReturnValue({
+      connected: false, readiness, capabilities: connector.capabilities,
+    });
+    const text = 'show my weekly reminders';
+    const preloaded = getDeferredToolsToPreloadForTurn({
+      enableToolDeferredLoading: true, messages: [{ id: 'u', role: 'user', content: text, timestamp: 1 }],
+      turn: TurnState.forTest(),
+    });
+    for (const tools of [getTextForegroundToolNamesForPrompt(text), preloaded]) {
+      expect(tools.filter((name) => name.startsWith('reminders'))).toEqual([]);
+    }
+  });
+
+  it('keeps the ready-connector fixture usable on a Linux test host', () => {
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    try {
+      enableReadyReminders();
+      for (const text of ['show my weekly reminders', '把每周例会的提醒改到周四', '明天下午3点提醒我打电话']) {
+        expect(getTextForegroundToolNamesForPrompt(text)).toEqual(
+          expect.arrayContaining(['reminders', 'reminders_create', 'reminders_update', 'reminders_delete']),
+        );
+      }
+    } finally {
+      Object.defineProperty(process, 'platform', platform);
     }
   });
 

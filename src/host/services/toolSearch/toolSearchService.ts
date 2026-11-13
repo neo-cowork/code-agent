@@ -162,8 +162,14 @@ export class ToolSearchService {
       }
     }
 
-    // 按分数排序
-    scored.sort((a, b) => b.score - a.score);
+    // Exact names must remain discoverable as partial-name matches accumulate.
+    // Keep scores unchanged: ranking alone must not increase auto-load confidence.
+    const exactName = query.trim().toLowerCase();
+    scored.sort((a, b) =>
+      Number(b.meta.name.toLowerCase() === exactName)
+      - Number(a.meta.name.toLowerCase() === exactName)
+      || b.score - a.score,
+    );
 
     // Jev 只在 keyword/required 搜索中改变排序；select 必须保持直接选择语义。
     const rerankOutcome = options.rerank?.enabled

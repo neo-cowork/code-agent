@@ -594,6 +594,15 @@ describe('ToolSearchService loadable results', () => {
     expect(browser.tools.filter((tool) => tool.name !== 'Browser').every((tool) => tool.description.length > 0)).toBe(true);
   });
 
+  it.each(['Task', 'task', ' TASK '])('keeps exact name %s ahead of accumulated partial matches without inflating load confidence', async (query) => {
+    registerProtocolToolForSearch('Task');
+    const service = new ToolSearchService();
+    const result = await service.searchTools(query, { includeMCP: false, maxResults: 1 });
+
+    expect(result.tools.map((tool) => tool.name)).toEqual(['Task']);
+    expect(result.loadedTools).toEqual([]);
+  });
+
   describe('compaction-boundary eviction', () => {
     it('keeps adjacent ordinary rounds stable, then evicts idle tools at compaction and rediscovers them', async () => {
       registerProtocolToolForSearch('Task');
