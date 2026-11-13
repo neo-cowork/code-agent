@@ -177,7 +177,7 @@ describe('full access, walk away: session mode → sub-agent inheritance → zer
         name: 'outside-grant', task: 'write minutes', customPrompt: 'You write minutes.', customTools: ['Write'],
       }, options);
       expect(cards).toHaveLength(1);
-      expect(cards[0]).toMatchObject({ tool: 'Write', forceConfirm: true });
+      expect(cards[0]).toMatchObject({ tool: 'Write', forceConfirm: true, reasonCode: 'file_write_outside_workspace' });
       expect(fs.existsSync(ungrantedFile)).toBe(false);
       cards.length = 0;
 
@@ -193,7 +193,9 @@ describe('full access, walk away: session mode → sub-agent inheritance → zer
       customTools: ['Write'],
     }, options);
     expect(cards).toHaveLength(1);
-    expect(cards[0]).toMatchObject({ tool: 'Write', forceConfirm: true });
+    expect(cards[0]).toMatchObject({ tool: 'Write', forceConfirm: true, reasonCode: 'file_write_outside_workspace' });
     expect(fs.readFileSync(outsideFile, 'utf8')).toBe('# minutes');
+    expect(env.infos.filter((entry) => entry.message === 'Approval request raised'
+      && (entry.meta as { forceConfirm?: boolean }).forceConfirm === false)).toEqual([]);
   });
 });
