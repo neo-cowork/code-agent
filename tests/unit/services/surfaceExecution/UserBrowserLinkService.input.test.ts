@@ -32,7 +32,7 @@ function createHarness() {
     const down = vi.fn(async () => undefined);
     const up = vi.fn(async () => undefined);
     const press = vi.fn(async () => undefined);
-    const insertText = vi.fn(async () => undefined);
+    const insertText = vi.fn(async (_text: string) => undefined);
     const page = {
       mouse: { click, wheel, move, down, up },
       keyboard: { press, insertText },
@@ -143,6 +143,42 @@ describe('UserBrowserLinkService.dispatchUserInput', () => {
     expect(result.__page.mouse.down).toHaveBeenCalled();
     expect(result.__page.mouse.up).toHaveBeenCalled();
     expect(result.__page.mouse.move.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('serializes rapid input and rejects queued input after the user run ends', async () => {
+    const { service, execute } = createHarness();
+    const original = execute.getMockImplementation()!;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    execute.mockImplementationOnce(async (input) => { await held; return original(input); });
+    const input = { conversationId: 'conversation-a', workspace: process.cwd(), input: { kind: 'insertText', text: 'a' } };
+    const first = service.dispatchUserInput(input);
+    const second = service.dispatchUserInput({ ...input, input: { kind: 'insertText', text: 'b' } });
+    await Promise.resolve();
+    expect(execute).toHaveBeenCalledTimes(1);
+    await service.end('conversation-a');
+    const rejected = expect(second).rejects.toThrow('USER_BROWSER_RUN_ENDED');
+    release();
+    await first;
+    await rejected;
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('delivers all rapidly queued characters in order', async () => {
+    const { service, execute } = createHarness();
+    const original = execute.getMockImplementation()!;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    execute.mockImplementationOnce(async (input) => { await held; return original(input); });
+    const pending = ['a', 'b', 'c'].map((text) => service.dispatchUserInput({
+      conversationId: 'conversation-a', workspace: process.cwd(), input: { kind: 'insertText', text },
+    }));
+    await Promise.resolve();
+    expect(execute).toHaveBeenCalledTimes(1);
+    release();
+    await Promise.all(pending);
+    const results = await Promise.all(execute.mock.results.map((result) => result.value));
+    expect(results.map((result) => result.__page.keyboard.insertText.mock.calls)).toEqual([[['a']], [['b']], [['c']]]);
   });
 
   it('setViewport 调用 browserService.setViewport', async () => {
