@@ -342,10 +342,14 @@ export class BrowserService implements Disposable {
    * 这里按进程句柄直接问 OS。
    */
   isProcessAlive(): boolean {
-    if (!this.browserProcess) return false;
+    // Bundled Playwright owns its process; connection and open pages are its liveness signal.
+    if (!this.browser?.isConnected() || !this.context?.pages().some((page) => !page.isClosed())) return false;
+    if (!this.browserProcess) return true;
+    const pid = this.browserProcess.pid;
+    if (!pid || pid <= 0) return false;
     if (this.browserProcess.exitCode !== null || this.browserProcess.signalCode !== null) return false;
     try {
-      process.kill(this.browserProcess.pid ?? -1, 0);
+      process.kill(pid, 0);
       return true;
     } catch (error) {
       return (error as NodeJS.ErrnoException).code === 'EPERM';

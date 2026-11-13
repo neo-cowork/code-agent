@@ -37,11 +37,7 @@ export type KeptResultPageSnapshot =
 export interface KeptBrowserPoolFacade {
   setKept(serviceKey: string, kept: boolean): void;
   releaseAgent(serviceKey: string): Promise<void>;
-  /**
-   * kept 窗活性探针（FU2，可选注入）：进程死后 isRunning()/getActiveTab() 是缓存
-   * 真值假阳性；读取侧据它复核。缺省（旧测试桩）跳过复核。
-   */
-  isServiceAlive?(serviceKey: string): boolean;
+  isServiceAlive(serviceKey: string): boolean;
 }
 
 export interface RegisterKeptBrowserInput {
@@ -150,8 +146,7 @@ export class KeptBrowserRegistry {
   private revalidateAlive(conversationId: string): void {
     const entry = this.entries.get(conversationId);
     if (entry?.state !== 'kept') return;
-    // 探针缺省（旧测试桩）时不复核：缺证据不判死。
-    if (!this.pool.isServiceAlive || this.pool.isServiceAlive(entry.serviceKey)) return;
+    if (this.pool.isServiceAlive(entry.serviceKey)) return;
     this.markClosed(conversationId);
   }
 

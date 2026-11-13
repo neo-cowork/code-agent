@@ -8,6 +8,7 @@ function createFakePool() {
   const released: string[] = [];
   const keptFlags = new Map<string, boolean>();
   const pool: KeptBrowserPoolFacade = {
+    isServiceAlive: vi.fn(() => true),
     setKept: vi.fn((key: string, kept: boolean) => keptFlags.set(key, kept)),
     releaseAgent: vi.fn(async (key: string) => {
       released.push(key);
@@ -226,7 +227,7 @@ describe('KeptBrowserRegistry (N-BROWSER-KEEP-RESULT-PAGE)', () => {
     expect(released).toEqual(['surface-key-1']);
   });
 
-  it('FU2: 活性探针缺省（旧测试桩/未注入）时读取行为不变，不因缺探针翻 closed', () => {
+  it('FU2: 活窗读取仍返回 kept，不释放窗口', () => {
     const { pool } = createFakePool();
     const registry = new KeptBrowserRegistry(pool);
     registry.register(baseInput());

@@ -133,6 +133,7 @@ function createFakeBrowser(options?: { initialTabs?: FakeTab[] }) {
 function createKeptPool(): { pool: KeptBrowserPoolFacade } {
   return {
     pool: {
+      isServiceAlive: () => true,
       setKept: poolMocks.setKept,
       releaseAgent: poolMocks.releaseAgent,
     },
