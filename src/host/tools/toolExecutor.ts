@@ -38,6 +38,7 @@ import { evaluateToolSlotDataDirAccess, FOREIGN_SLOT_DATA_DIR_CODE, type SlotDat
 import { createFileCheckpointIfNeeded } from './middleware/fileCheckpointMiddleware';
 import { getFileCheckpointService } from '../services/checkpoint';
 import { getConfirmationGate } from '../agent/confirmationGate';
+import { resolveDelegationApprovalTarget } from '../services/delegation/delegationApprovalTarget';
 import type { ConfirmationPreview } from '../../shared/contract/confirmation';
 import { computeLedgerArgsSurvival } from '../agent/parkedApprovalSurvival';
 import {
@@ -2054,7 +2055,11 @@ export class ToolExecutor {
       let shouldForceConfirm = false;
       try {
         const gate = getConfirmationGate();
-        confirmationPreview = gate.buildPreview(executionToolName, params, { workspaceRoot: this.runtimeWorkspace });
+        confirmationPreview = gate.buildPreview(executionToolName, params, {
+          workspaceRoot: this.runtimeWorkspace,
+          delegationTargetTitle: executionToolName === 'delegate_session'
+            ? resolveDelegationApprovalTarget(params, effectiveSessionId) : undefined,
+        });
         confirmationRiskLevel = gate.assessRiskLevel(executionToolName, params);
         shouldForceConfirm = gate.shouldConfirm(
           {
@@ -2240,6 +2245,7 @@ export class ToolExecutor {
       // E2: 确认门控 - 为高风险写操作附加预览并强制确认
       if (confirmationPreview) {
         permissionRequest.details.preview = confirmationPreview;
+        if (executionToolName === 'delegate_session') permissionRequest.reason = confirmationPreview.summary;
       }
       if (shouldForceConfirm) {
         permissionRequest.forceConfirm = true;
