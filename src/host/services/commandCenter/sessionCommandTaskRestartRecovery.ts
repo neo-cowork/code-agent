@@ -7,6 +7,7 @@
 // 选文件而不是扩账本 store：账本 store 只认终态行，加「运行中」行要动 schema 与查询面，
 // 而这里只需要「进程死了还剩谁」一个事实；每任务一个文件也避开并发读改写。
 import fs from 'node:fs';
+import { sessionTaskStatusLabel } from '../../../shared/i18n/sessionTaskStatus';
 import path from 'node:path';
 import type { Message } from '../../../shared/contract';
 import { getUserConfigDir } from '../../config/configPaths';
@@ -89,7 +90,7 @@ export function buildSessionTaskResultMessage(
   return {
     id,
     role: 'system',
-    content: `[任务结果] ${task.shortName}｜${status}｜${resultText}`,
+    content: `[任务结果] ${task.shortName}｜${sessionTaskStatusLabel(status)}｜${resultText}`,
     timestamp: Date.now(),
     metadata: {
       backgroundTaskResult: {

@@ -50,6 +50,12 @@ describe('sessionTaskPresentation', () => {
     }, 'reused raw id=session-work-c', zh)).toBe('继续跟踪后台任务：写稿　进行中');
   });
 
+  it('preserves replacement confirmation without exposing internal state or ids', () => {
+    const metadata = { sessionTask: { outcome: 'accepted', tasks: [{ shortName: '简报', status: 'running' }] }, sessionTaskReplacement: { shortName: '周报', stopped: true } };
+    expect(formatSessionTaskOutput(metadata, 'accepted id=session-work-x', zh)).toBe('已停止「周报」。已在后台开始：简报，完成后会告诉你。');
+    expect(formatSessionTaskOutput(metadata, 'accepted id=session-work-x', en)).toContain('Stopped “周报”. ');
+  });
+
   it('preserves the old raw output when sessionTask metadata is absent or invalid', () => {
     expect(formatSessionTaskOutput(undefined, rawStatus, zh)).toBe(rawStatus);
     expect(formatSessionTaskOutput({ sessionTask: { outcome: 'status', tasks: [] } }, rawStatus, en))

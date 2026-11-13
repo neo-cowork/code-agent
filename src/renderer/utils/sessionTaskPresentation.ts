@@ -57,14 +57,18 @@ export function formatSessionTaskOutput(
   const sessionTask = readSessionTask(metadata);
   if (!sessionTask) return rawOutput;
   const copy = t.sessionTaskPresentation;
+  const replacement = metadata?.sessionTaskReplacement as { shortName?: unknown; stopped?: unknown } | undefined;
+  const prefix = replacement && typeof replacement.shortName === 'string' && typeof replacement.stopped === 'boolean'
+    ? fill(replacement.stopped ? copy.replaced : copy.stopping, { name: replacement.shortName })
+    : '';
   const first = sessionTask.tasks[0];
   const status = (task: SessionTaskItem): string => copy.status[task.status];
 
   if (sessionTask.outcome === 'accepted' || sessionTask.outcome === 'queued') {
-    return fill(copy[sessionTask.outcome], { name: first.shortName });
+    return prefix + fill(copy[sessionTask.outcome], { name: first.shortName });
   }
   if (sessionTask.outcome === 'reused') {
-    return fill(copy.reused, { name: first.shortName, status: status(first) });
+    return prefix + fill(copy.reused, { name: first.shortName, status: status(first) });
   }
   return sessionTask.tasks.map((task) => fill(copy.statusLine, {
     name: task.shortName,

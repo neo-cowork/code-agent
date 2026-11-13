@@ -15,6 +15,12 @@ const TOOL_LABEL_KEYS: Record<string, keyof HumanToolLabels['tools']> = {
   webfetch: 'webFetch',
   websearch: 'webSearch',
   read: 'readFile',
+  write: 'writeFile',
+  writefile: 'writeFile',
+  edit: 'editFile',
+  editfile: 'editFile',
+  glob: 'findFiles',
+  grep: 'findFiles',
   readfile: 'readFile',
   memorysearch: 'memorySearch',
 };

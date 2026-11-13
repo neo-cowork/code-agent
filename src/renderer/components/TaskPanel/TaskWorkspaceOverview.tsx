@@ -219,12 +219,13 @@ export function buildOverviewContextRows(args: {
     if (isInternalContextPath(item.path)) continue;
     const identity = item.path || item.label;
     const key = `file:${identity}`;
+    const detail = item.detail ? getHumanToolLabel({ toolName: item.detail, labels: fallbacks.humanToolLabels }) : undefined;
     const existing = rows.get(key);
     if (existing) {
-      if (item.detail && existing.detail !== item.detail) {
+      if (detail && existing.detail !== detail) {
         existing.detail = existing.detail
-          ? `${item.detail} / ${existing.detail}`
-          : item.detail;
+          ? `${detail} / ${existing.detail}`
+          : detail;
       }
       continue;
     }
@@ -232,7 +233,7 @@ export function buildOverviewContextRows(args: {
       id: key,
       kind: 'file',
       label: humanContextLabel(item.label, fallbacks.unnamedOutput),
-      detail: item.detail,
+      detail,
     });
   }
 

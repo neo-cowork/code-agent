@@ -156,7 +156,7 @@ describe('指挥台任务：宿主重启后的收口', () => {
     await restartHost();
     const afterFirst = await transcript();
     expect(afterFirst).toHaveLength(1);
-    expect(afterFirst[0].content).toContain('researcher｜failed｜');
+    expect(afterFirst[0].content).toContain('researcher｜未完成｜');
     expect(afterFirst[0].content).toContain('应用重启');
     expect(afterFirst[0].metadata).toMatchObject({ backgroundTaskResult: { status: 'failed', shortName: 'researcher' } });
     const ledgerTask = getBackgroundTaskLedger().getTask(
@@ -208,7 +208,7 @@ describe('指挥台任务：宿主重启后的收口', () => {
     await vi.waitFor(() => expect(wake).toHaveBeenCalled());
     await vi.waitFor(async () => expect(await transcript()).toHaveLength(1));
     const [message] = await transcript();
-    expect(message.content).toContain('wakefail｜completed｜');
+    expect(message.content).toContain('wakefail｜已完成｜');
     expect(message.metadata).toMatchObject({ backgroundTaskResult: { taskId } });
   });
 });
