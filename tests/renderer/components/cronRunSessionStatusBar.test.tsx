@@ -568,3 +568,17 @@ it('reveals the identical complete multi-line shell preview without trimming or 
   fireEvent.click(toggle);
   expect(screen.getByTestId('cron-run-command').textContent).toBe(command);
 });
+
+it('renders file approval without a raw tool name or absolute path', async () => {
+  showSession(cronRunSession);
+  getExecutionsMock.mockResolvedValue([makeExecution({ status: 'running' })]);
+  listParkedApprovalsMock.mockResolvedValue([{
+    id: 'write-approval', kind: 'tool_approval', sessionId: 'session-1', tool: 'Write',
+    displayTool: 'Write', argsPreview: '/tmp/example/digest.md', requestedAt: 1, status: 'pending',
+  }]);
+  render(<CronRunSessionStatusBar sessionId="session-1" />);
+  const status = await screen.findByTestId('cron-run-status-text');
+  expect(status.textContent).not.toContain('Write');
+  expect(status.textContent).not.toContain('/tmp/example');
+  expect(status.textContent).toContain('digest.md');
+});

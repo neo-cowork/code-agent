@@ -722,7 +722,7 @@ traceView: {
 // Tool step group (ToolStepGroup)
 toolGroup: {
   statusRunning: 'running',
-  statusPartial: 'partial',
+  statusPartial: 'Some steps need attention',
   statusFailed: outcomeWordsEn.outcomeWords['failed-tool'].badge.label,
   statusCompleted: outcomeWordsEn.outcomeWords.completed.badge.label,
   recovered: 'Recovered',
