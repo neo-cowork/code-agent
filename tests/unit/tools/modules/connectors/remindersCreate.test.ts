@@ -356,7 +356,7 @@ describe('remindersCreateModule (native)', () => {
     it('formats remind_at with the connector time helper', async () => {
       const remindAtMs = Date.UTC(2026, 10, 9, 1, 0);
       execMock.mockResolvedValue({
-        data: { id: 'r-time', list: 'Work', title: 'Ship PR', completed: false },
+        data: { id: 'r-time', list: 'Work', title: 'Ship PR', completed: false, remindAtMs },
       });
       const result = await run({ ...validArgs, remind_at_ms: remindAtMs });
       expect(result.ok).toBe(true);
@@ -405,11 +405,11 @@ describe('reminder time receipt contract', () => {
   });
 
   it.each([
-    ['Asia/Shanghai', '2026-11-08T23:30:00+08:00', '2026-11-09T09:00:00+08:00', '2026-11-09 09:00', '周一'],
-    ['Asia/Shanghai', '2026-11-09T00:30:00+08:00', '2026-11-11T14:00:00+08:00', '2026-11-11 14:00', '周三'],
-    ['America/Los_Angeles', '2026-03-07T23:30:00-08:00', '2026-03-08T09:00:00-07:00', '2026-03-08 09:00', '周日'],
-    ['America/Los_Angeles', '2026-10-31T23:30:00-07:00', '2026-11-02T14:00:00-08:00', '2026-11-02 14:00', '周一'],
-  ])('legacy ms without remind_at_local: %s fixed now %s gives approval and read-back receipt %s', async (zone, now, target, wallClock, weekday) => {
+    ['Asia/Shanghai', '2026-11-08T23:30:00+08:00', '2026-11-09T09:00:00+08:00', '2026-11-09 09:00', '周一', 'UTC+8'],
+    ['Asia/Shanghai', '2026-11-09T00:30:00+08:00', '2026-11-11T14:00:00+08:00', '2026-11-11 14:00', '周三', 'UTC+8'],
+    ['America/Los_Angeles', '2026-03-07T23:30:00-08:00', '2026-03-08T09:00:00-07:00', '2026-03-08 09:00', '周日', 'UTC-7'],
+    ['America/Los_Angeles', '2026-10-31T23:30:00-07:00', '2026-11-02T14:00:00-08:00', '2026-11-02 14:00', '周一', 'UTC-8'],
+  ])('legacy ms without remind_at_local: %s fixed now %s gives approval and read-back receipt %s', async (zone, now, target, wallClock, weekday, offset) => {
     vi.stubEnv('TZ', zone);
     vi.useFakeTimers();
     vi.setSystemTime(new Date(now));
@@ -430,11 +430,11 @@ describe('reminder time receipt contract', () => {
     expect(execMock).toHaveBeenCalledWith('create_reminder', args);
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error(result.error);
-    const receipt = `提醒时间：${wallClock}（${weekday}，${zone}）`;
+    const receipt = `提醒时间：${wallClock} (${offset})（${weekday}，${zone}）`;
     expect(result.output).toContain(receipt);
     expect(result.meta?.remindAtMs).toBe(ms);
     expect(result.meta?.previewItem).toMatchObject({ content: { text: expect.stringContaining(receipt) } });
-    expect(result.output).toMatch(/提醒时间：\d{4}-\d{2}-\d{2} \d{2}:\d{2}（周.，[^）]+）/);
+    expect(result.output).toMatch(/提醒时间：\d{4}-\d{2}-\d{2} \d{2}:\d{2} \(UTC[+-]\d+(?::\d{2})?\)（周.，[^）]+）/);
   });
 
   it('receipt quotes actual read-back rather than the requested instant', async () => {
@@ -444,7 +444,7 @@ describe('reminder time receipt contract', () => {
       remindAtMs: Date.parse('2026-11-11T14:00:00+08:00'),
     } });
     const result = await run({ title: 'Dentist', remind_at_ms: Date.parse('2026-11-10T22:00:00+08:00') });
-    expect(result).toMatchObject({ ok: true, output: expect.stringContaining('提醒时间：2026-11-11 14:00（周三，Asia/Shanghai）') });
+    expect(result).toMatchObject({ ok: true, output: expect.stringContaining('提醒时间：2026-11-11 14:00 (UTC+8)（周三，Asia/Shanghai）') });
     expect(result).toMatchObject({ meta: { remindAtMs: Date.parse('2026-11-11T14:00:00+08:00') } });
   });
 
@@ -467,12 +467,12 @@ describe('remind_at_local through public execute', () => {
   afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
 
   it.each([
-    ['Asia/Shanghai', '2026-11-08T23:30:00+08:00', 'tomorrow 9am', '2026-11-09 09:00', '2026-11-09T01:00:00Z', '周一'],
-    ['Asia/Shanghai', '2026-11-09T00:30:00+08:00', 'day after tomorrow 2 pm', '2026-11-11 14:00', '2026-11-11T06:00:00Z', '周三'],
-    ['America/Los_Angeles', '2026-03-07T23:30:00-08:00', 'tomorrow 9am over spring DST', '2026-03-08 09:00', '2026-03-08T16:00:00Z', '周日'],
-    ['America/Los_Angeles', '2026-10-31T23:30:00-07:00', 'day after tomorrow 2 pm over autumn DST', '2026-11-02 14:00', '2026-11-02T22:00:00Z', '周一'],
-    ['Asia/Shanghai', '2026-11-09T00:30:00+08:00', 'evening 8:30', '2026-11-09 20:30', '2026-11-09T12:30:00Z', '周一'],
-  ])('%s fixed now %s: %s → %s', async (zone, now, _request, local, instant, weekday) => {
+    ['Asia/Shanghai', '2026-11-08T23:30:00+08:00', 'tomorrow 9am', '2026-11-09 09:00', '2026-11-09T01:00:00Z', '周一', 'UTC+8'],
+    ['Asia/Shanghai', '2026-11-09T00:30:00+08:00', 'day after tomorrow 2 pm', '2026-11-11 14:00', '2026-11-11T06:00:00Z', '周三', 'UTC+8'],
+    ['America/Los_Angeles', '2026-03-07T23:30:00-08:00', 'tomorrow 9am over spring DST', '2026-03-08 09:00', '2026-03-08T16:00:00Z', '周日', 'UTC-7'],
+    ['America/Los_Angeles', '2026-10-31T23:30:00-07:00', 'day after tomorrow 2 pm over autumn DST', '2026-11-02 14:00', '2026-11-02T22:00:00Z', '周一', 'UTC-8'],
+    ['Asia/Shanghai', '2026-11-09T00:30:00+08:00', 'evening 8:30', '2026-11-09 20:30', '2026-11-09T12:30:00Z', '周一', 'UTC+8'],
+  ])('%s fixed now %s: %s → %s', async (zone, now, _request, local, instant, weekday, offset) => {
     vi.stubEnv('TZ', zone);
     vi.useFakeTimers();
     vi.setSystemTime(new Date(now));
@@ -488,7 +488,7 @@ describe('remind_at_local through public execute', () => {
     expect(permission).toHaveBeenCalledOnce();
     expect(execMock).toHaveBeenCalledWith('create_reminder', { title: args.title, remind_at_ms: ms });
     expect(args).toEqual({ title: 'Time contract', remind_at_local: local });
-    expect(result).toMatchObject({ ok: true, output: expect.stringContaining(`提醒时间：${local}（${weekday}，${zone}）`), meta: { remindAtMs: ms } });
+    expect(result).toMatchObject({ ok: true, output: expect.stringContaining(`提醒时间：${local} (${offset})（${weekday}，${zone}）`), meta: { remindAtMs: ms } });
   });
 
   it.each([

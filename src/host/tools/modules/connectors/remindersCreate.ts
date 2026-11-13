@@ -62,7 +62,7 @@ function buildRemindersCreateSuccessResult(
       hour: '2-digit', minute: '2-digit', hourCycle: 'h23', weekday: 'short',
     }).formatToParts(new Date(remindAtMs));
     const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? '';
-    remindAtText = `${part('year')}-${part('month')}-${part('day')} ${part('hour')}:${part('minute')}（${part('weekday')}，${timeZone}）`;
+    remindAtText = `${formatConnectorTime(remindAtMs, timeZone)}（${part('weekday')}，${timeZone}）`;
   } else {
     remindAtText = reminder.remindAtMs === null ? '未设置' : '无法确认，请在提醒事项中查看';
   }
