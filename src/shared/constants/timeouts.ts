@@ -466,6 +466,11 @@ export const CANCELLATION_TIMEOUTS = {
   ROUTE_SETTLE_WAIT: 15_000,
   /** `/api/cancel` 终态轮询间隔 */
   ROUTE_SETTLE_POLL: 50,
+  /**
+   * 用户 Stop 时等待会话后台任务收线的上限（须小于验收口径的 3 s）。
+   * 超时只 warn 未收线的任务 id，不阻塞前台取消返回。
+   */
+  SESSION_BACKGROUND_SETTLE_WAIT: 2_500,
 } as const;
 
 /** Subagent 执行生命周期预算。 */

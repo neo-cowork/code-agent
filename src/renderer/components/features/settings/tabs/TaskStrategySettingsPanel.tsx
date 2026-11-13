@@ -9,7 +9,7 @@ import type {
   TaskStrategyProfileId,
 } from '@shared/contract';
 import { PROVIDER_MODELS } from '@shared/constants';
-import { buildRuntimeModelOptions } from '@shared/modelRuntime';
+import { buildRuntimeModelOptions, isRuntimeProviderAvailable } from '@shared/modelRuntime';
 import { Button, Select, Toggle } from '../../../primitives';
 import { useI18n } from '../../../../hooks/useI18n';
 
@@ -42,6 +42,8 @@ export interface TaskStrategySettingsPanelProps {
   settings: AppSettings | null;
   providerConfigs: Partial<Record<string, ModelProviderSettings>>;
   config: ModelConfig;
+  /** Saved default, independent of the provider currently being edited. */
+  defaultModel: Pick<ModelConfig, 'provider' | 'model'>;
   strategy: TaskModelStrategySettings | null;
   disabled?: boolean;
   /** 改动即存：开关 / 四档模型修改后立即调用持久化 */
@@ -54,6 +56,7 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
   settings,
   providerConfigs,
   config,
+  defaultModel,
   strategy,
   disabled,
   onChange,
@@ -86,11 +89,33 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
     [effectiveMemoryRoute, strategy],
   );
 
-  const modelOptions = useMemo(() => buildRuntimeModelOptions(
+  const runtimeModelOptions = useMemo(() => buildRuntimeModelOptions(
     effectiveSettings,
     PROVIDER_MODELS.map((provider) => provider.id),
     { includeDisabledProviders: Array.from(new Set([...profileProviders, config.provider])), dedupeProviderGroups: false },
   ), [config.provider, effectiveSettings, profileProviders]);
+
+  const modelOptions = useMemo(() => {
+    const options = [...runtimeModelOptions];
+    const provider = providerConfigs[defaultModel.provider];
+    // Only the saved remote default gets the catalog-missing display exemption.
+    // Explicitly disabled models and undiscovered local models stay unavailable.
+    if (defaultModel.model && defaultModel.provider !== 'local'
+      && provider?.enabled !== false && isRuntimeProviderAvailable(defaultModel.provider, provider)
+      && provider?.models?.[defaultModel.model]?.enabled !== false
+      && !options.some((option) => option.provider === defaultModel.provider && option.model === defaultModel.model)) {
+      options.push({
+        provider: defaultModel.provider,
+        model: defaultModel.model,
+        label: modelLabel(defaultModel.provider, defaultModel.model),
+        providerLabel: provider?.displayName
+          || options.find((option) => option.provider === defaultModel.provider)?.providerLabel
+          || defaultModel.provider,
+        features: [],
+      });
+    }
+    return options;
+  }, [defaultModel.provider, defaultModel.model, runtimeModelOptions, providerConfigs]);
 
   // 按 Provider 分组（optgroup）：避免所有已配模型平铺成一长串，effort 噪音靠分组收敛。
   const groupedOptions = useMemo(() => {
@@ -104,12 +129,12 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
     return Array.from(groups.values());
   }, [modelOptions]);
 
-  // 自愈：开启自动切换时，若某档位指向不可用模型，回退到当前默认模型（消除「不可用」）。
+  // 自愈目标必须来自运行时可选列表；展示豁免不授权把其他档位改写成该模型。
   useEffect(() => {
     if (strategy?.mode !== 'auto') return;
     const available = new Set(modelOptions.map((option) => optionValue(option.provider, option.model)));
     const fallback = optionValue(config.provider, config.model);
-    if (!available.has(fallback)) return;
+    if (!runtimeModelOptions.some((option) => optionValue(option.provider, option.model) === fallback)) return;
     let changed = false;
     const profiles = { ...strategy.profiles };
     for (const profile of SELF_HEAL_PROFILES) {
@@ -120,7 +145,7 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
       }
     }
     if (changed) onChange({ ...strategy, profiles });
-  }, [strategy, modelOptions, config.provider, config.model, onChange]);
+  }, [strategy, modelOptions, runtimeModelOptions, config.provider, config.model, onChange]);
 
   if (!strategy) {
     return <div className="text-sm text-zinc-500">{strategyText.loading}</div>;
