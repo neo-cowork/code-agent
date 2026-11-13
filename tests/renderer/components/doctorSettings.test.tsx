@@ -96,6 +96,23 @@ describe('DoctorSettings（设置页形态）', () => {
     });
   });
 
+  it.each(['zh', 'en'] as const)('localizes a probe/real-call mismatch in %s without offering a key fix', (language) => {
+    useAppStore.setState({ language });
+    useDoctorStore.setState({ report: {
+      ...MOCK_REPORT,
+      items: [{ category: 'network', name: 'Xiaomi MiMo', status: 'warn',
+        message: 'The test address returned 401, but your recent real calls succeeded — the test path may differ from the real one.',
+        details: 'The test address returned 401, but your recent real calls succeeded — the test path may differ from the real one.',
+        probeHttpStatus: 401 }],
+      summary: { pass: 0, warn: 1, fail: 0, skip: 0 },
+    } });
+    render(<DoctorSettings />);
+    expect(screen.getByText(language === 'zh'
+      ? '测试地址返回 401，但你最近的实际调用已成功，测试路径可能与实际调用不同。'
+      : 'The test address returned 401, but your recent real calls succeeded — the test path may differ from the real one.')).toBeTruthy();
+    expect(screen.queryByTestId('doctor-fix-open-provider-settings')).toBeNull();
+  });
+
   it('按 category 分组展示，且状态徽标齐全', () => {
     render(<DoctorSettings />);
     // 分组标题（i18n categoryLabels）
