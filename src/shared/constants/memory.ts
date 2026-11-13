@@ -198,6 +198,12 @@ export const ROLE_ASSETS = {
    *  6 = 探查 + 多步读取余量，掐掉长探查拖慢首次醒来。不许挪用 ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS，
    *  那是按「逐个检查产物」多步工作流设计的 15 轮预算，砍它会把巡检醒来掐断在半途）。 */
   FIRST_WAKE_MAX_ITERATIONS: 6,
+  /** 首次醒来内部指令的固定首行（两个提示词模板共用）。写回层拿它识别「这份
+   *  taskPrompt 不是用户原话」：合成指令绝不外显为履历摘要/专家列表的最近工作行。 */
+  FIRST_WAKE_PROMPT_HEAD: '你刚被用户创建为一位持久化专家，此刻是创建后的第一次巡览。这不是用户发来的消息，用户现在不在场。',
+  /** 首次醒来写回无人工摘要时的履历回落短句：不外显内部指令，也不装作干过活
+   *  （2026-11-12 owner 裁决：首次见面的最近工作行绝不回落到任务提示词）。 */
+  FIRST_WAKE_HISTORY_FALLBACK_SUMMARY: '刚创建，还没开始工作',
   /** 已删角色回收站根目录名（相对 getUserConfigDir()）：~/.code-agent/roles-trash/（N-ROLE-CREATE-DIRECT-DELETE） */
   TRASH_DIR_NAME: 'roles-trash',
   /** 回收站保留天数：过期条目在下次 trash/restore 时惰性清理（不新增定时器） */

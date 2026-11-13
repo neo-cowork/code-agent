@@ -393,6 +393,17 @@ describe('SessionAutomationService', () => {
   });
 
   describe('listParkedApprovals (B2)', () => {
+    it.each(['pending', 'orphaned'] as const)('missing tool stays a valid empty string without an English sentinel (%s)', (status) => {
+      state.parkedRows.set('missing-tool', {
+        id: 'missing-tool', kind: 'tool_approval', status,
+        submittedAt: 1000, coordinatorId: 'session-1',
+        payloadJson: JSON.stringify({ sessionId: 'session-1', requestedAt: 1000 }),
+      });
+      const [item] = new SessionAutomationService().listParkedApprovals();
+      expect(item.tool).toBe('');
+      expect(`${item.tool}${item.displayTool ?? ''}`).not.toContain('unknown');
+    });
+
     it('id 原样返回（= requestId），拿去 permissionResponse 能命中内存 pending', () => {
       // 停车行 id = parkApproval 写入时的 requestId；listParkedApprovals 不得改写 id，
       // 否则收件箱回传 permissionResponse 会命中不了内存 pending。
@@ -494,11 +505,13 @@ describe('SessionAutomationService', () => {
           requestedAt: 1000,
           argsRef: { sessionId: 'session-prev', toolCallId: 'toolu_prev' },
           argsPreview: 'npm run gates:fast · ***REDACTED***',
+          argsSummary: 'npm run gates:fast · ***REDACTED***' + ' --long-argument'.repeat(40),
         }),
       });
       const items = new SessionAutomationService().listParkedApprovals();
       expect(items).toHaveLength(1);
       expect(items[0].argsPreview).toBe('npm run gates:fast · ***REDACTED***');
+      expect(items[0].commandPreview).toBe('npm run gates:fast · ***REDACTED***' + ' --long-argument'.repeat(40));
     });
   });
 

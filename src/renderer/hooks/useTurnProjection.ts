@@ -304,6 +304,7 @@ export function projectTurns(
   // 供应商报错各落一条），只算一次、只渲染最后一条。带 toolCalls 的轮中消息不打断
   // 连续段——那一轮可能还会失败。
   const agentErrorRunByMessageId = projectAgentErrorRuns(messages);
+  const lastFailureId = messages.findLast(msg => msg.role === 'assistant' && msg.metadata?.agentError)?.id ?? null;
 
   for (const msg of messages) {
     if (msg.source === 'skill' && isSkillStatusContent(msg.content)) {
@@ -830,6 +831,12 @@ export function projectTurns(
   // 其回复已在对话流里；work card 记录仅供账号菜单「Neo 协同」topic 目录做历史视图。
 
   anchorVoiceTaskArtifactsToCompletionBroadcast(turns, voiceArtifactAnchors);
+
+  // 后台代理续跑提示整段会话只挂一处：最后一条失败消息的最后一个节点（同一消息被重复投影也只一个）。
+  const lastFailureNodes = turns.flatMap((turn) => turn.nodes)
+    .filter((node) => node.messageId === lastFailureId && node.metadata?.agentError);
+  const lastFailureNode = lastFailureNodes.at(-1);
+  if (lastFailureNode) lastFailureNode.agentErrorLast = true;
 
   // X5.5-D5：语音派出的 run 刻意活得比通话久，挂断后 run 的收尾文本 timestamp
   // 晚于摘要卡的 endedAt——摘要卡因此不在消息流最后。展示层把摘要卡钉到所在轮

@@ -40,7 +40,7 @@ const contextHealth: ContextHealthState = {
 
 const pillMocks = vi.hoisted(() => ({
   appState: {
-    contextHealth: undefined as ContextHealthState | undefined,
+    contextHealth: undefined as ContextHealthState | null | undefined,
     openWorkbenchTab: vi.fn(),
     setActiveWorkbenchTab: vi.fn(),
     setWorkbenchHighlight: vi.fn(),
@@ -57,6 +57,9 @@ const pillMocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   invokeDomain: vi.fn(),
   refreshContextHealth: vi.fn(),
+  messages: [] as Array<{ role: string }>,
+  isHydratingSession: false,
+  currentSessionId: 'session-1' as string | null,
   unmountSkill: vi.fn(),
   budgetStatus: {
     enabled: false,
@@ -89,14 +92,18 @@ vi.mock('../../../src/renderer/hooks/useBudgetStatus', () => ({
   useBudgetStatus: () => pillMocks.budgetStatus,
 }));
 
-vi.mock('../../../src/renderer/stores/sessionStore', () => ({
-  useSessionStore: {
-    getState: () => ({
-      currentSessionId: 'session-1',
-      refreshContextHealth: pillMocks.refreshContextHealth,
-    }),
-  },
-}));
+vi.mock('../../../src/renderer/stores/sessionStore', () => {
+  const state = () => ({
+    currentSessionId: pillMocks.currentSessionId,
+    refreshContextHealth: pillMocks.refreshContextHealth,
+    messages: pillMocks.messages,
+    isHydratingSession: pillMocks.isHydratingSession,
+  });
+  return { useSessionStore: Object.assign(
+    (selector: (s: ReturnType<typeof state>) => unknown) => selector(state()),
+    { getState: state },
+  ) };
+});
 
 vi.mock('../../../src/renderer/stores/skillStore', () => ({
   useSkillStore: (selector?: (state: { unmountSkill: typeof pillMocks.unmountSkill }) => unknown) => {
@@ -132,12 +139,76 @@ function hoverPill() {
 describe('ContextUsagePill — hover 气泡与明细弹层', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    pillMocks.messages = [];
+    pillMocks.currentSessionId = 'session-1';
+    pillMocks.isHydratingSession = false;
     pillMocks.appState.language = 'zh';
     pillMocks.appState.contextHealth = contextHealth;
     useContextCompactionStore.setState({ status: 'idle', result: null, error: null, updatedAt: 0 });
   });
 
   afterEach(cleanup);
+
+  it.each(['zh', 'en'] as const)('reopened history keeps real usage without waiting or native title (%s)', (language) => {
+    pillMocks.appState.language = language;
+    pillMocks.messages = [{ role: 'user' }];
+    pillMocks.appState.contextHealth = { ...contextHealth, usagePercent: 3.9 };
+    const { container, rerender } = render(<ContextUsagePill />);
+    const button = screen.getByRole('button', { name: language === 'zh' ? '上下文使用' : 'Context usage' });
+    fireEvent.mouseOver(button);
+    expect(button.hasAttribute('title')).toBe(false);
+    expect(container.textContent).toContain('3.9%');
+    expect(container.textContent).not.toMatch(/等待首轮|等待统计|Waiting for/);
+    // Reopening and then receiving the persisted snapshot while the pointer stays put.
+    pillMocks.appState.contextHealth = undefined;
+    rerender(<ContextUsagePill />);
+    expect(container.textContent).toBe('');
+    expect(button.hasAttribute('title')).toBe(false);
+    pillMocks.appState.contextHealth = contextHealth;
+    rerender(<ContextUsagePill />);
+    expect(container.textContent).toContain('20%');
+    expect(container.textContent).not.toMatch(/等待首轮|等待统计|Waiting for/);
+  });
+
+  it('history with health null has no waiting hover; click still opens pending detail', () => {
+    pillMocks.messages = [{ role: 'user' }];
+    pillMocks.appState.contextHealth = null;
+    const { container } = render(<ContextUsagePill />);
+    hoverPill();
+    expect(container.textContent).toBe('');
+    expect(pillButton().hasAttribute('title')).toBe(false);
+    fireEvent.click(pillButton());
+    expect(screen.getByTestId('context-health-detail').textContent).toContain('等待统计上下文容量');
+  });
+
+  it('startup before a session is selected does not claim an empty first turn', () => {
+    pillMocks.appState.contextHealth = null;
+    pillMocks.currentSessionId = null;
+    const { container } = render(<ContextUsagePill />);
+    hoverPill();
+    expect(container.textContent).toBe('');
+    expect(pillButton().hasAttribute('title')).toBe(false);
+  });
+
+  it('hydrating history does not claim the session is empty before messages arrive', () => {
+    pillMocks.appState.contextHealth = undefined;
+    pillMocks.isHydratingSession = true;
+    const { container } = render(<ContextUsagePill />);
+    hoverPill();
+    expect(container.textContent).toBe('');
+    expect(pillButton().hasAttribute('title')).toBe(false);
+  });
+
+  it.each([{ messages: [] }, { messages: [{ role: 'assistant' }] }])('empty session keeps waiting hover; assistant diagnostics do not count as a user turn (%j)', ({ messages }) => {
+    pillMocks.messages = messages;
+    pillMocks.appState.contextHealth = undefined;
+    render(<ContextUsagePill />);
+    expect(screen.queryByText('等待首轮对话')).toBeNull();
+    hoverPill();
+    expect(screen.getByText('等待首轮对话')).toBeTruthy();
+    expect(screen.getByText('等待统计上下文容量')).toBeTruthy();
+    expect(pillButton().hasAttribute('title')).toBe(false);
+  });
 
   it('hover 出只读气泡（% + token 数），气泡里没有分桶条和操作钮', () => {
     render(<ContextUsagePill />);
@@ -276,7 +347,7 @@ describe('ContextUsagePill — hover 气泡与明细弹层', () => {
     expect(screen.getByRole('button', { name: '立即压缩' })).toBeTruthy();
   });
 
-  it('① 窗口未知时：hover 气泡与按钮 title 无「容量未知 / Capacity unknown」搭配「x / max」的自相矛盾，无重复 badge 行（中英文）', () => {
+  it('① 窗口未知时：hover 气泡无「容量未知 / Capacity unknown」搭配「x / max」的自相矛盾，无重复 badge 行（中英文）', () => {
     pillMocks.appState.contextHealth = {
       ...contextHealth,
       currentTokens: 15_360,
@@ -286,11 +357,7 @@ describe('ContextUsagePill — hover 气泡与明细弹层', () => {
     };
     const { container } = render(<ContextUsagePill />);
     const btn = pillButton();
-    const titleZh = btn.getAttribute('title') ?? '';
-    expect(titleZh).toContain('已用约 15.4k Token');
-    expect(titleZh).toContain('模型上限未获取，暂按 128.0k 估算');
-    expect(titleZh).not.toContain('容量未知');
-    expect(titleZh).not.toMatch(/15\.4k\s*\/\s*128\.0k/);
+    expect(btn.hasAttribute('title')).toBe(false);
 
     hoverPill();
     const bubbleTextZh = container.textContent ?? '';
@@ -309,11 +376,7 @@ describe('ContextUsagePill — hover 气泡与明细弹层', () => {
     pillMocks.appState.language = 'en';
     const { container: containerEn } = render(<ContextUsagePill />);
     const btnEn = screen.getByRole('button', { name: 'Context usage' });
-    const titleEn = btnEn.getAttribute('title') ?? '';
-    expect(titleEn).toContain('About 15.4k Token used');
-    expect(titleEn).toContain('Model limit unavailable; estimating against 128.0k');
-    expect(titleEn).not.toContain('Capacity unknown');
-    expect(titleEn).not.toMatch(/15\.4k\s*\/\s*128\.0k/);
+    expect(btnEn.hasAttribute('title')).toBe(false);
 
     fireEvent.mouseOver(btnEn);
     const bubbleTextEn = containerEn.textContent ?? '';
@@ -329,7 +392,7 @@ describe('ContextUsagePill — hover 气泡与明细弹层', () => {
     expect(detailEnText.split('Model limit unavailable; estimating against 128.0k').length - 1).toBe(1);
   });
 
-  it('② 同一 ContextHealthState 在按钮 title、气泡、明细弹层（含各桶与缓存行）显示相同读数且均带 Token 单位，无裸数字', () => {
+  it('② 同一 ContextHealthState 在气泡、明细弹层（含各桶与缓存行）显示相同读数且均带 Token 单位，无裸数字', () => {
     const unifiedState: ContextHealthState = {
       currentTokens: 15_360,
       maxTokens: 128_000,
@@ -356,7 +419,7 @@ describe('ContextUsagePill — hover 气泡与明细弹层', () => {
     pillMocks.appState.contextHealth = unifiedState;
     const { container } = render(<ContextUsagePill />);
     const btn = pillButton();
-    expect(btn.getAttribute('title')).toContain('15.4k/128.0k Token');
+    expect(btn.hasAttribute('title')).toBe(false);
 
     hoverPill();
     expect(container.textContent).toContain('15.4k / 128.0k Token');

@@ -143,6 +143,11 @@ export function buildAgentRows(input: {
       const row = rows.find((candidate) => candidate.key === node.id);
       if (row) {
         row.node = node;
+        // Execution lifecycle beats an older persisted member snapshot, in either direction.
+        if (node.sources.some((source) => source === 'spawnGuard' || source === 'backgroundRegistry')) {
+          row.status = agentRowStatus(node.status);
+          row.stoppable = row.status === 'working';
+        }
         if (typeof node.budgetSummary.tokensUsed === 'number') row.tokens = node.budgetSummary.tokensUsed;
         row.failureReason = agentFailureCopy(node.failureCode, t, node.failureReason) ?? undefined;
       }

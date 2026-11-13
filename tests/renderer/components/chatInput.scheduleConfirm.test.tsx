@@ -3,7 +3,7 @@ import { chatInputZh } from '../../../src/renderer/i18n/chatInput';
 
 import React from 'react';
 import { act, fireEvent, render, renderHook, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message } from '@shared/contract';
 import type { CreateCronJobInput } from '../../../src/renderer/services/cronClient';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
@@ -812,5 +812,35 @@ describe('ScheduleConfirmCard — 卡内编辑', () => {
     render(<ScheduleConfirmCard draft={agentDraft()} confirming={false} onConfirm={vi.fn()} onDismiss={vi.fn()} />);
     expect(screen.queryByRole('button', { name: '编辑 什么时候' })).toBeNull();
     expect(screen.queryByRole('button', { name: '编辑 什么变化值得通知' })).toBeNull();
+  });
+});
+
+
+describe('schedule confirmation recurring timezone labels', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it.each([
+    ['America/Los_Angeles', 'zh', '每天 09:00'],
+    ['America/Los_Angeles', 'en', 'Daily at 09:00'],
+    ['Asia/Shanghai', 'zh', '每天 09:00'],
+    ['Asia/Shanghai', 'en', 'Daily at 09:00'],
+  ] as const)('host %s local zone in %s has no suffix', (zone, lang, expected) => {
+    vi.stubEnv('TZ', zone);
+    expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe(zone);
+    const input = { ...rowInput, scheduleType: 'cron' as const, schedule: { type: 'cron' as const, expression: '0 9 * * *', timezone: zone } };
+    expect(buildScheduleConfirmRows({ input }, rowLabels, lang).find(row => row.key === 'when')?.value).toBe(expected);
+  });
+
+  it.each([
+    ['zh', '每天 21:00（中国标准时间）'],
+    ['en', 'Daily at 21:00 (China Standard Time)'],
+  ] as const)('foreign zone in %s names the zone', (lang, expected) => {
+    vi.stubEnv('TZ', 'America/Los_Angeles');
+    const input = { ...rowInput, scheduleType: 'cron' as const, schedule: { type: 'cron' as const, expression: '0 21 * * *', timezone: 'Asia/Shanghai' } };
+    expect(buildScheduleConfirmRows({ input }, rowLabels, lang).find(row => row.key === 'when')?.value).toBe(expected);
+    if (lang === 'zh') {
+      render(<ScheduleConfirmCard draft={{ input, description: '备份照片', sourceSessionId: null }} confirming={false} onConfirm={vi.fn()} onDismiss={vi.fn()} />);
+      expect(screen.getByText(expected)).toBeTruthy();
+    }
   });
 });

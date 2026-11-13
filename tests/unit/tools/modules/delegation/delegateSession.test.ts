@@ -74,6 +74,9 @@ describe('delegate_session', () => {
     if (result.ok === true) {
       expect(result.meta).not.toHaveProperty('reused');
       expect(JSON.parse(result.output)).not.toHaveProperty('reused');
+      // 渲染端「查看目标会话」按钮要的目标 id：只在 meta，模型可见的 output 不带。
+      expect(result.meta).toMatchObject({ targetSessionId: 'target' });
+      expect(JSON.parse(result.output)).not.toHaveProperty('targetSessionId');
     }
     expect(new SessionDelegationRepository(db).listByTargetSession('target')).toHaveLength(1);
     expect(db.prepare('SELECT count(*) AS count FROM queued_inputs').get()).toMatchObject({ count: 1 });

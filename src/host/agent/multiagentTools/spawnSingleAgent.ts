@@ -9,6 +9,7 @@ import type { FullAgentConfig } from '../../../shared/contract/agentTypes';
 import { routeFailureCode } from '../../../shared/contract/cancellation';
 import {
   createScopedSwarmAgentId,
+  parseScopedSwarmAgentId,
 } from '../../../shared/contract/swarm';
 import {
   getAgentMaxBudget,
@@ -50,6 +51,7 @@ export async function executeSingleSpawnAgent(
   context: SubagentExecutionContext,
   childDepth: number,
   treeId: string,
+  managedAgentId?: string,
 ): Promise<MultiagentExecutionResult> {
     const guard = getSpawnGuard();
     const parallel = params.parallel as boolean | undefined;
@@ -175,7 +177,10 @@ export async function executeSingleSpawnAgent(
     }
 
     // Generate agent ID
-    const localAgentId = `agent_${role || 'dynamic'}_${randomUUID()}`;
+    let localAgentId = `agent_${role || 'dynamic'}_${randomUUID()}`;
+    if (managedAgentId) {
+      localAgentId = parseScopedSwarmAgentId(managedAgentId)?.localAgentId ?? managedAgentId;
+    }
     const agentId = context.swarmRunScope
       ? createScopedSwarmAgentId(context.swarmRunScope, localAgentId)
       : localAgentId;
@@ -386,6 +391,8 @@ export async function executeSingleSpawnAgent(
         // Register with SpawnGuard
         guard.register(agentId, role || 'dynamic', task, promise, abortController, {
           treeId,
+          parentRunId: context.runId,
+          background: Boolean(managedAgentId),
           completion: { title: completionTitle, kind: 'user_visible' },
           parentId: context.spawnParentAgentId,
           slotAcquired: true,
@@ -394,7 +401,11 @@ export async function executeSingleSpawnAgent(
         registeredWithGuard = true;
         slotLease = undefined;
 
-        const raced = await raceForegroundBlockingBudget(promise, foregroundBlockingBudgetMs);
+        // 后台 lane（managedAgentId 已在 registry 登记）不能再走前台预算→收养：
+        // adopt 同一 id 会抛 'Background subagent already running'，结果也落不进原记录。
+        const raced = managedAgentId
+          ? { kind: 'result' as const, result: await promise }
+          : await raceForegroundBlockingBudget(promise, foregroundBlockingBudgetMs);
 
         if (raced.kind === 'timeout') {
           delegateWorktreeCleanup();
@@ -496,6 +507,8 @@ Stats:
         // Register with SpawnGuard (auto-tracks completion)
         guard.register(agentId, role || 'dynamic', task, promise, abortController, {
           treeId,
+          parentRunId: context.runId,
+          background: true,
           completion: { title: completionTitle, kind: 'user_visible' },
           parentId: context.spawnParentAgentId,
           slotAcquired: true,

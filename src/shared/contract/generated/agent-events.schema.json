@@ -1170,6 +1170,32 @@
             "standingGrantTarget": {
               "type": "string"
             },
+            "browserSessionGrant": {
+              "type": "object",
+              "properties": {
+                "target": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "previousOrigins": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "target",
+                "previousOrigins"
+              ],
+              "additionalProperties": false
+            },
             "targetApp": {
               "type": "object",
               "properties": {
