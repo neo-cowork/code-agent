@@ -125,13 +125,13 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
                       </span>
                     ) : permissionDenied ? (
                       <span
-                        className="rounded-full px-2 py-1 text-xs text-badge-warning bg-amber-500/10"
+                        className="shrink-0 whitespace-nowrap rounded-full px-2 py-1 text-xs text-badge-warning bg-amber-500/10"
                         data-testid="cron-execution-permission-denied"
                       >
                         {statusMeta.label}
                       </span>
                     ) : (
-                      <span className={`rounded-full px-2 py-1 text-xs ${statusMeta.className}`}>
+                      <span className={`shrink-0 whitespace-nowrap rounded-full px-2 py-1 text-xs ${statusMeta.className}`}>
                         {statusMeta.label}
                       </span>
                     )}

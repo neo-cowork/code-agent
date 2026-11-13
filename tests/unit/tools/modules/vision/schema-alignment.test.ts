@@ -5,6 +5,7 @@
 // ============================================================================
 
 import { describe, it, expect, vi } from 'vitest';
+import { registerBrowserJevRouteProbe } from '../../../../../src/shared/constants/jevQuestions';
 
 import { browserSchema } from '../../../../../src/host/plugins/builtin/browserControl/browser.schema';
 import { computerSchema } from '../../../../../src/host/plugins/builtin/computerUse/computer.schema';
@@ -47,8 +48,9 @@ describe('vision Level 1 schemas literally aligned with legacy', () => {
     });
   }
 
-  it('Browser / browser_action stay aligned when CODE_AGENT_BROWSER_JEV_STEP=1', () => {
+  it('Browser / browser_action stay aligned when execute_goal is exposed (switch on + route)', () => {
     vi.stubEnv('CODE_AGENT_BROWSER_JEV_STEP', '1');
+    registerBrowserJevRouteProbe(() => true);
     try {
       expect(browserSchema.description).toBe(BrowserTool.description);
       expect(browserSchema.inputSchema).toEqual(BrowserTool.inputSchema);
@@ -57,6 +59,7 @@ describe('vision Level 1 schemas literally aligned with legacy', () => {
       expect(browserSchema.description).toContain('execute_goal');
       expect(browserActionSchema.inputSchema.properties?.action?.enum).toContain('execute_goal');
     } finally {
+      registerBrowserJevRouteProbe(null);
       vi.unstubAllEnvs();
     }
   });

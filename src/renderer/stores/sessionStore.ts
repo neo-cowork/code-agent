@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useSessionLoadRecoveryStore, sessionLoadErrorCode } from './sessionLoadRecovery';
 import type { Session, Message, SessionTask, TodoItem, StreamRecoverySnapshot, UserQuestionRequest } from '@shared/contract';
 import type { AgentEngineSessionMetadata } from '@shared/contract/agentEngine';
 import { normalizeAgentEngineSession } from '@shared/contract/agentEngine';
@@ -25,8 +26,8 @@ import {
   clearConversationTerminalFrames,
   forgetConversationFramesInMemory,
 } from './sessionTerminalFrames';
-import { executeCreateSession } from './sessionCreate';
-import { bumpSessionsLocalVersion, executeLoadOlderSessions, executeLoadSessions, withOpenedSessionOutsideWindow } from './sessionListPagination';
+import { executeCreateSession, observeSessionDraftUsage } from './sessionCreate';
+import { bumpSessionsLocalVersion, executeLoadOlderSessions, executeLoadSessions, resetSessionListLoadState, useSessionListLoadStore, withOpenedSessionOutsideWindow } from './sessionListPagination';
 import { mergeSnapshotWithLiveTail } from './sessionSnapshotMerge';
 import { clearFailedSend, mergeFailedSendOutbox } from './failedSendOutbox';
 import { groupRunsByTask, type CronRunGroups } from '@shared/cronRunDigest';
@@ -41,7 +42,7 @@ const logger = createLogger('SessionStore');
 async function invokeSession<T>(action: string, payload?: unknown): Promise<T> {
   const response = await window.domainAPI?.invoke<T>(IPC_DOMAINS.SESSION, action, payload);
   if (!response?.success) {
-    throw new Error(response?.error?.message || `Session action failed: ${action}`);
+    throw Object.assign(new Error(response?.error?.message || `Session action failed: ${action}`), { code: response?.error?.code });
   }
   return response.data as T;
 }
@@ -283,7 +284,7 @@ interface SessionActions {
 
 type SessionStore = SessionState & SessionActions;
 
-export const useSessionStore = create<SessionStore>()((set, get) => ({
+export const useSessionStore = observeSessionDraftUsage(create<SessionStore>()((set, get) => ({
     sessions: [],
     currentSessionId: null,
     messages: [],
@@ -351,7 +352,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       if (!options?.force) useAppStore.getState().closeSecondaryPages();
       if (currentSessionId === sessionId && !options?.force) return;
 
-      // 竞态保护：记录本次切换的版本号，异步完成后检查是否过期
+      useSessionLoadRecoveryStore.setState({ sessionId: null, errorCode: null });
       const switchVersion = ++_switchCounter;
       const previewSession = get().sessions.find((session) => session.id === sessionId) ?? null;
       const isReload = !!options?.force && currentSessionId === sessionId; // 强刷当前会话不是「打开」，不清未读
@@ -473,6 +474,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       } catch (error) {
         logger.error('Failed to switch session', error);
         if (switchVersion === _switchCounter) {
+          useSessionLoadRecoveryStore.setState({ sessionId, errorCode: sessionLoadErrorCode(error) });
           set({
             error: error instanceof Error ? error.message : 'Failed to switch session',
             isLoading: false,
@@ -1050,7 +1052,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     getSessionDesignBrief: (sessionId) => {
       return get().sessionDesignBriefs.get(sessionId);
     },
-  }));
+  })));
 
 let _initialized = false;
 let _settleInitialSessionState: (() => void) | null = null;
@@ -1097,6 +1099,8 @@ export async function reloadSessionsForAuthChange(options?: { principalChanged?:
   if (options?.principalChanged === false) {
     return useSessionStore.getState().loadSessions({ silent: true });
   }
+  resetSessionListLoadState();
+  useSessionLoadRecoveryStore.setState({ sessionId: null, errorCode: null });
   clearSessionStateForAuthChange();
   if (!_initialized) {
     return;
@@ -1105,9 +1109,7 @@ export async function reloadSessionsForAuthChange(options?: { principalChanged?:
   const store = useSessionStore.getState();
   await store.loadSessions();
   const { sessions, currentSessionId } = useSessionStore.getState();
-  if (currentSessionId) {
-    return;
-  }
+  if (currentSessionId || !useSessionListLoadStore.getState().settled || useSessionListLoadStore.getState().loading || useSessionListLoadStore.getState().error) return;
   await openBootSession(store, sessions);
 }
 
@@ -1132,12 +1134,7 @@ export async function initializeSessionStore(): Promise<void> {
 
     const { sessions, currentSessionId } = useSessionStore.getState();
 
-    if (currentSessionId) {
-      // A user action may create/select a session while the initial list request is
-      // still in flight. Keep that newer session and only finish wiring listeners.
-    } else {
-      await openBootSession(store, sessions);
-    }
+    if (!currentSessionId && useSessionListLoadStore.getState().settled && !useSessionListLoadStore.getState().loading && !useSessionListLoadStore.getState().error) await openBootSession(store, sessions);
   } finally {
     performance.mark('boot:session-settled');
     // 失败也要 settle：renderer-ready 就绪门不许挂死窗口显示

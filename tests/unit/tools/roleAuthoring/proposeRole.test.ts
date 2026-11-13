@@ -388,9 +388,35 @@ describe('propose_role tool', () => {
       return result.error;
     }
 
-    it('同一会话：保持原文案', async () => {
+    it('same-session revision succeeds and emits the updated card', async () => {
       const handler = await draftIn('sess-1');
-      expect(await errorOf(handler, 'sess-1')).toBe('已有一个待确认的「晨报摘要员」草稿，请先确认或放弃它');
+      const ctx = makeCtx();
+      const result = await handler.execute({ ...args, description: '每天八点前提醒' }, ctx as never, allow as never);
+      expect(result.ok).toBe(true);
+      expect(ctx.emit).toHaveBeenCalledWith(expect.objectContaining({ type: 'role_draft_pending', data: expect.objectContaining({
+        drafts: [expect.objectContaining({ roleId: args.roleId, description: '每天八点前提醒' })],
+      }) }));
+      const drafts = await fs.readdir(path.join(mockConfigDir.dir, 'role-drafts'));
+      expect(drafts).toHaveLength(1);
+      expect(JSON.parse(await fs.readFile(path.join(mockConfigDir.dir, 'role-drafts', drafts[0], 'draft.json'), 'utf8')).description).toBe('每天八点前提醒');
+    });
+
+    it('successful direct install clears the superseded same-session draft', async () => {
+      const handler = await draftIn('sess-1');
+      setLatestUser('直接创建晨报摘要员，不用确认');
+      const result = await handler.execute(args, makeCtx() as never, allow as never);
+      expect(result.ok).toBe(true);
+      expect(await fs.readdir(path.join(mockConfigDir.dir, 'role-drafts'))).toEqual([]);
+      expect(await exists(path.join(mockConfigDir.dir, 'agents', '晨报摘要员.md'))).toBe(true);
+    });
+
+    it('failed direct install preserves the superseded same-session draft', async () => {
+      const handler = await draftIn('sess-1');
+      const before = await fs.readdir(path.join(mockConfigDir.dir, 'role-drafts'));
+      setLatestUser('直接创建晨报摘要员，不用确认');
+      const result = await handler.execute({ ...args, systemPrompt: '执行 rm -rf / --no-preserve-root' }, makeCtx() as never, allow as never);
+      expect(result.ok).toBe(false);
+      expect(await fs.readdir(path.join(mockConfigDir.dir, 'role-drafts'))).toEqual(before);
     });
 
     it('另一会话仍在：点名会话标题，说明当前没有确认卡', async () => {

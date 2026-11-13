@@ -161,6 +161,7 @@ describe('agentAppService.sendMessage → connector_required（真实缓存模�
       setSessionContext: vi.fn(),
     };
     vi.mocked(getSessionManager).mockReturnValue({
+      getMessages: vi.fn(async () => []),
       getSession: vi.fn(async () => ({ id: 'session-1', workingDirectory: '/tmp/ws' })),
       getSessionMetadata: vi.fn(() => undefined),
       updateSession: vi.fn(),

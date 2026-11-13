@@ -28,7 +28,6 @@ import { useVoiceLiveRuntime } from '../../hooks/useVoiceLiveRuntime';
 import { deriveAgentMergeState } from '../../utils/agentMergeState';
 import { isAgentRowQuiet } from '../../utils/agentRowStall';
 import { stopSessionAgent } from '../../utils/stopSessionAgent';
-import { agentFailureCopy } from '../../utils/agentFailureCopy';
 import type { AgentRow } from '../../utils/agentRows';
 import { RoleInitialAvatar } from '../features/expert/RoleInitialAvatar';
 import { DiscussionStream } from '../features/swarm/DiscussionStream';
@@ -168,10 +167,9 @@ export const SessionAgentsPanel: React.FC = () => {
     const labels = text.panel.status;
     if (row.hold === 'approval') return labels.needsApproval;
     if (row.status === 'failed') {
-      const reason = (row.node?.failureCode ? agentFailureCopy(row.node.failureCode, t) : null)
-        ?? row.failureReason;
+      const reason = row.failureReason;
       return reason
-        ? `${labels.failed}：${reason}`
+        ? t.chat.delegationReceipt.failureDetail.replace('{status}', labels.failed).replace('{reason}', reason)
         : labels.failed;
     }
     if (row.status === 'cancelled') return labels.stopped;
@@ -198,7 +196,7 @@ export const SessionAgentsPanel: React.FC = () => {
             data-testid="agents-panel-stop-all"
             onClick={() => { void stopAll(); }}
             disabled={stoppingAll}
-            className="rounded-md px-2 py-1 text-[11px] text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-badge-danger disabled:cursor-not-allowed disabled:opacity-50"
+            className="whitespace-nowrap rounded-md px-2 py-1 text-[11px] text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-badge-danger disabled:cursor-not-allowed disabled:opacity-50"
           >
             {stoppingAll ? text.stopAllStopping : text.stopAll}
           </button>
@@ -209,7 +207,7 @@ export const SessionAgentsPanel: React.FC = () => {
             data-testid="agents-panel-clear-finished"
             onClick={() => { void clearFinished(); }}
             disabled={clearingFinished}
-            className="rounded-md px-2 py-1 text-[11px] text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+            className="whitespace-nowrap rounded-md px-2 py-1 text-[11px] text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {text.clearFinished}
           </button>

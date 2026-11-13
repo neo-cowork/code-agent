@@ -100,7 +100,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     const isDisabled = disabled || loading;
 
     const baseStyles = [
-      'inline-flex items-center justify-center',
+      'inline-flex shrink-0 items-center justify-center whitespace-nowrap',
       'font-medium',
       'rounded-lg',
       'transition-all duration-200',
@@ -132,7 +132,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         ) : (
           leftIcon && <span className={iconSize}>{leftIcon}</span>
         )}
-        {children && <span>{children}</span>}
+        {children && <span className="inline-flex items-center gap-1.5">{children}</span>}
         {!loading && rightIcon && <span className={iconSize}>{rightIcon}</span>}
       </button>
     );

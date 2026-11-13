@@ -270,6 +270,7 @@ export const MODEL_FEATURES: Record<string, ('tool' | 'vision' | 'reasoning')[]>
   'doubao-seed-1-6-flash': ['tool'],
   'doubao-seed-1-6-lite': ['tool'],
   // xiaomi MiMo（thinking-mode + tool calling）
+  'neohorse-1.5-flash-preview': ['tool', 'vision'],
   'mimo-v2.6-flash': ['tool', 'vision', 'reasoning'],
   'mimo-v2.5-pro': ['tool', 'reasoning'],
   'mimo-v2.5': ['tool', 'reasoning'],

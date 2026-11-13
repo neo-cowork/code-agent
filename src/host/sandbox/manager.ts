@@ -10,6 +10,7 @@ import { Bubblewrap, getBubblewrap, type BubblewrapConfig, type BubblewrapStatus
 import { getSeatbelt, type SeatbeltConfig, type SeatbeltStatus } from './seatbelt';
 import { SANDBOX_TIMEOUTS } from '../../shared/constants';
 import { getForbiddenWritePathsUnderRoot, getSensitiveSandboxPaths } from './sensitivePaths';
+import { NPM_SANDBOX_TEMP_PREFIX } from './wrapperMarkers';
 
 const logger = createLogger('SandboxManager', { lane: 'sandbox' });
 
@@ -136,7 +137,7 @@ interface NpmSandboxEnvironment {
 }
 
 function prepareNpmSandboxEnvironment(): NpmSandboxEnvironment {
-  const npmHome = fs.mkdtempSync(path.join(os.tmpdir(), 'neo-npm-'));
+  const npmHome = fs.mkdtempSync(path.join(os.tmpdir(), NPM_SANDBOX_TEMP_PREFIX));
   const userConfig = path.join(npmHome, 'npmrc');
   const cache = path.join(npmHome, 'cache');
   const logs = path.join(npmHome, 'logs');
