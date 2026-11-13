@@ -76,6 +76,7 @@ import {
 import { getIncompleteTasks, adoptOrphanTasks } from '../services/planning/taskStore';
 import { addSubagentUsage, type SubagentUsage } from './subagentUsageAccounting';
 import { runSubagentExecutionWithTrace } from './subagentExecutionTracing';
+import { withSubagentRunOwner } from './subagentRunOwner';
 import { createSubagentToolRuntime } from './subagentToolRuntime';
 import {
   normalizeSubagentModelContext,
@@ -137,11 +138,10 @@ export class SubagentExecutor {
     const request = applyRoleBoundaryToSubagentRequest(normalizeSubagentExecutionRequest(requestOrPrompt, legacyConfig, legacyContext));
     const externalExecution = routeExternalSubagentExecution(request);
     if (externalExecution) return externalExecution;
-    const { prompt, config, context } = request;
-    return runSubagentExecutionWithTrace(
-      request,
-      () => this.executeInternal(prompt, config, context),
-    );
+    return withSubagentRunOwner(request, (ownedRequest) => runSubagentExecutionWithTrace(
+      ownedRequest,
+      () => this.executeInternal(ownedRequest.prompt, ownedRequest.config, ownedRequest.context),
+    ));
   }
 
   private async executeInternal(

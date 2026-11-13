@@ -70,6 +70,11 @@ import { resetPermissionModeManager } from '../../../src/host/permissions/modes'
 import { createSubagentToolRuntime } from '../../../src/host/agent/subagentToolRuntime';
 import type { SubagentExecutionContext } from '../../../src/host/agent/subagentExecutorTypes';
 import { requestBrowserUploadApproval } from '../../../src/host/tools/vision/browserUploadApproval';
+import type { PendingApprovalRepository } from '../../../src/host/services/core/repositories/PendingApprovalRepository';
+import { WORKTREE_BASE_DIR } from '../../../src/host/agent/agentWorktreePath';
+import { withSubagentRunOwner } from '../../../src/host/agent/subagentRunOwner';
+import { getApplicationRunRegistry, resetApplicationRunRegistryForTests } from '../../../src/host/app/applicationRunRegistry';
+import { assertSurfaceRunOwner } from '../../../src/host/services/surfaceExecution/surfaceRunOwnership';
 
 const settings = (): AppSettings => ({
   permissions: {
@@ -284,10 +289,11 @@ describe('后台子代理 Browser upload_file 审批：前台 run 结束后仍 p
     for (const dir of tmpDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  function beginBrowserUploadApproval() {
+  function beginBrowserUploadApproval(ownedContext?: SubagentExecutionContext, repo?: PendingApprovalRepository) {
     const events: AgentEvent[] = [];
     const island = new OrchestratorPermissionIsland({
       getSettings: settings,
+      injectedPendingApprovalRepo: repo,
       isDevModeAutoApproveEnabled: () => false,
       getExecutionTopology: () => 'async_agent',
       hasApprovalUi: () => true,
@@ -296,6 +302,7 @@ describe('后台子代理 Browser upload_file 审批：前台 run 结束后仍 p
     const context = {
       sessionId: 'bg-browser-session',
       cwd: path.dirname(invoice),
+      ...ownedContext,
       // 生产接线：子代理 context.permission.request 落进会话 island。
       permission: { request: (request: Parameters<typeof island.requestPermission>[0]) => island.requestPermission(request) },
       resolver: { getDefinition: resolverState.getDefinition },
@@ -312,9 +319,14 @@ describe('后台子代理 Browser upload_file 审批：前台 run 结束后仍 p
     // Browser 工具体：与 browserAction upload_file 分支同一入口 requestBrowserUploadApproval，
     // 收到的 ToolContext.requestPermission 就是 createSubagentToolRuntime 装配的那个。
     resolverState.execute.mockImplementation(async (_name: string, params: { file: string }, toolContext: Parameters<typeof requestBrowserUploadApproval>[0]['context']) => {
+      if (ownedContext) assertSurfaceRunOwner({
+        runRegistry: getApplicationRunRegistry(),
+        identity: { conversationId: toolContext.sessionId!, runId: toolContext.runId!, agentId: toolContext.agentId! },
+        surface: 'browser', provider: 'managed', access: 'active',
+      });
       const approval = await requestBrowserUploadApproval({
         filePath: params.file,
-        context: { ...toolContext, runId: 'bg-run-1', agentId: 'bg-agent-1', currentToolCallId: 'call-upload-1' },
+        context: { ...toolContext, currentToolCallId: 'call-upload-1' },
         engine: 'managed',
       });
       return approval.approved
@@ -325,11 +337,11 @@ describe('后台子代理 Browser upload_file 审批：前台 run 结束后仍 p
       context,
       sessionId: 'bg-browser-session',
       effectiveMode: 'default',
-      identity: { agentId: 'bg-agent-1', runId: 'bg-run-1' },
+      identity: { agentId: 'bg-agent-1', runId: ownedContext?.runId ?? 'bg-run-1' },
       allowedToolNames: new Set(['Browser']),
       checkToolExecution: () => true,
     });
-    const execution = executor.execute('Browser', { action: 'upload_file', file: invoice }, { sessionId: 'bg-browser-session' });
+    const execution = executor.execute('Browser', { action: 'upload_file', file: invoice }, { sessionId: 'bg-browser-session', agentId: 'bg-agent-1', runId: ownedContext?.runId ?? 'bg-run-1' });
     return { island, execution, events };
   }
 
@@ -346,6 +358,7 @@ describe('后台子代理 Browser upload_file 审批：前台 run 结束后仍 p
 
     expect(request.type).toBe('file_read');
     expect(request.tool).toBe('browser_action.upload_file');
+    expect(request.sessionId).toBe('bg-browser-session');
     expect(request.forceConfirm).toBe(true);
     expect(request.agentId).toBe('bg-agent-1');
     expect(request.runId).toBe('bg-run-1');
@@ -391,4 +404,109 @@ describe('后台子代理 Browser upload_file 审批：前台 run 结束后仍 p
     expect(island.handlePermissionResponse(request.id, 'allow')).toBe('delivered');
     expect((await execution).success).toBe(true);
   });
+
+  it.each(['allow', 'deny'] as const)('lane owns Browser after foreground unregister, %s settles and releases owner', async (decision) => {
+    const registry = getApplicationRunRegistry();
+    const foreground = registry.start({ sessionId: 'bg-browser-session', workspace: path.dirname(invoice) });
+    const controller = new AbortController();
+    let laneRunId = '';
+    let upload: ReturnType<typeof beginBrowserUploadApproval> | undefined;
+    const execution = withSubagentRunOwner({
+      prompt: 'Attach invoice.pdf to the invoice form in the background',
+      config: { name: 'Invoice assistant', systemPrompt: '', availableTools: ['Browser'] },
+      context: {
+        sessionId: 'bg-browser-session', runId: foreground.context.runId,
+        workspace: path.dirname(invoice), cwd: path.dirname(invoice),
+        abortSignal: controller.signal,
+      } as SubagentExecutionContext,
+    }, async ({ context }) => {
+      laneRunId = context.runId!;
+      expect(laneRunId).not.toBe(foreground.context.runId);
+      expect(registry.getBySessionId(context.sessionId)).toBe(foreground);
+      registry.unregister(foreground.context.runId, foreground);
+      upload = beginBrowserUploadApproval(context);
+      const result = await upload.execution;
+      return { success: result.success, output: result.output ?? '', error: result.error, toolsUsed: ['Browser'], iterations: 1 };
+    });
+    await vi.advanceTimersByTimeAsync(10);
+    expect(upload).toBeDefined();
+    const request = await raised(upload!.island);
+    expect(request.runId).toBe(laneRunId);
+    expect(registry.resolve({ runId: laneRunId, sessionId: 'bg-browser-session' })).toBeDefined();
+    expect(upload!.island.handlePermissionResponse(request.id, decision)).toBe('delivered');
+    const result = await execution;
+    expect(result.success).toBe(decision === 'allow');
+    if (decision === 'deny') expect(result.error).toContain('The selected upload file was not explicitly approved.');
+    expect(registry.resolve({ runId: laneRunId })).toBeUndefined();
+    expect(() => assertSurfaceRunOwner({ runRegistry: registry,
+      identity: { conversationId: 'bg-browser-session', runId: laneRunId, agentId: 'bg-agent-1' },
+      surface: 'browser', provider: 'managed', access: 'active',
+    })).toThrow('Surface execution owner is not the active RunRegistry handle.');
+    resetApplicationRunRegistryForTests();
+  });
+
+  it('lane cancellation revokes surface actions, and failure releases its owner', async () => {
+    const registry = getApplicationRunRegistry();
+    const controller = new AbortController();
+    let laneRunId = '';
+    await expect(withSubagentRunOwner({
+      prompt: 'Attach invoice.pdf',
+      config: { name: 'Invoice assistant', systemPrompt: '', availableTools: ['Browser'] },
+      context: { sessionId: 'bg-browser-session', cwd: path.dirname(invoice), abortSignal: controller.signal } as SubagentExecutionContext,
+    }, async ({ context }) => {
+      laneRunId = context.runId!;
+      controller.abort('user-cancel');
+      await Promise.resolve();
+      expect(context.abortSignal.aborted).toBe(true);
+      expect(() => assertSurfaceRunOwner({ runRegistry: registry,
+        identity: { conversationId: context.sessionId, runId: laneRunId, agentId: 'bg-agent-1' },
+        surface: 'browser', provider: 'managed', access: 'active',
+      })).toThrow('Surface execution owner is not the active RunRegistry handle.');
+      throw new Error('lane ended');
+    })).rejects.toThrow('lane ended');
+    expect(registry.resolve({ runId: laneRunId })).toBeUndefined();
+    resetApplicationRunRegistryForTests();
+  });
+
+
+  it.each(['allow', 'deny'] as const)('background exact-file approval persists until %s, without broadening consent', async (decision) => {
+    const insert = vi.fn();
+    const resolve = vi.fn(() => 1);
+    const { island, execution } = beginBrowserUploadApproval(undefined, { insert, resolve } as unknown as PendingApprovalRepository);
+    const request = await raised(island);
+    expect(insert).toHaveBeenCalledOnce();
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ id: request.id,
+      payload: expect.objectContaining({ tool: 'browser_action.upload_file', type: 'file_read' }),
+    }));
+    island.drainPendingPermissions('deny', { skipBackgroundLanes: true });
+    expect(resolve).not.toHaveBeenCalled();
+    expect(island.handlePermissionResponse(request.id, decision)).toBe('delivered');
+    expect(resolve).toHaveBeenCalledWith(expect.objectContaining({ id: request.id, status: decision === 'allow' ? 'approved' : 'rejected' }));
+    expect((await execution).success).toBe(decision === 'allow');
+    expect(island.handlePermissionResponse(request.id, decision)).toBe('unknown_request');
+  });
+
+
+  it('Browser lane owner uses its isolated worktree without changing executor write authority', async () => {
+    const registry = getApplicationRunRegistry();
+    fs.mkdirSync(WORKTREE_BASE_DIR, { recursive: true });
+    const cwd = fs.mkdtempSync(path.join(WORKTREE_BASE_DIR, 'browser-owner-'));
+    tmpDirs.push(cwd);
+    const context = { sessionId: 'worktree-session', workspace: path.dirname(invoice), cwd,
+      abortSignal: new AbortController().signal,
+    } as SubagentExecutionContext;
+    await withSubagentRunOwner({ prompt: 'Attach invoice.pdf',
+      config: { name: 'Invoice assistant', systemPrompt: '', availableTools: ['Browser'] }, context,
+    }, async (request) => {
+      const handle = registry.resolve({ runId: request.context.runId });
+      expect(handle?.context.cwd).toBe(fs.realpathSync(cwd));
+      expect(handle?.context.workspace).toBe(fs.realpathSync(cwd));
+      expect(request.context.workspace).toBe(context.workspace);
+      expect(request.context.workspaceScope).toBe(context.workspaceScope);
+      return { success: true, output: '', toolsUsed: [], iterations: 0 };
+    });
+    expect(registry.size).toBe(0);
+    resetApplicationRunRegistryForTests();
+  });
+
 });

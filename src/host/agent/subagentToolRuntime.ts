@@ -135,7 +135,7 @@ export function createSubagentToolRuntime(input: {
         // 出站 / 不可逆 / 进程类工具（mustAskUnderAcceptEdits）仍要落到 permission.request。
         && !(mode === 'acceptEdits' && mustAskUnderAcceptEdits(request.tool))
       ) return true;
-      return context.permission.request({ ...request, ...input.identity });
+      return context.permission.request({ ...request, sessionId: input.sessionId, ...input.identity });
     },
   });
   const policyName = input.policyName || 'subagent pipeline';
