@@ -12,7 +12,7 @@ import { resetSessionTaskConcurrencyPoolForTest } from '../../../../src/host/ser
 import {
   resetBackgroundTaskLedgerForTest,
 } from '../../../../src/host/task/backgroundTaskLedger';
-import { executeDelegateTask } from '../../../../src/host/tools/modules/commandCenter/sessionCommandCenter';
+import { delegateTaskModule, executeDelegateTask } from '../../../../src/host/tools/modules/commandCenter/sessionCommandCenter';
 import { delegateTaskSchema } from '../../../../src/host/tools/modules/commandCenter/sessionCommandCenter.schema';
 import { createWorkspaceScope } from '../../../../src/host/runtime/workspaceScope';
 
@@ -238,7 +238,7 @@ describe('delegate_task overflow choice in host', () => {
     });
     const result = await executeDelegateTask(taskArgs(3), toolContext(session), allow);
     assert(result.ok);
-    expect(result.meta).toEqual({ sessionTask: { outcome, tasks: [{ taskId: getSessionCommandCenter().list(session).find((task) => task.shortName === '任务3')!.id, shortName: '任务3', status }] } });
+    expect(result.meta).toEqual({ sessionTask: { outcome, tasks: [{ shortName: '任务3', status }] } });
     if (delayed) {
       expect(result.output).toContain('已请求停止「任务1」');
       expect(result.output).not.toContain('已停止「任务1」');
@@ -285,6 +285,25 @@ describe('delegate_task overflow choice in host', () => {
     expect(result.output).toContain('回复“排队”');
     expect(result.output).not.toMatch(/no-renderer|aborted|timeout|declined|INVALID_ARGS/i);
     expect(getSessionCommandCenter().list(session)).toHaveLength(2);
+  });
+
+  it('production handler adds the exact task id to accepted and queued receipts', async () => {
+    const session = 'session-production-receipts';
+    const handler = await delegateTaskModule.createHandler();
+    const first = await handler.execute(taskArgs(1), toolContext(session), allow);
+    const second = await handler.execute(taskArgs(2), toolContext(session), allow);
+    assert(first.ok && second.ok);
+    const tasks = getSessionCommandCenter().list(session);
+    expect(first.meta).toEqual({ sessionTask: { outcome: 'accepted', tasks: [{ taskId: tasks[0].id, shortName: '任务1', status: 'running' }] } });
+    const reused = await handler.execute(taskArgs(1), toolContext(session), allow);
+    assert(reused.ok);
+    expect(reused.meta).toEqual({ sessionTask: { outcome: 'reused', tasks: [{ taskId: tasks[0].id, shortName: '任务1', status: 'running' }] } });
+    promptMock.mockResolvedValueOnce({ status: 'answered', response: { requestId: 'queue', answers: { 任务已满: '排队' } } });
+    const third = await handler.execute(taskArgs(3), toolContext(session), allow);
+    assert(third.ok);
+    const queued = getSessionCommandCenter().list(session).find((task) => task.shortName === '任务3');
+    assert(queued);
+    expect(third.meta).toEqual({ sessionTask: { outcome: 'queued', tasks: [{ taskId: queued.id, shortName: '任务3', status: 'queued' }] } });
   });
 
   it('documents queue_when_full without telling the model to call AskUserQuestion on overflow', () => {

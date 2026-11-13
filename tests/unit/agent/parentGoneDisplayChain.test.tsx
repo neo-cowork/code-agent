@@ -603,3 +603,23 @@ it('keeps the preannouncement marker off subsequent authored text, even identica
   expect(nodes[1].metadata?.backgroundTaskPreannounce).toBeUndefined();
   expect(nodes[1].content).toBe(text);
 });
+
+it.each(['en', 'zh'] as const)('shows the session-work model title safely in %s on both surfaces', (locale) => {
+  language = locale;
+  const task: Task = { id: 'session-work-integration', kind: 'session_command_task', source: 'session_command_center',
+    sessionId, title: '对比 Apple Notes、Notion、Obsidian', status: 'failed', createdAt: 1, updatedAt: 2, events: [], outputRefs: [],
+    failure: { reason: 'session_command_task_interrupted_by_restart', message: '应用重启时这个后台任务还没做完，已被中断，结果没能送回这里。需要的话请重新发起。' },
+  };
+  const call: ToolCall = { id: 'integration-call', name: 'delegate_task', arguments: {}, result: {
+    toolCallId: 'integration-call', success: true, output: 'accepted',
+    metadata: { sessionTask: { outcome: 'accepted', tasks: [{ taskId: task.id, shortName: '笔记', status: 'running' }] } },
+  } };
+  const t = locale === 'en' ? en : zh;
+  const row = buildAgentRows({ members: [], nodes: [], tasks: [task] })[0];
+  const presentation = deriveDelegationPresentation(call, [task], [], t);
+  expect(row.name).toBe(locale === 'en' ? 'Background assistant' : task.title);
+  expect(presentation?.title).toBe(row.name);
+  const card = render(<><DelegationHeader presentation={presentation!} /><DelegationReceipt presentation={presentation!} /></>);
+  if (locale === 'en') { expect(card.container.textContent).not.toMatch(cjk); expect(row.name).not.toMatch(cjk); }
+  printEvidence(`integration ${locale} title card=${JSON.stringify(card.container.textContent)} row=${JSON.stringify(row.name)}`);
+});

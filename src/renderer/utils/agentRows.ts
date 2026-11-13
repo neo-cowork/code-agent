@@ -1,6 +1,5 @@
-import { agentNodeLabel, agentRoleLabel } from './agentRoleLabel';
+import { agentNodeLabel, agentRoleLabel, backgroundTaskLabel } from './agentRoleLabel';
 import { agentFailureCopy, backgroundTaskFailureCopy } from './agentFailureCopy';
-import { containsCjk } from './containsCjk';
 import { languages } from '../i18n';
 import { useAppStore } from '../stores/appStore';
 // ============================================================================
@@ -182,9 +181,7 @@ export function buildAgentRows(input: {
     rows.push({
       key: task.id,
       kind: 'task',
-      name: t === languages.en && task.source === 'delegate_task' && containsCjk(task.title)
-        ? t.agentRoleLabels.roles.background
-        : task.title,
+      name: backgroundTaskLabel(task, t),
       isLead: false,
       status,
       failureReason: backgroundTaskFailureCopy(task, t) ?? undefined,

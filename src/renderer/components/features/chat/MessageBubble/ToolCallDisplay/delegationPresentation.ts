@@ -1,4 +1,4 @@
-import { agentNodeLabel } from '../../../../../utils/agentRoleLabel';
+import { agentNodeLabel, backgroundTaskLabel } from '../../../../../utils/agentRoleLabel';
 import { humanizeToolStep, parseDelegateSessionReceipt } from '../../../../../utils/humanizeToolStep';
 import { AgentFailureCode } from '@shared/contract/agentFailure';
 import type { AgentTreeNode } from '@shared/contract/agentTree';
@@ -8,7 +8,6 @@ import { languages, type Translations } from '../../../../../i18n';
 import { useAppStore } from '../../../../../stores/appStore';
 import { agentFailureCopy, backgroundTaskFailureCopy } from '../../../../../utils/agentFailureCopy';
 import { isToolInterruptionPlaceholder } from '../../../../../utils/toolExecutionPresentation';
-import { containsCjk } from '../../../../../utils/containsCjk';
 import {
   isAgentNodeTerminalStatus,
   isLastToolFailureVisible,
@@ -195,9 +194,7 @@ function fromTask(task: Task, t: Translations): DelegationPresentation {
         : 'failed';
   return {
     state,
-    title: t === languages.en && task.source === 'delegate_task' && containsCjk(task.title)
-      ? t.agentRoleLabels.roles.background
-      : displayPaths(task.title),
+    title: displayPaths(backgroundTaskLabel(task, t)),
     lastToolStep: task.progress?.lastToolStep,
     activityIds: taskActivityIds(task),
     sessionId: task.sessionId,

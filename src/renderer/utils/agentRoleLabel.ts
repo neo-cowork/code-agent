@@ -1,3 +1,5 @@
+import type { Task } from '@shared/contract/backgroundTask';
+import { containsCjk } from './containsCjk';
 import type { AgentTreeNode } from '@shared/contract/agentTree';
 import { languages, type Translations } from '../i18n';
 import { useAppStore } from '../stores/appStore';
@@ -21,4 +23,12 @@ export function agentNodeLabel(
   return node.background && labels === languages.en.agentRoleLabels
     ? labels.roles.background
     : agentRoleLabel(node.displayName || node.role, labels);
+}
+
+/** Model-generated background titles may be Chinese even in an English UI. */
+export function backgroundTaskLabel(task: Pick<Task, 'source' | 'title'>, t: Translations): string {
+  return t === languages.en
+    && (task.source === 'delegate_task' || task.source === 'session_command_center')
+    && containsCjk(task.title)
+    ? t.agentRoleLabels.roles.background : task.title;
 }
