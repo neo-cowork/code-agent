@@ -193,6 +193,7 @@ import { DurableRunRepository } from '../../../src/host/services/core/repositori
 import { createBackgroundSubagentRecoveryHandler } from '../../../src/host/runtime/durableRecoveryHandlers';
 import { AgentFailureCode } from '../../../src/shared/contract/agentFailure';
 import type { AgentTreeSnapshot } from '../../../src/shared/contract/agentTree';
+import type { Task } from '../../../src/shared/contract/backgroundTask';
 import type { ToolCall } from '../../../src/shared/contract';
 import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
@@ -210,6 +211,7 @@ import { useBackgroundTaskStore } from '../../../src/renderer/stores/backgroundT
 import { IPC_CHANNELS, IPC_DOMAINS } from '../../../src/shared/ipc';
 
 import type { TraceNode } from '../../../src/shared/contract/trace';
+import { TraceNodeRenderer } from '../../../src/renderer/components/features/chat/TraceNodeRenderer';
 import { ToolStepGroup } from '../../../src/renderer/components/features/chat/ToolStepGroup';
 import { ToolCallDisplay } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay';
 import { buildAgentRows } from '../../../src/renderer/utils/agentRows';
@@ -398,6 +400,17 @@ async function assertRestartDisplay(snapshot: AgentTreeSnapshot) {
   for (const locale of ['en', 'zh'] as const) {
     language = locale;
     invokeDomain.mockImplementation(async (domain, action) => domain === IPC_DOMAINS.AGENT && action === 'getTree' ? snapshot : null);
+    const notice = render(<TraceNodeRenderer sessionId={sessionId} node={{
+      id: 'recovered-wake-note', type: 'system', timestamp: 1,
+      content: '后台任务「You are a research-and-w…」已结束，结果见上方的任务结果；自动汇报这一步没能完成，需要的话可以直接问我。',
+      metadata: { backgroundWakeFailed: { taskId: node.id, reason: 'wake_failed' } },
+    }} />);
+    const noticeTitle = locale === 'en' ? 'Background assistant' : '助手';
+    await waitFor(() => expect(notice.container.textContent).toContain(noticeTitle));
+    expect(notice.container.textContent).not.toContain('You are a');
+    if (locale === 'en') expect(notice.container.textContent).not.toMatch(cjk);
+    printEvidence(`r3 ${locale} recovered notice=${JSON.stringify(notice.container.textContent)}`);
+    notice.unmount();
     const presentation = deriveDelegationPresentation(interrupted, [], snapshot.nodes, locale === 'en' ? en : zh);
     expect.soft(presentation, `${locale} interrupted spawn must correlate its real recovered node`).not.toBeNull();
     expect.soft(presentation).toEqual(deriveDelegationPresentation({ ...interrupted,
@@ -412,7 +425,7 @@ async function assertRestartDisplay(snapshot: AgentTreeSnapshot) {
     if (locale === 'en') expect(card.container.textContent).not.toMatch(cjk);
     card.unmount();
     // A real restart has a durable trace member AND a node. Exercise the merged row,
-    // preserving the raw trace name in ZH while resolving EN through agentRoleLabels.
+    // resolving raw role ids in both locales through agentRoleLabels.
     for (const duration of [38_000, 65_000]) {
       const run = { id: 'trace-r2', sessionId, status: 'failed', coordinator: 'parallel', startedAt: 1000,
         endedAt: 1000 + duration, durationMs: duration, totalAgents: 1, completedCount: 0, failedCount: 1,
@@ -435,7 +448,8 @@ async function assertRestartDisplay(snapshot: AgentTreeSnapshot) {
         expect.soft(text).not.toContain('coder');
         expect.soft(text).not.toMatch(cjk);
       } else {
-        expect.soft(screen.getByTestId(`agents-panel-row-${node.id}`).textContent).toBe('Ccoder失败：上级任务已经结束');
+        expect.soft(text).not.toContain('coder');
+        expect.soft(screen.getByTestId(`agents-panel-row-${node.id}`).textContent).toBe('编编程员失败：上级任务已经结束');
       }
       panel.unmount();
     }
@@ -477,5 +491,48 @@ it.each(['en', 'zh'] as const)('resolves raw known and unknown member role names
     members: ['coder', 'unregistered-role'].map((roleId) => ({ key: roleId, roleId, name: roleId, status: 'failed', isLead: false })),
     nodes: [], tasks: [],
   });
-  expect(rows.map((row) => row.name)).toEqual(locale === 'en' ? ['Coder', 'Assistant'] : ['coder', 'unregistered-role']);
+  expect(rows.map((row) => row.name)).toEqual(locale === 'en' ? ['Coder', 'Assistant'] : ['编程员', '助手']);
+});
+
+ it.each(['en', 'zh'] as const)('localizes the whole wake failure notice in %s without child prompt text', async (locale) => {
+  language = locale;
+  invokeDomain.mockResolvedValue({ nodes: [] });
+  const notice: TraceNode = {
+    id: 'wake-failure', type: 'system', timestamp: 1,
+    content: '后台任务「You are a research-and-w…」已结束，结果见上方的任务结果；自动汇报这一步没能完成，需要的话可以直接问我。',
+    metadata: { backgroundWakeFailed: { taskId: 'missing-task', reason: 'wake_failed' } },
+  };
+  const view = render(<TraceNodeRenderer node={notice} sessionId={sessionId} />);
+  const expected = locale === 'en'
+    ? 'Background task "Background assistant" ended — see the task result above. The automatic report could not be sent; ask me if you need it.'
+    : '后台任务「助手」已结束，结果见上方的任务结果；自动汇报这一步没能完成，需要的话可以直接问我。';
+  await waitFor(() => expect(view.container.textContent).toBe(expected));
+  printEvidence(`r3 ${locale} notice textContent=${JSON.stringify(view.container.textContent)}`);
+  expect(view.container.textContent).not.toContain('You are a');
+  if (locale === 'en') expect(view.container.textContent).not.toMatch(cjk);
+});
+
+it.each(['en', 'zh'] as const)('localizes the persisted session-work restart notice in %s', (locale) => {
+  language = locale;
+  const view = render(<TraceNodeRenderer node={{ id: 'session-work-interrupted', type: 'system', timestamp: 1,
+    content: '应用重启时这个后台任务还没做完，已被中断，结果没能送回这里。需要的话请重新发起。',
+    metadata: { backgroundTaskInterrupted: { taskId: 'session-work-task' } },
+  }} />);
+  expect(view.container.textContent).toBe((locale === 'en' ? en : zh).backgroundPanel.interrupted);
+  if (locale === 'en') expect(view.container.textContent).not.toMatch(cjk);
+  printEvidence(`r3 ${locale} session-work notice=${JSON.stringify(view.container.textContent)}`);
+});
+
+it.each(['en', 'zh'] as const)('uses the session-work restart reason in card and panel in %s', (locale) => {
+  language = locale;
+  const task: Task = { id: 'session-work-test', kind: 'session_command_task', source: 'session_command_center',
+    sessionId, title: 'Compare notes', status: 'failed', createdAt: 1, updatedAt: 2, events: [], outputRefs: [],
+    toolCallId: 'delegate-test', failure: { reason: 'session_command_task_interrupted_by_restart', message: '应用重启时这个后台任务还没做完，已被中断，结果没能送回这里。需要的话请重新发起。' },
+  };
+  const t = locale === 'en' ? en : zh;
+  const rows = buildAgentRows({ members: [], nodes: [], tasks: [task] });
+  expect(rows[0].failureReason).toBe(t.backgroundPanel.interrupted);
+  const presentation = deriveDelegationPresentation({ id: 'delegate-test', name: 'delegate_task', arguments: {}, result: { toolCallId: 'delegate-test', success: true, output: 'accepted' } }, [task], [], t);
+  expect(presentation?.failure).toBe(t.backgroundPanel.interrupted);
+  if (locale === 'en') expect(rows[0].failureReason).not.toMatch(cjk);
 });

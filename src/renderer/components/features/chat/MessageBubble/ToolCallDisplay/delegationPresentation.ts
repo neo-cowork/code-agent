@@ -6,10 +6,9 @@ import type { LastToolFailure, LastToolStep, Task, TaskOutputRef } from '@shared
 import type { ToolCall } from '@shared/contract';
 import { languages, type Translations } from '../../../../../i18n';
 import { useAppStore } from '../../../../../stores/appStore';
-import { agentFailureCopy } from '../../../../../utils/agentFailureCopy';
+import { agentFailureCopy, backgroundTaskFailureCopy } from '../../../../../utils/agentFailureCopy';
 import { isToolInterruptionPlaceholder } from '../../../../../utils/toolExecutionPresentation';
 import { containsCjk } from '../../../../../utils/containsCjk';
-import { isAgentFailureCode } from '@shared/contract/agentFailure';
 import {
   isAgentNodeTerminalStatus,
   isLastToolFailureVisible,
@@ -207,9 +206,7 @@ function fromTask(task: Task, t: Translations): DelegationPresentation {
       const output = taskOutput(ref);
       return output ? [output] : [];
     }),
-    failure: state === 'failed' ? agentFailureCopy(
-      isAgentFailureCode(task.failure?.reason) ? task.failure.reason : undefined, t, task.failure?.message || task.summary,
-    ) ?? undefined : undefined,
+    failure: state === 'failed' ? backgroundTaskFailureCopy(task, t) ?? undefined : undefined,
     toolFailure: isLastToolFailureVisible(task.status) ? task.progress?.lastToolFailure : undefined,
   };
 }

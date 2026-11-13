@@ -6,6 +6,8 @@
 export const backgroundPanelZh = {
   backgroundPanel: {
     title: '后台任务',
+    interrupted: '应用重启时这个后台任务还没做完，已被中断，结果没能送回这里。需要的话请重新发起。',
+    wakeFailed: '后台任务「{title}」已结束，结果见上方的任务结果；自动汇报这一步没能完成，需要的话可以直接问我。',
     minimizedLabel: '{count} 个后台任务',
     minimizedFinishedLabel: '{count} 个已结束后台任务',
     minimizedAria: '展开后台任务面板',
@@ -27,6 +29,8 @@ export const backgroundPanelZh = {
 export const backgroundPanelEn: typeof backgroundPanelZh = {
   backgroundPanel: {
     title: 'Background tasks',
+    interrupted: 'The app restarted while this background task was still running, so it was interrupted and its result could not be delivered. Please start it again if you still need it.',
+    wakeFailed: 'Background task "{title}" ended — see the task result above. The automatic report could not be sent; ask me if you need it.',
     minimizedLabel: '{count} background tasks',
     minimizedFinishedLabel: '{count} finished background tasks',
     minimizedAria: 'Expand background task panel',

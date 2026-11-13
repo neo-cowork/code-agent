@@ -46,6 +46,7 @@ import { WakeRationaleNote, wakeRationaleFromMetadata } from './WakeRationaleNot
 import { TurnTimelineNodeRenderer } from './TraceTimelineNodes';
 import { MessageContextFrame, MessageContextMenu } from './MessageContextMenu';
 import { messageContextMenuId } from './useMessageContextInterventions';
+import { BackgroundWakeFailureNote } from './BackgroundWakeFailureNote';
 import { StepLimitContinue } from './StepLimitContinue';
 
 interface TraceNodeRendererProps {
@@ -664,6 +665,10 @@ const SystemNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, s
   const [expanded, setExpanded] = useState(false);
   const { t } = useI18n();
 
+  if (node.metadata?.backgroundWakeFailed) {
+    return <BackgroundWakeFailureNote taskId={node.metadata.backgroundWakeFailed.taskId} sessionId={sessionId} />;
+  }
+
   const receipt = node.metadata?.roleEditReceipt;
   if (receipt) {
     const copy = t.roleEditReceipt;
@@ -789,7 +794,7 @@ const SystemNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, s
   // generic system
   return (
     <div className="px-3 py-1.5 text-xs text-zinc-500 italic">
-      {node.content}
+      {node.metadata?.backgroundTaskInterrupted ? t.backgroundPanel.interrupted : node.content}
     </div>
   );
 };

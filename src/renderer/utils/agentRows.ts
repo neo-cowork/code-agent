@@ -1,9 +1,8 @@
 import { agentNodeLabel, agentRoleLabel } from './agentRoleLabel';
-import { agentFailureCopy } from './agentFailureCopy';
+import { agentFailureCopy, backgroundTaskFailureCopy } from './agentFailureCopy';
 import { containsCjk } from './containsCjk';
 import { languages } from '../i18n';
 import { useAppStore } from '../stores/appStore';
-import { isAgentFailureCode } from '@shared/contract/agentFailure';
 // ============================================================================
 // agentRows - 「本会话的代理」统一行模型（N-L6-AGENTVIEW）
 // ----------------------------------------------------------------------------
@@ -124,7 +123,7 @@ export function buildAgentRows(input: {
       key: member.key,
       kind: 'expert',
       roleId: member.roleId,
-      name: t === languages.en && member.name === member.roleId
+      name: member.name === member.roleId
         ? agentRoleLabel(member.roleId, t.agentRoleLabels) : member.name,
       profession: member.profession,
       icon: member.icon,
@@ -188,9 +187,7 @@ export function buildAgentRows(input: {
         : task.title,
       isLead: false,
       status,
-      failureReason: agentFailureCopy(
-        isAgentFailureCode(task.failure?.reason) ? task.failure.reason : undefined, t, task.failure?.message,
-      ) ?? undefined,
+      failureReason: backgroundTaskFailureCopy(task, t) ?? undefined,
       stoppable: status === 'working',
       task,
     });
