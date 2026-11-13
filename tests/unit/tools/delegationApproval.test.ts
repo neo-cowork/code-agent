@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PermissionRequestData } from '../../../src/host/tools/types';
+import type { ConfirmationPreview } from '../../../src/shared/contract/confirmation';
 
 // 复用 toolExecutor.permissionBoundary.test.ts 的 mock 套路：
 // 通过 requestPermission spy 捕获 buildPermissionRequest 产出的 request 对象。
@@ -120,7 +121,7 @@ describe('delegation approval production entries', () => {
     if (cause === 'lookup_failed') runtime.listSessions.mockImplementationOnce(() => { throw new Error('unavailable'); });
     const request = await capture({ action: 'delegate_existing', ...ref, text: '加上果酱' });
     expect(request.reason).toBe('把这句话转给另一个会话');
-    expect(request.details.preview?.summary).toBe(request.reason);
+    expect((request.details.preview as ConfirmationPreview).summary).toBe(request.reason);
     expect(createLogger('test').warn).toHaveBeenCalledWith('Delegation approval target unavailable', { cause });
     expect(JSON.stringify([request.reason, request.details.preview])).not.toContain('delegate_session');
     process.stdout.write(`${JSON.stringify(vi.mocked(createLogger('test').warn).mock.calls.at(-1))}\n`);
@@ -139,7 +140,7 @@ describe('delegation approval production entries', () => {
     expect(preview).not.toContain('hidden-value');
     expect(preview).not.toContain('hidden-title');
     expect(preview).toContain('***REDACTED***');
-    expect(request.details.preview?.diff?.length).toBeLessThanOrEqual(203);
+    expect((request.details.preview as ConfirmationPreview).diff?.length).toBeLessThanOrEqual(203);
   });
 
   it('ConfirmationGate keeps every delegation action out of the default preview even without lookup', () => {
