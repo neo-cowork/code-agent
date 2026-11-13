@@ -453,7 +453,6 @@ export class SubagentExecutor {
         .catch(silence(logger, 'triggerSubagentStop:early-failure', 'warn'));
       return {
         success: false,
-        output: appendSubagentLeftoverShellReport('', reportSubagentLeftoverShells(executionAgentId, 'early-failure')),
         error,
         toolsUsed: [],
         iterations: 0,
@@ -462,6 +461,7 @@ export class SubagentExecutor {
         agentId: executionAgentId,
         contextSnapshot: latestContextSnapshot,
         ...extra,
+        output: appendSubagentLeftoverShellReport(extra.output ?? '', reportSubagentLeftoverShells(executionAgentId, 'early-failure')),
       };
     };
 
@@ -513,6 +513,7 @@ export class SubagentExecutor {
       // finalOutput 在循环之后才声明。进度回调若读它，会在 TDZ 里抛 ReferenceError，
       // 被记账的 catch 吞掉，重启通知就永远没有花费和进度。
       let latestAssistantText = '';
+      let exitedLoop = false;
 
       while (iterations < maxIterations) {
         iterations++;
@@ -544,6 +545,7 @@ export class SubagentExecutor {
         const iterBudgetCheck = pipeline.checkBudget(pipelineContext);
         if (!iterBudgetCheck.allowed) {
           logger.warn(`[${config.name}] Budget exceeded at iteration ${iterations}`);
+          exitedLoop = true;
           break;
         }
 
@@ -693,6 +695,7 @@ export class SubagentExecutor {
           taskGateReentries = wind.taskGateReentries;
           memberInputReentries = wind.memberInputReentries;
           if (wind.continueLoop) continue;
+          exitedLoop = true;
           break;
         }
 
@@ -1037,6 +1040,7 @@ export class SubagentExecutor {
         }
 
         // No response, break
+        exitedLoop = true;
         break;
         } finally {
           await turnObservability.endTurn(telemetryTurnId);
@@ -1044,6 +1048,12 @@ export class SubagentExecutor {
         }
       }
 
+      if (!exitedLoop) {
+        return earlyFailure('Max iterations reached', {
+          iterations, toolsUsed, toolCallCount: turnObservability.getToolCallCount(), output: answerLedger.settled(),
+          failureCode: AgentFailureCode.BudgetExhausted,
+        });
+      }
       return finalizeSubagentSuccess(completionDeps, { iterations, latestContextSnapshot });
     } catch (error) {
       return handleSubagentFailure(completionDeps, { error, iterations, latestContextSnapshot });

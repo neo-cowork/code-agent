@@ -244,6 +244,29 @@ describe('SubagentExecutor doom-loop guard', () => {
     process.env.CODE_AGENT_MODEL_ENGINE = 'legacy';
   });
 
+  it('reports a step-capped child as failed after its final tool call', async () => {
+    mocks.responses.push(toolResponse([{ id: 'read-1', name: 'Read', arguments: { path: 'sales.csv' } }]));
+    const { events, request } = createHarness();
+    request.config.maxIterations = 1;
+
+    const result = await new SubagentExecutor().execute(request);
+
+    expect(result).toMatchObject({ success: false, error: 'Max iterations reached', iterations: 1, toolsUsed: ['Read'], failureCode: 'budget-exhausted' });
+    expect(mocks.pipeline.completeContext).toHaveBeenCalledWith('pipeline-agent', false, 'Max iterations reached');
+    expect(events.find((event) => event.type === 'subagent_run_end')?.data.status).toBe('failed');
+  });
+
+  it('accepts an actual final answer on the last allowed step', async () => {
+    mocks.responses.push(textResponse('Completed the analysis.'));
+    const { events, request } = createHarness();
+    request.config.maxIterations = 1;
+
+    const result = await new SubagentExecutor().execute(request);
+
+    expect(result).toMatchObject({ success: true, output: 'Completed the analysis.', iterations: 1 });
+    expect(events.find((event) => event.type === 'subagent_run_end')?.data.status).toBe('completed');
+  });
+
   it('injects the same-call nudge, then cancels the run while preserving partial results', async () => {
     for (let iteration = 1; iteration <= 4; iteration++) {
       mocks.responses.push(toolResponse([{
