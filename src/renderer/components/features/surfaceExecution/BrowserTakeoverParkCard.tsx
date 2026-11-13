@@ -12,7 +12,7 @@ import { adoptKeptResultPage, getKeptResultPage, type KeptResultPage } from '../
 // 绝不 resume 已完结的会话；窗被闲置回收/关闭后翻成 closed：如实说登录没保留，
 // 不留死按钮。keep_result_page 的停靠不经过本卡（工作台终态条负责）。
 
-export interface BrowserTakeoverParkCardProps {
+interface BrowserTakeoverParkCardProps {
   conversationId: string | null | undefined;
   workspace?: string | null;
   messageLanguage?: 'zh' | 'en';

@@ -25,7 +25,7 @@ const TERMINAL_SESSION_REASONS = new Set(['close', 'crashed']);
 type KeptBrowserEntryState = 'kept' | 'closed';
 
 /** 停靠来由：keep_result_page=模型显式保留结果页；takeover=secretRef 接管后 run 结束停靠。 */
-export type KeptBrowserReasonV1 = 'keep_result_page' | 'takeover';
+type KeptBrowserReasonV1 = 'keep_result_page' | 'takeover';
 
 export interface KeptBrowserEntry {
   conversationId: string;
