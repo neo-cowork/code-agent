@@ -7,6 +7,7 @@ import type { AgentRunOptions } from '../../research/types';
 import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
 import { getTaskManager, type TaskManager, type TaskManagerEvent } from '../../task/TaskManager';
+import { SESSION_STOP_REQUESTED_EVENT } from '../../task/taskManagerTypes';
 import {
   SessionTaskSlotLedger,
   getSessionTaskConcurrencyPool,
@@ -174,6 +175,12 @@ export class SessionCommandCenter {
   private readonly onTaskEvent = (event: TaskManagerEvent): void => {
     void this.handleTaskEvent(event);
   };
+  /** 用户 Stop：排队中的任务尚无 run 可 abort，在这里直接终态化，且不得被前序任务的收线再放行启动。 */
+  private readonly onSessionStopRequested = (event: { sessionId: string }): void => {
+    for (const task of this.tasksBySession.get(event.sessionId)?.values() ?? []) {
+      if (task.status === 'queued') void this.settle(task, 'cancelled', '任务在开始前被取消。');
+    }
+  };
 
   constructor(
     manager: TaskManager = getTaskManager(),
@@ -193,6 +200,7 @@ export class SessionCommandCenter {
     for (const eventName of TASK_LIFECYCLE_EVENTS) {
       this.manager.on(eventName, this.onTaskEvent);
     }
+    this.manager.on(SESSION_STOP_REQUESTED_EVENT, this.onSessionStopRequested);
     if (typeof this.manager.observeAgentEvents === 'function') {
       this.stopAgentEventObservation = this.manager.observeAgentEvents((sessionId, event, taskId) => {
         this.handleAgentProgressEvent(sessionId, event, taskId);
@@ -395,6 +403,7 @@ export class SessionCommandCenter {
     for (const eventName of TASK_LIFECYCLE_EVENTS) {
       this.manager.off(eventName, this.onTaskEvent);
     }
+    this.manager.off(SESSION_STOP_REQUESTED_EVENT, this.onSessionStopRequested);
     for (const ledger of this.ledgers.values()) ledger.dispose();
     this.stopAgentEventObservation?.();
     this.shellHold.dispose();
@@ -822,7 +831,7 @@ export class SessionCommandCenter {
 
     for (const slot of startable) {
       const next = this.tasks(task.sessionId).get(slot.workItemId);
-      if (next) this.launch(next);
+      if (next && !TERMINAL.has(next.status)) this.launch(next);
     }
   }
 

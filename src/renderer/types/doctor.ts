@@ -27,6 +27,7 @@ export interface DoctorItem {
   name: string;
   status: DoctorStatus;
   message: string;
+  probeHttpStatus?: 401 | 403;
   details?: string;
   suggestion?: string;
   durationMs?: number;
