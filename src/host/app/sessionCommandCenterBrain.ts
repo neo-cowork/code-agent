@@ -1,3 +1,4 @@
+import { resolveTurnToolFace } from '../agent/runtime/turnToolFace';
 import type { AppServiceRunOptions } from '../../shared/contract/appService';
 import { resolveForegroundBrainMaxIterations, SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS } from '../../shared/constants/sessionCommandCenter';
 import { getTextForegroundToolNames } from '../tools/protocolRegistry';
@@ -176,9 +177,7 @@ export function getTextForegroundToolNamesForPrompt(
   // 无意图命中时零副作用（不触 configService/registry）。
   extras.push(...getNativeConnectorToolNamesForIntent({ userText: prompt, allowedConnectorIds }));
   extras.push(...getImageAnalyzeToolNamesForTurn(imageTurn));
-  if (extras.length === 0) return base;
-  // 存草稿轮 mail_draft 已在 extras 里，连接器扩展会再次带回同名——去重保序。
-  return Array.from(new Set([...base, ...extras]));
+  return resolveTurnToolFace({ baseToolNames: base, requiredToolNames: extras, prompt, foreground: true }) ?? base;
 }
 
 /** Shared logging and explicit-cap clamp for desktop and web assembly. */

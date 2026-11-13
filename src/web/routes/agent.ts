@@ -31,7 +31,7 @@ import {
 } from '../../host/app/workbenchTurnContext';
 import { withMissingAttachmentTurnSystemContext } from '../../host/app/missingAttachmentTurnContext';
 import { getSessionCommandCenterBrainContextForPrompt, getSessionCommandCenterTurnRulesForPrompt, getTextForegroundToolNamesForPrompt, resolveForegroundBrainTurnBudget } from '../../host/app/sessionCommandCenterBrain';
-import { applyMorningBriefSaveDraftRoleTools } from '../../host/app/morningBriefSaveDraftTools';
+import { resolveRoleChatToolFace } from '../../host/app/morningBriefSaveDraftTools';
 import { isSessionCommandCenterTurn } from '../../shared/constants/sessionCommandCenter';
 import { AUTO_DELEGATION_TOOL_NAMES } from '../../host/agent/routingToolPolicy';
 import { wrapWithTurnSystemContext } from '../../host/agent/turnScaffold';
@@ -1340,7 +1340,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       if (commandCenterBrain) {
         // 文字前台由 web TaskManager 承载，免除 CLI 专用的任务工具禁用表。
         config.taskManagerToolsEnabled = true;
-        config.allowedToolNames = applyMorningBriefSaveDraftRoleTools(
+        config.allowedToolNames = resolveRoleChatToolFace(
           prompt,
           // 手选/专家连接器收窄必须透传（rework r1）：非空 scope 之外即使意图命中也不进白名单，
           // 否则 run policy 放行范围外连接器写、预载却按收窄不送 schema，判决互相矛盾。
@@ -1348,7 +1348,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             attachments: body.attachments,
             model: config.modelConfig,
           }),
-          config.agentOverride?.tools,
+          config.agentOverride?.tools, config.agentOverride?.id,
         );
         config.foregroundToolFace = true;
         // 回合级规则块（如存草稿）与工具面同一真源，都从 sessionCommandCenterBrain 取，

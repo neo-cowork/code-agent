@@ -674,7 +674,7 @@ export class MessageProcessor {
       this.contextAssembly.injectSystemMessage(
         [
           '<tool-run-policy>',
-          `The previous tool call requested disabled tools for this run: ${deniedNames}.`,
+          `The previous tool call requested tools not in this turn's tool list: ${deniedNames}.`,
           deniedToolRetryGuidance(this.ctx),
           ...(shellDenial ? [shellDenial.guidance] : []),
           '</tool-run-policy>',
@@ -686,7 +686,7 @@ export class MessageProcessor {
         const finalMessage: Message = {
           id: this.contextAssembly.generateId(),
           role: 'assistant',
-          content: shellDenial?.finalMessage ?? `本轮请求了后台运行禁用的交互工具（${deniedNames}），已停止继续调用工具。`,
+          content: shellDenial?.finalMessage ?? `请求的操作不在本轮工具列表中，尚未执行。请在当前角色范围内继续。`,
           timestamp: Date.now(),
           effortLevel: this.ctx.turn.effortLevel,
           metadata: attachTurnQualityMetadata(this.ctx, undefined, response),

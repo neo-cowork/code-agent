@@ -1,3 +1,4 @@
+import { resolveTurnToolFace } from '../turnToolFace';
 import type { RuntimeContext } from '../runtimeContext';
 import { getToolSearchService } from '../../../services/toolSearch';
 import { isCoreToolName, resolveToolAlias } from '../../../services/toolSearch/deferredTools';
@@ -12,7 +13,7 @@ const logger = createLogger('ContextAssembly');
 type RuntimeForDeferredToolPreload = Pick<
   RuntimeContext,
   'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'goalMode' | 'turn'
-  | 'deniedToolNames' | 'allowedToolNames' | 'toolScope'
+  | 'deniedToolNames' | 'allowedToolNames' | 'toolScope' | 'foregroundToolFace'
 > & { sessionId?: string };
 
 // 意图正则守则（issue #322）：\b 对 . / - 等非单词字符也成立，"notes.md" 能穿过
@@ -175,7 +176,10 @@ export function getDeferredToolsToPreloadForTurn(
   }
 
   const denied = new Set((runtime.deniedToolNames ?? []).map((name) => resolveToolAlias(name).toLowerCase()));
-  return Array.from(tools).filter((name) => !denied.has(resolveToolAlias(name).toLowerCase()));
+  return (resolveTurnToolFace({
+    baseToolNames: [...tools], prompt: runtime.turn.runUserPrompt || userText, foreground: runtime.foregroundToolFace,
+    hardBoundary: (name) => !denied.has(resolveToolAlias(name).toLowerCase()),
+  }) ?? []).filter((name) => name !== '__role_boundary_deny_all__');
 }
 
 export function preloadDeferredToolsForTurn(

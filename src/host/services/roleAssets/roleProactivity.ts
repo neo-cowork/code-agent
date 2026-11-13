@@ -19,9 +19,9 @@ import {
 } from './wakeRationale';
 import { getSessionAutomationService } from '../sessionAutomation';
 import type { SessionAutomationEventKind, SessionAutomationStatus } from '../../../shared/contract/sessionAutomation';
-import { isExternalSideEffectTool } from '../../tools/externalSideEffect';
 import { getKnownToolNames } from '../../tools/knownToolNames';
-import { resolveRoleToolBoundary, toRoleBoundaryRunAllowlist } from './rolePersonalization';
+import { resolveToolAlias } from '../../services/toolSearch/deferredTools';
+import { resolveTurnToolFace } from '../../agent/runtime/turnToolFace';
 import { correctDecisionForUnreadableSources, lastWakeDateFromHistory, resolveWakeExternalDelta, storeWakeProposalsFromWake } from './roleWakeFindWork';
 import {
   observeGoalPauseFromEvents,
@@ -750,19 +750,13 @@ export async function resolveWakeRunToolScope(roleId: string): Promise<{
   }
 
   if (!declared || declared.length === 0) {
-    // 已知名册不含运行时才连上的 MCP 名。角色把这类名字写进 tools 时，走下面的声明过滤。
-    const deniedToolNames = new Set<string>();
-    for (const name of getKnownToolNames()) {
-      if (isExternalSideEffectTool(name)) deniedToolNames.add(name);
-    }
-    if (isExternalSideEffectTool('mail_send')) deniedToolNames.add('mail_send');
-    return deniedToolNames.size > 0 ? { deniedToolNames: [...deniedToolNames] } : {};
+    const known = [...getKnownToolNames(), 'mail_send'];
+    const allowed = new Set(resolveTurnToolFace({ baseToolNames: known, roleId, wake: true })?.map((name) => resolveToolAlias(name).toLowerCase()));
+    const deniedToolNames = known.filter((name) => !allowed.has(resolveToolAlias(name).toLowerCase()));
+    return deniedToolNames.length > 0 ? { deniedToolNames: [...new Set(deniedToolNames)] } : {};
   }
 
-  const withoutExternal = declared.filter((tool) => !isExternalSideEffectTool(tool));
-  const boundary = resolveRoleToolBoundary(roleId, withoutExternal);
-  const allowed = boundary ? boundary.allowedTools : withoutExternal;
-  return { allowedToolNames: toRoleBoundaryRunAllowlist(allowed) };
+  return { allowedToolNames: resolveTurnToolFace({ declaredToolNames: declared, roleId, wake: true }) };
 }
 
 /** headless 醒来路径：cli/bootstrap createAgentLoop（与 /api/run 同源的执行链路）。 webServer（发行版后端）没有 Electron main 的 TaskManager orchestrator，走这条。 角色 system prompt 和记忆注入块通过 config.systemPrompt 附加；工具面走 resolveWakeRunToolScope。 */

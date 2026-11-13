@@ -1,3 +1,5 @@
+import { resolveTurnToolFace } from './turnToolFace';
+import { resolveAgent } from '../agentRegistry';
 import type { ToolDefinition } from '../../../shared/contract';
 import type { RuntimeContext } from './runtimeContext';
 import { ASK_USER_QUESTION_TOOL_NAMES } from '../../../shared/constants/tools';
@@ -57,7 +59,11 @@ function isOneTurnDelegationBypassTool(toolName: string, ctx: RuntimeContext): b
 }
 
 export function isToolDeniedForRun(ctx: RuntimeContext, toolName: string): boolean {
-  return isToolDeniedByRunPolicy(runtimeToolPolicy(ctx), toolName);
+  if (isToolDeniedByRunPolicy(runtimeToolPolicy(ctx), toolName)) return true;
+  const role = ctx.agentId ? resolveAgent(ctx.agentId) : undefined;
+  if (!role?.tools?.length) return false;
+  const face = resolveTurnToolFace({ baseToolNames: [toolName], declaredToolNames: role.tools, roleId: role.id });
+  return !face?.some((name) => name.toLowerCase() === toolName.toLowerCase());
 }
 
 /**
@@ -79,6 +85,10 @@ export function deniedToolRetryGuidance(ctx: RuntimeContext): string {
   // （issue #1994），重试指引不许再把模型引回这个不可用工具。
   const askDenied = ctx.unattendedTurn === true
     || ASK_USER_QUESTION_TOOL_NAMES.some((name) => isToolDeniedForRun(ctx, name));
+  if (ctx.foregroundToolFace && !ctx.unattendedTurn && !isToolDeniedForRun(ctx, 'delegate_task')) {
+    return 'Hand this task to a background task via delegate_task and say in one sentence that it has started. '
+      + 'The requested call was not executed here. Report the handoff without speculating about permissions.';
+  }
   return askDenied
     ? 'Continue without those tools. If you need user input, state the blocker in your final text instead of calling an interactive tool.'
     : 'Continue without those tools. AskUserQuestion remains available; call it directly when the current task requires user input.';
@@ -95,13 +105,21 @@ export function filterToolsByRunPolicy(
   const askUnattended = ctx.unattendedTurn === true;
   const oneTurnFileDeliverable = detectTaskFeatures(latestUserPrompt(ctx)).isOneTurnFileDeliverable === true;
   const boundedComparison = isBoundedComparisonTurn(ctx);
+  const role = ctx.agentId ? resolveAgent(ctx.agentId) : undefined;
   const hasPolicy = (ctx.deniedToolNames?.length ?? 0) > 0 || (ctx.allowedToolNames?.length ?? 0) > 0;
-  if (!hasPolicy && !askUnattended && !oneTurnFileDeliverable && !boundedComparison) return tools;
-  return tools.filter((tool) => {
-    if (askUnattended && ASK_USER_QUESTION_TOOL_NAMES.some((name) => name === tool.name)) return false;
-    if (isOneTurnDelegationBypassTool(tool.name, ctx)) return false;
-    return !isToolDeniedByRunPolicy(runtimeToolPolicy(ctx), tool.name);
+  if (!hasPolicy && !askUnattended && !oneTurnFileDeliverable && !boundedComparison && !role?.tools?.length) return tools;
+  const names = resolveTurnToolFace({
+    baseToolNames: tools.filter((tool) => !isOneTurnDelegationBypassTool(tool.name, ctx)).map((tool) => tool.name),
+    prompt: currentTurnUserPrompt(ctx),
+    requiredToolNames: role?.tools,
+    declaredToolNames: role?.tools,
+    roleId: role?.id,
+    foreground: ctx.foregroundToolFace,
+    hardBoundary: (name) => !(askUnattended && ASK_USER_QUESTION_TOOL_NAMES.some((ask) => ask === name))
+      && !isToolDeniedByRunPolicy(runtimeToolPolicy(ctx), name),
   });
+  const allowed = new Set(names?.map((name) => name.toLowerCase()));
+  return tools.filter((tool) => allowed.has(tool.name.toLowerCase()));
 }
 
 /**

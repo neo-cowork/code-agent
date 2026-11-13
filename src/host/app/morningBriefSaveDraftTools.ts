@@ -1,3 +1,4 @@
+import { resolveTurnToolFace } from '../agent/runtime/turnToolFace';
 import { isMorningBriefSaveDraftReply } from './sessionCommandCenterBrain';
 
 // 存草稿轮、角色又没开邮件（未声明 mail/mail_draft）时整批撤下的工具名（FB-726）：
@@ -17,5 +18,17 @@ export function applyMorningBriefSaveDraftRoleTools(
 ): string[] | undefined {
   if (!allowedToolNames || !isMorningBriefSaveDraftReply(prompt) || !roleTools?.length) return allowedToolNames;
   if (roleTools.some((tool) => tool === 'mail' || tool === 'mail_draft')) return allowedToolNames;
-  return allowedToolNames.filter((tool) => !SAVE_DRAFT_NO_MAIL_REMOVE.has(tool));
+  return resolveTurnToolFace({ baseToolNames: allowedToolNames, hardBoundary: (tool) => !SAVE_DRAFT_NO_MAIL_REMOVE.has(tool) });
+}
+
+/** Both role-chat entry points add declarations before the final draft/boundary subtraction. */
+export function resolveRoleChatToolFace(
+  prompt: string,
+  baseToolNames: string[] | undefined,
+  declaredToolNames: readonly string[] | undefined,
+  roleId?: string,
+): string[] | undefined {
+  return applyMorningBriefSaveDraftRoleTools(prompt, resolveTurnToolFace({
+    baseToolNames, declaredToolNames, roleId,
+  }), declaredToolNames);
 }

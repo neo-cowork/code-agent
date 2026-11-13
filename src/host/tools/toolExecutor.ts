@@ -826,7 +826,7 @@ export class ToolExecutor {
       recordDecision(executionToolName, params, 'policy-deny', 'run tool policy (--tools/--disallowed-tools)', Date.now(), undefined, effectiveSessionId, this.ledgerOrigin);
       return {
         success: false,
-        error: `Tool not allowed: ${executionToolName} (disabled by --tools/--disallowed-tools)`,
+        error: `${executionToolName} is not in this turn's tool list. The call was not executed; use a listed tool within the current role boundary.`,
       };
     }
 
