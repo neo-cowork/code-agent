@@ -72,8 +72,6 @@ import { openExternalLink } from '../../utils/platform';
 // 二期：导航 pending（N1）+ 工具条（N2）+ 批注发 Agent（N3）。
 // P1 账号态：⋯ 菜单 Cookie 导入见 BrowserAgentWindowOverflowMenu。
 
-type Copy = ReturnType<typeof useI18n>['t']['workbenchTabs']['agentWindow'];
-
 /** 摘要卡用时：startedAt → projection updatedAt（裁定用 updatedAt，cleanup completedAt 依赖事件到达） */
 function formatTerminalDuration(
   startedAt: number,

@@ -215,10 +215,28 @@ describe('BrowserAgentWindow kept 条（活跃 user-browser-link 会话下仍渲
     expect(bar.textContent).toContain('结果页已保留');
     expect(bar.textContent).toContain('报名成功');
 
-    fireEvent.click(screen.getByTestId('browser-kept-result-adopt'));
+    const adoptButton = screen.getByTestId('browser-kept-result-adopt');
+    expect(adoptButton.closest('[data-browser-stage-overlay]')).not.toBeNull();
+    fireEvent.click(adoptButton);
     await waitFor(() => expect(adoptKeptResultPage).toHaveBeenCalledWith({
       conversationId: 'session-a',
       workspace: null,
+    }));
+  });
+
+  it('shows the closed result and URL-only reopen under the active user-link session', async () => {
+    seedActiveUserLinkSession();
+    getKeptResultPage.mockResolvedValue({
+      state: 'closed', url: 'http://127.0.0.1:8898/submit', title: '报名成功',
+    });
+    openHttpLinkInRailAsync.mockResolvedValue({});
+    render(<BrowserAgentWindow />);
+    const bar = await screen.findByTestId('browser-kept-result-bar-closed');
+    expect(bar.textContent).toContain('结果页已关闭');
+    expect(bar.textContent).toContain('重新打开只恢复网址');
+    fireEvent.click(screen.getByTestId('browser-kept-result-reopen'));
+    await waitFor(() => expect(openHttpLinkInRailAsync).toHaveBeenCalledWith({
+      href: 'http://127.0.0.1:8898/submit', conversationId: 'session-a', workspace: null,
     }));
   });
 
