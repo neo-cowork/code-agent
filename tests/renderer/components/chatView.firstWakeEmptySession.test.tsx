@@ -66,7 +66,7 @@ it('ChatView: expert empty session shows both remaining first-wake suggestions a
     isLoading: false,
     isHydratingSession: false,
     sessions: [{
-      id: 'empty-expert-session', title: '小历', messageCount: 0,
+      id: 'empty-expert-session', title: '小历', messageCount: 0, turnCount: 0,
       createdAt: 1, updatedAt: 1,
       modelConfig: { provider: 'openai', model: 'gpt-5.4' },
       metadata: { expertThread: { roleId: 'calendar-expert', setAt: 1 } },
@@ -80,7 +80,7 @@ it('ChatView: expert empty session shows both remaining first-wake suggestions a
 
   expect(await screen.findByTestId('role-first-wake-card')).toBeTruthy();
   for (const suggestion of snapshot.suggestions) {
-    expect(screen.getByRole('button', { name: suggestion.title, exact: true })).toBeTruthy();
+    expect(screen.getByRole('button', { name: suggestion.title })).toBeTruthy();
   }
   expect(getFirstWake).toHaveBeenCalledWith('calendar-expert');
   await waitFor(() => {
