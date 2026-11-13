@@ -6,6 +6,8 @@ import { useEffect, useState } from 'react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { BackgroundSessionInfo } from '@shared/contract/sessionState';
 import { createLogger } from '../utils/logger';
+import { latestUserTurnItems } from '../utils/conversationTurns';
+import type { Message } from '@shared/contract';
 import { countToolSteps } from '../utils/terminalWord';
 
 const logger = createLogger('BackgroundStepOutcomes');
@@ -27,7 +29,7 @@ export function useBackgroundStepOutcomes(
     for (const sessionId of pending.split('|')) {
       void (async () => {
         try {
-          const response = await window.domainAPI?.invoke<Parameters<typeof countToolSteps>[0] | null>(
+          const response = await window.domainAPI?.invoke<Message[] | null>(
             IPC_DOMAINS.SESSION, 'getMessages', { sessionId },
           );
           if (!active) return;
@@ -36,7 +38,11 @@ export function useBackgroundStepOutcomes(
             setOutcomes((prev) => ({ ...prev, [sessionId]: undefined }));
             return;
           }
-          setOutcomes((prev) => ({ ...prev, [sessionId]: countToolSteps(Array.isArray(response.data) ? response.data : []) }));
+          const messages = latestUserTurnItems(
+            Array.isArray(response.data) ? response.data : [],
+            (message) => message.role === 'user',
+          );
+          setOutcomes((prev) => ({ ...prev, [sessionId]: countToolSteps(messages) }));
         } catch (error) {
           logger.warn('Background session getMessages threw, row keeps host status word', {
             sessionId,

@@ -91,7 +91,7 @@ export function buildOverviewRunHeaderModel(args: {
     steps: total > 0
       ? { current: tone === 'done' ? total : Math.min(completed + 1, total), total }
       : null,
-    terminal: resolveRunTerminalKey(args.run),
+    terminal: resolveRunTerminalKey({ ...args.run, status }),
     elapsedMs: elapsedMs(args.run, live, args.now),
     live,
   };

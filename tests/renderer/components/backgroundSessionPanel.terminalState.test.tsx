@@ -8,7 +8,7 @@
 // 其余原样展示；running 条目才有 spinner 与计时。
 
 import React from 'react';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { BackgroundSessionPanel } from '../../../src/renderer/components/features/background/BackgroundSessionPanel';
@@ -174,6 +174,31 @@ describe('后台行的失败判定（唯一一步失败不能写「已完成」�
     (window as { domainAPI?: unknown }).domainAPI = { invoke };
     return invoke;
   }
+
+  it.each([false, true])('旧轮失败 + 新轮干净完成（有成功工具=%s）→ 已完成', async (hasSuccessfulTool) => {
+    const invoke = mockSessionMessages([{ success: false }]);
+    const oldMessages = (await invoke()).data;
+    invoke.mockClear();
+    // 显式等待异步读取完成，避免初始「已完成」造成假绿。
+    invoke.mockResolvedValue({
+      success: true,
+      data: [
+        { id: 'old-user', role: 'user', content: '整理旧报告', timestamp: 0 },
+        ...oldMessages,
+        { id: 'new-user', role: 'user', content: '整理新报告', timestamp: 3 },
+        ...(hasSuccessfulTool ? [{
+          id: 'new-tool', role: 'tool', content: '', timestamp: 4,
+          toolResults: [{ toolCallId: 'new-call', success: true }],
+        }] : []),
+        { id: 'new-answer', role: 'assistant', content: '报告已整理。', timestamp: 5 },
+      ],
+    });
+    await act(async () => {
+      renderPanelWith(backgroundTask({ status: 'completed' }));
+    });
+    expect(itemLine()).toBe('已完成');
+    expect(itemLine()).not.toBe('已完成，有提醒');
+  });
 
   it('completed 但唯一一步失败 → 「执行失败」，不是「已完成」', async () => {
     const invoke = mockSessionMessages([{ success: false }]);

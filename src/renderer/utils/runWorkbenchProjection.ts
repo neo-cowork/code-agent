@@ -1,4 +1,4 @@
-import { getLastConversationTurnIndex } from './conversationTurns';
+import { getLastConversationTurnIndex, latestUserTurnItems } from './conversationTurns';
 import type { TraceProjection, TraceTurn } from '@shared/contract/trace';
 import type { SessionTask, TaskProgressData, TodoItem } from '@shared/contract';
 import { isClosedTaskStatus, statusRequiresWaitReason, type TaskBlockedCategory } from '@shared/contract/planning';
@@ -143,7 +143,7 @@ function toolStepOutcome(turn: TraceTurn | null): { failed: number; total: numbe
   if (!turn) return undefined;
   let failed = 0;
   let total = 0;
-  for (const node of turn.nodes) {
+  for (const node of latestUserTurnItems(turn.nodes, (item) => item.type === 'user')) {
     const call = node.toolCall;
     if (!call || call._streaming || call.result === undefined) continue;
     total += 1;

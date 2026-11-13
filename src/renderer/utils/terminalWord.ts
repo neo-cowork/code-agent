@@ -3,7 +3,7 @@
 // i18n/outcomeWords 取词。各面板不再各自从 status 推一套「已完成/已停止/失败」。
 // ============================================================================
 
-import type { OutcomeKey } from '../i18n/outcomeWords';
+import { resolveRunCancellationOutcomeKey, type OutcomeKey } from '../i18n/outcomeWords';
 import type { RunUiState } from '../types/runWorkbench';
 import { BACKGROUND_TASK_CANCELLED } from '@shared/constants';
 import type { BackgroundSessionInfo } from '@shared/contract/sessionState';
@@ -49,7 +49,7 @@ export function resolveRunTerminalKey(
 ): OutcomeKey | null {
   switch (run.status) {
     case 'cancelled':
-      return run.terminalReason === 'idle_reaped' ? 'failed-idle-reaped' : 'cancelled-by-user';
+      return resolveRunCancellationOutcomeKey(run.terminalReason);
     case 'blocked':
       return 'failed-unknown';
     case 'completed':

@@ -1,5 +1,4 @@
 import { useLiveBackgroundAgentCount } from '../../hooks/useLiveBackgroundAgentCount';
-import { resolveRunCancellationOutcomeKey } from '../../i18n/outcomeWords';
 // ============================================================================
 // OverviewRunHeader —— 概览四模块 · 模块一「任务」：细进度线（2026-08-04 拍板二/三）
 // ----------------------------------------------------------------------------
