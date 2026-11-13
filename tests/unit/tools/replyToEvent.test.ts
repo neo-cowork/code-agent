@@ -234,7 +234,7 @@ describe('reply_to_event (N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN)', () => {
     const canUseTool = vi.fn(async () => ({ allow: true })) as never;
     try {
       // 模型偷塞了一个别的会话 id（还有账号字段）：解析仍然只出自绑定表。
-      const result = await replyToEventModule.createHandler().execute(
+      const result = await (await replyToEventModule.createHandler()).execute(
         { text: 'RR51-PONG 收到', chat_id: 'oc_evil', account: 'acc-evil' } as Record<string, unknown>,
         toolContext('reply-bound'),
         canUseTool,
@@ -250,7 +250,7 @@ describe('reply_to_event (N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN)', () => {
 
       // 不在批内的 event_id：拒绝，不发送。
       channelManagerState.sendMessage.mockClear();
-      const unknownEvent = await replyToEventModule.createHandler().execute(
+      const unknownEvent = await (await replyToEventModule.createHandler()).execute(
         { text: 'hi', event_id: 'om_not_in_batch' } as Record<string, unknown>,
         toolContext('reply-bound'),
         canUseTool,
@@ -276,7 +276,7 @@ describe('reply_to_event (N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN)', () => {
     } finally {
       leaveBind();
     }
-    const unbound = await replyToEventModule.createHandler().execute({ text: 'hi' } as Record<string, unknown>, toolContext('plain-session'), canUseTool);
+    const unbound = await (await replyToEventModule.createHandler()).execute({ text: 'hi' } as Record<string, unknown>, toolContext('plain-session'), canUseTool);
     expect(unbound.ok).toBe(false);
     expect(channelManagerState.sendMessage).not.toHaveBeenCalled();
   });
