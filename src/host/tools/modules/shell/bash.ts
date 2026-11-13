@@ -387,7 +387,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     const applySandbox = (
       cmd: string,
       allowNetwork: boolean,
-      extraWriteFile?: string,
+      extraWriteFile?: string | readonly string[],
       extraWriteRoot?: string,
     ): { ok: true; command: string } | { ok: false; error: string } => {
       if (!sandboxDecision.apply) return { ok: true, command: cmd };
@@ -426,8 +426,8 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           readWriteRoots: extraWriteRoot
             ? [...(baseWriteRoots ?? [workingDirectory]), extraWriteRoot]
             : baseWriteRoots,
-          // 一次性文件扩权只放开这一个文件；目录子树扩权（DIR-FORBIDDEN）追加该树但凭据/笼子/钩子/rc 名仍只读
-          readWriteFiles: extraWriteFile ? [extraWriteFile] : undefined,
+          // 一次性文件扩权只放开卡片覆盖的文件；目录子树扩权（DIR-FORBIDDEN）追加该树但凭据/笼子/钩子/rc 名仍只读
+          readWriteFiles: typeof extraWriteFile === 'string' ? [extraWriteFile] : extraWriteFile ? [...extraWriteFile] : undefined,
           forbiddenWriteUnder: extraWriteRoot ? [extraWriteRoot] : undefined,
           deniedReadRoots: [
             ...(ctx.deniedReadRoots ?? []),
@@ -631,7 +631,7 @@ Use process_kill to terminate the session.`;
         command: normalizedCommand,
         redline: ctx.executionIntent?.redline === true,
       });
-      const sandboxed = applySandbox(normalizedCommand, allowNetwork);
+      const sandboxed = applySandbox(normalizedCommand, allowNetwork, sandboxDecision.sandboxed ? ctx.approvedSandboxWriteFile : undefined);
       if (!sandboxed.ok) {
         return {
           ok: false,

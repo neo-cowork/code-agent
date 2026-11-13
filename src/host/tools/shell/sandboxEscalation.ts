@@ -20,64 +20,53 @@ function expandLeadingHome(rawPath: string): string {
   return rawPath;
 }
 
-/**
- * Extract one literal file operand from one `rm`, optionally accompanied by
- * harmless status reporting. The only accepted options are `--`, `-f`, and
- * `--force`; recursive, redirected, expanded, and multi-target rm stay ordinary.
- */
-function extractApprovedSingleFileRmTarget(
-  command: string,
-  workingDirectory: string,
-): string | undefined {
+/** Parse only the literal operands covered by one plain rm approval. */
+function extractApprovedRmTargets(command: string, workingDirectory: string): {
+  targets?: string[];
+  operandCount: number;
+  reason?: string;
+} {
   const parsed = parseShellCommand(command);
-  if (parsed.parsingFailed || parsed.trailingOperator || parsed.writeTargets.length > 0 || parsed.uncertain.length > 0) {
-    return undefined;
-  }
-  // The parser omits fd-only redirects (e.g. 2>&1). Refuse redirect syntax
-  // conservatively, including quoted spellings, rather than mint a hidden grant.
-  if (/[<>]/.test(command)) return undefined;
-  let segment: (typeof parsed.segments)[number] | undefined;
-  for (const current of parsed.segments) {
-    if (current.redirects.length > 0 || current.reads.length > 0) return undefined;
-    const program = current.words[0] ?? '';
-    if (path.posix.basename(program) === 'rm') {
-      if (segment) return undefined;
-      segment = current;
-    } else {
-      if (!['echo', 'printf', 'true', ':'].includes(program)) return undefined;
-      // Status reporting may expand $?, but must not assign shell variables or
-      // use printf's variable-writing forms before the literal rm is executed.
-      if (current.words.slice(1).some((word) => /[$`]/.test(word.replaceAll('${?}', '')))) return undefined;
-      if (program === 'printf' && current.words.slice(1).some((word) => /^-v|%[^%]*n/.test(word))) return undefined;
-    }
-    if (current.terminator !== null
-      && current.terminator !== ';'
-      && current.terminator !== '&&'
-      && !(segment && current.terminator === '||')) return undefined;
-  }
-  if (!segment) return undefined;
-
+  const rmSegments = parsed.segments.filter((segment) => path.posix.basename(segment.words[0] ?? '') === 'rm');
   const operands: string[] = [];
   let dashDash = false;
-  for (const arg of segment.words.slice(1)) {
-    if (!dashDash && arg === '--') {
-      dashDash = true;
-      continue;
-    }
+  let unsupportedOption = false;
+  for (const arg of rmSegments[0]?.words.slice(1) ?? []) {
+    if (!dashDash && arg === '--') { dashDash = true; continue; }
     if (!dashDash && arg.startsWith('-') && arg !== '-') {
-      if (arg !== '-f' && arg !== '--force') return undefined;
+      if (arg !== '-f' && arg !== '--force') unsupportedOption = true;
       continue;
     }
     operands.push(arg);
   }
-  if (operands.length !== 1) return undefined;
-  const rawOperand = operands[0];
-  if (!rawOperand || /[$`*?{}]/.test(rawOperand)) return undefined;
-  const expanded = expandLeadingHome(rawOperand);
-  const candidate = path.isAbsolute(expanded)
-    ? path.resolve(expanded)
-    : path.resolve(workingDirectory, expanded);
-  return candidate;
+  const refuse = (reason: string) => ({ operandCount: operands.length, reason });
+  if (parsed.parsingFailed || parsed.trailingOperator || parsed.writeTargets.length > 0
+    || parsed.uncertain.length > 0 || /[<>]/.test(command) || rmSegments.length !== 1) {
+    return refuse('command_shape');
+  }
+  let seenRm = false;
+  for (const current of parsed.segments) {
+    if (current.redirects.length > 0 || current.reads.length > 0) return refuse('redirect');
+    const program = current.words[0] ?? '';
+    if (current === rmSegments[0]) {
+      seenRm = true;
+    } else {
+      if (!['echo', 'printf', 'true', ':'].includes(program)) return refuse('command_shape');
+      // Status reporting may expand $?, never assign variables or write through printf.
+      if (current.words.slice(1).some((word) => /[$`]/.test(word.replaceAll('${?}', '')))) return refuse('expansion');
+      if (program === 'printf' && current.words.slice(1).some((word) => /^-v|%[^%]*n/.test(word))) return refuse('command_shape');
+    }
+    if (current.terminator !== null && current.terminator !== ';' && current.terminator !== '&&'
+      && !(seenRm && current.terminator === '||')) return refuse('command_shape');
+  }
+  if (unsupportedOption) return refuse('option');
+  // Bounded, all-or-nothing: a card must name every file its command can delete.
+  if (operands.length < 1 || operands.length > 8) return refuse('operand_count');
+  if (operands.some((operand) => !operand || /[$`*?{}[\]]/.test(operand))) return refuse('literal_operand');
+  return {
+    operandCount: operands.length,
+    targets: operands.map((operand) => path.resolve(workingDirectory, expandLeadingHome(operand))),
+  };
 }
 
 export interface SandboxEscalationEligibilityInput {
@@ -211,6 +200,13 @@ export function shouldOfferEscalation(input: SandboxEscalationEligibilityInput):
     return undefined;
   }
 
+  return resolveEscalationFile(input);
+}
+
+/** Shared path/policy checks; callers separately enforce their consent and execution gates. */
+function resolveEscalationFile(input: SandboxEscalationEligibilityInput): string | undefined {
+  const deniedPath = input.deniedPath;
+  if (!deniedPath || !path.isAbsolute(deniedPath)) return undefined;
   const home = path.resolve(homedir());
   const spelledPath = path.resolve(deniedPath);
   // lstat on the spelled path refuses a symlink as the last component; the canonical path would hide it.
@@ -236,30 +232,45 @@ export function shouldOfferEscalation(input: SandboxEscalationEligibilityInput):
   return resolvedPath;
 }
 
-/** Mint the literal write path covered by one approved plain single-file rm. */
+/** Mint literal write paths for all files covered by one user-approved rm. */
 export function approvedSingleFileRmGrant(
   command: string,
   input: Omit<SandboxEscalationEligibilityInput, 'deniedPath' | 'deniedPathCreatesDirectory'>,
-): string | undefined {
-  const deniedPath = extractApprovedSingleFileRmTarget(command, input.workingDirectory);
-  const grant = deniedPath && escalationTarget(deniedPath) === 'file'
-    ? shouldOfferEscalation({ ...input, deniedPath, deniedPathCreatesDirectory: false })
-    : undefined;
-  const rm = parseShellCommand(command).segments.find((segment) => path.posix.basename(segment.words[0] ?? '') === 'rm');
-  const operandCount = rm?.words.slice(1).filter((word) => !['--', '-f', '--force'].includes(word)).length ?? 0;
+): string | string[] | undefined {
+  const parsed = extractApprovedRmTargets(command, input.workingDirectory);
   const conditions = [
     !input.sandboxDecision.sandboxed && 'sandboxed',
-    !input.foreground && 'foreground', input.pty && 'pty', input.background && 'background',
+    !input.foreground && !input.background && 'foreground', input.pty && 'pty',
     input.unattended && 'unattended', input.writeFence && 'write_fence', input.evalRealRoot && 'eval_real_root',
     !['default', 'acceptEdits'].includes(input.permissionMode) && 'mode',
-    input.abortSignal.aborted && 'aborted', operandCount !== 1 && 'operand_count',
-  ].filter(Boolean);
+    input.abortSignal.aborted && 'aborted', parsed.reason,
+  ].filter((condition): condition is string => typeof condition === 'string');
+  const grants: string[] = [];
+  if (conditions.length === 0 && parsed.targets) {
+    for (const [operandIndex, deniedPath] of parsed.targets.entries()) {
+      if (escalationTarget(deniedPath) !== 'file') {
+        conditions.push(`path_class:operand_${operandIndex + 1}`);
+        break;
+      }
+      // A user-approved literal rm may run asynchronously in an attended session.
+      // This does not offer background escalation cards or relax unattended/write fences.
+      const granted = resolveEscalationFile({ ...input, deniedPath, deniedPathCreatesDirectory: false });
+      if (!granted) {
+        conditions.push(`${input.policyEnforcer === undefined ? 'policy_unbound' : 'path_policy'}:operand_${operandIndex + 1}`);
+        break;
+      }
+      grants.push(granted);
+    }
+  }
   const diagnostic = { sandboxed: input.sandboxDecision.sandboxed, foreground: input.foreground,
     pty: input.pty, background: input.background, unattended: input.unattended, writeFence: input.writeFence,
-    mode: input.permissionMode, operandCount, conditions: conditions.length ? conditions : ['path_class_or_policy_or_command_shape'] };
-  if (!grant) approvedRmLogger.warn(`APPROVED_RM_GRANT_REFUSED ${JSON.stringify(diagnostic)}`);
-  else approvedRmLogger.info(`APPROVED_RM_GRANT_MINTED ${JSON.stringify({ ...diagnostic, conditions: [] })}`);
-  return grant;
+    mode: input.permissionMode, operandCount: parsed.operandCount, conditions };
+  if (conditions.length > 0 || grants.length === 0) {
+    approvedRmLogger.warn(`APPROVED_RM_GRANT_REFUSED ${JSON.stringify(diagnostic)}`);
+    return undefined;
+  }
+  approvedRmLogger.info(`APPROVED_RM_GRANT_MINTED ${JSON.stringify(diagnostic)}`);
+  return grants.length === 1 ? grants[0] : grants;
 }
 
 /** Return the one directory subtree that may be offered for a single foreground retry. */

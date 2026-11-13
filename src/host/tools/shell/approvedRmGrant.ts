@@ -6,6 +6,9 @@ import { getSandboxManager } from '../../sandbox';
 import type { OsSandboxPermissionMode } from '../../sandbox/osSandboxPolicy';
 import { isBashToolName } from '../toolNames';
 import { approvedSingleFileRmGrant } from './sandboxEscalation';
+import { createLogger } from '../../services/infra/logger';
+
+const logger = createLogger('ApprovedRmGrant');
 
 interface ApprovedRmToolApprovalInput {
   approvalSource?: string;
@@ -19,13 +22,20 @@ interface ApprovedRmToolApprovalInput {
   policyEnforcer?: PolicyEnforcer | null;
 }
 
-/** Turn one user-approved plain rm call into a one-call, one-file seatbelt grant. */
+/** Turn one user-approved plain rm call into a one-call literal-file seatbelt grant. */
 export function approvedSingleFileRmGrantForToolApproval(
   input: ApprovedRmToolApprovalInput,
-): string | undefined {
-  if (input.approvalSource !== 'user' || !isBashToolName(input.toolName)) return undefined;
+): string | string[] | undefined {
+  if (!isBashToolName(input.toolName)) return undefined;
+  if (input.approvalSource !== 'user') {
+    logger.warn('APPROVED_RM_GRANT_REFUSED {"conditions":["approval_source"]}');
+    return undefined;
+  }
   const command = input.params.command;
-  if (typeof command !== 'string') return undefined;
+  if (typeof command !== 'string') {
+    logger.warn('APPROVED_RM_GRANT_REFUSED {"conditions":["command_type"]}');
+    return undefined;
+  }
   return approvedSingleFileRmGrant(command, {
     sandboxDecision: {
       sandboxed: (input.permissionRequest.details.sandbox as { applied?: unknown } | undefined)?.applied === true,

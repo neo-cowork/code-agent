@@ -14,6 +14,7 @@ import { getSandboxManager } from '../../../../../src/host/sandbox';
 import { getToolCache } from '../../../../../src/host/services/infra/toolCache';
 import { getProtocolRegistry } from '../../../../../src/host/tools/protocolRegistry';
 import * as approvedRmGrantModule from '../../../../../src/host/tools/shell/approvedRmGrant';
+import { getTaskOutput } from '../../../../../src/host/tools/shell/backgroundTasks';
 import { SANDBOX_APPROVED_RM_STILL_DENIED_FAILURE_CODE } from '../../../../../src/shared/constants';
 import { bashModule } from '../../../../../src/host/tools/modules/shell/bash';
 import { ToolExecutor } from '../../../../../src/host/tools/toolExecutor';
@@ -199,6 +200,54 @@ suite('approved rm uses a real seatbelt literal grant', () => {
       return grant;
     });
   }
+
+  it.each(['main-agent', 'sub-agent'] as const)(
+    'approved two-file rm deletes both files with real seatbelt via %s', async (shape) => {
+      const targets = [join(slashTmpRoot, `${shape}-two-cache.tmp`), join(outsideRoot, `${shape}-two-cache.tmp`)];
+      const neighbors = [join(slashTmpRoot, `${shape}-keep.tmp`), join(outsideRoot, `${shape}-keep.tmp`)];
+      [...targets, ...neighbors].forEach(file => writeFileSync(file, 'cache'));
+      const requests: PermissionRequestData[] = [];
+      const grant = vi.spyOn(approvedRmGrantModule, 'approvedSingleFileRmGrantForToolApproval');
+      const result = await executorFor(shape, requests, true).execute(
+        'Bash', { command: `rm -f -- ${targets.map(shellQuote).join(' ')}; echo "rm_exit=$?"` },
+        { sessionId: `real-seatbelt-two-${shape}` },
+      );
+      console.log(`TWO_FILE_SEATBELT ${shape} output=${JSON.stringify(result.result)} sandbox=${JSON.stringify(result.metadata?.sandbox)} ls=${targets.map(rawLs).join('; ')}`);
+      expect(grant).toHaveBeenCalledOnce();
+      expect(grant.mock.results[0].value).toHaveLength(2);
+      expect(requests).toHaveLength(1);
+      expect(result.success, result.error).toBe(true);
+      expect(result.result).toContain('rm_exit=0');
+      expect(result.metadata?.sandbox).toMatchObject({ applied: true, code: 'OS_SANDBOX_APPLIED' });
+      expect(targets.map(existsSync)).toEqual([false, false]);
+      expect(neighbors.map(existsSync)).toEqual([true, true]);
+    },
+  );
+
+  it('approved two-file background rm deletes both files with real seatbelt in an attended session', async () => {
+    const targets = [join(slashTmpRoot, 'background-cache.tmp'), join(outsideRoot, 'background-cache.tmp')];
+    const neighbors = [join(slashTmpRoot, 'background-keep.tmp'), join(outsideRoot, 'background-keep.tmp')];
+    [...targets, ...neighbors].forEach(file => writeFileSync(file, 'cache'));
+    const requests: PermissionRequestData[] = [];
+    const grant = vi.spyOn(approvedRmGrantModule, 'approvedSingleFileRmGrantForToolApproval');
+    const result = await executorFor('main-agent', requests, true).execute(
+      'Bash', { command: `rm -f -- ${targets.map(shellQuote).join(' ')}; echo "rm_exit=$?"`, run_in_background: true },
+      { sessionId: 'real-seatbelt-approved-background-two' },
+    );
+    expect(result.success, result.error).toBe(true);
+    const taskId = result.metadata?.taskId;
+    expect(typeof taskId).toBe('string');
+    const output = await getTaskOutput(String(taskId), true, 5000);
+    console.log(`TWO_FILE_BACKGROUND_SEATBELT output=${JSON.stringify(output)} sandbox=${JSON.stringify(result.metadata?.sandbox)} ls=${targets.map(rawLs).join('; ')}`);
+    expect(output?.exitCode).toBe(0);
+    expect(output?.output).toContain('rm_exit=0');
+    expect(grant).toHaveBeenCalledOnce();
+    expect(grant.mock.results[0].value).toHaveLength(2);
+    expect(requests).toHaveLength(1);
+    expect(result.metadata?.sandbox).toMatchObject({ applied: true, code: 'OS_SANDBOX_APPLIED' });
+    expect(targets.map(existsSync)).toEqual([false, false]);
+    expect(neighbors.map(existsSync)).toEqual([true, true]);
+  });
 
   it.each(['; echo "exit=$?"', ' && echo done'])(
     'public Bash entry after user approval deletes an outside file with suffix %s', async (suffix) => {
