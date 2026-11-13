@@ -6,6 +6,10 @@ export const createScheduledTaskSchema: ToolSchema = {
     + 'Use for explicit requests to create a scheduled task, recurring work, or recurring reminders '
     + '(e.g. 帮我建一个定时任务, 每天早上9点提醒我交报告, create a weekly report task), or a one-off automated run. '
     + 'Do not use for questions, debugging existing jobs, analyzing daily/weekly data now, or listing/editing/pausing tasks. '
+    + 'For data analysis, a time phrase alone is NOT a scheduling request: require an explicit request to schedule or automate FUTURE runs. '
+    + 'When the user asks to check/summarize data they sent, analyze that data now or ask for the missing data; never turn missing input into a future automation. '
+    + 'If it is ambiguous whether a time phrase describes supplied data or future runs, ask one clarifying question before calling this tool. '
+    + 'Recurring reminder directives do count as explicit future-run requests. '
     + 'A plain one-off personal reminder belongs to the reminders connector unless the user asks for an automated task. '
     + 'Use this instead of Bash/crontab or Reminders for Neo automations. Never claim creation until the tool succeeds. '
     + 'Tasks run locally while Neo is running; this does not grant file, connector, or login permissions.',
