@@ -129,7 +129,7 @@ describe('delegate_session clarify guard (needs_clarification)', () => {
 
   it('fires on create_new when the user never asked for a new chat', async () => {
     process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
-    const { db, rows } = setup('找个会话研究一下这个协议设计');
+    const { db, rows } = setup('找个会话研究一下这个通信协议');
     const result = await executeDelegateSession({ action: 'create_new', text: '研究协议设计' }, ctx, allow);
     expect(result).toMatchObject({ ok: false, meta: { code: 'needs_clarification' } });
     expect(rows()).toEqual({ delegations: 0, queued: 0 });
