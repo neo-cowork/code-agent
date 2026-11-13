@@ -86,6 +86,7 @@ import { whenInitialSessionStateSettled } from './stores/sessionStore';
 import { useAppIpcListeners } from './hooks/useAppIpcListeners';
 import { useInAppValidationBridge } from './hooks/useInAppValidationBridge';
 import { useLedgerDeepLink } from './hooks/useLedgerDeepLink';
+import { useShellLanguage } from './hooks/useShellLanguage';
 import { useDesktopPresence } from './hooks/useDesktopPresence';
 import { useI18n } from './hooks/useI18n';
 import { useCronOsNotification } from './hooks/useCronOsNotification';
@@ -150,6 +151,8 @@ function useWindowWidth(): number {
 
 export const App: React.FC = () => {
   const { t } = useI18n();
+  const [shellLanguageReady, setShellLanguageReady] = useState(false);
+  useShellLanguage(shellLanguageReady);
   useAppshots(); // 挂载 Appshots 事件监听（热键截图 → composer）
   useSurfaceExecutionPip(); // 当前会话 Browser / Computer 共享的可信实时 PiP
   useAgentHalo(); // CUA 原生驱动时的系统级光晕跟随（单指针共驾聚光灯）
@@ -523,6 +526,8 @@ export const App: React.FC = () => {
         }
       } catch (error) {
         logger.error('Failed to load settings', error);
+      } finally {
+        setShellLanguageReady(true);
       }
     };
     loadSettings();
