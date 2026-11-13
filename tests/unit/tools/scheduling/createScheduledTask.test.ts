@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CanUseToolFn, ToolContext } from '../../../../src/host/protocol/tools';
+import type { CanUseToolFn, CanUseToolResult, ToolContext } from '../../../../src/host/protocol/tools';
 
 const mocks = vi.hoisted(() => ({ createJob: vi.fn(), unattended: vi.fn() }));
 vi.mock('../../../../src/host/cron/cronService', () => ({ getCronService: () => ({ createJob: mocks.createJob }) }));
@@ -10,7 +10,10 @@ import { buildDeferredToolIndex } from '../../../../src/host/services/toolSearch
 
 const args = { name: 'Weekly report', prompt: 'Summarize this week’s notes', cron: '0 17 * * 5', timezone: 'Asia/Shanghai' };
 const ctx = { sessionId: 'test-session', abortSignal: new AbortController().signal } as ToolContext;
-const execute = (input: Record<string, unknown>, approve: CanUseToolFn, context = ctx) => createScheduledTaskModule.createHandler().execute(input, context, approve);
+const execute = async (input: Record<string, unknown>, approve: CanUseToolFn, context = ctx) => {
+  const handler = await createScheduledTaskModule.createHandler();
+  return handler.execute(input, context, approve);
+};
 
 describe('create_scheduled_task', () => {
   beforeEach(() => {
@@ -25,9 +28,10 @@ describe('create_scheduled_task', () => {
   });
 
   it('waits for mandatory confirmation before creating the exact schedule', async () => {
-    let resolve!: (value: { allow: boolean }) => void;
-    const approval = vi.fn(() => new Promise<{ allow: boolean }>((done) => { resolve = done; }));
-    const pending = execute(args, approval);
+    let resolve!: (value: CanUseToolResult) => void;
+    const approval = vi.fn(() => new Promise<CanUseToolResult>((done) => { resolve = done; }));
+    const handler = await createScheduledTaskModule.createHandler();
+    const pending = handler.execute(args, ctx, approval);
     expect(mocks.createJob).not.toHaveBeenCalled();
     expect(approval).toHaveBeenCalledWith('create_scheduled_task', args, expect.stringContaining(args.prompt), expect.objectContaining({ forceConfirm: true }));
     resolve({ allow: true });

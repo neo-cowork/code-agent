@@ -343,7 +343,7 @@ export function getDeferredToolsSummary(
   const compactLines: string[] = [];
   for (const [category, tools] of grouped) {
     fullLines.push(`[${category}] ${tools.join(' | ')}`);
-    nameLines.push(`[${category}] ${tools.map((tool) => tool.slice(0, tool.indexOf(': '))).join(' | ')}`);
+    nameLines.push(`[${category}] ${tools.map((tool) => tool.slice(0, tool.indexOf(': '))).join(' ')}`);
     compactLines.push(`[${category}] ${tools.length} tools; use ToolSearch to find them`);
   }
 

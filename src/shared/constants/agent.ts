@@ -97,7 +97,8 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // sys-v116: expose confirmed schedule creation to the foreground chat model.
 // sys-v117: distinguish supplied-data analysis from requests for future automation.
 // sys-v118: local one-off times do not require the model to guess a UTC offset.
-export const PROMPT_VERSION = 'sys-v118' as const;
+// sys-v119: compact builtin deferred names without removing tool discovery entries.
+export const PROMPT_VERSION = 'sys-v119' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =
