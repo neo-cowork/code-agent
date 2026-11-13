@@ -97,7 +97,7 @@ export function resolvePromptInputsHash(root: string, scope: PromptChangePaths):
   }
   hash.update('CODE_AGENT_BROWSER_JEV_STEP');
   hash.update('\0');
-  hash.update(process.env.CODE_AGENT_BROWSER_JEV_STEP === '1' ? '1' : '0');
+  hash.update(process.env.CODE_AGENT_BROWSER_JEV_STEP !== '0' ? '1' : '0');
   hash.update('\0');
   return hash.digest('hex');
 }
