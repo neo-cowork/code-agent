@@ -129,6 +129,8 @@ describe('managed browser takeover park', () => {
     const cookies = (storage ? JSON.parse(readFileSync(storage.path, 'utf8')).cookies : []) as Array<{ name: string }>;
     const result = {
       running,
+      serviceKey: h.before.serviceKey,
+      profileId: profile,
       probeAppCookie: cookies.some((cookie) => cookie.name === 'probe_app'),
       profileDirExists: Boolean(profileDir(profile)),
       sessionState: runtime.sessions.get(h.subject.sessionId)?.state,
@@ -150,7 +152,7 @@ describe('managed browser takeover park', () => {
     const snapshot = await execute(next, { action: 'get_dom_snapshot' });
     const claimed = binding(next);
     const page = await claimed.browserService.getPageContent();
-    process.stdout.write(`CLAIM_REAL ${JSON.stringify({ sameServiceKey: claimed.serviceKey === h.before.serviceKey, sameProfile: claimed.browserService.getSessionState().profileId === profile, page: page.text, loginGetsUnchanged: loginGets === getsBeforeContinue })}\n`);
+    process.stdout.write(`CLAIM_REAL ${JSON.stringify({ runOneServiceKey: h.before.serviceKey, runTwoServiceKey: claimed.serviceKey, profileBefore: profile, profileAfter: claimed.browserService.getSessionState().profileId, sameServiceKey: claimed.serviceKey === h.before.serviceKey, sameProfile: claimed.browserService.getSessionState().profileId === profile, page: page.text, loginGetsUnchanged: loginGets === getsBeforeContinue })}\n`);
     expect(snapshot.success).toBe(true);
     expect(snapshot.output).toContain('get_dom_snapshot before acting');
     expect(claimed.serviceKey).toBe(h.before.serviceKey);
@@ -165,8 +167,11 @@ describe('managed browser takeover park', () => {
   it('closed windows become closed and cannot be claimed by the next run', async () => {
     const h = await waitingHuman();
     await runtime.endRun(identity(h.ctx));
+    const profileBeforeClose = h.before.browserService.getSessionState().profileId!;
     await h.before.browserService.close();
+    expect(profileDir(profileBeforeClose)).toBeUndefined();
     expect(kept.snapshot(h.ctx.sessionId!)).toMatchObject({ state: 'closed', reason: 'takeover' });
+    process.stdout.write(`CLOSED_REAL ${JSON.stringify({ kept: kept.snapshot(h.ctx.sessionId!), running: h.before.browserService.isRunning(), profileDirExists: Boolean(profileDir(profileBeforeClose)) })}\n`);
     registry.unregister(h.ctx.runId!);
     const next = context(h.ctx.sessionId);
     expect((await execute(next, { action: 'navigate', url: `${idpOrigin}/idp` })).success).toBe(true);
