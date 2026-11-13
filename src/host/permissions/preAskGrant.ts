@@ -29,6 +29,7 @@ export function resolvePreAskGrant(input: {
   // run 档只在授权所属会话内命中。排在 standingGrants 之前：时间盒比永久授权窄。
   if (input.browserSessionTarget === null) return null;
   const identity = connectorToolGrantIdentity(input.toolName, input.browserSessionTarget ?? input.standingGrantTarget);
+  if (!identity) return null;
   const toolGrantTier = matchToolGrant(input.sessionId, identity.tool, identity.target);
   if (toolGrantTier) {
     return {

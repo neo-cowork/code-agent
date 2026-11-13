@@ -29,7 +29,10 @@ export function classifyConnectorTool(runtimeName: string): NonNullable<Permissi
 }
 
 /** Shared by mint and pre-ask. Writes retain the exact tool + target identity. */
-export function connectorToolGrantIdentity(tool: string, target: string | null): { tool: string; target: string | null } {
+export function connectorToolGrantIdentity(tool: string, target: string | null): { tool: string; target: string | null } | null {
+  // This is a storage namespace, never an MCP runtime identity. A plugin tool
+  // with the same spelling must neither consume nor mint a connector grant.
+  if (tool.startsWith('connector-read:')) return null;
   const access = classifyConnectorTool(tool);
   return access?.access === 'read'
     ? { tool: `connector-read:${access.connectorId}`, target: null }

@@ -144,6 +144,7 @@ function recordHumanGrant(
   }
   if (recordBrowserSessionGrant(response, request)) return;
   const identity = connectorToolGrantIdentity(request.tool, request.details?.standingGrantTarget ?? null);
+  if (!identity) return;
   const app = request.details?.targetApp;
   if (response === 'allow_session' && request.sessionId) {
     if (app?.name) mintAppGrantSession(request.sessionId, app);
