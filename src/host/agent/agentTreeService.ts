@@ -269,7 +269,13 @@ function parallelStatusToTree(status: ParallelAgentTaskSnapshotStatus): AgentTre
   }
 }
 
-function backgroundStatusToTree(status: BackgroundSubagentHandle['status']): AgentTreeNodeStatus {
+function backgroundStatusToTree(
+  status: BackgroundSubagentHandle['status'],
+  failureCode?: BackgroundSubagentHandle['failureCode'],
+): AgentTreeNodeStatus {
+  // 用户/父任务取消在登记表里记为 failed + CancelledBy*；树里按「已取消」呈现，不能冒充失败。
+  if (status === 'failed' && (failureCode === AgentFailureCode.CancelledByUser
+    || failureCode === AgentFailureCode.CancelledByParent)) return 'cancelled';
   switch (status) {
     case 'running':
       return 'running';
@@ -474,16 +480,17 @@ function mergeBackgroundAgent(
   if (handle.startedAt && !node.createdAt) node.createdAt = handle.startedAt;
   if (handle.finishedAt) node.completedAt = handle.finishedAt;
   node.updatedAt = handle.finishedAt ?? handle.startedAt ?? node.updatedAt;
-  applyStatus(node, backgroundStatusToTree(handle.status), 'backgroundRegistry', statusPriorities);
+  const treeStatus = backgroundStatusToTree(handle.status, handle.failureCode);
+  applyStatus(node, treeStatus, 'backgroundRegistry', statusPriorities);
   node.budgetSummary = mergeBudget(node.budgetSummary, budgetFromResult(handle.result));
   applyFailure(node, handle.failureCode);
 
   const progress = resultProgress(handle.result) ?? truncate(handle.error);
   if (progress) node.progress = progress;
   setLastEvent(node, {
-    summary: handle.error
+    summary: handle.error && treeStatus !== 'cancelled'
       ? `遇到问题：${truncate(handle.error) ?? handle.agentId}`
-      : `${statusLabel(backgroundStatusToTree(handle.status))}：${progress ?? handle.agentId}`,
+      : `${statusLabel(treeStatus)}：${progress ?? handle.agentId}`,
     at: handle.finishedAt ?? handle.startedAt,
     source: 'backgroundRegistry',
   });

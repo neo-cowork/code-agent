@@ -69,7 +69,12 @@ function musicTask(status: Task['status'], withFailure: boolean): Task {
 function renderReceipt(task: Task): void {
   const presentation = deriveDelegationPresentation(delegateCall, [task], []);
   expect(presentation).not.toBeNull();
-  render(<DelegationReceipt presentation={presentation!} />);
+  render(
+    <>
+      <DelegationHeader presentation={presentation!} />
+      <DelegationReceipt presentation={presentation!} />
+    </>,
+  );
 }
 
 afterEach(() => { cleanup(); language = 'zh'; });
@@ -98,6 +103,13 @@ describe('DelegationReceipt — 终局工具失败出路', () => {
     renderReceipt(musicTask('failed', false));
     expect(screen.queryByTestId('delegation-tool-failure')).toBeNull();
     expect(screen.getByTestId('delegation-failure').textContent).toContain('音乐生成失败，视频先交付了');
+  });
+
+  it('用户取消的任务显示中性已取消回执，不冒充执行失败', () => {
+    renderReceipt(musicTask('cancelled', false));
+    expect(screen.getByText('任务已取消')).toBeTruthy();
+    expect(screen.queryByTestId('delegation-failure')).toBeNull();
+    expect(screen.queryByTestId('delegation-tool-failure')).toBeNull();
   });
 });
 
