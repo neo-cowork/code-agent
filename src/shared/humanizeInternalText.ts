@@ -18,7 +18,7 @@ export interface InternalTextLeakMatch {
   sample: string;
 }
 
-export interface CollapseIntoDetailsInstruction {
+interface CollapseIntoDetailsInstruction {
   action: 'collapse_into_details';
   label: string;
   details: string;
@@ -152,9 +152,6 @@ const SANDBOX_EXEC_TOKEN_RE = new RegExp(leakPatterns.sandboxExec, 'g');
 
 const TEMP_PATH_GLOBAL_RE = new RegExp(leakPatterns.tempPath, 'g');
 
-const RAW_JSON_OBJECT_RE = new RegExp(
-  `^\\s*\\{(?:\\s*${leakPatterns.rawJsonKeyValue}\\s*,?){1,}\\}\\s*$`,
-);
 const INLINE_RAW_JSON_RE = new RegExp(`\\{(?:\\s*${leakPatterns.rawJsonKeyValue}\\s*,?){1,}\\}`, 'g');
 
 function humanizeMcpToolName(rawName: string, lang: InternalTextLanguage): string {
@@ -222,7 +219,7 @@ export function detectInternalTextLeaks(input: string): InternalTextLeakMatch[] 
   };
 
   const trimmed = input.trim();
-  if (RAW_JSON_OBJECT_RE.test(trimmed)) {
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
     try {
       const parsed: unknown = JSON.parse(trimmed);
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
@@ -328,7 +325,7 @@ export function humanizeInternalText(
   }
 
   // Standalone raw JSON object
-  if (RAW_JSON_OBJECT_RE.test(trimmed)) {
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
     try {
       const parsed: unknown = JSON.parse(trimmed);
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {

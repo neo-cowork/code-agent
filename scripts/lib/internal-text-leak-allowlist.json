@@ -486,18 +486,6 @@
     "reason": "unowned — needs a ticket"
   },
   {
-    "file": "src/renderer/components/features/workflow/TaskDetailPanel.tsx",
-    "rule": "uuid",
-    "sample": "task.taskId",
-    "reason": "unowned — needs a ticket"
-  },
-  {
-    "file": "src/renderer/components/features/workflow/TaskDetailPanel.tsx",
-    "rule": "raw_json",
-    "sample": "{JSON.stringify(task.output.data, null, 2)}",
-    "reason": "unowned — needs a ticket"
-  },
-  {
     "file": "src/renderer/components/onboarding/ModelOnboardingModal.tsx",
     "rule": "uuid",
     "sample": "{model.id}",
@@ -639,12 +627,6 @@
     "file": "src/renderer/components/features/swarm/AgentWorkRecordDialog.tsx",
     "rule": "uuid",
     "sample": "agent.name || agent.id",
-    "reason": "unowned — needs a ticket"
-  },
-  {
-    "file": "src/renderer/components/features/workflow/TaskDetailPanel.tsx",
-    "rule": "raw_json",
-    "sample": "JSON.stringify(task.output.data, null, 2)",
     "reason": "unowned — needs a ticket"
   },
   {
