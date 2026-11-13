@@ -24,7 +24,6 @@ import { useTurnProjection } from '../hooks/useTurnProjection';
 import { useSessionTurnActive } from '../hooks/useSessionTurnActive';
 import { useTurnExecutionClarity } from '../hooks/useTurnExecutionClarity';
 import { TurnBasedTraceView } from './features/chat/TurnBasedTraceView';
-import { StreamingIndicator } from './features/chat/StreamingIndicator';
 import { NewSessionWelcome } from './features/chat/NewSessionWelcome';
 import { EmptySessionArea } from './features/chat/SessionSwitchSkeleton';
 import { MemberConversationView } from './features/expert/MemberConversationView';
@@ -112,6 +111,7 @@ import { isChatSendAccepted } from '../utils/chatSendState';
 import { useImportedSessionResumeSend } from '../hooks/useImportedSessionResume';
 import { useCronRunFollowUpSend } from '../hooks/useCronRunFollowUpSend';
 import { useAssistantFeedbackEvents } from './features/chat/useAssistantFeedbackEvents';
+import { AssistantFeedbackIndicator } from './features/chat/AssistantFeedbackIndicator';
 import { DurableResumeNotice, shouldShowParkedNotice, suppressLegacyInterruptionDecision, useAbandonParkedRun, useDurableContinueVisible, useDurableResumeContinuation, useGuardedDurableContinue } from './features/chat/durableResume';
 import { QuotaWaitNotice } from './features/chat/quotaWaitNotice';
 import { ConnectorRequiredCards } from './features/chat/connectorRequiredCard';
@@ -951,13 +951,7 @@ export const ChatView: React.FC = () => {
               data-testid="assistant-send-placeholder"
             >
               <div className="mx-auto max-w-3xl px-4">
-                <StreamingIndicator
-                  startTime={pendingAssistantFeedback.startedAt}
-                  preparationPhase={pendingAssistantFeedback.phase === 'submitting'
-                    ? 'submitting'
-                    : pendingAssistantFeedback.phase === 'queued' ? 'queued' : undefined}
-                  waitingReason={pendingAssistantFeedback.phase === 'waiting_model' ? 'model' : undefined}
-                />
+                <AssistantFeedbackIndicator feedback={pendingAssistantFeedback} />
               </div>
             </div>
           )}
