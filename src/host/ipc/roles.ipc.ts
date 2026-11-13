@@ -110,7 +110,16 @@ export function sanitizeLastWork(line: string): string {
   }
 
   const [date, label, ...summarySegments] = segments;
-  const summary = cleanLastWorkText(summarySegments.join(' | '));
+  const metadataStart = summarySegments.findIndex((part) => /^(?:why|evidence): /.test(part));
+  const summarySegment = summarySegments.slice(0, metadataStart < 0 ? undefined : metadataStart).join(' | ');
+  // Synthetic wake prompts and duplicate write-back rows are not user work.
+  if (/^你被(?:定时|任务结束事件)唤醒。这不是用户发来的消息/.test(summarySegment.trim())
+    || /^主动巡检[（(](?:cadence|event)/.test(summarySegment.trim())) return '';
+  // Do not expose model rationale, evidence or internal decision tags here.
+  if (/^主动巡检[（(](?:cadence|event)/.test(label.trim())) {
+    return `${cleanLastWorkText(date)} 主动巡检`;
+  }
+  const summary = cleanLastWorkText(summarySegment);
   const visibleWork = summary || cleanLastWorkText(label);
   return [cleanLastWorkText(date), visibleWork].filter(Boolean).join(' ');
 }

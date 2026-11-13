@@ -943,6 +943,12 @@ describe('roles.ipc (domain:roles)', () => {
 });
 
 describe('sanitizeLastWork', () => {
+  it('hides synthetic wake instructions and internal wake evidence on both role surfaces', () => {
+    expect(sanitizeLastWork('- 2026-11-13 | 你被定时唤醒。这不是用户发来的消息 | 你被定时唤醒。这不是用户发来的消息，用户现在不在。')).toBe('');
+    expect(sanitizeLastWork('- 2026-11-13 | 主动巡检（cadence 触发） | 主动巡检（cadence 触发）')).toBe('');
+    expect(sanitizeLastWork('- 2026-11-13 | 主动巡检(cadence) | [report] completed | why: internal prompt | evidence: private/file.md')).toBe('2026-11-13 主动巡检');
+    expect(sanitizeLastWork('- 2026-11-13 | 报告 | 完成周报 | why: internal | evidence: private/file.md')).toBe('2026-11-13 完成周报');
+  });
   it('removes internal labels and leaked work directories from a history row', () => {
     expect(sanitizeLastWork('- 2026-07-22 | Directory: wt-e4a6fix | [工作目录: /private/tmp/xx/yy] 修复了侧栏对齐'))
       .toBe('2026-07-22 修复了侧栏对齐');

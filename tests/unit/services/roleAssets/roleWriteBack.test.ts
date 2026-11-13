@@ -334,6 +334,21 @@ describe('runRoleWriteBack', () => {
     expect(history[0]).not.toContain('（无产物落盘）');
   });
 
+  it('does not append duplicate history from either wake prompt while preserving write-back', async () => {
+    await ensureRoleAssetDirs('研究员');
+    mockQuickTask.mockResolvedValue({ success: false, error: 'model unavailable' });
+    for (const taskPrompt of [
+      '你被定时唤醒。这不是用户发来的消息，用户现在不在。\n你的任务：巡检',
+      '你被任务结束事件唤醒。这不是用户发来的消息，用户现在不在。',
+      '主动巡检（cadence 触发）',
+    ]) {
+      const result = await runRoleWriteBack({ roleId: '研究员', taskPrompt, finalOutput: '已检查' });
+      expect(result.executed).toBe(true);
+      expect(result.historyAppended).toBe(false);
+    }
+    expect(await loadRoleHistory('研究员')).toEqual([]);
+  });
+
   it('首次醒来的内部指令绝不外显为履历摘要：quick model 失败回落固定短句', async () => {
     await ensureRoleAssetDirs('研究员');
     mockQuickTask.mockResolvedValue({ success: false, error: 'model unavailable' });

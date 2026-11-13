@@ -28,6 +28,10 @@ export const CronDailyCostSummary: React.FC<CronDailyCostSummaryProps> = ({
     runsOn: execution.runsOn,
     skipped: readWakeSkipFromResult(execution.result) !== null,
   })));
+  const incompleteDays = new Set(cronDailyCostTotals(executions
+    .filter((execution) => execution.cost == null && readWakeSkipFromResult(execution.result) === null)
+    .map((execution) => ({ scheduledAt: execution.scheduledAt, startedAt: execution.startedAt, runsOn: execution.runsOn })))
+    .map((bucket) => bucket.dayKey));
   if (totals.length === 0) return null;
   const { today, yesterday } = cronTodayYesterdayKeys(Date.now());
   return (
@@ -46,7 +50,7 @@ export const CronDailyCostSummary: React.FC<CronDailyCostSummaryProps> = ({
         return (
           <span key={bucket.dayKey} data-testid={`${testId}-day`} className="text-zinc-400">
             {label}{' '}
-            <span className="font-medium tabular-nums text-zinc-200">{formatRunCostUsd(bucket.totalUsd)}</span>
+            <span className="font-medium tabular-nums text-zinc-200">{incompleteDays.has(bucket.dayKey) ? cc.dailyCostIncomplete : formatRunCostUsd(bucket.totalUsd)}</span>
             <span className="text-zinc-600">{runsNote}</span>
           </span>
         );

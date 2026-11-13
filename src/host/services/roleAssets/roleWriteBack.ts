@@ -126,6 +126,11 @@ async function doWriteBack(input: WriteBackInput): Promise<WriteBackResult> {
   // 4. 履历（产物清单）—— 即使没有记忆值得写，工作过就要记履历
   let historyAppended = false;
   try {
+    // The wake service owns its history row; its synthetic task is not user work.
+    if (/^你被(?:定时|任务结束事件)唤醒。这不是用户发来的消息/.test(input.taskPrompt)
+      || /^主动巡检[（(](?:cadence|event)/.test(input.taskPrompt)) {
+      return { executed: true, written, rejected: rejected.length, historyAppended: false };
+    }
     const date = new Date().toISOString().slice(0, 10);
     // 履历摘要回落：用户原话可截断；内部合成指令（首次醒来）绝不外显，回落固定短句
     //（2026-11-12 owner 裁决：专家列表的最近工作行不得出现首次醒来的提示词文本）。
