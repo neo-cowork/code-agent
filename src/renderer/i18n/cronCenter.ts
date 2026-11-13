@@ -471,11 +471,6 @@ export const cronCenterZh = {
         scheduleLabel: '工作日 08:30',
       },
       ...watchTemplateCopyZh,
-      'group-listen': {
-        name: '群监听',
-        description: '盯住一个群，来了新消息就按你的一句话处理',
-        scheduleLabel: '群里有新消息时',
-      },
     },
     // 模板连接器依赖状态
     connectorConnected: '已连接',
@@ -976,11 +971,6 @@ export const cronCenterEn: typeof cronCenterZh = {
         scheduleLabel: 'Weekdays 08:30',
       },
       ...watchTemplateCopyEn,
-      'group-listen': {
-        name: 'Group listen',
-        description: 'Watch one group and handle new messages with your one-liner',
-        scheduleLabel: 'When a new message arrives',
-      },
     },
     connectorConnected: 'Connected',
     connectorNotConnected: 'Not connected',

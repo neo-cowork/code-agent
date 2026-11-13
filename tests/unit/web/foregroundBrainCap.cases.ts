@@ -22,6 +22,31 @@ export function foregroundBrainCapCases(run: (input: {
       ]);
     });
 
+    it.each([
+      '按这个大纲出三张样张',
+      '先出个草稿看看',
+      'make three sample variants from this outline',
+    ])('keeps no-file-noun prompt at default cap: %s', async prompt => {
+      const result = await run({ prompt });
+      expect(result.cap).toBe(8);
+      expect(result.logs).toEqual(['Foreground brain budget rule=default cap=8 maxIterations=8']);
+    });
+
+    it.each([false, true])('keeps no-file-noun cap independent of earlier PPT delivery (last stop=%s)', async stopped => {
+      const history: Message[] = [
+        { id: 'earlier-deliverable', role: 'user', content: '做一份 PPT', timestamp: 1 },
+        { id: 'earlier-answer', role: 'assistant', content: '已完成', timestamp: 2 },
+        { id: 'last-answer', role: 'assistant', content: '大纲已准备好', timestamp: 3,
+          ...(stopped ? { metadata: { stoppedByStepLimit: true } } : {}) },
+      ];
+      const result = await run({ prompt: '按这个大纲出三张样张', history });
+      const cap = stopped ? 30 : 8;
+      expect(result.cap).toBe(cap);
+      expect(result.logs).toEqual([
+        `Foreground brain budget rule=${stopped ? 'continuation' : 'default'} cap=${cap} maxIterations=${cap}`,
+      ]);
+    });
+
     it.each([false, true])('uses only the last persisted assistant marker: %s', async marked => {
       const history: Message[] = [
         { id: 'old-stop', role: 'assistant', content: 'earlier stop', timestamp: 1,
