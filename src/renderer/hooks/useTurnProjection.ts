@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { useMemo } from 'react';
+import { getLastConversationTurnIndex } from '../utils/conversationTurns';
 import type { AgentErrorCategory, Message, MessageMetadata } from '@shared/contract';
 import {
   findRegisteredSystemEvent,
@@ -302,6 +303,7 @@ export function projectTurns(
   // 供应商报错各落一条），只算一次、只渲染最后一条。带 toolCalls 的轮中消息不打断
   // 连续段——那一轮可能还会失败。
   const agentErrorRunByMessageId = new Map<string, AgentErrorRunInfo>();
+  let lastFailureId: string | null = null;
   {
     // 扁平三变量而非可空对象：typescript7 对「可空对象 + `?.` 等值比较 + 显式判空」
     // 的组合会错把变量窄化成 never（隔离复现 TS2339/TS7022），扁平写法无此问题。
@@ -309,6 +311,7 @@ export function projectTurns(
     let runCategory: AgentErrorCategory | null = null;
     let runLength = 0;
     let sawUserSinceLastFailure = false;
+    let lastFailureMessageId: string | null = null;
     for (const msg of messages) {
       if (msg.role === 'user') {
         sawUserSinceLastFailure = true;
@@ -332,6 +335,7 @@ export function projectTurns(
         runMessageId = msg.id;
         sawUserSinceLastFailure = false;
         agentErrorRunByMessageId.set(msg.id, { runLength, latest: true });
+        lastFailureMessageId = msg.id;
         continue;
       }
       if (!msg.toolCalls?.length && msg.content?.trim()) {
@@ -340,6 +344,7 @@ export function projectTurns(
         runLength = 0;
       }
     }
+    lastFailureId = lastFailureMessageId;
   }
 
   for (const msg of messages) {
@@ -509,11 +514,7 @@ export function projectTurns(
       continue;
     }
 
-    // 用户可见 system 事件：登记制（P0-2）。role:'system' 的落库消息默认是只给模型看的
-    // 内部指令（真库 635 条 metadata 全 NULL），谁该给用户看由写入侧的登记表
-    //（shared/contract/systemEventRegistry）决定，这里只查表：
-    // - 已登记：按表里的呈现类型/挂轮策略投影（通话摘要、通话失败 #908、派活失败 W6-5、
-    //   派活结局印章 X5.5-A2-a）；
+    // 用户可见 system 事件按登记表投影；内部指令默认不显示。
     // - 未登记但带「事件性」metadata 键：开发档 console.error（契约测试同步报红），
     //   意思是「有人新写了用户可见事件却没登记」；生产档维持现状跳过。
     // 总闸不拆：未匹配的 system 消息一律 continue，绝不外泄给用户。
@@ -544,14 +545,14 @@ export function projectTurns(
         id: msg.id,
         type: 'system',
         subtype: spec.subtype,
-        content: msg.content,
+        content: spec.displayContent ? spec.displayContent(msg.metadata ?? {}) : msg.content,
         timestamp: msg.timestamp,
         metadata: msg.metadata,
       };
       // matched-turn（派活失败 W6-5）：按 workItemId 对回 voiceDispatch 派活轮，
       // 对不上退当前轮，一个轮都没有就独立成轮——失败记录绝不丢，也不留在半空。
       // current-turn（通话摘要 §7.5 / 通话失败 T3-#908）：通话级事件，挂当前轮。
-      const hostTurn = spec.attach === 'matched-turn'
+      const hostTurn = spec.attach === 'standalone' ? undefined : spec.attach === 'matched-turn'
         ? findVoiceWorkTurn(turns, (payload as { workItemId?: string }).workItemId) ?? currentTurn
         : currentTurn;
       if (hostTurn) {
@@ -563,6 +564,7 @@ export function projectTurns(
           turnNumber: turnCounter,
           turnId: `turn-${turnCounter}`,
           nodes: [node],
+          standalone: spec.attach === 'standalone' || undefined,
           status: 'completed',
           startTime: msg.timestamp,
           endTime: msg.timestamp,
@@ -655,7 +657,7 @@ export function projectTurns(
       const hasToolCalls = msg.toolCalls && msg.toolCalls.length > 0;
       // 运行失败的结构化错误挂在 metadata 上（AgentErrorCard），content 可能为空——
       // 不能按"空消息"跳过，否则错误卡片投不出来。
-      const hasAgentError = Boolean(msg.metadata?.agentError);
+      const hasAgentError = Boolean(msg.metadata?.agentError || msg.metadata?.envAssist);
 
       // Skip empty assistant messages
       if (!hasContent && !hasReasoning && !hasToolCalls && !hasAgentError) continue;
@@ -688,7 +690,11 @@ export function projectTurns(
           return;
         }
         const projectedContent = streamBreakKeptSegment ? stripStreamBreakMarker(content) : content;
-        if (streamBreakKeptSegment && !projectedContent.trim()) return;
+        if (streamBreakKeptSegment && !projectedContent.trim()) {
+          const bare = bareInterruptionNode(msg, messages, streamInterruptionReason);
+          if (bare) turn.nodes.push(bare);
+          return;
+        }
         // 模型回显：小模型有时把工具结果 JSON 当正文复述，整段吞掉不当答案渲染。
         if (isToolResultEcho(content)) return;
         // 去重：连续相同的模型决策只在首个节点显示，避免每条消息都刷"用户选择 mimo"
@@ -725,6 +731,7 @@ export function projectTurns(
       };
 
       const pushToolCallNode = (tc: NonNullable<Message['toolCalls']>[number]) => {
+        if (tc.result?.metadata?.envAssist) return;
         if (!recoveryMessage && interruptedToolCallIds.has(tc.id)
           && !executedToolCallIds.has(tc.id)) return;
         // 真身消息已携带同一调用（且已执行）时，recovery 侧让位不重复成行。
@@ -866,6 +873,12 @@ export function projectTurns(
 
   anchorVoiceTaskArtifactsToCompletionBroadcast(turns, voiceArtifactAnchors);
 
+  // 后台代理续跑提示整段会话只挂一处：最后一条失败消息的最后一个节点（同一消息被重复投影也只一个）。
+  const lastFailureNodes = turns.flatMap((turn) => turn.nodes)
+    .filter((node) => node.messageId === lastFailureId && node.metadata?.agentError);
+  const lastFailureNode = lastFailureNodes.at(-1);
+  if (lastFailureNode) lastFailureNode.agentErrorLast = true;
+
   // X5.5-D5：语音派出的 run 刻意活得比通话久，挂断后 run 的收尾文本 timestamp
   // 晚于摘要卡的 endedAt——摘要卡因此不在消息流最后。展示层把摘要卡钉到所在轮
   // 末尾（不改落库时序），恒排在这通电话 episode 的内容之后。
@@ -875,8 +888,9 @@ export function projectTurns(
   // the in-flight task. Normal user turns can still be active while waiting
   // for the first assistant response.
   let activeTurnIndex = -1;
-  if (isProcessing && turns.length > 0) {
-    const latestTurn = turns[turns.length - 1];
+  const latestConversationIndex = getLastConversationTurnIndex(turns);
+  if (isProcessing && latestConversationIndex >= 0) {
+    const latestTurn = turns[latestConversationIndex];
     // 钉在轮尾的通话摘要卡不是活动内容（D5）——判断轮尾时跳过它，否则钉尾会把
     // 在跑的派活轮从 active 上顶下来（lastNode 变成 system，流式标记丢失）。
     const latestNode = lastNonVoiceSummaryNode(latestTurn);
@@ -893,12 +907,13 @@ export function projectTurns(
     // 跳过它，让下面的回扫继续找到真正在跑的那一轮。
     if (latestNode?.type === 'user' && !isDirectRoutedUserTurn && !isVoiceSubtitleTail) {
       latestTurn.status = 'streaming';
-      activeTurnIndex = turns.length - 1;
+      activeTurnIndex = latestConversationIndex;
     }
 
     for (let index = turns.length - 1; index >= 0; index -= 1) {
       if (activeTurnIndex >= 0) break;
       const candidateTurn = turns[index];
+      if (candidateTurn.standalone) continue;
       const lastNode = lastNonVoiceSummaryNode(candidateTurn);
       if (!lastNode) continue;
 

@@ -105,6 +105,7 @@ const hostReasonEn: typeof hostReasonZh = {
 export const agentErrorZh = {
   agentError: {
     ariaLabel: '运行失败',
+    backgroundContinuing: { one: '后台还有 {count} 个代理在继续，完成后会告诉你', other: '后台还有 {count} 个代理在继续，完成后会告诉你' },
     rateLimitedInline: '模型服务商限流，稍后重试',
     hostReasons: hostReasonZh,
     // 连续同因折叠（N-UI-AGENT-ERROR-REPEAT-COLLAPSE）：早先失败轮压成的灰字行
@@ -181,6 +182,7 @@ export const agentErrorZh = {
       generic: {
         title: '运行失败',
         suggestion: '请重试一次；若反复失败，可新开会话继续，或复制错误报告反馈。',
+        providerReason: '服务商返回：「{reason}」',
       },
     },
     details: {
@@ -220,6 +222,7 @@ export const agentErrorZh = {
 export const agentErrorEn: typeof agentErrorZh = {
   agentError: {
     ariaLabel: 'Run failed',
+    backgroundContinuing: { one: '{count} agent is still working in the background. I’ll let you know when it finishes.', other: '{count} agents are still working in the background. I’ll let you know when they finish.' },
     rateLimitedInline: 'Model provider rate limit reached. Retry in a moment',
     hostReasons: hostReasonEn,
     mutedLine: 'No reply · {reason}',
@@ -292,6 +295,7 @@ export const agentErrorEn: typeof agentErrorZh = {
       generic: {
         title: 'Run failed',
         suggestion: 'Try again. If it keeps failing, start a new session, or copy the error report and send it to us.',
+        providerReason: 'Provider message: "{reason}"',
       },
     },
     details: {

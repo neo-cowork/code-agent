@@ -270,6 +270,18 @@ describe('approveByScheduleWriteGrant（放行判定矩阵）', () => {
     expect(editResult).toEqual({ approved: true, approvalSource: 'schedule-write-grant' });
   });
 
+  it.each(['calendar_create_event', 'mail_send', 'mcp__notes__append', 'MCPUnified'])(
+    '%s 属连接器/MCP/对外副作用：目标在授权根内也不放行', async (tool) => {
+      sessionState.sessions['ext-sess'] = {
+        id: 'ext-sess',
+        origin: { kind: 'cron', metadata: { writeGrantRoot: grantRoot } },
+      };
+      expect(await approveByScheduleWriteGrant({
+        sessionId: 'ext-sess', type: 'file_write', tool,
+        details: { path: path.join(grantRoot, 'note.txt') },
+      })).toBeUndefined();
+    });
+
   it('heartbeat 来源同样放行；非 cron/heartbeat 来源（channel/chat/无会话）不放行', async () => {
     sessionState.sessions['hb-sess'] = {
       id: 'hb-sess',

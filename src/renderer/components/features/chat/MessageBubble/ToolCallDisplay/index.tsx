@@ -1,4 +1,4 @@
-import { getToolPreflightKind, toolPreflightCopy } from '../../../../../utils/toolPreflightPresentation';
+import { getToolPreflightKind } from '../../../../../utils/toolPreflightPresentation';
 // ============================================================================
 // ToolCallDisplay - Claude Code terminal style tool execution display
 // StatusIndicator (braille spinner) + ToolName + params + ⎿ result summary
@@ -9,6 +9,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { StreamInterruptionReason, ToolCall } from '@shared/contract';
 import type { SessionMediaContext } from '@shared/utils/sessionMediaAssets';
 import { useAppStore } from '../../../../../stores/appStore';
+import { useParkedToolCallIds } from '../../../../../stores/parkedApprovalStore';
 import { isToolCallAwaitingApproval } from '../../../../../utils/sessionNeedsInput';
 import { useSessionStore } from '../../../../../stores/sessionStore';
 import { ToolHeader } from './ToolHeader';
@@ -149,11 +150,13 @@ export function ToolCallDisplay({
   const queuedPermissionRequests = useAppStore((state) => state.queuedPermissionRequests);
   const backgroundTasks = useBackgroundTaskStore((state) => state.tasks);
   const sessionId = mediaContext?.sessionId || currentSessionId;
+  const parkedToolCallIdsBySession = useParkedToolCallIds(sessionId, toolCall.result === undefined);
   const awaitingApproval = toolCall.result === undefined
     && isToolCallAwaitingApproval(toolCall.id, sessionId, {
       pendingPermissionRequest,
       pendingPermissionSessionId,
       queuedPermissionRequests,
+      parkedToolCallIdsBySession,
     });
   const delegationTool = isDelegationTool(toolCall.name);
   const { snapshot: agentTree } = useAgentTreeSnapshot(
@@ -166,6 +169,7 @@ export function ToolCallDisplay({
       toolCall,
       backgroundTasks,
       agentTree?.nodes ?? [],
+      t,
     );
     if (!presentation) return null;
     return {
@@ -175,7 +179,12 @@ export function ToolCallDisplay({
         agentTree?.nodes ?? [],
       ),
     };
-  }, [agentTree?.nodes, backgroundTasks, delegationTool, toolCall]);
+  }, [agentTree?.nodes, backgroundTasks, delegationTool, toolCall, t]);
+
+  const displayToolCall = useMemo(
+    () => toDelegationDisplayToolCall(toolCall, t, delegationPresentation),
+    [toolCall, t, delegationPresentation],
+  );
 
   // Calculate status
   const derivedStatus: ToolStatus = useMemo(() => {
@@ -287,7 +296,7 @@ export function ToolCallDisplay({
         {delegationPresentation
           ? <DelegationHeader presentation={delegationPresentation} />
           : <ToolHeader
-              toolCall={toolCall}
+              toolCall={displayToolCall}
               status={status}
               awaitingApproval={awaitingApproval}
               interruptionReason={interruptionReason}
@@ -297,9 +306,9 @@ export function ToolCallDisplay({
         {receipt && (
           <ToolReceiptMeta receipt={receipt} />
         )}
-        {!receipt && status !== 'error' && toolCall.result && toolCall.result.metadata?.recovered !== true && !delegationPresentation && !expanded && !isBashTool(toolCall) && status !== 'interrupted' && (
+        {!receipt && status !== 'error' && toolCall.result && toolCall.result.metadata?.recovered !== true && !delegationPresentation && toolCall.name !== 'list_session_candidates' && !expanded && !isBashTool(toolCall) && status !== 'interrupted' && (
           <span className="min-w-0 max-w-[220px] shrink truncate text-xs text-zinc-500">
-            <ResultSummary toolCall={toolCall} inline />
+            <ResultSummary toolCall={displayToolCall} inline />
           </span>
         )}
       </div>
@@ -349,17 +358,17 @@ export function ToolCallDisplay({
 
       {/* Bash inline output - when collapsed, show command output preview */}
       {!expanded && isBashTool(toolCall) && toolCall.result && (
-        <BashOutputPreview toolCall={toolCall} status={status} quietError={quietError} />
+        <BashOutputPreview toolCall={displayToolCall} status={status} quietError={quietError} />
       )}
 
       {/* Expanded details - indented under tool name */}
       {expanded && receipt && (
-        <ReceiptDetail receipt={receipt} toolCall={toolCall} />
+        <ReceiptDetail receipt={receipt} toolCall={displayToolCall} />
       )}
       {expanded && !receipt && (
         <div className="ml-6 animate-fadeIn">
           <ToolDetails
-            toolCall={toDelegationDisplayToolCall(toolCall)}
+            toolCall={displayToolCall}
             compact={compact}
             mediaContext={{
               ...mediaContext,

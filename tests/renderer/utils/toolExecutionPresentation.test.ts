@@ -13,6 +13,7 @@ import {
 } from '../../../src/renderer/utils/toolExecutionPresentation';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { en } from '../../../src/renderer/i18n/en';
+import { SANDBOX_APPROVED_RM_STILL_DENIED_FAILURE_CODE } from '../../../src/shared/constants';
 
 function makeToolCall(overrides: Partial<ToolCall> & Pick<ToolCall, 'name'>): ToolCall {
   return {
@@ -474,6 +475,16 @@ describe('humanizeToolFailureReason — failureCode 优先翻成一句人话', (
     expect(reason).not.toBe(zh.toolStepHumanize.failureReasonMissing);
   });
 
+  it('批准后沙盒仍拒绝删除：中文结果卡同时说明原因和下一步', () => {
+    const reason = humanizeToolFailureReason(failedCall(
+      SANDBOX_APPROVED_RM_STILL_DENIED_FAILURE_CODE,
+      'rm: target: Operation not permitted',
+    ), zh);
+    expect(reason).toBe('你已批准删除该文件，但沙盒仍然拒绝了删除；可以在访达里手动删除，或将文件移到当前工作目录后再试');
+    expect(reason).toContain('沙盒仍然拒绝');
+    expect(reason).toContain('在访达里手动删除');
+  });
+
   it('failureCode 人话优先于 metadata.reason 与原始 error', () => {
     const call = makeToolCall({
       name: 'spawn_agent',
@@ -571,4 +582,27 @@ describe('humanizeToolFailureReason — 裸工程错误码翻成人话 + 下一�
       .not.toBe(zh.toolStepHumanize.failureReasonMissing);
   });
 
+});
+
+
+describe('foreground wait validation copy', () => {
+  const error = 'foregroundBlockingBudgetMs must be less than role execution timeout (1200000 >= 900000)';
+  it.each([
+    [zh, '助手设置的等待时间超过了允许的上限，需要缩短', '这次任务的额度已经用完'],
+    [en, 'The wait time the assistant set exceeds the allowed limit and must be shortened.', 'This task used up its budget'],
+  ] as const)('shows the wait correction and preserves genuine budget copy (%#)', (t, expected, budgetCopy) => {
+    const call = makeToolCall({ name: 'spawn_agent', result: {
+      toolCallId: 'wait-argument', success: false, error,
+      metadata: { failureCode: 'invalid-arguments' },
+    } });
+    expect(humanizeToolFailureReason(call, t)).toBe(expected);
+    expect(humanizeToolError(error, call.name, t, call.result?.metadata)).toEqual({ summary: expected });
+    expect(humanizeToolFailureReason(call, t)).not.toMatch(/budget|quota|额度|预算|充值/iu);
+    expect(resolveToolTerminalOutcomeKey(call)).toBe('failed-tool');
+    // Historical rows may retain only the original English validation error.
+    expect(humanizeToolFailureReason({ ...call, result: { ...call.result!, metadata: {} } }, t)).toBe(expected);
+    const exhausted = { ...call, result: { ...call.result!, error: 'budget exhausted', metadata: { failureCode: 'budget-exhausted' } } };
+    expect(humanizeToolFailureReason(exhausted, t)).toBe(budgetCopy);
+    expect(resolveToolTerminalOutcomeKey(exhausted)).toBe('failed-budget');
+  });
 });

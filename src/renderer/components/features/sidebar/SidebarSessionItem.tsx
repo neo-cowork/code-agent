@@ -1,4 +1,7 @@
 import { formatDateTime } from '../../../utils/formatDateTime';
+import { useSessionStore } from '../../../stores/sessionStore';
+import { hasFailedCurrentRequest } from '../../../utils/overviewRunHeader';
+import { useLiveBackgroundAgentCount } from '../../../hooks/useLiveBackgroundAgentCount';
 import React from 'react';
 import { Archive, ArchiveRestore, AudioLines, CheckSquare, ChevronRight, GitFork, Loader2, Pin, Square } from 'lucide-react';
 import type { SessionRuntimeSummary } from '@shared/ipc';
@@ -143,7 +146,10 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   const backgroundSession = backgroundSessionMap.get(session.id);
   const surfaceExecutionSession = useSurfaceExecutionRunSession(session.id);
   const sessionTurnActive = useSessionTurnActive(session.id);
-  const status = getSessionStatusPresentation({
+  const failedCurrentRequest = useSessionStore((state) => state.currentSessionId === session.id && hasFailedCurrentRequest(state.messages));
+  const liveBackgroundCount = useLiveBackgroundAgentCount(session.id, session.status === 'error' || session.status === 'running', session.status === 'running' && !failedCurrentRequest);
+  const terminalFailure = liveBackgroundCount === 0 && (failedCurrentRequest || session.status === 'error');
+  const status = getSessionStatusPresentation(terminalFailure ? { sessionStatus: 'error' } : {
     backgroundSession,
     runtime: sessionRuntime,
     taskState: sessionStates[session.id],
@@ -154,7 +160,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   });
   const localizedStatusLabel =
     status.kind === 'error' ? t.common.error : status.kind === 'incomplete' ? t.common.incomplete : status.label;
-  const isRunning = sessionTurnActive && (status.kind === 'live' || status.kind === 'background');
+  const isRunning = liveBackgroundCount > 0 || (!failedCurrentRequest && session.status !== 'error' && sessionTurnActive && (status.kind === 'live' || status.kind === 'background'));
   const attentionDotClass = getAttentionDotClassName(status.kind);
   const waitingDetail = status.kind === 'approval' ? getWaitingDetailForSession?.(session.id) : undefined;
   const waitingAppName = waitingDetail?.kind === 'permission' ? waitingDetail.appName : undefined;
@@ -176,7 +182,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
     backgroundSession?.backgroundedAt || 0,
   );
   const messageSearchHitGroup = searchQuery.trim() ? messageSearchHitsBySessionId[session.id] : undefined;
-  const displayTitle = getDisplaySessionTitle(session.title);
+  const displayTitle = getDisplaySessionTitle(session.title, language);
   // 这条会话用过实时语音（host 在建连时写进会话 metadata）。是身份不是状态，
   // 所以走行尾的身份轴（右槽），不进讲「此刻怎么了」的状态槽——详见下方渲染处。
   const hadLiveVoice = session.metadata?.hadLiveVoice === true;
@@ -323,7 +329,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
             {surfaceExecutionSession ? (
               <SurfaceExecutionRunStatus session={surfaceExecutionSession} />
             ) : isRunning ? (
-              <Loader2 className="w-3 h-3 text-badge-success/80 animate-spin" aria-label={localizedStatusLabel} />
+              <Loader2 data-testid="session-active-dot" className="w-3 h-3 text-badge-success/80 animate-spin" aria-label={localizedStatusLabel} />
             ) : attentionDotClass ? (
               <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${attentionDotClass}`} aria-label={localizedStatusLabel} />
             ) : isUnread && !multiSelectMode ? (

@@ -18,6 +18,7 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-react';
+import { FormField, Input } from '../../../composites/FormField';
 import { Button, Modal } from '../../../primitives';
 import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
 import { createLogger } from '../../../../utils/logger';
@@ -43,6 +44,9 @@ import { ChannelAccountWarningStrip } from './ChannelAccountWarningStrip';
 import { TelegramGroupAccessPrerequisite, TelegramPrivacyModeBadge, TelegramPrivacyModeHint } from './TelegramPrivacyModeHint';
 import { FeishuSharedAppHint } from './FeishuSharedAppHint';
 import { FeishuLastInboundLine } from './FeishuLastInboundLine';
+import {
+  buildChannelConfig, ChannelRequiredField, clearChannelFormError, validateChannelForm, type ChannelFormErrors,
+} from './channelFormValidation';
 
 const logger = createLogger('ChannelsSettings');
 
@@ -68,8 +72,9 @@ export function getChannelPrivacyModeCopy(
   mode: ChannelPrivacyMode,
   options: ChannelPrivacyModeOption[] = CHANNEL_PRIVACY_MODE_OPTIONS,
 ): { label: string; description: string } {
-  return options.find((option) => option.value === mode)
-    ?? options[0]!;
+  const copy = options.find((option) => option.value === mode) ?? options[0];
+  if (!copy) throw new Error('Channel privacy mode options are empty');
+  return copy;
 }
 
 export function getChannelTypeLabel(
@@ -159,7 +164,7 @@ const ChannelFilterButton: React.FC<{
   <button
     type="button"
     onClick={onClick}
-    className={`h-7 rounded-md px-2.5 text-xs transition-colors ${
+    className={`shrink-0 whitespace-nowrap h-7 rounded-md px-2.5 text-xs transition-colors ${
       active
         ? 'bg-zinc-200 text-zinc-950'
         : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
@@ -260,52 +265,66 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
   const [tgGroupAccessMode, setTgGroupAccessMode] = useState<'allowlist' | 'all_members'>(
     (account?.config as TelegramChannelConfig)?.groupAccessMode || 'allowlist'
   );
+  const [errors, setErrors] = useState<ChannelFormErrors>({});
+  const portInputRef = React.useRef<HTMLInputElement>(null);
+  const nameInputRef = React.useRef<HTMLInputElement>(null);
+  const appIdInputRef = React.useRef<HTMLInputElement>(null);
+  const appSecretInputRef = React.useRef<HTMLInputElement>(null);
+  const botTokenInputRef = React.useRef<HTMLInputElement>(null);
+
+  const clearError = (field: keyof ChannelFormErrors) => setErrors((current) => clearChannelFormError(current, field));
+  const updateField = (field: keyof ChannelFormErrors, setter: (value: string) => void) => (value: string) => {
+      setter(value);
+      clearError(field);
+    };
+
+  const handleTypeChange = (nextType: ChannelType) => { setType(nextType); setErrors({}); };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    let config: ChannelAccountConfig;
+    const nextErrors = validateChannelForm(
+      { name, type, appId, appCredential: appSecret, botToken },
+      {
+        port: channelText.modal.portInvalidError,
+        name: channelText.modal.nameRequiredError,
+        appId: channelText.modal.appIdRequiredError,
+        appCredential: channelText.modal.appCredentialRequiredError,
+        botToken: channelText.modal.botTokenRequiredError,
+      },
+      portInputRef.current,
+    );
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors(nextErrors);
+      const firstMissingField = Object.keys(nextErrors)[0] as keyof ChannelFormErrors;
+      const firstMissingInput = {
+        port: portInputRef, name: nameInputRef, appId: appIdInputRef, appCredential: appSecretInputRef, botToken: botTokenInputRef,
+      }[firstMissingField];
+      firstMissingInput?.current?.focus();
+      return;
+    }
 
-    if (type === 'http-api') {
-      config = {
-        type: 'http-api',
-        port: parseInt(apiPort) || 8080,
-        apiKey: apiKey || crypto.randomUUID().replace(/-/g, ''),
-        enableCors,
-        privacyMode,
-      };
-    } else if (type === 'feishu' || type === 'lark') {
-      config = {
-        type,
-        appId,
-        appSecret,
-        encryptKey: encryptKey || undefined,
-        verificationToken: verificationToken || undefined,
-        useWebSocket,
-        webhookPort: parseInt(webhookPort) || 3200,
-        outboundAllowlist: outboundTargets
-          .split(/[,\n]/)
-          .map((target) => target.trim())
-          .filter(Boolean),
-        inboundAllowlist: larkLikeConfig?.inboundAllowlist,
-        ownerOpenId: larkLikeConfig?.ownerOpenId,
-        privacyMode,
-      };
-    } else if (type === 'telegram') {
-      const userIds = tgAllowedUserIds
-        .split(',')
-        .map(s => parseInt(s.trim()))
-        .filter(n => !isNaN(n));
-      config = {
-        type: 'telegram',
-        botToken,
-        proxyUrl: tgProxyUrl || undefined,
-        fallbackProxyUrl: tgFallbackProxy || undefined,
-        allowedUserIds: userIds.length > 0 ? userIds : undefined,
-        groupAccessMode: tgGroupAccessMode,
-        privacyMode,
-      };
-    } else {
+    const config = buildChannelConfig({
+      type,
+      apiPort,
+      httpCredential: apiKey,
+      enableCors,
+      appId,
+      appCredential: appSecret,
+      encryptKey,
+      verificationToken,
+      webhookPort,
+      useWebSocket,
+      outboundTargets,
+      larkLikeConfig,
+      botToken,
+      tgProxyUrl,
+      tgFallbackProxy,
+      tgAllowedUserIds,
+      tgGroupAccessMode,
+      privacyMode,
+    });
+    if (!config) {
       console.warn('Unknown channel type:', type);
       return;
     }
@@ -319,6 +338,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
       onClose={onClose}
       title={account ? channelText.modal.editTitle : channelText.modal.addTitle}
       size="md"
+      className="h-[min(40rem,90vh)]"
       footer={
         <>
           <Button type="button" variant="ghost" onClick={onClose}>
@@ -330,19 +350,17 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
         </>
       }
     >
-        <form id={formId} onSubmit={handleSubmit} className="space-y-4">
+        <form id={formId} noValidate onSubmit={handleSubmit} className="space-y-4">
           {/* 名称 */}
-          <div>
-            <label className="block text-sm text-zinc-400 mb-1">{channelText.modal.nameLabel}</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
-              placeholder={channelText.modal.namePlaceholder}
-              required
-            />
-          </div>
+          <ChannelRequiredField
+            label={channelText.modal.nameLabel}
+            error={errors.name}
+            id={`${formId}-name`}
+            inputRef={nameInputRef}
+            value={name}
+            onChange={updateField('name', setName)}
+            placeholder={channelText.modal.namePlaceholder}
+          />
 
           {/* 类型 */}
           {!account && (
@@ -350,7 +368,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
               <label className="block text-sm text-zinc-400 mb-1">{channelText.modal.typeLabel}</label>
               <select
                 value={type}
-                onChange={(e) => setType(e.target.value as ChannelType)}
+                onChange={(e) => handleTypeChange(e.target.value as ChannelType)}
                 className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
               >
                 {channelTypes.map((ct) => (
@@ -383,18 +401,11 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
           {/* HTTP API 配置 */}
           {type === 'http-api' && (
             <>
-              <div>
-                <label className="block text-sm text-zinc-400 mb-1">{channelText.modal.portLabel}</label>
-                <input
-                  type="number"
-                  value={apiPort}
-                  onChange={(e) => setApiPort(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
-                  placeholder="8080"
-                  min={1}
-                  max={65535}
-                />
-              </div>
+              <FormField label={channelText.modal.portLabel} error={errors.port} htmlFor={`${formId}-port`}>
+                <Input ref={portInputRef} type="number" value={apiPort}
+                  onChange={(e) => updateField('port', setApiPort)(e.target.value)}
+                  placeholder="8080" min={1} max={65535} />
+              </FormField>
               <div>
                 <label className="block text-sm text-zinc-400 mb-1">
                   API Key
@@ -432,36 +443,28 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
           {/* 飞书 / Lark 配置 */}
           {(type === 'feishu' || type === 'lark') && (
             <>
-              <div>
-                <label className="block text-sm text-zinc-400 mb-1">App ID</label>
-                <input
-                  type="text"
-                  value={appId}
-                  onChange={(e) => setAppId(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
-                  placeholder="cli_xxxxxxxxxx"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-zinc-400 mb-1">
-                  App Secret
-                  <button
-                    type="button"
-                    onClick={() => setShowSecrets(!showSecrets)}
-                    className="ml-2 text-zinc-500 hover:text-zinc-400"
-                  >
-                    {showSecrets ? <EyeOff className="w-3 h-3 inline" /> : <Eye className="w-3 h-3 inline" />}
-                  </button>
-                </label>
-                <input
-                  type={showSecrets ? 'text' : 'password'}
-                  value={appSecret}
-                  onChange={(e) => setAppSecret(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
-                  required
-                />
-              </div>
+              <ChannelRequiredField
+                label="App ID"
+                error={errors.appId}
+                id={`${formId}-app-id`}
+                inputRef={appIdInputRef}
+                value={appId}
+                onChange={updateField('appId', setAppId)}
+                placeholder="cli_xxxxxxxxxx"
+              />
+              <ChannelRequiredField
+                label="App Secret"
+                error={errors.appCredential}
+                id={`${formId}-app-secret`}
+                inputRef={appSecretInputRef}
+                value={appSecret}
+                onChange={updateField('appCredential', setAppSecret)}
+                type={showSecrets ? 'text' : 'password'}
+                showSensitiveValue={showSecrets}
+                onToggleSensitiveValue={() => setShowSecrets(!showSecrets)}
+                showSensitiveValueLabel={channelText.modal.showSensitiveValue}
+                hideSensitiveValueLabel={channelText.modal.hideSensitiveValue}
+              />
               <div className="rounded-lg border border-zinc-700 bg-zinc-800 p-3">
                 <label className="flex items-center gap-2 text-sm text-zinc-300">
                   <input
@@ -514,18 +517,11 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
                       className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm text-zinc-400 mb-1">{channelText.modal.webhookPortLabel}</label>
-                    <input
-                      type="number"
-                      value={webhookPort}
-                      onChange={(e) => setWebhookPort(e.target.value)}
-                      className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
-                      placeholder="3200"
-                      min={1}
-                      max={65535}
-                    />
-                  </div>
+                  <FormField label={channelText.modal.webhookPortLabel} error={errors.port} htmlFor={`${formId}-port`}>
+                    <Input ref={portInputRef} type="number" value={webhookPort}
+                      onChange={(e) => updateField('port', setWebhookPort)(e.target.value)}
+                      placeholder="3200" min={1} max={65535} />
+                  </FormField>
                   <div className="p-3 bg-zinc-800 rounded-lg border border-zinc-700">
                     <p className="text-xs text-zinc-400">
                       <strong className="text-zinc-400">{channelText.modal.configTipsTitle}</strong>
@@ -548,26 +544,20 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
           {/* Telegram 配置 */}
           {type === 'telegram' && (
             <>
-              <div>
-                <label className="block text-sm text-zinc-400 mb-1">
-                  Bot Token
-                  <button
-                    type="button"
-                    onClick={() => setShowSecrets(!showSecrets)}
-                    className="ml-2 text-zinc-500 hover:text-zinc-400"
-                  >
-                    {showSecrets ? <EyeOff className="w-3 h-3 inline" /> : <Eye className="w-3 h-3 inline" />}
-                  </button>
-                </label>
-                <input
-                  type={showSecrets ? 'text' : 'password'}
-                  value={botToken}
-                  onChange={(e) => setBotToken(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
-                  placeholder={channelText.modal.botTokenPlaceholder}
-                  required
-                />
-              </div>
+              <ChannelRequiredField
+                label="Bot Token"
+                error={errors.botToken}
+                id={`${formId}-bot-token`}
+                inputRef={botTokenInputRef}
+                value={botToken}
+                onChange={updateField('botToken', setBotToken)}
+                type={showSecrets ? 'text' : 'password'}
+                showSensitiveValue={showSecrets}
+                onToggleSensitiveValue={() => setShowSecrets(!showSecrets)}
+                showSensitiveValueLabel={channelText.modal.showToken}
+                hideSensitiveValueLabel={channelText.modal.hideToken}
+                placeholder={channelText.modal.botTokenPlaceholder}
+              />
               <div>
                 <label className="block text-sm text-zinc-400 mb-1">{channelText.modal.proxyUrlLabel}</label>
                 <input
@@ -595,8 +585,8 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
                   value={tgAllowedUserIds}
                   onChange={(e) => setTgAllowedUserIds(e.target.value)}
                   className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
-                  placeholder={channelText.modal.allowedUserIdsPlaceholder}
-                />
+                  aria-describedby="telegram-allowed-users-hint" placeholder={channelText.modal.allowedUserIdsPlaceholder}
+                /><p id="telegram-allowed-users-hint" className="mt-1 text-xs text-zinc-500 break-words">{channelText.modal.allowedUserIdsHint}</p>
               </div>
               <div>
                 <label className="block text-sm text-zinc-400 mb-1">
@@ -916,8 +906,8 @@ export const ChannelsSettings: React.FC = () => {
             </div>
           ) : (
             <div className="overflow-x-auto rounded-lg border border-zinc-800">
-              <div className="min-w-[760px]">
-                <div className="grid grid-cols-[minmax(220px,1.5fr)_120px_150px_minmax(160px,1fr)_210px] items-center border-b border-zinc-800 bg-zinc-900/80 px-3 py-2 text-xs font-medium text-zinc-500">
+              <div className="min-w-[842px]">
+                <div className="grid grid-cols-[minmax(200px,1.5fr)_120px_150px_minmax(140px,1fr)_232px] items-center border-b border-zinc-800 bg-zinc-900/80 px-3 py-2 text-xs font-medium text-zinc-500">
                   <div>{channelText.table.account}</div>
                   <div>{channelText.table.type}</div>
                   <div>{channelText.table.status}</div>
@@ -927,7 +917,7 @@ export const ChannelsSettings: React.FC = () => {
 
                 {filteredAccounts.map((account) => (
                   <div key={account.id} className="border-b border-zinc-800 bg-zinc-900/30 last:border-b-0 hover:bg-zinc-800/50" data-testid="channel-account-row">
-                    <div className="grid min-h-[72px] grid-cols-[minmax(220px,1.5fr)_120px_150px_minmax(160px,1fr)_210px] items-center px-3 py-3" data-testid="channel-account-grid-row">
+                    <div className="grid min-h-[72px] grid-cols-[minmax(200px,1.5fr)_120px_150px_minmax(140px,1fr)_232px] items-center px-3 py-3" data-testid="channel-account-grid-row">
                       <div className="flex min-w-0 items-center gap-3">
                         {getTypeIcon(account.type)}
                         <div className="min-w-0">
@@ -936,7 +926,7 @@ export const ChannelsSettings: React.FC = () => {
                       </div>
 
                       <div>
-                        <span className="inline-flex h-6 items-center rounded-md bg-zinc-800 px-2 text-xs text-zinc-300">
+                        <span className="shrink-0 whitespace-nowrap inline-flex h-6 items-center rounded-md bg-zinc-800 px-2 text-xs text-zinc-300">
                           {getChannelTypeLabel(account.type, channelTypes, channelText.typeNames)}
                         </span>
                       </div>
@@ -946,7 +936,7 @@ export const ChannelsSettings: React.FC = () => {
                           {getStatusText(account.status)}
                         </div>
                         {account.errorMessage && (
-                          <div className="mt-1 truncate text-xs text-badge-danger" title={account.errorMessage}>
+                          <div className="mt-1 whitespace-pre-wrap break-words text-xs text-badge-danger" title={account.errorMessage}>
                             {account.errorMessage}
                           </div>
                         )}
@@ -979,7 +969,7 @@ export const ChannelsSettings: React.FC = () => {
                         )}
                       </div>
 
-                      <div className="flex items-center justify-end gap-1.5">
+                      <div className="flex flex-wrap items-center justify-end gap-1.5">
                         <Button
                           size="sm"
                           variant="ghost"

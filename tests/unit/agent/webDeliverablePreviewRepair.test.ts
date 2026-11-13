@@ -9,6 +9,10 @@ import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeCont
 import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 import type { ArtifactPreviewHealthSummary } from '../../../src/host/agent/runtime/browser/artifactPreviewHealth';
 
+vi.mock('../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({ getSettings: () => ({ ui: { language: 'en' } }) }),
+}));
+
 // 接线验收（N-DESIGN-PREVIEW-REPAIR-WIRE ①②③）：网页交付物写后确定性预览体检 +
 // 至多一次自动修复。designPreviewRepair 只替换 assessment 的 healthRunner（spec/prompt
 // 构造走真实现），vision runner 整体替换为 spy 以断言"从不调用"。
@@ -217,7 +221,7 @@ describe('webDeliverablePreviewRepair module', () => {
     );
     expect(second.contextAssembly.injectSystemMessage).not.toHaveBeenCalled();
     expect(second.contextAssembly.addAndPersistMessage).toHaveBeenCalledWith(expect.objectContaining({
-      content: 'page-c.html: 2 display problem(s) remain in the web page: blank page、images cannot be displayed',
+      content: 'page-c.html: 2 display problem(s) remain in the web page: blank page, images cannot be displayed',
     }));
   });
 

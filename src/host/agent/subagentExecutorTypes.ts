@@ -1,4 +1,5 @@
 import type { Message, ModelConfig, PermissionPreset, ToolDefinition } from '../../shared/contract';
+import type { RequestPermissionResult } from '../../shared/contract/permission';
 import type { SwarmAgentContextSnapshot, SwarmRunScope } from '../../shared/contract/swarm';
 import type { CancellationReason } from '../../shared/contract/cancellation';
 import type { AgentFailureCode } from '../../shared/contract/agentFailure';
@@ -104,7 +105,7 @@ export interface SubagentPermissionRequest {
 }
 
 export interface SubagentPermissionPort {
-  request(request: SubagentPermissionRequest): Promise<boolean>;
+  request(request: SubagentPermissionRequest): Promise<RequestPermissionResult>;
 }
 
 export interface SubagentHookPort {
@@ -151,6 +152,8 @@ export interface SubagentAttachment {
 }
 
 export interface SubagentExecutionContext {
+  /** Identity assigned by a detached wrapper for this spawn invocation only; never inherited by its children. */
+  managedAgentId?: string;
   /** Native run identity; never inferred from a process singleton. */
   runId?: string;
   /** Stable user message that originated the parent native turn. */

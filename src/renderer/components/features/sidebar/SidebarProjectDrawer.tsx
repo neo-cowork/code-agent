@@ -1,4 +1,5 @@
 import { formatDateTime } from '../../../utils/formatDateTime';
+import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 import React from 'react';
 import {
   AlertTriangle,
@@ -116,11 +117,11 @@ function getGoalStatusIcon(status: SidebarProjectGoalMeta['status']): React.Reac
   return <Target className="h-3.5 w-3.5 text-badge-accent" />;
 }
 
-function formatArtifactMeta(artifact: SidebarProjectArtifactMeta, t: Translations): string {
+function formatArtifactMeta(artifact: SidebarProjectArtifactMeta, t: Translations, language: 'zh' | 'en'): string {
   return [
     getArtifactKindLabel(artifact.kind, t),
     artifact.toolName?.trim(),
-    artifact.sessionTitle?.trim(),
+    artifact.sessionTitle ? getDisplaySessionTitle(artifact.sessionTitle, language) : undefined,
   ].filter(Boolean).join(' · ');
 }
 
@@ -430,7 +431,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                         <span className="min-w-0 flex-1 truncate text-xs font-medium text-zinc-200">{artifact.title}</span>
                         {canOpen && <ArrowRight className="h-3.5 w-3.5 shrink-0 text-zinc-600" />}
                       </div>
-                      <div className="mt-0.5 truncate pl-5 text-[10px] text-zinc-600">{formatArtifactMeta(artifact, t)}</div>
+                      <div className="mt-0.5 truncate pl-5 text-[10px] text-zinc-600">{formatArtifactMeta(artifact, t, language)}</div>
                     </button>
                   );
                 })}
@@ -456,7 +457,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                   <button /* ds-allow:button: 会话卡片，全宽左对齐多行内容+当前态边框，primitive 居中变体不兼容 */
                     key={session.id}
                     type="button"
-                    aria-label={p.openProjectSession.replace('{title}', session.title)}
+                    aria-label={p.openProjectSession.replace('{title}', getDisplaySessionTitle(session.title, language))}
                     title={session.lastActiveTitle}
                     onClick={() => { void onOpenSession(session.id); }}
                     className={`rounded-md border px-2.5 py-2 text-left transition-colors hover:bg-zinc-800/70 ${
@@ -466,7 +467,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                     }`}
                   >
                     <div className="flex min-w-0 items-center gap-2">
-                      <span className="min-w-0 flex-1 truncate text-xs font-medium text-zinc-200">{session.title}</span>
+                      <span className="min-w-0 flex-1 truncate text-xs font-medium text-zinc-200">{getDisplaySessionTitle(session.title, language)}</span>
                       {session.typeLabel && (
                         <span className="shrink-0 rounded border border-zinc-700 bg-zinc-950/60 px-1.5 py-0.5 text-[10px] text-zinc-500">
                           {session.typeLabel}

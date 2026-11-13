@@ -1,3 +1,5 @@
+import { useI18n } from '../../../hooks/useI18n';
+import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 // ============================================================================
 // ExportModal - 会话导出模态框
 // 支持导出为 Markdown 和 JSON 格式
@@ -125,6 +127,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   sessionTitle,
   messages,
 }) => {
+  const { language } = useI18n();
+  const displayTitle = getDisplaySessionTitle(sessionTitle, language);
   const [format, setFormat] = useState<ExportFormat>('markdown');
   const [isExporting, setIsExporting] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -133,9 +137,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   // 生成导出内容
   const generateContent = useCallback(() => {
     return format === 'markdown'
-      ? exportToMarkdown(sessionTitle, messages)
+      ? exportToMarkdown(displayTitle, messages)
       : exportToJson(sessionTitle, messages);
-  }, [format, sessionTitle, messages]);
+  }, [format, sessionTitle, displayTitle, messages]);
 
   // 复制到剪贴板
   const handleCopyToClipboard = async () => {
@@ -156,7 +160,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     try {
       const content = generateContent();
       const extension = format === 'markdown' ? 'md' : 'json';
-      const filename = `${sessionTitle.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_')}_${new Date().toISOString().split('T')[0]}.${extension}`;
+      const filename = `${displayTitle.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_')}_${new Date().toISOString().split('T')[0]}.${extension}`;
 
       // 创建 Blob 并下载
       const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
@@ -248,7 +252,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         {/* Session info */}
         <div className="p-3 rounded-lg bg-zinc-800 border border-zinc-700">
           <p className="text-sm text-zinc-400 font-medium truncate">
-            {sessionTitle}
+            {displayTitle}
           </p>
         </div>
 

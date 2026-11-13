@@ -100,6 +100,24 @@ describe('roleDraftQueue', () => {
       expect(await exists(path.join(draftDir, 'agent.md'))).toBe(true);
     });
 
+    it('same-session replace writes the revision and removes the old draft', async () => {
+      const input = { roleId: '日程管家', description: '看日历', systemPrompt: '只读日历', sessionId: 'same' };
+      const first = await enqueueRoleDraft({ ...input, timestamp: 1 });
+      const second = await enqueueRoleDraft({ ...input, description: '看日历，每天早上八点前提醒', systemPrompt: '只读日历并提醒', timestamp: 2 });
+      expect(second.draft).toMatchObject({ description: '看日历，每天早上八点前提醒', sessionId: 'same' });
+      expect(await listRoleDrafts()).toEqual([second.draft]);
+      expect(await exists(path.join(getRoleDraftsDir(), first.draft!.id))).toBe(false);
+      expect(await fs.readdir(getRoleDraftsDir())).toEqual([second.draft!.id]);
+      expect(await fs.readFile(path.join(getRoleDraftsDir(), second.draft!.id, 'agent.md'), 'utf8')).toContain('只读日历并提醒');
+    });
+
+    it('invalid same-session revision preserves the pending draft', async () => {
+      const input = { roleId: '日程管家', description: '看日历', systemPrompt: '只读日历', sessionId: 'same' };
+      const first = await enqueueRoleDraft(input);
+      expect((await enqueueRoleDraft({ ...input, systemPrompt: ' ' })).draft).toBeNull();
+      expect(await listRoleDrafts()).toEqual([first.draft]);
+    });
+
     it('非法 roleId 拒绝入队', async () => {
       const r1 = await enqueueRoleDraft({ roleId: '../etc', description: '', systemPrompt: 'p', sessionId: 's' });
       expect(r1.draft).toBeNull();
@@ -122,9 +140,9 @@ describe('roleDraftQueue', () => {
       expect(r.reason).toMatch(/已存在同名角色/);
     });
 
-    it('队列里已有同名待确认草稿 → 拒绝', async () => {
+    it('队列里另一会话已有同名待确认草稿 → 拒绝', async () => {
       await enqueueRoleDraft({ roleId: '设计师', description: 'd', systemPrompt: 'p', sessionId: 's', timestamp: 1 });
-      const r = await enqueueRoleDraft({ roleId: '设计师', description: 'd2', systemPrompt: 'p2', sessionId: 's', timestamp: 2 });
+      const r = await enqueueRoleDraft({ roleId: '设计师', description: 'd2', systemPrompt: 'p2', sessionId: 'other', timestamp: 2 });
       expect(r.draft).toBeNull();
       expect(r.reason).toMatch(/待确认/);
     });

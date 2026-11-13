@@ -4,8 +4,9 @@
 // 收在「高级参数」折叠区；无描述时显示引导文案（入口样式，不接功能）。
 // ============================================================================
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { CronJobDefinition } from '@shared/contract';
+import type { AwaitingApprovalRun } from '@shared/contract/sessionAutomation';
 import { Activity, ChevronRight, Copy, LockKeyhole, Pencil, Play, Power, Sparkles, Trash2 } from 'lucide-react';
 import { useCronStore } from '../../../stores/cronStore';
 import { useI18n } from '../../../hooks/useI18n';
@@ -24,26 +25,27 @@ import {
 import { CronExecutionList } from './CronExecutionList';
 import { CronExecutionDetail } from './CronExecutionDetail';
 import { CLOUD_ROLE_BOUND_ERROR } from './CronCloudRoleRestriction';
-import { Button } from '../../primitives';
 import { CronRunsOnPill } from './CronRunsOnSelector';
 import { CronResultChannelSummary } from './CronResultChannel';
 import { useEventScheduleNames } from './useChannelCatalog';
 import { CronGroupListenCheck } from './CronGroupListenCheck';
 import { CronWebhookLinkBlock } from './CronWebhookLinkBlock';
 import { CronEventDecisionsPanel } from './CronEventDecisionsPanel';
-import { awaitingApprovalLabel } from './awaitingApprovalLabel';
-import { getBuiltinJobDisplay } from './builtinJobDisplay';
+import { CronJobApprovalHint } from './CronJobApprovalHint';
+import { getBuiltinJobDisplay, getVisibleJobTags } from './builtinJobDisplay';
 import { isWebhookCronJob } from '@shared/cronWebhookJob';
 import { CronWriteScopePanel } from './CronWriteScopePanel';
+import { formatDetailDuration } from './formatDetailDuration';
 
 interface CronJobDetailProps {
   job: CronJobDefinition | null;
   /** 等批准运行（N-CRON-UNATTENDED-BASH-PARK-STUCK）：头 chip 换 amber 徽章 + 一句提示 + 去处理。 */
-  awaitingRun?: { executionId: string | null; commandPreview?: string } | null;
+  awaitingRun?: AwaitingApprovalRun | null;
   onReviewAwaiting?: () => void;
+  onApprovalResolved?: () => Promise<void>;
 }
 
-export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun = null, onReviewAwaiting }) => {
+export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun = null, onReviewAwaiting, onApprovalResolved }) => {
   const { t, language } = useI18n();
   const cc = t.cronCenter;
   const {
@@ -59,6 +61,11 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
   const [isTriggering, setIsTriggering] = useState(false);
   const [toggleError, setToggleError] = useState<string | null>(null);
+  const approvalEntry = useRef<HTMLDivElement>(null);
+  const awaitingByJobId = useMemo(
+    () => job && awaitingRun ? new Map([[job.id, awaitingRun]]) : undefined,
+    [job, awaitingRun],
+  );
   // event 摘要的账号/群显示名（通道目录）；目录没有的回落 id。挂在早退 return 之前（hook 不得条件调用）。
   const eventNamesFor = useEventScheduleNames();
 
@@ -98,12 +105,13 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
   }
 
   const latest = latestExecutions[job.id];
-  const latestMeta = getLatestExecutionStatus(latest);
-  const latestLabel = cc.status[latest?.status ?? 'none'];
+  const latestMeta = getLatestExecutionStatus(latest, cc);
+  const latestLabel = latestMeta.label;
   const awaitingApproval = awaitingRun != null;
   const builtinDisplay = getBuiltinJobDisplay(job, language);
   const displayName = builtinDisplay?.name ?? job.name;
   const displayDescription = builtinDisplay?.description ?? job.description;
+  const displayTags = getVisibleJobTags(job);
   const cronTimeZone = job.schedule.type === 'cron' ? job.schedule.timezone : undefined;
   const scheduleSummary = job.schedule.type === 'cron'
     ? formatCronScheduleLabelWithZone(job.schedule.expression, job.schedule.timezone, language)
@@ -142,32 +150,25 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
               <h3 className="text-lg font-semibold text-zinc-100">{displayName}</h3>
               {awaitingApproval ? (
                 <span
-                  className="rounded-full border border-badge-warning/40 bg-amber-500/15 px-2 py-1 text-xs text-badge-warning"
+                  className="shrink-0 whitespace-nowrap rounded-full border border-badge-warning/40 bg-amber-500/15 px-2 py-1 text-xs text-badge-warning"
                   data-testid="cron-detail-awaiting-approval"
                 >
                   {cc.awaitingApprovalBadge}
                 </span>
               ) : (
-                <span className={`rounded-full px-2 py-1 text-xs ${latestMeta.className}`}>
+                <span className={`shrink-0 whitespace-nowrap rounded-full px-2 py-1 text-xs ${latestMeta.className}`}>
                   {cc.latest.replace('{label}', latestLabel)}
                 </span>
               )}
             </div>
-            {awaitingApproval && (
-              <div
-                className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-badge-warning/30 bg-amber-500/5 px-3 py-2"
-                data-testid="cron-detail-awaiting-approval-hint"
-              >
-                <span className="text-xs text-zinc-400">{awaitingApprovalLabel(cc.awaitingApprovalWithPreview, awaitingRun?.commandPreview) ?? cc.awaitingApprovalHint}</span>
-                <Button
-                  type="button"
-                  variant="primary"
-                  size="sm"
-                  onClick={onReviewAwaiting}
-                  data-testid="cron-detail-awaiting-approval-action"
-                >
-                  {cc.awaitingApprovalAction}
-                </Button>
+            {awaitingRun && (
+              <div ref={approvalEntry} tabIndex={-1}>
+                <CronJobApprovalHint
+                  key={awaitingRun.requestId}
+                  run={awaitingRun}
+                  onReview={onReviewAwaiting}
+                  onResolved={onApprovalResolved}
+                />
               </div>
             )}
             <div className="mt-2 max-w-3xl text-sm">
@@ -176,7 +177,7 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
               ) : (
                 // 引导文案 + 入口样式（不接功能）：虚线描边 = 可补全的占位，不是报错
                 <span
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-zinc-700 px-2.5 py-1 text-xs text-zinc-500"
+                  className="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 rounded-lg border border-dashed border-zinc-700 px-2.5 py-1 text-xs text-zinc-500"
                   data-testid="cron-detail-description-guide"
                 >
                   <Sparkles className="h-3 w-3" />
@@ -189,14 +190,14 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
           <div className="flex flex-wrap items-center gap-1">
             <button /* ds-allow:button: 详情头部超小文本按钮组（py-1.5 text-xs），primitive 最小 sm 仍更大 */
               onClick={() => openEditEditor(job.id)}
-              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+              className="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
             >
               <Pencil className="h-3.5 w-3.5" />
               {cc.edit}
             </button>
             <button /* ds-allow:button: 同上，超小文本按钮组 */
               onClick={handleToggleEnabled}
-              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+              className="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
             >
               <Power className="h-3.5 w-3.5" />
               {job.enabled ? cc.disable : cc.enable}
@@ -204,14 +205,14 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
             <button /* ds-allow:button: 同上，超小文本按钮组（蓝色语义） */
               onClick={handleTrigger}
               disabled={isTriggering}
-              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-badge-info transition-colors hover:bg-blue-500/10 hover:text-badge-info disabled:opacity-50"
+              className="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-badge-info transition-colors hover:bg-blue-500/10 hover:text-badge-info disabled:opacity-50"
             >
               <Play className="h-3.5 w-3.5" />
               {isTriggering ? cc.triggering : cc.trigger}
             </button>
             <button /* ds-allow:button: 同上，超小文本按钮组（红色语义） */
               onClick={handleDelete}
-              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-zinc-500 transition-colors hover:bg-red-500/10 hover:text-badge-danger"
+              className="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-zinc-500 transition-colors hover:bg-red-500/10 hover:text-badge-danger"
             >
               <Trash2 className="h-3.5 w-3.5" />
               {cc.delete}
@@ -288,17 +289,17 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
             <InfoCard label={cc.cardCreatedAt} value={formatDateTime(job.createdAt, language)} />
             <InfoCard label={cc.cardUpdatedAt} value={formatDateTime(job.updatedAt, language)} />
             <InfoCard label={cc.cardMaxRetries} value={job.maxRetries != null ? String(job.maxRetries) : '0'} />
-            <InfoCard label={cc.cardRetryDelay} value={job.retryDelay != null ? `${job.retryDelay}ms` : '—'} />
-            <InfoCard label={cc.cardTimeout} value={job.timeout != null ? `${job.timeout}ms` : '—'} />
+            <InfoCard label={cc.cardRetryDelay} value={formatDetailDuration(job.retryDelay, cc.detailDurationUnits)} />
+            <InfoCard label={cc.cardTimeout} value={formatDetailDuration(job.timeout, cc.detailDurationUnits)} />
           </div>
         </details>
 
-        {job.tags && job.tags.length > 0 && (
+        {displayTags.length > 0 && (
           <div className="mt-4 flex flex-wrap gap-2">
-            {job.tags.map((tag) => (
+            {displayTags.map((tag) => (
               <span
                 key={tag}
-                className="rounded-full bg-zinc-800 px-2.5 py-1 text-xs text-zinc-300"
+                className="shrink-0 whitespace-nowrap rounded-full bg-zinc-800 px-2.5 py-1 text-xs text-zinc-300"
               >
                 #{tag}
               </span>
@@ -323,11 +324,18 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
                 executions={executions}
                 runsOnByJobId={{ [job.id]: job.runsOn }}
                 selectedExecutionId={selectedExecutionId}
-                onSelectExecution={setSelectedExecutionId}
+                awaitingByJobId={awaitingByJobId}
+                onSelectExecution={(executionId) => {
+                  setSelectedExecutionId(executionId);
+                  if (awaitingRun?.executionId === executionId) {
+                    approvalEntry.current?.scrollIntoView({ block: 'nearest' });
+                    approvalEntry.current?.focus({ preventScroll: true });
+                  }
+                }}
               />
             </section>
             <section className="min-h-0 overflow-y-auto">
-              <CronExecutionDetail execution={selectedExecution} jobName={job.name} runsOn={job.runsOn} />
+              <CronExecutionDetail execution={selectedExecution} jobName={displayName} runsOn={job.runsOn} />
             </section>
           </div>
         )}
@@ -338,7 +346,7 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
 
 const InfoCard: React.FC<{ label: string; value: string; testId?: string }> = ({ label, value, testId }) => (
   <div className="rounded-xl border border-zinc-800 bg-zinc-950/50 p-3" data-testid={testId}>
-    <div className="text-xs text-zinc-500">{label}</div>
+    <div className="truncate text-xs text-zinc-500" title={label}>{label}</div>
     <div className="mt-1 text-sm text-zinc-200">{value}</div>
   </div>
 );

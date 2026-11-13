@@ -36,7 +36,7 @@ describe('executeCreateSession — 复用的草稿就是当前会话时给出回
     (globalThis as Record<string, unknown>).window = {
       domainAPI: { invoke: mockDomainInvoke },
     };
-    mockDomainInvoke.mockResolvedValue({ success: true, data: null });
+    mockDomainInvoke.mockImplementation(async (_domain: string, action: string) => ({ success: true, data: action === 'getMessages' ? [] : null }));
     useAppStore.setState({ composerFocusNonce: 0 });
     reusable = makeDraft('draft-1');
     state = {
@@ -55,7 +55,7 @@ describe('executeCreateSession — 复用的草稿就是当前会话时给出回
         state = { ...state, ...patch };
       },
       invalidatePendingSessionSwitches: () => {},
-      findReusableNewSessionDraft: () => reusable,
+      findReusableNewSessionDraft: ({ sessions }) => sessions.find((session) => session.id === reusable?.id) ?? null,
     };
   });
 
@@ -66,6 +66,15 @@ describe('executeCreateSession — 复用的草稿就是当前会话时给出回
     expect(state.switchSession).not.toHaveBeenCalled();
     // 没有新建会话：create 从未发出。
     expect(mockDomainInvoke.mock.calls.some(([, action]) => action === 'create')).toBe(false);
+  });
+
+  it('an English placeholder uses the same reusable-draft path', async () => {
+    reusable = { ...makeDraft('draft-1'), title: 'New conversation' };
+    state.sessions = [reusable];
+    await executeCreateSession(deps, 'New conversation');
+    expect(useAppStore.getState().composerFocusNonce).toBe(1);
+    expect(mockDomainInvoke.mock.calls.some(([, action]) => action === 'create')).toBe(false);
+    expect(state.sessions[0].title).toBe('New conversation');
   });
 
   it('草稿是别的会话时走切换，不发聚焦请求', async () => {

@@ -46,12 +46,18 @@ export function registerAgentCancelRoute(
       res.status(400).json({ error: 'Invalid cancel target', code: 'INVALID_PAYLOAD' });
       return;
     }
-    const { runId, sessionId } = parsedBody.data;
+    const { runId, sessionId, abandonParked } = parsedBody.data;
     const target = runRegistry.resolve({ runId, sessionId });
     if (!target) {
       // 恢复成 waiting 的 durable run 没有 handle，resolve() 查不到；不兜底的话
       // 路由只会回 "No active agent"，run 永远到不了终态，同一会话也起不了新 run。
-      const recovered = await runRegistry.terminalRecoveredWaitingRun({ runId, sessionId });
+      // user_stop 停靠除外：那是用户自己停出来的（保留「继续」），重复 Stop 对它是
+      // no-op，只有显式「放弃」（abandonParked）才终态化。
+      const recovered = await runRegistry.terminalRecoveredWaitingRun(
+        { runId, sessionId },
+        undefined,
+        { abandonParked: abandonParked === true },
+      );
       if (recovered) {
         if (!recovered.joined) onRecoveredWaitingCancelled?.({ runId: recovered.runId, sessionId: recovered.sessionId });
         res.json({ message: 'Cancelled', runId: recovered.runId, sessionId: recovered.sessionId });

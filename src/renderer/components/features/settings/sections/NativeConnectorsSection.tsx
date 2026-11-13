@@ -586,6 +586,9 @@ export const NativeConnectorsSection: React.FC<NativeConnectorsSectionProps> = (
           const description = connectorText.grid.descriptions[
             row.id as keyof typeof connectorText.grid.descriptions
           ] ?? `${connectorText.capabilitiesPrefix}${formatCapabilities(row.status?.capabilities ?? [], connectorText)}`;
+          const statusDetail = row.enabled && row.status?.readiness
+            ? connectorText.grid.statusDetail[row.status.readiness]
+            : description;
 
           return (
             <div
@@ -618,7 +621,7 @@ export const NativeConnectorsSection: React.FC<NativeConnectorsSectionProps> = (
                 </div>
               </div>
               <p className="mt-3 text-xs leading-relaxed text-zinc-400">
-                {row.status?.detail || description}
+                {statusDetail}
               </p>
               {lifecycleActions.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-2">

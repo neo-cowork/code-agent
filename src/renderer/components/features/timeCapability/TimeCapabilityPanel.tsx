@@ -250,7 +250,7 @@ const TimeCapabilityPanel: React.FC = () => {
     closeEditor,
   } = useCronStore();
   const openSettingsTab = useAppStore((state) => state.openSettingsTab);
-  const { language } = useI18n();
+  const { t, language } = useI18n();
   const capabilityRegistry = useWorkbenchCapabilityRegistry();
   const currentTurnScope = useCurrentTurnCapabilityScope();
   const {
@@ -365,7 +365,7 @@ const TimeCapabilityPanel: React.FC = () => {
 
   const renderCronJobRow = (job: CronJobDefinition, options?: { showError?: boolean }) => {
     const latest = latestExecutions[job.id];
-    const latestMeta = getLatestExecutionStatus(latest);
+    const latestMeta = getLatestExecutionStatus(latest, t.cronCenter);
     const isTriggering = triggeringJobId === job.id;
     const displayName = getBuiltinJobDisplay(job, language)?.name ?? job.name;
     const scheduleSummary = job.schedule.type === 'cron'

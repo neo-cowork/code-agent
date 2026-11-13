@@ -9,6 +9,15 @@ import os from 'os';
 import type { IPCRequest, IPCResponse } from '../../../src/shared/ipc';
 
 const mockConfigDir = vi.hoisted(() => ({ dir: '' }));
+const receipts = vi.hoisted(() => ({ persist: vi.fn(), broadcast: vi.fn() }));
+vi.mock('../../../src/host/services/infra/sessionManager', () => ({
+  getSessionManager: () => ({ addMessageToSession: receipts.persist }),
+}));
+vi.mock('../../../src/host/task/TaskManager', () => ({
+  getTaskManager: () => ({ emitAgentEventForSession: receipts.broadcast }),
+}));
+vi.mock('../../../src/host/services/roleAssets/roleFirstWake', () => ({ enqueueFirstWake: vi.fn() }));
+import { enqueueRoleDraft, generateRoleAgentMd } from '../../../src/host/services/roleAssets/roleDraftQueue';
 
 vi.mock('../../../src/host/config/configPaths', () => ({
   CONFIG_DIR_NEW: '.code-agent',
@@ -144,6 +153,51 @@ describe('roles.ipc (domain:roles)', () => {
     await fs.rm(mockConfigDir.dir, { recursive: true, force: true });
   });
 
+  describe('confirmDraft edit receipt', () => {
+    async function draft(edit = true, validOld = true) {
+      if (edit) {
+        await ensureRoleAssetDirs('研究员');
+        await fs.mkdir(path.join(mockConfigDir.dir, 'agents'), { recursive: true });
+        await fs.writeFile(path.join(mockConfigDir.dir, 'agents', '研究员.md'), validOld
+          ? generateRoleAgentMd({ roleId: '研究员', description: 'Research', tools: ['Read', 'Write'], systemPrompt: 'Cite sources.' })
+          : 'invalid old definition');
+      }
+      const result = await enqueueRoleDraft({
+        roleId: '研究员', editingRoleId: edit ? '研究员' : undefined,
+        description: 'Research', tools: ['read', 'calendar'], systemPrompt: 'Cite sources.\nCheck calendar.', sessionId: 'edit-session',
+      });
+      expect(result.draft).not.toBeNull();
+      return result.draft!.id;
+    }
+    it('persists and broadcasts a registered system receipt through production confirmDraft', async () => {
+      const res = await invoke('confirmDraft', { draftId: await draft() });
+      expect(res.success).toBe(true);
+      expect(receipts.persist).toHaveBeenCalledExactlyOnceWith('edit-session', expect.objectContaining({
+        role: 'system', content: 'Expert updated.',
+        metadata: { roleEditReceipt: { roleId: '研究员', addedTools: ['calendar'], removedTools: ['Write'],
+          descriptionChanged: false, promptChanged: true, diffAvailable: true } },
+      }));
+      expect(receipts.broadcast).toHaveBeenCalledExactlyOnceWith('edit-session', { type: 'message', data: receipts.persist.mock.calls[0][1] });
+    });
+    it('keeps confirmation successful when writing the receipt fails', async () => {
+      receipts.persist.mockRejectedValueOnce(new Error('database unavailable'));
+      expect((await invoke('confirmDraft', { draftId: await draft() })).success).toBe(true);
+      expect(receipts.broadcast).not.toHaveBeenCalled();
+    });
+    it('records an unavailable diff without preventing the edit', async () => {
+      expect((await invoke('confirmDraft', { draftId: await draft(true, false) })).success).toBe(true);
+      expect(receipts.persist).toHaveBeenCalledWith('edit-session', expect.objectContaining({
+        metadata: { roleEditReceipt: expect.objectContaining({ diffAvailable: false }) },
+      }));
+    });
+    it('does not emit an edit receipt for a newly created role or a failed confirm', async () => {
+      expect((await invoke('confirmDraft', { draftId: 'missing' })).success).toBe(false);
+      expect((await invoke('confirmDraft', { draftId: await draft(false) })).success).toBe(true);
+      expect(receipts.persist).not.toHaveBeenCalled();
+      expect(receipts.broadcast).not.toHaveBeenCalled();
+    });
+  });
+
   describe('list', () => {
     it('returns empty list when no persistent roles', async () => {
       const res = await invoke<RolePanelEntry[]>('list');
@@ -176,6 +230,14 @@ describe('roles.ipc (domain:roles)', () => {
       expect(entry.description).toContain('调研');
       expect(entry.memoryCount).toBe(2);
       expect(entry.lastWork).toBe('2026-06-03 产出报告');
+    });
+
+    it('list displays the label for a legacy no-artifact history summary', async () => {
+      await ensureRoleAssetDirs('研究员');
+      await appendRoleHistory('研究员', { date: '2026-11-10', artifactLabel: '检查本周日程', artifactRef: '-', summary: '（无产物落盘）' });
+      const res = await invoke<RolePanelEntry[]>('list');
+      expect(res.success).toBe(true);
+      expect(res.data?.[0].lastWork).toBe('2026-11-10 检查本周日程');
     });
 
     it('returns null last work when a role has no history', async () => {

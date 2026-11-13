@@ -5,6 +5,7 @@ import type {
   ContextInjectionSource,
 } from '../../../context/contextEventLedger';
 import { getSessionManager } from '../../../services';
+import { createSessionAccessRetry, isSessionNotAccessibleError } from '../../../services/commandCenter/sessionAccessRetry';
 import type { SystemEventMessageMetadata } from '../../../../shared/contract/systemEventRegistry';
 import { estimateTokens } from '../../../context/tokenOptimizer';
 import { getContextEventLedger } from '../../../context/contextEventLedger';
@@ -12,6 +13,7 @@ import type { ContextAssemblyCtx } from './shared';
 import type { AdvisoryTailKey } from '../turnState';
 import { persistRuntimeState } from '../runtimeStatePersistence';
 import { attachMessageCorrelation } from '../turnQuality';
+import { MAX_STEPS_REASON } from '../maxStepsFallback';
 import { getHarnessKnob } from '../harnessKnobs';
 import {
   logger,
@@ -240,13 +242,20 @@ export function inferBufferedSystemMessageCategory(ctx: ContextAssemblyCtx, cont
  * formatTerminalError 只取 message，不带堆栈），所以写成人话而不是技术描述。
  */
 class MessagePersistenceError extends Error {
-  constructor() {
-    super('对话记录写入失败，已停止本轮工具执行，避免产生记录里查不到的改动。请检查磁盘空间和数据库状态后重试。');
+  constructor(loginChanged = false) {
+    super(loginChanged
+      ? '登录状态已变化，任务已停止，可以重新登录后重试。'
+      : '对话记录写入失败，已停止本轮工具执行，避免产生记录里查不到的改动。请检查磁盘空间和数据库状态后重试。');
     this.name = 'MessagePersistenceError';
   }
 }
 
 export async function addAndPersistMessage(ctx: ContextAssemblyCtx, message: Message): Promise<void> {
+  if (ctx.runtime.foregroundToolFace && ctx.runtime.maxIterations > 1
+    && ctx.runtime.control.forceFinalResponseReason === MAX_STEPS_REASON
+    && message.role === 'assistant' && !message.toolCalls?.length) {
+    message.metadata = { ...message.metadata, stoppedByStepLimit: true };
+  }
   message.metadata = attachMessageCorrelation(ctx.runtime, message.metadata);
   if (ctx.runtime.historyVisibility === 'meta') {
     message.isMeta = true;
@@ -265,35 +274,75 @@ export async function addAndPersistMessage(ctx: ContextAssemblyCtx, message: Mes
   // （一次性/无持久化场景）本就不写库，那不是故障，不能拿它挡住工具。
   let attempted = false;
 
-  if (ctx.runtime.persistMessage) {
-    attempted = true;
-    try {
-      await ctx.runtime.persistMessage(message);
-      persisted = true;
-    } catch (error) {
-      logger.warn('[ContextAssembly] persistMessage callback failed; falling back to sessionManager', {
-        sessionId: ctx.runtime.sessionId,
-        messageId: message.id,
-        role: message.role,
-        error: error instanceof Error ? error.message : String(error),
-      });
+  let persistenceError: unknown;
+  const persist = async (): Promise<void> => {
+    if (ctx.runtime.persistMessage) {
+      attempted = true;
+      try {
+        await ctx.runtime.persistMessage(message);
+        persisted = true;
+      } catch (error) {
+        persistenceError = error;
+        logger.warn('[ContextAssembly] persistMessage callback failed; falling back to sessionManager', {
+          sessionId: ctx.runtime.sessionId,
+          messageId: message.id,
+          role: message.role,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
-  }
 
-  if (!persisted && ctx.runtime.sessionId) {
-    attempted = true;
-    try {
-      const sessionManager = getSessionManager();
-      await sessionManager.addMessageToSession(ctx.runtime.sessionId, message);
-      persisted = true;
-    } catch (error) {
-      logger.warn('[ContextAssembly] sessionManager.addMessageToSession failed', {
-        sessionId: ctx.runtime.sessionId,
-        messageId: message.id,
-        role: message.role,
-        error: error instanceof Error ? error.message : String(error),
-      });
+    if (!persisted && ctx.runtime.sessionId) {
+      attempted = true;
+      try {
+        const sessionManager = getSessionManager();
+        await sessionManager.addMessageToSession(ctx.runtime.sessionId, message);
+        persisted = true;
+      } catch (error) {
+        persistenceError = error;
+        logger.warn('[ContextAssembly] sessionManager.addMessageToSession failed', {
+          sessionId: ctx.runtime.sessionId,
+          messageId: message.id,
+          role: message.role,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
+  };
+  await persist();
+
+  if (!persisted && isSessionNotAccessibleError(persistenceError)) {
+    logger.warn('[ContextAssembly] waiting for session owner before persisting message', {
+      reason: 'message_persistence_waiting_for_owner',
+      sessionId: ctx.runtime.sessionId,
+      messageId: message.id,
+    });
+    // This await is before messageProcessor dispatches tools. Each retry still uses
+    // the original owner-filtered persistence paths; no write authority is retained.
+    await new Promise<void>((resolve, reject) => {
+      createSessionAccessRetry({
+        reasonKey: 'message_persistence',
+        attemptsUsed: 1,
+        logContext: { sessionId: ctx.runtime.sessionId, messageId: message.id },
+        attempt: async () => {
+          await persist();
+          if (!persisted) throw persistenceError;
+        },
+        onSettled: (outcome) => {
+          if (outcome === 'written') {
+            logger.warn('[ContextAssembly] message persistence resumed for session owner', {
+              reason: 'message_persistence_owner_resumed',
+              sessionId: ctx.runtime.sessionId,
+              messageId: message.id,
+            });
+            resolve();
+          } else {
+            reject(new MessagePersistenceError(outcome === 'exhausted'));
+          }
+        },
+        logger,
+      }).start();
+    });
   }
 
   if (persisted) {

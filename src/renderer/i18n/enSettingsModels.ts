@@ -277,6 +277,7 @@ export const enSettingsModels = {
         'When on, a region edit that cannot pixel-guarantee the unselected area is unchanged is cancelled with a notice (instead of handing you an image whose other areas may have been silently altered). Off by default: best-effort lock, and when it cannot be enforced the model result is still used so your editing is not interrupted.',
     },
     providerDoctor: {
+      probeAuthMismatch: 'The test address returned {status}, but your recent real calls succeeded — the test path may differ from the real one.',
       title: 'System diagnostics',
       pageDescription: 'Checks 9 categories of system health — environment, network, config, database and more. Failures link to one-click fixes.',
       exportLogs: 'Export logs',

@@ -67,7 +67,8 @@ const FOREGROUND_BACKGROUND_PATH = path.resolve(
 );
 
 describe('executeSpawnAgent 深度截断接线', () => {
-const source = readFileSync(SPAWN_AGENT_PATH, 'utf8');
+const source = readFileSync(SPAWN_AGENT_PATH, 'utf8')
+  + readFileSync(path.join(path.dirname(SPAWN_AGENT_PATH), 'spawnSingleAgent.ts'), 'utf8');
 const durableLaunchSource = readFileSync(DURABLE_LAUNCH_PATH, 'utf8');
 const foregroundBackgroundSource = readFileSync(FOREGROUND_BACKGROUND_PATH, 'utf8');
 

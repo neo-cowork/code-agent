@@ -66,6 +66,12 @@ export const DAG_SCHEDULER = {
   DEFAULT_MAX_RETRIES: 0,
 } as const;
 
+/** 账号会话校验超时 */
+export const AUTH_TIMEOUTS = {
+  /** 拉取 supabase session 的超时（启动后台校验与按需重校验共用） */
+  SESSION_FETCH_MS: 5_000,
+} as const;
+
 /** 服务初始化超时 */
 export const SERVICE_TIMEOUTS = {
   /** MCP 连接 */
@@ -80,6 +86,8 @@ export const SERVICE_TIMEOUTS = {
 
 export const NOTIFICATION_BUDGET = {
   WINDOW_MS: 15 * 60_000,
+  /** 窗口内暂存队列的落盘文件名（位于 userData 目录），重启后补发一条汇总。 */
+  HELD_FILE_NAME: 'held-notifications.json',
 } as const;
 
 /** 用户交互超时 */
@@ -97,7 +105,7 @@ export const INTERACTION_TIMEOUTS = {
    * 等待用户，等待期间由 beginHumanWait/endHumanWait 暂停该会话的工具计时。
    */
   PARKED_APPROVAL: 86_400_000,
-  /** cron/heartbeat 停车审批无人应答的降级期限（30 分钟）；channel/voice 仍走上面的 24h 兜底。 */
+  /** cron/heartbeat 及断线续跑的停车审批无人应答降级期限（30 分钟）；channel/voice 仍走 24h 兜底。 */
   UNATTENDED_PARKED_APPROVAL_DEGRADE: 1_800_000,
   /** MCP Elicitation 用户输入超时 */
   MCP_ELICITATION: 60_000,
@@ -221,10 +229,19 @@ export const LIBRARY_TIMEOUTS = {
 
 /** 浏览器操作超时 */
 export const BROWSER_TIMEOUTS = {
+  /** Minimum age before crash-leftover isolated profiles may be reclaimed. */
+  ISOLATED_PROFILE_SWEEP_GRACE: 10 * 60_000,
+  /** Bound size accounting across one sweep; incomplete profiles are kept. */
+  ISOLATED_PROFILE_SWEEP_MAX_ENTRIES: 10_000,
+  /** Reject oversized or malformed owner metadata without an unbounded read. */
+  ISOLATED_PROFILE_SWEEP_OWNER_MAX_BYTES: 1_024,
+  ISOLATED_PROFILE_SWEEP_WALK_BUDGET: 2_000,
   /** 浏览器操作默认超时 */
   ACTION_DEFAULT: 30_000,
   /** 等待选择器超时 */
   WAIT_SELECTOR: 5_000,
+  /** 选择器填写（page.fill）快速失败超时 */
+  FILL_SELECTOR: 5_000,
   /** 等待超时 */
   WAIT_DEFAULT: 1_000,
   /** Computer Use 等待超时 */
@@ -239,6 +256,10 @@ export const BROWSER_TIMEOUTS = {
    * 防止进程崩溃后 binding 永不释放而租约永远不过期。
    */
   LEASE_IN_USE_CEILING: 4 * 60 * 60_000,
+  /** Chrome 父进程看门狗：探测 Neo 服务进程是否还活着的间隔（秒，传给 sh sleep） */
+  PARENT_WATCHDOG_POLL_SEC: 2,
+  /** Chrome 父进程看门狗：SIGTERM 之后到 SIGKILL 残留进程的宽限（秒） */
+  PARENT_WATCHDOG_KILL_GRACE_SEC: 2,
 } as const;
 
 /** artifact_runnable 断言家族超时（浏览器类走 GAME_VALIDATION_TIMEOUTS / ARTIFACT_PREVIEW_HEALTH） */
@@ -273,6 +294,8 @@ export const TEST_TIMEOUTS = {
 
 /** Startup gates must not remain blocked forever when the renderer signal is lost. */
 export const STARTUP_TIMEOUTS = {
+  /** Warn once when an accepted send has not dispatched its first main-model request. */
+  FIRST_MODEL_REQUEST_WARN_MS: 30_000,
   RENDERER_WINDOW_READY: 5_000,
 } as const;
 
@@ -451,6 +474,8 @@ export const SUBAGENT_EXECUTION_TIMEOUTS = {
   FOREGROUND_TO_BACKGROUND_BUDGET: 600_000,
   /** 子 agent role execution timeout 下限，必须大于前台转后台预算。 */
   ROLE_EXECUTION_MINIMUM: 900_000,
+  /** 后台子代理完成后，等 worktree 清理结果并入完成通知的上限。 */
+  BACKGROUND_WORKTREE_NOTE_WAIT: 15_000,
 } as const;
 
 /** 后台/子 agent 完成提醒预算。 */
@@ -493,6 +518,11 @@ export const RENDERER_POLLING = {
   BACKOFF_FACTOR: 2,
   /** 传输层连接错误日志节流窗口：同一通道在此窗口内最多打一条，防后端不可达时刷屏 */
   TRANSPORT_ERROR_LOG_THROTTLE: 10_000,
+  /**
+   * 页面启动时 host 推来的审批快照（snapshot:true）先于 agent:event 监听器注册到达，
+   * 在此窗口内注册的新监听器补发一次（N-FIX-BGPANEL-STOP-TERMINAL-FU1-FU1-FU1）。
+   */
+  SSE_PERMISSION_SNAPSHOT_REPLAY_WINDOW: 10_000,
 } as const;
 
 /** 工具执行超时警告阈值 (ms)，按工具名或前缀匹配 */

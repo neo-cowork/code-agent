@@ -85,7 +85,7 @@ export const CronJobList: React.FC<CronJobListProps> = ({ awaitingByJobId }) => 
             </button>
             <button /* ds-allow:button: 描边超小尺寸按钮（py-1.5 text-xs），primitive 最小 sm 仍更大 */
               onClick={openCreateEditor}
-              className="inline-flex items-center gap-1 rounded-lg border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-300 transition-colors hover:border-zinc-600 hover:bg-zinc-800 hover:text-zinc-100"
+              className="shrink-0 whitespace-nowrap inline-flex items-center gap-1 rounded-lg border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-300 transition-colors hover:border-zinc-600 hover:bg-zinc-800 hover:text-zinc-100"
             >
               <Plus className="h-3.5 w-3.5" />
               {cc.create}
@@ -140,8 +140,8 @@ export const CronJobList: React.FC<CronJobListProps> = ({ awaitingByJobId }) => 
             {filteredJobs.map((job) => {
               const isSelected = job.id === selectedJobId;
               const latest = latestExecutions[job.id];
-              const latestMeta = getLatestExecutionStatus(latest);
-              const latestLabel = cc.status[latest?.status ?? 'none'];
+              const latestMeta = getLatestExecutionStatus(latest, cc);
+              const latestLabel = latestMeta.label;
               const awaitingApproval = awaitingByJobId?.has(job.id) ?? false;
               const triggerKind = getCronTriggerKind(job);
               const builtinDisplay = getBuiltinJobDisplay(job, language);
@@ -207,7 +207,7 @@ export const CronJobList: React.FC<CronJobListProps> = ({ awaitingByJobId }) => 
                     )}
                     {/* 触发源 chip：信息性标识统一中性 zinc，彩色只留给「要你处理的地方」 */}
                     <span
-                      className="rounded-full border border-zinc-700/70 bg-zinc-900 px-2 py-0.5 text-[11px] text-zinc-400"
+                      className="shrink-0 whitespace-nowrap rounded-full border border-zinc-700/70 bg-zinc-900 px-2 py-0.5 text-[11px] text-zinc-400"
                       data-testid="cron-job-trigger-kind"
                     >
                       {cc.triggerKind[triggerKind]}

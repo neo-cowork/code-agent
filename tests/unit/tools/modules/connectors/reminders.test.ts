@@ -140,6 +140,19 @@ describe('remindersModule (native)', () => {
       expect(meta.detail).not.toContain('set a1 to');
     });
 
+    it('uses list-specific guidance for list_reminders timeouts only', async () => {
+      execMock.mockRejectedValue(Object.assign(new Error('Command failed: osascript -e tell application "Reminders"'), { killed: true }));
+      const result = await run({ action: 'list_reminders' });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toMatch(/列表名称.*减少读取条数/);
+        expect(result.error).not.toMatch(/osascript|tell application|Command failed/);
+      }
+      const lists = await run({ action: 'list_lists' });
+      expect(lists.ok).toBe(false);
+      if (!lists.ok) expect(lists.error).not.toMatch(/列表名称.*减少读取条数/);
+    });
+
     it('keeps connector validation errors intact instead of rewriting to a retry hint', async () => {
       execMock.mockRejectedValue(new Error('list is required for get_reminder'));
       const result = await run({ action: 'get_status' });

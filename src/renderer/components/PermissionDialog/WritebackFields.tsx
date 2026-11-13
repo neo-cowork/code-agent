@@ -12,6 +12,7 @@ import { formatDateTime } from '../../utils/formatDateTime';
 import React, { useState } from 'react';
 import { EDITABLE_TOOL_FIELDS, type EditableField } from '@shared/contract';
 import { Input } from '../primitives/Input';
+import { DateTimeInput24 } from '../primitives/DateTimeInput24';
 import { Textarea } from '../primitives/Textarea';
 import { useI18n } from '../../hooks/useI18n';
 
@@ -312,11 +313,23 @@ export function WritebackEditForm({
             autoResize
             onChange={(e) => onChange({ ...draft, [field.key]: e.target.value })}
           />
+        ) : field.kind === 'datetime' ? (
+          <>
+            <DateTimeInput24
+              value={value}
+              testId={`writeback-edit-${field.key}`}
+              dateLabel={labels[field.key] ?? field.key}
+              hourLabel={t.cronCenter.simpleHourLabel}
+              minuteLabel={t.cronCenter.simpleMinuteLabel}
+              size="sm"
+              onChange={(next) => onChange({ ...draft, [field.key]: next })}
+            />
+            {errorMessage && <p className="mt-1 text-xs text-badge-danger">{errorMessage}</p>}
+          </>
         ) : (
           <Input
             {...common}
-            type={field.kind === 'datetime' ? 'datetime-local' : 'text'}
-            step={field.kind === 'datetime' ? '0.001' : undefined}
+            type="text"
             inputSize="sm"
             placeholder={field.kind === 'string_list' ? w.listPlaceholder : undefined}
             onChange={(e) => onChange({ ...draft, [field.key]: e.target.value })}

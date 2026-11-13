@@ -21,6 +21,7 @@ import { buildAgentPointerTimeline } from '../../../shared/utils/agentPointerEvi
 import { getAttachmentId } from '../../../shared/utils/messageAttachments';
 import { redactToolResultSecrets } from '../../security/secretRedaction';
 import * as fs from 'fs';
+import * as path from 'path';
 
 const logger = createLogger('MessageConverter');
 
@@ -407,6 +408,13 @@ function formatBytes(bytes: number | undefined): string | undefined {
   return `${bytes} B`;
 }
 
+// image_analyze 是延迟工具（不在核心工具表里）：提示里点名它时必须同时交代怎么拿到它，
+// 否则模型会把工具名当文件名去 Glob/Grep（realrun47）。前台文字轮的工具白名单里可能压根没有
+// ToolSearch，所以加载方式写成有条件的，并明确「拿不到就别找」。
+const IMAGE_ANALYZE_LOAD_NOTE =
+  'image_analyze 是延迟加载的工具：只有工具列表里有 ToolSearch 时，才先调用 ToolSearch（参数 {"query":"select:image_analyze"}）加载它；'
+  + '工具列表里没有 ToolSearch 或 image_analyze 时就不要找它。工具名不是文件，绝不要用 Glob/Grep 搜索工具名。';
+
 function processImageAttachment(
   attachment: MessageAttachment,
   contents: MessageContent[]
@@ -424,7 +432,7 @@ function processImageAttachment(
     text: [
       `🖼️ 用户上传了图片: ${attachment.name}${pathHint}`,
       attachment.path && !isAppshot
-        ? `如果当前模型不能直接看图，先调用 image_analyze 读取这个路径，再回答用户问题。`
+        ? `如果当前模型不能直接看图，先调用 image_analyze 读取这个路径，再回答用户问题。${IMAGE_ANALYZE_LOAD_NOTE}`
         : appshotGuidance,
     ].join('\n'),
   });
@@ -653,7 +661,7 @@ function processArchiveAttachment(attachment: MessageAttachment): string {
 }
 
 function processFolderAttachment(attachment: MessageAttachment): string {
-  const pathInfo = attachment.path ? `\n📍 绝对路径: ${attachment.path}` : '';
+  const pathInfo = attachment.path ? `\n📍 绝对路径: ${attachment.path}` : '\nFolder path unresolved; use individual file paths.';
   const stats = attachment.folderStats;
   const statsInfo = stats
     ? `\n📊 统计: ${stats.totalFiles} 个文件, ${(stats.totalSize / 1024).toFixed(1)} KB`
@@ -663,11 +671,15 @@ function processFolderAttachment(attachment: MessageAttachment): string {
   if (attachment.files && attachment.files.length > 0) {
     fileList = '\n\n**文件列表：**\n';
     for (const file of attachment.files) {
-      const sizeKB = file.content ? (file.content.length / 1024).toFixed(1) : '?';
-      const fullPath = attachment.path ? `${attachment.path}/${file.path}` : file.path;
-      fileList += `- ${file.path} (${sizeKB} KB) → \`${fullPath}\`\n`;
+      const sizeKB = (file.size / 1024).toFixed(1);
+      const readablePath = file.absolutePath
+        && (path.posix.isAbsolute(file.absolutePath) || path.win32.isAbsolute(file.absolutePath))
+        ? file.absolutePath : undefined;
+      const kind = file.binary ? `; ${file.type || 'other'}; binary, open with a tool` : '';
+      const access = readablePath ? `\`${readablePath}\`` : 'no readable path, cannot read; ask the user to re-attach';
+      fileList += `- ${file.path} (${sizeKB} KB${kind}) → ${access}\n`;
     }
-    fileList += '\n⚠️ **注意**: 以上只是文件列表，不包含文件内容。要分析代码，必须先用 `Read` 工具读取文件。';
+    fileList += '\nThis is a file list, not file contents. Read files with appropriate tools using only the supplied absolute paths. If a file cannot be read or has no readable path, say it cannot be read and ask the user to re-attach; never guess its nature (for example, that it is scanned).';
   }
 
   return `📁 **文件夹: ${attachment.name}**${pathInfo}${statsInfo}\n\n${attachment.data || ''}${fileList}`;
@@ -713,7 +725,7 @@ export function stripImagesFromMessages(messages: ModelMessage[]): ModelMessage[
           type: 'text',
           text: hasAppshotContext
             ? '[Appshot 图片已省略；窗口文字已在同一条消息的 <appshot> 上下文中提供。请优先根据该文本回答，不要要求读取本地图片路径。]'
-            : '[用户上传了图片，但当前模型不支持直接处理图片。如需理解图片内容，请用 image_analyze 读取上下文里的图片路径；如需在图片上标注，请用 image_annotate。不要回答“没有收到图片”。]',
+            : `[用户上传了图片，但当前模型不支持直接处理图片。如需理解图片内容，请用 image_analyze 读取上下文里的图片路径；如需在图片上标注，请用 image_annotate。${IMAGE_ANALYZE_LOAD_NOTE}不要回答“没有收到图片”。]`,
         });
       } else {
         newContent.push(part);

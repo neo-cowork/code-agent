@@ -6,6 +6,10 @@
 // ============================================================================
 
 import React, { useEffect, useState } from 'react';
+import { useSessionLoadRecoveryStore, retrySessionRead } from '../../../stores/sessionLoadRecovery';
+import { useSessionStore } from '../../../stores/sessionStore';
+import { useI18n } from '../../../hooks/useI18n';
+import { Button } from '../../primitives/Button';
 
 /** 骨架屏出现阈值：hydration 在此之内完成则全程不显示，避免快速切换闪一帧。 */
 export const SESSION_SKELETON_DELAY_MS = 150;
@@ -68,6 +72,19 @@ export const EmptySessionArea: React.FC<{
   settled: boolean;
   welcome: React.ReactNode;
 }> = ({ isHydratingSession, settled, welcome }) => {
+  const { t } = useI18n();
+  const failedSessionId = useSessionLoadRecoveryStore((state) => state.sessionId);
+  const errorCode = useSessionLoadRecoveryStore((state) => state.errorCode);
+  const currentSessionId = useSessionStore((state) => state.currentSessionId);
+  const switchSession = useSessionStore((state) => state.switchSession);
+  if (failedSessionId && failedSessionId === currentSessionId && !isHydratingSession) {
+    return (
+      <div role="alert" data-testid="session-load-error" className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center">
+        <p className="text-sm text-zinc-400">{t.sidebar.loadSessionFailed}</p>
+        <Button variant="secondary" size="sm" onClick={() => retrySessionRead(errorCode, () => switchSession(failedSessionId, { force: true }))}>{t.sidebar.retryLoadSessions}</Button>
+      </div>
+    );
+  }
   if (settled) return <>{welcome}</>;
   if (isHydratingSession) return <SessionSwitchSkeleton />;
   return <div className="h-full" aria-hidden />;

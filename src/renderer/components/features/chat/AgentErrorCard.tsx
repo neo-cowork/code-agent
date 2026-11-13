@@ -1,7 +1,6 @@
-// ============================================================================
-// AgentErrorCard - 会话区运行失败卡片
-// ============================================================================
-// 数据来自 message.metadata.agentError（classifyAgentError 在 error 事件时写入）。
+import { BackgroundChildrenNotice } from './BackgroundChildrenNotice';
+// =====================================================================// AgentErrorCard - 会话区运行失败卡片
+// =====================================================================// 数据来自 message.metadata.agentError（classifyAgentError 在 error 事件时写入）。
 // 视觉真源：role-wake-prototype-v2.html 屏三——中性面（bg-void + border-strong）、
 // 只有图标着 status-error、标题 14px / 正文 13px、安静描边按钮。
 // 连续同因失败折叠（N-UI-AGENT-ERROR-REPEAT-COLLAPSE）：run.latest=false 的失败轮
@@ -11,9 +10,9 @@
 // 新开会话=context_length/image_payload/generic；复制报告与技术详情=仅开发者模式。
 // rate_limited 由 AgentErrorPresentation 降为时间线灰字行。
 // 文案不持久化（metadata 只存 category + 排障字段），这里按 category 查 i18n 表。
-// ============================================================================
-
+// =====================================================================
 import { formatDateTime } from '../../../utils/formatDateTime';
+import { EnvAssistCard } from './EnvAssistCard';
 import React, { useCallback } from 'react';
 import { AlertTriangle, Copy, KeyRound, MessageSquarePlus, RotateCcw, SwitchCamera } from 'lucide-react';
 import type { AgentErrorCategory, AgentErrorMetadata } from '@shared/contract';
@@ -24,6 +23,7 @@ import { toast } from '../../../hooks/useToast';
 import { useAppStore } from '../../../stores/appStore';
 import { useMessageActionStore } from '../../../stores/messageActionStore';
 import { useSessionStore } from '../../../stores/sessionStore';
+import { extractReadableProviderReason } from '../../../utils/genericProviderReason';
 import { OPEN_MODEL_SWITCHER_EVENT } from '../../StatusBar/ModelSwitcher';
 
 const SWITCH_MODEL_CATEGORIES: ReadonlySet<AgentErrorCategory> = new Set([
@@ -161,6 +161,7 @@ export function buildAgentErrorReport(args: {
   t: Translations;
 }): string {
   const { error, title, suggestion, sessionId, t } = args;
+  if (error.envAssist) return '';
   const labels = t.agentError.report;
   const lines: string[] = [
     `## ${labels.title}`,
@@ -192,7 +193,8 @@ const AgentErrorCard: React.FC<{
   sessionId?: string;
   /** 同因连续段（投影层推导）；缺失按单次失败处理 */
   run?: AgentErrorRunInfo;
-}> = ({ error, messageId, sessionId, run }) => {
+  lastFailure?: boolean;
+}> = ({ error, messageId, sessionId, run, lastFailure }) => {
   const { t, language } = useI18n();
   const { title, suggestion } = resolveAgentErrorCopy(error, t, language === 'zh' ? 'zh-CN' : 'en-US');
   const developerMode = useAppStore((state) => state.developerMode);
@@ -235,6 +237,12 @@ const AgentErrorCard: React.FC<{
     : null;
   const technicalItems = showTechnicalDetails ? buildTechnicalItems(error, t, false) : [];
   const repeatNotice = buildRepeatNotice(run, error.category, t);
+  const readableProviderReason = error.category === 'generic' && !error.goalAbort
+    ? extractReadableProviderReason(error.rawMessage, language)
+    : null;
+  const providerReasonLine = readableProviderReason
+    ? t.agentError.categories.generic.providerReason.replace('{reason}', readableProviderReason)
+    : null;
 
   return (
     <div
@@ -253,6 +261,16 @@ const AgentErrorCard: React.FC<{
           <span className={language === 'zh' ? undefined : 'ml-1'}>{repeatNotice}</span>
         )}
       </div>
+
+      {providerReasonLine && (
+        <div
+          data-testid="agent-error-provider-reason"
+          className="mt-1 pl-[22px] text-xs text-text-tertiary"
+        >
+          {providerReasonLine}
+        </div>
+      )}
+      {lastFailure && <BackgroundChildrenNotice sessionId={sessionId} />}
 
       {ranOnModel && (
         <div className="mt-1.5 pl-[22px] font-mono text-[10px] text-text-tertiary">{ranOnModel}</div>
@@ -355,13 +373,16 @@ const RateLimitedErrorLine: React.FC<{
   error: AgentErrorMetadata;
   messageId: string;
   sessionId?: string;
-}> = ({ error, messageId, sessionId }) => {
+  run?: AgentErrorRunInfo;
+  lastFailure?: boolean;
+}> = ({ error, messageId, sessionId, run, lastFailure }) => {
   const { t, language } = useI18n();
   const developerMode = useAppStore((state) => state.developerMode);
   const isRunning = useSessionStore((state) => (sessionId ? state.runningSessionIds.has(sessionId) : false));
   const { title, suggestion } = resolveAgentErrorCopy(error, t, language === 'zh' ? 'zh-CN' : 'en-US');
   const technicalItems = buildTechnicalItems(error, t, true);
   const showDeveloperDetails = developerMode && !error.goalAbort;
+  const repeatNotice = buildRepeatNotice(run, error.category, t);
 
   const handleRetry = useCallback(() => {
     useMessageActionStore.getState().regenerateMessage(messageId);
@@ -385,6 +406,7 @@ const RateLimitedErrorLine: React.FC<{
     >
       <AlertTriangle className="h-3.5 w-3.5 shrink-0 self-center text-badge-warning" aria-hidden="true" />
       <span>{t.agentError.rateLimitedInline}</span>
+      {lastFailure && <BackgroundChildrenNotice sessionId={sessionId} />}
       <span aria-hidden="true">·</span>
       <button /* ds-allow:button: 时间线灰字行的行内文字链接，不使用按钮外壳 */
         type="button"
@@ -395,6 +417,12 @@ const RateLimitedErrorLine: React.FC<{
       >
         {t.agentError.actions.retry}
       </button>
+      {repeatNotice && (
+        <>
+          <span aria-hidden="true">·</span>
+          <span>{repeatNotice}</span>
+        </>
+      )}
       {showDeveloperDetails && (
         <>
           <span aria-hidden="true">·</span>
@@ -427,15 +455,17 @@ export const AgentErrorPresentation: React.FC<{
   sessionId?: string;
   /** 同因连续段（投影层推导）。latest=false 的失败轮压成灰字行；缺失按单次失败。 */
   run?: AgentErrorRunInfo;
+  /** 会话里最后一张失败卡：后台代理续跑提示只挂这里 */
+  lastFailure?: boolean;
 }> = (props) => {
+  if (props.error.envAssist) return <EnvAssistCard notice={props.error.envAssist} />;
   // 同一轮内的重复失败上报（两条用户消息之间同因再次落错）：同一失败，不渲染。
   if (props.run?.duplicate) return null;
-  // rate_limited 不参与折叠：保持既有的时间线灰字行 + 重试路径。
-  if (props.error.category === 'rate_limited') {
-    return <RateLimitedErrorLine {...props} />;
-  }
   if (props.run && !props.run.latest) {
     return <SupersededErrorLine error={props.error} />;
+  }
+  if (props.error.category === 'rate_limited') {
+    return <RateLimitedErrorLine {...props} />;
   }
   return <AgentErrorCard {...props} />;
 };

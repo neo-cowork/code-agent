@@ -5,6 +5,10 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 
 import type { TaskManager, TaskManagerEvent } from '../../../src/host/task/TaskManager';
+import { initTaskManager, resetTaskManager } from '../../../src/host/task/TaskManager';
+import type { AgentEvent, Message } from '../../../src/shared/contract';
+import type { ConfigService } from '../../../src/host/services/core/configService';
+import { AgentOrchestrator } from '../../../src/host/agent/agentOrchestrator';
 import { RunRegistry } from '../../../src/host/runtime/runRegistry';
 import { DurableRunKernel } from '../../../src/host/runtime/durableRunKernel';
 import { DurableRunRepository } from '../../../src/host/services/core/repositories/DurableRunRepository';
@@ -15,6 +19,7 @@ import { resetSessionTaskConcurrencyPoolForTest } from '../../../src/host/servic
 import { resetBackgroundTaskLedgerForTest } from '../../../src/host/task/backgroundTaskLedger';
 import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
 import type { AgentRunOptions } from '../../../src/host/research/types';
+import { isTerminalAgentError } from '../../../src/shared/utils/agentErrorClassification';
 
 // N-FIX-BG-TASK-WAKE-NO-OWNER-LEASE：真 RunRegistry（带 durable kernel）+ 真 createForegroundWake +
 // 真 SessionCommandCenter。TaskManager / Orchestrator 只替换到「注册 run」这一步，注册走产线同一个
@@ -48,7 +53,6 @@ class FakeTaskManager extends EventEmitter {
   });
   interruptBackgroundTask = vi.fn().mockResolvedValue(true);
   cancelBackgroundTask = vi.fn().mockResolvedValue(true);
-  observeAgentEvents(): () => void { return () => undefined; }
   emitTask(event: TaskManagerEvent): void {
     const taskId = (event.data as { taskId?: string } | undefined)?.taskId;
     if (taskId && (event.type === 'task_completed' || event.type === 'task_error' || event.type === 'task_cancelled')) {
@@ -69,6 +73,8 @@ class FakeTaskManager extends EventEmitter {
   getWaitingQueue(): string[] { return []; }
   hasActivePrimaryRun(sessionId: string): boolean { return this.registry.hasSession(sessionId); }
   onRunIdle(listener: () => void): () => void { return this.registry.onIdleTransition(listener); }
+  emitAgentEventForSession = vi.fn();
+  observeAgentEvents = vi.fn(() => () => undefined);
   setSessionContext = vi.fn();
   setWorkingDirectory = vi.fn();
 }
@@ -140,11 +146,16 @@ describe('background task settlement wake with a real RunRegistry', () => {
         setWorkingDirectory: manager.setWorkingDirectory,
         on: manager.on.bind(manager),
         off: manager.off.bind(manager),
+        emitAgentEventForSession: manager.emitAgentEventForSession,
+        observeAgentEvents: manager.observeAgentEvents,
       }) as unknown as ReturnType<ForegroundWakeDependencies['getTaskManager']>,
       loadSession: async () => session,
       hasQueuedUserInput: () => queued,
       isVoiceSession: () => false,
       recordWakeFailureNote: async () => undefined,
+      recordWakeDeferredNote: async () => undefined,
+      setTimeout: () => 1,
+      clearTimeout: () => undefined,
       logger: { info, warn },
     };
     center = new SessionCommandCenter(manager as unknown as TaskManager, {
@@ -315,5 +326,199 @@ describe('background task settlement wake with a real RunRegistry', () => {
     queued = false;
     manager.emit('state_change', { type: 'state_change', sessionId: SESSION, data: { status: 'idle' } });
     await vi.waitFor(() => expect(wakeSends).toBe(1));
+  });
+
+  it('routes wake terminal errors (both RUN_FAILED and thrown) to terminalErrorSink so TaskManager.observeAgentEvents sees only the backgroundWakeFailed system message while non-wake runs still deliver error events', async () => {
+    const prevEvalDisabled = process.env.EVAL_DISABLED;
+    process.env.EVAL_DISABLED = 'true';
+    const realManager = initTaskManager();
+    const observed: Array<{ sessionId: string; event: AgentEvent; taskId?: string }> = [];
+    const broadcast: Array<{ sessionId: string; event: AgentEvent }> = [];
+    const persistedNotes: Message[] = [];
+    const configService = {
+      getSettings: () => ({
+        permissions: {
+          autoApprove: { read: true, write: false, execute: false, network: false },
+          devModeAutoApprove: false,
+        },
+        models: { default: 'openai', providers: {}, routing: {} },
+      }),
+      getApiKey: () => '',
+      getServiceApiKey: () => '',
+      isDevModeAutoApproveEnabled: () => false,
+    } as unknown as ConfigService;
+    realManager.initialize({
+      configService,
+      runRegistry: registry,
+      onAgentEvent: (sessionId, event) => { broadcast.push({ sessionId, event }); },
+    });
+    const unobserve = realManager.observeAgentEvents((sessionId, event, taskId) => {
+      observed.push({ sessionId, event, taskId });
+    });
+    const realOrchestrator = realManager.getOrCreateCurrentOrchestrator(SESSION);
+    if (!realOrchestrator) throw new Error('expected real orchestrator');
+    realOrchestrator.setWorkingDirectory('/tmp/wake-project', { syncWorkspaceServices: false });
+
+    let loopBehavior: 'run_failed' | 'throw' = 'run_failed';
+    const runNormalSpy = vi
+      .spyOn(
+        AgentOrchestrator.prototype as unknown as {
+          runNormalMode: (
+            content: string,
+            onEvent: (event: AgentEvent) => void,
+            modelConfig: { provider: string; model: string },
+            sessionId?: string,
+            options?: AgentRunOptions,
+          ) => Promise<void>;
+        },
+        'runNormalMode',
+      )
+      .mockImplementation(async (_content, onEvent, modelConfig) => {
+        onEvent({ type: 'error', data: { message: 'non-terminal warning', terminal: false } });
+        if (loopBehavior === 'run_failed') {
+          onEvent({
+            type: 'error',
+            data: {
+              message: '401 invalid api key',
+              code: 'RUN_FAILED',
+              details: { provider: modelConfig.provider, model: modelConfig.model },
+            },
+          });
+          return;
+        }
+        onEvent({
+          type: 'error',
+          data: {
+            message: 'network connection reset',
+            details: { provider: modelConfig.provider, model: modelConfig.model },
+          },
+        });
+        throw new Error('network connection reset');
+      });
+
+    try {
+      const realWake = createForegroundWake({
+        getTaskManager: () => ({
+          ...manager,
+          getSessionState: () => manager.getSessionState(),
+          getWaitingQueue: () => [],
+          hasActivePrimaryRun: (sessionId: string) => manager.hasActivePrimaryRun(sessionId),
+          onRunIdle: (listener: () => void) => manager.onRunIdle(listener),
+          getOrCreateCurrentOrchestrator: () => realOrchestrator,
+          setSessionContext: manager.setSessionContext,
+          setWorkingDirectory: manager.setWorkingDirectory,
+          on: manager.on.bind(manager),
+        }),
+        loadSession: async () => session,
+        hasQueuedUserInput: () => false,
+        isVoiceSession: () => false,
+        recordWakeFailureNote: async (sessionId, content, detail) => {
+          const message: Message = {
+            id: `wake-note-${persistedNotes.length + 1}`,
+            role: 'system',
+            content,
+            timestamp: Date.now(),
+            metadata: { backgroundWakeFailed: detail },
+          };
+          persistedNotes.push(message);
+          realManager.emitAgentEventForSession(sessionId, { type: 'message', data: message });
+        },
+        recordWakeDeferredNote: async () => undefined,
+        setTimeout: () => 1,
+        clearTimeout: () => undefined,
+        logger: { info, warn },
+      });
+
+      const wakeTask: SessionCommandTask = {
+        id: 'task-real-1',
+        sessionId: SESSION,
+        title: '任务一',
+        shortName: '任务一',
+        laneKey: 'lane-1',
+        submissionKey: 'sub-1',
+        prompt: '做点事',
+        workspaceScope: SCOPE,
+        status: 'completed',
+        attempt: 1,
+        createdAt: 1,
+        updatedAt: 2,
+        summary: '任务一完成',
+      };
+
+      // (a) RUN_FAILED resolving wake turn: note recorded once, terminal error suppressed, warning still delivered
+      loopBehavior = 'run_failed';
+      await realWake(wakeTask, 'completed');
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(persistedNotes).toHaveLength(1);
+      expect(persistedNotes[0].metadata?.backgroundWakeFailed).toEqual({
+        taskId: 'task-real-1',
+        reason: 'turn_error',
+      });
+      expect(warn).toHaveBeenCalledWith(
+        'Foreground wake failed: wake turn failed',
+        expect.objectContaining({ sessionId: SESSION, taskId: 'task-real-1', message: '401 invalid api key' }),
+      );
+      expect(
+        observed.filter((o) => o.event.type === 'error' && isTerminalAgentError(o.event.data)),
+      ).toEqual([]);
+      expect(
+        broadcast.filter((b) => b.event.type === 'error' && isTerminalAgentError(b.event.data)),
+      ).toEqual([]);
+      expect(
+        observed.filter((o) => o.event.type === 'error' && !isTerminalAgentError(o.event.data)),
+      ).toHaveLength(1);
+      expect(
+        observed.filter(
+          (o) => o.event.type === 'message' && Boolean((o.event.data as Message).metadata?.backgroundWakeFailed),
+        ),
+      ).toHaveLength(1);
+
+      // (b) Throwing wake turn (emits terminal error then throws): note recorded once (not twice), no terminal error broadcast
+      observed.length = 0;
+      broadcast.length = 0;
+      warn.mockClear();
+      loopBehavior = 'throw';
+      await realWake({ ...wakeTask, id: 'task-real-2' }, 'completed');
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(persistedNotes).toHaveLength(2);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(
+        'Foreground wake failed: wake turn failed',
+        expect.objectContaining({ sessionId: SESSION, taskId: 'task-real-2', message: 'network connection reset' }),
+      );
+      expect(
+        observed.filter((o) => o.event.type === 'error' && isTerminalAgentError(o.event.data)),
+      ).toEqual([]);
+      expect(
+        observed.filter(
+          (o) => o.event.type === 'message' && Boolean((o.event.data as Message).metadata?.backgroundWakeFailed),
+        ),
+      ).toHaveLength(1);
+
+      // (c) Non-wake run (no terminalErrorSink) still delivers the terminal error event unchanged
+      observed.length = 0;
+      broadcast.length = 0;
+      loopBehavior = 'run_failed';
+      await realOrchestrator.sendMessage('普通用户消息', undefined, { mode: 'normal' });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      const terminalObserved = observed.filter(
+        (o) => o.event.type === 'error' && isTerminalAgentError(o.event.data),
+      );
+      expect(terminalObserved).toHaveLength(1);
+      expect(terminalObserved[0].event.data).toMatchObject({
+        code: 'RUN_FAILED',
+        message: '401 invalid api key',
+      });
+    } finally {
+      runNormalSpy.mockRestore();
+      unobserve();
+      await realOrchestrator.drainWorkspaceServices();
+      resetTaskManager();
+      if (prevEvalDisabled === undefined) delete process.env.EVAL_DISABLED;
+      else process.env.EVAL_DISABLED = prevEvalDisabled;
+    }
   });
 });

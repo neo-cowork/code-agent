@@ -26,6 +26,7 @@ import {
   agentSpawnModule,
 } from '../../../../../src/host/tools/modules/multiagent/spawnAgent';
 import { executeTaskStatus } from '../../../../../src/host/tools/modules/commandCenter/sessionCommandCenter';
+import { formatSystemReminderForCompletions } from '../../../../../src/host/agent/subagentCompletionNotification';
 import { getBackgroundSubagentRegistry } from '../../../../../src/host/agent/backgroundSubagentRegistry';
 
 function makeLogger(): Logger {
@@ -256,6 +257,30 @@ describe('spawn_agent dispatch to protocol-native service', () => {
     expect(onProgress).toHaveBeenCalledWith({ stage: 'completing', percent: 100 });
   });
 
+  it('stores the report only once while preserving artifact identity', async () => {
+    const marker = 'A tested recovery plan is missing.';
+    executeSpawnAgentMock.mockResolvedValue({ success: true, output: marker });
+    const handler = await spawnAgentModule.createHandler();
+    const result = await handler.execute({ role: 'explore', task: 'Review risks' }, makeCtx(), allowAll);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(JSON.stringify(result).split(marker)).toHaveLength(2);
+    expect(result.meta?.artifact).toMatchObject({
+      artifactId: expect.any(String), name: 'spawn_agent result', contentLength: marker.length,
+    });
+  });
+
+  it('stores the foreground budget hand-off output once', async () => {
+    const marker = 'Agent [Explorer] exceeded foreground budget and continues in background:';
+    executeSpawnAgentMock.mockResolvedValue({ success: true, output: `${marker}\n- foreground_budget_ms=1000` });
+    const handler = await spawnAgentModule.createHandler();
+    const result = await handler.execute({ role: 'explore', task: 'Review risks' }, makeCtx(), allowAll);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(JSON.stringify(result).split(marker)).toHaveLength(2);
+    expect(result.meta?.artifacts).toBeUndefined();
+  });
+
   it('normalizes public role aliases before dispatching to native spawn', async () => {
     executeSpawnAgentMock.mockResolvedValue({
       success: true,
@@ -305,6 +330,31 @@ describe('spawn_agent dispatch to protocol-native service', () => {
     expect(executeSpawnAgentMock).toHaveBeenCalled();
   });
 
+  it.each([
+    { name: ' 文档主题整理 ', label: '文档主题整理' },
+    { name: undefined, label: 'Read seven documents and count them by topic' },
+    { name: '   ', label: 'Read seven documents and count them by topic' },
+  ])('run_in_background completion notice row uses $label (name=$name)', async ({ name, label }) => {
+    const sessionId = `completion-label-${String(name)}`;
+    const registry = getBackgroundSubagentRegistry();
+    executeSpawnAgentMock.mockResolvedValue({ success: true, output: 'Counted seven documents' });
+    const handler = await spawnAgentModule.createHandler();
+    const result = await handler.execute(
+      { role: 'explore', name, task: ' Read seven documents and count them by topic ', run_in_background: true },
+      makeCtx({ sessionId, suppressBackgroundSubagentIdleWake: true }),
+      allowAll,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const agentId = result.meta?.agentId as string;
+    await vi.waitFor(() => expect(registry.getStatus(agentId)?.status).toBe('completed'));
+    const records = registry.drainCompletionNotifications({ sessionId });
+    expect(records).toHaveLength(1);
+    expect(records[0].title).toBe(label);
+    expect(records[0].kind).toBe('internal');
+    expect(formatSystemReminderForCompletions(records)).toContain(`- ${label}: completed`);
+  });
+
   it('run_in_background uses a child-owned abort signal', async () => {
     const parent = new AbortController();
     let childSignal: AbortSignal | undefined;
@@ -349,7 +399,7 @@ describe('spawn_agent dispatch to protocol-native service', () => {
     const status = await executeTaskStatus({}, makeCtx({ sessionId }), allowAll);
     expect(status).toEqual({
       ok: true,
-      output: expect.stringContaining(`1. 整理三份会议笔记中的行动项 [running] id=${agentId}`),
+      output: expect.stringContaining(`1. coder [running] id=${agentId} duration=`),
       meta: { sessionTask: { outcome: 'status', tasks: [] } },
     });
 
@@ -375,7 +425,7 @@ describe('spawn_agent dispatch to protocol-native service', () => {
     const status = await executeTaskStatus({}, makeCtx({ sessionId }), allowAll);
     expect(status).toEqual({
       ok: true,
-      output: expect.stringContaining(`1. 完成会议笔记整理 [completed] id=${agentId}：行动项：确认负责人和截止时间`),
+      output: expect.stringContaining(`1. coder [completed] id=${agentId} duration=0 s：行动项：确认负责人和截止时间`),
       meta: { sessionTask: { outcome: 'status', tasks: [] } },
     });
   });

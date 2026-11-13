@@ -144,10 +144,10 @@ describe.each([
     expect(unrelated.summary).toBe(originalLogSummary);
     expect(unrelatedWithoutLog.summary).toBe(originalNoLogSummary);
     expect(syntax.notification).toBe(
-      `osascript -e 'foo' 失败，退出码 1，耗时 2 分钟，日志 ${syntaxLog}`,
+      `osascript -e 'foo' 失败，退出码 1，耗时 2 分钟`,
     );
     expect(unrelated.notification).toBe(
-      `npm test 失败，退出码 1，耗时 2 分钟，日志 ${unrelatedLog}`,
+      `npm test 失败，退出码 1，耗时 2 分钟`,
     );
   });
 });
