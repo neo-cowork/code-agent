@@ -31,6 +31,12 @@ export interface RunToolPolicy {
    * 名字由调用方用 canonicalStrictBoundaryToolNames 归一后传入。
    */
   readonly skillBoundaryAllowedTools?: readonly string[];
+  /**
+   * 文字前台 brain 工具面（ADR-059）：白名单之外只补一类入口——ToolSearch（发现）与
+   * 用户已启用的 MCP 服务器工具（`mcp__<server>__*`，未启用的服务器根本不会注册）。
+   * 逐次审批照旧在执行层生效，不改权限档，也不替用户启用任何服务器。
+   */
+  readonly foregroundToolFace?: boolean;
 }
 
 function normalizeRunPolicyToolName(name: string): string {
@@ -72,8 +78,15 @@ export function isToolDeniedByRunPolicy(policy: RunToolPolicy, toolName: string)
   const allowedForRun = !allowed
     || allowed.has(normalized)
     || isToolAllowedByWorkbenchScope(policy.toolScope, toolName)
-    || isToolAllowedBySkillBoundary(policy.skillBoundaryAllowedTools, normalized);
+    || isToolAllowedBySkillBoundary(policy.skillBoundaryAllowedTools, normalized)
+    || (policy.foregroundToolFace === true && isForegroundMcpEntryTool(normalized));
   return !allowedForRun || (deniedToolSet(policy)?.has(normalized) ?? false);
+}
+
+const FOREGROUND_DISCOVERY_TOOL = 'toolsearch';
+
+function isForegroundMcpEntryTool(normalizedToolName: string): boolean {
+  return normalizedToolName === FOREGROUND_DISCOVERY_TOOL || normalizedToolName.startsWith('mcp__');
 }
 
 /**

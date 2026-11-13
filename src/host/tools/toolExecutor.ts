@@ -802,6 +802,7 @@ export class ToolExecutor {
       allowedToolNames: options.allowedToolNames,
       toolScope: options.toolScope,
       skillBoundaryAllowedTools: options.skillBoundaryAllowedTools,
+      foregroundToolFace: options.foregroundToolFace,
     }, executionToolName)) {
       logger.warn('Tool blocked by run tool policy', { toolName: executionToolName });
       recordDecision(executionToolName, params, 'policy-deny', 'run tool policy (--tools/--disallowed-tools)', Date.now(), undefined, effectiveSessionId, this.ledgerOrigin);

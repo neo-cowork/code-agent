@@ -100,4 +100,15 @@ describe('runToolPolicy (pure)', () => {
     };
     expect(isToolDeniedByRunPolicy(policy, 'propose_role')).toBe(true);
   });
+  it('文字前台面：白名单外只多放 ToolSearch 与 mcp__ 工具，其它仍禁用，deny 一票否决', () => {
+    const policy: RunToolPolicy = { allowedToolNames: ['Read', 'delegate_task'], foregroundToolFace: true };
+    expect(isToolDeniedByRunPolicy(policy, 'ToolSearch')).toBe(false);
+    expect(isToolDeniedByRunPolicy(policy, 'mcp__external-import-nonce__get_random_nonce')).toBe(false);
+    expect(isToolDeniedByRunPolicy(policy, 'Bash')).toBe(true);
+    expect(isToolDeniedByRunPolicy(policy, 'WebSearch')).toBe(true);
+    expect(isToolDeniedByRunPolicy({ ...policy, deniedToolNames: ['mcp__x__y'] }, 'mcp__x__y')).toBe(true);
+    // 非前台面的精确白名单语义不变
+    expect(isToolDeniedByRunPolicy({ allowedToolNames: ['Read'] }, 'ToolSearch')).toBe(true);
+    expect(isToolDeniedByRunPolicy({ allowedToolNames: ['Read'] }, 'mcp__a__b')).toBe(true);
+  });
 });
