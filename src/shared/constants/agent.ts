@@ -95,7 +95,8 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // sys-v115：整合合并——keep_result_page 枚举/描述/结果文案（本单）叠上 main 的 sys-v114 面，
 // 合并面未在任何一侧单独记录过，按惯例升版。
 // sys-v116：自然语言定时任务按轮暴露 schedule_task，模型请求草案确认卡。
-export const PROMPT_VERSION = 'sys-v116' as const;
+// sys-v117：精简延迟工具 JSON 用法的冗余措辞，保留完整工具索引与加载规则。
+export const PROMPT_VERSION = 'sys-v117' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =

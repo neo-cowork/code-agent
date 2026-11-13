@@ -25,6 +25,7 @@ describe('registered schedule_task module', () => {
     const description = '每天9点汇总销售表';
     const { result, emit } = await execute(description);
     expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
     expect(emit).toHaveBeenCalledExactlyOnceWith({ type: 'schedule_draft_requested', data: { sessionId: 'attended-session', description } });
     expect(result.output).toContain('nothing is created until they confirm');
   });
