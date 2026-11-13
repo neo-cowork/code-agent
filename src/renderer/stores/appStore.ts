@@ -99,6 +99,7 @@ export type { WorkbenchTabId, WorkbenchViewId } from '../utils/workbenchViews';
 // when several activations fire in the same millisecond.
 let _previewTabTick = 0;
 const nextPreviewTabTick = () => ++_previewTabTick;
+let settingsModelFocusTick = 0;
 let _settingsMemoryFocusTick = 0;
 const nextSettingsMemoryFocusNonce = () => ++_settingsMemoryFocusTick;
 let _settingsCapabilityFocusTick = 0;
@@ -121,6 +122,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   showSettings: false,
   settingsReturnTo: null,
   settingsInitialTab: null,
+  settingsModelFocus: null,
   settingsMemoryFocus: null,
   settingsCapabilityFocus: null,
   composerFocusNonce: 0,
@@ -240,7 +242,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
   // 带返回落点打开设置（Stripe portal return_url 模式）：深链落点不在设置页时退化为普通深链。
   openSettingsWithReturn: (tab, returnTo) => {
-    const noFocus = { settingsMemoryFocus: null, settingsCapabilityFocus: null };
+    const noFocus = { settingsModelFocus: null, settingsMemoryFocus: null, settingsCapabilityFocus: null };
     const target = resolveSettingsDeepLink(tab, installedBundledCapabilityIds());
     if (target.kind !== 'settings') {
       get().openSettingsTab(tab);
@@ -265,7 +267,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setShowPromptManager: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showPromptManager: show }),
   // 落点判定收在 resolveSettingsDeepLink 一处（ADR-049 §收窄），store 只负责应用
   openSettingsTab: (tab) => {
-    const noFocus = { settingsMemoryFocus: null, settingsCapabilityFocus: null };
+    const noFocus = { settingsModelFocus: null, settingsMemoryFocus: null, settingsCapabilityFocus: null };
     const target = resolveSettingsDeepLink(tab, installedBundledCapabilityIds());
     if (target.kind === 'cronCenter') {
       // 深链直达自动化（设置页搜索）：也算「回去了」，返回落点就地清掉，草稿留给编辑器取。
@@ -277,9 +279,16 @@ export const useAppStore = create<AppState>()((set, get) => ({
       set({ showSettings: true, settingsInitialTab: target.tab, ...noFocus });
     }
   },
+  openModelSettings: (provider) => set({
+    showSettings: true, settingsInitialTab: 'model',
+    settingsModelFocus: { provider, nonce: ++settingsModelFocusTick },
+    settingsMemoryFocus: null, settingsCapabilityFocus: null,
+  }),
+  clearSettingsModelFocus: () => set({ settingsModelFocus: null }),
   openMemorySettings: (focus) => set({
     showSettings: true,
     settingsInitialTab: 'memory',
+    settingsModelFocus: null,
     settingsMemoryFocus: focus
       ? { ...focus, nonce: nextSettingsMemoryFocusNonce() }
       : null,
@@ -288,6 +297,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   openCapabilitySettingsTarget: (focus) => {
     get().openCapabilityHub(focus.kind === 'skill' ? 'skills' : 'connectors');
     set({
+      settingsModelFocus: null,
       settingsMemoryFocus: null,
       settingsCapabilityFocus: { ...focus, nonce: nextSettingsCapabilityFocusNonce() },
     });
