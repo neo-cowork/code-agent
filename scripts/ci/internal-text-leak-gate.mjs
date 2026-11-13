@@ -36,11 +36,11 @@ import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, '..');
+const REPO_ROOT = path.resolve(__dirname, '../..');
 const DEFAULT_RENDERER_DIR = path.join(REPO_ROOT, 'src/renderer');
 const DEFAULT_ALLOWLIST_PATH = path.join(
   REPO_ROOT,
-  'scripts/internal-text-leak-allowlist.json',
+  'scripts/lib/internal-text-leak-allowlist.json',
 );
 const DEFAULT_DYNAMIC_ALLOWLIST_PATH = path.join(
   REPO_ROOT,

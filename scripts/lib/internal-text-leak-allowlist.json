@@ -524,7 +524,7 @@
   {
     "file": "src/renderer/i18n/enSettingsWork.ts",
     "rule": "ou_id",
-    "sample": "Separate conversation IDs with commas, e.g. oc_abc123def",
+    "sample": "e.g. oc_abc123def",
     "reason": "unowned — needs a ticket"
   },
   {
@@ -536,7 +536,7 @@
   {
     "file": "src/renderer/i18n/zhSettingsWork.ts",
     "rule": "ou_id",
-    "sample": "多个会话 ID 用逗号分隔，例如 oc_abc123def",
+    "sample": "例如 oc_abc123def",
     "reason": "unowned — needs a ticket"
   },
   {

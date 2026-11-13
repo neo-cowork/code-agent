@@ -45,7 +45,7 @@
     "check:context-overhead": "npx tsx scripts/ci/context-overhead-ratchet.ts",
     "check:ptc-sdk-determinism": "node scripts/ci/ptc-contract-gate.mjs sdk-determinism",
     "check:ptc-transport-name": "node scripts/ci/ptc-contract-gate.mjs transport-name-reservation",
-    "gate:internal-text-leak": "node scripts/internal-text-leak-gate.mjs",
+    "gate:internal-text-leak": "node scripts/ci/internal-text-leak-gate.mjs",
     "typecheck": "node node_modules/typescript7/bin/tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
