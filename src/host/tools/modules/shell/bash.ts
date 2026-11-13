@@ -380,6 +380,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     // 三条执行路径统一 applySandbox。不可用时：强制档硬报错，灰度档显式降级，绝不静默裸跑。
     // -------------------------------------------------------------------------
     let sandboxCleanup: (() => void) | undefined;
+    let taskOutputSandboxApplied = false;
     const cleanupSandbox = () => {
       const cleanup = sandboxCleanup;
       sandboxCleanup = undefined;
@@ -417,9 +418,10 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
         const baseWriteRoots = writeFence && fenceRoot
           ? [fenceRoot]
           : scopeWriteRoots ?? workspaceConfinedRoots;
-        const taskOutputRoot = !writeFence && !ctx.restrictWritesToWorkspace && !process.env.CODE_AGENT_EVAL_REAL_ROOT
-          ? taskOutputDirectoryForShell(ctx.sessionId, permissionMode, cmd) : undefined;
+        const taskOutputRoot = !runInBackground && !usePty && !writeFence && !ctx.restrictWritesToWorkspace && !process.env.CODE_AGENT_EVAL_REAL_ROOT
+          ? taskOutputDirectoryForShell(ctx.sessionId, permissionMode, cmd, ctx.workspaceScope) : undefined;
         const extraRoots = [...new Set([extraWriteRoot, taskOutputRoot].filter((root): root is string => Boolean(root)))];
+        taskOutputSandboxApplied = Boolean(taskOutputRoot);
         if (taskOutputRoot) ctx.logger.info('Task output directory applied to shell sandbox', { sessionId: ctx.sessionId, directory: taskOutputRoot });
         const wrapped = wrapCommandForSandbox(cmd, {
           workingDirectory,
@@ -821,7 +823,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
           // 沙箱决策原样保留（sandboxed 标志随收编传入）。显式 run_in_background=true
           // 在 unattended 仍拒（上方 BACKGROUND_UNAVAILABLE）；只有非短档的 unattended
           // 超时保留 kill（120s 默认档维持 PR #2065 行为）。
-          onTimeout: unattended && !shortTier ? undefined : ({ child, stdout, stderr, startedAt }) => handoverTimedOutCommand({
+          onTimeout: taskOutputSandboxApplied || (unattended && !shortTier) ? undefined : ({ child, stdout, stderr, startedAt }) => handoverTimedOutCommand({
             child,
             command: sandboxedCommand,
             cwd: workingDirectory,

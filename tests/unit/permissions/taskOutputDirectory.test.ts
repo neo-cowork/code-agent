@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { getPermissionModeManager, resetPermissionModeManager, type PermissionMode } from '../../../src/host/permissions/modes';
 import { isTaskOutputPathAuthorized, taskOutputDirectoryForShell, withTaskOutputDirectory } from '../../../src/host/permissions/taskOutputDirectory';
 import { PermissionClassifier } from '../../../src/host/tools/permissionClassifier';
+import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
 import type { MessageMetadata } from '../../../src/shared/contract';
 
 const SESSION = 'task-output-session';
@@ -109,6 +110,11 @@ describe('explicit task output directory authorization', () => {
       expect(taskOutputDirectoryForShell('other-session', 'bypassPermissions', 'cp report.pptx output.pptx')).toBeUndefined();
       expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', 'cp report.pptx "$(pwd)/output.pptx"')).toBeUndefined();
       expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', 'cp report.pptx `pwd`/output.pptx')).toBeUndefined();
+      const primary = { sourceId: 'primary', role: 'primary' as const, access: 'read_write' as const, path: `${directory}-workspace` };
+      const scope = createWorkspaceScope('project', [primary, { sourceId: 'readonly', role: 'additional', access: 'read_only', path: directory }]);
+      expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', 'cp report.pptx output.pptx', scope)).toBeUndefined();
+      const childScope = createWorkspaceScope('project', [primary, { sourceId: 'readonly', role: 'additional', access: 'read_only', path: path.join(directory, 'source') }]);
+      expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', 'cp report.pptx output.pptx', childScope)).toBeUndefined();
     });
   });
 

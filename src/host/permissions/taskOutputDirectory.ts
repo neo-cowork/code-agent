@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import * as path from 'node:path';
 import type { MessageMetadata } from '../../shared/contract';
+import type { WorkspaceScope } from '../../shared/contract/project';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
 import { isPathWithinRoot } from '../runtime/workspaceScope';
 import { isProtectedWritePath } from '../sandbox/sensitivePaths';
@@ -76,11 +77,16 @@ export async function withTaskOutputDirectory<T>(input: {
 
 /** Add only this task's folder to an already-required OS write jail. Approval,
  * command policy and sensitive-path denials remain separate authoritative gates. */
-export function taskOutputDirectoryForShell(sessionId: string | undefined, mode: PermissionMode, command: string): string | undefined {
+export function taskOutputDirectoryForShell(sessionId: string | undefined, mode: PermissionMode, command: string, workspaceScope?: WorkspaceScope): string | undefined {
   const grant = scope.getStore();
   if (!grant || /\$|`|<\(|>\(/u.test(command)) return undefined;
   const parsed = parseShellCommand(command);
   if (parsed.parsingFailed || parsed.uncertain.length > 0) return undefined;
+  // A selected output folder does not override a Project Source's read-only promise,
+  // including when the selected folder contains that Source rather than vice versa.
+  if (workspaceScope?.roots.some((root) => root.access === 'read_only'
+    && (isPathWithinRoot(grant.directory, resolveCanonicalRunPath(root.path))
+      || isPathWithinRoot(resolveCanonicalRunPath(root.path), grant.directory)))) return undefined;
   return isTaskOutputPathAuthorized({ sessionId, mode, target: grant.directory, cwd: grant.directory })
     ? grant.directory : undefined;
 }
