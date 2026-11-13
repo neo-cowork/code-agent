@@ -152,6 +152,7 @@ export class BrowserService implements Disposable {
   private browser: Browser | null = null;
   private context: BrowserContext | null = null;
   private browserProcess: ChildProcess | null = null;
+  private closingBrowser = false;
   private tabs: Map<string, BrowserTab> = new Map();
   private activeTabId: string | null = null;
   private disposed = false;
@@ -305,6 +306,7 @@ export class BrowserService implements Disposable {
   async close(): Promise<void> {
     if (this.browser || this.context || this.browserProcess) {
       this.logger.log('INFO', 'Closing browser...');
+      this.closingBrowser = true;
       await this.context?.close().catch(() => undefined);
       await this.browser?.close().catch(() => undefined);
       await this.stopSystemChromeProcess();
@@ -319,6 +321,7 @@ export class BrowserService implements Disposable {
       if (this.profileMode === 'isolated') {
         this.configureManagedBrowserSession('persistent');
       }
+      this.closingBrowser = false;
       this.logger.log('INFO', 'Browser closed, all tabs cleared');
       this.emitSessionChanged('close');
     } else {
@@ -1015,6 +1018,7 @@ export class BrowserService implements Disposable {
     resolution: BrowserProviderResolution,
     fallbackReason: string | null = null,
   ): Promise<void> {
+    this.closingBrowser = false;
     const launched = await launchPlaywrightBundledBrowser({
       resolution,
       fallbackReason,
@@ -1038,8 +1042,15 @@ export class BrowserService implements Disposable {
         recommendedAction: launched.recommendedAction,
       },
     );
-    this.context = launched.context;
+    const context = launched.context;
+    this.context = context;
     this.browser = launched.browser;
+    // 浏览器进程消失（被杀/用户关窗）时 context 触发 close；主动 close() 不走这条。
+    context.on('close', () => {
+      if (this.context !== context || this.closingBrowser) return;
+      this.logger.log('WARN', 'Playwright browser context closed unexpectedly; treating session as crashed');
+      this.cleanupCrashedBrowserProcess();
+    });
   }
 
   private async installContextGuards(): Promise<void> {
