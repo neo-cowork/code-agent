@@ -4,7 +4,7 @@
 // another workspace. The check must use the instance ToolExecutor bound for this call.
 
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { resolveCanonicalRunPath } from '../../../../src/host/runtime/runContext';
@@ -106,7 +106,7 @@ describe('approvedSingleFileRmGrant stays literal and non-recursive', () => {
     'rm -rf ~',
     'rm --recursive target.txt',
     'rm target.txt other.txt',
-    'rm target.txt; echo done',
+    'rm target.txt; touch other.txt',
     'rm *.txt',
   ])('does not mint a literal grant for %s', (command) => {
     const cwd = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'approved-rm-refuse-')));
@@ -126,6 +126,62 @@ describe('approvedSingleFileRmGrant stays literal and non-recursive', () => {
       workingDirectory: cwd,
       policyEnforcer: null,
     })).toBeUndefined();
+  });
+
+
+  it.each([
+    'rm TARGET; echo "exit=$?"',
+    'rm TARGET && echo done',
+    'echo before && rm --force TARGET || printf "%s" done; true; :',
+    'true; rm -f -- TARGET; echo done; printf "%s" "$?"',
+  ])('grants exactly one file for harmless compound %s', (shape) => {
+    const cwd = resolveCanonicalRunPath(mkdtempSync('/tmp/approved-rm-compound-'));
+    dirs.push(cwd);
+    const target = join(cwd, 'target.txt');
+    writeFileSync(target, 'x');
+    const command = shape.replace('TARGET', `'${target}'`);
+    const grant = approvedSingleFileRmGrant(command, {
+      sandboxDecision: { sandboxed: true }, foreground: true, pty: false, background: false,
+      unattended: false, writeFence: false, evalRealRoot: false, permissionMode: 'default',
+      abortSignal: new AbortController().signal, newFileGrantSupported: true,
+      workingDirectory: cwd, policyEnforcer: null,
+    });
+    console.log(`COMPOUND_GRANT command=${command} grant=${String(grant)}`);
+    expect(grant).toBe(target);
+  });
+
+  it.each([
+    'rm a; rm b',
+    'rm a; echo x > /tmp/f',
+    'rm a | cat',
+    'rm a; touch b',
+    'rm -rf a; echo $?',
+    'rm a;',
+    'rm a &&',
+    'rm a ||',
+    'rm a & echo done',
+    'rm a; echo x 2>&1',
+    'rm a; echo x < b',
+    'rm a < b; echo done',
+    'rm a; echo "$(touch b)"',
+    'rm a; echo "`touch b`"',
+    'rm a; printf -v state x',
+    'echo before || rm a',
+    'rm a; ./echo done',
+  ])('refuses unsafe compound %s and leaves files intact', (command) => {
+    const cwd = resolveCanonicalRunPath(mkdtempSync('/tmp/approved-rm-negative-'));
+    dirs.push(cwd);
+    for (const name of ['a', 'b']) writeFileSync(join(cwd, name), 'keep');
+    const grant = approvedSingleFileRmGrant(command, {
+      sandboxDecision: { sandboxed: true }, foreground: true, pty: false, background: false,
+      unattended: false, writeFence: false, evalRealRoot: false, permissionMode: 'default',
+      abortSignal: new AbortController().signal, newFileGrantSupported: true,
+      workingDirectory: cwd, policyEnforcer: null,
+    });
+    console.log(`NEGATIVE_GRANT command=${command} grant=${String(grant)} a.exists=${existsSync(join(cwd, 'a'))} b.exists=${existsSync(join(cwd, 'b'))}`);
+    expect(grant).toBeUndefined();
+    expect(existsSync(join(cwd, 'a'))).toBe(true);
+    expect(existsSync(join(cwd, 'b'))).toBe(true);
   });
 
   it('does not mint a grant for a symlink target', () => {
