@@ -99,7 +99,7 @@ describe('FallbackBanner', () => {
     expect(html).toContain('openai/gpt-5.4-mini');
     expect(html).toContain('部分工具暂不可用');
     expect(html).toContain('6 → 0');
-    expect(html).toContain('读取文件, Edit, Write, Append +2');
+    expect(html).toContain('读取文件, 修改文件, 写入文件, Append +2');
   });
 
   it('renders exhausted fallback traces when expanded', () => {
