@@ -16,6 +16,7 @@ vi.mock('../../src/host/session/sessionTitleHostPrompt', () => ({ readUiLanguage
 vi.mock('../../src/host/services/core/databaseService', () => ({ getDatabase: () => ({ getDb: () => database }) }));
 import { SessionRepository } from '../../src/host/services/core/repositories/SessionRepository';
 import { createBackgroundTaskLedger } from '../../src/host/task/backgroundTaskLedger';
+import { createTask as createSessionTask } from '../../src/host/services/planning/taskStore';
 import { TaskListManager } from '../../src/host/agent/taskList';
 import { sanitizeNotificationText } from '../../src/host/services/infra/notificationPolicy';
 import { saveCronJob } from '../../src/host/cron/cronPersistence';
@@ -44,6 +45,11 @@ describe('humanized names at host persistence boundaries', () => {
     const plan = state.writes.find((w) => w.sql.includes('SET plan_title'))!;
     expect(detectInternalTextLeaks(String(plan.args[0]))).toEqual([]);
     expect(plan.args[1]).toBe(456);
+    const planningTask = createSessionTask(`planning-${lang}`, { subject: 'read_file', description: 'Read report' });
+    expect(planningTask.subject).toBe(lang === 'en' ? 'Read file' : '读取文件');
+    expect(planningTask.activeForm).toBe(planningTask.subject);
+    const chineseTask = createSessionTask(`planning-${lang}`, { subject: '整理周报', description: '整理周报' });
+    expect(chineseTask.activeForm).toBe('整理周报');
     const manager = new TaskListManager();
     const task = manager.createTask({ subject: raw, description: 'Export table' });
     expect(detectInternalTextLeaks(task.subject)).toEqual([]);

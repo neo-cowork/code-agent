@@ -183,6 +183,7 @@ function getSessionTaskMap(sessionId: string): Map<string, SessionTask> {
  * 创建任务
  */
 export function createTask(sessionId: string, input: CreateTaskInput): SessionTask {
+  const subject = humanizeStoredName(input.subject);
   const taskMap = getSessionTaskMap(sessionId);
   const now = Date.now();
 
@@ -192,9 +193,10 @@ export function createTask(sessionId: string, input: CreateTaskInput): SessionTa
 
   const task: SessionTask = {
     id: generateTaskId(sessionId, input.parentTaskId),
-    subject: humanizeStoredName(input.subject),
+    subject,
     description: input.description,
-    activeForm: humanizeStoredName(input.activeForm || generateActiveForm(input.subject)),
+    activeForm: input.activeForm ? humanizeStoredName(input.activeForm)
+      : subject !== input.subject || !/^[A-Za-z]/.test(subject) ? subject : generateActiveForm(subject),
     status: 'pending',
     priority: input.priority || 'normal',
     blocks: [],
