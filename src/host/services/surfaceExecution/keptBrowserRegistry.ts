@@ -50,6 +50,7 @@ export type KeptResultPageSnapshot =
 export interface KeptBrowserPoolFacade {
   setKept(serviceKey: string, kept: boolean): void;
   releaseAgent(serviceKey: string): Promise<void>;
+  isServiceAlive?(serviceKey: string): boolean;
 }
 
 export interface RegisterKeptBrowserInput {
@@ -120,12 +121,14 @@ export class KeptBrowserRegistry {
 
   /** 存活中的 kept 条目（adopt / ensureBinding 认领判据）。 */
   getAlive(conversationId: string): KeptBrowserEntry | null {
+    this.revalidateAlive(conversationId);
     const entry = this.get(conversationId);
     return entry?.state === 'kept' ? entry : this.getParkedAlive(conversationId);
   }
 
   /** Agent runs reclaim only the human-wait window, never an explicit result. */
   getParkedAlive(conversationId: string): KeptBrowserEntry | null {
+    this.revalidateAlive(conversationId);
     const entry = this.entries.get(this.entryKey(conversationId, true));
     return entry?.state === 'kept' ? { ...entry } : null;
   }
@@ -136,6 +139,7 @@ export class KeptBrowserRegistry {
    * keep_result_page 条目永不经过这里。
    */
   getTakeoverParkAlive(conversationId: string): KeptBrowserEntry | null {
+    this.revalidateAlive(conversationId);
     const entry = this.entries.get(this.entryKey(conversationId));
     return entry?.state === 'kept' && entry.reason === 'takeover' ? { ...entry } : null;
   }
@@ -200,9 +204,19 @@ export class KeptBrowserRegistry {
 
   /** IPC 三态快照。 */
   snapshot(conversationId: string): KeptResultPageSnapshot {
+    this.revalidateAlive(conversationId);
     const entry = this.entries.get(this.entryKey(conversationId));
     if (!entry || entry.parkedForUser) return { state: 'none', url: null, title: null, reason: null };
     return { state: entry.state, url: entry.url, title: entry.title, reason: entry.reason };
+  }
+
+  private revalidateAlive(conversationId: string): void {
+    for (const parkedForUser of [false, true]) {
+      const entry = this.entries.get(this.entryKey(conversationId, parkedForUser));
+      if (entry?.state !== 'kept') continue;
+      if (this.pool.isServiceAlive ? this.pool.isServiceAlive(entry.serviceKey) : true) continue;
+      this.markClosed(conversationId, entry.serviceKey);
+    }
   }
 
   private markClosedIfService(conversationId: string, serviceKey: string): void {

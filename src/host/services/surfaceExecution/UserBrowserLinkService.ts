@@ -26,6 +26,7 @@ import {
 
 
 interface UserBrowserRun {
+  inputTail: Promise<void>;
   handle: RunHandle;
   identity: SurfaceRuntimeIdentityV1;
 }
@@ -120,6 +121,7 @@ export class UserBrowserLinkService {
         workspace,
       });
       run = {
+        inputTail: Promise.resolve(),
         handle,
         identity: {
           conversationId,
@@ -331,31 +333,38 @@ export class UserBrowserLinkService {
     const action = browserActionForInput(payload);
     const run = this.ensureRun(conversationId, workspace);
 
-    const result = await this.adapter.execute({
-      identity: run.identity,
-      operationId: `user-browser-link:input:${payload.kind}:${randomUUID()}`,
-      action,
-      // 只传白名单字段摘要给 runtime 记账；真正执行走 dispatch 白名单实现，无 CDP 方法字段。
-      params: { action, kind: payload.kind },
-      async executeProvider(_signal, browserService) {
-        const activeTab = browserService.getActiveTab();
-        if (!activeTab) throw new Error('No active browser tab.');
-        const viewport = browserService.getSessionState().viewport;
-        // 二次校验：用真实视口收紧坐标上界（防渲染层伪造超大坐标）
-        const again = validateUserBrowserInputPayload(payload, {
-          viewportWidth: viewport?.width,
-          viewportHeight: viewport?.height,
-        });
-        if (!again.ok) throw new Error(again.error);
-        await dispatchUserBrowserInputOnPage(activeTab.page, again.payload);
-        return { success: true, output: `User browser ${payload.kind}` };
-      },
-    });
+    // Serialize per-run input so concurrent Surface operations do not supersede keystrokes,
+    // and drop queued input once the run ends or is replaced.
+    const pending = run.inputTail.then(async () => {
+      if (this.runs.get(conversationId) !== run) throw new Error('USER_BROWSER_RUN_ENDED');
+      const result = await this.adapter.execute({
+        identity: run.identity,
+        operationId: `user-browser-link:input:${payload.kind}:${randomUUID()}`,
+        action,
+        // 只传白名单字段摘要给 runtime 记账；真正执行走 dispatch 白名单实现，无 CDP 方法字段。
+        params: { action, kind: payload.kind },
+        async executeProvider(_signal, browserService) {
+          const activeTab = browserService.getActiveTab();
+          if (!activeTab) throw new Error('No active browser tab.');
+          const viewport = browserService.getSessionState().viewport;
+          // 二次校验：用真实视口收紧坐标上界（防渲染层伪造超大坐标）
+          const again = validateUserBrowserInputPayload(payload, {
+            viewportWidth: viewport?.width,
+            viewportHeight: viewport?.height,
+          });
+          if (!again.ok) throw new Error(again.error);
+          await dispatchUserBrowserInputOnPage(activeTab.page, again.payload);
+          return { success: true, output: `User browser ${payload.kind}` };
+        },
+      });
 
-    if (!result.success) {
-      throw new Error(result.error || 'User browser input failed.');
-    }
-    return this.runtime.snapshotConversation(conversationId);
+      if (!result.success) {
+        throw new Error(result.error || 'User browser input failed.');
+      }
+      return this.runtime.snapshotConversation(conversationId);
+    });
+    run.inputTail = pending.then(() => undefined, () => undefined);
+    return pending;
   }
 
   async end(

@@ -1,8 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
 import { RunRegistry } from '../../../../src/host/runtime/runRegistry';
+import { SurfaceLiveStreamService } from '../../../../src/host/services/surfaceExecution/SurfaceLiveStreamService';
 import { UserBrowserLinkService } from '../../../../src/host/services/surfaceExecution/UserBrowserLinkService';
 import type { ManagedBrowserProviderAdapter } from '../../../../src/host/services/surfaceExecution/ManagedBrowserProviderAdapter';
-import type { SurfaceConversationSnapshotV1 } from '../../../../src/shared/contract/surfaceExecution';
+import type {
+  SurfaceConversationSnapshotV1,
+  SurfaceLiveFrameV1,
+} from '../../../../src/shared/contract/surfaceExecution';
+
+const startPageScreencast = vi.hoisted(() => vi.fn());
+
+vi.mock('../../../../src/host/services/infra/browser/pageScreencast', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  startPageScreencast,
+}));
 
 function snapshot(conversationId: string): SurfaceConversationSnapshotV1 {
   return {
@@ -32,7 +43,7 @@ function createHarness() {
     const down = vi.fn(async () => undefined);
     const up = vi.fn(async () => undefined);
     const press = vi.fn(async () => undefined);
-    const insertText = vi.fn(async () => undefined);
+    const insertText = vi.fn(async (_text: string) => undefined);
     const page = {
       mouse: { click, wheel, move, down, up },
       keyboard: { press, insertText },
@@ -159,5 +170,110 @@ describe('UserBrowserLinkService.dispatchUserInput', () => {
     const call = first![0] as unknown as { action: string };
     expect(call.action).toBe('set_viewport');
     expect(setViewport).toHaveBeenCalledWith(900, 500);
+  });
+
+  it('serializes rapid input per run and rejects queued input once the run ends', async () => {
+    const { service, execute } = createHarness();
+    const original = execute.getMockImplementation()!;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    execute.mockImplementationOnce(async (input) => {
+      await held;
+      return original(input);
+    });
+    const base = {
+      conversationId: 'conversation-a',
+      workspace: process.cwd(),
+      input: { kind: 'insertText', text: 'a' },
+    };
+    const first = service.dispatchUserInput(base);
+    const second = service.dispatchUserInput({ ...base, input: { kind: 'insertText', text: 'b' } });
+    await Promise.resolve();
+    expect(execute).toHaveBeenCalledTimes(1);
+
+    await service.end('conversation-a');
+    const rejected = expect(second).rejects.toThrow('USER_BROWSER_RUN_ENDED');
+    release();
+    await first;
+    await rejected;
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('delivers rapidly queued characters in order without superseding', async () => {
+    const { service, execute } = createHarness();
+    const original = execute.getMockImplementation()!;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    execute.mockImplementationOnce(async (input) => {
+      await held;
+      return original(input);
+    });
+    const pending = ['p', 't', 'e', 't'].map((text) => service.dispatchUserInput({
+      conversationId: 'conversation-a',
+      workspace: process.cwd(),
+      input: { kind: 'insertText', text },
+    }));
+    await Promise.resolve();
+    expect(execute).toHaveBeenCalledTimes(1);
+    release();
+    await Promise.all(pending);
+    const results = await Promise.all(execute.mock.results.map((result) => result.value));
+    expect(results.map((result) => result.__page.keyboard.insertText.mock.calls)).toEqual([
+      [['p']],
+      [['t']],
+      [['e']],
+      [['t']],
+    ]);
+  });
+});
+
+describe('SurfaceLiveStreamService.start first-frame buffer', () => {
+  it('delivers a frame emitted before startup finishes once streaming becomes active', async () => {
+    const published: SurfaceLiveFrameV1[] = [];
+    const stop = vi.fn(async () => undefined);
+    startPageScreencast.mockImplementationOnce(async (
+      _page: unknown,
+      _options: unknown,
+      onFrame: (frame: { base64: string; width: number; height: number; capturedAtMs: number }) => void,
+    ) => {
+      onFrame({ base64: 'FIRST_FRAME', width: 960, height: 600, capturedAtMs: 123 });
+      return { stop };
+    });
+
+    const stream = new SurfaceLiveStreamService(
+      {
+        sessions: {
+          get: () => ({
+            sessionId: 'surface-1',
+            conversationId: 'conversation-a',
+            surface: 'browser',
+            state: 'running',
+          }),
+        },
+      } as never,
+      {
+        findBindingBySurfaceSessionId: () => ({
+          browserService: {
+            isRunning: () => true,
+            getActiveTab: () => ({ id: 'tab-1', page: { id: 'page-1' } }),
+          },
+        }),
+      } as never,
+      (frame) => published.push(frame),
+    );
+
+    const state = await stream.start({
+      version: 1,
+      conversationId: 'conversation-a',
+      surfaceSessionId: 'surface-1',
+    });
+    expect(state.streaming).toBe(true);
+    expect(published).toHaveLength(1);
+    expect(published[0]?.dataUrl).toBe('data:image/jpeg;base64,FIRST_FRAME');
+    await stream.stop('surface-1');
   });
 });
