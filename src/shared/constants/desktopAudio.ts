@@ -11,4 +11,7 @@ export const MEETING_SESSION_LIMITS = {
   MAX_DURATION_MS: 4 * 60 * 60 * 1000,
   SLEEP_GAP_MS: 2 * 60 * 1000,
   TICK_MS: 30 * 1000,
+  /** 会前提醒：每分钟看一次日历，会开始前 2 分钟内提醒（开始后 2 分钟内录制条仍挂着） */
+  CALENDAR_POLL_MS: 60 * 1000,
+  CALENDAR_LEAD_MS: 2 * 60 * 1000,
 } as const;

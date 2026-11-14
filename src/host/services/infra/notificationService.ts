@@ -562,6 +562,23 @@ class NotificationService implements Disposable {
   }
 
   /**
+   * 会前提醒（N-MEETING-SESSION）：日历上的会快开始了，问用户要不要记这场会。
+   * 要用户决定，按 needs_input 放行、绕过焦点门；没有目标会话，点击只唤起应用（录制条上点开始）。
+   */
+  notifyMeetingStarting(data: { title: string; body: string }): void {
+    if (!this.isIntentAllowed('needs_input')) return;
+    if (!this.shouldNotify(true)) return;
+    this.enqueueBudgeted({
+      intent: 'needs_input',
+      type: 'plugin',
+      sessionId: '',
+      title: data.title,
+      body: data.body,
+      delivery: { urgent: true },
+    });
+  }
+
+  /**
    * 发送插件主动请求的系统通知。插件没有目标会话，因此通知点击只负责唤起应用，
    * 不会尝试切换到不存在的会话。
    */

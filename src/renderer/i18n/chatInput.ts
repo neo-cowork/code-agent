@@ -11,7 +11,10 @@ import { durableStoppedEn, durableStoppedZh } from './durableStopped';
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮（同 chatTranscript.ts 先例）。
 // ============================================================================
 
+import { meetingBarEn, meetingBarZh } from './meetingBar';
+
 export const chatInputZh = {
+  ...meetingBarZh,
   ...evalBridgeZh,
   ...turnFeedbackWhyZh,
   ...wakeRationaleZh,
@@ -199,25 +202,6 @@ export const chatInputZh = {
     saveAsSuffix: '"',
     save: '保存',
     ignore: '忽略',
-  },
-  meetingBar: {
-    recording: '记录中',
-    paused: '已暂停',
-    pause: '暂停',
-    resume: '继续',
-    stop: '结束',
-    silenceWarning: '已经 {minutes} 分钟没人说话，{remain} 分钟后自动结束',
-    ended: {
-      manual: '这场会已结束',
-      silence: '{minutes} 分钟没人说话，这场会已自动结束',
-      max_duration: '已录满 {hours} 小时，这场会已自动结束',
-      sleep: '电脑睡眠了，这场会已结束',
-      capture_stopped: '录音停了，这场会已结束',
-      interrupted: '上次 Neo 退出时这场会被中断',
-    },
-    startFailed: '录音没开起来',
-    openSettings: '去设置看看',
-    dismiss: '知道了',
   },
   loopStatusBar: {
     runningPrefix: '循环中 · 第 ',
@@ -513,6 +497,7 @@ export const chatInputZh = {
 };
 
 export const chatInputEn: typeof chatInputZh = {
+  ...meetingBarEn,
   ...evalBridgeEn,
   ...turnFeedbackWhyEn,
   ...wakeRationaleEn,
@@ -697,25 +682,6 @@ export const chatInputEn: typeof chatInputZh = {
     saveAsSuffix: '"',
     save: 'Save',
     ignore: 'Dismiss',
-  },
-  meetingBar: {
-    recording: 'Recording',
-    paused: 'Paused',
-    pause: 'Pause',
-    resume: 'Resume',
-    stop: 'End',
-    silenceWarning: 'No one has spoken for {minutes} min — ending automatically in {remain} min',
-    ended: {
-      manual: 'This meeting has ended',
-      silence: 'No one spoke for {minutes} min, so the meeting was ended',
-      max_duration: 'Reached the {hours}-hour limit, so the meeting was ended',
-      sleep: 'Your computer went to sleep, so the meeting was ended',
-      capture_stopped: 'Recording stopped, so the meeting was ended',
-      interrupted: 'This meeting was interrupted when Neo last quit',
-    },
-    startFailed: "Recording didn't start",
-    openSettings: 'Check settings',
-    dismiss: 'Got it',
   },
   loopStatusBar: {
     runningPrefix: 'Looping · turn ',

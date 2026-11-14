@@ -5,6 +5,7 @@
 import { create } from 'zustand';
 import type { MeetingSessionStatus } from '@shared/contract/audioCapture';
 import {
+  dismissMeetingUpcoming,
   getMeetingStatus,
   pauseMeeting,
   resumeMeeting,
@@ -25,6 +26,7 @@ interface MeetingSessionState {
   resume: () => Promise<void>;
   stop: () => Promise<void>;
   dismiss: () => void;
+  dismissUpcoming: () => Promise<void>;
 }
 
 export const useMeetingSessionStore = create<MeetingSessionState>()((set, get) => {
@@ -59,5 +61,6 @@ export const useMeetingSessionStore = create<MeetingSessionState>()((set, get) =
       return st;
     }),
     dismiss: () => set((s) => ({ error: null, dismissedEndedId: s.status?.lastEnded?.id ?? s.dismissedEndedId })),
+    dismissUpcoming: () => run(dismissMeetingUpcoming),
   };
 });

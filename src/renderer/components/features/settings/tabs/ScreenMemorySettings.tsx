@@ -20,6 +20,7 @@ import { WebModeBanner } from '../WebModeBanner';
 import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
 import ipcService from '../../../../services/ipcService';
 import { NativeDesktopSection } from '../sections/NativeDesktopSection';
+import { MeetingCalendarReminderToggle } from '../sections/MeetingCalendarReminderToggle';
 import { OpenchronicleSettings } from './OpenchronicleSettings';
 import { useI18n } from '../../../../hooks/useI18n';
 import { zh } from '../../../../i18n/zh';
@@ -397,9 +398,12 @@ export const ScreenMemorySettings: React.FC = () => {
             fallbackKind="bundled"
           />
           {tauri ? (
-            <div className="h-[460px] rounded-lg border border-zinc-700/60 overflow-hidden bg-zinc-900">
-              <NativeDesktopSection />
-            </div>
+            <>
+              <MeetingCalendarReminderToggle />
+              <div className="h-[460px] rounded-lg border border-zinc-700/60 overflow-hidden bg-zinc-900">
+                <NativeDesktopSection />
+              </div>
+            </>
           ) : (
             <NativeDesktopUnavailable />
           )}

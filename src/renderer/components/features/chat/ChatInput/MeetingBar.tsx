@@ -25,7 +25,7 @@ const barButton = 'flex items-center gap-1 rounded-md px-2 py-0.5 hover:bg-white
 export const MeetingBar: React.FC = () => {
   const { t } = useI18n();
   const text = t.meetingBar;
-  const { status, busy, error, dismissedEndedId, refresh, pause, resume, stop, dismiss } = useMeetingSessionStore();
+  const { status, busy, error, dismissedEndedId, refresh, start, pause, resume, stop, dismiss, dismissUpcoming } = useMeetingSessionStore();
   const openSettingsTab = useAppStore((s) => s.openSettingsTab);
   const current = status?.current ?? null;
   const [now, setNow] = useState(() => Date.now());
@@ -52,6 +52,21 @@ export const MeetingBar: React.FC = () => {
           <span className="min-w-0 flex-1 truncate">{text.startFailed}</span>
           <button type="button" className={barButton} onClick={() => { dismiss(); openSettingsTab('openchronicle'); }}>{text.openSettings}</button>
           <button type="button" className={barButton} onClick={dismiss}>{text.dismiss}</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!current && status?.upcoming) {
+    return (
+      <div className="px-3 pb-2" data-testid="meeting-upcoming">
+        <div className="flex items-center gap-2 whitespace-nowrap rounded-lg border border-badge-info/30 bg-badge-info/10 px-3 py-1.5 text-xs text-badge-info">
+          <Mic size={13} className="shrink-0" />
+          <span className="min-w-0 flex-1 truncate">
+            {text.upcoming.replace('{title}', status.upcoming.title)} · {text.upcomingConsent}
+          </span>
+          <button type="button" className={barButton} disabled={busy} onClick={() => void start()}>{text.upcomingStart}</button>
+          <button type="button" className={barButton} disabled={busy} onClick={() => void dismissUpcoming()}>{text.dismiss}</button>
         </div>
       </div>
     );
