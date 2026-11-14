@@ -50,9 +50,48 @@ describe('sessionTaskPresentation', () => {
     }, 'reused raw id=session-work-c', zh)).toBe('继续跟踪后台任务：写稿　进行中');
   });
 
+  it('preserves replacement confirmation without exposing internal state or ids', () => {
+    const metadata = { sessionTask: { outcome: 'accepted', tasks: [{ shortName: '简报', status: 'running' }] }, sessionTaskReplacement: { shortName: '周报', stopped: true } };
+    expect(formatSessionTaskOutput(metadata, 'accepted id=session-work-x', zh)).toBe('已停止「周报」。已在后台开始：简报，完成后会告诉你。');
+    expect(formatSessionTaskOutput(metadata, 'accepted id=session-work-x', en)).toContain('Stopped “周报”. ');
+  });
+
+  it('keeps result details and filenames without exposing the workspace prefix or raw file tools', () => {
+    const metadata = { sessionTaskWorkspaceRoots: ['/work/My Project'], sessionTask: {
+      outcome: 'status', tasks: [{ shortName: '报告', status: 'completed', detail: '已用 Read 核对，写入 /work/My Project/报告.md。' }],
+    } };
+    expect(formatSessionTaskOutput(metadata, '', zh)).toBe('报告　已完成：已用 读取文件 核对，写入 报告.md。');
+    expect(formatSessionTaskOutput(metadata, '', en)).toBe('报告　Completed: 已用 Read file 核对，写入 报告.md。');
+    expect(metadata.sessionTask.tasks[0].detail).toContain('/work/My Project/报告.md');
+  });
+
+  it('localizes background file actions without changing shared approval labels', () => {
+    const metadata = { sessionTask: { outcome: 'status', tasks: [
+      { shortName: '报告', status: 'completed', detail: 'Write 后用 Edit 修改。' },
+    ] } };
+    expect(formatSessionTaskOutput(metadata, '', zh)).toBe('报告　已完成：写入文件 后用 编辑文件 修改。');
+    expect(formatSessionTaskOutput(metadata, '', en)).toBe('报告　Completed: Write file 后用 Edit file 修改。');
+  });
+
   it('preserves the old raw output when sessionTask metadata is absent or invalid', () => {
     expect(formatSessionTaskOutput(undefined, rawStatus, zh)).toBe(rawStatus);
     expect(formatSessionTaskOutput({ sessionTask: { outcome: 'status', tasks: [] } }, rawStatus, en))
       .toBe(rawStatus);
+  });
+
+  it('hides the model-facing Agent ID suffix of background sub-agent rows (only and mixed with tasks), zh and en', () => {
+    const only = '- coder ：进行中，已用时3 秒（Agent ID: agent_coder_123）\n没有剩余时间数据，请勿估算完成时间。';
+    for (const t of [zh, en]) {
+      const out = formatSessionTaskOutput({ sessionTask: { outcome: 'status', tasks: [] } }, only, t);
+      expect(out).toContain('coder ：进行中，已用时3 秒');
+      expect(out).not.toMatch(/Agent ID|agent_/);
+    }
+    const mixed = `1. 写稿：进行中\n${only}`;
+    for (const t of [zh, en]) {
+      const out = formatSessionTaskOutput(statusMetadata, mixed, t);
+      expect(out).not.toMatch(/Agent ID|agent_/);
+      const out2 = formatSessionTaskOutput({ sessionTask: { outcome: 'status', tasks: [{ shortName: '写稿', status: 'running' }] } }, mixed, t);
+      expect(out2).not.toMatch(/Agent ID|agent_/);
+    }
   });
 });

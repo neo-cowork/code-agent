@@ -106,7 +106,7 @@ describe('buildOverviewContextRows', () => {
     expect(rows.map((row) => row.kind)).toEqual(['file', 'skill', 'mcp', 'memory']);
     expect(rows[0]).toMatchObject({
       label: 'hello.html',
-      detail: 'Read / Write',
+      detail: '读取文件 / 写入文件',
     });
     // MCP 按 server 去重显示 server 名
     expect(rows.find((row) => row.kind === 'mcp')).toMatchObject({ label: 'filesystem' });

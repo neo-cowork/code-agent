@@ -3,6 +3,7 @@ import type {
   ToolContext as ProtocolToolContext,
 } from '../protocol/tools';
 import type { ModelConfig } from '../../shared/contract';
+import { PermissionRequestReason } from '../../shared/contract/permission';
 import type { RunTraceContext } from '../telemetry/runTraceContext';
 import type { TelemetryCollector } from '../telemetry/telemetryCollector';
 import type {
@@ -64,6 +65,7 @@ export function createProtocolSubagentExecutionContext(
     resolver,
     permission: {
       request: async (request) => {
+        const reasonCode = Object.values(PermissionRequestReason).find((code) => code === request.reasonCode);
         const result = await canUseTool(
           request.tool,
           request.details,
@@ -78,6 +80,7 @@ export function createProtocolSubagentExecutionContext(
             tool: request.tool,
             details: request.details,
             reason: request.reason,
+            ...(reasonCode ? { reasonCode } : {}),
             dangerLevel: request.dangerLevel,
             decisionTrace: request.decisionTrace,
             ledgerRecordedByChild: true,
