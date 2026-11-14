@@ -12,7 +12,9 @@ import { filterReadOnlyCronArtifacts, type CronRunArtifactContext } from './cron
 import { UNATTENDED_TRUST_NOTICE } from '../../shared/unattendedTrust';
 import { CRON_AGENT_SNAPSHOT, CRON_GUARDRAILS, EXTERNAL_WATCH, isZeroPricedModel } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
-import type { AgentAction, CronJobDefinition } from '../../shared/contract/cron';
+import type { AgentAction, CronJobDefinition, CronExecutionTrigger } from '../../shared/contract/cron';
+import { bindEventReplySession } from '../tools/eventReplySession';
+import { enrichReplyTargetChatNames, resolveEventAccountName } from './cronEventChatNames';
 import {
   buildCronAgentActionResult,
   cronAgentRunHasAlert,
@@ -96,6 +98,7 @@ export async function executeCronAgentAction(
   executionId?: string,
   eventPayloadBlock?: string,
   timeout?: number,
+  eventTrigger?: CronExecutionTrigger,
 ): Promise<unknown> {
   const runStartedAt = Date.now();
   // Heartbeat 任务: 检查 active_hours 窗口
@@ -119,6 +122,19 @@ export async function executeCronAgentAction(
   if (!orchestrator) {
     throw new Error(`AgentOrchestrator not available for cron session ${cronSession.id}`);
   }
+  // 回复目的地绑定（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）：把本批通道事件的逐事件
+  // 目的地登记进会话——reply_to_event 只认这张表，且 withEventReplyTools 只给绑定的会话注入工具。
+  // 群名缺位时按账号从通道会话目录补齐（TTL 缓存；失败回落原始会话 id，见 cronEventChatNames）。
+  const rawReplyTargets = eventTrigger?.replyTargets;
+  const eventReplyAccountId = eventTrigger?.accountId;
+  const eventReplyTargets = eventReplyAccountId && rawReplyTargets && rawReplyTargets.length > 0
+    ? await enrichReplyTargetChatNames(eventReplyAccountId, rawReplyTargets)
+    : undefined;
+  const leaveEventReply = eventReplyAccountId && eventReplyTargets && eventReplyTargets.length > 0
+    ? bindEventReplySession(cronSession.id, eventReplyAccountId, eventReplyTargets)
+    : undefined;
+  // 命中规则的可读账号位（账号名；失败回落 accountId，见 cronEventChatNames）。
+  const eventReplyAccountName = eventReplyAccountId ? await resolveEventAccountName(eventReplyAccountId) : undefined;
   // cron/heartbeat 无人值守会话标 async_agent（2026-07-13 拍板）：bash 走
   // ask+forceConfirm，无人应答由 requestPermission 60s 超时 deny 兜底，
   // 与 readOnly 会话档双保险。必须在 sendMessage 前标注。
@@ -153,7 +169,11 @@ export async function executeCronAgentAction(
   warnIfBudgetCapCannotTrigger(definition, cronSession.modelConfig);
   const artifactRefresh = beginArtifactRefresh(definition);
   // 观察档（N-TRIGGER-OBSERVE-MODE）：本会话的对外副作用调用由 ToolExecutor 拦下记 would_act。
-  const leaveObserveMode = enterObserveModeForCronRun(definition, cronSession.id, executionId);
+  const leaveObserveMode = enterObserveModeForCronRun(definition, cronSession.id, executionId, undefined, {
+    // 命中规则的可读会话位：本批事件带的群名（没有就回落配置里的原始会话 id）。
+    chatName: eventReplyTargets?.find((target) => target.chatName?.trim())?.chatName,
+    accountName: eventReplyAccountName,
+  });
   try {
     try {
       // 事件触发时通道载荷只以 untrusted 定界块追加在 prompt 尾部，并给该条
@@ -246,6 +266,7 @@ export async function executeCronAgentAction(
       console.warn('[CronService] Failed to scan connector-lost tool results after cron run', lostScanError);
     }
   } finally {
+    leaveEventReply?.();
     leaveObserveMode();
     tm.cleanup(cronSession.id);
   }

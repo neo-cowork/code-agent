@@ -26,6 +26,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { ToolSchema } from '../../../src/host/protocol/tools';
+import type { ToolDefinition } from '../../../src/shared/contract/tool';
 import { resolveToolCallAccesses } from '../../../src/host/tools/dispatch/resolveToolCallAccess';
 import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import { registerMigratedTools } from '../../../src/host/tools/modules';
@@ -71,6 +72,14 @@ const REACHABLE_VIA_FACADE: Record<string, string> = {
  * 会被断言「确实仍有 strict skill 在用」——最后一个引用消失时本门报红，提醒清理。
  */
 const STRICT_SKILL_INJECTED = new Set<string>(['exit_role_flow']);
+
+/**
+ * 会话条件注入工具集：注册进 registry（dispatch 按名解析），但按会话绑定状态注入
+ * 工具表——不进 CORE / DEFERRED 索引是刻意的：未绑定的会话调它只会拿到清晰报错，
+ * 把它挂上 ToolSearch 等于向所有会话宣传一条走不通的路（T3b 原则）。
+ * 会被断言「绑定会话确实注入、未绑定会话确实剥掉」——注入点被删时本门报红。
+ */
+const SESSION_CONDITIONAL_INJECTED = new Set<string>(['reply_to_event']);
 
 /**
  * 存量真·不可达名单（**只许变短**）。2026-08-14 建门时钉住 19 条，同日
@@ -120,6 +129,7 @@ describe('注册即可发现（registry → 模型到达路径）', () => {
       .filter((name) => !isDiscoverable(name))
       .filter((name) => !(name in REACHABLE_VIA_FACADE))
       .filter((name) => !STRICT_SKILL_INJECTED.has(name))
+      .filter((name) => !SESSION_CONDITIONAL_INJECTED.has(name))
       .filter((name) => !UNREACHABLE_BASELINE.has(name));
 
     expect(unreachable).toEqual([]);
@@ -151,8 +161,28 @@ describe('注册即可发现（registry → 模型到达路径）', () => {
       ...UNREACHABLE_BASELINE,
       ...Object.keys(REACHABLE_VIA_FACADE),
       ...STRICT_SKILL_INJECTED,
+      ...SESSION_CONDITIONAL_INJECTED,
     ].filter((name) => !registered.has(name));
     expect(stale).toEqual([]);
+  });
+
+  it('SESSION_CONDITIONAL_INJECTED 里的工具确实按会话绑定注入（注入点被删时报红）', async () => {
+    const { withEventReplyTools } = await import('../../../src/host/tools/dispatch/toolDefinitions');
+    const { bindEventReplySession } = await import('../../../src/host/tools/eventReplySession');
+    const base: ToolDefinition[] = [{ name: 'Read', description: 'r', inputSchema: { type: 'object' }, outputSchema: { type: 'string' }, requiresPermission: false, permissionLevel: 'read' }];
+    // 未绑定会话（含 'all' 模式全量表已混入的形态）：剥掉。
+    const polluted: ToolDefinition[] = [...base, { name: 'reply_to_event', description: 'r2', inputSchema: { type: 'object' }, outputSchema: { type: 'string' }, requiresPermission: true, permissionLevel: 'write' }];
+    for (const session of [undefined, 'plain-session'] as const) {
+      expect(withEventReplyTools(polluted, session).map((tool) => tool.name)).toEqual(['Read']);
+    }
+    // 绑定会话：注入。
+    const leave = bindEventReplySession('session-conditional-probe', 'acc-1', [{ eventId: 'om_1', chatId: 'oc_g' }]);
+    try {
+      expect(withEventReplyTools(base, 'session-conditional-probe').map((tool) => tool.name))
+        .toEqual(['Read', 'reply_to_event']);
+    } finally {
+      leave();
+    }
   });
 
   it('STRICT_SKILL_INJECTED 里的工具确实仍被 strict skill 引用（最后一个引用消失时提醒清理）', () => {

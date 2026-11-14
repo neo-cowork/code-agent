@@ -266,6 +266,8 @@ describe('ToolExecutor observe-mode interception (N-TRIGGER-OBSERVE-MODE ②)', 
         runId: 'run-1',
         tool: 'mail_send',
         target: 'client@example.com',
+        // N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN：would_act 行也带「命中的规则」。
+        matchedRule: 'mail message · account _icloud · mailbox INBOX',
         summary: 'Re: invoice — We will refund you today.',
       })]);
     } finally {

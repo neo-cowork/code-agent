@@ -16,6 +16,7 @@ import {
   normalizeBrowserComputerCatalogToolName,
 } from '../../shared/utils/browserComputerActionCatalog';
 import { extractStandingGrantTarget, isExternalSideEffectTool } from './externalSideEffect';
+import { eventReplyTargetLabel, EVENT_REPLY_TOOL_NAME } from './eventReplySession';
 import { getObserveConnectorCliAction } from './observeModeConnectorCli';
 import { isBashToolName } from './toolNames';
 import type { ToolExecutionResult } from './types';
@@ -89,9 +90,15 @@ export function interceptObserveModeToolCall(
   if (!sink || !isObserveInterceptedToolCall(toolName, params)) return null;
   const connectorAction = isBashToolName(toolName) && typeof params.command === 'string'
     ? getObserveConnectorCliAction(params.command) : null;
-  const target = isExternalSideEffectTool(toolName)
-    ? extractStandingGrantTarget(toolName, params) ?? undefined
+  // reply_to_event 的目的地出自宿主绑定（不在参数里）：台账目标行用可读群名，
+  // 解析不到绑定（理论上不可能——工具只在绑定的 run 里注入）才回落空。
+  const eventReplyLabel = toolName === EVENT_REPLY_TOOL_NAME
+    ? eventReplyTargetLabel(sessionId, typeof params.event_id === 'string' ? params.event_id : undefined)
     : undefined;
+  const target = eventReplyLabel
+    ?? (isExternalSideEffectTool(toolName)
+      ? extractStandingGrantTarget(toolName, params) ?? undefined
+      : undefined);
   const interception: ObserveModeInterception = connectorAction ? {
     ...connectorAction,
     summary: truncateObserveText(connectorAction.summary, CRON_EVENT_DECISIONS.MAX_SUMMARY_CHARS),

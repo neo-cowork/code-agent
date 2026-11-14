@@ -121,7 +121,7 @@ describe('CronEventDecisionsPanel (via CronJobDetail)', () => {
     expect(sectionRows.map((row) => row.getAttribute('data-decision'))).toEqual(['would_act', 'would_act']);
     expect(sectionRows.map((row) => row.getAttribute('data-highlight'))).toEqual(['true', 'true']);
     expect(sectionRows[0].textContent).toContain('本会执行');
-    expect(sectionRows[0].textContent).toContain('mail_send');
+    expect(sectionRows[0].textContent).toContain('发送邮件');
     expect(sectionRows[0].textContent).toContain('client@example.com');
     expect(sectionRows[0].textContent).toContain('We will refund you today.');
     // 事件行带「命中的任务规则」（返修②）。
