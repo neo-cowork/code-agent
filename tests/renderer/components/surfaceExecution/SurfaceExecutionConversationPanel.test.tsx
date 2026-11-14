@@ -235,7 +235,7 @@ describe('SurfaceExecutionConversationPanel', () => {
       const bars = screen.getAllByTestId('surface-execution-compact-bar');
       expect(bars).toHaveLength(2);
       expect(bars[0].getAttribute('data-state')).toBe('completed');
-      expect(bars[0].textContent).toContain('浏览器 · 已完成');
+      expect(bars[0].textContent).toContain('浏览器 · 已结束');
       expect(bars[1].getAttribute('data-state')).toBe('running');
       expect(bars[1].textContent).toContain('浏览器 · 正在操作 managed.example.test');
       expect(screen.queryByTestId('surface-execution-session')).toBeNull();

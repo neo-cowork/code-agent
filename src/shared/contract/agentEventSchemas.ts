@@ -176,6 +176,8 @@ const permissionRequestSchema = typed<PermissionRequest>(z.object({
     newContent: z.string().optional(),
     server: z.string().optional(),
     toolName: z.string().optional(),
+    connectorAccess: z.object({ connectorId: z.string(), connectorName: z.string(), access: z.enum(['read', 'write']) }).optional(),
+    purpose: z.string().optional(),
     commandRiskLevel: z.enum(['safe', 'unknown', 'low', 'medium', 'high', 'critical']).optional(),
     commandSecurityFlags: z.array(z.string()).optional(),
     affectedPath: z.string().optional(),
