@@ -101,13 +101,14 @@ export function describeDelegateTaskResult(result: Exclude<SpawnSessionTaskResul
 function sessionTaskMeta(
   outcome: 'accepted' | 'queued' | 'reused' | 'status',
   tasks: SessionCommandTask[],
+  includeTaskIds = false,
 ): Record<string, unknown> {
   return {
     sessionTask: {
       outcome,
       tasks: tasks.map((task) => {
         const detail = task.resultText ?? task.detail ?? task.summary;
-        return { shortName: task.shortName, status: task.status, ...(detail ? { detail } : {}) };
+        return { ...(includeTaskIds ? { taskId: task.id } : {}), shortName: task.shortName, status: task.status, ...(detail ? { detail } : {}) };
       }),
     },
   };
@@ -116,11 +117,12 @@ function sessionTaskMeta(
 function delegateTaskReceipt(
   result: Exclude<SpawnSessionTaskResult, { outcome: 'requires_choice' }>,
   prefix = '',
+  includeTaskIds = false,
 ): ToolResult<string> {
   return {
     ok: true,
     output: prefix + describeDelegateTaskResult(result),
-    meta: sessionTaskMeta(result.outcome === 'started' ? 'accepted' : result.outcome, [result.task]),
+    meta: sessionTaskMeta(result.outcome === 'started' ? 'accepted' : result.outcome, [result.task], includeTaskIds),
   };
 }
 
@@ -129,6 +131,7 @@ export async function executeDelegateTask(
   ctx: ToolContext,
   canUseTool: CanUseToolFn,
   onProgress?: ToolProgressFn,
+  includeTaskIds = false,
 ): Promise<ToolResult<string>> {
   const denied = await permit(delegateTaskSchema.name, args, canUseTool);
   if (denied) return denied;
@@ -178,12 +181,12 @@ export async function executeDelegateTask(
   };
   const result = await getSessionCommandCenter().spawn(spawnInput);
   if (result.outcome === 'requires_choice') {
-    const choiceResult = await resolveOverflowChoiceInHost(spawnInput, result.active, ctx, onProgress);
+    const choiceResult = await resolveOverflowChoiceInHost(spawnInput, result.active, ctx, includeTaskIds, onProgress);
     onProgress?.({ stage: 'completing', percent: 100 });
     return choiceResult;
   }
   onProgress?.({ stage: 'completing', percent: 100 });
-  return delegateTaskReceipt(result);
+  return delegateTaskReceipt(result, '', includeTaskIds);
 }
 
 function buildOverflowQuestionOptions(
@@ -222,6 +225,7 @@ async function resolveOverflowChoiceInHost(
   spawnInput: SpawnSessionTaskInput,
   active: SessionCommandTask[],
   ctx: ToolContext,
+  includeTaskIds: boolean,
   onProgress?: ToolProgressFn,
 ): Promise<ToolResult<string>> {
   const { abortSignal } = ctx;
@@ -262,7 +266,7 @@ async function resolveOverflowChoiceInHost(
     if (queued.outcome === 'requires_choice') {
       return { ok: true, output: describeOverflowUnansweredFallback(shortName) };
     }
-    return delegateTaskReceipt(queued, '你已选择排队，无需再次选择。');
+    return delegateTaskReceipt(queued, '你已选择排队，无需再次选择。', includeTaskIds);
   }
 
   const matchedReplace = replaceable.find((entry) => entry.label === answer)
@@ -286,7 +290,7 @@ async function resolveOverflowChoiceInHost(
     const current = center.list(sessionId).find((task) => task.id === replacement.task.id);
     const receipt = delegateTaskReceipt(current?.status === 'running'
       ? { outcome: 'started', task: current }
-      : replacement, cancellationReceipt);
+      : replacement, cancellationReceipt, includeTaskIds);
     if (receipt.ok) receipt.meta = { ...receipt.meta, sessionTaskReplacement: { shortName: cancellation.task.shortName, stopped } };
     return receipt;
   }
@@ -389,7 +393,8 @@ function moduleFor(
   return { schema, createHandler: () => new Handler(schema, executeFn) };
 }
 
-export const delegateTaskModule = moduleFor(delegateTaskSchema, executeDelegateTask);
+export const delegateTaskModule = moduleFor(delegateTaskSchema, (args, ctx, canUseTool, onProgress) =>
+  executeDelegateTask(args, ctx, canUseTool, onProgress, true));
 export const steerTaskModule = moduleFor(steerTaskSchema, executeSteerTask);
 export const cancelTaskModule = moduleFor(cancelTaskSchema, executeCancelTask);
 export const taskStatusModule = moduleFor(taskStatusSchema, executeTaskStatus);

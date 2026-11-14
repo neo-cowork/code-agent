@@ -45,6 +45,7 @@ import { listSessionCandidatesSchema } from '../../src/host/tools/modules/delega
 import { askUserQuestionSchema } from '../../src/host/tools/modules/planning/askUserQuestion.schema';
 import { projectSessionCandidates } from '../../src/host/services/delegation/delegationCandidates';
 import { admitDelegation } from '../../src/host/services/delegation/delegationAdmission';
+import { evaluateClarifyGuard } from '../../src/host/services/delegation/delegationClarifyGuard';
 
 // ----------------------------------------------------------------------------
 // 常量与类型（script-local 实验常量，非业务常量）
@@ -95,7 +96,7 @@ interface ParsedContext {
 
 type Prediction =
   | { label: 'no_delegation'; content: string }
-  | { label: 'delegate_existing' | 'create_new' | 'correct' | 'stop' | 'resume'; candidateRef?: string; delegationId?: string }
+  | { label: 'delegate_existing' | 'create_new' | 'correct' | 'stop' | 'resume'; candidateRef?: string; delegationId?: string; text?: string }
   | { label: 'clarify' };
 
 /** fail-loud：抛错；main 捕获后打 FAIL 并非零退出（self-check 里 assert.throws 也用它）。 */
@@ -233,7 +234,20 @@ function wireTools(): Array<Record<string, unknown>> {
 
 interface ArmSpec { model: string; baseUrl: string; apiKey: string; keyEnv: string; }
 
+const RATE_LIMIT_RETRIES = 8;
+const RATE_LIMIT_WAIT_MS = 8_000;
+
+/** 429 限流（dogfood 臂 60 次/分钟）按固定间隔重试；其他错误不重试。 */
 async function chatCall(arm: ArmSpec, body: Record<string, unknown>): Promise<{ ok: boolean; json?: unknown; error?: string }> {
+  let last = await chatCallOnce(arm, body);
+  for (let attempt = 0; attempt < RATE_LIMIT_RETRIES && !last.ok && last.error?.startsWith('HTTP 429'); attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, RATE_LIMIT_WAIT_MS));
+    last = await chatCallOnce(arm, body);
+  }
+  return last;
+}
+
+async function chatCallOnce(arm: ArmSpec, body: Record<string, unknown>): Promise<{ ok: boolean; json?: unknown; error?: string }> {
   try {
     const response = await fetch(`${arm.baseUrl}/chat/completions`, {
       method: 'POST',
@@ -256,6 +270,18 @@ function assistantContent(payload: unknown): string {
   return typeof message?.content === 'string' ? message.content.trim() : '';
 }
 
+/** 第一个 tool call 的 text 参数（生产工具入参名；缺失/非字符串 → 空串）。 */
+function firstCallText(payload: unknown): string {
+  const call = (payload as { choices?: Array<{ message?: { tool_calls?: Array<{ function?: { arguments?: unknown } }> } }> })?.choices?.[0]?.message?.tool_calls?.[0];
+  const raw = call?.function?.arguments;
+  try {
+    const args = typeof raw === 'string' ? JSON.parse(raw) as Record<string, unknown> : (raw as Record<string, unknown> | undefined);
+    return typeof args?.text === 'string' ? args.text : '';
+  } catch {
+    return '';
+  }
+}
+
 /** 第一个 tool call → 预测标签（无 tool call 落 no_delegation，带回回复文本）。 */
 function classifyPrediction(payload: unknown): Prediction {
   const first = parseFirstToolCall(payload);
@@ -263,8 +289,8 @@ function classifyPrediction(payload: unknown): Prediction {
   if (first.tool === askUserQuestionSchema.name) return { label: 'clarify' };
   if (first.tool === delegateSessionSchema.name) {
     switch (first.action) {
-      case 'delegate_existing': return { label: 'delegate_existing', candidateRef: first.candidateRef };
-      case 'create_new': return { label: 'create_new' };
+      case 'delegate_existing': return { label: 'delegate_existing', candidateRef: first.candidateRef, text: firstCallText(payload) };
+      case 'create_new': return { label: 'create_new', text: firstCallText(payload) };
       case 'correct': return { label: 'correct', delegationId: first.delegationId };
       case 'stop': return { label: 'stop', delegationId: first.delegationId };
       case 'resume': return { label: 'resume', delegationId: first.delegationId };
@@ -306,6 +332,50 @@ function scoreItem(input: ScoreInput): { correct: boolean; e2Violation: boolean;
     || (gold === 'delegate_existing' && prediction.label === 'delegate_existing' && !correct);
   const e4UnnecessaryClarify = ROUTABLE.has(gold) && prediction.label === 'clarify';
   return { correct, e2Violation, e4UnnecessaryClarify, note };
+}
+
+// ----------------------------------------------------------------------------
+// 生产守卫复用：与 runDelegateSession 同一个纯函数 evaluateClarifyGuard
+// ----------------------------------------------------------------------------
+
+const TRUST_NOTE = /「?([^「」，。；:：\n]+?)」?的工作区 folderTrust=(\w+)\(blocked (\d+)\)/;
+
+/**
+ * 守卫 + 准入镜像：先跑生产 evaluateClarifyGuard；放行后再用真 admitDelegation 复现
+ * 生产里 G3（引用解不开）/ G12（备注里目标工作区 untrusted）的拒绝——拒绝在生产里同样
+ * 把模型引向 AskUserQuestion，所以记为 clarify。返回 null = 放行（保持原预测）。
+ */
+function guardVerdict(item: K2Item, parsed: ParsedContext, prediction: Prediction): { rule: string } | null {
+  if (prediction.label !== 'delegate_existing' && prediction.label !== 'create_new') return null;
+  const refs = parsed.candidates.map((c) => candidateRefFor(item.id, c.shortName));
+  const chosenIndex = prediction.label === 'delegate_existing' && prediction.candidateRef ? refs.indexOf(prediction.candidateRef) : -1;
+  if (prediction.label === 'delegate_existing' && chosenIndex < 0) return { rule: 'admission_G3_unresolved_ref' };
+  const verdict = evaluateClarifyGuard({
+    action: prediction.label,
+    candidates: parsed.candidates.map((c) => ({ shortName: c.shortName, workspaceName: c.workspaceName })),
+    chosenIndex: prediction.label === 'delegate_existing' ? chosenIndex : null,
+    userMessage: item.utterance,
+  });
+  if (verdict.kind === 'clarify') return { rule: verdict.rule };
+  if (prediction.label === 'delegate_existing') {
+    const note = item.context.match(TRUST_NOTE);
+    const chosen = parsed.candidates[chosenIndex];
+    const untrusted = note !== null && note[1].trim() === chosen.shortName && note[2] !== 'trusted' && Number(note[3]) > 0;
+    const sessionIds = parsed.candidates.map((_, index) => `s-${index}`);
+    const snapshot: Parameters<typeof admitDelegation>[1] = {
+      originSessionId: 'origin-1', originTurnId: 'turn-1',
+      candidates: { candidateSetId: candidateSetIdFor(item.id), candidateRefs: refs, candidateSessionIds: sessionIds },
+      target: {
+        sessionId: sessionIds[chosenIndex], sessionExists: true, isArchived: false, isDeleted: false, sessionType: 'chat', engineKind: 'native',
+        workspaceRoot: `/w/${chosen.workspaceName}`, workspaceAuthorized: true, permissionMode: 'default',
+        folderTrust: untrusted ? { state: note[2], blockedItems: Number(note[3]) } : { state: 'trusted', blockedItems: 0 },
+      },
+      runningTurns: [], targetActiveRunId: null, delegatedRunIds: [], userQueuedOrSendingRows: 0, existingDelegation: null, chainDelegation: null,
+    };
+    const admitted = admitDelegation({ action: 'delegate_existing', content: item.utterance, candidateRef: prediction.candidateRef, candidateSetId: candidateSetIdFor(item.id) }, snapshot);
+    if (admitted.kind === 'rejected') return { rule: `admission_${admitted.gate}_${admitted.code}` };
+  }
+  return null;
 }
 
 function percentileNearestRank(sorted: number[], p: number): number {
@@ -419,6 +489,14 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
 }
 
 function resolveArm(kind: 'main' | 'second'): ArmSpec {
+  // 环境驱动的 dogfood 臂：K2_EVAL_ARM=xiaomi 时主 arm 走 XIAOMI_API_URL/KEY/MODEL（不改语料与评分）。
+  if (kind === 'main' && process.env.K2_EVAL_ARM === 'xiaomi') {
+    const apiKey = (process.env.XIAOMI_API_KEY || '').trim();
+    const baseUrl = (process.env.XIAOMI_API_URL || '').trim().replace(/\/+$/, '');
+    const model = (process.env.XIAOMI_MODEL || '').trim() || 'mimo-v2.6-flash';
+    if (apiKey === '' || baseUrl === '') failLoud('XIAOMI_API_KEY / XIAOMI_API_URL 未配置');
+    return { model, baseUrl, apiKey, keyEnv: 'XIAOMI_API_KEY' };
+  }
   const keyEnv = kind === 'main' ? 'ZHIPU_CODING_API_KEY' : 'STEPFUN_API_KEY';
   const tier = kind === 'main' ? ZHIPU_CODING_TIER : STEPFUN_TIER;
   const apiKey = (process.env[keyEnv] || '').trim();
@@ -426,11 +504,17 @@ function resolveArm(kind: 'main' | 'second'): ArmSpec {
   return { model: tier.model, baseUrl: tier.baseUrl, apiKey, keyEnv };
 }
 
-interface E1Row { id: string; gold: K2Label; correct: boolean; e2: boolean; e4: boolean; note: string; latencyMs: number | null; transportError: boolean; }
+interface E1Row {
+  id: string; gold: K2Label; correct: boolean; e2: boolean; e4: boolean; note: string; latencyMs: number | null; transportError: boolean;
+  /** 守卫触发的规则名（未触发 = undefined）；correct/e2/e4 已按守卫后的预测评分。 */
+  guardRule?: string;
+  rawE2?: boolean; rawE4?: boolean; rawCorrect?: boolean;
+}
 
-async function runE1(items: K2Item[]): Promise<{ rows: E1Row[]; summary: Record<string, unknown> }> {
+async function runE1(items: K2Item[], useGuard: boolean): Promise<{ rows: E1Row[]; summary: Record<string, unknown>; rawPredictions: Array<{ id: string; prediction: Prediction }> }> {
   const arm = resolveArm('main');
   const parsed = items.map((item) => parseContext(item));
+  const rawPredictions: Array<{ id: string; prediction: Prediction }> = [];
   const rows = await mapLimit(items, CONCURRENCY, async (item, ): Promise<E1Row> => {
     const context = parsed[items.indexOf(item)];
     const started = Date.now();
@@ -450,15 +534,20 @@ async function runE1(items: K2Item[]): Promise<{ rows: E1Row[]; summary: Record<
       return { id: item.id, gold: item.gold_label, correct: false, e2: false, e4: false, note: `transport:${result.error?.slice(0, 80)}`, latencyMs: null, transportError: true };
     }
     const prediction = classifyPrediction(result.json);
+    rawPredictions.push({ id: item.id, prediction });
     const refByShort = new Map(context.candidates.map((c) => [c.shortName, candidateRefFor(item.id, c.shortName)]));
-    const scored = scoreItem({ item, refByShort, prediction });
+    const fired = useGuard ? guardVerdict(item, context, prediction) : null;
+    const scored = scoreItem({ item, refByShort, prediction: fired ? { label: 'clarify' } : prediction });
+    const raw = useGuard ? scoreItem({ item, refByShort, prediction }) : null;
     return {
       id: item.id, gold: item.gold_label, correct: scored.correct, e2: scored.e2Violation, e4: scored.e4UnnecessaryClarify,
-      note: scored.note, latencyMs, transportError: false,
+      note: fired ? `guard:${fired.rule}` : scored.note, latencyMs, transportError: false, guardRule: fired?.rule,
+      // 同一次预测、不套守卫的评分（守卫档位内部对照，保证「守卫后 E4 不高于无守卫 E4」可逐条核）。
+      ...(raw ? { rawE2: raw.e2Violation, rawE4: raw.e4UnnecessaryClarify, rawCorrect: raw.correct } : {}),
     };
   });
   const transportErrors = rows.filter((r) => r.transportError).length;
-  if (transportErrors / rows.length > 0.1) failLoud(`传输错误率 ${(transportErrors / rows.length * 100).toFixed(1)}% > 10%`);
+  if (transportErrors / rows.length > 0.1) failLoud(`传输错误率 ${(transportErrors / rows.length * 100).toFixed(1)}% > 10%（首条：${rows.find((r) => r.transportError)?.note ?? ''}）`);
   const perLabel = K2_LABELS.map((label) => {
     const subset = rows.filter((r) => r.gold === label);
     return { label, n: subset.length, correct: subset.filter((r) => r.correct).length };
@@ -470,8 +559,21 @@ async function runE1(items: K2Item[]): Promise<{ rows: E1Row[]; summary: Record<
   const trapRows = rows.filter((r) => trapIds.includes(r.id) && r.e4);
   const answerHereRows = rows.filter((r) => r.gold === 'answer_here');
   const rejectRows = rows.filter((r) => r.gold === 'reject');
+  const firedRows = rows.filter((r) => r.guardRule !== undefined);
+  const rawRoutable = routableRows.filter((r) => r.rawE4);
+  const guardStats = useGuard ? {
+    guardFired: firedRows.map((r) => ({ id: r.id, gold: r.gold, rule: r.guardRule })),
+    guardCausedE4Ids: firedRows.filter((r) => ROUTABLE.has(r.gold)).map((r) => r.id),
+    noGuardSameRun: {
+      e1: rows.filter((r) => r.rawCorrect).length / rows.length,
+      e2Ids: rows.filter((r) => r.rawE2).map((r) => r.id),
+      e4: `${rawRoutable.length}/${routableRows.length}`,
+    },
+  } : undefined;
   const summary = {
     model: arm.model,
+    guard: useGuard ? 'on' : 'off',
+    ...(guardStats ? { guardStats } : {}),
     items: rows.length,
     transportErrors,
     e1: {
@@ -492,7 +594,7 @@ async function runE1(items: K2Item[]): Promise<{ rows: E1Row[]; summary: Record<
       p95Ms: percentileNearestRank(rows.filter((r) => r.latencyMs !== null).map((r) => r.latencyMs as number).sort((a, b) => a - b), 95),
     },
   };
-  return { rows, summary };
+  return { rows, summary, rawPredictions };
 }
 
 // ----------------------------------------------------------------------------
@@ -760,8 +862,8 @@ async function main(): Promise<void> {
     doc.e5 = summary;
     console.log(JSON.stringify(summary, null, 2));
   } else {
-    const { rows, summary } = await runE1(items);
-    doc.e1Run = { summary, rows: rows.map((r) => ({ id: r.id, gold: r.gold, correct: r.correct, e2: r.e2, e4: r.e4 })) };
+    const { rows, summary, rawPredictions } = await runE1(items, !args.includes('--no-guard'));
+    doc.e1Run = { summary, rawPredictions, rows: rows.map((r) => ({ id: r.id, gold: r.gold, correct: r.correct, e2: r.e2, e4: r.e4 })) };
     console.log(JSON.stringify(summary, null, 2));
   }
   doc.generatedAt = new Date().toISOString();

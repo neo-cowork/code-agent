@@ -286,6 +286,10 @@ export interface SurfaceOutputRefV1 {
 
 export type SurfaceSessionViewV1 = Omit<InteractiveSurfaceSessionV1, 'grantId'>;
 
+/** Event `operation.action` tags for a model-requested "waiting for the user" takeover (the bar picks its copy from these). */
+export const WAIT_FOR_USER_EVENT_ACTION = 'wait_for_user';
+export const WAIT_FOR_USER_TIMEOUT_EVENT_ACTION = 'wait_for_user_timeout';
+
 export interface SurfaceExecutionEventV1 {
   version: 1;
   eventId: string;
