@@ -12,7 +12,7 @@ const logger = createLogger('ContextAssembly');
 type RuntimeForDeferredToolPreload = Pick<
   RuntimeContext,
   'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'goalMode' | 'turn'
-  | 'deniedToolNames' | 'allowedToolNames' | 'toolScope'
+  | 'deniedToolNames' | 'allowedToolNames' | 'toolScope' | 'foregroundMcpServerIds'
 > & { sessionId?: string };
 
 // 意图正则守则（issue #322）：\b 对 . / - 等非单词字符也成立，"notes.md" 能穿过
@@ -131,6 +131,18 @@ export function getDeferredToolsToPreloadForTurn(
   if (allowedMcpServerIds.size > 0) {
     for (const meta of getToolSearchService().getMCPToolsMeta()) {
       if (meta.mcpServer && allowedMcpServerIds.has(meta.mcpServer)) {
+        tools.add(meta.name);
+      }
+    }
+  }
+
+  // 文字前台：用户自己配置且已启用的 MCP 服务器工具直接送 schema，不再藏在 ToolSearch 后面
+  // （发现一跳在小模型 + 前台步数预算下会耗尽步数）。内置默认服务器不在该名单内，保持 deferred。
+  // 服务器此刻未连接就没有工具元数据，本轮缺席即可，ToolSearch 仍在名单非空时保留。
+  const foregroundMcpServerIds = new Set(runtime.foregroundMcpServerIds ?? []);
+  if (foregroundMcpServerIds.size > 0) {
+    for (const meta of getToolSearchService().getMCPToolsMeta()) {
+      if (meta.mcpServer && foregroundMcpServerIds.has(meta.mcpServer)) {
         tools.add(meta.name);
       }
     }

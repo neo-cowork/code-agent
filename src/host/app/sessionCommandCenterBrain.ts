@@ -1,7 +1,6 @@
 import type { AppServiceRunOptions } from '../../shared/contract/appService';
 import { resolveForegroundBrainMaxIterations, SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS } from '../../shared/constants/sessionCommandCenter';
 import { getTextForegroundToolNames } from '../tools/protocolRegistry';
-import { getForegroundMcpServerIds } from '../mcp/foregroundMcpServers';
 import { detectTaskFeatures } from '../prompts/systemReminders';
 import { getNativeConnectorToolNamesForIntent } from '../connectors/nativeConnectorIntent';
 import { isRoleProactivityChatIntent } from './roleProactivityChatIntent';
@@ -202,6 +201,7 @@ export function withSessionCommandCenterBrain(
   prompt?: string,
   imageTurn?: ForegroundImageTurn,
   lastAssistantStoppedByStepLimit = false,
+  foregroundMcpServerIds: readonly string[] = [],
 ): AppServiceRunOptions {
   const text = prompt ?? '';
   const turnSystemContext = [
@@ -214,7 +214,7 @@ export function withSessionCommandCenterBrain(
     maxIterations: resolveForegroundBrainTurnBudget(text, lastAssistantStoppedByStepLimit, options?.maxIterations),
     allowedToolNames: getTextForegroundToolNamesForPrompt(text, options?.toolScope?.allowedConnectorIds, imageTurn),
     foregroundToolFace: true,
-    foregroundMcpServerIds: getForegroundMcpServerIds(),
+    foregroundMcpServerIds: [...foregroundMcpServerIds],
     turnSystemContext,
   };
 }

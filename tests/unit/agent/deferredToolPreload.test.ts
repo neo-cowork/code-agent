@@ -47,8 +47,8 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 }));
 
 function runtime(
-  overrides: Partial<Pick<RuntimeContext, 'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'turn' | 'deniedToolNames' | 'allowedToolNames' | 'toolScope'>>,
-): Pick<RuntimeContext, 'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'turn' | 'deniedToolNames' | 'allowedToolNames' | 'toolScope'> {
+  overrides: Partial<Pick<RuntimeContext, 'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'turn' | 'deniedToolNames' | 'allowedToolNames' | 'toolScope' | 'foregroundMcpServerIds'>>,
+): Pick<RuntimeContext, 'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'turn' | 'deniedToolNames' | 'allowedToolNames' | 'toolScope' | 'foregroundMcpServerIds'> {
   return {
     enableToolDeferredLoading: true,
     executionIntent: undefined,
@@ -338,6 +338,28 @@ describe('deferred tool preload', () => {
     expect(getDeferredToolsToPreloadForTurn(runtime({
       toolScope: { allowedMcpServerIds: ['github'] },
     }))).toEqual(['mcp__github__search_code']);
+  });
+
+  it('文字前台：用户 MCP 服务器的工具直接送 schema（非 deferred），内置服务器仍不预载', () => {
+    const meta = (server: string, tool: string) => ({
+      name: `mcp__${server}__${tool}`, shortDescription: tool, tags: ['mcp'], aliases: [], source: 'mcp' as const, mcpServer: server,
+    });
+    getToolSearchService().registerMCPTools([
+      meta('external-import-nonce', 'get_random_nonce'),
+      meta('deepwiki', 'ask_question'),
+      meta('cua-driver', 'click'),
+      meta('github', 'search_code'),
+    ]);
+    const preload = getDeferredToolsToPreloadForTurn(runtime({
+      allowedToolNames: ['Read', 'delegate_task'],
+      foregroundMcpServerIds: ['external-import-nonce'],
+    }));
+    expect(preload).toContain('mcp__external-import-nonce__get_random_nonce');
+    expect(preload.filter((name) => name.startsWith('mcp__'))).toEqual(['mcp__external-import-nonce__get_random_nonce']);
+    // 名单为空（无用户服务器）时不预载任何 mcp__ 工具
+    expect(getDeferredToolsToPreloadForTurn(runtime({
+      allowedToolNames: ['Read'], foregroundMcpServerIds: [],
+    })).filter((name) => name.startsWith('mcp__'))).toEqual([]);
   });
 
   // role-edit-flow 根因 #2 回归护栏：active skill 的 allowedTools 里的非 core 工具
