@@ -1,0 +1,115 @@
+import { describe, expect, it } from 'vitest';
+import { detectReplyEgressLeaks } from '../../src/shared/replyEgressLeakDetect';
+
+describe('detectReplyEgressLeaks', () => {
+  describe('positive samples (zh/en audit examples)', () => {
+    it('flags mechanism_talk and internal_tool_name on "我的工具列表里没有 browser_action"', () => {
+      const reply = '抱歉，我的工具列表里没有 browser_action，暂时打不开这个网页。';
+      const result = detectReplyEgressLeaks(reply, '打开这个网页截图发我并总结');
+
+      expect(result.categories).toContain('mechanism_talk');
+      expect(result.categories).toContain('internal_tool_name');
+      expect(result.matchedTokens).toContain('工具列表里');
+      expect(result.matchedTokens).toContain('browser_action');
+      expect(result.matchedTokens).not.toContain(reply);
+    });
+
+    it('flags mechanism_talk on "本轮 Bash 不可用"', () => {
+      const reply = '本轮 Bash 不可用，无法直接执行清理脚本。';
+      const result = detectReplyEgressLeaks(reply, '帮我把桌面上的临时文件删掉');
+
+      expect(result.categories).toEqual(['mechanism_talk']);
+      expect(result.matchedTokens).toContain('本轮 Bash 不可用');
+      expect(result.matchedTokens).not.toContain(reply);
+    });
+
+    it('flags English mechanism talk ("tool list", "this turn\'s tools", "system prompt")', () => {
+      const reply =
+        "My tool list has no browser_action, and this turn's tools are unavailable because the system prompt forbids direct shell execution.";
+      const result = detectReplyEgressLeaks(reply, 'Please open this page and summarize it.');
+
+      expect(result.categories).toContain('mechanism_talk');
+      expect(result.categories).toContain('internal_tool_name');
+      expect(result.categories).not.toContain('english_reply_to_zh');
+      expect(result.matchedTokens).toContain('browser_action');
+      expect(result.matchedTokens).toContain('system prompt');
+      expect(result.matchedTokens).not.toContain(reply);
+    });
+
+    it('flags english_reply_to_zh on audit narration sample sent to a Chinese user', () => {
+      const reply =
+        'Both mail and calendar connectors are connected. Now let me take stock of accounts and pull recent data.';
+      const result = detectReplyEgressLeaks(reply, '查一下我明天的日程再回邮件');
+
+      expect(result.categories).toEqual(['english_reply_to_zh']);
+      expect(result.matchedTokens.length).toBeGreaterThan(0);
+      expect(result.matchedTokens).toContain('Both');
+      expect(result.matchedTokens).not.toContain(reply);
+    });
+
+    it('flags english_reply_to_zh when Chinese user asks to summarize an English item in Chinese', () => {
+      const reply =
+        'Here is a summary of the project proposal: the team plans to ship the desktop release next Friday after finishing the final reliability review and documentation pass.';
+      const result = detectReplyEgressLeaks(reply, '帮我看看这封英文邮件讲了什么');
+
+      expect(result.categories).toEqual(['english_reply_to_zh']);
+    });
+  });
+
+  describe('negative samples', () => {
+    it('does not flag english_reply_to_zh when a Chinese user explicitly asks for English', () => {
+      const englishReply =
+        'Both mail and calendar connectors are connected. Here is the English summary you requested for tomorrow morning.';
+
+      expect(
+        detectReplyEgressLeaks(englishReply, '请用英文回复：帮我写一段明早会议的安排说明').categories,
+      ).toEqual([]);
+      expect(
+        detectReplyEgressLeaks(englishReply, '把这段话翻译成英文：明天上午十点同步项目进度').categories,
+      ).toEqual([]);
+      expect(
+        detectReplyEgressLeaks(englishReply, '帮我起草一封英文邮件给客户确认时间').categories,
+      ).toEqual([]);
+      expect(
+        detectReplyEgressLeaks(englishReply, '总结一下今天的工作，please reply in English').categories,
+      ).toEqual([]);
+    });
+
+    it('skips text inside markdown code fences for mechanism_talk, tool names, and English text', () => {
+      const fencedWithChineseIntro = [
+        '已为你整理好示例片段：',
+        '```txt',
+        '我的工具列表里没有 browser_action',
+        '本轮 Bash 不可用，system prompt 限制了调用',
+        'Both mail and calendar connectors are connected. Now let me take stock of accounts and pull recent data.',
+        '```',
+      ].join('\n');
+
+      const fenceOnly = [
+        '```md',
+        'Both mail and calendar connectors are connected. Now let me take stock of accounts and pull recent data.',
+        'browser_action spawn_agent system prompt',
+        '```',
+      ].join('\n');
+
+      expect(detectReplyEgressLeaks(fencedWithChineseIntro, '帮我整理示例').categories).toEqual([]);
+      expect(detectReplyEgressLeaks(fenceOnly, '帮我整理示例').categories).toEqual([]);
+    });
+
+    it('does not flag plain human-language Chinese fallback replies or English replies to English users', () => {
+      expect(
+        detectReplyEgressLeaks(
+          '这里暂时没法直接运行清理命令，文件还没有改动；我可以先帮你列出桌面上的临时文件清单，再交由后台处理。',
+          '帮我把桌面上的临时文件删掉',
+        ).categories,
+      ).toEqual([]);
+
+      expect(
+        detectReplyEgressLeaks(
+          'Both mail and calendar connectors are connected. Now let me take stock of accounts and pull recent data.',
+          'Check my calendar for tomorrow and draft a reply.',
+        ).categories,
+      ).toEqual([]);
+    });
+  });
+});
