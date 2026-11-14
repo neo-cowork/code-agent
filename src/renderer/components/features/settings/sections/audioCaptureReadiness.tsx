@@ -1,5 +1,5 @@
 import React from 'react';
-import type { AudioCaptureMissingPrerequisiteCode } from '@shared/contract/audioCapture';
+import type { AudioCaptureMissingPrerequisiteCode, AudioCaptureMode } from '@shared/contract/audioCapture';
 import { GhostButton } from '../../../primitives/Button';
 import type { AudioCaptureStatus } from '../../../../services/nativeDesktop';
 
@@ -46,7 +46,7 @@ export async function loadDayAndHourAudioSegments(
 
 function computeMissingAudioPrerequisites(
   status: AudioCaptureStatus | null,
-  selectedMode: 'microphone' | 'system-audio',
+  selectedMode: AudioCaptureMode,
   failedCode?: AudioCaptureMissingPrerequisiteCode | null,
 ): AudioCaptureMissingPrerequisiteCode[] {
   const codes: AudioCaptureMissingPrerequisiteCode[] = [];
@@ -61,7 +61,7 @@ function computeMissingAudioPrerequisites(
   if (prereqs) {
     const micReady = prereqs.recorder.microphone === 'ready';
     const sysReady = prereqs.recorder.systemAudio === 'ready';
-    if (selectedMode === 'system-audio') {
+    if (selectedMode !== 'microphone') {
       if (!sysReady && !micReady) add('recorder_missing');
       else if (!sysReady) add('system_audio_helper_missing');
     } else if (!micReady) {
@@ -117,7 +117,7 @@ export const NativeDesktopEmptyView: React.FC<{
 
 export const AudioCaptureReadinessLine: React.FC<{
   status: AudioCaptureStatus | null;
-  mode: 'microphone' | 'system-audio';
+  mode: AudioCaptureMode;
   failedCode?: AudioCaptureMissingPrerequisiteCode | null;
   text: AudioReadinessText;
   onRecheck: () => void;
