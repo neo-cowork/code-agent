@@ -3,6 +3,8 @@
 // ============================================================================
 // 嵌入 StatusBar，支持对话中途切换模型
 
+import { humanizeInternalText } from '@shared/humanizeInternalText';
+import { useModelMenuNavigation } from './useModelMenuNavigation';
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useSessionStore } from '../../stores/sessionStore';
@@ -184,7 +186,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const [modelSettings, setModelSettings] = useState<AppSettings | null>(null);
   // modelSettings IPC 是否已返回（用于打开面板时的锚定时机）
   const [settingsLoaded, setSettingsLoaded] = useState(false);
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const modelText = t.settings.model.models;
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -554,104 +556,25 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
 
   const selectableOptionCount = showModelSettingsPrompt ? 0 : 1 + filteredOptions.length;
 
-  useEffect(() => {
-    if (!open) return;
-    setActiveOptionIndex(0);
-  }, [open, searchQuery]);
-
-  useEffect(() => {
-    if (!open || selectableOptionCount <= 0) return;
-    setActiveOptionIndex((index) => Math.min(index, selectableOptionCount - 1));
-  }, [open, selectableOptionCount]);
-
-  useEffect(() => {
-    if (!open || selectableOptionCount <= 0) return;
-    const active = menuRef.current?.querySelector<HTMLElement>(`[data-model-option-index="${activeOptionIndex}"]`);
-    active?.scrollIntoView({ block: 'nearest' });
-  }, [activeOptionIndex, open, selectableOptionCount]);
-
-  const handleMenuKeyDown = useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
-    // 输入法合成期（中文/日文等选候选词）的回车/方向键交给输入法，不当弹窗快捷键，
-    // 否则按回车选词会被误当"选中模型+关弹窗"。
-    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      if (selectableOptionCount <= 0) return;
-      event.preventDefault();
-      setActiveOptionIndex((index) => {
-        const delta = event.key === 'ArrowDown' ? 1 : -1;
-        return (index + delta + selectableOptionCount) % selectableOptionCount;
-      });
-      return;
-    }
-
-    if (event.key === 'Enter') {
-      if (selectableOptionCount <= 0) return;
-      event.preventDefault();
-      if (activeOptionIndex === 0) {
-        void handleSelectAuto();
-        return;
-      }
-      const option = filteredOptions[activeOptionIndex - 1];
-      if (option) void handleSelect(option);
-      return;
-    }
-
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      setOpen(false);
-    }
-  }, [
-    activeOptionIndex,
-    filteredOptions,
-    handleSelect,
-    handleSelectAuto,
-    selectableOptionCount,
-  ]);
-
   const displayModel = overrideModel || currentModel;
   const isOverridden = engine.kind === 'native' && !!overrideModel;
   const displayProvider = overrideProvider || defaultProvider;
 
-  // 打开面板时锚定到当前选中模型：等 modelSettings IPC 返回、列表二次渲染后执行一次。
-  // 用 anchorPendingRef 保证每次打开只锚一次，搜索过滤（groupedFilteredOptions 变化）不重复锚定。
-  useEffect(() => {
-    if (!open) return;
-    if (!settingsLoaded) {
-      anchorPendingRef.current = true;
-      return;
-    }
-    if (!anchorPendingRef.current) return;
-    anchorPendingRef.current = false;
-    if (showModelSettingsPrompt) return;
-    let selectedIndex = 0;
-    for (const group of groupedFilteredOptions) {
-      const hit = group.options.find(
-        ({ option }) => option.model === displayModel && option.provider === displayProvider,
-      );
-      if (hit) {
-        selectedIndex = hit.index;
-        break;
-      }
-    }
-    // 键盘导航从当前选中项开始；无选中项时保持 0（「自动」）
-    setActiveOptionIndex(selectedIndex);
-    if (selectedIndex <= 0) return;
-    // 直接设置内层滚动容器的 scrollTop 让选中行居中可见，避免 scrollIntoView 误滚外层页面
-    const container = listScrollRef.current;
-    const row = container?.querySelector<HTMLElement>(`[data-model-option-index="${selectedIndex}"]`);
-    if (container && row) {
-      container.scrollTop = row.offsetTop - (container.clientHeight - row.clientHeight) / 2;
-    }
-  }, [open, settingsLoaded, showModelSettingsPrompt, groupedFilteredOptions, displayModel, displayProvider]);
+  const handleMenuKeyDown = useModelMenuNavigation({
+    open, searchQuery, selectableOptionCount, activeOptionIndex, setActiveOptionIndex,
+    filteredOptions, handleSelect, handleSelectAuto, setOpen, menuRef,
+    settingsLoaded, showModelSettingsPrompt, groupedFilteredOptions,
+    displayModel, displayProvider, anchorPendingRef, listScrollRef,
+  });
 
   const nativeDisplayLabel = overrideAdaptive ? '自动' : getRuntimeModelLabel(displayModel, displayProvider, modelSettings);
   const selectedNativeOption = useMemo(
     () => modelOptions.find((option) => option.provider === displayProvider && option.model === displayModel),
     [displayModel, displayProvider, modelOptions],
   );
-  const displayLabel = engine.kind === 'native'
+  const displayLabel = humanizeInternalText(engine.kind === 'native'
     ? showModelSettingsPrompt ? '配置模型' : nativeDisplayLabel
-    : engine.model ?? '默认模型';
+    : engine.model ?? '默认模型', language).text;
 
   const effortOptions = useMemo(
     () => engine.kind === 'native'
@@ -1055,7 +978,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
           hover:text-zinc-100 transition-colors
           ${isOverridden ? 'text-badge-warning' : 'text-zinc-400'}
         `}
-        title={triggerTitle}
+        title={humanizeInternalText(triggerTitle, language).text}
       >
         {engine.kind !== 'native' && (
           <>
