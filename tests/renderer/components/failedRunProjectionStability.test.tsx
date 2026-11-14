@@ -8,9 +8,10 @@ import fixture from '../fixtures/failedBackgroundSpawn.json';
 
 const runtime = vi.hoisted(() => ({ invokeDomain: vi.fn() }));
 vi.mock('../../../src/renderer/services/ipcService', () => ({ default: { invokeDomain: runtime.invokeDomain, invoke: vi.fn().mockResolvedValue([]) } }));
-vi.mock('../../../src/renderer/hooks/useI18n', async () => {
+vi.mock('../../../src/renderer/hooks/useI18n', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/renderer/hooks/useI18n')>();
   const { zh } = await import('../../../src/renderer/i18n/zh');
-  return { useI18n: () => ({ t: zh, language: 'zh' }) };
+  return { ...actual, useI18n: () => ({ t: zh, language: 'zh' }) };
 });
 // Only replace viewport measurement; the production turn and node renderers stay real.
 vi.mock('react-virtuoso', () => ({
