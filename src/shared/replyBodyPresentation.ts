@@ -21,6 +21,16 @@ export function presentReplyBody(input: string, lang: InternalTextLanguage = 'zh
     }
     return '';
   });
+  // Role wake proposals are parsed by the host into proposal cards; the raw fenced JSON is not reply prose.
+  text = text.replace(/```wake_proposals\b[\s\S]*?(?:```|$)/gi, (raw) => {
+    technical.push(raw);
+    return '';
+  });
+  const fence = text.lastIndexOf('```');
+  if (fence >= 0 && text.length - fence > 3 && '```wake_proposals'.startsWith(text.slice(fence).toLowerCase())) {
+    technical.push(text.slice(fence));
+    text = text.slice(0, fence);
+  }
   // A streaming prefix must not flash raw tags before its closing tag arrives.
   text = text.replace(new RegExp(`<(?:${tags})(?:\\b[^>]*>[\\s\\S]*|[^>]*)$`, 'i'), (raw) => {
     technical.push(raw);

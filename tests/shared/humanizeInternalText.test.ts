@@ -168,6 +168,20 @@ describe('reply body display projection', () => {
       expect(presentReplyBody(text).text).toBe(text);
     }
   });
+
+  it.each(['zh', 'en'] as const)('moves the role wake proposal block out of the reply body in %s', (lang) => {
+    const block = '```wake_proposals\n[{"title":"Draft the budget follow-up","prompt":"Draft a follow-up note"}]\n```';
+    const raw = `Check finished, nothing changed.\n\n${block}\n\n<decision>silence</decision>`;
+    const projected = presentReplyBody(raw, lang);
+    expect(projected.text).toBe('Check finished, nothing changed.');
+    expect(projected.text).not.toMatch(/wake_proposals|\[\{|"prompt"/);
+    expect(projected.technicalDetails).toContain(block);
+    expect(projected.technicalDetails).toContain('<decision>silence</decision>');
+    expect(presentReplyBody('Check finished.\n```wake_proposals\n[{"title":"Dra', lang).text).toBe('Check finished.');
+    expect(presentReplyBody('Check finished.\n```wake_pro', lang).text).toBe('Check finished.');
+    const code = 'Run this:\n```json\n[{"title":"kept"}]\n```';
+    expect(presentReplyBody(code, lang).text).toBe(code);
+  });
 });
 
 

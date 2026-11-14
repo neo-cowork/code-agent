@@ -4,6 +4,7 @@
 
 import type { ToolCall } from '@shared/contract';
 import type { Translations } from '../../../../../../i18n';
+import { interpolate } from '../../../../../../i18n/interpolate';
 import { summarizeBash } from './bashSummarizer';
 import { summarizeGrep } from './grepSummarizer';
 import { summarizeGlob } from './globSummarizer';
@@ -49,10 +50,10 @@ export function summarizeTool(toolCall: ToolCall, t: Translations): string | nul
       return summarizeBash(toolCall, t);
 
     case 'Grep':
-      return summarizeGrep(toolCall);
+      return summarizeGrep(toolCall, t);
 
     case 'Glob':
-      return summarizeGlob(toolCall);
+      return summarizeGlob(toolCall, t);
 
     case 'Read':
     case 'read_pdf':
@@ -65,37 +66,37 @@ export function summarizeTool(toolCall: ToolCall, t: Translations): string | nul
       return summarizeWrite(toolCall, t);
 
     case 'list_directory':
-      return summarizeListDirectory(toolCall);
+      return summarizeListDirectory(toolCall, t);
 
     case 'task':
-      return summarizeTask(toolCall);
+      return summarizeTask(toolCall, t);
 
     case 'todo_write':
-      return summarizeTodoWrite(toolCall);
+      return summarizeTodoWrite(toolCall, t);
 
     case 'mcp':
-      return summarizeMcp(toolCall);
+      return summarizeMcp(toolCall, t);
 
     case 'ppt_generate':
-      return summarizePptGenerate(toolCall);
+      return summarizePptGenerate(toolCall, t);
 
     case 'image_generate':
-      return summarizeImageGenerate(toolCall);
+      return summarizeImageGenerate(toolCall, t);
 
     case 'video_generate':
-      return summarizeVideoGenerate(toolCall);
+      return summarizeVideoGenerate(toolCall, t);
 
     case 'WebSearch':
-      return summarizeWebSearch(toolCall);
+      return summarizeWebSearch(toolCall, t);
 
     case 'web_fetch':
       return summarizeWebFetch(toolCall, t);
 
     case 'AskUserQuestion':
-      return summarizeAskUser(toolCall);
+      return summarizeAskUser(toolCall, t);
 
     default:
-      return summarizeDefault(toolCall);
+      return summarizeDefault(toolCall, t);
   }
 }
 
@@ -103,57 +104,57 @@ export function summarizeTool(toolCall: ToolCall, t: Translations): string | nul
 // Additional Summarizers
 // ============================================================================
 
-function summarizeListDirectory(toolCall: ToolCall): string | null {
+function summarizeListDirectory(toolCall: ToolCall, t: Translations): string | null {
   const output = toolCall.result?.output;
-  if (!output) return 'Empty';
+  if (!output) return t.toolResultSummary.empty;
 
   if (Array.isArray(output)) {
-    return `${output.length} items`;
+    return interpolate(t.toolResultSummary.itemCount, { count: output.length });
   }
 
   const lines = String(output).trim().split('\n').filter(Boolean);
-  return `${lines.length} items`;
+  return interpolate(t.toolResultSummary.itemCount, { count: lines.length });
 }
 
-function summarizeTask(toolCall: ToolCall): string | null {
+function summarizeTask(toolCall: ToolCall, t: Translations): string | null {
   if (toolCall.result?.success) {
-    return 'Completed';
+    return t.toolResultSummary.completed;
   }
   return null;
 }
 
-function summarizeTodoWrite(toolCall: ToolCall): string | null {
+function summarizeTodoWrite(toolCall: ToolCall, t: Translations): string | null {
   const todos = toolCall.arguments?.todos as Array<{ status: string }> | undefined;
   if (todos && Array.isArray(todos)) {
-    const completed = todos.filter((t) => t.status === 'completed').length;
-    return `${completed}/${todos.length} done`;
+    const completed = todos.filter((todo) => todo.status === 'completed').length;
+    return interpolate(t.toolResultSummary.todoProgress, { done: completed, total: todos.length });
   }
-  return 'Updated';
+  return t.toolResultSummary.updated;
 }
 
-function summarizeMcp(toolCall: ToolCall): string | null {
+function summarizeMcp(toolCall: ToolCall, t: Translations): string | null {
   if (toolCall.result?.success) {
     const output = toolCall.result.output;
     if (typeof output === 'string' && output.length < 60) {
       return output;
     }
-    return 'Done';
+    return t.toolResultSummary.done;
   }
   return null;
 }
 
-function summarizePptGenerate(toolCall: ToolCall): string | null {
+function summarizePptGenerate(toolCall: ToolCall, t: Translations): string | null {
   const metadata = toolCall.result?.metadata;
   if (metadata) {
     const slidesCount = metadata.slidesCount as number | undefined;
     if (slidesCount) {
-      return `${slidesCount} slides`;
+      return interpolate(t.toolResultSummary.slideCount, { count: slidesCount });
     }
   }
-  return 'Generated';
+  return t.toolResultSummary.generated;
 }
 
-function summarizeImageGenerate(toolCall: ToolCall): string | null {
+function summarizeImageGenerate(toolCall: ToolCall, t: Translations): string | null {
   const metadata = toolCall.result?.metadata;
   if (metadata) {
     // outputImagePaths = 批量输出列表；不读 imagePaths（那是 sessionMediaAssets 的输入素材字段）。
@@ -163,7 +164,7 @@ function summarizeImageGenerate(toolCall: ToolCall): string | null {
     const imagePath = (metadata.imagePath as string | undefined) || imagePaths[0];
     if (imagePath) {
       const fileName = imagePath.split('/').pop() || 'image';
-      return imagePaths.length > 1 ? `${fileName} +${imagePaths.length - 1} more` : fileName;
+      return imagePaths.length > 1 ? interpolate(t.toolResultSummary.moreFiles, { name: fileName, count: imagePaths.length - 1 }) : fileName;
     }
     const artifactPaths = Array.isArray(metadata.artifacts)
       ? metadata.artifacts
@@ -174,16 +175,16 @@ function summarizeImageGenerate(toolCall: ToolCall): string | null {
       : [];
     if (artifactPaths.length > 0) {
       const fileName = artifactPaths[0].split('/').pop() || 'image';
-      return artifactPaths.length > 1 ? `${fileName} +${artifactPaths.length - 1} more` : fileName;
+      return artifactPaths.length > 1 ? interpolate(t.toolResultSummary.moreFiles, { name: fileName, count: artifactPaths.length - 1 }) : fileName;
     }
     if (metadata.imageBase64) {
-      return 'Base64 image';
+      return t.toolResultSummary.imageData;
     }
   }
-  return 'Generated';
+  return t.toolResultSummary.generated;
 }
 
-function summarizeVideoGenerate(toolCall: ToolCall): string | null {
+function summarizeVideoGenerate(toolCall: ToolCall, t: Translations): string | null {
   const metadata = toolCall.result?.metadata;
   if (metadata) {
     const duration = metadata.duration as number | undefined;
@@ -200,13 +201,13 @@ function summarizeVideoGenerate(toolCall: ToolCall): string | null {
     if (aspectRatio) parts.push(aspectRatio);
 
     if (parts.length > 0) {
-      return `视频生成完成 (${parts.join(', ')})`;
+      return interpolate(t.toolResultSummary.videoGeneratedWith, { details: parts.join(', ') });
     }
   }
-  return '视频生成完成';
+  return t.toolResultSummary.videoGenerated;
 }
 
-function summarizeWebSearch(toolCall: ToolCall): string | null {
+function summarizeWebSearch(toolCall: ToolCall, t: Translations): string | null {
   const output = toolCall.result?.output;
   if (!output) return null;
 
@@ -218,13 +219,12 @@ function summarizeWebSearch(toolCall: ToolCall): string | null {
 
   // Parse "Sources: perplexity, exa, tavily, brave" line
   const sourcesMatch = str.match(/Sources:\s*([^|\n]+)/i);
-  let summary = `${resultCount} results`;
   if (sourcesMatch) {
     const sources = sourcesMatch[1].trim().replace(/,\s*$/, '');
-    summary += ` · via ${sources}`;
+    return interpolate(t.toolResultSummary.searchResultsVia, { count: resultCount, sources });
   }
 
-  return summary;
+  return interpolate(t.toolResultSummary.searchResults, { count: resultCount });
 }
 
 function summarizeWebFetch(toolCall: ToolCall, t: Translations): string | null {
@@ -241,7 +241,7 @@ function summarizeWebFetch(toolCall: ToolCall, t: Translations): string | null {
   return t.toolResultSummary.lineCount.replace('{count}', String(lines));
 }
 
-function summarizeAskUser(toolCall: ToolCall): string | null {
+function summarizeAskUser(toolCall: ToolCall, t: Translations): string | null {
   const output = toolCall.result?.output;
   if (output) {
     const answer = String(output);
@@ -250,5 +250,5 @@ function summarizeAskUser(toolCall: ToolCall): string | null {
     }
     return answer.slice(0, 37) + '...';
   }
-  return 'Answered';
+  return t.toolResultSummary.answered;
 }

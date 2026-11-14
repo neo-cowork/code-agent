@@ -374,8 +374,13 @@ function connectorFallbackAction(
  * 时这里会把汉字描述判为不匹配，退模板，仍然安全。
  */
 function matchesUiScript(text: string, t: Translations): boolean {
-  return CJK_PATTERN.test(t.toolStepHumanize.writeFallback) === CJK_PATTERN.test(text);
+  const cjkUi = CJK_PATTERN.test(t.toolStepHumanize.writeFallback);
+  if (cjkUi !== CJK_PATTERN.test(text)) return false;
+  // 宿主的机械兜底是英文句子，只是把中文关键词/文件名引了进来（Search for "预算"）：仍是英文，不能上中文界面。
+  return !(cjkUi && ENGLISH_STEP_SENTENCE.test(text));
 }
+
+const ENGLISH_STEP_SENTENCE = /^(?:Search|Read|Write|Edit|Find|List|Fetch|Store|Update|Ask|Browser|Computer|Use|Run)\b[\s:]/;
 
 /** 模型有时把内部工具名当描述（"Use task_status"）；含原始工具名作独立词的描述不可用，退回本地化模板。 */
 export function mentionsRawToolName(text: string, toolName: string): boolean {

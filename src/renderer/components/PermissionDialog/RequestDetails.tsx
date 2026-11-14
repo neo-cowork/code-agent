@@ -13,6 +13,7 @@ import { Badge } from '../primitives/Badge';
 import { Button } from '../primitives/Button';
 import { Eye, EyeOff } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
+import { HumanizedText } from '../HumanizedText';
 import { useAppStore } from '../../stores/appStore';
 import { resolveHostReasonCopy } from '../../utils/hostReasonPresentation';
 import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
@@ -203,7 +204,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       {details.preview && details.preview.type !== 'diff' && !(details.preview.type === 'command' && details.command) && (
         <div className="mt-4">
           {!(details.connectorAccess && details.preview.type === 'generic') && (
-            <div className="text-xs text-zinc-400 mb-2">{details.preview.summary}</div>
+            <div className="text-xs text-zinc-400 mb-2"><HumanizedText text={details.preview.summary} /></div>
           )}
           {details.preview.diff && (
             <pre className="text-xs p-2 rounded bg-zinc-700 border border-zinc-700 text-zinc-400 overflow-x-auto max-h-32 whitespace-pre-wrap break-all">

@@ -311,6 +311,21 @@ describe('humanizeToolStep — shortDescription 语种不符时退回模板', ()
     expect(humanizeToolStep('Write', { file_path: 'gear.txt' }, zh, '打开 Baidu 搜索 Claude'))
       .toBe('打开 Baidu 搜索 Claude');
   });
+
+  it('中文界面拒绝只是引用了中文关键词的英文兜底描述', () => {
+    for (const [name, args, description] of [
+      ['Grep', { pattern: '预算|下周计划' }, 'Search for "预算|下周计划"'],
+      ['WebSearch', { query: '销售报表导出' }, 'Search web for "销售报表导出"'],
+      ['memory_search', { query: '周报模板' }, 'Search memory for "周报模板"'],
+      ['Read', { file_path: '周报.md' }, 'Read 周报.md'],
+      ['some_future_tool', {}, 'Use 周报 helper'],
+    ] as const) {
+      const label = humanizeToolStep(name, args, zh, description);
+      expect(label).not.toBe(description);
+      expect(label).not.toMatch(/^(?:Search|Read|Use)\b/);
+    }
+    expect(humanizeToolStep('Write', { file_path: 'gear.txt' }, zh, 'Excel 表格导出完成')).toBe('Excel 表格导出完成');
+  });
 });
 
 describe('humanizeToolStep — en locale parity', () => {

@@ -7,6 +7,7 @@ import React from 'react';
 import { HumanizedText } from '../../../../HumanizedText';
 import type { ToolCall } from '@shared/contract';
 import { summarizeTool } from './summarizers';
+import { RAW_NO_MATCHES_SUMMARY } from './summarizers/globSummarizer';
 import { useI18n } from '../../../../../hooks/useI18n';
 import { resolveCollapsedFailureSummary } from '../../../../../utils/toolExecutionPresentation';
 import { isRawToolStdoutNoMatches } from '../../../../../utils/toolStatusLinePresentation';
@@ -25,10 +26,11 @@ export function ResultSummary({ toolCall, inline = false }: Props) {
     : collapsedSuccessSummary(summarizeTool(toolCall, t), toolCall);
 
   if (!summary) return null;
+  const shown = !isError && summary === RAW_NO_MATCHES_SUMMARY ? t.toolResultSummary.noMatches : summary;
 
   const content = (
     <span className={isError ? 'text-[var(--cc-error)]' : 'text-zinc-500'}>
-      <HumanizedText text={summary} />
+      <HumanizedText text={shown} />
     </span>
   );
 

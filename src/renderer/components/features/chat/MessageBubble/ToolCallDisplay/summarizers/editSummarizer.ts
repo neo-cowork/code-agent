@@ -16,10 +16,10 @@ export function summarizeEdit(toolCall: ToolCall, t: Translations): string | nul
 
     // 空编辑检测：聚合后的 old/new 文本完全相同或都为空
     if (oldString !== undefined && newString !== undefined && oldString === newString) {
-      return '无变化';
+      return t.toolResultSummary.unchanged;
     }
     if (!oldString && !newString) {
-      return '无变化';
+      return t.toolResultSummary.unchanged;
     }
 
     if (oldString && newString) {
@@ -32,10 +32,10 @@ export function summarizeEdit(toolCall: ToolCall, t: Translations): string | nul
       } else if (diff < 0) {
         return t.toolResultSummary.removedLines.replace('{count}', String(Math.abs(diff)));
       }
-      return 'Modified';
+      return t.toolResultSummary.modified;
     }
 
-    return 'Done';
+    return t.toolResultSummary.done;
   }
 
   return null;
@@ -55,7 +55,7 @@ export function summarizeWrite(toolCall: ToolCall, t: Translations): string | nu
       const lines = content.split('\n').length;
       return t.toolResultSummary.lineCount.replace('{count}', String(lines));
     }
-    return 'Done';
+    return t.toolResultSummary.done;
   }
 
   return null;

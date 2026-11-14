@@ -4,10 +4,12 @@
 
 import type { ToolCall } from '@shared/contract';
 import type { Translations } from '../../../../../../i18n';
+import { interpolate } from '../../../../../../i18n/interpolate';
 
 export function summarizeBash(toolCall: ToolCall, t: Translations): string | null {
   const output = toolCall.result?.output;
-  if (!output) return 'Done';
+  const text = t.toolResultSummary;
+  if (!output) return text.done;
 
   const outputStr = String(output).trim();
   const lines = outputStr.split('\n');
@@ -21,8 +23,8 @@ export function summarizeBash(toolCall: ToolCall, t: Translations): string | nul
     const failMatch = outputStr.match(/(\d+)\s*fail/i);
     if (passMatch || failMatch) {
       const parts = [];
-      if (passMatch) parts.push(`${passMatch[1]} passed`);
-      if (failMatch) parts.push(`${failMatch[1]} failed`);
+      if (passMatch) parts.push(interpolate(text.testsPassed, { count: passMatch[1] }));
+      if (failMatch) parts.push(interpolate(text.testsFailed, { count: failMatch[1] }));
       return parts.join(', ');
     }
   }
@@ -31,32 +33,32 @@ export function summarizeBash(toolCall: ToolCall, t: Translations): string | nul
   if (command.includes('npm install') || command.includes('npm i ')) {
     const addedMatch = outputStr.match(/added (\d+) packages/);
     if (addedMatch) {
-      return `added ${addedMatch[1]} packages`;
+      return interpolate(text.packagesAdded, { count: addedMatch[1] });
     }
     const upToDateMatch = outputStr.match(/up to date/i);
     if (upToDateMatch) {
-      return 'up to date';
+      return text.upToDate;
     }
   }
 
   // npm run build
   if (command.includes('npm run build') || command.includes('npm build')) {
     if (outputStr.includes('successfully') || outputStr.includes('Done in')) {
-      return 'Build succeeded';
+      return text.buildSucceeded;
     }
   }
 
   // git status
   if (command.includes('git status')) {
     if (outputStr.includes('nothing to commit')) {
-      return 'Clean';
+      return text.noChanges;
     }
     const modifiedMatch = outputStr.match(/modified:\s+(\d+)/);
     if (modifiedMatch) {
-      return `${modifiedMatch[1]} modified`;
+      return interpolate(text.modifiedCount, { count: modifiedMatch[1] });
     }
     if (outputStr.includes('Changes not staged')) {
-      return 'Uncommitted changes';
+      return text.uncommittedChanges;
     }
   }
 
@@ -64,28 +66,28 @@ export function summarizeBash(toolCall: ToolCall, t: Translations): string | nul
   if (command.includes('git commit')) {
     const commitMatch = outputStr.match(/\[[\w-]+\s+([a-f0-9]+)\]/);
     if (commitMatch) {
-      return `Committed ${commitMatch[1].slice(0, 7)}`;
+      return interpolate(text.committed, { ref: commitMatch[1].slice(0, 7) });
     }
   }
 
   // git push
   if (command.includes('git push')) {
     if (outputStr.includes('Everything up-to-date')) {
-      return 'Up to date';
+      return text.upToDate;
     }
     if (outputStr.includes('->')) {
-      return 'Pushed';
+      return text.pushed;
     }
   }
 
   // tsc / typecheck
   if (command.includes('tsc') || command.includes('typecheck')) {
     if (outputStr.length === 0 || outputStr.includes('0 errors')) {
-      return 'No errors';
+      return text.noErrors;
     }
     const errorMatch = outputStr.match(/(\d+)\s*error/i);
     if (errorMatch) {
-      return `${errorMatch[1]} errors`;
+      return interpolate(text.errorCount, { count: errorMatch[1] });
     }
   }
 
@@ -95,7 +97,7 @@ export function summarizeBash(toolCall: ToolCall, t: Translations): string | nul
     if (items.length <= 5) {
       return items.join(', ');
     }
-    return `${items.length} items`;
+    return interpolate(text.itemCount, { count: items.length });
   }
 
   // pwd output
@@ -109,7 +111,7 @@ export function summarizeBash(toolCall: ToolCall, t: Translations): string | nul
   }
 
   // Multi-line output - show line count
-  return t.toolResultSummary.lineCount.replace('{count}', String(lines.length));
+  return text.lineCount.replace('{count}', String(lines.length));
 }
 
 function shortenPath(path: string): string {
