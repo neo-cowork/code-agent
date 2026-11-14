@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MessageContent } from '../../../src/renderer/components/features/chat/MessageBubble/MessageContent';
 import { wrapFilePathsInBackticks, wrapTicketsAsLinks } from '../../../src/renderer/components/features/chat/MessageBubble/filePathProcessor';
 import { runHref } from './encodeRunCommand';
+import { TaskDashboardSummary } from '../../../src/renderer/components/TaskPanel/RunWorkbenchCards';
 import { FileArtifactCard } from '../../../src/renderer/components/features/chat/MessageBubble/FileArtifactCard';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
@@ -26,6 +27,17 @@ describe('deliverable and command navigation', () => {
     const view = render(<FileArtifactCard items={[{ label: 'summary.svg', path: filePath, kind: 'file', ownerKind: 'tool', ownerLabel: 'Write', role: 'deliverable' }]} />);
     expect(view.getByTitle('…/reports/summary.svg').textContent).toContain('summary.svg');
     expect(view.container.querySelector(`[title="${filePath}"]`)).toBeNull();
+  });
+
+  it('shortens task output-ref hover titles', () => {
+    const view = render(<TaskDashboardSummary tasks={[{
+      id: 'background:task-log', scope: 'global', title: 'Log task', status: 'completed',
+      steps: [{ title: '已完成', status: 'completed' }],
+      outputRefs: [{ id: 'task-log:ref', taskId: 'task-log', type: 'log', label: 'Task log', pathOrUrl: '/Users/example/registered/task.log' }],
+    }]} />);
+    const row = view.getByTestId('task-output-refs').querySelector('[title]');
+    expect(row?.getAttribute('title')).toBe('…/registered/task.log');
+    expect(row?.getAttribute('title')).not.toMatch(/\/(Users|home)\//);
   });
 
   it('opens a historic !open report in the focused app preview', async () => {
