@@ -17,7 +17,7 @@ vi.mock('../../../src/host/security/folderTrustService', () => ({
   isProjectConfigTrusted: async () => false,
 }));
 
-const NO_FOLDER_INSTRUCTION = `Call no tools. Reply with exactly one plain sentence in the user's language saying that no folder has been chosen yet and directing them to click "${CHOOSE_FOLDER_ENTRY_LABEL.en}" (Chinese label: "${CHOOSE_FOLDER_ENTRY_LABEL.zh}") in the sidebar project area, then asking them to send /init-memory again.`;
+const NO_FOLDER_INSTRUCTION = `Call no tools. Reply with exactly one plain sentence in the user's language saying that no folder has been chosen yet and directing them to click "${CHOOSE_FOLDER_ENTRY_LABEL.en}" (Chinese label: "${CHOOSE_FOLDER_ENTRY_LABEL.zh}") in the sidebar, then asking them to send /init-memory again.`;
 
 describe('expandSlashPromptForModel /init-memory working directory guard', () => {
   let tempRoot: string;
