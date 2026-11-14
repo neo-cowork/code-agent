@@ -189,6 +189,7 @@ vi.mock('../../../src/host/agent/spawnGuard', () => ({
   }),
 }));
 
+import * as memberAnswers from '../../../src/host/agent/memberInputWindDown';
 import { SubagentExecutor } from '../../../src/host/agent/subagentExecutor';
 
 type CapturedEvent = { type: string; data: Record<string, unknown> };
@@ -476,5 +477,121 @@ describe('SubagentExecutor doom-loop guard', () => {
         content: expect.stringContaining('same_error_family'),
       }),
     ]));
+  });
+});
+
+
+describe('SubagentExecutor text tool-call repair', () => {
+  const pseudoCall = 'Calling Grep({"path":"x","pattern":"."})';
+  const findings = 'The rollback plan is in operations-handover.md: pause rollout, restore the stable release, and verify sign-in.';
+
+  beforeEach(() => {
+    mocks.responses.length = 0;
+    mocks.inferenceMessages.length = 0;
+    vi.clearAllMocks();
+  });
+
+  it.each([
+    'Calling Grep({"path":"x","pattern":"."})',
+    'Calling Grep({"path":"x","pattern":"."})\nCalling Read({"file_path":"x"})',
+    'Called Grep({"path":"x","pattern":"."})',
+  ])('retries pseudo text %s through executeInternal and returns the actual findings', async (content) => {
+    mocks.responses.push(textResponse(content), textResponse(findings));
+    const { request } = createHarness();
+    const result = await new SubagentExecutor().execute(request);
+
+    expect(result).toMatchObject({ success: true, output: findings, iterations: 2 });
+    expect(mocks.inference).toHaveBeenCalledTimes(2);
+    expect(mocks.toolExecute).not.toHaveBeenCalled();
+    expect(mocks.inferenceMessages[1]).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'assistant', content }),
+      expect.objectContaining({ role: 'system', content: expect.stringContaining('<tool-call-format-error>') }),
+    ]));
+  });
+
+  it('fails after two nudges when the model keeps returning pseudo calls', async () => {
+    mocks.responses.push(...Array.from({ length: 6 }, () => textResponse(pseudoCall)));
+    const { request, events } = createHarness();
+    const result = await new SubagentExecutor().execute(request);
+
+    expect(result).toMatchObject({ success: false, output: '', iterations: 3 });
+    expect(result.error).toContain('could not produce a result');
+    expect(mocks.inference).toHaveBeenCalledTimes(3);
+    expect(mocks.pipeline.completeContext).toHaveBeenCalledWith('pipeline-agent', false, result.error);
+    expect(events.find((event) => event.type === 'subagent_run_end')?.data.status).toBe('failed');
+  });
+
+  it('fails rather than falling through to success at the iteration cap', async () => {
+    mocks.responses.push(textResponse(pseudoCall));
+    const { request } = createHarness();
+    request.config.maxIterations = 1;
+    const result = await new SubagentExecutor().execute(request);
+
+    expect(result).toMatchObject({ success: false, output: '', iterations: 1 });
+    expect(result.error).toContain('could not produce a result');
+  });
+
+  it('rejects pseudo text remaining in the settled answer at finalization', async () => {
+    const createLedger = memberAnswers.createMemberAnswerLedger;
+    const spy = vi.spyOn(memberAnswers, 'createMemberAnswerLedger').mockImplementationOnce((...args) => ({
+      ...createLedger(...args),
+      settled: () => pseudoCall,
+    }));
+    mocks.responses.push(textResponse(findings));
+    const { request, events } = createHarness();
+    try {
+      const result = await new SubagentExecutor().execute(request);
+      expect(result).toMatchObject({ success: false, output: '' });
+      expect(result.error).toContain('could not produce a result');
+      expect(events.find((event) => event.type === 'subagent_run_end')?.data.status).toBe('failed');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+
+describe.each(['text branch', 'final ledger'] as const)('SubagentExecutor usable results: %s', (entry) => {
+  beforeEach(() => {
+    mocks.responses.length = 0;
+    mocks.inferenceMessages.length = 0;
+    vi.clearAllMocks();
+  });
+
+  it.each([
+    'Created src/utils/report.ts with the requested helper.',
+    'Edited src/a.ts to handle null',
+    'Read the release checklist and confirmed the rollback owner.',
+    'Ran: the validation suite; all checks passed.',
+    'Found files matching: src/**/*.ts',
+    'Searched for: rollback; the plan is in operations-handover.md.',
+    'Listed: four release documents.',
+    'Fetched: the release notes.',
+    'Invoked skill: document review completed.',
+    '{"name":"x","params":{"status":"complete"}}',
+    '{"name":"x","input":{"status":"complete"}}',
+    '{"name":"x","arguments":{"status":"complete"}}',
+    '{"tool":"x","params":{"status":"complete"}}',
+    'The check Calling Grep({"path":"x","pattern":"."}) found the rollback plan.',
+    'Example syntax: `Calling Grep({"path":"x","pattern":"."})`.',
+  ])('preserves a completed result verbatim: %s', async (content) => {
+    const createLedger = memberAnswers.createMemberAnswerLedger;
+    const spy = entry === 'final ledger'
+      ? vi.spyOn(memberAnswers, 'createMemberAnswerLedger').mockImplementationOnce((...args) => ({
+        ...createLedger(...args),
+        settled: () => content,
+      }))
+      : undefined;
+    mocks.responses.push(...Array.from({ length: 3 }, () => textResponse(entry === 'final ledger' ? 'Review complete.' : content)));
+    const { request, events } = createHarness();
+    try {
+      const result = await new SubagentExecutor().execute(request);
+      expect(result).toMatchObject({ success: true, output: content, iterations: 1 });
+      expect(mocks.inference).toHaveBeenCalledTimes(1);
+      expect(mocks.toolExecute).not.toHaveBeenCalled();
+      expect(events.find((event) => event.type === 'subagent_run_end')?.data.status).toBe('completed');
+    } finally {
+      spy?.mockRestore();
+    }
   });
 });

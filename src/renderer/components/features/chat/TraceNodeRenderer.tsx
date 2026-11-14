@@ -41,11 +41,13 @@ import { getStreamInterruptionReasonLabel } from '../../../utils/streamInterrupt
 import { useMessageActionStore } from '../../../stores/messageActionStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useStreamResumeStore } from '../../../stores/streamResumeStore';
+import { formatRoleHistoryLine } from '../expert/roleHistoryPresentation';
 import { MemberInputNote } from '../expert/MemberInputNote';
 import { WakeRationaleNote, wakeRationaleFromMetadata } from './WakeRationaleNote';
 import { TurnTimelineNodeRenderer } from './TraceTimelineNodes';
 import { MessageContextFrame, MessageContextMenu } from './MessageContextMenu';
 import { messageContextMenuId } from './useMessageContextInterventions';
+import { BackgroundWakeFailureNote } from './BackgroundWakeFailureNote';
 import { StepLimitContinue } from './StepLimitContinue';
 
 interface TraceNodeRendererProps {
@@ -83,6 +85,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
   suppressSendFailedBadge,
   fileChangesByPath,
 }) => {
+  const { t } = useI18n();
   let content: React.ReactNode;
 
   switch (node.type) {
@@ -112,7 +115,9 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
       }
       content = (
         <AssistantTextNode
-          node={node}
+          node={node.metadata?.automation?.automationType === 'role_wake'
+            ? { ...node, content: formatRoleHistoryLine(node.content, t.expert.roleDetail.historyDecision, t.expert.roleDetail.historyWake) }
+            : node}
           sessionId={sessionId}
           isStreaming={isStreaming}
           inVoiceDispatchCard={inVoiceDispatchCard}
@@ -349,8 +354,14 @@ const AssistantTextNode: React.FC<{
   const keptBreakSegment = node.metadata?.streamInterruptionReason === 'stream-break';
   const wakeFields = wakeRationaleFromMetadata(node.metadata);
 
+  const preannounce = node.metadata?.backgroundTaskPreannounce;
+  const preannounceCopy = preannounce?.title
+    ? interpolate(t.backgroundPanel.preannounce.named, { title: preannounce.title })
+    : t.backgroundPanel.preannounce.generic;
+  const localizedContent = preannounce?.text && node.content.startsWith(preannounce.text)
+    ? preannounceCopy + node.content.slice(preannounce.text.length) : node.content;
   const { displayContent, isAnimating, tailStartIndex } = useSmoothStreamingText({
-    content: node.content || '',
+    content: localizedContent || '',
     isStreaming: Boolean(turnStreaming),
   });
 
@@ -642,6 +653,16 @@ const SystemNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, s
   const [expanded, setExpanded] = useState(false);
   const { t } = useI18n();
 
+  if (node.metadata?.backgroundWakeFailed) {
+    return (
+      <BackgroundWakeFailureNote
+        detail={node.metadata.backgroundWakeFailed}
+        content={node.content}
+        sessionId={sessionId}
+      />
+    );
+  }
+
   const receipt = node.metadata?.roleEditReceipt;
   if (receipt) {
     const copy = t.roleEditReceipt;
@@ -767,7 +788,7 @@ const SystemNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, s
   // generic system
   return (
     <div className="px-3 py-1.5 text-xs text-zinc-500 italic">
-      {node.content}
+      {node.metadata?.backgroundTaskInterrupted ? t.backgroundPanel.interrupted : node.content}
     </div>
   );
 };
