@@ -15,7 +15,7 @@ import { useSessionStore } from '../../../../../stores/sessionStore';
 import { ToolHeader } from './ToolHeader';
 import { ResultSummary } from './ResultSummary';
 import { ToolDetails } from './ToolDetails';
-import { getToolStatus, getStatusColor, type ToolStatus } from './styles';
+import { getStatusColor, type ToolStatus } from './styles';
 import {
   buildBrowserComputerActionPreview,
   type BrowserComputerActionPreview,
@@ -34,6 +34,7 @@ import {
 } from '../../../../../utils/askUserQuestionRecord';
 import { Button } from '../../../../primitives';
 import { neoUIActionRouter } from '../../../../../services/neoUIActionRouter';
+import { useToolCallTerminalResolver } from '../../../../../hooks/useToolCallTerminalResolver';
 import { useI18n } from '../../../../../hooks/useI18n';
 import { useBackgroundTaskStore } from '../../../../../stores/backgroundTaskStore';
 import { useAgentTreeSnapshot } from '../../../../../hooks/useAgentTreeSnapshot';
@@ -119,6 +120,8 @@ interface ToolCallDisplayProps {
   statusOverride?: ToolStatus;
   interruptionReason?: StreamInterruptionReason;
   receipt?: ToolReceiptPresentation;
+  agentId?: string;
+  sessionLive?: boolean;
 }
 
 export interface ToolReceiptPresentation {
@@ -138,13 +141,14 @@ export function ToolCallDisplay({
   statusOverride,
   interruptionReason,
   receipt,
+  agentId,
+  sessionLive,
 }: ToolCallDisplayProps) {
   const { t } = useI18n();
   const toolCall = useMemo(() => getToolPreflightKind(originalToolCall) === 'question' && originalToolCall.result
     ? { ...originalToolCall, result: { ...originalToolCall.result, success: false, error: originalToolCall.result.error ?? originalToolCall.result.output } }
     : originalToolCall, [originalToolCall]);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
-  const processingSessionIds = useAppStore((state) => state.processingSessionIds);
   const pendingPermissionRequest = useAppStore((state) => state.pendingPermissionRequest);
   const pendingPermissionSessionId = useAppStore((state) => state.pendingPermissionSessionId);
   const queuedPermissionRequests = useAppStore((state) => state.queuedPermissionRequests);
@@ -186,20 +190,12 @@ export function ToolCallDisplay({
     [toolCall, t, delegationPresentation],
   );
 
-  // Calculate status
-  const derivedStatus: ToolStatus = useMemo(() => {
-    if (statusOverride) return statusOverride;
-    if (awaitingApproval) return 'pending';
-    if (receipt) return receipt.status === 'failed' ? 'error' : 'success';
-    // 结局优先（投影层标记 recovered）：这次失败已被后续成功收尾（同处 Edit 重试成功等），
-    // 不再按错误行渲染——主文案回完成态、失败原因行撤掉，只留一条安静的「后续修改已成功」
-    // 脚注。回执行不在此列：receipt 自己的成败渲染优先，维持原样。
-    if (toolCall.result?.metadata?.recovered === true) return 'success';
-    if (delegationPresentation?.state === 'working') return 'pending';
-    if (delegationPresentation?.state === 'completed') return 'success';
-    if (delegationPresentation?.state === 'failed') return 'error';
-    return getToolStatus(toolCall, currentSessionId, processingSessionIds);
-  }, [awaitingApproval, delegationPresentation?.state, toolCall, currentSessionId, processingSessionIds, receipt, statusOverride]);
+  const resolveToolCallTerminalState = useToolCallTerminalResolver(sessionId, [{ toolCall, agentId }]);
+  const terminal = resolveToolCallTerminalState(toolCall, interruptionReason, agentId, sessionLive, delegationPresentation?.state);
+  // A receipt row renders its own outcome text, so its icon follows the receipt (even past a recovered result).
+  const derivedStatus: ToolStatus = statusOverride ?? (receipt && !awaitingApproval
+    ? receipt.status === 'failed' ? 'error' : 'success'
+    : terminal.displayStatus);
   // 收口时内存消息会先终态，随后持久化列表回填；回填窗口里同一 call 可能短暂缺 result。
   // 一旦同一 toolCall 到达成功/失败，renderer 不再把它降回 pending/interrupted。
   const terminalStatusRef = useRef<{ toolCallId: string; status: ToolStatus | null }>({
@@ -260,6 +256,8 @@ export function ToolCallDisplay({
     setExpanded((value) => !value);
     setUserToggled(true);
   };
+
+  if (terminal.state === 'hidden') return null;
 
   return (
     <div
@@ -593,7 +591,7 @@ const WorkflowStagePreview: React.FC<{ preview: WorkflowStagePreviewData }> = ({
           const policy = formatWorkflowPolicy(stage.toolPolicyMode, copy);
           const duration = formatWorkflowDuration(stage.duration);
           const tools = stage.toolsUsed.length > 0
-            ? [...new Set(stage.toolsUsed.map((toolName) => humanizeWorkflowTool(toolName, t, copy)))].join('、')
+            ? [...new Set(stage.toolsUsed.map((toolName) => humanizeWorkflowTool(toolName, t, copy)))].join(t.toolStepHumanize.listSeparator)
             : null;
           return (
             <div

@@ -10,6 +10,7 @@ import { connectorDisplayName } from '../../../utils/connectorDisplayName';
 import { resumeConnectorTask } from '../../../utils/connectorRequiredWatcher';
 import ipcService from '../../../services/ipcService';
 import { IPC_DOMAINS } from '@shared/ipc';
+import { LostLoginCard } from './lostLoginCard';
 import { openExternalLink } from '../../../utils/platform';
 
 async function reauthorizeConnector(entry: ConnectorRequiredEntry): Promise<void> {
@@ -58,6 +59,7 @@ function InsufficientScopeCard({ entry, name }: { entry: ConnectorRequiredEntry;
 function ConnectorRequiredCard({ entry, name }: { entry: ConnectorRequiredEntry; name: string }): React.ReactElement {
   const { t } = useI18n();
   if (entry.reason === 'insufficient_scope') return <InsufficientScopeCard entry={entry} name={name} />;
+  if (entry.reason === 'lost_login') return <LostLoginCard entry={entry} name={name} />;
   const resuming = entry.status === 'resuming';
   return (
     <div data-testid={`connector-required-card-${entry.connectorId}`} className="mx-4 mb-2 flex items-center justify-between gap-3 rounded-lg border border-border-muted bg-surface-subtle px-3 py-2 text-sm text-zinc-300">

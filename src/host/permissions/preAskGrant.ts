@@ -6,6 +6,7 @@
 import { getSessionAutomationService } from '../services/sessionAutomation/sessionAutomationService';
 import { matchAppGrant } from './appGrantStore';
 import { appGrantKey, type ComputerTargetApp } from './computerAppTarget';
+import { connectorToolGrantIdentity } from './connectorToolAccess';
 import { matchToolGrant } from './toolGrantStore';
 
 export function resolvePreAskGrant(input: {
@@ -27,7 +28,9 @@ export function resolvePreAskGrant(input: {
   // N-PERM-GRANT-TIERS：host 侧工具授权两档。target 精确一致（null 只匹配 null），
   // run 档只在授权所属会话内命中。排在 standingGrants 之前：时间盒比永久授权窄。
   if (input.browserSessionTarget === null) return null;
-  const toolGrantTier = matchToolGrant(input.sessionId, input.toolName, input.browserSessionTarget ?? input.standingGrantTarget);
+  const identity = connectorToolGrantIdentity(input.toolName, input.browserSessionTarget ?? input.standingGrantTarget);
+  if (!identity) return null;
+  const toolGrantTier = matchToolGrant(input.sessionId, identity.tool, identity.target);
   if (toolGrantTier) {
     return {
       ledgerReason: `tool_grant:${toolGrantTier}`,

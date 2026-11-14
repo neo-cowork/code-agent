@@ -24,7 +24,7 @@ import { getNativeDesktopService } from '../services/desktop/nativeDesktopServic
 import { getComputerSurface } from '../services/desktop/computerSurface';
 import { startDesktopVisionAnalyzer } from '../services/desktop/desktopVisionAnalyzer';
 import { startDesktopAudioCapture, stopDesktopAudioCapture, getAudioCaptureStatus, clearAudioRecordings } from '../services/desktop/desktopAudioCapture';
-import type { AudioCaptureMissingPrerequisiteCode, AudioCapturePrerequisites } from '@shared/contract/audioCapture';
+import type { AudioCaptureMissingPrerequisiteCode, AudioCaptureMode, AudioCapturePrerequisites } from '@shared/contract/audioCapture';
 import { browserService } from '../services/infra/browserService';
 import { browserRelayService } from '../services/infra/browserRelayService';
 import {
@@ -472,9 +472,11 @@ const desktopHandlers: RawDomainRouteHandlers<DesktopDomainRequest, NativeDeskto
     if (manualAudioActive) {
       return { success: true, data: getAudioCaptureStatus() } satisfies IPCResponse<unknown>;
     }
-    const payload = raw as { fifoPath?: string; mode?: 'microphone' | 'system-audio' } | undefined;
+    const payload = raw as { fifoPath?: string; mode?: unknown } | undefined;
     const fifoPath = payload?.fifoPath;
-    const mode = payload?.mode || 'microphone';
+    const mode: AudioCaptureMode = payload?.mode === 'system-audio' || payload?.mode === 'meeting'
+      ? payload.mode
+      : 'microphone';
     if (process.platform === 'darwin' && process.arch === 'arm64') {
       const runtimeStatus = await getRuntimeAssetsStatus();
       const vadStatus = runtimeStatus.assets.find((asset) => asset.id === 'onnxruntime-vad');
@@ -503,13 +505,13 @@ const desktopHandlers: RawDomainRouteHandlers<DesktopDomainRequest, NativeDeskto
       if (missing.length === 0) {
         const micReady = prereqs ? prereqs.recorder.microphone === 'ready' : audioSt.soxAvailable;
         const sysReady = prereqs ? prereqs.recorder.systemAudio === 'ready' : Boolean(audioSt.systemAudioAvailable);
-        if (mode === 'system-audio' && !sysReady && !micReady) {
+        if (mode !== 'microphone' && !sysReady && !micReady) {
           missing.push('recorder_missing');
         } else if (mode === 'microphone' && !micReady) {
           missing.push('recorder_missing');
         }
         if ((prereqs ? prereqs.transcriptionEngine === 'missing' : audioSt.asrEngine === 'none')) {
-          missing.push('transcription_engine_missing');
+          missing.push(prereqs?.missing.includes('transcription_model_missing') ? 'transcription_model_missing' : 'transcription_engine_missing');
         }
         if (prereqs?.voiceDetection === 'unsupported') {
           missing.push('voice_detection_unsupported');
