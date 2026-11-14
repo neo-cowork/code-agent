@@ -167,9 +167,9 @@ export function readComposerDraftEntry(
         .filter((item) => !isValidDraftAttachment(item))
         .map((item) => unreadableAttachmentName(item) ?? '')
         .filter((name) => name.length > 0);
-      const attachments = validAttachments.slice(0, UI.MAX_ATTACHMENTS_DROP);
+      const attachments = validAttachments.slice(0, UI.MAX_ATTACHMENTS);
       const overflowNames = validAttachments
-        .slice(UI.MAX_ATTACHMENTS_DROP)
+        .slice(UI.MAX_ATTACHMENTS)
         .map((att) => sanitizeAttachmentDisplayName(att.name));
       const parsedDropped = Array.isArray(parsed.dropped)
         ? parsed.dropped
@@ -243,7 +243,7 @@ function writeComposerDraft(
   );
 
   for (const att of attachments) {
-    if (kept.length >= UI.MAX_ATTACHMENTS_DROP) {
+    if (kept.length >= UI.MAX_ATTACHMENTS) {
       dropped.push(sanitizeAttachmentDisplayName(att.name));
       continue;
     }

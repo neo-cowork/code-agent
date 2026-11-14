@@ -9,8 +9,8 @@ import { useCallback, useEffect, useState } from 'react';
 import type { MessageAttachment } from '../../../../../shared/contract';
 import { UI } from '@shared/constants';
 import { useI18n } from '../../../../hooks/useI18n';
-import { toast } from '../../../../hooks/useToast';
 import { mergeAttachments } from './attachmentDedupe';
+import { notifyAttachmentMerge } from './attachmentMergeToast';
 import { collectDroppedAttachmentsAndSkillZips } from './utils';
 
 interface UseDragAndDropOptions {
@@ -81,17 +81,15 @@ export function useDragAndDrop({
 
       if (newAttachments.length > 0) {
         setAttachments((prev) => {
-          const result = mergeAttachments(prev, newAttachments, UI.MAX_ATTACHMENTS_DROP);
-          if (result.skippedCount > 0) {
-            toast.show('warning', t.chatInput.attachmentAlreadyAdded.replace('{name}', result.duplicates[0]?.incoming.name ?? ''));
-          }
+          const result = mergeAttachments(prev, newAttachments, UI.MAX_ATTACHMENTS);
+          notifyAttachmentMerge(result, t.chatInput);
           return result.attachments;
         });
       }
     } finally {
       setIsUploading(false);
     }
-  }, [onDroppedSkillZips, processFile, processFolderEntry, setAttachments, setIsUploading, t.chatInput.attachmentAlreadyAdded]);
+  }, [onDroppedSkillZips, processFile, processFolderEntry, setAttachments, setIsUploading, t.chatInput]);
 
   return { isDragOver, handleDragOver, handleDragLeave, handleDrop };
 }
