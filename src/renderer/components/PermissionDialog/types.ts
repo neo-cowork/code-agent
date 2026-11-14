@@ -64,6 +64,9 @@ export interface PermissionRequestDetails {
   body?: string;
   connectorTokenAttached?: boolean;
   path?: string; // 兼容旧版 API
+  /** Directory-access parameters from the host default request shape. */
+  access?: string;
+  reason?: string;
   // E2: 确认门控预览
   preview?: {
     type: 'diff' | 'command' | 'network' | 'generic';

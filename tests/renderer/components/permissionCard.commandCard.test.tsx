@@ -255,31 +255,31 @@ describe('PermissionCard command de-dup, spawn_agent summary, and long script co
 
     const { container, unmount } = render(<PermissionCard />);
     const textZh = container.textContent || '';
-    expect(textZh).toContain('需要你确认');
+    expect(textZh).toContain('启动子任务');
     expect(textZh).not.toContain('执行命令');
     expect(textZh).toContain('派出子代理：每周销售汇总');
     expect(textZh).toContain('任务：汇总本周销售日报并输出关键异常指标');
-    expect(textZh).toContain('权限：可修改文件、运行命令');
+    expect(textZh).toContain('权限：可修改文件、启动本机程序');
     expect(textZh).not.toMatch(/数据分析师|Task:|Role:/);
     expect(textZh).not.toContain('执行工具 spawn_agent');
     expect(textZh).not.toContain('允许执行这条命令');
     expect(textZh).not.toContain('将执行有风险命令');
-    expect(textZh).toContain('允许进行以下操作？');
-    expect(textZh).toContain('请确认下面的任务和操作范围。');
+    expect(textZh).toContain('允许这次操作？');
+    expect(textZh).toContain('将启动一个子任务。');
     unmount();
 
     // Also verify English title
     state.language = 'en';
     const enRender = render(<PermissionCard />);
     const textEn = enRender.container.textContent || '';
-    expect(textEn).toContain('Needs your approval');
-    expect(textEn).toContain('Allow the following operation?');
-    expect(textEn).toContain('Review the task and scope below before approving.');
+    expect(textEn).toContain('Start a sub-task');
+    expect(textEn).toContain('Allow this action?');
+    expect(textEn).toContain('Starts a sub-task.');
     expect(textEn).not.toContain('Allow running this command');
     expect(textEn).not.toContain('Runs a risky command');
     expect(textEn).toContain('派出子代理：每周销售汇总');
     expect(textEn).toContain('任务：汇总本周销售日报并输出关键异常指标');
-    expect(textEn).toContain('权限：可修改文件、运行命令');
+    expect(textEn).toContain('Permissions: may change files and run local programs');
   });
   it.each(['spawn_agent', 'AgentSpawn'])('%s interactive card shows actual task, full out-of-workspace targets and permission with a misleading name', (tool) => {
     const params = {
@@ -294,7 +294,7 @@ describe('PermissionCard command de-dup, spawn_agent summary, and long script co
     const { container } = render(<PermissionCard />);
     expect(container.textContent).toContain('派出子代理：整理文档');
     expect(container.textContent).toContain(`任务：${params.task}`);
-    expect(container.textContent).toContain('权限：可修改文件、运行命令');
+    expect(container.textContent).toContain('权限：可修改文件、启动本机程序');
     expect(container.textContent).not.toMatch(/coder|Task:|Role:/);
     expect(container.querySelector('[data-testid="permission-args-preview"]')).toBeNull();
   });

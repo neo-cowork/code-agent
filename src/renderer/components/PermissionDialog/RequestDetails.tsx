@@ -16,7 +16,7 @@ import { useI18n } from '../../hooks/useI18n';
 import { useAppStore } from '../../stores/appStore';
 import { resolveHostReasonCopy } from '../../utils/hostReasonPresentation';
 import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
-import { isDangerousRequestShape, isSafeDefaultDeny, permissionConsequence } from './permissionPresentation';
+import { isDangerousRequestShape, isSafeDefaultDeny, isHostDefaultToolPreview, shellActionPresentation, permissionConsequence } from './permissionPresentation';
 import { ConnectorWriteDisclosure } from './ConnectorWriteDisclosure';
 import { estimateMediaPriceCny } from './mediaPriceEstimate';
 import { formatCny } from '@shared/media/imageCost';
@@ -63,13 +63,19 @@ export function RequestDetails({ request }: RequestDetailsProps) {
   if (browser) {
     const copy = language === 'en' ? browserSessionGrantEn : browserSessionGrantZh;
     const site = browser.target?.slice(browser.target.indexOf('@') + 1);
-    return <p className="break-all text-xs leading-5 text-zinc-300" data-testid="browser-session-reason">
+    return <>
+      {!copy.actions[details.action ?? ''] && <p className="text-xs leading-5 text-zinc-400" data-testid="permission-consequence">
+        {permissionConsequence(request, t)}
+      </p>}
+      <p className="break-all text-xs leading-5 text-zinc-300" data-testid="browser-session-reason">
       {!site ? copy.unresolved : browser.previousOrigins.length > 0
         ? copy.crossSite.replace('{previous}', browser.previousOrigins.join(', ')).replace('{site}', site)
         : null}
-    </p>;
+      </p>
+    </>;
   }
   // 兼容旧版 API：path -> filePath
+  const isDirectoryAccess = request.tool.trim().toLowerCase() === 'request_directory';
   const filePath = details.filePath || details.path;
 
   // ADR-067 D3：peer 消息触发的动作必须在卡上标明来源（写回分支同样适用）。
@@ -141,10 +147,15 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       <MediaPriceNotice request={request} />
 
       {/* 文件路径 */}
-      {filePath && <DetailItem label={labels.detailFile} value={filePath} isPath />}
+      {filePath && !isDirectoryAccess && <DetailItem label={labels.detailFile} value={filePath} isPath />}
 
       {/* 命令 */}
-      {details.command && (
+      {details.command && (shellActionPresentation(request, t) ? (
+        <details>
+          <summary className="cursor-pointer text-xs text-zinc-400">{labels.commandShowAll}</summary>
+          <DetailItem label={labels.detailCommand} value={details.command} isCode />
+        </details>
+      ) : (
         <DetailItem
           key={`command-${request.id}`}
           label={labels.detailCommand}
@@ -153,7 +164,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
           isDangerous={isDangerousRequestShape(request)}
           collapsible={type === 'command' && !(isDangerousRequestShape(request) || isSafeDefaultDeny(request))}
         />
-      )}
+      ))}
 
       {details.sandbox && (
         <p
@@ -200,14 +211,16 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       )}
 
       {/* 确认门控 非 diff 预览（命令/网络/通用） */}
-      {details.preview && details.preview.type !== 'diff' && !(details.preview.type === 'command' && details.command) && (
+      {!isDirectoryAccess && details.preview && details.preview.type !== 'diff' && !(details.preview.type === 'command' && details.command) && !isHostDefaultToolPreview(request) && (
         <div className="mt-4">
           {!(details.connectorAccess && details.preview.type === 'generic') && (
             <div className="text-xs text-zinc-400 mb-2">{details.preview.summary}</div>
           )}
           {details.preview.diff && (
             <pre className="text-xs p-2 rounded bg-zinc-700 border border-zinc-700 text-zinc-400 overflow-x-auto max-h-32 whitespace-pre-wrap break-all">
-              {details.preview.diff}
+              {request.tool === 'spawn_agent' || request.tool === 'AgentSpawn'
+                ? details.preview.diff.replace(/^权限：可修改文件、运行命令$/mu, labels.spawnPermissionPrograms)
+                : details.preview.diff}
             </pre>
           )}
         </div>

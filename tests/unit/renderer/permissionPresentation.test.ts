@@ -163,7 +163,7 @@ describe('per-app grant card consequence suppression', () => {
     expect(permissionConsequence(request, zh)).toBe('将执行有风险命令，可能覆盖本机系统或项目状态。');
   });
 
-  it('forceConfirm 的按应用请求（appGrantCard=false）仍保留命令后果行', () => {
+  it('forceConfirm 的按应用请求（appGrantCard=false）仍保留后果行，但不把非 shell 工具说成命令', () => {
     const request: PermissionRequest = {
       ...baseRequest,
       tool: 'computer_use',
@@ -172,7 +172,7 @@ describe('per-app grant card consequence suppression', () => {
       details: { targetApp: { name: 'Safari' } },
     };
 
-    expect(permissionConsequence(request, zh)).toBe('将执行有风险命令，可能覆盖本机系统或项目状态。');
+    expect(permissionConsequence(request, zh)).toBe('将执行这项操作。');
   });
 });
 
