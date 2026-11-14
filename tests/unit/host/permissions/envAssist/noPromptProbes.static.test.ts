@@ -12,8 +12,6 @@ const grant = 'src/host/permissions/envAssist/grants/requestGrant.ts';
 const legacyLines: Record<string, string[]> = {
   // Comments explain the existing forbidden shell bypass.
   "src/host/app/morningBriefSaveDraftTools.ts": ["// - delegate_task：后台任务自带完整工具面，会绕回 Bash/osascript 真发信；", "// - Bash：shell 执行工具，osascript 调 Mail 的直接旁路。"],
-  // Existing platform notification executor.
-  "src/host/platform/notifications.ts": ["* 原生通知 — macOS 使用 osascript，其他平台 no-op", "safeExecDetached('osascript', ['-e', script]);"],
   // Comment enumerates trusted command consumers.
   "src/host/utils/safeShell.ts": ["// - cmd 必须是受信任的常量（'open', 'xdg-open', 'osascript', 'explorer.exe' 等）"],
   // Existing sandbox command classification and refusal explanation.
@@ -26,8 +24,12 @@ const legacyLines: Record<string, string[]> = {
   "src/host/ipc/voicePaste.ipc.ts": ["execFile('osascript', ['-e', 'tell application \"System Events\" to keystroke \"v\" using command down'],"],
   // Comment describes existing mail connector polling.
   "src/host/cron/cronMailPoller.ts": ["// list_messages（osascript 秒级）的在飞轮询——那趟 settle 后若再 scheduleTick，"],
-  // Comments describe existing notification delivery paths.
-  "src/host/services/infra/notificationService.ts": ["* osascript（host 侧，壳死了也能弹）；单测注入替身，不真弹系统通知。", "/** 测试注入原生通知替身；不传恢复默认 osascript 路径。 */", "* 图标与身份，点击经 onAction 跳到对应会话。替代旧的 osascript（无图标、点击不回调）。"],
+  // Model tool-description guidance mentions GUI osascript disclosure; never executes it.
+  "src/host/mcp/cuaLadderGuidance.ts": ["// shell）→ browser_action（网页）→ 屏幕控制（最后手段；首次 GUI 操作含 osascript，动手前先说一句话）。", "'Prefer connectors/files/shell/browser_action. Before first GUI control (including osascript), say one sentence naming the app and why direct control is needed; pure Apple Events data access is exempt.';"],
+  // System prompt capability-ladder guidance mentions Bash/osascript disclosure; never executes it.
+  "src/host/prompts/base/tools.ts": ["- Capability ladder: connectors/native tools first; browser_action for web; screen last. Before a run's first GUI action (also Bash/osascript activation/clicks/keys/open-document edits), emit ONE sentence in content, not reasoning, in the user's language naming the app and why no connector/browser route works. Exclude pure connector/Apple Events data access. Unavailable connector: state it in content and call a tool under normal per-app approval"],
+  // Comment describes existing notification delivery history.
+  "src/host/services/infra/notificationService.ts": ["* 图标与身份，点击经 onAction 跳到对应会话。替代旧的 osascript（无图标、点击不回调）。"],
   // Existing desktop AX action/context execution.
   "src/host/services/desktop/backgroundAxBridge.ts": ["const stdout = getExecStdout(await execFileAsync('osascript', [", "const stdout = getExecStdout(await execFileAsync('osascript', ["],
   // Existing desktop application/window context execution.
