@@ -1477,9 +1477,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const candidateNotice = buildCapabilityCandidateNotice(sessionId);
       if (candidateNotice) capabilityContextLines.push(candidateNotice);
       // 回合级规则块（存草稿解析规则，FU1 rework r2）：必须并进模型面 turn 脚手架——
-      // 下面那份 config.systemPrompt 会在 contextAssembly 重建系统消息时被丢
-      // （ctx.systemPrompt 不进请求，真机抓包实证），写那里等于丢。与桌面 envelope 路
-      // （withSessionCommandCenterBrain → turnSystemContext）同源同形；基块不在此扩面。
+      // 基块由 config.systemPrompt 保留，回合规则与桌面 envelope 路
+      // （withSessionCommandCenterBrain → turnSystemContext）同源同形。
       capabilityContextLines.push(...getSessionCommandCenterTurnRulesForPrompt(prompt));
       const missingAttachmentContext = withMissingAttachmentTurnSystemContext(
         { turnSystemContext: capabilityContextLines },
