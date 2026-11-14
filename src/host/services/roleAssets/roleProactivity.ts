@@ -208,7 +208,7 @@ function inferGoalText(text: string, verify?: string): string {
 export function inferAdvanceGoalProposalFromWake(finalOutput: string, contextBlock?: string | null): AdvanceGoalProposal | null {
   const explicitProposal = parseAdvanceGoalProposal(finalOutput);
   if (explicitProposal) return explicitProposal;
-  const source = [finalOutput, contextBlock ?? ''].filter((s) => s.trim().length > 0).join('\n');
+  const source = [stripWakeMarkup(finalOutput), contextBlock ?? ''].filter((s) => s.trim().length > 0).join('\n');
   if (!ADVANCE_SIGNAL_PATTERN.test(source)) return null;
   const verify = inferVerifyCommand(source);
   const goal = inferGoalText(source, verify);
