@@ -511,7 +511,7 @@ const desktopHandlers: RawDomainRouteHandlers<DesktopDomainRequest, NativeDeskto
           missing.push('recorder_missing');
         }
         if ((prereqs ? prereqs.transcriptionEngine === 'missing' : audioSt.asrEngine === 'none')) {
-          missing.push('transcription_engine_missing');
+          missing.push(prereqs?.missing.includes('transcription_model_missing') ? 'transcription_model_missing' : 'transcription_engine_missing');
         }
         if (prereqs?.voiceDetection === 'unsupported') {
           missing.push('voice_detection_unsupported');
