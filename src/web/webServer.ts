@@ -1233,7 +1233,7 @@ async function main(): Promise<void> {
     // 强停后的真取消由下面的 reap 步骤执行。
     // stop 意图（「停止并退出」）：不再 60s 排空，改为先 cancel 所有 run（停止按钮同款路径）、等短宽限、
     // 再补一次空闲浏览器清理（stopIntentShutdownCancel）；其余意图走原排空。
-    if (getDaemonQuitIntent() === 'stop') await (await import('../host/runtime/stopIntentShutdownCancel')).cancelRunsOnStopIntentShutdown(runRegistry);
+    if (getDaemonQuitIntent() === 'stop') await (await import('../host/runtime/stopIntentShutdownCancel')).cancelRunsOnStopIntentShutdown(runRegistry, { watchdogActive: isDrainWatchdogActive(shellPipeAttached), withCap });
     else await drainPendingOpsForShutdown({
       getPendingOps: () => runRegistry.size + (getBackgroundTaskLedger().hasActiveTasks() ? 1 : 0),
       watchdogActive: isDrainWatchdogActive(shellPipeAttached),

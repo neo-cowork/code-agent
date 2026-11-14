@@ -59,6 +59,28 @@ describe('cancelRunsOnStopIntentShutdown（停止并退出：停机先 cancel �
     expect(Date.now() - startedAt).toBeLessThan(2_000);
   });
 
+  it('intent=stop + 壳看门狗在（win32）：宽限压到 1s 并套 withCap，不等 3s', async () => {
+    quitIntent.value = 'stop';
+    registry.register(fakeHandle('stuck', () => undefined));
+    const withCap = vi.fn(<T,>(p: Promise<T>, _label: string): Promise<T | void> => p);
+    const startedAt = Date.now();
+    const summary = await cancelRunsOnStopIntentShutdown(registry, { watchdogActive: true, withCap, pollIntervalMs: 20, log: vi.fn() });
+    const elapsed = Date.now() - startedAt;
+    expect(withCap).toHaveBeenCalledWith(expect.anything(), 'stopIntent.cancel');
+    expect(elapsed).toBeGreaterThanOrEqual(900);
+    expect(elapsed).toBeLessThan(2_000); // 缺省无看门狗档是 3s
+    expect(summary.remaining).toBe(1);
+  });
+
+  it('withCap 先到期时不再等取消步骤（预算封顶）', async () => {
+    quitIntent.value = 'stop';
+    registry.register(fakeHandle('stuck', () => undefined));
+    const withCap = <T,>(p: Promise<T>): Promise<T | void> => Promise.race([p, new Promise<void>((r) => setTimeout(r, 100))]);
+    const startedAt = Date.now();
+    await cancelRunsOnStopIntentShutdown(registry, { watchdogActive: true, withCap, pollIntervalMs: 20, log: vi.fn() });
+    expect(Date.now() - startedAt).toBeLessThan(600);
+  });
+
   it.each(['none', 'background'] as const)('intent=%s：不 cancel 任何 run', async (intent) => {
     quitIntent.value = intent;
     const onCancel = vi.fn();
@@ -73,6 +95,6 @@ describe('cancelRunsOnStopIntentShutdown（停止并退出：停机先 cancel �
 describe('webServer.shutdown 接线（static-contract）', () => {
   it('stop 分支只走 cancel 函数，其余意图保留 drain', () => {
     const src = readFileSync('src/web/webServer.ts', 'utf8');
-    expect(src).toMatch(/if \(getDaemonQuitIntent\(\) === 'stop'\) await \(await import\('[^']*stopIntentShutdownCancel'\)\)\.cancelRunsOnStopIntentShutdown\(runRegistry\);\n\s*else await drainPendingOpsForShutdown\(/);
+    expect(src).toMatch(/if \(getDaemonQuitIntent\(\) === 'stop'\) await \(await import\('[^']*stopIntentShutdownCancel'\)\)\.cancelRunsOnStopIntentShutdown\(runRegistry, \{ watchdogActive: isDrainWatchdogActive\(shellPipeAttached\), withCap \}\);\n\s*else await drainPendingOpsForShutdown\(/);
   });
 });
