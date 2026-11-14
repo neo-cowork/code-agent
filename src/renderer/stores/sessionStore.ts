@@ -35,6 +35,7 @@ import { recoveryLoadLightsTurn, runtimeStatusCountsAsRunning } from './parkedCo
 import { hostStampPredatesTerminal } from './terminalRunGuardStore';
 import { bindInitializedSessionBroadcasts } from './sessionStoreBroadcasts';
 import { openInitialSession } from './sessionBootDraft';
+import { composerDraftStorageKey, removeComposerDraft } from '../components/features/chat/ChatInput/composerDraftStore';
 import { getSessionTitlePlaceholder } from '../utils/sessionTitlePlaceholder';
 
 const logger = createLogger('SessionStore');
@@ -514,6 +515,7 @@ export const useSessionStore = observeSessionDraftUsage(create<SessionStore>()((
       try {
         await invokeSession('delete', { sessionId });
         clearFailedSend(sessionId);
+        removeComposerDraft(composerDraftStorageKey(sessionId, false));
 
         // 清理该会话的设计态：design-active 标记 + 画布属主，避免悬空。
         useDesignCanvasStore.getState().releaseSessionDesignState(sessionId);
