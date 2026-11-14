@@ -231,6 +231,8 @@ export function useSidebarRowActions(params: UseSidebarRowActionsParams): Sideba
     e.preventDefault();
     e.stopPropagation();
     setRenamingId(session.id);
+    // 预填当前显示标题（zh [定时]/[心跳]）：parseCronSessionTitle 同时识别 zh/en 前缀，
+    // 保存后 round-trip 仍被识别（main #3198 口径，sidebarSessionItem.cronFolding 钉死）
     setRenameValue(getDisplaySessionTitle(session.title, language));
   }, [setRenamingId, setRenameValue, language]);
 
