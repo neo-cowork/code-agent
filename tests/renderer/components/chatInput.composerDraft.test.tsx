@@ -658,7 +658,7 @@ describe('composer draft v2 attachments', () => {
     expect(noticeText).toContain('small-first.png');
     expect(noticeText).toContain('small-second.png');
     expect(noticeText).toContain('oversize-board.png');
-    expect(noticeText).toContain('未保存');
+    expect(noticeText).toContain('没能保存或恢复');
 
     fireEvent.click(screen.getByTestId('unsent-draft-put-back'));
     expect(setValue).toHaveBeenCalledWith('月度复盘说明');
@@ -723,7 +723,7 @@ describe('composer draft v2 attachments', () => {
 
     const notice = screen.getByTestId('unsent-draft-notice');
     expect(notice.textContent).toContain('report-a.png');
-    expect(notice.textContent).toContain('未保存');
+    expect(notice.textContent).toContain('没能保存或恢复');
     expect(screen.queryByTestId('unsent-draft-put-back')).toBeNull();
     fireEvent.click(screen.getByTestId('unsent-draft-discard'));
     expect(screen.queryByTestId('unsent-draft-notice')).toBeNull();
@@ -775,6 +775,43 @@ describe('composer draft v2 attachments', () => {
     const names = merged.map((att) => att.name);
     expect(new Set(names).size).toBe(UI.MAX_ATTACHMENTS_DROP);
     expect(names.slice(0, 3)).toEqual(['shot-1.png', 'existing-a.png', 'existing-b.png']);
+  });
+
+  it('names an unreadable stored attachment as not restored and puts back only the valid one', () => {
+    const good = makeImageAttachment('good-1', 'good-shot.png', 64);
+    const noData = { ...makeImageAttachment('bad-1', 'broken-shot.png', 64), data: '' };
+    const wrongShape = { id: 'bad-2', type: 'file', name: 'C:\\tmp\\old-report.pdf' };
+    localStorage.setItem(KEY_A, JSON.stringify({ v: 2, text: '继续写', attachments: [good, noData, wrongShape] }));
+
+    const setValue = vi.fn();
+    const setAttachments = vi.fn();
+    const { result } = renderHook(() =>
+      useComposerDraftPersistence({
+        sessionId: SESSION_A, sessionless: false, value: '', setValue, attachments: [], setAttachments,
+      }),
+    );
+    expect(result.current.notice).toMatchObject({
+      preview: '继续写',
+      attachmentNames: ['good-shot.png'],
+      droppedNames: ['broken-shot.png', 'old-report.pdf'],
+    });
+    const view = render(
+      <UnsentDraftNotice
+        preview={result.current.notice!.preview}
+        attachmentNames={result.current.notice!.attachmentNames}
+        droppedNames={result.current.notice!.droppedNames}
+        onPutBack={result.current.putBack}
+        onDiscard={result.current.discard}
+      />,
+    );
+    const text = screen.getByTestId('unsent-draft-notice').textContent ?? '';
+    expect(text).toContain('broken-shot.png');
+    expect(text).toContain('old-report.pdf');
+    expect(text).not.toContain('tmp');
+    expect(text).toContain('没能保存或恢复');
+    fireEvent.click(screen.getByTestId('unsent-draft-put-back'));
+    expect(setAttachments).toHaveBeenCalledWith([good]);
+    view.unmount();
   });
 
   it('keeps v1 drafts readable and restorable through the hook', () => {

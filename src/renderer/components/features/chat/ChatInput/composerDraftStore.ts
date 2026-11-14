@@ -98,7 +98,16 @@ function isValidDraftAttachment(value: unknown): value is MessageAttachment {
     && typeof candidate.name === 'string'
     && typeof candidate.size === 'number'
     && typeof candidate.mimeType === 'string'
+    // An inline image with no data cannot be shown again; treat it as unreadable.
+    && (candidate.type !== 'image' || (typeof candidate.data === 'string' && candidate.data.length > 0))
   );
+}
+
+/** Name of a stored attachment that failed validation, so the notice can say it was not restored. */
+function unreadableAttachmentName(value: unknown): string | null {
+  if (!value || typeof value !== 'object') return null;
+  const name = (value as { name?: unknown }).name;
+  return sanitizeAttachmentDisplayName(typeof name === 'string' ? name : '');
 }
 
 export function composerDraftStorageKey(
@@ -146,9 +155,12 @@ export function readComposerDraftEntry(
     }
     if (parsed.v === 2) {
       if (typeof parsed.text !== 'string') return null;
-      const validAttachments = Array.isArray(parsed.attachments)
-        ? parsed.attachments.filter(isValidDraftAttachment)
-        : [];
+      const storedAttachments: unknown[] = Array.isArray(parsed.attachments) ? parsed.attachments : [];
+      const validAttachments = storedAttachments.filter(isValidDraftAttachment);
+      const unreadableNames = storedAttachments
+        .filter((item) => !isValidDraftAttachment(item))
+        .map((item) => unreadableAttachmentName(item) ?? '')
+        .filter((name) => name.length > 0);
       const attachments = validAttachments.slice(0, UI.MAX_ATTACHMENTS_DROP);
       const overflowNames = validAttachments
         .slice(UI.MAX_ATTACHMENTS_DROP)
@@ -158,7 +170,7 @@ export function readComposerDraftEntry(
           .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
           .map(sanitizeAttachmentDisplayName)
         : [];
-      const dropped = [...parsedDropped, ...overflowNames];
+      const dropped = [...parsedDropped, ...unreadableNames, ...overflowNames];
       if (!hasDraftText(parsed.text) && attachments.length === 0 && dropped.length === 0) {
         return null;
       }
