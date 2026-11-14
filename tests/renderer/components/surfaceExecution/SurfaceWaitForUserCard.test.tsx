@@ -107,3 +107,112 @@ describe('reason never names another button', () => {
     expect(picked?.reason).toBe('请完成验证');
   });
 });
+
+describe('computer session takeover card', () => {
+  function runningComputerSession() {
+    const scope = surfaceScope('comp-1', 'computer');
+    const base = surfaceSession({
+      id: 'comp-1',
+      surface: 'computer',
+      state: 'running',
+      targetSummary: 'Notes — Weekly report',
+    });
+    return {
+      ...base,
+      availableControls: ['takeover', 'stop', 'end_session'] as typeof base.availableControls,
+      events: [surfaceEvent(scope, {
+        sessionState: 'running',
+        phase: 'observe',
+        status: 'completed',
+        userSummary: '已读取窗口当前界面',
+        availableControls: ['takeover', 'stop', 'end_session'],
+      })],
+    };
+  }
+
+  function waitingComputerSession() {
+    const scope = surfaceScope('comp-1', 'computer');
+    const base = surfaceSession({
+      id: 'comp-1',
+      surface: 'computer',
+      state: 'waiting_human',
+      targetSummary: 'Notes — Weekly report',
+      waitingReason: 'Waiting for human control',
+    });
+    return {
+      ...base,
+      availableControls: ['resume', 'stop', 'end_session'] as typeof base.availableControls,
+      events: [surfaceEvent(scope, {
+        sessionState: 'waiting_human',
+        phase: 'human',
+        status: 'waiting',
+        userSummary: 'Surface control takeover waiting',
+        operation: { action: 'takeover', risk: 'control' },
+        availableControls: ['resume', 'stop', 'end_session'],
+      })],
+    };
+  }
+
+  it('shows Take over on running computer session and Done on waiting_human in zh and en without leaking host strings', async () => {
+    const onControl = vi.fn().mockResolvedValue(undefined);
+    const { rerender } = render(
+      <SurfaceExecutionConversationPanel
+        conversationId="conversation-1"
+        sessions={[runningComputerSession()]}
+        translations={surfaceExecutionZh}
+        now={10_000}
+        onControl={onControl}
+      />,
+    );
+    const zhTakeoverBtn = screen.getByRole('button', { name: /^我来操作:/ });
+    expect(zhTakeoverBtn.textContent).toContain('我来操作');
+
+    rerender(
+      <SurfaceExecutionConversationPanel
+        conversationId="conversation-1"
+        sessions={[runningComputerSession()]}
+        translations={getSurfaceExecutionTranslations('en')}
+        now={10_000}
+        onControl={onControl}
+      />,
+    );
+    const enTakeoverBtn = screen.getByRole('button', { name: /^Take over:/ });
+    expect(enTakeoverBtn.textContent).toContain('Take over');
+
+    rerender(
+      <SurfaceExecutionConversationPanel
+        conversationId="conversation-1"
+        sessions={[waitingComputerSession()]}
+        translations={surfaceExecutionZh}
+        now={10_000}
+        onControl={onControl}
+      />,
+    );
+    const zhCard = screen.getByTestId('surface-human-takeover-card');
+    expect(zhCard.textContent).toContain('Neo 在等你');
+    expect(screen.getByTestId('surface-human-takeover-done').textContent).toBe('好了');
+    const zhFullText = screen.getByTestId('surface-execution-session').textContent ?? '';
+    expect(zhFullText).not.toContain('Waiting for human control');
+    expect(zhFullText).not.toContain('Surface control takeover waiting');
+
+    fireEvent.click(screen.getByTestId('surface-human-takeover-done'));
+    await waitFor(() => expect(onControl).toHaveBeenCalledWith({
+      version: 1,
+      conversationId: 'conversation-1',
+      surfaceSessionId: 'surface-comp-1',
+      action: 'resume',
+    }));
+
+    rerender(
+      <SurfaceExecutionConversationPanel
+        conversationId="conversation-1"
+        sessions={[waitingComputerSession()]}
+        translations={getSurfaceExecutionTranslations('en')}
+        now={10_000}
+        onControl={onControl}
+      />,
+    );
+    expect(screen.getByTestId('surface-human-takeover-card').textContent).toContain('Neo is waiting for you');
+    expect(screen.getByTestId('surface-human-takeover-done').textContent).toBe('Done');
+  });
+});
