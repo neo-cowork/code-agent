@@ -211,7 +211,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
         <div className="mt-4">
           {!(details.connectorAccess && details.preview.type === 'generic')
             && !(details.preview.type === 'generic' && details.preview.summary.includes(request.tool)) && (
-            <div className="text-xs text-zinc-400 mb-2">{details.preview.summary}</div>
+            <div className="text-xs text-zinc-400 mb-2 whitespace-pre-line">{details.preview.summary}</div>
           )}
           {details.preview.diff && (
             <pre className="text-xs p-2 rounded bg-zinc-700 border border-zinc-700 text-zinc-400 overflow-x-auto max-h-32 whitespace-pre-wrap break-all">
