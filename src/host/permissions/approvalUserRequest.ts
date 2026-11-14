@@ -32,7 +32,8 @@ export function withUserRequestQuote(
     const recent = db.getRecentMessages(sessionId, APPROVAL_USER_REQUEST_LOOKBACK_MESSAGES);
     for (let i = recent.length - 1; i >= 0; i -= 1) {
       const message = recent[i];
-      if (message.role !== 'user' || isTelemetryRecoveredMessage(message)) continue;
+      // isMeta user rows are host/model-injected (e.g. a delegated-task brief the model wrote), not the human's words.
+      if (message.role !== 'user' || message.isMeta || isTelemetryRecoveredMessage(message)) continue;
       if (typeof message.content !== 'string') continue;
       const text = stripInlineAttachmentBlocks(message.content).replace(/\s+/g, ' ').trim();
       if (!text) continue;

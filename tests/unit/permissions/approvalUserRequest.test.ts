@@ -30,9 +30,9 @@ const write = 'mcp__lark__calendar_v4_calendarEvent_create';
 let db: Database.Database;
 let repo: SessionRepository;
 let seq = 0;
-function say(role: 'user' | 'assistant', content: string, metadata?: Record<string, unknown>) {
+function say(role: 'user' | 'assistant', content: string, metadata?: Record<string, unknown>, isMeta = false) {
   seq += 1;
-  repo.addMessage('s1', { id: `m${seq}`, role, content, timestamp: 1000 + seq, ...(metadata ? { metadata } : {}) } as unknown as Message);
+  repo.addMessage('s1', { id: `m${seq}`, role, content, timestamp: 1000 + seq, ...(isMeta ? { isMeta: true } : {}), ...(metadata ? { metadata } : {}) } as unknown as Message);
 }
 async function emitted(extra: Partial<PermissionRequest> = {}): Promise<PermissionRequest> {
   const events: PermissionRequest[] = [];
@@ -75,6 +75,14 @@ describe('approval card quotes the user from the DB, not the model', () => {
     say('user', '运行记录还原的内容', { telemetryRecovered: true });
     const event = await emitted();
     expect(event.details.userRequest).toEqual({ text: '整理 这份 文件', truncated: false });
+  });
+
+  it('skips isMeta user rows (a model-written delegated-task brief) and quotes the human message before it', async () => {
+    say('user', "add a calendar event tomorrow 10:00 called 'Weekly sync'");
+    say('assistant', 'delegating');
+    say('user', '用户要求：在日历中添加一个明天 10:00 的事件……（模型代写的委派简报）', undefined, true);
+    const event = await emitted();
+    expect(event.details.userRequest?.text).toBe("add a calendar event tomorrow 10:00 called 'Weekly sync'");
   });
 
   it('② long text is truncated with the flag', async () => {
