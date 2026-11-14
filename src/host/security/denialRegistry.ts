@@ -112,23 +112,29 @@ class DenialRegistry {
    * automatic approvals (unattended read-only MCP, schedule write grant, dev mode,
    * configured auto-approve level) and right before creating a human ask/park/card.
    */
-  refuseIfGoalDenied(request: {
-    sessionId?: string;
-    runId?: string;
-    turnOrigin?: ReadonlyArray<{ runId?: string }>;
-    tool: string;
-    details?: { sensitiveStep?: unknown };
-  }): (PermissionAskResult & { denialSource: 'user' }) | null {
+  refuseIfGoalDenied(
+    request: {
+      sessionId?: string;
+      sourceMessageId?: string;
+      runId?: string;
+      turnOrigin?: ReadonlyArray<{ runId?: string }>;
+      tool: string;
+      details?: { sensitiveStep?: unknown };
+    },
+    options?: { log?: boolean },
+  ): (PermissionAskResult & { denialSource: 'goal-sticky-host' }) | null {
     const entry = this.resolveGoalEntry(request.tool, request);
     if (!entry || !this.goals.get(entry.sessionId)?.has(entry.key)) return null;
-    createLogger('DenialRegistry').warn('user-denied-goal-sticky: refusing approval before ask/park', {
-      sessionId: entry.sessionId,
-      scope: entry.scope,
-      toolFamily: entry.toolFamily,
-    });
+    if (options?.log !== false) {
+      createLogger('DenialRegistry').warn('user-denied-goal-sticky: refusing approval before ask/park', {
+        sessionId: entry.sessionId,
+        scope: entry.scope,
+        toolFamily: entry.toolFamily,
+      });
+    }
     return {
       approved: false,
-      denialSource: 'user',
+      denialSource: 'goal-sticky-host',
       message: userDeniedGoalStickyError(request.tool).modelText,
     };
   }
