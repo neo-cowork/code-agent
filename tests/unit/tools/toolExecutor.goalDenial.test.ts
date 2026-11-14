@@ -63,7 +63,7 @@ describe('same-goal denial at the ToolExecutor ask boundary', () => {
         permissions: { autoApprove: { read: false, write: false, execute: false, network: false } },
       }) as unknown as AppSettings,
       isDevModeAutoApproveEnabled: opts.devMode ?? (() => false),
-      getExecutionTopology: () => ((opts.unattended ?? true) ? 'async_agent' : 'single_agent'),
+      getExecutionTopology: () => ((opts.unattended ?? true) ? 'async_agent' : 'main'),
       hasApprovalUi: () => !(opts.unattended ?? true),
       injectedPendingApprovalRepo: repo,
       onEvent: (event) => {

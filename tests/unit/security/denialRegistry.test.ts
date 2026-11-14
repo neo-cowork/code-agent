@@ -236,7 +236,7 @@ describe('OrchestratorPermissionIsland.requestPermission goal-sticky after autom
         permissions: { autoApprove: { execute: levelAutoApprove } },
       }) as unknown as AppSettings,
       isDevModeAutoApproveEnabled: () => devMode,
-      getExecutionTopology: () => 'single_agent',
+      getExecutionTopology: () => 'main',
       hasApprovalUi: () => true,
       injectedPendingApprovalRepo: repo,
       onEvent: (event) => {
