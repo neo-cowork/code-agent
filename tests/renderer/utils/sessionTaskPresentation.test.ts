@@ -78,4 +78,20 @@ describe('sessionTaskPresentation', () => {
     expect(formatSessionTaskOutput({ sessionTask: { outcome: 'status', tasks: [] } }, rawStatus, en))
       .toBe(rawStatus);
   });
+
+  it('hides the model-facing Agent ID suffix of background sub-agent rows (only and mixed with tasks), zh and en', () => {
+    const only = '- coder ：进行中，已用时3 秒（Agent ID: agent_coder_123）\n没有剩余时间数据，请勿估算完成时间。';
+    for (const t of [zh, en]) {
+      const out = formatSessionTaskOutput({ sessionTask: { outcome: 'status', tasks: [] } }, only, t);
+      expect(out).toContain('coder ：进行中，已用时3 秒');
+      expect(out).not.toMatch(/Agent ID|agent_/);
+    }
+    const mixed = `1. 写稿：进行中\n${only}`;
+    for (const t of [zh, en]) {
+      const out = formatSessionTaskOutput(statusMetadata, mixed, t);
+      expect(out).not.toMatch(/Agent ID|agent_/);
+      const out2 = formatSessionTaskOutput({ sessionTask: { outcome: 'status', tasks: [{ shortName: '写稿', status: 'running' }] } }, mixed, t);
+      expect(out2).not.toMatch(/Agent ID|agent_/);
+    }
+  });
 });

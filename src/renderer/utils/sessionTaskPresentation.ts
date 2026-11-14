@@ -50,7 +50,18 @@ function fill(template: string, values: Record<string, string>): string {
   );
 }
 
+// task_status 的子代理行带「（Agent ID: x）」供模型调用 collect_agent 等；用户卡片不展示。
+const AGENT_ID_SUFFIX = /\s*[（(]Agent ID:[^）)]*[）)]/g;
+
 export function formatSessionTaskOutput(
+  metadata: Record<string, unknown> | undefined,
+  rawOutput: string,
+  t: Translations,
+): string {
+  return formatStructuredSessionTaskOutput(metadata, rawOutput.replace(AGENT_ID_SUFFIX, ''), t).replace(AGENT_ID_SUFFIX, '');
+}
+
+function formatStructuredSessionTaskOutput(
   metadata: Record<string, unknown> | undefined,
   rawOutput: string,
   t: Translations,

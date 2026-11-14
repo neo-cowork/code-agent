@@ -399,7 +399,7 @@ describe('spawn_agent dispatch to protocol-native service', () => {
     const status = await executeTaskStatus({}, makeCtx({ sessionId }), allowAll);
     expect(status).toEqual({
       ok: true,
-      output: expect.stringContaining(`- coder ：进行中，已用时`),
+      output: expect.stringMatching(new RegExp(`- coder ：进行中，已用时.*（Agent ID: ${agentId}）`)),
       meta: { sessionTask: { outcome: 'status', tasks: [] } },
     });
 
