@@ -212,4 +212,127 @@ describe('delegate_session clarify guard (needs_clarification)', () => {
     expect(loggerWarn).toHaveBeenCalledWith(expect.stringContaining('no readable origin user message'));
     db.close();
   });
+
+  // N-DELEGATE-SESSION-K2-FU3-FU1-FU1：钉死真实渲染端 UserQuestionCard.tsx 回传的答案形态：
+  // 1) 单选点选某一项只回传 option.label（不含 option.description，即便 description 提到了另一候选）；
+  // 2) 模型缩略 label（如「首页设计稿」）同样只传 label，守卫靠唯一二元组命中目标放行；
+  // 3) 点击「两个都发」（label 无候选名）或多选同时勾选两项（高分并列）均不放行单目标绑定，0 行落库。
+  describe('real UserQuestionCard answer contract (label-only and 两个都发)', () => {
+    const realUiSessions = [
+      { id: 'sid-design', title: '官网改版-首页设计稿', workingDirectory: '/workspace/origin/design', updatedAt: NOW, sessionType: 'chat' as const, engineKind: 'native' },
+      { id: 'sid-copy', title: '官网改版-落地页文案', workingDirectory: '/workspace/origin/copy', updatedAt: NOW - 1, sessionType: 'chat' as const, engineKind: 'native' },
+    ];
+
+    function setupRealUi(userMessage: string) {
+      turnCounter += 1;
+      const runId = `run-real-${turnCounter}`;
+      (ctx as unknown as { turnId: string; runId: string }).turnId = `turn-real-${turnCounter}`;
+      (ctx as unknown as { runId: string }).runId = runId;
+      const db = new Database(':memory:');
+      applySchema(db, { info() {}, warn() {}, error() {}, debug() {} } as never);
+      db.prepare(`INSERT INTO sessions (id, title, model_provider, model_name, created_at, updated_at) VALUES ('origin', 'origin', 'local', 'test', ?, ?)`).run(NOW, NOW);
+      db.prepare(`INSERT INTO messages (id, session_id, role, content, timestamp) VALUES ('m-1', 'origin', 'user', ?, ?)`).run(userMessage, NOW);
+      const projection = projectSessionCandidates(realUiSessions, { originSessionId: 'origin', now: NOW, secret: getDelegationCandidateSecret() });
+      const refOf = (title: string) => projection.candidates[realUiSessions.findIndex((row) => row.title === title)].candidateRef;
+      (ctx as unknown as { delegationRuntime?: unknown }).delegationRuntime = {
+        getDb: () => db,
+        listSessions: () => realUiSessions,
+        getSessionRow: (id: string) => {
+          const row = realUiSessions.find((entry) => entry.id === id);
+          return row ? { ...row, modelConfig: { provider: 'local', model: 'test' } } : null;
+        },
+        getWorkspaceRoots: () => ['/workspace/origin'],
+        getRuns: () => [],
+        getRun: () => undefined,
+        getPermissionMode: () => 'default',
+        evaluateFolderTrust: async () => ({ state: 'trusted', blockedItems: 0 }),
+        notifyEnqueued: vi.fn(),
+        now: () => NOW,
+      };
+      const rows = () => ({
+        delegations: (db.prepare('SELECT count(*) AS count FROM session_delegations').get() as { count: number }).count,
+        targets: (db.prepare('SELECT target_session_id FROM session_delegations').all() as Array<{ target_session_id: string }>).map((r) => r.target_session_id),
+      });
+      return { db, projection, refOf, rows };
+    }
+
+    async function clickRealCardOption(
+      options: Array<{ label: string; description: string }>,
+      selectedAnswer: string | string[],
+      multiSelect = false,
+    ) {
+      const header = '发到哪个会话';
+      promptUserInChat.mockResolvedValueOnce({
+        status: 'answered',
+        response: { requestId: `req-${turnCounter}-${Math.random()}`, answers: { [header]: selectedAnswer } },
+      });
+      const askCtx = { ...(ctx as object), logger: { debug() {}, info() {}, warn() {}, error() {} } } as never;
+      return executeAskUserQuestion({
+        questions: [{
+          header,
+          question: `这条备注要发到哪个会话？#${Math.random()}`,
+          multiSelect,
+          options,
+        }],
+      }, askCtx, allow);
+    }
+
+    const cardOptions = [
+      { label: '官网改版-首页设计稿', description: '设计相关会话（不发给官网改版-落地页文案）' },
+      { label: '官网改版-落地页文案', description: '文案相关会话' },
+      { label: '两个都发', description: '同一条备注同时转达给官网改版-首页设计稿和官网改版-落地页文案' },
+    ];
+
+    it('releases exactly the clicked session when UserQuestionCard sends option.label only (full display name or shortened suffix)', async () => {
+      process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
+      const { db, projection, refOf, rows } = setupRealUi('把这条备注发给官网改版那边的会话：周五前要把配色再对一遍');
+      const designCall = { action: 'delegate_existing', candidateSetId: projection.candidateSetId, candidateRef: refOf('官网改版-首页设计稿'), text: '周五前要把配色再对一遍' };
+      expect(await executeDelegateSession(designCall, ctx, allow)).toMatchObject({ ok: false, meta: { code: 'needs_clarification', rule: 'ambiguous_reference' } });
+
+      // Real card sends only option.label ('官网改版-首页设计稿'), never option.description (which mentions the other chat too).
+      expect((await clickRealCardOption(cardOptions, '官网改版-首页设计稿')).ok).toBe(true);
+      expect((await executeDelegateSession(designCall, ctx, allow)).ok).toBe(true);
+      expect(rows()).toEqual({ delegations: 1, targets: ['sid-design'] });
+      expect(loggerInfo).toHaveBeenCalledWith('[DelegateSession] clarify guard passed: the user answered a clarification question in this turn and the answer matches the target');
+      db.close();
+
+      // Shortened suffix label ('首页设计稿') also uniquely scores sid-design without needing description.
+      const second = setupRealUi('把这条备注发给官网改版那边的会话：周五前要把配色再对一遍');
+      const shortenedOptions = [
+        { label: '首页设计稿', description: '发给「官网改版-首页设计稿」这个会话' },
+        { label: '落地页文案', description: '发给「官网改版-落地页文案」这个会话' },
+      ];
+      const secondCall = { action: 'delegate_existing', candidateSetId: second.projection.candidateSetId, candidateRef: second.refOf('官网改版-首页设计稿'), text: '周五前要把配色再对一遍' };
+      expect(await executeDelegateSession(secondCall, ctx, allow)).toMatchObject({ ok: false, meta: { code: 'needs_clarification' } });
+      expect((await clickRealCardOption(shortenedOptions, '首页设计稿')).ok).toBe(true);
+      expect((await executeDelegateSession(secondCall, ctx, allow)).ok).toBe(true);
+      expect(second.rows()).toEqual({ delegations: 1, targets: ['sid-design'] });
+      second.db.close();
+      delete (ctx as unknown as { runId?: string }).runId;
+    });
+
+    it('rejects retries when UserQuestionCard sends 「两个都发」 (or multi-selects both sessions), writing zero rows', async () => {
+      process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
+      const { db, projection, refOf, rows } = setupRealUi('把这条备注发给官网改版那边的会话：周五前统一核对一下底部版权年份');
+      const designCall = { action: 'delegate_existing', candidateSetId: projection.candidateSetId, candidateRef: refOf('官网改版-首页设计稿'), text: '周五前统一核对一下底部版权年份' };
+      const copyCall = { action: 'delegate_existing', candidateSetId: projection.candidateSetId, candidateRef: refOf('官网改版-落地页文案'), text: '周五前统一核对一下底部版权年份' };
+
+      expect(await executeDelegateSession(designCall, ctx, allow)).toMatchObject({ ok: false, meta: { code: 'needs_clarification', rule: 'ambiguous_reference' } });
+      expect((await clickRealCardOption(cardOptions, '两个都发')).ok).toBe(true);
+      expect(await executeDelegateSession(designCall, ctx, allow)).toMatchObject({ ok: false, meta: { code: 'needs_clarification', rule: 'ambiguous_reference' } });
+      expect(await executeDelegateSession(copyCall, ctx, allow)).toMatchObject({ ok: false, meta: { code: 'needs_clarification', rule: 'ambiguous_reference' } });
+      expect(rows()).toEqual({ delegations: 0, targets: [] });
+      db.close();
+
+      // Multi-select / free-text naming both full titles ties at top score -> rejected as named_other_candidate.
+      const tied = setupRealUi('把这条备注发给官网改版那边的会话：周五前统一核对一下底部版权年份');
+      const tiedDesign = { action: 'delegate_existing', candidateSetId: tied.projection.candidateSetId, candidateRef: tied.refOf('官网改版-首页设计稿'), text: '周五前统一核对一下底部版权年份' };
+      expect(await executeDelegateSession(tiedDesign, ctx, allow)).toMatchObject({ ok: false, meta: { code: 'needs_clarification' } });
+      expect((await clickRealCardOption(cardOptions.slice(0, 2), ['官网改版-首页设计稿', '官网改版-落地页文案'], true)).ok).toBe(true);
+      expect(await executeDelegateSession(tiedDesign, ctx, allow)).toMatchObject({ ok: false, meta: { code: 'needs_clarification', rule: 'named_other_candidate' } });
+      expect(tied.rows()).toEqual({ delegations: 0, targets: [] });
+      tied.db.close();
+      delete (ctx as unknown as { runId?: string }).runId;
+    });
+  });
 });
