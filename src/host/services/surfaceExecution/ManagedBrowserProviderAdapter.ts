@@ -259,8 +259,8 @@ export class ManagedBrowserProviderAdapter {
     return binding ? { ...binding, identity: { ...binding.identity }, target: { ...binding.target } } : null;
   }
 
-  async clearConversationResumeState(conversationId: string): Promise<void> {
-    await Promise.all([this.resumeStateStore.clearConversation(conversationId), this.lastPageStore.clearConversation(conversationId)]);
+  async clearConversationResumeState(conversationId: string, opts: { keepLastPage?: boolean } = {}): Promise<void> {
+    await Promise.all([this.resumeStateStore.clearConversation(conversationId), opts.keepLastPage ? undefined : this.lastPageStore.clearConversation(conversationId)]);
   }
 
   activateConversationResumeState(conversationId: string): void {
