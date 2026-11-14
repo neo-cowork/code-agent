@@ -95,6 +95,9 @@ export interface MeetingRecordStore {
   transcript(record: MeetingSummaryRecord): MeetingTranscriptLine[];
   /** 标题、纪要、转写里含关键词的会，每条带一段命中原文 */
   search(query: string, limit: number): Array<{ meeting: MeetingSummaryRecord; snippet: string; atMs: number | null }>;
+  /** 纪要进度；不碰 updated_at_ms（那是「记这场会」的心跳，意外退出收尾要用） */
+  setMinutesState(id: string, state: MeetingMinutesState, minutesSessionId?: string | null): void;
+  saveMinutes(id: string, minutes: MeetingMinutes): void;
 }
 
 export function createMeetingRecordStore(run: MeetingSqlRunner): MeetingRecordStore {
@@ -169,6 +172,13 @@ export function createMeetingRecordStore(run: MeetingSqlRunner): MeetingRecordSt
         if (meeting) result.push({ meeting, snippet: snippetAround(h.text, query), atMs: h.atMs });
       }
       return result;
+    },
+    setMinutesState(id, state, minutesSessionId) {
+      const session = minutesSessionId === undefined ? '' : `, minutes_session_id = ${minutesSessionId === null ? 'NULL' : q(minutesSessionId)}`;
+      exec(`UPDATE meetings SET minutes_state = ${q(state)}${session} WHERE id = ${q(id)};`);
+    },
+    saveMinutes(id, minutes) {
+      exec(`UPDATE meetings SET minutes_json = ${q(JSON.stringify(minutes))}, minutes_state = 'done' WHERE id = ${q(id)};`);
     },
   };
 }

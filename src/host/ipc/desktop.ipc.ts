@@ -64,6 +64,11 @@ const meetingSession = new MeetingSession(
     stop: stopManualAudio,
     isCapturing: () => getAudioCaptureStatus().capturing,
   },
+  Date.now,
+  // 散会自动交记言出纪要（N-MEETING-PAGE）；开关、转写长度在 meetingMinutes 里判，这里只入队
+  (record) => {
+    void import('../services/desktop/meetingMinutes').then(({ enqueueMeetingMinutes }) => enqueueMeetingMinutes(record.id));
+  },
 );
 
 const logger = createLogger('DesktopIPC');

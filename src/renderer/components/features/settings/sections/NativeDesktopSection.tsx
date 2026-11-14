@@ -61,6 +61,7 @@ import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { DangerButton } from '../../../primitives/Button';
 import { AudioCaptureReadinessLine, isAudioPrerequisiteCode, loadDayAndHourAudioSegments, NativeDesktopEmptyView } from './audioCaptureReadiness';
 import { getAudioCaptureErrorText } from './audioCaptureError';
+import { MeetingAutoMinutesToggle } from './MeetingAutoMinutesToggle';
 import { AudioRetentionFailureLine } from './audioRetentionFailure';
 import { useI18n } from '../../../../hooks/useI18n';
 import { interpolate } from '../../../../i18n/interpolate';
@@ -974,6 +975,7 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
         text={nativeDesktopText.audioReadiness}
         onRecheck={() => { void handleRecheckAudio(); }}
       />
+      <MeetingAutoMinutesToggle />
       <div className="flex flex-wrap items-center gap-3 border-b border-zinc-800/50 px-5 py-2 shrink-0">
         <span className="text-[11px] text-zinc-400">
           {interpolate(nativeDesktopText.audioRetention.rule, { hours: AUDIO_RETENTION_HOURS })}
