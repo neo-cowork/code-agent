@@ -59,6 +59,17 @@ describe('resolveFileUrl', () => {
     expect(params.get('token')).toBe('test-token');
   });
 
+  it('routes chat upload copies (any type) under the config dir to /api/workspace/file, not the image-only screenshot route', () => {
+    mocks.hasNativeBridge.mockReturnValue(false);
+    stubWindow('http:', 'test-token');
+    for (const dir of ['.code-agent', '.code-agent-dev', '.code-agent-dev2']) {
+      const target = `/Users/linchen/${dir}/uploads/11111111-1111-1111-1111-111111111111/clip.mp4`;
+      const resolved = resolveFileUrl(target);
+      expect(resolved.startsWith('/api/workspace/file?')).toBe(true);
+      expect(new URLSearchParams(resolved.split('?')[1]).get('path')).toBe(target);
+    }
+  });
+
   it('routes dev-channel config dir (.code-agent-dev) images to /api/screenshot in web mode', () => {
     mocks.hasNativeBridge.mockReturnValue(false);
     stubWindow('http:', 'test-token');

@@ -13,6 +13,10 @@ import type {
 } from '../../../../../src/host/protocol/tools';
 import { fileReadTracker } from '../../../../../src/host/tools/fileReadTracker';
 import { HostReasonCode } from '../../../../../src/shared/contract/permission';
+import { getUserDataPath } from '../../../../../src/host/platform/appPaths';
+import { CHAT_UPLOAD_SUBDIR_NAME } from '../../../../../src/shared/constants/chatUploads';
+import { PermissionClassifier, readArgumentsRequirePermission } from '../../../../../src/host/tools/permissionClassifier';
+import { evaluateToolSlotDataDirAccess } from '../../../../../src/host/security/slotDataDirGuard';
 
 vi.mock('../../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
@@ -274,7 +278,7 @@ describe('readModule (native)', () => {
       if (!result.ok) {
         expect(result.code).toBe('ENOENT');
         expect(result.error).toBe(
-          `File not found: ${uploadPath}（该文件是聊天上传的临时副本，应用重启后会被清理——请直接告诉用户：上传已过期，请重新上传该文件）`,
+          `File not found: ${uploadPath}（该文件是聊天上传的副本，已失效——请直接告诉用户：附件已失效，请重新拖入）`,
         );
         expect(result.meta?.hostReason).toEqual({
           code: HostReasonCode.UploadExpired,
@@ -308,7 +312,7 @@ describe('readModule (native)', () => {
         expect(result.ok).toBe(false);
         if (!result.ok) {
           expect(result.code).toBe('ENOENT');
-          expect(result.error).toContain('上传已过期，请重新上传该文件');
+          expect(result.error).toContain('附件已失效，请重新拖入');
         }
       } finally {
         if (originalTmpdir === undefined) delete process.env.TMPDIR;
@@ -328,6 +332,47 @@ describe('readModule (native)', () => {
       if (!result.ok) {
         expect(result.code).toBe('ENOENT');
         expect(result.error).toBe(`File not found: ${path.join(tmpDir, 'plain-missing.txt')}`);
+      }
+    });
+
+    it('reads a file under the per-data-dir uploads root without extra permission or slot blocks', async () => {
+      const uploadDir = path.join(getUserDataPath(), CHAT_UPLOAD_SUBDIR_NAME, 'uuid-live');
+      const uploadFile = path.join(uploadDir, 'contract-clause3.md');
+      await fs.mkdir(uploadDir, { recursive: true });
+      await fs.writeFile(uploadFile, 'Clause 3: Net 30 payment terms', 'utf-8');
+      try {
+        expect(evaluateToolSlotDataDirAccess('Read', { file_path: uploadFile }, tmpDir)).toEqual({ allowed: true });
+        expect(readArgumentsRequirePermission('Read', { file_path: uploadFile }, { workingDirectory: tmpDir })).toBe(false);
+        const classifier = new PermissionClassifier({ enableLlm: false });
+        const decision = await classifier.classify('Read', { file_path: uploadFile }, {
+          workingDirectory: tmpDir,
+          permissionLevel: 'read',
+        });
+        expect(decision.decision).toBe('approve');
+
+        const handler = await readModule.createHandler();
+        const result = await handler.execute({ file_path: uploadFile }, makeCtx({ workingDir: tmpDir }), allowAll);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.output).toContain('Clause 3: Net 30 payment terms');
+        }
+      } finally {
+        await fs.rm(uploadDir, { recursive: true, force: true });
+      }
+    });
+
+    it('ENOENT on the per-data-dir uploads root yields UploadExpired (both text and binary)', async () => {
+      const missingText = path.join(getUserDataPath(), CHAT_UPLOAD_SUBDIR_NAME, 'uuid-gone', 'notes.md');
+      const missingPdf = path.join(getUserDataPath(), CHAT_UPLOAD_SUBDIR_NAME, 'uuid-gone', 'contract.pdf');
+      const handler = await readModule.createHandler();
+
+      for (const target of [missingText, missingPdf]) {
+        const result = await handler.execute({ file_path: target }, makeCtx(), allowAll);
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.code).toBe('ENOENT');
+          expect(result.meta?.hostReason).toMatchObject({ code: HostReasonCode.UploadExpired });
+        }
       }
     });
 

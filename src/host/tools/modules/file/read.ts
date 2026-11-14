@@ -28,9 +28,8 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { makeEvidenceRef } from '../../../../shared/contract/evidence';
-import { createHostReason, HostReasonCode } from '../../../../shared/contract/permission';
 import { computeContentDigest, fileReadTracker } from '../../fileReadTracker';
-import { confineEvalPath, isChatUploadPath } from '../../file/pathUtils';
+import { buildExpiredChatUploadResult, confineEvalPath, isChatUploadPath } from '../../file/pathUtils';
 import { parseEmbeddedParams, resolveInputPath } from '../../utils/resolveInputPath';
 import { getFileMutationActorId } from './fileMutationIdentity';
 import { extractFileFacts, dataFingerprintStore } from '../../dataFingerprint';
@@ -130,6 +129,15 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
     // 二进制/结构化格式拦截 — 防止读到乱码后幻觉
     const ext = path.extname(filePath).toLowerCase();
     if (BINARY_REDIRECTS[ext]) {
+      if (isChatUploadPath(filePath)) {
+        try {
+          await fs.access(filePath);
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+            return buildExpiredChatUploadResult(filePath);
+          }
+        }
+      }
       const hint = BINARY_REDIRECTS[ext];
       return {
         ok: false,
@@ -234,21 +242,13 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
     } catch (err) {
       const e = err as NodeJS.ErrnoException;
       if (e.code === 'ENOENT') {
-        // 聊天上传的临时副本随 webServer 启动/关停整体清空（cleanupUploadDirs）。
-        // 命中上传目录却 ENOENT 时给模型一句人话，让它转告用户重新上传，
-        // 而不是回一句「文件不存在」把对话卡死。
-        const expiredUpload = isChatUploadPath(filePath);
-        const uploadNote = expiredUpload
-          ? '（该文件是聊天上传的临时副本，应用重启后会被清理——请直接告诉用户：上传已过期，请重新上传该文件）'
-          : '';
-        const error = `File not found: ${filePath}${uploadNote}`;
+        if (isChatUploadPath(filePath)) {
+          return buildExpiredChatUploadResult(filePath);
+        }
         return {
           ok: false,
-          error,
+          error: `File not found: ${filePath}`,
           code: 'ENOENT',
-          ...(expiredUpload
-            ? { meta: { hostReason: createHostReason(HostReasonCode.UploadExpired, error) } }
-            : {}),
         };
       }
       return {

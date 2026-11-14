@@ -4,9 +4,11 @@
 
 import path from 'path';
 import os from 'os';
-import fs from 'fs';
+import { realpathSync } from 'fs';
 import { resolveCanonicalRunPath } from '../../runtime/runContext';
-import { CHAT_UPLOAD_DIR_NAME } from '../../../shared/constants/chatUploads';
+import { getUserDataPath } from '../../platform/appPaths';
+import { createHostReason, HostReasonCode, type HostReasonPayload } from '../../../shared/contract/permission';
+import { CHAT_UPLOAD_DIR_NAME, CHAT_UPLOAD_SUBDIR_NAME } from '../../../shared/constants/chatUploads';
 
 /**
  * 把「可能不存在」的路径规范化：存在的前缀走 realpath（解析 /var → /private/var
@@ -15,7 +17,7 @@ import { CHAT_UPLOAD_DIR_NAME } from '../../../shared/constants/chatUploads';
  */
 function canonicalizePossiblyMissing(target: string): string {
   try {
-    return fs.realpathSync(target);
+    return realpathSync(target);
   } catch {
     const parent = path.dirname(target);
     if (parent === target) return target; // 到达文件系统根，无法再向上
@@ -24,22 +26,45 @@ function canonicalizePossiblyMissing(target: string): string {
 }
 
 /**
- * 是否落在聊天上传临时目录（web/Tauri 的 /api/upload/temp 落盘处，
- * webServer 启动/关停时整体清空）。Read 工具用它在上传副本 ENOENT 时
- * 给「上传已过期，请重新上传」的人话提示，而不是一句干巴巴的 not found。
+ * 是否落在聊天上传目录（当前 `<userData>/uploads` 或历史 `os.tmpdir()/code-agent-uploads`）。
+ * 读类工具用它在上传副本 ENOENT 时给「上传已过期，请重新上传」的人话提示。
  *
  * macOS os.tmpdir() 返回 /var/…（软链别名），而 document-evidence 锚、上传
- * 回执常以 realpath 形态（/private/var/…）回到 Read 工具——纯词法前缀比对会
- * 漏（realrun20：模型重读上传 csv 只拿到 not found，转告用户「临时文件已被系统
- * 清理」）。词法不中时两侧都按「存在前缀 realpath、缺失尾部保留」规范化再比，
+ * 回执常以 realpath 形态（/private/var/…）回到读工具——纯词法前缀比对会漏。
+ * 词法不中时两侧都按「存在前缀 realpath、缺失尾部保留」规范化再比，
  * 文件与上传根目录都不在了也能对上。
  */
 export function isChatUploadPath(filePath: string): boolean {
-  const uploadRoot = path.join(os.tmpdir(), CHAT_UPLOAD_DIR_NAME);
-  if (filePath.startsWith(`${uploadRoot}${path.sep}`)) return true;
-  const canonicalRoot = canonicalizePossiblyMissing(uploadRoot);
+  const explicitDataDir = process.env.CODE_AGENT_DATA_DIR?.trim();
+  const uploadRoots = new Set<string>([
+    path.join(getUserDataPath(), CHAT_UPLOAD_SUBDIR_NAME),
+    ...(explicitDataDir ? [path.join(path.resolve(explicitDataDir), CHAT_UPLOAD_SUBDIR_NAME)] : []),
+    path.join(os.tmpdir(), CHAT_UPLOAD_DIR_NAME),
+  ]);
+  for (const uploadRoot of uploadRoots) {
+    if (filePath.startsWith(`${uploadRoot}${path.sep}`)) return true;
+  }
   const canonicalTarget = canonicalizePossiblyMissing(filePath);
-  return canonicalTarget.startsWith(`${canonicalRoot}${path.sep}`);
+  for (const uploadRoot of uploadRoots) {
+    const canonicalRoot = canonicalizePossiblyMissing(uploadRoot);
+    if (canonicalTarget.startsWith(`${canonicalRoot}${path.sep}`)) return true;
+  }
+  return false;
+}
+
+export function buildExpiredChatUploadResult(filePath: string): {
+  ok: false;
+  error: string;
+  code: 'ENOENT';
+  meta: { hostReason: HostReasonPayload };
+} {
+  const error = `File not found: ${filePath}（该文件是聊天上传的副本，已失效——请直接告诉用户：附件已失效，请重新拖入）`;
+  return {
+    ok: false,
+    error,
+    code: 'ENOENT',
+    meta: { hostReason: createHostReason(HostReasonCode.UploadExpired, error) },
+  };
 }
 
 /**

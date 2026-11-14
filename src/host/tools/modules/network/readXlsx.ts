@@ -24,6 +24,7 @@ import type {
 } from '../../../protocol/tools';
 import { dataFingerprintStore } from '../../dataFingerprint';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
+import { buildExpiredChatUploadResult, isChatUploadPath } from '../../file/pathUtils';
 import { readXlsxSchema as schema } from './readXlsx.schema';
 import {
   isNsPrefixedRelationshipsError,
@@ -91,6 +92,7 @@ export async function executeReadXlsx(
     : path.join(ctx.workingDir, filePathArg);
 
   if (!fs.existsSync(absPath)) {
+    if (isChatUploadPath(absPath)) return buildExpiredChatUploadResult(absPath);
     return { ok: false, error: `文件不存在: ${absPath}`, code: 'ENOENT' };
   }
 
