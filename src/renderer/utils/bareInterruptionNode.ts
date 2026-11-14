@@ -3,6 +3,7 @@
 // 这里为它补一个空正文节点，由 TraceNodeRenderer 按本地化“已停止”文案渲染。
 import type { Message, StreamInterruptionReason } from '@shared/contract';
 import type { TraceNode } from '@shared/contract/trace';
+import { resolveToolCallTerminalState } from './toolCallTerminalState';
 import { isStreamRecoveryMessage } from './streamRecoveryMessage';
 
 const PROTOCOL_MARKERS = /\[cancelled\]|\[未完成\s*[—-]\s*切换会话中断\]|\[连接中断\s*[—-]\s*部分回答已保留\]/giu;
@@ -36,6 +37,7 @@ export function bareInterruptionNode(
   all: Message[],
   reason: StreamInterruptionReason,
 ): TraceNode | null {
+  if (resolveToolCallTerminalState({ interruptionReason: reason }).state !== 'interrupted') return null;
   if (reason !== 'user' && reason !== 'session-switch' && reason !== 'stream-break') return null;
   if (isStreamRecoveryMessage(msg) || msg.toolCalls?.length) return null;
   if (msg.content.replace(PROTOCOL_MARKERS, '').trim()) return null;

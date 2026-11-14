@@ -13,6 +13,8 @@ import { getUserConfigDir } from '../../config/configPaths';
 import { isOrtTensor, loadVadRuntime, type OrtRuntimeModule } from './audioVadRuntime';
 import { getAudioCapturePrerequisites } from './audioCapturePrerequisites';
 import { clearAllAudioRecordings, finalizeSegmentAudio, getAudioRetentionStatus, sweepAudioRetention } from './audioRetention';
+import { dropMicEchoes } from './audioCrossEcho';
+import { AUDIO_SPEAKER_ID, type AudioCaptureMode } from '@shared/contract/audioCapture';
 import type { InferenceSession, Tensor as OrtTensor } from 'onnxruntime-node';
 
 const logger = createLogger('DesktopAudioCapture');
@@ -38,10 +40,13 @@ const ASR_TIMEOUT_MS = 120_000;
 
 // Power management check interval
 const POWER_CHECK_INTERVAL_MS = 60_000;
+const CAPTURE_KILL_GRACE_MS = 2_000;
 const AUDIO_RETENTION_INTERVAL_MS = 60 * 60 * 1000;
 
-// Capture mode: microphone (default) or system-audio (ScreenCaptureKit, captures headphone output)
-type CaptureMode = 'microphone' | 'system-audio';
+// Capture mode: microphone (default), system-audio (ScreenCaptureKit, captures headphone output),
+// or meeting (both at once, tagged 我 / 对方)
+type CaptureMode = AudioCaptureMode;
+type CaptureSource = 'microphone' | 'system-audio' | 'fifo';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -111,15 +116,25 @@ const PYTHON3_PATHS = [
 // State
 // ============================================================================
 
-let recProcess: ChildProcess | null = null;
-let vadInstance: VadProcessor | null = null;
+/** 一路采集：自己的进程/流 + 自己的 VAD 状态（两路共用一个 VAD 会把隐藏状态搅在一起） */
+interface CaptureTrack {
+  source: CaptureSource;
+  speakerId: number;
+  vad: VadProcessor;
+  proc: ChildProcess | null;
+  stream: fs.ReadStream | null;
+}
+
+let tracks: CaptureTrack[] = [];
 let capturing = false;
 let captureMode: CaptureMode = 'microphone';
+/** 用户选的模式；会议模式缺系统音频组件时 captureMode 会降成 microphone，这里留原值给界面说明 */
+let requestedMode: CaptureMode = 'microphone';
 let powerMode: 'full' | 'reduced' | 'paused' = 'full';
 let powerCheckTimer: ReturnType<typeof setInterval> | null = null;
 let audioRetentionTimer: ReturnType<typeof setInterval> | null = null;
 let totalSegments = 0;
-const asrQueue: Array<{ wavPath: string; startMs: number; endMs: number }> = [];
+const asrQueue: Array<{ wavPath: string; startMs: number; endMs: number; speakerId: number }> = [];
 let recBinaryPath: string | null = null; // 缓存 rec 二进制路径
 let ffmpegBinaryPath: string | null = null; // 缓存 ffmpeg 二进制路径
 let systemAudioBinaryPath: string | null = null; // 缓存 system-audio-capture 路径
@@ -450,9 +465,14 @@ function getDailyAudioDir(): string {
   return dir;
 }
 
-function saveWavFile(pcm: Int16Array, startMs: number): string {
+/** 两路可能在同一毫秒切出一段，会议模式的文件名和行 id 带说话人后缀防撞 */
+function segmentKey(startMs: number, speakerId: number): string {
+  return speakerId === AUDIO_SPEAKER_ID.UNKNOWN ? `${startMs}` : `${startMs}-s${speakerId}`;
+}
+
+function saveWavFile(pcm: Int16Array, startMs: number, speakerId: number): string {
   const dir = getDailyAudioDir();
-  const filename = `audio_${startMs}.wav`;
+  const filename = `audio_${segmentKey(startMs, speakerId)}.wav`;
   const wavPath = path.join(dir, filename);
 
   // Write WAV header + PCM data
@@ -645,7 +665,7 @@ function getSqlitePath(): string | null {
   return status.sqliteDbPath && fs.existsSync(status.sqliteDbPath) ? status.sqliteDbPath : null;
 }
 
-function ensureAudioTable(sqlitePath: string): void {
+export function ensureAudioTable(sqlitePath: string): void {
   const sql = `
 CREATE TABLE IF NOT EXISTS audio_segments (
   id TEXT PRIMARY KEY,
@@ -670,7 +690,7 @@ CREATE INDEX IF NOT EXISTS idx_audio_start ON audio_segments (start_at_ms DESC);
   }
 }
 
-function persistAudioSegment(
+export function persistAudioSegment(
   sqlitePath: string,
   segment: {
     id: string;
@@ -679,12 +699,14 @@ function persistAudioSegment(
     durationMs: number;
     wavPath: string;
     transcript: string | null;
+    speakerId: number;
     asrEngine: string;
     asrDurationMs: number;
-  }
+  },
+  createdAtMs: number = Date.now(),
 ): boolean {
   const transcript = segment.transcript ? `'${sqlEscape(segment.transcript)}'` : 'NULL';
-  const sql = `INSERT OR REPLACE INTO audio_segments (id, start_at_ms, end_at_ms, duration_ms, wav_path, transcript, asr_engine, asr_duration_ms, created_at_ms) VALUES ('${sqlEscape(segment.id)}', ${segment.startAtMs}, ${segment.endAtMs}, ${segment.durationMs}, '${sqlEscape(segment.wavPath)}', ${transcript}, '${sqlEscape(segment.asrEngine)}', ${segment.asrDurationMs}, ${Date.now()});`;
+  const sql = `INSERT OR REPLACE INTO audio_segments (id, start_at_ms, end_at_ms, duration_ms, wav_path, transcript, speaker_id, asr_engine, asr_duration_ms, created_at_ms) VALUES ('${sqlEscape(segment.id)}', ${segment.startAtMs}, ${segment.endAtMs}, ${segment.durationMs}, '${sqlEscape(segment.wavPath)}', ${transcript}, ${Math.trunc(segment.speakerId)}, '${sqlEscape(segment.asrEngine)}', ${segment.asrDurationMs}, ${createdAtMs});`;
   try {
     execFileSync('sqlite3', [sqlitePath, sql], { encoding: 'utf-8' });
     return true;
@@ -712,7 +734,7 @@ async function processOneAsrItem(): Promise<void> {
 
     const sqlitePath = getSqlitePath();
     if (sqlitePath) {
-      const segmentId = `audio-${item.startMs}`;
+      const segmentId = `audio-${segmentKey(item.startMs, item.speakerId)}`;
       const persisted = persistAudioSegment(sqlitePath, {
         id: segmentId,
         startAtMs: item.startMs,
@@ -720,11 +742,14 @@ async function processOneAsrItem(): Promise<void> {
         durationMs: item.endMs - item.startMs,
         wavPath: item.wavPath,
         transcript: text,
+        speakerId: item.speakerId,
         asrEngine: engine,
         asrDurationMs: asrDuration,
       });
       if (persisted && text) {
         finalizeSegmentAudio({ sqlitePath, audioDir: getAudioDir(), segmentId, wavPath: item.wavPath });
+        // 两路各自转写、先后不定：哪一路落库都回头查一次同时段的另一路
+        if (item.speakerId !== AUDIO_SPEAKER_ID.UNKNOWN) dropMicEchoes(sqlitePath, item.startMs, item.endMs);
       }
     }
 
@@ -847,262 +872,191 @@ function parseAudioDevices(output: string): string {
   return `:${devices[0].index}`;
 }
 
-function startRecCapture(mode: CaptureMode = 'microphone'): boolean {
-  if (recProcess) return true;
+/** 起一路采集进程：麦克风走 ffmpeg AVFoundation（fallback sox rec），系统音频走 ScreenCaptureKit 工具 */
+function spawnSource(source: 'microphone' | 'system-audio'): ChildProcess | null {
+  if (source === 'system-audio') {
+    const sysAudioBin = findSystemAudioCaptureBinary();
+    if (!sysAudioBin) return null;
+    logger.info('[音频采集] 使用 ScreenCaptureKit 系统音频模式');
+    return spawn(sysAudioBin, [], { stdio: ['ignore', 'pipe', 'pipe'] });
+  }
+  // 麦克风：优先使用 ffmpeg + AVFoundation（macOS TCC 兼容），fallback 到 sox rec
+  const ffmpegBin = findFfmpegBinary();
+  if (ffmpegBin) {
+    const audioDevice = detectAudioDeviceIndex();
+    logger.info('[音频采集] 使用 ffmpeg AVFoundation 模式', { device: audioDevice });
+    return spawn(ffmpegBin, [
+      '-f', 'avfoundation', '-i', audioDevice,
+      '-ar', String(SAMPLE_RATE), '-ac', '1', '-f', 's16le', 'pipe:1',
+    ], { stdio: ['ignore', 'pipe', 'pipe'] });
+  }
+  logger.warn('[音频采集] ffmpeg 不可用，fallback 到 sox rec');
+  const recBin = findRecBinary() || 'rec';
+  return spawn(recBin, [
+    '-q', '-t', 'raw', '-r', String(SAMPLE_RATE), '-c', '1', '-b', '16', '-e', 'signed-integer', '-',
+  ], { stdio: ['ignore', 'pipe', 'pipe'] });
+}
 
-  try {
-    // 系统音频模式：使用 ScreenCaptureKit 采集（戴耳机也能录会议音频）
-    if (mode === 'system-audio') {
-      const sysAudioBin = findSystemAudioCaptureBinary();
-      if (sysAudioBin) {
-        logger.info('[音频采集] 使用 ScreenCaptureKit 系统音频模式');
-        recProcess = spawn(sysAudioBin, [], { stdio: ['ignore', 'pipe', 'pipe'] });
-      } else {
-        logger.warn('[音频采集] system-audio-capture 不可用，回退到麦克风模式');
-        mode = 'microphone';
-      }
+/** 一路 16kHz mono s16le 流 → VAD 切段 → 落 wav → 排队转写（两路各一份，互不干扰） */
+function pumpPcm(input: NodeJS.ReadableStream, track: CaptureTrack): void {
+  let accumBuffer = Buffer.alloc(0);
+  let vadErrorLogged = false;
+  let dataChunkCount = 0;
+  let lastDiagMs = 0;
+
+  input.on('data', async (data: Buffer | string) => {
+    if (typeof data === 'string') return; // skip string chunks
+    if (powerMode === 'paused') return;
+    // 已停掉的一路：进程哪怕还没退干净，数据也不再落库（否则停了又开会多出一路「对方」）
+    if (!tracks.includes(track)) return;
+
+    dataChunkCount++;
+    if (dataChunkCount === 1) {
+      logger.debug('[音频采集] 首次收到音频数据', { source: track.source, bytes: data.length });
     }
 
-    // 麦克风模式：优先使用 ffmpeg + AVFoundation（macOS TCC 兼容），fallback 到 sox rec
-    if (mode === 'microphone') {
-    const ffmpegBin = findFfmpegBinary();
-    if (ffmpegBin) {
-      const audioDevice = detectAudioDeviceIndex();
-      logger.info('[音频采集] 使用 ffmpeg AVFoundation 模式', { device: audioDevice });
-      recProcess = spawn(ffmpegBin, [
-        '-f', 'avfoundation', '-i', audioDevice,
-        '-ar', String(SAMPLE_RATE), '-ac', '1', '-f', 's16le', 'pipe:1',
-      ], { stdio: ['ignore', 'pipe', 'pipe'] });
-    } else {
-      logger.warn('[音频采集] ffmpeg 不可用，fallback 到 sox rec');
-      const recBin = findRecBinary() || 'rec';
-      recProcess = spawn(recBin, [
-        '-q', '-t', 'raw', '-r', String(SAMPLE_RATE), '-c', '1', '-b', '16', '-e', 'signed-integer', '-',
-      ], { stdio: ['ignore', 'pipe', 'pipe'] });
+    // 每 10 秒输出一次音频振幅诊断
+    const now = Date.now();
+    if (now - lastDiagMs > 10_000) {
+      lastDiagMs = now;
+      const int16View = new Int16Array(data.buffer.slice(data.byteOffset, data.byteOffset + Math.min(data.length, 1024)));
+      let maxAmp = 0;
+      for (let i = 0; i < int16View.length; i++) {
+        const abs = Math.abs(int16View[i]);
+        if (abs > maxAmp) maxAmp = abs;
+      }
+      logger.debug('[音频采集] 振幅诊断', {
+        source: track.source,
+        chunks: dataChunkCount,
+        maxAmp,
+        maxAmpPct: `${(maxAmp / 32768 * 100).toFixed(1)}%`,
+        vadSpeaking: track.vad.isSpeaking,
+      });
     }
-    } // end if (mode === 'microphone')
 
-    if (!recProcess) return false;
+    accumBuffer = Buffer.concat([accumBuffer, data]);
 
-    let accumBuffer = Buffer.alloc(0);
+    while (accumBuffer.length >= BLOCK_BYTES) {
+      const chunk = accumBuffer.subarray(0, BLOCK_BYTES);
+      accumBuffer = accumBuffer.subarray(BLOCK_BYTES);
 
-    let vadErrorLogged = false;
-    let dataChunkCount = 0;
-    let lastDiagMs = 0;
+      const int16 = new Int16Array(
+        chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + BLOCK_BYTES)
+      );
 
-    recProcess.stdout!.on('data', async (data: Buffer) => {
-      if (powerMode === 'paused') return;
+      try {
+        const segments = await track.vad.processChunk(int16);
+        for (const segment of segments) {
+          const endMs = Date.now();
+          const durationMs = Math.round((segment.length / SAMPLE_RATE) * 1000);
+          const startMs = endMs - durationMs;
 
-      dataChunkCount++;
-      if (dataChunkCount === 1) {
-        logger.debug('[音频采集] 首次收到 rec 数据', { bytes: data.length });
-      }
-
-      // 每 10 秒输出一次音频振幅诊断
-      const now = Date.now();
-      if (now - lastDiagMs > 10_000) {
-        lastDiagMs = now;
-        const int16View = new Int16Array(data.buffer.slice(data.byteOffset, data.byteOffset + Math.min(data.length, 1024)));
-        let maxAmp = 0;
-        for (let i = 0; i < int16View.length; i++) {
-          const abs = Math.abs(int16View[i]);
-          if (abs > maxAmp) maxAmp = abs;
-        }
-        logger.debug('[音频采集] 振幅诊断', {
-          chunks: dataChunkCount,
-          maxAmp,
-          maxAmpPct: `${(maxAmp / 32768 * 100).toFixed(1)}%`,
-          vadSpeaking: vadInstance?.isSpeaking ?? false,
-        });
-      }
-
-      accumBuffer = Buffer.concat([accumBuffer, data]);
-
-      while (accumBuffer.length >= BLOCK_BYTES) {
-        const chunk = accumBuffer.subarray(0, BLOCK_BYTES);
-        accumBuffer = accumBuffer.subarray(BLOCK_BYTES);
-
-        const int16 = new Int16Array(
-          chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + BLOCK_BYTES)
-        );
-
-        if (vadInstance) {
+          // Save WAV and queue for ASR
           try {
-            const segments = await vadInstance.processChunk(int16);
-            for (const segment of segments) {
-              const endMs = Date.now();
-              const durationMs = Math.round((segment.length / SAMPLE_RATE) * 1000);
-              const startMs = endMs - durationMs;
-
-              // Save WAV and queue for ASR
-              try {
-                const wavPath = saveWavFile(segment, startMs);
-                logger.debug('[音频采集] 语音段完成', {
-                  duration: `${durationMs}ms`,
-                  samples: segment.length,
-                  file: path.basename(wavPath),
-                });
-                asrQueue.push({ wavPath, startMs, endMs });
-                // Process ASR in background
-                processAsrQueue().catch(() => {});
-              } catch (error) {
-                logger.error('[音频采集] 保存语音段失败', {
-                  error: error instanceof Error ? error.message : String(error),
-                });
-              }
-            }
+            const wavPath = saveWavFile(segment, startMs, track.speakerId);
+            logger.debug('[音频采集] 语音段完成', {
+              source: track.source,
+              duration: `${durationMs}ms`,
+              samples: segment.length,
+              file: path.basename(wavPath),
+            });
+            asrQueue.push({ wavPath, startMs, endMs, speakerId: track.speakerId });
+            processAsrQueue().catch(() => {});
           } catch (error) {
-            if (!vadErrorLogged) {
-              vadErrorLogged = true;
-              logger.error('[音频采集] VAD processChunk 异常（后续不再重复）', {
-                error: error instanceof Error ? error.message : String(error),
-                stack: error instanceof Error ? error.stack : undefined,
-              });
-            }
+            logger.error('[音频采集] 保存语音段失败', {
+              error: error instanceof Error ? error.message : String(error),
+            });
           }
         }
+      } catch (error) {
+        if (!vadErrorLogged) {
+          vadErrorLogged = true;
+          logger.error('[音频采集] VAD processChunk 异常（后续不再重复）', {
+            source: track.source,
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+          });
+        }
       }
-    });
+    }
+  });
+}
 
-    // 捕获 stderr — rec 权限/设备错误会输出到这里
-    const stderrChunks: string[] = [];
-    recProcess.stderr!.on('data', (data: Buffer) => {
-      const msg = data.toString().trim();
-      if (msg) stderrChunks.push(msg);
-      if (stderrChunks.length <= 3) {
-        logger.debug('[音频采集] rec stderr', { message: msg });
-      }
-    });
-
-    recProcess.on('error', (err) => {
-      logger.error('[音频采集] rec 进程错误', { error: err.message });
-      recProcess = null;
-    });
-
-    recProcess.on('exit', (code) => {
-      recProcess = null;
-      if (capturing) {
-        logger.warn('[音频采集] rec 进程意外退出，3 秒后自动重启', { code, mode });
-        setTimeout(() => {
-          if (capturing && !recProcess) {
-            logger.info('[音频采集] 正在重启 rec 进程...');
-            startRecCapture(captureMode);
-          }
-        }, 3000);
-      }
-    });
-
-    logger.info('[音频采集] rec 进程已启动 (16kHz mono PCM)');
-    return true;
+/** 给一路采集接进程：stdout 进 VAD，stderr 留诊断，意外退出 3 秒后只重启这一路 */
+function attachProcess(track: CaptureTrack, source: 'microphone' | 'system-audio'): boolean {
+  let proc: ChildProcess | null;
+  try {
+    proc = spawnSource(source);
   } catch (error) {
-    logger.error('[音频采集] 启动 rec 进程失败', {
+    logger.error('[音频采集] 启动采集进程失败', {
+      source,
       error: error instanceof Error ? error.message : String(error),
     });
     return false;
   }
+  if (!proc) return false;
+  track.proc = proc;
+  pumpPcm(proc.stdout!, track);
+
+  // 捕获 stderr — 权限/设备错误会输出到这里
+  let stderrCount = 0;
+  proc.stderr!.on('data', (data: Buffer) => {
+    const msg = data.toString().trim();
+    if (msg && ++stderrCount <= 3) {
+      logger.debug('[音频采集] 采集进程 stderr', { source, message: msg });
+    }
+  });
+
+  proc.on('error', (err) => {
+    logger.error('[音频采集] 采集进程错误', { source, error: err.message });
+    if (track.proc === proc) track.proc = null;
+  });
+
+  proc.on('exit', (code) => {
+    if (track.proc === proc) track.proc = null;
+    if (capturing && tracks.includes(track)) {
+      logger.warn('[音频采集] 采集进程意外退出，3 秒后自动重启', { code, source });
+      setTimeout(() => {
+        if (capturing && tracks.includes(track) && !track.proc) {
+          logger.info('[音频采集] 正在重启采集进程...', { source });
+          attachProcess(track, source);
+        }
+      }, 3000);
+    }
+  });
+
+  logger.info('[音频采集] 采集进程已启动 (16kHz mono PCM)', { source });
+  return true;
+}
+
+async function newTrack(source: CaptureSource, speakerId: number): Promise<CaptureTrack | null> {
+  const vad = new VadProcessor();
+  if (!(await vad.init())) return null;
+  return { source, speakerId, vad, proc: null, stream: null };
 }
 
 // ============================================================================
 // Public API
 // ============================================================================
 
-let fifoStream: fs.ReadStream | null = null;
-
 /** 从 FIFO（Tauri Rust 端启动的 rec 写入）读取音频数据 */
-function startFifoCapture(fifoPath: string): boolean {
+function attachFifo(track: CaptureTrack, fifoPath: string): boolean {
   try {
     logger.info('[音频采集] 从 FIFO 读取音频', { fifoPath });
+    const stream = fs.createReadStream(fifoPath, { highWaterMark: BLOCK_BYTES * 4 });
+    track.stream = stream;
+    pumpPcm(stream, track);
 
-    fifoStream = fs.createReadStream(fifoPath, { highWaterMark: BLOCK_BYTES * 4 });
-
-    let accumBuffer = Buffer.alloc(0);
-    let vadErrorLogged = false;
-    let dataChunkCount = 0;
-    let lastDiagMs = 0;
-
-    fifoStream.on('data', async (data: Buffer | string) => {
-      if (typeof data === 'string') return; // skip string chunks
-      if (powerMode === 'paused') return;
-
-      dataChunkCount++;
-      if (dataChunkCount === 1) {
-        logger.debug('[音频采集] 首次收到 FIFO 数据', { bytes: data.length });
-      }
-
-      // 每 10 秒输出一次音频振幅诊断
-      const now = Date.now();
-      if (now - lastDiagMs > 10_000) {
-        lastDiagMs = now;
-        const int16View = new Int16Array(data.buffer.slice(data.byteOffset, data.byteOffset + Math.min(data.length, 1024)));
-        let maxAmp = 0;
-        for (let i = 0; i < int16View.length; i++) {
-          const abs = Math.abs(int16View[i]);
-          if (abs > maxAmp) maxAmp = abs;
-        }
-        logger.debug('[音频采集] FIFO 振幅诊断', {
-          chunks: dataChunkCount,
-          maxAmp,
-          maxAmpPct: `${(maxAmp / 32768 * 100).toFixed(1)}%`,
-          vadSpeaking: vadInstance?.isSpeaking ?? false,
-        });
-      }
-
-      accumBuffer = Buffer.concat([accumBuffer, data]);
-
-      while (accumBuffer.length >= BLOCK_BYTES) {
-        const chunk = accumBuffer.subarray(0, BLOCK_BYTES);
-        accumBuffer = accumBuffer.subarray(BLOCK_BYTES);
-
-        const int16 = new Int16Array(
-          chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + BLOCK_BYTES)
-        );
-
-        if (vadInstance) {
-          try {
-            const segments = await vadInstance.processChunk(int16);
-            for (const segment of segments) {
-              const endMs = Date.now();
-              const durationMs = Math.round((segment.length / SAMPLE_RATE) * 1000);
-              const startMs = endMs - durationMs;
-
-              try {
-                const wavPath = saveWavFile(segment, startMs);
-                logger.debug('[音频采集] 语音段完成', {
-                  duration: `${durationMs}ms`,
-                  samples: segment.length,
-                  file: path.basename(wavPath),
-                });
-                asrQueue.push({ wavPath, startMs, endMs });
-                processAsrQueue().catch(() => {});
-              } catch (error) {
-                logger.error('[音频采集] 保存语音段失败', {
-                  error: error instanceof Error ? error.message : String(error),
-                });
-              }
-            }
-          } catch (error) {
-            if (!vadErrorLogged) {
-              vadErrorLogged = true;
-              logger.error('[音频采集] VAD processChunk 异常（后续不再重复）', {
-                error: error instanceof Error ? error.message : String(error),
-                stack: error instanceof Error ? error.stack : undefined,
-              });
-            }
-          }
-        }
-      }
-    });
-
-    fifoStream.on('error', (err) => {
+    stream.on('error', (err) => {
       logger.error('[音频采集] FIFO 读取错误', { error: err.message });
-      fifoStream = null;
+      track.stream = null;
     });
 
-    fifoStream.on('end', () => {
+    stream.on('end', () => {
       if (capturing) {
         logger.warn('[音频采集] FIFO 流结束');
       }
-      fifoStream = null;
+      track.stream = null;
     });
 
     return true;
@@ -1112,6 +1066,26 @@ function startFifoCapture(fifoPath: string): boolean {
     });
     return false;
   }
+}
+
+/** 按模式决定开哪几路：单路模式不标说话人；会议模式麦克风 = 我、系统音频 = 对方 */
+export function planCaptureTracks(
+  mode: CaptureMode,
+  systemAudioReady: boolean,
+): Array<{ source: 'microphone' | 'system-audio'; speakerId: number }> {
+  if (mode === 'meeting') {
+    // 缺系统音频组件就降级为只录麦克风：外放时麦克风里混着对方，标「我」会错，按不区分记
+    return systemAudioReady
+      ? [
+          { source: 'microphone', speakerId: AUDIO_SPEAKER_ID.ME },
+          { source: 'system-audio', speakerId: AUDIO_SPEAKER_ID.OTHERS },
+        ]
+      : [{ source: 'microphone', speakerId: AUDIO_SPEAKER_ID.UNKNOWN }];
+  }
+  if (mode === 'system-audio' && systemAudioReady) {
+    return [{ source: 'system-audio', speakerId: AUDIO_SPEAKER_ID.UNKNOWN }];
+  }
+  return [{ source: 'microphone', speakerId: AUDIO_SPEAKER_ID.UNKNOWN }];
 }
 
 // 过期录音清扫的统一入口：采集启动/定时器走它，webStartupRetention 的启动期
@@ -1124,28 +1098,20 @@ export function sweepCapturedAudio(): void {
 
 export async function startDesktopAudioCapture(fifoPath?: string, mode: CaptureMode = 'microphone'): Promise<void> {
   if (capturing) return;
+  requestedMode = mode;
 
-  // 系统音频模式不需要 ffmpeg/sox
-  if (mode === 'system-audio') {
-    if (!findSystemAudioCaptureBinary()) {
-      logger.warn('[音频采集] system-audio-capture 不可用，回退到麦克风模式');
-      mode = 'microphone';
-    }
+  const useFifo = Boolean(fifoPath && fs.existsSync(fifoPath));
+  const systemAudioReady = mode !== 'microphone' && Boolean(findSystemAudioCaptureBinary());
+  if (mode !== 'microphone' && !systemAudioReady) {
+    logger.warn('[音频采集] system-audio-capture 不可用，回退到麦克风模式', { requestedMode: mode });
   }
+  const plan = planCaptureTracks(mode, systemAudioReady);
+  const needsMicrophone = plan.some((p) => p.source === 'microphone');
 
   // Check audio capture tool availability
-  if (mode === 'microphone' && !fifoPath && !findFfmpegBinary() && !findRecBinary()) {
+  // 传了 FIFO 就由 Tauri 端录麦克风，不查本机 ffmpeg/sox（与改造前一致）
+  if (needsMicrophone && !fifoPath && !findFfmpegBinary() && !findRecBinary()) {
     logger.warn('[音频采集] ffmpeg/sox 均未安装，跳过音频采集。安装: brew install ffmpeg');
-    return;
-  }
-
-  captureMode = mode;
-
-  // Initialize VAD
-  vadInstance = new VadProcessor();
-  const vadReady = await vadInstance.init();
-  if (!vadReady) {
-    logger.warn('[音频采集] VAD 初始化失败，跳过音频采集');
     return;
   }
 
@@ -1155,19 +1121,33 @@ export async function startDesktopAudioCapture(fifoPath?: string, mode: CaptureM
     ensureAudioTable(sqlitePath);
   }
 
-  // Start capture — prefer FIFO (Rust TCC) over direct spawn
+  // Start capture — prefer FIFO (Rust TCC) over direct spawn；FIFO 只有麦克风一路
   capturing = true;
-  const started = fifoPath && fs.existsSync(fifoPath)
-    ? startFifoCapture(fifoPath)
-    : startRecCapture(mode);
-  logger.info(fifoPath && fs.existsSync(fifoPath)
-    ? '[音频采集] 使用 Tauri FIFO 模式'
-    : '[音频采集] 使用直接 spawn 模式', fifoPath && fs.existsSync(fifoPath) ? { fifoPath } : { mode });
+  const started: CaptureTrack[] = [];
+  if (useFifo && fifoPath) {
+    const track = await newTrack('fifo', AUDIO_SPEAKER_ID.UNKNOWN);
+    if (track && attachFifo(track, fifoPath)) started.push(track);
+    logger.info('[音频采集] 使用 Tauri FIFO 模式', { fifoPath });
+  } else {
+    for (const p of plan) {
+      const track = await newTrack(p.source, p.speakerId);
+      if (!track) {
+        logger.warn('[音频采集] VAD 初始化失败，跳过音频采集');
+        break;
+      }
+      if (attachProcess(track, p.source)) started.push(track);
+    }
+    logger.info('[音频采集] 使用直接 spawn 模式', { mode, tracks: started.map((t) => t.source) });
+  }
 
-  if (!started) {
+  if (started.length === 0) {
     capturing = false;
     return;
   }
+  tracks = started;
+  captureMode = useFifo ? 'microphone'
+    : started.length === 2 ? 'meeting'
+      : started[0].source === 'system-audio' ? 'system-audio' : 'microphone';
 
   // Power management timer
   powerCheckTimer = setInterval(() => {
@@ -1181,20 +1161,28 @@ export async function startDesktopAudioCapture(fifoPath?: string, mode: CaptureM
   sweepCapturedAudio();
   audioRetentionTimer = setInterval(sweepCapturedAudio, AUDIO_RETENTION_INTERVAL_MS);
 
-  logger.info('[音频采集] 后台音频采集已启动');
+  logger.info('[音频采集] 后台音频采集已启动', { captureMode, requestedMode });
 }
 
 export function stopDesktopAudioCapture(): void {
   capturing = false;
   captureMode = 'microphone';
-  if (recProcess) {
-    recProcess.kill();
-    recProcess = null;
+  requestedMode = 'microphone';
+  for (const track of tracks) {
+    const proc = track.proc;
+    if (proc) {
+      proc.kill();
+      // 采集进程收到 TERM 不退时补 KILL，不留孤儿进程占着麦克风/系统音频
+      setTimeout(() => {
+        if (proc.exitCode === null && proc.signalCode === null) {
+          logger.warn('[音频采集] 采集进程 TERM 后未退出，强制结束', { source: track.source, pid: proc.pid });
+          proc.kill('SIGKILL');
+        }
+      }, CAPTURE_KILL_GRACE_MS);
+    }
+    track.stream?.destroy();
   }
-  if (fifoStream) {
-    fifoStream.destroy();
-    fifoStream = null;
-  }
+  tracks = [];
   if (powerCheckTimer) {
     clearInterval(powerCheckTimer);
     powerCheckTimer = null;
@@ -1203,7 +1191,6 @@ export function stopDesktopAudioCapture(): void {
     clearInterval(audioRetentionTimer);
     audioRetentionTimer = null;
   }
-  vadInstance = null;
   logger.info('[音频采集] 后台音频采集已停止');
 }
 
@@ -1212,11 +1199,12 @@ export function clearAudioRecordings() {
 }
 
 export function getAudioCaptureStatus() {
-  const prerequisites = getAudioCapturePrerequisites(captureMode);
+  const prerequisites = getAudioCapturePrerequisites(requestedMode);
   return {
     capturing,
     captureMode,
-    vadReady: vadInstance?.isSpeaking !== undefined,
+    requestedMode,
+    vadReady: tracks.length > 0,
     soxAvailable: prerequisites.recorder.microphone === 'ready',
     systemAudioAvailable: prerequisites.recorder.systemAudio === 'ready',
     asrEngine: findWhisperBinary() ? 'whisper-cpp' : findQwenAsrModel() ? 'qwen3-asr' : 'none',

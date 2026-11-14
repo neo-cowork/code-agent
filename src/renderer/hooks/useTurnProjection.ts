@@ -1,3 +1,4 @@
+import { projectAgentErrorRuns } from '../utils/agentErrorRuns';
 // ============================================================================
 // useTurnProjection - Project messages[] into TraceTurns
 // Pure derivation via useMemo, no new state or store
@@ -5,13 +6,13 @@
 
 import { useMemo } from 'react';
 import { getLastConversationTurnIndex } from '../utils/conversationTurns';
-import type { AgentErrorCategory, Message, MessageMetadata } from '@shared/contract';
+import type { Message, MessageMetadata } from '@shared/contract';
 import {
   findRegisteredSystemEvent,
   findUnregisteredSystemEventKeys,
 } from '@shared/contract/systemEventRegistry';
 import type { NeoWorkCardDetail } from '@shared/contract/tag';
-import type { AgentErrorRunInfo, TraceProjection, TraceTurn, TraceNode } from '@shared/contract/trace';
+import type { TraceProjection, TraceTurn, TraceNode } from '@shared/contract/trace';
 import type { SwarmLaunchRequest } from '@shared/contract/swarm';
 import type { TurnArtifactOwnershipItem } from '@shared/contract/turnTimeline';
 import { isSkillStatusContent } from '../components/features/chat/MessageBubble/SkillStatusMessage';
@@ -302,50 +303,8 @@ export function projectTurns(
   // 消息之间的同因报错是**同一轮失败**的重复上报（web 路径 host 结构化标记与原始
   // 供应商报错各落一条），只算一次、只渲染最后一条。带 toolCalls 的轮中消息不打断
   // 连续段——那一轮可能还会失败。
-  const agentErrorRunByMessageId = new Map<string, AgentErrorRunInfo>();
-  let lastFailureId: string | null = null;
-  {
-    // 扁平三变量而非可空对象：typescript7 对「可空对象 + `?.` 等值比较 + 显式判空」
-    // 的组合会错把变量窄化成 never（隔离复现 TS2339/TS7022），扁平写法无此问题。
-    let runMessageId: string | null = null;
-    let runCategory: AgentErrorCategory | null = null;
-    let runLength = 0;
-    let sawUserSinceLastFailure = false;
-    let lastFailureMessageId: string | null = null;
-    for (const msg of messages) {
-      if (msg.role === 'user') {
-        sawUserSinceLastFailure = true;
-        continue;
-      }
-      if (msg.role !== 'assistant') continue;
-      const agentError = msg.metadata?.agentError;
-      if (agentError) {
-        const sameCategory = runCategory === agentError.category;
-        if (sameCategory && runMessageId !== null && sawUserSinceLastFailure) {
-          // 新一轮失败、同因延续：上一轮降为灰字行
-          agentErrorRunByMessageId.set(runMessageId, { runLength, latest: false });
-          runLength += 1;
-        } else if (sameCategory && runMessageId !== null) {
-          // 同一轮内的重复报错：前一条不再渲染，次数也不涨
-          agentErrorRunByMessageId.set(runMessageId, { runLength, latest: false, duplicate: true });
-        } else {
-          runCategory = agentError.category;
-          runLength = 1;
-        }
-        runMessageId = msg.id;
-        sawUserSinceLastFailure = false;
-        agentErrorRunByMessageId.set(msg.id, { runLength, latest: true });
-        lastFailureMessageId = msg.id;
-        continue;
-      }
-      if (!msg.toolCalls?.length && msg.content?.trim()) {
-        runCategory = null;
-        runMessageId = null;
-        runLength = 0;
-      }
-    }
-    lastFailureId = lastFailureMessageId;
-  }
+  const agentErrorRunByMessageId = projectAgentErrorRuns(messages);
+  const lastFailureId = messages.findLast(msg => msg.role === 'assistant' && msg.metadata?.agentError)?.id ?? null;
 
   for (const msg of messages) {
     if (msg.source === 'skill' && isSkillStatusContent(msg.content)) {

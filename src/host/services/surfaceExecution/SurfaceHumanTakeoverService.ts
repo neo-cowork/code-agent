@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { WAIT_FOR_USER_EVENT_ACTION, WAIT_FOR_USER_TIMEOUT_EVENT_ACTION } from '../../../shared/contract/surfaceExecution';
 import type { SurfaceGrantSubjectV1 } from './SurfaceAccessGrantService';
 import { SurfaceEventHub } from './SurfaceEventHub';
 import { SurfaceInterruptService } from './SurfaceInterruptService';
@@ -28,6 +29,8 @@ export class SurfaceHumanTakeoverService {
     subject: SurfaceGrantSubjectV1;
     reason: string;
     timeoutMs: number;
+    /** Model-requested wait: tagged on events; a timeout leaves the session waiting instead of stopping it. */
+    waitForUser?: boolean;
   }): Promise<{
     requestId: string;
     wait: Promise<SurfaceTakeoverResolutionV1>;
@@ -51,6 +54,7 @@ export class SurfaceHumanTakeoverService {
       status: 'waiting',
       userSummary: input.reason,
       ...targetAt(),
+      ...(input.waitForUser ? { operation: { action: WAIT_FOR_USER_EVENT_ACTION, risk: 'control' } } : {}),
       evidenceRefs: [],
       artifactRefs: [],
       availableControls: ['resume', 'stop', 'end_session'],
@@ -63,6 +67,20 @@ export class SurfaceHumanTakeoverService {
       this.pending.set(requestId, { requestId, subject: input.subject, resolve, timer });
     });
     const wait = resolutionPromise.then(async (resolution) => {
+      if (resolution === 'timed_out' && input.waitForUser) {
+        // Recoverable: no stop, window stays. The bar flips to "stopped and waiting"; Done still resumes.
+        this.events.publish(input.subject, {
+          phase: 'human',
+          status: 'waiting',
+          userSummary: input.reason,
+          ...targetAt(),
+          operation: { action: WAIT_FOR_USER_TIMEOUT_EVENT_ACTION, risk: 'control' },
+          evidenceRefs: [],
+          artifactRefs: [],
+          availableControls: ['resume', 'stop', 'end_session'],
+        });
+        return resolution;
+      }
       if (resolution === 'continue' || resolution === 'navigated') this.interrupts.resume(input.subject);
       else await this.interrupts.stop(input.subject);
       this.events.publish(input.subject, {
