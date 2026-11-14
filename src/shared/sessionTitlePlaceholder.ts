@@ -126,14 +126,20 @@ export async function resolveSessionTitle(
     log.warn('quick model unavailable -> rule summary');
     return deriveRuleSummaryTitle(sourceText, language);
   }
-  if (first.title && !isEchoSessionTitle(first.title, sourceText)) return first.title;
+  if (first.title && !isEchoSessionTitle(first.title, sourceText)) {
+    log.info('title from quick model', { title: first.title });
+    return first.title;
+  }
   if (!first.title) {
     log.warn('quick model returned no title -> rule summary');
     return deriveRuleSummaryTitle(sourceText, language);
   }
   log.warn('title echo detected -> retry', { title: first.title });
   const retry = await ask(true);
-  if (retry.title && !isEchoSessionTitle(retry.title, sourceText)) return retry.title;
+  if (retry.title && !isEchoSessionTitle(retry.title, sourceText)) {
+    log.info('title from quick model (strict retry)', { title: retry.title });
+    return retry.title;
+  }
   log.warn('retry still echo -> rule summary', { title: retry.title });
   return deriveRuleSummaryTitle(sourceText, language);
 }
