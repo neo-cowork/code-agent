@@ -88,12 +88,15 @@ export function ParkedApprovalCards() {
   const items = useParkedApprovals(sessionId);
   const pending = useAppStore((state) => state.pendingPermissionRequest);
   const queued = useAppStore((state) => state.queuedPermissionRequests);
-  const liveIds = new Set([
+  const resolved = useAppStore((state) => state.resolvedPermissionRequests);
+  // Answered live cards still represent their ledger rows until the next poll.
+  const representedIds = new Set([
     ...(pending && !pending.resolved ? [pending.id] : []),
     ...Object.values(queued ?? {}).flat().filter((request) => !request.resolved).map((request) => request.id),
+    ...Object.values(resolved ?? {}).flat().map((request) => request.id),
   ]);
   const visible = items.filter((item) => item.sessionId === sessionId && item.status === 'pending'
-    && item.kind === 'tool_approval' && item.tool.trim() && !liveIds.has(item.id));
+    && item.kind === 'tool_approval' && item.tool.trim() && !representedIds.has(item.id));
   if (!sessionId || visible.length === 0) return null;
   return (
     <div className="w-full shrink-0 chat-col-pad" data-testid="parked-approval-cards">

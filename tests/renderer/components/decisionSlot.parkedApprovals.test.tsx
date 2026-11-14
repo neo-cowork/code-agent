@@ -2,6 +2,7 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { PermissionRequest } from '../../../src/shared/contract';
 import type { ParkedApprovalInboxItem } from '../../../src/shared/contract/pendingApproval';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 
@@ -20,6 +21,7 @@ import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { refreshParkedApprovals } from '../../../src/renderer/stores/parkedApprovalStore';
 import { hasNeedsInputForSession } from '../../../src/renderer/utils/sessionNeedsInput';
 import { useToastStore } from '../../../src/renderer/hooks/useToast';
+import { releaseApprovalResponse } from '../../../src/renderer/utils/approvalResponseGuard';
 
 const SESSION = 'restarted-session';
 const row = (changes: Partial<ParkedApprovalInboxItem> = {}): ParkedApprovalInboxItem => ({
@@ -35,11 +37,14 @@ beforeEach(async () => {
   api.list.mockResolvedValue([]);
   api.invoke.mockResolvedValue({ resumed: 'executed' });
   await refreshParkedApprovals();
-  useAppStore.setState({ language: 'zh', pendingPermissionRequest: null, pendingPermissionSessionId: null, queuedPermissionRequests: {} });
+  useAppStore.setState({ language: 'zh', pendingPermissionRequest: null, pendingPermissionSessionId: null, queuedPermissionRequests: {}, resolvedPermissionRequests: {} });
   useSessionStore.setState({ currentSessionId: SESSION, messages: [], loadSessions, switchSession });
   useToastStore.setState({ toasts: [] });
 });
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  releaseApprovalResponse('persisted-request');
+});
 
 async function open(items: ParkedApprovalInboxItem[] = [row()]) {
   api.list.mockResolvedValue(items);
@@ -90,6 +95,40 @@ describe('DecisionSlot persisted decisions after restart', () => {
     await open();
     expect(screen.queryByTestId('parked-approval-card')).toBeNull();
     expect(screen.getByTestId('decision-slot')).not.toBeNull();
+  });
+
+  it.each([
+    ['pending', 'allow', 'once', /允许一次|仍然执行/u],
+    ['pending', 'deny', 'deny', /拒绝/u],
+    ['queued', 'allow', 'once', /允许一次|仍然执行/u],
+    ['queued', 'deny', 'deny', /拒绝/u],
+  ] as const)('does not resurrect an answered live card while its parked row is stale: %s / %s', async (source, response, decision, action) => {
+    const request: PermissionRequest = {
+      id: 'persisted-request', sessionId: SESSION, parentToolUseId: 'delete-call',
+      tool: 'Bash', type: 'command', details: { command: 'rm notes/old-export.csv' },
+      timestamp: 1, forceConfirm: true, runId: 'background-run',
+    };
+    const nextRequest: PermissionRequest = {
+      ...request, id: 'next-request', parentToolUseId: 'next-call',
+      details: { command: 'rm notes/second-export.csv' }, timestamp: 2,
+    };
+    if (source === 'pending') useAppStore.getState().setPendingPermissionRequest(request, SESSION);
+    else useAppStore.getState().enqueuePermissionRequest(SESSION, request);
+    useAppStore.getState().enqueuePermissionRequest(SESSION, nextRequest);
+    await open([row(), row({ id: nextRequest.id, toolCallId: nextRequest.parentToolUseId })]);
+    expect(screen.queryByTestId('parked-approval-card')).toBeNull();
+
+    fireEvent.click(within(screen.getByTestId('permission-card')).getByRole('button', { name: action }));
+    await waitFor(() => expect(useAppStore.getState().resolvedPermissionRequests[SESSION]?.[0]).toMatchObject({
+      id: request.id, resolved: true, decision,
+    }));
+    expect(api.invoke).toHaveBeenCalledWith(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, request.id, response, SESSION);
+    // The host mirror has not polled yet: answering moves the live request into history atomically.
+    expect(screen.queryByTestId('parked-approval-card')).toBeNull();
+    expect(screen.getByTestId('permission-card').textContent).toContain('second-export.csv');
+    await act(async () => { await refreshParkedApprovals(); });
+    expect(screen.queryByTestId('parked-approval-card')).toBeNull();
+    expect(api.invoke).toHaveBeenCalledTimes(1);
   });
 
   it('updates the preview when the ids have not changed', async () => {
