@@ -86,6 +86,8 @@ interface AutomationReviewInboxProps {
   onPendingCountChange?: (count: number) => void;
   onParkedResolved?: () => void;
   onParkedChange?: () => void;
+  /** 卡片里「N 个操作等你确认」的 N（status==='pending' 的停车审批数）；页首 tile 并入同一个数 */
+  onParkedPendingChange?: (count: number) => void;
   /**
    * 外部新鲜度信号（Rework r1）：收件箱常驻挂载、只在 mount 时拉一次，停车审批
    * 发生在面板开着时不会自动出现。父级在等批准集合变化（出现/消失）时变更本值，
@@ -124,7 +126,7 @@ function folderDisplayName(folder: string): string {
   return parts[parts.length - 1] ?? folder;
 }
 
-export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ onPendingCountChange, refreshSignal, onParkedResolved, onParkedChange }) => {
+export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ onPendingCountChange, onParkedPendingChange, refreshSignal, onParkedResolved, onParkedChange }) => {
   const { t, language } = useI18n();
   const cc = t.cronCenter;
   const switchSession = useSessionStore((state) => state.switchSession);
@@ -183,6 +185,11 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
   useEffect(() => {
     load();
   }, [load, refreshSignal]);
+
+  const parkedPendingCount = groupParkedWrites(parked).filter((item) => item.status === 'pending').length;
+  useEffect(() => {
+    onParkedPendingChange?.(parkedPendingCount);
+  }, [onParkedPendingChange, parkedPendingCount]);
 
   // 页面停着时定时任务跑完也要自动刷新：可见时低频轮询，切回前台/窗口聚焦立即重拉。
   useEffect(() => {
@@ -308,7 +315,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
               {parked.some((item) => item.status !== 'voided') && (
                 <div className="mb-2 flex items-center gap-2 text-xs font-medium text-badge-warning">
                   <ShieldAlert className="h-3.5 w-3.5" />
-                  {interpolatePlural(cc.parkedTitle, groupParkedWrites(parked).filter((item) => item.status === 'pending').length)}
+                  {interpolatePlural(cc.parkedTitle, parkedPendingCount)}
                 </div>
               )}
               <div className="space-y-1.5">
