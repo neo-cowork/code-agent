@@ -506,6 +506,14 @@ describe('CronSimpleCreate', () => {
       expect((createJob.mock.calls[0][0] as CronJobDefinition).schedule).toMatchObject({ type: 'cron', expression: '0 22 * * *' });
     });
 
+    it('English UI copy for the hint', () => {
+      useAppStore.setState({ language: 'en' });
+      render(<CronSimpleCreate onDone={vi.fn()} />);
+      fireEvent.change(screen.getByPlaceholderText(/competitor/i), { target: { value: 'nightly tidy downloads' } });
+      expect(screen.getByTestId('cron-simple-time-hint').textContent)
+        .toBe('Set to 22:00 because your task says “nightly” — change it if you like');
+    });
+
     it('晚上8点 → 20:00（显式钟点胜出）', () => {
       render(<CronSimpleCreate onDone={vi.fn()} />);
       fireEvent.change(goalBox(), { target: { value: '每天晚上8点备份' } });
