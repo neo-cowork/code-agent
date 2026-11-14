@@ -3,7 +3,7 @@
 // FB-580（2026-11-05 真机复现）：新会话欢迎页点示例卡 vs composer 里已有的草稿。
 // 卡片本意是「不知道干什么」的一键起点；用户已经开始打字/挂附件/摆 chip 时，
 // 点卡绝不替他发送（重活直接开跑）也不丢弃草稿——模板追加进输入框（空行分隔），
-// 发送时机由用户决定。空 composer 保持一键直发。
+// 发送时机由用户决定。空 composer 同样只填充（FB-1091），不再一键直发。
 //
 // 三条验收（任务书 N-WELCOME-CARD-KEEP-DRAFT）：
 //   1. 空 composer → 点卡发送一次；
@@ -132,21 +132,48 @@ afterEach(() => {
 });
 
 describe('FB-580 示例卡 × composer 草稿保育（真实组件组合）', () => {
-  it('空 composer：点卡一键直发，且只发一次', () => {
+  it.each([0, 1, 2, 3])('空 composer：点第 %i 张示例卡只填进输入框并聚焦，不调用 onSend', (index) => {
     const onSend = vi.fn();
     const chatInputRef = createRef<ChatInputHandle>();
     render(<WelcomeFlowHarness onSend={onSend} chatInputRef={chatInputRef} />);
 
     expect(chatInputRef.current?.hasDraftOccupancy()).toBe(false);
-    clickWeeklyReportCard();
+    fireEvent.click(screen.getByText(suggestions[index].title));
 
-    expect(onSend).toHaveBeenCalledTimes(1);
-    expect(onSend).toHaveBeenCalledWith(WEEKLY_REPORT_PROMPT);
-    // 没走填充分支：输入框仍是空的
-    expect(extractComposerPlainText(getEditor())).toBe('');
+    expect(onSend).not.toHaveBeenCalled();
+    expect(extractComposerPlainText(getEditor())).toBe(suggestions[index].prompt);
+    expect(document.activeElement).toBe(getEditor());
   });
 
-  it('纯空白草稿不算占用：仍走一键直发，不被空白字符「占住」', () => {
+  it('填入后用户改成自己的内容，真实 ChatInput 发送的是改后的文本', () => {
+    const onSend = vi.fn();
+    const inputSend = vi.fn(async (_payload: unknown) => true);
+    const chatInputRef = createRef<ChatInputHandle>();
+    render(
+      <div>
+        <NewSessionWelcome
+          onSend={onSend}
+          isComposerOccupied={() => Boolean(chatInputRef.current?.hasDraftOccupancy())}
+          onFillDraft={(prompt) => chatInputRef.current?.appendDraftPrompt(prompt)}
+        />
+        <ChatInput ref={chatInputRef} onSend={inputSend} />
+      </div>,
+    );
+
+    clickWeeklyReportCard();
+    expect(extractComposerPlainText(getEditor())).toBe(WEEKLY_REPORT_PROMPT);
+    const EDITED = '这周我修了登录 bug，写了发布说明';
+    act(() => {
+      chatInputRef.current?.setDraft({ content: EDITED });
+    });
+    fireEvent.click(screen.getByRole('button', { name: zh.chatInput.sendAria }));
+
+    expect(onSend).not.toHaveBeenCalled();
+    expect(inputSend).toHaveBeenCalledTimes(1);
+    expect(inputSend.mock.calls[0][0]).toMatchObject({ content: EDITED });
+  });
+
+  it('纯空白草稿不算占用：同样只填充，不发送', () => {
     const onSend = vi.fn();
     const chatInputRef = createRef<ChatInputHandle>();
     render(<WelcomeFlowHarness onSend={onSend} chatInputRef={chatInputRef} />);
@@ -157,8 +184,8 @@ describe('FB-580 示例卡 × composer 草稿保育（真实组件组合）', ()
     expect(chatInputRef.current?.hasDraftOccupancy()).toBe(false);
     clickWeeklyReportCard();
 
-    expect(onSend).toHaveBeenCalledTimes(1);
-    expect(onSend).toHaveBeenCalledWith(WEEKLY_REPORT_PROMPT);
+    expect(onSend).not.toHaveBeenCalled();
+    expect(extractComposerPlainText(getEditor()).trim()).toBe(WEEKLY_REPORT_PROMPT);
   });
 
   it('composer 已有文本：不发送，模板空行接在用户文本之后，输入框获得焦点', () => {

@@ -30,18 +30,18 @@ describe('空态首屏：真新会话给欢迎页，恢复的历史会话写明�
   afterEach(() => cleanup());
 
   it('没有会话信息时按真新会话渲染欢迎页', () => {
-    render(<NewSessionWelcome onSend={vi.fn()} />);
+    render(<NewSessionWelcome onFillDraft={vi.fn()} onSend={vi.fn()} />);
     expect(screen.getByTestId('chat-welcome-title').textContent).toBe(WELCOME_TITLE);
   });
 
   it('真·新会话（默认标题 + 零消息）渲染欢迎页', () => {
-    render(<NewSessionWelcome onSend={vi.fn()} session={session({})} />);
+    render(<NewSessionWelcome onFillDraft={vi.fn()} onSend={vi.fn()} session={session({})} />);
     expect(screen.getByTestId('chat-welcome-title').textContent).toBe(WELCOME_TITLE);
   });
 
   it('恢复的空历史会话把会话标题写在首屏，不再伪装成欢迎页', () => {
     // 事故形状：0 消息，却带着旧标题
-    render(<NewSessionWelcome onSend={vi.fn()} session={session({ title: '你好' })} />);
+    render(<NewSessionWelcome onFillDraft={vi.fn()} onSend={vi.fn()} session={session({ title: '你好' })} />);
 
     const title = screen.getByTestId('chat-welcome-title').textContent ?? '';
     expect(title).toContain('你好');
@@ -51,12 +51,12 @@ describe('空态首屏：真新会话给欢迎页，恢复的历史会话写明�
   });
 
   it('有内容的会话（即便标题是默认的）同样不算新会话', () => {
-    render(<NewSessionWelcome onSend={vi.fn()} session={session({ messageCount: 3 })} />);
+    render(<NewSessionWelcome onFillDraft={vi.fn()} onSend={vi.fn()} session={session({ messageCount: 3 })} />);
     expect(screen.getByTestId('chat-welcome-title').textContent).not.toBe(WELCOME_TITLE);
   });
 
   it('品牌区：42px 慢转地球单独作主视觉，不与品牌标并排（2026-08-02 修订：双标并置生硬）', () => {
-    const { container } = render(<NewSessionWelcome onSend={vi.fn()} />);
+    const { container } = render(<NewSessionWelcome onFillDraft={vi.fn()} onSend={vi.fn()} />);
     const planet = container.querySelector('[data-planet="earth"]') as HTMLElement | null;
     expect(planet).toBeTruthy();
     expect(planet?.style.width).toBe('42px');
@@ -71,12 +71,12 @@ describe('通用建议卡：有上下文就不摆', () => {
   afterEach(() => cleanup());
 
   it('纯新会话（无工作区、无 pin 材料）摆建议卡', () => {
-    render(<NewSessionWelcome onSend={() => {}} workingDirectory={null} />);
+    render(<NewSessionWelcome onFillDraft={vi.fn()} onSend={() => {}} workingDirectory={null} />);
     expect(screen.queryByText('写一份本周工作周报')).not.toBeNull();
   });
 
   it('从空间/项目进来（带 workingDirectory）不摆建议卡', () => {
-    render(<NewSessionWelcome onSend={() => {}} workingDirectory="/repo/app" />);
+    render(<NewSessionWelcome onFillDraft={vi.fn()} onSend={() => {}} workingDirectory="/repo/app" />);
     expect(screen.queryByText('写一份本周工作周报')).toBeNull();
   });
 });
