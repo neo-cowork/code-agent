@@ -281,6 +281,33 @@ suite('approved rm uses a real seatbelt literal grant', () => {
     expect(result.metadata?.sandbox).toMatchObject({ applied: true, code: 'OS_SANDBOX_APPLIED' });
   });
 
+  it('policy denial in the second rm mints no grant and leaves the first file after one approval', async () => {
+    const targets = [join(slashTmpRoot, 'multi-deny-first.tmp'), join(outsideRoot, 'multi-deny-second.tmp')];
+    targets.forEach(file => writeFileSync(file, 'keep'));
+    getPolicyEngine().loadUserRules({ ask: [ASK_RULE], deny: [`Edit(${targets[1]})`] }, 'user-ui');
+    const requests: PermissionRequestData[] = [];
+    const grant = vi.spyOn(approvedRmGrantModule, 'approvedSingleFileRmGrantForToolApproval');
+    const executor = new ToolExecutor({
+      workingDirectory: workspace, ledgerOrigin: 'eval',
+      requestPermission: async request => {
+        requests.push(request);
+        // Approve the original card only; a separate escalation card is separate consent.
+        return requests.length === 1
+          ? { approved: true, approvalSource: 'user' as const }
+          : { approved: false, denialSource: 'user' as const };
+      },
+    });
+    executor.setAuditEnabled(false);
+    const result = await executor.execute(
+      'Bash', { command: `rm -f -- "${targets[0]}"; rm -f -- "${targets[1]}"` }, { sessionId: 'real-seatbelt-multi-policy-denied' },
+    );
+    expect(result.success).toBe(false);
+    expect(grant).toHaveBeenCalledOnce(); expect(grant.mock.results[0].value).toBeUndefined();
+    expect(targets.map(existsSync)).toEqual([true, true]);
+    expect(requests).toHaveLength(2);
+    expect(requests[1].details.action).toBe('sandbox_escalate_once');
+  });
+
   it('approved two-file background rm deletes both files with real seatbelt in an attended session', async () => {
     const targets = [join(slashTmpRoot, 'background-cache.tmp'), join(outsideRoot, 'background-cache.tmp')];
     const neighbors = [join(slashTmpRoot, 'background-keep.tmp'), join(outsideRoot, 'background-keep.tmp')];
