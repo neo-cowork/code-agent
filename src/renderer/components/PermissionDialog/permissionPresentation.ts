@@ -361,7 +361,8 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
       .replace('{count}', fileCountText(count, t));
   }
   if (request.type === 'network' || request.type === 'mcp') {
-    const endpoint = request.details.url
+    const endpoint = request.details.connectorAccess?.connectorName
+      || request.details.url
       || [request.details.server, request.details.toolName].filter(Boolean).join(' / ')
       || p.externalServiceFallback;
     return p.consequenceNetwork.replace('{target}', redactCredentialText(endpoint));

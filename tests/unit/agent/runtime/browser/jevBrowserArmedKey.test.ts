@@ -41,7 +41,7 @@ import {
 import { BrowserTool } from '../../../../../src/host/tools/vision/BrowserTool';
 
 const CAPTURED_MISSING_KEY_WARN =
-  'CODE_AGENT_BROWSER_JEV_STEP 已开启但 TYPESAFE_API_KEY 缺失，Jev 步选不生效（走主模型逐步 Browser）';
+  '无可用 Jev 路由（未登录/缺 TYPESAFE_API_KEY），Jev 步选不生效（走主模型逐步 Browser）';
 
 const CAPTURED_UNARMED_RESULT = {
   success: false,

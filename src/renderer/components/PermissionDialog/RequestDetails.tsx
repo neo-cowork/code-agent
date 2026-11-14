@@ -195,7 +195,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       )}
 
       {/* MCP 工具 */}
-      {details.server && details.toolName && (
+      {!details.connectorAccess && details.server && details.toolName && (
         <DetailItem label={labels.detailMcpTool} value={`${details.server} / ${details.toolName}`} />
       )}
 
@@ -212,7 +212,9 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       {/* 确认门控 非 diff 预览（命令/网络/通用） */}
       {details.preview && details.preview.type !== 'diff' && !(details.preview.type === 'command' && details.command) && !isHostDefaultToolPreview(request) && (
         <div className="mt-4">
-          <div className="text-xs text-zinc-400 mb-2">{details.preview.summary}</div>
+          {!(details.connectorAccess && details.preview.type === 'generic') && (
+            <div className="text-xs text-zinc-400 mb-2">{details.preview.summary}</div>
+          )}
           {details.preview.diff && (
             <pre className="text-xs p-2 rounded bg-zinc-700 border border-zinc-700 text-zinc-400 overflow-x-auto max-h-32 whitespace-pre-wrap break-all">
               {request.tool === 'spawn_agent' || request.tool === 'AgentSpawn'

@@ -1,9 +1,14 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const h = vi.hoisted(() => ({ spawn: vi.fn(), warn: vi.fn(), broadcast: vi.fn() }));
+const h = vi.hoisted(() => ({
+  spawn: vi.fn(), spawnSync: vi.fn(), exec: vi.fn(), execFile: vi.fn(),
+  execSync: vi.fn(), execFileSync: vi.fn(), warn: vi.fn(), broadcast: vi.fn(),
+}));
 vi.mock('node:child_process', async (importOriginal) => ({
-  ...await importOriginal<typeof import('node:child_process')>(), spawn: h.spawn,
+  ...await importOriginal<typeof import('node:child_process')>(),
+  spawn: h.spawn, spawnSync: h.spawnSync, exec: h.exec, execFile: h.execFile,
+  execSync: h.execSync, execFileSync: h.execFileSync,
 }));
 vi.mock('../../../../src/host/platform', async () => ({
   ...await import('../../../../src/host/platform/notifications'),
@@ -23,7 +28,6 @@ import { notificationService } from '../../../../src/host/services/infra/notific
 import { Notification } from '../../../../src/host/platform/notifications';
 
 let child: EventEmitter & { unref: ReturnType<typeof vi.fn> };
-let osascript: ReturnType<typeof vi.spyOn>;
 const notify = () => notificationService.notifyNeedsInput({ sessionId: '--session;$(ignored)', title: 'write_file', body: 'mcp__internal' });
 
 beforeEach(() => {
@@ -31,14 +35,15 @@ beforeEach(() => {
   vi.stubEnv('CODE_AGENT_NOTIFICATION_DRY_RUN', '');
   vi.stubEnv('CODE_AGENT_SHELL_EXE', '/Applications/Agent Neo.app/Contents/MacOS/code-agent-tauri');
   vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
-  osascript = vi.spyOn(Notification.prototype, 'show').mockImplementation(() => {});
   child = Object.assign(new EventEmitter(), { unref: vi.fn() });
   h.spawn.mockReturnValue(child);
   notificationService.clearRecentNotifications();
   notificationService.setNativeNotificationSender(null);
 });
 afterEach(() => {
-  expect(osascript).not.toHaveBeenCalled();
+  for (const launch of [h.spawn, h.spawnSync, h.exec, h.execFile, h.execSync, h.execFileSync]) {
+    expect(launch.mock.calls.filter(([command]) => /\bosascript\b/.test(String(command)))).toEqual([]);
+  }
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
 });
@@ -53,9 +58,11 @@ describe('production notificationService needs-input background notify-only', ()
       { detached: true, stdio: 'ignore', shell: false },
     );
     expect(child.unref).toHaveBeenCalledOnce();
-    expect(osascript).not.toHaveBeenCalled();
     console.info('ASSERT spawn argv:', JSON.stringify(h.spawn.mock.calls[0]));
-    console.info('ASSERT src/host/platform/notifications.ts Notification.show (osascript) calls:', osascript.mock.calls.length);
+    const osascriptCalls = [h.spawn, h.spawnSync, h.exec, h.execFile, h.execSync, h.execFileSync]
+      .flatMap((launch) => launch.mock.calls).filter(([command]) => /\bosascript\b/.test(String(command)));
+    expect(osascriptCalls).toEqual([]);
+    console.info('ASSERT child_process spawn/exec osascript calls:', osascriptCalls.length);
   });
 
   it('missing env warns notify-only-executable-missing with no osascript', () => {

@@ -43,6 +43,8 @@ export interface PermissionRequestDetails {
   changes?: string;
   server?: string;
   toolName?: string;
+  connectorAccess?: { connectorId: string; connectorName: string; access: 'read' | 'write' };
+  purpose?: string;
   commandRiskLevel?: 'safe' | 'unknown' | 'low' | 'medium' | 'high' | 'critical';
   commandSecurityFlags?: string[];
   affectedPath?: string;
