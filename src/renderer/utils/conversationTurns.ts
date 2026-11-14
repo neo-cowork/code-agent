@@ -9,3 +9,9 @@ export function getActiveConversationTurnIndex(projection: TraceProjection): num
   const index = projection.activeTurnIndex;
   return index >= 0 && projection.turns[index] && !projection.turns[index].standalone ? index : -1;
 }
+
+/** Keep step outcomes scoped to the latest user request, for both trace nodes and stored messages. */
+export function latestUserTurnItems<T>(items: readonly T[], isUser: (item: T) => boolean): readonly T[] {
+  const index = items.findLastIndex(isUser);
+  return index < 0 ? items : items.slice(index);
+}

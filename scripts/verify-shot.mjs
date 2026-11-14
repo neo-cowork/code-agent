@@ -3,11 +3,11 @@
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, URL } from 'node:url';
 import { chromium } from 'playwright';
 
 function usage() {
-  return 'Usage: node scripts/verify-shot.mjs <url> <out.png> [--viewport 1440x900] [--wait selector]';
+  return 'Usage: node scripts/verify-shot.mjs <url> <out.png> [--viewport 1440x900] [--wait selector] [--session id]';
 }
 
 function optionValue(args, name) {
@@ -44,7 +44,8 @@ async function main(args = process.argv.slice(2)) {
   }
   const viewport = parseViewport(optionValue(args, '--viewport'));
   const waitSelector = optionValue(args, '--wait');
-  const knownArgs = new Set([rawUrl, rawOutput, '--viewport', optionValue(args, '--viewport'), '--wait', waitSelector].filter(Boolean));
+  const sessionId = optionValue(args, '--session');
+  const knownArgs = new Set([rawUrl, rawOutput, '--viewport', optionValue(args, '--viewport'), '--wait', waitSelector, '--session', sessionId].filter(Boolean));
   const unknown = args.find((arg) => !knownArgs.has(arg));
   if (unknown) throw new Error(`unknown option: ${unknown}`);
 
@@ -52,10 +53,15 @@ async function main(args = process.argv.slice(2)) {
   mkdirSync(path.dirname(output), { recursive: true });
   const browser = await chromium.launch({ headless: true });
   try {
-    const page = await browser.newPage({ viewport });
+    const page = await browser.newPage({ viewport, ...(process.env.NEO_VERIFY_AUTH_TOKEN
+      ? { extraHTTPHeaders: { Authorization: `Bearer ${process.env.NEO_VERIFY_AUTH_TOKEN}` } } : {}) });
     await page.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    if (sessionId) {
+      await page.locator(`[data-session-id=${JSON.stringify(sessionId)}]`).first().click({ timeout: 60_000 });
+    }
     if (waitSelector) {
       await page.waitForSelector(waitSelector, { state: 'visible', timeout: 60_000 });
+      console.log(`NEO_VERIFY_WAIT_VISIBLE=${waitSelector}`);
     } else {
       await page.waitForSelector('body', { state: 'visible', timeout: 60_000 });
     }
