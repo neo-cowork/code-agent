@@ -17,6 +17,7 @@ import { findWhisperBinary, whisperLanguageArgs } from '../media/whisperBinary';
 import { clearAllAudioRecordings, finalizeSegmentAudio, getAudioRetentionStatus, sweepAudioRetention } from './audioRetention';
 import { dropMicEchoes } from './audioCrossEcho';
 import { AudioStreamClock } from './audioStreamClock';
+import { BLOCK_SIZE, SAMPLE_RATE, VadStateMachine } from './vadStateMachine';
 import { AUDIO_SPEAKER_ID, type AudioCaptureMode } from '@shared/contract/audioCapture';
 import type { InferenceSession, Tensor as OrtTensor } from 'onnxruntime-node';
 
@@ -27,18 +28,8 @@ const execFileAsync = promisify(execFile);
 // Config
 // ============================================================================
 
-const SAMPLE_RATE = 16000;
-const BLOCK_SIZE = 512; // 512 samples = 32ms at 16kHz
 const BLOCK_BYTES = BLOCK_SIZE * 2; // 16-bit = 2 bytes per sample
-
-// VAD thresholds (Silero v5, matching meeting-cli's hysteresis)
-const VAD_ONSET = 0.5; // start speech: high threshold
-const VAD_OFFSET = 0.35; // end speech: lower threshold
-const MIN_SPEECH_MS = 500; // minimum speech duration to keep
-const MIN_SILENCE_MS = 2000; // 2s silence to finalize segment
-const SPEECH_PAD_MS = 200; // pad speech boundaries
 const VAD_CONTEXT_SAMPLES = 64; // Silero v5 16kHz 每块前拼的上下文样本数
-const MAX_SPEECH_S = 15; // max segment duration, then smart-split
 
 // ASR
 const ASR_TIMEOUT_MS = 120_000;
@@ -129,6 +120,8 @@ interface CaptureTrack {
   stream: fs.ReadStream | null;
   /** 这一路 VAD 的处理链：进程重启后新旧两条流也排在同一条链上，不并发推理 */
   vadChain: Promise<void>;
+  /** 停止录音前调用：把 VAD 里没切完的那段排到处理链末尾收尾（暂停/结束前最后一句不丢） */
+  flushVad?: () => void;
 }
 
 let tracks: CaptureTrack[] = [];
@@ -218,139 +211,7 @@ function findRecBinary(): string | null {
   }
 }
 
-// ============================================================================
-// VAD State Machine (ported from meeting-cli VadEngine)
-// ============================================================================
-
-export class VadStateMachine {
-  private speechActive = false;
-  private speechBuffer: number[] = [];
-  private speechSamples = 0;
-  private silenceSamples = 0;
-  private probHistory: number[] = [];
-  private pendingPad: number[] = [];
-  /** speechBuffer 开头那段补白的样本数：probHistory[0] 对应的块从这里开始 */
-  private leadSamples = 0;
-
-  private readonly onset: number;
-  private readonly offset: number;
-  private readonly minSpeechSamples: number;
-  private readonly minSilenceSamples: number;
-  private readonly speechPadSamples: number;
-  private readonly maxSpeechSamples: number;
-
-  constructor(onset = VAD_ONSET, offset = VAD_OFFSET) {
-    this.onset = onset;
-    this.offset = offset;
-    this.minSpeechSamples = Math.floor(MIN_SPEECH_MS * SAMPLE_RATE / 1000);
-    this.minSilenceSamples = Math.floor(MIN_SILENCE_MS * SAMPLE_RATE / 1000);
-    this.speechPadSamples = Math.floor(SPEECH_PAD_MS * SAMPLE_RATE / 1000);
-    this.maxSpeechSamples = Math.floor(MAX_SPEECH_S * SAMPLE_RATE);
-  }
-
-  processChunk(pcmInt16: Int16Array, prob: number): Int16Array[] {
-    const completed: Int16Array[] = [];
-    const chunkLen = pcmInt16.length;
-
-    // Hysteresis: use onset to START speech, offset to END speech
-    const isSpeech = this.speechActive ? prob >= this.offset : prob >= this.onset;
-
-    if (isSpeech) {
-      if (!this.speechActive) {
-        // Speech onset
-        this.speechActive = true;
-        this.speechBuffer = [...this.pendingPad];
-        this.leadSamples = this.pendingPad.length;
-        this.speechSamples = this.speechBuffer.length;
-        this.silenceSamples = 0;
-        this.probHistory = [];
-      }
-
-      for (let i = 0; i < pcmInt16.length; i++) {
-        this.speechBuffer.push(pcmInt16[i]);
-      }
-      this.speechSamples += chunkLen;
-      this.silenceSamples = 0;
-      this.probHistory.push(prob);
-
-      // Smart max-duration split
-      if (this.speechSamples >= this.maxSpeechSamples) {
-        const segment = this.smartSplit();
-        if (segment) completed.push(segment);
-      }
-    } else {
-      if (this.speechActive) {
-        for (let i = 0; i < pcmInt16.length; i++) {
-          this.speechBuffer.push(pcmInt16[i]);
-        }
-        this.silenceSamples += chunkLen;
-        this.probHistory.push(prob);
-
-        if (this.silenceSamples >= this.minSilenceSamples) {
-          // Silence long enough → finalize segment
-          if (this.speechSamples >= this.minSpeechSamples) {
-            completed.push(new Int16Array(this.speechBuffer));
-          }
-          this.speechActive = false;
-          this.speechBuffer = [];
-          this.speechSamples = 0;
-          this.silenceSamples = 0;
-          this.probHistory = [];
-        }
-        // Short gaps (breathing) → keep buffering
-      }
-    }
-
-    // 滚动保留最近 speechPadSamples 个样本，开口时补在段落前面。原来只取本块的尾巴，
-    // 一块只有 512 样本，实际只补 32ms，每句开头被吃字（N-MEETING-DUALTRACK-FU2）
-    this.pendingPad = this.pendingPad.concat(Array.from(pcmInt16)).slice(-this.speechPadSamples);
-
-    return completed;
-  }
-
-  private smartSplit(): Int16Array | null {
-    if (this.probHistory.length === 0) {
-      const seg = new Int16Array(this.speechBuffer);
-      this.speechBuffer = [];
-      this.speechSamples = 0;
-      this.probHistory = [];
-      return seg;
-    }
-
-    // Find lowest-prob chunk in second half
-    const half = Math.floor(this.probHistory.length / 2);
-    const secondHalf = this.probHistory.slice(half);
-    let minIdx = half;
-    let minVal = secondHalf[0];
-    for (let i = 1; i < secondHalf.length; i++) {
-      if (secondHalf[i] < minVal) {
-        minVal = secondHalf[i];
-        minIdx = half + i;
-      }
-    }
-
-    // 切在最安静那块的开头：要跳过段首补白，否则切点提前补白那么长、切进字中间
-    const splitSample = this.leadSamples + minIdx * BLOCK_SIZE;
-    if (splitSample <= 0 || splitSample >= this.speechBuffer.length) {
-      const seg = new Int16Array(this.speechBuffer);
-      this.speechBuffer = [];
-      this.speechSamples = 0;
-      this.probHistory = [];
-      return seg;
-    }
-
-    const firstPart = new Int16Array(this.speechBuffer.slice(0, splitSample));
-    this.speechBuffer = this.speechBuffer.slice(splitSample);
-    this.speechSamples = this.speechBuffer.length;
-    this.probHistory = this.probHistory.slice(minIdx);
-    this.leadSamples = 0; // 剩下的从最安静那块开头起，不再带补白
-    return firstPart;
-  }
-
-  get isSpeaking(): boolean {
-    return this.speechActive;
-  }
-}
+export { VadStateMachine };
 
 // ============================================================================
 // Silero VAD v5 Processor (direct ONNX Runtime, no wrapper)
@@ -450,6 +311,10 @@ class VadProcessor {
     }
 
     return this.stateMachine.processChunk(pcmInt16, prob);
+  }
+
+  flush(): Int16Array[] {
+    return this.stateMachine.flush();
   }
 
   get isSpeaking(): boolean {
@@ -928,6 +793,33 @@ function pumpPcm(input: NodeJS.ReadableStream, track: CaptureTrack): void {
   let lastDiagMs = 0;
   // 每条流一个时钟：进程重启后新流首包重新定原点，重启空窗不会让后续段落整体偏早
   const clock = new AudioStreamClock(SAMPLE_RATE);
+  let lastBlockEndMs = 0;
+
+  const emitSegment = (segment: Int16Array, endMs: number): void => {
+    const durationMs = Math.round((segment.length / SAMPLE_RATE) * 1000);
+    const startMs = endMs - durationMs;
+    try {
+      const wavPath = saveWavFile(segment, startMs, track.speakerId);
+      logger.debug('[音频采集] 语音段完成', {
+        source: track.source,
+        duration: `${durationMs}ms`,
+        samples: segment.length,
+        file: path.basename(wavPath),
+      });
+      asrQueue.push({ wavPath, startMs, endMs, speakerId: track.speakerId });
+      processAsrQueue().catch(() => {});
+    } catch (error) {
+      logger.error('[音频采集] 保存语音段失败', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+  track.flushVad = () => {
+    track.vadChain = track.vadChain.then(() => {
+      if (lastBlockEndMs === 0) return; // 这条流还没处理过数据
+      for (const segment of track.vad.flush()) emitSegment(segment, lastBlockEndMs);
+    });
+  };
 
   // 一路的数据包必须逐个处理完再处理下一个：VAD 带隐藏状态，主线程一卡、积压的包并发进
   // session.run 会共用旧状态，段落被错合/错切，时间偏出好几秒（N-MEETING-DUALTRACK-FU1 真机实测）。
@@ -984,30 +876,10 @@ function pumpPcm(input: NodeJS.ReadableStream, track: CaptureTrack): void {
 
       // 这一块样本对应的音频时刻；段落在这块处切出，就以它为结束时间
       const blockEndMs = clock.advance(BLOCK_SIZE);
+      lastBlockEndMs = blockEndMs;
       try {
         const segments = await track.vad.processChunk(int16);
-        for (const segment of segments) {
-          const endMs = blockEndMs;
-          const durationMs = Math.round((segment.length / SAMPLE_RATE) * 1000);
-          const startMs = endMs - durationMs;
-
-          // Save WAV and queue for ASR
-          try {
-            const wavPath = saveWavFile(segment, startMs, track.speakerId);
-            logger.debug('[音频采集] 语音段完成', {
-              source: track.source,
-              duration: `${durationMs}ms`,
-              samples: segment.length,
-              file: path.basename(wavPath),
-            });
-            asrQueue.push({ wavPath, startMs, endMs, speakerId: track.speakerId });
-            processAsrQueue().catch(() => {});
-          } catch (error) {
-            logger.error('[音频采集] 保存语音段失败', {
-              error: error instanceof Error ? error.message : String(error),
-            });
-          }
-        }
+        for (const segment of segments) emitSegment(segment, blockEndMs);
       } catch (error) {
         if (!vadErrorLogged) {
           vadErrorLogged = true;
@@ -1209,6 +1081,7 @@ export function stopDesktopAudioCapture(): void {
   captureMode = 'microphone';
   requestedMode = 'microphone';
   for (const track of tracks) {
+    track.flushVad?.(); // 正在说的那段先收尾，再停进程
     const proc = track.proc;
     if (proc) {
       proc.kill();
