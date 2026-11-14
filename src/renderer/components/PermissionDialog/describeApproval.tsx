@@ -115,7 +115,10 @@ function userFacingReason(reason: string | undefined): string | undefined {
 function iconFor(kind: ApprovalKind, request: PermissionRequest): React.ReactElement {
   switch (kind) {
     case 'shell':
-      return React.createElement(Terminal, { size: 20 });
+      // dangerous_command 的警告三角是既有视觉（e2e 基线）；终端图标只给普通 shell 命令。
+      return request.type === 'dangerous_command'
+        ? getPermissionConfig('dangerous_command').icon as React.ReactElement
+        : React.createElement(Terminal, { size: 20 });
     case 'file_read':
     case 'file_write':
     case 'file_edit':

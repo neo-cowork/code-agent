@@ -32,6 +32,24 @@ function humanizeParamLabels(diff: string): string {
   return diff.split('\n').map((line) => line.replace(/^([a-z0-9]+(?:_[a-z0-9]+)+)(?=:)/u, (key) => key.replaceAll('_', ' '))).join('\n');
 }
 
+/**
+ * 网页操作卡（web_action）：host 预览是「参数名: 值」逐行（action/text/selector…）。action 已由标题
+ * 「操作网页」表达，其余只留用户要认的两样——输入/点击的文字、目标元素——并用本地化标签展示。
+ */
+function webActionRows(diff: string | undefined): Array<{ field: 'text' | 'target'; value: string }> {
+  const rows: Array<{ field: 'text' | 'target'; value: string }> = [];
+  for (const line of (diff ?? '').split('\n')) {
+    const at = line.indexOf(':');
+    if (at < 0) continue;
+    const key = line.slice(0, at).trim();
+    const value = line.slice(at + 1).trim();
+    if (!value) continue;
+    if (key === 'text' || key === 'value') rows.push({ field: 'text', value });
+    else if (key === 'selector' || key === 'targetRef' || key === 'ref') rows.push({ field: 'target', value });
+  }
+  return rows;
+}
+
 function sandboxStatusCopy(
   sandbox: NonNullable<PermissionRequest['details']['sandbox']>,
   labels: {
@@ -213,7 +231,14 @@ export function RequestDetails({ request }: RequestDetailsProps) {
             && !(details.preview.type === 'generic' && details.preview.summary.includes(request.tool)) && (
             <div className="text-xs text-zinc-400 mb-2 whitespace-pre-line">{details.preview.summary}</div>
           )}
-          {details.preview.diff && kind !== 'web_open' && (
+          {kind === 'web_action' && webActionRows(details.preview.diff).map((row) => (
+            <DetailItem
+              key={`${row.field}-${row.value}`}
+              label={row.field === 'text' ? labels.detailWebText : labels.detailWebTarget}
+              value={row.value}
+            />
+          ))}
+          {details.preview.diff && kind !== 'web_open' && kind !== 'web_action' && (
             <pre className="text-xs p-2 rounded bg-zinc-700 border border-zinc-700 text-zinc-400 overflow-x-auto max-h-32 whitespace-pre-wrap break-all">
               {details.preview.type === 'generic' ? humanizeParamLabels(details.preview.diff) : details.preview.diff}
             </pre>

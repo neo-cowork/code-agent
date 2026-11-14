@@ -405,6 +405,18 @@ describe('PermissionCard presentation gate (production host request shapes)', ()
     process.stdout.write(`rendered production Browser navigate cards:\n${lines.join('\n')}\n`);
   });
 
+  it('a dangerous shell command keeps the warning icon, not the terminal icon', () => {
+    const request = toRequest({
+      type: 'dangerous_command', tool: 'Bash', forceConfirm: true, dangerLevel: 'danger',
+      details: { command: 'rm -rf ./dist', commandRiskLevel: 'critical' },
+    }, 'approval-dangerous');
+    for (const language of LANGUAGES) {
+      const { html } = renderCard(request, language);
+      expect(html, `${language}: warning icon`).toMatch(/lucide-(triangle-alert|alert-triangle)/u);
+      expect(html, `${language}: not the plain terminal icon`).not.toContain('lucide-terminal');
+    }
+  });
+
   it('a grant-free Browser page action still shows what will be typed/clicked', () => {
     const click = captured.find((c) => c.origin === 'executor:Browser click_text')!;
     const request = withoutBrowserGrant(click.request);
@@ -415,6 +427,11 @@ describe('PermissionCard presentation gate (production host request shapes)', ()
       expect(text, `${language}: target text on the card`).toContain('Finish');
       expect(text, `${language}: web action wording`).toContain(language === 'zh' ? '操作网页' : 'Operate on a web page');
       expect(text, `${language}: no tool-name dump`).not.toMatch(/执行工具|Browser/u);
+      const remainder = text.split('Finish').join('');
+      expect(remainder, `${language}: no snake_case internal enum`).not.toMatch(/\b[a-z]+(?:_[a-z]+)+\b/u);
+      expect(text, `${language}: no raw action key`).not.toContain('action:');
+      expect(text, `${language}: localized labels, no raw param keys`).not.toMatch(/\btext:|selector:/u);
+      expect(text, `${language}: labelled text`).toContain(language === 'zh' ? '内容' : 'Text');
     }
     process.stdout.write(`rendered grant-free Browser click_text cards:\n${lines.join('\n')}\n`);
   });
