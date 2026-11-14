@@ -249,7 +249,7 @@ const title = 'Compare three note-taking apps';
 const cjk = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\u3000-\u303f\uff00-\uffef]/u;
 
 // Literal byte baselines from origin/main; do not derive the expectation from the active dictionary.
-const chineseCard = '执行失败助手上级任务已经结束';
+const chineseCard = '执行失败助手上级任务已经结束查看详情重试';
 const chinesePanelRow = '助手失败：上级任务已经结束';
 
 async function assertSurfaces(snapshot: AgentTreeSnapshot, producer: string) {

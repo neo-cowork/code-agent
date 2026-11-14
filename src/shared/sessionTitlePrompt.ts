@@ -66,7 +66,10 @@ const LANGUAGE_NAME: Record<SessionTitleLanguage, string> = {
   en: 'English',
 };
 
-export function buildSessionTitlePrompt(message: string, uiLanguage: SessionTitleLanguage): string {
+const STRICT_RETRY_RULE =
+  'Your previous title copied the user\'s wording. Do NOT reuse any phrase from the message; rewrite it as a noun phrase naming the topic, starting with a different word.';
+
+export function buildSessionTitlePrompt(message: string, uiLanguage: SessionTitleLanguage, strict = false): string {
   const detected = detectMessageLanguage(message);
   const language = detected ?? uiLanguage;
   const languageRule = detected
@@ -76,6 +79,9 @@ export function buildSessionTitlePrompt(message: string, uiLanguage: SessionTitl
     'Generate a short session title for the following user message.',
     languageRule,
     `Length: ${LENGTH_HINT[language]}. No quotation marks and no trailing punctuation. Output only the title.`,
+    'Summarize the topic as a short noun phrase. Never copy or truncate the user\'s wording, and do not start with 请 / 帮我 / please.',
+    'Examples: "请帮我分析这个 sales.csv，按地区汇总金额" -> 销售数据按地区汇总; "Can you help me draft a weekly report about the release" -> Weekly release report draft',
+    ...(strict ? [STRICT_RETRY_RULE] : []),
     '',
     message,
   ].join('\n');
