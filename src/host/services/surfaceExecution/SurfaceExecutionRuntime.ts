@@ -733,6 +733,7 @@ export class SurfaceExecutionRuntime {
           availableControls: ['stop'],
         });
         try {
+          this.interrupts.prepareRunEnd(subject);
           this.grants.revokeForSession(subject);
           await this.conversationControl.cancelPendingTakeover(subject);
           await this.interrupts.endSession(subject);
