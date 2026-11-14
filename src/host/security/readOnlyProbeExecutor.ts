@@ -8,7 +8,7 @@
 //   plan 里全是只读步骤，abort 不会留下副作用。
 // ============================================================================
 
-import { execFile, type ExecFileOptionsWithStringEncoding } from 'child_process';
+import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -185,11 +185,32 @@ function scrubbedEnv(): NodeJS.ProcessEnv {
 
 function runFixed(bin: string, args: string[], cwd: string): Promise<ProbeRunResult> {
   return new Promise((resolve, reject) => {
-    // argv0：GNU 工具用 argv[0] 作错误前缀（"ls: …"），与经 shell 以裸命令名执行时一致。类型声明里没有 argv0，运行时 spawn 支持。
-    const options = { cwd, argv0: path.basename(bin), env: scrubbedEnv(), timeout: EXEC_TIMEOUT_MS, maxBuffer: MAX_OUTPUT_CHARS, encoding: 'utf8' } as ExecFileOptionsWithStringEncoding;
-    execFile(bin, args, options, (err, stdout, stderr) => {
-      if (err && typeof (err as { code?: unknown }).code !== 'number') { reject(new ProbeAbort(`exec ${path.basename(bin)} failed`)); return; }
-      resolve({ stdout, stderr, exitCode: err ? (err as unknown as { code: number }).code : 0 });
+    // argv0：GNU 工具用 argv[0] 作错误前缀（"ls: …"），与经 shell 以裸命令名执行时一致。execFile 不转发 argv0，必须直接 spawn。
+    const child = spawn(bin, args, { cwd, env: scrubbedEnv(), argv0: path.basename(bin), stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    const settle = (finish: () => void): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      finish();
+    };
+    const abort = (reason: string): void => {
+      child.kill('SIGKILL');
+      settle(() => reject(new ProbeAbort(reason)));
+    };
+    const timer = setTimeout(() => abort(`exec ${path.basename(bin)} timed out`), EXEC_TIMEOUT_MS);
+    const collect = (kind: 'out' | 'err') => (chunk: Buffer): void => {
+      if (kind === 'out') stdout += chunk.toString('utf8'); else stderr += chunk.toString('utf8');
+      if (stdout.length + stderr.length > MAX_OUTPUT_CHARS) abort(`exec ${path.basename(bin)} output too large`);
+    };
+    child.stdout.on('data', collect('out'));
+    child.stderr.on('data', collect('err'));
+    child.on('error', () => settle(() => reject(new ProbeAbort(`exec ${path.basename(bin)} failed`))));
+    child.on('close', (code) => {
+      if (code === null) { settle(() => reject(new ProbeAbort(`exec ${path.basename(bin)} killed by signal`))); return; }
+      settle(() => resolve({ stdout, stderr, exitCode: code }));
     });
   });
 }

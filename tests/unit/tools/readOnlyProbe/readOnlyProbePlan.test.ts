@@ -30,6 +30,19 @@ vi.mock('../../../../src/host/services/infra/shellEnvironment', async (importOri
   return { ...actual, getShellPath: () => shellPathOverride.value ?? actual.getShellPath() };
 });
 
+const spawnCalls = vi.hoisted(() => [] as Array<{ bin: string; options: { argv0?: string } }>);
+vi.mock('child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('child_process')>();
+  return {
+    ...actual,
+    spawn: ((bin: string, ...rest: unknown[]) => {
+      const options = rest.find((r) => r && typeof r === 'object' && !Array.isArray(r)) as { argv0?: string } | undefined;
+      spawnCalls.push({ bin, options: options ?? {} });
+      return (actual.spawn as (...a: unknown[]) => unknown)(bin, ...rest);
+    }) as typeof actual.spawn,
+  };
+});
+
 import { getToolCache } from '../../../../src/host/services/infra/toolCache';
 import { fileReadTracker } from '../../../../src/host/tools/fileReadTracker';
 import { getProtocolRegistry } from '../../../../src/host/tools/protocolRegistry';
@@ -161,6 +174,16 @@ except Exception as e:
       expect(permissionAsks).toEqual([]);
       expect(result.output).toBe(realBash(command));
     });
+  });
+
+  it('固定二进制以裸命令名作 argv[0] 启动（GNU 工具错误前缀 "ls:" 而非 "/bin/ls:"）', async () => {
+    spawnCalls.length = 0;
+    const result = await run(`ls -l "${fx}/nope-argv0.txt"; command -v ls`);
+    expect(permissionAsks).toEqual([]);
+    const lsCall = spawnCalls.find((c) => c.bin === '/bin/ls');
+    expect(lsCall?.options.argv0).toBe('ls');
+    expect(result.output).toContain('[stderr]: ls: ');
+    expect(result.output).not.toContain('/bin/ls:');
   });
 
   describe('② 破坏性追加仍要审批或被拒（4 × 3 = 12）', () => {
