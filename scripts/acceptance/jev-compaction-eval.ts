@@ -1,6 +1,6 @@
 /** Real-session compaction comparison. Never writes session text or needles.
  * Usage: tsx scripts/acceptance/jev-compaction-eval.ts <session-dir>
- *        tsx scripts/acceptance/jev-compaction-eval.ts --dev-db [--inventory]
+ *        tsx scripts/acceptance/jev-compaction-eval.ts --dev-db [--inventory] [--session-ids=<file>] [--smoke-id=<id>]
  * Owner override 2026-11-13: current dogfood subscription, never DeepSeek/GLM.
  */
 import assert from 'node:assert/strict';
@@ -11,6 +11,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { Message } from '../../src/shared/contract';
 import type { ProjectableMessage } from '../../src/host/context/projectionEngine';
 import { estimateConversationTokens, estimateTokens } from '../../src/host/context/tokenEstimator';
+import { MODEL_MAX_TOKENS } from '../../src/shared/constants';
 import { JEV_MODEL, estimateJevCallUsd, type JevSystemOneCall } from '../../src/shared/constants/jevQuestions';
 import { resolveModelPrice } from '../../src/shared/pricing/resolveModelPrice';
 
@@ -20,16 +21,82 @@ const MIN_RESULTS = 20;
 const MIN_TOKENS = 30_000;
 const BUDGET_USD = 3;
 const RECENT = 10;
-const OUTPUT = 'docs/research/assets/2026-09-30-jev-eval/compaction.json';
+const SUMMARY_AS_PROD_MAX_TOKENS = 1000;
+const SUMMARY_FAIR_MAX_TOKENS = MODEL_MAX_TOKENS.DEFAULT;
+const OUTPUT = 'docs/research/assets/2026-11-14-jev-eval-fu1/compaction.json';
 const PRIVATE_ROOT = path.join(os.homedir(), 'work/out/N-JEV-COMPACTION-EVAL');
+const REASONS = ['admitted', 'truncated', 'overBudget', 'missing_*', 'empty', 'not_shorter'] as const;
+
+type SummaryReason = (typeof REASONS)[number];
 type Session = { id: string; origin: string; messages: Message[] };
-type Arm = { tokens: number; retained: number; retention: number; ms: number; calls: number;
-  inputTokens: number; outputTokens: number; usd?: number; rejected: number };
-type Row = { id: string; beforeTokens: number; needles: number; S: Arm; J: Arm;
-  skipped: number; unavailable: number; badShape: number };
+type CallRecord = { outputTokens: number; truncated: number };
+type ValidationCounts = {
+  ok: number;
+  truncated: number;
+  overBudget: number;
+  emptyOrWhitespace: number;
+  missingPaths: number;
+  missingErrors: number;
+  missingOpenWork: number;
+  notShorter: number;
+};
+type Arm = {
+  tokens: number;
+  retained: number;
+  retention: number;
+  ms: number;
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+  usd?: number;
+  rejected: number;
+};
+type SummaryArm = Arm & {
+  summaryTokens: number;
+  callRecords: CallRecord[];
+  validation: ValidationCounts;
+};
+type Row = {
+  id: string;
+  beforeTokens: number;
+  planOriginalTokens: number;
+  needles: number;
+  S: SummaryArm;
+  SFair: SummaryArm;
+  J: Arm;
+  skipped: number;
+  unavailable: number;
+  badShape: number;
+};
 
 function check(condition: unknown, code: string): asserts condition {
   if (!condition) throw new Error(code);
+}
+
+/** One-reason-per-row classifier and fair-admission rule.
+ * When ignoreOverBudget is false, matches production admission
+ * (`validation.ok && estimateTokens(summaryContent) < plan.originalTokens`).
+ * When ignoreOverBudget is true (S-fair), lifts only the overBudget check while
+ * keeping empty, truncated, missing_*, and shorter-than-original enforcement.
+ */
+function classifySummaryAdmission(
+  validation: Pick<ValidationCounts, 'emptyOrWhitespace' | 'truncated' | 'overBudget' | 'missingPaths' | 'missingErrors' | 'missingOpenWork'>,
+  summaryContentTokens: number,
+  originalTokens: number,
+  ignoreOverBudget: boolean,
+): SummaryReason {
+  if (validation.emptyOrWhitespace) return 'empty';
+  if (validation.truncated) return 'truncated';
+  if (!ignoreOverBudget && validation.overBudget) return 'overBudget';
+  if (validation.missingPaths > 0 || validation.missingErrors > 0 || validation.missingOpenWork > 0) return 'missing_*';
+  if (summaryContentTokens >= originalTokens) return 'not_shorter';
+  return 'admitted';
+}
+
+function buildReasonHistogram(reasons: SummaryReason[]): Record<SummaryReason, number> {
+  const counts = Object.fromEntries(REASONS.map((reason) => [reason, 0])) as Record<SummaryReason, number>;
+  for (const reason of reasons) counts[reason]++;
+  return counts;
 }
 
 /** Evaluation-process-only optimization for the estimator's Markdown matcher.
@@ -227,16 +294,67 @@ function selfCheck(): void {
   const linked = longText + '[kept](target)';
   assert.deepEqual(linked.match(pattern), [...linked.matchAll(new RegExp(pattern.source, 'gm'))].map((match) => match[0]));
   assert.equal('plain'.repeat(15_000).match(pattern), null);
-  console.log('self-check: 20 passed / 0 failed / 0 skipped; network_calls=0');
+  // Reason classifier & S-fair admission assertions:
+  const cleanFlags = { emptyOrWhitespace: 0, truncated: 0, overBudget: 0, missingPaths: 0, missingErrors: 0, missingOpenWork: 0 };
+  assert.equal(classifySummaryAdmission({ ...cleanFlags, emptyOrWhitespace: 1 }, 10, 5000, false), 'empty');
+  assert.equal(classifySummaryAdmission({ ...cleanFlags, truncated: 1, missingPaths: 4 }, 980, 5000, true), 'truncated');
+  assert.equal(classifySummaryAdmission({ ...cleanFlags, overBudget: 1 }, 1250, 5000, false), 'overBudget');
+  assert.equal(classifySummaryAdmission({ ...cleanFlags, overBudget: 1 }, 1250, 5000, true), 'admitted');
+  assert.equal(classifySummaryAdmission({ ...cleanFlags, overBudget: 1, missingPaths: 2 }, 1250, 5000, true), 'missing_*');
+  assert.equal(classifySummaryAdmission(cleanFlags, 1250, 1200, true), 'not_shorter');
+  assert.deepEqual(buildReasonHistogram(['admitted', 'truncated', 'truncated', 'missing_*']), {
+    admitted: 1, truncated: 2, overBudget: 0, 'missing_*': 1, empty: 0, not_shorter: 0,
+  });
+  console.log('self-check: 27 passed / 0 failed / 0 skipped; network_calls=0');
 }
 
 function median(values: number[]): number {
+  if (values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);
   const middle = Math.floor(sorted.length / 2);
   return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
-async function evaluate(sessions: Session[], needlesById: Map<string, string[]>): Promise<void> {
+function computeArmStats<T extends Arm>(
+  rows: Row[],
+  pick: (row: Row) => T,
+  includeUsd: boolean,
+  overrideTotalUsd?: number,
+): { totals: Record<string, number>; medians: Record<string, number> } {
+  const values = rows.map(pick);
+  const fields = ['tokens', 'retained', 'ms', 'calls', 'inputTokens', 'outputTokens', 'rejected'] as const;
+  return {
+    totals: {
+      ...Object.fromEntries(fields.map((key) => [key, values.reduce((sum, value) => sum + value[key], 0)])),
+      needles: rows.reduce((sum, row) => sum + row.needles, 0),
+      ...(includeUsd ? { usd: overrideTotalUsd ?? values.reduce((sum, value) => sum + (value.usd ?? 0), 0) } : {}),
+    },
+    medians: {
+      ...Object.fromEntries([...fields, 'retention' as const].map((key) => [key, median(values.map((value) => value[key]))])),
+      ...(includeUsd ? { usd: median(values.map((value) => value.usd ?? 0)) } : {}),
+    },
+  };
+}
+
+function assertNumericAndIdsOnly(value: unknown, allowedIds: Set<string>, key?: string): void {
+  if (Array.isArray(value)) {
+    for (const item of value) assertNumericAndIdsOnly(item, allowedIds);
+    return;
+  }
+  if (value && typeof value === 'object') {
+    for (const [entryKey, entryValue] of Object.entries(value)) {
+      assertNumericAndIdsOnly(entryValue, allowedIds, entryKey);
+    }
+    return;
+  }
+  if (typeof value === 'string') {
+    check(key === 'id' && allowedIds.has(value), 'artifact_non_id_string');
+    return;
+  }
+  check(typeof value === 'number' && Number.isFinite(value), 'artifact_non_numeric_leaf');
+}
+
+async function evaluate(sessions: Session[], needlesById: Map<string, string[]>, smokeOnly: boolean): Promise<void> {
   const dogfood = fs.readFileSync(path.join(os.homedir(), '.ship/grab/realrun-dev-model'), 'utf8').trim();
   check(dogfood === 'xiaomi', 'unsupported_dogfood_provider: explicitly configure the current subscription before running');
   check(process.env.XIAOMI_API_KEY?.trim(), 'missing_credentials: XIAOMI_API_KEY=unset');
@@ -252,21 +370,61 @@ async function evaluate(sessions: Session[], needlesById: Map<string, string[]>)
   process.env.CODE_AGENT_DATA_DIR = dataDir;
   process.env.CODE_AGENT_CLI_MODE = 'true';
   process.env.CODE_AGENT_JEV_COMPACTION = '1';
-  // Isolated config never borrows OpenRouter/hosted credentials or relay settings.
   fs.writeFileSync(path.join(dataDir, '.env'), '', { mode: 0o600 });
+
+  const { getConfigService } = await import('../../src/host/services/core/configService');
+  const { compactModelSummarizeWithMetadata, resetCompactModel } = await import('../../src/host/context/compactModel');
+  const { createCompactionPlan, summarizeCompactionPlan } = await import('../../src/host/context/compactionService');
+  const { ModelRouter } = await import('../../src/host/model/modelRouter');
+  const { applyJevCompaction } = await import('../../src/host/context/jevCompaction');
+  const { systemOne, resolveJevRoute } = await import('../../src/host/model/providers/typesafeProvider');
+
+  // Read-only probe (0 network calls): resolve what compact model production picks when
+  // (1) contextCompression is omitted from config.json (factory DEFAULT_SETTINGS), and
+  // (2) contextCompression.compactModel is explicitly unset ('') while main model = baseline.
+  const originalInference = ModelRouter.prototype.inference;
+  let probedMaxTokens = 0;
+  let omittedCompact: { provider: string; model: string };
+  let unsetCompact: { provider: string; model: string };
+  ModelRouter.prototype.inference = async function (_messages, _tools, config) {
+    probedMaxTokens = config.maxTokens ?? 0;
+    return { type: 'text', content: 'probe', usage: { inputTokens: 1, outputTokens: 1 } };
+  };
+  try {
+    fs.writeFileSync(path.join(dataDir, 'config.json'), JSON.stringify({
+      model: baseline,
+      models: { providers: { xiaomi: { enabled: true, baseUrl: process.env.XIAOMI_API_URL } } },
+    }), { mode: 0o600 });
+    await getConfigService().initialize();
+    resetCompactModel();
+    const resOmitted = await compactModelSummarizeWithMetadata('probe', SUMMARY_AS_PROD_MAX_TOKENS);
+    omittedCompact = { provider: resOmitted.metadata.provider, model: resOmitted.metadata.model };
+
+    fs.writeFileSync(path.join(dataDir, 'config.json'), JSON.stringify({
+      model: baseline,
+      contextCompression: { compactProvider: '', compactModel: '' },
+      models: { providers: { xiaomi: { enabled: true, baseUrl: process.env.XIAOMI_API_URL } } },
+    }), { mode: 0o600 });
+    await getConfigService().initialize();
+    resetCompactModel();
+    const resUnset = await compactModelSummarizeWithMetadata('probe', SUMMARY_AS_PROD_MAX_TOKENS);
+    unsetCompact = { provider: resUnset.metadata.provider, model: resUnset.metadata.model };
+  } finally {
+    ModelRouter.prototype.inference = originalInference;
+    resetCompactModel();
+  }
+  console.log(`default_compact_resolution omitted=${omittedCompact.provider}/${omittedCompact.model} unset_on_baseline=${unsetCompact.provider}/${unsetCompact.model} pinned_eval=${baseline.provider}/${baseline.model} router_max_tokens=${probedMaxTokens} probe_network_calls=0`);
+
+  // Isolated config never borrows OpenRouter/hosted credentials or relay settings.
   fs.writeFileSync(path.join(dataDir, 'config.json'), JSON.stringify({
     model: baseline,
     contextCompression: { compactProvider: baseline.provider, compactModel: baseline.model },
     models: { providers: { xiaomi: { enabled: true, baseUrl: process.env.XIAOMI_API_URL } } },
     jev: { enabled: true, openRouterConsent: false, neoHostedEnabled: false },
   }), { mode: 0o600 });
-
-  const { getConfigService } = await import('../../src/host/services/core/configService');
   await getConfigService().initialize();
-  const { createCompactionPlan, summarizeCompactionPlan } = await import('../../src/host/context/compactionService');
-  const { ModelRouter } = await import('../../src/host/model/modelRouter');
-  const { applyJevCompaction } = await import('../../src/host/context/jevCompaction');
-  const { systemOne, resolveJevRoute } = await import('../../src/host/model/providers/typesafeProvider');
+  resetCompactModel();
+
   const route = resolveJevRoute();
   check(route?.kind === 'official' && route.model === JEV_MODEL, 'jev_official_route_required');
   const budgetPath = path.join(PRIVATE_ROOT, 'paid-budget.json');
@@ -283,33 +441,40 @@ async function evaluate(sessions: Session[], needlesById: Map<string, string[]>)
     paidUsd += usd; // Includes failed attempts conservatively.
     fs.writeFileSync(budgetPath, JSON.stringify({ reservedUsd: previousPaidUsd + paidUsd }) + '\n', { mode: 0o600 });
   };
+
+  let liftMaxTokens = 0;
   let summaryCalls = 0;
   let summaryIn = 0;
   let summaryOut = 0;
-  // Production streaming uses node:http, not fetch. Observe the real router,
-  // delegating unchanged; each repair is another inference with its own usage.
-  const originalInference = ModelRouter.prototype.inference;
+  let activeCallRecords: CallRecord[] = [];
+  // Production streaming uses node:http, not fetch. Observe the real router;
+  // for S-fair only, lift config.maxTokens inside this wrapper without touching src/.
   ModelRouter.prototype.inference = async function (...args: Parameters<typeof originalInference>) {
-    const [messages, , config] = args;
+    const [messages, tools, config, onChunk, signal, requestOptions] = args;
     check(config.provider === baseline.provider && config.model === baseline.model, 'summary_request_model_mismatch');
     check(config.baseUrl === process.env.XIAOMI_API_URL, 'summary_endpoint_mismatch');
+    const effectiveConfig = liftMaxTokens > 0 ? { ...config, maxTokens: liftMaxTokens } : config;
     summaryCalls++;
-    const response = await originalInference.apply(this, args);
+    const response = await originalInference.call(this, messages, tools, effectiveConfig, onChunk, signal, requestOptions);
     // ModelResponse inputTokens excludes cache hits/writes; include them when
     // reporting the full prompt volume, including every summary repair call.
     summaryIn += response.usage ? response.usage.inputTokens
       + (response.usage.cacheReadTokens ?? 0) + (response.usage.cacheCreationTokens ?? 0)
       : estimateTokens(JSON.stringify(messages));
-    summaryOut += response.usage?.outputTokens ?? estimateTokens(response.content || '');
+    const callOut = response.usage?.outputTokens ?? estimateTokens(response.content || '');
+    summaryOut += callOut;
+    activeCallRecords.push({ outputTokens: callOut, truncated: Number(Boolean(response.truncated)) });
     return response;
   };
+
   const rows: Row[] = [];
+  const sReasons: SummaryReason[] = [];
+  const sfReasons: SummaryReason[] = [];
   try {
     for (const session of sessions) {
       const needles = needlesById.get(session.id)!;
       const original = project(session.messages);
       const sMessages = structuredClone(session.messages);
-      const startedS = performance.now();
       // Single-user long sessions have no safe span in manual_current's
       // latest-user heuristic. The existing explicit-anchor API preserves the
       // same trailing ten messages and still adjusts for tool pair integrity.
@@ -317,18 +482,60 @@ async function evaluate(sessions: Session[], needlesById: Map<string, string[]>)
         anchorMessageId: sMessages[Math.max(2, sMessages.length - RECENT)]?.id,
         messages: sMessages, skipAudit: true });
       check(plan, 'summary_plan_missing');
-      const callsBefore = summaryCalls;
-      const inBefore = summaryIn;
-      const outBefore = summaryOut;
-      const summary = await summarizeCompactionPlan(plan);
-      check(summary.summaryModel.provider === baseline.provider && summary.summaryModel.model === baseline.model,
-        'summary_metadata_model_mismatch');
-      const summaryContent = '[Context Handoff] Another language model worked on this task and produced the following summary. Use this to build on the work already done.\n\n' + summary.summary;
-      const admitted = summary.validation.ok && estimateTokens(summaryContent) < plan.originalTokens;
-      const sAfter = admitted ? project([{ id: 'eval-summary', role: 'system', content: summaryContent, timestamp: 0 }, ...plan.preservedMessages]) : original;
-      const S: Arm = { tokens: tokens(sAfter), ...retention(needles, sAfter), ms: Math.round(performance.now() - startedS),
-        calls: summaryCalls - callsBefore, inputTokens: summaryIn - inBefore, outputTokens: summaryOut - outBefore,
-        rejected: Number(!admitted) };
+
+      const runSummaryArm = async (fair: boolean): Promise<{ arm: SummaryArm; reason: SummaryReason; modelTag: string }> => {
+        liftMaxTokens = fair ? SUMMARY_FAIR_MAX_TOKENS : 0;
+        activeCallRecords = [];
+        const callsBefore = summaryCalls;
+        const inBefore = summaryIn;
+        const outBefore = summaryOut;
+        const started = performance.now();
+        const summary = await summarizeCompactionPlan(structuredClone(plan));
+        check(summary.summaryModel.provider === baseline.provider && summary.summaryModel.model === baseline.model,
+          'summary_metadata_model_mismatch');
+        const summaryContent = '[Context Handoff] Another language model worked on this task and produced the following summary. Use this to build on the work already done.\n\n' + summary.summary;
+        const summaryContentTokens = estimateTokens(summaryContent);
+        const validation: ValidationCounts = {
+          ok: Number(summary.validation.ok),
+          truncated: Number(summary.validation.truncated),
+          overBudget: Number(summary.validation.overBudget),
+          emptyOrWhitespace: Number(summary.validation.emptyOrWhitespace),
+          missingPaths: summary.validation.missingPaths.length,
+          missingErrors: summary.validation.missingErrors.length,
+          missingOpenWork: summary.validation.missingOpenWork.length,
+          notShorter: Number(summaryContentTokens >= plan.originalTokens),
+        };
+        const reason = classifySummaryAdmission(validation, summaryContentTokens, plan.originalTokens, fair);
+        const admitted = reason === 'admitted';
+        if (!fair) {
+          check(admitted === (summary.validation.ok && summaryContentTokens < plan.originalTokens), 'as_prod_admission_mismatch');
+        }
+        const after = admitted
+          ? project([{ id: 'eval-summary', role: 'system', content: summaryContent, timestamp: 0 }, ...plan.preservedMessages])
+          : original;
+        return {
+          modelTag: `${summary.summaryModel.provider}/${summary.summaryModel.model}`,
+          reason,
+          arm: {
+            tokens: tokens(after),
+            ...retention(needles, after),
+            ms: Math.round(performance.now() - started),
+            calls: summaryCalls - callsBefore,
+            inputTokens: summaryIn - inBefore,
+            outputTokens: summaryOut - outBefore,
+            rejected: Number(!admitted),
+            summaryTokens: summaryContentTokens,
+            callRecords: [...activeCallRecords],
+            validation,
+          },
+        };
+      };
+
+      const sOut = await runSummaryArm(false);
+      const sfOut = await runSummaryArm(true);
+      sReasons.push(sOut.reason);
+      sfReasons.push(sfOut.reason);
+
       const jMessages = structuredClone(original);
       let jevUsd = 0;
       let jevCalls = 0;
@@ -349,46 +556,103 @@ async function evaluate(sessions: Session[], needlesById: Map<string, string[]>)
       check(jevCalls > 0, 'jev_no_real_calls');
       const J: Arm = { tokens: tokens(jMessages), ...retention(needles, jMessages), ms: Math.round(performance.now() - startedJ),
         usd: jevUsd, calls: jevCalls, inputTokens: jevInput, outputTokens: 0, rejected: Number(result.skipped) };
-      rows.push({ id: session.id, beforeTokens: tokens(original), needles: needles.length, S, J,
-        skipped: Number(result.skipped), unavailable: Number(result.reason === 'unavailable'), badShape: Number(result.reason === 'bad_shape') });
-      console.log(`row=${session.id} summaryModel=${summary.summaryModel.provider}/${summary.summaryModel.model} S=${JSON.stringify(S)} J=${JSON.stringify(J)}`);
+      rows.push({
+        id: session.id,
+        beforeTokens: tokens(original),
+        planOriginalTokens: plan.originalTokens,
+        needles: needles.length,
+        S: sOut.arm,
+        SFair: sfOut.arm,
+        J,
+        skipped: Number(result.skipped),
+        unavailable: Number(result.reason === 'unavailable'),
+        badShape: Number(result.reason === 'bad_shape'),
+      });
+      console.log(`row=${session.id} summaryModel=${sOut.modelTag} S_reason=${sOut.reason} SFair_reason=${sfOut.reason} S=${JSON.stringify(sOut.arm)} SFair=${JSON.stringify(sfOut.arm)} J=${JSON.stringify(J)}`);
     }
   } finally {
     ModelRouter.prototype.inference = originalInference;
   }
+
   check(rows.filter((row) => row.unavailable || row.badShape).length / rows.length <= 0.1, 'jev_unavailable_or_bad_shape_over_10_percent');
-  const stats = (arm: 'S' | 'J'): { totals: Record<string, number>; medians: Record<string, number> } => {
-    const values = rows.map((row) => row[arm]);
-    const fields = ['tokens', 'retained', 'ms', 'calls', 'inputTokens', 'outputTokens', 'rejected'] as const;
-    return {
-      totals: { ...Object.fromEntries(fields.map((key) => [key, values.reduce((sum, value) => sum + value[key], 0)])),
-        needles: rows.reduce((sum, row) => sum + row.needles, 0), ...(arm === 'J' ? { usd: paidUsd } : {}) },
-      medians: { ...Object.fromEntries([...fields, 'retention' as const].map((key) => [key, median(values.map((value) => value[key]))])),
-        ...(arm === 'J' ? { usd: median(values.map((value) => value.usd!)) } : {}) },
-    };
+  const rejectionHistogramS = buildReasonHistogram(sReasons);
+  const rejectionHistogramSFair = buildReasonHistogram(sfReasons);
+  const S = computeArmStats(rows, (row) => row.S, false);
+  const SFair = computeArmStats(rows, (row) => row.SFair, false);
+  const J = computeArmStats(rows, (row) => row.J, true, paidUsd);
+
+  const fairAdmittedRows = rows.filter((row) => row.SFair.rejected === 0);
+  const prodAdmittedRows = rows.filter((row) => row.S.rejected === 0);
+  const likeForLikeSFairAdmitted = {
+    count: fairAdmittedRows.length,
+    stillRejected: rows.length - fairAdmittedRows.length,
+    SFair: computeArmStats(fairAdmittedRows, (row) => row.SFair, false),
+    J: computeArmStats(fairAdmittedRows, (row) => row.J, true),
   };
-  const S = stats('S');
-  const J = stats('J');
-  // String values are session ids only; model/billing metadata are named keys.
-  const report = { baselineSubscription: { [baseline.provider]: { [baseline.model]: 1 } }, jevModel: { [JEV_MODEL]: 1 },
-    originalPlannedSessions: 20, authorizedSessions: MIN_SESSIONS, evaluatedSessions: rows.length, directionalOnly: 1,
+  const likeForLikeSProdAdmitted = {
+    count: prodAdmittedRows.length,
+    stillRejected: rows.length - prodAdmittedRows.length,
+    S: computeArmStats(prodAdmittedRows, (row) => row.S, false),
+    J: computeArmStats(prodAdmittedRows, (row) => row.J, true),
+  };
+
+  console.log(`evaluated_ids=${JSON.stringify(rows.map((row) => row.id))}`);
+  console.log(`histogram_S=${JSON.stringify(rejectionHistogramS)}`);
+  console.log(`histogram_SFair=${JSON.stringify(rejectionHistogramSFair)}`);
+  console.log('| id | arm | admitted | reason | post tokens | facts retained | calls | out tokens | wall ms | cost |');
+  console.log('|---|---|---:|---|---:|---:|---:|---:|---:|---|');
+  rows.forEach((row, index) => {
+    console.log(`| ${row.id} | S | ${1 - row.S.rejected} | ${sReasons[index]} | ${row.S.tokens} | ${row.S.retained}/${row.needles} | ${row.S.calls} | ${row.S.outputTokens} | ${row.S.ms} | subscription |`);
+    console.log(`| ${row.id} | S-fair | ${1 - row.SFair.rejected} | ${sfReasons[index]} | ${row.SFair.tokens} | ${row.SFair.retained}/${row.needles} | ${row.SFair.calls} | ${row.SFair.outputTokens} | ${row.SFair.ms} | subscription |`);
+    console.log(`| ${row.id} | J | ${1 - row.J.rejected} | ${row.J.rejected ? 'skipped' : 'admitted'} | ${row.J.tokens} | ${row.J.retained}/${row.needles} | ${row.J.calls} | ${row.J.outputTokens} | ${row.J.ms} | $${row.J.usd!.toFixed(8)} |`);
+  });
+  console.log(`totals_all S=${JSON.stringify(S)} SFair=${JSON.stringify(SFair)} J=${JSON.stringify(J)}`);
+  console.log(`like_for_like_a_all n=${rows.length} still_rejected_SFair=${likeForLikeSFairAdmitted.stillRejected} SFair_median_retention=${SFair.medians.retention} J_median_retention=${J.medians.retention} SFair_median_tokens=${SFair.medians.tokens} J_median_tokens=${J.medians.tokens}`);
+  console.log(`like_for_like_b_SFair_admitted n=${likeForLikeSFairAdmitted.count} still_rejected_SFair=${likeForLikeSFairAdmitted.stillRejected} SFair_median_retention=${likeForLikeSFairAdmitted.SFair.medians.retention} J_median_retention=${likeForLikeSFairAdmitted.J.medians.retention} SFair_median_tokens=${likeForLikeSFairAdmitted.SFair.medians.tokens} J_median_tokens=${likeForLikeSFairAdmitted.J.medians.tokens}`);
+  console.log(`like_for_like_b_S_prod_admitted n=${likeForLikeSProdAdmitted.count} still_rejected_S=${likeForLikeSProdAdmitted.stillRejected} S_median_retention=${likeForLikeSProdAdmitted.S.medians.retention} J_median_retention=${likeForLikeSProdAdmitted.J.medians.retention} S_median_tokens=${likeForLikeSProdAdmitted.S.medians.tokens} J_median_tokens=${likeForLikeSProdAdmitted.J.medians.tokens}`);
+  console.log(`budget_usd=${BUDGET_USD} previous_paid_usd=${previousPaidUsd} run_paid_usd=${paidUsd} cumulative_paid_usd=${previousPaidUsd + paidUsd}`);
+
+  const verdictAll = J.medians.retention < SFair.medians.retention ? 'report only, do not wire (不接电只留报告)' : 'wiring candidate (可接电候选)';
+  const verdictAdmitted = likeForLikeSFairAdmitted.J.medians.retention < likeForLikeSFairAdmitted.SFair.medians.retention
+    ? 'report only, do not wire (不接电只留报告)' : 'wiring candidate (可接电候选)';
+  console.log(`recommendation_all_15=${verdictAll} token_delta_total_J_minus_SFair=${J.totals.tokens - SFair.totals.tokens} token_delta_median_J_minus_SFair=${J.medians.tokens - SFair.medians.tokens} USD_delta=not_comparable_subscription SFair=subscription J=$${paidUsd.toFixed(8)}`);
+  console.log(`recommendation_admitted_only=${verdictAdmitted} token_delta_total_J_minus_SFair=${likeForLikeSFairAdmitted.J.totals.tokens - likeForLikeSFairAdmitted.SFair.totals.tokens} token_delta_median_J_minus_SFair=${likeForLikeSFairAdmitted.J.medians.tokens - likeForLikeSFairAdmitted.SFair.medians.tokens} USD_delta=not_comparable_subscription SFair=subscription J=$${likeForLikeSFairAdmitted.J.totals.usd.toFixed(8)}`);
+
+  if (smokeOnly) {
+    console.log(`smoke_complete=1 sessions=${rows.length} JSON_written=0`);
+    return;
+  }
+
+  // String values are session ids only; model/billing/reason metadata are named keys.
+  const report = {
+    baselineSubscription: { [baseline.provider]: { [baseline.model]: 1 } },
+    productionDefaultCompactWhenOmitted: { [omittedCompact.provider]: { [omittedCompact.model]: 1 } },
+    productionDefaultCompactWhenUnsetOnBaseline: { [unsetCompact.provider]: { [unsetCompact.model]: 1 } },
+    jevModel: { [JEV_MODEL]: 1 },
+    summaryAsProductionMaxTokens: SUMMARY_AS_PROD_MAX_TOKENS,
+    summaryFairMaxTokens: SUMMARY_FAIR_MAX_TOKENS,
+    originalPlannedSessions: 20,
+    authorizedSessions: MIN_SESSIONS,
+    evaluatedSessions: rows.length,
+    directionalOnly: 1,
     evaluationNonLinkMatchFastPath: 1,
-    budgetUsd: BUDGET_USD, paidUsd, previousAttemptsPaidUsd: previousPaidUsd,
-    cumulativePaidUsd: previousPaidUsd + paidUsd, rows, S, J };
+    budgetUsd: BUDGET_USD,
+    paidUsd,
+    previousAttemptsPaidUsd: previousPaidUsd,
+    cumulativePaidUsd: previousPaidUsd + paidUsd,
+    rejectionHistogramS,
+    rejectionHistogramSFair,
+    rows,
+    S,
+    SFair,
+    J,
+    likeForLikeSFairAdmitted,
+    likeForLikeSProdAdmitted,
+  };
+  assertNumericAndIdsOnly(report, new Set(rows.map((row) => row.id)));
   fs.mkdirSync(path.dirname(OUTPUT), { recursive: true });
   fs.writeFileSync(OUTPUT, JSON.stringify(report, null, 2) + '\n', { flag: 'wx' });
-  console.log('| id | arm | post tokens | facts retained | wall ms | cost |');
-  console.log('|---|---|---:|---:|---:|---|');
-  for (const row of rows) {
-    for (const arm of ['S', 'J'] as const) {
-      const value = row[arm];
-      console.log(`| ${row.id} | ${arm} | ${value.tokens} | ${value.retained}/${row.needles} | ${value.ms} | ${arm === 'S' ? 'subscription' : '$' + value.usd!.toFixed(8)} |`);
-    }
-  }
-  console.log(`totals S=${JSON.stringify(S)} J=${JSON.stringify(J)}`);
-  console.log(`n=${rows.length} original_planned_n=20 directional_only=1`);
-  console.log(J.medians.retention < S.medians.retention ? '不接电只留报告' : '可接电候选');
-  console.log(`token_delta_J_minus_S=${J.totals.tokens - S.totals.tokens} USD_delta=not_comparable_subscription S=subscription J=$${paidUsd.toFixed(8)}`);
+  console.log(`n=${rows.length} original_planned_n=20 directional_only=1 JSON_written=1 output=${OUTPUT}`);
 }
 
 async function main(): Promise<void> {
@@ -397,12 +661,17 @@ async function main(): Promise<void> {
   check(!fs.existsSync(path.join(os.homedir(), '.ship/disabled')), 'automation_disabled');
   check(JEV_MODEL === 'jev-1.13.0', 'jev_model_mismatch');
   const inventoryOnly = args.includes('--inventory');
+  const smokeId = args.find((arg) => arg.startsWith('--smoke-id='))?.slice('--smoke-id='.length);
   if (!inventoryOnly) {
     console.log(`TYPESAFE_API_KEY=${process.env.TYPESAFE_API_KEY?.trim() ? 'set' : 'unset'}`);
     check(process.env.TYPESAFE_API_KEY?.trim(), 'missing_credentials: TYPESAFE_API_KEY=unset; network_calls=0; JSON_written=0');
-    check(!fs.existsSync(OUTPUT), 'output_already_exists: preserve previous run; choose a fresh checkout');
+    if (!smokeId) {
+      check(!fs.existsSync(OUTPUT), 'output_already_exists: preserve previous run; choose a fresh checkout');
+    }
   }
-  const source = args.includes('--dev-db') ? readDevSessions() : readDirectory(args.find((arg) => !arg.startsWith('--')) || path.join(os.homedir(), 'work/jev-eval/compaction-sessions'));
+  const source = args.includes('--dev-db')
+    ? readDevSessions()
+    : readDirectory(args.find((arg) => !arg.startsWith('--')) || path.join(os.homedir(), 'work/jev-eval/compaction-sessions'));
   const selectionPath = args.find((arg) => arg.startsWith('--session-ids='))?.slice('--session-ids='.length);
   const selectedIds: unknown = selectionPath ? JSON.parse(fs.readFileSync(selectionPath, 'utf8')) : undefined;
   if (selectedIds !== undefined) {
@@ -410,6 +679,10 @@ async function main(): Promise<void> {
       && selectedIds.every((id) => typeof id === 'string' && /^[\w-]+$/.test(id))
       && new Set(selectedIds).size === MIN_SESSIONS, 'invalid_authorized_session_ids');
     source.sessions = source.sessions.filter((session) => selectedIds.includes(session.id));
+  }
+  if (smokeId !== undefined) {
+    check(/^[\w-]+$/.test(smokeId), 'invalid_smoke_session_id');
+    source.sessions = source.sessions.filter((session) => session.id === smokeId);
   }
   const qualified: Session[] = [];
   const needlesById = new Map<string, string[]>();
@@ -429,9 +702,10 @@ async function main(): Promise<void> {
       needlesById.set(session.id, extractNeedles(session.messages));
     }
   }
-  console.log(`inventory: total=${source.totalSessions} candidates=${source.sessions.length} qualified=${qualified.length} required=${MIN_SESSIONS} network_calls=0 JSON_written=0`);
-  check(qualified.length >= MIN_SESSIONS, 'BLOCKED: precondition (sessions); network_calls=0; JSON_written=0');
-  if (!inventoryOnly) await evaluate(qualified.slice(0, MIN_SESSIONS), needlesById);
+  const required = smokeId !== undefined ? 1 : MIN_SESSIONS;
+  console.log(`inventory: total=${source.totalSessions} candidates=${source.sessions.length} qualified=${qualified.length} required=${required} network_calls=0 JSON_written=0`);
+  check(qualified.length >= required, 'BLOCKED: precondition (sessions); network_calls=0; JSON_written=0');
+  if (!inventoryOnly) await evaluate(qualified.slice(0, required), needlesById, smokeId !== undefined);
 }
 
 const restoreMatch = installNonLinkMatchFastPath();
