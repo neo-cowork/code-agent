@@ -510,13 +510,13 @@ describe('AutomationReviewInbox', () => {
   it('Write row without forceConfirm shows zh / en tier buttons', async () => {
     listParkedApprovals.mockResolvedValue([makeParked({ kind: 'tool_approval', tool: 'Write', riskClass: null })]);
     render(<AutomationReviewInbox />);
-    expect((await screen.findByTestId('parked-allow-run')).textContent).toBe('到这次做完为止');
+    expect((await screen.findByTestId('parked-allow-run')).textContent).toBe('本次任务内允许');
     expect(screen.getByTestId('parked-allow-24h').textContent).toBe('24 小时内允许');
     cleanup();
 
     i18nState.language = 'en';
     render(<AutomationReviewInbox />);
-    expect((await screen.findByTestId('parked-allow-run')).textContent).toBe('Until this run is done');
+    expect((await screen.findByTestId('parked-allow-run')).textContent).toBe('Allow for this task');
     expect(screen.getByTestId('parked-allow-24h').textContent).toBe('Allow for 24 hours');
   });
 

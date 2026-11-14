@@ -87,6 +87,11 @@ const cases = [
     status: { transcriptionEngine: 'missing' },
   },
   {
+    code: 'transcription_model_missing',
+    key: 'transcriptionModelMissing',
+    status: { transcriptionEngine: 'missing', missing: ['transcription_model_missing'] },
+  },
+  {
     code: 'voice_detection_missing',
     key: 'voiceDetectionMissing',
     status: { voiceDetection: 'missing' },

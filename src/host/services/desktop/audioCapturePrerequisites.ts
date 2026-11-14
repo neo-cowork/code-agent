@@ -11,13 +11,13 @@ import type {
 import { getUserConfigDir } from '../../config/configPaths';
 import { createLogger } from '../infra/logger';
 import { loadVadRuntime, type VadRuntimeLoadResult } from './audioVadRuntime';
+import { findWhisperBinary, hasWhisperModel } from '../media/whisperBinary';
 
 const logger = createLogger('AudioCapturePrerequisites');
 
 const FFMPEG_PATHS = ['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/usr/bin/ffmpeg'];
 const REC_PATHS = ['/opt/homebrew/bin/rec', '/usr/local/bin/rec', '/usr/bin/rec'];
 const SYSTEM_AUDIO_CAPTURE_NAME = 'system-audio-capture';
-const WHISPER_PATHS = ['/opt/homebrew/bin/whisper-cpp', '/usr/local/bin/whisper-cpp'];
 
 function isCommandOnPath(command: string): boolean {
   try {
@@ -45,9 +45,6 @@ function hasSystemAudioRecorder(moduleDir = __dirname): boolean {
   return candidates.some((candidate) => fs.existsSync(candidate));
 }
 
-function hasWhisperEngine(): boolean {
-  return WHISPER_PATHS.some((candidate) => fs.existsSync(candidate)) || isCommandOnPath('whisper-cpp');
-}
 
 function hasQwenEngine(homeDir: string): boolean {
   const qwenPaths = [
@@ -98,7 +95,9 @@ export function getAudioCapturePrerequisites(
   const homeDir = process.env.CODE_AGENT_HOME || os.homedir();
   const microphoneReady = hasMicrophoneRecorder();
   const systemAudioReady = hasSystemAudioRecorder();
-  const transcriptionReady = hasWhisperEngine() || hasQwenEngine(homeDir);
+  // 有 whisper 程序还得有模型才转得了字；两者缺哪个提示不同（程序 vs 模型）
+  const whisperBinary = findWhisperBinary() !== null;
+  const transcriptionReady = (whisperBinary && hasWhisperModel(homeDir)) || hasQwenEngine(homeDir);
   const voiceDetection = detectVoiceDetectionState();
 
   const missing: AudioCaptureMissingPrerequisiteCode[] = [];
@@ -114,7 +113,7 @@ export function getAudioCapturePrerequisites(
   }
 
   if (!transcriptionReady) {
-    missing.push('transcription_engine_missing');
+    missing.push(whisperBinary ? 'transcription_model_missing' : 'transcription_engine_missing');
   }
 
   if (voiceDetection === 'unsupported') {

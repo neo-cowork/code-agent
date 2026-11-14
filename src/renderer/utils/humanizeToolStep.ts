@@ -681,8 +681,12 @@ export function humanizeToolGroupLabel(
     ? t.toolStepHumanize.group
     : t.toolStepHumanize.statusForms[status].group;
   return order
-    .map((bucket) => g[bucket].replace('{count}', String(counts.get(bucket))))
-    .join('、');
+    .map((bucket) => {
+      const count = counts.get(bucket) ?? 0;
+      const singular = count === 1 ? t.toolStepHumanize.groupSingular[status][bucket] : undefined;
+      return (singular ?? g[bucket]).replace('{count}', String(count));
+    })
+    .join(t.toolStepHumanize.listSeparator);
 }
 
 // ============================================================================
