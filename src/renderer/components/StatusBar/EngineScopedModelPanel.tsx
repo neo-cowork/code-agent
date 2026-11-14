@@ -110,7 +110,7 @@ export function EngineScopedModelPanel({
   onOpenSettings,
   onRetryCatalog,
 }: EngineScopedModelPanelProps) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const copy = t.engineModelPanel;
   const currentSource = sourceForKind(sources, currentEngine);
   const currentEngineLabel = AGENT_ENGINE_LABELS[currentEngine];
@@ -191,7 +191,7 @@ export function EngineScopedModelPanel({
                     && source.evidence === 'production'
                     ? copy.stateLoginUnverified
                     : copy.stateAdapterClosed
-                : source.recommendation?.label ?? copy.stateUnavailable;
+                : (language === 'en' ? source.recommendation?.labelEn : undefined) ?? source.recommendation?.label ?? copy.stateUnavailable;
             return (
               <button
                 key={source.manifestId}

@@ -233,6 +233,7 @@ export interface AgentEngineSourceDescriptor {
   iconAsset?: string;
   recommendation?: {
     label: string;
+    labelEn?: string;
     reason: string;
   };
   evidence: 'production' | 'local_spike' | 'official_docs' | 'none';

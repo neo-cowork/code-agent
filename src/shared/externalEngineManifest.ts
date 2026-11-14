@@ -83,6 +83,8 @@ export interface ExternalEngineManifest {
   auditNotes: string[];
   recommendation?: {
     label: string;
+    /** English status label for the engine picker. */
+    labelEn?: string;
     reason: string;
   };
 }
@@ -517,6 +519,7 @@ const EXTERNAL_ENGINE_MANIFESTS: readonly ExternalEngineManifest[] = [
     ],
     recommendation: {
       label: '需要登录',
+      labelEn: 'Sign-in needed',
       reason: '请先在 Qoder Work CLI 完成官方登录，再验证模型目录和真实事件流。',
     },
   },
@@ -549,6 +552,7 @@ const EXTERNAL_ENGINE_MANIFESTS: readonly ExternalEngineManifest[] = [
     ],
     recommendation: {
       label: '可探测',
+      labelEn: 'Can be detected',
       reason: '适合后续通过通用 Manifest + Zulu codec 接入。',
     },
   },
@@ -576,6 +580,7 @@ const EXTERNAL_ENGINE_MANIFESTS: readonly ExternalEngineManifest[] = [
     auditNotes: ['No executable probe or adapter is enabled without repository evidence.'],
     recommendation: {
       label: '推荐了解',
+      labelEn: 'Worth a look',
       reason: '需要完成官方协议与实机验证后才能在 Neo 中选择。',
     },
   },

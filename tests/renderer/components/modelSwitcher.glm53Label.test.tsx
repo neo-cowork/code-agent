@@ -52,6 +52,7 @@ vi.mock('../../../src/renderer/hooks/useI18n', () => ({
   }),
 }));
 
+import { listExternalEngineManifests } from '../../../src/shared/externalEngineManifest';
 import { ModelSwitcher } from '../../../src/renderer/components/StatusBar/ModelSwitcher';
 import {
   buildEngineReliabilitySummary, buildProviderBillingSummary, buildProviderHealthSummary,
@@ -88,6 +89,14 @@ const xiaomiSettings = {
   },
 };
 
+// Engines that are listed but cannot be picked yet carry a status label from the shared manifest.
+const engineSources = { list: [] as unknown[] };
+const recommendedSources = listExternalEngineManifests().filter((manifest) => manifest.recommendation).map((manifest) => ({
+  manifestId: manifest.id, label: manifest.label, summary: '', detected: false, selectable: false, authState: 'unknown',
+  modelSelection: 'unavailable', evidence: 'none', credentialOwner: 'official_client', auditNotes: [],
+  recommendation: manifest.recommendation,
+}));
+
 function installDomainApi(settings: unknown = settingsWithLabel, health: Record<string, unknown> | null = null, override: unknown = null) {
   const invoke = vi.fn(async (_domain: string, action: string) => {
     if (action === 'get') return { success: true, data: settings };
@@ -96,7 +105,7 @@ function installDomainApi(settings: unknown = settingsWithLabel, health: Record<
     if (action === 'get_search_capabilities') {
       return { success: false, data: null };
     }
-    if (action === 'listSources') return { success: true, data: [] };
+    if (action === 'listSources') return { success: true, data: engineSources.list };
     if (action === 'listModels') return { success: true, data: { catalog: null } };
     return { success: true, data: null };
   });
@@ -105,6 +114,7 @@ function installDomainApi(settings: unknown = settingsWithLabel, health: Record<
 }
 
 beforeEach(() => {
+  engineSources.list = [];
   ui.language = 'zh';
   appState.modelConfig.provider = 'zhipu';
   sessionState.sessions[0].engine.kind = 'native';
@@ -182,6 +192,8 @@ describe('ModelSwitcher GLM-5.3 label', () => {
   it('English UI: the adaptive trigger label, the empty state, the engine picker and the helper badges contain no Chinese text', async () => {
     ui.language = 'en';
     appState.modelConfig.provider = 'xiaomi';
+    engineSources.list = recommendedSources;
+    expect(recommendedSources.length).toBeGreaterThan(0);
     installDomainApi(xiaomiSettings, null, { adaptive: true });
     const first = render(<ModelSwitcher currentModel="mimo-v2.5-pro" />);
     const trigger = screen.getByRole('button', { name: en.settings.model.models.switcherPanel.triggerAria });
@@ -190,6 +202,7 @@ describe('ModelSwitcher GLM-5.3 label', () => {
     await waitFor(() => expect(document.body.querySelector('[data-current-engine-row]')).not.toBeNull());
     fireEvent.click(document.body.querySelector('[data-current-engine-row] button') as HTMLElement);
     await waitFor(() => expect(document.body.querySelector('[data-engine-picker]')).not.toBeNull());
+    await waitFor(() => expect(document.body.querySelectorAll('[data-engine-source]').length).toBe(recommendedSources.length));
     expect(visibleText().split('\n').filter((line) => CJK.test(line))).toEqual([]);
     first.unmount();
 
