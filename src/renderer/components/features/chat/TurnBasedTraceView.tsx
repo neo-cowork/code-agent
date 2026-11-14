@@ -972,13 +972,12 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     });
   }, [projection.turns]);
 
-  const { handleRailJump, handleRailNodeJump, expandedTurnId } = useTurnRailJump({
+  const { handleRailJump, handleRailNodeJump, expansionRequest } = useTurnRailJump({
     sessionId: projection.sessionId, turnsRef: projectionTurnsRef, virtuosoRef,
     scrollerRef: scrollerElementRef, followRef: keepActiveOutputVisibleRef,
     cancelRef: activeDisplayScrollCancelRef, nodeSelector: getTraceNodeSelector,
   });
 
-  // Render individual turn card
   const itemContent = useCallback(
     (virtuosoIndex: number, turn: TraceTurn) => {
       const index = virtuosoIndex - firstItemIndex;
@@ -1001,7 +1000,8 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
               turn={turn}
               sessionId={projection.sessionId}
               defaultExpanded={isStreaming || (isLast && workDetailPolicy.keepLastTurnOpen)}
-              forceExpanded={hasSearchMatch || turn.turnId === expandedTurnId}
+              forceExpanded={hasSearchMatch}
+              expandRequest={expansionRequest?.turnId === turn.turnId ? expansionRequest : undefined}
               highlightActive={isActiveMatchTurn}
               isActiveTurn={isStreaming}
               isLastTurn={isLast}
@@ -1025,7 +1025,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
         </div>
       );
     },
-    [activeMatchIndex, afterFirstUserMessage, beforeFirstUserMessage, expandedTurnId, firstItemIndex, isProjectionSessionProcessing, onRewindUserPrompt, outputFollowTurnIndex, projection.activeTurnIndex, projection.sessionId, projection.turns, projectionStreamSnapshot, scheduleActiveDisplayScroll, searchMatches, sessionStatus, suppressActiveBusySignal, workDetailPolicy],
+    [activeMatchIndex, afterFirstUserMessage, beforeFirstUserMessage, expansionRequest, firstItemIndex, isProjectionSessionProcessing, onRewindUserPrompt, outputFollowTurnIndex, projection.activeTurnIndex, projection.sessionId, projection.turns, projectionStreamSnapshot, scheduleActiveDisplayScroll, searchMatches, sessionStatus, suppressActiveBusySignal, workDetailPolicy],
   );
 
   // Header: load-older indicator

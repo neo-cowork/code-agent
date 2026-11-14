@@ -24,7 +24,7 @@ it('expands the target, retries virtual mounting, aligns the exact user node and
   };
   const { result, rerender } = renderHook(({ sessionId }) => useTurnRailJump({ ...args, sessionId }), { initialProps: { sessionId: 'session-1' } });
   act(() => result.current.handleRailNodeJump('turn-1', 'added-2'));
-  expect(result.current.expandedTurnId).toBe('turn-1');
+  expect(result.current.expansionRequest).toEqual({ sessionId: 'session-1', turnId: 'turn-1', nodeId: 'added-2' });
   expect(args.followRef.current).toBe(false);
   expect(previousCancel).toHaveBeenCalledOnce();
   expect(scrollToIndex).toHaveBeenCalledWith({ index: 0, align: 'start', behavior: 'auto' });
@@ -36,8 +36,8 @@ it('expands the target, retries virtual mounting, aligns the exact user node and
   tick(); expect(node.scrollIntoView).toHaveBeenCalledWith({ block: 'start', behavior: 'auto' });
   expect(other.scrollIntoView).not.toHaveBeenCalled();
   rerender({ sessionId: 'session-2' });
-  expect(result.current.expandedTurnId).toBeNull(); expect(frames.size).toBe(0);
+  expect(result.current.expansionRequest).toBeUndefined(); expect(frames.size).toBe(0);
   act(() => result.current.handleRailJump('turn-2'));
-  expect(result.current.expandedTurnId).toBeNull();
+  expect(result.current.expansionRequest).toBeUndefined();
   expect(scrollToIndex).toHaveBeenLastCalledWith({ index: 1, align: 'start', behavior: 'auto' });
 });

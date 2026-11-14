@@ -14,7 +14,7 @@ interface TurnRailJumpOptions {
 
 /** Share the rail's turn navigation and settle an added message after virtual mounting. */
 export function useTurnRailJump({ sessionId, turnsRef, virtuosoRef, scrollerRef, followRef, cancelRef, nodeSelector }: TurnRailJumpOptions) {
-  const [expanded, setExpanded] = useState<{ sessionId: string; turnId: string } | null>(null);
+  const [expanded, setExpanded] = useState<{ sessionId: string; turnId: string; nodeId: string } | null>(null);
   useEffect(() => () => { cancelRef.current?.(); }, [cancelRef, sessionId]);
 
   const jump = useCallback((turnId: string, nodeId?: string) => {
@@ -23,7 +23,7 @@ export function useTurnRailJump({ sessionId, turnsRef, virtuosoRef, scrollerRef,
     followRef.current = false;
     cancelRef.current?.();
     cancelRef.current = null;
-    setExpanded(nodeId ? { sessionId, turnId } : null);
+    setExpanded(nodeId ? { sessionId, turnId, nodeId } : null);
     virtuosoRef.current?.scrollToIndex({ index, align: 'start', behavior: 'auto' });
     if (!nodeId) return;
 
@@ -55,5 +55,5 @@ export function useTurnRailJump({ sessionId, turnsRef, virtuosoRef, scrollerRef,
 
   const handleRailJump = useCallback((turnId: string) => jump(turnId), [jump]);
   const handleRailNodeJump = useCallback((turnId: string, nodeId: string) => jump(turnId, nodeId), [jump]);
-  return { handleRailJump, handleRailNodeJump, expandedTurnId: expanded?.sessionId === sessionId ? expanded.turnId : null };
+  return { handleRailJump, handleRailNodeJump, expansionRequest: expanded?.sessionId === sessionId ? expanded : undefined };
 }
