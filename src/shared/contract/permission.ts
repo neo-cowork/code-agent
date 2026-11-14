@@ -182,6 +182,9 @@ export interface PermissionRequest {
     newContent?: string;
     server?: string;
     toolName?: string;
+    /** Host catalog classification; never trusted from tool arguments or renderer input. */
+    connectorAccess?: { connectorId: string; connectorName: string; access: 'read' | 'write' };
+    purpose?: string;
     /** commandSafety 结果；未识别却需确认时由执行层覆写为 unknown，供审批卡生成人话后果。 */
     commandRiskLevel?: 'safe' | 'unknown' | 'low' | 'medium' | 'high' | 'critical';
     commandSecurityFlags?: string[];

@@ -552,6 +552,10 @@ export function humanizeToolFailureReason(toolCall: Pick<ToolCall, 'name' | 'res
 
   const code = sanitizeCodeParamValue(metadata?.code);
   if (code) {
+    if (toolCall.name === 'delegate_session' && /^[a-z][a-z0-9_]*$/.test(code)) {
+      const table = t.toolStepHumanize.delegationRejectionCodes as Record<string, string | undefined>;
+      return table[code] ?? t.toolStepHumanize.delegationRejectionFallback;
+    }
     // 先查裸码人话表（FB-746），翻不动才退回「错误码 X」——数字退出码与 HTTP nnn 不进表，原样保留。
     return mapRawToolCodeCopy(code, t) ?? t.toolStepHumanize.failureCode.replace('{code}', code);
   }

@@ -8,7 +8,7 @@ const hook = fs.readFileSync(path.join(process.cwd(), 'src/renderer/hooks/useKey
 describe('macOS Settings menu contract', () => {
   it('puts Settings with Cmd+, between About and Services in the app submenu', () => {
     const submenu = main.slice(main.indexOf('let app_submenu ='), main.indexOf('let edit_submenu ='));
-    expect(submenu).toContain('MenuItem::with_id(handle, "open_settings", "设置…", true, Some("Cmd+,"))');
+    expect(submenu).toContain('MenuItem::with_id(handle, "open_settings", labels.settings, true, Some("Cmd+,"))');
     expect(submenu.indexOf('PredefinedMenuItem::about')).toBeLessThan(submenu.indexOf('"open_settings"'));
     expect(submenu.indexOf('"open_settings"')).toBeLessThan(submenu.indexOf('PredefinedMenuItem::services'));
   });

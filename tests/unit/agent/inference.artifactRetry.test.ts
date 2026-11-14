@@ -730,7 +730,7 @@ describe('contextAssembly inference artifact retry', () => {
     expect(ctx.runtime.messages).toContainEqual(
       expect.objectContaining({
         role: 'system',
-        content: '已用视觉模型 mimo-v2-omni 读取图片，继续由 mimo-v2.5-pro 回答。',
+        content: '已先读取图片内容，再继续回答。',
         metadata: expect.objectContaining({
           agentRecoveryNotice: { kind: 'vision_preflight_used' },
         }),

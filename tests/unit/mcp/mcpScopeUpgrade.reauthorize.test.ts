@@ -71,6 +71,32 @@ describe('reauthorize = invalidate tokens + reconnect (item-1 hypothesis against
     await client.disconnect('fake-notion');
   }, 60_000);
 
+  it('401 on a tool call (tokens dropped server-side) carries the authorization-required marker; the build helper turns it into a lost_login card', async () => {
+    const client = new MCPClient();
+    const config = { name: 'fake-401', type: 'http-streamable' as const, serverUrl: fake.url, enabled: true, auth: 'oauth' as const };
+    client.addServer(config);
+    await client.connect(config).catch(() => {});
+    await client.waitForPendingOAuthAuthorization('fake-401');
+    expect(client.isConnected('fake-401')).toBe(true);
+
+    fake.revokeAllTokens();
+    // 浏览器自动同意会静默重新授权；这里不要它，才能看到裸 401
+    const { openExternal } = await import('../../../src/host/platform/nativeShell');
+    vi.mocked(openExternal).mockImplementationOnce(async () => {});
+    const failed = await client.callTool('t401', 'fake-401', 'write_page', {});
+    fs.appendFileSync(EVIDENCE, `401 tool call result: ${JSON.stringify({ success: failed.success, error: failed.error, metadata: failed.metadata })}\n`);
+    expect(failed.success).toBe(false);
+    expect(failed.metadata).toEqual({ mcpAuthorizationRequired: true });
+    const { buildConnectorToolFailureEvent } = await import('../../../src/host/agent/runtime/connectorScopeCard');
+    const event = buildConnectorToolFailureEvent({ success: false, metadata: { ...failed.metadata, server: 'fake-401' } });
+    fs.appendFileSync(EVIDENCE, `401 card event: ${JSON.stringify(event)}\n`);
+    expect(event).toEqual({
+      type: 'connector_required',
+      data: { connectors: [{ id: 'fake-401', source: 'selected', reason: 'lost_login', lostCode: 'mcp_oauth_authorization_required' }] },
+    });
+    await client.disconnect('fake-401');
+  }, 60_000);
+
   it('declined / non-OAuth servers report failure without throwing', async () => {
     const client = new MCPClient();
     client.addServer({ name: 'plain', type: 'http-streamable', serverUrl: fake.url, enabled: true });

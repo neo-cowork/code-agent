@@ -8,6 +8,7 @@
 // ============================================================================
 
 import type { ToolRegistry } from '../registry';
+import { installBrowserJevRouteProbe } from './network/browserJevAvailability';
 
 // ── Eager schema imports (P0-7 方案 A — single source of truth) ───────────
 // .schema.ts 文件只 type-import ToolSchema，无运行时副作用；可安全 eager 导入。
@@ -193,6 +194,7 @@ import { registerCrossSessionDelegationTools } from './delegation/registration';
 
 export function registerMigratedTools(registry: ToolRegistry, platform: NodeJS.Platform = process.platform,
   crossSessionDelegationEnabled: boolean = isCrossSessionDelegationEnabled()): void {
+  installBrowserJevRouteProbe(); // Browser execute_goal 暴露面依赖 Jev 路由（shared 层不能直接 import host）
   // reply_to_event（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）：注册无条件（dispatch 按名解析），
   // 但不在 CORE_TOOLS / DEFERRED_TOOLS_META——只有绑定事件目的地的事件 run 由
   // withEventReplyTools 注入工具表，普通会话与 ToolSearch 目录都看不到它。

@@ -19,8 +19,10 @@ import {
   Mic,
   MicOff,
   Volume2,
+  Users,
   Eye,
 } from 'lucide-react';
+import type { AudioCaptureMode } from '@shared/contract/audioCapture';
 import {
   getNativeDesktopCollectorStatus,
   listRecentNativeDesktopEvents,
@@ -48,6 +50,8 @@ import {
   formatDate,
   formatDurationShort,
   formatTime,
+  nextAudioCaptureMode,
+  speakerName,
   speakerStyle,
   type AppCluster,
   type HourBlock,
@@ -238,7 +242,7 @@ const MeetingDetailPanel: React.FC<{
                   return (
                     <div key={id} className="flex items-center gap-1.5">
                       <div className={`w-2.5 h-2.5 rounded-full ${style.dot}`} />
-                      <span className={`text-[11px] ${style.text}`}>{text.speaker} {id}</span>
+                      <span className={`text-[11px] ${style.text}`}>{speakerName(id, text)}</span>
                     </div>
                   );
                 })}
@@ -308,7 +312,7 @@ const MeetingDetailPanel: React.FC<{
                       <div className={`shrink-0 w-16 flex items-center gap-1 pt-0.5`}>
                         <div className={`w-2 h-2 rounded-full shrink-0 ${style.dot}`} />
                         <span className={`text-[10px] font-medium ${style.text}`}>
-                          {text.speaker}{spkId}
+                          {speakerName(spkId, text)}
                         </span>
                       </div>
                     ) : (
@@ -459,7 +463,7 @@ const AppGroupCard: React.FC<{
                     return (
                       <div key={seg.id} className="flex gap-1.5 text-[12px]">
                         {style && (
-                          <span className={`shrink-0 ${style.text}`}>{text.speaker}{spkId}:</span>
+                          <span className={`shrink-0 ${style.text}`}>{speakerName(spkId, text)}:</span>
                         )}
                         <span className="text-zinc-400 line-clamp-1">{seg.transcript}</span>
                       </div>
@@ -768,7 +772,7 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
     }
   };
 
-  const [audioCaptureMode, setAudioCaptureMode] = useState<'microphone' | 'system-audio'>('system-audio');
+  const [audioCaptureMode, setAudioCaptureMode] = useState<AudioCaptureMode>('meeting');
 
   const openClearConfirm = async () => {
     if (clearBusy) return;
@@ -895,11 +899,15 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
           {/* 采集模式切换（非录音状态时可切换） */}
           {!audioStatus?.capturing && (
             <button /* ds-allow:button: 采集模式切换，自定义小尺寸 chip+图标随状态切换，primitive 无对应变体 */
-              onClick={() => setAudioCaptureMode(m => m === 'microphone' ? 'system-audio' : 'microphone')}
-              title={audioCaptureMode === 'system-audio' ? nativeDesktopText.audioMode.systemAudioTitle : nativeDesktopText.audioMode.microphone}
+              onClick={() => setAudioCaptureMode(nextAudioCaptureMode)}
+              title={audioCaptureMode === 'meeting'
+                ? nativeDesktopText.audioMode.meetingTitle
+                : audioCaptureMode === 'system-audio' ? nativeDesktopText.audioMode.systemAudioTitle : nativeDesktopText.audioMode.microphone}
               className="px-2 py-1 rounded-lg text-[11px] inline-flex items-center gap-1 bg-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 border border-zinc-700/50 transition-colors"
             >
-              {audioCaptureMode === 'system-audio' ? (
+              {audioCaptureMode === 'meeting' ? (
+                <><Users className="w-3 h-3" /> {nativeDesktopText.audioMode.meeting}</>
+              ) : audioCaptureMode === 'system-audio' ? (
                 <><Volume2 className="w-3 h-3" /> {nativeDesktopText.audioMode.systemAudio}</>
               ) : (
                 <><Mic className="w-3 h-3" /> {nativeDesktopText.audioMode.microphone}</>
@@ -912,7 +920,9 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
             disabled={audioBusy}
             title={audioStatus?.capturing
               ? nativeDesktopText.recording.stopTitle
-              : audioCaptureMode === 'system-audio'
+              : audioCaptureMode === 'meeting'
+                ? nativeDesktopText.recording.meetingTitle
+                : audioCaptureMode === 'system-audio'
                 ? nativeDesktopText.recording.systemAudioTitle
                 : nativeDesktopText.recording.microphoneTitle}
             className={`px-2.5 py-1 rounded-lg text-[11px] inline-flex items-center gap-1 transition-colors ${
@@ -1010,7 +1020,10 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
           {audioStatus?.capturing && (
             <span className="text-badge-danger">
               {nativeDesktopText.recording.recording}{nativeDesktopText.separator}{audioStatus.totalSegments}{nativeDesktopText.units.segmentSuffix}{nativeDesktopText.separator}{audioStatus.asrEngine}
+              {audioStatus.captureMode === 'meeting' ? `${nativeDesktopText.separator}${nativeDesktopText.audioMode.meeting}` : ''}
               {audioStatus.captureMode === 'system-audio' ? `${nativeDesktopText.separator}${nativeDesktopText.audioMode.systemAudio}` : ''}
+              {audioStatus.requestedMode && audioStatus.requestedMode !== audioStatus.captureMode
+                ? `${nativeDesktopText.separator}${nativeDesktopText.audioMode.degradedToMicrophone}` : ''}
             </span>
           )}
         </div>

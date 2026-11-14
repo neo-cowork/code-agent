@@ -10,6 +10,8 @@ import { normalizeErrorMessage } from '../../lightMemory/normalizeErrorMessage';
 import { formatThrownError } from '../../../shared/utils/providerError';
 import { isQuotaSuspendWaitMs, isQuotaWaitSuspendEligible, isQuotaWaitSuspendError, QuotaWaitSuspendError } from './quotaWaitSuspend';
 
+import { BAD_SUCCESS_BODY_MAX_RETRIES, isRetryableBadSuccessBody } from './badSuccessBody';
+
 export { isQuotaWaitSuspendError, QuotaWaitSuspendError };
 
 /** Global retry event emitter for CLI visibility */
@@ -154,6 +156,8 @@ export function isRetryableModelCallError(err: unknown): boolean {
   const errCode = (err as NodeJS.ErrnoException).code;
   if (includesAnyPattern(msg, NON_RETRYABLE_PATTERNS)) return false;
   if (includesAnyPattern(msg, FALLBACK_ONLY_PATTERNS)) return false;
+  // 2xx 但响应体不可用（截断/空体/HTML）：结构判定，状态码 200 不在下面的白名单里。
+  if (isRetryableBadSuccessBody(err)) return true;
   const status = getErrorStatus(err);
   // 显式 4xx 护栏：鉴权/欠费/参数类确定性错误（400-404、409、422）绝不重试——
   // 文案未收录时（如国内 provider 中文报错）也不能靠 {429,5xx} 白名单漏进重试，
@@ -599,6 +603,7 @@ export async function withTransientRetry<T>(
   const fingerprintOwner = { provider: providerName, model };
   const healthMonitor = getProviderHealthMonitor();
   let timeoutRetriesUsed = 0;
+  let badBodyRetriesUsed = 0;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const startTime = Date.now();
@@ -624,13 +629,17 @@ export async function withTransientRetry<T>(
         const timeoutBudgetLeft = !timeoutError
           || maxTimeoutRetries === undefined
           || timeoutRetriesUsed < maxTimeoutRetries;
-        if (!timeoutBudgetLeft) {
+        const badBodyBudgetLeft = !isRetryableBadSuccessBody(err) || badBodyRetriesUsed < BAD_SUCCESS_BODY_MAX_RETRIES;
+        if (!badBodyBudgetLeft) {
+          logger.warn(`[${providerName}] 2xx 坏响应体已重试 ${badBodyRetriesUsed} 次仍失败，停止重试: "${msg}"`);
+        } else if (!timeoutBudgetLeft) {
           logger.warn(`[${providerName}] 客户端超时重试已达上限 (${maxTimeoutRetries})，放弃重试: "${msg}"`);
         } else if (noted?.tripped) {
           stopForFingerprint = true;
           logger.warn(`[${providerName}] 同一可重试错误指纹已连续 ${noted.streak} 次，停止重试: "${msg}"`);
         } else {
           if (timeoutError) timeoutRetriesUsed += 1;
+          if (isRetryableBadSuccessBody(err)) badBodyRetriesUsed += 1;
           // 优先尊重上游的 retry-after 提示，否则指数退避 + jitter（roadmap 1.9）
           const retryAfterMs = extractRetryAfterMs(err);
           const delay = computeRetryBackoffMs(attempt, baseDelay, retryAfterMs);

@@ -710,6 +710,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
         const latestUserMessage = [...modelMessages].reverse().find((message) => message.role === 'user');
         commandCenterPreannounce = emitCommandCenterToolStart({
           toolName: chunk.toolCall?.name,
+          locale: getConfigService().getSettings().ui.language,
           commandCenterEnabled: ctx.runtime.allowedToolNames?.includes('delegate_task') === true,
           streamedContent: ctx.runtime.turn.lastStreamedContent,
           existingPreannounce: commandCenterPreannounce,
@@ -838,7 +839,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       if (unattendedRun) ctx.inferenceRecovery.consecutiveStreamBreakRounds = streamBrokeThisRound ? ctx.inferenceRecovery.consecutiveStreamBreakRounds + 1 : roundSucceeded ? 0 : ctx.inferenceRecovery.consecutiveStreamBreakRounds;
     }
     if (!ctx.runtime.control.isCancelled) contentStreamFilter.finish(response.content);
-    response = applyCommandCenterPreannounce(response, commandCenterPreannounce);
+    response = applyCommandCenterPreannounce(response, commandCenterPreannounce, extractUserRequestText([...modelMessages].reverse().find((message) => message.role === 'user')));
     if (pendingCapabilityFallback && !response.fallback) {
       response.actualProvider = pendingCapabilityFallback.to.provider;
       response.actualModel = pendingCapabilityFallback.to.model;

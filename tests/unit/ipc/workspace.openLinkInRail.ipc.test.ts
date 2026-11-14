@@ -43,7 +43,7 @@ describe('workspace openLinkInRail wiring', () => {
       surfaceSessionId: 'surface-user',
       snapshot: snapshot('conversation-a'),
     }));
-    const keptState = vi.fn(() => ({ state: 'none' as const, url: null, title: null }));
+    const keptState = vi.fn(() => ({ state: 'none' as const, url: null, title: null, reason: null }));
     const links: UserBrowserLinks = {
       open,
       end,
@@ -108,7 +108,7 @@ describe('workspace openLinkInRail wiring', () => {
       surfaceSessionId: 'surface-user',
       snapshot: snapshot('conversation-a'),
     }));
-    const keptState = vi.fn(() => ({ state: 'none' as const, url: null, title: null }));
+    const keptState = vi.fn(() => ({ state: 'none' as const, url: null, title: null, reason: null }));
     const links: UserBrowserLinks = {
       open,
       end,
@@ -168,7 +168,7 @@ describe('workspace openLinkInRail wiring', () => {
 
   // ── N-BROWSER-KEEP-RESULT-PAGE：getKeptResultPage / adoptKeptResultPage ──
 
-  function createKeptLinks() {
+  function createKeptLinks(): UserBrowserLinks {
     return {
       open: vi.fn(async () => ({ conversationId: 'c', runId: 'r', surfaceSessionId: 's', snapshot: snapshot('c') })),
       end: vi.fn(async () => null),
@@ -181,8 +181,8 @@ describe('workspace openLinkInRail wiring', () => {
         surfaceSessionId: 'surface-user',
         snapshot: snapshot('conversation-a'),
       })),
-      keptState: vi.fn(() => ({ state: 'kept', url: 'https://example.test/result', title: 'Result' })),
-    } as unknown as UserBrowserLinks;
+      keptState: vi.fn(() => ({ state: 'kept' as const, url: 'https://example.test/result', title: 'Result', reason: 'keep_result_page' as const })),
+    };
   }
 
   function installKeptRoutes(links: UserBrowserLinks) {
@@ -212,6 +212,7 @@ describe('workspace openLinkInRail wiring', () => {
       state: 'kept',
       url: 'https://example.test/result',
       title: 'Result',
+      reason: 'keep_result_page',
     });
     expect(links.keptState).toHaveBeenCalledWith('conversation-a');
   });
@@ -250,6 +251,7 @@ describe('workspace openLinkInRail wiring', () => {
     } satisfies IPCRequest) as { success: boolean; error?: { message?: string } };
 
     expect(response.success).toBe(false);
-    expect(response.error?.message).toContain('No kept result page');
+    expect(response.error?.message).toContain('这一页的浏览器窗口已经关闭');
+    expect(response.error?.message).not.toContain('No kept result page');
   });
 });

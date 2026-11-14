@@ -697,7 +697,7 @@ export class SurfaceExecutionRuntime {
   async control(
     subject: SurfaceGrantSubjectV1,
     action: SurfaceSessionControlActionV1,
-    options?: { reason?: string; timeoutMs?: number },
+    options?: Parameters<SurfaceConversationControlService['control']>[2],
   ): Promise<void | SurfaceTakeoverControlV1> {
     if (action === 'continue') {
       throw new SurfaceExecutionRuntimeError({
@@ -733,6 +733,7 @@ export class SurfaceExecutionRuntime {
           availableControls: ['stop'],
         });
         try {
+          this.interrupts.prepareRunEnd(subject);
           this.grants.revokeForSession(subject);
           await this.conversationControl.cancelPendingTakeover(subject);
           await this.interrupts.endSession(subject);

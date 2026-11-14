@@ -2,10 +2,11 @@
 //
 // 失败句本身走 addMessageToSession（按 owner 过滤），会话不可读时同样写不进——
 // 唤醒轮失败 + 失败句写不进叠在一起，用户就什么都看不到。这里先立刻写一次，
-// 写不进就等登录态变化再写最后一次（一次性，不无限等）。文案复用 foregroundWake
+// 写不进就等原 owner 的登录态信号补写一次（无轮询）。文案复用 foregroundWake
 // 的句式，不自造新文案。刻意只依赖 foregroundWake / authService / logger：
 // idle-wake 等轻消费方动态引它不会再拖进 sessionManager 那条重链。
 import { formatBackgroundWakeFailureNote, recordBackgroundWakeFailureNote } from './foregroundWake';
+import { isSessionNotAccessibleError } from './sessionAccessRetry';
 import { getAuthService } from '../auth/authService';
 import { createLogger } from '../infra/logger';
 
@@ -21,7 +22,7 @@ export async function recordBackgroundWakeFailureNoteWithOwnerRetry(input: {
   const write = (): Promise<void> => recordBackgroundWakeFailureNote(
     input.sessionId,
     content,
-    { taskId: input.taskId, reason: input.reason },
+    { taskId: input.taskId, reason: input.reason, title: input.shortName },
   );
   const warnNotRecorded = (error: unknown): void => {
     logger.warn('Background wake failure note not recorded', {
@@ -38,10 +39,15 @@ export async function recordBackgroundWakeFailureNoteWithOwnerRetry(input: {
     warnNotRecorded(error);
   }
   try {
+    let inFlight = false;
     const unsubscribe = getAuthService().addAuthChangeCallback((user) => {
-      if (!user) return;
-      unsubscribe();
-      void write().catch(warnNotRecorded);
+      if (!user || inFlight) return;
+      inFlight = true;
+      void write().then(unsubscribe).catch((error: unknown) => {
+        warnNotRecorded(error);
+        // An unrelated account must not consume the original owner's note.
+        if (!isSessionNotAccessibleError(error)) unsubscribe();
+      }).finally(() => { inFlight = false; });
     });
   } catch (error) {
     warnNotRecorded(error);
