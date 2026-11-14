@@ -11,6 +11,7 @@ import {
   printKeyValue,
 } from './_helpers.ts';
 import { RouteTraceChip } from '../../src/renderer/components/features/chat/RouteTraceChip.tsx';
+import { zh } from '../../src/renderer/i18n/zh.ts';
 import {
   buildProviderBillingSummary,
   buildProviderHealthSummary,
@@ -131,6 +132,7 @@ export function buildModelStrategySurfaceVisibilityResult(): ModelStrategySurfac
     endpoint: 'https://commonstack.example/v1',
   }));
   const tooltip = formatNativeModelSwitcherTooltip({
+    labels: zh.settings.model.models.switcherTooltip,
     engineLabel: 'Neo',
     currentModel: 'mimo-v2.5-pro',
     displayProvider: 'xiaomi',
@@ -139,8 +141,8 @@ export function buildModelStrategySurfaceVisibilityResult(): ModelStrategySurfac
     overridden: false,
     billingSummary: buildProviderBillingSummary('payg'),
     healthSummary: buildProviderHealthSummary({ status: 'healthy', latencyP50: 120, errorRate: 0 }),
-    effort: { label: 'High' },
-    thinkingLabel: 'Think',
+    effort: { value: 'high', label: 'High' },
+    thinkingEnabled: true,
   });
 
   const checks: Record<string, boolean> = {
@@ -184,7 +186,7 @@ export function buildModelStrategySurfaceVisibilityResult(): ModelStrategySurfac
       'OpenAI-compatible',
       'commonstack.example/v1',
     ]),
-    modelSwitcherTooltipShowsTaskStrategyContext: tooltip === '自动路由（按任务、成本和能力切换，当前主任务 mimo-v2.5-pro） · Engine: Neo · 计费: 按量 · Provider: 健康 · Effort: High · Thinking: Think',
+    modelSwitcherTooltipShowsTaskStrategyContext: tooltip === '自动路由（按任务、成本和能力切换，当前主任务 mimo-v2.5-pro） · 引擎: Neo · 计费: 按量 · 服务: 健康 · 思考深度: 高 · 思考: 开',
   };
   const failedChecks = Object.entries(checks)
     .filter(([, passed]) => !passed)
