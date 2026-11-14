@@ -17,6 +17,7 @@ vi.mock('../../../src/host/tools/protocolRegistry', async () => {
   });
 
 import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
+import type { DeferredToolMeta } from '../../../src/shared/contract/toolSearch';
 import type { ToolModule, ToolSchema } from '../../../src/host/protocol/tools';
 import {
   getDeferredToolsToPreloadForTurn,
@@ -341,8 +342,8 @@ describe('deferred tool preload', () => {
   });
 
   it('文字前台：用户 MCP 服务器的工具直接送 schema（非 deferred），内置服务器仍不预载', () => {
-    const meta = (server: string, tool: string) => ({
-      name: `mcp__${server}__${tool}`, shortDescription: tool, tags: ['mcp'], aliases: [], source: 'mcp' as const, mcpServer: server,
+    const meta = (server: string, tool: string): DeferredToolMeta => ({
+      name: `mcp__${server}__${tool}`, shortDescription: tool, tags: ['mcp'], aliases: [], source: 'mcp', mcpServer: server,
     });
     getToolSearchService().registerMCPTools([
       meta('external-import-nonce', 'get_random_nonce'),

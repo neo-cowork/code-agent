@@ -11,12 +11,12 @@ import type { MCPServerConfig } from './types';
 
 // 内置默认服务器名（与 mcpDefaultServers.getDefaultMCPServers 同步，漂移由单测守住）。
 // 静态列出而不是运行时调 getDefaultMCPServers：后者读 configService/环境，前台装配路径不该依赖它。
-export const BUILTIN_MCP_SERVER_NAMES: ReadonlySet<string> = new Set([
+const BUILTIN_MCP_SERVER_NAMES: ReadonlySet<string> = new Set([
   CUA_DRIVER_SERVER_NAME, 'argus', 'deepwiki', 'filesystem', 'git', 'github', 'sqlite',
   'brave-search', 'memory', 'sequential-thinking', 'puppeteer', 'docker',
 ]);
 
-export function selectForegroundMcpServerIds(
+function selectForegroundMcpServerIds(
   configs: readonly Pick<MCPServerConfig, 'name' | 'scope' | 'enabled'>[],
   builtinNames: ReadonlySet<string>,
 ): string[] {

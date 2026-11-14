@@ -12,37 +12,8 @@ vi.mock('../../../src/host/config/configPaths', async () => {
   };
 });
 
-import {
-  BUILTIN_MCP_SERVER_NAMES,
-  getForegroundMcpServerIds,
-  selectForegroundMcpServerIds,
-} from '../../../src/host/mcp/foregroundMcpServers';
+import { getForegroundMcpServerIds } from '../../../src/host/mcp/foregroundMcpServers';
 import { getDefaultMCPServers } from '../../../src/host/mcp/mcpDefaultServers';
-import type { MCPConfigScope } from '../../../src/host/mcp/types';
-
-const cfg = (name: string, scope: MCPConfigScope, enabled = true) => ({ name, scope, enabled });
-
-describe('selectForegroundMcpServerIds', () => {
-  it('只收 user scope、已启用、且不在内置默认名单里的服务器', () => {
-    expect(selectForegroundMcpServerIds([
-      cfg('external-import-nonce', 'user'),
-      cfg('disabled-import', 'user', false),
-      cfg('cua-driver', 'builtin'),
-      cfg('deepwiki', 'builtin'),
-      cfg('github', 'user'),
-      cfg('from-repo', 'project'),
-      cfg('local-one', 'local'),
-      cfg('cloud-one', 'cloud'),
-      cfg('runtime-one', 'runtime'),
-    ], BUILTIN_MCP_SERVER_NAMES)).toEqual(['external-import-nonce']);
-  });
-
-  it('BUILTIN_MCP_SERVER_NAMES 覆盖 getDefaultMCPServers 返回的每一个内置服务器名', () => {
-    for (const server of getDefaultMCPServers()) {
-      expect(BUILTIN_MCP_SERVER_NAMES.has(server.name), server.name).toBe(true);
-    }
-  });
-});
 
 describe('getForegroundMcpServerIds（读配置文件，不看连接状态）', () => {
   beforeEach(async () => { home.dir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-mcp-')); });
@@ -65,5 +36,16 @@ describe('getForegroundMcpServerIds（读配置文件，不看连接状态）', 
     expect(await getForegroundMcpServerIds()).toEqual([]);
     await fs.rm(path.join(home.dir, 'mcp.json'));
     expect(await getForegroundMcpServerIds()).toEqual([]);
+  });
+
+  it('内置名单覆盖 getDefaultMCPServers 的每一个名字（防漂移）：全部以 user 条目写入也一个不进名单', async () => {
+    const servers = [
+      ...getDefaultMCPServers().map((server) => ({ name: server.name, type: 'stdio', command: 'node', enabled: true })),
+      { name: 'cua-driver', type: 'stdio', command: 'node', enabled: true },
+      { name: 'argus', type: 'stdio', command: 'node', enabled: true },
+      { name: 'user-own', type: 'stdio', command: 'node', enabled: true },
+    ];
+    await fs.writeFile(path.join(home.dir, 'mcp.json'), JSON.stringify({ servers }));
+    expect(await getForegroundMcpServerIds()).toEqual(['user-own']);
   });
 });

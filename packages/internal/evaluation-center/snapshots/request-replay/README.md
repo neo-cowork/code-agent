@@ -60,6 +60,7 @@ keyless 确定性假模型（`CODE_AGENT_E2E_LOCAL_AGENT_MODEL=1`）真会话的
 ## 重录确认
 
 （行为不可见改动在此追加：日期 / PR / 说明）
+- 2026-11-13 / N-EXTHISTORY-IMPORT-K1B-MCP（分支 mq/exthistory-import-k1b-mcp，PR #3265）/ 敏感变更：src/host/agent/runtime/contextAssembly/deferredToolPreload.ts（仅当 `foregroundMcpServerIds` 非空——即文字前台且 ~/.code-agent/mcp.json 里有用户自己启用的 MCP 服务器——才把这些服务器已注册的 `mcp__<server>__*` 工具直接预载；录制语料无此类服务器，名单恒空，预载块不触发，请求组装/系统提示/工具 schema 逐字未动）。本机 `env -u TYPESAFE_API_KEY npm run acceptance:snapshot-replay:record` 重录 7 会话 16 轮并自验通过；与已提交快照差异 42 文件，逐 blob 比对仅 `Today's date` 日期锚（12→13、周四→周五）及其带出的 sha256/manifest 轮换，剔除后零剩余。故快照本体不更新，重录字节已丢弃，以本行作为同 PR 快照目录更新。
 - 2026-11-12 / N-FIX-ATTACH-IMAGE-ANALYZE-GLOB-WASTE-FU1-FU1-FU1-VISION-NOTICE（分支 mq/fix-attach-image-analyze-glob-waste-fu1-fu1-fu1-vision-notice，未开 PR）/ 敏感变更：src/host/agent/runtime/contextAssembly/visionPreflight.ts（vision_preflight_used 用户补注改为 shared/i18n 的 zh/en 文案表、去掉模型 id 插值；只改落库 role:'system' 补注文本，不改请求组装/系统提示/工具 schema；模型可见的 `[视觉预处理结果]` 块逐字未动）。录制语料 7 会话 16 轮均无图片轮，视觉预处理分支不触发。本机 `npm run acceptance:snapshot-replay:record` 重录 7 会话 16 轮并自验通过，快照目录 `git status` 零 diff。以本行作为同 PR 快照目录更新。
 - 2026-11-10 / N-FIX-DOCX-MARKDOWN-STAR-LEAK-AND-OUTPUT-DIR / 敏感变更：src/host/tools/modules/network/docxGenerate.schema.ts；录制语料未触及该改动段，本机 `acceptance:snapshot-replay:record` 重录零漂移（收活循环代录，PR 号见 ship 回执）。
 - 2026-11-09 / N-FIX-ATTACH-IMAGE-ANALYZE-GLOB-WASTE / 敏感变更：src/host/agent/messageHandling/converter.ts；录制语料未触及该改动段，本机 `acceptance:snapshot-replay:record` 重录零漂移（收活循环代录，PR 号见 ship 回执）。
