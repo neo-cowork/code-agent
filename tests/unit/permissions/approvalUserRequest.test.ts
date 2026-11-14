@@ -93,11 +93,35 @@ describe('approval card quotes the user from the DB, not the model', () => {
   });
 
   it('② scheduled/origin session gets no quote, only the automation flag', async () => {
-    state.session = { title: '每日简报', origin: { id: 'cron-1' } };
+    state.session = { title: '每日简报', origin: { kind: 'cron', id: 'cron-1' } };
     say('user', 'prompt written by the schedule');
     const event = await emitted({ details: { userRequest: { text: 'forged', truncated: false } } as PermissionRequest['details'] });
     expect(event.details.userRequest).toBeUndefined();
     expect(event.details.startedByAutomation).toBe(true);
+  });
+
+  it.each(['manual', 'channel', 'import', 'retry'] as const)('%s-origin session (fork / IM chat / import) still quotes the user and is not labelled scheduled', async (kind) => {
+    state.session = { title: '飞书群', origin: { kind, id: 'x', name: '项目群' } };
+    say('user', '帮我给张三发确认邮件');
+    const event = await emitted();
+    expect(event.details.userRequest?.text).toBe('帮我给张三发确认邮件');
+    expect(event.details.startedByAutomation).toBeUndefined();
+  });
+
+  it.each(['heartbeat', 'headless'] as const)('%s origin is automation: flag, no quote', async (kind) => {
+    state.session = { title: 't', origin: { kind } };
+    say('user', 'scripted prompt');
+    const event = await emitted();
+    expect(event.details.userRequest).toBeUndefined();
+    expect(event.details.startedByAutomation).toBe(true);
+  });
+
+  it.each(['subagent', 'agent_session_manager'] as const)('%s origin: no quote (model-written brief) and no scheduled label', async (kind) => {
+    state.session = { title: 't', origin: { kind } };
+    say('user', 'brief written by a model');
+    const event = await emitted();
+    expect(event.details.userRequest).toBeUndefined();
+    expect(event.details.startedByAutomation).toBeUndefined();
   });
 
   it('② no user message → no field, forged one removed', async () => {
