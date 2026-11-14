@@ -334,5 +334,64 @@ describe('delegate_session clarify guard (needs_clarification)', () => {
       tied.db.close();
       delete (ctx as unknown as { runId?: string }).runId;
     });
+
+    it('returns a distinct Chinese single-target re-ask rejection after 「两个都发」 (or tied multi-select), then releases 1 row when a later single-label answer picks one session', async () => {
+      process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
+      const { db, projection, refOf, rows } = setupRealUi('把这条备注发给官网改版那边的会话：周五前统一核对一下底部版权年份');
+      const designCall = { action: 'delegate_existing', candidateSetId: projection.candidateSetId, candidateRef: refOf('官网改版-首页设计稿'), text: '周五前统一核对一下底部版权年份' };
+      const copyCall = { action: 'delegate_existing', candidateSetId: projection.candidateSetId, candidateRef: refOf('官网改版-落地页文案'), text: '周五前统一核对一下底部版权年份' };
+
+      const initialRejected = await executeDelegateSession(designCall, ctx, allow);
+      expect(initialRejected).toMatchObject({ ok: false, code: 'DELEGATION_REJECTED', meta: { code: 'needs_clarification', rule: 'ambiguous_reference' } });
+      const initialError = (initialRejected as { error: string }).error;
+
+      // 1) User clicks 「两个都发」 -> both parallel retries receive the distinct Chinese single-target rejection, 0 rows written.
+      expect((await clickRealCardOption(cardOptions, '两个都发')).ok).toBe(true);
+      const afterBothDesign = await executeDelegateSession(designCall, ctx, allow);
+      const afterBothCopy = await executeDelegateSession(copyCall, ctx, allow);
+      expect(afterBothDesign).toMatchObject({ ok: false, code: 'DELEGATION_REJECTED', meta: { code: 'needs_clarification', rule: 'ambiguous_reference' } });
+      expect(afterBothCopy).toMatchObject({ ok: false, code: 'DELEGATION_REJECTED', meta: { code: 'needs_clarification', rule: 'ambiguous_reference' } });
+      const bothError = (afterBothDesign as { error: string }).error;
+      expect(bothError).not.toBe(initialError);
+      expect(bothError).toBe((afterBothCopy as { error: string }).error);
+      expect(bothError).toContain('一次交接只能发给一个会话');
+      expect(bothError).toContain('AskUserQuestion');
+      expect(bothError).toContain('都发');
+      expect(bothError).toContain('全部');
+      expect(bothError).toContain('「官网改版-首页设计稿」');
+      expect(bothError).toContain('「官网改版-落地页文案」');
+      for (const row of realUiSessions) expect(bothError).not.toContain(row.id);
+      expect(bothError).not.toContain(refOf('官网改版-首页设计稿'));
+      expect(rows()).toEqual({ delegations: 0, targets: [] });
+
+      // 2) Model re-asks with single-session options only -> user clicks 「官网改版-首页设计稿」 -> wrong target still rejected, clicked session releases 1 row.
+      expect((await clickRealCardOption(cardOptions.slice(0, 2), '官网改版-首页设计稿')).ok).toBe(true);
+      const wrongTargetAfterReask = await executeDelegateSession(copyCall, ctx, allow);
+      expect(wrongTargetAfterReask).toMatchObject({ ok: false, meta: { code: 'needs_clarification', rule: 'named_other_candidate' } });
+      expect((wrongTargetAfterReask as { error: string }).error).toBe(initialError);
+      expect(rows()).toEqual({ delegations: 0, targets: [] });
+
+      expect((await executeDelegateSession(designCall, ctx, allow)).ok).toBe(true);
+      expect(rows()).toEqual({ delegations: 1, targets: ['sid-design'] });
+      db.close();
+
+      // 3) Multi-select tie naming both sessions also gets the distinct Chinese rejection, and a subsequent single-label answer supersedes the tie and releases 1 row.
+      const tied = setupRealUi('把这条备注发给官网改版那边的会话：周五前统一核对一下底部版权年份');
+      const tiedDesign = { action: 'delegate_existing', candidateSetId: tied.projection.candidateSetId, candidateRef: tied.refOf('官网改版-首页设计稿'), text: '周五前统一核对一下底部版权年份' };
+      const tiedCopy = { action: 'delegate_existing', candidateSetId: tied.projection.candidateSetId, candidateRef: tied.refOf('官网改版-落地页文案'), text: '周五前统一核对一下底部版权年份' };
+      expect(await executeDelegateSession(tiedDesign, ctx, allow)).toMatchObject({ ok: false, meta: { code: 'needs_clarification' } });
+      expect((await clickRealCardOption(cardOptions.slice(0, 2), ['官网改版-首页设计稿', '官网改版-落地页文案'], true)).ok).toBe(true);
+      const afterTie = await executeDelegateSession(tiedDesign, ctx, allow);
+      expect(afterTie).toMatchObject({ ok: false, code: 'DELEGATION_REJECTED', meta: { code: 'needs_clarification', rule: 'named_other_candidate' } });
+      expect((afterTie as { error: string }).error).toContain('一次交接只能发给一个会话');
+      expect(tied.rows()).toEqual({ delegations: 0, targets: [] });
+
+      expect((await clickRealCardOption(cardOptions.slice(0, 2), '官网改版-落地页文案')).ok).toBe(true);
+      expect(await executeDelegateSession(tiedDesign, ctx, allow)).toMatchObject({ ok: false, meta: { code: 'needs_clarification', rule: 'named_other_candidate' } });
+      expect((await executeDelegateSession(tiedCopy, ctx, allow)).ok).toBe(true);
+      expect(tied.rows()).toEqual({ delegations: 1, targets: ['sid-copy'] });
+      tied.db.close();
+      delete (ctx as unknown as { runId?: string }).runId;
+    });
   });
 });
