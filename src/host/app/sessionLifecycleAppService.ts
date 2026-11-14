@@ -39,7 +39,7 @@ export class SessionLifecycleAppService {
           message: error instanceof Error ? error.message : String(error),
         });
       });
-      await getManagedBrowserProviderAdapter().clearConversationResumeState(previousSessionId);
+      await getManagedBrowserProviderAdapter().clearConversationResumeState(previousSessionId, { keepLastPage: true });
     }
     getManagedBrowserProviderAdapter().activateConversationResumeState(nextSessionId);
   }
