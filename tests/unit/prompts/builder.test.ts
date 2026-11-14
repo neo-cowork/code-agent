@@ -107,6 +107,10 @@ describe('Prompt Builder', () => {
       expect(contract).toContain('说明做了什么、为什么这样做、对用户意味着什么');
       expect(contract).toContain('最后一句必须是事实陈述，然后直接停止');
       expect(contract).toContain('删除任何提议、条件式邀请、可点击下一步和问号');
+      expect(contract).toContain('绝不向用户提及工具名或“本轮工具/工具列表/系统提示词/本轮不可用”');
+      expect(contract).toContain('面向用户的每句话（含工具调用间的过渡说明）都用用户本条消息的语言');
+      expect(contract).toContain('Never tell the user tool names or "this turn\'s tools / tool list / system prompt / unavailable this turn"');
+      expect(contract).toContain('Write every user-facing sentence, including narration between tool calls, in the language of the user\'s current message');
     });
 
     it('keeps the communication contract cache-stable when per-turn content changes', () => {

@@ -7,6 +7,8 @@ import { Button } from '../../../../primitives/Button';
 import { describeLastToolFailure, describeLastToolStep, resolveAgentActivityStepStatus } from '../../../../../utils/agentActivity';
 import { agentFailureCopy } from '../../../../../utils/agentFailureCopy';
 import { openExternalLink } from '../../../../../utils/platform';
+import { useMemberViewStore } from '../../../../../stores/memberViewStore';
+import { neoUIActionRouter } from '../../../../../services/neoUIActionRouter';
 import type { DelegationPresentation } from './delegationPresentation';
 
 export function DelegationHeader({ presentation }: { presentation: DelegationPresentation }) {
@@ -112,6 +114,36 @@ export function DelegationReceipt({ presentation }: { presentation: DelegationPr
           {toolFailure.detail && <span className="text-zinc-400"> · {toolFailure.detail}</span>}
         </div>
       )}
+      {presentation.state === 'failed' && <DelegationFailedActions presentation={presentation} />}
+    </div>
+  );
+}
+
+/** 失败回执的两个出口：看成员详情（同成员条 chip 的视图）、把重做句放进输入框（不自动发送）。 */
+function DelegationFailedActions({ presentation }: { presentation: DelegationPresentation }) {
+  const { t } = useI18n();
+  const text = t.delegationFailedActions;
+  const { memberId } = presentation;
+  return (
+    <div className="flex items-center gap-1.5" data-testid="delegation-failed-actions">
+      {memberId && (
+        <Button
+          variant="ghost"
+          size="sm"
+          data-testid="delegation-view-details"
+          onClick={() => useMemberViewStore.getState().setViewingMemberId(memberId)}
+        >
+          {text.viewDetails}
+        </Button>
+      )}
+      <Button
+        variant="ghost"
+        size="sm"
+        data-testid="delegation-retry"
+        onClick={() => neoUIActionRouter.fillComposer(text.retryDraft.replace('{task}', presentation.retryTitle ?? presentation.title))}
+      >
+        {text.retry}
+      </Button>
     </div>
   );
 }
