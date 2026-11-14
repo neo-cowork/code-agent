@@ -18,7 +18,7 @@ import * as path from 'path';
 import { quickTask } from '../../model/quickModel';
 import { withTimeout } from '../infra/timeoutController';
 import { createLogger } from '../infra/logger';
-import { ROLE_ASSETS } from '../../../shared/constants';
+import { ROLE_ASSETS, ROLE_PROACTIVITY } from '../../../shared/constants';
 import { ensureMemoryDir, getMemoryIndexPath } from '../../lightMemory/indexLoader';
 import {
   appendRoleHistory,
@@ -400,4 +400,24 @@ function truncate(text: string, max: number): string {
 /** 判断一段文本是否首次醒来的内部合成指令。includes 而非 startsWith：会话脚手架可能包裹前缀。 */
 function isFirstWakeTaskPrompt(text: string): boolean {
   return text.includes(ROLE_ASSETS.FIRST_WAKE_PROMPT_HEAD);
+}
+
+/**
+ * 判断一段文本是否巡检醒来（cadence / event）的内部合成指令或触发标签。
+ * 与 roleProactivity.buildWakePrompt 及 WAKE_SESSION_TITLE_PREFIX 共享唯一真源，
+ * 供写回层去重和 roles IPC 履历清洗共同调用。
+ */
+export function isSyntheticWakeTask(text: string): boolean {
+  const trimmed = text.trim();
+  if (
+    trimmed.includes(ROLE_ASSETS.WAKE_PROMPT_HEAD_CADENCE)
+    || trimmed.includes(ROLE_ASSETS.WAKE_PROMPT_HEAD_EVENT)
+  ) {
+    return true;
+  }
+  if (!trimmed.startsWith(ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX)) {
+    return false;
+  }
+  const rest = trimmed.slice(ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX.length);
+  return /^[（(](?:cadence|event)\b/.test(rest);
 }

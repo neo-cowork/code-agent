@@ -376,7 +376,17 @@ pub fn install_notification_delegate(app: tauri::AppHandle, focus: fn(&tauri::Ap
 
 #[cfg(target_os = "macos")]
 pub fn post_unc(title: &str, body: &str, id: Option<&str>) -> Result<(), String> {
-    post_unc_with_session(title, body, id, None)
+    // Guard the shared entry point so shell hints and IPC callers are equally safe.
+    let in_app_bundle = std::env::current_exe()
+        .map(|exe| exe_is_in_app_bundle(&exe))
+        .unwrap_or(false);
+    if decide_backend(in_app_bundle, true) != NotificationBackend::Unc {
+        return Err("UNUserNotificationCenter is reserved for macOS app bundles".to_string());
+    }
+    objc2::exception::catch(std::panic::AssertUnwindSafe(|| {
+        post_unc_with_session(title, body, id, None)
+    }))
+    .unwrap_or_else(|_| Err("notification-objective-c-exception".to_string()))
 }
 
 #[cfg(target_os = "macos")]
@@ -735,6 +745,15 @@ mod tests {
         assert_eq!(decide_backend(true, true), NotificationBackend::Unc);
         assert_eq!(decide_backend(false, true), NotificationBackend::Legacy);
         assert_eq!(decide_backend(true, false), NotificationBackend::Legacy);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn unbundled_post_unc_rejects_with_bundle_reason() {
+        assert_eq!(
+            super::post_unc("Agent Neo", "body", None),
+            Err("UNUserNotificationCenter is reserved for macOS app bundles".to_string())
+        );
     }
 
     #[test]

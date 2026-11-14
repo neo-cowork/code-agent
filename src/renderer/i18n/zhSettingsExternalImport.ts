@@ -19,9 +19,11 @@ export const zhSettingsExternalImport = {
         instructions: '说明',
         memories: '记忆',
         skills: '技能',
+        mcp: 'MCP 服务器',
       },
       sourceNames: {
         'claude-code': 'Claude Code',
+        'claude-desktop': 'Claude Desktop',
         codex: 'Codex',
         cursor: 'Cursor',
         'grok-build': 'Grok Build',
