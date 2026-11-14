@@ -1109,7 +1109,8 @@ export async function startDesktopAudioCapture(fifoPath?: string, mode: CaptureM
   const needsMicrophone = plan.some((p) => p.source === 'microphone');
 
   // Check audio capture tool availability
-  if (needsMicrophone && !useFifo && !findFfmpegBinary() && !findRecBinary()) {
+  // 传了 FIFO 就由 Tauri 端录麦克风，不查本机 ffmpeg/sox（与改造前一致）
+  if (needsMicrophone && !fifoPath && !findFfmpegBinary() && !findRecBinary()) {
     logger.warn('[音频采集] ffmpeg/sox 均未安装，跳过音频采集。安装: brew install ffmpeg');
     return;
   }

@@ -50,7 +50,7 @@ function matchedChars(a: string, b: string): number {
 }
 
 /** 两句话字面相同的比例（按短的那句算）；不够判重时返回 0 */
-export function crossEchoRatio(a: string, b: string): number {
+function crossEchoRatio(a: string, b: string): number {
   const x = normalize(a);
   const y = normalize(b);
   if (!x || !y) return 0;
@@ -58,21 +58,21 @@ export function crossEchoRatio(a: string, b: string): number {
   return same >= ECHO_MIN_SAME ? same / Math.min(x.length, y.length) : 0;
 }
 
-export interface EchoCandidate {
+interface EchoCandidate {
   id: string;
   startAtMs: number;
   endAtMs: number;
   transcript: string;
 }
 
-export function isCrossEcho(mic: EchoCandidate, others: EchoCandidate): boolean {
+function isCrossEcho(mic: EchoCandidate, others: EchoCandidate): boolean {
   const overlaps = mic.startAtMs < others.endAtMs + ECHO_TIME_SLACK_MS
     && others.startAtMs < mic.endAtMs + ECHO_TIME_SLACK_MS;
   return overlaps && crossEchoRatio(mic.transcript, others.transcript) >= ECHO_MIN_RATIO;
 }
 
 /** 麦克风段里哪些是对方声音的串录，返回要删的麦克风段 id */
-export function micEchoIds(mic: EchoCandidate[], others: EchoCandidate[]): string[] {
+function micEchoIds(mic: EchoCandidate[], others: EchoCandidate[]): string[] {
   return mic.filter((m) => others.some((o) => isCrossEcho(m, o))).map((m) => m.id);
 }
 
