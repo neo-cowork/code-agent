@@ -60,6 +60,7 @@ function createSequencedAgentEventDispatcher(
 ): IpcEventHandlers[typeof IPC_CHANNELS.AGENT_EVENT] {
   let activeStreamEpoch: string | undefined;
   const lastSeqBySession = new Map<string, number>();
+  const lastPermissionSeqByRequest = new Map<string, number>();
 
   return (event) => {
     // stream_end 是渲染层本地哨兵：httpTransport 在 per-run 流结束时会合成它
@@ -85,6 +86,7 @@ function createSequencedAgentEventDispatcher(
     }
     if (activeStreamEpoch !== undefined && streamEpoch !== activeStreamEpoch) {
       lastSeqBySession.clear();
+      lastPermissionSeqByRequest.clear();
       notifySnapshotRequired({
         transport: streamEpoch.startsWith('http:') ? 'http-sse' : 'native-ipc',
         streamEpoch,
@@ -95,8 +97,18 @@ function createSequencedAgentEventDispatcher(
     }
     activeStreamEpoch = streamEpoch;
 
+    // /api/run and /api/events share a host cursor but arrive independently.
+    // A later global event can overtake a live approval on the run stream.
+    // Track each approval's lifecycle separately so resolved events still defeat
+    // older pending copies, without moving the session watermark backwards.
+    const requestId = event.type === 'permission_request' ? event.data?.id : undefined;
+    const permissionKey = typeof requestId === 'string' ? `${sessionId}:${requestId}` : undefined;
     const lastSeq = lastSeqBySession.get(sessionId);
-    if (lastSeq !== undefined && seq <= lastSeq) {
+    const dedupeSeq = permissionKey ? lastPermissionSeqByRequest.get(permissionKey) : lastSeq;
+    if (dedupeSeq !== undefined && seq <= dedupeSeq) {
+      if (permissionKey) console.debug('[ipcService] Permission event dropped', {
+        reason: 'permission_request_sequence_duplicate', requestId, seq, lastSeq: dedupeSeq,
+      });
       recordStreamingPerformanceCounter('stream.ipc.duplicate_dropped');
       return;
     }
@@ -109,7 +121,17 @@ function createSequencedAgentEventDispatcher(
         reason: 'sequence_gap',
       });
     }
-    lastSeqBySession.set(sessionId, seq);
+    if (permissionKey) {
+      lastPermissionSeqByRequest.set(permissionKey, seq);
+      if (lastPermissionSeqByRequest.size > 256) {
+        const oldest = lastPermissionSeqByRequest.keys().next().value;
+        if (oldest !== undefined) {
+          lastPermissionSeqByRequest.delete(oldest);
+          console.debug('[ipcService] Permission history evicted', { reason: 'permission_history_capacity' });
+        }
+      }
+    }
+    lastSeqBySession.set(sessionId, Math.max(lastSeq ?? 0, seq));
 
     callback(event);
   };
