@@ -74,8 +74,12 @@ function extractNeedles(messages: Message[]): string[] {
   return [...needles];
 }
 
-function retention(needles: string[], messages: Array<{ content: string }>) {
-  const retained = needles.filter((needle) => messages.some((message) => message.content.includes(needle))).length;
+function retention(needles: string[], messages: Array<{ content: string; toolCalls?: unknown }>) {
+  // Surviving call arguments are also in the model-visible transcript. A path
+  // retained there still survives even if its corresponding result is dropped.
+  const transcript = messages.map((message) => message.content
+    + (message.toolCalls ? '\n' + JSON.stringify(message.toolCalls) : '')).join('\n');
+  const retained = needles.filter((needle) => transcript.includes(needle)).length;
   return { retained, retention: needles.length ? retained / needles.length : 0 };
 }
 
@@ -187,7 +191,9 @@ function selfCheck(): void {
   assert.equal(tokens(project(sample)), estimateConversationTokens(sample));
   assert.equal(JEV_MODEL, 'jev-1.13.0');
   assert.ok(Math.abs(estimateJevCallUsd(400, 0) - 0.0000042) < 1e-12);
-  console.log('self-check: 15 passed / 0 failed / 0 skipped; network_calls=0');
+  assert.equal(retention(['/tmp/eval/input.csv'], [{ content: '',
+    toolCalls: [{ id: 'call-a', name: 'read_file', arguments: { path: '/tmp/eval/input.csv' } }] }]).retained, 1);
+  console.log('self-check: 16 passed / 0 failed / 0 skipped; network_calls=0');
 }
 
 function median(values: number[]): number {
