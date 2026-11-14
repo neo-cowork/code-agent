@@ -61,6 +61,22 @@ describe('runtime follow-up helpers', () => {
     }
   });
 
+  it.each([
+    ['zh', '本地服务没有接受这次请求，请刷新页面后重试。'],
+    ['en', 'Neo could not accept this request. Refresh the page and try again.'],
+  ] as const)('maps REQUEST_INVALID to the refresh sentence in %s, not the add-a-sentence copy', (language, sentence) => {
+    const original = useAppStore.getState().language;
+    useAppStore.setState({ language: language });
+    try {
+      const error = Object.assign(new Error('云端代理请求失败 (400): Invalid request'), { status: 400, code: 'REQUEST_INVALID' });
+      const message = getAgentSendFailureMessage(error);
+      expect(message).toBe(sentence);
+      expect(message).not.toMatch(/云端代理请求失败|Invalid request|400/);
+    } finally {
+      useAppStore.setState({ language: original });
+    }
+  });
+
   // 这一档不是失败：模型上一轮已经答完（用户也看到了），只是 run 还没收干净。
   // 判据必须认结构化 status，不能只靠中文文案——文案一改就静默失效。
   it('recognises the session-busy run conflict from status and from the raw host message', () => {
