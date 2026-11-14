@@ -127,6 +127,13 @@ except Exception as e:
     for (const id of ['1376', '1129', '1319', '1349']) {
       it(`记录 ${id}`, async () => {
         const command = historical()[id];
+        if (id === '1349' && process.platform !== 'darwin') {
+          // xattr / ls -O 是 macOS 专属：非 macOS 编译得出但执行期放弃 → 必须回到审批链（fail-closed）
+          await run(command);
+          expect(permissionAsks.length).toBeGreaterThan(0);
+          expect(probeRows()).toHaveLength(0);
+          return;
+        }
         const result = await run(command);
         expect(permissionAsks).toEqual([]);
         expect(result.success).toBe(true);
@@ -234,12 +241,22 @@ print(os.listdir('${fx}/link'))
     });
 
     it('点名路径经符号链接指向敏感目录 → 仍审批', async () => {
+      // 目标不必真实存在：悬空链接同样会被 ls 跟随（CI 的 HOME 里没有 ~/.ssh）
       const dotSsh = path.join(os.homedir(), '.ssh');
       const evil = path.join(root, 'evil');
       await fs.symlink(dotSsh, evil);
       sessionMessages.push({ role: 'user', content: `看 ${evil}` });
       await run(`command -v ls; ls -l "${evil}"`);
       expect(permissionAsks.length).toBeGreaterThan(0);
+    });
+
+    it('点名路径是悬空符号链接，目标落在 ~/.ssh 下 → 仍审批', async () => {
+      const evil = path.join(root, 'dangling');
+      await fs.symlink(path.join(os.homedir(), '.ssh', 'no-such-dir-for-test'), evil);
+      sessionMessages.push({ role: 'user', content: `看 ${evil}` });
+      await run(`command -v ls; ls -l "${evil}"`);
+      expect(permissionAsks.length).toBeGreaterThan(0);
+      expect(probeRows()).toHaveLength(0);
     });
 
     it('会话附件所在目录可列出（只读列目录）', async () => {

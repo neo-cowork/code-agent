@@ -43,13 +43,21 @@ const FIXED_BINARIES = { ls: '/bin/ls', xattr: '/usr/bin/xattr', id: '/usr/bin/i
 // 路径授权
 // ----------------------------------------------------------------------------
 
-function realpathOfPrefix(abs: string): string {
+function realpathOfPrefix(abs: string, depth = 0): string {
   let current = abs;
   const rest: string[] = [];
   for (let guard = 0; guard < 64; guard++) {
     try {
       return path.join(fs.realpathSync(current), ...rest.reverse());
     } catch {
+      // 悬空符号链接（目标尚不存在，如指向 ~/.ssh 的链接）：realpath 会失败，但后续 ls 等仍会跟随它，
+      // 必须按链接目标继续解析，不能退回到链接自身的路径。
+      try {
+        if (depth < 16 && fs.lstatSync(current).isSymbolicLink()) {
+          const target = path.resolve(path.dirname(current), fs.readlinkSync(current));
+          return path.join(realpathOfPrefix(target, depth + 1), ...rest.reverse());
+        }
+      } catch { /* not a link */ }
       const parent = path.dirname(current);
       if (parent === current) return abs;
       rest.push(path.basename(current));
@@ -177,7 +185,7 @@ function scrubbedEnv(): NodeJS.ProcessEnv {
 
 function runFixed(bin: string, args: string[], cwd: string): Promise<ProbeRunResult> {
   return new Promise((resolve, reject) => {
-    execFile(bin, args, { cwd, env: scrubbedEnv(), timeout: EXEC_TIMEOUT_MS, maxBuffer: MAX_OUTPUT_CHARS, encoding: 'utf8' }, (err, stdout, stderr) => {
+    execFile(bin, args, { cwd, argv0: path.basename(bin), env: scrubbedEnv(), timeout: EXEC_TIMEOUT_MS, maxBuffer: MAX_OUTPUT_CHARS, encoding: 'utf8' }, (err, stdout, stderr) => {
       if (err && typeof (err as { code?: unknown }).code !== 'number') { reject(new ProbeAbort(`exec ${path.basename(bin)} failed`)); return; }
       resolve({ stdout, stderr, exitCode: err ? (err as unknown as { code: number }).code : 0 });
     });
