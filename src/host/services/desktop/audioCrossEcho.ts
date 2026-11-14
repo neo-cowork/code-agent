@@ -16,7 +16,7 @@ const ECHO_MIN_BLOCK = 3; // 零散单字（「对」「的」）不算相同
 const ECHO_MIN_SAME = 6; // 「对对对」这类短句会误配，合计不到 6 个相同字不判
 const ECHO_MIN_RATIO = 0.5;
 /** 两段时间允许的错位：两路各自做语音切段，起止对不齐 */
-export const ECHO_TIME_SLACK_MS = 1000;
+const ECHO_TIME_SLACK_MS = 1000;
 
 function normalize(text: string): string {
   return text.replace(/[\s\p{P}\p{S}]/gu, '');
