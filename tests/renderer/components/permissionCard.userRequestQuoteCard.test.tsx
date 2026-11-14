@@ -80,4 +80,60 @@ describe('PermissionCard user request quote (whole card, normalizeRequest whitel
     expect(screen.getByTestId('user-request-quote').textContent)
       .toBe(messages.decisionCard.permission.userRequestQuote.replace('{text}', 'add Weekly sync tomorrow…'));
   });
+
+  it.each([
+    ['zh', zh, '每日简报'],
+    ['en', en, 'Daily brief'],
+  ] as const)('%s scheduled-task connector card shows scheduled-task-origin and hides duplicate connector-purpose', (language, messages, taskName) => {
+    state.language = language;
+    state.request = {
+      ...connectorRequest(),
+      details: {
+        connectorAccess: { connectorId: 'lark', connectorName: language === 'en' ? 'Feishu' : '飞书', access: 'write' },
+        purpose: taskName,
+        startedByAutomation: true,
+      } as PermissionRequest['details'],
+    };
+    render(<PermissionCard />);
+    expect(screen.getByTestId('scheduled-task-origin').textContent)
+      .toBe(messages.decisionCard.permission.startedByScheduledTask.replace('{name}', taskName));
+    expect(screen.queryByTestId('connector-purpose')).toBeNull();
+  });
+
+  it.each([['zh', zh], ['en', en]] as const)('%s non-scheduled connector card with purpose keeps connector-purpose', (language, messages) => {
+    state.language = language;
+    state.request = {
+      ...connectorRequest(),
+      details: {
+        connectorAccess: { connectorId: 'lark', connectorName: language === 'en' ? 'Feishu' : '飞书', access: 'write' },
+        purpose: '每周日程汇总',
+        userRequest: { text: '同步下周会议到日历', truncated: false },
+      } as PermissionRequest['details'],
+    };
+    render(<PermissionCard />);
+    expect(screen.getByTestId('connector-purpose').textContent)
+      .toBe(messages.decisionCard.permission.connectorPurpose.replace('{purpose}', '每周日程汇总'));
+    expect(screen.getByTestId('user-request-quote').textContent)
+      .toBe(messages.decisionCard.permission.userRequestQuote.replace('{text}', '同步下周会议到日历'));
+    expect(screen.queryByTestId('scheduled-task-origin')).toBeNull();
+  });
+
+  it.each([['zh', zh], ['en', en]] as const)('%s keeps connector-purpose when startedByAutomation and purpose coexist with a human userRequest quote', (language, messages) => {
+    state.language = language;
+    state.request = {
+      ...connectorRequest(),
+      details: {
+        connectorAccess: { connectorId: 'lark', connectorName: language === 'en' ? 'Feishu' : '飞书', access: 'write' },
+        purpose: '每日简报',
+        startedByAutomation: true,
+        userRequest: { text: '把简报发到项目群', truncated: false },
+      } as PermissionRequest['details'],
+    };
+    render(<PermissionCard />);
+    expect(screen.getByTestId('connector-purpose').textContent)
+      .toBe(messages.decisionCard.permission.connectorPurpose.replace('{purpose}', '每日简报'));
+    expect(screen.getByTestId('user-request-quote').textContent)
+      .toBe(messages.decisionCard.permission.userRequestQuote.replace('{text}', '把简报发到项目群'));
+    expect(screen.queryByTestId('scheduled-task-origin')).toBeNull();
+  });
 });
