@@ -11,9 +11,12 @@ const { getKeptResultPage, adoptKeptResultPage, openHttpLinkInRailAsync } = vi.h
   openHttpLinkInRailAsync: vi.fn(),
 }));
 
-vi.mock('../../../src/renderer/services/userBrowserLink', () => ({
+vi.mock('../../../src/renderer/services/keptResultPage', () => ({
   getKeptResultPage: (conversationId: string) => getKeptResultPage(conversationId),
   adoptKeptResultPage: (input: unknown) => adoptKeptResultPage(input),
+}));
+
+vi.mock('../../../src/renderer/services/userBrowserLink', () => ({
   openHttpLinkInRailAsync: (input: unknown) => openHttpLinkInRailAsync(input),
 }));
 
