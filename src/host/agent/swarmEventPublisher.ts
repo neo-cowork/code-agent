@@ -88,9 +88,10 @@ export class SwarmEventEmitter {
     });
   }
 
-  started(scope: SwarmRunScope, agentCount: number): void {
+  started(scope: SwarmRunScope, agentCount: number, publisher = 'SwarmEventEmitter'): void {
     this.publish(scope, {
       type: 'swarm:started',
+      publisher,
       timestamp: Date.now(),
       data: {
         statistics: {
