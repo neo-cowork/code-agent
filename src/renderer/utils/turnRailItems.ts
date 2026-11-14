@@ -5,6 +5,9 @@
 // 跳转直接 scrollToIndex。
 // ============================================================================
 import type { TraceNode, TraceTurn } from '@shared/contract/trace';
+import { extractUserRequest } from '@shared/utils/turnScaffold';
+import { roleEditReceiptZh } from '../i18n/roleEditReceipt';
+import { formatEditRoleUserPrompt } from './formatEditRoleUserPrompt';
 
 export interface TurnRailItem {
   turnId: string;
@@ -56,15 +59,21 @@ function isVoiceTurn(turn: TraceTurn): boolean {
   return turn.nodes.some((node) => Boolean(node.metadata?.voiceDispatch));
 }
 
-export function buildTurnRailItems(turns: readonly TraceTurn[]): TurnRailItem[] {
+export function buildTurnRailItems(
+  turns: readonly TraceTurn[],
+  editRolePromptTemplate: string = roleEditReceiptZh.roleEditReceipt.userPrompt,
+): TurnRailItem[] {
+  const projectPrompt = (raw: string | undefined) => (
+    raw ? formatEditRoleUserPrompt(extractUserRequest(raw), editRolePromptTemplate) : raw
+  );
   return turns.filter((turn) => !turn.standalone).map((turn) => ({
     turnId: turn.turnId,
     turnNumber: turn.turnNumber,
-    prompt: previewText(getTurnUserNode(turn)?.content, PROMPT_PREVIEW_MAX),
+    prompt: previewText(projectPrompt(getTurnUserNode(turn)?.content), PROMPT_PREVIEW_MAX),
     response: previewText(getTurnFinalTextNode(turn, isVoiceTurn(turn))?.content, RESPONSE_PREVIEW_MAX),
     queuedMessages: turn.nodes.filter((node) => node.type === 'user').slice(1).map((node) => ({
       nodeId: node.id,
-      prompt: previewText(node.content, PROMPT_PREVIEW_MAX),
+      prompt: previewText(projectPrompt(node.content), PROMPT_PREVIEW_MAX),
     })),
   }));
 }
