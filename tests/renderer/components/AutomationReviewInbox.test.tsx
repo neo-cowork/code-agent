@@ -449,6 +449,18 @@ describe('AutomationReviewInbox', () => {
     });
   });
 
+  it('连接器未登录提示：有 summary 才显示（多条换行），只有去重记录没有 summary 不显示', async () => {
+    listPendingReview.mockResolvedValue([
+      makeRecord({ id: 'with-summary', title: '有提示', config: { pendingReview: { at: 1700000000000, connectorLost: { days: { feishu: '2032-01-05' }, summary: '今天的定时运行没能读取「飞书」：它当前未登录。', summaryDay: '2032-01-05' } } } }),
+      makeRecord({ id: 'days-only', title: '仅去重', config: { pendingReview: { at: 1700000000000, connectorLost: { days: { feishu: '2032-01-05' } } } } }),
+    ]);
+    render(<AutomationReviewInbox />);
+    await waitFor(() => {
+      expect(screen.getAllByTestId('automation-review-connector-lost')).toHaveLength(1);
+    });
+    expect(screen.getByTestId('automation-review-connector-lost').textContent).toContain('「飞书」');
+  });
+
   it('查看结果：标记已读并跳结果会话', async () => {
     listPendingReview.mockResolvedValue([makeRecord({})]);
     render(<AutomationReviewInbox />);
@@ -486,7 +498,16 @@ describe('AutomationReviewInbox', () => {
     });
   });
 
-  it('普通工具停车行显示 zh / en 两档按钮', async () => {
+  it('forceConfirm row hides tier buttons and keeps approve / deny', async () => {
+    listParkedApprovals.mockResolvedValue([makeParked({ tool: 'Bash', riskClass: null, forceConfirm: true })]);
+    render(<AutomationReviewInbox />);
+    expect(await screen.findByTestId('parked-approve')).toBeTruthy();
+    expect(screen.getByTestId('parked-reject')).toBeTruthy();
+    expect(screen.queryByTestId('parked-allow-run')).toBeNull();
+    expect(screen.queryByTestId('parked-allow-24h')).toBeNull();
+  });
+
+  it('Write row without forceConfirm shows zh / en tier buttons', async () => {
     listParkedApprovals.mockResolvedValue([makeParked({ kind: 'tool_approval', tool: 'Write', riskClass: null })]);
     render(<AutomationReviewInbox />);
     expect((await screen.findByTestId('parked-allow-run')).textContent).toBe('本次任务内允许');

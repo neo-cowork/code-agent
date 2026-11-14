@@ -86,6 +86,14 @@ describe('模型分', () => {
     expect(ledger.candidates[0]?.displayName).toBe('截图表格转 Excel');
   });
 
+  it('保留完整的模型说明，不在英文单词中间截断', async () => {
+    const record = seedCandidate();
+    const summary = 'Capture receipt screenshots, extract the text, and organize the resulting information into an Excel workbook.';
+    quick.result = { success: true, content: JSON.stringify([{ index: 1, name: 'Organize receipts', summary }]) };
+    await fillMissingNames([record]);
+    expect(getCapabilityCandidateStore().get(record.clusterKey)?.summary).toBe(summary);
+  });
+
   it('名字语言跟随用户原话：英文原话 → English，中文原话 → 中文，判不出 → 界面语言', async () => {
     const record = seedCandidate();
     const english = { ...record, sampleUserMessages: ['turn the tables in these screenshots into Excel'] };

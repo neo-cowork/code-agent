@@ -181,3 +181,40 @@ describe('PermissionGrantList human tool names', () => {
     expect(row.textContent).toContain(language === 'zh' ? `有效期至 ${ZH_EXPIRES}` : `Valid until ${EN_EXPIRES}`);
   });
 });
+
+
+describe('PermissionGrantList connector read grants', () => {
+  it.each([
+    ['zh', 'run', '只读 · 本次任务 · 授权于'],
+    ['zh', '24h', '限时放行 · 只读 · 24 小时内 · 授权于'],
+    ['en', 'run', 'Read-only · This task · Granted'],
+    ['en', '24h', 'Temporary allow · Read-only · 24 hours · Granted'],
+  ] as const)('%s %s preserves the read-only marker and tier scope', async (language, source, expected) => {
+    useAppStore.setState({ language });
+    invokeDomain.mockResolvedValue([{
+      id: `connector-${source}`, kind: 'tool-timed', label: '飞书', connectorAccess: 'read',
+      source, grantedAt: GRANTED_AT, expiresAt: source === 'run' ? null : Date.now() + 121 * 60_000,
+    }]);
+    const view = render(<PermissionGrantList />);
+    const row = await view.findByTestId('permission-grant-row');
+    expect(row.querySelector('.text-zinc-500')?.textContent).toMatch(new RegExp(`^${expected}`));
+    expect(row.querySelector('.text-sm')?.textContent).toBe('飞书');
+  });
+
+  it.each(['zh', 'en'] as const)('%s shows connector name, read-only scope, remaining time and revokes by stable id', async (language) => {
+    useAppStore.setState({ language });
+    invokeDomain.mockResolvedValue([{
+      id: 'tool-24h:connector-read%3Alark', kind: 'tool-timed', label: '飞书', connectorAccess: 'read',
+      source: '24h', grantedAt: Date.now(), expiresAt: Date.now() + 121 * 60_000,
+    }]);
+    const view = render(<PermissionGrantList />);
+    const row = await view.findByTestId('permission-grant-row');
+    expect(row.querySelector('.text-sm')?.textContent).toBe('飞书');
+    expect(row.textContent).toContain(language === 'zh' ? '只读' : 'Read-only');
+    expect(row.textContent).toContain(language === 'zh' ? '剩余 3 小时' : '3 h left');
+    invokeDomain.mockResolvedValue({ revoked: true });
+    fireEvent.click(view.getByTestId('permission-grant-revoke'));
+    await waitFor(() => expect(view.queryByTestId('permission-grant-row')).toBeNull());
+    expect(invokeDomain).toHaveBeenLastCalledWith('domain:settings', 'revokePermissionGrant', { id: 'tool-24h:connector-read%3Alark' });
+  });
+});
