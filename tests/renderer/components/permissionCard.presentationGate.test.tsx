@@ -166,6 +166,24 @@ describe('PermissionCard shared presentation gate', () => {
     process.stdout.write(`neutral by default: ${neutralByDefault.join(', ')}\n`);
   });
 
+  it.each([
+    ['zh', '允许读取 飞书？', '飞书的所有只读工具'],
+    ['en', 'Allow reading 飞书?', 'All read-only tools in 飞书'],
+  ] as const)('preserves main connector wording and scope for command-shaped requests (%s)', (language, title, scope) => {
+    const request: PermissionRequest = {
+      id: 'connector-command', sessionId: 'session-current', tool: 'mcp__lark__calendar_v4_calendar_primary',
+      type: 'command', details: {
+        connectorAccess: { connectorId: 'lark', connectorName: '飞书', access: 'read' },
+        purpose: 'Weekly schedule summary',
+      }, timestamp: 1,
+    };
+    const html = render(request, language);
+    expect(html.split(title).length - 1).toBe(2);
+    expect(html).toContain(scope);
+    expect(html).toContain('Weekly schedule summary');
+    expect(html).not.toContain('permission-action-icon');
+  });
+
   it('defaults future tools to neutral presentation even with command-shaped requests', () => {
     for (const type of ['command', 'dangerous_command'] as const) {
       const request = { ...requestForTool('future_action'), type };
