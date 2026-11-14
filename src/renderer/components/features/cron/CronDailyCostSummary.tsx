@@ -15,6 +15,18 @@ interface CronDailyCostSummaryProps {
   testId?: string;
 }
 
+function hasUnrecordedSessionCost(execution: CronJobExecution): boolean {
+  if (execution.cost != null || readWakeSkipFromResult(execution.result) !== null) return false;
+  if (!['completed', 'failed', 'cancelled', 'interrupted'].includes(execution.status)) return false;
+  // A missing cost alone is normal for non-model actions and wakes resolved before
+  // creating a session. Only a finished session can have an unrecorded model cost.
+  const result = execution.result;
+  const sessionId = execution.sessionId ?? (
+    typeof result === 'object' && result !== null && 'sessionId' in result ? result.sessionId : undefined
+  );
+  return typeof sessionId === 'string' && sessionId.length > 0;
+}
+
 export const CronDailyCostSummary: React.FC<CronDailyCostSummaryProps> = ({
   executions,
   testId = 'cron-daily-cost-summary',
@@ -29,7 +41,7 @@ export const CronDailyCostSummary: React.FC<CronDailyCostSummaryProps> = ({
     skipped: readWakeSkipFromResult(execution.result) !== null,
   })));
   const incompleteDays = new Set(cronDailyCostTotals(executions
-    .filter((execution) => execution.cost == null && readWakeSkipFromResult(execution.result) === null)
+    .filter(hasUnrecordedSessionCost)
     .map((execution) => ({ scheduledAt: execution.scheduledAt, startedAt: execution.startedAt, runsOn: execution.runsOn })))
     .map((bucket) => bucket.dayKey));
   if (totals.length === 0) return null;
