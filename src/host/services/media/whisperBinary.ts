@@ -52,3 +52,11 @@ export function hasWhisperModel(homeDir: string = os.homedir()): boolean {
     return false;
   }
 }
+
+/**
+ * whisper 的语言参数。指定中文时它会随机输出繁体（11-14 真机：同一句话系统音频一路简体、
+ * 麦克风一路繁体），给一句简体提示让输出稳定在简体——国内用户要的是简体，两路去重也才对得上字。
+ */
+export function whisperLanguageArgs(language: string): string[] {
+  return language === 'zh' ? ['-l', 'zh', '--prompt', '以下是普通话的句子。'] : ['-l', language];
+}

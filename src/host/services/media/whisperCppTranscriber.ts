@@ -7,7 +7,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { findWhisperBinary as findSharedWhisperBinary } from './whisperBinary';
+import { findWhisperBinary as findSharedWhisperBinary, whisperLanguageArgs } from './whisperBinary';
 
 const execFileAsync = promisify(execFile);
 
@@ -216,7 +216,7 @@ export async function transcribeWithWhisperCpp(
     const whisperArgs: string[] = [
       '-m', modelPath,
       '-f', wavPath,
-      '-l', language,
+      ...whisperLanguageArgs(language),
       '-t', String(threads),
       '--no-prints',
     ];

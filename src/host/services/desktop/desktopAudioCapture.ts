@@ -6,19 +6,21 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { spawn, execFileSync, type ChildProcess } from 'child_process';
+import { spawn, execFile, execFileSync, type ChildProcess } from 'child_process';
+import { promisify } from 'util';
 import { createLogger } from '../infra/logger';
 import { getNativeDesktopService } from './nativeDesktopService';
 import { getUserConfigDir } from '../../config/configPaths';
 import { isOrtTensor, loadVadRuntime, type OrtRuntimeModule } from './audioVadRuntime';
 import { getAudioCapturePrerequisites } from './audioCapturePrerequisites';
-import { findWhisperBinary } from '../media/whisperBinary';
+import { findWhisperBinary, whisperLanguageArgs } from '../media/whisperBinary';
 import { clearAllAudioRecordings, finalizeSegmentAudio, getAudioRetentionStatus, sweepAudioRetention } from './audioRetention';
 import { dropMicEchoes } from './audioCrossEcho';
 import { AUDIO_SPEAKER_ID, type AudioCaptureMode } from '@shared/contract/audioCapture';
 import type { InferenceSession, Tensor as OrtTensor } from 'onnxruntime-node';
 
 const logger = createLogger('DesktopAudioCapture');
+const execFileAsync = promisify(execFile);
 
 // ============================================================================
 // Config
@@ -532,8 +534,10 @@ async function transcribeWithWhisperCpp(wavPath: string): Promise<string | null>
   if (!binary || !model) return null;
 
   try {
-    const result = execFileSync(binary, [
-      '-m', model, '-f', wavPath, '-l', 'zh', '-t', '4', '--no-prints',
+    // 必须异步：同步调用会把整个事件循环卡住十几秒（大模型首段），两路音频在管道里积压，
+    // 段落时间戳整体后移、积压的语音会丢，同进程的网页服务也跟着卡（11-14 真机实测 18.5 秒）
+    const { stdout: result } = await execFileAsync(binary, [
+      '-m', model, '-f', wavPath, ...whisperLanguageArgs('zh'), '-t', '4', '--no-prints',
     ], { encoding: 'utf-8', timeout: ASR_TIMEOUT_MS });
 
     // Parse output: [timestamp] text

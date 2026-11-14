@@ -2,7 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { findWhisperBinary, hasWhisperModel } from '../../../../src/host/services/media/whisperBinary';
+import { findWhisperBinary, hasWhisperModel, whisperLanguageArgs } from '../../../../src/host/services/media/whisperBinary';
 
 const exists = (present: string[]) => (p: string) => present.includes(p);
 const noWhich = () => null;
@@ -38,5 +38,12 @@ describe('whisper 模型', () => {
     expect(hasWhisperModel(home)).toBe(false);
     fs.writeFileSync(path.join(home, '.cache', 'whisper', 'ggml-base.bin'), '');
     expect(hasWhisperModel(home)).toBe(true);
+  });
+});
+
+describe('whisper 语言参数', () => {
+  it('中文带简体提示（否则会随机出繁体，两路去重对不上字）；其他语言不加', () => {
+    expect(whisperLanguageArgs('zh')).toEqual(['-l', 'zh', '--prompt', '以下是普通话的句子。']);
+    expect(whisperLanguageArgs('en')).toEqual(['-l', 'en']);
   });
 });
