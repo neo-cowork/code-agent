@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type BetterSqlite3 from 'better-sqlite3';
 import type { Session } from '../../src/shared/contract';
 import { detectInternalTextLeaks } from '../../src/shared/internalTextLeakDetect';
+import { getDisplaySessionTitle } from '../../src/renderer/utils/sessionPresentation';
 
 const state = vi.hoisted(() => ({ language: 'en' as 'zh' | 'en', writes: [] as Array<{ sql: string; args: unknown[] }> }));
 const database = {
@@ -84,8 +85,9 @@ describe('humanized names at host persistence boundaries', () => {
     }
     const onlyId: Session = { id: 'session_names456', title: uuid, modelConfig: { provider: 'xiaomi', model: 'test-model' }, createdAt: 100, updatedAt: 200 };
     repo.createSession(onlyId);
-    expect(onlyId.title.trim().length).toBeGreaterThan(0);
-    expect(detectInternalTextLeaks(onlyId.title)).toEqual([]);
+    // Nothing but an id: stored as is (no placeholder word), so readers that treat id-only titles as untitled still do.
+    expect(onlyId.title).toBe(uuid);
+    expect(getDisplaySessionTitle(onlyId.title, lang)).not.toContain(uuid);
   });
 
   it.each(['zh', 'en'] as const)('stores a channel session name without the chat id or a placeholder suffix in %s', (lang) => {

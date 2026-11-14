@@ -29,7 +29,7 @@ export function insertSessionWithId(
     },
     options?: { syncOrigin?: 'local' | 'remote' },
   ): void {
-    const title = humanizeStoredName(data.title);
+    const title = humanizeStoredName(data.title, 'keep');
     const now = Date.now();
     const createdAt = normalizeStoredTimestamp(data.createdAt, now);
     const updatedAt = normalizeStoredTimestamp(data.updatedAt, createdAt);
@@ -95,7 +95,7 @@ export function insertSessionWithId(
 
 
 export function insertSession(db: BetterSqlite3.Database, session: Session): void {
-    const title = humanizeStoredName(session.title);
+    const title = humanizeStoredName(session.title, 'keep');
     const stmt = db.prepare(`
         INSERT INTO sessions (
           id, user_id, title, model_provider, model_name, working_directory,

@@ -223,7 +223,7 @@ export class SessionRepository {
     updates: Partial<Session>,
     options?: SessionWriteOptions & { isDeleted?: boolean },
   ): void {
-    const title = updates.title === undefined ? undefined : humanizeStoredName(updates.title);
+    const title = updates.title === undefined ? undefined : humanizeStoredName(updates.title, 'keep');
     // Use COALESCE to avoid read-before-write: only update fields that are provided
     const stmt = this.db.prepare(`
         UPDATE sessions
@@ -326,7 +326,7 @@ export class SessionRepository {
   updateSessionPlanTitle(sessionId: string, planTitle: string | null, updatedAt?: number): void {
     const result = this.db
       .prepare(`UPDATE sessions SET plan_title = ?, updated_at = ? WHERE id = ?`)
-      .run(planTitle === null ? null : humanizeStoredName(planTitle), updatedAt ?? Date.now(), sessionId);
+      .run(planTitle === null ? null : humanizeStoredName(planTitle, 'keep'), updatedAt ?? Date.now(), sessionId);
     if (result.changes === 0) throw new Error(`Session not found: ${sessionId}`);
   }
 
