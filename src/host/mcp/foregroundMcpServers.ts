@@ -68,19 +68,27 @@ export async function resolveForegroundMcpToolScope(
       try {
         const { getMCPClient } = await import('./mcpClient');
         const client = getMCPClient();
-        for (const config of toPreconnect) {
-          try {
-            if (!client.getServerState(config.name)) {
-              client.addServer(config);
-            }
-            await client.ensureConnected(config.name, AbortSignal.timeout(MCP_TIMEOUTS.SSE_CONNECT));
-          } catch (error) {
-            logger.warn('Foreground user MCP server preconnect failed (non-blocking)', {
+        // 并行 + 短预算：超时只放弃等待，共享连接继续，不拖慢每轮；
+        // error 状态的 server 不在每轮重试，避免坏配置把每条消息都卡住。
+        const settled = await Promise.allSettled(toPreconnect.map(async (config) => {
+          const state = client.getServerState(config.name);
+          if (state?.status === 'error') {
+            logger.warn('Foreground user MCP server skipped preconnect (previous connect failed)', {
               serverName: config.name,
-              error: error instanceof Error ? error.message : String(error),
+            });
+            return;
+          }
+          if (!state) client.addServer(config);
+          await client.ensureConnected(config.name, AbortSignal.timeout(MCP_TIMEOUTS.FOREGROUND_PRECONNECT));
+        }));
+        settled.forEach((result, index) => {
+          if (result.status === 'rejected') {
+            logger.warn('Foreground user MCP server preconnect failed (non-blocking)', {
+              serverName: toPreconnect[index].name,
+              error: result.reason instanceof Error ? result.reason.message : String(result.reason),
             });
           }
-        }
+        });
       } catch (error) {
         logger.warn('MCP client unavailable during foreground scope resolution', {
           error: error instanceof Error ? error.message : String(error),

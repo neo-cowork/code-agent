@@ -12,6 +12,21 @@ import type { ToolDefinition } from '../../../src/shared/contract';
 import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
 
 const home = vi.hoisted(() => ({ dir: '' }));
+const fakeClient = vi.hoisted(() => ({
+  states: new Map<string, { status: string }>(),
+  started: [] as string[],
+  signals: [] as Array<AbortSignal | undefined>,
+  release: [] as Array<() => void>,
+  addServer: (config: { name: string }) => { fakeClient.states.set(config.name, { status: 'lazy' }); },
+  getServerState: (name: string) => fakeClient.states.get(name),
+  ensureConnected: (name: string, signal?: AbortSignal) => {
+    fakeClient.started.push(name);
+    fakeClient.signals.push(signal);
+    return new Promise<boolean>((resolve) => { fakeClient.release.push(() => resolve(true)); });
+  },
+}));
+
+vi.mock('../../../src/host/mcp/mcpClient', () => ({ getMCPClient: () => fakeClient }));
 
 vi.mock('../../../src/host/config/configPaths', async () => {
   const actual = await vi.importActual<typeof import('../../../src/host/config/configPaths')>('../../../src/host/config/configPaths');
@@ -130,5 +145,34 @@ describe('foregroundMcpReachability（普通会话文字前台经 toolScope.allo
     expect(
       await resolveForegroundMcpToolScope({ allowedMcpServerIds: ['user-a'] }, { preconnect: false }),
     ).toEqual({ allowedMcpServerIds: ['user-a'] });
+  });
+
+  it('预连接并行发起、带前台短预算信号，且不在每轮重试 error 状态的服务器', async () => {
+    fakeClient.states.clear();
+    fakeClient.started.length = 0;
+    fakeClient.signals.length = 0;
+    fakeClient.release.length = 0;
+    await fs.writeFile(
+      path.join(home.dir, 'mcp.json'),
+      JSON.stringify({
+        servers: [
+          { name: 'slow-a', type: 'stdio', command: 'node', enabled: true },
+          { name: 'slow-b', type: 'stdio', command: 'node', enabled: true },
+          { name: 'broken', type: 'stdio', command: 'node', enabled: true },
+        ],
+      }),
+      'utf-8',
+    );
+    fakeClient.states.set('broken', { status: 'error' });
+
+    const pending = resolveForegroundMcpToolScope(undefined);
+    await vi.waitFor(() => expect(fakeClient.started).toHaveLength(2));
+    // 两个 server 都已发起连接，而第一个还没完成 → 并行而非串行
+    expect(fakeClient.started.sort()).toEqual(['slow-a', 'slow-b']);
+    expect(fakeClient.signals.every((signal) => signal !== undefined)).toBe(true);
+    fakeClient.release.forEach((release) => release());
+    const scope = await pending;
+    expect(scope?.allowedMcpServerIds).toEqual(['slow-a', 'slow-b', 'broken']);
+    expect(fakeClient.started).not.toContain('broken');
   });
 });
