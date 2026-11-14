@@ -4,6 +4,9 @@ import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentEngineSourceDescriptor } from '../../../src/shared/contract/agentEngine';
+import { listExternalEngineManifests } from '../../../src/shared/externalEngineManifest';
+
+const cursorManifest = listExternalEngineManifests().find((manifest) => manifest.id === 'cursor_cli')!;
 
 const appState = {
   modelConfig: {
@@ -13,7 +16,7 @@ const appState = {
     baseUrl: 'https://api.deepseek.com',
   },
   workingDirectory: '/workspace' as string | undefined,
-  language: 'zh' as const,
+  language: 'zh' as 'zh' | 'en',
   setLanguage: vi.fn(),
   cloudUIStrings: null,
 };
@@ -106,6 +109,19 @@ const sources: AgentEngineSourceDescriptor[] = [
     credentialOwner: 'official_client',
     auditNotes: [],
   },
+  {
+    manifestId: cursorManifest.id,
+    label: cursorManifest.label,
+    summary: cursorManifest.summary,
+    detected: false,
+    selectable: false,
+    authState: 'not_checked',
+    modelSelection: cursorManifest.modelSelection,
+    recommendation: cursorManifest.recommendation,
+    evidence: cursorManifest.adapter.evidence,
+    credentialOwner: cursorManifest.adapter.credentialOwner,
+    auditNotes: [],
+  },
 ];
 
 const invokeDomain = vi.fn();
@@ -119,6 +135,7 @@ import { onboardingZh } from '../../../src/renderer/i18n/onboarding';
 const text = onboardingZh.onboarding;
 
 beforeEach(() => {
+  appState.language = 'zh';
   appState.workingDirectory = '/workspace';
   sessionState.sessions[0].workingDirectory = '/workspace';
   updateSessionEngine.mockReset();
@@ -309,5 +326,142 @@ describe('two-step onboarding', () => {
       model: 'claude-sonnet-4',
       protocol: 'claude',
     })));
+  });
+
+  it('renders subscription route, API route, and default-model step in English with zero CJK', async () => {
+    const HAN_RE = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/u;
+    appState.language = 'en';
+
+    render(<ModelOnboardingModal onComplete={vi.fn()} onSkip={vi.fn()} />);
+    await screen.findByTestId('onboarding-subscription-sources');
+
+    const dialog = screen.getByRole('dialog', { name: 'Set up Neo' });
+    expect(dialog.textContent).toContain('Official account / subscription');
+    expect(dialog.textContent).toContain('Detected on this computer');
+    expect(dialog.textContent).toContain('Not installed / recommended');
+    const cursorCard = dialog.querySelector('[data-onboarding-recommendation="cursor_cli"]');
+    expect(cursorCard?.textContent).toContain('Requires official protocol verification before it can be selected in Neo.');
+    expect(cursorCard?.textContent).toContain('Recommended');
+    expect(dialog.textContent).not.toMatch(HAN_RE);
+
+    // Advance to subscription default-model step
+    fireEvent.click(dialog.querySelector('[data-onboarding-engine="codex_cli"]')!);
+    await screen.findByTestId('onboarding-model-step');
+    expect(dialog.textContent).toContain('Confirm default model');
+    expect(dialog.textContent).toContain('Codex CLI shows only the models detected from this client.');
+    expect(dialog.textContent).not.toMatch(HAN_RE);
+
+    // Go back and switch to API Key route
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    fireEvent.click(await screen.findByTestId('onboarding-route-api'));
+    await screen.findByTestId('onboarding-api-source');
+    expect(dialog.textContent).toContain('Connect an official API or compatible endpoint');
+    expect(dialog.textContent).toContain('Everyday chat, coding, and cost-effective tasks');
+    expect(dialog.textContent).toContain('Zhipu GLM');
+    expect(dialog.textContent).toContain('Volcengine / Doubao');
+    expect(dialog.textContent).toContain('Xiaomi MiMo');
+    expect(dialog.textContent).toContain('OpenAI-compatible endpoint');
+    expect(dialog.textContent).toContain('Anthropic-compatible endpoint');
+    expect(dialog.textContent).not.toMatch(HAN_RE);
+
+    // Verify & advance to API default-model step
+    fireEvent.change(screen.getByPlaceholderText("Paste this provider's API key"), {
+      target: { value: 'sk-en-test' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Verify & choose model' }));
+    await screen.findByTestId('onboarding-model-step');
+    expect(dialog.textContent).toContain('DeepSeek passed connection verification.');
+    expect(dialog.textContent).not.toMatch(HAN_RE);
+  });
+
+  it('preserves byte-identical Simplified Chinese strings across all three wizard screens', async () => {
+    appState.language = 'zh';
+    render(<ModelOnboardingModal onComplete={vi.fn()} onSkip={vi.fn()} />);
+    await screen.findByTestId('onboarding-subscription-sources');
+
+    const dialog = screen.getByRole('dialog', { name: '初始化 Neo' });
+
+    // Pre-change zh snapshot of subscription route strings
+    const expectedSubscriptionStrings = [
+      '初始化 Neo',
+      '抵达新栖地。',
+      'Neo 是你地球之外的新居所。花一分钟配好引擎，我们就出发。',
+      '连接来源',
+      '默认模型',
+      '官方账号 / 订阅',
+      'API Key',
+      '选择本机已登录的官方客户端',
+      '整卡点击后直接进入默认模型；未通过 Adapter 门禁的来源不会伪装成可用。',
+      '本机已检测',
+      'codex-cli 1.0.0 · Adapter 已开放 · 官方登录已确认',
+      '可用',
+      '已检测 · CLI 未登录 · 生产 Adapter 未开放',
+      '需登录',
+      '未安装 / 推荐项',
+      'Adapter 已开放 · 本机未检测到客户端',
+      '未安装',
+      '需要完成官方协议与实机验证后才能在 Neo 中选择。',
+      '推荐了解',
+      '官方登录凭证始终由对应客户端管理',
+      '跳过，稍后在设置里配置',
+    ];
+    for (const expected of expectedSubscriptionStrings) {
+      expect(dialog.textContent).toContain(expected);
+    }
+
+    // Subscription default-model step
+    fireEvent.click(dialog.querySelector('[data-onboarding-engine="codex_cli"]')!);
+    await screen.findByTestId('onboarding-model-step');
+    for (const expected of [
+      '确认默认模型',
+      'Codex CLI 只展示探测到的真实模型能力。',
+      '返回',
+      '下一步',
+    ]) {
+      expect(dialog.textContent).toContain(expected);
+    }
+
+    // Back to API route
+    fireEvent.click(screen.getByRole('button', { name: '返回' }));
+    fireEvent.click(await screen.findByTestId('onboarding-route-api'));
+    await screen.findByTestId('onboarding-api-source');
+    const expectedApiStrings = [
+      '连接官方 API 或兼容接口',
+      '先验证接口并读取真实模型目录，再进入默认模型。',
+      '日常聊天、代码和高性价比任务',
+      '长文本、中文写作和文档处理',
+      '智谱 GLM',
+      '国内直连、视觉和多模态能力',
+      '办公文档、多模态和国内生态',
+      'GPT 系列官方 API',
+      'Anthropic 官方 API',
+      'Google Gemini 官方 API',
+      'MiniMax 官方 API',
+      'xAI Grok 官方 API',
+      '高速推理官方 API',
+      '联网搜索官方 API',
+      '火山 / 豆包',
+      '火山引擎 Ark 官方 API',
+      'LongCat API 开放平台',
+      '小米 MiMo',
+      '小米 MiMo Token Plan',
+      'OpenAI 兼容接口',
+      '适用于 new-api、one-api 和其他 OpenAI-compatible 网关。',
+      'Anthropic 兼容接口',
+      '适用于实现 Anthropic Messages / models 协议的自定义接口。',
+      '密钥只存在这台电脑上，不会上传。',
+      '验证并选择模型',
+    ];
+    for (const expected of expectedApiStrings) {
+      expect(dialog.textContent).toContain(expected);
+    }
+
+    // API default-model step
+    fireEvent.change(screen.getByPlaceholderText(text.apiKeyPlaceholder), {
+      target: { value: 'sk-zh-test' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '验证并选择模型' }));
+    await screen.findByTestId('onboarding-model-step');
+    expect(dialog.textContent).toContain('DeepSeek 已通过连接验证。');
   });
 });
