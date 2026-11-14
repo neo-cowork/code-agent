@@ -11,6 +11,7 @@ import { GENERATOR_WRITE_TOOLS, writeTargetPathOf } from './writeTargetPath';
 import { resolveToolWriteTargets } from './writeTargets';
 import { connectorWriteAskClassification } from './connectorTokenWrite';
 import { isNonLocalWriteTool, requiresScheduleWriteGrant } from '../cron/cronWriteGrant';
+import { isTaskOutputPathAuthorized } from '../permissions/taskOutputDirectory';
 
 // 写入工具名映射
 const WRITE_TOOLS = new Set([
@@ -31,6 +32,14 @@ const WRITE_TOOLS = new Set([
   'excel_generate',
 ]);
 
+/** Host-only policy input for the subagent's outside-workdir gate. */
+export function isTaskOutputFileWriteAuthorized(toolName: string, args: Record<string, unknown>, context: ClassificationContext): boolean {
+  const target = writeTargetPathOf(toolName, args);
+  return WRITE_TOOLS.has(toolName) && Boolean(target && isTaskOutputPathAuthorized({
+    sessionId: context.sessionId, mode: context.permissionMode, target, cwd: context.workingDirectory,
+  }));
+}
+
 // 生成器类写入工具的路径是可选参数：缺省时产物落在会话工作目录（resolveInputPath
 // 对 fileName 的行为），按 workingDirectory 本身参与边界判断即可。
 
@@ -50,6 +59,7 @@ function outsideProjectWriteAsk(
     ),
     confidence: 0.9,
     cached: false,
+    bypassCache: true,
     traceStep: createTraceStep('permission_classifier', 'W3: outside_project', 'ask', reason, startTime),
     trustBoundary: true,
   };
@@ -90,7 +100,7 @@ export async function classifyFileWrite(
   // canonicalizes symlinks, which must not turn an in-folder escape into /tmp approval.
   const policyTarget = writeTargetPathOf(toolName, args);
   const originalPolicy = policyTarget ? classifyTarget(toolName, policyTarget, context, startTime) : undefined;
-  if (originalPolicy && originalPolicy.decision !== 'approve') return { ...originalPolicy, bypassCache: scheduled };
+  if (originalPolicy && originalPolicy.decision !== 'approve') return { ...originalPolicy, bypassCache: scheduled || originalPolicy.bypassCache };
   const assessment = scheduled && context.toolDefinition
     ? resolveToolWriteTargets({ definition: context.toolDefinition, params: args, workingDirectory: context.workingDirectory })
     : undefined;
@@ -111,7 +121,7 @@ export async function classifyFileWrite(
     if (outside >= 0) return { ...outsideProjectWriteAsk(toolName, targets[outside], startTime), bypassCache: true };
   }
   const boundary = results.find((result) => result.decision !== 'approve');
-  if (boundary) return { ...boundary, bypassCache: scheduled };
+  if (boundary) return { ...boundary, bypassCache: scheduled || boundary.bypassCache };
   const writesWorkspace = results.some((result) => result.workspaceWrite);
   if (writesWorkspace && scheduled) {
     const reason = 'Scheduled workspace file writes require an explicit folder grant';
@@ -120,7 +130,7 @@ export async function classifyFileWrite(
       traceStep: createTraceStep('permission_classifier', 'schedule_write_grant', 'ask', reason, startTime) };
   }
   const { workspaceWrite: _workspaceWrite, ...result } = results[0];
-  return { ...result, bypassCache: scheduled };
+  return { ...result, bypassCache: scheduled || result.bypassCache };
 }
 
 /**
@@ -172,6 +182,10 @@ function classifyTarget(
     : undefined;
   if (isProtectedWritePath(resolved, { homeDir: CANONICAL_HOME_DIR, projectRoot: workspace })) {
     return protectedWriteAsk(toolName, resolved, startTime);
+  }
+  if (isTaskOutputFileWriteAuthorized(toolName, { file_path: filePath }, context)) {
+    return { decision: 'approve', reason: 'task_output_directory', confidence: 1, cached: false, bypassCache: true,
+      traceStep: createTraceStep('permission_classifier', 'task_output_directory', 'allow', 'Explicit output directory for this task', startTime) };
   }
   if (!workspaceBoundary || !workspace) return outsideProjectWriteAsk(toolName, resolved, startTime);
   if (isPathInside(resolved, workspace)) {
