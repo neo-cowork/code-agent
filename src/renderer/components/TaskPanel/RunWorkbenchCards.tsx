@@ -1,3 +1,4 @@
+import { formatDisplayPath } from '../../utils/displayPath';
 import { resolveRunCancellationOutcomeKey } from '../../i18n/outcomeWords';
 import type React from 'react';
 import { useState } from 'react';
@@ -559,7 +560,7 @@ const TaskOutputRefRow = ({ outputRef: ref }: { outputRef: TaskRecordOutputRef }
   return (
     <div
       className="min-w-0 rounded bg-surface-subtle px-2 py-1"
-      title={ref.pathOrUrl || ref.label}
+      title={ref.type === 'url' ? ref.pathOrUrl || ref.label : formatDisplayPath(ref.pathOrUrl || ref.label)}
     >
       <div className="flex min-w-0 items-center gap-2">
         <span className={`flex-shrink-0 rounded border px-1.5 py-0.5 text-[9px] ${outputRefTone(ref.type)}`}>

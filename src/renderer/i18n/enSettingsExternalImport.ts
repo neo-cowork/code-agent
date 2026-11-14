@@ -20,9 +20,11 @@ export const enSettingsExternalImport = {
         instructions: 'Instructions',
         memories: 'Memories',
         skills: 'Skills',
+        mcp: 'MCP servers',
       },
       sourceNames: {
         'claude-code': 'Claude Code',
+        'claude-desktop': 'Claude Desktop',
         codex: 'Codex',
         cursor: 'Cursor',
         'grok-build': 'Grok Build',

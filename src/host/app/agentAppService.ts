@@ -76,6 +76,7 @@ import type {
 } from '../../shared/contract/conversationEnvelope';
 import { resolveConnectorRequiredForTurn, withWorkbenchTurnSystemContext } from './workbenchTurnContext';
 import { withMissingAttachmentTurnSystemContext } from './missingAttachmentTurnContext';
+import { resolveForegroundMcpToolScope } from '../mcp/foregroundMcpServers';
 import { resolveForegroundImageTurn, withSessionCommandCenterBrain } from './sessionCommandCenterBrain';
 import { isSessionCommandCenterTurn } from '../../shared/constants/sessionCommandCenter';
 import { getPermissionModeManager } from '../permissions/modes';
@@ -839,7 +840,10 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       hasGoal: Boolean(optionsWithTurnSettings.goal),
     })
       ? withSessionCommandCenterBrain(
-        optionsWithTurnSettings,
+        {
+          ...optionsWithTurnSettings,
+          toolScope: await resolveForegroundMcpToolScope(optionsWithTurnSettings.toolScope),
+        },
         envelope.content,
         resolveForegroundImageTurn(resolvedSessionId, envelope.attachments, optionsWithTurnSettings.modelSpec),
         (await getSessionManager().getMessages(resolvedSessionId)).slice().reverse().find(message => message.role === 'assistant' && !message.isMeta && message.visibility !== 'rewound')?.metadata?.stoppedByStepLimit === true,
@@ -1055,7 +1059,10 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       hasGoal: Boolean(workbenchOptions?.goal),
     })
       ? withSessionCommandCenterBrain(
-        workbenchOptions,
+        {
+          ...(workbenchOptions ?? {}),
+          toolScope: await resolveForegroundMcpToolScope(workbenchOptions?.toolScope),
+        },
         envelope.content,
         resolveForegroundImageTurn(resolvedSessionId, envelope.attachments, workbenchOptions?.modelSpec),
         (await getSessionManager().getMessages(resolvedSessionId)).slice().reverse().find(message => message.role === 'assistant' && !message.isMeta && message.visibility !== 'rewound')?.metadata?.stoppedByStepLimit === true,
