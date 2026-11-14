@@ -75,6 +75,35 @@ describe('describeDeniedShellCalls', () => {
     expect(out?.guidance).toContain('Reply in the same language the user is writing in this turn.');
   });
 
+  it('Chinese shell requests with ASCII paths or commands stay Chinese instead of flipping to English', () => {
+    for (const ui of ['zh', 'en'] as const) {
+      uiState.language = ui;
+      for (const prompt of [
+        '请把 ~/Desktop/neo-old-notes.txt 删掉',
+        '请把~/Desktop/neo-old-notes.txt删掉',
+        '帮我运行 npm run build',
+        '运行 npm install express typescript vitest',
+        '看下 src/host/agent/runtime/foregroundShellDenial.ts',
+      ]) {
+        const out = describeDeniedShellCalls(buildTurnCtx(prompt), [{ name: 'Bash' }]);
+        expect(out?.finalMessage, `ui=${ui} prompt=${prompt}`).toBe(EXPECTED_ZH_FINAL_MESSAGE);
+      }
+    }
+  });
+
+  it('English shell requests with CJK filenames still return the English finalMessage', () => {
+    uiState.language = 'zh';
+    for (const prompt of [
+      "Please delete ~/Desktop/会议纪要-2026年11月最终版.docx, I don't need it any more.",
+      'Delete 会议纪要-2026年11月最终版.docx',
+    ]) {
+      const out = describeDeniedShellCalls(buildTurnCtx(prompt), [{ name: 'Bash' }]);
+      expect(out?.finalMessage, prompt).toBeDefined();
+      expect(out?.finalMessage, prompt).not.toMatch(CJK_OR_FULLWIDTH);
+      expect(out?.finalMessage, prompt).toMatch(/did not run/i);
+    }
+  });
+
   it('empty or language-neutral prompt falls back to the UI language', () => {
     uiState.language = 'en';
     const enEmpty = describeDeniedShellCalls(buildTurnCtx(''), [{ name: 'Bash' }]);
