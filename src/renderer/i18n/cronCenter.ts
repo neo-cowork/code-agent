@@ -1,3 +1,4 @@
+import { parkedApprovalInboxEn, parkedApprovalInboxZh } from './parkedApprovalInbox';
 import { automationPresentationEn, automationPresentationZh } from './automationPresentation';
 import { cronCloudEn, cronCloudZh } from './cronCloud';
 import { cronRoutineRestateEn, cronRoutineRestateZh } from './cronRoutineRestate';
@@ -20,6 +21,7 @@ export const cronCenterZh = {
     ...cronEditorChromeZh,
     ...cronCloudZh,
     parkedVoided: parkedApprovalVoidedZh,
+    ...parkedApprovalInboxZh,
     groupListenCheck: {
       title: '检查群消息是否连通',
       start: '发条测试消息',
@@ -384,7 +386,7 @@ export const cronCenterZh = {
     simpleWeekdayLabel: '星期几',
     weekdays: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'],
     simpleCreateCta: '创建自动化',
-    simpleCreateFailed: '创建失败',
+    simpleCreateFailed: '创建失败', simpleStaggerHint: '整点容易和其他任务扎堆触发，建议把分钟错开到 {minute} 分。',
     // 保存后复述视图（N-ROLE-ROUTINE-RESTATE）：行标签复用 chatInput 的 scheduleConfirm
     ...cronRoutineRestateZh,
     inboxTitle: '{count} 条待过目',
@@ -469,11 +471,6 @@ export const cronCenterZh = {
         scheduleLabel: '工作日 08:30',
       },
       ...watchTemplateCopyZh,
-      'group-listen': {
-        name: '群监听',
-        description: '盯住一个群，来了新消息就按你的一句话处理',
-        scheduleLabel: '群里有新消息时',
-      },
     },
     // 模板连接器依赖状态
     connectorConnected: '已连接',
@@ -542,6 +539,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     ...cronEditorChromeEn,
     ...cronCloudEn,
     parkedVoided: parkedApprovalVoidedEn,
+    ...parkedApprovalInboxEn,
     groupListenCheck: {
       title: 'Check group message reception',
       start: 'Send a test message',
@@ -894,7 +892,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     simpleWeekdayLabel: 'Day of week',
     weekdays: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
     simpleCreateCta: 'Create automation',
-    simpleCreateFailed: 'Failed to create',
+    simpleCreateFailed: 'Failed to create', simpleStaggerHint: 'Tasks starting on the hour tend to pile up with others. Consider moving the minute to :{minute}.',
     ...cronRoutineRestateEn,
     inboxTitle: '{count} to review',
     inboxAllClear: 'All reviewed ✓',
@@ -973,11 +971,6 @@ export const cronCenterEn: typeof cronCenterZh = {
         scheduleLabel: 'Weekdays 08:30',
       },
       ...watchTemplateCopyEn,
-      'group-listen': {
-        name: 'Group listen',
-        description: 'Watch one group and handle new messages with your one-liner',
-        scheduleLabel: 'When a new message arrives',
-      },
     },
     connectorConnected: 'Connected',
     connectorNotConnected: 'Not connected',

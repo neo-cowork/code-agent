@@ -52,7 +52,7 @@ const TASK_URL_RE = /https?:\/\/[^\s<>"'`)]+/i;
 const MANUAL_TAKEOVER_COPY = /manual takeover|user takeover|take over manually|requires manual|人工接管|用户接管/i;
 
 const BROWSER_JEV_MISSING_KEY_WARN =
-  'CODE_AGENT_BROWSER_JEV_STEP 已开启但 TYPESAFE_API_KEY 缺失，Jev 步选不生效（走主模型逐步 Browser）';
+  '无可用 Jev 路由（未登录/缺 TYPESAFE_API_KEY），Jev 步选不生效（走主模型逐步 Browser）';
 
 // 会改页面状态的操作。超时/异常不代表动作未送达，这类动作一旦结果不确定必须停环回落。
 const MUTATING_OPERATIONS: ReadonlySet<BrowserStepOperation> = new Set(['click', 'type', 'press_enter']);

@@ -199,6 +199,7 @@ describe('fast gate fail-closed contracts', () => {
       .toThrow('duplicate gate registration: inputs');
     const live = fs.readFileSync(path.join(root, 'scripts/gates-fast.mjs'), 'utf8');
     expect(extractGateIds(live)).toContain('shared-host-boundary');
+    expect(extractGateIds(live)).toContain('user-visible-leak');
     expect(() => validateGateBudgetCoverage(policy, extractGateIds(live))).not.toThrow();
   });
   it('policy leaves 2x headroom over the measured agent-core PR under load (09-15 route-domains TASK run, 3 receipts)', () => {
