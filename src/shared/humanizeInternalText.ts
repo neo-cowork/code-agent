@@ -10,6 +10,7 @@ import {
 
 export type InternalTextLanguage = 'zh' | 'en';
 
+const COMPLETED_TASK_STATE_RE = new RegExp(leakPatterns.completedTaskState);
 const EMPTY_BACKGROUND_TASKS_RE = new RegExp(leakPatterns.emptyBackgroundTasks);
 const PERMISSION_REQUEST_TITLE_RE = new RegExp(leakPatterns.permissionRequestTitle);
 const PERMISSION_REQUEST_RE = new RegExp(leakPatterns.permissionRequest);
@@ -197,9 +198,10 @@ export function humanizeInternalText(
     return { text: 'There are no background tasks in this conversation.', detectedFormats: [] };
   }
 
+  const localizedInput = lang === 'en' ? input.replace(COMPLETED_TASK_STATE_RE, 'Task completed') : input;
   const leaks = detectInternalTextLeaks(input);
   if (leaks.length === 0) {
-    return { text: input, detectedFormats: [] };
+    return { text: localizedInput, detectedFormats: [] };
   }
 
   const detectedFormats = [...new Set(leaks.map((l) => l.format))];
@@ -292,7 +294,7 @@ export function humanizeInternalText(
     }
   }
 
-  let next = input;
+  let next = localizedInput;
   let shouldCollapseDetails = false;
 
   // 1. Replace English state phrases first (some include `id=...` or colons)

@@ -49,5 +49,6 @@
   "sandboxCommand": "(?:Command failed:\\s*)?\\bsandbox-exec\\b[^\\r\\n]*",
   "internalToolLabel": "^(?:Read|Write|Edit|Bash|Glob|Grep)$|(?<![A-Za-z0-9_/-])(?:Read|Write|Edit|Bash|Glob|Grep)(?=\\s*[:：])",
   "permissionRequestTitle": "^需要授权$",
-  "permissionRequest": "^(Read|Write|Edit|Bash|Glob|Grep)\\s*[:：]\\s*请求执行权限$"
+  "permissionRequest": "^(Read|Write|Edit|Bash|Glob|Grep)\\s*[:：]\\s*请求执行权限$",
+  "completedTaskState": "^(?:后台)?任务已完成(?=[\\s：:]|$)"
 }

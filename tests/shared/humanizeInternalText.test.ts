@@ -201,3 +201,12 @@ describe('tool labels in native approval notices', () => {
     }
   });
 });
+
+
+it('localizes a host completion state while retaining the original diagnostic input', () => {
+  expect(humanizeInternalText('任务已完成 Duration: 10 sec', 'en').text).toBe('Task completed Duration: 10 sec');
+  const raw = '任务已完成 call_export123';
+  const result = humanizeInternalText(raw, 'en');
+  expect(result.text).toBe('Task completed tool operation');
+  expect(result.collapseIntoDetails?.details).toBe(raw);
+});
