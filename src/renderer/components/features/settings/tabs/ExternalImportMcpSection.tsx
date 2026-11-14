@@ -50,7 +50,7 @@ function ItemLine({
         <div className="truncate text-xs text-zinc-200">
           {item.name}
           <span className="mx-1.5 text-zinc-500">·</span>
-          <span className="text-zinc-400">{sourceNames[item.sourceId] ?? item.sourceId}</span>
+          <span className="text-zinc-400">{sourceNames[item.sourceId]}</span>
           <span className="mx-1.5 text-zinc-500">·</span>
           <span className="text-zinc-500">{copy.kindLabels[item.kind]}</span>
         </div>
@@ -90,7 +90,7 @@ export function ExternalImportMcpPreview({
         <div className="mt-2 space-y-1 text-[11px] text-zinc-500">
           {unhealthyFiles.map((file) => (
             <div key={file.sourceId} className="truncate" data-testid={`external-import-mcp-file-${file.sourceId}`}>
-              {sourceNames[file.sourceId] ?? file.sourceId}
+              {sourceNames[file.sourceId]}
               {' · '}
               {copy.fileStatusLabels[file.status]}
             </div>
