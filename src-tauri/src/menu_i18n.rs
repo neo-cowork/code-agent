@@ -34,6 +34,7 @@ impl Language {
             Self::En => Labels {
                 settings: "Settings…",
                 quit: "Quit Agent Neo",
+                full_quit: "Quit Completely",
                 quick_ask: "Quick Ask",
                 new_chat: "New Chat",
                 paste_context: "Paste as Context",
@@ -41,6 +42,7 @@ impl Language {
             Self::Zh => Labels {
                 settings: "设置…",
                 quit: "退出 Agent Neo",
+                full_quit: "完全退出",
                 quick_ask: "快速提问",
                 new_chat: "新建对话",
                 paste_context: "粘贴为上下文",
@@ -52,6 +54,7 @@ impl Language {
 #[derive(Debug, PartialEq, Eq)]
 pub struct Labels {
     pub settings: &'static str,
+    pub full_quit: &'static str,
     pub quit: &'static str,
     pub quick_ask: &'static str,
     pub new_chat: &'static str,
@@ -82,6 +85,7 @@ fn update_items(items: Vec<MenuItemKind<tauri::Wry>>, labels: &Labels) -> tauri:
                 let text = match item.id().as_ref() {
                     "open_settings" => labels.settings,
                     "quit_app" => labels.quit,
+                    "full_quit" => labels.full_quit,
                     "quick_ask" => labels.quick_ask,
                     "new_chat" => labels.new_chat,
                     "paste_context" => labels.paste_context,
@@ -132,6 +136,7 @@ mod tests {
             Labels {
                 settings: "Settings…",
                 quit: "Quit Agent Neo",
+                full_quit: "Quit Completely",
                 quick_ask: "Quick Ask",
                 new_chat: "New Chat",
                 paste_context: "Paste as Context",
@@ -147,6 +152,7 @@ mod tests {
             Labels {
                 settings: "\u{8bbe}\u{7f6e}…",
                 quit: "\u{9000}\u{51fa} Agent Neo",
+                full_quit: "完全退出",
                 quick_ask: "\u{5feb}\u{901f}\u{63d0}\u{95ee}",
                 new_chat: "\u{65b0}\u{5efa}\u{5bf9}\u{8bdd}",
                 paste_context: "\u{7c98}\u{8d34}\u{4e3a}\u{4e0a}\u{4e0b}\u{6587}",

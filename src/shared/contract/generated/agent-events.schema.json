@@ -1161,6 +1161,25 @@
             "purpose": {
               "type": "string"
             },
+            "userRequest": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "truncated": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "text",
+                "truncated"
+              ],
+              "additionalProperties": false
+            },
+            "startedByAutomation": {
+              "type": "boolean"
+            },
             "commandRiskLevel": {
               "type": "string",
               "enum": [

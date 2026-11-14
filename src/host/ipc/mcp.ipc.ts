@@ -28,6 +28,11 @@ import { getCloudConfigService } from '../services/cloud';
 import { getConfigService } from '../services/core/configService';
 import { getSecureStorage } from '../services/core/secureStorage';
 import { extractSecrets } from '../mcp/secretRef';
+import { applyExternalMcpImport, planExternalMcpImport } from '../externalImport/mcpServersImport';
+import type {
+  ExternalMcpApplyRequest,
+  ExternalMcpPreviewRequest,
+} from '../../shared/contract/externalImport';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('MCP.ipc', { lane: 'mcp' });
@@ -733,6 +738,12 @@ const mcpHandlers: DomainRouteHandlers<McpDomainRequest, RegisterMcpHandlersOpti
   refreshFromCloud: async (_ctx, _requestPayload) => {
     await handleRefreshFromCloud();
     return { success: true };
+  },
+  externalImportMcpPreview: async (_ctx, requestPayload) => {
+    return await planExternalMcpImport(requestPayload as ExternalMcpPreviewRequest | undefined);
+  },
+  externalImportMcpApply: async (_ctx, requestPayload) => {
+    return await applyExternalMcpImport(requestPayload as ExternalMcpApplyRequest | undefined);
   },
 };
 
