@@ -14,12 +14,12 @@ import { RouteTraceChip } from '../../src/renderer/components/features/chat/Rout
 import {
   buildProviderBillingSummary,
   buildProviderHealthSummary,
-  formatNativeModelSwitcherTooltip,
   ProviderBillingBadge,
   ProviderHealthBadge,
   ProviderSourceBadge,
   ProviderTransportBadge,
 } from '../../src/renderer/components/StatusBar/modelSwitcherHelpers.tsx';
+import { formatNativeModelSwitcherTooltip } from '../../src/renderer/components/StatusBar/modelSwitcherTooltips.ts';
 
 export interface ModelStrategySurfaceVisibilityResult {
   ok: boolean;
@@ -139,7 +139,7 @@ export function buildModelStrategySurfaceVisibilityResult(): ModelStrategySurfac
     overridden: false,
     billingSummary: buildProviderBillingSummary('payg'),
     healthSummary: buildProviderHealthSummary({ status: 'healthy', latencyP50: 120, errorRate: 0 }),
-    effort: { label: 'High' },
+    effort: { label: 'High', shortLabel: '高' },
     thinkingLabel: 'Think',
   });
 
@@ -184,7 +184,7 @@ export function buildModelStrategySurfaceVisibilityResult(): ModelStrategySurfac
       'OpenAI-compatible',
       'commonstack.example/v1',
     ]),
-    modelSwitcherTooltipShowsTaskStrategyContext: tooltip === '自动路由（按任务、成本和能力切换，当前主任务 mimo-v2.5-pro） · Engine: Neo · 计费: 按量 · Provider: 健康 · Effort: High · Thinking: Think',
+    modelSwitcherTooltipShowsTaskStrategyContext: tooltip === '自动路由（按任务、成本和能力切换，当前主任务 mimo-v2.5-pro） · 计费: 按量 · 服务状态: 健康 · 推理强度: 高 · 思考: Think',
   };
   const failedChecks = Object.entries(checks)
     .filter(([, passed]) => !passed)

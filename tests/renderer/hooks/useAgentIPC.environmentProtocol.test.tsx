@@ -105,7 +105,7 @@ describe('useAgentIPC 发送失败 → ENVIRONMENT_PROTOCOL_UNSUPPORTED 文案',
     expect(assistants[0]?.content).toBe(environmentProtocolUnsupportedMessage(protocolRejection(), 'en'));
   });
 
-  it('其他发送错误不误伤：无稳定码时仍走原始报错路径', async () => {
+  it('其他发送错误不误伤：无协议稳定码时落回通用失败句而非协议版本闸文案', async () => {
     invokeMock.mockRejectedValueOnce(new Error('network down'));
     const hook = renderSendHook();
 
@@ -115,6 +115,6 @@ describe('useAgentIPC 发送失败 → ENVIRONMENT_PROTOCOL_UNSUPPORTED 文案',
 
     const assistants = assistantMessages();
     expect(assistants).toHaveLength(1);
-    expect(assistants[0]?.content).toBe('Error: network down');
+    expect(assistants[0]?.content).toBe('Neo 暂时没能完成这次请求，请稍后再试。');
   });
 });
