@@ -80,6 +80,7 @@ export function publishBackgroundSubagentVisibility(options: {
   task: string;
   startedAt: number;
   ownsRunLifecycle: boolean;
+  publisher?: string;
 }): void {
   const { promise, scope, agentId, agentName, role, task, startedAt, ownsRunLifecycle } = options;
   if (!scope) return;
@@ -88,7 +89,7 @@ export function publishBackgroundSubagentVisibility(options: {
     ? registerSingleSpawnVisibility(scope, agentId)
     : undefined;
   const emitter = getSwarmEventEmitter();
-  if (ownsRunLifecycle) emitter.started(scope, 1);
+  if (ownsRunLifecycle) emitter.started(scope, 1, options.publisher);
   emitter.agentAdded(scope, { id: agentId, name: agentName, role, dispatchedTask: task });
   emitter.agentUpdated(scope, agentId, { status: 'running', startTime: startedAt });
 
@@ -167,6 +168,7 @@ export function adoptForegroundSubagent(options: {
     task,
     startedAt: agentStartedAt,
     ownsRunLifecycle: !context.swarmRunScope,
+    publisher: 'adoptForegroundSubagent',
   });
   return {
     success: true,
