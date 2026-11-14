@@ -50,8 +50,9 @@ export function createProtocolSubagentExecutionContext(
     throw new Error('Subagent execution requires resolver in protocol context');
   }
 
+  // Surface ownership may be auxiliary; child-agent lifetime stays under the native parent.
   return {
-    runId: ctx.runId,
+    runId: ctx.spawnParentRunId ?? ctx.runId,
     sourceMessageId: ctx.sourceMessageId,
     sessionId: ctx.sessionId,
     workspace: ctx.workspace,
@@ -108,7 +109,7 @@ export function createProtocolSubagentExecutionContext(
     forcePermissionHandler: ctx.forcePermissionHandler,
     spawnTreeId: overrides.spawnTreeId ?? ctx.spawnTreeId,
     swarmRunScope: ctx.swarmRunScope,
-    parentNativeRunId: ctx.swarmRunScope?.parentNativeRunId ?? ctx.runId,
+    parentNativeRunId: ctx.swarmRunScope?.parentNativeRunId ?? ctx.spawnParentRunId ?? ctx.runId,
     spawnQueueTimeoutMs: ctx.spawnQueueTimeoutMs,
     spawnParentStartedAt: ctx.spawnParentStartedAt,
     spawnParentTimeoutMs: ctx.spawnParentTimeoutMs,

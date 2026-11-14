@@ -104,6 +104,7 @@ export function createSubagentToolRuntime(input: {
   const executor = new ToolExecutor({
     workingDirectory: nativeRunContext?.cwd ?? context.cwd,
     runContext: nativeRunContext,
+    spawnParentRunId: context.parentNativeRunId,
     // N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE：这里不走 forRun 派生，父执行器的写边界
     // 开关必须显式继承——漏传等于子代理绕过写边界（#1686 第四轮 ai-review 形状）。
     restrictWritesToWorkspace: context.restrictWritesToWorkspace === true,
@@ -135,7 +136,7 @@ export function createSubagentToolRuntime(input: {
         // 出站 / 不可逆 / 进程类工具（mustAskUnderAcceptEdits）仍要落到 permission.request。
         && !(mode === 'acceptEdits' && mustAskUnderAcceptEdits(request.tool))
       ) return true;
-      return context.permission.request({ ...request, ...input.identity });
+      return context.permission.request({ ...request, sessionId: input.sessionId, ...input.identity });
     },
   });
   const policyName = input.policyName || 'subagent pipeline';

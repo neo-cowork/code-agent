@@ -177,28 +177,28 @@ describe('SessionCommandCenter', () => {
         queue_when_full: true,
       }, ctx, allow);
       const reused = await executeDelegateTask(firstArgs, ctx, allow);
-      const tasks = getSessionCommandCenter().list('session-meta');
       const status = await executeTaskStatus({}, ctx, allow);
 
       expect(accepted).toEqual({
         ok: true,
-        output: `accepted：后台任务「首项」(${tasks[0].id}) 已开始。accepted 不等于完成；结果只以后续任务终态回流为准。`,
+        output: `后台任务「首项」已开始，尚未完成；完成后会在这里告诉你结果。`,
         meta: { sessionTask: { outcome: 'accepted', tasks: [{ shortName: '首项', status: 'running' }] } },
       });
       expect(queued).toEqual({
         ok: true,
-        output: `queued：已把「排队」(${tasks[1].id}) 放进同一任务线，前序任务结束后自动开始。`,
+        output: `已把「排队」加入排队，空闲后自动开始。`,
         meta: { sessionTask: { outcome: 'queued', tasks: [{ shortName: '排队', status: 'queued' }] } },
       });
       expect(reused).toEqual({
         ok: true,
-        output: `reused：复用「首项」(${tasks[0].id})，当前状态 [running]。`,
+        output: `继续跟踪「首项」，当前进行中。`,
         meta: { sessionTask: { outcome: 'reused', tasks: [{ shortName: '首项', status: 'running' }] } },
       });
       expect(status).toEqual({
         ok: true,
-        output: `1. 首项 [running] id=${tasks[0].id}\n2. 排队 [queued] id=${tasks[1].id}\nNo remaining-time data exists. Do not estimate an ETA. Use only this fresh status read; finished helpers must never be described as running.`,
+        output: `1. 首项：进行中\n2. 排队：等待开始\n没有剩余时间数据，请勿估算完成时间。请以本次查询为准，已结束的任务不能说成仍在进行。`,
         meta: {
+          sessionTaskWorkspaceRoots: [PROJECT_SCOPE.primaryRoot],
           sessionTask: {
             outcome: 'status',
             tasks: [
@@ -402,7 +402,7 @@ describe('SessionCommandCenter', () => {
     });
     expect(retry.task.id).not.toBe(first.task.id);
     expect(center.list('session-a')).toHaveLength(2);
-    expect(describeDelegateTaskResult(retry)).toContain('上一次 [failed]：上游超时');
+    expect(describeDelegateTaskResult(retry)).toContain('上一次未完成：上游超时');
     center.dispose();
   });
 
@@ -1191,7 +1191,8 @@ describe('model-facing task result text', () => {
       );
       expect(result).toMatchObject({ ok: true });
       if (!result.ok) return;
-      expect(result.output).toContain(spawned.task.id);
+      expect(result.output).toContain(spawned.task.shortName);
+      expect(result.output).not.toContain(spawned.task.id);
       expect(result.output).toContain(conclusion);
       expect(result.output).toContain(HINT_SENTENCE);
     } finally {
