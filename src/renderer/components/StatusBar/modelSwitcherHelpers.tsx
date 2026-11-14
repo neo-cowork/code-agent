@@ -560,60 +560,6 @@ export function buildProviderMetaTitle(group: {
   ].filter(Boolean).join('\n');
 }
 
-export type ModelSwitcherTooltipLabels = Translations['settings']['model']['models']['switcherTooltip'];
-
-function tooltipEffortLabel(effort: Pick<EffortOption, 'value' | 'label'>, labels: ModelSwitcherTooltipLabels): string {
-  return effort.label === SINGLE_EFFORT_OPTION[0].label ? labels.effortDefault : labels.effortLevels[effort.value];
-}
-
-export function formatNativeModelSwitcherTooltip(args: {
-  labels: ModelSwitcherTooltipLabels;
-  engineLabel: string;
-  currentModel: string;
-  displayProvider: ModelProvider;
-  displayModel: string;
-  adaptive: boolean;
-  overridden: boolean;
-  billingSummary?: Pick<ProviderBillingSummary, 'mode'> | null;
-  healthSummary?: Pick<ProviderHealthSummary, 'state'> | null;
-  effort?: Pick<EffortOption, 'value' | 'label'> | null;
-  thinkingEnabled?: boolean | null;
-}): string {
-  const { labels } = args;
-  const model = `${args.displayProvider}/${args.displayModel}`;
-  const modelLine = args.adaptive
-    ? interpolate(labels.adaptive, { model: args.currentModel })
-    : args.overridden
-      ? interpolate(labels.overridden, { model, original: args.currentModel })
-      : `${labels.mainModel}: ${model}`;
-  return [
-    modelLine,
-    `${labels.engine}: ${args.engineLabel}`,
-    args.billingSummary ? `${labels.billing}: ${labels.billingModes[args.billingSummary.mode]}` : null,
-    args.healthSummary ? `${labels.provider}: ${labels.health[args.healthSummary.state]}` : null,
-    args.effort ? `${labels.effort}: ${tooltipEffortLabel(args.effort, labels)}` : null,
-    typeof args.thinkingEnabled === 'boolean'
-      ? `${labels.thinking}: ${args.thinkingEnabled ? labels.thinkingOn : labels.thinkingOff}`
-      : null,
-  ].filter(Boolean).join(' · ');
-}
-
-export function formatExternalModelSwitcherTooltip(args: {
-  labels: ModelSwitcherTooltipLabels;
-  engineLabel: string;
-  model?: string | null;
-  effort?: Pick<EffortOption, 'value' | 'label'> | null;
-  reliabilityLabel?: string | null;
-}): string {
-  const { labels } = args;
-  return [
-    `${labels.engine}: ${args.engineLabel}`,
-    `${labels.mainModel}: ${args.model ?? labels.defaultModel}`,
-    args.effort ? `${labels.effort}: ${tooltipEffortLabel(args.effort, labels)}` : null,
-    args.reliabilityLabel ? `${labels.status}: ${args.reliabilityLabel}` : null,
-  ].filter(Boolean).join(' · ');
-}
-
 export function getEngineUnavailableReason(
   descriptor: AgentEngineDescriptor,
   needsWorkspace: boolean,

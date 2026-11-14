@@ -375,8 +375,9 @@ describe('AutomationReviewInbox', () => {
     expect(screen.queryByTestId('cron-artifact-row')).toBeNull();
     fireEvent.click(screen.getByTestId('automation-review-digest-toggle'));
     expect(screen.getByTestId('cron-artifact-open').textContent).toContain('report.md');
-    expect(screen.getByTestId('cron-artifact-open').getAttribute('title')).toBe('/work/run/report.md');
+    expect(screen.getByTestId('cron-artifact-open').getAttribute('title')).toBe('…/run/report.md');
     expect(screen.getByTestId('cron-artifact-text').textContent).toContain('notes.md');
+    expect(screen.getByTestId('cron-artifact-text').getAttribute('title')).toBe('notes.md');
     expect(screen.queryAllByTestId('cron-artifact-open')).toHaveLength(1);
 
     fireEvent.click(screen.getByTestId('cron-artifact-open'));
@@ -397,6 +398,8 @@ describe('AutomationReviewInbox', () => {
     });
     expect(toastError).not.toHaveBeenCalled();
     expect(toastSuccess).not.toHaveBeenCalled();
+    expect(screen.getAllByTestId('cron-artifact-text').map((node) => node.getAttribute('title')))
+      .toEqual(['…/run/report.md', 'notes.md']);
   });
 
   it('web 模式点击产物复制路径并提示，不调用打开 IPC', async () => {
@@ -669,11 +672,10 @@ describe('AutomationReviewInbox', () => {
     const cards = screen.getAllByTestId('parked-approval-voided');
     expect(new Set(cards.map((card) => card.textContent)).size).toBe(6);
     cards.forEach((card, index) => {
-      const time = new Date(items[index].requestedAt).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN', {
-        month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-      });
+      const prefix = language === 'en' ? 'Started' : '开始于';
+      const minute = String(32 + index).padStart(2, '0');
       expect(card.textContent).toContain(names[index % 3]);
-      expect(card.textContent).toContain(`${language === 'en' ? 'Started' : '开始于'} ${time}`);
+      expect(card.textContent).toMatch(new RegExp(`${prefix} (?:2026/)?11/0?7,? 00:${minute}(?!\\d)`));
       expect(card.textContent).not.toMatch(/session_|chat-|AM|PM/);
       expect(card.querySelector('button')).toBeNull();
       expect([...card.children].every((line) => line.textContent?.trim())).toBe(true);

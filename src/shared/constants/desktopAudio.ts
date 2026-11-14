@@ -11,4 +11,7 @@ export const MEETING_SESSION_LIMITS = {
   MAX_DURATION_MS: 4 * 60 * 60 * 1000,
   SLEEP_GAP_MS: 2 * 60 * 1000,
   TICK_MS: 30 * 1000,
+  /** 对话按场取转写：正在进行或结束 2 小时内的会单独注入，预算 8000 字（会长了保留最近的） */
+  CONTEXT_RECENT_MS: 2 * 60 * 60 * 1000,
+  CONTEXT_MAX_CHARS: 8_000,
 } as const;

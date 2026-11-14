@@ -16,6 +16,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
+import { buildExpiredChatUploadResult, isChatUploadPath } from '../../file/pathUtils';
 import { readDocxSchema as schema } from './readDocx.schema';
 
 type DocxFormat = 'text' | 'markdown' | 'html';
@@ -49,6 +50,7 @@ export async function executeReadDocx(
   const absPath = path.isAbsolute(filePath) ? filePath : path.join(ctx.workingDir, filePath);
 
   if (!fs.existsSync(absPath)) {
+    if (isChatUploadPath(absPath)) return buildExpiredChatUploadResult(absPath);
     return { ok: false, error: `文件不存在: ${absPath}`, code: 'ENOENT' };
   }
 

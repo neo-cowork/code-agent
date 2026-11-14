@@ -1,8 +1,7 @@
 import React from 'react';
 import type { SurfaceExecutionEventV1 } from '@shared/contract/surfaceExecution';
 import type { SurfaceExecutionTranslationsV1 } from '../../../i18n/surfaceExecution';
-import { surfaceEventUserSummary } from '../../../utils/surfaceExecutionProjection';
-import { safeSurfaceText } from './surfaceExecutionPresentation';
+import { localizedSurfaceEventSummary, safeSurfaceText } from './surfaceExecutionPresentation';
 
 interface SurfaceSemanticTimelineProps {
   events: readonly SurfaceExecutionEventV1[];
@@ -29,11 +28,7 @@ function TimelineEvent({ event, copy }: {
   event: SurfaceExecutionEventV1;
   copy: SurfaceExecutionTranslationsV1;
 }) {
-  const summary = event.userSummary.startsWith('Browser login state could not be saved')
-    ? copy.resumeState.exportFailed
-    : event.userSummary.startsWith('Browser login state could not be restored')
-      ? copy.resumeState.importFailed
-      : safeSurfaceText(surfaceEventUserSummary(event), copy.fallback.stage, 220);
+  const summary = localizedSurfaceEventSummary(event, copy, 220);
   const findings = (event.observation?.findings ?? []).slice(0, 3);
 
   return (

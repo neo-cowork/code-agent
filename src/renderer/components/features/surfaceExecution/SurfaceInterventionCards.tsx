@@ -16,16 +16,22 @@ export function SurfaceHumanTakeoverCard({ session, copy, onControl }: SurfaceIn
   const [pending, setPending] = React.useState(false);
   const event = latestSurfaceEvent(session);
   const waitForUser = selectBrowserWaitForUserV1(session);
+  const isComputerTakeover = session.session.surface === 'computer' && session.session.state === 'waiting_human';
+  const genericControlSummary = event?.userSummary === 'Waiting for human control'
+    || Boolean(event?.userSummary.startsWith('Surface control '));
   const detail = waitForUser
     ? safeSurfaceText(waitForUser.reason, copy.takeover.description, 180)
-    : event?.phase === 'human'
+    : event?.phase === 'human' && !genericControlSummary
       ? safeSurfaceText(event.userSummary, copy.takeover.description, 180)
       : copy.takeover.description;
   const title = waitForUser
     ? (waitForUser.timedOut ? copy.takeover.stoppedTitle : copy.takeover.waitingTitle)
-    : copy.takeover.title;
+    : isComputerTakeover
+      ? copy.takeover.waitingTitle
+      : copy.takeover.title;
   // Same resume control the live-view bar sends: the chat card is enough to finish the handover.
-  const canDone = Boolean(waitForUser && onControl && surfaceControlActions(session).includes('resume'));
+  // Computer sessions have no browser live-view bar, so the chat card also offers Done directly.
+  const canDone = Boolean((waitForUser || isComputerTakeover) && onControl && surfaceControlActions(session).includes('resume'));
 
   return (
     <section

@@ -272,6 +272,36 @@ export class NativeDesktopService {
     }
   }
 
+  /** 最近一场会（N-MEETING-SESSION，meetings 表由「记这场会」写）；没有或表不存在则 null */
+  getLatestMeeting(): { id: string; title: string; started_at_ms: number; ended_at_ms: number | null } | null {
+    const sqlitePath = this.getSqliteDbPath();
+    if (!fs.existsSync(sqlitePath)) return null;
+    try {
+      const output = execFileSync('sqlite3', ['-json', sqlitePath,
+        'SELECT id, title, started_at_ms, ended_at_ms FROM meetings ORDER BY started_at_ms DESC LIMIT 1;',
+      ], { encoding: 'utf-8' }).trim();
+      if (!output) return null;
+      return (JSON.parse(output) as Array<{ id: string; title: string; started_at_ms: number; ended_at_ms: number | null }>)[0] ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** [from, to) 内最近的 limit 段转写，按时间正序（会议长时保留最近的，不是最早的） */
+  listRecentAudioSegments(from: number, to: number, limit: number): AudioSegment[] {
+    const sqlitePath = this.getSqliteDbPath();
+    if (!fs.existsSync(sqlitePath)) return [];
+    try {
+      const output = execFileSync('sqlite3', ['-json', sqlitePath,
+        `SELECT id, start_at_ms, end_at_ms, duration_ms, wav_path, transcript, speaker_id, asr_engine FROM audio_segments WHERE start_at_ms >= ${Math.trunc(from)} AND start_at_ms < ${Math.trunc(to)} AND transcript IS NOT NULL AND transcript != '' ORDER BY start_at_ms DESC LIMIT ${Math.trunc(limit)};`,
+      ], { encoding: 'utf-8' }).trim();
+      if (!output) return [];
+      return (JSON.parse(output) as AudioSegment[]).reverse();
+    } catch {
+      return [];
+    }
+  }
+
   getStats(query: DesktopTimelineQuery = {}): DesktopActivityStats {
     const events = this.getTimeline({ ...query, limit: query.limit || 1000 });
     const byAppMap = new Map<string, number>();

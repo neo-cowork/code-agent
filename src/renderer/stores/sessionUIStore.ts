@@ -9,6 +9,7 @@ import { useSessionStore, type SessionFilter } from './sessionStore';
 import { useSurfaceExecutionStore } from './surfaceExecutionStore';
 import type { SidebarSessionTier } from '../utils/sidebarSessionTiers';
 import { createLogger } from '../utils/logger';
+import { composerDraftStorageKey, removeComposerDraft } from '../components/features/chat/ChatInput/composerDraftStore';
 
 const logger = createLogger('SessionUIStore');
 
@@ -19,6 +20,8 @@ async function deleteSession(id: string): Promise<void> {
   }
   // 终态留影的内存半跟会话一起删（盘上那一半由 host 会话删除收敛点负责）
   useSurfaceExecutionStore.getState().clearConversation(id);
+  // 已删会话的未发送草稿（含 base64 附件）不再占 localStorage 配额
+  removeComposerDraft(composerDraftStorageKey(id, false));
 }
 
 export type { SessionFilter };

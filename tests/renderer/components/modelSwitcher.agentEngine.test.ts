@@ -1,3 +1,4 @@
+import { formatExternalModelSwitcherTooltip, formatNativeModelSwitcherTooltip } from '../../../src/renderer/components/StatusBar/modelSwitcherTooltips';
 import { describe, expect, it } from 'vitest';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -15,9 +16,7 @@ import {
   buildProviderHealthSummary,
   compareProviderHealth,
   ENGINE_SHORT_LABEL,
-  formatExternalModelSwitcherTooltip,
   formatEngineReliabilityContract,
-  formatNativeModelSwitcherTooltip,
   getProviderEffortOptions,
   ProviderBillingBadge,
   ProviderHealthBadge,
@@ -343,7 +342,6 @@ describe('ModelSwitcher Agent Engine selection', () => {
 
   it('formats native trigger tooltip with main task strategy context', () => {
     expect(formatNativeModelSwitcherTooltip({
-      labels: zh.settings.model.models.switcherTooltip,
       engineLabel: 'Neo',
       currentModel: 'mimo-v2.5-pro',
       displayProvider: 'xiaomi',
@@ -352,16 +350,15 @@ describe('ModelSwitcher Agent Engine selection', () => {
       overridden: false,
       billingSummary: buildProviderBillingSummary('payg'),
       healthSummary: buildProviderHealthSummary({ status: 'healthy', latencyP50: 120, errorRate: 0 }),
-      effort: { value: 'high', label: 'High' },
-      thinkingEnabled: true,
+      effort: { label: 'High', shortLabel: '高' },
+      thinkingLabel: '思考',
     })).toBe(
-      '自动路由（按任务、成本和能力切换，当前主任务 mimo-v2.5-pro） · 引擎: Neo · 计费: 按量 · 服务: 健康 · 思考深度: 高 · 思考: 开',
+      '自动路由（按任务、成本和能力切换，当前主任务 mimo-v2.5-pro） · 计费: 按量 · 服务状态: 健康 · 推理强度: 高 · 思考: 思考',
     );
   });
 
   it('formats native override tooltip with original main task model', () => {
     expect(formatNativeModelSwitcherTooltip({
-      labels: zh.settings.model.models.switcherTooltip,
       engineLabel: 'Neo',
       currentModel: 'kimi-k2.5',
       displayProvider: 'zhipu',
@@ -370,20 +367,54 @@ describe('ModelSwitcher Agent Engine selection', () => {
       overridden: true,
       billingSummary: buildProviderBillingSummary('unknown'),
       healthSummary: buildProviderHealthSummary(null),
-      effort: { value: 'low', label: 'Default' },
+      effort: { label: 'Default', shortLabel: '默认' },
     })).toBe(
-      '已覆盖: zhipu/glm-4.5v (原主任务: kimi-k2.5) · 引擎: Neo · 计费: 未知 · 服务: 未检测 · 思考深度: 默认',
+      '已覆盖: zhipu/glm-4.5v (原主任务: kimi-k2.5) · 计费: 计费未知 · 推理强度: 默认',
     );
   });
 
   it('formats external trigger tooltip with engine model, effort, and reliability', () => {
     expect(formatExternalModelSwitcherTooltip({
-      labels: zh.settings.model.models.switcherTooltip,
       engineLabel: 'Claude',
       model: 'sonnet',
-      effort: { value: 'high', label: 'High' },
+      effort: { label: 'High', shortLabel: '高' },
       reliabilityLabel: '认证失败',
-    })).toBe('引擎: Claude · 主任务模型: sonnet · 思考深度: 高 · 状态: 认证失败');
+    })).toBe('运行引擎: Claude · 主任务模型: sonnet · 推理强度: 高 · 服务状态: 认证失败');
+  });
+
+  it('preserves English tooltip field names and effort labels', () => {
+    expect(formatNativeModelSwitcherTooltip({
+      language: 'en', engineLabel: 'Neo', currentModel: 'main',
+      displayProvider: 'xiaomi', displayModel: 'main', adaptive: false, overridden: false,
+      healthSummary: buildProviderHealthSummary(null),
+      effort: { label: 'High', shortLabel: '高' }, thinkingLabel: 'Think',
+    })).toBe('主任务模型: xiaomi/main · Effort: High · Thinking: Think');
+    expect(formatExternalModelSwitcherTooltip({
+      language: 'en', engineLabel: 'Claude', model: 'sonnet',
+      effort: { label: 'High', shortLabel: '高' }, reliabilityLabel: 'ready',
+    })).toBe('Engine: Claude · 主任务模型: sonnet · Effort: High · Provider: ready');
+  });
+
+  it.each(['zh', 'en'] as const)('with labels, the tooltip is written entirely in the UI language (%s)', (language) => {
+    const labels = (language === 'en' ? en : zh).settings.model.models.switcherTooltip;
+    const native = formatNativeModelSwitcherTooltip({
+      labels, engineLabel: 'Neo', currentModel: 'kimi-k2.5', displayProvider: 'zhipu', displayModel: 'glm-4.5v',
+      adaptive: false, overridden: false,
+      billingSummary: buildProviderBillingSummary('payg'),
+      healthSummary: buildProviderHealthSummary({ status: 'healthy' }),
+      effort: { value: 'high', label: 'High', shortLabel: '高' }, thinkingEnabled: true,
+    });
+    const external = formatExternalModelSwitcherTooltip({
+      labels, engineLabel: 'Claude', model: 'sonnet', effort: { value: 'high', label: 'High', shortLabel: '高' }, reliabilityLabel: 'ready',
+    });
+    if (language === 'en') {
+      expect(native).toBe('Main task model: zhipu/glm-4.5v · Engine: Neo · Billing: Pay as you go · Service: Healthy · Thinking depth: High · Thinking: On');
+      expect(external).toBe('Engine: Claude · Main task model: sonnet · Thinking depth: High · Status: ready');
+      expect(`${native}${external}`).not.toMatch(/[\u3400-\u9fff]/);
+    } else {
+      expect(native).toBe('主任务模型: zhipu/glm-4.5v · 引擎: Neo · 计费: 按量 · 服务: 健康 · 思考深度: 高 · 思考: 开');
+      expect(external).toBe('引擎: Claude · 主任务模型: sonnet · 思考深度: 高 · 状态: ready');
+    }
   });
 
   it('shows the model settings prompt only for native sessions after settings prove no configured models', () => {

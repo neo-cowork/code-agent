@@ -57,6 +57,7 @@ export * from './cronEventTrigger';
 export * from './cronAgentTypes';
 export * from './serviceTier';
 export * from './pendingApproval';
+export * from './approvalUserRequest';
 export * from './cloudRun';
 export * from './chatUploads';
 export * from './cuaSensitiveStep';

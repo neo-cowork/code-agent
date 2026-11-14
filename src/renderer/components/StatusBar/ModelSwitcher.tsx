@@ -1,3 +1,4 @@
+import { formatExternalModelSwitcherTooltip, formatNativeModelSwitcherTooltip } from './modelSwitcherTooltips';
 // ============================================================================
 // ModelSwitcher - 运行时模型切换下拉框
 // ============================================================================
@@ -52,8 +53,6 @@ import {
   buildProviderMetaTitle,
   CAPABILITY_CONFIG,
   ENGINE_SHORT_LABEL,
-  formatExternalModelSwitcherTooltip,
-  formatNativeModelSwitcherTooltip,
   getEngineEffortOptions,
   getReasoningSegmentMode,
   buildThinkingSegmentOptions,
@@ -607,14 +606,14 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     : null;
   const triggerTitle = engine.kind !== 'native'
     ? formatExternalModelSwitcherTooltip({
-      labels: modelText.switcherTooltip,
+      language, labels: modelText.switcherTooltip,
       engineLabel: ENGINE_SHORT_LABEL[engine.kind],
       model: engine.model,
     })
     : showModelSettingsPrompt
       ? modelText.switcherTooltip.noModel
       : formatNativeModelSwitcherTooltip({
-        labels: modelText.switcherTooltip,
+        language, labels: modelText.switcherTooltip,
         engineLabel: ENGINE_SHORT_LABEL[engine.kind],
         currentModel,
         displayProvider,

@@ -7,6 +7,7 @@ import { enSettingsModels } from './enSettingsModels';
 import { enSettingsWork } from './enSettingsWork';
 import { enSettingsSystem } from './enSettingsSystem';
 import { enSettingsExternalImport } from './enSettingsExternalImport';
+import { enSettingsExternalImportMcp } from './enSettingsExternalImportMcp';
 import { enSettingsPrivacyReceipt } from './enSettingsPrivacyReceipt';
 
 export const enSettings = {
@@ -19,5 +20,6 @@ export const enSettings = {
   ...enSettingsWork,
   ...enSettingsSystem,
   ...enSettingsExternalImport,
+  ...enSettingsExternalImportMcp,
   ...enSettingsPrivacyReceipt,
 };

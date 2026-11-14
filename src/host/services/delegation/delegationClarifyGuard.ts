@@ -38,7 +38,13 @@ export interface ClarifyGuardInput {
 
 export type ClarifyGuardVerdict =
   | { kind: 'proceed' }
-  | { kind: 'clarify'; rule: ClarifyGuardRule; candidateNames: string[] };
+  | {
+      kind: 'clarify';
+      rule: ClarifyGuardRule;
+      candidateNames: string[];
+      reason: 'unclear_target' | 'non_single_answer';
+      message: string;
+    };
 
 const MAX_QUESTION_CANDIDATES = 8;
 // A spoken full title outranks every partial signal, so it can never be tied by partial matches.
@@ -189,9 +195,35 @@ function isAmbiguousReference(rawMessage: string, candidates: ReadonlyArray<Clar
   return top > 0 && top < FULL_TITLE_SCORE && scores.filter((score) => score === top).length >= 2;
 }
 
+function candidateDisplayNames(candidates: ReadonlyArray<ClarifyGuardCandidate>): string[] {
+  return [...new Set(candidates.map((candidate) => candidate.shortName.trim()).filter((name) => name.length > 0))].slice(
+    0,
+    MAX_QUESTION_CANDIDATES,
+  );
+}
+
 function clarify(rule: ClarifyGuardRule, candidates: ReadonlyArray<ClarifyGuardCandidate>): ClarifyGuardVerdict {
-  const names = [...new Set(candidates.map((candidate) => candidate.shortName.trim()).filter((name) => name.length > 0))];
-  return { kind: 'clarify', rule, candidateNames: names.slice(0, MAX_QUESTION_CANDIDATES) };
+  const candidateNames = candidateDisplayNames(candidates);
+  const names = candidateNames.length > 0 ? ` Candidate chats (display names): ${candidateNames.map((name) => `「${name}」`).join('、')}.` : '';
+  return {
+    kind: 'clarify',
+    rule,
+    candidateNames,
+    reason: 'unclear_target',
+    message: `needs_clarification: the target chat is not clear enough to send this safely.${names} Nothing was delegated. Ask the user which chat they mean with AskUserQuestion, using those display names as the options (plain words, no ids); do not retry delegate_session until the user answers.`,
+  };
+}
+
+function clarifyNonSingleAnswer(rule: ClarifyGuardRule, candidates: ReadonlyArray<ClarifyGuardCandidate>): ClarifyGuardVerdict {
+  const candidateNames = candidateDisplayNames(candidates);
+  const names = candidateNames.length > 0 ? `可选会话（显示名）：${candidateNames.map((name) => `「${name}」`).join('、')}。` : '';
+  return {
+    kind: 'clarify',
+    rule,
+    candidateNames,
+    reason: 'non_single_answer',
+    message: `needs_clarification: 一次交接只能发给一个会话，用户的回答未能唯一确定单个目标会话，本次没有发送任何内容。${names}请用 AskUserQuestion 重新让用户单选，每个选项只能是一个会话的显示名（纯文字、不含 id，禁止提供「两个都发」「两条都发」「都发」「全部」等选项）；在用户重新单选之前不要重试 delegate_session。如果重问后用户仍未单选单个会话，请停止调用本工具，直接用中文告知用户本次没有发送。`,
+  };
 }
 
 export function evaluateClarifyGuard(input: ClarifyGuardInput): ClarifyGuardVerdict {
@@ -238,9 +270,12 @@ export function evaluateClarifyAnswer(input: {
   const scores = scoreCandidates(answer, input.candidates);
   const top = Math.max(0, ...scores);
   if (top > 0) {
-    // 答案点到了某家：必须是唯一最高分，且就是模型这次要发的那家。
+    // 答案点到了某家：必须是唯一最高分，且就是模型这次要发的那家；多选并列按「未单选单个会话」引导单选重问。
     const winners = scores.flatMap((score, index) => (score === top ? [index] : []));
-    return winners.length === 1 && winners[0] === input.chosenIndex ? { kind: 'proceed' } : clarify('named_other_candidate', input.candidates);
+    if (winners.length === 1) {
+      return winners[0] === input.chosenIndex ? { kind: 'proceed' } : clarify('named_other_candidate', input.candidates);
+    }
+    return clarifyNonSingleAnswer('named_other_candidate', input.candidates);
   }
-  return input.rule === 'vague_task_text' ? { kind: 'proceed' } : clarify(input.rule, input.candidates);
+  return input.rule === 'vague_task_text' ? { kind: 'proceed' } : clarifyNonSingleAnswer(input.rule, input.candidates);
 }

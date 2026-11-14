@@ -5,10 +5,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ReasoningSegment } from '../../../src/renderer/components/StatusBar/ReasoningSegment';
 import {
   buildThinkingSegmentOptions,
-  formatNativeModelSwitcherTooltip,
   getReasoningSegmentMode,
   type EffortOption,
 } from '../../../src/renderer/components/StatusBar/modelSwitcherHelpers';
+import { formatNativeModelSwitcherTooltip } from '../../../src/renderer/components/StatusBar/modelSwitcherTooltips';
 import type { EffortLevel } from '../../../src/shared/contract/agent';
 import { en, zh } from '../../../src/renderer/i18n';
 
@@ -160,16 +160,15 @@ describe('native reasoning segment', () => {
     expect(view.queryAllByRole('button')).toHaveLength(0);
   });
 
-  it('keeps Effort in the native trigger tooltip', () => {
+  it('localizes effort in the native trigger tooltip', () => {
     expect(formatNativeModelSwitcherTooltip({
-      labels: zh.settings.model.models.switcherTooltip,
       engineLabel: 'Neo',
       currentModel: 'mimo-v2.5-pro',
       displayProvider: 'xiaomi',
       displayModel: 'mimo-v2.5-pro',
       adaptive: false,
       overridden: false,
-      effort: { value: 'high', label: 'High' },
-    })).toContain(`${zh.settings.model.models.switcherTooltip.effort}: ${zh.settings.model.models.switcherTooltip.effortLevels.high}`);
+      effort: { label: 'High', shortLabel: '高' },
+    })).toContain('推理强度: 高');
   });
 });
