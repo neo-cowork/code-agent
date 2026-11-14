@@ -132,7 +132,7 @@ const ExpertCard: React.FC<{
     {/* truncate 只对块级生效：外层必须 flex + min-w-0，否则长履历会撑破卡片 */}
     {tab === 'mine' ? (
       <div className="flex min-w-0 items-baseline text-[11px] text-zinc-500">
-        {entry.memoryCount > 0 || entry.lastWork ? <><span className="flex-shrink-0">{text.memoryCount.replace('{count}', String(entry.memoryCount))}</span>{entry.lastWork ? <span className="ml-2 min-w-0 truncate" title={formatRoleHistoryLine(entry.lastWork, text.roleDetail.historyDecision)}>{text.lastWorkPrefix}{formatRoleHistoryLine(entry.lastWork, text.roleDetail.historyDecision)}</span> : null}</> : text.noRecordYet}
+        {entry.memoryCount > 0 || entry.lastWork ? <><span className="flex-shrink-0">{text.memoryCount.replace('{count}', String(entry.memoryCount))}</span>{entry.lastWork ? <span className="ml-2 min-w-0 truncate" title={formatRoleHistoryLine(entry.lastWork, text.roleDetail.historyDecision, text.roleDetail.historyWake)}>{text.lastWorkPrefix}{formatRoleHistoryLine(entry.lastWork, text.roleDetail.historyDecision, text.roleDetail.historyWake)}</span> : null}</> : text.noRecordYet}
       </div>
     ) : null}
     {tab === 'mine' ? <RolePackHealthNotice item={rolePacksByRoleId.get(entry.roleId)} busy={busyRolePackId === entry.roleId} onRetryMissingSkills={onRetryMissingSkills} /> : null}

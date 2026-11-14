@@ -115,7 +115,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
       content = (
         <AssistantTextNode
           node={node.metadata?.automation?.automationType === 'role_wake'
-            ? { ...node, content: formatRoleHistoryLine(node.content, t.expert.roleDetail.historyDecision) }
+            ? { ...node, content: formatRoleHistoryLine(node.content, t.expert.roleDetail.historyDecision, t.expert.roleDetail.historyWake) }
             : node}
           sessionId={sessionId}
           isStreaming={isStreaming}

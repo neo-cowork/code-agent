@@ -58,3 +58,29 @@ it('preserves tags outside the summary prefix', () => {
   for (const line of ['User quoted [advance] here', '- 2026-11-12 | [report] label | Ordinary text', '- 2026-11-12 | Work | User quoted [suggest]', '[unknown] Text']) expect(formatRoleHistoryLine(line, copy)).toBe(line);
   expect(formatRoleHistoryLine('[advance] Done', copy)).toBe('Advanced Done');
 });
+
+it.each([['zh', false], ['en', false], ['zh', true], ['en', true]] as const)('%s Records humanizes legacy wake labels, scaffolds and header (sanitized=%s)', async (language, sanitized) => {
+  const history = [
+    '- 2026-11-13 | 主动巡检（cadence 触发） | 主动巡检（cadence 触发）',
+    '- 2026-11-13 | 主动巡检（event 触发） | 主动巡检（event 触发）',
+    '- 2026-11-13 | 巡检 | 你被任务结束事件唤醒。这不是用户发来的消息，用户现在不在。 你的任务： 1. 读你的工作履历',
+    '- 2026-11-13 | 巡检 | 例行巡检记录',
+    '- 2026-11-13 | 主动巡检（cadence 触发） | 你被定时唤醒。这不是用户发来的消息，用户现在不在。 你的任务： 1. 读你的工作履历',
+  ].map((line) => sanitized ? line.split(' | ')[0].slice(2) + ' ' + line.split(' | ').slice(2).join(' | ') : line);
+  const detail: RolePanelDetail = {
+    roleId: 'reporter', definition: null, definitionPath: '', history, memories: [],
+    proactivity: { level: 'silent' }, visual: { displayName: 'Reporter' }, isBuiltin: false,
+    personalization: { userExpectation: '', soul: '', boundaries: { disallowExternalSending: false } },
+  };
+  invokeDomain.mockImplementation((_domain: string, action: string) => Promise.resolve(action === 'detail' ? structuredClone(detail) : []));
+  useAppStore.setState({ language });
+  render(<RoleDetailPage roleId="reporter" />);
+  fireEvent.click(await screen.findByTestId('role-detail-tab-records'));
+  const records = screen.getByTestId('role-detail-records-tab');
+  for (const raw of ['cadence', 'event 触发', '你被定时唤醒', '你被任务结束事件唤醒', '你的任务', '持久化角色', 'Persistent role']) expect(document.body.textContent).not.toContain(raw);
+  const expected = language === 'zh' ? ['定时巡检', '任务完成后巡检', '例行巡检记录'] : ['Scheduled check-in', 'Check-in after task', 'Check-in recorded'];
+  for (const label of expected) expect(records.textContent).toContain(label);
+  expect(screen.getByTestId('role-training-summary-latest').textContent).toContain(expected[2]);
+  expect(screen.getByText(language === 'zh' ? '长期专家 — 记忆与履历归你所有' : 'Long-term expert - memory and work history stay yours')).toBeTruthy();
+  expect(detail.history).toEqual(history);
+});

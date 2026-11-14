@@ -784,7 +784,7 @@ const RoleTrainingSummary: React.FC<{
 }> = ({ detail }) => {
   const { t } = useI18n();
   const text = t.settings.roles.detail;
-  const latest = formatRoleHistoryLine(detail.history.at(-1) ?? "", t.expert.roleDetail.historyDecision).replace(/^- /, "");
+  const latest = formatRoleHistoryLine(detail.history.at(-1) ?? "", t.expert.roleDetail.historyDecision, t.expert.roleDetail.historyWake).replace(/^- /, "");
 
   return (
     <section
@@ -968,7 +968,7 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
                     className="flex items-start gap-2 text-xs text-zinc-400"
                   >
                     <History className="mt-0.5 h-3 w-3 shrink-0 text-zinc-600" />
-                    <span>{formatRoleHistoryLine(line, t.expert.roleDetail.historyDecision).replace(/^- /, "")}</span>
+                    <span>{formatRoleHistoryLine(line, t.expert.roleDetail.historyDecision, t.expert.roleDetail.historyWake).replace(/^- /, "")}</span>
                   </li>
                 ))}
               </ul>
