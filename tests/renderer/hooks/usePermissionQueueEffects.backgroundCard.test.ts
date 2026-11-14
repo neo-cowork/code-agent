@@ -349,7 +349,7 @@ describe('three sibling approvals share their parent runId', () => {
     expect(toastError).not.toHaveBeenCalled();
   });
 
-  it('stale click retires only that card, shows the human message and leaves a failed (timeout) record for the lane', async () => {
+  it('stale click retires only that card and shows the human message without recording a local decision', async () => {
     const { requests } = enqueueSiblings();
     invoke.mockResolvedValueOnce({ outcome: 'unknown_request' });
     render(createElement<PermissionCardProps>(PermissionCard, { requestOverride: requests[0], sessionIdOverride: 'session-main' }));
@@ -359,8 +359,8 @@ describe('three sibling approvals share their parent runId', () => {
       expect(toastError).toHaveBeenCalledWith(zh.decisionCard.permission.settledElsewhere);
     });
     expect(zh.decisionCard.permission.settledElsewhere).toBeTruthy();
-    expect(useAppStore.getState().resolvedPermissionRequests['session-main']?.map(r => [r.id, r.agentId, r.decision]))
-      .toEqual([[requests[0].id, requests[0].agentId, 'timeout']]);
+    // stale 不一定是超时（手机先答、工具已跑）：只收卡，不把别处的结局记成本机决定
+    expect(useAppStore.getState().resolvedPermissionRequests).toEqual({});
   });
 
   it('sidebar waiting status follows the same store as the cards: shown while any sibling card is live, gone after the last', () => {

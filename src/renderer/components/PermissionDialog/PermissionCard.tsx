@@ -277,13 +277,8 @@ export function PermissionCard({
         if (classifyPermissionDelivery(outcome) !== 'ok') {
           logPermissionClickExit({ requestId: request.id, stage: 'undelivered', sessionId: request.sessionId, error: outcome });
           releaseApprovalResponse(request.id);
-          // 宿主已没有这条请求的等待方：卡不能无声消失，工具步骤要落成明确的「已超时」失败态，
-          // 而不是让子代理那一路继续显示「工作中」。拿不到快照（override 卡）时退回只收卡。
-          if (requestSnapshot && recordPermissionDecision && classifyPermissionDelivery(outcome) === 'stale') {
-            recordPermissionDecision(requestSnapshot, 'timeout', requestSessionId);
-          } else {
-            dismissPermissionRequest(request.id);
-          }
+          // 不进已决存证：stale 也包括手机先答（工具真的跑了）、宿主取消等，不能把别处的结局记成本机的「已超时」。
+          dismissPermissionRequest(request.id);
           toast.error(t.decisionCard.permission.settledElsewhere);
           return;
         }
