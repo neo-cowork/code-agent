@@ -29,6 +29,7 @@ import {
   compileSimpleSchedule,
 } from '../../../src/renderer/components/features/cron/CronSimpleCreate';
 import { buildCronJobInput, buildDraftFromJob } from '../../../src/renderer/components/features/cron/types';
+import { suggestCronStaggerMinute } from '../../../src/shared/cronStagger';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 
 // 与 timeInput24.test.tsx 同款：把区域钉成 en-US 十二小时制，验证 24 小时下拉不出现 AM/PM。
@@ -280,6 +281,19 @@ describe('CronSimpleCreate', () => {
     expect(suggested).toBeLessThanOrEqual(59);
 
     // 分钟下拉改成 17 → 09:17：不再撞整点，建议消失
+    fireEvent.change(screen.getByTestId('cron-simple-time-minute'), { target: { value: '17' } });
+    expect(screen.queryByTestId('cron-stagger-hint')).toBeNull();
+  });
+
+  it('English data-testid="cron-stagger-hint" shows the suggested minute on the hour and disappears off the hour', () => {
+    useAppStore.setState({ language: 'en' });
+    render(<CronSimpleCreate onDone={() => undefined} />);
+
+    const hint = screen.getByTestId('cron-stagger-hint');
+    expect(hint.textContent).toContain(String(suggestCronStaggerMinute('daily 09:00')));
+    expect(hint.textContent).toMatch(/[A-Za-z]/);
+    expect(hint.textContent).not.toMatch(/[一-鿿]/);
+
     fireEvent.change(screen.getByTestId('cron-simple-time-minute'), { target: { value: '17' } });
     expect(screen.queryByTestId('cron-stagger-hint')).toBeNull();
   });

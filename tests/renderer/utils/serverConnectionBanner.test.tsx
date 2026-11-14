@@ -6,7 +6,7 @@ import { WEB_SERVER_CONNECTION_MONITOR as timing } from '../../../src/shared/con
 import { ServerConnectionBanner } from '../../../src/renderer/components/ServerConnectionBanner';
 import { useServerConnectionStore } from '../../../src/renderer/stores/serverConnectionStore';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
-import { reportServerUnreachable } from '../../../src/renderer/utils/serverConnectionMonitor';
+import { reportServerUnreachable, retryNow } from '../../../src/renderer/utils/serverConnectionMonitor';
 import { serverConnectionEn, serverConnectionZh } from '../../../src/renderer/i18n/serverConnection';
 
 const fetchMock = vi.fn();
@@ -67,6 +67,25 @@ describe('Retry feedback through the real banner and monitor', () => {
     act(() => reportServerUnreachable());
     await advance(timing.UNAVAILABLE_AFTER_MS);
     expect(screen.getByRole('status').textContent).not.toContain(copy.retryFailed);
+  });
+
+  it('ignores repeated retryNow calls while the banner is checking', async () => {
+    useAppStore.setState({ language: 'en' });
+    render(<ServerConnectionBanner />);
+    act(() => reportServerUnreachable());
+    await advance(timing.UNAVAILABLE_AFTER_MS);
+
+    let rejectProbe: (error: Error) => void = () => {};
+    fetchMock.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectProbe = reject; }));
+    const callsBeforeRetry = fetchMock.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: serverConnectionEn.serverConnection.retry }));
+    expect(fetchMock).toHaveBeenCalledTimes(callsBeforeRetry + 1);
+    expect((screen.getByRole('button', { name: serverConnectionEn.serverConnection.checking }) as HTMLButtonElement).disabled).toBe(true);
+
+    act(() => { retryNow(); retryNow(); });
+    expect(fetchMock).toHaveBeenCalledTimes(callsBeforeRetry + 1);
+    await act(async () => rejectProbe(new TypeError('Load failed')));
+    expect(screen.getByRole('status').textContent).toContain(serverConnectionEn.serverConnection.retryFailed);
   });
 
   it('new keys have zh/en parity', () => {
