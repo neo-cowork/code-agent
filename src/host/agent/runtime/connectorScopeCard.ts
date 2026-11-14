@@ -11,7 +11,7 @@ import type { AgentEvent, ToolResult } from '../../../shared/contract';
 import { getMcpPermissionPageUrl, MCP_PERMISSION_PAGE_URLS } from '../../../shared/constants';
 import { MCP_AUTHORIZATION_REQUIRED_METADATA_KEY, MCP_INSUFFICIENT_SCOPE_METADATA_KEY } from '../../mcp/mcpErrors';
 
-export function buildInsufficientScopeConnectorEvent(
+function buildInsufficientScopeConnectorEvent(
   result: Pick<ToolResult, 'success' | 'metadata'>,
   permissionPages: Readonly<Record<string, string>> = MCP_PERMISSION_PAGE_URLS,
 ): AgentEvent | null {
@@ -66,6 +66,7 @@ function buildLostLoginConnectorEvent(
 /** 工具失败 → 连接卡事件（权限范围不足优先，其次登录丢失）；两处发射点（引擎 / 子代理）共用。 */
 export function buildConnectorToolFailureEvent(
   result: Pick<ToolResult, 'success' | 'metadata'>,
+  permissionPages: Readonly<Record<string, string>> = MCP_PERMISSION_PAGE_URLS,
 ): AgentEvent | null {
-  return buildInsufficientScopeConnectorEvent(result) ?? buildLostLoginConnectorEvent(result);
+  return buildInsufficientScopeConnectorEvent(result, permissionPages) ?? buildLostLoginConnectorEvent(result);
 }

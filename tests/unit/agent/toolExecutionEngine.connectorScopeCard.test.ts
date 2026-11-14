@@ -14,7 +14,7 @@ import { ControlState } from '../../../src/host/agent/runtime/controlState';
 import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
 import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
 import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
-import { buildInsufficientScopeConnectorEvent } from '../../../src/host/agent/runtime/connectorScopeCard';
+import { buildConnectorToolFailureEvent } from '../../../src/host/agent/runtime/connectorScopeCard';
 
 const serviceMocks = vi.hoisted(() => ({
   langfuse: {
@@ -188,14 +188,14 @@ describe('insufficient_scope → connector_required card', () => {
   });
 });
 
-describe('buildInsufficientScopeConnectorEvent helpUrl', () => {
+describe('buildConnectorToolFailureEvent helpUrl', () => {
   it('no table entry → no helpUrl key; table entry → helpUrl; default table ships empty', () => {
-    const none = buildInsufficientScopeConnectorEvent(scopeFailure(), {});
+    const none = buildConnectorToolFailureEvent(scopeFailure(), {});
     expect(JSON.stringify(none)).not.toContain('helpUrl');
-    const withEntry = buildInsufficientScopeConnectorEvent(scopeFailure(), { notion: 'https://example.test/permissions' });
+    const withEntry = buildConnectorToolFailureEvent(scopeFailure(), { notion: 'https://example.test/permissions' });
     expect(withEntry).toMatchObject({ data: { connectors: [{ id: 'notion', helpUrl: 'https://example.test/permissions' }] } });
-    expect(JSON.stringify(buildInsufficientScopeConnectorEvent(scopeFailure()))).not.toContain('helpUrl');
-    expect(buildInsufficientScopeConnectorEvent(scopeFailure({ serverName: undefined, server: 'notion' }))).not.toBeNull();
+    expect(JSON.stringify(buildConnectorToolFailureEvent(scopeFailure()))).not.toContain('helpUrl');
+    expect(buildConnectorToolFailureEvent(scopeFailure({ serverName: undefined, server: 'notion' }))).not.toBeNull();
   });
 });
 
