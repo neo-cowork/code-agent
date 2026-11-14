@@ -120,7 +120,7 @@ describe('SessionMemberBar（折叠 chip）', () => {
       {
         id: 'pricing-comparison', sessionId: 'session-1', source: 'session_command_center',
         title, status: 'failed', createdAt: 1, updatedAt: 2, events: [], outputRefs: [],
-        failure: { reason: 'session_command_task_interrupted_by_restart' },
+        failure: { reason: 'session_command_task_interrupted_by_restart', message: '任务因应用重启而中断。' },
         summary: '定价对比报告尚未完成，请重新发起任务。',
       },
     ] });
