@@ -239,14 +239,29 @@ function resolveBudgetUsd(input: CuaJevStepRunInput): number {
 /** 焦点被抢走：驱动 0.14.2 的两条已知文案（⑩ 表：前台被换掉 ⇒ 失败交回，不重试）。 */
 const FOCUS_STOLEN_PATTERN = /different app to become frontmost|self_activation_suppressed/i;
 
+function parseJsonPayload(raw: string): unknown {
+  const start = raw.indexOf('{');
+  const candidate = start > 0 ? raw.slice(start) : raw;
+  return JSON.parse(candidate);
+}
+
 function parseObserveResponse(result: ToolResult<string>): {
   state: ComputerUseStateViewV1;
   imageBase64?: string;
 } | null {
+  const fromMeta = result.meta?.computerUseStateV1;
+  if (fromMeta && typeof fromMeta === 'object' && 'stateId' in fromMeta) {
+    return {
+      state: fromMeta as ComputerUseStateViewV1,
+      ...(typeof result.meta?.imageBase64 === 'string'
+        ? { imageBase64: result.meta.imageBase64 }
+        : {}),
+    };
+  }
   const payload = result.ok ? result.output : result.error;
   let parsed: unknown;
   try {
-    parsed = JSON.parse(payload);
+    parsed = parseJsonPayload(payload);
   } catch {
     return null;
   }
@@ -263,7 +278,7 @@ function parseObserveResponse(result: ToolResult<string>): {
 function parseRootsResponse(result: ToolResult<string>): ComputerUseRootRefV1[] | null {
   const payload = result.ok ? result.output : result.error;
   try {
-    const parsed = JSON.parse(payload) as { roots?: unknown };
+    const parsed = parseJsonPayload(payload) as { roots?: unknown };
     return Array.isArray(parsed.roots) ? (parsed.roots as ComputerUseRootRefV1[]) : [];
   } catch {
     return null;

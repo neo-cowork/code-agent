@@ -10,6 +10,10 @@ import { NewSessionWelcome } from '../../../src/renderer/components/features/cha
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { languages } from '../../../src/renderer/i18n';
 import { getDisplaySessionTitle, splitCronSessionTitleParts } from '../../../src/renderer/utils/sessionPresentation';
+import { FileArtifactCard } from '../../../src/renderer/components/features/chat/MessageBubble/FileArtifactCard';
+import { SessionDiffSummary } from '../../../src/renderer/components/features/chat/SessionDiffSummary';
+import { ArtifactThumbStrip } from '../../../src/renderer/components/TaskPanel/OutputArtifactRows';
+import { TaskDashboardSummary } from '../../../src/renderer/components/TaskPanel/RunWorkbenchCards';
 import { MessageContent } from '../../../src/renderer/components/features/chat/MessageBubble/MessageContent';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { formatLocalDateTime } from '../../../src/renderer/utils/i18nTime';
@@ -443,6 +447,9 @@ const cronRunBody = [
   '<cron_alert>',
   '新发现的冲突',
   '</cron_alert>',
+  '',
+  'cron_summary:',
+  '',
   '<cron_summary>',
   'urgency: fyi',
   '本周汇总完成',
@@ -486,10 +493,11 @@ describe('cron run session machine headers', () => {
       expect(screen.getByText('可见正文')).toBeTruthy();
       const open = screen.getByTestId('cron-artifact-open');
       expect(open.textContent).toContain('report.md');
-      expect(open.getAttribute('title')).toBe('/work/run/report.md');
+      expect(open.getAttribute('title')).toBe('…/run/report.md');
       expect(view.container.textContent).not.toContain('SECRET_SNAPSHOT');
       expect(view.container.textContent).not.toContain('urgency:');
       expect(view.container.textContent).not.toContain('<cron_');
+      expect(view.container.textContent).not.toContain('cron_summary');
       view.unmount();
     }
   });
@@ -540,4 +548,65 @@ it('empty cron heading follows UI language without changing the stored title', (
   expect(screen.getByTestId('chat-welcome-title').textContent).toBe('Picking up your last session: [Schedule] 每晨整理周会纪要');
   expect(screen.getByTestId('chat-welcome-title').textContent).not.toContain('[定时]');
   expect(stored.title).toBe('[Schedule] 每晨整理周会纪要');
+});
+
+describe('hover titles never expose absolute local paths', () => {
+  it('shortens every workspace path in the real project group header title', () => {
+    const view = renderGroup({
+      group: {
+        key: 'project:p1', name: 'code-agent', path: '/workspace/projects/project-one',
+        paths: ['/workspace/projects/project-one', '/workspace/projects/project-two'],
+        projectId: 'p1', isUncategorized: false, sessions: [], latestActivityAt: 3,
+      },
+    });
+    const header = view.container.querySelector('[data-sidebar-group-phase]')?.firstElementChild;
+    expect(header?.getAttribute('title')).toBe('code-agent · …/projects/project-one · …/projects/project-two');
+    expect(header?.textContent).toContain('code-agent');
+  });
+
+  it('shortens file-card hover titles while retaining the visible filename', () => {
+    const filePath = '/workspace/project/reports/summary.svg';
+    const view = render(<FileArtifactCard items={[{ label: 'summary.svg', path: filePath, kind: 'file', ownerKind: 'tool', ownerLabel: 'Write', role: 'deliverable' }]} />);
+    expect(view.getByTitle('…/reports/summary.svg').textContent).toContain('summary.svg');
+    expect(view.container.querySelector(`[title="${filePath}"]`)).toBeNull();
+  });
+
+  it('shortens hover paths in the expanded session diff file list', () => {
+    const filePath = '/workspace/project/reports/summary.md';
+    const view = render(<SessionDiffSummary messages={[{
+      id: 'm-w', role: 'assistant', content: '', timestamp: 0,
+      toolCalls: [{ id: 'tc-w', name: 'Write', arguments: { file_path: filePath, content: 'Summary' },
+        result: { toolCallId: 'tc-w', success: true, output: `Created file: ${filePath}` } }],
+    }] as never} />);
+    fireEvent.click(view.getByRole('button'));
+    expect(view.getByTitle('…/reports/summary.md').textContent).toContain('summary.md');
+    expect(view.container.querySelector(`[title="${filePath}"]`)).toBeNull();
+  });
+
+  it('shortens overview artifact thumb titles but still opens the full path', () => {
+    const onOpenFile = vi.fn();
+    render(<ArtifactThumbStrip
+      items={[{ kind: 'file', label: 'allow-me.txt', ownerKind: 'tool', ownerLabel: 'Write', path: '/Users/example/notes/allow-me.txt' }] as never}
+      previewItems={[]}
+      unnamedLabel="未命名输出"
+      onOpenFile={onOpenFile}
+      onOpenPreview={vi.fn()}
+    />);
+    const card = screen.getByTestId('overview-artifact-thumb');
+    expect(card.title).toBe('…/notes/allow-me.txt');
+    expect(card.title).not.toMatch(/\/(Users|home)\//);
+    fireEvent.click(card);
+    expect(onOpenFile).toHaveBeenCalledWith('/Users/example/notes/allow-me.txt');
+  });
+
+  it('shortens task output-ref hover titles', () => {
+    const view = render(<TaskDashboardSummary tasks={[{
+      id: 'background:task-log', scope: 'global', title: 'Log task', status: 'completed',
+      steps: [{ title: '已完成', status: 'completed' }],
+      outputRefs: [{ id: 'task-log:ref', taskId: 'task-log', type: 'log', label: 'Task log', pathOrUrl: '/Users/example/registered/task.log' }],
+    }]} />);
+    const row = view.getByTestId('task-output-refs').querySelector('[title]');
+    expect(row?.getAttribute('title')).toBe('…/registered/task.log');
+    expect(row?.getAttribute('title')).not.toMatch(/\/(Users|home)\//);
+  });
 });

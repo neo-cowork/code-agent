@@ -142,65 +142,14 @@ const ERROR_RE =
   /\b(?:error|assertionerror|exception|traceback|failed|failure|fatal|panic|enoent|eacces|timeout|timed out|stderr|exit code|exit status|segmentation fault)\b/i;
 const READ_TOOL_RE = /^(?:read|read_file|file_read|Read)$/i;
 const TEXT_EXTENSIONS = new Set([
-  '.c',
-  '.cc',
-  '.cfg',
-  '.conf',
-  '.cpp',
-  '.css',
-  '.csv',
-  '.go',
-  '.h',
-  '.hpp',
-  '.html',
-  '.ini',
-  '.java',
-  '.js',
-  '.json',
-  '.jsx',
-  '.log',
-  '.lua',
-  '.md',
-  '.mjs',
-  '.py',
-  '.rb',
-  '.rs',
-  '.sql',
-  '.toml',
-  '.ts',
-  '.tsx',
-  '.txt',
-  '.xml',
-  '.yaml',
-  '.yml',
-  '.zsh',
+  '.c', '.cc', '.cfg', '.conf', '.cpp', '.css', '.csv', '.go', '.h', '.hpp', '.html',
+  '.ini', '.java', '.js', '.json', '.jsx', '.log', '.lua', '.md', '.mjs', '.py', '.rb',
+  '.rs', '.sql', '.toml', '.ts', '.tsx', '.txt', '.xml', '.yaml', '.yml', '.zsh',
 ]);
 const BINARY_OR_RICH_EXTENSIONS = new Set([
-  '.7z',
-  '.avif',
-  '.bin',
-  '.bmp',
-  '.doc',
-  '.docx',
-  '.dmg',
-  '.gif',
-  '.gz',
-  '.heic',
-  '.ico',
-  '.jpeg',
-  '.jpg',
-  '.mov',
-  '.mp3',
-  '.mp4',
-  '.pdf',
-  '.png',
-  '.ppt',
-  '.pptx',
-  '.sqlite',
-  '.webp',
-  '.xls',
-  '.xlsx',
-  '.zip',
+  '.7z', '.avif', '.bin', '.bmp', '.doc', '.docx', '.dmg', '.gif', '.gz', '.heic',
+  '.ico', '.jpeg', '.jpg', '.mov', '.mp3', '.mp4', '.pdf', '.png', '.ppt', '.pptx',
+  '.sqlite', '.webp', '.xls', '.xlsx', '.zip',
 ]);
 const SENSITIVE_PATH_RE =
   /(?:^|\/)(?:\.env(?:[./-].*)?|id_rsa|id_dsa|id_ed25519|credentials?|secrets?|tokens?|private[-_]?key|api[-_]?key)(?:$|[./-])/i;
@@ -642,10 +591,26 @@ function compactIds(messages: SurvivorManifestMessage[], preserveRecentCount: nu
   return { compactedMessageIds, preservedMessageIds };
 }
 
+function trimListToBudget<T>(list: T[], copy: ContextSurvivorManifest, budget: ManifestBudget): boolean {
+  if (list.length === 0) return true;
+  const saved = list.slice();
+  list.length = 0;
+  if (manifestOverBudget(copy, budget)) return true;
+  let low = 0;
+  let high = saved.length - 1;
+  while (low < high) {
+    const mid = Math.floor((low + high + 1) / 2);
+    list.splice(0, list.length, ...saved.slice(0, mid));
+    if (manifestOverBudget(copy, budget)) high = mid - 1;
+    else low = mid;
+  }
+  list.splice(0, list.length, ...saved.slice(0, low));
+  return false;
+}
+
 function enforceManifestBudget(manifest: ContextSurvivorManifest, options: SurvivorManifestBuildOptions): ContextSurvivorManifest {
   const budget = manifestBudget(options);
   if (budget === undefined) return manifest;
-
   const copy: ContextSurvivorManifest = {
     ...manifest,
     commands: manifest.commands.map((command) => ({ ...command })),
@@ -657,30 +622,43 @@ function enforceManifestBudget(manifest: ContextSurvivorManifest, options: Survi
     filePaths: [...manifest.filePaths],
     files: manifest.files.map((file) => ({ ...file })),
   };
+  if (!manifestOverBudget(copy, budget)) return copy;
 
-  while (manifestOverBudget(copy, budget)) {
-    if (copy.commands.length > 0) {
-      copy.commands.pop();
-    } else if (copy.errors.length > 0) {
-      copy.errors.pop();
-    } else if (copy.todos.length > 0) {
-      copy.todos.pop();
-    } else if (copy.openWork.length > 0) {
-      copy.openWork.pop();
-    } else if (copy.artifacts.length > 0) {
-      copy.artifacts.pop();
-    } else if (copy.archivedToolResults.length > 0) {
-      copy.archivedToolResults.pop();
-    } else if (copy.filePaths.length > 0) {
-      copy.filePaths.pop();
-      copy.files.pop();
-    } else if (copy.dataFingerprintText) {
+  if (
+    trimListToBudget(copy.commands, copy, budget)
+    && trimListToBudget(copy.errors, copy, budget)
+    && trimListToBudget(copy.todos, copy, budget)
+    && trimListToBudget(copy.openWork, copy, budget)
+    && trimListToBudget(copy.artifacts, copy, budget)
+    && trimListToBudget(copy.archivedToolResults, copy, budget)
+  ) {
+    if (copy.filePaths.length > 0) {
+      const savedPaths = copy.filePaths.slice();
+      const savedFiles = copy.files.slice();
+      const applyPops = (pops: number) => {
+        copy.filePaths = savedPaths.slice(0, Math.max(0, savedPaths.length - pops));
+        copy.files = savedFiles.slice(0, Math.max(0, savedFiles.length - pops));
+      };
+      applyPops(savedPaths.length);
+      if (!manifestOverBudget(copy, budget)) {
+        let low = 1;
+        let high = savedPaths.length;
+        while (low < high) {
+          const mid = Math.floor((low + high) / 2);
+          applyPops(mid);
+          if (manifestOverBudget(copy, budget)) low = mid + 1;
+          else high = mid;
+        }
+        applyPops(low);
+        return copy;
+      }
+    }
+
+    while (copy.dataFingerprintText && manifestOverBudget(copy, budget)) {
       const nextLength = Math.max(0, Math.floor(copy.dataFingerprintText.length / 2));
       if (nextLength === copy.dataFingerprintText.length) break;
       copy.dataFingerprintText = clampText(copy.dataFingerprintText, nextLength);
       copy.dataFingerprint = copy.dataFingerprintText;
-    } else {
-      break;
     }
   }
   return copy;
