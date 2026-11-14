@@ -40,7 +40,7 @@ vi.mock('../../../src/renderer/services/nativeDesktop', () => ({
   listAudioSegments: (from: number, to: number) => services.listAudioSegments(from, to),
   startNativeDesktopCollector: () => services.startNativeDesktopCollector(),
   stopNativeDesktopCollector: () => services.stopNativeDesktopCollector(),
-  startAudioCapture: (mode: 'microphone' | 'system-audio') => services.startAudioCapture(mode),
+  startAudioCapture: (mode: 'microphone' | 'system-audio' | 'meeting') => services.startAudioCapture(mode),
   stopAudioCapture: () => services.stopAudioCapture(),
 }));
 
