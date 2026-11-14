@@ -405,6 +405,20 @@ describe('PermissionCard presentation gate (production host request shapes)', ()
     process.stdout.write(`rendered production Browser navigate cards:\n${lines.join('\n')}\n`);
   });
 
+  it('a grant-free Browser page action still shows what will be typed/clicked', () => {
+    const click = captured.find((c) => c.origin === 'executor:Browser click_text')!;
+    const request = withoutBrowserGrant(click.request);
+    const lines: string[] = [];
+    for (const language of LANGUAGES) {
+      const { text } = renderCard(request, language);
+      lines.push(`${language}: ${text}`);
+      expect(text, `${language}: target text on the card`).toContain('Finish');
+      expect(text, `${language}: web action wording`).toContain(language === 'zh' ? '操作网页' : 'Operate on a web page');
+      expect(text, `${language}: no tool-name dump`).not.toMatch(/执行工具|Browser/u);
+    }
+    process.stdout.write(`rendered grant-free Browser click_text cards:\n${lines.join('\n')}\n`);
+  });
+
   it('a future tool nobody wrote copy for is neutral in both languages, for every command-shaped type', () => {
     for (const c of captured.filter((x) => x.origin.startsWith('future:'))) {
       for (const [language, title] of [['zh', '需要你确认'], ['en', 'Needs your approval']] as const) {

@@ -213,7 +213,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
             && !(details.preview.type === 'generic' && details.preview.summary.includes(request.tool)) && (
             <div className="text-xs text-zinc-400 mb-2 whitespace-pre-line">{details.preview.summary}</div>
           )}
-          {details.preview.diff && !kind.startsWith('web_') && (
+          {details.preview.diff && kind !== 'web_open' && (
             <pre className="text-xs p-2 rounded bg-zinc-700 border border-zinc-700 text-zinc-400 overflow-x-auto max-h-32 whitespace-pre-wrap break-all">
               {details.preview.type === 'generic' ? humanizeParamLabels(details.preview.diff) : details.preview.diff}
             </pre>
