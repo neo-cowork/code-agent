@@ -16,6 +16,7 @@ import { usePermissionStore, type PermissionRequestForMemory } from '../../store
 import { DecisionCard, isEditableTarget, type DecisionCardViewMode, type DecisionOption } from '../DecisionCard';
 import { RequestDetails } from './RequestDetails';
 import { OutboundMaskNotice } from './OutboundMaskNotice';
+import { UserRequestQuote } from './UserRequestQuote';
 import type { PermissionRequest, ApprovalLevel, PermissionType } from './types';
 import type { PermissionRequest as ContractPermissionRequest, PermissionResponse } from '@shared/contract';
 import { isEditableTool, PermissionRequestReason } from '@shared/contract';
@@ -629,6 +630,7 @@ export function PermissionCard({
               {p.connectorPurpose.replace('{purpose}', request.details.purpose)}
             </p>
           ) : null}
+          <UserRequestQuote details={request.details} labels={p} />
           <RequestDetails request={request} />
         </>
       }
