@@ -2358,7 +2358,7 @@ export class ToolExecutor {
         }
       }
 
-      const ask = await getDenialRegistry().guardApproval({
+      const ask = await getDenialRegistry().observeApproval({
         sessionId: effectiveSessionId, sourceMessageId: options.sourceMessageId, runId: effectiveRunId,
         toolName: executionToolName, app: computerApp, enabled: !cuaSensitiveStep && !commandAnalysisFailedReason,
         ask: () => requestPermissionWithTelemetry({

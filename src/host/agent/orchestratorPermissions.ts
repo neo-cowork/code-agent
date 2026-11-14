@@ -11,6 +11,7 @@ import { INTERACTION_TIMEOUTS } from '../../shared/constants/timeouts';
 import { PARKED_APPROVAL_PREVIEW_MAX_CHARS } from '../../shared/constants/pendingApproval';
 import { PARKED_APPROVAL_ENTRY_PATH } from '../../shared/parkedApprovalLocation';
 import { PARKED_APPROVAL_CLOSURE_SENTENCES } from '../../shared/parkedApprovalClosure';
+import { getDenialRegistry } from '../security/denialRegistry';
 import { redactCommandSecrets } from '../security/secretRedaction';
 import { generatePermissionRequestId } from '../../shared/utils/id';
 import type { ExecutionTopology } from '../permissions';
@@ -608,6 +609,8 @@ export class OrchestratorPermissionIsland {
     if (detached || unattended || voice) {
       const parkRepo = this.getPendingApprovalRepo();
       if (parkRepo) {
+        const parkedGoalDenial = getDenialRegistry().refuseIfGoalDenied(fullRequest);
+        if (parkedGoalDenial) return parkedGoalDenial;
         return this.parkApproval(
           fullRequest,
           permissionLevel,
@@ -634,6 +637,9 @@ export class OrchestratorPermissionIsland {
         return { approved: true, approvalSource: 'auto-approve-level' };
       }
     }
+
+    const goalDenial = getDenialRegistry().refuseIfGoalDenied(fullRequest);
+    if (goalDenial) return goalDenial;
 
     // 有审批 UI 的交互会话一直等待真人裁决；无 UI 的 headless 路径仍按 60s/5min
     // fail-closed，和 createCLIPermissionHandler 的 no-approval-ui 判据保持同一环境边界。

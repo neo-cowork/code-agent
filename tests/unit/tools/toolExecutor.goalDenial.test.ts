@@ -4,10 +4,13 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getDenialRegistry } from '../../../src/host/security/denialRegistry';
+import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
+import { getPermissionModeManager, resetPermissionModeManager } from '../../../src/host/permissions/modes';
 import { createLogger } from '../../../src/host/services/infra/logger';
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 import { PendingApprovalRepository } from '../../../src/host/services/core/repositories/PendingApprovalRepository';
 import { agentErrorZh, agentErrorEn } from '../../../src/renderer/i18n/agentError';
+import type { AppSettings } from '../../../src/shared/contract';
 import { HostReasonCode, type PermissionDenialSource } from '../../../src/shared/contract/permission';
 
 vi.unmock('better-sqlite3');
@@ -29,6 +32,7 @@ describe('same-goal denial at the ToolExecutor ask boundary', () => {
   let repo: PendingApprovalRepository;
   beforeEach(async () => {
     getDenialRegistry().clearAll();
+    resetPermissionModeManager();
     cwd = await mkdtemp(join(tmpdir(), 'goal-denial-'));
     db = new Database(':memory:');
     db.exec(`CREATE TABLE pending_approvals (
@@ -37,20 +41,55 @@ describe('same-goal denial at the ToolExecutor ask boundary', () => {
     )`);
     repo = new PendingApprovalRepository(db);
   });
-  afterEach(async () => { vi.restoreAllMocks(); db.close(); await rm(cwd, { recursive: true, force: true }); });
+  afterEach(async () => {
+    resetPermissionModeManager();
+    vi.restoreAllMocks();
+    db.close();
+    await rm(cwd, { recursive: true, force: true });
+  });
 
-  function executor(source: PermissionDenialSource = 'user', message?: string, readOnly = false) {
-    let seq = 0;
-    const requestPermission = vi.fn(async () => {
-      const id = `approval-${++seq}`;
-      repo.insert({ id, kind: 'tool_approval', agentId: null, agentName: null,
-        coordinatorId: 'goal-session', payload: { tool: 'Bash' }, submittedAt: seq });
-      repo.resolve({ id, status: 'rejected', feedback: source, resolvedAt: seq });
-      return { approved: false, denialSource: source, message };
+  function executor(
+    source: PermissionDenialSource = 'user',
+    message?: string,
+    readOnly = false,
+    opts: { unattended?: boolean; devMode?: () => boolean } = {},
+  ) {
+    if (opts.unattended ?? true) {
+      getPermissionModeManager().markUnattendedSession('goal-session');
+    }
+    let humanPrompts = 0;
+    const island = new OrchestratorPermissionIsland({
+      getSettings: () => ({
+        permissions: { autoApprove: { read: false, write: false, execute: false, network: false } },
+      }) as unknown as AppSettings,
+      isDevModeAutoApproveEnabled: opts.devMode ?? (() => false),
+      getExecutionTopology: () => ((opts.unattended ?? true) ? 'async_agent' : 'single_agent'),
+      hasApprovalUi: () => !(opts.unattended ?? true),
+      injectedPendingApprovalRepo: repo,
+      onEvent: (event) => {
+        if (event.type === 'permission_request' && !event.data.resolved) {
+          humanPrompts += 1;
+          const machineDenial = source === 'user' ? undefined : source;
+          queueMicrotask(() => {
+            if (opts.unattended ?? true) {
+              island.resolveParkedApproval(event.data.id, 'deny', message, machineDenial);
+            } else {
+              island.handlePermissionResponse(event.data.id, 'deny');
+            }
+          });
+        }
+      },
     });
-    const tool = new ToolExecutor({ workingDirectory: cwd, requestPermission, permissionModeOverride: readOnly ? 'readOnly' : undefined });
+    const requestPermission = vi.fn((req: Parameters<OrchestratorPermissionIsland['requestPermission']>[0]) => (
+      island.requestPermission(req)
+    ));
+    const tool = new ToolExecutor({
+      workingDirectory: cwd,
+      requestPermission,
+      permissionModeOverride: readOnly ? 'readOnly' : undefined,
+    });
     tool.setAuditEnabled(false);
-    return { tool, requestPermission };
+    return { tool, requestPermission, getHumanPrompts: () => humanPrompts };
   }
   const options = { sessionId: 'goal-session', sourceMessageId: 'user-1' };
 
@@ -64,17 +103,18 @@ describe('same-goal denial at the ToolExecutor ask boundary', () => {
   });
 
   it.each([
-    ['foreground', options],
-    ['scheduled/background without source message', { sessionId: 'goal-session', runId: 'run-nightly-1' }],
-  ])('%s: changed command/arguments cause zero new pending rows', async (_label, scope) => {
-    const { tool, requestPermission } = executor();
+    ['foreground', options, false],
+    ['scheduled/background without source message', { sessionId: 'goal-session', runId: 'run-nightly-1' }, true],
+  ])('%s: changed command/arguments cause zero new pending rows', async (_label, scope, unattended) => {
+    const { tool, getHumanPrompts } = executor('user', undefined, false, { unattended });
     await tool.execute('Bash', { command: 'find . -name draft -delete' }, scope);
     const before = db.prepare('SELECT * FROM pending_approvals').all();
+    expect(before).toHaveLength(unattended ? 1 : 0);
     const warn = vi.spyOn(Object.getPrototypeOf(createLogger('DenialRegistry')) as ReturnType<typeof createLogger>, 'warn');
     const result = await tool.execute('bash', { command: 'find . -name backup -exec rm {} \\;' }, scope);
     process.stdout.write(`pending_approvals before: ${JSON.stringify(before)}\n`);
     process.stdout.write(`pending_approvals after: ${JSON.stringify(db.prepare('SELECT * FROM pending_approvals').all())}\n`);
-    expect(requestPermission).toHaveBeenCalledTimes(1);
+    expect(getHumanPrompts()).toBe(1);
     expect(db.prepare('SELECT * FROM pending_approvals').all()).toEqual(before);
     expect(result.error).toBe(guidance);
     expect(warn).toHaveBeenCalledWith('user-denied-goal-sticky: refusing approval before ask/park', expect.objectContaining({ toolFamily: 'Bash' }));
@@ -82,33 +122,44 @@ describe('same-goal denial at the ToolExecutor ask boundary', () => {
   });
 
   it('new user message in the same session permits a new approval', async () => {
-    const { tool, requestPermission } = executor();
+    const { tool, getHumanPrompts } = executor();
     await tool.execute('Bash', { command: 'find . -name draft -delete' }, options);
     await tool.execute('Bash', { command: 'find . -name backup -delete' }, { ...options, sourceMessageId: 'user-2' });
-    expect(requestPermission).toHaveBeenCalledTimes(2);
+    expect(getHumanPrompts()).toBe(2);
     expect(db.prepare('SELECT * FROM pending_approvals').all()).toHaveLength(2);
   });
 
   it('tomorrow is a new run when no source message exists', async () => {
-    const { tool, requestPermission } = executor();
+    const { tool, getHumanPrompts } = executor();
     await tool.execute('Bash', { command: 'find . -name draft -delete' }, { sessionId: 'goal-session', runId: 'night-1' });
     await tool.execute('Bash', { command: 'find . -name backup -delete' }, { sessionId: 'goal-session', runId: 'night-2' });
-    expect(requestPermission).toHaveBeenCalledTimes(2);
+    expect(getHumanPrompts()).toBe(2);
   });
 
   it('read-only command after rejection still executes without approval', async () => {
-    const { tool, requestPermission } = executor();
+    const { tool, getHumanPrompts } = executor();
     await tool.execute('Bash', { command: 'find . -name draft -delete' }, options);
     const result = await tool.execute('Bash', { command: 'pwd' }, options);
     expect(result.success).toBe(true);
-    expect(requestPermission).toHaveBeenCalledTimes(1);
+    expect(getHumanPrompts()).toBe(1);
+  });
+
+  it('auto-approve inside the permission handler still approves after a family denial', async () => {
+    let devMode = false;
+    const { tool, getHumanPrompts } = executor('user', undefined, false, { unattended: false, devMode: () => devMode });
+    const denied = await tool.execute('Bash', { command: 'find . -name draft -delete' }, options);
+    expect(denied.success).toBe(false);
+    devMode = true;
+    const allowed = await tool.execute('Bash', { command: 'mkdir -p sorted' }, options);
+    expect(allowed.success).toBe(true);
+    expect(getHumanPrompts()).toBe(1);
   });
 
   it.each(['timeout', 'cancelled', 'fail-closed', 'scripted', 'no-approval-ui'] as const)('%s does not trigger goal sticky', async (source) => {
-    const { tool, requestPermission } = executor(source);
+    const { tool, getHumanPrompts } = executor(source);
     await tool.execute('Bash', { command: 'find . -name draft -delete' }, options);
     await tool.execute('Bash', { command: 'find . -name backup -delete' }, options);
-    expect(requestPermission).toHaveBeenCalledTimes(2);
+    expect(getHumanPrompts()).toBe(2);
   });
 
   it('readOnly mode must not replace a real user denial with mode advice', async () => {
