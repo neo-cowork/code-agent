@@ -24,10 +24,17 @@ import { getSessionManager } from '../../../src/host/services/infra/sessionManag
 import {
   SESSION_COMMAND_TASK_IDLE_TIMEOUT_MS,
   SESSION_COMMAND_TASK_APPROVAL_WAIT_CAP_MS,
+  TASK_STATUS_UNCHANGED_HINT,
   resolveSessionCommandTaskIdleTimeoutMs,
   resolveSessionCommandTaskApprovalWaitCapMs,
 } from '../../../src/shared/constants/sessionCommandCenter';
 import { INTERACTION_TIMEOUTS } from '../../../src/shared/constants/timeouts';
+import {
+  recordTaskStatusAnswer,
+  resetTaskStatusDedupeForTest,
+  shouldReturnTaskStatusUnchangedHint,
+} from '../../../src/host/tools/modules/commandCenter/taskStatusDedupe';
+import { getBackgroundSubagentRegistry } from '../../../src/host/agent/backgroundSubagentRegistry';
 
 // N-FIX-WEBFETCH-BLOCK-PRIVATE-NET-FU2：executeTaskStatus 走单例指挥台，单例构造默认拿
 // 真实 getTaskManager()——未 initialize 时 startBackgroundTask 同步抛错，任务会被立刻
@@ -1201,5 +1208,202 @@ describe('model-facing task result text', () => {
       resetSessionCommandCenterForTest();
       singletonTaskManagerHolder.manager = undefined;
     }
+  });
+});
+
+// ============================================================================
+// N-FIX-BGTASK-STATUS-POLL-TRIPLE-CARDS-REST1：task_status 同 turn 去重
+// 派活后模型常在几秒内连查 2-3 次 task_status，全量回答每次重画一张「进行中」卡片。
+// 同一 turn + 签名未变 → 短提示（meta 原样，卡片与折叠行为不变）；签名变化、换 turn、
+// 缺 turnId 或终态 → 照旧全量。全部走生产入口 executeTaskStatus + 真实单例指挥台。
+// ============================================================================
+describe('task_status same-turn dedupe', () => {
+  const SESSION = 'session-dedupe';
+  const allow = vi.fn().mockResolvedValue({ allow: true }) as CanUseToolFn;
+
+  function statusCtx(turnId?: string): ToolContext {
+    return {
+      sessionId: SESSION,
+      ...(turnId === undefined ? {} : { turnId }),
+      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      abortSignal: new AbortController().signal,
+    } as unknown as ToolContext;
+  }
+
+  async function spawnRunning() {
+    const center = getSessionCommandCenter();
+    const spawned = await center.spawn({ ...input(1), sessionId: SESSION });
+    if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+    return spawned.task;
+  }
+
+  function emitTaskCompleted(taskId: string, conclusion: string): void {
+    (singletonTaskManagerHolder.manager as FakeTaskManager).emitTask({
+      type: 'task_completed',
+      sessionId: SESSION,
+      data: { taskId, conclusion },
+    });
+  }
+
+  function emitTaskError(taskId: string, error: string): void {
+    (singletonTaskManagerHolder.manager as FakeTaskManager).emitTask({
+      type: 'task_error',
+      sessionId: SESSION,
+      data: { taskId, error },
+    });
+  }
+
+  /** 终态投影会落 [任务结果] 消息并唤醒前台 brain：单测里把会话库挡掉（同上文件 1163 行的口径）。 */
+  function stubSessionStore() {
+    const addMessageToSession = vi.spyOn(getSessionManager(), 'addMessageToSession').mockResolvedValue(undefined);
+    const loadSession = vi.spyOn(getSessionManager(), 'getSession').mockResolvedValue(null);
+    return () => {
+      addMessageToSession.mockRestore();
+      loadSession.mockRestore();
+    };
+  }
+
+  beforeEach(() => {
+    resetSessionTaskConcurrencyPoolForTest();
+    resetBackgroundTaskLedgerForTest();
+    resetTaskStatusDedupeForTest();
+    singletonTaskManagerHolder.manager = new FakeTaskManager();
+    resetSessionCommandCenterForTest();
+  });
+
+  afterEach(() => {
+    resetSessionCommandCenterForTest();
+    singletonTaskManagerHolder.manager = undefined;
+    vi.useRealTimers();
+  });
+
+  it('answers the first poll of a turn with the full list and repeats with the short hint while meta stays identical', async () => {
+    await spawnRunning();
+    const ctx = statusCtx('turn-1');
+
+    const first = await executeTaskStatus({}, ctx, allow);
+    const second = await executeTaskStatus({}, ctx, allow);
+    const third = await executeTaskStatus({}, ctx, allow);
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(third.ok).toBe(true);
+    if (!first.ok || !second.ok || !third.ok) return;
+
+    // 第 1 次：全量列表（含运行中护栏行），不含短提示
+    expect(first.output).toContain('1. 任务1：进行中');
+    expect(first.output).toContain('没有剩余时间数据');
+    expect(first.output).not.toContain(TASK_STATUS_UNCHANGED_HINT);
+    // 第 2/3 次：短提示 + 同口径标识符行（活跃序号/短名），不再重复护栏行
+    expect(second.output).toBe(`${TASK_STATUS_UNCHANGED_HINT}\n1. 任务1：进行中`);
+    expect(third.output).toBe(second.output);
+    // meta 三次 deep-equal：用户卡片由 meta 构建、foldSessionTaskStatus 只键在 meta 上，行为不变
+    expect(second.meta).toEqual(first.meta);
+    expect(third.meta).toEqual(first.meta);
+  });
+
+  it('returns the full answer again once the task completes (status and result text changed)', async () => {
+    const task = await spawnRunning();
+    const ctx = statusCtx('turn-1');
+    const first = await executeTaskStatus({}, ctx, allow);
+    const second = await executeTaskStatus({}, ctx, allow);
+    expect(first.output).not.toContain(TASK_STATUS_UNCHANGED_HINT);
+    expect(second.output).toContain(TASK_STATUS_UNCHANGED_HINT);
+
+    const restoreSessionStore = stubSessionStore();
+    try {
+      emitTaskCompleted(task.id, '报告已生成并通过检查。');
+      await vi.waitFor(() => {
+        expect(getSessionCommandCenter().list(SESSION)).toMatchObject([{ status: 'completed' }]);
+      });
+
+      const third = await executeTaskStatus({}, ctx, allow);
+      expect(third.output).not.toContain(TASK_STATUS_UNCHANGED_HINT);
+      expect(third.output).toContain('已完成：报告已生成并通过检查。');
+    } finally {
+      restoreSessionStore();
+    }
+  });
+
+  it('returns the full answer again once the task fails', async () => {
+    const task = await spawnRunning();
+    const ctx = statusCtx('turn-1');
+    const first = await executeTaskStatus({}, ctx, allow);
+    const second = await executeTaskStatus({}, ctx, allow);
+    expect(first.output).not.toContain(TASK_STATUS_UNCHANGED_HINT);
+    expect(second.output).toContain(TASK_STATUS_UNCHANGED_HINT);
+
+    const restoreSessionStore = stubSessionStore();
+    try {
+      emitTaskError(task.id, '上游超时');
+      await vi.waitFor(() => {
+        expect(getSessionCommandCenter().list(SESSION)).toMatchObject([{ status: 'failed' }]);
+      });
+
+      const third = await executeTaskStatus({}, ctx, allow);
+      expect(third.output).not.toContain(TASK_STATUS_UNCHANGED_HINT);
+      expect(third.output).toContain('未完成：上游超时');
+    } finally {
+      restoreSessionStore();
+    }
+  });
+
+  it('returns the full answer when the turnId differs (the user asked again in a new turn)', async () => {
+    await spawnRunning();
+    const firstCtx = statusCtx('turn-1');
+    const secondCtx = statusCtx('turn-2');
+
+    const first = await executeTaskStatus({}, firstCtx, allow);
+    expect(first.output).not.toContain(TASK_STATUS_UNCHANGED_HINT);
+    const second = await executeTaskStatus({}, secondCtx, allow);
+    expect(second.output).not.toContain(TASK_STATUS_UNCHANGED_HINT);
+    expect(second.output).toContain('1. 任务1：进行中');
+    // 新 turn 的全量回答已入账：同一新 turn 内再查才回短提示
+    const third = await executeTaskStatus({}, secondCtx, allow);
+    expect(third.output).toContain(TASK_STATUS_UNCHANGED_HINT);
+  });
+
+  it('answers in full and logs one debug line when turnId is absent', async () => {
+    await spawnRunning();
+    const ctx = statusCtx();
+
+    const first = await executeTaskStatus({}, ctx, allow);
+    const second = await executeTaskStatus({}, ctx, allow);
+    expect(first.output).not.toContain(TASK_STATUS_UNCHANGED_HINT);
+    expect(second.output).not.toContain(TASK_STATUS_UNCHANGED_HINT);
+    expect(second.output).toContain('1. 任务1：进行中');
+    const logger = (ctx as unknown as { logger: { debug: ReturnType<typeof vi.fn> } }).logger;
+    expect(logger.debug).toHaveBeenCalledWith(
+      expect.stringContaining('turnId'),
+      expect.objectContaining({ sessionId: SESSION }),
+    );
+  });
+
+  it('still returns the hint when only the sub-agent elapsed seconds changed, keeping the Agent ID suffix', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-08-24T00:00:00.000Z'));
+    const agentId = getBackgroundSubagentRegistry().spawn(
+      () => new Promise(() => {}),
+      { sessionId: SESSION, title: '调研' },
+    );
+    const ctx = statusCtx('turn-1');
+
+    const first = await executeTaskStatus({}, ctx, allow);
+    expect(first.output).toContain(`（Agent ID: ${agentId}）`);
+    expect(first.output).toContain('已用时0 秒');
+
+    vi.setSystemTime(new Date('2026-08-24T00:00:05.000Z'));
+    const second = await executeTaskStatus({}, ctx, allow);
+    // 已用时变了但签名把它排除在外：仍回短提示，且保留 collect 所需的 Agent ID 后缀
+    expect(second.output).toBe(`${TASK_STATUS_UNCHANGED_HINT}\n- 调研 ：进行中（Agent ID: ${agentId}）`);
+    expect(second.output).not.toContain('已用时');
+    expect(second.output).not.toMatch(/\b(running|completed|failed|cancelled|queued)\b/);
+  });
+
+  it('treats a changed result text as a new answer even while the status is unchanged', () => {
+    const task = { id: 'task-1', shortName: '任务1', status: 'running' } as SessionCommandTask;
+    recordTaskStatusAnswer(SESSION, 'turn-1', [task], []);
+    // 签名里的 resultText 变了（生产里命令任务的结果文本只在终态出现，这里直接钉签名敏感性）
+    expect(shouldReturnTaskStatusUnchangedHint(SESSION, 'turn-1', [{ ...task, resultText: '新结论' }], [])).toBe(false);
+    expect(shouldReturnTaskStatusUnchangedHint(SESSION, 'turn-1', [task], [])).toBe(true);
   });
 });
