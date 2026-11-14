@@ -176,8 +176,8 @@ describe('automatic-session run titles', () => {
       language: 'zh',
       now: 0,
     });
-    expect(model.title).toBe(`${shown} 晨间笔记汇总`);
-    expect(model.title).not.toMatch(/cron_summary|artifact:|urgency:|Unix 秒|当前时间|IM 策略/);
+    expect(model?.title).toBe(`${shown} 晨间笔记汇总`);
+    expect(model?.title).not.toMatch(/cron_summary|artifact:|urgency:|Unix 秒|当前时间|IM 策略/);
   });
 
   it('strips host decoration from the user instruction used as a run title', () => {
