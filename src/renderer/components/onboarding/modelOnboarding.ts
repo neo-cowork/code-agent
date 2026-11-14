@@ -7,6 +7,9 @@ import type {
 } from '@shared/contract';
 import { DEFAULT_MODEL, MODEL, PROVIDER_MODELS_MAP, getProviderInfo } from '@shared/constants';
 import { getProviderRuntimeModels } from '@shared/modelRuntime';
+import type { Translations } from '../../i18n/zh';
+
+export type OnboardingTranslations = Translations['onboarding'];
 
 export interface OnboardingProviderCopy {
   id: ModelProvider;
@@ -33,7 +36,7 @@ export interface OnboardingModelSelection {
   providerSettings: ModelProviderSettings;
 }
 
-export const ONBOARDING_OFFICIAL_PROVIDERS: readonly ModelProvider[] = [
+export const ONBOARDING_OFFICIAL_PROVIDERS = [
   'deepseek',
   'moonshot',
   'zhipu',
@@ -48,7 +51,7 @@ export const ONBOARDING_OFFICIAL_PROVIDERS: readonly ModelProvider[] = [
   'volcengine',
   'longcat',
   'xiaomi',
-];
+] as const satisfies readonly ModelProvider[];
 
 export const ONBOARDING_RECOMMENDED_PROVIDERS: readonly ModelProvider[] = [
   'deepseek',
@@ -57,78 +60,17 @@ export const ONBOARDING_RECOMMENDED_PROVIDERS: readonly ModelProvider[] = [
   'qwen',
 ];
 
-const PROVIDER_COPY: Partial<Record<ModelProvider, Pick<OnboardingProviderCopy, 'name' | 'description' | 'badge'>>> = {
-  deepseek: {
-    name: 'DeepSeek',
-    description: '日常聊天、代码和高性价比任务',
-    badge: '推荐默认',
-  },
-  moonshot: {
-    name: 'Kimi / Moonshot',
-    description: '长文本、中文写作和文档处理',
-    badge: '长文本',
-  },
-  zhipu: {
-    name: '智谱 GLM',
-    description: '国内直连、视觉和多模态能力',
-    badge: '国内可用',
-  },
-  qwen: {
-    name: 'Qwen',
-    description: '办公文档、多模态和国内生态',
-    badge: '办公场景',
-  },
-  openai: {
-    name: 'OpenAI',
-    description: 'GPT 系列官方 API',
-  },
-  claude: {
-    name: 'Claude',
-    description: 'Anthropic 官方 API',
-  },
-  gemini: {
-    name: 'Gemini',
-    description: 'Google Gemini 官方 API',
-  },
-  minimax: {
-    name: 'MiniMax',
-    description: 'MiniMax 官方 API',
-  },
-  grok: {
-    name: 'Grok',
-    description: 'xAI Grok 官方 API',
-  },
-  groq: {
-    name: 'Groq',
-    description: '高速推理官方 API',
-  },
-  perplexity: {
-    name: 'Perplexity',
-    description: '联网搜索官方 API',
-  },
-  volcengine: {
-    name: '火山 / 豆包',
-    description: '火山引擎 Ark 官方 API',
-  },
-  longcat: {
-    name: 'LongCat',
-    description: 'LongCat API 开放平台',
-  },
-  xiaomi: {
-    name: '小米 MiMo',
-    description: '小米 MiMo Token Plan',
-  },
-};
-
 /** 中转站/自定义卡片（OpenAI 兼容），让只有中转 key 的新用户也能完成 onboarding */
-export const ONBOARDING_RELAY_CARD: OnboardingProviderCopy = {
-  id: 'custom',
-  name: '中转站 / 自定义',
-  description: 'OpenAI 兼容中转站（new-api / one-api 等），填接口地址和 Key',
-  badge: '中转',
-  recommended: false,
-  requiresBaseUrl: true,
-};
+export function getOnboardingRelayCard(text: OnboardingTranslations): OnboardingProviderCopy {
+  return {
+    id: 'custom',
+    name: text.providerCards.relay.name,
+    description: text.providerCards.relay.description,
+    badge: text.providerCards.relay.badge,
+    recommended: false,
+    requiresBaseUrl: true,
+  };
+}
 
 /** Onboarding is deliberately two steps: source, then its default model. */
 export const ONBOARDING_STEPS = ['source', 'model'] as const;
@@ -143,30 +85,33 @@ export interface OnboardingApiCompatibilityOption {
   protocol: ModelProviderProtocol;
 }
 
-export const ONBOARDING_API_COMPATIBILITY_OPTIONS: readonly OnboardingApiCompatibilityOption[] = [
-  {
-    id: 'openai-compatible',
-    label: 'OpenAI 兼容接口',
-    description: '适用于 new-api、one-api 和其他 OpenAI-compatible 网关。',
-    protocol: 'openai',
-  },
-  {
-    id: 'anthropic-compatible',
-    label: 'Anthropic 兼容接口',
-    description: '适用于实现 Anthropic Messages / models 协议的自定义接口。',
-    protocol: 'claude',
-  },
-];
+export function getOnboardingApiCompatibilityOptions(
+  text: OnboardingTranslations,
+): readonly OnboardingApiCompatibilityOption[] {
+  return [
+    {
+      id: 'openai-compatible',
+      label: text.providerCards.compatibility['openai-compatible'].label,
+      description: text.providerCards.compatibility['openai-compatible'].description,
+      protocol: 'openai',
+    },
+    {
+      id: 'anthropic-compatible',
+      label: text.providerCards.compatibility['anthropic-compatible'].label,
+      description: text.providerCards.compatibility['anthropic-compatible'].description,
+      protocol: 'claude',
+    },
+  ];
+}
 
-export function getOnboardingProviderCards(): OnboardingProviderCopy[] {
+export function getOnboardingProviderCards(text: OnboardingTranslations): OnboardingProviderCopy[] {
   return ONBOARDING_OFFICIAL_PROVIDERS.map((id) => {
-    const registry = getProviderInfo(id);
-    const copy = PROVIDER_COPY[id];
+    const copy: { name: string; description: string; badge?: string } = text.providerCards[id];
     return {
       id,
-      name: copy?.name || registry?.displayName || id,
-      description: copy?.description || `${registry?.displayName || id} 官方 API`,
-      badge: copy?.badge,
+      name: copy.name,
+      description: copy.description,
+      badge: copy.badge,
       recommended: ONBOARDING_RECOMMENDED_PROVIDERS.includes(id),
     };
   });

@@ -280,6 +280,16 @@
       ]
     },
     {
+      "id": "renderer-cjk-literal-ratchet",
+      "paths": [
+        "scripts/renderer-cjk-literal-ratchet.mjs",
+        "scripts/renderer-cjk-literal-baseline.json"
+      ],
+      "files": [
+        "tests/scripts/rendererCjkLiteralRatchet.test.ts"
+      ]
+    },
+    {
       "id": "eval-center",
       "paths": [
         "packages/internal/evaluation-center/scripts/**",
