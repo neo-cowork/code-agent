@@ -29,6 +29,22 @@ if (args[0] === 'auth' && args[1] === 'status') {
     setInterval(() => {}, 1000);
   } else {
     if (mode === 'status-fail') process.exit(1);
+    if (mode === 'status-not-configured') {
+      process.stderr.write('profile "neo" not found: not configured\\n');
+      process.exit(1);
+    }
+    if (mode === 'status-split-utf8') {
+      // 多字节字符正好被切在两次 write 之间（管道 chunk 边界）
+      const body = Buffer.from(JSON.stringify({ identities: { user: { available: true, userName: '飞书未登录'.repeat(40) } }, identity: 'user' }));
+      const cut = body.indexOf(Buffer.from('飞书')) + 1;
+      process.stdout.write(body.subarray(0, cut));
+      setTimeout(() => { process.stdout.write(body.subarray(cut)); process.exit(0); }, 150);
+      return;
+    }
+    if (mode === 'status-signed-out') {
+      process.stdout.write(JSON.stringify({ identities: { user: { available: false } }, identity: 'bot' }));
+      process.exit(0);
+    }
     process.stdout.write(JSON.stringify({
       identities: { user: { available: true, openId: 'ou_fake', userName: 'Neo User', tenantName: 'Neo Corp' } },
       identity: 'user',
@@ -162,6 +178,33 @@ describe('Feishu lark-cli driver', () => {
       identity: 'none',
       stale: true,
     });
+  });
+
+  it('tags only the two CONFIRMED lost-login probes with a machine reason (signed-out, not-configured); install-missing and unclassified failures stay untagged', async () => {
+    const signedOut = await fixture('status-signed-out');
+    await expect(signedOut.driver.status()).resolves.toMatchObject({ connected: false, lostReason: 'cli_not_logged_in' });
+
+    const notConfigured = await fixture('status-not-configured');
+    const configured = await notConfigured.driver.status();
+    expect(configured).toMatchObject({ connected: false, lostReason: 'cli_missing_configuration' });
+    expect(configured.stale).toBeUndefined();
+
+    const unclassified = await fixture('status-fail');
+    expect((await unclassified.driver.status()).lostReason).toBeUndefined();
+    const missingBinary = createLarkCliDriver({
+      dataDir: path.join(path.dirname(unclassified.logPath), 'missing-2'),
+      timeoutMs: 100,
+    });
+    expect((await missingBinary.status()).lostReason).toBeUndefined();
+  });
+
+  it('keeps multi-byte CLI output intact when a pipe chunk splits a character (no U+FFFD, round-trips as UTF-8)', async () => {
+    const { driver } = await fixture('status-split-utf8');
+    const status = await driver.status();
+    const name = status.user?.name ?? '';
+    expect(name).toBe('飞书未登录'.repeat(40));
+    expect(name).not.toContain('\uFFFD');
+    expect(Buffer.from(name, 'utf8').toString('utf8')).toBe(name);
   });
 
   it('reuses status inside the TTL and refreshes after expiry', async () => {

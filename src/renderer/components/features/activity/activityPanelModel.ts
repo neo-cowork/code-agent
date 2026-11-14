@@ -279,7 +279,9 @@ function buildCapabilityRows(args: {
         : copy.capability.noMeetingContext,
       detail: args.native.audioStatus?.capturing
         ? interpolatePlural(copy.capability.recording, args.native.audioStatus.totalSegments)
-          .replace('{mode}', args.native.audioStatus.captureMode === 'system-audio' ? copy.capability.modeSystemAudio : copy.capability.modeMicrophone)
+          .replace('{mode}', args.native.audioStatus.captureMode === 'meeting'
+            ? copy.capability.modeMeeting
+            : args.native.audioStatus.captureMode === 'system-audio' ? copy.capability.modeSystemAudio : copy.capability.modeMicrophone)
         : args.native.audioSegments.length > 0
           ? copy.capability.transcriptSegments.replace('{count}', String(args.native.audioSegments.length))
           : audioSource?.unavailableReason || copy.capability.audioFallback,

@@ -161,6 +161,7 @@ export interface AppState {
   /** 非空 = 这次设置是带返回落点打开的；closeSettings 据此决定关了落哪儿。 */
   settingsReturnTo: SettingsReturnTo | null;
   settingsInitialTab: SettingsTab | null; // 打开设置时默认选中的 Tab
+  settingsModelFocus: { provider: ModelConfig['provider']; nonce: number } | null;
   settingsMemoryFocus: SettingsMemoryFocus | null;
   settingsCapabilityFocus: SettingsCapabilityFocus | null;
   /**
@@ -299,6 +300,7 @@ export interface AppState {
 
   // Model Config
   modelConfig: ModelConfig;
+  settingsLoaded: boolean;
 
   // Workspace State
   workingDirectory: string | null;
@@ -315,6 +317,8 @@ export interface AppState {
   closeSettings: () => void;
   setPendingRoleChatSeed: (seed: string | null) => void;
   openSettingsTab: (tab: SettingsTab) => void; // 打开设置并跳转到指定 Tab
+  openModelSettings: (provider: ModelConfig['provider']) => void;
+  clearSettingsModelFocus: () => void;
   openMemorySettings: (focus?: Omit<SettingsMemoryFocus, 'nonce'>) => void;
   openCapabilitySettingsTarget: (focus: Omit<SettingsCapabilityFocus, 'nonce'>) => void;
   clearSettingsInitialTab: () => void; // 清除初始 Tab（设置页使用后调用）
