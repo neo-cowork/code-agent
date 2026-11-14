@@ -50,6 +50,12 @@ export const UI = {
 export const COMPOSER_DRAFT_ATTACHMENT_BUDGET_BYTES = 2 * 1024 * 1024;
 
 /**
+ * 所有会话草稿合计的体积预算（字节）。单会话预算之外再设总量，避免几个会话各留一张
+ * 截图就占满同源 localStorage 配额，挤掉发送失败记录、界面偏好等其他写入方。
+ */
+export const COMPOSER_DRAFT_TOTAL_BUDGET_BYTES = 3 * 1024 * 1024;
+
+/**
  * 侧栏会话列表分页页大小：首屏与每次「加载更多」各取这么多条。
  * 仓储层按 updated_at DESC 做 limit/offset 分页；不要把本值调成无限大——
  * 侧栏无虚拟化，几千个会话 DOM 节点会拖垮渲染（2026-08-07 工单结论）。

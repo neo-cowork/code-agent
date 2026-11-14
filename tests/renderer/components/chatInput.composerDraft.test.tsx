@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, renderHook, screen } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { en } from '../../../src/renderer/i18n/en';
-import { COMPOSER_DRAFT_ATTACHMENT_BUDGET_BYTES, UI } from '../../../src/shared/constants';
+import { COMPOSER_DRAFT_ATTACHMENT_BUDGET_BYTES, COMPOSER_DRAFT_TOTAL_BUDGET_BYTES, UI } from '../../../src/shared/constants';
 import type { MessageAttachment } from '../../../src/shared/contract';
 import {
   COMPOSER_DRAFT_DEBOUNCE_MS,
@@ -812,6 +812,26 @@ describe('composer draft v2 attachments', () => {
     fireEvent.click(screen.getByTestId('unsent-draft-put-back'));
     expect(setAttachments).toHaveBeenCalledWith([good]);
     view.unmount();
+  });
+
+  it('shares one total budget across sessions: a later session cannot push stored drafts past it', async () => {
+    const perDraftBytes = 1_200_000; // fits the per-session budget; two fit the 3 MiB total, a third does not
+    const writer = createComposerDraftWriter({ pageTarget: null, visibilityTarget: null });
+    writer.flushNow(KEY_A, '', () => false, [makeImageAttachment('a1', 'a.png', perDraftBytes)]);
+    writer.flushNow(KEY_B, '', () => false, [makeImageAttachment('b1', 'b.png', perDraftBytes)]);
+    const keyC = composerDraftStorageKey('session-c', false)!;
+    writer.flushNow(keyC, '第三个会话', () => false, [makeImageAttachment('c1', 'c.png', perDraftBytes)]);
+    writer.dispose();
+
+    expect(readComposerDraftEntry(KEY_A)?.attachments.map((att) => att.name)).toEqual(['a.png']);
+    expect(readComposerDraftEntry(KEY_B)?.attachments.map((att) => att.name)).toEqual(['b.png']);
+    // C no longer fits the shared total: named in dropped, never silent
+    const total = [KEY_A, KEY_B, keyC].reduce((sum, k) => sum + (localStorage.getItem(k) ?? '').length, 0);
+    expect(total).toBeLessThanOrEqual(COMPOSER_DRAFT_TOTAL_BUDGET_BYTES + 4096);
+    const c = readComposerDraftEntry(keyC);
+    expect(c?.text).toBe('第三个会话');
+    expect(c?.attachments).toEqual([]);
+    expect(c?.dropped).toEqual(['c.png']);
   });
 
   it('keeps v1 drafts readable and restorable through the hook', () => {

@@ -1,7 +1,7 @@
 // Per-session idle composer draft (text + inline attachments within budget).
 // Voice and @refs are not stored. localStorage only — queued_inputs is for messages handed to host.
 
-import { COMPOSER_DRAFT_ATTACHMENT_BUDGET_BYTES, UI } from '@shared/constants';
+import { COMPOSER_DRAFT_ATTACHMENT_BUDGET_BYTES, COMPOSER_DRAFT_TOTAL_BUDGET_BYTES, UI } from '@shared/constants';
 import type { MessageAttachment } from '@shared/contract';
 
 export const COMPOSER_DRAFT_DEBOUNCE_MS = 400;
@@ -37,6 +37,12 @@ export interface ComposerDraftEntry {
   text: string;
   attachments: MessageAttachment[];
   dropped: string[];
+}
+
+/** Optional enumeration, present on real localStorage; test doubles may omit it. */
+interface ComposerDraftEnumerableStorage extends ComposerDraftStorage {
+  readonly length?: number;
+  key?(index: number): string | null;
 }
 
 interface ComposerDraftFlushTarget {
@@ -201,6 +207,18 @@ function buildStoredDraftV2(
   return payload;
 }
 
+/** Bytes already held by the other sessions' drafts, counted against the shared total budget. */
+function otherDraftsBytes(storage: ComposerDraftEnumerableStorage, ownKey: string): number {
+  if (typeof storage.length !== 'number' || typeof storage.key !== 'function') return 0;
+  let total = 0;
+  for (let i = 0; i < storage.length; i += 1) {
+    const k = storage.key(i);
+    if (!k || k === ownKey || !k.startsWith(COMPOSER_DRAFT_KEY_PREFIX)) continue;
+    total += utf8ByteLength(storage.getItem(k) ?? '');
+  }
+  return total;
+}
+
 /** Empty draft (no text, no attachments, no carried-over dropped names) is ignored. */
 function writeComposerDraft(
   key: string | null,
@@ -219,6 +237,10 @@ function writeComposerDraft(
   const kept: MessageAttachment[] = [];
   const dropped: string[] = [...cleanedExtra];
   let usedBytes = utf8ByteLength(JSON.stringify({ v: 2, text }));
+  const budget = Math.min(
+    COMPOSER_DRAFT_ATTACHMENT_BUDGET_BYTES,
+    Math.max(0, COMPOSER_DRAFT_TOTAL_BUDGET_BYTES - otherDraftsBytes(storage, key)),
+  );
 
   for (const att of attachments) {
     if (kept.length >= UI.MAX_ATTACHMENTS_DROP) {
@@ -226,7 +248,7 @@ function writeComposerDraft(
       continue;
     }
     const attBytes = utf8ByteLength(JSON.stringify(att)) + 1;
-    if (usedBytes + attBytes <= COMPOSER_DRAFT_ATTACHMENT_BUDGET_BYTES) {
+    if (usedBytes + attBytes <= budget) {
       kept.push(att);
       usedBytes += attBytes;
     } else {
@@ -265,11 +287,13 @@ export function writeComposerDraftIfAbsent(
 
 export function removeComposerDraft(
   key: string | null,
-  storage: Pick<ComposerDraftStorage, 'removeItem'> = localStorage,
+  storage?: Pick<ComposerDraftStorage, 'removeItem'>,
 ): void {
   if (!key) return;
   try {
-    storage.removeItem(key);
+    // Session delete also runs where localStorage does not exist (node tests, SSR).
+    const target = storage ?? (typeof localStorage === 'undefined' ? null : localStorage);
+    target?.removeItem(key);
   } catch {
     // Private mode and quota failures leave the in-memory composer as the source of truth.
   }
