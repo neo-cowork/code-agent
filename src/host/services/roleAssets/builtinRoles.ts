@@ -14,6 +14,7 @@
 // 角色记忆永远是用户自己积累的。
 // ============================================================================
 
+import { createHash } from 'crypto';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { BuiltinRoleVisual } from '../../../shared/contract/roleAssets';
@@ -449,7 +450,7 @@ max-iterations: 20
     agentMd: `---
 name: 记言
 description: 帮你把会议逐字稿/录音整理成结构化纪要 — 决策、行动项、未解问题，一句都不编造
-tools: [Read, Write, Glob, ListDirectory, ReadDocument, AskUserQuestion, docx_generate, MemoryRead, MemoryWrite, TaskManager]
+tools: [Read, Write, Glob, ListDirectory, ReadDocument, AskUserQuestion, docx_generate, MemoryRead, MemoryWrite, TaskManager, local_speech_to_text, meeting_records, tmeetMeetingList, tmeetMeetingSearch]
 skills: [meeting-summary]
 model: balanced
 max-iterations: 20
@@ -463,7 +464,7 @@ max-iterations: 20
 
 ## 你怎么开工
 
-**先辨素材形态，再定处理路径。** 协作者给你的可能是逐字稿文本、音频视频文件、妙记链接或口述要点：能直接读的直接读；转不动的（如手头没有 ASR 能力的录音）如实告知缺什么、请协作者补逐字稿，不硬编。
+**先辨素材形态，再定处理路径。** 协作者给你的可能是逐字稿文本、音频视频文件、妙记链接、腾讯会议录制或口述要点：能直接读的直接读；录音用 local_speech_to_text 在本机转写；用 Neo「记这场会」录过或导入过的会，用 meeting_records 按会议读转写。转不动的如实告知缺什么、请协作者补逐字稿，不硬编。
 
 **整理前先问两件事**（可用 AskUserQuestion）：
 - 这份纪要给谁看？（团队同步 / 领导汇报 / 存档）决定详略。
@@ -683,11 +684,24 @@ export interface InstallBuiltinRolesResult {
   installedAgents: string[];
   /** 本次新创建的角色资产目录 */
   installedRoleDirs: string[];
+  /** 本次从旧版出厂内容升级到新版的 agent 定义（用户没改过的才升） */
+  upgradedAgents: string[];
 }
 
 /**
+ * 各预设角色历代出厂 agentMd 的 sha256。用户磁盘上那份和其中某个逐字节相同 = 没改过，安装时升级到新版；
+ * 对不上（用户改过一个字也算）就不碰。改某个角色的 agentMd 时，把改前那版的哈希追加进来。
+ */
+const PREVIOUS_BUILTIN_AGENT_MD_SHA256: Readonly<Record<string, readonly string[]>> = {
+  // #2411 首版（N-MEETING-PAGE 给记言补会议读取工具前）
+  记言: ['36f49a0a62a66baccada4d664b12948a2a76a616051761085eadd42f89bf897e'],
+};
+
+const sha256 = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
+
+/**
  * 安装预设角色到用户目录（幂等）：
- * - agents/<id>.md 不存在才写（用户编辑过的定义不覆盖）
+ * - agents/<id>.md 不存在才写；和旧版出厂内容哈希相同的升级到新版（用户编辑过的定义不覆盖）
  * - roles/<id>/ 骨架不存在才建（角色记忆永远归用户）
  * - roles/<id>/bindings.json 不存在才种出厂 skill 绑定（引用 only；用户删空不复活）
  *
@@ -695,7 +709,7 @@ export interface InstallBuiltinRolesResult {
  * 任何失败只记日志，不阻塞启动。
  */
 export async function installBuiltinRoles(): Promise<InstallBuiltinRolesResult> {
-  const result: InstallBuiltinRolesResult = { installedAgents: [], installedRoleDirs: [] };
+  const result: InstallBuiltinRolesResult = { installedAgents: [], installedRoleDirs: [], upgradedAgents: [] };
   const agentsDir = getAgentsMdDir().user;
 
   try {
@@ -706,13 +720,16 @@ export async function installBuiltinRoles(): Promise<InstallBuiltinRolesResult> 
   }
 
   for (const role of BUILTIN_ROLES) {
-    // 1. agent 定义（不存在才写）
+    // 1. agent 定义：不存在才写；已存在且和某个旧版出厂内容逐字节相同（哈希比对）= 用户没改过，升级到新版
     const agentMdPath = path.join(agentsDir, `${role.id}.md`);
     try {
-      const alreadyExists = await fs.access(agentMdPath).then(() => true, () => false);
-      if (!alreadyExists) {
+      const existing = await fs.readFile(agentMdPath, 'utf-8').catch(() => null);
+      if (existing === null) {
         await fs.writeFile(agentMdPath, role.agentMd, 'utf-8');
         result.installedAgents.push(role.id);
+      } else if (existing !== role.agentMd && PREVIOUS_BUILTIN_AGENT_MD_SHA256[role.id]?.includes(sha256(existing))) {
+        await fs.writeFile(agentMdPath, role.agentMd, 'utf-8');
+        result.upgradedAgents.push(role.id);
       }
     } catch (err) {
       logger.warn('Failed to install builtin role agent definition', { roleId: role.id, error: String(err) });
@@ -751,7 +768,7 @@ export async function installBuiltinRoles(): Promise<InstallBuiltinRolesResult> 
     }
   }
 
-  if (result.installedAgents.length > 0 || result.installedRoleDirs.length > 0) {
+  if (result.installedAgents.length > 0 || result.installedRoleDirs.length > 0 || result.upgradedAgents.length > 0) {
     logger.info('Builtin roles installed', result);
   }
   return result;

@@ -110,6 +110,13 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     source: 'builtin',
   },
   {
+    name: 'meeting_records',
+    shortDescription: '查过去的会议记录：列出、按关键词搜、读某场会的纪要和转写',
+    tags: ['memory', 'search'],
+    aliases: ['meeting records', 'past meetings', 'meeting minutes', '会议记录', '会议纪要', '上次开会', '那场会', '会上说了什么', '会议转写'],
+    source: 'builtin',
+  },
+  {
     name: 'Append',
     shortDescription: '往文件尾部追加内容，用于一次 Write 装不下的大产物分块续写',
     tags: ['file'],

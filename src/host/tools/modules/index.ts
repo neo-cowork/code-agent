@@ -142,6 +142,7 @@ import { visualEditSchema } from './vision/visualEdit.schema';
 import { memoryReadSchema } from './lightMemory/memoryRead.schema';
 import { memoryWriteSchema } from './lightMemory/memoryWrite.schema';
 import { episodicRecallSchema } from './lightMemory/episodicRecall.schema';
+import { meetingRecordsSchema } from './lightMemory/meetingRecords.schema';
 import { memorySearchSchema } from './lightMemory/memorySearch.schema';
 import { memoryAmendSchema } from './lightMemory/memoryAmend.schema';
 import { proposeProjectMemorySchema } from './lightMemory/proposeProjectMemory.schema';
@@ -768,6 +769,10 @@ export function registerMigratedTools(registry: ToolRegistry, platform: NodeJS.P
   registry.register(
     episodicRecallSchema,
     async () => (await import('./lightMemory/episodicRecall')).episodicRecallModule,
+  );
+  registry.register(
+    meetingRecordsSchema,
+    async () => (await import('./lightMemory/meetingRecords')).meetingRecordsModule,
   );
   registry.register(
     memorySearchSchema,
