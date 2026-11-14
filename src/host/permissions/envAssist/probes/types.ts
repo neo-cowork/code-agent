@@ -9,6 +9,7 @@ export type ReadOnlyProbe = () => Promise<ProbeResult>;
 export interface PassiveBridge {
   AXIsProcessTrusted(): Promise<boolean>;
   CGPreflightScreenCaptureAccess(): Promise<boolean>;
+  IOHIDCheckAccess(): Promise<0 | 1 | 2>;
   AEDeterminePermissionToAutomateTarget(targetBundleId: string, askUserIfNeeded: false): Promise<0 | -1743 | -1744 | -600>;
 }
 
@@ -16,5 +17,6 @@ export interface PassiveBridge {
 export interface PromptingBridge {
   requestAccessibility(): Promise<void>;
   CGRequestScreenCaptureAccess(): Promise<void>;
+  IOHIDRequestAccess(): Promise<void>;
   AEDeterminePermissionToAutomateTarget(targetBundleId: string, askUserIfNeeded: true): Promise<void>;
 }
