@@ -14,6 +14,7 @@ import path from 'node:path';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { PermissionRequest } from '../../../src/shared/contract';
+import type { ToolSchema } from '../../../src/host/protocol/tools';
 
 const state = vi.hoisted(() => ({
   language: 'zh' as 'zh' | 'en',
@@ -117,9 +118,10 @@ function toRequest(raw: Record<string, unknown>, id: string): PermissionRequest 
   return { id, sessionId: 'session-current', timestamp: 1, ...raw } as unknown as PermissionRequest;
 }
 
-function sampleParams(schema: { inputSchema?: { properties?: Record<string, { type?: string }>; required?: string[] } }): Record<string, unknown> {
-  const properties = schema.inputSchema?.properties ?? {};
-  const names = schema.inputSchema?.required?.length ? schema.inputSchema.required : Object.keys(properties).slice(0, 1);
+function sampleParams(schema: ToolSchema): Record<string, unknown> {
+  const properties = (schema.inputSchema.properties ?? {}) as Record<string, { type?: string }>;
+  const required = schema.inputSchema.required as string[] | undefined;
+  const names = required?.length ? required : Object.keys(properties).slice(0, 1);
   const params: Record<string, unknown> = {};
   for (const name of names) {
     const type = properties[name]?.type;
@@ -202,7 +204,8 @@ beforeAll(async () => {
   } as never;
   for (const access of ['read_only', 'read_write'] as const) {
     let hint: Record<string, unknown> | undefined;
-    await requestDirectoryModule.createHandler().execute(
+    const handler = await requestDirectoryModule.createHandler();
+    await handler.execute(
       { path: sampleDir, reason: 'List the weekly reports', access },
       ctx,
       (async (name: string, _args: unknown, reason: string | undefined, req?: Record<string, unknown>) => {
