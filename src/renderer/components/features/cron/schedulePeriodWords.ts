@@ -69,7 +69,7 @@ export function parseSchedulePeriodWords(text: string): SchedulePeriodWords | nu
     if (m && (!period || m.index < period.index)) period = { word: m[0], time, index: m.index };
   }
   const week = readWeekday(text);
-  const allowBare = period !== null || /每天|every day|daily/i.test(text);
+  const allowBare = period !== null || /每天|every day|daily|下午|傍晚|午后|中午/i.test(text);
   const clock = readClock(text, allowBare);
 
   let time: string | undefined;
@@ -79,7 +79,9 @@ export function parseSchedulePeriodWords(text: string): SchedulePeriodWords | nu
     const evening = period?.time === EVENING_TIME;
     if (clock.meridiem === 'pm' && hour < 12) hour += 12;
     else if (clock.meridiem === 'am' && hour === 12) hour = 0;
-    else if (!clock.meridiem && evening && hour < 12) hour += 12;
+    else if (!clock.meridiem && evening && hour === 12) hour = 0;
+    else if (!clock.meridiem && (evening || /下午|傍晚|午后/.test(text)) && hour < 12) hour += 12;
+    else if (!clock.meridiem && /中午/.test(text) && hour < 6) hour += 12;
     time = `${pad(hour)}:${pad(clock.minute)}`;
     word = clock.text;
   } else if (period) {
