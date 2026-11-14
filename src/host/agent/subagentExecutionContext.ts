@@ -3,6 +3,7 @@ import type {
   ToolContext as ProtocolToolContext,
 } from '../protocol/tools';
 import type { ModelConfig } from '../../shared/contract';
+import { PermissionRequestReason } from '../../shared/contract/permission';
 import type { RunTraceContext } from '../telemetry/runTraceContext';
 import type { TelemetryCollector } from '../telemetry/telemetryCollector';
 import type {
@@ -50,8 +51,9 @@ export function createProtocolSubagentExecutionContext(
     throw new Error('Subagent execution requires resolver in protocol context');
   }
 
+  // Surface ownership may be auxiliary; child-agent lifetime stays under the native parent.
   return {
-    runId: ctx.runId,
+    runId: ctx.spawnParentRunId ?? ctx.runId,
     sourceMessageId: ctx.sourceMessageId,
     sessionId: ctx.sessionId,
     workspace: ctx.workspace,
@@ -63,6 +65,7 @@ export function createProtocolSubagentExecutionContext(
     resolver,
     permission: {
       request: async (request) => {
+        const reasonCode = Object.values(PermissionRequestReason).find((code) => code === request.reasonCode);
         const result = await canUseTool(
           request.tool,
           request.details,
@@ -77,6 +80,7 @@ export function createProtocolSubagentExecutionContext(
             tool: request.tool,
             details: request.details,
             reason: request.reason,
+            ...(reasonCode ? { reasonCode } : {}),
             dangerLevel: request.dangerLevel,
             decisionTrace: request.decisionTrace,
             ledgerRecordedByChild: true,
@@ -108,7 +112,7 @@ export function createProtocolSubagentExecutionContext(
     forcePermissionHandler: ctx.forcePermissionHandler,
     spawnTreeId: overrides.spawnTreeId ?? ctx.spawnTreeId,
     swarmRunScope: ctx.swarmRunScope,
-    parentNativeRunId: ctx.swarmRunScope?.parentNativeRunId ?? ctx.runId,
+    parentNativeRunId: ctx.swarmRunScope?.parentNativeRunId ?? ctx.spawnParentRunId ?? ctx.runId,
     spawnQueueTimeoutMs: ctx.spawnQueueTimeoutMs,
     spawnParentStartedAt: ctx.spawnParentStartedAt,
     spawnParentTimeoutMs: ctx.spawnParentTimeoutMs,

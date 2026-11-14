@@ -2,6 +2,8 @@ import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 
 export const sessionTaskPresentationZh = {
   sessionTaskPresentation: {
+    replaced: '已停止「{name}」。',
+    stopping: '已请求停止「{name}」。',
     accepted: '已在后台开始：{name}，完成后会告诉你。',
     queued: '已排队：{name}，轮到它时会自动开始。',
     reused: '继续跟踪后台任务：{name}　{status}',
@@ -21,6 +23,8 @@ export const sessionTaskPresentationZh = {
 
 export const sessionTaskPresentationEn: typeof sessionTaskPresentationZh = {
   sessionTaskPresentation: {
+    replaced: 'Stopped “{name}”. ',
+    stopping: 'Requested stopping “{name}”. ',
     accepted: "Started in the background: {name}. I'll tell you when it's done.",
     queued: 'Queued: {name}. It will start automatically when its turn comes.',
     reused: 'Continuing to track: {name} — {status}',
