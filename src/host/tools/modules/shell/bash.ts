@@ -55,6 +55,7 @@ import { containWriteFenceWorkspaceRoot, isOsWriteFenceAvailable } from '../../.
 import { resolveCanonicalRunPath } from '../../../runtime/runContext';
 import type { PolicyEnforcer } from '../../../security/policyEnforcer';
 import { isPathWithinRoot } from '../../../runtime/workspaceScope';
+import { taskOutputDirectoryForShell } from '../../../permissions/taskOutputDirectory';
 import { resolveContextWindow } from '../../../model/modelLimits';
 import { resolveToolResultBudget } from '../../../context/layers/toolResultBudget';
 
@@ -379,6 +380,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     // 三条执行路径统一 applySandbox。不可用时：强制档硬报错，灰度档显式降级，绝不静默裸跑。
     // -------------------------------------------------------------------------
     let sandboxCleanup: (() => void) | undefined;
+    let taskOutputSandboxApplied = false;
     const cleanupSandbox = () => {
       const cleanup = sandboxCleanup;
       sandboxCleanup = undefined;
@@ -416,6 +418,11 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
         const baseWriteRoots = writeFence && fenceRoot
           ? [fenceRoot]
           : scopeWriteRoots ?? workspaceConfinedRoots;
+        const taskOutputRoot = !runInBackground && !usePty && !writeFence && !ctx.restrictWritesToWorkspace && !process.env.CODE_AGENT_EVAL_REAL_ROOT
+          ? taskOutputDirectoryForShell(ctx.sessionId, permissionMode, cmd, ctx.workspaceScope) : undefined;
+        const extraRoots = [...new Set([extraWriteRoot, taskOutputRoot].filter((root): root is string => Boolean(root)))];
+        taskOutputSandboxApplied = Boolean(taskOutputRoot);
+        if (taskOutputRoot) ctx.logger.info('Task output directory applied to shell sandbox', { sessionId: ctx.sessionId, directory: taskOutputRoot });
         const wrapped = wrapCommandForSandbox(cmd, {
           workingDirectory,
           readOnlyRoots: ctx.workspaceScope?.roots
@@ -423,12 +430,12 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
             .map((root) => resolveCanonicalRunPath(root.path)),
           // 目录子树扩权：基座写根（缺省回退 cwd，与 wrapCommand 的默认一致）之上追加该目录，
           // 绝不整体替换——替换会丢掉工作区写根
-          readWriteRoots: extraWriteRoot
-            ? [...(baseWriteRoots ?? [workingDirectory]), extraWriteRoot]
+          readWriteRoots: extraRoots.length
+            ? [...(baseWriteRoots ?? [workingDirectory]), ...extraRoots]
             : baseWriteRoots,
           // 一次性文件扩权只放开卡片覆盖的文件；目录子树扩权（DIR-FORBIDDEN）追加该树但凭据/笼子/钩子/rc 名仍只读
           readWriteFiles: typeof extraWriteFile === 'string' ? [extraWriteFile] : extraWriteFile ? [...extraWriteFile] : undefined,
-          forbiddenWriteUnder: extraWriteRoot ? [extraWriteRoot] : undefined,
+          forbiddenWriteUnder: extraRoots.length ? extraRoots : undefined,
           deniedReadRoots: [
             ...(ctx.deniedReadRoots ?? []),
             ...(process.env.CODE_AGENT_EVAL_REAL_ROOT ? [process.env.CODE_AGENT_EVAL_REAL_ROOT] : []),
@@ -816,7 +823,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
           // 沙箱决策原样保留（sandboxed 标志随收编传入）。显式 run_in_background=true
           // 在 unattended 仍拒（上方 BACKGROUND_UNAVAILABLE）；只有非短档的 unattended
           // 超时保留 kill（120s 默认档维持 PR #2065 行为）。
-          onTimeout: unattended && !shortTier ? undefined : ({ child, stdout, stderr, startedAt }) => handoverTimedOutCommand({
+          onTimeout: taskOutputSandboxApplied || (unattended && !shortTier) ? undefined : ({ child, stdout, stderr, startedAt }) => handoverTimedOutCommand({
             child,
             command: sandboxedCommand,
             cwd: workingDirectory,

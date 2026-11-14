@@ -147,7 +147,7 @@ describe('buildOverviewContextRows 准入规则', () => {
       ],
     });
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ kind: 'file', label: 'hello.html', detail: 'Read / Write' });
+    expect(rows[0]).toMatchObject({ kind: 'file', label: 'hello.html', detail: '读取文件 / 写入文件' });
   });
 
   it('原始内部 ID 禁漏：tool-result 文件整行排除，能力名解析不出时兜底人话标签', () => {
