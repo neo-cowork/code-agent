@@ -3,7 +3,7 @@ import React from 'react';
 import { cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { TaskNodeData } from '../../../src/shared/contract/dagVisualization';
-import { detectInternalTextLeaks } from '../../../src/shared/humanizeInternalText';
+import { detectInternalTextLeaks } from '../../../src/shared/internalTextLeakDetect';
 import { TaskDetailPanel } from '../../../src/renderer/components/features/workflow/TaskDetailPanel';
 
 const appState = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }));

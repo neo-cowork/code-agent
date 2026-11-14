@@ -1,22 +1,13 @@
-import leakPatterns from './internalTextLeakPatterns.json';
+import {
+  detectInternalTextLeaks,
+  ENGLISH_STATE_REGEXES,
+  type InternalTextFormat,
+  CALL_ID_EXACT_RE, CALL_ID_GLOBAL_RE, INLINE_RAW_JSON_RE, INTERNAL_TOOL_GLOBAL_RE,
+  OU_ID_EXACT_RE, OU_ID_GLOBAL_RE, SANDBOX_EXEC_COMMAND_RE, SANDBOX_EXEC_TOKEN_RE,
+  SESSION_ID_EXACT_RE, SESSION_ID_GLOBAL_RE, TEMP_PATH_GLOBAL_RE, UUID_EXACT_RE, UUID_GLOBAL_RE,
+} from './internalTextLeakDetect';
 
 export type InternalTextLanguage = 'zh' | 'en';
-
-export type InternalTextFormat =
-  | 'uuid'
-  | 'session_id'
-  | 'call_id'
-  | 'ou_id'
-  | 'internal_tool_name'
-  | 'english_state_word'
-  | 'sandbox_exec'
-  | 'temp_path'
-  | 'raw_json';
-
-export interface InternalTextLeakMatch {
-  format: InternalTextFormat;
-  sample: string;
-}
 
 interface CollapseIntoDetailsInstruction {
   action: 'collapse_into_details';
@@ -29,21 +20,6 @@ export interface HumanizedInternalTextResult {
   detectedFormats: InternalTextFormat[];
   collapseIntoDetails?: CollapseIntoDetailsInstruction;
 }
-
-const UUID_EXACT_RE = new RegExp(
-  `^(?:${leakPatterns.uuid.replace(/^\\b|\\b$/g, '')})$`,
-  'i',
-);
-const UUID_GLOBAL_RE = new RegExp(leakPatterns.uuid, 'gi');
-
-const SESSION_ID_EXACT_RE = new RegExp(`^(?:${leakPatterns.sessionId.replace(/^\\b|\\b$/g, '')})$`);
-const SESSION_ID_GLOBAL_RE = new RegExp(leakPatterns.sessionId, 'g');
-
-const CALL_ID_EXACT_RE = new RegExp(`^(?:${leakPatterns.callId.replace(/^\\b|\\b$/g, '')})$`);
-const CALL_ID_GLOBAL_RE = new RegExp(leakPatterns.callId, 'g');
-
-const OU_ID_EXACT_RE = new RegExp(`^(?:${leakPatterns.ouId.replace(/^\\b|\\b$/g, '')})$`);
-const OU_ID_GLOBAL_RE = new RegExp(leakPatterns.ouId, 'g');
 
 const INTERNAL_TOOL_LABELS: Record<string, { zh: string; en: string }> = {
   read_file: { zh: '读取文件', en: 'Read file' },
@@ -74,15 +50,6 @@ const INTERNAL_TOOL_LABELS: Record<string, { zh: string; en: string }> = {
   TaskManager: { zh: '管理后台任务', en: 'Manage background tasks' },
 };
 
-const INTERNAL_TOOL_NAMES_SORTED = [...leakPatterns.internalToolNames].sort(
-  (a, b) => b.length - a.length,
-);
-
-const INTERNAL_TOOL_GLOBAL_RE = new RegExp(
-  `${leakPatterns.internalToolPrefix}|(?<![A-Za-z0-9_/-])(?:${INTERNAL_TOOL_NAMES_SORTED.join('|')})(?![A-Za-z0-9_/-])`,
-  'g',
-);
-
 interface EnglishStatePattern {
   regex: RegExp;
   replace: (match: string, lang: InternalTextLanguage, ...groups: string[]) => string;
@@ -90,11 +57,11 @@ interface EnglishStatePattern {
 
 const ENGLISH_STATE_PATTERNS: EnglishStatePattern[] = [
   {
-    regex: new RegExp(leakPatterns.englishState[0], 'g'),
+    regex: ENGLISH_STATE_REGEXES[0],
     replace: (_match, lang) => (lang === 'en' ? 'Received: ' : '已接收：'),
   },
   {
-    regex: new RegExp(leakPatterns.englishState[1], 'gi'),
+    regex: ENGLISH_STATE_REGEXES[1],
     replace: (_match, lang, state) => {
       const normalized = (state || '').toLowerCase();
       if (lang === 'en') {
@@ -112,47 +79,40 @@ const ENGLISH_STATE_PATTERNS: EnglishStatePattern[] = [
     },
   },
   {
-    regex: new RegExp(leakPatterns.englishState[2], 'gi'),
+    regex: ENGLISH_STATE_REGEXES[2],
     replace: (_match, lang) =>
       lang === 'en'
         ? 'Execution interrupted because the background process exited unexpectedly'
         : '执行中断：后台进程异常退出',
   },
   {
-    regex: new RegExp(leakPatterns.englishState[3], 'gi'),
+    regex: ENGLISH_STATE_REGEXES[3],
     replace: (_match, lang) =>
       lang === 'en' ? 'Operation was cancelled' : '已取消本次操作',
   },
   {
-    regex: new RegExp(leakPatterns.englishState[4], 'gi'),
+    regex: ENGLISH_STATE_REGEXES[4],
     replace: (_match, lang) =>
       lang === 'en' ? 'Result saved' : '已记录执行结果',
   },
   {
-    regex: new RegExp(leakPatterns.englishState[5], 'gi'),
+    regex: ENGLISH_STATE_REGEXES[5],
     replace: (_match, lang, account, mailbox) =>
       lang === 'en'
         ? `Mail message (${account} / ${mailbox})`
         : `邮件消息（账号 ${account} · 邮箱 ${mailbox}）`,
   },
   {
-    regex: new RegExp(leakPatterns.englishState[6], 'gi'),
+    regex: ENGLISH_STATE_REGEXES[6],
     replace: (_match, lang) =>
       lang === 'en' ? 'No external message sent' : '未发送外部通知',
   },
   {
-    regex: new RegExp(leakPatterns.englishState[7], 'gi'),
+    regex: ENGLISH_STATE_REGEXES[7],
     replace: (_match, lang) =>
       lang === 'en' ? 'No event handling records for this run' : '本次运行未产生事件处理记录',
   },
 ];
-
-const SANDBOX_EXEC_COMMAND_RE = new RegExp(`${leakPatterns.sandboxExec}\\s+-f\\s+\\S+`, 'g');
-const SANDBOX_EXEC_TOKEN_RE = new RegExp(leakPatterns.sandboxExec, 'g');
-
-const TEMP_PATH_GLOBAL_RE = new RegExp(leakPatterns.tempPath, 'g');
-
-const INLINE_RAW_JSON_RE = new RegExp(`\\{(?:\\s*${leakPatterns.rawJsonKeyValue}\\s*,?){1,}\\}`, 'g');
 
 function humanizeMcpToolName(rawName: string, lang: InternalTextLanguage): string {
   const parts = rawName.replace(/^mcp__/, '').split('__').filter(Boolean);
@@ -195,59 +155,6 @@ function summarizeParsedJson(
   return lang === 'en'
     ? 'Structured details collapsed (expand Details to inspect)'
     : '结构化技术详情已折叠（展开「详情」可查看）';
-}
-
-/**
- * Inspect a user-visible string and return all internal-format leaks found.
- * Used both by the renderer humanizer and by the CI internal-text-leak gate.
- */
-export function detectInternalTextLeaks(input: string): InternalTextLeakMatch[] {
-  if (!input?.trim()) return [];
-
-  const matches: InternalTextLeakMatch[] = [];
-  const pushUnique = (format: InternalTextFormat, sample: string) => {
-    if (!matches.some((m) => m.format === format && m.sample === sample)) {
-      matches.push({ format, sample });
-    }
-  };
-  const collectRegexMatches = (regex: RegExp, format: InternalTextFormat) => {
-    regex.lastIndex = 0;
-    for (const match of input.matchAll(regex)) {
-      if (match[0]) pushUnique(format, match[0]);
-    }
-    regex.lastIndex = 0;
-  };
-
-  const trimmed = input.trim();
-  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
-    try {
-      const parsed: unknown = JSON.parse(trimmed);
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        pushUnique('raw_json', trimmed.slice(0, 80));
-      }
-    } catch {
-      // If it still looks like a raw JSON object literal with key-value pairs
-      collectRegexMatches(INLINE_RAW_JSON_RE, 'raw_json');
-    }
-  } else {
-    collectRegexMatches(INLINE_RAW_JSON_RE, 'raw_json');
-  }
-
-  collectRegexMatches(UUID_GLOBAL_RE, 'uuid');
-  collectRegexMatches(SESSION_ID_GLOBAL_RE, 'session_id');
-  collectRegexMatches(CALL_ID_GLOBAL_RE, 'call_id');
-  collectRegexMatches(OU_ID_GLOBAL_RE, 'ou_id');
-  collectRegexMatches(INTERNAL_TOOL_GLOBAL_RE, 'internal_tool_name');
-
-  for (const pattern of ENGLISH_STATE_PATTERNS) {
-    collectRegexMatches(pattern.regex, 'english_state_word');
-  }
-
-  collectRegexMatches(SANDBOX_EXEC_COMMAND_RE, 'sandbox_exec');
-  collectRegexMatches(SANDBOX_EXEC_TOKEN_RE, 'sandbox_exec');
-  collectRegexMatches(TEMP_PATH_GLOBAL_RE, 'temp_path');
-
-  return matches;
 }
 
 /**

@@ -1,4 +1,4 @@
-import type { InternalTextFormat } from '../../src/shared/humanizeInternalText';
+import type { InternalTextFormat } from '../../src/shared/internalTextLeakDetect';
 
 type ScanOptions = { rendererDir?: string; repoRoot?: string };
 type AllowlistEntry = {

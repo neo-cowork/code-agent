@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import {
-  detectInternalTextLeaks,
-  humanizeInternalText,
-  type InternalTextFormat,
-} from '../../src/shared/humanizeInternalText';
+import { humanizeInternalText } from '../../src/shared/humanizeInternalText';
+import { detectInternalTextLeaks, type InternalTextFormat } from '../../src/shared/internalTextLeakDetect';
 
 describe('humanizeInternalText', () => {
   const formatCases: Array<{

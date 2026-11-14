@@ -13,7 +13,7 @@ import type { TaskRecord } from '../../../src/renderer/types/runWorkbench';
 import {
   detectInternalTextLeaks,
   type InternalTextFormat,
-} from '../../../src/shared/humanizeInternalText';
+} from '../../../src/shared/internalTextLeakDetect';
 import dynamicAllowlist from '../../../scripts/lib/internal-text-leak-dynamic-allowlist.json';
 import { ToolStepGroup } from '../../../src/renderer/components/features/chat/ToolStepGroup';
 import { ToolDetails } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/ToolDetails';
