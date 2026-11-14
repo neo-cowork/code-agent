@@ -106,7 +106,17 @@ export function createMeetingRecordStore(run: MeetingSqlRunner): MeetingRecordSt
       if (!info) return ''; // 库打不开：这次什么都不做，下次再试迁移（runner 已记过原因）
       const have = new Set((JSON.parse(info) as Array<{ name: string }>).map((c) => c.name));
       const missing = EXTRA_COLUMNS.filter(([name]) => !have.has(name));
-      if (missing.length) run(missing.map(([name, type]) => `ALTER TABLE meetings ADD COLUMN ${name} ${type};`).join('\n'), false);
+      if (missing.length) {
+        run(missing.map(([name, type]) => `ALTER TABLE meetings ADD COLUMN ${name} ${type};`).join('\n'), false);
+        // ALTER 成功和失败（库被锁、runner 吞错）都返回空串：再查一遍列，补不齐就不置位、下次重试
+        const after = run('PRAGMA table_info(meetings);', true).trim();
+        const now = new Set(after ? (JSON.parse(after) as Array<{ name: string }>).map((c) => c.name) : []);
+        const still = EXTRA_COLUMNS.filter(([name]) => !now.has(name)).map(([name]) => name);
+        if (still.length) {
+          logger.warn('[会议] 会议表补列没成功，这次按旧表读，下次再试', { missing: still });
+          return '';
+        }
+      }
       migrated = true;
     }
     return run(`${MEETINGS_DDL}\n${sql}`, json).trim();
@@ -145,7 +155,8 @@ export function createMeetingRecordStore(run: MeetingSqlRunner): MeetingRecordSt
       const hits: Array<{ id: string; text: string; atMs: number | null }> = [];
       const metaOut = exec(`SELECT id, title, minutes_json, imported_transcript FROM meetings WHERE title LIKE ${like} ESCAPE '\\' OR minutes_json LIKE ${like} ESCAPE '\\' OR imported_transcript LIKE ${like} ESCAPE '\\' ORDER BY started_at_ms DESC LIMIT ${Math.trunc(limit)};`, true);
       for (const r of metaOut ? JSON.parse(metaOut) as Array<{ id: string; title: string; minutes_json: string | null; imported_transcript: string | null }> : []) {
-        const field = [r.title, r.minutes_json ?? '', r.imported_transcript ?? ''].find((t) => t.includes(query)) ?? r.title;
+        const needle = query.toLowerCase(); // SQL LIKE 对英文不分大小写，这里同口径
+        const field = [r.title, r.minutes_json ?? '', r.imported_transcript ?? ''].find((t) => t.toLowerCase().includes(needle)) ?? r.title;
         hits.push({ id: r.id, text: field, atMs: null });
       }
       const audio = exec(`SELECT m.id AS id, a.start_at_ms AS at, a.transcript AS text FROM meetings m JOIN audio_segments a ON a.start_at_ms >= m.started_at_ms AND a.start_at_ms < COALESCE(m.ended_at_ms, ${Number.MAX_SAFE_INTEGER}) WHERE m.source = 'recorded' AND a.transcript LIKE ${like} ESCAPE '\\' ORDER BY a.start_at_ms DESC LIMIT ${Math.trunc(limit)};`, true);
@@ -165,7 +176,7 @@ export function createMeetingRecordStore(run: MeetingSqlRunner): MeetingRecordSt
 
 /** 命中处前后各取一段，长文本不整段塞给模型 */
 export function snippetAround(text: string, query: string, radius = 60): string {
-  const i = text.indexOf(query);
+  const i = text.toLowerCase().indexOf(query.toLowerCase());
   if (i < 0) return text.slice(0, radius * 2);
   const start = Math.max(0, i - radius);
   const end = Math.min(text.length, i + query.length + radius);
@@ -202,7 +213,7 @@ export async function getMeetingRecordStore(): Promise<MeetingRecordStore> {
       audioReady = true;
     }
     try {
-      return execFileSync('sqlite3', json ? ['-json', dbPath, sql] : [dbPath, sql], { encoding: 'utf-8' });
+      return execFileSync('sqlite3', json ? ['-json', dbPath, sql] : [dbPath, sql], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] });
     } catch (error) {
       logger.warn('[会议] 读写会议记录失败', { error: error instanceof Error ? error.message : String(error) });
       return '';

@@ -42,11 +42,11 @@ export function buildRecordListArgs(args: Record<string, unknown>): string[] {
   const start = str(args.start), end = str(args.end), id = str(args.meeting_id), code = str(args.meeting_code);
   if (code && !/^\d+$/.test(code)) throw new Error('meeting_code must contain digits only');
   if (!id && !code && !(start && end)) throw new Error('give start + end, or meeting_id, or meeting_code');
-  if (start) out.push('--start', start);
-  if (end) out.push('--end', end);
-  if (id) out.push('--meeting-id', id);
-  if (code) out.push('--meeting-code', code);
-  if (str(args.page_token)) out.push('--page-token', str(args.page_token));
+  if (start) out.push(`--start=${start}`);
+  if (end) out.push(`--end=${end}`);
+  if (id) out.push(`--meeting-id=${id}`);
+  if (code) out.push(`--meeting-code=${code}`);
+  if (str(args.page_token)) out.push(`--page-token=${str(args.page_token)}`);
   out.push('--format', 'json');
   return out;
 }
@@ -78,8 +78,9 @@ export async function fetchTmeetTranscript(
   let used = 0;
   let pid = '0';
   for (let page = 0; page < MEETING_SESSION_LIMITS.IMPORT_MAX_PAGES; page++) {
-    const args = ['record', 'transcript-get', '--record-file-id', recordFileId, '--pid', pid, '--limit', '100', '--format', 'json'];
-    if (meetingId) args.push('--meeting-id', meetingId);
+    // 模型给的值一律 --flag=value：以 - 开头的值不会被 CLI 当成选项
+    const args = ['record', 'transcript-get', `--record-file-id=${recordFileId}`, `--pid=${pid}`, '--limit=100', '--format', 'json'];
+    if (meetingId) args.push(`--meeting-id=${meetingId}`);
     const data = parseData(await exec(args, 'tmeet record transcript-get'), 'transcript-get');
     const paragraphs = arr(obj(data.minutes).paragraphs).map(obj);
     for (const p of paragraphs) {
@@ -97,7 +98,7 @@ export async function fetchTmeetTranscript(
 }
 
 export async function fetchTmeetSmartMinutes(exec: Exec, recordFileId: string): Promise<{ minute: string; todos: string[] }> {
-  const data = parseData(await exec(['record', 'smart-minutes', '--record-file-id', recordFileId, '--format', 'json'], 'tmeet record smart-minutes'), 'smart-minutes');
+  const data = parseData(await exec(['record', 'smart-minutes', `--record-file-id=${recordFileId}`, '--format', 'json'], 'tmeet record smart-minutes'), 'smart-minutes');
   const mm = obj(data.meeting_minute);
   // todo 实测是空字符串，todos 是 [{content:'-   事项 @某人', executor_list}]
   const todos = arr(mm.todos).map((t) => str(obj(t).content).replace(/^[-\s]+/, '')).filter(Boolean);

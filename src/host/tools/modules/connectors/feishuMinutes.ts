@@ -122,12 +122,12 @@ const fmtOffset = (sec: number) => {
 export async function runFeishuMinutesSearch(exec: LarkExec, args: Record<string, unknown>): Promise<ToolResult<string>> {
   const cli = ['minutes', '+search', '--as', 'user', '--format', 'json'];
   for (const [key, flag] of [['query', '--query'], ['start', '--start'], ['end', '--end'], ['page_token', '--page-token']] as const) {
-    if (str(args[key])) cli.push(flag, str(args[key]));
+    if (str(args[key])) cli.push(`${flag}=${str(args[key])}`); // --flag=value：以 - 开头的值不会被当成选项
   }
   if (args.page_size !== undefined) {
     const n = Number(args.page_size);
     if (!Number.isInteger(n) || n < 1 || n > 30) return { ok: false, error: 'page_size must be an integer from 1 to 30', code: 'INVALID_ARGS' };
-    cli.push('--page-size', String(n));
+    cli.push(`--page-size=${n}`);
   }
   try {
     const { hits, pageToken } = parseMinutesSearch(await exec(cli, 'lark-cli minutes +search'));

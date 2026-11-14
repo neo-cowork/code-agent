@@ -47,7 +47,7 @@ describe('腾讯会议录制', () => {
       });
     };
     const r = await runTmeetRecordList(exec, { start: '2026-10-15T00:00+08:00', end: '2026-11-14T23:59+08:00' });
-    expect(calls[0]).toEqual(['record', 'list', '--start', '2026-10-15T00:00+08:00', '--end', '2026-11-14T23:59+08:00', '--format', 'json']);
+    expect(calls[0]).toEqual(['record', 'list', '--start=2026-10-15T00:00+08:00', '--end=2026-11-14T23:59+08:00', '--format', 'json']);
     expect(r.ok && r.output).toContain('record_file_id rf-1');
     expect(r.ok && r.output).toContain('没有可查看的录制文件');
   });
@@ -62,7 +62,7 @@ describe('腾讯会议录制', () => {
   it('转写按 more 分页，下一页从最后一段 pid+1 起；带发言人和时刻', async () => {
     const pids: string[] = [];
     const exec = async (args: string[]) => {
-      const pid = args[args.indexOf('--pid') + 1];
+      const pid = args.find((a) => a.startsWith('--pid='))!.slice('--pid='.length);
       pids.push(pid);
       return pid === '0'
         ? ok({ code: 0, more: true, minutes: { paragraphs: [para(0, '00:01', '张三', '先看礼品类型'), para(1, '00:14', '李四', '按实际情况建商品')] } })
@@ -132,6 +132,14 @@ describe('飞书妙记', () => {
     const r = await runFeishuMinutesSearch(exec, { query: '考试' });
     expect(r.ok && r.output).toContain('- 考试要点讲解 · token tok1 · 所有者: 某人 开始时间: 2026.11.01 21:07:26');
     expect(r.ok && r.output).toContain('page_token: p2');
+  });
+
+  it('模型给的参数以 - 开头也只当值，不会变成 CLI 选项', async () => {
+    const seen: string[][] = [];
+    const exec: LarkExec = async (args) => { seen.push(args); return JSON.stringify({ ok: true, data: { items: [] } }); };
+    await runFeishuMinutesSearch(exec, { query: '--as bot' });
+    expect(seen[0]).toContain('--query=--as bot');
+    expect(seen[0].filter((a) => a === '--as')).toHaveLength(1);
   });
 
   it('读妙记：在临时目录里跑（转写只收相对路径），读回转写，跑完删掉临时目录', async () => {

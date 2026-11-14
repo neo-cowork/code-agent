@@ -36,6 +36,15 @@ describe('会议记录', () => {
     expect(sh('PRAGMA table_info(meetings);')).toContain('minutes_json');
   });
 
+  it('补列失败（库被锁、runner 吞错）不标记迁移完成，下次再试', () => {
+    let failAlter = true;
+    const flaky: MeetingSqlRunner = (sql, json) => (failAlter && sql.includes('ALTER TABLE') ? '' : run(sql, json));
+    const store = createMeetingRecordStore(flaky);
+    expect(store.list(10)).toEqual([]);
+    failAlter = false;
+    expect(store.list(10).map((m) => m.id)).toEqual(['m1']);
+  });
+
   it('转写只取这场会起止时间内的段，标出我/对方', () => {
     const store = createMeetingRecordStore(run);
     const lines = store.transcript(store.get('m1')!);
