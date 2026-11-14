@@ -81,4 +81,10 @@ describe('shared internal text wiring', () => {
     expect(view.getAllByText('Review the report')).toHaveLength(1);
   });
 
+  it('preserves existing channel-name cleanup before humanizing the final title', () => {
+    const title = '[Channel] Reports · 3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+    expect(getDisplaySessionTitle(title, 'en')).toBe('Channel · Reports');
+    expect(getDisplaySessionTitle(title, 'zh')).toBe('渠道 · Reports');
+  });
+
 });

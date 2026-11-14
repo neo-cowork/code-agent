@@ -76,7 +76,11 @@ export function matchesSessionStatusFilter(
 }
 
 export function getDisplaySessionTitle(title?: string | null, language: Language = 'zh'): string {
-  const rawTitle = humanizeInternalText(title?.trim() ?? '', language).text;
+  return humanizeInternalText(localizedSessionTitle(title, language), language).text;
+}
+
+function localizedSessionTitle(title: string | null | undefined, language: Language): string {
+  const rawTitle = title?.trim() ?? '';
   const placeholder = getSessionTitlePlaceholder(rawTitle, language);
   if (placeholder !== null) return placeholder;
   const stripped = stripAppshotBlocks(rawTitle);
