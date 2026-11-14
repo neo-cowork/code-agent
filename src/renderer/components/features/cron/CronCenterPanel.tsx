@@ -17,7 +17,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Clock3, WalletCards } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
-import { useCronStore } from '../../../stores/cronStore';
+import { filterVisibleCronJobs, useCronStore } from '../../../stores/cronStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
 import ipcService from '../../../services/ipcService';
@@ -94,6 +94,8 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
     jobNamesLoaded,
     stats,
     selectedJobId,
+    locationFilter,
+    searchQuery,
     isEditorOpen,
     editingJobId,
     copyingJobId,
@@ -228,10 +230,26 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isEditorOpen, onClose]);
 
-  const selectedJob = useMemo(
-    () => jobs.find((job) => job.id === selectedJobId) || null,
-    [jobs, selectedJobId]
+  const visibleJobs = useMemo(
+    () => filterVisibleCronJobs(jobs, searchQuery, locationFilter, language),
+    [jobs, searchQuery, locationFilter, language],
   );
+
+  const selectedJob = useMemo(() => {
+    if (selectedJobId) {
+      const matched = visibleJobs.find((job) => job.id === selectedJobId);
+      if (matched) return matched;
+    }
+    return visibleJobs[0] ?? null;
+  }, [visibleJobs, selectedJobId]);
+
+  useEffect(() => {
+    if (isLoading) return;
+    const nextSelectedJobId = selectedJob?.id ?? null;
+    if (nextSelectedJobId !== selectedJobId) {
+      useCronStore.setState({ selectedJobId: nextSelectedJobId });
+    }
+  }, [isLoading, selectedJob, selectedJobId]);
 
   const editingJob = useMemo(
     () => jobs.find((job) => job.id === editingJobId) || null,
