@@ -6,7 +6,6 @@
 // 本机录的会，转写就是起止时间内的 audio_segments；导入的会，转写存在 imported_transcript。
 // ============================================================================
 
-import { execFileSync } from 'node:child_process';
 import { MEETING_SESSION_LIMITS } from '../../../shared/constants';
 import {
   AUDIO_SPEAKER_ID,
@@ -31,7 +30,7 @@ const EXTRA_COLUMNS: Array<[string, string]> = [
   ['minutes_session_id', 'TEXT'],
 ];
 
-export type MeetingSqlRunner = (sql: string, json: boolean) => string;
+type MeetingSqlRunner = (sql: string, json: boolean) => string;
 
 const q = (v: string) => `'${v.replace(/'/g, "''")}'`;
 const likePattern = (v: string) => q(`%${v.replace(/[\\%_]/g, (c) => `\\${c}`)}%`);
@@ -175,7 +174,7 @@ export function createMeetingRecordStore(run: MeetingSqlRunner): MeetingRecordSt
 }
 
 /** 命中处前后各取一段，长文本不整段塞给模型 */
-export function snippetAround(text: string, query: string, radius = 60): string {
+function snippetAround(text: string, query: string, radius = 60): string {
   const i = text.toLowerCase().indexOf(query.toLowerCase());
   if (i < 0) return text.slice(0, radius * 2);
   const start = Math.max(0, i - radius);
@@ -196,28 +195,4 @@ export function formatTranscript(lines: MeetingTranscriptLine[], maxChars: numbe
     used += s.length + 1;
   }
   return { text: out.join('\n'), truncated: false };
-}
-
-let defaultStore: MeetingRecordStore | null = null;
-
-/** 生产用：录音库路径同 desktopAudioCapture.getSqlitePath（库不存在会先建） */
-export async function getMeetingRecordStore(): Promise<MeetingRecordStore> {
-  if (defaultStore) return defaultStore;
-  const { getSqlitePath, ensureAudioTable } = await import('./desktopAudioCapture');
-  let audioReady = false;
-  defaultStore = createMeetingRecordStore((sql, json) => {
-    const dbPath = getSqlitePath();
-    if (!dbPath) return '';
-    if (!audioReady) {
-      ensureAudioTable(dbPath); // 会议表 join audio_segments：采集器从没写过时表可能还不存在
-      audioReady = true;
-    }
-    try {
-      return execFileSync('sqlite3', json ? ['-json', dbPath, sql] : [dbPath, sql], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] });
-    } catch (error) {
-      logger.warn('[会议] 读写会议记录失败', { error: error instanceof Error ? error.message : String(error) });
-      return '';
-    }
-  });
-  return defaultStore;
 }

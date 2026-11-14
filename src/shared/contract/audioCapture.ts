@@ -48,13 +48,13 @@ export type MeetingSource = 'recorded' | 'feishu' | 'tmeet';
 export type MeetingMinutesState = 'pending' | 'running' | 'done' | 'failed' | 'skipped';
 
 /** 一条纪要内容，quote 是转写里的原话出处 */
-export interface MeetingMinutesItem {
+interface MeetingMinutesItem {
   text: string;
   quote: string;
 }
 
 /** 行动项：原话没说负责人 / 截止时间的为 null，界面显示「待认领 / 待定」，只列不派 */
-export interface MeetingActionItem extends MeetingMinutesItem {
+interface MeetingActionItem extends MeetingMinutesItem {
   owner: string | null;
   due: string | null;
 }

@@ -7,7 +7,8 @@ import type {
 } from '../../../protocol/tools';
 import { MEETING_SESSION_LIMITS } from '../../../../shared/constants';
 import type { MeetingMinutes, MeetingSummaryRecord } from '../../../../shared/contract/audioCapture';
-import { formatTranscript, getMeetingRecordStore, type MeetingRecordStore } from '../../../services/desktop/meetingRecords';
+import { formatTranscript, type MeetingRecordStore } from '../../../services/desktop/meetingRecords';
+import { getMeetingRecordStore } from '../../../services/desktop/meetingRecordsDefault';
 import { meetingRecordsSchema as schema } from './meetingRecords.schema';
 
 const SOURCE_LABEL: Record<MeetingSummaryRecord['source'], string> = { recorded: '本机录音', feishu: '飞书妙记', tmeet: '腾讯会议' };

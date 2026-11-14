@@ -3,11 +3,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createMeetingRecordStore, formatTranscript, type MeetingSqlRunner } from '../../../../src/host/services/desktop/meetingRecords';
+import { createMeetingRecordStore, formatTranscript } from '../../../../src/host/services/desktop/meetingRecords';
 import { createSqliteMeetingStore } from '../../../../src/host/services/desktop/meetingSession';
 import { runMeetingRecords } from '../../../../src/host/tools/modules/lightMemory/meetingRecords';
 
 // 真 sqlite3 CLI + 临时库：会议表迁移、upsert、join audio_segments 都是 SQL 行为，mock 掉就测不到
+type MeetingSqlRunner = Parameters<typeof createMeetingRecordStore>[0];
+
 let dir: string;
 let db: string;
 const run: MeetingSqlRunner = (sql, json) => execFileSync('sqlite3', json ? ['-json', db, sql] : [db, sql], { encoding: 'utf-8' });
