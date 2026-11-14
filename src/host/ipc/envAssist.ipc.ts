@@ -7,7 +7,8 @@ import { getSessionManager } from '../services/infra/sessionManager';
 import { canOpenEnvSettings, openEnvSettings } from '../permissions/envAssist/settingsPane';
 
 import { mintClickToken, requestGrant } from '../permissions/envAssist/grants/requestGrant';
-import { accessibilityProbe, automationProbe, screenRecordingProbe } from '../permissions/envAssist/probes/passiveProbes';
+import { accessibilityProbe, automationProbe, inputMonitoringProbe, screenRecordingProbe } from '../permissions/envAssist/probes/passiveProbes';
+import type { ReadOnlyProbe } from '../permissions/envAssist/probes/types';
 
 async function findNotice(id: string): Promise<EnvAssistNotice | undefined> {
   const messageId = `env-assist:${id}`;
@@ -26,6 +27,21 @@ interface EnvAssistDependencies {
   findNotice: (id: string) => Promise<EnvAssistNotice | undefined>;
 }
 
+function resolveGrantProbe(
+  pane: string,
+  bridge: EnvAssistDependencies['passiveBridge'],
+  targetBundleId: string | undefined,
+): ReadOnlyProbe | null {
+  const passive = bridge ?? null;
+  switch (pane) {
+    case 'accessibility': return accessibilityProbe(passive);
+    case 'screenCapture': return screenRecordingProbe(passive);
+    case 'inputMonitoring': return inputMonitoringProbe(passive);
+    case 'automation': return targetBundleId ? automationProbe(passive, targetBundleId) : null;
+    default: return null;
+  }
+}
+
 const defaults: EnvAssistDependencies = { available: canOpenEnvSettings, open: openEnvSettings, findNotice };
 const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
   getAvailability: (deps: EnvAssistDependencies) => ({ available: deps.available() }),
@@ -40,13 +56,10 @@ const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
       return { status: 'rejected' };
     }
     if (request.actionKind === 'request_grant') {
-      if (request.payload.pane === 'automation' && !notice.target?.id) return { status: 'rejected' };
+      const probe = resolveGrantProbe(request.payload.pane, deps.passiveBridge, notice.target?.id);
+      if (!probe) return { status: 'rejected' };
       const token = mintClickToken(notice.id, deps.now);
       const grant = await requestGrant(token, { ...request.payload, targetBundleId: notice.target?.id }, deps.grantBridge ?? null, deps.now);
-      const bridge = deps.passiveBridge ?? null;
-      const probe = request.payload.pane === 'accessibility' ? accessibilityProbe(bridge)
-        : request.payload.pane === 'screenCapture' ? screenRecordingProbe(bridge)
-          : automationProbe(bridge, notice.target?.id ?? '');
       const outcome = await probe();
       return { status: grant === 'requested' ? 'checked' : grant, outcome };
     }

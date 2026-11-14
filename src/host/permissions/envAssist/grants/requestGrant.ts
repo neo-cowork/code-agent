@@ -9,7 +9,7 @@ interface ClickToken {
 }
 const pending = new WeakSet<ClickToken>();
 
-type GrantTarget = { pane: 'accessibility' | 'screenCapture' | 'automation'; targetBundleId?: string };
+type GrantTarget = { pane: 'accessibility' | 'screenCapture' | 'inputMonitoring' | 'automation'; targetBundleId?: string };
 
 /** Called only after the IPC user action has matched the current owned notice. */
 export function mintClickToken(noticeId: string, now: () => number = Date.now): ClickToken {
@@ -26,6 +26,7 @@ export async function requestGrant(token: ClickToken, target: GrantTarget, bridg
   switch (target.pane) {
     case 'accessibility': await bridge.requestAccessibility(); break;
     case 'screenCapture': await bridge.CGRequestScreenCaptureAccess(); break;
+    case 'inputMonitoring': await bridge.IOHIDRequestAccess(); break;
     case 'automation':
       if (!target.targetBundleId) return 'rejected';
       await bridge.AEDeterminePermissionToAutomateTarget(target.targetBundleId, true);
