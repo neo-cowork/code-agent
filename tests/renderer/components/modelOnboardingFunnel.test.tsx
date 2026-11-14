@@ -356,7 +356,7 @@ describe('two-step onboarding', () => {
     fireEvent.click(await screen.findByTestId('onboarding-route-api'));
     await screen.findByTestId('onboarding-api-source');
     expect(dialog.textContent).toContain('Connect an official API or compatible endpoint');
-    expect(dialog.textContent).toContain('Everyday chat, coding, and cost-effective tasks');
+    expect(dialog.textContent).toContain('Everyday chat and coding, low cost');
     expect(dialog.textContent).toContain('Zhipu GLM');
     expect(dialog.textContent).toContain('Volcengine / Doubao');
     expect(dialog.textContent).toContain('Xiaomi MiMo');
