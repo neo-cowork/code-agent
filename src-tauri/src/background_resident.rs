@@ -104,11 +104,14 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn unbundled_hint_returns_error_without_recording_marker() {
+        let expected = crate::native_notification::post_unc("Agent Neo", "probe", None)
+            .expect_err("unbundled post_unc must fail closed");
+        assert!(expected.ends_with("is reserved for macOS app bundles"));
         let dir = temp_dir();
         for _ in 0..2 {
             assert_eq!(
                 post_hint_once(&dir, || post_native_hint(QuitDialogLanguage::En)),
-                Err("UNUserNotificationCenter is reserved for macOS app bundles".to_string())
+                Err(expected.clone())
             );
             assert!(!dir.join(HINT_MARKER).exists());
         }

@@ -747,6 +747,15 @@ mod tests {
         assert_eq!(decide_backend(true, false), NotificationBackend::Legacy);
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn unbundled_post_unc_rejects_with_bundle_reason() {
+        assert_eq!(
+            super::post_unc("Agent Neo", "body", None),
+            Err("UNUserNotificationCenter is reserved for macOS app bundles".to_string())
+        );
+    }
+
     #[test]
     fn result_serializes_to_the_renderer_contract() {
         let result = PostSystemNotificationResult {
