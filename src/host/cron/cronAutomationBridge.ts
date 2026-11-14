@@ -232,6 +232,22 @@ export async function recordCronAutomationArchived(definition: CronJobDefinition
   }
 }
 
+/** 本地日历日 YYYY-MM-DD：连接器失联收件箱的同日去重键与摘要有效期都按它算。 */
+export function localDayKey(ms: number): string {
+  const date = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function carryConnectorLost(
+  previous: { days: Record<string, string>; summary?: string; summaryDay?: string } | undefined,
+  executionAtMs: number,
+): { connectorLost?: { days: Record<string, string>; summary?: string; summaryDay?: string } } {
+  if (!previous) return {};
+  const sameDay = previous.summaryDay === localDayKey(executionAtMs);
+  return { connectorLost: { days: previous.days, ...(sameDay && previous.summary ? { summary: previous.summary, summaryDay: previous.summaryDay } : {}) } };
+}
+
 export async function recordCronAutomationExecution(
   definition: CronJobDefinition,
   execution: CronJobExecution,
@@ -300,6 +316,9 @@ export async function recordCronAutomationExecution(
           ...(urgencyRaw ? { urgencyRaw } : {}),
           ...(digest ? { digest } : {}),
           ...(permissionDenied ? { permissionDenied } : {}),
+          // 同次运行里已写入的「连接器未登录」记录：recordEvent 只做 config 浅合并，这里整体替换 pendingReview，
+          // 必须带上。days（同日去重）始终保留；summary 只在仍是写入当天时保留，之后的运行不再显示过期提示。
+          ...carryConnectorLost(existing?.config?.pendingReview?.connectorLost, execution.completedAt ?? execution.startedAt ?? execution.scheduledAt),
         } } }
         : loginWall
           ? { configPatch: { loginWall: { siteOrigin: loginWall.siteOrigin, at: execution.completedAt ?? Date.now() } } }

@@ -278,6 +278,7 @@ export const ipcService = {
   on,
   off,
   getPathForFile,
+  get uploadFolderBatch() { return commandApi()?.uploadFolderBatch; },
   extractPdfText,
   extractExcelText,
   extractExcelJson,
