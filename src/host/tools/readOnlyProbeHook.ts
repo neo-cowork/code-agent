@@ -68,7 +68,11 @@ export async function tryReadOnlyProbe(input: ReadOnlyProbeInput): Promise<{ out
   if (!isReadOnlyProbeEnabled()) return null;
   const plan = compileReadOnlyProbePlan(input.command, { homeDir: os.homedir(), platform: process.platform });
   if (!plan) return null;
-  if (!userRulesAllow([input.command, ...plan.steps.map((s) => s.source)], input.sessionId)) return null;
+  const programs = [...new Set(plan.steps.map((s) => s.program))];
+  if (!userRulesAllow([input.command, ...plan.steps.map((s) => s.source)], input.sessionId)) {
+    logger.info('readonly_probe_plan_miss', { cause: 'user-or-builtin-rule', programs });
+    return null;
+  }
   const result = await executeReadOnlyProbePlan(plan, {
     workingDirectory: input.workingDirectory,
     workspaceRoot: input.workspaceRoot,
@@ -76,10 +80,17 @@ export async function tryReadOnlyProbe(input: ReadOnlyProbeInput): Promise<{ out
     ...sessionAuthority(input),
   });
   // 非零退出码的失败呈现（Command exited with code N）由真 Bash 路径负责：放弃，让原链处理。
-  if (result?.exitCode !== 0) return null;
+  if ('aborted' in result) {
+    logger.info('readonly_probe_plan_miss', { cause: result.aborted, programs });
+    return null;
+  }
+  if (result.exitCode !== 0) {
+    logger.info('readonly_probe_plan_miss', { cause: 'non-zero-exit', programs });
+    return null;
+  }
   const body = result.stderr ? `${result.stdout}\n[stderr]: ${result.stderr}` : result.stdout;
   return {
     output: `[cwd: ${input.workingDirectory}]\n${body}`,
-    programs: [...new Set(plan.steps.map((s) => s.program))],
+    programs,
   };
 }

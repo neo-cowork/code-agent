@@ -327,8 +327,8 @@ class Runner {
   }
 }
 
-/** 执行计划；任何不确定返回 null（调用方走原审批链）。 */
-export async function executeReadOnlyProbePlan(plan: ReadOnlyProbePlan, auth: ProbeAuthority): Promise<ProbeRunResult | null> {
+/** 执行计划；任何不确定返回 { aborted }（调用方走原审批链）。 */
+export async function executeReadOnlyProbePlan(plan: ReadOnlyProbePlan, auth: ProbeAuthority): Promise<ProbeRunResult | { aborted: string }> {
   const runner = new Runner({ ...auth, homeDir: auth.homeDir || os.homedir() });
   let status = 0;
   try {
@@ -337,9 +337,10 @@ export async function executeReadOnlyProbePlan(plan: ReadOnlyProbePlan, auth: Pr
       if (step.op === '||' && status === 0) continue;
       status = await runner.run(step.cmd, step.redirect);
     }
-  } catch {
+  } catch (err) {
     // PyException 逃出 try 块 = 脚本会以 traceback 退出；ProbeAbort = 无法证明。其余意外同样交回审批链。
-    return null;
+    // 原因只带固定短语（不含路径 / 内容），供现场判因。
+    return { aborted: err instanceof ProbeAbort ? err.message : err instanceof PyException ? 'python exception outside try' : 'unexpected error' };
   }
   return { stdout: runner.stdout, stderr: runner.stderr, exitCode: status };
 }
