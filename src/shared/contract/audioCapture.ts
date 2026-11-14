@@ -14,6 +14,8 @@ export type AudioCaptureMissingPrerequisiteCode =
   | 'recorder_missing'
   | 'system_audio_helper_missing'
   | 'transcription_engine_missing'
+  /** 装了 whisper 程序但没下语音模型（~/.cache/whisper 下没有 ggml-*.bin） */
+  | 'transcription_model_missing'
   | 'voice_detection_missing'
   | 'voice_detection_unsupported';
 

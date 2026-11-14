@@ -1,4 +1,5 @@
-import { AgentFailureCode, inferAgentFailureCode } from '@shared/contract/agentFailure';
+import type { Task } from '@shared/contract/backgroundTask';
+import { AgentFailureCode, inferAgentFailureCode, isAgentFailureCode } from '@shared/contract/agentFailure';
 import { languages, type Translations } from '../i18n';
 import { agentFailureHostPhrases } from '../i18n/agentFailureHostPhrases';
 import { containsCjk } from './containsCjk';
@@ -18,4 +19,10 @@ export function agentFailureCopy(code: AgentFailureCode | undefined, t: Translat
     ? agentFailureHostPhrases[reason]
     : inferAgentFailureCode({ error: reason });
   return copy[inferred];
+}
+
+/** Session-work recovery has its own stable reason, distinct from parent-gone. */
+export function backgroundTaskFailureCopy(task: Task, t: Translations): string | null {
+  if (task.failure?.reason === 'session_command_task_interrupted_by_restart') return t.backgroundPanel.interrupted;
+  return agentFailureCopy(isAgentFailureCode(task.failure?.reason) ? task.failure.reason : undefined, t, task.failure?.message || task.summary);
 }

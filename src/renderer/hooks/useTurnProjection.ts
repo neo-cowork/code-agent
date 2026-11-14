@@ -687,7 +687,9 @@ export function projectTurns(
           thinking: attachReasoning ? msg.thinking : undefined,
           artifacts: msg.artifacts,
           modelDecision,
-          metadata: includeAgentError ? projectedMetadata : contentMetadata,
+          metadata: index && index > 1 && (includeAgentError ? projectedMetadata : contentMetadata)?.backgroundTaskPreannounce
+            ? { ...(includeAgentError ? projectedMetadata : contentMetadata), backgroundTaskPreannounce: undefined }
+            : includeAgentError ? projectedMetadata : contentMetadata,
           ...(agentErrorRun ? { agentErrorRun } : {}),
         });
       };

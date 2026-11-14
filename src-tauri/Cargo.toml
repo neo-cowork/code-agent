@@ -15,7 +15,7 @@ tauri-plugin-process = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
-ctrlc = "3.4"
+ctrlc = { version = "3.4", features = ["termination"] }  # 不开 termination 只接 SIGINT，SIGTERM 会直接杀壳、不跑 cleanup_server（N-FIX-TAURI-SIGTERM-ORPHAN-WEBSERVER）
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-dialog = "2"
