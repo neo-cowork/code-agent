@@ -16,6 +16,7 @@ import { getAudioCapturePrerequisites } from './audioCapturePrerequisites';
 import { findWhisperBinary, whisperLanguageArgs } from '../media/whisperBinary';
 import { clearAllAudioRecordings, finalizeSegmentAudio, getAudioRetentionStatus, sweepAudioRetention } from './audioRetention';
 import { dropMicEchoes } from './audioCrossEcho';
+import { AudioStreamClock } from './audioStreamClock';
 import { AUDIO_SPEAKER_ID, type AudioCaptureMode } from '@shared/contract/audioCapture';
 import type { InferenceSession, Tensor as OrtTensor } from 'onnxruntime-node';
 
@@ -36,6 +37,7 @@ const VAD_OFFSET = 0.35; // end speech: lower threshold
 const MIN_SPEECH_MS = 500; // minimum speech duration to keep
 const MIN_SILENCE_MS = 2000; // 2s silence to finalize segment
 const SPEECH_PAD_MS = 200; // pad speech boundaries
+const VAD_CONTEXT_SAMPLES = 64; // Silero v5 16kHz 每块前拼的上下文样本数
 const MAX_SPEECH_S = 15; // max segment duration, then smart-split
 
 // ASR
@@ -125,6 +127,8 @@ interface CaptureTrack {
   vad: VadProcessor;
   proc: ChildProcess | null;
   stream: fs.ReadStream | null;
+  /** 这一路 VAD 的处理链：进程重启后新旧两条流也排在同一条链上，不并发推理 */
+  vadChain: Promise<void>;
 }
 
 let tracks: CaptureTrack[] = [];
@@ -218,13 +222,15 @@ function findRecBinary(): string | null {
 // VAD State Machine (ported from meeting-cli VadEngine)
 // ============================================================================
 
-class VadStateMachine {
+export class VadStateMachine {
   private speechActive = false;
   private speechBuffer: number[] = [];
   private speechSamples = 0;
   private silenceSamples = 0;
   private probHistory: number[] = [];
   private pendingPad: number[] = [];
+  /** speechBuffer 开头那段补白的样本数：probHistory[0] 对应的块从这里开始 */
+  private leadSamples = 0;
 
   private readonly onset: number;
   private readonly offset: number;
@@ -254,6 +260,7 @@ class VadStateMachine {
         // Speech onset
         this.speechActive = true;
         this.speechBuffer = [...this.pendingPad];
+        this.leadSamples = this.pendingPad.length;
         this.speechSamples = this.speechBuffer.length;
         this.silenceSamples = 0;
         this.probHistory = [];
@@ -294,9 +301,9 @@ class VadStateMachine {
       }
     }
 
-    // Keep tail for padding next onset
-    const padStart = Math.max(0, pcmInt16.length - this.speechPadSamples);
-    this.pendingPad = Array.from(pcmInt16.slice(padStart));
+    // 滚动保留最近 speechPadSamples 个样本，开口时补在段落前面。原来只取本块的尾巴，
+    // 一块只有 512 样本，实际只补 32ms，每句开头被吃字（N-MEETING-DUALTRACK-FU2）
+    this.pendingPad = this.pendingPad.concat(Array.from(pcmInt16)).slice(-this.speechPadSamples);
 
     return completed;
   }
@@ -322,7 +329,8 @@ class VadStateMachine {
       }
     }
 
-    const splitSample = minIdx * BLOCK_SIZE;
+    // 切在最安静那块的开头：要跳过段首补白，否则切点提前补白那么长、切进字中间
+    const splitSample = this.leadSamples + minIdx * BLOCK_SIZE;
     if (splitSample <= 0 || splitSample >= this.speechBuffer.length) {
       const seg = new Int16Array(this.speechBuffer);
       this.speechBuffer = [];
@@ -335,6 +343,7 @@ class VadStateMachine {
     this.speechBuffer = this.speechBuffer.slice(splitSample);
     this.speechSamples = this.speechBuffer.length;
     this.probHistory = this.probHistory.slice(minIdx);
+    this.leadSamples = 0; // 剩下的从最安静那块开头起，不再带补白
     return firstPart;
   }
 
@@ -351,6 +360,8 @@ class VadProcessor {
   private session: InferenceSession | null = null;
   private ort: OrtRuntimeModule | null = null;
   private state: OrtTensor | null = null; // hidden state carried across frames
+  // Silero v5 在 16kHz 下每块前要拼上一块最后 64 个样本（官方用法），不拼时开口检测偏晚（N-MEETING-DUALTRACK-FU2）
+  private context = new Float32Array(VAD_CONTEXT_SAMPLES);
   private stateMachine: VadStateMachine;
   private initialized = false;
 
@@ -401,13 +412,13 @@ class VadProcessor {
     if (!this.initialized) return [];
     if (!this.ort || !this.session || !this.state) return [];
 
-    // Convert Int16 to Float32 [-1.0, 1.0]
-    const float32 = new Float32Array(pcmInt16.length);
+    // Convert Int16 to Float32 [-1.0, 1.0]，前面拼上一块的最后 64 个样本
+    const float32 = new Float32Array(VAD_CONTEXT_SAMPLES + pcmInt16.length);
+    float32.set(this.context);
     for (let i = 0; i < pcmInt16.length; i++) {
-      float32[i] = pcmInt16[i] / 32768.0;
+      float32[VAD_CONTEXT_SAMPLES + i] = pcmInt16[i] / 32768.0;
     }
-
-    // Run Silero v5: input=[1, chunk_size], state=[2,1,128], sr=scalar
+    // Run Silero v5: input=[1, 64 + chunk_size], state=[2,1,128], sr=scalar
     const input = new this.ort.Tensor('float32', float32, [1, float32.length]);
     const sr = new this.ort.Tensor('int64', BigInt64Array.from([BigInt(SAMPLE_RATE)]), []);
 
@@ -420,6 +431,7 @@ class VadProcessor {
     }
     const prob = output.data[0] ?? 0;
     this.state = stateN; // carry hidden state forward
+    this.context = float32.slice(float32.length - VAD_CONTEXT_SAMPLES); // 和隐藏状态一起前进，推理失败时两者不错开
 
     // 每 500 次（约 16 秒）输出一次 VAD 概率
     this.probLogCount++;
@@ -880,6 +892,10 @@ function spawnSource(source: 'microphone' | 'system-audio'): ChildProcess | null
     logger.info('[音频采集] 使用 ffmpeg AVFoundation 模式', { device: audioDevice });
     return spawn(ffmpegBin, [
       '-f', 'avfoundation', '-i', audioDevice,
+      // avfoundation 会丢帧（11-14 本机实测只出实时的 0.88 倍），段落时间按样本数推算会越录越早；
+      // 按时间戳把缺口补成静音，样本数才和墙钟对得上（N-MEETING-DUALTRACK-FU1）
+      // ponytail: 只覆盖 ffmpeg；sox rec 回落和 Tauri FIFO 路径若也丢帧仍会偏早，遇到再补
+      '-af', 'aresample=async=1',
       '-ar', String(SAMPLE_RATE), '-ac', '1', '-f', 's16le', 'pipe:1',
     ], { stdio: ['ignore', 'pipe', 'pipe'] });
   }
@@ -896,10 +912,25 @@ function pumpPcm(input: NodeJS.ReadableStream, track: CaptureTrack): void {
   let vadErrorLogged = false;
   let dataChunkCount = 0;
   let lastDiagMs = 0;
+  // 每条流一个时钟：进程重启后新流首包重新定原点，重启空窗不会让后续段落整体偏早
+  const clock = new AudioStreamClock(SAMPLE_RATE);
 
-  input.on('data', async (data: Buffer | string) => {
+  // 一路的数据包必须逐个处理完再处理下一个：VAD 带隐藏状态，主线程一卡、积压的包并发进
+  // session.run 会共用旧状态，段落被错合/错切，时间偏出好几秒（N-MEETING-DUALTRACK-FU1 真机实测）。
+  // ponytail: 处理长期跟不上实时时队列会一直涨，真遇到再加丢包/降级
+  input.on('data', (data: Buffer | string) => {
     if (typeof data === 'string') return; // skip string chunks
-    if (powerMode === 'paused') return;
+    clock.receive(data.length); // 原点按到达时刻定，不能等排队
+    track.vadChain = track.vadChain.then(() => handlePcm(data)).catch((error) => {
+      logger.error('[音频采集] 处理音频数据异常', { source: track.source, error: error instanceof Error ? error.message : String(error) });
+    });
+  });
+
+  async function handlePcm(data: Buffer): Promise<void> {
+    if (powerMode === 'paused') {
+      clock.advance(data.length / 2); // 丢掉的样本也算时间，恢复后不漂
+      return;
+    }
     // 已停掉的一路：进程哪怕还没退干净，数据也不再落库（否则停了又开会多出一路「对方」）
     if (!tracks.includes(track)) return;
 
@@ -937,10 +968,12 @@ function pumpPcm(input: NodeJS.ReadableStream, track: CaptureTrack): void {
         chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + BLOCK_BYTES)
       );
 
+      // 这一块样本对应的音频时刻；段落在这块处切出，就以它为结束时间
+      const blockEndMs = clock.advance(BLOCK_SIZE);
       try {
         const segments = await track.vad.processChunk(int16);
         for (const segment of segments) {
-          const endMs = Date.now();
+          const endMs = blockEndMs;
           const durationMs = Math.round((segment.length / SAMPLE_RATE) * 1000);
           const startMs = endMs - durationMs;
 
@@ -972,7 +1005,7 @@ function pumpPcm(input: NodeJS.ReadableStream, track: CaptureTrack): void {
         }
       }
     }
-  });
+  }
 }
 
 /** 给一路采集接进程：stdout 进 VAD，stderr 留诊断，意外退出 3 秒后只重启这一路 */
@@ -1025,7 +1058,7 @@ function attachProcess(track: CaptureTrack, source: 'microphone' | 'system-audio
 async function newTrack(source: CaptureSource, speakerId: number): Promise<CaptureTrack | null> {
   const vad = new VadProcessor();
   if (!(await vad.init())) return null;
-  return { source, speakerId, vad, proc: null, stream: null };
+  return { source, speakerId, vad, proc: null, stream: null, vadChain: Promise.resolve() };
 }
 
 // ============================================================================
