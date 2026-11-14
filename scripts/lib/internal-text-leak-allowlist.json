@@ -78,12 +78,6 @@
     "reason": "unowned — needs a ticket"
   },
   {
-    "file": "src/renderer/components/features/chat/TurnQualityStrip.tsx",
-    "rule": "uuid",
-    "sample": "{summary.agentScorecard.agentName || summary.agentScorecard.agentId || 'Main agent'}",
-    "reason": "unowned — needs a ticket"
-  },
-  {
     "file": "src/renderer/components/features/computerUse/ComputerUseContent.tsx",
     "rule": "uuid",
     "sample": "{target.windowTitle || target.bundleId || '没有窗口标题'}",
@@ -106,30 +100,6 @@
     "rule": "internal_tool_name",
     "sample": "还没有 Computer Surface action trace。执行过 `computer_use.get_state / observe / get_ax_elements` 后会在这里显示风险摘要。",
     "reason": "unowned — needs a ticket"
-  },
-  {
-    "file": "src/renderer/components/features/cron/CronEventDecisionsPanel.tsx",
-    "rule": "uuid",
-    "sample": "{row.kind === 'action' ? copy.actionLabel.replace('{tool}', row.tool ?? '') : copy.eventLabel.replace('{id}', row.eventId ?? '')}",
-    "reason": "N-FIX-CRON-EVENT-DECISION-ENGLISH-RAW-ID"
-  },
-  {
-    "file": "src/renderer/components/features/cron/CronExecutionDetail.tsx",
-    "rule": "uuid",
-    "sample": "{execution.id}",
-    "reason": "N-FIX-CRON-RUN-RAW-ID-AS-NAME"
-  },
-  {
-    "file": "src/renderer/components/features/cron/CronExecutionDetail.tsx",
-    "rule": "session_id",
-    "sample": "execution.sessionId || '—'",
-    "reason": "N-FIX-CRON-RUN-RAW-ID-AS-NAME"
-  },
-  {
-    "file": "src/renderer/components/features/cron/CronExecutionList.tsx",
-    "rule": "uuid",
-    "sample": "{jobNameById[execution.jobId] || execution.jobId}",
-    "reason": "N-FIX-CRON-RUN-RAW-ID-AS-NAME"
   },
   {
     "file": "src/renderer/components/features/expert/ExpertPanel.tsx",
@@ -258,12 +228,6 @@
     "reason": "unowned — needs a ticket"
   },
   {
-    "file": "src/renderer/components/features/settings/sections/NativeConnectorsSection.tsx",
-    "rule": "uuid",
-    "sample": "{row.id}",
-    "reason": "unowned — needs a ticket"
-  },
-  {
     "file": "src/renderer/components/features/settings/tabs/AgentEngineModelCatalogSection.tsx",
     "rule": "uuid",
     "sample": "model.id",
@@ -273,12 +237,6 @@
     "file": "src/renderer/components/features/settings/tabs/AgentEngineModelCatalogSection.tsx",
     "rule": "uuid",
     "sample": "model.disabledReason || model.id",
-    "reason": "unowned — needs a ticket"
-  },
-  {
-    "file": "src/renderer/components/features/settings/tabs/ChannelsSettings.tsx",
-    "rule": "uuid",
-    "sample": "{account.id}",
     "reason": "unowned — needs a ticket"
   },
   {
@@ -525,108 +483,6 @@
     "file": "src/renderer/i18n/zhSettingsWork.ts",
     "rule": "ou_id",
     "sample": "例如 oc_abc123def",
-    "reason": "unowned — needs a ticket"
-  },
-  {
-    "file": "src/renderer/components/WorkbenchTabs.tsx",
-    "rule": "uuid",
-    "sample": "{labelFor(view.id)}",
-    "reason": "unowned — needs a ticket"
-  },
-  {
-    "file": "src/renderer/components/WorkbenchTabs.tsx",
-    "rule": "uuid",
-    "sample": "{descriptionFor(view.id)}",
-    "reason": "unowned — needs a ticket"
-  },
-  {
-    "file": "src/renderer/components/features/expert/TeamRecipeDetailPage.tsx",
-    "rule": "uuid",
-    "sample": "text.expertTeamMode.replace('{lead}', roleName(recipe.lead.roleId))",
-    "reason": "unowned — needs a ticket"
-  },
-  {
-    "file": "src/renderer/components/features/expert/TeamRecipeDetailPage.tsx",
-    "rule": "uuid",
-    "sample": "{roleName(member.roleId)}",
-    "reason": "unowned — needs a ticket"
-  },
-  {
-    "file": "src/renderer/components/features/projectCollaboration/ProjectCollaborationDetailPane.tsx",
-    "rule": "uuid",
-    "sample": "{formatRequesterLabel(workCard.requesterUserId, currentUser)}",
-    "reason": "unowned — needs a ticket"
-  },
-  {
-    "file": "src/renderer/components/features/projectCollaboration/ProjectCollaborationPanel.tsx",
-    "rule": "uuid",
-    "sample": "{formatRequesterLabel(workCard.requesterUserId, currentUser)}",
-    "reason": "unowned — needs a ticket"
-  },
-  {
-    "file": "src/renderer/components/features/projectSpace/CloudCollabCardsSection.tsx",
-    "rule": "uuid",
-    "sample": "{formatRequesterLabel(card.requesterUserId, currentUser)}",
-    "reason": "unowned — needs a ticket"
-  },
-  {
-    "file": "src/renderer/components/features/settings/tabs/DataSettings.tsx",
-    "rule": "uuid",
-    "sample": "{getRowIcon(row.id)}",
-    "reason": "unowned — needs a ticket"
-  },
-  {
-    "file": "src/renderer/components/features/settings/tabs/GeneralSettings.tsx",
-    "rule": "uuid",
-    "sample": "{getPermissionIcon(row.id)}",
-    "reason": "unowned — needs a ticket"
-  },
-  {
-    "file": "src/renderer/components/features/settings/tabs/WorkspaceSettings.tsx",
-    "rule": "uuid",
-    "sample": "{scopeIcon(tile.id)}",
-    "reason": "unowned — needs a ticket"
-  },
-  {
-    "file": "src/renderer/components/features/settings/tabs/WorkspaceSettings.tsx",
-    "rule": "uuid",
-    "sample": "{scopeIcon(layer.id)}",
-    "reason": "unowned — needs a ticket"
-  },
-  {
-    "file": "src/renderer/components/features/cron/CronEventDecisionsPanel.tsx",
-    "rule": "uuid",
-    "sample": "copy.eventLabel.replace('{id}', row.eventId ?? '')",
-    "reason": "N-FIX-CRON-EVENT-DECISION-ENGLISH-RAW-ID"
-  },
-  {
-    "file": "src/renderer/components/features/cron/CronExecutionList.tsx",
-    "rule": "uuid",
-    "sample": "jobNameById[execution.jobId] || execution.jobId",
-    "reason": "N-FIX-CRON-RUN-RAW-ID-AS-NAME"
-  },
-  {
-    "file": "src/renderer/components/features/settings/tabs/MemoryEntriesManager.tsx",
-    "rule": "uuid",
-    "sample": "row.summary || row.id",
-    "reason": "unowned — needs a ticket"
-  },
-  {
-    "file": "src/renderer/components/features/settings/tabs/MemoryEntriesManager.tsx",
-    "rule": "session_id",
-    "sample": "item.filePath || item.memoryId || item.sessionId || item.candidateId || item.source || 'unknown'",
-    "reason": "unowned — needs a ticket"
-  },
-  {
-    "file": "src/renderer/components/features/settings/tabs/SearchSettings.tsx",
-    "rule": "uuid",
-    "sample": "sourceText?.label ?? entry.id",
-    "reason": "unowned — needs a ticket"
-  },
-  {
-    "file": "src/renderer/components/features/swarm/AgentWorkRecordDialog.tsx",
-    "rule": "uuid",
-    "sample": "agent.name || agent.id",
     "reason": "unowned — needs a ticket"
   },
   {
