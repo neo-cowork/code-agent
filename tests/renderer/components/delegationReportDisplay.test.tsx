@@ -127,7 +127,8 @@ it.each([zh, en])('localizes background receipts without exposing task ids or po
       call.result!.output = output;
       const original = JSON.stringify(call);
       const projected = toDelegationDisplayToolCall(call, t);
-      expect(projected.result?.output).toBe(t.chat.delegationReceipt.working);
+      // No live child fact → no "working" claim either.
+      expect(projected.result?.output).toBe('');
       expect(JSON.stringify(call)).toBe(original);
     }
   }
