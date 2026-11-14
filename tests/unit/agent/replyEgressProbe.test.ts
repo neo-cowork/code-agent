@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
 import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
 
@@ -95,7 +95,7 @@ function createRealContextAssembly(
 
 describe('ContextAssembly.addAndPersistMessage ReplyEgress probe', () => {
   let tmpLogDir = '';
-  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+  let consoleErrorSpy: MockInstance<typeof console.error>;
 
   beforeEach(() => {
     tmpLogDir = fs.mkdtempSync(path.join(os.tmpdir(), 'reply-egress-log-'));
