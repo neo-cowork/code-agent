@@ -28,7 +28,7 @@ describe('humanized names at host persistence boundaries', () => {
     state.language = lang;
     const raw = 'read_file call_report123';
     const repo = new SessionRepository(database as unknown as BetterSqlite3.Database);
-    const session: Session = { id: 'session_report123', title: raw, messages: [], modelConfig: { provider: 'xiaomi', model: 'test-model' }, createdAt: 100, updatedAt: 200 };
+    const session: Session = { id: 'session_report123', title: raw, modelConfig: { provider: 'xiaomi', model: 'test-model' }, createdAt: 100, updatedAt: 200 };
     repo.createSession(session);
     repo.createSessionWithId('session_insert123', { title: raw, modelConfig: session.modelConfig, createdAt: 100, updatedAt: 200 });
     expect(detectInternalTextLeaks(session.title)).toEqual([]);
@@ -54,7 +54,7 @@ describe('humanized names at host persistence boundaries', () => {
     const task = manager.createTask({ subject: raw, description: 'Export table' });
     expect(detectInternalTextLeaks(task.subject)).toEqual([]);
     expect(detectInternalTextLeaks(manager.updateTask(task.id, { subject: raw })!.subject)).toEqual([]);
-    const job = { id: 'job-test', name: raw, scheduleType: 'interval', schedule: {}, action: {}, runsOn: 'local', createdAt: 100, updatedAt: 200 } as CronJobDefinition;
+    const job: CronJobDefinition = { id: 'job-test', name: raw, scheduleType: 'every', schedule: { type: 'every', interval: 1, unit: 'hours' }, action: { type: 'shell', command: 'true' }, runsOn: 'local', enabled: true, createdAt: 100, updatedAt: 200 };
     await saveCronJob(job);
     const cron = state.writes.find((w) => w.sql.includes('INSERT INTO cron_jobs'))!;
     expect(detectInternalTextLeaks(String(cron.args[1]))).toEqual([]);
