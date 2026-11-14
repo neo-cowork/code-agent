@@ -44,6 +44,19 @@ describe('对话按场取转写（N-MEETING-SESSION 验收⑤）', () => {
     expect(svc.ranges).toHaveLength(0);
   });
 
+  it('会刚结束：会内的按场注入，会后录的仍放进桌面活动（只取结束之后的）', async () => {
+    const svc = service({ title: '产品周会', started_at_ms: NOW - 60 * MIN, ended_at_ms: NOW - 40 * MIN }, [
+      seg(50, '会上说的', 2),
+      seg(10, '会后自己录的备忘', 1),
+    ]);
+    expect(buildMeetingTranscript(deps(svc))?.text).toBe('[14:40 对方] 会上说的');
+    const ctx = await buildActivityContext(deps(svc));
+    const audio = ctx.sources.find((s) => s.source === 'audio');
+    expect(audio?.status).toBe('available');
+    expect(audio?.text).toContain('会后自己录的备忘');
+    expect(audio?.text).not.toContain('会上说的');
+  });
+
   it('会结束超过 2 小时：不注入会议转写，录音回到最近 1 小时的老逻辑', async () => {
     const svc = service({ title: '早会', started_at_ms: NOW - 4 * 60 * MIN, ended_at_ms: NOW - L.CONTEXT_RECENT_MS - MIN }, [seg(10, '最近说的话', null)]);
     expect(buildMeetingTranscript(deps(svc))).toBeNull();

@@ -172,11 +172,13 @@ function buildAudioSource(args: {
   service: NativeDesktopActivityReader;
 }): ActivityContextSource {
   try {
-    // 有相关的会时，转写按这场会单独注入（见 buildMeetingTranscript），这里不再重复放最近 1 小时
-    if (relevantMeeting(args.service, args.now)) {
+    // 有相关的会时，会内转写按这场会单独注入（见 buildMeetingTranscript）：会还在开就不重复放；
+    // 会已结束只放结束之后录的（会后的录音不属于这场会，两边都不放就丢了）
+    const meeting = relevantMeeting(args.service, args.now);
+    if (meeting?.ended_at_ms === null) {
       return unavailableSource('audio', args.now, AUDIO_MAX_CHARS, 'Meeting transcript is injected separately');
     }
-    const from = args.now - AUDIO_LOOKBACK_MS;
+    const from = Math.max(args.now - AUDIO_LOOKBACK_MS, meeting?.ended_at_ms ?? 0);
     const segments = args.service.listAudioSegments(from, args.now);
     const items = segments.map(toAudioItem);
     const evidenceRefs = items.flatMap((item) => item.evidenceRefs ?? []);
