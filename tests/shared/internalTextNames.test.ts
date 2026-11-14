@@ -61,6 +61,22 @@ describe('humanized names at host persistence boundaries', () => {
     expect(detectInternalTextLeaks(job.name)).toEqual([]);
   });
 
+  it.each(['zh', 'en'] as const)('stores a channel session name without the chat id or a placeholder suffix in %s', (lang) => {
+    state.language = lang;
+    const repo = new SessionRepository(database as unknown as BetterSqlite3.Database);
+    for (const chatId of ['7e35d853-b2b1-4e85-8c37-849adbf3dddf', 'oc_1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d']) {
+      state.writes = [];
+      const session: Session = { id: 'session_channel123', title: `[Channel] 客服收件箱 · ${chatId}`, modelConfig: { provider: 'xiaomi', model: 'test-model' }, createdAt: 100, updatedAt: 200 };
+      repo.createSession(session);
+      const stored = String(state.writes.find((w) => w.sql.includes('INSERT INTO sessions'))!.args[2]);
+      expect(stored).toBe('[Channel] 客服收件箱');
+      expect(session.title).toBe('[Channel] 客服收件箱');
+    }
+    const named: Session = { id: 'session_channel456', title: '[Channel] 客服收件箱 · 售后一群', modelConfig: { provider: 'xiaomi', model: 'test-model' }, createdAt: 100, updatedAt: 200 };
+    repo.createSession(named);
+    expect(named.title).toBe('[Channel] 客服收件箱 · 售后一群');
+  });
+
   it('notification text uses the shared layer before truncation and removes reply control tags', () => {
     state.language = 'en';
     const raw = '**Report ready** read_file call_export123 <decision>report</decision><rationale>Review it</rationale>';

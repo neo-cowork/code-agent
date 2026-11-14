@@ -115,4 +115,24 @@ describe('messageActionStore Fork', () => {
     expect(useSessionStore.getState().switchSession).not.toHaveBeenCalled();
     expect(mocks.error).toHaveBeenCalledWith('创建分支失败: ANCHOR_REWOUND');
   });
+
+  it('writes the fork toasts in the current UI language', async () => {
+    const { useAppStore } = await import('../../../src/renderer/stores/appStore');
+    const previous = useAppStore.getState().language;
+    useAppStore.setState({ language: 'en' });
+    try {
+      mocks.invokeDomain.mockResolvedValue({ childSession: { id: 'child-session' }, workspaceLabel: '历史对话 + 当前文件' });
+      await useMessageActionStore.getState().createForkFromReply('a2');
+      expect(mocks.success).toHaveBeenCalledWith('Fork created: conversation history + current files');
+      mocks.invokeDomain.mockRejectedValue(new Error('ANCHOR_REWOUND'));
+      await useMessageActionStore.getState().createForkFromReply('a2');
+      expect(mocks.error).toHaveBeenCalledWith('Could not create the fork: ANCHOR_REWOUND');
+      useSessionStore.setState({ runningSessionIds: new Set(['source-session']) });
+      await useMessageActionStore.getState().createForkFromReply('a2');
+      expect(mocks.error).toHaveBeenLastCalledWith('The task is still running. Stop it before creating a fork.');
+      for (const call of [...mocks.success.mock.calls, ...mocks.error.mock.calls]) expect(String(call[0])).not.toMatch(/[\u3400-\u9fff]/);
+    } finally {
+      useAppStore.setState({ language: previous });
+    }
+  });
 });

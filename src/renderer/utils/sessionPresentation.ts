@@ -1,3 +1,4 @@
+import { splitChannelSessionTitle } from '@shared/channelSessionTitle';
 import { humanizeInternalText } from '@shared/humanizeInternalText';
 import { localizeCronSessionTitle, parseCronSessionTitle } from '@shared/cronSessionTitle';
 import type { SessionStatus } from '@shared/contract/session';
@@ -87,13 +88,10 @@ function localizedSessionTitle(title: string | null | undefined, language: Langu
   if (stripped && !stripped.trim().startsWith('<appshot')) {
     // [Channel] 档沿用 #3218 的渲染（本地化渠道前缀 + 剥离尾部群聊 UUID）；
     // Schedule/Heartbeat/Cron 走共享 localizer（本单 option A：zh `[定时] `、en `[Schedule] `）。
-    const channelMatch = /^\[Channel\]\s*(.*)$/i.exec(stripped);
-    if (channelMatch) {
+    const channel = splitChannelSessionTitle(stripped);
+    if (channel) {
       const t = languages[language];
-      const name = channelMatch[1]
-        .replace(/\s*·\s*(?:[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}|(?:oc|ou|chat|ch)_[\w-]+|(?=[a-z\d_-]*\d)[a-z\d_-]{24,}|\d{8,})$/i, '')
-        .trim();
-      return name ? `${t.automationPresentation.channel} · ${name}` : t.automationPresentation.channel;
+      return channel.name ? `${t.automationPresentation.channel} · ${channel.name}` : t.automationPresentation.channel;
     }
     return localizeCronSessionTitle(
       localizeAppshotSessionTitle(stripped, language), language, languages[language].sidebar.cronTitlePrefixes,

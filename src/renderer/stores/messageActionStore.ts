@@ -16,6 +16,9 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
 import { useSessionStore } from './sessionStore';
 import { toast } from '../hooks/useToast';
+import { useAppStore } from './appStore';
+import { languages } from '../i18n';
+import { interpolate } from '../i18n/interpolate';
 
 /**
  * ADR-040：定点反馈要把结构化锚点和文本一起送出，所以发送口带 context。
@@ -203,8 +206,9 @@ export const useMessageActionStore = create<MessageActionState>((set, get) => ({
     const sessionStore = useSessionStore.getState();
     const sessionId = sessionStore.currentSessionId;
     if (!sessionId) return;
+    const text = languages[useAppStore.getState().language].turnCard;
     if (sessionStore.isSessionRunning(sessionId)) {
-      toast.error('任务仍在运行，停止后才能创建分支');
+      toast.error(text.forkBlockedWhileRunning);
       return;
     }
 
@@ -223,9 +227,11 @@ export const useMessageActionStore = create<MessageActionState>((set, get) => ({
       // then load the independently persisted child through the normal session path.
       await useSessionStore.getState().loadSessions({ silent: true });
       await useSessionStore.getState().switchSession(result.childSession.id);
-      toast.success(`已创建分支任务：${result.workspaceLabel}`);
+      toast.success(interpolate(text.forkCreatedToast, {
+        label: workspaceMode === 'isolated_at_anchor' ? text.forkWorkspaceIsolated : text.forkWorkspaceShared,
+      }));
     } catch (error) {
-      toast.error(`创建分支失败: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error(interpolate(text.forkFailedToast, { reason: error instanceof Error ? error.message : String(error) }));
     }
   },
 }));
