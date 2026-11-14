@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ToolCall } from '../../../src/shared/contract';
 import { en } from '../../../src/renderer/i18n/en';
+import { zh } from '../../../src/renderer/i18n/zh';
 import { summarizeTool } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/summarizers';
 
 function editToolCall(id: string, edits: Array<{ old_text: string; new_text: string }>): ToolCall {
@@ -34,8 +35,8 @@ describe('summarizeTool — Edit summaries read the registered edits[] shape', (
   });
 
   it('reports 无变化 when every edits[] item is a no-op', () => {
-    expect(
-      summarizeTool(editToolCall('tc-3', [{ old_text: 'same', new_text: 'same' }]), en),
-    ).toBe('无变化');
+    const call = editToolCall('tc-3', [{ old_text: 'same', new_text: 'same' }]);
+    expect(summarizeTool(call, zh)).toBe('无变化');
+    expect(summarizeTool(call, en)).toBe('No changes');
   });
 });
