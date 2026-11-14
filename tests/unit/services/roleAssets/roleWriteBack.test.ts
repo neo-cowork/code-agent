@@ -9,20 +9,24 @@ import os from 'os';
 
 const mockConfigDir = vi.hoisted(() => ({ dir: '' }));
 const mockQuickTask = vi.hoisted(() => vi.fn());
+const mockLogInfo = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../../src/host/config/configPaths', () => ({
   getUserConfigDir: () => mockConfigDir.dir,
   getAgentsMdDir: () => ({ user: path.join(mockConfigDir.dir, 'agents') }),
 }));
 
-vi.mock('../../../../src/host/services/infra/logger', () => ({
-  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
-}));
+vi.mock('../../../../src/host/services/infra/logger', () => {
+  const stub = { info: mockLogInfo, warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+  return { createLogger: () => stub, logger: stub };
+});
 
 vi.mock('../../../../src/host/model/quickModel', () => ({
   quickTask: mockQuickTask,
 }));
 
+import { ROLE_PROACTIVITY } from '../../../../src/shared/constants';
+import { buildWakePrompt } from '../../../../src/host/services/roleAssets/roleProactivity';
 import {
   applyWriteGate,
   runRoleWriteBack,
@@ -126,6 +130,7 @@ describe('runRoleWriteBack', () => {
   beforeEach(async () => {
     mockConfigDir.dir = await fs.mkdtemp(path.join(os.tmpdir(), 'role-wb-'));
     mockQuickTask.mockReset();
+    mockLogInfo.mockReset();
   });
 
   afterEach(async () => {
@@ -334,19 +339,25 @@ describe('runRoleWriteBack', () => {
     expect(history[0]).not.toContain('（无产物落盘）');
   });
 
-  it('does not append duplicate history from either wake prompt while preserving write-back', async () => {
+  it('does not append duplicate history from either wake prompt while preserving write-back and logging skip', async () => {
     await ensureRoleAssetDirs('研究员');
     mockQuickTask.mockResolvedValue({ success: false, error: 'model unavailable' });
-    for (const taskPrompt of [
-      '你被定时唤醒。这不是用户发来的消息，用户现在不在。\n你的任务：巡检',
-      '你被任务结束事件唤醒。这不是用户发来的消息，用户现在不在。',
-      '主动巡检（cadence 触发）',
-    ]) {
+    const wakePrompts = [
+      buildWakePrompt('cadence'),
+      buildWakePrompt('event', '用户刚结束一轮长任务'),
+      `${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}（cadence 触发）`,
+    ];
+    for (const taskPrompt of wakePrompts) {
       const result = await runRoleWriteBack({ roleId: '研究员', taskPrompt, finalOutput: '已检查' });
       expect(result.executed).toBe(true);
       expect(result.historyAppended).toBe(false);
     }
     expect(await loadRoleHistory('研究员')).toEqual([]);
+    expect(mockLogInfo).toHaveBeenCalledTimes(wakePrompts.length);
+    expect(mockLogInfo).toHaveBeenCalledWith(
+      'Role write-back skipped history because wake service owns it',
+      { roleId: '研究员', written: 0, rejected: 0 },
+    );
   });
 
   it('首次醒来的内部指令绝不外显为履历摘要：quick model 失败回落固定短句', async () => {
