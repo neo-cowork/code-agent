@@ -167,8 +167,8 @@ export function ToolHeader({
         </span>
       )}
 
-      {(filePath || typeof rawArgs?.command === 'string') && (
-        <details className="text-[10px] text-zinc-500" onClick={(event) => event.stopPropagation()}>
+      {status !== 'interrupted' && !isToolInterruptionPlaceholder(toolCall.result?.error) && (filePath || typeof rawArgs?.command === 'string') && (
+        <details className="text-[10px] text-zinc-500" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
           <summary className="cursor-pointer">{t.agentError.details.technical}</summary>
           <pre className="whitespace-pre-wrap break-words">{filePath || String(rawArgs?.command)}</pre>
         </details>
