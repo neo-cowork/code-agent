@@ -16,6 +16,7 @@ import type { RoleProactivityConfig, RoleWakeDecision, RoleWakeProposal } from '
 import { getRoleWakeProposalsPath, isSafeRoleId } from './roleAssetPaths';
 import { listConnectedSourceNames } from './roleFirstWake';
 import { topicExcludeHits } from './wakeRationale';
+import { readUiLanguage } from '../../session/sessionTitleHostPrompt';
 
 const logger = createLogger('RoleWakeFindWork');
 
@@ -277,4 +278,15 @@ export async function dismissWakeProposal(roleId: string, title: string): Promis
   state.dismissed.push({ title: found.title, dismissedAt: new Date().toISOString() });
   await writeWakeProposalsState(roleId, state);
   return { success: true };
+}
+
+/** 巡检会话 / 通知标题跟随界面语言；履历里的标记仍用存储常量（按它统计与解析）。 */
+export function wakeTitle(roleId: string, stamp?: string): string {
+  const label = readUiLanguage() === 'en' ? 'Check-in' : ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX;
+  return stamp ? `${roleId} · ${label} ${stamp}` : `${roleId} · ${label}`;
+}
+
+/** 巡检有产出但拿不到摘要时的通知正文。 */
+export function wakeOutputFallback(roleId: string): string {
+  return readUiLanguage() === 'en' ? `${roleId} has something new from its check-in` : `角色 ${roleId} 醒来产出了新内容`;
 }

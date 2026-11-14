@@ -1,7 +1,6 @@
 import { UNATTENDED_TRUST_NOTICE } from '../../../shared/unattendedTrust';
 // Role proactivity: cadence/event → budget → wake → decision → history.
 import { createLogger } from '../infra/logger';
-import { readUiLanguage } from '../../session/sessionTitleHostPrompt';
 import { ROLE_PROACTIVITY, SWARM_GOAL } from '../../../shared/constants';
 import type {
   RoleProactivityConfig,
@@ -23,7 +22,7 @@ import type { SessionAutomationEventKind, SessionAutomationStatus } from '../../
 import { isExternalSideEffectTool } from '../../tools/externalSideEffect';
 import { getKnownToolNames } from '../../tools/knownToolNames';
 import { resolveRoleToolBoundary, toRoleBoundaryRunAllowlist } from './rolePersonalization';
-import { correctDecisionForUnreadableSources, lastWakeDateFromHistory, resolveWakeExternalDelta, storeWakeProposalsFromWake } from './roleWakeFindWork';
+import { correctDecisionForUnreadableSources, lastWakeDateFromHistory, resolveWakeExternalDelta, storeWakeProposalsFromWake, wakeOutputFallback, wakeTitle } from './roleWakeFindWork';
 import {
   observeGoalPauseFromEvents,
   withGoalPauseAbort,
@@ -89,12 +88,6 @@ export function isWithinQuietHours(
   return start < end
     ? current >= start && current < end
     : current >= start || current < end;
-}
-
-/** 巡检会话 / 通知标题跟随界面语言；履历里的标记仍用存储常量（按它统计与解析）。 */
-function wakeTitle(roleId: string, stamp?: string): string {
-  const label = readUiLanguage() === 'en' ? 'Check-in' : ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX;
-  return stamp ? `${roleId} · ${label} ${stamp}` : `${roleId} · ${label}`;
 }
 
 // 预算护栏（设计 §6：每角色每天最多醒 N 次，cadence + event 合计）
@@ -482,7 +475,7 @@ export async function wakeRole(
       notificationService.notifyRoleWakeOutput({
         sessionId: session.id,
         title: wakeTitle(roleId),
-        body: (advanceGoalStatus ? summary : wakeText) || (readUiLanguage() === 'en' ? `${roleId} has something new from its check-in` : `角色 ${roleId} 醒来产出了新内容`),
+        body: (advanceGoalStatus ? summary : wakeText) || wakeOutputFallback(roleId),
       });
     }
     logger.info('Wake completed with output', { roleId, trigger, decision, sessionId: session.id });
