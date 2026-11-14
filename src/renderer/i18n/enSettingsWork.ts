@@ -441,13 +441,13 @@ export const enSettingsWork = {
           },
           realtime: {
             label: 'Real-time involvement',
-            hint: 'Custom cadence (up to 4 times per day) plus desktop notifications when there is output',
+            hint: 'Custom schedule (up to 4 times per day) plus desktop notifications when there is output',
           },
         },
       },
       detail: {
         backToList: 'Back to role list',
-        subtitle: 'Persistent role - memory and work history stay yours',
+        subtitle: 'Long-term expert - memory and work history stay yours',
         editByChatTitle: 'Use chat to update this role (description / tools / system prompt)',
         editByChat: 'Edit in chat',
         proactivityTitle: 'Proactivity',
