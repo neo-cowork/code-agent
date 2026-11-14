@@ -137,4 +137,3 @@ export function insertSession(db: BetterSqlite3.Database, session: Session): voi
     })();
     session.title = title;
   }
-
