@@ -184,7 +184,7 @@ export function snippetAround(text: string, query: string, radius = 60): string 
 }
 
 /** 转写按预算从头装（出纪要要从开头读起），装不下标出省略 */
-export function formatTranscript(lines: MeetingTranscriptLine[], maxChars = MEETING_SESSION_LIMITS.RECORDS_READ_MAX_CHARS): { text: string; truncated: boolean } {
+export function formatTranscript(lines: MeetingTranscriptLine[], maxChars: number = MEETING_SESSION_LIMITS.RECORDS_READ_MAX_CHARS): { text: string; truncated: boolean } {
   const out: string[] = [];
   let used = 0;
   for (const line of lines) {
