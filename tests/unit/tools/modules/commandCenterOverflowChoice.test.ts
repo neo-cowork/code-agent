@@ -12,9 +12,17 @@ import { resetSessionTaskConcurrencyPoolForTest } from '../../../../src/host/ser
 import {
   resetBackgroundTaskLedgerForTest,
 } from '../../../../src/host/task/backgroundTaskLedger';
-import { delegateTaskModule, executeDelegateTask } from '../../../../src/host/tools/modules/commandCenter/sessionCommandCenter';
+import {
+  delegateTaskModule,
+  executeCancelTask,
+  executeDelegateTask,
+  executeTaskStatus,
+} from '../../../../src/host/tools/modules/commandCenter/sessionCommandCenter';
 import { delegateTaskSchema } from '../../../../src/host/tools/modules/commandCenter/sessionCommandCenter.schema';
 import { createWorkspaceScope } from '../../../../src/host/runtime/workspaceScope';
+
+const persistMessage = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+vi.mock('../../../../src/host/services/infra/sessionManager', () => ({ getSessionManager: () => ({ addMessageToSession: persistMessage }) }));
 
 const promptMock = vi.hoisted(() => vi.fn());
 vi.mock('../../../../src/host/tools/utils/userQuestionPrompt', () => ({
@@ -138,7 +146,8 @@ describe('delegate_task overflow choice in host', () => {
 
     expect(third.ok).toBe(true);
     assert(third.ok);
-    expect(third.output).toContain('queued：已把「任务3」');
+    expect(third.output).toContain('已把「任务3」');
+    expect(third.output).not.toMatch(/session-work-|queued|accepted|requires_choice|lane_busy/);
     const allTasks = getSessionCommandCenter().list(session);
     expect(allTasks).toHaveLength(3);
     expect(allTasks[2]).toMatchObject({ shortName: '任务3', status: 'queued' });
@@ -170,7 +179,7 @@ describe('delegate_task overflow choice in host', () => {
     expect(questions[0].options).toHaveLength(2);
     expect(result).toMatchObject({ ok: true });
     assert(result.ok);
-    expect(result.output).toContain('queued：已把「任务5」');
+    expect(result.output).toContain('已把「任务5」');
     expect(getSessionCommandCenter().list(currentSession)).toEqual([
       expect.objectContaining({ shortName: '任务5', status: 'queued' }),
     ]);
@@ -192,11 +201,74 @@ describe('delegate_task overflow choice in host', () => {
     expect(result.ok).toBe(true);
     assert(result.ok);
     expect(result.output).toContain('已停止「任务1」');
-    expect(result.output).toContain('accepted：后台任务「任务3」');
+    expect(result.output).toContain('后台任务「任务3」');
+    expect(result.output).toContain('你刚才选择的替换');
 
     const tasks = getSessionCommandCenter().list(session);
     expect(tasks.find((t) => t.shortName === '任务1')?.status).toBe('cancelled');
     expect(tasks.find((t) => t.shortName === '任务3')?.status).toBe('running');
+  });
+
+  it('starts an explicitly selected replacement before an older queued task', async () => {
+    const session = 'session-replace-with-queue';
+    await executeDelegateTask(taskArgs(1), toolContext(session), allow);
+    await executeDelegateTask(taskArgs(2), toolContext(session), allow);
+    await executeDelegateTask(taskArgs(3, { queue_when_full: true }), toolContext(session), allow);
+    promptMock.mockResolvedValueOnce({
+      status: 'answered', response: { requestId: 'replace-with-queue', answers: { 任务已满: '替换任务1' } },
+    });
+    const result = await executeDelegateTask(taskArgs(4), toolContext(session), allow);
+    assert(result.ok);
+    expect(result.output.startsWith('已停止「任务1」')).toBe(true);
+    const tasks = getSessionCommandCenter().list(session);
+    expect(tasks.find((task) => task.shortName === '任务1')?.status).toBe('cancelled');
+    expect(tasks.find((task) => task.shortName === '任务3')?.status).toBe('queued');
+    expect(tasks.find((task) => task.shortName === '任务4')?.status).toBe('running');
+  });
+
+  it('reserves the next slot for a replacement when cancellation completes later', async () => {
+    const session = 'session-delayed-replace-with-queue';
+    await executeDelegateTask(taskArgs(1), toolContext(session), allow);
+    await executeDelegateTask(taskArgs(2), toolContext(session), allow);
+    await executeDelegateTask(taskArgs(3, { queue_when_full: true }), toolContext(session), allow);
+    const original = getSessionCommandCenter().list(session).find((task) => task.shortName === '任务1');
+    assert(original);
+    fakeManager.cancelBackgroundTask.mockResolvedValueOnce(true);
+    promptMock.mockResolvedValueOnce({
+      status: 'answered', response: { requestId: 'delayed-replace', answers: { 任务已满: '替换任务1' } },
+    });
+    setTimeout(() => fakeManager.emit('task_cancelled', { type: 'task_cancelled', sessionId: session, data: { taskId: original.id } } satisfies TaskManagerEvent), 10);
+    const result = await executeDelegateTask(taskArgs(4), toolContext(session), allow);
+    assert(result.ok);
+    expect(result.output).toContain('已停止「任务1」');
+    await vi.waitFor(() => {
+      const tasks = getSessionCommandCenter().list(session);
+      expect(tasks.find((task) => task.shortName === '任务3')?.status).toBe('queued');
+      expect(tasks.find((task) => task.shortName === '任务4')?.status).toBe('running');
+    });
+  });
+
+  it('waits for delayed cancellation before reporting that replacement started', async () => {
+    const session = 'session-confirm-replacement';
+    await executeDelegateTask(taskArgs(1), toolContext(session), allow);
+    await executeDelegateTask(taskArgs(2), toolContext(session), allow);
+    await executeDelegateTask(taskArgs(3, { queue_when_full: true }), toolContext(session), allow);
+    const original = getSessionCommandCenter().list(session).find((task) => task.shortName === '任务1');
+    assert(original);
+    fakeManager.cancelBackgroundTask.mockImplementationOnce(async () => {
+      setTimeout(() => fakeManager.emit('task_cancelled', {
+        type: 'task_cancelled', sessionId: session, data: { taskId: original.id },
+      } satisfies TaskManagerEvent), 10);
+      return true;
+    });
+    promptMock.mockResolvedValueOnce({
+      status: 'answered', response: { requestId: 'confirm-replace', answers: { 任务已满: '替换任务1' } },
+    });
+    const result = await executeDelegateTask(taskArgs(4), toolContext(session), allow);
+    assert(result.ok);
+    expect(result.output.startsWith('已停止「任务1」')).toBe(true);
+    expect(result.output).toContain('后台任务「任务4」');
+    expect(getSessionCommandCenter().list(session).find((task) => task.shortName === '任务3')?.status).toBe('queued');
   });
 
   it.each(['missing', 'ambiguous', 'rejected'] as const)(
@@ -238,12 +310,13 @@ describe('delegate_task overflow choice in host', () => {
     });
     const result = await executeDelegateTask(taskArgs(3), toolContext(session), allow);
     assert(result.ok);
-    expect(result.meta).toEqual({ sessionTask: { outcome, tasks: [{ shortName: '任务3', status }] } });
+    expect(result.meta).toMatchObject({ sessionTask: { outcome, tasks: [{ shortName: '任务3', status }] } });
+    if (answer.startsWith('替换')) expect(result.meta).toMatchObject({ sessionTaskReplacement: { shortName: '任务1', stopped: !delayed } });
     if (delayed) {
       expect(result.output).toContain('已请求停止「任务1」');
       expect(result.output).not.toContain('已停止「任务1」');
     }
-  });
+  }, 20_000);
 
   it('when user chooses Not now (暂不创建), creates no task and does not queue', async () => {
     const session = 'session-not-now';
@@ -283,8 +356,28 @@ describe('delegate_task overflow choice in host', () => {
     expect(result.output).toContain('尚未创建');
     expect(result.output).toContain('没有加入排队');
     expect(result.output).toContain('回复“排队”');
+    expect(persistMessage).toHaveBeenCalledWith(session, expect.objectContaining({ role: 'assistant', content: result.output }));
     expect(result.output).not.toMatch(/no-renderer|aborted|timeout|declined|INVALID_ARGS/i);
     expect(getSessionCommandCenter().list(session)).toHaveLength(2);
+  });
+
+  it('starts the chosen queued task on release and persists its completed result', async () => {
+    const session = 'queue-completion';
+    await executeDelegateTask(taskArgs(1), toolContext(session), allow);
+    await executeDelegateTask(taskArgs(2), toolContext(session), allow);
+    promptMock.mockResolvedValueOnce({ status: 'answered', response: { requestId: 'queue', answers: { 任务已满: '排队' } } });
+    await executeDelegateTask(taskArgs(3), toolContext(session), allow);
+    const [first, , queued] = getSessionCommandCenter().list(session);
+    expect(queued.status).toBe('queued');
+    fakeManager.emit('task_completed', { type: 'task_completed', sessionId: session, data: { taskId: first.id, conclusion: '周报已写出' } });
+    await vi.waitFor(() => expect(fakeManager.startBackgroundTask).toHaveBeenCalledTimes(3));
+    expect(getSessionCommandCenter().list(session)[2].status).toBe('running');
+    fakeManager.emit('task_completed', { type: 'task_completed', sessionId: session, data: { taskId: queued.id, conclusion: '三点简报已写出' } });
+    await vi.waitFor(() => expect(persistMessage).toHaveBeenCalledWith(session, expect.objectContaining({
+      content: expect.stringContaining('三点简报已写出'),
+      metadata: expect.objectContaining({ backgroundTaskResult: expect.objectContaining({ taskId: queued.id, status: 'completed' }) }),
+    })));
+    expect(getSessionCommandCenter().list(session)[2].status).toBe('completed');
   });
 
   it('production handler adds the exact task id to accepted and queued receipts', async () => {
@@ -310,5 +403,28 @@ describe('delegate_task overflow choice in host', () => {
     const desc = delegateTaskSchema.inputSchema.properties?.queue_when_full?.description ?? '';
     expect(desc).toContain('排队');
     expect(desc).not.toContain('AskUserQuestion');
+  });
+
+  it('task_status numbers only active tasks (same ordinals cancel_task resolves) and ambiguity lists ordinals', async () => {
+    const session = 'session-ordinal';
+    await executeDelegateTask(taskArgs(1), toolContext(session), allow);
+    await executeDelegateTask(taskArgs(2, { short_name: '同名' }), toolContext(session), allow);
+    const [first] = getSessionCommandCenter().list(session);
+    fakeManager.emit('task_completed', { type: 'task_completed', sessionId: session, data: { taskId: first.id, conclusion: 'ok' } });
+    await vi.waitFor(() => expect(getSessionCommandCenter().active(session)).toHaveLength(1));
+    await executeDelegateTask(taskArgs(3, { short_name: '同名' }), toolContext(session), allow);
+
+    const status = await executeTaskStatus({}, toolContext(session), allow);
+    const lines = (status.ok ? status.output : '').split('\n');
+    expect(lines[0]).toMatch(/^- 任务1/);
+    expect(lines[1]).toMatch(/^1\. 同名/);
+    expect(lines[2]).toMatch(/^2\. 同名/);
+
+    const ambiguous = await executeCancelTask({ target: '同名' }, toolContext(session), allow);
+    expect(ambiguous.ok ? ambiguous.output : '').toContain('第1个「同名」、第2个「同名」');
+    const cancelled = await executeCancelTask({ target: '2' }, toolContext(session), allow);
+    const active = getSessionCommandCenter().active(session);
+    expect(cancelled.ok ? cancelled.output : '').toContain('同名');
+    expect(active.map((t) => t.title)).toEqual(['后台任务 2']);
   });
 });
