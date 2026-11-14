@@ -91,6 +91,8 @@ export interface AgentLoopConfig {
   inferenceOptions?: InferenceOptions;
   /** Per-run iteration cap for acceptance and controlled runtime harnesses. */
   maxIterations?: number;
+  /** A background completion report ends normally after its text response. */
+  completionReportOnly?: boolean;
   /** 当前 run 写入模型历史但不进入用户可见聊天历史。 */
   historyVisibility?: 'visible' | 'meta';
   /** Whether this run may publish context health to the session's main ring. */
@@ -193,6 +195,7 @@ export interface ModelResponse {
   // Adaptive Thinking: 思考过程
   thinking?: string;
   responsesOutput?: unknown[];
+  backgroundTaskPreannounce?: NonNullable<Message['metadata']>['backgroundTaskPreannounce'];
   searchTrace?: Array<{ id?: string; action?: string; query?: string; url?: string }>;
   // Token usage from API response
   usage?: { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheCreationTokens?: number; providerReportedSavedTokens?: number; serviceTier?: string };

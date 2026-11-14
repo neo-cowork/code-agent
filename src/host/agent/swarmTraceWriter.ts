@@ -644,12 +644,13 @@ export class SwarmTraceWriter {
   /** 极简启发式失败归因，沿用 telemetry_tool_calls.error_category 的字符串风格 */
   private classifyFailure(message: string): string {
     const m = message.toLowerCase();
+    if (m.includes('worktree') && (m.includes('create') || m.includes('add'))) return 'worktree_create_failed';
     if (m.includes('timeout')) return 'timeout';
     if (m.includes('cancel')) return 'cancelled';
     if (m.includes('permission')) return 'permission';
     if (m.includes('rate limit') || m.includes('429') || isChineseRateLimitMessage(m)) return 'rate_limit';
     if (m.includes('network') || m.includes('econn')) return 'network';
-    if (m.includes('parse')) return 'parse_error';
+    if (/(?:^|[^a-z0-9-])parse/.test(m)) return 'parse_error';
     return 'unknown';
   }
 

@@ -1,3 +1,4 @@
+import { projectAgentErrorRuns } from '../utils/agentErrorRuns';
 // ============================================================================
 // useTurnProjection - Project messages[] into TraceTurns
 // Pure derivation via useMemo, no new state or store
@@ -5,13 +6,13 @@
 
 import { useMemo } from 'react';
 import { getLastConversationTurnIndex } from '../utils/conversationTurns';
-import type { AgentErrorCategory, Message, MessageMetadata } from '@shared/contract';
+import type { Message, MessageMetadata } from '@shared/contract';
 import {
   findRegisteredSystemEvent,
   findUnregisteredSystemEventKeys,
 } from '@shared/contract/systemEventRegistry';
 import type { NeoWorkCardDetail } from '@shared/contract/tag';
-import type { AgentErrorRunInfo, TraceProjection, TraceTurn, TraceNode } from '@shared/contract/trace';
+import type { TraceProjection, TraceTurn, TraceNode } from '@shared/contract/trace';
 import type { SwarmLaunchRequest } from '@shared/contract/swarm';
 import type { TurnArtifactOwnershipItem } from '@shared/contract/turnTimeline';
 import { isSkillStatusContent } from '../components/features/chat/MessageBubble/SkillStatusMessage';
@@ -302,50 +303,8 @@ export function projectTurns(
   // 消息之间的同因报错是**同一轮失败**的重复上报（web 路径 host 结构化标记与原始
   // 供应商报错各落一条），只算一次、只渲染最后一条。带 toolCalls 的轮中消息不打断
   // 连续段——那一轮可能还会失败。
-  const agentErrorRunByMessageId = new Map<string, AgentErrorRunInfo>();
-  let lastFailureId: string | null = null;
-  {
-    // 扁平三变量而非可空对象：typescript7 对「可空对象 + `?.` 等值比较 + 显式判空」
-    // 的组合会错把变量窄化成 never（隔离复现 TS2339/TS7022），扁平写法无此问题。
-    let runMessageId: string | null = null;
-    let runCategory: AgentErrorCategory | null = null;
-    let runLength = 0;
-    let sawUserSinceLastFailure = false;
-    let lastFailureMessageId: string | null = null;
-    for (const msg of messages) {
-      if (msg.role === 'user') {
-        sawUserSinceLastFailure = true;
-        continue;
-      }
-      if (msg.role !== 'assistant') continue;
-      const agentError = msg.metadata?.agentError;
-      if (agentError) {
-        const sameCategory = runCategory === agentError.category;
-        if (sameCategory && runMessageId !== null && sawUserSinceLastFailure) {
-          // 新一轮失败、同因延续：上一轮降为灰字行
-          agentErrorRunByMessageId.set(runMessageId, { runLength, latest: false });
-          runLength += 1;
-        } else if (sameCategory && runMessageId !== null) {
-          // 同一轮内的重复报错：前一条不再渲染，次数也不涨
-          agentErrorRunByMessageId.set(runMessageId, { runLength, latest: false, duplicate: true });
-        } else {
-          runCategory = agentError.category;
-          runLength = 1;
-        }
-        runMessageId = msg.id;
-        sawUserSinceLastFailure = false;
-        agentErrorRunByMessageId.set(msg.id, { runLength, latest: true });
-        lastFailureMessageId = msg.id;
-        continue;
-      }
-      if (!msg.toolCalls?.length && msg.content?.trim()) {
-        runCategory = null;
-        runMessageId = null;
-        runLength = 0;
-      }
-    }
-    lastFailureId = lastFailureMessageId;
-  }
+  const agentErrorRunByMessageId = projectAgentErrorRuns(messages);
+  const lastFailureId = messages.findLast(msg => msg.role === 'assistant' && msg.metadata?.agentError)?.id ?? null;
 
   for (const msg of messages) {
     if (msg.source === 'skill' && isSkillStatusContent(msg.content)) {
@@ -669,6 +628,10 @@ export function projectTurns(
       const projectedMetadata = streamInterruptionReason
         ? { ...msg.metadata, streamInterruptionReason }
         : msg.metadata;
+      // 错误属于整条消息的终态，不属于每个 text/tool 分片。
+      const contentMetadata = projectedMetadata?.agentError
+        ? { ...projectedMetadata, agentError: undefined }
+        : projectedMetadata;
       let recoveryToolProjected = false;
 
       // 一条 assistant 消息若因 content_parts 交错（text 穿插 tool_call）拆成多个
@@ -676,7 +639,7 @@ export function projectTurns(
       // 避免同一段 thinking 在多个折叠行里重复出现（P0 去噪：思考块过多问题的根因之一）。
       let reasoningAttachedForMessage = false;
 
-      const pushAssistantTextNode = (content: string, index?: number, includeError = !hasOrderedParts) => {
+      const pushAssistantTextNode = (content: string, index?: number, includeAgentError = false) => {
         // 中断轮的唯一时间线信号由 recovery 工具节点承载。落库 marker 前的 partial
         // 与 snapshot.content 是同一段流式正文，二者都继续投影会在重载后重复两遍，
         // 也会破坏“灰字一行 + 决策槽一行”的单信号形态。
@@ -710,9 +673,8 @@ export function projectTurns(
         }
         const attachReasoning = !reasoningAttachedForMessage;
         reasoningAttachedForMessage = true;
-        // 同因连续段信息只随 agentError 走：同一条消息拆出的所有正文节点拿同一个
-        // run 对象，折叠/整卡的判定整条消息一致。
-        const agentErrorRun = projectedMetadata?.agentError
+        // 只在唯一错误落点复用前台/后台共用的连续失败折叠结果。
+        const agentErrorRun = includeAgentError && projectedMetadata?.agentError
           ? agentErrorRunByMessageId.get(msg.id)
           : undefined;
         turn.nodes.push({
@@ -725,7 +687,9 @@ export function projectTurns(
           thinking: attachReasoning ? msg.thinking : undefined,
           artifacts: msg.artifacts,
           modelDecision,
-          metadata: hasAgentError && !includeError ? { ...projectedMetadata, agentError: undefined, envAssist: undefined } : projectedMetadata,
+          metadata: index && index > 1 && (includeAgentError ? projectedMetadata : contentMetadata)?.backgroundTaskPreannounce
+            ? { ...(includeAgentError ? projectedMetadata : contentMetadata), backgroundTaskPreannounce: undefined }
+            : includeAgentError ? projectedMetadata : contentMetadata,
           ...(agentErrorRun ? { agentErrorRun } : {}),
         });
       };
@@ -743,7 +707,7 @@ export function projectTurns(
         // result），按真实结局渲染，剥掉中断标记；否则维持中断单信号。
         const nodeMetadata = recoveryMessage && executedToolCallIds.has(tc.id)
           ? stripStreamRecoveryMarker(msg).metadata
-          : projectedMetadata;
+          : contentMetadata;
         turn.nodes.push({
           id: `${msg.id}-tc-${tc.id}`,
           type: 'tool_call',
@@ -827,7 +791,7 @@ export function projectTurns(
       }
 
       if (hasContent || hasReasoning || hasAgentError) {
-        pushAssistantTextNode(msg.content);
+        pushAssistantTextNode(msg.content, undefined, true);
       }
 
       for (const tc of msg.toolCalls ?? []) {

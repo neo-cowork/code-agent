@@ -283,6 +283,7 @@ async function runSpawnAgent(
         : {}),
       role: backgroundRole,
       declaredOutputs,
+      abort: () => bgController.abort(),
       suppressIdleWake: Boolean(ctx.suppressBackgroundSubagentIdleWake),
       ...(ctx.suppressBackgroundSubagentIdleWake ? { suppressReason: 'goal-loop' as const } : {}),
       onComplete: scheduleBackgroundSubagentIdleWake,

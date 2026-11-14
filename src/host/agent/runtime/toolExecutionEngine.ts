@@ -2,7 +2,7 @@ import { toolModelCallback } from './toolModelCallback';
 import { settleEnvBlockedTool, peekEnvBlockedNote } from './envBlockedTurn';
 import { getToolAttemptTrace, shouldFreezeNonReadWhileAwaitingUser, buildAwaitingUserBlockedResult, AWAITING_USER_FREEZE_NOTICE } from './toolAttemptTrace';
 import { publishEnvAssistToolNotice } from '../../permissions/envAssist/toolNotice';
-import { buildInsufficientScopeConnectorEvent } from './connectorScopeCard';
+import { buildConnectorToolFailureEvent } from './connectorScopeCard';
 import { emitBatchTerminatedToolResult, emitForceFinalSkippedToolResult } from './forceFinalSeal';
 import { mintDelegatedTurnOrigin, mintUserTurnOrigin } from '../messageOrigin';
 import { attachDocumentOrigin, describeDocumentEvidenceProblems, documentClaimPreflight } from './documentEvidenceBoundary';
@@ -1149,7 +1149,7 @@ export class ToolExecutionEngine {
       logger.debug(` Emitting tool_call_end for ${toolCall.name} (success)`);
       this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.turn.currentTurnId, toolCall.id, preservedToolResult.success, preservedToolResult.error, preservedToolResult.duration || 0, observedToolResult.output?.substring(0, 500), observedToolResult.metadata);
       this.ctx.onEvent({ type: 'tool_call_end', data: observedToolResult });
-      const scopeCard = buildInsufficientScopeConnectorEvent(preservedToolResult);
+      const scopeCard = buildConnectorToolFailureEvent(preservedToolResult);
       if (scopeCard) this.ctx.onEvent(scopeCard);
       // Tool execution logging (non-blocking)
       if (this.ctx.onToolExecutionLog && this.ctx.sessionId) {

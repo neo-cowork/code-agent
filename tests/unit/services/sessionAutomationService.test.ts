@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { formatCronScheduleLabel, recordCronAutomationCreated } from '../../../src/host/cron/cronAutomationBridge';
+import type { CronJobDefinition } from '../../../src/shared/contract/cron';
 import type { Message } from '../../../src/shared/contract';
 
 type Row = {
@@ -161,6 +163,7 @@ describe('SessionAutomationService', () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
@@ -197,6 +200,44 @@ describe('SessionAutomationService', () => {
         },
       },
     });
+  });
+
+  it.each([
+    ['Pacific/Auckland', '每天 21:00（中国标准时间）'],
+    ['Asia/Shanghai', '每天 21:00'],
+  ])('formatCronScheduleLabel and created notice under machine zone %s: %s', async (timeZone, label) => {
+    // Fake timers wrap Intl with own resolvedOptions methods; mock the native prototype instead.
+    vi.useRealTimers();
+    const original = Intl.DateTimeFormat.prototype.resolvedOptions;
+    vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockImplementation(function (this: Intl.DateTimeFormat) {
+      return { ...original.call(this), timeZone };
+    });
+    const schedule = { type: 'cron', expression: '0 21 * * *', timezone: 'Asia/Shanghai' } as const;
+    expect(formatCronScheduleLabel(schedule)).toBe(label);
+    const definition: CronJobDefinition = {
+      id: 'job-timezone', name: '整理周报', runsOn: 'local', enabled: true,
+      scheduleType: 'cron', schedule,
+      action: { type: 'agent', agentType: 'default', prompt: '提醒我整理周报' },
+      metadata: { sourceSessionId: 'session-1' },
+      createdAt: Date.now(), updatedAt: Date.now(),
+      nextRunAt: Date.parse('2026-06-18T13:00:00Z'),
+    };
+    await recordCronAutomationCreated(definition, (job) => job);
+    expect(state.rows.get('cron:job-timezone')?.cadence_label).toBe(label);
+    expect(state.messages).toHaveLength(1);
+    expect(state.messages[0].message.content).toBe(
+      `自动化已创建：整理周报\n频率：${label}\n下次运行：${new Date(definition.nextRunAt!).toLocaleString('zh-CN', {
+        month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+      })}\n状态：已启用`,
+    );
+  });
+
+  it('cron notice leaves missing/invalid zones alone and includes a complex-expression zone exactly once', () => {
+    for (const timezone of [undefined, 'Invalid/Zone']) {
+      expect(formatCronScheduleLabel({ type: 'cron', expression: '0 21 * * *', timezone })).toBe('每天 21:00');
+    }
+    expect(formatCronScheduleLabel({ type: 'cron', expression: '0 21 1,15 * *', timezone: 'Asia/Shanghai' }))
+      .toBe('自定义时间 · 0 21 1,15 * * · Asia/Shanghai');
   });
 
   it('summarizes the next active automation for sidebar badges', () => {
@@ -393,6 +434,17 @@ describe('SessionAutomationService', () => {
   });
 
   describe('listParkedApprovals (B2)', () => {
+    it.each(['pending', 'orphaned'] as const)('missing tool stays a valid empty string without an English sentinel (%s)', (status) => {
+      state.parkedRows.set('missing-tool', {
+        id: 'missing-tool', kind: 'tool_approval', status,
+        submittedAt: 1000, coordinatorId: 'session-1',
+        payloadJson: JSON.stringify({ sessionId: 'session-1', requestedAt: 1000 }),
+      });
+      const [item] = new SessionAutomationService().listParkedApprovals();
+      expect(item.tool).toBe('');
+      expect(`${item.tool}${item.displayTool ?? ''}`).not.toContain('unknown');
+    });
+
     it('id 原样返回（= requestId），拿去 permissionResponse 能命中内存 pending', () => {
       // 停车行 id = parkApproval 写入时的 requestId；listParkedApprovals 不得改写 id，
       // 否则收件箱回传 permissionResponse 会命中不了内存 pending。
