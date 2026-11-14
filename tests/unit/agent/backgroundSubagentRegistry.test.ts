@@ -5,6 +5,8 @@ import { join } from 'path';
 import { BackgroundSubagentRegistry } from '../../../src/host/agent/backgroundSubagentRegistry';
 import type { SubagentResult } from '../../../src/host/agent/subagentExecutorTypes';
 import { AgentFailureCode } from '../../../src/shared/contract/agentFailure';
+import { appendSubagentLeftoverShellReport } from '../../../src/host/agent/subagentLeftoverShells';
+import { formatSubagentLeftoverShellReport } from '../../../src/shared/i18n/subagentLeftoverShells';
 
 function deferred<T>() {
   let resolve!: (v: T) => void;
@@ -240,5 +242,65 @@ describe('BackgroundSubagentRegistry', () => {
     expect(onComplete).toHaveBeenCalledTimes(1);
     expect(reg.drainCompletionNotifications({ sessionId: 'session-adopt', runId: 'run-adopt' })).toHaveLength(1);
     expect(reg.drainCompletionNotifications({ sessionId: 'session-adopt', runId: 'run-adopt' })).toEqual([]);
+  });
+
+  describe('early-stop delivery (background only)', () => {
+    it('turns a stopHint success into a failed entry with the Chinese conclusion and step_cap kind', async () => {
+      const reg = new BackgroundSubagentRegistry();
+      const conclusion = '后台任务做到第 3 步（上限 3 步）就用完了步数，还没有得出最终结果。';
+      const agentId = reg.spawn(async () => ({
+        success: true, output: 'Subagent completed without output', toolsUsed: [], iterations: 3,
+        stopHint: { kind: 'step_cap' as const, conclusion },
+      }));
+      const result = await reg.await(agentId);
+      expect(result).toMatchObject({ success: false, error: conclusion, stopKind: 'step_cap' });
+      expect(reg.getStatus(agentId)?.status).toBe('failed');
+      // 步数用尽不是预算用尽：不能带 BudgetExhausted。
+      expect(reg.getStatus(agentId)?.failureCode).not.toBe(AgentFailureCode.BudgetExhausted);
+    });
+
+    it('keeps main\'s failed/budget-exhausted record for a cap hit while carrying the plain conclusion', async () => {
+      const reg = new BackgroundSubagentRegistry();
+      const agentId = reg.spawn(async () => ({
+        success: false, output: '', error: 'Max iterations reached', failureCode: AgentFailureCode.BudgetExhausted,
+        toolsUsed: [], iterations: 3,
+        stopHint: { kind: 'step_cap' as const, conclusion: '后台任务做到第 3 步（上限 3 步）就用完了步数。' },
+      }));
+      await reg.await(agentId);
+      expect(reg.getStatus(agentId)).toMatchObject({ status: 'failed', error: 'Max iterations reached', failureCode: AgentFailureCode.BudgetExhausted });
+    });
+
+    it.each(['step_cap', 'no_conclusion'] as const)('keeps the leftover background shell report (with taskId) after the %s conclusion', async (kind) => {
+      const reg = new BackgroundSubagentRegistry();
+      const conclusion = kind === 'step_cap' ? '后台任务做到第 3 步（上限 3 步）就用完了步数。' : '后台任务停下来了，但没有留下最终结果。';
+      const report = formatSubagentLeftoverShellReport(
+        [{ commandSummary: 'npm run dev', taskId: 'shell-task-42', elapsedMs: 1000, mayAwaitSystemPrompt: false }], 'zh',
+      );
+      // 与完成路径同形：output 已带报告，stopHint 带同一份报告对象（不重扫 shell）。
+      const agentId = reg.spawn(async () => ({
+        success: true, toolsUsed: [], iterations: 3,
+        output: appendSubagentLeftoverShellReport('Subagent completed without output', report),
+        stopHint: { kind, conclusion, leftoverReport: report },
+      }));
+      const result = await reg.await(agentId);
+      const output = reg.getStatus(agentId)?.result?.output ?? '';
+      expect(result?.output).toBe(output);
+      expect(output.startsWith(conclusion)).toBe(true);
+      expect(output).toContain('shell-task-42');
+      // 判定与错误文本不动：error 仍只是结论，不混入报告。
+      expect(reg.getStatus(agentId)).toMatchObject({ status: 'failed', error: conclusion });
+    });
+
+    it('keeps the raw error on the entry (diagnosis) for thrown and returned failures', async () => {
+      const reg = new BackgroundSubagentRegistry();
+      const thrown = reg.spawn(async () => { throw new Error('Durable Run persistence is unavailable'); });
+      const returned = reg.spawn(async () => ({
+        success: false, output: '', error: 'budget exhausted', toolsUsed: [], iterations: 1,
+      }));
+      await reg.await(thrown);
+      await reg.await(returned);
+      expect(reg.getStatus(thrown)?.error).toBe('Durable Run persistence is unavailable');
+      expect(reg.getStatus(returned)?.error).toBe('budget exhausted');
+    });
   });
 });

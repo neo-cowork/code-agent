@@ -785,6 +785,15 @@ const SystemNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, s
     return <VoiceCallSummaryCard summary={node.metadata.voiceCallSummary} />;
   }
 
+  // 后台任务提前停下的结论句：是会话末尾的结论行，不是过程噪音——正常字号/字重、不斜体。
+  if (node.metadata?.backgroundTaskStopped) {
+    return (
+      <div className="py-1.5 text-sm leading-relaxed text-zinc-300" data-testid="background-task-stopped-note">
+        {node.content}
+      </div>
+    );
+  }
+
   // generic system
   return (
     <div className="px-3 py-1.5 text-xs text-zinc-500 italic">

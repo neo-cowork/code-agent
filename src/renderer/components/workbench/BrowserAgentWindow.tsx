@@ -1,3 +1,4 @@
+import { resolveBrowserEmptyText } from './browserAgentWindowEmptyText';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
@@ -71,8 +72,6 @@ import { openExternalLink } from '../../utils/platform';
 // relay 启停 / 清 cookie 等高级管理仍只在 LocalOps，从 ⋯ 深链过去。
 // 二期：导航 pending（N1）+ 工具条（N2）+ 批注发 Agent（N3）。
 // P1 账号态：⋯ 菜单 Cookie 导入见 BrowserAgentWindowOverflowMenu。
-
-type Copy = ReturnType<typeof useI18n>['t']['workbenchTabs']['agentWindow'];
 
 function formatTemplate(template: string, vars: Record<string, string | number>): string {
   return template.replace(/\{(\w+)\}/g, (match, key: string) => (
@@ -545,6 +544,14 @@ export const BrowserAgentWindow: React.FC = () => {
     })
     : null;
 
+  const emptyText = resolveBrowserEmptyText(copy, {
+    repairNeeded: Boolean(primaryRepair),
+    blockedDetail: browserSession.blockedDetail,
+    streaming: liveStream.streaming,
+    streamUnavailable: Boolean(liveStream.unavailableReason),
+    running,
+    activeUrl,
+  });
   return (
     <div
       data-testid="workbench-browser-view"
@@ -834,18 +841,8 @@ export const BrowserAgentWindow: React.FC = () => {
             data-testid="browser-agent-window-empty"
             className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center"
           >
-            <div className="text-xs text-zinc-400">
-              {primaryRepair
-                ? copy.notReadyTitle
-                : liveStream.streaming
-                  ? copy.connecting
-                  : liveStream.unavailableReason
-                    ? copy.streamUnavailable
-                    : copy.idleTitle}
-            </div>
-            <div className="max-w-[320px] text-[11px] leading-relaxed text-zinc-600">
-              {primaryRepair ? browserSession.blockedDetail || copy.idleHint : copy.idleHint}
-            </div>
+            <div className="text-xs text-zinc-400">{emptyText.title}</div>
+            <div className="max-w-[320px] text-[11px] leading-relaxed text-zinc-600">{emptyText.hint}</div>
             {browserSession.actionError && (
               <div className="text-[11px] leading-relaxed text-badge-danger">
                 {browserSession.actionError}

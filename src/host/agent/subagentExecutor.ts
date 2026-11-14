@@ -87,6 +87,7 @@ import {
 import { startSubagentLifecycle } from './subagentLifecycleHooks';
 import { SubagentDoomLoopGuard } from './subagentDoomLoopGuard';
 import { createSubagentTurnObservability } from './subagentTurnTrace';
+import { buildStepCapConclusion } from './subagentStepCapConclusion';
 import { noteSubagentLiveProgress } from './backgroundSubagentLiveProgress';
 import {
   handleSubagentAbort,
@@ -1064,9 +1065,11 @@ export class SubagentExecutor {
         return earlyFailure('Max iterations reached', {
           iterations, toolsUsed, toolCallCount: turnObservability.getToolCallCount(), output: answerLedger.settled(),
           failureCode: AgentFailureCode.BudgetExhausted,
+          // 只读提示：前台照 main 按失败返回；后台注册表据此给用户一句白话（而不是「额度用完了」）。
+          ...(answerLedger.settled() ? {} : { stopHint: { kind: 'step_cap' as const, conclusion: buildStepCapConclusion({ iterations, maxIterations, messages }) } }),
         });
       }
-      return finalizeSubagentSuccess(completionDeps, { iterations, latestContextSnapshot });
+      return finalizeSubagentSuccess(completionDeps, { iterations, latestContextSnapshot, maxIterations, messages });
     } catch (error) {
       return handleSubagentFailure(completionDeps, { error, iterations, latestContextSnapshot });
     } finally {

@@ -11,6 +11,10 @@
 // 时回填状态与结果。getStatus / await 凭 agentId 查状态、取结果。
 // ============================================================================
 
+import { recordBackgroundTaskStopNote } from '../services/commandCenter/backgroundTaskStopNote';
+import { resolveStoppedTaskOutcome } from '../services/commandCenter/sessionTaskStopConclusion';
+import { describeSubagentStopReason } from './subagentFailureReason';
+import { appendSubagentLeftoverShellReport } from './subagentLeftoverShells';
 import { randomUUID } from 'node:crypto';
 import type { SubagentResult } from './subagentExecutorTypes';
 import { AgentFailureCode, inferAgentFailureCode, type AgentFailureCode as AgentFailureCodeType } from '../../shared/contract/agentFailure';
@@ -299,21 +303,35 @@ export class BackgroundSubagentRegistry {
   ): Promise<SubagentResult | undefined> {
     return (async (): Promise<SubagentResult | undefined> => {
       try {
-        const result = await promise;
+        const returned = await promise;
+        // 前台共用的执行器只给 stopHint、不改判；后台注册表才把「没有结论就停下」落成失败 + 白话说明。
+        const hint: SubagentResult['stopHint'] | undefined = returned.success
+          ? returned.stopHint ?? (!returned.output.trim()
+            ? { kind: 'no_conclusion', conclusion: resolveStoppedTaskOutcome({ status: 'completed', detail: '' }).detail }
+            : undefined)
+          : undefined;
+        const result: SubagentResult = hint
+          ? {
+            ...returned, success: false, error: hint.conclusion, stopKind: hint.kind,
+            // 结论在前，保留完成路径已生成的仍在运行的后台 shell 报告（含 taskId，否则没人会去清理它）。
+            output: appendSubagentLeftoverShellReport(hint.conclusion, hint.leftoverReport ?? ''),
+          }
+          : returned;
         const entry = this.entries.get(agentId);
         if (entry) {
           entry.status = result.success ? 'completed' : 'failed';
           entry.result = result;
           if (!result.success) {
-            entry.error = result.error ?? 'Subagent failed';
+            const rawError = result.error ?? 'Subagent failed';
             entry.failureCode = inferAgentFailureCode({
               failureCode: result.failureCode,
               cancellationReason: result.cancellationReason,
               error: result.error,
             });
+            entry.error = rawError;
           }
           entry.finishedAt = this.now();
-          this.recordCompletion(entry, options);
+          await this.recordCompletion(entry, options);
           await this.finalizeDurable(options.durableSession ?? null, entry);
         }
         return result;
@@ -321,10 +339,11 @@ export class BackgroundSubagentRegistry {
         const entry = this.entries.get(agentId);
         if (entry) {
           entry.status = 'failed';
-          entry.error = err instanceof Error ? err.message : String(err);
+          const rawError = err instanceof Error ? err.message : String(err);
           entry.failureCode = inferAgentFailureCode({ error: err, defaultCode: undefined });
+          entry.error = rawError;
           entry.finishedAt = this.now();
-          this.recordCompletion(entry, options);
+          await this.recordCompletion(entry, options);
           await this.finalizeDurable(options.durableSession ?? null, entry);
         }
         return undefined;
@@ -332,7 +351,7 @@ export class BackgroundSubagentRegistry {
     })();
   }
 
-  private recordCompletion(entry: BackgroundSubagentEntry, options: BackgroundSubagentOptions): void {
+  private async recordCompletion(entry: BackgroundSubagentEntry, options: BackgroundSubagentOptions): Promise<void> {
     this.liveProgressByAgent.delete(entry.agentId);
     if (options.completionNotificationGate?.suppress) return;
     const record = buildSubagentCompletionRecord({
@@ -354,12 +373,24 @@ export class BackgroundSubagentRegistry {
       runId: entry.runId,
       treeId: entry.treeId,
     });
+    const cancelled = entry.failureCode === AgentFailureCode.CancelledByUser
+      || entry.failureCode === AgentFailureCode.CancelledByParent;
+    if (entry.status === 'failed' && entry.sessionId && !cancelled) {
+      try {
+        // 给用户的白话说明只在这条用户可见通道里生成；entry.error / durable terminal.reason 保留原始错误。
+        const plain = entry.result?.stopHint?.kind === 'step_cap'
+          ? entry.result.stopHint.conclusion
+          : describeSubagentStopReason(entry.error ?? record.summary, entry.failureCode ?? AgentFailureCode.Unknown);
+        await recordBackgroundTaskStopNote(entry.sessionId, record.title, plain, {
+          taskId: entry.agentId,
+          kind: entry.result?.stopKind ?? (entry.result?.stopHint?.kind === 'step_cap' ? 'step_cap' : 'error'),
+        });
+      } catch (error) { logger.warn('Failed to record background stop note', error); }
+    }
     if (!this.queuedNotificationKeys.has(record.dedupeKey)) {
       this.queuedNotificationKeys.add(record.dedupeKey);
       this.pendingNotifications.push(record);
     }
-    const cancelled = entry.failureCode === AgentFailureCode.CancelledByUser
-      || entry.failureCode === AgentFailureCode.CancelledByParent;
     if (!options.suppressIdleWake && !cancelled) {
       void options.onComplete?.(record);
     }

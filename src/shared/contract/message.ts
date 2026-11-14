@@ -452,6 +452,11 @@ export interface MessageMetadata {
   roleFlowStalled?: {
     skillName: 'create-role' | 'edit-role';
   };
+  /** Deterministic user-visible note when a background task stops before producing its conclusion. */
+  backgroundTaskStopped?: {
+    taskId: string;
+    kind: 'step_cap' | 'no_conclusion' | 'error';
+  };
   /**
    * 后台任务终态唤醒前台失败时的用户可见说明（`role:'system'`）：任务结果已在会话里，
    * 只是自动汇报这一步没成；reason 区分 owner lease 缺失、步数耗尽与其它失败。
