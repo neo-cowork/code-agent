@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { BrowserService } from '../../../src/host/services/infra/browserService';
 import { RunRegistry } from '../../../src/host/runtime/runRegistry';
 import { SecureBrowserResumeStateStore } from '../../../src/host/services/surfaceExecution/BrowserResumeStateStore';
@@ -102,7 +102,8 @@ describe('switching vs deleting a chat: managed browser last page', () => {
   let resumeStore: SecureBrowserResumeStateStore;
   let resumeStorage: ReturnType<typeof memoryStorage>;
   let lastPageStore: SecureBrowserLastPageStore;
-  let logger: { info: ReturnType<typeof vi.fn>; warn: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn> };
+  type LogFn = (message: string, metadata?: unknown) => void;
+  let logger: { info: Mock<LogFn>; warn: Mock<LogFn>; error: Mock<LogFn> };
   let windows: Map<string, ReturnType<typeof fakeWindow>>;
   let current: string | null;
   let runN = 0;
@@ -114,7 +115,7 @@ describe('switching vs deleting a chat: managed browser last page', () => {
     lastPageStore = new SecureBrowserLastPageStore({ secureStorage: memoryStorage() });
     registry = new RunRegistry();
     runtime = new SurfaceExecutionRuntime({ runRegistry: registry });
-    logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    logger = { info: vi.fn<LogFn>(), warn: vi.fn<LogFn>(), error: vi.fn<LogFn>() };
     windows = new Map();
     adapter = new ManagedBrowserProviderAdapter(
       runtime,
