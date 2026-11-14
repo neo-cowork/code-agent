@@ -198,7 +198,7 @@ async function buildSnapshot(
 // 同一条原始消息拒绝，否则本轮永远委托不出去。放行证据只认「拒绝之后真的有一次完整作答」
 // （askUserQuestionAnswersSince，来自作答记录路径；跳过/无界面/残缺答案走不到），并且答案
 // 文本必须点到这次要发的会话（evaluateClarifyAnswer）。没作答、点了别家、答案无关都继续拒。
-const clarificationAsked = new Map<string, { mark: number; rule: ClarifyGuardRule }>();
+const clarificationAsked = new Map<string, { mark: number; rule: ClarifyGuardRule; supersededMark?: number }>();
 const CLARIFICATION_TRACK_LIMIT = 256;
 
 // ADR-072 D2/D3 确定性守卫：模型只给建议，目标不清时不绑定，改回一个可点选的问题。
@@ -233,7 +233,14 @@ function clarifyGuardRejection(
   }
   const guardCandidates = projection.candidates.map((candidate) => ({ shortName: candidate.shortName, workspaceName: candidate.workspaceName }));
   // 作答证据：拒绝之后的作答，或（模型自己先问了用户、还没被守卫拒过时）本轮任何一次完整作答。
-  const answers = askUserQuestionAnswersSince(ctx.sessionId, scope, asked?.mark ?? 0);
+  // 若上一轮作答是「都发/多选并列」（supersededMark），在新一次作答到来前保持原 mark 让同批重试都收到单选重问提示；
+  // 新一次作答到来（currentMark > supersededMark）后切到 supersededMark，只评判重问后的新答案。
+  const currentMark = askUserQuestionAnswerMark();
+  const effectiveMark =
+    asked?.supersededMark !== undefined && currentMark > asked.supersededMark
+      ? asked.supersededMark
+      : (asked?.mark ?? 0);
+  const answers = askUserQuestionAnswersSince(ctx.sessionId, scope, effectiveMark);
   let verdict = evaluateClarifyGuard({ action: call.action, candidates: guardCandidates, chosenIndex, userMessage });
   if (verdict.kind === 'proceed') return null;
   // 没任务内容（vague_task_text）只认「守卫拒绝之后」的作答，无关的早先作答不算。
@@ -245,17 +252,20 @@ function clarifyGuardRejection(
       logger.info('[DelegateSession] clarify guard passed: the user answered a clarification question in this turn and the answer matches the target');
       return null;
     }
+    if (verdict.reason === 'non_single_answer') {
+      if (!asked && clarificationAsked.size >= CLARIFICATION_TRACK_LIMIT) clarificationAsked.delete(clarificationAsked.keys().next().value as string);
+      clarificationAsked.set(turnKey, { mark: effectiveMark, rule: asked?.rule ?? verdict.rule, supersededMark: currentMark });
+    }
   }
-  // 作答后仍被拒（点了别家/无关答案）不推进 mark：用户已经答过的那次作答，对之后改对的重试仍然有效。
+  // 作答后仍被拒（点了别家）不推进 mark：用户已经答过的那次作答，对之后改对的重试仍然有效。
   if (!answerConsulted) {
-    if (clarificationAsked.size >= CLARIFICATION_TRACK_LIMIT) clarificationAsked.delete(clarificationAsked.keys().next().value as string);
-    clarificationAsked.set(turnKey, { mark: askUserQuestionAnswerMark(), rule: asked?.rule ?? verdict.rule });
+    if (!asked && clarificationAsked.size >= CLARIFICATION_TRACK_LIMIT) clarificationAsked.delete(clarificationAsked.keys().next().value as string);
+    clarificationAsked.set(turnKey, { mark: currentMark, rule: asked?.rule ?? verdict.rule });
   }
-  const names = verdict.candidateNames.length > 0 ? ` Candidate chats (display names): ${verdict.candidateNames.map((name) => `「${name}」`).join('、')}.` : '';
   return {
     ok: false,
     code: 'DELEGATION_REJECTED',
-    error: `needs_clarification: the target chat is not clear enough to send this safely.${names} Nothing was delegated. Ask the user which chat they mean with AskUserQuestion, using those display names as the options (plain words, no ids); do not retry delegate_session until the user answers.`,
+    error: verdict.message,
     meta: { code: 'needs_clarification', gate: 'none', rule: verdict.rule },
   };
 }
