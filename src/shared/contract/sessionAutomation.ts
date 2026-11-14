@@ -140,6 +140,8 @@ export interface SessionAutomationConfig extends Record<string, unknown> {
     };
     /** 到达运行次数上限后由 cron 记录的待过目原因。 */
     maxRunsReached?: { maxRuns: number; summary?: string };
+    /** 无人值守运行发现连接器登录丢失：按连接器记最近一次写入的本地日历日（YYYY-MM-DD），同日去重；summary（面向用户，每个连接器一句）只属于 summaryDay 那一天。 */
+    connectorLost?: { days: Record<string, string>; summary?: string; summaryDay?: string };
     /** 有命令没获批准且无产出的运行标记（N-CRON-RUN-COMPLETED-BUT-DENIED）：收件箱据此显示「需处理」。 */
     permissionDenied?: CronPermissionDeniedMarker;
   };
