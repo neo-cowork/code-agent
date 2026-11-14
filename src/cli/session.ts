@@ -12,11 +12,15 @@ import type {
 import { stampAssistantMessageCorrelation } from '../host/session/assistantCorrelation';
 import { readSqliteErrorCode } from '../host/services/core/database/sqliteErrors';
 import {
-  deriveFallbackSessionTitle,
+  resolveSessionTitle,
+  type SessionTitleModelAnswer,
   isProvisionalAutoTitle,
   sessionTitleSource,
 } from '../shared/sessionTitlePlaceholder';
 import crypto from 'crypto';
+import { createLogger } from '../host/services/infra/logger';
+
+const logger = createLogger('CLI-Session');
 
 // ----------------------------------------------------------------------------
 // Types
@@ -515,8 +519,7 @@ export class CLISessionManager {
     // web 预写层的「prompt 头 + ...」临时档也是自动产物，智能标题照常替换。
     if (session.messageCount > 1 || !isProvisionalAutoTitle(session.title, titleSource)) return;
 
-    let title = await this.generateSmartTitle(titleSource);
-    if (!title) title = deriveFallbackSessionTitle(firstMessage, uiLanguage);
+    const title = await resolveSessionTitle(titleSource, uiLanguage, (strict) => this.generateSmartTitle(titleSource, strict), logger);
 
     const latest = await this.getSession(sessionId);
     if (!latest || !isProvisionalAutoTitle(latest.title, titleSource)) return;
@@ -535,12 +538,12 @@ export class CLISessionManager {
 
   /**
    * 使用小模型生成智能会话标题
-   * 模型不可用时返回 null，由调用方降级处理
+   * 模型不可用 / 无产出由 resolveSessionTitle 降级并留痕
    */
-  private async generateSmartTitle(message: string): Promise<string | null> {
+  private async generateSmartTitle(message: string, strict = false): Promise<SessionTitleModelAnswer> {
     try {
       const { quickTask, isQuickModelAvailable } = await import('../host/model/quickModel');
-      if (!isQuickModelAvailable()) return null;
+      if (!isQuickModelAvailable()) return { title: null, unavailable: true };
       const { buildSessionTitlePrompt } = await import('../shared/sessionTitlePrompt');
       const { getConfigService } = await import('./bootstrap');
 
@@ -549,7 +552,7 @@ export class CLISessionManager {
 
       let uiLanguage: 'zh' | 'en' = 'zh';
       try { uiLanguage = getConfigService().getSettings().ui.language === 'en' ? 'en' : 'zh'; } catch { /* 读不到按中文 */ }
-      const result = await quickTask(buildSessionTitlePrompt(truncated, uiLanguage));
+      const result = await quickTask(buildSessionTitlePrompt(truncated, uiLanguage, strict));
 
       if (result.success && result.content) {
         // 清理：去引号、去标点、限长
@@ -557,11 +560,12 @@ export class CLISessionManager {
           .replace(/^["'「『]|["'」』]$/g, '')
           .replace(/[。！？.!?]$/g, '');
         if (title.length > 50) title = title.slice(0, 50) + '...';
-        if (title.length >= 2) return title;
+        if (title.length >= 2) return { title };
       }
-      return null;
-    } catch {
-      return null; // 静默降级
+      return { title: null };
+    } catch (error) {
+      logger.warn('smart title generation failed', { error: String(error) });
+      return { title: null };
     }
   }
 
