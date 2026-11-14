@@ -58,7 +58,7 @@ export class SubagentTextToolCallGuard {
   private retries = 0;
 
   retry(content: string, messages: RuntimeMessage[], canContinue: boolean): boolean {
-    const match = this.detector.detectFailedToolCallPattern(content);
+    const match = this.detector.detectFailedToolCallPattern(content, 'explicit-calls');
     if (!match) return false;
     if (!canContinue || this.retries >= TEXT_TOOL_CALL_MAX_RETRIES) {
       logger.warn('Subagent text tool-call repair exhausted; failing without a result');
@@ -201,7 +201,7 @@ export function finalizeSubagentSuccess(
   } = deps;
   const { iterations, latestContextSnapshot } = state;
   const finalOutput = answerLedger.settled();
-  if (new AntiPatternDetector().detectFailedToolCallPattern(finalOutput)) {
+  if (new AntiPatternDetector().detectFailedToolCallPattern(finalOutput, 'explicit-calls')) {
     return handleSubagentFailure(deps, { ...state, error: new SubagentTextToolCallError() });
   }
 

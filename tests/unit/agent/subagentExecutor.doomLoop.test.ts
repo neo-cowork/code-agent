@@ -443,3 +443,49 @@ describe('SubagentExecutor text tool-call repair', () => {
     }
   });
 });
+
+
+describe.each(['text branch', 'final ledger'] as const)('SubagentExecutor usable results: %s', (entry) => {
+  beforeEach(() => {
+    mocks.responses.length = 0;
+    mocks.inferenceMessages.length = 0;
+    vi.clearAllMocks();
+  });
+
+  it.each([
+    'Created src/utils/report.ts with the requested helper.',
+    'Edited src/a.ts to handle null',
+    'Read the release checklist and confirmed the rollback owner.',
+    'Ran: the validation suite; all checks passed.',
+    'Found files matching: src/**/*.ts',
+    'Searched for: rollback; the plan is in operations-handover.md.',
+    'Listed: four release documents.',
+    'Fetched: the release notes.',
+    'Invoked skill: document review completed.',
+    '{"name":"x","params":{"status":"complete"}}',
+    '{"name":"x","input":{"status":"complete"}}',
+    '{"name":"x","arguments":{"status":"complete"}}',
+    '{"tool":"x","params":{"status":"complete"}}',
+    'The check Calling Grep({"path":"x","pattern":"."}) found the rollback plan.',
+    'Example syntax: `Calling Grep({"path":"x","pattern":"."})`.',
+  ])('preserves a completed result verbatim: %s', async (content) => {
+    const createLedger = memberAnswers.createMemberAnswerLedger;
+    const spy = entry === 'final ledger'
+      ? vi.spyOn(memberAnswers, 'createMemberAnswerLedger').mockImplementationOnce((...args) => ({
+        ...createLedger(...args),
+        settled: () => content,
+      }))
+      : undefined;
+    mocks.responses.push(...Array.from({ length: 3 }, () => textResponse(entry === 'final ledger' ? 'Review complete.' : content)));
+    const { request, events } = createHarness();
+    try {
+      const result = await new SubagentExecutor().execute(request);
+      expect(result).toMatchObject({ success: true, output: content, iterations: 1 });
+      expect(mocks.inference).toHaveBeenCalledTimes(1);
+      expect(mocks.toolExecute).not.toHaveBeenCalled();
+      expect(events.find((event) => event.type === 'subagent_run_end')?.data.status).toBe('completed');
+    } finally {
+      spy?.mockRestore();
+    }
+  });
+});

@@ -669,8 +669,11 @@ export class AntiPatternDetector {
    * 3. Intent description patterns - "I'll call the toolname tool..."
    * 4. JSON format patterns - {"name": "toolname", "arguments": ...}
    */
-  detectFailedToolCallPattern(content: string): FailedToolCallMatch | null {
+  detectFailedToolCallPattern(content: string, mode: 'all' | 'explicit-calls' = 'all'): FailedToolCallMatch | null {
     const trimmed = content.trim();
+    // Hard result rejection needs unambiguous call syntax, not completion summaries
+    // or JSON deliverables that the main loop may choose to repair speculatively.
+    if (mode === 'explicit-calls') return this.detectCallSyntax(trimmed, true);
 
     // ========== History format patterns (reverse parse formatToolCallForHistory) ==========
 
@@ -762,12 +765,8 @@ export class AntiPatternDetector {
 
     // ========== Generic call patterns ==========
 
-    // "Called/Calling toolname({...})" — includes subagent history serialization.
-    const calledPattern = /Call(?:ed|ing)\s+(\w+)\s*\(\s*(\{[\s\S]*?\})\s*\)/i;
-    const calledMatch = trimmed.match(calledPattern);
-    if (calledMatch) {
-      return { toolName: calledMatch[1], args: calledMatch[2] };
-    }
+    const calledMatch = this.detectCallSyntax(trimmed);
+    if (calledMatch) return calledMatch;
 
     // ========== Intent description patterns ==========
 
@@ -791,6 +790,22 @@ export class AntiPatternDetector {
     }
 
     return null;
+  }
+
+  private detectCallSyntax(content: string, wholeResponse = false): FailedToolCallMatch | null {
+    // One matcher for both policies; only the hard-failure policy requires every
+    // non-whitespace byte to belong to a Called/Calling expression.
+    const calledPattern = /Call(?:ed|ing)\s+(\w+)\s*\(\s*(\{[\s\S]*?\})\s*\)/gi;
+    let first: FailedToolCallMatch | null = null;
+    let end = 0;
+    for (const match of content.matchAll(calledPattern)) {
+      const parsed = { toolName: match[1], args: match[2] };
+      if (!wholeResponse) return parsed;
+      if (content.slice(end, match.index).trim()) return null;
+      first ??= parsed;
+      end = match.index + match[0].length;
+    }
+    return content.slice(end).trim() ? null : first;
   }
 
   // cleanXmlResidues 已提取为独立函数，见 ./cleanXml.ts
