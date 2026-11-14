@@ -1,5 +1,6 @@
 import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 import React, { useEffect, useState } from 'react';
+import type { AwaitingApprovalRun } from '@shared/contract/sessionAutomation';
 import type { CronJobDefinition, CronJobExecution, CronPermissionDeniedReason } from '@shared/contract';
 import { isCronPermissionDeniedMarker } from '@shared/cronPermissionDenied';
 import { classifyCronFailure, type CronFailurePresentationKind } from '@shared/utils/cronFailureClassification';
@@ -62,7 +63,7 @@ interface CronExecutionDetailProps {
   jobNamesLoaded?: boolean;
   runsOn?: CronJobDefinition['runsOn'];
   /** 等批准运行（N-CRON-UNATTENDED-BASH-PARK-STUCK）：状态 chip 换 amber 徽章 + 一句提示 + 去处理。 */
-  awaitingRun?: { executionId: string | null; commandPreview?: string } | null;
+  awaitingRun?: Pick<AwaitingApprovalRun, 'executionId' | 'tool' | 'commandPreview'> | null;
   onReviewAwaiting?: () => void;
 }
 
@@ -224,7 +225,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
           className="mx-1 mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-badge-warning/30 bg-amber-500/5 px-3 py-2"
           data-testid="cron-exec-detail-awaiting-approval-hint"
         >
-          <span className="text-xs text-zinc-400">{awaitingApprovalLabel(cc.awaitingApprovalWithPreview, awaitingRun.commandPreview) ?? cc.awaitingApprovalHint}</span>
+          <span className="text-xs text-zinc-400">{awaitingApprovalLabel(cc, awaitingRun) ?? cc.awaitingApprovalHint}</span>
           <Button
             type="button"
             variant="primary"

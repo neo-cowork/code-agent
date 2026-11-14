@@ -1,6 +1,5 @@
-import { agentNodeLabel } from './agentRoleLabel';
-import { agentFailureCopy } from './agentFailureCopy';
-import { containsCjk } from './containsCjk';
+import { agentNodeLabel, agentRoleLabel, backgroundTaskLabel } from './agentRoleLabel';
+import { agentFailureCopy, backgroundTaskFailureCopy } from './agentFailureCopy';
 import { languages, type Translations } from '../i18n';
 import { agentFailureHostPhrases } from '../i18n/agentFailureHostPhrases';
 import { useAppStore } from '../stores/appStore';
@@ -162,7 +161,7 @@ export function buildAgentRows(input: {
   tasks: Task[];
 }): AgentRow[] {
   const { members, nodes, tasks } = input;
-  const t = languages[useAppStore.getState().language];
+  const t = languages[useAppStore.getState().language] ?? languages.zh;
   const rows: AgentRow[] = [];
   const memberKeys = new Set(members.map((member) => member.key));
 
@@ -171,7 +170,8 @@ export function buildAgentRows(input: {
       key: member.key,
       kind: 'expert',
       roleId: member.roleId,
-      name: member.name,
+      name: member.status !== 'standby' && member.name === member.roleId
+        ? agentRoleLabel(member.roleId, t.agentRoleLabels) : member.name,
       profession: member.profession,
       icon: member.icon,
       isLead: member.isLead,
@@ -191,6 +191,7 @@ export function buildAgentRows(input: {
       const row = rows.find((candidate) => candidate.key === node.id);
       if (row) {
         row.node = node;
+        if (node.background && t === languages.en) row.name = agentNodeLabel(node, t.agentRoleLabels);
         // Execution lifecycle beats an older persisted member snapshot, in either direction.
         if (node.sources.some((source) => source === 'spawnGuard' || source === 'backgroundRegistry')) {
           row.status = agentRowStatus(node.status);
@@ -238,14 +239,10 @@ export function buildAgentRows(input: {
     rows.push({
       key: task.id,
       kind: 'task',
-      name: t === languages.en && task.source === 'delegate_task' && containsCjk(task.title)
-        ? t.agentRoleLabels.roles.background
-        : task.title,
+      name: backgroundTaskLabel(task, t),
       isLead: false,
       status,
-      failureReason: agentFailureCopy(
-        isAgentFailureCode(task.failure?.reason) ? task.failure.reason : undefined, t, task.failure?.message,
-      ) ?? undefined,
+      failureReason: backgroundTaskFailureCopy(task, t) ?? undefined,
       stoppable: status === 'working',
       task,
     });

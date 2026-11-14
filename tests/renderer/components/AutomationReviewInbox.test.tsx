@@ -449,6 +449,18 @@ describe('AutomationReviewInbox', () => {
     });
   });
 
+  it('连接器未登录提示：有 summary 才显示（多条换行），只有去重记录没有 summary 不显示', async () => {
+    listPendingReview.mockResolvedValue([
+      makeRecord({ id: 'with-summary', title: '有提示', config: { pendingReview: { at: 1700000000000, connectorLost: { days: { feishu: '2032-01-05' }, summary: '今天的定时运行没能读取「飞书」：它当前未登录。', summaryDay: '2032-01-05' } } } }),
+      makeRecord({ id: 'days-only', title: '仅去重', config: { pendingReview: { at: 1700000000000, connectorLost: { days: { feishu: '2032-01-05' } } } } }),
+    ]);
+    render(<AutomationReviewInbox />);
+    await waitFor(() => {
+      expect(screen.getAllByTestId('automation-review-connector-lost')).toHaveLength(1);
+    });
+    expect(screen.getByTestId('automation-review-connector-lost').textContent).toContain('「飞书」');
+  });
+
   it('查看结果：标记已读并跳结果会话', async () => {
     listPendingReview.mockResolvedValue([makeRecord({})]);
     render(<AutomationReviewInbox />);
@@ -498,13 +510,13 @@ describe('AutomationReviewInbox', () => {
   it('Write row without forceConfirm shows zh / en tier buttons', async () => {
     listParkedApprovals.mockResolvedValue([makeParked({ kind: 'tool_approval', tool: 'Write', riskClass: null })]);
     render(<AutomationReviewInbox />);
-    expect((await screen.findByTestId('parked-allow-run')).textContent).toBe('到这次做完为止');
+    expect((await screen.findByTestId('parked-allow-run')).textContent).toBe('本次任务内允许');
     expect(screen.getByTestId('parked-allow-24h').textContent).toBe('24 小时内允许');
     cleanup();
 
     i18nState.language = 'en';
     render(<AutomationReviewInbox />);
-    expect((await screen.findByTestId('parked-allow-run')).textContent).toBe('Until this run is done');
+    expect((await screen.findByTestId('parked-allow-run')).textContent).toBe('Allow for this task');
     expect(screen.getByTestId('parked-allow-24h').textContent).toBe('Allow for 24 hours');
   });
 
@@ -777,6 +789,33 @@ describe('AutomationReviewInbox', () => {
     expect(screen.getByTestId('parked-args-preview').textContent).toBe(
       'Arguments: curl https://api.example.com/v1 · Bearer ***REDACTED***',
     );
+  });
+
+  it.each(['zh', 'en'] as const)('presents shell approvals in user language while retaining command details (%s)', async (language) => {
+    i18nState.language = language;
+    listParkedApprovals.mockResolvedValue([makeParked({ tool: 'Bash', riskClass: null, argsPreview: 'ls -la /tmp/notes' })]);
+    render(<AutomationReviewInbox />);
+    const card = await screen.findByTestId('parked-approval-item');
+    expect(card.textContent).toContain(language === 'zh' ? '运行命令' : 'Run a command');
+    expect(card.textContent).not.toContain('Bash');
+    const summary = screen.getByText(language === 'zh' ? '查看命令' : 'View command');
+    expect(summary.closest('details')?.open).toBe(false);
+    fireEvent.click(summary);
+    expect(screen.getByTestId('parked-shell-preview').textContent).toBe('ls -la /tmp/notes');
+  });
+
+  it('presents a single file write without exposing the internal tool or absolute path', async () => {
+    listParkedApprovals.mockResolvedValue([makeParked({ tool: 'Write', riskClass: null, argsPreview: '/tmp/notes/today.md' })]);
+    render(<AutomationReviewInbox />);
+    const card = await screen.findByTestId('parked-approval-item');
+    expect(card.textContent).toContain('写入文件');
+    expect(card.textContent).toContain('today.md');
+    expect(screen.getByTestId('parked-args-preview').textContent).not.toContain('/tmp/notes');
+    expect(card.textContent).not.toContain('Write');
+    const details = screen.getByText('查看完整位置');
+    expect(details.closest('details')?.open).toBe(false);
+    fireEvent.click(details);
+    expect(screen.getByTestId('parked-file-location').textContent).toBe('/tmp/notes/today.md');
   });
 
   describe('一键授权此任务写文件夹（writeGrantFolder）', () => {
