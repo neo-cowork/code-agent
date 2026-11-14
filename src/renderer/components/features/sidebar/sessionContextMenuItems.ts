@@ -469,6 +469,7 @@ export function buildSessionContextMenuItems(
       icon: createElement(Pencil, { className: 'h-4 w-4' }),
       onClick: () => {
         setRenamingId(session.id);
+        // 预填当前显示标题（zh [定时]/[心跳]）：parseCronSessionTitle 同时识别 zh/en 前缀，round-trip 安全（main #3198 口径）
         setRenameValue(getDisplaySessionTitle(session.title, useAppStore.getState().language));
       },
     },

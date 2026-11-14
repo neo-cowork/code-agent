@@ -259,5 +259,105 @@ export function createDevSurfaceExecutionConversationRouter(
     }
   });
 
+  router.post('/seed-computer', async (req: Request, res: Response) => {
+    try {
+      const body = (req.body && typeof req.body === 'object' ? req.body : {}) as {
+        conversationId?: unknown;
+        language?: unknown;
+      };
+      const conversationId = typeof body.conversationId === 'string' ? body.conversationId.trim() : '';
+      const language = body.language === 'en' ? 'en' : 'zh';
+      if (!conversationId || conversationId.length > 256) {
+        res.status(400).json({ ok: false, error: 'conversationId is required.' });
+        return;
+      }
+      const sessionManager = getSessionManager();
+      const conversation = await sessionManager.getSession(conversationId, Number.MAX_SAFE_INTEGER);
+      if (!conversation) {
+        res.status(404).json({ ok: false, error: 'Conversation is unavailable.' });
+        return;
+      }
+      if (runRegistry.hasSession(conversationId)) {
+        res.status(409).json({ ok: false, error: 'Conversation already has an active run.' });
+        return;
+      }
+      const runId = `surface-computer-seed-${Date.now()}`;
+      runRegistry.start({ runId, sessionId: conversationId, workspace: process.cwd() });
+      const runtime = getSurfaceExecutionRuntime();
+      const identity = {
+        conversationId,
+        runId,
+        turnId: 'surface-computer-seed-turn',
+        agentId: CONVERSATION_AGENT_ID,
+        emitSurfaceEvent: (event: SurfaceExecutionEventV1) => broadcastSurfaceEvent(conversationId, event),
+      };
+      const prepared = runtime.prepareComputerSession({ identity });
+      const appTitle = language === 'en' ? 'Weekly Team Report' : '本周团队周报汇总';
+      const recorded = runtime.recordComputerObservation({
+        identity,
+        surfaceSessionId: prepared.session.sessionId,
+        state: {
+          version: 1,
+          stateId: `cua-seed-state-${Date.now()}`,
+          observedAtMs: Date.now(),
+          expiresAtMs: Date.now() + 120_000,
+          hostRevision: 1,
+          degraded: false,
+          root: {
+            provider: 'cua-driver',
+            pid: 4242,
+            windowId: 17,
+            appName: 'Notes',
+            title: appTitle,
+            isOnScreen: true,
+            onCurrentSpace: true,
+          },
+          elements: [{
+            ref: 'e1',
+            role: 'AXButton',
+            label: language === 'en' ? 'Sign in to sync' : '登录以同步',
+            frame: { x: 24, y: 40, width: 120, height: 32 },
+          }],
+        },
+        metadata: {
+          providerGeneration: 'cua-driver:seed-1',
+          providerSnapshotId: 'snapshot-seed-1',
+        },
+        userSummary: language === 'en'
+          ? 'Opened Notes window and detected a sign-in prompt'
+          : '已读取备忘录窗口，当前停在登录验证界面',
+      });
+      runtime.grants.issue({
+        subject: prepared.subject,
+        target: recorded.observation.target,
+        capabilities: ['observe', 'input'],
+        dataScopes: [`window:${recorded.observation.target.kind === 'computer' ? recorded.observation.target.windowRef : ''}`],
+        actionClasses: ['read', 'write'],
+        ttlMs: 15 * 60_000,
+      });
+      const projection = getSurfaceConversationProjectionService();
+      await projection.flushPersistence(conversationId);
+      const snapshot = await projection.getSnapshot(conversationId);
+      const projected = snapshot.sessions.find((candidate) => (
+        candidate.session.sessionId === prepared.session.sessionId
+      ));
+      if (!projected?.writable) {
+        throw new Error('Production Surface conversation projection did not expose the seeded computer session.');
+      }
+      res.json({
+        ok: true,
+        runId,
+        surfaceSessionId: prepared.session.sessionId,
+        writable: projected.writable,
+      });
+    } catch (error) {
+      logger.warn('Dev Computer Surface seed failed', error);
+      res.status(400).json({
+        ok: false,
+        error: error instanceof Error ? error.message : 'Computer Surface seed failed.',
+      });
+    }
+  });
+
   return router;
 }

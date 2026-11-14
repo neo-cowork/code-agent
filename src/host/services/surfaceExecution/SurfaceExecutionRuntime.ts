@@ -55,21 +55,23 @@ import {
   type SurfaceComputerErrorInputV1,
 } from './surfaceComputerErrorProjection';
 import {
+  awaitComputerHumanTakeoverRelease,
+  awaitOwnedComputerSessionReady,
   computerExpectationToSurface,
   computerTargetFromState,
+  findActiveOwnedComputerSession,
   recordComputerInputLockLifecycleEvent,
 } from './surfaceComputerRuntimeHelpers';
 import { publishSurfaceContinuationEvent } from './surfaceContinuationRuntime';
-import { WAITING_HUMAN_MODEL_GUIDANCE, waitForBrowserHumanTakeoverRelease } from './browserHumanTakeoverWait';
+import { assertBrowserSurfaceSessionReady, waitForBrowserHumanTakeoverRelease } from './browserHumanTakeoverWait';
 import { assertSurfaceRunOwner } from './surfaceRunOwnership';
 import {
   assertSurfaceSessionOwnershipForLog,
   browserBindingKey,
   browserLeaseSubjectFor,
   computerBindingKey,
-  findBrowserSessionId,
-  findComputerSessionId,
   subjectFor,
+  surfaceIdentityError,
 } from './surfaceRuntimeHelpers';
 
 export interface SurfaceRuntimeIdentityV1 {
@@ -316,7 +318,7 @@ export class SurfaceExecutionRuntime {
         ...(input.parentSignal ? { parentSignal: input.parentSignal } : {}),
       });
     }
-    this.assertBrowserSessionReady(session, input.operationId);
+    assertBrowserSurfaceSessionReady(session, input.operationId);
     const binding = this.browserBindings.get(
       browserBindingKey(
         input.identity,
@@ -569,6 +571,7 @@ export class SurfaceExecutionRuntime {
     provider?: string;
     providerStateId: string;
     operationId: string;
+    toolCallId?: string;
     arguments: Record<string, unknown>;
     expectation?: ComputerUseExpectationV1;
     parentSignal?: AbortSignal;
@@ -603,6 +606,12 @@ export class SurfaceExecutionRuntime {
       );
     }
     this.bindEmitter(binding.subject.sessionId, input.identity.emitSurfaceEvent);
+    if (this.sessions.requireOwned(binding.subject.sessionId, binding.subject).state === 'waiting_human') {
+      await awaitComputerHumanTakeoverRelease({
+        sessions: this.sessions, subject: binding.subject, conversationId: input.identity.conversationId,
+        operationId: input.operationId, toolCallId: input.toolCallId, parentSignal: input.parentSignal,
+      });
+    }
     const descriptor = this.capabilities.resolve('computer_use', 'act', input.arguments);
     const grant = this.grants.issue({
       subject: binding.subject,
@@ -773,7 +782,10 @@ export class SurfaceExecutionRuntime {
 
   surfaceErrorFromComputerResult(input: SurfaceComputerErrorInputV1) {
     const provider = input.provider || 'cua-driver';
-    return projectSurfaceComputerError(input, this.findComputerSessionId(input.identity, provider));
+    return projectSurfaceComputerError(
+      input,
+      this.findOwnedComputerSessionId(input.identity, provider) || 'surface_unbound',
+    );
   }
 
   private assertSurfaceSessionOwnershipForLog(identity: SurfaceRuntimeIdentityV1): void {
@@ -912,10 +924,6 @@ export class SurfaceExecutionRuntime {
     });
   }
 
-  private findBrowserSessionId(identity: SurfaceRuntimeIdentityV1, provider: string): string {
-    return findBrowserSessionId(this.sessions, identity, provider);
-  }
-
   private browserIdentityError(
     identity: SurfaceRuntimeIdentityV1,
     code: 'SURFACE_STATE_STALE' | 'SURFACE_TRANSPORT_UNAVAILABLE',
@@ -924,41 +932,20 @@ export class SurfaceExecutionRuntime {
     provider: string,
     operationId: string,
   ): SurfaceExecutionRuntimeError {
-    return new SurfaceExecutionRuntimeError({
-      code,
-      message,
-      phase: code === 'SURFACE_STATE_STALE' ? 'prepare' : 'act',
-      retryable: true,
-      recommendedAction,
-      surface: 'browser',
-      provider,
-      sessionId: this.findBrowserSessionId(identity, provider),
-      operationId,
+    return surfaceIdentityError({
+      sessions: this.sessions, identity, surface: 'browser', code, message, recommendedAction, provider, operationId,
     });
   }
 
-  private assertBrowserSessionReady(
-    session: InteractiveSurfaceSessionV1,
-    operationId: string,
-  ): void {
-    if (session.state === 'running') return;
-    throw new SurfaceExecutionRuntimeError({
-      code: 'SURFACE_SESSION_BUSY',
-      message: `Browser Surface session cannot start an operation while ${session.state}.` + (session.state === 'waiting_human' ? ` ${WAITING_HUMAN_MODEL_GUIDANCE}` : ''),
-      phase: 'prepare',
-      retryable: session.state === 'paused' || session.state === 'waiting_human',
-      userActionRequired: session.state === 'waiting_human',
-      recommendedAction: 'Resume or finish human takeover before the next Browser operation.',
-      surface: 'browser',
-      provider: session.provider,
-      sessionId: session.sessionId,
-      ...(session.activeTarget ? { targetRef: session.activeTarget } : {}),
-      operationId,
-    });
+  awaitComputerSessionReady(input: {
+    identity: SurfaceRuntimeIdentityV1; provider?: string; operationId: string; toolCallId?: string; parentSignal?: AbortSignal;
+  }): Promise<InteractiveSurfaceSessionV1 | null> {
+    this.assertActiveRun(input.identity);
+    return awaitOwnedComputerSessionReady({ sessions: this.sessions, ...input });
   }
 
-  private findComputerSessionId(identity: SurfaceRuntimeIdentityV1, provider: string): string {
-    return findComputerSessionId(this.sessions, identity, provider);
+  findOwnedComputerSessionId(identity: SurfaceRuntimeIdentityV1, provider?: string): string | undefined {
+    return findActiveOwnedComputerSession(this.sessions, identity, provider)?.sessionId;
   }
 
   private errorForIdentity(
@@ -969,16 +956,8 @@ export class SurfaceExecutionRuntime {
     provider: string,
     operationId: string,
   ): SurfaceExecutionRuntimeError {
-    return new SurfaceExecutionRuntimeError({
-      code,
-      message,
-      phase: code === 'SURFACE_STATE_STALE' ? 'prepare' : 'act',
-      retryable: true,
-      recommendedAction,
-      surface: 'computer',
-      provider,
-      sessionId: this.findComputerSessionId(identity, provider),
-      operationId,
+    return surfaceIdentityError({
+      sessions: this.sessions, identity, surface: 'computer', code, message, recommendedAction, provider, operationId,
     });
   }
 }

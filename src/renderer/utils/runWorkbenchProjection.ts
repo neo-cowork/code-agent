@@ -1,3 +1,4 @@
+import { stripCronPromptDecoration } from '@shared/cronRunMessage';
 import { getLastConversationTurnIndex, latestUserTurnItems } from './conversationTurns';
 import type { TraceProjection, TraceTurn } from '@shared/contract/trace';
 import type { SessionTask, TaskProgressData, TodoItem } from '@shared/contract';
@@ -37,7 +38,7 @@ function latestTurn(projection: TraceProjection): TraceTurn | null {
 
 function userInstructionTitle(turn: TraceTurn | null): string | undefined {
   const content = turn?.nodes.find((node) => node.type === 'user')?.content.trim();
-  return content || undefined;
+  return content ? stripCronPromptDecoration(content).trim() || undefined : undefined;
 }
 
 function getTimelineNodes(turn: TraceTurn | null): TurnTimelineNode[] {
