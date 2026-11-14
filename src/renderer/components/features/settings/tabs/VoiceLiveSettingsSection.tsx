@@ -442,9 +442,10 @@ export const VoiceLiveSettingsSection: React.FC = () => {
             className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible"
           >
             <option value="">{text.executionModelFollowSession}</option>
-            {PROVIDER_MODELS.map((provider) => (
-              <option key={provider.id} value={provider.id}>{getProviderDisplayName(provider.id, undefined, provider.name, uiLanguage)}</option>
-            ))}
+            {PROVIDER_MODELS.map((provider) => {
+              const providerLabel = getProviderDisplayName(provider.id, undefined, provider.name, uiLanguage);
+              return <option key={provider.id} value={provider.id}>{providerLabel}</option>;
+            })}
           </select>
           <select
             data-testid="voice-execution-model"
