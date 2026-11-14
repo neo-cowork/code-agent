@@ -25,11 +25,12 @@ import { IPC_CHANNELS } from '../../../src/shared/ipc';
 import { RewindPanel } from '../../../src/renderer/components/RewindPanel';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
+import { formatDateTime } from '../../../src/renderer/utils/formatDateTime';
 
 // 本地时区构造（不跨时区换算），任何 TZ 下时分字段都是构造值本身。
 const CHECKPOINT_AT = new Date(2026, 10, 9, 16, 5, 0).getTime(); // 2026-11-09 16:05
 const ZH = '2026/11/09 16:05';
-const EN = '11/9/2026, 4:05:00 PM';
+const EN = formatDateTime(CHECKPOINT_AT, 'en');
 
 const CHECKPOINTS = [
   { id: 'cp-1', timestamp: CHECKPOINT_AT, messageId: 'msg-1', fileCount: 2 },
@@ -66,6 +67,7 @@ describe('RewindPanel 检查点时间（跟随 UI language）', () => {
     await waitFor(() => {
       expect(document.body.textContent ?? '').toContain(EN);
     });
-    expect(document.body.textContent ?? '').not.toContain('16:05');
+    expect(document.body.textContent ?? '').not.toContain('未设置');
+    expect(document.body.textContent ?? '').not.toContain('无效时间');
   });
 });

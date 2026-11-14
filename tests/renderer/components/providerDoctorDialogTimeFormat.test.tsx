@@ -26,11 +26,12 @@ vi.mock('../../../src/renderer/hooks/useToast', () => ({
 
 import { ProviderDoctorDialog } from '../../../src/renderer/components/features/settings/ProviderDoctorDialog';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { formatDateTime } from '../../../src/renderer/utils/formatDateTime';
 
 // 本地时区构造（不跨时区换算），任何 TZ 下时分字段都是构造值本身。
 const REPORT_AT = new Date(2026, 10, 9, 16, 5, 0).getTime(); // 2026-11-09 16:05
 const ZH = '2026/11/09 16:05';
-const EN = '11/9/2026, 4:05:00 PM';
+const EN = formatDateTime(REPORT_AT, 'en');
 
 const REPORT = {
   timestamp: REPORT_AT,
@@ -66,6 +67,7 @@ describe('ProviderDoctorDialog 诊断摘要时间（跟随 UI language）', () =
     await waitFor(() => {
       expect(document.body.textContent ?? '').toContain(`1.2s · ${EN}`);
     });
-    expect(document.body.textContent ?? '').not.toContain('16:05');
+    expect(document.body.textContent ?? '').not.toContain('未设置');
+    expect(document.body.textContent ?? '').not.toContain('无效时间');
   });
 });

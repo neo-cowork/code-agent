@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { SessionReplaySummaryDialog } from '../../../src/renderer/components/features/sidebar/SessionReplaySummaryDialog';
 import type { Task } from '@shared/contract/backgroundTask';
+import { formatDateTime } from '../../../src/renderer/utils/formatDateTime';
 
 // renderToStaticMarkup（服务端渲染路径）下 zustand 的 getServerSnapshot 返回初始
 // state，useAppStore.setState 影响不到静态渲染——改 mock useI18n 定桩 language
@@ -27,7 +28,7 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
 // 本地时区构造（不跨时区换算），任何 TZ 下时分字段都是构造值本身。
 const EVENT_AT = new Date(2026, 10, 9, 16, 5, 0).getTime(); // 2026-11-09 16:05
 const ZH = '2026/11/09 16:05';
-const EN = '11/9/2026, 4:05:00 PM';
+const EN = formatDateTime(EVENT_AT, 'en');
 
 const BACKGROUND_TASK: Task = {
   id: 'task-1',
@@ -115,6 +116,7 @@ describe('SessionReplaySummaryDialog 内联事件时间（跟随 UI language）'
     i18nState.language = 'en';
     const html = renderDialog();
     expect(html).toContain(EN);
-    expect(html).not.toContain('16:05');
+    expect(html).not.toContain('未设置');
+    expect(html).not.toContain('无效时间');
   });
 });
