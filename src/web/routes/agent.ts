@@ -1684,7 +1684,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         // 能力上下文/斜杠命令展开的 modelFacePrompt。下面 finally 里 endRunPolicy 配对清除。
         beginRunUserRuleContext(runContext.runId, sessionId, {
           roleId: config.agentOverride?.id,
-          initiatingText: resolveRunInitiatingText(visiblePrompt, { historyVisibility: body.historyVisibility }),
+          // 外来文本不是用户授权：委派身份只认服务端注入 config 的带外标记。
+          initiatingText: body.context?.memoryTainted === true || config.delegationOrigin
+            ? undefined
+            : resolveRunInitiatingText(visiblePrompt, { historyVisibility: body.historyVisibility }),
         });
         await agentLoop.run(modelFacePrompt, visiblePrompt);
       }

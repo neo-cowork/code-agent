@@ -1,3 +1,4 @@
+import { runInitiatingTextProvenanceCases } from './runInitiatingTextProvenance.cases';
 import { foregroundBrainCapCases } from './foregroundBrainCap.cases';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import express from 'express';
@@ -489,6 +490,48 @@ function externalForkContextSource(
 }
 
 describe('createAgentRouter', () => {
+  runInitiatingTextProvenanceCases(async ({ prompt, memoryTainted, delegated, forgedDelegation }) => {
+    const sessionId = 'session-web-provenance';
+    const origin = { delegationId: 'trusted-delegation', actionFingerprint: 'trusted-fingerprint' };
+    const context = {
+      ...(memoryTainted !== undefined ? { memoryTainted } : {}),
+      ...(forgedDelegation ? { delegationOrigin: origin } : {}),
+    };
+    let seen: {
+      initiatingText: string | undefined;
+      trustedDelegation: boolean;
+      outcome: ReturnType<typeof resolveUserRuleOutcomeForTool>;
+    } | undefined;
+    mockRun.mockImplementationOnce(async () => {
+      seen = {
+        initiatingText: resolveRunUserRuleContext(sessionId).initiatingText,
+        trustedDelegation: Boolean(mockCreateAgentLoop.mock.calls.at(-1)?.[0].delegationOrigin),
+        outcome: resolveUserRuleOutcomeForTool(sessionId, 'WebFetch', {}),
+      };
+    });
+    if (delegated) {
+      await closeServer();
+      let sendNow: Parameters<NonNullable<Parameters<typeof createAgentRouter>[0]['registerQueuedInputSendNowHook']>>[0] | undefined;
+      await startAgentApi({ registerQueuedInputSendNowHook: (handler) => { sendNow = handler; } });
+      expect(sendNow).toBeDefined();
+      await sendNow!({
+        id: 'queued-provenance', sessionId,
+        envelope: { content: prompt, sessionId, context }, delegationOrigin: origin,
+      }, 'idle');
+    } else {
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt, sessionId, context }),
+      });
+      await response.text();
+      expect(response.status).toBe(200);
+    }
+    expect(mockRun).toHaveBeenCalledTimes(1);
+    expect(resolveRunUserRuleContext(sessionId)).toEqual({});
+    if (!seen) throw new Error('AgentLoop did not observe the run context');
+    return seen;
+  });
+
   foregroundBrainCapCases(async ({ prompt, history = [], requestedCap, goal }) => {
     await closeServer();
     sessionMessages.delete('cap-session');
