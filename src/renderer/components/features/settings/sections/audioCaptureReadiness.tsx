@@ -7,6 +7,7 @@ interface AudioReadinessText {
   recorderMissing: string;
   systemAudioHelperMissing: string;
   transcriptionEngineMissing: string;
+  transcriptionModelMissing: string;
   voiceDetectionMissing: string;
   voiceDetectionUnsupported: string;
   recheck: string;
@@ -16,6 +17,7 @@ const KNOWN_CODES: ReadonlySet<AudioCaptureMissingPrerequisiteCode> = new Set([
   'recorder_missing',
   'system_audio_helper_missing',
   'transcription_engine_missing',
+  'transcription_model_missing',
   'voice_detection_missing',
   'voice_detection_unsupported',
 ]);
@@ -68,7 +70,7 @@ function computeMissingAudioPrerequisites(
       add('recorder_missing');
     }
     if (prereqs.transcriptionEngine === 'missing') {
-      add('transcription_engine_missing');
+      add(prereqs.missing.includes('transcription_model_missing') ? 'transcription_model_missing' : 'transcription_engine_missing');
     }
     if (prereqs.voiceDetection === 'unsupported') {
       add('voice_detection_unsupported');
@@ -93,6 +95,8 @@ function messageForCode(code: AudioCaptureMissingPrerequisiteCode, text: AudioRe
       return text.systemAudioHelperMissing;
     case 'transcription_engine_missing':
       return text.transcriptionEngineMissing;
+    case 'transcription_model_missing':
+      return text.transcriptionModelMissing;
     case 'voice_detection_missing':
       return text.voiceDetectionMissing;
     case 'voice_detection_unsupported':
