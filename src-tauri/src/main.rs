@@ -27,6 +27,7 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 mod agent_halo;
 mod appshots;
 mod appshots_hotkey_gate;
+mod background_resident;
 mod menu_i18n;
 use menu_i18n::set_shell_language;
 mod native_app_icon;
@@ -2484,6 +2485,14 @@ fn spawn_quit_guard_flow(
                     }
                 }
             }
+            quit_guard::QuitDecision::HideToBackground { language } => {
+                background_resident::minimize_and_hint(&app, language);
+                coordinator.finish();
+                #[cfg(target_os = "macos")]
+                if matches!(origin, QuitFlowOrigin::MacApplicationTerminate) {
+                    reply_to_mac_application_terminate(&app, false);
+                }
+            }
             quit_guard::QuitDecision::Confirm { prompt, language } => {
                 let offers_background_continue = matches!(
                     resident_host::quit_dialog_button_set_current(language),
@@ -2595,47 +2604,7 @@ fn show_quit_confirm_dialog(
                         return;
                     }
                 }
-                // 后台继续与停止并退出都在退壳 / cleanup 之前声明意图。
-                // Windows 后台继续的 detach 失败仍在上面 return（留在 app）；
-                // 这里的 POST 失败不拦退出：unix 没 token 和请求失败分开记一条警告。
-                let mode = if plan.cleanup_server { "stop" } else { "background" };
-                let token = resolve_server_script(&app).ok().and_then(|(_script, root)| {
-                    quit_guard::read_quit_guard_token(&root, real_data_dir().as_deref())
-                });
-                if token.is_none() {
-                    eprintln!("quit-intent: no token; continuing exit ({mode})");
-                } else if !quit_guard::post_quit_intent(
-                    &server_url(),
-                    token.as_deref(),
-                    mode,
-                    quit_guard::QUIT_GUARD_TIMEOUT,
-                ) {
-                    eprintln!("quit-intent: request failed; continuing exit ({mode})");
-                } else if plan.cleanup_server {
-                    // stop 意图已被 daemon 确认：cleanup 换「EOF + 等自退」通道（最多
-                    // 65s），等待期藏掉全部窗口；POST 失败/无 token 仍走旧 SIGTERM+3s。
-                    coordinator.set_stop_intent_landed();
-                    hide_windows_for_stop_wait(&app);
-                }
-                // 后台继续：不清理（ExitRequested/Exit 按 plan 跳过 cleanup_server），
-                // 常驻宿主接管运行中的任务；停止并退出：照旧清理。
-                if !plan.cleanup_server {
-                    coordinator.set_background_continue();
-                }
-                coordinator.allow_exit();
-                coordinator.finish();
-                match origin {
-                    QuitFlowOrigin::TauriExit => app.exit(0),
-                    #[cfg(target_os = "macos")]
-                    QuitFlowOrigin::MacApplicationTerminate => {
-                        if plan.cleanup_server {
-                            // AppKit 正在等待回复；先清理再批准退出，与 ExitRequested
-                            // 保持相同的优雅停止约定。
-                            cleanup_server(&app);
-                        }
-                        reply_to_mac_application_terminate(&app, true);
-                    }
-                }
+                execute_quit_exit_plan(app, coordinator, origin, plan);
             } else {
                 // 取消：什么都不清理（webServer 继续跑），app 继续运行
                 coordinator.finish();
@@ -2645,6 +2614,60 @@ fn show_quit_confirm_dialog(
                 }
             }
         });
+}
+
+// Shared stop-and-quit sequence: the dialog and explicit full_quit cannot drift.
+fn execute_quit_exit_plan(
+    app: AppHandle,
+    coordinator: Arc<quit_guard::QuitCoordinator>,
+    origin: QuitFlowOrigin,
+    plan: quit_guard::QuitExitPlan,
+) {
+    // 后台继续与停止并退出都在退壳 / cleanup 之前声明意图。
+    // Windows 后台继续的 detach 失败仍在上面 return（留在 app）；
+    // 这里的 POST 失败不拦退出：unix 没 token 和请求失败分开记一条警告。
+    let mode = if plan.cleanup_server {
+        "stop"
+    } else {
+        "background"
+    };
+    let token = resolve_server_script(&app).ok().and_then(|(_script, root)| {
+        quit_guard::read_quit_guard_token(&root, real_data_dir().as_deref())
+    });
+    if token.is_none() {
+        eprintln!("quit-intent: no token; continuing exit ({mode})");
+    } else if !quit_guard::post_quit_intent(
+        &server_url(),
+        token.as_deref(),
+        mode,
+        quit_guard::QUIT_GUARD_TIMEOUT,
+    ) {
+        eprintln!("quit-intent: request failed; continuing exit ({mode})");
+    } else if plan.cleanup_server {
+        // stop 意图已被 daemon 确认：cleanup 换「EOF + 等自退」通道（最多
+        // 65s），等待期藏掉全部窗口；POST 失败/无 token 仍走旧 SIGTERM+3s。
+        coordinator.set_stop_intent_landed();
+        hide_windows_for_stop_wait(&app);
+    }
+    // 后台继续：不清理（ExitRequested/Exit 按 plan 跳过 cleanup_server），
+    // 常驻宿主接管运行中的任务；停止并退出：照旧清理。
+    if !plan.cleanup_server {
+        coordinator.set_background_continue();
+    }
+    coordinator.allow_exit();
+    coordinator.finish();
+    match origin {
+        QuitFlowOrigin::TauriExit => app.exit(0),
+        #[cfg(target_os = "macos")]
+        QuitFlowOrigin::MacApplicationTerminate => {
+            if plan.cleanup_server {
+                // AppKit 正在等待回复；先清理再批准退出，与 ExitRequested
+                // 保持相同的优雅停止约定。
+                cleanup_server(&app);
+            }
+            reply_to_mac_application_terminate(&app, true);
+        }
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -2799,6 +2822,7 @@ fn setup_app_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             &PredefinedMenuItem::hide_others(handle, None)?,
             &PredefinedMenuItem::separator(handle)?,
             &MenuItem::with_id(handle, "quit_app", labels.quit, true, Some("Cmd+Q"))?,
+            &MenuItem::with_id(handle, "full_quit", labels.full_quit, true, None::<&str>)?,
         ],
     )?;
 
@@ -4042,6 +4066,7 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         // 不用预定义 .quit()：它走 muda 的 terminate:/PostQuitMessage，绕过
         // ExitRequested，守卫拦不到。自定义项与 ⌘Q 走同一受守卫入口。
         .text("quit_app", labels.quit)
+        .text("full_quit", labels.full_quit)
         .build()?;
     const TRAY_ICON: tauri::image::Image<'_> = include_image!("./icons/tray-template.png");
 
@@ -4838,6 +4863,16 @@ fn main() {
         RunEvent::MenuEvent(event) if event.id().as_ref() == "open_settings" => {
             let _ = request_main_window_focus(app_handle);
             app_handle.emit("menu:open-settings", ()).ok();
+        }
+        RunEvent::MenuEvent(event) if event.id().as_ref() == "full_quit" => {
+            let app = app_handle.clone();
+            let coordinator = app_handle.state::<Arc<quit_guard::QuitCoordinator>>().inner().clone();
+            thread::spawn(move || {
+                execute_quit_exit_plan(
+                    app, coordinator, QuitFlowOrigin::TauriExit,
+                    quit_guard::quit_exit_plan(quit_guard::QuitAnswerAction::Quit, cfg!(not(unix))),
+                )
+            });
         }
         RunEvent::MenuEvent(event) if event.id().as_ref() == "quit_app" => {
             app_handle.exit(0);
