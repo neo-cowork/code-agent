@@ -4,6 +4,7 @@ import { getToolPreflightKind } from '../../../../../utils/toolPreflightPresenta
 // StatusIndicator (braille spinner) + ToolName + params + ⎿ result summary
 // ============================================================================
 
+import { HumanizedText } from '../../../../HumanizedText';
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { StreamInterruptionReason, ToolCall } from '@shared/contract';
@@ -324,7 +325,7 @@ export function ToolCallDisplay({
               preflight → 其余结构化来源）。这里若先调 toolPreflightCopy 就等于把那个顺序绕过去，
               用户亲手点的拒绝会被渲染成「未能自动批准」，而同一屏上方的组头（走
               humanizeToolFailureReason）显示「审批被拒绝」——同一件事两处自相矛盾。 */}
-          {humanizeToolFailureReason(toolCall, t)}
+          <HumanizedText text={humanizeToolFailureReason(toolCall, t)} />
           {toolCall.result?.metadata?.recovered === true && <span className="ml-2 text-badge-success">{t.deliveryExperience.recovered}</span>}
         </div>
       )}
@@ -425,7 +426,7 @@ function ReceiptDetail({ receipt, toolCall }: { receipt: ToolReceiptPresentation
     : raw;
   if (!displayRaw) return null;
   return (
-    <pre
+    <div
       className={`ml-6 mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md border px-2.5 py-2 text-[11px] leading-relaxed animate-fadeIn ${
         receipt.status === 'failed'
           ? 'border-red-500/20 bg-red-500/[0.05] text-badge-danger/80'
@@ -433,8 +434,8 @@ function ReceiptDetail({ receipt, toolCall }: { receipt: ToolReceiptPresentation
       }`}
       data-testid="tool-step-receipt-detail"
     >
-      {typeof displayRaw === 'string' ? displayRaw : JSON.stringify(displayRaw, null, 2)}
-    </pre>
+      <HumanizedText text={typeof displayRaw === 'string' ? displayRaw : JSON.stringify(displayRaw, null, 2)} />
+    </div>
   );
 }
 

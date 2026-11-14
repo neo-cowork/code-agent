@@ -4,6 +4,7 @@
 // ============================================================================
 
 import React from 'react';
+import { HumanizedText } from '../../../../HumanizedText';
 import type { ToolCall } from '@shared/contract';
 import { summarizeTool } from './summarizers';
 import { useI18n } from '../../../../../hooks/useI18n';
@@ -27,7 +28,7 @@ export function ResultSummary({ toolCall, inline = false }: Props) {
 
   const content = (
     <span className={isError ? 'text-[var(--cc-error)]' : 'text-zinc-500'}>
-      {summary}
+      <HumanizedText text={summary} />
     </span>
   );
 

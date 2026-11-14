@@ -3,6 +3,7 @@
 // ============================================================================
 
 import React from 'react';
+import { HumanizedText } from './HumanizedText';
 import { Check, X, Info, AlertTriangle } from 'lucide-react';
 import { useToastStore, type ToastType } from '../hooks/useToast';
 import { Z_LAYERS } from '../styles/zLayers';
@@ -37,7 +38,7 @@ export const ToastContainer: React.FC = () => {
           <span className="text-sm font-bold shrink-0 mt-0.5">{ICON_MAP[t.type]}</span>
           {/* 高度上限（现象 11）：超长错误原文（如几十条 lineage findings）超出滚动，
               不许一条 toast 占满半个屏幕。 */}
-          <span className="text-sm text-zinc-200 break-words max-h-40 overflow-y-auto">{t.message}</span>
+          <span className="text-sm text-zinc-200 break-words max-h-40 overflow-y-auto"><HumanizedText text={t.message} /></span>
           {t.action && (
             <button /* ds-allow:button: toast 内的描边小动作钮（不再提示），Button primitive 的主按钮语义不符 */
               onClick={() => {

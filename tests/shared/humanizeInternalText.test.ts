@@ -1,3 +1,5 @@
+import { presentReplyBody } from '../../src/shared/replyBodyPresentation';
+import { ROLE_PROACTIVITY } from '../../src/shared/constants/memory';
 import { describe, expect, it } from 'vitest';
 import { humanizeInternalText } from '../../src/shared/humanizeInternalText';
 import { detectInternalTextLeaks, type InternalTextFormat } from '../../src/shared/internalTextLeakDetect';
@@ -132,6 +134,38 @@ describe('humanizeInternalText', () => {
       expect(zh.text).toBe(sample);
       expect(zh.detectedFormats).toEqual([]);
       expect(zh.collapseIntoDetails).toBeUndefined();
+    }
+  });
+});
+
+describe('reply body display projection', () => {
+  it.each(['zh', 'en'] as const)('separates role tags and deduplicates reasons in %s', (lang) => {
+    const raw = 'Your report is ready.\n<decision>report</decision><rationale>Review the report</rationale><evidence>notes.md</evidence>';
+    const projected = presentReplyBody(raw, lang);
+    expect(projected.text).toBe('Your report is ready.');
+    expect(projected.rationale).toBe('Review the report');
+    expect(projected.evidence).toBe('notes.md');
+    expect(projected.technicalDetails).toContain('<decision>report</decision>');
+    expect(ROLE_PROACTIVITY.DECISION_TAG_PATTERN.exec(raw)?.[1]).toBe('report');
+    expect(raw).toContain('<rationale>Review the report</rationale>');
+  });
+
+  it('hides scheduled event attributes and shows each reason only once', () => {
+    const tag = '<cron_event_decision id="om_event123" action="ignore" rule="mail">No reply needed</cron_event_decision>';
+    const raw = `Mailbox checked.\n${tag}\n${tag}`;
+    const projected = presentReplyBody(raw, 'en');
+    expect(projected.text).toBe('Mailbox checked.');
+    expect(projected.rationale).toBe('No reply needed');
+    expect(projected.technicalDetails).toBe(`${tag}\n${tag}`);
+  });
+
+  it('humanizes reason text, hides incomplete streaming tags and preserves ordinary content', () => {
+    expect(presentReplyBody('<rationale>read_file call_export123</rationale>', 'en').rationale).toBe('Read file tool operation');
+    for (const suffix of ['<decision>rep', '<rationale>Wait', '<cron_event_decision id="om_one"', '<cron_event_dec', '<rat']) {
+      expect(presentReplyBody(`Report ready.\n${suffix}`).text).toBe('Report ready.');
+    }
+    for (const text of ['Report <strong>ready</strong>.', 'a < b', 'A decision about the report', 'Use <custom>tags</custom>.']) {
+      expect(presentReplyBody(text).text).toBe(text);
     }
   });
 });

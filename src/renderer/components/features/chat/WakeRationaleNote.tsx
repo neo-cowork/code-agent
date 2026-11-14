@@ -4,6 +4,7 @@
 // 只展示醒来时落库的 rationale / evidence。缺失时写明「这条没有记录理由」，
 // 不从正文倒推。
 
+import { HumanizedText } from '../../HumanizedText';
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { MessageMetadata } from '@shared/contract/message';
@@ -65,10 +66,10 @@ export const WakeRationaleNote: React.FC<{ fields: WakeRationaleFields }> = ({ f
             <p data-testid="wake-rationale-missing">{text.missing}</p>
           ) : (
             <>
-              <p data-testid="wake-rationale-text">{fields.rationale}</p>
+              <p data-testid="wake-rationale-text"><HumanizedText text={fields.rationale ?? ''} /></p>
               {fields.evidence ? (
                 <p data-testid="wake-rationale-evidence" className="mt-1 text-zinc-500">
-                  {text.evidenceLabel}：{fields.evidence}
+                  {text.evidenceLabel}：<HumanizedText text={fields.evidence} />
                 </p>
               ) : null}
             </>

@@ -5,6 +5,8 @@
 // dead code removed in ADR-043 T2 遗留刀2).
 // ============================================================================
 
+import { presentReplyBody } from '@shared/replyBodyPresentation';
+import { HumanizedText } from '../../HumanizedText';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { TraceNode } from '@shared/contract/trace';
 import { traceTerminalToolCall } from '../../../utils/toolCallTerminalState';
@@ -334,7 +336,7 @@ const AssistantTextNode: React.FC<{
   inVoiceDispatchCard?: boolean;
   onStreamingDisplayUpdate?: (nodeId: string, displayLength: number, isAnimating: boolean) => void;
 }> = ({ node, sessionId, isStreaming: turnStreaming, inVoiceDispatchCard, onStreamingDisplayUpdate }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const rootRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const wasReportingStreamingDisplayRef = useRef(false);
@@ -352,7 +354,7 @@ const AssistantTextNode: React.FC<{
   const sessionLive = useAppStore((state) => (sessionId ? state.processingSessionIds.has(sessionId) : false));
   const resumeNote = sessionLive ? node.metadata?.streamResumeNote : undefined;
   const keptBreakSegment = node.metadata?.streamInterruptionReason === 'stream-break';
-  const wakeFields = wakeRationaleFromMetadata(node.metadata);
+  const storedWakeFields = wakeRationaleFromMetadata(node.metadata);
 
   const preannounce = node.metadata?.backgroundTaskPreannounce;
   const preannounceCopy = preannounce?.title
@@ -360,8 +362,12 @@ const AssistantTextNode: React.FC<{
     : t.backgroundPanel.preannounce.generic;
   const localizedContent = preannounce?.text && node.content.startsWith(preannounce.text)
     ? preannounceCopy + node.content.slice(preannounce.text.length) : node.content;
+  const reply = presentReplyBody(localizedContent, language);
+  const wakeFields = storedWakeFields ?? (reply.rationale || reply.evidence
+    ? { rationale: reply.rationale, evidence: reply.evidence, missing: !reply.rationale }
+    : null);
   const { displayContent, isAnimating, tailStartIndex } = useSmoothStreamingText({
-    content: localizedContent || '',
+    content: reply.text || '',
     isStreaming: Boolean(turnStreaming),
   });
 
@@ -568,6 +574,12 @@ const AssistantTextNode: React.FC<{
       )}
 
       {wakeFields ? <WakeRationaleNote fields={wakeFields} /> : null}
+      {reply.technicalDetails && (
+        <details className="mt-2 text-xs text-zinc-500" data-testid="reply-technical-details">
+          <summary className="cursor-pointer">{t.agentError.details.technical}</summary>
+          <pre className="whitespace-pre-wrap break-words">{reply.technicalDetails}</pre>
+        </details>
+      )}
 
     </div>
   );
@@ -788,7 +800,7 @@ const SystemNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, s
   // generic system
   return (
     <div className="px-3 py-1.5 text-xs text-zinc-500 italic">
-      {node.metadata?.backgroundTaskInterrupted ? t.backgroundPanel.interrupted : node.content}
+      <HumanizedText text={node.metadata?.backgroundTaskInterrupted ? t.backgroundPanel.interrupted : node.content} />
     </div>
   );
 };

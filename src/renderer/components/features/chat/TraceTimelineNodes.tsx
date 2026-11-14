@@ -4,6 +4,7 @@
 // SkillActivity / ArtifactOwnership 五类时间线卡 + 分发器 TurnTimelineNodeRenderer。
 // ============================================================================
 
+import { HumanizedText } from '../../HumanizedText';
 import React, { useState } from 'react';
 import type { TraceNode } from '@shared/contract/trace';
 import type { TurnTimelineNode as TurnTimelinePayload, TurnTimelineTone } from '@shared/contract/turnTimeline';
@@ -91,14 +92,14 @@ const BlockedCapabilitiesNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ 
           <div key={`${reason.kind}-${reason.id}`} className="rounded-md bg-black/10 px-2.5 py-2">
             <div className="mb-1 flex items-center gap-1.5">
               <WorkbenchPill tone={reason.kind === 'skill' ? 'skill' : reason.kind === 'connector' ? 'connector' : 'mcp'}>
-                {reason.label}
+                <HumanizedText text={reason.label} />
               </WorkbenchPill>
               <span className={`text-[10px] ${reason.severity === 'error' ? 'text-badge-danger' : 'text-badge-warning'}`}>
                 {reason.code}
               </span>
             </div>
-            <div className="text-xs text-zinc-200">{reason.detail}</div>
-            <div className="mt-1 text-[11px] text-zinc-400">{reason.hint}</div>
+            <div className="text-xs text-zinc-200"><HumanizedText text={reason.detail} /></div>
+            <div className="mt-1 text-[11px] text-zinc-400"><HumanizedText text={reason.hint} /></div>
           </div>
         ))}
       </div>
@@ -146,7 +147,7 @@ const RoutingEvidenceNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ time
           <WorkbenchPill key={name} tone="agent">{name}</WorkbenchPill>
         ))}
       </div>
-      <div className="text-xs text-zinc-100">{evidence.summary}</div>
+      <div className="text-xs text-zinc-100"><HumanizedText text={evidence.summary} /></div>
       {evidence.steps.length > 0 && (
         <div className="mt-2 space-y-1.5">
           {evidence.steps.map((step, index) => (
@@ -156,14 +157,14 @@ const RoutingEvidenceNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ time
                 <div className="flex flex-wrap items-center gap-1.5">
                   {/* 异常步骤（warning/error）用红/琥珀色文案，一眼看出是哪一步挂的 */}
                   <span className={step.tone === 'error' ? 'text-badge-danger' : step.tone === 'warning' ? 'text-badge-warning' : 'text-zinc-200'}>
-                    {step.label}
+                    <HumanizedText text={step.label} />
                   </span>
                   <WorkbenchPill tone={step.tone === 'error' || step.tone === 'warning' ? 'info' : 'neutral'}>
                     {stepStatusLabels[step.status] || step.status}
                   </WorkbenchPill>
                 </div>
                 {step.detail && (
-                  <div className="mt-1 text-zinc-600">{step.detail}</div>
+                  <div className="mt-1 text-zinc-600"><HumanizedText text={step.detail} /></div>
                 )}
               </div>
             </div>
@@ -216,7 +217,7 @@ const HookActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timelin
           <ChevronRight className="ml-auto h-3.5 w-3.5 shrink-0 text-zinc-600" />
         )}
       </button>
-      <div className="text-xs text-zinc-100">{activity.summary}</div>
+      <div className="text-xs text-zinc-100"><HumanizedText text={activity.summary} /></div>
       {expanded && (
         <div className="mt-2 space-y-1.5">
           {activity.items.map((item, index) => (
@@ -229,7 +230,7 @@ const HookActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timelin
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="text-zinc-200">{(item.names || []).join('、') || labels.unnamed}</span>
                   <WorkbenchPill tone="neutral">{HOOK_EVENT_LABELS[item.event] || item.event}</WorkbenchPill>
-                  {item.toolName && <WorkbenchPill tone="neutral">{item.toolName}</WorkbenchPill>}
+                  {item.toolName && <WorkbenchPill tone="neutral"><HumanizedText text={item.toolName} /></WorkbenchPill>}
                   <WorkbenchPill tone={item.action === 'block' ? 'info' : 'mcp'}>
                     {item.action === 'block' ? labels.blocked : labels.allowed}
                   </WorkbenchPill>
@@ -279,11 +280,11 @@ const SkillActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timeli
             <span className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full bg-mark-accent" />
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-1.5">
-                <WorkbenchPill tone="skill">{item.label}</WorkbenchPill>
+                <WorkbenchPill tone="skill"><HumanizedText text={item.label} /></WorkbenchPill>
                 <span className="text-zinc-300">{getSkillActionLabel(item.action)}</span>
               </div>
               {item.detail && (
-                <div className="mt-1 text-[11px] leading-relaxed text-zinc-500">{item.detail}</div>
+                <div className="mt-1 text-[11px] leading-relaxed text-zinc-500"><HumanizedText text={item.detail} /></div>
               )}
             </div>
           </div>
@@ -310,7 +311,7 @@ const ArtifactItemPills: React.FC<{ items: ArtifactItem[]; className?: string }>
             iconForKind(kindForTurnArtifact(item))
           )}
           <div className="min-w-0 flex-1">
-            <div className="truncate text-xs text-zinc-100">{item.label}</div>
+            <div className="truncate text-xs text-zinc-100"><HumanizedText text={item.label} /></div>
             {/* 非 link 项的 ownerLabel 恒为「Assistant」类零信息文案，不渲染次行；
                 link 项的次行是抓取来源（WebFetch 等），有信息量，保留。 */}
             {item.kind === 'link' && (

@@ -16,6 +16,8 @@ import { BackgroundChildrenNotice } from './BackgroundChildrenNotice';
 
 import { EnvAssistCard } from './EnvAssistCard';
 import React, { useCallback } from 'react';
+import { humanizeInternalText } from '@shared/humanizeInternalText';
+import { HumanizedText } from '../../HumanizedText';
 import { AlertTriangle, Copy, KeyRound, MessageSquarePlus, RotateCcw, SwitchCamera } from 'lucide-react';
 import type { AgentErrorCategory, AgentErrorMetadata } from '@shared/contract';
 import type { AgentErrorRunInfo } from '@shared/contract/trace';
@@ -240,7 +242,7 @@ const AgentErrorCard: React.FC<{
   const technicalItems = showTechnicalDetails ? buildTechnicalItems(error, t, false) : [];
   const repeatNotice = buildRepeatNotice(run, error.category, t);
   const readableProviderReason = error.category === 'generic' && !error.goalAbort
-    ? extractReadableProviderReason(error.rawMessage, language)
+    ? extractReadableProviderReason(humanizeInternalText(error.rawMessage ?? '', language).text, language)
     : null;
   const providerReasonLine = readableProviderReason
     ? t.agentError.categories.generic.providerReason.replace('{reason}', readableProviderReason)
@@ -254,11 +256,11 @@ const AgentErrorCard: React.FC<{
     >
       <div className="flex items-center gap-2 text-sm font-medium text-text-primary">
         <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-status-error" aria-hidden="true" />
-        <div className="min-w-0 flex-1">{title}</div>
+        <div className="min-w-0 flex-1"><HumanizedText text={title} /></div>
       </div>
 
       <div className="mt-0.5 pl-[22px] text-[13px] leading-relaxed text-text-secondary">
-        {suggestion}
+        <HumanizedText text={suggestion} />
         {repeatNotice && (
           <span className={language === 'zh' ? undefined : 'ml-1'}>{repeatNotice}</span>
         )}
@@ -269,7 +271,7 @@ const AgentErrorCard: React.FC<{
           data-testid="agent-error-provider-reason"
           className="mt-1 pl-[22px] text-xs text-text-tertiary"
         >
-          {providerReasonLine}
+          <HumanizedText text={providerReasonLine} />
         </div>
       )}
       {lastFailure && <BackgroundChildrenNotice sessionId={sessionId} />}

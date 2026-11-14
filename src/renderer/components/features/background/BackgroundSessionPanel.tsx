@@ -11,6 +11,7 @@ import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 // Stop/Clear 与切前台按钮是兄弟节点，不嵌套（button 里套 button 是非法 HTML）。
 
 import React from 'react';
+import { HumanizedText } from '../../HumanizedText';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { Play, CheckCircle, XCircle, Loader2, X, Square, Trash2 } from 'lucide-react';
 import type { BackgroundSessionInfo } from '@shared/contract/sessionState';
@@ -114,7 +115,7 @@ const BackgroundSessionItem: React.FC<BackgroundSessionItemProps> = ({
             {getDisplaySessionTitle(session.title, language)}
           </div>
           <div className="text-xs text-zinc-400" data-testid="background-session-item-line">
-            {line}
+            <HumanizedText text={line} />
           </div>
           {session.progress !== undefined && isRunning && (
             <div className="mt-1 h-1 bg-zinc-600 rounded-full overflow-hidden">

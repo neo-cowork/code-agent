@@ -1,3 +1,4 @@
+import { humanizeInternalText } from '@shared/humanizeInternalText';
 import { agentRoleLabel } from './agentRoleLabel';
 // ============================================================================
 // humanizeToolStep — 把工具调用（工具名 + 参数）合成一句人话步骤文案
@@ -418,7 +419,12 @@ export function parseDelegateSessionReceipt(result?: { success?: boolean; output
   }
 }
 
-export function humanizeToolStep(
+export function humanizeToolStep(...args: Parameters<typeof buildToolStep>): string {
+  const language = CJK_PATTERN.test(args[2].toolStepHumanize.writeFallback) ? 'zh' : 'en';
+  return humanizeInternalText(buildToolStep(...args), language).text;
+}
+
+function buildToolStep(
   name: string,
   args: Record<string, unknown> | undefined,
   t: Translations,

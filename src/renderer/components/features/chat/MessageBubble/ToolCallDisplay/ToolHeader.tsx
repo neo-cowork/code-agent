@@ -6,6 +6,10 @@ import { toolPreflightCopy } from '../../../../../utils/toolPreflightPresentatio
 // ============================================================================
 
 import React from 'react';
+import { formatDisplayPath } from '../../../../../utils/displayPath';
+import { isToolInterruptionPlaceholder } from '../../../../../utils/toolExecutionPresentation';
+import { resolveStreamInterruptionOutcomeKey } from '../../../../../i18n/outcomeWords';
+import { humanizeInternalText } from '@shared/humanizeInternalText';
 import type { StreamInterruptionReason, ToolCall } from '@shared/contract';
 import { getToolStatusLabel } from './statusLabels';
 import type { ToolStatus } from './styles';
@@ -22,10 +26,7 @@ import {
 import { TargetContextIcon } from './TargetContextIcon';
 import { useI18n } from '../../../../../hooks/useI18n';
 import { useAppStore } from '../../../../../stores/appStore';
-import { formatDisplayPath } from '../../../../../utils/displayPath';
-import { isToolInterruptionPlaceholder } from '../../../../../utils/toolExecutionPresentation';
 import { buildToolStatusLineCopy } from '../../../../../utils/toolStatusLinePresentation';
-import { resolveStreamInterruptionOutcomeKey } from '../../../../../i18n/outcomeWords';
 
 interface Props {
   toolCall: ToolCall;
@@ -36,32 +37,6 @@ interface Props {
   showDetailName?: boolean;
   /** 回执行把成败统一放到右侧元信息，主动作前不重复状态词。 */
   hideStatusLabel?: boolean;
-}
-
-/**
- * 构造 ToolHeader 的 hover tooltip：当模型 shortDescription 用 "..." 缩写了路径，
- * tooltip 兜底贴出完整的 file_path / path / command，让用户 hover 能看全。
- */
-function buildToolHeaderTitle(
-  toolCall: ToolCall,
-  displayName: string,
-  interruptionLabel: string,
-): string {
-  const args = (toolCall.arguments ?? {}) as Record<string, unknown>;
-  const filePath = args.file_path ?? args.path;
-  if (isToolInterruptionPlaceholder(toolCall.result?.error)) {
-    const target = typeof filePath === 'string' && filePath
-      ? formatDisplayPath(filePath)
-      : displayName;
-    return `${interruptionLabel} · ${target}`;
-  }
-  if (typeof filePath === 'string' && filePath && !displayName.includes(filePath)) {
-    return `${displayName}\n${filePath}`;
-  }
-  if (typeof args.command === 'string' && args.command && !displayName.includes(args.command)) {
-    return `${displayName}\n${args.command}`;
-  }
-  return displayName;
 }
 
 function getPluginOriginDisplayName(toolCall: ToolCall): string | undefined {
@@ -82,7 +57,7 @@ export function ToolHeader({
   showDetailName = false,
   hideStatusLabel = false,
 }: Props) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const openPreview = useAppStore((s) => s.openPreview);
   // 模型若提供了 shortDescription（产品视角语义标签），优先作为主标题展示；
   // 没有时 fallback 到 humanizeToolStep 合成的人话句子（读取了 xxx.md / 运行了命令 xxx），
@@ -97,7 +72,7 @@ export function ToolHeader({
     ? (toolCall.targetContext?.kind === 'app' ? toolCall.targetContext.label : undefined)
     : undefined;
   const labelArgs = computerLabelArgs(rawArgs, leasedApp);
-  const displayName = preflight?.action ?? (assembled
+  const rawDisplayName = preflight?.action ?? (assembled
     ? assembled.action
     : humanizeToolStep(
         toolCall.name,
@@ -114,6 +89,7 @@ export function ToolHeader({
         toolCall.stepLabel,
         { delegationReceipt: toolCall.name === 'delegate_session' ? parseDelegateSessionReceipt(toolCall.result) : undefined },
       ));
+  const displayName = humanizeInternalText(rawDisplayName, language).text;
   const statusLabel = assembled
     ? assembled.terminal
     : getToolStatusLabel(toolCall, status, t, awaitingApproval, interruptionReason);
@@ -140,10 +116,10 @@ export function ToolHeader({
     openPreview(filePath);
   };
 
-  const interruptionOutcome = t.outcomeWords[
-    resolveStreamInterruptionOutcomeKey(interruptionReason)
-  ].timeline;
-  const title = buildToolHeaderTitle(toolCall, displayName, interruptionOutcome.label);
+  const interruptionLabel = t.outcomeWords[resolveStreamInterruptionOutcomeKey(interruptionReason)].timeline.label;
+  const title = isToolInterruptionPlaceholder(toolCall.result?.error)
+    ? humanizeInternalText(`${interruptionLabel} · ${filePath ? formatDisplayPath(filePath) : displayName}`, language).text
+    : displayName;
   const pluginOriginDisplayName = getPluginOriginDisplayName(toolCall);
 
   return (
@@ -172,7 +148,7 @@ export function ToolHeader({
           data-testid="tool-header-open-preview"
           className={`${status === 'interrupted' ? 'text-zinc-500 font-normal hover:text-zinc-300' : 'text-zinc-200 font-semibold hover:text-zinc-100'} truncate min-w-0 text-left hover:underline underline-offset-2`}
           title={title}
-          aria-label={t.toolStepHumanize.openPreviewAria.replace('{path}', filePath)}
+          aria-label={t.toolStepHumanize.openPreviewAria.replace('{path}', displayName)}
           onClick={handleOpenPreview}
           onKeyDown={(event) => {
             if (event.key === 'Enter' || event.key === ' ') {
@@ -193,13 +169,13 @@ export function ToolHeader({
 
       {showSecondaryName && (
         <span className="flex-shrink-0 text-[10px] text-zinc-600 font-normal">
-          {toolNameForDetail(toolCall.name)}
+          {humanizeInternalText(toolNameForDetail(toolCall.name), language).text}
         </span>
       )}
 
       {pluginOriginDisplayName && (
         <span className="flex-shrink-0 text-xs text-zinc-500 font-normal" data-testid="tool-plugin-origin">
-          {t.toolStepHumanize.pluginOrigin.replace('{plugin}', pluginOriginDisplayName)}
+          {t.toolStepHumanize.pluginOrigin.replace('{plugin}', humanizeInternalText(pluginOriginDisplayName, language).text)}
         </span>
       )}
 
