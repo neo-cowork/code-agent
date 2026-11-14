@@ -1,5 +1,5 @@
 import React from 'react';
-import type { AudioCaptureMissingPrerequisiteCode } from '@shared/contract/audioCapture';
+import type { AudioCaptureMissingPrerequisiteCode, AudioCaptureMode } from '@shared/contract/audioCapture';
 import { GhostButton } from '../../../primitives/Button';
 import type { AudioCaptureStatus } from '../../../../services/nativeDesktop';
 
@@ -7,6 +7,7 @@ interface AudioReadinessText {
   recorderMissing: string;
   systemAudioHelperMissing: string;
   transcriptionEngineMissing: string;
+  transcriptionModelMissing: string;
   voiceDetectionMissing: string;
   voiceDetectionUnsupported: string;
   recheck: string;
@@ -16,6 +17,7 @@ const KNOWN_CODES: ReadonlySet<AudioCaptureMissingPrerequisiteCode> = new Set([
   'recorder_missing',
   'system_audio_helper_missing',
   'transcription_engine_missing',
+  'transcription_model_missing',
   'voice_detection_missing',
   'voice_detection_unsupported',
 ]);
@@ -46,7 +48,7 @@ export async function loadDayAndHourAudioSegments(
 
 function computeMissingAudioPrerequisites(
   status: AudioCaptureStatus | null,
-  selectedMode: 'microphone' | 'system-audio',
+  selectedMode: AudioCaptureMode,
   failedCode?: AudioCaptureMissingPrerequisiteCode | null,
 ): AudioCaptureMissingPrerequisiteCode[] {
   const codes: AudioCaptureMissingPrerequisiteCode[] = [];
@@ -61,14 +63,14 @@ function computeMissingAudioPrerequisites(
   if (prereqs) {
     const micReady = prereqs.recorder.microphone === 'ready';
     const sysReady = prereqs.recorder.systemAudio === 'ready';
-    if (selectedMode === 'system-audio') {
+    if (selectedMode !== 'microphone') {
       if (!sysReady && !micReady) add('recorder_missing');
       else if (!sysReady) add('system_audio_helper_missing');
     } else if (!micReady) {
       add('recorder_missing');
     }
     if (prereqs.transcriptionEngine === 'missing') {
-      add('transcription_engine_missing');
+      add(prereqs.missing.includes('transcription_model_missing') ? 'transcription_model_missing' : 'transcription_engine_missing');
     }
     if (prereqs.voiceDetection === 'unsupported') {
       add('voice_detection_unsupported');
@@ -93,6 +95,8 @@ function messageForCode(code: AudioCaptureMissingPrerequisiteCode, text: AudioRe
       return text.systemAudioHelperMissing;
     case 'transcription_engine_missing':
       return text.transcriptionEngineMissing;
+    case 'transcription_model_missing':
+      return text.transcriptionModelMissing;
     case 'voice_detection_missing':
       return text.voiceDetectionMissing;
     case 'voice_detection_unsupported':
@@ -117,7 +121,7 @@ export const NativeDesktopEmptyView: React.FC<{
 
 export const AudioCaptureReadinessLine: React.FC<{
   status: AudioCaptureStatus | null;
-  mode: 'microphone' | 'system-audio';
+  mode: AudioCaptureMode;
   failedCode?: AudioCaptureMissingPrerequisiteCode | null;
   text: AudioReadinessText;
   onRecheck: () => void;

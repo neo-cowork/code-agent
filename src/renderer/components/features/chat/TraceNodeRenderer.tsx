@@ -7,7 +7,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { TraceNode } from '@shared/contract/trace';
-import type { ToolCall } from '@shared/contract';
+import { traceTerminalToolCall } from '../../../utils/toolCallTerminalState';
 import type { FileChange } from '../../../utils/turnDiffSummary';
 import { stripAppshotBlocks } from '@shared/contract/appshot';
 import { extractUserRequest, stripSystemReminderBlocks } from '@shared/utils/turnScaffold';
@@ -46,6 +46,7 @@ import { WakeRationaleNote, wakeRationaleFromMetadata } from './WakeRationaleNot
 import { TurnTimelineNodeRenderer } from './TraceTimelineNodes';
 import { MessageContextFrame, MessageContextMenu } from './MessageContextMenu';
 import { messageContextMenuId } from './useMessageContextInterventions';
+import { BackgroundWakeFailureNote } from './BackgroundWakeFailureNote';
 import { StepLimitContinue } from './StepLimitContinue';
 
 interface TraceNodeRendererProps {
@@ -349,8 +350,14 @@ const AssistantTextNode: React.FC<{
   const keptBreakSegment = node.metadata?.streamInterruptionReason === 'stream-break';
   const wakeFields = wakeRationaleFromMetadata(node.metadata);
 
+  const preannounce = node.metadata?.backgroundTaskPreannounce;
+  const preannounceCopy = preannounce?.title
+    ? interpolate(t.backgroundPanel.preannounce.named, { title: preannounce.title })
+    : t.backgroundPanel.preannounce.generic;
+  const localizedContent = preannounce?.text && node.content.startsWith(preannounce.text)
+    ? preannounceCopy + node.content.slice(preannounce.text.length) : node.content;
   const { displayContent, isAnimating, tailStartIndex } = useSmoothStreamingText({
-    content: node.content || '',
+    content: localizedContent || '',
     isStreaming: Boolean(turnStreaming),
   });
 
@@ -570,37 +577,15 @@ const ToolCallNode: React.FC<{ node: TraceNode; sessionId?: string; unfinishedTo
   // Reconstruct ToolCall object for ToolCallDisplay
   // 必须把语义字段（shortDescription / targetContext / expectedOutcome）一起带回来，
   // 否则 ToolCallDisplay / ToolHeader 拿不到，会 fallback 到机械路径并多渲染重复信息
-  const toolCall: ToolCall = {
-    id: node.toolCall.id,
-    name: node.toolCall.name,
-    arguments: node.toolCall.args,
-    _streaming: node.toolCall._streaming,
-    shortDescription: node.toolCall.shortDescription,
-    stepLabel: node.toolCall.stepLabel,
-    targetContext: node.toolCall.targetContext,
-    expectedOutcome: node.toolCall.expectedOutcome,
-    result: node.toolCall.result !== undefined ? {
-      toolCallId: node.toolCall.id,
-      success: node.toolCall.success ?? true,
-      output: node.toolCall.success !== false ? node.toolCall.result : undefined,
-      error: node.toolCall.success === false ? node.toolCall.result : undefined,
-      duration: node.toolCall.duration,
-      outputPath: node.toolCall.outputPath,
-      // 投影层的 recovered 标记要随 result.metadata 带给 ToolCallDisplay（同 ToolStepGroup
-      // 的构造路径），否则已恢复的失败行仍按普通失败渲染「未成功」+ 失败原因行。
-      metadata: node.toolCall.recovered
-        ? { ...(node.toolCall.metadata || {}), recovered: true }
-        : node.toolCall.metadata,
-    } : undefined,
-    liveOutput: node.toolCall.liveOutput,
-  };
+  const toolCall = traceTerminalToolCall(node.toolCall);
 
   return (
     <ToolCallDisplay
       toolCall={toolCall}
       index={0}
       total={1}
-      statusOverride={node.metadata?.streamRecovery || interruptionReason ? 'interrupted' : unfinishedToolIsLive && node.toolCall.result === undefined ? 'pending' : undefined}
+      sessionLive={unfinishedToolIsLive}
+      agentId={node.metadata?.agentTeam?.agentId}
       interruptionReason={interruptionReason ?? (node.metadata?.streamRecovery ? 'app-restart' : undefined)}
       mediaContext={{ sessionId, messageId: node.messageId || node.id }}
     />
@@ -663,6 +648,16 @@ const SystemErrorNode: React.FC<{ node: TraceNode }> = ({ node }) => {
 const SystemNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, sessionId }) => {
   const [expanded, setExpanded] = useState(false);
   const { t } = useI18n();
+
+  if (node.metadata?.backgroundWakeFailed) {
+    return (
+      <BackgroundWakeFailureNote
+        detail={node.metadata.backgroundWakeFailed}
+        content={node.content}
+        sessionId={sessionId}
+      />
+    );
+  }
 
   const receipt = node.metadata?.roleEditReceipt;
   if (receipt) {
@@ -789,7 +784,7 @@ const SystemNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, s
   // generic system
   return (
     <div className="px-3 py-1.5 text-xs text-zinc-500 italic">
-      {node.content}
+      {node.metadata?.backgroundTaskInterrupted ? t.backgroundPanel.interrupted : node.content}
     </div>
   );
 };

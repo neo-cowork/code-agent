@@ -68,10 +68,11 @@ import { useMessageActionStore } from '../stores/messageActionStore';
 import { useModeStore } from '../stores/modeStore';
 import { isWebMode } from '../utils/platform';
 import { toast } from '../hooks/useToast';
+import { DEFAULT_PROVIDER, getProviderInfo } from '@shared/constants';
+import { resolveConfiguredDefaultProvider } from '@shared/modelDefaults';
 import { hasConfiguredDefaultRuntimeModel, hasConfiguredRuntimeModels } from '@shared/modelRuntime';
 import { buildGoalSeedTodos } from '@shared/utils/goalTodos';
 
-// PlanPanel moved to inline display in TurnBasedTraceView
 import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndicator';
 import { RewindPanel } from './RewindPanel';
 // Pending PermissionCard lives in the fixed DecisionSlot above ChatInput.
@@ -596,15 +597,14 @@ export const ChatView: React.FC = () => {
         openSettingsTab('model');
         return false;
       }
-      toast.info(t.chat.configureModelFirst);
-      openSettingsTab('model');
+      const provider = resolveConfiguredDefaultProvider(settings?.models, DEFAULT_PROVIDER);
+      toast.info(t.modelSetup.missingApiKey.replace('{provider}', getProviderInfo(provider)?.displayName || t.modelSetup.thisModel));
+      useAppStore.getState().openModelSettings(provider);
       return false;
     } catch {
       return true;
     }
   }, [openSettingsTab, t]);
-  // @neo 提交分支已移除（2026-07-29 拍板）：输入框不再有工作卡/续接交互，
-  // @neo 字样按普通文本消息发送；工作卡从 Neo 协同页发起。
   const handleSendEnvelope = useCallback(async (envelope: ConversationEnvelope): Promise<boolean> => {
     const clientMessageId = envelope.clientMessageId ?? generateMessageId();
     const feedbackSessionId = envelope.sessionId ?? currentSessionId;
@@ -663,7 +663,7 @@ export const ChatView: React.FC = () => {
       },
     });
     // 跳过提问后的 placeholder 出口（R5 帧 8）：下一条普通消息真的发出去了才恢复常规文案。
-    if (sent && currentSessionId === skippedQuestionSessionId) {
+    if (sent && currentSessionId !== null && currentSessionId === skippedQuestionSessionId) {
       setSkippedQuestionSessionId(null);
     }
     return sent;
@@ -1078,7 +1078,7 @@ export const ChatView: React.FC = () => {
             disabled={effectiveIsProcessing || isCreatingSession} isProcessing={effectiveIsProcessing}
             hasStoppableBackgroundWork={hasStoppableBackgroundWork} isInterrupting={isInterrupting} isStopping={isStopping}
             onStop={handleStop} hasContinuation={showDurableContinue}
-            onContinue={durableContinue.onContinue} hasPlan={false} placeholder={currentSessionId === skippedQuestionSessionId ? t.userQuestion.skippedPlaceholder : undefined} />
+            onContinue={durableContinue.onContinue} hasPlan={false} placeholder={currentSessionId !== null && currentSessionId === skippedQuestionSessionId ? t.userQuestion.skippedPlaceholder : undefined} />
         </div>
       </div>
 
