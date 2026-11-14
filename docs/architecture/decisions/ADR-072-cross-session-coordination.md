@@ -388,6 +388,8 @@ R3 起 D5.1 只定不变量，落点由施工卡定。下面每条是施工卡�
 
 不满足 E1-E4 任意一条：不接电，回评测迭代；E5/E6 不满足：可以带病接电但必须立单。
 
+> 11-13 补注（E2 收口）：E2=0 不再靠模型自觉。`runDelegateSession` 在准入门之前跑确定性守卫，目标不清（引用多家匹配、点名不存在的会话、没说新建却 `create_new`、没有任务内容）直接返回 `needs_clarification`，模型唯一合法的下一步是 AskUserQuestion，委托表零写入。门号 G1–G12 不变。见拍板记录 2026-11-13 一行。
+
 ## 与五个既有编排设施的关系（吸收 / 并存 / 不碰）
 
 | 设施 | 关系 | 一句话 |
@@ -468,6 +470,7 @@ R4 起没有开放槽。Q1、Q3 的槽已删，决定在拍板记录。下表只
 | 2026-09-23 | R4：撤销隐藏协调会话与 `session_type='coordination'`。协调是任意会话里的能力，工具为 `delegate_session` + 只读 `list_session_candidates`。D4 的两次小调用和决策表撤销，改成工具契约。`coordination_session_id` / `coordination_turn_id` 改为 `origin_session_id` / `origin_turn_id`。G4 改为幂等（原 G7 并入，编号 G7 空出，G5/G6/G8–G12 不改号）。同目标多条委托按 `queued_inputs` FIFO 排队；G10 只拒绝用户占用，不拒绝同目标上的其他委托。INV-2「有活跃 run 即忙」在排队语义下不成立，改为三句；「排在本行之后的输入不算忙」仍成立。接缝 (b) 不再把「active 且当前没在跑」一律当成中断。不同目标不另加池：不进 `SESSION_TASK_CONCURRENCY`（全局 4）、不进 `SPAWN_GUARD.MAX_TREE_AGENTS`（8）、不进 `WEB_SSE.MAX_CONCURRENT_PER_TOKEN`（drain 的 `connectedClient: false`）。Q4：默认发起会话已保存的模型，施工 A/B 再决定设置入口。Q5：委托轮与发起轮都进上传；评分分母不剔委托轮；来源标记进遥测字段。岔路：拍板记录原文写「剔出上线后评分分母」，括号要求按 R4 改写后的口径落地；爸原话是「其他你建议的都 OK」，更接近原话的是本段建议（不剔），不是继续剔一个已经不存在的隐藏会话。拍板记录四行照抄。原「Q1/Q3/Q4/Q5 待对齐」占位行删掉，它不是决定 | 爸 09-23 拍板 Q1/Q3/Q4/Q5（N-WORKHUB-ADR R4） |
 | 2026-10-24 | E1 标签集：`reject` 为独立第 8 值标签，不并入 answer_here/clarify（labels.md v1.0 的「推定，待确认」就此落定）。判定锚点：澄清了也不能做 → reject；澄清后或许能做 → clarify | 爸（林晨）10-24 拍板（N-DELEGATE-SESSION-K2 语料卷） |
 | 2026-10-29 | Q4 结论：不开「路由专用模型」设置入口。K1-AB 两臂各 35/36 判对、harmful error 0，快速档 P95 21091 ms 反而差于主模型 11918 ms（`docs/research/assets/2026-10-delegate-routing-ab/results.json`）——路由档位无实质差异，不值得暴露设置项；委托默认走发起会话已保存的模型 | 爸（林晨）10-29 拍板（N-DELEGATE-SESSION-K1-AB 数据落地） |
+| 2026-11-13 | E2 不安全绑定的收口方式：选 A，在代码里加确定性守卫（`delegationClarifyGuard`），目标不清时工具返回 `needs_clarification`、模型只能转 AskUserQuestion、不写委托行。调工具描述（N-DELEGATE-SESSION-K2-FU3）实测无效已撤；B（保持 flag 关）、C（接受违例）不取 | 爸（林晨）11-13，经发版说明拍板（N-DELEGATE-SESSION-K2-FU3-FU1） |
 
 ---
 

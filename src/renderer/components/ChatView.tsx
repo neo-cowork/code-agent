@@ -11,6 +11,8 @@ import { useSessionStore } from '../stores/sessionStore';
 import { useSessionUIStore } from '../stores/sessionUIStore';
 import { useStreamingMessageAccumulatorStore } from '../stores/streamingMessageAccumulatorStore';
 import { selectHasStoppableSwarmWork, useSwarmStore } from '../stores/swarmStore';
+import { useBackgroundTaskStore } from '../stores/backgroundTaskStore';
+import { useTaskStore } from '../stores/taskStore';
 import {
   ensureNeoWorkCardLiveUpdates,
   isNeoWorkCardAwaitingRuntimeTerminal,
@@ -31,6 +33,8 @@ import { MemberConversationView } from './features/expert/MemberConversationView
 import { useMemberViewStore } from '../stores/memberViewStore';
 export { buildDefaultSuggestions } from './features/chat/NewSessionWelcome';
 import { SurfaceExecutionChatPanel } from './features/surfaceExecution/SurfaceExecutionChatPanel';
+import { detectMessageLanguage } from '@shared/sessionTitlePrompt';
+import { BrowserTakeoverParkCard } from './features/surfaceExecution/BrowserTakeoverParkCard';
 import { PinnedTodoBar } from './features/chat/PinnedTodoBar';
 import { BackgroundSessionPanel } from './features/background';
 import { SessionRecapBanner } from './features/chat/SessionRecapBanner';
@@ -66,10 +70,11 @@ import { useMessageActionStore } from '../stores/messageActionStore';
 import { useModeStore } from '../stores/modeStore';
 import { isWebMode } from '../utils/platform';
 import { toast } from '../hooks/useToast';
+import { DEFAULT_PROVIDER, getProviderInfo } from '@shared/constants';
+import { resolveConfiguredDefaultProvider } from '@shared/modelDefaults';
 import { hasConfiguredDefaultRuntimeModel, hasConfiguredRuntimeModels } from '@shared/modelRuntime';
 import { buildGoalSeedTodos } from '@shared/utils/goalTodos';
 
-// PlanPanel moved to inline display in TurnBasedTraceView
 import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndicator';
 import { RewindPanel } from './RewindPanel';
 // Pending PermissionCard lives in the fixed DecisionSlot above ChatInput.
@@ -101,6 +106,7 @@ import {
 import { recordStreamingPerformanceCounter } from '../utils/streamingPerformanceMetrics';
 import { findSearchMatchForPendingJump } from '../utils/sessionSearchJump';
 import { buildProjectGoalChatStart } from '../utils/projectGoalChatSeed';
+import { isTerminalTaskStatus } from '@shared/contract/backgroundTask';
 import { findPendingPlanApproval, hasPlanApproval } from '../utils/planApprovalView';
 import { Image, MessageSquare } from 'lucide-react';
 import {
@@ -375,6 +381,26 @@ export const ChatView: React.FC = () => {
   // 回溯横幅禁用，并进去会把「主 loop 空闲时发新消息」误路由成运行中补充。
   const hasStoppableSwarmWork = useSwarmStore((state) =>
     selectHasStoppableSwarmWork(state, currentSessionId));
+  const hasStoppableCommandCenterWork = useBackgroundTaskStore((state) => (
+    Boolean(currentSessionId) && state.tasks.some((task) => (
+      task.sessionId === currentSessionId
+      && task.source === 'session_command_center'
+      && !isTerminalTaskStatus(task.status)
+    ))
+  ));
+  // 点过 Stop 且后台任务还没全部收线：按钮显示「正在停止」但保持可点（前台 idle 时 TaskManager 不会进 cancelling）。
+  const [stopRequestedSessionId, setStopRequestedSessionId] = useState<string | null>(null);
+  const isStopping = useTaskStore((state) => (
+    currentSessionId ? state.sessionStates[currentSessionId]?.status === 'cancelling' : false
+  )) || (Boolean(currentSessionId) && stopRequestedSessionId === currentSessionId && hasStoppableCommandCenterWork);
+  useEffect(() => {
+    if (stopRequestedSessionId && !hasStoppableCommandCenterWork) setStopRequestedSessionId(null);
+  }, [stopRequestedSessionId, hasStoppableCommandCenterWork]);
+  const handleStop = useCallback(() => {
+    setStopRequestedSessionId(currentSessionId ?? null);
+    return cancel();
+  }, [cancel, currentSessionId]);
+  const hasStoppableBackgroundWork = hasStoppableSwarmWork || hasStoppableCommandCenterWork;
 
   // Bridge 拦截状态 (Phase 4)
   const [bridgePrompt, setBridgePrompt] = useState<{ toolName: string } | null>(null);
@@ -573,15 +599,14 @@ export const ChatView: React.FC = () => {
         openSettingsTab('model');
         return false;
       }
-      toast.info(t.chat.configureModelFirst);
-      openSettingsTab('model');
+      const provider = resolveConfiguredDefaultProvider(settings?.models, DEFAULT_PROVIDER);
+      toast.info(t.modelSetup.missingApiKey.replace('{provider}', getProviderInfo(provider)?.displayName || t.modelSetup.thisModel));
+      useAppStore.getState().openModelSettings(provider);
       return false;
     } catch {
       return true;
     }
   }, [openSettingsTab, t]);
-  // @neo 提交分支已移除（2026-07-29 拍板）：输入框不再有工作卡/续接交互，
-  // @neo 字样按普通文本消息发送；工作卡从 Neo 协同页发起。
   const handleSendEnvelope = useCallback(async (envelope: ConversationEnvelope): Promise<boolean> => {
     const clientMessageId = envelope.clientMessageId ?? generateMessageId();
     const feedbackSessionId = envelope.sessionId ?? currentSessionId;
@@ -640,7 +665,7 @@ export const ChatView: React.FC = () => {
       },
     });
     // 跳过提问后的 placeholder 出口（R5 帧 8）：下一条普通消息真的发出去了才恢复常规文案。
-    if (sent && currentSessionId === skippedQuestionSessionId) {
+    if (sent && currentSessionId !== null && currentSessionId === skippedQuestionSessionId) {
       setSkippedQuestionSessionId(null);
     }
     return sent;
@@ -889,6 +914,15 @@ export const ChatView: React.FC = () => {
         />
 
         <SurfaceExecutionChatPanel conversationId={currentSessionId} />
+        {/* N-FIX-FIX-BROWSER-SECRETREF-HARDEN（FB-578）：secretRef 接管停靠的聊天「继续」卡。
+            「继续」发送一条用户消息开启下一轮（下一段任务在 ensureBinding 认领停靠窗），
+            不 resume 已完结的会话。 */}
+        <BrowserTakeoverParkCard
+          conversationId={currentSessionId}
+          workspace={currentSessionWorkingDirectory}
+          messageLanguage={detectMessageLanguage(messages.findLast((message) => message.role === 'user' && !message.isMeta)?.content ?? '')}
+          onContinue={handleSendMessage}
+        />
 
         <RoleFirstWakeThreadBanner suppressWakeProposals={isEmptySessionWelcomeVisible} />
 
@@ -1053,8 +1087,9 @@ export const ChatView: React.FC = () => {
 
           <ChatInput ref={chatInputRef} onSend={handleSendEnvelopeWithCronFollowUp} onSteer={handleSteerEnvelope}
             disabled={effectiveIsProcessing || isCreatingSession} isProcessing={effectiveIsProcessing}
-            hasStoppableBackgroundWork={hasStoppableSwarmWork} isInterrupting={isInterrupting} onStop={cancel} hasContinuation={showDurableContinue}
-            onContinue={durableContinue.onContinue} hasPlan={false} placeholder={currentSessionId === skippedQuestionSessionId ? t.userQuestion.skippedPlaceholder : undefined} />
+            hasStoppableBackgroundWork={hasStoppableBackgroundWork} isInterrupting={isInterrupting} isStopping={isStopping}
+            onStop={handleStop} hasContinuation={showDurableContinue}
+            onContinue={durableContinue.onContinue} hasPlan={false} placeholder={currentSessionId !== null && currentSessionId === skippedQuestionSessionId ? t.userQuestion.skippedPlaceholder : undefined} />
         </div>
       </div>
 
