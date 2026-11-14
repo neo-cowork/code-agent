@@ -12,10 +12,11 @@ import { useTaskStore } from '../../../src/renderer/stores/taskStore';
 import { projectSourceTrustCopy } from '../../../src/renderer/i18n/agentRunErrors';
 import { languages } from '../../../src/renderer/i18n';
 
-vi.mock('../../../src/renderer/hooks/useI18n', async () => {
+vi.mock('../../../src/renderer/hooks/useI18n', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/renderer/hooks/useI18n')>();
   const { languages: langs } = await import('../../../src/renderer/i18n');
   const { useAppStore: store } = await import('../../../src/renderer/stores/appStore');
-  return { useI18n: () => ({ t: langs[store((s) => s.language)] }) };
+  return { ...actual, useI18n: () => ({ t: langs[store((s) => s.language)] }) };
 });
 
 vi.mock('react-virtuoso', async () => {
