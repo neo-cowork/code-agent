@@ -41,6 +41,13 @@ pub(crate) fn dialog_copy(language: QuitDialogLanguage) -> QuitDialogCopy {
     }
 }
 
+pub(crate) fn background_hint(language: QuitDialogLanguage) -> &'static str {
+    match language {
+        QuitDialogLanguage::Zh => "Agent Neo 会在后台继续运行，以便执行定时任务。如需完全退出，请点击菜单栏图标 → 完全退出。",
+        QuitDialogLanguage::En => "Agent Neo keeps running in the background so your scheduled tasks run. To quit completely, use the menu bar icon → Quit Completely.",
+    }
+}
+
 pub(crate) fn prompt_text(
     prompt: QuitPrompt,
     offers_background_continue: bool,
@@ -49,9 +56,6 @@ pub(crate) fn prompt_text(
     match (language, offers_background_continue, prompt) {
         (QuitDialogLanguage::Zh, true, QuitPrompt::RunningTasks) => {
             "有任务正在运行。\n\n后台继续：关闭窗口，任务和定时任务照常运行\n停止并退出：停止全部任务（含定时任务）并退出"
-        }
-        (QuitDialogLanguage::Zh, true, QuitPrompt::ScheduledTasks) => {
-            "当前只有定时任务。停止后这些任务将不再运行。\n\n后台继续：关闭窗口，任务和定时任务照常运行\n停止并退出：停止全部任务（含定时任务）并退出"
         }
         (QuitDialogLanguage::Zh, true, QuitPrompt::Both) => {
             "有任务正在运行，也有定时任务。\n\n后台继续：关闭窗口，任务和定时任务照常运行\n停止并退出：停止全部任务（含定时任务）并退出"
@@ -62,9 +66,6 @@ pub(crate) fn prompt_text(
         (QuitDialogLanguage::Zh, false, QuitPrompt::RunningTasks) => {
             "有任务正在运行。退出将停止这些任务。"
         }
-        (QuitDialogLanguage::Zh, false, QuitPrompt::ScheduledTasks) => {
-            "当前只有定时任务。退出将停止这些定时任务，停止后不再运行。"
-        }
         (QuitDialogLanguage::Zh, false, QuitPrompt::Both) => {
             "有任务正在运行，也有定时任务。退出将停止运行中的任务和定时任务。"
         }
@@ -74,9 +75,6 @@ pub(crate) fn prompt_text(
         (QuitDialogLanguage::En, true, QuitPrompt::RunningTasks) => {
             "Tasks are currently running.\n\nKeep Running in Background: Close the window; tasks and scheduled tasks will continue running\nStop and Quit: Stop all tasks (including scheduled tasks) and quit"
         }
-        (QuitDialogLanguage::En, true, QuitPrompt::ScheduledTasks) => {
-            "There are only scheduled tasks. Stopping will prevent them from running.\n\nKeep Running in Background: Close the window; tasks and scheduled tasks will continue running\nStop and Quit: Stop all tasks (including scheduled tasks) and quit"
-        }
         (QuitDialogLanguage::En, true, QuitPrompt::Both) => {
             "Tasks are currently running, and there are scheduled tasks.\n\nKeep Running in Background: Close the window; tasks and scheduled tasks will continue running\nStop and Quit: Stop all tasks (including scheduled tasks) and quit"
         }
@@ -85,9 +83,6 @@ pub(crate) fn prompt_text(
         }
         (QuitDialogLanguage::En, false, QuitPrompt::RunningTasks) => {
             "Tasks are currently running. Quitting will stop these tasks."
-        }
-        (QuitDialogLanguage::En, false, QuitPrompt::ScheduledTasks) => {
-            "There are only scheduled tasks. Quitting will stop these scheduled tasks, and they will not run again."
         }
         (QuitDialogLanguage::En, false, QuitPrompt::Both) => {
             "Tasks are currently running, and there are scheduled tasks. Quitting will stop the running tasks and scheduled tasks."
@@ -109,7 +104,6 @@ mod tests {
             let copy = dialog_copy(language);
             for prompt in [
                 QuitPrompt::RunningTasks,
-                QuitPrompt::ScheduledTasks,
                 QuitPrompt::Both,
                 QuitPrompt::Unverified,
             ] {
@@ -131,7 +125,6 @@ mod tests {
     fn localized_copy_covers_all_prompts_and_button_sets() {
         let prompts = [
             QuitPrompt::RunningTasks,
-            QuitPrompt::ScheduledTasks,
             QuitPrompt::Both,
             QuitPrompt::Unverified,
         ];
@@ -157,6 +150,12 @@ mod tests {
                 assert!(!two.contains(copy.background_button));
             }
         }
+    }
+
+    #[test]
+    fn background_hint_names_the_full_quit_menu_item_in_both_languages() {
+        assert!(background_hint(QuitDialogLanguage::Zh).contains("菜单栏图标 → 完全退出"));
+        assert!(background_hint(QuitDialogLanguage::En).contains("menu bar icon → Quit Completely"));
     }
 
     #[test]
