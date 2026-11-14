@@ -28,6 +28,8 @@ mod agent_halo;
 mod appshots;
 mod appshots_hotkey_gate;
 mod background_resident;
+mod env_assist_grant;
+mod env_assist_passive;
 mod menu_i18n;
 use menu_i18n::set_shell_language;
 mod native_app_icon;

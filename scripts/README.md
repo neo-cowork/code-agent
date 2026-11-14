@@ -32,7 +32,7 @@ Renderer 英文计数文案由 `i18n-plural-ratchet.mjs` 守门，作为 package
 `gates:local` 共用的稳定入口，禁止 `(s)` 和未走 plural pair 的硬复数。
 
 Neo 用户旅程 React commitCount 由 `perf-journey-ratchet.mjs` 与同目录显式基线守门：
-PR 时 `gates:fast` 按路径各占 1 个文件槽（共享产品路径只挂最敏感的那条旅程），合入 main 后 swarm-ci 全量复跑。计数上升红、下降绿；收紧基线是手工 `node scripts/perf-journey-ratchet.mjs --tighten`（只降不升）。
+PR 时 `gates:fast` 按路径各占 1 个文件槽（共享产品路径只挂最敏感的那条旅程），合入 main 后 swarm-ci 全量复跑。计数上升红、下降绿；收紧基线是手工 `node scripts/perf-journey-ratchet.mjs --tighten`（只降不升）。CI 任务有意留在裸 `ubuntu-24.04` runner 上运行，不进容器（Playwright 容器内 Chromium 在 `long-session` 读出 14 vs 基线 13，见 PR #3330）。脚本输出的 `commit-trace` 与 `environment` 行记录逐次提交与运行环境，后续若再评估容器化须先据此比对差异。
 
 一次性迁移、局部调试和新验收脚本不要继续平铺到根层。迁移已有脚本时先保留薄兼容入口，确认 package scripts、workflow 和文档引用全部切换后再删除。
 
