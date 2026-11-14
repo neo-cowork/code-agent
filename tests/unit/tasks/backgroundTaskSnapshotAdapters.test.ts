@@ -31,9 +31,10 @@ import {
   syncShellTaskSnapshotToLedger,
   syncPtySessionSnapshotToLedger,
 } from '../../../src/host/task/backgroundTaskSnapshotAdapters';
-import type {
-  BackgroundTaskLifecycleEvent,
-  PtySessionLifecycleEvent,
+import {
+  resolveBackgroundTaskName,
+  type BackgroundTaskLifecycleEvent,
+  type PtySessionLifecycleEvent,
 } from '../../../src/host/tools/modules/shell/backgroundTaskSources';
 
 describe('backgroundTaskSnapshotAdapters', () => {
@@ -208,18 +209,91 @@ describe('backgroundTaskSnapshotAdapters', () => {
   it('unnamed shell and PTY titles use the same target fallback; details retain commands', () => {
     const ledger = new BackgroundTaskLedger();
     const command = 'curl -s -m 5 http://127.0.0.1:8899/; echo done';
+    const displayName = resolveBackgroundTaskName(undefined, command);
     syncShellTaskSnapshotToLedger({
-      taskId: 'unnamed', status: 'running', command, displayCommand: command,
+      taskId: 'unnamed', status: 'running', command, displayCommand: command, displayName,
       cwd: '/repo', startTime: 1_000, duration: 0, outputFile: '/tmp/unnamed.log',
     }, ledger);
     syncPtySessionSnapshotToLedger({
-      sessionId: 'unnamed', status: 'running', command: 'curl', args: ['-s', 'http://127.0.0.1:8899/'],
+      sessionId: 'unnamed', status: 'running', command, args: [], displayCommand: command, displayName,
       cwd: '/repo', startTime: 1_000, duration: 0, outputFile: '/tmp/unnamed.log', cols: 80, rows: 24,
     }, ledger);
     expect(ledger.getTask('shell:unnamed')).toMatchObject({ title: '127.0.0.1:8899', command });
-    expect(ledger.getTask('pty:unnamed')).toMatchObject({
-      title: '127.0.0.1:8899', command: 'curl -s http://127.0.0.1:8899/',
-    });
+    expect(ledger.getTask('pty:unnamed')).toMatchObject({ title: '127.0.0.1:8899', command });
+  });
+
+  it('PTY snapshots retain the full unwrapped command in ledger and SQLite recovery when displayName is shortened', () => {
+    const db = new Database(':memory:');
+    try {
+      const store = new SqliteBackgroundTaskStore(db);
+      const ledger = new BackgroundTaskLedger({ store });
+      const unwrapped = 'npm run dev';
+      const shortName = resolveBackgroundTaskName(undefined, unwrapped);
+      expect(shortName).toBe('npm');
+
+      syncPtySessionSnapshotToLedger({
+        sessionId: 'pty-unsandboxed',
+        status: 'running',
+        command: unwrapped,
+        args: [],
+        displayCommand: unwrapped,
+        displayName: shortName,
+        cwd: '/repo',
+        ownerSessionId: 'session-pty',
+        startTime: 1_000,
+        duration: 500,
+        outputFile: '/tmp/pty-unsandboxed.log',
+        cols: 80,
+        rows: 24,
+      }, ledger);
+
+      syncPtySessionSnapshotToLedger({
+        sessionId: 'pty-sandboxed',
+        status: 'completed',
+        command: 'sandbox-exec -f /var/folders/x/profile.sb /bin/sh -c "npm run dev"',
+        args: [],
+        displayCommand: unwrapped,
+        displayName: shortName,
+        sandboxed: true,
+        cwd: '/repo',
+        ownerSessionId: 'session-pty',
+        startTime: 2_000,
+        endTime: 3_000,
+        duration: 1_000,
+        exitCode: 0,
+        outputFile: '/tmp/pty-sandboxed.log',
+        cols: 80,
+        rows: 24,
+      }, ledger);
+
+      const genericFallbackCommand = '[ -f ready ] && echo ok';
+      syncPtySessionSnapshotToLedger({
+        sessionId: 'pty-generic',
+        status: 'running',
+        command: genericFallbackCommand,
+        args: [],
+        displayCommand: genericFallbackCommand,
+        displayName: resolveBackgroundTaskName(undefined, genericFallbackCommand),
+        cwd: '/repo',
+        ownerSessionId: 'session-pty',
+        startTime: 3_500,
+        duration: 100,
+        outputFile: '/tmp/pty-generic.log',
+        cols: 80,
+        rows: 24,
+      }, ledger);
+
+      expect(ledger.getTask('pty:pty-unsandboxed')).toMatchObject({ title: 'npm', command: 'npm run dev' });
+      expect(ledger.getTask('pty:pty-sandboxed')).toMatchObject({ title: 'npm', command: 'npm run dev' });
+      expect(ledger.getTask('pty:pty-generic')).toMatchObject({
+        title: 'Background task',
+        command: genericFallbackCommand,
+      });
+      expect(store.loadTerminalTask('pty:pty-unsandboxed')).toMatchObject({ title: 'npm', command: 'npm run dev' });
+      expect(store.loadTerminalTask('pty:pty-sandboxed')).toMatchObject({ title: 'npm', command: 'npm run dev' });
+    } finally {
+      db.close();
+    }
   });
 
   it('maps stopped shell snapshots to cancelled with displayCommand and task_cancelled notification', () => {

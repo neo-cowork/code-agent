@@ -296,8 +296,8 @@ export function syncPtySessionSnapshotToLedger(
   const status = mapShellStatus(session.status, session.stoppedByRequest);
   const taskId = `pty:${session.sessionId}`;
   const rawCommand = [session.command, ...session.args].filter(Boolean).join(' ');
-  const command = safeLabel(session.displayName?.trim() || rawCommand, `PTY ${session.sessionId.slice(0, 8)}`);
-  const label = resolveBackgroundTaskName(safeLabel(session.displayName, ''), rawCommand);
+  const command = safeLabel(session.displayCommand?.trim() || rawCommand, `PTY ${session.sessionId.slice(0, 8)}`);
+  const label = resolveBackgroundTaskName(safeLabel(session.displayName, ''), session.displayCommand || rawCommand);
   const previous = ledger.getTask(taskId);
   const recoveryStatus = status === 'running' ? 'running-live' : status;
   ledger.upsertTask({
