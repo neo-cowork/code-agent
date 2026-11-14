@@ -2,6 +2,7 @@ import type { Response } from 'express';
 import type { AgentEvent, SessionStatus } from '../../shared/contract';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { notificationService } from '../../host/services/infra/notificationService';
+import { buildApprovalNoticeCopy } from '../../host/services/infra/notificationPolicy';
 import { MessageDeltaAccumulator } from '../../host/protocol/messageDeltaAccumulator';
 import { createAgentRunSSEBatcher } from '../helpers/agentRunSSEBatcher';
 import { broadcastSSE, sendSSE } from '../helpers/sse';
@@ -176,8 +177,7 @@ export class AgentRunController {
       }
       notificationService.notifyNeedsInput({
         sessionId: this.deps.sessionId,
-        title: '需要授权',
-        body: data.tool ? `${data.tool}: ${data.command || '请求执行权限'}` : '请求执行权限',
+        ...buildApprovalNoticeCopy(data.tool, data.command),
         dedupeKey: data.id,
       });
     } catch (error) {

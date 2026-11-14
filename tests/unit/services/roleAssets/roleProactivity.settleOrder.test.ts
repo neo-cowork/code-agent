@@ -174,6 +174,28 @@ describe('wakeRole realtime notice vs late task_complete settlement', () => {
     ]);
   });
 
+  it('English UI: the check-in session title and its notice are written in English', async () => {
+    mockSettings.value = { roleAssets: { proactivity: { defaultLevel: 'realtime' } }, ui: { language: 'en' } };
+    deliverTaskCompleteAfterRunReturns();
+    const result = await wakeRole(ROLE, 'cadence');
+    await delay(60);
+    expect(result).toMatchObject({ status: 'completed', decision: 'report' });
+    const created = mockSessionManager.createSession.mock.calls.at(-1)?.[0] as { title: string };
+    expect(created.title).toMatch(new RegExp(`^${ROLE} · Check-in \\d{2}-\\d{2} \\d{2}:\\d{2}$`));
+    expect(created.title).not.toContain(ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX);
+    expect(notificationService.getRecentNotifications()).toEqual([
+      expect.objectContaining({ type: 'task_complete', sessionId: SESSION, title: `${ROLE} · Check-in` }),
+    ]);
+  });
+
+  it('Chinese UI keeps the Chinese check-in session title', async () => {
+    deliverTaskCompleteAfterRunReturns();
+    await wakeRole(ROLE, 'cadence');
+    await delay(60);
+    const created = mockSessionManager.createSession.mock.calls.at(-1)?.[0] as { title: string };
+    expect(created.title).toMatch(new RegExp(`^${ROLE} · ${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX} \\d{2}-\\d{2} \\d{2}:\\d{2}$`));
+  });
+
   it('a run that times out without task_complete does not leak the mark: later follow-up still notifies', async () => {
     const wake = { roleId: ROLE, sessionId: SESSION, phase: 'wake-run' as const, timeoutMs: 10, cancel: () => undefined };
     await expect(withWakeRunTimeout(() => new Promise<never>(() => undefined), wake)).rejects.toThrow(/timed out/);

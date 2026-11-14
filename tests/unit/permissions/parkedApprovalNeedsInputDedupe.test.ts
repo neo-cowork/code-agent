@@ -5,15 +5,17 @@
 // 断言同一条停车请求只投递一条横幅；普通（非停车）请求经 ② 仍各投递一条。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentEvent, AppSettings } from '../../../src/shared/contract';
-import { PARKED_APPROVAL_ENTRY_PATH } from '../../../src/shared/parkedApprovalLocation';
-import { sidebarZh } from '../../../src/renderer/i18n/sidebar';
-import { cronCenterZh } from '../../../src/renderer/i18n/cronCenter';
+import { PARKED_APPROVAL_ENTRY_PATH, PARKED_APPROVAL_ENTRY_PATH_EN } from '../../../src/shared/parkedApprovalLocation';
+import { sidebarEn, sidebarZh } from '../../../src/renderer/i18n/sidebar';
+import { cronCenterEn, cronCenterZh } from '../../../src/renderer/i18n/cronCenter';
+import { buildParkedApprovalNoticeCopy } from '../../../src/host/services/infra/notificationPolicy';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 import type { PendingApprovalRepository } from '../../../src/host/services/core/repositories/PendingApprovalRepository';
 
 const platformMocks = vi.hoisted(() => ({
   focusedWindow: null as object | null,
   broadcast: vi.fn(),
+  language: 'zh' as 'zh' | 'en',
 }));
 
 const sessionManagerStub = vi.hoisted(() => ({
@@ -35,7 +37,7 @@ vi.mock('../../../src/host/services/infra/logger', () => {
 });
 // notifyTaskResuming 的文案语言读 configService（ui.language）；本文件不测该路径，钉死 zh。
 vi.mock('../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getSettings: () => ({ ui: { language: 'zh' } }) }),
+  getConfigService: () => ({ getSettings: () => ({ ui: { language: platformMocks.language } }) }),
 }));
 // persistTaskManagerEvent / backgroundTaskTerminal 从 services barrel 拿
 // { getSessionManager, notificationService }——sessionManager 打桩，notificationService 用真件。
@@ -130,7 +132,8 @@ describe('停车审批 needs-input 横幅去重（真服务链路）', () => {
       IPC_CHANNELS.NOTIFICATION_SHOW,
       expect.objectContaining({
         title: '有操作等你确认', sessionId, urgent: true,
-        body: `无人值守任务请求执行 write_file，已暂停等你批准，到${PARKED_APPROVAL_ENTRY_PATH}处理。`,
+        // 横幅正文过共享人话层：工具名 write_file 以「写入文件」出现，不露原始工具名。
+        body: `无人值守任务请求执行 写入文件，已暂停等你批准，到${PARKED_APPROVAL_ENTRY_PATH}处理。`,
       }),
     );
 
@@ -179,10 +182,50 @@ describe('停车审批 needs-input 横幅去重（真服务链路）', () => {
   });
 });
 
+describe('approval notices follow the UI language', () => {
+  beforeEach(() => {
+    platformMocks.language = 'en';
+    platformMocks.focusedWindow = {};
+    platformMocks.broadcast.mockClear();
+    notificationService.clearRecentNotifications();
+  });
+  afterEach(() => {
+    platformMocks.language = 'zh';
+    notificationService.clearRecentNotifications();
+  });
+
+  it('English UI: a permission request through the persistence path is announced in English', async () => {
+    const sessionId = 'plain-permission-en';
+    await persistTaskManagerEvent(makeDeps(), sessionId, {
+      type: 'permission_request',
+      data: { id: 'plain-en-1', sessionId, type: 'network', tool: 'mcp__mail__list_recent_emails', details: {}, timestamp: 1 },
+    });
+    expect(platformMocks.broadcast).toHaveBeenCalledWith(
+      IPC_CHANNELS.NOTIFICATION_SHOW,
+      expect.objectContaining({ title: 'Approval needed', body: 'Plugin tool (list recent emails): needs your approval', sessionId, urgent: true }),
+    );
+    const shown = platformMocks.broadcast.mock.calls[0][1] as { title: string; body: string };
+    expect(`${shown.title} ${shown.body}`).not.toMatch(/[\u3400-\u9fff]|mcp__/);
+  });
+
+  it('English UI: the unattended (parked) approval notice is English and names the English screen path', () => {
+    const copy = buildParkedApprovalNoticeCopy('write_file');
+    expect(copy.title).toBe('An action is waiting for you');
+    expect(copy.body).toBe(`An unattended task wants to run write_file and is paused until you approve it under ${PARKED_APPROVAL_ENTRY_PATH_EN}.`);
+    notificationService.notifyNeedsInput({ sessionId: 'parked-en', ...copy, dedupeKey: 'parked-en-1' });
+    const shown = platformMocks.broadcast.mock.calls[0][1] as { title: string; body: string };
+    expect(shown.body).toBe('An unattended task wants to run Write file and is paused until you approve it under Automations → Run history.');
+    expect(`${shown.title} ${shown.body}`).not.toMatch(/[\u3400-\u9fff]|write_file/);
+  });
+});
+
 describe('parked approval location i18n drift', () => {
   it('pins the entry path to sidebar automation and runs tab, and the approval group heading', () => {
     expect(PARKED_APPROVAL_ENTRY_PATH).toBe(
       `「${sidebarZh.sidebar.capabilityZone.automation}」→「${cronCenterZh.cronCenter.tabRuns}」`,
+    );
+    expect(PARKED_APPROVAL_ENTRY_PATH_EN).toBe(
+      `${sidebarEn.sidebar.capabilityZone.automation} → ${cronCenterEn.cronCenter.tabRuns}`,
     );
     expect(cronCenterZh.cronCenter.parkedTitle).toEqual({
       one: '{count} 个操作等你确认', other: '{count} 个操作等你确认',

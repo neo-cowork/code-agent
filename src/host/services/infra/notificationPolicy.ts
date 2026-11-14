@@ -1,6 +1,7 @@
 import { humanizeInternalText } from '../../../shared/humanizeInternalText';
 import { presentReplyBody } from '../../../shared/replyBodyPresentation';
 import { readUiLanguage } from '../../session/sessionTitleHostPrompt';
+import { PARKED_APPROVAL_ENTRY_PATH, PARKED_APPROVAL_ENTRY_PATH_EN } from '../../../shared/parkedApprovalLocation';
 // ============================================================================
 // Notification Policy Gate
 // ============================================================================
@@ -53,6 +54,29 @@ function stripMarkdownForBanner(text: string): string {
     .replace(/~~(.+?)~~/g, '$1')
     .replace(/`([^`]*)`/g, '$1')
     .replace(/\*\*|`/g, '');
+}
+
+/** Approval notice copy in the UI language; every permission_request producer shares it. */
+export function buildApprovalNoticeCopy(tool?: unknown, command?: unknown): { title: string; body: string } {
+  const en = readUiLanguage() === 'en';
+  const waiting = en ? 'needs your approval' : '请求执行权限';
+  return {
+    title: en ? 'Approval needed' : '需要授权',
+    body: tool ? `${String(tool)}: ${command ? String(command) : waiting}` : en ? 'A request needs your approval' : waiting,
+  };
+}
+
+/** Unattended (parked) approval notice in the UI language. */
+export function buildParkedApprovalNoticeCopy(tool: string): { title: string; body: string } {
+  return readUiLanguage() === 'en'
+    ? {
+      title: 'An action is waiting for you',
+      body: `An unattended task wants to run ${tool} and is paused until you approve it under ${PARKED_APPROVAL_ENTRY_PATH_EN}.`,
+    }
+    : {
+      title: '有操作等你确认',
+      body: `无人值守任务请求执行 ${tool}，已暂停等你批准，到${PARKED_APPROVAL_ENTRY_PATH}处理。`,
+    };
 }
 
 export function sanitizeNotificationText(value: unknown, maxLength = 240): string {

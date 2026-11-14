@@ -1,6 +1,7 @@
 import { UNATTENDED_TRUST_NOTICE } from '../../../shared/unattendedTrust';
 // Role proactivity: cadence/event → budget → wake → decision → history.
 import { createLogger } from '../infra/logger';
+import { readUiLanguage } from '../../session/sessionTitleHostPrompt';
 import { ROLE_PROACTIVITY, SWARM_GOAL } from '../../../shared/constants';
 import type {
   RoleProactivityConfig,
@@ -88,6 +89,12 @@ export function isWithinQuietHours(
   return start < end
     ? current >= start && current < end
     : current >= start || current < end;
+}
+
+/** 巡检会话 / 通知标题跟随界面语言；履历里的标记仍用存储常量（按它统计与解析）。 */
+function wakeTitle(roleId: string, stamp?: string): string {
+  const label = readUiLanguage() === 'en' ? 'Check-in' : ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX;
+  return stamp ? `${roleId} · ${label} ${stamp}` : `${roleId} · ${label}`;
 }
 
 // 预算护栏（设计 §6：每角色每天最多醒 N 次，cadence + event 合计）
@@ -319,7 +326,7 @@ export async function wakeRole(
   const now = new Date();
   const titleStamp = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   const session = await sessionManager.createSession({
-    title: `${roleId} · ${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX} ${titleStamp}`,
+    title: wakeTitle(roleId, titleStamp),
     // 注意：provider/model 不传常量兜底——传 undefined 让 resolver 落到
     // settings.models.default（headless webServer 没有 currentSession，
     // 硬传 DEFAULT_PROVIDER 会绕过用户配置的默认 provider）
@@ -345,7 +352,7 @@ export async function wakeRole(
         sourceSessionId: options.sourceSessionId,
         type: 'role_wake',
         status: 'running',
-        title: `${roleId} · ${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}`,
+        title: wakeTitle(roleId),
         cadenceLabel: trigger === 'event' ? '任务完成后唤醒' : '定时醒来',
         sourceRefId: session.id,
         resultSessionId: session.id,
@@ -474,8 +481,8 @@ export async function wakeRole(
       const { notificationService } = await import('../infra/notificationService');
       notificationService.notifyRoleWakeOutput({
         sessionId: session.id,
-        title: `${roleId} · ${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}`,
-        body: (advanceGoalStatus ? summary : wakeText) || `角色 ${roleId} 醒来产出了新内容`,
+        title: wakeTitle(roleId),
+        body: (advanceGoalStatus ? summary : wakeText) || (readUiLanguage() === 'en' ? `${roleId} has something new from its check-in` : `角色 ${roleId} 醒来产出了新内容`),
       });
     }
     logger.info('Wake completed with output', { roleId, trigger, decision, sessionId: session.id });

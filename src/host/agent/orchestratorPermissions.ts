@@ -9,7 +9,6 @@ import { isApprovePermissionResponse } from '../../shared/contract/permission';
 import type { ToolApprovalPayload, PendingApprovalKind } from '../../shared/contract/pendingApproval';
 import { INTERACTION_TIMEOUTS } from '../../shared/constants/timeouts';
 import { PARKED_APPROVAL_PREVIEW_MAX_CHARS } from '../../shared/constants/pendingApproval';
-import { PARKED_APPROVAL_ENTRY_PATH } from '../../shared/parkedApprovalLocation';
 import { PARKED_APPROVAL_CLOSURE_SENTENCES } from '../../shared/parkedApprovalClosure';
 import { getDenialRegistry } from '../security/denialRegistry';
 import { redactCommandSecrets } from '../security/secretRedaction';
@@ -20,6 +19,7 @@ import { isUnattendedAllowedReadOnlyTool } from '../permissions/unattendedReadOn
 import { approveByScheduleWriteGrant, writeGrantFolderForParking } from '../cron/cronWriteGrant';
 import { getSessionAutomationService } from '../services/sessionAutomation/sessionAutomationService';
 import { notificationService } from '../services/infra/notificationService';
+import { buildParkedApprovalNoticeCopy } from '../services/infra/notificationPolicy';
 import type { PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
 import { isExternalSideEffectTool } from '../tools/externalSideEffect';
 import { EDITABLE_PERMISSION_TIMEOUT_MS, isEditableTool } from '../../shared/contract/permissionEdit';
@@ -901,8 +901,7 @@ export class OrchestratorPermissionIsland {
         try {
           notificationService.notifyNeedsInput({
             sessionId: fullRequest.sessionId,
-            title: '有操作等你确认',
-            body: `无人值守任务请求执行 ${fullRequest.tool}，已暂停等你批准，到${PARKED_APPROVAL_ENTRY_PATH}处理。`,
+            ...buildParkedApprovalNoticeCopy(fullRequest.tool),
             // 停车口先发；同一条请求随后经 permission_request 事件再进落库通知口，
             // 同键去重，用户只看到这一条更具体的「到自动化的运行记录处理」横幅。
             dedupeKey: fullRequest.id,

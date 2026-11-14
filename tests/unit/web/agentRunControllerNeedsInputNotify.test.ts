@@ -19,6 +19,7 @@ import { IPC_CHANNELS } from '../../../src/shared/ipc';
 const platformMocks = vi.hoisted(() => ({
   focusedWindow: null as object | null,
   broadcast: vi.fn(),
+  language: 'zh' as 'zh' | 'en',
 }));
 
 vi.mock('../../../src/host/platform', () => ({
@@ -34,7 +35,7 @@ vi.mock('../../../src/host/services/infra/logger', () => {
   return { createLogger: vi.fn(() => fake), logger: fake, default: fake };
 });
 vi.mock('../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getSettings: () => ({ ui: { language: 'zh' } }) }),
+  getConfigService: () => ({ getSettings: () => ({ ui: { language: platformMocks.language } }) }),
 }));
 
 const { AgentRunController } = await import('../../../src/web/routes/agentRunController');
@@ -91,6 +92,7 @@ function permissionRequest(overrides: PermissionRequestOverrides = {}): AgentEve
 
 describe('AgentRunController 前台 needs-input 横幅', () => {
   beforeEach(() => {
+    platformMocks.language = 'zh';
     platformMocks.focusedWindow = {};
     platformMocks.broadcast.mockClear();
     notificationService.clearRecentNotifications();
@@ -114,6 +116,24 @@ describe('AgentRunController 前台 needs-input 横幅', () => {
     });
     // 事件本身照常进 SSE，横幅只是旁路。
     expect(platformMocks.broadcast).toHaveBeenCalledTimes(1);
+  });
+
+  it('English UI: the notice title and fallback body are English, and the delivered banner has no Chinese', () => {
+    platformMocks.language = 'en';
+    const notify = vi.spyOn(notificationService, 'notifyNeedsInput');
+    const controller = createController('session-fg-en');
+    controller.emitAgentEvent(permissionRequest({ id: 'perm-req-en-1' }));
+    expect(notify).toHaveBeenLastCalledWith({
+      sessionId: 'session-fg-en', title: 'Approval needed', body: 'bash: npm test', dedupeKey: 'perm-req-en-1',
+    });
+    controller.emitAgentEvent(permissionRequest({ id: 'perm-req-en-2', command: undefined }));
+    expect(notify).toHaveBeenLastCalledWith({
+      sessionId: 'session-fg-en', title: 'Approval needed', body: 'bash: needs your approval', dedupeKey: 'perm-req-en-2',
+    });
+    for (const call of platformMocks.broadcast.mock.calls.filter(([channel]) => channel === IPC_CHANNELS.NOTIFICATION_SHOW)) {
+      const shown = call[1] as { title: string; body: string };
+      expect(`${shown.title} ${shown.body}`).not.toMatch(/[\u3400-\u9fff]/);
+    }
   });
 
   it('同一请求 id 两次到达 → 真通知服务同键去重只投一条；不同 id 各投一条', () => {
