@@ -24,10 +24,8 @@ export const UI = {
   CLOUD_TASK_REFRESH_INTERVAL: 5000,
   /** 预览文本截断长度 */
   PREVIEW_TEXT_MAX_LENGTH: 500,
-  /** 最大附件数量（文件选择） */
-  MAX_ATTACHMENTS_FILE_SELECT: 5,
-  /** 最大附件数量（拖放） */
-  MAX_ATTACHMENTS_DROP: 10,
+  /** 单条消息最大附件数量 */
+  MAX_ATTACHMENTS: 10,
   /** 文本域最大高度 (px) */
   TEXTAREA_MAX_HEIGHT: 200,
   /** 工具调用分组阈值：N 个以上自动归组 */
