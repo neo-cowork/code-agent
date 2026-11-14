@@ -1134,6 +1134,33 @@
             "toolName": {
               "type": "string"
             },
+            "connectorAccess": {
+              "type": "object",
+              "properties": {
+                "connectorId": {
+                  "type": "string"
+                },
+                "connectorName": {
+                  "type": "string"
+                },
+                "access": {
+                  "type": "string",
+                  "enum": [
+                    "read",
+                    "write"
+                  ]
+                }
+              },
+              "required": [
+                "connectorId",
+                "connectorName",
+                "access"
+              ],
+              "additionalProperties": false
+            },
+            "purpose": {
+              "type": "string"
+            },
             "commandRiskLevel": {
               "type": "string",
               "enum": [
@@ -2631,6 +2658,14 @@
               },
               "reason": {
                 "type": "string"
+              },
+              "lostCode": {
+                "type": "string",
+                "enum": [
+                  "cli_not_logged_in",
+                  "cli_missing_configuration",
+                  "mcp_oauth_authorization_required"
+                ]
               },
               "requiredScope": {
                 "type": "string"
