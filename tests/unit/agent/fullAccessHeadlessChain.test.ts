@@ -5,23 +5,28 @@
 //     不产生 forceConfirm=false 的 `Approval request raised`（普通审批卡）。
 // 只替身外部边界：模型推理、auth 账号、日志采集；档位管理器 / 子代理执行器 / childContext / ToolExecutor / 审批岛全真实。
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import * as fs from 'fs';
 import * as nodePath from 'path';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/shared/ipc';
 
-const { tmpDataDir, workspace, outsideDir } = await vi.hoisted(async () => {
+const { tmpDataDir, workspace, outsideDir, acceptEditsDir } = await vi.hoisted(async () => {
   const nodeFs = await import('node:fs');
   const nodeOs = await import('node:os');
   const nodePathMod = await import('node:path');
   const mk = (prefix: string) => nodeFs.mkdtempSync(nodePathMod.join(nodeOs.tmpdir(), prefix));
-  return { tmpDataDir: mk('full-access-chain-'), workspace: mk('full-access-ws-'), outsideDir: mk('full-access-out-') };
+  return {
+    tmpDataDir: mk('full-access-chain-'), workspace: mk('full-access-ws-'), outsideDir: mk('full-access-out-'),
+    // /tmp is already auto-approved; use a non-temp root to exercise the outside-workspace ask.
+    acceptEditsDir: nodeFs.mkdtempSync(nodePathMod.join(nodeOs.homedir(), '.full-access-accept-edits-')),
+  };
 });
 process.env.CODE_AGENT_DATA_DIR = tmpDataDir;
 process.env.CODE_AGENT_MODEL_ENGINE = 'legacy';
 afterAll(() => {
   delete process.env.CODE_AGENT_DATA_DIR;
   delete process.env.CODE_AGENT_MODEL_ENGINE;
-  for (const dir of [tmpDataDir, workspace, outsideDir]) fs.rmSync(dir, { recursive: true, force: true });
+  for (const dir of [tmpDataDir, workspace, outsideDir, acceptEditsDir]) fs.rmSync(dir, { recursive: true, force: true });
 });
 
 const env = vi.hoisted(() => ({
@@ -197,5 +202,68 @@ describe('full access, walk away: session mode → sub-agent inheritance → zer
     expect(fs.readFileSync(outsideFile, 'utf8')).toBe('# minutes');
     expect(env.infos.filter((entry) => entry.message === 'Approval request raised'
       && (entry.meta as { forceConfirm?: boolean }).forceConfirm === false)).toEqual([]);
+  });
+
+  it.each(['bypassPermissions', 'acceptEdits'] as const)('preserves %s auto-approval through the real executor without forceConfirm cards', async (mode) => {
+    const cards: Array<Record<string, unknown>> = [];
+    const island: OrchestratorPermissionIsland = new OrchestratorPermissionIsland({
+      getSettings: () => ({ permissions: {} }) as never,
+      isDevModeAutoApproveEnabled: () => false,
+      getExecutionTopology: () => 'main',
+      hasApprovalUi: () => true,
+      onEvent: (event) => {
+        if (event.type !== 'permission_request') return;
+        const card = event.data as { id: string };
+        cards.push(card as unknown as Record<string, unknown>);
+        island.handlePermissionResponse(card.id, 'deny');
+      },
+    });
+    const sessionId = `${SESSION_ID}-${mode}`;
+    const response = await handler(null, {
+      action: 'setSessionPermissionMode',
+      payload: { sessionId, mode, approved: mode === 'bypassPermissions' },
+    } as IPCRequest);
+    expect(response.data).toEqual({ changed: true, mode });
+    const executor = new ToolExecutor({
+      workingDirectory: workspace,
+      requestPermission: (request) => island.requestPermission(request),
+    });
+    executor.setAuditEnabled(false);
+    if (mode === 'bypassPermissions') {
+      const repoDir = fs.mkdtempSync(nodePath.join(workspace, 'git-push-'));
+      const bareDir = nodePath.join(repoDir, 'remote.git');
+      execFileSync('git', ['init', '--bare', '-q', bareDir]);
+      execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: repoDir });
+      execFileSync('git', ['config', 'user.email', 'test@example.test'], { cwd: repoDir });
+      execFileSync('git', ['config', 'user.name', 'Test'], { cwd: repoDir });
+      execFileSync('git', ['commit', '--allow-empty', '-q', '-m', 'init'], { cwd: repoDir });
+      execFileSync('git', ['remote', 'add', 'origin', bareDir], { cwd: repoDir });
+      const gitExecutor = new ToolExecutor({
+        workingDirectory: repoDir,
+        requestPermission: (request) => island.requestPermission(request),
+      });
+      gitExecutor.setAuditEnabled(false);
+      const pushResult = await gitExecutor.execute('Bash', { command: 'git push origin main' }, {
+        sessionId, abortSignal: new AbortController().signal,
+      });
+      expect(cards).toEqual([]);
+      expect(pushResult).toMatchObject({ success: true });
+      expect(execFileSync('git', ['--git-dir', bareDir, 'rev-parse', 'refs/heads/main'], { encoding: 'utf8' }))
+        .toBe(execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoDir, encoding: 'utf8' }));
+      expect(env.infos.filter((entry) => entry.message === 'Approval request raised')).toEqual([]);
+      return;
+    }
+    const outsideTarget = nodePath.join(fs.realpathSync(acceptEditsDir), 'accept-edits-outside.md');
+    const writeResult = await executor.execute('Write', {
+      file_path: outsideTarget,
+      content: '# accept-edits outside write',
+    }, {
+      sessionId,
+      abortSignal: new AbortController().signal,
+    });
+    expect(cards).toEqual([]);
+    expect(writeResult, JSON.stringify(writeResult)).toMatchObject({ success: true });
+    expect(fs.readFileSync(outsideTarget, 'utf8')).toBe('# accept-edits outside write');
+    expect(env.infos.filter((entry) => entry.message === 'Approval request raised')).toEqual([]);
   });
 });

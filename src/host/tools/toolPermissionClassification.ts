@@ -557,7 +557,10 @@ export async function resolveToolPermissionClassification(input: {
     };
   }
   if (classification.decision === 'ask'
-    && !classification.trustBoundary
+    // Keep this task's outside-file gate scoped to full access; other boundary asks
+    // retain their existing permission-mode behavior (including acceptEdits).
+    && !(input.sessionPermissionMode === 'bypassPermissions'
+      && classification.hostReason?.code === HostReasonCode.PermissionFileOutsideWorkspaceConfirmationRequired)
     && !classification.scheduleWriteTargets
     && permissionModeAutoApproves(input.sessionPermissionMode, input.permissionLevel)
     // acceptEdits 只承诺文件编辑免确认：出站 / 不可逆 / 拉起进程的写档工具不升 approve，

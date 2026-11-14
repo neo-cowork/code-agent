@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { getPermissionModeManager, resetPermissionModeManager, type PermissionMode } from '../../../src/host/permissions/modes';
 import { isTaskOutputPathAuthorized, taskOutputDirectoryForShell, withTaskOutputDirectory } from '../../../src/host/permissions/taskOutputDirectory';
 import { PermissionClassifier } from '../../../src/host/tools/permissionClassifier';
+import { resolveToolPermissionClassification } from '../../../src/host/tools/toolPermissionClassification';
 import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
 import type { MessageMetadata } from '../../../src/shared/contract';
 
@@ -147,5 +148,50 @@ describe('explicit task output directory authorization', () => {
       expect(authorized(path.join(link, 'minutes.md'))).toBe(false);
       expect(authorized(path.join(inside, 'minutes.md'))).toBe(false);
     });
+  });
+
+  it.each([
+    { tool: 'Bash', params: { command: 'git push origin main' }, level: 'execute', mode: 'bypassPermissions' },
+    { tool: 'Bash', params: { command: './bash -c "echo ok"' }, level: 'execute', mode: 'bypassPermissions' },
+    { tool: 'Bash', params: { command: 'cat ~/.aws/credentials' }, level: 'execute', mode: 'bypassPermissions' },
+    { tool: 'mail_send', params: {}, level: 'write', mode: 'bypassPermissions' },
+    { tool: 'Write', params: { content: '# notes' }, level: 'write', mode: 'acceptEdits' },
+  ] as const)('preserves baseline auto-approval for $mode $tool $params', async ({ tool, params, level, mode }) => {
+    // A virtual non-temp destination exercises the real outside-workspace rule without writing there.
+    const virtualRoot = path.join(path.parse(directory).root, `neo-outside-${path.basename(directory)}`);
+    const args = tool === 'Write' ? { ...params, file_path: path.join(virtualRoot, 'notes.md') } : params;
+    expect(await new PermissionClassifier().classify(tool, args, {
+      sessionId: SESSION, workingDirectory: directory, workspaceRoot: directory, permissionLevel: level,
+    })).toMatchObject({ decision: 'ask', trustBoundary: true });
+    expect(await resolveToolPermissionClassification({
+      sessionId: SESSION,
+      policyForcesConfirmation: false,
+      boundaryViolation: undefined,
+      workingDirectory: directory,
+      workspaceRoot: directory,
+      permStartTime: Date.now(),
+      readOnlyForcesConfirmation: false,
+      executionToolName: tool, policyToolName: tool,
+      params: args, permissionLevel: level, sessionPermissionMode: mode,
+    })).toMatchObject({
+      decision: 'approve',
+      traceStep: { rule: 'permission_mode_auto_approve', result: 'allow' },
+    });
+  });
+
+  it('retains default-mode boundary asks and acceptEdits external-write confirmation', async () => {
+    const base = {
+      sessionId: SESSION, policyForcesConfirmation: false, boundaryViolation: undefined,
+      workingDirectory: directory, workspaceRoot: directory, permStartTime: Date.now(),
+      readOnlyForcesConfirmation: false,
+    };
+    expect(await resolveToolPermissionClassification({
+      ...base, executionToolName: 'Bash', policyToolName: 'Bash',
+      params: { command: 'git push origin main' }, permissionLevel: 'execute', sessionPermissionMode: 'default',
+    })).toMatchObject({ decision: 'ask', trustBoundary: true });
+    expect(await resolveToolPermissionClassification({
+      ...base, executionToolName: 'mail_send', policyToolName: 'mail_send',
+      params: {}, permissionLevel: 'write', sessionPermissionMode: 'acceptEdits',
+    })).toMatchObject({ decision: 'ask', trustBoundary: true });
   });
 });
