@@ -24,9 +24,9 @@ const CORE_TOOL_ABILITY_ZH: Readonly<Record<string, string>> = {
   history: '记住和回想',
 };
 
-export const UNKNOWN_TOOL_ABILITY_ZH = '其他能力';
+const UNKNOWN_TOOL_ABILITY_ZH = '其他能力';
 
-export function roleToolAbilityLabel(toolName: string): string {
+function roleToolAbilityLabel(toolName: string): string {
   const name = toolName.trim();
   const connector = findConnectorToolMetadata(name);
   if (connector) return connector.connectorName;
