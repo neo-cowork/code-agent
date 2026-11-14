@@ -10,6 +10,7 @@ import { PreviewErrorState } from '../../../src/renderer/components/PreviewPanel
 import { toPreviewErrorState } from '../../../src/renderer/components/previewPanelModel';
 import { ArtifactStandingRefresh } from '../../../src/renderer/components/ArtifactStandingRefresh';
 import { buildStandingRefreshJobInput } from '@shared/artifactStandingRefresh';
+import { formatDateTime } from '../../../src/renderer/utils/formatDateTime';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -300,7 +301,10 @@ describe('ArtifactStandingRefresh chip 状态', () => {
       const label = chip.querySelector('span');
       expect(label?.className).not.toContain('truncate');
       const title = chip.getAttribute('title') ?? '';
-      expect(title).toContain(new Date(at).toLocaleString('en-US'));
+      // main: en-US toLocaleString（12h AM/PM）；MIXED 后: 共享 formatDateTime(at,'en')。
+      // 二者择一即可，但 en 误走 zh-CN 路径（2026/10/04 …）两者都不满足。
+      const accepted = [new Date(at).toLocaleString('en-US'), formatDateTime(at, 'en')];
+      expect(accepted.some((t) => title.includes(t))).toBe(true);
     } finally {
       useAppStore.getState().setLanguage('zh');
     }
