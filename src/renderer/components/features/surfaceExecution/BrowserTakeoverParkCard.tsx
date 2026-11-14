@@ -6,7 +6,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import { useSessionTurnActive } from '../../../hooks/useSessionTurnActive';
 import { useTaskStore } from '../../../stores/taskStore';
 import { Button } from '../../primitives';
-import { adoptKeptResultPage, getKeptResultPage, type KeptResultPage } from '../../../services/userBrowserLink';
+import { adoptKeptResultPage, getKeptResultPage, type KeptResultPage } from '../../../services/keptResultPage';
 
 // N-FIX-FIX-BROWSER-SECRETREF-HARDEN（FB-578）：secretRef 接管停靠的聊天卡。
 // run 在接管等待中结束时窗口停靠（不关窗、登录态保留），聊天里用一句大白话告诉

@@ -2,11 +2,12 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { Button } from '../primitives';
+import { browserStageOverlayMarker } from '../../utils/browserStageInteractionGate';
 import {
   adoptKeptResultPage,
   getKeptResultPage,
   type KeptResultPage,
-} from '../../services/userBrowserLink';
+} from '../../services/keptResultPage';
 import { openHttpLinkInRailAsync } from '../../services/userBrowserLink';
 
 // N-BROWSER-KEEP-RESULT-PAGE：agent run 终态时叠加在留影/摘要卡底部的结果页条。
@@ -27,11 +28,13 @@ function formatTemplate(template: string, vars: Record<string, string>): string 
 export interface BrowserKeptResultBarProps {
   conversationId: string | null | undefined;
   workspace: string | null | undefined;
+  turnActive?: boolean;
 }
 
 export const BrowserKeptResultBar: React.FC<BrowserKeptResultBarProps> = ({
   conversationId,
   workspace,
+  turnActive = false,
 }) => {
   const { t } = useI18n();
   const copy: KeptCopy = t.workbenchTabs.agentWindow.keptResult;
@@ -39,6 +42,9 @@ export const BrowserKeptResultBar: React.FC<BrowserKeptResultBarProps> = ({
   const [busy, setBusy] = useState<'adopt' | 'reopen' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
+  const turnActiveRef = useRef(turnActive);
+  turnActiveRef.current = turnActive;
+  const wasTurnActiveRef = useRef(turnActive);
 
   const refresh = useCallback(async () => {
     const next = await getKeptResultPage(conversationId);
@@ -47,6 +53,7 @@ export const BrowserKeptResultBar: React.FC<BrowserKeptResultBarProps> = ({
 
   useEffect(() => {
     mountedRef.current = true;
+    wasTurnActiveRef.current = turnActiveRef.current;
     void refresh();
     const timer = setInterval(() => void refresh(), KEPT_STATE_POLL_MS);
     return () => {
@@ -54,6 +61,14 @@ export const BrowserKeptResultBar: React.FC<BrowserKeptResultBarProps> = ({
       clearInterval(timer);
     };
   }, [refresh]);
+
+  useEffect(() => {
+    const wasActive = wasTurnActiveRef.current;
+    wasTurnActiveRef.current = turnActive;
+    if (wasActive && !turnActive) {
+      void refresh();
+    }
+  }, [turnActive, refresh]);
 
   const onAdopt = useCallback(async () => {
     if (!conversationId) return;
@@ -93,6 +108,7 @@ export const BrowserKeptResultBar: React.FC<BrowserKeptResultBarProps> = ({
 
   return (
     <div
+      {...browserStageOverlayMarker}
       data-testid={`browser-kept-result-bar-${kept.state}`}
       className="absolute bottom-3 left-1/2 z-10 flex w-[min(420px,calc(100%-24px))] -translate-x-1/2 flex-col items-center gap-1.5 rounded-lg border border-white/10 bg-zinc-900/90 px-3 py-2.5 text-center shadow-lg"
     >

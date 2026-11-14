@@ -74,6 +74,7 @@ function createFakeBrowser(options?: { initialTabs?: FakeTab[] }) {
       return {};
     }),
     isRunning: () => running,
+    isProcessAlive: () => running,
     getActiveTab: () => (running ? tabs.get(activeTabId || '') ?? null : null),
     listTabs: () => Array.from(tabs.values()).map((tab) => ({ ...tab })),
     closeTab: vi.fn(async (tabId: string) => {
