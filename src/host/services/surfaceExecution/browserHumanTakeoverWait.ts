@@ -87,6 +87,31 @@ export function forgetBrowserTakeoverCapExpired(sessionId: string): void {
   forgetCapExpiredWaitingHuman(sessionId);
 }
 
+/**
+ * Sessions whose user just handed the browser back (takeover released). The next browser
+ * action result for the session carries a one-sentence "a human touched the page" note.
+ */
+const humanTouchedSessions = new Set<string>();
+
+export const BROWSER_HUMAN_TOUCHED_NOTE =
+  'A human used this page since your last look, so it may have changed. Call get_dom_snapshot before acting on it.';
+
+/** takeover 释放点（SurfaceInterruptService.resume，且之前是 waiting_human）调用。 */
+export function noteBrowserHumanReleased(sessionId: string): void {
+  humanTouchedSessions.delete(sessionId);
+  humanTouchedSessions.add(sessionId);
+  while (humanTouchedSessions.size > CAP_EXPIRED_WAITING_HUMAN_SESSIONS_MAX) {
+    const oldest = humanTouchedSessions.values().next();
+    if (oldest.done) break;
+    humanTouchedSessions.delete(oldest.value);
+  }
+}
+
+/** True once per release: the caller prepends the note to that action's result. */
+export function consumeBrowserHumanTouched(sessionId: string): boolean {
+  return humanTouchedSessions.delete(sessionId);
+}
+
 function browserSessionBusy(
   session: InteractiveSurfaceSessionV1,
   operationId: string,

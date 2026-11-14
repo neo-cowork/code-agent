@@ -152,6 +152,9 @@ enum CaptureError: Error, CustomStringConvertible {
 let capture = SystemAudioCapture()
 
 // 信号处理：优雅退出
+// 信号源必须全局持有：放在函数局部变量里，函数一返回就被释放取消，
+// 而下面又把信号设成 SIG_IGN —— TERM 被彻底吞掉，父进程停录音时这个进程永远不退（N-MEETING-DUALTRACK 真机实测）。
+var signalSources: [DispatchSourceSignal] = []
 func setupSignalHandler(_ sig: Int32) {
     let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
     source.setEventHandler {
@@ -159,6 +162,7 @@ func setupSignalHandler(_ sig: Int32) {
         exit(0)
     }
     source.resume()
+    signalSources.append(source)
     signal(sig, SIG_IGN)
 }
 setupSignalHandler(SIGINT)

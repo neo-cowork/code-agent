@@ -34,6 +34,7 @@ vi.mock('../../../../src/host/config/configPaths', () => ({
 }));
 
 import { getAudioCaptureStatus, startDesktopAudioCapture } from '../../../../src/host/services/desktop/desktopAudioCapture';
+import { getAudioCapturePrerequisites } from '../../../../src/host/services/desktop/audioCapturePrerequisites';
 
 const originalPlatform = process.platform;
 const originalArch = process.arch;
@@ -117,6 +118,14 @@ describe('getAudioCaptureStatus prerequisites (computed without starting capture
       systemAudio: 'missing',
     });
     expect(childProcess.execFileSync).not.toHaveBeenCalledWith('swiftc', expect.anything(), expect.anything());
+  });
+
+  it('meeting mode: missing system audio helper is reported (capture degrades to microphone only), microphone mode ignores it', () => {
+    existingPaths.add('/opt/homebrew/bin/ffmpeg');
+    existingPaths.add('/opt/homebrew/bin/whisper-cpp');
+
+    expect(getAudioCapturePrerequisites('meeting').missing).toContain('system_audio_helper_missing');
+    expect(getAudioCapturePrerequisites('microphone').missing).not.toContain('system_audio_helper_missing');
   });
 
   it('recorder missing: reports recorder_missing when neither ffmpeg nor rec is available', () => {
