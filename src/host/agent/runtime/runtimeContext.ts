@@ -68,6 +68,7 @@ export interface RuntimeContext {
   readonly onEvent: (event: AgentEvent) => void;
   readonly modelRouter: ModelRouter;
   readonly maxIterations: number;
+  readonly completionReportOnly?: boolean;
   readonly workingDirectory: string;
   readonly projectConfigDirectory?: string;
   readonly workspaceScope?: WorkspaceScope;
