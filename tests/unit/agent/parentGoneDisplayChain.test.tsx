@@ -478,7 +478,7 @@ describe('r2 complete group summary', () => {
     language = locale;
     const nodes: TraceNode[] = ['unrecognized-step', 'spawn_agent'].map((name, index) => ({
       id: `group-${index}`, type: 'tool_call', content: '', timestamp: index,
-      toolCall: { id: `call-group-${index}`, name, args: {}, result: 'interrupted: process crashed before a result was recorded', success: false },
+      toolCall: { id: `call-group-${index}`, name, args: {}, result: 'ordinary failure', success: false },
     }));
     const group = render(<ToolStepGroup nodes={nodes} sessionId={sessionId} />);
     const line = screen.getByTestId('tool-group-head-label').textContent;
