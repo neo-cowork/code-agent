@@ -6,18 +6,22 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { spawn, execFileSync, type ChildProcess } from 'child_process';
+import { spawn, execFile, execFileSync, type ChildProcess } from 'child_process';
+import { promisify } from 'util';
 import { createLogger } from '../infra/logger';
 import { getNativeDesktopService } from './nativeDesktopService';
 import { getUserConfigDir } from '../../config/configPaths';
 import { isOrtTensor, loadVadRuntime, type OrtRuntimeModule } from './audioVadRuntime';
 import { getAudioCapturePrerequisites } from './audioCapturePrerequisites';
+import { findWhisperBinary, whisperLanguageArgs } from '../media/whisperBinary';
 import { clearAllAudioRecordings, finalizeSegmentAudio, getAudioRetentionStatus, sweepAudioRetention } from './audioRetention';
 import { dropMicEchoes } from './audioCrossEcho';
+import { AudioStreamClock } from './audioStreamClock';
 import { AUDIO_SPEAKER_ID, type AudioCaptureMode } from '@shared/contract/audioCapture';
 import type { InferenceSession, Tensor as OrtTensor } from 'onnxruntime-node';
 
 const logger = createLogger('DesktopAudioCapture');
+const execFileAsync = promisify(execFile);
 
 // ============================================================================
 // Config
@@ -93,7 +97,6 @@ const REC_PATHS = ['/opt/homebrew/bin/rec', '/usr/local/bin/rec', '/usr/bin/rec'
 const SYSTEM_AUDIO_CAPTURE_NAME = 'system-audio-capture';
 
 // Whisper-cpp paths
-const WHISPER_PATHS = ['/opt/homebrew/bin/whisper-cpp', '/usr/local/bin/whisper-cpp'];
 const WHISPER_MODEL_DIR = path.join(os.homedir(), '.cache', 'whisper');
 const WHISPER_DEFAULT_MODEL = 'ggml-large-v3-turbo.bin';
 
@@ -123,6 +126,8 @@ interface CaptureTrack {
   vad: VadProcessor;
   proc: ChildProcess | null;
   stream: fs.ReadStream | null;
+  /** 这一路 VAD 的处理链：进程重启后新旧两条流也排在同一条链上，不并发推理 */
+  vadChain: Promise<void>;
 }
 
 let tracks: CaptureTrack[] = [];
@@ -501,17 +506,6 @@ function saveWavFile(pcm: Int16Array, startMs: number, speakerId: number): strin
 // ASR (Transcription)
 // ============================================================================
 
-function findWhisperBinary(): string | null {
-  for (const p of WHISPER_PATHS) {
-    if (fs.existsSync(p)) return p;
-  }
-  try {
-    const result = execFileSync('which', ['whisper-cpp'], { encoding: 'utf-8' }).trim();
-    if (result && fs.existsSync(result)) return result;
-  } catch { /* not found */ }
-  return null;
-}
-
 function findWhisperModel(): string | null {
   const modelPath = path.join(WHISPER_MODEL_DIR, WHISPER_DEFAULT_MODEL);
   if (fs.existsSync(modelPath)) return modelPath;
@@ -543,8 +537,10 @@ async function transcribeWithWhisperCpp(wavPath: string): Promise<string | null>
   if (!binary || !model) return null;
 
   try {
-    const result = execFileSync(binary, [
-      '-m', model, '-f', wavPath, '-l', 'zh', '-t', '4', '--no-prints',
+    // 必须异步：同步调用会把整个事件循环卡住十几秒（大模型首段），两路音频在管道里积压，
+    // 段落时间戳整体后移、积压的语音会丢，同进程的网页服务也跟着卡（11-14 真机实测 18.5 秒）
+    const { stdout: result } = await execFileAsync(binary, [
+      '-m', model, '-f', wavPath, ...whisperLanguageArgs('zh'), '-t', '4', '--no-prints',
     ], { encoding: 'utf-8', timeout: ASR_TIMEOUT_MS });
 
     // Parse output: [timestamp] text
@@ -887,6 +883,10 @@ function spawnSource(source: 'microphone' | 'system-audio'): ChildProcess | null
     logger.info('[音频采集] 使用 ffmpeg AVFoundation 模式', { device: audioDevice });
     return spawn(ffmpegBin, [
       '-f', 'avfoundation', '-i', audioDevice,
+      // avfoundation 会丢帧（11-14 本机实测只出实时的 0.88 倍），段落时间按样本数推算会越录越早；
+      // 按时间戳把缺口补成静音，样本数才和墙钟对得上（N-MEETING-DUALTRACK-FU1）
+      // ponytail: 只覆盖 ffmpeg；sox rec 回落和 Tauri FIFO 路径若也丢帧仍会偏早，遇到再补
+      '-af', 'aresample=async=1',
       '-ar', String(SAMPLE_RATE), '-ac', '1', '-f', 's16le', 'pipe:1',
     ], { stdio: ['ignore', 'pipe', 'pipe'] });
   }
@@ -903,10 +903,25 @@ function pumpPcm(input: NodeJS.ReadableStream, track: CaptureTrack): void {
   let vadErrorLogged = false;
   let dataChunkCount = 0;
   let lastDiagMs = 0;
+  // 每条流一个时钟：进程重启后新流首包重新定原点，重启空窗不会让后续段落整体偏早
+  const clock = new AudioStreamClock(SAMPLE_RATE);
 
-  input.on('data', async (data: Buffer | string) => {
+  // 一路的数据包必须逐个处理完再处理下一个：VAD 带隐藏状态，主线程一卡、积压的包并发进
+  // session.run 会共用旧状态，段落被错合/错切，时间偏出好几秒（N-MEETING-DUALTRACK-FU1 真机实测）。
+  // ponytail: 处理长期跟不上实时时队列会一直涨，真遇到再加丢包/降级
+  input.on('data', (data: Buffer | string) => {
     if (typeof data === 'string') return; // skip string chunks
-    if (powerMode === 'paused') return;
+    clock.receive(data.length); // 原点按到达时刻定，不能等排队
+    track.vadChain = track.vadChain.then(() => handlePcm(data)).catch((error) => {
+      logger.error('[音频采集] 处理音频数据异常', { source: track.source, error: error instanceof Error ? error.message : String(error) });
+    });
+  });
+
+  async function handlePcm(data: Buffer): Promise<void> {
+    if (powerMode === 'paused') {
+      clock.advance(data.length / 2); // 丢掉的样本也算时间，恢复后不漂
+      return;
+    }
     // 已停掉的一路：进程哪怕还没退干净，数据也不再落库（否则停了又开会多出一路「对方」）
     if (!tracks.includes(track)) return;
 
@@ -944,10 +959,12 @@ function pumpPcm(input: NodeJS.ReadableStream, track: CaptureTrack): void {
         chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + BLOCK_BYTES)
       );
 
+      // 这一块样本对应的音频时刻；段落在这块处切出，就以它为结束时间
+      const blockEndMs = clock.advance(BLOCK_SIZE);
       try {
         const segments = await track.vad.processChunk(int16);
         for (const segment of segments) {
-          const endMs = Date.now();
+          const endMs = blockEndMs;
           const durationMs = Math.round((segment.length / SAMPLE_RATE) * 1000);
           const startMs = endMs - durationMs;
 
@@ -979,7 +996,7 @@ function pumpPcm(input: NodeJS.ReadableStream, track: CaptureTrack): void {
         }
       }
     }
-  });
+  }
 }
 
 /** 给一路采集接进程：stdout 进 VAD，stderr 留诊断，意外退出 3 秒后只重启这一路 */
@@ -1032,7 +1049,7 @@ function attachProcess(track: CaptureTrack, source: 'microphone' | 'system-audio
 async function newTrack(source: CaptureSource, speakerId: number): Promise<CaptureTrack | null> {
   const vad = new VadProcessor();
   if (!(await vad.init())) return null;
-  return { source, speakerId, vad, proc: null, stream: null };
+  return { source, speakerId, vad, proc: null, stream: null, vadChain: Promise.resolve() };
 }
 
 // ============================================================================
