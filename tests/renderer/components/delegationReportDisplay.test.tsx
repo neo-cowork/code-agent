@@ -212,7 +212,8 @@ describe('background hand-off row', () => {
     call.result!.output = 'Agent [Explorer] exceeded foreground budget and continues in background:\n- status=running';
     call.result!.metadata = { background: true, transferredToBackground: true };
     const projected = toDelegationDisplayToolCall(call, t);
-    expect(projected.result?.output).toBe(t.chat.delegationReceipt.working);
+    // No live child fact: neither "working" nor "completed" is claimed.
+    expect(projected.result?.output).toBe('');
     expect(getToolStatusLabel(projected, 'success', t)).toBe(t.chat.delegationReceipt.dispatched);
     expect(getToolStatusLabel(taskCall('', 'spawn_agent'), 'success', t)).toBe(t.chat.delegationReceipt.completed);
   });

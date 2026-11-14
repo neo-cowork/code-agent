@@ -44,8 +44,13 @@ export function getToolStatusLabel(
       return toolCall._streaming ? labels.preparing : labels.running;
     case 'success':
       if (toolCall.name === 'spawn_agent') {
-        const background = toolCall.result?.metadata?.transferredToBackground === true
-          || toolCall.result?.metadata?.background === true
+        const metadata = toolCall.result?.metadata;
+        // 已改写成人话的回执（toDelegationDisplayToolCall）里找不到英文标记；
+        // 结构化的派发事实（后台标记 / 派发时状态 running）才是判据，别因改写退成「已完成」。
+        const background = metadata?.transferredToBackground === true
+          || metadata?.background === true
+          || (metadata?.result as { background?: unknown } | undefined)?.background === true
+          || (metadata?.action === 'spawn' && metadata?.status === 'running')
           || toolCall.result?.output?.includes('exceeded foreground budget and continues in background')
           || toolCall.result?.output?.includes('spawned in background')
           || toolCall.result?.output?.includes('Status: running');
