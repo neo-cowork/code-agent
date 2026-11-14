@@ -4,6 +4,7 @@
 // ============================================================================
 
 import type { TraceNode } from '@shared/contract/trace';
+import { sessionTaskStatusReasoningGaps } from './sessionTaskStatusReasoningGaps';
 
 // Edit/Write 由 TurnDiffSummary 独立渲染，不进 step label
 const DIFF_OWNED_TOOLS = new Set([
@@ -51,11 +52,12 @@ function isHoistedTimelineNode(node: TraceNode): boolean {
 
 /**
  * 按相邻关系把 turn.nodes 分组：相邻的"非 diff-owned"工具调用合并成 tool_group
- * （hoisted 时间线节点不打断聚合），
+ * （hoisted 时间线节点、相同状态查询之间的纯思考不打断聚合），
  * 其他节点（user / assistant_text 含纯思考 / system / Edit+Write 工具）按时序原样保留
  */
 export function groupAdjacentToolCalls(nodes: TraceNode[]): DisplayNode[] {
   const result: DisplayNode[] = [];
+  const statusReasoningGaps = sessionTaskStatusReasoningGaps(nodes);
   let buffer: TraceNode[] = [];
 
   const flush = () => {
@@ -77,8 +79,8 @@ export function groupAdjacentToolCalls(nodes: TraceNode[]): DisplayNode[] {
   for (const node of nodes) {
     if (node.type === 'tool_call' && node.toolCall && !isDiffOwnedToolNode(node)) {
       buffer.push(node);
-    } else if (isHoistedTimelineNode(node)) {
-      // 顶部固定槽已渲染，这里保持原样输出（TurnCard 渲染为 null），但不打断聚合
+    } else if (isHoistedTimelineNode(node) || statusReasoningGaps.has(node)) {
+      // 横幅/思考仍保留在原 turn 的固定槽；只让相同状态查询跨纯思考共享一组。
       result.push({ kind: 'node', node });
     } else {
       flush();

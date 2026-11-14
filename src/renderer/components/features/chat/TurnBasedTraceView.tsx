@@ -11,6 +11,7 @@ import type { SearchMatch } from './ChatSearchBar';
 import { TurnCard } from './TurnCard';
 import { getActiveConversationTurnIndex, getLastConversationTurnIndex } from '../../../utils/conversationTurns';
 import { TurnRail } from './TurnRail';
+import { useTurnRailJump } from './useTurnRailJump';
 import { startSearchMatchSettlement } from './searchMatchSettlement';
 import { isScrollerNearBottom, scheduleAfterLayout, startBottomSettlement, useSessionEntryScroll } from './useSessionEntryScroll';
 export { isScrollerNearBottom } from './useSessionEntryScroll';
@@ -971,17 +972,12 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     });
   }, [projection.turns]);
 
-  // 导航格点击：与搜索跳转同一套——停止跟随，按数组下标顶对齐、无动画（长距离虚拟跳转带动画会丢）
-  const handleRailJump = useCallback((turnId: string) => {
-    const index = projectionTurnsRef.current.findIndex((turn) => turn.turnId === turnId);
-    if (index < 0) return;
-    keepActiveOutputVisibleRef.current = false;
-    activeDisplayScrollCancelRef.current?.();
-    activeDisplayScrollCancelRef.current = null;
-    virtuosoRef.current?.scrollToIndex({ index, align: 'start', behavior: 'auto' });
-  }, []);
+  const { handleRailJump, handleRailNodeJump, expansionRequest } = useTurnRailJump({
+    sessionId: projection.sessionId, turnsRef: projectionTurnsRef, virtuosoRef,
+    scrollerRef: scrollerElementRef, followRef: keepActiveOutputVisibleRef,
+    cancelRef: activeDisplayScrollCancelRef, nodeSelector: getTraceNodeSelector,
+  });
 
-  // Render individual turn card
   const itemContent = useCallback(
     (virtuosoIndex: number, turn: TraceTurn) => {
       const index = virtuosoIndex - firstItemIndex;
@@ -1005,6 +1001,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
               sessionId={projection.sessionId}
               defaultExpanded={isStreaming || (isLast && workDetailPolicy.keepLastTurnOpen)}
               forceExpanded={hasSearchMatch}
+              expandRequest={expansionRequest?.turnId === turn.turnId ? expansionRequest : undefined}
               highlightActive={isActiveMatchTurn}
               isActiveTurn={isStreaming}
               isLastTurn={isLast}
@@ -1028,7 +1025,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
         </div>
       );
     },
-    [activeMatchIndex, afterFirstUserMessage, beforeFirstUserMessage, firstItemIndex, isProjectionSessionProcessing, onRewindUserPrompt, outputFollowTurnIndex, projection.activeTurnIndex, projection.sessionId, projection.turns, projectionStreamSnapshot, scheduleActiveDisplayScroll, searchMatches, sessionStatus, suppressActiveBusySignal, workDetailPolicy],
+    [activeMatchIndex, afterFirstUserMessage, beforeFirstUserMessage, expansionRequest, firstItemIndex, isProjectionSessionProcessing, onRewindUserPrompt, outputFollowTurnIndex, projection.activeTurnIndex, projection.sessionId, projection.turns, projectionStreamSnapshot, scheduleActiveDisplayScroll, searchMatches, sessionStatus, suppressActiveBusySignal, workDetailPolicy],
   );
 
   // Header: load-older indicator
@@ -1105,7 +1102,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
           <ArrowDown className="w-4 h-4" />
         </button>
       )}
-      <TurnRail items={railItems} activeTurnId={railActiveTurnId} onJump={handleRailJump} />
+      <TurnRail items={railItems} activeTurnId={railActiveTurnId} onJump={handleRailJump} onJumpToNode={handleRailNodeJump} />
     </div>
     </SessionModelsContext.Provider></I18nKeyCacheProvider>
   );

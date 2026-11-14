@@ -27,24 +27,23 @@ describe('humanizeToolStep — per-category snapshots (zh)', () => {
     expect(humanizeToolStep('Edit', { file_path: 'src/index.ts' }, zh)).toBe('编辑了 src/index.ts');
   });
 
-  it('bash: uses command preview when no shortDescription', () => {
-    expect(humanizeToolStep('Bash', { command: 'ls src/' }, zh)).toBe('运行了命令 ls src/');
+  it('bash: uses localized narration without command preview', () => {
+    expect(humanizeToolStep('Bash', { command: 'ls src/' }, zh)).toBe('运行了一条命令');
   });
 
-  it('bash: shortDescription wins over command', () => {
-    expect(humanizeToolStep('Bash', { command: 'ls src/' }, zh, '列出源码目录')).toBe('列出源码目录');
+  it('bash: uses trusted localized narration instead of model shortDescription', () => {
+    expect(humanizeToolStep('Bash', { command: 'ls src/' }, zh, '列出源码目录')).toBe('运行了一条命令');
   });
 
-  it('bash: schema description becomes the user-facing narration', () => {
+  it('bash: schema description does not override localized narration', () => {
     expect(humanizeToolStep('Bash', { command: 'ls src/', description: '列出源码目录' }, zh))
-      .toBe('列出源码目录');
+      .toBe('运行了一条命令');
   });
 
-  // 「注入对用户可见」红线在会话侧的一半：Neo 往用户终端敲了什么，聊天里要读得出来，
-  // 不能只显示一句「使用了 terminal_write」。
-  it('terminal_write: shows what was typed into the user terminal', () => {
+  // 2026-11-13 owner decision: command details belong in explicit inspection, not timeline labels.
+  it('terminal_write: keeps command text out of the timeline row', () => {
     expect(humanizeToolStep('terminal_write', { input: 'grok ask "hi"' }, zh))
-      .toBe('运行了命令 grok ask "hi"');
+      .toBe('运行了一条命令');
   });
 
   it('search: Grep pattern', () => {
@@ -219,7 +218,7 @@ describe('humanizeToolStep — per-category snapshots (zh)', () => {
     ['mcp__github__create_issue', {}, undefined, '通过 github 创建内容未成功'],
     ['mcp__lark__im_v1_message_create', {}, undefined, '在飞书发消息未成功'],
     ['Read', { file_path: 'report.md' }, undefined, '读取 report.md 未成功'],
-    ['Bash', { command: 'npm test' }, undefined, '运行命令 npm test 未成功'],
+    ['Bash', { command: 'npm test' }, undefined, '运行命令未成功'],
     ['todo_write', {}, undefined, '更新待办清单未成功'],
   ] as const)('failed %s 使用未遂式，不声称动作已经完成', (name, args, stepLabel, expected) => {
     expect(humanizeToolStep(name, args, zh, '执行了这个动作', 'failed', stepLabel)).toBe(expected);
@@ -234,7 +233,7 @@ describe('humanizeToolStep — per-category snapshots (zh)', () => {
     expect(humanizeToolStep('mcp__lark__im_v1_message_create', {}, en, 'Sent the message', 'failed'))
       .toBe('Could not send a message in Lark');
     expect(humanizeToolStep('Bash', { command: 'npm test' }, en, undefined, 'failed'))
-      .toBe('Could not run command npm test');
+      .toBe('Could not run a command');
   });
 
   it.each([
@@ -317,15 +316,15 @@ describe('humanizeToolStep — shortDescription 语种不符时退回模板', ()
 describe('humanizeToolStep — en locale parity', () => {
   it('renders the same categories in English', () => {
     expect(humanizeToolStep('Read', { file_path: 'report.md' }, en)).toBe('Read report.md');
-    expect(humanizeToolStep('Bash', { command: 'ls src/' }, en)).toBe('Ran command ls src/');
+    expect(humanizeToolStep('Bash', { command: 'ls src/' }, en)).toBe('Ran a command');
     expect(humanizeToolStep('unknown_tool', {}, en)).toBe('Ran a tool operation');
     expect(humanizeToolStep('TaskManager', {}, en)).toBe('Updated tasks');
     expect(humanizeToolStep('mcp__lark__im_v1_message_create', {}, en)).toBe('Sent a message in Lark');
   });
 
-  it('英文界面仍接受英文 shortDescription', () => {
+  it('英文命令行也使用可信的本地化描述', () => {
     expect(humanizeToolStep('Bash', { command: 'ls src/' }, en, 'List the source directory'))
-      .toBe('List the source directory');
+      .toBe('Ran a command');
   });
 });
 

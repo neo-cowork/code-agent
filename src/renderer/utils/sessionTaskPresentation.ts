@@ -13,7 +13,7 @@ interface SessionTaskItem {
 const OUTCOMES = new Set<SessionTaskOutcome>(['accepted', 'queued', 'reused', 'status']);
 const STATUSES = new Set<SessionTaskStatus>(['queued', 'running', 'cancelling', 'completed', 'failed', 'cancelled']);
 
-function readSessionTask(metadata: Record<string, unknown> | undefined): {
+export function readSessionTask(metadata: Record<string, unknown> | undefined): {
   outcome: SessionTaskOutcome;
   tasks: SessionTaskItem[];
 } | null {

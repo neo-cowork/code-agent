@@ -153,6 +153,36 @@ beforeEach(() => {
   });
 });
 describe('ExpertPanel', () => {
+  it.each(['zh', 'en'] as const)('%s humanizes legacy wake summaries in cards and tooltips', async (language) => {
+    useAppStore.setState({ language });
+    const entries = [
+      ['scheduled', '主动巡检（cadence 触发）', language === 'zh' ? '定时巡检' : 'Scheduled check-in'],
+      ['after-task', '主动巡检（event 触发）', language === 'zh' ? '任务完成后巡检' : 'Check-in after task'],
+      ['legacy', '你被定时唤醒。这不是用户发来的消息，用户现在不在。 你的任务： 1. 读你的工作履历', language === 'zh' ? '例行巡检记录' : 'Check-in recorded'],
+    ];
+    listRoles.mockResolvedValue(entries.map(([roleId, summary]) => makeEntry({ roleId, lastWork: `2026-11-13 ${summary}` })));
+    render(<ExpertPanel />);
+    fireEvent.click(screen.getByTestId('expert-tab-mine'));
+    for (const [roleId, , expected] of entries) {
+      const card = await screen.findByTestId(`expert-card-${roleId}`);
+      expect(within(card).getByTitle(`2026-11-13 ${expected}`)).toBeTruthy();
+      for (const raw of ['cadence', 'event 触发', '你被定时唤醒']) expect(card.textContent).not.toContain(raw);
+    }
+    useAppStore.setState({ language: 'zh' });
+  });
+
+  it.each([['zh', '有建议'], ['en', 'Suggestion']] as const)('%s humanizes the latest work on the expert card and its tooltip', async (language, label) => {
+    useAppStore.setState({ language });
+    listRoles.mockResolvedValue([makeEntry({ lastWork: '2026-11-12 [suggest] Weekly definitions aligned' })]);
+    render(<ExpertPanel />);
+    fireEvent.click(screen.getByTestId('expert-tab-mine'));
+    const card = await screen.findByTestId('expert-card-牧之');
+    const text = within(card).getByText(new RegExp(label + ' Weekly definitions aligned'));
+    expect(text.title).toBe(`2026-11-12 ${label} Weekly definitions aligned`);
+    expect(card.textContent).not.toContain('[suggest]');
+    useAppStore.setState({ language: 'zh' });
+  });
+
   it('「我的」渲染角色卡（花名/职业/记忆态），空记录显示未合作文案', async () => {
     listRoles.mockResolvedValue([
       makeEntry(),

@@ -77,12 +77,13 @@ import { useAppStore } from '../../../../stores/appStore';
 import { useAppshotsStore } from '../../../../stores/appshotsStore';
 import { ComposerChipsRow } from './ComposerChipsRow';
 import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
-import { ModelSwitcher } from '../../../StatusBar/ModelSwitcher';
+import { ModelSlot } from '../../../StatusBar/ModelSlot';
 import ipcService from '../../../../services/ipcService';
 import { invokeNativeCommandAction, isNativeCommandRuntimeAvailable } from '../../../../services/nativeCommandFacade';
 import { toast } from '../../../../hooks/useToast';
 import { goalComposerDraftToParsed } from './parseGoalCommand';
 import { LoopStatusBar } from './LoopStatusBar';
+import { MeetingBar } from './MeetingBar';
 import { ScheduleComposerCard } from './ScheduleComposerCard';
 import { ScheduleConfirmCard } from './ScheduleConfirmCard';
 import { GoalConfirmCard } from './GoalConfirmCard';
@@ -1298,6 +1299,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             <LoopStatusBar sessionId={currentSessionId} />
           </SlotEntry>
 
+          {/* 「记这场会」录制条（L3 上下文层，组件自闸；入口在 + 菜单） */}
+          <SlotEntry id="meeting-status">
+            <MeetingBar />
+          </SlotEntry>
+
           {/* 定时任务对话式创建卡片（/schedule 不带参数时）（L1 阻塞决策层） */}
           <SlotEntry id="schedule-composer" active={scheduleComposerOpen}>
             {scheduleComposerOpen && (
@@ -1648,7 +1654,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
             {/* 模型选择器（已合并 Agent Engine 选择到下拉框顶部 chip 行） */}
             <div className="text-xs">
-              <ModelSwitcher currentModel={modelConfig.model} />
+              <ModelSlot currentModel={modelConfig.model} />
             </div>
 
             {/* 运行中第三个显式动作（次级位，紧挨发送；不占核心操作区、不加默认键位） */}

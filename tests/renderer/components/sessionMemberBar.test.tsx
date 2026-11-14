@@ -135,19 +135,24 @@ describe('SessionMemberBar（折叠 chip）', () => {
     render(<SessionMemberBar sessionId="session-1" />);
     const chip = await screen.findByTestId('session-member-bar-collapsed');
     expect(chip.textContent).toContain('2 个代理 · 完成');
-    // 账本完成事件常把 filesChanged 落成 []，没有隔离 worktree 时仍报合到一起
-    expect(screen.getByTestId('member-bar-merge-state').textContent).toBe('改动已经合到一起了');
+    // 账本完成事件没有文件改动证据时只报已汇报，不谎称已合并
+    expect(screen.getByTestId('member-bar-merge-state').textContent).toBe('已汇报');
     // chip 左侧头像叠：专家行走 RoleInitialAvatar
     expect(screen.getByTestId('role-initial-avatar-researcher')).toBeTruthy();
     expect(screen.getByTestId('role-initial-avatar-writer')).toBeTruthy();
   });
 
-  it('账本完成事件 filesChanged 为空、角色不是只读时芯片仍报合到一起了', async () => {
+  it.each([
+    ['zh', '已汇报', '改动已经合到一起了'],
+    ['en', 'Reported', 'Changes merged'],
+  ] as const)('账本完成事件 filesChanged 为空、角色不是只读时芯片报已汇报而非合到一起了 (%s)', async (lang, expected, forbidden) => {
+    appState.language = lang;
     mockLedger(completedDetail);
 
     render(<SessionMemberBar sessionId="session-1" />);
     const merge = await screen.findByTestId('member-bar-merge-state');
-    expect(merge.textContent).toBe('改动已经合到一起了');
+    expect(merge.textContent).toBe(expected);
+    expect(merge.textContent).not.toBe(forbidden);
   });
 
   it('有真实文件改动时芯片仍报合到一起了', async () => {

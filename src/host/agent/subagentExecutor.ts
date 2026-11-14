@@ -78,6 +78,7 @@ import {
 import { getIncompleteTasks, adoptOrphanTasks } from '../services/planning/taskStore';
 import { addSubagentUsage, type SubagentUsage } from './subagentUsageAccounting';
 import { runSubagentExecutionWithTrace } from './subagentExecutionTracing';
+import { withSubagentRunOwner } from './subagentRunOwner';
 import { createSubagentToolRuntime } from './subagentToolRuntime';
 import {
   normalizeSubagentModelContext,
@@ -91,6 +92,7 @@ import {
   handleSubagentAbort,
   finalizeSubagentSuccess, appendSubagentLeftoverShellReport, reportSubagentLeftoverShells,
   handleSubagentFailure,
+  SubagentTextToolCallGuard,
   type SubagentCompletionDeps,
   type SubagentCompletionTerminal,
 } from './subagentExecutorCompletion';
@@ -139,11 +141,10 @@ export class SubagentExecutor {
     const request = applyRoleBoundaryToSubagentRequest(normalizeSubagentExecutionRequest(requestOrPrompt, legacyConfig, legacyContext));
     const externalExecution = routeExternalSubagentExecution(request);
     if (externalExecution) return externalExecution;
-    const { prompt, config, context } = request;
-    return runSubagentExecutionWithTrace(
-      request,
-      () => this.executeInternal(prompt, config, context),
-    );
+    return withSubagentRunOwner(request, (ownedRequest) => runSubagentExecutionWithTrace(
+      ownedRequest,
+      () => this.executeInternal(ownedRequest.prompt, ownedRequest.config, ownedRequest.context),
+    ));
   }
 
   private async executeInternal(
@@ -515,6 +516,7 @@ export class SubagentExecutor {
       // 注入重入消息督办，上限 2 次（MiMo subagent 上限），防跑飞
       let taskGateReentries = 0;
       let memberInputReentries = 0;
+      const textToolCallGuard = new SubagentTextToolCallGuard();
       // finalOutput 在循环之后才声明。进度回调若读它，会在 TDZ 里抛 ReferenceError，
       // 被记账的 catch 吞掉，重启通知就永远没有花费和进度。
       let latestAssistantText = '';
@@ -679,6 +681,11 @@ export class SubagentExecutor {
 
         // Handle text response - subagent is done
         if (response.type === 'text' && response.content) {
+          if (textToolCallGuard.retry(response.content, messages, iterations < maxIterations)) {
+            emitContextSnapshot();
+            persistTelemetryTurn(response.content, response.thinking);
+            continue;
+          }
           latestAssistantText = response.content;
           const wind = commitMemberTextAnswer({
             ledger: answerLedger,
