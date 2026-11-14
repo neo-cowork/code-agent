@@ -106,6 +106,24 @@ describe('onboarding two-step funnel', () => {
   });
 });
 
+describe('onboarding English language pack', () => {
+  it('contains no Chinese in any string, including states the wizard only shows briefly', () => {
+    const withChinese: string[] = [];
+    const walk = (value: unknown, keyPath: string) => {
+      if (typeof value === 'string') {
+        if (/[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/u.test(value)) withChinese.push(`${keyPath}=${value}`);
+      } else if (value && typeof value === 'object') {
+        for (const [key, child] of Object.entries(value)) walk(child, `${keyPath}.${key}`);
+      }
+    };
+    walk(onboardingEn.onboarding, 'onboarding');
+
+    expect(withChinese).toEqual([]);
+    expect(onboardingEn.onboarding.detectingClients).toBe('Checking local clients…');
+    expect(onboardingEn.onboarding.noClientsDetected).toBe('No official clients detected on this computer.');
+  });
+});
+
 describe('onboarding engine recommendation copy', () => {
   it('keeps a language-pack entry for every engine manifest recommendation', () => {
     type RecommendationCopy = Record<string, { label: string; reason: string } | undefined>;
