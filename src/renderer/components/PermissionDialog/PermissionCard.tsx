@@ -68,6 +68,8 @@ function normalizeRequest(
       toolName: request.details.toolName,
       connectorAccess: request.details.connectorAccess,
       purpose: request.details.purpose,
+      userRequest: request.details.userRequest,
+      startedByAutomation: request.details.startedByAutomation,
       commandRiskLevel: request.details.commandRiskLevel,
       commandSecurityFlags: request.details.commandSecurityFlags,
       affectedPath: request.details.affectedPath,
