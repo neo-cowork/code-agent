@@ -9,6 +9,7 @@ const CONNECTOR_LABEL_KEYS: Record<string, keyof HumanToolLabels['connectors']> 
   calendar: 'calendar',
   reminders: 'reminders',
   tmeet: 'tmeet',
+  feishu: 'feishu',
 };
 
 const TOOL_LABEL_KEYS: Record<string, keyof HumanToolLabels['tools']> = {

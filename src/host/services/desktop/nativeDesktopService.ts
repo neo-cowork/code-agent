@@ -279,7 +279,8 @@ export class NativeDesktopService {
     try {
       const output = execFileSync('sqlite3', ['-json', sqlitePath,
         'SELECT id, title, started_at_ms, ended_at_ms FROM meetings ORDER BY started_at_ms DESC LIMIT 1;',
-      ], { encoding: 'utf-8' }).trim();
+        // 没录过会时还没有 meetings 表：返回 null 是预期，sqlite 的报错收进异常，不往进程 stderr 刷屏（每轮都调）
+      ], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
       if (!output) return null;
       return (JSON.parse(output) as Array<{ id: string; title: string; started_at_ms: number; ended_at_ms: number | null }>)[0] ?? null;
     } catch {

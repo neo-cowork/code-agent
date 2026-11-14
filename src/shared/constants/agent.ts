@@ -97,7 +97,9 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // sys-v116 (main): preserve the main-branch prompt changes.
 // sys-v117–118: add wait_for_user and refine its instructions.
 // sys-v119: integrate wait_for_user with the updated main prompt surface.
-export const PROMPT_VERSION = 'sys-v119' as const;
+// sys-v120：N-MEETING-PAGE——新增 meeting_records 只读工具（列出/搜索/读取过去的会议纪要与转写）。
+// sys-v121：N-MEETING-PAGE——新增 tmeetRecordList / tmeetRecordRead / feishuMinutesSearch / feishuMinutesRead 只读工具，五个会议读取工具加 stepLabel。
+export const PROMPT_VERSION = 'sys-v121' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =
