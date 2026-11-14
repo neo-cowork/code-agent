@@ -3,6 +3,8 @@ import { Hand } from 'lucide-react';
 import { RENDERER_POLLING } from '@shared/constants';
 import { workbenchTabsEn, workbenchTabsZh } from '../../../i18n/workbenchTabs';
 import { useI18n } from '../../../hooks/useI18n';
+import { useSessionTurnActive } from '../../../hooks/useSessionTurnActive';
+import { useTaskStore } from '../../../stores/taskStore';
 import { Button } from '../../primitives';
 import { adoptKeptResultPage, getKeptResultPage, type KeptResultPage } from '../../../services/userBrowserLink';
 
@@ -31,42 +33,67 @@ export const BrowserTakeoverParkCard: React.FC<BrowserTakeoverParkCardProps> = (
   const continueMessage = (messageLanguage ?? language) === 'en'
     ? workbenchTabsEn.workbenchTabs.agentWindow.takeoverPark.continueMessage
     : workbenchTabsZh.workbenchTabs.agentWindow.takeoverPark.continueMessage;
+  const turnActive = useSessionTurnActive(conversationId);
   const [park, setPark] = useState<KeptResultPage>({ state: 'none', url: null, title: null, reason: null });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
   const conversationRef = useRef(conversationId);
   conversationRef.current = conversationId;
+  const turnActiveRef = useRef(turnActive);
+  turnActiveRef.current = turnActive;
+  const wasTurnActiveRef = useRef(turnActive);
+  const claimEpochRef = useRef(0);
 
   const [pendingClaim, setPendingClaim] = useState(false);
   const [parkConversation, setParkConversation] = useState(conversationId);
 
+  const refresh = useCallback(async () => {
+    const targetConversation = conversationId;
+    const epochAtStart = claimEpochRef.current;
+    const next = await getKeptResultPage(targetConversation);
+    if (!mountedRef.current || conversationRef.current !== targetConversation) return;
+    setParkConversation(targetConversation);
+    setPark(next);
+    if (next.reason !== 'takeover' || next.state !== 'kept') {
+      setPendingClaim(false);
+    } else if (!turnActiveRef.current && claimEpochRef.current === epochAtStart) {
+      setPendingClaim(false);
+    }
+  }, [conversationId]);
+
   useEffect(() => {
-    let cancelled = false;
     mountedRef.current = true;
+    wasTurnActiveRef.current = turnActiveRef.current;
     setBusy(false);
     setPendingClaim(false);
     setError(null);
-    const refresh = async () => {
-      const next = await getKeptResultPage(conversationId);
-      if (!cancelled) {
-        setParkConversation(conversationId);
-        setPark(next);
-      }
-    };
     void refresh();
     const timer = setInterval(() => void refresh(), RENDERER_POLLING.KEPT_BROWSER_STATE);
     return () => {
-      cancelled = true;
       mountedRef.current = false;
       clearInterval(timer);
     };
-  }, [conversationId]);
+  }, [refresh]);
+
+  useEffect(() => {
+    const wasActive = wasTurnActiveRef.current;
+    wasTurnActiveRef.current = turnActive;
+    // 若下一轮未动用浏览器就结束（纯文本回复或中途报错），停靠条目未被认领消耗：
+    // 立即重查并解开按钮，不等下一轮轮询，也不把卡片永久锁死。
+    if (wasActive && !turnActive) {
+      setPendingClaim(false);
+      void refresh();
+    }
+  }, [turnActive, refresh]);
 
   const onContinueClick = useCallback(async () => {
-    if (busy || pendingClaim) return;
+    if (busy || turnActive || pendingClaim) return;
     setBusy(true);
     setError(null);
+    const taskBefore = conversationId
+      ? useTaskStore.getState().sessionStates?.[conversationId]
+      : undefined;
     try {
       // A window may have closed since the last poll. Never start a stale Continue.
       const current = await getKeptResultPage(conversationId);
@@ -74,18 +101,32 @@ export const BrowserTakeoverParkCard: React.FC<BrowserTakeoverParkCardProps> = (
       setPark(current);
       if (current.reason !== 'takeover' || current.state !== 'kept') return;
       const sent = await onContinue(continueMessage);
-      if (mountedRef.current && conversationRef.current === conversationId) {
-        if (sent === false) setError(copy.continueFailed);
-        else setPendingClaim(true);
+      if (!mountedRef.current || conversationRef.current !== conversationId) return;
+      if (sent === false) {
+        setError(copy.continueFailed);
+        return;
+      }
+      const taskAfter = conversationId
+        ? useTaskStore.getState().sessionStates?.[conversationId]
+        : undefined;
+      const sendSettledWithoutRun = taskAfter !== taskBefore
+        && (taskAfter?.status === 'error' || taskAfter?.status === 'cancelled');
+      if (sendSettledWithoutRun) {
+        setPendingClaim(false);
+        await refresh();
+      } else {
+        claimEpochRef.current += 1;
+        setPendingClaim(true);
       }
     } catch {
       if (mountedRef.current && conversationRef.current === conversationId) setError(copy.continueFailed);
     } finally {
       if (mountedRef.current && conversationRef.current === conversationId) setBusy(false);
     }
-  }, [busy, pendingClaim, conversationId, onContinue, continueMessage, copy.continueFailed]);
+  }, [busy, turnActive, pendingClaim, conversationId, onContinue, continueMessage, copy.continueFailed, refresh]);
 
   const onOpen = useCallback(async () => {
+    if (busy || turnActive || pendingClaim) return;
     setBusy(true);
     setError(null);
     try {
@@ -99,10 +140,11 @@ export const BrowserTakeoverParkCard: React.FC<BrowserTakeoverParkCardProps> = (
     } finally {
       if (mountedRef.current && conversationRef.current === conversationId) setBusy(false);
     }
-  }, [conversationId, workspace, copy.openFailed]);
+  }, [busy, turnActive, pendingClaim, conversationId, workspace, copy.openFailed]);
 
   if (parkConversation !== conversationId || park.reason !== 'takeover') return null;
   const alive = park.state === 'kept';
+  const actionDisabled = busy || turnActive || pendingClaim;
 
   return (
     <div
@@ -122,7 +164,7 @@ export const BrowserTakeoverParkCard: React.FC<BrowserTakeoverParkCardProps> = (
             <Button
               variant="secondary"
               size="sm"
-              disabled={busy || pendingClaim}
+              disabled={actionDisabled}
               onClick={onOpen}
               data-testid="browser-takeover-park-open"
             >
@@ -132,7 +174,7 @@ export const BrowserTakeoverParkCard: React.FC<BrowserTakeoverParkCardProps> = (
               variant="primary"
               size="sm"
               loading={busy}
-              disabled={busy || pendingClaim}
+              disabled={actionDisabled}
               onClick={onContinueClick}
               data-testid="browser-takeover-park-continue"
             >

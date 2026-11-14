@@ -2,9 +2,10 @@
 // N-FIX-FIX-BROWSER-SECRETREF-HARDEN（FB-578）：secretRef 接管停靠的聊天卡三态
 // （takeover+kept / takeover+closed / 其他不渲染）+「继续」发送用户消息。
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BrowserTakeoverParkCard } from '../../../../src/renderer/components/features/surfaceExecution/BrowserTakeoverParkCard';
+import { useTaskStore } from '../../../../src/renderer/stores/taskStore';
 
 const { getKeptResultPage, adoptKeptResultPage } = vi.hoisted(() => ({
   getKeptResultPage: vi.fn(),
@@ -20,10 +21,12 @@ beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   getKeptResultPage.mockReset();
   adoptKeptResultPage.mockReset().mockResolvedValue({});
+  useTaskStore.setState({ sessionStates: {} });
 });
 
 afterEach(() => {
   cleanup();
+  useTaskStore.setState({ sessionStates: {} });
   vi.useRealTimers();
 });
 
@@ -139,4 +142,113 @@ describe('BrowserTakeoverParkCard', () => {
     await waitFor(() => expect(onContinue).toHaveBeenCalledWith('I have finished signing in in the browser window. Please continue the earlier task.'));
   });
 
+  it('clears pendingClaim on poll when the next run did not consume the parked window so Open and Continue work again', async () => {
+    getKeptResultPage.mockResolvedValue({
+      state: 'kept',
+      url: 'https://idp.example.test/login',
+      title: 'Sign in',
+      reason: 'takeover',
+    });
+    const onContinue = vi.fn();
+    render(<BrowserTakeoverParkCard conversationId="conversation-a" workspace="/workspace" onContinue={onContinue} />);
+
+    const openButton = await screen.findByTestId('browser-takeover-park-open');
+    const continueButton = await screen.findByTestId('browser-takeover-park-continue');
+    fireEvent.click(continueButton);
+
+    await waitFor(() => expect(onContinue).toHaveBeenCalledTimes(1));
+    expect((openButton as HTMLButtonElement).disabled).toBe(true);
+    expect((continueButton as HTMLButtonElement).disabled).toBe(true);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(31_000);
+    });
+
+    await waitFor(() => {
+      expect((openButton as HTMLButtonElement).disabled).toBe(false);
+      expect((continueButton as HTMLButtonElement).disabled).toBe(false);
+    });
+
+    fireEvent.click(openButton);
+    await waitFor(() => expect(adoptKeptResultPage).toHaveBeenCalledWith({
+      conversationId: 'conversation-a',
+      workspace: '/workspace',
+    }));
+
+    fireEvent.click(continueButton);
+    await waitFor(() => expect(onContinue).toHaveBeenCalledTimes(2));
+  });
+
+  it('keeps actions disabled while the continuation turn runs and re-enables immediately when a non-browser turn finishes', async () => {
+    getKeptResultPage.mockResolvedValue({
+      state: 'kept',
+      url: 'https://idp.example.test/login',
+      title: 'Sign in',
+      reason: 'takeover',
+    });
+    const onContinue = vi.fn(() => {
+      act(() => {
+        useTaskStore.getState().updateSessionState('conversation-a', {
+          status: 'running',
+          startTime: Date.now(),
+        });
+      });
+      return true;
+    });
+    render(<BrowserTakeoverParkCard conversationId="conversation-a" onContinue={onContinue} />);
+
+    const openButton = await screen.findByTestId('browser-takeover-park-open');
+    const continueButton = await screen.findByTestId('browser-takeover-park-continue');
+    fireEvent.click(continueButton);
+
+    await waitFor(() => expect(onContinue).toHaveBeenCalledTimes(1));
+    expect((openButton as HTMLButtonElement).disabled).toBe(true);
+    expect((continueButton as HTMLButtonElement).disabled).toBe(true);
+
+    // Mid-run poll must NOT re-enable actions while the turn is still running.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(31_000);
+    });
+    expect((openButton as HTMLButtonElement).disabled).toBe(true);
+    expect((continueButton as HTMLButtonElement).disabled).toBe(true);
+
+    // Turn finishes with text only (browser was never touched, so kept entry remains).
+    act(() => {
+      useTaskStore.getState().updateSessionState('conversation-a', { status: 'idle' });
+    });
+
+    await waitFor(() => {
+      expect((openButton as HTMLButtonElement).disabled).toBe(false);
+      expect((continueButton as HTMLButtonElement).disabled).toBe(false);
+    });
+  });
+
+  it('does not leave actions disabled when send settles into task error before starting a run', async () => {
+    getKeptResultPage.mockResolvedValue({
+      state: 'kept',
+      url: 'https://idp.example.test/login',
+      title: 'Sign in',
+      reason: 'takeover',
+    });
+    const onContinue = vi.fn(() => {
+      act(() => {
+        useTaskStore.getState().updateSessionState('conversation-a', {
+          status: 'error',
+          error: 'HTTP 500',
+        });
+      });
+      return true;
+    });
+    render(<BrowserTakeoverParkCard conversationId="conversation-a" onContinue={onContinue} />);
+
+    const openButton = await screen.findByTestId('browser-takeover-park-open');
+    const continueButton = await screen.findByTestId('browser-takeover-park-continue');
+    fireEvent.click(continueButton);
+
+    await waitFor(() => expect(onContinue).toHaveBeenCalledTimes(1));
+    await waitFor(() => {
+      expect((openButton as HTMLButtonElement).disabled).toBe(false);
+      expect((continueButton as HTMLButtonElement).disabled).toBe(false);
+    });
+  });
 });
