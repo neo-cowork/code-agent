@@ -19,6 +19,7 @@ import type {
   AudioCaptureMissingPrerequisiteCode,
   AudioCaptureMode,
   AudioCapturePrerequisites,
+  MeetingSessionStatus,
 } from '@shared/contract/audioCapture';
 import { invalidateComputerUseSnapshotForSystemSettings } from '../stores/computerUseStore';
 
@@ -530,6 +531,20 @@ export async function stopAudioCapture(): Promise<AudioCaptureStatus> {
     } catch { /* best effort */ }
   }
   return status;
+}
+
+// 「记这场会」（N-MEETING-SESSION）。开始/继续失败时抛错，message 是前置缺失码（同 startAudioCapture）
+export const startMeeting = (title?: string) =>
+  postDesktopAction<MeetingSessionStatus>('startMeeting', title ? { title } : undefined);
+export const pauseMeeting = () => postDesktopAction<MeetingSessionStatus>('pauseMeeting');
+export const resumeMeeting = () => postDesktopAction<MeetingSessionStatus>('resumeMeeting');
+export const stopMeeting = () => postDesktopAction<MeetingSessionStatus>('stopMeeting');
+export async function getMeetingStatus(): Promise<MeetingSessionStatus | null> {
+  try {
+    return await postDesktopAction<MeetingSessionStatus>('getMeetingStatus');
+  } catch {
+    return null;
+  }
 }
 
 export async function getAudioCaptureStatus(): Promise<AudioCaptureStatus | null> {

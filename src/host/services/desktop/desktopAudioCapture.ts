@@ -664,10 +664,24 @@ function sqlEscape(value: string): string {
   return value.replace(/'/g, "''");
 }
 
-function getSqlitePath(): string | null {
+/**
+ * 录音库路径。库文件平时由桌面活动采集器（Rust）创建；没开过采集器时这里自己建，
+ * 否则转写只落 wav、不入库也没提示（N-MEETING-SESSION 前提）。Rust 侧建表都是 IF NOT EXISTS，先建无妨。
+ */
+export function getSqlitePath(): string | null {
   const service = getNativeDesktopService();
-  const status = service.getStatus();
-  return status.sqliteDbPath && fs.existsSync(status.sqliteDbPath) ? status.sqliteDbPath : null;
+  const dbPath = service.getStatus().sqliteDbPath;
+  if (!dbPath) return null;
+  if (!fs.existsSync(dbPath)) {
+    try {
+      fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+      ensureAudioTable(dbPath);
+      logger.info('[音频采集] 录音库不存在，已新建', { dbPath });
+    } catch (error) {
+      logger.warn('[音频采集] 新建录音库失败', { dbPath, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return fs.existsSync(dbPath) ? dbPath : null;
 }
 
 export function ensureAudioTable(sqlitePath: string): void {
