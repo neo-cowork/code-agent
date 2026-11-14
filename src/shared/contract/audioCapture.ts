@@ -30,7 +30,7 @@ export interface AudioCapturePrerequisites {
 }
 
 /** 一场会的状态（N-MEETING-SESSION）。出纪要中/完成属于会议页（N-MEETING-PAGE），见 docs/architecture/meeting-session.md */
-export type MeetingState = 'recording' | 'paused' | 'ended';
+type MeetingState = 'recording' | 'paused' | 'ended';
 export type MeetingEndReason = 'manual' | 'silence' | 'max_duration' | 'sleep' | 'capture_stopped' | 'interrupted';
 
 export interface MeetingRecord {
