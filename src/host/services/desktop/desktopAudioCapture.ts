@@ -126,8 +126,8 @@ interface CaptureTrack {
   vad: VadProcessor;
   proc: ChildProcess | null;
   stream: fs.ReadStream | null;
-  /** 按样本数推算段落时间，处理跟不上实时也不漂（N-MEETING-DUALTRACK-FU1） */
-  clock: AudioStreamClock;
+  /** 这一路 VAD 的处理链：进程重启后新旧两条流也排在同一条链上，不并发推理 */
+  vadChain: Promise<void>;
 }
 
 let tracks: CaptureTrack[] = [];
@@ -885,6 +885,7 @@ function spawnSource(source: 'microphone' | 'system-audio'): ChildProcess | null
       '-f', 'avfoundation', '-i', audioDevice,
       // avfoundation 会丢帧（11-14 本机实测只出实时的 0.88 倍），段落时间按样本数推算会越录越早；
       // 按时间戳把缺口补成静音，样本数才和墙钟对得上（N-MEETING-DUALTRACK-FU1）
+      // ponytail: 只覆盖 ffmpeg；sox rec 回落和 Tauri FIFO 路径若也丢帧仍会偏早，遇到再补
       '-af', 'aresample=async=1',
       '-ar', String(SAMPLE_RATE), '-ac', '1', '-f', 's16le', 'pipe:1',
     ], { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -902,22 +903,23 @@ function pumpPcm(input: NodeJS.ReadableStream, track: CaptureTrack): void {
   let vadErrorLogged = false;
   let dataChunkCount = 0;
   let lastDiagMs = 0;
+  // 每条流一个时钟：进程重启后新流首包重新定原点，重启空窗不会让后续段落整体偏早
+  const clock = new AudioStreamClock(SAMPLE_RATE);
 
   // 一路的数据包必须逐个处理完再处理下一个：VAD 带隐藏状态，主线程一卡、积压的包并发进
   // session.run 会共用旧状态，段落被错合/错切，时间偏出好几秒（N-MEETING-DUALTRACK-FU1 真机实测）。
   // ponytail: 处理长期跟不上实时时队列会一直涨，真遇到再加丢包/降级
-  let chain: Promise<void> = Promise.resolve();
   input.on('data', (data: Buffer | string) => {
     if (typeof data === 'string') return; // skip string chunks
-    track.clock.receive(data.length); // 原点按到达时刻定，不能等排队
-    chain = chain.then(() => handlePcm(data)).catch((error) => {
+    clock.receive(data.length); // 原点按到达时刻定，不能等排队
+    track.vadChain = track.vadChain.then(() => handlePcm(data)).catch((error) => {
       logger.error('[音频采集] 处理音频数据异常', { source: track.source, error: error instanceof Error ? error.message : String(error) });
     });
   });
 
   async function handlePcm(data: Buffer): Promise<void> {
     if (powerMode === 'paused') {
-      track.clock.advance(data.length / 2); // 丢掉的样本也算时间，恢复后不漂
+      clock.advance(data.length / 2); // 丢掉的样本也算时间，恢复后不漂
       return;
     }
     // 已停掉的一路：进程哪怕还没退干净，数据也不再落库（否则停了又开会多出一路「对方」）
@@ -958,7 +960,7 @@ function pumpPcm(input: NodeJS.ReadableStream, track: CaptureTrack): void {
       );
 
       // 这一块样本对应的音频时刻；段落在这块处切出，就以它为结束时间
-      const blockEndMs = track.clock.advance(BLOCK_SIZE);
+      const blockEndMs = clock.advance(BLOCK_SIZE);
       try {
         const segments = await track.vad.processChunk(int16);
         for (const segment of segments) {
@@ -1047,7 +1049,7 @@ function attachProcess(track: CaptureTrack, source: 'microphone' | 'system-audio
 async function newTrack(source: CaptureSource, speakerId: number): Promise<CaptureTrack | null> {
   const vad = new VadProcessor();
   if (!(await vad.init())) return null;
-  return { source, speakerId, vad, proc: null, stream: null, clock: new AudioStreamClock(SAMPLE_RATE) };
+  return { source, speakerId, vad, proc: null, stream: null, vadChain: Promise.resolve() };
 }
 
 // ============================================================================
