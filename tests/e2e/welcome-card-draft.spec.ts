@@ -11,7 +11,7 @@ const CARDS = [
   { key: 'sales-data', title: /分析一组销售数据|Analyze a sales spreadsheet/, promptHead: /分析下面这份月度销售数据|Analyze this monthly sales dataset/ },
 ] as const;
 const DRAFT = 'draft XY77 keep test';
-const NO_MODEL_NOTICE = /Configure a model before sending|先配置一个模型后再发送/;
+const NO_MODEL_NOTICE = /No API Key for .+ yet|尚未配置 API Key/;
 
 async function openFreshWelcome(page: Page): Promise<void> {
   await page.goto('/');

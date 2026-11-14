@@ -5,12 +5,14 @@ import { act, renderHook } from '@testing-library/react';
 import type { MessageAttachment } from '../../../src/shared/contract';
 import { buildMultimodalContent } from '../../../src/host/agent/messageHandling/converter';
 
-const ipc = vi.hoisted(() => ({ getPathForFile: vi.fn() }));
+const ipc = vi.hoisted(() => ({ getPathForFile: vi.fn(), uploadFolderBatch: undefined as undefined | ReturnType<typeof vi.fn> }));
 vi.mock('../../../src/renderer/services/ipcService', () => ({ default: ipc }));
 vi.mock('../../../src/renderer/hooks/useToast', () => ({ toast: { show: vi.fn() } }));
 vi.mock('../../../src/renderer/components/features/chat/ChatInput/attachmentSummaries', () => ({
   buildArchiveManifest: vi.fn(), buildPresentationSummary: vi.fn(),
 }));
+import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { MAX_FOLDER_BATCH_BODY_SIZE } from '../../../src/shared/constants/chatUploads';
 import { useFileUpload } from '../../../src/renderer/components/features/chat/ChatInput/useFileUpload';
 
 function directory(files: File[], name = 'contract-bundle'): FileSystemDirectoryEntry {
@@ -50,7 +52,76 @@ async function processFolder(files: File[]) {
 describe('folder upload', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    ipc.uploadFolderBatch = undefined;
     ipc.getPathForFile.mockImplementation(async (file: File) => `/tmp/uploads/${file.name}`);
+  });
+
+  function batchFiles() {
+    return Array.from({ length: 30 }, (_, n) => new File(['%PDF contract ' + n], `contract${n}.pdf`));
+  }
+
+  function enableBatch() {
+    ipc.uploadFolderBatch = vi.fn(async (entries: Array<{ file: File; relativePath: string }>) => ({
+      root: '/tmp/code-agent-uploads/batch-root',
+      files: entries.map(({ relativePath }) => ({ relativePath, path: `/tmp/code-agent-uploads/batch-root/${relativePath}` })),
+    }));
+  }
+
+  it('30 files through public processFolderEntry get all absolutePaths and the shared root in one request', async () => {
+    enableBatch();
+    const attachment = await processFolder(batchFiles());
+    expect(ipc.uploadFolderBatch).toHaveBeenCalledTimes(1);
+    expect(ipc.uploadFolderBatch!.mock.calls[0][0]).toHaveLength(30);
+    expect(ipc.getPathForFile).not.toHaveBeenCalled();
+    expect(attachment.files).toHaveLength(30);
+    expect(attachment.files!.every((file) => file.absolutePath === `/tmp/code-agent-uploads/batch-root/${file.path}`)).toBe(true);
+    expect(attachment.path).toBe('/tmp/code-agent-uploads/batch-root');
+    expect(attachment.data).not.toContain('无法确定');
+    process.stdout.write('public hook: 30/30 absolutePath; one batch request; path=' + attachment.path + '\n');
+  });
+
+  it.each([429, 404])('batch %i falls back to at most 10 single paths with unresolved note in zh and en', async (status) => {
+    for (const language of ['zh', 'en'] as const) {
+      useAppStore.setState({ language });
+      enableBatch();
+      ipc.getPathForFile.mockClear();
+      ipc.uploadFolderBatch!.mockRejectedValue(new Error(`Batch upload failed: ${status}`));
+      const attachment = await processFolder(batchFiles());
+      expect(ipc.getPathForFile).toHaveBeenCalledTimes(10);
+      expect(attachment.files!.filter((file) => file.absolutePath)).toHaveLength(10);
+      expect(attachment.path).toBeUndefined();
+      expect(attachment.data).toContain(language === 'zh' ? '无法确定文件夹的可读路径' : 'Folder path unresolved; use the readable path supplied for each file.');
+      process.stdout.write(`batch ${status} ${language}: 10 paths, summary=${attachment.data}\n`);
+    }
+    useAppStore.setState({ language: 'zh' });
+  });
+
+  it('chunks under the total body cap, retaining every path and no invented common root', async () => {
+    enableBatch();
+    ipc.uploadFolderBatch!.mockImplementation(async (entries: Array<{ file: File; relativePath: string }>) => {
+      const root = `/tmp/batch-${entries[0].file.name}`;
+      expect(entries.reduce((size, { file }) => size + file.size + 2048, 1024)).toBeLessThan(MAX_FOLDER_BATCH_BODY_SIZE);
+      return { root, files: entries.map(({ relativePath }) => ({ relativePath, path: `${root}/${relativePath}` })) };
+    });
+    const files = batchFiles().slice(0, 5);
+    files.forEach((file) => Object.defineProperty(file, 'size', { value: 50 * 1024 * 1024 }));
+    const attachment = await processFolder(files);
+    expect(ipc.uploadFolderBatch).toHaveBeenCalledTimes(2);
+    expect(attachment.files!.filter((file) => file.absolutePath)).toHaveLength(5);
+    expect(attachment.path).toBeUndefined();
+    expect(attachment.data).toContain('无法确定文件夹的可读路径');
+  });
+
+  it('discards partial batch results before fallback after a later chunk fails', async () => {
+    enableBatch();
+    const succeed = ipc.uploadFolderBatch!.getMockImplementation()!;
+    ipc.uploadFolderBatch!.mockImplementationOnce(succeed).mockRejectedValueOnce(new Error('network failure'));
+    const files = batchFiles().slice(0, 5);
+    files.forEach((file) => Object.defineProperty(file, 'size', { value: 50 * 1024 * 1024 }));
+    const attachment = await processFolder(files);
+    expect(ipc.getPathForFile).toHaveBeenCalledTimes(5);
+    expect(attachment.files!.every((file) => file.absolutePath?.startsWith('/tmp/uploads/'))).toBe(true);
+    expect(attachment.path).toBeUndefined();
   });
 
   it('real PDF fixture stores no binary text and carries its own readable path', async () => {

@@ -47,8 +47,11 @@ build_swift_tool() {
     exit 1
   fi
 
-  # 增量检查：源文件未变且产物较新则跳过（交叉编译指定 arch 时强制重编）。
-  if [[ -z "${SWIFT_BUILD_ARCH:-}" && -f "$output" && "$output" -nt "$source" ]]; then
+# 增量检查按源码内容哈希，不比文件时间：worktree 引导会把主树旧产物拷过来，拷出的文件
+  # 时间比源码新，按时间判断永远「已是最新」，Swift 改动进不了 Dev 包（N-MEETING-DUALTRACK-FU1 真机查出）。
+  # 交叉编译指定 arch 时强制重编。
+  local_sha="$(shasum -a 256 "$source" | cut -d' ' -f1)"
+  if [[ -z "${SWIFT_BUILD_ARCH:-}" && -f "$output" && "$(cat "$output.srcsha" 2>/dev/null)" == "$local_sha" ]]; then
     echo "✓ $name 已是最新（源文件未变）"
     return
   fi
@@ -62,6 +65,7 @@ build_swift_tool() {
     "$source"
 
   chmod +x "$output"
+  if [[ -z "${SWIFT_BUILD_ARCH:-}" ]]; then echo "$local_sha" > "$output.srcsha"; else rm -f "$output.srcsha"; fi
   echo "✓ 产物: $output"
   ls -lh "$output"
 }

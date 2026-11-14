@@ -24,6 +24,7 @@ import { readCronPermissionDenied } from './cronNormalizers';
 import { cronSourceSessionIdFromDefinition } from '../../shared/cronWriteScope';
 import { resolveCronArtifactsForReview } from '../../shared/cronArtifactPath';
 import { formatCronExpressionLabel } from '../../shared/cronHumanize';
+import { formatCronTimeZoneSuffix } from '../../shared/cronTimeZone';
 import { parseCronLoginWallStop } from '../../shared/utils/browserLoginWall';
 import { getDatabase } from '../services/core/databaseService';
 
@@ -144,9 +145,12 @@ export function formatCronScheduleLabel(schedule: CronScheduleConfig): string {
         ? new Date(ts).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
         : '一次性';
     }
-    case 'cron':
-      // cron 表达式说人话（FB-326）：`17 8 * * *` → 「每天 08:17」；复杂式回退「自定义时间 · 原文」。
-      return formatCronExpressionLabel(schedule.expression, schedule.timezone, 'zh');
+    case 'cron': {
+      const label = formatCronExpressionLabel(schedule.expression, schedule.timezone, 'zh');
+      // Complex-expression fallbacks already include the configured zone.
+      if (schedule.timezone && label.endsWith(` · ${schedule.timezone}`)) return label;
+      return formatCronTimeZoneSuffix(label, schedule.timezone, 'zh');
+    }
     default:
       return '按配置';
   }
@@ -232,6 +236,22 @@ export async function recordCronAutomationArchived(definition: CronJobDefinition
   }
 }
 
+/** 本地日历日 YYYY-MM-DD：连接器失联收件箱的同日去重键与摘要有效期都按它算。 */
+export function localDayKey(ms: number): string {
+  const date = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function carryConnectorLost(
+  previous: { days: Record<string, string>; summary?: string; summaryDay?: string } | undefined,
+  executionAtMs: number,
+): { connectorLost?: { days: Record<string, string>; summary?: string; summaryDay?: string } } {
+  if (!previous) return {};
+  const sameDay = previous.summaryDay === localDayKey(executionAtMs);
+  return { connectorLost: { days: previous.days, ...(sameDay && previous.summary ? { summary: previous.summary, summaryDay: previous.summaryDay } : {}) } };
+}
+
 export async function recordCronAutomationExecution(
   definition: CronJobDefinition,
   execution: CronJobExecution,
@@ -300,6 +320,9 @@ export async function recordCronAutomationExecution(
           ...(urgencyRaw ? { urgencyRaw } : {}),
           ...(digest ? { digest } : {}),
           ...(permissionDenied ? { permissionDenied } : {}),
+          // 同次运行里已写入的「连接器未登录」记录：recordEvent 只做 config 浅合并，这里整体替换 pendingReview，
+          // 必须带上。days（同日去重）始终保留；summary 只在仍是写入当天时保留，之后的运行不再显示过期提示。
+          ...carryConnectorLost(existing?.config?.pendingReview?.connectorLost, execution.completedAt ?? execution.startedAt ?? execution.scheduledAt),
         } } }
         : loginWall
           ? { configPatch: { loginWall: { siteOrigin: loginWall.siteOrigin, at: execution.completedAt ?? Date.now() } } }

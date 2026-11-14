@@ -108,6 +108,7 @@ describe('background task settlement wake with a real RunRegistry', () => {
   let queued: boolean;
   let wakeBody: (options: AgentRunOptions) => Promise<void>;
   let wakeSends: number;
+  let wakePrompts: string[];
 
   beforeEach(() => {
     resetSessionTaskConcurrencyPoolForTest();
@@ -118,12 +119,14 @@ describe('background task settlement wake with a real RunRegistry', () => {
     info = vi.fn<(message: string, details?: unknown) => void>();
     queued = false;
     wakeSends = 0;
+    wakePrompts = [];
     wakeBody = async () => undefined;
     const orchestrator = {
       isProcessing: () => false,
       // 与 AgentOrchestrator.sendMessage 同一注册路径：auxiliary 且无 parentRunId → 非 durable
       sendMessage: vi.fn(async (_p: string, _a: unknown, options: AgentRunOptions) => {
         wakeSends += 1;
+        wakePrompts.push(_p);
         const handle = await startRunPreferringDurable(
           registry,
           { runId: `wake-run-${wakeSends}`, sessionId: SESSION, workspace: '/tmp/wake-project' },
@@ -303,6 +306,56 @@ describe('background task settlement wake with a real RunRegistry', () => {
     expect(wakeSends).toBe(1);
   });
 
+  it.each(['step-limit', 'repeated-operation'] as const)('delivers the completed result after a foreground %s hand-back releases its production registry handle', async (kind) => {
+    const previousEvalDisabled = process.env.EVAL_DISABLED;
+    process.env.EVAL_DISABLED = 'true';
+    const realManager = initTaskManager();
+    const events: AgentEvent[] = [];
+    const configService = {
+      getSettings: () => ({ permissions: { autoApprove: { read: true, write: false, execute: false, network: false }, devModeAutoApprove: false },
+        models: { default: 'openai', providers: {}, routing: {} } }),
+      getApiKey: () => '', getServiceApiKey: () => '', isDevModeAutoApproveEnabled: () => false,
+    } as unknown as ConfigService;
+    realManager.initialize({ configService, runRegistry: registry, onAgentEvent: (_sessionId, event) => { events.push(event); } });
+    const foreground = realManager.getOrCreateCurrentOrchestrator(SESSION);
+    if (!foreground) throw new Error('expected resident foreground orchestrator');
+    foreground.setWorkingDirectory('/tmp/wake-project', { syncWorkspaceServices: false });
+    let finishHandBack: () => void = () => undefined;
+    const handBack = new Promise<void>(resolve => { finishHandBack = resolve; });
+    const runNormal = vi.spyOn(AgentOrchestrator.prototype as unknown as {
+      runNormalMode: (content: string, onEvent: (event: AgentEvent) => void) => Promise<void>;
+    }, 'runNormalMode').mockImplementation(async (_content, onEvent) => {
+      const handle = await startRunPreferringDurable(registry, { runId: `poll-${kind}`, sessionId: SESSION, workspace: '/tmp/wake-project' }, 'primary');
+      await handBack;
+      // Policy generation belongs to the sibling ticket; inject only its public event boundary.
+      onEvent({ type: 'message', data: { id: `hand-back-${kind}`, role: 'assistant',
+        content: kind === 'step-limit' ? 'Reached step limit' : 'Repeated operation handed back', timestamp: 1,
+        metadata: kind === 'step-limit' ? { stoppedByStepLimit: true } : undefined } });
+      registry.unregister(`poll-${kind}`, handle);
+    });
+    try {
+      const task = await startForegroundWithTask();
+      const polling = foreground.sendMessage('Check the project tests again', undefined, { mode: 'normal' });
+      await vi.waitFor(() => expect(registry.hasSession(SESSION)).toBe(true));
+      expect(wakeSends).toBe(0);
+      finishHandBack();
+      await polling;
+      expect(registry.hasSession(SESSION)).toBe(false);
+      settle(task, 'Project tests passed: 32 suites, 0 failures');
+      await vi.waitFor(() => expect(wakeSends).toBe(1));
+      expect(wakePrompts[0]).toContain('Project tests passed: 32 suites, 0 failures');
+      expect(events.some(event => event.type === 'message' && (event.data as Message).id === `hand-back-${kind}`)).toBe(true);
+      expect(manager.startFailures).toEqual([]);
+      expect(manager.settleFailures).toEqual([]);
+      console.log('FOREGROUND_HANDBACK_WAKE_RAW', JSON.stringify({ kind, foregroundReleased: true, wakeSends, resultDelivered: wakePrompts[0].includes('Project tests passed: 32 suites, 0 failures') }));
+    } finally {
+      finishHandBack(); runNormal.mockRestore();
+      await foreground.drainWorkspaceServices(); resetTaskManager();
+      if (previousEvalDisabled === undefined) delete process.env.EVAL_DISABLED;
+      else process.env.EVAL_DISABLED = previousEvalDisabled;
+    }
+  });
+
   it('also delivers a busy-deferred wake on the TaskManager idle state_change', async () => {
     const task = await startForegroundWithTask();
     manager.state = { status: 'running' };
@@ -454,6 +507,7 @@ describe('background task settlement wake with a real RunRegistry', () => {
       expect(persistedNotes[0].metadata?.backgroundWakeFailed).toEqual({
         taskId: 'task-real-1',
         reason: 'turn_error',
+        title: '任务一',
       });
       expect(warn).toHaveBeenCalledWith(
         'Foreground wake failed: wake turn failed',
