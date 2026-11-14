@@ -1,7 +1,7 @@
 import type { SurfaceGrantSubjectV1 } from './SurfaceAccessGrantService';
 import { SurfaceExecutionRuntimeError } from './SurfaceExecutionRuntimeError';
 import { SurfaceSessionManager } from './SurfaceSessionManager';
-import { forgetBrowserTakeoverCapExpired, WAITING_HUMAN_MODEL_GUIDANCE } from './browserHumanTakeoverWait';
+import { forgetBrowserTakeoverCapExpired, noteBrowserHumanReleased, WAITING_HUMAN_MODEL_GUIDANCE } from './browserHumanTakeoverWait';
 
 interface ActiveOperation {
   subject: SurfaceGrantSubjectV1;
@@ -15,6 +15,7 @@ interface ActiveOperation {
 interface SessionInterruptState {
   operations: Map<string, ActiveOperation>;
   cleanup: Set<() => void | Promise<void>>;
+  runEndedDuringTakeover?: boolean;
 }
 
 export interface SurfaceOperationInterruptHandle {
@@ -104,6 +105,18 @@ export class SurfaceInterruptService {
     return () => state.cleanup.delete(cleanup);
   }
 
+  /** Capture run-end ownership before cancelling takeover changes the session state. */
+  prepareRunEnd(subject: SurfaceGrantSubjectV1): void {
+    const session = this.sessions.requireOwned(subject.sessionId, subject);
+    this.stateFor(subject.sessionId).runEndedDuringTakeover =
+      session.surface === 'browser' && session.state === 'waiting_human';
+  }
+
+  shouldParkAfterRunEnd(subject: SurfaceGrantSubjectV1): boolean {
+    this.sessions.requireOwned(subject.sessionId, subject);
+    return this.stateFor(subject.sessionId).runEndedDuringTakeover === true;
+  }
+
   async pause(subject: SurfaceGrantSubjectV1): Promise<void> {
     const session = this.sessions.requireOwned(subject.sessionId, subject);
     if (session.state !== 'running') {
@@ -119,6 +132,7 @@ export class SurfaceInterruptService {
       throw this.controlError(subject, 'resume', session.provider, session.surface, session.state);
     }
     this.sessions.transition(subject.sessionId, subject, 'running');
+    if (session.state === 'waiting_human') noteBrowserHumanReleased(subject.sessionId);
     // 用户按继续回到 running：清掉 cap-expired 记忆，新一轮 takeover 重新完整等待。
     forgetBrowserTakeoverCapExpired(subject.sessionId);
   }

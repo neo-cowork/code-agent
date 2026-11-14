@@ -6,6 +6,9 @@ import { getDatabase } from '../services/core/databaseService';
 import { getSessionManager } from '../services/infra/sessionManager';
 import { canOpenEnvSettings, openEnvSettings } from '../permissions/envAssist/settingsPane';
 
+import { mintClickToken, requestGrant } from '../permissions/envAssist/grants/requestGrant';
+import { accessibilityProbe, automationProbe, screenRecordingProbe } from '../permissions/envAssist/probes/passiveProbes';
+
 async function findNotice(id: string): Promise<EnvAssistNotice | undefined> {
   const messageId = `env-assist:${id}`;
   const row = getDatabase().getDb()?.prepare('SELECT session_id FROM messages WHERE id = ?').get(messageId) as { session_id: string } | undefined;
@@ -15,6 +18,9 @@ async function findNotice(id: string): Promise<EnvAssistNotice | undefined> {
 }
 
 interface EnvAssistDependencies {
+  passiveBridge?: Parameters<typeof accessibilityProbe>[0];
+  grantBridge?: Parameters<typeof requestGrant>[2];
+  now?: () => number;
   available: () => boolean;
   open: (pane: string) => Promise<boolean>;
   findNotice: (id: string) => Promise<EnvAssistNotice | undefined>;
@@ -32,6 +38,17 @@ const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
     if (notice?.phase !== 'needs_user' || action?.kind !== request.actionKind
       || !action?.payload || !('pane' in action.payload) || action.payload.pane !== request.payload.pane) {
       return { status: 'rejected' };
+    }
+    if (request.actionKind === 'request_grant') {
+      if (request.payload.pane === 'automation' && !notice.target?.id) return { status: 'rejected' };
+      const token = mintClickToken(notice.id, deps.now);
+      const grant = await requestGrant(token, { ...request.payload, targetBundleId: notice.target?.id }, deps.grantBridge ?? null, deps.now);
+      const bridge = deps.passiveBridge ?? null;
+      const probe = request.payload.pane === 'accessibility' ? accessibilityProbe(bridge)
+        : request.payload.pane === 'screenCapture' ? screenRecordingProbe(bridge)
+          : automationProbe(bridge, notice.target?.id ?? '');
+      const outcome = await probe();
+      return { status: grant === 'requested' ? 'checked' : grant, outcome };
     }
     if (!deps.available()) return { status: 'not_available' };
     return { status: await deps.open(request.payload.pane) ? 'opened' : 'not_available' };

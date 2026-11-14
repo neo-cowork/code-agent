@@ -77,7 +77,7 @@ import { useAppStore } from '../../../../stores/appStore';
 import { useAppshotsStore } from '../../../../stores/appshotsStore';
 import { ComposerChipsRow } from './ComposerChipsRow';
 import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
-import { ModelSwitcher } from '../../../StatusBar/ModelSwitcher';
+import { ModelSlot } from '../../../StatusBar/ModelSlot';
 import ipcService from '../../../../services/ipcService';
 import { invokeNativeCommandAction, isNativeCommandRuntimeAvailable } from '../../../../services/nativeCommandFacade';
 import { toast } from '../../../../hooks/useToast';
@@ -147,6 +147,8 @@ export interface ChatInputProps {
   hasStoppableBackgroundWork?: boolean;
   /** 运行中输入正在接入 */
   isInterrupting?: boolean;
+  /** 用户已请求停止，等待前后台任务全部收线 */
+  isStopping?: boolean;
   /** 停止处理回调 */
   onStop?: () => void;
   /** parked durable run 的用户继续回调 */
@@ -299,6 +301,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   isProcessing,
   hasStoppableBackgroundWork,
   isInterrupting,
+  isStopping,
   onStop,
   onContinue,
   hasContinuation,
@@ -1645,7 +1648,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
             {/* 模型选择器（已合并 Agent Engine 选择到下拉框顶部 chip 行） */}
             <div className="text-xs">
-              <ModelSwitcher currentModel={modelConfig.model} />
+              <ModelSlot currentModel={modelConfig.model} />
             </div>
 
             {/* 运行中第三个显式动作（次级位，紧挨发送；不占核心操作区、不加默认键位） */}
@@ -1668,6 +1671,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               configured={liveVoiceAvailability.configured}
               isProcessing={Boolean(isProcessing)}
               isInterrupting={isInterrupting}
+              isStopping={isStopping}
               hasContent={hasContent}
               hasContinuation={Boolean(hasContinuation)}
               onStop={onStop}

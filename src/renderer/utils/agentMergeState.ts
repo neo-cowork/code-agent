@@ -4,8 +4,8 @@
 // 协作者语言；其余情况返回 null（不显示）：
 //   conflict：有所有权冲突（两处改到同一个地方）
 //   waiting：有代理卡住了在等你（waiting_input/stalled/blocked）
-//   merged：≥2 个代理全部完成、无冲突，且有真实文件改动
-//   reported：≥2 个代理全部完成、无冲突，但无 worktree / 0 改动（只读 explore）
+//   merged：≥2 个代理全部完成、无冲突，且有真实文件改动证据
+//   reported：≥2 个代理全部完成、无冲突，但没有任何改动证据（缺记录也算，不谎称已合并）
 // ============================================================================
 
 import type { AgentTreeOwnershipConflict } from '@shared/contract/agentTree';
@@ -29,14 +29,6 @@ function rowHasFileChanges(row: MergeStateRow): boolean {
   return (row.node?.worktreeState?.changedFiles?.length ?? 0) > 0;
 }
 
-/** 内置只读角色（与 host BUILTIN_TOOL_READONLY_ROLES 对齐，不从 host 倒进口）。 */
-const READONLY_ROLES = new Set(['explore', 'explorer', 'reviewer']);
-
-function rowIsReadonlyRole(row: MergeStateRow): boolean {
-  const role = (row.roleId ?? row.node?.role ?? '').toLowerCase();
-  return READONLY_ROLES.has(role);
-}
-
 export function deriveAgentMergeState(
   rows: ReadonlyArray<MergeStateRow>,
   conflicts: readonly AgentTreeOwnershipConflict[],
@@ -47,10 +39,9 @@ export function deriveAgentMergeState(
   if (active.some((row) => row.status === 'waiting')) return 'waiting';
   if (active.length >= 2 && active.every((row) => row.status === 'done')) {
     if (active.some(rowHasFileChanges)) return 'merged';
-    // 完成事件经常不填 filesChanged。缺记录 ≠ 零改动：普通角色保持 merged。
-    // 只读 explore/reviewer 默认无 worktree（ROLE_DEFAULT_ISOLATION explorer=none），
-    // 全员只读且无改动证据才报已汇报。
-    return active.every(rowIsReadonlyRole) ? 'reported' : 'merged';
+    // 没有改动证据（filesChanged / worktree.changedFiles 都空）一律只报已汇报，
+    // 不对「没改文件」的任务声称改动已合并。
+    return 'reported';
   }
   return null;
 }

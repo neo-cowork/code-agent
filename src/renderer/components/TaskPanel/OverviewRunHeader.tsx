@@ -1,5 +1,4 @@
 import { useLiveBackgroundAgentCount } from '../../hooks/useLiveBackgroundAgentCount';
-import { resolveRunCancellationOutcomeKey } from '../../i18n/outcomeWords';
 // ============================================================================
 // OverviewRunHeader —— 概览四模块 · 模块一「任务」：细进度线（2026-08-04 拍板二/三）
 // ----------------------------------------------------------------------------
@@ -87,25 +86,18 @@ export const OverviewRunHeader: React.FC = () => {
   if (!model) return null;
 
   const wt = t.workbenchTabs;
-  const cancelledOutcome = t.outcomeWords[resolveRunCancellationOutcomeKey(runWorkbench.run.terminalReason)].timeline;
-  const failedOutcome = t.outcomeWords['failed-unknown'].timeline;
+  const terminalWord = model.terminal ? t.outcomeWords[model.terminal].timeline : null;
   const toneLabel = model.tone === 'waiting'
     ? wt.overviewRunWaitingApproval
-    : (model.outcome === 'cancelled' || model.outcome === 'idle-reaped')
-      ? cancelledOutcome.label
-      : model.outcome === 'error'
-        ? failedOutcome.label
-        : model.live
-          ? wt.overviewProgressLabel
-          : wt.overviewRunStepsDone.replace('{total}', String(model.steps?.total ?? 0));
+    : terminalWord
+      ? terminalWord.label
+      : wt.overviewProgressLabel;
 
-  // 第二行小字：waiting → 「等你确认」；error → 人话结局；live → 当前动作句
+  // 第二行小字：waiting → 「等你确认」；非干净终态 → 与徽章同一终态词 + 原因；live → 当前动作句
   const phaseLine = model.tone === 'waiting'
     ? wt.overviewRunWaitingApproval
-    : model.outcome
-      ? ((model.outcome === 'cancelled' || model.outcome === 'idle-reaped')
-        ? `${cancelledOutcome.label} · ${cancelledOutcome.reason}`
-        : `${failedOutcome.label} · ${failedOutcome.reason}`)
+    : terminalWord && model.terminal !== 'completed'
+      ? `${terminalWord.label} · ${terminalWord.reason}`
       : model.phase;
 
   return (
@@ -135,7 +127,9 @@ export const OverviewRunHeader: React.FC = () => {
                 current: model.steps.current,
                 total: model.steps.total,
               })
-              : formatTemplate(wt.overviewRunStepsDone, { total: model.steps.total })}
+              : model.terminal === 'completed' || !terminalWord
+                ? formatTemplate(wt.overviewRunStepsDone, { total: model.steps.total })
+                : terminalWord.label}
           </span>
         )}
         {model.elapsedMs !== null && (
