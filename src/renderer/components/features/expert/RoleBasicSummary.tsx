@@ -26,7 +26,7 @@ export const RoleBasicSummary: React.FC<{ detail: RolePanelDetail }> = ({ detail
       <div className="flex flex-wrap items-center gap-1.5">
         <span className="text-xs text-zinc-400">{text.abilities}</span>
         {abilities.length > 0
-          ? abilities.map((label) => <span key={label} data-testid="role-basic-summary-ability" className="rounded bg-zinc-700/60 px-2 py-0.5 text-xs text-zinc-200">{label}</span>)
+          ? abilities.map((label) => <span key={label} data-testid="role-basic-summary-ability" className="whitespace-nowrap rounded bg-zinc-700/60 px-2 py-0.5 text-xs text-zinc-200">{label}</span>)
           : <span data-testid="role-basic-summary-no-abilities" className="text-xs text-zinc-500">{text.noAbilities}</span>}
       </div>
     </div>
