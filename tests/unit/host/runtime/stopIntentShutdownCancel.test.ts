@@ -62,11 +62,12 @@ describe('cancelRunsOnStopIntentShutdown（停止并退出：停机先 cancel �
   it('intent=stop + 壳看门狗在（win32）：宽限压到 1s 并套 withCap，不等 3s', async () => {
     quitIntent.value = 'stop';
     registry.register(fakeHandle('stuck', () => undefined));
-    const withCap = vi.fn(<T,>(p: Promise<T>, _label: string): Promise<T | void> => p);
+    const labels: string[] = [];
+    const withCap = <T,>(p: Promise<T>, label: string): Promise<T | void> => { labels.push(label); return p; };
     const startedAt = Date.now();
     const summary = await cancelRunsOnStopIntentShutdown(registry, { watchdogActive: true, withCap, pollIntervalMs: 20, log: vi.fn() });
     const elapsed = Date.now() - startedAt;
-    expect(withCap).toHaveBeenCalledWith(expect.anything(), 'stopIntent.cancel');
+    expect(labels).toEqual(['stopIntent.cancel']);
     expect(elapsed).toBeGreaterThanOrEqual(900);
     expect(elapsed).toBeLessThan(2_000); // 缺省无看门狗档是 3s
     expect(summary.remaining).toBe(1);
