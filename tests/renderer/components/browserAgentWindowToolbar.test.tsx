@@ -283,6 +283,7 @@ describe('BrowserAgentWindow kept 条（活跃 user-browser-link 会话下仍渲
     useAppStore.setState({
       language: 'zh',
       showLocalOpsPanel: false,
+      workingDirectory: null,
       localOpsTab: 'desktop',
       activeWorkbenchTab: 'browser',
       workbenchCollapsed: false,
