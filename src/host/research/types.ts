@@ -220,6 +220,12 @@ export interface AgentRunOptions {
   parentRunId?: string;
   /** 已由上层分配独立执行槽时，禁止分析器再次进入 AutoAgent 扇出。 */
   disableAutoAgent?: boolean;
+  /**
+   * N-PERM-NL-RULES-K2：本轮输入里「用户自己写的话」，preapprove 触发短语只在这里匹配。
+   * string = 生产者声明（定时任务的提示词正文）；null = 明确没有（IM 通道/外部载荷）；
+   * 缺省 = 按来源推断，定值见 permissions/runInitiatingText.ts。
+   */
+  initiatingUserText?: string | null;
   /** 唤醒等辅助轮截取终态 error 事件：命中时走此回调并抑制向会话前端广播通用失败卡。 */
   terminalErrorSink?: (data: unknown) => void;
 }

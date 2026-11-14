@@ -34,6 +34,7 @@ import {
   parseParkedApprovalPayload,
 } from './parkedApprovalSurvival';
 import { sanitizeToolCallsForHistory } from './messageHandling/converter';
+import { NL_RULE_K2_TEXT } from '../../shared/nlRuleRestate';
 import { closeSessionParkedRun, sessionHasPendingToolApproval } from './parkedApprovalRunClosure';
 import type { DurableRunRepository } from '../services/core/repositories/DurableRunRepository';
 
@@ -271,6 +272,11 @@ async function resumeWithPorts(
   // 放行判定单一真源（rework r2）：手写清单曾把 allow_run/allow_24h 当拒绝——
   // 用户在收件箱点的「到这次做完为止/24 小时内允许」经重启恢复反而落 rejected。
   if (!isApprovePermissionResponse(input.response)) {
+    // N-PERM-NL-RULES-K2：handback「我做完了」——重启后同样不执行，台账消息用 handback
+    // 口径（用户亲自做、勿重试），不落「已被拒绝」的误导文案。
+    if (input.response === 'user_did_it') {
+      return deny('user did it themselves after restart', NL_RULE_K2_TEXT.handbackDoneModelText(payload.tool));
+    }
     return deny('rejected by user after restart', 'approval rejected by user after restart');
   }
 

@@ -1,3 +1,4 @@
+import { runInitiatingTextProvenanceCases } from './runInitiatingTextProvenance.cases';
 import { foregroundBrainCapCases } from './foregroundBrainCap.cases';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import express from 'express';
@@ -31,6 +32,9 @@ import {
   sessionMessagesProjection as sessionMessages,
 } from '../../../src/web/helpers/webSessionStore';
 import { RunRegistry } from '../../../src/host/runtime/runRegistry';
+import { getPolicyEngine, resetPolicyEngine } from '../../../src/host/permissions/policyEngine';
+import { resolveRunUserRuleContext } from '../../../src/host/permissions/runPolicySnapshot';
+import { resolveUserRuleOutcomeForTool } from '../../../src/host/permissions/userRuleOutcome';
 import { SteerRejectedError } from '../../../src/host/agent/runtime/conversationRuntime';
 import { QueuedInputRepository } from '../../../src/host/services/core/repositories/QueuedInputRepository';
 import { applySessionDelegationsSchema } from '../../../src/host/services/core/database/schemaSessionDelegations';
@@ -486,6 +490,48 @@ function externalForkContextSource(
 }
 
 describe('createAgentRouter', () => {
+  runInitiatingTextProvenanceCases(async ({ prompt, memoryTainted, delegated, forgedDelegation }) => {
+    const sessionId = 'session-web-provenance';
+    const origin = { delegationId: 'trusted-delegation', actionFingerprint: 'trusted-fingerprint' };
+    const context = {
+      ...(memoryTainted !== undefined ? { memoryTainted } : {}),
+      ...(forgedDelegation ? { delegationOrigin: origin } : {}),
+    };
+    let seen: {
+      initiatingText: string | undefined;
+      trustedDelegation: boolean;
+      outcome: ReturnType<typeof resolveUserRuleOutcomeForTool>;
+    } | undefined;
+    mockRun.mockImplementationOnce(async () => {
+      seen = {
+        initiatingText: resolveRunUserRuleContext(sessionId).initiatingText,
+        trustedDelegation: Boolean(mockCreateAgentLoop.mock.calls.at(-1)?.[0].delegationOrigin),
+        outcome: resolveUserRuleOutcomeForTool(sessionId, 'WebFetch', {}),
+      };
+    });
+    if (delegated) {
+      await closeServer();
+      let sendNow: Parameters<NonNullable<Parameters<typeof createAgentRouter>[0]['registerQueuedInputSendNowHook']>>[0] | undefined;
+      await startAgentApi({ registerQueuedInputSendNowHook: (handler) => { sendNow = handler; } });
+      expect(sendNow).toBeDefined();
+      await sendNow!({
+        id: 'queued-provenance', sessionId,
+        envelope: { content: prompt, sessionId, context }, delegationOrigin: origin,
+      }, 'idle');
+    } else {
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt, sessionId, context }),
+      });
+      await response.text();
+      expect(response.status).toBe(200);
+    }
+    expect(mockRun).toHaveBeenCalledTimes(1);
+    expect(resolveRunUserRuleContext(sessionId)).toEqual({});
+    if (!seen) throw new Error('AgentLoop did not observe the run context');
+    return seen;
+  });
+
   foregroundBrainCapCases(async ({ prompt, history = [], requestedCap, goal }) => {
     await closeServer();
     sessionMessages.delete('cap-session');
@@ -922,6 +968,84 @@ describe('createAgentRouter', () => {
   // 路径恒空。这里锁死：命中/失败都必须发 routing_resolved，且 requestedAgentId
   // 必须进 AgentLoop config（turnQuality 徽标降级判定用）。
   // --------------------------------------------------------------------------
+  // N-PERM-NL-RULES-K2 返修 r6：桌面聊天走的是本路由（不经 AgentOrchestrator），run 的角色与
+  // 发起话此前在这里从不盖章——真机实跑（realrun-r6/run-1）用户明说了触发短语，WebFetch 仍
+  // 卡在审批上；带角色范围的规则在角色聊天里也不生效。真路由 + 真 PolicyEngine + 真消费端。
+  describe('/api/run 给 run 盖章（角色 + 用户原话），run 结束即清', () => {
+    const PHRASE = '照常发周报';
+
+    async function runAndProbe(body: Record<string, unknown>, probe: () => void): Promise<void> {
+      mockRun.mockImplementationOnce(async () => { probe(); });
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      await response.text();
+      expect(response.status).toBe(200);
+      expect(mockRun).toHaveBeenCalled();
+    }
+
+    beforeEach(() => {
+      resetPolicyEngine();
+      getPolicyEngine().loadUserRules({
+        nlRules: [
+          { behavior: 'preapprove', rule: 'WebFetch', phrases: [PHRASE] },
+          { behavior: 'handback', rule: 'Bash(rm *)', roleId: 'explore' },
+        ],
+      });
+    });
+
+    afterEach(() => {
+      resetPolicyEngine();
+    });
+
+    it('用户在聊天里说了触发短语 → 本轮 WebFetch 免询问；跑完盖章清掉', async () => {
+      const session = 'session-k2-stamp-hit';
+      let during: unknown;
+      await runAndProbe({ prompt: `${PHRASE}，顺便查下官网`, sessionId: session }, () => {
+        during = resolveUserRuleOutcomeForTool(session, 'WebFetch', { url: 'https://example.com' });
+      });
+      expect(during).toEqual({ kind: 'preapproved', rule: 'WebFetch', phrase: PHRASE });
+      expect(resolveRunUserRuleContext(session)).toEqual({});
+      expect(resolveUserRuleOutcomeForTool(session, 'WebFetch', {})).toEqual({ kind: 'ask', rule: 'WebFetch' });
+    });
+
+    it('用户没说短语 → 回落 ask', async () => {
+      const session = 'session-k2-stamp-miss';
+      let during: unknown;
+      await runAndProbe({ prompt: '查下官网', sessionId: session }, () => {
+        during = resolveUserRuleOutcomeForTool(session, 'WebFetch', {});
+      });
+      expect(during).toEqual({ kind: 'ask', rule: 'WebFetch' });
+    });
+
+    it('隐藏的系统轮（historyVisibility=meta）即使正文带短语也不算用户说的', async () => {
+      const session = 'session-k2-stamp-meta';
+      let during: unknown;
+      await runAndProbe({ prompt: `计划已批准：${PHRASE}`, sessionId: session, historyVisibility: 'meta' }, () => {
+        during = resolveUserRuleOutcomeForTool(session, 'WebFetch', {});
+      });
+      expect(during).toEqual({ kind: 'ask', rule: 'WebFetch' });
+    });
+
+    it('带角色范围的规则：与该角色聊天时命中，不选角色的主聊天不命中', async () => {
+      let withRole: unknown;
+      await runAndProbe(
+        { prompt: '清理一下临时文件', sessionId: 'session-k2-stamp-role', context: { preferredAgentId: 'explore' } },
+        () => { withRole = resolveUserRuleOutcomeForTool('session-k2-stamp-role', 'Bash', { command: 'rm /tmp/a.txt' }); },
+      );
+      expect(withRole).toEqual({ kind: 'handback', rule: 'Bash(rm *)' });
+
+      let mainChat: unknown;
+      await runAndProbe(
+        { prompt: '清理一下临时文件', sessionId: 'session-k2-stamp-main' },
+        () => { mainChat = resolveUserRuleOutcomeForTool('session-k2-stamp-main', 'Bash', { command: 'rm /tmp/a.txt' }); },
+      );
+      expect(mainChat).toEqual({ kind: 'none' });
+    });
+  });
+
   describe('/api/run preferredAgentId 路由真相（routing_resolved over SSE）', () => {
     function parseSSEEvent(raw: string, eventName: string): Record<string, unknown> | null {
       const lines = raw.split('\n');

@@ -25,6 +25,7 @@ import { ToolExecutor } from '../tools/toolExecutor';
 import type { ExecutionTopology } from '../permissions';
 import { getPermissionModeManager, rolePermissionPresetToMode } from '../permissions/modes';
 import { beginRunPolicy, endRunPolicy } from '../permissions/runPolicySnapshot';
+import { resolveRunInitiatingText, stampInputProvenance } from '../permissions/runInitiatingText';
 import type { PermissionAskResult, PermissionDeliveryOutcome } from '../../shared/contract/permission';
 import { externalEngineWriteDenial } from '../services/agentEngine/agentEngineGuards';
 import type { ConfigService } from '../services/core/configService';
@@ -302,6 +303,9 @@ export class AgentOrchestrator {
         },
       );
     }
+
+    // K2：IM 通道/带外部载荷的消息没有可信的用户原话，来源随 options 下传到 run 盖章处。
+    runOptions = stampInputProvenance(runOptions, messageMetadata);
 
     // Route to appropriate mode
     const mode = options?.mode ?? 'normal';
@@ -941,7 +945,13 @@ export class AgentOrchestrator {
       // N-PERM-POLICYVERSION ②③：run 起点冻结权限基线——外部来源（config 热重载/hook/
       // plugin/项目设置）的放宽不作用于本 run，下个 run 起生效；收紧与用户 UI 放宽仍
       // 立即生效。放在角色档写入之后：专家自带的审批档属于本轮基线。
-      beginRunPolicy(nativeRunId, sessionId);
+      // K2 盖章（N-PERM-NL-RULES-K2）：本轮角色 id 与发起话随快照冻结——带 roleId 的一句话
+      // 规则只在这个角色上命中；preapprove 的触发短语在发起话里做逐字子串匹配。发起话只认
+      // 用户原话（content），不是拼了系统上下文的 effectiveContent；按来源定值见 runInitiatingText。
+      beginRunPolicy(nativeRunId, sessionId, {
+        roleId: routedRole?.id,
+        initiatingText: resolveRunInitiatingText(content, options),
+      });
       const runSession = sessionId ? await getSessionManager().getSession(sessionId) : undefined;
       const sessionWorkspaceScope = runSession
         ? resolveSessionWorkspaceScope(

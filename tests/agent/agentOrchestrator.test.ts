@@ -364,7 +364,10 @@ import { createWorkspaceScope } from '../../src/host/runtime/workspaceScope';
 import { resolveToolPermissionClassification } from '../../src/host/tools/toolPermissionClassification';
 import { TaskManager } from '../../src/host/task/TaskManager';
 import { applyTurnSystemContext } from '../../src/host/agent/orchestratorTurnContext';
-import { extractUserRequest } from '../../src/shared/utils/turnScaffold';
+import { extractUserRequest, wrapWithTurnSystemContext } from '../../src/shared/utils/turnScaffold';
+import { getPolicyEngine, resetPolicyEngine } from '../../src/host/permissions/policyEngine';
+import { resolveUserRuleOutcomeForTool } from '../../src/host/permissions/userRuleOutcome';
+import { resolveRunInitiatingText } from '../../src/host/permissions/runInitiatingText';
 import {
   beginVoiceDispatch,
   dispatchVoiceIntent,
@@ -2418,6 +2421,137 @@ describe('AgentOrchestrator', () => {
       getPermissionModeManager().setSessionMode(SESSION, 'acceptEdits', true);
 
       expect(await modeDuringRun('role-no-preset')).toBe('acceptEdits');
+    });
+  });
+
+  // N-PERM-NL-RULES-K2 返修（PR #2911 Important 1）：run 盖章的「发起话」只认用户原话。
+  // 走真 runStandardAgentLoop（真 beginRunPolicy/endRunPolicy + 真 PolicyEngine + 真消费端），
+  // 在 AgentLoop.run 执行期间问「这条 npm publish 落在哪一档」。
+  describe('K2 preapprove 发起话只认用户原话', () => {
+    const SESSION = 'k2-initiating-text-session';
+    const PHRASE = '照常发周报';
+    const RULE = 'Bash(npm publish *)';
+
+    async function outcomeDuringRun(
+      content: string,
+      executionContent: string | undefined,
+      options: AgentRunOptions,
+    ): Promise<ReturnType<typeof resolveUserRuleOutcomeForTool> | undefined> {
+      let seen: ReturnType<typeof resolveUserRuleOutcomeForTool> | undefined;
+      agentLoopProbe.onRun = () => {
+        seen = resolveUserRuleOutcomeForTool(SESSION, 'Bash', { command: 'npm publish --tag weekly' });
+      };
+      try {
+        await (orchestrator as unknown as {
+          runStandardAgentLoop(
+            content: string,
+            onEvent: (e: AgentEvent) => void,
+            modelConfig: unknown,
+            sessionId?: string,
+            executionContent?: string,
+            toolScope?: unknown,
+            executionIntent?: unknown,
+            options?: AgentRunOptions,
+          ): Promise<void>;
+        }).runStandardAgentLoop(
+          content, mockOnEvent, { provider: 'deepseek', model: 'deepseek-chat' },
+          SESSION, executionContent, undefined, undefined, options,
+        );
+      } finally {
+        agentLoopProbe.onRun = undefined;
+      }
+      return seen;
+    }
+
+    beforeEach(() => {
+      resetPolicyEngine();
+      getPolicyEngine().loadUserRules({ nlRules: [{ behavior: 'preapprove', rule: RULE, phrases: [PHRASE] }] });
+    });
+
+    afterEach(() => {
+      resetPolicyEngine();
+    });
+
+    it('短语只在系统注入的角色资料块里、用户没说 → 回落 ask（不免审批）', async () => {
+      const content = '只是打个招呼';
+      const executionContent = wrapWithTurnSystemContext(
+        [`<role_context>上周记录：${PHRASE}已完成</role_context>`],
+        content,
+      );
+      expect(await outcomeDuringRun(content, executionContent, { mode: 'normal' }))
+        .toEqual({ kind: 'ask', rule: RULE });
+    });
+
+    it('用户亲口说了短语 → 免询问（同样带系统注入块）', async () => {
+      const content = `${PHRASE}，发吧`;
+      const executionContent = wrapWithTurnSystemContext(['<role_context>无关资料</role_context>'], content);
+      expect(await outcomeDuringRun(content, executionContent, { mode: 'normal' }))
+        .toEqual({ kind: 'preapproved', rule: RULE, phrase: PHRASE });
+    });
+
+    it('自动化轮（唤醒/子代理回报）的提示词带短语 → 回落 ask', async () => {
+      const content = `后台子代理回报：${PHRASE}`;
+      expect(await outcomeDuringRun(content, undefined, { mode: 'normal', inputSource: 'automation' }))
+        .toEqual({ kind: 'ask', rule: RULE });
+      expect(await outcomeDuringRun(content, undefined, { mode: 'normal', inputHistoryVisibility: 'meta' }))
+        .toEqual({ kind: 'ask', rule: RULE });
+    });
+
+    it('定时任务声明了用户写的提示词正文 → 只在正文里匹配，快照/外部载荷不算', async () => {
+      const prompt = `每周一${PHRASE}`;
+      expect(await outcomeDuringRun(
+        `${prompt}\n\n<previous_snapshot>无关</previous_snapshot>`, undefined,
+        { mode: 'normal', inputSource: 'automation', initiatingUserText: prompt },
+      )).toEqual({ kind: 'preapproved', rule: RULE, phrase: PHRASE });
+      expect(await outcomeDuringRun(
+        `每周一整理收件箱\n\n<event_payload>${PHRASE}</event_payload>`, undefined,
+        { mode: 'normal', inputSource: 'automation', initiatingUserText: '每周一整理收件箱' },
+      )).toEqual({ kind: 'ask', rule: RULE });
+    });
+
+    // executeMessage 是唯一能看到消息元数据的地方：IM 通道（发言人身份无从核实）与
+    // 带外部载荷的消息必须在这里被标成「没有用户原话」，再随 options 传到盖章处。
+    it('真 executeMessage：IM 通道/外部载荷的消息 → 传给 run 的 options 里发起话为空', async () => {
+      vi.stubEnv('EVAL_DISABLED', 'true');
+      try {
+        const drive = async (options: AgentRunOptions, messageMetadata?: Record<string, unknown>) => {
+          const captured: { content?: string; options?: AgentRunOptions } = {};
+          const ingress = {
+            permissions: { drainPendingPermissions: vi.fn() },
+            configService: { getSettings: () => ({}), getApiKey: vi.fn(() => 'test-key') },
+            resolveSessionId: async () => null,
+            generateId: () => 'k2-ingress',
+            messageHistory: { getMessages: () => [] },
+            getWorkingDirectory: () => undefined,
+            applyHistoryVisibility: (m: Message) => m,
+            addMessage: vi.fn(),
+            runNormalMode: async (content: string, _onEvent: unknown, _modelConfig: unknown, _sessionId: unknown, runOptions: AgentRunOptions) => {
+              captured.content = content;
+              captured.options = runOptions;
+            },
+          };
+          await (AgentOrchestrator.prototype as unknown as {
+            executeMessage: (this: unknown, ...args: unknown[]) => Promise<void>;
+          }).executeMessage.call(ingress, `${PHRASE}吧`, undefined, options, messageMetadata, undefined, true);
+          return resolveRunInitiatingText(captured.content ?? '', captured.options);
+        };
+        const base = { mode: 'normal' as const, disableAutoAgent: true };
+
+        expect(await drive(base)).toBe(`${PHRASE}吧`);
+        expect(await drive(base, { channel: { platform: 'feishu', accountId: 'a', chatId: 'c1' } })).toBeUndefined();
+        expect(await drive(base, { memoryTainted: true })).toBeUndefined();
+        // 定时任务带外部事件载荷：声明的提示词正文保留（载荷不在声明里）
+        expect(await drive({ ...base, inputSource: 'automation', initiatingUserText: PHRASE }, { memoryTainted: true }))
+          .toBe(PHRASE);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
+    it('run 结束盖章即清：下一轮不沿用上一轮的发起话', async () => {
+      await outcomeDuringRun(`${PHRASE}`, undefined, { mode: 'normal' });
+      expect(resolveUserRuleOutcomeForTool(SESSION, 'Bash', { command: 'npm publish --tag weekly' }))
+        .toEqual({ kind: 'ask', rule: RULE });
     });
   });
 
