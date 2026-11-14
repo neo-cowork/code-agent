@@ -34,6 +34,7 @@ vi.mock('../../../../src/host/config/configPaths', () => ({
 }));
 
 import { getAudioCaptureStatus, startDesktopAudioCapture } from '../../../../src/host/services/desktop/desktopAudioCapture';
+import { getAudioCapturePrerequisites } from '../../../../src/host/services/desktop/audioCapturePrerequisites';
 
 const originalPlatform = process.platform;
 const originalArch = process.arch;
@@ -49,6 +50,7 @@ describe('getAudioCaptureStatus prerequisites (computed without starting capture
   let tempHome: string;
   let existingPaths: Set<string>;
 
+  let whisperModels: string[] = [];
   beforeEach(() => {
     vi.restoreAllMocks();
     setRuntimeTarget('darwin', 'arm64');
@@ -62,7 +64,10 @@ describe('getAudioCaptureStatus prerequisites (computed without starting capture
     vi.spyOn(fs, 'existsSync').mockImplementation((p: fs.PathLike) => {
       return existingPaths.has(String(p));
     });
-    vi.spyOn(fs, 'readdirSync').mockReturnValue([]);
+    // whisper 模型目录默认有一个模型；要测「缺模型」的用例把 whisperModels 清空
+    whisperModels = ['ggml-base.bin'];
+    vi.spyOn(fs, 'readdirSync').mockImplementation(((p: fs.PathLike) =>
+      String(p).endsWith(path.join('.cache', 'whisper')) ? whisperModels : []) as unknown as typeof fs.readdirSync);
     vi.spyOn(childProcess, 'execFileSync').mockImplementation((cmd) => {
       throw new Error(`which ${cmd} not found`);
     });
@@ -117,6 +122,29 @@ describe('getAudioCaptureStatus prerequisites (computed without starting capture
       systemAudio: 'missing',
     });
     expect(childProcess.execFileSync).not.toHaveBeenCalledWith('swiftc', expect.anything(), expect.anything());
+  });
+
+  it('meeting mode: missing system audio helper is reported (capture degrades to microphone only), microphone mode ignores it', () => {
+    existingPaths.add('/opt/homebrew/bin/ffmpeg');
+    existingPaths.add('/opt/homebrew/bin/whisper-cpp');
+
+    expect(getAudioCapturePrerequisites('meeting').missing).toContain('system_audio_helper_missing');
+    expect(getAudioCapturePrerequisites('microphone').missing).not.toContain('system_audio_helper_missing');
+  });
+
+  it('whisper-cli (new Homebrew name) counts as the transcription engine', () => {
+    existingPaths.add('/opt/homebrew/bin/ffmpeg');
+    existingPaths.add('/opt/homebrew/bin/whisper-cli');
+    expect(getAudioCapturePrerequisites('microphone').missing).not.toContain('transcription_engine_missing');
+  });
+
+  it('whisper program installed but no model: reports transcription_model_missing, not engine missing', () => {
+    existingPaths.add('/opt/homebrew/bin/ffmpeg');
+    existingPaths.add('/opt/homebrew/bin/whisper-cli');
+    whisperModels = [];
+    const missing = getAudioCapturePrerequisites('microphone').missing;
+    expect(missing).toContain('transcription_model_missing');
+    expect(missing).not.toContain('transcription_engine_missing');
   });
 
   it('recorder missing: reports recorder_missing when neither ffmpeg nor rec is available', () => {

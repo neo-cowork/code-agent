@@ -241,7 +241,7 @@ describe('background subagent idle wake', () => {
     expect(wakeNoteMocks.record).toHaveBeenCalledWith(
       'failed-session',
       'wake failed: 后台任务',
-      { taskId: 'agent-failed', reason: 'owner_missing' },
+      { taskId: 'agent-failed', reason: 'owner_missing', title: '后台任务' },
     );
   });
 
@@ -272,7 +272,7 @@ describe('background subagent idle wake', () => {
     scheduleBackgroundSubagentIdleWake(trigger('agent-silent', 'silent-session'));
     await vi.advanceTimersByTimeAsync(50);
 
-    expect(wakeNoteMocks.record).toHaveBeenCalledWith('silent-session', expect.any(String), { taskId: 'agent-silent', reason: 'wake_failed' });
+    expect(wakeNoteMocks.record).toHaveBeenCalledWith('silent-session', expect.any(String), { taskId: 'agent-silent', reason: 'wake_failed', title: '后台任务' });
   });
 
   it.each([
@@ -292,7 +292,7 @@ describe('background subagent idle wake', () => {
     expect(wakeNoteMocks.record).toHaveBeenCalledWith(
       sessionId,
       `wake failed: ${shortName}`,
-      { taskId: agentId, reason: 'wake_failed' },
+      { taskId: agentId, reason: 'wake_failed', title: shortName },
     );
     expect(wakeNoteMocks.format.mock.calls[0]?.[0]).not.toMatch(/browser_action|Playwright|WebFetch|\n/);
   });
@@ -307,7 +307,7 @@ describe('background subagent idle wake', () => {
     expect(wakeNoteMocks.record).toHaveBeenCalledWith(
       'throwing-session',
       'wake failed: 后台任务',
-      { taskId: 'agent-throws', reason: 'wake_failed' },
+      { taskId: 'agent-throws', reason: 'wake_failed', title: '后台任务' },
     );
   });
 
@@ -361,7 +361,7 @@ describe('background subagent idle wake', () => {
     expect(wakeNoteMocks.record).toHaveBeenLastCalledWith(
       'restore-session',
       'wake failed: 后台任务',
-      { taskId: 'agent-restore', reason: 'wake_failed' },
+      { taskId: 'agent-restore', reason: 'wake_failed', title: '后台任务' },
     );
   });
 });
