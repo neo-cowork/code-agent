@@ -335,6 +335,12 @@ export interface AppSettings {
     /** 用户级 allow 规则（最低优先级，不能压过 deny） */
     allow?: string[];
     /**
+     * 只读探测免卡（ReadOnlyProbePlan）：可证明只读的 Bash 探测（存在性/目录列表/工具查找）
+     * 在进程内直接执行、不弹审批卡。缺省 = 开；显式 false 立即关闭，所有 Bash 回到原审批链。
+     * 环境变量 CODE_AGENT_READONLY_PROBE=off 同样关闭。
+     */
+    readOnlyProbePlan?: boolean;
+    /**
      * 内部标记：true 表示配置升级到 6.8.x 但用户尚未显式声明 inheritance。
      * UI 检测到该标记会弹一次性引导，提醒用户选择继承策略。
      */
