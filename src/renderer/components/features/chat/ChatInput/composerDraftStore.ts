@@ -10,6 +10,27 @@ const COMPOSER_DRAFT_HOME_KEY = `${COMPOSER_DRAFT_KEY_PREFIX}home`;
 /** Fired after a draft is written from outside the composer (boot adopting the home draft). */
 export const COMPOSER_DRAFT_ADOPTED_EVENT = 'neo:composer-draft-adopted';
 
+/**
+ * 「选择文件夹」入口建新任务时，输入框里已敲的字要带到新任务：入口在选完目录后、建会话前
+ * hold 一下，ChatInput 的会话切换清空只在 hold 有效期内放过这一次文本清空。
+ */
+const COMPOSER_DRAFT_CARRY_HOLD_MS = 15_000;
+let composerDraftCarryUntil = 0;
+
+export function holdComposerDraftForNextSession(): void {
+  composerDraftCarryUntil = Date.now() + COMPOSER_DRAFT_CARRY_HOLD_MS;
+}
+
+export function releaseComposerDraftHold(): void {
+  composerDraftCarryUntil = 0;
+}
+
+export function consumeComposerDraftHold(): boolean {
+  const held = Date.now() < composerDraftCarryUntil;
+  composerDraftCarryUntil = 0;
+  return held;
+}
+
 export type ComposerDraftSendOutcome = 'success' | 'failure' | 'timeout';
 
 interface ComposerDraftStorage {
