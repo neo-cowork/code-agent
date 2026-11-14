@@ -196,6 +196,8 @@ export interface ToolModule<Args = Record<string, unknown>, Output = unknown> {
 export interface ToolContext {
   /** Native Run identity only; Agent Team identity lives in swarmRunScope. */
   readonly runId?: string;
+  /** Native parent used for child-agent settlement, distinct from a surface owner. */
+  readonly spawnParentRunId?: string;
   /** Conversation turn that owns this tool call and its durable projections. */
   readonly turnId?: string;
   /** Stable user message that originated this native turn. */
@@ -340,8 +342,8 @@ export interface ToolContext {
   readonly executionIntent?: ConversationExecutionIntent;
   /** Run-scoped trace context, injected by the dispatch boundary. */
   readonly traceContext?: unknown;
-  /** One literal file grant minted by ToolExecutor for an approved single-file rm. */
-  readonly approvedSandboxWriteFile?: string;
+  /** Literal file grants minted by ToolExecutor for this approved rm call. */
+  readonly approvedSandboxWriteFile?: string | readonly string[];
   /** ToolExecutor 针对本次记忆目录写入签发的一次性授权。 */
   readonly directiveMemoryWriteGrant?: DirectiveMemoryWriteGrant;
 }

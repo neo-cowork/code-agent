@@ -16,7 +16,11 @@
 //   （保守方向：漏匹配 > 误伤）。
 // ============================================================================
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import nodePath from 'path';
+import type { PermissionAskResult, PermissionDenialSource } from '../../shared/contract/permission';
+import { permissionDenialError, userDeniedGoalStickyError } from '../tools/toolPermissionClassification';
+import { createLogger } from '../services/infra/logger';
 import { canonicalizeCommand } from './canonicalizeCommand';
 import { isBashToolName } from '../tools/toolNames';
 import { extractStandingGrantTarget } from '../tools/externalSideEffect';
@@ -69,7 +73,114 @@ interface DenialRecord {
 const MAX_SESSIONS = 20;
 const MAX_PER_SESSION = 50;
 
+interface GoalApprovalScope {
+  sessionId?: string;
+  sourceMessageId?: string;
+  runId?: string;
+  enabled: boolean;
+}
+
 class DenialRegistry {
+  // Separate from exact fingerprints: record even for tools whose arguments cannot be canonicalized.
+  private goals = new Map<string, Set<string>>();
+  private goalScope = new AsyncLocalStorage<GoalApprovalScope>();
+
+  private resolveGoalEntry(
+    toolName: string,
+    fallback?: {
+      sessionId?: string;
+      sourceMessageId?: string;
+      runId?: string;
+      turnOrigin?: ReadonlyArray<{ runId?: string }>;
+      details?: { sensitiveStep?: unknown };
+    },
+  ): { sessionId: string; scope: string; toolFamily: string; key: string } | null {
+    const active = this.goalScope.getStore();
+    const enabled = active ? active.enabled : !fallback?.details?.sensitiveStep;
+    if (!enabled) return null;
+    const sourceMessageId = active?.sourceMessageId ?? fallback?.sourceMessageId;
+    const runId = active?.runId ?? fallback?.runId ?? fallback?.turnOrigin?.find((o) => o.runId)?.runId;
+    const scope = sourceMessageId ? `message:${sourceMessageId}` : runId ? `run:${runId}` : undefined;
+    if (!scope) return null;
+    const sessionId = (active?.sessionId ?? fallback?.sessionId) ?? `scope:${scope}`;
+    const toolFamily = isBashToolName(toolName) ? 'Bash' : toolName;
+    return { sessionId, scope, toolFamily, key: JSON.stringify([scope, toolFamily]) };
+  }
+
+  /**
+   * In-handler goal-sticky guard: called inside a permission handler AFTER its
+   * automatic approvals (unattended read-only MCP, schedule write grant, dev mode,
+   * configured auto-approve level) and right before creating a human ask/park/card.
+   */
+  refuseIfGoalDenied(request: {
+    sessionId?: string;
+    runId?: string;
+    turnOrigin?: ReadonlyArray<{ runId?: string }>;
+    tool: string;
+    details?: { sensitiveStep?: unknown };
+  }): (PermissionAskResult & { denialSource: 'user' }) | null {
+    const entry = this.resolveGoalEntry(request.tool, request);
+    if (!entry || !this.goals.get(entry.sessionId)?.has(entry.key)) return null;
+    createLogger('DenialRegistry').warn('user-denied-goal-sticky: refusing approval before ask/park', {
+      sessionId: entry.sessionId,
+      scope: entry.scope,
+      toolFamily: entry.toolFamily,
+    });
+    return {
+      approved: false,
+      denialSource: 'user',
+      message: userDeniedGoalStickyError(request.tool).modelText,
+    };
+  }
+
+  /**
+   * Binds message/run scope for in-handler `refuseIfGoalDenied` and records real-user
+   * denials after the handler resolves. Does NOT refuse before `ask()`, so handler-level
+   * automatic approvals run first. No session-wide lock.
+   */
+  async observeApproval(input: {
+    sessionId?: string; sourceMessageId?: string; runId?: string;
+    toolName: string; enabled: boolean; app?: { name: string } | null;
+    ask: () => Promise<PermissionAskResult & { denialSource: PermissionDenialSource | undefined }>;
+  }): Promise<PermissionAskResult & { denialSource: PermissionDenialSource | undefined }> {
+    const scopeState: GoalApprovalScope = {
+      sessionId: input.sessionId,
+      sourceMessageId: input.sourceMessageId,
+      runId: input.runId,
+      enabled: input.enabled,
+    };
+    const result = await this.goalScope.run(scopeState, input.ask);
+    if (input.enabled && !result.approved && result.denialSource === 'user') {
+      const entry = this.resolveGoalEntry(input.toolName, scopeState);
+      if (entry) {
+        let bucket = this.goals.get(entry.sessionId);
+        if (!bucket) {
+          bucket = new Set();
+          this.goals.set(entry.sessionId, bucket);
+          if (this.goals.size > MAX_SESSIONS) {
+            const oldest = this.goals.keys().next().value;
+            if (oldest !== undefined) this.goals.delete(oldest);
+          }
+        }
+        bucket.delete(entry.key);
+        bucket.add(entry.key);
+        if (bucket.size > MAX_PER_SESSION) {
+          const oldest = bucket.values().next().value;
+          if (oldest !== undefined) bucket.delete(oldest);
+        }
+      }
+      const guidance = userDeniedGoalStickyError(input.toolName).modelText;
+      // A responder-supplied reason must not hide the instruction to stop and ask;
+      // an in-handler sticky refusal already carries `guidance` verbatim.
+      result.message = !result.message
+        ? permissionDenialError(input.toolName, 'user', input.app).modelText
+        : result.message.includes(guidance)
+          ? result.message
+          : `${result.message} ${guidance}`;
+    }
+    return result;
+  }
+
   private sessions = new Map<string, Map<string, DenialRecord>>();
 
   record(entry: DenialRecord): void {
@@ -105,6 +216,7 @@ class DenialRegistry {
 
   clearAll(): void {
     this.sessions.clear();
+    this.goals.clear();
   }
 }
 
