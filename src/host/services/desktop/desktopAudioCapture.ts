@@ -900,9 +900,19 @@ function pumpPcm(input: NodeJS.ReadableStream, track: CaptureTrack): void {
   let dataChunkCount = 0;
   let lastDiagMs = 0;
 
-  input.on('data', async (data: Buffer | string) => {
+  // 一路的数据包必须逐个处理完再处理下一个：VAD 带隐藏状态，主线程一卡、积压的包并发进
+  // session.run 会共用旧状态，段落被错合/错切，时间偏出好几秒（N-MEETING-DUALTRACK-FU1 真机实测）。
+  // ponytail: 处理长期跟不上实时时队列会一直涨，真遇到再加丢包/降级
+  let chain: Promise<void> = Promise.resolve();
+  input.on('data', (data: Buffer | string) => {
     if (typeof data === 'string') return; // skip string chunks
-    track.clock.receive(data.length);
+    track.clock.receive(data.length); // 原点按到达时刻定，不能等排队
+    chain = chain.then(() => handlePcm(data)).catch((error) => {
+      logger.error('[音频采集] 处理音频数据异常', { source: track.source, error: error instanceof Error ? error.message : String(error) });
+    });
+  });
+
+  async function handlePcm(data: Buffer): Promise<void> {
     if (powerMode === 'paused') {
       track.clock.advance(data.length / 2); // 丢掉的样本也算时间，恢复后不漂
       return;
@@ -981,7 +991,7 @@ function pumpPcm(input: NodeJS.ReadableStream, track: CaptureTrack): void {
         }
       }
     }
-  });
+  }
 }
 
 /** 给一路采集接进程：stdout 进 VAD，stderr 留诊断，意外退出 3 秒后只重启这一路 */
