@@ -120,7 +120,12 @@ async function flushWake(sessionId: string): Promise<void> {
           mode: 'normal',
           inputHistoryVisibility: 'meta',
           maxIterations: 1,
+          completionReportOnly: true,
           disableAutoAgent: true,
+          terminalErrorSink: (data: unknown) => {
+            const payload = data as { message?: unknown };
+            failureMessage ??= String(payload?.message ?? 'wake turn failed');
+          },
         },
         messageMetadata,
         `background-subagent:${sessionId}:${Date.now()}`,
