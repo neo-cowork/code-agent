@@ -229,6 +229,19 @@ export const LIBRARY_TIMEOUTS = {
 
 /** 浏览器操作超时 */
 export const BROWSER_TIMEOUTS = {
+  /** Minimum age before crash-leftover isolated profiles may be reclaimed. */
+  ISOLATED_PROFILE_SWEEP_GRACE: 10 * 60_000,
+  /** Longer grace for pre-marker (no owner file) profiles, whose liveness can only be inferred. */
+  ISOLATED_PROFILE_SWEEP_LEGACY_GRACE: 7 * 24 * 60 * 60_000,
+  /** Bound the `ps` probe call. */
+  ISOLATED_PROFILE_SWEEP_PROBE_TIMEOUT: 5_000,
+  /** Cap on `ps` output accepted by the legacy-profile process probe. */
+  ISOLATED_PROFILE_SWEEP_PROBE_MAX_BYTES: 32 * 1024 * 1024,
+  /** Bound size accounting across one sweep; incomplete profiles are kept. */
+  ISOLATED_PROFILE_SWEEP_MAX_ENTRIES: 10_000,
+  /** Reject oversized or malformed owner metadata without an unbounded read. */
+  ISOLATED_PROFILE_SWEEP_OWNER_MAX_BYTES: 1_024,
+  ISOLATED_PROFILE_SWEEP_WALK_BUDGET: 2_000,
   /** 浏览器操作默认超时 */
   ACTION_DEFAULT: 30_000,
   /** 等待选择器超时 */
@@ -249,6 +262,10 @@ export const BROWSER_TIMEOUTS = {
    * 防止进程崩溃后 binding 永不释放而租约永远不过期。
    */
   LEASE_IN_USE_CEILING: 4 * 60 * 60_000,
+  /** Chrome 父进程看门狗：探测 Neo 服务进程是否还活着的间隔（秒，传给 sh sleep） */
+  PARENT_WATCHDOG_POLL_SEC: 2,
+  /** Chrome 父进程看门狗：SIGTERM 之后到 SIGKILL 残留进程的宽限（秒） */
+  PARENT_WATCHDOG_KILL_GRACE_SEC: 2,
 } as const;
 
 /** artifact_runnable 断言家族超时（浏览器类走 GAME_VALIDATION_TIMEOUTS / ARTIFACT_PREVIEW_HEALTH） */
@@ -412,7 +429,26 @@ export function getToolExecutionTimeoutMs(toolName: string): number | undefined 
 export const BROWSER_HUMAN_TAKEOVER_WAIT = {
   POLL_INTERVAL_MS: 100,
   CAP_MS: 100_000,
+  /** Takeover control timer: how long the user may hold the view before the session stops. */
+  TIMER_MS: 5 * 60_000,
 } as const;
+
+/**
+ * How long a model-requested `wait_for_user` browser action waits for the user to
+ * press Done. Defaults to the existing 5-minute human-takeover timer. The wait is
+ * booked as human time (approval-wait accounting), so it is not bounded by the
+ * 120s tool inactivity budget. `CODE_AGENT_BROWSER_WAIT_FOR_USER_MS` is a harness
+ * override for tests and real-run drills only, not a user setting.
+ */
+const BROWSER_WAIT_FOR_USER = {
+  LIMIT_MS: BROWSER_HUMAN_TAKEOVER_WAIT.TIMER_MS,
+  LIMIT_ENV: 'CODE_AGENT_BROWSER_WAIT_FOR_USER_MS',
+} as const;
+
+export function getBrowserWaitForUserLimitMs(): number {
+  const override = Number(process.env[BROWSER_WAIT_FOR_USER.LIMIT_ENV]);
+  return Number.isFinite(override) && override > 0 ? override : BROWSER_WAIT_FOR_USER.LIMIT_MS;
+}
 
 // 有不可重放副作用的原生工具：多数只在启动前查一次 abortSignal，外层 inactivity 超时
 // 触发时副作用可能已经完成。这类工具的超时结果必须标 outcome-unknown（模型先核实状态
@@ -455,6 +491,11 @@ export const CANCELLATION_TIMEOUTS = {
   ROUTE_SETTLE_WAIT: 15_000,
   /** `/api/cancel` 终态轮询间隔 */
   ROUTE_SETTLE_POLL: 50,
+  /**
+   * 用户 Stop 时等待会话后台任务收线的上限（须小于验收口径的 3 s）。
+   * 超时只 warn 未收线的任务 id，不阻塞前台取消返回。
+   */
+  SESSION_BACKGROUND_SETTLE_WAIT: 2_500,
 } as const;
 
 /** Subagent 执行生命周期预算。 */
@@ -463,6 +504,8 @@ export const SUBAGENT_EXECUTION_TIMEOUTS = {
   FOREGROUND_TO_BACKGROUND_BUDGET: 600_000,
   /** 子 agent role execution timeout 下限，必须大于前台转后台预算。 */
   ROLE_EXECUTION_MINIMUM: 900_000,
+  /** 后台子代理完成后，等 worktree 清理结果并入完成通知的上限。 */
+  BACKGROUND_WORKTREE_NOTE_WAIT: 15_000,
 } as const;
 
 /** 后台/子 agent 完成提醒预算。 */
@@ -481,6 +524,8 @@ export const SUBAGENT_COMPLETION_NOTIFICATIONS = {
  * 后端不可达时间隔从 BASE 翻倍到 MAX，避免空闲猛打 + 日志刷屏。
  */
 export const RENDERER_POLLING = {
+  /** Kept browser windows: reflect close/reclaim in chat and the workbench. */
+  KEPT_BROWSER_STATE: 30_000,
   /** loop:list 状态轮询基础间隔 */
   LOOP_BASE: 2_000,
   /** 后台任务（listTasks + drainNotifications）轮询基础间隔 */
@@ -505,6 +550,11 @@ export const RENDERER_POLLING = {
   BACKOFF_FACTOR: 2,
   /** 传输层连接错误日志节流窗口：同一通道在此窗口内最多打一条，防后端不可达时刷屏 */
   TRANSPORT_ERROR_LOG_THROTTLE: 10_000,
+  /**
+   * 页面启动时 host 推来的审批快照（snapshot:true）先于 agent:event 监听器注册到达，
+   * 在此窗口内注册的新监听器补发一次（N-FIX-BGPANEL-STOP-TERMINAL-FU1-FU1-FU1）。
+   */
+  SSE_PERMISSION_SNAPSHOT_REPLAY_WINDOW: 10_000,
 } as const;
 
 /** 工具执行超时警告阈值 (ms)，按工具名或前缀匹配 */

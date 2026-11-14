@@ -1,6 +1,9 @@
 import React from 'react';
 import { useI18n } from '../../../../../hooks/useI18n';
 import { useAppStore } from '../../../../../stores/appStore';
+import { useSessionStore } from '../../../../../stores/sessionStore';
+import { useSessionListLoadStore } from '../../../../../stores/sessionListPagination';
+import { Button } from '../../../../primitives/Button';
 import { describeLastToolFailure, describeLastToolStep, resolveAgentActivityStepStatus } from '../../../../../utils/agentActivity';
 import { agentFailureCopy } from '../../../../../utils/agentFailureCopy';
 import { openExternalLink } from '../../../../../utils/platform';
@@ -8,15 +11,24 @@ import type { DelegationPresentation } from './delegationPresentation';
 
 export function DelegationHeader({ presentation }: { presentation: DelegationPresentation }) {
   const { t } = useI18n();
-  const status = t.chat.delegationReceipt[presentation.state];
+  const template = t.chat.delegationReceipt.headlines[presentation.state];
+  const [prefix, suffix] = template.split('{name}');
+  const headline = template.replace('{name}', presentation.title);
   return (
-    <div className="flex min-w-0 flex-1 items-baseline gap-2">
-      <span className="flex-shrink-0 text-xs text-zinc-500">{status}</span>
-      <span className="min-w-0 truncate font-semibold text-zinc-200" title={presentation.title}>
-        {presentation.title}
-      </span>
+    <div className="min-w-0 flex-1 truncate text-xs text-zinc-200" title={headline} data-testid="delegation-headline">
+      {prefix && <span className="text-zinc-500">{prefix}</span>}
+      <span className="font-semibold" title={presentation.title}>{presentation.title}</span>
+      {suffix && <span className="text-zinc-500">{suffix}</span>}
     </div>
   );
+}
+
+/** 目标会话还在才给入口；列表已读完（无更早分页）却找不到它 = 已删除/归档。 */
+function useTargetSessionAvailable(targetSessionId: string | undefined): boolean {
+  const listed = useSessionStore((state) => Boolean(targetSessionId) && state.sessions.some((session) => session.id === targetSessionId));
+  const hasOlder = useSessionStore((state) => state.hasOlderSessions);
+  const settled = useSessionListLoadStore((state) => state.settled);
+  return Boolean(targetSessionId) && (listed || hasOlder || !settled);
 }
 
 export function DelegationReceipt({ presentation }: { presentation: DelegationPresentation }) {
@@ -27,9 +39,11 @@ export function DelegationReceipt({ presentation }: { presentation: DelegationPr
   const pendingPermissionRequest = useAppStore((state) => state.pendingPermissionRequest);
   const pendingPermissionSessionId = useAppStore((state) => state.pendingPermissionSessionId);
   const queuedPermissionRequests = useAppStore((state) => state.queuedPermissionRequests);
-  const failure = (presentation.failureCode ? agentFailureCopy(presentation.failureCode, t) : null)
-    ?? presentation.failure;
-  const toolFailure = presentation.state === 'working'
+  const targetAvailable = useTargetSessionAvailable(presentation.targetSessionId);
+  const failure = presentation.state === 'failed'
+    ? agentFailureCopy(presentation.failureCode, t, presentation.failure)
+    : presentation.failure;
+  const toolFailure = presentation.state === 'working' || presentation.state === 'cancelled'
     ? undefined
     : describeLastToolFailure(presentation.toolFailure, t);
 
@@ -70,6 +84,21 @@ export function DelegationReceipt({ presentation }: { presentation: DelegationPr
               {output.label}
             </button>
           ))}
+        </div>
+      )}
+      {targetAvailable && presentation.targetSessionId && (
+        <Button
+          variant="ghost"
+          size="sm"
+          data-testid="delegation-view-target"
+          onClick={() => { void useSessionStore.getState().switchSession(presentation.targetSessionId as string); }}
+        >
+          {t.chat.delegationReceipt.viewTargetSession}
+        </Button>
+      )}
+      {presentation.branch && (
+        <div data-testid="delegation-branch">
+          {t.chat.delegationReceipt.mergeBranch.replace('{branch}', presentation.branch)}
         </div>
       )}
       {failure && (

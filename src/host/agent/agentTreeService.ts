@@ -35,6 +35,7 @@ import { extractToolStepTarget } from './toolStepTarget';
 import { getFileOwnershipRegistry } from '../services/infra/fileOwnershipRegistry';
 
 export interface AgentTreeSpawnAgentSource {
+  background?: boolean;
   id: string;
   role: string;
   treeId?: string;
@@ -268,7 +269,13 @@ function parallelStatusToTree(status: ParallelAgentTaskSnapshotStatus): AgentTre
   }
 }
 
-function backgroundStatusToTree(status: BackgroundSubagentHandle['status']): AgentTreeNodeStatus {
+function backgroundStatusToTree(
+  status: BackgroundSubagentHandle['status'],
+  failureCode?: BackgroundSubagentHandle['failureCode'],
+): AgentTreeNodeStatus {
+  // 用户/父任务取消在登记表里记为 failed + CancelledBy*；树里按「已取消」呈现，不能冒充失败。
+  if (status === 'failed' && (failureCode === AgentFailureCode.CancelledByUser
+    || failureCode === AgentFailureCode.CancelledByParent)) return 'cancelled';
   switch (status) {
     case 'running':
       return 'running';
@@ -341,6 +348,7 @@ function mergeSpawnAgent(
 ): void {
   const node = ensureNode(nodes, agent.id, agent.role);
   addSource(node, 'spawnGuard');
+  node.background = agent.background ?? false;
   node.role = agent.role;
   node.displayName = agent.completion?.title ?? node.displayName;
   node.task = agent.task;
@@ -422,12 +430,13 @@ function mergeContextRecord(
   const node = ensureNode(nodes, record.agentId, role);
   addSource(node, 'subagentContext');
   const lifecycle = record.lifecycle;
-  // Explicit graph terminal (parent-run settlement) wins; persisted lifecycle terminal facts survive
-  // restart; only unfinished records use the orphan heuristic.
+  // Explicit graph terminal (parent-run settlement) wins; then persisted lifecycle (executor exit, tells cancelled
+  // from failed) survives restart; then SpawnGuard's completion fact survives late context flushes; only
+  // unfinished records use the orphan heuristic.
   const status: AgentTreeNodeStatus = record.terminalStatus
     ?? (lifecycle && lifecycle.status !== 'running'
       ? lifecycle.status
-      : record.updatedAt < HOST_PROCESS_BOOT_MS ? 'cancelled' : 'unknown');
+      : record.lifecycleStatus ?? (record.updatedAt < HOST_PROCESS_BOOT_MS ? 'cancelled' : 'unknown'));
   if (lifecycle) {
     node.displayName = lifecycle.displayName;
     node.role = lifecycle.role ?? node.role;
@@ -459,26 +468,29 @@ function mergeBackgroundAgent(
   nodes: Map<string, AgentTreeNode>,
   statusPriorities: Map<string, number>,
   handle: BackgroundSubagentHandle,
+  backgroundAgentId = handle.agentId,
 ): void {
   const node = ensureNode(nodes, handle.agentId, 'background');
   addSource(node, 'backgroundRegistry');
   node.background = true;
+  node.backgroundAgentId = backgroundAgentId;
   node.displayName ||= handle.displayName;
   node.task ??= handle.title;
   if (node.role === 'background' && handle.role) node.role = handle.role;
   if (handle.startedAt && !node.createdAt) node.createdAt = handle.startedAt;
   if (handle.finishedAt) node.completedAt = handle.finishedAt;
   node.updatedAt = handle.finishedAt ?? handle.startedAt ?? node.updatedAt;
-  applyStatus(node, backgroundStatusToTree(handle.status), 'backgroundRegistry', statusPriorities);
+  const treeStatus = backgroundStatusToTree(handle.status, handle.failureCode);
+  applyStatus(node, treeStatus, 'backgroundRegistry', statusPriorities);
   node.budgetSummary = mergeBudget(node.budgetSummary, budgetFromResult(handle.result));
   applyFailure(node, handle.failureCode);
 
   const progress = resultProgress(handle.result) ?? truncate(handle.error);
   if (progress) node.progress = progress;
   setLastEvent(node, {
-    summary: handle.error
+    summary: handle.error && treeStatus !== 'cancelled'
       ? `遇到问题：${truncate(handle.error) ?? handle.agentId}`
-      : `${statusLabel(backgroundStatusToTree(handle.status))}：${progress ?? handle.agentId}`,
+      : `${statusLabel(treeStatus)}：${progress ?? handle.agentId}`,
     at: handle.finishedAt ?? handle.startedAt,
     source: 'backgroundRegistry',
   });
@@ -594,7 +606,7 @@ export function buildAgentTreeSnapshot(sources: AgentTreeSnapshotSources = {}): 
     if (sessionId && handle.sessionId !== sessionId) continue;
     mergeBackgroundAgent(nodes, statusPriorities, {
       ...handle, agentId: registryAliases.get(handle.agentId) ?? handle.agentId,
-    });
+    }, handle.agentId);
   }
   for (const record of sources.contextRecords ?? []) {
     if (sessionId && record.sessionId !== sessionId) continue;

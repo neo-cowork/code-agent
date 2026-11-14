@@ -1,3 +1,6 @@
+import { publishBackgroundSubagentVisibility, resolveSingleSpawnRunScope } from '../../../agent/multiagentTools/spawnAgentForegroundBackground';
+import { randomUUID } from 'crypto';
+import { createScopedSwarmAgentId } from '../../../../shared/contract/swarm';
 // ============================================================================
 // SpawnAgent / AgentSpawn (P1 Wave 3 — multiagent: native ToolModule rewrite)
 //
@@ -28,6 +31,7 @@ import type { ToolResolver } from '../../dispatch/toolResolver';
 import { spawnAgentSchema, agentSpawnSchema } from './spawnAgent.schema';
 import { withMultiagentMeta } from './resultMeta';
 import { getBackgroundSubagentRegistry } from '../../../agent/backgroundSubagentRegistry';
+import { resolveSubagentUserLabel } from '../../../agent/resolveSubagentUserLabel';
 import { withBackgroundDurableAgentId } from '../../../agent/backgroundSubagentLiveProgress';
 import { scheduleBackgroundSubagentIdleWake } from '../../../agent/backgroundSubagentIdleWake';
 import { beginWorkDirectoryRun, endWorkDirectoryRun } from '../../../agent/runtime/workDirectoryMaterializer';
@@ -105,6 +109,7 @@ async function runBackgroundSubagent(
 ): Promise<SubagentResult> {
   const bgResult = await executeSpawnAgent(normalizedArgs, {
     ...executionContext,
+    managedAgentId: agentId,
     events: withBackgroundDurableAgentId(executionContext.events, agentId),
     abortSignal: bgController.signal,
     // 后台子 agent 标 async_agent（2026-07-13 拍板）：bash 走 ask+forceConfirm
@@ -241,9 +246,7 @@ async function runSpawnAgent(
   if (args.run_in_background === true) {
     const bgController = new AbortController();
     const backgroundRole = typeof normalizedArgs.role === 'string' ? normalizedArgs.role : undefined;
-    const backgroundTitle = typeof normalizedArgs.task === 'string' && normalizedArgs.task.trim()
-      ? normalizedArgs.task.trim()
-      : (backgroundRole ?? '后台任务');
+    const backgroundTitle = resolveSubagentUserLabel(normalizedArgs);
     const declaredOutputs = getDeclaredOutputsForRole(backgroundRole);
     // N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO：后台 lane 不走 AgentLoop.run，工作目录的
     // 占用计数（workDirectoryMaterializer）此前只由前台 run 持有——前台一收线，懒开的
@@ -251,13 +254,23 @@ async function runSpawnAgent(
     // 必然失败。后台 lane 活多久，目录就占多久。
     const bgWorkDir = ctx.workingDir;
     beginWorkDirectoryRun(bgWorkDir);
+    const localAgentId = `subagent-bg-${randomUUID()}`;
+    const backgroundAgentId = ctx.swarmRunScope
+      ? createScopedSwarmAgentId(ctx.swarmRunScope, localAgentId) : localAgentId;
     const agentId = getBackgroundSubagentRegistry().spawn(async (): Promise<SubagentResult> => {
       try {
-        return await runBackgroundSubagent(normalizedArgs, executionContext, bgController, agentId);
+        const promise = runBackgroundSubagent(normalizedArgs, executionContext, bgController, agentId);
+        const scope = resolveSingleSpawnRunScope(executionContext, ctx.spawnTreeId ?? ctx.sessionId ?? agentId, agentId);
+        publishBackgroundSubagentVisibility({
+          promise, scope, agentId, agentName: backgroundRole ?? 'agent', role: backgroundRole ?? 'dynamic',
+          task: backgroundTitle, startedAt: Date.now(), ownsRunLifecycle: !ctx.swarmRunScope,
+        });
+        return await promise;
       } finally {
         endWorkDirectoryRun(bgWorkDir);
       }
     }, {
+      agentId: backgroundAgentId,
       title: backgroundTitle,
       ...(typeof normalizedArgs.name === 'string' && normalizedArgs.name.trim()
         ? { displayName: normalizedArgs.name.trim() } : {}),
@@ -269,6 +282,7 @@ async function runSpawnAgent(
         : {}),
       role: backgroundRole,
       declaredOutputs,
+      abort: () => bgController.abort(),
       suppressIdleWake: Boolean(ctx.suppressBackgroundSubagentIdleWake),
       ...(ctx.suppressBackgroundSubagentIdleWake ? { suppressReason: 'goal-loop' as const } : {}),
       onComplete: scheduleBackgroundSubagentIdleWake,

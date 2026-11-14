@@ -1,4 +1,5 @@
 import { formatDisplayPath } from '../../../utils/displayPath';
+import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 import React from 'react';
 import { X } from 'lucide-react';
 import { IconButton, Modal } from '../../primitives';
@@ -169,7 +170,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
     <Modal
       isOpen={true}
       onClose={onClose}
-      title={sessionTitle}
+      title={getDisplaySessionTitle(sessionTitle, language)}
       size="md"
       className="!w-[80vw] !max-w-[1100px]"
       zIndex={Z_LAYERS.criticalOverlay}
@@ -177,7 +178,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
         <>
           <div className="min-w-0 flex-1">
             <div className="text-xs font-medium uppercase tracking-wide text-badge-accent">Replay</div>
-            <h2 className="mt-1 truncate text-sm font-semibold text-zinc-100">{sessionTitle}</h2>
+            <h2 className="mt-1 truncate text-sm font-semibold text-zinc-100">{getDisplaySessionTitle(sessionTitle, language)}</h2>
             <p className="mt-1 truncate text-[11px] text-zinc-500">{replay.traceIdentity.replayKey}</p>
           </div>
           <IconButton

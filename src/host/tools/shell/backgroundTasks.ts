@@ -9,6 +9,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { getUserConfigDir } from '../../config/configPaths';
+import { BASH } from '../../../shared/constants';
+import { quote } from 'shell-quote';
+import { parseShellCommand } from '../../security/commandParse';
 
 // ============================================================================
 // Constants
@@ -16,7 +19,6 @@ import { getUserConfigDir } from '../../config/configPaths';
 
 const MAX_BACKGROUND_TASKS = 10;
 const MAX_BACKGROUND_OUTPUT = 1024 * 1024; // 1MB per task
-export const BACKGROUND_TASK_MAX_RUNTIME = 10 * 60 * 1000; // 10 minutes
 const TASK_CLEANUP_INTERVAL = 60 * 1000; // 1 minute
 
 // ============================================================================
@@ -36,6 +38,7 @@ export interface TaskState {
   outputSize: number;
   command: string;
   displayCommand?: string;
+  displayName?: string;
   exitCode?: number;
   lastReadPosition: number;
   /** 主超时定时器 */
@@ -47,6 +50,8 @@ export interface TaskState {
   ownerAgentId?: string;
   sandboxed?: boolean;
   stoppedByRequest?: boolean;
+  /** 被最长运行时间上限终止（区别于用户 Stop 与普通失败） */
+  timedOut?: boolean;
   terminalEventEmitted?: boolean;
   onExit?: () => void;
 }
@@ -56,6 +61,7 @@ export interface TaskInfo {
   status: 'running' | 'completed' | 'failed';
   command: string;
   displayCommand?: string;
+  displayName?: string;
   cwd: string;
   sessionId?: string;
   toolCallId?: string;
@@ -66,6 +72,8 @@ export interface TaskInfo {
   exitCode?: number;
   outputFile: string;
   stoppedByRequest?: boolean;
+  timedOut?: boolean;
+  maxRuntime?: number;
 }
 
 export interface TaskOutput {
@@ -81,6 +89,7 @@ export interface StartBackgroundTaskOptions {
   toolCallId?: string;
   ownerAgentId?: string;
   displayCommand?: string;
+  displayName?: string;
   env?: NodeJS.ProcessEnv;
   sandboxed?: boolean;
   onExit?: () => void;
@@ -179,6 +188,7 @@ function toTaskInfo(task: TaskState): TaskInfo {
     status: task.status,
     command: task.command,
     displayCommand: task.displayCommand,
+    displayName: task.displayName,
     cwd: task.cwd,
     sessionId: task.sessionId,
     toolCallId: task.toolCallId,
@@ -189,6 +199,7 @@ function toTaskInfo(task: TaskState): TaskInfo {
     exitCode: task.exitCode,
     outputFile: task.outputFile,
     ...(task.stoppedByRequest ? { stoppedByRequest: true } : {}),
+    ...(task.timedOut ? { timedOut: true, maxRuntime: task.maxRuntime } : {}),
   };
 }
 
@@ -261,10 +272,11 @@ function registerBackgroundTaskProcess(
     outputStream,
     status: 'running',
     startTime: options.startedAt ?? Date.now(),
-    maxRuntime: Math.min(maxRuntime, BACKGROUND_TASK_MAX_RUNTIME),
+    maxRuntime: Math.min(maxRuntime, BASH.BACKGROUND_MAX_RUNTIME),
     outputSize: 0,
     command,
     displayCommand: options.displayCommand,
+    displayName: options.displayName,
     lastReadPosition: 0,
     cwd,
     sessionId: options.sessionId,
@@ -293,6 +305,7 @@ function registerBackgroundTaskProcess(
   const timeout = setTimeout(() => {
     if (taskState.status === 'running') {
       console.warn(`[BackgroundTasks] Task ${taskId} exceeded max runtime, terminating...`);
+      taskState.timedOut = true;
       void killProcessTree(proc, { posixGroupKill: true })
         .then(() => runTaskExitCallback(taskState));
     }
@@ -339,13 +352,57 @@ function registerBackgroundTaskProcess(
   return { success: true, taskId, outputFile };
 }
 
+const NAME_MAX = 40;
+const SETUP_COMMANDS = new Set(['cd', 'export', 'set', 'source', '.', 'echo', 'printf']);
+
+function shortTarget(command: string, depth = 0): string {
+  if (depth > 4) return '';
+  const url = command.match(/\bhttps?:\/\/[^\s'"<>;|&\\]+/i);
+  if (url) {
+    try {
+      return new URL(url[0]).host.slice(0, NAME_MAX);
+    } catch { /* Incomplete URLs fall back to the executable. */ }
+  }
+  // Reuse the quote-aware shell parser to unwrap sudo/env/shells and ignore redirects.
+  for (const { program, args } of parseShellCommand(command).executions) {
+    const base = path.posix.basename(program.replaceAll('\\', '/'));
+    if (SETUP_COMMANDS.has(base)) continue;
+    if (base === 'sandbox-exec') {
+      let index = 0;
+      while (index < args.length && args[index].startsWith('-')) {
+        const flag = args[index++];
+        if (flag === '--') break;
+        if (['-f', '-p', '-D'].includes(flag)) index++;
+      }
+      return shortTarget(quote(args.slice(index)), depth + 1);
+    }
+    // A title must never contain command syntax, even for an unparseable script.
+    if (/^[\p{L}\p{N}_.+-]+$/u.test(base)) return base.slice(0, NAME_MAX);
+  }
+  return '';
+}
+
+/**
+ * One user-readable name for a background shell/PTY task: the model's Bash `description`
+ * when usable (single line, <= 60 chars), else a short human target derived from the command
+ * (URL => host[:port], otherwise the executable basename). Never the raw command line;
+ * the full command lives in `displayCommand`.
+ */
+export function resolveBackgroundTaskName(description: unknown, command: string): string {
+  if (typeof description === 'string') {
+    const trimmed = description.trim();
+    if (trimmed && !/[\r\n]/.test(trimmed) && trimmed.length <= 60) return trimmed;
+  }
+  return shortTarget(command) || 'Background task';
+}
+
 /**
  * Start a background task
  */
 export function startBackgroundTask(
   command: string,
   cwd: string,
-  maxRuntime: number = BACKGROUND_TASK_MAX_RUNTIME,
+  maxRuntime: number = BASH.BACKGROUND_MAX_RUNTIME,
   options: StartBackgroundTaskOptions = {},
 ): { success: boolean; taskId?: string; error?: string; outputFile?: string } {
   const capacity = ensureTaskCapacity();
@@ -376,7 +433,7 @@ export function adoptBackgroundTask(
   if (proc.exitCode !== null || proc.signalCode !== null) {
     return { success: false, error: 'The timed-out process has already exited.' };
   }
-  return registerBackgroundTaskProcess(proc, command, cwd, BACKGROUND_TASK_MAX_RUNTIME, options);
+  return registerBackgroundTaskProcess(proc, command, cwd, BASH.BACKGROUND_MAX_RUNTIME, options);
 }
 
 /**
@@ -403,7 +460,10 @@ export async function killBackgroundTask(
     }
 
     // 超时清扫不是用户/模型的停止请求：不打 stopped 标记，账本仍记 failed。
-    if (wasRunning && options.reason !== 'timeout') task.stoppedByRequest = true;
+    if (wasRunning) {
+      if (options.reason === 'timeout') task.timedOut = true;
+      else task.stoppedByRequest = true;
+    }
     task.outputStream?.end();
     // SIGTERM → 宽限 → SIGKILL → 探到整组消失，全在 killProcessTree 内部。
     await killProcessTree(task.process, { posixGroupKill: true });

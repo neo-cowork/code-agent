@@ -125,8 +125,40 @@ describe('display-only automatic-session prefixes', () => {
     const title = `${stored} Morning notes`;
     expect(getLocalizedSessionTitle(title, 'zh')).toBe(`${localized} Morning notes`);
     expect(getLocalizedSessionTitle(title, 'en')).toBe(title);
-    expect(getDisplaySessionTitle(title, 'zh')).toBe(title);
+    expect(getDisplaySessionTitle(title, 'zh')).toBe(`${localized} Morning notes`);
     expect(splitCronSessionTitleParts(title)).toEqual({ prefix: stored, name: 'Morning notes' });
     expect(getLocalizedSessionTitle('Manual task', 'zh')).toBe('Manual task');
+  });
+});
+
+it('search indexes the visible cron prefix and the stored title', () => {
+  const session = { title: '[Cron] 周报' } as Parameters<typeof buildSessionSearchText>[0]['session'];
+  const status = getSessionStatusPresentation({});
+  expect(buildSessionSearchText({ session, status, language: 'zh' })).toContain('[定时] 周报');
+  expect(buildSessionSearchText({ session, status, language: 'zh' })).toContain('[cron] 周报');
+  expect(buildSessionSearchText({ session, status, language: 'en' })).toContain('[schedule] 周报');
+});
+
+describe('automation titles stay localized at display time', () => {
+  it.each([
+    ['[Schedule] Weekly report', 'zh', '[定时] Weekly report'],
+    ['[Heartbeat] 巡检', 'zh', '[心跳] 巡检'],
+    ['[Cron] Old report', 'en', '[Schedule] Old report'],
+    ['[Schedule] Weekly report', 'en', '[Schedule] Weekly report'],
+    ['[Heartbeat] Check', 'en', '[Heartbeat] Check'],
+  ] as const)('localizes %s in %s', (stored, language, expected) => {
+    expect(getDisplaySessionTitle(stored, language)).toBe(expected);
+    expect(splitCronSessionTitleParts(expected)?.name).toBe(stored.replace(/^\[\w+\] /, ''));
+  });
+  it('removes a legacy channel UUID but preserves the account and real chat names', () => {
+    const legacy = '[Channel] Meeting notes channel · f3927c39-8924-43f1-86e4-8e5c9cc5086e';
+    expect(getDisplaySessionTitle(legacy, 'zh')).toBe('渠道 · Meeting notes channel');
+    expect(getDisplaySessionTitle(legacy, 'en')).toBe('Channel · Meeting notes channel');
+    for (const id of ['oc_1234abcd', 'ou_9876abcd', '1234567890', 'chat_abcdef123456']) {
+      expect(getDisplaySessionTitle(`[Channel] Work · ${id}`, 'zh')).toBe('渠道 · Work');
+    }
+    expect(getDisplaySessionTitle('[Channel] Work · Design team', 'en')).toBe('Channel · Work · Design team');
+    expect(getDisplaySessionTitle('[Channel] Work · EngineeringCommunicationChannel', 'en')).toBe('Channel · Work · EngineeringCommunicationChannel');
+    expect(getDisplaySessionTitle('Ordinary · title', 'zh')).toBe('Ordinary · title');
   });
 });

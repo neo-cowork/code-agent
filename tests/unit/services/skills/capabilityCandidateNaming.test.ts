@@ -17,10 +17,15 @@ vi.mock('../../../../src/host/config/configPaths', () => ({
 const quick = vi.hoisted(() => ({
   available: true,
   result: { success: true, content: '' } as { success: boolean; content?: string },
+  prompts: [] as string[],
+  ui: 'zh' as 'zh' | 'en',
+}));
+vi.mock('../../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({ getSettings: () => ({ ui: { language: quick.ui } }) }),
 }));
 vi.mock('../../../../src/host/model/quickModel', () => ({
   isQuickModelAvailable: () => quick.available,
-  quickTask: async () => quick.result,
+  quickTask: async (prompt: string) => { quick.prompts.push(prompt); return quick.result; },
 }));
 
 import { fillMissingNames, fallbackName } from '../../../../src/host/services/skills/capabilityCandidateNaming';
@@ -53,6 +58,8 @@ beforeEach(() => {
   getCapabilityCandidateStore().resetForTests();
   quick.available = true;
   quick.result = { success: true, content: '' };
+  quick.prompts = [];
+  quick.ui = 'zh';
 });
 
 describe('模型分', () => {
@@ -77,6 +84,34 @@ describe('模型分', () => {
       'utf-8',
     )) as { candidates: Array<{ displayName?: string }> };
     expect(ledger.candidates[0]?.displayName).toBe('截图表格转 Excel');
+  });
+
+  it('保留完整的模型说明，不在英文单词中间截断', async () => {
+    const record = seedCandidate();
+    const summary = 'Capture receipt screenshots, extract the text, and organize the resulting information into an Excel workbook.';
+    quick.result = { success: true, content: JSON.stringify([{ index: 1, name: 'Organize receipts', summary }]) };
+    await fillMissingNames([record]);
+    expect(getCapabilityCandidateStore().get(record.clusterKey)?.summary).toBe(summary);
+  });
+
+  it('名字语言跟随用户原话：英文原话 → English，中文原话 → 中文，判不出 → 界面语言', async () => {
+    const record = seedCandidate();
+    const english = { ...record, sampleUserMessages: ['turn the tables in these screenshots into Excel'] };
+    const neutral = { ...record, sampleUserMessages: ['12345 😀'] };
+
+    await fillMissingNames([record]);
+    expect(quick.prompts[0]).toContain('名字和说明的语言：中文');
+
+    getCapabilityCandidateStore().resetForTests();
+    getCapabilityCandidateStore().put({ ...english, displayName: undefined, summary: undefined });
+    await fillMissingNames([{ ...english, displayName: undefined, summary: undefined }]);
+    expect(quick.prompts[1]).toContain('名字和说明的语言：English');
+
+    quick.ui = 'en';
+    getCapabilityCandidateStore().resetForTests();
+    getCapabilityCandidateStore().put({ ...neutral, displayName: undefined, summary: undefined });
+    await fillMissingNames([{ ...neutral, displayName: undefined, summary: undefined }]);
+    expect(quick.prompts[2]).toContain('名字和说明的语言：English');
   });
 
   it('模型不可用时落人话兜底名与说明，不暴露工具组合', async () => {
@@ -139,5 +174,56 @@ describe('模型分', () => {
     await fillMissingNames([record]);
     const named = getCapabilityCandidateStore().get(record.clusterKey)!;
     expect(await fillMissingNames([named])).toBe(0);
+  });
+});
+
+// ============================================================================
+// 兜底名语言档（N-FIX-TITLE-LANG-FOLLOWS-UI-FU1 ⑦）：模型失败时的 fallbackName /
+// fallbackSummary 跟用户原话的语言，判不出跟 UI —— 与模型路径同一条规则。
+// ============================================================================
+describe('兜底名语言档（quickTask 不可用）', () => {
+  beforeEach(() => {
+    quick.available = false;
+  });
+
+  it('en UI + 英文原话 → 英文名与英文说明', async () => {
+    quick.ui = 'en';
+    const record = seedCandidate();
+    const english = { ...record, sampleUserMessages: ['turn the tables in these screenshots into Excel'], displayName: undefined, summary: undefined };
+    getCapabilityCandidateStore().resetForTests();
+    getCapabilityCandidateStore().put(english);
+    expect(await fillMissingNames([english])).toBe(1);
+
+    const view = listCandidates(T0)[0];
+    expect(view.displayName).toBe('Capture and analyze the screen');
+    expect(view.summary).toBe('Capture and analyze the screen, as you asked');
+    expect(view.displayName).not.toMatch(/[㐀-鿿]/);
+  });
+
+  it('zh UI + 中文原话 → 中文兜底名不变', async () => {
+    const record = seedCandidate();
+    expect(await fillMissingNames([record])).toBe(1);
+    const view = listCandidates(T0)[0];
+    expect(view.displayName).toBe('截取并分析屏幕');
+    expect(view.summary).toBe('按用户要求截取并分析屏幕');
+  });
+
+  it('消息语言优先于 UI：en UI + 中文原话 → 中文；zh UI + 英文原话 → 英文', async () => {
+    quick.ui = 'en';
+    const record = seedCandidate();
+    expect(await fillMissingNames([record])).toBe(1);
+    expect(listCandidates(T0)[0].displayName).toBe('截取并分析屏幕');
+
+    const english = {
+      ...record,
+      clusterKey: `${record.clusterKey}-en`,
+      sampleUserMessages: ['turn the tables in these screenshots into Excel'],
+      displayName: undefined,
+      summary: undefined,
+    };
+    quick.ui = 'zh';
+    getCapabilityCandidateStore().put(english);
+    expect(await fillMissingNames([english])).toBe(1);
+    expect(getCapabilityCandidateStore().get(english.clusterKey)?.displayName).toBe('Capture and analyze the screen');
   });
 });

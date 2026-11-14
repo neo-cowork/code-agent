@@ -258,6 +258,7 @@ describe('CronService execution location invariants', () => {
   it('does not create a local cron timer for an enabled cloud job', async () => {
     const service = new CronService();
     const cloudClient = installCloudClient(service);
+    cloudClient.isConfigured = () => true;
 
     const job = await service.createJob({
       ...shellJob('hours'),

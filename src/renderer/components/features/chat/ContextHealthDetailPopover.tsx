@@ -80,10 +80,7 @@ function buildBuckets(health: ContextHealthState, ch: Record<string, string>): B
   // ds-allow:end
 }
 
-function sessionHasSentMessage(): boolean {
-  const getState = useSessionStore.getState;
-  if (typeof getState !== 'function') return false;
-  const messages = getState().messages;
+export function sessionHasSentMessage(messages = useSessionStore.getState?.().messages): boolean {
   // 只认 user 消息：/context 等斜杠命令的本地 assistant 诊断输出不算「已发首条」，
   // 否则空会话执行 /context 后会错误进入等待态（ai-review PR#1705）。
   return Array.isArray(messages) && messages.some((m) => m?.role === 'user');

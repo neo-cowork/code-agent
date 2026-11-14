@@ -1,6 +1,5 @@
 import { AgentFailureCode, HostReasonCode, type ToolCall } from '@shared/contract';
 import { ASK_USER_QUESTION_UNANSWERED_PREFIX } from '@shared/contract/askUserQuestion';
-import { redactCredentialText } from '@shared/security/secretPatterns';
 import type { Translations } from '../i18n';
 import { classifyToolName } from './humanizeToolStep';
 
@@ -20,6 +19,13 @@ const UNDELIVERED_QUESTION_PLACEHOLDER = new RegExp(
 // rejected there (classifier/policy/hard-gate/timeout/cancel), as opposed to no approval UI
 // existing at all (PermissionDeniedNoApprovalUi, handled separately below).
 const APPROVAL_REQUIRED_HOST_CODES: ReadonlySet<HostReasonCode> = new Set([
+  // 用户自己的 deny 规则也是权限层硬拒（evaluateGuardFabricGate → evaluateUserDeny）：
+  // 工具在执行前被拦下，什么都没写。不认它的话 ToolHeader 把这类行当普通失败渲染，
+  // 标题仍是「打开预览」按钮——点开一个从未写出的文件，右栏红字「failed to load
+  // file」（N-FIX-PREFLIGHT-UNWRITTEN-TITLE-OPEN-PREVIEW-FAIL-FU1）。失败原因行不受
+  // 影响：humanizeToolFailureReason 先查 hostReason 登记表，出「被你设置的权限规则
+  // 拦下了」的登记文案，不会落到这里的 approvalRequired「需要人工确认」。
+  HostReasonCode.PermissionDeniedUserRule,
   HostReasonCode.PermissionClassifierDenied,
   HostReasonCode.PermissionHighRiskActionBlocked,
   HostReasonCode.PermissionUnregisteredActionBlocked,
@@ -87,15 +93,6 @@ export function getToolPreflightKind(tool: Pick<ToolCall, 'name' | 'result'>): P
   return null;
 }
 
-const COMMAND_PREVIEW_MAX = 80;
-
-/** 与 humanizeToolStep 的 takePreview 同口径：压空白、超长尾部截断。 */
-function previewCommand(value: string): string | undefined {
-  const trimmed = redactCredentialText(value.trim().replace(/\s+/g, ' '));
-  if (!trimmed) return undefined;
-  return trimmed.length <= COMMAND_PREVIEW_MAX ? trimmed : `${trimmed.slice(0, COMMAND_PREVIEW_MAX)}…`;
-}
-
 export function toolPreflightCopy(tool: Pick<ToolCall, 'name' | 'result'> & Partial<Pick<ToolCall, 'arguments'>>, t: Translations): { action: string; reason: string } | null {
   const kind = getToolPreflightKind(tool);
   if (!kind) return null;
@@ -103,15 +100,9 @@ export function toolPreflightCopy(tool: Pick<ToolCall, 'name' | 'result'> & Part
   if (kind === 'question') return { action: c.questionUnavailable, reason: c.questionReason };
   const category = classifyToolName(tool.name);
   const verb = category === 'write' ? c.notWritten : category === 'edit' ? c.notEdited : category === 'read' ? c.notRead : c.blocked;
-  // 文件类给 basename，非文件类（Bash / Process / terminal_write…）给命令原文——
-  // 否则连着几条命令被权限层拦下时，时间线上是数条一模一样的「未执行 · 需要人工确认」，
-  // 用户分不清拦下的是哪条。origin/main 同一输入显示的是「运行命令 npm test 未成功」，
-  // 命令原文在行内，不是只在 hover tooltip 里。
   const path = tool.arguments?.file_path ?? tool.arguments?.path;
-  const command = tool.arguments?.command ?? tool.arguments?.input;
-  const subject = typeof path === 'string'
-    ? path.split(/[\\/]/).pop()
-    : typeof command === 'string' ? previewCommand(command) : undefined;
+  const subject = category !== 'bash' && typeof path === 'string'
+    ? path.split(/[\\/]/).pop() : undefined;
   return { action: subject ? `${verb} · ${subject}` : verb,
     reason: kind === 'repair' ? c.repairReason : c[kind] };
 }

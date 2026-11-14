@@ -3,7 +3,8 @@
 // Enhanced with unified pipeline (T4)
 // ============================================================================
 
-import { buildInsufficientScopeConnectorEvent } from './runtime/connectorScopeCard';
+import { publishEnvAssistToolNotice } from '../permissions/envAssist/toolNotice';
+import { buildConnectorToolFailureEvent } from './runtime/connectorScopeCard';
 import { resolveSubagentPreset } from './subagentFirstRunPreset';
 import type { AgentMessageOrigin } from './messageOrigin';
 import type { ToolCall } from '../../shared/contract';
@@ -22,9 +23,11 @@ import {
 } from './agentDefinition';
 import { routeExternalSubagentExecution } from './subagentExecutionRouter';
 import { compactSubagentMessages } from './subagentCompaction';
+import { SubagentContextProjection } from './subagentContextProjection';
 import { SUBAGENT_COMPACTION } from '../../shared/constants';
 import { AgentFailureCode } from '../../shared/contract/agentFailure';
 import { getPlanApprovalGate } from './planApproval';
+import { getSpawnGuard } from './spawnGuard';
 import { buildChildContext } from './childContext';
 import { AgentTask, type SidecarMetadata } from './agentTask';
 import { generateMessageId } from '../../shared/utils/id';
@@ -88,6 +91,7 @@ import {
   handleSubagentAbort,
   finalizeSubagentSuccess, appendSubagentLeftoverShellReport, reportSubagentLeftoverShells,
   handleSubagentFailure,
+  SubagentTextToolCallGuard,
   type SubagentCompletionDeps,
   type SubagentCompletionTerminal,
 } from './subagentExecutorCompletion';
@@ -185,6 +189,7 @@ export class SubagentExecutor {
     let toolCallsAttempted = 0;
     let iterations = 0;
     const doomLoopGuard = new SubagentDoomLoopGuard();
+    const contextProjection = new SubagentContextProjection(context.modelConfig.model, context.modelConfig.provider, sessionId);
     // ADR-067 D3：本轮最新输入的 origin 链。drain 注入时刷新；无注入的迭代保留
     // 上一条（peer 指令的影响跨 iteration 持续，直到下一条新输入到达）。
     let currentTurnOrigin: AgentMessageOrigin[] | undefined;
@@ -435,8 +440,8 @@ export class SubagentExecutor {
 
     const terminal: SubagentCompletionTerminal = { status: 'failed' };
 
-    // 早退失败收口（预算触顶 / 工具装配失败共用）：统一 cleanup + orphan 接管 +
-    // SubagentStop + 结构化失败返回，extra 携带各自的 failureCode/缺失清单等差异化字段。
+    // 早退/触顶失败收口（预算触顶 / 工具装配失败 / 迭代耗尽共用）：统一 cleanup + orphan 接管 +
+    // 后代子树取消 + SubagentStop + 结构化失败返回，extra 携带各自的 failureCode/缺失清单等差异化字段。
     const earlyFailure = (error: string, extra: Partial<SubagentResult>): SubagentResult => {
       logger.error(`[${config.name}] ${error}`);
       cleanupTimer();
@@ -446,11 +451,14 @@ export class SubagentExecutor {
       agentTask.fail(error);
       // orphan 接管（roadmap 2.6）：subagent 名下未收口任务释放回主会话
       adoptOrphanTasks(sessionId, pipelineContext.agentId);
+      const leftoverReport = reportSubagentLeftoverShells(executionAgentId, 'early-failure');
+      if (context.spawnGuardId) {
+        getSpawnGuard().cancelDescendants(context.spawnGuardId, 'parent-cancel');
+      }
       context.hooks?.triggerSubagentStop(config.name, undefined, sessionId, agentTask.id)
         .catch(silence(logger, 'triggerSubagentStop:early-failure', 'warn'));
       return {
         success: false,
-        output: appendSubagentLeftoverShellReport('', reportSubagentLeftoverShells(executionAgentId, 'early-failure')),
         error,
         toolsUsed: [],
         iterations: 0,
@@ -459,6 +467,7 @@ export class SubagentExecutor {
         agentId: executionAgentId,
         contextSnapshot: latestContextSnapshot,
         ...extra,
+        output: appendSubagentLeftoverShellReport(extra.output ?? '', leftoverReport),
       };
     };
 
@@ -507,9 +516,11 @@ export class SubagentExecutor {
       // 注入重入消息督办，上限 2 次（MiMo subagent 上限），防跑飞
       let taskGateReentries = 0;
       let memberInputReentries = 0;
+      const textToolCallGuard = new SubagentTextToolCallGuard();
       // finalOutput 在循环之后才声明。进度回调若读它，会在 TDZ 里抛 ReferenceError，
       // 被记账的 catch 吞掉，重启通知就永远没有花费和进度。
       let latestAssistantText = '';
+      let exitedLoop = false;
 
       while (iterations < maxIterations) {
         iterations++;
@@ -541,6 +552,7 @@ export class SubagentExecutor {
         const iterBudgetCheck = pipeline.checkBudget(pipelineContext);
         if (!iterBudgetCheck.allowed) {
           logger.warn(`[${config.name}] Budget exceeded at iteration ${iterations}`);
+          exitedLoop = true;
           break;
         }
 
@@ -557,11 +569,17 @@ export class SubagentExecutor {
         });
 
         const telemetryTurnId = turnObservability.startTurn(iterations);
-        // Auto-compaction: truncate old messages if approaching context limit
+        // Call model
+        const effectiveInterventions = getContextInterventionState().getEffectiveSnapshot(
+          sessionId,
+          executionAgentId,
+        );
+        const projectedMessages = await contextProjection.project(applyInterventionsToMessages(messages, effectiveInterventions), iterations, effectiveInterventions);
+        // Last-resort fallback on the request copy, after shared compression.
         if (iterations > SUBAGENT_COMPACTION.SKIP_FIRST_ITERATIONS) {
-          if (compactSubagentMessages(messages, context.modelConfig.model, context.modelConfig.provider)) {
+          if (compactSubagentMessages(projectedMessages, context.modelConfig.model, context.modelConfig.provider)) {
             turnObservability.recordCompaction(latestContextSnapshot.currentTokens);
-            for (const message of messages) {
+            for (const message of projectedMessages) {
               if (typeof message.content === 'string' && message.content.includes('[truncated]')) {
                 message.observation = buildObservation('compression_survivor', 'subagent_compaction', {
                   sourceKind: 'compression_survivor',
@@ -573,12 +591,7 @@ export class SubagentExecutor {
           }
         }
 
-        // Call model
-        const effectiveInterventions = getContextInterventionState().getEffectiveSnapshot(
-          sessionId,
-          executionAgentId,
-        );
-        const inferenceMessages = projectReadSubagentMessages(applyInterventionsToMessages(messages, effectiveInterventions));
+        const inferenceMessages = projectReadSubagentMessages(projectedMessages);
         const providerMessages = buildInferenceMessages(inferenceMessages);
         const telemetryTurnStartedAt = Date.now();
         const currentTelemetryTurnNumber = ++telemetryTurnNumber;
@@ -668,6 +681,11 @@ export class SubagentExecutor {
 
         // Handle text response - subagent is done
         if (response.type === 'text' && response.content) {
+          if (textToolCallGuard.retry(response.content, messages, iterations < maxIterations)) {
+            emitContextSnapshot();
+            persistTelemetryTurn(response.content, response.thinking);
+            continue;
+          }
           latestAssistantText = response.content;
           const wind = commitMemberTextAnswer({
             ledger: answerLedger,
@@ -689,6 +707,7 @@ export class SubagentExecutor {
           taskGateReentries = wind.taskGateReentries;
           memberInputReentries = wind.memberInputReentries;
           if (wind.continueLoop) continue;
+          exitedLoop = true;
           break;
         }
 
@@ -896,9 +915,10 @@ export class SubagentExecutor {
                   subagentPolicy,
                 },
               ).finally(markToolEnd);
+              await publishEnvAssistToolNotice({ toolName: toolCall.name, result, sessionId: context.sessionId, runId: executionRunId, onEvent: (event) => context.events.emit(event.type, event.data) });
               descendantUsage = addSubagentUsage(descendantUsage, result.metadata);
               // MCP 权限范围不足：子代理（文字前台委派的常见路径）的失败也要给用户一张「重新授权」卡
-              const scopeCard = buildInsufficientScopeConnectorEvent(result);
+              const scopeCard = buildConnectorToolFailureEvent(result);
               if (scopeCard) context.events.emit(scopeCard.type, scopeCard.data);
               const toolDuration = Date.now() - toolStartTime;
               toolResults.push(
@@ -1012,6 +1032,7 @@ export class SubagentExecutor {
             success: call.success,
             summary: call.resultSummary ?? call.error ?? '',
           })));
+          contextProjection.recordToolResults(messages[messages.length - 1], assistantToolCalls, toolResults);
           doomLoopGuard.injectPendingNudge(messages);
           pushObservabilityMessage({
             id: generateMessageId(),
@@ -1031,6 +1052,7 @@ export class SubagentExecutor {
         }
 
         // No response, break
+        exitedLoop = true;
         break;
         } finally {
           await turnObservability.endTurn(telemetryTurnId);
@@ -1038,6 +1060,12 @@ export class SubagentExecutor {
         }
       }
 
+      if (!exitedLoop) {
+        return earlyFailure('Max iterations reached', {
+          iterations, toolsUsed, toolCallCount: turnObservability.getToolCallCount(), output: answerLedger.settled(),
+          failureCode: AgentFailureCode.BudgetExhausted,
+        });
+      }
       return finalizeSubagentSuccess(completionDeps, { iterations, latestContextSnapshot });
     } catch (error) {
       return handleSubagentFailure(completionDeps, { error, iterations, latestContextSnapshot });

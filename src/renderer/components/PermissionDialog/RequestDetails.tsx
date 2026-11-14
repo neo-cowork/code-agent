@@ -15,6 +15,7 @@ import { Eye, EyeOff } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { useAppStore } from '../../stores/appStore';
 import { resolveHostReasonCopy } from '../../utils/hostReasonPresentation';
+import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
 import { isDangerousRequestShape, isSafeDefaultDeny, permissionConsequence } from './permissionPresentation';
 import { ConnectorWriteDisclosure } from './ConnectorWriteDisclosure';
 import { estimateMediaPriceCny } from './mediaPriceEstimate';
@@ -58,6 +59,16 @@ export function RequestDetails({ request }: RequestDetailsProps) {
   const labels = t.decisionCard.permission;
   const cc = t.cronCenter;
 
+  const browser = details.browserSessionGrant;
+  if (browser) {
+    const copy = language === 'en' ? browserSessionGrantEn : browserSessionGrantZh;
+    const site = browser.target?.slice(browser.target.indexOf('@') + 1);
+    return <p className="break-all text-xs leading-5 text-zinc-300" data-testid="browser-session-reason">
+      {!site ? copy.unresolved : browser.previousOrigins.length > 0
+        ? copy.crossSite.replace('{previous}', browser.previousOrigins.join(', ')).replace('{site}', site)
+        : null}
+    </p>;
+  }
   // 兼容旧版 API：path -> filePath
   const filePath = details.filePath || details.path;
 
@@ -174,7 +185,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       )}
 
       {/* MCP 工具 */}
-      {details.server && details.toolName && (
+      {!details.connectorAccess && details.server && details.toolName && (
         <DetailItem label={labels.detailMcpTool} value={`${details.server} / ${details.toolName}`} />
       )}
 
@@ -191,7 +202,9 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       {/* 确认门控 非 diff 预览（命令/网络/通用） */}
       {details.preview && details.preview.type !== 'diff' && !(details.preview.type === 'command' && details.command) && (
         <div className="mt-4">
-          <div className="text-xs text-zinc-400 mb-2">{details.preview.summary}</div>
+          {!(details.connectorAccess && details.preview.type === 'generic') && (
+            <div className="text-xs text-zinc-400 mb-2">{details.preview.summary}</div>
+          )}
           {details.preview.diff && (
             <pre className="text-xs p-2 rounded bg-zinc-700 border border-zinc-700 text-zinc-400 overflow-x-auto max-h-32 whitespace-pre-wrap break-all">
               {details.preview.diff}

@@ -149,11 +149,11 @@ export interface PendingProjectGoalChatSeed {
 }
 
 /**
- * 设置页的用户关闭落点（Stripe portal return_url 模式）：从二级页（目前只有自动化的
- * webhook 门）「去设置」时记下来源页，用户关闭设置（X / Esc）时直接回该页而不是聊天首页。
+ * 设置页的用户关闭落点（Stripe portal return_url 模式）：从自动化页或聊天确认卡
+ *「去设置」时记下来源页，用户关闭设置（X / Esc）时直接回该页而不是聊天首页。
  * 只经 AppState 消费，不单独导出。
  */
-type SettingsReturnTo = 'cronCenter';
+type SettingsReturnTo = 'cronCenter' | 'chat';
 
 export interface AppState {
   // UI State
@@ -161,6 +161,7 @@ export interface AppState {
   /** 非空 = 这次设置是带返回落点打开的；closeSettings 据此决定关了落哪儿。 */
   settingsReturnTo: SettingsReturnTo | null;
   settingsInitialTab: SettingsTab | null; // 打开设置时默认选中的 Tab
+  settingsModelFocus: { provider: ModelConfig['provider']; nonce: number } | null;
   settingsMemoryFocus: SettingsMemoryFocus | null;
   settingsCapabilityFocus: SettingsCapabilityFocus | null;
   /**
@@ -299,6 +300,7 @@ export interface AppState {
 
   // Model Config
   modelConfig: ModelConfig;
+  settingsLoaded: boolean;
 
   // Workspace State
   workingDirectory: string | null;
@@ -315,6 +317,8 @@ export interface AppState {
   closeSettings: () => void;
   setPendingRoleChatSeed: (seed: string | null) => void;
   openSettingsTab: (tab: SettingsTab) => void; // 打开设置并跳转到指定 Tab
+  openModelSettings: (provider: ModelConfig['provider']) => void;
+  clearSettingsModelFocus: () => void;
   openMemorySettings: (focus?: Omit<SettingsMemoryFocus, 'nonce'>) => void;
   openCapabilitySettingsTarget: (focus: Omit<SettingsCapabilityFocus, 'nonce'>) => void;
   clearSettingsInitialTab: () => void; // 清除初始 Tab（设置页使用后调用）

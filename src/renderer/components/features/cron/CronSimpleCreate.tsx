@@ -18,6 +18,7 @@ import { DateTimeInput24, TimeInput24 } from '../../primitives';
 import { Select } from '../../primitives/Select';
 import { Textarea } from '../../primitives/Textarea';
 import { useCronStore } from '../../../stores/cronStore';
+import { interpolate } from '../../../i18n/interpolate';
 import { useI18n } from '../../../hooks/useI18n';
 import { listProjects } from '../../../services/projectClient';
 import { listRoles } from '../../../services/rolesClient';
@@ -27,6 +28,10 @@ import { CronResultChannelField } from './CronResultChannel';
 import { CronRunBudgetField } from './CronRunBudgetField';
 import { showCronLoginWallWarning } from './cronLoginWallNotice';
 import { CLOUD_ROLE_BOUND_ERROR } from './CronCloudRoleRestriction';
+import { CRON_CLOUD_NOT_CONFIGURED } from '@shared/constants/cronErrors';
+import { CronCloudCreateNotice } from './CronCloudCreateNotice';
+import { stashCronEditorDraft } from './cronEditorDraftStash';
+import { openCloudCronSettings } from '../../../utils/cronCloudSettingsNavigation';
 import { SavedRoutineRestate } from './SavedRoutineRestate';
 import { PendingRoutineRestate } from './PendingRoutineRestate';
 import { usePendingRoutineGate, type PendingRoutineSave } from './usePendingRoutineGate';
@@ -117,6 +122,7 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone, onDr
   const [roles, setRoles] = useState<RolePanelEntry[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [cloudUnconfigured, setCloudUnconfigured] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // 保存成功且角色绑定的任务：不直接关闭，切换到只读复述视图（Done 才关闭）。
   const [savedJob, setSavedJob] = useState<CronJobDefinition | null>(null);
@@ -135,6 +141,11 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone, onDr
       onDone();
       return true;
     } catch (err) {
+      if (err instanceof Error && 'code' in err && err.code === CRON_CLOUD_NOT_CONFIGURED) {
+        setCloudUnconfigured(true);
+        backToEdit();
+        return false;
+      }
       const message = err instanceof Error ? err.message : '';
       setError(message.includes(CLOUD_ROLE_BOUND_ERROR)
         ? cc.cloudRoleBoundHint
@@ -174,6 +185,7 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone, onDr
       setError(cc.simpleGoalRequired);
       return;
     }
+    setCloudUnconfigured(false);
     setSubmitting(true);
     setError(null);
     try {
@@ -190,6 +202,10 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone, onDr
       );
       await gateOrPersist(buildCronJobInput(draft), 'create');
     } catch (err) {
+      if (err instanceof Error && 'code' in err && err.code === CRON_CLOUD_NOT_CONFIGURED) {
+        setCloudUnconfigured(true);
+        return;
+      }
       const message = err instanceof Error ? err.message : '';
       setError(message.includes(CLOUD_ROLE_BOUND_ERROR)
         ? cc.cloudRoleBoundHint
@@ -224,6 +240,13 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone, onDr
 
   return (
     <div className="space-y-4" data-testid="cron-simple-create">
+      {cloudUnconfigured && <CronCloudCreateNotice
+        onSwitchLocal={() => { setRunsOn('local'); setCloudUnconfigured(false); }}
+        onSettings={() => {
+          stashCronEditorDraft(buildSimpleDraft(goal, name, compileSimpleSchedule({ freq, time, weekday, intervalHours, onceAt }), roleId, libraryProjectId, runsOn, resultChannel, urgencyCriteria, maxRunBudget));
+          openCloudCronSettings();
+        }}
+      />}
       {error && (
         <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-badge-danger">
           {error}
@@ -314,8 +337,7 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone, onDr
         )}
         {needTime && time.endsWith(':00') && (
           <p className="text-xs text-badge-warning sm:col-span-2" data-testid="cron-stagger-hint">
-            整点容易和其他任务扎堆触发，建议把分钟错开到{' '}
-            {suggestCronStaggerMinute(`${freq} ${time}`)} 分。
+            {interpolate(cc.simpleStaggerHint, { minute: suggestCronStaggerMinute(`${freq} ${time}`) })}
           </p>
         )}
         {freq === 'hourly' && (

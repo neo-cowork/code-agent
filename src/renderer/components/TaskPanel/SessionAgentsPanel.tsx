@@ -14,7 +14,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Bot, ChevronDown, ChevronRight, Clock, Square, X, Zap } from 'lucide-react';
 import { cancelSwarmRunOrFallback } from '../features/swarm/SwarmInlineMonitor';
 import { useI18n } from '../../hooks/useI18n';
-import { interpolatePlural } from '../../i18n/interpolate';
+import { interpolate, interpolatePlural } from '../../i18n/interpolate';
 import { useSessionAgentRows } from '../../hooks/useSessionAgentRows';
 import { useDurableSwarmRunDetail } from '../../hooks/useDurableSwarmRunDetail';
 import { useSessionStore } from '../../stores/sessionStore';
@@ -22,12 +22,12 @@ import { useAppStore } from '../../stores/appStore';
 import { useSwarmStore } from '../../stores/swarmStore';
 import { useComposerStore } from '../../stores/composerStore';
 import { useMemberViewStore } from '../../stores/memberViewStore';
+import { isTerminalTaskStatus } from '@shared/contract/backgroundTask';
 import { useBackgroundTaskStore } from '../../stores/backgroundTaskStore';
 import { useVoiceLiveRuntime } from '../../hooks/useVoiceLiveRuntime';
 import { deriveAgentMergeState } from '../../utils/agentMergeState';
 import { isAgentRowQuiet } from '../../utils/agentRowStall';
 import { stopSessionAgent } from '../../utils/stopSessionAgent';
-import { agentFailureCopy } from '../../utils/agentFailureCopy';
 import type { AgentRow } from '../../utils/agentRows';
 import { RoleInitialAvatar } from '../features/expert/RoleInitialAvatar';
 import { DiscussionStream } from '../features/swarm/DiscussionStream';
@@ -40,11 +40,11 @@ function formatPanelTokens(tokens: number): string {
   return `${(tokens / 1_000_000).toFixed(2)}M`;
 }
 
-function formatPanelDuration(ms: number): string {
+function formatPanelDuration(ms: number, copy: { seconds: string; minutes: string }): string {
   const totalSeconds = Math.max(1, Math.round(ms / 1000));
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
-  return minutes > 0 ? `${minutes} 分 ${seconds} 秒` : `${seconds} 秒`;
+  return interpolate(minutes > 0 ? copy.minutes : copy.seconds, { minutes, seconds });
 }
 
 /** 「暂无进展」提示的「现在」刷新节拍（UI 本地节拍，阈值本身在 WORKFLOW_STALL_THRESHOLDS）。 */
@@ -67,10 +67,15 @@ export const SessionAgentsPanel: React.FC = () => {
   const [stoppingKey, setStoppingKey] = useState<string | null>(null);
   const [stopHintKey, setStopHintKey] = useState<string | null>(null);
   const [stoppingAll, setStoppingAll] = useState(false);
+  const [clearingFinished, setClearingFinished] = useState(false);
   const [eventsOpen, setEventsOpen] = useState(false);
 
   const mergeState = deriveAgentMergeState(rows, conflicts);
   const stoppableRows = rows.filter((row) => row.stoppable);
+  // 「清除已结束」只认后台任务行（kind=task + 终态）；成员/专家行不算
+  const hasEndedTaskRows = rows.some((row) => (
+    row.kind === 'task' && row.task !== undefined && isTerminalTaskStatus(row.task.status)
+  ));
   // 「暂无进展」提示需要一个会走的「现在」（agentRowStall）：节拍只在有 working 行时
   // 开，面板空闲/全部收尾即清，不给空闲会话留定时器（与 WorkflowInlineMonitor 同口径）。
   const anyWorking = rows.some((row) => row.status === 'working');
@@ -146,14 +151,25 @@ export const SessionAgentsPanel: React.FC = () => {
     }
   };
 
+  const clearFinished = async () => {
+    if (!sessionId || clearingFinished) return;
+    setClearingFinished(true);
+    try {
+      await useBackgroundTaskStore.getState().dismissEndedTasks(sessionId);
+    } catch {
+      // 清除失败时行原样留着，用户可再点；下一轮 3s 轮询会重新对齐
+    } finally {
+      setClearingFinished(false);
+    }
+  };
+
   const statusLabel = (row: AgentRow): string => {
     const labels = text.panel.status;
     if (row.hold === 'approval') return labels.needsApproval;
     if (row.status === 'failed') {
-      const reason = (row.node?.failureCode ? agentFailureCopy(row.node.failureCode, t) : null)
-        ?? row.failureReason;
+      const reason = row.failureReason;
       return reason
-        ? `${labels.failed}：${reason}`
+        ? t.chat.delegationReceipt.failureDetail.replace('{status}', labels.failed).replace('{reason}', reason)
         : labels.failed;
     }
     if (row.status === 'cancelled') return labels.stopped;
@@ -180,9 +196,20 @@ export const SessionAgentsPanel: React.FC = () => {
             data-testid="agents-panel-stop-all"
             onClick={() => { void stopAll(); }}
             disabled={stoppingAll}
-            className="rounded-md px-2 py-1 text-[11px] text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-badge-danger disabled:cursor-not-allowed disabled:opacity-50"
+            className="whitespace-nowrap rounded-md px-2 py-1 text-[11px] text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-badge-danger disabled:cursor-not-allowed disabled:opacity-50"
           >
             {stoppingAll ? text.stopAllStopping : text.stopAll}
+          </button>
+        )}
+        {hasEndedTaskRows && (
+          <button /* ds-allow:button: 面板顶部清除已结束与停止全部同档的超小文本按钮 */
+            type="button"
+            data-testid="agents-panel-clear-finished"
+            onClick={() => { void clearFinished(); }}
+            disabled={clearingFinished}
+            className="whitespace-nowrap rounded-md px-2 py-1 text-[11px] text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {text.clearFinished}
           </button>
         )}
         <button /* ds-allow:button: 关闭右栏是图标级小按钮，Button primitive 无此紧凑图标变体 */
@@ -364,7 +391,7 @@ export const SessionAgentsPanel: React.FC = () => {
           {elapsedMs !== null && elapsedMs > 0 && (
             <span className="inline-flex items-center gap-1">
               <Clock className="h-3 w-3" aria-hidden />
-              {formatPanelDuration(elapsedMs)}
+              {formatPanelDuration(elapsedMs, text.panel.duration)}
             </span>
           )}
         </div>

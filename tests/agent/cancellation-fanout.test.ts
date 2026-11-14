@@ -57,6 +57,7 @@ function buildTaskManagerMock(sessionId: string, opts?: { tmOwned?: boolean }) {
   return {
     getSessionState: vi.fn().mockReturnValue({ status: opts?.tmOwned ? 'running' : 'idle' }),
     cancelTask: vi.fn().mockResolvedValue(undefined),
+    cancelSessionBackgroundWork: vi.fn().mockResolvedValue(undefined),
     getOrCreateCurrentOrchestrator: vi.fn().mockReturnValue({
       cancel: vi.fn().mockResolvedValue(undefined),
     }),

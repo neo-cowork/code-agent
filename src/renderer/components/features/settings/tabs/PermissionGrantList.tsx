@@ -15,21 +15,52 @@ import ipcService from '../../../../services/ipcService';
 import { SettingsSection } from '../SettingsLayout';
 import { useI18n } from '../../../../hooks/useI18n';
 import { formatDateTime } from '../../../../utils/formatDateTime';
+import { getHumanToolLabel } from '../../../../utils/toolHumanLabel';
 import { zh } from '../../../../i18n/zh';
 import { Button } from '../../../primitives';
 
 type PermissionGrantsText = typeof zh.settings.privacy.permissionGrants;
 
+// 授权列表里的核心文件/命令工具没有连接器身份，这里单独映射；不放进共享 getHumanToolLabel，
+// 否则聊天里的审批记录（ToolStepGroup）会出现「运行命令 · 运行了命令 ls」式重复前缀。
+const GRANT_TOOL_LABEL_KEYS: Record<string, keyof typeof zh.receiptPresentation.humanToolLabels.tools> = {
+  bash: 'runCommand',
+  write: 'writeFile',
+  writefile: 'writeFile',
+  edit: 'editFile',
+  editfile: 'editFile',
+};
+
+function toolGrantLabel(
+  label: string,
+  labels: typeof zh.receiptPresentation.humanToolLabels,
+): string {
+  const key = GRANT_TOOL_LABEL_KEYS[label.trim().toLowerCase().replace(/[-_\s]/g, '')];
+  return key ? labels.tools[key] : getHumanToolLabel({ toolName: label, labels });
+}
+
 function scopeLabel(source: string, copy: PermissionGrantsText['scope']): string {
   if (source === 'conversation') return copy.conversation;
   if (source === 'settings') return copy.always;
+  if (source === 'run') return copy.run;
+  if (source === '24h') return copy.hours24;
   return copy.automation.replace('{title}', source);
 }
 
-function kindLabel(kind: PermissionGrantEntry['kind'], copy: PermissionGrantsText['kind']): string {
+function kindLabel(grant: PermissionGrantEntry, copy: PermissionGrantsText['kind']): string {
+  if (grant.source === 'run') return '';
+  const { kind } = grant;
   if (kind === 'app') return copy.app;
   if (kind === 'tool-target') return copy.toolTarget;
+  if (kind === 'tool-timed') return copy.toolTimed;
   return copy.toolSession;
+}
+
+function remainingTime(expiresAt: number, copy: PermissionGrantsText): string {
+  const minutes = Math.max(1, (expiresAt - Date.now()) / 60_000);
+  return minutes < 60
+    ? copy.remainingMinutes.replace('{n}', String(Math.ceil(minutes)))
+    : copy.remainingHours.replace('{n}', String(Math.ceil(minutes / 60)));
 }
 
 const PermissionGrantList: React.FC = () => {
@@ -78,16 +109,18 @@ const PermissionGrantList: React.FC = () => {
           {grants.map((grant) => (
             <li key={grant.id} data-testid="permission-grant-row" className="flex items-center justify-between gap-3 py-2">
               <div className="min-w-0">
-                <div className="truncate text-sm text-zinc-200">{grant.label}</div>
+                <div className="truncate text-sm text-zinc-200">
+                  {grant.kind === 'app' || grant.connectorAccess === 'read' ? grant.label : toolGrantLabel(grant.label, t.receiptPresentation.humanToolLabels)}
+                </div>
                 <div className="mt-0.5 text-xs text-zinc-500">
-                  {kindLabel(grant.kind, copy.kind)}
-                  {' · '}
-                  {scopeLabel(grant.source, copy.scope)}
+                  {[kindLabel(grant, copy.kind), grant.connectorAccess === 'read' ? copy.readOnly : '', scopeLabel(grant.source, copy.scope)].filter(Boolean).join(' · ')}
                   {' · '}
                   {copy.grantedOn.replace('{date}', formatDateTime(grant.grantedAt, language))}
-                  {grant.expiresAt !== null ? ` · ${copy.expiresOn.replace('{date}', formatDateTime(grant.expiresAt, language))}` : ''}
+                  {grant.expiresAt !== null ? ` · ${grant.kind === 'tool-timed'
+                    ? remainingTime(grant.expiresAt, copy)
+                    : copy.expiresOn.replace('{date}', formatDateTime(grant.expiresAt, language))}` : ''}
                 </div>
-                {grant.kind === 'tool-target' && grant.detail ? (
+                {(grant.kind === 'tool-target' || grant.kind === 'tool-timed') && grant.detail ? (
                   <div className="mt-0.5 truncate text-xs text-zinc-400">{copy.targetLabel.replace('{target}', grant.detail)}</div>
                 ) : null}
               </div>

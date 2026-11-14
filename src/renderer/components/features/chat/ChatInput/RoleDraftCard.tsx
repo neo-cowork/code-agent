@@ -318,11 +318,6 @@ export const RoleDraftCard: React.FC<RoleDraftCardProps> = ({ drafts, onResolved
                   <span className="text-xs font-medium text-badge-success truncate" title={draft.roleId}>
                     {draft.roleId}
                   </span>
-                  {draft.category && (
-                    <span className="px-1.5 py-px text-[10px] rounded bg-emerald-500/20 text-badge-success flex-shrink-0">
-                      {draft.category}
-                    </span>
-                  )}
                 </div>
                 {draft.description && (
                   <div className="text-[11px] text-badge-success/70 truncate" title={draft.description}>

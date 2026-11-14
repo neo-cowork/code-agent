@@ -7,6 +7,7 @@ import type { AgentRunOptions } from '../../research/types';
 import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
 import { getTaskManager, type TaskManager, type TaskManagerEvent } from '../../task/TaskManager';
+import { SESSION_STOP_REQUESTED_EVENT } from '../../task/taskManagerTypes';
 import {
   SessionTaskSlotLedger,
   getSessionTaskConcurrencyPool,
@@ -15,11 +16,17 @@ import {
 } from './sessionTaskSlotLedger';
 import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
 import { createForegroundWake } from './foregroundWake';
+import { BackgroundShellHold } from './backgroundShellHold';
 import {
-  buildSessionTaskResultMessage,
   clearSessionCommandTaskMarker,
   markSessionCommandTaskRunning,
+  settleSessionCommandTaskMarkerForDeferredProjection,
 } from './sessionCommandTaskRestartRecovery';
+import {
+  deferTerminalResultProjectionUntilAccessible,
+  projectTerminalResult,
+} from './terminalResultProjection';
+import { isSessionNotAccessibleError } from './sessionAccessRetry';
 import { getConfigService } from '../core/configService';
 import {
   formatSessionCommandTaskIdleFailure,
@@ -155,6 +162,8 @@ export class SessionCommandCenter {
   private readonly pendingApprovalIdsByTask = new Map<string, Set<string>>();
   /** 本轮审批等待的起点（首张未答审批时刻）；审批清空即删，下一张重新计时。 */
   private readonly approvalWaitStartedAtByTask = new Map<string, number>();
+  /** 子 run 起了后台 Bash 又没再调工具就结束：挂起收尾，等命令退出（见 backgroundShellHold.ts）。 */
+  private readonly shellHold = new BackgroundShellHold();
   private readonly approvalWaitCapMs: number;
   private readonly manager: TaskManager;
   private readonly projectTerminalResult: NonNullable<SessionCommandCenterDependencies['projectTerminalResult']>;
@@ -165,6 +174,12 @@ export class SessionCommandCenter {
   private readonly stopAgentEventObservation?: () => void;
   private readonly onTaskEvent = (event: TaskManagerEvent): void => {
     void this.handleTaskEvent(event);
+  };
+  /** 用户 Stop：排队中的任务尚无 run 可 abort，在这里直接终态化，且不得被前序任务的收线再放行启动。 */
+  private readonly onSessionStopRequested = (event: { sessionId: string }): void => {
+    for (const task of this.tasksBySession.get(event.sessionId)?.values() ?? []) {
+      if (task.status === 'queued') void this.settle(task, 'cancelled', '任务在开始前被取消。');
+    }
   };
 
   constructor(
@@ -185,6 +200,7 @@ export class SessionCommandCenter {
     for (const eventName of TASK_LIFECYCLE_EVENTS) {
       this.manager.on(eventName, this.onTaskEvent);
     }
+    this.manager.on(SESSION_STOP_REQUESTED_EVENT, this.onSessionStopRequested);
     if (typeof this.manager.observeAgentEvents === 'function') {
       this.stopAgentEventObservation = this.manager.observeAgentEvents((sessionId, event, taskId) => {
         this.handleAgentProgressEvent(sessionId, event, taskId);
@@ -371,6 +387,11 @@ export class SessionCommandCenter {
       await this.settle(task, 'cancelled', '任务在开始前被取消。');
       return { outcome: 'resolved', task: { ...task } };
     }
+    if (this.shellHold.isHeld(task.id)) {
+      const live = this.tasksBySession.get(sessionId)?.get(task.id);
+      if (live) await this.settle(live, 'cancelled', '任务已取消。');
+      return { outcome: 'resolved', task: { ...(live ?? task) } };
+    }
     const accepted = await this.manager.cancelBackgroundTask(task.id);
     if (!accepted) return { outcome: 'missing' };
     task.status = 'cancelling';
@@ -382,8 +403,10 @@ export class SessionCommandCenter {
     for (const eventName of TASK_LIFECYCLE_EVENTS) {
       this.manager.off(eventName, this.onTaskEvent);
     }
+    this.manager.off(SESSION_STOP_REQUESTED_EVENT, this.onSessionStopRequested);
     for (const ledger of this.ledgers.values()) ledger.dispose();
     this.stopAgentEventObservation?.();
+    this.shellHold.dispose();
     this.toolNamesByCallId.clear();
     this.shellCommandsByCallId.clear();
     this.pendingApprovalIdsByTask.clear();
@@ -509,6 +532,16 @@ export class SessionCommandCenter {
       const artifacts = Array.isArray(data?.artifacts)
         ? data.artifacts as NormalizedToolArtifactMeta[]
         : undefined;
+      const held = this.shellHold.hold(task.id, ({ note, exited }) => {
+        // 命令已退出：命令结果就是结果，子 run 启动时的说明（「已启动…仍在运行」）已过时，不带入。
+        // 到上限仍在运行：说明当前状态，并把启动说明明确标成早先的说明。
+        const detail = exited || !conclusion ? note : `${note} 任务启动时的说明：${conclusion}`;
+        void this.settle(task, 'completed', detail, artifacts);
+      });
+      if (held) {
+        logger.info('Deferring task settlement until its background command exits', { taskId: task.id });
+        return;
+      }
       await this.settle(task, 'completed', conclusion, artifacts);
       return;
     }
@@ -597,6 +630,7 @@ export class SessionCommandCenter {
     const tool = this.toolNamesByCallId.get(mapKey) ?? task.progress?.lastToolStep?.tool;
     this.toolNamesByCallId.delete(mapKey);
     this.shellCommandsByCallId.delete(mapKey);
+    this.shellHold.noteToolCallEnd(task.id, result);
 
     if (result.success) {
       const failure = task.progress?.lastToolFailure;
@@ -726,6 +760,7 @@ export class SessionCommandCenter {
     artifacts?: NormalizedToolArtifactMeta[],
   ): Promise<void> {
     if (TERMINAL.has(task.status)) return;
+    this.shellHold.drop(task.id);
     this.approvalWaitStartedAtByTask.delete(task.id);
     task.status = status;
     task.detail = detail;
@@ -755,25 +790,48 @@ export class SessionCommandCenter {
     // reused，重试静默失效。正是这条改动要消灭的形态，只是窗口更窄。
     const startable = this.ledger(task.sessionId).settle(task.id, status);
 
+    // 投影与唤醒各用各的 try：投影失败（登录恢复窗口里 addMessageToSession 抛
+    // Session not found）绝不能把唤醒一起跳过——旧代码两者同一个 try，一抛就只剩
+    // 一行 warn，结果行/唤醒/失败句全丢。settle 也只等投影的首次尝试，重试全部
+    // 离线进行，不推迟下面 startable 的下一轮 launch。
     try {
       await this.projectTerminalResult(task, status);
-      void this.wakeForegroundBrain(task, status).catch((error) => {
-        logger.warn('Failed to wake text foreground brain after task settlement', {
-          taskId: task.id,
-          message: error instanceof Error ? error.message : String(error),
-        });
-      });
+      clearSessionCommandTaskMarker(task.id);
     } catch (error) {
       logger.warn('Failed to project text command task result', {
+        reason: 'terminal_projection_failed',
+        sessionId: task.sessionId,
         taskId: task.id,
         message: error instanceof Error ? error.message : String(error),
       });
+      if (isSessionNotAccessibleError(error)) {
+        // running 标记先补终态快照再保留：重试窗口内宿主再崩，下次启动按真实结局补投结果，
+        // 不会把已 settle 的任务当中断改写成 failed（Rework r1）。
+        // 重试写成/致命失败时清标记；耗尽时保留——下次启动还能补投一次真实结果。
+        settleSessionCommandTaskMarkerForDeferredProjection({ ...task, status });
+        deferTerminalResultProjectionUntilAccessible({
+          task,
+          status,
+          write: (deferredTask, deferredStatus) => this.projectTerminalResult(deferredTask, deferredStatus),
+          onSettled: (outcome) => {
+            if (outcome === 'exhausted') return;
+            clearSessionCommandTaskMarker(task.id);
+          },
+        });
+      } else {
+        clearSessionCommandTaskMarker(task.id);
+      }
     }
-    clearSessionCommandTaskMarker(task.id);
+    void Promise.resolve(this.wakeForegroundBrain(task, status)).catch((error) => {
+      logger.warn('Failed to wake text foreground brain after task settlement', {
+        taskId: task.id,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    });
 
     for (const slot of startable) {
       const next = this.tasks(task.sessionId).get(slot.workItemId);
-      if (next) this.launch(next);
+      if (next && !TERMINAL.has(next.status)) this.launch(next);
     }
   }
 
@@ -846,19 +904,6 @@ export class SessionCommandCenter {
       .at(-1);
     return previous?.id;
   }
-}
-
-async function projectTerminalResult(
-  task: SessionCommandTask,
-  status: TerminalTaskStatus,
-): Promise<void> {
-  // 模型读的是 resultText（1500 封顶带截断标记），不是 240 字 summary；
-  // backgroundTaskResult.metadata 的 reader 只取 taskId/artifacts，不拿它当 UI 文案。
-  const resultText = task.resultText ?? task.summary;
-  await getSessionManager().addMessageToSession(
-    task.sessionId,
-    buildSessionTaskResultMessage(task, status, resultText),
-  );
 }
 
 let singleton: SessionCommandCenter | null = null;

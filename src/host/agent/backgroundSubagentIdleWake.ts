@@ -2,8 +2,14 @@ import { SUBAGENT_COMPLETION_NOTIFICATIONS } from '../../shared/constants';
 import type { MessageMetadata } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
 import { formatSystemReminderForCompletions, type SubagentCompletionRecord } from './subagentCompletionNotification';
+import { isSessionNotAccessibleError } from '../services/commandCenter/sessionAccessRetry';
 
 const logger = createLogger('BackgroundSubagentIdleWake');
+
+function isRunSessionConflict(error: unknown): boolean {
+  const candidate = error as { code?: unknown; name?: unknown } | null;
+  return candidate?.code === 'RUN_SESSION_CONFLICT' || candidate?.name === 'RunSessionConflictError';
+}
 
 interface PendingWakeBatch {
   timer: ReturnType<typeof setTimeout>;
@@ -44,7 +50,7 @@ async function flushWake(sessionId: string): Promise<void> {
 
     const { getBackgroundSubagentRegistry } = await import('./backgroundSubagentRegistry');
     const records = getBackgroundSubagentRegistry().drainCompletionNotifications({ sessionId });
-    const content = formatSystemReminderForCompletions(records);
+    const content = formatSystemReminderForCompletions(records, { delivery: 'wake' });
     if (!content) return;
 
     const messageMetadata: MessageMetadata = {
@@ -66,12 +72,15 @@ async function flushWake(sessionId: string): Promise<void> {
       const shortName = characters.length > 24 ? `${characters.slice(0, 24).join('').trimEnd()}…` : firstLine;
       const message = error instanceof Error ? error.message : String(error);
       try {
-        const { formatBackgroundWakeFailureNote, recordBackgroundWakeFailureNote } = await import('../services/commandCenter/foregroundWake');
-        await recordBackgroundWakeFailureNote(
+        // 写不进（登录恢复窗口里会话对当前 owner 不可读）时，这个包装会等登录态
+        // 恢复再补写一次——失败句不能跟着唤醒轮一起消失。
+        const { recordBackgroundWakeFailureNoteWithOwnerRetry } = await import('../services/commandCenter/backgroundWakeNoteRetry');
+        await recordBackgroundWakeFailureNoteWithOwnerRetry({
           sessionId,
-          formatBackgroundWakeFailureNote(shortName),
-          { taskId: task.agentId, reason: message.includes('no live owner lease') ? 'owner_missing' : 'wake_failed' },
-        );
+          taskId: task.agentId,
+          shortName,
+          reason: message.includes('no live owner lease') ? 'owner_missing' : 'wake_failed',
+        });
       } catch (noteError) {
         logger.warn('Background subagent wake failure note not recorded', {
           sessionId,
@@ -111,7 +120,12 @@ async function flushWake(sessionId: string): Promise<void> {
           mode: 'normal',
           inputHistoryVisibility: 'meta',
           maxIterations: 1,
+          completionReportOnly: true,
           disableAutoAgent: true,
+          terminalErrorSink: (data: unknown) => {
+            const payload = data as { message?: unknown };
+            failureMessage ??= String(payload?.message ?? 'wake turn failed');
+          },
         },
         messageMetadata,
         `background-subagent:${sessionId}:${Date.now()}`,
@@ -123,6 +137,11 @@ async function flushWake(sessionId: string): Promise<void> {
   } catch (error) {
     logger.warn('Failed to wake idle parent session for background subagent completion', {
       sessionId,
+      reason: isRunSessionConflict(error)
+        ? 'run_session_conflict'
+        : isSessionNotAccessibleError(error)
+          ? 'session_not_accessible_for_current_owner'
+          : 'wake_start_failed',
       error: String(error),
     });
     await recordFailure?.(error);

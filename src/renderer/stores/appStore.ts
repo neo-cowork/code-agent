@@ -49,6 +49,7 @@ import {
 } from '../utils/workbenchViews';
 import { createWorkbenchActions } from './workbenchActions';
 import { SECONDARY_PAGES_CLOSED } from './secondaryPages';
+import { useScheduleSettingsDraftStore } from './scheduleSettingsDraftStore';
 import { discardCronEditorDraft } from '../components/features/cron/cronEditorDraftStash';
 import { buildContentPreviewState } from './contentPreviewState';
 import { buildPermissionDecisionState, buildPermissionDismissState, buildForegroundRunEndState, buildBackgroundRunEndState } from './permissionDecisionState';
@@ -98,10 +99,13 @@ export type { WorkbenchTabId, WorkbenchViewId } from '../utils/workbenchViews';
 // when several activations fire in the same millisecond.
 let _previewTabTick = 0;
 const nextPreviewTabTick = () => ++_previewTabTick;
+let settingsModelFocusTick = 0;
 let _settingsMemoryFocusTick = 0;
 const nextSettingsMemoryFocusNonce = () => ++_settingsMemoryFocusTick;
 let _settingsCapabilityFocusTick = 0;
 const nextSettingsCapabilityFocusNonce = () => ++_settingsCapabilityFocusTick;
+const SETTINGS_MODAL_FOCUS_CLEARED = { settingsModelFocus: null, settingsMemoryFocus: null } as const;
+const ALL_SETTINGS_FOCUS_CLEARED = { ...SETTINGS_MODAL_FOCUS_CLEARED, settingsCapabilityFocus: null } as const;
 
 const GLOBAL_PERMISSION_REQUEST_SESSION_ID = 'global';
 
@@ -120,6 +124,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   showSettings: false,
   settingsReturnTo: null,
   settingsInitialTab: null,
+  settingsModelFocus: null,
   settingsMemoryFocus: null,
   settingsCapabilityFocus: null,
   composerFocusNonce: 0,
@@ -217,6 +222,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // Initial Model Config
   modelConfig: defaultModelConfig,
+  settingsLoaded: false,
 
   // Initial Workspace State
   workingDirectory: null,
@@ -229,25 +235,31 @@ export const useAppStore = create<AppState>()((set, get) => ({
   // 不带返回落点的关闭（引导完成 / 邀专家 / 建角色会话等，落点是聊天）：
   // 清掉返回落点，并作废「去设置」暂存的编辑器草稿——之后的「新建任务」给全新空白草稿。
   setShowSettings: (show) => {
-    if (!show) discardCronEditorDraft();
+    if (!show) {
+      discardCronEditorDraft();
+      useScheduleSettingsDraftStore.getState().clearDraft();
+    }
     set(show
       ? { showSettings: true }
-      : { ...SECONDARY_PAGES_CLOSED, showSettings: false, settingsReturnTo: null });
+      : { ...SECONDARY_PAGES_CLOSED, showSettings: false, settingsReturnTo: null, ...SETTINGS_MODAL_FOCUS_CLEARED });
   },
   // 带返回落点打开设置（Stripe portal return_url 模式）：深链落点不在设置页时退化为普通深链。
   openSettingsWithReturn: (tab, returnTo) => {
-    const noFocus = { settingsMemoryFocus: null, settingsCapabilityFocus: null };
     const target = resolveSettingsDeepLink(tab, installedBundledCapabilityIds());
     if (target.kind !== 'settings') {
       get().openSettingsTab(tab);
       return;
     }
-    set({ showSettings: true, settingsInitialTab: target.tab, settingsReturnTo: returnTo, ...noFocus });
+    set({ showSettings: true, settingsInitialTab: target.tab, settingsReturnTo: returnTo, ...ALL_SETTINGS_FOCUS_CLEARED });
   },
   // 用户关闭设置（X / Esc）：带返回落点时直接回该页（编辑器凭暂存草稿重开）；否则与 setShowSettings(false) 等价。
   closeSettings: () => {
     if (get().settingsReturnTo === 'cronCenter') {
-      set({ ...SECONDARY_PAGES_CLOSED, showSettings: false, showCronCenter: true, settingsReturnTo: null });
+      set({ ...SECONDARY_PAGES_CLOSED, showSettings: false, showCronCenter: true, settingsReturnTo: null, ...SETTINGS_MODAL_FOCUS_CLEARED });
+      return;
+    }
+    if (get().settingsReturnTo === 'chat') {
+      set({ ...SECONDARY_PAGES_CLOSED, showSettings: false, settingsReturnTo: null, ...SETTINGS_MODAL_FOCUS_CLEARED });
       return;
     }
     get().setShowSettings(false);
@@ -257,21 +269,27 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setShowPromptManager: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showPromptManager: show }),
   // 落点判定收在 resolveSettingsDeepLink 一处（ADR-049 §收窄），store 只负责应用
   openSettingsTab: (tab) => {
-    const noFocus = { settingsMemoryFocus: null, settingsCapabilityFocus: null };
     const target = resolveSettingsDeepLink(tab, installedBundledCapabilityIds());
     if (target.kind === 'cronCenter') {
       // 深链直达自动化（设置页搜索）：也算「回去了」，返回落点就地清掉，草稿留给编辑器取。
-      set({ ...SECONDARY_PAGES_CLOSED, showCronCenter: true, showSettings: false, settingsReturnTo: null, ...noFocus });
+      set({ ...SECONDARY_PAGES_CLOSED, showCronCenter: true, showSettings: false, settingsReturnTo: null, ...ALL_SETTINGS_FOCUS_CLEARED });
     } else if (target.kind === 'capabilityHub') {
       get().openCapabilityHub(target.tab);
-      set(noFocus);
+      set(ALL_SETTINGS_FOCUS_CLEARED);
     } else {
-      set({ showSettings: true, settingsInitialTab: target.tab, ...noFocus });
+      set({ showSettings: true, settingsInitialTab: target.tab, ...ALL_SETTINGS_FOCUS_CLEARED });
     }
   },
+  openModelSettings: (provider) => set({
+    showSettings: true, settingsInitialTab: 'model',
+    settingsModelFocus: { provider, nonce: ++settingsModelFocusTick },
+    settingsMemoryFocus: null, settingsCapabilityFocus: null,
+  }),
+  clearSettingsModelFocus: () => set({ settingsModelFocus: null }),
   openMemorySettings: (focus) => set({
     showSettings: true,
     settingsInitialTab: 'memory',
+    settingsModelFocus: null,
     settingsMemoryFocus: focus
       ? { ...focus, nonce: nextSettingsMemoryFocusNonce() }
       : null,
@@ -280,6 +298,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   openCapabilitySettingsTarget: (focus) => {
     get().openCapabilityHub(focus.kind === 'skill' ? 'skills' : 'connectors');
     set({
+      settingsModelFocus: null,
       settingsMemoryFocus: null,
       settingsCapabilityFocus: { ...focus, nonce: nextSettingsCapabilityFocusNonce() },
     });
@@ -365,6 +384,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const state = get();
     // 关掉设置且不回自动化：返回落点与暂存草稿一并作废（同 setShowSettings(false) 的放弃语义）。
     discardCronEditorDraft();
+    useScheduleSettingsDraftStore.getState().clearDraft();
     set({
       ...SECONDARY_PAGES_CLOSED,
       showCapabilityHub: true,
@@ -372,6 +392,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       capabilityHubTab: tab,
       expertPanelTab: !state.showCapabilityHub && !state.expertDetailRoleId ? 'discover' : state.expertPanelTab,
       settingsReturnTo: null,
+      ...SETTINGS_MODAL_FOCUS_CLEARED,
     });
   },
   setExpertPanelTab: (tab) => set({ expertPanelTab: tab }),

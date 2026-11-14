@@ -77,6 +77,8 @@ const previewItemsState = vi.hoisted(() => ({
   receiptItems: [] as Array<Record<string, unknown>>,
 }));
 
+const locale = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }));
+
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { zh } = await import('../../../src/renderer/i18n/zh');
   const { en } = await import('../../../src/renderer/i18n/en');
@@ -562,4 +564,13 @@ describe('Todo 模块：组队会话成员级清单', () => {
 
     expect(screen.queryByTestId('overview-todo-module')).toBeNull();
   });
+});
+
+
+it.each([['zh', '待办'], ['en', 'Todo']] as const)('TaskWorkspaceOverview module label (%s): %s', (language, label) => {
+  locale.language = language;
+  runWorkbenchState.tasks = [sessionTask([{ title: '收集资料', status: 'in_progress' }])];
+  render(<TaskWorkspaceOverview />);
+  expect(screen.getByTestId('overview-todo-module').getAttribute('aria-label')).toBe(label);
+  expect(screen.getByTestId('overview-todo-module').textContent).toContain(label);
 });

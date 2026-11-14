@@ -17,6 +17,7 @@ import {
   isAppleScriptFailure,
 } from '../../../connectors/native/osascript';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { formatConnectorTime } from './connectorTime';
 import { remindersSchema as schema } from './reminders.schema';
 
 type RemindersAction = 'get_status' | 'list_lists' | 'list_reminders';
@@ -26,10 +27,14 @@ interface ReminderItem {
   list: string;
   title: string;
   completed: boolean;
+  remindAtMs?: number | null;
 }
 
 function formatReminder(reminder: ReminderItem): string {
-  return `- #${reminder.id} [${reminder.list}] ${reminder.title}${reminder.completed ? ' (completed)' : ''}`;
+  const remindAt = typeof reminder.remindAtMs === 'number' && Number.isFinite(reminder.remindAtMs)
+    ? `提醒时间：${formatConnectorTime(reminder.remindAtMs)}`
+    : '无提醒时间';
+  return `- #${reminder.id} [${reminder.list}] ${reminder.title}${reminder.completed ? ' (completed)' : ''} | ${remindAt}`;
 }
 
 function buildRemindersMeta(
@@ -155,6 +160,9 @@ async function executeReminders(
       error: osascriptFailure
         ? failure.message
         : `Reminders connector failed: ${error instanceof Error ? error.message : String(error)}`,
+      // 与 calendar.ts 同形：AppleScript 失败码随结果下发（classify 的 perm_automation
+      // 判据读 metadata.code，缺了它 reminders 的授权被拒永远发不出环境卡片）。
+      ...(osascriptFailure ? { code: failure.code } : {}),
     };
   }
 }

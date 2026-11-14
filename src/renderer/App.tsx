@@ -69,9 +69,9 @@ import { useRendererBundleAutoReload } from './hooks/useRendererBundleAutoReload
 import { IPC_CHANNELS, IPC_DOMAINS, type ConfirmActionRequest } from '@shared/ipc';
 import type { AppSettings, ModelConfig, MCPElicitationRequest, MCPOAuthConsentRequest, UpdateInfo } from '@shared/contract';
 import { isOpenTaskStatus } from '@shared/contract/planning';
-import { UI, DEFAULT_PROVIDER, DEFAULT_MODEL, getProviderEndpointForProtocol } from '@shared/constants';
-import { fallbackModelForProvider } from '@shared/modelRuntime';
-import { resolveConfiguredDefaultProvider } from '@shared/modelDefaults';
+import { UI } from '@shared/constants';
+import { applyModelSettings, loadModelSettings } from './services/modelSettings';
+import { applyRendererPrivacyFlags, readReportedTelemetryEnv, resolvePrivacyFlags } from './observability/privacyFlags';
 import { UNSORTED_PROJECT_ID } from '@shared/contract/project';
 import { createLogger } from './utils/logger';
 import ipcService from './services/ipcService';
@@ -80,12 +80,12 @@ import { useWorkflowStore } from './stores/workflowStore';
 import { useBackgroundTaskStore } from './stores/backgroundTaskStore';
 import { tauriCheckForUpdate } from './utils/tauriUpdater';
 import { setSentryRendererContext } from './observability/sentryRenderer';
-import { applyRendererPrivacyFlags, readReportedTelemetryEnv, resolvePrivacyFlags } from './observability/privacyFlags';
 import { signalRendererReady, RENDERER_READY_SETTLE_CAP_MS } from './utils/rendererReady';
 import { whenInitialSessionStateSettled } from './stores/sessionStore';
 import { useAppIpcListeners } from './hooks/useAppIpcListeners';
 import { useInAppValidationBridge } from './hooks/useInAppValidationBridge';
 import { useLedgerDeepLink } from './hooks/useLedgerDeepLink';
+import { useShellLanguage } from './hooks/useShellLanguage';
 import { useDesktopPresence } from './hooks/useDesktopPresence';
 import { useI18n } from './hooks/useI18n';
 import { useCronOsNotification } from './hooks/useCronOsNotification';
@@ -150,6 +150,8 @@ function useWindowWidth(): number {
 
 export const App: React.FC = () => {
   const { t } = useI18n();
+  const [shellLanguageReady, setShellLanguageReady] = useState(false);
+  useShellLanguage(shellLanguageReady);
   useAppshots(); // 挂载 Appshots 事件监听（热键截图 → composer）
   useSurfaceExecutionPip(); // 当前会话 Browser / Computer 共享的可信实时 PiP
   useAgentHalo(); // CUA 原生驱动时的系统级光晕跟随（单指针共驾聚光灯）
@@ -404,29 +406,11 @@ export const App: React.FC = () => {
   // 从最新 settings 读激活模型并推入 store（初始加载与 onboarding 自动解除共用）。
   const loadActiveModelConfig = useCallback(async () => {
     try {
-      const settings = await invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
-      // renderer 侧遥测通道跟随隐私开关（host 侧对应 privacyGate；boot 一次 + 设置页切换时重放）
-      applyRendererPrivacyFlags(resolvePrivacyFlags(settings, readReportedTelemetryEnv()));
-      if (!settings?.models) return;
-      const defaultProvider = resolveConfiguredDefaultProvider(settings.models, DEFAULT_PROVIDER);
-      const providerConfig = settings.models.providers?.[defaultProvider];
-      if (!providerConfig) return;
-      const model = providerConfig.model || fallbackModelForProvider(defaultProvider, settings) || DEFAULT_MODEL;
-      const modelSettings = providerConfig.models?.[model];
-      setModelConfig({
-        provider: defaultProvider,
-        model,
-        apiKey: providerConfig.apiKey || '',
-        baseUrl: providerConfig.baseUrl || getProviderEndpointForProtocol(defaultProvider, providerConfig.protocol) || '',
-        protocol: providerConfig.protocol,
-        temperature: providerConfig.temperature ?? 0.7,
-        maxTokens: modelSettings?.maxTokens ?? providerConfig.maxTokens ?? 4096,
-        capabilities: modelSettings?.capabilities,
-      });
+      await loadModelSettings();
     } catch (error) {
       logger.error('Failed to load active model config', error);
     }
-  }, [setModelConfig]);
+  }, []);
 
   // onboarding 弹窗期间，若团队共享 provider（中转站）登录后被下发到位，自动关闭弹窗并切到共享模型，
   // 不让没配 key 的同事卡在"配置 key"弹窗上。
@@ -472,6 +456,7 @@ export const App: React.FC = () => {
     const loadSettings = async () => {
       try {
         const settings = await invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
+        applyRendererPrivacyFlags(resolvePrivacyFlags(settings, readReportedTelemetryEnv()));
 
         // 加载语言设置
         if (settings?.ui?.language) {
@@ -498,31 +483,11 @@ export const App: React.FC = () => {
           useAppStore.getState().setDeveloperMode(true);
           logger.info('Loaded developer mode', { enabled: true });
         }
-
-
-        // 加载模型配置
-        if (settings?.models) {
-          const defaultProvider = resolveConfiguredDefaultProvider(settings.models, DEFAULT_PROVIDER);
-          const providerConfig = settings.models.providers?.[defaultProvider];
-
-          if (providerConfig) {
-            const model = providerConfig.model || fallbackModelForProvider(defaultProvider, settings) || DEFAULT_MODEL;
-            const modelSettings = providerConfig.models?.[model];
-            setModelConfig({
-              provider: defaultProvider,
-              model,
-              apiKey: providerConfig.apiKey || '',
-              baseUrl: providerConfig.baseUrl || getProviderEndpointForProtocol(defaultProvider, providerConfig.protocol) || '',
-              protocol: providerConfig.protocol,
-              temperature: providerConfig.temperature ?? 0.7,
-              maxTokens: modelSettings?.maxTokens ?? providerConfig.maxTokens ?? 4096,
-              capabilities: modelSettings?.capabilities,
-            });
-            logger.info('Loaded model config for provider', { provider: defaultProvider });
-          }
-        }
+        applyModelSettings(settings);
       } catch (error) {
         logger.error('Failed to load settings', error);
+      } finally {
+        setShellLanguageReady(true);
       }
     };
     loadSettings();

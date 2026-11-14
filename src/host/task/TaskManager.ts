@@ -39,9 +39,12 @@ import { MULTIAGENT_TOOL_NAMES } from '../../shared/constants/tools';
 import { SESSION_COMMAND_CENTER_TOOL_NAMES } from '../../shared/constants/sessionCommandCenter';
 import { collectToolArtifactsFromMetadata } from '../../shared/contract/artifactBlob';
 import { isDeliverableArtifact } from '../../shared/contract/artifactRoleRegistry';
+import { stopSessionBackgroundWork } from './sessionBackgroundStop';
 import { persistTaskManagerEvent, type TurnState } from './taskManagerEventPersistence';
+import { isTaskDeliveryFailed } from './taskDeliveryVerdict';
 import {
   DEFAULT_CONFIG,
+  SESSION_STOP_REQUESTED_EVENT,
   type BackgroundTaskRun,
   type BackgroundTaskRunStatus,
   type OrchestratorWrapper,
@@ -315,6 +318,7 @@ export class TaskManager extends EventEmitter {
     // workspaceScope 仍可缺省：无项目后台 run 可以继续执行读任务，但不会获得写边界。
     if (workspaceScope) orchestrator.setWorkspaceScopeAuthority(workspaceScope);
 
+    const inheritedMessageIds = new Set(session?.messages.map((message) => message.id));
     if (session?.messages.length) orchestrator.setMessages(session.messages);
     if (session?.workingDirectory) {
       orchestrator.setWorkingDirectory(session.workingDirectory, { syncWorkspaceServices: false });
@@ -350,17 +354,26 @@ export class TaskManager extends EventEmitter {
         this.emitEvent('task_cancelled', sessionId, { taskId });
       } else {
         const messages = typeof orchestrator.getMessages === 'function'
-          ? orchestrator.getMessages()
+          ? orchestrator.getMessages().filter((message) => !inheritedMessageIds.has(message.id))
           : [];
         const finalMessage = [...messages]
           .reverse()
           .find((message) => message.role === 'assistant' && message.content?.trim());
+        const seenArtifactLocations = new Set<string>();
         const artifacts = messages.flatMap((message) => (
           (message.toolResults ?? []).flatMap((result) => collectToolArtifactsFromMetadata(result.metadata))
-        )).filter((artifact) => isDeliverableArtifact(artifact) && Boolean(artifact.path || artifact.url));
-        this.emitEvent('task_completed', sessionId, {
+        )).filter((artifact) => {
+          const location = artifact.path ?? artifact.url;
+          if (!isDeliverableArtifact(artifact) || !location || seenArtifactLocations.has(location)) return false;
+          seenArtifactLocations.add(location);
+          return true;
+        });
+        const deliveryFailed = isTaskDeliveryFailed(messages, artifacts.length);
+        this.emitEvent(deliveryFailed ? 'task_error' : 'task_completed', sessionId, {
           taskId,
-          conclusion: finalMessage?.content?.trim(),
+          ...(deliveryFailed
+            ? { error: finalMessage?.content?.trim() || 'Task delivery failed.' }
+            : { conclusion: finalMessage?.content?.trim() }),
           ...(artifacts.length ? { artifacts } : {}),
         });
       }
@@ -454,7 +467,7 @@ export class TaskManager extends EventEmitter {
     const state = this.getSessionState(sessionId);
 
     if (state.status === 'queued') {
-      await this.cancelTask(sessionId);
+      await this.cancelTask(sessionId, { keepBackground: true });
       await this.startTask(sessionId, message, attachments, options, messageMetadata, clientMessageId);
       return { outcome: 'steered' };
     }
@@ -535,7 +548,34 @@ export class TaskManager extends EventEmitter {
    *
    * @param sessionId - 会话 ID
    */
-  async cancelTask(sessionId: string): Promise<void> {
+  async cancelTask(sessionId: string, options?: { keepBackground?: boolean }): Promise<void> {
+    // 后台级联必须先于下面所有按前台状态的 early-return：前台 idle（委派后的常态）时也要停后台。
+    // keepBackground：只想摘掉前台（排队中被改道、切会话、进程收尾）的内部调用不是用户 Stop，不动后台。
+    const backgroundSettled = options?.keepBackground
+      ? Promise.resolve()
+      : this.cancelSessionBackgroundWork(sessionId);
+    try {
+      await this.cancelForegroundTask(sessionId);
+    } finally {
+      await backgroundSettled;
+    }
+  }
+
+  /**
+   * 用户 Stop 的后台级联：同步 abort 该会话全部运行中后台任务（指挥台委派任务 +
+   * run_in_background 子代理），返回的 promise 限时等待收线（永不 reject）。
+   * 无前台 orchestrator 的入口（web /api/cancel 的 idle 会话）直接调用本方法。
+   */
+  cancelSessionBackgroundWork(sessionId: string): Promise<void> {
+    this.emit(SESSION_STOP_REQUESTED_EVENT, { type: SESSION_STOP_REQUESTED_EVENT, sessionId });
+    return stopSessionBackgroundWork({
+      sessionId,
+      backgroundRuns: this.backgroundRuns,
+      cancelBackgroundTask: (taskId) => this.cancelBackgroundTask(taskId),
+    });
+  }
+
+  private async cancelForegroundTask(sessionId: string): Promise<void> {
     const state = this.sessionStates.get(sessionId);
     if (!state) {
       logger.warn(`Session ${sessionId} not found`);
@@ -908,12 +948,12 @@ export class TaskManager extends EventEmitter {
 
     // 取消所有排队任务
     for (const sessionId of [...this.waitingQueue]) {
-      await this.cancelTask(sessionId);
+      await this.cancelTask(sessionId, { keepBackground: true });
     }
 
     // 取消所有运行中任务
     for (const sessionId of this.activeOrchestrators.keys()) {
-      await this.cancelTask(sessionId);
+      await this.cancelTask(sessionId, { keepBackground: true });
     }
 
     // 清理信号量等待

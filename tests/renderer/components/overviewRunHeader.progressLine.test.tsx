@@ -138,8 +138,28 @@ describe('buildOverviewRunHeaderModel 步骤计数与结局', () => {
       now: START + 3_000,
     });
 
-    expect(cancelled).toMatchObject({ tone: 'error', outcome: 'cancelled', phase: null });
-    expect(blocked).toMatchObject({ tone: 'error', outcome: 'error', phase: null });
+    expect(cancelled).toMatchObject({ tone: 'error', terminal: 'cancelled-by-user', phase: null });
+    expect(blocked).toMatchObject({ tone: 'error', terminal: 'failed-unknown', phase: null });
+  });
+
+  it('终态词跟生效状态走：后台子代理仍在跑/主请求失败时，不并出「已完成」终态词（与 #3225 合并缝）', () => {
+    // run 本身 completed，但后台子代理仍在跑 → 生效状态 running，终态词必须为 null
+    const withLiveChild = buildOverviewRunHeaderModel({
+      run: run({ status: 'completed', startedAt: START, endedAt: START + 5_000 }),
+      primaryFailed: true,
+      backgroundChildren: 1,
+      now: START + 6_000,
+    });
+    expect(withLiveChild).toMatchObject({ tone: 'live', status: 'running', terminal: null });
+
+    // 子代理结束后主请求失败 → 生效状态 blocked，终态词是失败词而不是「已完成」
+    const childEnded = buildOverviewRunHeaderModel({
+      run: run({ status: 'completed', startedAt: START, endedAt: START + 5_000 }),
+      primaryFailed: true,
+      backgroundChildren: 0,
+      now: START + 9_000,
+    });
+    expect(childEnded).toMatchObject({ tone: 'error', status: 'blocked', terminal: 'failed-unknown' });
   });
 });
 
@@ -222,5 +242,48 @@ describe('OverviewRunHeader 细进度线', () => {
     const phase = screen.getByTestId('overview-run-header-phase');
     expect(phase.textContent).toBe('已取消 · 你停止了这次执行');
     expect(screen.getByTestId('overview-run-header').textContent).not.toMatch(/cancelled|blocked|error/i);
+  });
+  it('停止后：徽章步骤后缀、第二行红字同属「已取消」，不再并出「已完成」', () => {
+    setRun(
+      run({ status: 'cancelled', startedAt: START, endedAt: START + 2_000 }),
+      sessionTask([
+        { title: '收集资料', status: 'completed' },
+        { title: '整理成文', status: 'in_progress' },
+      ]),
+    );
+    render(<OverviewRunHeader />);
+    expect(screen.getByTestId('overview-run-header').getAttribute('data-run-status')).toBe('cancelled');
+    expect(screen.getByTestId('overview-run-header-steps').textContent).toBe('已取消');
+    expect(screen.getByTestId('overview-run-header-phase').textContent).toBe('已取消 · 你停止了这次执行');
+    expect(screen.getByTestId('overview-run-header').textContent).not.toContain('已完成');
+  });
+
+  it('唯一一步失败：不显示「已完成」，徽章与第二行都是失败词', () => {
+    setRun(
+      run({ status: 'completed', startedAt: START, endedAt: START + 2_000, toolStepOutcome: { failed: 1, total: 1 } }),
+      sessionTask([{ title: '复制文件', status: 'completed' }]),
+    );
+    render(<OverviewRunHeader />);
+    expect(screen.getByTestId('overview-run-header-steps').textContent).toBe('执行失败');
+    expect(screen.getByTestId('overview-run-header-phase').textContent).toBe('执行失败 · 工具没有完成这一步');
+    expect(screen.getByTestId('overview-run-header').textContent).not.toContain('已完成');
+  });
+
+  it('部分步骤失败：显示「已完成，有提醒」而不是干净的已完成', () => {
+    setRun(
+      run({ status: 'completed', startedAt: START, endedAt: START + 2_000, toolStepOutcome: { failed: 1, total: 3 } }),
+      sessionTask([{ title: '整理', status: 'completed' }]),
+    );
+    render(<OverviewRunHeader />);
+    expect(screen.getByTestId('overview-run-header-steps').textContent).toBe('已完成，有提醒');
+  });
+
+  it('批准后继续跑完且无失败步骤：仍是干净的「已完成 · 共 N 步」', () => {
+    setRun(
+      run({ status: 'completed', startedAt: START, endedAt: START + 2_000, toolStepOutcome: { failed: 0, total: 2 } }),
+      sessionTask([{ title: '整理', status: 'completed' }]),
+    );
+    render(<OverviewRunHeader />);
+    expect(screen.getByTestId('overview-run-header-steps').textContent).toBe('已完成 · 共 1 步');
   });
 });

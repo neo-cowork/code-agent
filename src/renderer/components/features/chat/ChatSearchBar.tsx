@@ -1,3 +1,4 @@
+import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 // ============================================================================
 // ChatSearchBar - In-session + Cross-session message search (Cmd/Ctrl+F)
 // ============================================================================
@@ -303,6 +304,7 @@ const CrossSessionResultRow: React.FC<{
   onJump: (item: CrossSessionSearchResultItem) => void;
   t: Translations;
 }> = ({ item, onJump, t }) => {
+  const { language } = useI18n();
   const timeStr = formatRelativeTime(t, item.timestamp);
   const roleLabel = item.role === 'user' ? t.chatSearch.roleUser : item.role === 'assistant' ? t.chatSearch.roleAssistant : t.chatSearch.roleSystem;
   const turnLabel = typeof item.turnNumber === 'number' && item.turnNumber > 0
@@ -319,7 +321,7 @@ const CrossSessionResultRow: React.FC<{
     >
       <div className="flex items-center gap-2 mb-1">
         <span className="text-xs font-medium text-zinc-300 truncate flex-1">
-          {item.sessionTitle || item.sessionId.slice(0, 8)}
+          {item.sessionTitle ? getDisplaySessionTitle(item.sessionTitle, language) : item.sessionId.slice(0, 8)}
         </span>
         <span className={`text-[10px] px-1.5 py-0.5 rounded ${
           item.role === 'user' ? 'bg-blue-900/40 text-badge-info' : 'bg-emerald-900/40 text-badge-success'

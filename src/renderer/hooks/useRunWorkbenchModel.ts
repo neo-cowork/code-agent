@@ -5,7 +5,7 @@
 // - 状态分类唯一走 sessionPresentation.getSessionStatusPresentation 的
 //   kind/文案映射，不再自备一套 status→文案翻译；
 // - 标题按 sourceThreadId 从 sessionStore.sessions 查 DB 标题
-//   （getLocalizedSessionTitle 归一），查不到才退回「会话 <id 前 8 位>」占位；
+//   （getDisplaySessionTitle 归一，zh 显示 [定时] 前缀），查不到才退回「会话 <id 前 8 位>」占位；
 // - DB session.status 由主进程 TaskManager 在 run 生命周期边界回写
 //   （崩溃由 markCrashedActiveSessions 追认 interrupted/orphaned），
 //   重启后概览与侧栏对同一会话的标题/状态分类/集合一致。
@@ -37,7 +37,7 @@ import {
   type LongTaskUiStatus,
 } from '@shared/contract/productClosure';
 import {
-  getLocalizedSessionTitle,
+  getDisplaySessionTitle,
   getSessionStatusPresentation,
   type SessionStatusKind,
 } from '../utils/sessionPresentation';
@@ -77,8 +77,8 @@ function sessionStatusKindToTaskStatus(kind: SessionStatusKind): TaskRecord['sta
 }
 
 export function buildGlobalTaskRecords(args: {
-  currentSessionId: string | null;
   language?: Language;
+  currentSessionId: string | null;
   sessionStates: ReturnType<typeof useTaskStore.getState>['sessionStates'];
   /** sessionStore.sessions（DB 标题 + 持久化状态），按 sourceThreadId 反查 */
   sessions?: ReadonlyArray<Pick<SessionWithMeta, 'id' | 'title' | 'status'>>;
@@ -100,7 +100,7 @@ export function buildGlobalTaskRecords(args: {
         id: `global:${sessionId}`,
         scope: 'global' as const,
         title: session
-          ? getLocalizedSessionTitle(session.title, args.language)
+          ? getDisplaySessionTitle(session.title, args.language)
           : `会话 ${sessionId.slice(0, 8)}`,
         status,
         steps: [{
