@@ -16,7 +16,8 @@ import { useI18n } from '../../hooks/useI18n';
 import { useAppStore } from '../../stores/appStore';
 import { resolveHostReasonCopy } from '../../utils/hostReasonPresentation';
 import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
-import { isDangerousRequestShape, isSafeDefaultDeny, permissionConsequence } from './permissionPresentation';
+import { isDangerousRequestShape, isSafeDefaultDeny } from './permissionPresentation';
+import { describeApproval } from './describeApproval';
 import { ConnectorWriteDisclosure } from './ConnectorWriteDisclosure';
 import { estimateMediaPriceCny } from './mediaPriceEstimate';
 import { formatCny } from '@shared/media/imageCost';
@@ -24,6 +25,11 @@ import { OS_SANDBOX_CODES } from '@shared/constants/sandbox';
 
 interface RequestDetailsProps {
   request: PermissionRequest;
+}
+
+/** host 默认的通用预览是「执行工具 <工具名>」+「参数名: 值」逐行；工具名与下划线参数名都是内部标识，不上卡。 */
+function humanizeParamLabels(diff: string): string {
+  return diff.split('\n').map((line) => line.replace(/^([a-z0-9]+(?:_[a-z0-9]+)+)(?=:)/u, (key) => key.replaceAll('_', ' '))).join('\n');
 }
 
 function sandboxStatusCopy(
@@ -58,6 +64,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
   const { type, details } = request;
   const labels = t.decisionCard.permission;
   const cc = t.cronCenter;
+  const { consequence } = describeApproval(request, t, language);
 
   const browser = details.browserSessionGrant;
   if (browser) {
@@ -131,9 +138,9 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       {peerOriginNotice}
       {pluginOriginNotice}
       {externalScopeNotice}
-      {permissionConsequence(request, t) && (
+      {consequence && (
         <p className={`text-xs leading-5 ${type === 'dangerous_command' || request.dangerLevel === 'danger' ? 'text-badge-danger' : 'text-zinc-400'}`} data-testid="permission-consequence">
-          {permissionConsequence(request, t)}
+          {consequence}
         </p>
       )}
 
@@ -141,7 +148,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       <MediaPriceNotice request={request} />
 
       {/* 文件路径 */}
-      {filePath && <DetailItem label={labels.detailFile} value={filePath} isPath />}
+      {filePath && type !== 'directory_access' && <DetailItem label={labels.detailFile} value={filePath} isPath />}
 
       {/* 命令 */}
       {details.command && (
@@ -202,12 +209,13 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       {/* 确认门控 非 diff 预览（命令/网络/通用） */}
       {details.preview && details.preview.type !== 'diff' && !(details.preview.type === 'command' && details.command) && (
         <div className="mt-4">
-          {!(details.connectorAccess && details.preview.type === 'generic') && (
+          {!(details.connectorAccess && details.preview.type === 'generic')
+            && !(details.preview.type === 'generic' && details.preview.summary.includes(request.tool)) && (
             <div className="text-xs text-zinc-400 mb-2">{details.preview.summary}</div>
           )}
           {details.preview.diff && (
             <pre className="text-xs p-2 rounded bg-zinc-700 border border-zinc-700 text-zinc-400 overflow-x-auto max-h-32 whitespace-pre-wrap break-all">
-              {details.preview.diff}
+              {details.preview.type === 'generic' ? humanizeParamLabels(details.preview.diff) : details.preview.diff}
             </pre>
           )}
         </div>

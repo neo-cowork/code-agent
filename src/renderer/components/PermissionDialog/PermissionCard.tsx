@@ -21,6 +21,7 @@ import type { PermissionRequest as ContractPermissionRequest, PermissionResponse
 import { isEditableTool, PermissionRequestReason } from '@shared/contract';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { getPermissionConfig } from './utils';
+import { describeApproval } from './describeApproval';
 import { useI18n } from '../../hooks/useI18n';
 import ipcService from '../../services/ipcService';
 import { toast } from '../../hooks/useToast';
@@ -32,12 +33,17 @@ import {
   validateWritebackDraft,
   type WritebackDraft,
 } from './WritebackFields';
-import { defaultPermissionViewMode, isGenericCommandRequest, isDangerousRequestShape, isSafeDefaultDeny, permissionSummary } from './permissionPresentation';
+import { defaultPermissionViewMode, isDangerousRequestShape, isSafeDefaultDeny, permissionSummary } from './permissionPresentation';
 import { isSandboxEscalation, sandboxEscalationDeniedPath, sandboxEscalationQuestion } from './sandboxEscalationPresentation';
 import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
 import { SensitiveStepHandbackCard } from './SensitiveStepHandbackCard';
 import { classifyPermissionDelivery } from './permissionDelivery';
 import { logPermissionClickExit } from '../../services/permissionClickLog';
+
+function stringField(source: object, key: string): string | undefined {
+  const value = (source as Record<string, unknown>)[key];
+  return typeof value === 'string' ? value : undefined;
+}
 
 // 将共享类型的 PermissionRequest 转换为本地类型
 function normalizeRequest(
@@ -80,6 +86,8 @@ function normalizeRequest(
       body: request.details.body,
       connectorTokenAttached: request.details.connectorTokenAttached,
       path: request.details.path,
+      requestedAccess: request.details.requestedAccess,
+      access: stringField(request.details, 'access'),
       preview: request.details.preview,
       sandbox: request.details.sandbox,
       deniedPath: request.details.deniedPath,
@@ -397,7 +405,7 @@ export function PermissionCard({
   if (!request) return null;
 
   const sandboxPath = sandboxEscalation ? sandboxEscalationDeniedPath(request) : undefined;
-  const config = getPermissionConfig(request.type);
+  const described = describeApproval(request, t, language);
 
   const p = t.decisionCard.permission;
   const w = p.writeback;
@@ -456,7 +464,6 @@ export function PermissionCard({
   const contentTitle = editable && typeof request.rawArgs?.title === 'string'
     ? request.rawArgs.title.trim()
     : '';
-  const isGenericCommandCard = isGenericCommandRequest(request);
   const hasDetailFields = Boolean(
     request.details.command ||
     request.details.path ||
@@ -482,16 +489,14 @@ export function PermissionCard({
             ? w.remindersUpdateTitle
             : editable
               ? w.mailSendTitle
-              : isDangerous
+              : isDangerous && described.kind === 'shell'
                 ? getPermissionConfig('command').title
-                : isGenericCommandCard
-                  ? p.genericApprovalTitle
-                  : config.title);
+                : described.title);
   const icon = isMeetingCreate || isCalendarWrite
     ? <CalendarPlus size={20} />
     : isRemindersWrite
       ? <ListTodo size={20} />
-      : editable ? <Mail size={20} /> : config.icon;
+      : editable ? <Mail size={20} /> : described.icon;
   const question = connectorQuestion ?? (sandboxEscalation
     ? sandboxEscalationQuestion(request.reason, permissionSummary(request, t))
     : appGrantCard && !isDangerous
@@ -508,7 +513,7 @@ export function PermissionCard({
             ? (contentTitle ? w.remindersUpdateQuestion.replace('{title}', contentTitle) : w.remindersUpdateQuestionFallback)
     : editable
     ? (firstRecipient ? w.mailSendQuestion.replace('{target}', firstRecipient) : w.mailSendQuestionFallback)
-    : permissionSummary(request, t, language));
+    : described.question);
   const viewMode = viewState?.requestId === request.id
     ? viewState.mode
     : defaultPermissionViewMode(request);

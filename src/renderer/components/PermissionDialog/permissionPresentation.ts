@@ -76,7 +76,7 @@ export function isDangerousRequestShape(request: PermissionRequest): boolean {
     || (request.type === 'command' && isDangerousCommand(request.details.command));
 }
 
-export function isGenericCommandRequest(request: PermissionRequest): boolean {
+function isGenericCommandRequest(request: PermissionRequest): boolean {
   return request.type === 'command'
     && request.tool.trim().toLowerCase() !== 'bash'
     // App-specific consent keeps its existing force-confirm command warning.
@@ -87,7 +87,9 @@ export function isGenericCommandRequest(request: PermissionRequest): boolean {
 export function defaultPermissionViewMode(request: PermissionRequest): DecisionCardViewMode {
   if (request.details.browserSessionGrant) return 'expanded';
   if (request.rawArgs || isOutsideWorkspace(request) || isSafeDefaultDeny(request)) return 'expanded';
-  return request.type === 'file_read' || request.type === 'file_write' || request.type === 'file_edit'
+  // 没有文件目标的「文件类」请求是中性卡（describeApproval 归 generic），要展开才看得到范围。
+  return (request.type === 'file_read' || request.type === 'file_write' || request.type === 'file_edit')
+    && fileTarget(request)
     ? 'compact'
     : 'expanded';
 }
@@ -189,6 +191,9 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
   }
   if (request.reasonCode === PermissionRequestReason.UncertainWriteTargetWithPathDeny) {
     return p.consequenceUncertainWriteTarget;
+  }
+  if (request.boundary?.id === 'file.external_read') {
+    return p.consequenceReadOutside.replace('{target}', target ? compactFileTarget(target) : p.targetFallback);
   }
   if (isOutsideWorkspace(request)) {
     return p.consequenceOutside

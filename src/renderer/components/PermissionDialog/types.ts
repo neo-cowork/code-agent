@@ -14,7 +14,9 @@ export type PermissionType =
   | 'command'
   | 'dangerous_command'
   | 'network'
-  | 'mcp';
+  | 'mcp'
+  /** request_directory：申请访问工作区外的文件夹（与 shared/contract 同口径）。 */
+  | 'directory_access';
 
 // 审批级别
 export type ApprovalLevel =
@@ -64,6 +66,9 @@ export interface PermissionRequestDetails {
   body?: string;
   connectorTokenAttached?: boolean;
   path?: string; // 兼容旧版 API
+  /** request_directory 申请的访问档位（read_only / read_write）；旧形状可能写成 access。 */
+  requestedAccess?: string;
+  access?: string;
   // E2: 确认门控预览
   preview?: {
     type: 'diff' | 'command' | 'network' | 'generic';
