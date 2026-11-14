@@ -2636,7 +2636,7 @@ describe('createAgentRouter', () => {
     const body = await response.json();
 
     expect(response.status).toBe(400);
-    expect(body).toEqual({ error: 'Missing prompt' });
+    expect(body).toEqual({ error: 'Invalid request', code: 'REQUEST_INVALID' });
     expect(mockCreateAgentLoop).not.toHaveBeenCalled();
     expect(createCLIAgent).not.toHaveBeenCalled();
   });
@@ -2650,6 +2650,19 @@ describe('createAgentRouter', () => {
       });
       expect(response.status).toBe(400);
       expect(await response.json()).toEqual({ error: 'Missing prompt', code: 'PROMPT_REQUIRED' });
+    }
+    expect(mockCreateAgentLoop).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-prompt body failure with REQUEST_INVALID, not the prompt-missing code', async () => {
+    for (const body of [{ prompt: 'Prepare a weekly report', sessionId: 42 }, { prompt: 42 }]) {
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: 'Invalid request', code: 'REQUEST_INVALID' });
     }
     expect(mockCreateAgentLoop).not.toHaveBeenCalled();
   });
