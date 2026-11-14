@@ -5,7 +5,7 @@ import type {
   SurfaceTargetRefV1,
 } from '@shared/contract/surfaceExecution';
 import { redactSurfaceExecutionValue } from '@shared/utils/surfaceExecutionRedaction';
-import type { RendererSurfaceSessionProjectionV1 } from '../../../utils/surfaceExecutionProjection';
+import { surfaceEventUserSummary, type RendererSurfaceSessionProjectionV1 } from '../../../utils/surfaceExecutionProjection';
 import type { SurfaceExecutionTranslationsV1 } from '../../../i18n/surfaceExecution';
 import { formatSurfaceExecutionCopy } from '../../../i18n/surfaceExecution';
 
@@ -104,7 +104,8 @@ export function surfaceStageLabel(
   session: RendererSurfaceSessionProjectionV1,
   copy: SurfaceExecutionTranslationsV1,
 ): string {
-  return safeSurfaceText(latestSurfaceEvent(session)?.userSummary, copy.fallback.stage, 180);
+  const latestEvent = latestSurfaceEvent(session);
+  return safeSurfaceText(latestEvent ? surfaceEventUserSummary(latestEvent) : undefined, copy.fallback.stage, 180);
 }
 
 export function surfaceControllerLabel(
@@ -154,7 +155,7 @@ export function surfaceNeedsInteraction(session: RendererSurfaceSessionProjectio
 
 /** 紧凑状态条的目标文案：浏览器会话取域名（脱敏后），取不到返回 null 由调用方兜底。 */
 export function surfaceTargetDomain(target: SurfaceTargetRefV1 | undefined): string | null {
-  if (!target || target.kind !== 'browser') return null;
+  if (target?.kind !== 'browser') return null;
   return safeSurfaceText(browserDomain(target.origin), '', 100) || null;
 }
 

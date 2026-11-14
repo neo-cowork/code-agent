@@ -144,6 +144,8 @@ export const ProviderConnectionSection: React.FC<ProviderConnectionSectionProps>
             <label className="mb-2 block text-sm font-medium text-zinc-200">{connectionText.apiKey}</label>
             <Input
               type="password"
+              data-model-api-key
+              aria-label={connectionText.apiKey}
               value={apiKey}
               onChange={(event) => onApiKeyChange(event.target.value)}
               placeholder={

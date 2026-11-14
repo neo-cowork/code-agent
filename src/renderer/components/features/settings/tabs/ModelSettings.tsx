@@ -41,7 +41,6 @@ import { resolveConfiguredDefaultProvider } from '@shared/modelDefaults';
 const logger = createLogger('ModelSettings');
 
 // ============================================================================
-// Types
 // ============================================================================
 
 // Re-export ModelConfig from shared types for consistency
@@ -81,6 +80,7 @@ import { TaskStrategySettingsPanel } from './TaskStrategySettingsPanel';
 import { ServiceTierCostNote } from './ServiceTierCostNote';
 import { ProviderModelsSection } from './ProviderModelsSection';
 import { AddProviderCard } from './AddProviderCard';
+import { useModelSettingsFocus } from './useModelSettingsFocus';
 import { useModelThinkingSettings } from './useModelThinkingSettings';
 export type { ModelConfig };
 
@@ -97,7 +97,6 @@ interface DefaultModelSelection {
 }
 
 // ============================================================================
-// Component
 // ============================================================================
 
 export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, onDirtyChange }) => {
@@ -287,6 +286,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
     setIsAddingProvider(false);
   }, [config, onChange, providerConfigs]);
 
+  const modelPanelRef = useModelSettingsFocus(config.provider, settingsLoaded, isAddingProvider, handleSelectProvider);
   const handleApiKeyChange = useCallback((value: string) => {
     markDirty();
     patchCurrentProviderConfig({
@@ -908,7 +908,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
           onOpenDoctor={() => setIsDoctorOpen(true)}
         />
 
-        <div className="min-w-0 space-y-4">
+        <div ref={modelPanelRef} data-model-provider={config.provider} className="min-w-0 space-y-4">
           {isAddingProvider ? (
             <AddProviderCard
               name={newProviderName}

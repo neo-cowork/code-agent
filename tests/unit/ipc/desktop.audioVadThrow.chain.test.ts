@@ -60,7 +60,9 @@ describe('DESKTOP startAudioCapture -> real desktopAudioCapture -> throwing VAD 
       path.join(tempHome, 'bin', 'system-audio-capture'),
     ]);
     vi.spyOn(fs, 'existsSync').mockImplementation((p) => existingPaths.has(String(p)));
-    vi.spyOn(fs, 'readdirSync').mockReturnValue([]);
+    // 转写就绪 = 有 whisper 程序 + 模型目录里有模型；本用例只让语音检测缺失
+    vi.spyOn(fs, 'readdirSync').mockImplementation(((p: fs.PathLike) =>
+      String(p).endsWith(path.join('.cache', 'whisper')) ? ['ggml-base.bin'] : []) as unknown as typeof fs.readdirSync);
     vi.spyOn(childProcess, 'execFileSync').mockImplementation(() => { throw new Error('command not found'); });
     vi.spyOn(childProcess, 'spawn').mockImplementation(() => { throw new Error('unexpected recorder spawn'); });
     leaves.loadVadRuntime.mockImplementation(() => { throw new Error('dlopen failed'); });

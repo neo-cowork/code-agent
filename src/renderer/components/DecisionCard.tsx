@@ -75,6 +75,7 @@ export interface DecisionCardProps {
   collapseLabel?: string;
   /** 选项改为点即裁决按钮，不再先选单选项再二次确认。 */
   directActions?: boolean;
+  showActionDescriptions?: boolean;
   onDirectAction?: (id: string) => void;
   /** 直裁决模式下的蓝色主按钮；危险卡传 deny。 */
   primaryActionId?: string;
@@ -135,6 +136,7 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
   expandLabel = 'Details',
   collapseLabel = 'Collapse',
   directActions = false,
+  showActionDescriptions = false,
   onDirectAction,
   primaryActionId,
   dangerActionId,
@@ -238,19 +240,24 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
         key={option.id}
         size="sm"
         variant={primary ? 'primary' : 'ghost'}
-        className={`h-7 shrink-0 rounded-md py-1 ${
+        className={`${showActionDescriptions ? 'h-auto whitespace-normal text-left' : 'h-7'} shrink-0 rounded-md py-1 ${
           dangerAction ? 'border border-red-500/50 text-badge-danger hover:bg-red-500/10 hover:text-badge-danger' : ''
         } ${primary && dangerActionId ? 'ml-auto' : ''}`}
         disabled={option.disabled || submitting}
         loading={submitting && primary}
         onClick={() => onDirectAction?.(option.id)}
       >
-        <span className="inline-flex items-center gap-1.5">
-          {option.label}
-          {option.shortcut && (
-            <kbd className="rounded bg-zinc-700 px-1 py-px font-mono text-[9px] text-zinc-400">
-              {option.shortcut}
-            </kbd>
+        <span className={showActionDescriptions ? 'flex max-w-56 flex-col items-start gap-0.5' : 'inline-flex items-center gap-1.5'}>
+          <span className="inline-flex items-center gap-1.5">
+            {option.label}
+            {option.shortcut && (
+              <kbd className="rounded bg-zinc-700 px-1 py-px font-mono text-[9px] text-zinc-400">
+                {option.shortcut}
+              </kbd>
+            )}
+          </span>
+          {showActionDescriptions && option.description && (
+            <span className={`whitespace-normal break-words text-[11px] font-normal ${primary ? 'text-white/90' : 'text-zinc-400'}`}>{option.description}</span>
           )}
         </span>
       </Button>

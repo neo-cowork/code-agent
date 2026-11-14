@@ -3,6 +3,8 @@
 // ============================================================================
 
 import { create } from 'zustand';
+import { languages } from '../i18n';
+import { useAppStore } from './appStore';
 import type { AuthSessionTrustState, AuthStatus, AuthUser, SyncStatus } from '../../shared/contract';
 import { IPC_CHANNELS, IPC_DOMAINS } from '../../shared/ipc';
 import { createLogger } from '../utils/logger';
@@ -230,7 +232,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
         await reloadSessionsForAuthenticatedUser();
         return true;
       }
-      set({ error: getResultErrorMessage(result, '登录失败'), isLoading: false });
+      set({ error: getResultErrorMessage(result, languages[useAppStore.getState().language].authModal.signInFailed), isLoading: false });
       return false;
     } catch (error) {
       set({ error: getDisplayErrorMessage(error), isLoading: false });
@@ -255,7 +257,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
         await reloadSessionsForAuthenticatedUser();
         return true;
       }
-      set({ error: getResultErrorMessage(result, '注册失败'), isLoading: false });
+      set({ error: getResultErrorMessage(result, languages[useAppStore.getState().language].authModal.signUpFailed), isLoading: false });
       return false;
     } catch (error) {
       set({ error: getDisplayErrorMessage(error), isLoading: false });
