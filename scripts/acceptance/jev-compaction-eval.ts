@@ -1,6 +1,8 @@
 /** Real-session compaction comparison. Never writes session text or needles.
  * Usage: tsx scripts/acceptance/jev-compaction-eval.ts <session-dir>
  *        tsx scripts/acceptance/jev-compaction-eval.ts --dev-db [--inventory]
+ * Large real tool results: node --enable-experimental-regexp-engine-on-excessive-backtracks
+ *   --import tsx scripts/acceptance/jev-compaction-eval.ts --dev-db
  * Owner override 2026-11-13: current dogfood subscription, never DeepSeek/GLM.
  */
 import assert from 'node:assert/strict';
@@ -261,7 +263,11 @@ async function evaluate(sessions: Session[], needlesById: Map<string, string[]>)
     check(config.baseUrl === process.env.XIAOMI_API_URL, 'summary_endpoint_mismatch');
     summaryCalls++;
     const response = await originalInference.apply(this, args);
-    summaryIn += response.usage?.inputTokens ?? estimateTokens(JSON.stringify(messages));
+    // ModelResponse inputTokens excludes cache hits/writes; include them when
+    // reporting the full prompt volume, including every summary repair call.
+    summaryIn += response.usage ? response.usage.inputTokens
+      + (response.usage.cacheReadTokens ?? 0) + (response.usage.cacheCreationTokens ?? 0)
+      : estimateTokens(JSON.stringify(messages));
     summaryOut += response.usage?.outputTokens ?? estimateTokens(response.content || '');
     return response;
   };
