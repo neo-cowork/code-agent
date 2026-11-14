@@ -514,11 +514,5 @@
     "rule": "uuid",
     "sample": "{copyButton(row.eventId, 'cron-event-decision-copy-event')}",
     "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-MISC"
-  },
-  {
-    "file": "src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/index.tsx",
-    "rule": "raw_json",
-    "sample": "{typeof displayRaw === 'string' ? displayRaw : JSON.stringify(displayRaw, null, 2)}",
-    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-CHAT-APPROVAL"
   }
 ]
