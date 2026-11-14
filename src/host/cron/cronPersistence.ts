@@ -1,3 +1,4 @@
+import { humanizeStoredName } from '../session/humanizeStoredName';
 import type { CronJobDefinition, CronJobExecution } from '../../shared/contract/cron';
 import { getDatabase } from '../services/core/databaseService';
 import { resolveCronEventActionMode } from '../../shared/cronEventActionMode';
@@ -69,6 +70,7 @@ export async function saveCronJob(
   job: CronJobDefinition,
   cloudJobId?: string,
 ): Promise<void> {
+  job.name = humanizeStoredName(job.name);
   try {
     const db = getDatabase().getDb();
     if (!db) return;

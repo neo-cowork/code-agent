@@ -342,6 +342,8 @@ class NotificationService implements Disposable {
   private enqueueBudgeted(notification: Omit<BudgetedNotification, 'id'>, id = `notification_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`): NotificationBudgetDisposition {
     const item: BudgetedNotification = {
       ...notification,
+      title: sanitizeNotificationText(notification.title, 120),
+      body: sanitizeNotificationText(notification.body, 320),
       id,
     };
     const disposition = this.budget.enqueue(item);

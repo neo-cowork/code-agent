@@ -1,3 +1,4 @@
+import { humanizeStoredName } from '../../session/humanizeStoredName';
 // ============================================================================
 // Task Store - Session-scoped task storage (Claude Code 2.x compatible)
 // ============================================================================
@@ -191,9 +192,9 @@ export function createTask(sessionId: string, input: CreateTaskInput): SessionTa
 
   const task: SessionTask = {
     id: generateTaskId(sessionId, input.parentTaskId),
-    subject: input.subject,
+    subject: humanizeStoredName(input.subject),
     description: input.description,
-    activeForm: input.activeForm || generateActiveForm(input.subject),
+    activeForm: humanizeStoredName(input.activeForm || generateActiveForm(input.subject)),
     status: 'pending',
     priority: input.priority || 'normal',
     blocks: [],
@@ -230,6 +231,10 @@ export function updateTask(
   taskId: string,
   updates: UpdateTaskInput
 ): SessionTask | null {
+  updates = { ...updates,
+    ...(updates.subject !== undefined ? { subject: humanizeStoredName(updates.subject) } : {}),
+    ...(updates.activeForm !== undefined ? { activeForm: humanizeStoredName(updates.activeForm) } : {}),
+  };
   const taskMap = getSessionTaskMap(sessionId);
 
   const task = taskMap.get(taskId);
@@ -489,7 +494,7 @@ export function replaceTasksAtomically(
   const startCounter = sessionTaskCounters.get(sessionId) ?? 0;
 
   subjects.forEach((rawSubject, index) => {
-    const subject = rawSubject.trim();
+    const subject = humanizeStoredName(rawSubject.trim());
     const id = String(startCounter + index + 1);
     taskMap.set(id, {
       id,

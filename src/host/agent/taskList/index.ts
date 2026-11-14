@@ -1,3 +1,4 @@
+import { humanizeStoredName } from '../../session/humanizeStoredName';
 // ============================================================================
 // TaskList Manager - 可视化任务列表管理
 // 用于 Auto Agent / Swarm 执行时的任务状态追踪与 UI 同步
@@ -47,7 +48,7 @@ export class TaskListManager {
     const now = Date.now();
     const task: TaskItemIpc = {
       id: generateMessageId(),
-      subject: input.subject,
+      subject: humanizeStoredName(input.subject),
       description: input.description,
       status: 'pending',
       assignee: input.assignee,
@@ -67,6 +68,7 @@ export class TaskListManager {
     const task = this.tasks.get(taskId);
     if (!task) return null;
 
+    changes = { ...changes, ...(changes.subject !== undefined ? { subject: humanizeStoredName(changes.subject) } : {}) };
     Object.assign(task, changes, { updatedAt: Date.now() });
     this.emit({ type: 'task_updated', task, taskId, changes });
     return task;

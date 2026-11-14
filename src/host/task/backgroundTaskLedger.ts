@@ -1,3 +1,4 @@
+import { humanizeStoredName } from '../session/humanizeStoredName';
 import type {
   AddTaskOutputRefInput,
   AppendTaskEventInput,
@@ -61,6 +62,8 @@ export class BackgroundTaskLedger {
     const existing = this.tasks.get(input.id);
     const status = input.status ?? existing?.status ?? DEFAULT_TASK_STATUS;
     const timestamp = input.updatedAt ?? now;
+    const title = input.title ?? existing?.title;
+    const command = input.command ?? existing?.command;
     const next: Task = {
       id: input.id,
       kind: input.kind ?? existing?.kind,
@@ -69,7 +72,7 @@ export class BackgroundTaskLedger {
       toolCallId: input.toolCallId ?? existing?.toolCallId,
       runId: input.runId ?? existing?.runId,
       source: input.source ?? existing?.source ?? DEFAULT_TASK_SOURCE,
-      title: input.title ?? existing?.title ?? input.id,
+      title: humanizeStoredName(!title || title === command ? 'TaskManager' : title),
       summary: input.summary ?? existing?.summary,
       command: input.command ?? existing?.command,
       cwd: input.cwd ?? existing?.cwd,
@@ -103,7 +106,7 @@ export class BackgroundTaskLedger {
       taskId: input.taskId,
       type: input.type,
       status: input.status,
-      message: input.message,
+      message: input.message === undefined ? undefined : humanizeStoredName(input.message),
       timestamp,
       data: input.data,
       metadata: cloneMetadata(input.metadata),
@@ -184,8 +187,8 @@ export class BackgroundTaskLedger {
       taskId: input.taskId,
       sessionId,
       type: input.type,
-      title: input.title,
-      message: input.message,
+      title: input.title === undefined ? undefined : humanizeStoredName(input.title),
+      message: humanizeStoredName(input.message),
       createdAt: input.createdAt ?? this.now(),
       payload: input.payload,
       metadata: cloneMetadata(input.metadata),

@@ -1,3 +1,6 @@
+import { humanizeInternalText } from '../../../shared/humanizeInternalText';
+import { presentReplyBody } from '../../../shared/replyBodyPresentation';
+import { readUiLanguage } from '../../session/sessionTitleHostPrompt';
 // ============================================================================
 // Notification Policy Gate
 // ============================================================================
@@ -53,7 +56,9 @@ function stripMarkdownForBanner(text: string): string {
 }
 
 export function sanitizeNotificationText(value: unknown, maxLength = 240): string {
-  const plain = stripMarkdownForBanner(String(value ?? ''));
+  const language = readUiLanguage();
+  const body = presentReplyBody(String(value ?? ''), language).text;
+  const plain = humanizeInternalText(stripMarkdownForBanner(body), language).text;
   const full = scrubUserFacingText(plain, {
     surface: 'desktop_notification',
     maxLength: Math.max(maxLength * 4, 1000),
