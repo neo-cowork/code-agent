@@ -12,6 +12,7 @@ import {
   Settings2,
   SquarePen,
 } from 'lucide-react';
+import { formatDisplayPath } from '../../../utils/displayPath';
 import { isWebMode } from '../../../utils/platform';
 import { pickWorkingDirectory } from '../../../services/workingDirectoryPicker';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
@@ -175,7 +176,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
   });
   const title = group.isUncategorized
     ? p.plainChatTitle
-    : `${summary.displayName}${group.paths.length > 0 ? ` · ${group.paths.join(' · ')}` : ''}`;
+    : `${summary.displayName}${group.paths.length > 0 ? ` · ${group.paths.map((path) => formatDisplayPath(path)).join(' · ')}` : ''}`;
   const detailsExpanded = Boolean(expandedProjectDetails[group.key]);
   const drawerOpen = projectDrawerKey === group.key;
   const drawerSessions = drawerOpen ? buildProjectDrawerSessions(group.sessions as SessionWithMeta[]) : [];
