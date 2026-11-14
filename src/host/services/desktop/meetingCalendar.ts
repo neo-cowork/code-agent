@@ -39,12 +39,14 @@ export async function requestCalendarAccess(): Promise<CalendarAccess> {
   const script = `
 ObjC.import('EventKit');
 const store = $.EKEventStore.alloc.init;
-let done = false;
-const cb = (granted, err) => { done = true; };
+const cb = (granted, err) => {};
 if (store.respondsToSelector('requestFullAccessToEventsWithCompletion:')) store.requestFullAccessToEventsWithCompletion(cb);
 else store.requestAccessToEntityTypeCompletion(0, cb);
+// 不靠回调：JXA 里完成回调不触发（真机：点完允许后干等到超时）。轮询授权状态，一变就返回
 const deadline = Date.now() + 120000;
-while (!done && Date.now() < deadline) $.NSRunLoop.currentRunLoop.runUntilDate($.NSDate.dateWithTimeIntervalSinceNow(0.2));
+while ($.EKEventStore.authorizationStatusForEntityType(0) === 0 && Date.now() < deadline) {
+  $.NSRunLoop.currentRunLoop.runUntilDate($.NSDate.dateWithTimeIntervalSinceNow(0.2));
+}
 $.EKEventStore.authorizationStatusForEntityType(0);`;
   return toAccess(Number(await runJxa(script, 130_000)));
 }
