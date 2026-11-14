@@ -100,7 +100,7 @@ export function shellActionPresentation(request: PermissionRequest, t: Translati
   };
 }
 
-type NonShellPresentationKey = 'browser' | 'browserAction' | 'roleProactivity' | 'spawnAgent' | 'browserClipboardWrite';
+type NonShellPresentationKey = 'browser' | 'browserAction' | 'roleProactivity' | 'spawnAgent' | 'browserClipboardWrite' | 'requestDirectory';
 
 function nonShellPresentationKey(request: PermissionRequest): NonShellPresentationKey | undefined {
   const tool = request.tool.trim().toLowerCase();
@@ -109,6 +109,7 @@ function nonShellPresentationKey(request: PermissionRequest): NonShellPresentati
     // 标题必须跟实际动作走：只有导航叫「打开网页」，点击/填写/提交不能冒充。
     return request.details.action === 'navigate' ? 'browser' : 'browserAction';
   }
+  if (tool === 'request_directory') return 'requestDirectory';
   if (tool === 'set_role_proactivity') return 'roleProactivity';
   if (tool === 'spawn_agent' || tool === 'agentspawn') return 'spawnAgent';
   if (tool === 'browser_action.write_clipboard' || tool === 'write_clipboard') return 'browserClipboardWrite';
@@ -121,6 +122,7 @@ function hasFileTarget(request: PermissionRequest): boolean {
 
 function isNonShellRequest(request: PermissionRequest): boolean {
   if (isShellAction(request)) return false;
+  if (nonShellPresentationKey(request) === 'requestDirectory') return true;
   if (request.type === 'command' || request.type === 'dangerous_command') return true;
   // 文件类请求却没有任何文件目标：非文件工具借了文件模板（如 TaskManager 按 write 级别走 file_write），
   // 展开会写成「创建文件」。带目标的真文件工具与「写入目标不确定」卡不动。
@@ -133,7 +135,7 @@ function safeNonShellDetail(request: PermissionRequest): string | undefined {
   // RequestDetails 已渲染 details.preview.summary；host 常把同一句同时写进 reason，
   // 后果行再复述就是同一行出现两次。
   const candidate = request.reason?.trim();
-  if (!candidate) return undefined;
+  if (!candidate || candidate.toLowerCase().includes(request.tool.toLowerCase())) return undefined;
   if (candidate === request.details.preview?.summary?.trim()) return undefined;
   if (/命令|command|覆盖本机系统|overwrite local system/iu.test(candidate)) return undefined;
   if (request.type === 'file_read' && /写入|覆盖|write|overwrite/iu.test(candidate)) return undefined;
@@ -145,7 +147,14 @@ function safeNonShellDetail(request: PermissionRequest): string | undefined {
  * 它只是内部工具名，不是给用户看的摘要，详情区不渲染。
  */
 export function isHostDefaultToolPreview(request: PermissionRequest): boolean {
-  return request.details.preview?.summary?.trim() === `执行工具 ${request.tool}`;
+  const preview = request.details.preview;
+  if (preview?.summary?.trim() === `执行工具 ${request.tool}`) return true;
+  // A generic host fallback is not user copy, even when the host supplied it in English
+  // or in an args preview. Keep explicit tool presentations and real shell review intact.
+  const key = nonShellPresentationKey(request);
+  if (!isNonShellRequest(request) || (key && key !== 'requestDirectory')) return false;
+  return [preview?.summary, preview?.diff, request.argsPreview]
+    .some((text) => text?.toLowerCase().includes(request.tool.toLowerCase()));
 }
 
 /** Icon override so non-shell cards do not wear the shell terminal icon. Shell cards keep the config icon. */
@@ -168,6 +177,8 @@ export function permissionTitle(request: PermissionRequest, t: Translations): st
   if (!isNonShellRequest(request)) return undefined;
   const p = t.decisionCard.permission;
   switch (nonShellPresentationKey(request)) {
+    case 'requestDirectory':
+      return p.titleRequestDirectory;
     case 'browser':
       return p.titleBrowserNavigation;
     case 'browserAction':
@@ -186,6 +197,14 @@ export function permissionTitle(request: PermissionRequest, t: Translations): st
 function nonShellConsequence(request: PermissionRequest, t: Translations): string {
   const p = t.decisionCard.permission;
   switch (nonShellPresentationKey(request)) {
+    case 'requestDirectory': {
+      const target = fileTarget(request);
+      const copy = request.details.access === 'read_write'
+        ? p.consequenceDirectoryReadWrite : p.consequenceDirectoryReadOnly;
+      const consequence = copy.replace('{target}', target ? formatFilePath(redactCredentialText(target)) : p.targetFallback);
+      const reason = request.details.reason?.trim();
+      return reason ? `${consequence} ${redactCredentialText(reason)}` : consequence;
+    }
     case 'browser': {
       const url = request.details.url?.trim();
       return url
@@ -246,7 +265,7 @@ export function isGenericCommandRequest(request: PermissionRequest): boolean {
 }
 
 export function defaultPermissionViewMode(request: PermissionRequest): DecisionCardViewMode {
-  if (request.details.browserSessionGrant) return 'expanded';
+  if (request.details.browserSessionGrant || nonShellPresentationKey(request) === 'requestDirectory') return 'expanded';
   if (request.rawArgs || isOutsideWorkspace(request) || isSafeDefaultDeny(request)) return 'expanded';
   return request.type === 'file_read' || request.type === 'file_write' || request.type === 'file_edit'
     ? 'compact'

@@ -32,7 +32,7 @@ import {
   validateWritebackDraft,
   type WritebackDraft,
 } from './WritebackFields';
-import { defaultPermissionViewMode, isGenericCommandRequest, isDangerousRequestShape, isSafeDefaultDeny, permissionIcon, permissionSummary, permissionTitle } from './permissionPresentation';
+import { defaultPermissionViewMode, isGenericCommandRequest, isDangerousRequestShape, isSafeDefaultDeny, permissionIcon, isHostDefaultToolPreview, permissionSummary, permissionTitle } from './permissionPresentation';
 import { isSandboxEscalation, sandboxEscalationDeniedPath, sandboxEscalationQuestion } from './sandboxEscalationPresentation';
 import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
 import { SensitiveStepHandbackCard } from './SensitiveStepHandbackCard';
@@ -43,6 +43,7 @@ import { logPermissionClickExit } from '../../services/permissionClickLog';
 function normalizeRequest(
   request: import('@shared/contract').PermissionRequest
 ): PermissionRequest {
+  const hostDetails = request.details as Record<string, unknown>;
   return {
     id: request.id,
     sessionId: request.sessionId,
@@ -80,6 +81,8 @@ function normalizeRequest(
       body: request.details.body,
       connectorTokenAttached: request.details.connectorTokenAttached,
       path: request.details.path,
+      access: typeof hostDetails.access === 'string' ? hostDetails.access : undefined,
+      reason: typeof hostDetails.reason === 'string' ? hostDetails.reason : undefined,
       preview: request.details.preview,
       sandbox: request.details.sandbox,
       deniedPath: request.details.deniedPath,
@@ -617,7 +620,7 @@ export function PermissionCard({
             </p>
           ) : null}
           {/* 停车审批参数预览（host 已脱敏 + 截断）：一眼看清这步要干什么，缺省或 RequestDetails 已展示同源字段时不重复渲染 */}
-          {request.argsPreview && !hasDetailFields && (
+          {request.argsPreview && !hasDetailFields && !isHostDefaultToolPreview(request) && (
             <div className="rounded-lg bg-zinc-900/60 px-2.5 py-1.5" data-testid="permission-args-preview">
               <span className="text-[11px] text-zinc-500">{p.argsPreviewLabel}</span>
               <p className="mt-0.5 break-all text-xs leading-5 text-zinc-300">{request.argsPreview}</p>

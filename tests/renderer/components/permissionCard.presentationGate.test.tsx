@@ -54,6 +54,9 @@ const explicitNonShellTools = [
   'SessionManager',
 ] as const;
 
+// Both use toolExecutor's default { ...params } branch, without a fabricated preview.
+const explicitDefaultTools = ['request_directory', 'delegate_session'] as const;
+
 const bannedNonShell = ['命令', 'command', '覆盖本机系统', 'overwrite local system', '执行工具', 'Execute tool'];
 const bannedFileTitles = ['创建文件', '编辑文件', '读取文件', 'Create file', 'Edit file', 'Read file'];
 const bannedRead = ['写入', '覆盖', 'write', 'overwrite'];
@@ -71,7 +74,7 @@ function sampleParams(schema?: GateSchema): Record<string, unknown> {
       : type === 'boolean' ? true
       : type === 'array' ? ['example']
       : type === 'object' ? {}
-      : name.toLowerCase().includes('url') ? 'https://example.com' : `example-${name}`;
+      : name.toLowerCase().includes('url') ? 'https://example.com' : 'Weekly notes';
   }
   return params;
 }
@@ -87,7 +90,11 @@ function requestForTool(tool: string, schema?: GateSchema): PermissionRequest {
   const fileParam = details.file_path ?? details.path;
   if (typeof fileParam === 'string' && permissionType.startsWith('file_')) details.path = '/workspace/example.txt';
   let reason: string | undefined;
-  if (tool === 'Browser') {
+  if (tool === 'request_directory') {
+    details = { path: '~/Documents/周报', access: 'read_only', reason: 'List the weekly reports' };
+  } else if (tool === 'delegate_session') {
+    details = { action: 'create_new', text: 'Summarize the weekly notes' };
+  } else if (tool === 'Browser') {
     details = { action: 'navigate', url: 'https://example.com' };
   } else if (tool === 'Browser.click_text') {
     // Real run (2026-11-10): Browser click_text on a form submit button; confirmationGate's default
@@ -132,8 +139,10 @@ describe('PermissionCard shared presentation gate', () => {
   it('covers every approval-capable protocol tool and reports neutral defaults', () => {
     const schemas = getProtocolRegistry().getSchemas();
     const byName = new Map(schemas.map((schema) => [schema.name, schema]));
-    const tools = [...new Set([...schemas.map((schema) => schema.name), ...explicitNonShellTools])].sort();
+    const tools = [...new Set([...schemas.map((schema) => schema.name), ...explicitNonShellTools, ...explicitDefaultTools])].sort();
     const neutralByDefault: string[] = [];
+    process.stdout.write(`approval-capable tools: ${tools.join(', ')}\n`);
+    expect(tools).toEqual(expect.arrayContaining([...explicitDefaultTools]));
 
     for (const tool of tools) {
       const schema = byName.get(tool);
@@ -141,11 +150,26 @@ describe('PermissionCard shared presentation gate', () => {
       const shell = schema?.category === 'shell' || Boolean(request.details.command?.trim());
       const zh = render(request, 'zh');
       const en = render(request, 'en');
+      for (const language of ['zh', 'en'] as const) {
+        const root = document.createElement('div');
+        root.innerHTML = language === 'zh' ? zh : en;
+        let copy = root.textContent ?? '';
+        // Only URL/path/reason are user data. Never remove tool names or access/action enum values.
+        for (const value of [request.details.path, request.details.url, (request.details as Record<string, unknown>).reason, request.reason]) {
+          if (typeof value === 'string' && value) copy = copy.replaceAll(value, '');
+        }
+        expect(copy, `${tool} ${language}: no internal snake_case identifier`).not.toMatch(/\b[a-z]+(_[a-z]+)+\b/u);
+        if (tool === 'request_directory') {
+          expect(copy).not.toContain('创建文件');
+          expect(copy).not.toContain('Create file');
+          expect(copy).toContain(language === 'zh' ? '访问其他文件夹' : 'Access another folder');
+        }
+      }
       if (request.type === 'file_read') {
         for (const banned of bannedRead) expect(`${zh}\n${en}`, `${tool} read wording`).not.toContain(banned);
       }
       if (!shell) {
-        if (!request.type.startsWith('file_') && tool !== 'Browser' && tool !== 'Browser.click_text' && tool !== 'set_role_proactivity' && tool !== 'spawn_agent' && tool !== 'AgentSpawn' && tool !== 'browser_action.write_clipboard') {
+        if (!request.type.startsWith('file_') && tool !== 'Browser' && tool !== 'Browser.click_text' && tool !== 'set_role_proactivity' && tool !== 'spawn_agent' && tool !== 'AgentSpawn' && tool !== 'browser_action.write_clipboard' && tool !== 'request_directory') {
           neutralByDefault.push(tool);
         }
         expect(zh, `${tool} must not wear the shell terminal icon`).not.toContain('lucide-terminal');
@@ -164,6 +188,41 @@ describe('PermissionCard shared presentation gate', () => {
 
     expect(neutralByDefault.length, 'new non-shell tools are visible as neutral by default').toBeGreaterThan(0);
     process.stdout.write(`neutral by default: ${neutralByDefault.join(', ')}\n`);
+  });
+
+  it('names the requested folder, access and user reason without raw parameter rows', () => {
+    for (const access of [undefined, 'read_only', 'read_write']) {
+      const base = requestForTool('request_directory', { permissionLevel: 'write', category: 'fs' });
+      const request = { ...base, details: { ...base.details, access, preview: new ConfirmationGate().buildPreview('request_directory', { ...base.details, access }) } };
+      for (const language of ['zh', 'en'] as const) {
+        const root = document.createElement('div');
+        root.innerHTML = render(request, language);
+        const copy = root.textContent ?? '';
+        expect(copy).toContain('~/Documents/周报');
+        expect(copy).toContain('List the weekly reports');
+        expect(copy).toContain(language === 'zh'
+          ? access === 'read_write' ? '查看和修改' : '仅查看'
+          : access === 'read_write' ? 'reading and changing' : 'only read');
+        expect(copy).not.toMatch(/access:|path:|reason:|创建文件|Create file/u);
+        process.stdout.write(`CARD request_directory ${language} ${access ?? 'default'}: ${copy}\n`);
+      }
+    }
+  });
+
+  it('hides fallback tool names in host reasons, previews and parked args previews', () => {
+    const base = requestForTool('delegate_session', { permissionLevel: 'execute', category: 'planning' });
+    for (const preview of [undefined, new ConfirmationGate().buildPreview('future_action', { action: 'create_new' }),
+      { type: 'generic' as const, summary: 'Run delegate_session', diff: 'action: create_new' }]) {
+      const tool = preview?.summary.includes('future_action') ? 'future_action' : base.tool;
+      const request = { ...base, tool, reason: `Execute ${tool}`, argsPreview: `${tool}: action=create_new`,
+        details: { ...base.details, preview } };
+      for (const language of ['zh', 'en'] as const) {
+        const root = document.createElement('div');
+        root.innerHTML = render(request, language);
+        expect(root.textContent).not.toContain(tool);
+        expect(root.textContent).not.toMatch(/\b[a-z]+(_[a-z]+)+\b/u);
+      }
+    }
   });
 
   it.each([

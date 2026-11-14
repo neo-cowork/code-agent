@@ -75,6 +75,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
     </>;
   }
   // 兼容旧版 API：path -> filePath
+  const isDirectoryAccess = request.tool.trim().toLowerCase() === 'request_directory';
   const filePath = details.filePath || details.path;
 
   // ADR-067 D3：peer 消息触发的动作必须在卡上标明来源（写回分支同样适用）。
@@ -146,7 +147,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       <MediaPriceNotice request={request} />
 
       {/* 文件路径 */}
-      {filePath && <DetailItem label={labels.detailFile} value={filePath} isPath />}
+      {filePath && !isDirectoryAccess && <DetailItem label={labels.detailFile} value={filePath} isPath />}
 
       {/* 命令 */}
       {details.command && (shellActionPresentation(request, t) ? (
@@ -210,7 +211,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       )}
 
       {/* 确认门控 非 diff 预览（命令/网络/通用） */}
-      {details.preview && details.preview.type !== 'diff' && !(details.preview.type === 'command' && details.command) && !isHostDefaultToolPreview(request) && (
+      {!isDirectoryAccess && details.preview && details.preview.type !== 'diff' && !(details.preview.type === 'command' && details.command) && !isHostDefaultToolPreview(request) && (
         <div className="mt-4">
           {!(details.connectorAccess && details.preview.type === 'generic') && (
             <div className="text-xs text-zinc-400 mb-2">{details.preview.summary}</div>
