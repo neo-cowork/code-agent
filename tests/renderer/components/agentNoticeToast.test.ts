@@ -46,8 +46,8 @@ describe('AgentNoticeToast', () => {
       reasonCode: 'agent_routed',
       params: { agentName: 'code-reviewer' },
     };
-    expect(formatAgentNoticeToast(event, zh)).toBe('使用 Agent：code-reviewer');
-    expect(formatAgentNoticeToast(event, en)).toBe('Using agent: code-reviewer');
+    expect(formatAgentNoticeToast(event, zh)).toBe('已交给「code-reviewer」处理');
+    expect(formatAgentNoticeToast(event, en)).toBe('Handed this to "code-reviewer"');
   });
 
   it('formats historical image omission with localized user-visible copy', () => {
