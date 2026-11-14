@@ -10,6 +10,8 @@ import React from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const locale = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }));
+
 const appState = vi.hoisted(() => ({
   workingDirectory: '/repo/app',
   openPreview: vi.fn(),
@@ -77,7 +79,8 @@ const previewItemsState = vi.hoisted(() => ({
 
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { zh } = await import('../../../src/renderer/i18n/zh');
-  return { useI18n: () => ({ language: 'zh', t: zh }) };
+  const { en } = await import('../../../src/renderer/i18n/en');
+  return { useI18n: () => ({ language: locale.language, t: locale.language === 'zh' ? zh : en }) };
 });
 vi.mock('../../../src/renderer/stores/appStore', () => ({
   useAppStore: (selector?: (state: typeof appState) => unknown) => (
@@ -156,6 +159,7 @@ function sessionTask(steps: Array<{ title: string; status: string }>) {
 afterEach(() => cleanup());
 
 beforeEach(() => {
+  locale.language = 'zh';
   setRun('running');
   runWorkbenchState.tasks = [];
   runWorkbenchState.tools = [];
@@ -176,6 +180,22 @@ beforeEach(() => {
 });
 
 describe('四模块归位', () => {
+  it.each(['zh', 'en'] as const)('uses %s task and file-action labels', (language) => {
+    locale.language = language;
+    runWorkbenchState.tasks = [sessionTask([{ title: '整理笔记', status: 'in_progress' }])];
+    statusRailState.context.items = [
+      { id: 'r1', label: 'summary.md', detail: 'Read', bucket: 'files', source: 'tool', path: '/workspace/summary.md' },
+      { id: 'w1', label: 'summary.md', detail: 'Write', bucket: 'files', source: 'tool', path: '/workspace/summary.md' },
+      { id: 'r2', label: 'notes.txt', detail: 'Read', bucket: 'files', source: 'tool', path: '/workspace/notes.txt' },
+    ] as never;
+    render(<TaskWorkspaceOverview />);
+    expect.soft(screen.getByTestId('overview-todo-module').textContent).toContain(language === 'zh' ? '待办' : 'Todo');
+    const text = screen.getByTestId('overview-context-rows').textContent;
+    expect.soft(text).toContain(language === 'zh' ? '读取 / 写入' : 'Read / Write');
+    expect.soft(text).toContain(language === 'zh' ? '读取' : 'Read');
+    if (language === 'zh') expect(screen.getByTestId('task-workspace-overview').textContent).not.toMatch(/TODO|Read|Write/);
+  });
+
   it('模块顺序：任务（进度线）→ Todo → 上下文 → 产物；无诊断入口', () => {
     runWorkbenchState.tasks = [sessionTask([{ title: '收集资料', status: 'in_progress' }])];
     statusRailState.context.items = [

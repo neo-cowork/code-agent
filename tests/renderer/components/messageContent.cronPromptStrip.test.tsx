@@ -31,6 +31,8 @@ const ASSISTANT_WITH_CRON_BLOCKS = [
   'last_echo=BG-PARKED-888',
   '</cron_snapshot>',
   '',
+  'cron_summary:',
+  '',
   '<cron_summary>',
   'urgency: fyi',
   'shell 命令 echo BG-PARKED-888 已成功执行，输出为 BG-PARKED-888。',

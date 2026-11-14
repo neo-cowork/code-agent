@@ -107,6 +107,16 @@ const projection: TraceProjection = {
 };
 
 describe('runWorkbenchProjection', () => {
+  it('uses the original instruction as the run title without changing the stored trace', () => {
+    const decorated = structuredClone(projection);
+    const user = decorated.turns[0].nodes.find((node) => node.type === 'user');
+    if (!user) throw new Error('missing user fixture');
+    const raw = '读取 notes.txt 并写入摘要\n\n【当前时间】2026-11-13T13:01:36.399Z（UTC）。Unix 秒；IM 策略\n<cron_summary> artifact: urgency:';
+    user.content = raw;
+    expect(buildRunUiState({ projection: decorated, sessionId: 'session-1' }).title).toBe('读取 notes.txt 并写入摘要');
+    expect(user.content).toBe(raw);
+  });
+
   it('derives blocked run state from current turn capability warnings', () => {
     const run = buildRunUiState({
       projection,

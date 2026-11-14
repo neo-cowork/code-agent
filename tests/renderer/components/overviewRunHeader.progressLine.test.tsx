@@ -151,6 +151,16 @@ describe('OverviewRunHeader 细进度线', () => {
     ] as never });
   });
 
+  it.each([['[Schedule]', '[定时]'], ['[Heartbeat]', '[心跳]']])('shows the localized automatic-session title for %s instead of host instructions', (storedPrefix, displayPrefix) => {
+    useSessionStore.setState({ sessions: [{ id: 'session-a', title: `${storedPrefix} 晨间笔记汇总` }] as never });
+    setRun(run({ status: 'completed', title: '读取 notes.txt\n\n【当前时间】2026-11-13T13:01:36.399Z（UTC）。Unix 秒；IM 策略\n<cron_summary> artifact: urgency:' }));
+    render(<OverviewRunHeader />);
+    const title = screen.getByTestId('overview-run-header-title');
+    expect(title.textContent).toBe(`${displayPrefix} 晨间笔记汇总`);
+    expect(title.title).toBe(`${displayPrefix} 晨间笔记汇总`);
+    expect(title.title).not.toMatch(/cron_summary|artifact:|urgency:|Unix 秒|当前时间|IM 策略/);
+  });
+
   it('不再是带边框的卡片容器', () => {
     setRun(run({ status: 'running', startedAt: START }));
     render(<OverviewRunHeader />);

@@ -18,7 +18,6 @@ import { useI18n } from '../../hooks/useI18n';
 import { useRunWorkbenchModel } from '../../hooks/useRunWorkbenchModel';
 import { useRunControlStore } from '../../stores/runControlStore';
 import { useSessionStore } from '../../stores/sessionStore';
-import { getLocalizedSessionTitle } from '../../utils/sessionPresentation';
 import {
   buildOverviewRunHeaderModel,
   formatElapsedClock,
@@ -63,7 +62,7 @@ export const OverviewRunHeader: React.FC = () => {
   const interrupt = useRunControlStore((state) => state.actions?.interrupt);
   const sessionTitle = useSessionStore((state) => {
     const session = state.sessions.find((item) => item.id === state.currentSessionId);
-    return session ? getLocalizedSessionTitle(session.title, language) : null;
+    return session?.title ?? null;
   });
 
   // 秒表只在活跃回合里装 interval；无 run 时 hook 照样要调用（hooks 规则），
@@ -72,6 +71,7 @@ export const OverviewRunHeader: React.FC = () => {
   const model = buildOverviewRunHeaderModel({
     run: runWorkbench.run,
     sessionTitle,
+    language,
     now,
     todoProgress: summarizeTodoProgress(runWorkbench.tasks),
   });
