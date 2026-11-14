@@ -70,7 +70,7 @@ import { handleUnavailableToolCalls } from './messageProcessorUnavailableTools';
 import { recordMessageProcessorModelCallTelemetry } from './messageProcessorTelemetry';
 import { handleTruncatedToolCalls } from './messageProcessorToolTruncation';
 import { noteStagnationFingerprint } from '../../model/cacheHitObservation';
-import { deniedToolRetryGuidance, isToolDeniedForRun } from './toolRunPolicy';
+import { deniedToolFinalReply, deniedToolRetryGuidance, isToolDeniedForRun } from './toolRunPolicy';
 import { describeDeniedShellCalls } from './foregroundShellDenial';
 import { attachTurnQualityMetadata } from './turnQuality';
 import { wasMessagePersistedByContextAssembly } from './contextAssembly/systemContextStack';
@@ -686,7 +686,7 @@ export class MessageProcessor {
         const finalMessage: Message = {
           id: this.contextAssembly.generateId(),
           role: 'assistant',
-          content: shellDenial?.finalMessage ?? `请求的操作不在本轮工具列表中，尚未执行。请在当前角色范围内继续。`,
+          content: deniedToolFinalReply(this.ctx),
           timestamp: Date.now(),
           effortLevel: this.ctx.turn.effortLevel,
           metadata: attachTurnQualityMetadata(this.ctx, undefined, response),

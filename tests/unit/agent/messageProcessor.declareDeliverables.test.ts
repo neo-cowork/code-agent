@@ -357,6 +357,42 @@ describe('declare_deliverables 不吞整批', () => {
     expect(result?.error).not.toMatch(/tool list|tool face|disabled|permission policy/i);
   });
 
+  // 生产里 maxToolCallRetries 是 2（agentLoop.ts）：第三次被拒的调用会把终态那句话直接发给用户。
+  it.each([
+    ['前台面被拒的 Bash', { foregroundToolFace: true, allowedToolNames: ['delegate_task', 'Read'] },
+      { id: 'denied-shell', name: 'Bash', arguments: { command: 'rm ~/Desktop/neo-test.txt' } },
+      '这件事这次还没做成，你再说一声，我把这件事交给后台任务去做，完成后告诉你结果。'],
+    ['角色面被拒的非 shell 调用', { agentId: 'calendar-expert', allowedToolNames: ['Read', 'calendar'] },
+      { id: 'denied-send', name: 'mail_send', arguments: { to: 'a@b.c', subject: 's', body: 'b' } },
+      '这件事超出了我能做的范围，所以没有做。'],
+  ])('重试用尽后发给用户的终态一句话不露工具名和内部说法（%s）', async (_label, face, deniedCall, expected) => {
+    const ctx = buildCtx({ ...face, maxToolCallRetries: 2 });
+    const deps = buildDeps(ctx);
+    const toolEngine = { executeToolsWithHooks: vi.fn() };
+    const processor = makeProcessor(ctx, deps, toolEngine);
+
+    const actions: string[] = [];
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      actions.push(await processor.handleToolResponse(toolUseResponse([deniedCall]), false, attempt, EVENT_PROC));
+    }
+
+    expect(actions).toEqual(['continue', 'continue', 'break']);
+    expect(toolEngine.executeToolsWithHooks).not.toHaveBeenCalled();
+    const emitted = (ctx.onEvent as ReturnType<typeof vi.fn>).mock.calls
+      .map(([event]) => event as { type: string; data: Message })
+      .filter((event) => event.type === 'message' && event.data.role === 'assistant' && !event.data.toolCalls?.length);
+    expect(emitted).toHaveLength(1);
+    const content = emitted[0].data.content;
+    expect(content).toBe(expected);
+    for (const leaked of ['Bash', 'mail_send', 'delegate_task', 'Shell', '工具列表', '工具面', '禁用', '不可用', '没有加载', '权限策略']) {
+      expect(content).not.toContain(leaked);
+    }
+    // 边界与留痕不变：每一次被拒的调用仍按 TOOL_DISABLED_FOR_RUN 落库，没有任何工具被执行。
+    const denied = deps.persisted.filter((message) => message.role === 'tool').flatMap((message) => message.toolResults ?? []);
+    expect(denied).toHaveLength(3);
+    expect(denied.every((result) => result.success === false && result.metadata?.code === 'TOOL_DISABLED_FOR_RUN')).toBe(true);
+  });
+
   it('run 级禁用工具：整批调用和每条合成失败结果都落库（含批内被连带跳过的调用）', async () => {
     const ctx = buildCtx({ deniedToolNames: ['WebSearch'], maxToolCallRetries: 3 });
     const deps = buildDeps(ctx);

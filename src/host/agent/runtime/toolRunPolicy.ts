@@ -1,4 +1,4 @@
-import { BACKGROUND_HANDOFF_GUIDANCE } from '../../services/commandCenter/delegationGuidance';
+import { BACKGROUND_HANDOFF_GUIDANCE, BACKGROUND_HANDOFF_PENDING_REPLY, OUT_OF_SCOPE_REPLY } from '../../services/commandCenter/delegationGuidance';
 import { resolveTurnToolFace } from './turnToolFace';
 import { resolveAgent } from '../agentRegistry';
 import type { ToolDefinition } from '../../../shared/contract';
@@ -81,14 +81,21 @@ function runtimeToolPolicy(ctx: RuntimeContext): RunToolPolicy {
   };
 }
 
+function canHandOffToBackground(ctx: RuntimeContext): boolean {
+  return ctx.foregroundToolFace === true && !ctx.unattendedTurn && !isToolDeniedForRun(ctx, 'delegate_task');
+}
+
+/** User-visible last word once denied calls exhaust the retries: names no tool, grants none. */
+export function deniedToolFinalReply(ctx: RuntimeContext): string {
+  return canHandOffToBackground(ctx) ? BACKGROUND_HANDOFF_PENDING_REPLY : OUT_OF_SCOPE_REPLY;
+}
+
 export function deniedToolRetryGuidance(ctx: RuntimeContext): string {
   // unattendedTurn 时 AskUserQuestion 已被 filterToolsByRunPolicy 收出工具面
   // （issue #1994），重试指引不许再把模型引回这个不可用工具。
   const askDenied = ctx.unattendedTurn === true
     || ASK_USER_QUESTION_TOOL_NAMES.some((name) => isToolDeniedForRun(ctx, name));
-  if (ctx.foregroundToolFace && !ctx.unattendedTurn && !isToolDeniedForRun(ctx, 'delegate_task')) {
-    return BACKGROUND_HANDOFF_GUIDANCE;
-  }
+  if (canHandOffToBackground(ctx)) return BACKGROUND_HANDOFF_GUIDANCE;
   return askDenied
     ? 'Continue without those tools. If you need user input, state the blocker in your final text instead of calling an interactive tool.'
     : 'Continue without those tools. AskUserQuestion remains available; call it directly when the current task requires user input.';

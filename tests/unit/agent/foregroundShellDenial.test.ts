@@ -1,5 +1,6 @@
-// N-FIX-NL-RULE-ASK-BASH-SILENT-ABORT：Bash 被本轮工具面收掉时必须留下可区分日志 + 人话终态，
+// N-FIX-NL-RULE-ASK-BASH-SILENT-ABORT：Bash 被本轮工具面收掉时必须留下可区分日志，
 // 不能是「Bash is disabled」式无原因中断。规则经 loadUserRules 真实装载（translator 同款规则串）。
+// 用户看到的终态那句话经 MessageProcessor.handleToolResponse 验，见 messageProcessor.declareDeliverables.test.ts。
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -22,10 +23,9 @@ describe('describeDeniedShellCalls', () => {
   beforeEach(() => { resetPolicyEngine(); warn.mockClear(); });
   afterEach(() => resetPolicyEngine());
 
-  it('Bash 被收出工具面 + 用户有 Bash(rm *) ask 规则：warn 带原因与规则 id，给出人话终态', () => {
+  it('Bash 被收出工具面 + 用户有 Bash(rm *) ask 规则：warn 带原因与规则 id，指引不说工具被禁用', () => {
     getPolicyEngine().loadUserRules({ ask: [buildRuleString({ tool: 'Bash', pattern: 'rm *' })] }, 'user-ui');
     const out = describeDeniedShellCalls(ctx, [{ name: 'Bash' }]);
-    expect(out?.finalMessage).toContain('命令没有运行');
     expect(out?.guidance).toContain('NOT run');
     expect(out?.guidance).not.toMatch(/Bash is disabled/i);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('Bash call dropped before approval'), expect.objectContaining({
