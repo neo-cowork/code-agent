@@ -500,7 +500,6 @@ async function initializeServices(): Promise<void> {
     logger.warn('Dev slot seeding skipped:', (e as Error).message);
   }
 
-  reapExpiredUploadDirs();
   ensureUploadRootDir();
 
   // 1. 初始化 ConfigService（main 模块的单例，IPC handler 通过 getConfigService() 获取）
@@ -592,6 +591,7 @@ async function initializeServices(): Promise<void> {
     }
   }
   bootMark('database');
+  reapExpiredUploadDirs(databaseForDurableRun?.getDb() ?? null);
 
   // 4.6 模型级可用性标记回灌（N-MOBILE-CONN-POLISH-R3 ④）：停用/不存在的模型标记持久化
   // 在数据目录，重启后继续生效——否则手机默认模型的回落链会把「从未调用过」的已停用模型

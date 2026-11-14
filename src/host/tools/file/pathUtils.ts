@@ -58,7 +58,7 @@ export function buildExpiredChatUploadResult(filePath: string): {
   code: 'ENOENT';
   meta: { hostReason: HostReasonPayload };
 } {
-  const error = `File not found: ${filePath}（该文件是聊天上传的临时副本，应用重启后会被清理——请直接告诉用户：上传已过期，请重新上传该文件）`;
+  const error = `File not found: ${filePath}（该文件是聊天上传的副本，已失效——请直接告诉用户：附件已失效，请重新拖入）`;
   return {
     ok: false,
     error,

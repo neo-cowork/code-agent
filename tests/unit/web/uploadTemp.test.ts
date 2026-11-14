@@ -7,6 +7,9 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { Readable } from 'node:stream';
+vi.unmock('better-sqlite3');
+import Database from 'better-sqlite3';
+import { applyTestSessionSchema } from '../../utils/applyTestSessionSchema';
 import type { Request, Response } from 'express';
 import {
   MAX_UPLOAD_SIZE,
@@ -23,6 +26,8 @@ import {
 } from '../../../src/shared/constants/chatUploads';
 import { getUserDataPath } from '../../../src/host/platform/appPaths';
 import { readModule } from '../../../src/host/tools/modules/file/read';
+import { listDirectoryModule } from '../../../src/host/tools/modules/file/listDirectory';
+import { globModule } from '../../../src/host/tools/modules/file/glob';
 import { HostReasonCode } from '../../../src/shared/contract/permission';
 
 function buildMultipart(parts: Array<{
@@ -210,6 +215,12 @@ describe('handleTempUpload missing file field (error path)', () => {
 });
 
 describe('chat upload persistence and retention reaper', () => {
+  function makeDb() {
+    const db = new Database(':memory:');
+    applyTestSessionSchema(db);
+    return db;
+  }
+
   function makeReadCtx() {
     const ctrl = new AbortController();
     return {
@@ -247,7 +258,9 @@ describe('chat upload persistence and retention reaper', () => {
     const batchFilePath = batchPayload.files[0].path;
 
     // Simulate webServer startup sequence (reapExpiredUploadDirs + ensureUploadRootDir)
-    reapExpiredUploadDirs();
+    const restartDb = makeDb();
+    reapExpiredUploadDirs(restartDb);
+    restartDb.close();
     ensureUploadRootDir();
 
     expect(fs.existsSync(singlePath)).toBe(true);
@@ -293,12 +306,51 @@ describe('chat upload persistence and retention reaper', () => {
     fs.utimesSync(expiredRoot, expiredDate, expiredDate);
     fs.utimesSync(youngRoot, youngDate, youngDate);
 
-    reapExpiredUploadDirs();
+    const db = makeDb();
+    reapExpiredUploadDirs(db);
+    db.close();
 
     expect(fs.existsSync(expiredRoot)).toBe(false);
     expect(fs.existsSync(expiredFile)).toBe(false);
     expect(fs.existsSync(youngRoot)).toBe(true);
     expect(fs.readFileSync(youngFile, 'utf8')).toBe('young contract');
+  });
+
+  it('keeps an over-retention upload still referenced by a session or queued message, removes unreferenced ones, and keeps everything when the DB is unavailable', async () => {
+    ensureUploadRootDir();
+    const upload = async (name: string) => {
+      const { body, contentType } = buildMultipart([
+        { name: 'file0', filename: name, value: `content of ${name}`, contentType: 'text/markdown' },
+        { name: 'relativePath0', value: `folder/${name}` },
+      ]);
+      const res = makeRes();
+      await handleTempBatchUpload(makeReq(body, contentType), res);
+      return (res.body as { root: string; files: Array<{ path: string }> });
+    };
+    const referenced = await upload('referenced.md');
+    const queued = await upload('queued.md');
+    const orphan = await upload('orphan.md');
+
+    const db = makeDb();
+    db.prepare(`INSERT INTO sessions (id, title, model_provider, model_name, created_at, updated_at)
+      VALUES ('s1', 't', 'p', 'm', 1, 1)`).run();
+    db.prepare(`INSERT INTO messages (id, session_id, role, content, timestamp) VALUES ('m1', 's1', 'user', ?, 1)`)
+      .run(`请看附件 ${referenced.files[0].path}`);
+    db.prepare(`INSERT INTO queued_inputs (id, session_id, envelope_json, created_at, updated_at) VALUES ('q1', 's1', ?, 1, 1)`)
+      .run(JSON.stringify({ text: queued.files[0].path }));
+
+    const old = new Date(Date.now() - (CHAT_UPLOAD_RETENTION_DAYS + 5) * 24 * 60 * 60 * 1000);
+    for (const u of [referenced, queued, orphan]) fs.utimesSync(u.root, old, old);
+
+    reapExpiredUploadDirs(null);
+    expect(fs.existsSync(orphan.root)).toBe(true);
+
+    reapExpiredUploadDirs(db);
+    db.close();
+
+    expect(fs.existsSync(referenced.files[0].path)).toBe(true);
+    expect(fs.existsSync(queued.files[0].path)).toBe(true);
+    expect(fs.existsSync(orphan.root)).toBe(false);
   });
 
   it('still yields UploadExpired on ENOENT for legacy os.tmpdir()/code-agent-uploads paths', async () => {
@@ -311,6 +363,24 @@ describe('chat upload persistence and retention reaper', () => {
       expect(result.meta?.hostReason).toMatchObject({
         code: HostReasonCode.UploadExpired,
       });
+    }
+  });
+
+  it('yields UploadExpired for ListDirectory and Glob on a vanished upload directory', async () => {
+    const gone = path.join(UPLOAD_ROOT_DIR, 'ffffffff-ffff-ffff-ffff-ffffffffffff', 'file');
+    const ask = async (mod: typeof listDirectoryModule | typeof globModule, input: Record<string, unknown>) => {
+      const handler = await mod.createHandler();
+      return handler.execute(input, makeReadCtx(), async () => ({ allow: true }));
+    };
+    for (const result of [
+      await ask(listDirectoryModule, { path: gone }),
+      await ask(globModule, { pattern: '**/*', path: gone }),
+    ]) {
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.meta?.hostReason).toMatchObject({ code: HostReasonCode.UploadExpired });
+        expect(result.error).not.toContain('应用重启后');
+      }
     }
   });
 });

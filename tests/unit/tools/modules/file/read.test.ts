@@ -278,7 +278,7 @@ describe('readModule (native)', () => {
       if (!result.ok) {
         expect(result.code).toBe('ENOENT');
         expect(result.error).toBe(
-          `File not found: ${uploadPath}（该文件是聊天上传的临时副本，应用重启后会被清理——请直接告诉用户：上传已过期，请重新上传该文件）`,
+          `File not found: ${uploadPath}（该文件是聊天上传的副本，已失效——请直接告诉用户：附件已失效，请重新拖入）`,
         );
         expect(result.meta?.hostReason).toEqual({
           code: HostReasonCode.UploadExpired,
@@ -312,7 +312,7 @@ describe('readModule (native)', () => {
         expect(result.ok).toBe(false);
         if (!result.ok) {
           expect(result.code).toBe('ENOENT');
-          expect(result.error).toContain('上传已过期，请重新上传该文件');
+          expect(result.error).toContain('附件已失效，请重新拖入');
         }
       } finally {
         if (originalTmpdir === undefined) delete process.env.TMPDIR;

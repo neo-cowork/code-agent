@@ -7,6 +7,8 @@ import path from 'path';
 import fs from 'fs';
 import { randomUUID } from 'crypto';
 import type { Request, Response } from 'express';
+import type BetterSqlite3 from 'better-sqlite3';
+import { createLogger } from '../../host/services/infra/logger';
 import { getUserDataPath } from '../../host/platform/appPaths';
 import { getDefaultWorkDirectory, getLegacyDefaultWorkDirectory } from '../../host/config/configPaths';
 import { MANAGED_BROWSER_ARTIFACT_DIR } from '../../host/services/infra/browser/managedBrowserHelpers';
@@ -19,6 +21,8 @@ import {
   MAX_FOLDER_BATCH_BODY_SIZE,
 } from '../../shared/constants/chatUploads';
 
+const logger = createLogger('UploadReaper');
+
 export const MAX_UPLOAD_SIZE = 50 * 1024 * 1024;
 export const UPLOAD_ROOT_DIR = path.join(getUserDataPath(), CHAT_UPLOAD_SUBDIR_NAME);
 const UPLOAD_RETENTION_MS = CHAT_UPLOAD_RETENTION_DAYS * 24 * 60 * 60 * 1000;
@@ -27,23 +31,41 @@ export function ensureUploadRootDir(): void {
   fs.mkdirSync(UPLOAD_ROOT_DIR, { recursive: true });
 }
 
-export function reapExpiredUploadDirs(): void {
+const UPLOAD_DIR_NAME_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isUploadDirReferenced(db: BetterSqlite3.Database, uuid: string): boolean {
+  const like = `%${uuid}%`;
+  const hit = db.prepare(
+    `SELECT 1 FROM messages WHERE content LIKE @like OR tool_calls LIKE @like OR tool_results LIKE @like
+       OR attachments LIKE @like OR metadata LIKE @like LIMIT 1`,
+  ).get({ like });
+  if (hit) return true;
+  return Boolean(db.prepare('SELECT 1 FROM queued_inputs WHERE envelope_json LIKE ? LIMIT 1').get(like));
+}
+
+/** 启动回收：只删「超过保留期」且「未被任何会话消息/排队消息引用」的上传子目录。库不可用 → 一律不删。 */
+export function reapExpiredUploadDirs(db: BetterSqlite3.Database | null): void {
   try {
     if (!fs.existsSync(UPLOAD_ROOT_DIR)) return;
+    if (!db) {
+      logger.warn('Upload reaper skipped: database unavailable, keeping all chat uploads');
+      return;
+    }
     const cutoffMs = Date.now() - UPLOAD_RETENTION_MS;
     for (const entry of fs.readdirSync(UPLOAD_ROOT_DIR)) {
       try {
+        if (!UPLOAD_DIR_NAME_RE.test(entry)) continue;
         const entryPath = path.join(UPLOAD_ROOT_DIR, entry);
         const stats = fs.lstatSync(entryPath);
-        if (stats.isDirectory() && stats.mtimeMs < cutoffMs) {
-          fs.rmSync(entryPath, { recursive: true, force: true });
-        }
-      } catch {
-        // Ignore per-entry races
+        if (!stats.isDirectory() || stats.mtimeMs >= cutoffMs) continue;
+        if (isUploadDirReferenced(db, entry)) continue;
+        fs.rmSync(entryPath, { recursive: true, force: true });
+      } catch (error) {
+        logger.warn('Upload reaper skipped entry', { entry, reason: error instanceof Error ? error.message : String(error) });
       }
     }
-  } catch {
-    // Swallow — caller can log if needed
+  } catch (error) {
+    logger.warn('Upload reaper failed', { reason: error instanceof Error ? error.message : String(error) });
   }
 }
 
