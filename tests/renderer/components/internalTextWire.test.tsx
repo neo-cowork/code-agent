@@ -71,4 +71,14 @@ describe('shared internal text wiring', () => {
     fireEvent.click(view.getByTestId('wake-rationale-why'));
     expect(view.getAllByText('Review the report')).toHaveLength(1);
   });
+  it('does not repeat raw metadata tags in the why disclosure', () => {
+    ui.language = 'en';
+    const tagged = '<decision>report</decision><rationale>Review the report</rationale>';
+    const view = render(<WakeRationaleNote fields={{ rationale: tagged, evidence: tagged, missing: false }} />);
+    fireEvent.click(view.getByTestId('wake-rationale-why'));
+    expect(view.container.textContent).not.toContain('<decision>');
+    expect(view.container.textContent).not.toContain('<rationale>');
+    expect(view.getAllByText('Review the report')).toHaveLength(1);
+  });
+
 });

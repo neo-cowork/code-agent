@@ -169,3 +169,19 @@ describe('reply body display projection', () => {
     }
   });
 });
+
+
+describe('background status and sandbox command exits', () => {
+  it('localizes the stored background-empty state without changing normal Chinese copy', () => {
+    const raw = '当前会话还没有后台任务。';
+    expect(humanizeInternalText(raw, 'en').text).toBe('There are no background tasks in this conversation.');
+    expect(humanizeInternalText(raw, 'zh').text).toBe(raw);
+  });
+  it('keeps a sandbox command entirely behind details', () => {
+    const raw = 'Command failed: sandbox-exec -f /tmp/profile.sb sh -c "python export.py"';
+    const result = humanizeInternalText(raw, 'en');
+    expect(result.text).toBe('macOS system sandbox');
+    expect(result.collapseIntoDetails?.details).toBe(raw);
+    expect(result.text).not.toContain('python');
+  });
+});

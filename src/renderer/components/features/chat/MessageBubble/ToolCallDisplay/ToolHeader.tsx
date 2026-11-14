@@ -167,6 +167,13 @@ export function ToolHeader({
         </span>
       )}
 
+      {(filePath || typeof rawArgs?.command === 'string') && (
+        <details className="text-[10px] text-zinc-500" onClick={(event) => event.stopPropagation()}>
+          <summary className="cursor-pointer">{t.agentError.details.technical}</summary>
+          <pre className="whitespace-pre-wrap break-words">{filePath || String(rawArgs?.command)}</pre>
+        </details>
+      )}
+
       {showSecondaryName && (
         <span className="flex-shrink-0 text-[10px] text-zinc-600 font-normal">
           {humanizeInternalText(toolNameForDetail(toolCall.name), language).text}

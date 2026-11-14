@@ -16,7 +16,6 @@ import { BackgroundChildrenNotice } from './BackgroundChildrenNotice';
 
 import { EnvAssistCard } from './EnvAssistCard';
 import React, { useCallback } from 'react';
-import { humanizeInternalText } from '@shared/humanizeInternalText';
 import { HumanizedText } from '../../HumanizedText';
 import { AlertTriangle, Copy, KeyRound, MessageSquarePlus, RotateCcw, SwitchCamera } from 'lucide-react';
 import type { AgentErrorCategory, AgentErrorMetadata } from '@shared/contract';
@@ -242,7 +241,7 @@ const AgentErrorCard: React.FC<{
   const technicalItems = showTechnicalDetails ? buildTechnicalItems(error, t, false) : [];
   const repeatNotice = buildRepeatNotice(run, error.category, t);
   const readableProviderReason = error.category === 'generic' && !error.goalAbort
-    ? extractReadableProviderReason(humanizeInternalText(error.rawMessage ?? '', language).text, language)
+    ? extractReadableProviderReason(error.rawMessage, language)
     : null;
   const providerReasonLine = readableProviderReason
     ? t.agentError.categories.generic.providerReason.replace('{reason}', readableProviderReason)

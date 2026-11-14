@@ -1,3 +1,4 @@
+import { humanizeInternalText } from '@shared/humanizeInternalText';
 import { resolveRunCancellationOutcomeKey } from '../../i18n/outcomeWords';
 import { HumanizedText } from '../HumanizedText';
 import type React from 'react';
@@ -398,7 +399,7 @@ const TaskRecordRow = ({
   primary?: boolean;
   showOutputRefs?: boolean;
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const rail = deriveTaskRailView(task, run);
   const dependencySummary = dependencySummaryLabel(rail.dependencySummary, t);
   const rw = t.taskStatusPanels.runWorkbench;
@@ -458,7 +459,7 @@ const TaskRecordRow = ({
       {/* 结果/原因/当前动作行只挂在非 checklist 行（后台任务等）——checklist 会话任务的
           当前动作与「任务」模块进度线的 phase 是同一份内容，不重复（四模块禁止内容重复） */}
       {rail.mode !== 'checklist' && detailCopy && (
-        <div className="mt-1 line-clamp-3 text-[11px] text-zinc-500"><HumanizedText text={detailCopy} /></div>
+        <div className="mt-1 line-clamp-3 text-[11px] text-zinc-500" title={humanizeInternalText(detailCopy, language).text}><HumanizedText text={detailCopy} /></div>
       )}
 
       {showOutputRefs && task.outputRefs && task.outputRefs.length > 0 && (

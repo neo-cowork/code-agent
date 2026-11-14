@@ -44,5 +44,7 @@
   ],
   "sandboxExec": "\\bsandbox-exec\\b",
   "tempPath": "(?:\\/private\\/tmp|\\/tmp|\\/var\\/folders)\\/[A-Za-z0-9._/-]+",
-  "rawJsonKeyValue": "\\\"[A-Za-z0-9_.-]+\\\"\\s*:\\s*(?:\\\"[^\\\"]*\\\"|-?\\d+(?:\\.\\d+)?|true|false|null|\\[[^\\]]*\\]|\\{[^}]*\\})"
+  "rawJsonKeyValue": "\\\"[A-Za-z0-9_.-]+\\\"\\s*:\\s*(?:\\\"[^\\\"]*\\\"|-?\\d+(?:\\.\\d+)?|true|false|null|\\[[^\\]]*\\]|\\{[^}]*\\})",
+  "emptyBackgroundTasks": "^当前会话还没有后台任务。$",
+  "sandboxCommand": "(?:Command failed:\\s*)?\\bsandbox-exec\\b[^\\r\\n]*"
 }

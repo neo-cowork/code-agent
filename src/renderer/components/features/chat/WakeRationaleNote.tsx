@@ -4,6 +4,7 @@
 // 只展示醒来时落库的 rationale / evidence。缺失时写明「这条没有记录理由」，
 // 不从正文倒推。
 
+import { presentReplyBody } from '@shared/replyBodyPresentation';
 import { HumanizedText } from '../../HumanizedText';
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
@@ -39,10 +40,14 @@ export function wakeRationaleFromMetadata(metadata?: MessageMetadata): WakeRatio
 }
 
 export const WakeRationaleNote: React.FC<{ fields: WakeRationaleFields }> = ({ fields }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const text = t.wakeRationale;
   const [open, setOpen] = useState(false);
-  const showMissing = fields.missing || !fields.rationale?.trim();
+  const rationaleProjection = presentReplyBody(fields.rationale ?? '', language);
+  const evidenceProjection = presentReplyBody(fields.evidence ?? '', language);
+  const rationale = rationaleProjection.text || rationaleProjection.rationale;
+  const evidence = evidenceProjection.text || evidenceProjection.evidence || evidenceProjection.rationale;
+  const showMissing = fields.missing || !rationale?.trim();
 
   return (
     <div className="mt-2" data-testid="wake-rationale">
@@ -66,10 +71,10 @@ export const WakeRationaleNote: React.FC<{ fields: WakeRationaleFields }> = ({ f
             <p data-testid="wake-rationale-missing">{text.missing}</p>
           ) : (
             <>
-              <p data-testid="wake-rationale-text"><HumanizedText text={fields.rationale ?? ''} /></p>
-              {fields.evidence ? (
+              <p data-testid="wake-rationale-text"><HumanizedText text={rationale ?? ''} /></p>
+              {evidence && evidence !== rationale ? (
                 <p data-testid="wake-rationale-evidence" className="mt-1 text-zinc-500">
-                  {text.evidenceLabel}：<HumanizedText text={fields.evidence} />
+                  {text.evidenceLabel}：<HumanizedText text={evidence} />
                 </p>
               ) : null}
             </>

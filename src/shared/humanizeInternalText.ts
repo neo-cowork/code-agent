@@ -1,3 +1,4 @@
+import leakPatterns from './internalTextLeakPatterns.json';
 import {
   detectInternalTextLeaks,
   ENGLISH_STATE_REGEXES,
@@ -8,6 +9,9 @@ import {
 } from './internalTextLeakDetect';
 
 export type InternalTextLanguage = 'zh' | 'en';
+
+const EMPTY_BACKGROUND_TASKS_RE = new RegExp(leakPatterns.emptyBackgroundTasks);
+const SANDBOX_COMMAND_LINE_RE = new RegExp(leakPatterns.sandboxCommand, 'g');
 
 interface CollapseIntoDetailsInstruction {
   action: 'collapse_into_details';
@@ -173,6 +177,10 @@ export function humanizeInternalText(
     return { text: input, detectedFormats: [] };
   }
 
+  if (lang === 'en' && EMPTY_BACKGROUND_TASKS_RE.test(input.trim())) {
+    return { text: 'There are no background tasks in this conversation.', detectedFormats: [] };
+  }
+
   const leaks = detectInternalTextLeaks(input);
   if (leaks.length === 0) {
     return { text: input, detectedFormats: [] };
@@ -284,7 +292,7 @@ export function humanizeInternalText(
   SANDBOX_EXEC_TOKEN_RE.lastIndex = 0;
   if (SANDBOX_EXEC_COMMAND_RE.test(next) || SANDBOX_EXEC_TOKEN_RE.test(next)) {
     shouldCollapseDetails = true;
-    next = next.replace(SANDBOX_EXEC_COMMAND_RE, () =>
+    next = next.replace(SANDBOX_COMMAND_LINE_RE, () =>
       lang === 'en' ? 'macOS system sandbox' : '系统安全沙箱',
     );
     next = next.replace(SANDBOX_EXEC_TOKEN_RE, () =>
