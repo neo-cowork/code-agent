@@ -194,6 +194,11 @@ const gates = [
     args: ['scripts/host-chinese-error-ratchet.mjs'],
   },
   {
+    ci: 'swarm-ci / smoke / Internal text leak gate',
+    command: 'npm',
+    args: ['run', 'gate:internal-text-leak'],
+  },
+  {
     ci: 'swarm-ci / smoke / Host ESM/CJS static gate',
     command: 'node',
     args: ['scripts/ci/host-esm-cjs-lint.mjs'],
