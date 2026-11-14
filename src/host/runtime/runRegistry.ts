@@ -56,7 +56,7 @@ import type { ConversationModelSpec } from '../../shared/contract/conversationEn
 import { createKeyedSerializer } from './keyedSerializer';
 import { findRecoveredWaitingRun as matchRecoveredWaitingRun, findSupersededSessionRoots, settleModelOpsForManualContinue, supersedeSessionRoots, terminalRecoveredWaitingRunOnce } from './recoveredWaitingRun';
 import { isDurableResumeQueued } from './durableRecoveryQueueState';
-import { asNativeAgentTeamProjectionState, isDurableActiveSessionConstraint, isHeartbeatFencingError, isSqliteBusyError, mergeAgentTeamProjectionState } from './runRegistrySupport';
+import { agentTeamOperationIds, asNativeAgentTeamProjectionState, isDurableActiveSessionConstraint, isHeartbeatFencingError, isSqliteBusyError, mergeAgentTeamProjectionState } from './runRegistrySupport';
 import { armQuotaWaitOnPark, clearQuotaWaitTimer } from './quotaWaitTimer';
 import { resolveAdoptedRecoveryWorkspace } from './adoptedRecoveryWorkspace';
 import { createLogger } from '../services/infra/logger';
@@ -608,7 +608,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     const previousProjection = asNativeAgentTeamProjectionState(previousState);
     const teamProjection = previousProjection?.teams.find((team) => team.teamRunId === input.teamRunId);
     const pendingOperations: PendingOperation[] = (projected.pendingOperations ?? []).map((operation) =>
-      operation.kind === 'child_run' && operation.operationId === teamProjection?.operationId
+      operation.kind === 'child_run' && operation.operationId === (teamProjection?.operationId ?? agentTeamOperationIds.get(input.teamRunId))
         ? {
             ...operation,
             status: input.status === 'completed' ? 'succeeded' : 'failed',
@@ -624,7 +624,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
       state: mergeAgentTeamProjectionState(previousState, {
         teamRunId: input.teamRunId,
         treeId: teamProjection?.treeId ?? input.teamRunId,
-        operationId: teamProjection?.operationId ?? '',
+        operationId: teamProjection?.operationId ?? agentTeamOperationIds.get(input.teamRunId) ?? '',
         status: input.status,
         resultRef: input.resultRef,
       }),
