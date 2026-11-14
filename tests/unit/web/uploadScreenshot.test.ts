@@ -49,6 +49,18 @@ describe('handleScreenshot whitelist', () => {
     expect(pipe).toHaveBeenCalledOnce();
   });
 
+  it('serves chat upload images from the runtime userData/uploads dir', () => {
+    vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+    const pipe = vi.fn();
+    vi.spyOn(fs, 'createReadStream').mockReturnValue({ pipe } as unknown as fs.ReadStream);
+
+    const res = mockRes();
+    handleScreenshot(mockReq('/fake/userdata/uploads/11111111-1111-1111-1111-111111111111/pic.png'), res);
+
+    expect(res.statusCode).toBe(0);
+    expect(pipe).toHaveBeenCalledOnce();
+  });
+
   it('serves appshots from the runtime userData/appshots dir', () => {
     vi.spyOn(fs, 'existsSync').mockReturnValue(true);
     const pipe = vi.fn();

@@ -338,7 +338,7 @@ export function startWebCapabilityBootstrap(
 
 import { broadcastSSE, sseClients } from './helpers/sse';
 import { applyDbIntegrityOutcome, dbAvailable, setDbAvailable } from './helpers/sessionCache';
-import { cleanupUploadDirs, ensureUploadRootDir } from './helpers/upload';
+import { ensureUploadRootDir, scheduleExpiredUploadReap } from './helpers/upload';
 
 // Middleware
 import {
@@ -500,7 +500,6 @@ async function initializeServices(): Promise<void> {
     logger.warn('Dev slot seeding skipped:', (e as Error).message);
   }
 
-  cleanupUploadDirs();
   ensureUploadRootDir();
 
   // 1. 初始化 ConfigService（main 模块的单例，IPC handler 通过 getConfigService() 获取）
@@ -592,6 +591,7 @@ async function initializeServices(): Promise<void> {
     }
   }
   bootMark('database');
+  scheduleExpiredUploadReap(databaseForDurableRun?.getDb() ?? null);
 
   // 4.6 模型级可用性标记回灌（N-MOBILE-CONN-POLISH-R3 ④）：停用/不存在的模型标记持久化
   // 在数据目录，重启后继续生效——否则手机默认模型的回落链会把「从未调用过」的已停用模型
@@ -1250,7 +1250,6 @@ async function main(): Promise<void> {
     // .dev-token 保留不删 — dev 下 kill/restart webServer 时 auth.ts 会复用
     // 同一个 token，避免 Tauri WebView 里固化的旧 token 失效踩 "Invalid auth
     // token"。若要轮换 token，手动删 .dev-token 后重启 webServer。
-    cleanupUploadDirs();
     // 收尸：取消在跑 agent + 确认后台任务进程树死干净。排在关库之前——关库不设
     // 超时上限，排它后面的步骤真机上可能永远轮不到。
     await withCap(

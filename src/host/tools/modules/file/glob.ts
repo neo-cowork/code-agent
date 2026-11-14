@@ -31,6 +31,7 @@ import type {
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { buildSpillNotice, spillToolResultArchive, type ToolResultArchiveRef } from '../../../utils/toolResultSpill';
 import { applyPartialToOutput } from '../shell/partialResults';
+import { buildExpiredChatUploadResult, isChatUploadPath } from '../../file/pathUtils';
 import { globSchema as schema } from './glob.schema';
 import {
   collectForeignSlotTraversalExcludes,
@@ -168,6 +169,13 @@ class GlobHandler implements ToolHandler<Record<string, unknown>, string> {
     }
 
     const searchPath = resolveInputPath(inputPath, ctx.workingDir);
+    if (isChatUploadPath(searchPath)) {
+      try {
+        await fs.access(searchPath);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') return buildExpiredChatUploadResult(searchPath);
+      }
+    }
     const slotExcludes = collectForeignSlotTraversalExcludes(searchPath);
 
     onProgress?.({ stage: 'starting', detail: `glob ${pattern}` });
