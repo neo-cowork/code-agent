@@ -277,6 +277,7 @@ export function PermissionCard({
         if (classifyPermissionDelivery(outcome) !== 'ok') {
           logPermissionClickExit({ requestId: request.id, stage: 'undelivered', sessionId: request.sessionId, error: outcome });
           releaseApprovalResponse(request.id);
+          // 不进已决存证：stale 也包括手机先答（工具真的跑了）、宿主取消等，不能把别处的结局记成本机的「已超时」。
           dismissPermissionRequest(request.id);
           toast.error(t.decisionCard.permission.settledElsewhere);
           return;
