@@ -229,6 +229,8 @@ export class VadStateMachine {
   private silenceSamples = 0;
   private probHistory: number[] = [];
   private pendingPad: number[] = [];
+  /** speechBuffer 开头那段补白的样本数：probHistory[0] 对应的块从这里开始 */
+  private leadSamples = 0;
 
   private readonly onset: number;
   private readonly offset: number;
@@ -258,6 +260,7 @@ export class VadStateMachine {
         // Speech onset
         this.speechActive = true;
         this.speechBuffer = [...this.pendingPad];
+        this.leadSamples = this.pendingPad.length;
         this.speechSamples = this.speechBuffer.length;
         this.silenceSamples = 0;
         this.probHistory = [];
@@ -326,7 +329,8 @@ export class VadStateMachine {
       }
     }
 
-    const splitSample = minIdx * BLOCK_SIZE;
+    // 切在最安静那块的开头：要跳过段首补白，否则切点提前补白那么长、切进字中间
+    const splitSample = this.leadSamples + minIdx * BLOCK_SIZE;
     if (splitSample <= 0 || splitSample >= this.speechBuffer.length) {
       const seg = new Int16Array(this.speechBuffer);
       this.speechBuffer = [];
@@ -339,6 +343,7 @@ export class VadStateMachine {
     this.speechBuffer = this.speechBuffer.slice(splitSample);
     this.speechSamples = this.speechBuffer.length;
     this.probHistory = this.probHistory.slice(minIdx);
+    this.leadSamples = 0; // 剩下的从最安静那块开头起，不再带补白
     return firstPart;
   }
 
@@ -413,8 +418,6 @@ class VadProcessor {
     for (let i = 0; i < pcmInt16.length; i++) {
       float32[VAD_CONTEXT_SAMPLES + i] = pcmInt16[i] / 32768.0;
     }
-    this.context = float32.slice(float32.length - VAD_CONTEXT_SAMPLES);
-
     // Run Silero v5: input=[1, 64 + chunk_size], state=[2,1,128], sr=scalar
     const input = new this.ort.Tensor('float32', float32, [1, float32.length]);
     const sr = new this.ort.Tensor('int64', BigInt64Array.from([BigInt(SAMPLE_RATE)]), []);
@@ -428,6 +431,7 @@ class VadProcessor {
     }
     const prob = output.data[0] ?? 0;
     this.state = stateN; // carry hidden state forward
+    this.context = float32.slice(float32.length - VAD_CONTEXT_SAMPLES); // 和隐藏状态一起前进，推理失败时两者不错开
 
     // 每 500 次（约 16 秒）输出一次 VAD 概率
     this.probLogCount++;

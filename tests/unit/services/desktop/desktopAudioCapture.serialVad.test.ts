@@ -11,7 +11,7 @@ vi.mock('../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 vi.mock('../../../../src/host/services/desktop/audioVadRuntime', () => ({
-  isOrtTensor: vi.fn(() => false),
+  isOrtTensor: vi.fn(() => true),
   loadVadRuntime: () => ({
     ok: true,
     modelPath: '/fake/silero.onnx',
@@ -26,7 +26,7 @@ vi.mock('../../../../src/host/services/desktop/audioVadRuntime', () => ({
             await new Promise((r) => setTimeout(r, 2));
             vad.inflight--;
             vad.runs++;
-            return {};
+            return { output: { data: new Float32Array([0]) }, stateN: {} };
           },
         }),
       },
@@ -92,5 +92,21 @@ describe('VAD 开口补白', () => {
 
     expect(segments).toHaveLength(1);
     expect(segments[0][0]).toBe(onsetSample - 3200); // 补满 200ms（3200 样本），不是只补上一块的 512
+  });
+
+  it('长句超过 15 秒切分时，切在最安静那块的开头，不被段首补白带偏', async () => {
+    const { VadStateMachine } = await import('../../../../src/host/services/desktop/desktopAudioCapture');
+    const sm = new VadStateMachine();
+    const block = (v: number) => new Int16Array(512).fill(v);
+    for (let i = 0; i < 20; i++) sm.processChunk(block(0), 0); // 静音，攒满 200ms 补白
+    const quiet = 400; // 后半段里概率最低的一块（仍算说话）
+    const segments: Int16Array[] = [];
+    for (let i = 0; i < 480 && segments.length === 0; i++) {
+      segments.push(...sm.processChunk(block(i === quiet ? 7 : 1), i === quiet ? 0.4 : 0.9));
+    }
+
+    expect(segments).toHaveLength(1);
+    expect(segments[0].length).toBe(3200 + quiet * 512); // 补白 + 最安静那块之前的说话
+    expect(segments[0][segments[0].length - 1]).toBe(1); // 最安静那块（值 7）留给下一段开头
   });
 });
