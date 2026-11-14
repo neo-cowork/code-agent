@@ -3,11 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import {
-  appendRemindersToMessage,
-  createReminderContext,
-  selectReminders,
-} from '../../../../src/host/prompts/dynamicReminders';
+import { resolveSkillInvocationFromSkills } from '../../../../src/host/services/skills/skillInvocationResolver';
 import { BUILTIN_SKILLS } from '../../../../src/host/services/skills/builtinSkillsData';
 import { checkMeetingMinutesFidelity } from '../../../fixtures/meeting-minutes-fidelity/checker';
 
@@ -69,23 +65,16 @@ describe('checkMeetingMinutesFidelity', () => {
   });
 });
 
-describe('原措辞触发会议纪要提醒（路由）', () => {
+describe('原措辞路由到 meeting-summary skill', () => {
   const message = readFileSync('tests/fixtures/meeting-minutes-fidelity/user-message.txt', 'utf8');
-  /** 复现生产注入路径：conversationRuntime 取 userMessage 的增量部分当 reminder */
-  const inject = (text: string) => {
-    const result = selectReminders(createReminderContext(text));
-    return appendRemindersToMessage(text, result.reminders).substring(text.length);
-  };
 
-  it('FB-1267 原消息 → 注入会议纪要提醒，通用文档/数据提醒让位', () => {
-    const injected = inject(message);
-    expect(injected).toContain('"command": "meeting-summary"');
-    expect(injected).toContain('保真底线');
-    expect(injected).not.toContain('文档生成必须遵循的流程');
-    expect(injected).not.toContain('先出初稿');
+  it('原消息不带 /meeting-summary 也由别名路由加载该 skill（Skill 工具被运行策略收走时唯一的加载路径）', () => {
+    const hit = resolveSkillInvocationFromSkills(message, BUILTIN_SKILLS as never);
+    expect(hit?.skill.name).toBe('meeting-summary');
+    expect(hit?.matchKind).toBe('alias');
   });
 
   it('与会议纪要无关的消息不触发', () => {
-    expect(inject('帮我写一份 Q3 营销季度报告')).not.toContain('meeting-summary');
+    expect(resolveSkillInvocationFromSkills('写一份周报', BUILTIN_SKILLS as never)).toBeNull();
   });
 });

@@ -92,27 +92,7 @@ export const CONTENT_GENERATION_REMINDERS: ReminderDefinition[] = [
     tokens: 200,
     // 单轮文件交付改走 FILE_DELIVERABLE_WORKFLOW：这里的 Bash+pandas 路径在文字前台
     // 不可达，照走只会把执行挤到后台脚本上去（N-HOME-STARTER-CARDS-FILES r2 实测）。
-    shouldInclude: (ctx) => ctx.taskFeatures.isDataTask && !ctx.taskFeatures.isOneTurnFileDeliverable && !ctx.taskFeatures.isMeetingMinutesTask ? 1.0 : 0,
-    exclusiveGroup: 'task-type-selection',
-    category: 'tool',
-  },
-  {
-    // FB-1267：会议速记整理。通用文档提醒的「先出完整初稿 / 不留占位符」会把素材没写的
-    // 负责人、截止、动作补成真的；这里改走 meeting-summary skill 并守来源保真。
-    id: 'MEETING_MINUTES_WORKFLOW',
-    priority: 1,
-    content: `<system-reminder>
-**会议纪要任务**：有 Skill 工具时先调用 \`skill({ "command": "meeting-summary", "args": "<用户给的速记或文件>" })\`；没有就直接按下面的规则出纪要。
-
-**保真底线**（用户要求"必须有负责人和截止时间""待办可执行"时同样适用）：
-- 待办事项只复述素材原话里的那一件事，一个字都不往后加。素材只说"要 PM 重新排优先级"，待办就是"重新排优先级"，**不能写成"…并向财务同步/回复财务/通知相关方"**；也不新增素材没提的待办（如"出周报"），推导出的"收尾动作"不得单独成行或写成备注
-- 负责人列只能填素材里出现的人名或原话里的角色（如 PM）；素材没点名就写"待指定"，不要写"工程团队""工程侧""运营"等泛称
-- 截止列只能抄素材原话（如"下周三""下个迭代"）；素材没说就写"待定（来源未定）"，不要写"尽快""本周内"或编日期；不知道会议日期就不换算相对日期，会议日期也写"素材未记录"，不要用今天的日期
-- 还在权衡、只提了方向的事项单列"讨论中"，不要升格成决议或待办；"已达成"与"讨论中"分开写
-- 纪要末尾加一行，列出哪些字段因素材没写而待定；用户说了不要提问就不要追问
-</system-reminder>`,
-    tokens: 330,
-    shouldInclude: (ctx) => ctx.taskFeatures.isMeetingMinutesTask ? 1.0 : 0,
+    shouldInclude: (ctx) => ctx.taskFeatures.isDataTask && !ctx.taskFeatures.isOneTurnFileDeliverable ? 1.0 : 0,
     exclusiveGroup: 'task-type-selection',
     category: 'tool',
   },
@@ -138,7 +118,7 @@ export const CONTENT_GENERATION_REMINDERS: ReminderDefinition[] = [
 - 无遗留占位符文本
 </system-reminder>`,
     tokens: 270,
-    shouldInclude: (ctx) => ctx.taskFeatures.isDocumentTask && !ctx.taskFeatures.isOneTurnFileDeliverable && !ctx.taskFeatures.isMeetingMinutesTask && !inAuthoringSkillFlow(ctx) ? 1.0 : 0,
+    shouldInclude: (ctx) => ctx.taskFeatures.isDocumentTask && !ctx.taskFeatures.isOneTurnFileDeliverable && !inAuthoringSkillFlow(ctx) ? 1.0 : 0,
     exclusiveGroup: 'task-type-selection',
     category: 'tool',
   },

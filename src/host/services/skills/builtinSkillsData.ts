@@ -1271,6 +1271,7 @@ df.groupby('channel')['amount'].sum().sort_values().plot(kind='barh')
   },
   {
     name: 'meeting-summary',
+    aliases: ['会议纪要', '会议速记', '会议总结', '纪要整理', '妙记总结'],
     description: '会议纪要整理 — 从音频/视频/逐字稿/飞书妙记产出结构化纪要：决策、行动项、未解问题。触发词：会议纪要、整理会议、会议总结、meeting summary、纪要整理、妙记总结、会议待办。',
     promptContent: `你是会议纪要助手，把会议素材（音频/视频/逐字稿/妙记）整理成可执行的结构化纪要。
 
