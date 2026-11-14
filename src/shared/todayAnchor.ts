@@ -28,15 +28,16 @@ function formatWeekCalendar(
     const parts = formatter.formatToParts(new Date(today + offset * 86_400_000));
     const get = (type: Intl.DateTimeFormatPartTypes): string =>
       parts.find((item) => item.type === type)?.value ?? '';
-    return `${get('weekday')} ${get('month')}-${get('day')}`;
+    const weekday = language === 'en' ? get('weekday') : get('weekday').replace('周', '');
+    return `${weekday}${language === 'en' ? ' ' : ''}${get('month')}-${get('day')}`;
   };
   const week = (startOffset: number): string =>
-    Array.from({ length: 7 }, (_, index) => entry(startOffset + index)).join(language === 'en' ? ', ' : '、');
+    Array.from({ length: 7 }, (_, index) => entry(startOffset + index)).join(' ');
   const thisWeek = week(-mondayOffset);
   const nextWeek = week(7 - mondayOffset);
   return language === 'en'
-    ? `Calendar (month-day): this week ${thisWeek}; next week ${nextWeek}. Read relative dates such as "this Friday" or "next Monday" from this list.`
-    : `日历（月-日）：本周 ${thisWeek}；下周 ${nextWeek}。"本周五""下周一"等相对日期请直接从此列表查，不要自行推算。`;
+    ? `Calendar: this week ${thisWeek}; next week ${nextWeek}`
+    : `日历：本周 ${thisWeek}；下周 ${nextWeek}`;
 }
 
 /**
