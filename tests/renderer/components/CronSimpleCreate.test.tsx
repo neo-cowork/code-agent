@@ -506,7 +506,7 @@ describe('CronSimpleCreate', () => {
       expect((createJob.mock.calls[0][0] as CronJobDefinition).schedule).toMatchObject({ type: 'cron', expression: '0 22 * * *' });
     });
 
-    it.each([['每天下午3点汇总', '15'], ['每天傍晚6点', '18'], ['每晚12点', '00']])('%s → 小时 %s', (goal, h) => {
+    it.each([['每天下午3点汇总', '15'], ['每天傍晚6点', '18'], ['每晚12点', '00'], ['每天早上8点整理昨天下午的会议纪要', '08'], ['每天上午5点前，中午汇总', '05']])('%s → 小时 %s', (goal, h) => {
       render(<CronSimpleCreate onDone={vi.fn()} />);
       fireEvent.change(goalBox(), { target: { value: goal } });
       expect(hour()).toBe(h);

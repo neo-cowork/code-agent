@@ -47,18 +47,18 @@ function readWeekday(text: string): Pick<SchedulePeriodWords, 'freq' | 'weekday'
 }
 
 /** 显式钟点：HH:MM、8pm 总是生效；「8点」只在同时出现时段词/每天时生效，避免误读目标里的无关数字。 */
-function readClock(text: string, allowBare: boolean): { hour: number; minute: number; text: string; meridiem?: 'am' | 'pm' } | null {
+function readClock(text: string, allowBare: boolean): { hour: number; minute: number; text: string; index: number; meridiem?: 'am' | 'pm' } | null {
   const colon = text.match(/(\d{1,2})\s*[:：]\s*(\d{2})/);
-  if (colon) return { hour: Number(colon[1]), minute: Number(colon[2]), text: colon[0] };
+  if (colon) return { hour: Number(colon[1]), minute: Number(colon[2]), text: colon[0], index: colon.index ?? 0 };
   const ampm = text.match(/(\d{1,2})\s*([ap])\.?m\b\.?/i);
-  if (ampm) return { hour: Number(ampm[1]), minute: 0, text: ampm[0], meridiem: ampm[2].toLowerCase() === 'p' ? 'pm' : 'am' };
+  if (ampm) return { hour: Number(ampm[1]), minute: 0, text: ampm[0], index: ampm.index ?? 0, meridiem: ampm[2].toLowerCase() === 'p' ? 'pm' : 'am' };
   if (!allowBare) return null;
   const zh = text.match(/([零〇一二两三四五六七八九十]{1,3}|\d{1,2})\s*点\s*(半|(\d{1,2})\s*分?)?/);
   if (!zh) return null;
   const hour = zhHour(zh[1]);
   if (hour === null) return null;
   const minute = zh[2] === '半' ? 30 : zh[3] ? Number(zh[3]) : 0;
-  return { hour, minute, text: zh[0].trim() };
+  return { hour, minute, text: zh[0].trim(), index: zh.index ?? 0 };
 }
 
 export function parseSchedulePeriodWords(text: string): SchedulePeriodWords | null {
@@ -76,12 +76,16 @@ export function parseSchedulePeriodWords(text: string): SchedulePeriodWords | nu
   let word = period?.word ?? '';
   if (clock && clock.hour < 24 && clock.minute < 60) {
     let { hour } = clock;
-    const evening = period?.time === EVENING_TIME;
+    // 上下午只认紧挨钟点前面的那个词，文本别处的「下午/早上」不参与换算。
+    const lead = text.slice(0, clock.index);
+    const evening = /(?:每天晚上|每晚|每夜|晚上|夜里|nightly|every night|every evening)\s*$/i.test(lead);
+    const afternoon = /(?:下午|傍晚|午后)\s*$/.test(lead);
+    const noon = /中午\s*$/.test(lead);
     if (clock.meridiem === 'pm' && hour < 12) hour += 12;
     else if (clock.meridiem === 'am' && hour === 12) hour = 0;
     else if (!clock.meridiem && evening && hour === 12) hour = 0;
-    else if (!clock.meridiem && (evening || /下午|傍晚|午后/.test(text)) && hour < 12) hour += 12;
-    else if (!clock.meridiem && /中午/.test(text) && hour < 6) hour += 12;
+    else if (!clock.meridiem && (evening || afternoon) && hour < 12) hour += 12;
+    else if (!clock.meridiem && noon && hour < 6) hour += 12;
     time = `${pad(hour)}:${pad(clock.minute)}`;
     word = clock.text;
   } else if (period) {
