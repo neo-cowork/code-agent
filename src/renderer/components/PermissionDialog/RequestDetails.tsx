@@ -64,10 +64,10 @@ export function RequestDetails({ request }: RequestDetailsProps) {
   const { type, details } = request;
   const labels = t.decisionCard.permission;
   const cc = t.cronCenter;
-  const { consequence } = describeApproval(request, t, language);
+  const { kind, consequence, dedicatedBrowserCard } = describeApproval(request, t, language);
 
   const browser = details.browserSessionGrant;
-  if (browser) {
+  if (browser && dedicatedBrowserCard) {
     const copy = language === 'en' ? browserSessionGrantEn : browserSessionGrantZh;
     const site = browser.target?.slice(browser.target.indexOf('@') + 1);
     return <p className="break-all text-xs leading-5 text-zinc-300" data-testid="browser-session-reason">
@@ -213,7 +213,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
             && !(details.preview.type === 'generic' && details.preview.summary.includes(request.tool)) && (
             <div className="text-xs text-zinc-400 mb-2 whitespace-pre-line">{details.preview.summary}</div>
           )}
-          {details.preview.diff && (
+          {details.preview.diff && !kind.startsWith('web_') && (
             <pre className="text-xs p-2 rounded bg-zinc-700 border border-zinc-700 text-zinc-400 overflow-x-auto max-h-32 whitespace-pre-wrap break-all">
               {details.preview.type === 'generic' ? humanizeParamLabels(details.preview.diff) : details.preview.diff}
             </pre>

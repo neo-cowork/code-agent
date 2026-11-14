@@ -473,7 +473,7 @@ export function PermissionCard({
   );
   const title = connectorQuestion ?? (sandboxEscalation
     ? p.sandboxEscalationTitle
-    : request.details.browserSessionGrant
+    : described.dedicatedBrowserCard
     ? browserCopy.title
     : appGrantCard
     ? p.computerApp.title.replace('{app}', request.details.targetApp?.name ?? '')

@@ -38,6 +38,8 @@ interface ApprovalDescription {
   question: string;
   consequence: string | undefined;
   icon: React.ReactElement;
+  /** 浏览器会话授权专属卡（按站点命名）是否接管标题/问句/详情；站点未解析的导航走 web_open 文案。 */
+  dedicatedBrowserCard: boolean;
 }
 
 function assertNever(value: never): never {
@@ -144,17 +146,20 @@ export function describeApproval(
   language: Language = 'zh',
 ): ApprovalDescription {
   const described = describeKind(request, t, language);
-  // 浏览器会话授权卡的问句由 permissionSummary 按动作+站点生成（标题由 PermissionCard 的专属分支给）。
-  return request.details.browserSessionGrant
-    ? { ...described, question: permissionSummary(request, t, language) }
-    : described;
+  const grant = request.details.browserSessionGrant;
+  // 站点已解析的授权卡（按站点问句）保持专属文案；站点未解析的网页导航只说「访问这个网址」，
+  // 不再借专属卡的「无法确认当前网站」。
+  const dedicatedBrowserCard = Boolean(grant) && !(described.kind === 'web_open' && !grant?.target);
+  return dedicatedBrowserCard
+    ? { ...described, question: permissionSummary(request, t, language), dedicatedBrowserCard }
+    : { ...described, dedicatedBrowserCard };
 }
 
 function describeKind(
   request: PermissionRequest,
   t: Translations,
   language: Language,
-): ApprovalDescription {
+): Omit<ApprovalDescription, 'dedicatedBrowserCard'> {
   const kind = classify(request);
   const p = t.decisionCard.permission;
   const icon = iconFor(kind, request);

@@ -386,6 +386,25 @@ describe('PermissionCard presentation gate (production host request shapes)', ()
     for (const c of [navigate, click]) expect(renderCard(c.request, 'zh').html).not.toContain('lucide-terminal');
   });
 
+  it('production Browser navigate request (grant marker kept) says only that it opens/visits the URL, identically when repeated', () => {
+    const navigate = captured.find((c) => c.origin === 'executor:Browser navigate')!;
+    expect((navigate.request.details as Record<string, unknown>).browserSessionGrant).toBeDefined();
+    const lines: string[] = [];
+    for (const language of LANGUAGES) {
+      const first = renderCard(navigate.request, language);
+      const second = renderCard(navigate.request, language);
+      lines.push(`${language} #1: ${first.text}`, `${language} #2: ${second.text}`);
+      expect(first.text, `${language}: URL on the card`).toContain('https://example.com');
+      expect(first.text, `${language}: only visiting`).toContain(language === 'zh' ? '将访问 https://example.com' : 'Will visit https://example.com');
+      expect(first.text, `${language}: title`).toContain(language === 'zh' ? '打开网页' : 'Open web page');
+      expect(first.text, `${language}: risk/command wording`).not.toMatch(/命令|command|有风险|覆盖本机系统|overwrite|risky|无法确认当前网站|could not be confirmed/iu);
+      expect(first.html).not.toContain('lucide-terminal');
+      expect(first.text, `${language}: no raw action enum`).not.toContain('action: navigate');
+      expect(second.text, `${language}: repeated card identical`).toBe(first.text);
+    }
+    process.stdout.write(`rendered production Browser navigate cards:\n${lines.join('\n')}\n`);
+  });
+
   it('a future tool nobody wrote copy for is neutral in both languages, for every command-shaped type', () => {
     for (const c of captured.filter((x) => x.origin.startsWith('future:'))) {
       for (const [language, title] of [['zh', '需要你确认'], ['en', 'Needs your approval']] as const) {
