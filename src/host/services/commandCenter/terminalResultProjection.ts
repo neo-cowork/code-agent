@@ -40,16 +40,17 @@ export async function projectTerminalResult(
   // 模型读的是 resultText（1500 封顶带截断标记），不是 240 字 summary；
   // backgroundTaskResult.metadata 的 reader 只取 taskId/artifacts，不拿它当 UI 文案。
   const resultText = task.resultText ?? task.summary;
-  // 提前停下的白话说明走独立的注册 system 事件（id 由 taskId 派生，重试幂等），先于 [任务结果] 行落库。
+  await getSessionManager().addMessageToSession(
+    task.sessionId,
+    buildSessionTaskResultMessage(task, status, resultText, `session-task-result-${task.id}`, resolveLocale()),
+  );
+  // 提前停下的白话说明走独立的注册 system 事件（id 由 taskId 派生，重试幂等）。放在 [任务结果] 行之后：
+  // 说明写失败会抛出并随整条投影重试，但绝不会挡住结果行落库。
   if (task.stopped) {
     await recordBackgroundTaskStopNote(task.sessionId, task.shortName, task.stopped.content, {
       taskId: task.id, kind: task.stopped.kind,
     });
   }
-  await getSessionManager().addMessageToSession(
-    task.sessionId,
-    buildSessionTaskResultMessage(task, status, resultText, `session-task-result-${task.id}`, resolveLocale()),
-  );
 }
 
 /**
