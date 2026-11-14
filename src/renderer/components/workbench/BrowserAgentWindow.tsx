@@ -875,7 +875,7 @@ export const BrowserAgentWindow: React.FC = () => {
         <BrowserKeptResultBar
           conversationId={currentSessionId}
           workspace={workingDirectory}
-          turnActive={sessionTurnActive || agentSurfaceBusy}
+          turnActive={sessionTurnActive}
         />
         {annotateMode && pins.map((pin) => (
           <button
