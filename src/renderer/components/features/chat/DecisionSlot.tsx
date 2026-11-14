@@ -28,6 +28,7 @@ import { PlanApprovalCard } from '../../PlanApprovalCard';
 import type { PendingPlanApprovalTarget } from '../../../utils/planApprovalView';
 import { resolveStreamInterruptionOutcomeKey } from '../../../i18n/outcomeWords';
 import { hasCurrentTurnJevInjectionFlag } from '../../../utils/jevInjectionAdvisory';
+import { ParkedApprovalCards } from './ParkedApprovalCards';
 
 const GLOBAL_PERMISSION_SESSION_ID = 'global';
 
@@ -240,7 +241,11 @@ interface DecisionSlotProps {
   onUserQuestionSkipped?: () => void;
 }
 
-export function DecisionSlot({
+export function DecisionSlot(props: DecisionSlotProps) {
+  return <><LiveDecisionSlot {...props} /><ParkedApprovalCards /></>;
+}
+
+function LiveDecisionSlot({
   streamInterruption,
   userQuestion,
   userQuestionCount = userQuestion ? 1 : 0,
