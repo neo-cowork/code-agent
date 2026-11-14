@@ -46,6 +46,37 @@ function errorNodes(messages: Message[]) {
 }
 
 describe('projectTurns 连续同因失败折叠', () => {
+  it.each(['rate_limited', 'generic', 'network'] as const)(
+    '%s：后台工具消息的错误只落在末尾，思考/正文/工具保留且节点 ID 唯一',
+    (category) => {
+      for (const textParts of [[], ['开始查看', '仍在等待']] as string[][]) {
+        const failed = errMsg(category);
+        failed.thinking = '先查看后台任务状态';
+        failed.metadata = { ...failed.metadata, correlation: { turnId: 'background-turn' } };
+        failed.toolCalls = [{ id: 'status-call', name: 'task_status', arguments: {} }];
+        failed.contentParts = [
+          ...textParts.map((text) => ({ type: 'text' as const, text })),
+          { type: 'tool_call', toolCallId: 'status-call' },
+        ];
+        const nodes = projectTurns([userMsg(), failed], 'session-1', false).turns[0].nodes
+          .filter((node) => node.type !== 'user');
+        expect(new Set(nodes.map((node) => node.id)).size).toBe(nodes.length);
+        const errors = nodes.filter((node) => node.metadata?.agentError);
+        expect(errors).toHaveLength(1);
+        expect(nodes.at(-1)).toBe(errors[0]);
+        expect(errors[0].messageId).toBe(failed.id);
+        expect(errors[0].agentErrorRun).toEqual({ runLength: 1, latest: true });
+        expect(nodes.filter((node) => node.thinking)).toHaveLength(1);
+        expect(nodes[0].thinking).toBe(failed.thinking);
+        expect(nodes.filter((node) => node.type === 'tool_call').map((node) => node.toolCall?.id))
+          .toEqual(['status-call']);
+        expect(nodes.filter((node) => node.content).map((node) => node.content)).toEqual(textParts);
+        expect(nodes.every((node) => node.metadata?.correlation?.turnId === 'background-turn')).toBe(true);
+        expect(failed.metadata?.agentError?.category).toBe(category);
+      }
+    },
+  );
+
   it('3 次同因失败：前两轮 latest=false（灰字行），最新一轮 latest=true、runLength=3', () => {
     const messages = [
       userMsg(), errMsg('auth'),
