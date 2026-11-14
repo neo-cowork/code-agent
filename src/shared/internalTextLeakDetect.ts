@@ -61,7 +61,7 @@ export const INLINE_RAW_JSON_RE = new RegExp(`\\{(?:\\s*${leakPatterns.rawJsonKe
 export function detectInternalTextLeaks(input: string): Array<{ format: InternalTextFormat; sample: string }> {
   if (!input?.trim()) return [];
 
-  const matches: InternalTextLeakMatch[] = [];
+  const matches: Array<{ format: InternalTextFormat; sample: string }> = [];
   const pushUnique = (format: InternalTextFormat, sample: string) => {
     if (!matches.some((m) => m.format === format && m.sample === sample)) {
       matches.push({ format, sample });
