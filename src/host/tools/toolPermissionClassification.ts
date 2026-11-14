@@ -287,8 +287,9 @@ export function permissionDenialError(
       const name = app?.name?.trim();
       const modelText = name
         ? `Permission denied by user: access to ${name} was denied. Do not retry operating ${name} in this task unless the user asks.`
-        : 'Permission denied by user';
-      return createHostReason(HostReasonCode.PermissionDeniedByUser, modelText, metadata);
+        : 'Permission denied by user.';
+      const guidance = userDeniedGoalStickyError(toolName).modelText;
+      return createHostReason(HostReasonCode.PermissionDeniedByUser, `${modelText} ${guidance}`, metadata);
     }
     case 'no-approval-ui':
       return createHostReason(
@@ -409,8 +410,20 @@ export function userDeniedStickyError(toolName: string, deniedSummary?: string):
   const prior = deniedSummary ? ` (${deniedSummary})` : '';
   const modelText = `${toolName} was not executed: the user already declined this exact action${prior} `
     + 'earlier in this conversation turn. It will not run and will not be asked again until the user '
-    + 'sends another message, so do not retry it or rephrase it. If the user still wants it, ask them in chat.';
+    + 'sends another message, so do not retry it or rephrase it. If the user still wants it, ask them in chat. '
+    + userDeniedGoalStickyError(toolName).modelText;
   return createHostReason(HostReasonCode.PermissionDeniedByUser, modelText, { toolName });
+}
+
+/** Model-facing guidance shared by live denials, parked recovery and the goal guard. */
+export function userDeniedGoalStickyError(toolName: string): HostReasonPayload {
+  return createHostReason(HostReasonCode.PermissionDeniedByUser,
+    'The user just declined this kind of action. Do not request approval for the same goal again '
+      + 'by rewording it or changing the command or arguments. First ask the user one short question '
+      + 'about how to proceed: use AskUserQuestion if available, otherwise your final message. '
+      + 'For unattended, scheduled or background runs, put that question in your final message. '
+      + 'Wait for a new user message before requesting approval for this kind of action again.',
+    { toolName });
 }
 
 /**

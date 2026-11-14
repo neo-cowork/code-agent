@@ -28,3 +28,27 @@ export interface AudioCapturePrerequisites {
   voiceDetection: AudioCaptureVoiceDetectionState;
   missing: AudioCaptureMissingPrerequisiteCode[];
 }
+
+/** 一场会的状态（N-MEETING-SESSION）。出纪要中/完成属于会议页（N-MEETING-PAGE），见 docs/architecture/meeting-session.md */
+type MeetingState = 'recording' | 'paused' | 'ended';
+export type MeetingEndReason = 'manual' | 'silence' | 'max_duration' | 'sleep' | 'capture_stopped' | 'interrupted';
+
+export interface MeetingRecord {
+  id: string;
+  title: string;
+  startedAtMs: number;
+  endedAtMs: number | null;
+  state: MeetingState;
+  endReason: MeetingEndReason | null;
+}
+
+export interface MeetingSessionStatus {
+  /** 正在进行（记录中或暂停）的会；没有则 null */
+  current: MeetingRecord | null;
+  /** 连续多久没转写出人声（暂停时不计） */
+  silenceMs: number;
+  /** 静音已到提醒线：界面提示「还在开会吗」 */
+  silenceWarning: boolean;
+  /** 最近一场已结束的会：界面据此提示「已因 X 自动结束」 */
+  lastEnded: MeetingRecord | null;
+}

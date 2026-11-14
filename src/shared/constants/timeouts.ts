@@ -528,6 +528,8 @@ export const RENDERER_POLLING = {
   KEPT_BROWSER_STATE: 30_000,
   /** loop:list 状态轮询基础间隔 */
   LOOP_BASE: 2_000,
+  /** 「记这场会」进行中时拉会议状态（静音提醒、自动结束要及时反映到录制条） */
+  MEETING_STATUS: 5_000,
   /** 后台任务（listTasks + drainNotifications）轮询基础间隔 */
   BACKGROUND_TASK_BASE: 3_000,
   /** native bridge 收到后台任务失效推送后的兜底轮询间隔 */
