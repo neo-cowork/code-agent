@@ -454,6 +454,7 @@ describe('background task settlement wake with a real RunRegistry', () => {
       expect(persistedNotes[0].metadata?.backgroundWakeFailed).toEqual({
         taskId: 'task-real-1',
         reason: 'turn_error',
+        title: '任务一',
       });
       expect(warn).toHaveBeenCalledWith(
         'Foreground wake failed: wake turn failed',

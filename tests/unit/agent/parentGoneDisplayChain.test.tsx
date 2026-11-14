@@ -402,15 +402,21 @@ async function assertRestartDisplay(snapshot: AgentTreeSnapshot) {
   for (const locale of ['en', 'zh'] as const) {
     language = locale;
     invokeDomain.mockImplementation(async (domain, action) => domain === IPC_DOMAINS.AGENT && action === 'getTree' ? snapshot : null);
+    const realShortName = 'Compare three note-taking apps';
+    const mainZhWakeNote = `后台任务「${realShortName}」已结束；自动汇报这一步没能完成，恢复原账号登录后可查看任务结果，也可以直接问我。`;
     const notice = render(<TraceNodeRenderer sessionId={sessionId} node={{
       id: 'recovered-wake-note', type: 'system', timestamp: 1,
-      content: '后台任务「You are a research-and-w…」已结束，结果见上方的任务结果；自动汇报这一步没能完成，需要的话可以直接问我。',
-      metadata: { backgroundWakeFailed: { taskId: node.id, reason: 'wake_failed' } },
+      content: mainZhWakeNote,
+      metadata: { backgroundWakeFailed: { taskId: 'session-work-crashed-task', reason: 'wake_failed', title: realShortName } },
     }} />);
-    const noticeTitle = locale === 'en' ? 'Background assistant' : '助手';
-    await waitFor(() => expect(notice.container.textContent).toContain(noticeTitle));
-    expect(notice.container.textContent).not.toContain('You are a');
-    if (locale === 'en') expect(notice.container.textContent).not.toMatch(cjk);
+    if (locale === 'en') {
+      expect(notice.container.textContent).toContain(realShortName);
+      expect(notice.container.textContent).toContain('sign back in to the original account to view the task result');
+      expect(notice.container.textContent).not.toMatch(cjk);
+    } else {
+      expect(notice.container.textContent).toBe(mainZhWakeNote);
+      expect(notice.container.textContent).toContain('恢复原账号登录后可查看任务结果');
+    }
     printEvidence(`r3 ${locale} recovered notice=${JSON.stringify(notice.container.textContent)}`);
     notice.unmount();
     const presentation = deriveDelegationPresentation(interrupted, [], snapshot.nodes, locale === 'en' ? en : zh);
@@ -496,22 +502,57 @@ it.each(['en', 'zh'] as const)('resolves raw known and unknown member role names
   expect(rows.map((row) => row.name)).toEqual(locale === 'en' ? ['Coder', 'Assistant'] : ['编程员', '助手']);
 });
 
- it.each(['en', 'zh'] as const)('localizes the whole wake failure notice in %s without child prompt text', async (locale) => {
+it.each(['en', 'zh'] as const)('localizes the real SessionCommandTask wake failure notice in %s with title and main ZH copy', async (locale) => {
   language = locale;
-  invokeDomain.mockResolvedValue({ nodes: [] });
+  invokeDomain.mockResolvedValue({
+    nodes: [{
+      id: 'unrelated-agent-node', role: 'coder', task: 'You are a research-and-writing assistant.',
+      status: 'failed', statusLabel: '失败', background: true,
+      children: [], worktreeState: { status: 'none' }, budgetSummary: {}, evidenceRefs: [], sources: ['backgroundRegistry'],
+    }],
+  });
+  const shortName = 'Compare three note-taking apps';
+  const mainZhSentence = `后台任务「${shortName}」已结束；自动汇报这一步没能完成，恢复原账号登录后可查看任务结果，也可以直接问我。`;
   const notice: TraceNode = {
     id: 'wake-failure', type: 'system', timestamp: 1,
-    content: '后台任务「You are a research-and-w…」已结束，结果见上方的任务结果；自动汇报这一步没能完成，需要的话可以直接问我。',
-    metadata: { backgroundWakeFailed: { taskId: 'missing-task', reason: 'wake_failed' } },
+    content: mainZhSentence,
+    metadata: { backgroundWakeFailed: { taskId: 'session-work-not-in-tree', reason: 'wake_failed', title: shortName } },
   };
   const view = render(<TraceNodeRenderer node={notice} sessionId={sessionId} />);
   const expected = locale === 'en'
-    ? 'Background task "Background assistant" ended — see the task result above. The automatic report could not be sent; ask me if you need it.'
-    : '后台任务「助手」已结束，结果见上方的任务结果；自动汇报这一步没能完成，需要的话可以直接问我。';
+    ? `Background task "${shortName}" has ended; the automatic report could not be completed — sign back in to the original account to view the task result, or ask me directly.`
+    : mainZhSentence;
   await waitFor(() => expect(view.container.textContent).toBe(expected));
   printEvidence(`r3 ${locale} notice textContent=${JSON.stringify(view.container.textContent)}`);
-  expect(view.container.textContent).not.toContain('You are a');
-  if (locale === 'en') expect(view.container.textContent).not.toMatch(cjk);
+  if (locale === 'en') {
+    expect(view.container.textContent).toContain(shortName);
+    expect(view.container.textContent).toContain('sign back in to the original account to view the task result');
+    expect(view.container.textContent).not.toMatch(cjk);
+  } else {
+    expect(view.container.textContent).toContain('恢复原账号登录后可查看任务结果');
+  }
+  view.unmount();
+
+  if (locale === 'en') {
+    const legacy = render(<TraceNodeRenderer sessionId={sessionId} node={{
+      id: 'wake-failure-legacy', type: 'system', timestamp: 2,
+      content: '后台任务「You are a research-and-w…」已结束；自动汇报这一步没能完成，恢复原账号登录后可查看任务结果，也可以直接问我。',
+      metadata: { backgroundWakeFailed: { taskId: 'unrelated-agent-node', reason: 'wake_failed' } },
+    }} />);
+    await waitFor(() => expect(legacy.container.textContent).toContain('Background assistant'));
+    expect(legacy.container.textContent).not.toContain('You are a');
+    expect(legacy.container.textContent).not.toMatch(cjk);
+    legacy.unmount();
+
+    const cjkTitle = render(<TraceNodeRenderer sessionId={sessionId} node={{
+      id: 'wake-failure-cjk-title', type: 'system', timestamp: 3,
+      content: '后台任务「周报」已结束；自动汇报这一步没能完成，恢复原账号登录后可查看任务结果，也可以直接问我。',
+      metadata: { backgroundWakeFailed: { taskId: 'session-work-zh-title', reason: 'wake_failed', title: '周报' } },
+    }} />);
+    expect(cjkTitle.container.textContent).toContain('Background assistant');
+    expect(cjkTitle.container.textContent).not.toMatch(cjk);
+    cjkTitle.unmount();
+  }
 });
 
 it.each(['en', 'zh'] as const)('localizes the persisted session-work restart notice in %s', (locale) => {

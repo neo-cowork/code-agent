@@ -672,7 +672,13 @@ const SystemNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, s
   const { t } = useI18n();
 
   if (node.metadata?.backgroundWakeFailed) {
-    return <BackgroundWakeFailureNote taskId={node.metadata.backgroundWakeFailed.taskId} sessionId={sessionId} />;
+    return (
+      <BackgroundWakeFailureNote
+        detail={node.metadata.backgroundWakeFailed}
+        content={node.content}
+        sessionId={sessionId}
+      />
+    );
   }
 
   const receipt = node.metadata?.roleEditReceipt;
