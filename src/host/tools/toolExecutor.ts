@@ -2376,10 +2376,14 @@ export class ToolExecutor {
         }
       }
 
-      const ask = await requestPermissionWithTelemetry({
-        request: permissionRequest,
-        toolCallId: options.currentToolCallId,
-        requestPermission: this.requestPermission,
+      const ask = await getDenialRegistry().observeApproval({
+        sessionId: effectiveSessionId, sourceMessageId: options.sourceMessageId, runId: effectiveRunId,
+        toolName: executionToolName, app: computerApp, enabled: !cuaSensitiveStep && !commandAnalysisFailedReason,
+        ask: () => requestPermissionWithTelemetry({
+          request: permissionRequest,
+          toolCallId: options.currentToolCallId,
+          requestPermission: this.requestPermission,
+        }),
       });
       if (commandAnalysisFailedReason) {
         ask.approved = false;
