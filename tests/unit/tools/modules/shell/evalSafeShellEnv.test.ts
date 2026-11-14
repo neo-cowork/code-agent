@@ -44,60 +44,27 @@ describe('createEvalSafeShellEnv × desktop shell bridge env hard-deny', () => {
     tempDirs = [];
   });
 
-  it('excludes both bridge env vars even under allowNetwork secureref refill and allowed_secret_vars escape hatch', () => {
+  it.each([
+    { mode: 'allowed_secret_vars escape hatch', policy: '[env_filter]\nstrip_secret_vars = true\nallowed_secret_vars = ["CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN", "CODE_AGENT_ENV_ASSIST_BRIDGE_URL"]\n', extra: false },
+    { mode: 'network secureref refill', policy: '', extra: false },
+    { mode: 'strip_secret_vars=false with extra overrides', policy: '[env_filter]\nstrip_secret_vars = false\n', extra: true },
+  ])('hard-denies both bridge vars under $mode', ({ policy, extra }) => {
     const projectDir = makeTmpDir('eval-safe-proj-');
-    fs.writeFileSync(
-      path.join(projectDir, 'code-agent-policy.toml'),
-      [
-        '[env_filter]',
-        'strip_secret_vars = true',
-        'allowed_secret_vars = ["CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN", "CODE_AGENT_ENV_ASSIST_BRIDGE_URL"]',
-      ].join('\n'),
-    );
-
-    const allowedResult = createEvalSafeShellEnv(undefined, projectDir, undefined, {
-      allowNetwork: true,
-      command: 'echo $CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN',
-    });
-    expect(allowedResult.ok).toBe(true);
-    if (allowedResult.ok) {
-      expect(allowedResult.env).not.toHaveProperty('CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN');
-      expect(allowedResult.env).not.toHaveProperty('CODE_AGENT_ENV_ASSIST_BRIDGE_URL');
-      expect(Object.values(allowedResult.env)).not.toContain('secret-bridge-token-64hex');
-    }
-
-    // Also verify default strip_secret_vars=true (empty allowed_secret_vars) with allowNetwork refill,
-    // plus strip_secret_vars=false and explicit extra overrides.
-    const defaultProjectDir = makeTmpDir('eval-safe-default-proj-');
-    const refillResult = createEvalSafeShellEnv(undefined, defaultProjectDir, undefined, {
-      allowNetwork: true,
-      command: 'echo $CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN',
-    });
-    expect(refillResult.ok).toBe(true);
-    if (refillResult.ok) {
-      expect(refillResult.env).not.toHaveProperty('CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN');
-      expect(refillResult.env).not.toHaveProperty('CODE_AGENT_ENV_ASSIST_BRIDGE_URL');
-      expect(Object.values(refillResult.env)).not.toContain('secret-bridge-token-64hex');
-    }
-
-    const stripDisabledProjectDir = makeTmpDir('eval-safe-strip-off-proj-');
-    fs.writeFileSync(
-      path.join(stripDisabledProjectDir, 'code-agent-policy.toml'),
-      '[env_filter]\nstrip_secret_vars = false\n',
-    );
-    const stripOffResult = createEvalSafeShellEnv(
-      {
-        CODE_AGENT_ENV_ASSIST_BRIDGE_URL: 'http://127.0.0.1:54321',
-        CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN: 'secret-bridge-token-64hex',
-      },
-      stripDisabledProjectDir,
+    fs.writeFileSync(path.join(projectDir, 'code-agent-policy.toml'), policy);
+    const result = createEvalSafeShellEnv(
+      extra ? {
+        CODE_AGENT_ENV_ASSIST_BRIDGE_URL: process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_URL,
+        CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN: process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN,
+      } : undefined,
+      projectDir,
       undefined,
       { allowNetwork: true, command: 'echo $CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN' },
     );
-    expect(stripOffResult.ok).toBe(true);
-    if (stripOffResult.ok) {
-      expect(stripOffResult.env).not.toHaveProperty('CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN');
-      expect(stripOffResult.env).not.toHaveProperty('CODE_AGENT_ENV_ASSIST_BRIDGE_URL');
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.env).not.toHaveProperty('CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN');
+      expect(result.env).not.toHaveProperty('CODE_AGENT_ENV_ASSIST_BRIDGE_URL');
+      expect(Object.values(result.env)).not.toContain('secret-bridge-token-64hex');
     }
   });
 });

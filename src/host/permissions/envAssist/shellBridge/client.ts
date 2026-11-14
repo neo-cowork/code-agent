@@ -22,7 +22,7 @@ let capturedBridgeEnv: CapturedBridgeEnv | null = null;
  * Stores the initial values in module-private memory and immediately deletes
  * both variables from process.env before any child process can inherit them.
  */
-function captureShellBridgeEnvImpl(): void {
+export function captureShellBridgeEnv(): void {
   if (capturedBridgeEnv === null) {
     capturedBridgeEnv = {
       rawUrl: process.env[BRIDGE_URL_ENV],
@@ -32,12 +32,6 @@ function captureShellBridgeEnvImpl(): void {
   delete process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_URL;
   delete process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN;
 }
-
-export const captureShellBridgeEnv = Object.assign(captureShellBridgeEnvImpl, {
-  resetForTest(): void {
-    capturedBridgeEnv = null;
-  },
-});
 
 function parseLoopbackOrigin(rawUrl: string): string | null {
   try {

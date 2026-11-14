@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -7,8 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ENV_ASSIST_BRIDGE_TIMEOUT_MS, ENV_ASSIST_CLICK_TTL_MS } from '../../../../../src/shared/constants/envAssist';
 import type { EnvAssistNotice } from '../../../../../src/shared/contract/envAssist';
 import type { Message } from '../../../../../src/shared/contract';
-import { registerEnvAssistHandlers } from '../../../../../src/host/ipc/envAssist.ipc';
-import * as grants from '../../../../../src/host/permissions/envAssist/grants/requestGrant';
+import type { registerEnvAssistHandlers as RegisterEnvAssistHandlers } from '../../../../../src/host/ipc/envAssist.ipc';
+import type * as Grants from '../../../../../src/host/permissions/envAssist/grants/requestGrant';
 import {
   accessibilityProbe,
   automationProbe,
@@ -16,17 +17,22 @@ import {
   screenRecordingProbe,
 } from '../../../../../src/host/permissions/envAssist/probes/passiveProbes';
 import { createShellPassiveBridge } from '../../../../../src/host/permissions/envAssist/probes/shellPassiveBridge';
-import {
-  captureShellBridgeEnv,
-  resolveShellBridgeClientFromEnv,
+import type {
+  captureShellBridgeEnv as CaptureShellBridgeEnv,
+  resolveShellBridgeClientFromEnv as ResolveShellBridgeClientFromEnv,
 } from '../../../../../src/host/permissions/envAssist/shellBridge/client';
-import { ipcHost, type HandlerFn } from '../../../../../src/host/platform';
+import type { HandlerFn } from '../../../../../src/host/platform';
 
 const logs = vi.hoisted(() => ({
   warn: vi.fn(),
   debug: vi.fn(),
   info: vi.fn(),
   error: vi.fn(),
+}));
+
+const startupProbe = vi.hoisted(() => vi.fn());
+vi.mock('../../../../../src/web/devSlotRuntime', () => ({
+  detectDevSlotRuntime: startupProbe,
 }));
 
 const storage = vi.hoisted(() => ({
@@ -260,20 +266,38 @@ describe('shell loopback bridge & production registerEnvAssistHandlers defaults'
   const activeStubs: ShellStub[] = [];
   const tempDirs: string[] = [];
 
-  beforeEach(() => {
-    captureShellBridgeEnv.resetForTest();
+  let registerEnvAssistHandlers: typeof RegisterEnvAssistHandlers;
+  let captureShellBridgeEnv: typeof CaptureShellBridgeEnv;
+  let resolveShellBridgeClientFromEnv: typeof ResolveShellBridgeClientFromEnv;
+  let grants: typeof Grants;
+
+  async function loadProductionModules(): Promise<void> {
+    // Exercise fresh launch state without exposing a credential reset in production.
+    vi.resetModules();
+    ({ captureShellBridgeEnv, resolveShellBridgeClientFromEnv } = await import(
+      '../../../../../src/host/permissions/envAssist/shellBridge/client'
+    ));
+    ({ registerEnvAssistHandlers } = await import('../../../../../src/host/ipc/envAssist.ipc'));
+    grants = await import('../../../../../src/host/permissions/envAssist/grants/requestGrant');
+    const { ipcHost } = await import('../../../../../src/host/platform');
+    vi.spyOn(ipcHost, 'handle').mockImplementation((_channel, fn) => {
+      handler = fn;
+    });
+  }
+
+  beforeEach(async () => {
+    delete process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_URL;
+    delete process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN;
+    await loadProductionModules();
     logs.warn.mockClear();
     storage.notices.clear();
     storage.openPane.mockClear();
     storage.available.mockReturnValue(true);
     Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
-    vi.spyOn(ipcHost, 'handle').mockImplementation((_channel, fn) => {
-      handler = fn;
-    });
+    startupProbe.mockReset();
   });
 
   afterEach(async () => {
-    captureShellBridgeEnv.resetForTest();
     vi.useRealTimers();
     vi.restoreAllMocks();
     Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
@@ -373,8 +397,8 @@ describe('shell loopback bridge & production registerEnvAssistHandlers defaults'
     // degrades to null bridges, and open_settings_pane still opens System Settings via the existing path.
     delete process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_URL;
     delete process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN;
-    captureShellBridgeEnv.resetForTest();
     logs.warn.mockClear();
+    await loadProductionModules();
     registerEnvAssistHandlers();
     expect(logs.warn).toHaveBeenCalledWith('env_assist_bridge:no_shell');
     const noShellWarn = String(logs.warn.mock.calls[0]?.[0]);
@@ -453,12 +477,31 @@ describe('shell loopback bridge & production registerEnvAssistHandlers defaults'
     );
   });
 
+  it('captures only once and scrubs reintroduced env vars without replacing the launch credentials', async () => {
+    const stub = await startShellStub();
+    activeStubs.push(stub);
+    process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_URL = stub.url;
+    process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN = stub.token;
+    captureShellBridgeEnv();
+    expect(process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN).toBeUndefined();
+    expect(process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_URL).toBeUndefined();
+
+    process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_URL = 'http://127.0.0.1:1';
+    process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN = 'reintroduced-test-value';
+    captureShellBridgeEnv();
+    expect(process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN).toBeUndefined();
+    expect(process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_URL).toBeUndefined();
+    const bridge = createShellPassiveBridge(resolveShellBridgeClientFromEnv()!);
+    expect(await accessibilityProbe(bridge)()).toEqual({ status: 'denied' });
+    expect(stub.passiveHits).toBe(1);
+    expect(stub.grantHits).toBe(0);
+  });
+
   it('webServer startup (webEnvInit) captures and deletes bridge env vars before any child spawn while probes and request_grant still reach the stub', async () => {
     const stub = await startShellStub();
     activeStubs.push(stub);
 
     const savedWebEnv = {
-      HOME: process.env.HOME,
       CODE_AGENT_DATA_DIR: process.env.CODE_AGENT_DATA_DIR,
       WEB_PORT: process.env.WEB_PORT,
       CODE_AGENT_WEB_PORT: process.env.CODE_AGENT_WEB_PORT,
@@ -469,12 +512,26 @@ describe('shell loopback bridge & production registerEnvAssistHandlers defaults'
     tempDirs.push(fakeHome);
 
     try {
-      process.env.HOME = fakeHome;
       process.env.CODE_AGENT_DATA_DIR = path.join(fakeHome, '.code-agent');
       process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_URL = stub.url;
       process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN = stub.token;
 
+      startupProbe.mockImplementation(() => {
+        // This is webEnvInit's earliest spawn-capable runtime probe, before IPC/tools/MCP/plugins.
+        expect(process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN).toBeUndefined();
+        expect(process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_URL).toBeUndefined();
+        const child = spawnSync(process.execPath, ['-e', `
+          process.exit(
+            process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN === undefined &&
+            process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_URL === undefined ? 0 : 1
+          );
+        `]);
+        expect(child.status).toBe(0);
+        return { isGitWorktree: () => false, isSlotFree: () => true };
+      });
       await import('../../../../../src/web/webEnvInit');
+      expect(startupProbe).toHaveBeenCalledOnce();
+      process.stdout.write('[startup capture] earliest runtime probe child inherited neither bridge var\n');
 
       // Immediately after webEnvInit (before tools, MCP, plugins, or registerEnvAssistHandlers run),
       // both env vars are deleted from process.env.
