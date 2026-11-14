@@ -3,6 +3,7 @@ import { turnCheckoutChatEn, turnCheckoutChatZh } from './turnCheckout';
 import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 import { toolStepVerbsEn, toolStepVerbsZh } from './toolStepVerbs';
 import { turnRailEn, turnRailZh } from './turnRail';
+import { projectTrustTurnCardEn, projectTrustTurnCardZh, projectTrustTurnRunEn, projectTrustTurnRunZh } from './projectTrust';
 import { chatErrorCopyEn, chatErrorCopyZh } from './chatErrorCopy';
 export const chatTranscriptZh = {
   ...turnRailZh,
@@ -18,14 +19,16 @@ chat: {
   activityIdle: '正在整理任务…',
   delegationReceipt: {
     failureDetail: '{status}：{reason}',
-    headlines: { working: '代理工作中{name}', completed: `${outcomeWordsZh.outcomeWords.completed.timeline.label}{name}`, failed: `${outcomeWordsZh.outcomeWords['failed-unknown'].timeline.label}{name}` },
+    headlines: { working: '代理工作中{name}', completed: `${outcomeWordsZh.outcomeWords.completed.timeline.label}{name}`, failed: `${outcomeWordsZh.outcomeWords['failed-unknown'].timeline.label}{name}`, cancelled: `${outcomeWordsZh.outcomeWords['cancelled-by-user'].detail.label}{name}` },
     working: '代理工作中',
     completed: outcomeWordsZh.outcomeWords.completed.timeline.label,
     failed: outcomeWordsZh.outcomeWords['failed-unknown'].timeline.label,
+    cancelled: outcomeWordsZh.outcomeWords['cancelled-by-user'].detail.label,
     dispatched: '已派出',
     steps: '做了 {count} 步',
     output: '产出',
     mergeBranch: '改动在分支 {branch}，合并后才会生效',
+    viewTargetSession: '查看目标会话',
   },
   taskNotificationWithLog: '{message}。可在任务面板查看日志。',
   taskTimeoutNotice: '后台任务运行超过 {minutes} 分钟，已被停止。',
@@ -361,6 +364,7 @@ turnCard: {
   collapseTurn: '折叠本轮',
   expandTurn: '展开本轮',
   sendFailed: '没发出去',
+  ...projectTrustTurnCardZh,
   recoveredFromRecord: '这条消息由运行记录还原，可能和你的原话略有出入',
   editAndResend: '编辑重发',
   fork: '创建分支',
@@ -437,6 +441,7 @@ turnRun: {
   cleanupBadge: '清理中',
   outputsSignal: '{count} 个产出',
   toolsSignal: '{count} 次工具调用',
+  ...projectTrustTurnRunZh,
 },
 ...chatErrorCopyZh,
 // 实时预览诊断条（LivePreviewFrame）——frameError 原文 + CSP snippet 折叠在
@@ -511,14 +516,16 @@ chat: {
   activityIdle: 'Organizing the task…',
   delegationReceipt: {
     failureDetail: '{status}: {reason}',
-    headlines: { working: '{name} is working', completed: '{name} finished', failed: "{name} didn't finish" },
+    headlines: { working: '{name} is working', completed: '{name} finished', failed: "{name} didn't finish", cancelled: '{name} was cancelled' },
     working: 'Agent working',
     completed: 'Completed',
     failed: 'Not completed',
+    cancelled: outcomeWordsEn.outcomeWords['cancelled-by-user'].detail.label,
     dispatched: 'Dispatched',
     steps: 'Completed {count} steps',
     output: 'Output',
     mergeBranch: 'Changes are on branch {branch}; merge it to apply them',
+    viewTargetSession: 'View target chat',
   },
   taskNotificationWithLog: '{message}. View logs in the task panel.',
   taskTimeoutNotice: 'Background task ran over {minutes} minutes and was stopped.',
@@ -860,6 +867,7 @@ turnCard: {
   collapseTurn: 'Collapse this turn',
   expandTurn: 'Expand this turn',
   sendFailed: 'Not sent',
+  ...projectTrustTurnCardEn,
   recoveredFromRecord: 'Restored from the run history; it may differ slightly from what you wrote',
   editAndResend: 'Edit and resend',
   fork: 'Fork',
@@ -938,6 +946,7 @@ turnRun: {
   cleanupBadge: 'cleanup',
   outputsSignal: '{count} outputs',
   toolsSignal: '{count} tool calls',
+  ...projectTrustTurnRunEn,
 },
 
 ...chatErrorCopyEn,

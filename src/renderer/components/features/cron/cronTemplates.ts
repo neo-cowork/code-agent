@@ -5,9 +5,11 @@ import { CRON_EVENT_TRIGGER } from '@shared/constants';
 import type { CronJobDraft } from './types';
 import { createDefaultCronJobDraft } from './types';
 import { localCronTimezone } from './localTimezone';
+import type { TemplateCopy } from '../../../i18n/cronWatchTemplateCopy';
 import { cronCenterEn } from '../../../i18n/cronCenter';
+import { enAgentPrompt, enTagsText, enUnregisteredCopy } from './cronTemplatesEn';
 
-/** 模板草稿的语言档：zh 为存量行为；en 的 name/description 取 cronCenter.templates 英文词条。 */
+/** 模板草稿的语言档：zh 为存量行为；en 的 name/description 取 cronCenter.templates 英文词条，agentPrompt 取 cronTemplatesEn。 */
 type CronTemplateLanguage = 'zh' | 'en';
 
 // ── Template field definition ───────────────────────────────────────
@@ -40,8 +42,8 @@ export interface CronTemplate {
    */
   event?: boolean;
   /**
-   * language 缺省 zh（存量行为）。en 时只换 name/description 为英文词条；
-   * agentPrompt 仍是中文（已知遗留，未翻译）。
+   * language 缺省 zh（存量行为）。en 时 name/description 取英文词条（没登记的维持草稿原文），
+   * agentPrompt 用 cronTemplatesEn 的手写英文版（group-listen 的提示词即用户输入，不翻译）。
    */
   /** description 里带用户输入（如群监听的任务）的模板：en 档的描述构造，缺省回退词条/中文草稿描述。 */
   enDescription?: (values: Record<string, string>) => string;
@@ -138,8 +140,8 @@ function morningTriageDraft(values: Record<string, string> | undefined): CronJob
  */
 export function getTemplateDisplayCopy(
   template: Pick<CronTemplate, 'id' | 'name' | 'description' | 'scheduleLabel'>,
-  localized: Readonly<Record<string, Pick<CronTemplate, 'name' | 'description' | 'scheduleLabel'>>> | undefined,
-): Pick<CronTemplate, 'name' | 'description' | 'scheduleLabel'> {
+  localized: Readonly<Record<string, TemplateCopy>> | undefined,
+): TemplateCopy {
   return localized?.[template.id] ?? {
     name: template.name,
     description: template.description,
@@ -360,13 +362,27 @@ function withLanguage(template: CronTemplate): CronTemplate {
     ...template,
     generate: (values, language = 'zh') => {
       const draft = generate(values);
+      if (language !== 'en') return draft;
       const localized: Readonly<Record<string, { name: string; description: string }>> = cronCenterEn.cronCenter.templates;
-      const copy = language === 'en' ? localized[template.id] : undefined;
-      if (!copy) return draft;
+      const copy = localized[template.id];
+      // i18n 没登记词条的模板（web-change-watch / feishu-*）的 en 名称/描述取 cronTemplatesEn；
       // 描述里带用户输入的模板不能被卡片固定文案覆盖，否则任务文本丢失（列表/搜索区分不了）
+      const unregistered = enUnregisteredCopy(template.id, values);
       const dynamic = template.fields.some((field) => field.required === true);
-      const description = template.enDescription?.(values) ?? (dynamic ? draft.description : copy.description);
-      return { ...draft, name: copy.name, description };
+      const description = template.enDescription?.(values)
+        ?? (copy && !dynamic ? copy.description : (unregistered?.description ?? draft.description));
+      // en 档的 agent 提示词与标签走手写英文版（cronTemplatesEn）；提示词没有英文版的模板
+      // （group-listen：提示词即用户输入）保持草稿原文
+      const enPrompt = enAgentPrompt(template.id, values);
+      const enTags = enTagsText(template.id);
+      return {
+        ...draft,
+        // 生成的任务名：专用 en 名（无词条模板）优先于卡片展示名，卡片文案可以单独改而不动任务名
+        name: unregistered?.name ?? copy?.name ?? draft.name,
+        description,
+        ...(enTags !== undefined ? { tagsText: enTags } : {}),
+        ...(enPrompt !== undefined ? { agentPrompt: enPrompt } : {}),
+      };
     },
   };
 }
@@ -386,6 +402,19 @@ function parseFriendlySchedule(input?: string): Partial<CronJobDraft> {
   // Direct cron expression (5-6 fields starting with number or *)
   if (/^[\d*]/.test(s) && s.split(/\s+/).length >= 5) {
     return { scheduleType: 'cron', cronExpression: input.trim(), cronTimezone: 'Asia/Shanghai' };
+  }
+
+  const englishInterval = s.match(/^every\s+(\d+)\s+(hours?|minutes?)$/);
+  if (englishInterval || s === 'every hour') {
+    return {
+      scheduleType: 'every',
+      everyInterval: englishInterval?.[1] ?? '1',
+      everyUnit: englishInterval?.[2].startsWith('minute') ? 'minutes' : 'hours',
+    };
+  }
+  const englishDaily = s.match(/^(?:every day|daily)\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?$/);
+  if (englishDaily && Number(englishDaily[1]) < 24 && Number(englishDaily[2] ?? 0) < 60) {
+    return { scheduleType: 'cron', cronExpression: `${Number(englishDaily[2] ?? 0)} ${Number(englishDaily[1])} * * *`, cronTimezone: 'Asia/Shanghai' };
   }
 
   // "每小时" / "每 N 小时"

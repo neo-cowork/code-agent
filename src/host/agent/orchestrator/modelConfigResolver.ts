@@ -10,11 +10,12 @@ import { getModelSessionState } from '../../session/modelSessionState';
 import {
   DEFAULT_PROVIDER,
   getModelMaxOutputTokens,
-  normalizeProviderId,
 } from '../../../shared/constants';
 import { fallbackModelForProvider } from '../../../shared/modelRuntime';
 import { createLogger } from '../../services/infra/logger';
 import { resolveConfiguredDefaultProvider } from '../../../shared/modelDefaults';
+
+import { resolveConfiguredProvider } from '../../model/configuredProvider';
 
 const logger = createLogger('ModelConfigResolver');
 
@@ -27,17 +28,15 @@ export function resolveModelConfig(
 ): ModelConfig {
   // 从用户配置获取选择的 provider 和 model
   const userProviderStr = resolveConfiguredDefaultProvider(settings.models, DEFAULT_PROVIDER);
-  const normalizedProvider = (normalizeProviderId(userProviderStr) ?? userProviderStr ?? DEFAULT_PROVIDER) as ModelProvider;
-  const providerConfig =
-    settings.models?.providers?.[normalizedProvider]
-    ?? settings.models?.providers?.[userProviderStr];
+  const { connection, providerConfig } = resolveConfiguredProvider(configService, settings, userProviderStr);
+  const normalizedProvider = connection.provider;
   const userModel = providerConfig?.model || getDefaultModelByProvider(normalizedProvider, settings);
   const maxTokens = providerConfig?.models?.[userModel]?.maxTokens
     ?? providerConfig?.maxTokens
     ?? getModelMaxOutputTokens(userModel, normalizedProvider);
 
   // 获取对应的 API Key
-  const selectedApiKey = configService.getApiKey(normalizedProvider);
+  const selectedApiKey = connection.apiKey;
 
   const selectedProvider: ModelProvider = normalizedProvider;
   const selectedModel = userModel;
@@ -49,11 +48,8 @@ export function resolveModelConfig(
   }
 
   return {
-    provider: selectedProvider,
+    ...connection,
     model: selectedModel,
-    apiKey: selectedApiKey,
-    baseUrl: providerConfig?.baseUrl,
-    protocol: providerConfig?.protocol,
     temperature: 0.7,
     maxTokens,
   };
@@ -72,17 +68,11 @@ export function resolveRunModelConfig(
   // 单一事实来源）按 provider 补 MODEL_API_ENDPOINTS 默认端点与 env key。
   let modelConfig = resolveModelConfig(configService, settings);
   if (explicitModelSpec) {
-    const provider = explicitModelSpec.provider as ModelProvider;
-    const providerSettings = settings.models?.providers?.[provider];
+    const { connection } = resolveConfiguredProvider(configService, settings, explicitModelSpec.provider);
     return {
       ...modelConfig,
-      provider,
+      ...connection,
       model: explicitModelSpec.model,
-      apiKey: configService.getApiKey(provider),
-      baseUrl: providerSettings?.baseUrl,
-      // protocol 与 apiKey/baseUrl 同理：必须跟着目标 provider 换，沿用上一家的会把
-      // 协议家族也串染过去（如把 OpenAI 家族的 'openai' 带进 claude 家族的 provider）。
-      protocol: providerSettings?.protocol,
       adaptive: false,
     };
   }
@@ -93,14 +83,11 @@ export function resolveRunModelConfig(
     return { ...modelConfig, adaptive: true };
   }
   if (override) {
-    const providerSettings = settings.models?.providers?.[override.provider];
+    const { connection } = resolveConfiguredProvider(configService, settings, override.provider);
     modelConfig = {
       ...modelConfig,
-      provider: override.provider,
+      ...connection,
       model: override.model,
-      apiKey: configService.getApiKey(override.provider),
-      baseUrl: providerSettings?.baseUrl,
-      protocol: providerSettings?.protocol,
       temperature: override.temperature ?? modelConfig.temperature,
       maxTokens: override.maxTokens ?? modelConfig.maxTokens,
       adaptive: false,

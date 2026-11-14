@@ -34,6 +34,8 @@ import { getUserConfigDir } from '../config/configPaths';
 import { createLogger } from '../services/infra/logger';
 import { expandTilde, resolveInputPath } from '../tools/utils/resolveInputPath';
 import { writeTargetPathOf } from '../tools/writeTargetPath';
+import { isConnectorToolName, isMcpToolName } from '../../shared/contract/workbenchTools';
+import { isExternalSideEffectTool } from '../tools/externalSideEffect';
 import { getPermissionModeManager } from '../permissions/modes';
 import { getDatabase } from '../services/core/databaseService';
 import { normalizeCronJobRow } from './cronNormalizers';
@@ -79,24 +81,20 @@ export async function backfillCronWriteScopes(updatedAt = Date.now()): Promise<v
   logger.info('Schedule write grant backfill completed', { backfilled: updates.length });
 }
 
-/** Route scheduled file mutations through the existing grant/park authority, even after W1 approves. */
-export async function requiresScheduleWriteGrant(
-  request: { type: string; tool?: string; details?: Record<string, unknown> },
-  sessionId: string | undefined,
-  workingDirectory: string,
-  workspaceRoot: string | undefined,
-): Promise<boolean> {
-  const { type } = request;
-  if ((type !== 'file_write' && type !== 'file_edit')
-    || !getPermissionModeManager().isUnattendedSession(sessionId)) return false;
-  // Only replace the in-workspace shortcut; outside-workspace policy stays unchanged.
-  const target = writeTargetPathOf(request.tool, request.details);
-  if (!workspaceRoot || typeof target !== 'string'
-    || !isPathWithinWriteGrantRoot(resolveInputPath(target, workingDirectory), workspaceRoot)) return false;
-  const session = await scheduleWriteGrantSession(sessionId);
+/** Connector / MCP / external-side-effect tools: a local folder grant never covers them. */
+export function isNonLocalWriteTool(toolName: string | undefined): boolean {
+  if (!toolName) return false;
+  return isConnectorToolName(toolName) || isMcpToolName(toolName)
+    || toolName.startsWith('mcp:') || toolName === 'MCPUnified' || isExternalSideEffectTool(toolName);
+}
+
+/** Session authority only; file classification owns the workspace/path decision. */
+export async function requiresScheduleWriteGrant(sessionId: string | undefined): Promise<boolean> {
+  if (!getPermissionModeManager().isUnattendedSession(sessionId)) return false;
+  const session = await cronSessionOrigin(sessionId);
   if (!session) return false;
   logger.info('Scheduled file write requires grant check in orchestratorPermissions', {
-    sessionId, type, branch: session.root ? 'check-granted-path' : 'park-missing-grant',
+    sessionId, branch: session.root ? 'check-granted-path' : 'park-missing-grant',
   });
   return true;
 }
@@ -243,6 +241,12 @@ export async function approveByScheduleWriteGrant(request: {
   details?: { path?: string; filePath?: string; [key: string]: unknown };
 }): Promise<PermissionAskResult | undefined> {
   if (request.type !== 'file_write' && request.type !== 'file_edit') return undefined;
+  if (isNonLocalWriteTool(request.tool)) {
+    logger.info('Schedule write grant declined (folder grant covers local file writes only)', {
+      sessionId: request.sessionId, tool: request.tool,
+    });
+    return undefined;
+  }
   // forceConfirm 只放行「W3 写边界 ask 为唯一成因」这一种形态（返修 r2）：cron/heartbeat
   // 会话的 runContext 没有 workspace 权威，一切绝对路径写都被判 outside_project
   // （2026-10-24 e2e 实证 boundaryAskForcesConfirmation=true，其余成因 false），而用户点
@@ -262,65 +266,70 @@ export async function approveByScheduleWriteGrant(request: {
     });
     return undefined;
   }
-  const rawTarget = writeTargetPathOf(request.tool, request.details)
+  const resolvedTargets = request.details?.scheduleWriteTargets;
+  const legacyTarget = writeTargetPathOf(request.tool, request.details)
     ?? (typeof request.details?.filePath === 'string' ? request.details.filePath : undefined);
-  if (!rawTarget) {
-    logger.info('Schedule write grant declined the target (no file path on the request)', {
-      sessionId: request.sessionId,
-      grantRoot,
-    });
-    return undefined;
-  }
-  // 判据必须与执行侧同一份路径解析：Write/Append 落盘前走 resolveInputPath（先
-  // expandTilde 再对会话工作目录归一）。`~/x` 若不先展开，会被 path.isAbsolute 判成
-  // 相对路径拼进 cwd（cron 会话 cwd=授权根）恒判界内放行，而执行侧把文件写进真实
-  // 家目录——授权边界与保护路径清单被 ~ 前缀整体绕过（返修 r1）。判据侧复用同一份
-  // 解析器，杜绝两处再漂移；Edit 工具自身不展 tilde（落 cwd/~ 下），此处更严只影响
-  // 停车与否、不产生旁路。
-  const expanded = expandTilde(rawTarget);
-  let target: string;
-  if (path.isAbsolute(expanded)) {
-    target = path.resolve(expanded);
-  } else {
-    const cwd = grantSession?.workingDirectory;
-    if (!cwd || !path.isAbsolute(cwd)) {
-      logger.info('Schedule write grant declined a relative target (session has no working directory)', {
+  const targets = Array.isArray(resolvedTargets) ? resolvedTargets : [legacyTarget];
+  if (!targets.length) return undefined;
+  for (const rawTarget of targets) {
+    if (typeof rawTarget !== 'string' || !rawTarget) {
+      logger.info('Schedule write grant declined the target (no file path on the request)', {
         sessionId: request.sessionId,
         grantRoot,
-        target: rawTarget,
       });
       return undefined;
     }
-    target = resolveInputPath(rawTarget, cwd);
+    // 判据必须与执行侧同一份路径解析：Write/Append 落盘前走 resolveInputPath（先
+    // expandTilde 再对会话工作目录归一）。`~/x` 若不先展开，会被 path.isAbsolute 判成
+    // 相对路径拼进 cwd（cron 会话 cwd=授权根）恒判界内放行，而执行侧把文件写进真实
+    // 家目录——授权边界与保护路径清单被 ~ 前缀整体绕过（返修 r1）。判据侧复用同一份
+    // 解析器，杜绝两处再漂移；Edit 工具自身不展 tilde（落 cwd/~ 下），此处更严只影响
+    // 停车与否、不产生旁路。
+    const expanded = expandTilde(rawTarget);
+    let target: string;
+    if (path.isAbsolute(expanded)) {
+      target = path.resolve(expanded);
+    } else {
+      const cwd = grantSession?.workingDirectory;
+      if (!cwd || !path.isAbsolute(cwd)) {
+        logger.info('Schedule write grant declined a relative target (session has no working directory)', {
+          sessionId: request.sessionId,
+          grantRoot,
+          target: rawTarget,
+        });
+        return undefined;
+      }
+      target = resolveInputPath(rawTarget, cwd);
+    }
+    if (!isPathWithinWriteGrantRoot(target, grantRoot)) {
+      logger.info('Schedule write grant declined the target (outside the granted folder)', {
+        sessionId: request.sessionId,
+        grantRoot,
+        target,
+      });
+      return undefined;
+    }
+    // 保护路径（~/.ssh、策略文件、根内 .git/config 等约束自改写目标）不因落在授权文件夹
+    // 内而放行——授权只覆盖普通文件写。projectRoot 必须带上（与执行侧同参形状）：漏了它
+    // <root>/.git/config、根内数据目录策略文件等项目级条目整组漏拦（返修 r2）。会话工作
+    // 目录与授权根不同时两侧都查（runContext 的 workspace 权威可能是其中任一个）。
+    // 禁写名规则（.git/hooks 下新建钩子、凭据名文件，与 getForbiddenWritePathsUnderRoot
+    // 同一名册）一并补拦，不要求目标已存在。
+    const resolvedTarget = path.resolve(target);
+    const cwdRoot = grantSession?.workingDirectory;
+    if (
+      isProtectedWritePath(resolvedTarget, { projectRoot: grantRoot })
+      || (cwdRoot
+        && path.isAbsolute(cwdRoot)
+        && path.resolve(cwdRoot) !== path.resolve(grantRoot)
+        && isProtectedWritePath(resolvedTarget, { projectRoot: cwdRoot }))
+      || isForbiddenWriteNameUnderRoot(resolvedTarget, grantRoot)
+    ) {
+      logger.info('Schedule write grant declined a protected write path', { target, grantRoot });
+      return undefined;
+    }
   }
-  if (!isPathWithinWriteGrantRoot(target, grantRoot)) {
-    logger.info('Schedule write grant declined the target (outside the granted folder)', {
-      sessionId: request.sessionId,
-      grantRoot,
-      target,
-    });
-    return undefined;
-  }
-  // 保护路径（~/.ssh、策略文件、根内 .git/config 等约束自改写目标）不因落在授权文件夹
-  // 内而放行——授权只覆盖普通文件写。projectRoot 必须带上（与执行侧同参形状）：漏了它
-  // <root>/.git/config、根内数据目录策略文件等项目级条目整组漏拦（返修 r2）。会话工作
-  // 目录与授权根不同时两侧都查（runContext 的 workspace 权威可能是其中任一个）。
-  // 禁写名规则（.git/hooks 下新建钩子、凭据名文件，与 getForbiddenWritePathsUnderRoot
-  // 同一名册）一并补拦，不要求目标已存在。
-  const resolvedTarget = path.resolve(target);
-  const cwdRoot = grantSession?.workingDirectory;
-  if (
-    isProtectedWritePath(resolvedTarget, { projectRoot: grantRoot })
-    || (cwdRoot
-      && path.isAbsolute(cwdRoot)
-      && path.resolve(cwdRoot) !== path.resolve(grantRoot)
-      && isProtectedWritePath(resolvedTarget, { projectRoot: cwdRoot }))
-    || isForbiddenWriteNameUnderRoot(resolvedTarget, grantRoot)
-  ) {
-    logger.info('Schedule write grant declined a protected write path', { target, grantRoot });
-    return undefined;
-  }
-  logger.info('Schedule write grant approved the target', { sessionId: request.sessionId, target, grantRoot });
+  logger.info('Schedule write grant approved the target', { sessionId: request.sessionId, grantRoot });
   return { approved: true, approvalSource: 'schedule-write-grant' };
 }
 

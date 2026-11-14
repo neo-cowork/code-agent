@@ -146,7 +146,7 @@ export const expertZh = {
     },
     roleDetail: {
       roleWakeLabel: '角色唤醒',
-      roleWakeTooltip: '角色醒来时自己记下的',
+      roleWakeTooltip: '角色醒来时自己记下的（{time}）',
       maxIterations: '最大迭代次数',
       skills: '技能',
       tools: '工具',
@@ -476,7 +476,7 @@ export const expertEn: typeof expertZh = {
     },
     roleDetail: {
       roleWakeLabel: 'Role wake',
-      roleWakeTooltip: 'Written by the role itself when it woke up',
+      roleWakeTooltip: 'Written by the role itself when it woke up ({time})',
       maxIterations: 'Maximum iterations',
       skills: 'Skills',
       tools: 'Tools',

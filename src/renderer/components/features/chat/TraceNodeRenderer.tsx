@@ -28,6 +28,7 @@ import { RouteTraceChip, shouldRenderModelDecisionChip } from './RouteTraceChip'
 import { TurnQualityStrip } from './TurnQualityStrip';
 import { EnvAssistCard } from './EnvAssistCard';
 import { AgentErrorPresentation } from './AgentErrorCard';
+import { ProjectTrustConfirmCard } from './ProjectTrustConfirmCard';
 import { VoiceCallSummaryCard } from '../voice/VoiceCallSummaryCard';
 import { useSmoothStreamingText } from '../../../hooks/useSmoothStreamingText';
 import { Archive, AudioLines, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, RefreshCw, RotateCcw } from 'lucide-react';
@@ -64,6 +65,8 @@ interface TraceNodeRendererProps {
   onStreamingDisplayUpdate?: (nodeId: string, displayLength: number, isAnimating: boolean) => void;
   onRewindUserPrompt?: (messageId: string, content: string) => void;
   rewindDisabled?: boolean;
+  /** 旧项目待确认轮：用户气泡不挂「没发出去 · 编辑重发」（见 utils/projectTrustTurn）。 */
+  suppressSendFailedBadge?: boolean;
   fileChangesByPath?: ReadonlyMap<string, FileChange>;
 }
 
@@ -77,6 +80,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
   onStreamingDisplayUpdate,
   onRewindUserPrompt,
   rewindDisabled,
+  suppressSendFailedBadge,
   fileChangesByPath,
 }) => {
   let content: React.ReactNode;
@@ -90,7 +94,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
           content={node.content}
           attachments={attachments}
           sourceType={node.metadata?.source}
-          sendFailed={node.metadata?.sendFailed === true}
+          sendFailed={node.metadata?.sendFailed === true && !suppressSendFailedBadge}
           telemetryRecovered={isTelemetryRecoveredMessage({ role: 'user', content: node.content, metadata: node.metadata })}
           suppressVoiceBadge={Boolean(inVoiceDispatchCard)}
           isNeoTagMessage={Boolean(node.metadata?.neoTag)}
@@ -543,7 +547,13 @@ const AssistantTextNode: React.FC<{
           messageId={messageId}
           sessionId={sessionId}
           run={node.agentErrorRun}
+          lastFailure={node.agentErrorLast}
         />
+      )}
+
+      {/* 旧项目 Source 快照缺失的发送失败：正文已是人话句子，这里补「确认并重发」 */}
+      {node.metadata?.sendFailureCode === 'PROJECT_SOURCE_TRUST' && (
+        <ProjectTrustConfirmCard node={node} sessionId={sessionId} />
       )}
 
       {wakeFields ? <WakeRationaleNote fields={wakeFields} /> : null}
@@ -667,7 +677,7 @@ const SystemNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, s
       humanToolLabels: t.receiptPresentation.humanToolLabels,
     }).join(t.receiptPresentation.roleCapabilityLabels.separator);
     return (
-      <div className="mx-3 my-1.5 rounded-md border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-xs text-zinc-400">
+      <div className="shrink-0 mx-3 my-1.5 rounded-md border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-xs text-zinc-400">
         <div className="font-medium text-zinc-300">{title}</div>
         {receipt.diffAvailable !== false && !unchanged && (
           <div className="mt-1">

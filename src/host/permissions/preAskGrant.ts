@@ -13,6 +13,7 @@ export function resolvePreAskGrant(input: {
   sessionId: string | undefined;
   standingGrantTarget: string | null;
   computerApp: ComputerTargetApp | null;
+  browserSessionTarget?: string | null;
   blocked: boolean;
 }): { ledgerReason: string; traceRule: string; traceDetail: string } | null {
   if (input.blocked) return null;
@@ -25,12 +26,13 @@ export function resolvePreAskGrant(input: {
   }
   // N-PERM-GRANT-TIERS：host 侧工具授权两档。target 精确一致（null 只匹配 null），
   // run 档只在授权所属会话内命中。排在 standingGrants 之前：时间盒比永久授权窄。
-  const toolGrantTier = matchToolGrant(input.sessionId, input.toolName, input.standingGrantTarget);
+  if (input.browserSessionTarget === null) return null;
+  const toolGrantTier = matchToolGrant(input.sessionId, input.toolName, input.browserSessionTarget ?? input.standingGrantTarget);
   if (toolGrantTier) {
     return {
       ledgerReason: `tool_grant:${toolGrantTier}`,
       traceRule: `tool_grant:${toolGrantTier}`,
-      traceDetail: toolGrantTier === 'run'
+      traceDetail: toolGrantTier === 'session' ? 'Session approval matched this action and site' : toolGrantTier === 'run'
         ? `任务内授权命中：${input.toolName}`
         : `24 小时授权命中：${input.toolName}`,
     };

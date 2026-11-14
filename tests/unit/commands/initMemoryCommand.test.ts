@@ -16,12 +16,24 @@ describe('/init-memory builtin prompt command', () => {
     expect(command?.template).toContain('read_xlsx');
     expect(command?.template).toContain('read_pdf');
     expect(command?.template).toContain('ReadDocument');
-    expect(command?.template).toContain('exists, not overwritten');
+    expect(command?.template).toContain('已存在，未覆盖');
     expect(command?.template).toContain('逐字转述工具返回的中文状态说明行');
     expect(command?.template).toContain('仍待确认，需在设置→记忆页确认才生效');
-    expect(command?.template).toContain('不要把 status: candidate / status: active 这类原始状态行或英文回执句子贴给用户');
+    expect(command?.template).toContain('不要把原始状态词、编号或英文回执句子贴给用户');
+    expect(command?.template).toContain('主题只用中文名称呼：用途、关键文件、约定');
     expect(command?.template).toContain('不要把同一条记忆同时描述为待确认、部分已生效、以设置页为准或已生效');
     expect(command?.description).toBeTruthy();
+  });
+
+  it('keeps English receipt words out of the template except the single parameter-list line', () => {
+    const template = BUILTIN_PROMPT_COMMANDS.find((item) => item.name === 'init-memory')?.template ?? '';
+    // 工具调用参数行是模板里唯一允许出现英文主题值的地方，按精确子串豁免恰好一次。
+    const parameterList = 'purpose、key-files、conventions';
+    expect(template.split(parameterList)).toHaveLength(2);
+    const outsideParameterList = template.replace(parameterList, '');
+    for (const word of ['candidate', 'active', 'exists', 'purpose', 'key-files', 'conventions']) {
+      expect(outsideParameterList).not.toContain(word);
+    }
   });
 
   it('is not a handler command', () => {

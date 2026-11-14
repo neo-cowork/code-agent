@@ -303,6 +303,7 @@ export function projectTurns(
   // 供应商报错各落一条），只算一次、只渲染最后一条。带 toolCalls 的轮中消息不打断
   // 连续段——那一轮可能还会失败。
   const agentErrorRunByMessageId = new Map<string, AgentErrorRunInfo>();
+  let lastFailureId: string | null = null;
   {
     // 扁平三变量而非可空对象：typescript7 对「可空对象 + `?.` 等值比较 + 显式判空」
     // 的组合会错把变量窄化成 never（隔离复现 TS2339/TS7022），扁平写法无此问题。
@@ -310,6 +311,7 @@ export function projectTurns(
     let runCategory: AgentErrorCategory | null = null;
     let runLength = 0;
     let sawUserSinceLastFailure = false;
+    let lastFailureMessageId: string | null = null;
     for (const msg of messages) {
       if (msg.role === 'user') {
         sawUserSinceLastFailure = true;
@@ -333,6 +335,7 @@ export function projectTurns(
         runMessageId = msg.id;
         sawUserSinceLastFailure = false;
         agentErrorRunByMessageId.set(msg.id, { runLength, latest: true });
+        lastFailureMessageId = msg.id;
         continue;
       }
       if (!msg.toolCalls?.length && msg.content?.trim()) {
@@ -341,6 +344,7 @@ export function projectTurns(
         runLength = 0;
       }
     }
+    lastFailureId = lastFailureMessageId;
   }
 
   for (const msg of messages) {
@@ -665,6 +669,10 @@ export function projectTurns(
       const projectedMetadata = streamInterruptionReason
         ? { ...msg.metadata, streamInterruptionReason }
         : msg.metadata;
+      // 错误属于整条消息的终态，不属于每个 text/tool 分片。
+      const contentMetadata = projectedMetadata?.agentError
+        ? { ...projectedMetadata, agentError: undefined }
+        : projectedMetadata;
       let recoveryToolProjected = false;
 
       // 一条 assistant 消息若因 content_parts 交错（text 穿插 tool_call）拆成多个
@@ -672,7 +680,7 @@ export function projectTurns(
       // 避免同一段 thinking 在多个折叠行里重复出现（P0 去噪：思考块过多问题的根因之一）。
       let reasoningAttachedForMessage = false;
 
-      const pushAssistantTextNode = (content: string, index?: number) => {
+      const pushAssistantTextNode = (content: string, index?: number, includeAgentError = false) => {
         // 中断轮的唯一时间线信号由 recovery 工具节点承载。落库 marker 前的 partial
         // 与 snapshot.content 是同一段流式正文，二者都继续投影会在重载后重复两遍，
         // 也会破坏“灰字一行 + 决策槽一行”的单信号形态。
@@ -706,9 +714,8 @@ export function projectTurns(
         }
         const attachReasoning = !reasoningAttachedForMessage;
         reasoningAttachedForMessage = true;
-        // 同因连续段信息只随 agentError 走：同一条消息拆出的所有正文节点拿同一个
-        // run 对象，折叠/整卡的判定整条消息一致。
-        const agentErrorRun = projectedMetadata?.agentError
+        // 只在唯一错误落点复用前台/后台共用的连续失败折叠结果。
+        const agentErrorRun = includeAgentError && projectedMetadata?.agentError
           ? agentErrorRunByMessageId.get(msg.id)
           : undefined;
         turn.nodes.push({
@@ -721,7 +728,7 @@ export function projectTurns(
           thinking: attachReasoning ? msg.thinking : undefined,
           artifacts: msg.artifacts,
           modelDecision,
-          metadata: projectedMetadata,
+          metadata: includeAgentError ? projectedMetadata : contentMetadata,
           ...(agentErrorRun ? { agentErrorRun } : {}),
         });
       };
@@ -739,7 +746,7 @@ export function projectTurns(
         // result），按真实结局渲染，剥掉中断标记；否则维持中断单信号。
         const nodeMetadata = recoveryMessage && executedToolCallIds.has(tc.id)
           ? stripStreamRecoveryMarker(msg).metadata
-          : projectedMetadata;
+          : contentMetadata;
         turn.nodes.push({
           id: `${msg.id}-tc-${tc.id}`,
           type: 'tool_call',
@@ -811,7 +818,7 @@ export function projectTurns(
         // 错误卡片尾随在工具行之后：带 agentError 的消息即使 content_parts 全是工具
         // 调用，也要补一个空正文节点承载 AgentErrorCard，否则失败无任何可见落点。
         if (hasAgentError) {
-          pushAssistantTextNode('');
+          pushAssistantTextNode('', textIndex + 1, true);
         }
 
         // content_parts 是权威交错顺序。走到这里若仍 textIndex===0，说明 parts 里没有
@@ -823,7 +830,7 @@ export function projectTurns(
       }
 
       if (hasContent || hasReasoning || hasAgentError) {
-        pushAssistantTextNode(msg.content);
+        pushAssistantTextNode(msg.content, undefined, true);
       }
 
       for (const tc of msg.toolCalls ?? []) {
@@ -868,6 +875,12 @@ export function projectTurns(
   // 其回复已在对话流里；work card 记录仅供账号菜单「Neo 协同」topic 目录做历史视图。
 
   anchorVoiceTaskArtifactsToCompletionBroadcast(turns, voiceArtifactAnchors);
+
+  // 后台代理续跑提示整段会话只挂一处：最后一条失败消息的最后一个节点（同一消息被重复投影也只一个）。
+  const lastFailureNodes = turns.flatMap((turn) => turn.nodes)
+    .filter((node) => node.messageId === lastFailureId && node.metadata?.agentError);
+  const lastFailureNode = lastFailureNodes.at(-1);
+  if (lastFailureNode) lastFailureNode.agentErrorLast = true;
 
   // X5.5-D5：语音派出的 run 刻意活得比通话久，挂断后 run 的收尾文本 timestamp
   // 晚于摘要卡的 endedAt——摘要卡因此不在消息流最后。展示层把摘要卡钉到所在轮
