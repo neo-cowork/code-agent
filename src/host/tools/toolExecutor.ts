@@ -1,4 +1,5 @@
 import { EnvBlockedError } from '../permissions/envAssist/EnvBlockedError';
+import { normalizeReminderCreateTime } from './reminderCreateTime';
 import { isEmergencyStopActive } from '../security/emergencyStop';
 import { emergencyStopMessage } from '../../shared/i18n/emergencyStop';
 import { getLocale } from '../platform/appPaths';
@@ -39,6 +40,7 @@ import { evaluateToolSlotDataDirAccess, FOREIGN_SLOT_DATA_DIR_CODE, type SlotDat
 import { createFileCheckpointIfNeeded } from './middleware/fileCheckpointMiddleware';
 import { getFileCheckpointService } from '../services/checkpoint';
 import { getConfirmationGate } from '../agent/confirmationGate';
+import { resolveDelegationApprovalTarget } from '../services/delegation/delegationApprovalTarget';
 import type { ConfirmationPreview } from '../../shared/contract/confirmation';
 import { computeLedgerArgsSurvival } from '../agent/parkedApprovalSurvival';
 import {
@@ -321,6 +323,8 @@ export interface ToolExecutorConfig {
   permissionModeOverrideIsInheritedCeiling?: boolean;
   /** Present only for immutable per-run executors. */
   runContext?: RunContext;
+  /** Preserve child-agent Stop ancestry when this executor owns an auxiliary surface run. */
+  spawnParentRunId?: string;
   /** Optional final dispatch hop. Returning null falls back to the protocol resolver. */
   dispatchTool?: ToolExecutionDelegate;
   /** 账本来源由所有构造入口显式声明。 */
@@ -476,6 +480,7 @@ export class ToolExecutor {
   private requestPermission: (request: PermissionRequestData) => Promise<RequestPermissionResult>;
   private workingDirectory: string;
   private readonly runContext?: RunContext;
+  private readonly spawnParentRunId?: string;
   private readonly restrictWritesToWorkspace: boolean;
   private readonly dispatchTool?: ToolExecutionDelegate;
   private executionTopology: ExecutionTopology;
@@ -495,6 +500,7 @@ export class ToolExecutor {
     this.permissionModeOverrideIsInheritedCeiling = config.permissionModeOverrideIsInheritedCeiling === true;
     this.forcePermissionHandler = config.forcePermissionHandler === true;
     this.runContext = config.runContext;
+    this.spawnParentRunId = config.spawnParentRunId;
     this.dispatchTool = config.dispatchTool;
     this.executionTopology = config.executionTopology ?? 'main';
     this.ledgerOrigin = config.ledgerOrigin ?? 'desktop';
@@ -541,6 +547,7 @@ export class ToolExecutor {
       dispatchTool: dispatchTool ?? this.dispatchTool,
       ledgerOrigin: this.ledgerOrigin,
       spawnMaxDepth: this.spawnMaxDepth,
+      spawnParentRunId: this.spawnParentRunId,
       // 写边界同样必须继承：子代理走 forRun 派生，漏传就等于子调用绕过边界
       // （#1686 ai-review 第三轮）。与上面的收缩档同理——边界只在主 executor 上生效不算边界。
       restrictWritesToWorkspace: this.restrictWritesToWorkspace,
@@ -690,6 +697,11 @@ export class ToolExecutor {
     }
 
     const executionToolName = toolDef.name;
+    const reminderTime = normalizeReminderCreateTime(executionToolName, params);
+    if (!reminderTime.ok) {
+      return { success: false, error: reminderTime.error, metadata: { code: reminderTime.code } };
+    }
+    params = reminderTime.args;
     const pluginOrigin = getPluginOriginForTool(executionToolName);
     const pluginId = getPluginIdForTool(executionToolName);
     const policyToolName = normalizeToolName(executionToolName);
@@ -1305,6 +1317,7 @@ export class ToolExecutor {
     // Create tool context
     const context: ToolContext & { sessionId?: string } = {
       runId: effectiveRunId, turnId: options.turnId,
+      spawnParentRunId: this.spawnParentRunId,
       sourceMessageId: options.sourceMessageId,
       sessionId: effectiveSessionId,
       workspace: this.writeWorkspaceRoot ?? this.runtimeWorkspace,
@@ -2105,7 +2118,11 @@ export class ToolExecutor {
       let shouldForceConfirm = false;
       try {
         const gate = getConfirmationGate();
-        confirmationPreview = gate.buildPreview(executionToolName, params, { workspaceRoot: this.runtimeWorkspace });
+        confirmationPreview = gate.buildPreview(executionToolName, params, {
+          workspaceRoot: this.runtimeWorkspace,
+          delegationTargetTitle: executionToolName === 'delegate_session'
+            ? resolveDelegationApprovalTarget(params, effectiveSessionId) : undefined,
+        });
         confirmationRiskLevel = gate.assessRiskLevel(executionToolName, params);
         shouldForceConfirm = gate.shouldConfirm(
           {
@@ -2302,6 +2319,7 @@ export class ToolExecutor {
       // E2: 确认门控 - 为高风险写操作附加预览并强制确认
       if (confirmationPreview) {
         permissionRequest.details.preview = confirmationPreview;
+        if (executionToolName === 'delegate_session') permissionRequest.reason = confirmationPreview.summary;
       }
       if (shouldForceConfirm) {
         permissionRequest.forceConfirm = true;
@@ -2358,10 +2376,14 @@ export class ToolExecutor {
         }
       }
 
-      const ask = await requestPermissionWithTelemetry({
-        request: permissionRequest,
-        toolCallId: options.currentToolCallId,
-        requestPermission: this.requestPermission,
+      const ask = await getDenialRegistry().observeApproval({
+        sessionId: effectiveSessionId, sourceMessageId: options.sourceMessageId, runId: effectiveRunId,
+        toolName: executionToolName, app: computerApp, enabled: !cuaSensitiveStep && !commandAnalysisFailedReason,
+        ask: () => requestPermissionWithTelemetry({
+          request: permissionRequest,
+          toolCallId: options.currentToolCallId,
+          requestPermission: this.requestPermission,
+        }),
       });
       if (commandAnalysisFailedReason) {
         ask.approved = false;

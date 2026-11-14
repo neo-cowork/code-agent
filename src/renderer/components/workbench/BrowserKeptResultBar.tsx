@@ -35,7 +35,7 @@ export const BrowserKeptResultBar: React.FC<BrowserKeptResultBarProps> = ({
 }) => {
   const { t } = useI18n();
   const copy: KeptCopy = t.workbenchTabs.agentWindow.keptResult;
-  const [kept, setKept] = useState<KeptResultPage>({ state: 'none', url: null, title: null });
+  const [kept, setKept] = useState<KeptResultPage>({ state: 'none', url: null, title: null, reason: null });
   const [busy, setBusy] = useState<'adopt' | 'reopen' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
@@ -87,7 +87,9 @@ export const BrowserKeptResultBar: React.FC<BrowserKeptResultBarProps> = ({
     }
   }, [kept.url, conversationId, workspace, copy.reopenFailed]);
 
-  if (kept.state === 'none') return null;
+  // N-FIX-FIX-BROWSER-SECRETREF-HARDEN：takeover 停靠不经过本条（聊天里的「继续」卡
+  // 负责），避免同一扇窗出现两个不同口径的入口。
+  if (kept.state === 'none' || kept.reason === 'takeover') return null;
 
   return (
     <div

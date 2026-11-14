@@ -11,6 +11,11 @@ const getAllWindowsMock = vi.hoisted(() => vi.fn());
 const hasInteractiveRendererMock = vi.hoisted(() => vi.fn());
 const ipcMainHandleMock = vi.hoisted(() => vi.fn());
 const confirmMock = vi.hoisted(() => vi.fn());
+const settingsMock = vi.hoisted(() => {
+  const fn = vi.fn<() => unknown>();
+  fn.mockReturnValue({ ui: { language: 'zh' } });
+  return fn;
+});
 const responseHandlerRef = vi.hoisted(() => ({ fn: undefined as undefined | ((e: unknown, r: unknown) => Promise<void>) }));
 ipcMainHandleMock.mockImplementation((channel: string, fn: (e: unknown, r: unknown) => Promise<void>) => {
   if (channel === 'canvas-video:response') responseHandlerRef.fn = fn;
@@ -19,6 +24,9 @@ ipcMainHandleMock.mockImplementation((channel: string, fn: (e: unknown, r: unkno
 vi.mock('../../../../../src/host/platform', () => ({
   ipcHost: { handle: ipcMainHandleMock },
   AppWindow: { getAllWindows: getAllWindowsMock, hasInteractiveRenderer: hasInteractiveRendererMock },
+}));
+vi.mock('../../../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({ getSettings: settingsMock }),
 }));
 vi.mock('../../../../../src/host/tools/modules/design/generationCostConfirm', () => ({
   confirmGenerationCost: confirmMock,
@@ -48,6 +56,7 @@ beforeEach(() => {
   getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);
   hasInteractiveRendererMock.mockReturnValue(true);
   confirmMock.mockResolvedValue(true);
+  settingsMock.mockReturnValue({ ui: { language: 'zh' } });
 });
 
 async function run(args: Record<string, unknown>, ctx = makeCtx(), perm = allow) {
@@ -93,6 +102,34 @@ describe('ProposeVideoOps 成本确认 fail-closed', () => {
     if (r.ok) expect(r.output).toContain('未确认');
     // 关键：没有发起 CANVAS_VIDEO_ASK（不进 renderer 出图路径）
     expect(sendMock).not.toHaveBeenCalledWith('canvas-video:ask', expect.anything());
+  });
+});
+
+// FB-1285：媒介键不再传中文自由文本；en UI 下明细全英文（模型用 ASCII id 而非中文 label）。
+const CJK = /[\u3000-\u303f\u3040-\u30ff\u4e00-\u9fff\uac00-\ud7af\uff01-\uff60]/;
+
+describe('ProposeVideoOps 成本确认参数语言', () => {
+  it('④en UI：mediaLabel=video，明细用模型 id，无中文', async () => {
+    settingsMock.mockReturnValue({ ui: { language: 'en' } });
+    confirmMock.mockResolvedValue(false); // 拿到参数即 fail-closed 返回，不进 renderer 等待
+    const r = await run({ mode: 't2v', prompt: 'a cat' });
+    expect(r.ok).toBe(true);
+    expect(confirmMock).toHaveBeenCalledTimes(1);
+    const arg = confirmMock.mock.calls[0][0];
+    expect(arg.mediaLabel).toBe('video');
+    expect(arg.detail).toBe('t2v · 5s · wan2.7-t2v');
+    expect(arg.mediaLabel).not.toMatch(CJK);
+    expect(arg.detail).not.toMatch(CJK);
+    expect(arg.estCny).toBeGreaterThan(0);
+    expect(arg.sessionId).toBe('sess-1');
+  });
+
+  it('④zh UI：明细保持现状（中文模型 label）', async () => {
+    confirmMock.mockResolvedValue(false);
+    await run({ mode: 't2v', prompt: 'a cat' });
+    const arg = confirmMock.mock.calls[0][0];
+    expect(arg.mediaLabel).toBe('video');
+    expect(arg.detail).toBe('t2v · 5s · 通义万相 文生视频');
   });
 });
 

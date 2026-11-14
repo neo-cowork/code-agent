@@ -1,4 +1,5 @@
 import type { Translations } from '../i18n';
+import { getBackgroundTaskToolLabel } from './toolHumanLabel';
 
 type SessionTaskOutcome = 'accepted' | 'queued' | 'reused' | 'status';
 type SessionTaskStatus = 'queued' | 'running' | 'cancelling' | 'completed' | 'failed' | 'cancelled';
@@ -12,7 +13,7 @@ interface SessionTaskItem {
 const OUTCOMES = new Set<SessionTaskOutcome>(['accepted', 'queued', 'reused', 'status']);
 const STATUSES = new Set<SessionTaskStatus>(['queued', 'running', 'cancelling', 'completed', 'failed', 'cancelled']);
 
-function readSessionTask(metadata: Record<string, unknown> | undefined): {
+export function readSessionTask(metadata: Record<string, unknown> | undefined): {
   outcome: SessionTaskOutcome;
   tasks: SessionTaskItem[];
 } | null {
@@ -49,7 +50,18 @@ function fill(template: string, values: Record<string, string>): string {
   );
 }
 
+// task_status 的子代理行带「（Agent ID: x）」供模型调用 collect_agent 等；用户卡片不展示。
+const AGENT_ID_SUFFIX = /\s*[（(]Agent ID:[^）)]*[）)]/g;
+
 export function formatSessionTaskOutput(
+  metadata: Record<string, unknown> | undefined,
+  rawOutput: string,
+  t: Translations,
+): string {
+  return formatStructuredSessionTaskOutput(metadata, rawOutput.replace(AGENT_ID_SUFFIX, ''), t).replace(AGENT_ID_SUFFIX, '');
+}
+
+function formatStructuredSessionTaskOutput(
   metadata: Record<string, unknown> | undefined,
   rawOutput: string,
   t: Translations,
@@ -57,18 +69,36 @@ export function formatSessionTaskOutput(
   const sessionTask = readSessionTask(metadata);
   if (!sessionTask) return rawOutput;
   const copy = t.sessionTaskPresentation;
+  const replacement = metadata?.sessionTaskReplacement as { shortName?: unknown; stopped?: unknown } | undefined;
+  const prefix = replacement && typeof replacement.shortName === 'string' && typeof replacement.stopped === 'boolean'
+    ? fill(replacement.stopped ? copy.replaced : copy.stopping, { name: replacement.shortName })
+    : '';
   const first = sessionTask.tasks[0];
   const status = (task: SessionTaskItem): string => copy.status[task.status];
+  const detailText = (detail: string): string => {
+    let text = detail;
+    const roots = metadata?.sessionTaskWorkspaceRoots;
+    if (Array.isArray(roots)) {
+      for (const root of roots) {
+        if (typeof root !== 'string' || !root.trim()) continue;
+        const base = root.replace(/[\\/]+$/, '');
+        for (const prefix of [`${base}/`, `${base}\\`]) text = text.split(prefix).join('');
+      }
+    }
+    return text.replace(/\b(Read|Write|Edit|Glob|Grep)\b/g, (toolName) => getBackgroundTaskToolLabel({
+      toolName, labels: t.receiptPresentation.humanToolLabels,
+    }));
+  };
 
   if (sessionTask.outcome === 'accepted' || sessionTask.outcome === 'queued') {
-    return fill(copy[sessionTask.outcome], { name: first.shortName });
+    return prefix + fill(copy[sessionTask.outcome], { name: first.shortName });
   }
   if (sessionTask.outcome === 'reused') {
-    return fill(copy.reused, { name: first.shortName, status: status(first) });
+    return prefix + fill(copy.reused, { name: first.shortName, status: status(first) });
   }
   return sessionTask.tasks.map((task) => fill(copy.statusLine, {
     name: task.shortName,
     status: status(task),
-    detail: task.detail ? fill(copy.detail, { detail: task.detail }) : '',
+    detail: task.detail ? fill(copy.detail, { detail: detailText(task.detail) }) : '',
   })).join('\n');
 }

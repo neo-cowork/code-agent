@@ -1,4 +1,9 @@
-import { BACKGROUND_HANDOFF_GUIDANCE, BACKGROUND_HANDOFF_PENDING_REPLY, OUT_OF_SCOPE_REPLY } from '../../services/commandCenter/delegationGuidance';
+import {
+  BACKGROUND_HANDOFF_GUIDANCE, BACKGROUND_HANDOFF_PENDING_REPLY, BACKGROUND_HANDOFF_PENDING_REPLY_EN,
+  OUT_OF_SCOPE_REPLY, OUT_OF_SCOPE_REPLY_EN,
+} from '../../services/commandCenter/delegationGuidance';
+import { detectMessageLanguage } from '../../../shared/sessionTitlePrompt';
+import { readUiLanguage } from '../../session/sessionTitleHostPrompt';
 import { resolveTurnToolFace } from './turnToolFace';
 import { resolveAgent } from '../agentRegistry';
 import type { ToolDefinition } from '../../../shared/contract';
@@ -87,7 +92,9 @@ function canHandOffToBackground(ctx: RuntimeContext): boolean {
 
 /** User-visible last word once denied calls exhaust the retries: names no tool, grants none. */
 export function deniedToolFinalReply(ctx: RuntimeContext): string {
-  return canHandOffToBackground(ctx) ? BACKGROUND_HANDOFF_PENDING_REPLY : OUT_OF_SCOPE_REPLY;
+  const zh = (detectMessageLanguage(ctx.turn?.runUserPrompt ?? '') ?? readUiLanguage()) === 'zh';
+  if (canHandOffToBackground(ctx)) return zh ? BACKGROUND_HANDOFF_PENDING_REPLY : BACKGROUND_HANDOFF_PENDING_REPLY_EN;
+  return zh ? OUT_OF_SCOPE_REPLY : OUT_OF_SCOPE_REPLY_EN;
 }
 
 export function deniedToolRetryGuidance(ctx: RuntimeContext): string {

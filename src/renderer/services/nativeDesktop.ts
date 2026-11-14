@@ -17,7 +17,9 @@ import type {
 } from '@shared/contract';
 import type {
   AudioCaptureMissingPrerequisiteCode,
+  AudioCaptureMode,
   AudioCapturePrerequisites,
+  MeetingSessionStatus,
 } from '@shared/contract/audioCapture';
 import { invalidateComputerUseSnapshotForSystemSettings } from '../stores/computerUseStore';
 
@@ -401,7 +403,9 @@ export async function stopNativeVoiceAec(): Promise<boolean> {
 
 export interface AudioCaptureStatus {
   capturing: boolean;
-  captureMode: 'microphone' | 'system-audio';
+  captureMode: AudioCaptureMode;
+  /** 用户选的模式；和 captureMode 不同 = 降级了（会议模式缺系统音频组件时只录麦克风） */
+  requestedMode?: AudioCaptureMode;
   vadReady: boolean;
   soxAvailable: boolean;
   systemAudioAvailable: boolean;
@@ -514,7 +518,7 @@ async function invokeDesktopDomain<T>(
   return parseIPCResponse<T>(payloadValue);
 }
 
-export async function startAudioCapture(mode: 'microphone' | 'system-audio' = 'microphone'): Promise<AudioCaptureStatus> {
+export async function startAudioCapture(mode: AudioCaptureMode = 'microphone'): Promise<AudioCaptureStatus> {
   return postDesktopAction<AudioCaptureStatus>('startAudioCapture', { mode });
 }
 
@@ -527,6 +531,20 @@ export async function stopAudioCapture(): Promise<AudioCaptureStatus> {
     } catch { /* best effort */ }
   }
   return status;
+}
+
+// 「记这场会」（N-MEETING-SESSION）。开始/继续失败时抛错，message 是前置缺失码（同 startAudioCapture）
+export const startMeeting = (title?: string) =>
+  postDesktopAction<MeetingSessionStatus>('startMeeting', title ? { title } : undefined);
+export const pauseMeeting = () => postDesktopAction<MeetingSessionStatus>('pauseMeeting');
+export const resumeMeeting = () => postDesktopAction<MeetingSessionStatus>('resumeMeeting');
+export const stopMeeting = () => postDesktopAction<MeetingSessionStatus>('stopMeeting');
+export async function getMeetingStatus(): Promise<MeetingSessionStatus | null> {
+  try {
+    return await postDesktopAction<MeetingSessionStatus>('getMeetingStatus');
+  } catch {
+    return null;
+  }
 }
 
 export async function getAudioCaptureStatus(): Promise<AudioCaptureStatus | null> {

@@ -399,7 +399,7 @@ describe('spawn_agent dispatch to protocol-native service', () => {
     const status = await executeTaskStatus({}, makeCtx({ sessionId }), allowAll);
     expect(status).toEqual({
       ok: true,
-      output: expect.stringContaining(`1. coder [running] id=${agentId} duration=`),
+      output: expect.stringMatching(new RegExp(`- coder ：进行中，已用时.*（Agent ID: ${agentId}）`)),
       meta: { sessionTask: { outcome: 'status', tasks: [] } },
     });
 
@@ -425,7 +425,7 @@ describe('spawn_agent dispatch to protocol-native service', () => {
     const status = await executeTaskStatus({}, makeCtx({ sessionId }), allowAll);
     expect(status).toEqual({
       ok: true,
-      output: expect.stringContaining(`1. coder [completed] id=${agentId} duration=0 s：行动项：确认负责人和截止时间`),
+      output: expect.stringContaining(`- coder ：已完成，已用时0 秒：行动项：确认负责人和截止时间`),
       meta: { sessionTask: { outcome: 'status', tasks: [] } },
     });
   });

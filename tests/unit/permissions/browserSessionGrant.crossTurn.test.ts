@@ -55,10 +55,20 @@ describe('cross-turn permission resolution with the real managed adapter', () =>
   const prepare = async (runId: string, url: string, agentId = 'default') => {
     registry.startAuxiliary({ runId, sessionId, workspace: '/tmp/reports' });
     const owner = identity(runId, agentId);
-    // Production browserAction selects its run-keyed service before adapter.execute.
+    // Preload the run service before binding; a live user window can be shared instead.
     await adapter.getBrowserService(owner).navigate(url);
     const result = await adapter.execute({ identity: owner, operationId: `prepare-${runId}`, action: 'get_content', params: {},
       executeProvider: async () => ({ success: true, output: 'Weekly reports' }) });
+    expect(result.success).toBe(true);
+  };
+  const navigateBound = async (runId: string, url: string) => {
+    const result = await adapter.execute({ identity: identity(runId), operationId: `navigate-${runId}`, action: 'navigate', params: { url },
+      executeProvider: async (_signal, browser) => {
+        expect(browser).toBe(adapter.getBinding(identity(runId))!.browserService);
+        expect(adapter.getBrowserService(identity(runId))).toBe(browser);
+        await browser.navigate(url);
+        return { success: true, output: 'Navigated to reports' };
+      } });
     expect(result.success).toBe(true);
   };
   beforeEach(() => {
@@ -95,7 +105,7 @@ describe('cross-turn permission resolution with the real managed adapter', () =>
   });
   afterEach(() => { vi.restoreAllMocks(); bindToolGrantDatabase(null, true); db.close(); });
 
-  it.each(['finished', 'stopped'])('a %s prior turn cannot authorize another browser service through a shared user binding', async (ending) => {
+  it.each(['finished', 'stopped'])('a %s prior turn cannot authorize a new origin in a shared user browser', async (ending) => {
     await prepare('y1', 'http://localhost:8123/reports');
     await call('y1');
     expect(requests).toHaveLength(1);
@@ -106,11 +116,14 @@ describe('cross-turn permission resolution with the real managed adapter', () =>
     clearToolRunGrants(sessionId);
     await prepare('y2', 'http://127.0.0.1:8123/reports');
     expect(adapter.getBinding(identity('y2'))!.browserService.getLiveTabUrl()).toBe('http://localhost:8123/reports');
+    // Production actions use the adapter's bound window, including cross-origin navigation.
+    await navigateBound('y2', 'http://127.0.0.1:8123/reports');
     await call('y2');
     expect(executedSites.at(-1)).toBe('http://127.0.0.1:8123/reports');
-    expect(requests, 'a new origin must ask even when the binding still describes the old user window').toHaveLength(2);
+    expect(requests, 'a new origin in the shared user window must ask again').toHaveLength(2);
     expect(requests[1].details.browserSessionGrant).toEqual({ target: 'wait_for_download@http://127.0.0.1:8123', previousOrigins: ['http://localhost:8123'] });
     await prepare('y3', 'http://localhost:8123/reports');
+    await navigateBound('y3', 'http://localhost:8123/reports');
     await call('y3');
     expect(requests).toHaveLength(2);
     expect(getDecisionHistory().getRecent(20).at(-1)?.reason).toBe('tool_grant:session');

@@ -86,6 +86,7 @@ import { getComboRecorder } from '../services/skills/comboRecorder';
 import { recordCapabilityGapTurn } from './capabilityGapTurnRecorder';
 import { mergeTurnSystemContext } from './turnScaffold';
 import { beginWorkDirectoryRun, endWorkDirectoryRun } from './runtime/workDirectoryMaterializer';
+import { withTaskOutputDirectory } from '../permissions/taskOutputDirectory';
 
 export class AgentLoop {
   private ctx: RuntimeContext;
@@ -151,6 +152,7 @@ export class AgentLoop {
         ?? config.goalRecoverySnapshot?.contract.maxTurns
         ?? config.goalContract?.maxTurns
         ?? getMaxIterations(),
+      completionReportOnly: config.completionReportOnly,
       workingDirectory: config.workingDirectory,
       projectConfigDirectory: config.projectConfigDirectory ?? config.workingDirectory,
       workspaceScope: config.workspaceScope,
@@ -298,6 +300,11 @@ export class AgentLoop {
       }),
     };
 
+    if (config.completionReportOnly) {
+      this.ctx.control.forceFinalResponse('background-completion-report',
+        'Report the supplied background result once, briefly, in the user\'s language. Respect a denied action; do not retry it or claim it succeeded. Do not call tools or expose internal names or paths.');
+    }
+
     // Create modules
     this.conversationRuntime = new ConversationRuntime(this.ctx, config.structuredOutput);
     this.toolEngine = new ToolExecutionEngine(this.ctx);
@@ -330,6 +337,22 @@ export class AgentLoop {
    *   `<live_voice_permission_notice>` 整块就是这么露给用户的）。省略时按 userMessage 处理。
    */
   async run(userMessage: string, displayPrompt?: string): Promise<void> {
+    const source = this.ctx.messages.at(-1);
+    const userText = displayPrompt ?? userMessage;
+    await withTaskOutputDirectory({
+      sessionId: this.ctx.sessionId, userText, metadata: source?.metadata,
+      inherit: this.ctx.publishContextHealth === false && !this.ctx.delegationOrigin,
+      // A new visible user message is the authority. Recovery, hidden and relayed
+      // runs cannot regain a grant by replaying a prompt from conversation history.
+      internal: source?.role !== 'user' || source.content !== userText || source.isMeta === true
+        || this.ctx.historyVisibility === 'meta' || this.ctx.unattendedTurn === true
+        || this.ctx.publishContextHealth === false
+        || Boolean(this.ctx.delegationOrigin || this.ctx.goalRecoverySnapshot)
+        || (this.ctx.runTraceContext?.attempt ?? 1) > 1,
+    }, () => this.runInTaskScope(userMessage, displayPrompt));
+  }
+
+  private async runInTaskScope(userMessage: string, displayPrompt?: string): Promise<void> {
     if (hasUntrustedMemoryInput(this.ctx.messages)) this.ctx.control.markMemoryTainted();
     const assistantMessageIdsBeforeRun = new Set(
       this.ctx.messages.filter((message) => message.role === 'assistant').map((message) => message.id),

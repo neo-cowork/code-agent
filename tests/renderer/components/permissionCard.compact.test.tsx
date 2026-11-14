@@ -114,7 +114,7 @@ describe('PermissionCard 紧凑/展开判据', () => {
     expect(document.body.textContent).not.toContain('审批决策链');
     expect(document.body.textContent).not.toContain('会访问');
     expect(screen.getByRole('button', { name: /允许一次/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /到这次做完为止/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /本次任务内允许/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /24 小时内允许/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /拒绝/ })).toBeTruthy();
   });

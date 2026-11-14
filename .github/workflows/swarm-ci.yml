@@ -66,6 +66,15 @@ on:
       - 'scripts/check-token-integrity.mjs'
       - 'scripts/check-copy.mjs'
       - 'scripts/host-chinese-error-ratchet.mjs'
+      - 'scripts/ci/internal-text-leak-gate.mjs'
+      - 'scripts/ci/internal-text-leak-gate.d.mts'
+      - 'scripts/lib/internal-text-leak-allowlist.json'
+      - 'scripts/lib/internal-text-leak-dynamic-allowlist.json'
+      - 'src/shared/humanizeInternalText.ts'
+      - 'src/shared/internalTextLeakPatterns.json'
+      - 'tests/renderer/components/internalTextLeakDynamicScan.test.tsx'
+      - 'tests/shared/humanizeInternalText.test.ts'
+      - 'tests/scripts/internalTextLeakGate.test.ts'
       - 'scripts/attention-budget-ratchet.mjs'
       # 基线也要触发：只改基线 = 手工放宽棘轮，不能溜过门（与 knip 基线同理）
       - 'scripts/attention-budget-ratchet-baseline.json'
@@ -274,6 +283,12 @@ jobs:
         # 含中文字符串字面量的存量只降不升。脚本对 0 文件、0 目标和 TS 解析失败 fail loud。
         run: node scripts/host-chinese-error-ratchet.mjs
 
+      - name: Internal text leak gate
+        # N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE：拦截 renderer 用户可见表面的 9 类内部格式泄漏
+        # （UUID、session_id、call_id/toolu_、ou_/oc_、内部工具名、裸英文状态词、sandbox-exec、
+        # 临时路径、裸 JSON）。白名单每条必填归属单号/理由；对 0 文件、TS 解析失败、白名单缺理由 fail loud。
+        run: npm run gate:internal-text-leak
+
       - name: Attention budget ratchet (injection fixed cost)
         # 注入固定开销棘轮：无守卫静态注入总量 + 实时语音固定文案 token，只降不升（语音 ±10% 容差见基线）。
         # 此前只在 gates-local 本地跑、CI 零执行——#1199 改语音文案后 CI 全绿合入，把主线门带红（N-L8-ATT11/12）。
@@ -395,7 +410,7 @@ jobs:
         - /home/runner:/home/runner
     env:
       HOME: /home/runner
-    needs: container-tools
+    needs: [container-tools, node-pty-binding]
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -429,6 +444,16 @@ jobs:
         run: |
           test -f node_modules/better-sqlite3/prebuilds/linux-x64.node
           node -e "const Database=require('better-sqlite3'); const db=new Database(':memory:'); db.prepare('SELECT 1').get(); db.close()"
+
+      - name: Fetch node-pty native binding
+        # Real-host unit tests need the binding compiled outside this container.
+        uses: actions/download-artifact@v4
+        with:
+          name: node-pty-binding
+          path: node_modules/node-pty/build/Release
+
+      - name: Assert node-pty binding
+        run: node -e "require('node-pty')"
 
       - name: Unit + renderer vitest (shard ${{ matrix.shard }}/4)
         # 2026-09-05 N-GATE-SUBSET-EXPAND：全收 tests/unit + tests/renderer。

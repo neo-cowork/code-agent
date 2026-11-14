@@ -1,5 +1,4 @@
 import { buildDelegatedTaskPrompt } from '../../../services/commandCenter/delegationGuidance';
-import { getSessionManager } from '../../../services/infra/sessionManager';
 import type {
   CanUseToolFn,
   ToolContext,
@@ -8,7 +7,8 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
-import type { MessageAttachment, UserQuestionOption } from '../../../../shared/contract';
+import type { Message, MessageAttachment, UserQuestionOption } from '../../../../shared/contract';
+import { CANCELLATION_TIMEOUTS } from '../../../../shared/constants/timeouts';
 import {
   getSessionCommandCenter,
   type SessionCommandTask,
@@ -26,6 +26,9 @@ import {
   steerTaskSchema,
   taskStatusSchema,
 } from './sessionCommandCenter.schema';
+
+import { getSessionManager } from '../../../services/infra/sessionManager';
+import { sessionTaskStatusLabel } from '../../../../shared/i18n/sessionTaskStatus';
 
 const WORKSPACE_REQUIRED_MESSAGE = '没有可写的项目根，请先选择项目或添加目录。';
 const OVERFLOW_QUESTION_HEADER = '任务已满';
@@ -61,11 +64,12 @@ function requireSession(ctx: ToolContext): ToolResult<string> | string {
   return ctx.sessionId?.trim() || { ok: false, error: 'No active session', code: 'DOMAIN_ERROR' };
 }
 
-function describeReferenceFailure(result: SessionTaskReferenceResult, action: string): string {
-  if (result.outcome === 'missing') return `没有找到可${action}的活跃任务，什么都没改。先调用 task_status 核对。`;
+function describeReferenceFailure(result: SessionTaskReferenceResult, action: string, sessionId: string): string {
+  if (result.outcome === 'missing') return `没有找到可${action}的活跃任务，什么都没改。请先核对当前任务。`;
   if (result.outcome === 'ambiguous') {
-    const options = result.candidates.map((task) => task.shortName).join('、');
-    return `目标不唯一，什么都没改。现在调用 AskUserQuestion 让用户从这些短名中选择：${options}。`;
+    const active = getSessionCommandCenter().active(sessionId);
+    const options = result.candidates.map((task) => `第${active.findIndex((entry) => entry.id === task.id) + 1}个「${task.shortName}」`).join('、');
+    return `目标不唯一，什么都没改。请让用户从这些任务中选择（可用序号指定）：${options}。`;
   }
   return '';
 }
@@ -84,27 +88,28 @@ async function permit(
 export function describeDelegateTaskResult(result: Exclude<SpawnSessionTaskResult, { outcome: 'requires_choice' }>): string {
   const { task } = result;
   const retryContext = task.retryOf
-    ? `这是第 ${task.attempt} 次尝试；上一次 [${task.retryOf.status}]${task.retryOf.detail ? `：${task.retryOf.detail}` : '。'}`
+    ? `这是第 ${task.attempt} 次尝试；上一次${sessionTaskStatusLabel(task.retryOf.status)}${task.retryOf.detail ? `：${task.retryOf.detail}` : '。'}`
     : '';
   if (result.outcome === 'reused') {
-    return `reused：复用「${task.shortName}」(${task.id})，当前状态 [${task.status}]${task.detail ? `：${task.detail}` : '。'}${task.attempt > 1 ? `这是第 ${task.attempt} 次尝试。` : ''}`;
+    return `继续跟踪「${task.shortName}」，当前${sessionTaskStatusLabel(task.status)}${task.detail ? `：${task.detail}` : '。'}${task.attempt > 1 ? `这是第 ${task.attempt} 次尝试。` : ''}`;
   }
   if (result.outcome === 'queued') {
-    return `queued：已把「${task.shortName}」(${task.id}) 放进同一任务线，前序任务结束后自动开始。${retryContext}`;
+    return `已把「${task.shortName}」加入排队，空闲后自动开始。${retryContext}`;
   }
-  return `accepted：后台任务「${task.shortName}」(${task.id}) 已开始。accepted 不等于完成；结果只以后续任务终态回流为准。${retryContext}`;
+  return `后台任务「${task.shortName}」已开始，尚未完成；完成后会在这里告诉你结果。${retryContext}`;
 }
 
 function sessionTaskMeta(
   outcome: 'accepted' | 'queued' | 'reused' | 'status',
   tasks: SessionCommandTask[],
+  includeTaskIds = false,
 ): Record<string, unknown> {
   return {
     sessionTask: {
       outcome,
       tasks: tasks.map((task) => {
         const detail = task.resultText ?? task.detail ?? task.summary;
-        return { shortName: task.shortName, status: task.status, ...(detail ? { detail } : {}) };
+        return { ...(includeTaskIds ? { taskId: task.id } : {}), shortName: task.shortName, status: task.status, ...(detail ? { detail } : {}) };
       }),
     },
   };
@@ -113,11 +118,12 @@ function sessionTaskMeta(
 function delegateTaskReceipt(
   result: Exclude<SpawnSessionTaskResult, { outcome: 'requires_choice' }>,
   prefix = '',
+  includeTaskIds = false,
 ): ToolResult<string> {
   return {
     ok: true,
     output: prefix + describeDelegateTaskResult(result),
-    meta: sessionTaskMeta(result.outcome === 'started' ? 'accepted' : result.outcome, [result.task]),
+    meta: sessionTaskMeta(result.outcome === 'started' ? 'accepted' : result.outcome, [result.task], includeTaskIds),
   };
 }
 
@@ -126,6 +132,7 @@ export async function executeDelegateTask(
   ctx: ToolContext,
   canUseTool: CanUseToolFn,
   onProgress?: ToolProgressFn,
+  includeTaskIds = false,
 ): Promise<ToolResult<string>> {
   const denied = await permit(delegateTaskSchema.name, args, canUseTool);
   if (denied) return denied;
@@ -184,12 +191,12 @@ export async function executeDelegateTask(
   };
   const result = await getSessionCommandCenter().spawn(spawnInput);
   if (result.outcome === 'requires_choice') {
-    const choiceResult = await resolveOverflowChoiceInHost(spawnInput, result.active, ctx.abortSignal);
+    const choiceResult = await resolveOverflowChoiceInHost(spawnInput, result.active, ctx, includeTaskIds, onProgress);
     onProgress?.({ stage: 'completing', percent: 100 });
     return choiceResult;
   }
   onProgress?.({ stage: 'completing', percent: 100 });
-  return delegateTaskReceipt(result);
+  return delegateTaskReceipt(result, '', includeTaskIds);
 }
 
 function buildOverflowQuestionOptions(
@@ -227,14 +234,18 @@ function extractOverflowAnswer(result: PromptUserResult): string | undefined {
 async function resolveOverflowChoiceInHost(
   spawnInput: SpawnSessionTaskInput,
   active: SessionCommandTask[],
-  abortSignal: AbortSignal,
+  ctx: ToolContext,
+  includeTaskIds: boolean,
+  onProgress?: ToolProgressFn,
 ): Promise<ToolResult<string>> {
+  const { abortSignal } = ctx;
   const { shortName, sessionId } = spawnInput;
   const { options, replaceable } = buildOverflowQuestionOptions(shortName, active);
   const question = replaceable.length > 0
     ? `当前后台任务槽位已满，「${shortName}」要排队等待，还是替换一件本会话的任务？`
     : `当前后台任务槽位已满，「${shortName}」要排队等待空闲槽位，还是暂不创建？`;
 
+  onProgress?.({ stage: 'running', detail: `${OVERFLOW_QUESTION_HEADER}：${question} ${options.map((option) => option.label).join(' / ')}` });
   const promptResult = await promptUserInChat([{
     header: OVERFLOW_QUESTION_HEADER,
     question,
@@ -250,7 +261,12 @@ async function resolveOverflowChoiceInHost(
 
   const answer = extractOverflowAnswer(promptResult);
   if (!answer) {
-    return { ok: true, output: describeOverflowUnansweredFallback(shortName) };
+    const content = describeOverflowUnansweredFallback(shortName);
+    // Persist the actionable receipt itself: a model paraphrase may omit the next step.
+    const message: Message = { id: crypto.randomUUID(), role: 'assistant', content, timestamp: Date.now() };
+    await getSessionManager().addMessageToSession(sessionId, message);
+    ctx.emit({ type: 'message', data: message });
+    return { ok: true, output: content };
   }
   if (answer === OVERFLOW_DECLINE_OPTION_LABEL) {
     return { ok: true, output: `用户选择了暂不创建，后台任务「${shortName}」未创建，也未加入排队。` };
@@ -260,7 +276,7 @@ async function resolveOverflowChoiceInHost(
     if (queued.outcome === 'requires_choice') {
       return { ok: true, output: describeOverflowUnansweredFallback(shortName) };
     }
-    return delegateTaskReceipt(queued);
+    return delegateTaskReceipt(queued, '你已选择排队，无需再次选择。', includeTaskIds);
   }
 
   const matchedReplace = replaceable.find((entry) => entry.label === answer)
@@ -270,21 +286,23 @@ async function resolveOverflowChoiceInHost(
 
   if (matchedReplace) {
     const center = getSessionCommandCenter();
-    const cancellation = await center.cancel(sessionId, matchedReplace.task.id);
-    if (cancellation.outcome !== 'resolved') {
+    const { cancellation, replacement } = await center.replace(spawnInput, matchedReplace.task.id);
+    if (cancellation.outcome !== 'resolved' || !replacement || replacement.outcome === 'requires_choice') {
       return { ok: true, output: describeOverflowUnansweredFallback(shortName) };
     }
-    const stopped = center.list(sessionId).find((task) => task.id === cancellation.task.id)?.status === 'cancelled';
-    const cancellationReceipt = `${stopped ? '已停止' : '已请求停止'}「${cancellation.task.shortName}」。`;
-    const restarted = await center.spawn(spawnInput);
-    if (restarted.outcome !== 'requires_choice') {
-      return delegateTaskReceipt(restarted, cancellationReceipt);
+    const deadline = Date.now() + CANCELLATION_TIMEOUTS.ROUTE_SETTLE_WAIT;
+    let stopped = center.list(sessionId).find((task) => task.id === cancellation.task.id)?.status === 'cancelled';
+    while (!stopped && !abortSignal?.aborted && Date.now() < deadline) {
+      await new Promise<void>((resolve) => setTimeout(resolve, CANCELLATION_TIMEOUTS.ROUTE_SETTLE_POLL));
+      stopped = center.list(sessionId).find((task) => task.id === cancellation.task.id)?.status === 'cancelled';
     }
-    const queuedAfterCancel = await center.spawn({ ...spawnInput, queueWhenFull: true });
-    if (queuedAfterCancel.outcome !== 'requires_choice') {
-      return delegateTaskReceipt(queuedAfterCancel, cancellationReceipt);
-    }
-    return { ok: true, output: describeOverflowUnansweredFallback(shortName) };
+    const cancellationReceipt = `${stopped ? '已停止' : '已请求停止'}「${cancellation.task.shortName}」。这是你刚才选择的替换，无需恢复原任务。`;
+    const current = center.list(sessionId).find((task) => task.id === replacement.task.id);
+    const receipt = delegateTaskReceipt(current?.status === 'running'
+      ? { outcome: 'started', task: current }
+      : replacement, cancellationReceipt, includeTaskIds);
+    if (receipt.ok) receipt.meta = { ...receipt.meta, sessionTaskReplacement: { shortName: cancellation.task.shortName, stopped } };
+    return receipt;
   }
 
   return { ok: true, output: describeOverflowUnansweredFallback(shortName) };
@@ -302,7 +320,7 @@ export async function executeSteerTask(
   const instruction = stringArg(args, 'instruction');
   if (!instruction) return { ok: false, error: 'instruction is required', code: 'INVALID_ARGS' };
   const result = await getSessionCommandCenter().steer(session, stringArg(args, 'target') || undefined, instruction);
-  if (result.outcome !== 'resolved') return { ok: true, output: describeReferenceFailure(result, '转向') };
+  if (result.outcome !== 'resolved') return { ok: true, output: describeReferenceFailure(result, '转向', session) };
   return { ok: true, output: `已把新要求投递给「${result.task.shortName}」；它的完成状态仍以后续终态回流为准。` };
 }
 
@@ -316,7 +334,7 @@ export async function executeCancelTask(
   const session = requireSession(ctx);
   if (typeof session !== 'string') return session;
   const result = await getSessionCommandCenter().cancel(session, stringArg(args, 'target') || undefined);
-  if (result.outcome !== 'resolved') return { ok: true, output: describeReferenceFailure(result, '取消') };
+  if (result.outcome !== 'resolved') return { ok: true, output: describeReferenceFailure(result, '取消', session) };
   const verb = result.task.status === 'cancelled' ? '已取消' : '正在取消';
   return { ok: true, output: `${verb}「${result.task.shortName}」；只有终态回流后才能声称它已经停稳。` };
 }
@@ -336,15 +354,22 @@ export async function executeTaskStatus(
   if (tasks.length === 0 && backgroundSubagents.length === 0) {
     return { ok: true, output: '当前会话还没有后台任务。' };
   }
-  const taskRows = tasks.map((task, index) => {
+  // 序号口径必须与 resolve() 一致：只有活跃任务编号（cancel_task/steer 的 target 序号），已结束的不编号
+  const activeIds = getSessionCommandCenter().active(session).map((task) => task.id);
+  const taskRows = tasks.map((task) => {
     // resultText 优先：240 字 summary 会截断「改走 Bash curl 审批」这类可执行提示（FB-577）
     const resultText = task.resultText ?? task.summary;
-    return `${index + 1}. ${task.shortName} [${task.status}] id=${task.id}${resultText ? `：${resultText}` : ''}`;
+    const activeIndex = activeIds.indexOf(task.id);
+    const label = activeIndex >= 0 ? `${activeIndex + 1}.` : '-';
+    return `${label} ${task.shortName}：${sessionTaskStatusLabel(task.status)}${resultText ? `：${resultText}` : ''}`;
   });
   return {
     ok: true,
-    output: [...taskRows, ...formatBackgroundSubagentRows(backgroundSubagents, tasks.length, snapshot.generatedAt, tasks.some((task) => task.status === 'running'))].join('\n'),
-    meta: sessionTaskMeta('status', tasks),
+    output: [...taskRows, ...formatBackgroundSubagentRows(backgroundSubagents, snapshot.generatedAt, tasks.some((task) => task.status === 'running'))].join('\n'),
+    meta: {
+      ...sessionTaskMeta('status', tasks),
+      ...(tasks.length ? { sessionTaskWorkspaceRoots: [...new Set(tasks.map((task) => task.workspaceScope.primaryRoot))] } : {}),
+    },
   };
 }
 
@@ -378,7 +403,8 @@ function moduleFor(
   return { schema, createHandler: () => new Handler(schema, executeFn) };
 }
 
-export const delegateTaskModule = moduleFor(delegateTaskSchema, executeDelegateTask);
+export const delegateTaskModule = moduleFor(delegateTaskSchema, (args, ctx, canUseTool, onProgress) =>
+  executeDelegateTask(args, ctx, canUseTool, onProgress, true));
 export const steerTaskModule = moduleFor(steerTaskSchema, executeSteerTask);
 export const cancelTaskModule = moduleFor(cancelTaskSchema, executeCancelTask);
 export const taskStatusModule = moduleFor(taskStatusSchema, executeTaskStatus);

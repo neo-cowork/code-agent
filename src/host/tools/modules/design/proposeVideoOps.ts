@@ -24,6 +24,7 @@ import { INTERACTION_TIMEOUTS } from '../../../../shared/constants';
 import { videoModelById, videoModelsWithCap, clampVideoDuration } from '../../../../shared/constants/visualModels';
 import { estimateVideoCostCny } from '../../../../shared/media/videoCost';
 import { confirmGenerationCost } from './generationCostConfirm';
+import { readUiLanguage } from '../../../session/sessionTitleHostPrompt';
 import { proposeVideoOpsSchema as schema } from './proposeVideoOps.schema';
 
 const logger = createLogger('ProposeVideoOps');
@@ -92,10 +93,12 @@ export async function executeProposeVideoOps(
   onProgress?.({ stage: 'starting', detail: schema.name });
 
   // ── 会话区成本确认（不抢画布焦点；fail-closed：取消/无 renderer/超时 → 不花钱）──
+  // en 卡片明细用模型 id（ASCII）而不是中文 label（如「通义万相 文生视频」），避免英文卡混中文。
+  const uiLang = readUiLanguage();
   const confirmed = await confirmGenerationCost({
-    mediaLabel: '视频',
+    mediaLabel: 'video',
     estCny,
-    detail: `${mode} · ${durationSec}s · ${resolved.label}`,
+    detail: `${mode} · ${durationSec}s · ${uiLang === 'en' ? resolved.id : resolved.label}`,
     sessionId: ctx.sessionId,
     abortSignal: ctx.abortSignal,
   });

@@ -2,7 +2,7 @@
 // Desktop IPC Handlers - 原生桌面活动查询
 // ============================================================================
 
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import type { IpcMain } from '../platform';
 import type { IPCResponse } from '@shared/ipc';
 import type { RawDomainRouteHandlers } from '@shared/ipc/domainRoutes';
@@ -23,8 +23,9 @@ import type { ManagedBrowserProxyInput } from '../services/infra/browserService'
 import { getNativeDesktopService } from '../services/desktop/nativeDesktopService';
 import { getComputerSurface } from '../services/desktop/computerSurface';
 import { startDesktopVisionAnalyzer } from '../services/desktop/desktopVisionAnalyzer';
-import { startDesktopAudioCapture, stopDesktopAudioCapture, getAudioCaptureStatus, clearAudioRecordings } from '../services/desktop/desktopAudioCapture';
-import type { AudioCaptureMissingPrerequisiteCode, AudioCapturePrerequisites } from '@shared/contract/audioCapture';
+import { startDesktopAudioCapture, stopDesktopAudioCapture, getAudioCaptureStatus, clearAudioRecordings, getSqlitePath } from '../services/desktop/desktopAudioCapture';
+import { MeetingSession, createSqliteMeetingStore } from '../services/desktop/meetingSession';
+import type { AudioCaptureMissingPrerequisiteCode, AudioCaptureMode, AudioCapturePrerequisites } from '@shared/contract/audioCapture';
 import { browserService } from '../services/infra/browserService';
 import { browserRelayService } from '../services/infra/browserRelayService';
 import {
@@ -42,6 +43,28 @@ import { getManagedBrowserProviderAdapter } from '../services/surfaceExecution/M
 // 音频采集完全走手动触发（录制按钮），不再自动检测会议 app。
 // 自动检测会让 ScreenCaptureKit 在用户未知情时拉起，macOS 统一标注为"屏幕共享"，体验错位。
 let manualAudioActive = false;
+
+function stopManualAudio(): void {
+  manualAudioActive = false;
+  stopDesktopAudioCapture();
+}
+
+// 「记这场会」（N-MEETING-SESSION）：只由用户在会话「+」菜单手动开始，录音走会议模式
+const meetingSession = new MeetingSession(
+  createSqliteMeetingStore(() => getSqlitePath(), (dbPath, sql, json) => {
+    try {
+      return execFileSync('sqlite3', json ? ['-json', dbPath, sql] : [dbPath, sql], { encoding: 'utf-8' });
+    } catch (error) {
+      logger.warn('[会议] 读写 meetings 失败', { error: error instanceof Error ? error.message : String(error) });
+      return '';
+    }
+  }),
+  {
+    start: async () => getAudioCaptureStatus().capturing, // 录音已由 startAudioCapture 处理器开好，这里只确认
+    stop: stopManualAudio,
+    isCapturing: () => getAudioCaptureStatus().capturing,
+  },
+);
 
 const logger = createLogger('DesktopIPC');
 const FULL_DISK_ACCESS_SETTINGS_URL = 'x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles';
@@ -472,9 +495,11 @@ const desktopHandlers: RawDomainRouteHandlers<DesktopDomainRequest, NativeDeskto
     if (manualAudioActive) {
       return { success: true, data: getAudioCaptureStatus() } satisfies IPCResponse<unknown>;
     }
-    const payload = raw as { fifoPath?: string; mode?: 'microphone' | 'system-audio' } | undefined;
+    const payload = raw as { fifoPath?: string; mode?: unknown } | undefined;
     const fifoPath = payload?.fifoPath;
-    const mode = payload?.mode || 'microphone';
+    const mode: AudioCaptureMode = payload?.mode === 'system-audio' || payload?.mode === 'meeting'
+      ? payload.mode
+      : 'microphone';
     if (process.platform === 'darwin' && process.arch === 'arm64') {
       const runtimeStatus = await getRuntimeAssetsStatus();
       const vadStatus = runtimeStatus.assets.find((asset) => asset.id === 'onnxruntime-vad');
@@ -503,13 +528,13 @@ const desktopHandlers: RawDomainRouteHandlers<DesktopDomainRequest, NativeDeskto
       if (missing.length === 0) {
         const micReady = prereqs ? prereqs.recorder.microphone === 'ready' : audioSt.soxAvailable;
         const sysReady = prereqs ? prereqs.recorder.systemAudio === 'ready' : Boolean(audioSt.systemAudioAvailable);
-        if (mode === 'system-audio' && !sysReady && !micReady) {
+        if (mode !== 'microphone' && !sysReady && !micReady) {
           missing.push('recorder_missing');
         } else if (mode === 'microphone' && !micReady) {
           missing.push('recorder_missing');
         }
         if ((prereqs ? prereqs.transcriptionEngine === 'missing' : audioSt.asrEngine === 'none')) {
-          missing.push('transcription_engine_missing');
+          missing.push(prereqs?.missing.includes('transcription_model_missing') ? 'transcription_model_missing' : 'transcription_engine_missing');
         }
         if (prereqs?.voiceDetection === 'unsupported') {
           missing.push('voice_detection_unsupported');
@@ -534,17 +559,55 @@ const desktopHandlers: RawDomainRouteHandlers<DesktopDomainRequest, NativeDeskto
     return { success: true, data: audioSt } satisfies IPCResponse<unknown>;
   },
   stopAudioCapture: async (_service, _raw) => {
-    manualAudioActive = false;
-    stopDesktopAudioCapture();
+    stopManualAudio();
+    meetingSession.onCaptureStoppedExternally(); // 设置页关录音时，这场会跟着结束
     return { success: true, data: getAudioCaptureStatus() } satisfies IPCResponse<unknown>;
   },
   getAudioCaptureStatus: async (_service, _raw) => {
     return { success: true, data: getAudioCaptureStatus() } satisfies IPCResponse<unknown>;
   },
+  startMeeting: async (service, raw) => {
+    if (!meetingSession.status().current) {
+      const started = await startMeetingCapture(service);
+      if (!started.success) return started; // 缺转写引擎等前置：原样带回界面
+    }
+    const payload = raw as { title?: unknown } | undefined;
+    const title = typeof payload?.title === 'string' ? payload.title : undefined;
+    return { success: true, data: await meetingSession.start(title) } satisfies IPCResponse<unknown>;
+  },
+  pauseMeeting: async (_service, _raw) => {
+    return { success: true, data: meetingSession.pause() } satisfies IPCResponse<unknown>;
+  },
+  resumeMeeting: async (service, _raw) => {
+    if (meetingSession.status().current?.state === 'paused') {
+      const started = await startMeetingCapture(service);
+      if (!started.success) return started;
+    }
+    return { success: true, data: await meetingSession.resume() } satisfies IPCResponse<unknown>;
+  },
+  stopMeeting: async (_service, _raw) => {
+    return { success: true, data: meetingSession.end('manual') } satisfies IPCResponse<unknown>;
+  },
+  getMeetingStatus: async (_service, _raw) => {
+    return { success: true, data: meetingSession.status() } satisfies IPCResponse<unknown>;
+  },
+  listMeetings: async (_service, _raw) => {
+    return { success: true, data: meetingSession.list() } satisfies IPCResponse<unknown>;
+  },
   clearAudioRecordings: async (_service, _raw) => {
     return { success: true, data: clearAudioRecordings() } satisfies IPCResponse<unknown>;
   },
 };
+
+/**
+ * 会议要两路同录。设置页可能已开着单路录音（只录麦克风）：沿用它会显示「记录中」却录不到对方，
+ * 所以不是会议模式就先停掉再按会议模式重开。这之后录音归这场会管，结束会议时一起停。
+ */
+async function startMeetingCapture(service: NativeDesktopService): Promise<IPCResponse<unknown>> {
+  const st = getAudioCaptureStatus();
+  if (manualAudioActive && st.capturing && st.captureMode !== 'meeting') stopManualAudio();
+  return desktopHandlers.startAudioCapture(service, { mode: 'meeting' });
+}
 
 const desktopRoutes = defineDomainRoutes<DesktopDomainRequest, NativeDesktopService>(
   DesktopSchemas.REQUEST,

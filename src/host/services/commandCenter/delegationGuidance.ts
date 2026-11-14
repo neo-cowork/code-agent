@@ -7,6 +7,8 @@ export const BACKGROUND_HANDOFF_REPLY = 'After acceptance reply only: '
 // The first is an offer, not a claim: nothing has been handed off at that point.
 export const BACKGROUND_HANDOFF_PENDING_REPLY = `这件事这次还没做成，你再说一声，${BACKGROUND_HANDOFF_SENTENCE}`;
 export const OUT_OF_SCOPE_REPLY = '这件事超出了我能做的范围，所以没有做。';
+export const BACKGROUND_HANDOFF_PENDING_REPLY_EN = 'That did not get done this time. Ask again and I will hand it to a background task and tell you the result when it finishes.';
+export const OUT_OF_SCOPE_REPLY_EN = 'That is outside what I can do here, so I did not do it.';
 
 export const DELEGATED_METHOD_REQUIREMENT = 'The requested method is part of the task requirements. '
   + 'Carry it out as requested; an alternative method is not completion. '
