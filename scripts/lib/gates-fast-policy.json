@@ -2,6 +2,7 @@
   "version": 1,
   "budgetMs": 170000,
   "maxFiles": 16,
+  "deferMaxFiles": 200,
   "baseline": [
     "tests/unit/agentEventSchemas.test.ts",
     "tests/unit/security/commandSafety.relativeDelete.test.ts",

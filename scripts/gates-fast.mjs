@@ -116,6 +116,11 @@ async function gate(id, applicable, run) {
   const record = { id, budgetMs: policy.budgetsMs[id], status: applicable ? 'running' : 'not-applicable', reason: applicable ? 'required by policy/PR paths' : 'no matching PR paths', durationMs: 0 };
   receipt.gates.push(record);
   if (!applicable) return;
+  if (id === 'vitest' && receipt.vitestDeferred) {
+    record.status = 'deferred-to-ci';
+    record.reason = 'over-cap; full selected test set deferred to PR CI';
+    return;
+  }
   const began = performance.now();
   activeGate = { id, began };
   console.log(`▶ gates:fast ${id}`);
@@ -137,6 +142,7 @@ try {
     throw new Error('FAIL: receipt must be outside source or under .reports/gates-fast');
   }
   if (policy.maxFiles !== 16) throw new Error('FAIL: policy requires 16-file maximum');
+  if (policy.deferMaxFiles !== 200) throw new Error('FAIL: policy requires 200-file deferral ceiling');
   validateGateBudgetCoverage(policy, extractGateIds(fs.readFileSync(path.join(root, 'scripts/gates-fast.mjs'), 'utf8')), shipOuterMs);
   if (options.regressions) regressions = JSON.parse(fs.readFileSync(options.regressions, 'utf8'));
   await gate('inputs', true, async () => {
@@ -154,7 +160,8 @@ try {
     receipt.changedFiles = diff.filter((_value, index) => index % 2 === 1);
     receipt.deletedFiles = receipt.changedFiles.filter((_file, index) => diff[index * 2] === 'D');
     const selected = selectTests(policy, receipt.changedFiles, regressions, receipt.deletedFiles);
-    validateFiles(root, selected.files, policy.maxFiles);
+    const deferred = validateFiles(root, selected.files, policy.maxFiles, policy.deferMaxFiles);
+    if (deferred) receipt.vitestDeferred = deferred;
     receipt.selectedFiles = selected.files;
     receipt.matchedRules = selected.matchedRules;
     receipt.manualRegressions = regressions;

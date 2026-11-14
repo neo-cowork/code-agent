@@ -12,8 +12,9 @@ import {
 
 const root = path.resolve(__dirname, '../..');
 describe('fast gate fail-closed contracts', () => {
-  it('pins the fast-gate cap at 16 files and rejects overflow without truncation', () => {
+  it('pins the fast-gate cap at 16 files and defers overflow without truncation', () => {
     expect(policy.maxFiles).toBe(16);
+    expect(policy.deferMaxFiles).toBe(200);
     const list16 = [
       ...policy.baseline,
       'tests/wrappers/openaiWrapper.test.ts',
@@ -34,7 +35,31 @@ describe('fast gate fail-closed contracts', () => {
     validateFiles(root, list16, policy.maxFiles);
     const list17 = [...list16, 'tests/services/cloudConfigService.test.ts'];
     expect(list17).toHaveLength(17);
+    expect(validateFiles(root, list17, policy.maxFiles, policy.deferMaxFiles)).toEqual({
+      reason: 'over-cap', selected: 17, maxFiles: 16, files: list17,
+    });
+    // The execution manifest still has the strict cap; only the input gate opts into deferral.
     expect(() => validateFiles(root, list17, policy.maxFiles)).toThrow('never truncate');
+  });
+  it('keeps zero, invalid, missing, excluded and escaping paths red even with deferral enabled', () => {
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'fast-path-contract-')));
+    try {
+      fs.mkdirSync(path.join(dir, 'tests'));
+      fs.writeFileSync(path.join(dir, 'tests/good.test.ts'), '');
+      fs.symlinkSync(path.join(root, policy.baseline[0]), path.join(dir, 'tests/escape.test.ts'));
+      const prefix = Array.from({ length: 16 }, () => 'tests/good.test.ts');
+      expect(() => validateFiles(dir, [], policy.maxFiles, policy.deferMaxFiles))
+        .toThrow('FAIL: selected 0 files; allowed 1..200; never truncate');
+      for (const [file, error] of [
+        ['tests/*.test.ts', 'not an exact repository test path'],
+        ['tests/../escape.test.ts', 'not an exact repository test path'],
+        ['tests/missing.test.ts', 'selected test missing or unreadable'],
+        ['tests/smoke/excluded.test.ts', 'test path is excluded from fast execution'],
+        ['tests/escape.test.ts', 'test outside repository'],
+      ]) expect(() => validateFiles(dir, [...prefix, file], policy.maxFiles, policy.deferMaxFiles)).toThrow(error);
+      expect(validateFiles(dir, Array(200).fill(prefix[0]), policy.maxFiles, policy.deferMaxFiles)?.selected).toBe(200);
+      expect(() => selectTests(policy, ['src/unregistered.ts'], [])).toThrow('unregistered PR paths');
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   });
   it('rejects missing, extra, duplicate and empty actual selections before execution', () => {
     for (const actual of [[], ['a'], ['a', 'b', 'c'], ['a', 'a', 'b']]) {
@@ -219,6 +244,11 @@ describe('fast gate fail-closed contracts', () => {
       'CI: pending (PR not created; authoritative CI evidence will be bound after creation).',
     ]);
     expect(renderReceipt({ ...receipt, status: 'failed', error: 'budget exceeded' })[0]).toContain('FAILED: budget exceeded');
+    const deferred = JSON.parse(JSON.stringify({ ...receipt, vitestDeferred: {
+      reason: 'over-cap', selected: 17, maxFiles: 16, files: ['tests/example.test.ts'],
+    } }));
+    expect(renderReceipt(deferred)).toContain('gates:fast vitest deferred to PR CI: selected 17 files > 16');
+    expect(renderReceipt(deferred)).toContain('CI: pending (PR not created; authoritative CI evidence will be bound after creation).');
     expect(digest('private-v1')).not.toBe(digest('private-v2'));
     for (const mode of ['ran', 'reused']) {
       const privateCheck = { mode, inputHash: digest('private-inputs') };

@@ -24,8 +24,8 @@ export function assertExactFiles(expected, actual, phase) {
   }
 }
 
-export function validateFiles(root, files, maxFiles) {
-  if (!files.length || files.length > maxFiles) throw new Error(`FAIL: selected ${files.length} files; allowed 1..${maxFiles}; never truncate`);
+export function validateFiles(root, files, maxFiles, deferMaxFiles = maxFiles) {
+  if (!files.length || files.length > deferMaxFiles) throw new Error(`FAIL: selected ${files.length} files; allowed 1..${deferMaxFiles}; never truncate`);
   for (const file of files) {
     if (typeof file !== 'string' || !/^(tests|src)\/.*\.test\.tsx?$/.test(file)
         || /[\\*?[\]{}!\n\r]/.test(file) || file.split('/').includes('..')) {
@@ -40,6 +40,7 @@ export function validateFiles(root, files, maxFiles) {
     }
     assertFastExecutable(path.relative(fs.realpathSync(root), target).split(path.sep).join('/'));
   }
+  if (files.length > maxFiles) return { reason: 'over-cap', selected: files.length, maxFiles, files: [...files] };
 }
 
 export function selectTests(policy, changed, regressions = [], deletedFiles = []) {
@@ -137,7 +138,9 @@ export function renderReceipt(receipt) {
   const ci = receipt.ci.status === 'pending' && receipt.prNumber === null
     ? 'CI: pending (PR not created; authoritative CI evidence will be bound after creation).'
     : `CI: ${receipt.ci.status}`;
-  return [local, ci, ...(receipt.privateCheck ? [`private check: ${receipt.privateCheck.mode} inputHash=${receipt.privateCheck.inputHash.slice(0, 16)}`] : [])];
+  const deferred = receipt.vitestDeferred;
+  return [local, ...(deferred ? [`gates:fast vitest deferred to PR CI: selected ${deferred.selected} files > ${deferred.maxFiles}`] : []),
+    ci, ...(receipt.privateCheck ? [`private check: ${receipt.privateCheck.mode} inputHash=${receipt.privateCheck.inputHash.slice(0, 16)}`] : [])];
 }
 
 // ship pr 外层给 gates:fast 180s（~/.local/bin/ship），总上限必须留 10s 给回执落盘与核验。
