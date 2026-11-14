@@ -3,6 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import type {
+  AudioCaptureMode,
   AudioCaptureMissingPrerequisiteCode,
   AudioCapturePrerequisites,
   AudioCaptureVoiceDetectionState,
@@ -92,7 +93,7 @@ function detectVoiceDetectionState(moduleDir = __dirname): AudioCaptureVoiceDete
 }
 
 export function getAudioCapturePrerequisites(
-  activeMode: 'microphone' | 'system-audio' = 'microphone',
+  activeMode: AudioCaptureMode = 'microphone',
 ): AudioCapturePrerequisites {
   const homeDir = process.env.CODE_AGENT_HOME || os.homedir();
   const microphoneReady = hasMicrophoneRecorder();
@@ -101,7 +102,8 @@ export function getAudioCapturePrerequisites(
   const voiceDetection = detectVoiceDetectionState();
 
   const missing: AudioCaptureMissingPrerequisiteCode[] = [];
-  if (activeMode === 'system-audio') {
+  // 会议模式缺系统音频组件时降级为只录麦克风，和系统音频模式同一个提示码
+  if (activeMode === 'system-audio' || activeMode === 'meeting') {
     if (!systemAudioReady && !microphoneReady) {
       missing.push('recorder_missing');
     } else if (!systemAudioReady) {

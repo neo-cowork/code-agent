@@ -40,7 +40,7 @@ vi.mock('../../../src/renderer/services/nativeDesktop', () => ({
   listAudioSegments: (from: number, to: number) => services.listAudioSegments(from, to),
   startNativeDesktopCollector: () => services.startNativeDesktopCollector(),
   stopNativeDesktopCollector: () => services.stopNativeDesktopCollector(),
-  startAudioCapture: (mode: 'microphone' | 'system-audio') => services.startAudioCapture(mode),
+  startAudioCapture: (mode: 'microphone' | 'system-audio' | 'meeting') => services.startAudioCapture(mode),
   stopAudioCapture: () => services.stopAudioCapture(),
 }));
 
@@ -152,7 +152,7 @@ describe('NativeDesktopSection isolated audio hints on the rendered DOM', () => 
         fireEvent.click(screen.getByRole('button', { name: text.recording.record }));
         const recording = await screen.findByRole('button', { name: text.recording.recording });
         await waitFor(() => expect((recording as HTMLButtonElement).disabled).toBe(false));
-        expect(services.startAudioCapture).toHaveBeenCalledExactlyOnceWith('system-audio');
+        expect(services.startAudioCapture).toHaveBeenCalledExactlyOnceWith('meeting');
         expect(recording.textContent).toContain(text.recording.recording);
         expect(screen.queryByTestId('audio-capture-readiness')).toBeNull();
         expectNoAudioError(section, text);
