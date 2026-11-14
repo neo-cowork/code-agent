@@ -58,7 +58,9 @@ function stripMarkdownForBanner(text: string): string {
 export function sanitizeNotificationText(value: unknown, maxLength = 240): string {
   const language = readUiLanguage();
   const body = presentReplyBody(String(value ?? ''), language).text;
-  const plain = humanizeInternalText(stripMarkdownForBanner(body), language).text;
+  // Humanize before stripping markdown: `mcp__server__tool` would otherwise lose its `__` as bold markers
+  // and reach the banner as an unrecognizable id.
+  const plain = humanizeInternalText(stripMarkdownForBanner(humanizeInternalText(body, language).text), language).text;
   const full = scrubUserFacingText(plain, {
     surface: 'desktop_notification',
     maxLength: Math.max(maxLength * 4, 1000),

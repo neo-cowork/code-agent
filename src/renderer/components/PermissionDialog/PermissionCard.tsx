@@ -397,7 +397,7 @@ export function PermissionCard({
   if (!request) return null;
 
   const sandboxPath = sandboxEscalation ? sandboxEscalationDeniedPath(request) : undefined;
-  const config = getPermissionConfig(request.type);
+  const config = getPermissionConfig(request.type, language);
 
   const p = t.decisionCard.permission;
   const w = p.writeback;
@@ -483,7 +483,7 @@ export function PermissionCard({
             : editable
               ? w.mailSendTitle
               : isDangerous
-                ? getPermissionConfig('command').title
+                ? getPermissionConfig('command', language).title
                 : isGenericCommandCard
                   ? p.genericApprovalTitle
                   : config.title);

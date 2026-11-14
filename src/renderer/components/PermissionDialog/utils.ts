@@ -16,7 +16,18 @@ import {
 import type { PermissionType, PermissionConfig } from './types';
 
 // 权限配置映射
-export function getPermissionConfig(type: PermissionType): PermissionConfig {
+const PERMISSION_TITLES_EN: Record<PermissionType, string> = {
+  file_read: 'Read file',
+  file_write: 'Create file',
+  file_edit: 'Edit file',
+  file_delete: 'Delete file',
+  command: 'Run command',
+  dangerous_command: 'Dangerous command',
+  network: 'Network request',
+  mcp: 'Connector tool',
+};
+
+export function getPermissionConfig(type: PermissionType, language: 'zh' | 'en' = 'zh'): PermissionConfig {
   const configs: Record<PermissionType, PermissionConfig> = {
     file_read: {
       icon: React.createElement(FileText, { size: 20 }),
@@ -76,7 +87,8 @@ export function getPermissionConfig(type: PermissionType): PermissionConfig {
     },
   };
 
-  return configs[type] || configs.command;
+  const config = configs[type] || configs.command;
+  return language === 'en' ? { ...config, title: PERMISSION_TITLES_EN[type] ?? PERMISSION_TITLES_EN.command } : config;
 }
 
 // 危险命令检测模式

@@ -58,6 +58,31 @@ function countOccurrences(haystack: string, needle: string): number {
 }
 
 describe('PermissionCard command de-dup, spawn_agent summary, and long script collapse', () => {
+  it.each(['zh', 'en'] as const)('shows a connector tool approval without the raw tool id and in the UI language (%s)', (language) => {
+    state.language = language;
+    const preview = new ConfirmationGate().buildPreview('mcp__mail__list_recent_emails', { days: 7 } as Record<string, unknown>);
+    state.request = {
+      id: `req-connector-${language}`,
+      sessionId: 'session-current',
+      tool: 'mcp__mail__list_recent_emails',
+      type: 'network',
+      details: { preview },
+      timestamp: 1,
+    };
+    const { container } = render(<PermissionCard />);
+    const text = container.textContent || '';
+    expect(text).not.toMatch(/mcp__|list_recent_emails/);
+    expect(text).toContain('list recent emails');
+    if (language === 'en') {
+      expect(text).toContain('Network request');
+      expect(text).toContain('Run tool: ');
+      expect(text).not.toMatch(/[\u3400-\u9fff]/);
+    } else {
+      expect(text).toContain('网络请求');
+      expect(text).toContain('执行工具 ');
+    }
+  });
+
   it('(a) renders bash command text exactly once (interactive and parked with argsPreview)', () => {
     const gate = new ConfirmationGate();
     const command = 'curl -sL https://example.com/api/status | head -n 20';

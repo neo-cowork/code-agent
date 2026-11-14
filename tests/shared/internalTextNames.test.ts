@@ -86,6 +86,15 @@ describe('humanized names at host persistence boundaries', () => {
     expect(text).not.toContain('<decision>');
     expect(text).not.toContain('Review it');
   });
+  it.each(['zh', 'en'] as const)('keeps connector tool ids out of approval notices in %s', (lang) => {
+    state.language = lang;
+    const text = sanitizeNotificationText('mcp__mail__list_recent_emails: 请求执行权限');
+    expect(text).not.toMatch(/mcp|list_recent_emails|maillist/i);
+    expect(detectInternalTextLeaks(text)).toEqual([]);
+    expect(text).toContain('请求执行权限');
+    expect(sanitizeNotificationText('**Report ready** __done__ `weekly-report.md`')).toBe('Report ready done weekly-report.md');
+  });
+
   it('keeps background commands as execution data and uses plain titles and notices', () => {
     state.language = 'en';
     const ledger = createBackgroundTaskLedger();

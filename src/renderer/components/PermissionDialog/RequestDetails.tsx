@@ -204,7 +204,10 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       {details.preview && details.preview.type !== 'diff' && !(details.preview.type === 'command' && details.command) && (
         <div className="mt-4">
           {!(details.connectorAccess && details.preview.type === 'generic') && (
-            <div className="text-xs text-zinc-400 mb-2"><HumanizedText text={details.preview.summary} /></div>
+            <div className="text-xs text-zinc-400 mb-2">
+              {/* 宿主的通用兜底摘要是中文「执行工具 <名>」；英文界面换成同义英文前缀。 */}
+              <HumanizedText text={language === 'en' ? details.preview.summary.replace(/^执行工具\s+/, 'Run tool: ') : details.preview.summary} />
+            </div>
           )}
           {details.preview.diff && (
             <pre className="text-xs p-2 rounded bg-zinc-700 border border-zinc-700 text-zinc-400 overflow-x-auto max-h-32 whitespace-pre-wrap break-all">
