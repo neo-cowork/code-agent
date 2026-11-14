@@ -883,6 +883,9 @@ function spawnSource(source: 'microphone' | 'system-audio'): ChildProcess | null
     logger.info('[音频采集] 使用 ffmpeg AVFoundation 模式', { device: audioDevice });
     return spawn(ffmpegBin, [
       '-f', 'avfoundation', '-i', audioDevice,
+      // avfoundation 会丢帧（11-14 本机实测只出实时的 0.88 倍），段落时间按样本数推算会越录越早；
+      // 按时间戳把缺口补成静音，样本数才和墙钟对得上（N-MEETING-DUALTRACK-FU1）
+      '-af', 'aresample=async=1',
       '-ar', String(SAMPLE_RATE), '-ac', '1', '-f', 's16le', 'pipe:1',
     ], { stdio: ['ignore', 'pipe', 'pipe'] });
   }
