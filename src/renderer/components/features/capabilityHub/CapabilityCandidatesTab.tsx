@@ -82,7 +82,7 @@ const CandidateRow: React.FC<CandidateRowProps> = ({ candidate, text, busy, onIg
       <div className="min-w-0">
         <div className="flex items-center gap-2">
           <span className="truncate text-sm font-medium text-zinc-100">
-            {candidate.displayName || candidate.shapeTokens.join(' + ')}
+            {candidate.displayName || text.unnamed}
           </span>
           <Badge
             className="shrink-0 border-zinc-700 bg-zinc-800/60 text-[10px] font-medium text-zinc-300"
@@ -93,14 +93,13 @@ const CandidateRow: React.FC<CandidateRowProps> = ({ candidate, text, busy, onIg
           </Badge>
         </div>
         {candidate.summary ? (
-          <p className="mt-0.5 truncate text-xs text-zinc-400">{candidate.summary}</p>
+          <p className="mt-0.5 whitespace-pre-wrap break-words text-xs text-zinc-400">{candidate.summary}</p>
         ) : null}
         <p className="mt-1 text-xs text-zinc-500">{evidenceLine(candidate, text)}</p>
         {/* 「凭什么把这几次归成一条」——聚类必须能解释，不能只给个分数 */}
         <p className="mt-0.5 text-[11px] text-zinc-600">
           {text.whyGrouped
             .replace('{count}', String(candidate.occurrences))
-            .replace('{tokens}', candidate.shapeTokens.join(', '))
             .replace('{variants}', String(candidate.variants.length))}
         </p>
         {(candidate.signals.degraded || candidate.signals.missingDependency) ? (

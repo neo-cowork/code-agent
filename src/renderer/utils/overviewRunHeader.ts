@@ -8,6 +8,8 @@ import type { Message } from '@shared/contract';
 // ============================================================================
 
 import type { RunUiState, RunUiStatus } from '../types/runWorkbench';
+import type { OutcomeKey } from '../i18n/outcomeWords';
+import { resolveRunTerminalKey } from './terminalWord';
 
 /**
  * run 处于这些状态说明有活跃回合在跑。此前 useTaskActivity / RunWorkbenchCards
@@ -48,8 +50,8 @@ export interface OverviewRunHeaderModel {
   tone: RunOverviewTone;
   /** 步骤计数（第 N 步 / 共 M 步）；无 TODO 为 null */
   steps: { current: number; total: number } | null;
-  /** 异常态的人话结局键；非异常态为 null */
-  outcome: 'cancelled' | 'idle-reaped' | 'error' | null;
+  /** 终态词键（resolveRunTerminalKey 唯一解析，徽章/步骤后缀/第二行都读它）；活跃/等确认为 null */
+  terminal: OutcomeKey | null;
   /** 用时；起点未知时为 null（不假造 0） */
   elapsedMs: number | null;
   /** 活跃回合：秒表在走、给中断按钮 */
@@ -89,11 +91,7 @@ export function buildOverviewRunHeaderModel(args: {
     steps: total > 0
       ? { current: tone === 'done' ? total : Math.min(completed + 1, total), total }
       : null,
-    outcome: tone === 'error'
-      ? (args.run.status === 'cancelled'
-        ? (args.run.terminalReason === 'idle_reaped' ? 'idle-reaped' : 'cancelled')
-        : 'error')
-      : null,
+    terminal: resolveRunTerminalKey({ ...args.run, status }),
     elapsedMs: elapsedMs(args.run, live, args.now),
     live,
   };
