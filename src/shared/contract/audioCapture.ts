@@ -51,4 +51,13 @@ export interface MeetingSessionStatus {
   silenceWarning: boolean;
   /** 最近一场已结束的会：界面据此提示「已因 X 自动结束」 */
   lastEnded: MeetingRecord | null;
+  /** 日历上快开始的会（会前提醒开着才有）：录制条显示「XX 快开始了 · 记这场会」 */
+  upcoming?: MeetingUpcoming | null;
+  /** 会前提醒的日历授权状态（开关打开时才查） */
+  calendarAccess?: 'granted' | 'denied' | 'not_determined';
+}
+
+export interface MeetingUpcoming {
+  title: string;
+  startAtMs: number;
 }

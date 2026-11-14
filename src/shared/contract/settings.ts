@@ -519,6 +519,10 @@ export interface AppSettings {
   };
   // 上下文压缩配置
   contextCompression?: ContextCompressionConfig;
+  /** 记这场会：会前提醒（读日历，只提醒不自动开录），默认关 */
+  meeting?: {
+    calendarReminder?: boolean;
+  };
   // Appshots（左右 Command 双击抓窗口截图+文本送进 composer）
   appshots?: {
     /** 是否启用左右 Command 双击热键 */

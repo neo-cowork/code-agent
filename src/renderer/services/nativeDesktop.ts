@@ -539,6 +539,9 @@ export const startMeeting = (title?: string) =>
 export const pauseMeeting = () => postDesktopAction<MeetingSessionStatus>('pauseMeeting');
 export const resumeMeeting = () => postDesktopAction<MeetingSessionStatus>('resumeMeeting');
 export const stopMeeting = () => postDesktopAction<MeetingSessionStatus>('stopMeeting');
+export const dismissMeetingUpcoming = () => postDesktopAction<MeetingSessionStatus>('dismissMeetingUpcoming');
+export const requestCalendarAccess = () =>
+  postDesktopAction<{ access: 'granted' | 'denied' | 'not_determined' }>('requestCalendarAccess');
 export async function getMeetingStatus(): Promise<MeetingSessionStatus | null> {
   try {
     return await postDesktopAction<MeetingSessionStatus>('getMeetingStatus');
