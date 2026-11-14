@@ -74,7 +74,21 @@ describe('原措辞路由到 meeting-summary skill', () => {
     expect(hit?.matchKind).toBe('alias');
   });
 
-  it('与会议纪要无关的消息不触发', () => {
-    expect(resolveSkillInvocationFromSkills('写一份周报', BUILTIN_SKILLS as never)).toBeNull();
+  it('只是提到纪要的请求不加载 skill（发送/删除/提醒/周报引用）', () => {
+    for (const text of [
+      '写一份周报',
+      '把今天的会议纪要发到飞书群【产品周会】',
+      '删除桌面上的会议纪要.docx',
+      '每天下午五点提醒我看会议总结',
+      '周报里引用上次的会议纪要',
+    ]) {
+      expect(resolveSkillInvocationFromSkills(text, BUILTIN_SKILLS as never), text).toBeNull();
+    }
+  });
+
+  it('明确要整理纪要的说法仍加载', () => {
+    for (const text of ['帮我整理会议纪要', '把这段会议速记整理一下', '做个纪要整理']) {
+      expect(resolveSkillInvocationFromSkills(text, BUILTIN_SKILLS as never)?.skill.name, text).toBe('meeting-summary');
+    }
   });
 });
