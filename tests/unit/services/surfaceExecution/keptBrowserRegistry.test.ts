@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { BrowserService } from '../../../../src/host/services/infra/browserService';
 import {
   KeptBrowserRegistry,
   type KeptBrowserPoolFacade,
@@ -8,6 +9,7 @@ function createFakePool() {
   const released: string[] = [];
   const keptFlags = new Map<string, boolean>();
   const pool: KeptBrowserPoolFacade = {
+    isServiceAlive: vi.fn(() => true),
     setKept: vi.fn((key: string, kept: boolean) => keptFlags.set(key, kept)),
     releaseAgent: vi.fn(async (key: string) => {
       released.push(key);
@@ -248,5 +250,69 @@ describe('KeptBrowserRegistry (N-BROWSER-KEEP-RESULT-PAGE)', () => {
       title: 'Result',
       reason: 'keep_result_page',
     });
+  });
+
+  it('FU2: 进程死掉且没有 close/crashed 事件时，读取侧（snapshot/getAlive）按活性探针当场翻 closed', () => {
+    const { pool, released } = createFakePool();
+    let alive = true;
+    pool.isServiceAlive = vi.fn(() => alive);
+    const registry = new KeptBrowserRegistry(pool);
+    registry.register(baseInput());
+
+    alive = false;
+    expect(registry.snapshot('conversation-a')).toEqual({
+      state: 'closed',
+      url: 'https://example.test/result',
+      title: 'Result',
+      reason: 'keep_result_page',
+    });
+    expect(registry.getAlive('conversation-a')).toBeNull();
+    expect(released).toEqual(['surface-key-1']);
+  });
+
+  it('FU2: 活窗读取仍返回 kept，不释放窗口', () => {
+    const { pool } = createFakePool();
+    const registry = new KeptBrowserRegistry(pool);
+    registry.register(baseInput());
+
+    expect(registry.snapshot('conversation-a').state).toBe('kept');
+    expect(registry.getAlive('conversation-a')?.serviceKey).toBe('surface-key-1');
+  });
+});
+
+function serviceState({ connected = true, open = true, processHandle = null }: {
+  connected?: boolean;
+  open?: boolean;
+  processHandle?: { pid?: number; exitCode: number | null; signalCode: string | null } | null;
+} = {}) {
+  const service = Object.create(BrowserService.prototype) as BrowserService;
+  Reflect.set(service, 'browser', { isConnected: () => connected });
+  Reflect.set(service, 'context', { pages: () => [{ isClosed: () => !open }] });
+  Reflect.set(service, 'browserProcess', processHandle);
+  return service;
+}
+
+describe('kept window liveness across managed browser providers', () => {
+  it('keeps a connected bundled Playwright window without a child process handle', () => {
+    expect(serviceState().isProcessAlive()).toBe(true);
+  });
+  it('rejects disconnected browsers and closed pages', () => {
+    expect(serviceState({ connected: false }).isProcessAlive()).toBe(false);
+    expect(serviceState({ open: false }).isProcessAlive()).toBe(false);
+  });
+  it('rejects exited or unspawned system Chrome without probing unrelated processes', () => {
+    const kill = vi.spyOn(process, 'kill');
+    try {
+      expect(serviceState({ processHandle: { exitCode: 1, signalCode: null, pid: 123 } }).isProcessAlive()).toBe(false);
+      expect(serviceState({ processHandle: { exitCode: null, signalCode: null } }).isProcessAlive()).toBe(false);
+      expect(kill).not.toHaveBeenCalled();
+    } finally { kill.mockRestore(); }
+  });
+  it('checks the recorded Chrome pid when cached references survive process death', () => {
+    const kill = vi.spyOn(process, 'kill').mockImplementation(() => { throw Object.assign(new Error('gone'), { code: 'ESRCH' }); });
+    try {
+      expect(serviceState({ processHandle: { exitCode: null, signalCode: null, pid: 123 } }).isProcessAlive()).toBe(false);
+      expect(kill).toHaveBeenCalledWith(123, 0);
+    } finally { kill.mockRestore(); }
   });
 });

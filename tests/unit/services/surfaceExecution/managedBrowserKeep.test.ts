@@ -74,6 +74,8 @@ function createFakeBrowser(options?: { initialTabs?: FakeTab[] }) {
       return {};
     }),
     isRunning: () => running,
+    // FU2：adopt 判活从 isRunning() 缓存引用换成 OS 句柄探针，假服务同语义跟随。
+    isProcessAlive: () => running,
     getActiveTab: () => (running ? tabs.get(activeTabId || '') ?? null : null),
     listTabs: () => Array.from(tabs.values()).map((tab) => ({ ...tab })),
     closeTab: vi.fn(async (tabId: string) => {
@@ -131,6 +133,7 @@ function createFakeBrowser(options?: { initialTabs?: FakeTab[] }) {
 function createKeptPool(): { pool: KeptBrowserPoolFacade } {
   return {
     pool: {
+      isServiceAlive: () => true,
       setKept: poolMocks.setKept,
       releaseAgent: poolMocks.releaseAgent,
     },

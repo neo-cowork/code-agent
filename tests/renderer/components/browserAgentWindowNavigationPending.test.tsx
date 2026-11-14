@@ -30,6 +30,7 @@ vi.mock('../../../src/renderer/hooks/useSurfaceLiveFrames', () => ({
   useSurfaceLiveFrames: () => liveFrameState,
 }));
 vi.mock('../../../src/renderer/services/userBrowserLink', () => ({
+  getKeptResultPage: vi.fn(async () => ({ state: 'none', url: null, title: null })),
   openHttpLinkInRailAsync: (input: unknown) => openHttpLinkInRailAsync(input),
   closeUserBrowserLinkRun: (...args: unknown[]) => closeUserBrowserLinkRun(...args),
   controlUserBrowserHistory: (...args: unknown[]) => controlUserBrowserHistory(...args),

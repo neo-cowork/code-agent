@@ -141,6 +141,16 @@ describe('SurfaceLiveStreamService（B1-R·R1 帧流归属与生命周期）', (
     expect(stop).toHaveBeenCalledTimes(1);
   });
 
+  it('publishes a static page first frame emitted before startup resolves', async () => {
+    startPageScreencast.mockImplementationOnce(async (_page, _options, onFrame: FrameEmitter) => {
+      onFrame({ base64: 'FIRST', width: 960, height: 600, capturedAtMs: 42 });
+      return { stop };
+    });
+    await build().start(REQUEST);
+    expect(published).toHaveLength(1);
+    expect(published[0]?.dataUrl).toBe('data:image/jpeg;base64,FIRST');
+  });
+
   it('底层开流抛错时降级成不可用，不把异常抛给 IPC', async () => {
     startPageScreencast.mockRejectedValueOnce(new Error('CDP unavailable'));
 

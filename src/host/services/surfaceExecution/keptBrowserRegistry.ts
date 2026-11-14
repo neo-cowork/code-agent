@@ -50,6 +50,7 @@ export type KeptResultPageSnapshot =
 export interface KeptBrowserPoolFacade {
   setKept(serviceKey: string, kept: boolean): void;
   releaseAgent(serviceKey: string): Promise<void>;
+  isServiceAlive(serviceKey: string): boolean;
 }
 
 export interface RegisterKeptBrowserInput {
@@ -120,6 +121,7 @@ export class KeptBrowserRegistry {
 
   /** 存活中的 kept 条目（adopt / ensureBinding 认领判据）。 */
   getAlive(conversationId: string): KeptBrowserEntry | null {
+    this.revalidateAlive(conversationId);
     const entry = this.get(conversationId);
     return entry?.state === 'kept' ? entry : this.getParkedAlive(conversationId);
   }
@@ -200,9 +202,21 @@ export class KeptBrowserRegistry {
 
   /** IPC 三态快照。 */
   snapshot(conversationId: string): KeptResultPageSnapshot {
+    this.revalidateAlive(conversationId);
     const entry = this.entries.get(this.entryKey(conversationId));
     if (!entry || entry.parkedForUser) return { state: 'none', url: null, title: null, reason: null };
     return { state: entry.state, url: entry.url, title: entry.title, reason: entry.reason };
+  }
+
+  /**
+   * FU2：close/crashed 事件之外的兜底——进程被杀/闲置回收走得再安静，读取侧
+   * （IPC 三态 / adopt 判据）也要当场把死窗翻成 closed，不把「已保留」说给死窗。
+   */
+  private revalidateAlive(conversationId: string): void {
+    const entry = this.entries.get(this.entryKey(conversationId));
+    if (entry?.state !== 'kept') return;
+    if (this.pool.isServiceAlive(entry.serviceKey)) return;
+    this.markClosed(conversationId, entry.serviceKey);
   }
 
   private markClosedIfService(conversationId: string, serviceKey: string): void {

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { Button } from '../primitives';
+import { browserStageOverlayMarker } from '../../utils/browserStageInteractionGate';
 import {
   adoptKeptResultPage,
   getKeptResultPage,
@@ -93,6 +94,7 @@ export const BrowserKeptResultBar: React.FC<BrowserKeptResultBarProps> = ({
 
   return (
     <div
+      {...browserStageOverlayMarker}
       data-testid={`browser-kept-result-bar-${kept.state}`}
       className="absolute bottom-3 left-1/2 z-10 flex w-[min(420px,calc(100%-24px))] -translate-x-1/2 flex-col items-center gap-1.5 rounded-lg border border-white/10 bg-zinc-900/90 px-3 py-2.5 text-center shadow-lg"
     >

@@ -60,6 +60,7 @@ vi.mock('../../../src/renderer/hooks/useSurfaceLiveFrames', () => ({
   useSurfaceLiveFrames: () => liveFrameState,
 }));
 vi.mock('../../../src/renderer/services/userBrowserLink', () => ({
+  getKeptResultPage: vi.fn(async () => ({ state: 'none', url: null, title: null })),
   openHttpLinkInRailAsync: vi.fn(async () => ({
     conversationId: 'session-a',
     runId: 'run-a',

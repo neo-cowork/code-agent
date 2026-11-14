@@ -90,6 +90,16 @@ export class BrowserPool {
     entry.kept = kept;
   }
 
+  /**
+   * kept 结果窗活性探针（N-FIX-BROWSER-KEEP-RESULT-PAGE-FU2）：按 OS 问进程句柄，
+   * 不信 isRunning() 的缓存引用；无条目视为死。close/crashed 事件缺席（进程被杀、
+   * 闲置回收走得安静）时由读取侧（kept 三态 / adopt 判据）复核。
+   */
+  isServiceAlive(key: string): boolean {
+    const entry = this.entries.get(key);
+    return Boolean(entry?.service.isProcessAlive());
+  }
+
   async releaseAgent(agentId: string): Promise<void> {
     if (!agentId || agentId === DEFAULT_AGENT_KEY) return;
     const entry = this.entries.get(agentId);

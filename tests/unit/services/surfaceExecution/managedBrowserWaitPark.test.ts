@@ -47,6 +47,7 @@ function harness() {
     getPageContent: vi.fn(async () => ({ url: tab.url, title: tab.title, text: 'Invoice portal', links: [] })),
     ensureSession: vi.fn(async () => { running = true; return {}; }),
     isRunning: () => running,
+    isProcessAlive: () => running,
     getActiveTab: () => (running ? { ...tab } : null),
     listTabs: () => [{ ...tab }],
     navigate,
@@ -63,7 +64,7 @@ function harness() {
     firstKey ??= key;
     return (key === firstKey ? raw : unused) as unknown as BrowserService;
   });
-  const keptRegistry = new KeptBrowserRegistry({ setKept: poolMocks.setKept, releaseAgent: poolMocks.releaseAgent });
+  const keptRegistry = new KeptBrowserRegistry({ setKept: poolMocks.setKept, releaseAgent: poolMocks.releaseAgent, isServiceAlive: () => true });
   const resume: BrowserResumeStateStore = {
     exportForConversation: vi.fn(async () => '/x'), importForConversation: vi.fn(async () => false),
     clearConversation: vi.fn(async () => undefined), activateConversation: vi.fn(),

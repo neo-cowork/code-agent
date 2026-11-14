@@ -353,6 +353,26 @@ export class BrowserService implements Disposable {
     return this.browser !== null || this.context !== null;
   }
 
+  /**
+   * kept 结果窗活性真源（N-FIX-BROWSER-KEEP-RESULT-PAGE-FU2）：isRunning() 只看
+   * browser/context 引用，进程死后引用残留会假阳性（close/crashed 事件也可能不来）；
+   * 这里按进程句柄直接问 OS。
+   */
+  isProcessAlive(): boolean {
+    // Bundled Playwright owns its process; connection and open pages are its liveness signal.
+    if (!this.browser?.isConnected() || !this.context?.pages().some((page) => !page.isClosed())) return false;
+    if (!this.browserProcess) return true;
+    const pid = this.browserProcess.pid;
+    if (!pid || pid <= 0) return false;
+    if (this.browserProcess.exitCode !== null || this.browserProcess.signalCode !== null) return false;
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code === 'EPERM';
+    }
+  }
+
   // --------------------------------------------------------------------------
   // Tab Management
   // --------------------------------------------------------------------------
