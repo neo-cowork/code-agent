@@ -108,6 +108,23 @@ interface ToolStepVerbBundle {
   };
   /** 登记表外仍未翻译的全大写码（^[A-Z][A-Z0-9_]*$）的兜底句；数字退出码 / HTTP nnn 不走这里 */
   rawFailureCodeFallback: string;
+  /** delegate_session 被拒的小写码（metadata.code）→ 一句人话；不含码名，说明没有交接出去 */
+  delegationRejectionCodes: {
+    target_unavailable: string;
+    not_delegatable: string;
+    self_route: string;
+    candidate_set_stale: string;
+    idempotency_conflict: string;
+    workspace_boundary: string;
+    write_conflict: string;
+    unauthorized_workspace: string;
+    target_busy: string;
+    target_permission_mode: string;
+    untrusted_workspace: string;
+    ambiguous: string;
+    invalid_call: string;
+  };
+  delegationRejectionFallback: string;
   /**
    * 停车审批自动收口句（键 = PARKED_APPROVAL_CLOSURE_SENTENCES 的名字；zh 直接用原句，保证字节一致）。
    * 按 Record<共享键联合, string> 收口：host 新增收口原因而任一语言表漏配时，这里直接编译红。
@@ -219,6 +236,22 @@ export const toolStepVerbsZh: ToolStepVerbBundle = {
     FS_ERROR: '文件读写失败，请确认文件没被占用且有权限',
   },
   rawFailureCodeFallback: '这一步没有成功，展开可查看详情',
+  delegationRejectionCodes: {
+    target_unavailable: 'Neo 找不到要交接的那个对话，所以没有交接出去。请确认对话还在后重试。',
+    not_delegatable: '那个对话现在不能接收交接，所以没有交接出去。请换一个对话再试。',
+    self_route: '不能把任务交接给当前这个对话本身，所以没有交接出去。请指定另一个对话。',
+    candidate_set_stale: '可选的对话列表已经变化，所以没有交接出去。请重新说一次要交给哪个对话。',
+    idempotency_conflict: '同一次交接的内容前后不一致，所以没有交接出去。请重新发起一次。',
+    workspace_boundary: '那个对话在另一个工作目录，超出了这次允许的范围，所以没有交接出去。',
+    write_conflict: '那个对话正在改同一批文件，为避免冲突没有交接出去。请等它完成后再试。',
+    unauthorized_workspace: '你还没有授权访问那个对话所在的目录，所以没有交接出去。',
+    target_busy: '那个对话正在处理别的任务，所以没有交接出去。请等它忙完后再试。',
+    target_permission_mode: '那个对话的权限模式不允许接收交接，所以没有交接出去。',
+    untrusted_workspace: '那个对话所在的目录还没有被信任，所以没有交接出去。请先信任该目录。',
+    ambiguous: 'Neo 分不清你指的是哪个对话，所以没有交接出去。请说出对话名称后再试。',
+    invalid_call: 'Neo 这次没能发出交接，所以没有交接出去。请稍后再试一次。',
+  },
+  delegationRejectionFallback: '这次交接没有成功，没有交接出去。请稍后再试，或展开查看详情。',
   parkedClosure: { ...PARKED_APPROVAL_CLOSURE_SENTENCES },
   agentFailureReasons: {
     timeout: '处理时间超过了限制',
@@ -288,6 +321,22 @@ export const toolStepVerbsEn: ToolStepVerbBundle = {
     FS_ERROR: 'Reading or writing the file failed; make sure it is not in use and you have access',
   },
   rawFailureCodeFallback: 'This step did not succeed; expand for details',
+  delegationRejectionCodes: {
+    target_unavailable: 'Neo could not find the chat to hand this to, so nothing was handed over. Check that it still exists and try again.',
+    not_delegatable: 'That chat cannot take a hand-off right now, so nothing was handed over. Pick a different chat and try again.',
+    self_route: 'A task cannot be handed to the chat it came from, so nothing was handed over. Name a different chat.',
+    candidate_set_stale: 'The list of chats you could hand over to has changed, so nothing was handed over. Say which chat you mean again.',
+    idempotency_conflict: 'The same hand-off was sent twice with different content, so nothing was handed over. Start the hand-off again.',
+    workspace_boundary: 'That chat works in a folder outside what is allowed here, so nothing was handed over.',
+    write_conflict: 'That chat is already changing the same files, so nothing was handed over to avoid a clash. Try again once it finishes.',
+    unauthorized_workspace: 'You have not allowed access to the folder that chat works in, so nothing was handed over.',
+    target_busy: 'That chat is busy with another task, so nothing was handed over. Try again when it is free.',
+    target_permission_mode: 'That chat is in a permission mode that cannot take hand-offs, so nothing was handed over.',
+    untrusted_workspace: 'The folder that chat works in is not trusted yet, so nothing was handed over. Trust the folder first, then try again.',
+    ambiguous: 'Neo could not tell which chat you meant, so nothing was handed over. Name the chat and try again.',
+    invalid_call: 'Neo could not send this hand-off, so nothing was handed over. Try again in a moment.',
+  },
+  delegationRejectionFallback: 'This hand-off did not go through, so nothing was handed over. Try again in a moment, or expand for details.',
   parkedClosure: {
     expiredAfterRestart24h: 'This step waited for your confirmation for over 24 hours, so it was voided automatically and did not run.',
     workingDirectoryUnavailable: "This conversation has no working directory, so it can't be run safely after a restart. It did not run.",
