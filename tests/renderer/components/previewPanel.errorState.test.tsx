@@ -278,7 +278,7 @@ describe('ArtifactStandingRefresh chip 状态', () => {
     expect(title).not.toMatch(/\b[AP]M\b/);
   });
 
-  it('en 语言：失败 chip 是英文短状态，title 包含本地日期与时分', async () => {
+  it('en 语言：失败 chip 是英文短状态，title 用 en-US 格式化时间', async () => {
     const at = new Date(2026, 9, 4, 1, 2, 3).getTime();
     mockPublishInfo({
       jobId: 'job-1',
@@ -300,7 +300,7 @@ describe('ArtifactStandingRefresh chip 状态', () => {
       const label = chip.querySelector('span');
       expect(label?.className).not.toContain('truncate');
       const title = chip.getAttribute('title') ?? '';
-      expect(title).toMatch(/(?<!\d)(?:2026\/10\/0?4|10\/0?4\/2026),? 0?1:02(?::03)?(?!\d)/);
+      expect(title).toContain(new Date(at).toLocaleString('en-US'));
     } finally {
       useAppStore.getState().setLanguage('zh');
     }
