@@ -1,3 +1,4 @@
+import { getDisplaySessionTitle } from '../../../../utils/sessionPresentation';
 // ============================================================================
 // ChatInput - 消息输入组件主入口
 // 支持多模态输入：文本、图片、代码、PDF、文件夹
@@ -146,6 +147,8 @@ export interface ChatInputProps {
   hasStoppableBackgroundWork?: boolean;
   /** 运行中输入正在接入 */
   isInterrupting?: boolean;
+  /** 用户已请求停止，等待前后台任务全部收线 */
+  isStopping?: boolean;
   /** 停止处理回调 */
   onStop?: () => void;
   /** parked durable run 的用户继续回调 */
@@ -298,6 +301,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   isProcessing,
   hasStoppableBackgroundWork,
   isInterrupting,
+  isStopping,
   onStop,
   onContinue,
   hasContinuation,
@@ -307,7 +311,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   sessionless = false,
   scopeProjectId = null,
 }, ref) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [value, setValue] = useState('');
   const inputMemoryTainted = useRef(false);
   useEffect(() => { if (!value) inputMemoryTainted.current = false; }, [value]);
@@ -344,6 +348,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const composerDraft = useComposerDraftPersistence({
     sessionId: currentSessionId,
     sessionless,
+    scopeProjectId,
     value,
     setValue,
     suspend: editingQueuedInputId !== null,
@@ -588,13 +593,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       chips.push({ key: `library:${item.id}`, kind: 'library', id: item.id, label: item.title });
     }
     for (const reference of sessionReferences) {
-      chips.push({ key: `session:${reference.id}`, kind: 'session', id: reference.id, label: reference.title });
+      chips.push({ key: `session:${reference.id}`, kind: 'session', id: reference.id, label: getDisplaySessionTitle(reference.title, language) });
     }
     for (const reference of artifactReferences) {
       chips.push({ key: `artifact:${reference.id}`, kind: 'artifact', id: reference.id, label: reference.name });
     }
     return chips;
-  }, [pendingCommand, selectedSkillIds, attachments, pinnedLibraryItems, sessionReferences, artifactReferences, capabilityRegistry.items]);
+  }, [pendingCommand, selectedSkillIds, attachments, pinnedLibraryItems, sessionReferences, artifactReferences, capabilityRegistry.items, language]);
 
   // slash 面板选中后：光标前的触发词（/goal、/sk…）原位替换成 chip 挂载点。
   // 无触发词（+ 菜单等无光标来源）时 no-op——store 更新后编辑器对账会把 chip 补到末尾。
@@ -976,6 +981,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   } = useChatInputSlashCommands({
     value,
     currentSessionId,
+    // 无会话语境（协作空间页）：未挂载 skill 只记选择，挂载推迟到发送时落进新会话
+    deferMountUntilSend: sessionless,
     skillRecommendations,
     mountRecommendedSkill,
     installRecommendedSkill,
@@ -1664,6 +1671,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               configured={liveVoiceAvailability.configured}
               isProcessing={Boolean(isProcessing)}
               isInterrupting={isInterrupting}
+              isStopping={isStopping}
               hasContent={hasContent}
               hasContinuation={Boolean(hasContinuation)}
               onStop={onStop}

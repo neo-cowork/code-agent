@@ -198,6 +198,7 @@ export const Sidebar: React.FC = () => {
     user,
     isAuthenticated,
     isLoading: isAuthLoading,
+    hasResolvedStatus: hasResolvedAuthStatus,
     sessionTrustState,
     authBackendAvailable,
     hasCachedAdminClaim,
@@ -854,7 +855,9 @@ export const Sidebar: React.FC = () => {
           注意行内容高由**最高的那个**决定（昵称 text-sm 的 20，不是头像的 16）——
           按 16 算会差 2px，实测才发现（2026-07-28）。横向仍是 4，与其他区块 px-1 同规范。 */}
       <div className="px-1 py-1.5 relative flex-shrink-0" ref={accountMenuRef}>
-        {isAuthenticated && user ? (
+        {!hasResolvedAuthStatus && !(isAuthenticated && user) ? (
+          <div className="h-8" data-testid="sidebar-account-loading" aria-busy="true" />
+        ) : isAuthenticated && user ? (
           <>
             <button
               onClick={() => setShowUserMenu(!showUserMenu)}

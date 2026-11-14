@@ -93,6 +93,7 @@ const NATIVE_TAURI_COMMANDS = [
   'pip_hide',
   'pip_show',
   'renderer_ready',
+  'set_shell_language',
   'shutdown_web_server_for_update',
   'warm_compile_cache_after_install',
 ] as const;

@@ -38,6 +38,8 @@ vi.mock('../../../src/renderer/components/features/cron/cronTemplates', async (i
     generate: () => ({
       ...createDefaultCronJobDraft(),
       name: '测试飞书模板',
+      scheduleType: 'cron' as const,
+      cronTimezone: 'Asia/Shanghai',
       actionType: 'agent' as const,
       agentType: 'default',
       agentPrompt: '测试用',
@@ -109,20 +111,22 @@ describe('模板卡连接器状态三态渲染', () => {
 });
 
 describe('模板卡计划时区口径', () => {
-  it('不同区模板标出时区，本地模板保持原文，并同步 zh/en 文案', () => {
+  it('本地模板保持原文，显式外区模板标出时区，并同步 zh/en 文案', () => {
     const initialTz = process.env.TZ;
     const initialLanguage = useAppStore.getState().language;
     process.env.TZ = 'America/Los_Angeles';
     try {
       useAppStore.setState({ language: 'zh' });
       const { rerender } = render(<CronFeaturedTemplates />);
-      expect(screen.getByText('工作日 15:00（中国标准时间）')).toBeTruthy();
+      expect(screen.getByText('工作日 15:00')).toBeTruthy();
       expect(screen.getByText('工作日 08:30')).toBeTruthy();
+      expect(screen.getByText('每天 09:00（中国标准时间）')).toBeTruthy();
 
       useAppStore.setState({ language: 'en' });
       rerender(<CronFeaturedTemplates />);
-      expect(screen.getByText('Weekdays at 15:00 (China Standard Time)')).toBeTruthy();
+      expect(screen.getByText('Weekdays at 15:00')).toBeTruthy();
       expect(screen.getByText('Weekdays 08:30')).toBeTruthy();
+      expect(screen.getByText('每天 09:00 (China Standard Time)')).toBeTruthy();
     } finally {
       if (initialTz === undefined) delete process.env.TZ;
       else process.env.TZ = initialTz;

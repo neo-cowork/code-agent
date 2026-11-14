@@ -21,6 +21,7 @@ const env = vi.hoisted(() => ({
     connected: boolean;
     identity: string;
     stale?: boolean;
+    lostReason?: 'cli_not_logged_in' | 'cli_missing_configuration';
   }>,
   larkStatusStarted: false,
 }));
@@ -161,6 +162,7 @@ describe('agentAppService.sendMessage → connector_required（真实缓存模�
       setSessionContext: vi.fn(),
     };
     vi.mocked(getSessionManager).mockReturnValue({
+      getMessages: vi.fn(async () => []),
       getSession: vi.fn(async () => ({ id: 'session-1', workingDirectory: '/tmp/ws' })),
       getSessionMetadata: vi.fn(() => undefined),
       updateSession: vi.fn(),
@@ -195,6 +197,41 @@ describe('agentAppService.sendMessage → connector_required（真实缓存模�
 
     // 发卡点真的起了探测（而不是拿冷缓存直接判 ready）
     expect(env.larkStatusStarted).toBe(true);
+    const calls = connectorRequiredCalls();
+    expect(calls).toHaveLength(1);
+    expect(calls[0][1]).toEqual({
+      type: 'connector_required',
+      data: { connectors: [{ id: 'feishu', source: 'selected', reason: 'not_connected' }] },
+    });
+  });
+
+  it.each([
+    ['cli_not_logged_in'],
+    ['cli_missing_configuration'],
+  ] as const)('CONFIRMED 探测原因 %s → 同一入口发 lost_login + lostCode（不再是通用 not_connected）', async (lostReason) => {
+    env.larkStatus = Promise.resolve({ connected: false, identity: 'none', lostReason });
+    registerConnectorIpc();
+    await createService().sendMessage({
+      sessionId: 'session-1',
+      content: '读一下我最新的飞书消息并总结成 3 条',
+      context: { selectedConnectorIds: ['feishu'] },
+    });
+    const calls = connectorRequiredCalls();
+    expect(calls).toHaveLength(1);
+    expect(calls[0][1]).toEqual({
+      type: 'connector_required',
+      data: { connectors: [{ id: 'feishu', source: 'selected', reason: 'lost_login', lostCode: lostReason }] },
+    });
+  });
+
+  it('stale 探测（超时/未分类失败复用旧值）→ 绝不出 lost_login，保持通用 not_connected', async () => {
+    env.larkStatus = Promise.resolve({ connected: false, identity: 'none', stale: true, lostReason: 'cli_not_logged_in' });
+    registerConnectorIpc();
+    await createService().sendMessage({
+      sessionId: 'session-1',
+      content: '读一下我最新的飞书消息',
+      context: { selectedConnectorIds: ['feishu'] },
+    });
     const calls = connectorRequiredCalls();
     expect(calls).toHaveLength(1);
     expect(calls[0][1]).toEqual({

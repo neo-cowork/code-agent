@@ -127,6 +127,7 @@ const ALLOWLIST: AllowlistEntry[] = [
   { file: 'src/renderer/components/features/settings/sections/SaaSConnectorsSection.tsx', name: 'clientSecret', reason: '用户手输的 OAuth client secret 草稿：oauthSetSecret 只写，提交后立即清空' },
 
   // ---- i18n 文案键：值为界面标签/提示文案，不含凭据 ----
+  { file: 'src/renderer/i18n/modelSetup.ts', name: 'missingApiKey', reason: '中英文 i18n 缺少密钥提示文案键：值为静态提示，仅插入 provider 显示名，不读取、传递或存储任何凭据值' },
   { file: 'src/renderer/i18n/en.ts', name: 'api_key_payg', reason: 'i18n 计费模式标签键（按量付费），非凭据' },
   { file: 'src/renderer/i18n/en.ts', name: 'apiKeyLabel', reason: 'i18n 文案键，值为界面标签' },
   { file: 'src/renderer/i18n/en.ts', name: 'apiKeyPlaceholder', reason: 'i18n 文案键，值为输入框占位文案' },

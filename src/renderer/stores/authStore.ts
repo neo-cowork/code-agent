@@ -3,6 +3,8 @@
 // ============================================================================
 
 import { create } from 'zustand';
+import { languages } from '../i18n';
+import { useAppStore } from './appStore';
 import type { AuthSessionTrustState, AuthStatus, AuthUser, SyncStatus } from '../../shared/contract';
 import { IPC_CHANNELS, IPC_DOMAINS } from '../../shared/ipc';
 import { createLogger } from '../utils/logger';
@@ -127,6 +129,8 @@ interface AuthState {
   statusLoadFailed: boolean;
   user: AuthUser | null;
   isLoading: boolean;
+  /** false until the first host getStatus settles (ok or failed): identity is unknown, not signed out */
+  hasResolvedStatus: boolean;
   error: string | null;
   sessionTrustState: AuthSessionTrustState;
   authBackendAvailable: boolean | null;
@@ -178,6 +182,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   statusLoadFailed: false,
   user: null,
   isLoading: true,
+  hasResolvedStatus: false,
   error: null,
   sessionTrustState: 'none',
   authBackendAvailable: null,
@@ -230,7 +235,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
         await reloadSessionsForAuthenticatedUser();
         return true;
       }
-      set({ error: getResultErrorMessage(result, '登录失败'), isLoading: false });
+      set({ error: getResultErrorMessage(result, languages[useAppStore.getState().language].authModal.signInFailed), isLoading: false });
       return false;
     } catch (error) {
       set({ error: getDisplayErrorMessage(error), isLoading: false });
@@ -255,7 +260,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
         await reloadSessionsForAuthenticatedUser();
         return true;
       }
-      set({ error: getResultErrorMessage(result, '注册失败'), isLoading: false });
+      set({ error: getResultErrorMessage(result, languages[useAppStore.getState().language].authModal.signUpFailed), isLoading: false });
       return false;
     } catch (error) {
       set({ error: getDisplayErrorMessage(error), isLoading: false });
@@ -457,6 +462,7 @@ export async function initializeAuthStore(): Promise<void> {
     logger.error('Failed to load auth status', error);
   } finally {
     store.setLoading(false);
+    useAuthStore.setState({ hasResolvedStatus: true });
   }
 
   // Load sync status
@@ -480,6 +486,7 @@ export async function initializeAuthStore(): Promise<void> {
       const prevUserId = useAuthStore.getState().user?.id ?? null;
       store.setUser(event.user);
       store.setLoading(false);
+      useAuthStore.setState({ hasResolvedStatus: true });
       store.setShowAuthModal(false);
       store.setAuthStatusMeta({
         sessionTrustState: event.sessionTrustState ?? 'verified',
@@ -490,6 +497,7 @@ export async function initializeAuthStore(): Promise<void> {
     } else if (event.type === 'signed_out') {
       const prevUserId = useAuthStore.getState().user?.id ?? null;
       store.setUser(null);
+      useAuthStore.setState({ hasResolvedStatus: true });
       store.setAuthStatusMeta({
         sessionTrustState: 'none',
         authBackendAvailable: event.authBackendAvailable,

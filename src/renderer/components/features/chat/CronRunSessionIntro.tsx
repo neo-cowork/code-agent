@@ -13,7 +13,9 @@ export const CronRunSessionIntro: React.FC<{ sessionId: string | null }> = ({ se
   const { t } = useI18n();
   const isCronRunSession = useSessionStore((state) => {
     if (!sessionId) return false;
-    const kind = state.sessions.find((session) => session.id === sessionId)?.origin?.kind;
+    const origin = state.sessions.find((session) => session.id === sessionId)?.origin;
+    if (origin?.metadata?.trigger === 'first_wake') return false;
+    const kind = origin?.kind;
     return kind === 'cron' || kind === 'heartbeat';
   });
   if (!isCronRunSession) return null;

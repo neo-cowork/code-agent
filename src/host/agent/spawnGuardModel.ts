@@ -11,7 +11,6 @@ import { READONLY_TOOL_DENYLIST } from './routingToolPolicy';
 import type { SubagentResult } from './subagentExecutorTypes';
 import {
   getSwarmRunScopeKey,
-  getSwarmTreeScopeKey,
   type SwarmRunScope,
 } from '../../shared/contract/swarm';
 import type { SubagentCompletionKind } from './subagentCompletionNotification';
@@ -22,6 +21,11 @@ import type { AgentMessage } from './messageOrigin';
 // ============================================================================
 
 export interface ManagedAgent {
+  /** Native parent execution identity, distinct from a Team run scope. */
+  parentRunId?: string;
+  /** Actual managed waiter; separate from the strictly same-Team parentId tree. */
+  waiterAgentId?: string;
+  background?: boolean;
   id: string;
   completion?: { title?: string; kind?: SubagentCompletionKind };
   role: string;
@@ -80,6 +84,10 @@ export interface SpawnGuardConfig {
 }
 
 export interface RegisterOptions {
+  parentRunId?: string;
+  /** Actual managed waiter; separate from the strictly same-Team parentId tree. */
+  waiterAgentId?: string;
+  background?: boolean;
   treeId?: string;
   parentId?: string;
   slotAcquired?: boolean;
@@ -301,3 +309,34 @@ export {
   SUBAGENT_DISABLED_TOOLS,
   READONLY_DISABLED_TOOLS,
 };
+
+/** A still-live detached branch may legitimately keep awaiting its foreground descendants. */
+export function hasLiveBackgroundAncestor(agent: ManagedAgent, agents: ReadonlyMap<string, ManagedAgent>): boolean {
+  const seen = new Set<string>();
+  let parentId = agent.parentId ?? agent.waiterAgentId;
+  while (parentId && !seen.has(parentId)) {
+    seen.add(parentId);
+    const parent = agents.get(parentId);
+    if (!parent || !isLiveRunningStatus(parent.status)) return false;
+    if (parent.background) return true;
+    parentId = parent.parentId ?? parent.waiterAgentId;
+  }
+  return false;
+}
+
+export function finishManagedAgentChildren(parent: ManagedAgent, agents: ReadonlyMap<string, ManagedAgent>, cancel: (child: ManagedAgent) => void): void {
+  for (const child of agents.values()) {
+    if ((child.parentId === parent.id || child.waiterAgentId === parent.id) && !child.background && isLiveRunningStatus(child.status)) cancel(child);
+  }
+}
+
+/** Waiter metadata never creates a cross-session or cross-Native-run cancellation authority. */
+export function resolveManagedWaiterId(waiterId: string | undefined, agents: ReadonlyMap<string, ManagedAgent>, sessionId: string, parentRunId?: string): string | undefined {
+  const id = waiterId?.trim();
+  if (!id) return undefined;
+  const waiter = agents.get(id);
+  if (!waiter) return undefined; // A primary conversation role is not a managed executor.
+  if ((waiter.sessionId ?? waiter.treeId) !== sessionId) throw new Error('Managed waiter session scope mismatch');
+  if (parentRunId && waiter.parentRunId && parentRunId !== waiter.parentRunId) throw new Error('Managed waiter Native run scope mismatch');
+  return id;
+}

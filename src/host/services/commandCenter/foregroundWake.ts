@@ -71,13 +71,13 @@ export interface ForegroundWakeDependencies {
   recordWakeFailureNote(
     sessionId: string,
     content: string,
-    detail: { taskId: string; reason: 'owner_missing' | 'wake_failed' },
+    detail: NonNullable<NonNullable<Message['metadata']>['backgroundWakeFailed']>,
   ): Promise<void>;
   /** 唤醒推迟超过上限时给用户的一句不打断说明。 */
   recordWakeDeferredNote(
     sessionId: string,
     content: string,
-    detail: { taskId: string; outcome: 'completed' | 'failed' },
+    detail: NonNullable<NonNullable<Message['metadata']>['backgroundWakeDeferred']>,
   ): Promise<void>;
   /** 可注入的计时器，避免单测真等待。 */
   setTimeout(callback: () => void, delayMs: number): unknown;
@@ -129,13 +129,13 @@ function hasQueuedUserInput(sessionId: string): boolean {
 }
 
 export function formatBackgroundWakeFailureNote(shortName: string): string {
-  return `后台任务「${shortName}」已结束，结果见上方的任务结果；自动汇报这一步没能完成，需要的话可以直接问我。`;
+  return `后台任务「${shortName}」已结束；自动汇报这一步没能完成，恢复原账号登录后可查看任务结果，也可以直接问我。`;
 }
 
 export async function recordBackgroundWakeFailureNote(
   sessionId: string,
   content: string,
-  detail: { taskId: string; reason: 'owner_missing' | 'wake_failed' },
+  detail: NonNullable<NonNullable<Message['metadata']>['backgroundWakeFailed']>,
 ): Promise<void> {
   // 必须带登记键：渲染端按 systemEventRegistry 放行，无 metadata 的 system 消息一律被投影层跳过
   const message: Message = {
@@ -256,13 +256,14 @@ export function createForegroundWake(
       if (pendingBySession.get(pending.task.sessionId) !== pending || pending.noticeEmitted) return;
       pending.noticeTimer = null;
       pending.noticeEmitted = true;
+      const deferredTitle = truncateObserveText(pending.task.title, BACKGROUND_WAKE_DEFER_TASK_TITLE_MAX_CHARS);
       void dependencies.recordWakeDeferredNote(
         pending.task.sessionId,
         formatBackgroundWakeDeferredNote(
-          truncateObserveText(pending.task.title, BACKGROUND_WAKE_DEFER_TASK_TITLE_MAX_CHARS),
+          deferredTitle,
           pending.status,
         ),
-        { taskId: pending.task.id, outcome: pending.status },
+        { taskId: pending.task.id, outcome: pending.status, title: deferredTitle },
       ).catch((error) => {
         dependencies.logger.warn('Foreground wake deferred note not recorded', {
           sessionId: pending.task.sessionId,
@@ -368,7 +369,7 @@ export function createForegroundWake(
       await dependencies.recordWakeFailureNote(
         sessionId,
         formatBackgroundWakeFailureNote(task.shortName),
-        { taskId: task.id, reason: 'wake_failed' },
+        { taskId: task.id, reason: 'wake_failed', title: task.shortName },
       ).catch((noteError) => {
         dependencies.logger.warn('Foreground wake failure note not recorded', {
           reason: 'session_not_accessible_retries_exhausted',
@@ -412,6 +413,7 @@ export function createForegroundWake(
     pending.flushing = true;
     void wake(pending.task, pending.status, pending).catch((error) => {
       dependencies.logger.warn('Foreground wake failed', {
+        reason: 'turn_error',
         sessionId,
         taskId: pending.task.id,
         message: error instanceof Error ? error.message : String(error),
@@ -539,7 +541,7 @@ export function createForegroundWake(
           WAKE_NOOP_TOOL_NAME,
         ])),
         terminalErrorSink: (data: unknown) => {
-          if (capturedError === null) {
+          if (capturedError === null || capturedError === 'Max iterations reached') {
             capturedError = getAgentErrorMessage(data) ?? 'wake turn failed';
           }
         },
@@ -557,23 +559,42 @@ export function createForegroundWake(
       });
       turnRan = true;
       let thrownError: string | null = null;
+      let reportedToUser = false;
+      const stopObserving = manager.observeAgentEvents((eventSessionId, event, taskId) => {
+        if (eventSessionId !== sessionId || taskId || event.type !== 'message') return;
+        const message = event.data as Message;
+        if (message.role === 'assistant' && !message.isMeta
+          && typeof message.content === 'string' && message.content.trim()
+          && !message.toolCalls?.length) reportedToUser = true;
+      });
       try {
         await orchestrator.sendMessage(wakePrompt(task, status), undefined, options);
       } catch (error) {
         thrownError = error instanceof Error ? error.message : String(error);
+      } finally {
+        stopObserving();
       }
-      const failureMessage = capturedError ?? thrownError;
+      const failureMessage = capturedError === 'Max iterations reached' && thrownError
+        ? thrownError : capturedError ?? thrownError;
+      if (reportedToUser && failureMessage === 'Max iterations reached') {
+        dependencies.logger.info('Foreground wake reported to user; ignoring max-iterations marker', {
+          sessionId, taskId: task.id,
+        });
+        return;
+      }
       if (failureMessage !== null) {
         // 失败原因分开记：owner lease 缺失是 run 注册问题，其余是唤醒轮自身失败
         const ownerMissing = failureMessage.includes('no live owner lease');
+        const reason = ownerMissing ? 'owner_missing'
+          : failureMessage === 'Max iterations reached' ? 'max_iterations' : 'turn_error';
         dependencies.logger.warn(
           `Foreground wake failed: ${ownerMissing ? 'owner missing' : 'wake turn failed'}`,
-          { sessionId, taskId: task.id, message: failureMessage },
+          { sessionId, taskId: task.id, reason, message: failureMessage },
         );
         await dependencies.recordWakeFailureNote(
           sessionId,
           formatBackgroundWakeFailureNote(task.shortName),
-          { taskId: task.id, reason: ownerMissing ? 'owner_missing' : 'wake_failed' },
+          { taskId: task.id, reason, title: task.shortName },
         ).catch((noteError) => {
           dependencies.logger.warn('Foreground wake failure note not recorded', {
             sessionId,
