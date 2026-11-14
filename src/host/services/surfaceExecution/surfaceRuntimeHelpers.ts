@@ -8,6 +8,7 @@ import type { RunRegistry } from '../../runtime/runRegistry';
 import { createLogger } from '../infra/logger';
 import type { SurfaceGrantSubjectV1 } from './SurfaceAccessGrantService';
 import type { BrowserTabLeaseSubjectV1 } from './BrowserTabLeaseService';
+import { SurfaceExecutionRuntimeError } from './SurfaceExecutionRuntimeError';
 import type { SurfaceSessionManager } from './SurfaceSessionManager';
 
 const surfaceOwnershipLogger = createLogger('SurfaceExecutionRuntime.ownership');
@@ -102,4 +103,30 @@ export function findComputerSessionId(
     surface: 'computer',
     provider,
   })?.sessionId || 'unbound';
+}
+
+export function surfaceIdentityError(input: {
+  sessions: SurfaceSessionManager;
+  identity: { conversationId: string; runId: string; agentId: string };
+  surface: 'browser' | 'computer';
+  code: 'SURFACE_STATE_STALE' | 'SURFACE_TRANSPORT_UNAVAILABLE';
+  message: string;
+  recommendedAction: string;
+  provider: string;
+  operationId: string;
+}): SurfaceExecutionRuntimeError {
+  const sessionId = input.surface === 'browser'
+    ? findBrowserSessionId(input.sessions, input.identity, input.provider)
+    : findComputerSessionId(input.sessions, input.identity, input.provider);
+  return new SurfaceExecutionRuntimeError({
+    code: input.code,
+    message: input.message,
+    phase: input.code === 'SURFACE_STATE_STALE' ? 'prepare' : 'act',
+    retryable: true,
+    recommendedAction: input.recommendedAction,
+    surface: input.surface,
+    provider: input.provider,
+    sessionId,
+    operationId: input.operationId,
+  });
 }

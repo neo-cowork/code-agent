@@ -2,26 +2,33 @@ import type { InteractiveSurfaceSessionV1 } from '../../../shared/contract/surfa
 import { BROWSER_HUMAN_TAKEOVER_WAIT } from '../../../shared/constants/timeouts';
 import { SurfaceExecutionRuntimeError } from './SurfaceExecutionRuntimeError';
 
-interface BrowserHumanTakeoverWaitInput {
+interface SurfaceHumanTakeoverWaitInput {
   readSession: () => InteractiveSurfaceSessionV1;
   operationId: string;
   parentSignal?: AbortSignal;
+  capMs?: number;
   now?: () => number;
 }
 
 /**
- * Block a browser action while the user is operating the live view.
+ * Block a Browser or Computer Surface action while the user holds input control.
  * Returns when the session is `running` again. Stopping, any other
  * non-running state, or the wait cap rejects with the same
- * `SURFACE_SESSION_BUSY` error `assertBrowserSessionReady` throws.
+ * `SURFACE_SESSION_BUSY` error `assertBrowserSurfaceSessionReady` throws.
  * The run abort signal rejects the wait so a cancelled run cannot sit here
  * until the cap.
  */
-export async function waitForBrowserHumanTakeoverRelease(
-  input: BrowserHumanTakeoverWaitInput,
+export async function waitForSurfaceHumanTakeoverRelease(
+  input: SurfaceHumanTakeoverWaitInput,
 ): Promise<InteractiveSurfaceSessionV1> {
   const now = input.now ?? Date.now;
-  const deadline = now() + BROWSER_HUMAN_TAKEOVER_WAIT.CAP_MS;
+  const initial = input.readSession();
+  const capMs = input.capMs ?? (
+    initial.surface === 'computer'
+      ? BROWSER_HUMAN_TAKEOVER_WAIT.COMPUTER_CAP_MS
+      : BROWSER_HUMAN_TAKEOVER_WAIT.CAP_MS
+  );
+  const deadline = now() + capMs;
   while (true) {
     if (input.parentSignal?.aborted) {
       throw cancelledWhileWaiting(input.readSession(), input.operationId, input.parentSignal.reason);
@@ -33,11 +40,11 @@ export async function waitForBrowserHumanTakeoverRelease(
     }
     if (current.state !== 'waiting_human') {
       forgetCapExpiredWaitingHuman(current.sessionId);
-      throw browserSessionBusy(current, input.operationId);
+      throw surfaceSessionBusy(current, input.operationId);
     }
     if (now() >= deadline || capExpiredWaitingHumanSessions.has(current.sessionId)) {
       rememberCapExpiredWaitingHuman(current.sessionId);
-      throw browserSessionBusy(current, input.operationId);
+      throw surfaceSessionBusy(current, input.operationId);
     }
     const remaining = deadline - now();
     try {
@@ -50,14 +57,29 @@ export async function waitForBrowserHumanTakeoverRelease(
       if (latest.state !== 'waiting_human') {
         forgetCapExpiredWaitingHuman(latest.sessionId);
       }
-      throw browserSessionBusy(latest, input.operationId);
+      throw surfaceSessionBusy(latest, input.operationId);
     }
   }
+}
+
+export function waitForBrowserHumanTakeoverRelease(
+  input: SurfaceHumanTakeoverWaitInput,
+): Promise<InteractiveSurfaceSessionV1> {
+  return waitForSurfaceHumanTakeoverRelease(input);
 }
 
 /** FU1-FU2-FU1：waiting_human 的 BUSY 消息面向模型的行动指引（三处 BUSY 站点共用）。 */
 export const WAITING_HUMAN_MODEL_GUIDANCE =
   'The user is still using the browser. Do NOT retry browser actions; tell the user to finish and press Continue in the browser window, then stop and wait for their reply.';
+
+const COMPUTER_WAITING_HUMAN_MODEL_GUIDANCE =
+  'The user is still using the computer. Do NOT retry computer actions; tell the user to finish and press Done, then stop and wait for their reply.';
+
+export function waitingHumanModelGuidance(surface: InteractiveSurfaceSessionV1['surface']): string {
+  return surface === 'computer'
+    ? COMPUTER_WAITING_HUMAN_MODEL_GUIDANCE
+    : WAITING_HUMAN_MODEL_GUIDANCE;
+}
 
 /**
  * FU1-FU2-FU1-FU1：同一 session 已等满一次 cap 仍 waiting_human 的记忆。
@@ -96,6 +118,9 @@ const humanTouchedSessions = new Set<string>();
 export const BROWSER_HUMAN_TOUCHED_NOTE =
   'A human used this page since your last look, so it may have changed. Call get_dom_snapshot before acting on it.';
 
+export const COMPUTER_HUMAN_TOUCHED_NOTE =
+  'A human used this screen since your last look, so it may have changed. Observe again before acting.';
+
 /** takeover 释放点（SurfaceInterruptService.resume，且之前是 waiting_human）调用。 */
 export function noteBrowserHumanReleased(sessionId: string): void {
   humanTouchedSessions.delete(sessionId);
@@ -112,18 +137,28 @@ export function consumeBrowserHumanTouched(sessionId: string): boolean {
   return humanTouchedSessions.delete(sessionId);
 }
 
-function browserSessionBusy(
+export function assertBrowserSurfaceSessionReady(
+  session: InteractiveSurfaceSessionV1,
+  operationId: string,
+): void {
+  if (session.state === 'running') return;
+  throw surfaceSessionBusy(session, operationId);
+}
+
+function surfaceSessionBusy(
   session: InteractiveSurfaceSessionV1,
   operationId: string,
 ): SurfaceExecutionRuntimeError {
+  const surfaceLabel = session.surface === 'computer' ? 'Computer' : 'Browser';
   return new SurfaceExecutionRuntimeError({
     code: 'SURFACE_SESSION_BUSY',
-    message: `Browser Surface session cannot start an operation while ${session.state}.` + (session.state === 'waiting_human' ? ` ${WAITING_HUMAN_MODEL_GUIDANCE}` : ''),
+    message: `${surfaceLabel} Surface session cannot start an operation while ${session.state}.`
+      + (session.state === 'waiting_human' ? ` ${waitingHumanModelGuidance(session.surface)}` : ''),
     phase: 'prepare',
     retryable: session.state === 'paused' || session.state === 'waiting_human',
     userActionRequired: session.state === 'waiting_human',
-    recommendedAction: 'Resume or finish human takeover before the next Browser operation.',
-    surface: 'browser',
+    recommendedAction: `Resume or finish human takeover before the next ${surfaceLabel} operation.`,
+    surface: session.surface,
     provider: session.provider,
     sessionId: session.sessionId,
     ...(session.activeTarget ? { targetRef: session.activeTarget } : {}),
@@ -136,15 +171,16 @@ function cancelledWhileWaiting(
   operationId: string,
   reason: unknown,
 ): SurfaceExecutionRuntimeError {
+  const surfaceLabel = session.surface === 'computer' ? 'Computer' : 'Browser';
   return new SurfaceExecutionRuntimeError({
     code: 'SURFACE_REQUEST_CANCELLED',
     message: typeof reason === 'string'
       ? reason
-      : 'Browser operation was cancelled while waiting for human takeover to finish.',
+      : `${surfaceLabel} operation was cancelled while waiting for human takeover to finish.`,
     phase: 'prepare',
     retryable: true,
     recommendedAction: 'Re-observe before deciding whether to retry.',
-    surface: 'browser',
+    surface: session.surface,
     provider: session.provider,
     sessionId: session.sessionId,
     ...(session.activeTarget ? { targetRef: session.activeTarget } : {}),
