@@ -15,6 +15,7 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
 }));
 
 import { TaskDetailPanel } from '../../../src/renderer/components/features/workflow/TaskDetailPanel';
+import { formatDateTime } from '../../../src/renderer/utils/formatDateTime';
 
 // 本地时区构造（不跨时区换算），任何 TZ 下时分字段都是构造值本身。
 const STARTED = new Date(2026, 10, 9, 16, 5, 0).getTime(); // 2026-11-09 16:05
@@ -40,10 +41,10 @@ describe('TaskDetailPanel 时间口径（跟随 UI language）', () => {
     expect(html).not.toMatch(/AM|PM/);
   });
 
-  it('en UI：维持 en-US 原样（英文 UI 行为不变）', () => {
+  it('en UI：Started/Completed 跟随 formatDateTime', () => {
     appState.language = 'en';
     const html = renderToStaticMarkup(<TaskDetailPanel task={TASK} onClose={() => {}} />);
-    expect(html).toContain('11/9/2026, 4:05:00 PM');
-    expect(html).toContain('11/9/2026, 5:30:00 PM');
+    expect(html).toContain(formatDateTime(STARTED, 'en'));
+    expect(html).toContain(formatDateTime(COMPLETED, 'en'));
   });
 });
