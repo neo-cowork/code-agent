@@ -431,6 +431,8 @@ export function getToolExecutionTimeoutMs(toolName: string): number | undefined 
 export const BROWSER_HUMAN_TAKEOVER_WAIT = {
   POLL_INTERVAL_MS: 100,
   CAP_MS: 100_000,
+  /** Computer takeover wait is booked as human time (beginApprovalWait), so its per-call cap matches the 5-minute takeover timer. */
+  COMPUTER_CAP_MS: 5 * 60_000,
   /** Takeover control timer: how long the user may hold the view before the session stops. */
   TIMER_MS: 5 * 60_000,
 } as const;
