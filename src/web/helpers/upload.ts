@@ -13,7 +13,7 @@ import { MANAGED_BROWSER_ARTIFACT_DIR } from '../../host/services/infra/browser/
 import { resolveNativeDesktopCandidateRoots } from '../../host/services/desktop/nativeDesktopService';
 import { PRESENTATION_PREVIEW_CACHE_DIRNAME } from '../../host/tools/media/ppt/constants';
 import { PREVIEW_FORMAT_CACHE_DIRNAME } from '../../host/ipc/previewFormatCacheName';
-import { CHAT_UPLOAD_DIR_NAME } from '../../shared/constants/chatUploads';
+import { CHAT_UPLOAD_DIR_NAME, MAX_FOLDER_BATCH_BODY_SIZE } from '../../shared/constants/chatUploads';
 
 export const MAX_UPLOAD_SIZE = 50 * 1024 * 1024;
 export const UPLOAD_ROOT_DIR = path.join(os.tmpdir(), CHAT_UPLOAD_DIR_NAME);
@@ -51,7 +51,7 @@ function sanitizeRelativePath(relativePath?: string): string[] {
     .map(sanitizePathSegment);
 }
 
-async function readRequestBuffer(req: Request, maxSize: number): Promise<Buffer> {
+async function readRequestBuffer(req: Request, maxSize: number, destroyOnLimit = true): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let total = 0;
@@ -60,10 +60,11 @@ async function readRequestBuffer(req: Request, maxSize: number): Promise<Buffer>
       total += chunk.length;
       if (total > maxSize) {
         reject(new Error(`File exceeds ${Math.floor(maxSize / (1024 * 1024))}MB limit`));
-        req.destroy();
+        chunks.length = 0;
+        if (destroyOnLimit) req.destroy();
         return;
       }
-      chunks.push(chunk);
+      if (total <= maxSize) chunks.push(chunk);
     });
 
     req.on('end', () => resolve(Buffer.concat(chunks)));
@@ -72,15 +73,14 @@ async function readRequestBuffer(req: Request, maxSize: number): Promise<Buffer>
   });
 }
 
-function parseMultipartUpload(body: Buffer, boundary: string): {
-  filename: string;
-  data: Buffer;
+function parseMultipartParts(body: Buffer, boundary: string): {
+  files: Array<{ fieldName: string; filename: string; data: Buffer }>;
   fields: Record<string, string>;
 } {
   const delimiter = Buffer.from(`--${boundary}`);
   const headerSeparator = Buffer.from('\r\n\r\n');
   const fields: Record<string, string> = {};
-  let filePart: { filename: string; data: Buffer } | null = null;
+  const files: Array<{ fieldName: string; filename: string; data: Buffer }> = [];
   let cursor = body.indexOf(delimiter);
 
   while (cursor !== -1) {
@@ -118,7 +118,7 @@ function parseMultipartUpload(body: Buffer, boundary: string): {
     }
 
     if (filenameMatch) {
-      filePart = { filename: filenameMatch[1], data: content };
+      files.push({ fieldName, filename: filenameMatch[1], data: content });
     } else {
       fields[fieldName] = content.toString('utf8');
     }
@@ -126,6 +126,12 @@ function parseMultipartUpload(body: Buffer, boundary: string): {
     cursor = nextBoundary;
   }
 
+  return { files, fields };
+}
+
+function parseMultipartUpload(body: Buffer, boundary: string) {
+  const { files, fields } = parseMultipartParts(body, boundary);
+  const filePart = files.at(-1);
   if (!filePart) {
     throw new Error('Missing file field');
   }
@@ -162,6 +168,51 @@ export async function handleTempUpload(req: Request, res: Response): Promise<voi
   fs.mkdirSync(path.dirname(resolvedDestination), { recursive: true });
   fs.writeFileSync(resolvedDestination, data);
   res.json({ path: resolvedDestination });
+}
+
+/** Each fileN part is paired with relativePathN; validate everything before writing. */
+export async function handleTempBatchUpload(req: Request, res: Response): Promise<void> {
+  const contentType = req.header('content-type') || '';
+  const boundaryMatch = contentType.match(/boundary=([^;]+)/i);
+  if (!contentType.toLowerCase().startsWith('multipart/form-data') || !boundaryMatch) {
+    res.status(400).json({ error: 'Expected multipart/form-data' });
+    return;
+  }
+  if (Number(req.header('content-length')) > MAX_FOLDER_BATCH_BODY_SIZE) {
+    req.resume();
+    throw new Error('File exceeds 200MB limit');
+  }
+  const body = await readRequestBuffer(req, MAX_FOLDER_BATCH_BODY_SIZE, false);
+  const { files, fields } = parseMultipartParts(body, boundaryMatch[1].trim().replace(/^"|"$/g, ''));
+  if (!files.length) throw new Error('Missing file field');
+  const root = path.join(UPLOAD_ROOT_DIR, randomUUID());
+  const destinations = new Set<string>();
+  const uploads = files.map(({ fieldName, data }) => {
+    if (data.length > MAX_UPLOAD_SIZE) throw new Error('File exceeds 50MB limit');
+    const index = /^file(\d+)$/.exec(fieldName)?.[1];
+    const relativePath = index === undefined ? undefined : fields[`relativePath${index}`];
+    if (!relativePath || /^(?:[\\/]|[A-Za-z]:)/.test(relativePath)
+      || relativePath.split(/[\\/]+/).some((segment) => segment.trim() === '..')) {
+      throw new Error('Invalid upload path');
+    }
+    const segments = sanitizeRelativePath(relativePath);
+    const destination = path.resolve(root, ...segments);
+    if (!destination.startsWith(`${root}${path.sep}`) || destinations.has(destination)) {
+      throw new Error('Invalid upload path');
+    }
+    destinations.add(destination);
+    return { relativePath, path: destination, data };
+  });
+  try {
+    for (const upload of uploads) {
+      fs.mkdirSync(path.dirname(upload.path), { recursive: true });
+      fs.writeFileSync(upload.path, upload.data);
+    }
+  } catch (error) {
+    fs.rmSync(root, { recursive: true, force: true });
+    throw error;
+  }
+  res.json({ root, files: uploads.map(({ relativePath, path: filePath }) => ({ relativePath, path: filePath })) });
 }
 
 // ── Screenshot proxy (serves local screenshot files via HTTP) ──────────────
