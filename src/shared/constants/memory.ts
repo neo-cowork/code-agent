@@ -204,6 +204,9 @@ export const ROLE_ASSETS = {
   /** 首次醒来写回无人工摘要时的履历回落短句：不外显内部指令，也不装作干过活
    *  （2026-11-12 owner 裁决：首次见面的最近工作行绝不回落到任务提示词）。 */
   FIRST_WAKE_HISTORY_FALLBACK_SUMMARY: '刚创建，还没开始工作',
+  /** Cadence/event scaffold recognition shared by write-back and legacy history presentation. */
+  WAKE_TASK_PROMPT_PATTERN: /你被(?:定时|任务结束事件)唤醒。这不是用户发来的消息，用户现在不在。/,
+  WAKE_HISTORY_FALLBACK_SUMMARY: '例行巡检记录',
   /** 已删角色回收站根目录名（相对 getUserConfigDir()）：~/.code-agent/roles-trash/（N-ROLE-CREATE-DIRECT-DELETE） */
   TRASH_DIR_NAME: 'roles-trash',
   /** 回收站保留天数：过期条目在下次 trash/restore 时惰性清理（不新增定时器） */

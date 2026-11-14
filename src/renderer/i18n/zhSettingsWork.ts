@@ -448,7 +448,7 @@ export const zhSettingsWork = {
       },
       detail: {
         backToList: '返回角色列表',
-        subtitle: '持久化角色 — 记忆与履历归你所有',
+        subtitle: '长期专家 — 记忆与履历归你所有',
         editByChatTitle: '用对话修改这个角色（改描述 / 工具 / 系统提示词）',
         editByChat: '对话式修改',
         proactivityTitle: '主动性',

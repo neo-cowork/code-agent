@@ -41,6 +41,7 @@ import { getStreamInterruptionReasonLabel } from '../../../utils/streamInterrupt
 import { useMessageActionStore } from '../../../stores/messageActionStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useStreamResumeStore } from '../../../stores/streamResumeStore';
+import { formatRoleHistoryLine } from '../expert/roleHistoryPresentation';
 import { MemberInputNote } from '../expert/MemberInputNote';
 import { WakeRationaleNote, wakeRationaleFromMetadata } from './WakeRationaleNote';
 import { TurnTimelineNodeRenderer } from './TraceTimelineNodes';
@@ -84,6 +85,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
   suppressSendFailedBadge,
   fileChangesByPath,
 }) => {
+  const { t } = useI18n();
   let content: React.ReactNode;
 
   switch (node.type) {
@@ -113,7 +115,9 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
       }
       content = (
         <AssistantTextNode
-          node={node}
+          node={node.metadata?.automation?.automationType === 'role_wake'
+            ? { ...node, content: formatRoleHistoryLine(node.content, t.expert.roleDetail.historyDecision, t.expert.roleDetail.historyWake) }
+            : node}
           sessionId={sessionId}
           isStreaming={isStreaming}
           inVoiceDispatchCard={inVoiceDispatchCard}
