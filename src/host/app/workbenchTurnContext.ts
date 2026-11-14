@@ -542,7 +542,13 @@ function listNotReadyDeclaredConnectors(
 ): ConnectorRequiredItem[] {
   return collectDeclaredConnectorIds(options, context, sessionMetadata)
     .filter((entry) => !isConnectorReadyForTurnScope(entry.id))
-    .map(({ id, source }) => ({ id, source, reason: CONNECTOR_REQUIRED_DEFAULT_REASON }));
+    .map(({ id, source }) => {
+      // 只有探测确认的 CLI 失联（CONFIRMED code）才升级成 lost_login；其余保持通用未连接
+      const lostCode = isCliConnectorId(id) ? getCachedCliConnectorConnectionStatus(id)?.lostReason : undefined;
+      return lostCode
+        ? { id, source, reason: 'lost_login', lostCode }
+        : { id, source, reason: CONNECTOR_REQUIRED_DEFAULT_REASON };
+    });
 }
 
 /**

@@ -1,4 +1,5 @@
 import type { AudioSegment, DesktopActivityEvent } from '../../../../services/nativeDesktop';
+import { AUDIO_SPEAKER_ID, type AudioCaptureMode } from '@shared/contract/audioCapture';
 
 // ============================================================================
 // Types
@@ -239,6 +240,19 @@ const SPEAKER_COLORS = [
 
 export function speakerStyle(id: number) {
   return SPEAKER_COLORS[(id - 1) % SPEAKER_COLORS.length] || SPEAKER_COLORS[0];
+}
+
+/** 会议模式按声道分出的「我 / 对方」直接显示称呼，其余仍按编号 */
+export function speakerName(id: number, text: { speaker: string; speakerMe: string; speakerOthers: string }): string {
+  if (id === AUDIO_SPEAKER_ID.ME) return text.speakerMe;
+  if (id === AUDIO_SPEAKER_ID.OTHERS) return text.speakerOthers;
+  return `${text.speaker} ${id}`;
+}
+
+const AUDIO_CAPTURE_MODE_CYCLE: AudioCaptureMode[] = ['meeting', 'system-audio', 'microphone'];
+
+export function nextAudioCaptureMode(mode: AudioCaptureMode): AudioCaptureMode {
+  return AUDIO_CAPTURE_MODE_CYCLE[(AUDIO_CAPTURE_MODE_CYCLE.indexOf(mode) + 1) % AUDIO_CAPTURE_MODE_CYCLE.length];
 }
 
 /** 对没有换行的旧分析文本做智能分段，已有 markdown 格式的保留原样 */
