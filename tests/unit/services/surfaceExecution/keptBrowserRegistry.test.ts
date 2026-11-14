@@ -264,6 +264,7 @@ describe('KeptBrowserRegistry (N-BROWSER-KEEP-RESULT-PAGE)', () => {
       state: 'closed',
       url: 'https://example.test/result',
       title: 'Result',
+      reason: 'keep_result_page',
     });
     expect(registry.getAlive('conversation-a')).toBeNull();
     expect(released).toEqual(['surface-key-1']);
