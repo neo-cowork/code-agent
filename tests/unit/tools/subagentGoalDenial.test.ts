@@ -97,7 +97,7 @@ describe('same-goal denial propagates to sub-agents (createSubagentToolRuntime l
     await parent.execute('Bash', { command: 'find . -name draft -delete' }, mainOptions);
     expect(humanPrompts).toBe(1);
     const rows = db.prepare('SELECT * FROM pending_approvals').all();
-    const result = await child('goal-session', 'user-1').run('find . -name backup -exec rm {} \;');
+    const result = await child('goal-session', 'user-1').run('find . -name backup -exec rm {} +');
     expect(result.error).toContain(stickyText);
     expect(humanPrompts).toBe(1);
     expect(db.prepare('SELECT * FROM pending_approvals').all()).toEqual(rows);
