@@ -60,7 +60,7 @@ function makeRecipe(overrides: Partial<TeamRecipe> = {}): TeamRecipe {
 }
 
 beforeEach(() => {
-  useAppStore.setState({ expertPanelTab: 'discover' });
+  useAppStore.setState({ expertPanelTab: 'discover', language: 'zh' });
   listRolePacks.mockResolvedValue([]);
   listTeamRecipes.mockResolvedValue([]);
   createTeamRecipe.mockResolvedValue(makeRecipe({ id: 'user-copied' }));
@@ -146,5 +146,67 @@ describe('ExpertPanel Discover search', () => {
     await waitFor(() => expect(screen.getByTestId('role-pack-load-error')).toBeTruthy());
     expect(screen.getByTestId('expert-search-empty')).toBeTruthy();
     expect(screen.getByRole('button', { name: '重试' })).toBeTruthy();
+  });
+});
+
+
+describe('ExpertPanel Discover matches in Mine', () => {
+  const userExpert = makeEntry({ roleId: 'weekly-proofreader', displayName: '周报校对师', source: 'user', description: '校对周报', profession: '编辑', tags: ['周报'] });
+
+  it.each([
+    ['zh', '「我的」里有 1 位匹配「周报校对师」的专家', '去「我的」查看'],
+    ['en', '1 matching expert in Mine for "周报校对师"', 'View in Mine'],
+  ] as const)('shows localized user-only match and preserves the search on navigation (%s)', async (language, hint, action) => {
+    useAppStore.setState({ language });
+    listRoles.mockResolvedValue([makeEntry(), userExpert]);
+    render(<ExpertPanel />);
+    const input = await screen.findByTestId('expert-search-input');
+    expect(screen.queryByTestId('expert-discover-mine-hint')).toBeNull();
+    fireEvent.change(input, { target: { value: '  周报校对师  ' } });
+    const row = screen.getByTestId('expert-discover-mine-hint');
+    expect(row.textContent).toContain(hint);
+    expect(screen.getByTestId('expert-discover-mine-hint-go').textContent).toBe(action);
+    expect(screen.getByTestId('expert-search-empty')).toBeTruthy();
+    expect(row.compareDocumentPosition(screen.getByTestId('expert-search-empty')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByTestId('expert-card-weekly-proofreader')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('expert-discover-mine-hint-go'));
+    expect(screen.getByTestId('expert-tab-mine').getAttribute('aria-selected')).toBe('true');
+    expect((screen.getByTestId('expert-search-input') as HTMLInputElement).value).toBe('  周报校对师  ');
+    expect(screen.getByTestId('expert-card-weekly-proofreader')).toBeTruthy();
+    expect(screen.queryByTestId('expert-card-牧之')).toBeNull();
+    expect(screen.queryByTestId('expert-discover-mine-hint')).toBeNull();
+  });
+
+  it.each(['zh', 'en'] as const)('counts only non-builtin matches alongside Discover hits (%s)', async (language) => {
+    useAppStore.setState({ language });
+    listRoles.mockResolvedValue([
+      makeEntry({ description: '周报需求梳理' }), userExpert,
+      makeEntry({ roleId: 'project-editor', displayName: '项目编辑', source: 'project', description: '周报审阅' }),
+      makeEntry({ roleId: 'unrelated', displayName: '画师', source: 'user', description: '画插画' }),
+    ]);
+    render(<ExpertPanel />);
+    const input = await screen.findByTestId('expert-search-input');
+    fireEvent.change(input, { target: { value: '周报' } });
+    expect(screen.getByTestId('expert-discover-mine-hint').textContent).toContain(language === 'zh'
+      ? '「我的」里有 2 位匹配「周报」的专家'
+      : '2 matching experts in Mine for "周报"');
+    expect(screen.getByTestId('expert-card-牧之')).toBeTruthy();
+    expect(screen.queryByTestId('expert-card-weekly-proofreader')).toBeNull();
+    expect(screen.queryByTestId('expert-search-empty')).toBeNull();
+    fireEvent.change(input, { target: { value: '   ' } });
+    expect(screen.queryByTestId('expert-discover-mine-hint')).toBeNull();
+  });
+
+  it('has no hint for builtin-only hits or no Mine matches', async () => {
+    listRoles.mockResolvedValue([makeEntry(), userExpert]);
+    render(<ExpertPanel />);
+    const input = await screen.findByTestId('expert-search-input');
+    fireEvent.change(input, { target: { value: '牧之' } });
+    expect(screen.getByTestId('expert-card-牧之')).toBeTruthy();
+    expect(screen.queryByTestId('expert-discover-mine-hint')).toBeNull();
+    fireEvent.change(input, { target: { value: '不存在的专家' } });
+    expect(screen.getByTestId('expert-search-empty')).toBeTruthy();
+    expect(screen.queryByTestId('expert-discover-mine-hint')).toBeNull();
   });
 });
