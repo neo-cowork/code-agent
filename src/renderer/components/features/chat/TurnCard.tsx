@@ -2,7 +2,7 @@
 // TurnCard - A single conversation turn (user prompt + assistant responses)
 // ============================================================================
 import { isProjectTrustPendingTurn } from '../../../utils/projectTrustTurn';
-import React, { useCallback, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import React, { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
 import type { TraceTurn, TraceNode } from '@shared/contract/trace';
 import type { StreamRecoverySnapshot } from '@shared/contract/session';
 import type { TurnHookActivity, TurnSkillActivity } from '@shared/contract/turnTimeline';
@@ -67,6 +67,7 @@ import { useVoiceLiveRuntime } from '../../../hooks/useVoiceLiveRuntime';
 import { hasPendingPermissionForSession, hasQueuedPermissionForSession } from '../../../utils/sessionNeedsInput';
 import { useSessionTurnActive } from '../../../hooks/useSessionTurnActive';
 import { resolveBusySignal } from '../../../utils/turnBusySignal';
+import { useTurnCardExpansion } from './useTurnCardExpansion';
 import { hasFoldHiddenMiddle, isNodeSkippedInMiddle } from './turnFoldVisibility';
 import { getObservedCronRunStatusForSession, hasParkedApprovalClosure, isLiveCronRunStatusKind, subscribeObservedCronRunStatus } from './cronRunSessionStatus';
 
@@ -76,6 +77,7 @@ interface TurnCardProps {
   defaultExpanded?: boolean;
   /** Force expand for search matches */
   forceExpanded?: boolean;
+  expandRequest?: { nodeId: string };
   /** This turn contains the active search match */
   highlightActive?: boolean;
   /** This turn is the current active renderer turn. */
@@ -99,6 +101,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   sessionId,
   defaultExpanded,
   forceExpanded,
+  expandRequest,
   highlightActive,
   isActiveTurn,
   isLastTurn,
@@ -189,36 +192,10 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         turn.nodes.length >= policy.foldThreshold &&
         Boolean(foldedView.finalTextNode) &&
         hasFoldHiddenMiddle(displayNodes, foldedView.userNode, foldedView.finalTextNode);
-  // 会话还在跑（goal 多轮任务的轮间空档：轮已 completed、下一轮未开）时挂载的末轮
-  // 不折——过程还在跑，折了就丢现场；等会话闲下来再由下面的自动折叠收口。
-  const [userExpanded, setUserExpanded] = useState(
-    hasExternalStatusLine
-      ? false
-      : Boolean(defaultExpanded) || !canFold || Boolean(isSessionProcessing)
-  );
-  const expanded = userExpanded || Boolean(forceExpanded);
-  const folded = canFold && !expanded;
-
-  // 简洁档收尾自动折叠（2026-10-17 拍板 B）：流式期间全程展开，轮收尾进入可折叠态
-  // 且会话整体也闲下来（r1：goal 多轮任务里轮粒度的 completed 早于会话结束，轮间
-  // 空档不许折）的那一刻，若用户从没手动点过这轮的展开/收起，就地折回「用时」一行 +
-  // 结论。其余档 keepLastTurnOpen=true 不动（收尾保持展开）。用户点过就永远以用户的手
-  // 为准；搜索强制展开走 forceExpanded，与这里互不干扰。layout effect：收尾帧先铺开
-  // 再跳回会闪一下，折叠要在 paint 前落定。
-  const userToggledRef = useRef(false);
-  const autoFoldEligible = canFold && !policy.keepLastTurnOpen && !isSessionProcessing;
-  const autoFoldEligibleRef = useRef(autoFoldEligible);
-  useLayoutEffect(() => {
-    const wasEligible = autoFoldEligibleRef.current;
-    autoFoldEligibleRef.current = autoFoldEligible;
-    if (!wasEligible && autoFoldEligible && !userToggledRef.current) {
-      setUserExpanded(false);
-    }
-  }, [autoFoldEligible]);
-  const handleToggleExpanded = useCallback(() => {
-    userToggledRef.current = true;
-    setUserExpanded(!expanded);
-  }, [expanded]);
+  const { expanded, folded, handleToggleExpanded } = useTurnCardExpansion({
+    canFold, hasExternalStatusLine, keepLastTurnOpen: policy.keepLastTurnOpen,
+    defaultExpanded, isSessionProcessing, forceExpanded, expandRequest,
+  });
 
   // Codex 式外壳：user 消息 + "Worked for Xm Ys" 折叠/展开按钮 + 最终 AI 结论
   // 中间的 thinking/tool_groups/中间 AI 文本根据 expanded 切换显示
