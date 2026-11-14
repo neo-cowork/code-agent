@@ -24,7 +24,7 @@ import {
   recordTurnMemoryBlock,
   recordTurnMemoryDisabled,
 } from './turnQuality';
-import { getCurrentActivityContext } from '../../services/activity/activityContextProvider';
+import { getCurrentActivityContext, buildMeetingTranscript } from '../../services/activity/activityContextProvider';
 import { formatActivityPromptContext } from '../../services/activity/activityPromptFormatter';
 import { getSessionManager } from '../../services';
 import { generateMessageId } from '../../../shared/utils/id';
@@ -148,6 +148,16 @@ export async function injectActivityContext(
         'desktop-activity',
       );
       logger.info('[AgentLoop] Activity desktop context injected at session start');
+    }
+
+    // 「记这场会」：正在进行或刚结束的那场会的转写，单独一块、单独预算（不挤在桌面活动的 4500 字里）
+    const meeting = options.includeDesktopActivity ? buildMeetingTranscript() : null;
+    if (meeting) {
+      contextAssembly.injectSystemMessage(
+        `<meeting-transcript title="${meeting.title.replace(/"/g, "'")}">\n${meeting.text}\n</meeting-transcript>`,
+        'desktop-activity',
+      );
+      logger.info('[AgentLoop] Meeting transcript injected at session start');
     }
   } catch {
     // Graceful: activity context never blocks a run.

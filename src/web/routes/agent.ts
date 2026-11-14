@@ -30,6 +30,7 @@ import {
   buildWorkbenchToolScope,
 } from '../../host/app/workbenchTurnContext';
 import { withMissingAttachmentTurnSystemContext } from '../../host/app/missingAttachmentTurnContext';
+import { resolveForegroundMcpToolScope } from '../../host/mcp/foregroundMcpServers';
 import { getSessionCommandCenterBrainContextForPrompt, getSessionCommandCenterTurnRulesForPrompt, getTextForegroundToolNamesForPrompt, resolveForegroundBrainTurnBudget } from '../../host/app/sessionCommandCenterBrain';
 import { applyMorningBriefSaveDraftRoleTools } from '../../host/app/morningBriefSaveDraftTools';
 import { isSessionCommandCenterTurn } from '../../shared/constants/sessionCommandCenter';
@@ -1338,6 +1339,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
       const commandCenterBrain = isSessionCommandCenterTurn({ prompt, hasGoal: Boolean(body.goal) });
       if (commandCenterBrain) {
+        config.toolScope = await resolveForegroundMcpToolScope(config.toolScope);
         // 文字前台由 web TaskManager 承载，免除 CLI 专用的任务工具禁用表。
         config.taskManagerToolsEnabled = true;
         config.allowedToolNames = applyMorningBriefSaveDraftRoleTools(

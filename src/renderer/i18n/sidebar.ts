@@ -6,8 +6,14 @@ import { cronSessionTitlePrefixes } from '@shared/cronSessionTitle';
 // ============================================================================
 
 export const sidebarZh = {
+  modelSwitcherTooltip: {
+    engine: '运行引擎', service: '服务状态', effort: '推理强度', thinking: '思考',
+  },
+
   sidebar: {
     cronTitlePrefixes: cronSessionTitlePrefixes.zh,
+    scheduleSessionPrefix: '[定时]',
+    heartbeatSessionPrefix: '[心跳]',
     // 顶部 / 搜索
     newTask: '新任务',
     collapseSidebar: '收起侧栏',
@@ -391,8 +397,14 @@ export const sidebarZh = {
 };
 
 export const sidebarEn: typeof sidebarZh = {
+  modelSwitcherTooltip: {
+    engine: 'Engine', service: 'Provider', effort: 'Effort', thinking: 'Thinking',
+  },
+
   sidebar: {
     cronTitlePrefixes: cronSessionTitlePrefixes.en,
+    scheduleSessionPrefix: '[Schedule]',
+    heartbeatSessionPrefix: '[Heartbeat]',
     newTask: 'New task',
     collapseSidebar: 'Collapse sidebar',
     expandSidebar: 'Expand sidebar',

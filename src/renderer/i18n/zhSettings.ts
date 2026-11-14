@@ -7,6 +7,7 @@ import { zhSettingsModels } from './zhSettingsModels';
 import { zhSettingsWork } from './zhSettingsWork';
 import { zhSettingsSystem } from './zhSettingsSystem';
 import { zhSettingsExternalImport } from './zhSettingsExternalImport';
+import { zhSettingsExternalImportMcp } from './zhSettingsExternalImportMcp';
 import { zhSettingsPrivacyReceipt } from './zhSettingsPrivacyReceipt';
 
 export const zhSettings = {
@@ -19,5 +20,6 @@ export const zhSettings = {
   ...zhSettingsWork,
   ...zhSettingsSystem,
   ...zhSettingsExternalImport,
+  ...zhSettingsExternalImportMcp,
   ...zhSettingsPrivacyReceipt,
 };

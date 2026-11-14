@@ -1,4 +1,6 @@
 import type { Message } from '@shared/contract';
+import { getLocalizedSessionTitle, splitCronSessionTitleParts } from './sessionPresentation';
+import type { Language } from '../i18n';
 // ============================================================================
 // Overview Run header 视图模型（T1 主路径收口）
 // ----------------------------------------------------------------------------
@@ -63,6 +65,7 @@ export function buildOverviewRunHeaderModel(args: {
   primaryFailed?: boolean;
   backgroundChildren?: number;
   sessionTitle?: string | null;
+  language?: Language;
   now: number;
   /** TODO 进度（summarizeTodoProgress）；total=0 视为无 TODO，不出步骤段 */
   todoProgress?: { completed: number; total: number } | null;
@@ -76,7 +79,10 @@ export function buildOverviewRunHeaderModel(args: {
       : args.run.status;
   const live = isLiveRunStatus(status);
   const tone = deriveRunOverviewTone(status);
-  const title = args.run.title?.trim() || args.sessionTitle?.trim() || args.run.phase;
+  const sessionTitle = args.sessionTitle?.trim();
+  const automaticTitle = sessionTitle && splitCronSessionTitleParts(sessionTitle)
+    ? getLocalizedSessionTitle(sessionTitle, args.language ?? 'zh') : null;
+  const title = automaticTitle || args.run.title?.trim() || sessionTitle || args.run.phase;
   const total = args.todoProgress?.total ?? 0;
   const completed = args.todoProgress?.completed ?? 0;
 

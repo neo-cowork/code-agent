@@ -39,6 +39,11 @@ export const WEB_DAEMON = {
    * WEB_SERVER_SHUTDOWN_TIMEOUTS.PRE_DB_BUDGET_MS（2s）同量级、不超 STEP_MS。
    */
   DRAIN_GRACE_UNDER_SHELL_MS: 1_000,
+  /**
+   * 「停止并退出」意图下，停机先 cancel 所有在跑 run 后等它们收口的宽限（ms）。
+   * 远小于 DRAIN_GRACE_MS：stop 的语义是真停，不再 60s 排空。
+   */
+  STOP_INTENT_CANCEL_GRACE_MS: 3_000,
   /** 排空 / 停止等待的轮询间隔（ms）。 */
   POLL_INTERVAL_MS: 250,
   /** `neo daemon stop` 发出 SIGTERM 后等 daemon 退出的上限（ms），须 ≥ DRAIN_GRACE_MS。 */

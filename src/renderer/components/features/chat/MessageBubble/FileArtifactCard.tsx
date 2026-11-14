@@ -1,3 +1,4 @@
+import { formatDisplayPath } from '../../../../utils/displayPath';
 // ============================================================================
 // FileArtifactCard - Render turn-owned files and media artifacts
 // ============================================================================
@@ -159,7 +160,7 @@ export const FileArtifactCard: React.FC<Props> = ({ items, mediaContext, fileCha
                overflow-visible：动作条的 ⋯ 溢出菜单朝卡片外弹，overflow-hidden 会把菜单整个裁掉
                （2026-08-05 真机：「三个点点了没反应」）；圆角由尾行自己的 rounded-b 补。 */
             className="w-fit min-w-64 max-w-full overflow-visible rounded-md border border-border-muted bg-surface-subtle transition-colors hover:border-border-muted hover:bg-surface-subtle"
-            title={mediaAsset.path || mediaAsset.url || item.label}
+            title={formatDisplayPath(mediaAsset.path || mediaAsset.url || item.label)}
           >
             <div className="flex items-center gap-2 px-2.5 py-1.5">
               {pickIcon(ext)}
