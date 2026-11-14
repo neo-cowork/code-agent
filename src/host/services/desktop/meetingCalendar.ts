@@ -29,7 +29,7 @@ async function runJxa(script: string, timeoutMs: number): Promise<string> {
 
 export async function getCalendarAccess(): Promise<CalendarAccess> {
   if (process.platform !== 'darwin') return 'denied';
-  const out = await runJxa("ObjC.import('EventKit'); $.EKEventStore.authorizationStatusForEntityType(0);", 10_000);
+  const out = await runJxa("ObjC.import('EventKit'); Number($.EKEventStore.authorizationStatusForEntityType(0));", 10_000);
   return toAccess(Number(out));
 }
 
@@ -42,12 +42,13 @@ const store = $.EKEventStore.alloc.init;
 const cb = (granted, err) => {};
 if (store.respondsToSelector('requestFullAccessToEventsWithCompletion:')) store.requestFullAccessToEventsWithCompletion(cb);
 else store.requestAccessToEntityTypeCompletion(0, cb);
-// 不靠回调：JXA 里完成回调不触发（真机：点完允许后干等到超时）。轮询授权状态，一变就返回
+// 不靠回调：JXA 里完成回调不触发（真机：点完允许后干等到超时）。轮询授权状态，一变就返回。
+// JXA 返回的是包装值不是 number（=== 0 永远不成立），一律 Number() 再比
 const deadline = Date.now() + 120000;
-while ($.EKEventStore.authorizationStatusForEntityType(0) === 0 && Date.now() < deadline) {
+while (Number($.EKEventStore.authorizationStatusForEntityType(0)) === 0 && Date.now() < deadline) {
   $.NSRunLoop.currentRunLoop.runUntilDate($.NSDate.dateWithTimeIntervalSinceNow(0.2));
 }
-$.EKEventStore.authorizationStatusForEntityType(0);`;
+Number($.EKEventStore.authorizationStatusForEntityType(0));`;
   return toAccess(Number(await runJxa(script, 130_000)));
 }
 
@@ -61,8 +62,9 @@ const evs = store.eventsMatchingPredicate(pred);
 const out = [];
 for (let i = 0; i < evs.count; i++) {
   const e = evs.objectAtIndex(i);
-  const startMs = Math.round(e.startDate.timeIntervalSince1970 * 1000);
-  if (!e.allDay && startMs >= ${fromMs} && startMs < ${toMs}) out.push({ title: ObjC.unwrap(e.title) || '', startAtMs: startMs });
+  const startMs = Math.round(Number(e.startDate.timeIntervalSince1970) * 1000); // JXA 包装值，Number() 再算
+  const allDay = Boolean(ObjC.unwrap(e.allDay));
+  if (!allDay && startMs >= ${fromMs} && startMs < ${toMs}) out.push({ title: String(ObjC.unwrap(e.title) || ''), startAtMs: startMs });
 }
 JSON.stringify(out);`;
   const parsed: unknown = JSON.parse(await runJxa(script, 15_000) || '[]');
