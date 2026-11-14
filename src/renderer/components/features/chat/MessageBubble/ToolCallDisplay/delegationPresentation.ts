@@ -249,7 +249,7 @@ export function deriveDelegationPresentation(
   toolCall: ToolCall,
   tasks: Task[],
   agentNodes: AgentTreeNode[],
-  t: Translations = languages[useAppStore.getState().language],
+  t: Translations = languages[useAppStore.getState().language] ?? languages.zh,
 ): DelegationPresentation | null {
   if (!toolCall.result) return null;
   if (toolCall.name === 'delegate_session') {

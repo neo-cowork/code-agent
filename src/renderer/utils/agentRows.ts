@@ -113,7 +113,7 @@ export function buildAgentRows(input: {
   tasks: Task[];
 }): AgentRow[] {
   const { members, nodes, tasks } = input;
-  const t = languages[useAppStore.getState().language];
+  const t = languages[useAppStore.getState().language] ?? languages.zh;
   const rows: AgentRow[] = [];
   const memberKeys = new Set(members.map((member) => member.key));
 
@@ -122,7 +122,7 @@ export function buildAgentRows(input: {
       key: member.key,
       kind: 'expert',
       roleId: member.roleId,
-      name: member.name === member.roleId
+      name: member.status !== 'standby' && member.name === member.roleId
         ? agentRoleLabel(member.roleId, t.agentRoleLabels) : member.name,
       profession: member.profession,
       icon: member.icon,
