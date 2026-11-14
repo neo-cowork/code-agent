@@ -17,7 +17,6 @@ import {
   ensureUploadRootDir,
   handleTempBatchUpload,
   handleTempUpload,
-  reapExpiredUploadDirs,
   scheduleExpiredUploadReap,
 } from '../../../src/web/helpers/upload';
 import {
@@ -217,6 +216,17 @@ describe('handleTempUpload missing file field (error path)', () => {
 });
 
 describe('chat upload persistence and retention reaper', () => {
+  // 回收只经生产入口 scheduleExpiredUploadReap（延迟定时器）触发：快进定时器即模拟"启动后到点回收"。
+  function reapExpiredUploadDirs(db: Parameters<typeof scheduleExpiredUploadReap>[0]) {
+    vi.useFakeTimers();
+    try {
+      scheduleExpiredUploadReap(db);
+      vi.advanceTimersByTime(CHAT_UPLOAD_REAP_DELAY_MS);
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
   function makeDb() {
     const db = new Database(':memory:');
     applyTestSessionSchema(db);

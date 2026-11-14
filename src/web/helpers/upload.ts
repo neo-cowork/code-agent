@@ -58,7 +58,7 @@ function collectReferencedUploadIds(db: BetterSqlite3.Database, candidates: Read
 }
 
 /** 启动回收：只删「超过保留期」且「未被任何会话消息/排队消息引用」的上传子目录。库不可用 → 一律不删。 */
-export function reapExpiredUploadDirs(db: BetterSqlite3.Database | null): void {
+function reapExpiredUploadDirs(db: BetterSqlite3.Database | null): void {
   try {
     if (!fs.existsSync(UPLOAD_ROOT_DIR)) return;
     const cutoffMs = Date.now() - UPLOAD_RETENTION_MS;
