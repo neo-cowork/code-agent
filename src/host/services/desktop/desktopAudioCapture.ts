@@ -16,6 +16,7 @@ import { getAudioCapturePrerequisites } from './audioCapturePrerequisites';
 import { findWhisperBinary, whisperLanguageArgs } from '../media/whisperBinary';
 import { clearAllAudioRecordings, finalizeSegmentAudio, getAudioRetentionStatus, sweepAudioRetention } from './audioRetention';
 import { dropMicEchoes } from './audioCrossEcho';
+import { AudioStreamClock } from './audioStreamClock';
 import { AUDIO_SPEAKER_ID, type AudioCaptureMode } from '@shared/contract/audioCapture';
 import type { InferenceSession, Tensor as OrtTensor } from 'onnxruntime-node';
 
@@ -125,6 +126,8 @@ interface CaptureTrack {
   vad: VadProcessor;
   proc: ChildProcess | null;
   stream: fs.ReadStream | null;
+  /** 按样本数推算段落时间，处理跟不上实时也不漂（N-MEETING-DUALTRACK-FU1） */
+  clock: AudioStreamClock;
 }
 
 let tracks: CaptureTrack[] = [];
@@ -899,7 +902,11 @@ function pumpPcm(input: NodeJS.ReadableStream, track: CaptureTrack): void {
 
   input.on('data', async (data: Buffer | string) => {
     if (typeof data === 'string') return; // skip string chunks
-    if (powerMode === 'paused') return;
+    track.clock.receive(data.length);
+    if (powerMode === 'paused') {
+      track.clock.advance(data.length / 2); // 丢掉的样本也算时间，恢复后不漂
+      return;
+    }
     // 已停掉的一路：进程哪怕还没退干净，数据也不再落库（否则停了又开会多出一路「对方」）
     if (!tracks.includes(track)) return;
 
@@ -937,10 +944,12 @@ function pumpPcm(input: NodeJS.ReadableStream, track: CaptureTrack): void {
         chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + BLOCK_BYTES)
       );
 
+      // 这一块样本对应的音频时刻；段落在这块处切出，就以它为结束时间
+      const blockEndMs = track.clock.advance(BLOCK_SIZE);
       try {
         const segments = await track.vad.processChunk(int16);
         for (const segment of segments) {
-          const endMs = Date.now();
+          const endMs = blockEndMs;
           const durationMs = Math.round((segment.length / SAMPLE_RATE) * 1000);
           const startMs = endMs - durationMs;
 
@@ -1025,7 +1034,7 @@ function attachProcess(track: CaptureTrack, source: 'microphone' | 'system-audio
 async function newTrack(source: CaptureSource, speakerId: number): Promise<CaptureTrack | null> {
   const vad = new VadProcessor();
   if (!(await vad.init())) return null;
-  return { source, speakerId, vad, proc: null, stream: null };
+  return { source, speakerId, vad, proc: null, stream: null, clock: new AudioStreamClock(SAMPLE_RATE) };
 }
 
 // ============================================================================
