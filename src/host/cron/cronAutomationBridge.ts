@@ -24,6 +24,7 @@ import { readCronPermissionDenied } from './cronNormalizers';
 import { cronSourceSessionIdFromDefinition } from '../../shared/cronWriteScope';
 import { resolveCronArtifactsForReview } from '../../shared/cronArtifactPath';
 import { formatCronExpressionLabel } from '../../shared/cronHumanize';
+import { formatCronTimeZoneSuffix } from '../../shared/cronTimeZone';
 import { parseCronLoginWallStop } from '../../shared/utils/browserLoginWall';
 import { getDatabase } from '../services/core/databaseService';
 
@@ -144,9 +145,12 @@ export function formatCronScheduleLabel(schedule: CronScheduleConfig): string {
         ? new Date(ts).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
         : '一次性';
     }
-    case 'cron':
-      // cron 表达式说人话（FB-326）：`17 8 * * *` → 「每天 08:17」；复杂式回退「自定义时间 · 原文」。
-      return formatCronExpressionLabel(schedule.expression, schedule.timezone, 'zh');
+    case 'cron': {
+      const label = formatCronExpressionLabel(schedule.expression, schedule.timezone, 'zh');
+      // Complex-expression fallbacks already include the configured zone.
+      if (schedule.timezone && label.endsWith(` · ${schedule.timezone}`)) return label;
+      return formatCronTimeZoneSuffix(label, schedule.timezone, 'zh');
+    }
     default:
       return '按配置';
   }
