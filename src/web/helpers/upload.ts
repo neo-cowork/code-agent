@@ -16,6 +16,7 @@ import { resolveNativeDesktopCandidateRoots } from '../../host/services/desktop/
 import { PRESENTATION_PREVIEW_CACHE_DIRNAME } from '../../host/tools/media/ppt/constants';
 import { PREVIEW_FORMAT_CACHE_DIRNAME } from '../../host/ipc/previewFormatCacheName';
 import {
+  CHAT_UPLOAD_REAP_DELAY_MS,
   CHAT_UPLOAD_RETENTION_DAYS,
   CHAT_UPLOAD_SUBDIR_NAME,
   MAX_FOLDER_BATCH_BODY_SIZE,
@@ -32,41 +33,68 @@ export function ensureUploadRootDir(): void {
 }
 
 const UPLOAD_DIR_NAME_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UPLOAD_DIR_NAME_GLOBAL_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 
-function isUploadDirReferenced(db: BetterSqlite3.Database, uuid: string): boolean {
-  const like = `%${uuid}%`;
-  const hit = db.prepare(
-    `SELECT 1 FROM messages WHERE content LIKE @like OR tool_calls LIKE @like OR tool_results LIKE @like
-       OR attachments LIKE @like OR metadata LIKE @like LIMIT 1`,
-  ).get({ like });
-  if (hit) return true;
-  return Boolean(db.prepare('SELECT 1 FROM queued_inputs WHERE envelope_json LIKE ? LIMIT 1').get(like));
+/** 一次流式扫描收集所有被消息/排队消息引用的上传 uuid（不按目录逐个全表扫描）。 */
+function collectReferencedUploadIds(db: BetterSqlite3.Database, candidates: ReadonlySet<string>): Set<string> {
+  const referenced = new Set<string>();
+  const collect = (row: Record<string, unknown>) => {
+    for (const value of Object.values(row)) {
+      if (typeof value !== 'string') continue;
+      for (const match of value.matchAll(UPLOAD_DIR_NAME_GLOBAL_RE)) {
+        const id = match[0].toLowerCase();
+        if (candidates.has(id)) referenced.add(id);
+      }
+    }
+  };
+  const marker = `%${CHAT_UPLOAD_SUBDIR_NAME}%`;
+  for (const row of db.prepare(
+    `SELECT content, tool_calls, tool_results, attachments, metadata FROM messages
+       WHERE content LIKE @m OR tool_calls LIKE @m OR tool_results LIKE @m OR attachments LIKE @m OR metadata LIKE @m`,
+  ).iterate({ m: marker })) collect(row as Record<string, unknown>);
+  for (const row of db.prepare('SELECT envelope_json FROM queued_inputs WHERE envelope_json LIKE ?')
+    .iterate(marker)) collect(row as Record<string, unknown>);
+  return referenced;
 }
 
 /** 启动回收：只删「超过保留期」且「未被任何会话消息/排队消息引用」的上传子目录。库不可用 → 一律不删。 */
 export function reapExpiredUploadDirs(db: BetterSqlite3.Database | null): void {
   try {
     if (!fs.existsSync(UPLOAD_ROOT_DIR)) return;
-    if (!db) {
-      logger.warn('Upload reaper skipped: database unavailable, keeping all chat uploads');
-      return;
-    }
     const cutoffMs = Date.now() - UPLOAD_RETENTION_MS;
+    const expired = new Map<string, string>();
     for (const entry of fs.readdirSync(UPLOAD_ROOT_DIR)) {
       try {
         if (!UPLOAD_DIR_NAME_RE.test(entry)) continue;
         const entryPath = path.join(UPLOAD_ROOT_DIR, entry);
         const stats = fs.lstatSync(entryPath);
-        if (!stats.isDirectory() || stats.mtimeMs >= cutoffMs) continue;
-        if (isUploadDirReferenced(db, entry)) continue;
-        fs.rmSync(entryPath, { recursive: true, force: true });
+        if (stats.isDirectory() && stats.mtimeMs < cutoffMs) expired.set(entry.toLowerCase(), entryPath);
       } catch (error) {
         logger.warn('Upload reaper skipped entry', { entry, reason: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    if (expired.size === 0) return;
+    if (!db) {
+      logger.warn('Upload reaper skipped: database unavailable, keeping all chat uploads');
+      return;
+    }
+    const referenced = collectReferencedUploadIds(db, new Set(expired.keys()));
+    for (const [id, entryPath] of expired) {
+      if (referenced.has(id)) continue;
+      try {
+        fs.rmSync(entryPath, { recursive: true, force: true });
+      } catch (error) {
+        logger.warn('Upload reaper failed to remove entry', { id, reason: error instanceof Error ? error.message : String(error) });
       }
     }
   } catch (error) {
     logger.warn('Upload reaper failed', { reason: error instanceof Error ? error.message : String(error) });
   }
+}
+
+/** 延迟到 HTTP 就绪之后再回收，避免扫库拖慢启动。 */
+export function scheduleExpiredUploadReap(db: BetterSqlite3.Database | null): void {
+  setTimeout(() => reapExpiredUploadDirs(db), CHAT_UPLOAD_REAP_DELAY_MS).unref();
 }
 
 function sanitizePathSegment(segment: string): string {
@@ -308,6 +336,7 @@ export function handleScreenshot(
   // 渲染为灰底问号裂图（2026-08-04 C.12：真实存在的 png 被 403）。
   const isScreenshotDir = isPathWithinBase(resolved, path.join(userData, MANAGED_BROWSER_ARTIFACT_DIR))
     || isPathWithinBase(resolved, path.join(userData, 'appshots'))
+    || isPathWithinBase(resolved, UPLOAD_ROOT_DIR)
     || isPathWithinBase(resolved, path.join(userData, 'cache', PRESENTATION_PREVIEW_CACHE_DIRNAME))
     || isPathWithinBase(resolved, path.join(userData, 'cache', PREVIEW_FORMAT_CACHE_DIRNAME))
     || isPathWithinBase(resolved, getDefaultWorkDirectory())
@@ -379,6 +408,7 @@ function isWorkspaceFileAllowed(
   const allowedRoots = [
     path.resolve(process.cwd()),
     path.resolve(os.tmpdir()),
+    UPLOAD_ROOT_DIR,
   ];
   if (allowedRoots.some((root) => isPathWithinBase(targetPath, root))) return true;
   const workDirectories = [

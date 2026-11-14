@@ -338,7 +338,7 @@ export function startWebCapabilityBootstrap(
 
 import { broadcastSSE, sseClients } from './helpers/sse';
 import { applyDbIntegrityOutcome, dbAvailable, setDbAvailable } from './helpers/sessionCache';
-import { ensureUploadRootDir, reapExpiredUploadDirs } from './helpers/upload';
+import { ensureUploadRootDir, scheduleExpiredUploadReap } from './helpers/upload';
 
 // Middleware
 import {
@@ -591,7 +591,7 @@ async function initializeServices(): Promise<void> {
     }
   }
   bootMark('database');
-  reapExpiredUploadDirs(databaseForDurableRun?.getDb() ?? null);
+  scheduleExpiredUploadReap(databaseForDurableRun?.getDb() ?? null);
 
   // 4.6 模型级可用性标记回灌（N-MOBILE-CONN-POLISH-R3 ④）：停用/不存在的模型标记持久化
   // 在数据目录，重启后继续生效——否则手机默认模型的回落链会把「从未调用过」的已停用模型

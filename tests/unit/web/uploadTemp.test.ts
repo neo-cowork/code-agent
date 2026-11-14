@@ -18,9 +18,11 @@ import {
   handleTempBatchUpload,
   handleTempUpload,
   reapExpiredUploadDirs,
+  scheduleExpiredUploadReap,
 } from '../../../src/web/helpers/upload';
 import {
   CHAT_UPLOAD_DIR_NAME,
+  CHAT_UPLOAD_REAP_DELAY_MS,
   CHAT_UPLOAD_RETENTION_DAYS,
   CHAT_UPLOAD_SUBDIR_NAME,
 } from '../../../src/shared/constants/chatUploads';
@@ -351,6 +353,45 @@ describe('chat upload persistence and retention reaper', () => {
     expect(fs.existsSync(referenced.files[0].path)).toBe(true);
     expect(fs.existsSync(queued.files[0].path)).toBe(true);
     expect(fs.existsSync(orphan.root)).toBe(false);
+  });
+
+  it('reaps with a single streaming scan of messages regardless of how many expired dirs exist, and defers the scan off the startup path', async () => {
+    ensureUploadRootDir();
+    const roots: string[] = [];
+    const old = new Date(Date.now() - (CHAT_UPLOAD_RETENTION_DAYS + 5) * 24 * 60 * 60 * 1000);
+    for (let i = 0; i < 6; i += 1) {
+      const { body, contentType } = buildMultipart([
+        { name: 'file0', filename: `f${i}.md`, value: 'x', contentType: 'text/markdown' },
+        { name: 'relativePath0', value: `d/f${i}.md` },
+      ]);
+      const res = makeRes();
+      await handleTempBatchUpload(makeReq(body, contentType), res);
+      const root = (res.body as { root: string }).root;
+      fs.utimesSync(root, old, old);
+      roots.push(root);
+    }
+    const db = makeDb();
+    const prepare = vi.spyOn(db, 'prepare');
+    reapExpiredUploadDirs(db);
+    const messageScans = prepare.mock.calls.filter(([sql]) => /FROM messages/.test(String(sql))).length;
+    db.close();
+    expect(messageScans).toBe(1);
+    expect(roots.every((r) => !fs.existsSync(r))).toBe(true);
+
+    vi.useFakeTimers();
+    try {
+      const lateDb = makeDb();
+      const lateRoot = path.join(UPLOAD_ROOT_DIR, '22222222-2222-2222-2222-222222222222');
+      fs.mkdirSync(lateRoot, { recursive: true });
+      fs.utimesSync(lateRoot, old, old);
+      scheduleExpiredUploadReap(lateDb);
+      expect(fs.existsSync(lateRoot)).toBe(true);
+      vi.advanceTimersByTime(CHAT_UPLOAD_REAP_DELAY_MS);
+      expect(fs.existsSync(lateRoot)).toBe(false);
+      lateDb.close();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('still yields UploadExpired on ENOENT for legacy os.tmpdir()/code-agent-uploads paths', async () => {

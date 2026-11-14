@@ -9,6 +9,8 @@
 export const CHAT_UPLOAD_DIR_NAME = 'code-agent-uploads';
 export const CHAT_UPLOAD_SUBDIR_NAME = 'uploads';
 export const CHAT_UPLOAD_RETENTION_DAYS = 30;
+/** 启动后延迟回收上传目录，避免同步扫库拖慢 HTTP 就绪。 */
+export const CHAT_UPLOAD_REAP_DELAY_MS = 60_000;
 
 /** Per-folder request budget: half of the shared 20/min /api/upload/temp bucket, so single-file attachments right after a folder keep headroom. */
 export const MAX_FOLDER_PATH_UPLOADS = 10;
