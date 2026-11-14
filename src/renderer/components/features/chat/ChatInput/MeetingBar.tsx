@@ -30,16 +30,19 @@ export const MeetingBar: React.FC = () => {
   const current = status?.current ?? null;
   const [now, setNow] = useState(() => Date.now());
 
-  // 首次挂载拉一次（Neo 重开后恢复录制条）；有会在进行时轮询，静音提醒/自动结束要及时反映
+  // 有会在进行时快轮询（静音提醒/自动结束要及时反映），没有时退到慢心跳：会议不一定从 + 菜单开始
+  //（Neo 重开后恢复、日历提醒点开始），录制条要能自己发现
+  const active = Boolean(current);
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+    const poll = setInterval(() => void refresh(), active ? RENDERER_POLLING.MEETING_STATUS : RENDERER_POLLING.MAX_BACKOFF);
+    return () => clearInterval(poll);
+  }, [active, refresh]);
   useEffect(() => {
-    if (!current) return;
-    const poll = setInterval(() => void refresh(), RENDERER_POLLING.MEETING_STATUS);
+    if (!active) return;
     const tick = setInterval(() => setNow(Date.now()), 1000);
-    return () => { clearInterval(poll); clearInterval(tick); };
-  }, [current, refresh]);
+    return () => clearInterval(tick);
+  }, [active]);
 
   if (error) {
     return (
