@@ -67,7 +67,9 @@ describe('ProviderDoctorDialog 诊断摘要时间（跟随 UI language）', () =
     await waitFor(() => {
       expect(document.body.textContent ?? '').toContain(`1.2s · ${EN}`);
     });
-    expect(document.body.textContent ?? '').not.toContain('未设置');
-    expect(document.body.textContent ?? '').not.toContain('无效时间');
+    // 剥除该摘要行合法 EN 后，屏上不得混入 zh 24h 时间或裸 16:05（MIXED 统一 EN === ZH 后仍成立）
+    const withoutEn = (document.body.textContent ?? '').replace(`1.2s · ${EN}`, '');
+    expect(withoutEn).not.toContain(ZH);
+    expect(withoutEn).not.toContain('16:05');
   });
 });

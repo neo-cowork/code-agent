@@ -89,7 +89,8 @@ describe('VoiceLiveSettingsSection 录音最近清理行（跟随 UI language）
     await waitFor(() => {
       expect(screen.getByTestId('call-recording-cleanup').textContent).toContain(`Last cleanup: ${EN}`);
     });
-    expect(screen.getByTestId('call-recording-cleanup').textContent).not.toContain('未设置');
-    expect(screen.getByTestId('call-recording-cleanup').textContent).not.toContain('无效时间');
+    const withoutEn = (screen.getByTestId('call-recording-cleanup').textContent ?? '').replace(`Last cleanup: ${EN}`, '');
+    expect(withoutEn).not.toContain(ZH);
+    expect(withoutEn).not.toContain('16:05');
   });
 });

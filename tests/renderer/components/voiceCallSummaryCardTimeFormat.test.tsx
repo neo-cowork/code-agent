@@ -60,7 +60,8 @@ describe('VoiceCallSummaryCard 字幕行时间（跟随 UI language）', () => {
     fireEvent.click(screen.getByRole('button'));
     const row = screen.getByText('check the build').closest('li');
     expect(row?.textContent).toContain(EN);
-    expect(row?.textContent).not.toContain('未设置');
-    expect(row?.textContent).not.toContain('无效时间');
+    const withoutEn = (row?.textContent ?? '').replace(EN, '');
+    expect(withoutEn).not.toContain(ZH);
+    expect(withoutEn).not.toContain('16:05');
   });
 });

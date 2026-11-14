@@ -84,7 +84,8 @@ describe('VoiceAuditDialog 通话清单时间（跟随 UI language）', () => {
     await waitFor(() => {
       expect(screen.getByTestId('voice-audit-call-voice-a').textContent).toContain(EN);
     });
-    expect(screen.getByTestId('voice-audit-call-voice-a').textContent).not.toContain('未设置');
-    expect(screen.getByTestId('voice-audit-call-voice-a').textContent).not.toContain('无效时间');
+    const withoutEn = (screen.getByTestId('voice-audit-call-voice-a').textContent ?? '').replace(EN, '');
+    expect(withoutEn).not.toContain(ZH);
+    expect(withoutEn).not.toContain('16:05');
   });
 });

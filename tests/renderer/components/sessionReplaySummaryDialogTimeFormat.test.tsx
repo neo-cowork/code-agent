@@ -116,7 +116,9 @@ describe('SessionReplaySummaryDialog 内联事件时间（跟随 UI language）'
     i18nState.language = 'en';
     const html = renderDialog();
     expect(html).toContain(EN);
-    expect(html).not.toContain('未设置');
-    expect(html).not.toContain('无效时间');
+    // 剥除所有合法 EN 后，不得残留某调用点漏传 language 打出的 zh 24h 时间或裸 16:05（MIXED 统一 EN === ZH 后仍成立）
+    const withoutEn = html.replaceAll(EN, '');
+    expect(withoutEn).not.toContain(ZH);
+    expect(withoutEn).not.toContain('16:05');
   });
 });
