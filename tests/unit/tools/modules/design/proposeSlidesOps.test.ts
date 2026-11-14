@@ -10,9 +10,17 @@ const sendMock = vi.hoisted(() => vi.fn());
 const getAllWindowsMock = vi.hoisted(() => vi.fn());
 const confirmMock = vi.hoisted(() => vi.fn());
 const deckMock = vi.hoisted(() => vi.fn());
+const settingsMock = vi.hoisted(() => {
+  const fn = vi.fn<() => unknown>();
+  fn.mockReturnValue({ ui: { language: 'zh' } });
+  return fn;
+});
 
 vi.mock('../../../../../src/host/platform', () => ({
   AppWindow: { getAllWindows: getAllWindowsMock },
+}));
+vi.mock('../../../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({ getSettings: settingsMock }),
 }));
 vi.mock('../../../../../src/host/tools/modules/design/generationCostConfirm', () => ({
   confirmGenerationCost: confirmMock,
@@ -45,6 +53,7 @@ beforeEach(() => {
   getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);
   confirmMock.mockResolvedValue(true);
   deckMock.mockResolvedValue({ filePath: '/Downloads/slides-x.pptx', slidesCount: 8, costCny: 0 });
+  settingsMock.mockReturnValue({ ui: { language: 'zh' } });
 });
 
 async function run(args: Record<string, unknown>, ctx = makeCtx(), perm = allow) {
@@ -135,6 +144,30 @@ describe('ProposeSlidesOps 付费配图路径', () => {
     const confirmedCount = Number(confirmDetail.match(/(\d+)\s*张/)?.[1]);
     expect(confirmedCount).toBeGreaterThan(0);
     expect(payload.maxImages).toBe(confirmedCount);
+  });
+});
+
+// FB-1285：媒介键不再传中文自由文本；en UI 下明细单位词用 images，无中文。
+const CJK = /[\u3000-\u303f\u3040-\u30ff\u4e00-\u9fff\uac00-\ud7af\uff01-\uff60]/;
+
+describe('ProposeSlidesOps 成本确认参数语言', () => {
+  it('④en UI：mediaLabel=slideImages，明细单位词 images，无中文', async () => {
+    settingsMock.mockReturnValue({ ui: { language: 'en' } });
+    await run({ topic: 'AI 产品经理转型', illustrate: true });
+    expect(confirmMock).toHaveBeenCalledTimes(1);
+    const arg = confirmMock.mock.calls[0][0];
+    expect(arg.mediaLabel).toBe('slideImages');
+    expect(arg.mediaLabel).not.toMatch(CJK);
+    expect(arg.detail).toMatch(/^\d+ images · \S+$/);
+    expect(arg.detail).not.toMatch(CJK);
+    expect(arg.estCny).toBeGreaterThan(0);
+  });
+
+  it('④zh UI：明细单位词保持「张」', async () => {
+    await run({ topic: 'AI 产品经理转型', illustrate: true });
+    const arg = confirmMock.mock.calls[0][0];
+    expect(arg.mediaLabel).toBe('slideImages');
+    expect(arg.detail).toMatch(/^\d+ 张 · \S+$/);
   });
 });
 

@@ -28,6 +28,8 @@ export interface Tool extends ToolDefinition {
 export interface ToolContext {
   /** Native Run identity only; Agent Team identity lives in swarmRunScope. */
   runId?: string;
+  /** Native parent used for child-agent settlement, distinct from a surface owner. */
+  spawnParentRunId?: string;
   /** Conversation turn that owns this tool call and its durable projections. */
   turnId?: string;
   /** Stable user message that originated this native turn. */
@@ -195,8 +197,8 @@ export interface ToolContext {
   approvedToolCall?: {
     toolName: string;
     args: Record<string, unknown>;
-    /** One literal file grant minted by the approval boundary for this exact call. */
-    sandboxWriteFile?: string;
+    /** Literal file grants minted by the approval boundary for this exact call. */
+    sandboxWriteFile?: string | readonly string[];
   };
   /** 当前 turn 的显式工具作用域 */
   toolScope?: WorkbenchToolScope;

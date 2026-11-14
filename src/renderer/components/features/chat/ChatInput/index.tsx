@@ -83,6 +83,7 @@ import { invokeNativeCommandAction, isNativeCommandRuntimeAvailable } from '../.
 import { toast } from '../../../../hooks/useToast';
 import { goalComposerDraftToParsed } from './parseGoalCommand';
 import { LoopStatusBar } from './LoopStatusBar';
+import { MeetingBar } from './MeetingBar';
 import { ScheduleComposerCard } from './ScheduleComposerCard';
 import { ScheduleConfirmCard } from './ScheduleConfirmCard';
 import { GoalConfirmCard } from './GoalConfirmCard';
@@ -1296,6 +1297,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           {/* 会话内循环（/loop）运行状态条（L3 上下文层，组件自闸） */}
           <SlotEntry id="loop-status">
             <LoopStatusBar sessionId={currentSessionId} />
+          </SlotEntry>
+
+          {/* 「记这场会」录制条（L3 上下文层，组件自闸；入口在 + 菜单） */}
+          <SlotEntry id="meeting-status">
+            <MeetingBar />
           </SlotEntry>
 
           {/* 定时任务对话式创建卡片（/schedule 不带参数时）（L1 阻塞决策层） */}
