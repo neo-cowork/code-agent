@@ -79,6 +79,25 @@ describe('ToolStepGroup repeated task_status presentation', () => {
     expect(cardCount(render([statusNode(), other, statusNode()]))).toBe(2);
   });
 
+  it('does not merge across a tool hidden by terminal-state resolution', () => {
+    const hidden = statusNode();
+    hidden.toolCall = { id: 'hidden-call', name: 'Read', args: {}, _streaming: true };
+    const html = render([statusNode(), hidden, statusNode()]);
+    expect(cardCount(html)).toBe(2);
+    expect(html).not.toContain('data-testid="tool-call-row-Read"');
+    expect(html).not.toContain('task-status-check-count');
+  });
+
+  it('keeps the group shell when terminal-state resolution hides another node', () => {
+    const hidden = statusNode();
+    hidden.toolCall = { id: 'hidden-call', name: 'Read', args: {}, _streaming: true };
+    const html = render([hidden, statusNode(), statusNode()]);
+    expect(cardCount(html)).toBe(1);
+    expect(html).toContain('已查看 2 次');
+    expect(html).toContain('data-testid="tool-group-head-label"');
+    expect(html).not.toContain('data-testid="tool-call-row-Read"');
+  });
+
   it('does not merge changed details or task names', () => {
     const renamed = statusNode('running', '核对数字');
     const payload = renamed.toolCall!.metadata!.sessionTask as { tasks: { shortName: string }[] };

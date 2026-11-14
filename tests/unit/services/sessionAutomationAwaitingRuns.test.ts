@@ -100,6 +100,22 @@ describe('listAwaitingApprovalRuns (host join, N-CRON-UNATTENDED-BASH-PARK-STUCK
     expect('commandPreview' in byJob['job-c']).toBe(false);
   });
 
+  it('preserves the approval tool alongside the raw preview so file paths cannot be mistaken for shell commands', async () => {
+    insertSession('sess-file', { kind: 'cron', id: 'job-file' }, 'exec-file');
+    insertSession('sess-shell', { kind: 'cron', id: 'job-shell' }, 'exec-shell');
+    for (const [id, tool, preview] of [['file', 'Write', '/tmp/notes/today.md'], ['shell', 'Bash', '/usr/bin/id']]) {
+      insertApproval(`req-${id}`, `sess-${id}`);
+      db.prepare('UPDATE pending_approvals SET payload_json = ? WHERE id = ?').run(
+        JSON.stringify({ sessionId: `sess-${id}`, tool, argsPreview: preview, requestedAt: 1000 }), `req-${id}`,
+      );
+    }
+    const { SessionAutomationService } = await import('../../../src/host/services/sessionAutomation/sessionAutomationService');
+    expect(new SessionAutomationService().listAwaitingApprovalRuns()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ jobId: 'job-file', tool: 'Write', commandPreview: '/tmp/notes/today.md' }),
+      expect.objectContaining({ jobId: 'job-shell', tool: 'Bash', commandPreview: '/usr/bin/id' }),
+    ]));
+  });
+
   it('② 会话缺失 → 跳过并 warn（reason: session row missing）；非 cron origin → 不进结果', async () => {
     insertApproval('req-gone', 'sess-missing', 1);
     insertSession('sess-sub', { kind: 'subagent' });

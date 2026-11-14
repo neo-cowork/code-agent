@@ -10,6 +10,7 @@ export function foldSessionTaskStatus(toolCalls: readonly ToolCall[]): {
   let previousKey: string | null = null;
   for (const toolCall of toolCalls) {
     const payload = toolCall.name === 'task_status' && toolCall.result?.success === true
+      && toolCall.result.output !== undefined
       ? readSessionTask(toolCall.result.metadata)
       : null;
     const key = payload?.outcome === 'status' ? JSON.stringify(payload) : null;

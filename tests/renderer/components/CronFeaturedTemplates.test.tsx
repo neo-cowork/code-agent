@@ -46,9 +46,9 @@ import { buildCronJobInput, formatActionSummary } from '../../../src/renderer/co
 import { useCronStore } from '../../../src/renderer/stores/cronStore';
 
 const EXPECTED_SCHEDULES = {
-  'daily-lookahead': { type: 'cron', expression: '0 15 * * 1-5', timezone: 'Asia/Shanghai' },
-  'daily-review': { type: 'cron', expression: '30 17 * * 1-5', timezone: 'Asia/Shanghai' },
-  'weekly-review': { type: 'cron', expression: '30 17 * * 4', timezone: 'Asia/Shanghai' },
+  'daily-lookahead': { type: 'cron', expression: '0 15 * * 1-5', timezone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+  'daily-review': { type: 'cron', expression: '30 17 * * 1-5', timezone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+  'weekly-review': { type: 'cron', expression: '30 17 * * 4', timezone: Intl.DateTimeFormat().resolvedOptions().timeZone },
   // 晨间分诊用运行机器的本地时区（台账口径「本地时区」），不钉死 Asia/Shanghai
   'morning-triage': {
     type: 'cron',
@@ -140,7 +140,7 @@ describe('cowork cron templates', () => {
       schedule: {
         type: 'cron',
         expression: '30 10 * * *',
-        timezone: 'Asia/Shanghai',
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       },
       action: {
         type: 'agent',
