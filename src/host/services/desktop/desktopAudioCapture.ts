@@ -12,6 +12,7 @@ import { getNativeDesktopService } from './nativeDesktopService';
 import { getUserConfigDir } from '../../config/configPaths';
 import { isOrtTensor, loadVadRuntime, type OrtRuntimeModule } from './audioVadRuntime';
 import { getAudioCapturePrerequisites } from './audioCapturePrerequisites';
+import { findWhisperBinary } from '../media/whisperBinary';
 import { clearAllAudioRecordings, finalizeSegmentAudio, getAudioRetentionStatus, sweepAudioRetention } from './audioRetention';
 import { dropMicEchoes } from './audioCrossEcho';
 import { AUDIO_SPEAKER_ID, type AudioCaptureMode } from '@shared/contract/audioCapture';
@@ -93,7 +94,6 @@ const REC_PATHS = ['/opt/homebrew/bin/rec', '/usr/local/bin/rec', '/usr/bin/rec'
 const SYSTEM_AUDIO_CAPTURE_NAME = 'system-audio-capture';
 
 // Whisper-cpp paths
-const WHISPER_PATHS = ['/opt/homebrew/bin/whisper-cpp', '/usr/local/bin/whisper-cpp'];
 const WHISPER_MODEL_DIR = path.join(os.homedir(), '.cache', 'whisper');
 const WHISPER_DEFAULT_MODEL = 'ggml-large-v3-turbo.bin';
 
@@ -500,17 +500,6 @@ function saveWavFile(pcm: Int16Array, startMs: number, speakerId: number): strin
 // ============================================================================
 // ASR (Transcription)
 // ============================================================================
-
-function findWhisperBinary(): string | null {
-  for (const p of WHISPER_PATHS) {
-    if (fs.existsSync(p)) return p;
-  }
-  try {
-    const result = execFileSync('which', ['whisper-cpp'], { encoding: 'utf-8' }).trim();
-    if (result && fs.existsSync(result)) return result;
-  } catch { /* not found */ }
-  return null;
-}
 
 function findWhisperModel(): string | null {
   const modelPath = path.join(WHISPER_MODEL_DIR, WHISPER_DEFAULT_MODEL);
