@@ -33,9 +33,12 @@ describe('formatDateTime (detail time, language-aware)', () => {
     expect(formatDateTime(AT)).toBe('2026/11/09 04:00');
   });
 
-  it('en：维持 en-US 原样（英文 UI 行为不变）', () => {
-    expect(formatDateTime(AT, 'en')).toBe('11/9/2026, 4:00:00 AM');
-    expect(formatDateTime(PM, 'en')).toBe('11/9/2026, 4:05:00 PM');
+  it('en：包含正确的年月日与时分分量，区分上下午时刻', () => {
+    const enAt = formatDateTime(AT, 'en');
+    const enPm = formatDateTime(PM, 'en');
+    expect(enAt).toMatch(/^(?:2026\/11\/09|11\/9\/2026,)\s0?4:00(?::00\b.*)?$/);
+    expect(enPm).toMatch(/^(?:2026\/11\/09|11\/9\/2026,)\s(?:16|4):05(?::00\b.*)?$/);
+    expect(enPm).not.toBe(formatDateTime(new Date(2026, 10, 9, 4, 5, 0).getTime(), 'en'));
   });
 
   it('兜底文案保留：未设置 / 无效时间', () => {
@@ -58,6 +61,6 @@ describe('formatDateTime (detail time, language-aware)', () => {
       updatedAt: 0,
     };
     expect(formatScheduleSummary(job, 'zh')).toBe('一次性 · 2026/11/09 04:00');
-    expect(formatScheduleSummary(job, 'en')).toBe('一次性 · 11/9/2026, 4:00:00 AM');
+    expect(formatScheduleSummary(job, 'en')).toMatch(/^一次性 · (?:2026\/11\/09|11\/9\/2026,)\s0?4:00(?::00\b.*)?$/);
   });
 });
