@@ -49,6 +49,9 @@ export function sessionTitleSource(sourceText: string, language: TitleLanguage =
 export function isProvisionalAutoTitle(title: string | null | undefined, sourceText: string): boolean {
   if (isPlaceholderSessionTitle(title)) return true;
   const named = (title ?? '').trim();
+  // web 预写层对 <=30 字的 prompt 整句写入、不带 `...`：与首行相同同样是自动产物。
+  const flat = (text: string) => text.replace(/\s+/g, ' ').trim();
+  if (named && flat(named) === flat(sourceText.trimStart().split('\n')[0] ?? '')) return true;
   if (!named.endsWith('...')) return false;
   const slice = named.slice(0, -3);
   if (!slice) return false;
@@ -60,4 +63,77 @@ export function deriveFallbackSessionTitle(sourceText: string, language: TitleLa
   const firstLine = sessionTitleSource(sourceText, language).trim().split('\n')[0] || APPSHOT_SESSION_TITLE[language];
   const title = firstLine.slice(0, 50);
   return firstLine.length > 50 ? `${title}...` : title;
+}
+
+const TITLE_RULE_MAX_CHARS = 20;
+const TITLE_ECHO_EXEMPT_MAX_CHARS = 8;
+const CLAUSE_SPLIT = /[，。；：！？,;:!?\n]|\.(?=\s|$)/;
+const REQUEST_BOILERPLATE =
+  /^(?:请你帮我|请帮我|请你|请|帮我|麻烦你|麻烦|能不能|可不可以|能否|可以|我想要|我想|我需要你|我需要|please|can you|could you|would you|help me|i need you to|i want you to|i'd like you to|i need|i want)(?![a-z])\s*/i;
+
+function firstLineOf(sourceText: string): string {
+  return sourceText.trim().split('\n')[0]?.trim() ?? '';
+}
+
+/** 标题是否只是首条消息的前缀（或反过来）：即「回声」。斜杠命令与 <=8 字首行豁免。 */
+export function isEchoSessionTitle(title: string, sourceText: string): boolean {
+  const first = firstLineOf(sourceText);
+  if (/^\/[\w:.-]+$/.test(first) || Array.from(first).length <= TITLE_ECHO_EXEMPT_MAX_CHARS) return false;
+  const tn = title.replace(/(?:\.\.\.|…)+$/, '').trim();
+  if (!tn) return false;
+  if (tn.length < 10 && tn === title.trim()) return false;
+  const fun = sourceText.replace(/\s*\n\s*/g, ' ').trim();
+  return [first, fun].some((f) => f.startsWith(tn) || (f.length >= 6 && tn.startsWith(f)));
+}
+
+/** 无模型 / 模型仍回声时的规则摘要：首行首个分句去掉请求套话，最多 20 字，不带 `...`。 */
+export function deriveRuleSummaryTitle(sourceText: string, language: TitleLanguage = 'zh'): string {
+  const first = firstLineOf(sessionTitleSource(sourceText, language)) || APPSHOT_SESSION_TITLE[language];
+  let clause = (first.split(CLAUSE_SPLIT).find((part) => part.trim()) ?? first).trim();
+  for (let i = 0; i < 3; i++) {
+    const next = clause.replace(REQUEST_BOILERPLATE, '').trim();
+    if (next === clause) break;
+    clause = next;
+  }
+  const chars = Array.from(clause || first);
+  if (chars.length <= TITLE_RULE_MAX_CHARS) return chars.join('');
+  const cut = chars.slice(0, TITLE_RULE_MAX_CHARS).join('');
+  // 拉丁文按词截，不把单词劈在半截；中文无空格照字截。
+  const lastSpace = cut.lastIndexOf(' ');
+  return chars[TITLE_RULE_MAX_CHARS] !== ' ' && lastSpace >= 8 ? cut.slice(0, lastSpace) : cut.trimEnd();
+}
+
+export interface SessionTitleModelAnswer {
+  title: string | null;
+  /** 小模型本身不可用（区别于调用了但没产出）。 */
+  unavailable?: boolean;
+}
+
+interface SessionTitleLog {
+  info(message: string, data?: unknown): void;
+  warn(message: string, data?: unknown): void;
+}
+
+/** 模型标题 -> 回声检查 -> 带更严指令重试一次 -> 规则摘要；每次降级都留痕。 */
+export async function resolveSessionTitle(
+  sourceText: string,
+  language: TitleLanguage,
+  ask: (strict: boolean) => Promise<SessionTitleModelAnswer>,
+  log: SessionTitleLog,
+): Promise<string> {
+  const first = await ask(false);
+  if (first.unavailable) {
+    log.warn('quick model unavailable -> rule summary');
+    return deriveRuleSummaryTitle(sourceText, language);
+  }
+  if (first.title && !isEchoSessionTitle(first.title, sourceText)) return first.title;
+  if (!first.title) {
+    log.warn('quick model returned no title -> rule summary');
+    return deriveRuleSummaryTitle(sourceText, language);
+  }
+  log.warn('title echo detected -> retry', { title: first.title });
+  const retry = await ask(true);
+  if (retry.title && !isEchoSessionTitle(retry.title, sourceText)) return retry.title;
+  log.warn('retry still echo -> rule summary', { title: retry.title });
+  return deriveRuleSummaryTitle(sourceText, language);
 }
