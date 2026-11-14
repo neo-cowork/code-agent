@@ -21,7 +21,7 @@ export const permissionGrantsEn = {
   title: 'Permissions you have granted',
   description: 'Every "allow" you have given Neo is listed here, revocable row by row; the next identical action asks again after a revoke.',
   empty: 'You have not granted any standing permissions yet.',
-  kind: { app: 'Computer use', toolTarget: 'External action', toolSession: 'Conversation allow', toolTimed: 'Time-boxed allow' },
+  kind: { app: 'Computer use', toolTarget: 'External action', toolSession: 'Conversation allow', toolTimed: 'Temporary allow' },
   scope: { always: 'Always', conversation: 'This conversation', run: 'This task', hours24: '24 hours', automation: 'Automation "{title}"' },
   readOnly: 'Read-only',
   targetLabel: 'Target: {target}',

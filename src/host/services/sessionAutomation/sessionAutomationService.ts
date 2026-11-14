@@ -650,6 +650,7 @@ export class SessionAutomationService {
         requestId: row.id,
         sessionId,
         requestedAt: payload.requestedAt ?? row.submittedAt,
+        ...(payload.tool ? { tool: payload.tool } : {}),
         ...((payload.argsPreview ?? payload.argsSummary) ? { commandPreview: payload.argsPreview ?? payload.argsSummary } : {}),
       });
     }
