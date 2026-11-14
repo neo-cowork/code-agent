@@ -97,7 +97,8 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // sys-v116 (main): preserve the main-branch prompt changes.
 // sys-v117–118: add wait_for_user and refine its instructions.
 // sys-v119: integrate wait_for_user with the updated main prompt surface.
-export const PROMPT_VERSION = 'sys-v119' as const;
+// sys-v120: integration merge of main's browser/reminders schema changes with this branch's handoff wording.
+export const PROMPT_VERSION = 'sys-v120' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =

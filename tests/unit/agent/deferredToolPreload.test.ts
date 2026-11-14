@@ -276,12 +276,13 @@ describe('deferred tool preload', () => {
     }))).toEqual(['workflow_orchestrate']);
   });
 
+  // Keep the server fixture distinct from the real registered jira tool name.
   it('preloads MCPUnified for explicit MCP management requests', () => {
     const loaded = preloadDeferredToolsForTurn(runtime({
       messages: [{
         id: 'm1',
         role: 'user',
-        content: '帮我配置一个 jira 的 http-streamable MCP server',
+        content: '帮我配置一个 planning-mcp 的 http-streamable MCP server',
         timestamp: 1,
       }],
     }));

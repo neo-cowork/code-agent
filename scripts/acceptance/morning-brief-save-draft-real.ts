@@ -18,7 +18,7 @@ const CALL_TIMEOUT_MS = 120_000;
 
 let getSessionCommandCenterBrainContextForPrompt: typeof import('../../src/host/app/sessionCommandCenterBrain').getSessionCommandCenterBrainContextForPrompt;
 let getTextForegroundToolNamesForPrompt: typeof import('../../src/host/app/sessionCommandCenterBrain').getTextForegroundToolNamesForPrompt;
-let applyMorningBriefSaveDraftRoleTools: typeof import('../../src/host/app/morningBriefSaveDraftTools').applyMorningBriefSaveDraftRoleTools;
+let resolveRoleChatToolFace: typeof import('../../src/host/app/morningBriefSaveDraftTools').resolveRoleChatToolFace;
 let mailDraftSchema: ToolSchema;
 let mailSendSchema: ToolSchema;
 let delegateSessionSchema: ToolSchema;
@@ -33,7 +33,7 @@ async function loadProductModules(): Promise<void> {
   ]);
   getSessionCommandCenterBrainContextForPrompt = brain.getSessionCommandCenterBrainContextForPrompt;
   getTextForegroundToolNamesForPrompt = brain.getTextForegroundToolNamesForPrompt;
-  applyMorningBriefSaveDraftRoleTools = saveDraftTools.applyMorningBriefSaveDraftRoleTools;
+  resolveRoleChatToolFace = saveDraftTools.resolveRoleChatToolFace;
   mailDraftSchema = mailDraft.mailDraftSchema;
   mailSendSchema = mailSend.mailSendSchema;
   delegateSessionSchema = delegateSession.delegateSessionSchema;
@@ -160,7 +160,7 @@ function systemPrompt(removeRuleFive: boolean): string {
 function wireTools(scenario: Scenario): Array<Record<string, unknown>> {
   const schemas = [mailDraftSchema, mailSendSchema, delegateSessionSchema];
   const allowedToolNames = scenario === 'C'
-    ? applyMorningBriefSaveDraftRoleTools(USER_REPLY, getTextForegroundToolNamesForPrompt(USER_REPLY), ['Read']) ?? []
+    ? resolveRoleChatToolFace(USER_REPLY, getTextForegroundToolNamesForPrompt(USER_REPLY), ['Read', delegateSessionSchema.name]) ?? []
     : schemas.map((schema) => schema.name);
   if (scenario === 'C') console.log(`post_fix_no_mail_role_tools=${JSON.stringify(allowedToolNames)}`);
   const allowed = new Set(allowedToolNames);

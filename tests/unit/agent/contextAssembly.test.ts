@@ -559,6 +559,17 @@ beforeEach(() => {
 });
 
 describe('ContextAssembly.buildModelMessages()', () => {
+  it.each([
+    ['foreground', 'Run commands and online checks through delegate_task. Reply with a plain handoff.'],
+    ['role-wake', 'You are the morning patrol expert. Read the calendar and mail, then report.'],
+  ])('preserves the configured %s identity in the actual model-facing system message', async (_kind, configuredPrompt) => {
+    const ctx = buildRuntimeContext({ systemPrompt: configuredPrompt });
+    const messages = await new ContextAssembly(ctx as never).buildModelMessages();
+    expect(messages[0].role).toBe('system');
+    expect(messages[0].content).toContain(configuredPrompt);
+    expect(getPromptForTask).not.toHaveBeenCalled();
+  });
+
   const sessionId = `session-${Date.now()}`;
   const agentId = 'agent-runtime-test';
 

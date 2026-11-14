@@ -1,3 +1,4 @@
+import { BACKGROUND_HANDOFF_REPLY } from '../../../services/commandCenter/delegationGuidance';
 import type { ToolSchema } from '../../../protocol/tools';
 
 const target = {
@@ -10,7 +11,7 @@ const target = {
 // 否则模型会优先相信工具表和工具描述，重现「环境受限」类错误解释。
 export const delegateTaskSchema: ToolSchema = {
   name: 'delegate_task',
-  description: '需要运行命令、联网查证、等待审批、多步骤执行，或生成报告/网页等长任务时，调用本工具创建一个带完整工具面的后台任务。短小的本地文件读写由文字前台直接完成。accepted 只代表已接单，不代表完成；排队或交接只代表已受理还没开始跑，后台跑完也只代表执行结束——都不等于用户已收到，对用户的通报以会话里的真实回流为准，在那之前只说「已开始／已排队」。',
+  description: '运行命令、联网查证、等待审批、多步骤执行或生成报告/网页等长任务：创建带完整工具面的后台任务。短小的本地文件读写由文字前台直接完成。accepted 只代表已接单，不代表完成；排队或交接只代表已受理还没开始跑；后台跑完也只代表执行结束，不等于用户已收到。真实终态回流前只说「已开始／已排队」。' + ' ' + BACKGROUND_HANDOFF_REPLY,
   outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
@@ -19,7 +20,7 @@ export const delegateTaskSchema: ToolSchema = {
       short_name: { type: 'string', description: '2-4 个字符的任务短名，中文或英文均可，例如「周报」「RR」。超过 4 字符时系统会稳定归一化。' },
       lane_key: { type: 'string', description: '目标或主题的稳定 lane；继续处理同一对象必须沿用。' },
       submission_key: { type: 'string', description: '当前 turn 内稳定的幂等键；同一次派发重试必须原样复用。' },
-      prompt: { type: 'string', description: '给后台执行侧的完整自包含指令，保留用户原话中的目标、约束和验收要求。' },
+      prompt: { type: 'string', description: 'Self-contained objective, requested method, constraints and acceptance criteria from the user.' },
       queue_when_full: { type: 'boolean', description: '仅在并发槽已满且用户明确要求排队后才传 true。' },
     },
     required: ['title', 'short_name', 'lane_key', 'submission_key', 'prompt'],

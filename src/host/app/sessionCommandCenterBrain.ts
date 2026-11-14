@@ -1,3 +1,5 @@
+import { BACKGROUND_HANDOFF_REPLY, DELEGATED_METHOD_REQUIREMENT } from '../services/commandCenter/delegationGuidance';
+import { resolveTurnToolFace } from '../agent/runtime/turnToolFace';
 import type { AppServiceRunOptions } from '../../shared/contract/appService';
 import { resolveForegroundBrainMaxIterations, SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS } from '../../shared/constants/sessionCommandCenter';
 import { getTextForegroundToolNames } from '../tools/protocolRegistry';
@@ -30,7 +32,7 @@ const SESSION_COMMAND_CENTER_BRAIN_CONTEXT = [
   '派活纪律：short_name 用 2-4 个字符，中文或英文均可；同一目标沿用 lane_key；同一 turn 的重试沿用 submission_key。',
   'delegate_task 返回 accepted 只表示后台已接单。你可以告诉用户已经开始或排队，但不得声称完成；完成、失败和取消只以后续任务终态回流为准。',
   '绝不描述你没有真做过的事。只有对应工具返回成功后，才可以说已经读取、修改或执行。',
-  '不要用“好的收到”空承接。派活后用一句话说明哪件短名已开始、排队或需要选择，然后结束当前 turn。',
+  BACKGROUND_HANDOFF_REPLY + ' ' + DELEGATED_METHOD_REQUIREMENT,
   // 只讲能做什么，不枚举缺什么：ADR-056 首轮真机 FAIL 的机制是负向枚举本身——原文点名
   // 「Bash/Write/Edit 一概没有」并在同句写「不要说"环境禁用了"」，模型把三个工具名和「禁用」
   // 原样还了回来（session_1786186241326_0bce358d）。删起因优于再加一层反向指令。
@@ -99,8 +101,8 @@ export function getSessionCommandCenterBrainContextForPrompt(prompt: string): st
 /**
  * 回合级规则块（不含常驻基块）：存草稿判据命中的轮才有内容。
  * web 主链（routes/agent.ts）把这份并进模型面 turn 脚手架——config.systemPrompt 那份
- * 会在 contextAssembly 重建系统消息时被丢（ctx.systemPrompt 不进请求，2026-11-11 FU1
- * 真机抓包实证）；桌面 envelope 路仍走 withSessionCommandCenterBrain 的全量清单。
+ * 由 contextAssembly 保留为系统身份的一部分；桌面 envelope 路仍走
+ * withSessionCommandCenterBrain 的全量清单。
  */
 export function getSessionCommandCenterTurnRulesForPrompt(prompt: string): string[] {
   return isMorningBriefSaveDraftReply(prompt) ? [MORNING_BRIEF_SAVE_DRAFT_CONTEXT] : [];
@@ -176,9 +178,7 @@ export function getTextForegroundToolNamesForPrompt(
   // 无意图命中时零副作用（不触 configService/registry）。
   extras.push(...getNativeConnectorToolNamesForIntent({ userText: prompt, allowedConnectorIds }));
   extras.push(...getImageAnalyzeToolNamesForTurn(imageTurn));
-  if (extras.length === 0) return base;
-  // 存草稿轮 mail_draft 已在 extras 里，连接器扩展会再次带回同名——去重保序。
-  return Array.from(new Set([...base, ...extras]));
+  return resolveTurnToolFace({ baseToolNames: base, requiredToolNames: extras, prompt, foreground: true }) ?? base;
 }
 
 /** Shared logging and explicit-cap clamp for desktop and web assembly. */

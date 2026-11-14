@@ -36,6 +36,8 @@ const harness = vi.hoisted(() => ({
     allowedToolNames?: string[];
     deniedToolNames?: string[];
     hasGoal: boolean;
+    roleId?: string;
+    rolePrompt?: string;
   }>,
 }));
 
@@ -137,11 +139,14 @@ vi.mock('../../../../src/cli/bootstrap', () => ({
     allowedToolNames?: string[];
     deniedToolNames?: string[];
     goalContract?: unknown;
+    agentOverride?: { id: string; systemPrompt: string };
   }) => {
     harness.loops.push({
       allowedToolNames: config.allowedToolNames ? [...config.allowedToolNames] : undefined,
       deniedToolNames: config.deniedToolNames ? [...config.deniedToolNames] : undefined,
       hasGoal: config.goalContract != null,
+      roleId: config.agentOverride?.id,
+      rolePrompt: config.agentOverride?.systemPrompt,
     });
     return { run: vi.fn(async () => undefined) };
   }),
@@ -202,8 +207,8 @@ describe('role wake tool scope', () => {
     await ensureRoleAssetDirs(UNDECLARED_ROLE);
     writeRolePersonalization(DENY_ROLE, { boundaries: { disallowExternalSending: true } });
     harness.resolveAgent.mockImplementation((roleId: string) => {
-      if (roleId === SCOPE_ROLE) return { id: roleId, tools: DECLARED_TOOLS };
-      if (roleId === DENY_ROLE) return { id: roleId, tools: ['mail_send', 'mcp__lark__im.v1.message.create'] };
+      if (roleId === SCOPE_ROLE) return { id: roleId, name: roleId, prompt: '只读巡检角色提示词', tools: DECLARED_TOOLS };
+      if (roleId === DENY_ROLE) return { id: roleId, name: roleId, prompt: '禁止对外发送角色提示词', tools: ['mail_send', 'mcp__lark__im.v1.message.create'] };
       if (roleId === UNDECLARED_ROLE) return { id: roleId, tools: [] };
       return undefined;
     });
@@ -222,6 +227,8 @@ describe('role wake tool scope', () => {
 
     expect(harness.loops).toHaveLength(1);
     expect(harness.loops[0].hasGoal).toBe(false);
+    expect(harness.loops[0].roleId).toBe(SCOPE_ROLE);
+    expect(harness.loops[0].rolePrompt).toBe('只读巡检角色提示词');
     expectScopedAllowList(harness.loops[0].allowedToolNames);
 
     harness.loops.length = 0;
@@ -245,6 +252,8 @@ describe('role wake tool scope', () => {
 
     expect(harness.loops).toHaveLength(2);
     expect(harness.loops[1].hasGoal).toBe(true);
+    expect(harness.loops[1].roleId).toBe(SCOPE_ROLE);
+    expect(harness.loops[1].rolePrompt).toBe('只读巡检角色提示词');
     expectScopedAllowList(harness.loops[1].allowedToolNames);
 
     harness.loops.length = 0;
@@ -257,6 +266,8 @@ describe('role wake tool scope', () => {
 
     expect(harness.loops).toHaveLength(2);
     expect(harness.loops[1].hasGoal).toBe(true);
+    expect(harness.loops[1].roleId).toBe(DENY_ROLE);
+    expect(harness.loops[1].rolePrompt).toBe('禁止对外发送角色提示词');
     expectDenyAll(harness.loops[1].allowedToolNames);
   });
 

@@ -2262,12 +2262,25 @@ describe('AgentOrchestrator', () => {
       expect((await runSaveDraft())?.filter((tool) => tool === 'mail_draft')).toHaveLength(1);
     });
 
-    it.skipIf(process.platform !== 'darwin')('leaves a non-save-draft mail prompt for a no-mail role untouched', async () => {
+    // 声明了工具的角色不继承指挥台常驻面（delegate_task / Bash 不进），
+    // 但本轮连接器意图带进来的邮件面照旧在列——非存草稿轮不归存草稿门管（与 main 一致）。
+    it('a declared role does not inherit the standing foreground face on a non-save-draft mail prompt', async () => {
       registerRole(['Read']);
+      setMailConnectorEnabled(true);
+      const tools = await runSaveDraft(ROLE, '帮我发邮件给 a@b.c，说明会议改期');
+      expect(tools).toContain('Read');
+      for (const absent of ['delegate_task', 'Bash', 'Write', 'Edit', 'spawn_agent']) expect(tools).not.toContain(absent);
+      if (process.platform === 'darwin') {
+        for (const present of ['mail', 'mail_send', 'mail_draft']) expect(tools).toContain(present);
+      }
+    });
+
+    it.skipIf(process.platform !== 'darwin')('leaves a non-save-draft mail prompt for a role without declared tools untouched', async () => {
+      registerRole([]);
       setMailConnectorEnabled(true);
 
       const tools = await runSaveDraft(ROLE, '帮我发邮件给 a@b.c，说明会议改期');
-      // 非存草稿轮不归本门管：连接器意图命中带进来的 mail 三件套与 delegate_task 原样在列。
+      // 未声明工具的角色保持原行为，连接器意图扩展与 delegate_task 仍在列。
       for (const present of ['mail', 'mail_send', 'mail_draft', 'delegate_task']) {
         expect(tools).toContain(present);
       }

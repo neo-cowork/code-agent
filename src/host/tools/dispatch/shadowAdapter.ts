@@ -1,3 +1,4 @@
+import { withConnectorReconnectGuidance } from './connectorReconnectGuidance';
 // ============================================================================
 // Protocol Adapter — 旧 ToolContext → protocol ToolContext 的桥接 + 执行入口
 //
@@ -306,7 +307,7 @@ export async function executePocToolViaProtocol(
 
     const canUseTool = buildCanUseToolFromLegacy(legacyCtx, input.toolName);
 
-    const protoResult = await handler.execute(input.params, ctx, canUseTool);
+    const protoResult = withConnectorReconnectGuidance(input.toolName, await handler.execute(input.params, ctx, canUseTool));
 
     if (protoResult.ok) {
       const output = typeof protoResult.output === 'string'
