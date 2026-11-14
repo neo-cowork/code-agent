@@ -1,3 +1,4 @@
+import { formatExternalModelSwitcherTooltip, formatNativeModelSwitcherTooltip } from '../../../src/renderer/components/StatusBar/modelSwitcherTooltips';
 import { describe, expect, it } from 'vitest';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -15,9 +16,7 @@ import {
   buildProviderHealthSummary,
   compareProviderHealth,
   ENGINE_SHORT_LABEL,
-  formatExternalModelSwitcherTooltip,
   formatEngineReliabilityContract,
-  formatNativeModelSwitcherTooltip,
   getProviderEffortOptions,
   ProviderBillingBadge,
   ProviderHealthBadge,
@@ -351,10 +350,10 @@ describe('ModelSwitcher Agent Engine selection', () => {
       overridden: false,
       billingSummary: buildProviderBillingSummary('payg'),
       healthSummary: buildProviderHealthSummary({ status: 'healthy', latencyP50: 120, errorRate: 0 }),
-      effort: { label: 'High' },
-      thinkingLabel: 'Think',
+      effort: { label: 'High', shortLabel: '高' },
+      thinkingLabel: '思考',
     })).toBe(
-      '自动路由（按任务、成本和能力切换，当前主任务 mimo-v2.5-pro） · Engine: Neo · 计费: 按量 · Provider: 健康 · Effort: High · Thinking: Think',
+      '自动路由（按任务、成本和能力切换，当前主任务 mimo-v2.5-pro） · 计费: 按量 · 服务状态: 健康 · 推理强度: 高 · 思考: 思考',
     );
   });
 
@@ -368,9 +367,9 @@ describe('ModelSwitcher Agent Engine selection', () => {
       overridden: true,
       billingSummary: buildProviderBillingSummary('unknown'),
       healthSummary: buildProviderHealthSummary(null),
-      effort: { label: 'Default' },
+      effort: { label: 'Default', shortLabel: '默认' },
     })).toBe(
-      '已覆盖: zhipu/glm-4.5v (原主任务: kimi-k2.5) · Engine: Neo · 计费: 计费未知 · Provider: 未检测 · Effort: Default',
+      '已覆盖: zhipu/glm-4.5v (原主任务: kimi-k2.5) · 计费: 计费未知 · 推理强度: 默认',
     );
   });
 
@@ -378,9 +377,22 @@ describe('ModelSwitcher Agent Engine selection', () => {
     expect(formatExternalModelSwitcherTooltip({
       engineLabel: 'Claude',
       model: 'sonnet',
-      effort: { label: 'High' },
+      effort: { label: 'High', shortLabel: '高' },
       reliabilityLabel: '认证失败',
-    })).toBe('Engine: Claude · 主任务模型: sonnet · Effort: High · 状态: 认证失败');
+    })).toBe('运行引擎: Claude · 主任务模型: sonnet · 推理强度: 高 · 服务状态: 认证失败');
+  });
+
+  it('preserves English tooltip field names and effort labels', () => {
+    expect(formatNativeModelSwitcherTooltip({
+      language: 'en', engineLabel: 'Neo', currentModel: 'main',
+      displayProvider: 'xiaomi', displayModel: 'main', adaptive: false, overridden: false,
+      healthSummary: buildProviderHealthSummary(null),
+      effort: { label: 'High', shortLabel: '高' }, thinkingLabel: 'Think',
+    })).toBe('主任务模型: xiaomi/main · Effort: High · Thinking: Think');
+    expect(formatExternalModelSwitcherTooltip({
+      language: 'en', engineLabel: 'Claude', model: 'sonnet',
+      effort: { label: 'High', shortLabel: '高' }, reliabilityLabel: 'ready',
+    })).toBe('Engine: Claude · 主任务模型: sonnet · Effort: High · Provider: ready');
   });
 
   it('shows the model settings prompt only for native sessions after settings prove no configured models', () => {
