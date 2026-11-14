@@ -30,7 +30,14 @@
     "MultiEdit",
     "ToolSearch",
     "AgentSpawn",
-    "TaskManager"
+    "TaskManager",
+    "delegate_session",
+    "list_session_candidates",
+    "delegate_existing",
+    "create_new",
+    "candidateSetId",
+    "MemoryRead",
+    "Glob"
   ],
   "englishState": [
     "\\baccepted\\s*[：:]\\s*",

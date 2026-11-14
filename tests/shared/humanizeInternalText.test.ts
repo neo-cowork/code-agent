@@ -134,4 +134,18 @@ describe('humanizeInternalText', () => {
       expect(zh.collapseIntoDetails).toBeUndefined();
     }
   });
+
+  it('handover tool names are humanized in zh and en; ordinary prose is untouched', () => {
+    const raw = 'call delegate_session after list_session_candidates (candidateSetId), then delegate_existing or create_new; MemoryRead, Glob';
+    const zh = humanizeInternalText(raw, 'zh').text;
+    const en = humanizeInternalText(raw, 'en').text;
+    for (const name of ['delegate_session', 'list_session_candidates', 'candidateSetId', 'delegate_existing', 'create_new', 'MemoryRead', 'Glob']) {
+      expect(zh).not.toContain(name);
+      expect(en).not.toContain(name);
+    }
+    expect(zh).toContain('转交到另一个会话');
+    expect(en).toContain('Hand off to another chat');
+    const prose = 'Globally, the user wants a new chat for the picnic plan.';
+    expect(humanizeInternalText(prose, 'en')).toEqual({ text: prose, detectedFormats: [] });
+  });
 });

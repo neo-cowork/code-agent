@@ -48,6 +48,13 @@ const INTERNAL_TOOL_LABELS: Record<string, { zh: string; en: string }> = {
   ToolSearch: { zh: '查找可用工具', en: 'Find available tools' },
   AgentSpawn: { zh: '启动协作助手', en: 'Start helper' },
   TaskManager: { zh: '管理后台任务', en: 'Manage background tasks' },
+  delegate_session: { zh: '转交到另一个会话', en: 'Hand off to another chat' },
+  list_session_candidates: { zh: '查找可转交的会话', en: 'Find chats to hand off to' },
+  delegate_existing: { zh: '转交到已有会话', en: 'Hand off to an existing chat' },
+  create_new: { zh: '新建会话', en: 'Create a new chat' },
+  candidateSetId: { zh: '候选会话', en: 'candidate chats' },
+  MemoryRead: { zh: '读取记忆', en: 'Read memory' },
+  Glob: { zh: '按名称查找文件', en: 'Find files by name' },
 };
 
 interface EnglishStatePattern {
