@@ -15,12 +15,16 @@ import { persistRuntimeState } from '../runtimeStatePersistence';
 import { attachMessageCorrelation } from '../turnQuality';
 import { MAX_STEPS_REASON } from '../maxStepsFallback';
 import { getHarnessKnob } from '../harnessKnobs';
+import { createLogger } from '../../../services/infra/logger';
+import { detectReplyEgressLeaks } from '../../../../shared/replyEgressLeakDetect';
 import {
   logger,
   MAX_PERSISTENT_SYSTEM_CONTEXT_ITEMS,
   MAX_PERSISTENT_SYSTEM_CONTEXT_ITEM_TOKENS,
   normalizePersistentSystemContextKey,
 } from './shared';
+
+const replyEgressLogger = createLogger('ReplyEgress');
 
 const CONTEXT_ASSEMBLY_PERSISTED_MESSAGE = Symbol.for('code-agent.contextAssembly.persistedMessage');
 const CONTEXT_INJECTION_METADATA = Symbol.for('code-agent.contextAssembly.injectionMetadata');
@@ -259,6 +263,28 @@ export async function addAndPersistMessage(ctx: ContextAssemblyCtx, message: Mes
   message.metadata = attachMessageCorrelation(ctx.runtime, message.metadata);
   if (ctx.runtime.historyVisibility === 'meta') {
     message.isMeta = true;
+  }
+
+  if (message.role === 'assistant' && !message.isMeta && typeof message.content === 'string') {
+    try {
+      const leak = detectReplyEgressLeaks(message.content, ctx.runtime.turn?.runUserPrompt ?? '');
+      if (leak.categories.length > 0) {
+        replyEgressLogger.warn('Reply egress leak detected', {
+          reason: 'reply_egress_leak_detected',
+          sessionId: ctx.runtime.sessionId,
+          messageId: message.id,
+          categories: leak.categories,
+          matches: leak.matchedTokens,
+        });
+      }
+    } catch (error) {
+      replyEgressLogger.warn('Reply egress probe failed', {
+        reason: 'reply_egress_probe_error',
+        sessionId: ctx.runtime.sessionId,
+        messageId: message.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   ctx.runtime.messages.push(message);
