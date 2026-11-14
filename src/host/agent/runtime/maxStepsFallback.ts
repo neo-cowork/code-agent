@@ -23,6 +23,16 @@ const logger = createLogger('MaxStepsFallback');
 
 export const MAX_STEPS_REASON = 'max-steps-reached';
 
+export function isCompletedBackgroundReport(ctx: RuntimeContext): boolean {
+  if (!ctx.completionReportOnly) return false;
+  for (let index = ctx.messages.length - 1; index >= 0; index--) {
+    const message = ctx.messages[index];
+    if (message.role === 'user') return false;
+    if (message.role === 'assistant' && message.content?.trim() && !message.toolCalls?.length) return true;
+  }
+  return false;
+}
+
 export function buildMaxStepsErrorData(ctx: RuntimeContext) {
   const lastAssistant = [...ctx.messages].reverse().find((message) => message.role === 'assistant');
   const stoppedByStepLimit = ctx.foregroundToolFace && ctx.maxIterations > 1
