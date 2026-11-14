@@ -31,7 +31,7 @@ const COMPOSER_IN_PROGRESS_PRIORITY: readonly ComposerInProgressId[] = [
 // （ComposerSlot 直接抛错拒渲染）。四层语义：
 //   L1 阻塞决策：三张草稿确认卡 + 定时/目标/种子三张对话式创建卡。永不让位，同时来就摞。
 //   L2 进行中：通话 / 上传。互斥，只留 COMPOSER_IN_PROGRESS_PRIORITY 里最靠前的那个。
-//   L3 上下文：成员条 / 循环状态条 / 排队引导卡。不让位；被 L1 挤时可收成摘要（成员条已实现）。
+//   L3 上下文：成员条 / 循环状态条 / 会议录制条 / 排队引导卡。不让位；被 L1 挤时可收成摘要（成员条已实现）。
 //   L4 建议：建议条 / 能力建议 / 组合技能卡 / Plan 入口。L1 或 L2 有货就整层隐藏。
 // 优先级判断不许写进任何一个占用者组件里——组件只声明「我是谁、我现在要不要出现」。
 // ============================================================================
@@ -48,6 +48,7 @@ export type ComposerSlotOccupantId =
   | 'seed-composer'
   | 'member-bar'
   | 'loop-status'
+  | 'meeting-status'
   | 'rejected-uploads'
   | 'suggestion-bar'
   | 'capability-strip'
@@ -66,6 +67,7 @@ export const COMPOSER_SLOT_LAYER: Readonly<Record<ComposerSlotOccupantId, Compos
   upload: 2,
   'member-bar': 3,
   'loop-status': 3,
+  'meeting-status': 3,
   'rejected-uploads': 3,
   'suggestion-bar': 4,
   'capability-strip': 4,

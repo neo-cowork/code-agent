@@ -1,0 +1,502 @@
+{
+  "baselineSubscription": {
+    "xiaomi": {
+      "neohorse-1.5-flash-preview": 1
+    }
+  },
+  "jevModel": {
+    "jev-1.13.0": 1
+  },
+  "originalPlannedSessions": 20,
+  "authorizedSessions": 15,
+  "evaluatedSessions": 15,
+  "directionalOnly": 1,
+  "evaluationNonLinkMatchFastPath": 1,
+  "budgetUsd": 3,
+  "paidUsd": 0.010431540000000005,
+  "previousAttemptsPaidUsd": 0.020170836000000008,
+  "cumulativePaidUsd": 0.030602376000000014,
+  "rows": [
+    {
+      "id": "session_1792833597296_2482acd5",
+      "beforeTokens": 4720,
+      "needles": 1,
+      "S": {
+        "tokens": 4720,
+        "retained": 1,
+        "retention": 1,
+        "ms": 11471,
+        "calls": 2,
+        "inputTokens": 7760,
+        "outputTokens": 2000,
+        "rejected": 1
+      },
+      "J": {
+        "tokens": 3297,
+        "retained": 1,
+        "retention": 1,
+        "ms": 922,
+        "usd": 0.00033940200000000004,
+        "calls": 1,
+        "inputTokens": 8081,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1793699747736_6210aeb1",
+      "beforeTokens": 5903,
+      "needles": 2,
+      "S": {
+        "tokens": 2274,
+        "retained": 1,
+        "retention": 0.5,
+        "ms": 5116,
+        "calls": 1,
+        "inputTokens": 13781,
+        "outputTokens": 822,
+        "rejected": 0
+      },
+      "J": {
+        "tokens": 2150,
+        "retained": 2,
+        "retention": 1,
+        "ms": 1059,
+        "usd": 0.000351708,
+        "calls": 1,
+        "inputTokens": 8374,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1793712034015_82afcadc",
+      "beforeTokens": 5261,
+      "needles": 5,
+      "S": {
+        "tokens": 5261,
+        "retained": 5,
+        "retention": 1,
+        "ms": 10607,
+        "calls": 2,
+        "inputTokens": 28452,
+        "outputTokens": 2000,
+        "rejected": 1
+      },
+      "J": {
+        "tokens": 5261,
+        "retained": 5,
+        "retention": 1,
+        "ms": 909,
+        "usd": 0.000339318,
+        "calls": 1,
+        "inputTokens": 8079,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1793786871148_7fa28926",
+      "beforeTokens": 5139,
+      "needles": 5,
+      "S": {
+        "tokens": 5139,
+        "retained": 5,
+        "retention": 1,
+        "ms": 12484,
+        "calls": 2,
+        "inputTokens": 26133,
+        "outputTokens": 2000,
+        "rejected": 1
+      },
+      "J": {
+        "tokens": 2003,
+        "retained": 1,
+        "retention": 0.2,
+        "ms": 829,
+        "usd": 0.00030949800000000006,
+        "calls": 1,
+        "inputTokens": 7369,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1793799207013_9966126c",
+      "beforeTokens": 11547,
+      "needles": 2,
+      "S": {
+        "tokens": 11547,
+        "retained": 2,
+        "retention": 1,
+        "ms": 10417,
+        "calls": 2,
+        "inputTokens": 31792,
+        "outputTokens": 2000,
+        "rejected": 1
+      },
+      "J": {
+        "tokens": 4482,
+        "retained": 1,
+        "retention": 0.5,
+        "ms": 1023,
+        "usd": 0.000385266,
+        "calls": 1,
+        "inputTokens": 9173,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1794030501431_fa9bef70",
+      "beforeTokens": 110321,
+      "needles": 5,
+      "S": {
+        "tokens": 110321,
+        "retained": 5,
+        "retention": 1,
+        "ms": 17856,
+        "calls": 2,
+        "inputTokens": 39804,
+        "outputTokens": 2000,
+        "rejected": 1
+      },
+      "J": {
+        "tokens": 2664,
+        "retained": 1,
+        "retention": 0.2,
+        "ms": 1411,
+        "usd": 0.0011724720000000001,
+        "calls": 2,
+        "inputTokens": 27916,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1794041583647_dd5f6b06",
+      "beforeTokens": 27077,
+      "needles": 5,
+      "S": {
+        "tokens": 27077,
+        "retained": 5,
+        "retention": 1,
+        "ms": 10820,
+        "calls": 2,
+        "inputTokens": 36718,
+        "outputTokens": 2000,
+        "rejected": 1
+      },
+      "J": {
+        "tokens": 2205,
+        "retained": 2,
+        "retention": 0.4,
+        "ms": 1035,
+        "usd": 0.0005558280000000001,
+        "calls": 1,
+        "inputTokens": 13234,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1794051270959_4abbd841",
+      "beforeTokens": 326039,
+      "needles": 5,
+      "S": {
+        "tokens": 326039,
+        "retained": 5,
+        "retention": 1,
+        "ms": 22274,
+        "calls": 2,
+        "inputTokens": 40605,
+        "outputTokens": 2000,
+        "rejected": 1
+      },
+      "J": {
+        "tokens": 36425,
+        "retained": 2,
+        "retention": 0.4,
+        "ms": 2401,
+        "usd": 0.002554944,
+        "calls": 5,
+        "inputTokens": 60832,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1794113000000_rr58long",
+      "beforeTokens": 58970,
+      "needles": 5,
+      "S": {
+        "tokens": 2971,
+        "retained": 3,
+        "retention": 0.6,
+        "ms": 16996,
+        "calls": 2,
+        "inputTokens": 50958,
+        "outputTokens": 2000,
+        "rejected": 0
+      },
+      "J": {
+        "tokens": 23725,
+        "retained": 2,
+        "retention": 0.4,
+        "ms": 1905,
+        "usd": 0.001483734,
+        "calls": 3,
+        "inputTokens": 35327,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1794458764754_fa52c046",
+      "beforeTokens": 22057,
+      "needles": 5,
+      "S": {
+        "tokens": 22057,
+        "retained": 5,
+        "retention": 1,
+        "ms": 11863,
+        "calls": 2,
+        "inputTokens": 37988,
+        "outputTokens": 2000,
+        "rejected": 1
+      },
+      "J": {
+        "tokens": 5880,
+        "retained": 0,
+        "retention": 0,
+        "ms": 1265,
+        "usd": 0.0008468040000000002,
+        "calls": 2,
+        "inputTokens": 20162,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1794476700129_12251397",
+      "beforeTokens": 10751,
+      "needles": 5,
+      "S": {
+        "tokens": 10751,
+        "retained": 5,
+        "retention": 1,
+        "ms": 10312,
+        "calls": 2,
+        "inputTokens": 23141,
+        "outputTokens": 2000,
+        "rejected": 1
+      },
+      "J": {
+        "tokens": 3997,
+        "retained": 2,
+        "retention": 0.4,
+        "ms": 852,
+        "usd": 0.000302022,
+        "calls": 1,
+        "inputTokens": 7191,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1794487413728_72da5cce",
+      "beforeTokens": 2818,
+      "needles": 2,
+      "S": {
+        "tokens": 2818,
+        "retained": 2,
+        "retention": 1,
+        "ms": 9197,
+        "calls": 2,
+        "inputTokens": 32682,
+        "outputTokens": 1907,
+        "rejected": 1
+      },
+      "J": {
+        "tokens": 1497,
+        "retained": 0,
+        "retention": 0,
+        "ms": 818,
+        "usd": 0.000182028,
+        "calls": 1,
+        "inputTokens": 4334,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1794511239872_acbe9414",
+      "beforeTokens": 5711,
+      "needles": 2,
+      "S": {
+        "tokens": 5711,
+        "retained": 2,
+        "retention": 1,
+        "ms": 8600,
+        "calls": 2,
+        "inputTokens": 33274,
+        "outputTokens": 1825,
+        "rejected": 1
+      },
+      "J": {
+        "tokens": 3513,
+        "retained": 0,
+        "retention": 0,
+        "ms": 819,
+        "usd": 0.00024864,
+        "calls": 1,
+        "inputTokens": 5920,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1794539777942_13fbb74f",
+      "beforeTokens": 10845,
+      "needles": 5,
+      "S": {
+        "tokens": 10845,
+        "retained": 5,
+        "retention": 1,
+        "ms": 16336,
+        "calls": 2,
+        "inputTokens": 38826,
+        "outputTokens": 2000,
+        "rejected": 1
+      },
+      "J": {
+        "tokens": 4733,
+        "retained": 1,
+        "retention": 0.2,
+        "ms": 1098,
+        "usd": 0.00049854,
+        "calls": 1,
+        "inputTokens": 11870,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1794562219359_756a4981",
+      "beforeTokens": 38299,
+      "needles": 5,
+      "S": {
+        "tokens": 38299,
+        "retained": 5,
+        "retention": 1,
+        "ms": 30229,
+        "calls": 2,
+        "inputTokens": 18131,
+        "outputTokens": 2000,
+        "rejected": 1
+      },
+      "J": {
+        "tokens": 11788,
+        "retained": 1,
+        "retention": 0.2,
+        "ms": 1459,
+        "usd": 0.0008613360000000001,
+        "calls": 2,
+        "inputTokens": 20508,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    }
+  ],
+  "S": {
+    "totals": {
+      "tokens": 585830,
+      "retained": 56,
+      "ms": 204578,
+      "calls": 29,
+      "inputTokens": 460045,
+      "outputTokens": 28554,
+      "rejected": 13,
+      "needles": 59
+    },
+    "medians": {
+      "tokens": 10751,
+      "retained": 5,
+      "ms": 11471,
+      "calls": 2,
+      "inputTokens": 32682,
+      "outputTokens": 2000,
+      "rejected": 1,
+      "retention": 1
+    }
+  },
+  "J": {
+    "totals": {
+      "tokens": 113620,
+      "retained": 21,
+      "ms": 17805,
+      "calls": 24,
+      "inputTokens": 248370,
+      "outputTokens": 0,
+      "rejected": 0,
+      "needles": 59,
+      "usd": 0.010431540000000005
+    },
+    "medians": {
+      "tokens": 3997,
+      "retained": 1,
+      "ms": 1035,
+      "calls": 1,
+      "inputTokens": 9173,
+      "outputTokens": 0,
+      "rejected": 0,
+      "retention": 0.4,
+      "usd": 0.000385266
+    }
+  }
+}
