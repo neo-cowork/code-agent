@@ -1,0 +1,88 @@
+// 用户 Stop 的会话级后台收线：同步触发该会话所有运行中后台工作的 abort（不 await、逐个 try/catch），
+// 再限时等待它们收线。前台取消由调用方并行推进，本函数不碰前台。
+import { createLogger } from '../services/infra/logger';
+import { CANCELLATION_TIMEOUTS } from '../../shared/constants';
+import { getBackgroundSubagentRegistry } from '../agent/backgroundSubagentRegistry';
+import { getSwarmServices, hasSwarmServices } from '../agent/swarmServices';
+import type { BackgroundTaskRun } from './taskManagerTypes';
+
+const logger = createLogger('SessionBackgroundStop');
+
+interface SessionBackgroundStopInput {
+  sessionId: string;
+  backgroundRuns: ReadonlyMap<string, BackgroundTaskRun>;
+  cancelBackgroundTask: (taskId: string) => Promise<boolean>;
+  settleWaitMs?: number;
+}
+
+/** 调用返回时所有 abort 已经发出；返回的 promise 在全部收线或超时后 resolve（永不 reject）。 */
+export function stopSessionBackgroundWork(input: SessionBackgroundStopInput): Promise<void> {
+  const pending = new Map<string, Promise<unknown>>();
+
+  // detached/adopted spawn_agent 子代理登记在 SpawnGuard（不在 backgroundRuns/registry 的 abort 里）：
+  // 与桌面 agentAppService.cancel 同款扇出，先放审批等待再 abort，避免审批挂住的子代理拖死收线。
+  // 重复触发幂等（已取消的不再计数）。
+  if (hasSwarmServices()) {
+    try {
+      const services = getSwarmServices();
+      services.planApproval.cancelSession(input.sessionId, 'user-cancel');
+      services.launchApproval.cancelSession(input.sessionId, 'user-cancel');
+      const cancelled = services.spawnGuard.cancelSession(input.sessionId, 'user-cancel');
+      services.parallelCoordinators.abortSession(input.sessionId, 'user-cancel');
+      if (cancelled > 0) logger.info('Session stop: spawnGuard cancelled subagents', { sessionId: input.sessionId, cancelled });
+    } catch (error) {
+      logger.warn('Session stop: subagent fan-out failed', {
+        sessionId: input.sessionId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  for (const run of input.backgroundRuns.values()) {
+    if (run.sessionId !== input.sessionId || run.status !== 'running') continue;
+    try {
+      pending.set(run.taskId, input.cancelBackgroundTask(run.taskId));
+    } catch (error) {
+      logger.warn('Background task cancel threw on session stop', {
+        sessionId: input.sessionId,
+        taskId: run.taskId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  try {
+    for (const { agentId, settled } of getBackgroundSubagentRegistry().cancelSession(input.sessionId)) {
+      pending.set(agentId, settled);
+    }
+  } catch (error) {
+    logger.warn('Background subagent cancel failed on session stop', {
+      sessionId: input.sessionId,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+  if (pending.size === 0) return Promise.resolve();
+  const firedAt = Date.now();
+  logger.info('Session stop: background abort issued', { sessionId: input.sessionId, taskIds: [...pending.keys()] });
+
+  const waitMs = input.settleWaitMs ?? CANCELLATION_TIMEOUTS.SESSION_BACKGROUND_SETTLE_WAIT;
+  const unsettled = new Set(pending.keys());
+  const tracked = [...pending].map(([id, promise]) => (
+    Promise.resolve(promise).then(() => undefined, () => undefined).then(() => { unsettled.delete(id); })
+  ));
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<void>((resolve) => { timer = setTimeout(resolve, waitMs); });
+  return Promise.race([Promise.allSettled(tracked).then(() => undefined), timeout]).then(() => {
+    if (unsettled.size === 0) {
+      logger.info('Session stop: background work settled', {
+        sessionId: input.sessionId,
+        elapsedMs: Date.now() - firedAt,
+      });
+    } else {
+      logger.warn('Background work did not settle after session stop', {
+        sessionId: input.sessionId,
+        waitMs,
+        taskIds: [...unsettled],
+      });
+    }
+  }).finally(() => clearTimeout(timer));
+}
