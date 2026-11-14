@@ -408,7 +408,7 @@ async function persistServerDefault(server: MCPServerConfig): Promise<unknown> {
   await ensureUserConfigDir();
   const persisted = await persistMcpServerConfigToPath(getMcpScopedConfigPaths().user, 'servers', server);
   const { getMCPClient } = await import('../mcp/mcpClient');
-  getMCPClient().addServer({ ...server, scope: 'runtime' });
+  getMCPClient().addServer({ ...server, scope: 'user' });
   return persisted;
 }
 

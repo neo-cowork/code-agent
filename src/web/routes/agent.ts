@@ -30,6 +30,7 @@ import {
   buildWorkbenchToolScope,
 } from '../../host/app/workbenchTurnContext';
 import { withMissingAttachmentTurnSystemContext } from '../../host/app/missingAttachmentTurnContext';
+import { getForegroundMcpServerIds } from '../../host/mcp/foregroundMcpServers';
 import { getSessionCommandCenterBrainContextForPrompt, getSessionCommandCenterTurnRulesForPrompt, getTextForegroundToolNamesForPrompt, resolveForegroundBrainTurnBudget } from '../../host/app/sessionCommandCenterBrain';
 import { applyMorningBriefSaveDraftRoleTools } from '../../host/app/morningBriefSaveDraftTools';
 import { isSessionCommandCenterTurn } from '../../shared/constants/sessionCommandCenter';
@@ -1351,6 +1352,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           config.agentOverride?.tools,
         );
         config.foregroundToolFace = true;
+        config.foregroundMcpServerIds = getForegroundMcpServerIds();
         // 回合级规则块（如存草稿）与工具面同一真源，都从 sessionCommandCenterBrain 取，
         // 不能只同步 getTextForegroundToolNamesForPrompt 一边（rework r1：存草稿曾只送
         // mail_draft 不送解析规则，模型即兴解析晨报草稿块）。

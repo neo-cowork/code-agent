@@ -229,6 +229,7 @@ export interface ToolContext {
   readonly allowedToolNames?: readonly string[];
   /** 本轮 allowedToolNames 只是会话指挥台前台 brain 自己的工具面（ADR-059），不是 run 级硬边界：子代理不继承它，按角色声明拿工具（N-SUBAGENT-WEBSEARCH-INHERIT）。 */
   readonly foregroundToolFace?: boolean;
+  readonly foregroundMcpServerIds?: readonly string[];
   /** Opaque run-scoped SkillDiscoveryService handle. */
   readonly skillDiscoveryService?: unknown;
   /** Opaque run-scoped telemetry owner for spawned agents. */

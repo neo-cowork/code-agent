@@ -32,11 +32,12 @@ export interface RunToolPolicy {
    */
   readonly skillBoundaryAllowedTools?: readonly string[];
   /**
-   * 文字前台 brain 工具面（ADR-059）：白名单之外只补一类入口——ToolSearch（发现）与
-   * 用户已启用的 MCP 服务器工具（`mcp__<server>__*`，未启用的服务器根本不会注册）。
+   * 文字前台 brain 工具面（ADR-059）：白名单之外只补用户自己配置且已启用的 MCP 服务器
+   * （调用方显式传入 server id，来源见 mcp/foregroundMcpServers.ts），以及发现它们所需的 ToolSearch。
+   * 内置默认服务器（cua-driver / argus / deepwiki / github 等）不在名单内，照旧只走委派。
    * 逐次审批照旧在执行层生效，不改权限档，也不替用户启用任何服务器。
    */
-  readonly foregroundToolFace?: boolean;
+  readonly foregroundMcpServerIds?: readonly string[];
 }
 
 function normalizeRunPolicyToolName(name: string): string {
@@ -79,14 +80,21 @@ export function isToolDeniedByRunPolicy(policy: RunToolPolicy, toolName: string)
     || allowed.has(normalized)
     || isToolAllowedByWorkbenchScope(policy.toolScope, toolName)
     || isToolAllowedBySkillBoundary(policy.skillBoundaryAllowedTools, normalized)
-    || (policy.foregroundToolFace === true && isForegroundMcpEntryTool(normalized));
+    || isForegroundMcpEntryTool(policy.foregroundMcpServerIds, toolName, normalized);
   return !allowedForRun || (deniedToolSet(policy)?.has(normalized) ?? false);
 }
 
 const FOREGROUND_DISCOVERY_TOOL = 'toolsearch';
 
-function isForegroundMcpEntryTool(normalizedToolName: string): boolean {
-  return normalizedToolName === FOREGROUND_DISCOVERY_TOOL || normalizedToolName.startsWith('mcp__');
+function isForegroundMcpEntryTool(
+  serverIds: readonly string[] | undefined,
+  toolName: string,
+  normalizedToolName: string,
+): boolean {
+  if (!serverIds || serverIds.length === 0) return false;
+  if (normalizedToolName === FOREGROUND_DISCOVERY_TOOL) return true;
+  const serverId = toolName.startsWith('mcp__') ? extractMcpServerIdFromToolName(toolName) : undefined;
+  return Boolean(serverId && serverIds.includes(serverId));
 }
 
 /**

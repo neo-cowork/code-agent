@@ -229,6 +229,7 @@ export class AgentLoop {
       deniedToolNames: config.deniedToolNames,
       allowedToolNames: config.allowedToolNames,
       foregroundToolFace: config.foregroundToolFace,
+      foregroundMcpServerIds: config.foregroundMcpServerIds,
       hookMessageBuffer: new HookMessageBuffer(),
       messageHistoryCompressor: new MessageHistoryCompressor(),
       autoCompressor: getAutoCompressor(),

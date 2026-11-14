@@ -383,7 +383,7 @@ describe('applyExternalMcpImport：落盘、泄密、幂等（验收②③④）
     ]);
     expect(runtimeAddServer).toHaveBeenCalledTimes(6);
     for (const [server] of runtimeAddServer.mock.calls) {
-      expect(server).toMatchObject({ enabled: false, scope: 'runtime' });
+      expect(server).toMatchObject({ enabled: false, scope: 'user' });
       expect(JSON.stringify(server)).not.toContain(SECRET_LITERAL);
     }
 

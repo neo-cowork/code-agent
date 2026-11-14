@@ -71,7 +71,7 @@ function runtimeToolPolicy(ctx: RuntimeContext): RunToolPolicy {
     allowedToolNames: ctx.allowedToolNames,
     toolScope: ctx.toolScope,
     skillBoundaryAllowedTools: canonicalStrictBoundaryToolNames(ctx.turn?.skillToolBoundary),
-    foregroundToolFace: ctx.foregroundToolFace,
+    foregroundMcpServerIds: ctx.foregroundMcpServerIds,
   };
 }
 

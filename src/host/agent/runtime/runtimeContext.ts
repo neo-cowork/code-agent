@@ -129,6 +129,7 @@ export interface RuntimeContext {
   readonly deniedToolNames?: string[];
   readonly allowedToolNames?: string[];
   readonly foregroundToolFace?: boolean;
+  readonly foregroundMcpServerIds?: readonly string[];
 
   // --- Turn 级状态切片（ADR-038 批3a，写操作走 TurnState 方法）---
   readonly turn: TurnState;
