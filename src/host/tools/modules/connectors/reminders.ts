@@ -17,6 +17,7 @@ import {
   isAppleScriptFailure,
 } from '../../../connectors/native/osascript';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { formatConnectorTime } from './connectorTime';
 import { remindersSchema as schema } from './reminders.schema';
 
 type RemindersAction = 'get_status' | 'list_lists' | 'list_reminders';
@@ -26,10 +27,14 @@ interface ReminderItem {
   list: string;
   title: string;
   completed: boolean;
+  remindAtMs?: number | null;
 }
 
 function formatReminder(reminder: ReminderItem): string {
-  return `- #${reminder.id} [${reminder.list}] ${reminder.title}${reminder.completed ? ' (completed)' : ''}`;
+  const remindAt = typeof reminder.remindAtMs === 'number' && Number.isFinite(reminder.remindAtMs)
+    ? `提醒时间：${formatConnectorTime(reminder.remindAtMs)}`
+    : '无提醒时间';
+  return `- #${reminder.id} [${reminder.list}] ${reminder.title}${reminder.completed ? ' (completed)' : ''} | ${remindAt}`;
 }
 
 function buildRemindersMeta(

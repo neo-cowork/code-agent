@@ -126,22 +126,15 @@ async function doWriteBack(input: WriteBackInput): Promise<WriteBackResult> {
   // 4. 履历（产物清单）—— 即使没有记忆值得写，工作过就要记履历
   let historyAppended = false;
   try {
-    // The wake service owns its history row; its synthetic task is not user work.
-    if (isSyntheticWakeTask(input.taskPrompt)) {
-      logger.info('Role write-back skipped history because wake service owns it', {
-        roleId: input.roleId,
-        written,
-        rejected: rejected.length,
-      });
-      return { executed: true, written, rejected: rejected.length, historyAppended: false };
-    }
     const date = new Date().toISOString().slice(0, 10);
-    // 履历摘要回落：用户原话可截断；内部合成指令（首次醒来）绝不外显，回落固定短句
+    // 履历摘要回落：用户原话可截断；内部合成指令（首次醒来 / 巡检醒来）绝不外显，回落固定短句
     //（2026-11-12 owner 裁决：专家列表的最近工作行不得出现首次醒来的提示词文本）。
     const summary = judgment?.historySummary
       || (isFirstWakeTaskPrompt(input.taskPrompt)
         ? ROLE_ASSETS.FIRST_WAKE_HISTORY_FALLBACK_SUMMARY
-        : truncate(input.taskPrompt.replace(/\s+/g, ' '), 60));
+        : ROLE_ASSETS.WAKE_TASK_PROMPT_PATTERN.test(input.taskPrompt)
+          ? ROLE_ASSETS.WAKE_HISTORY_FALLBACK_SUMMARY
+          : truncate(input.taskPrompt.replace(/\s+/g, ' '), 60));
     const primaryArtifact = input.artifacts?.[0];
     await appendRoleHistory(input.roleId, {
       date,
