@@ -63,11 +63,12 @@ function requireSession(ctx: ToolContext): ToolResult<string> | string {
   return ctx.sessionId?.trim() || { ok: false, error: 'No active session', code: 'DOMAIN_ERROR' };
 }
 
-function describeReferenceFailure(result: SessionTaskReferenceResult, action: string): string {
+function describeReferenceFailure(result: SessionTaskReferenceResult, action: string, sessionId: string): string {
   if (result.outcome === 'missing') return `没有找到可${action}的活跃任务，什么都没改。请先核对当前任务。`;
   if (result.outcome === 'ambiguous') {
-    const options = result.candidates.map((task) => task.shortName).join('、');
-    return `目标不唯一，什么都没改。请让用户从这些任务中选择：${options}。`;
+    const active = getSessionCommandCenter().active(sessionId);
+    const options = result.candidates.map((task) => `第${active.findIndex((entry) => entry.id === task.id) + 1}个「${task.shortName}」`).join('、');
+    return `目标不唯一，什么都没改。请让用户从这些任务中选择（可用序号指定）：${options}。`;
   }
   return '';
 }
@@ -305,7 +306,7 @@ export async function executeSteerTask(
   const instruction = stringArg(args, 'instruction');
   if (!instruction) return { ok: false, error: 'instruction is required', code: 'INVALID_ARGS' };
   const result = await getSessionCommandCenter().steer(session, stringArg(args, 'target') || undefined, instruction);
-  if (result.outcome !== 'resolved') return { ok: true, output: describeReferenceFailure(result, '转向') };
+  if (result.outcome !== 'resolved') return { ok: true, output: describeReferenceFailure(result, '转向', session) };
   return { ok: true, output: `已把新要求投递给「${result.task.shortName}」；它的完成状态仍以后续终态回流为准。` };
 }
 
@@ -319,7 +320,7 @@ export async function executeCancelTask(
   const session = requireSession(ctx);
   if (typeof session !== 'string') return session;
   const result = await getSessionCommandCenter().cancel(session, stringArg(args, 'target') || undefined);
-  if (result.outcome !== 'resolved') return { ok: true, output: describeReferenceFailure(result, '取消') };
+  if (result.outcome !== 'resolved') return { ok: true, output: describeReferenceFailure(result, '取消', session) };
   const verb = result.task.status === 'cancelled' ? '已取消' : '正在取消';
   return { ok: true, output: `${verb}「${result.task.shortName}」；只有终态回流后才能声称它已经停稳。` };
 }
@@ -339,14 +340,18 @@ export async function executeTaskStatus(
   if (tasks.length === 0 && backgroundSubagents.length === 0) {
     return { ok: true, output: '当前会话还没有后台任务。' };
   }
-  const taskRows = tasks.map((task, index) => {
+  // 序号口径必须与 resolve() 一致：只有活跃任务编号（cancel_task/steer 的 target 序号），已结束的不编号
+  const activeIds = getSessionCommandCenter().active(session).map((task) => task.id);
+  const taskRows = tasks.map((task) => {
     // resultText 优先：240 字 summary 会截断「改走 Bash curl 审批」这类可执行提示（FB-577）
     const resultText = task.resultText ?? task.summary;
-    return `${index + 1}. ${task.shortName}：${sessionTaskStatusLabel(task.status)}${resultText ? `：${resultText}` : ''}`;
+    const activeIndex = activeIds.indexOf(task.id);
+    const label = activeIndex >= 0 ? `${activeIndex + 1}.` : '-';
+    return `${label} ${task.shortName}：${sessionTaskStatusLabel(task.status)}${resultText ? `：${resultText}` : ''}`;
   });
   return {
     ok: true,
-    output: [...taskRows, ...formatBackgroundSubagentRows(backgroundSubagents, tasks.length, snapshot.generatedAt, tasks.some((task) => task.status === 'running'))].join('\n'),
+    output: [...taskRows, ...formatBackgroundSubagentRows(backgroundSubagents, snapshot.generatedAt, tasks.some((task) => task.status === 'running'))].join('\n'),
     meta: {
       ...sessionTaskMeta('status', tasks),
       ...(tasks.length ? { sessionTaskWorkspaceRoots: [...new Set(tasks.map((task) => task.workspaceScope.primaryRoot))] } : {}),

@@ -12,7 +12,7 @@ import { resetSessionTaskConcurrencyPoolForTest } from '../../../../src/host/ser
 import {
   resetBackgroundTaskLedgerForTest,
 } from '../../../../src/host/task/backgroundTaskLedger';
-import { executeDelegateTask } from '../../../../src/host/tools/modules/commandCenter/sessionCommandCenter';
+import { executeCancelTask, executeDelegateTask, executeTaskStatus } from '../../../../src/host/tools/modules/commandCenter/sessionCommandCenter';
 import { delegateTaskSchema } from '../../../../src/host/tools/modules/commandCenter/sessionCommandCenter.schema';
 import { createWorkspaceScope } from '../../../../src/host/runtime/workspaceScope';
 
@@ -379,5 +379,28 @@ describe('delegate_task overflow choice in host', () => {
     const desc = delegateTaskSchema.inputSchema.properties?.queue_when_full?.description ?? '';
     expect(desc).toContain('排队');
     expect(desc).not.toContain('AskUserQuestion');
+  });
+
+  it('task_status numbers only active tasks (same ordinals cancel_task resolves) and ambiguity lists ordinals', async () => {
+    const session = 'session-ordinal';
+    await executeDelegateTask(taskArgs(1), toolContext(session), allow);
+    await executeDelegateTask(taskArgs(2, { short_name: '同名' }), toolContext(session), allow);
+    const [first] = getSessionCommandCenter().list(session);
+    fakeManager.emit('task_completed', { type: 'task_completed', sessionId: session, data: { taskId: first.id, conclusion: 'ok' } });
+    await vi.waitFor(() => expect(getSessionCommandCenter().active(session)).toHaveLength(1));
+    await executeDelegateTask(taskArgs(3, { short_name: '同名' }), toolContext(session), allow);
+
+    const status = await executeTaskStatus({}, toolContext(session), allow);
+    const lines = (status.ok ? status.output : '').split('\n');
+    expect(lines[0]).toMatch(/^- 任务1/);
+    expect(lines[1]).toMatch(/^1\. 同名/);
+    expect(lines[2]).toMatch(/^2\. 同名/);
+
+    const ambiguous = await executeCancelTask({ target: '同名' }, toolContext(session), allow);
+    expect(ambiguous.ok ? ambiguous.output : '').toContain('第1个「同名」、第2个「同名」');
+    const cancelled = await executeCancelTask({ target: '2' }, toolContext(session), allow);
+    const active = getSessionCommandCenter().active(session);
+    expect(cancelled.ok ? cancelled.output : '').toContain('同名');
+    expect(active.map((t) => t.title)).toEqual(['后台任务 2']);
   });
 });
