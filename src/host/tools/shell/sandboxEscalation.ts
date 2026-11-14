@@ -18,9 +18,9 @@ function expandLeadingHome(rawPath: string): string {
 }
 
 /**
- * Extract one literal file operand from a single plain `rm` command. The only
- * accepted options are `--`, `-f`, and `--force`; recursive, compound,
- * redirected, expanded, and multi-target commands stay on the ordinary path.
+ * Extract one literal file operand from one `rm`, optionally accompanied by
+ * harmless status reporting. The only accepted options are `--`, `-f`, and
+ * `--force`; recursive, redirected, expanded, and multi-target rm stay ordinary.
  */
 function extractApprovedSingleFileRmTarget(
   command: string,
@@ -30,14 +30,29 @@ function extractApprovedSingleFileRmTarget(
   if (parsed.parsingFailed || parsed.trailingOperator || parsed.writeTargets.length > 0 || parsed.uncertain.length > 0) {
     return undefined;
   }
-  if (parsed.segments.length !== 1) return undefined;
-  const segment = parsed.segments[0];
-  if (
-    segment.terminator !== null
-    || segment.redirects.length > 0
-    || segment.reads.length > 0
-    || path.posix.basename(segment.words[0] ?? '') !== 'rm'
-  ) return undefined;
+  // The parser omits fd-only redirects (e.g. 2>&1). Refuse redirect syntax
+  // conservatively, including quoted spellings, rather than mint a hidden grant.
+  if (/[<>]/.test(command)) return undefined;
+  let segment: (typeof parsed.segments)[number] | undefined;
+  for (const current of parsed.segments) {
+    if (current.redirects.length > 0 || current.reads.length > 0) return undefined;
+    const program = current.words[0] ?? '';
+    if (path.posix.basename(program) === 'rm') {
+      if (segment) return undefined;
+      segment = current;
+    } else {
+      if (!['echo', 'printf', 'true', ':'].includes(program)) return undefined;
+      // Status reporting may expand $?, but must not assign shell variables or
+      // use printf's variable-writing forms before the literal rm is executed.
+      if (current.words.slice(1).some((word) => /[$`]/.test(word.replaceAll('${?}', '')))) return undefined;
+      if (program === 'printf' && current.words.slice(1).some((word) => /^-v|%[^%]*n/.test(word))) return undefined;
+    }
+    if (current.terminator !== null
+      && current.terminator !== ';'
+      && current.terminator !== '&&'
+      && !(segment && current.terminator === '||')) return undefined;
+  }
+  if (!segment) return undefined;
 
   const operands: string[] = [];
   let dashDash = false;

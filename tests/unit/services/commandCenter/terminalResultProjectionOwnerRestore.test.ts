@@ -10,7 +10,10 @@ import { applySchema } from '../../../../src/host/services/core/database/schema'
 import { applySessionsMigrations } from '../../../../src/host/services/core/database/migrations';
 import { SessionRepository } from '../../../../src/host/services/core/repositories/SessionRepository';
 import { SessionCommandCenter, resetSessionCommandCenterForTest } from '../../../../src/host/services/commandCenter/sessionCommandCenter';
+import { addAndPersistMessage } from '../../../../src/host/agent/runtime/contextAssembly/systemContextStack';
+import type { ContextAssemblyCtx } from '../../../../src/host/agent/runtime/contextAssembly/shared';
 import { createWorkspaceScope } from '../../../../src/host/runtime/workspaceScope';
+import type { Message } from '../../../../src/shared/contract';
 import type { TaskManager } from '../../../../src/host/task/TaskManager';
 import {
   BACKGROUND_WAKE_OWNER_RETRY_INTERVAL_MS,
@@ -216,7 +219,7 @@ describe('settle 终态投影在登录恢复窗口里的收口', () => {
     expect(logsOf('warn').some((entry) => entry.message === 'Background wake failure note not recorded')).toBe(false);
   });
 
-  it('重试耗尽：留有区别度的 warn；owner 恢复后恰好一句人话，不写结果行', async () => {
+  it('重试耗尽：换账号不写，原 owner 迟到后恰好一条结果行和一句人话', async () => {
     const manager = new ControllableTaskManager();
     const center = new SessionCommandCenter(manager as unknown as TaskManager, {});
     const taskId = await spawnAndComplete(manager, center);
@@ -234,17 +237,93 @@ describe('settle 终态投影在登录恢复窗口里的收口', () => {
     expect(fs.existsSync(markerFile)).toBe(true);
     expect(JSON.parse(fs.readFileSync(markerFile, 'utf8')).terminal).toMatchObject({ status: 'completed' });
 
-    // owner 恢复：耗尽分支挂的一次性补写落地，恰好一句人话
+    fireAuth({ id: 'u2' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(messageRows()).toHaveLength(0);
+    expect(connection.prepare('SELECT user_id FROM sessions WHERE id = ?').get(SESSION)).toEqual({ user_id: 'u1' });
+    expect(logsOf('warn').some((entry) => entry.details?.reason === 'terminal_projection_late_owner_wait')).toBe(true);
+
+    // Wrong-account sign-in must not consume the pending projection.
     fireAuth({ id: 'u1' });
-    await vi.waitFor(() => expect(messageRows().length).toBe(1));
-    const [note] = messageRows();
+    await vi.waitFor(() => expect(messageRows().length).toBe(2));
+    const note = messageRows().find((row) => (row.metadata as { backgroundWakeFailed?: unknown })?.backgroundWakeFailed)!;
+    const result = messageRows().find((row) => row.id === `session-task-result-${taskId}`);
+    expect(result?.content).toBe('[任务结果] 周报｜已完成｜周报已写好');
+    expect(note.content).not.toContain('上方');
+    await vi.waitFor(() => expect(fs.existsSync(markerFile)).toBe(false));
     expect(note.role).toBe('system');
     expect(note.content).toContain('后台任务「周报」已结束');
     expect(note.content).toContain('自动汇报这一步没能完成');
     expect((note.metadata as { backgroundWakeFailed?: { taskId?: string } }).backgroundWakeFailed?.taskId).toBe(taskId);
 
     await vi.advanceTimersByTimeAsync(BACKGROUND_WAKE_OWNER_RETRY_INTERVAL_MS * 2);
-    expect(messageRows()).toHaveLength(1);
+    fireAuth({ id: 'u1' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(messageRows()).toHaveLength(2);
+    expect(logsOf('warn').filter((entry) => entry.details?.reason === 'terminal_projection_late_owner_written')).toHaveLength(1);
+  });
+
+  function persistenceCtx(): ContextAssemblyCtx {
+    return {
+      runtime: {
+        sessionId: SESSION, messages: [], historyVisibility: 'meta',
+        persistMessage: (message: Message) => getSessionManager().addMessageToSession(SESSION, message),
+      },
+      recordContextEventsForMessage: vi.fn(),
+    } as unknown as ContextAssemblyCtx;
+  }
+
+  it('addAndPersistMessage pauses before continuation then same owner completes with one result and one wake', async () => {
+    const ctx = persistenceCtx();
+    const continuation = vi.fn();
+    const pending = addAndPersistMessage(ctx, {
+      id: 'pending-assistant', role: 'assistant', content: '整理三份会议记录', timestamp: Date.now(),
+    }).then(continuation);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(logsOf('warn').some((entry) => entry.details?.reason === 'message_persistence_waiting_for_owner')).toBe(true);
+    expect(continuation).not.toHaveBeenCalled();
+    expect(messageRows()).toHaveLength(0);
+    fireAuth({ id: 'u2' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(continuation).not.toHaveBeenCalled();
+    expect(messageRows()).toHaveLength(0);
+    fireAuth({ id: 'u1' });
+    await pending;
+    expect(continuation).toHaveBeenCalledTimes(1);
+    expect(ctx.runtime.messages).toHaveLength(1);
+    const manager = new ControllableTaskManager();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {});
+    const taskId = await spawnAndComplete(manager, center);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(messageRows().filter((row) => row.id === `session-task-result-${taskId}`)).toHaveLength(1);
+    expect(messageRows().filter((row) => row.role === 'assistant' && row.id.startsWith('wake-reply-'))).toHaveLength(1);
+  });
+
+  it('addAndPersistMessage exhaustion stops with plain login sentence and late settle projects once', async () => {
+    const pending = addAndPersistMessage(persistenceCtx(), {
+      id: 'pending-assistant', role: 'assistant', content: '整理三份会议记录', timestamp: Date.now(),
+    }).catch((error: unknown) => error as Error);
+    await vi.advanceTimersByTimeAsync(BACKGROUND_WAKE_OWNER_RETRY_INTERVAL_MS * (BACKGROUND_WAKE_OWNER_RETRY_MAX_ATTEMPTS + 2));
+    const error = await pending;
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).name).toBe('MessagePersistenceError');
+    expect((error as Error).message).toBe('登录状态已变化，任务已停止，可以重新登录后重试。');
+    expect(logsOf('warn').some((entry) => entry.details?.reason === 'message_persistence_not_accessible_retries_exhausted')).toBe(true);
+    expect(messageRows()).toHaveLength(0);
+    const manager = new ControllableTaskManager();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {});
+    const spawned = await center.spawn({
+      sessionId: SESSION, title: '周报', shortName: '周报', laneKey: 'a', submissionKey: 'a', prompt: '汇总周报',
+      workspaceScope: createWorkspaceScope('p', [{ sourceId: 's', path: tmpDir, role: 'primary', access: 'read_write' }]),
+    });
+    if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission');
+    manager.emit('task_error', { type: 'task_error', sessionId: SESSION, data: { taskId: spawned.task.id, error: (error as Error).message } });
+    await vi.advanceTimersByTimeAsync(BACKGROUND_WAKE_OWNER_RETRY_INTERVAL_MS * (BACKGROUND_WAKE_OWNER_RETRY_MAX_ATTEMPTS + 2));
+    fireAuth({ id: 'u1' });
+    await vi.advanceTimersByTimeAsync(0);
+    const results = messageRows().filter((row) => row.id === `session-task-result-${spawned.task.id}`);
+    expect(results).toHaveLength(1);
+    expect(results[0].content).toContain('登录状态已变化，任务已停止，可以重新登录后重试。');
   });
 
   it('非可达性失败不进重试：只留 terminal_projection_failed 的 warn，标记照清', async () => {

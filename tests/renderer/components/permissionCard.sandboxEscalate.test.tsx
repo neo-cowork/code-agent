@@ -266,7 +266,7 @@ describe('other approval cards stay word-for-word', () => {
     expect(html).toContain(GENERIC_CONSEQUENCE);
     expect(html).toContain('>echo hi<');
     expect(buttonLabel(html, '允许一次', 'y')).toBe(true);
-    expect(buttonLabel(html, '到这次做完为止', 's')).toBe(true);
+    expect(buttonLabel(html, '本次任务内允许', 's')).toBe(true);
     expect(buttonLabel(html, '24 小时内允许', 'a')).toBe(true);
     expect(buttonLabel(html, '拒绝', 'n')).toBe(true);
     expect(html).not.toContain('沙盒拦截了这一步');
@@ -305,7 +305,7 @@ describe('other approval cards stay word-for-word', () => {
     expect(html).toContain('data-view-mode="compact"');
     expect(html).toContain('允许写入 notes.md？');
     expect(buttonLabel(html, '允许一次', 'y')).toBe(true);
-    expect(buttonLabel(html, '到这次做完为止', 's')).toBe(true);
+    expect(buttonLabel(html, '本次任务内允许', 's')).toBe(true);
     expect(buttonLabel(html, '24 小时内允许', 'a')).toBe(true);
     expect(buttonLabel(html, '拒绝', 'n')).toBe(true);
     expect(html).not.toContain('将写入 notes.md');

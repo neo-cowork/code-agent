@@ -1,3 +1,4 @@
+import { parkedApprovalInboxEn, parkedApprovalInboxZh } from './parkedApprovalInbox';
 import { automationPresentationEn, automationPresentationZh } from './automationPresentation';
 import { cronCloudEn, cronCloudZh } from './cronCloud';
 import { cronRoutineRestateEn, cronRoutineRestateZh } from './cronRoutineRestate';
@@ -20,6 +21,7 @@ export const cronCenterZh = {
     ...cronEditorChromeZh,
     ...cronCloudZh,
     parkedVoided: parkedApprovalVoidedZh,
+    ...parkedApprovalInboxZh,
     groupListenCheck: {
       title: '检查群消息是否连通',
       start: '发条测试消息',
@@ -229,6 +231,11 @@ export const cronCenterZh = {
     roleWakeNoModel: '无模型调用',
     execError: '错误',
     execResult: '结果',
+    resultNoText: '本次运行未产生文字结果。',
+    resultNoSummary: '本次运行没有留下摘要，可打开会话查看。',
+    resultNoSummaryNoSession: '本次运行没有留下摘要。',
+    resultFiles: '生成的文件',
+    resultAlertReason: '提醒原因：{reason}',
     execStopReason: '为什么停了',
     // 简单创建流（A3）
     simpleTitle: '添加自动化',
@@ -384,7 +391,7 @@ export const cronCenterZh = {
     simpleWeekdayLabel: '星期几',
     weekdays: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'],
     simpleCreateCta: '创建自动化',
-    simpleCreateFailed: '创建失败',
+    simpleCreateFailed: '创建失败', simpleStaggerHint: '整点容易和其他任务扎堆触发，建议把分钟错开到 {minute} 分。',
     // 保存后复述视图（N-ROLE-ROUTINE-RESTATE）：行标签复用 chatInput 的 scheduleConfirm
     ...cronRoutineRestateZh,
     inboxTitle: '{count} 条待过目',
@@ -428,9 +435,10 @@ export const cronCenterZh = {
     parkedWriteGroupTitle: '写入 {count} 个文件到「{folder}」文件夹',
     parkedGroupFileSep: '、',
     parkedAllowFolderKept: '本次已允许；这个任务已有别的授权文件夹，没有改动',
-    parkedAllowRun: '到这次做完为止',
+    parkedAllowRun: '本次任务内允许',
     parkedAllow24h: '24 小时内允许',
     parkedArgsPreviewLabel: '参数：',
+    parkedShowLocation: '查看完整位置',
     pairingTitle: '{channel} 私聊配对',
     pairingCode: '配对码 {code}',
     pairingSender: '发送者 {sender}',
@@ -469,11 +477,6 @@ export const cronCenterZh = {
         scheduleLabel: '工作日 08:30',
       },
       ...watchTemplateCopyZh,
-      'group-listen': {
-        name: '群监听',
-        description: '盯住一个群，来了新消息就按你的一句话处理',
-        scheduleLabel: '群里有新消息时',
-      },
     },
     // 模板连接器依赖状态
     connectorConnected: '已连接',
@@ -542,6 +545,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     ...cronEditorChromeEn,
     ...cronCloudEn,
     parkedVoided: parkedApprovalVoidedEn,
+    ...parkedApprovalInboxEn,
     groupListenCheck: {
       title: 'Check group message reception',
       start: 'Send a test message',
@@ -742,6 +746,11 @@ export const cronCenterEn: typeof cronCenterZh = {
     roleWakeNoModel: 'No model call',
     execError: 'Error',
     execResult: 'Result',
+    resultNoText: 'This run produced no text result.',
+    resultNoSummary: 'This run left no summary. Open the session to view it.',
+    resultNoSummaryNoSession: 'This run left no summary.',
+    resultFiles: 'Generated files',
+    resultAlertReason: 'Reason for the alert: {reason}',
     execStopReason: 'Why it stopped',
     simpleTitle: 'New automation',
     simpleGoalLabel: 'What should Neo do on schedule',
@@ -894,7 +903,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     simpleWeekdayLabel: 'Day of week',
     weekdays: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
     simpleCreateCta: 'Create automation',
-    simpleCreateFailed: 'Failed to create',
+    simpleCreateFailed: 'Failed to create', simpleStaggerHint: 'Tasks starting on the hour tend to pile up with others. Consider moving the minute to :{minute}.',
     ...cronRoutineRestateEn,
     inboxTitle: '{count} to review',
     inboxAllClear: 'All reviewed ✓',
@@ -935,9 +944,10 @@ export const cronCenterEn: typeof cronCenterZh = {
     parkedWriteGroupTitle: 'Write {count} files in the "{folder}" folder',
     parkedGroupFileSep: ', ',
     parkedAllowFolderKept: 'Allowed this time; this task already has another granted folder, left unchanged',
-    parkedAllowRun: 'Until this run is done',
+    parkedAllowRun: 'Allow for this task',
     parkedAllow24h: 'Allow for 24 hours',
     parkedArgsPreviewLabel: 'Arguments: ',
+    parkedShowLocation: 'View full location',
     pairingTitle: '{channel} direct-message pairing',
     pairingCode: 'Pairing code {code}',
     pairingSender: 'Sender {sender}',
@@ -973,11 +983,6 @@ export const cronCenterEn: typeof cronCenterZh = {
         scheduleLabel: 'Weekdays 08:30',
       },
       ...watchTemplateCopyEn,
-      'group-listen': {
-        name: 'Group listen',
-        description: 'Watch one group and handle new messages with your one-liner',
-        scheduleLabel: 'When a new message arrives',
-      },
     },
     connectorConnected: 'Connected',
     connectorNotConnected: 'Not connected',

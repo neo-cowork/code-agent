@@ -6,7 +6,7 @@
 // ============================================================================
 
 import { create } from 'zustand';
-import type { ConnectorRequiredItem } from '@shared/contract/agent';
+import type { ConnectorLostCode, ConnectorRequiredItem } from '@shared/contract/agent';
 
 type ConnectorRequiredStatus = 'pending' | 'resuming' | 'dismissed';
 
@@ -19,6 +19,8 @@ export interface ConnectorRequiredEntry {
   /** 轮询到顶仍未连上：卡片改露手动「我已连好，继续」。 */
   gaveUp: boolean;
   polls: number;
+  /** lost_login 卡专用：已确认的失联原因码 */
+  lostCode?: ConnectorLostCode;
   /** insufficient_scope 卡专用 */
   requiredScope?: string;
   helpUrl?: string;
@@ -47,8 +49,9 @@ export const useConnectorRequiredStore = create<ConnectorRequiredState>((set, ge
     const entries = { ...state.entries };
     for (const item of items) {
       const key = connectorRequiredKey(sessionId, item.id);
-      // 「稍后」对该会话+连接器永久静音；其余状态（含已续跑过又掉线）重新回到 pending
-      if (entries[key]?.status === 'dismissed') continue;
+      // 「稍后」对该会话+连接器静音（lost_login 例外：每次再触发都要再露出来）；
+      // 其余状态（含已续跑过又掉线）重新回到 pending
+      if (entries[key]?.status === 'dismissed' && item.reason !== 'lost_login') continue;
       entries[key] = {
         sessionId,
         connectorId: item.id,
@@ -57,6 +60,7 @@ export const useConnectorRequiredStore = create<ConnectorRequiredState>((set, ge
         status: 'pending',
         gaveUp: false,
         polls: 0,
+        ...(item.lostCode ? { lostCode: item.lostCode } : {}),
         ...(item.requiredScope ? { requiredScope: item.requiredScope } : {}),
         ...(item.helpUrl ? { helpUrl: item.helpUrl } : {}),
       };
@@ -108,12 +112,13 @@ export function parseConnectorRequiredPayload(data: unknown): ConnectorRequiredI
   if (!Array.isArray(connectors)) return [];
   return connectors.flatMap((item) => {
     if (!item || typeof item !== 'object') return [];
-    const { id, source, reason, requiredScope, helpUrl } = item as Record<string, unknown>;
+    const { id, source, reason, lostCode, requiredScope, helpUrl } = item as Record<string, unknown>;
     if (typeof id !== 'string' || !id) return [];
     return [{
       id,
       source: source === 'expert' ? 'expert' as const : 'selected' as const,
       reason: typeof reason === 'string' && reason ? reason : 'not_connected',
+      ...(lostCode === 'cli_not_logged_in' || lostCode === 'cli_missing_configuration' || lostCode === 'mcp_oauth_authorization_required' ? { lostCode } : {}),
       ...(typeof requiredScope === 'string' && requiredScope ? { requiredScope } : {}),
       ...(typeof helpUrl === 'string' && helpUrl ? { helpUrl } : {}),
     }];
