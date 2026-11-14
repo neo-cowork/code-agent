@@ -15,7 +15,7 @@ import { promptUserInChat } from '../../utils/userQuestionPrompt';
 import { readUiLanguage } from '../../../session/sessionTitleHostPrompt';
 
 /** 媒介键：不再收自由文本中文，zh/en 名词由 MEDIA_COPY 映射（FB-1285）。 */
-export type CostConfirmMedia = 'image' | 'video' | 'slideImages';
+type CostConfirmMedia = 'image' | 'video' | 'slideImages';
 
 /**
  * 媒介名词表：zh 存裸名词（进「本次生成…」槽位），en 存带单复数冠词的完整短语
@@ -64,7 +64,7 @@ const COST_CONFIRM_COPY: Record<'zh' | 'en', CostConfirmCopy> = {
 
 export interface GenerationCostConfirmInput {
   /** 媒介键（image/video/slideImages），zh/en 名词由 MEDIA_COPY 按 UI 语言映射。 */
-  mediaLabel: CostConfirmMedia;
+  mediaLabel: 'image' | 'video' | 'slideImages';
   /** 预估成本（人民币元），取自共享价表（imageCost/videoCost），禁硬编码。 */
   estCny: number;
   /** 数量/时长等明细，如「2 张」/「2 images」；单位词由调用方按 UI 语言本地化。 */
