@@ -32,7 +32,7 @@ const INTERNAL_TOOL_NAMES_SORTED = [...leakPatterns.internalToolNames].sort(
 );
 
 export const INTERNAL_TOOL_GLOBAL_RE = new RegExp(
-  `${leakPatterns.internalToolPrefix}|(?<![A-Za-z0-9_/-])(?:${INTERNAL_TOOL_NAMES_SORTED.join('|')})(?![A-Za-z0-9_/-])`,
+  `${leakPatterns.internalToolLabel}|${leakPatterns.internalToolPrefix}|(?<![A-Za-z0-9_/-])(?:${INTERNAL_TOOL_NAMES_SORTED.join('|')})(?![A-Za-z0-9_/-])`,
   'g',
 );
 

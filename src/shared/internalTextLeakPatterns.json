@@ -46,5 +46,8 @@
   "tempPath": "(?:\\/private\\/tmp|\\/tmp|\\/var\\/folders)\\/[A-Za-z0-9._/-]+",
   "rawJsonKeyValue": "\\\"[A-Za-z0-9_.-]+\\\"\\s*:\\s*(?:\\\"[^\\\"]*\\\"|-?\\d+(?:\\.\\d+)?|true|false|null|\\[[^\\]]*\\]|\\{[^}]*\\})",
   "emptyBackgroundTasks": "^当前会话还没有后台任务。$",
-  "sandboxCommand": "(?:Command failed:\\s*)?\\bsandbox-exec\\b[^\\r\\n]*"
+  "sandboxCommand": "(?:Command failed:\\s*)?\\bsandbox-exec\\b[^\\r\\n]*",
+  "internalToolLabel": "^(?:Read|Write|Edit|Bash|Glob|Grep)$|(?<![A-Za-z0-9_/-])(?:Read|Write|Edit|Bash|Glob|Grep)(?=\\s*[:：])",
+  "permissionRequestTitle": "^需要授权$",
+  "permissionRequest": "^(Read|Write|Edit|Bash|Glob|Grep)\\s*[:：]\\s*请求执行权限$"
 }

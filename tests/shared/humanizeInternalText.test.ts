@@ -185,3 +185,19 @@ describe('background status and sandbox command exits', () => {
     expect(result.text).not.toContain('python');
   });
 });
+
+
+describe('tool labels in native approval notices', () => {
+  it.each(['zh', 'en'] as const)('humanizes aliases at label boundaries without changing English prose in %s', (lang) => {
+    expect(humanizeInternalText('Bash: 请求执行权限', lang).text).toBe(lang === 'en' ? 'Run command needs your approval' : '运行命令需要你批准');
+    expect(humanizeInternalText('需要授权', 'en').text).toBe('Approval needed');
+    for (const raw of ['Bash', 'Read:', 'Write:', 'Grep:', 'Glob:', 'Edit:']) {
+      const result = humanizeInternalText(raw, lang);
+      expect(result.detectedFormats).toContain('internal_tool_name');
+      expect(detectInternalTextLeaks(result.text)).toEqual([]);
+    }
+    for (const prose of ['Read the weekly report.', 'Write a summary.', 'Edit the document after review.']) {
+      expect(humanizeInternalText(prose, lang).text).toBe(prose);
+    }
+  });
+});

@@ -11,6 +11,8 @@ import {
 export type InternalTextLanguage = 'zh' | 'en';
 
 const EMPTY_BACKGROUND_TASKS_RE = new RegExp(leakPatterns.emptyBackgroundTasks);
+const PERMISSION_REQUEST_TITLE_RE = new RegExp(leakPatterns.permissionRequestTitle);
+const PERMISSION_REQUEST_RE = new RegExp(leakPatterns.permissionRequest);
 const SANDBOX_COMMAND_LINE_RE = new RegExp(leakPatterns.sandboxCommand, 'g');
 
 interface CollapseIntoDetailsInstruction {
@@ -26,6 +28,12 @@ export interface HumanizedInternalTextResult {
 }
 
 const INTERNAL_TOOL_LABELS: Record<string, { zh: string; en: string }> = {
+  Read: { zh: '读取文件', en: 'Read file' },
+  Write: { zh: '写入文件', en: 'Write file' },
+  Edit: { zh: '编辑文件', en: 'Edit file' },
+  Bash: { zh: '运行命令', en: 'Run command' },
+  Glob: { zh: '查找文件', en: 'Find files' },
+  Grep: { zh: '搜索内容', en: 'Search content' },
   read_file: { zh: '读取文件', en: 'Read file' },
   write_file: { zh: '写入文件', en: 'Write file' },
   edit_file: { zh: '编辑文件', en: 'Edit file' },
@@ -177,6 +185,14 @@ export function humanizeInternalText(
     return { text: input, detectedFormats: [] };
   }
 
+  if (lang === 'en' && PERMISSION_REQUEST_TITLE_RE.test(input.trim())) {
+    return { text: 'Approval needed', detectedFormats: [] };
+  }
+  const permissionTool = PERMISSION_REQUEST_RE.exec(input.trim())?.[1];
+  if (permissionTool) {
+    const action = INTERNAL_TOOL_LABELS[permissionTool][lang];
+    return { text: lang === 'en' ? `${action} needs your approval` : `${action}需要你批准`, detectedFormats: ['internal_tool_name'] };
+  }
   if (lang === 'en' && EMPTY_BACKGROUND_TASKS_RE.test(input.trim())) {
     return { text: 'There are no background tasks in this conversation.', detectedFormats: [] };
   }
