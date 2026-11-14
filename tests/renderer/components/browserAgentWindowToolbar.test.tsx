@@ -335,7 +335,10 @@ describe('BrowserAgentWindow kept 条（活跃 user-browser-link 会话下仍渲
     getKeptResultPage.mockResolvedValue({
       state: 'closed', url: 'http://127.0.0.1:8898/submit', title: '报名成功',
     });
-    openHttpLinkInRailAsync.mockResolvedValue({});
+    openHttpLinkInRailAsync.mockResolvedValue({
+      conversationId: 'session-a', runId: 'run-a', surfaceSessionId: 'surface-user',
+      snapshot: { version: 1, conversationId: 'session-a', sessions: [], updatedAt: 1 },
+    });
     render(<BrowserAgentWindow />);
     const bar = await screen.findByTestId('browser-kept-result-bar-closed');
     expect(bar.textContent).toContain('结果页已关闭');
