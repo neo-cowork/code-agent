@@ -19,7 +19,8 @@ import {
 } from '../../../services/delegation/delegationAdmission';
 import { deriveActionFingerprint, deriveSubmissionKey, delegationTargetIdentity } from '../../../services/delegation/delegationKeys';
 import { projectSessionCandidates, resolveCandidateRef } from '../../../services/delegation/delegationCandidates';
-import { evaluateClarifyGuard } from '../../../services/delegation/delegationClarifyGuard';
+import { evaluateClarifyAnswer, evaluateClarifyGuard, type ClarifyGuardRule } from '../../../services/delegation/delegationClarifyGuard';
+import { askUserQuestionAnswerMark, askUserQuestionAnswersSince } from '../planning/askUserQuestionReplay';
 import { getDelegationCandidateSecret, getDelegationToolRuntime, readOriginUserMessage, workspaceWithinRoots } from '../../../services/delegation/delegationToolRuntime';
 import { isCrossSessionDelegationEnabled } from '../../../services/delegation/crossSessionDelegationFlag';
 import { createLogger } from '../../../services/infra/logger';
@@ -192,24 +193,13 @@ async function buildSnapshot(
   };
 }
 
-// 守卫已在本轮拒绝过的发起轮：key = 发起会话 + 发起轮身份，value = 拒绝时刻。
+// 守卫已在本轮拒绝过的发起轮：key = 发起会话 + 发起轮身份，value = 拒绝时刻的作答流水 mark + 规则名。
 // 用户通过 AskUserQuestion 作答后（答案是工具输出，不是 messages 行），同一轮的重试不能再被
-// 同一条原始消息拒绝，否则本轮永远委托不出去。作答的证据 = 拒绝之后该会话有一条成功完成的
-// AskUserQuestion 事件；没作答就重试仍然被拒。
-const clarificationAskedAt = new Map<string, number>();
+// 同一条原始消息拒绝，否则本轮永远委托不出去。放行证据只认「拒绝之后真的有一次完整作答」
+// （askUserQuestionAnswersSince，来自作答记录路径；跳过/无界面/残缺答案走不到），并且答案
+// 文本必须点到这次要发的会话（evaluateClarifyAnswer）。没作答、点了别家、答案无关都继续拒。
+const clarificationAsked = new Map<string, { mark: number; rule: ClarifyGuardRule }>();
 const CLARIFICATION_TRACK_LIMIT = 256;
-
-function clarificationAnswered(db: ReturnType<typeof getDelegationToolRuntime>['getDb'] extends () => infer D ? D : never, sessionId: string, since: number): boolean {
-  if (!db) return false;
-  try {
-    const row = db.prepare(
-      `SELECT 1 AS hit FROM tool_execution_events WHERE session_id = ? AND tool_name = 'AskUserQuestion' AND phase = 'complete' AND status = 'success' AND recorded_at >= ? LIMIT 1`,
-    ).get(sessionId, since);
-    return row !== undefined;
-  } catch {
-    return false;
-  }
-}
 
 // ADR-072 D2/D3 确定性守卫：模型只给建议，目标不清时不绑定，改回一个可点选的问题。
 // 返回 null = 放行进准入门；否则是 needs_clarification 拒绝（候选只给显示名，不含 id）。
@@ -224,13 +214,9 @@ function clarifyGuardRejection(
     logger.warn('[DelegateSession] clarify guard message-based rules skipped: the session has no readable origin user message');
     return null;
   }
+  const scope = ctx.runId ?? ctx.turnId ?? '';
   const turnKey = `${ctx.sessionId}\0${originTurnIdOf(ctx)}`;
-  const askedAt = clarificationAskedAt.get(turnKey);
-  if (askedAt !== undefined && clarificationAnswered(runtime.getDb(), ctx.sessionId, askedAt)) {
-    clarificationAskedAt.delete(turnKey);
-    logger.info('[DelegateSession] clarify guard passed: the user answered the clarification question in this turn');
-    return null;
-  }
+  const asked = clarificationAsked.get(turnKey);
   const secret = getDelegationCandidateSecret();
   const projection = projectSessionCandidates(runtime.listSessions(), {
     originSessionId: ctx.sessionId,
@@ -245,15 +231,26 @@ function clarifyGuardRejection(
     if (!resolved.ok) return null;
     chosenIndex = projection.sessionIds.indexOf(resolved.sessionId);
   }
-  const verdict = evaluateClarifyGuard({
-    action: call.action,
-    candidates: projection.candidates.map((candidate) => ({ shortName: candidate.shortName, workspaceName: candidate.workspaceName })),
-    chosenIndex,
-    userMessage,
-  });
+  const guardCandidates = projection.candidates.map((candidate) => ({ shortName: candidate.shortName, workspaceName: candidate.workspaceName }));
+  // 作答证据：拒绝之后的作答，或（模型自己先问了用户、还没被守卫拒过时）本轮任何一次完整作答。
+  const answers = askUserQuestionAnswersSince(ctx.sessionId, scope, asked?.mark ?? 0);
+  let verdict = evaluateClarifyGuard({ action: call.action, candidates: guardCandidates, chosenIndex, userMessage });
   if (verdict.kind === 'proceed') return null;
-  if (clarificationAskedAt.size >= CLARIFICATION_TRACK_LIMIT) clarificationAskedAt.delete(clarificationAskedAt.keys().next().value as string);
-  clarificationAskedAt.set(turnKey, runtime.now());
+  // 没任务内容（vague_task_text）只认「守卫拒绝之后」的作答，无关的早先作答不算。
+  const answerConsulted = answers.length > 0 && (asked !== undefined || verdict.rule !== 'vague_task_text');
+  if (answerConsulted) {
+    verdict = evaluateClarifyAnswer({ rule: asked?.rule ?? verdict.rule, action: call.action, candidates: guardCandidates, chosenIndex, answerText: answers.join('\n') });
+    if (verdict.kind === 'proceed') {
+      clarificationAsked.delete(turnKey);
+      logger.info('[DelegateSession] clarify guard passed: the user answered a clarification question in this turn and the answer matches the target');
+      return null;
+    }
+  }
+  // 作答后仍被拒（点了别家/无关答案）不推进 mark：用户已经答过的那次作答，对之后改对的重试仍然有效。
+  if (!answerConsulted) {
+    if (clarificationAsked.size >= CLARIFICATION_TRACK_LIMIT) clarificationAsked.delete(clarificationAsked.keys().next().value as string);
+    clarificationAsked.set(turnKey, { mark: askUserQuestionAnswerMark(), rule: asked?.rule ?? verdict.rule });
+  }
   const names = verdict.candidateNames.length > 0 ? ` Candidate chats (display names): ${verdict.candidateNames.map((name) => `「${name}」`).join('、')}.` : '';
   return {
     ok: false,

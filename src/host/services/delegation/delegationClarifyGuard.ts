@@ -167,20 +167,24 @@ function hasNoTaskContent(message: string, candidates: ReadonlyArray<ClarifyGuar
  * belongs to this candidate only counts 2, each shared Chinese bigram (or an English alias for one) counts 1.
  * Ambiguous = the best score is shared by two or more candidates and no full title was spoken.
  */
-function isAmbiguousReference(rawMessage: string, candidates: ReadonlyArray<ClarifyGuardCandidate>): boolean {
+function scoreCandidates(rawMessage: string, candidates: ReadonlyArray<ClarifyGuardCandidate>): number[] {
   const message = withAliases(rawMessage);
   const flat = normalize(message);
   const lower = message.toLowerCase();
   const tokenOwners = new Map<string, number>();
   const tokensOf = candidates.map((candidate) => [...new Set([...asciiTokens(candidate.shortName), ...asciiTokens(candidate.workspaceName)])]);
   for (const tokens of tokensOf) for (const token of tokens) tokenOwners.set(token, (tokenOwners.get(token) ?? 0) + 1);
-  const scores = candidates.map((candidate, index) => {
+  return candidates.map((candidate, index) => {
     const title = normalize(candidate.shortName);
     let score = title.length >= 2 && flat.includes(title) ? FULL_TITLE_SCORE : 0;
     for (const token of tokensOf[index]) if (tokenOwners.get(token) === 1 && lower.includes(token)) score += 2;
     score += new Set(bigrams(candidate.shortName).filter((gram) => message.includes(gram))).size;
     return score;
   });
+}
+
+function isAmbiguousReference(rawMessage: string, candidates: ReadonlyArray<ClarifyGuardCandidate>): boolean {
+  const scores = scoreCandidates(rawMessage, candidates);
   const top = Math.max(0, ...scores);
   return top > 0 && top < FULL_TITLE_SCORE && scores.filter((score) => score === top).length >= 2;
 }
@@ -209,4 +213,34 @@ export function evaluateClarifyGuard(input: ClarifyGuardInput): ClarifyGuardVerd
     if (named.length > 0 && !named.includes(input.chosenIndex)) return clarify('named_other_candidate', candidates);
   }
   return { kind: 'proceed' };
+}
+
+/**
+ * 澄清作答后的复核：用户通过 AskUserQuestion 真的点了答案之后，模型重试 delegate_session。
+ * 只在答案文本里找证据：delegate_existing 的答案必须点到模型这次选的候选（点了别家 → 再问）；
+ * create_new 的答案必须带显式新建意图；vague_task_text 被拒的那次，任何非空答案都算补了任务内容
+ * （目标另按候选规则核）。答案文本里没有任何候选名且不满足上述条件 → 视为无关答案，不放行。
+ */
+export function evaluateClarifyAnswer(input: {
+  rule: ClarifyGuardRule;
+  action: 'delegate_existing' | 'create_new';
+  candidates: ReadonlyArray<ClarifyGuardCandidate>;
+  chosenIndex: number | null;
+  answerText: string;
+}): ClarifyGuardVerdict {
+  const answer = input.answerText.trim();
+  if (answer === '') return clarify(input.rule, input.candidates);
+  if (input.action === 'create_new') {
+    return input.rule === 'vague_task_text' || NEW_INTENT_PATTERNS.some((pattern) => pattern.test(answer))
+      ? { kind: 'proceed' }
+      : clarify(input.rule, input.candidates);
+  }
+  const scores = scoreCandidates(answer, input.candidates);
+  const top = Math.max(0, ...scores);
+  if (top > 0) {
+    // 答案点到了某家：必须是唯一最高分，且就是模型这次要发的那家。
+    const winners = scores.flatMap((score, index) => (score === top ? [index] : []));
+    return winners.length === 1 && winners[0] === input.chosenIndex ? { kind: 'proceed' } : clarify('named_other_candidate', input.candidates);
+  }
+  return input.rule === 'vague_task_text' ? { kind: 'proceed' } : clarify(input.rule, input.candidates);
 }

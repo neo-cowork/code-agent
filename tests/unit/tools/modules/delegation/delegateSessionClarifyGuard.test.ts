@@ -4,6 +4,8 @@ vi.unmock('better-sqlite3');
 
 const loggerInfo = vi.hoisted(() => vi.fn());
 const loggerWarn = vi.hoisted(() => vi.fn());
+const promptUserInChat = vi.hoisted(() => vi.fn());
+vi.mock('../../../../../src/host/tools/utils/userQuestionPrompt', () => ({ promptUserInChat }));
 vi.mock('../../../../../src/host/observability/posthogNode', () => ({ trackNode: vi.fn() }));
 vi.mock('../../../../../src/host/services/infra/logger', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../../../../src/host/services/infra/logger')>();
@@ -13,6 +15,7 @@ vi.mock('../../../../../src/host/services/infra/logger', async (importOriginal) 
 import { applySchema } from '../../../../../src/host/services/core/database/schema';
 import { getDelegationCandidateSecret } from '../../../../../src/host/services/delegation/delegationToolRuntime';
 import { projectSessionCandidates } from '../../../../../src/host/services/delegation/delegationCandidates';
+import { executeAskUserQuestion } from '../../../../../src/host/tools/modules/planning/askUserQuestion';
 import { executeDelegateSession } from '../../../../../src/host/tools/modules/delegation/delegateSession';
 
 const ctx = {
@@ -31,7 +34,10 @@ const sessions = [
   { id: 'sid-site-copy', title: '官网改版落地页文案专属会话', workingDirectory: '/workspace/origin', updatedAt: NOW - 4, sessionType: 'chat' as const, engineKind: 'native' },
 ];
 
+let turnCounter = 0;
 function setup(userMessage: string | null) {
+  turnCounter += 1;
+  (ctx as unknown as { turnId: string }).turnId = `turn-${turnCounter}`;
   const db = new Database(':memory:');
   applySchema(db, { info() {}, warn() {}, error() {}, debug() {} } as never);
   if (userMessage !== null) {
@@ -99,19 +105,64 @@ describe('delegate_session clarify guard (needs_clarification)', () => {
     db.close();
   });
 
-  it('lets the retry through once the user answered the AskUserQuestion; an unanswered retry is still rejected', async () => {
+  // 真实作答路径：用 executeAskUserQuestion 跑完整的提问→作答/跳过，不手插账本。
+  async function askUser(outcome: { status: 'answered'; answer: string } | { status: 'declined' }) {
+    promptUserInChat.mockResolvedValueOnce(outcome.status === 'declined'
+      ? { status: 'declined', response: { requestId: 'r', declined: true, answers: {} } }
+      : { status: 'answered', response: { requestId: 'r', answers: { 目标会话: outcome.answer } } });
+    const askCtx = { ...(ctx as object), logger: { debug() {}, info() {}, warn() {}, error() {} } } as never;
+    return executeAskUserQuestion({
+      questions: [{ header: '目标会话', question: `要发给哪个会话？#${Math.random()}`, options: [{ label: 'CLI重构', description: 'a' }, { label: '组件库重构', description: 'b' }] }],
+    }, askCtx, allow);
+  }
+
+  const ambiguousCall = (projection: { candidateSetId: string }, ref: string) => ({ action: 'delegate_existing', candidateSetId: projection.candidateSetId, candidateRef: ref, text: '看看这个报错' });
+
+  it('user declined the question: the retry is rejected again and nothing is written', async () => {
     process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
     const { db, projection, refOf, rows } = setup('让重构那边看看这个报错');
-    const call = { action: 'delegate_existing', candidateSetId: projection.candidateSetId, candidateRef: refOf('CLI重构'), text: '看看这个报错' };
-    const first = await executeDelegateSession(call, ctx, allow);
-    expect(first).toMatchObject({ ok: false, meta: { code: 'needs_clarification' } });
-    const unanswered = await executeDelegateSession(call, ctx, allow);
-    expect(unanswered).toMatchObject({ ok: false, meta: { code: 'needs_clarification' } });
+    const call = ambiguousCall(projection, refOf('CLI重构'));
+    expect(await executeDelegateSession(call, ctx, allow)).toMatchObject({ ok: false, meta: { code: 'needs_clarification' } });
+    const asked = await askUser({ status: 'declined' });
+    expect(asked.ok).toBe(true);
+    expect(await executeDelegateSession(call, ctx, allow)).toMatchObject({ ok: false, meta: { code: 'needs_clarification' } });
     expect(rows()).toEqual({ delegations: 0, queued: 0 });
-    db.prepare(`INSERT INTO tool_execution_events (execution_id, session_id, tool_name, phase, status, recorded_at) VALUES ('e-1', 'origin', 'AskUserQuestion', 'complete', 'success', ?)`).run(NOW + 1);
-    const retry = await executeDelegateSession(call, ctx, allow);
-    expect(retry.ok).toBe(true);
+    db.close();
+  });
+
+  it('user answered the chat the model retries with: delegates exactly once', async () => {
+    process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
+    const { db, projection, refOf, rows } = setup('让重构那边看看这个报错');
+    const call = ambiguousCall(projection, refOf('CLI重构'));
+    expect(await executeDelegateSession(call, ctx, allow)).toMatchObject({ ok: false, meta: { code: 'needs_clarification' } });
+    await askUser({ status: 'answered', answer: 'CLI重构' });
+    expect((await executeDelegateSession(call, ctx, allow)).ok).toBe(true);
     expect(rows()).toEqual({ delegations: 1, queued: 1 });
+    db.close();
+  });
+
+  it('the model asked the user on its own before any guard rejection: a matching answer lets the call through, a different pick does not', async () => {
+    process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
+    const { db, projection, refOf, rows } = setup('让重构那边看看这个报错');
+    await askUser({ status: 'answered', answer: '组件库重构' });
+    expect(await executeDelegateSession(ambiguousCall(projection, refOf('CLI重构')), ctx, allow)).toMatchObject({ ok: false, meta: { rule: 'named_other_candidate' } });
+    expect(rows()).toEqual({ delegations: 0, queued: 0 });
+    expect((await executeDelegateSession(ambiguousCall(projection, refOf('组件库重构')), ctx, allow)).ok).toBe(true);
+    expect(rows()).toEqual({ delegations: 1, queued: 1 });
+    db.close();
+  });
+
+  it('user picked A but the model retries with B (or the answer is unrelated): still rejected, zero rows', async () => {
+    process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
+    const { db, projection, refOf, rows } = setup('让重构那边看看这个报错');
+    expect(await executeDelegateSession(ambiguousCall(projection, refOf('CLI重构')), ctx, allow)).toMatchObject({ ok: false, meta: { code: 'needs_clarification' } });
+    await askUser({ status: 'answered', answer: '组件库重构' });
+    const wrong = await executeDelegateSession(ambiguousCall(projection, refOf('CLI重构')), ctx, allow);
+    expect(wrong).toMatchObject({ ok: false, meta: { code: 'needs_clarification', rule: 'named_other_candidate' } });
+    expect(rows()).toEqual({ delegations: 0, queued: 0 });
+    await askUser({ status: 'answered', answer: '好的没问题' });
+    expect(await executeDelegateSession(ambiguousCall(projection, refOf('CLI重构')), ctx, allow)).toMatchObject({ ok: false, meta: { code: 'needs_clarification' } });
+    expect(rows()).toEqual({ delegations: 0, queued: 0 });
     db.close();
   });
 
