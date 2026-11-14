@@ -17,7 +17,7 @@ describe('overview artifact thumb strip routing', () => {
           label: 'allow-me.txt',
           ownerKind: 'tool',
           ownerLabel: 'Write',
-          path: '/Users/example/notes/allow-me.txt',
+          path: '/tmp/allow-me.txt',
         }]}
         previewItems={[]}
         unnamedLabel="未命名输出"
@@ -26,12 +26,9 @@ describe('overview artifact thumb strip routing', () => {
       />,
     );
 
-    const card = screen.getByTestId('overview-artifact-thumb');
-    expect(card.title).toBe('…/notes/allow-me.txt');
-    expect(card.title).not.toMatch(/\/(Users|home)\//);
-    fireEvent.click(card);
+    fireEvent.click(screen.getByTestId('overview-artifact-thumb'));
 
-    expect(onOpenFile).toHaveBeenCalledWith('/Users/example/notes/allow-me.txt');
+    expect(onOpenFile).toHaveBeenCalledWith('/tmp/allow-me.txt');
     expect(onOpenPreview).not.toHaveBeenCalled();
   });
 

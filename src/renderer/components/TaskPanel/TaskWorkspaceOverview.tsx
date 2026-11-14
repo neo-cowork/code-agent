@@ -319,9 +319,6 @@ const CONTEXT_KIND_CAP = 5;
 function ContextRows({ rows }: { rows: OverviewContextRow[] }) {
   const { t } = useI18n();
   const wt = t.workbenchTabs;
-  const fileActions: Record<string, string> = {
-    Read: wt.overviewContextRead, Write: wt.overviewContextWrite, Edit: wt.overviewContextEdit,
-  };
   const [expandedKinds, setExpandedKinds] = useState<ReadonlySet<string>>(new Set());
 
   const kindLabels: Record<OverviewContextKind, string> = {
@@ -371,9 +368,7 @@ function ContextRows({ rows }: { rows: OverviewContextRow[] }) {
                   <span className={`ml-auto max-w-[110px] shrink-0 truncate text-[10px] ${
                     row.blocked ? 'text-badge-warning' : 'text-zinc-600'
                   }`}>
-                    {row.kind === 'file'
-                      ? row.detail.split(' / ').map((action) => fileActions[action] ?? action).join(' / ')
-                      : row.detail}
+                    {row.detail}
                   </span>
                 )}
               </div>

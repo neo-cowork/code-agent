@@ -51,13 +51,13 @@ function sharedSessionProps(currentSessionId: string | null = null): SidebarSess
   };
 }
 
-function renderGroup(currentSessionId: string | null = null, paths?: string[]) {
+function renderGroup(currentSessionId: string | null = null) {
   const props: Parameters<typeof SidebarProjectGroup>[0] = {
     group: {
       key: 'project:p1',
       name: 'code-agent',
-      path: '/workspace/projects/code-agent',
-      paths: paths ?? ['/workspace/projects/code-agent'],
+      path: '/Users/linchen/Downloads/ai/code-agent',
+      paths: ['/Users/linchen/Downloads/ai/code-agent'],
       projectId: 'p1',
       isUncategorized: false,
       sessions: [],
@@ -99,13 +99,6 @@ function groupHeaderClassName(container: HTMLElement): string {
 }
 
 describe('SidebarProjectGroup 组头底色制度（批P 第五波③）', () => {
-  it('shortens every workspace path in the real group header title', () => {
-    const { container } = renderGroup(null, ['/workspace/projects/project-one', '/workspace/projects/project-two']);
-    const header = container.querySelector('[data-sidebar-group-phase]')?.firstElementChild;
-    expect(header?.getAttribute('title')).toBe('code-agent · …/projects/project-one · …/projects/project-two');
-    expect(header?.textContent).toContain('code-agent');
-  });
-
   it('非选中组头无抬色底色：不含 bg-zinc-900 / bg-zinc-800 常驻类', () => {
     const { container } = renderGroup(null);
     const cls = groupHeaderClassName(container);

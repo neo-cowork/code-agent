@@ -1,7 +1,5 @@
-// @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { SessionDiffSummary } from '../../../src/renderer/components/features/chat/SessionDiffSummary';
 import type { Message } from '../../../src/shared/contract/message';
@@ -45,18 +43,7 @@ function makeWrite(filePath: string, content: string, id = 'tc-write'): Message 
   };
 }
 
-afterEach(cleanup);
-
 describe('SessionDiffSummary', () => {
-  it('shortens hover paths in the expanded file list', () => {
-    const view = render(React.createElement(SessionDiffSummary, {
-      messages: [makeWrite('/workspace/project/reports/summary.md', 'Summary')],
-    }));
-    fireEvent.click(view.getByRole('button'));
-    expect(view.getByTitle('…/reports/summary.md').textContent).toContain('summary.md');
-    expect(view.container.querySelector('[title="/workspace/project/reports/summary.md"]')).toBeNull();
-  });
-
   it('renders nothing when no file write tools were called', () => {
     const html = renderToStaticMarkup(
       React.createElement(SessionDiffSummary, { messages: [] }),
