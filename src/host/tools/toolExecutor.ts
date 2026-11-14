@@ -323,6 +323,8 @@ export interface ToolExecutorConfig {
   permissionModeOverrideIsInheritedCeiling?: boolean;
   /** Present only for immutable per-run executors. */
   runContext?: RunContext;
+  /** Preserve child-agent Stop ancestry when this executor owns an auxiliary surface run. */
+  spawnParentRunId?: string;
   /** Optional final dispatch hop. Returning null falls back to the protocol resolver. */
   dispatchTool?: ToolExecutionDelegate;
   /** 账本来源由所有构造入口显式声明。 */
@@ -478,6 +480,7 @@ export class ToolExecutor {
   private requestPermission: (request: PermissionRequestData) => Promise<RequestPermissionResult>;
   private workingDirectory: string;
   private readonly runContext?: RunContext;
+  private readonly spawnParentRunId?: string;
   private readonly restrictWritesToWorkspace: boolean;
   private readonly dispatchTool?: ToolExecutionDelegate;
   private executionTopology: ExecutionTopology;
@@ -497,6 +500,7 @@ export class ToolExecutor {
     this.permissionModeOverrideIsInheritedCeiling = config.permissionModeOverrideIsInheritedCeiling === true;
     this.forcePermissionHandler = config.forcePermissionHandler === true;
     this.runContext = config.runContext;
+    this.spawnParentRunId = config.spawnParentRunId;
     this.dispatchTool = config.dispatchTool;
     this.executionTopology = config.executionTopology ?? 'main';
     this.ledgerOrigin = config.ledgerOrigin ?? 'desktop';
@@ -543,6 +547,7 @@ export class ToolExecutor {
       dispatchTool: dispatchTool ?? this.dispatchTool,
       ledgerOrigin: this.ledgerOrigin,
       spawnMaxDepth: this.spawnMaxDepth,
+      spawnParentRunId: this.spawnParentRunId,
       // 写边界同样必须继承：子代理走 forRun 派生，漏传就等于子调用绕过边界
       // （#1686 ai-review 第三轮）。与上面的收缩档同理——边界只在主 executor 上生效不算边界。
       restrictWritesToWorkspace: this.restrictWritesToWorkspace,
@@ -1312,6 +1317,7 @@ export class ToolExecutor {
     // Create tool context
     const context: ToolContext & { sessionId?: string } = {
       runId: effectiveRunId, turnId: options.turnId,
+      spawnParentRunId: this.spawnParentRunId,
       sourceMessageId: options.sourceMessageId,
       sessionId: effectiveSessionId,
       workspace: this.writeWorkspaceRoot ?? this.runtimeWorkspace,

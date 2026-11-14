@@ -612,7 +612,9 @@ export class OrchestratorPermissionIsland {
       : undefined;
     // cron/heartbeat/channel/语音派都走停车审批，24h backstop 只负责泄漏兜底；
     // 60s 终态仅保留给显式登记的旧兼容会话。
-    if (detached || unattended || voice) {
+    const backgroundExactFile = hasBackgroundRunIdentity(fullRequest)
+      && request.tool === 'browser_action.upload_file' && forceConfirm;
+    if (detached || unattended || voice || backgroundExactFile) {
       const parkRepo = this.getPendingApprovalRepo();
       if (parkRepo) {
         return this.parkApproval(
