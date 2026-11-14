@@ -1,4 +1,4 @@
-// Static contract for the macOS osascript notification fallback and its host-side callers.
+// Static contract prohibiting the retired osascript notification channel and host-side callers.
 //
 // Known limit: this text scan does not reconstruct string concatenation such as
 // `\'display \' + \'notification\'`; that form is outside this gate's lexical contract.
@@ -20,27 +20,10 @@ const DISPLAY_NOTIFICATION_PATTERN = /display\s+notification/i;
 const HOST_NATIVE_NOTIFICATION_PATTERN = /new\s+Notification\s*\(/;
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.mjs']);
 
-const ALLOWLIST = {
-  'display-notification': [
-    {
-      file: 'src/host/platform/notifications.ts',
-      reason:
-        'Sole implementation of the macOS host-side fallback; the banner is attributed to Script Editor, so no new caller may use it for user-visible notices.',
-    },
-  ],
-  'host-native-notification-constructor': [
-    {
-      file: 'src/host/platform/notifications.ts',
-      reason:
-        'Sole implementation of the macOS host-side fallback; the banner is attributed to Script Editor, so no new caller may use it for user-visible notices.',
-    },
-    {
-      file: 'src/host/services/infra/notificationService.ts',
-      reason:
-        'Fallback B sender; osascript banners are attributed to Script Editor, and this is the single approved caller.',
-    },
-  ],
-} as const satisfies Record<NotificationRule, readonly AllowlistEntry[]>;
+const ALLOWLIST: Record<NotificationRule, readonly AllowlistEntry[]> = {
+  'display-notification': [],
+  'host-native-notification-constructor': [],
+};
 
 function isHostOrWebFile(relativePath: string): boolean {
   return relativePath.startsWith('src/host/') || relativePath.startsWith('src/web/');
