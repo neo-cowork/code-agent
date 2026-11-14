@@ -5,8 +5,8 @@ import type { SpeechTranscribeResult } from '@shared/contract';
 import type { ConversationVoiceInputMetadata } from '@shared/contract/conversationEnvelope';
 import { UI } from '@shared/constants';
 import { useI18n } from '../../../../hooks/useI18n';
-import { toast } from '../../../../hooks/useToast';
 import { mergeAttachments } from './attachmentDedupe';
+import { notifyAttachmentMerge } from './attachmentMergeToast';
 import type { InputAreaRef } from './InputArea';
 
 type VoiceInputContextValue = {
@@ -39,16 +39,14 @@ export function useChatInputComposerActions(params: UseChatInputComposerActionsP
   } = params;
   const { t } = useI18n();
 
-  const appendAttachments = useCallback((incoming: MessageAttachment[], cap: number) => {
+  const appendAttachments = useCallback((incoming: MessageAttachment[]) => {
     if (incoming.length === 0) return;
     setAttachments((prev) => {
-      const result = mergeAttachments(prev, incoming, cap);
-      if (result.skippedCount > 0) {
-        toast.show('warning', t.chatInput.attachmentAlreadyAdded.replace('{name}', result.duplicates[0]?.incoming.name ?? ''));
-      }
+      const result = mergeAttachments(prev, incoming, UI.MAX_ATTACHMENTS);
+      notifyAttachmentMerge(result, t.chatInput);
       return result.attachments;
     });
-  }, [setAttachments, t.chatInput.attachmentAlreadyAdded]);
+  }, [setAttachments, t.chatInput]);
 
   // 处理文件选择
   const handleFileSelect = async (files: FileList) => {
@@ -59,7 +57,7 @@ export function useChatInputComposerActions(params: UseChatInputComposerActionsP
         const attachment = await processFile(file);
         if (attachment) newAttachments.push(attachment);
       }
-      appendAttachments(newAttachments, UI.MAX_ATTACHMENTS_FILE_SELECT);
+      appendAttachments(newAttachments);
     } finally {
       setIsUploading(false);
     }
@@ -70,7 +68,7 @@ export function useChatInputComposerActions(params: UseChatInputComposerActionsP
     setIsUploading(true);
     try {
       const attachment = await processFile(file);
-      if (attachment) appendAttachments([attachment], UI.MAX_ATTACHMENTS_FILE_SELECT);
+      if (attachment) appendAttachments([attachment]);
     } finally {
       setIsUploading(false);
     }
