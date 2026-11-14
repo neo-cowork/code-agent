@@ -10,6 +10,35 @@ export interface ShellBridgeClient {
   post<TResponse>(path: string, body?: Record<string, unknown>): Promise<TResponse>;
 }
 
+interface CapturedBridgeEnv {
+  rawUrl: string | undefined;
+  token: string | undefined;
+}
+
+let capturedBridgeEnv: CapturedBridgeEnv | null = null;
+
+/**
+ * One-time capture of the desktop shell loopback bridge credentials.
+ * Stores the initial values in module-private memory and immediately deletes
+ * both variables from process.env before any child process can inherit them.
+ */
+function captureShellBridgeEnvImpl(): void {
+  if (capturedBridgeEnv === null) {
+    capturedBridgeEnv = {
+      rawUrl: process.env[BRIDGE_URL_ENV],
+      token: process.env[BRIDGE_TOKEN_ENV],
+    };
+  }
+  delete process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_URL;
+  delete process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN;
+}
+
+export const captureShellBridgeEnv = Object.assign(captureShellBridgeEnvImpl, {
+  resetForTest(): void {
+    capturedBridgeEnv = null;
+  },
+});
+
 function parseLoopbackOrigin(rawUrl: string): string | null {
   try {
     const parsed = new URL(rawUrl);
@@ -26,15 +55,23 @@ function parseLoopbackOrigin(rawUrl: string): string | null {
 }
 
 export function resolveShellBridgeClientFromEnv(
-  env: NodeJS.ProcessEnv = process.env,
+  env?: NodeJS.ProcessEnv,
   platform: NodeJS.Platform = process.platform,
 ): ShellBridgeClient | null {
+  let rawUrl: string | undefined;
+  let token: string | undefined;
+  if (env === undefined || env === process.env) {
+    captureShellBridgeEnv();
+    rawUrl = capturedBridgeEnv?.rawUrl?.trim();
+    token = capturedBridgeEnv?.token?.trim();
+  } else {
+    rawUrl = env[BRIDGE_URL_ENV]?.trim();
+    token = env[BRIDGE_TOKEN_ENV]?.trim();
+  }
   if (platform !== 'darwin') {
     logger.warn('env_assist_bridge:no_shell');
     return null;
   }
-  const rawUrl = env[BRIDGE_URL_ENV]?.trim();
-  const token = env[BRIDGE_TOKEN_ENV]?.trim();
   const baseUrl = rawUrl ? parseLoopbackOrigin(rawUrl) : null;
   if (!baseUrl || !token) {
     logger.warn('env_assist_bridge:no_shell');

@@ -1,5 +1,8 @@
+import fs from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
+import os from 'node:os';
+import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ENV_ASSIST_BRIDGE_TIMEOUT_MS, ENV_ASSIST_CLICK_TTL_MS } from '../../../../../src/shared/constants/envAssist';
 import type { EnvAssistNotice } from '../../../../../src/shared/contract/envAssist';
@@ -13,7 +16,10 @@ import {
   screenRecordingProbe,
 } from '../../../../../src/host/permissions/envAssist/probes/passiveProbes';
 import { createShellPassiveBridge } from '../../../../../src/host/permissions/envAssist/probes/shellPassiveBridge';
-import { resolveShellBridgeClientFromEnv } from '../../../../../src/host/permissions/envAssist/shellBridge/client';
+import {
+  captureShellBridgeEnv,
+  resolveShellBridgeClientFromEnv,
+} from '../../../../../src/host/permissions/envAssist/shellBridge/client';
 import { ipcHost, type HandlerFn } from '../../../../../src/host/platform';
 
 const logs = vi.hoisted(() => ({
@@ -252,8 +258,10 @@ describe('shell loopback bridge & production registerEnvAssistHandlers defaults'
   const originalPlatform = process.platform;
   let handler: HandlerFn | undefined;
   const activeStubs: ShellStub[] = [];
+  const tempDirs: string[] = [];
 
   beforeEach(() => {
+    captureShellBridgeEnv.resetForTest();
     logs.warn.mockClear();
     storage.notices.clear();
     storage.openPane.mockClear();
@@ -265,6 +273,7 @@ describe('shell loopback bridge & production registerEnvAssistHandlers defaults'
   });
 
   afterEach(async () => {
+    captureShellBridgeEnv.resetForTest();
     vi.useRealTimers();
     vi.restoreAllMocks();
     Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
@@ -276,21 +285,27 @@ describe('shell loopback bridge & production registerEnvAssistHandlers defaults'
       const s = activeStubs.pop()!;
       await s.close();
     }
+    while (tempDirs.length > 0) {
+      fs.rmSync(tempDirs.pop()!, { recursive: true, force: true });
+    }
   });
 
-  it('wires production registerEnvAssistHandlers() defaults through the shell endpoint and degrades with distinguishable warns', async () => {
+  it('wires production registerEnvAssistHandlers() defaults through the shell endpoint, scrubs bridge vars from process.env, and degrades with distinguishable warns', async () => {
     const stub = await startShellStub();
     activeStubs.push(stub);
 
     process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_URL = stub.url;
     process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN = stub.token;
 
-    // Production zero-arg registration builds real PassiveBridge + PromptingBridge at call time.
+    // Production zero-arg registration captures bridge vars into module-private memory and scrubs process.env.
     expect(logs.warn).not.toHaveBeenCalled();
     registerEnvAssistHandlers();
     expect(registerEnvAssistHandlers.routes.actions.act).toBeTypeOf('function');
+    expect(process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN).toBeUndefined();
+    expect(process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_URL).toBeUndefined();
 
-    // Passive diagnosis probes hit ONLY /v1/passive/* and keep /v1/grant/* counter at 0.
+    // Even with process.env scrubbed, resolveShellBridgeClientFromEnv() uses captured values
+    // and passive diagnosis probes hit ONLY /v1/passive/* while keeping /v1/grant/* counter at 0.
     const passiveBridge = createShellPassiveBridge(resolveShellBridgeClientFromEnv()!);
     expect(await accessibilityProbe(passiveBridge)()).toEqual({ status: 'denied' });
     expect(await screenRecordingProbe(passiveBridge)()).toEqual({ status: 'denied' });
@@ -354,10 +369,11 @@ describe('shell loopback bridge & production registerEnvAssistHandlers defaults'
       `[production defaults] request_grant×4 status=checked grantHits=${stub.grantHits} passiveHits=${stub.passiveHits}\n`,
     );
 
-    // Web build / no shell (env vars absent): logs env_assist_bridge:no_shell, degrades to null bridges,
-    // and open_settings_pane still opens System Settings via the existing path.
+    // Web build / no shell (env vars absent, fresh uncaptured state): logs env_assist_bridge:no_shell,
+    // degrades to null bridges, and open_settings_pane still opens System Settings via the existing path.
     delete process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_URL;
     delete process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN;
+    captureShellBridgeEnv.resetForTest();
     logs.warn.mockClear();
     registerEnvAssistHandlers();
     expect(logs.warn).toHaveBeenCalledWith('env_assist_bridge:no_shell');
@@ -395,11 +411,16 @@ describe('shell loopback bridge & production registerEnvAssistHandlers defaults'
     });
     expect(stub.grantHits).toBe(4);
 
-    // Also capture the other two distinct bridge warn reasons (bridge_auth_rejected & bridge_unreachable).
-    process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_URL = stub.url;
-    process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN = 'wrong-token';
+    // Also capture the other two distinct bridge warn reasons via the explicit env parameter.
     logs.warn.mockClear();
-    const wrongAuthProbe = accessibilityProbe(createShellPassiveBridge(resolveShellBridgeClientFromEnv()!));
+    const wrongAuthProbe = accessibilityProbe(
+      createShellPassiveBridge(
+        resolveShellBridgeClientFromEnv({
+          CODE_AGENT_ENV_ASSIST_BRIDGE_URL: stub.url,
+          CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN: 'wrong-token',
+        })!,
+      ),
+    );
     expect(await wrongAuthProbe()).toEqual({
       status: 'unavailable',
       reason: 'probe_unavailable:accessibility:native_error',
@@ -410,10 +431,15 @@ describe('shell loopback bridge & production registerEnvAssistHandlers defaults'
     const closedStub = await startShellStub();
     const closedUrl = closedStub.url;
     await closedStub.close();
-    process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_URL = closedUrl;
-    process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN = stub.token;
     logs.warn.mockClear();
-    const unreachableProbe = accessibilityProbe(createShellPassiveBridge(resolveShellBridgeClientFromEnv()!));
+    const unreachableProbe = accessibilityProbe(
+      createShellPassiveBridge(
+        resolveShellBridgeClientFromEnv({
+          CODE_AGENT_ENV_ASSIST_BRIDGE_URL: closedUrl,
+          CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN: stub.token,
+        })!,
+      ),
+    );
     expect(await unreachableProbe()).toEqual({
       status: 'unavailable',
       reason: 'probe_unavailable:accessibility:native_error',
@@ -425,6 +451,70 @@ describe('shell loopback bridge & production registerEnvAssistHandlers defaults'
     process.stdout.write(
       `[distinct warn reasons] 1=${noShellWarn} 2=${authRejectedWarn} 3=${unreachableWarn}\n`,
     );
+  });
+
+  it('webServer startup (webEnvInit) captures and deletes bridge env vars before any child spawn while probes and request_grant still reach the stub', async () => {
+    const stub = await startShellStub();
+    activeStubs.push(stub);
+
+    const savedWebEnv = {
+      HOME: process.env.HOME,
+      CODE_AGENT_DATA_DIR: process.env.CODE_AGENT_DATA_DIR,
+      WEB_PORT: process.env.WEB_PORT,
+      CODE_AGENT_WEB_PORT: process.env.CODE_AGENT_WEB_PORT,
+      CODE_AGENT_CLI_MODE: process.env.CODE_AGENT_CLI_MODE,
+      CODE_AGENT_WEB_MODE: process.env.CODE_AGENT_WEB_MODE,
+    };
+    const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'shell-bridge-webenv-'));
+    tempDirs.push(fakeHome);
+
+    try {
+      process.env.HOME = fakeHome;
+      process.env.CODE_AGENT_DATA_DIR = path.join(fakeHome, '.code-agent');
+      process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_URL = stub.url;
+      process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN = stub.token;
+
+      await import('../../../../../src/web/webEnvInit');
+
+      // Immediately after webEnvInit (before tools, MCP, plugins, or registerEnvAssistHandlers run),
+      // both env vars are deleted from process.env.
+      expect(process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN).toBeUndefined();
+      expect(process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_URL).toBeUndefined();
+
+      // Subsequent registration and passive probes still reach the stub using the captured values.
+      registerEnvAssistHandlers();
+
+      const passiveBridge = createShellPassiveBridge(resolveShellBridgeClientFromEnv()!);
+      expect(await accessibilityProbe(passiveBridge)()).toEqual({ status: 'denied' });
+      expect(stub.passiveHits).toBe(1);
+      expect(stub.grantHits).toBe(0);
+
+      putNotice({
+        id: 'n-startup-capture',
+        sessionId: 's-startup',
+        runId: 'r-startup',
+        class: 'perm_screen_recording',
+        phase: 'needs_user',
+        sentenceKey: 'env.sentence',
+        action: { kind: 'request_grant', labelKey: 'env.allow', payload: { pane: 'screenCapture' } },
+        resume: { mode: 'manual' },
+        updatedAt: 1,
+      });
+      const grantRes = await handler!({} as never, {
+        action: 'act',
+        payload: { noticeId: 'n-startup-capture', actionKind: 'request_grant', payload: { pane: 'screenCapture' } },
+      });
+      expect(grantRes).toEqual({
+        success: true,
+        data: { status: 'checked', outcome: { status: 'granted' } },
+      });
+      expect(stub.grantHits).toBe(1);
+    } finally {
+      for (const [key, val] of Object.entries(savedWebEnv)) {
+        if (val === undefined) delete process.env[key];
+        else process.env[key] = val;
+      }
+    }
   });
 
   it('fault injection through act: missing, replayed, and expired click tokens keep /v1/grant/* hits at 0; wrong token and unreachable/timed-out endpoint keep grant hits at 0 across all passive probes', async () => {
@@ -447,6 +537,9 @@ describe('shell loopback bridge & production registerEnvAssistHandlers defaults'
     });
 
     registerEnvAssistHandlers();
+    expect(process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN).toBeUndefined();
+    expect(process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_URL).toBeUndefined();
+
     const actPayload = {
       noticeId: 'n-fault',
       actionKind: 'request_grant' as const,
@@ -500,9 +593,13 @@ describe('shell loopback bridge & production registerEnvAssistHandlers defaults'
     );
     nowSpy.mockRestore();
 
-    // 4. Wrong token (401 and 403): all four passive probes return unavailable with warn and grantHits stays 0.
-    process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN = 'stale-token-after-shell-restart';
-    const wrongAuthBridge = createShellPassiveBridge(resolveShellBridgeClientFromEnv()!);
+    // 4. Wrong token (401 and 403) via explicit env parameter: all four passive probes return unavailable with warn and grantHits stays 0.
+    const wrongAuthBridge = createShellPassiveBridge(
+      resolveShellBridgeClientFromEnv({
+        CODE_AGENT_ENV_ASSIST_BRIDGE_URL: stub.url,
+        CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN: 'stale-token-after-shell-restart',
+      })!,
+    );
     const probeEntries = [
       ['accessibility', accessibilityProbe(wrongAuthBridge)],
       ['screen_recording', screenRecordingProbe(wrongAuthBridge)],
@@ -535,9 +632,12 @@ describe('shell loopback bridge & production registerEnvAssistHandlers defaults'
     const deadStub = await startShellStub();
     const deadUrl = deadStub.url;
     await deadStub.close();
-    process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_URL = deadUrl;
-    process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN = stub.token;
-    const deadBridge = createShellPassiveBridge(resolveShellBridgeClientFromEnv()!);
+    const deadBridge = createShellPassiveBridge(
+      resolveShellBridgeClientFromEnv({
+        CODE_AGENT_ENV_ASSIST_BRIDGE_URL: deadUrl,
+        CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN: stub.token,
+      })!,
+    );
     for (const [name, runProbe] of [
       ['accessibility', accessibilityProbe(deadBridge)],
       ['screen_recording', screenRecordingProbe(deadBridge)],
@@ -556,11 +656,14 @@ describe('shell loopback bridge & production registerEnvAssistHandlers defaults'
 
     // Timeout path using ENV_ASSIST_BRIDGE_TIMEOUT_MS against a hanging endpoint.
     stub.state.hang = true;
-    process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_URL = stub.url;
-    process.env.CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN = stub.token;
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     logs.warn.mockClear();
-    const hangingBridge = createShellPassiveBridge(resolveShellBridgeClientFromEnv()!);
+    const hangingBridge = createShellPassiveBridge(
+      resolveShellBridgeClientFromEnv({
+        CODE_AGENT_ENV_ASSIST_BRIDGE_URL: stub.url,
+        CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN: stub.token,
+      })!,
+    );
     const pendingProbe = accessibilityProbe(hangingBridge)();
     await vi.advanceTimersByTimeAsync(ENV_ASSIST_BRIDGE_TIMEOUT_MS);
     expect(await pendingProbe).toEqual({
