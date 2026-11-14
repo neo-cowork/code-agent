@@ -673,7 +673,8 @@ export class MessageProcessor {
       this.contextAssembly.injectSystemMessage(
         [
           '<tool-run-policy>',
-          'The requested operation has not been executed here.',
+          this.ctx.foregroundToolFace ? 'The requested operation has not been executed here.'
+            : `The requested operation has not been executed here: ${Array.from(new Set(deniedToolCalls.map((call) => call.name))).join(', ')}.`,
           deniedToolRetryGuidance(this.ctx),
           ...(shellDenial ? [shellDenial.guidance] : []),
           '</tool-run-policy>',
