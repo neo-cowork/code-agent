@@ -13,20 +13,34 @@ import { MANAGED_BROWSER_ARTIFACT_DIR } from '../../host/services/infra/browser/
 import { resolveNativeDesktopCandidateRoots } from '../../host/services/desktop/nativeDesktopService';
 import { PRESENTATION_PREVIEW_CACHE_DIRNAME } from '../../host/tools/media/ppt/constants';
 import { PREVIEW_FORMAT_CACHE_DIRNAME } from '../../host/ipc/previewFormatCacheName';
-import { CHAT_UPLOAD_DIR_NAME, MAX_FOLDER_BATCH_BODY_SIZE } from '../../shared/constants/chatUploads';
+import {
+  CHAT_UPLOAD_RETENTION_DAYS,
+  CHAT_UPLOAD_SUBDIR_NAME,
+  MAX_FOLDER_BATCH_BODY_SIZE,
+} from '../../shared/constants/chatUploads';
 
 export const MAX_UPLOAD_SIZE = 50 * 1024 * 1024;
-export const UPLOAD_ROOT_DIR = path.join(os.tmpdir(), CHAT_UPLOAD_DIR_NAME);
+export const UPLOAD_ROOT_DIR = path.join(getUserDataPath(), CHAT_UPLOAD_SUBDIR_NAME);
+const UPLOAD_RETENTION_MS = CHAT_UPLOAD_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
 export function ensureUploadRootDir(): void {
   fs.mkdirSync(UPLOAD_ROOT_DIR, { recursive: true });
 }
 
-export function cleanupUploadDirs(): void {
+export function reapExpiredUploadDirs(): void {
   try {
     if (!fs.existsSync(UPLOAD_ROOT_DIR)) return;
+    const cutoffMs = Date.now() - UPLOAD_RETENTION_MS;
     for (const entry of fs.readdirSync(UPLOAD_ROOT_DIR)) {
-      fs.rmSync(path.join(UPLOAD_ROOT_DIR, entry), { recursive: true, force: true });
+      try {
+        const entryPath = path.join(UPLOAD_ROOT_DIR, entry);
+        const stats = fs.lstatSync(entryPath);
+        if (stats.isDirectory() && stats.mtimeMs < cutoffMs) {
+          fs.rmSync(entryPath, { recursive: true, force: true });
+        }
+      } catch {
+        // Ignore per-entry races
+      }
     }
   } catch {
     // Swallow — caller can log if needed

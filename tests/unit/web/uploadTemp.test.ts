@@ -4,15 +4,26 @@
 // ============================================================================
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { Readable } from 'node:stream';
 import type { Request, Response } from 'express';
 import {
   MAX_UPLOAD_SIZE,
   UPLOAD_ROOT_DIR,
-  cleanupUploadDirs,
+  ensureUploadRootDir,
+  handleTempBatchUpload,
   handleTempUpload,
+  reapExpiredUploadDirs,
 } from '../../../src/web/helpers/upload';
+import {
+  CHAT_UPLOAD_DIR_NAME,
+  CHAT_UPLOAD_RETENTION_DAYS,
+  CHAT_UPLOAD_SUBDIR_NAME,
+} from '../../../src/shared/constants/chatUploads';
+import { getUserDataPath } from '../../../src/host/platform/appPaths';
+import { readModule } from '../../../src/host/tools/modules/file/read';
+import { HostReasonCode } from '../../../src/shared/contract/permission';
 
 function buildMultipart(parts: Array<{
   name: string;
@@ -72,7 +83,7 @@ function makeRes() {
 }
 
 afterEach(() => {
-  cleanupUploadDirs();
+  fs.rmSync(UPLOAD_ROOT_DIR, { recursive: true, force: true });
   vi.restoreAllMocks();
 });
 
@@ -195,5 +206,111 @@ describe('handleTempUpload missing file field (error path)', () => {
     await expect(handleTempUpload(makeReq(body, contentType), res)).rejects.toThrow(
       /Missing file field/,
     );
+  });
+});
+
+describe('chat upload persistence and retention reaper', () => {
+  function makeReadCtx() {
+    const ctrl = new AbortController();
+    return {
+      sessionId: 'upload-test-session',
+      agentId: 'upload-test-agent',
+      workingDir: process.cwd(),
+      abortSignal: ctrl.signal,
+      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      emit: () => void 0,
+    };
+  }
+
+  it('places UPLOAD_ROOT_DIR under getUserDataPath()/uploads rather than os.tmpdir()', () => {
+    expect(UPLOAD_ROOT_DIR).toBe(path.join(getUserDataPath(), CHAT_UPLOAD_SUBDIR_NAME));
+    expect(UPLOAD_ROOT_DIR.startsWith(os.tmpdir() + path.sep) && UPLOAD_ROOT_DIR.includes(CHAT_UPLOAD_DIR_NAME)).toBe(false);
+  });
+
+  it('keeps fresh single and batch uploads readable via Read after a simulated server restart', async () => {
+    ensureUploadRootDir();
+
+    const single = buildMultipart([
+      { name: 'file', filename: 'clause3.md', value: 'Clause 3: Payment due within 30 days.', contentType: 'text/markdown' },
+    ]);
+    const singleRes = makeRes();
+    await handleTempUpload(makeReq(single.body, single.contentType), singleRes);
+    const singlePath = (singleRes.body as { path: string }).path;
+
+    const batch = buildMultipart([
+      { name: 'file0', filename: 'contract.md', value: 'Master Service Agreement — Fee $12,000', contentType: 'text/markdown' },
+      { name: 'relativePath0', value: 'contracts/contract.md' },
+    ]);
+    const batchRes = makeRes();
+    await handleTempBatchUpload(makeReq(batch.body, batch.contentType), batchRes);
+    const batchPayload = batchRes.body as { root: string; files: Array<{ relativePath: string; path: string }> };
+    const batchFilePath = batchPayload.files[0].path;
+
+    // Simulate webServer startup sequence (reapExpiredUploadDirs + ensureUploadRootDir)
+    reapExpiredUploadDirs();
+    ensureUploadRootDir();
+
+    expect(fs.existsSync(singlePath)).toBe(true);
+    expect(fs.existsSync(batchFilePath)).toBe(true);
+
+    const handler = await readModule.createHandler();
+    const singleRead = await handler.execute({ file_path: singlePath }, makeReadCtx(), async () => ({ allow: true }));
+    expect(singleRead.ok).toBe(true);
+    if (singleRead.ok) {
+      expect(singleRead.output).toContain('Clause 3: Payment due within 30 days.');
+    }
+
+    const batchRead = await handler.execute({ file_path: batchFilePath }, makeReadCtx(), async () => ({ allow: true }));
+    expect(batchRead.ok).toBe(true);
+    if (batchRead.ok) {
+      expect(batchRead.output).toContain('Master Service Agreement — Fee $12,000');
+    }
+  });
+
+  it('removes upload subdirs older than CHAT_UPLOAD_RETENTION_DAYS and keeps younger subdirs', async () => {
+    ensureUploadRootDir();
+
+    const expiredUpload = buildMultipart([
+      { name: 'file0', filename: 'old.md', value: 'expired contract', contentType: 'text/markdown' },
+      { name: 'relativePath0', value: 'folder/old.md' },
+    ]);
+    const expiredRes = makeRes();
+    await handleTempBatchUpload(makeReq(expiredUpload.body, expiredUpload.contentType), expiredRes);
+    const expiredRoot = (expiredRes.body as { root: string; files: Array<{ path: string }> }).root;
+    const expiredFile = (expiredRes.body as { files: Array<{ path: string }> }).files[0].path;
+
+    const youngUpload = buildMultipart([
+      { name: 'file', filename: 'recent.md', value: 'young contract', contentType: 'text/markdown' },
+    ]);
+    const youngRes = makeRes();
+    await handleTempUpload(makeReq(youngUpload.body, youngUpload.contentType), youngRes);
+    const youngFile = (youngRes.body as { path: string }).path;
+    const youngRoot = path.dirname(youngFile);
+
+    const dayMs = 24 * 60 * 60 * 1000;
+    const expiredDate = new Date(Date.now() - (CHAT_UPLOAD_RETENTION_DAYS + 1) * dayMs);
+    const youngDate = new Date(Date.now() - (CHAT_UPLOAD_RETENTION_DAYS - 1) * dayMs);
+    fs.utimesSync(expiredRoot, expiredDate, expiredDate);
+    fs.utimesSync(youngRoot, youngDate, youngDate);
+
+    reapExpiredUploadDirs();
+
+    expect(fs.existsSync(expiredRoot)).toBe(false);
+    expect(fs.existsSync(expiredFile)).toBe(false);
+    expect(fs.existsSync(youngRoot)).toBe(true);
+    expect(fs.readFileSync(youngFile, 'utf8')).toBe('young contract');
+  });
+
+  it('still yields UploadExpired on ENOENT for legacy os.tmpdir()/code-agent-uploads paths', async () => {
+    const legacyPath = path.join(os.tmpdir(), CHAT_UPLOAD_DIR_NAME, 'legacy-uuid-42', 'contract.md');
+    const handler = await readModule.createHandler();
+    const result = await handler.execute({ file_path: legacyPath }, makeReadCtx(), async () => ({ allow: true }));
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('ENOENT');
+      expect(result.meta?.hostReason).toMatchObject({
+        code: HostReasonCode.UploadExpired,
+      });
+    }
   });
 });
