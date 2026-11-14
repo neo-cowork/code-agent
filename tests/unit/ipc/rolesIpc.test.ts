@@ -950,7 +950,7 @@ describe('roles.ipc (domain:roles)', () => {
 });
 
 describe('sanitizeLastWork', () => {
-  it('hides real buildWakePrompt instructions and skips duplicate write-back history from shared constants', async () => {
+  it('hides real buildWakePrompt instructions and keeps write-back history free of the scaffold', async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'roles-ipc-wake-'));
     mockConfigDir.dir = tmpDir;
     try {
@@ -965,9 +965,13 @@ describe('sanitizeLastWork', () => {
         expect(sanitizeLastWork(`- 2026-11-13 | ${flat} | ${flat}`)).toBe('');
         const wb = await runRoleWriteBack({ roleId: '研究员', taskPrompt: prompt, finalOutput: '已检查' });
         expect(wb.executed).toBe(true);
-        expect(wb.historyAppended).toBe(false);
+        expect(wb.historyAppended).toBe(true);
       }
-      expect(await loadRoleHistory('研究员')).toEqual([]);
+      const rows = await loadRoleHistory('研究员');
+      expect(rows.length).toBeGreaterThan(0);
+      for (const row of rows) {
+        expect(sanitizeLastWork(row)).not.toMatch(/你被|你的任务|这不是用户发来的消息/);
+      }
       expect(sanitizeLastWork(`- 2026-11-13 | ${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}(cadence) | [report] completed | why: internal prompt | evidence: private/file.md`))
         .toBe(`2026-11-13 ${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}`);
       expect(sanitizeLastWork('- 2026-11-13 | 报告 | 完成周报 | why: internal | evidence: private/file.md')).toBe('2026-11-13 完成周报');
