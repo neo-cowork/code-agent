@@ -568,7 +568,7 @@ const desktopHandlers: RawDomainRouteHandlers<DesktopDomainRequest, NativeDeskto
   },
   startMeeting: async (service, raw) => {
     if (!meetingSession.status().current) {
-      const started = await desktopHandlers.startAudioCapture(service, { mode: 'meeting' });
+      const started = await startMeetingCapture(service);
       if (!started.success) return started; // 缺转写引擎等前置：原样带回界面
     }
     const payload = raw as { title?: unknown } | undefined;
@@ -580,7 +580,7 @@ const desktopHandlers: RawDomainRouteHandlers<DesktopDomainRequest, NativeDeskto
   },
   resumeMeeting: async (service, _raw) => {
     if (meetingSession.status().current?.state === 'paused') {
-      const started = await desktopHandlers.startAudioCapture(service, { mode: 'meeting' });
+      const started = await startMeetingCapture(service);
       if (!started.success) return started;
     }
     return { success: true, data: await meetingSession.resume() } satisfies IPCResponse<unknown>;
@@ -598,6 +598,16 @@ const desktopHandlers: RawDomainRouteHandlers<DesktopDomainRequest, NativeDeskto
     return { success: true, data: clearAudioRecordings() } satisfies IPCResponse<unknown>;
   },
 };
+
+/**
+ * 会议要两路同录。设置页可能已开着单路录音（只录麦克风）：沿用它会显示「记录中」却录不到对方，
+ * 所以不是会议模式就先停掉再按会议模式重开。这之后录音归这场会管，结束会议时一起停。
+ */
+async function startMeetingCapture(service: NativeDesktopService): Promise<IPCResponse<unknown>> {
+  const st = getAudioCaptureStatus();
+  if (manualAudioActive && st.capturing && st.captureMode !== 'meeting') stopManualAudio();
+  return desktopHandlers.startAudioCapture(service, { mode: 'meeting' });
+}
 
 const desktopRoutes = defineDomainRoutes<DesktopDomainRequest, NativeDesktopService>(
   DesktopSchemas.REQUEST,

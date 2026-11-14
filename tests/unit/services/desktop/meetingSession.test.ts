@@ -110,6 +110,13 @@ describe('记这场会：状态与自动结束', () => {
     expect(t.session.status().lastEnded?.endReason).toBe('manual');
   });
 
+  it('连点两次开始：只建一场会', async () => {
+    const t = setup();
+    const [a, b] = await Promise.all([t.session.start(), t.session.start()]);
+    expect(a.current?.id ?? b.current?.id).toBeTruthy();
+    expect(t.saved.filter((r) => r.state === 'recording')).toHaveLength(1);
+  });
+
   it('录音没开起来：不建会', async () => {
     const t = setup();
     const session = new MeetingSession(t.store, { start: async () => false, stop: () => {}, isCapturing: () => false });

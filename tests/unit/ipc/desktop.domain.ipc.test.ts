@@ -288,6 +288,16 @@ describe('记这场会（N-MEETING-SESSION）', () => {
     expect(res).toMatchObject({ success: true, data: { current: { title: '周会', state: 'recording' } } });
   });
 
+  it('设置页已开着只录麦克风：开会先停掉再按会议模式重开（否则录不到对方）', async () => {
+    const call = await setup();
+    svc.audioStatus = { capturing: true, captureMode: 'microphone', soxAvailable: true, asrEngine: 'whisper' };
+    await call('startAudioCapture', { mode: 'microphone' });
+    svc.startAudio.mockClear();
+    await call('startMeeting', {});
+    expect(svc.stopAudio).toHaveBeenCalledTimes(1);
+    expect(svc.startAudio).toHaveBeenCalledWith(undefined, 'meeting');
+  });
+
   it('录音开不起来：原样带回 AUDIO_START_FAILED，不建会', async () => {
     const call = await setup();
     svc.audioStatus = { capturing: false, soxAvailable: true, asrEngine: 'none', missingPrerequisites: ['transcription_engine_missing'] };

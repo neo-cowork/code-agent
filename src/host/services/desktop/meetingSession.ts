@@ -51,10 +51,17 @@ export class MeetingSession {
     this.store.closeInterrupted();
   }
 
+  private starting = false;
+
   async start(title?: string): Promise<MeetingSessionStatus> {
     this.recover();
-    if (this.current) return this.status();
-    if (!(await this.capture.start())) return this.status();
+    if (this.current || this.starting) return this.status(); // 连点两次不建出两场会
+    this.starting = true;
+    try {
+      if (!(await this.capture.start())) return this.status();
+    } finally {
+      this.starting = false;
+    }
     const now = this.now();
     this.current = {
       id: `meeting-${now}`,

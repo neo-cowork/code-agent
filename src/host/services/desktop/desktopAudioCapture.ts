@@ -826,6 +826,9 @@ function pumpPcm(input: NodeJS.ReadableStream, track: CaptureTrack): void {
   // ponytail: 处理长期跟不上实时时队列会一直涨，真遇到再加丢包/降级
   input.on('data', (data: Buffer | string) => {
     if (typeof data === 'string') return; // skip string chunks
+    // 已停掉的一路：进程哪怕还没退干净，停止之后才到的数据不再落库（否则停了又开会多出一路「对方」）。
+    // 在到达时判断而不是排队后判断：停止前已到、还在队里的包照常处理，最后一句不丢
+    if (!tracks.includes(track)) return;
     clock.receive(data.length); // 原点按到达时刻定，不能等排队
     track.vadChain = track.vadChain.then(() => handlePcm(data)).catch((error) => {
       logger.error('[音频采集] 处理音频数据异常', { source: track.source, error: error instanceof Error ? error.message : String(error) });
@@ -837,8 +840,6 @@ function pumpPcm(input: NodeJS.ReadableStream, track: CaptureTrack): void {
       clock.advance(data.length / 2); // 丢掉的样本也算时间，恢复后不漂
       return;
     }
-    // 已停掉的一路：进程哪怕还没退干净，数据也不再落库（否则停了又开会多出一路「对方」）
-    if (!tracks.includes(track)) return;
 
     dataChunkCount++;
     if (dataChunkCount === 1) {
