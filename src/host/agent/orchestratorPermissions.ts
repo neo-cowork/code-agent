@@ -839,6 +839,7 @@ export class OrchestratorPermissionIsland {
         tool: fullRequest.tool,
         type: fullRequest.type,
         permissionLevel,
+        ...(fullRequest.forceConfirm === true ? { forceConfirm: true } : {}),
         requestedAt: fullRequest.timestamp,
         argsSummary: argsSummaryRaw === undefined ? undefined : redactCommandSecrets(argsSummaryRaw),
         ...(argsRef ? { argsRef } : {}),
