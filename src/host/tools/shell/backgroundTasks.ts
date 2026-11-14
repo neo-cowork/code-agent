@@ -10,6 +10,8 @@ import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { getUserConfigDir } from '../../config/configPaths';
 import { BASH } from '../../../shared/constants';
+import { quote } from 'shell-quote';
+import { parseShellCommand } from '../../security/commandParse';
 
 // ============================================================================
 // Constants
@@ -36,6 +38,7 @@ export interface TaskState {
   outputSize: number;
   command: string;
   displayCommand?: string;
+  displayName?: string;
   exitCode?: number;
   lastReadPosition: number;
   /** 主超时定时器 */
@@ -58,6 +61,7 @@ export interface TaskInfo {
   status: 'running' | 'completed' | 'failed';
   command: string;
   displayCommand?: string;
+  displayName?: string;
   cwd: string;
   sessionId?: string;
   toolCallId?: string;
@@ -85,6 +89,7 @@ export interface StartBackgroundTaskOptions {
   toolCallId?: string;
   ownerAgentId?: string;
   displayCommand?: string;
+  displayName?: string;
   env?: NodeJS.ProcessEnv;
   sandboxed?: boolean;
   onExit?: () => void;
@@ -183,6 +188,7 @@ function toTaskInfo(task: TaskState): TaskInfo {
     status: task.status,
     command: task.command,
     displayCommand: task.displayCommand,
+    displayName: task.displayName,
     cwd: task.cwd,
     sessionId: task.sessionId,
     toolCallId: task.toolCallId,
@@ -270,6 +276,7 @@ function registerBackgroundTaskProcess(
     outputSize: 0,
     command,
     displayCommand: options.displayCommand,
+    displayName: options.displayName,
     lastReadPosition: 0,
     cwd,
     sessionId: options.sessionId,
@@ -343,6 +350,50 @@ function registerBackgroundTaskProcess(
     void killBackgroundTask(taskId);
   }
   return { success: true, taskId, outputFile };
+}
+
+const NAME_MAX = 40;
+const SETUP_COMMANDS = new Set(['cd', 'export', 'set', 'source', '.', 'echo', 'printf']);
+
+function shortTarget(command: string, depth = 0): string {
+  if (depth > 4) return '';
+  const url = command.match(/\bhttps?:\/\/[^\s'"<>;|&\\]+/i);
+  if (url) {
+    try {
+      return new URL(url[0]).host.slice(0, NAME_MAX);
+    } catch { /* Incomplete URLs fall back to the executable. */ }
+  }
+  // Reuse the quote-aware shell parser to unwrap sudo/env/shells and ignore redirects.
+  for (const { program, args } of parseShellCommand(command).executions) {
+    const base = path.posix.basename(program.replaceAll('\\', '/'));
+    if (SETUP_COMMANDS.has(base)) continue;
+    if (base === 'sandbox-exec') {
+      let index = 0;
+      while (index < args.length && args[index].startsWith('-')) {
+        const flag = args[index++];
+        if (flag === '--') break;
+        if (['-f', '-p', '-D'].includes(flag)) index++;
+      }
+      return shortTarget(quote(args.slice(index)), depth + 1);
+    }
+    // A title must never contain command syntax, even for an unparseable script.
+    if (/^[\p{L}\p{N}_.+-]+$/u.test(base)) return base.slice(0, NAME_MAX);
+  }
+  return '';
+}
+
+/**
+ * One user-readable name for a background shell/PTY task: the model's Bash `description`
+ * when usable (single line, <= 60 chars), else a short human target derived from the command
+ * (URL => host[:port], otherwise the executable basename). Never the raw command line;
+ * the full command lives in `displayCommand`.
+ */
+export function resolveBackgroundTaskName(description: unknown, command: string): string {
+  if (typeof description === 'string') {
+    const trimmed = description.trim();
+    if (trimmed && !/[\r\n]/.test(trimmed) && trimmed.length <= 60) return trimmed;
+  }
+  return shortTarget(command) || 'Background task';
 }
 
 /**

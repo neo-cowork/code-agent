@@ -4,6 +4,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WorkbenchOverview } from '../../../src/renderer/components/WorkbenchOverview';
 import { deriveHasTaskActivity } from '../../../src/renderer/hooks/useTaskActivity';
+import { buildRunUiState } from '../../../src/renderer/utils/runWorkbenchProjection';
 
 const taskActivity = vi.hoisted(() => ({
   hasTaskActivity: false,
@@ -140,6 +141,7 @@ describe('WorkbenchOverview', () => {
       taskCount: 0,
       taskProgress: null,
       runStatus: 'completed' as const,
+      hasRunPresence: false,
     };
 
     expect(deriveHasTaskActivity(quiet)).toBe(false);
@@ -149,6 +151,58 @@ describe('WorkbenchOverview', () => {
       ...quiet,
       taskProgress: { turnId: 'turn-1', phase: 'tool_running', progress: 50 },
     })).toBe(true);
-    expect(deriveHasTaskActivity({ ...quiet, runStatus: 'using_tools' })).toBe(true);
+    expect(deriveHasTaskActivity({ ...quiet, runStatus: 'using_tools', hasRunPresence: true })).toBe(true);
+  });
+
+  it('does not treat a live run status without run presence as activity', () => {
+    const synthetic = {
+      agentNodeCount: 0,
+      taskCount: 0,
+      taskProgress: null,
+      runStatus: 'planning' as const,
+      hasRunPresence: false,
+    };
+
+    // 空会话的合成 planning（无 turn、无在途会话）不挤掉空态叙事
+    expect(deriveHasTaskActivity(synthetic)).toBe(false);
+    expect(deriveHasTaskActivity({ ...synthetic, runStatus: 'running' })).toBe(false);
+    // 有 turn 落投影（或会话在途）的 live 状态才是活动
+    expect(deriveHasTaskActivity({ ...synthetic, hasRunPresence: true })).toBe(true);
+  });
+
+  it('preserves the idle empty-session narrative across projection and activity consumers', () => {
+    // 组合层钉子：空会话投影出非终止状态（不伪造 completed），
+    // activity 消费侧凭存在证据把它判为「没有活动」，空态叙事得以保留。
+    const idleRun = buildRunUiState({
+      projection: { sessionId: 'session-new', turns: [], activeTurnIndex: -1 },
+      sessionId: 'session-new',
+      sessionStatus: 'idle',
+    });
+    expect(idleRun.status).toBe('planning');
+    expect(idleRun.identity.turnId).toBeNull();
+    expect(deriveHasTaskActivity({
+      agentNodeCount: 0,
+      taskCount: 0,
+      taskProgress: null,
+      runStatus: idleRun.status,
+      hasRunPresence: idleRun.identity.turnId !== null,
+    })).toBe(false);
+
+    // Send 已受理（会话侧 running/queued）但 turn 尚未落投影：在途窗口仍是活动
+    for (const sessionStatus of ['queued', 'running'] as const) {
+      const inFlightRun = buildRunUiState({
+        projection: { sessionId: 'session-new', turns: [], activeTurnIndex: -1 },
+        sessionId: 'session-new',
+        sessionStatus,
+      });
+      expect(inFlightRun.identity.turnId).toBeNull();
+      expect(deriveHasTaskActivity({
+        agentNodeCount: 0,
+        taskCount: 0,
+        taskProgress: null,
+        runStatus: inFlightRun.status,
+        hasRunPresence: inFlightRun.identity.turnId !== null || sessionStatus === 'running' || sessionStatus === 'queued',
+      })).toBe(true);
+    }
   });
 });

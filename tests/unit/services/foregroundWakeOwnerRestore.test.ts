@@ -8,6 +8,8 @@ import { DatabaseService } from '../../../src/host/services/core/databaseService
 import { applySchema } from '../../../src/host/services/core/database/schema';
 import { applySessionsMigrations } from '../../../src/host/services/core/database/migrations';
 import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
+import type { AgentEvent, Message } from '../../../src/shared/contract';
+import type { AgentRunOptions } from '../../../src/host/research/types';
 import type { SessionCommandTask } from '../../../src/host/services/commandCenter/sessionCommandCenter';
 import {
   BACKGROUND_WAKE_OWNER_RETRY_INTERVAL_MS,
@@ -19,6 +21,7 @@ import {
 // 只替换登录用户（可控）、TaskManager 外壳和 logger（捕获）。
 
 const harness = vi.hoisted(() => ({
+  observers: new Set<(sessionId: string, event: AgentEvent, taskId?: string) => void>(),
   db: null as unknown,
   user: null as { id: string } | null,
   callbacks: [] as Array<(user: { id: string } | null, status: string) => void>,
@@ -78,7 +81,10 @@ vi.mock('../../../src/host/task/TaskManager', async (importOriginal) => {
       on: () => undefined,
       onRunIdle: () => undefined,
       emitAgentEventForSession: () => undefined,
-      observeAgentEvents: () => () => undefined,
+      observeAgentEvents: (observer: (sessionId: string, event: AgentEvent, taskId?: string) => void) => {
+        harness.observers.add(observer);
+        return () => harness.observers.delete(observer);
+      },
     }),
   };
 });
@@ -110,9 +116,11 @@ describe('foreground wake when the session is not accessible for the current own
   let coreDb: DatabaseService;
   let connection: Database.Database;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.useFakeTimers();
     harness.log.length = 0;
+    harness.observers.clear();
+    await getSessionManager().dispose();
     harness.callbacks.length = 0;
     harness.user = null;
     harness.sendMessage = vi.fn(async (..._args: unknown[]) => {
@@ -150,6 +158,70 @@ describe('foreground wake when the session is not accessible for the current own
     if (previousDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
     else process.env.CODE_AGENT_DATA_DIR = previousDataDir;
     fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it.each([
+    { name: 'reply then step cap', reply: true, error: 'Max iterations reached', reason: null },
+    { name: 'step cap without reply', reply: false, error: 'Max iterations reached', reason: 'max_iterations' },
+    { name: 'owner lease missing', reply: false, error: 'Durable Run run-x has no live owner lease', reason: 'owner_missing' },
+    { name: 'other error after reply', reply: true, error: 'provider unavailable', reason: 'turn_error' },
+  ])('$name persists the correct outcome through createForegroundWake', async ({ reply, error, reason }) => {
+    harness.user = { id: 'u1' };
+    harness.sendMessage = vi.fn(async (...args: unknown[]) => {
+      const options = args[2] as AgentRunOptions;
+      if (reply) {
+        const message: Message = { id: 'visible-report', role: 'assistant', content: '周报已汇总', timestamp: Date.now() };
+        await getSessionManager().addMessageToSession(SESSION, message);
+        for (const observer of harness.observers) observer(SESSION, { type: 'message', data: message });
+      }
+      options.terminalErrorSink?.({ message: error });
+    });
+    await createForegroundWake()(makeTask(), 'completed');
+    const rows = connection.prepare('SELECT role, content, metadata FROM messages WHERE session_id = ?').all(SESSION) as Array<{ role: string; content: string; metadata: string | null }>;
+    const notes = rows.filter((row) => row.metadata && JSON.parse(row.metadata).backgroundWakeFailed);
+    expect(harness.observers.size).toBe(0);
+    if (reason) {
+      expect(notes).toHaveLength(1);
+      expect(JSON.parse(notes[0].metadata!).backgroundWakeFailed).toEqual({ taskId: 'task-1', reason, title: '周报' });
+      expect(logsOf('warn').find((entry) => entry.message.startsWith('Foreground wake failed:'))?.details).toMatchObject({ reason, message: error });
+    } else {
+      expect(rows.some((row) => row.role === 'assistant' && row.content === '周报已汇总')).toBe(true);
+      expect(notes).toHaveLength(0);
+      expect(logsOf('warn').filter((entry) => entry.message.startsWith('Foreground wake failed:'))).toHaveLength(0);
+      expect(logsOf('info').some((entry) => entry.message === 'Foreground wake reported to user; ignoring max-iterations marker')).toBe(true);
+    }
+  });
+
+  it.each(['sink', 'throw'])('keeps a real %s error after a report and step-cap marker', async (source) => {
+    harness.user = { id: 'u1' };
+    harness.sendMessage = vi.fn(async (...args: unknown[]) => {
+      const message: Message = { id: 'report', role: 'assistant', content: '周报已汇总', timestamp: Date.now() };
+      await getSessionManager().addMessageToSession(SESSION, message);
+      for (const observer of harness.observers) observer(SESSION, { type: 'message', data: message });
+      const options = args[2] as AgentRunOptions;
+      options.terminalErrorSink?.({ message: 'Max iterations reached' });
+      if (source === 'throw') throw new Error('provider unavailable');
+      options.terminalErrorSink?.({ message: 'provider unavailable' });
+    });
+    await createForegroundWake()(makeTask(), 'completed');
+    const reloaded = await getSessionManager().getSession(SESSION, 50);
+    expect(reloaded?.messages.filter((message) => message.metadata?.backgroundWakeFailed).map((message) => message.metadata?.backgroundWakeFailed?.reason)).toEqual(['turn_error']);
+    expect(harness.observers.size).toBe(0);
+  });
+
+  it.each(['other-session', 'background-task', 'tool-call', 'meta', 'empty'])('does not count a %s message as a visible wake reply', async (kind) => {
+    harness.user = { id: 'u1' };
+    harness.sendMessage = vi.fn(async (...args: unknown[]) => {
+      const message = { role: 'assistant', content: kind === 'empty' ? '  ' : '周报已汇总', isMeta: kind === 'meta',
+        ...(kind === 'tool-call' ? { toolCalls: [{ id: 'call', name: 'Read', arguments: {} }] } : {}) };
+      for (const observer of harness.observers) observer(kind === 'other-session' ? 'other' : SESSION,
+        { type: 'message', data: message } as AgentEvent, kind === 'background-task' ? 'child' : undefined);
+      (args[2] as AgentRunOptions).terminalErrorSink?.({ message: 'Max iterations reached' });
+    });
+    await createForegroundWake()(makeTask(), 'completed');
+    const reloaded = await getSessionManager().getSession(SESSION, 50);
+    expect(reloaded?.messages.filter((message) => message.metadata?.backgroundWakeFailed).map((message) => message.metadata?.backgroundWakeFailed?.reason)).toEqual(['max_iterations']);
+    expect(harness.observers.size).toBe(0);
   });
 
   it('delivers exactly once after the login is restored, with a distinguishable log reason', async () => {

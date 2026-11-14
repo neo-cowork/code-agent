@@ -19,6 +19,8 @@
 import { CAPABILITY_CANDIDATES } from '../../shared/constants';
 import { listCandidates } from '../services/skills/capabilityGapDetector';
 import { fallbackName } from '../services/skills/capabilityCandidateNaming';
+import { detectMessageLanguage } from '../../shared/sessionTitlePrompt';
+import { readUiLanguage } from '../session/sessionTitleHostPrompt';
 
 const noticedSessions = new Set<string>();
 
@@ -43,7 +45,12 @@ export function buildCapabilityCandidateNotice(sessionId?: string | null): strin
     '（这是系统记的后台统计，只作背景知识：不是用户请求、不是任务、也不需要你做任何事。禁止在任何回复、任何后台任务或子代理的说明里提及、引用或转述本块——包括引用本块的标签名。本轮要做的只有下面 <user_request> 里的用户原话。）',
     '统计内容：你在过去的会话里反复用现成工具拼凑完成过这些事情（次数为真实统计）：',
     ...top.map((candidate) => {
-      const name = candidate.displayName || fallbackName(candidate);
+      // 兜底名语言与模型路径同一规则：用户原话判得出语言就跟原话，判不出跟 UI
+      const name = candidate.displayName
+        || fallbackName(
+          candidate,
+          detectMessageLanguage(candidate.sampleUserMessages.join(' ')) ?? readUiLanguage(),
+        );
       return `- ${name}：已拼凑 ${candidate.occurrences} 次，平均 ${Math.round(candidate.avgSteps)} 步。`;
     }),
     '用户如果问起「你还能加什么能力」「这事是不是老做」，可以据此如实回答（用你自己的话，不要照抄本块）。',

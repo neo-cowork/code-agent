@@ -19,7 +19,9 @@ import {
 } from '../../../services/delegation/delegationAdmission';
 import { deriveActionFingerprint, deriveSubmissionKey, delegationTargetIdentity } from '../../../services/delegation/delegationKeys';
 import { projectSessionCandidates, resolveCandidateRef } from '../../../services/delegation/delegationCandidates';
-import { getDelegationCandidateSecret, getDelegationToolRuntime, workspaceWithinRoots } from '../../../services/delegation/delegationToolRuntime';
+import { evaluateClarifyAnswer, evaluateClarifyGuard, type ClarifyGuardRule } from '../../../services/delegation/delegationClarifyGuard';
+import { askUserQuestionAnswerMark, askUserQuestionAnswersSince } from '../planning/askUserQuestionReplay';
+import { getDelegationCandidateSecret, getDelegationToolRuntime, readOriginUserMessage, workspaceWithinRoots } from '../../../services/delegation/delegationToolRuntime';
 import { isCrossSessionDelegationEnabled } from '../../../services/delegation/crossSessionDelegationFlag';
 import { createLogger } from '../../../services/infra/logger';
 import { trackNode } from '../../../observability/posthogNode';
@@ -60,7 +62,7 @@ function plainStateOf(status: SessionDelegationRecord['status'], runStatus?: Run
   return 'The target session has received this request and will handle it shortly.';
 }
 
-function successfulOutput(input: { delegationId: string; targetName: string; queuedAhead: number; status: SessionDelegationRecord['status']; runStatus?: RunStatus; reused?: true }): ToolResult<string> {
+function successfulOutput(input: { targetSessionId: string; delegationId: string; targetName: string; queuedAhead: number; status: SessionDelegationRecord['status']; runStatus?: RunStatus; reused?: true }): ToolResult<string> {
   const payload = {
     delegationId: input.delegationId,
     target: input.targetName,
@@ -76,7 +78,8 @@ function successfulOutput(input: { delegationId: string; targetName: string; que
   return {
     ok: true,
     output: JSON.stringify(payload),
-    meta: { ...payload },
+    // 目标会话 id 只进 meta（渲染端「查看目标会话」按钮用），绝不进模型可见的 output。
+    meta: { ...payload, targetSessionId: input.targetSessionId },
   };
 }
 
@@ -93,6 +96,7 @@ async function reusedReceipt(
   }
   const run = row.targetRunId ? await new DurableRunRepository(db).get(row.targetRunId) : null;
   return successfulOutput({
+    targetSessionId: row.targetSessionId,
     delegationId: row.delegationId,
     targetName: runtime.getSessionRow(row.targetSessionId)?.title ?? 'session',
     queuedAhead: 0, status: row.status, runStatus: run?.status, reused: true,
@@ -186,6 +190,73 @@ async function buildSnapshot(
     userQueuedOrSendingRows,
     existingDelegation,
     ...(chainDelegation ? { chainDelegation } : {}),
+  };
+}
+
+// 守卫已在本轮拒绝过的发起轮：key = 发起会话 + 发起轮身份，value = 拒绝时刻的作答流水 mark + 规则名。
+// 用户通过 AskUserQuestion 作答后（答案是工具输出，不是 messages 行），同一轮的重试不能再被
+// 同一条原始消息拒绝，否则本轮永远委托不出去。放行证据只认「拒绝之后真的有一次完整作答」
+// （askUserQuestionAnswersSince，来自作答记录路径；跳过/无界面/残缺答案走不到），并且答案
+// 文本必须点到这次要发的会话（evaluateClarifyAnswer）。没作答、点了别家、答案无关都继续拒。
+const clarificationAsked = new Map<string, { mark: number; rule: ClarifyGuardRule }>();
+const CLARIFICATION_TRACK_LIMIT = 256;
+
+// ADR-072 D2/D3 确定性守卫：模型只给建议，目标不清时不绑定，改回一个可点选的问题。
+// 返回 null = 放行进准入门；否则是 needs_clarification 拒绝（候选只给显示名，不含 id）。
+function clarifyGuardRejection(
+  call: DelegateSessionCall,
+  ctx: Parameters<ToolHandler['execute']>[1],
+  runtime: ReturnType<typeof getDelegationToolRuntime>,
+): ToolResult<string> | null {
+  if (call.action !== 'delegate_existing' && call.action !== 'create_new') return null;
+  const userMessage = readOriginUserMessage(runtime.getDb(), ctx.sessionId, ctx.sourceMessageId);
+  if (userMessage === null) {
+    logger.warn('[DelegateSession] clarify guard message-based rules skipped: the session has no readable origin user message');
+    return null;
+  }
+  const scope = ctx.runId ?? ctx.turnId ?? '';
+  const turnKey = `${ctx.sessionId}\0${originTurnIdOf(ctx)}`;
+  const asked = clarificationAsked.get(turnKey);
+  const secret = getDelegationCandidateSecret();
+  const projection = projectSessionCandidates(runtime.listSessions(), {
+    originSessionId: ctx.sessionId,
+    now: runtime.now(),
+    secret,
+    isRunning: (sessionId) => runtime.getRun(sessionId) !== undefined,
+  });
+  let chosenIndex: number | null = null;
+  if (call.action === 'delegate_existing') {
+    // 引用解不开 / 集合过期交给 G3 原样拒绝（码与 gate 不变）。
+    const resolved = resolveCandidateRef({ candidateSetId: call.candidateSetId, candidateRef: call.candidateRef }, projection, secret);
+    if (!resolved.ok) return null;
+    chosenIndex = projection.sessionIds.indexOf(resolved.sessionId);
+  }
+  const guardCandidates = projection.candidates.map((candidate) => ({ shortName: candidate.shortName, workspaceName: candidate.workspaceName }));
+  // 作答证据：拒绝之后的作答，或（模型自己先问了用户、还没被守卫拒过时）本轮任何一次完整作答。
+  const answers = askUserQuestionAnswersSince(ctx.sessionId, scope, asked?.mark ?? 0);
+  let verdict = evaluateClarifyGuard({ action: call.action, candidates: guardCandidates, chosenIndex, userMessage });
+  if (verdict.kind === 'proceed') return null;
+  // 没任务内容（vague_task_text）只认「守卫拒绝之后」的作答，无关的早先作答不算。
+  const answerConsulted = answers.length > 0 && (asked !== undefined || verdict.rule !== 'vague_task_text');
+  if (answerConsulted) {
+    verdict = evaluateClarifyAnswer({ rule: asked?.rule ?? verdict.rule, action: call.action, candidates: guardCandidates, chosenIndex, answerText: answers.join('\n') });
+    if (verdict.kind === 'proceed') {
+      clarificationAsked.delete(turnKey);
+      logger.info('[DelegateSession] clarify guard passed: the user answered a clarification question in this turn and the answer matches the target');
+      return null;
+    }
+  }
+  // 作答后仍被拒（点了别家/无关答案）不推进 mark：用户已经答过的那次作答，对之后改对的重试仍然有效。
+  if (!answerConsulted) {
+    if (clarificationAsked.size >= CLARIFICATION_TRACK_LIMIT) clarificationAsked.delete(clarificationAsked.keys().next().value as string);
+    clarificationAsked.set(turnKey, { mark: askUserQuestionAnswerMark(), rule: asked?.rule ?? verdict.rule });
+  }
+  const names = verdict.candidateNames.length > 0 ? ` Candidate chats (display names): ${verdict.candidateNames.map((name) => `「${name}」`).join('、')}.` : '';
+  return {
+    ok: false,
+    code: 'DELEGATION_REJECTED',
+    error: `needs_clarification: the target chat is not clear enough to send this safely.${names} Nothing was delegated. Ask the user which chat they mean with AskUserQuestion, using those display names as the options (plain words, no ids); do not retry delegate_session until the user answers.`,
+    meta: { code: 'needs_clarification', gate: 'none', rule: verdict.rule },
   };
 }
 
@@ -312,6 +383,8 @@ async function runDelegateSession(
   const runtime = getDelegationToolRuntime(ctx);
   const call = parsed.call;
   try {
+    const guarded = clarifyGuardRejection(call, ctx, runtime);
+    if (guarded) return guarded;
     const admission = await admissionFor(call, ctx, runtime);
     if (admission.result.kind === 'rejected') return rejection(admission.result.code, admission.result.detail, admission.result.gate);
     if (admission.result.kind === 'reused') {
@@ -379,7 +452,7 @@ async function executeNewDelegation(
   }
   if (committed.kind === 'reused') return reusedReceipt(committed.delegationId, runtime);
   runtime.notifyEnqueued(targetId);
-  return successfulOutput({ delegationId: committed.delegationId, targetName, status: 'active', queuedAhead: admission.snapshot.userQueuedOrSendingRows });
+  return successfulOutput({ targetSessionId: targetId, delegationId: committed.delegationId, targetName, status: 'active', queuedAhead: admission.snapshot.userQueuedOrSendingRows });
 }
 
 async function executeChain(
@@ -398,7 +471,7 @@ async function executeChain(
     const handle = runtime.getRun(row.targetSessionId);
     if (handle?.cancel && row.targetRunId && handle.context.runId === row.targetRunId) await handle.cancel('user');
     repository.markStopped(row.delegationId, { reason: 'user' }, now);
-    return successfulOutput({ delegationId: row.delegationId, targetName: runtime.getSessionRow(row.targetSessionId)?.title ?? 'session', status: 'stopped', queuedAhead: 0 });
+    return successfulOutput({ targetSessionId: row.targetSessionId, delegationId: row.delegationId, targetName: runtime.getSessionRow(row.targetSessionId)?.title ?? 'session', status: 'stopped', queuedAhead: 0 });
   }
   if (call.action === 'resume') {
     if (!row.targetQueuedInputId) return rejection('invalid_call', 'delegation has no queued input');
@@ -433,7 +506,7 @@ async function executeChain(
     queued.unpauseQueued(row.targetQueuedInputId, now);
     repository.markResumed(row.delegationId, now);
     runtime.notifyEnqueued(row.targetSessionId);
-    return successfulOutput({ delegationId: row.delegationId, targetName: runtime.getSessionRow(row.targetSessionId)?.title ?? 'session', status: 'active', queuedAhead: 0 });
+    return successfulOutput({ targetSessionId: row.targetSessionId, delegationId: row.delegationId, targetName: runtime.getSessionRow(row.targetSessionId)?.title ?? 'session', status: 'active', queuedAhead: 0 });
   }
   if (call.action === 'correct') {
     if (!call.content) return rejection('invalid_call', 'correct requires task text');
@@ -463,7 +536,7 @@ async function executeChain(
     }
     if (committed.kind === 'reused') return reusedReceipt(committed.delegationId, runtime);
     runtime.notifyEnqueued(newTarget);
-    return successfulOutput({ delegationId: committed.delegationId, targetName: target?.title ?? 'session', status: 'active', queuedAhead: 0 });
+    return successfulOutput({ targetSessionId: newTarget, delegationId: committed.delegationId, targetName: target?.title ?? 'session', status: 'active', queuedAhead: 0 });
   }
   return rejection('invalid_call', 'unsupported chain action');
 }

@@ -5,6 +5,7 @@ import type { PermissionRequest } from './types';
 import { formatFilePath, isDangerousCommand } from './utils';
 import { redactCredentialText } from '@shared/security/secretPatterns';
 import { PermissionRequestReason } from '@shared/contract';
+import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
 import { isSandboxEscalation } from './sandboxEscalationPresentation';
 
 function fileTarget(request: PermissionRequest): string | undefined {
@@ -84,6 +85,7 @@ export function isGenericCommandRequest(request: PermissionRequest): boolean {
 }
 
 export function defaultPermissionViewMode(request: PermissionRequest): DecisionCardViewMode {
+  if (request.details.browserSessionGrant) return 'expanded';
   if (request.rawArgs || isOutsideWorkspace(request) || isSafeDefaultDeny(request)) return 'expanded';
   return request.type === 'file_read' || request.type === 'file_write' || request.type === 'file_edit'
     ? 'compact'
@@ -91,6 +93,12 @@ export function defaultPermissionViewMode(request: PermissionRequest): DecisionC
 }
 
 export function permissionSummary(request: PermissionRequest, t: Translations, language: Language = 'zh'): string {
+  const browser = request.details.browserSessionGrant;
+  const copy = language === 'en' ? browserSessionGrantEn : browserSessionGrantZh;
+  const action = copy.actions[request.details.action ?? ''];
+  if (browser && action) return copy.question.replace('{action}', action)
+    .replace('{site}', browser.target?.slice(browser.target.indexOf('@') + 1) ?? copy.unknownSite);
+
   const p = t.decisionCard.permission;
   if (isGenericCommandRequest(request)) return p.genericApprovalQuestion;
   const target = fileTarget(request);
@@ -188,7 +196,8 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
       .replace('{count}', fileCountText(count, t));
   }
   if (request.type === 'network' || request.type === 'mcp') {
-    const endpoint = request.details.url
+    const endpoint = request.details.connectorAccess?.connectorName
+      || request.details.url
       || [request.details.server, request.details.toolName].filter(Boolean).join(' / ')
       || p.externalServiceFallback;
     return p.consequenceNetwork.replace('{target}', redactCredentialText(endpoint));

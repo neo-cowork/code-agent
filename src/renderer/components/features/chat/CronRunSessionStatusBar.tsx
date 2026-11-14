@@ -15,6 +15,7 @@ import type { ParkedApprovalInboxItem } from '@shared/contract/pendingApproval';
 import type { PermissionResponse } from '@shared/contract/permission';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { Check, X } from 'lucide-react';
+import { Button } from '../../primitives/Button';
 import { cronClient } from '../../../services/cronClient';
 import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
 import ipcService from '../../../services/ipcService';
@@ -22,6 +23,8 @@ import { refreshParkedApprovals } from '../../../stores/parkedApprovalStore';
 import { useCronStore } from '../../../stores/cronStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
+import type { Translations } from '../../../i18n';
+import { classifyToolName, humanizeToolStep } from '../../../utils/humanizeToolStep';
 import { toast } from '../../../hooks/useToast';
 import { classifyPermissionDelivery } from '../../PermissionDialog/permissionDelivery';
 import {
@@ -40,26 +43,23 @@ import {
 /** 运行中/等批准才轮询；终态定格（再跑一次会开新会话，不会改写本记录）。 */
 const POLL_INTERVAL_MS = 2000;
 
-function awaitingLabelFromParked(item: ParkedApprovalInboxItem, bashRunPrefix: string): string | undefined {
-  const preview = item.argsPreview?.trim();
-  if (!item.displayTool && item.tool?.toLowerCase() === 'bash' && preview) {
-    return `${bashRunPrefix}${preview}`;
-  }
-  const parts = [item.displayTool ?? item.tool, preview].filter(Boolean);
-  return parts.length > 0 ? parts.join('：') : undefined;
-}
-
 function findParkedApprovalForSession(
   rows: ParkedApprovalInboxItem[] | undefined,
   sessionId: string,
-  bashRunPrefix: string,
+  t: Translations,
 ): CronRunAwaitingApproval | null {
   const pending = (rows ?? []).find((item) => item.sessionId === sessionId && item.status === 'pending');
   if (!pending) return null;
+  const category = classifyToolName(pending.tool);
+  const preview = pending.argsPreview?.trim();
+  const basename = preview && /^(?:[^\s\0]*[\\/])?[^\s\/\\]+$/.test(preview)
+    ? preview.split(/[\\/]/).pop() : undefined;
+  const args = ['read', 'write', 'edit'].includes(category) && basename ? { file_path: basename } : undefined;
   return {
     id: pending.id,
     requestedAt: pending.requestedAt,
-    label: awaitingLabelFromParked(pending, bashRunPrefix),
+    label: category === 'bash' ? t.automationPresentation.runCommand : humanizeToolStep(pending.tool, args, t, undefined, 'pending-approval'),
+    command: category === 'bash' ? pending.commandPreview ?? pending.argsPreview : undefined,
   };
 }
 
@@ -74,6 +74,7 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
   const [execution, setExecution] = useState<CronJobExecution | null>(null);
   const [pendingApproval, setPendingApproval] = useState<CronRunAwaitingApproval | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [expandedApprovalId, setExpandedApprovalId] = useState<string | null>(null);
   const [approvalBusy, setApprovalBusy] = useState(false);
   const [isRerunning, setIsRerunning] = useState(false);
   // 终态后停轮询：completed/interrupted/failed/cancelled 不会自己变回来。
@@ -97,13 +98,14 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
     try {
       const executions = await cronClient.getExecutions(jobId, 20);
       const nextExecution = findCronExecutionForSession(executions, { executionId, sessionId });
+      useCronStore.setState((state) => ({ executionsByJobId: { ...state.executionsByJobId, [jobId]: executions } }));
       if (nextExecution) missingFetchesRef.current = 0;
       else missingFetchesRef.current += 1;
       setExecution(nextExecution);
       // 等批准列表只为 running 期间服务（等批准的运行 execution 必是 running）。
       if (nextExecution?.status === 'running') {
         const parked = await sessionAutomationClient.listParkedApprovals();
-        setPendingApproval(findParkedApprovalForSession(parked, sessionId, copy.awaitingBashPrefix));
+        setPendingApproval(findParkedApprovalForSession(parked, sessionId, t));
       } else {
         setPendingApproval((previous) => (nextExecution ? null : previous));
       }
@@ -117,7 +119,7 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
     } catch {
       // 拉不到就不改状态：宁可停在上一拍的真实值，也不显示编出来的状态。
     }
-  }, [copy.awaitingBashPrefix, executionId, jobId, sessionId]);
+  }, [t, executionId, jobId, sessionId]);
 
   const activeKind = status?.kind ?? null;
   useEffect(() => {
@@ -194,12 +196,24 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
           {copy.awaiting}
           {status.approval.label ? `：${status.approval.label}` : ''}
         </span>
+        {status.approval.command !== undefined && (
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-expanded={expandedApprovalId === status.approval.id}
+            aria-controls={`cron-command-${status.approval.id}`}
+            onClick={() => { setExpandedApprovalId(expandedApprovalId === status.approval.id ? null : status.approval.id); }}
+            data-testid="cron-run-command-toggle"
+          >
+            {expandedApprovalId === status.approval.id ? t.automationPresentation.hideCommand : t.automationPresentation.showCommand}
+          </Button>
+        )}
         <span className="flex items-center gap-1.5">
           <button /* ds-allow:button: 状态行内超小批准按钮（h-6 px-2 text-xs），Button primitive 最小 sm 档更高 */
             type="button"
             onClick={() => { void handleApproval('allow'); }}
             disabled={approvalBusy}
-            className="inline-flex h-6 items-center gap-1 rounded-md border border-badge-success/40 bg-emerald-500/10 px-2 text-xs text-badge-success transition-colors hover:bg-emerald-500/20 disabled:opacity-50"
+            className="shrink-0 whitespace-nowrap inline-flex h-6 items-center gap-1 rounded-md border border-badge-success/40 bg-emerald-500/10 px-2 text-xs text-badge-success transition-colors hover:bg-emerald-500/20 disabled:opacity-50"
             data-testid="cron-run-status-approve"
           >
             <Check className="h-3 w-3" />
@@ -209,13 +223,20 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
             type="button"
             onClick={() => { void handleApproval('deny'); }}
             disabled={approvalBusy}
-            className="inline-flex h-6 items-center gap-1 rounded-md border border-border-muted px-2 text-xs text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-50"
+            className="shrink-0 whitespace-nowrap inline-flex h-6 items-center gap-1 rounded-md border border-border-muted px-2 text-xs text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-50"
             data-testid="cron-run-status-reject"
           >
             <X className="h-3 w-3" />
             {copy.reject}
           </button>
         </span>
+        {status.approval.command !== undefined && expandedApprovalId === status.approval.id && (
+          <pre
+            id={`cron-command-${status.approval.id}`}
+            className="basis-full min-w-0 whitespace-pre-wrap break-all rounded-md bg-surface-secondary p-2 text-xs text-zinc-300"
+            data-testid="cron-run-command"
+          >{status.approval.command}</pre>
+        )}
       </div>
     );
   }
@@ -266,7 +287,7 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
           type="button"
           onClick={() => { void handleRerun(); }}
           disabled={isRerunning}
-          className="inline-flex h-6 items-center rounded-md border border-border-muted px-2 text-xs text-zinc-300 transition-colors hover:bg-zinc-800 disabled:opacity-50"
+          className="shrink-0 whitespace-nowrap inline-flex h-6 items-center rounded-md border border-border-muted px-2 text-xs text-zinc-300 transition-colors hover:bg-zinc-800 disabled:opacity-50"
           data-testid="cron-run-status-rerun"
         >
           {copy.rerun}

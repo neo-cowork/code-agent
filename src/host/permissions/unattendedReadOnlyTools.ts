@@ -9,29 +9,7 @@
 // 只对 async_agent 拓扑生效；未声明 / 声明外的工具照旧走审批门。
 // ============================================================================
 
-import { RECOMMENDED_MCP_SERVERS } from '../../shared/constants/mcpCatalog';
-
-/** 裸工具名 → 运行时 MCP 工具名：`mcp__<serverId>__<点换下划线>`。 */
-function toRuntimeToolName(serverId: string, bareTool: string): string {
-  return `mcp__${serverId}__${bareTool.replace(/\./g, '_')}`;
-}
-
-/**
- * 从 catalog 聚合所有声明为只读的工具的运行时名。catalog 是静态常量，构建一次缓存。
- * 空集合也缓存（没有连接器声明 readOnlyTools 时，恒返回 false，是安全默认）。
- */
-let allowSet: ReadonlySet<string> | null = null;
-function getAllowSet(): ReadonlySet<string> {
-  if (allowSet) return allowSet;
-  const set = new Set<string>();
-  for (const entry of RECOMMENDED_MCP_SERVERS) {
-    for (const bareTool of entry.readOnlyTools ?? []) {
-      set.add(toRuntimeToolName(entry.id, bareTool));
-    }
-  }
-  allowSet = set;
-  return set;
-}
+import { isDeclaredReadOnlyConnectorTool } from './connectorToolAccess';
 
 /**
  * 该工具是否可在无人值守会话里免审批放行。
@@ -40,5 +18,5 @@ function getAllowSet(): ReadonlySet<string> {
  */
 export function isUnattendedAllowedReadOnlyTool(toolName: string): boolean {
   if (!toolName.startsWith('mcp__')) return false;
-  return getAllowSet().has(toolName);
+  return isDeclaredReadOnlyConnectorTool(toolName);
 }

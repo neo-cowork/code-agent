@@ -1,4 +1,5 @@
 import React from 'react';
+import type { AwaitingApprovalRun } from '@shared/contract/sessionAutomation';
 import type { CronJobDefinition, CronJobExecution, CronPermissionDeniedMarker } from '@shared/contract';
 import { useI18n } from '../../../hooks/useI18n';
 import {
@@ -23,7 +24,7 @@ interface CronExecutionListProps {
   /** Immutable execution location keyed by job id. */
   runsOnByJobId?: Record<string, CronJobDefinition['runsOn']>;
   /** jobId → 等批准运行（N-CRON-UNATTENDED-BASH-PARK-STUCK）：running 行状态格换 amber 徽章。 */
-  awaitingByJobId?: Map<string, { commandPreview?: string }>;
+  awaitingByJobId?: Map<string, Pick<AwaitingApprovalRun, 'tool' | 'commandPreview'>>;
 }
 
 const thClass = 'whitespace-nowrap px-1 py-2';
@@ -100,7 +101,7 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
               : undefined;
             const rowReason = deniedSentence ?? wakeSkipText;
             const costRunsOn = execution.runsOn ?? runsOnByJobId?.[execution.jobId];
-            const awaitingPreview = awaitingByJobId?.get(execution.jobId)?.commandPreview;
+            const awaitingLabel = awaitingApprovalLabel(cc, awaitingByJobId?.get(execution.jobId));
             const isSelected = execution.id === selectedExecutionId;
             const rowTone = isSelected ? 'bg-zinc-800/80' : 'bg-zinc-900/40 hover:bg-zinc-800/50';
             return (
@@ -119,19 +120,19 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
                       <span
                         className="inline-block max-w-[180px] overflow-hidden text-ellipsis whitespace-nowrap rounded-full border border-badge-warning/40 bg-amber-500/15 px-2 py-1 align-middle text-xs text-badge-warning"
                         data-testid="cron-exec-awaiting-approval"
-                        title={awaitingPreview ? cc.awaitingApprovalWithPreview.replace('{preview}', awaitingPreview) : undefined}
+                        title={awaitingLabel ?? undefined}
                       >
-                        {awaitingApprovalLabel(cc.awaitingApprovalWithPreview, awaitingPreview) ?? cc.awaitingApprovalBadge}
+                        {awaitingLabel ?? cc.awaitingApprovalBadge}
                       </span>
                     ) : permissionDenied ? (
                       <span
-                        className="rounded-full px-2 py-1 text-xs text-badge-warning bg-amber-500/10"
+                        className="shrink-0 whitespace-nowrap rounded-full px-2 py-1 text-xs text-badge-warning bg-amber-500/10"
                         data-testid="cron-execution-permission-denied"
                       >
                         {statusMeta.label}
                       </span>
                     ) : (
-                      <span className={`rounded-full px-2 py-1 text-xs ${statusMeta.className}`}>
+                      <span className={`shrink-0 whitespace-nowrap rounded-full px-2 py-1 text-xs ${statusMeta.className}`}>
                         {statusMeta.label}
                       </span>
                     )}

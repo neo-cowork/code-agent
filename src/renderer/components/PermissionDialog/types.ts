@@ -43,6 +43,8 @@ export interface PermissionRequestDetails {
   changes?: string;
   server?: string;
   toolName?: string;
+  connectorAccess?: { connectorId: string; connectorName: string; access: 'read' | 'write' };
+  purpose?: string;
   commandRiskLevel?: 'safe' | 'unknown' | 'low' | 'medium' | 'high' | 'critical';
   commandSecurityFlags?: string[];
   affectedPath?: string;
@@ -51,6 +53,8 @@ export interface PermissionRequestDetails {
   targetKind?: FileTargetKind;
   /** B4：external 工具的授权 target 精确串（收件人/频道 id）；有值时审批卡点一行去向。 */
   standingGrantTarget?: string;
+    /** Host-only action + exact origin; null means one-time permission only. */
+    browserSessionGrant?: { target: string | null; previousOrigins: string[] };
   /** computer_use 目标应用。有值且非 forceConfirm 时，审批卡按应用给三个选项。 */
   targetApp?: { bundleId?: string; name: string };
   /** ADR-067 D3：host 透传的 peer 消息触发标注；渲染层只消费，缺省不显示。 */

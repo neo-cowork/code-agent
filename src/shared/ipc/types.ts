@@ -34,6 +34,8 @@ export interface AgentMessageRequest {
 export interface AgentCancelRequest {
   runId?: string;
   sessionId?: string;
+  /** 显式「放弃」停靠 run；不带时对 waiting/user_stop 停靠是 no-op（Stop 幂等）。 */
+  abandonParked?: boolean;
 }
 
 export interface AgentPermissionResponseRequest {

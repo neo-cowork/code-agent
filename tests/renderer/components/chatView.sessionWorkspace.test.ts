@@ -10,7 +10,7 @@ const ipcInvokeMock = vi.hoisted(() => vi.fn(async () => undefined));
 const settingsInvokeMock = vi.hoisted(() => vi.fn<() => Promise<unknown>>(async () => { throw new Error('test boundary'); }));
 
 const sessionState = {
-  currentSessionId: 'session-1',
+  currentSessionId: 'session-1' as string | null,
   hasOlderMessages: false,
   isLoadingOlder: false,
   loadOlderMessages: vi.fn(async () => {}),
@@ -46,6 +46,7 @@ const appState = {
   setTaskPlan: vi.fn(),
   setShowSettings: vi.fn(),
   openSettingsTab: vi.fn(),
+  openModelSettings: vi.fn(),
 };
 
 vi.mock('../../../src/renderer/stores/appStore', () => ({
@@ -53,6 +54,7 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
     (selector?: (state: typeof appState) => unknown) => selector ? selector(appState) : appState,
     {
       getState: () => ({
+        ...appState,
         setWorkingDirectory: vi.fn(),
       }),
     },
@@ -274,9 +276,10 @@ vi.mock('../../../src/renderer/utils/platform', () => ({
   isWebMode: () => false,
 }));
 
+const locale = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }));
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
-  const { zh } = await import('../../../src/renderer/i18n/zh');
-  return { useI18n: () => ({ t: zh, language: 'zh' }) };
+  const { languages } = await import('../../../src/renderer/i18n');
+  return { useI18n: () => ({ t: languages[locale.language], language: locale.language }) };
 });
 
 import { ChatView, buildDefaultSuggestions } from '../../../src/renderer/components/ChatView';
@@ -284,11 +287,15 @@ import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
 
 import { useAuthStore } from '../../../src/renderer/stores/authStore';
+import { useToastStore } from '../../../src/renderer/hooks/useToast';
 
 beforeEach(() => {
   useAuthStore.setState({ isAuthenticated: true, showAuthModal: false });
   sendMessageMock.mockClear();
   appState.openSettingsTab.mockClear();
+  appState.openModelSettings.mockClear();
+  locale.language = 'zh';
+  useToastStore.setState({ toasts: [] });
   window.domainAPI = { invoke: vi.fn(async () => ({ success: true, data: null })) } as typeof window.domainAPI;
   settingsInvokeMock.mockReset().mockRejectedValue(new Error('test boundary'));
 });
@@ -455,6 +462,19 @@ describe('ChatView session shell', () => {
     }
   });
 
+  it('null session without a skipped question leaves the default composer placeholder', () => {
+    const originalSessionId = sessionState.currentSessionId;
+    sessionState.currentSessionId = null;
+    try {
+      render(React.createElement(ChatView));
+      const input = screen.getByLabelText('chat-input-field') as HTMLInputElement;
+      expect(input.placeholder).not.toBe(zh.userQuestion.skippedPlaceholder);
+      expect(input.placeholder).toBe('');
+    } finally {
+      sessionState.currentSessionId = originalSessionId;
+    }
+  });
+
   it('跳过提问后只改输入区 placeholder，下一条普通消息发出后恢复', async () => {
     sendMessageMock.mockClear();
     ipcInvokeMock.mockClear();
@@ -571,5 +591,36 @@ describe('ChatView send authentication', () => {
     await waitFor(() => expect(useAuthStore.getState().showAuthModal).toBe(true));
     expect(sendMessageMock).not.toHaveBeenCalled();
     expect(input.value).toBe(prompt);
+  });
+});
+
+
+describe('ChatView missing API Key notice', () => {
+  it.each([
+    ['en', 'openai', 'No API Key for OpenAI yet. Settings is open — add one, then send again.'],
+    ['zh', 'openai', 'OpenAI 尚未配置 API Key。已打开设置，请添加后再发送。'],
+    ['en', 'custom-meeting', 'No API Key for this model yet. Settings is open — add one, then send again.'],
+    ['zh', 'custom-meeting', '这个模型 尚未配置 API Key。已打开设置，请添加后再发送。'],
+  ] as const)('toast copy and provider target %s/%s', async (language, provider, expected) => {
+    locale.language = language;
+    settingsInvokeMock.mockResolvedValue({ models: { default: provider, defaultProvider: 'deepseek', providers: {} } });
+    render(React.createElement(ChatView));
+    fireEvent.change(screen.getByLabelText('chat-input-field'), { target: { value: '把 notes.txt 的会议记录整理成三个要点' } });
+    fireEvent.submit(screen.getByTestId('chat-input'));
+    await waitFor(() => expect(useToastStore.getState().toasts.at(-1)?.message).toBe(expected));
+    expect(appState.openModelSettings).toHaveBeenCalledExactlyOnceWith(provider);
+    expect(appState.openSettingsTab).not.toHaveBeenCalled();
+    expect(sendMessageMock).not.toHaveBeenCalled();
+    expect((screen.getByLabelText('chat-input-field') as HTMLInputElement).value).toContain('notes.txt');
+    expect(useToastStore.getState().toasts.map((toast) => toast.message).join(' ')).not.toMatch(/Configure a model before sending|先配置一个模型后再发送/);
+  });
+
+  it('keeps the configured alternative notice and ordinary settings branch unchanged', async () => {
+    settingsInvokeMock.mockResolvedValue({ models: { default: 'openai', providers: { deepseek: { enabled: true, apiKeyConfigured: true } } } });
+    render(React.createElement(ChatView));
+    fireEvent.submit(screen.getByTestId('chat-input'));
+    await waitFor(() => expect(useToastStore.getState().toasts.at(-1)?.message).toBe(zh.chat.configureModelKeyFirst));
+    expect(appState.openSettingsTab).toHaveBeenCalledWith('model');
+    expect(appState.openModelSettings).not.toHaveBeenCalled();
   });
 });

@@ -179,6 +179,9 @@ export interface PermissionRequest {
     newContent?: string;
     server?: string;
     toolName?: string;
+    /** Host catalog classification; never trusted from tool arguments or renderer input. */
+    connectorAccess?: { connectorId: string; connectorName: string; access: 'read' | 'write' };
+    purpose?: string;
     /** commandSafety 结果；未识别却需确认时由执行层覆写为 unknown，供审批卡生成人话后果。 */
     commandRiskLevel?: 'safe' | 'unknown' | 'low' | 'medium' | 'high' | 'critical';
     commandSecurityFlags?: string[];
@@ -195,6 +198,8 @@ export interface PermissionRequest {
      * 透传，供停车审批卡出「每次都允许发 <target>」铸权入口；模型侧无入口（no-self-grant）。
      */
     standingGrantTarget?: string;
+    /** Host-only action + exact origin; null means one-time permission only. */
+    browserSessionGrant?: { target: string | null; previousOrigins: string[] };
     /**
      * computer_use 的目标应用。有此字段时审批卡按应用给「始终 / 本次对话 / 拒绝」，
      * 不走工具级会话记忆。bundleId 缺省时按应用名匹配。

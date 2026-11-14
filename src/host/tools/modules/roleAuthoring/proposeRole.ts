@@ -16,15 +16,22 @@ import type {
   ToolResult,
   ToolSchema,
 } from '../../../protocol/tools';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 import type { SkillCategory } from '../../../../shared/contract/skillRepository';
 import type { Message, SessionOrigin } from '../../../../shared/contract';
 import {
   enqueueRoleDraft,
   installRoleDraft,
   prepareRoleDraft,
+  rejectRoleDraft,
 } from '../../../services/roleAssets/roleDraftQueue';
 import { buildRoleCreatedSummary } from '../../../services/roleAssets/roleCreatedSummary';
 import { shouldCreateRoleDirectly } from '../../../services/roleAssets/roleCreationIntent';
+import { groupRoleToolsByAbility } from '../../../../shared/contract/roleToolAbility';
+import { diffRoleDefinition } from '../../../services/roleAssets/roleEditChange';
+import { getAgentsMdDir } from '../../../config/configPaths';
+import { parseAgentMd } from '../../../agent/hybrid/agentMdLoader';
 import { getSessionManager } from '../../../services/infra/sessionManager';
 import { getPermissionModeManager } from '../../../permissions/modes';
 import { findUnknownToolNames, getKnownToolNames, hasProtocolToolRegistry } from '../../knownToolNames';
@@ -70,7 +77,7 @@ async function shouldInstallDirectly(ctx: ToolContext, editingRoleId: string | u
 
 /**
  * 同名待确认草稿冲突：确认卡只在草稿所属会话里显示，所以失败文案要告诉模型草稿在哪。
- * 三种情形：本会话（沿用原文案）/ 另一会话仍在（点名）/ 所属会话已不存在（孤儿，不指路）。
+ * 跨会话两种情形：另一会话仍在（点名）/ 所属会话已不存在（孤儿，不指路）。
  */
 async function describeDraftRejection(
   ctx: ToolContext,
@@ -111,6 +118,40 @@ async function describeDraftRejection(
     `请如实告诉用户：同名专家「${name}」已在${where}起草过、还没确认，请回到那个对话确认或放弃它，或者告诉你一个新名字，你会重新起草。` +
     `不要说当前对话有确认卡或让用户在这里点确认，不要再用同一个名字重试。`
   );
+}
+
+/** 改已有角色时，把新草稿与当前定义的差异写成给模型看的清单；读不到当前定义要明说并留 warn。 */
+async function buildChangeBlock(
+  ctx: ToolContext,
+  roleId: string,
+  next: { description: string; tools: string[]; systemPrompt: string },
+): Promise<string> {
+  const header = '\n本次相对当前定义的改动：\n';
+  try {
+    const file = path.join(getAgentsMdDir().user, `${roleId}.md`);
+    const previous = parseAgentMd(await fs.readFile(file, 'utf-8'), file);
+    if (!previous) throw new Error('Invalid agent definition frontmatter');
+    const change = diffRoleDefinition(
+      { description: previous.description, tools: previous.tools, systemPrompt: previous.prompt },
+      next,
+    );
+    const abilityLine = (verb: string, names: string[]) => groupRoleToolsByAbility(names)
+      .map((g) => `- ${verb}能力：${g.label}（${g.toolNames.join('、')}）`);
+    const items: string[] = [...abilityLine('新增', change.addedTools), ...abilityLine('移除', change.removedTools)];
+    if (change.descriptionChanged) items.push('- 描述有改动');
+    if (change.promptLinesAdded || change.promptLinesRemoved) {
+      items.push(`- 系统提示词：新增 ${change.promptLinesAdded} 行、删除 ${change.promptLinesRemoved} 行`);
+    }
+    const body = items.length ? items.join('\n') : '- 与当前定义完全一致（没有任何改动）';
+    return `${header}${body}\n` +
+      '对照用户这次点名要改的内容：清单里凡是用户没提的改动，都要从草稿里去掉并重新调用本工具；回复用户时只如实说清单里的改动，不要多说也不要少说；对用户只说中文能力名（括号里的工具 id 只是给你对照用的，不要写进回复）。\n';
+  } catch (error) {
+    ctx.logger.warn('propose_role could not read current definition for change list', {
+      roleId,
+      reason: String(error),
+    });
+    return `${header}- 读不到当前定义，无法核对改动范围；请如实告诉用户这一点，并只说你确实改了的部分。\n`;
+  }
 }
 
 class ProposeRoleHandler implements ToolHandler<Record<string, unknown>, string> {
@@ -196,6 +237,11 @@ class ProposeRoleHandler implements ToolHandler<Record<string, unknown>, string>
         return { ok: false, error: installed.error ?? 'Role installation failed', code: 'DRAFT_REJECTED' };
       }
 
+      for (const id of prepared.supersededDraftIds ?? []) {
+        const removed = await rejectRoleDraft(id);
+        if (!removed.success) throw new Error(removed.error);
+      }
+
       const summary = buildRoleCreatedSummary(prepared.draft);
       ctx.emit({
         type: 'role_created_direct',
@@ -262,12 +308,16 @@ class ProposeRoleHandler implements ToolHandler<Record<string, unknown>, string>
 
     const toolsLine = tools.length > 0 ? tools.join(', ') : '（默认全集）';
     const verb = editingRoleId ? '修改' : '创建';
+    const changeBlock = editingRoleId
+      ? await buildChangeBlock(ctx, draft.roleId, { description: draft.description, tools: draft.tools, systemPrompt })
+      : '';
     return {
       ok: true,
       output:
         `已为「${draft.roleId}」生成${editingRoleId ? '修改' : ''}草稿，确认卡已弹出，等待用户点击确认。\n` +
         `- 描述：${draft.description || '（无）'}\n` +
         `- 工具：${toolsLine}\n` +
+        changeBlock +
         `请告诉用户：可以直接确认${verb}，或继续提出修改（你会重新起草）。在用户确认前不要重复调用本工具，除非用户要求改动。`,
       meta: {
         draftId: draft.id,

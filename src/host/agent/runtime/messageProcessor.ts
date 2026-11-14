@@ -1,3 +1,4 @@
+import { peekEnvBlockedNote, envBlockedCancelledClosures } from './envBlockedTurn';
 import type { TraceEventDataMap } from './turnTrace';
 import { getToolAttemptTrace } from './toolAttemptTrace';
 import { checkDocumentEvidenceClaims } from './documentEvidenceBoundary';
@@ -171,7 +172,8 @@ export class MessageProcessor {
       inputTokens: response.usage?.inputTokens,
       outputTokens: response.usage?.outputTokens,
       modelDecision: response.runtimeDiagnostics?.modelDecision,
-      metadata: attachTurnQualityMetadata(this.ctx, undefined, response),
+      metadata: attachTurnQualityMetadata(this.ctx, response.backgroundTaskPreannounce
+        ? { backgroundTaskPreannounce: response.backgroundTaskPreannounce } : undefined, response),
       // 逐段就地映射，保住 provider 记录的 text/tool 交错顺序——渲染层拿它当权威顺序。
       // 拍平成「一段合并 text + 其余非 text」会把「先读 config」→Read→「再看 package.json」→Read
       // 渲染成两段旁白粘连并全部前置、两张卡在后，叙事顺序对不上实际发生顺序。
@@ -802,10 +804,17 @@ export class MessageProcessor {
 
     if (this.ctx.control.isCancelled || this.ctx.control.isInterrupted || this.ctx.control.runAbortController?.signal.aborted) {
       logger.info('[AgentLoop] Run stop detected after tool execution; persisting cancelled tool-call closures');
+      if (peekEnvBlockedNote(this.ctx.runId) && toolResults.length) {
+        const historyResults = sanitizeToolResultsForHistoryWithCalls(toolResults, toolCalls);
+        await this.contextAssembly.addAndPersistMessage({
+          id: `${assistantMessage.id}:env-blocked-results`, role: 'tool', timestamp: Date.now(),
+          content: JSON.stringify(historyResults), toolResults: historyResults,
+        });
+      }
       await persistCancelledToolCallClosures({
         messages: this.ctx.messages,
         assistantMessage,
-        toolCalls,
+        toolCalls: envBlockedCancelledClosures(this.ctx.runId, toolCalls),
         persistMessage: (message) => this.contextAssembly.addAndPersistMessage(message),
       });
       return 'break';

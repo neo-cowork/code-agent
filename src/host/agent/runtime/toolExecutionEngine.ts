@@ -1,6 +1,8 @@
+import { toolModelCallback } from './toolModelCallback';
+import { settleEnvBlockedTool, peekEnvBlockedNote } from './envBlockedTurn';
 import { getToolAttemptTrace, shouldFreezeNonReadWhileAwaitingUser, buildAwaitingUserBlockedResult, AWAITING_USER_FREEZE_NOTICE } from './toolAttemptTrace';
 import { publishEnvAssistToolNotice } from '../../permissions/envAssist/toolNotice';
-import { buildInsufficientScopeConnectorEvent } from './connectorScopeCard';
+import { buildConnectorToolFailureEvent } from './connectorScopeCard';
 import { emitBatchTerminatedToolResult, emitForceFinalSkippedToolResult } from './forceFinalSeal';
 import { mintDelegatedTurnOrigin, mintUserTurnOrigin } from '../messageOrigin';
 import { attachDocumentOrigin, describeDocumentEvidenceProblems, documentClaimPreflight } from './documentEvidenceBoundary';
@@ -859,7 +861,7 @@ export class ToolExecutionEngine {
         logger.info('[AgentLoop] exit_role_flow succeeded: strict skill tool boundary cleared for this turn');
       }
 
-      if (this.isRunCancelled()) {
+      if (this.isRunCancelled() && !peekEnvBlockedNote(this.ctx.runId)) {
         const suppressedResult = this.buildSuppressedCancelledResult(toolCall, startTime);
         langfuse.endSpan(toolSpanId, {
           success: false,
@@ -1147,7 +1149,7 @@ export class ToolExecutionEngine {
       logger.debug(` Emitting tool_call_end for ${toolCall.name} (success)`);
       this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.turn.currentTurnId, toolCall.id, preservedToolResult.success, preservedToolResult.error, preservedToolResult.duration || 0, observedToolResult.output?.substring(0, 500), observedToolResult.metadata);
       this.ctx.onEvent({ type: 'tool_call_end', data: observedToolResult });
-      const scopeCard = buildInsufficientScopeConnectorEvent(preservedToolResult);
+      const scopeCard = buildConnectorToolFailureEvent(preservedToolResult);
       if (scopeCard) this.ctx.onEvent(scopeCard);
       // Tool execution logging (non-blocking)
       if (this.ctx.onToolExecutionLog && this.ctx.sessionId) {
@@ -1169,6 +1171,7 @@ export class ToolExecutionEngine {
       return preservedToolResult;
     } catch (error) {
       watchdog.stop();
+      settleEnvBlockedTool(error, { runId: this.ctx.runId, toolCallId: toolCall.id, markCancelled: () => this.ctx.control.markCancelled() });
       // catch 错误处理已抽取为 handleToolExecutionError（行为不变）；watchdog.stop()
       // 幂等，与成功路径的重复调用安全。其余逻辑全部委托给 helper。
       return await handleToolExecutionError({
@@ -1196,16 +1199,7 @@ export class ToolExecutionEngine {
    * 使用当前 modelConfig，不带工具定义，非流式
    */
 
-  createModelCallback(): (prompt: string) => Promise<string> {
-    return async (prompt: string): Promise<string> => {
-      const response = await this.ctx.modelRouter.inference(
-        [{ role: 'user', content: prompt }],
-        [],
-        this.ctx.modelConfig,
-      );
-      return typeof response.content === 'string' ? response.content : '';
-    };
-  }
+  createModelCallback(): (prompt: string) => Promise<string> { return toolModelCallback(this.ctx); }
 
   private appendBackgroundCompletionReminder(result: ToolResult): ToolResult {
     if (!this.ctx.sessionId) return result;

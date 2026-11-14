@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BrowserAgentWindow } from '../../../src/renderer/components/workbench/BrowserAgentWindow';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
@@ -22,6 +22,13 @@ const openHttpLinkInRailAsync = vi.fn(async (_input: unknown) => ({
 const closeUserBrowserLinkRun = vi.fn(async (..._args: unknown[]) => undefined);
 const controlUserBrowserHistory = vi.fn(async (..._args: unknown[]) => null);
 const dispatchUserBrowserInput = vi.fn(async (_input: unknown) => null);
+const requestBrowserHumanTakeover = vi.fn(async (_input: unknown): Promise<void> => undefined);
+
+vi.mock('../../../src/renderer/hooks/requestBrowserHumanTakeover', () => ({
+  requestBrowserHumanTakeover: (input: unknown) => requestBrowserHumanTakeover(input),
+  confirmLiveBrowserInterrupt: async (input: { confirmStagePreempt: () => void }) => input.confirmStagePreempt(),
+}));
+
 const setUserBrowserViewport = vi.fn(async (_input: unknown) => null);
 
 let browserSessionState: BrowserSessionState;
@@ -137,7 +144,8 @@ function seedActiveAgentSession(agentId: string): void {
 
 describe('BrowserAgentWindow 画面交互透传（P1）', () => {
   beforeEach(() => {
-    dispatchUserBrowserInput.mockClear();
+    dispatchUserBrowserInput.mockReset().mockResolvedValue(null);
+    requestBrowserHumanTakeover.mockReset().mockResolvedValue(undefined);
     openHttpLinkInRailAsync.mockClear();
     setUserBrowserViewport.mockClear();
     useAppStore.setState({
@@ -173,7 +181,7 @@ describe('BrowserAgentWindow 画面交互透传（P1）', () => {
     browserSessionState = buildBrowserSessionState();
   });
 
-  afterEach(() => cleanup());
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
   it('用户空闲时点击画面会 dispatch click', async () => {
     render(<BrowserAgentWindow />);
@@ -314,4 +322,117 @@ describe('BrowserAgentWindow 画面交互透传（P1）', () => {
     expect(Number.isFinite(payload.input.fromX)).toBe(true);
     expect(payload.input.toX).toBeGreaterThan(payload.input.fromX);
   });
+
+  it('serializes ten rapid keys even with reverse dispatch completion delays', async () => {
+    const started: string[] = [];
+    const completed: string[] = [];
+    let inFlight = 0;
+    let maximumInFlight = 0;
+    dispatchUserBrowserInput.mockImplementation(async (raw) => {
+      const { input } = raw as { input: { text: string } };
+      const index = started.length;
+      started.push(input.text);
+      maximumInFlight = Math.max(maximumInFlight, ++inFlight);
+      await new Promise((resolve) => setTimeout(resolve, (10 - index) * 8));
+      completed.push(input.text);
+      inFlight -= 1;
+      return null;
+    });
+    render(<BrowserAgentWindow />);
+    const stage = screen.getByTestId('browser-agent-window-stage');
+    stage.focus();
+    for (const key of 'bring-id!!') fireEvent.keyDown(stage, { key });
+    await waitFor(() => expect(completed).toHaveLength(10));
+    expect(started.join('')).toBe('bring-id!!');
+    expect(completed.join('')).toBe('bring-id!!');
+    expect(maximumInFlight).toBe(1);
+  });
+
+  it('preserves every key pending confirmation and waits for takeover before dispatch', async () => {
+    seedActiveAgentSession('agent-a');
+    browserSessionState = buildBrowserSessionState({ browserSurfaceSessionId: 'surface-agent' });
+    let release!: () => void;
+    requestBrowserHumanTakeover.mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve; }));
+    render(<BrowserAgentWindow />);
+    const stage = screen.getByTestId('browser-agent-window-stage');
+    stage.focus();
+    for (const key of 'bring-id') fireEvent.keyDown(stage, { key });
+    expect(dispatchUserBrowserInput).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('中断并操作'));
+    await waitFor(() => expect(requestBrowserHumanTakeover).toHaveBeenCalledTimes(1));
+    expect(dispatchUserBrowserInput).not.toHaveBeenCalled();
+    fireEvent.keyDown(stage, { key: '!' });
+    await act(async () => release());
+    await waitFor(() => expect(dispatchUserBrowserInput).toHaveBeenCalledTimes(9));
+    expect(dispatchUserBrowserInput.mock.calls.map(([raw]) => (raw as { input: { text: string } }).input.text).join('')).toBe('bring-id!');
+  });
+
+  it('logs a dispatch rejection and still dispatches the next key', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    dispatchUserBrowserInput.mockRejectedValueOnce(new Error('Observation is consumed, superseded, or expired.'));
+    render(<BrowserAgentWindow />);
+    const stage = screen.getByTestId('browser-agent-window-stage');
+    fireEvent.keyDown(stage, { key: 'a' });
+    fireEvent.keyDown(stage, { key: 'b' });
+    await waitFor(() => expect(dispatchUserBrowserInput).toHaveBeenCalledTimes(2));
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('Browser stage input dispatch failed'), expect.objectContaining({
+      reason: 'dispatch_failed', kind: 'insertText', errorMessage: 'Observation is consumed, superseded, or expired.',
+    }));
+  });
+
+  it('cancels queued keys when the component unmounts', async () => {
+    let release!: () => void;
+    dispatchUserBrowserInput.mockImplementationOnce(() => new Promise<null>((resolve) => { release = () => resolve(null); }));
+    const view = render(<BrowserAgentWindow />);
+    const stage = screen.getByTestId('browser-agent-window-stage');
+    fireEvent.keyDown(stage, { key: 'a' });
+    fireEvent.keyDown(stage, { key: 'b' });
+    await waitFor(() => expect(dispatchUserBrowserInput).toHaveBeenCalledTimes(1));
+    view.unmount();
+    await act(async () => release());
+    expect(dispatchUserBrowserInput).toHaveBeenCalledTimes(1);
+  });
+
+  it('stage paste dispatches one insertText and never reaches a sibling textarea', async () => {
+    const siblingPaste = vi.fn();
+    const ancestorPaste = vi.fn();
+    render(<div onPaste={ancestorPaste}><BrowserAgentWindow /><textarea aria-label="chat sibling" onPaste={siblingPaste} /></div>);
+    const stage = screen.getByTestId('browser-agent-window-stage');
+    stage.focus();
+    const text = '报名时请携带身份证，谢谢。';
+    const getData = vi.fn(() => text);
+    expect(fireEvent.paste(stage, { clipboardData: { getData } })).toBe(false);
+    await waitFor(() => expect(dispatchUserBrowserInput).toHaveBeenCalledTimes(1));
+    expect(getData).toHaveBeenCalledWith('text/plain');
+    expect(dispatchUserBrowserInput).toHaveBeenCalledWith(expect.objectContaining({ input: { kind: 'insertText', text } }));
+    expect(siblingPaste).not.toHaveBeenCalled();
+    expect(ancestorPaste).not.toHaveBeenCalled();
+    expect((screen.getByLabelText('chat sibling') as HTMLTextAreaElement).value).toBe('');
+  });
+
+  it('sibling textarea paste stays untouched and sends nothing to the page', () => {
+    const siblingPaste = vi.fn();
+    render(<><BrowserAgentWindow /><textarea aria-label="chat sibling" onPaste={siblingPaste} /></>);
+    const sibling = screen.getByLabelText('chat sibling');
+    sibling.focus();
+    expect(fireEvent.paste(sibling, { clipboardData: { getData: () => '中文聊天' } })).toBe(true);
+    expect(siblingPaste).toHaveBeenCalledTimes(1);
+    expect(siblingPaste.mock.calls[0][0].defaultPrevented).toBe(false);
+    expect(dispatchUserBrowserInput).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['overlong', '文'.repeat(2049), 'insertText requires non-empty text within length limit.'],
+    ['control character', 'a' + String.fromCharCode(1), 'insertText contains forbidden control characters.'],
+  ])('rejects %s paste with a reason and without truncating or dispatching', async (_name, text, reason) => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    render(<BrowserAgentWindow />);
+    const stage = screen.getByTestId('browser-agent-window-stage');
+    stage.focus();
+    expect(fireEvent.paste(stage, { clipboardData: { getData: () => text } })).toBe(false);
+    await act(async () => undefined);
+    expect(dispatchUserBrowserInput).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('Browser stage paste rejected'), { reason, textLength: text.length });
+  });
+
 });

@@ -47,18 +47,19 @@ import { ContextAssembly } from '../../../../src/host/agent/runtime/contextAssem
 import { RunFinalizer } from '../../../../src/host/agent/runtime/runFinalizer';
 import { StreamHandler } from '../../../../src/host/agent/runtime/streamHandler';
 import { MessageProcessor } from '../../../../src/host/agent/runtime/messageProcessor';
-import { ensureMaxStepsWrapUp, activateMaxStepsFinalResponse } from '../../../../src/host/agent/runtime/maxStepsFallback';
+import { ensureMaxStepsWrapUp, activateMaxStepsFinalResponse, buildMaxStepsErrorData, createStepWarning } from '../../../../src/host/agent/runtime/maxStepsFallback';
+import { getBackgroundSubagentRegistry } from '../../../../src/host/agent/backgroundSubagentRegistry';
 
 // Real foreground options -> AgentLoop composition root -> real runtime and persistence.
 // Only startup integrations, provider responses and post-run integrations are isolated.
-function foreground(maxIterations = 8, foregroundToolFace = true) {
+function foreground(maxIterations = 8, foregroundToolFace = true, prompt = 'read the handoff notes', runId?: string) {
   const persisted: Message[] = [];
   const loop = new AgentLoop({
-    ...withSessionCommandCenterBrain({ maxIterations }, 'read the handoff notes'),
+    ...withSessionCommandCenterBrain({ maxIterations }, prompt),
     foregroundToolFace,
     modelConfig: { provider: 'openai', model: 'test-model', apiKey: 'test' },
     toolExecutor: {} as never,
-    messages: [], onEvent: vi.fn(), sessionId: 'step-limit-session',
+    messages: [], onEvent: vi.fn(), sessionId: 'step-limit-session', runId,
     workingDirectory: '/tmp', memoryMode: 'off', enableHooks: false, persistLongTermMemory: false,
     persistMessage: async (message) => { persisted.push(structuredClone(message)); },
   });
@@ -75,6 +76,36 @@ function foreground(maxIterations = 8, foregroundToolFace = true) {
 afterEach(() => vi.restoreAllMocks());
 
 describe('foreground step-limit continuation', () => {
+  it('emits a failure instead of a pause when this run still owns a background child', async () => {
+    const { ctx, assembly } = foreground(8, true, 'read the handoff notes', 'parent-run');
+    ctx.stats.beginRun();
+    await assembly.addAndPersistMessage({ id: 'handoff', role: 'assistant', content: 'Work remains.', timestamp: Date.now(), metadata: { stoppedByStepLimit: true } });
+    vi.spyOn(getBackgroundSubagentRegistry(), 'list').mockReturnValue([
+      { runId: 'parent-run', sessionId: ctx.sessionId, status: 'running' },
+    ] as ReturnType<ReturnType<typeof getBackgroundSubagentRegistry>['list']>);
+    const finalizer = new RunFinalizer(ctx);
+    finalizer.setModules(assembly, { runSessionEndLearning: vi.fn() } as never);
+
+    await finalizer.finalizeRun(8, 'Prepare a report', { endTrace: vi.fn(), flush: vi.fn(async () => undefined) } as never, 8);
+
+    const error = vi.mocked(ctx.onEvent).mock.calls.map(([event]) => event).find((event) => event.type === 'error');
+    expect(error?.data).toEqual({ message: 'Max iterations reached', code: RUN_ERROR_CODE_MAX_ITERATIONS });
+    expect(buildMaxStepsErrorData({ ...ctx, runId: 'other-run' })).toEqual({ message: 'Max iterations reached', code: RUN_ERROR_CODE_MAX_ITERATIONS, details: { stoppedByStepLimit: true } });
+  });
+  it('warns at the larger foreground deliverable cap minus two, not at six', () => {
+    const { ctx } = foreground(50, true, '制作 PPTX');
+    expect(ctx.maxIterations).toBe(30);
+    const inject = vi.fn();
+    const warn = createStepWarning(ctx, inject);
+    for (let iteration = 1; iteration < 28; iteration++) warn(iteration);
+    expect(inject).not.toHaveBeenCalled();
+    warn(28);
+    expect(inject).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('About 2 steps remain'), 'nudge');
+    warn(28);
+    warn(29);
+    expect(inject).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     ['foreground forced final', true, true, false, true],
     ['foreground fallback', true, false, false, true],

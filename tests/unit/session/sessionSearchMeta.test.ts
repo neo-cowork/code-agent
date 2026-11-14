@@ -1,5 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const cronState = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en', title: '[Schedule] 每晨整理周会纪要' }));
+vi.mock('../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({ getSettings: () => ({ ui: { language: cronState.language } }) }),
+}));
+vi.mock('../../../src/host/services/serviceRegistry', () => ({
+  getServiceRegistry: () => ({ register: vi.fn() }),
+}));
+vi.mock('../../../src/host/services', async () => ({
+  notificationService: (await import('../../../src/host/services/infra/notificationService')).notificationService,
+  getSessionManager: () => ({ getSession: async () => ({ id: 'cron-session', title: cronState.title }) }),
+}));
+vi.mock('../../../src/host/session/backgroundTaskManager', () => ({
+  getBackgroundTaskManager: () => ({ isInBackground: () => false }),
+}));
+vi.mock('../../../src/host/services/roleAssets/wakeRunGuard', () => ({ isRoleWakeRunActive: () => false }));
+
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import {
@@ -58,5 +74,37 @@ describe('getSessionSearchMeta', () => {
       { sessionId: 'x', title: 'Mine', updatedAt: 7, createdAt: 1, archived: true },
     ]);
     expect(getSessionSearchMeta(db, [], 'u1')).toEqual([]);
+  });
+});
+
+
+it('finds localized schedule and heartbeat titles before LIMIT without crossing owner fences', () => {
+  seed('old', '[Cron] 周报', { user: 'u1', updated: 10 });
+  seed('beat', '[HEARTBEAT] 巡检', { user: 'u1', updated: 20 });
+  seed('renamed', '[定时] 月报', { user: 'u1', updated: 30 });
+  seed('private', '[Schedule] 周报', { user: 'u2', updated: 90 });
+  seed('archived', '[Schedule] 周报', { user: 'u1', status: 'archived', updated: 99 });
+  seed('unrelated', '周报', { user: 'u1', updated: 100 });
+  expect(searchSessionTitles(db, '定时', 'u1', 1).map((r) => r.sessionId)).toEqual(['renamed']);
+  expect(searchSessionTitles(db, 'Schedule', 'u1', 10).map((r) => r.sessionId)).toEqual(['renamed', 'old']);
+  expect(searchSessionTitles(db, '心跳', 'u1', 10).map((r) => r.sessionId)).toEqual(['beat']);
+  expect(searchSessionTitles(db, '[Cron]', 'u1', 10).map((r) => r.sessionId)).toEqual(['old']);
+  expect(searchSessionTitles(db, '[定时] 周报', 'u1', 10).map((r) => r.sessionId)).toEqual(['old']);
+});
+
+import { notificationService } from '../../../src/host/services/infra/notificationService';
+import { settleBackgroundOnTaskComplete } from '../../../src/host/task/backgroundTaskTerminal';
+
+
+describe('cron completion through the production terminal entry', () => {
+  it.each(['zh', 'en'] as const)('renders the stored cron title using notification locale %s', async (language) => {
+    vi.stubEnv('CODE_AGENT_NOTIFICATION_DRY_RUN', '1');
+    cronState.language = language;
+    await settleBackgroundOnTaskComplete('cron-session', 'cron-session', { summary: '周会纪要摘要已整理', duration: 500 });
+    const title = notificationService.getRecentNotifications().at(-1)?.title;
+    expect(title).toBe(language === 'zh' ? '任务完成 - [定时] 每晨整理周会纪要' : 'Task completed - [Schedule] 每晨整理周会纪要');
+    notificationService.clearRecentNotifications();
+    vi.unstubAllEnvs();
+    console.info(`settleBackgroundOnTaskComplete → notifyTaskComplete locale=${language} title=${title}`);
   });
 });

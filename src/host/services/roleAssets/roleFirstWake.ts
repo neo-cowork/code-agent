@@ -40,6 +40,13 @@ const logger = createLogger('RoleFirstWake');
 /** 建议块的 fenced 语言标记（提示词与解析共用同一拼写） */
 const SUGGESTIONS_BLOCK_TAG = 'first_wake_suggestions';
 const SUGGESTIONS_BLOCK_PATTERN = /```first_wake_suggestions\s*([\s\S]*?)```/i;
+// First meeting starts after confirmation; creation-card instructions are already handled.
+const STALE_FIRST_WAKE_CARD_PATTERNS = [
+  /\b(?:pending[\s-]+(?:(?:confirmation|approval)[\s-]+)?(?:card|draft)|(?:confirmation|approval)[\s-]+card)\b/i,
+  /(?:待确认|待审批|待处理|未确认)[^，。；！？,;!?\n]{0,8}(?:卡片?|草稿)|确认卡(?:片)?/u,
+];
+const FIRST_WAKE_CONFIRMED_RULE = '用户已经确认创建了你这位专家；不要建议发送、查看或确认任何待处理的确认卡或草稿，只建议现在能做的事。';
+
 const MAX_SUGGESTIONS = 3;
 const TITLE_MAX_CHARS = 80;
 const PROMPT_MAX_CHARS = 500;
@@ -231,7 +238,11 @@ export async function getFirstWakeSnapshot(roleId: string): Promise<RoleFirstWak
 // ----------------------------------------------------------------------------
 
 function expectationLine(userExpectation: string): string[] {
-  return userExpectation ? [`用户创建你时留下的期望：「${userExpectation}」`, ''] : [];
+  // Keep the saved expectation intact; omit only stale creation steps from this run.
+  const expectation = userExpectation.split(/(?<=[，。；！？.,;!?\r\n])/u)
+    .filter((clause) => !STALE_FIRST_WAKE_CARD_PATTERNS.some((pattern) => pattern.test(clause)))
+    .join('').trim();
+  return expectation ? [`用户创建你时留下的期望：「${expectation}」`, ''] : [];
 }
 
 /**
@@ -240,9 +251,10 @@ function expectationLine(userExpectation: string): string[] {
  * 擅长什么/第一次醒来」，只讲这次实际看到了什么（含读取失败的部分）。
  */
 const FIRST_WAKE_PROMPT_CONNECTED = (sourceNames: readonly string[], userExpectation: string): string => [
-  '你刚被用户创建为一位持久化专家，此刻是创建后的第一次巡览。这不是用户发来的消息，用户现在不在场。',
+  ROLE_ASSETS.FIRST_WAKE_PROMPT_HEAD,
   '',
   ...expectationLine(userExpectation),
+  FIRST_WAKE_CONFIRMED_RULE,
   '当前已连接的数据源：',
   ...sourceNames.map((name) => `- ${name}`),
   '',
@@ -268,9 +280,10 @@ const FIRST_WAKE_PROMPT_CONNECTED = (sourceNames: readonly string[], userExpecta
  * 同 2026-11-05 返修：不复述名字/职责，不提第一次醒来。
  */
 const FIRST_WAKE_PROMPT_NONE = (userExpectation: string): string => [
-  '你刚被用户创建为一位持久化专家，此刻是创建后的第一次巡览。这不是用户发来的消息，用户现在不在场。',
+  ROLE_ASSETS.FIRST_WAKE_PROMPT_HEAD,
   '',
   ...expectationLine(userExpectation),
+  FIRST_WAKE_CONFIRMED_RULE,
   '当前没有任何已连接的数据源，你没有可查看的真实数据，也不要做任何工具探查。',
   '',
   '你的任务：',
@@ -315,6 +328,7 @@ function parseFirstWakeSuggestions(
       ? (item as { prompt: string }).prompt.trim().slice(0, PROMPT_MAX_CHARS).trim()
       : '';
     if (!title || !prompt) continue;
+    if (STALE_FIRST_WAKE_CARD_PATTERNS.some((pattern) => pattern.test(`${title}\n${prompt}`))) continue;
     const key = `${title}\n${prompt}`;
     if (seen.has(key)) continue;
     seen.add(key);

@@ -28,6 +28,7 @@ import ipcService from "../../../services/ipcService";
 import { createLogger } from "../../../utils/logger";
 import { startEditRoleChat } from "../../../utils/startEditRoleChat";
 import { goToExpertThread } from "../../../utils/inviteExpert";
+import { formatLocalDateTime } from "../../../utils/i18nTime";
 import { useI18n } from "../../../hooks/useI18n";
 import { useMcpServerStates } from "../../../hooks/useMcpServerStates";
 import { resolveSessionConnectorIds } from "@shared/contract/expertConnectors";
@@ -48,6 +49,7 @@ import { RolePersonalizationTab } from './RolePersonalizationTab';
 import { RoleRecordsTab } from './RoleRecordsTab';
 import { RoleRoutinesSection } from './RoleRoutinesSection';
 import { RoleDeleteControl, shouldMountRoleDeleteControl } from './RoleDeleteControl';
+import { formatRoleHistoryLine } from "./roleHistoryPresentation";
 
 const logger = createLogger("RoleDetailPage");
 
@@ -340,7 +342,7 @@ interface MemoryRowProps {
 }
 
 const MemoryRow: React.FC<MemoryRowProps> = ({ roleId, memory, onChanged }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const roleText = t.settings.roles;
   const commonText = t.common;
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -386,7 +388,7 @@ const MemoryRow: React.FC<MemoryRowProps> = ({ roleId, memory, onChanged }) => {
           <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-zinc-200">
             {memory.name}
             {memory.lastChange?.actor === 'role_wake' ? (
-              <Badge title={t.expert.roleDetail.roleWakeTooltip} className="border-border-default bg-surface-hover text-[10px] text-text-secondary">
+              <Badge title={t.expert.roleDetail.roleWakeTooltip.replace('{time}', memory.lastChange.timestamp ? formatLocalDateTime(memory.lastChange.timestamp, language) : '')} className="border-border-default bg-surface-hover text-[10px] text-text-secondary">
                 {t.expert.roleDetail.roleWakeLabel}
               </Badge>
             ) : null}
@@ -782,7 +784,7 @@ const RoleTrainingSummary: React.FC<{
 }> = ({ detail }) => {
   const { t } = useI18n();
   const text = t.settings.roles.detail;
-  const latest = detail.history.at(-1)?.replace(/^- /, "");
+  const latest = formatRoleHistoryLine(detail.history.at(-1) ?? "", t.expert.roleDetail.historyDecision, t.expert.roleDetail.historyWake).replace(/^- /, "");
 
   return (
     <section
@@ -966,7 +968,7 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
                     className="flex items-start gap-2 text-xs text-zinc-400"
                   >
                     <History className="mt-0.5 h-3 w-3 shrink-0 text-zinc-600" />
-                    <span>{line.replace(/^- /, "")}</span>
+                    <span>{formatRoleHistoryLine(line, t.expert.roleDetail.historyDecision, t.expert.roleDetail.historyWake).replace(/^- /, "")}</span>
                   </li>
                 ))}
               </ul>

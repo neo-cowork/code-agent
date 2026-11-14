@@ -150,7 +150,7 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
                 : status.label,
           statusToneClassName: status.toneClassName,
           showStatusBadge: status.showBadge,
-          typeLabel: getSessionTypeLabel(session.type),
+          typeLabel: getSessionTypeLabel(session.type, t),
           summary: hasMeaningfulSummary ? snapshotSummary : undefined,
           lastActiveTitle: new Date(latestActivityAt).toLocaleString(localeForLanguage(language)),
           workingDirectory: session.workingDirectory,

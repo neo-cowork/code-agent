@@ -96,6 +96,13 @@ export interface RegisterBrowserTabLeaseCleanupInputV1 {
   restore(placement: Readonly<BrowserTabOriginalPlacementV1>): void | Promise<void>;
 }
 
+/** Options for a `takeover` control. `waitForUser` marks a model-requested "Neo is waiting for you" wait. */
+export interface SurfaceTakeoverOptionsV1 {
+  reason?: string;
+  timeoutMs?: number;
+  waitForUser?: boolean;
+}
+
 export interface SurfaceTakeoverControlV1 {
   requestId: string;
   wait: Promise<SurfaceTakeoverResolutionV1>;
@@ -115,6 +122,7 @@ export const BROWSER_SURFACE_OPERATIONS = [
   'get_dom_snapshot', 'get_a11y_snapshot', 'get_workbench_state',
   'get_account_state', 'export_storage_state', 'import_storage_state',
   'wait', 'get_logs', 'list_profiles', 'import_profile_cookies', 'clear_cookies',
+  'keep_result_page', 'wait_for_user',
 ];
 
 export const RELAY_BROWSER_SURFACE_OPERATIONS = [

@@ -78,6 +78,7 @@ export interface AgentTreeNode {
   id: string;
   role: string;
   displayName?: string;
+  /** Detached child that survives a failed primary run. */
   background?: boolean;
   /** Stable registry id retained when this node uses the execution-context id. */
   backgroundAgentId?: string;

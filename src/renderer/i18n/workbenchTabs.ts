@@ -34,7 +34,7 @@ export const workbenchTabsZh = {
     pinLogs: '钉住日志',
     unpinLogs: '取消钉住日志',
     overviewProgressLabel: '任务进程',
-    overviewTodosLabel: 'Todo',
+    overviewTodosLabel: '待办',
     overviewContextLabel: '上下文',
     overviewArtifactsLabel: '产物',
     overviewReceiptsLabel: '已执行',
@@ -137,6 +137,30 @@ export const workbenchTabsZh = {
       importCookiesOpenFullDiskAccess: '打开系统设置',
       importCookiesUseRelayHint: '或改用 Chrome Relay',
       livePicture: 'Neo 正在浏览的页面画面',
+      // N-BROWSER-KEEP-RESULT-PAGE：终态条（结果页保留 / 已关闭可重开）
+      keptResult: {
+        keptTitle: '结果页已保留',
+        keptHint: 'Neo 把这一页留给你了，提交状态原样保留，可以直接继续操作。',
+        keptOpen: '在 Neo 中打开',
+        keptClosedHint: '这页窗已关闭（闲置回收或浏览器被关）。重新打开只恢复网址，不恢复表单里已填的内容。',
+        closedTitle: '结果页已关闭',
+        reopen: '重新打开',
+        reopenFailed: '打不开这一页：{error}',
+        adoptFailed: '认领结果页失败：{error}',
+      },
+      // N-FIX-FIX-BROWSER-SECRETREF-HARDEN（FB-578）：secretRef 接管停靠的聊天卡（继续 / 已回收）。
+      // 「继续」发送一条用户消息开启下一轮（绝不 resume 已完结的会话）；窗被回收后只说事实，不留死按钮。
+      takeoverPark: {
+        parkedTitle: '浏览器已交给你',
+        openAction: '打开浏览器',
+        openFailed: '暂时无法打开浏览器，请再试一次。',
+        parkedHint: 'Neo 把浏览器窗口留给你了：请在窗口里完成登录，然后回到这里点「继续」，Neo 会接着用这个已登录的页面。',
+        continueAction: '继续',
+        continueMessage: '我已在浏览器窗口里登录完成，请继续刚才的任务。',
+        closedTitle: '浏览器已关闭',
+        closedHint: '浏览器窗口已被关闭或回收，登录状态没有保留。请重新发起任务，Neo 会重新打开页面。',
+        continueFailed: '消息未能发送，请再试一次。',
+      },
       // 地址栏（2026-08-04 工单）：显示当前页 URL、可编辑回车导航；搜索词判无效不做搜索
       addressBarLabel: '地址栏',
       addressBarPlaceholder: '输入网址，回车打开',
@@ -148,6 +172,9 @@ export const workbenchTabsZh = {
       interruptConfirmCancel: '取消',
       takeoverPausedHint: '你正在操作这个页面，Neo 已暂停',
       takeoverContinue: '继续',
+      takeoverWaitingHint: 'Neo 在等你：{reason}',
+      takeoverStoppedHint: 'Neo 已停下，在等你：{reason}',
+      takeoverDone: '好了',
       liveInteract: '浏览器实时画面，可点击、滚动和键盘输入',
       // 二期 N1：导航 pending / 失败反馈
       navigatingStatus: '正在打开…',
@@ -308,6 +335,32 @@ export const workbenchTabsEn: typeof workbenchTabsZh = {
       importCookiesOpenFullDiskAccess: 'Open System Settings',
       importCookiesUseRelayHint: 'Or use Chrome Relay',
       livePicture: 'Live picture of the page Neo is browsing',
+      // N-BROWSER-KEEP-RESULT-PAGE: terminal bar (result page kept / closed, reopen)
+      keptResult: {
+        keptTitle: 'Result page kept',
+        keptHint: 'Neo left this page for you — the submitted state is intact, keep working right here.',
+        keptOpen: 'Open in Neo',
+        keptClosedHint: 'This window was closed (idle reclaim or the browser was closed). Reopening restores the address only, not anything typed into forms.',
+        closedTitle: 'Result page closed',
+        reopen: 'Reopen',
+        reopenFailed: 'Could not open this page: {error}',
+        adoptFailed: 'Could not attach to the kept page: {error}',
+      },
+      // N-FIX-FIX-BROWSER-SECRETREF-HARDEN (FB-578): chat card for a takeover-parked
+      // browser (Continue / reclaimed). Continue sends a user message to start the next
+      // turn (never resumes a completed session); the reclaimed state states the fact
+      // with no dead button.
+      takeoverPark: {
+        parkedTitle: 'The browser is yours',
+        openAction: 'Open browser',
+        openFailed: 'The browser could not be opened. Please try again.',
+        parkedHint: 'Neo left the browser window for you: finish signing in inside the window, then press Continue here — Neo will pick up on the same signed-in page.',
+        continueAction: 'Continue',
+        continueMessage: 'I have finished signing in in the browser window. Please continue the earlier task.',
+        closedTitle: 'Browser closed',
+        closedHint: 'The browser window was closed or reclaimed, and the sign-in was not kept. Please start the task again; Neo will reopen the page.',
+        continueFailed: 'The message could not be sent. Please try again.',
+      },
       addressBarLabel: 'Address bar',
       addressBarPlaceholder: 'Type a URL and press Enter',
       addressBarInvalid: 'That is not a valid URL. Enter a full address like example.com.',
@@ -318,6 +371,9 @@ export const workbenchTabsEn: typeof workbenchTabsZh = {
       interruptConfirmCancel: 'Cancel',
       takeoverPausedHint: 'You are operating this page. Neo is paused',
       takeoverContinue: 'Continue',
+      takeoverWaitingHint: 'Neo is waiting for you: {reason}',
+      takeoverStoppedHint: 'Neo stopped and is waiting for you: {reason}',
+      takeoverDone: 'Done',
       liveInteract: 'Live browser view — click, scroll, and type',
       navigatingStatus: 'Opening…',
       navigationFailed: 'Failed to open: {error}',

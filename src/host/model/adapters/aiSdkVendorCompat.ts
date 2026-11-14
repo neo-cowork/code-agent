@@ -1,5 +1,12 @@
 import type { ModelConfig } from '../../../shared/contract';
+import { resolveModelInfo } from '../modelInfo';
 import { resolveModelCapabilities } from '../modelCapabilityMatrix';
+
+export function resolveAiSdkReasoning(config: ModelConfig) {
+  if (!config.reasoningEffort || config.reasoningEffort === 'max'
+    || resolveModelInfo(config.provider, config.model)?.thinking?.kind === 'none') return undefined;
+  return config.reasoningEffort;
+}
 
 // ── 国内 thinking 模型（zhipu/moonshot/xiaomi）的 openai-compatible vendor quirks，迁自各 legacy
 //    provider class 的 buildRequestBody。全部走 openai-compatible 官方支持的 settings：

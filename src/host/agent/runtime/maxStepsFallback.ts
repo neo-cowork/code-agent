@@ -17,16 +17,29 @@ import { RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../shared/constants';
 import type { RuntimeContext } from './runtimeContext';
 import type { ContextAssembly } from './contextAssembly';
 import type { ContextInjectionSource } from '../../../shared/contract/contextView';
+import { getBackgroundSubagentRegistry } from '../backgroundSubagentRegistry';
 
 const logger = createLogger('MaxStepsFallback');
 
 export const MAX_STEPS_REASON = 'max-steps-reached';
 
+export function isCompletedBackgroundReport(ctx: RuntimeContext): boolean {
+  if (!ctx.completionReportOnly) return false;
+  for (let index = ctx.messages.length - 1; index >= 0; index--) {
+    const message = ctx.messages[index];
+    if (message.role === 'user') return false;
+    if (message.role === 'assistant' && message.content?.trim() && !message.toolCalls?.length) return true;
+  }
+  return false;
+}
+
 export function buildMaxStepsErrorData(ctx: RuntimeContext) {
   const lastAssistant = [...ctx.messages].reverse().find((message) => message.role === 'assistant');
   const stoppedByStepLimit = ctx.foregroundToolFace && ctx.maxIterations > 1
     && lastAssistant !== undefined && lastAssistant.timestamp >= ctx.stats.runStartTime
-    && lastAssistant?.metadata?.stoppedByStepLimit === true;
+    && lastAssistant?.metadata?.stoppedByStepLimit === true
+    && !(ctx.runId && getBackgroundSubagentRegistry().list().some((child) =>
+      child.runId === ctx.runId && child.sessionId === ctx.sessionId && child.status === 'running'));
   return {
     message: 'Max iterations reached',
     ...(ctx.maxIterations > 1 ? { code: RUN_ERROR_CODE_MAX_ITERATIONS } : {}),

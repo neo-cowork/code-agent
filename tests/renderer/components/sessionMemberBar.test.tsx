@@ -2,6 +2,7 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { createSwarmTraceStorageId, type SwarmAgentState } from '../../../src/shared/contract/swarm';
 import type { SwarmRunAgentRecord, SwarmRunDetail, SwarmRunListItem } from '../../../src/shared/contract/swarmTrace';
@@ -10,6 +11,7 @@ import { IPC_CHANNELS } from '../../../src/shared/ipc';
 const invokeMock = vi.fn();
 const invokeDomainMock = vi.fn();
 const appState = {
+  language: 'zh' as 'zh' | 'en',
   openWorkspacePreview: vi.fn(),
   openWorkbenchTab: vi.fn(),
   workbenchTabs: [] as string[],
@@ -22,7 +24,7 @@ const swarmState: {
   lastEventAt?: number;
 } = { agents: [], activeSessionId: undefined };
 
-vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: zh }) }));
+vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: appState.language === 'en' ? en : zh }) }));
 vi.mock('../../../src/renderer/stores/appStore', () => {
   // 工厂在组件 import 时求值，早于 const 初始化：必须延迟解引用
   const useAppStore = (selector: (state: typeof appState) => unknown) => selector(appState);
@@ -71,6 +73,7 @@ const completedDetail: SwarmRunDetail = {
 
 describe('SessionMemberBar（折叠 chip）', () => {
   beforeEach(() => {
+    appState.language = 'zh';
     swarmState.agents = [];
     swarmState.activeSessionId = undefined;
     swarmState.activeRunId = undefined;
@@ -91,6 +94,35 @@ describe('SessionMemberBar（折叠 chip）', () => {
   });
   afterEach(() => cleanup());
 
+  it.each(['zh', 'en'] as const)('failed chip names each failed agent and human reason, and opens experts (%s)', async (language) => {
+    appState.language = language;
+    useBackgroundTaskStore.setState({ tasks: [
+      { id: 'budget-review', sessionId: 'session-1', source: 'delegate_task', title: 'Budget review', status: 'failed', createdAt: 1, updatedAt: 2, events: [], outputRefs: [], failure: { reason: 'tool-unavailable', message: 'missing file' } },
+      { id: 'notes-review', sessionId: 'session-1', source: 'delegate_task', title: 'Notes review', status: 'failed', createdAt: 1, updatedAt: 2, events: [], outputRefs: [] },
+    ] });
+    render(<SessionMemberBar sessionId="session-1" />);
+    const chip = await screen.findByTestId('session-member-bar-collapsed');
+    const t = language === 'zh' ? zh : en;
+    const reason = t.toolStepHumanize.failureCodes['tool-unavailable'];
+    expect(chip.textContent).toContain(language === 'zh' ? '2 个代理 · 失败 · Budget review' : '2 agents · Failed · Budget review');
+    expect(chip.getAttribute('title')).toBe(
+      t.chat.delegationReceipt.failureDetail.replace('{status}', 'Budget review').replace('{reason}', reason) + '\n' + (language === 'zh' ? 'Notes review' : t.chat.delegationReceipt.failureDetail.replace('{status}', 'Notes review').replace('{reason}', t.toolStepHumanize.agentFailureReasons.unknown)),
+    );
+    expect(chip.getAttribute('title')).not.toContain('tool-unavailable');
+    fireEvent.click(chip);
+    expect(appState.openWorkbenchTab).toHaveBeenCalledWith('experts', { source: 'user' });
+  });
+
+  it('cancelled chip names the stopped agent, with name only when no reason exists', async () => {
+    useBackgroundTaskStore.setState({ tasks: [
+      { id: 'budget-review', sessionId: 'session-1', source: 'delegate_task', title: 'Budget review', status: 'cancelled', createdAt: 1, updatedAt: 2, events: [], outputRefs: [] },
+    ] });
+    render(<SessionMemberBar sessionId="session-1" />);
+    const chip = await screen.findByTestId('session-member-bar-collapsed');
+    expect(chip.textContent).toContain(' · Budget review');
+    expect(chip.getAttribute('title')).toBe('Budget review');
+  });
+
   it('没有团队也没有预选时不渲染', async () => {
     render(<SessionMemberBar sessionId="session-1" />);
     await Promise.resolve();
@@ -103,19 +135,24 @@ describe('SessionMemberBar（折叠 chip）', () => {
     render(<SessionMemberBar sessionId="session-1" />);
     const chip = await screen.findByTestId('session-member-bar-collapsed');
     expect(chip.textContent).toContain('2 个代理 · 完成');
-    // 账本完成事件常把 filesChanged 落成 []，没有隔离 worktree 时仍报合到一起
-    expect(screen.getByTestId('member-bar-merge-state').textContent).toBe('改动已经合到一起了');
+    // 账本完成事件没有文件改动证据时只报已汇报，不谎称已合并
+    expect(screen.getByTestId('member-bar-merge-state').textContent).toBe('已汇报');
     // chip 左侧头像叠：专家行走 RoleInitialAvatar
     expect(screen.getByTestId('role-initial-avatar-researcher')).toBeTruthy();
     expect(screen.getByTestId('role-initial-avatar-writer')).toBeTruthy();
   });
 
-  it('账本完成事件 filesChanged 为空、角色不是只读时芯片仍报合到一起了', async () => {
+  it.each([
+    ['zh', '已汇报', '改动已经合到一起了'],
+    ['en', 'Reported', 'Changes merged'],
+  ] as const)('账本完成事件 filesChanged 为空、角色不是只读时芯片报已汇报而非合到一起了 (%s)', async (lang, expected, forbidden) => {
+    appState.language = lang;
     mockLedger(completedDetail);
 
     render(<SessionMemberBar sessionId="session-1" />);
     const merge = await screen.findByTestId('member-bar-merge-state');
-    expect(merge.textContent).toBe('改动已经合到一起了');
+    expect(merge.textContent).toBe(expected);
+    expect(merge.textContent).not.toBe(forbidden);
   });
 
   it('有真实文件改动时芯片仍报合到一起了', async () => {
