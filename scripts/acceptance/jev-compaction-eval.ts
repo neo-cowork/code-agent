@@ -14,7 +14,8 @@ import { estimateConversationTokens, estimateTokens } from '../../src/host/conte
 import { JEV_MODEL, estimateJevCallUsd, type JevSystemOneCall } from '../../src/shared/constants/jevQuestions';
 import { resolveModelPrice } from '../../src/shared/pricing/resolveModelPrice';
 
-const MIN_SESSIONS = 20;
+// Orchestrator 2026-11-14: use the previously inventoried 15, directional only.
+const MIN_SESSIONS = 15;
 const MIN_RESULTS = 20;
 const MIN_TOKENS = 30_000;
 const BUDGET_USD = 3;
@@ -228,14 +229,19 @@ async function evaluate(sessions: Session[], needlesById: Map<string, string[]>)
   const { systemOne, resolveJevRoute } = await import('../../src/host/model/providers/typesafeProvider');
   const route = resolveJevRoute();
   check(route?.kind === 'official' && route.model === JEV_MODEL, 'jev_official_route_required');
+  const budgetPath = path.join(PRIVATE_ROOT, 'paid-budget.json');
+  const previousPaidUsd = fs.existsSync(budgetPath)
+    ? Number((JSON.parse(fs.readFileSync(budgetPath, 'utf8')) as { reservedUsd: number }).reservedUsd) : 0;
+  check(Number.isFinite(previousPaidUsd) && previousPaidUsd >= 0, 'invalid_paid_budget_ledger');
   let paidUsd = 0;
   let financialAbort = false;
   const reserve = (usd: number) => {
-    if (paidUsd + usd > BUDGET_USD) {
+    if (previousPaidUsd + paidUsd + usd > BUDGET_USD) {
       financialAbort = true;
       throw new Error('budget_exceeded: next call would exceed $3');
     }
     paidUsd += usd; // Includes failed attempts conservatively.
+    fs.writeFileSync(budgetPath, JSON.stringify({ reservedUsd: previousPaidUsd + paidUsd }) + '\n', { mode: 0o600 });
   };
   let summaryCalls = 0;
   let summaryIn = 0;
@@ -260,7 +266,12 @@ async function evaluate(sessions: Session[], needlesById: Map<string, string[]>)
       const original = project(session.messages);
       const sMessages = structuredClone(session.messages);
       const startedS = performance.now();
-      const plan = createCompactionPlan({ sessionId: session.id, source: 'manual_current', messages: sMessages, skipAudit: true });
+      // Single-user long sessions have no safe span in manual_current's
+      // latest-user heuristic. The existing explicit-anchor API preserves the
+      // same trailing ten messages and still adjusts for tool pair integrity.
+      const plan = createCompactionPlan({ sessionId: session.id, source: 'manual_from_message',
+        anchorMessageId: sMessages[Math.max(2, sMessages.length - RECENT)]?.id,
+        messages: sMessages, skipAudit: true });
       check(plan, 'summary_plan_missing');
       const callsBefore = summaryCalls;
       const inBefore = summaryIn;
@@ -316,7 +327,9 @@ async function evaluate(sessions: Session[], needlesById: Map<string, string[]>)
   const J = stats('J');
   // String values are session ids only; model/billing metadata are named keys.
   const report = { baselineSubscription: { [baseline.provider]: { [baseline.model]: 1 } }, jevModel: { [JEV_MODEL]: 1 },
-    budgetUsd: BUDGET_USD, paidUsd, rows, S, J };
+    originalPlannedSessions: 20, authorizedSessions: MIN_SESSIONS, evaluatedSessions: rows.length, directionalOnly: 1,
+    budgetUsd: BUDGET_USD, paidUsd, previousAttemptsPaidUsd: previousPaidUsd,
+    cumulativePaidUsd: previousPaidUsd + paidUsd, rows, S, J };
   fs.mkdirSync(path.dirname(OUTPUT), { recursive: true });
   fs.writeFileSync(OUTPUT, JSON.stringify(report, null, 2) + '\n', { flag: 'wx' });
   console.log('| id | arm | post tokens | facts retained | wall ms | cost |');
@@ -328,6 +341,7 @@ async function evaluate(sessions: Session[], needlesById: Map<string, string[]>)
     }
   }
   console.log(`totals S=${JSON.stringify(S)} J=${JSON.stringify(J)}`);
+  console.log(`n=${rows.length} original_planned_n=20 directional_only=1`);
   console.log(J.medians.retention < S.medians.retention ? '不接电只留报告' : '可接电候选');
   console.log(`token_delta_J_minus_S=${J.totals.tokens - S.totals.tokens} USD_delta=not_comparable_subscription S=subscription J=$${paidUsd.toFixed(8)}`);
 }
@@ -344,6 +358,14 @@ async function main(): Promise<void> {
     check(!fs.existsSync(OUTPUT), 'output_already_exists: preserve previous run; choose a fresh checkout');
   }
   const source = args.includes('--dev-db') ? readDevSessions() : readDirectory(args.find((arg) => !arg.startsWith('--')) || path.join(os.homedir(), 'work/jev-eval/compaction-sessions'));
+  const selectionPath = args.find((arg) => arg.startsWith('--session-ids='))?.slice('--session-ids='.length);
+  const selectedIds: unknown = selectionPath ? JSON.parse(fs.readFileSync(selectionPath, 'utf8')) : undefined;
+  if (selectedIds !== undefined) {
+    check(Array.isArray(selectedIds) && selectedIds.length === MIN_SESSIONS
+      && selectedIds.every((id) => typeof id === 'string' && /^[\w-]+$/.test(id))
+      && new Set(selectedIds).size === MIN_SESSIONS, 'invalid_authorized_session_ids');
+    source.sessions = source.sessions.filter((session) => selectedIds.includes(session.id));
+  }
   const qualified: Session[] = [];
   const needlesById = new Map<string, string[]>();
   const ids = new Set<string>();
