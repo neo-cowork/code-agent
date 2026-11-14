@@ -31,6 +31,7 @@ describe('connector reconnect guidance through real protocol dispatch', () => {
     expect(result.success).toBe(false);
     expect(result.metadata?.code).toBe('NOT_INITIALIZED');
     expect(result.error).toContain('Settings > Connectors');
+    expect(result.error).toContain('这次还没读到所需数据，请在设置 > 连接器重新连接后再试。');
     expect(warn).toHaveBeenCalledWith('Connector call needs reconnection', expect.objectContaining({
       connectorId: 'calendar', reason: 'not-enabled-or-registered',
     }));
@@ -41,6 +42,9 @@ describe('connector reconnect guidance through real protocol dispatch', () => {
     const result = await execute(path, 'get_status');
     expect(result.success).toBe(true);
     expect(result.output).toContain('Settings > Connectors');
+    expect(result.output).toContain('complete user-facing answer is exactly this single everyday sentence');
+    expect(result.output).not.toMatch(/not configured|Capabilities: none/i);
+    expect(result.output).toContain('这次还没读到所需数据，请在设置 > 连接器重新连接后再试。');
     expect(result.metadata?.status).toMatchObject({ connected: false, unavailable: true });
     expect(warn).toHaveBeenCalledWith('Connector call needs reconnection', expect.objectContaining({
       connectorId: 'calendar', reason: 'status-not-connected',
