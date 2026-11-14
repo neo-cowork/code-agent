@@ -2526,8 +2526,20 @@ fn show_quit_confirm_dialog(
 
     let app = app.clone();
     let coordinator = coordinator.clone();
-    app.dialog()
-        .message(message)
+    let mut dialog = app.dialog().message(message);
+    // 必须挂到主窗口（N-FIX-QUIT-DIALOG-SYSTEM-ALERT）：没有父窗口时 rfd 的异步弹窗走
+    // CFUserNotificationDisplayAlert（超时 0），由系统 UserNotificationCenter 托管——
+    // 脚本按 Neo 进程点不到按钮，Neo 进程退了弹窗还挂在屏幕上。挂上主窗口后是
+    // Neo 自己的 NSAlert sheet。托盘退出时主窗口可能藏着，先显示出来，否则 sheet 看不见。
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+        dialog = dialog.parent(&window);
+    } else {
+        eprintln!("quit guard: main window missing; quit dialog falls back to a system alert");
+    }
+    dialog
         .title(dialog_copy.title)
         .kind(MessageDialogKind::Warning)
         .buttons(match button_set {
