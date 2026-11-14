@@ -482,20 +482,29 @@ export class ManagedBrowserProviderAdapter {
       && binding.browserService.isRunning()
       && Boolean(binding.browserService.getActiveTab())
     ));
-    // Only same-conversation takeover parks are claimable by agents.
+    // N-BROWSER-KEEP-RESULT-PAGE: a user run claims (adopts) the conversation's
+    // kept result window WITHOUT navigating. Stale entries (window died
+    // without a close event) flip to closed and the user path continues.
+    // N-FIX-FIX-BROWSER-SECRETREF-HARDEN: an agent run additionally claims a
+    // takeover park (reason='takeover') or the wait_for_user parked window;
+    // an explicit keep_result_page stays user-only.
     let keptService: BrowserService | null = null;
     let keptServiceKey: string | null = null;
     let claimedTakeoverPark = false;
     if (!shared) {
       const kept = this.keptRegistry.getAlive(identity.conversationId);
-      if (kept && (isUserRun(identity) || kept.reason === 'takeover')) {
+      if (kept && (isUserRun(identity) || kept.reason === 'takeover' || kept.parkedForUser)) {
         const candidate = this.acquireBrowser(kept.serviceKey);
         if (candidate.isRunning() && candidate.getActiveTab()) {
           keptService = candidate;
           keptServiceKey = kept.serviceKey;
-          claimedTakeoverPark = !isUserRun(identity) && kept.reason === 'takeover';
+          if (!isUserRun(identity) && kept.reason === 'takeover') {
+            claimedTakeoverPark = true;
+          } else if (!isUserRun(identity)) {
+            this.keptRegistry.unpark(identity.conversationId);
+          }
         } else {
-          this.keptRegistry.markClosed(identity.conversationId);
+          this.keptRegistry.markClosed(identity.conversationId, kept.serviceKey);
         }
       }
     }

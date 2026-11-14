@@ -1,7 +1,7 @@
 import type { SurfaceGrantSubjectV1 } from './SurfaceAccessGrantService';
 import { SurfaceExecutionRuntimeError } from './SurfaceExecutionRuntimeError';
 import { SurfaceSessionManager } from './SurfaceSessionManager';
-import { forgetBrowserTakeoverCapExpired, WAITING_HUMAN_MODEL_GUIDANCE } from './browserHumanTakeoverWait';
+import { forgetBrowserTakeoverCapExpired, noteBrowserHumanReleased, WAITING_HUMAN_MODEL_GUIDANCE } from './browserHumanTakeoverWait';
 
 interface ActiveOperation {
   subject: SurfaceGrantSubjectV1;
@@ -132,6 +132,7 @@ export class SurfaceInterruptService {
       throw this.controlError(subject, 'resume', session.provider, session.surface, session.state);
     }
     this.sessions.transition(subject.sessionId, subject, 'running');
+    if (session.state === 'waiting_human') noteBrowserHumanReleased(subject.sessionId);
     // 用户按继续回到 running：清掉 cap-expired 记忆，新一轮 takeover 重新完整等待。
     forgetBrowserTakeoverCapExpired(subject.sessionId);
   }

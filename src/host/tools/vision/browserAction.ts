@@ -40,6 +40,7 @@ import {
 } from './browserActionResultProjection';
 import { maybeExecuteBrowserSurfaceInteraction } from './browserActionSurfaceInteractions';
 import { executeKeepResultPage } from './browserKeepResultPage';
+import { applyHumanTouchedNote, executeWaitForUser } from './browserWaitForUser';
 import { formatDomSnapshotForModel } from './browserDomSnapshotFormat';
 import { parkHostDomSnapshot } from '../../services/infra/browser/domSnapshotHandoff';
 import { enforceBrowserCaptchaTakeoverGate } from './browserCaptchaGate';
@@ -96,6 +97,7 @@ type BrowserActionType =
   | 'fill_form'
   | 'get_logs'
   | 'keep_result_page'
+  | 'wait_for_user'
   | 'execute_goal';
 
 const MANAGED_SESSION_ACTIONS = new Set<BrowserActionType>([
@@ -140,6 +142,7 @@ Routing: prefer web_fetch/search for plain reads; use browser_action for login/s
 engine (ADR-041): optional auto|managed|relay (default auto). Explicit managed/relay never silent-switches. managed=Neo isolated browser; relay=user-attached Chrome tab.
 Profile login reuse: list_profiles; import_profile_cookies recognizes the legacy userConfirmed signal but also requires a one-time Host approval bound to profile/domain scope; clear_cookies clears managed profile cookies. Never log cookie values.
 keep_result_page: call once the active page is the final result the user should take over — it closes every other tab and keeps this window open for the user after the run ends (not for relay/unattended runs or the shared personal profile).
+wait_for_user {reason}: when only the user can do the next step in the page (captcha, sign-in, payment confirmation), call this instead of asking in chat and ending the turn. reason = one plain sentence in the user's language (<=120 chars, no URLs/paths/tool names/button names); it is shown to the user with a Done button. It blocks until they press Done, then call get_dom_snapshot before acting. On WAIT_FOR_USER_TIMEOUT end the turn with one plain sentence; do not retry.
 storageState file path: export_storage_state / import_storage_state for CI/scripts.${browserJevStepDescriptionSuffix()}`; },
   requiresPermission: true,
   permissionLevel: 'execute',
@@ -158,7 +161,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
           'get_workbench_state', 'get_account_state', 'export_storage_state', 'import_storage_state',
           'list_profiles', 'import_profile_cookies', 'clear_cookies',
           'wait_for_download', 'upload_file', 'wait', 'fill_form', 'get_logs',
-          'keep_result_page',
+          'keep_result_page', 'wait_for_user',
           'execute_goal',
         ],
         description: 'The browser action to perform',
@@ -296,6 +299,10 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
         type: 'boolean',
         description: 'Legacy compatibility signal for import_profile_cookies. It cannot authorize import without a one-time Host permission bound to the exact profile/domain scope (ADR-041).',
       },
+      reason: {
+        type: 'string',
+        description: 'wait_for_user only (required): one plain sentence in the user\'s language, at most 120 characters, saying what the user should do in the browser. Shown to the user as-is; no URLs, file paths, tool names or button names (the user already has a Done button; do not tell them to press anything).',
+      },
       task: {
         type: 'string',
         description: 'Natural-language goal for execute_goal',
@@ -366,15 +373,19 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
     }
 
     const surfaceIdentity = surfaceIdentityFromToolContext(context);
+    // Runs outside the managed-surface operation on purpose: takeover aborts in-flight operations.
+    if (action === 'wait_for_user') {
+      return executeWaitForUser({ identity: surfaceIdentity, context, params });
+    }
     const useManagedSurface = Boolean(surfaceIdentity) && action !== 'list_profiles';
     const managedAdapter = getManagedBrowserProviderAdapter();
     // Native Surface ownership remains isolated by conversation/run/agent. The
     // adapter may share one physical window among legal owners in the same
     // conversation so user navigation and the agent can continue one page.
     // Legacy callers without a complete owner identity keep the historical path.
-    let acquiredBrowserService: BrowserService;
+    let browserService: BrowserService;
     try {
-      acquiredBrowserService = useManagedSurface && surfaceIdentity
+      browserService = useManagedSurface && surfaceIdentity
         ? managedAdapter.getBrowserService(surfaceIdentity)
         : getBrowserService(context.agentId);
     } catch (error) {
@@ -385,7 +396,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
     }
 
     if (action === 'execute_goal') {
-      const driver = resolveBrowserJevStep({ browserService: acquiredBrowserService });
+      const driver = resolveBrowserJevStep({ browserService });
       if (!driver) return jevBrowserStepUnarmedResult();
       if (typeof params.task !== 'string' || !params.task.trim()) {
         return jevBrowserStepEmptyTaskResult();
@@ -395,24 +406,24 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
         ? params.assertions as JevPageAssertion[]
         : undefined;
       const jevBudgetUsd = typeof params.jevBudgetUsd === 'number' ? params.jevBudgetUsd : undefined;
-      const trace = acquiredBrowserService.beginTrace({
+      const trace = browserService.beginTrace({
         toolName: 'browser_action',
         action,
         params,
       });
       try {
-        const loginWallBeforeRun = await enforceBrowserLoginWallStop({ browserService: acquiredBrowserService, context });
+        const loginWallBeforeRun = await enforceBrowserLoginWallStop({ browserService, context });
         if (loginWallBeforeRun) {
-          const completedTrace = acquiredBrowserService.finishTrace(trace, {
+          const completedTrace = browserService.finishTrace(trace, {
             success: false,
             error: loginWallBeforeRun.error || null,
           });
           return appendBrowserWorkbenchNote(withWorkbenchTrace(loginWallBeforeRun, completedTrace, context), workbenchNotes);
         }
-        const result = await driver.run({ task, assertions, jevBudgetUsd, browserService: acquiredBrowserService }, context);
-        const loginWallAfterRun = await enforceBrowserLoginWallStop({ browserService: acquiredBrowserService, context });
+        const result = await driver.run({ task, assertions, jevBudgetUsd, browserService }, context);
+        const loginWallAfterRun = await enforceBrowserLoginWallStop({ browserService, context });
         const finalResult = loginWallAfterRun ?? result;
-        const completedTrace = acquiredBrowserService.finishTrace(trace, {
+        const completedTrace = browserService.finishTrace(trace, {
           success: finalResult.success,
           error: finalResult.error || null,
           screenshotPath: getScreenshotPathFromResult(finalResult),
@@ -420,8 +431,8 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
         return appendBrowserWorkbenchNote(withWorkbenchTrace(finalResult, completedTrace, context), workbenchNotes);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        acquiredBrowserService.logger.log('ERROR', `Action "${action}" failed: ${errorMessage}`);
-        const completedTrace = acquiredBrowserService.finishTrace(trace, {
+        browserService.logger.log('ERROR', `Action "${action}" failed: ${errorMessage}`);
+        const completedTrace = browserService.finishTrace(trace, {
           success: false,
           error: errorMessage,
         });
@@ -436,7 +447,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
       workbenchNotes.push(await ensureManagedBrowserSessionForWorkbench({ agentId: context.agentId }));
     }
 
-    const trace = acquiredBrowserService.beginTrace({
+    const trace = browserService.beginTrace({
       toolName: 'browser_action',
       action,
       params,
@@ -445,13 +456,12 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
     try {
       // N-FIX-FIX-BROWSER-SECRETREF-HARDEN: the adapter binds a run to the window its
       // Surface session owns — for a takeover-park claim that window's pool key differs
-      // from this identity's own key, so the action must run on the service the adapter
-      // hands over, not on the own-key service acquired above.
-      const executeManagedProviderAction = async (boundBrowserService?: BrowserService): Promise<ToolExecutionResult> => {
-        const browserService = boundBrowserService ?? acquiredBrowserService;
+      // from this identity's own key, so executeProvider below must run on (and retarget
+      // browserService to) the service the adapter hands over, not the own-key one.
+      const executeManagedProviderAction = async (): Promise<ToolExecutionResult> => {
         const loginWallStop = await enforceBrowserLoginWallStop({ browserService, tabId, context });
         if (loginWallStop) return loginWallStop;
-        const captchaGate = await enforceBrowserCaptchaTakeoverGate({ action, browserService, tabId, context });
+        const captchaGate = await enforceBrowserCaptchaTakeoverGate({ action, browserService, tabId });
         if (captchaGate) {
           return captchaGate;
         }
@@ -875,14 +885,21 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
             action,
             params,
             ...(context.abortSignal ? { abortSignal: context.abortSignal } : {}),
-            executeProvider: async (_signal, boundBrowserService) => executeManagedProviderAction(boundBrowserService),
+            executeProvider: async (_signal, ownedBrowserService) => {
+              // The adapter may reclaim a parked/shared window instead of the preflight pool entry.
+              browserService = ownedBrowserService;
+              return executeManagedProviderAction();
+            },
           })
         : await executeManagedProviderAction();
       if (rawResult.success) {
-        const loginWallStop = await enforceBrowserLoginWallStop({ browserService: acquiredBrowserService, tabId, context });
+        const loginWallStop = await enforceBrowserLoginWallStop({ browserService, tabId, context });
         if (loginWallStop) rawResult = loginWallStop;
       }
-      const completedTrace = acquiredBrowserService.finishTrace(trace, {
+      if (useManagedSurface && surfaceIdentity) {
+        rawResult = applyHumanTouchedNote(rawResult, managedAdapter.getBinding(surfaceIdentity)?.surfaceSessionId);
+      }
+      const completedTrace = browserService.finishTrace(trace, {
         success: rawResult.success,
         error: rawResult.error || null,
         screenshotPath: getScreenshotPathFromResult(rawResult),
@@ -890,14 +907,14 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
       return appendBrowserWorkbenchNote(withWorkbenchTrace(rawResult, completedTrace, context), workbenchNotes);
     } catch (error) {
       const errorMessage = scrubSecretFromMessage(error instanceof Error ? error.message : 'Unknown error', secretRef);
-      acquiredBrowserService.logger.log('ERROR', `Action "${action}" failed: ${errorMessage}`);
-      const completedTrace = acquiredBrowserService.finishTrace(trace, {
+      browserService.logger.log('ERROR', `Action "${action}" failed: ${errorMessage}`);
+      const completedTrace = browserService.finishTrace(trace, {
         success: false,
         error: errorMessage,
       });
 
       // Get recent logs for debugging
-      const recentLogs = acquiredBrowserService.logger.getLogsAsString(5);
+      const recentLogs = browserService.logger.getLogsAsString(5);
 
       // Provide helpful error messages
       const targetRefError = getBrowserTargetRefErrorDetails(error);

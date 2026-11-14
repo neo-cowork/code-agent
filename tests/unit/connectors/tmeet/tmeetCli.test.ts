@@ -154,7 +154,7 @@ describe('Tencent Meeting tmeet CLI driver', () => {
 
   it('matches only the documented Logged in status text', async () => {
     const { driver, credentialPath } = await fixture();
-    await expect(driver.status()).resolves.toEqual({ connected: false, identity: 'none' });
+    await expect(driver.status()).resolves.toEqual({ connected: false, identity: 'none', lostReason: 'cli_not_logged_in' });
 
     await writeFile(credentialPath, 'connected');
     await expect(driver.status()).resolves.toEqual({ connected: true, identity: 'user' });
@@ -224,7 +224,7 @@ describe('Tencent Meeting tmeet CLI driver', () => {
     await driver.disconnect();
 
     expect((await calls(logPath)).map((call) => call.args)).toEqual([['auth', 'logout']]);
-    await expect(driver.status()).resolves.toEqual({ connected: false, identity: 'none' });
+    await expect(driver.status()).resolves.toEqual({ connected: false, identity: 'none', lostReason: 'cli_not_logged_in' });
   });
 
   it('pins installation to 1.0.15 under the Neo tmeet data directory', async () => {
@@ -295,7 +295,7 @@ fs.chmodSync(path.join(pkg, 'scripts', 'tmeet.js'), 0o755);
       },
     });
 
-    await expect(driver.status()).resolves.toEqual({ connected: false, identity: 'none' });
+    await expect(driver.status()).resolves.toEqual({ connected: false, identity: 'none', lostReason: 'cli_not_logged_in' });
     expect(JSON.parse(await readFile(npmLog, 'utf8'))).toEqual([
       'install', '--prefix', path.join(dataDir, 'tmeet'), '@tencentcloud/tmeet@1.0.15',
     ]);
@@ -372,7 +372,7 @@ fs.chmodSync(path.join(pkg, 'scripts', 'tmeet.js'), 0o755);
       },
     });
 
-    await expect(driver.status()).resolves.toEqual({ connected: false, identity: 'none' });
+    await expect(driver.status()).resolves.toEqual({ connected: false, identity: 'none', lostReason: 'cli_not_logged_in' });
     expect(JSON.parse(await readFile(npmLog, 'utf8'))).toEqual([
       'install', '--prefix', path.join(dataDir, 'tmeet'), '@tencentcloud/tmeet@1.0.15',
     ]);
@@ -529,7 +529,7 @@ fs.chmodSync(path.join(pkg, 'scripts', 'tmeet.js'), 0o755);
       },
     });
 
-    await expect(driver.status()).resolves.toEqual({ connected: false, identity: 'none' });
+    await expect(driver.status()).resolves.toEqual({ connected: false, identity: 'none', lostReason: 'cli_not_logged_in' });
     expect(JSON.parse(await readFile(npmLog, 'utf8'))).toEqual([
       'install', '--prefix', path.join(dataDir, 'tmeet'), '@tencentcloud/tmeet@1.0.15',
     ]);

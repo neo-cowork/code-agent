@@ -46,6 +46,9 @@ vi.mock('../../../src/renderer/components/features/settings/WebModeBanner', () =
   WebModeBanner: () => null,
 }));
 
+import { CronExecutionList } from '../../../src/renderer/components/features/cron/CronExecutionList';
+import { CronExecutionDetail } from '../../../src/renderer/components/features/cron/CronExecutionDetail';
+import { CronJobApprovalHint } from '../../../src/renderer/components/features/cron/CronJobApprovalHint';
 import { CronCenterPanel } from '../../../src/renderer/components/features/cron/CronCenterPanel';
 import { useCronStore } from '../../../src/renderer/stores/cronStore';
 import { cronClient } from '../../../src/renderer/services/cronClient';
@@ -289,7 +292,7 @@ describe('无人值守等批准可见性（N-CRON-UNATTENDED-BASH-PARK-STUCK-VIS
     render(<CronCenterPanel onClose={() => undefined} />);
     awaitingRunsMock = [{
       jobId: 'job-1', executionId: 'exec-1', requestId: 'req-1', requestedAt: 1,
-      commandPreview: 'node scripts/refresh-wechat.js --since yesterday --verbose-long-flag',
+      tool: 'Bash', commandPreview: 'node scripts/refresh-wechat.js --since yesterday --verbose-long-flag',
     }];
 
     await vi.waitFor(
@@ -299,20 +302,49 @@ describe('无人值守等批准可见性（N-CRON-UNATTENDED-BASH-PARK-STUCK-VIS
       { timeout: 3000 },
     );
     const hint = screen.getByTestId('cron-detail-awaiting-approval-hint').textContent ?? '';
-    expect(hint).toContain('等你批准：node scripts/refresh-wechat…');
-    expect(hint).toContain('…');
+    expect(hint).toContain('等你批准：运行命令');
+    expect(hint).not.toContain('node scripts/refresh-wechat');
     expect(hint).not.toContain('--verbose-long-flag');
 
     fireEvent.click(screen.getByTestId('cron-detail-awaiting-approval-action'));
     await vi.waitFor(
       () => {
         const chip = screen.getByTestId('cron-exec-awaiting-approval');
-        expect(chip.textContent).toContain('等你批准：node scripts/refresh-wechat…');
+        expect(chip.textContent).toContain('等你批准：运行命令');
         expect(chip.className).toContain('whitespace-nowrap');
         expect(chip.className).toContain('max-w-[180px]');
-        expect(chip.getAttribute('title')).toContain('等你批准：node scripts/refresh-wechat.js --since yesterday --verbose-long-flag');
+        expect(chip.getAttribute('title')).toBe('等你批准：运行命令');
       },
       { timeout: 3000 },
     );
+  });
+});
+
+
+describe.each(['zh', 'en'] as const)('shared approval labels (%s)', (language) => {
+  describe.each(['list', 'detail', 'hint'] as const)('%s surface', (surface) => {
+    it.each([
+      { tool: 'Write', preview: '/Users/example/Documents/morning-notes/today-plan.md', name: 'today-plan.md' },
+      { tool: 'Write', preview: 'C:\\Users\\example\\Documents\\reading-list.md', name: 'reading-list.md' },
+      { tool: 'Bash', preview: 'ls -la /Users/example/Documents && echo ready', name: null },
+      { tool: 'Bash', preview: '/usr/bin/id', name: null },
+    ])('does not expose raw $tool preview: $preview', (item) => {
+      useAppStore.setState({ language });
+      const run = { jobId: 'job-1', executionId: 'exec-1', requestId: 'request-1', sessionId: 'session-1', requestedAt: 1, tool: item.tool, commandPreview: item.preview };
+      const execution = { id: 'exec-1', jobId: 'job-1', status: 'running' as const, scheduledAt: 1, retryAttempt: 0 };
+      render(surface === 'list'
+        ? <CronExecutionList executions={[execution]} selectedExecutionId={null} onSelectExecution={() => undefined} awaitingByJobId={new Map([['job-1', run]])} />
+        : surface === 'detail'
+          ? <CronExecutionDetail execution={execution} awaitingRun={run} />
+          : <CronJobApprovalHint run={run} />);
+      const name = item.name ?? (language === 'zh' ? '运行命令' : 'Run a command');
+      const expected = `${language === 'zh' ? '等你批准：' : 'Needs your approval: '}${name}`;
+      const id = surface === 'list' ? 'cron-exec-awaiting-approval' : surface === 'detail' ? 'cron-exec-detail-awaiting-approval-hint' : 'cron-detail-awaiting-approval-hint';
+      const element = screen.getByTestId(id);
+      expect(element.textContent).toContain(expected);
+      expect(element.textContent).not.toContain(item.preview);
+      expect(element.textContent).not.toMatch(/\/Users\/|C:\\|ls -la|echo ready/);
+      if (surface === 'list') expect(element.getAttribute('title')).toBe(expected);
+    });
   });
 });

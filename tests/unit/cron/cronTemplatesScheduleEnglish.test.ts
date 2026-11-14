@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CRON_TEMPLATES } from '../../../src/renderer/components/features/cron/cronTemplates';
 
 const templates = CRON_TEMPLATES.filter((t) => ['web-change-watch', 'feishu-calendar-conflict', 'feishu-table-change'].includes(t.id));
-const daily = (cronExpression: string) => ({ scheduleType: 'cron', cronExpression, cronTimezone: 'Asia/Shanghai' });
+const daily = (cronExpression: string) => ({ scheduleType: 'cron', cronExpression, cronTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone });
 const every = (everyInterval: string, everyUnit: string) => ({ scheduleType: 'every', everyInterval, everyUnit });
 
 const cases = [

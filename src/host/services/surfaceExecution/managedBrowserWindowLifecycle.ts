@@ -33,9 +33,13 @@ export async function releaseManagedBrowserWindow(input: {
     });
   }
   if (stillShared) return;
+  // A kept window survives its run's cleanup (agent keep, user claim release or a
+  // takeover park alike). It stays pooled-but-idle: lease un-pinned and pool entry
+  // not in use, so idle expiry / pool pressure can still reclaim it. Final URL/title
+  // refresh so reopen restores where the run actually ended, not where keep was called.
   if (keptRegistry.isKeptServiceAlive(serviceKey)) {
     if (activeTab?.url) {
-      keptRegistry.refreshTarget(identity.conversationId, activeTab.url, activeTab.title || '');
+      keptRegistry.refreshTarget(identity.conversationId, activeTab.url, activeTab.title || '', serviceKey);
     }
     // Pool idle reclaim and the BrowserService lease remain in force.
     browserPool.setInUse(serviceKey, false);

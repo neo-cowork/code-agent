@@ -10,7 +10,7 @@ const ipcInvokeMock = vi.hoisted(() => vi.fn(async () => undefined));
 const settingsInvokeMock = vi.hoisted(() => vi.fn<() => Promise<unknown>>(async () => { throw new Error('test boundary'); }));
 
 const sessionState = {
-  currentSessionId: 'session-1',
+  currentSessionId: 'session-1' as string | null,
   hasOlderMessages: false,
   isLoadingOlder: false,
   loadOlderMessages: vi.fn(async () => {}),
@@ -452,6 +452,19 @@ describe('ChatView session shell', () => {
       cleanup();
       window.domainAPI = undefined;
       sessionState.pendingUserQuestionsBySessionId = new Map();
+    }
+  });
+
+  it('null session without a skipped question leaves the default composer placeholder', () => {
+    const originalSessionId = sessionState.currentSessionId;
+    sessionState.currentSessionId = null;
+    try {
+      render(React.createElement(ChatView));
+      const input = screen.getByLabelText('chat-input-field') as HTMLInputElement;
+      expect(input.placeholder).not.toBe(zh.userQuestion.skippedPlaceholder);
+      expect(input.placeholder).toBe('');
+    } finally {
+      sessionState.currentSessionId = originalSessionId;
     }
   });
 

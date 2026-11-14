@@ -37,12 +37,12 @@ import { getHumanToolLabel } from '../../../utils/toolHumanLabel';
 import { buildToolStatusLineCopy } from '../../../utils/toolStatusLinePresentation';
 import { resolveStreamInterruptionOutcomeKey } from '../../../i18n/outcomeWords';
 import { useAppStore } from '../../../stores/appStore';
-import { useParkedToolCallIds } from '../../../stores/parkedApprovalStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useMessageActionStore } from '../../../stores/messageActionStore';
 import { Button } from '../../primitives/Button';
 import { redactCredentialText } from '@shared/security/secretPatterns';
-import { isToolCallAwaitingApproval } from '../../../utils/sessionNeedsInput';
+import { useToolCallTerminalResolver } from '../../../hooks/useToolCallTerminalResolver';
+import { traceTerminalToolCall } from '../../../utils/toolCallTerminalState';
 
 interface ToolStepGroupProps {
   nodes: TraceNode[];
@@ -57,36 +57,6 @@ interface ToolStepGroupProps {
 }
 
 const EMPTY_RESOLVED_PERMISSION_REQUESTS: PermissionRequest[] = [];
-
-/**
- * 会话是否仍在线（与 TraceNodeRenderer 同款判据）：无 result 的调用只有在
- * 在线会话里才可信地算「在跑」。回合已收尾（processingSessionIds 不含本会话）
- * 时，无 result 只能是中断/回收的残留，不能再用进行时动词渲染（FB-595：折叠头
- * 说「运行中」、展开行说「已中断」，两个状态源打架）。
- */
-function useSessionLive(sessionId: string | undefined): boolean {
-  return useAppStore((state) => (sessionId ? state.processingSessionIds.has(sessionId) : false));
-}
-
-/** 无 result 且会话已离线、也不在等审批 → 陈旧的未完成调用，按已中断收口。 */
-function isStaleUnfinishedToolCall(
-  toolCall: NonNullable<TraceNode['toolCall']>,
-  awaitingApproval: boolean,
-  sessionLive: boolean,
-): boolean {
-  return !awaitingApproval && toolCall.result === undefined && !sessionLive;
-}
-
-// 只消费「等审批 / 在线运行 / 已有结果」三种形态；陈旧未完成的调用必须先被
-// isStaleUnfinishedToolCall 拦下走中断文案，不能落到这里拿进行时动词。
-function resolveTraceToolStepStatus(
-  toolCall: NonNullable<TraceNode['toolCall']>,
-  awaitingApproval: boolean,
-): ToolStepStatus {
-  if (awaitingApproval) return 'pending-approval';
-  if (toolCall.result === undefined) return 'running';
-  return toolCall.success === false ? 'failed' : 'completed';
-}
 
 export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   nodes: sourceNodes,
@@ -108,28 +78,19 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   const resolvedPermissionRequests = useAppStore((state) => (
     sessionId ? state.resolvedPermissionRequests?.[sessionId] : undefined
   )) ?? EMPTY_RESOLVED_PERMISSION_REQUESTS;
-  const pendingPermissionRequest = useAppStore((state) => state.pendingPermissionRequest);
-  const pendingPermissionSessionId = useAppStore((state) => state.pendingPermissionSessionId);
-  const queuedPermissionRequests = useAppStore((state) => state.queuedPermissionRequests);
-  const sessionLive = useSessionLive(sessionId);
-  const hasUnfinishedCall = useMemo(
-    () => sourceNodes.some((node) => node.toolCall && node.toolCall.result === undefined),
-    [sourceNodes],
-  );
-  const parkedToolCallIdsBySession = useParkedToolCallIds(sessionId, hasUnfinishedCall);
-  const permissionState = useMemo(() => ({
-    pendingPermissionRequest,
-    pendingPermissionSessionId,
-    queuedPermissionRequests,
-    parkedToolCallIdsBySession,
-  }), [pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests, parkedToolCallIdsBySession]);
+  const terminalCalls = useMemo(() => nodes.flatMap(node => node.toolCall
+    ? [{ node, toolCall: traceTerminalToolCall(node.toolCall), agentId: node.metadata?.agentTeam?.agentId }] : []), [nodes]);
+  const resolveToolCallTerminalState = useToolCallTerminalResolver(sessionId, terminalCalls);
+  const terminalById = useMemo(() => new Map(terminalCalls.map(({ node, toolCall, agentId }) => [toolCall.id,
+    resolveToolCallTerminalState(toolCall, node.metadata?.streamInterruptionReason ?? (node.metadata?.streamRecovery ? 'app-restart' : undefined),
+      agentId, isStreamingTurn ? true : undefined)] as const)), [terminalCalls, resolveToolCallTerminalState, isStreamingTurn]);
   // 主流可见节点：过滤 ToolSearch 等纯内部动作（仍可在混合组的展开明细里看到）
   const streamVisibleNodes = useMemo(
     () => nodes.filter((n) => {
       const name = n.toolCall?.name;
-      return !name || !isInternalStreamTool(name);
+      return (!name || !isInternalStreamTool(name)) && terminalById.get(n.toolCall?.id ?? '')?.state !== 'hidden';
     }),
-    [nodes],
+    [nodes, terminalById],
   );
   const label = useMemo(() => {
     if (streamVisibleNodes.length === 0) return '';
@@ -137,10 +98,11 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       const tc = streamVisibleNodes[0].toolCall;
       if (tc) {
         const connectorId = findConnectorIdForToolName(tc.name);
-        const awaitingApproval = tc.result === undefined && isToolCallAwaitingApproval(tc.id, sessionId, permissionState);
+        const terminal = terminalById.get(tc.id);
+        if (!terminal) return '';
         // 陈旧未完成（会话已离线）：与展开行同一句中断文案（buildToolStatusLineCopy
         // 就是 ToolHeader 渲染 interrupted 态用的那个装配器），不进进行时词表。
-        if (isStaleUnfinishedToolCall(tc, awaitingApproval, sessionLive)) {
+        if (terminal.state === 'interrupted') {
           const staleLine = buildToolStatusLineCopy({
             status: 'interrupted',
             toolCall: {
@@ -157,7 +119,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           });
           return `${connector} · ${staleLine}`;
         }
-        const stepStatus = resolveTraceToolStepStatus(tc, awaitingApproval);
+        const stepStatus = terminal.stepStatus;
         const preflight = toolPreflightCopy({ name: tc.name, arguments: tc.args, result: tc.result === undefined ? undefined : {
           toolCallId: tc.id, success: tc.success ?? true, error: tc.success === false ? tc.result : undefined, output: tc.result, metadata: tc.metadata,
         } }, t);
@@ -210,13 +172,13 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       }
       // 陈旧未完成（会话已离线）：不进进行时/未成功词表，统一用展开行同源的
       // 中断结局词收口（多步组没有逐条人话行，只报结局词，明细展开可看）。
-      if (isStaleUnfinishedToolCall(tc, tc.result === undefined && isToolCallAwaitingApproval(tc.id, sessionId, permissionState), sessionLive)) {
+      if (terminalById.get(tc.id)?.state === 'interrupted') {
         staleUnfinished += 1;
         continue;
       }
       const stepStatus = benign
         ? 'completed'
-        : resolveTraceToolStepStatus(tc, tc.result === undefined && isToolCallAwaitingApproval(tc.id, sessionId, permissionState));
+        : terminalById.get(tc.id)?.stepStatus ?? 'completed';
       byStatus.set(stepStatus, [...(byStatus.get(stepStatus) ?? []), tc.name]);
     }
     return [
@@ -225,7 +187,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       blockedCommands ? t.deliveryExperience.blockedCommands.replace('{count}', String(blockedCommands)) : '',
       blockedSteps ? t.deliveryExperience.blockedSteps.replace('{count}', String(blockedSteps)) : '',
     ].filter(Boolean).join(t.deliveryExperience.labelSeparator);
-  }, [permissionState, sessionId, sessionLive, streamVisibleNodes, t]);
+  }, [terminalById, streamVisibleNodes, t]);
 
   const status = useMemo<'pending-approval' | 'streaming' | 'partial' | 'error' | 'ok'>(() => {
     let hasError = false;
@@ -237,59 +199,28 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       // 自动加载重试 + 已恢复的失败都是良性/已收尾状态，不参与组状态判定
       // （否则组会卡 error/partial、顶红、一直展开，把成功的一轮演成翻车）。
       if (isAutoLoadedRetry(tc.metadata) || tc.recovered) continue;
-      if (tc.result === undefined && isToolCallAwaitingApproval(tc.id, sessionId, permissionState)) {
-        return 'pending-approval';
-      }
-      // 无 result 且会话已离线 = 陈旧未完成（FB-595）：不点亮 running，否则回合收尾后
-      // 折叠头仍挂「运行中 ·」，与展开行的「已中断」打架。文案由 label 那边统一收口。
-      if (tc.result === undefined) {
-        if (sessionLive) hasRunning = true;
-        continue;
-      }
-      if (tc.success === false) hasError = true;
-      if (tc.success === true || (tc.result !== undefined && tc.success !== false)) {
-        hasSuccess = true;
-      }
+      const terminal = terminalById.get(tc.id);
+      if (!terminal) continue;
+      if (terminal.stepStatus === 'pending-approval') return 'pending-approval';
+      if (terminal.state === 'running') hasRunning = true;
+      if (terminal.state === 'failed') hasError = true;
+      if (terminal.state === 'completed' || terminal.state === 'hidden') hasSuccess = true;
     }
     if (hasError && (hasSuccess || hasRunning)) return 'partial';
     if (hasError) return 'error';
     return hasRunning ? 'streaming' : 'ok';
-  }, [nodes, permissionState, sessionLive, sessionId]);
+  }, [nodes, terminalById]);
 
   // 构造 ToolCallDisplay 需要的 ToolCall 对象
   const toolCalls = useMemo<ToolCall[]>(() => {
     return nodes
       .map((n) => {
         if (!n.toolCall) return null;
-        const tc = n.toolCall;
-        return {
-          id: tc.id,
-          name: tc.name,
-          arguments: tc.args,
-          _streaming: tc._streaming,
-          shortDescription: tc.shortDescription,
-          stepLabel: tc.stepLabel,
-          targetContext: tc.targetContext,
-          expectedOutcome: tc.expectedOutcome,
-          liveOutput: tc.liveOutput,
-          result:
-            tc.result !== undefined
-              ? {
-                  toolCallId: tc.id,
-                  success: tc.success ?? true,
-                  output: tc.success !== false ? tc.result : undefined,
-                  error: tc.success === false ? tc.result : undefined,
-                  duration: tc.duration,
-                  outputPath: tc.outputPath,
-                  metadata: tc.recovered
-                    ? { ...(tc.metadata || {}), recovered: true }
-                    : tc.metadata,
-                }
-              : undefined,
-        } as ToolCall;
+        if (terminalById.get(n.toolCall.id)?.state === 'hidden') return null;
+        return traceTerminalToolCall(n.toolCall);
       })
       .filter((x): x is ToolCall => !!x);
-  }, [nodes]);
+  }, [nodes, terminalById]);
   const receiptCacheRef = useRef(new Map<string, ToolReceiptPresentation>());
   const receiptByToolCallId = (() => {
     const liveToolCallIds = new Set(toolCalls.map((toolCall) => toolCall.id));
@@ -404,13 +335,13 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   // 不是 tc._streaming 参数流标记——同一工具参数流完时 result 仍未到位也算在跑）。
   const runningToolCall = useMemo<ToolCall | null>(() => {
     for (let i = toolCalls.length - 1; i >= 0; i -= 1) {
-      if (toolCalls[i].result === undefined) return toolCalls[i];
+      if (terminalById.get(toolCalls[i].id)?.state === 'running') return toolCalls[i];
     }
     return null;
-  }, [toolCalls]);
+  }, [toolCalls, terminalById]);
   const completedStepsCount = useMemo(
-    () => toolCalls.filter((tc) => tc.result !== undefined).length,
-    [toolCalls],
+    () => toolCalls.filter((tc) => terminalById.get(tc.id)?.state === 'completed').length,
+    [toolCalls, terminalById],
   );
   const isFailureStatus = status === 'error' || status === 'partial';
   const needsUserActionShell = isFailureStatus && hasEscalatedError;
@@ -473,11 +404,12 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     return (
       <div className="my-0.5">
         <ToolCallDisplay
+          sessionLive={isStreamingTurn || undefined}
+          agentId={nodes.find(node => node.toolCall?.id === toolCall.id)?.metadata?.agentTeam?.agentId}
           toolCall={toolCall}
           index={0}
           total={1}
           compact
-          statusOverride="interrupted"
           interruptionReason={interruptedNode.metadata?.streamInterruptionReason ?? 'app-restart'}
           mediaContext={{
             sessionId,
@@ -488,7 +420,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     );
   }
 
-  if (toolCalls.length === 1 && isDelegationTool(toolCalls[0].name)) {
+  if (nodes.length === 1 && toolCalls.length === 1 && isDelegationTool(toolCalls[0].name)) {
     const toolCall = toolCalls[0];
     return (
       <div
@@ -497,6 +429,8 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         style={!isStreamingTurn ? getDeferredContentStyle('toolCard') : undefined}
       >
         <ToolCallDisplay
+          sessionLive={isStreamingTurn || undefined}
+          agentId={nodes.find(node => node.toolCall?.id === toolCall.id)?.metadata?.agentTeam?.agentId}
           toolCall={toolCall}
           index={0}
           total={1}
@@ -618,6 +552,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         <div className="ml-4 mt-1 space-y-1 pl-3">
           {truncatedRunningToolCall && (
             <ToolCallDisplay
+              sessionLive={isStreamingTurn || undefined}
               toolCall={truncatedRunningToolCall}
               index={0}
               total={1}
@@ -646,6 +581,8 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
               data-trace-id={typeof tc.result?.metadata?.traceId === 'string' ? tc.result.metadata.traceId : undefined}
             >
               <ToolCallDisplay
+              sessionLive={isStreamingTurn || undefined}
+                agentId={nodes.find(node => node.toolCall?.id === tc.id)?.metadata?.agentTeam?.agentId}
                 toolCall={tc}
                 index={i}
                 total={toolCalls.length}

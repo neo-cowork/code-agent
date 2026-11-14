@@ -41,6 +41,44 @@ function baseInput(overrides: Partial<{ conversationId: string; serviceKey: stri
 }
 
 describe('KeptBrowserRegistry (N-BROWSER-KEEP-RESULT-PAGE)', () => {
+  it('keeps result and human-wait lifecycles independent, including shared services', () => {
+    const { pool, released, keptFlags } = createFakePool();
+    const registry = new KeptBrowserRegistry(pool);
+    const result = baseInput();
+    registry.register(result);
+    registry.register({ ...result, parkedForUser: true });
+    registry.unpark(result.conversationId);
+    expect(keptFlags.get(result.serviceKey)).toBe(true);
+    expect(registry.snapshot(result.conversationId).state).toBe('kept');
+    registry.register({ ...result, parkedForUser: true });
+    const replacement = baseInput({ serviceKey: 'new-result' });
+    registry.register(replacement);
+    expect(released).toEqual([]);
+    expect(registry.getParkedAlive(result.conversationId)?.serviceKey).toBe(result.serviceKey);
+    result.browserService.emit('close');
+    expect(released).toEqual([result.serviceKey]);
+    expect(registry.getParkedAlive(result.conversationId)).toBeNull();
+    expect(registry.snapshot(result.conversationId).state).toBe('kept');
+    replacement.browserService.emit('crashed');
+    expect(released).toEqual([result.serviceKey, replacement.serviceKey]);
+    expect(registry.snapshot(result.conversationId).state).toBe('closed');
+  });
+
+  it('replaces only the parked window and closes shared slots exactly once', () => {
+    const { pool, released } = createFakePool();
+    const registry = new KeptBrowserRegistry(pool);
+    const result = baseInput();
+    const parked = baseInput({ serviceKey: 'parked' });
+    registry.register(result);
+    registry.register({ ...parked, parkedForUser: true });
+    registry.register({ ...result, parkedForUser: true });
+    expect(released).toEqual(['parked']);
+    result.browserService.emit('close');
+    expect(released).toEqual(['parked', result.serviceKey]);
+    expect(registry.getAlive(result.conversationId)).toBeNull();
+    expect(registry.snapshot(result.conversationId).state).toBe('closed');
+  });
+
   it('registers a kept entry and reports the three-state snapshot', () => {
     const { pool } = createFakePool();
     const registry = new KeptBrowserRegistry(pool, () => 1000);
