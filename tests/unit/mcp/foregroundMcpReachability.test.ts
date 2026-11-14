@@ -32,6 +32,9 @@ function toolDef(name: string): ToolDefinition {
     name,
     description: `${name} description`,
     inputSchema: { type: 'object', properties: {} },
+    outputSchema: { type: 'object', properties: {} },
+    requiresPermission: true,
+    permissionLevel: 'execute',
   };
 }
 
@@ -65,7 +68,7 @@ describe('foregroundMcpReachability（普通会话文字前台经 toolScope.allo
     const brainOptions = withSessionCommandCenterBrain({ toolScope }, prompt);
     const policy = {
       allowedToolNames: brainOptions.allowedToolNames,
-      deniedToolNames: brainOptions.deniedToolNames,
+      deniedToolNames: brainOptions.deniedToolNames as readonly string[] | undefined,
       toolScope: brainOptions.toolScope,
     };
 
