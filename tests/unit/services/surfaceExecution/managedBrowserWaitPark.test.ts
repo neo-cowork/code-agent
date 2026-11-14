@@ -95,7 +95,7 @@ describe('timed-out wait_for_user parks the window', () => {
     expect(result.error).toContain('kept on the same page');
     expect(h.keptRegistry.getAlive('conversation-p')).toMatchObject({ parkedForUser: true, url: 'https://portal.example.test/gate' });
     // not offered as a "kept result page" in the chat
-    expect(h.keptRegistry.snapshot('conversation-p')).toEqual({ state: 'none', url: null, title: null });
+    expect(h.keptRegistry.snapshot('conversation-p')).toEqual({ state: 'none', url: null, title: null, reason: null });
 
     const parkedKey = h.adapter.getBinding(h.idA)!.serviceKey;
     await h.runtime.endRun(h.idA);
@@ -138,7 +138,7 @@ describe('timed-out wait_for_user parks the window', () => {
     } as unknown as ToolContext);
     expect(result.metadata).toMatchObject({ code: 'WAIT_FOR_USER_TIMEOUT', windowParked: true });
     expect(poolMocks.releaseAgent).not.toHaveBeenCalledWith('prior-result');
-    const snapshot = { state: 'kept', url: 'https://portal.example.test/invoice', title: 'Prior invoice' };
+    const snapshot = { state: 'kept', url: 'https://portal.example.test/invoice', title: 'Prior invoice', reason: 'keep_result_page' as const };
     expect(h.keptRegistry.snapshot('conversation-p')).toEqual(snapshot);
     const parkedKey = h.adapter.getBinding(h.idA)!.serviceKey;
     await h.runtime.endRun(h.idA);

@@ -95,6 +95,7 @@ describe('KeptBrowserRegistry (N-BROWSER-KEEP-RESULT-PAGE)', () => {
       title: 'Result',
       keptAt: 1000,
       state: 'kept',
+      reason: 'keep_result_page',
     });
     expect(registry.get('conversation-a')?.serviceKey).toBe('surface-key-1');
     expect(registry.isKeptServiceAlive('surface-key-1')).toBe(true);
@@ -229,9 +230,9 @@ describe('KeptBrowserRegistry (N-BROWSER-KEEP-RESULT-PAGE)', () => {
     expect(registry.get('conversation-a')?.state).toBe('closed');
   });
 
-  it('snapshot reports the IPC three states: none / kept / closed with url+title', () => {
+  it('snapshot reports the IPC three states: none / kept / closed with url+title+reason', () => {
     const registry = new KeptBrowserRegistry(createFakePool().pool);
-    expect(registry.snapshot('conversation-a')).toEqual({ state: 'none', url: null, title: null });
+    expect(registry.snapshot('conversation-a')).toEqual({ state: 'none', url: null, title: null, reason: null });
 
     const input = baseInput();
     registry.register(input);
@@ -239,6 +240,7 @@ describe('KeptBrowserRegistry (N-BROWSER-KEEP-RESULT-PAGE)', () => {
       state: 'kept',
       url: 'https://example.test/result',
       title: 'Result',
+      reason: 'keep_result_page',
     });
 
     input.browserService.emit('close');
@@ -246,6 +248,7 @@ describe('KeptBrowserRegistry (N-BROWSER-KEEP-RESULT-PAGE)', () => {
       state: 'closed',
       url: 'https://example.test/result',
       title: 'Result',
+      reason: 'keep_result_page',
     });
   });
 
