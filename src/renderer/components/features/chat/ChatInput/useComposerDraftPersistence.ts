@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { UI } from '@shared/constants';
+import type { MessageAttachment } from '@shared/contract';
+import { mergeAttachments } from './attachmentDedupe';
 import {
   COMPOSER_DRAFT_ADOPTED_EVENT,
   COMPOSER_DRAFT_DEBOUNCE_MS,
@@ -6,15 +9,21 @@ import {
   composerDraftPreview,
   composerDraftStorageKey,
   createComposerDraftWriter,
-  readComposerDraft,
+  hasComposerDraftContent,
+  readComposerDraftEntry,
   removeComposerDraft,
+  type ComposerDraftEntry,
   type ComposerDraftSendOutcome,
   type ComposerDraftWriter,
 } from './composerDraftStore';
 
+const EMPTY_ATTACHMENTS: MessageAttachment[] = [];
+
 interface ComposerDraftNotice {
   text: string;
   preview: string;
+  attachmentNames: string[];
+  droppedNames: string[];
 }
 
 interface ComposerDraftPersistence {
@@ -22,8 +31,8 @@ interface ComposerDraftPersistence {
   putBack: () => void;
   discard: () => void;
   /**
-   * Call immediately before the optimistic setValue('').
-   * Flushes the current text and marks the send in flight so the empty box
+   * Call immediately before the optimistic setValue('') / setAttachments([]).
+   * Flushes the current draft and marks the send in flight so the empty box
    * does not delete the stored draft.
    */
   noteOptimisticClear: () => void;
@@ -43,15 +52,28 @@ export function useComposerDraftPersistence(args: {
   scopeProjectId?: string | null;
   value: string;
   setValue: (value: string) => void;
+  attachments?: MessageAttachment[];
+  setAttachments?: (attachments: MessageAttachment[]) => void;
   /** Queued-edit mode borrows the box. Don't persist that text or clear the idle draft when it leaves. */
   suspend?: boolean;
 }): ComposerDraftPersistence {
-  const { sessionId, sessionless, scopeProjectId = null, value, setValue, suspend = false } = args;
+  const {
+    sessionId,
+    sessionless,
+    scopeProjectId = null,
+    value,
+    setValue,
+    attachments = EMPTY_ATTACHMENTS,
+    setAttachments,
+    suspend = false,
+  } = args;
   const key = composerDraftStorageKey(sessionId, sessionless, scopeProjectId);
   const keyRef = useRef(key);
   const prevKeyRef = useRef(key);
   const valueRef = useRef(value);
   valueRef.current = value;
+  const attachmentsRef = useRef(attachments);
+  attachmentsRef.current = attachments;
   const sendInFlightRef = useRef(false);
   // Key of the session that started the send. The settle can land after a
   // session switch, so it must not read whatever key is current by then.
@@ -60,13 +82,13 @@ export function useComposerDraftPersistence(args: {
   const wasSuspendedRef = useRef(false);
   const writerRef = useRef<ComposerDraftWriter | null>(null);
   const [sendInFlight, setSendInFlight] = useState(false);
-  const [stored, setStored] = useState<string | null>(() => readComposerDraft(key));
+  const [stored, setStored] = useState<ComposerDraftEntry | null>(() => readComposerDraftEntry(key));
 
   useEffect(() => {
     const writer = createComposerDraftWriter({
       delayMs: COMPOSER_DRAFT_DEBOUNCE_MS,
-      onCommitted: (committedKey, text) => {
-        if (committedKey === keyRef.current) setStored(text);
+      onCommitted: (committedKey, entry) => {
+        if (committedKey === keyRef.current) setStored(entry);
       },
       onRemoved: (removedKey) => {
         if (removedKey === keyRef.current) setStored(null);
@@ -80,7 +102,7 @@ export function useComposerDraftPersistence(args: {
   }, []);
 
   useEffect(() => {
-    const onAdopted = () => setStored(readComposerDraft(keyRef.current));
+    const onAdopted = () => setStored(readComposerDraftEntry(keyRef.current));
     window.addEventListener(COMPOSER_DRAFT_ADOPTED_EVENT, onAdopted);
     return () => window.removeEventListener(COMPOSER_DRAFT_ADOPTED_EVENT, onAdopted);
   }, []);
@@ -89,7 +111,7 @@ export function useComposerDraftPersistence(args: {
     const writer = writerRef.current;
     if (!writer) return;
     if (suspend) {
-      // The box now shows a queued message. Flush the idle text that was already
+      // The box now shows a queued message. Flush the idle draft that was already
       // scheduled, and don't replace it with the queued body.
       if (!wasSuspendedRef.current) writer.flushPending();
       wasSuspendedRef.current = true;
@@ -97,7 +119,7 @@ export function useComposerDraftPersistence(args: {
         prevKeyRef.current = key;
         keyRef.current = key;
         ignoreNextEmptyRef.current = true;
-        setStored(readComposerDraft(key));
+        setStored(readComposerDraftEntry(key));
       }
       return;
     }
@@ -110,33 +132,38 @@ export function useComposerDraftPersistence(args: {
       prevKeyRef.current = key;
       keyRef.current = key;
       // Session switch clears the box in a later effect. This render still has
-      // the previous session's text, so flush it onto the previous key first.
-      if (valueRef.current.trim()) {
-        writer.flushNow(previousKey, valueRef.current, () => false);
+      // the previous session's text and attachments, so flush them onto the previous key first.
+      if (hasComposerDraftContent(valueRef.current, attachmentsRef.current)) {
+        writer.flushNow(previousKey, valueRef.current, () => false, attachmentsRef.current);
       } else {
         writer.flushPending();
       }
       ignoreNextEmptyRef.current = true;
-      setStored(readComposerDraft(key));
+      setStored(readComposerDraftEntry(key));
       return;
     }
     keyRef.current = key;
-    if (!value.trim() && ignoreNextEmptyRef.current) {
+    if (!hasComposerDraftContent(value, attachments) && ignoreNextEmptyRef.current) {
       // Mount and the post-switch clear both start from an empty box. That
-      // empty value is not the user deleting the stored draft.
+      // empty state is not the user deleting the stored draft.
       ignoreNextEmptyRef.current = false;
       return;
     }
     ignoreNextEmptyRef.current = false;
-    writer.schedule(key, value, () => sendInFlightRef.current);
-  }, [key, suspend, value]);
+    writer.schedule(key, value, () => sendInFlightRef.current, attachments);
+  }, [attachments, key, suspend, value]);
 
   const noteOptimisticClear = useCallback(() => {
     sendInFlightRef.current = true;
     setSendInFlight(true);
     sendKeyRef.current = keyRef.current;
     // Hold, do not remove. Success is the only outcome that deletes.
-    writerRef.current?.flushNow(keyRef.current, valueRef.current, () => true);
+    writerRef.current?.flushNow(
+      keyRef.current,
+      valueRef.current,
+      () => true,
+      attachmentsRef.current,
+    );
   }, []);
 
   const noteSendSettled = useCallback((outcome: ComposerDraftSendOutcome) => {
@@ -180,10 +207,23 @@ export function useComposerDraftPersistence(args: {
   }, [noteOptimisticClear, noteSendSettled]);
 
   const putBack = useCallback(() => {
-    const text = readComposerDraft(keyRef.current);
-    if (!text) return;
-    setValue(text);
-  }, [setValue]);
+    const entry = readComposerDraftEntry(keyRef.current);
+    if (!entry) return;
+    const hasText = Boolean(entry.text.trim());
+    const hasAttachments = entry.attachments.length > 0;
+    if (!hasText && !hasAttachments) return;
+    if (hasText) {
+      setValue(entry.text);
+    }
+    if (hasAttachments && setAttachments) {
+      const { attachments: merged } = mergeAttachments(
+        attachmentsRef.current,
+        entry.attachments,
+        UI.MAX_ATTACHMENTS_DROP,
+      );
+      setAttachments(merged);
+    }
+  }, [setAttachments, setValue]);
 
   const discard = useCallback(() => {
     writerRef.current?.cancel();
@@ -191,9 +231,15 @@ export function useComposerDraftPersistence(args: {
     setStored(null);
   }, []);
 
-  const notice = sendInFlight || value.trim() || !stored
-    ? null
-    : { text: stored, preview: composerDraftPreview(stored) };
+  const notice: ComposerDraftNotice | null =
+    sendInFlight || hasComposerDraftContent(value, attachments) || !stored
+      ? null
+      : {
+          text: stored.text,
+          preview: stored.text.trim() ? composerDraftPreview(stored.text) : '',
+          attachmentNames: stored.attachments.map((att) => att.name.split(/[\\/]/).pop() || att.name),
+          droppedNames: stored.dropped,
+        };
 
   return {
     notice,
