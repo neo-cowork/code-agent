@@ -9,6 +9,8 @@ import type {
 import { fetchOpenchronicleContext } from '../external/openchronicleContextProvider';
 import { getNativeDesktopService } from '../desktop/nativeDesktopService';
 import { guardSensitiveText } from '../../security/sensitiveDataGuard';
+import { AUDIO_SPEAKER_ID } from '@shared/contract/audioCapture';
+import { MEETING_SESSION_LIMITS } from '@shared/constants';
 
 const DEFAULT_MAX_CHARS = 12_000;
 const OPENCHRONICLE_MAX_CHARS = 3_000;
@@ -22,6 +24,9 @@ interface NativeDesktopActivityReader {
   getCurrentContext(): DesktopActivityEvent | null;
   listRecent(limit?: number): DesktopActivityEvent[];
   listAudioSegments(from: number, to: number): AudioSegment[];
+  /** 「记这场会」的最近一场会（没有 meetings 表时为 null） */
+  getLatestMeeting?(): { title: string; started_at_ms: number; ended_at_ms: number | null } | null;
+  listRecentAudioSegments?(from: number, to: number, limit: number): AudioSegment[];
 }
 
 export interface BuildActivityContextDeps {
@@ -167,6 +172,10 @@ function buildAudioSource(args: {
   service: NativeDesktopActivityReader;
 }): ActivityContextSource {
   try {
+    // 有相关的会时，转写按这场会单独注入（见 buildMeetingTranscript），这里不再重复放最近 1 小时
+    if (relevantMeeting(args.service, args.now)) {
+      return unavailableSource('audio', args.now, AUDIO_MAX_CHARS, 'Meeting transcript is injected separately');
+    }
     const from = args.now - AUDIO_LOOKBACK_MS;
     const segments = args.service.listAudioSegments(from, args.now);
     const items = segments.map(toAudioItem);
@@ -195,6 +204,47 @@ function buildAudioSource(args: {
       error instanceof Error ? error.message : String(error),
     );
   }
+}
+
+/** 正在进行，或结束不到 CONTEXT_RECENT_MS 的会 */
+function relevantMeeting(service: NativeDesktopActivityReader, now: number) {
+  const meeting = service.getLatestMeeting?.();
+  if (!meeting) return null;
+  if (meeting.ended_at_ms !== null && now - meeting.ended_at_ms > MEETING_SESSION_LIMITS.CONTEXT_RECENT_MS) return null;
+  return meeting;
+}
+
+const MEETING_SEGMENT_LIMIT = 600; // 4 小时的会大约这个量级；字数预算再从尾部截
+
+/**
+ * 对话按场取转写（N-MEETING-SESSION 验收⑤）：正在进行或刚结束的那场会的转写，标出我/对方与时刻。
+ * 会长了保留最近的部分（用户问的多半是刚才说的）。没有相关的会返回 null。
+ */
+export function buildMeetingTranscript(deps: BuildActivityContextDeps = {}): { title: string; text: string } | null {
+  const now = deps.nowMs?.() ?? Date.now();
+  const service = deps.nativeDesktopService ?? getNativeDesktopService();
+  const meeting = relevantMeeting(service, now);
+  if (!meeting || !service.listRecentAudioSegments) return null;
+  const segments = service.listRecentAudioSegments(meeting.started_at_ms, meeting.ended_at_ms ?? now, MEETING_SEGMENT_LIMIT);
+  const lines = segments
+    .map((seg) => {
+      const who = seg.speaker_id === AUDIO_SPEAKER_ID.ME ? '我' : seg.speaker_id === AUDIO_SPEAKER_ID.OTHERS ? '对方' : '';
+      const t = new Date(seg.start_at_ms);
+      const hhmm = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+      return guardActivityText(`[${hhmm}${who ? ` ${who}` : ''}] ${seg.transcript ?? ''}`);
+    })
+    .filter((line) => line.trim());
+  if (lines.length === 0) return null;
+  // 从尾部往前装，装满预算为止
+  const kept: string[] = [];
+  let used = 0;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (used + lines[i].length + 1 > MEETING_SESSION_LIMITS.CONTEXT_MAX_CHARS) break;
+    kept.unshift(lines[i]);
+    used += lines[i].length + 1;
+  }
+  const head = kept.length < lines.length ? '...(更早的部分已省略)\n' : '';
+  return { title: guardActivityText(meeting.title), text: head + kept.join('\n') };
 }
 
 function buildScreenshotAnalysisSource(args: {
