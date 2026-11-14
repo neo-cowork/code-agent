@@ -94,7 +94,7 @@ function namedVerbatim(candidates: string[], texts: string[]): boolean {
 }
 
 /** 返回规范化绝对路径；未授权返回 null。 */
-export function authorizeProbePath(raw: string, auth: ProbeAuthority): string | null {
+function authorizeProbePath(raw: string, auth: ProbeAuthority): string | null {
   if (!raw || raw.includes('\0')) return null;
   const abs = path.resolve(auth.workingDirectory, raw);
   const real = realpathOfPrefix(abs);

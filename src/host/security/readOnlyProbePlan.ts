@@ -9,7 +9,7 @@
 // - 本文件只做「语法 → 计划」，不碰文件系统；路径授权与执行在 readOnlyProbeExecutor.ts。
 // ============================================================================
 
-export type ProbeStream = 'out' | 'err' | 'null';
+type ProbeStream = 'out' | 'err' | 'null';
 
 /** 一条简单命令的 fd1 / fd2 最终去向（按 shell 从左到右的重定向语义折叠）。 */
 export interface ProbeRedirect {
@@ -40,7 +40,7 @@ export type ProbeCommand =
   | { kind: 'whoami' }
   | { kind: 'python'; program: PyStmt[] };
 
-export interface ProbeStep {
+interface ProbeStep {
   /** 与前一步的连接符；第一步恒为 ';'。 */
   op: ';' | '&&' | '||';
   cmd: ProbeCommand;

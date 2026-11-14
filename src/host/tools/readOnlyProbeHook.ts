@@ -27,7 +27,7 @@ export interface ReadOnlyProbeInput {
   currentAttachments?: Array<{ path?: string }>;
 }
 
-export function isReadOnlyProbeEnabled(): boolean {
+function isReadOnlyProbeEnabled(): boolean {
   if (/^(off|0|false)$/i.test(process.env.CODE_AGENT_READONLY_PROBE ?? '')) return false;
   try {
     return getConfigService().getSettings().permissions?.readOnlyProbePlan !== false;
