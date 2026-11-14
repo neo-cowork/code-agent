@@ -219,7 +219,7 @@ export function useComposerDraftPersistence(args: {
       const { attachments: merged } = mergeAttachments(
         attachmentsRef.current,
         entry.attachments,
-        UI.MAX_ATTACHMENTS_DROP,
+        UI.MAX_ATTACHMENTS,
       );
       setAttachments(merged);
     }

@@ -729,21 +729,21 @@ describe('composer draft v2 attachments', () => {
     expect(screen.queryByTestId('unsent-draft-notice')).toBeNull();
   });
 
-  it('caps stored and restored attachments at UI.MAX_ATTACHMENTS_DROP (10) without duplicates', () => {
+  it('caps stored and restored attachments at UI.MAX_ATTACHMENTS (10) without duplicates', () => {
     const storage = memoryStorage();
     const writer = createComposerDraftWriter({
       storage,
       pageTarget: null,
       visibilityTarget: null,
     });
-    const twelve = Array.from({ length: UI.MAX_ATTACHMENTS_DROP + 2 }, (_, idx) =>
+    const twelve = Array.from({ length: UI.MAX_ATTACHMENTS + 2 }, (_, idx) =>
       makeImageAttachment(`cap-${idx + 1}`, `shot-${idx + 1}.png`, 32),
     );
     writer.flushNow(KEY_A, '十二张图', () => false, twelve);
     writer.dispose();
 
     const stored = readComposerDraftEntry(KEY_A, storage);
-    expect(stored?.attachments).toHaveLength(UI.MAX_ATTACHMENTS_DROP);
+    expect(stored?.attachments).toHaveLength(UI.MAX_ATTACHMENTS);
     expect(stored?.dropped).toEqual(['shot-11.png', 'shot-12.png']);
 
     // Put back into a composer that already holds 3 attachments (1 shared + 2 new): dedupes and caps at 10
@@ -771,9 +771,9 @@ describe('composer draft v2 attachments', () => {
     act(() => { result.current.putBack(); });
     expect(setAttachments).toHaveBeenCalledTimes(1);
     const merged = setAttachments.mock.calls[0][0] as MessageAttachment[];
-    expect(merged).toHaveLength(UI.MAX_ATTACHMENTS_DROP);
+    expect(merged).toHaveLength(UI.MAX_ATTACHMENTS);
     const names = merged.map((att) => att.name);
-    expect(new Set(names).size).toBe(UI.MAX_ATTACHMENTS_DROP);
+    expect(new Set(names).size).toBe(UI.MAX_ATTACHMENTS);
     expect(names.slice(0, 3)).toEqual(['shot-1.png', 'existing-a.png', 'existing-b.png']);
   });
 
