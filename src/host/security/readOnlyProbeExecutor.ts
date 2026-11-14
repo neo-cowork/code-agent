@@ -12,6 +12,7 @@ import { execFile } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { getShellPath } from '../services/infra/shellEnvironment';
 import { isSensitiveCredentialPath } from '../sandbox/sensitivePaths';
 import type { ProbeCommand, ProbeRedirect, PyExpr, PyStmt, ReadOnlyProbePlan } from './readOnlyProbePlan';
 
@@ -184,7 +185,7 @@ function runFixed(bin: string, args: string[], cwd: string): Promise<ProbeRunRes
 }
 
 function lookupOnPath(name: string): string | null {
-  const dirs = [...(process.env.PATH ?? '').split(':'), '/usr/bin', '/bin', '/usr/sbin', '/sbin', '/usr/local/bin', '/opt/homebrew/bin'];
+  const dirs = [...getShellPath().split(':'), '/usr/bin', '/bin', '/usr/sbin', '/sbin', '/usr/local/bin', '/opt/homebrew/bin'];
   for (const dir of dirs) {
     if (!dir) continue;
     const candidate = path.join(dir, name);

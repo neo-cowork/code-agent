@@ -24,6 +24,12 @@ vi.mock('../../../../src/host/services/core/databaseService', async (importOrigi
   return { ...actual, getDatabase: () => ({ getMessages: () => sessionMessages }) as unknown as ReturnType<typeof actual.getDatabase> };
 });
 
+const shellPathOverride = vi.hoisted(() => ({ value: undefined as string | undefined }));
+vi.mock('../../../../src/host/services/infra/shellEnvironment', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../src/host/services/infra/shellEnvironment')>();
+  return { ...actual, getShellPath: () => shellPathOverride.value ?? actual.getShellPath() };
+});
+
 import { getToolCache } from '../../../../src/host/services/infra/toolCache';
 import { fileReadTracker } from '../../../../src/host/tools/fileReadTracker';
 import { getProtocolRegistry } from '../../../../src/host/tools/protocolRegistry';
@@ -59,6 +65,7 @@ describe('只读探测免卡（ReadOnlyProbePlan）', () => {
     await fs.writeFile(path.join(elsewhere, 'secret.txt'), 'secret');
     await fs.symlink(elsewhere, path.join(fx, 'link'));
     sessionMessages.length = 0;
+    shellPathOverride.value = undefined;
     permissionAsks = [];
     delete process.env.CODE_AGENT_READONLY_PROBE;
     getToolCache().clear();
@@ -242,6 +249,16 @@ print(os.listdir('${fx}/link'))
       expect(permissionAsks).toEqual([]);
       expect(result.output).toBe(realBash(command));
     });
+  });
+
+  it('command -v 用登录 shell 的 PATH（与真 Bash 一致），而不是 process.env.PATH', async () => {
+    const bin = path.join(root, 'login-shell-bin');
+    await fs.mkdir(bin);
+    await fs.writeFile(path.join(bin, 'nvmtool'), '#!/bin/sh\n', { mode: 0o755 });
+    shellPathOverride.value = `${bin}:/usr/bin:/bin`;
+    const result = await run('command -v nvmtool || echo "no nvmtool"');
+    expect(permissionAsks).toEqual([]);
+    expect(result.output).toBe(`[cwd: ${fx}]\n${bin}/nvmtool\n`);
   });
 
   describe('④ 一键关闭 → 卡片回来，编译器不被调用', () => {
