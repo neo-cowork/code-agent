@@ -20,7 +20,7 @@ describe('scripts/lib/internal-text-leak-allowlist.json', () => {
     const nonRendererPaths: string[] = [];
     const duplicateKeys: string[] = [];
     const unownedEntries: string[] = [];
-    const missingTicketPrefix: string[] = [];
+    const notBareTicketId: string[] = [];
     const retiredReasonEntries: string[] = [];
 
     for (const entry of entries) {
@@ -37,8 +37,8 @@ describe('scripts/lib/internal-text-leak-allowlist.json', () => {
       if (/\bunowned\b/i.test(entry.reason)) {
         unownedEntries.push(`${entry.file} [${entry.rule}]: ${entry.reason}`);
       }
-      if (!/^[A-Z]+-[A-Z0-9-]+(?:\b|$)/.test(entry.reason)) {
-        missingTicketPrefix.push(`${entry.file} [${entry.rule}]: ${entry.reason}`);
+      if (!/^[A-Z]+(?:-[A-Z0-9]+)+$/.test(entry.reason)) {
+        notBareTicketId.push(`${entry.file} [${entry.rule}]: ${entry.reason}`);
       }
       if (RETIRED_STALE_REASONS.has(entry.reason)) {
         retiredReasonEntries.push(`${entry.file} [${entry.rule}]: ${entry.reason}`);
@@ -48,7 +48,7 @@ describe('scripts/lib/internal-text-leak-allowlist.json', () => {
     expect(nonRendererPaths).toEqual([]);
     expect(duplicateKeys).toEqual([]);
     expect(unownedEntries).toEqual([]);
-    expect(missingTicketPrefix).toEqual([]);
+    expect(notBareTicketId).toEqual([]);
     expect(retiredReasonEntries).toEqual([]);
   });
 });
