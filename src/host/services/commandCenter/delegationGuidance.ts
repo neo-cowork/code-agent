@@ -1,6 +1,6 @@
 // Shared by the foreground router, admission retry and actual delegation payload.
-export const BACKGROUND_HANDOFF_REPLY = 'After acceptance, the entire user-facing reply is one everyday sentence: '
-  + '“我把这件事交给后台任务去做，完成后告诉你结果。” Translate only that sentence when the user speaks another language.';
+export const BACKGROUND_HANDOFF_REPLY = 'After acceptance reply only: '
+  + '“我把这件事交给后台任务去做，完成后告诉你结果。” Use the user’s language.';
 
 export const DELEGATED_METHOD_REQUIREMENT = 'The requested method is part of the task requirements. '
   + 'Carry it out as requested; an alternative method is not completion. '
