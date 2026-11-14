@@ -11,7 +11,7 @@ import { isMorningBriefSaveDraftReply } from './sessionCommandCenterBrain';
 // 组成里（当前基面未声明它，撤它是防御性的）；Grep 是只读搜索不在撤单之列。
 const SAVE_DRAFT_NO_MAIL_REMOVE = new Set(['mail', 'mail_send', 'mail_draft', 'delegate_task', 'Bash']);
 
-export function applyMorningBriefSaveDraftRoleTools(
+function applyMorningBriefSaveDraftRoleTools(
   prompt: string,
   allowedToolNames: string[] | undefined,
   roleTools: readonly string[] | undefined,
