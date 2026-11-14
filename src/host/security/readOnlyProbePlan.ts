@@ -306,7 +306,7 @@ function parsePyBlock(lines: PyLine[], from: number, indent: number, state: { im
       if (!p.atEnd()) throw new PyParseError('print trailing');
       stmts.push({ t: 'print', args }); idx++; continue;
     }
-    const assign = /^([A-Za-z_][A-Za-z0-9_]*) = (.+)$/.exec(text);
+    const assign = /^([A-Za-z_][A-Za-z0-9_]*) ?=(?!=) ?(.+)$/.exec(text);
     if (assign && !PY_KEYWORDS.has(assign[1])) {
       if (!state.imported && assign[2].includes('os.')) throw new PyParseError('os before import');
       stmts.push({ t: 'assign', n: assign[1], e: new PyExprParser(assign[2]).parseSingle() });
@@ -354,7 +354,9 @@ function compileEchoText(words: string[]): { text: string; newline: boolean } | 
   let newline = true;
   let args = words;
   if (args[0] === '-n') { newline = false; args = args.slice(1); }
-  if (args.some((a) => a.startsWith('-') || a.includes('\\'))) return null;
+  // 首参形如 -e/-E/-ne 是 echo 选项（各 shell 语义不同），不模拟；`---x` 这类不是选项，按字面输出
+  if (args[0] !== undefined && /^-[neE]+$/.test(args[0])) return null;
+  if (args.some((a) => a.includes('\\'))) return null;
   return { text: args.join(' '), newline };
 }
 
