@@ -92,6 +92,68 @@ describe('approved rm production approval boundary', () => {
     refused(reason);
   });
 
+  it.each([';', '&&', '||', '\n'])('mints absolute multi-rm files joined by %s, with descriptor duplication', separator => {
+    input.params.command = `rm -f -- "${files[0]}" 2>&1 ${separator} rm -f -- "${files[1]}"; echo "exit=$?" 2>&1`;
+    expect(approvedSingleFileRmGrantForToolApproval(input)).toEqual(files.slice(0, 2));
+    expect(logs.warn).not.toHaveBeenCalled();
+  });
+
+  it('counts canonical distinct files across rm segments, not repeated operands', () => {
+    input.params.command = `rm -f -- ${files.slice(0, 8).map(file => `'${file}'`).join(' ')}; rm -f -- '${files[0]}'`;
+    expect(approvedSingleFileRmGrantForToolApproval(input)).toEqual(files.slice(0, 8));
+  });
+
+  it.each(['2>/tmp/x', '>file', '&>file', '>>file', '<file', '>|file', '>&-', '1>&2', '12>&1', '02>&1', '2>&10', '2>&-','2 >&1', '2>&1file', '<<EOF\nx\nEOF'])(
+    'refuses redirect %s with redirect_non_dup', redirect => {
+      input.params.command = `rm -- "${files[0]}" ${redirect}`;
+      refused('redirect_non_dup');
+    },
+  );
+
+  it.each(['cd /x', 'pushd /x', 'popd'])(
+    'refuses cwd mutation %s across the whole approval', mutation => {
+      input.params.command = `${mutation}; rm -f -- a`;
+      refused('multi_rm_cwd_change');
+    },
+  );
+
+  it.each(['mv', 'cp', 'ln', 'touch'])(
+    'refuses filesystem mutation %s across the whole approval', mutation => {
+      input.params.command = `${mutation} '${files[0]}' '${files[2]}'; rm -f -- '${files[1]}'`;
+      refused('filesystem_change');
+    },
+  );
+
+  it('refuses nine distinct absolute operands across two rm segments atomically', () => {
+    input.params.command = `rm -f -- ${files.slice(0, 5).map(file => `'${file}'`).join(' ')}; rm -f -- ${files.slice(5).map(file => `'${file}'`).join(' ')}`;
+    refused('operand_count>8');
+  });
+
+  it('refuses a directory in the second rm without granting the first file', () => {
+    const directory = join(cwd, 'directory'); mkdirSync(directory);
+    input.params.command = `rm -f -- '${files[0]}'; rm -f -- '${directory}'`;
+    refused('operand_not_regular_file');
+  });
+
+  it('refuses policy denial in the second rm and leaves the first file untouched', () => {
+    getPolicyEngine().loadUserRules({ deny: [`Edit(${files[1]})`] }, 'user-ui');
+    input.params.command = `rm -f -- '${files[0]}'; rm -f -- '${files[1]}'`;
+    refused('policy_denied');
+    expect(existsSync(files[0])).toBe(true);
+  });
+
+  it.each([
+    ['rm -f -- "ABS"; rm -f -- /tmp/*.tmp', 'literal_operand'],
+    ['rm -f -- "ABS"; rm -f -- "$(printf /tmp/x)"', 'expansion'],
+    ['rm -f -- "ABS"; rm -r -- /tmp/x', 'option'],
+    ['rm -f -- "ABS"; rm -d -- /tmp/x', 'option'],
+    ['rm -f -- "ABS"; rm -f -- ~/x', 'operand_not_absolute_literal'],
+    ['F1="ABS"; rm -f -- "ABS"; rm -f -- "$F1"', 'operand_not_absolute_literal'],
+  ])('refuses unsafe multi-rm %s', (command, reason) => {
+    input.params.command = command.replaceAll('ABS', files[0]);
+    refused(reason);
+  });
+
   it('accepts eight operands and preserves the one-file grant', () => {
     input.params.command = `rm -- ${files.slice(0, 8).map(file => `'${file}'`).join(' ')}`;
     expect(approvedSingleFileRmGrantForToolApproval(input)).toEqual(files.slice(0, 8));

@@ -249,6 +249,38 @@ suite('approved rm uses a real seatbelt literal grant', () => {
     expect(existsSync(neighbor)).toBe(true);
   });
 
+  it('approved natural-1 descriptor duplication deletes its absolute file under real seatbelt', async () => {
+    const target = join(slashTmpRoot, 'natural-one.tmp'); writeFileSync(target, 'cache');
+    const requests: PermissionRequestData[] = [];
+    const grant = vi.spyOn(approvedRmGrantModule, 'approvedSingleFileRmGrantForToolApproval');
+    const result = await executorFor('main-agent', requests, true).execute(
+      'Bash', { command: `rm -- "${target}" 2>&1; echo "---exit:$?---"` }, { sessionId: 'real-seatbelt-natural-one' },
+    );
+    console.log(`NATURAL_ONE_SEATBELT output=${JSON.stringify(result.result)} sandbox=${JSON.stringify(result.metadata?.sandbox)} ls=${rawLs(target)}`);
+    expect(result.success, result.error).toBe(true);
+    expect(result.result).toContain('---exit:0---');
+    expect(grant).toHaveBeenCalledOnce(); expect(grant.mock.results[0].value).toBeTruthy();
+    expect(requests).toHaveLength(1); expect(existsSync(target)).toBe(false);
+    expect(result.metadata?.sandbox).toMatchObject({ applied: true, code: 'OS_SANDBOX_APPLIED' });
+  });
+
+  it('approved natural-2 multi-rm with echo and ls probes deletes both files under real seatbelt', async () => {
+    const targets = [join(slashTmpRoot, 'natural-two.tmp'), join(outsideRoot, 'natural-two.tmp')];
+    const neighbor = join(outsideRoot, 'natural-two-keep.tmp');
+    [...targets, neighbor].forEach(file => writeFileSync(file, 'cache'));
+    const command = `rm -f -- "${targets[0]}"; echo "rm1_exit:$?"; rm -f -- "${targets[1]}"; echo "rm2_exit:$?"; echo "=== verify ==="; ls -ld -- "${targets[0]}"; echo "ls1_exit:$?"; ls -ld -- "${targets[1]}"; echo "ls2_exit:$?"`;
+    const requests: PermissionRequestData[] = [];
+    const grant = vi.spyOn(approvedRmGrantModule, 'approvedSingleFileRmGrantForToolApproval');
+    const result = await executorFor('main-agent', requests, true).execute('Bash', { command }, { sessionId: 'real-seatbelt-natural-two' });
+    console.log(`NATURAL_TWO_SEATBELT output=${JSON.stringify(result.result)} sandbox=${JSON.stringify(result.metadata?.sandbox)} ls=${targets.map(rawLs).join('; ')}`);
+    expect(result.success, result.error).toBe(true);
+    expect(result.result).toContain('rm1_exit:0'); expect(result.result).toContain('rm2_exit:0');
+    expect(grant).toHaveBeenCalledOnce(); expect(grant.mock.results[0].value).toHaveLength(2);
+    expect(requests).toHaveLength(1); expect(targets.map(existsSync)).toEqual([false, false]);
+    expect(existsSync(neighbor)).toBe(true);
+    expect(result.metadata?.sandbox).toMatchObject({ applied: true, code: 'OS_SANDBOX_APPLIED' });
+  });
+
   it('approved two-file background rm deletes both files with real seatbelt in an attended session', async () => {
     const targets = [join(slashTmpRoot, 'background-cache.tmp'), join(outsideRoot, 'background-cache.tmp')];
     const neighbors = [join(slashTmpRoot, 'background-keep.tmp'), join(outsideRoot, 'background-keep.tmp')];
