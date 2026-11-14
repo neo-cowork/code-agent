@@ -605,12 +605,15 @@ function stripLeadingMemoryHeaders(content: string): string {
 }
 
 function parseFrontmatter(content: string): ParsedFrontmatter {
-  const match = leadingMemoryHeader(content);
+  const match = content.match(/^\s*---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/);
   if (!match) return { body: content };
   const fm: Record<string, string> = {};
   for (const line of match[1].split(/\r?\n/)) {
-    const separator = line.indexOf(':');
-    fm[line.slice(0, separator)] = line.slice(separator + 1).trim();
+    const field = line.match(/^([a-zA-Z_][a-zA-Z0-9_-]*):[ \t]*(.*)$/);
+    if (field) fm[field[1]] = field[2].trim();
   }
+  // The outer header written by this service can contain multiline name/description
+  // values. Keep its first-line metadata semantics; nested content remains strict.
+  if (!leadingMemoryHeader(content) && !('name' in fm && 'description' in fm)) return { body: content };
   return { name: fm.name, description: fm.description, body: stripLeadingMemoryHeaders(content.slice(match[0].length)).trim() };
 }
