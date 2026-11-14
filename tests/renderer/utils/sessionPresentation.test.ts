@@ -120,11 +120,13 @@ describe('placeholder display uses the current UI language', () => {
 
 describe('display-only automatic-session prefixes', () => {
   it.each([
-    ['[Schedule]', '[定时]'], ['[Cron]', '[定时]'], ['[Heartbeat]', '[心跳]'],
-  ])('localizes %s without changing editing or raw detection', (stored, localized) => {
+    ['[Schedule]', '[定时]', '[Schedule] Morning notes'],
+    ['[Cron]', '[定时]', '[Schedule] Morning notes'],
+    ['[Heartbeat]', '[心跳]', '[Heartbeat] Morning notes'],
+  ])('localizes %s in zh and keeps en canonical prefixes', (stored, localized, enTitle) => {
     const title = `${stored} Morning notes`;
     expect(getLocalizedSessionTitle(title, 'zh')).toBe(`${localized} Morning notes`);
-    expect(getLocalizedSessionTitle(title, 'en')).toBe(title);
+    expect(getLocalizedSessionTitle(title, 'en')).toBe(enTitle);
     expect(getDisplaySessionTitle(title, 'zh')).toBe(`${localized} Morning notes`);
     expect(splitCronSessionTitleParts(title)).toEqual({ prefix: stored, name: 'Morning notes' });
     expect(getLocalizedSessionTitle('Manual task', 'zh')).toBe('Manual task');
