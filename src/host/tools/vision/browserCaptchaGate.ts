@@ -1,11 +1,11 @@
 // ============================================================================
 // Browser captcha / risk-control takeover gate (N-BROWSER-CAPTCHA-TAKEOVER)
-// 页面命中人机验证 / 风控 / MFA / 登录墙分类时，变更动作强制进人审门；
+// 页面命中人机验证 / 风控 / MFA 分类时，变更动作被拦下并指引模型调 wait_for_user；
 // 不靠模型自觉，用户指令「绕过」不能绕过这道门（复用现有分类器，不另造第二套）。
 // 只读动作（screenshot / get_content / get_dom_snapshot / scroll 等）不受影响。
 // ============================================================================
 
-import type { ToolContext, ToolExecutionResult } from '../types';
+import type { ToolExecutionResult } from '../types';
 import { classifyBrowserComputerManualTakeover } from '../../../shared/utils/browserComputerRedaction';
 import { detectBrowserChallenge } from '../../../shared/utils/browserChallengeDetection';
 import { readChallengeSignals, type ChallengeSignalPage } from '../../services/infra/browser/challengeSignalReader';
@@ -35,11 +35,10 @@ export interface BrowserCaptchaGateInput {
   action: string;
   browserService: CaptchaGateBrowserService;
   tabId?: string;
-  context: Pick<ToolContext, 'requestPermission'>;
 }
 
 /**
- * 命中分类时返回 `manual_takeover_required` 失败结果（审批被拒），否则返回 null 放行。
+ * 命中分类时返回 `MANUAL_TAKEOVER_REQUIRED` 失败结果（指引模型调 wait_for_user），否则返回 null 放行。
  * 页面内容读不到时放行并留痕——动作自身会在无标签页等场景自然失败。
  */
 export async function enforceBrowserCaptchaTakeoverGate(
@@ -87,30 +86,15 @@ export async function enforceBrowserCaptchaTakeoverGate(
   if (!takeover || !GATED_TAKEOVER_CLASSES.has(takeover)) {
     return null;
   }
-  const approved = await input.context.requestPermission({
-    type: 'dangerous_command',
-    tool: `browser_action.${input.action}`,
-    forceConfirm: true,
-    dangerLevel: 'danger',
-    reason: '页面要求人机验证，需要你亲自完成',
-    details: {
-      action: input.action,
-      takeoverClass: takeover,
-      url,
-    },
-  });
-  if (approved) {
-    return null;
-  }
   logger.warn(`captcha takeover gate: blocked "${input.action}" (class=${takeover}, url=${url})`);
   return {
     success: false,
-    error: `页面命中人机验证/风控（${takeover}），变更动作 ${input.action} 已强制接管：请你在浏览器窗口亲自完成验证（可用 browser_action switch_tab 把标签页前置），完成后重试。`,
+    error: `This page asks for a human verification or sign-in step (${takeover}), so "${input.action}" was not run. Do not try to get around it. Call browser_action with action "wait_for_user" and a reason: one plain sentence, in the user's language, saying what the user needs to do in the browser. Then call get_dom_snapshot after they press Done.`,
     metadata: {
       code: 'MANUAL_TAKEOVER_REQUIRED',
       userActionRequired: true,
       captchaClass: takeover,
-      takeoverAction: 'browser_action.switch_tab',
+      takeoverAction: 'browser_action.wait_for_user',
     },
   };
 }

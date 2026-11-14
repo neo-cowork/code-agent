@@ -1,7 +1,14 @@
 import { agentNodeLabel, agentRoleLabel, backgroundTaskLabel } from './agentRoleLabel';
 import { agentFailureCopy, backgroundTaskFailureCopy } from './agentFailureCopy';
-import { languages } from '../i18n';
+import { languages, type Translations } from '../i18n';
+import { agentFailureHostPhrases } from '../i18n/agentFailureHostPhrases';
 import { useAppStore } from '../stores/appStore';
+import {
+  AgentFailureCode,
+  agentFailureCodeFromCancellationReason,
+  inferAgentFailureCode,
+  isAgentFailureCode,
+} from '@shared/contract/agentFailure';
 // ============================================================================
 // agentRows - 「本会话的代理」统一行模型（N-L6-AGENTVIEW）
 // ----------------------------------------------------------------------------
@@ -35,6 +42,10 @@ export interface MemberRowSource {
   filesChanged?: readonly string[];
   /** 最近可见进展的活锚点（contextSnapshot.lastUpdated，只从活源取，不回落 startTime）；无进展提示（agentRowStall）用它算空转。 */
   lastActivityAt?: number;
+  error?: string | null;
+  failureCategory?: string | null;
+  agent?: { error?: string | null };
+  record?: { error?: string | null; failureCategory?: string | null };
 }
 
 export interface AgentRow {
@@ -98,6 +109,43 @@ function memberRowStatus(status: MemberRowSource['status']): AgentRowStatus {
   return agentRowStatus(status);
 }
 
+const PERSISTED_FAILURE_CATEGORY_CODES: Readonly<Record<string, AgentFailureCode>> = {
+  worktree_create_failed: AgentFailureCode.WorktreeCreateFailed,
+  timeout: AgentFailureCode.Timeout,
+  permission: AgentFailureCode.PermissionDenied,
+  cancelled: AgentFailureCode.CancelledByUser,
+  interrupted_by_restart: AgentFailureCode.ParentGone,
+  rate_limit: AgentFailureCode.ModelError,
+  network: AgentFailureCode.ModelError,
+  parse_error: AgentFailureCode.ModelError,
+  unknown: AgentFailureCode.Unknown,
+};
+
+function inferPersistedMemberFailureCode(rawError: string, rawCategory: string): AgentFailureCode | undefined {
+  if (!rawError && !rawCategory) return undefined;
+  if (isAgentFailureCode(rawCategory)) return rawCategory;
+  if (rawCategory === 'interrupted_by_restart') return AgentFailureCode.ParentGone;
+  if (rawError && Object.hasOwn(agentFailureHostPhrases, rawError)) {
+    return agentFailureHostPhrases[rawError];
+  }
+  const fromCancellation = agentFailureCodeFromCancellationReason(rawError);
+  if (fromCancellation) return fromCancellation;
+  const categoryCode = PERSISTED_FAILURE_CATEGORY_CODES[rawCategory];
+  if (!rawError) return categoryCode ?? AgentFailureCode.Unknown;
+  return inferAgentFailureCode({
+    error: rawError,
+    defaultCode: categoryCode ?? AgentFailureCode.Unknown,
+  });
+}
+
+function memberFailureReason(member: MemberRowSource, t: Translations): string | undefined {
+  if (member.status !== 'failed' && member.status !== 'cancelled') return undefined;
+  const rawError = (member.error ?? member.record?.error ?? member.agent?.error ?? '').trim();
+  const rawCategory = (member.failureCategory ?? member.record?.failureCategory ?? '').trim();
+  const code = inferPersistedMemberFailureCode(rawError, rawCategory);
+  return code ? agentFailureCopy(code, t) ?? undefined : undefined;
+}
+
 /** delegate_task 后台任务与 agentTree 节点的关联键：id / runId / metadata.childRunId 任一相等即同一个代理。 */
 function taskLinkedNodeId(task: Task, nodeIds: ReadonlySet<string>): string | undefined {
   if (nodeIds.has(task.id)) return task.id;
@@ -128,6 +176,7 @@ export function buildAgentRows(input: {
       icon: member.icon,
       isLead: member.isLead,
       status: memberRowStatus(member.status),
+      failureReason: memberFailureReason(member, t),
       stoppable: member.status === 'running',
       filesChanged: member.filesChanged,
       member,
@@ -149,7 +198,16 @@ export function buildAgentRows(input: {
           row.stoppable = row.status === 'working';
         }
         if (typeof node.budgetSummary.tokensUsed === 'number') row.tokens = node.budgetSummary.tokensUsed;
-        row.failureReason = agentFailureCopy(node.failureCode, t, node.failureReason) ?? undefined;
+        if (row.status !== 'failed' && row.status !== 'cancelled') {
+          row.failureReason = undefined;
+        } else {
+          const liveFailureReason = node.failureCode || node.failureReason
+            ? agentFailureCopy(node.failureCode, t, node.failureReason) ?? undefined
+            : undefined;
+          row.failureReason = liveFailureReason
+            ?? row.failureReason
+            ?? (agentFailureCopy(node.failureCode, t, node.failureReason) ?? undefined);
+        }
       }
       continue;
     }

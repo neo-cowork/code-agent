@@ -16,6 +16,7 @@ import type {
 } from '../../shared/ipc';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { RENDERER_POLLING } from '../../shared/constants';
+import { createFolderBatchUpload } from './folderBatchUpload';
 import { createPermissionSnapshotRetention } from './permissionSnapshotRetention';
 import { getLocalBridgeClient } from '../services/localBridge';
 import { useLocalBridgeStore } from '../stores/localBridgeStore';
@@ -994,6 +995,8 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
         if (set.size === 0) listeners.delete(channel);
       }
     }) as CommandBridgeAPI['off'],
+
+    uploadFolderBatch: createFolderBatchUpload(baseUrl, getAuthHeaders),
 
     getPathForFile: async (_file: File) => {
       const formData = new FormData();
