@@ -151,6 +151,7 @@ export const AgentEngineListSection: React.FC = () => {
     const unavailableReason = getEngineUnavailableReason(
       descriptor,
       descriptor.kind !== 'native' && !effectiveWorkingDirectory,
+      t.settings.model.models.switcherPanel,
     );
     if (unavailableReason) {
       toast.info(unavailableReason);

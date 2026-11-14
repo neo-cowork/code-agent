@@ -53,6 +53,10 @@ vi.mock('../../../src/renderer/hooks/useI18n', () => ({
 }));
 
 import { ModelSwitcher } from '../../../src/renderer/components/StatusBar/ModelSwitcher';
+import {
+  buildEngineReliabilitySummary, buildProviderBillingSummary, buildProviderHealthSummary,
+  ProviderBillingBadge, ProviderHealthBadge, ProviderSourceBadge, ProviderTransportBadge,
+} from '../../../src/renderer/components/StatusBar/modelSwitcherHelpers';
 
 const settingsWithLabel = {
   models: {
@@ -70,11 +74,26 @@ const settingsWithLabel = {
   },
 };
 
-function installDomainApi() {
+const xiaomiSettings = {
+  models: {
+    default: 'xiaomi',
+    providers: {
+      xiaomi: {
+        enabled: true,
+        apiKeyConfigured: true,
+        models: { 'mimo-v2.5-pro': { enabled: true }, 'mimo-v2.5-flash': { enabled: true } },
+      },
+    },
+    routing: {},
+  },
+};
+
+function installDomainApi(settings: unknown = settingsWithLabel, health: Record<string, unknown> | null = null, override: unknown = null) {
   const invoke = vi.fn(async (_domain: string, action: string) => {
-    if (action === 'get') return { success: true, data: settingsWithLabel };
-    if (action === 'getModelOverride') return { success: true, data: null };
-    if (action === 'getHealthStatus' || action === 'get_search_capabilities') {
+    if (action === 'get') return { success: true, data: settings };
+    if (action === 'getModelOverride') return { success: true, data: override };
+    if (action === 'getHealthStatus') return health ? { success: true, data: health } : { success: false, data: null };
+    if (action === 'get_search_capabilities') {
       return { success: false, data: null };
     }
     if (action === 'listSources') return { success: true, data: [] };
@@ -125,13 +144,91 @@ describe('ModelSwitcher GLM-5.3 label', () => {
       sessionState.sessions[0].engine.kind = kind;
       sessionState.sessions[0].engine.model = id;
       render(<ModelSwitcher currentModel={id} />);
-      const trigger = screen.getByRole('button', { name: '切换模型' });
+      const trigger = screen.getByRole('button', { name: (language === 'en' ? en : zh).settings.model.models.switcherPanel.triggerAria });
       expect(trigger.textContent).not.toContain(id);
       expect(trigger.title).not.toContain(id);
       expect(trigger.textContent).toContain(language === 'en' ? 'Internal record' : '内部记录');
       expect(sessionState.sessions[0].engine.model).toBe(id);
       cleanup();
     }
+  });
+
+  // Every piece of text a user can read or hover in the status-bar switcher: text nodes plus title / aria-label / placeholder.
+  const visibleText = () => [
+    document.body.textContent ?? '',
+    ...Array.from(document.body.querySelectorAll('[title],[aria-label],[placeholder]')).flatMap((el) => [
+      el.getAttribute('title') ?? '', el.getAttribute('aria-label') ?? '', el.getAttribute('placeholder') ?? '',
+    ]),
+  ].join('\n');
+  const CJK = /[\u3400-\u9fff]/;
+
+  it('English UI: trigger, opened panel and provider health marks contain no Chinese text', async () => {
+    ui.language = 'en';
+    appState.modelConfig.provider = 'xiaomi';
+    installDomainApi(xiaomiSettings, {
+      xiaomi: { status: 'unavailable', latencyP50: 4200, errorRate: 0.91, providerMark: { kind: 'auth' } },
+    });
+    render(<ModelSwitcher currentModel="mimo-v2.5-pro" />);
+    const trigger = screen.getByRole('button', { name: en.settings.model.models.switcherPanel.triggerAria });
+    fireEvent.click(trigger);
+    await waitFor(() => expect(document.body.querySelector('[data-model-search-input]')).not.toBeNull());
+    await waitFor(() => expect(document.body.querySelectorAll('[data-model-option-index]').length).toBeGreaterThan(1));
+    await waitFor(() => expect(visibleText()).toContain(en.settings.model.models.switcherPanel.availability.auth));
+    expect(visibleText()).toContain(en.settings.model.models.switcherPanel.header);
+    expect(visibleText()).toContain(en.settings.model.models.switcherPanel.auto);
+    expect(visibleText().split('\n').filter((line) => CJK.test(line))).toEqual([]);
+  });
+
+  it('English UI: the adaptive trigger label, the empty state, the engine picker and the helper badges contain no Chinese text', async () => {
+    ui.language = 'en';
+    appState.modelConfig.provider = 'xiaomi';
+    installDomainApi(xiaomiSettings, null, { adaptive: true });
+    const first = render(<ModelSwitcher currentModel="mimo-v2.5-pro" />);
+    const trigger = screen.getByRole('button', { name: en.settings.model.models.switcherPanel.triggerAria });
+    await waitFor(() => expect(trigger.textContent).toBe(en.settings.model.models.switcherPanel.auto));
+    fireEvent.click(trigger);
+    await waitFor(() => expect(document.body.querySelector('[data-current-engine-row]')).not.toBeNull());
+    fireEvent.click(document.body.querySelector('[data-current-engine-row] button') as HTMLElement);
+    await waitFor(() => expect(document.body.querySelector('[data-engine-picker]')).not.toBeNull());
+    expect(visibleText().split('\n').filter((line) => CJK.test(line))).toEqual([]);
+    first.unmount();
+
+    installDomainApi({ models: { default: 'xiaomi', providers: {}, routing: {} } });
+    render(<ModelSwitcher currentModel="mimo-v2.5-pro" />);
+    const emptyTrigger = screen.getByRole('button', { name: en.settings.model.models.switcherPanel.triggerAria });
+    fireEvent.click(emptyTrigger);
+    await waitFor(() => expect(emptyTrigger.textContent).toBe(en.settings.model.models.switcherPanel.configureModel));
+    expect(visibleText().split('\n').filter((line) => CJK.test(line))).toEqual([]);
+    cleanup();
+
+    const text = en.settings.model.models.switcherPanel;
+    render(<>
+      <ProviderBillingBadge summary={buildProviderBillingSummary('payg', text)} />
+      <ProviderBillingBadge summary={buildProviderBillingSummary('unknown', text)} />
+      <ProviderHealthBadge summary={buildProviderHealthSummary({ status: 'unavailable', latencyP50: 4200, errorRate: 0.91 }, text)} />
+      <ProviderHealthBadge summary={buildProviderHealthSummary(null, text)} />
+      <ProviderSourceBadge sourceLabel="CommonStack" />
+      <ProviderTransportBadge protocol="openai" endpoint="https://commonstack.example/v1" />
+    </>);
+    expect(visibleText().split('\n').filter((line) => CJK.test(line))).toEqual([]);
+    const reliability = buildEngineReliabilitySummary({
+      descriptor: {
+        kind: 'codex_cli', label: 'Codex', executable: true, installState: 'installed', runtimeState: 'ready', riskTier: 'low',
+        capabilities: ['execute', 'stream_events'],
+        reliability: {
+          cliStatus: 'not_checked', authState: 'not_checked', quotaState: 'available', streamingMode: 'none',
+          partialMessages: false, transcriptMode: 'final_text', toolSupport: 'read_only_cli_tools', mcpBridge: false,
+        },
+      } as unknown as Parameters<typeof buildEngineReliabilitySummary>[0]['descriptor'],
+      needsWorkspace: false,
+      sessionFailure: { category: 'auth', reason: 'token expired', suggestion: 'Sign in again', retryable: false, occurredAt: 0 } as unknown as Parameters<typeof buildEngineReliabilitySummary>[0]['sessionFailure'],
+      now: 5 * 60_000,
+      text,
+    });
+    expect(JSON.stringify(reliability)).not.toMatch(CJK);
+    expect(reliability?.capabilityLine).toContain(text.engine.cli.not_checked);
+    expect(reliability?.capabilityLine).toContain(text.engine.quota.available);
+    expect(reliability?.capabilityLine).toContain(text.engine.auth.not_checked);
   });
 
   it.each(['native', 'codex'] as const)('localizes every %s trigger tooltip field label for the current language', async (kind) => {
@@ -141,7 +238,7 @@ describe('ModelSwitcher GLM-5.3 label', () => {
       sessionState.sessions[0].engine.kind = kind;
       installDomainApi();
       render(<ModelSwitcher currentModel="mimo-v2.5-pro" />);
-      const trigger = screen.getByRole('button', { name: '切换模型' });
+      const trigger = screen.getByRole('button', { name: (language === 'en' ? en : zh).settings.model.models.switcherPanel.triggerAria });
       const text = (language === 'en' ? en : zh).settings.model.models.switcherTooltip;
       await waitFor(() => expect(trigger.title).toContain(`${text.mainModel}: `));
       expect(trigger.title).toContain(`${text.engine}: `);

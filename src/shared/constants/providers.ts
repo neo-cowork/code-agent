@@ -178,6 +178,8 @@ export interface CanonicalProviderInfo {
   defaultModel: string;
   endpoint: string;
   displayName: string;
+  /** English brand name, only where displayName is written in Chinese. */
+  displayNameEn?: string;
 }
 
 /**
@@ -268,6 +270,7 @@ export const PROVIDER_REGISTRY: Record<BuiltInModelProvider, CanonicalProviderIn
     defaultModel: 'doubao-1.5-pro-256k',
     endpoint: MODEL_API_ENDPOINTS.volcengine,
     displayName: '火山引擎 (豆包)',
+    displayNameEn: 'Volcengine (Doubao)',
   },
   longcat: {
     aliases: ['longcat'],
@@ -280,6 +283,7 @@ export const PROVIDER_REGISTRY: Record<BuiltInModelProvider, CanonicalProviderIn
     defaultModel: 'mimo-v2.5-pro',
     endpoint: MODEL_API_ENDPOINTS.xiaomi,
     displayName: '小米 MiMo',
+    displayNameEn: 'Xiaomi MiMo',
   },
   custom: {
     aliases: ['custom'],
@@ -335,8 +339,9 @@ export function getProviderEndpointForProtocol(
   return getProviderEndpoint(provider);
 }
 
-export function getProviderDisplayName(provider: string | null | undefined): string | undefined {
-  return getProviderInfo(provider)?.displayName;
+export function getProviderDisplayName(provider: string | null | undefined, language: 'zh' | 'en' = 'zh'): string | undefined {
+  const info = getProviderInfo(provider);
+  return (language === 'en' ? info?.displayNameEn : undefined) ?? info?.displayName;
 }
 
 // ============================================================================
