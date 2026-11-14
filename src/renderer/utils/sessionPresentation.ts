@@ -106,6 +106,20 @@ export function splitCronSessionTitleParts(title: string): { prefix: string; nam
   return parts?.name ? { prefix: parts.prefix, name: parts.name } : null;
 }
 
+/** Display only: editing and stored-prefix detection must keep using the raw title. */
+export function getLocalizedSessionTitle(title?: string | null, language: Language = 'zh'): string {
+  const displayTitle = getDisplaySessionTitle(title, language);
+  const parts = splitCronSessionTitleParts(displayTitle);
+  if (!parts || language === 'en') return displayTitle;
+  const labels = languages[language].sidebar;
+  // 本地化后的 zh 前缀是 [心跳]，英文章节只认 [heartbeat]：两种写法都要认出心跳类
+  const isHeartbeat = parts.prefix.toLowerCase() === '[heartbeat]'
+    || parts.prefix === labels.heartbeatSessionPrefix;
+  const prefix = isHeartbeat
+    ? labels.heartbeatSessionPrefix : labels.scheduleSessionPrefix;
+  return `${prefix} ${parts.name}`;
+}
+
 /**
  * Classify a session's status for sidebar display.
  *
