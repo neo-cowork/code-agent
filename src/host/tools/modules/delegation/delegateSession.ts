@@ -192,6 +192,25 @@ async function buildSnapshot(
   };
 }
 
+// 守卫已在本轮拒绝过的发起轮：key = 发起会话 + 发起轮身份，value = 拒绝时刻。
+// 用户通过 AskUserQuestion 作答后（答案是工具输出，不是 messages 行），同一轮的重试不能再被
+// 同一条原始消息拒绝，否则本轮永远委托不出去。作答的证据 = 拒绝之后该会话有一条成功完成的
+// AskUserQuestion 事件；没作答就重试仍然被拒。
+const clarificationAskedAt = new Map<string, number>();
+const CLARIFICATION_TRACK_LIMIT = 256;
+
+function clarificationAnswered(db: ReturnType<typeof getDelegationToolRuntime>['getDb'] extends () => infer D ? D : never, sessionId: string, since: number): boolean {
+  if (!db) return false;
+  try {
+    const row = db.prepare(
+      `SELECT 1 AS hit FROM tool_execution_events WHERE session_id = ? AND tool_name = 'AskUserQuestion' AND phase = 'complete' AND status = 'success' AND recorded_at >= ? LIMIT 1`,
+    ).get(sessionId, since);
+    return row !== undefined;
+  } catch {
+    return false;
+  }
+}
+
 // ADR-072 D2/D3 确定性守卫：模型只给建议，目标不清时不绑定，改回一个可点选的问题。
 // 返回 null = 放行进准入门；否则是 needs_clarification 拒绝（候选只给显示名，不含 id）。
 function clarifyGuardRejection(
@@ -203,6 +222,13 @@ function clarifyGuardRejection(
   const userMessage = readOriginUserMessage(runtime.getDb(), ctx.sessionId, ctx.sourceMessageId);
   if (userMessage === null) {
     logger.warn('[DelegateSession] clarify guard message-based rules skipped: the session has no readable origin user message');
+    return null;
+  }
+  const turnKey = `${ctx.sessionId}\0${originTurnIdOf(ctx)}`;
+  const askedAt = clarificationAskedAt.get(turnKey);
+  if (askedAt !== undefined && clarificationAnswered(runtime.getDb(), ctx.sessionId, askedAt)) {
+    clarificationAskedAt.delete(turnKey);
+    logger.info('[DelegateSession] clarify guard passed: the user answered the clarification question in this turn');
     return null;
   }
   const secret = getDelegationCandidateSecret();
@@ -226,6 +252,8 @@ function clarifyGuardRejection(
     userMessage,
   });
   if (verdict.kind === 'proceed') return null;
+  if (clarificationAskedAt.size >= CLARIFICATION_TRACK_LIMIT) clarificationAskedAt.delete(clarificationAskedAt.keys().next().value as string);
+  clarificationAskedAt.set(turnKey, runtime.now());
   const names = verdict.candidateNames.length > 0 ? ` Candidate chats (display names): ${verdict.candidateNames.map((name) => `「${name}」`).join('、')}.` : '';
   return {
     ok: false,

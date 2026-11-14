@@ -99,6 +99,22 @@ describe('delegate_session clarify guard (needs_clarification)', () => {
     db.close();
   });
 
+  it('lets the retry through once the user answered the AskUserQuestion; an unanswered retry is still rejected', async () => {
+    process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
+    const { db, projection, refOf, rows } = setup('让重构那边看看这个报错');
+    const call = { action: 'delegate_existing', candidateSetId: projection.candidateSetId, candidateRef: refOf('CLI重构'), text: '看看这个报错' };
+    const first = await executeDelegateSession(call, ctx, allow);
+    expect(first).toMatchObject({ ok: false, meta: { code: 'needs_clarification' } });
+    const unanswered = await executeDelegateSession(call, ctx, allow);
+    expect(unanswered).toMatchObject({ ok: false, meta: { code: 'needs_clarification' } });
+    expect(rows()).toEqual({ delegations: 0, queued: 0 });
+    db.prepare(`INSERT INTO tool_execution_events (execution_id, session_id, tool_name, phase, status, recorded_at) VALUES ('e-1', 'origin', 'AskUserQuestion', 'complete', 'success', ?)`).run(NOW + 1);
+    const retry = await executeDelegateSession(call, ctx, allow);
+    expect(retry.ok).toBe(true);
+    expect(rows()).toEqual({ delegations: 1, queued: 1 });
+    db.close();
+  });
+
   it('does not fire when the user names enough of one long title', async () => {
     process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
     const { db, projection, refOf, rows } = setup('把这条备注发给官网改版首页设计稿那个会话：周五前配色再对一遍');
