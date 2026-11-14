@@ -162,13 +162,14 @@ describe('native reasoning segment', () => {
 
   it('keeps Effort in the native trigger tooltip', () => {
     expect(formatNativeModelSwitcherTooltip({
+      labels: zh.settings.model.models.switcherTooltip,
       engineLabel: 'Neo',
       currentModel: 'mimo-v2.5-pro',
       displayProvider: 'xiaomi',
       displayModel: 'mimo-v2.5-pro',
       adaptive: false,
       overridden: false,
-      effort: { label: 'High' },
-    })).toContain('Effort:');
+      effort: { value: 'high', label: 'High' },
+    })).toContain(`${zh.settings.model.models.switcherTooltip.effort}: ${zh.settings.model.models.switcherTooltip.effortLevels.high}`);
   });
 });

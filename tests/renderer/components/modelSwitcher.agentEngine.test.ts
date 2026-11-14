@@ -343,6 +343,7 @@ describe('ModelSwitcher Agent Engine selection', () => {
 
   it('formats native trigger tooltip with main task strategy context', () => {
     expect(formatNativeModelSwitcherTooltip({
+      labels: zh.settings.model.models.switcherTooltip,
       engineLabel: 'Neo',
       currentModel: 'mimo-v2.5-pro',
       displayProvider: 'xiaomi',
@@ -351,15 +352,16 @@ describe('ModelSwitcher Agent Engine selection', () => {
       overridden: false,
       billingSummary: buildProviderBillingSummary('payg'),
       healthSummary: buildProviderHealthSummary({ status: 'healthy', latencyP50: 120, errorRate: 0 }),
-      effort: { label: 'High' },
-      thinkingLabel: 'Think',
+      effort: { value: 'high', label: 'High' },
+      thinkingEnabled: true,
     })).toBe(
-      '自动路由（按任务、成本和能力切换，当前主任务 mimo-v2.5-pro） · Engine: Neo · 计费: 按量 · Provider: 健康 · Effort: High · Thinking: Think',
+      '自动路由（按任务、成本和能力切换，当前主任务 mimo-v2.5-pro） · 引擎: Neo · 计费: 按量 · 服务: 健康 · 思考深度: 高 · 思考: 开',
     );
   });
 
   it('formats native override tooltip with original main task model', () => {
     expect(formatNativeModelSwitcherTooltip({
+      labels: zh.settings.model.models.switcherTooltip,
       engineLabel: 'Neo',
       currentModel: 'kimi-k2.5',
       displayProvider: 'zhipu',
@@ -368,19 +370,20 @@ describe('ModelSwitcher Agent Engine selection', () => {
       overridden: true,
       billingSummary: buildProviderBillingSummary('unknown'),
       healthSummary: buildProviderHealthSummary(null),
-      effort: { label: 'Default' },
+      effort: { value: 'low', label: 'Default' },
     })).toBe(
-      '已覆盖: zhipu/glm-4.5v (原主任务: kimi-k2.5) · Engine: Neo · 计费: 计费未知 · Provider: 未检测 · Effort: Default',
+      '已覆盖: zhipu/glm-4.5v (原主任务: kimi-k2.5) · 引擎: Neo · 计费: 未知 · 服务: 未检测 · 思考深度: 默认',
     );
   });
 
   it('formats external trigger tooltip with engine model, effort, and reliability', () => {
     expect(formatExternalModelSwitcherTooltip({
+      labels: zh.settings.model.models.switcherTooltip,
       engineLabel: 'Claude',
       model: 'sonnet',
-      effort: { label: 'High' },
+      effort: { value: 'high', label: 'High' },
       reliabilityLabel: '认证失败',
-    })).toBe('Engine: Claude · 主任务模型: sonnet · Effort: High · 状态: 认证失败');
+    })).toBe('引擎: Claude · 主任务模型: sonnet · 思考深度: 高 · 状态: 认证失败');
   });
 
   it('shows the model settings prompt only for native sessions after settings prove no configured models', () => {

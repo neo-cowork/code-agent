@@ -597,9 +597,6 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     showModelSettingsPrompt,
     effortOptionCount: effortOptions.length,
   });
-  const thinkingShortLabel = supportsThinkingControls
-    ? thinkingEnabled ? '思考' : '不思考'
-    : null;
   const selectedNativeBillingSummary = engine.kind === 'native'
     ? buildProviderBillingSummary(selectedNativeOption?.providerBillingMode)
     : null;
@@ -608,12 +605,14 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     : null;
   const triggerTitle = engine.kind !== 'native'
     ? formatExternalModelSwitcherTooltip({
+      labels: modelText.switcherTooltip,
       engineLabel: ENGINE_SHORT_LABEL[engine.kind],
-      model: engine.model ?? '默认模型',
+      model: engine.model,
     })
     : showModelSettingsPrompt
-      ? '还没有可用模型'
+      ? modelText.switcherTooltip.noModel
       : formatNativeModelSwitcherTooltip({
+        labels: modelText.switcherTooltip,
         engineLabel: ENGINE_SHORT_LABEL[engine.kind],
         currentModel,
         displayProvider,
@@ -623,7 +622,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         billingSummary: selectedNativeBillingSummary,
         healthSummary: selectedNativeHealthSummary,
         effort: selectedEffort,
-        thinkingLabel: thinkingShortLabel,
+        thinkingEnabled: supportsThinkingControls ? thinkingEnabled : null,
       });
 
   const handleTriggerClick = useCallback(() => {

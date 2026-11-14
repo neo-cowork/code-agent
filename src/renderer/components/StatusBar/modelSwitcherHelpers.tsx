@@ -18,6 +18,7 @@ import {
   type EngineModelCompatReasonCode,
 } from '@shared/constants/engineCompat';
 import type { Translations } from '../../i18n';
+import { interpolate } from '../../i18n/interpolate';
 import type { EffortLevel } from '../../../shared/contract/agent';
 import { getProviderLogoBadge, getProviderLogoMark } from './providerLogoCatalog';
 import { useProviderIconImageSource } from '../../utils/providerIconAssets';
@@ -636,44 +637,57 @@ export function buildProviderMetaTitle(group: {
   ].filter(Boolean).join('\n');
 }
 
+export type ModelSwitcherTooltipLabels = Translations['settings']['model']['models']['switcherTooltip'];
+
+function tooltipEffortLabel(effort: Pick<EffortOption, 'value' | 'label'>, labels: ModelSwitcherTooltipLabels): string {
+  return effort.label === SINGLE_EFFORT_OPTION[0].label ? labels.effortDefault : labels.effortLevels[effort.value];
+}
+
 export function formatNativeModelSwitcherTooltip(args: {
+  labels: ModelSwitcherTooltipLabels;
   engineLabel: string;
   currentModel: string;
   displayProvider: ModelProvider;
   displayModel: string;
   adaptive: boolean;
   overridden: boolean;
-  billingSummary?: ProviderBillingSummary | null;
-  healthSummary?: ProviderHealthSummary | null;
-  effort?: Pick<EffortOption, 'label'> | null;
-  thinkingLabel?: string | null;
+  billingSummary?: Pick<ProviderBillingSummary, 'mode'> | null;
+  healthSummary?: Pick<ProviderHealthSummary, 'state'> | null;
+  effort?: Pick<EffortOption, 'value' | 'label'> | null;
+  thinkingEnabled?: boolean | null;
 }): string {
+  const { labels } = args;
+  const model = `${args.displayProvider}/${args.displayModel}`;
   const modelLine = args.adaptive
-    ? `自动路由（按任务、成本和能力切换，当前主任务 ${args.currentModel}）`
+    ? interpolate(labels.adaptive, { model: args.currentModel })
     : args.overridden
-      ? `已覆盖: ${args.displayProvider}/${args.displayModel} (原主任务: ${args.currentModel})`
-      : `主任务模型: ${args.displayProvider}/${args.displayModel}`;
+      ? interpolate(labels.overridden, { model, original: args.currentModel })
+      : `${labels.mainModel}: ${model}`;
   return [
     modelLine,
-    `Engine: ${args.engineLabel}`,
-    args.billingSummary ? `计费: ${args.billingSummary.label}` : null,
-    args.healthSummary ? `Provider: ${args.healthSummary.label}` : null,
-    args.effort ? `Effort: ${args.effort.label}` : null,
-    args.thinkingLabel ? `Thinking: ${args.thinkingLabel}` : null,
+    `${labels.engine}: ${args.engineLabel}`,
+    args.billingSummary ? `${labels.billing}: ${labels.billingModes[args.billingSummary.mode]}` : null,
+    args.healthSummary ? `${labels.provider}: ${labels.health[args.healthSummary.state]}` : null,
+    args.effort ? `${labels.effort}: ${tooltipEffortLabel(args.effort, labels)}` : null,
+    typeof args.thinkingEnabled === 'boolean'
+      ? `${labels.thinking}: ${args.thinkingEnabled ? labels.thinkingOn : labels.thinkingOff}`
+      : null,
   ].filter(Boolean).join(' · ');
 }
 
 export function formatExternalModelSwitcherTooltip(args: {
+  labels: ModelSwitcherTooltipLabels;
   engineLabel: string;
-  model: string;
-  effort?: Pick<EffortOption, 'label'> | null;
+  model?: string | null;
+  effort?: Pick<EffortOption, 'value' | 'label'> | null;
   reliabilityLabel?: string | null;
 }): string {
+  const { labels } = args;
   return [
-    `Engine: ${args.engineLabel}`,
-    `主任务模型: ${args.model}`,
-    args.effort ? `Effort: ${args.effort.label}` : null,
-    args.reliabilityLabel ? `状态: ${args.reliabilityLabel}` : null,
+    `${labels.engine}: ${args.engineLabel}`,
+    `${labels.mainModel}: ${args.model ?? labels.defaultModel}`,
+    args.effort ? `${labels.effort}: ${tooltipEffortLabel(args.effort, labels)}` : null,
+    args.reliabilityLabel ? `${labels.status}: ${args.reliabilityLabel}` : null,
   ].filter(Boolean).join(' · ');
 }
 

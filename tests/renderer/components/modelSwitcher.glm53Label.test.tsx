@@ -87,6 +87,7 @@ function installDomainApi() {
 
 beforeEach(() => {
   ui.language = 'zh';
+  appState.modelConfig.provider = 'zhipu';
   sessionState.sessions[0].engine.kind = 'native';
   sessionState.sessions[0].engine.model = undefined;
   Element.prototype.scrollIntoView = vi.fn();
@@ -133,4 +134,29 @@ describe('ModelSwitcher GLM-5.3 label', () => {
     }
   });
 
+  it.each(['native', 'codex'] as const)('localizes every %s trigger tooltip field label for the current language', async (kind) => {
+    appState.modelConfig.provider = 'xiaomi';
+    for (const language of ['en', 'zh'] as const) {
+      ui.language = language;
+      sessionState.sessions[0].engine.kind = kind;
+      installDomainApi();
+      render(<ModelSwitcher currentModel="mimo-v2.5-pro" />);
+      const trigger = screen.getByRole('button', { name: '切换模型' });
+      const text = (language === 'en' ? en : zh).settings.model.models.switcherTooltip;
+      await waitFor(() => expect(trigger.title).toContain(`${text.mainModel}: `));
+      expect(trigger.title).toContain(`${text.engine}: `);
+      if (language === 'en') {
+        expect(trigger.title).not.toMatch(/[\u3400-\u9fff]/);
+      } else {
+        expect(trigger.title).not.toMatch(/\b(?:Engine|Provider|Effort|Thinking): /);
+      }
+      if (kind === 'native') {
+        expect(trigger.title).toContain(`${text.billing}: ${text.billingModes.payg}`);
+        expect(trigger.title).toContain(`${text.provider}: ${text.health.unknown}`);
+        expect(trigger.title).toContain(`${text.effort}: ${text.effortLevels.high}`);
+        expect(trigger.title).toContain(`${text.thinking}: ${text.thinkingOn}`);
+      }
+      cleanup();
+    }
+  });
 });
