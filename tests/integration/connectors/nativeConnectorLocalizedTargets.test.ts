@@ -95,7 +95,7 @@ describe('localized native connector targets through production tools', () => {
 
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.output).toBe('已创建提醒：\n- [提醒事项] 默认提醒');
+      expect(result.output).toBe('已创建提醒：\n- [提醒事项] 默认提醒\n提醒时间：无法确认，请在提醒事项中查看');
       expect(result.meta).toMatchObject({ list: '提醒事项' });
       expect(result.output).not.toContain('reminder-1');
     }
