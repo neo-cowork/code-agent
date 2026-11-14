@@ -65,7 +65,7 @@ import { isBashToolName, normalizeToolName } from './toolNames';
 import { isToolDeniedByRunPolicy } from './runToolPolicy';
 import { evaluateSubagentPolicyDenial, type SubagentToolPolicy } from '../agent/subagentToolRuntime';
 import { finalizeSurfaceAwareToolResult } from './artifacts/surfaceExecutionToolResultPipeline';
-import { recordDecision, recordInToolPermissionAsk } from './toolExecutorDecisionTrace';
+import { denyUnanalyzableCommand, recordDecision, recordInToolPermissionAsk } from './toolExecutorDecisionTrace';
 import { checkNeoTagToolGuard } from './neoTagToolGuard';
 import type { PermissionMode } from '../permissions/modes';
 import {
@@ -1927,12 +1927,11 @@ export class ToolExecutor {
         );
       }
       if (commandAnalysisFailedReason) {
-        traceBuilder.addStep(
-          'permission_classifier',
-          'command_analysis_failed',
-          'ask',
-          `命令无法可靠拆词，审批结果不能放行：${commandAnalysisFailedReason}`,
-        );
+        return denyUnanalyzableCommand({
+          toolName: executionToolName, params, reason: commandAnalysisFailedReason,
+          permStartTime, traceBuilder, sessionId: effectiveSessionId,
+          ledgerOrigin: this.ledgerOrigin, auditEnabled: this.auditEnabled, hookManager: options.hookManager,
+        });
       } else if (!guardFabricForcesApproval || guardFabricAskRuleOnly) {
         try {
           // 三分支解析 + readOnly/档位改写规则见 toolPermissionClassification.ts
