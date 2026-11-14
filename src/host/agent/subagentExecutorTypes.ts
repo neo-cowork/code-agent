@@ -156,6 +156,8 @@ export interface SubagentAttachment {
 }
 
 export interface SubagentExecutionContext {
+  /** Identity assigned by a detached wrapper for this spawn invocation only; never inherited by its children. */
+  managedAgentId?: string;
   /** Native run identity; never inferred from a process singleton. */
   runId?: string;
   /** Stable user message that originated the parent native turn. */

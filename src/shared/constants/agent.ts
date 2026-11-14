@@ -92,7 +92,12 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // sys-v111: integrate main sys-v109 with missing-attachment context and same-language reply.
 // sys-v113: integrate main sys-v112 with the measured GUI disclosure wording (unchanged).
 // sys-v114: trim two filler words from the skills rule to fit the resident-layer budget (no semantic change).
-export const PROMPT_VERSION = 'sys-v114' as const;
+// sys-v115：整合合并——keep_result_page 枚举/描述/结果文案（本单）叠上 main 的 sys-v114 面，
+// 合并面未在任何一侧单独记录过，按惯例升版。
+// sys-v116 (main): preserve the main-branch prompt changes.
+// sys-v117–118: add wait_for_user and refine its instructions.
+// sys-v119: integrate wait_for_user with the updated main prompt surface.
+export const PROMPT_VERSION = 'sys-v119' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =

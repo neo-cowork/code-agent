@@ -257,6 +257,17 @@ describe('BackgroundSubagentRegistry', () => {
       expect(reg.getStatus(agentId)?.failureCode).not.toBe(AgentFailureCode.BudgetExhausted);
     });
 
+    it('keeps main\'s failed/budget-exhausted record for a cap hit while carrying the plain conclusion', async () => {
+      const reg = new BackgroundSubagentRegistry();
+      const agentId = reg.spawn(async () => ({
+        success: false, output: '', error: 'Max iterations reached', failureCode: AgentFailureCode.BudgetExhausted,
+        toolsUsed: [], iterations: 3,
+        stopHint: { kind: 'step_cap' as const, conclusion: '后台任务做到第 3 步（上限 3 步）就用完了步数。' },
+      }));
+      await reg.await(agentId);
+      expect(reg.getStatus(agentId)).toMatchObject({ status: 'failed', error: 'Max iterations reached', failureCode: AgentFailureCode.BudgetExhausted });
+    });
+
     it('keeps the raw error on the entry (diagnosis) for thrown and returned failures', async () => {
       const reg = new BackgroundSubagentRegistry();
       const thrown = reg.spawn(async () => { throw new Error('Durable Run persistence is unavailable'); });

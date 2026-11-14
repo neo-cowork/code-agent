@@ -1,4 +1,4 @@
-import { agentRoleLabelsZh } from './agentRoleLabels';
+import { authModalZh } from './authModal'; import { modelSetupZh } from './modelSetup'; import { agentRoleLabelsZh } from './agentRoleLabels';
 // ============================================================================
 // Chinese (Simplified) Translations - 简体中文
 // ============================================================================
@@ -62,7 +62,7 @@ import { permissionRuleNlZh } from './permissionRuleNl';
 import { sessionTaskPresentationZh } from './sessionTaskPresentation'; import { toolResultSummaryZh } from './toolResultSummary'; import { codeBlockZh } from './codeBlock';
 
 export const zh = {
-  ...agentRoleLabelsZh, ...canvasActorZh, ...activityPanelZh,
+  ...authModalZh, ...modelSetupZh, ...agentRoleLabelsZh, ...canvasActorZh, ...activityPanelZh,
   ...imageNarrationZh, ...mermaidZh,
   ...voiceAuditZh,
   ...capabilityHubZh,

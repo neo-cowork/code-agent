@@ -96,13 +96,14 @@ export function describeDelegateTaskResult(result: Exclude<SpawnSessionTaskResul
 function sessionTaskMeta(
   outcome: 'accepted' | 'queued' | 'reused' | 'status',
   tasks: SessionCommandTask[],
+  includeTaskIds = false,
 ): Record<string, unknown> {
   return {
     sessionTask: {
       outcome,
       tasks: tasks.map((task) => {
         const detail = task.resultText ?? task.detail ?? task.summary;
-        return { shortName: task.shortName, status: task.status, ...(detail ? { detail } : {}) };
+        return { ...(includeTaskIds ? { taskId: task.id } : {}), shortName: task.shortName, status: task.status, ...(detail ? { detail } : {}) };
       }),
     },
   };
@@ -111,11 +112,12 @@ function sessionTaskMeta(
 function delegateTaskReceipt(
   result: Exclude<SpawnSessionTaskResult, { outcome: 'requires_choice' }>,
   prefix = '',
+  includeTaskIds = false,
 ): ToolResult<string> {
   return {
     ok: true,
     output: prefix + describeDelegateTaskResult(result),
-    meta: sessionTaskMeta(result.outcome === 'started' ? 'accepted' : result.outcome, [result.task]),
+    meta: sessionTaskMeta(result.outcome === 'started' ? 'accepted' : result.outcome, [result.task], includeTaskIds),
   };
 }
 
@@ -124,6 +126,7 @@ export async function executeDelegateTask(
   ctx: ToolContext,
   canUseTool: CanUseToolFn,
   onProgress?: ToolProgressFn,
+  includeTaskIds = false,
 ): Promise<ToolResult<string>> {
   const denied = await permit(delegateTaskSchema.name, args, canUseTool);
   if (denied) return denied;
@@ -173,12 +176,12 @@ export async function executeDelegateTask(
   };
   const result = await getSessionCommandCenter().spawn(spawnInput);
   if (result.outcome === 'requires_choice') {
-    const choiceResult = await resolveOverflowChoiceInHost(spawnInput, result.active, ctx.abortSignal);
+    const choiceResult = await resolveOverflowChoiceInHost(spawnInput, result.active, ctx.abortSignal, includeTaskIds);
     onProgress?.({ stage: 'completing', percent: 100 });
     return choiceResult;
   }
   onProgress?.({ stage: 'completing', percent: 100 });
-  return delegateTaskReceipt(result);
+  return delegateTaskReceipt(result, '', includeTaskIds);
 }
 
 function buildOverflowQuestionOptions(
@@ -217,6 +220,7 @@ async function resolveOverflowChoiceInHost(
   spawnInput: SpawnSessionTaskInput,
   active: SessionCommandTask[],
   abortSignal: AbortSignal,
+  includeTaskIds: boolean,
 ): Promise<ToolResult<string>> {
   const { shortName, sessionId } = spawnInput;
   const { options, replaceable } = buildOverflowQuestionOptions(shortName, active);
@@ -249,7 +253,7 @@ async function resolveOverflowChoiceInHost(
     if (queued.outcome === 'requires_choice') {
       return { ok: true, output: describeOverflowUnansweredFallback(shortName) };
     }
-    return delegateTaskReceipt(queued);
+    return delegateTaskReceipt(queued, '', includeTaskIds);
   }
 
   const matchedReplace = replaceable.find((entry) => entry.label === answer)
@@ -267,11 +271,11 @@ async function resolveOverflowChoiceInHost(
     const cancellationReceipt = `${stopped ? '已停止' : '已请求停止'}「${cancellation.task.shortName}」。`;
     const restarted = await center.spawn(spawnInput);
     if (restarted.outcome !== 'requires_choice') {
-      return delegateTaskReceipt(restarted, cancellationReceipt);
+      return delegateTaskReceipt(restarted, cancellationReceipt, includeTaskIds);
     }
     const queuedAfterCancel = await center.spawn({ ...spawnInput, queueWhenFull: true });
     if (queuedAfterCancel.outcome !== 'requires_choice') {
-      return delegateTaskReceipt(queuedAfterCancel, cancellationReceipt);
+      return delegateTaskReceipt(queuedAfterCancel, cancellationReceipt, includeTaskIds);
     }
     return { ok: true, output: describeOverflowUnansweredFallback(shortName) };
   }
@@ -367,7 +371,8 @@ function moduleFor(
   return { schema, createHandler: () => new Handler(schema, executeFn) };
 }
 
-export const delegateTaskModule = moduleFor(delegateTaskSchema, executeDelegateTask);
+export const delegateTaskModule = moduleFor(delegateTaskSchema, (args, ctx, canUseTool, onProgress) =>
+  executeDelegateTask(args, ctx, canUseTool, onProgress, true));
 export const steerTaskModule = moduleFor(steerTaskSchema, executeSteerTask);
 export const cancelTaskModule = moduleFor(cancelTaskSchema, executeCancelTask);
 export const taskStatusModule = moduleFor(taskStatusSchema, executeTaskStatus);

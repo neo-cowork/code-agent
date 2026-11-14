@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { publishEnvAssistToolNotice } from '../permissions/envAssist/toolNotice';
-import { buildInsufficientScopeConnectorEvent } from './runtime/connectorScopeCard';
+import { buildConnectorToolFailureEvent } from './runtime/connectorScopeCard';
 import { resolveSubagentPreset } from './subagentFirstRunPreset';
 import type { AgentMessageOrigin } from './messageOrigin';
 import type { ToolCall } from '../../shared/contract';
@@ -27,6 +27,7 @@ import { SubagentContextProjection } from './subagentContextProjection';
 import { SUBAGENT_COMPACTION } from '../../shared/constants';
 import { AgentFailureCode } from '../../shared/contract/agentFailure';
 import { getPlanApprovalGate } from './planApproval';
+import { getSpawnGuard } from './spawnGuard';
 import { buildChildContext } from './childContext';
 import { AgentTask, type SidecarMetadata } from './agentTask';
 import { generateMessageId } from '../../shared/utils/id';
@@ -85,6 +86,7 @@ import {
 import { startSubagentLifecycle } from './subagentLifecycleHooks';
 import { SubagentDoomLoopGuard } from './subagentDoomLoopGuard';
 import { createSubagentTurnObservability } from './subagentTurnTrace';
+import { buildStepCapConclusion } from './subagentStepCapConclusion';
 import { noteSubagentLiveProgress } from './backgroundSubagentLiveProgress';
 import {
   handleSubagentAbort,
@@ -438,8 +440,8 @@ export class SubagentExecutor {
 
     const terminal: SubagentCompletionTerminal = { status: 'failed' };
 
-    // 早退失败收口（预算触顶 / 工具装配失败共用）：统一 cleanup + orphan 接管 +
-    // SubagentStop + 结构化失败返回，extra 携带各自的 failureCode/缺失清单等差异化字段。
+    // 早退/触顶失败收口（预算触顶 / 工具装配失败 / 迭代耗尽共用）：统一 cleanup + orphan 接管 +
+    // 后代子树取消 + SubagentStop + 结构化失败返回，extra 携带各自的 failureCode/缺失清单等差异化字段。
     const earlyFailure = (error: string, extra: Partial<SubagentResult>): SubagentResult => {
       logger.error(`[${config.name}] ${error}`);
       cleanupTimer();
@@ -449,11 +451,14 @@ export class SubagentExecutor {
       agentTask.fail(error);
       // orphan 接管（roadmap 2.6）：subagent 名下未收口任务释放回主会话
       adoptOrphanTasks(sessionId, pipelineContext.agentId);
+      const leftoverReport = reportSubagentLeftoverShells(executionAgentId, 'early-failure');
+      if (context.spawnGuardId) {
+        getSpawnGuard().cancelDescendants(context.spawnGuardId, 'parent-cancel');
+      }
       context.hooks?.triggerSubagentStop(config.name, undefined, sessionId, agentTask.id)
         .catch(silence(logger, 'triggerSubagentStop:early-failure', 'warn'));
       return {
         success: false,
-        output: appendSubagentLeftoverShellReport('', reportSubagentLeftoverShells(executionAgentId, 'early-failure')),
         error,
         toolsUsed: [],
         iterations: 0,
@@ -462,6 +467,7 @@ export class SubagentExecutor {
         agentId: executionAgentId,
         contextSnapshot: latestContextSnapshot,
         ...extra,
+        output: appendSubagentLeftoverShellReport(extra.output ?? '', leftoverReport),
       };
     };
 
@@ -513,6 +519,7 @@ export class SubagentExecutor {
       // finalOutput 在循环之后才声明。进度回调若读它，会在 TDZ 里抛 ReferenceError，
       // 被记账的 catch 吞掉，重启通知就永远没有花费和进度。
       let latestAssistantText = '';
+      let exitedLoop = false;
 
       while (iterations < maxIterations) {
         iterations++;
@@ -544,6 +551,7 @@ export class SubagentExecutor {
         const iterBudgetCheck = pipeline.checkBudget(pipelineContext);
         if (!iterBudgetCheck.allowed) {
           logger.warn(`[${config.name}] Budget exceeded at iteration ${iterations}`);
+          exitedLoop = true;
           break;
         }
 
@@ -693,6 +701,7 @@ export class SubagentExecutor {
           taskGateReentries = wind.taskGateReentries;
           memberInputReentries = wind.memberInputReentries;
           if (wind.continueLoop) continue;
+          exitedLoop = true;
           break;
         }
 
@@ -903,7 +912,7 @@ export class SubagentExecutor {
               await publishEnvAssistToolNotice({ toolName: toolCall.name, result, sessionId: context.sessionId, runId: executionRunId, onEvent: (event) => context.events.emit(event.type, event.data) });
               descendantUsage = addSubagentUsage(descendantUsage, result.metadata);
               // MCP 权限范围不足：子代理（文字前台委派的常见路径）的失败也要给用户一张「重新授权」卡
-              const scopeCard = buildInsufficientScopeConnectorEvent(result);
+              const scopeCard = buildConnectorToolFailureEvent(result);
               if (scopeCard) context.events.emit(scopeCard.type, scopeCard.data);
               const toolDuration = Date.now() - toolStartTime;
               toolResults.push(
@@ -1037,6 +1046,7 @@ export class SubagentExecutor {
         }
 
         // No response, break
+        exitedLoop = true;
         break;
         } finally {
           await turnObservability.endTurn(telemetryTurnId);
@@ -1044,6 +1054,14 @@ export class SubagentExecutor {
         }
       }
 
+      if (!exitedLoop) {
+        return earlyFailure('Max iterations reached', {
+          iterations, toolsUsed, toolCallCount: turnObservability.getToolCallCount(), output: answerLedger.settled(),
+          failureCode: AgentFailureCode.BudgetExhausted,
+          // 只读提示：前台照 main 按失败返回；后台注册表据此给用户一句白话（而不是「额度用完了」）。
+          ...(answerLedger.settled() ? {} : { stopHint: { kind: 'step_cap' as const, conclusion: buildStepCapConclusion({ iterations, maxIterations, messages }) } }),
+        });
+      }
       return finalizeSubagentSuccess(completionDeps, { iterations, latestContextSnapshot, maxIterations, messages });
     } catch (error) {
       return handleSubagentFailure(completionDeps, { error, iterations, latestContextSnapshot });

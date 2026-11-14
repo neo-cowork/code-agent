@@ -1,4 +1,4 @@
-import { agentRoleLabelsEn } from './agentRoleLabels';
+import { authModalEn } from './authModal'; import { modelSetupEn } from './modelSetup'; import { agentRoleLabelsEn } from './agentRoleLabels';
 // ============================================================================
 // English Translations
 // ============================================================================
@@ -64,7 +64,7 @@ import { sessionTaskPresentationEn } from './sessionTaskPresentation'; import { 
 // en 缺 key / en 多 key 都在此报红，同时保留 en 自身的推断类型。zh.ts 是形状真源
 //（Translations = typeof zh），与叶子先例 artifactShare.ts 的 satisfies 锁同范式。
 export const en = {
-  ...agentRoleLabelsEn, ...canvasActorEn, ...activityPanelEn,
+  ...authModalEn, ...modelSetupEn, ...agentRoleLabelsEn, ...canvasActorEn, ...activityPanelEn,
   ...imageNarrationEn, ...mermaidEn,
   ...voiceAuditEn,
   ...capabilityHubEn,

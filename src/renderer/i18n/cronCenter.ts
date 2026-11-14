@@ -1,3 +1,5 @@
+import { parkedApprovalInboxEn, parkedApprovalInboxZh } from './parkedApprovalInbox';
+import { automationPresentationEn, automationPresentationZh } from './automationPresentation';
 import { cronCloudEn, cronCloudZh } from './cronCloud';
 import { cronRoutineRestateEn, cronRoutineRestateZh } from './cronRoutineRestate';
 import { parkedApprovalVoidedEn, parkedApprovalVoidedZh } from './parkedApprovalVoided';
@@ -6,6 +8,7 @@ import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 import type { EventScheduleValidationReason } from '@shared/cronEventValidation';
 import { cronPermissionDeniedReasonText } from '@shared/cronPermissionDenied';
 import { cronEditorChromeEn, cronEditorChromeZh } from './cronEditorChrome';
+import { watchTemplateCopyEn, watchTemplateCopyZh } from './cronWatchTemplateCopy';
 // 自动化面板词条（features/cron 全家桶）—— zh/en 同文件相邻维护。
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮（同 sidebar.ts / chatInput.ts 先例）。
 // 注：types.ts 里的 formatActionSummary/formatDateTime 等格式化函数文案暂未迁移
@@ -13,10 +16,12 @@ import { cronEditorChromeEn, cronEditorChromeZh } from './cronEditorChrome';
 // 不再往本文件塞词条。其余遗留随收尾清扫批一并处理。
 // ============================================================================
 export const cronCenterZh = {
+  ...automationPresentationZh,
   cronCenter: {
     ...cronEditorChromeZh,
     ...cronCloudZh,
     parkedVoided: parkedApprovalVoidedZh,
+    ...parkedApprovalInboxZh,
     groupListenCheck: {
       title: '检查群消息是否连通',
       start: '发条测试消息',
@@ -381,7 +386,7 @@ export const cronCenterZh = {
     simpleWeekdayLabel: '星期几',
     weekdays: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'],
     simpleCreateCta: '创建自动化',
-    simpleCreateFailed: '创建失败',
+    simpleCreateFailed: '创建失败', simpleStaggerHint: '整点容易和其他任务扎堆触发，建议把分钟错开到 {minute} 分。',
     // 保存后复述视图（N-ROLE-ROUTINE-RESTATE）：行标签复用 chatInput 的 scheduleConfirm
     ...cronRoutineRestateZh,
     inboxTitle: '{count} 条待过目',
@@ -425,7 +430,10 @@ export const cronCenterZh = {
     parkedWriteGroupTitle: '写入 {count} 个文件到「{folder}」文件夹',
     parkedGroupFileSep: '、',
     parkedAllowFolderKept: '本次已允许；这个任务已有别的授权文件夹，没有改动',
+    parkedAllowRun: '到这次做完为止',
+    parkedAllow24h: '24 小时内允许',
     parkedArgsPreviewLabel: '参数：',
+    parkedShowLocation: '查看完整位置',
     pairingTitle: '{channel} 私聊配对',
     pairingCode: '配对码 {code}',
     pairingSender: '发送者 {sender}',
@@ -435,6 +443,7 @@ export const cronCenterZh = {
     // 推荐模板卡
     templatesTitle: '推荐自动化',
     templatesSubtitle: '无需填写，点一下即可按默认时间开始',
+    connectorNames: { lark: '飞书' } as Record<string, string>,
     templateEnable: '开启',
     templateEnabled: '已开启',
     templateReenable: '重新开启',
@@ -462,11 +471,7 @@ export const cronCenterZh = {
         description: '汇总昨晚到现在的未读邮件、消息和日历变动',
         scheduleLabel: '工作日 08:30',
       },
-      'group-listen': {
-        name: '群监听',
-        description: '盯住一个群，来了新消息就按你的一句话处理',
-        scheduleLabel: '群里有新消息时',
-      },
+      ...watchTemplateCopyZh,
     },
     // 模板连接器依赖状态
     connectorConnected: '已连接',
@@ -530,10 +535,12 @@ export const cronCenterZh = {
 };
 
 export const cronCenterEn: typeof cronCenterZh = {
+  ...automationPresentationEn,
   cronCenter: {
     ...cronEditorChromeEn,
     ...cronCloudEn,
     parkedVoided: parkedApprovalVoidedEn,
+    ...parkedApprovalInboxEn,
     groupListenCheck: {
       title: 'Check group message reception',
       start: 'Send a test message',
@@ -886,7 +893,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     simpleWeekdayLabel: 'Day of week',
     weekdays: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
     simpleCreateCta: 'Create automation',
-    simpleCreateFailed: 'Failed to create',
+    simpleCreateFailed: 'Failed to create', simpleStaggerHint: 'Tasks starting on the hour tend to pile up with others. Consider moving the minute to :{minute}.',
     ...cronRoutineRestateEn,
     inboxTitle: '{count} to review',
     inboxAllClear: 'All reviewed ✓',
@@ -927,7 +934,10 @@ export const cronCenterEn: typeof cronCenterZh = {
     parkedWriteGroupTitle: 'Write {count} files in the "{folder}" folder',
     parkedGroupFileSep: ', ',
     parkedAllowFolderKept: 'Allowed this time; this task already has another granted folder, left unchanged',
+    parkedAllowRun: 'Until this run is done',
+    parkedAllow24h: 'Allow for 24 hours',
     parkedArgsPreviewLabel: 'Arguments: ',
+    parkedShowLocation: 'View full location',
     pairingTitle: '{channel} direct-message pairing',
     pairingCode: 'Pairing code {code}',
     pairingSender: 'Sender {sender}',
@@ -936,6 +946,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     backToSimple: 'Back',
     templatesTitle: 'Recommended automations',
     templatesSubtitle: 'No setup — one click starts them on the default schedule',
+    connectorNames: { lark: 'Feishu' } as Record<string, string>,
     templateEnable: 'Enable',
     templateEnabled: 'On',
     templateReenable: 'Re-enable',
@@ -961,11 +972,7 @@ export const cronCenterEn: typeof cronCenterZh = {
         description: 'Round up unread mail, messages, and calendar changes since last night',
         scheduleLabel: 'Weekdays 08:30',
       },
-      'group-listen': {
-        name: 'Group listen',
-        description: 'Watch one group and handle new messages with your one-liner',
-        scheduleLabel: 'When a new message arrives',
-      },
+      ...watchTemplateCopyEn,
     },
     connectorConnected: 'Connected',
     connectorNotConnected: 'Not connected',

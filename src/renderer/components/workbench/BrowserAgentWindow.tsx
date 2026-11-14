@@ -45,6 +45,7 @@ import {
 import { useBrowserStageUserInput } from '../../hooks/useBrowserStageUserInput';
 import { confirmLiveBrowserInterrupt } from '../../hooks/requestBrowserHumanTakeover';
 import { BrowserHumanTakeoverBar } from './BrowserHumanTakeoverBar';
+import { BrowserKeptResultBar } from './BrowserKeptResultBar';
 import { BROWSER_STAGE_VIEWPORT } from '@shared/constants';
 import { resolveStageFollowPlan } from '@shared/utils/browserStageViewportFollow';
 import { normalizeBrowserAddressInput } from '../../utils/browserAddressBar';
@@ -341,7 +342,6 @@ export const BrowserAgentWindow: React.FC = () => {
     maxHeight: stageFollow?.capture.maxHeight ?? null,
   });
 
-  // 三期 P1 / R4：画面交互透传（点击/滚轮/键盘/拖拽）；坐标 content 优先跟随视口 CSS。
   const stageInput = useBrowserStageUserInput({
     conversationId: currentSessionId,
     workspace: workingDirectory,
@@ -758,6 +758,7 @@ export const BrowserAgentWindow: React.FC = () => {
           }
           : stageInput.onStageKeyDown}
         onCompositionEnd={annotateMode ? undefined : stageInput.onStageCompositionEnd}
+        onPaste={stageInput.onStagePaste}
         onFocus={() => {
           if (!annotateMode && stageInput.interactive) stageInput.setStageFocused(true);
         }}
@@ -874,6 +875,7 @@ export const BrowserAgentWindow: React.FC = () => {
           </div>
         )}
 
+        {terminalSurfaceSession && <BrowserKeptResultBar conversationId={currentSessionId} workspace={workingDirectory} />}
         {annotateMode && pins.map((pin) => (
           <button
             key={pin.id}

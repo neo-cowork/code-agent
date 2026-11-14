@@ -58,6 +58,8 @@ interface BackgroundSubagentEntry extends BackgroundSubagentHandle {
   done: Promise<SubagentResult | undefined>;
   /** 运行中快照，只给 durable 账本；不进 getStatus/list。 */
   liveProgress?: BackgroundSubagentProgressSnapshot;
+  /** 用户 Stop 时触发该 run 独立 controller 的 abort；不进 getStatus/list。 */
+  abort?: () => void;
 }
 
 export interface BackgroundSubagentScopeFilter {
@@ -78,6 +80,8 @@ export interface BackgroundSubagentOptions {
   declaredOutputs?: string[];
   suppressIdleWake?: boolean;
   suppressReason?: 'block-wait' | 'cancelled' | 'goal-loop';
+  /** 后台 run 用独立 AbortController（不随父 turn abort），用户 Stop 时靠它收线。 */
+  abort?: () => void;
   /**
    * 完成通知闸门（N-WF-SETTLEMENT-DEDUPE）：对象按引用穿透 adopt/spawn 内部的
    * options 拷贝，完成时可读到调用方置的最新值。suppress=true 时 recordCompletion
@@ -133,8 +137,30 @@ export class BackgroundSubagentRegistry {
       ...(options.declaredOutputs && options.declaredOutputs.length > 0
         ? { declaredOutputs: options.declaredOutputs }
         : {}),
+      ...(options.abort ? { abort: options.abort } : {}),
     });
     return agentId;
+  }
+
+  /**
+   * 用户 Stop：同步触发该会话所有运行中后台 subagent 的 abort（逐个 try/catch，不 await），
+   * 返回各自的收线 promise 供调用方限时等待。
+   */
+  cancelSession(sessionId: string): Array<{ agentId: string; settled: Promise<unknown> }> {
+    const fired: Array<{ agentId: string; settled: Promise<unknown> }> = [];
+    for (const entry of this.entries.values()) {
+      if (entry.sessionId !== sessionId || entry.status !== 'running' || !entry.abort) continue;
+      try {
+        entry.abort();
+      } catch (error) {
+        logger.warn('Background subagent abort threw on session stop', {
+          agentId: entry.agentId,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+      fired.push({ agentId: entry.agentId, settled: entry.done });
+    }
+    return fired;
   }
 
   adopt(promise: Promise<SubagentResult>, options: BackgroundSubagentOptions & { agentId: string; startedAt?: number }):
@@ -347,10 +373,12 @@ export class BackgroundSubagentRegistry {
     if (entry.status === 'failed' && entry.sessionId && !cancelled) {
       try {
         // 给用户的白话说明只在这条用户可见通道里生成；entry.error / durable terminal.reason 保留原始错误。
-        const plain = describeSubagentStopReason(entry.error ?? record.summary, entry.failureCode ?? AgentFailureCode.Unknown);
+        const plain = entry.result?.stopHint?.kind === 'step_cap'
+          ? entry.result.stopHint.conclusion
+          : describeSubagentStopReason(entry.error ?? record.summary, entry.failureCode ?? AgentFailureCode.Unknown);
         await recordBackgroundTaskStopNote(entry.sessionId, record.title, plain, {
           taskId: entry.agentId,
-          kind: entry.result?.stopKind ?? 'error',
+          kind: entry.result?.stopKind ?? (entry.result?.stopHint?.kind === 'step_cap' ? 'step_cap' : 'error'),
         });
       } catch (error) { logger.warn('Failed to record background stop note', error); }
     }
@@ -388,7 +416,7 @@ export class BackgroundSubagentRegistry {
   }
 
   private toHandle(entry: BackgroundSubagentEntry): BackgroundSubagentHandle {
-    const { done: _done, liveProgress: _liveProgress, ...handle } = entry;
+    const { done: _done, liveProgress: _liveProgress, abort: _abort, ...handle } = entry;
     return handle;
   }
 

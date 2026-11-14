@@ -304,18 +304,20 @@ async function createReminder(payload: Record<string, unknown>): Promise<Reminde
   }
 
   lines.push(
-    `return (id of newReminder as text) & "|" & ${listName ? `(my sanitizeText("${escapeAppleScriptString(listName)}"))` : '(my sanitizeText(name of targetList))'} & "|" & (my sanitizeText(name of newReminder)) & "|" & (completed of newReminder as text)`,
+    'set rawRemindDate to remind me date of newReminder',
+    `return (id of newReminder as text) & "|" & ${listName ? `(my sanitizeText("${escapeAppleScriptString(listName)}"))` : '(my sanitizeText(name of targetList))'} & "|" & (my sanitizeText(name of newReminder)) & "|" & (completed of newReminder as text) & "|" & (my isoDateText(rawRemindDate))`,
     'end tell',
     'end tell'
   );
 
   const output = await runAppleScript(lines);
-  const [id, list, parsedTitle, completedRaw] = parseLine(output);
+  const [id, list, parsedTitle, completedRaw, remindAtRaw] = parseLine(output);
   return {
     id,
     list,
     title: parsedTitle,
     completed: completedRaw === 'true',
+    remindAtMs: remindAtRaw === undefined ? undefined : parseAppleScriptDate(remindAtRaw),
   };
 }
 

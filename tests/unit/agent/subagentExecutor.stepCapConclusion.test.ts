@@ -232,16 +232,15 @@ describe('SubagentExecutor step cap conclusion', () => {
     process.env.CODE_AGENT_MODEL_ENGINE = 'legacy';
   });
 
-  it('keeps a foreground cap hit as a success (unchanged contract) and hands the Chinese conclusion over as stopHint', async () => {
+  it('keeps main\'s foreground cap-hit contract (failed, budget-exhausted, raw error) and only adds a Chinese stopHint', async () => {
     mocks.responses.push(browserResponse(1), browserResponse(2), browserResponse(3));
 
     const result = await new SubagentExecutor().execute(createRequest(3));
 
-    // 共享执行器不改判：Task/工作流子代理照旧 success、无 failureCode（不会被当成预算用尽）。
-    expect(result.success).toBe(true);
-    expect(result.failureCode).toBeUndefined();
-    expect(result.error).toBeUndefined();
-    expect(result.output).toBe('Subagent completed without output');
+    // 共享执行器不改 main 的判定（撞步数 = failed + BudgetExhausted + 原始错误），只多带只读 stopHint。
+    expect(result.success).toBe(false);
+    expect(result.failureCode).toBe('budget-exhausted');
+    expect(result.error).toBe('Max iterations reached');
     expect(result.iterations).toBe(3);
     expect(result.stopHint?.kind).toBe('step_cap');
     expect(result.stopHint?.conclusion).toContain('第 3 步（上限 3 步）');
@@ -261,7 +260,7 @@ describe('SubagentExecutor step cap conclusion', () => {
     const result = await new SubagentExecutor().execute(createRequest(2));
 
     mocks.pageInfo.value = null;
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
     expect(result.stopHint?.conclusion).toContain('最后停留在页面http://www.sina.com.cn/p2');
   });
 

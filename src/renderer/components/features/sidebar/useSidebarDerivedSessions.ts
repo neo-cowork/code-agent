@@ -100,7 +100,7 @@ export interface SidebarDerivedSessions {
  */
 export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParams): SidebarDerivedSessions {
   const { canOpenSessionReplay } = params;
-  const { t } = useI18n();
+  const { t, language } = useI18n();
 
   const sessions = useSessionStore((state) => state.sessions);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
@@ -328,6 +328,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
       }
 
       return buildSessionSearchText({
+        language,
         session,
         snapshot: session.workbenchSnapshot,
         status,
@@ -337,6 +338,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
     backgroundSessionMap,
     hasNeedsInputForSession,
     allowedSearchSessionIds,
+    language,
     hasActiveTrajectoryFilter,
     messageSearchHitsBySessionId,
     replayEvidenceBySessionId,
@@ -399,6 +401,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
           hasNeedsInput: hasNeedsInputForSession(session.id),
         });
         return buildSessionSearchText({
+          language,
           session,
           snapshot: session.workbenchSnapshot,
           status,
@@ -407,6 +410,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
       .sort((left, right) => (right.updatedAt || 0) - (left.updatedAt || 0));
   }, [
     allowedSearchSessionIds,
+    language,
     effectiveSearchScope,
     remoteSearchSessions,
     sessions,

@@ -136,3 +136,11 @@ describe('ForkSourceHint', () => {
     expectNoInternalIds(source.textContent);
   });
 });
+
+it.each(['zh', 'en'] as const)('localizes the cron parent title in %s', (language) => {
+  mocks.language = language;
+  mocks.sessions.push({ id: parentSessionId, title: '[Schedule] 每晨整理周会纪要', metadata: {} });
+  addForkChild();
+  render(<ForkSourceHint sessionId="child" />);
+  expect(screen.getByRole('button').textContent).toContain(language === 'zh' ? '[定时] 每晨整理周会纪要' : '[Schedule] 每晨整理周会纪要');
+});

@@ -5,6 +5,7 @@ import { CRON_EVENT_TRIGGER } from '@shared/constants';
 import type { CronJobDraft } from './types';
 import { createDefaultCronJobDraft } from './types';
 import { localCronTimezone } from './localTimezone';
+import type { TemplateCopy } from '../../../i18n/cronWatchTemplateCopy';
 import { cronCenterEn } from '../../../i18n/cronCenter';
 import { enAgentPrompt, enTagsText, enUnregisteredCopy } from './cronTemplatesEn';
 
@@ -139,8 +140,8 @@ function morningTriageDraft(values: Record<string, string> | undefined): CronJob
  */
 export function getTemplateDisplayCopy(
   template: Pick<CronTemplate, 'id' | 'name' | 'description' | 'scheduleLabel'>,
-  localized: Readonly<Record<string, Pick<CronTemplate, 'name' | 'description' | 'scheduleLabel'>>> | undefined,
-): Pick<CronTemplate, 'name' | 'description' | 'scheduleLabel'> {
+  localized: Readonly<Record<string, TemplateCopy>> | undefined,
+): TemplateCopy {
   return localized?.[template.id] ?? {
     name: template.name,
     description: template.description,
@@ -166,7 +167,7 @@ const BASE_CRON_TEMPLATES: CronTemplate[] = [
         tagsText: '前瞻, 日程, 待办',
         scheduleType: 'cron',
         cronExpression: '0 15 * * 1-5',
-        cronTimezone: 'Asia/Shanghai',
+        cronTimezone: localCronTimezone(),
         actionType: 'agent',
         agentType: 'default',
         agentPrompt:
@@ -188,7 +189,7 @@ const BASE_CRON_TEMPLATES: CronTemplate[] = [
         tagsText: '回顾, 进展, 待办',
         scheduleType: 'cron',
         cronExpression: '30 17 * * 1-5',
-        cronTimezone: 'Asia/Shanghai',
+        cronTimezone: localCronTimezone(),
         actionType: 'agent',
         agentType: 'default',
         agentPrompt:
@@ -210,7 +211,7 @@ const BASE_CRON_TEMPLATES: CronTemplate[] = [
         tagsText: '周报, 回顾, 计划',
         scheduleType: 'cron',
         cronExpression: '30 17 * * 4',
-        cronTimezone: 'Asia/Shanghai',
+        cronTimezone: localCronTimezone(),
         actionType: 'agent',
         agentType: 'default',
         agentPrompt:
@@ -376,7 +377,8 @@ function withLanguage(template: CronTemplate): CronTemplate {
       const enTags = enTagsText(template.id);
       return {
         ...draft,
-        name: copy?.name ?? unregistered?.name ?? draft.name,
+        // 生成的任务名：专用 en 名（无词条模板）优先于卡片展示名，卡片文案可以单独改而不动任务名
+        name: unregistered?.name ?? copy?.name ?? draft.name,
         description,
         ...(enTags !== undefined ? { tagsText: enTags } : {}),
         ...(enPrompt !== undefined ? { agentPrompt: enPrompt } : {}),
@@ -393,13 +395,26 @@ export const FEATURED_CRON_TEMPLATES = CRON_TEMPLATES.filter((template) => templ
 
 function parseFriendlySchedule(input?: string): Partial<CronJobDraft> {
   if (!input?.trim()) {
-    return { scheduleType: 'cron', cronExpression: '0 9 * * *', cronTimezone: 'Asia/Shanghai' };
+    return { scheduleType: 'cron', cronExpression: '0 9 * * *', cronTimezone: localCronTimezone() };
   }
   const s = input.trim().toLowerCase();
 
   // Direct cron expression (5-6 fields starting with number or *)
   if (/^[\d*]/.test(s) && s.split(/\s+/).length >= 5) {
-    return { scheduleType: 'cron', cronExpression: input.trim(), cronTimezone: 'Asia/Shanghai' };
+    return { scheduleType: 'cron', cronExpression: input.trim(), cronTimezone: localCronTimezone() };
+  }
+
+  const englishInterval = s.match(/^every\s+(\d+)\s+(hours?|minutes?)$/);
+  if (englishInterval || s === 'every hour') {
+    return {
+      scheduleType: 'every',
+      everyInterval: englishInterval?.[1] ?? '1',
+      everyUnit: englishInterval?.[2].startsWith('minute') ? 'minutes' : 'hours',
+    };
+  }
+  const englishDaily = s.match(/^(?:every day|daily)\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?$/);
+  if (englishDaily && Number(englishDaily[1]) < 24 && Number(englishDaily[2] ?? 0) < 60) {
+    return { scheduleType: 'cron', cronExpression: `${Number(englishDaily[2] ?? 0)} ${Number(englishDaily[1])} * * *`, cronTimezone: localCronTimezone() };
   }
 
   // "每小时" / "每 N 小时"
@@ -419,12 +434,12 @@ function parseFriendlySchedule(input?: string): Partial<CronJobDraft> {
   if (dailyAt) {
     const h = dailyAt[1] || '9';
     const m = dailyAt[2] || '0';
-    return { scheduleType: 'cron', cronExpression: `${m} ${h} * * *`, cronTimezone: 'Asia/Shanghai' };
+    return { scheduleType: 'cron', cronExpression: `${m} ${h} * * *`, cronTimezone: localCronTimezone() };
   }
   if (s.includes('每天')) {
-    return { scheduleType: 'cron', cronExpression: '0 9 * * *', cronTimezone: 'Asia/Shanghai' };
+    return { scheduleType: 'cron', cronExpression: '0 9 * * *', cronTimezone: localCronTimezone() };
   }
 
   // Fallback: treat as cron or daily 9am
-  return { scheduleType: 'cron', cronExpression: '0 9 * * *', cronTimezone: 'Asia/Shanghai' };
+  return { scheduleType: 'cron', cronExpression: '0 9 * * *', cronTimezone: localCronTimezone() };
 }

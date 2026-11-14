@@ -1,3 +1,6 @@
+import { publishBackgroundSubagentVisibility, resolveSingleSpawnRunScope } from '../../../agent/multiagentTools/spawnAgentForegroundBackground';
+import { randomUUID } from 'crypto';
+import { createScopedSwarmAgentId } from '../../../../shared/contract/swarm';
 // ============================================================================
 // SpawnAgent / AgentSpawn (P1 Wave 3 — multiagent: native ToolModule rewrite)
 //
@@ -106,6 +109,7 @@ async function runBackgroundSubagent(
 ): Promise<SubagentResult> {
   const bgResult = await executeSpawnAgent(normalizedArgs, {
     ...executionContext,
+    managedAgentId: agentId,
     events: withBackgroundDurableAgentId(executionContext.events, agentId),
     abortSignal: bgController.signal,
     // 后台子 agent 标 async_agent（2026-07-13 拍板）：bash 走 ask+forceConfirm
@@ -250,13 +254,23 @@ async function runSpawnAgent(
     // 必然失败。后台 lane 活多久，目录就占多久。
     const bgWorkDir = ctx.workingDir;
     beginWorkDirectoryRun(bgWorkDir);
+    const localAgentId = `subagent-bg-${randomUUID()}`;
+    const backgroundAgentId = ctx.swarmRunScope
+      ? createScopedSwarmAgentId(ctx.swarmRunScope, localAgentId) : localAgentId;
     const agentId = getBackgroundSubagentRegistry().spawn(async (): Promise<SubagentResult> => {
       try {
-        return await runBackgroundSubagent(normalizedArgs, executionContext, bgController, agentId);
+        const promise = runBackgroundSubagent(normalizedArgs, executionContext, bgController, agentId);
+        const scope = resolveSingleSpawnRunScope(executionContext, ctx.spawnTreeId ?? ctx.sessionId ?? agentId, agentId);
+        publishBackgroundSubagentVisibility({
+          promise, scope, agentId, agentName: backgroundRole ?? 'agent', role: backgroundRole ?? 'dynamic',
+          task: backgroundTitle, startedAt: Date.now(), ownsRunLifecycle: !ctx.swarmRunScope,
+        });
+        return await promise;
       } finally {
         endWorkDirectoryRun(bgWorkDir);
       }
     }, {
+      agentId: backgroundAgentId,
       title: backgroundTitle,
       ...(typeof normalizedArgs.name === 'string' && normalizedArgs.name.trim()
         ? { displayName: normalizedArgs.name.trim() } : {}),
@@ -268,6 +282,7 @@ async function runSpawnAgent(
         : {}),
       role: backgroundRole,
       declaredOutputs,
+      abort: () => bgController.abort(),
       suppressIdleWake: Boolean(ctx.suppressBackgroundSubagentIdleWake),
       ...(ctx.suppressBackgroundSubagentIdleWake ? { suppressReason: 'goal-loop' as const } : {}),
       onComplete: scheduleBackgroundSubagentIdleWake,
