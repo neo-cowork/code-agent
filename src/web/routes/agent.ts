@@ -1348,7 +1348,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             attachments: body.attachments,
             model: config.modelConfig,
           }),
-          config.agentOverride?.tools, config.agentOverride?.id,
+          config.agentOverride?.tools, config.agentOverride?.id, true,
         );
         config.foregroundToolFace = true;
         // 回合级规则块（如存草稿）与工具面同一真源，都从 sessionCommandCenterBrain 取，

@@ -1,11 +1,15 @@
 /**
  * One ordered tool-face resolver: tools the user names this turn, tools the role
  * declares, and read tools an unattended wake needs are never narrowed away;
- * the hard boundary is subtracted last and never widened. A declared role's
- * result is always a subset of its declaration. ADR-059 routes foreground
- * execution tools through delegate_task; it does not put Bash/browser on that face.
+ * the hard boundary is subtracted last and never widened.
+ * - "Names" covers only the execution tools this resolver exists for: shell, browser
+ *   and desktop control. On the command-center foreground they keep their exit,
+ *   delegate_task (ADR-059), and never land on that face themselves. No other word
+ *   in the prompt adds a tool: many registered names are ordinary words, and
+ *   connector tools enter only through the connector-scoped intent path.
+ * - A declared role's result is a subset of its declaration plus the turn's own
+ *   additions (turnExtraToolNames), with the role boundary still subtracted last.
  */
-import { getToolSearchService } from '../../services/toolSearch/toolSearchService';
 import { resolveToolAlias } from '../../services/toolSearch/deferredTools';
 import { resolveRoleToolBoundary, toRoleBoundaryRunAllowlist } from '../../services/roleAssets/rolePersonalization';
 import { isExternalSideEffectTool } from '../../tools/externalSideEffect';
@@ -23,6 +27,8 @@ interface TurnToolFaceInput {
   roleId?: string;
   foreground?: boolean;
   wake?: boolean;
+  /** Turn-level additions admitted alongside a role's declarations; the boundary still applies. */
+  turnExtraToolNames?: readonly string[];
   /** Additional hard admission predicate, applied after all required additions. */
   hardBoundary?: (name: string) => boolean;
 }
@@ -38,21 +44,21 @@ export function resolveTurnToolFace(input: TurnToolFaceInput): string[] | undefi
   for (const schema of schemas) {
     if (schema.category === 'vision' && schema.permissionLevel === 'execute') executionTools.add(canonical(schema.name));
   }
-  const registered = [...schemas.map((schema) => schema.name),
-    ...getToolSearchService().getMCPToolsMeta().map((meta) => meta.name)];
-  const declaredSet = declared ? new Set(declared.map(canonical)) : undefined;
+  const declaredSet = declared
+    ? new Set([...declared, ...(input.turnExtraToolNames ?? [])].map(canonical)) : undefined;
   const foreground = input.foreground && !declared;
   const names = new Map<string, string>();
   const add = (name: string) => names.set(canonical(name), resolveToolAlias(name));
   for (const name of input.baseToolNames ?? []) add(name);
   for (const name of input.requiredToolNames ?? []) add(name);
   for (const name of declared ?? []) add(name);
-  // Exact registry-name tokens, not ordinary verbs ('append') or intent keywords.
-  // Only this turn's text counts; alias normalization still applies to declarations.
+  for (const name of input.turnExtraToolNames ?? []) add(name);
+  // Only an execution tool named by its exact registry name counts, and only in this
+  // turn's text. Every other registered name is ignored here on purpose.
   const tokens = new Set((input.prompt ?? '').split(/[^a-zA-Z0-9_]+/u));
-  for (const name of registered) {
-    if (!tokens.has(name)) continue;
-    add(foreground && executionTools.has(canonical(name)) ? 'delegate_task' : name);
+  for (const { name } of schemas) {
+    if (!tokens.has(name) || !executionTools.has(canonical(name))) continue;
+    add(foreground ? 'delegate_task' : name);
   }
   if (input.wake) {
     for (const schema of getProtocolToolSchemas()) {

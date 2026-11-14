@@ -839,6 +839,7 @@ export class ToolExecutor {
       return {
         success: false,
         error: `${executionToolName} is not in this turn's tool list. The call was not executed; use a listed tool within the current role boundary.`,
+        metadata: { code: 'TOOL_DISABLED_FOR_RUN' },
       };
     }
 

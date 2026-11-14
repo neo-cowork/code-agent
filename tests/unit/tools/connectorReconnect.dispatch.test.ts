@@ -4,6 +4,7 @@ import { getToolResolver } from '../../../src/host/tools/dispatch/toolResolver';
 import { executePocToolViaProtocol } from '../../../src/host/tools/dispatch/shadowAdapter';
 import { getConnectorRegistry } from '../../../src/host/connectors/registry';
 import type { ToolContext } from '../../../src/host/tools/types';
+import { calendarSchema } from '../../../src/host/tools/modules/connectors/calendar.schema';
 
 const warn = vi.hoisted(() => vi.fn());
 vi.mock('../../../src/host/services/infra/logger', () => ({
@@ -22,7 +23,12 @@ const execute = async (path: string, action: string) => {
 describe('connector reconnect guidance through real protocol dispatch', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    getProtocolRegistry();
+    // The calendar tool registers on macOS only; register the real schema and module where
+    // it is missing so the dispatch wrapper is exercised on the Linux CI runner as well.
+    const registry = getProtocolRegistry();
+    if (!registry.has(calendarSchema.name)) {
+      registry.register(calendarSchema, async () => (await import('../../../src/host/tools/modules/connectors/calendar')).calendarModule);
+    }
     getConnectorRegistry().configure([]);
   });
 

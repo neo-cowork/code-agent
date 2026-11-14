@@ -900,7 +900,7 @@ export class AgentOrchestrator {
     // 局部变量让 TS 自己收窄，不用非空断言（eslint 棘轮把 no-non-null-assertion 记成 warning，
     // 新增一处就顶破基线）。
     const boundaryAllowedToolNames = resolveRoleChatToolFace(
-      content, options?.allowedToolNames, routedRole?.tools, routedRole?.id,
+      content, options?.allowedToolNames, routedRole?.tools, routedRole?.id, options?.foregroundToolFace === true,
     );
     if (roleToolBoundary) {
       logger.info('[RoleBoundary] foreground role tool allowlist applied', {

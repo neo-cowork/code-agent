@@ -81,7 +81,10 @@ describe('standalone denylist 走真 ToolExecutor（N-SOL-GAME-AB-FU1）', () =>
         deniedToolNames: [...STANDALONE_UNAVAILABLE_TOOLS],
       });
       expect(result.success, `${toolName} must be refused`).toBe(false);
-      expect(result.error).toBe(`Tool not allowed: ${toolName} (disabled by --tools/--disallowed-tools)`);
+      // 稳定判据是机器码；文案跟随真执行器当前的中性说法（不再说 disabled）。
+      expect(result.metadata?.code).toBe('TOOL_DISABLED_FOR_RUN');
+      expect(result.error).toBe(`${toolName} is not in this turn's tool list. The call was not executed; use a listed tool within the current role boundary.`);
+      expect(result.error).not.toMatch(/disabled|permission policy/i);
       expect(result.error).not.toContain('TaskManager not initialized');
     }
     expect(commandCenter.getSessionCommandCenter).not.toHaveBeenCalled();

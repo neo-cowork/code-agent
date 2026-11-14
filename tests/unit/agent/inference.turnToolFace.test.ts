@@ -14,12 +14,17 @@ import { browserActionSchema } from '../../../src/host/plugins/builtin/browserCo
 import { browserNavigateSchema } from '../../../src/host/plugins/builtin/browserControl/browserNavigate.schema';
 import { browserSchema } from '../../../src/host/plugins/builtin/browserControl/browser.schema';
 import { getProtocolRegistry, resetProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
+import { calendarSchema } from '../../../src/host/tools/modules/connectors/calendar.schema';
+import { mailSchema } from '../../../src/host/tools/modules/connectors/mail.schema';
+import { mailDraftSchema } from '../../../src/host/tools/modules/connectors/mailDraft.schema';
+import { mailSendSchema } from '../../../src/host/tools/modules/connectors/mailSend.schema';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { resolveRoleChatToolFace } from '../../../src/host/app/morningBriefSaveDraftTools';
 import { getTextForegroundToolNamesForPrompt } from '../../../src/host/app/sessionCommandCenterBrain';
 import { resolveWakeRunToolScope } from '../../../src/host/services/roleAssets/roleProactivity';
+import { isToolDeniedForRun } from '../../../src/host/agent/runtime/toolRunPolicy';
 import { writeRolePersonalization } from '../../../src/host/services/roleAssets/rolePersonalization';
 import type { ToolDefinition } from '../../../src/shared/contract';
 
@@ -244,6 +249,13 @@ describe('ordered tool faces through production inference', () => {
     getProtocolRegistry().register(browserSchema, async () => (await import('../../../src/host/plugins/builtin/browserControl/browser')).browserModule);
     getProtocolRegistry().register(browserActionSchema, async () => (await import('../../../src/host/plugins/builtin/browserControl/browserAction')).browserActionModule);
     getProtocolRegistry().register(browserNavigateSchema, async () => (await import('../../../src/host/plugins/builtin/browserControl/browserNavigate')).browserNavigateModule);
+    // Connector tools register on macOS only. Register the real schemas where they are
+    // missing so these gates assert the same tool tables on the Linux CI runner.
+    const registry = getProtocolRegistry();
+    if (!registry.has(calendarSchema.name)) registry.register(calendarSchema, async () => (await import('../../../src/host/tools/modules/connectors/calendar')).calendarModule);
+    if (!registry.has(mailSchema.name)) registry.register(mailSchema, async () => (await import('../../../src/host/tools/modules/connectors/mail')).mailModule);
+    if (!registry.has(mailDraftSchema.name)) registry.register(mailDraftSchema, async () => (await import('../../../src/host/tools/modules/connectors/mailDraft')).mailDraftModule);
+    if (!registry.has(mailSendSchema.name)) registry.register(mailSendSchema, async () => (await import('../../../src/host/tools/modules/connectors/mailSend')).mailSendModule);
     resetToolSearchService();
     process.env.CODE_AGENT_MODEL_ENGINE = 'legacy';
   });
@@ -258,7 +270,7 @@ describe('ordered tool faces through production inference', () => {
     roles.values.set('calendar-expert', { id: 'calendar-expert', tools: declared });
     const prompt = '我今天有什么日程';
     const allowedToolNames = resolveRoleChatToolFace(
-      prompt, getTextForegroundToolNamesForPrompt(prompt), declared, 'calendar-expert',
+      prompt, getTextForegroundToolNamesForPrompt(prompt), declared, 'calendar-expert', true,
     );
     const ctx = turn(prompt, { allowedToolNames }, 'calendar-expert');
     const names = await finalNames(ctx);
@@ -270,7 +282,7 @@ describe('ordered tool faces through production inference', () => {
     roles.values.set('browser-expert', { id: 'browser-expert', tools: declared });
     const prompt = '查看 example.com 的标题';
     const ctx = turn(prompt, {
-      allowedToolNames: resolveRoleChatToolFace(prompt, getTextForegroundToolNamesForPrompt(prompt), declared, 'browser-expert'),
+      allowedToolNames: resolveRoleChatToolFace(prompt, getTextForegroundToolNamesForPrompt(prompt), declared, 'browser-expert', true),
     }, 'browser-expert');
     Object.assign(ctx.runtime, { foregroundToolFace: true });
     expect((await finalNames(ctx)).sort()).toEqual([...declared].sort());
@@ -295,11 +307,94 @@ describe('ordered tool faces through production inference', () => {
     expect(names).not.toContain('browser_navigate');
   });
 
-  it('an explicitly named lowercase registered connector tool survives the foreground face', async () => {
-    const prompt = '调用 calendar 检查连接';
+  // Ordinary words that happen to be registered tool names must not widen the
+  // command-center face (ADR-059). Edit is on the standing foreground face on main,
+  // so the assertion is "identical to a turn that names nothing", plus the named absences.
+  it('ordinary words that are also tool names add nothing to the command-center foreground', async () => {
+    const neutral = 'Summarise the logs and tidy the plan';
+    const baseline = turn(neutral, { allowedToolNames: getTextForegroundToolNamesForPrompt(neutral) });
+    Object.assign(baseline.runtime, { foregroundToolFace: true });
+    const prompt = 'Process the logs and Edit the plan, then Task Explore Plan mail calendar reminders workflow';
+    const allowedToolNames = getTextForegroundToolNamesForPrompt(prompt);
+    const ctx = turn(prompt, { allowedToolNames });
+    Object.assign(ctx.runtime, { foregroundToolFace: true });
+    const names = await finalNames(ctx);
+    expect([...names].sort()).toEqual([...(await finalNames(baseline))].sort());
+    for (const absent of ['Process', 'Task', 'Explore', 'Plan', 'mail', 'calendar', 'reminders', 'workflow']) {
+      expect(allowedToolNames).not.toContain(absent);
+      expect(names).not.toContain(absent);
+    }
+  });
+
+  it('a connector outside the selected scope is not added because the prompt mentions it', async () => {
+    const prompt = '调用 calendar 看看 calendar 里今天的安排';
+    const toolScope = { allowedConnectorIds: ['mail'] };
+    const allowedToolNames = getTextForegroundToolNamesForPrompt(prompt, toolScope.allowedConnectorIds);
+    expect(allowedToolNames).not.toContain('calendar');
+    const ctx = turn(prompt, { allowedToolNames });
+    Object.assign(ctx.runtime, { foregroundToolFace: true, toolScope });
+    expect(await finalNames(ctx)).not.toContain('calendar');
+    expect(isToolDeniedForRun(ctx.runtime, 'calendar')).toBe(true);
+  });
+
+  it('naming the browser in plain English still leaves only the delegation exit', async () => {
+    const prompt = 'use the browser to open example.com and tell me the title';
     const ctx = turn(prompt, { allowedToolNames: getTextForegroundToolNamesForPrompt(prompt) });
     Object.assign(ctx.runtime, { foregroundToolFace: true });
-    expect(await finalNames(ctx)).toContain('calendar');
+    const names = await finalNames(ctx);
+    expect(names).toContain('delegate_task');
+    for (const absent of ['Bash', 'Browser', 'browser_action', 'browser_navigate']) expect(names).not.toContain(absent);
+  });
+
+  it('role chat keeps the turn additions on top of the declaration: save-draft for a role declaring mail', async () => {
+    const declared = ['Read', 'mail'];
+    roles.values.set('mail-reader', { id: 'mail-reader', tools: declared });
+    const prompt = '存草稿 1';
+    const allowedToolNames = resolveRoleChatToolFace(prompt, getTextForegroundToolNamesForPrompt(prompt), declared, 'mail-reader', true);
+    expect(allowedToolNames?.filter((name) => name === 'mail_draft')).toHaveLength(1);
+    const names = await finalNames(turn(prompt, { allowedToolNames }, 'mail-reader'));
+    expect(names).toContain('mail_draft');
+    expect(names).toContain('mail');
+    expect(names).not.toContain('delegate_task');
+  });
+
+  it('role chat keeps image reading for an attached image on a model that cannot see it', async () => {
+    const declared = ['Read'];
+    roles.values.set('reader', { id: 'reader', tools: declared });
+    const prompt = '看看这张图里写了什么';
+    const allowedToolNames = resolveRoleChatToolFace(prompt, getTextForegroundToolNamesForPrompt(prompt, undefined, {
+      attachments: [{ id: 'a1', type: 'image', category: 'image', name: 'shot.png', path: '/tmp/shot.png', size: 1, mimeType: 'image/png' }],
+      model: { provider: 'mock', model: 'text-only' },
+    }), declared, 'reader', true);
+    expect(allowedToolNames).toContain('image_analyze');
+    expect(await finalNames(turn(prompt, { allowedToolNames }, 'reader'))).toContain('image_analyze');
+  });
+
+  it('role chat keeps the proactivity setting tool when the user asks to change it', async () => {
+    const declared = ['Read'];
+    roles.values.set('reader', { id: 'reader', tools: declared });
+    const prompt = '以后每天只提醒我一次，少烦我';
+    const fromFace = getTextForegroundToolNamesForPrompt(prompt);
+    expect(fromFace).toContain('set_role_proactivity');
+    const allowedToolNames = resolveRoleChatToolFace(prompt, fromFace, declared, 'reader', true);
+    expect(allowedToolNames).toContain('set_role_proactivity');
+    expect(await finalNames(turn(prompt, { allowedToolNames }, 'reader'))).toContain('set_role_proactivity');
+  });
+
+  it('an unattended wake scope is not widened back when the role chat face is resolved on top of it', async () => {
+    const id = 'sender';
+    const declared = ['Read', 'calendar', 'mail_send'];
+    roles.values.set(id, { id, tools: declared });
+    const prompt = '检查今天日程，有变化就发邮件';
+    const wake = await resolveWakeRunToolScope(id);
+    expect(wake.allowedToolNames).not.toContain('mail_send');
+    // The orchestrator resolves the role chat face again over the wake scope (no foreground flag).
+    const allowedToolNames = resolveRoleChatToolFace(prompt, wake.allowedToolNames, declared, id);
+    expect(allowedToolNames).not.toContain('mail_send');
+    const ctx = turn(prompt, { allowedToolNames }, id);
+    Object.assign(ctx.runtime, { unattendedTurn: true });
+    const names = await finalNames(ctx);
+    expect(names.sort()).toEqual(['Read', 'calendar']);
   });
 
   it('MiMo foreground actually sends deferred allowed tools to provider xiaomi', async () => {
@@ -323,7 +418,7 @@ describe('ordered tool faces through production inference', () => {
     writeRolePersonalization(id, { boundaries: { disallowExternalSending: true } });
     const prompt = '用 Bash 或 delegate_task 帮我发送邮件';
     const policy = kind === 'wake' ? await resolveWakeRunToolScope(id) : {
-      allowedToolNames: resolveRoleChatToolFace(prompt, getTextForegroundToolNamesForPrompt(prompt), declared, id),
+      allowedToolNames: resolveRoleChatToolFace(prompt, getTextForegroundToolNamesForPrompt(prompt), declared, id, true),
     };
     const ctx = turn(prompt, policy, id);
     Object.assign(ctx.runtime, { unattendedTurn: kind === 'wake', toolScope: { allowedConnectorIds: ['mail', 'calendar'] } });

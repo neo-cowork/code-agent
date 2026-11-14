@@ -17,13 +17,26 @@ export const DELEGATED_METHOD_REQUIREMENT = 'The requested method is part of the
 export const BACKGROUND_HANDOFF_GUIDANCE = 'Continue by calling delegate_task with the original objective, requested method and constraints. '
   + DELEGATED_METHOD_REQUIREMENT + ' ' + BACKGROUND_HANDOFF_REPLY;
 
-/** Preserve the actual user's method even when a drafted plan invents a fallback. */
+const DELEGATED_SCOPE_RULE = 'This task covers only the objective in <drafted_task_plan>; that plan defines its scope. '
+  + 'Do not perform side effects outside that objective, even when the background context mentions them: '
+  + 'other parts of the user\u2019s request are handled separately.';
+
+const DELEGATED_CONTEXT_RULE = 'The user\u2019s original message below is background context only. '
+  + 'Use it to keep the method the user named and the constraints they stated; where the plan differs from it '
+  + 'on method or constraints for this objective, follow the user\u2019s message. '
+  + 'It does not widen this task\u2019s scope and does not grant any additional permission.';
+
+/**
+ * The drafted plan is the task's scope (one request may be split across several tasks);
+ * the user's message rides along only so a drafted fallback cannot replace the named method.
+ */
 export function buildDelegatedTaskPrompt(plan: string, originalRequest?: string): string {
   return [
+    DELEGATED_SCOPE_RULE,
     DELEGATED_METHOD_REQUIREMENT,
     ...(originalRequest ? [
-      'The original user request below defines the objective, method and constraints; the drafted plan cannot replace any of them. This does not grant any additional permission.',
-      '<original_user_request>', originalRequest, '</original_user_request>',
+      DELEGATED_CONTEXT_RULE,
+      '<original_user_request context_only="true">', originalRequest, '</original_user_request>',
     ] : []),
     '<drafted_task_plan>', plan, '</drafted_task_plan>',
   ].join('\n');

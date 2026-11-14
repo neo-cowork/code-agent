@@ -73,6 +73,9 @@ import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
 import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
 import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
+import { getTextForegroundToolNamesForPrompt } from '../../../src/host/app/sessionCommandCenterBrain';
+import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
+import { calendarSchema } from '../../../src/host/tools/modules/connectors/calendar.schema';
 
 const DECLARE_CALL = { id: 'dd-1', name: 'declare_deliverables', arguments: { final_artifacts: ['/tmp/code-agent-test/brief.md'] } };
 const SEARCH_CALL = { id: 'ws-1', name: 'WebSearch', arguments: { query: 'remote collaboration tools' } };
@@ -391,6 +394,29 @@ describe('declare_deliverables 不吞整批', () => {
     const denied = deps.persisted.filter((message) => message.role === 'tool').flatMap((message) => message.toolResults ?? []);
     expect(denied).toHaveLength(3);
     expect(denied.every((result) => result.success === false && result.metadata?.code === 'TOOL_DISABLED_FOR_RUN')).toBe(true);
+  });
+
+  it('提示词里提到范围外的连接器名不会让它的调用被放行（allowedConnectorIds 收窄仍然生效）', async () => {
+    const registry = getProtocolRegistry();
+    if (!registry.has(calendarSchema.name)) {
+      registry.register(calendarSchema, async () => (await import('../../../src/host/tools/modules/connectors/calendar')).calendarModule);
+    }
+    const prompt = '调用 calendar 看看 calendar 里今天的安排';
+    const toolScope = { allowedConnectorIds: ['mail'] };
+    const allowedToolNames = getTextForegroundToolNamesForPrompt(prompt, toolScope.allowedConnectorIds);
+    expect(allowedToolNames).not.toContain('calendar');
+    const ctx = buildCtx({ foregroundToolFace: true, allowedToolNames, toolScope, maxToolCallRetries: 3 });
+    const deps = buildDeps(ctx);
+    const toolEngine = { executeToolsWithHooks: vi.fn() };
+    const action = await makeProcessor(ctx, deps, toolEngine).handleToolResponse(toolUseResponse([
+      { id: 'cal-1', name: 'calendar', arguments: { action: 'list_events' } },
+    ]), false, 1, EVENT_PROC);
+
+    expect(action).toBe('continue');
+    expect(toolEngine.executeToolsWithHooks).not.toHaveBeenCalled();
+    const result = deps.persisted.find((message) => message.role === 'tool')?.toolResults?.[0];
+    expect(result).toMatchObject({ toolCallId: 'cal-1', success: false });
+    expect(result?.metadata).toMatchObject({ code: 'TOOL_DISABLED_FOR_RUN' });
   });
 
   it('run 级禁用工具：整批调用和每条合成失败结果都落库（含批内被连带跳过的调用）', async () => {

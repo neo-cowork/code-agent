@@ -180,6 +180,7 @@ export function getDeferredToolsToPreloadForTurn(
   return (resolveTurnToolFace({
     baseToolNames: [...tools], prompt: runtime.turn.runUserPrompt || userText, foreground: runtime.foregroundToolFace,
     declaredToolNames: runtime.agentId ? resolveAgent(runtime.agentId)?.tools : undefined,
+    turnExtraToolNames: runtime.agentId ? runtime.allowedToolNames : undefined,
     hardBoundary: (name) => !denied.has(resolveToolAlias(name).toLowerCase()),
   }) ?? []).filter((name) => name !== '__role_boundary_deny_all__' && !isCoreToolName(name));
 }

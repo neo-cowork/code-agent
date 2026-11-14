@@ -68,7 +68,9 @@ export function isToolDeniedForRun(ctx: RuntimeContext, toolName: string): boole
   if (isToolDeniedByRunPolicy(runtimeToolPolicy(ctx), toolName)) return true;
   const role = ctx.agentId ? resolveAgent(ctx.agentId) : undefined;
   if (!role?.tools?.length) return false;
-  const face = resolveTurnToolFace({ baseToolNames: [toolName], declaredToolNames: role.tools, roleId: role.id });
+  const face = resolveTurnToolFace({
+    baseToolNames: [toolName], declaredToolNames: role.tools, turnExtraToolNames: ctx.allowedToolNames, roleId: role.id,
+  });
   return !face?.some((name) => name.toLowerCase() === toolName.toLowerCase());
 }
 
@@ -127,6 +129,7 @@ export function filterToolsByRunPolicy(
     prompt: currentTurnUserPrompt(ctx),
     requiredToolNames: role?.tools,
     declaredToolNames: role?.tools,
+    turnExtraToolNames: role ? ctx.allowedToolNames : undefined,
     roleId: role?.id,
     foreground: ctx.foregroundToolFace,
     hardBoundary: (name) => !(askUnattended && ASK_USER_QUESTION_TOOL_NAMES.some((ask) => ask === name))
