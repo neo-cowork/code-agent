@@ -244,7 +244,13 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
   }, [visibleJobs, selectedJobId]);
 
   useEffect(() => {
-    if (isLoading) return;
+    // 选中回写只在「可见列表可信」时执行。挂载首轮 render 闭包里的 isLoading 是 false，
+    // 但 refresh effect（声明在前）已同步把 store.isLoading 置 true、jobs 尚未返回——
+    // 此时可见列表不可信，不能把通知点击在面板挂载前 selectJob 预设好的 selectedJobId
+    // 覆写成 null（否则 loadJobs 完成后回落选中第一个任务，PR review r1）。
+    // 读 store 的实时 isLoading：加载期间不动 selectedJobId，交给 loadJobs 的
+    // resolveSelectedCronJobId 按新可见列表收敛；加载完成后本 effect 随依赖重跑再收敛。
+    if (isLoading || useCronStore.getState().isLoading) return;
     const nextSelectedJobId = selectedJob?.id ?? null;
     if (nextSelectedJobId !== selectedJobId) {
       useCronStore.setState({ selectedJobId: nextSelectedJobId });

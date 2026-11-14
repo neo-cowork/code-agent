@@ -342,4 +342,38 @@ describe('CronCenterPanel visible-list detail invariant (FB-1428)', () => {
     const detail = await screen.findByTestId('cron-job-detail');
     expect(within(detail).getByRole('heading', { name: '云端日报' })).toBeTruthy();
   });
+
+  it('notification click on a closed center keeps its job selected through the panel first mount (store not loaded yet)', async () => {
+    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+
+    // Cron Center 关闭（或从未打开）：store 从未加载，jobs=[]、isLoading=false。
+    renderHook(() => useCronOsNotification({} as never, vi.fn()));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+
+    act(() => {
+      notificationHooks.show?.({
+        id: 'notif-water-1',
+        title: '定时任务没跑成',
+        body: '运行失败',
+        jobId: 'job-water',
+        failure: true,
+      });
+    });
+    await act(async () => {
+      notificationHooks.click?.({ payload: { id: 'notif-water-1' } });
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    // 面板挂载前，点击已把目标任务写进 store（App 随后挂载 Cron Center）。
+    expect(useCronStore.getState().selectedJobId).toBe('job-water');
+
+    render(<CronCenterPanel onClose={() => undefined} />);
+    await waitFor(() => expect(useCronStore.getState().isLoading).toBe(false));
+
+    // 详情必须是通知对应任务，而不是挂载回写把选中清成 null 后回落到的列表第一个任务。
+    expect(within(screen.getByTestId('cron-job-detail')).getByRole('heading', { name: '喝水提醒' })).toBeTruthy();
+    expect(useCronStore.getState().selectedJobId).toBe('job-water');
+  });
 });
