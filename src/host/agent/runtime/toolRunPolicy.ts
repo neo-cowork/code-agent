@@ -1,3 +1,4 @@
+import { BACKGROUND_HANDOFF_GUIDANCE } from '../../services/commandCenter/delegationGuidance';
 import { resolveTurnToolFace } from './turnToolFace';
 import { resolveAgent } from '../agentRegistry';
 import type { ToolDefinition } from '../../../shared/contract';
@@ -86,8 +87,7 @@ export function deniedToolRetryGuidance(ctx: RuntimeContext): string {
   const askDenied = ctx.unattendedTurn === true
     || ASK_USER_QUESTION_TOOL_NAMES.some((name) => isToolDeniedForRun(ctx, name));
   if (ctx.foregroundToolFace && !ctx.unattendedTurn && !isToolDeniedForRun(ctx, 'delegate_task')) {
-    return 'Hand this task to a background task via delegate_task and say in one sentence that it has started. '
-      + 'The requested call was not executed here. Report only that the background task has started.';
+    return BACKGROUND_HANDOFF_GUIDANCE;
   }
   return askDenied
     ? 'Continue without those tools. If you need user input, state the blocker in your final text instead of calling an interactive tool.'

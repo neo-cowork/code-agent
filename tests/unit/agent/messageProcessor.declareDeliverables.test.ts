@@ -338,6 +338,25 @@ describe('declare_deliverables 不吞整批', () => {
     expect(deps.persisted.find((m) => m.role === 'tool')?.toolResults?.[0]).toMatchObject({ toolCallId: 'ws-1', success: false });
   });
 
+  it('foreground denied-call guidance gives only a plain handoff and retains the required method', async () => {
+    const ctx = buildCtx({ foregroundToolFace: true, allowedToolNames: ['delegate_task', 'Read'], maxToolCallRetries: 3 });
+    const deps = buildDeps(ctx);
+    const toolEngine = { executeToolsWithHooks: vi.fn() };
+    const processor = makeProcessor(ctx, deps, toolEngine);
+    await processor.handleToolResponse(toolUseResponse([
+      { id: 'denied-shell', name: 'Bash', arguments: { command: 'curl https://example.com' } },
+    ]), false, 1, EVENT_PROC);
+
+    expect(toolEngine.executeToolsWithHooks).not.toHaveBeenCalled();
+    const guidance = deps.injected.join('\n');
+    expect(guidance).toContain('我把这件事交给后台任务去做，完成后告诉你结果。');
+    expect(guidance).toContain('requested method');
+    expect(guidance).not.toMatch(/Bash|Browser|工具列表|工具面|not in this turn|unavailable|not loaded/i);
+    const result = deps.persisted.find((message) => message.role === 'tool')?.toolResults?.[0];
+    expect(result?.success).toBe(false);
+    expect(result?.error).not.toMatch(/tool list|tool face|disabled|permission policy/i);
+  });
+
   it('run 级禁用工具：整批调用和每条合成失败结果都落库（含批内被连带跳过的调用）', async () => {
     const ctx = buildCtx({ deniedToolNames: ['WebSearch'], maxToolCallRetries: 3 });
     const deps = buildDeps(ctx);

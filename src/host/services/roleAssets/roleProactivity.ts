@@ -1,3 +1,4 @@
+import { resolveExplicitAgentOverride } from '../../agent/explicitAgentOverride';
 import { UNATTENDED_TRUST_NOTICE } from '../../../shared/unattendedTrust';
 // Role proactivity: cadence/event → budget → wake → decision → history.
 import { createLogger } from '../infra/logger';
@@ -759,7 +760,7 @@ export async function resolveWakeRunToolScope(roleId: string): Promise<{
   return { allowedToolNames: resolveTurnToolFace({ declaredToolNames: declared, roleId, wake: true }) };
 }
 
-/** headless 醒来路径：cli/bootstrap createAgentLoop（与 /api/run 同源的执行链路）。 webServer（发行版后端）没有 Electron main 的 TaskManager orchestrator，走这条。 角色 system prompt 和记忆注入块通过 config.systemPrompt 附加；工具面走 resolveWakeRunToolScope。 */
+/** headless 醒来路径：cli/bootstrap createAgentLoop（与 /api/run 同源的执行链路）。 webServer（发行版后端）没有 Electron main 的 TaskManager orchestrator，走这条。 角色身份走 config.agentOverride，记忆注入块通过 config.systemPrompt 附加；工具面走 resolveWakeRunToolScope。 */
 async function runWakeViaCliLoop(params: {
   sessionId: string;
   roleId: string;
@@ -777,16 +778,9 @@ async function runWakeViaCliLoop(params: {
   });
   const config = agent.getConfig();
 
-  // 角色 agent 定义的 system prompt（有定义则注入，让醒来实例带角色人设）
-  let rolePrompt = '';
-  try {
-    const { resolveAgent } = await import('../../agent/agentRegistry');
-    rolePrompt = resolveAgent(params.roleId)?.prompt ?? '';
-  } catch {
-    // registry 不可用 → 只用记忆注入块
-  }
-
-  config.systemPrompt = [rolePrompt, params.contextBlock ?? ''].filter((s) => s.trim().length > 0).join('\n\n');
+  // Match first-wake: the role replaces the generic agent identity; assets remain an appended context.
+  config.agentOverride = resolveExplicitAgentOverride(params.roleId) ?? undefined;
+  config.systemPrompt = params.contextBlock ?? '';
   config.systemInstructions = [UNATTENDED_TRUST_NOTICE];
   config.maxIterations = ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS;
   // 角色醒来是无人值守发起，不进上线后评测分母。
@@ -913,13 +907,8 @@ async function launchAdvanceGoalRun(params: {
   });
   const config = agent.getConfig();
 
-  let rolePrompt = '';
-  try {
-    const { resolveAgent } = await import('../../agent/agentRegistry');
-    rolePrompt = resolveAgent(params.roleId)?.prompt ?? '';
-  } catch { /* registry 不可用 → 只用记忆注入块 */ }
-
-  config.systemPrompt = [rolePrompt, params.contextBlock ?? ''].filter((s) => s.trim().length > 0).join('\n\n');
+  config.agentOverride = resolveExplicitAgentOverride(params.roleId) ?? undefined;
+  config.systemPrompt = params.contextBlock ?? '';
   config.systemInstructions = [UNATTENDED_TRUST_NOTICE];
   // goal run 同样是无人值守发起。
   config.originKind = 'headless';

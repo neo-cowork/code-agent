@@ -669,12 +669,11 @@ export class MessageProcessor {
           error: blocked ? 'TOOL_DISABLED_FOR_RUN' : 'TOOL_BATCH_SKIPPED', metadata: { skipped: !blocked } }, false, 0);
       }
       this.guardState.toolCallRetryCount++;
-      const deniedNames = Array.from(new Set(deniedToolCalls.map((toolCall) => toolCall.name))).join(', ');
       const shellDenial = describeDeniedShellCalls(this.ctx, deniedToolCalls);
       this.contextAssembly.injectSystemMessage(
         [
           '<tool-run-policy>',
-          `The previous tool call requested tools not in this turn's tool list: ${deniedNames}.`,
+          'The requested operation has not been executed here.',
           deniedToolRetryGuidance(this.ctx),
           ...(shellDenial ? [shellDenial.guidance] : []),
           '</tool-run-policy>',

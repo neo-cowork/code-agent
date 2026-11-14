@@ -33,10 +33,8 @@ export function describeDeniedShellCalls(
     userBashRules: userBashRules.map((rule) => rule.id),
   });
   return {
-    guidance: "Bash is not in this turn's tool list; the command was NOT run. "
-      + 'If delegate_task is in the tool list, hand the command intent to that background task now '
-      + 'and say in one sentence that it has started. Otherwise explain the current role boundary '
-      + 'without offering an execution route outside it.',
+    guidance: 'The requested operation was NOT run. Follow the accompanying next-action guidance '
+      + 'and use its everyday handoff sentence as the complete reply after acceptance.',
     finalMessage: '本轮前台不直接执行 Shell 命令（Bash），命令没有运行。可以让我把它交给后台代理执行，届时会按你的权限规则询问你。',
   };
 }

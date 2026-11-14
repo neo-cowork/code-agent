@@ -1,3 +1,5 @@
+import { buildDelegatedTaskPrompt } from '../../../services/commandCenter/delegationGuidance';
+import { getSessionManager } from '../../../services/infra/sessionManager';
 import type {
   CanUseToolFn,
   ToolContext,
@@ -151,6 +153,15 @@ export async function executeDelegateTask(
     };
   }
 
+  let originalRequest: string | undefined;
+  if (ctx.sourceMessageId) {
+    try {
+      const source = (await getSessionManager().getMessages(session)).find((message) => message.id === ctx.sourceMessageId);
+      if (source?.role === 'user' && !source.isMeta && source.visibility !== 'rewound') originalRequest = source.content;
+    } catch (error) {
+      ctx.logger.warn('Delegation original request lookup failed', { reason: 'source-request-unavailable', error: String(error) });
+    }
+  }
   onProgress?.({ stage: 'starting', detail: shortName });
   const spawnInput: SpawnSessionTaskInput = {
     sessionId: session,
@@ -158,7 +169,7 @@ export async function executeDelegateTask(
     shortName,
     laneKey,
     submissionKey,
-    prompt,
+    prompt: buildDelegatedTaskPrompt(prompt, originalRequest),
     workspaceScope,
     queueWhenFull: args.queue_when_full === true,
     attachments: ctx.subagent?.attachments as MessageAttachment[] | undefined,
