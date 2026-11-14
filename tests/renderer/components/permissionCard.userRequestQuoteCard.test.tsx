@@ -80,4 +80,19 @@ describe('PermissionCard user request quote (whole card, normalizeRequest whitel
     expect(screen.getByTestId('user-request-quote').textContent)
       .toBe(messages.decisionCard.permission.userRequestQuote.replace('{text}', 'add Weekly sync tomorrow…'));
   });
+
+  it.each([
+    ['zh', zh, '由定时任务「每日飞书日历周会」启动', '由定时任务启动'],
+    ['en', en, 'Started by scheduled task “每日飞书日历周会”', 'Started by a scheduled task'],
+  ] as const)('%s cron-origin card names the task, no user quote; blank name falls back to generic', (language, _m, named, generic) => {
+    state.language = language;
+    state.request = { ...connectorRequest(), details: { startedByAutomation: true, scheduledTaskName: '每日飞书日历周会' } as PermissionRequest['details'] };
+    const view = render(<PermissionCard />);
+    expect(screen.getByTestId('scheduled-task-origin').textContent).toBe(named);
+    expect(screen.queryByTestId('user-request-quote')).toBeNull();
+    view.unmount();
+    state.request = { ...connectorRequest(), details: { startedByAutomation: true } as PermissionRequest['details'] };
+    render(<PermissionCard />);
+    expect(screen.getByTestId('scheduled-task-origin').textContent).toBe(generic);
+  });
 });

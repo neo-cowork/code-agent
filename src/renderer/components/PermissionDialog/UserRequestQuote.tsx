@@ -1,9 +1,11 @@
 import React from 'react';
 import type { PermissionRequest } from '../../../shared/contract/permission';
 
+type QuoteDetails = Pick<PermissionRequest['details'], 'userRequest' | 'startedByAutomation' | 'scheduledTaskName'>;
+
 interface UserRequestQuoteProps {
-  details: PermissionRequest['details'];
-  labels: { userRequestQuote: string; startedByScheduledTask: string };
+  details: QuoteDetails;
+  labels: { userRequestQuote: string; startedByScheduledTask: string; startedByScheduledTaskGeneric: string };
 }
 
 /** Host-quoted user words (or the scheduled-task origin) so the user can check the action is theirs. */
@@ -16,10 +18,11 @@ export function UserRequestQuote({ details, labels }: UserRequestQuoteProps) {
       </p>
     );
   }
-  if (details.startedByAutomation && details.purpose) {
+  if (details.startedByAutomation) {
+    const name = details.scheduledTaskName?.trim();
     return (
       <p data-testid="scheduled-task-origin" className="break-words text-sm text-zinc-300">
-        {labels.startedByScheduledTask.replace('{name}', details.purpose)}
+        {name ? labels.startedByScheduledTask.replace('{name}', name) : labels.startedByScheduledTaskGeneric}
       </p>
     );
   }

@@ -1180,6 +1180,9 @@
             "startedByAutomation": {
               "type": "boolean"
             },
+            "scheduledTaskName": {
+              "type": "string"
+            },
             "commandRiskLevel": {
               "type": "string",
               "enum": [
