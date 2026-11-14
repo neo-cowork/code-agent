@@ -7,7 +7,7 @@
  */
 import type { StreamInterruptionReason } from '@shared/contract';
 
-type OutcomeKey =
+export type OutcomeKey =
   | 'cancelled-by-user'
   | 'interrupted-session-switch'
   | 'interrupted-restart'

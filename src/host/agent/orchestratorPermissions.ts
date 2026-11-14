@@ -33,6 +33,8 @@ import { recordBrowserSessionGrant } from '../permissions/browserSessionGrant';
 import { getConfirmationGate } from './confirmationGate';
 import { NL_RULE_K2_TEXT } from '../../shared/nlRuleRestate';
 import { mintAppGrantSession, mintAppGrantStanding } from '../permissions/appGrantStore';
+import { connectorApprovalDetails } from '../permissions/connectorApprovalDetails';
+import { connectorToolGrantIdentity } from '../permissions/connectorToolAccess';
 import { mintTool24hGrant, mintToolRunGrant } from '../permissions/toolGrantStore';
 import { getPermissionLevel } from './orchestrator/modelConfigResolver';
 import { createLogger } from '../services/infra/logger';
@@ -142,6 +144,8 @@ function recordHumanGrant(
     return;
   }
   if (recordBrowserSessionGrant(response, request)) return;
+  const identity = connectorToolGrantIdentity(request.tool, request.details?.standingGrantTarget ?? null);
+  if (!identity) return;
   const app = request.details?.targetApp;
   if (response === 'allow_session' && request.sessionId) {
     if (app?.name) mintAppGrantSession(request.sessionId, app);
@@ -157,10 +161,10 @@ function recordHumanGrant(
         requestId: request.id,
       });
     } else {
-      mintToolRunGrant(request.sessionId, request.tool, request.details?.standingGrantTarget ?? null);
+      mintToolRunGrant(request.sessionId, identity.tool, identity.target);
     }
   } else if (response === 'allow_24h' && !app?.name) {
-    mintTool24hGrant(request.tool, request.details?.standingGrantTarget ?? null);
+    mintTool24hGrant(identity.tool, identity.target);
   }
 }
 
@@ -509,8 +513,11 @@ export class OrchestratorPermissionIsland {
   async requestPermission(
     request: OrchestratorPermissionRequest,
   ): Promise<PermissionAskResult> {
+    const details = connectorApprovalDetails(request);
     const fullRequest: PermissionRequest = {
       ...request,
+      type: details.connectorAccess ? 'mcp' : request.type,
+      details,
       id: generatePermissionRequestId(),
       timestamp: Date.now(),
     };
@@ -845,6 +852,7 @@ export class OrchestratorPermissionIsland {
         tool: fullRequest.tool,
         type: fullRequest.type,
         permissionLevel,
+        ...(fullRequest.forceConfirm === true ? { forceConfirm: true } : {}),
         requestedAt: fullRequest.timestamp,
         argsSummary: argsSummaryRaw === undefined ? undefined : redactCommandSecrets(argsSummaryRaw),
         ...(argsRef ? { argsRef } : {}),

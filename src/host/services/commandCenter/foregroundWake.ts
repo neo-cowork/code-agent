@@ -77,7 +77,7 @@ export interface ForegroundWakeDependencies {
   recordWakeDeferredNote(
     sessionId: string,
     content: string,
-    detail: { taskId: string; outcome: 'completed' | 'failed' },
+    detail: NonNullable<NonNullable<Message['metadata']>['backgroundWakeDeferred']>,
   ): Promise<void>;
   /** 可注入的计时器，避免单测真等待。 */
   setTimeout(callback: () => void, delayMs: number): unknown;
@@ -256,13 +256,14 @@ export function createForegroundWake(
       if (pendingBySession.get(pending.task.sessionId) !== pending || pending.noticeEmitted) return;
       pending.noticeTimer = null;
       pending.noticeEmitted = true;
+      const deferredTitle = truncateObserveText(pending.task.title, BACKGROUND_WAKE_DEFER_TASK_TITLE_MAX_CHARS);
       void dependencies.recordWakeDeferredNote(
         pending.task.sessionId,
         formatBackgroundWakeDeferredNote(
-          truncateObserveText(pending.task.title, BACKGROUND_WAKE_DEFER_TASK_TITLE_MAX_CHARS),
+          deferredTitle,
           pending.status,
         ),
-        { taskId: pending.task.id, outcome: pending.status },
+        { taskId: pending.task.id, outcome: pending.status, title: deferredTitle },
       ).catch((error) => {
         dependencies.logger.warn('Foreground wake deferred note not recorded', {
           sessionId: pending.task.sessionId,
@@ -368,7 +369,7 @@ export function createForegroundWake(
       await dependencies.recordWakeFailureNote(
         sessionId,
         formatBackgroundWakeFailureNote(task.shortName),
-        { taskId: task.id, reason: 'wake_failed' },
+        { taskId: task.id, reason: 'wake_failed', title: task.shortName },
       ).catch((noteError) => {
         dependencies.logger.warn('Foreground wake failure note not recorded', {
           reason: 'session_not_accessible_retries_exhausted',
@@ -593,7 +594,7 @@ export function createForegroundWake(
         await dependencies.recordWakeFailureNote(
           sessionId,
           formatBackgroundWakeFailureNote(task.shortName),
-          { taskId: task.id, reason },
+          { taskId: task.id, reason, title: task.shortName },
         ).catch((noteError) => {
           dependencies.logger.warn('Foreground wake failure note not recorded', {
             sessionId,
