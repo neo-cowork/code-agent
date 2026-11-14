@@ -66,6 +66,20 @@ const MATRIX_CASES: MatrixCase[] = [
     },
   },
   {
+    id: '400 REQUEST_INVALID',
+    run: async ({ invokeSend }) => {
+      fetchMock.mockImplementation(async () =>
+        jsonResponse(400, { error: `Invalid request ${SENTINEL}`, code: 'REQUEST_INVALID' }),
+      );
+      const error = await invokeSend().catch((e: unknown) => e);
+      return { error, expectedRawInWarn: SENTINEL };
+    },
+    expected: {
+      zh: '本地服务没有接受这次请求，请刷新页面后重试。',
+      en: 'Neo could not accept this request. Refresh the page and try again.',
+    },
+  },
+  {
     id: '401 Invalid auth token',
     run: async ({ invokeSend }) => {
       fetchMock.mockImplementation(async () =>

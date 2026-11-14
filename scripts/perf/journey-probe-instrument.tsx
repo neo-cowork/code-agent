@@ -1,11 +1,26 @@
-import React, { Profiler, useLayoutEffect, useState, type ReactNode } from 'react';
-import type { JourneyId, JourneyLongTask, JourneyProbeResult } from './journey-probe-protocol';
+import React, {
+  Profiler,
+  useLayoutEffect,
+  useState,
+  type ProfilerOnRenderCallback,
+  type ReactNode,
+} from 'react';
+import type {
+  JourneyCommitTraceEntry,
+  JourneyEnvironment,
+  JourneyId,
+  JourneyLongTask,
+  JourneyProbeResult,
+} from './journey-probe-protocol';
 import { roundMs } from './journey-probe-protocol';
+
+const COMMIT_TRACE_CAP = 200;
 
 export interface JourneyInstrument {
   commitCount: number;
   hotRenderCount: number;
-  onRender: () => void;
+  commitTrace: readonly JourneyCommitTraceEntry[];
+  onRender: ProfilerOnRenderCallback;
   HotProbe: (props: { children: ReactNode }) => React.ReactElement;
 }
 
@@ -29,12 +44,34 @@ export function createJourneyInstrument(): JourneyInstrument {
   const state = {
     commitCount: 0,
     hotRenderCount: 0,
+    commitTrace: [] as JourneyCommitTraceEntry[],
   };
 
   function HotProbe({ children }: { children: ReactNode }): React.ReactElement {
     state.hotRenderCount += 1;
     return <>{children}</>;
   }
+
+  const onRender: ProfilerOnRenderCallback = (
+    _id,
+    phase,
+    actualDuration,
+    _baseDuration,
+    startTime,
+  ) => {
+    state.commitCount += 1;
+    if (state.commitTrace.length < COMMIT_TRACE_CAP) {
+      const startedAt = typeof window !== 'undefined'
+        ? (window.__PERF_JOURNEY_STARTED_AT__ ?? startTime)
+        : startTime;
+      state.commitTrace.push({
+        index: state.commitCount,
+        phase,
+        actualDurationMs: roundMs(actualDuration),
+        startMs: roundMs(startTime - startedAt),
+      });
+    }
+  };
 
   return {
     get commitCount() {
@@ -43,9 +80,10 @@ export function createJourneyInstrument(): JourneyInstrument {
     get hotRenderCount() {
       return state.hotRenderCount;
     },
-    onRender() {
-      state.commitCount += 1;
+    get commitTrace() {
+      return state.commitTrace;
     },
+    onRender,
     HotProbe,
   };
 }
@@ -147,6 +185,19 @@ export async function waitForCommitSettlement(
   }
 }
 
+function collectJourneyEnvironment(): JourneyEnvironment {
+  return {
+    userAgent: navigator.userAgent,
+    devicePixelRatio: window.devicePixelRatio,
+    fontsLoaded: document.fonts.size,
+    bodyFontFamily: getComputedStyle(document.body).fontFamily,
+    viewport: {
+      width: window.innerWidth,
+      height: window.innerHeight,
+    },
+  };
+}
+
 export function publishJourneyResult(
   journey: JourneyId,
   instrument: JourneyInstrument,
@@ -166,6 +217,8 @@ export function publishJourneyResult(
       : 0,
     extraRenders: extraRenderCount(),
     ready,
+    commitTrace: [...instrument.commitTrace],
+    environment: collectJourneyEnvironment(),
   };
   window.__PERF_JOURNEY_RESULT__ = result;
   document.body.setAttribute('data-perf-journey-ready', journey);

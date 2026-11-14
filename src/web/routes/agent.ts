@@ -52,7 +52,7 @@ import { buildTurnTerminalFailure } from './agentTurnTerminalFailure';
 import { getAgentErrorMessage } from '../../shared/utils/agentErrorClassification';
 import { createMarkSessionExecutionEnvironment } from '../../host/services/cloudRun/sessionExecutionEnvironmentMarker';
 import { checkEnvironmentProtocol } from './environmentProtocolGate';
-import { PROMPT_REQUIRED } from '../../shared/contract/agentRunErrors';
+import { PROMPT_REQUIRED, REQUEST_INVALID } from '../../shared/contract/agentRunErrors';
 import {
   AgentRunBodySchema,
   isPromptRequiredFailure,
@@ -1904,10 +1904,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     }
     const parsedBody = AgentRunBodySchema.safeParse(req.body);
     if (!parsedBody.success) {
-      res.status(400).json({
-        error: 'Missing prompt',
-        ...(isPromptRequiredFailure(parsedBody.error, req.body) ? { code: PROMPT_REQUIRED } : {}),
-      });
+      res.status(400).json(isPromptRequiredFailure(parsedBody.error, req.body)
+        ? { error: 'Missing prompt', code: PROMPT_REQUIRED }
+        : { error: 'Invalid request', code: REQUEST_INVALID });
       return;
     }
     // N2：/run 的 context 是 passthrough，客户端可伪造 delegationOrigin——一律剥掉。

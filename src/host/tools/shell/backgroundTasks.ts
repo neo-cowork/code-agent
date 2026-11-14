@@ -696,7 +696,7 @@ process.on('beforeExit', persistRunningTasks);
 // 这里原本挂的是 SIGINT/SIGTERM 处理器，末尾 `process.exit(0)`。它是模块级代码，
 // 在 esbuild 单包里于 `main()` 之前就注册好，于是排在 webServer 自己那个
 // `process.on('SIGTERM', shutdown)` 前面——SIGTERM 一到，这里同步 exit(0)，
-// webServer 的 shutdown()（cleanupUploadDirs → durable/devServer 收尾 →
+// webServer 的 shutdown()（durable/devServer 收尾 →
 // closeAllDatabaseConnections 做 WAL checkpoint）**一步都跑不到**。
 // 2026-08-08 mac Dev 槽真机坐实：正常退出 exitReason=graceful-sigterm、
 // waitStatus=exit status: 0（看起来完美），但 -wal 4.1MB / -shm 32KB 原样残留，

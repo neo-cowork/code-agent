@@ -230,5 +230,24 @@ describe('Path Utilities', () => {
       expect(isChatUploadPath(path.join(lexicalTmp, 'a.csv'))).toBe(false);
       expect(isChatUploadPath('/etc/hosts')).toBe(false);
     });
+
+    it('accepts lexical and canonical forms under the per-data-dir uploads root even when missing', () => {
+      const originalDataDir = process.env.CODE_AGENT_DATA_DIR;
+      const base = fs.realpathSync.native(createTemporaryDirectory('chat-upload-datadir-'));
+      const canonicalDataDir = path.join(base, 'real-data');
+      const lexicalDataDir = path.join(base, 'lex-data');
+      fs.mkdirSync(canonicalDataDir, { recursive: true });
+      fs.symlinkSync(canonicalDataDir, lexicalDataDir);
+      process.env.CODE_AGENT_DATA_DIR = lexicalDataDir;
+      try {
+        expect(isChatUploadPath(path.join(lexicalDataDir, 'uploads', 'uuid-1', 'contract.pdf'))).toBe(true);
+        expect(isChatUploadPath(path.join(canonicalDataDir, 'uploads', 'uuid-1', 'contract.pdf'))).toBe(true);
+        expect(isChatUploadPath(path.join(canonicalDataDir, 'config.json'))).toBe(false);
+        expect(isChatUploadPath(path.join(lexicalDataDir, 'other', 'contract.pdf'))).toBe(false);
+      } finally {
+        if (originalDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
+        else process.env.CODE_AGENT_DATA_DIR = originalDataDir;
+      }
+    });
   });
 });

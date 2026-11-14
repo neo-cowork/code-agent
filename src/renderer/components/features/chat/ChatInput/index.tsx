@@ -352,6 +352,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     scopeProjectId,
     value,
     setValue,
+    attachments,
+    setAttachments,
     suspend: editingQueuedInputId !== null,
   });
 
@@ -1477,6 +1479,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         {composerDraft.notice && (!currentSessionReadOnly || cronRunFollowUpMode) && (
           <UnsentDraftNotice
             preview={composerDraft.notice.preview}
+            attachmentNames={composerDraft.notice.attachmentNames}
+            droppedNames={composerDraft.notice.droppedNames}
             onPutBack={composerDraft.putBack}
             onDiscard={composerDraft.discard}
           />
