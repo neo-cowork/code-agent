@@ -778,7 +778,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
                     )}
                   </div>
                   <div>
-                    <label className="mb-2 block text-sm text-zinc-200">{text.apiKeyLabel}</label>
+                    <label className="mb-2 block text-sm text-zinc-200">{text.keyFieldLabel}</label>
                     <Input
                       type="password"
                       value={apiKey}
