@@ -423,7 +423,26 @@ export function getToolExecutionTimeoutMs(toolName: string): number | undefined 
 export const BROWSER_HUMAN_TAKEOVER_WAIT = {
   POLL_INTERVAL_MS: 100,
   CAP_MS: 100_000,
+  /** Takeover control timer: how long the user may hold the view before the session stops. */
+  TIMER_MS: 5 * 60_000,
 } as const;
+
+/**
+ * How long a model-requested `wait_for_user` browser action waits for the user to
+ * press Done. Defaults to the existing 5-minute human-takeover timer. The wait is
+ * booked as human time (approval-wait accounting), so it is not bounded by the
+ * 120s tool inactivity budget. `CODE_AGENT_BROWSER_WAIT_FOR_USER_MS` is a harness
+ * override for tests and real-run drills only, not a user setting.
+ */
+const BROWSER_WAIT_FOR_USER = {
+  LIMIT_MS: BROWSER_HUMAN_TAKEOVER_WAIT.TIMER_MS,
+  LIMIT_ENV: 'CODE_AGENT_BROWSER_WAIT_FOR_USER_MS',
+} as const;
+
+export function getBrowserWaitForUserLimitMs(): number {
+  const override = Number(process.env[BROWSER_WAIT_FOR_USER.LIMIT_ENV]);
+  return Number.isFinite(override) && override > 0 ? override : BROWSER_WAIT_FOR_USER.LIMIT_MS;
+}
 
 // 有不可重放副作用的原生工具：多数只在启动前查一次 abortSignal，外层 inactivity 超时
 // 触发时副作用可能已经完成。这类工具的超时结果必须标 outcome-unknown（模型先核实状态
@@ -466,6 +485,11 @@ export const CANCELLATION_TIMEOUTS = {
   ROUTE_SETTLE_WAIT: 15_000,
   /** `/api/cancel` 终态轮询间隔 */
   ROUTE_SETTLE_POLL: 50,
+  /**
+   * 用户 Stop 时等待会话后台任务收线的上限（须小于验收口径的 3 s）。
+   * 超时只 warn 未收线的任务 id，不阻塞前台取消返回。
+   */
+  SESSION_BACKGROUND_SETTLE_WAIT: 2_500,
 } as const;
 
 /** Subagent 执行生命周期预算。 */

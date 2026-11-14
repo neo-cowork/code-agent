@@ -131,6 +131,20 @@ jobs:
   smoke:
     name: Swarm smoke (unit + integration)
     runs-on: ubuntu-24.04
+    # 系统库/字体/浏览器烤在微软镜像里（MCR，不依赖 Ubuntu apt 源）；版本须与 package-lock 的 playwright 一致，
+    # 由 tests/scripts/playwrightInstallWorkflow.test.ts 钉死。容器内不得再 apt / playwright install。
+    container:
+      image: mcr.microsoft.com/playwright:v1.60.0-noble
+      # 非 root：测试里的 EACCES / chmod / 只读目录断言在 root 下不成立；
+      # --init：PID 1 回收僵尸，否则 killProcessTree 整树退出证明会把僵尸当存活。
+      options: --user 1001 --init
+      # 宿主 runner 的真实家目录：HOME=/github/home 会让「/home/<用户>」形态的脱敏断言失配，
+      # 且该目录不可写。挂同路径 + 下面 env.HOME，让 os.homedir() 与宿主一致。
+      volumes:
+        - /home/runner:/home/runner
+    env:
+      HOME: /home/runner
+    needs: container-tools
     # 15 而非 10：主链路子集 ~200s + 新增的 playwright 浏览器安装 ~1-2min，
     # 原上限对满载 runner 已经偏紧（实测单轮跑到失败就用了 5m25s）。
     # 35 而非 25：主链路子集已涨到 1813 文件 / 1.5w 例、单测步 ~13min，整job在 main 实测
@@ -143,6 +157,14 @@ jobs:
         with:
           # strict production reachability compares PR additions with the real main merge-base.
           fetch-depth: 0
+
+      - name: Trust workspace for git (container runs as root, workspace owned by runner uid)
+        # actions/checkout 只在自己的临时全局配置里写 safe.directory；后续步骤的 git
+        # （merge-base / fetch / ls-files）会报 dubious ownership，棘轮门静默失明或整门红。
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Host tools (lsof / ps) for container
+        uses: ./.github/actions/container-tools
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
@@ -280,11 +302,6 @@ jobs:
         # 同时拒绝本机 -darwin 产物冒充 Swarm full 的 Linux/Chromium 基线。
         run: npm run check:visual-shotbase-baselines
 
-      - name: Install Playwright browsers
-        uses: ./.github/actions/setup-playwright
-        with:
-          with-deps: true
-
       - name: Script gates (vitest tests/scripts)
         # tests/scripts 下的守门测试（designSystemGate / architectureDebtReport /
         # windowChromeContract / releaseMacosGates 等）此前不在任何 CI 套件里，
@@ -365,6 +382,20 @@ jobs:
   unit:
     name: Unit + renderer vitest (shard ${{ matrix.shard }}/4)
     runs-on: ubuntu-24.04
+    # 系统库/字体/浏览器烤在微软镜像里（MCR，不依赖 Ubuntu apt 源）；版本须与 package-lock 的 playwright 一致，
+    # 由 tests/scripts/playwrightInstallWorkflow.test.ts 钉死。容器内不得再 apt / playwright install。
+    container:
+      image: mcr.microsoft.com/playwright:v1.60.0-noble
+      # 非 root：测试里的 EACCES / chmod / 只读目录断言在 root 下不成立；
+      # --init：PID 1 回收僵尸，否则 killProcessTree 整树退出证明会把僵尸当存活。
+      options: --user 1001 --init
+      # 宿主 runner 的真实家目录：HOME=/github/home 会让「/home/<用户>」形态的脱敏断言失配，
+      # 且该目录不可写。挂同路径 + 下面 env.HOME，让 os.homedir() 与宿主一致。
+      volumes:
+        - /home/runner:/home/runner
+    env:
+      HOME: /home/runner
+    needs: [container-tools, node-pty-binding]
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -373,6 +404,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Trust workspace for git (container runs as root, workspace owned by runner uid)
+        # actions/checkout 只在自己的临时全局配置里写 safe.directory；后续步骤的 git
+        # （merge-base / fetch / ls-files）会报 dubious ownership，棘轮门静默失明或整门红。
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Host tools (lsof / ps) for container
+        uses: ./.github/actions/container-tools
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
@@ -391,10 +430,15 @@ jobs:
           test -f node_modules/better-sqlite3/prebuilds/linux-x64.node
           node -e "const Database=require('better-sqlite3'); const db=new Database(':memory:'); db.prepare('SELECT 1').get(); db.close()"
 
-      - name: Install Playwright browsers
-        uses: ./.github/actions/setup-playwright
+      - name: Fetch node-pty native binding
+        # Real-host unit tests need the binding compiled outside this container.
+        uses: actions/download-artifact@v4
         with:
-          with-deps: true
+          name: node-pty-binding
+          path: node_modules/node-pty/build/Release
+
+      - name: Assert node-pty binding
+        run: node -e "require('node-pty')"
 
       - name: Unit + renderer vitest (shard ${{ matrix.shard }}/4)
         # 2026-09-05 N-GATE-SUBSET-EXPAND：全收 tests/unit + tests/renderer。
@@ -429,6 +473,73 @@ jobs:
             --exclude 'tests/unit/runtime/runtimeAssetStatus.test.ts' \
             --exclude 'tests/unit/security/commandSafety.approvalDecisionGaps.test.ts'
 
+  # Playwright 镜像没有 lsof / ps 等且容器内不许 apt：在宿主 runner（自带这些工具）上连库打包，容器 job 下载。
+  container-tools:
+    name: Bundle host tools for container jobs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Bundle lsof / ps / pgrep / pkill / sqlite3 / unzip / zip with their libraries
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/container-tools"
+          mkdir -p "$out/bin" "$out/real" "$out/lib"
+          for tool in lsof ps pgrep pkill sqlite3 unzip zip; do
+            src="$(command -v "$tool")"
+            cp "$src" "$out/real/$tool"
+            # libc 家族容器里自带且必须同一份，其余依赖库随包带走
+            ldd "$src" | awk '/=> \//{print $3}' \
+              | grep -vE '/(libc|libm|libdl|libpthread|librt|libresolv)\.so' \
+              | xargs -r cp -n -t "$out/lib"
+            # wrapper 只给这一个进程设 LD_LIBRARY_PATH，不污染容器里的 node / chromium
+            printf '%s\n' '#!/bin/sh' 'd="$(cd "$(dirname "$0")/.." && pwd)"' \
+              "LD_LIBRARY_PATH=\"\$d/lib\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}\" exec \"\$d/real/$tool\" \"\$@\"" > "$out/bin/$tool"
+            chmod +x "$out/bin/$tool"
+          done
+          lsof_out="$("$out/bin/lsof" -v 2>&1)" || true
+          printf '%s\n' "$lsof_out" | sed -n '1,2p'
+          "$out/bin/ps" --version
+          "$out/bin/sqlite3" --version
+          "$out/bin/unzip" -v > /dev/null
+
+      - name: Upload tools bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-tools
+          path: ${{ runner.temp }}/container-tools
+          if-no-files-found: error
+
+  # node-pty 没有 linux prebuild，需 g++/make；Playwright 镜像不带编译器且容器内不许 apt，
+  # 所以在宿主 runner 上编出 pty.node（N-API，ABI 稳定），full 下载使用。
+  node-pty-binding:
+    name: Build node-pty binding
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Build node-pty native binding
+        run: |
+          npm rebuild node-pty --build-from-source
+          test -f node_modules/node-pty/build/Release/pty.node
+
+      - name: Upload node-pty binding
+        uses: actions/upload-artifact@v4
+        with:
+          name: node-pty-binding
+          path: node_modules/node-pty/build/Release/pty.node
+          if-no-files-found: error
+
   full:
     name: Swarm full (smoke + e2e)
     # full/e2e 现在 PR 也跑（删掉了原来限定 push/workflow_dispatch 的 if）：merge gate 只在合并后
@@ -441,12 +552,34 @@ jobs:
     # npm ci、自己再跑一遍 smoke suite），串在后面只是把它那 3min 加在 smoke 的 19min 后面。
     # 代价是 smoke 注定要红的 PR 也会白跑一轮 e2e——公有仓 runner 免费，换 3min wall clock 值。
     runs-on: ubuntu-24.04
+    # 系统库/字体/浏览器烤在微软镜像里（MCR，不依赖 Ubuntu apt 源）；版本须与 package-lock 的 playwright 一致，
+    # 由 tests/scripts/playwrightInstallWorkflow.test.ts 钉死。容器内不得再 apt / playwright install。
+    container:
+      image: mcr.microsoft.com/playwright:v1.60.0-noble
+      # 非 root：测试里的 EACCES / chmod / 只读目录断言在 root 下不成立；
+      # --init：PID 1 回收僵尸，否则 killProcessTree 整树退出证明会把僵尸当存活。
+      options: --user 1001 --init
+      # 宿主 runner 的真实家目录：HOME=/github/home 会让「/home/<用户>」形态的脱敏断言失配，
+      # 且该目录不可写。挂同路径 + 下面 env.HOME，让 os.homedir() 与宿主一致。
+      volumes:
+        - /home/runner:/home/runner
+    env:
+      HOME: /home/runner
+    needs: [container-tools, node-pty-binding]
     timeout-minutes: 25
     outputs:
       status: ${{ steps.result.outputs.status }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Trust workspace for git (container runs as root, workspace owned by runner uid)
+        # actions/checkout 只在自己的临时全局配置里写 safe.directory；后续步骤的 git
+        # （merge-base / fetch / ls-files）会报 dubious ownership，棘轮门静默失明或整门红。
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Host tools (lsof / ps) for container
+        uses: ./.github/actions/container-tools
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
@@ -465,20 +598,16 @@ jobs:
           test -f node_modules/better-sqlite3/prebuilds/linux-x64.node
           node -e "const Database=require('better-sqlite3'); const db=new Database(':memory:'); db.prepare('SELECT 1').get(); db.close()"
 
-      - name: Build node-pty native binding
-        # main 的 full job 一直缺这步：npm ci --ignore-scripts 跳过了 node-pty 的 install 脚本，
-        # 而 node-pty 1.1.0 只带 darwin / win32 prebuild、不带 linux-x64，e2e webServer 启动时
-        # loadNativeModule('pty') 在 build/Release → prebuilds/linux-x64 都找不到 pty.node 直接崩
-        # （exit 1），导致每次 push main 的 full job 必红（PR 只跑 smoke 不起 webServer 所以看不出）。
-        # 这里现场编译并断言产物存在，让失败暴露在本步而非拖到 webServer 启动。
-        run: |
-          npm rebuild node-pty --build-from-source
-          test -f node_modules/node-pty/build/Release/pty.node
-
-      - name: Install Playwright browsers
-        uses: ./.github/actions/setup-playwright
+      - name: Fetch node-pty native binding
+        # 由 node-pty-binding job 在宿主 runner 编译（容器内无编译器、不许 apt）；
+        # npm ci --ignore-scripts 不编 node-pty，缺它 e2e webServer 的 loadNativeModule('pty') 会直接崩。
+        uses: actions/download-artifact@v4
         with:
-          with-deps: true
+          name: node-pty-binding
+          path: node_modules/node-pty/build/Release
+
+      - name: Assert node-pty binding
+        run: test -f node_modules/node-pty/build/Release/pty.node
 
       - name: Run smoke suite
         run: node scripts/ci/vitest-with-flake-ledger.mjs --job "Run smoke suite" -- npm run test:swarm:smoke -- --retry=1
@@ -556,10 +685,32 @@ jobs:
     name: Perf journey ratchet (post-merge)
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
+    # 系统库/字体/浏览器烤在微软镜像里（MCR，不依赖 Ubuntu apt 源）；版本须与 package-lock 的 playwright 一致，
+    # 由 tests/scripts/playwrightInstallWorkflow.test.ts 钉死。容器内不得再 apt / playwright install。
+    container:
+      image: mcr.microsoft.com/playwright:v1.60.0-noble
+      # 非 root：测试里的 EACCES / chmod / 只读目录断言在 root 下不成立；
+      # --init：PID 1 回收僵尸，否则 killProcessTree 整树退出证明会把僵尸当存活。
+      options: --user 1001 --init
+      # 宿主 runner 的真实家目录：HOME=/github/home 会让「/home/<用户>」形态的脱敏断言失配，
+      # 且该目录不可写。挂同路径 + 下面 env.HOME，让 os.homedir() 与宿主一致。
+      volumes:
+        - /home/runner:/home/runner
+    env:
+      HOME: /home/runner
+    needs: container-tools
     timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Trust workspace for git (container runs as root, workspace owned by runner uid)
+        # actions/checkout 只在自己的临时全局配置里写 safe.directory；后续步骤的 git
+        # （merge-base / fetch / ls-files）会报 dubious ownership，棘轮门静默失明或整门红。
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Host tools (lsof / ps) for container
+        uses: ./.github/actions/container-tools
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
@@ -569,11 +720,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci --ignore-scripts
-
-      - name: Install Playwright browsers
-        uses: ./.github/actions/setup-playwright
-        with:
-          with-deps: true
 
       - name: Run all journey commit-count probes
         env:

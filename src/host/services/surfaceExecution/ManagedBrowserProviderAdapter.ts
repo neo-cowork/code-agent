@@ -465,20 +465,21 @@ export class ManagedBrowserProviderAdapter {
       && Boolean(binding.browserService.getActiveTab())
     ));
     // N-BROWSER-KEEP-RESULT-PAGE: a user run claims (adopts) the conversation's
-    // kept result window WITHOUT navigating — the live page with its submitted
-    // state stays exactly as the agent left it. Stale entries (window died
+    // kept result window WITHOUT navigating. Stale entries (window died
     // without a close event) flip to closed and the user path continues.
     let keptService: BrowserService | null = null;
     let keptServiceKey: string | null = null;
-    if (!shared && isUserRun(identity)) {
-      const kept = this.keptRegistry.getAlive(identity.conversationId);
+    if (!shared) {
+      const kept = isUserRun(identity) ? this.keptRegistry.getAlive(identity.conversationId)
+        : this.keptRegistry.getParkedAlive(identity.conversationId);
       if (kept) {
         const candidate = this.acquireBrowser(kept.serviceKey);
         if (candidate.isRunning() && candidate.getActiveTab()) {
           keptService = candidate;
           keptServiceKey = kept.serviceKey;
+          if (!isUserRun(identity)) this.keptRegistry.unpark(identity.conversationId);
         } else {
-          this.keptRegistry.markClosed(identity.conversationId);
+          this.keptRegistry.markClosed(identity.conversationId, kept.serviceKey);
         }
       }
     }
@@ -698,8 +699,7 @@ export class ManagedBrowserProviderAdapter {
       if (activeTab?.url) {
         this.keptRegistry.refreshTarget(
           binding.identity.conversationId,
-          activeTab.url,
-          activeTab.title || '',
+          activeTab.url, activeTab.title || '', binding.serviceKey,
         );
       }
       browserPool.setInUse(binding.serviceKey, false);
