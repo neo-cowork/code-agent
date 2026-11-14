@@ -55,6 +55,24 @@ export function isProvisionalAutoTitle(title: string | null | undefined, sourceT
   return sourceText.startsWith(slice) || sourceText.trimStart().startsWith(slice);
 }
 
+/**
+ * 云端 sessions 行回灌本地的标题守卫（FB-1089）：云端行只在新会话时写过 web 首轮的
+ * 自动标题（buildSessionTitle 30 字截断；≤30 字 prompt 原样入列不带 `...`），此后
+ * 每轮只顶 updated_at——时间戳上永远「更新」。本地标题已定档（智能标题或用户命名，
+ * 非占位、非截断）而云端仍是这类自动产物时保留本地；云端是真改名（非自动档）时
+ * 照旧云端取胜。sourceText 传会话第一条可见用户消息原文。
+ */
+export function shouldKeepLocalTitleOverCloud(
+  localTitle: string | null | undefined,
+  cloudTitle: string | null | undefined,
+  sourceText: string,
+): boolean {
+  const cloudIsAutoTitle = isProvisionalAutoTitle(cloudTitle, sourceText)
+    || (typeof cloudTitle === 'string' && cloudTitle.trim() === sourceText.trim());
+  if (!cloudIsAutoTitle) return false;
+  return !isProvisionalAutoTitle(localTitle, sourceText);
+}
+
 /** 小模型不可用时的标题：首行，最多 50 字，超出加 `...`。 */
 export function deriveFallbackSessionTitle(sourceText: string, language: TitleLanguage = 'zh'): string {
   const firstLine = sessionTitleSource(sourceText, language).trim().split('\n')[0] || APPSHOT_SESSION_TITLE[language];
