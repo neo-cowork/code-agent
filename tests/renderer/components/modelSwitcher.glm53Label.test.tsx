@@ -189,6 +189,19 @@ describe('ModelSwitcher GLM-5.3 label', () => {
     expect(visibleText().split('\n').filter((line) => CJK.test(line))).toEqual([]);
   });
 
+  it.each(['zh', 'en'] as const)('names model capabilities in the UI language on hover instead of raw keys (%s)', async (language) => {
+    ui.language = language;
+    appState.modelConfig.provider = 'xiaomi';
+    installDomainApi(xiaomiSettings);
+    render(<ModelSwitcher currentModel="mimo-v2.5-pro" />);
+    const text = (language === 'en' ? en : zh).settings.model.models.switcherPanel;
+    fireEvent.click(screen.getByRole('button', { name: text.triggerAria }));
+    await waitFor(() => expect(document.body.querySelectorAll('[data-model-option-index]').length).toBeGreaterThan(1));
+    const titles = Array.from(document.body.querySelectorAll('[data-model-option-index] [title]')).map((el) => el.getAttribute('title'));
+    expect(titles).toContain(text.capabilities.tool);
+    for (const raw of ['tool', 'vision', 'reasoning', 'code', 'fast', 'longContext']) expect(titles).not.toContain(raw);
+  });
+
   it('English UI: the adaptive trigger label, the empty state, the engine picker and the helper badges contain no Chinese text', async () => {
     ui.language = 'en';
     appState.modelConfig.provider = 'xiaomi';

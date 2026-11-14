@@ -178,6 +178,7 @@ export const zhSettingsModels = {
           openModelSettings: '去模型设置',
           noMatch: '无匹配模型',
           restoreMain: '恢复主任务模型',
+          capabilities: { code: '写代码', vision: '识图', tool: '工具调用', reasoning: '深度思考', fast: '响应快', longContext: '长上下文' },
           providerStatusAria: 'Provider 状态: {label}',
           switchFailed: '模型切换失败: {reason}。请检查 API Key 或网络连接',
           unknownError: '未知错误',

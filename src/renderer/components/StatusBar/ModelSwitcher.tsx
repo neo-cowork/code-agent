@@ -894,7 +894,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                                     <span
                                       key={cap}
                                       className={`inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded ${cfg.color}`}
-                                      title={cap}
+                                      title={panelText.capabilities[cap as keyof typeof panelText.capabilities] ?? cap}
                                     >
                                       {cfg.icon}
                                     </span>

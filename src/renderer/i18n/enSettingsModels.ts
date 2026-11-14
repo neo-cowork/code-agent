@@ -177,6 +177,7 @@ export const enSettingsModels = {
           openModelSettings: 'Open model settings',
           noMatch: 'No matching models',
           restoreMain: 'Restore the main task model',
+          capabilities: { code: 'Coding', vision: 'Vision', tool: 'Tool calling', reasoning: 'Reasoning', fast: 'Fast', longContext: 'Long context' },
           providerStatusAria: 'Provider status: {label}',
           switchFailed: 'Could not switch the model: {reason}. Check the API key or your network connection.',
           unknownError: 'unknown error',
