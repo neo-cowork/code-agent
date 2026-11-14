@@ -25,7 +25,7 @@ import { getComputerSurface } from '../services/desktop/computerSurface';
 import { startDesktopVisionAnalyzer } from '../services/desktop/desktopVisionAnalyzer';
 import { startDesktopAudioCapture, stopDesktopAudioCapture, getAudioCaptureStatus, clearAudioRecordings, getSqlitePath } from '../services/desktop/desktopAudioCapture';
 import { MeetingSession, createSqliteMeetingStore } from '../services/desktop/meetingSession';
-import type { AudioCaptureMissingPrerequisiteCode, AudioCaptureMode, AudioCapturePrerequisites } from '@shared/contract/audioCapture';
+import type { AudioCaptureMissingPrerequisiteCode, AudioCaptureMode, AudioCapturePrerequisites, MeetingImportCandidate } from '@shared/contract/audioCapture';
 import { browserService } from '../services/infra/browserService';
 import { browserRelayService } from '../services/infra/browserRelayService';
 import {
@@ -596,8 +596,37 @@ const desktopHandlers: RawDomainRouteHandlers<DesktopDomainRequest, NativeDeskto
   getMeetingStatus: async (_service, _raw) => {
     return { success: true, data: meetingSession.status() } satisfies IPCResponse<unknown>;
   },
+  // 会议页（N-MEETING-PAGE）：列表带纪要状态，详情带整场转写；导入后与本机录的会一样按设置自动出纪要
   listMeetings: async (_service, _raw) => {
-    return { success: true, data: meetingSession.list() } satisfies IPCResponse<unknown>;
+    meetingSession.status(); // 先收尾上次意外退出没走完的会，列表里才不会挂着「记录中」
+    const { getMeetingRecordStore } = await import('../services/desktop/meetingRecordsDefault');
+    return { success: true, data: (await getMeetingRecordStore()).list(50) } satisfies IPCResponse<unknown>;
+  },
+  getMeetingDetail: async (_service, raw) => {
+    const id = typeof (raw as { id?: unknown } | undefined)?.id === 'string' ? (raw as { id: string }).id : '';
+    const { getMeetingRecordStore } = await import('../services/desktop/meetingRecordsDefault');
+    const store = await getMeetingRecordStore();
+    const meeting = id ? store.get(id) : null;
+    if (!meeting) return { success: false, error: { code: 'NOT_FOUND', message: 'meeting not found' } } satisfies IPCResponse<unknown>;
+    return { success: true, data: { meeting, transcript: store.transcript(meeting) } } satisfies IPCResponse<unknown>;
+  },
+  regenerateMeetingMinutes: async (_service, raw) => {
+    const id = typeof (raw as { id?: unknown } | undefined)?.id === 'string' ? (raw as { id: string }).id : '';
+    if (!id) return { success: false, error: { code: 'INVALID_ARGS', message: 'id is required' } } satisfies IPCResponse<unknown>;
+    const { enqueueMeetingMinutes } = await import('../services/desktop/meetingMinutes');
+    enqueueMeetingMinutes(id, true);
+    return { success: true, data: { queued: true } } satisfies IPCResponse<unknown>;
+  },
+  listMeetingImportCandidates: async (_service, _raw) => {
+    const { listMeetingImportCandidates, defaultImportDeps } = await import('../services/desktop/meetingImport');
+    return { success: true, data: await listMeetingImportCandidates(await defaultImportDeps()) } satisfies IPCResponse<unknown>;
+  },
+  importMeeting: async (_service, raw) => {
+    const { importMeeting, defaultImportDeps } = await import('../services/desktop/meetingImport');
+    const { enqueueMeetingMinutes } = await import('../services/desktop/meetingMinutes');
+    const result = await importMeeting(raw as MeetingImportCandidate, await defaultImportDeps());
+    if (result.created) enqueueMeetingMinutes(result.id);
+    return { success: true, data: result } satisfies IPCResponse<unknown>;
   },
   clearAudioRecordings: async (_service, _raw) => {
     return { success: true, data: clearAudioRecordings() } satisfies IPCResponse<unknown>;

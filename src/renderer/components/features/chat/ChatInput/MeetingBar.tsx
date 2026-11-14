@@ -27,6 +27,7 @@ export const MeetingBar: React.FC = () => {
   const text = t.meetingBar;
   const { status, busy, error, dismissedEndedId, refresh, pause, resume, stop, dismiss } = useMeetingSessionStore();
   const openSettingsTab = useAppStore((s) => s.openSettingsTab);
+  const openMeetingPage = useAppStore((s) => s.openMeetingPage);
   const current = status?.current ?? null;
   const [now, setNow] = useState(() => Date.now());
 
@@ -59,7 +60,8 @@ export const MeetingBar: React.FC = () => {
 
   if (!current) {
     const ended = status?.lastEnded;
-    if (!ended || ended.id === dismissedEndedId || ended.endReason === 'manual' || !ended.endReason) return null;
+    // 手动结束也提示：散会后从这里进会议页看纪要（N-MEETING-PAGE）
+    if (!ended || ended.id === dismissedEndedId || !ended.endReason) return null;
     const msg = text.ended[ended.endReason]
       .replace('{minutes}', String(MEETING_SESSION_LIMITS.SILENCE_END_MS / MIN))
       .replace('{hours}', String(MEETING_SESSION_LIMITS.MAX_DURATION_MS / (60 * MIN)));
@@ -68,6 +70,7 @@ export const MeetingBar: React.FC = () => {
         <div className="flex items-center gap-2 whitespace-nowrap rounded-lg border border-zinc-600/40 bg-zinc-800/60 px-3 py-1.5 text-xs text-zinc-300">
           <Mic size={13} className="shrink-0 text-zinc-400" />
           <span className="min-w-0 flex-1 truncate">{ended.title} · {msg}</span>
+          <button type="button" className={barButton} data-testid="meeting-bar-open-page" onClick={() => { dismiss(); openMeetingPage(ended.id); }}>{t.library.meetings.openPage}</button>
           <button type="button" className={barButton} onClick={dismiss}>{text.dismiss}</button>
         </div>
       </div>

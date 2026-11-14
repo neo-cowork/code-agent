@@ -98,6 +98,19 @@ export interface MeetingRecordStore {
   /** 纪要进度；不碰 updated_at_ms（那是「记这场会」的心跳，意外退出收尾要用） */
   setMinutesState(id: string, state: MeetingMinutesState, minutesSessionId?: string | null): void;
   saveMinutes(id: string, minutes: MeetingMinutes): void;
+  /** 导入外部转写成一场会；同一来源同一外部编号导入过就返回原来那场，不重复建 */
+  importMeeting(input: ImportedMeetingInput): { id: string; created: boolean };
+}
+
+export interface ImportedMeetingInput {
+  source: Exclude<MeetingSource, 'recorded'>;
+  externalRef: string;
+  title: string;
+  startedAtMs: number;
+  endedAtMs: number;
+  lines: MeetingTranscriptLine[];
+  /** 写入时刻；缺省现在 */
+  nowMs?: number;
 }
 
 export function createMeetingRecordStore(run: MeetingSqlRunner): MeetingRecordStore {
@@ -179,6 +192,15 @@ export function createMeetingRecordStore(run: MeetingSqlRunner): MeetingRecordSt
     },
     saveMinutes(id, minutes) {
       exec(`UPDATE meetings SET minutes_json = ${q(JSON.stringify(minutes))}, minutes_state = 'done' WHERE id = ${q(id)};`);
+    },
+    importMeeting(input) {
+      const found = exec(`SELECT id FROM meetings WHERE source = ${q(input.source)} AND external_ref = ${q(input.externalRef)} LIMIT 1;`, true);
+      const existing = found ? (JSON.parse(found) as Array<{ id: string }>)[0]?.id : undefined;
+      if (existing) return { id: existing, created: false };
+      const now = input.nowMs ?? Date.now();
+      const id = `meeting-${input.source}-${input.externalRef}`;
+      exec(`INSERT INTO meetings (id, title, started_at_ms, ended_at_ms, state, end_reason, updated_at_ms, source, external_ref, imported_transcript) VALUES (${q(id)}, ${q(input.title)}, ${Math.trunc(input.startedAtMs)}, ${Math.trunc(input.endedAtMs)}, 'ended', NULL, ${Math.trunc(now)}, ${q(input.source)}, ${q(input.externalRef)}, ${q(JSON.stringify(input.lines))});`);
+      return { id, created: true };
     },
   };
 }

@@ -83,6 +83,23 @@ export interface MeetingSummaryRecord extends MeetingRecord {
   minutesSessionId: string | null;
 }
 
+/** 会议页读一场会：概要 + 整场转写 */
+export interface MeetingDetail {
+  meeting: MeetingSummaryRecord;
+  transcript: MeetingTranscriptLine[];
+}
+
+/** 导入对话框里一条可导入的外部会议：妙记 token，或腾讯会议录制文件 id */
+export interface MeetingImportCandidate {
+  source: 'feishu' | 'tmeet';
+  ref: string;
+  /** 腾讯会议的会议 id（取转写要带） */
+  meetingId?: string;
+  title: string;
+  startedAtMs: number | null;
+  endedAtMs?: number | null;
+}
+
 export interface MeetingSessionStatus {
   /** 正在进行（记录中或暂停）的会；没有则 null */
   current: MeetingRecord | null;

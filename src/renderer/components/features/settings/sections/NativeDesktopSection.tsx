@@ -15,7 +15,6 @@ import {
   Image as ImageIcon,
   X,
   FileText,
-  ArrowLeft,
   Mic,
   MicOff,
   Volume2,
@@ -37,6 +36,7 @@ import {
   type AudioCaptureStatus,
   type DesktopActivityEvent,
   type NativeDesktopCollectorStatus,
+  listMeetingRecords,
 } from '../../../../services/nativeDesktop';
 
 import {
@@ -45,7 +45,6 @@ import {
   build24HourBlocks,
   buildMeetingAppNameSet,
   clusterAppsByDuration,
-  clusterAudioTopics,
   formatAnalysisText,
   formatDate,
   formatDurationShort,
@@ -64,6 +63,7 @@ import { getAudioCaptureErrorText } from './audioCaptureError';
 import { MeetingAutoMinutesToggle } from './MeetingAutoMinutesToggle';
 import { AudioRetentionFailureLine } from './audioRetentionFailure';
 import { useI18n } from '../../../../hooks/useI18n';
+import { useAppStore } from '../../../../stores/appStore';
 import { interpolate } from '../../../../i18n/interpolate';
 import { resolveScreenshotUrl } from '../../../../utils/resolveFileUrl';
 
@@ -178,158 +178,14 @@ const HourSlot: React.FC<{
   );
 };
 
-// ============================================================================
-// Meeting detail panel (full overlay)
-// ============================================================================
-
-const MeetingDetailPanel: React.FC<{
-  appName: string;
-  audioSegs: AudioSegment[];
-  text: NativeDesktopText;
-  onClose: () => void;
-}> = ({ appName, audioSegs, text, onClose }) => {
-  const topics = useMemo(() => clusterAudioTopics(audioSegs, text.topics), [audioSegs, text]);
-  const [activeTopic, setActiveTopic] = useState<number>(0);
-  const transcriptRefs = useRef<Map<number, HTMLDivElement>>(new Map());
-
-  const totalDuration = audioSegs.length > 0
-    ? audioSegs[audioSegs.length - 1].end_at_ms - audioSegs[0].start_at_ms
-    : 0;
-  const speakerIds = useMemo(() => {
-    const ids = new Set<number>();
-    for (const s of audioSegs) if (s.speaker_id && s.speaker_id > 0) ids.add(s.speaker_id);
-    return Array.from(ids).sort();
-  }, [audioSegs]);
-
-  const scrollToTopic = (idx: number) => {
-    setActiveTopic(idx);
-    const firstSeg = topics[idx]?.segments[0];
-    if (firstSeg) {
-      const el = transcriptRefs.current.get(audioSegs.indexOf(firstSeg));
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  };
-
-  return (
-    <div className="absolute inset-0 z-20 bg-zinc-900 flex flex-col">
-      {/* Header */}
-      <div className="flex items-center gap-3 px-5 py-3 border-b border-zinc-700/50 shrink-0">
-        <button /* ds-allow:button: 会议详情返回按钮，纯图标 p-1，primitive 变体会改变尺寸与外观 */ onClick={onClose} className="p-1 rounded hover:bg-zinc-700/50 text-zinc-400 hover:text-zinc-200">
-          <ArrowLeft className="w-4 h-4" />
-        </button>
-        <div className={`w-6 h-6 rounded-lg flex items-center justify-center text-white text-[10px] font-medium ${appColor(appName)}`}>
-          {appInitial(appName)}
-        </div>
-        <div>
-          <div className="text-sm font-medium text-zinc-200">{appName}{text.separator}{text.meetingDetails}</div>
-          <div className="text-[11px] text-zinc-500">
-            {audioSegs.length}{text.units.speechSegmentSuffix}{text.separator}{formatDurationShort(totalDuration, text.duration)}
-            {speakerIds.length > 0 && `${text.separator}${speakerIds.length}${text.units.speakerCountSuffix}`}
-          </div>
-        </div>
-      </div>
-
-      {/* Body: left topics + right transcript */}
-      <div className="flex flex-1 min-h-0">
-        {/* Left: topic timeline */}
-        <div className="w-[200px] border-r border-zinc-700/30 overflow-y-auto shrink-0 py-3">
-          {/* Speaker legend */}
-          {speakerIds.length > 0 && (
-            <div className="px-4 pb-3 mb-3 border-b border-zinc-800/50">
-              <div className="text-[10px] text-zinc-600 mb-1.5">{text.speaker}</div>
-              <div className="space-y-1">
-                {speakerIds.map((id) => {
-                  const style = speakerStyle(id);
-                  return (
-                    <div key={id} className="flex items-center gap-1.5">
-                      <div className={`w-2.5 h-2.5 rounded-full ${style.dot}`} />
-                      <span className={`text-[11px] ${style.text}`}>{speakerName(id, text)}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Topic list */}
-          <div className="px-2 space-y-0.5">
-            {topics.map((topic, idx) => (
-              <button /* ds-allow:button: 话题列表项，全宽左对齐多行内容+选中态边框，primitive 居中变体不兼容 */
-                key={idx}
-                onClick={() => scrollToTopic(idx)}
-                className={`w-full text-left px-2.5 py-2 rounded-lg transition-colors ${
-                  activeTopic === idx
-                    ? 'bg-cyan-500/10 border border-badge-info/20'
-                    : 'hover:bg-zinc-800/60 border border-transparent'
-                }`}
-              >
-                <div className="text-[10px] text-zinc-600 font-mono">
-                  {formatTime(topic.startMs)} - {formatTime(topic.endMs)}
-                </div>
-                <div className="text-[12px] text-zinc-300 mt-0.5 line-clamp-2 leading-snug">
-                  {topic.label}
-                </div>
-                <div className="text-[10px] text-zinc-600 mt-0.5">
-                  {topic.segments.length}{text.units.segmentSuffix}
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Right: full transcript */}
-        <div className="flex-1 overflow-y-auto py-4 px-5">
-          <div className="space-y-1">
-            {audioSegs.map((seg, idx) => {
-              const spkId = seg.speaker_id && seg.speaker_id > 0 ? seg.speaker_id : 0;
-              const style = spkId > 0 ? speakerStyle(spkId) : null;
-
-              // Check if we're entering a new topic — insert topic header
-              let topicHeader: string | null = null;
-              for (const topic of topics) {
-                if (topic.segments[0] === seg) {
-                  topicHeader = topic.label;
-                  break;
-                }
-              }
-
-              return (
-                <React.Fragment key={seg.id}>
-                  {topicHeader && (
-                    <div className="flex items-center gap-2 pt-4 pb-2 first:pt-0">
-                      <div className="h-px flex-1 bg-zinc-700/50" />
-                      <span className="text-[10px] text-zinc-500 shrink-0">{topicHeader}</span>
-                      <div className="h-px flex-1 bg-zinc-700/50" />
-                    </div>
-                  )}
-                  <div
-                    ref={(el) => { if (el) transcriptRefs.current.set(idx, el); }}
-                    className="flex gap-3 py-1.5 group"
-                  >
-                    <span className="text-zinc-600 font-mono text-[11px] w-11 shrink-0 text-right pt-0.5">
-                      {formatTime(seg.start_at_ms)}
-                    </span>
-                    {style ? (
-                      <div className={`shrink-0 w-16 flex items-center gap-1 pt-0.5`}>
-                        <div className={`w-2 h-2 rounded-full shrink-0 ${style.dot}`} />
-                        <span className={`text-[10px] font-medium ${style.text}`}>
-                          {speakerName(spkId, text)}
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="w-16 shrink-0" />
-                    )}
-                    <span className="text-[13px] text-zinc-300 leading-relaxed">{seg.transcript}</span>
-                  </div>
-                </React.Fragment>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
+// 会议详情已搬到资料库的会议页（N-MEETING-PAGE，features/meetings/MeetingPage.tsx）：
+// 这里的入口按录音时刻找到对应的那场会打开，找不到就打开会议列表。
+async function openMeetingCovering(segs: AudioSegment[]): Promise<void> {
+  const at = segs[0]?.start_at_ms;
+  const meetings = await listMeetingRecords().catch(() => []);
+  const hit = at === undefined ? undefined : meetings.find((m) => m.startedAtMs <= at && (m.endedAtMs ?? Number.MAX_SAFE_INTEGER) >= at);
+  useAppStore.getState().openMeetingPage(hit?.id ?? null);
+}
 
 // ============================================================================
 // Right: hour detail panel
@@ -503,7 +359,6 @@ const HourDetailPanel: React.FC<{
   const [audioSegs, setAudioSegs] = useState<AudioSegment[]>([]);
   const [dayAudioCount, setDayAudioCount] = useState<number>(0);
   const [collapsedApps, setCollapsedApps] = useState<Set<string>>(new Set());
-  const [meetingDetailApp, setMeetingDetailApp] = useState<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const appGroupRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
@@ -522,7 +377,6 @@ const HourDetailPanel: React.FC<{
   // Reset state when hour changes
   useEffect(() => {
     setCollapsedApps(new Set());
-    setMeetingDetailApp(null);
   }, [block.hour]);
 
   const appClusters = useMemo(() => clusterAppsByDuration(block.segments, 30), [block.segments]);
@@ -676,22 +530,12 @@ const HourDetailPanel: React.FC<{
                 text={text}
                 onToggle={() => toggleApp(cluster.appName)}
                 onScreenshotClick={(p) => setLightboxPath(p)}
-                onOpenMeeting={isMeeting && clusterAudioSegs.length > 0 ? () => setMeetingDetailApp(cluster.appName) : undefined}
+                onOpenMeeting={isMeeting && clusterAudioSegs.length > 0 ? () => { void openMeetingCovering(clusterAudioSegs); } : undefined}
               />
             </div>
           );
         })}
       </div>
-
-      {/* Meeting detail overlay */}
-      {meetingDetailApp && (
-        <MeetingDetailPanel
-          appName={meetingDetailApp}
-          audioSegs={audioSegs}
-          text={text}
-          onClose={() => setMeetingDetailApp(null)}
-        />
-      )}
 
       {lightboxPath && <ScreenshotLightbox path={lightboxPath} onClose={() => setLightboxPath(null)} />}
     </div>
