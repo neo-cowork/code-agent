@@ -144,6 +144,22 @@ function writeStepSummary(markdown) {
   writeFileSync(file, `${markdown.endsWith('\n') ? markdown : `${markdown}\n`}`, { flag: 'a' });
 }
 
+function formatCommitTrace(trace) {
+  if (!Array.isArray(trace)) return null;
+  if (trace.length === 0) return '(empty)';
+  return trace
+    .map((entry) => `#${entry.index} ${entry.phase}@${Number(entry.startMs).toFixed(1)}ms/${Number(entry.actualDurationMs).toFixed(1)}ms`)
+    .join(' | ');
+}
+
+function formatEnvironment(env) {
+  if (!env || typeof env !== 'object' || Array.isArray(env)) return null;
+  const viewport = env.viewport && typeof env.viewport === 'object'
+    ? `${env.viewport.width}x${env.viewport.height}`
+    : 'unknown';
+  return `viewport=${viewport} devicePixelRatio=${env.devicePixelRatio} fontsLoaded=${env.fontsLoaded} bodyFontFamily=${JSON.stringify(env.bodyFontFamily)} userAgent=${JSON.stringify(env.userAgent)}`;
+}
+
 function formatSummary({ comparisons, increases, decreases }) {
   const rows = comparisons.map((entry) => {
     const delta = entry.current - entry.reference;
@@ -163,6 +179,18 @@ function formatSummary({ comparisons, increases, decreases }) {
   ];
   if (increases.length) {
     lines.push(`**Regressions (blocking):** ${increases.map((entry) => `${entry.journey} ${entry.reference} → ${entry.current}`).join(', ')}`, '');
+    const detailLines = [];
+    for (const entry of increases) {
+      if (entry.commitTrace !== null) {
+        detailLines.push(`- \`${entry.journey}\` commit-trace: \`${entry.commitTrace}\``);
+      }
+      if (entry.environment !== null) {
+        detailLines.push(`- \`${entry.journey}\` environment: \`${entry.environment}\``);
+      }
+    }
+    if (detailLines.length) {
+      lines.push(...detailLines, '');
+    }
   }
   if (decreases.length) {
     lines.push(`**Can tighten:** ${decreases.map((entry) => `${entry.journey} ${entry.reference} → ${entry.current}`).join(', ')}`, '');
@@ -205,10 +233,18 @@ for (const report of reports) {
   const reference = baseline.journeys[report.journey].commitCount;
   const current = report.commitCount;
   const delta = current - reference;
+  const commitTrace = formatCommitTrace(report.commitTrace);
+  const environment = formatEnvironment(report.environment);
   comparisons.push({ journey: report.journey, current, reference, delta });
   console.log(`[perf-journey-ratchet] ${report.journey} commitCount current=${current} baseline=${reference} wallClockMs=${report.wallClockMs} longTaskCount=${report.longTaskCount} hotRenderCount=${report.hotRenderCount}`);
+  if (commitTrace !== null) {
+    console.log(`[perf-journey-ratchet] ${report.journey} commit-trace: ${commitTrace}`);
+  }
+  if (environment !== null) {
+    console.log(`[perf-journey-ratchet] ${report.journey} environment: ${environment}`);
+  }
   if (current > reference) {
-    increases.push({ journey: report.journey, current, reference, delta });
+    increases.push({ journey: report.journey, current, reference, delta, commitTrace, environment });
     console.error(`[perf-journey-ratchet] ✗ ${report.journey} commitCount 上升：${reference} -> ${current} (+${delta})。这是确定性计数回归，禁止合入；把多余 commit 从热路径拿掉。`);
   } else if (current < reference) {
     decreases.push({ journey: report.journey, current, reference, delta });
