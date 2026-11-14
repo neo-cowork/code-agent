@@ -22,6 +22,8 @@ export interface PermissionGrantEntry {
   kind: PermissionGrantKind;
   label: string;
   detail?: string;
+  /** Connector-wide read scope, distinct from the target detail. */
+  connectorAccess?: 'read';
   source: string;
   grantedAt: number;
   expiresAt: number | null;
