@@ -374,11 +374,11 @@ describe('N-PERMTRACE 审批拒绝路径可观测性', () => {
     expect(result.error).toContain('--dangerously-skip-permissions');
   });
 
-  it('对照组：真人拒绝（裸 boolean false）仍记 user，文案不变', async () => {
+  it('对照组：真人拒绝（裸 boolean false）仍记 user，模型必须先问用户', async () => {
     const { result, entry } = await denyOnce(vi.fn().mockResolvedValue(false));
 
     expect(entry).toMatchObject({ outcome: 'ask-denied', reason: 'user' });
-    expect(result.error).toBe('Permission denied by user');
+    expect(result.error).toBe('Permission denied by user. The user just declined this kind of action. Do not request approval for the same goal again by rewording it or changing the command or arguments. First ask the user one short question about how to proceed: use AskUserQuestion if available, otherwise your final message. For unattended, scheduled or background runs, put that question in your final message. Wait for a new user message before requesting approval for this kind of action again.');
   });
 
   it('无人值守降级拒绝的说明原样作为工具结果交给模型', async () => {
