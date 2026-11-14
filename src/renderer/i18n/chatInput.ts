@@ -6,6 +6,7 @@ import { turnFeedbackWhyEn, turnFeedbackWhyZh } from './turnFeedbackWhy';
 import { evalBridgeEn, evalBridgeZh } from './evalBridge';
 import { wakeRationaleEn, wakeRationaleZh } from './wakeRationale';
 import { durableStoppedEn, durableStoppedZh } from './durableStopped';
+import { unsentDraftCopyEn, unsentDraftCopyZh } from './unsentDraft';
 // Chat 输入区词条（ChatInput index / InputArea / AttachmentBar / SendButton /
 // useFileUpload / ScheduleComposerCard / 长尾组件与 hook）—— zh/en 同文件相邻维护。
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮（同 chatTranscript.ts 先例）。
@@ -101,9 +102,7 @@ export const chatInputZh = {
     importedNoticeNoAnchor: '这段导入的对话还没有可以续接的助手回复，暂时无法在这里继续。',
     importedSendBlocked: '暂时无法继续：这段导入的对话还没有可以续接的助手回复。',
     importedForkFailed: '没能开启续接会话：{reason}',
-    unsentDraftNotice: '上次输入框里还有一段内容：「{preview}」',
-    unsentDraftPutBack: '放回输入框',
-    unsentDraftDiscard: '丢弃',
+    ...unsentDraftCopyZh,
   },
   scheduleComposer: {
     title: '创建定时任务',
@@ -599,9 +598,7 @@ export const chatInputEn: typeof chatInputZh = {
     importedNoticeNoAnchor: 'This imported chat has no assistant reply to continue from yet.',
     importedSendBlocked: 'Cannot continue yet: this imported chat has no assistant reply to continue from.',
     importedForkFailed: 'Could not open a continuation session: {reason}',
-    unsentDraftNotice: 'There is still text from the input box: "{preview}"',
-    unsentDraftPutBack: 'Put it back in the input',
-    unsentDraftDiscard: 'Discard',
+    ...unsentDraftCopyEn,
   },
   scheduleComposer: {
     title: 'Create scheduled task',

@@ -1,5 +1,8 @@
-// Per-session idle composer text. Attachments, voice, and @refs are not stored.
-// localStorage only — the queued_inputs table is for messages already handed to the host.
+// Per-session idle composer draft (text + inline attachments within budget).
+// Voice and @refs are not stored. localStorage only — queued_inputs is for messages handed to host.
+
+import { COMPOSER_DRAFT_ATTACHMENT_BUDGET_BYTES, UI } from '@shared/constants';
+import type { MessageAttachment } from '@shared/contract';
 
 export const COMPOSER_DRAFT_DEBOUNCE_MS = 400;
 const COMPOSER_DRAFT_PREVIEW_LIMIT = 40;
@@ -18,9 +21,22 @@ interface ComposerDraftStorage {
   removeItem(key: string): void;
 }
 
-interface StoredComposerDraft {
+interface StoredComposerDraftV1 {
   v: 1;
   text: string;
+}
+
+interface StoredComposerDraftV2 {
+  v: 2;
+  text: string;
+  attachments?: MessageAttachment[];
+  dropped?: string[];
+}
+
+export interface ComposerDraftEntry {
+  text: string;
+  attachments: MessageAttachment[];
+  dropped: string[];
 }
 
 interface ComposerDraftFlushTarget {
@@ -35,17 +51,63 @@ interface ComposerDraftVisibilityTarget extends ComposerDraftFlushTarget {
 interface PendingDraftWrite {
   key: string | null;
   text: string;
+  attachments: readonly MessageAttachment[];
   isSendInFlight: () => boolean;
 }
 
 export interface ComposerDraftWriter {
-  schedule(key: string | null, text: string, isSendInFlight: () => boolean): void;
-  /** Drop the timer and write this pair now. Empty text does not delete while a send is in flight. */
-  flushNow(key: string | null, text: string, isSendInFlight: () => boolean): void;
+  schedule(
+    key: string | null,
+    text: string,
+    isSendInFlight: () => boolean,
+    attachments?: readonly MessageAttachment[],
+  ): void;
+  /** Drop the timer and write this draft now. Empty draft does not delete while a send is in flight. */
+  flushNow(
+    key: string | null,
+    text: string,
+    isSendInFlight: () => boolean,
+    attachments?: readonly MessageAttachment[],
+  ): void;
   /** Write whatever schedule() last queued. Used on page hide and before a session switch. */
   flushPending(): void;
   cancel(): void;
   dispose(): void;
+}
+
+const utf8Encoder = new TextEncoder();
+
+function utf8ByteLength(value: string): number {
+  return utf8Encoder.encode(value).byteLength;
+}
+
+function sanitizeAttachmentDisplayName(name: string): string {
+  const trimmed = name.trim();
+  const base = trimmed.split(/[\\/]/).pop()?.trim();
+  return base || trimmed || 'attachment';
+}
+
+function isValidDraftAttachment(value: unknown): value is MessageAttachment {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<MessageAttachment>;
+  return (
+    typeof candidate.id === 'string'
+    && candidate.id.length > 0
+    && (candidate.type === 'image' || candidate.type === 'file')
+    && typeof candidate.category === 'string'
+    && typeof candidate.name === 'string'
+    && typeof candidate.size === 'number'
+    && typeof candidate.mimeType === 'string'
+    // An inline image with no data cannot be shown again; treat it as unreadable.
+    && (candidate.type !== 'image' || (typeof candidate.data === 'string' && candidate.data.length > 0))
+  );
+}
+
+/** Name of a stored attachment that failed validation, so the notice can say it was not restored. */
+function unreadableAttachmentName(value: unknown): string | null {
+  if (!value || typeof value !== 'object') return null;
+  const name = (value as { name?: unknown }).name;
+  return sanitizeAttachmentDisplayName(typeof name === 'string' ? name : '');
 }
 
 export function composerDraftStorageKey(
@@ -68,10 +130,17 @@ function hasDraftText(text: string): boolean {
   return text.trim().length > 0;
 }
 
-export function readComposerDraft(
+export function hasComposerDraftContent(
+  text: string,
+  attachments: readonly MessageAttachment[] = [],
+): boolean {
+  return hasDraftText(text) || attachments.length > 0;
+}
+
+export function readComposerDraftEntry(
   key: string | null,
   storage?: Pick<ComposerDraftStorage, 'getItem'>,
-): string | null {
+): ComposerDraftEntry | null {
   if (!key) return null;
   // Boot code also runs where localStorage does not exist (node tests, SSR): no storage = no draft.
   const source = storage ?? (typeof localStorage === 'undefined' ? null : localStorage);
@@ -79,34 +148,119 @@ export function readComposerDraft(
   try {
     const raw = source.getItem(key);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<StoredComposerDraft>;
-    if (parsed.v !== 1 || typeof parsed.text !== 'string' || !hasDraftText(parsed.text)) return null;
-    return parsed.text;
+    const parsed = JSON.parse(raw) as Partial<StoredComposerDraftV1 | StoredComposerDraftV2>;
+    if (parsed.v === 1) {
+      if (typeof parsed.text !== 'string' || !hasDraftText(parsed.text)) return null;
+      return { text: parsed.text, attachments: [], dropped: [] };
+    }
+    if (parsed.v === 2) {
+      if (typeof parsed.text !== 'string') return null;
+      const storedAttachments: unknown[] = Array.isArray(parsed.attachments) ? parsed.attachments : [];
+      const validAttachments = storedAttachments.filter(isValidDraftAttachment);
+      const unreadableNames = storedAttachments
+        .filter((item) => !isValidDraftAttachment(item))
+        .map((item) => unreadableAttachmentName(item) ?? '')
+        .filter((name) => name.length > 0);
+      const attachments = validAttachments.slice(0, UI.MAX_ATTACHMENTS_DROP);
+      const overflowNames = validAttachments
+        .slice(UI.MAX_ATTACHMENTS_DROP)
+        .map((att) => sanitizeAttachmentDisplayName(att.name));
+      const parsedDropped = Array.isArray(parsed.dropped)
+        ? parsed.dropped
+          .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+          .map(sanitizeAttachmentDisplayName)
+        : [];
+      const dropped = [...parsedDropped, ...unreadableNames, ...overflowNames];
+      if (!hasDraftText(parsed.text) && attachments.length === 0 && dropped.length === 0) {
+        return null;
+      }
+      return { text: parsed.text, attachments, dropped };
+    }
+    return null;
   } catch {
     return null;
   }
 }
 
-/** Whitespace-only text is ignored: nothing is written and an existing value is left untouched. */
+export function readComposerDraft(
+  key: string | null,
+  storage?: Pick<ComposerDraftStorage, 'getItem'>,
+): string | null {
+  const entry = readComposerDraftEntry(key, storage);
+  return entry ? entry.text : null;
+}
+
+function buildStoredDraftV2(
+  text: string,
+  attachments: MessageAttachment[],
+  dropped: string[],
+): StoredComposerDraftV2 {
+  const payload: StoredComposerDraftV2 = { v: 2, text };
+  if (attachments.length > 0) payload.attachments = attachments;
+  if (dropped.length > 0) payload.dropped = dropped;
+  return payload;
+}
+
+/** Empty draft (no text, no attachments, no carried-over dropped names) is ignored. */
 function writeComposerDraft(
   key: string | null,
   text: string,
+  attachments: readonly MessageAttachment[] = [],
   storage: ComposerDraftStorage = localStorage,
-): boolean {
-  if (!key || !hasDraftText(text)) return false;
+  extraDropped: readonly string[] = [],
+): ComposerDraftEntry | null {
+  const cleanedExtra = extraDropped
+    .filter((name) => name.trim().length > 0)
+    .map(sanitizeAttachmentDisplayName);
+  if (!key || (!hasDraftText(text) && attachments.length === 0 && cleanedExtra.length === 0)) {
+    return null;
+  }
+
+  const kept: MessageAttachment[] = [];
+  const dropped: string[] = [...cleanedExtra];
+  let usedBytes = utf8ByteLength(JSON.stringify({ v: 2, text }));
+
+  for (const att of attachments) {
+    if (kept.length >= UI.MAX_ATTACHMENTS_DROP) {
+      dropped.push(sanitizeAttachmentDisplayName(att.name));
+      continue;
+    }
+    const attBytes = utf8ByteLength(JSON.stringify(att)) + 1;
+    if (usedBytes + attBytes <= COMPOSER_DRAFT_ATTACHMENT_BUDGET_BYTES) {
+      kept.push(att);
+      usedBytes += attBytes;
+    } else {
+      dropped.push(sanitizeAttachmentDisplayName(att.name));
+    }
+  }
+
   try {
-    const payload: StoredComposerDraft = { v: 1, text };
-    storage.setItem(key, JSON.stringify(payload));
-    return true;
+    storage.setItem(key, JSON.stringify(buildStoredDraftV2(text, kept, dropped)));
+    return { text, attachments: kept, dropped };
   } catch {
-    return false;
+    if (kept.length === 0) return null;
+    const allDropped = [
+      ...cleanedExtra,
+      ...attachments.map((att) => sanitizeAttachmentDisplayName(att.name)),
+    ];
+    try {
+      storage.setItem(key, JSON.stringify(buildStoredDraftV2(text, [], allDropped)));
+      return { text, attachments: [], dropped: allDropped };
+    } catch {
+      return null;
+    }
   }
 }
 
-/** Write only when the key holds no draft yet. Returns true when the key ends up holding this text. */
-export function writeComposerDraftIfAbsent(key: string | null, text: string): boolean {
-  if (readComposerDraft(key) !== null) return false;
-  return writeComposerDraft(key, text);
+/** Write only when the key holds no draft yet. Returns true when the key ends up holding this draft. */
+export function writeComposerDraftIfAbsent(
+  key: string | null,
+  text: string,
+  attachments: readonly MessageAttachment[] = [],
+  dropped: readonly string[] = [],
+): boolean {
+  if (readComposerDraftEntry(key) !== null) return false;
+  return writeComposerDraft(key, text, attachments, localStorage, dropped) !== null;
 }
 
 export function removeComposerDraft(
@@ -134,7 +288,7 @@ export function createComposerDraftWriter(options: {
   delayMs?: number;
   pageTarget?: ComposerDraftFlushTarget | null;
   visibilityTarget?: ComposerDraftVisibilityTarget | null;
-  onCommitted?: (key: string, text: string) => void;
+  onCommitted?: (key: string, entry: ComposerDraftEntry) => void;
   onRemoved?: (key: string) => void;
 } = {}): ComposerDraftWriter {
   const storage = options.storage ?? localStorage;
@@ -146,7 +300,7 @@ export function createComposerDraftWriter(options: {
 
   const commit = (entry: PendingDraftWrite): void => {
     if (!entry.key) return;
-    if (!hasDraftText(entry.text)) {
+    if (!hasComposerDraftContent(entry.text, entry.attachments)) {
       // Optimistic clear empties the box before anyone knows whether the send landed.
       // Deleting here would drop the only copy. A later success outcome removes it.
       if (entry.isSendInFlight()) return;
@@ -154,8 +308,9 @@ export function createComposerDraftWriter(options: {
       options.onRemoved?.(entry.key);
       return;
     }
-    if (writeComposerDraft(entry.key, entry.text, storage)) {
-      options.onCommitted?.(entry.key, entry.text);
+    const committed = writeComposerDraft(entry.key, entry.text, entry.attachments, storage);
+    if (committed) {
+      options.onCommitted?.(entry.key, committed);
     }
   };
 
@@ -183,8 +338,8 @@ export function createComposerDraftWriter(options: {
   visibilityTarget?.addEventListener('visibilitychange', onVisibility);
 
   return {
-    schedule(key, text, isSendInFlight) {
-      pending = { key, text, isSendInFlight };
+    schedule(key, text, isSendInFlight, attachments = []) {
+      pending = { key, text, attachments, isSendInFlight };
       cancelTimer();
       timer = setTimeout(() => {
         timer = null;
@@ -193,10 +348,10 @@ export function createComposerDraftWriter(options: {
         if (entry) commit(entry);
       }, delayMs);
     },
-    flushNow(key, text, isSendInFlight) {
+    flushNow(key, text, isSendInFlight, attachments = []) {
       pending = null;
       cancelTimer();
-      commit({ key, text, isSendInFlight });
+      commit({ key, text, attachments, isSendInFlight });
     },
     flushPending,
     cancel() {

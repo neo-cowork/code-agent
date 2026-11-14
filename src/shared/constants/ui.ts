@@ -43,6 +43,13 @@ export const UI = {
 } as const;
 
 /**
+ * 未发送输入框草稿的附件总体积预算（字节，UTF-8 JSON）。
+ * 浏览器同源 localStorage 配额通常约 5 MiB，单会话草稿控制在 2 MiB 以内；
+ * 超出的附件不写入存储，仅保留文件名在恢复条中提示用户。
+ */
+export const COMPOSER_DRAFT_ATTACHMENT_BUDGET_BYTES = 2 * 1024 * 1024;
+
+/**
  * 侧栏会话列表分页页大小：首屏与每次「加载更多」各取这么多条。
  * 仓储层按 updated_at DESC 做 limit/offset 分页；不要把本值调成无限大——
  * 侧栏无虚拟化，几千个会话 DOM 节点会拖垮渲染（2026-08-07 工单结论）。
