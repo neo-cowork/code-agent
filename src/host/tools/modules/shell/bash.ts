@@ -518,7 +518,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           // secret vars would leak straight back in (ptyExecutor spreads
           // process.env UNDER the passed env) — so never inherit.
           inheritProcessEnv: false,
-          sandboxed: sandboxDecision.sandboxed, displayName: resolveBackgroundTaskName(args.description, normalizedCommand),
+          sandboxed: sandboxDecision.sandboxed, displayCommand: normalizedCommand, displayName: resolveBackgroundTaskName(args.description, normalizedCommand),
           ...(sandboxCleanup ? { onExit: cleanupSandbox } : {}),
         });
       } catch (error) {

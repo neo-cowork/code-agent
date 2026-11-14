@@ -17,10 +17,14 @@ const { existsSyncMock, unlinkSyncMock } = vi.hoisted(() => ({
   unlinkSyncMock: vi.fn(),
 }));
 
-vi.mock('fs', () => ({
-  existsSync: (...args: unknown[]) => existsSyncMock(...args),
-  unlinkSync: (...args: unknown[]) => unlinkSyncMock(...args),
-}));
+vi.mock('fs', () => {
+  // 真实 fs 同时有默认导出和命名导出，夹具保持同样形状
+  const mod = {
+    existsSync: (...args: unknown[]) => existsSyncMock(...args),
+    unlinkSync: (...args: unknown[]) => unlinkSyncMock(...args),
+  };
+  return { ...mod, default: mod };
+});
 
 const { execFileMock } = vi.hoisted(() => ({
   execFileMock: vi.fn(),
@@ -28,6 +32,8 @@ const { execFileMock } = vi.hoisted(() => ({
 
 vi.mock('child_process', () => ({
   execFile: (...args: unknown[]) => execFileMock(...args),
+  // whisper 查找走 PATH 兜底时用；测试里一律视为 PATH 上没有
+  execFileSync: () => { throw new Error('not on PATH'); },
 }));
 
 vi.mock('util', () => ({
@@ -266,7 +272,7 @@ describe('local_speech_to_text — execute', () => {
 
   it('returns NOT_INITIALIZED when whisper-cpp missing', async () => {
     existsSyncMock.mockImplementation((p: string) => {
-      if (typeof p === 'string' && p.includes('whisper-cpp')) return false;
+      if (typeof p === 'string' && /whisper-(cpp|cli)/.test(p)) return false;
       return true;
     });
     mockExec(() => [new Error('not found'), '', '']);
