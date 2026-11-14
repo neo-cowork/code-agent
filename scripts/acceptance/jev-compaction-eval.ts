@@ -1,8 +1,6 @@
 /** Real-session compaction comparison. Never writes session text or needles.
  * Usage: tsx scripts/acceptance/jev-compaction-eval.ts <session-dir>
  *        tsx scripts/acceptance/jev-compaction-eval.ts --dev-db [--inventory]
- * Large real tool results: node --enable-experimental-regexp-engine-on-excessive-backtracks
- *   --import tsx scripts/acceptance/jev-compaction-eval.ts --dev-db
  * Owner override 2026-11-13: current dogfood subscription, never DeepSeek/GLM.
  */
 import assert from 'node:assert/strict';
@@ -32,6 +30,30 @@ type Row = { id: string; beforeTokens: number; needles: number; S: Arm; J: Arm;
 
 function check(condition: unknown, code: string): asserts condition {
   if (!condition) throw new Error(code);
+}
+
+/** Evaluation-process-only optimization for the estimator's Markdown matcher.
+ * Both removed alternatives require the literal "](": when absent, neither
+ * can match. Preserve all matches/flags/lastIndex; restore the builtin on exit.
+ * Avoids quadratic searches in large serialized Survivor Manifests, without
+ * changing production source, model inputs, estimator values, or classification.
+ */
+function installNonLinkMatchFastPath(): () => void {
+  const originalMatch = String.prototype.match;
+  const linkAlternatives = '|!\\[.*\\]\\(.*\\)|\\[.*\\]\\(.*\\)';
+  String.prototype.match = function (this: string, pattern: unknown): RegExpMatchArray | null {
+    if (typeof this === 'string' && this.length > 50_000 && pattern instanceof RegExp
+      && Object.getPrototypeOf(pattern) === RegExp.prototype
+      && !Object.hasOwn(pattern, Symbol.match) && !Object.hasOwn(pattern, 'source')
+      && !Object.hasOwn(pattern, 'flags') && pattern.flags === 'gm'
+      && pattern.source.endsWith(linkAlternatives) && !this.includes('](')) {
+      pattern.lastIndex = 0;
+      return Reflect.apply(originalMatch, this,
+        [new RegExp(pattern.source.slice(0, -linkAlternatives.length), pattern.flags)]);
+    }
+    return Reflect.apply(originalMatch, this, [pattern]);
+  };
+  return () => { String.prototype.match = originalMatch; };
 }
 
 function resultTexts(message: Message): string[] {
@@ -195,7 +217,17 @@ function selfCheck(): void {
   assert.ok(Math.abs(estimateJevCallUsd(400, 0) - 0.0000042) < 1e-12);
   assert.equal(retention(['/tmp/eval/input.csv'], [{ content: '',
     toolCalls: [{ id: 'call-a', name: 'read_file', arguments: { path: '/tmp/eval/input.csv' } }] }]).retained, 1);
-  console.log('self-check: 16 passed / 0 failed / 0 skipped; network_calls=0');
+  const pattern = /`[^`]+`|!\[.*\]\(.*\)|\[.*\]\(.*\)/gm;
+  const longText = '`kept` text\n'.repeat(5000);
+  const expected = [...longText.matchAll(pattern)].map((match) => match[0]);
+  assert.deepEqual(longText.match(pattern), expected);
+  pattern.lastIndex = 30;
+  longText.match(pattern);
+  assert.equal(pattern.lastIndex, 0);
+  const linked = longText + '[kept](target)';
+  assert.deepEqual(linked.match(pattern), [...linked.matchAll(new RegExp(pattern.source, 'gm'))].map((match) => match[0]));
+  assert.equal('plain'.repeat(15_000).match(pattern), null);
+  console.log('self-check: 20 passed / 0 failed / 0 skipped; network_calls=0');
 }
 
 function median(values: number[]): number {
@@ -340,6 +372,7 @@ async function evaluate(sessions: Session[], needlesById: Map<string, string[]>)
   // String values are session ids only; model/billing metadata are named keys.
   const report = { baselineSubscription: { [baseline.provider]: { [baseline.model]: 1 } }, jevModel: { [JEV_MODEL]: 1 },
     originalPlannedSessions: 20, authorizedSessions: MIN_SESSIONS, evaluatedSessions: rows.length, directionalOnly: 1,
+    evaluationNonLinkMatchFastPath: 1,
     budgetUsd: BUDGET_USD, paidUsd, previousAttemptsPaidUsd: previousPaidUsd,
     cumulativePaidUsd: previousPaidUsd + paidUsd, rows, S, J };
   fs.mkdirSync(path.dirname(OUTPUT), { recursive: true });
@@ -401,6 +434,7 @@ async function main(): Promise<void> {
   if (!inventoryOnly) await evaluate(qualified.slice(0, MIN_SESSIONS), needlesById);
 }
 
+const restoreMatch = installNonLinkMatchFastPath();
 main().catch((error: unknown) => {
   if (process.argv.includes('--self-check') && error instanceof assert.AssertionError) {
     console.error(`self-check assertion: ${error.message}`);
@@ -412,4 +446,4 @@ main().catch((error: unknown) => {
     ? error.message : 'evaluation_failed: details suppressed to protect session content and credentials';
   console.error(safe);
   process.exitCode = 1;
-});
+}).finally(restoreMatch);
