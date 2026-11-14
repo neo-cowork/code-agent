@@ -107,7 +107,9 @@ describe('PermissionGrantList time-boxed tool grants', () => {
 
   it('run tier shows 本次任务 and target, with no expiry suffix when null', async () => {
     const { row } = await renderTimedGrant(null, 'zh', 'team@example.com');
-    expect(row.textContent).toContain('限时放行 · 本次任务');
+    expect(row.textContent).toContain('本次任务 · 授权于');
+    expect(row.textContent).not.toContain('限时放行');
+    expect(row.querySelector('.text-zinc-500')?.textContent).not.toMatch(/^\s*·/);
     expect(row.textContent).toContain('对象：team@example.com');
     expect(row.textContent).not.toMatch(/剩余|有效期至/);
   });
@@ -119,7 +121,7 @@ describe('PermissionGrantList time-boxed tool grants', () => {
 
   it.each([[121, '3 h left'], [42.1, '43 min left']])('en remaining time at %s minutes: %s', async (minutes, expected) => {
     const { row } = await renderTimedGrant(minutes, 'en', 'team@example.com');
-    expect(row.textContent).toContain('Time-boxed allow · 24 hours');
+    expect(row.textContent).toContain('Temporary allow · 24 hours');
     expect(row.textContent).toContain(`Granted ${EN}`);
     expect(row.textContent).toContain(expected);
     expect(row.textContent).toContain('Target: team@example.com');
@@ -128,7 +130,9 @@ describe('PermissionGrantList time-boxed tool grants', () => {
 
   it('en run tier shows This task without a target or expiry suffix', async () => {
     const { row } = await renderTimedGrant(null, 'en');
-    expect(row.textContent).toContain('Time-boxed allow · This task');
+    expect(row.textContent).toContain('This task · Granted');
+    expect(row.textContent).not.toContain('Temporary allow');
+    expect(row.querySelector('.text-zinc-500')?.textContent).not.toMatch(/^\s*·/);
     expect(row.textContent).not.toMatch(/left|Valid until|Target:/);
   });
 
@@ -175,5 +179,42 @@ describe('PermissionGrantList human tool names', () => {
     const row = await view.findByTestId('permission-grant-row');
     expect(row.querySelector('.text-sm')?.textContent).toBe('Bash');
     expect(row.textContent).toContain(language === 'zh' ? `有效期至 ${ZH_EXPIRES}` : `Valid until ${EN_EXPIRES}`);
+  });
+});
+
+
+describe('PermissionGrantList connector read grants', () => {
+  it.each([
+    ['zh', 'run', '只读 · 本次任务 · 授权于'],
+    ['zh', '24h', '限时放行 · 只读 · 24 小时内 · 授权于'],
+    ['en', 'run', 'Read-only · This task · Granted'],
+    ['en', '24h', 'Temporary allow · Read-only · 24 hours · Granted'],
+  ] as const)('%s %s preserves the read-only marker and tier scope', async (language, source, expected) => {
+    useAppStore.setState({ language });
+    invokeDomain.mockResolvedValue([{
+      id: `connector-${source}`, kind: 'tool-timed', label: '飞书', connectorAccess: 'read',
+      source, grantedAt: GRANTED_AT, expiresAt: source === 'run' ? null : Date.now() + 121 * 60_000,
+    }]);
+    const view = render(<PermissionGrantList />);
+    const row = await view.findByTestId('permission-grant-row');
+    expect(row.querySelector('.text-zinc-500')?.textContent).toMatch(new RegExp(`^${expected}`));
+    expect(row.querySelector('.text-sm')?.textContent).toBe('飞书');
+  });
+
+  it.each(['zh', 'en'] as const)('%s shows connector name, read-only scope, remaining time and revokes by stable id', async (language) => {
+    useAppStore.setState({ language });
+    invokeDomain.mockResolvedValue([{
+      id: 'tool-24h:connector-read%3Alark', kind: 'tool-timed', label: '飞书', connectorAccess: 'read',
+      source: '24h', grantedAt: Date.now(), expiresAt: Date.now() + 121 * 60_000,
+    }]);
+    const view = render(<PermissionGrantList />);
+    const row = await view.findByTestId('permission-grant-row');
+    expect(row.querySelector('.text-sm')?.textContent).toBe('飞书');
+    expect(row.textContent).toContain(language === 'zh' ? '只读' : 'Read-only');
+    expect(row.textContent).toContain(language === 'zh' ? '剩余 3 小时' : '3 h left');
+    invokeDomain.mockResolvedValue({ revoked: true });
+    fireEvent.click(view.getByTestId('permission-grant-revoke'));
+    await waitFor(() => expect(view.queryByTestId('permission-grant-row')).toBeNull());
+    expect(invokeDomain).toHaveBeenLastCalledWith('domain:settings', 'revokePermissionGrant', { id: 'tool-24h:connector-read%3Alark' });
   });
 });

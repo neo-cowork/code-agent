@@ -19,7 +19,7 @@ import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useTaskStore } from '../../../stores/taskStore';
 import { recordStreamingPerformanceCounter } from '../../../utils/streamingPerformanceMetrics';
-import { useI18n } from '../../../hooks/useI18n';
+import { I18nKeyCacheProvider, useI18n } from '../../../hooks/useI18n';
 import { useScrollEdgeFade } from '../../../hooks/useScrollEdgeFade';
 import { SessionModelsContext } from './sessionModelsContext';
 import { hasIncompleteStreamSnapshot } from '../../../utils/streamingStatePresentation';
@@ -1044,7 +1044,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   ), []);
 
   return (
-    <SessionModelsContext.Provider value={sessionModels}>
+    <I18nKeyCacheProvider enabled={projection.turns.length >= 40}><SessionModelsContext.Provider value={sessionModels}>
     <ConversationTurnTailSlotHost />
     <div className="relative h-full min-h-0 @container" data-virtuoso-first-item-index={firstItemIndex}>
       <Virtuoso
@@ -1104,6 +1104,6 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       )}
       <TurnRail items={railItems} activeTurnId={railActiveTurnId} onJump={handleRailJump} onJumpToNode={handleRailNodeJump} />
     </div>
-    </SessionModelsContext.Provider>
+    </SessionModelsContext.Provider></I18nKeyCacheProvider>
   );
 };
