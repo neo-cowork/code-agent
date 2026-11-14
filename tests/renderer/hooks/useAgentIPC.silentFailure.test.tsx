@@ -91,7 +91,7 @@ describe('useAgentIPC sendMessage silentFailure', () => {
       (message) => message.role === 'assistant',
     );
     expect(assistantMessages).toHaveLength(1);
-    expect(assistantMessages[0]?.content).toBe('Error: session already running');
+    expect(assistantMessages[0]?.content).toBe('Neo 暂时没能完成这次请求，请稍后再试。');
     const userMessages = useSessionStore.getState().messages.filter((message) => message.role === 'user');
     expect(userMessages).toHaveLength(1);
     expect(userMessages[0]?.metadata?.sendFailed).toBe(true);
@@ -299,7 +299,7 @@ describe('useAgentIPC sendMessage silentFailure', () => {
     expect(invokeMock).not.toHaveBeenCalled();
     expect(useSessionStore.getState().messages.at(-1)).toMatchObject({
       role: 'assistant',
-      content: 'Error: foreground input unavailable',
+      content: 'Neo 暂时没能完成这次请求，请稍后再试。',
     });
   });
 });
