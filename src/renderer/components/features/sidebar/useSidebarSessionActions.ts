@@ -20,6 +20,7 @@ import type {
   SidebarProjectGoalMeta,
   SidebarProjectMeta,
 } from '../../../utils/sidebarProjectSummary';
+import { holdComposerDraftForNextSession, releaseComposerDraftHold } from '../chat/ChatInput/composerDraftStore';
 import { pickWorkingDirectory } from '../../../services/workingDirectoryPicker';
 
 const SIDEBAR_GROUP_COLLAPSE_DELAY_MS = 160;
@@ -202,10 +203,14 @@ export function useSidebarSessionActions(
     try {
       const directory = await pickWorkingDirectory(t.sidebar.selectDirectoryTitle);
       if (directory) {
+        holdComposerDraftForNextSession();
         await createWorkspaceChat(directory, directory);
       }
     } catch (error) {
       console.error('Failed to create independent space:', error);
+    } finally {
+      // 等会话切换的 effect 先消费 hold；没消费（复用当前空白任务、没切会话）再释放
+      setTimeout(releaseComposerDraftHold, 1000);
     }
   }, [createWorkspaceChat, creatingWorkspaceKey, isCreatingSession, t]);
 
