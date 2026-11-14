@@ -20,6 +20,12 @@ import { promptUserInChat, type PromptUserResult } from '../../utils/userQuestio
 import { getAgentTreeSnapshot } from '../../../agent/agentTreeService';
 import { formatBackgroundSubagentRows } from './backgroundSubagentTaskRows';
 import {
+  dropTaskStatusRecordIfIdle,
+  recordTaskStatusAnswer,
+  shouldReturnTaskStatusUnchangedHint,
+  taskStatusUnchangedHint,
+} from './taskStatusDedupe';
+import {
   cancelTaskSchema,
   delegateTaskSchema,
   steerTaskSchema,
@@ -342,6 +348,7 @@ export async function executeTaskStatus(
   const snapshot = getAgentTreeSnapshot({ sessionId: session });
   const backgroundSubagents = snapshot.nodes.filter((node) => node.background);
   if (tasks.length === 0 && backgroundSubagents.length === 0) {
+    dropTaskStatusRecordIfIdle(session, tasks, backgroundSubagents);
     return { ok: true, output: '当前会话还没有后台任务。' };
   }
   // 序号口径必须与 resolve() 一致：只有活跃任务编号（cancel_task/steer 的 target 序号），已结束的不编号
@@ -353,7 +360,7 @@ export async function executeTaskStatus(
     const label = activeIndex >= 0 ? `${activeIndex + 1}.` : '-';
     return `${label} ${task.shortName}：${sessionTaskStatusLabel(task.status)}${resultText ? `：${resultText}` : ''}`;
   });
-  return {
+  const result: ToolResult<string> = {
     ok: true,
     output: [...taskRows, ...formatBackgroundSubagentRows(backgroundSubagents, snapshot.generatedAt, tasks.some((task) => task.status === 'running'))].join('\n'),
     meta: {
@@ -361,6 +368,19 @@ export async function executeTaskStatus(
       ...(tasks.length ? { sessionTaskWorkspaceRoots: [...new Set(tasks.map((task) => task.workspaceScope.primaryRoot))] } : {}),
     },
   };
+  // 同 turn 重复轮询去重（N-FIX-BGTASK-STATUS-POLL-TRIPLE-CARDS-REST1）：签名未变时回短提示，
+  // meta 原样保留——用户卡片由 metadata 构建，foldSessionTaskStatus 也只键在 meta 上，
+  // 所以卡片与折叠行为和全量回答完全一致；缺 turnId 记一条 debug（不允许静默跳过）。
+  if (!ctx.turnId) {
+    ctx.logger?.debug('task_status dedupe skipped: no turnId in tool context', { sessionId: session });
+    recordTaskStatusAnswer(session, ctx.turnId, tasks, backgroundSubagents);
+    return result;
+  }
+  if (shouldReturnTaskStatusUnchangedHint(session, ctx.turnId, tasks, backgroundSubagents)) {
+    return { ok: true, output: taskStatusUnchangedHint(tasks, backgroundSubagents), meta: result.meta };
+  }
+  recordTaskStatusAnswer(session, ctx.turnId, tasks, backgroundSubagents);
+  return result;
 }
 
 type CommandToolExecutor = (
