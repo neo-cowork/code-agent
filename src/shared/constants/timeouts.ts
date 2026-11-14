@@ -423,7 +423,26 @@ export function getToolExecutionTimeoutMs(toolName: string): number | undefined 
 export const BROWSER_HUMAN_TAKEOVER_WAIT = {
   POLL_INTERVAL_MS: 100,
   CAP_MS: 100_000,
+  /** Takeover control timer: how long the user may hold the view before the session stops. */
+  TIMER_MS: 5 * 60_000,
 } as const;
+
+/**
+ * How long a model-requested `wait_for_user` browser action waits for the user to
+ * press Done. Defaults to the existing 5-minute human-takeover timer. The wait is
+ * booked as human time (approval-wait accounting), so it is not bounded by the
+ * 120s tool inactivity budget. `CODE_AGENT_BROWSER_WAIT_FOR_USER_MS` is a harness
+ * override for tests and real-run drills only, not a user setting.
+ */
+const BROWSER_WAIT_FOR_USER = {
+  LIMIT_MS: BROWSER_HUMAN_TAKEOVER_WAIT.TIMER_MS,
+  LIMIT_ENV: 'CODE_AGENT_BROWSER_WAIT_FOR_USER_MS',
+} as const;
+
+export function getBrowserWaitForUserLimitMs(): number {
+  const override = Number(process.env[BROWSER_WAIT_FOR_USER.LIMIT_ENV]);
+  return Number.isFinite(override) && override > 0 ? override : BROWSER_WAIT_FOR_USER.LIMIT_MS;
+}
 
 // 有不可重放副作用的原生工具：多数只在启动前查一次 abortSignal，外层 inactivity 超时
 // 触发时副作用可能已经完成。这类工具的超时结果必须标 outcome-unknown（模型先核实状态

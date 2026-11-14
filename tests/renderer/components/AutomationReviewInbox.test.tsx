@@ -449,6 +449,18 @@ describe('AutomationReviewInbox', () => {
     });
   });
 
+  it('连接器未登录提示：有 summary 才显示（多条换行），只有去重记录没有 summary 不显示', async () => {
+    listPendingReview.mockResolvedValue([
+      makeRecord({ id: 'with-summary', title: '有提示', config: { pendingReview: { at: 1700000000000, connectorLost: { days: { feishu: '2032-01-05' }, summary: '今天的定时运行没能读取「飞书」：它当前未登录。', summaryDay: '2032-01-05' } } } }),
+      makeRecord({ id: 'days-only', title: '仅去重', config: { pendingReview: { at: 1700000000000, connectorLost: { days: { feishu: '2032-01-05' } } } } }),
+    ]);
+    render(<AutomationReviewInbox />);
+    await waitFor(() => {
+      expect(screen.getAllByTestId('automation-review-connector-lost')).toHaveLength(1);
+    });
+    expect(screen.getByTestId('automation-review-connector-lost').textContent).toContain('「飞书」');
+  });
+
   it('查看结果：标记已读并跳结果会话', async () => {
     listPendingReview.mockResolvedValue([makeRecord({})]);
     render(<AutomationReviewInbox />);
