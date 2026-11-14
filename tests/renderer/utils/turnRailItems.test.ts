@@ -21,9 +21,21 @@ describe('buildTurnRailItems', () => {
       turn(2, [node('user', '再加页码'), node('tool_call', 'Edit'), node('assistant_text', '页码加好了。')]),
     ]);
     expect(items).toEqual([
-      { turnId: 'turn-1', turnNumber: 1, prompt: '把封面标题改成《8 月客户之声周报》', response: '标题已更新，封面和页眉同步改好。' },
-      { turnId: 'turn-2', turnNumber: 2, prompt: '再加页码', response: '页码加好了。' },
+      { turnId: 'turn-1', turnNumber: 1, prompt: '把封面标题改成《8 月客户之声周报》', response: '标题已更新，封面和页眉同步改好。', queuedMessages: [] },
+      { turnId: 'turn-2', turnNumber: 2, prompt: '再加页码', response: '页码加好了。', queuedMessages: [] },
     ]);
+  });
+
+  it('keeps added messages in order, excludes the first user and uses the same preview rule', () => {
+    const first = node('user', 'Summarize the notes');
+    const added = [node('user', 'Also add\n risks'), node('user', 'Shorten it'), node('user', 'x'.repeat(60))];
+    const [item] = buildTurnRailItems([turn(1, [first, node('assistant_text', 'Working'), ...added])]);
+    expect(item.queuedMessages).toEqual([
+      { nodeId: added[0].id, prompt: 'Also add risks' },
+      { nodeId: added[1].id, prompt: 'Shorten it' },
+      { nodeId: added[2].id, prompt: `${'x'.repeat(50)}…` },
+    ]);
+    expect(item.prompt).toBe(first.content);
   });
 
   it('预览折叠换行并按 50 / 120 字截断加省略号', () => {
@@ -41,7 +53,7 @@ describe('buildTurnRailItems', () => {
 
   it('没有文字的轮（图片/命令）预览留空，由界面按序号显示', () => {
     const [item] = buildTurnRailItems([turn(3, [node('user', '   '), node('tool_call', 'Bash')])]);
-    expect(item).toEqual({ turnId: 'turn-3', turnNumber: 3, prompt: '', response: '' });
+    expect(item).toEqual({ turnId: 'turn-3', turnNumber: 3, prompt: '', response: '', queuedMessages: [] });
   });
 
   it('语音派活轮的结论跳过带 voiceDispatch 的指令节点（与 TurnCard 折叠视图同口径）', () => {

@@ -195,8 +195,8 @@ export interface ToolContext {
   approvedToolCall?: {
     toolName: string;
     args: Record<string, unknown>;
-    /** One literal file grant minted by the approval boundary for this exact call. */
-    sandboxWriteFile?: string;
+    /** Literal file grants minted by the approval boundary for this exact call. */
+    sandboxWriteFile?: string | readonly string[];
   };
   /** 当前 turn 的显式工具作用域 */
   toolScope?: WorkbenchToolScope;

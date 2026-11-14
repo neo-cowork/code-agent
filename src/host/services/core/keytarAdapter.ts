@@ -28,6 +28,9 @@ export function loadKeytar(
   loader: () => typeof import('keytar') = () => require('keytar') as typeof import('keytar')
 ): typeof import('keytar') | null {
   if (process.env.CODE_AGENT_CLI_MODE && process.env.CODE_AGENT_WEB_MODE !== 'true') return null;
+  // 打包前的启动检查（scripts/verify-webserver-boot.mjs）只验服务能起来、用不到密钥；它用开发机自己的
+  // node（Homebrew 版是 adhoc 签名、没有团队号），读钥匙串里 code-agent 那项每次都弹框要登录密码。
+  if (process.env.CODE_AGENT_BOOT_SMOKE === '1') return null;
   if (!hasDarwinLoginKeychain()) {
     console.warn(
       '[SecureStorage] keytar skipped: no default login keychain under $HOME'

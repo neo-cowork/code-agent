@@ -81,7 +81,7 @@ const ALLOWLIST: AllowlistEntry[] = [
   { file: 'src/renderer/i18n/enSkillCautionRules.ts', name: 'embeddedSecret', reason: 'i18n 文案键：嵌入密钥类 caution 命中的白话风险句（string），不承载任何凭据值' },
 
   // ---- 设置/接入表单：apiKey 均为用户手输的表单态，写向 host，回显只走掩码/布尔 ----
-  { file: 'src/renderer/App.tsx', name: 'apiKey', reason: '读取 settings 契约里的 providerConfig.apiKey 填充模型配置（既有 settings 回传面），非新增暴露' },
+  { file: 'src/renderer/services/modelSettings.ts', name: 'apiKey', reason: '原 App.tsx 的既有读取搬迁：从 settings 契约的 providerConfig.apiKey 填充 ModelConfig.apiKey，非新增凭据回传面' },
   { file: 'src/renderer/stores/appStore.ts', name: 'apiKey', reason: '默认模型配置占位空串，真实值仅用户输入后由 host 存储' },
   { file: 'src/renderer/components/design/CustomImageModelManager.tsx', name: 'apiKey', reason: '自定义图像模型表单态：用户手输、保存时写向 host' },
   { file: 'src/renderer/components/design/designFiles.ts', name: 'apiKey', reason: 'invoke 载荷成员：用户手输的 key 写向 host（只写方向）' },
