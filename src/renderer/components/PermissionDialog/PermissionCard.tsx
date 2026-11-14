@@ -65,6 +65,8 @@ function normalizeRequest(
       changes: request.details.changes,
       server: request.details.server,
       toolName: request.details.toolName,
+      connectorAccess: request.details.connectorAccess,
+      purpose: request.details.purpose,
       commandRiskLevel: request.details.commandRiskLevel,
       commandSecurityFlags: request.details.commandSecurityFlags,
       affectedPath: request.details.affectedPath,
@@ -187,11 +189,13 @@ export function PermissionCard({
     isDangerousRequestShape(request);
 
   // forceConfirm 该有的职责一点没松：不许走「会话/始终」这类常驻授权，必须逐次点。
-  const hideStandingGrants = isDangerous || editable || request?.forceConfirm === true || sandboxEscalation;
+  const browserOnceOnly = Boolean(request?.details.browserSessionGrant
+    && (!request.details.browserSessionGrant.target || !['open', 'wait_for_download'].includes(String(request.details.action))));
+  const hideStandingGrants = isDangerous || editable || request?.forceConfirm === true || sandboxEscalation || browserOnceOnly;
 
   const memoryRequest = request ? toMemoryRequest(request) : null;
   const isNewRequest = request !== null && !settled && processedRequestRef.current !== request.id;
-  const memoryResult = memoryRequest && isNewRequest && request?.forceConfirm !== true && !appGrantCard && !request?.details.browserSessionGrant
+  const memoryResult = memoryRequest && isNewRequest && request?.forceConfirm !== true && !appGrantCard && !request?.details.connectorAccess && !request?.details.browserSessionGrant
     ? checkMemory(memoryRequest)
     : null;
 
@@ -238,7 +242,7 @@ export function PermissionCard({
       processedRequestRef.current = request.id;
 
       try {
-        if (!appGrantCard && !request.details.browserSessionGrant && (level === 'session' || level === 'always' || level === 'never') && request.forceConfirm !== true) {
+        if (!appGrantCard && !request.details.connectorAccess && !request.details.browserSessionGrant && (level === 'session' || level === 'always' || level === 'never') && request.forceConfirm !== true) {
           const memoryReq: PermissionRequestForMemory = {
             id: request.id,
             tool: request.tool,
@@ -396,6 +400,13 @@ export function PermissionCard({
 
   const p = t.decisionCard.permission;
   const w = p.writeback;
+  const connector = request.details.connectorAccess;
+  const connectorQuestion = connector
+    ? (connector.access === 'read' ? p.connectorRead : p.connectorWrite).replace('{connector}', connector.connectorName)
+    : undefined;
+  const connectorScope = connector
+    ? (connector.access === 'read' ? p.connectorReadScope : p.connectorWriteScope).replace('{connector}', connector.connectorName)
+    : undefined;
   const pendingHeaderEnd = remainingCount > 0
     ? <span className="text-xs text-zinc-500">{p.remainingCount.replace('{count}', String(remainingCount))}</span>
     : undefined;
@@ -423,8 +434,8 @@ export function PermissionCard({
     { id: 'once', label: p.optionOnce, description: p.optionOnceDesc, shortcut: 'y' },
     ...(!hideStandingGrants
       ? [
-          { id: 'run', label: request.details.browserSessionGrant ? browserCopy.session : p.optionRun, description: request.details.browserSessionGrant ? browserCopy.sessionDesc : p.optionRunDesc, shortcut: 's' },
-          ...(!request.details.browserSessionGrant ? [{ id: '24h', label: p.option24h, description: p.option24hDesc, shortcut: 'a' }] : []),
+          { id: 'run', label: request.details.browserSessionGrant ? browserCopy.session : p.optionRun, description: request.details.browserSessionGrant ? browserCopy.sessionDesc : [connectorScope, p.optionRunDesc].filter(Boolean).join(' · '), shortcut: 's' },
+          ...(!request.details.browserSessionGrant ? [{ id: '24h', label: p.option24h, description: [connectorScope, p.option24hDesc].filter(Boolean).join(' · '), shortcut: 'a' }] : []),
         ]
       : []),
     { id: 'deny', label: p.optionDeny, description: p.optionDenyDesc, shortcut: 'n' },
@@ -452,7 +463,7 @@ export function PermissionCard({
     request.details.url ||
     request.details.changes
   );
-  const title = sandboxEscalation
+  const title = connectorQuestion ?? (sandboxEscalation
     ? p.sandboxEscalationTitle
     : request.details.browserSessionGrant
     ? browserCopy.title
@@ -474,13 +485,13 @@ export function PermissionCard({
                 ? getPermissionConfig('command').title
                 : isGenericCommandCard
                   ? p.genericApprovalTitle
-                  : config.title;
+                  : config.title);
   const icon = isMeetingCreate || isCalendarWrite
     ? <CalendarPlus size={20} />
     : isRemindersWrite
       ? <ListTodo size={20} />
       : editable ? <Mail size={20} /> : config.icon;
-  const question = sandboxEscalation
+  const question = connectorQuestion ?? (sandboxEscalation
     ? sandboxEscalationQuestion(request.reason, permissionSummary(request, t))
     : appGrantCard && !isDangerous
     ? p.computerApp.question.replace('{app}', request.details.targetApp?.name ?? '')
@@ -496,7 +507,7 @@ export function PermissionCard({
             ? (contentTitle ? w.remindersUpdateQuestion.replace('{title}', contentTitle) : w.remindersUpdateQuestionFallback)
     : editable
     ? (firstRecipient ? w.mailSendQuestion.replace('{target}', firstRecipient) : w.mailSendQuestionFallback)
-    : permissionSummary(request, t, language);
+    : permissionSummary(request, t, language));
   const viewMode = viewState?.requestId === request.id
     ? viewState.mode
     : defaultPermissionViewMode(request);
@@ -612,6 +623,11 @@ export function PermissionCard({
               <p className="mt-0.5 break-all text-xs leading-5 text-zinc-300">{request.argsPreview}</p>
             </div>
           )}
+          {connector && request.details.purpose ? (
+            <p data-testid="connector-purpose" className="text-sm text-zinc-300">
+              {p.connectorPurpose.replace('{purpose}', request.details.purpose)}
+            </p>
+          ) : null}
           <RequestDetails request={request} />
         </>
       }
@@ -634,6 +650,7 @@ export function PermissionCard({
       expandLabel={t.decisionCard.details}
       collapseLabel={t.decisionCard.collapse}
       directActions
+      showActionDescriptions={Boolean(connector)}
       primaryActionId={appGrantCard && !isDangerous ? 'session' : (safeDefaultDeny ? 'deny' : 'once')}
       dangerActionId={safeDefaultDeny ? 'once' : undefined}
       onDirectAction={(id) => {

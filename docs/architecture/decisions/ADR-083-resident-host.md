@@ -153,3 +153,9 @@ sequenceDiagram
 
 1. **留守任务的写授权（方案 A，B 兜底）**：定时任务可在任务详情面板预授权一个「写文件夹」（= 运行会话的工作目录同源判定：常设刷新取产物所在目录，其余取来源会话工作目录；存 `metadata.writeGrantRoot`，只有专用授权 IPC 写得进，updateJob/createJob 一律剥掉）。壳已退出（background）后该任务的 cron/heartbeat 会话写**文件夹内**的 `file_write` / `file_edit` 自动放行（approvalSource=`schedule-write-grant`，realpath 归一防 `..` 与软链逃逸）；出界写、Bash、其余工具、保护路径（forceConfirm）照旧停车等人。授权语义对照 `loginPassThroughOrigin` 先例：显式同意才落库、可撤销。落选方案 B（每次都弹）作为兜底而非主路径，理由：竞品的「Always allow」若不持久化，用户会被同一件每日任务反复打扰（用户实测反馈，claudeissues.com/issue/59302）。
 2. **停车审批的原生通知兜底（fallback B）**：renderer toast 不随壳退出存活（`broadcastToRenderer` 无落点）。`needs_input` 通知在退出意图为 `background` 时额外弹一条 host 侧原生通知（osascript，文案固定人话、不带工具名）。已知局限：意图声明后无「壳重新接上」复位事件，重开后同一条 needs_input 会 toast + 原生双弹——接受，漏报贵过重复提醒。
+
+## 拍板记录（2026-11-12 append，停车审批通知通道清理，只增不改）
+
+2026-10-24 的历史记录保留；停车审批的 stage-B（fallback B）现已改为启动 Agent Neo 壳并传入 `--notify-only`，通知横幅归属 Agent Neo，点击打开对应会话或 Automation 运行记录。退出意图为 `background` 时仍经生产 `notificationService.notifyNeedsInput` 入口投递，通知策略与预算不变。
+
+旧 osascript 通知通道及 `src/host/platform/notifications.ts` 中的发送器已删除；该模块仅保留 `Notification.isSupported()` 的 macOS 支持检测。`tests/unit/host/notificationOsascriptGate.test.ts` 的两项静态门白名单均已清空，禁止重新引入旧通知发送文本或 host/web 原生通知构造调用。壳的实际横幅与点击行为由编排方在设备上验收。

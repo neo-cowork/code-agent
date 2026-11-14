@@ -50,6 +50,7 @@ interface DoctorItem {
   name: string;
   status: DoctorStatus;
   message: string;
+  probeHttpStatus?: 401 | 403;
   details?: string;
   suggestion?: string;
   durationMs?: number;
@@ -130,6 +131,10 @@ const DoctorItemRow: React.FC<{
   defaultExpanded: boolean;
   suggestionPrefix: string;
 }> = ({ item, defaultExpanded, suggestionPrefix }) => {
+  const { t } = useI18n();
+  const message = item.probeHttpStatus
+    ? t.settings.providerDoctor.probeAuthMismatch.replace('{status}', String(item.probeHttpStatus))
+    : item.message;
   const [expanded, setExpanded] = useState(defaultExpanded);
   const hasDetails = !!(item.details || item.suggestion);
   const style = STATUS_STYLES[item.status];
@@ -151,7 +156,7 @@ const DoctorItemRow: React.FC<{
         {/* Name + message */}
         <span className="flex-1 min-w-0">
           <span className="text-sm text-zinc-200">{item.name}</span>
-          <span className="text-sm text-zinc-500 ml-2">{item.message}</span>
+          <span className="text-sm text-zinc-500 ml-2">{message}</span>
         </span>
 
         {/* Expand indicator */}
@@ -176,7 +181,7 @@ const DoctorItemRow: React.FC<{
           )}
           {item.details && (
             <pre className="text-xs text-zinc-400 bg-zinc-800/60 rounded p-2 whitespace-pre-wrap break-all">
-              {item.details}
+              {item.probeHttpStatus ? message : item.details}
             </pre>
           )}
         </div>
