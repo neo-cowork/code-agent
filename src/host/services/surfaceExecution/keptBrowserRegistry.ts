@@ -130,6 +130,16 @@ export class KeptBrowserRegistry {
     return entry?.state === 'kept' ? { ...entry } : null;
   }
 
+  /**
+   * N-FIX-FIX-BROWSER-SECRETREF-HARDEN：存活中的 takeover 停靠条目（secretRef 接管后
+   * run 结束停靠，落在显式结果槽但 reason 区别于模型 keep）。仅 agent run 认领；
+   * keep_result_page 条目永不经过这里。
+   */
+  getTakeoverParkAlive(conversationId: string): KeptBrowserEntry | null {
+    const entry = this.entries.get(this.entryKey(conversationId));
+    return entry?.state === 'kept' && entry.reason === 'takeover' ? { ...entry } : null;
+  }
+
   private entryKey(conversationId: string, parkedForUser = false): string {
     return JSON.stringify([conversationId, parkedForUser]);
   }

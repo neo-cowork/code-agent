@@ -19,9 +19,15 @@ export async function releaseManagedBrowserWindow(input: {
   const { binding, stillShared, keptRegistry } = input;
   const { browserService, serviceKey, identity } = binding;
   const activeTab = browserService.getActiveTab();
+  // wait_for_user already parked this exact window on its timeout (parkedForUser slot):
+  // re-parking it as a takeover would flip its reason and attach the sign-in handoff
+  // note to the reclaiming run, which wait_for_user's own wording covers. Skip; the
+  // existing entry stays authoritative.
+  const alreadyParked = [keptRegistry.get(identity.conversationId), keptRegistry.getParkedAlive(identity.conversationId)]
+    .some((entry) => entry?.serviceKey === serviceKey && entry.state === 'kept');
   // Record the park even if the panel currently has a user binding to this window.
   // Explicit Stop and timeout do not set parkForTakeover; only endRun does.
-  if (input.parkForTakeover && serviceKey !== input.personalServiceKey
+  if (input.parkForTakeover && !alreadyParked && serviceKey !== input.personalServiceKey
     && browserService.isRunning() && activeTab?.url) {
     keptRegistry.register({
       conversationId: identity.conversationId,

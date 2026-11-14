@@ -485,15 +485,18 @@ export class ManagedBrowserProviderAdapter {
     // N-BROWSER-KEEP-RESULT-PAGE: a user run claims (adopts) the conversation's
     // kept result window WITHOUT navigating. Stale entries (window died
     // without a close event) flip to closed and the user path continues.
-    // N-FIX-FIX-BROWSER-SECRETREF-HARDEN: an agent run additionally claims a
-    // takeover park (reason='takeover') or the wait_for_user parked window;
-    // an explicit keep_result_page stays user-only.
+    // N-FIX-FIX-BROWSER-SECRETREF-HARDEN: an agent run claims only a takeover
+    // park (secretRef handover) or the wait_for_user parked window; an explicit
+    // keep_result_page stays user-only.
     let keptService: BrowserService | null = null;
     let keptServiceKey: string | null = null;
     let claimedTakeoverPark = false;
     if (!shared) {
-      const kept = this.keptRegistry.getAlive(identity.conversationId);
-      if (kept && (isUserRun(identity) || kept.reason === 'takeover' || kept.parkedForUser)) {
+      const kept = isUserRun(identity)
+        ? this.keptRegistry.getAlive(identity.conversationId)
+        : (this.keptRegistry.getTakeoverParkAlive(identity.conversationId)
+          ?? this.keptRegistry.getParkedAlive(identity.conversationId));
+      if (kept) {
         const candidate = this.acquireBrowser(kept.serviceKey);
         if (candidate.isRunning() && candidate.getActiveTab()) {
           keptService = candidate;
