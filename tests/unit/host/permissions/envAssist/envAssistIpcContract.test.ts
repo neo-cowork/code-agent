@@ -1,5 +1,5 @@
 // Evidence class: hermetic-protocol (fake native bridges). Not real-device proof.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { accessibilityProbe, automationProbe, screenRecordingProbe } from '../../../../../src/host/permissions/envAssist/probes/passiveProbes';
 import type { PassiveBridge, PromptingBridge } from '../../../../../src/host/permissions/envAssist/probes/types';
 import * as grants from '../../../../../src/host/permissions/envAssist/grants/requestGrant';
@@ -55,7 +55,7 @@ const notice = (pane: Pane, klass: EnvAssistNotice['class'], kind: 'request_gran
 
 describe('envAssist IPC contract (hermetic-protocol, fake bridges)', () => {
   let handler: HandlerFn | undefined;
-  let mint: ReturnType<typeof vi.spyOn<typeof grants, 'mintClickToken'>>;
+  let mint: MockInstance<typeof grants.mintClickToken>;
   beforeEach(() => {
     vi.spyOn(ipcHost, 'handle').mockImplementation((_c, fn) => { handler = fn; });
     mint = vi.spyOn(grants, 'mintClickToken');
