@@ -112,6 +112,9 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
   }
 
   const resultView = cronRunResultView(execution.result);
+  const fallbackResultText = resultView.isAgentResult
+    ? execution.sessionId ? cc.resultNoSummary : cc.resultNoSummaryNoSession
+    : cc.resultNoText;
   const urgencyLabel = resultView.urgency && {
     must_today: cc.inboxUrgencySectionMustToday,
     can_wait: cc.inboxUrgencySectionCanWait,
@@ -397,7 +400,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
           </span>
         )}
         <p className="whitespace-pre-wrap break-words text-sm text-zinc-100" data-testid="cron-result-summary">
-          {resultView.summaryText ?? cc.resultNoText}
+          {resultView.summaryText ?? fallbackResultText}
         </p>
         {resultView.artifacts.length > 0 && (
           <div className="mt-3" data-testid="cron-result-artifacts">
