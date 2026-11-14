@@ -28,6 +28,7 @@ import ipcService from "../../../services/ipcService";
 import { createLogger } from "../../../utils/logger";
 import { startEditRoleChat } from "../../../utils/startEditRoleChat";
 import { goToExpertThread } from "../../../utils/inviteExpert";
+import { formatLocalDateTime } from "../../../utils/i18nTime";
 import { useI18n } from "../../../hooks/useI18n";
 import { useMcpServerStates } from "../../../hooks/useMcpServerStates";
 import { resolveSessionConnectorIds } from "@shared/contract/expertConnectors";
@@ -340,7 +341,7 @@ interface MemoryRowProps {
 }
 
 const MemoryRow: React.FC<MemoryRowProps> = ({ roleId, memory, onChanged }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const roleText = t.settings.roles;
   const commonText = t.common;
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -386,7 +387,7 @@ const MemoryRow: React.FC<MemoryRowProps> = ({ roleId, memory, onChanged }) => {
           <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-zinc-200">
             {memory.name}
             {memory.lastChange?.actor === 'role_wake' ? (
-              <Badge title={t.expert.roleDetail.roleWakeTooltip} className="border-border-default bg-surface-hover text-[10px] text-text-secondary">
+              <Badge title={t.expert.roleDetail.roleWakeTooltip.replace('{time}', memory.lastChange.timestamp ? formatLocalDateTime(memory.lastChange.timestamp, language) : '')} className="border-border-default bg-surface-hover text-[10px] text-text-secondary">
                 {t.expert.roleDetail.roleWakeLabel}
               </Badge>
             ) : null}

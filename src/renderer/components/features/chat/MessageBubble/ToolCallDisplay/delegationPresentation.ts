@@ -16,7 +16,7 @@ import {
   taskActivityIds,
 } from '../../../../../utils/agentActivity';
 
-type DelegationReceiptState = 'working' | 'completed' | 'failed';
+type DelegationReceiptState = 'working' | 'completed' | 'failed' | 'cancelled';
 
 interface DelegationReceiptOutput {
   id: string;
@@ -41,6 +41,8 @@ export interface DelegationPresentation {
   activityIds: readonly string[];
   /** 任务归属会话；agentTree 节点路径没有，审批作用域由 resolveAgentActivityStepStatus 兜底。 */
   sessionId?: string;
+  /** delegate_session 回执：委托目标会话 id（来自工具结果 metadata，模型不可见）。 */
+  targetSessionId?: string;
 }
 
 const TASK_STATS_MARKER = '\nStats:\n';
@@ -188,7 +190,9 @@ function fromTask(task: Task, t: Translations): DelegationPresentation {
     ? 'working'
     : task.status === 'completed'
       ? 'completed'
-      : 'failed';
+      : task.status === 'cancelled'
+        ? 'cancelled'
+        : 'failed';
   return {
     state,
     title: t === languages.en && task.source === 'delegate_task' && containsCjk(task.title)
@@ -261,6 +265,8 @@ export function deriveDelegationPresentation(
       title: humanizeToolStep(toolCall.name, toolCall.arguments, t, undefined, 'completed', undefined, { delegationReceipt }),
       outputs: [],
       activityIds: [],
+      ...(typeof toolCall.result.metadata?.targetSessionId === 'string' && toolCall.result.metadata.targetSessionId
+        ? { targetSessionId: toolCall.result.metadata.targetSessionId } : {}),
     };
   }
   if (toolCall.name === 'delegate_task') {

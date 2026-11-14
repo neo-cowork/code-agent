@@ -13,6 +13,8 @@ import { getPolicyEngine, resetPolicyEngine } from '../../../../../src/host/perm
 import { getSandboxManager } from '../../../../../src/host/sandbox';
 import { getToolCache } from '../../../../../src/host/services/infra/toolCache';
 import { getProtocolRegistry } from '../../../../../src/host/tools/protocolRegistry';
+import * as approvedRmGrantModule from '../../../../../src/host/tools/shell/approvedRmGrant';
+import { SANDBOX_APPROVED_RM_STILL_DENIED_FAILURE_CODE } from '../../../../../src/shared/constants';
 import { bashModule } from '../../../../../src/host/tools/modules/shell/bash';
 import { ToolExecutor } from '../../../../../src/host/tools/toolExecutor';
 import { createProtocolSubagentExecutionContext } from '../../../../../src/host/agent/subagentExecutionContext';
@@ -35,7 +37,7 @@ function shellQuote(value: string): string {
 }
 
 function rawLs(target: string): string {
-  const listed = spawnSync('/bin/ls', ['-l', target], { encoding: 'utf8' });
+  const listed = spawnSync('/bin/ls', ['-ln', target], { encoding: 'utf8' });
   return `${listed.stdout}${listed.stderr}`.trim();
 }
 
@@ -66,6 +68,7 @@ suite('approved rm uses a real seatbelt literal grant', () => {
   afterEach(() => {
     resetPolicyEngine();
     resetPermissionModeManager();
+    vi.restoreAllMocks();
   });
 
   afterAll(() => {
@@ -122,7 +125,8 @@ suite('approved rm uses a real seatbelt literal grant', () => {
   });
 
   it('real parent protocol bridge -> child approval grants the first sandboxed rm and one ledger row', async () => {
-    const target = join(outsideRoot, 'protocol-subagent.txt');
+    const target = join(slashTmpRoot, 'protocol-subagent.txt');
+    traceApprovalGrants('parent-bridge-child');
     const parentProbe = join(workspace, 'parent-protocol-probe.txt');
     writeFileSync(target, 'remove me');
     writeFileSync(parentProbe, 'parent probe');
@@ -153,6 +157,7 @@ suite('approved rm uses a real seatbelt literal grant', () => {
         const childExecutor = new ToolExecutor({
           workingDirectory: workspace,
           ledgerOrigin: 'subagent',
+          executionTopology: 'async_agent',
           forcePermissionHandler: true,
           requestPermission: (request) => subagentContext.permission.request(request),
         });
@@ -185,6 +190,47 @@ suite('approved rm uses a real seatbelt literal grant', () => {
       appendPermissionDecision.mockRestore();
     }
   });
+
+  function traceApprovalGrants(label: string): void {
+    const original = approvedRmGrantModule.approvedSingleFileRmGrantForToolApproval;
+    vi.spyOn(approvedRmGrantModule, 'approvedSingleFileRmGrantForToolApproval').mockImplementation((input) => {
+      const grant = original(input);
+      console.log(`TOOL_APPROVAL_GRANT ${label} source=${input.approvalSource} command=${input.params.command} grant=${String(grant)}`);
+      return grant;
+    });
+  }
+
+  it.each(['; echo "exit=$?"', ' && echo done'])(
+    'public Bash entry after user approval deletes an outside file with suffix %s', async (suffix) => {
+      const target = join(slashTmpRoot, 'compound.txt');
+      const neighbor = join(slashTmpRoot, 'neighbor.txt');
+      writeFileSync(target, 'remove me');
+      writeFileSync(neighbor, 'keep me');
+      const command = `rm ${shellQuote(target)}${suffix}`;
+      traceApprovalGrants('public-bash-compound');
+      const requests: PermissionRequestData[] = [];
+      const handler = await bashModule.createHandler();
+      const execute = vi.spyOn(Object.getPrototypeOf(handler) as typeof handler, 'execute');
+      console.log(`COMPOUND_LS_BEFORE: ${rawLs(target)}`);
+      try {
+        const result = await executorFor('main-agent', requests, true).execute(
+          'Bash', { command }, { sessionId: 'real-seatbelt-compound' },
+        );
+        console.log(`COMPOUND_LS_AFTER: ${rawLs(target)}`);
+        console.log(`COMPOUND_RESULT command=${command} success=${result.success} output=${JSON.stringify(result.result)} sandbox=${JSON.stringify(result.metadata?.sandbox)} failureCode=${String(result.metadata?.failureCode)} neighbor.exists=${existsSync(neighbor)}`);
+        expect(execute).toHaveBeenCalledOnce();
+        expect(requests).toHaveLength(1);
+        expect(result.success, result.error).toBe(true);
+        expect(result.metadata?.sandbox).toMatchObject({ applied: true, code: 'OS_SANDBOX_APPLIED' });
+        expect(result.metadata?.failureCode).not.toBe(SANDBOX_APPROVED_RM_STILL_DENIED_FAILURE_CODE);
+        expect(result.result).toContain(suffix.startsWith(';') ? 'exit=0' : 'done');
+        expect(existsSync(target)).toBe(false);
+        expect(existsSync(neighbor)).toBe(true);
+      } finally {
+        execute.mockRestore();
+      }
+    },
+  );
 
   it('public Bash entry deletes the approved file under os.tmpdir with the real sandbox', async () => {
     const target = join(osTmpRoot, 'main-agent-os-tmpdir.txt');

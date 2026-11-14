@@ -22,6 +22,7 @@ import {
   enqueueRoleDraft,
   installRoleDraft,
   prepareRoleDraft,
+  rejectRoleDraft,
 } from '../../../services/roleAssets/roleDraftQueue';
 import { buildRoleCreatedSummary } from '../../../services/roleAssets/roleCreatedSummary';
 import { shouldCreateRoleDirectly } from '../../../services/roleAssets/roleCreationIntent';
@@ -70,7 +71,7 @@ async function shouldInstallDirectly(ctx: ToolContext, editingRoleId: string | u
 
 /**
  * 同名待确认草稿冲突：确认卡只在草稿所属会话里显示，所以失败文案要告诉模型草稿在哪。
- * 三种情形：本会话（沿用原文案）/ 另一会话仍在（点名）/ 所属会话已不存在（孤儿，不指路）。
+ * 跨会话两种情形：另一会话仍在（点名）/ 所属会话已不存在（孤儿，不指路）。
  */
 async function describeDraftRejection(
   ctx: ToolContext,
@@ -194,6 +195,11 @@ class ProposeRoleHandler implements ToolHandler<Record<string, unknown>, string>
       const installed = await installRoleDraft(prepared.draft, prepared.agentMd);
       if (!installed.success) {
         return { ok: false, error: installed.error ?? 'Role installation failed', code: 'DRAFT_REJECTED' };
+      }
+
+      for (const id of prepared.supersededDraftIds ?? []) {
+        const removed = await rejectRoleDraft(id);
+        if (!removed.success) throw new Error(removed.error);
       }
 
       const summary = buildRoleCreatedSummary(prepared.draft);

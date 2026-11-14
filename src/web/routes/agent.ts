@@ -30,9 +30,9 @@ import {
   buildWorkbenchToolScope,
 } from '../../host/app/workbenchTurnContext';
 import { withMissingAttachmentTurnSystemContext } from '../../host/app/missingAttachmentTurnContext';
-import { getSessionCommandCenterBrainContextForPrompt, getSessionCommandCenterTurnRulesForPrompt, getTextForegroundToolNamesForPrompt } from '../../host/app/sessionCommandCenterBrain';
+import { getSessionCommandCenterBrainContextForPrompt, getSessionCommandCenterTurnRulesForPrompt, getTextForegroundToolNamesForPrompt, resolveForegroundBrainTurnBudget } from '../../host/app/sessionCommandCenterBrain';
 import { applyMorningBriefSaveDraftRoleTools } from '../../host/app/morningBriefSaveDraftTools';
-import { isSessionCommandCenterTurn, SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS } from '../../shared/constants/sessionCommandCenter';
+import { isSessionCommandCenterTurn } from '../../shared/constants/sessionCommandCenter';
 import { AUTO_DELEGATION_TOOL_NAMES } from '../../host/agent/routingToolPolicy';
 import { wrapWithTurnSystemContext } from '../../host/agent/turnScaffold';
 import { buildCapabilityCandidateNotice } from '../../host/agent/capabilityCandidateNotice';
@@ -1351,10 +1351,6 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           config.agentOverride?.tools,
         );
         config.foregroundToolFace = true;
-        config.maxIterations = Math.min(
-          config.maxIterations ?? SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
-          SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
-        );
         // 回合级规则块（如存草稿）与工具面同一真源，都从 sessionCommandCenterBrain 取，
         // 不能只同步 getTextForegroundToolNamesForPrompt 一边（rework r1：存草稿曾只送
         // mail_draft 不送解析规则，模型即兴解析晨报草稿块）。
@@ -1445,6 +1441,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // tool result and make the provider reject the next user turn as malformed history.
       const inferenceHistory = cachedHistory.filter(
         (message) => !message.isMeta && message.visibility !== 'rewound',
+      );
+      if (commandCenterBrain) config.maxIterations = resolveForegroundBrainTurnBudget(
+        prompt, inferenceHistory.slice().reverse().find(message => message.role === 'assistant')?.metadata?.stoppedByStepLimit === true,
+        config.maxIterations, logger,
       );
       const history = inferenceHistory.map(({
         id,

@@ -95,6 +95,7 @@ const ROLE_HISTORY_ABSOLUTE_PATH = /(?:\/(?:Users|private|tmp|var|home|opt|etc|A
 
 function cleanLastWorkText(text: string): string {
   return text
+    .replaceAll('（无产物落盘）', ' ')
     .replace(ROLE_HISTORY_WORKDIR, ' ')
     .replace(ROLE_HISTORY_ABSOLUTE_PATH, ' ')
     .replace(/\s+/g, ' ')

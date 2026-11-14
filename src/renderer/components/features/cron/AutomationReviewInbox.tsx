@@ -1,3 +1,4 @@
+import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 // ============================================================================
 // AutomationReviewInbox —— 自动化页首的「待过目」收件箱（三件套 A4，独立卡片区）。
 // 数据源 = sessionAutomation 记录（status=pending_review 或 config.pendingReview）
@@ -11,6 +12,7 @@
 // ============================================================================
 
 import React, { useCallback, useEffect, useState } from 'react';
+import { isEditableTool } from '@shared/contract';
 import type { CronUrgency, PermissionResponse, SessionAutomationRecord } from '@shared/contract';
 import type { ParkedApprovalInboxItem } from '@shared/contract/pendingApproval';
 import { isCronUrgency } from '@shared/cronUrgency';
@@ -59,11 +61,24 @@ function recordUrgency(record: SessionAutomationRecord): CronUrgency {
   return isCronUrgency(urgency) ? urgency : 'fyi';
 }
 
-function formatWaiting(requestedAt: number): string {
+type InboxCopy = ReturnType<typeof useI18n>['t']['cronCenter'];
+
+function parkedToolTitle(item: ParkedApprovalInboxItem, copy: InboxCopy): string {
+  const title = item.displayTool ?? item.tool ?? '';
+  const storedPrefix = '重启前发起 · ';
+  const restarted = title.startsWith(storedPrefix);
+  const name = (restarted ? title.slice(storedPrefix.length) : title).trim();
+  return `${restarted ? copy.parkedVoided.restartPrefix : ''}${!name || name === 'unknown' ? copy.parkedPendingAction : name}`;
+}
+
+function formatWaiting(requestedAt: number, copy: InboxCopy): string {
   const mins = Math.max(0, Math.floor((Date.now() - requestedAt) / 60_000));
-  if (mins < 60) return `${mins}m`;
+  if (mins < 1) return copy.parkedWaitingLessThanMinute;
+  if (mins < 60) return copy.parkedWaitingMinutes.replace('{n}', String(mins));
   const hrs = Math.floor(mins / 60);
-  return hrs < 24 ? `${hrs}h` : `${Math.floor(hrs / 24)}d`;
+  return hrs < 24
+    ? copy.parkedWaitingHours.replace('{n}', String(hrs))
+    : copy.parkedWaitingDays.replace('{n}', String(Math.floor(hrs / 24)));
 }
 
 interface AutomationReviewInboxProps {
@@ -280,7 +295,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
     <div className="shrink-0 px-5 pt-4" data-testid="automation-review-inbox">
       {!hasContent ? (
         <div
-          className="flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-950/40 px-4 py-2.5 text-xs text-zinc-500"
+          className="shrink-0 flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-950/40 px-4 py-2.5 text-xs text-zinc-500"
           data-testid="automation-review-all-clear"
         >
           <CircleCheck className="h-3.5 w-3.5 text-badge-success" />
@@ -311,7 +326,8 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                         data-testid="parked-approval-item"
                       >
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm text-zinc-200">{item.displayTool ?? item.tool}</div>
+                          <div className="truncate text-sm text-zinc-200">{parkedToolTitle(item, cc)}</div>
+                          {item.sessionTitle && <div className="truncate text-xs text-zinc-400" data-testid="parked-session-title">{item.sessionTitle}</div>}
                           <SensitiveStepParkedRow
                             step={item.sensitiveStep}
                             onRespond={(response) => { void handleResolveParked(item, response); }}
@@ -324,7 +340,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                   // A4 作用域提示：external 动作离开本机（暖色边框强调）；有 target 时点名去向。
                   // 非 external 审批卡不变（不加 scopeNote、不换边框）。
                   const scopeNote = isExternal
-                    ? cc.parkedScopeExternal.replace('{target}', item.standingGrantTarget ?? (item.displayTool ?? item.tool))
+                    ? cc.parkedScopeExternal.replace('{target}', item.standingGrantTarget ?? (parkedToolTitle(item, cc)))
                     : null;
                   // B4 铸权入口：仅 external + 能确定性提取 target 时出现（模型侧无入口）。
                   const canMintStanding = isExternal && !!item.standingGrantTarget;
@@ -340,13 +356,14 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                             ? cc.pairingTitle.replace('{channel}', item.pairingChannel === 'lark' ? 'Lark' : 'Feishu')
                             : item.groupIds && item.groupIds.length > 1 && item.writeGrantFolder
                               ? cc.parkedWriteGroupTitle.replace('{count}', String(item.groupIds.length)).replace('{folder}', folderDisplayName(item.writeGrantFolder))
-                              : (item.displayTool ?? item.tool)}
+                              : (parkedToolTitle(item, cc))}
                           {isExternal && (
                             <span className="shrink-0 rounded bg-orange-500/15 px-1.5 py-0.5 text-[10px] text-badge-warning">
                               {cc.parkedExternalBadge}
                             </span>
                           )}
                         </div>
+                        {!isPairing && item.sessionTitle && <div className="truncate text-xs text-zinc-400" data-testid="parked-session-title">{item.sessionTitle}</div>}
                         {isPairing && item.pairingCode && (
                           <div className="text-xs font-medium text-badge-warning" data-testid="pairing-code">
                             {cc.pairingCode.replace('{code}', item.pairingCode)}
@@ -375,7 +392,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                           </div>
                         )}
                         <div className="text-[11px] text-zinc-500">
-                          {isOrphaned ? cc.parkedOrphaned : cc.parkedWaiting.replace('{duration}', formatWaiting(item.requestedAt))}
+                          {isOrphaned ? cc.parkedOrphaned : cc.parkedWaiting.replace('{duration}', formatWaiting(item.requestedAt, cc))}
                         </div>
                       </div>
                       {!isOrphaned && (
@@ -413,6 +430,30 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                               {cc.parkedAllowFolder.replace('{folder}', folderDisplayName(item.writeGrantFolder))}
                             </button>
                           )}
+                          {(item.kind === 'tool_approval' || item.kind === undefined) && !item.forceConfirm && !isEditableTool(item.tool) && (!isExternal || !!item.standingGrantTarget) && (
+                            <>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="secondary"
+                                disabled={busyId === item.id}
+                                onClick={() => handleResolveParked(item, 'allow_run')}
+                                data-testid="parked-allow-run"
+                              >
+                                {cc.parkedAllowRun}
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="secondary"
+                                disabled={busyId === item.id}
+                                onClick={() => handleResolveParked(item, 'allow_24h')}
+                                data-testid="parked-allow-24h"
+                              >
+                                {cc.parkedAllow24h}
+                              </Button>
+                            </>
+                          )}
                           <button /* ds-allow:button: 同上，收件箱行内超小文本按钮 */
                             onClick={() => handleResolveParked(item, 'deny')}
                             disabled={busyId === item.id}
@@ -438,7 +479,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                 {(!foldVoided || voidedExpanded) && voided.map((item) => (
                   <div key={item.id} className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2 opacity-50" data-testid="parked-approval-voided">
                     <div className="truncate text-sm text-zinc-200">{voidedToolTitle(item.displayTool ?? item.tool, cc.parkedVoided)}</div>
-                    {item.sessionTitle && <div className="text-xs text-zinc-400">{item.sessionTitle}</div>}
+                    {item.sessionTitle && <div className="text-xs text-zinc-400">{getDisplaySessionTitle(item.sessionTitle, language)}</div>}
                     <div className="text-[11px] text-zinc-500">
                       {cc.parkedVoided.startedAt.replace('{time}', new Date(item.requestedAt).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN', {
                         month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',

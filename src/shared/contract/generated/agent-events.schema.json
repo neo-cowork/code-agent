@@ -1134,6 +1134,33 @@
             "toolName": {
               "type": "string"
             },
+            "connectorAccess": {
+              "type": "object",
+              "properties": {
+                "connectorId": {
+                  "type": "string"
+                },
+                "connectorName": {
+                  "type": "string"
+                },
+                "access": {
+                  "type": "string",
+                  "enum": [
+                    "read",
+                    "write"
+                  ]
+                }
+              },
+              "required": [
+                "connectorId",
+                "connectorName",
+                "access"
+              ],
+              "additionalProperties": false
+            },
+            "purpose": {
+              "type": "string"
+            },
             "commandRiskLevel": {
               "type": "string",
               "enum": [
@@ -1169,6 +1196,32 @@
             },
             "standingGrantTarget": {
               "type": "string"
+            },
+            "browserSessionGrant": {
+              "type": "object",
+              "properties": {
+                "target": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "previousOrigins": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "target",
+                "previousOrigins"
+              ],
+              "additionalProperties": false
             },
             "targetApp": {
               "type": "object",
