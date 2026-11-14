@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { useCallback } from 'react';
-import { MAX_FOLDER_PATH_UPLOADS } from '../../../../../shared/constants/chatUploads';
+import { MAX_FOLDER_PATH_UPLOADS, MAX_FOLDER_BATCH_BODY_SIZE } from '../../../../../shared/constants/chatUploads';
 import type { MessageAttachment } from '../../../../../shared/contract';
 import {
   MAX_FILE_SIZE,
@@ -268,18 +268,62 @@ export function useFileUpload() {
       fileContents.push(entry);
     }
 
-    // Binary files need tools; prioritize their uploads within the transport budget.
-    const pathOrder = filesToProcess.map((_, index) => index)
-      .sort((a, b) => Number(!!fileContents[b].binary) - Number(!!fileContents[a].binary))
-      .slice(0, MAX_FOLDER_PATH_UPLOADS);
-    for (const index of pathOrder) {
-      try {
-        const absolutePath = await ipcService.getPathForFile(filesToProcess[index]);
-        if (absolutePath && /^(?:\/|[A-Za-z]:[\\/]|\\\\)/.test(absolutePath)) {
-          fileContents[index].absolutePath = absolutePath;
+    let batchRoots: string[] | undefined;
+    let batchFailed = false;
+    try {
+      if (ipcService.uploadFolderBatch) {
+        // Reserve multipart headers/UTF-8 paths as well as file bytes in every chunk.
+        const chunks: Array<Array<{ file: File; relativePath: string }>> = [[]];
+        let chunkSize = 1024;
+        for (const [index, file] of filesToProcess.entries()) {
+          const relativePath = fileContents[index].path;
+          const partSize = file.size + new TextEncoder().encode(relativePath + file.name).length + 1024;
+          if (partSize + 1024 > MAX_FOLDER_BATCH_BODY_SIZE) throw new Error('File exceeds batch limit');
+          if (chunkSize + partSize > MAX_FOLDER_BATCH_BODY_SIZE) {
+            chunks.push([]);
+            chunkSize = 1024;
+          }
+          chunks[chunks.length - 1].push({ file, relativePath });
+          chunkSize += partSize;
         }
-      } catch (error) {
-        logger.warn('processFolderEntry - failed to get file path', { error });
+        const uploaded = [];
+        for (const chunk of chunks) {
+          const pending = ipcService.uploadFolderBatch?.(chunk);
+          if (!pending) break; // Native bridges keep the existing path flow.
+          const result = await pending;
+          if (!/^(?:\/|[A-Za-z]:[\\/]|\\\\)/.test(result.root)
+            || result.files.length !== chunk.length
+            || !result.files.every((entry, index) => entry.relativePath === chunk[index].relativePath
+              && entry.path.replace(/\\/g, '/').startsWith(result.root.replace(/\\/g, '/').replace(/\/+$/, '') + '/'))) {
+            throw new Error('Invalid batch upload paths');
+          }
+          uploaded.push(result);
+        }
+        if (uploaded.length === chunks.length) {
+          batchRoots = uploaded.map((result) => result.root);
+          const paths = new Map(uploaded.flatMap((result) => result.files.map((entry) => [entry.relativePath, entry.path] as const)));
+          for (const entry of fileContents) entry.absolutePath = paths.get(entry.path);
+        }
+      }
+    } catch (error) {
+      batchFailed = true;
+      logger.warn('processFolderEntry - batch upload failed, using per-file fallback', { error });
+    }
+
+    if (!batchRoots) {
+      // Binary files need tools; prioritize their uploads within the transport budget.
+      const pathOrder = filesToProcess.map((_, index) => index)
+        .sort((a, b) => Number(!!fileContents[b].binary) - Number(!!fileContents[a].binary))
+        .slice(0, MAX_FOLDER_PATH_UPLOADS);
+      for (const index of pathOrder) {
+        try {
+          const absolutePath = await ipcService.getPathForFile(filesToProcess[index]);
+          if (absolutePath && /^(?:\/|[A-Za-z]:[\\/]|\\\\)/.test(absolutePath)) {
+            fileContents[index].absolutePath = absolutePath;
+          }
+        } catch (error) {
+          logger.warn('processFolderEntry - failed to get file path', { error });
+        }
       }
     }
 
@@ -290,8 +334,9 @@ export function useFileUpload() {
         ? absolutePath.slice(0, -entry.path.length) + folderName
         : undefined;
     });
-    const folderPath = folderRoots[0] && folderRoots.every((root) => root === folderRoots[0])
-      ? folderRoots[0] : undefined;
+    const roots = batchRoots ?? folderRoots;
+    const folderPath = !batchFailed && roots[0] && roots.every((root) => root === roots[0])
+      ? roots[0] : undefined;
 
     const id = generateAttachmentId();
     const typeStats = Object.entries(byType)

@@ -6,7 +6,7 @@
 // 闲置 30 分钟（lease 到期）/ 池满驱逐 / 用户关闭后翻成 `closed`，URL 留存供一键重开
 // （重开只恢复 URL，不恢复表单内容）。
 //
-// 一个会话最多一扇 kept 窗：新的 keep 关掉旧的。
+// Each conversation retains an explicit result and a separate timed-out human wait.
 // 窗口自身的 close/crashed 会话事件把条目翻成 closed（池条目一并释放，不占容量）。
 
 import { createLogger } from '../infra/logger';
@@ -26,6 +26,8 @@ export interface KeptBrowserEntry {
   title: string;
   keptAt: number;
   state: KeptBrowserEntryState;
+  /** Parked by a timed-out wait_for_user: the next agent run of the conversation reclaims it (no chat "kept result" UI). */
+  parkedForUser?: boolean;
 }
 
 /** IPC/UI 用的三态快照：none=无 kept 条目；kept=窗还活着；closed=已关、URL 留存。 */
@@ -48,6 +50,7 @@ export interface RegisterKeptBrowserInput {
   /** kept 窗的会话变化事件源（close/crashed → closed）。 */
   browserService: { onSessionChanged?: (listener: (reason: string) => void) => (() => void) | undefined };
   keptAt?: number;
+  parkedForUser?: boolean;
 }
 
 export class KeptBrowserRegistry {
@@ -64,12 +67,14 @@ export class KeptBrowserRegistry {
    * 同一 serviceKey 重复 keep 只刷新 url/title/keptAt。
    */
   register(input: RegisterKeptBrowserInput): KeptBrowserEntry {
-    const previous = this.entries.get(input.conversationId);
+    const key = this.entryKey(input.conversationId, input.parkedForUser);
+    const previous = this.entries.get(key);
+    this.entries.delete(key);
     if (previous && previous.serviceKey !== input.serviceKey && previous.state === 'kept') {
       this.retireKeptService(previous);
     }
-    this.unsubs.get(input.conversationId)?.();
-    this.unsubs.delete(input.conversationId);
+    this.unsubs.get(key)?.();
+    this.unsubs.delete(key);
 
     const entry: KeptBrowserEntry = {
       conversationId: input.conversationId,
@@ -78,8 +83,9 @@ export class KeptBrowserRegistry {
       title: input.title,
       keptAt: input.keptAt ?? this.now(),
       state: 'kept',
+      ...(input.parkedForUser ? { parkedForUser: true } : {}),
     };
-    this.entries.set(input.conversationId, entry);
+    this.entries.set(key, entry);
     this.pool.setKept(entry.serviceKey, true);
 
     const capturedServiceKey = entry.serviceKey;
@@ -87,13 +93,14 @@ export class KeptBrowserRegistry {
       if (!TERMINAL_SESSION_REASONS.has(reason)) return;
       this.markClosedIfService(input.conversationId, capturedServiceKey);
     });
-    if (unsubscribe) this.unsubs.set(input.conversationId, unsubscribe);
+    if (unsubscribe) this.unsubs.set(key, unsubscribe);
     return { ...entry };
   }
 
   /** 会话当前 kept 条目（含 closed；无条目返回 null）。 */
   get(conversationId: string): KeptBrowserEntry | null {
-    const entry = this.entries.get(conversationId);
+    const entry = this.entries.get(this.entryKey(conversationId))
+      ?? this.entries.get(this.entryKey(conversationId, true));
     return entry ? { ...entry } : null;
   }
 
@@ -101,7 +108,17 @@ export class KeptBrowserRegistry {
   getAlive(conversationId: string): KeptBrowserEntry | null {
     this.revalidateAlive(conversationId);
     const entry = this.get(conversationId);
-    return entry?.state === 'kept' ? entry : null;
+    return entry?.state === 'kept' ? entry : this.getParkedAlive(conversationId);
+  }
+
+  /** Agent runs reclaim only the human-wait window, never an explicit result. */
+  getParkedAlive(conversationId: string): KeptBrowserEntry | null {
+    const entry = this.entries.get(this.entryKey(conversationId, true));
+    return entry?.state === 'kept' ? { ...entry } : null;
+  }
+
+  private entryKey(conversationId: string, parkedForUser = false): string {
+    return JSON.stringify([conversationId, parkedForUser]);
   }
 
   /** 该池键是否仍是某会话存活中的 kept 窗（releaseBinding 跳过释放的判据）。 */
@@ -112,30 +129,38 @@ export class KeptBrowserRegistry {
     return false;
   }
 
+  /** A parked window was reclaimed by a run: drop the entry (window stays with that run, closes normally at its end). */
+  unpark(conversationId: string): void {
+    const key = this.entryKey(conversationId, true);
+    const entry = this.entries.get(key);
+    if (!entry) return;
+    this.unsubs.get(key)?.();
+    this.unsubs.delete(key);
+    this.entries.delete(key);
+    if (!this.isKeptServiceAlive(entry.serviceKey)) this.pool.setKept(entry.serviceKey, false);
+  }
+
   /** 条目翻 closed：URL 留存；池条目释放（死窗不占池容量、不挡新任务）。 */
-  markClosed(conversationId: string): void {
-    const entry = this.entries.get(conversationId);
-    if (entry?.state !== 'kept') return;
-    entry.state = 'closed';
-    this.unsubs.get(conversationId)?.();
-    this.unsubs.delete(conversationId);
-    this.retireKeptService(entry);
-    logger.info(`Kept result page closed (conversation ${entry.conversationId}): ${entry.url}`);
+  markClosed(conversationId: string, serviceKey?: string): void {
+    const target = serviceKey ?? this.get(conversationId)?.serviceKey;
+    if (target) this.markClosedIfService(conversationId, target);
   }
 
   /** run 收尾时用窗的最终地址刷新 kept 条目（keep 之后模型又导航过的场景）。 */
-  refreshTarget(conversationId: string, url: string, title: string): void {
-    const entry = this.entries.get(conversationId);
-    if (entry?.state !== 'kept') return;
-    entry.url = url;
-    entry.title = title;
+  refreshTarget(conversationId: string, url: string, title: string, serviceKey?: string): void {
+    const target = serviceKey ?? this.get(conversationId)?.serviceKey;
+    for (const entry of this.entries.values()) {
+      if (entry.conversationId !== conversationId || entry.serviceKey !== target || entry.state !== 'kept') continue;
+      entry.url = url;
+      entry.title = title;
+    }
   }
 
   /** IPC 三态快照。 */
   snapshot(conversationId: string): KeptResultPageSnapshot {
     this.revalidateAlive(conversationId);
-    const entry = this.entries.get(conversationId);
-    if (!entry) return { state: 'none', url: null, title: null };
+    const entry = this.entries.get(this.entryKey(conversationId));
+    if (!entry || entry.parkedForUser) return { state: 'none', url: null, title: null };
     return { state: entry.state, url: entry.url, title: entry.title };
   }
 
@@ -144,19 +169,29 @@ export class KeptBrowserRegistry {
    * （IPC 三态 / adopt 判据）也要当场把死窗翻成 closed，不把「已保留」说给死窗。
    */
   private revalidateAlive(conversationId: string): void {
-    const entry = this.entries.get(conversationId);
+    const entry = this.entries.get(this.entryKey(conversationId));
     if (entry?.state !== 'kept') return;
     if (this.pool.isServiceAlive(entry.serviceKey)) return;
-    this.markClosed(conversationId);
+    this.markClosed(conversationId, entry.serviceKey);
   }
 
   private markClosedIfService(conversationId: string, serviceKey: string): void {
-    const entry = this.entries.get(conversationId);
-    if (entry?.serviceKey !== serviceKey) return;
-    this.markClosed(conversationId);
+    let closed: KeptBrowserEntry | undefined;
+    for (const [key, entry] of this.entries) {
+      if (entry.conversationId !== conversationId || entry.serviceKey !== serviceKey || entry.state !== 'kept') continue;
+      entry.state = 'closed';
+      this.unsubs.get(key)?.();
+      this.unsubs.delete(key);
+      closed = entry;
+    }
+    if (closed) {
+      this.retireKeptService(closed);
+      logger.info(`Kept browser closed (conversation ${conversationId}): ${closed.url}`);
+    }
   }
 
   private retireKeptService(entry: KeptBrowserEntry): void {
+    if (this.isKeptServiceAlive(entry.serviceKey)) return;
     this.pool.setKept(entry.serviceKey, false);
     void this.pool.releaseAgent(entry.serviceKey).catch(() => undefined);
   }

@@ -13,7 +13,7 @@
 #   bash scripts/run-dev-slot.sh [N] --open-only # 不构建，只拉起已装的槽 N
 #   bash scripts/run-dev-slot.sh [N] --background # 启动时尽量不抢前台
 #   bash scripts/run-dev-slot.sh [N] --dry-run    # 只打印将执行的启动命令
-#   bash scripts/run-dev-slot.sh [N] --fresh-user # 使用独立的新用户目录，退出后手动清理
+#   bash scripts/run-dev-slot.sh [N] --fresh-user # 使用独立的新用户目录与登录身份，退出后手动清理
 #   NEO_SLOT_BACKGROUND=1 bash scripts/run-dev-slot.sh [N] # 等价于 --background
 #
 # Verification limits under --background (expected, not measured):
@@ -92,6 +92,7 @@ if [ "$FRESH_USER" = "1" ]; then
     }
     process.stdout.write(path.resolve(requested));
   ')"
+  FRESH_NAME="fresh-$(node -e 'process.stdout.write(require("crypto").randomBytes(12).toString("hex"))')"
   FRESH_DIR="$FRESH_ROOT/neo-fresh-slot${SLOT}-$(date +%Y%m%d-%H%M%S)"
 fi
 
@@ -130,6 +131,7 @@ APP_PATH="/Applications/$APP_NAME.app"
 LAUNCH=(open)
 if [ "$FRESH_USER" = "1" ]; then
   LAUNCH+=(--env "CODE_AGENT_DATA_DIR=$FRESH_DIR")
+  LAUNCH+=(--env "CODE_AGENT_FRESH_USER=$FRESH_NAME")
 fi
 if [ "$BACKGROUND" = "1" ]; then
   LAUNCH+=(--env NEO_VERIFY_NO_FOREGROUND=1 -g -j)
@@ -142,7 +144,7 @@ print_launch_command() {
   for arg in "${LAUNCH[@]:1}"; do
     case "$arg" in
       CODE_AGENT_DATA_DIR=*) printf ' CODE_AGENT_DATA_DIR="%s"' "${arg#CODE_AGENT_DATA_DIR=}" ;;
-      NEO_VERIFY_NO_FOREGROUND=1) printf ' %s' "$arg" ;;
+      CODE_AGENT_FRESH_USER=*|NEO_VERIFY_NO_FOREGROUND=1) printf ' %s' "$arg" ;;
       -*) printf ' %s' "$arg" ;;
       *) printf ' "%s"' "$arg" ;;
     esac

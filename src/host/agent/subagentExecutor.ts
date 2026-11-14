@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { publishEnvAssistToolNotice } from '../permissions/envAssist/toolNotice';
-import { buildInsufficientScopeConnectorEvent } from './runtime/connectorScopeCard';
+import { buildConnectorToolFailureEvent } from './runtime/connectorScopeCard';
 import { resolveSubagentPreset } from './subagentFirstRunPreset';
 import type { AgentMessageOrigin } from './messageOrigin';
 import type { ToolCall } from '../../shared/contract';
@@ -903,7 +903,7 @@ export class SubagentExecutor {
               await publishEnvAssistToolNotice({ toolName: toolCall.name, result, sessionId: context.sessionId, runId: executionRunId, onEvent: (event) => context.events.emit(event.type, event.data) });
               descendantUsage = addSubagentUsage(descendantUsage, result.metadata);
               // MCP 权限范围不足：子代理（文字前台委派的常见路径）的失败也要给用户一张「重新授权」卡
-              const scopeCard = buildInsufficientScopeConnectorEvent(result);
+              const scopeCard = buildConnectorToolFailureEvent(result);
               if (scopeCard) context.events.emit(scopeCard.type, scopeCard.data);
               const toolDuration = Date.now() - toolStartTime;
               toolResults.push(
