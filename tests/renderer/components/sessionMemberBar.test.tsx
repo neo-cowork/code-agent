@@ -113,6 +113,32 @@ describe('SessionMemberBar（折叠 chip）', () => {
     expect(appState.openWorkbenchTab).toHaveBeenCalledWith('experts', { source: 'user' });
   });
 
+  it.each(['zh', 'en'] as const)('restart-interrupted failed chip localizes a Chinese background task title and reason (%s)', async (language) => {
+    appState.language = language;
+    const title = '供应商定价对比报告';
+    useBackgroundTaskStore.setState({ tasks: [
+      {
+        id: 'pricing-comparison', sessionId: 'session-1', source: 'session_command_center',
+        title, status: 'failed', createdAt: 1, updatedAt: 2, events: [], outputRefs: [],
+        failure: { reason: 'session_command_task_interrupted_by_restart', message: '任务因应用重启而中断。' },
+        summary: '定价对比报告尚未完成，请重新发起任务。',
+      },
+    ] });
+    render(<SessionMemberBar sessionId="session-1" />);
+    const chip = await screen.findByTestId('session-member-bar-collapsed');
+    expect(chip.textContent).toContain(language === 'en'
+      ? '1 agent · Failed · Background assistant'
+      : `1 个代理 · 失败 · ${title}`);
+    expect(chip.getAttribute('title')).toBe(language === 'en'
+      ? `Background assistant: ${en.backgroundPanel.interrupted}`
+      : `${title}：${zh.backgroundPanel.interrupted}`);
+    if (language === 'en') {
+      expect(chip.getAttribute('title')).toMatch(/^Background assistant: The app restarted while this background task was still running/);
+    }
+    expect(chip.getAttribute('title')).not.toContain('session_command_task_interrupted_by_restart');
+    expect(chip.getAttribute('title')).not.toContain('interrupted_by_restart');
+  });
+
   it('cancelled chip names the stopped agent, with name only when no reason exists', async () => {
     useBackgroundTaskStore.setState({ tasks: [
       { id: 'budget-review', sessionId: 'session-1', source: 'delegate_task', title: 'Budget review', status: 'cancelled', createdAt: 1, updatedAt: 2, events: [], outputRefs: [] },

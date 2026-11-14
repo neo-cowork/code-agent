@@ -7,6 +7,7 @@ import { useSessionStore } from '../../stores/sessionStore';
 import { environmentProtocolUnsupportedMessage } from '../../i18n/executionEnvironment';
 import { rejectedRequestMessage } from '../../i18n/agentRunErrors';
 import { httpFailureMessage } from '../../utils/httpFailureMessage';
+import { getServerReconnectingMessage } from '../../utils/serverConnectionMonitor';
 import { getApiBaseUrl } from '../../api/transport';
 
 export function isRuntimeBusyStatus(status: TaskSessionStatus | undefined): boolean {
@@ -52,10 +53,13 @@ export function getAgentSendFailureMessage(error: unknown): string {
   const language = useAppStore.getState().language;
   const protocolMessage = environmentProtocolUnsupportedMessage(error, language);
   if (protocolMessage) return protocolMessage;
+  const rawBody = typeof error === 'object' && error !== null
+    ? (error as { rawErrorBody?: unknown }).rawErrorBody
+    : undefined;
   // 400/422（含 PROMPT_REQUIRED / PROJECT_SOURCE_TRUST）：气泡只给下一步提示，原始响应体 warn 留痕。
   const rejected = rejectedRequestMessage(error, language);
   if (rejected) {
-    console.warn('[AgentSend] request rejected by host:', raw);
+    console.warn('[AgentSend] request rejected by host:', raw, rawBody ?? '');
     return rejected;
   }
   // HTTP 状态级失败（transport 带 status 的 Error）：一句话人话，不加 Error: 前缀、
@@ -64,7 +68,7 @@ export function getAgentSendFailureMessage(error: unknown): string {
     const { status, code } = error as { status?: unknown; code?: unknown };
     if (typeof status === 'number') {
       // transport 挂的 rawErrorBody（原始响应体/HTML）只进 warn 诊断，不进气泡。
-      console.warn('[AgentSend] http failure:', raw, (error as { rawErrorBody?: unknown }).rawErrorBody ?? '');
+      console.warn('[AgentSend] http failure:', raw, rawBody ?? '');
       return httpFailureMessage({
         status,
         code: typeof code === 'string' ? code : undefined,
@@ -72,9 +76,15 @@ export function getAgentSendFailureMessage(error: unknown): string {
       });
     }
   }
-  return message
-    ? `Error: ${message}`
-    : 'Error: 消息发送失败，但前端没有收到具体错误。请查看后台日志。';
+  // 网络层/未知无状态失败：原始报错只进 warn 留痕；若已是连接监视器的重连提示句则直接采用（无 Error: 前缀），
+  // 否则统一落回当前语言的通用重试句。
+  const cause = error instanceof Error ? error.cause : undefined;
+  console.warn('[AgentSend] send failure:', message || String(error), cause ?? '');
+  const reconnectingMessage = getServerReconnectingMessage();
+  if (message && message === reconnectingMessage) {
+    return reconnectingMessage;
+  }
+  return httpFailureMessage({ status: 0, language });
 }
 
 export function getRuntimeInputMode(context?: ConversationEnvelopeContext): RuntimeInputMode {

@@ -3,7 +3,7 @@ import { join, relative } from 'node:path';
 import ts from 'typescript';
 import { expect, it } from 'vitest';
 
-const forbidden = /osascript|runAppleScript|CGRequest|askUserIfNeeded\s*:\s*true|requestAccess|requestAccessibility/;
+const forbidden = /osascript|runAppleScript|CGRequest|IOHIDRequestAccess|askUserIfNeeded\s*:\s*true|requestAccess|requestAccessibility/;
 const probes = 'src/host/permissions/envAssist/probes/';
 const grant = 'src/host/permissions/envAssist/grants/requestGrant.ts';
 
