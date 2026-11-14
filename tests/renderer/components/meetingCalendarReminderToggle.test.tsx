@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { zh } from '../../../src/renderer/i18n/zh';
 
 const state = vi.hoisted(() => ({
-  invoke: vi.fn(async (_domain: string, action: string) => (action === 'get' ? { meeting: { calendarReminder: false } } : undefined)),
+  invoke: vi.fn(async (_domain: string, action: string, _payload?: { meeting: { calendarReminder: boolean } }) => (action === 'get' ? { meeting: { calendarReminder: false } } : undefined)),
   access: 'denied' as 'granted' | 'denied',
 }));
 
@@ -25,7 +25,7 @@ describe('会前提醒开关', () => {
     render(<MeetingCalendarReminderToggle />);
     fireEvent.click(await screen.findByRole('switch', { name: '会前提醒我记这场会' }));
     await waitFor(() => expect(screen.getByText(/系统设置 → 隐私与安全性 → 日历/)).toBeTruthy());
-    const sets = state.invoke.mock.calls.filter((c) => c[1] === 'set').map((c) => (c[2] as { meeting: { calendarReminder: boolean } }).meeting.calendarReminder);
+    const sets = state.invoke.mock.calls.filter((c) => c[1] === 'set').map((c) => c[2]?.meeting.calendarReminder);
     expect(sets).toEqual([true, false]);
   });
 
