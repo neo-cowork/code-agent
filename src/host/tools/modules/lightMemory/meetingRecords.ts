@@ -54,7 +54,7 @@ export function runMeetingRecords(store: MeetingRecordStore, args: Record<string
     const id = typeof args.meeting_id === 'string' ? args.meeting_id.trim() : '';
     if (!id) return { ok: false, error: 'read needs meeting_id', code: 'INVALID_ARGS' };
     const meeting = store.get(id);
-    if (!meeting) return { ok: false, error: `没有 id 为 ${id} 的会议`, code: 'NOT_FOUND' };
+    if (!meeting) return { ok: false, error: `no meeting with id ${id}`, code: 'NOT_FOUND' };
     const { text, truncated } = formatTranscript(store.transcript(meeting));
     return {
       ok: true,
