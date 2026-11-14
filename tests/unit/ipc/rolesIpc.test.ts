@@ -17,6 +17,9 @@ vi.mock('../../../src/host/task/TaskManager', () => ({
   getTaskManager: () => ({ emitAgentEventForSession: receipts.broadcast }),
 }));
 vi.mock('../../../src/host/services/roleAssets/roleFirstWake', () => ({ enqueueFirstWake: vi.fn() }));
+vi.mock('../../../src/host/model/quickModel', () => ({
+  quickTask: vi.fn(async () => ({ success: false, error: 'model unavailable' })),
+}));
 import { enqueueRoleDraft, generateRoleAgentMd } from '../../../src/host/services/roleAssets/roleDraftQueue';
 
 vi.mock('../../../src/host/config/configPaths', () => ({
@@ -116,11 +119,15 @@ vi.mock('../../../src/host/platform', async (importOriginal) => {
 });
 
 import { registerRolesHandlers, sanitizeLastWork } from '../../../src/host/ipc/roles.ipc';
+import { ROLE_PROACTIVITY } from '../../../src/shared/constants';
+import { buildWakePrompt } from '../../../src/host/services/roleAssets/roleProactivity';
+import { runRoleWriteBack } from '../../../src/host/services/roleAssets/roleWriteBack';
 import {
   ensureRoleAssetDirs,
   writeScopedMemory,
   appendRoleHistory,
   listScopedMemories,
+  loadRoleHistory,
 } from '../../../src/host/services/roleAssets/roleAssetService';
 import type { RolePanelDetail, RolePanelEntry } from '../../../src/shared/contract/roleAssets';
 import { BUILTIN_ROLES, installBuiltinRoles } from '../../../src/host/services/roleAssets/builtinRoles';
@@ -943,6 +950,35 @@ describe('roles.ipc (domain:roles)', () => {
 });
 
 describe('sanitizeLastWork', () => {
+  it('hides real buildWakePrompt instructions and keeps write-back history free of the scaffold', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'roles-ipc-wake-'));
+    mockConfigDir.dir = tmpDir;
+    try {
+      await ensureRoleAssetDirs('研究员');
+      const wakeTriggerLabel = `${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}（cadence 触发）`;
+      for (const prompt of [
+        buildWakePrompt('cadence'),
+        buildWakePrompt('event', '用户刚结束一轮长任务'),
+        wakeTriggerLabel,
+      ]) {
+        const flat = prompt.replace(/\s+/g, ' ').slice(0, 60);
+        expect(sanitizeLastWork(`- 2026-11-13 | ${flat} | ${flat}`)).toBe('');
+        const wb = await runRoleWriteBack({ roleId: '研究员', taskPrompt: prompt, finalOutput: '已检查' });
+        expect(wb.executed).toBe(true);
+        expect(wb.historyAppended).toBe(true);
+      }
+      const rows = await loadRoleHistory('研究员');
+      expect(rows.length).toBeGreaterThan(0);
+      for (const row of rows) {
+        expect(sanitizeLastWork(row)).not.toMatch(/你被|你的任务|这不是用户发来的消息/);
+      }
+      expect(sanitizeLastWork(`- 2026-11-13 | ${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}(cadence) | [report] completed | why: internal prompt | evidence: private/file.md`))
+        .toBe(`2026-11-13 ${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}`);
+      expect(sanitizeLastWork('- 2026-11-13 | 报告 | 完成周报 | why: internal | evidence: private/file.md')).toBe('2026-11-13 完成周报');
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
   it('removes internal labels and leaked work directories from a history row', () => {
     expect(sanitizeLastWork('- 2026-07-22 | Directory: wt-e4a6fix | [工作目录: /private/tmp/xx/yy] 修复了侧栏对齐'))
       .toBe('2026-07-22 修复了侧栏对齐');
