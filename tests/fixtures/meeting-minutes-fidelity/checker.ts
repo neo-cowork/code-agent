@@ -6,7 +6,7 @@ export interface FidelityOptions {
 }
 
 export const ALLOWED_OWNERS = ['小陈', '老王', 'PM'];
-const PENDING = /待指定|待定|待认领|待确认|来源未/;
+const PENDING = /待指定|待定|待认领|待确认|来源未|未约定|未记录|未给|待明确/;
 const FORBIDDEN_DEADLINE_WORDS = /尽快|本周内|ASAP|立即|马上/i;
 // 来源没有的动作：回复财务、运营周报材料
 const FORBIDDEN_ACTIONS = [/回复财务|书面回复|同步(给|回)?财务|向财务/, /周报/];
