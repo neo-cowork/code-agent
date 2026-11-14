@@ -1,5 +1,6 @@
 import { hasNativeBridge } from '../api/transport';
 import { CONFIG_DIR_NEW, CONFIG_DIR_DEV } from '../../shared/constants/configDir';
+import { CHAT_UPLOAD_SUBDIR_NAME } from '../../shared/constants/chatUploads';
 
 function getBrowserAuthToken(): string | null {
   if (typeof window === 'undefined') return null;
@@ -36,7 +37,9 @@ export function resolveFileUrl(filePath: string): string {
     // 两个都要识别；漏掉 dev 目录会错路由到 /api/workspace/file 被 403，pptx 预览整页裂图。
     // normalize 分隔符以兼容 Windows 反斜杠路径。
     const normalized = filePath.replace(/\\/g, '/');
-    if (normalized.includes(`/${CONFIG_DIR_NEW}/`) || normalized.includes(`/${CONFIG_DIR_DEV}/`)) {
+    // 聊天上传副本（<数据目录>/uploads）含视频/音频等非图片，必须走通用 workspace 文件路由，截图路由只认图片。
+    const isChatUploadCopy = normalized.includes(`/${CONFIG_DIR_NEW}`) && normalized.includes(`/${CHAT_UPLOAD_SUBDIR_NAME}/`);
+    if (!isChatUploadCopy && (normalized.includes(`/${CONFIG_DIR_NEW}/`) || normalized.includes(`/${CONFIG_DIR_DEV}/`))) {
       return resolveScreenshotUrl(filePath);
     }
 

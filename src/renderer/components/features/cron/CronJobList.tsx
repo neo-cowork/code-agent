@@ -67,7 +67,7 @@ export const CronJobList: React.FC<CronJobListProps> = ({ awaitingByJobId }) => 
   }, [jobs, searchQuery, locationFilter, language]);
 
   return (
-    <div className="flex h-full flex-col border-r border-zinc-800 bg-zinc-950/80">
+    <div className="flex h-full flex-col border-r border-zinc-800 bg-zinc-950/80 contain-size">
       <div className="border-b border-zinc-800 p-4">
         <div className="mb-3 flex items-center justify-between">
           <div>

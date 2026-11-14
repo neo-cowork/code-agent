@@ -11,6 +11,7 @@
 // 滚动契约（2026-07-26 打磨批 D D0）：header 以下整体是页级滚动区（overflow-y-auto）——
 // 顶区全是 shrink-0，工作台 grid 用 flex-[1_0_420px]：高屏 grow 占满剩余空间，
 // 矮屏不低于 420px、整页可滚到达。
+// 详情按内容撑高工作台，不能再以 containment/overflow 裁出第二层滚动区。
 // ============================================================================
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -388,7 +389,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
           <>
             {/* 模板区独立成块（拍板）：与任务工作台分离，点一下即建 */}
             <CronFeaturedTemplates />
-            <div className="grid flex-[1_0_420px] grid-cols-[360px_1fr] overflow-hidden">
+            <div className="grid flex-[1_0_420px] grid-cols-[360px_1fr]">
               <CronJobList awaitingByJobId={awaitingByJobId} />
               <div className="min-w-0">
                 {isLoading && jobs.length === 0 ? (
