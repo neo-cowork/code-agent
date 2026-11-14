@@ -14,6 +14,7 @@
 import { recordBackgroundTaskStopNote } from '../services/commandCenter/backgroundTaskStopNote';
 import { resolveStoppedTaskOutcome } from '../services/commandCenter/sessionTaskStopConclusion';
 import { describeSubagentStopReason } from './subagentFailureReason';
+import { appendSubagentLeftoverShellReport } from './subagentLeftoverShells';
 import { randomUUID } from 'node:crypto';
 import type { SubagentResult } from './subagentExecutorTypes';
 import { AgentFailureCode, inferAgentFailureCode, type AgentFailureCode as AgentFailureCodeType } from '../../shared/contract/agentFailure';
@@ -304,13 +305,17 @@ export class BackgroundSubagentRegistry {
       try {
         const returned = await promise;
         // 前台共用的执行器只给 stopHint、不改判；后台注册表才把「没有结论就停下」落成失败 + 白话说明。
-        const hint = returned.success
+        const hint: SubagentResult['stopHint'] | undefined = returned.success
           ? returned.stopHint ?? (!returned.output.trim()
-            ? { kind: 'no_conclusion' as const, conclusion: resolveStoppedTaskOutcome({ status: 'completed', detail: '' }).detail }
+            ? { kind: 'no_conclusion', conclusion: resolveStoppedTaskOutcome({ status: 'completed', detail: '' }).detail }
             : undefined)
           : undefined;
         const result: SubagentResult = hint
-          ? { ...returned, success: false, output: hint.conclusion, error: hint.conclusion, stopKind: hint.kind }
+          ? {
+            ...returned, success: false, error: hint.conclusion, stopKind: hint.kind,
+            // 结论在前，保留完成路径已生成的仍在运行的后台 shell 报告（含 taskId，否则没人会去清理它）。
+            output: appendSubagentLeftoverShellReport(hint.conclusion, hint.leftoverReport ?? ''),
+          }
           : returned;
         const entry = this.entries.get(agentId);
         if (entry) {

@@ -79,7 +79,7 @@ export interface SubagentResult {
   /** Deterministic early-stop category, independent of failure-code billing/cancellation semantics. */
   stopKind?: 'step_cap' | 'no_conclusion';
   /** 成功返回但没有文字结论（撞步数上限 / 最后一轮只有工具调用）；只有后台注册表据此改判，前台调用方不受影响。 */
-  stopHint?: { kind: 'step_cap' | 'no_conclusion'; conclusion: string };
+  stopHint?: { kind: 'step_cap' | 'no_conclusion'; conclusion: string; /** 完成路径已生成的「仍在运行的后台 shell」报告（含 taskId），后台注册表改写 output 时须保留。 */ leftoverReport?: string };
   /**
    * N-SUBAGENT-ZEROTOOLS：声明了但（触发按需连接后仍）未装配上的工具名。
    * 全部未装配时配合 failureCode: ToolUnavailable 结构化失败；

@@ -178,11 +178,6 @@ export function finalizeSubagentSuccess(
     ? buildStepCapConclusion({ iterations, maxIterations: state.maxIterations, messages: state.messages ?? [] })
     : undefined;
 
-  const stopHint: SubagentResult['stopHint'] | undefined = finalOutput ? undefined
-    : stepCapConclusion
-      ? { kind: 'step_cap', conclusion: stepCapConclusion }
-      : { kind: 'no_conclusion', conclusion: resolveStoppedTaskOutcome({ status: 'completed', detail: '' }).detail };
-
   // Get final cost
   cleanupTimer();
   stopIdleWatchdog();
@@ -229,6 +224,12 @@ export function finalizeSubagentSuccess(
     // 角色参与记录：主 run 结束后据此触发 event 醒来（内部文档 §2.2）
     recordRoleParticipation(sessionId, config.roleId);
   }
+
+  // leftoverReport 来自上面唯一一次 reportSubagentLeftoverShells（有副作用，不重扫），随 stopHint 带给后台注册表。
+  const stopHint: SubagentResult['stopHint'] | undefined = finalOutput ? undefined
+    : stepCapConclusion
+      ? { kind: 'step_cap', conclusion: stepCapConclusion, leftoverReport }
+      : { kind: 'no_conclusion', conclusion: resolveStoppedTaskOutcome({ status: 'completed', detail: '' }).detail, leftoverReport };
 
   terminal.status = 'completed';
   return {
