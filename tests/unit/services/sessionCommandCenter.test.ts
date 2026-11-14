@@ -1329,6 +1329,49 @@ describe('task_status same-turn dedupe', () => {
     }
   });
 
+  it('still dedupes a new task polled in the same turn after an earlier task already finished', async () => {
+    const center = getSessionCommandCenter();
+    const a = await spawnRunning();
+    const restoreSessionStore = stubSessionStore();
+    try {
+      emitTaskCompleted(a.id, '任务A完成。');
+      await vi.waitFor(() => {
+        expect(center.list(SESSION)).toMatchObject([{ status: 'completed' }]);
+      });
+      const spawnedB = await center.spawn({ ...input(2), sessionId: SESSION });
+      if (spawnedB.outcome === 'requires_choice') throw new Error('unexpected admission result');
+
+      const ctx = statusCtx('turn-2');
+      const first = await expectOkStatus(ctx);
+      const second = await expectOkStatus(ctx);
+      const third = await expectOkStatus(ctx);
+      expect(first.output).not.toContain(TASK_STATUS_UNCHANGED_HINT);
+      expect(second.output).toContain(TASK_STATUS_UNCHANGED_HINT);
+      expect(third.output).toBe(second.output);
+      expect(second.meta).toEqual(first.meta);
+    } finally {
+      restoreSessionStore();
+    }
+  });
+
+  it('keeps answering in full when every task in the session is already finished', async () => {
+    const task = await spawnRunning();
+    const restoreSessionStore = stubSessionStore();
+    try {
+      emitTaskCompleted(task.id, '全部完成。');
+      await vi.waitFor(() => {
+        expect(getSessionCommandCenter().list(SESSION)).toMatchObject([{ status: 'completed' }]);
+      });
+      const ctx = statusCtx('turn-1');
+      const first = await expectOkStatus(ctx);
+      const second = await expectOkStatus(ctx);
+      expect(first.output).not.toContain(TASK_STATUS_UNCHANGED_HINT);
+      expect(second.output).not.toContain(TASK_STATUS_UNCHANGED_HINT);
+    } finally {
+      restoreSessionStore();
+    }
+  });
+
   it('returns the full answer again once the task fails', async () => {
     const task = await spawnRunning();
     const ctx = statusCtx('turn-1');

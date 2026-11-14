@@ -7,9 +7,9 @@
 //     与 snapshot.generatedAt 不进签名，否则去重永远不命中。
 //   - 同一 turn 内签名未变且无终态 → 回短提示（见 TASK_STATUS_UNCHANGED_HINT），
 //     meta 仍由调用方原样带上，卡片文案与 foldSessionTaskStatus 折叠不受影响。
-//   - 签名变化、换了 turn（用户在新 turn 里再问）、缺 turnId 或出现终态 → 照旧
-//     全量回答并覆盖记录；终态后「完成会自动通知你」的承诺已兑现，模型需要读到
-//     全量结果文本，不进去重。
+//   - 签名变化（含任务刚进终态）、换了 turn、缺 turnId、或会话里已无活跃项 → 照旧
+//     全量回答并覆盖记录。已结束的旧任务会一直留在列表里，不能因此让去重失效：
+//     终态结果在它首次出现的全量回答里已交付，签名未变即无新信息。
 // 记录只存几十字节级签名串；条目按 TASK_STATUS_DEDUPE_MAX_SESSIONS 封顶，
 // 会话里已无可跟踪的任务/子代理时由调用方顺路清掉。
 // ============================================================================
@@ -36,9 +36,10 @@ function isTerminalStatus(status: string): boolean {
   return status === 'completed' || status === 'failed' || status === 'cancelled' || status === 'killed';
 }
 
-function hasTerminalState(tasks: SessionCommandTask[], subagents: AgentTreeNode[]): boolean {
-  return tasks.some((task) => isTerminalStatus(task.status))
-    || subagents.some((node) => isTerminalStatus(node.status));
+/** 指挥台从不移除已结束任务；只有仍有活跃项时「完成会自动通知」的提示才成立。 */
+function hasActiveState(tasks: SessionCommandTask[], subagents: AgentTreeNode[]): boolean {
+  return tasks.some((task) => !isTerminalStatus(task.status))
+    || subagents.some((node) => !isTerminalStatus(node.status));
 }
 
 function signatureOf(tasks: SessionCommandTask[], subagents: AgentTreeNode[]): string {
@@ -58,7 +59,7 @@ function signatureOf(tasks: SessionCommandTask[], subagents: AgentTreeNode[]): s
   });
 }
 
-/** 同一 turn、签名未变且无终态时才允许用短提示替代全量回答。 */
+/** 同一 turn、签名未变且仍有活跃项时才允许用短提示替代全量回答。 */
 export function shouldReturnTaskStatusUnchangedHint(
   sessionId: string,
   turnId: string | undefined,
@@ -68,7 +69,7 @@ export function shouldReturnTaskStatusUnchangedHint(
   if (!turnId) return false;
   const record = recordsBySession.get(sessionId);
   if (record?.turnId !== turnId) return false;
-  if (hasTerminalState(tasks, subagents)) return false;
+  if (!hasActiveState(tasks, subagents)) return false;
   return record.signature === signatureOf(tasks, subagents);
 }
 
