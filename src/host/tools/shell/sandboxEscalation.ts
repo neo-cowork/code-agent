@@ -6,6 +6,9 @@ import { resolveCanonicalRunPath } from '../../runtime/runContext';
 import { parseShellCommand } from '../../security/commandParse';
 import type { PolicyEnforcer } from '../../security/policyEnforcer';
 import { denyConcreteShellWritePath } from './writePathPolicyDeny';
+import { createLogger } from '../../services/infra/logger';
+
+const approvedRmLogger = createLogger('ApprovedRmGrant');
 
 function expandLeadingHome(rawPath: string): string {
   const home = homedir();
@@ -17,64 +20,138 @@ function expandLeadingHome(rawPath: string): string {
   return rawPath;
 }
 
-/**
- * Extract one literal file operand from one `rm`, optionally accompanied by
- * harmless status reporting. The only accepted options are `--`, `-f`, and
- * `--force`; recursive, redirected, expanded, and multi-target rm stay ordinary.
- */
-function extractApprovedSingleFileRmTarget(
-  command: string,
-  workingDirectory: string,
-): string | undefined {
-  const parsed = parseShellCommand(command);
-  if (parsed.parsingFailed || parsed.trailingOperator || parsed.writeTargets.length > 0 || parsed.uncertain.length > 0) {
-    return undefined;
-  }
-  // The parser omits fd-only redirects (e.g. 2>&1). Refuse redirect syntax
-  // conservatively, including quoted spellings, rather than mint a hidden grant.
-  if (/[<>]/.test(command)) return undefined;
-  let segment: (typeof parsed.segments)[number] | undefined;
-  for (const current of parsed.segments) {
-    if (current.redirects.length > 0 || current.reads.length > 0) return undefined;
-    const program = current.words[0] ?? '';
-    if (path.posix.basename(program) === 'rm') {
-      if (segment) return undefined;
-      segment = current;
-    } else {
-      if (!['echo', 'printf', 'true', ':'].includes(program)) return undefined;
-      // Status reporting may expand $?, but must not assign shell variables or
-      // use printf's variable-writing forms before the literal rm is executed.
-      if (current.words.slice(1).some((word) => /[$`]/.test(word.replaceAll('${?}', '')))) return undefined;
-      if (program === 'printf' && current.words.slice(1).some((word) => /^-v|%[^%]*n/.test(word))) return undefined;
+/** Reject shell expansion whose argv cannot be determined without running the shell. */
+function hasUnsafeRmExpansion(command: string): boolean {
+  let quote: "'" | '"' | undefined;
+  for (let index = 0; index < command.length; index += 1) {
+    const character = command[index];
+    if (character === '`' || (character === '$' && command[index + 1] === '(')) return true;
+    if (character === '\\' && quote !== "'") {
+      if (command[index + 1] === '$' || command[index + 1] === '`') return true;
+      index += 1;
+      continue;
     }
-    if (current.terminator !== null
-      && current.terminator !== ';'
-      && current.terminator !== '&&'
-      && !(segment && current.terminator === '||')) return undefined;
+    if (character === quote) { quote = undefined; continue; }
+    if (!quote && (character === "'" || character === '"')) { quote = character; continue; }
+    // Unquoted variables undergo word splitting and pathname expansion. Status is numeric.
+    if (character === '$' && quote !== '"' && !/^\$(?:\?|\{\?\})/.test(command.slice(index))) return true;
   }
-  if (!segment) return undefined;
+  return quote !== undefined;
+}
 
-  const operands: string[] = [];
-  let dashDash = false;
-  for (const arg of segment.words.slice(1)) {
-    if (!dashDash && arg === '--') {
-      dashDash = true;
+/** Project only the exact descriptor duplication out of the policy parser, never execution. */
+function projectApprovedRmRedirects(command: string): { source: string; marker: string; refused: boolean } {
+  let marker = '__approved_rm_stderr_dup__';
+  while (command.includes(marker)) marker += '_';
+  let source = '';
+  let quote: "'" | '"' | undefined;
+  for (let index = 0; index < command.length; index += 1) {
+    const character = command[index];
+    if (character === '\\' && quote !== "'") {
+      source += character + (command[++index] ?? '');
       continue;
     }
-    if (!dashDash && arg.startsWith('-') && arg !== '-') {
-      if (arg !== '-f' && arg !== '--force') return undefined;
+    if (character === quote) quote = undefined;
+    else if (!quote && (character === "'" || character === '"')) quote = character;
+    if (!quote && character === '2' && command.startsWith('2>&1', index)
+      && (index === 0 || /[\s;&|]/.test(command[index - 1]))
+      && (index + 4 === command.length || /[\s;&|]/.test(command[index + 4]))) {
+      source += ` ${marker} `;
+      index += 3;
       continue;
     }
-    operands.push(arg);
+    if (!quote && /[<>]/.test(character)) return { source, marker, refused: true };
+    source += character;
   }
-  if (operands.length !== 1) return undefined;
-  const rawOperand = operands[0];
-  if (!rawOperand || /[$`*?{}]/.test(rawOperand)) return undefined;
-  const expanded = expandLeadingHome(rawOperand);
-  const candidate = path.isAbsolute(expanded)
-    ? path.resolve(expanded)
-    : path.resolve(workingDirectory, expanded);
-  return candidate;
+  return { source, marker, refused: false };
+}
+
+/** Parse approved static rm calls and read-only probes without executing their shell syntax. */
+function extractApprovedRmTargets(command: string, workingDirectory: string): {
+  containsRm: boolean;
+  targets?: string[];
+  operandCount: number;
+  reason?: string;
+} {
+  const projection = projectApprovedRmRedirects(command);
+  const original = parseShellCommand(command);
+  const parsed = parseShellCommand(projection.source);
+  const redirected = new Set(parsed.segments.filter(segment => segment.words.includes(projection.marker)));
+  for (const segment of parsed.segments) segment.words = segment.words.filter(word => word !== projection.marker);
+  const rmSegments = parsed.segments.filter((segment) => path.posix.basename(segment.words[0] ?? '') === 'rm');
+  const operands: string[] = [];
+  const containsRm = rmSegments.length > 0 || original.segments.some(segment => path.posix.basename(segment.words[0] ?? '') === 'rm');
+  const refuse = (reason: string) => ({ containsRm, operandCount: operands.length, reason });
+  if (projection.refused) return refuse('command_shape:redirect_non_dup');
+  if (hasUnsafeRmExpansion(command)) return refuse('expansion');
+  if (parsed.writeTargets.length > 0) return refuse('command_shape:filesystem_change');
+  if (parsed.parsingFailed || parsed.trailingOperator
+    || parsed.uncertain.length > 0 || rmSegments.length < 1) {
+    return refuse('command_shape');
+  }
+  const bindings = new Map<string, string>();
+  let seenCommand = false;
+  for (const current of parsed.segments) {
+    if (current.redirects.length > 0 || current.reads.length > 0) return refuse('command_shape:redirect_non_dup');
+    const program = current.words[0] ?? '';
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(program)) {
+      // Only unconditional prefix assignments. No command-local env, reassignment, or shell controls.
+      if (redirected.has(current)) return refuse('command_shape:redirect_non_dup');
+      if (seenCommand || ![';', '\n', null].includes(current.terminator)) return refuse('assignment_position');
+      for (const word of current.words) {
+        const assignment = /^([A-Za-z_][A-Za-z0-9_]*)=([^$`*?{}[\]~]*)$/.exec(word);
+        if (!assignment) return refuse('assignment_value');
+        const [, name, value] = assignment;
+        if (bindings.has(name) || name in process.env
+          || /^(?:_|BASH.*|ZSH.*|IFS|ENV|PATH|CDPATH|GLOBIGNORE|FIGNORE|SHELLOPTS|RANDOM|SRANDOM|SECONDS|EPOCH.*|LINENO|PPID|UID|EUID|GROUPS|FUNCNAME|DIRSTACK|PIPESTATUS|OPTIND|OPTARG|PS[0-4]|PROMPT_COMMAND)$/.test(name)) {
+          return refuse('assignment_control');
+        }
+        bindings.set(name, value);
+      }
+      continue;
+    }
+    seenCommand = true;
+    const substitute = (word: string): string => word.replace(
+      /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g,
+      (reference, name: string) => bindings.get(name) ?? reference,
+    );
+    if (rmSegments.includes(current)) {
+      if (rmSegments.length === 1 && parsed.segments[parsed.segments.indexOf(current) - 1]?.terminator === '||') return refuse('command_shape');
+      if (!['rm', '/bin/rm', '/usr/bin/rm'].includes(program)) return refuse('command_shape');
+      const segmentOperandStart = operands.length;
+      let dashDash = false;
+      for (const rawArg of current.words.slice(1)) {
+        const arg = substitute(rawArg);
+        if (!dashDash && arg === '--') { dashDash = true; continue; }
+        if (!dashDash && arg.startsWith('-') && arg !== '-') {
+          if (arg !== '-f' && !(rmSegments.length === 1 && arg === '--force')) return refuse('option');
+          continue;
+        }
+        if (!arg || /[$`*?{}[\]]/.test(arg)) return refuse('literal_operand');
+        if ((rmSegments.length > 1 || redirected.size > 0) && (!path.isAbsolute(rawArg) || rawArg.includes('$'))) {
+          return refuse('command_shape:operand_not_absolute_literal');
+        }
+        // Bound values are literal strings, not a second opportunity for tilde expansion.
+        operands.push(rawArg.includes('$') ? path.resolve(workingDirectory, arg) : expandLeadingHome(arg));
+      }
+      if (operands.length === segmentOperandStart) return refuse('operand_count');
+    } else {
+      if (['cd', 'pushd', 'popd'].includes(program)) return refuse('command_shape:multi_rm_cwd_change');
+      if (['mv', 'cp', 'ln', 'touch'].includes(program)) return refuse('command_shape:filesystem_change');
+      if (!['test', '[', 'ls', 'stat', 'echo', 'printf', 'true', ':'].includes(program)) return refuse('command_shape');
+      if (redirected.has(current) && ['true', ':'].includes(program)) return refuse('command_shape:redirect_non_dup');
+      if (program === '[' && current.words.at(-1) !== ']') return refuse('command_shape');
+      if (current.words.slice(1).some((word) => /[$`]/.test(substitute(word).replaceAll('${?}', '')))) return refuse('expansion');
+      if (program === 'printf' && current.words.slice(1).some((word) => /^-v|%[^%]*n/.test(substitute(word)))) return refuse('command_shape');
+    }
+    if (current.terminator !== null && ![';', '\n', '&&', '||'].includes(current.terminator)) return refuse('command_shape');
+  }
+  if (operands.length < 1) return refuse('operand_count');
+  return {
+    containsRm: true,
+    operandCount: operands.length,
+    targets: operands.map((operand) => path.resolve(workingDirectory, operand)),
+  };
 }
 
 export interface SandboxEscalationEligibilityInput {
@@ -208,6 +285,13 @@ export function shouldOfferEscalation(input: SandboxEscalationEligibilityInput):
     return undefined;
   }
 
+  return resolveEscalationFile(input);
+}
+
+/** Shared path/policy checks; callers separately enforce their consent and execution gates. */
+function resolveEscalationFile(input: SandboxEscalationEligibilityInput): string | undefined {
+  const deniedPath = input.deniedPath;
+  if (!deniedPath || !path.isAbsolute(deniedPath)) return undefined;
   const home = path.resolve(homedir());
   const spelledPath = path.resolve(deniedPath);
   // lstat on the spelled path refuses a symlink as the last component; the canonical path would hide it.
@@ -233,15 +317,47 @@ export function shouldOfferEscalation(input: SandboxEscalationEligibilityInput):
   return resolvedPath;
 }
 
-/** Mint the literal write path covered by one approved plain single-file rm. */
+/** Mint literal write paths for all files covered by one user-approved rm. */
 export function approvedSingleFileRmGrant(
   command: string,
   input: Omit<SandboxEscalationEligibilityInput, 'deniedPath' | 'deniedPathCreatesDirectory'>,
-): string | undefined {
-  const deniedPath = extractApprovedSingleFileRmTarget(command, input.workingDirectory);
-  return deniedPath && escalationTarget(deniedPath) === 'file'
-    ? shouldOfferEscalation({ ...input, deniedPath, deniedPathCreatesDirectory: false })
-    : undefined;
+): string | string[] | undefined {
+  const parsed = extractApprovedRmTargets(command, input.workingDirectory);
+  if (!parsed.containsRm) return undefined;
+  const conditions = [
+    !input.sandboxDecision.sandboxed && 'sandboxed',
+    !input.foreground && !input.background && 'foreground', input.pty && 'pty',
+    input.unattended && 'unattended', input.writeFence && 'write_fence', input.evalRealRoot && 'eval_real_root',
+    !['default', 'acceptEdits'].includes(input.permissionMode) && 'mode',
+    input.abortSignal.aborted && 'aborted', parsed.reason,
+  ].filter((condition): condition is string => typeof condition === 'string');
+  const grants: string[] = [];
+  if (conditions.length === 0 && parsed.targets) {
+    for (const [operandIndex, deniedPath] of parsed.targets.entries()) {
+      if (escalationTarget(deniedPath) !== 'file') {
+        conditions.push(`path_class:operand_${operandIndex + 1}:operand_not_regular_file`);
+        break;
+      }
+      // A user-approved literal rm may run asynchronously in an attended session.
+      // This does not offer background escalation cards or relax unattended/write fences.
+      const granted = resolveEscalationFile({ ...input, deniedPath, deniedPathCreatesDirectory: false });
+      if (!granted) {
+        conditions.push(`${input.policyEnforcer === undefined ? 'policy_unbound' : 'path_policy'}:operand_${operandIndex + 1}:policy_denied`);
+        break;
+      }
+      if (!grants.includes(granted)) grants.push(granted);
+      if (grants.length > 8) { conditions.push('operand_count>8'); break; }
+    }
+  }
+  const diagnostic = { sandboxed: input.sandboxDecision.sandboxed, foreground: input.foreground,
+    pty: input.pty, background: input.background, unattended: input.unattended, writeFence: input.writeFence,
+    mode: input.permissionMode, operandCount: parsed.operandCount, conditions };
+  if (conditions.length > 0 || grants.length === 0) {
+    approvedRmLogger.warn(`APPROVED_RM_GRANT_REFUSED ${JSON.stringify(diagnostic)}`);
+    return undefined;
+  }
+  approvedRmLogger.info(`APPROVED_RM_GRANT_MINTED ${JSON.stringify(diagnostic)}`);
+  return grants.length === 1 && parsed.operandCount === 1 ? grants[0] : grants;
 }
 
 /** Return the one directory subtree that may be offered for a single foreground retry. */
