@@ -1,14 +1,13 @@
-import { agentNodeLabel } from '../../../../../utils/agentRoleLabel';
+import { agentNodeLabel, backgroundTaskLabel } from '../../../../../utils/agentRoleLabel';
 import { humanizeToolStep, parseDelegateSessionReceipt } from '../../../../../utils/humanizeToolStep';
-import type { AgentFailureCode } from '@shared/contract/agentFailure';
+import { AgentFailureCode } from '@shared/contract/agentFailure';
 import type { AgentTreeNode } from '@shared/contract/agentTree';
 import type { LastToolFailure, LastToolStep, Task, TaskOutputRef } from '@shared/contract/backgroundTask';
 import type { ToolCall } from '@shared/contract';
 import { languages, type Translations } from '../../../../../i18n';
 import { useAppStore } from '../../../../../stores/appStore';
-import { agentFailureCopy } from '../../../../../utils/agentFailureCopy';
-import { containsCjk } from '../../../../../utils/containsCjk';
-import { isAgentFailureCode } from '@shared/contract/agentFailure';
+import { agentFailureCopy, backgroundTaskFailureCopy } from '../../../../../utils/agentFailureCopy';
+import { isToolInterruptionPlaceholder } from '../../../../../utils/toolExecutionPresentation';
 import {
   isAgentNodeTerminalStatus,
   isLastToolFailureVisible,
@@ -195,9 +194,7 @@ function fromTask(task: Task, t: Translations): DelegationPresentation {
         : 'failed';
   return {
     state,
-    title: t === languages.en && task.source === 'delegate_task' && containsCjk(task.title)
-      ? t.agentRoleLabels.roles.background
-      : displayPaths(task.title),
+    title: displayPaths(backgroundTaskLabel(task, t)),
     lastToolStep: task.progress?.lastToolStep,
     activityIds: taskActivityIds(task),
     sessionId: task.sessionId,
@@ -208,9 +205,7 @@ function fromTask(task: Task, t: Translations): DelegationPresentation {
       const output = taskOutput(ref);
       return output ? [output] : [];
     }),
-    failure: state === 'failed' ? agentFailureCopy(
-      isAgentFailureCode(task.failure?.reason) ? task.failure.reason : undefined, t, task.failure?.message || task.summary,
-    ) ?? undefined : undefined,
+    failure: state === 'failed' ? backgroundTaskFailureCopy(task, t) ?? undefined : undefined,
     toolFailure: isLastToolFailureVisible(task.status) ? task.progress?.lastToolFailure : undefined,
   };
 }
@@ -254,7 +249,7 @@ export function deriveDelegationPresentation(
   toolCall: ToolCall,
   tasks: Task[],
   agentNodes: AgentTreeNode[],
-  t: Translations = languages[useAppStore.getState().language],
+  t: Translations = languages[useAppStore.getState().language] ?? languages.zh,
 ): DelegationPresentation | null {
   if (!toolCall.result) return null;
   if (toolCall.name === 'delegate_session') {
@@ -270,14 +265,29 @@ export function deriveDelegationPresentation(
     };
   }
   if (toolCall.name === 'delegate_task') {
-    const task = tasks.find((candidate) => candidate.toolCallId === toolCall.id);
+    const receipt = toolCall.result.metadata?.sessionTask as { tasks?: Array<{ taskId?: unknown }> } | undefined;
+    const taskId = Array.isArray(receipt?.tasks) && receipt.tasks.length === 1 && typeof receipt.tasks[0]?.taskId === 'string'
+      ? receipt.tasks[0].taskId : undefined;
+    const task = tasks.find((candidate) => candidate.toolCallId === toolCall.id
+      || (taskId !== undefined && candidate.id === taskId));
     return task ? fromTask(task, t) : null;
   }
   if (toolCall.name === 'spawn_agent') {
     const agentId = extractSpawnAgentId(toolCall);
-    if (!agentId) return null;
-    const node = agentNodes.find((candidate) => candidate.id === agentId || candidate.backgroundAgentId === agentId);
-    return node ? fromAgent(node, t) : null;
+    if (agentId) {
+      const node = agentNodes.find((candidate) => candidate.id === agentId || candidate.backgroundAgentId === agentId);
+      return node ? fromAgent(node, t) : null;
+    }
+    // A crash can persist the dispatched call before its result records the child id.
+    // The session-scoped tree may already have the recovered child's stronger fact.
+    // Only an exact, unique task match for an interrupted background spawn is safe.
+    const task = toolCall.arguments?.task;
+    if (toolCall.arguments?.run_in_background !== true || typeof task !== 'string' || !task.trim()
+      || !isToolInterruptionPlaceholder(toolCall.result.error)
+      || !toolCall.result.error?.toLowerCase().includes('process crashed')) return null;
+    const matches = agentNodes.filter((node) => node.background
+      && node.failureCode === AgentFailureCode.ParentGone && node.task === task);
+    return matches.length === 1 ? fromAgent(matches[0], t) : null;
   }
   return null;
 }

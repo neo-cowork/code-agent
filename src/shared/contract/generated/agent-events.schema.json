@@ -2659,6 +2659,14 @@
               "reason": {
                 "type": "string"
               },
+              "lostCode": {
+                "type": "string",
+                "enum": [
+                  "cli_not_logged_in",
+                  "cli_missing_configuration",
+                  "mcp_oauth_authorization_required"
+                ]
+              },
               "requiredScope": {
                 "type": "string"
               },
