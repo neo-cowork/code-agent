@@ -13,7 +13,7 @@ import { getUserConfigDir } from '../../config/configPaths';
 import { isOrtTensor, loadVadRuntime, type OrtRuntimeModule } from './audioVadRuntime';
 import { getAudioCapturePrerequisites } from './audioCapturePrerequisites';
 import { clearAllAudioRecordings, finalizeSegmentAudio, getAudioRetentionStatus, sweepAudioRetention } from './audioRetention';
-import { ECHO_TIME_SLACK_MS, micEchoIds, type EchoCandidate } from './audioCrossEcho';
+import { dropMicEchoes } from './audioCrossEcho';
 import { AUDIO_SPEAKER_ID, type AudioCaptureMode } from '@shared/contract/audioCapture';
 import type { InferenceSession, Tensor as OrtTensor } from 'onnxruntime-node';
 
@@ -40,6 +40,7 @@ const ASR_TIMEOUT_MS = 120_000;
 
 // Power management check interval
 const POWER_CHECK_INTERVAL_MS = 60_000;
+const CAPTURE_KILL_GRACE_MS = 2_000;
 const AUDIO_RETENTION_INTERVAL_MS = 60 * 60 * 1000;
 
 // Capture mode: microphone (default), system-audio (ScreenCaptureKit, captures headphone output),
@@ -717,38 +718,6 @@ export function persistAudioSegment(
   }
 }
 
-/** 会议模式：删掉同时段里被系统音频证实是对方声音的麦克风段（外放串录）。返回删了几条 */
-export function dropMicEchoes(sqlitePath: string, fromMs: number, toMs: number): number {
-  const sql = `SELECT id, start_at_ms, end_at_ms, transcript, speaker_id FROM audio_segments WHERE speaker_id IN (${AUDIO_SPEAKER_ID.ME}, ${AUDIO_SPEAKER_ID.OTHERS}) AND transcript IS NOT NULL AND transcript != '' AND start_at_ms < ${Math.trunc(toMs + ECHO_TIME_SLACK_MS)} AND end_at_ms > ${Math.trunc(fromMs - ECHO_TIME_SLACK_MS)};`;
-  try {
-    const raw = execFileSync('sqlite3', ['-json', sqlitePath, sql], { encoding: 'utf-8' }).trim();
-    const mic: EchoCandidate[] = [];
-    const others: EchoCandidate[] = [];
-    for (const row of raw ? parseJsonArray(raw) : []) {
-      if (!isRecord(row)) continue;
-      const id = readStringField(row, 'id');
-      const startAtMs = readNumberField(row, 'start_at_ms');
-      const endAtMs = readNumberField(row, 'end_at_ms');
-      const transcript = readStringField(row, 'transcript');
-      if (!id || startAtMs === undefined || endAtMs === undefined || !transcript) continue;
-      const target = readNumberField(row, 'speaker_id') === AUDIO_SPEAKER_ID.ME ? mic : others;
-      target.push({ id, startAtMs, endAtMs, transcript });
-    }
-    const ids = micEchoIds(mic, others);
-    if (ids.length === 0) return 0;
-    const list = ids.map((id) => `'${sqlEscape(id)}'`).join(', ');
-    execFileSync('sqlite3', [sqlitePath, `DELETE FROM audio_segments WHERE id IN (${list});`], { encoding: 'utf-8' });
-    logger.info('[音频采集] 删掉麦克风串录的对方声音', { count: ids.length });
-    return ids.length;
-  } catch (error) {
-    // 去重失败不影响转写入库，只是会多一条重复句
-    logger.warn('[音频采集] 两路去重失败', {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return 0;
-  }
-}
-
 // ============================================================================
 // ASR Queue Processor
 // ============================================================================
@@ -938,6 +907,8 @@ function pumpPcm(input: NodeJS.ReadableStream, track: CaptureTrack): void {
   input.on('data', async (data: Buffer | string) => {
     if (typeof data === 'string') return; // skip string chunks
     if (powerMode === 'paused') return;
+    // 已停掉的一路：进程哪怕还没退干净，数据也不再落库（否则停了又开会多出一路「对方」）
+    if (!tracks.includes(track)) return;
 
     dataChunkCount++;
     if (dataChunkCount === 1) {
@@ -1197,7 +1168,17 @@ export function stopDesktopAudioCapture(): void {
   captureMode = 'microphone';
   requestedMode = 'microphone';
   for (const track of tracks) {
-    track.proc?.kill();
+    const proc = track.proc;
+    if (proc) {
+      proc.kill();
+      // 采集进程收到 TERM 不退时补 KILL，不留孤儿进程占着麦克风/系统音频
+      setTimeout(() => {
+        if (proc.exitCode === null && proc.signalCode === null) {
+          logger.warn('[音频采集] 采集进程 TERM 后未退出，强制结束', { source: track.source, pid: proc.pid });
+          proc.kill('SIGKILL');
+        }
+      }, CAPTURE_KILL_GRACE_MS);
+    }
     track.stream?.destroy();
   }
   tracks = [];

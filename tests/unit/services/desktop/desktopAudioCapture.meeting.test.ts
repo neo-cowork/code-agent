@@ -15,8 +15,8 @@ vi.mock('../../../../src/host/config/configPaths', () => ({
   getUserConfigDir: () => '/tmp/code-agent-test-config',
 }));
 
+import { dropMicEchoes } from '../../../../src/host/services/desktop/audioCrossEcho';
 import {
-  dropMicEchoes,
   ensureAudioTable,
   persistAudioSegment,
   planCaptureTracks,
