@@ -815,6 +815,7 @@ export function createAgentLoop(
     ])),
     allowedToolNames: config.allowedToolNames,
     foregroundToolFace: config.foregroundToolFace,
+    foregroundMcpServerIds: config.foregroundMcpServerIds,
     historyVisibility: config.historyVisibility,
     unattendedTurn: config.originKind === 'headless',
     telemetryAdapter,

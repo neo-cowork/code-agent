@@ -100,4 +100,34 @@ describe('runToolPolicy (pure)', () => {
     };
     expect(isToolDeniedByRunPolicy(policy, 'propose_role')).toBe(true);
   });
+  it('文字前台面：(a) 用户已启用的导入服务器工具可达，ToolSearch 随之放行', () => {
+    const policy: RunToolPolicy = {
+      allowedToolNames: ['Read', 'delegate_task'],
+      foregroundMcpServerIds: ['external-import-nonce'],
+    };
+    expect(isToolDeniedByRunPolicy(policy, 'mcp__external-import-nonce__get_random_nonce')).toBe(false);
+    expect(isToolDeniedByRunPolicy(policy, 'ToolSearch')).toBe(false);
+    expect(isToolDeniedByRunPolicy(policy, 'Bash')).toBe(true);
+    expect(isToolDeniedByRunPolicy({ ...policy, deniedToolNames: ['mcp__external-import-nonce__get_random_nonce'] },
+      'mcp__external-import-nonce__get_random_nonce')).toBe(true);
+  });
+
+  it('文字前台面：(b) 内置默认服务器（cua-driver/argus/deepwiki/github 等）仍被挡在前台外', () => {
+    const policy: RunToolPolicy = {
+      allowedToolNames: ['Read', 'delegate_task'],
+      foregroundMcpServerIds: ['external-import-nonce'],
+    };
+    for (const name of ['mcp__cua-driver__click', 'mcp__argus__screenshot', 'mcp__deepwiki__ask_question',
+      'mcp__github__create_issue', 'mcp__sequential-thinking__sequentialthinking']) {
+      expect(isToolDeniedByRunPolicy(policy, name), name).toBe(true);
+    }
+  });
+
+  it('文字前台面：(c) 未启用/无用户服务器时没有任何 mcp__ 或 ToolSearch 豁免', () => {
+    const base: RunToolPolicy = { allowedToolNames: ['Read'] };
+    for (const policy of [base, { ...base, foregroundMcpServerIds: [] }]) {
+      expect(isToolDeniedByRunPolicy(policy, 'mcp__external-import-nonce__get_random_nonce')).toBe(true);
+      expect(isToolDeniedByRunPolicy(policy, 'ToolSearch')).toBe(true);
+    }
+  });
 });

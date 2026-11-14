@@ -28,6 +28,8 @@ import type {
   ExternalImportCategory,
   ExternalImportDetectResult,
   ExternalImportSourceStatus,
+  ExternalMcpApplyResult,
+  ExternalMcpPreviewResult,
   ExternalSkillsApplyResult,
   ExternalSkillsPreviewResult,
 } from '@shared/contract/externalImport';
@@ -45,13 +47,15 @@ import { ExternalSkillsSyncSection } from './ExternalSkillsSyncSection';
 import { ExternalInstructionsSyncSection } from './ExternalInstructionsSyncSection';
 import { ExternalImportHistory } from './ExternalImportHistory';
 import { countImportableRules, ExternalImportInstructionRules, type DirectiveState } from './ExternalImportInstructionRules';
+import { ExternalImportMcpPreview, ExternalImportMcpResults, type ExternalImportMcpCopy } from './ExternalImportMcpSection';
 
 /** 页面类别列：新类别（K1B 的 MCP servers）在此加一档 + 对应 host handler。 */
-const IMPORT_CATEGORIES: ExternalImportCategory[] = ['instructions', 'memories', 'skills'];
+const IMPORT_CATEGORIES: ExternalImportCategory[] = ['instructions', 'memories', 'skills', 'mcp'];
 
 interface ImportResults {
   memory: MemoryImportApplyResult | null;
   skills: ExternalSkillsApplyResult | null;
+  mcp: ExternalMcpApplyResult | null;
   directivesImported: number;
 }
 
@@ -64,6 +68,7 @@ function categoryLabel(category: ExternalImportCategory, copy: ExternalImportCop
 export const ExternalImportSettings: React.FC = () => {
   const { t } = useI18n();
   const copy = t.settings.externalImport;
+  const mcpCopy = t.settings.externalImportMcp;
   const detectionStatus = useExternalImportStore((state) => state.status);
   const detectionResult = useExternalImportStore((state) => state.result);
   const ensureChecked = useExternalImportStore((state) => state.ensureChecked);
@@ -75,6 +80,7 @@ export const ExternalImportSettings: React.FC = () => {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [previewMemory, setPreviewMemory] = useState<MemoryImportDryRunResult | null>(null);
   const [previewSkills, setPreviewSkills] = useState<ExternalSkillsPreviewResult | null>(null);
+  const [previewMcp, setPreviewMcp] = useState<ExternalMcpPreviewResult | null>(null);
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<Set<string>>(new Set());
   const [directiveStates, setDirectiveStates] = useState<Record<string, DirectiveState>>({});
   const [results, setResults] = useState<ImportResults | null>(null);
@@ -148,6 +154,20 @@ export const ExternalImportSettings: React.FC = () => {
     [detectedSources, isSelected],
   );
 
+  // MCP 类别（K1B）：勾选了 mcp 类别的来源（claude-code/claude-desktop/cursor/codex）。
+  const selectedMcpSourceIds = useMemo(
+    () => detectedSources
+      .filter((source) => source.categories.some((c) => c.category === 'mcp')
+        && isSelected(source.sourceId, 'mcp'))
+      .map((source) => source.sourceId),
+    [detectedSources, isSelected],
+  );
+
+  const anyMcpCategory = useMemo(
+    () => detectedSources.some((source) => source.categories.some((c) => c.category === 'mcp')),
+    [detectedSources],
+  );
+
   const toggleCategory = (sourceId: string, category: ExternalImportCategory): void => {
     const key = `${sourceId}#${category}`;
     setSelection((current) => ({ ...current, [key]: !current[key] }));
@@ -157,24 +177,33 @@ export const ExternalImportSettings: React.FC = () => {
     return ipcService.invokeDomain<T>(IPC_DOMAINS.MEMORY, action, payload);
   }, []);
 
+  // MCP 导入的 action 挂 MCP 域（host handler 在 mcp.ipc.ts 域表）。
+  const invokeMcp = useCallback(async <T,>(action: string, payload: unknown): Promise<T> => {
+    return ipcService.invokeDomain<T>(IPC_DOMAINS.MCP, action, payload);
+  }, []);
+
   const runPreview = async () => {
-    if (selectedAdapterIds.length === 0 && selectedSkillSourceIds.length === 0) {
+    if (selectedAdapterIds.length === 0 && selectedSkillSourceIds.length === 0 && selectedMcpSourceIds.length === 0) {
       setMessage({ type: 'error', text: copy.emptySelection });
       return;
     }
     setBusy('preview');
     setMessage(null);
     try {
-      const [memory, skills] = await Promise.all([
+      const [memory, skills, mcp] = await Promise.all([
         selectedAdapterIds.length > 0
           ? invoke<MemoryImportDryRunResult>('memoryHarnessImportDryRun', { adapterIds: selectedAdapterIds })
           : Promise.resolve(null),
         selectedSkillSourceIds.length > 0
           ? invoke<ExternalSkillsPreviewResult>('externalImportSkillsPreview', { sourceIds: selectedSkillSourceIds })
           : Promise.resolve(null),
+        selectedMcpSourceIds.length > 0
+          ? invokeMcp<ExternalMcpPreviewResult>('externalImportMcpPreview', { sourceIds: selectedMcpSourceIds })
+          : Promise.resolve(null),
       ]);
       setPreviewMemory(memory);
       setPreviewSkills(skills);
+      setPreviewMcp(mcp);
       setSelectedCandidateIds(new Set(
         (memory?.candidates ?? [])
           .filter((candidate) => candidate.disposition === 'add')
@@ -196,7 +225,7 @@ export const ExternalImportSettings: React.FC = () => {
     setBusy('apply');
     setMessage(null);
     try {
-      const [memory, skills] = await Promise.all([
+      const [memory, skills, mcp] = await Promise.all([
         selectedAdapterIds.length > 0 && selectedCandidateIds.size > 0
           ? invoke<MemoryImportApplyResult>('memoryHarnessImportApply', {
             adapterIds: selectedAdapterIds,
@@ -206,9 +235,12 @@ export const ExternalImportSettings: React.FC = () => {
         selectedSkillSourceIds.length > 0
           ? invoke<ExternalSkillsApplyResult>('externalImportSkillsApply', { sourceIds: selectedSkillSourceIds })
           : Promise.resolve(null),
+        selectedMcpSourceIds.length > 0
+          ? invokeMcp<ExternalMcpApplyResult>('externalImportMcpApply', { sourceIds: selectedMcpSourceIds })
+          : Promise.resolve(null),
       ]);
       const directivesImported = Object.values(directiveStates).filter((state) => state === 'imported').length;
-      setResults({ memory, skills, directivesImported });
+      setResults({ memory, skills, mcp, directivesImported });
       setStep('results');
       if (skills) await useExternalImportHistoryStore.getState().load();
       await refreshDetection();
@@ -264,6 +296,7 @@ export const ExternalImportSettings: React.FC = () => {
     setStep('select');
     setPreviewMemory(null);
     setPreviewSkills(null);
+    setPreviewMcp(null);
     setResults(null);
     setBusy('detect');
     try {
@@ -324,6 +357,15 @@ export const ExternalImportSettings: React.FC = () => {
         <ExternalSkillsSyncSection />
         <ExternalInstructionsSyncSection />
 
+        {anyMcpCategory && (
+          <div
+            data-testid="external-import-mcp-note"
+            className="shrink-0 rounded-lg border border-badge-warning/20 bg-badge-warning/10 px-3 py-2 text-xs text-badge-warning"
+          >
+            {mcpCopy.categoryNote}
+          </div>
+        )}
+
         {claudeSkills && (
           <div
             data-testid="external-import-claude-skills"
@@ -380,8 +422,10 @@ export const ExternalImportSettings: React.FC = () => {
         {step === 'preview' && (
           <PreviewStep
             copy={copy}
+            mcpCopy={mcpCopy}
             previewMemory={previewMemory}
             previewSkills={previewSkills}
+            previewMcp={previewMcp}
             selectedCandidateIds={selectedCandidateIds}
             directiveStates={directiveStates}
             busy={busy}
@@ -429,6 +473,13 @@ export const ExternalImportSettings: React.FC = () => {
                   ))}
                 </div>
               </div>
+            )}
+            {results.mcp && (
+              <ExternalImportMcpResults
+                copy={mcpCopy}
+                sourceNames={copy.sourceNames}
+                result={results.mcp}
+              />
             )}
             {results.directivesImported > 0 && (
               <div data-testid="external-import-results-directives" className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3 text-xs text-zinc-300">
@@ -529,8 +580,10 @@ function SourceRow({
 
 function PreviewStep({
   copy,
+  mcpCopy,
   previewMemory,
   previewSkills,
+  previewMcp,
   selectedCandidateIds,
   directiveStates,
   busy,
@@ -541,8 +594,10 @@ function PreviewStep({
   onApply,
 }: {
   copy: ExternalImportCopy;
+  mcpCopy: ExternalImportMcpCopy;
   previewMemory: MemoryImportDryRunResult | null;
   previewSkills: ExternalSkillsPreviewResult | null;
+  previewMcp: ExternalMcpPreviewResult | null;
   selectedCandidateIds: Set<string>;
   directiveStates: Record<string, DirectiveState>;
   busy: string | null;
@@ -556,7 +611,9 @@ function PreviewStep({
   const duplicateCandidates = previewMemory?.candidates.filter((candidate) => candidate.disposition === 'skip') ?? [];
   const instructions = previewMemory?.instructions ?? [];
   const skillItems = previewSkills?.items ?? [];
-  const hasAnything = readyCandidates.length > 0 || instructions.length > 0 || skillItems.some((item) => item.disposition === 'copy');
+  const hasAnything = readyCandidates.length > 0 || instructions.length > 0
+    || skillItems.some((item) => item.disposition === 'copy')
+    || (previewMcp?.summary.import ?? 0) > 0;
 
   return (
     <div className="space-y-3" data-testid="external-import-preview">
@@ -625,6 +682,10 @@ function PreviewStep({
             ))}
           </div>
         </div>
+      )}
+
+      {previewMcp && (
+        <ExternalImportMcpPreview copy={mcpCopy} sourceNames={copy.sourceNames} preview={previewMcp} />
       )}
 
       {instructions.length > 0 && (

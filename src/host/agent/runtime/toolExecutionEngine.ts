@@ -840,6 +840,7 @@ export class ToolExecutionEngine {
           forceFinalResponse: this.ctx.control.forceFinalResponse.bind(this.ctx.control),
           deniedToolNames: this.ctx.deniedToolNames,
           allowedToolNames: this.ctx.allowedToolNames, foregroundToolFace: this.ctx.foregroundToolFace,
+          foregroundMcpServerIds: this.ctx.foregroundMcpServerIds,
           // strict skill 流程面透传：让执行层兜底闸与组装层同一语义（FB-327），
           // 边界内工具（如 propose_role）不被前台白名单在派发时二次拦截。
           skillBoundaryAllowedTools: canonicalStrictBoundaryToolNames(this.ctx.turn.skillToolBoundary),

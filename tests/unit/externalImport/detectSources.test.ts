@@ -207,3 +207,55 @@ describe('detectExternalImportSources', () => {
     expect(result.sources.find((source) => source.sourceId === 'claude-code')?.detected).toBe(false);
   });
 });
+
+describe('detectExternalImportSources：MCP 类别计数（N-EXTHISTORY-IMPORT-K1B-MCP）', () => {
+  it('MCP 配置文件在机 → 来源行加 mcp 类别计数（与预览同一套安全规则）', async () => {
+    await fs.mkdir(path.join(homeDir, '.claude'), { recursive: true });
+    await fs.writeFile(
+      path.join(homeDir, '.claude.json'),
+      JSON.stringify({
+        mcpServers: {
+          github: { command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'], env: { GITHUB_TOKEN: 'x' } },
+          off: { command: 'npx', args: ['-y', 'off-mcp'], disabled: true },
+        },
+      }),
+      'utf-8',
+    );
+    await fs.mkdir(path.join(homeDir, '.cursor'), { recursive: true });
+
+    const result = await detectExternalImportSources({} as never);
+    const claudeCode = result.sources.find((source) => source.sourceId === 'claude-code');
+    const cursor = result.sources.find((source) => source.sourceId === 'cursor');
+
+    // disabled 条目不算候选：count=1；claude-code 无 adapter dry-run 数据时技能/记忆照旧。
+    expect(claudeCode?.categories.find((c) => c.category === 'mcp')).toEqual({ category: 'mcp', count: 1 });
+    // .cursor 目录在机但没有 mcp.json → 不出 mcp chip（无配置文件不算类别）。
+    expect(cursor?.categories.some((c) => c.category === 'mcp')).toBe(false);
+  });
+
+  it('Claude Desktop 来源：标记目录在机才检出，只带 MCP 类别', async () => {
+    const desktopDir = path.join(homeDir, 'Library', 'Application Support', 'Claude');
+    await fs.mkdir(desktopDir, { recursive: true });
+    await fs.writeFile(
+      path.join(desktopDir, 'claude_desktop_config.json'),
+      JSON.stringify({ mcpServers: { filesystem: { command: 'npx', args: ['x'] } } }),
+      'utf-8',
+    );
+
+    const result = await detectExternalImportSources({} as never);
+    const desktop = result.sources.find((source) => source.sourceId === 'claude-desktop');
+    expect(desktop?.detected).toBe(true);
+    expect(desktop?.adapterId).toBeUndefined();
+    expect(desktop?.homePath).toBe('~/Library/Application Support/Claude');
+    expect(desktop?.categories).toEqual([{ category: 'mcp', count: 1 }]);
+  });
+
+  it('MCP 配置文件存在但坏了 → 仍出 mcp chip（count=0，预览会给文件级原因）', async () => {
+    await fs.mkdir(path.join(homeDir, '.cursor'), { recursive: true });
+    await fs.writeFile(path.join(homeDir, '.cursor', 'mcp.json'), '{ broken', 'utf-8');
+
+    const result = await detectExternalImportSources({} as never);
+    const cursor = result.sources.find((source) => source.sourceId === 'cursor');
+    expect(cursor?.categories.find((c) => c.category === 'mcp')).toEqual({ category: 'mcp', count: 0 });
+  });
+});

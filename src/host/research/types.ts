@@ -187,6 +187,7 @@ export interface AgentRunOptions {
   allowedToolNames?: string[];
   /** 本轮 allowedToolNames 只是会话指挥台前台 brain 自己的工具面（ADR-059），不是 run 级硬边界：子代理不继承它，按角色声明拿工具（N-SUBAGENT-WEBSEARCH-INHERIT）。 */
   foregroundToolFace?: boolean;
+  foregroundMcpServerIds?: string[];
   toolScope?: import('../../shared/contract/conversationEnvelope').WorkbenchToolScope;
   executionIntent?: import('../../shared/contract/conversationEnvelope').ConversationExecutionIntent;
   runtimeInput?: import('../../shared/contract/conversationEnvelope').RuntimeInputIntent;

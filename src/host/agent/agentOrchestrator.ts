@@ -1019,6 +1019,9 @@ export class AgentOrchestrator {
       deniedToolNames,
       allowedToolNames: boundaryAllowedToolNames,
       foregroundToolFace: options?.foregroundToolFace === true && !roleToolBoundary,
+      foregroundMcpServerIds: options?.foregroundToolFace === true && !roleToolBoundary
+        ? options.foregroundMcpServerIds
+        : undefined,
       telemetryAdapter,
       persistMessage: sessionId
         ? async (message: Message) => {

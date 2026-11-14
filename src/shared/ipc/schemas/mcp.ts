@@ -13,6 +13,8 @@ const McpDomainRequestSchema = z.object({
   action: z.enum([
     'addServer',
     'cancelServerInstall',
+    'externalImportMcpApply',
+    'externalImportMcpPreview',
     'getCatalog',
     'getServerStates',
     'getStatus',

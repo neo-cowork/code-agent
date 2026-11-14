@@ -19,7 +19,9 @@ import type {
   ExternalImportDetectResult,
   ExternalImportSourceId,
   ExternalImportSourceStatus,
+  ExternalMcpConfigSourceId,
 } from '../../shared/contract/externalImport';
+import { countExternalMcpImportCandidates } from './mcpServersImport';
 
 /** 页面类别列的数据驱动真源：K1B（MCP）追加类别 = 这里加一档 + host handler。 */
 interface SourceDescriptor {
@@ -31,6 +33,8 @@ interface SourceDescriptor {
   /** 技能目录（相对 home）；Claude 为只读原地读取 */
   skillsDir?: string;
   skillsReadOnly?: boolean;
+  /** 有 MCP server 配置文件的来源（N-EXTHISTORY-IMPORT-K1B-MCP）→ MCP 类别计数 */
+  mcpConfigSourceId?: ExternalMcpConfigSourceId;
 }
 
 const SOURCES: SourceDescriptor[] = [
@@ -40,17 +44,27 @@ const SOURCES: SourceDescriptor[] = [
     adapterId: 'claude-code',
     skillsDir: path.join('.claude', 'skills'),
     skillsReadOnly: true,
+    mcpConfigSourceId: 'claude-code',
+  },
+  {
+    // Claude Desktop（GUI app）：配置在 ~/Library/Application Support/Claude，
+    // 只带 MCP 类别（无记忆/技能目录）。
+    sourceId: 'claude-desktop',
+    markerDir: path.join('Library', 'Application Support', 'Claude'),
+    mcpConfigSourceId: 'claude-desktop',
   },
   {
     sourceId: 'codex',
     markerDir: '.codex',
     adapterId: 'codex-local-custom',
     skillsDir: path.join('.codex', 'skills'),
+    mcpConfigSourceId: 'codex',
   },
   {
     sourceId: 'cursor',
     markerDir: '.cursor',
     skillsDir: path.join('.cursor', 'skills'),
+    mcpConfigSourceId: 'cursor',
   },
   { sourceId: 'grok-build', markerDir: '.grok', adapterId: 'grok-build' },
   { sourceId: 'qwen-code', markerDir: '.qwen', adapterId: 'qwen-code' },
@@ -128,6 +142,14 @@ export async function detectExternalImportSources(
         await countSkillFolders(path.join(homeDir, descriptor.skillsDir)),
         descriptor.skillsReadOnly,
       )];
+    }
+
+    // MCP 类别计数（K1B）：配置文件在机才出 chip；可导入候选数与预览同一套安全规则。
+    if (descriptor.mcpConfigSourceId && status.detected) {
+      const mcp = await countExternalMcpImportCandidates(descriptor.mcpConfigSourceId, homeDir);
+      if (mcp.filePresent) {
+        status.categories = [...status.categories, { category: 'mcp', count: mcp.count }];
+      }
     }
 
     sources.push(status);
