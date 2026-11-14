@@ -120,6 +120,7 @@ interface ToolCallDisplayProps {
   statusOverride?: ToolStatus;
   interruptionReason?: StreamInterruptionReason;
   receipt?: ToolReceiptPresentation;
+  statusCheckCount?: number;
   agentId?: string;
   sessionLive?: boolean;
 }
@@ -141,6 +142,7 @@ export function ToolCallDisplay({
   statusOverride,
   interruptionReason,
   receipt,
+  statusCheckCount = 1,
   agentId,
   sessionLive,
 }: ToolCallDisplayProps) {
@@ -307,6 +309,11 @@ export function ToolCallDisplay({
         {!receipt && status !== 'error' && toolCall.result && toolCall.result.metadata?.recovered !== true && !delegationPresentation && toolCall.name !== 'list_session_candidates' && !expanded && !isBashTool(toolCall) && status !== 'interrupted' && (
           <span className="min-w-0 max-w-[220px] shrink truncate text-xs text-zinc-500">
             <ResultSummary toolCall={displayToolCall} inline />
+          </span>
+        )}
+        {statusCheckCount > 1 && (
+          <span className="shrink-0 text-xs text-zinc-500" data-testid="task-status-check-count">
+            {t.sessionTaskPresentation.checkedTimes.replace('{count}', String(statusCheckCount))}
           </span>
         )}
       </div>
@@ -591,7 +598,7 @@ const WorkflowStagePreview: React.FC<{ preview: WorkflowStagePreviewData }> = ({
           const policy = formatWorkflowPolicy(stage.toolPolicyMode, copy);
           const duration = formatWorkflowDuration(stage.duration);
           const tools = stage.toolsUsed.length > 0
-            ? [...new Set(stage.toolsUsed.map((toolName) => humanizeWorkflowTool(toolName, t, copy)))].join('、')
+            ? [...new Set(stage.toolsUsed.map((toolName) => humanizeWorkflowTool(toolName, t, copy)))].join(t.toolStepHumanize.listSeparator)
             : null;
           return (
             <div

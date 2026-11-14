@@ -7,6 +7,7 @@
 // 不碰「回到底部」（留在输入框上方居中）、不联动右栏「日志」。
 // ============================================================================
 import React, { useEffect, useId, useRef, useState } from 'react';
+import { Button } from '../../primitives/Button';
 import { useI18n } from '../../../hooks/useI18n';
 import { TURN_RAIL_MIN_TURNS, type TurnRailItem } from '../../../utils/turnRailItems';
 
@@ -14,6 +15,7 @@ interface TurnRailProps {
   items: TurnRailItem[];
   activeTurnId: string | null;
   onJump: (turnId: string) => void;
+  onJumpToNode: (turnId: string, nodeId: string) => void;
 }
 
 /** 每格的理想高度；轮数多、窗口矮时按 flex 收缩（最低 TICK_MIN_PX），条内不滚动 */
@@ -28,7 +30,7 @@ function fill(template: string, values: Record<string, number | string>): string
   return Object.entries(values).reduce((text, [key, value]) => text.replace(`{${key}}`, String(value)), template);
 }
 
-export const TurnRail: React.FC<TurnRailProps> = ({ items, activeTurnId, onJump }) => {
+export const TurnRail: React.FC<TurnRailProps> = ({ items, activeTurnId, onJump, onJumpToNode }) => {
   const { t } = useI18n();
   const text = t.turnRail;
   const [expanded, setExpanded] = useState(false);
@@ -45,6 +47,7 @@ export const TurnRail: React.FC<TurnRailProps> = ({ items, activeTurnId, onJump 
 
   if (items.length < TURN_RAIL_MIN_TURNS) return null;
 
+  const messages = items.reduce((total, item) => total + 1 + item.queuedMessages.length, 0);
   const active = items.find((item) => item.turnId === activeTurnId) ?? null;
   const preview = items.find((item) => item.turnId === previewTurnId) ?? null;
   const turnLabel = (item: TurnRailItem) => fill(text.turnN, { n: item.turnNumber });
@@ -104,6 +107,7 @@ export const TurnRail: React.FC<TurnRailProps> = ({ items, activeTurnId, onJump 
           >
             <div className="mb-0.5 text-[11px] tabular-nums text-badge-accent">{turnLabel(preview)}</div>
             <div className="text-zinc-100">{preview.prompt || turnLabel(preview)}</div>
+            {preview.queuedMessages.length > 0 && <div className="mt-1 text-zinc-400">{fill(text.includesAdded, { n: preview.queuedMessages.length })}</div>}
             {preview.response && <div className="mt-1 text-zinc-400">{preview.response}</div>}
           </div>
         )}
@@ -124,7 +128,7 @@ export const TurnRail: React.FC<TurnRailProps> = ({ items, activeTurnId, onJump 
           className="absolute right-1 top-3 bottom-16 z-10 flex w-64 max-w-[60%] flex-col rounded-lg border border-zinc-700/60 bg-zinc-900/95 shadow-lg backdrop-blur-sm"
         >
           <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-2 text-xs text-zinc-300">
-            <span>{fill(text.allTurns, { count: items.length })}</span>
+            <span>{fill(messages === items.length ? text.allTurns : text.allTurnsWithMessages, { count: items.length, messages })}</span>
             <button /* ds-allow:button: 清单头部的紧凑文字收起动作，Button primitive 会撑高标题行 */
               type="button"
               onClick={() => setExpanded(false)}
@@ -146,6 +150,23 @@ export const TurnRail: React.FC<TurnRailProps> = ({ items, activeTurnId, onJump 
                     <span className="shrink-0 tabular-nums text-zinc-500">{turnLabel(item)}</span>
                     <span className="truncate">{item.prompt}</span>
                   </button>
+                  {item.queuedMessages.length > 0 && (
+                    <ul className="ml-5 border-l border-zinc-700/60">
+                      {item.queuedMessages.map((message) => (
+                        <li key={message.nodeId}>
+                          <Button
+                            type="button" variant="ghost" size="sm" fullWidth
+                            aria-label={`${text.added} · ${message.prompt}`}
+                            onClick={() => onJumpToNode(item.turnId, message.nodeId)}
+                            className="!justify-start rounded-none text-left [&>span]:min-w-0"
+                          >
+                            <span className="shrink-0">{text.added} ·{' '}</span>
+                            <span className="truncate">{message.prompt}</span>
+                          </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </li>
               );
             })}

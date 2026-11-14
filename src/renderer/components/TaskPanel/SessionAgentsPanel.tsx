@@ -14,7 +14,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Bot, ChevronDown, ChevronRight, Clock, Square, X, Zap } from 'lucide-react';
 import { cancelSwarmRunOrFallback } from '../features/swarm/SwarmInlineMonitor';
 import { useI18n } from '../../hooks/useI18n';
-import { interpolatePlural } from '../../i18n/interpolate';
+import { interpolate, interpolatePlural } from '../../i18n/interpolate';
 import { useSessionAgentRows } from '../../hooks/useSessionAgentRows';
 import { useDurableSwarmRunDetail } from '../../hooks/useDurableSwarmRunDetail';
 import { useSessionStore } from '../../stores/sessionStore';
@@ -40,11 +40,11 @@ function formatPanelTokens(tokens: number): string {
   return `${(tokens / 1_000_000).toFixed(2)}M`;
 }
 
-function formatPanelDuration(ms: number): string {
+function formatPanelDuration(ms: number, copy: { seconds: string; minutes: string }): string {
   const totalSeconds = Math.max(1, Math.round(ms / 1000));
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
-  return minutes > 0 ? `${minutes} 分 ${seconds} 秒` : `${seconds} 秒`;
+  return interpolate(minutes > 0 ? copy.minutes : copy.seconds, { minutes, seconds });
 }
 
 /** 「暂无进展」提示的「现在」刷新节拍（UI 本地节拍，阈值本身在 WORKFLOW_STALL_THRESHOLDS）。 */
@@ -391,7 +391,7 @@ export const SessionAgentsPanel: React.FC = () => {
           {elapsedMs !== null && elapsedMs > 0 && (
             <span className="inline-flex items-center gap-1">
               <Clock className="h-3 w-3" aria-hidden />
-              {formatPanelDuration(elapsedMs)}
+              {formatPanelDuration(elapsedMs, text.panel.duration)}
             </span>
           )}
         </div>

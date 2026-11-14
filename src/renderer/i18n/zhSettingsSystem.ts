@@ -384,6 +384,7 @@ export const zhSettingsSystem = {
         recorderMissing: '暂时无法录音：缺少录音组件。安装后请点「重新检查」。',
         systemAudioHelperMissing: '系统音频组件暂未就绪，录音时将改用麦克风。准备完成后请点「重新检查」。',
         transcriptionEngineMissing: '可以录音，但暂时无法把语音转成文字：未检测到转写引擎。配置后请点「重新检查」。',
+        transcriptionModelMissing: '可以录音，但暂时无法把语音转成文字：转写程序已装好，还缺语音模型。下载后请点「重新检查」。',
         voiceDetectionMissing: '暂时无法录音：语音检测运行组件尚未就绪。点击「录音」会自动准备，或点「重新检查」刷新状态。',
         voiceDetectionUnsupported: '这台 Mac 暂不支持后台录音的语音检测。',
         recheck: '重新检查',

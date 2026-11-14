@@ -382,6 +382,7 @@ export const enSettingsSystem = {
         recorderMissing: "Can't record yet: the recording component is missing. Install it, then press Re-check.",
         systemAudioHelperMissing: 'System audio component is not ready yet; recording will use the microphone instead. Once ready, press Re-check.',
         transcriptionEngineMissing: "Recording works, but speech can't be turned into text yet: no transcription engine. Set one up, then press Re-check.",
+        transcriptionModelMissing: "Recording works, but speech can't be turned into text yet: the transcription program is installed but its speech model is missing. Download it, then press Re-check.",
         voiceDetectionMissing: "Can't record yet: the voice-detection runtime is not ready. Press Record to prepare it automatically, or press Re-check.",
         voiceDetectionUnsupported: "This Mac doesn't support background-recording voice detection.",
         recheck: 'Re-check',

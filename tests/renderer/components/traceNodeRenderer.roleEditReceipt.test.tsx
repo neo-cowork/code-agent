@@ -10,9 +10,10 @@ import { TurnBasedTraceView, getFocusedTurnIndex, getOutputFollowTurnIndex } fro
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 
 // Static rendering reads Zustand's initial snapshot; supply the selected language explicitly.
-vi.mock('../../../src/renderer/hooks/useI18n', async () => {
+vi.mock('../../../src/renderer/hooks/useI18n', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/renderer/hooks/useI18n')>();
   const { languages } = await import('../../../src/renderer/i18n');
-  return { useI18n: () => ({ t: languages[useAppStore.getState().language] }) };
+  return { ...actual, useI18n: () => ({ t: languages[useAppStore.getState().language] }) };
 });
 
 const receipt: NonNullable<MessageMetadata['roleEditReceipt']> = {

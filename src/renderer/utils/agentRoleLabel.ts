@@ -1,3 +1,5 @@
+import type { Task } from '@shared/contract/backgroundTask';
+import { containsCjk } from './containsCjk';
 import type { AgentTreeNode } from '@shared/contract/agentTree';
 import { languages, type Translations } from '../i18n';
 import { useAppStore } from '../stores/appStore';
@@ -5,7 +7,7 @@ import { useAppStore } from '../stores/appStore';
 /** Resolve at render time so persisted sessions keep their original role ids. */
 export function agentRoleLabel(
   role: string,
-  labels: Translations['agentRoleLabels'] = languages[useAppStore.getState().language].agentRoleLabels,
+  labels: Translations['agentRoleLabels'] = (languages[useAppStore.getState().language] ?? languages.zh).agentRoleLabels,
 ): string {
   const name = role.trim();
   if (Object.hasOwn(labels.roles, name)) return labels.roles[name as keyof typeof labels.roles];
@@ -16,9 +18,17 @@ export function agentRoleLabel(
 /** Background names are host/model bookkeeping; retain the existing Chinese display. */
 export function agentNodeLabel(
   node: Pick<AgentTreeNode, 'role' | 'displayName' | 'background'>,
-  labels: Translations['agentRoleLabels'] = languages[useAppStore.getState().language].agentRoleLabels,
+  labels: Translations['agentRoleLabels'] = (languages[useAppStore.getState().language] ?? languages.zh).agentRoleLabels,
 ): string {
   return node.background && labels === languages.en.agentRoleLabels
     ? labels.roles.background
     : agentRoleLabel(node.displayName || node.role, labels);
+}
+
+/** Model-generated background titles may be Chinese even in an English UI. */
+export function backgroundTaskLabel(task: Pick<Task, 'source' | 'title'>, t: Translations): string {
+  return t === languages.en
+    && (task.source === 'delegate_task' || task.source === 'session_command_center')
+    && containsCjk(task.title)
+    ? t.agentRoleLabels.roles.background : task.title;
 }
