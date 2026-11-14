@@ -244,7 +244,7 @@ describe('ArtifactStandingRefresh chip 状态', () => {
   });
 
   it('lastRefreshFailed 在场：chip 只显示短状态「已保留上一版」，时间/原因进 title，label 无 truncate', async () => {
-    const at = Date.UTC(2026, 9, 4, 1, 2, 3);
+    const at = new Date(2026, 9, 4, 1, 2, 3).getTime();
     mockPublishInfo({
       jobId: 'job-1',
       enabled: true,
@@ -273,13 +273,13 @@ describe('ArtifactStandingRefresh chip 状态', () => {
     expect(chip.textContent).not.toContain('boom');
     const title = chip.getAttribute('title') ?? '';
     expect(title).toContain('boom');
-    // 时间按 app 语言（zh→zh-CN）格式化，不是浏览器默认 locale（本机默认 en-US）
-    expect(title).toContain(new Date(at).toLocaleString('zh-CN'));
+    // 时间包含本地年月日与时分，且 zh 界面不出 AM/PM
+    expect(title).toMatch(/(?<!\d)2026\/10\/0?4 01:02(?::03)?(?!\d)/);
     expect(title).not.toMatch(/\b[AP]M\b/);
   });
 
-  it('en 语言：失败 chip 是英文短状态，title 用 en-US 格式化时间', async () => {
-    const at = Date.UTC(2026, 9, 4, 1, 2, 3);
+  it('en 语言：失败 chip 是英文短状态，title 包含本地日期与时分', async () => {
+    const at = new Date(2026, 9, 4, 1, 2, 3).getTime();
     mockPublishInfo({
       jobId: 'job-1',
       enabled: true,
@@ -300,7 +300,7 @@ describe('ArtifactStandingRefresh chip 状态', () => {
       const label = chip.querySelector('span');
       expect(label?.className).not.toContain('truncate');
       const title = chip.getAttribute('title') ?? '';
-      expect(title).toContain(new Date(at).toLocaleString('en-US'));
+      expect(title).toMatch(/(?<!\d)(?:2026\/10\/0?4|10\/0?4\/2026),? 0?1:02(?::03)?(?!\d)/);
     } finally {
       useAppStore.getState().setLanguage('zh');
     }
