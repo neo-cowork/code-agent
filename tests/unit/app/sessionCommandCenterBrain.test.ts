@@ -34,6 +34,7 @@ import {
   getSessionCommandCenterBrainContextForPrompt,
   getTextForegroundToolNamesForPrompt,
   withSessionCommandCenterBrain,
+  resolveForegroundBrainTurnBudget,
 } from '../../../src/host/app/sessionCommandCenterBrain';
 // 常量已不导出（防止装配路绕过单一真源直接拼常量），这里从共用函数取基块：
 // 空白轮次不命中任何回合级规则，返回值唯一成员就是 brain 基块。
@@ -173,6 +174,15 @@ describe('ADR-059 声明式文字前台边界', () => {
 });
 
 describe('withSessionCommandCenterBrain', () => {
+  it.each([false, true])('no-file-noun budget uses only the previous stop marker: %s', stopped => {
+    const info = vi.fn();
+    const cap = stopped ? 30 : 8;
+    expect(resolveForegroundBrainTurnBudget('按这个大纲出三张样张', stopped, undefined, { info })).toBe(cap);
+    expect(info).toHaveBeenCalledExactlyOnceWith(
+      `Foreground brain budget rule=${stopped ? 'continuation' : 'default'} cap=${cap} maxIterations=${cap}`,
+    );
+  });
+
   it.each([
     ['做 PPTX', false, 30], ['做 PPT', false, 30], ['做 Excel 表格', false, 30],
     ['写 Word 文档', false, 30], ['导出 PDF', false, 30], ['制作 HTML 网页', false, 30],

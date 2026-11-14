@@ -147,6 +147,8 @@ export interface ChatInputProps {
   hasStoppableBackgroundWork?: boolean;
   /** 运行中输入正在接入 */
   isInterrupting?: boolean;
+  /** 用户已请求停止，等待前后台任务全部收线 */
+  isStopping?: boolean;
   /** 停止处理回调 */
   onStop?: () => void;
   /** parked durable run 的用户继续回调 */
@@ -299,6 +301,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   isProcessing,
   hasStoppableBackgroundWork,
   isInterrupting,
+  isStopping,
   onStop,
   onContinue,
   hasContinuation,
@@ -345,6 +348,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const composerDraft = useComposerDraftPersistence({
     sessionId: currentSessionId,
     sessionless,
+    scopeProjectId,
     value,
     setValue,
     suspend: editingQueuedInputId !== null,
@@ -977,6 +981,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   } = useChatInputSlashCommands({
     value,
     currentSessionId,
+    // 无会话语境（协作空间页）：未挂载 skill 只记选择，挂载推迟到发送时落进新会话
+    deferMountUntilSend: sessionless,
     skillRecommendations,
     mountRecommendedSkill,
     installRecommendedSkill,
@@ -1665,6 +1671,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               configured={liveVoiceAvailability.configured}
               isProcessing={Boolean(isProcessing)}
               isInterrupting={isInterrupting}
+              isStopping={isStopping}
               hasContent={hasContent}
               hasContinuation={Boolean(hasContinuation)}
               onStop={onStop}
