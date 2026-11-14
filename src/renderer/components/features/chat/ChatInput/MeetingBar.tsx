@@ -47,7 +47,7 @@ export const MeetingBar: React.FC = () => {
   if (error) {
     return (
       <div className="px-3 pb-2">
-        <div className="flex items-center gap-2 rounded-lg border border-badge-warning/30 bg-badge-warning/10 px-3 py-1.5 text-xs text-badge-warning">
+        <div className="flex items-center gap-2 whitespace-nowrap rounded-lg border border-badge-warning/30 bg-badge-warning/10 px-3 py-1.5 text-xs text-badge-warning">
           <Mic size={13} className="shrink-0" />
           <span className="min-w-0 flex-1 truncate">{text.startFailed}</span>
           <button type="button" className={barButton} onClick={() => { dismiss(); openSettingsTab('openchronicle'); }}>{text.openSettings}</button>
@@ -65,7 +65,7 @@ export const MeetingBar: React.FC = () => {
       .replace('{hours}', String(MEETING_SESSION_LIMITS.MAX_DURATION_MS / (60 * MIN)));
     return (
       <div className="px-3 pb-2">
-        <div className="flex items-center gap-2 rounded-lg border border-zinc-600/40 bg-zinc-800/60 px-3 py-1.5 text-xs text-zinc-300">
+        <div className="flex items-center gap-2 whitespace-nowrap rounded-lg border border-zinc-600/40 bg-zinc-800/60 px-3 py-1.5 text-xs text-zinc-300">
           <Mic size={13} className="shrink-0 text-zinc-400" />
           <span className="min-w-0 flex-1 truncate">{ended.title} · {msg}</span>
           <button type="button" className={barButton} onClick={dismiss}>{text.dismiss}</button>
@@ -80,7 +80,7 @@ export const MeetingBar: React.FC = () => {
   const remainMin = Math.max(1, Math.ceil((MEETING_SESSION_LIMITS.SILENCE_END_MS - (status?.silenceMs ?? 0)) / MIN));
   return (
     <div className="px-3 pb-2" data-testid="meeting-bar">
-      <div className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs ${warn ? 'border-badge-warning/30 bg-badge-warning/10 text-badge-warning' : 'border-badge-danger/30 bg-badge-danger/10 text-badge-danger'}`}>
+      <div className={`flex items-center gap-2 whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs ${warn ? 'border-badge-warning/30 bg-badge-warning/10 text-badge-warning' : 'border-badge-danger/30 bg-badge-danger/10 text-badge-danger'}`}>
         <span className={`h-2 w-2 shrink-0 rounded-full ${paused ? 'bg-zinc-400' : 'bg-badge-danger animate-pulse'}`} aria-hidden />
         <span className="shrink-0 font-medium">{paused ? text.paused : text.recording} {formatElapsed(now - current.startedAtMs)}</span>
         <span className="min-w-0 flex-1 truncate opacity-80">
