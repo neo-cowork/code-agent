@@ -1,13 +1,15 @@
 import type { CliConnectorDescriptor } from '../contract/cliConnectorDescriptor';
 
 const LARK_CLI_PROFILE = 'neo';
-const LARK_CLI_SCOPE = 'offline_access im:message im:message.send_as_user';
+// 妙记只读五项（N-MEETING-PAGE，11-15 用 lark-cli 1.0.89 新建的 neo 应用真机授权通过）：会议页导入妙记、记言读转写
+const LARK_CLI_MINUTES_READ_SCOPE = 'minutes:minutes:readonly minutes:minutes.basic:read minutes:minutes.search:read minutes:minutes.artifacts:read minutes:minutes.transcript:export';
+const LARK_CLI_SCOPE = `offline_access im:message im:message.send_as_user ${LARK_CLI_MINUTES_READ_SCOPE}`;
 
 export const feishuCliDescriptor = {
   id: 'feishu',
   displayName: '飞书',
   logo: 'feishu',
-  toolNames: [],
+  toolNames: ['feishuMinutesSearch', 'feishuMinutesRead'],
   loggerName: 'FeishuLarkCli',
   installDirectory: 'lark-cli',
   npmPackage: '@larksuite/cli',
@@ -98,7 +100,7 @@ export const tmeetDescriptor = {
   displayName: '腾讯会议',
   displayNameEn: 'Tencent Meeting',
   logo: 'tmeet',
-  toolNames: ['tmeetMeetingList', 'tmeetMeetingCreate', 'tmeetMeetingSearch'],
+  toolNames: ['tmeetMeetingList', 'tmeetMeetingCreate', 'tmeetMeetingSearch', 'tmeetRecordList', 'tmeetRecordRead'],
   writeActions: {
     tmeetMeetingCreate: { zh: '创建会议', en: 'create a meeting' },
   },

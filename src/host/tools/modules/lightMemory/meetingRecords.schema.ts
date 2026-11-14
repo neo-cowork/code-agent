@@ -2,6 +2,7 @@ import type { ToolSchema } from '../../../protocol/tools';
 
 export const meetingRecordsSchema: ToolSchema = {
   name: 'meeting_records',
+  stepLabel: { default: 'meetingRecords' },
   description: `Read the user's past meetings stored in Agent Neo: meetings recorded with "记这场会" and imported Feishu Minutes / Tencent Meeting transcripts, with their minutes (decisions, action items, open questions).
 
 Use it when the user asks about a past meeting ("上周那场会定了什么", "谁说要跟进报价"), or when you need a meeting's transcript to write minutes.

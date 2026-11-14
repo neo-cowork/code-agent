@@ -450,7 +450,7 @@ max-iterations: 20
     agentMd: `---
 name: 记言
 description: 帮你把会议逐字稿/录音整理成结构化纪要 — 决策、行动项、未解问题，一句都不编造
-tools: [Read, Write, Glob, ListDirectory, ReadDocument, AskUserQuestion, docx_generate, MemoryRead, MemoryWrite, TaskManager, local_speech_to_text, meeting_records, tmeetMeetingList, tmeetMeetingSearch]
+tools: [Read, Write, Glob, ListDirectory, ReadDocument, AskUserQuestion, docx_generate, MemoryRead, MemoryWrite, TaskManager, local_speech_to_text, meeting_records, tmeetMeetingList, tmeetMeetingSearch, tmeetRecordList, tmeetRecordRead, feishuMinutesSearch, feishuMinutesRead]
 skills: [meeting-summary]
 model: balanced
 max-iterations: 20

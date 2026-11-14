@@ -18,4 +18,6 @@ export const MEETING_SESSION_LIMITS = {
   RECORDS_READ_MAX_CHARS: 60_000,
   /** meeting_records 搜索每次最多返回几条命中 */
   RECORDS_SEARCH_LIMIT: 20,
+  /** 从腾讯会议分页拉转写最多拉几页（每页 100 段），防止异常分页无限循环 */
+  IMPORT_MAX_PAGES: 60,
 } as const;

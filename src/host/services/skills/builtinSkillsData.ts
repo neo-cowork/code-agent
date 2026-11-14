@@ -1280,18 +1280,25 @@ df.groupby('channel')['amount'].sum().sort_values().plot(kind='barh')
 
 ### 类型 1：飞书妙记 URL
 \`https://*.feishu.cn/minutes/<minute-token>\`
-→ 如果有 \`lark_minutes\` 工具，直接调用
-→ 否则提示用户下载逐字稿后用类型 4 处理
+→ 调用 \`feishuMinutesRead\`（参数传整条链接或 token）取转写；只知道大概时间或标题时先用 \`feishuMinutesSearch\` 找
+→ 工具提示飞书没连接或没授权读妙记，就照提示请用户去设置里连接；连不上再请用户导出逐字稿，按类型 5 处理
+→ 妙记自带的 AI 摘要和待办不是原话，只作参考，纪要以转写原话为准
 
-### 类型 2：本地音频/视频文件
+### 类型 2：腾讯会议
+→ \`tmeetRecordList\` 按时间找到录制拿 record_file_id，再用 \`tmeetRecordRead\` 取转写（腾讯会议智能纪要同样只作参考）
+
+### 类型 3：Neo 里录过或导入过的会
+→ \`meeting_records\` 先 list / search 找到会议 id，再 read 取转写
+
+### 类型 4：本地音频/视频文件
 \`.mp3 / .wav / .mp4 / .m4a\`
-→ 调用 ASR 工具（如果有）转逐字稿
-→ 再按类型 4 处理
+→ 调用 \`local_speech_to_text\` 在本机转逐字稿
+→ 再按类型 6 处理
 
-### 类型 3：txt/markdown 逐字稿
+### 类型 5：txt/markdown 逐字稿
 → 直接 read_file 后处理
 
-### 类型 4：用户粘贴的内容
+### 类型 6：用户粘贴的内容
 → 直接处理
 
 ## 纪要结构
@@ -1383,7 +1390,7 @@ df.groupby('channel')['amount'].sum().sort_values().plot(kind='barh')
 纪要末尾加一行，列出哪些字段因来源没写而留待定（例："待定：发票对接的负责人与截止时间。"），没有就写"无待定项"。用户说了不要提问时不要追问，补充信息由用户之后回复再更新纪要。
 用户没禁止提问时，可再问是否推送飞书群 / 同步 Obsidian。`,
     basePath: '',
-    allowedTools: ['read_file', 'write_file', 'web_fetch', 'ask_user_question'],
+    allowedTools: ['read_file', 'write_file', 'web_fetch', 'ask_user_question', 'feishuMinutesSearch', 'feishuMinutesRead', 'tmeetRecordList', 'tmeetRecordRead', 'meeting_records', 'local_speech_to_text'],
     disableModelInvocation: false,
     userInvocable: true,
     executionContext: 'inline',

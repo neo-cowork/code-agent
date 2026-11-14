@@ -475,6 +475,10 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
   { name: 'tmeetMeetingList', shortDescription: '列出待开始、进行中或近 30 天已结束的腾讯会议', tags: ['planning', 'search'], aliases: ['tmeet meetings', 'Tencent Meeting list', '腾讯会议列表', '腾讯会议', '会议', '最近会议', '历史会议', '已结束会议', '最近开过的会'], source: 'builtin' },
   { name: 'tmeetMeetingSearch', shortDescription: '按关键词、会议号或时间窗搜索腾讯会议', tags: ['planning', 'search'], aliases: ['search Tencent Meeting', 'tmeet meeting search', '搜会议', '找会议', '会议号'], source: 'builtin' },
   { name: 'tmeetMeetingCreate', shortDescription: '创建腾讯会议', tags: ['planning'], aliases: ['create Tencent Meeting', 'new tmeet meeting', '创建腾讯会议'], source: 'builtin' },
+  { name: 'tmeetRecordList', shortDescription: '列出腾讯会议的云录制和文字转写（拿 record_file_id）', tags: ['planning', 'search'], aliases: ['Tencent Meeting recordings', 'tmeet records', '腾讯会议录制', '腾讯会议转写', '会议录制', '云录制'], source: 'builtin' },
+  { name: 'tmeetRecordRead', shortDescription: '读腾讯会议一场录制的智能纪要和逐段转写', tags: ['planning', 'search'], aliases: ['Tencent Meeting transcript', 'tmeet transcript', 'smart minutes', '腾讯会议纪要', '元宝纪要', '智能纪要', '腾讯会议逐字稿'], source: 'builtin' },
+  { name: 'feishuMinutesSearch', shortDescription: '按关键词或时间搜飞书妙记', tags: ['planning', 'search'], aliases: ['Feishu Minutes search', 'lark minutes', '飞书妙记', '妙记', '搜妙记'], source: 'builtin' },
+  { name: 'feishuMinutesRead', shortDescription: '读一条飞书妙记的转写、AI 摘要和待办', tags: ['planning', 'search'], aliases: ['Feishu Minutes transcript', 'read lark minutes', '妙记转写', '妙记逐字稿', '妙记链接'], source: 'builtin' },
   {
     name: 'mail',
     shortDescription: '读取 macOS Mail 中的本地邮件账户、邮箱和邮件内容',

@@ -143,7 +143,12 @@ export type ToolStepLabelKey =
   | 'tmeetMeetingListUpcoming'
   | 'tmeetMeetingListEnded'
   | 'tmeetMeetingCreate'
-  | 'tmeetMeetingSearch';
+  | 'tmeetMeetingSearch'
+  | 'tmeetRecordList'
+  | 'tmeetRecordRead'
+  | 'feishuMinutesSearch'
+  | 'feishuMinutesRead'
+  | 'meetingRecords';
 
 /** Renderer-facing verb phase. No existing runtime status includes the approval wait as a distinct state. */
 export type ToolStepStatus = 'pending-approval' | 'running' | 'completed' | 'failed';
