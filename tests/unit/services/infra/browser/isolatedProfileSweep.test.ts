@@ -262,6 +262,18 @@ describe('isolated profile sweep', () => {
       expect(await fs.readdir(root)).toEqual(['l8-noprobe']);
       expect(logger.log).toHaveBeenCalledWith('DEBUG', 'Isolated profile sweep kept l8-noprobe: legacy-probe-unavailable');
     });
+    it('a process launched with the non-canonical (symlinked tmpDir) path keeps the dir', async () => {
+      const link = path.join(tmpDir, 'link');
+      await fs.symlink(tmpDir, link);
+      const viaLink = path.join(link, MANAGED_BROWSER_ISOLATED_PROFILE_PREFIX);
+      const dir = await legacy('l8-noncanon', 8);
+      expect(path.join(viaLink, 'l8-noncanon')).not.toBe(dir);
+      await sweepStaleIsolatedBrowserProfiles({
+        tmpDir: link, logger, listProcessCommands: async () => `chrome --user-data-dir=${path.join(viaLink, 'l8-noncanon')} --foo\n`,
+      });
+      expect(await fs.readdir(root)).toEqual(['l8-noncanon']);
+      expect(logger.log).toHaveBeenCalledWith('DEBUG', 'Isolated profile sweep kept l8-noncanon: live');
+    });
     it('a prefix-sibling path is not confused with the directory', async () => {
       const a = await legacy('profile-abc', 8);
       const b = await legacy('profile-abc-2', 8);

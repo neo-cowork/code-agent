@@ -29,14 +29,15 @@ function listProcessCommands(): Promise<string> {
   });
 }
 
-function commandUsesDir(commands: string, dir: string): boolean {
+function commandUsesDir(commands: string, dirs: string[]): boolean {
   const marker = '--user-data-dir=';
   for (const line of commands.split('\n')) {
     let from = line.indexOf(marker);
     while (from !== -1) {
       let rest = line.slice(from + marker.length);
       if (rest.startsWith('"') || rest.startsWith("'")) rest = rest.slice(1);
-      if (rest.startsWith(dir)) {
+      for (const dir of dirs) {
+        if (!rest.startsWith(dir)) continue;
         const next = rest.charAt(dir.length);
         // A sibling that merely extends the name (`-abc` vs `-abc-2`) must not match.
         if (next === '' || /[\s"'/]/.test(next)) return true;
@@ -117,7 +118,8 @@ export async function sweepStaleIsolatedBrowserProfiles(options: {
       } catch {
         return 'legacy-probe-unavailable';
       }
-      if (commandUsesDir(commands, dir)) return 'live';
+      // Chrome is launched with the os.tmpdir()-based path, which differs from the canonical one on macOS (/var vs /private/var).
+      if (commandUsesDir(commands, [dir, path.join(root, path.basename(dir))])) return 'live';
       return lockBlocks(lock, dir);
     }
     if (age < grace) return 'young';

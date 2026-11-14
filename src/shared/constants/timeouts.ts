@@ -233,9 +233,9 @@ export const BROWSER_TIMEOUTS = {
   ISOLATED_PROFILE_SWEEP_GRACE: 10 * 60_000,
   /** Longer grace for pre-marker (no owner file) profiles, whose liveness can only be inferred. */
   ISOLATED_PROFILE_SWEEP_LEGACY_GRACE: 7 * 24 * 60 * 60_000,
-  /** Cap on `ps` output accepted by the legacy-profile process probe. */
   /** Bound the `ps` probe call. */
   ISOLATED_PROFILE_SWEEP_PROBE_TIMEOUT: 5_000,
+  /** Cap on `ps` output accepted by the legacy-profile process probe. */
   ISOLATED_PROFILE_SWEEP_PROBE_MAX_BYTES: 32 * 1024 * 1024,
   /** Bound size accounting across one sweep; incomplete profiles are kept. */
   ISOLATED_PROFILE_SWEEP_MAX_ENTRIES: 10_000,
