@@ -5,10 +5,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ReasoningSegment } from '../../../src/renderer/components/StatusBar/ReasoningSegment';
 import {
   buildThinkingSegmentOptions,
-  formatNativeModelSwitcherTooltip,
   getReasoningSegmentMode,
   type EffortOption,
 } from '../../../src/renderer/components/StatusBar/modelSwitcherHelpers';
+import { formatNativeModelSwitcherTooltip } from '../../../src/renderer/components/StatusBar/modelSwitcherTooltips';
 import type { EffortLevel } from '../../../src/shared/contract/agent';
 import { en, zh } from '../../../src/renderer/i18n';
 
@@ -160,7 +160,7 @@ describe('native reasoning segment', () => {
     expect(view.queryAllByRole('button')).toHaveLength(0);
   });
 
-  it('keeps Effort in the native trigger tooltip', () => {
+  it('localizes effort in the native trigger tooltip', () => {
     expect(formatNativeModelSwitcherTooltip({
       engineLabel: 'Neo',
       currentModel: 'mimo-v2.5-pro',
@@ -168,7 +168,7 @@ describe('native reasoning segment', () => {
       displayModel: 'mimo-v2.5-pro',
       adaptive: false,
       overridden: false,
-      effort: { label: 'High' },
-    })).toContain('Effort:');
+      effort: { label: 'High', shortLabel: '高' },
+    })).toContain('推理强度: 高');
   });
 });

@@ -1083,6 +1083,7 @@ export class CronService implements Disposable {
       case 'role-wake': {
         // 角色主动性：cadence 到点 → 完整醒来循环（内部文档）
         const { wakeRole } = await import('../services/roleAssets/roleProactivity');
+        const wakeStartedAt = new Date().toISOString();
         // 只计量不设闸：role-wake 历史上不吃 maxRunBudget（本单不扩权），外层闸仍是全局预算池。
         const costMeter = createCronRunCostMeterForExecution(undefined, executionId);
         const wakeResult = await costMeter.run(() => wakeRole(action.roleId, 'cadence')).catch((error: unknown) => {
@@ -1093,6 +1094,7 @@ export class CronService implements Disposable {
         console.error(
           `[CronService] Role wake ${wakeResult.status}`
           + ` (role=${wakeResult.roleId}, decision=${wakeResult.decision ?? '-'}, session=${wakeResult.sessionId ?? '-'})`
+          + ` startedAt=${wakeStartedAt} completedAt=${new Date().toISOString()}`
           + (wakeResult.skipReason ? `: ${wakeResult.skipReason}` : ''),
         );
         return wakeCostUsd > 0 ? { ...wakeResult, costUsd: wakeCostUsd } : wakeResult;
