@@ -34,11 +34,14 @@ vi.mock('../../../src/renderer/components/features/chat/ToolStepGroup', () => ({
 import { TurnCard } from '../../../src/renderer/components/features/chat/TurnCard';
 
 const PROSE = 'The user wants to move this plan to a new chat, so I should check the existing sessions first.';
+const ACTIVE_PROSE = "There's an active background task and no other tasks active.";
 const LEAKY_THINKING = [
   PROSE,
   'I will call delegate_session after list_session_candidates returns a candidateSetId.',
   'Maybe memory_search or MemoryRead helps, ToolSearch and Glob could find tools, AskUserQuestion if unsure.',
   'Options: delegate_existing or create_new; the target session state is active.',
+  'Raw echo {"status":"active"} and status: active, marked `active`; the session metadata says Active: 1/1d...',
+  ACTIVE_PROSE,
 ].join('\n');
 
 function renderThinking(language: 'zh' | 'en'): string {
@@ -75,6 +78,9 @@ describe('TurnCard → ThinkingDigestBanner — 展开的思考不外露内部�
       for (const word of FORBIDDEN) expect(scroller).not.toContain(word);
       expect(scroller).not.toMatch(/\bGlob\b/);
       expect(scroller).toContain(PROSE);
+      expect(scroller).not.toMatch(/state is active|status: active|&quot;status&quot;:&quot;active|`active`|Active: 1\/1d/);
+      expect(scroller).toContain(ACTIVE_PROSE.replace("'", '&#x27;'));
+      expect(scroller).toContain(language === 'en' ? 'Active chats: 1' : '活跃会话 1 个');
     });
   }
 });

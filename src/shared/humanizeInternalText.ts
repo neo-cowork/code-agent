@@ -119,6 +119,19 @@ const ENGLISH_STATE_PATTERNS: EnglishStatePattern[] = [
     replace: (_match, lang) =>
       lang === 'en' ? 'No event handling records for this run' : '本次运行未产生事件处理记录',
   },
+  {
+    regex: ENGLISH_STATE_REGEXES[8],
+    replace: (_match, lang) => (lang === 'en' ? 'Status: in progress' : '状态：进行中'),
+  },
+  {
+    regex: ENGLISH_STATE_REGEXES[9],
+    replace: (_match, lang) => (lang === 'en' ? 'in progress' : '进行中'),
+  },
+  {
+    regex: ENGLISH_STATE_REGEXES[10],
+    replace: (_match, lang, count) =>
+      lang === 'en' ? `Active chats: ${count}` : `活跃会话 ${count} 个`,
+  },
 ];
 
 function humanizeMcpToolName(rawName: string, lang: InternalTextLanguage): string {

@@ -148,4 +148,18 @@ describe('humanizeInternalText', () => {
     const prose = 'Globally, the user wants a new chat for the picnic plan.';
     expect(humanizeInternalText(prose, 'en')).toEqual({ text: prose, detectedFormats: [] });
   });
+
+  it('internal `active` state forms are humanized; ordinary prose with "active" is unchanged', () => {
+    const raw = 'state is active; {"status":"active"}; status: active; `active`; Active: 1/1d';
+    const zh = humanizeInternalText(raw, 'zh').text;
+    const en = humanizeInternalText(raw, 'en').text;
+    for (const out of [zh, en]) expect(out).not.toMatch(/state is active|status: active|"status"|`active`|1\/1d/);
+    expect(zh).toContain('状态：进行中');
+    expect(zh).toContain('活跃会话 1 个');
+    expect(en).toContain('Status: in progress');
+    expect(en).toContain('Active chats: 1');
+    for (const prose of ["There's an active background task", 'no background tasks active', 'the status of active tasks']) {
+      expect(humanizeInternalText(prose, 'en')).toEqual({ text: prose, detectedFormats: [] });
+    }
+  });
 });
