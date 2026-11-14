@@ -1,3 +1,4 @@
+import { RECOMMENDED_SKILLS } from '@shared/constants/skillCatalog';
 import { humanizeInternalText } from '@shared/humanizeInternalText';
 import { agentRoleLabel } from './agentRoleLabel';
 // ============================================================================
@@ -382,6 +383,21 @@ function matchesUiScript(text: string, t: Translations): boolean {
 
 const ENGLISH_STEP_SENTENCE = /^(?:Search|Read|Write|Edit|Find|List|Fetch|Store|Update|Ask|Browser|Computer|Use|Run)\b[\s:]/;
 
+const CATALOG_SKILL_DISPLAY_NAMES = new Map(RECOMMENDED_SKILLS.map((skill) => [skill.name, skill.displayName]));
+
+/**
+ * 技能行上的名字：目录里的 slug（weekly-report-synthesis）不是给人看的——中文界面换成目录显示名；
+ * 英文界面只在显示名本身不含汉字时才用它（目录没有英文名字段），否则返回 undefined，
+ * 调用方用不带名字的说法。不在目录里的是用户自己装的技能，名字是他自己起的，原样保留。
+ */
+function resolveSkillLabel(slug: string | undefined, t: Translations): string | undefined {
+  if (!slug) return undefined;
+  const displayName = CATALOG_SKILL_DISPLAY_NAMES.get(slug);
+  if (displayName === undefined) return slug;
+  const cjkUi = CJK_PATTERN.test(t.toolStepHumanize.writeFallback);
+  return cjkUi || !CJK_PATTERN.test(displayName) ? displayName : undefined;
+}
+
 /** 模型有时把内部工具名当描述（"Use task_status"）；含原始工具名作独立词的描述不可用，退回本地化模板。 */
 export function mentionsRawToolName(text: string, toolName: string): boolean {
   if (!toolName) return false;
@@ -576,7 +592,7 @@ function buildToolStep(
       return h.taskManager;
     case 'skill': {
       // Skill schema 用 command 传技能名；历史/别名可能用 skill / name
-      const skillName = firstString(a, ['command', 'skill', 'name']);
+      const skillName = resolveSkillLabel(firstString(a, ['command', 'skill', 'name']), t);
       return skillName ? h.skill.replace('{skill}', skillName) : h.skillFallback;
     }
     case 'screenshot':

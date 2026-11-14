@@ -438,3 +438,42 @@ describe('file selection patterns use plain step copy', () => {
     }
   });
 });
+
+// 技能步骤行不许露出目录里的 kebab-case slug：中文界面用目录的中文显示名，
+// 英文界面目录没有英文名时用不带名字的说法；用户自己装的技能（不在目录里）保留原名。
+describe('humanizeToolStep — skill rows never show a catalog slug', () => {
+  const slug = 'weekly-report-synthesis';
+  const statuses = ['running', 'completed', 'failed'] as const;
+  const fallback = (t: typeof zh, status: (typeof statuses)[number]) =>
+    status === 'completed' ? t.toolStepHumanize.skillFallback : t.toolStepHumanize.statusForms[status].skillFallback;
+
+  it.each(statuses)('zh uses the catalog display name when %s', (status) => {
+    for (const args of [{ command: slug }, { skill: slug }, { name: slug }]) {
+      const label = humanizeToolStep('Skill', args, zh, undefined, status);
+      expect(label).not.toContain(slug);
+      expect(label).toContain('周报萃取');
+    }
+  });
+
+  it.each(statuses)('en uses the no-name wording when %s (the catalog has no English name)', (status) => {
+    const label = humanizeToolStep('Skill', { command: slug }, en, undefined, status);
+    expect(label).not.toContain(slug);
+    expect(label).not.toMatch(/[㐀-鿿]/);
+    expect(label).toBe(fallback(en, status));
+  });
+
+  it.each(statuses)('a user-installed skill that is not in the catalog keeps its name when %s', (status) => {
+    expect(humanizeToolStep('Skill', { command: 'my-custom-skill' }, zh, undefined, status)).toContain('my-custom-skill');
+    expect(humanizeToolStep('Skill', { command: 'my-custom-skill' }, en, undefined, status)).toContain('my-custom-skill');
+  });
+
+  it('the grouped summary line counts skills and never names them', () => {
+    for (const t of [zh, en]) {
+      for (const status of statuses) {
+        const label = humanizeToolGroupLabel(['Skill', 'Skill'], t, status);
+        expect(label).toContain('2');
+        expect(label).not.toMatch(/[a-z]+-[a-z]+-[a-z]+/);
+      }
+    }
+  });
+});
