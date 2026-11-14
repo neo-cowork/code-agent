@@ -229,7 +229,7 @@ describe('contextAssembly inference artifact retry', () => {
 
     expect(ctx.taskProgress.emitTaskProgress).toHaveBeenCalledWith(
       'generating',
-      '正在生成 artifact 内容...',
+      '正在整理结果…',
     );
   });
 
@@ -607,7 +607,7 @@ describe('contextAssembly inference artifact retry', () => {
 
     expect(ctx.taskProgress.emitTaskProgress).toHaveBeenCalledWith(
       'generating',
-      '正在写入 artifact 修复补丁...',
+      '正在写入修正内容…',
     );
   });
 
@@ -1002,7 +1002,7 @@ describe('contextAssembly inference artifact retry', () => {
     expect(options).toMatchObject({ artifactRepairActive: false });
     expect(ctx.taskProgress.emitTaskProgress).toHaveBeenCalledWith(
       'generating',
-      '正在生成 artifact 内容...',
+      '正在整理结果…',
     );
   });
 
