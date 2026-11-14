@@ -101,6 +101,20 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn unbundled_hint_returns_error_without_recording_marker() {
+        let dir = temp_dir();
+        for _ in 0..2 {
+            assert_eq!(
+                post_hint_once(&dir, || post_native_hint(QuitDialogLanguage::En)),
+                Err("UNUserNotificationCenter is reserved for macOS app bundles".to_string())
+            );
+            assert!(!dir.join(HINT_MARKER).exists());
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
+
     #[test]
     fn unreadable_marker_path_does_not_post_or_mark_success() {
         let dir = temp_dir();

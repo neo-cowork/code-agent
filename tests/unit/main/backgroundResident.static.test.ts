@@ -13,6 +13,27 @@ function between(start: string, end: string): string {
 }
 
 describe('scheduled-only shell residency and explicit complete quit', () => {
+  it('protects every post_unc caller with bundle selection and an Objective-C exception boundary', () => {
+    const native = read('native_notification.rs');
+    const start = native.indexOf('pub fn post_unc(');
+    const end = native.indexOf('fn post_unc_with_session(', start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const post = native.slice(start, end);
+    expect(post).toContain('std::env::current_exe()');
+    expect(post).toContain('exe_is_in_app_bundle(&exe)');
+    expect(post).toContain('.unwrap_or(false)');
+    expect(post).toMatch(/if decide_backend\(in_app_bundle, true\) != NotificationBackend::Unc\s*\{\s*return Err\(/);
+    const guardAt = post.indexOf('decide_backend(');
+    const catchAt = post.indexOf('objc2::exception::catch(');
+    const sendAt = post.indexOf('post_unc_with_session(');
+    expect(guardAt).toBeGreaterThan(-1);
+    expect(catchAt).toBeGreaterThan(guardAt);
+    expect(sendAt).toBeGreaterThan(catchAt);
+    expect(post).toMatch(/objc2::exception::catch\(std::panic::AssertUnwindSafe\(\|\|\s*\{\s*post_unc_with_session\(/);
+    expect(post).toMatch(/\.unwrap_or_else\(\|_\| Err\(/);
+  });
+
   it('wires full_quit below quit_app in the tray and app menu with translated labels', () => {
     const tray = between('fn setup_tray(', 'fn request_main_window_focus(');
     expect(tray).toMatch(/\.text\("quit_app", labels\.quit\)\s*\.text\("full_quit", labels\.full_quit\)/);
