@@ -23,6 +23,8 @@ import { refreshParkedApprovals } from '../../../stores/parkedApprovalStore';
 import { useCronStore } from '../../../stores/cronStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
+import type { Translations } from '../../../i18n';
+import { classifyToolName, humanizeToolStep } from '../../../utils/humanizeToolStep';
 import { toast } from '../../../hooks/useToast';
 import { classifyPermissionDelivery } from '../../PermissionDialog/permissionDelivery';
 import {
@@ -41,27 +43,23 @@ import {
 /** 运行中/等批准才轮询；终态定格（再跑一次会开新会话，不会改写本记录）。 */
 const POLL_INTERVAL_MS = 2000;
 
-function awaitingLabelFromParked(item: ParkedApprovalInboxItem, runCommandLabel: string): string | undefined {
-  const preview = item.argsPreview?.trim();
-  if (item.tool?.toLowerCase() === 'bash') {
-    return runCommandLabel;
-  }
-  const parts = [item.displayTool ?? item.tool, preview].filter(Boolean);
-  return parts.length > 0 ? parts.join('：') : undefined;
-}
-
 function findParkedApprovalForSession(
   rows: ParkedApprovalInboxItem[] | undefined,
   sessionId: string,
-  runCommandLabel: string,
+  t: Translations,
 ): CronRunAwaitingApproval | null {
   const pending = (rows ?? []).find((item) => item.sessionId === sessionId && item.status === 'pending');
   if (!pending) return null;
+  const category = classifyToolName(pending.tool);
+  const preview = pending.argsPreview?.trim();
+  const basename = preview && /^(?:[^\s\0]*[\\/])?[^\s\/\\]+$/.test(preview)
+    ? preview.split(/[\\/]/).pop() : undefined;
+  const args = ['read', 'write', 'edit'].includes(category) && basename ? { file_path: basename } : undefined;
   return {
     id: pending.id,
     requestedAt: pending.requestedAt,
-    label: awaitingLabelFromParked(pending, runCommandLabel),
-    command: pending.tool?.toLowerCase() === 'bash' ? pending.commandPreview ?? pending.argsPreview : undefined,
+    label: category === 'bash' ? t.automationPresentation.runCommand : humanizeToolStep(pending.tool, args, t, undefined, 'pending-approval'),
+    command: category === 'bash' ? pending.commandPreview ?? pending.argsPreview : undefined,
   };
 }
 
@@ -107,7 +105,7 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
       // 等批准列表只为 running 期间服务（等批准的运行 execution 必是 running）。
       if (nextExecution?.status === 'running') {
         const parked = await sessionAutomationClient.listParkedApprovals();
-        setPendingApproval(findParkedApprovalForSession(parked, sessionId, t.automationPresentation.runCommand));
+        setPendingApproval(findParkedApprovalForSession(parked, sessionId, t));
       } else {
         setPendingApproval((previous) => (nextExecution ? null : previous));
       }
@@ -121,7 +119,7 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
     } catch {
       // 拉不到就不改状态：宁可停在上一拍的真实值，也不显示编出来的状态。
     }
-  }, [t.automationPresentation.runCommand, executionId, jobId, sessionId]);
+  }, [t, executionId, jobId, sessionId]);
 
   const activeKind = status?.kind ?? null;
   useEffect(() => {
