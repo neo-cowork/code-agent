@@ -28,6 +28,7 @@ mod agent_halo;
 mod appshots;
 mod appshots_hotkey_gate;
 mod background_resident;
+mod env_assist_bridge;
 mod env_assist_grant;
 mod env_assist_passive;
 mod menu_i18n;
@@ -2101,6 +2102,16 @@ fn spawn_web_server_recording(
         .stdin(Stdio::piped())
         .stdout(stdout_stdio)
         .stderr(stderr_stdio);
+
+    command
+        .env_remove("CODE_AGENT_ENV_ASSIST_BRIDGE_URL")
+        .env_remove("CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN");
+    #[cfg(target_os = "macos")]
+    if let Some((bridge_url, bridge_token)) = env_assist_bridge::ensure_started() {
+        command
+            .env("CODE_AGENT_ENV_ASSIST_BRIDGE_URL", bridge_url)
+            .env("CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN", bridge_token);
+    }
 
     for (key, value) in web_server_runtime_env(&working_dir, resource_dir.as_deref()) {
         command.env(key, value.as_os_str());
