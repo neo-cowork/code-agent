@@ -1,0 +1,44 @@
+{
+  "source": [
+    {
+      "surface": "src/renderer/i18n/zhSettingsWork.ts",
+      "term": "Provider",
+      "count": 4,
+      "reason": "N-FIX-SETTINGS-ENGINEERING-JARGON-SCREENMEM-STT: existing voice/screen-memory copy; owned redesign is queued"
+    }
+  ],
+  "components": [
+    {
+      "surface": "settings/voiceModel",
+      "term": "Provider",
+      "count": 2,
+      "reason": "N-FIX-SETTINGS-ENGINEERING-JARGON-SCREENMEM-STT: existing voice/screen-memory copy; owned redesign is queued"
+    },
+    {
+      "surface": "settings/voiceModel",
+      "term": "API Key",
+      "count": 1,
+      "reason": "N-FIX-SETTINGS-ENGINEERING-JARGON-SCREENMEM-STT: existing voice/screen-memory copy; owned redesign is queued"
+    },
+    {
+      "surface": "settings/voiceLive",
+      "term": "Provider",
+      "count": 1,
+      "reason": "N-FIX-SETTINGS-ENGINEERING-JARGON-SCREENMEM-STT: existing voice/screen-memory copy; owned redesign is queued"
+    },
+    {
+      "surface": "settings/openchronicle",
+      "term": "Provider",
+      "count": 5,
+      "reason": "N-FIX-SETTINGS-ENGINEERING-JARGON-SCREENMEM-STT: existing voice/screen-memory copy; owned redesign is queued"
+    }
+  ],
+  "browser": [
+    {
+      "surface": "settings/屏幕记忆",
+      "term": "Provider",
+      "count": 2,
+      "reason": "N-FIX-SETTINGS-ENGINEERING-JARGON-SCREENMEM-STT: existing voice/screen-memory copy; owned redesign is queued"
+    }
+  ]
+}

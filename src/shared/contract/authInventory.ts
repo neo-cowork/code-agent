@@ -23,17 +23,17 @@ export interface AuthInventoryItem {
 export const AUTH_INVENTORY: Record<AuthInventoryItemId, AuthInventoryItem> = {
   'provider.api_key': {
     id: 'provider.api_key',
-    title: '模型 Provider API Key',
+    title: '模型服务密钥',
     examples: ['OpenAI', 'Anthropic', 'Groq', 'Moonshot', 'Zhipu'],
     storage: 'secure storage / Keychain / encrypted backup',
-    display: '普通读取只显示 apiKeyConfigured；不展示完整 key。',
-    revoke: '在模型设置删除 key，或去服务商控制台轮换。',
-    diagnosticPolicy: '诊断包和日志必须脱敏 provider key。',
+    display: '普通读取只显示 apiKeyConfigured；不展示完整密钥。',
+    revoke: '在模型设置删除密钥，或去服务商控制台轮换。',
+    diagnosticPolicy: '诊断包和日志必须脱敏模型服务密钥。',
   },
   'channel.token': {
     id: 'channel.token',
     title: '通道 Token 和 App Secret',
-    examples: ['HTTP API key', 'Feishu appSecret', 'Telegram botToken'],
+    examples: ['HTTP API 通道密钥', 'Feishu appSecret', 'Telegram botToken'],
     storage: '通道配置保存在 secure storage。',
     display: '表单默认 password/masked；复制完整值必须是显式动作。',
     revoke: '禁用/删除通道，或在外部平台撤销 token。',
@@ -55,7 +55,7 @@ export const AUTH_INVENTORY: Record<AuthInventoryItemId, AuthInventoryItem> = {
     storage: 'MCP server config，本地保存。',
     display: 'Header value 默认 masked；JSON 原文编辑需要提示风险。',
     revoke: '编辑 MCP server config 或服务端轮换 key。',
-    diagnosticPolicy: '诊断和日志隐藏 Authorization、cookie、api key。',
+    diagnosticPolicy: '诊断和日志隐藏 Authorization、cookie、密钥。',
   },
   'mcp.oauth': {
     id: 'mcp.oauth',

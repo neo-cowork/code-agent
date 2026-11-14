@@ -327,7 +327,7 @@ export const zhSettingsWork = {
         cancel: '取消',
         save: '保存',
         add: '添加',
-        copyApiKey: '复制 API Key',
+        copyApiKey: '复制密钥',
         copy: '复制',
         disconnect: '断开',
         connect: '连接',
@@ -341,7 +341,7 @@ export const zhSettingsWork = {
         deleteConfirm: '确定要删除这个通道吗？',
         deleted: '通道已删除',
         deleteFailed: '删除失败',
-        apiKeyCopied: 'API Key 已复制到剪贴板',
+        apiKeyCopied: '密钥已复制到剪贴板',
       },
       status: {
         error: '错误',
@@ -874,7 +874,7 @@ export const zhSettingsWork = {
       },
       auth: {
         title: '凭证库存',
-        description: 'API key、OAuth、channel token、MCP env/header、browser relay token 分开管理和展示。',
+        description: '模型服务密钥、OAuth、channel token、MCP env/header、browser relay token 分开管理和展示。',
         examplesLabel: '例子: ',
         displayLabel: '展示: ',
         diagnosticsLabel: '诊断: ',

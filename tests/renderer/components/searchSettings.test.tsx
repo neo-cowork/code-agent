@@ -68,8 +68,8 @@ describe('SearchSettings 搜索源 API Key', () => {
 
     // 基线：4 个未配 Key 的付费源（perplexity/openai/exa/tavily）+ 2 个外部搜索源
     // 凭据（zhipu-search/minimax-search），brave 已配
-    expect(screen.getAllByText('需配 Key')).toHaveLength(6);
-    expect(screen.getAllByText('已配 Key')).toHaveLength(1);
+    expect(screen.getAllByText('需配密钥')).toHaveLength(6);
+    expect(screen.getAllByText('已配密钥')).toHaveLength(1);
 
     fireEvent.change(input, { target: { value: 'tvly-test-key-123' } });
     fireEvent.click(screen.getByTestId('search-key-save-tavily'));
@@ -84,8 +84,8 @@ describe('SearchSettings 搜索源 API Key', () => {
 
     // 就地翻转：不整页 reload（不再有 get 调用），状态文案与打码值直接更新
     await waitFor(() => {
-      expect(screen.getAllByText('需配 Key')).toHaveLength(5);
-      expect(screen.getAllByText('已配 Key')).toHaveLength(2);
+      expect(screen.getAllByText('需配密钥')).toHaveLength(5);
+      expect(screen.getAllByText('已配密钥')).toHaveLength(2);
     });
     expect(screen.getByTestId('search-key-masked-tavily').textContent).toBe('tvly-tes...');
     expect(screen.queryByTestId('search-key-input-tavily')).toBeNull();
@@ -137,7 +137,7 @@ describe('SearchSettings 搜索源 API Key', () => {
 
     // 状态翻回「需配 Key」，输入框重新展开
     await waitFor(() => {
-      expect(screen.getAllByText('需配 Key')).toHaveLength(7);
+      expect(screen.getAllByText('需配密钥')).toHaveLength(7);
     });
     expect(screen.queryByTestId('search-key-masked-brave')).toBeNull();
     expect(screen.getByTestId('search-key-input-brave')).toBeTruthy();
@@ -147,9 +147,9 @@ describe('SearchSettings 搜索源 API Key', () => {
     render(<SearchSettings />);
     const input = await screen.findByTestId('external-search-key-input-zhipu-search');
 
-    // 两行都在，且各自带「与模型 key 不同」的占位提示
+    // 两行都在，且各自带「与模型密钥不同」的占位提示
     expect(screen.getByTestId('external-search-key-input-minimax-search')).toBeTruthy();
-    expect(input.getAttribute('placeholder')).toContain('与模型 key 不同');
+    expect(input.getAttribute('placeholder')).toContain('与模型密钥不同');
 
     fireEvent.change(input, { target: { value: 'zhipu-official-key-1' } });
     fireEvent.click(screen.getByTestId('external-search-key-save-zhipu-search'));

@@ -21,6 +21,7 @@ import {
 import { normalizeVoiceInputDevice } from '@shared/voiceInputDevice';
 import { VOICE_SESSION_MAX_DURATION_MS } from '@shared/constants/voice';
 import { PROVIDER_MODELS, PROVIDER_MODELS_MAP } from '@shared/constants/models';
+import { getProviderDisplayName } from '../../../../i18n/settingsVocabulary';
 import ipcService from '../../../../services/ipcService';
 import { createLogger } from '../../../../utils/logger';
 import { interpolatePlural } from '../../../../i18n/interpolate';
@@ -441,9 +442,10 @@ export const VoiceLiveSettingsSection: React.FC = () => {
             className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible"
           >
             <option value="">{text.executionModelFollowSession}</option>
-            {PROVIDER_MODELS.map((provider) => (
-              <option key={provider.id} value={provider.id}>{provider.name}</option>
-            ))}
+            {PROVIDER_MODELS.map((provider) => {
+              const providerLabel = getProviderDisplayName(provider.id, undefined, provider.name, uiLanguage);
+              return <option key={provider.id} value={provider.id}>{providerLabel}</option>;
+            })}
           </select>
           <select
             data-testid="voice-execution-model"

@@ -12,4 +12,7 @@ export const zhSettingsPrivacyReceipt = {
       collapse: '收起明细',
       noPlaintextHint: '明细只显示种类与厂商收到的占位符，不包含原始值。',
     },
+    privacyLabels: {
+      transcriptionService: '转写服务: ',
+    },
 };

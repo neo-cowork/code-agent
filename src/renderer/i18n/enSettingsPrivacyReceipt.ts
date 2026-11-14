@@ -13,4 +13,7 @@ export const enSettingsPrivacyReceipt = {
       collapse: 'Hide details',
       noPlaintextHint: 'Details show only the kind and the placeholder the vendor received — never the original value.',
     },
+    privacyLabels: {
+      transcriptionService: 'Provider: ',
+    },
 };
