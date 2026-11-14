@@ -141,4 +141,16 @@ describe('sessionUIStore.confirmDelete - 终态留影内存半跟会话一起删
 
     expect(useSurfaceExecutionStore.getState().frameByScope[keyA]).toBeTruthy();
   });
+
+  it('confirmDelete 同时清掉该会话的未发送草稿（含附件），别的会话草稿保留', async () => {
+    localStorage.setItem('neo.composerDraft.v1:session-a', JSON.stringify({ v: 2, text: 'a', attachments: [] }));
+    localStorage.setItem('neo.composerDraft.v1:session-b', JSON.stringify({ v: 2, text: 'b' }));
+
+    useSessionUIStore.setState({ pendingDelete: { ids: ['session-a'], timer: null } });
+    await useSessionUIStore.getState().confirmDelete();
+
+    expect(localStorage.getItem('neo.composerDraft.v1:session-a')).toBeNull();
+    expect(localStorage.getItem('neo.composerDraft.v1:session-b')).not.toBeNull();
+    localStorage.clear();
+  });
 });
