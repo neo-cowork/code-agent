@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React, { useState } from 'react';
-import { act, cleanup, render, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ModelConfig } from '../../../src/shared/contract';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
@@ -14,12 +14,12 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 }));
 vi.mock('../../../src/renderer/utils/platform', () => ({ isWebMode: () => false }));
 
-function Settings() {
-  const [config, setConfig] = useState<ModelConfig>({ provider: 'deepseek', model: 'deepseek-chat', apiKey: '', temperature: 0.7 });
+function Settings({ initialProvider = 'deepseek' }: { initialProvider?: ModelConfig['provider'] }) {
+  const [config, setConfig] = useState<ModelConfig>({ provider: initialProvider, model: 'deepseek-chat', apiKey: '', temperature: 0.7 });
   return <ModelSettings config={config} onChange={setConfig} />;
 }
 
-beforeEach(() => useAppStore.setState({ language: 'en', settingsModelFocus: null }));
+beforeEach(() => useAppStore.setState({ language: 'en', settingsModelFocus: null, settingsMemoryFocus: null }));
 afterEach(cleanup);
 
 describe('ModelSettings one-shot API key focus', () => {
@@ -46,5 +46,64 @@ describe('ModelSettings one-shot API key focus', () => {
     useAppStore.getState().openModelSettings('openai');
     useAppStore.getState().openSettingsTab('general');
     expect(useAppStore.getState().settingsModelFocus).toBeNull();
+  });
+
+  it.each(['deepseek', 'local'] as const)(
+    'clears disabled local focus so selecting another provider is not dragged back (initial=%s)',
+    async (initialProvider) => {
+      useAppStore.getState().openModelSettings('local');
+      const view = render(<Settings initialProvider={initialProvider} />);
+      await waitFor(() => {
+        expect(view.container.textContent).toContain('Needs Key · 16');
+        expect(view.container.querySelector('[data-model-provider]')?.getAttribute('data-model-provider')).toBe('local');
+      });
+      expect(view.container.querySelector<HTMLInputElement>('input[data-model-api-key]')?.disabled).toBe(true);
+
+      let deepseekButton = Array.from(view.container.querySelectorAll('aside button')).find((btn) =>
+        btn.textContent?.includes('DeepSeek'),
+      );
+      if (!deepseekButton) {
+        const expandToggle = view.container.querySelector<HTMLButtonElement>('aside button[title]');
+        expect(expandToggle).toBeTruthy();
+        fireEvent.click(expandToggle!);
+        deepseekButton = Array.from(view.container.querySelectorAll('aside button')).find((btn) =>
+          btn.textContent?.includes('DeepSeek'),
+        );
+      }
+      expect(deepseekButton).toBeTruthy();
+      fireEvent.click(deepseekButton!);
+
+      expect(view.container.querySelector('[data-model-provider]')?.getAttribute('data-model-provider')).toBe('deepseek');
+      expect(view.container.querySelector<HTMLInputElement>('input[data-model-api-key]')?.disabled).toBe(false);
+      expect(useAppStore.getState().settingsModelFocus).toBeNull();
+    },
+  );
+
+  it('closing settings clears pending settings focus across all close paths', () => {
+    useAppStore.getState().openModelSettings('local');
+    useAppStore.getState().setShowSettings(false);
+    expect(useAppStore.getState().settingsModelFocus).toBeNull();
+
+    useAppStore.getState().openModelSettings('local');
+    useAppStore.getState().closeSettings();
+    expect(useAppStore.getState().settingsModelFocus).toBeNull();
+
+    useAppStore.getState().openModelSettings('local');
+    useAppStore.setState({ settingsReturnTo: 'cronCenter' });
+    useAppStore.getState().closeSettings();
+    expect(useAppStore.getState().settingsModelFocus).toBeNull();
+
+    useAppStore.getState().openModelSettings('local');
+    useAppStore.setState({ settingsReturnTo: 'chat' });
+    useAppStore.getState().closeSettings();
+    expect(useAppStore.getState().settingsModelFocus).toBeNull();
+
+    useAppStore.getState().openModelSettings('local');
+    useAppStore.getState().openCapabilityHub('connectors');
+    expect(useAppStore.getState().settingsModelFocus).toBeNull();
+
+    useAppStore.getState().openMemorySettings({ filename: 'project.md' });
+    useAppStore.getState().closeSettings();
+    expect(useAppStore.getState().settingsMemoryFocus).toBeNull();
   });
 });

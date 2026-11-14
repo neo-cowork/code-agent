@@ -104,6 +104,8 @@ let _settingsMemoryFocusTick = 0;
 const nextSettingsMemoryFocusNonce = () => ++_settingsMemoryFocusTick;
 let _settingsCapabilityFocusTick = 0;
 const nextSettingsCapabilityFocusNonce = () => ++_settingsCapabilityFocusTick;
+const SETTINGS_MODAL_FOCUS_CLEARED = { settingsModelFocus: null, settingsMemoryFocus: null } as const;
+const ALL_SETTINGS_FOCUS_CLEARED = { ...SETTINGS_MODAL_FOCUS_CLEARED, settingsCapabilityFocus: null } as const;
 
 const GLOBAL_PERMISSION_REQUEST_SESSION_ID = 'global';
 
@@ -238,26 +240,25 @@ export const useAppStore = create<AppState>()((set, get) => ({
     }
     set(show
       ? { showSettings: true }
-      : { ...SECONDARY_PAGES_CLOSED, showSettings: false, settingsReturnTo: null });
+      : { ...SECONDARY_PAGES_CLOSED, showSettings: false, settingsReturnTo: null, ...SETTINGS_MODAL_FOCUS_CLEARED });
   },
   // 带返回落点打开设置（Stripe portal return_url 模式）：深链落点不在设置页时退化为普通深链。
   openSettingsWithReturn: (tab, returnTo) => {
-    const noFocus = { settingsModelFocus: null, settingsMemoryFocus: null, settingsCapabilityFocus: null };
     const target = resolveSettingsDeepLink(tab, installedBundledCapabilityIds());
     if (target.kind !== 'settings') {
       get().openSettingsTab(tab);
       return;
     }
-    set({ showSettings: true, settingsInitialTab: target.tab, settingsReturnTo: returnTo, ...noFocus });
+    set({ showSettings: true, settingsInitialTab: target.tab, settingsReturnTo: returnTo, ...ALL_SETTINGS_FOCUS_CLEARED });
   },
   // 用户关闭设置（X / Esc）：带返回落点时直接回该页（编辑器凭暂存草稿重开）；否则与 setShowSettings(false) 等价。
   closeSettings: () => {
     if (get().settingsReturnTo === 'cronCenter') {
-      set({ ...SECONDARY_PAGES_CLOSED, showSettings: false, showCronCenter: true, settingsReturnTo: null });
+      set({ ...SECONDARY_PAGES_CLOSED, showSettings: false, showCronCenter: true, settingsReturnTo: null, ...SETTINGS_MODAL_FOCUS_CLEARED });
       return;
     }
     if (get().settingsReturnTo === 'chat') {
-      set({ ...SECONDARY_PAGES_CLOSED, showSettings: false, settingsReturnTo: null });
+      set({ ...SECONDARY_PAGES_CLOSED, showSettings: false, settingsReturnTo: null, ...SETTINGS_MODAL_FOCUS_CLEARED });
       return;
     }
     get().setShowSettings(false);
@@ -267,16 +268,15 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setShowPromptManager: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showPromptManager: show }),
   // 落点判定收在 resolveSettingsDeepLink 一处（ADR-049 §收窄），store 只负责应用
   openSettingsTab: (tab) => {
-    const noFocus = { settingsModelFocus: null, settingsMemoryFocus: null, settingsCapabilityFocus: null };
     const target = resolveSettingsDeepLink(tab, installedBundledCapabilityIds());
     if (target.kind === 'cronCenter') {
       // 深链直达自动化（设置页搜索）：也算「回去了」，返回落点就地清掉，草稿留给编辑器取。
-      set({ ...SECONDARY_PAGES_CLOSED, showCronCenter: true, showSettings: false, settingsReturnTo: null, ...noFocus });
+      set({ ...SECONDARY_PAGES_CLOSED, showCronCenter: true, showSettings: false, settingsReturnTo: null, ...ALL_SETTINGS_FOCUS_CLEARED });
     } else if (target.kind === 'capabilityHub') {
       get().openCapabilityHub(target.tab);
-      set(noFocus);
+      set(ALL_SETTINGS_FOCUS_CLEARED);
     } else {
-      set({ showSettings: true, settingsInitialTab: target.tab, ...noFocus });
+      set({ showSettings: true, settingsInitialTab: target.tab, ...ALL_SETTINGS_FOCUS_CLEARED });
     }
   },
   openModelSettings: (provider) => set({
@@ -391,6 +391,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       capabilityHubTab: tab,
       expertPanelTab: !state.showCapabilityHub && !state.expertDetailRoleId ? 'discover' : state.expertPanelTab,
       settingsReturnTo: null,
+      ...SETTINGS_MODAL_FOCUS_CLEARED,
     });
   },
   setExpertPanelTab: (tab) => set({ expertPanelTab: tab }),
