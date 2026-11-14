@@ -17,6 +17,7 @@ import type {
 } from '@shared/contract';
 import type {
   AudioCaptureMissingPrerequisiteCode,
+  AudioCaptureMode,
   AudioCapturePrerequisites,
 } from '@shared/contract/audioCapture';
 import { invalidateComputerUseSnapshotForSystemSettings } from '../stores/computerUseStore';
@@ -401,7 +402,9 @@ export async function stopNativeVoiceAec(): Promise<boolean> {
 
 export interface AudioCaptureStatus {
   capturing: boolean;
-  captureMode: 'microphone' | 'system-audio';
+  captureMode: AudioCaptureMode;
+  /** 用户选的模式；和 captureMode 不同 = 降级了（会议模式缺系统音频组件时只录麦克风） */
+  requestedMode?: AudioCaptureMode;
   vadReady: boolean;
   soxAvailable: boolean;
   systemAudioAvailable: boolean;
@@ -514,7 +517,7 @@ async function invokeDesktopDomain<T>(
   return parseIPCResponse<T>(payloadValue);
 }
 
-export async function startAudioCapture(mode: 'microphone' | 'system-audio' = 'microphone'): Promise<AudioCaptureStatus> {
+export async function startAudioCapture(mode: AudioCaptureMode = 'microphone'): Promise<AudioCaptureStatus> {
   return postDesktopAction<AudioCaptureStatus>('startAudioCapture', { mode });
 }
 

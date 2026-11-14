@@ -27,6 +27,7 @@ export const MANAGED_BROWSER_PERSISTENT_PROFILE_ID = 'managed-browser-profile';
 export const MANAGED_BROWSER_ARTIFACT_DIR = 'screenshots';
 export const MANAGED_BROWSER_ARTIFACT_ROOT_DIR = 'managed-browser-artifacts';
 export const MANAGED_BROWSER_ISOLATED_PROFILE_PREFIX = 'code-agent-managed-browser-';
+export const MANAGED_BROWSER_ISOLATED_OWNER_FILE = 'neo-isolated-owner.json';
 export const BROWSER_TARGET_REF_TTL_MS = 60_000;
 export const MANAGED_BROWSER_DEFAULT_LEASE_TTL_MS = 30 * 60_000;
 export const MANAGED_BROWSER_MIN_LEASE_TTL_MS = 5_000;
@@ -261,6 +262,10 @@ export function resolveManagedBrowserProfile(args: {
   fs.mkdirSync(isolatedRootDir, { recursive: true });
   const makeTempDir = args.makeTempDir || fs.mkdtempSync;
   const profileDir = makeTempDir(path.join(isolatedRootDir, `${profileId}-`));
+  // Record ownership before either Chrome provider can start (including lockless headless shell).
+  fs.writeFileSync(path.join(profileDir, MANAGED_BROWSER_ISOLATED_OWNER_FILE), JSON.stringify({
+    host: os.hostname(), pid: process.pid, processStartedAt: performance.timeOrigin,
+  }), { flag: 'wx', mode: 0o600 });
 
   return {
     sessionId,
@@ -519,7 +524,7 @@ export function sanitizeManagedBrowserId(value: string): string {
   return safe || 'workspace';
 }
 
-function isPathInsideRoot(targetPath: string, rootPath: string): boolean {
+export function isPathInsideRoot(targetPath: string, rootPath: string): boolean {
   const target = path.resolve(targetPath);
   const root = path.resolve(rootPath);
   return target !== root && isPathWithinRoot(target, root);

@@ -27,6 +27,7 @@ import {
   type BrowserProviderResolution,
 } from './browserProvider';
 import { BrowserLogger } from './browser/logger';
+import { PostResultReloadGuard } from './browser/postResultReloadGuard';
 import { refreshBrowserTabMetadata as refreshBrowserTabMetadataFields } from './browser/tabHistoryMetadata';
 import { browserRelayService } from './browserRelayService';
 import {
@@ -178,6 +179,7 @@ export class BrowserService implements Disposable {
   private viewport = { width: 1280, height: 720 };
   private traces: WorkbenchActionTrace[] = [];
   private targetRefs = new BrowserTargetRefRegistry();
+  private postResultReloadGuard = new PostResultReloadGuard();
   private pendingDialogs = new Map<string, BrowserPendingDialog>();
   private consoleErrors: string[] = [];
   /** 页级导航/会话变化监听（surface adapter 有机跳转回写用） */
@@ -257,6 +259,7 @@ export class BrowserService implements Disposable {
 
     this.mode = options.mode || this.getDefaultMode();
     this.configureManagedBrowserSession(options.profileMode || 'persistent');
+    if (this.profileMode === 'isolated') void import('./browser/isolatedProfileSweep').then(({ sweepStaleIsolatedBrowserProfiles }) => sweepStaleIsolatedBrowserProfiles({ currentProfileDir: this.isolatedProfileDir, logger: this.logger, oncePerProcess: true })).catch((error) => this.logger.log('WARN', `Isolated profile sweep failed: ${error}`));
     this.proxyConfig = resolveManagedBrowserProxyConfig({ input: options.proxy, env: process.env });
     const resolution = resolveBrowserProvider({ requestedProvider: options.provider });
     this.updateProviderDiagnostics(resolution, {
@@ -365,6 +368,7 @@ export class BrowserService implements Disposable {
 
     this.logger.log('INFO', `Creating new tab${url ? ` with URL: ${summarizeBrowserUrlForLog(url)}` : ''}`);
     const page = await this.context!.newPage();
+    this.postResultReloadGuard.track(page);
     await page.setViewportSize(this.viewport).catch(() => undefined);
     const tabId = `tab_${randomUUID()}`;
 
@@ -567,6 +571,10 @@ export class BrowserService implements Disposable {
     this.targetRefs.clear();
     await this.refreshTabMetadata(tab);
     this.emitSessionChanged('history');
+  }
+
+  getPostResultReloadError(tabId?: string): string | null {
+    return this.postResultReloadGuard.getRefusal(this.getTab(tabId), this.logger);
   }
 
   async reload(tabId?: string): Promise<void> {
