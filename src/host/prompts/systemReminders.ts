@@ -381,6 +381,8 @@ export interface TaskFeatures {
   isFuzzyTroubleshooting: boolean;
   /** 截屏/查看当前屏幕意图（区别于分析已有截图文件） */
   isScreenCaptureTask: boolean;
+  /** 会议速记/纪要整理：先走 meeting-summary skill，守来源保真（提醒见 reminders/contentGeneration.ts）。 */
+  isMeetingMinutesTask?: boolean;
   dimensions: string[];
 }
 
@@ -683,6 +685,7 @@ export function detectTaskFeatures(prompt: string, fileExtensions?: string[]): T
     isFuzzyCodeReview: hasFuzzyIntent && hasCodeContext,
     isFuzzyTroubleshooting: hasFuzzyIntent && hasTroubleContext,
     isScreenCaptureTask: screenCaptureKeywords.some((k) => normalizedPrompt.includes(k)),
+    isMeetingMinutesTask: /会议(?:纪要|速记|记录|总结)|会议待办|\bmeeting\s+(?:minutes|summary|notes)\b/i.test(normalizedPrompt),
     dimensions: matchedDimensions,
   };
 }

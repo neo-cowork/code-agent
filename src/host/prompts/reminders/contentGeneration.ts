@@ -92,7 +92,27 @@ export const CONTENT_GENERATION_REMINDERS: ReminderDefinition[] = [
     tokens: 200,
     // 单轮文件交付改走 FILE_DELIVERABLE_WORKFLOW：这里的 Bash+pandas 路径在文字前台
     // 不可达，照走只会把执行挤到后台脚本上去（N-HOME-STARTER-CARDS-FILES r2 实测）。
-    shouldInclude: (ctx) => ctx.taskFeatures.isDataTask && !ctx.taskFeatures.isOneTurnFileDeliverable ? 1.0 : 0,
+    shouldInclude: (ctx) => ctx.taskFeatures.isDataTask && !ctx.taskFeatures.isOneTurnFileDeliverable && !ctx.taskFeatures.isMeetingMinutesTask ? 1.0 : 0,
+    exclusiveGroup: 'task-type-selection',
+    category: 'tool',
+  },
+  {
+    // FB-1267：会议速记整理。通用文档提醒的「先出完整初稿 / 不留占位符」会把素材没写的
+    // 负责人、截止、动作补成真的；这里改走 meeting-summary skill 并守来源保真。
+    id: 'MEETING_MINUTES_WORKFLOW',
+    priority: 1,
+    content: `<system-reminder>
+**会议纪要任务**：有 Skill 工具时先调用 \`skill({ "command": "meeting-summary", "args": "<用户给的速记或文件>" })\`；没有就直接按下面的规则出纪要。
+
+**保真底线**（用户要求"必须有负责人和截止时间""待办可执行"时同样适用）：
+- 负责人、截止时间、待办内容只能来自用户给的素材，不推断、不补全、不顺手新增待办
+- 素材没点名的负责人写"待指定"，不要写成"工程团队""运营"等泛称或按职责猜人；素材没说的截止写"待定（来源未定）"，不要写"尽快""本周内"或编日期
+- 素材没说的动作（如"回复财务""出周报""同步某方"）不得写进待办；"下周三"等相对日期保留原词，不知道会议日期就不换算
+- 还在权衡、只提了方向的事项（如"要 PM 重新排优先级"）单列"讨论中"，不要升格成决议或待办；"已达成"与"讨论中"分开写
+- 纪要末尾加一行，列出哪些字段因素材没写而待定；用户说了不要提问就不要追问
+</system-reminder>`,
+    tokens: 330,
+    shouldInclude: (ctx) => ctx.taskFeatures.isMeetingMinutesTask ? 1.0 : 0,
     exclusiveGroup: 'task-type-selection',
     category: 'tool',
   },
@@ -118,7 +138,7 @@ export const CONTENT_GENERATION_REMINDERS: ReminderDefinition[] = [
 - 无遗留占位符文本
 </system-reminder>`,
     tokens: 270,
-    shouldInclude: (ctx) => ctx.taskFeatures.isDocumentTask && !ctx.taskFeatures.isOneTurnFileDeliverable && !inAuthoringSkillFlow(ctx) ? 1.0 : 0,
+    shouldInclude: (ctx) => ctx.taskFeatures.isDocumentTask && !ctx.taskFeatures.isOneTurnFileDeliverable && !ctx.taskFeatures.isMeetingMinutesTask && !inAuthoringSkillFlow(ctx) ? 1.0 : 0,
     exclusiveGroup: 'task-type-selection',
     category: 'tool',
   },
